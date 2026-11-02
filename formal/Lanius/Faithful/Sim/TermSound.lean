@@ -468,10 +468,14 @@ theorem neverNext_sound (call : Calls) (fuel : Nat) :
   | assert _ => intro E e h; simp [neverNext] at h
   | set _ _ => intro E e h; simp [neverNext] at h
   | setEval _ _ => intro E e h; simp [neverNext] at h
-  | letMatch _ _ _ _ _ _ | setField _ _ _ | setCall _ _ _ | «while» _ _ | letAlloc _ _ _ _
+  | «while» _ _ => intro E e h; simp [neverNext] at h
+  | whileEval _ _ => intro E e h; simp [neverNext] at h
+  | «break» => intro E e _ he; simp [mstmt] at he
+  | «continue» => intro E e _ he; simp [mstmt] at he
+  | letMatch _ _ _ _ _ _ | setField _ _ _ | setCall _ _ _ | letAlloc _ _ _ _
   | letLoad _ _ _ _ | setByte _ _ _ | free _ _ _ | letSlice _ _ _ _ _ | letIndex _ _ _ _ _
-  | setIndex _ _ _ | whileEval _ _ | setIndexEval _ _ _ | setFieldEval _ _ _ | «break»
-  | «continue» | matchArm _ _ _ _ _ _ _ _ | unreachable _ _ => intro E e _ he; simp [mstmt] at he
+  | setIndex _ _ _ | setIndexEval _ _ _ | setFieldEval _ _ _
+  | matchArm _ _ _ _ _ _ _ _ | unreachable _ _ => intro E e _ he; simp [mstmt] at he
 
 theorem AEnv.get?_forget (ws : List Nat) (x : Nat) : ∀ (A : AEnv),
     (A.forget ws).get? x = (A.get? x).map (fun c => if ws.contains x then .unk else c)

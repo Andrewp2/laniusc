@@ -109,7 +109,7 @@ def stmtOkC (ret : SrcType) (tenv : TEnv) : SrcStmt → Bool
   | .then first second => stmtOkC ret tenv first && stmtOkC ret tenv second
   | .if condition thenBranch elseBranch =>
     isBoolTy (exprTy boxes tenv condition) && stmtOkC ret tenv thenBranch && stmtOkC ret tenv elseBranch
-  | .while _ _ => false
+  | .while condition body => isBoolTy (exprTy boxes tenv condition) && stmtOkC ret tenv body
   | .return value =>
     match exprTy boxes tenv value with
     | some t => t.same ret
@@ -128,7 +128,7 @@ def stmtOkC (ret : SrcType) (tenv : TEnv) : SrcStmt → Bool
   | .setEval id value => setOk tenv id (effTyC calls boxes tenv value)
   | .ifEval condition thenBranch elseBranch =>
     isBoolTy (effTyC calls boxes tenv condition) && stmtOkC ret tenv thenBranch && stmtOkC ret tenv elseBranch
-  | .whileEval _ _ => false
+  | .whileEval condition body => isBoolTy (effTyC calls boxes tenv condition) && stmtOkC ret tenv body
   | .returnEval value =>
     match effTyC calls boxes tenv value with
     | some t => t.same ret
@@ -138,8 +138,8 @@ def stmtOkC (ret : SrcType) (tenv : TEnv) : SrcStmt → Bool
   | .setFieldEval _ _ _ => false
   | .returnUnit => true
   | .assert condition => isBoolTy (effTyC calls boxes tenv condition)
-  | .break => false
-  | .continue => false
+  | .break => true
+  | .continue => true
   | .matchArm _ _ _ _ _ _ _ _ => false
   | .unreachable _ _ => false
 
@@ -217,7 +217,7 @@ theorem stmtOkC_eq (ret : SrcType) (s : SrcStmt) : ∀ tenv : TEnv,
   | setCall => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
   | «then» first second ih1 ih2 => intro tenv; rw [stmtOkC, stmtOk, ih1, ih2] <;> rfl
   | «if» condition thenBranch elseBranch ih1 ih2 => intro tenv; rw [stmtOkC, stmtOk, ih1, ih2] <;> rfl
-  | «while» => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
+  | «while» condition body ih => intro tenv; rw [stmtOkC, stmtOk, ih]
   | «return» value => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
   | letAlloc => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
   | letLoad => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
@@ -230,7 +230,7 @@ theorem stmtOkC_eq (ret : SrcType) (s : SrcStmt) : ∀ tenv : TEnv,
   | setEval => intro tenv; rw [stmtOkC, stmtOk, effTyC_eq]
   | ifEval condition thenBranch elseBranch ih1 ih2 =>
     intro tenv; rw [stmtOkC, stmtOk, effTyC_eq, ih1, ih2] <;> rfl
-  | whileEval => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
+  | whileEval condition body ih => intro tenv; rw [stmtOkC, stmtOk, effTyC_eq, ih]
   | returnEval value => intro tenv; rw [stmtOkC, stmtOk, effTyC_eq] <;> rfl
   | discard value => intro tenv; rw [stmtOkC, stmtOk, effTyC_eq] <;> rfl
   | setIndexEval => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
@@ -379,7 +379,8 @@ theorem callTy_eq_blocks {sp : SrcProgram} {outside : List Nat} {blocks : List (
 
 theorem pureFunc_fast {sp : SrcProgram} {prims : Prims} {outside : List Nat} {boxes : Boxes}
     {calls : Nat → List SrcType → Option SrcType} {f : SrcFunc} (hb : boxElem sp prims = boxes)
-    (hc : callTy sp outside = calls) (ok : stmtOkC calls boxes f.ret (paramTEnv f.params) f.body = true) :
+    (hc : callTy sp outside = calls)
+    (ok : (stmtOkC calls boxes f.ret (paramTEnv f.params) f.body && !looseJump f.body) = true) :
     PureFunc sp prims outside f = true := by
   unfold PureFunc
   rw [hb, ← stmtOkC_eq, hc]

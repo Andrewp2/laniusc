@@ -510,6 +510,57 @@ theorem if_trap_inv {cond : Core.Expr} {a b : Core.Stmt} (h : execStmt k P st (.
       exact ⟨j, rfl, .inl run⟩
     all_goals simp at h
 
+theorem while_trap_inv {cond : Core.Expr} {body : Core.Stmt}
+    (h : execStmt k P st (.whileLoop cond body) = .trapped r st') :
+    ∃ j, k = j + 1 ∧ (evalExpr j P st cond = .trapped r st' ∨
+      (∃ v, evalExpr j P st cond = .done v st' ∧ (∀ x, v ≠ .boolean x) ∧ r = .typeMismatch) ∨
+      ∃ s1, evalExpr j P st cond = .done (.boolean true) s1 ∧
+        (execStmt j P s1 body = .trapped r st' ∨
+         ∃ cb s2, execStmt j P s1 body = .done cb s2 ∧ (cb = .next ∨ cb = .continueLoop) ∧
+           execStmt j P s2 (.whileLoop cond body) = .trapped r st')) := by
+  cases k with
+  | zero => simp [execStmt] at h
+  | succ j =>
+    simp only [execStmt] at h
+    split at h
+    · simp at h
+    · rename_i s1 run
+      split at h
+      · rename_i s2 brun
+        exact ⟨j, rfl, .inr (.inr ⟨s1, run, .inr ⟨.next, s2, brun, .inl rfl, h⟩⟩)⟩
+      · rename_i s2 brun
+        exact ⟨j, rfl, .inr (.inr ⟨s1, run, .inr ⟨.continueLoop, s2, brun, .inr rfl, h⟩⟩)⟩
+      · simp at h
+      · simp at h
+      · rename_i reason s2 brun
+        simp only [Semantics.Outcome.trapped.injEq] at h
+        obtain ⟨rfl, rfl⟩ := h
+        exact ⟨j, rfl, .inr (.inr ⟨s1, run, .inl brun⟩)⟩
+      all_goals simp at h
+    · rename_i v s1 notF notT run
+      simp only [Semantics.Outcome.trapped.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      refine ⟨j, rfl, .inr (.inl ⟨v, run, fun x e => ?_, rfl⟩)⟩
+      subst e
+      cases x
+      · exact notF rfl
+      · exact notT rfl
+    · rename_i reason s1 run
+      simp only [Semantics.Outcome.trapped.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      exact ⟨j, rfl, .inl run⟩
+    all_goals simp at h
+
+theorem break_trap (h : execStmt k P st .breakLoop = .trapped r st') : False := by
+  cases k with
+  | zero => simp [execStmt] at h
+  | succ j => simp [execStmt] at h
+
+theorem continue_trap (h : execStmt k P st .continueLoop = .trapped r st') : False := by
+  cases k with
+  | zero => simp [execStmt] at h
+  | succ j => simp [execStmt] at h
+
 theorem return_trap_inv {e : Core.Expr} (h : execStmt k P st (.returnValue (some e)) = .trapped r st') :
     ∃ j, k = j + 1 ∧ evalExpr j P st e = .trapped r st' := by
   cases k with

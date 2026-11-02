@@ -15,13 +15,17 @@ gives such a program a meaning without a heap: `boxed` and `unbox` are the
 identity, locals are an environment, and everything else is what Core does,
 with Core's own scalar functions.
 
-Fuel counts calls only: `peff` and `pstmt` go by the syntax of a body,
-with the meaning of its calls a parameter, and `pcall` gives a call with
-fuel `n + 1` its body's meaning with calls of fuel `n`. So a function's
-certificate unfolds its body without fuel case splits, and a Core run with
-fuel `n` has a pure run within the same fuel (`Faithful/Simulation.lean`).
-The constructs pure code does not use (loops, assignment, raw memory) have
-no pure meaning (`none`).
+Fuel counts calls and loop steps: `peff` and `mstmt` go by the syntax of a
+body, with the meaning of its calls a parameter, and `pcall` gives a call
+with fuel `n + 1` its body's meaning with calls of fuel `n` and loops of at
+most `n` steps. An assignment replaces the value of its local's newest
+binding, and a loop is recursion on its fuel (`ploop`). A body with no loop
+and no assignment has the simpler meaning `pstmt`, which leaves the
+environment it got, so a function's certificate unfolds its body without
+fuel case splits (`pcall_succ`), and a Core run with fuel `n` has a pure run
+within the same fuel (`Faithful/Simulation.lean`). The constructs pure code
+does not use (raw memory, fields written in place) have no pure meaning
+(`none`).
 
 Each extracted Lean function is then proved to be what the pure semantics
 computes for its Lanius function (`Faithful/Cert.lean`), on values that
@@ -344,6 +348,21 @@ def pstmt (env : Env) : SrcStmt → Option Done
   | .assert condition =>
       ((peff call env condition).bind asBool).bind fun b => if b then some .next else none
 
+/-- A loop of at most `fuel` steps: while `test` holds, the body, until it
+breaks or returns. A body that ends `continue` goes on as one that ends. -/
+def ploop (test : Env → Option Bool) (body : Env → Option Out) : Nat → Env → Option Out
+  | 0, _ => none
+  | fuel + 1, env =>
+    (test env).bind fun b =>
+      if b then
+        (body env).bind fun o =>
+          match o with
+          | .next e => ploop test body fuel e
+          | .cont e => ploop test body fuel e
+          | .brk e => some (.next e)
+          | .ret value => some (.ret value)
+      else some (.next env)
+
 /-- A statement, with `call` the meaning of its calls and `fuel` the steps
 its loops may take: how it ends and the environment it leaves. -/
 def mstmt (fuel : Nat) (env : Env) : SrcStmt → Option Out
@@ -364,7 +383,8 @@ def mstmt (fuel : Nat) (env : Env) : SrcStmt → Option Out
   | .if condition thenBranch elseBranch =>
       ((pexpr env condition).bind asBool).bind fun b =>
         if b then mstmt fuel env thenBranch else mstmt fuel env elseBranch
-  | .while _ _ => none
+  | .while condition body =>
+      ploop (fun e => (pexpr e condition).bind asBool) (fun e => mstmt fuel e body) fuel env
   | .return value => (pexpr env value).map fun v => .ret (some v)
   | .letAlloc _ _ _ _ => none
   | .letLoad _ _ _ _ => none
@@ -379,14 +399,15 @@ def mstmt (fuel : Nat) (env : Env) : SrcStmt → Option Out
   | .ifEval condition thenBranch elseBranch =>
       ((peff call env condition).bind asBool).bind fun b =>
         if b then mstmt fuel env thenBranch else mstmt fuel env elseBranch
-  | .whileEval _ _ => none
+  | .whileEval condition body =>
+      ploop (fun e => (peff call e condition).bind asBool) (fun e => mstmt fuel e body) fuel env
   | .returnEval value => (peff call env value).map fun v => .ret (some v)
   | .discard value => (peff call env value).map fun _ => .next env
   | .setIndexEval _ _ _ => none
   | .setFieldEval _ _ _ => none
   | .returnUnit => some (.ret none)
-  | .break => none
-  | .continue => none
+  | .break => some (.brk env)
+  | .continue => some (.cont env)
   | .matchArm _ _ _ _ _ _ _ _ => none
   | .unreachable _ _ => none
   | .assert condition =>

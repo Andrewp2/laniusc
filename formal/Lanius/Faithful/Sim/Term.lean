@@ -203,7 +203,7 @@ def neverNext : SrcStmt → Bool
   | .setCall _ _ _ => true
   | .then first second => neverNext first || neverNext second
   | .if _ a b => neverNext a && neverNext b
-  | .while _ _ => true
+  | .while _ _ => false
   | .return _ => true
   | .letAlloc _ _ _ _ => true
   | .letLoad _ _ _ _ => true
@@ -215,7 +215,7 @@ def neverNext : SrcStmt → Bool
   | .letEval _ _ _ body => neverNext body
   | .setEval _ _ => false
   | .ifEval _ a b => neverNext a && neverNext b
-  | .whileEval _ _ => true
+  | .whileEval _ _ => false
   | .returnEval _ => true
   | .discard _ => false
   | .setIndexEval _ _ _ => true

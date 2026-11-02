@@ -182,6 +182,41 @@ theorem agree_then {env : Env} {o1 o : Out} {k : Env → Option Out}
     subst h
     simp [Out.env?] at he
 
+/-- A loop keeps what its body keeps. -/
+theorem ploop_agree {test : Env → Option Bool} {body : Env → Option Out}
+    (hb : ∀ env o, body env = some o → ∀ e, o.env? = some e → Agree [] env e) :
+    ∀ (n : Nat) {env : Env} {o : Out}, ploop test body n env = some o → ∀ e, o.env? = some e → Agree [] env e
+  | 0, _, _, h => by simp [ploop] at h
+  | n + 1, env, o, h => by
+    simp only [ploop, Option.bind_eq_some_iff] at h
+    obtain ⟨b, -, h⟩ := h
+    cases b with
+    | false =>
+      simp only [Bool.false_eq_true, if_false, Option.some.injEq] at h
+      subst h
+      intro e he
+      simp only [Out.env?, Option.some.injEq] at he
+      subst he
+      exact Agree.refl _ _
+    | true =>
+      simp only [if_true, Option.bind_eq_some_iff] at h
+      obtain ⟨ob, hob, h⟩ := h
+      cases ob with
+      | next e1 => exact fun e he => (hb env _ hob e1 rfl).trans (ploop_agree hb n h e he)
+      | cont e1 => exact fun e he => (hb env _ hob e1 rfl).trans (ploop_agree hb n h e he)
+      | brk e1 =>
+        simp only [Option.some.injEq] at h
+        subst h
+        intro e he
+        simp only [Out.env?, Option.some.injEq] at he
+        subst he
+        exact hb env _ hob _ rfl
+      | ret v =>
+        simp only [Option.some.injEq] at h
+        subst h
+        intro e he
+        simp [Out.env?] at he
+
 /-- **A statement keeps the environment's locals and its hidden bindings.** -/
 theorem mstmt_agree (call : Calls) (fuel : Nat) :
     ∀ (s : SrcStmt) {env : Env} {o : Out}, mstmt call fuel env s = some o →
@@ -286,8 +321,21 @@ theorem mstmt_agree (call : Calls) (fuel : Nat) :
     simp only [mstmt, Option.some.injEq] at h
     subst h
     simp [Out.env?] at he
-  | letMatch | setField | setCall | «while» | letAlloc | letLoad | setByte | free | letSlice | letIndex
-  | setIndex | whileEval | setIndexEval | setFieldEval | «break» | «continue» | matchArm | unreachable =>
+  | «while» condition body ih =>
+    intro env o h
+    exact ploop_agree (fun _ _ h' => ih h') fuel h
+  | whileEval condition body ih =>
+    intro env o h
+    exact ploop_agree (fun _ _ h' => ih h') fuel h
+  | «break» | «continue» =>
+    intro env o h e he
+    simp only [mstmt, Option.some.injEq] at h
+    subst h
+    simp only [Out.env?, Option.some.injEq] at he
+    subst he
+    exact Agree.refl _ _
+  | letMatch | setField | setCall | letAlloc | letLoad | setByte | free | letSlice | letIndex
+  | setIndex | setIndexEval | setFieldEval | matchArm | unreachable =>
     intro env o h; simp [mstmt] at h
 
 /-- A `let`'s ending keeps the locals its body did not assign, below the
@@ -328,6 +376,42 @@ theorem unwritten_then {env : Env} {o1 o : Out} {k : Env → Option Out} {ws1 ws
     simp only [Out.then, Option.some.injEq] at h
     subst h
     simp [Out.env?] at he
+
+/-- A loop keeps the locals its body does not assign. -/
+theorem ploop_unwritten {test : Env → Option Bool} {body : Env → Option Out} {ws : List Nat}
+    (hb : ∀ env o, body env = some o → ∀ e, o.env? = some e → ∀ x, x ∉ ws → e.get? x = env.get? x) :
+    ∀ (n : Nat) {env : Env} {o : Out}, ploop test body n env = some o →
+      ∀ e, o.env? = some e → ∀ x, x ∉ ws → e.get? x = env.get? x
+  | 0, _, _, h => by simp [ploop] at h
+  | n + 1, env, o, h => by
+    simp only [ploop, Option.bind_eq_some_iff] at h
+    obtain ⟨b, -, h⟩ := h
+    cases b with
+    | false =>
+      simp only [Bool.false_eq_true, if_false, Option.some.injEq] at h
+      subst h
+      intro e he _ _
+      simp only [Out.env?, Option.some.injEq] at he
+      subst he
+      rfl
+    | true =>
+      simp only [if_true, Option.bind_eq_some_iff] at h
+      obtain ⟨ob, hob, h⟩ := h
+      cases ob with
+      | next e1 => exact fun e he x hx => (ploop_unwritten hb n h e he x hx).trans (hb env _ hob e1 rfl x hx)
+      | cont e1 => exact fun e he x hx => (ploop_unwritten hb n h e he x hx).trans (hb env _ hob e1 rfl x hx)
+      | brk e1 =>
+        simp only [Option.some.injEq] at h
+        subst h
+        intro e he x hx
+        simp only [Out.env?, Option.some.injEq] at he
+        subst he
+        exact hb env _ hob _ rfl x hx
+      | ret v =>
+        simp only [Option.some.injEq] at h
+        subst h
+        intro e he
+        simp [Out.env?] at he
 
 /-- **A statement keeps the locals it does not assign.** -/
 theorem mstmt_unwritten (call : Calls) (fuel : Nat) :
@@ -435,8 +519,21 @@ theorem mstmt_unwritten (call : Calls) (fuel : Nat) :
     simp only [mstmt, Option.some.injEq] at h
     subst h
     simp [Out.env?] at he
-  | letMatch | setField | setCall | «while» | letAlloc | letLoad | setByte | free | letSlice | letIndex
-  | setIndex | whileEval | setIndexEval | setFieldEval | «break» | «continue» | matchArm | unreachable =>
+  | «while» condition body ih =>
+    intro env o h
+    exact ploop_unwritten (fun _ _ h' => ih h') fuel h
+  | whileEval condition body ih =>
+    intro env o h
+    exact ploop_unwritten (fun _ _ h' => ih h') fuel h
+  | «break» | «continue» =>
+    intro env o h e he _ _
+    simp only [mstmt, Option.some.injEq] at h
+    subst h
+    simp only [Out.env?, Option.some.injEq] at he
+    subst he
+    rfl
+  | letMatch | setField | setCall | letAlloc | letLoad | setByte | free | letSlice | letIndex
+  | setIndex | setIndexEval | setFieldEval | matchArm | unreachable =>
     intro env o h; simp [mstmt] at h
 
 end Lanius.Faithful

@@ -133,6 +133,70 @@ variable {sp : SrcProgram} {prims : Prims} {outside : List Nat} {N : Nat}
 theorem effOk {j : Nat} (lt : j < N) (calls : ∀ i < N, FuncSim sp prims outside i) : EffOk sp prims outside N j :=
   (eff_sim j (by omega) (fun i _ => calls i (by omega))).1
 
+/-- **A loop** whose test and body end as their pure meanings say ends as `ploop` says. -/
+theorem loop_sim {condC : Core.Expr} {body : SrcStmt} {test : Env → Option Bool} {ret : SrcType} {tenv : TEnv}
+    (htest : ∀ {j : Nat} {env : Env} {st : State} {x : Bool} {s1 : State}, j < N →
+      evalExpr j sp.toCore st condC = .done (.boolean x) s1 → Inv st →
+      EnvRel sp.toCore (boxElem sp prims) st.heap tenv env st → s1.heap.nextAddress ≤ 2 ^ 64 →
+      test env = some x ∧ EnvRel sp.toCore (boxElem sp prims) s1.heap tenv env s1 ∧ RanS st s1)
+    (tgrows : ∀ {j : Nat} {st : State} {v : Value} {s1 : State}, evalExpr j sp.toCore st condC = .done v s1 →
+      Grows st s1)
+    (hbody : ∀ {j : Nat} {env : Env} {st : State} {c : Completion} {st' : State}, j < N →
+      execStmt j sp.toCore st body.toCore = .done c st' → Inv st → Locs st →
+      EnvRel sp.toCore (boxElem sp prims) st.heap tenv env st → st'.heap.nextAddress ≤ 2 ^ 64 →
+      ∃ o, mstmt (pcall sp prims N) N env body = some o ∧
+        OutRel sp.toCore (boxElem sp prims) st'.heap ret tenv st' c o ∧ RanS st st')
+    (lgrows : ∀ {j : Nat} {st : State} {c : Completion} {st' : State},
+      execStmt j sp.toCore st (.whileLoop condC body.toCore) = .done c st' → Grows st st') :
+    ∀ (k : Nat) {env : Env} {st : State} {c : Completion} {st' : State}, k ≤ N →
+      execStmt k sp.toCore st (.whileLoop condC body.toCore) = .done c st' →
+      Inv st → Locs st → EnvRel sp.toCore (boxElem sp prims) st.heap tenv env st → st'.heap.nextAddress ≤ 2 ^ 64 →
+      ∃ o, ploop test (fun e => mstmt (pcall sp prims N) N e body) k env = some o ∧
+        OutRel sp.toCore (boxElem sp prims) st'.heap ret tenv st' c o ∧ RanS st st'
+  | 0, _, _, _, _, _, run, _, _, _, _ => by simp [execStmt] at run
+  | n + 1, env, st, c, st', le, run, inv, locs, rel, bound => by
+    obtain ⟨j, s1, x, hj, crun, rest⟩ := while_inv run
+    obtain rfl : j = n := by omega
+    rcases rest with ⟨rfl, rfl, rfl⟩ | ⟨rfl, cb, s2, brun, more⟩
+    · obtain ⟨ht, rel1, ran1⟩ := htest (by omega) crun inv rel bound
+      exact ⟨.next env, by rw [ploop, ht]; rfl, rel1, ran1⟩
+    · have g2 : Grows s2 st' := by
+        rcases more with ⟨-, lrun⟩ | ⟨-, -, rfl⟩ | ⟨-, -, -, rfl⟩
+        · exact lgrows lrun
+        · exact Grows.refl _
+        · exact Grows.refl _
+      have b2 := Grows.bound (execStmt_grows brun) g2 ((tgrows crun) inv.views).1 bound
+      have b1 := Grows.bound (tgrows crun) (execStmt_grows brun) inv.views b2
+      obtain ⟨ht, rel1, ran1⟩ := htest (by omega) crun inv rel b1
+      obtain ⟨ob, hob, orlb, ranb⟩ := hbody (by omega) brun ran1.inv (ran1.locs locs) rel1 b2
+      rcases more with ⟨hcb, lrun⟩ | ⟨rfl, rfl, rfl⟩ | ⟨r, rfl, rfl, rfl⟩
+      · have ran2 := ran1.trans ranb
+        rcases hcb with rfl | rfl
+        · obtain ⟨e, rfl, rel2⟩ := orlb.next_inv
+          obtain ⟨o, ho, orl, ran⟩ := loop_sim htest tgrows hbody lgrows j (by omega) lrun ranb.inv
+            (ran2.locs locs) rel2 bound
+          exact ⟨o, by rw [ploop, ht]; simp only [Option.bind_some, if_true, hob]; exact ho, orl, ran2.trans ran⟩
+        · cases ob with
+          | next _ => exact orlb.elim
+          | brk _ => exact orlb.elim
+          | ret _ => exact orlb.elim
+          | cont e =>
+            obtain ⟨o, ho, orl, ran⟩ := loop_sim htest tgrows hbody lgrows j (by omega) lrun ranb.inv
+              (ran2.locs locs) orlb bound
+            exact ⟨o, by rw [ploop, ht]; simp only [Option.bind_some, if_true, hob]; exact ho, orl, ran2.trans ran⟩
+      · cases ob with
+        | next _ => exact orlb.elim
+        | cont _ => exact orlb.elim
+        | ret _ => exact orlb.elim
+        | brk e =>
+          exact ⟨.next e, by rw [ploop, ht]; simp only [Option.bind_some, if_true, hob], orlb, ran1.trans ranb⟩
+      · cases ob with
+        | next _ => exact orlb.elim
+        | cont _ => exact orlb.elim
+        | brk _ => exact orlb.elim
+        | ret q =>
+          exact ⟨.ret q, by rw [ploop, ht]; simp only [Option.bind_some, if_true, hob], orlb, ran1.trans ranb⟩
+
 theorem stmt_sim (calls : ∀ i < N, FuncSim sp prims outside i) (ret : SrcType) (s : SrcStmt) :
     ∀ {k : Nat} {tenv : TEnv} {env : Env} {st : State} {c : Completion} {st' : State},
       k ≤ N → execStmt k sp.toCore st s.toCore = .done c st' →
@@ -297,7 +361,26 @@ theorem stmt_sim (calls : ∀ i < N, FuncSim sp prims outside i) (ret : SrcType)
     | false =>
       obtain ⟨o, ho, orl, ran⟩ := ih2 (by omega) brun ok2 inv locs rel bound
       exact ⟨o, by simp only [mstmt, hp, Option.bind_some, asBool, Bool.false_eq_true, if_false, ho], orl, ran⟩
-  | «while» => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
+  | «while» condition body ih =>
+    intro k tenv env st c st' le run ok inv locs rel bound
+    simp only [stmtOk, Bool.and_eq_true] at ok
+    obtain ⟨hc, okb⟩ := ok
+    have htc := isBoolTy_some hc
+    simp only [SrcStmt.toCore] at run
+    obtain ⟨o, ho, orl, ran⟩ := loop_sim (test := fun e => (pexpr e condition).bind asBool)
+      (fun _ crun inv rel _ => by
+        have e := condition.eval_state crun
+        subst e
+        obtain ⟨p, hp, r⟩ := expr_sim (toCore_target sp) tenv _ condition crun htc rel
+        rw [r.boolean] at hp
+        exact ⟨by simp only [hp, Option.bind_some, asBool], rel, .refl inv⟩)
+      (fun crun => by
+        have e := condition.eval_state crun
+        subst e
+        exact Grows.refl _)
+      (fun _ brun inv locs rel bound => ih (by omega) brun okb inv locs rel bound)
+      (fun lrun => execStmt_grows (s := .while condition body) lrun) k le run inv locs rel bound
+    exact ⟨o, by simp only [mstmt]; exact ploop_mono (fun _ _ h => h) (fun _ _ h => h) le ho, orl, ran⟩
   | «return» value =>
     intro k tenv env st c st' le run ok inv locs rel bound
     simp only [SrcStmt.toCore] at run
@@ -386,7 +469,21 @@ theorem stmt_sim (calls : ∀ i < N, FuncSim sp prims outside i) (ret : SrcType)
         ih2 (by omega) brun ok2 ran1.inv (locs.step ran1.step ran1.locals) (rel.step ran1.step ran1.locals) bound
       exact ⟨o, by simp only [mstmt, hp, Option.bind_some, asBool, Bool.false_eq_true, if_false, ho], orl,
         ran1.toS.trans ran⟩
-  | whileEval => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
+  | whileEval condition body ih =>
+    intro k tenv env st c st' le run ok inv locs rel bound
+    simp only [stmtOk, Bool.and_eq_true] at ok
+    obtain ⟨hc, okb⟩ := ok
+    have htc := isBoolTy_some hc
+    simp only [SrcStmt.toCore] at run
+    obtain ⟨o, ho, orl, ran⟩ := loop_sim (test := fun e => (peff (pcall sp prims N) e condition).bind asBool)
+      (fun lt crun inv rel b1 => by
+        obtain ⟨p, hp, r, ran1⟩ := effOk lt calls crun htc inv rel b1
+        rw [r.boolean] at hp
+        exact ⟨by simp only [hp, Option.bind_some, asBool], rel.step ran1.step ran1.locals, ran1.toS⟩)
+      (fun crun => effGrows crun)
+      (fun _ brun inv locs rel bound => ih (by omega) brun okb inv locs rel bound)
+      (fun lrun => execStmt_grows (s := .whileEval condition body) lrun) k le run inv locs rel bound
+    exact ⟨o, by simp only [mstmt]; exact ploop_mono (fun _ _ h => h) (fun _ _ h => h) le ho, orl, ran⟩
   | returnEval value =>
     intro k tenv env st c st' le run ok inv locs rel bound
     simp only [SrcStmt.toCore] at run
@@ -408,8 +505,16 @@ theorem stmt_sim (calls : ∀ i < N, FuncSim sp prims outside i) (ret : SrcType)
     exact ⟨.next env, by simp [mstmt, hp], rel.step ran.step ran.locals, ran.toS⟩
   | setIndexEval => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
   | setFieldEval => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
-  | «break» => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
-  | «continue» => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
+  | «break» =>
+    intro k tenv env st c st' le run ok inv locs rel bound
+    simp only [SrcStmt.toCore] at run
+    obtain ⟨rfl, rfl⟩ := break_inv run
+    exact ⟨.brk env, rfl, rel, .refl inv⟩
+  | «continue» =>
+    intro k tenv env st c st' le run ok inv locs rel bound
+    simp only [SrcStmt.toCore] at run
+    obtain ⟨rfl, rfl⟩ := continue_inv run
+    exact ⟨.cont env, rfl, rel, .refl inv⟩
   | matchArm => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
   | unreachable => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
   | returnUnit =>
@@ -444,7 +549,7 @@ theorem body_sim {m : Nat} (calls : ∀ i < m, FuncSim sp prims outside i) {c : 
   have rel := EnvRel.heap_eq (bindLocals_same (paramBindings f.params values) { st with locals := [] }).1.symm
     (EnvRel.entry inv args)
   obtain ⟨o, ho, orl, ran⟩ :=
-    stmt_sim calls f.ret f.body (Nat.le_refl m) run pure entryInv (Locs.entry inv _) rel bound
+    stmt_sim calls f.ret f.body (Nat.le_refl m) run (PureFunc.stmt pure) entryInv (Locs.entry inv _) rel bound
   have entryStep := (Step.clear st).trans (Step.bindLocals (paramBindings f.params values) { st with locals := [] })
   have step : Step st completed :=
     ⟨Frame.callee inv _ ran.frame, entryStep.reads.trans ran.frame.reads, entryStep.ranges.trans ran.frame.ranges⟩

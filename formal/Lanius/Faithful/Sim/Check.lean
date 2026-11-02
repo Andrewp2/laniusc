@@ -269,7 +269,7 @@ def stmtOk (ret : SrcType) (tenv : TEnv) : SrcStmt → Bool
   | .then first second => stmtOk ret tenv first && stmtOk ret tenv second
   | .if condition thenBranch elseBranch =>
     isBoolTy (exprTy boxes tenv condition) && stmtOk ret tenv thenBranch && stmtOk ret tenv elseBranch
-  | .while _ _ => false
+  | .while condition body => isBoolTy (exprTy boxes tenv condition) && stmtOk ret tenv body
   | .return value =>
     match exprTy boxes tenv value with
     | some t => t.same ret
@@ -288,7 +288,7 @@ def stmtOk (ret : SrcType) (tenv : TEnv) : SrcStmt → Bool
   | .setEval id value => setOk tenv id (effTy sp outside boxes tenv value)
   | .ifEval condition thenBranch elseBranch =>
     isBoolTy (effTy sp outside boxes tenv condition) && stmtOk ret tenv thenBranch && stmtOk ret tenv elseBranch
-  | .whileEval _ _ => false
+  | .whileEval condition body => isBoolTy (effTy sp outside boxes tenv condition) && stmtOk ret tenv body
   | .returnEval value =>
     match effTy sp outside boxes tenv value with
     | some t => t.same ret
@@ -298,8 +298,8 @@ def stmtOk (ret : SrcType) (tenv : TEnv) : SrcStmt → Bool
   | .setFieldEval _ _ _ => false
   | .returnUnit => true
   | .assert condition => isBoolTy (effTy sp outside boxes tenv condition)
-  | .break => false
-  | .continue => false
+  | .break => true
+  | .continue => true
   | .matchArm _ _ _ _ _ _ _ _ => false
   | .unreachable _ _ => false
 
@@ -314,8 +314,58 @@ def boxElem (sp : SrcProgram) (prims : Prims) : Boxes := fun id =>
       | [p] => if f.ret.typeId = id then some p.ty else none
       | _ => none
 
+/-- A `break` or `continue` outside every loop of the statement
+(`SrcStmt.breaksOut`, which `looseJump_eq` shows it is): a body that ends
+with one makes its call trap. -/
+def looseJump : SrcStmt → Bool
+  | .nop => false
+  | .let _ _ _ body => looseJump body
+  | .letStruct _ _ _ body => looseJump body
+  | .letCall _ _ _ _ body => looseJump body
+  | .letEnum _ _ _ _ body => looseJump body
+  | .letMatch _ _ _ _ _ body => looseJump body
+  | .set _ _ => false
+  | .setField _ _ _ => false
+  | .setCall _ _ _ => false
+  | .then first second => looseJump first || looseJump second
+  | .if _ thenBranch elseBranch => looseJump thenBranch || looseJump elseBranch
+  | .while _ _ => false
+  | .return _ => false
+  | .letAlloc _ _ _ body => looseJump body
+  | .letLoad _ _ _ body => looseJump body
+  | .setByte _ _ _ => false
+  | .free _ _ _ => false
+  | .letSlice _ _ _ _ body => looseJump body
+  | .letIndex _ _ _ _ body => looseJump body
+  | .setIndex _ _ _ => false
+  | .letEval _ _ _ body => looseJump body
+  | .setEval _ _ => false
+  | .ifEval _ thenBranch elseBranch => looseJump thenBranch || looseJump elseBranch
+  | .whileEval _ _ => false
+  | .returnEval _ => false
+  | .discard _ => false
+  | .setIndexEval _ _ _ => false
+  | .setFieldEval _ _ _ => false
+  | .returnUnit => false
+  | .assert _ => false
+  | .break => true
+  | .continue => true
+  | .matchArm _ _ _ _ _ _ body rest => looseJump body || looseJump rest
+  | .unreachable _ _ => false
+
+/-- A body with a pure meaning, and no `break` or `continue` outside its loops. -/
 def PureFunc (sp : SrcProgram) (prims : Prims) (outside : List Nat) (f : SrcFunc) : Bool :=
-  stmtOk sp outside (boxElem sp prims) f.ret (paramTEnv f.params) f.body
+  stmtOk sp outside (boxElem sp prims) f.ret (paramTEnv f.params) f.body && !looseJump f.body
+
+theorem PureFunc.stmt {sp : SrcProgram} {prims : Prims} {outside : List Nat} {f : SrcFunc}
+    (h : PureFunc sp prims outside f = true) :
+    stmtOk sp outside (boxElem sp prims) f.ret (paramTEnv f.params) f.body = true :=
+  ((Bool.and_eq_true _ _).mp h).1
+
+theorem PureFunc.noJump {sp : SrcProgram} {prims : Prims} {outside : List Nat} {f : SrcFunc}
+    (h : PureFunc sp prims outside f = true) : looseJump f.body = false := by
+  have := ((Bool.and_eq_true _ _).mp h).2
+  simpa using this
 
 /-- Every function but the prims and those `outside` (the driver, the prims'
 helpers), which pure functions do not call, has a pure meaning. -/

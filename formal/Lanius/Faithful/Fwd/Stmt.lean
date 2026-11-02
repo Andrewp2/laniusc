@@ -101,6 +101,94 @@ theorem setLocal_fwd {P : Core.Program} {st s1 : State} {id : Nat} {e : Core.Exp
       · rw [if_neg hw]
         simp [Semantics.syncI32ViewsToHeap, Semantics.syncI32ViewsToHeapFrom, views]
 
+theorem OutRel.of_brk {P : Core.Program} {boxes : Boxes} {heap : Memory.Heap} {ret : SrcType} {tenv : TEnv}
+    {st : State} {c : Completion} {e : Env} (r : OutRel P boxes heap ret tenv st c (.brk e)) :
+    c = .breakLoop ∧ EnvRel P boxes heap tenv e st := by
+  cases c with
+  | next => exact False.elim r
+  | breakLoop => exact ⟨rfl, r⟩
+  | continueLoop => exact False.elim r
+  | returned _ => exact False.elim r
+
+theorem OutRel.of_cont {P : Core.Program} {boxes : Boxes} {heap : Memory.Heap} {ret : SrcType} {tenv : TEnv}
+    {st : State} {c : Completion} {e : Env} (r : OutRel P boxes heap ret tenv st c (.cont e)) :
+    c = .continueLoop ∧ EnvRel P boxes heap tenv e st := by
+  cases c with
+  | next => exact False.elim r
+  | breakLoop => exact False.elim r
+  | continueLoop => exact ⟨rfl, r⟩
+  | returned _ => exact False.elim r
+
+theorem OutRel.of_ret {P : Core.Program} {boxes : Boxes} {heap : Memory.Heap} {ret : SrcType} {tenv : TEnv}
+    {st : State} {c : Completion} {q : Option Value} (r : OutRel P boxes heap ret tenv st c (.ret q)) :
+    ∃ w, c = .returned w := by
+  cases c with
+  | next => exact False.elim r
+  | breakLoop => exact False.elim r
+  | continueLoop => exact False.elim r
+  | returned w => exact ⟨w, rfl⟩
+
+/-- **A loop with a cost-semantics ending completes in Core**, when its test and body do. -/
+theorem loop_live {condC : Core.Expr} {body : SrcStmt} {qt : Env → Option (Bool × Nat)} {ret : SrcType}
+    {tenv : TEnv}
+    (tlive : ∀ {env : Env} {st : State} {x : Bool} {h : Nat}, Inv st → Locs st →
+      EnvRel sp.toCore (boxElem sp prims) st.heap tenv env st → qt env = some (x, h) →
+      st.heap.nextAddress + h ≤ 2 ^ 64 → st.heap.remaining = none →
+      ∃ s1, Ev (fun k => evalExpr k sp.toCore st condC) (.boolean x) s1 ∧
+        EnvRel sp.toCore (boxElem sp prims) s1.heap tenv env s1 ∧ RanS st s1 ∧
+        s1.heap.nextAddress ≤ st.heap.nextAddress + h ∧ s1.heap.remaining = none)
+    (blive : ∀ {env : Env} {st : State} {d : Out} {h : Nat}, Inv st → Locs st →
+      EnvRel sp.toCore (boxElem sp prims) st.heap tenv env st →
+      qstmt (qcall sp prims cost N) N env body = some (d, h) → st.heap.nextAddress + h ≤ 2 ^ 64 →
+      st.heap.remaining = none →
+      ∃ c st', Ev (fun k => execStmt k sp.toCore st body.toCore) c st' ∧
+        OutRel sp.toCore (boxElem sp prims) st'.heap ret tenv st' c d ∧ RanS st st' ∧
+        st'.heap.nextAddress ≤ st.heap.nextAddress + h ∧ st'.heap.remaining = none) :
+    ∀ (n : Nat) {env : Env} {st : State} {d : Out} {h : Nat}, Inv st → Locs st →
+      EnvRel sp.toCore (boxElem sp prims) st.heap tenv env st →
+      qloop qt (fun e => qstmt (qcall sp prims cost N) N e body) n env = some (d, h) →
+      st.heap.nextAddress + h ≤ 2 ^ 64 → st.heap.remaining = none →
+      ∃ c st', Ev (fun k => execStmt k sp.toCore st (.whileLoop condC body.toCore)) c st' ∧
+        OutRel sp.toCore (boxElem sp prims) st'.heap ret tenv st' c d ∧ RanS st st' ∧
+        st'.heap.nextAddress ≤ st.heap.nextAddress + h ∧ st'.heap.remaining = none
+  | 0, _, _, _, _, _, _, _, hq, _, _ => by simp [qloop] at hq
+  | n + 1, env, st, d, h, inv, locs, rel, hq, budget, fr => by
+    rw [qloop] at hq
+    obtain ⟨x, h1, h2, hq1, hrest, rfl⟩ := qthen_some hq
+    obtain ⟨s1, evc, rel1, ran1, g1, f1⟩ := tlive inv locs rel hq1 (part (by aomega) budget) fr
+    cases x with
+    | false =>
+      simp only [Bool.false_eq_true, if_false, Option.some.injEq, Prod.mk.injEq] at hrest
+      obtain ⟨rfl, rfl⟩ := hrest
+      exact ⟨.next, s1, while_false_fwd evc, rel1, ran1, by aomega, f1⟩
+    | true =>
+      rw [if_pos rfl] at hrest
+      obtain ⟨ob, h3, h4, hqb, hm, rfl⟩ := qthen_some hrest
+      obtain ⟨cb, s2, evb, orlb, ranb, g2, f2⟩ :=
+        blive ran1.inv (ran1.locs locs) rel1 hqb (part (by aomega) budget) f1
+      have ran2 := ran1.trans ranb
+      cases ob with
+      | next e =>
+        obtain ⟨rfl, rel2⟩ := orlb.of_next
+        obtain ⟨c, st', evl, orl, ranl, g3, f3⟩ :=
+          loop_live tlive blive n ranb.inv (ran2.locs locs) rel2 hm (part (by aomega) budget) f2
+        exact ⟨c, st', while_again_fwd evc evb (.inl rfl) evl, orl, ran2.trans ranl, by aomega, f3⟩
+      | cont e =>
+        obtain ⟨rfl, rel2⟩ := orlb.of_cont
+        obtain ⟨c, st', evl, orl, ranl, g3, f3⟩ :=
+          loop_live tlive blive n ranb.inv (ran2.locs locs) rel2 hm (part (by aomega) budget) f2
+        exact ⟨c, st', while_again_fwd evc evb (.inr rfl) evl, orl, ran2.trans ranl, by aomega, f3⟩
+      | brk e =>
+        obtain ⟨rfl, rel2⟩ := orlb.of_brk
+        simp only [Option.some.injEq, Prod.mk.injEq] at hm
+        obtain ⟨rfl, rfl⟩ := hm
+        exact ⟨.next, s2, while_break_fwd evc evb, rel2, ran2, by aomega, f2⟩
+      | ret q =>
+        obtain ⟨w, rfl⟩ := orlb.of_ret
+        simp only [Option.some.injEq, Prod.mk.injEq] at hm
+        obtain ⟨rfl, rfl⟩ := hm
+        exact ⟨.returned w, s2, while_ret_fwd evc evb, orlb, ran2, by aomega, f2⟩
+
 variable (calls : ∀ m, FuncSim sp prims outside m)
 include calls
 
@@ -362,7 +450,25 @@ theorem stmt_live (live : FuncLive sp prims outside cost N) (ret : SrcType) (s :
         exact if_fwd evc (by simpa using ev2)
       obtain ⟨dr, ran⟩ := stmt_rel calls ok inv locs rel (mstmt_of hq) ev (part g budget)
       exact ⟨_, _, ev, dr, ran, g, fg⟩
-  | «while» => intro tenv env st d h ok; simp [stmtOk] at ok
+  | «while» condition body ih =>
+    intro tenv env st d h ok inv locs rel hq budget fr
+    have ok' := ok
+    simp only [stmtOk, Bool.and_eq_true] at ok'
+    obtain ⟨hc, okb⟩ := ok'
+    have htc := isBoolTy_some hc
+    simp only [qstmt] at hq
+    obtain ⟨c, st', ev, orl, ran, g, f⟩ := loop_live (condC := condition.toCore)
+      (fun {env} {st} {x} {h} inv locs rel hq1 budget fr => by
+        obtain ⟨hm, rfl⟩ := qfree_some hq1
+        simp only [Option.bind_eq_some_iff] at hm
+        obtain ⟨cv, hcv, hb⟩ := hm
+        obtain ⟨v, evc⟩ := expr_live (toCore_target sp) tenv env condition htc rel hcv
+        obtain ⟨rfl, b', rfl⟩ : cv = v ∧ ∃ b', v = .boolean b' := (expr_rel htc rel hcv evc).scalar_ty rfl
+        simp only [asBool, Option.some.injEq] at hb
+        subst hb
+        exact ⟨st, evc, rel, .refl inv, by aomega, fr⟩)
+      (fun inv locs rel hq budget fr => ih okb inv locs rel hq budget fr) N inv locs rel hq budget fr
+    exact ⟨c, st', by simpa only [SrcStmt.toCore] using ev, orl, ran, g, f⟩
   | «return» value =>
     intro tenv env st d h ok inv locs rel hq budget fr
     have ok' := ok
@@ -474,7 +580,24 @@ theorem stmt_live (live : FuncLive sp prims outside cost N) (ret : SrcType) (s :
       have g : s2.heap.nextAddress ≤ st.heap.nextAddress + (h1 + h2) := by aomega
       obtain ⟨dr, ran⟩ := stmt_rel calls ok inv locs rel (mstmt_of hq) ev (part g budget)
       exact ⟨_, _, ev, dr, ran, g, f2⟩
-  | whileEval => intro tenv env st d h ok; simp [stmtOk] at ok
+  | whileEval condition body ih =>
+    intro tenv env st d h ok inv locs rel hq budget fr
+    have ok' := ok
+    simp only [stmtOk, Bool.and_eq_true] at ok'
+    obtain ⟨hc, okb⟩ := ok'
+    have htc := isBoolTy_some hc
+    simp only [qstmt] at hq
+    obtain ⟨c, st', ev, orl, ran, g, f⟩ := loop_live (condC := condition.toCore)
+      (fun {env} {st} {x} {h} inv locs rel hq1 budget fr => by
+        obtain ⟨cv, h1, h2, hcv, hbr, rfl⟩ := qthen_some hq1
+        obtain ⟨hb, rfl⟩ := qfree_some hbr
+        obtain ⟨v, s1, ev1, r, ran1, g1, f1⟩ := eff_live calls live condition htc inv rel hcv (part (by aomega) budget) fr
+        obtain ⟨rfl, b, rfl⟩ : cv = v ∧ ∃ b, v = .boolean b := r.scalar_ty rfl
+        simp only [asBool, Option.some.injEq] at hb
+        subst hb
+        exact ⟨s1, ev1, rel.step ran1.step ran1.locals, ran1.toS, by aomega, f1⟩)
+      (fun inv locs rel hq budget fr => ih okb inv locs rel hq budget fr) N inv locs rel hq budget fr
+    exact ⟨c, st', by simpa only [SrcStmt.toCore] using ev, orl, ran, g, f⟩
   | returnEval value =>
     intro tenv env st d h ok inv locs rel hq budget fr
     have ok' := ok
@@ -511,8 +634,16 @@ theorem stmt_live (live : FuncLive sp prims outside cost N) (ret : SrcType) (s :
     exact ⟨_, _, ev, dr, ran, g, f1⟩
   | setIndexEval => intro tenv env st d h ok; simp [stmtOk] at ok
   | setFieldEval => intro tenv env st d h ok; simp [stmtOk] at ok
-  | «break» => intro tenv env st d h ok; simp [stmtOk] at ok
-  | «continue» => intro tenv env st d h ok; simp [stmtOk] at ok
+  | «break» =>
+    intro tenv env st d h ok inv locs rel hq budget fr
+    simp only [qstmt, Option.some.injEq, Prod.mk.injEq] at hq
+    obtain ⟨rfl, rfl⟩ := hq
+    exact ⟨.breakLoop, st, by simpa only [SrcStmt.toCore] using break_fwd, rel, .refl inv, by aomega, fr⟩
+  | «continue» =>
+    intro tenv env st d h ok inv locs rel hq budget fr
+    simp only [qstmt, Option.some.injEq, Prod.mk.injEq] at hq
+    obtain ⟨rfl, rfl⟩ := hq
+    exact ⟨.continueLoop, st, by simpa only [SrcStmt.toCore] using continue_fwd, rel, .refl inv, by aomega, fr⟩
   | matchArm => intro tenv env st d h ok; simp [stmtOk] at ok
   | unreachable => intro tenv env st d h ok; simp [stmtOk] at ok
   | returnUnit =>

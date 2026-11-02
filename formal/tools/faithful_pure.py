@@ -454,7 +454,31 @@ class Checker:
             if t != self.get(tenv, a[0][1]):
                 raise Impure('assignment of another type')
             return
+        if c in ('while', 'whileEval'):
+            self.boolean(self.expr(tenv, a[0]) if c == 'while' else self.eff(tenv, a[0]), 'condition')
+            return self.stmt(ret, tenv, a[1])
+        if c in ('break', 'continue'):
+            return
         raise Impure(f'statement `{c}`')
+
+    def loose_jump(self, s):
+        """`looseJump`: a `break` or `continue` outside every loop."""
+        c, a = ctor(s)
+        if c in ('break', 'continue'):
+            return True
+        if c in ('let', 'letStruct', 'letEval', 'letAlloc', 'letLoad'):
+            return self.loose_jump(a[3])
+        if c in ('letCall', 'letEnum', 'letSlice', 'letIndex'):
+            return self.loose_jump(a[4])
+        if c == 'letMatch':
+            return self.loose_jump(a[5])
+        if c == 'then':
+            return self.loose_jump(a[0]) or self.loose_jump(a[1])
+        if c in ('if', 'ifEval'):
+            return self.loose_jump(a[1]) or self.loose_jump(a[2])
+        if c == 'matchArm':
+            return self.loose_jump(a[6]) or self.loose_jump(a[7])
+        return False
 
     def check(self, i):
         f = self.prog.funcs[i]
@@ -462,6 +486,8 @@ class Checker:
         for p in f['params']:
             tenv.insert(0, p)
         self.stmt(f['ret'], tenv, f['body'])
+        if self.loose_jump(f['body']):
+            raise Impure('a `break` or `continue` outside every loop')
 
 
 # ---------------------------------------------------------------- LiveFn, in Python

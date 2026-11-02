@@ -118,6 +118,57 @@ theorem if_inv {cond : Core.Expr} {a b : Core.Stmt} {c : Completion}
       exact ⟨j, next, false, rfl, run, h⟩
     all_goals simp at h
 
+/-- A loop's run: its test, and on `true` its body and the rest of the loop. -/
+theorem while_inv {cond : Core.Expr} {body : Core.Stmt} {c : Completion}
+    (h : execStmt k P st (.whileLoop cond body) = .done c st') :
+    ∃ j s1 x, k = j + 1 ∧ evalExpr j P st cond = .done (.boolean x) s1 ∧
+      ((x = false ∧ c = .next ∧ st' = s1) ∨
+       (x = true ∧ ∃ cb s2, execStmt j P s1 body = .done cb s2 ∧
+         (((cb = .next ∨ cb = .continueLoop) ∧ execStmt j P s2 (.whileLoop cond body) = .done c st') ∨
+          (cb = .breakLoop ∧ c = .next ∧ st' = s2) ∨
+          (∃ r, cb = .returned r ∧ c = cb ∧ st' = s2)))) := by
+  cases k with
+  | zero => simp [execStmt] at h
+  | succ j =>
+    simp only [execStmt] at h
+    split at h
+    · rename_i next run
+      simp only [Semantics.Outcome.done.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      exact ⟨j, next, false, rfl, run, .inl ⟨rfl, rfl, rfl⟩⟩
+    · rename_i next run
+      split at h
+      · rename_i completed brun
+        exact ⟨j, next, true, rfl, run, .inr ⟨rfl, .next, completed, brun, .inl ⟨.inl rfl, h⟩⟩⟩
+      · rename_i completed brun
+        exact ⟨j, next, true, rfl, run, .inr ⟨rfl, .continueLoop, completed, brun, .inl ⟨.inr rfl, h⟩⟩⟩
+      · rename_i completed brun
+        simp only [Semantics.Outcome.done.injEq] at h
+        obtain ⟨rfl, rfl⟩ := h
+        exact ⟨j, next, true, rfl, run, .inr ⟨rfl, .breakLoop, completed, brun, .inr (.inl ⟨rfl, rfl, rfl⟩)⟩⟩
+      · rename_i r completed brun
+        simp only [Semantics.Outcome.done.injEq] at h
+        obtain ⟨rfl, rfl⟩ := h
+        exact ⟨j, next, true, rfl, run, .inr ⟨rfl, .returned r, completed, brun, .inr (.inr ⟨r, rfl, rfl, rfl⟩)⟩⟩
+      all_goals simp at h
+    all_goals simp at h
+
+theorem break_inv {c : Completion} (h : execStmt k P st .breakLoop = .done c st') :
+    c = .breakLoop ∧ st' = st := by
+  cases k with
+  | zero => simp [execStmt] at h
+  | succ j =>
+    simp only [execStmt, Semantics.Outcome.done.injEq] at h
+    exact ⟨h.1.symm, h.2.symm⟩
+
+theorem continue_inv {c : Completion} (h : execStmt k P st .continueLoop = .done c st') :
+    c = .continueLoop ∧ st' = st := by
+  cases k with
+  | zero => simp [execStmt] at h
+  | succ j =>
+    simp only [execStmt, Semantics.Outcome.done.injEq] at h
+    exact ⟨h.1.symm, h.2.symm⟩
+
 theorem return_inv {e : Core.Expr} {c : Completion}
     (h : execStmt k P st (.returnValue (some e)) = .done c st') :
     ∃ j v, k = j + 1 ∧ evalExpr j P st e = .done v st' ∧ c = .returned (some v) := by

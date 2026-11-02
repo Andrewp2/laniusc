@@ -1283,10 +1283,12 @@ theorem stmt_live {ret : SrcType} :
         refine EvSome.bind (eff_live hO hP IH value h hW hc hE ht hl) fun v rv _ => ?_
         obtain ⟨E', hE'⟩ := Env.set_isSome (env := E) (id := id) v (by simp [hw])
         exact EvSome.const (a := .next E') (fun m => by simp only [hE', Option.map_some]) (hE.set hg rv hE')
-  | letMatch _ _ _ _ _ _ | setField _ _ _ | setCall _ _ _ | «while» _ _ | letAlloc _ _ _ _
+  | «while» _ _ | whileEval _ _ | «break» | «continue» =>
+    intro A W E tenv _ _ _ _ _ hl; simp [liveStmt] at hl
+  | letMatch _ _ _ _ _ _ | setField _ _ _ | setCall _ _ _ | letAlloc _ _ _ _
   | letLoad _ _ _ _ | setByte _ _ _ | free _ _ _ | letSlice _ _ _ _ _ | letIndex _ _ _ _ _
-  | setIndex _ _ _ | whileEval _ _ | setIndexEval _ _ _ | setFieldEval _ _ _ | «break»
-  | «continue» | matchArm _ _ _ _ _ _ _ _ | unreachable _ _ =>
+  | setIndex _ _ _ | setIndexEval _ _ _ | setFieldEval _ _ _
+  | matchArm _ _ _ _ _ _ _ _ | unreachable _ _ =>
     intro A W E tenv _ _ _ _ hs _; simp [stmtOk] at hs
 
 end
@@ -1336,7 +1338,7 @@ theorem pcall_live {sp : SrcProgram} {prims : Prims} {T : TermInfo} {outside bad
   have hlive := hL c f hf hp hout hbad
   simp only [LiveFn, Bool.and_eq_true, Bool.or_eq_true, decide_eq_true_eq] at hlive
   obtain ⟨N, d, hd, hN⟩ := stmt_live (oracleOk_pcall hT.decs hT.consts) hP IH f.body henv (WitOk.nil _)
-    hchk (paramEnv_ty hvs) hpure hlive.1
+    hchk (paramEnv_ty hvs) (PureFunc.stmt hpure) hlive.1
   have hdv : ∃ v, outValue f.ret d = some v ∧ PTy (boxElem sp prims) f.ret v := by
     cases d with
     | next e =>

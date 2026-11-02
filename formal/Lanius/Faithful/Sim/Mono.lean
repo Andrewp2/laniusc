@@ -207,6 +207,26 @@ theorem map_mono {α β : Type} {a a' : Option α} {f : α → β} {w : β}
   | none => simp at h
   | some x => rw [ha x rfl]; exact h
 
+/-- `ploop` keeps its value with tests and bodies that keep theirs, and more fuel. -/
+theorem ploop_mono {test test' : Env → Option Bool} {body body' : Env → Option Out}
+    (ht : ∀ e b, test e = some b → test' e = some b) (hb : ∀ e o, body e = some o → body' e = some o) :
+    ∀ {n n' : Nat} {env : Env} {o : Out}, n ≤ n' → ploop test body n env = some o → ploop test' body' n' env = some o
+  | 0, _, _, _, _, h => by simp [ploop] at h
+  | n + 1, n', env, o, le, h => by
+    obtain ⟨m, rfl⟩ : ∃ m, n' = m + 1 := ⟨n' - 1, by omega⟩
+    rw [ploop] at h ⊢
+    refine bind_mono (fun x hx => ht env x hx) (fun b w hx => ?_) h
+    cases b with
+    | false => exact hx
+    | true =>
+      rw [if_pos rfl] at hx ⊢
+      refine bind_mono (fun x hy => hb env x hy) (fun x w hy => ?_) hx
+      cases x with
+      | next e => exact ploop_mono ht hb (by omega) hy
+      | cont e => exact ploop_mono ht hb (by omega) hy
+      | brk e => exact hy
+      | ret value => exact hy
+
 /-- `mstmt` keeps its value with calls that give more values and more loop fuel. -/
 theorem mstmt_mono (le : CallsLe call call') {fuel fuel' : Nat} (fle : fuel ≤ fuel') (s : SrcStmt) :
     ∀ {env : Env} {o : Out}, mstmt call fuel env s = some o → mstmt call' fuel' env s = some o := by
@@ -249,7 +269,10 @@ theorem mstmt_mono (le : CallsLe call call') {fuel fuel' : Nat} (fle : fuel ≤ 
     cases b
     · exact ih2 hx
     · exact ih1 hx
-  | «while» => intro env o h; simp [mstmt] at h
+  | «while» condition body ih =>
+    intro env o h
+    simp only [mstmt] at h ⊢
+    exact ploop_mono (fun _ _ hx => hx) (fun _ _ hx => ih hx) fle h
   | «return» => exact fun h => h
   | letAlloc => intro env o h; simp [mstmt] at h
   | letLoad => intro env o h; simp [mstmt] at h
@@ -274,7 +297,11 @@ theorem mstmt_mono (le : CallsLe call call') {fuel fuel' : Nat} (fle : fuel ≤ 
     cases b
     · exact ih2 hx
     · exact ih1 hx
-  | whileEval => intro env o h; simp [mstmt] at h
+  | whileEval condition body ih =>
+    intro env o h
+    simp only [mstmt] at h ⊢
+    exact ploop_mono (fun _ _ hx => bind_mono (fun _ hy => peff_mono le hy) (fun _ _ hy => hy) hx)
+      (fun _ _ hx => ih hx) fle h
   | returnEval value =>
     intro env o h
     simp only [mstmt, Option.map_eq_some_iff] at h ⊢
@@ -293,8 +320,8 @@ theorem mstmt_mono (le : CallsLe call call') {fuel fuel' : Nat} (fle : fuel ≤ 
     simp only [mstmt] at h ⊢
     exact bind_mono (fun _ hx => bind_mono (fun _ hy => peff_mono le hy) (fun _ _ hy => hy) hx)
       (fun _ _ hx => hx) h
-  | «break» => intro env o h; simp [mstmt] at h
-  | «continue» => intro env o h; simp [mstmt] at h
+  | «break» => exact fun h => h
+  | «continue» => exact fun h => h
   | matchArm => intro env o h; simp [mstmt] at h
   | unreachable => intro env o h; simp [mstmt] at h
 

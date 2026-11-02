@@ -94,7 +94,7 @@ theorem func_live (pure : PureProg sp prims outside) (primsOk : PrimsOk sp prims
         (bindLocals_same _ _).1
       have rel := EnvRel.heap_eq heapE.symm (EnvRel.entry inv args)
       obtain ⟨compl, completed, ev, dr, -, grown, rem⟩ := stmt_live (func_sim pure primsOk) ih f.ret f.body
-        (pure c f found hp notOut) entryInv (Locs.entry inv _) rel hd (by rw [heapE]; simpa using budget)
+        (PureFunc.stmt (pure c f found hp notOut)) entryInv (Locs.entry inv _) rel hd (by rw [heapE]; simpa using budget)
         (by rw [heapE]; exact fr)
       rw [heapE] at grown
       obtain ⟨v, cr⟩ := callResult_of dr hd'

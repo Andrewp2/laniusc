@@ -1820,7 +1820,11 @@ the environment, and a loop is recursion on fuel.
   function has a loop or an assignment.
 - **The checks.** `stmtOk` takes `x = e` when `x` is bound and `e` has its
   type, `while c { b }` when `c` is a `bool` and `b` passes, and `break`
-  and `continue` anywhere, since a body that ends with one has no value.
+  and `continue` anywhere. `PureFunc` also asks that the body has no
+  `break` or `continue` outside its loops (`looseJump`, which is
+  `SrcStmt.breaksOut`), since Core traps undefined (`typeMismatch`) on a
+  call whose body ends with one. A loop may go on, so `neverNext` of a loop
+  is `false`.
   The termination check (`chkStmt`) forgets the size class of every local a
   statement may write (`SrcStmt.writes`, `AEnv.forget`) for the statements
   after it and, for a loop, in its condition and body. Settling needs no
@@ -1829,11 +1833,16 @@ the environment, and a loop is recursion on fuel.
   value when it stops and to `none` when it does not. `pcall_complete`
   keeps its statement and no longer walks the check; the check's classes
   now serve the liveness proof only. The liveness check (`liveStmt`)
-  needs a measure, since a live call must have a value; it accepts the
-  front end's counted loop, `while c < e { let x = c; c = c + 1; b }` with
-  `b` writing neither `c` nor `e`, which runs `e - c` steps.
+  needs a measure, since a live call must have a value. It does not take
+  loops yet. The next step is to take the front end's counted loop, `while
+  c < e { let x = c; c = c + 1; b }` with `b` writing neither `c` nor `e`,
+  which runs `e - c` steps.
 - **The proofs** relate Core's state after a statement to the environment
-  it left. `Locs` (next to `Inv`) says that the cells of the locals are
+  it left. A loop is one induction on fuel in each direction:
+  `loop_sim` (Core's run with fuel `k` is `ploop` with fuel `k`, then more
+  fuel by `ploop_mono`), `loop_safe` (a trap is the test's, the body's or
+  a later step's) and `loop_live` (`qloop`'s ending is Core's, by
+  `while_again_fwd`, `while_break_fwd` and `while_ret_fwd`). `Locs` (next to `Inv`) says that the cells of the locals are
   distinct and allocated, so an assignment to `x` changes no other visible
   local.
   Statements keep `Frame st st'` (in place of `Step`): every cell that no

@@ -56,6 +56,58 @@ open Lanius.Semantics (State Completion evalExpr evalExprs execStmt restoreLocal
 section
 variable {sp : SrcProgram} {prims : Prims} {outside : List Nat} {N : Nat}
 
+/-- **A loop** whose test and body trap defined, and whose test is a `bool`,
+traps defined. -/
+theorem loop_safe {condC : Core.Expr} {body : SrcStmt} {ret : SrcType} {tenv : TEnv}
+    (tsafe : ∀ {j : Nat} {env : Env} {st : State} {r : Lanius.Trap} {st' : State}, j < N →
+      evalExpr j sp.toCore st condC = .trapped r st' → Inv st →
+      EnvRel sp.toCore (boxElem sp prims) st.heap tenv env st → st'.heap.nextAddress ≤ 2 ^ 64 →
+      undefinedTrap r = false)
+    (htest : ∀ {j : Nat} {env : Env} {st : State} {v : Value} {s1 : State}, j < N →
+      evalExpr j sp.toCore st condC = .done v s1 → Inv st →
+      EnvRel sp.toCore (boxElem sp prims) st.heap tenv env st → s1.heap.nextAddress ≤ 2 ^ 64 →
+      (∃ x, v = .boolean x) ∧ EnvRel sp.toCore (boxElem sp prims) s1.heap tenv env s1 ∧ RanS st s1)
+    (tgrows : ∀ {j : Nat} {st : State} {v : Value} {s1 : State}, evalExpr j sp.toCore st condC = .done v s1 →
+      Grows st s1)
+    (bsafe : ∀ {j : Nat} {env : Env} {st : State} {r : Lanius.Trap} {st' : State}, j < N →
+      execStmt j sp.toCore st body.toCore = .trapped r st' → Inv st → Locs st →
+      EnvRel sp.toCore (boxElem sp prims) st.heap tenv env st → st'.heap.nextAddress ≤ 2 ^ 64 →
+      undefinedTrap r = false)
+    (hbody : ∀ {j : Nat} {env : Env} {st : State} {c : Completion} {st' : State}, j < N →
+      execStmt j sp.toCore st body.toCore = .done c st' → Inv st → Locs st →
+      EnvRel sp.toCore (boxElem sp prims) st.heap tenv env st → st'.heap.nextAddress ≤ 2 ^ 64 →
+      ∃ o, mstmt (pcall sp prims N) N env body = some o ∧
+        OutRel sp.toCore (boxElem sp prims) st'.heap ret tenv st' c o ∧ RanS st st')
+    (lgrows : ∀ {j : Nat} {st : State} {r : Lanius.Trap} {st' : State},
+      execStmt j sp.toCore st (.whileLoop condC body.toCore) = .trapped r st' → Grows st st') :
+    ∀ (k : Nat) {env : Env} {st : State} {r : Lanius.Trap} {st' : State}, k ≤ N →
+      execStmt k sp.toCore st (.whileLoop condC body.toCore) = .trapped r st' →
+      Inv st → Locs st → EnvRel sp.toCore (boxElem sp prims) st.heap tenv env st → st'.heap.nextAddress ≤ 2 ^ 64 →
+      undefinedTrap r = false
+  | 0, _, _, _, _, _, run, _, _, _, _ => by simp [execStmt] at run
+  | n + 1, env, st, r, st', le, run, inv, locs, rel, bound => by
+    obtain ⟨j, hj, crun | ⟨v, crun, notBool, -⟩ | ⟨s1, crun, brun | ⟨cb, s2, brun, hcb, lrun⟩⟩⟩ :=
+      while_trap_inv run
+    · exact tsafe (by omega) crun inv rel bound
+    · obtain ⟨⟨x, rfl⟩, -, -⟩ := htest (by omega) crun inv rel bound
+      exact (notBool x rfl).elim
+    · have b1 := Grows.bound (tgrows crun) (execStmt_trap_grows brun) inv.views bound
+      obtain ⟨-, rel1, ran1⟩ := htest (by omega) crun inv rel b1
+      exact bsafe (by omega) brun ran1.inv (ran1.locs locs) rel1 bound
+    · have b2 := Grows.bound (execStmt_grows brun) (lgrows lrun) ((tgrows crun) inv.views).1 bound
+      have b1 := Grows.bound (tgrows crun) (execStmt_grows brun) inv.views b2
+      obtain ⟨-, rel1, ran1⟩ := htest (by omega) crun inv rel b1
+      obtain ⟨ob, -, orlb, ranb⟩ := hbody (by omega) brun ran1.inv (ran1.locs locs) rel1 b2
+      have locs2 := (ran1.trans ranb).locs locs
+      rcases hcb with rfl | rfl
+      · obtain ⟨e, rfl, rel2⟩ := orlb.next_inv
+        exact loop_safe tsafe htest tgrows bsafe hbody lgrows j (by omega) lrun ranb.inv locs2 rel2 bound
+      · cases ob with
+        | next _ => exact orlb.elim
+        | brk _ => exact orlb.elim
+        | ret _ => exact orlb.elim
+        | cont e => exact loop_safe tsafe htest tgrows bsafe hbody lgrows j (by omega) lrun ranb.inv locs2 orlb bound
+
 theorem stmt_safe (calls : ∀ m, FuncSim sp prims outside m) (funcs : ∀ i < N, FuncSafe sp prims outside i)
     (ret : SrcType) (s : SrcStmt) :
     ∀ {k : Nat} {tenv : TEnv} {env : Env} {st : State} {r : Lanius.Trap} {st' : State},
@@ -211,7 +263,26 @@ theorem stmt_safe (calls : ∀ m, FuncSim sp prims outside m) (funcs : ∀ i < N
       cases x
       · exact ih2 (by omega) brun ok2 inv locs rel bound
       · exact ih1 (by omega) brun ok1 inv locs rel bound
-  | «while» => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
+  | «while» condition body ih =>
+    intro k tenv env st r st' le run ok inv locs rel bound
+    simp only [stmtOk, Bool.and_eq_true] at ok
+    obtain ⟨hc, okb⟩ := ok
+    have htc := isBoolTy_some hc
+    simp only [SrcStmt.toCore] at run
+    exact loop_safe (ret := ret)
+      (fun _ crun _ rel _ => (expr_safe target tenv _ condition crun htc rel).2)
+      (fun _ crun inv rel _ => by
+        have e := condition.eval_state crun
+        subst e
+        obtain ⟨p, -, r⟩ := expr_sim target tenv _ condition crun htc rel
+        exact ⟨r.bool_inv, rel, .refl inv⟩)
+      (fun crun => by
+        have e := condition.eval_state crun
+        subst e
+        exact Grows.refl _)
+      (fun _ brun inv locs rel bound => ih (by omega) brun okb inv locs rel bound)
+      (fun lt brun inv locs rel bound => stmtD ret body (by omega) brun okb inv locs rel bound)
+      (fun lrun => execStmt_trap_grows (s := .while condition body) lrun) k le run inv locs rel bound
   | «return» value =>
     intro k tenv env st r st' le run ok inv locs rel bound
     simp only [SrcStmt.toCore] at run
@@ -284,7 +355,21 @@ theorem stmt_safe (calls : ∀ m, FuncSim sp prims outside m) (funcs : ∀ i < N
         have b1 := Grows.bound (effGrows crun) (execStmt_trap_grows brun) inv.views bound
         obtain ⟨p, -, r, ran1⟩ := effD crun htc inv rel b1
         exact ih2 (by omega) brun ok2 ran1.inv (locs.step ran1.step ran1.locals) (rel.step ran1.step ran1.locals) bound
-  | whileEval => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
+  | whileEval condition body ih =>
+    intro k tenv env st r st' le run ok inv locs rel bound
+    simp only [stmtOk, Bool.and_eq_true] at ok
+    obtain ⟨hc, okb⟩ := ok
+    have htc := isBoolTy_some hc
+    simp only [SrcStmt.toCore] at run
+    exact loop_safe (ret := ret)
+      (fun lt crun inv rel bound => effS lt crun htc inv rel bound)
+      (fun _ crun inv rel b1 => by
+        obtain ⟨p, -, r, ran1⟩ := effD crun htc inv rel b1
+        exact ⟨r.bool_inv, rel.step ran1.step ran1.locals, ran1.toS⟩)
+      (fun crun => effGrows crun)
+      (fun _ brun inv locs rel bound => ih (by omega) brun okb inv locs rel bound)
+      (fun lt brun inv locs rel bound => stmtD ret body (by omega) brun okb inv locs rel bound)
+      (fun lrun => execStmt_trap_grows (s := .whileEval condition body) lrun) k le run inv locs rel bound
   | returnEval value =>
     intro k tenv env st r st' le run ok inv locs rel bound
     simp only [SrcStmt.toCore] at run
@@ -303,8 +388,8 @@ theorem stmt_safe (calls : ∀ m, FuncSim sp prims outside m) (funcs : ∀ i < N
     exact effS (by omega) vrun ht inv rel bound
   | setIndexEval => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
   | setFieldEval => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
-  | «break» => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
-  | «continue» => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
+  | «break» => intro k tenv env st r st' le run; exact (break_trap run).elim
+  | «continue» => intro k tenv env st r st' le run; exact (continue_trap run).elim
   | matchArm => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
   | unreachable => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
   | returnUnit =>
@@ -337,7 +422,7 @@ theorem body_safe {m : Nat} (calls : ∀ i, FuncSim sp prims outside i) (funcs :
   have entryInv := Inv.bindLocals (paramBindings f.params values) inv.clear
   have rel := EnvRel.heap_eq (bindLocals_same (paramBindings f.params values) { st with locals := [] }).1.symm
     (EnvRel.entry inv args)
-  exact stmt_safe calls funcs f.ret f.body (Nat.le_refl m) run pure entryInv (Locs.entry inv _) rel bound
+  exact stmt_safe calls funcs f.ret f.body (Nat.le_refl m) run (PureFunc.stmt pure) entryInv (Locs.entry inv _) rel bound
 
 end
 

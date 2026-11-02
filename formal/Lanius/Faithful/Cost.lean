@@ -88,6 +88,20 @@ def Out.qthen (rest : Env → Option (Out × Nat)) : Out → Option (Out × Nat)
   | .cont env => some (.cont env, 0)
   | .ret value => some (.ret value, 0)
 
+/-- `ploop` with costs: its tests' and bodies' added. -/
+def qloop (test : Env → Option (Bool × Nat)) (body : Env → Option (Out × Nat)) : Nat → Env → Option (Out × Nat)
+  | 0, _ => none
+  | fuel + 1, env =>
+    qthen (test env) fun b =>
+      if b then
+        qthen (body env) fun o =>
+          match o with
+          | .next e => qloop test body fuel e
+          | .cont e => qloop test body fuel e
+          | .brk e => some (.next e, 0)
+          | .ret value => some (.ret value, 0)
+      else some (.next env, 0)
+
 /-- A `let`'s body's ending with its binding dropped, and its cost. -/
 def qpop (o : Option (Out × Nat)) : Option (Out × Nat) := o.map fun p => (p.1.pop, p.2)
 
@@ -109,7 +123,8 @@ def qstmt (fuel : Nat) (env : Env) : SrcStmt → Option (Out × Nat)
   | .if condition thenBranch elseBranch =>
       ((pexpr env condition).bind asBool).bind fun b =>
         if b then qstmt fuel env thenBranch else qstmt fuel env elseBranch
-  | .while _ _ => none
+  | .while condition body =>
+      qloop (fun e => qfree ((pexpr e condition).bind asBool)) (fun e => qstmt fuel e body) fuel env
   | .return value => qfree ((pexpr env value).map fun v => .ret (some v))
   | .letAlloc _ _ _ _ => none
   | .letLoad _ _ _ _ => none
@@ -123,14 +138,15 @@ def qstmt (fuel : Nat) (env : Env) : SrcStmt → Option (Out × Nat)
   | .ifEval condition thenBranch elseBranch =>
       qthen (qeff call env condition) fun c => (asBool c).bind fun b =>
         if b then qstmt fuel env thenBranch else qstmt fuel env elseBranch
-  | .whileEval _ _ => none
+  | .whileEval condition body =>
+      qloop (fun e => qthen (qeff call e condition) fun c => qfree (asBool c)) (fun e => qstmt fuel e body) fuel env
   | .returnEval value => qthen (qeff call env value) fun v => some (.ret (some v), 0)
   | .discard value => qthen (qeff call env value) fun _ => some (.next env, 0)
   | .setIndexEval _ _ _ => none
   | .setFieldEval _ _ _ => none
   | .returnUnit => some (.ret none, 0)
-  | .break => none
-  | .continue => none
+  | .break => some (.brk env, 0)
+  | .continue => some (.cont env, 0)
   | .matchArm _ _ _ _ _ _ _ _ => none
   | .unreachable _ _ => none
   | .assert condition =>
@@ -259,6 +275,25 @@ theorem parms_eq (hc : ∀ c vs, call c vs = (qc c vs).map Prod.fst) : ∀ (env 
     | some bindings => exact peff_eq hc (env.bindAll bindings) value
 end
 
+theorem qloop_eq {test : Env → Option Bool} {body : Env → Option Out} {qt : Env → Option (Bool × Nat)}
+    {qb : Env → Option (Out × Nat)} (ht : ∀ e, test e = (qt e).map Prod.fst)
+    (hb : ∀ e, body e = (qb e).map Prod.fst) :
+    ∀ (n : Nat) (env : Env), ploop test body n env = (qloop qt qb n env).map Prod.fst
+  | 0, _ => rfl
+  | n + 1, env => by
+    rw [ploop, qloop]
+    refine fst_qthen (ht env) fun b => ?_
+    cases b with
+    | false => rfl
+    | true =>
+      rw [if_pos rfl, if_pos rfl]
+      refine fst_qthen (hb env) fun o => ?_
+      cases o with
+      | next e => exact qloop_eq ht hb n e
+      | cont e => exact qloop_eq ht hb n e
+      | brk _ => rfl
+      | ret _ => rfl
+
 theorem fst_qpop {o : Option (Out × Nat)} {a : Option Out} (h : a = o.map Prod.fst) :
     a.map Out.pop = (qpop o).map Prod.fst := by
   subst h
@@ -348,10 +383,19 @@ theorem mstmt_eq (hc : ∀ c vs, call c vs = (qc c vs).map Prod.fst) (fuel : Nat
     rw [mstmt, qstmt]
     exact fst_qthen (peff_eq hc env value) fun _ => fst_qfree _
   | returnUnit => intro env; rfl
-  | letMatch _ _ _ _ _ _ | setField _ _ _ | setCall _ _ _ | «while» _ _ | letAlloc _ _ _ _
+  | «while» condition body ih =>
+    intro env
+    rw [mstmt, qstmt]
+    exact qloop_eq (fun _ => fst_qfree _) ih fuel env
+  | whileEval condition body ih =>
+    intro env
+    rw [mstmt, qstmt]
+    exact qloop_eq (fun e => fst_qthen (peff_eq hc e condition) fun _ => fst_qfree _) ih fuel env
+  | «break» | «continue» => intro env; rfl
+  | letMatch _ _ _ _ _ _ | setField _ _ _ | setCall _ _ _ | letAlloc _ _ _ _
   | letLoad _ _ _ _ | setByte _ _ _ | free _ _ _ | letSlice _ _ _ _ _ | letIndex _ _ _ _ _
-  | setIndex _ _ _ | whileEval _ _ | setIndexEval _ _ _ | setFieldEval _ _ _ | «break»
-  | «continue» | matchArm _ _ _ _ _ _ _ _ | unreachable _ _ => intro env; rfl
+  | setIndex _ _ _ | setIndexEval _ _ _ | setFieldEval _ _ _
+  | matchArm _ _ _ _ _ _ _ _ | unreachable _ _ => intro env; rfl
 
 end
 
