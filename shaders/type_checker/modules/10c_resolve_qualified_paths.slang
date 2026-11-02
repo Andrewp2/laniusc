@@ -56,6 +56,8 @@ static const uint PATH_RESOLVE_STATUS_INVALID_OWNER = 3u;
 static const uint PATH_RESOLVE_STATUS_UNRESOLVED_MODULE = 5u;
 static const uint PATH_RESOLVE_STATUS_UNRESOLVED_DECL = 6u;
 static const uint PATH_RESOLVE_STATUS_MISSING_IMPORT_EDGE = 7u;
+// The qualifier names a type, which has no associated item with this name.
+static const uint PATH_RESOLVE_STATUS_MISSING_ASSOCIATED_ITEM = 8u;
 static const uint HIR_ITEM_VIS_PUBLIC = 1u;
 static const uint IMPORT_STATUS_OK = 0u;
 static const uint HIR_ITEM_NAMESPACE_VALUE = 2u;
@@ -197,9 +199,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         uint variant = find_qualified_variant(path_i, count);
         if (resolved_status[path_i] == 4u) return;
+        bool type_qualified = gParams.reserved != 0u &&
+            path_kind[path_i] == PATH_RECORD_KIND_HIR_PATH_EXPR &&
+            resolved_value_qualifier_binding[path_i].x == 1u;
         resolved_decl[path_i] = variant;
-        resolved_status[path_i] = variant != INVALID
-            ? PATH_RESOLVE_STATUS_OK : PATH_RESOLVE_STATUS_UNRESOLVED_MODULE;
+        resolved_status[path_i] = variant != INVALID ? PATH_RESOLVE_STATUS_OK
+            : (type_qualified ? PATH_RESOLVE_STATUS_MISSING_ASSOCIATED_ITEM
+                              : PATH_RESOLVE_STATUS_UNRESOLVED_MODULE);
         if (variant != INVALID)
             resolved_value_type_qualifier_token[path_i] =
                 path_segment_token[path_segment_base[path_i] + count - 2u];
