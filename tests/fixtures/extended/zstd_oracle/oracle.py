@@ -1,7 +1,14 @@
 """/usr/bin/zstd oracle for ext::zstd (sample_programs/library/unzstd.lani
-and zstd_probe.lani) and ext::xxhash (xxh64_probe.lani).
+and zstd_probe.lani), ext::zstd_encode (sample_programs/library/zstd.lani and
+zstd_encode_probe.lani) and ext::xxhash (xxh64_probe.lani).
 
 usage: python3 -I oracle.py UNZSTD XXH64_PROBE ZSTD_PROBE WORKDIR [--quick] [--only=GROUP]...
+          [--zstd=ZSTD_TOOL --encode-probe=ENCODE_PROBE]
+
+The encoder groups run when both encoder programs are given: frames from
+levels 1-3 must pass `zstd -t`, decode exactly under /usr/bin/zstd and the
+sample decoder, and be identical under every input/output step size; the
+sizes against `zstd -1` and `zstd -3` on fixed corpora are printed.
 
 Frames written by /usr/bin/zstd at levels 1-19 (and --ultra 20-22), with
 and without checksums and content sizes, piped (no content size), with
@@ -20,6 +27,12 @@ any disagreement.
 import os, random, struct, subprocess, sys
 
 UNZSTD, PROBE, STEPPER, WORK = (os.path.abspath(a) for a in sys.argv[1:5])
+def option(name):
+    for a in sys.argv:
+        if a.startswith(name + "="):
+            return os.path.abspath(a[len(name) + 1:])
+    return None
+ENCODER, ENCODE_PROBE = option("--zstd"), option("--encode-probe")
 QUICK = "--quick" in sys.argv
 ZSTD = "/usr/bin/zstd"
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
@@ -373,6 +386,79 @@ def chunked_group():
             bump("chunked steps")
 
 
+# ---------------------------------------------------------------- encoder
+def encode_group():
+    if not ENCODER or not ENCODE_PROBE:
+        return
+    sizes = [0, 1, 3, 4, 63, 64, 255, 256, 1023, 1024, 5000, 131071, 131072, 131073, 262144, 700000]
+    for _ in range(25 if QUICK else 90):
+        data = content(rng.choice(sizes))
+        if rng.random() < 0.15:
+            # Several distinct pieces: offsets of every size and repeat codes.
+            data = b"".join(content(rng.choice([10, 300, 5000, 70000])) for _ in range(rng.randrange(2, 12)))
+        level = rng.randrange(1, 4)
+        code, frame, err = run([ENCODER, "-%d" % level, "-c"], data, timeout=120)
+        if code != 0:
+            fail("encode L%d %d bytes: exit %d %s" % (level, len(data), code, err[:100]))
+            continue
+        zcode, zout, zerr = run([ZSTD, "-q", "-d", "-c"], frame)
+        tcode, _, _ = run([ZSTD, "-q", "-t"], frame)
+        if zcode != 0 or zout != data or tcode != 0:
+            fail("encode L%d %d bytes: zstd -d exit %d %s" % (level, len(data), zcode, zerr[:100]))
+            with open(os.path.join(WORK, "enc-%d.zst" % len(failures)), "wb") as f:
+                f.write(frame)
+            continue
+        bump("encode: zstd -d and -t accept")
+        if not check("encode: sample decodes", frame, data, via_file=False):
+            continue
+        steps = [str(rng.choice([1, 7, 4096, 65536, 1 << 20])), str(rng.choice([1, 13, 4096, 1 << 20]))]
+        if len(data) > 200000 and "1" in steps:
+            steps = ["4096", "13"]
+        code, again, _ = run([ENCODE_PROBE, str(level)] + steps, data, timeout=120)
+        if code != 0 or again != frame:
+            fail("encode L%d %d bytes: steps %s changed the frame" % (level, len(data), steps))
+        else:
+            bump("encode: step invariant")
+    # Window slides and long inputs: 3 MiB to 9 MiB with far repeats.
+    for level in (1, 2, 3):
+        piece = content(1 << 20)
+        data = piece + rng.randbytes(1 << 20) + piece + content(3 << 20) + piece[:300000]
+        if QUICK:
+            data = data[:3 << 20]
+        code, frame, _ = run([ENCODER, "-%d" % level, "-c"], data, timeout=280)
+        zcode, zout, _ = run([ZSTD, "-q", "-d", "-c"], frame, timeout=120)
+        if code != 0 or zcode != 0 or zout != data:
+            fail("encode long input L%d" % level)
+        else:
+            bump("encode: multi-MiB inputs")
+
+
+def encode_sizes():
+    if not ENCODER:
+        return
+    corpora = []
+    tar = os.path.join(WORK, "corpus.tar")
+    subprocess.run(["tar", "cf", tar, "-C", REPO, "stdlib", "extended"], capture_output=True)
+    corpora.append(("stdlib+extended tar", open(tar, "rb").read()))
+    corpora.append(("text", TEXT[:4 << 20]))
+    with open(UNZSTD, "rb") as f:
+        corpora.append(("unzstd executable", f.read()))
+    for name, data in corpora:
+        row = ["%s (%d B):" % (name, len(data))]
+        ours = {}
+        for level in (1, 2, 3):
+            code, frame, _ = run([ENCODER, "-%d" % level, "-c"], data, timeout=280)
+            zcode, zout, _ = run([ZSTD, "-q", "-d", "-c"], frame, timeout=120)
+            if code != 0 or zcode != 0 or zout != data:
+                fail("encode corpus %s L%d" % (name, level))
+            ours[level] = len(frame)
+            row.append("L%d %d" % (level, len(frame)))
+        for level in (1, 3):
+            row.append("zstd -%d %d" % (level, len(compress(data, ["-%d" % level]) or b"")))
+        bump("encode: corpora")
+        print(" ".join(row), file=sys.stderr)
+
+
 # ---------------------------------------------------------------- fuzz
 def fuzz_group():
     bases = []
@@ -423,7 +509,8 @@ def fuzz_group():
 
 
 groups = {"xxh": xxh_group, "levels": level_group, "params": params_group, "long": long_group, "multi": multi_group,
-          "dict": dictionary_group, "cli": cli_group, "chunked": chunked_group, "fuzz": fuzz_group}
+          "dict": dictionary_group, "cli": cli_group, "chunked": chunked_group, "encode": encode_group,
+          "sizes": encode_sizes, "fuzz": fuzz_group}
 chosen = [a[len("--only="):] for a in sys.argv if a.startswith("--only=")]
 for name, group in groups.items():
     if not chosen or name in chosen:
