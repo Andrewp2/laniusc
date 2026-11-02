@@ -161,6 +161,46 @@ grain 65,536 at 8 workers, through `std::pool` (threads) and `std::par`
 Every run printed the same check values for both. Threads skip the fork and
 the shared-region setup, which shows most in reduce, the shortest operation.
 
+## Small copies
+
+The x86 backend used to copy every aggregate with `rep movsq`. Its start-up
+cost (about 30 cycles on Zen 3) made a one-word enum argument copy cost
+more than the work around it: `Atomic64::load`, which passes its order enum
+by value, took 29 ns. Values of one to three words now copy through
+registers instead:
+
+- An aggregate store or copy loads every word into RCX, RDI and RSI, then
+  stores them all. That is overlap-safe without the direction test the
+  `rep movsq` body needs (`plan_memmove_tail` in
+  `shaders/codegen/lir/x86/instruction_plan.slang`).
+- A by-value parameter's copy into its fresh frame slot moves word by word
+  through RCX (`safety_emit.slang`; `parameter_values.slang` sizes it).
+
+Four or more words still use the shared `rep movsq` body.
+`tests/fixtures/stdlib_execution/concurrency/small_copy_bench.lani` runs 10M
+iterations of each kernel. The old compiler's build has 290 `rep movsq`
+sites and the new one 9, with the same checksum. Times are the minimum over
+35 interleaved runs at load average 15 to 50, in ms:
+
+| Kernel | rep movsq | mov | Speedup |
+| --- | ---: | ---: | ---: |
+| one-word record through a call | 85 | 51 | 1.67x |
+| two-word record | 157 | 151 | 1.04x |
+| three-word record | 129 | 117 | 1.10x |
+| `Option<i64>` returns | 234 | 177 | 1.32x |
+| three-word record copies between array slots | 221 | 184 | 1.20x |
+| three-word enum through a call | 304 | 415 | 0.73x |
+
+The enum kernel is slower only inside this program. As its own program
+(30M iterations, nothing else in the binary) it takes 933 ms against
+1,218 ms (1.31x faster), and its two builds differ only in the
+parameter-copy sequences, so the slowdown inside the larger binary is not
+explained yet. Single-thread costs from `micro.lani` over 5 runs:
+`Atomic64::load` drops from 17–32 to 9–17 ns, compare-exchange from 56–75
+to 35–60 ns, and a Ring send plus receive from 671–895 to 538–753 ns. The
+thread channels gained the most: Ring fan-in of 1 × 1,000,000 went from
+489 to 309 ms, and 4 × 500,000 from 1,683 to 726 ms.
+
 ## std::par on threads
 
 `std::par::sort_unstable_threads` and `sort_stable_threads` run the same
