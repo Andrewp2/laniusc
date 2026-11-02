@@ -1862,10 +1862,9 @@ mod tests {
         let flags = instance_flags(true);
 
         assert!(flags.contains(wgpu::InstanceFlags::DEBUG));
-        assert_eq!(
-            flags.contains(wgpu::InstanceFlags::VALIDATION),
-            wgpu::InstanceFlags::from_build_config().contains(wgpu::InstanceFlags::VALIDATION)
-        );
+        // Validation goes through the Vulkan loader, never wgpu's build flag.
+        assert!(!flags.contains(wgpu::InstanceFlags::VALIDATION));
+        assert!(!flags.contains(wgpu::InstanceFlags::GPU_BASED_VALIDATION));
     }
 
     #[test]
