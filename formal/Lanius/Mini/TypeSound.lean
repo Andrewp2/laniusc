@@ -1083,9 +1083,10 @@ theorem lowerCall_typed {P : Core.Program} (target : P.target = Core.Target.x86_
     unfold lowerCallSig at h
     split at h
     · rename_i same
+      simp only [Bool.and_eq_true] at same
       obtain ⟨f, found, params, ret⟩ := sigsOk.1 callee sig hsig
       have call := ExprHasType.call f found (by rw [params]; exact lowerArgs_typed target ok _ _ h)
-      rw [ret, same_toCore same] at call
+      rw [ret, same_toCore same.1] at call
       exact call
     · simp at h
 
@@ -1617,7 +1618,7 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
           subst h
           obtain ⟨f, found, params, ret⟩ := sigsOk.1 callee sig hsig
           have typedArgs := evalArgs_typed target sigsOk args ok (by simpa [SrcEff.types] using dd) hea
-          rw [typesSame_toCore checks.1, ← params] at typedArgs
+          rw [typesSame_toCore checks.1.1, ← params] at typedArgs
           have call := ExprHasType.call f found typedArgs
           rw [ret] at call
           exact call
@@ -2807,7 +2808,8 @@ theorem paramTypes_toCore : ∀ (params : List SrcParam),
   | param :: rest => by simp only [List.map_cons, paramTypes, paramTypes_toCore rest]
 
 theorem sigs_getElem : ∀ (funcs : List SrcFunc) (i : Nat),
-    (sigs funcs)[i]? = funcs[i]?.map fun func => ({ params := paramTypes func.params, ret := func.ret } : Sig)
+    (sigs funcs)[i]? = funcs[i]?.map fun func =>
+      ({ params := paramTypes func.params, ret := func.ret, need := 0, room := 0, block := 0 } : Sig)
   | [], _ => rfl
   | _ :: _, 0 => rfl
   | _ :: rest, i + 1 => by simp only [sigs, List.getElem?_cons_succ, sigs_getElem rest i]
@@ -2834,10 +2836,12 @@ theorem mem_coreFuncs : ∀ {funcs : List SrcFunc} {n : Nat} {f : Core.Function}
     · obtain ⟨i, g, hg, rfl⟩ := mem_coreFuncs h
       exact ⟨i, g, by simp [hg], rfl⟩
 
-theorem lowerFuncs_each {sigs : List Sig} {decls : SrcDecls} : ∀ {funcs : List SrcFunc} {out : List Func},
-    lowerFuncs sigs decls funcs = some out → ∀ func ∈ funcs, ∃ c, lowerFunc sigs decls func = some c
-  | [], _, _, _, h => by simp at h
-  | func :: rest, out, lowered, g, hg => by
+theorem lowerFuncs_each {sigs : List Sig} {decls : SrcDecls} :
+    ∀ {own : List Sig} {funcs : List SrcFunc} {out : List Func},
+    lowerFuncs sigs own decls funcs = some out → ∀ func ∈ funcs, ∃ c s, lowerFunc sigs s decls func = some c
+  | _, [], _, _, _, h => by simp at h
+  | [], _ :: _, _, lowered, _, _ => by simp [lowerFuncs] at lowered
+  | s :: _, func :: rest, out, lowered, g, hg => by
     simp only [lowerFuncs, lowerFuncCons] at lowered
     split at lowered
     · simp at lowered
@@ -2847,7 +2851,7 @@ theorem lowerFuncs_each {sigs : List Sig} {decls : SrcDecls} : ∀ {funcs : List
       · rename_i cs hcs
         simp only [List.mem_cons] at hg
         rcases hg with rfl | hg
-        · exact ⟨c, hc⟩
+        · exact ⟨c, s, hc⟩
         · exact lowerFuncs_each hcs g hg
 
 theorem unitTail_some {ret : SrcType} {body : Option Stmt} {b : Stmt} (h : unitTail ret body = some b) :
@@ -2859,9 +2863,11 @@ theorem unitTail_some {ret : SrcType} {body : Option Stmt} {b : Stmt} (h : unitT
     | some out => exact ⟨out, rfl⟩
   · exact ⟨b, h⟩
 
-theorem lowerFunc_body {sigs : List Sig} {decls : SrcDecls} {func : SrcFunc} {c : Func} (h : lowerFunc sigs decls func = some c) :
+theorem lowerFunc_body {sigs : List Sig} {own : Sig} {decls : SrcDecls} {func : SrcFunc} {c : Func}
+    (h : lowerFunc sigs own decls func = some c) :
     func.body.breaksOut = false ∧
-      ∃ out, func.body.lower sigs decls func.ret (paramScope func.params 0 []) (paramsSize func.params) = some out := by
+      ∃ out, func.body.lower (withBudget sigs (own.need - frameBlock func) (frameBlock func)) decls func.ret
+        (paramScope func.params 0 []) (paramsSize func.params) = some out := by
   unfold lowerFunc at h
   split at h
   · rename_i checks
@@ -3393,6 +3399,30 @@ theorem hostFuncs_find (i : Nat) :
                   simp [hostFunc, hostBase]
                 · simp [hostFunc, a, b, c, d, e, f, g, h, Ne.symm a, Ne.symm b, Ne.symm c, Ne.symm d, Ne.symm e, Ne.symm f, Ne.symm g, Ne.symm h]
 
+theorem withBudget_getElem : ∀ (ss : List Sig) (room block i : Nat),
+    (withBudget ss room block)[i]? = ss[i]?.map fun s =>
+      ({ params := s.params, ret := s.ret, need := s.need, room := room, block := block } : Sig)
+  | [], _, _, _ => rfl
+  | _ :: _, _, _, 0 => rfl
+  | _ :: rest, room, block, i + 1 => by
+    simp only [withBudget, List.getElem?_cons_succ, withBudget_getElem rest room block i]
+
+/-- A budget changes no signature's types. -/
+theorem SigsOk.withBudget {P : Core.Program} {ss : List Sig} (ok : SigsOk P ss) (room block : Nat) :
+    SigsOk P (withBudget ss room block) := by
+  constructor
+  · intro callee sig found
+    rw [withBudget_getElem] at found
+    cases hs : ss[callee]? with
+    | none => simp [hs] at found
+    | some s =>
+      simp only [hs, Option.map_some, Option.some.injEq] at found
+      subst found
+      exact ok.1 callee s hs
+  · intro callee service none hs
+    rw [withBudget_getElem, Option.map_eq_none_iff] at none
+    exact ok.2 callee service none hs
+
 theorem sigsOk_program (sp : SrcProgram) : SigsOk sp.toCore (sigs sp.funcs) := by
   constructor
   · intro callee sig found
@@ -3420,7 +3450,7 @@ open TypeSound in
 is declared in `sp.toCore`, and every function body ends in a `return` on
 every path, the Core meaning of the program is well typed by Core's rules. -/
 theorem lowerFuncs_wellTyped {sp : SrcProgram} {funcs : List Func}
-    (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some funcs)
+    (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some funcs)
     (declared : sp.Declared sp.toCore)
     (returns : ∀ func ∈ sp.funcs, (func.ret.isUnit || func.body.returns) = true) :
     Typing.ProgramWellTyped sp.toCore := by
@@ -3432,10 +3462,10 @@ theorem lowerFuncs_wellTyped {sp : SrcProgram} {funcs : List Func}
     simp only [hostFuncs, List.mem_cons, List.not_mem_nil, or_false] at hf
     rcases hf with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> exact ⟨rfl, rfl⟩
   obtain ⟨i, func, mem, rfl⟩ := mem_coreFuncs (n := 0) (funcs := sp.funcs) hf
-  obtain ⟨c, hc⟩ := lowerFuncs_each lowered func mem
+  obtain ⟨c, s, hc⟩ := lowerFuncs_each lowered func mem
   obtain ⟨inside, out, hout⟩ := lowerFunc_body hc
   obtain ⟨dparams, dbody⟩ := declared func mem
-  have stmt := SrcStmt.lower_typed rfl (sigsOk_program sp) func.body (inLoop := false)
+  have stmt := SrcStmt.lower_typed rfl ((sigsOk_program sp).withBudget _ _) func.body (inLoop := false)
     (paramScope_ok func.params (scopeOk_empty _) dparams) dbody (fun e => by simp [inside] at e) hout
   simp only [Typing.FunctionWellTyped, SrcFunc.toCore]
   have r := returns func mem
@@ -3475,10 +3505,10 @@ def idClash : SrcProgram :=
       (SrcStmt.return (SrcExpr.field 1 0)))
   { funcs := [{ params := [], ret := .i32, body := body }] }
 
-theorem noReturn_lowers : ∃ funcs, lowerFuncs (sigs noReturn.funcs) noReturn.decls noReturn.funcs = some funcs :=
+theorem noReturn_lowers : ∃ funcs, lowerFuncs (sigs noReturn.funcs) (sigs noReturn.funcs) noReturn.decls noReturn.funcs = some funcs :=
   ⟨_, rfl⟩
 
-theorem idClash_lowers : ∃ funcs, lowerFuncs (sigs idClash.funcs) idClash.decls idClash.funcs = some funcs :=
+theorem idClash_lowers : ∃ funcs, lowerFuncs (sigs idClash.funcs) (sigs idClash.funcs) idClash.decls idClash.funcs = some funcs :=
   ⟨_, rfl⟩
 
 theorem noReturn_rejected : compileSource noReturn = none := by rfl

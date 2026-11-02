@@ -454,10 +454,13 @@ structure Typed where
   ty : SrcType
   deriving Repr
 
-/-- A function's parameter types and result type. -/
+/-- A function's parameter types and result type, and the frame memory a call to it takes (need: its block and its callees', TRUSTED_BASE "Frame room"). room and block are the budget of the function whose body is lowered against the signatures: the room its callees may take and its own block. A call is lowered only when the callee's need fits the room. -/
 structure Sig where
   params : List SrcType
   ret : SrcType
+  need : Nat
+  room : Nat
+  block : Nat
   deriving Repr
 
 /-- Code that leaves a value of type ty in slots slot, slot + 1, ...; it may write any slot from slot on, and no slot below. -/

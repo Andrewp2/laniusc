@@ -20,20 +20,16 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-abbrev Stmt_Expr_extent (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Expr} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepExpr x0 v0 →
-    RepNat (Lanius.Mini.Expr.extent x0) w
-
-abbrev Stmt_Stmt_extent (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Stmt} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepStmt x0 v0 →
-    RepNat (Lanius.Mini.Stmt.extent x0) w
-
-abbrev Stmt_args_extent (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Expr} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 92 RepExpr) x0 v0 →
-    RepNat (Lanius.Mini.argsExtent x0) w
+abbrev Stmt_frame_block (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.SrcFunc} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcFunc x0 v0 →
+    RepNat (Lanius.Mini.frameBlock x0) w
 
 abbrev Stmt_sigs (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcFunc} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 5 RepSrcFunc) x0 v0 →
     (RepList 96 RepSig) (Lanius.Mini.sigs x0) w
+
+abbrev Stmt_with_budget (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List Lanius.Mini.Sig} {x1 : Nat} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 96 RepSig) x0 v0 → RepNat x1 v1 → RepNat x2 v2 →
+    (RepList 96 RepSig) (Lanius.Mini.withBudget x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

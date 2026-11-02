@@ -3,6 +3,7 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcC_lowerBody
+public import Lanius.Faithful.Gen.SelfStmt0
 public import Lanius.Faithful.Gen.SelfStmt1
 public import Lanius.Faithful.Gen.SelfStmt2
 public import Lanius.Faithful.Gen.SelfStmt3
@@ -10,6 +11,7 @@ public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmt7
+public import Lanius.Faithful.Gen.SelfStmtC_Expr_extent
 public import Lanius.Faithful.Gen.SelfStmtC_Inline_lowerSetScalar
 public import Lanius.Faithful.Gen.SelfStmtC_SrcType_size
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
@@ -163,7 +165,8 @@ theorem proof_lower_body {prog : SrcProgram} {prims : Prims} {ix_lower_body ix_p
   simp only [src_lower_body] at h
   faithful [Lanius.Mini.lowerBody]
 
-theorem proof_lower_func {prog : SrcProgram} {prims : Prims} {ix_lower_func ix_params_size ix_SrcType_size ix_params_valid ix_SrcStmt_breaks_out ix_lower_body ix_SrcStmt_depth ix_unit_tail ix_SrcStmt_lower ix_param_scope ix_empty_of_mini_selfhost_Binding : Nat} (fn : prog.funcs[ix_lower_func]? = some (src_lower_func ix_params_size ix_SrcType_size ix_params_valid ix_SrcStmt_breaks_out ix_lower_body ix_SrcStmt_depth ix_unit_tail ix_SrcStmt_lower ix_param_scope ix_empty_of_mini_selfhost_Binding)) (np : prims.isPrim ix_lower_func = false)
+theorem proof_lower_func {prog : SrcProgram} {prims : Prims} {ix_lower_func ix_minus ix_params_size ix_SrcType_size ix_params_valid ix_SrcStmt_breaks_out ix_lower_body ix_SrcStmt_depth ix_unit_tail ix_SrcStmt_lower ix_with_budget ix_frame_block ix_param_scope ix_empty_of_mini_selfhost_Binding : Nat} (fn : prog.funcs[ix_lower_func]? = some (src_lower_func ix_minus ix_params_size ix_SrcType_size ix_params_valid ix_SrcStmt_breaks_out ix_lower_body ix_SrcStmt_depth ix_unit_tail ix_SrcStmt_lower ix_with_budget ix_frame_block ix_param_scope ix_empty_of_mini_selfhost_Binding)) (np : prims.isPrim ix_lower_func = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_params_size : Certified (∀ {n : Nat}, Stmt_params_size prog prims ix_params_size n))
     (ext_SrcType_size : Certified (∀ {n : Nat}, Stmt_SrcType_size prog prims ix_SrcType_size n))
     (ext_params_valid : Certified (∀ {n : Nat}, Stmt_params_valid prog prims ix_params_valid n))
@@ -172,10 +175,12 @@ theorem proof_lower_func {prog : SrcProgram} {prims : Prims} {ix_lower_func ix_p
     (ext_SrcStmt_depth : Certified (∀ {n : Nat}, Stmt_SrcStmt_depth prog prims ix_SrcStmt_depth n))
     (ext_unit_tail : Certified (∀ {n : Nat}, Stmt_unit_tail prog prims ix_unit_tail n))
     (ext_SrcStmt_lower : Certified (∀ {n : Nat}, Stmt_SrcStmt_lower prog prims ix_SrcStmt_lower n))
+    (ext_with_budget : Certified (∀ {n : Nat}, Stmt_with_budget prog prims ix_with_budget n))
+    (ext_frame_block : Certified (∀ {n : Nat}, Stmt_frame_block prog prims ix_frame_block n))
     (ext_param_scope : Certified (∀ {n : Nat}, Stmt_param_scope prog prims ix_param_scope n))
     (ext_empty_of_mini_selfhost_Binding : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_Binding prog prims ix_empty_of_mini_selfhost_Binding n)) {n : Nat} :
     Stmt_lower_func prog prims ix_lower_func n := by
-  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
@@ -192,14 +197,15 @@ theorem proof_lower_func_cons {prog : SrcProgram} {prims : Prims} {ix_lower_func
   simp only [src_lower_func_cons] at h
   faithful [Lanius.Mini.lowerFuncCons]
 
-theorem step_lower_funcs {prog : SrcProgram} {prims : Prims} {ix_lower_funcs ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc ix_empty_of_mini_selfhost_Func ix_lower_func_cons ix_lower_func : Nat} (fn : prog.funcs[ix_lower_funcs]? = some (src_lower_funcs ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc ix_lower_funcs ix_empty_of_mini_selfhost_Func ix_lower_func_cons ix_lower_func)) (np : prims.isPrim ix_lower_funcs = false)
+theorem step_lower_funcs {prog : SrcProgram} {prims : Prims} {ix_lower_funcs ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc ix_empty_of_mini_selfhost_Func ix_lower_func_cons ix_lower_func ix_unbox_of_mini_selfhost_List_mini_selfhost_Sig : Nat} (fn : prog.funcs[ix_lower_funcs]? = some (src_lower_funcs ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc ix_lower_funcs ix_empty_of_mini_selfhost_Func ix_lower_func_cons ix_lower_func ix_unbox_of_mini_selfhost_List_mini_selfhost_Sig)) (np : prims.isPrim ix_lower_funcs = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc n))
     (ext_empty_of_mini_selfhost_Func : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_Func prog prims ix_empty_of_mini_selfhost_Func n))
     (ext_lower_func_cons : Certified (∀ {n : Nat}, Stmt_lower_func_cons prog prims ix_lower_func_cons n))
-    (ext_lower_func : Certified (∀ {n : Nat}, Stmt_lower_func prog prims ix_lower_func n)) {n : Nat}
+    (ext_lower_func : Certified (∀ {n : Nat}, Stmt_lower_func prog prims ix_lower_func n))
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_Sig : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Sig prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Sig n)) {n : Nat}
     (ih_lower_funcs : Certified (Stmt_lower_funcs prog prims ix_lower_funcs n)) :
     Stmt_lower_funcs prog prims ix_lower_funcs (n + 1) := by
-  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
   rw [pcall_succ np fn] at h
   simp only [src_lower_funcs] at h
   faithful [Lanius.Mini.lowerFuncs]

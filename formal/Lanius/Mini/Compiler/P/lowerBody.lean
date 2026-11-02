@@ -2,6 +2,7 @@ module
 
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
+import Lanius.Mini.Compiler.P.Expr_extent
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.SrcType_size
 import Lanius.Mini.Compiler.P.UintTy_half
@@ -36,11 +37,11 @@ def unitTail (ret : SrcType) (body : Option Stmt) : Option Stmt :=
   else
     body
 
-/-- Results and struct parameters have slots; a function returns its result type's slots, so it has at least that many locals. -/
-def lowerFunc (sigs : List Sig) (decls : SrcDecls) (func : SrcFunc) : Option Func :=
+/-- Results and struct parameters have slots; a function returns its result type's slots, so it has at least that many locals. own is the function's signature: its body is lowered with its need less its block as the room for its callees. -/
+def lowerFunc (sigs : List Sig) (own : Sig) (decls : SrcDecls) (func : SrcFunc) : Option Func :=
   let count : Nat := paramsSize func.params
   if decide (0 < SrcType.size func.ret) && paramsValid func.params && !(SrcStmt.breaksOut func.body) then
-    lowerBody count (SrcType.size func.ret) (SrcStmt.depth func.body) (unitTail func.ret (SrcStmt.lower func.body sigs decls func.ret (paramScope func.params 0 []) count))
+    lowerBody count (SrcType.size func.ret) (SrcStmt.depth func.body) (unitTail func.ret (SrcStmt.lower func.body (withBudget sigs (own.need - frameBlock func) (frameBlock func)) decls func.ret (paramScope func.params 0 []) count))
   else
     none
 
@@ -52,10 +53,14 @@ def lowerFuncCons (first : Option Func) (rest : Option (List Func)) : Option (Li
     | none => none
     | some fs => some (f :: fs)
 
-def lowerFuncs (sigs : List Sig) (decls : SrcDecls) (funcs : List SrcFunc) : Option (List Func) :=
+/-- own runs alongside funcs: each function's own signature. -/
+def lowerFuncs (sigs : List Sig) (own : List Sig) (decls : SrcDecls) (funcs : List SrcFunc) : Option (List Func) :=
   match funcs with
   | [] => some []
-  | func :: rest => lowerFuncCons (lowerFunc sigs decls func) (lowerFuncs sigs decls rest)
+  | func :: rest =>
+    match own with
+    | [] => none
+    | sig :: others => lowerFuncCons (lowerFunc sigs sig decls func) (lowerFuncs sigs others decls rest)
 
 /-- decls, if the declaration already there agrees. -/
 def keepIf (agrees : Bool) (decls : SrcDecls) : Option SrcDecls :=

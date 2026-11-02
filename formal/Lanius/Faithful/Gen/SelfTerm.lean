@@ -93,8 +93,8 @@ theorem settles_compile_words (vs : List Lanius.Core.Value) : Settles prog prims
   pcall_complete termOk 6 ⟨22, [], 0⟩ rfl vs
 
 /-- Every pure call of `lex_source` settles. -/
-theorem settles_lex_source (vs : List Lanius.Core.Value) : Settles prog prims 232 vs :=
-  pcall_complete termOk 232 ⟨18, [], 0⟩ rfl vs
+theorem settles_lex_source (vs : List Lanius.Core.Value) : Settles prog prims 235 vs :=
+  pcall_complete termOk 235 ⟨18, [], 0⟩ rfl vs
 
 /-- Every pure call of `validate_files` settles. -/
 theorem settles_validate_files (vs : List Lanius.Core.Value) : Settles prog prims 69 vs :=

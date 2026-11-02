@@ -39,11 +39,20 @@ stopping at the computations the theorems are about (`compileSource`,
 `linkObjects`, `elfFile`, `sourceProgramFiles`, `compileWords`,
 `frontEndWords` and the self program `Lanius.Faithful.Self.prog`, which are
 not trusted, section 10), with each one's type and body:
-definitions `d230774a2b033659` (4,489 constants). This covers Core's
+definitions `6d0c833ce4ab9a8d` (4,489 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
 the statements' own definitions (section 2). A private name is hashed
 without its module, so a definition that only moves between generated
-modules keeps its hash. The last change of the hash (11-01, steps 3.3 and 3.4 of
+modules keeps its hash. The last change of the hash (11-01, the frame-memory
+budget of array-to-slice arguments, before step 3.5): the verified
+compiler's signatures carry a need, a room and a block (`Sig`,
+`with_budget`, `frame_block`), which adds functions to the self program, so
+the generated tables that name its functions by index moved: the prim
+table `prims` (`Faithful/Gen/SelfPureTab.lean`) and `ixTimes`
+(`Faithful/Gen/SelfLiveTab.lean`, 105 to 106) name the same functions at
+their new indices. No other definition changed, and no statement's meaning
+did. The hash before it was `d230774a2b033659`.
+Before that (11-01, steps 3.3 and 3.4 of
 array-to-slice arguments): `SrcType.HoldsAt` has a constructor `borrowed`,
 a slice of a caller's array in `places` (marked `sliced`, a whole array of
 `i32` or `u8` elements), the slot holding `Addressed.pointer` (new, with its
