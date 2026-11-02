@@ -199,6 +199,20 @@ pub(super) fn x86_source_pack_link_error(context: &str, error: anyhow::Error) ->
 mod tests {
     use super::{super::typecheck::CompiledSourcePackObject, *};
 
+    /// An array extent named by a `usize` constant parameter: the checker
+    /// retains the checked conversion to the u32 count (SCALAR_U32), whose
+    /// fit obligation concrete replay discharges.
+    fn u32_count(
+        parameter: crate::type_checker::CheckedGenericParameter,
+    ) -> crate::type_checker::CheckedGenericConstantValue {
+        crate::type_checker::CheckedGenericConstantValue::CountProjection {
+            target_scalar: 4,
+            source: Box::new(crate::type_checker::CheckedGenericConstantValue::Parameter(
+                parameter,
+            )),
+        }
+    }
+
     #[test]
     fn missing_native_link_names_the_c_declarations() {
         use crate::compiler::{NativeCFunction, NativeCSignature, NativeCType};
@@ -299,7 +313,7 @@ fn main()->i32 { let literal:Leaf = Leaf { code:0 }; return 0; }
                 panic!("expected normalized array recipe, got {ty:?}");
             };
             assert_eq!(actual.as_ref(), &Type::Parameter(element));
-            assert_eq!(*count, Constant::Parameter(length));
+            assert_eq!(*count, u32_count(length));
         };
         let visible = public_recipe(b"Visible");
         assert_eq!(visible.kind, Kind::Record);
@@ -696,7 +710,7 @@ fn main()->i32 { return 0; }
                 panic!("ordered nested type/constant operands: {arguments:?}")
             };
             assert_eq!(parameter(element), parameters[1]);
-            assert_eq!(*length, Constant::Parameter(parameters[2]));
+            assert_eq!(*length, u32_count(parameters[2]));
             assert_eq!(*value, Constant::Parameter(parameters[2]));
             assert_eq!(*words, None);
         }
@@ -2023,7 +2037,10 @@ pub impl Maybe<bool> {
         .expect("read the actual generic vector module");
         // The rest of the vector's import closure.
         let mut sources = vec![definitions.to_owned(), memory, vector];
-        for module in ["alloc/allocator", "core/cmp", "core/option", "core/panic", "core/result"] {
+        for module in [
+            "alloc/allocator", "core/cmp", "core/option", "core/panic", "core/result",
+            "core/function",
+        ] {
             sources.push(
                 std::fs::read_to_string(
                     std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -2601,11 +2618,14 @@ fn main() -> i32 { return 0; }
                 matches!(ty, Type::Array { element, .. } if element.as_ref() == &parameter_type)
             }).expect("symbolic array remains an array");
             let Type::Array {
-                length: Constant::Parameter(constant),
+                length: Constant::CountProjection { target_scalar: 4, source },
                 words,
                 ..
             } = array_type
             else {
+                panic!("symbolic array length must retain its constant binder: {array_type:?}");
+            };
+            let Constant::Parameter(constant) = source.as_ref() else {
                 panic!("symbolic array length must retain its constant binder: {array_type:?}");
             };
             assert_origins(&keep_target, array_type, "core::retain::keep(array)");
@@ -2980,7 +3000,7 @@ fn main() -> i32 {
         };
         let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../stdlib/core");
-        let sources = ["result.lani", "mem.lani", "cmp.lani", "panic.lani"]
+        let sources = ["result.lani", "mem.lani", "cmp.lani", "panic.lani", "function.lani"]
             .iter()
             .map(|name| {
                 std::fs::read_to_string(root.join(name))
@@ -3414,8 +3434,9 @@ fn main() -> i32 {
         .expect("schedule distinct free and receiver body specializations");
         assert_eq!(
             objects.len(),
-            6,
-            "two original units plus two type instances for each free function and method"
+            3,
+            "two original units plus one replay object: the round's four instances \
+             (two types for each free function and method) share one frontend run"
         );
         let input =
             x86::GpuX86LinkInput::for_executable_refs(objects.iter().map(|object| object.as_ref()))

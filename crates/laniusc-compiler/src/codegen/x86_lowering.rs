@@ -1207,7 +1207,7 @@ mod tests {
         let call_args = storage_ro_from_bytes::<SemanticLirCallArg>(
             &gpu.device,
             "test.x86_lir.call_args",
-            &record_bytes(&[[6, 0, 0, 0], [6, 2, 1, 0]]),
+            &record_bytes(&[[6, 0, 0, 0, 0], [6, 2, 1, 0, 0]]),
             2,
         );
         let call_arg_total: LaniusBuffer<u32> = workspace
@@ -1240,7 +1240,7 @@ mod tests {
         let aggregate_elements = storage_ro_from_bytes::<SemanticLirAggregateElement>(
             &gpu.device,
             "test.x86_lir.aggregate_elements",
-            &record_bytes(&[[u32::MAX; 7]; 4]),
+            &record_bytes(&[[u32::MAX; 8]; 4]),
             4,
         );
         let string_rows = storage_ro_from_bytes::<SemanticLirString>(
@@ -1269,7 +1269,7 @@ mod tests {
         let params = storage_ro_from_bytes::<SemanticLirParam>(
             &gpu.device,
             "test.x86_lir.params",
-            &record_bytes(&[[0, 3, 0, 3], [u32::MAX; 4]]),
+            &record_bytes(&[[0, 3, 0, 3, 0], [u32::MAX; 5]]),
             2,
         );
         let locals = storage_ro_from_bytes::<SemanticLirLocal>(
@@ -1303,9 +1303,18 @@ mod tests {
             ]),
             24,
         );
-        let function_count = storage_ro_from_u32s(&gpu.device, "test.x86_lir.fn_count", &[1]);
-        let param_count = storage_ro_from_u32s(&gpu.device, "test.x86_lir.param_count", &[1]);
-        let local_count = storage_ro_from_u32s(&gpu.device, "test.x86_lir.local_count", &[1]);
+        // Retained semantic totals are graph-owned; passes bind the workspace
+        // allocation, so the fixture writes its counts there.
+        let graph_total = |name: &str, value: u32| -> LaniusBuffer<u32> {
+            let buffer: LaniusBuffer<u32> = workspace
+                .alias(&graph, graph.resource_id(name).unwrap(), 1)
+                .unwrap();
+            buffer.write(&gpu.queue, 0, &value.to_le_bytes());
+            buffer
+        };
+        let function_count = graph_total("lir.semantic.function_total", 1);
+        let param_count = graph_total("lir.semantic.param_total", 1);
+        let local_count = graph_total("lir.semantic.local_total", 1);
         let kernels = KernelRegistry::prepare_prefixes(
             &gpu.device,
             crate::codegen::lowering::LOWERING_KERNEL_PREFIXES,
@@ -1327,7 +1336,7 @@ mod tests {
             owner_by_instruction: &semantic_owners,
             function_id_by_hir: &semantic_function_ids,
             call_args: &call_args,
-            call_arg_count: &empty_count,
+            call_arg_count: &call_arg_total,
             call_arg_start_by_hir: &call_arg_start_by_hir,
             call_arg_count_by_hir: &call_arg_count_by_hir,
             aggregate_elements: &aggregate_elements,

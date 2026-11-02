@@ -1231,9 +1231,18 @@ mod tests {
         let semantic_call_args = storage_ro_from_bytes::<SemanticLirCallArg>(
             &gpu.device,
             "test.wasm_stage.semantic_call_args",
-            &words(&[[u32::MAX; 4]]),
+            &words(&[[u32::MAX; 5]]),
             1,
         );
+        // The optimizer reads the graph-owned total, not a fixture buffer.
+        let semantic_call_arg_total: LaniusBuffer<u32> = workspace
+            .alias(
+                &graph,
+                graph.resource_id("lir.semantic.call_arg_total").unwrap(),
+                1,
+            )
+            .unwrap();
+        semantic_call_arg_total.write(&gpu.queue, 0, &0u32.to_le_bytes());
         let semantic_call_arg_start = storage_ro_from_u32s(
             &gpu.device,
             "test.wasm_stage.call_arg_start",
@@ -1247,7 +1256,7 @@ mod tests {
         let semantic_aggregate_elements = storage_ro_from_bytes::<SemanticLirAggregateElement>(
             &gpu.device,
             "test.wasm_stage.aggregate_elements",
-            &words(&[[u32::MAX; 7]; 2]),
+            &words(&[[u32::MAX; 8]; 2]),
             2,
         );
         let semantic_string_rows = storage_ro_from_bytes::<SemanticLirString>(
@@ -1274,7 +1283,7 @@ mod tests {
         let semantic_params = storage_ro_from_bytes::<SemanticLirParam>(
             &gpu.device,
             "test.wasm_stage.params",
-            &words(&[[0, 2, 0, 3], [0, 4, 1, 7], [u32::MAX; 4], [u32::MAX; 4]]),
+            &words(&[[0, 2, 0, 3, 0], [0, 4, 1, 7, 0], [u32::MAX; 5], [u32::MAX; 5]]),
             4,
         );
         let semantic_locals = storage_ro_from_bytes::<SemanticLirLocal>(
@@ -1319,7 +1328,7 @@ mod tests {
                     owner_by_instruction: &semantic_owners,
                     function_id_by_hir: &semantic_owners,
                     call_args: &semantic_call_args,
-                    call_arg_count: &semantic_empty_count,
+                    call_arg_count: &semantic_call_arg_total,
                     call_arg_start_by_hir: &semantic_call_arg_start,
                     call_arg_count_by_hir: &semantic_call_arg_count_by_hir,
                     aggregate_elements: &semantic_aggregate_elements,

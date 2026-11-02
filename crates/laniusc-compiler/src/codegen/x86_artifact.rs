@@ -572,7 +572,7 @@ mod tests {
             parameters: 1,
             aggregate_elements: 1,
             target_instructions: 12,
-            artifact_bytes: 4096,
+            artifact_bytes: 8192,
         };
         let graph = lowering_compiler_graph_for_artifact(
             capacities,
@@ -624,7 +624,7 @@ mod tests {
         let aggregate_elements = storage_ro_from_bytes::<SemanticLirAggregateElement>(
             &gpu.device,
             "test.x86_artifact.sem.aggregate",
-            &records(&[[u32::MAX; 4]; 2]),
+            &records(&[[u32::MAX; 8]; 2]),
             2,
         );
         let strings = storage_ro_from_bytes::<SemanticLirString>(
@@ -649,7 +649,7 @@ mod tests {
         let semantic_params = storage_ro_from_bytes::<SemanticLirParam>(
             &gpu.device,
             "test.x86_artifact.sem.params",
-            &records(&[[0, 0, 0, 3]]),
+            &records(&[[0, 0, 0, 3, 0]]),
             1,
         );
         let semantic_locals = storage_ro_from_bytes::<SemanticLirLocal>(
