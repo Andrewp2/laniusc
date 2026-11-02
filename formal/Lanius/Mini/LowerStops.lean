@@ -67,9 +67,14 @@ import all Lanius.Mini.Compiler.P.modulesOk
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.repeatType
 import all Lanius.Mini.Compiler.P.shortCircuit
-import all Lanius.Mini.Compiler.P.sigs
+import all Lanius.Mini.Compiler.P.withBudget
+import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.sintToUint
 import all Lanius.Mini.Compiler.P.storeArray
+import all Lanius.Mini.Compiler.P.arrayCallSig
+import all Lanius.Mini.Compiler.P.bindingBytes
+import all Lanius.Mini.Compiler.P.needRound
+import all Lanius.Mini.Compiler.P.needsAfter
 import all Lanius.Mini.Compiler.P.storeEvalWord
 import all Lanius.Mini.Compiler.P.storeType
 import all Lanius.Mini.Compiler.P.storeWordElement
@@ -105,8 +110,13 @@ public import Lanius.Mini.Compiler.P.lowerTagged
 public import Lanius.Mini.Compiler.P.matchVariants
 public import Lanius.Mini.Compiler.P.repeatType
 public import Lanius.Mini.Compiler.P.shortCircuit
-public import Lanius.Mini.Compiler.P.sigs
+public import Lanius.Mini.Compiler.P.withBudget
+public import Lanius.Mini.Compiler.P.funcNeeds
 public import Lanius.Mini.Compiler.P.storeArray
+public import Lanius.Mini.Compiler.P.arrayCallSig
+public import Lanius.Mini.Compiler.P.bindingBytes
+public import Lanius.Mini.Compiler.P.needRound
+public import Lanius.Mini.Compiler.P.needsAfter
 public import Lanius.Mini.Compiler.P.storeWordElement
 public import Lanius.Mini.Compiler.P.wordStride
 
@@ -579,48 +589,63 @@ theorem EFails.callBody {L : Nat} {st : State} {callee : Nat} {args : List Core.
   | exited => trivial
   | outOfFuel => trivial
 
-/-- A callee's frame: its parameters in correspondence with the mini entry. -/
+theorem Prologue.stops {mp : Program} {env envX : Env} {hp hpX : Heap} {b pre : Stmt}
+    (pro : Prologue mp env hp envX hpX b pre) : ∀ d n, Stops mp d envX hpX b n → Stops mp d env hp pre n := by
+  intro d n s
+  rcases pro with ⟨rfl, rfl, rfl⟩ | ⟨first, rfl, h⟩
+  · exact s
+  · exact .seqSecond (h d) s
+
+/-- A callee's frame: its parameters in correspondence with the mini entry,
+after the prologue takes its block of frame memory. -/
 theorem callee_frame (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {callee : Nat}
-    {f : SrcFunc} (found : sp.funcs[callee]? = some f) {st : State} (fresh : st.Fresh)
-    (under : ∀ x ∈ places, x.cell < st.nextCell) {values : List Value}
+    {f : SrcFunc} (found : sp.funcs[callee]? = some f) {hp : Heap} {st : State} (fresh : st.Fresh)
+    (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp) (fits : sp.need callee ≤ bud.room)
+    {values : List Value}
     {bits : List (BitVec 64)} (holds : FieldsHold places (paramTypes f.params) values (Func.entry bits) 0) :
-    ∃ g b frame s, mp.funcs[callee]? = some g ∧ g.params = paramsSize f.params ∧ (sigs sp.funcs)[callee]? = some s ∧
+    ∃ g b pre frame s envX hpX, mp.funcs[callee]? = some g ∧ g.params = paramsSize f.params ∧
+      (sigs sp.funcs)[callee]? = some s ∧
       f.body.lower (sp.sigsAt (funcBudget s f)) sp.decls f.ret (paramScope f.params 0 []) (paramsSize f.params) = some b ∧
-      unitTail f.ret (some b) = some g.body ∧
-      Corr places (paramScope f.params 0 []) frame (calleeState f values st) (Func.entry bits) ∧
+      unitTail f.ret (some pre) = some g.body ∧ Prologue mp (Func.entry bits) hp envX hpX b pre ∧
+      Corr places (paramScope f.params 0 []) frame (calleeState f values st) envX ∧
       Layout (paramScope f.params 0 []) frame st.nextCell (paramsSize f.params) ∧
-      (calleeState f values st).Fresh ∧ Keeps [] st.nextCell ({ st with locals := [] } : State) (calleeState f values st) := by
+      (calleeState f values st).Fresh ∧ Keeps [] st.nextCell ({ st with locals := [] } : State) (calleeState f values st) ∧
+      HeapCorr (calleeState f values st).heap (calleeState f values st).world hpX ∧
+      FrameCorr (funcBudget s f) places (calleeState f values st) hpX ∧ hpX.limit = hp.limit := by
+  have under := fc.below fresh
   obtain ⟨g, own, gFound, ownFound, gOk⟩ := lowerFuncs_get lowered found
-  obtain ⟨gParams, _, valid, inside, b, bodyOk, tail⟩ := lowerFunc_some gOk
+  obtain ⟨gParams, _, valid, inside, b, pre, bodyOk, framed, tail, needs, -⟩ := lowerFunc_some gOk
+  have ownNeed : own.need = sp.need callee := sigs_need ownFound
   obtain ⟨frame, corr, fr, fresh0, keeps0⟩ := entry_corr (Func.entry bits) st.nextCell f.params
     (k := 0) (scope := []) (frame := fun _ => 0) (st := { st with locals := [] }) holds valid
     (Nat.le_refl _) under fresh ⟨rfl, fun _ _ _ mem => by simp at mem, fun _ mem => by simp at mem⟩
     ⟨fun _ mem => by simp at mem, fun _ mem => by simp at mem, fun _ mem => by simp at mem,
       fun _ mem => by simp at mem, fun _ mem => by simp at mem⟩
   rw [Nat.zero_add] at fr
-  exact ⟨g, b, frame, own, gFound, gParams, ownFound, bodyOk, tail, corr, fr, fresh0, keeps0⟩
+  have hc0 : HeapCorr (calleeState f values st).heap (calleeState f values st).world hp := by
+    rw [(bindLocals_same _ _).1, bindLocals_world]
+    exact hc
+  have fc0 := fc.congr (st' := calleeState f values st)
+    (fun x mem => keeps0.cells x.cell (under x mem) fun _ m => by simp at m) (fun _ _ _ _ => rfl) rfl rfl rfl
+  obtain ⟨envX, hpX, pro, corrX, hcX, fcX, limitX⟩ :=
+    bodyStart (mp := mp) framed corr fr hc0 fc0 needs (ownNeed ▸ fits)
+  exact ⟨g, b, pre, frame, own, envX, hpX, gFound, gParams, ownFound, bodyOk, tail, pro, corrX, fr, fresh0, keeps0,
+    hcX, fcX, limitX⟩
 
 /-- How a callee's body that completes within the limit completes. -/
 theorem body_shapes (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     (returns : funcsReturn sp.funcs = true) {callee : Nat} {f : SrcFunc} (found : sp.funcs[callee]? = some f)
     {hp : Heap} {st : State} (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp)
-    (fc : FrameCorr bud places st hp) {values : List Value}
+    (fc : FrameCorr bud places st hp) (fits : sp.need callee ≤ bud.room) {values : List Value}
     {bits : List (BitVec 64)} (holds : FieldsHold places (paramTypes f.params) values (Func.entry bits) 0)
     {j : Nat} {c : Completion} {completed : State}
     (run : execStmt j sp.toCore (calleeState f values st) f.body.toCore = .done c completed)
     (bound : completed.heap.nextAddress ≤ hp.limit) :
     (c = .next ∧ f.ret = .unit) ∨ (∃ v, c = .returned (some v)) ∨ (c = .returned none ∧ f.ret = .unit) := by
-  obtain ⟨g, b, frame, s, -, -, sFound, bodyOk, -, corr, fr, fresh0, keeps0⟩ :=
-    callee_frame lowered found fresh (fc.below fresh) holds
-  have fcc := fc.callee (bud' := funcBudget s f) (Nat.le_trans (Nat.sub_le _ _) (sigs_need_le sFound _))
-    (by simp [funcBudget, frameBlock])
-  have hc0 : HeapCorr (calleeState f values st).heap (calleeState f values st).world hp := by
-    rw [(bindLocals_same _ _).1, bindLocals_world]
-    exact hc
-  obtain ⟨-, -, _, _, _, matched⟩ := stmt_sound lowered j (hp := hp) bodyOk corr fr fresh0 keeps0.next hc0
-    (fcc.congr (fun x mem => keeps0.cells x.cell (fc.below fresh x mem) fun _ m => by simp at m) (fun _ _ _ _ => rfl)
-      rfl rfl rfl)
-    (fc.below fresh) run bound
+  obtain ⟨g, b, pre, frame, s, envX, hpX, -, -, sFound, bodyOk, -, -, corr, fr, fresh0, keeps0, hcX, fcX, limitX⟩ :=
+    callee_frame lowered found fresh hc fc fits holds
+  obtain ⟨-, -, _, _, _, matched⟩ := stmt_sound lowered j (hp := hpX) bodyOk corr fr fresh0 keeps0.next hcX fcX
+    (fc.below fresh) run (by rw [limitX]; exact bound)
   cases matched with
   | next =>
     refine .inl ⟨rfl, ?_⟩
@@ -648,27 +673,22 @@ theorem callee_stops (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.de
     {callee : Nat} {args : List Core.Expr} {st afterArgs : State} {k : Nat} {values : List Value}
     (argsRun : evalExprs k sp.toCore st args = .done values afterArgs) {f : SrcFunc}
     (found : sp.funcs[callee]? = some f) {hp : Heap} (fresh : afterArgs.Fresh) (hc : HeapCorr afterArgs.heap afterArgs.world hp)
-    (fc : FrameCorr bud places afterArgs hp) (within : afterArgs.heap.nextAddress ≤ hp.limit) {bits : List (BitVec 64)}
+    (fc : FrameCorr bud places afterArgs hp) (fits : sp.need callee ≤ bud.room)
+    (within : afterArgs.heap.nextAddress ≤ hp.limit) {bits : List (BitVec 64)}
     (holds : FieldsHold places (paramTypes f.params) values (Func.entry bits) 0) (bitsLen : bits.length = paramsSize f.params)
     (fails : EFails sp hp.limit st (.call callee args)) :
     ∃ d g, mp.funcs[callee]? = some g ∧ bits.length = g.params ∧ Stops mp d (Func.entry bits) hp g.body n := by
-  obtain ⟨g, b, frame, s, gFound, gParams, sFound, bodyOk, tail, corr, fr, fresh0, keeps0⟩ :=
-    callee_frame lowered found fresh (fc.below fresh) holds
-  have fcc := fc.callee (bud' := funcBudget s f) (Nat.le_trans (Nat.sub_le _ _) (sigs_need_le sFound _))
-    (by simp [funcBudget, frameBlock])
-  have hc0 : HeapCorr (calleeState f values afterArgs).heap (calleeState f values afterArgs).world hp := by
-    rw [(bindLocals_same _ _).1, bindLocals_world]
-    exact hc
+  obtain ⟨g, b, pre, frame, s, envX, hpX, gFound, gParams, sFound, bodyOk, tail, pro, corr, fr, fresh0, keeps0,
+    hcX, fcX, limitX⟩ := callee_frame lowered found fresh hc fc fits holds
   have len : values.length = f.params.length := by rw [holds.length, paramTypes_length]
   have bodyFails := fails.callBody argsRun found len fun run bound =>
-    body_shapes lowered returns found fresh hc fc holds run bound
-  have within0 : (calleeState f values afterArgs).heap.nextAddress ≤ hp.limit := by
-    rw [(bindLocals_same _ _).1]
+    body_shapes lowered returns found fresh hc fc fits holds run bound
+  have within0 : (calleeState f values afterArgs).heap.nextAddress ≤ hpX.limit := by
+    rw [(bindLocals_same _ _).1, limitX]
     exact within
-  obtain ⟨d, stops⟩ := prev f.body bodyOk corr fr fresh0 keeps0.next hc0
-    (fcc.congr (fun x mem => keeps0.cells x.cell (fc.below fresh x mem) fun _ m => by simp at m) (fun _ _ _ _ => rfl)
-      rfl rfl rfl)
-    (fc.below fresh) within0 bodyFails
+  obtain ⟨d, stops⟩ := prev f.body bodyOk corr fr fresh0 keeps0.next hcX fcX
+    (fc.below fresh) within0 (by rw [limitX]; exact bodyFails)
+  have stops := pro.stops d n stops
   refine ⟨d, g, gFound, by rw [gParams, bitsLen], ?_⟩
   simp only [unitTail] at tail
   split at tail
@@ -682,14 +702,17 @@ theorem callee_stops (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.de
 /-- A call whose arguments are lowered: it stops, or completes within the limit. -/
 theorem lowerCall_found {callee : Nat} {scope : List Binding} {args : List SrcExpr} {ty : SrcType}
     {es : List Expr} (ok : lowerCall (sp.sigsAt bud) scope callee args ty = some es) :
-    ∃ f, sp.funcs[callee]? = some f ∧ lowerArgs scope args (paramTypes f.params) = some es := by
+    ∃ f, sp.funcs[callee]? = some f ∧ lowerArgs scope args (paramTypes f.params) = some es ∧
+      sp.need callee ≤ bud.room := by
   simp only [lowerCall, sigsAt_get] at ok
   cases found : sp.funcs[callee]? with
   | none => simp [found] at ok
   | some f =>
     simp only [found, Option.map_some, lowerCallSig] at ok
     split at ok
-    · exact ⟨f, rfl, ok⟩
+    · rename_i checks
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+      exact ⟨f, rfl, ok, checks.2⟩
     · simp at ok
 
 /-- A call that fails and whose guard holds stops, one tick more than its callee. -/
@@ -701,10 +724,10 @@ theorem call_stops (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decl
     (g : (guardAll scope args).eval env ≠ 0)
     (fails : EFails sp hp.limit st (.call callee (args.map SrcExpr.toCore))) (target count : Nat) :
     ∃ d, Stops mp d env hp (.call target count callee es) (n + 1) := by
-  obtain ⟨f, found, argsOk⟩ := lowerCall_found ok
+  obtain ⟨f, found, argsOk, fits⟩ := lowerCall_found ok
   obtain ⟨k, vs, argsRun⟩ := lowerArgs_progress corr (SrcProgram.target_toCore sp) argsOk g
   obtain ⟨-, holds, esLen, -⟩ := lowerArgs_sound corr (SrcProgram.target_toCore sp) argsOk argsRun
-  obtain ⟨d, func, gFound, arity, stops⟩ := callee_stops lowered returns prev argsRun found fresh hc fc within holds
+  obtain ⟨d, func, gFound, arity, stops⟩ := callee_stops lowered returns prev argsRun found fresh hc fc fits within holds
     (by rw [evalAll_length, esLen, paramsSize_eq]) fails
   exact ⟨d + 1, .call gFound (by rw [← arity, evalAll_length]) (Nat.lt_succ_self d) stops⟩
 

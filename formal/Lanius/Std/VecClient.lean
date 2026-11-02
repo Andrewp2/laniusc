@@ -103,7 +103,7 @@ theorem compiled_of_pure {sp : SrcProgram} {binary : Binary} (compiled : compile
     {f : Nat} {func : SrcFunc} (found : sp.funcs[f]? = some func) {args : List Value}
     {bits : List (BitVec 64)} (typed : FieldsHold [] (paramTypes func.params) args (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize func.params) {st : Semantics.State} {heap : Heap}
-    (fresh : st.Fresh) (hc : HeapCorr st.heap st.world heap) (fits : st.heap.nextAddress ≤ heap.limit) {w : Value}
+    (fresh : st.Fresh) (hc : HeapCorr st.heap st.world heap) (fits : st.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp) {w : Value}
     (core : ∃ after, Semantics.RunsExpr sp.toCore st (.call f (args.map Core.Expr.value)) w after ∧
       Semantics.PureFrame st after) :
     ∃ depth results after, func.ret.HoldsAt [] w (Func.entry results) 0 ∧ results.length = func.ret.size ∧
@@ -111,7 +111,7 @@ theorem compiled_of_pure {sp : SrcProgram} {binary : Binary} (compiled : compile
   obtain ⟨final, ⟨threshold, stable, _⟩, frame⟩ := core
   have heapEq : final.heap = st.heap := frame.heap
   have result := compileSource_correct_from compiled found typed bitsLen fresh hc (stable threshold (Nat.le_refl _))
-    (by rw [heapEq]; exact fits)
+    (by rw [heapEq]; exact fits) frameRoom
   rw [heapEq, frame.world] at result
   exact result
 
@@ -135,13 +135,13 @@ theorem vec_client_correct {sp : SrcProgram} {binary : Binary} (compiled : compi
     (bitsLen : bits.length = paramsSize (lastOrZeroSrc ids).params)
     {st : Semantics.State} {heap : Heap} (fresh : st.Fresh) (hc : HeapCorr st.heap st.world heap)
     {xs : List Value} (rep : VecRep sp.toCore i32Ty 4 ids.vec st.heap v xs)
-    (fits : st.heap.nextAddress ≤ heap.limit) :
+    (fits : st.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp) :
     ∃ depth results after, SrcType.i32.HoldsAt [] (xs.getLast?.getD (.signed .i32 0)) (Func.entry results) 0 ∧
       results.length = SrcType.i32.size ∧ HeapCorr st.heap st.world after ∧
       MachineReturns binary depth f bits heap results after := by
   have coreFound : sp.toCore.function? f = some ((lastOrZeroSrc ids).toCore f) := by
     rw [SrcProgram.function?_toCore, found]
-  exact compiled_of_pure compiled found typed bitsLen fresh hc fits (lastOrZero_core inst coreFound fresh.1 rep)
+  exact compiled_of_pure compiled found typed bitsLen fresh hc fits frameRoom (lastOrZero_core inst coreFound fresh.1 rep)
 
 end compiled
 
@@ -229,6 +229,7 @@ theorem vecClientSrc_correct {binary : Binary} (compiled : compileSource vecClie
       results.length = SrcType.i32.size ∧ HeapCorr st.heap st.world after ∧
       MachineReturns binary depth 12 bits heap results after :=
   vec_client_correct compiled vecClientSrc_instance (f := 12) rfl typed bitsLen fresh hc rep fits
+    (fun pos => absurd pos (by decide +kernel))
 
 end concrete
 

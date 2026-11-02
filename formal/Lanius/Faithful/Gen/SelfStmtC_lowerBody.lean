@@ -80,4 +80,8 @@ abbrev Stmt_unit_tail (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {x1 : Option Lanius.Mini.Stmt} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepSrcType x0 v0 → (RepOption 134 RepStmt) x1 v1 →
     (RepOption 134 RepStmt) (Lanius.Mini.unitTail x0 x1) w
 
+abbrev Stmt_with_frame (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Nat} {x2 : Option Lanius.Mini.Stmt} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepNat x1 v1 → (RepOption 134 RepStmt) x2 v2 →
+    (RepOption 134 RepStmt) (Lanius.Mini.withFrame x0 x1 x2) w
+
 end Lanius.Faithful.SelfCert

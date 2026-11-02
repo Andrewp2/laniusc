@@ -75,9 +75,14 @@ import all Lanius.Mini.Compiler.P.modulesOk
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.repeatType
 import all Lanius.Mini.Compiler.P.shortCircuit
-import all Lanius.Mini.Compiler.P.sigs
+import all Lanius.Mini.Compiler.P.withBudget
+import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.sintToUint
 import all Lanius.Mini.Compiler.P.storeArray
+import all Lanius.Mini.Compiler.P.arrayCallSig
+import all Lanius.Mini.Compiler.P.bindingBytes
+import all Lanius.Mini.Compiler.P.needRound
+import all Lanius.Mini.Compiler.P.needsAfter
 import all Lanius.Mini.Compiler.P.storeEvalWord
 import all Lanius.Mini.Compiler.P.storeType
 import all Lanius.Mini.Compiler.P.storeWordElement
@@ -109,8 +114,13 @@ public import Lanius.Mini.Compiler.P.lowerLocal
 public import Lanius.Mini.Compiler.P.matchDst
 public import Lanius.Mini.Compiler.P.matchVariants
 public import Lanius.Mini.Compiler.P.shortCircuit
-public import Lanius.Mini.Compiler.P.sigs
+public import Lanius.Mini.Compiler.P.withBudget
+public import Lanius.Mini.Compiler.P.funcNeeds
 public import Lanius.Mini.Compiler.P.storeArray
+public import Lanius.Mini.Compiler.P.arrayCallSig
+public import Lanius.Mini.Compiler.P.bindingBytes
+public import Lanius.Mini.Compiler.P.needRound
+public import Lanius.Mini.Compiler.P.needsAfter
 public import Lanius.Mini.Compiler.P.storeEvalWord
 public import Lanius.Mini.Compiler.P.wordElement
 public import Lanius.Mini.Compiler.P.wordStride
@@ -1464,11 +1474,11 @@ theorem eval_call (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls
   split at ok
   · simp at ok
   rename_i ea argsOk
-  simp only [evalCallSig, Nat.zero_le, decide_true, Bool.and_true] at ok
+  simp only [evalCallSig] at ok
   split at ok
   · rename_i checks
     simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
-    obtain ⟨same, sized⟩ := checks
+    obtain ⟨⟨same, sized⟩, fits⟩ := checks
     have tyEq := typesSame_eq _ same
     simp only [Option.some.injEq] at ok
     subst ok
@@ -1483,7 +1493,7 @@ theorem eval_call (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls
         (Func.entry (Expr.evalAll envA (slotVars slot (sizes (paramTypes f.params))))) 0 :=
       holdsA.congr fun i below => by rw [Nat.zero_add, entry_slotVars envA slot _ below]
     obtain ⟨freshDone, keeps, d, rs, hp', bud', ⟨g, gFound, arity, exec⟩, holdsRet, len, hcDone, fcDone⟩ :=
-      body_sound lowered ih found (hp := hpA) freshA hcA fcA (fun _ h => sigs_need_le h _) (fcA.below freshA) holdsEntry
+      body_sound lowered ih found (hp := hpA) freshA hcA fcA fits (fcA.below freshA) holdsEntry
         (by rw [evalAll_length, slotVars_length, paramsSize_eq]) bodyRun result (by rw [execA.limit_normal]; exact bound')
     refine ⟨restore_fresh freshDone, keepsA.chain (keeps.trans (restore_keeps _ _ _)), localsA, sized,
       max dA (d + 1), envA.setMany slot rs, { hp' with fsp := hpA.fsp }, .seq (execA.mono (Nat.le_max_left _ _))

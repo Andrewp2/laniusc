@@ -266,7 +266,13 @@ theorem FrameCorr.nil (st : State) {hp : Heap} (room : 0 < bud.room + bud.block 
   ⟨fun _ mem => by simp at mem, fun _ mem => by simp at mem, fun _ mem => by simp at mem,
     fun _ mem => by simp at mem, fun _ mem => by simp at mem, room⟩
 
-/-- No places, and no frame memory needed: where a program's run starts. -/
+/-- No places, and `need` bytes of frame memory room when `need` is positive:
+where a program's run starts. -/
+theorem FrameCorr.start (st : State) {hp : Heap} {need : Nat} (frameRoom : 0 < need → hp.limit + need ≤ hp.fsp) :
+    FrameCorr ⟨need, 0⟩ [] st hp :=
+  FrameCorr.nil st fun pos => frameRoom (by simpa using pos)
+
+/-- No places, and no frame memory needed. -/
 theorem FrameCorr.empty (st : State) (hp : Heap) : FrameCorr ⟨0, 0⟩ [] st hp :=
   FrameCorr.nil st fun pos => absurd pos (by decide)
 

@@ -84,9 +84,14 @@ import all Lanius.Mini.Compiler.P.optimizeNeg
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.repeatType
 import all Lanius.Mini.Compiler.P.shortCircuit
-import all Lanius.Mini.Compiler.P.sigs
+import all Lanius.Mini.Compiler.P.withBudget
+import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.sintToUint
 import all Lanius.Mini.Compiler.P.storeArray
+import all Lanius.Mini.Compiler.P.arrayCallSig
+import all Lanius.Mini.Compiler.P.bindingBytes
+import all Lanius.Mini.Compiler.P.needRound
+import all Lanius.Mini.Compiler.P.needsAfter
 import all Lanius.Mini.Compiler.P.storeEvalWord
 import all Lanius.Mini.Compiler.P.storeType
 import all Lanius.Mini.Compiler.P.storeWordElement
@@ -137,9 +142,14 @@ public import Lanius.Mini.Compiler.P.matchVariants
 public import Lanius.Mini.Compiler.P.render
 public import Lanius.Mini.Compiler.P.repeatType
 public import Lanius.Mini.Compiler.P.shortCircuit
-public import Lanius.Mini.Compiler.P.sigs
+public import Lanius.Mini.Compiler.P.withBudget
+public import Lanius.Mini.Compiler.P.funcNeeds
 public import Lanius.Mini.Compiler.P.sintToUint
 public import Lanius.Mini.Compiler.P.storeArray
+public import Lanius.Mini.Compiler.P.arrayCallSig
+public import Lanius.Mini.Compiler.P.bindingBytes
+public import Lanius.Mini.Compiler.P.needRound
+public import Lanius.Mini.Compiler.P.needsAfter
 public import Lanius.Mini.Compiler.P.storeEvalWord
 public import Lanius.Mini.Compiler.P.storeWordElement
 public import Lanius.Mini.Compiler.P.structFields
@@ -2110,6 +2120,91 @@ theorem setIndexEval_array_typed {P : Core.Program} (target : P.target = Core.Ta
     · rw [eq_uint c]; exact .unsigned _
   exact .expression (.assign (.indexArray (.local inCtx) typedIndex integer) typedValue .set)
 
+/-- The arguments of a call passing arrays as slices are well typed: a pure
+one at its parameter type, an array local's slice at the slice type. -/
+theorem arrayArgs_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
+    {scope : List Binding} {ctx : Typing.Context} (ok : ScopeOk P ctx scope) :
+    ∀ (args : List SrcEff) (types : List SrcType) {t offset : Nat} {a : ArrayArgs},
+      arrayArgs scope args types t offset = some a →
+      ExprsHaveTypes P ctx (SrcEff.toCoreList args) (types.map SrcType.toCore)
+  | [], [], _, _, _, _ => .nil
+  | [], _ :: _, _, _, _, h => by simp [arrayArgs] at h
+  | _ :: _, [], _, _, _, h => by simp [arrayArgs] at h
+  | arg :: rest, ty :: more, t, offset, a, h => by
+    simp only [arrayArgs] at h
+    cases arg
+    case ePure e =>
+      simp only [arrayArg, arrayArgPure] at h
+      split at h
+      · simp at h
+      rename_i vs hv
+      split at h
+      · simp at h
+      rename_i r hr
+      exact .cons (lowerValue_typed target ok hv) (arrayArgs_typed target ok rest more hr)
+    case arraySlice element id =>
+      simp only [arrayArg, arrayArgSlice] at h
+      split at h
+      · simp at h
+      rename_i b found
+      simp only [arrayArgLocal] at h
+      split at h
+      · simp at h
+      rename_i r hr
+      simp only [arrayArgChecked] at h
+      split at h
+      · rename_i checks
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+        obtain ⟨⟨⟨⟨_, arr⟩, sl⟩, _⟩, _⟩ := checks
+        have inCtx := (ok id b found).1
+        rw [same_toCore arr] at inCtx
+        simp only [SrcEff.toCoreList, SrcEff.toCore, List.map_cons, same_toCore sl]
+        exact .cons (.arrayToSlice (.local inCtx)) (arrayArgs_typed target ok rest more hr)
+      · simp at h
+    all_goals simp [arrayArg] at h
+
+/-- A call passing arrays as slices is a well-typed Core call. -/
+theorem arrayCall_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
+    {sigs : List Sig} (sigsOk : SigsOk P sigs) {scope : List Binding} {ctx : Typing.Context}
+    (ok : ScopeOk P ctx scope) {next callee : Nat} {args : List SrcEff} {ev : Evaluated}
+    (h : arrayCall sigs scope next callee args = some ev) :
+    ExprHasType P ctx (.call callee (SrcEff.toCoreList args)) ev.ty.toCore := by
+  simp only [arrayCall] at h
+  split at h
+  · simp at h
+  rename_i sig hsig
+  simp only [arrayCallSig] at h
+  split at h
+  · simp at h
+  rename_i a ha
+  simp only [arrayCallCode] at h
+  split at h
+  · simp only [Option.some.injEq] at h
+    subst h
+    obtain ⟨f, found, params, ret⟩ := sigsOk.1 callee sig hsig
+    have typedArgs := arrayArgs_typed target ok args sig.params ha
+    rw [← params] at typedArgs
+    have call := ExprHasType.call f found typedArgs
+    rw [ret] at call
+    exact call
+  · simp at h
+
+/-- A value a statement computes is well typed (`stmtEval`). -/
+theorem stmtEval_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
+    {sigs : List Sig} {decls : SrcDecls} (sigsOk : SigsOk P sigs) (e : SrcEff) {scope : List Binding}
+    {ctx : Typing.Context} {slot : Nat} {ev : Evaluated} (ok : ScopeOk P ctx scope)
+    (dd : ∀ t ∈ e.types, TypeDeclared P t) (h : stmtEval e sigs decls scope slot = some ev) :
+    ExprHasType P ctx e.toCore ev.ty.toCore := by
+  unfold stmtEval at h
+  split at h
+  · rename_i passes
+    cases e
+    case eCall callee args =>
+      simp only [SrcEff.sliceCall] at h
+      exact arrayCall_typed target sigsOk ok h
+    all_goals simp [SrcEff.passesSlices] at passes
+  · exact SrcEff.eval_typed target sigsOk e ok dd h
+
 theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
     {sigs : List Sig} {decls : SrcDecls} (sigsOk : SigsOk P sigs) {ret : SrcType} :
     ∀ (s : SrcStmt) {scope : List Binding} {ctx : Typing.Context} {next : Nat} {inLoop : Bool}
@@ -2807,12 +2902,19 @@ theorem paramTypes_toCore : ∀ (params : List SrcParam),
   | [] => rfl
   | param :: rest => by simp only [List.map_cons, paramTypes, paramTypes_toCore rest]
 
-theorem sigs_getElem : ∀ (funcs : List SrcFunc) (i : Nat),
+theorem sigsWith_getElem : ∀ (funcs : List SrcFunc) (needs : List Nat) (i : Nat),
+    (sigsWith funcs needs)[i]? = funcs[i]?.map fun func =>
+      ({ params := paramTypes func.params, ret := func.ret, need := needs.getD i 0, room := 0, block := 0 } : Sig)
+  | [], _, _ => rfl
+  | _ :: _, _, 0 => rfl
+  | _ :: rest, needs, i + 1 => by
+    simp only [sigsWith, List.getElem?_cons_succ, sigsWith_getElem rest _ i]
+    cases needs <;> rfl
+
+theorem sigs_getElem (funcs : List SrcFunc) (i : Nat) :
     (sigs funcs)[i]? = funcs[i]?.map fun func =>
-      ({ params := paramTypes func.params, ret := func.ret, need := 0, room := 0, block := 0 } : Sig)
-  | [], _ => rfl
-  | _ :: _, 0 => rfl
-  | _ :: rest, i + 1 => by simp only [sigs, List.getElem?_cons_succ, sigs_getElem rest i]
+      ({ params := paramTypes func.params, ret := func.ret, need := (funcNeeds funcs).getD i 0, room := 0, block := 0 } : Sig) :=
+  sigsWith_getElem funcs _ i
 
 theorem find_coreFuncs : ∀ (funcs : List SrcFunc) (n i : Nat),
     (coreFuncs n funcs).find? (fun f => f.id == n + i) = funcs[i]?.map (SrcFunc.toCore (n + i))
@@ -2863,21 +2965,31 @@ theorem unitTail_some {ret : SrcType} {body : Option Stmt} {b : Stmt} (h : unitT
     | some out => exact ⟨out, rfl⟩
   · exact ⟨b, h⟩
 
+theorem withFrame_some {slot block : Nat} {body : Option Stmt} {b : Stmt} (h : withFrame slot block body = some b) :
+    ∃ out, body = some out := by
+  simp only [withFrame] at h
+  split at h
+  · exact ⟨b, h⟩
+  · cases body with
+    | none => simp at h
+    | some out => exact ⟨out, rfl⟩
+
 theorem lowerFunc_body {sigs : List Sig} {own : Sig} {decls : SrcDecls} {func : SrcFunc} {c : Func}
     (h : lowerFunc sigs own decls func = some c) :
     func.body.breaksOut = false ∧
       ∃ out, func.body.lower (withBudget sigs (own.need - frameBlock func) (frameBlock func)) decls func.ret
         (paramScope func.params 0 []) (paramsSize func.params) = some out := by
   unfold lowerFunc at h
+  dsimp only at h
   split at h
   · rename_i checks
     simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at checks
     unfold lowerBody at h
-    dsimp only at h
     split at h
     · simp at h
     · rename_i b hb
-      exact ⟨checks.2, unitTail_some hb⟩
+      obtain ⟨b', hb'⟩ := unitTail_some hb
+      exact ⟨checks.1.1.2, withFrame_some hb'⟩
   · simp at h
 
 

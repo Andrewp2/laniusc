@@ -728,6 +728,26 @@ verified compiler's locals are 64-bit slots with no address. The design:
    above frame memory, a literal's bytes placed by the loader (Core's
    `.string` value names no address, so any region outside Core's heap
    will do).
+7. **A static need per function (decided 11-01, step 3.5).** A function
+   takes its whole block at entry (`frame_block`: 8 bytes per element of
+   each array, parameter or let, it passes as a slice), by a prologue
+   `Frame(count, block)` before its body, and its array calls place their
+   arrays in that block. Its need (`func_needs`) is its block plus the
+   largest need of a function it calls, computed by rounds from all zeros
+   until they repeat (at most one round per function). The call sequence's
+   check is static: a call is lowered only when the callee's need fits the
+   caller's room (`sig.need <= sig.room`, `Sig` carries the need, the room
+   and the block of the function being lowered), so no frame-memory check
+   runs per call and the proofs carry the budget in `FrameCorr` (its room
+   field: `limit + room ≤ fsp` when the budget is positive). A call that
+   passes arrays round a recursive cycle has no fixpoint, so its need
+   never fits and the call is rejected; ROADMAP F15 lifts this with per-call
+   blocks released on return and a dynamic premise. The top theorems take
+   the need of the function they run as a premise on the heap
+   (`0 < need → limit + need ≤ fsp`; for a process, `need ≤ stack`), which
+   holds for any heap when the need is 0, as it is for every function of
+   the self program (`SelfPure.prog_need`), since it passes no array as a
+   slice.
 
 Order: frame memory in the IR and on x86; addressed array locals passed as
 slices; `i32_array_data_ptr`; `str`.
