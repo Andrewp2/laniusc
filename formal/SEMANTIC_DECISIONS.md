@@ -861,6 +861,50 @@ verified compiler's locals are 64-bit slots with no address. The design:
    above frame memory, a literal's bytes placed by the loader (Core's
    `.string` value names no address, so any region outside Core's heap
    will do).
+   The plan (decided 11-02, f6v). What the stdlib needs: nearly every
+   `str` is a local bound to a literal whose bytes are taken by
+   `core::mem::string_data_ptr(text)` and read through
+   `typed_slice_from_raw_parts` (the `core::unicode_*_data` tables, file
+   names); Core's `string_data_ptr` maps a fresh borrowed heap block at
+   `nextAddress` holding the bytes zero-padded to whole words
+   (`mapStringDataPtr`, `stringStorage`), so the verified compiler must
+   allocate and fill that block there, as for `i32_array_data_ptr`.
+   - *Where the bytes are.* The literals' bytes follow the code in the
+     binary's image, so the one loadable segment the loader maps (Linux's
+     `Loaded`) places them; no new segment and no copy at startup. The mini
+     heap gets a read-only static region, `staticBase` and `staticSize`:
+     loads may read `[staticBase, staticBase + staticSize)`, stores only
+     below `top`, so the static bytes never change. Its mini address is
+     the image's x86 address less the heap's base (wrapping, so above frame
+     memory in the mini address space, `top ≤ staticBase`). A new mini
+     statement `Static target offset` gives `staticBase + offset`; on x86 it
+     is `lea target, [rip + d]` then `sub target, r14`, `d` reaching the
+     static bytes after the code. The calling convention (`Contract`,
+     `HeapAt`, trusted) gains the static region: the heap's base plus
+     `staticBase` is the image's base plus the code's length, the bytes
+     there are the heap's, and the region is outside the heap and the
+     stack window. Rejected alternatives: a second loadable segment above
+     frame memory (changes the trusted loader), a startup copy loop
+     (an x86 loop proof at startup), moving the stack so the static bytes
+     sit at a constant below the heap (reworks the whole process layout).
+     Separate compilation: a module's static references are holes the
+     linker fills like call targets; until then a module with literals is
+     not compiled alone.
+   - *Values.* `SrcType.str` takes two slots, the pointer into the static
+     region and the byte length (below `2^31`). As for `View`, the slots'
+     truth is a heap fact kept per binding (`Corr.str`: the static bytes
+     at the pointer are the literal's UTF-8 bytes) rather than in
+     `HoldsAt`, which has no heap; so for now a `str` is only a local bound
+     to a literal (no `str` parameters, results, fields or payloads, no
+     assignment, no `==`), which is the stdlib's pattern.
+   - *`string_data_ptr`.* Allocate `stringStorage`'s size at alignment 4
+     (Core's `mapBorrowed`), copy the bytes from the static region (a
+     loop of byte loads and stores; the padding is the fresh block's
+     zeros), giving the block's address.
+   - *Stages.* (a) the mini machine's static region and `Static`, to x86,
+     the linker and the process, the top theorems kept; (b) `str`, its
+     literal let and `string_data_ptr` in the verified compiler, proved;
+     (c) the front end's reading; (d) the oracles.
 7. **A static need per function (decided 11-01, step 3.5).** A function
    takes its whole block at entry (`frame_block`: 8 bytes per element of
    each array, parameter or let, it passes as a slice), by a prologue
