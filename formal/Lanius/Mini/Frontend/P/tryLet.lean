@@ -66,6 +66,7 @@ def inferred (x : MEff) : Bool :=
   | .xHost id args => true
   | .xIf c t a b => false
   | .xLet id t v rt b => false
+  | .xLen sl => true
 
 def untypedIf (ok : Bool) (t : Ty) (h : LetHead) : Option Untyped :=
   if ok then

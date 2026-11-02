@@ -63,6 +63,7 @@ def bareEff (x : MEff) : Bool :=
   | .xHost id args => false
   | .xIf c t a b => false
   | .xLet id t v rt b => false
+  | .xLen sl => false
 
 def effTy (fuel : Nat) (env : FrontEnv) (scope : List Local) (x : MEff) : Option Ty :=
   if fuel = 0 then
@@ -85,6 +86,7 @@ def effTy (fuel : Nat) (env : FrontEnv) (scope : List Local) (x : MEff) : Option
     | .xHost id args => some Ty.tyI32
     | .xIf c t a b => some t
     | .xLet id t v rt b => some rt
+    | .xLen sl => some (Ty.tyUint UintTy.usize)
 
 def effsTys (fuel : Nat) (env : FrontEnv) (scope : List Local) (xs : List MEff) : Option (List Ty) :=
   match xs with

@@ -270,6 +270,8 @@ inductive MEff where
   | xIf : MEff → Ty → MEff → MEff → MEff
   /-- let id: ty = value in body, of the body's type: a literal match's effectful scrutinee bound to the match's local -/
   | xLet : Nat → Ty → MEff → Ty → MEff → MEff
+  /-- slice_len(x) of a slice local x -/
+  | xLen : Nat → MEff
   deriving Repr
 
 /-- An arm of a match expression: its binders, its value and the value's type. -/

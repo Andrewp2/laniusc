@@ -792,8 +792,8 @@ one the relation can state exactly:
   assignments and let heads are gone. Only an allocation and a raw slice
   are decided by their spelling.
 - Reserved paths: `alloc::allocator::alloc`, `alloc::allocator::dealloc`,
-  `slice_from_raw_parts`, `slice_stride` and `assert` (`builtinPaths`) are
-  never read as a function or variant.
+  `slice_from_raw_parts`, `slice_stride`, `slice_len` and `assert`
+  (`builtinPaths`) are never read as a function or variant.
 - The pure and effectful expression readings agree: a node read as the
   pure expression `e` reads effectfully only as `XPure e` (`pure_agree`,
   `Reading/Det/Agree`).
@@ -1161,7 +1161,7 @@ does: from the initializer alone, never from later uses. For `op?` that is
 the success payload's type. Otherwise `init` is read as an effectful
 expression with no expected type. Its type must be one no literal decides:
 a call (a method call included), a cast, an element, a struct literal, a
-`!`, `slice_stride`, or a local or field (`inferred`). A bare literal, an
+`!`, `slice_stride`, `slice_len`, or a local or field (`inferred`). A bare literal, an
 arithmetic expression, a variant and a `match` are not read untyped. Their
 type depends on a default for literals that the reader does not pick. The
 `let` then reads as the typed `let x: T = init;` would.
@@ -1766,6 +1766,12 @@ proofs are its cases in the forward simulation (`eval_len`, from
 local), in heap growth (and `len_trap_state` in the Faithful layer) and in
 Core typing (`ExprHasType.sliceLength`). The Faithful pure meaning leaves it
 unmodelled, as it does `ELet`.
+
+The front end reads `slice_len(x)`, with `x` a slice local named alone, as
+`ELen(x)` (`len_arg`, `EffPathCall.len`), as it reads `slice_stride(x)`.
+`slice_len` joins the reserved paths (`builtinPaths`), so no function or
+variant is read there. Its type is `usize`, so `let n = slice_len(s);`
+needs no annotation (`inferred`).
 
 ## `u16` views (decided 11-01)
 

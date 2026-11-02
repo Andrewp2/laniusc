@@ -37,6 +37,7 @@ def callParts (x : MEff) : Option Called :=
   | .xHost id args => none
   | .xIf c t a b => none
   | .xLet id t v rt b => none
+  | .xLen sl => none
 
 /-- The local an expression is, if it is one. -/
 def pureLocal (e : SrcExpr) : Option Nat :=

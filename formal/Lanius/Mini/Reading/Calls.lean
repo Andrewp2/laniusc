@@ -77,6 +77,7 @@ inductive EffTy (decls : Decls) (scope : List Local) : MEff → Ty → Prop
   | arraySlice {e : Ty} {a : Nat} : EffTy decls scope (.xArraySlice e a) (.tySlice e)
   | «if» {c a b : MEff} {t : Ty} : EffTy decls scope (.xIf c t a b) t
   | «let» {id : Nat} {t rt : Ty} {v b : MEff} : EffTy decls scope (.xLet id t v rt b) rt
+  | len {sl : Nat} : EffTy decls scope (.xLen sl) (.tyUint .usize)
 
 theorem instRet_sound {fuel : Nat} {decls : Decls} {inst : Inst} {t : Ty} (h : instRet fuel decls inst = some t) :
     InstRet decls inst t := by
@@ -182,6 +183,7 @@ theorem effTy_sound : ∀ {fuel : Nat} {env : FrontEnv} {scope : List Local} {x 
     | xArraySlice e a => cases h; exact .arraySlice
     | xIf c t' a b => cases h; exact .if
     | xLet id t' v rt b => cases h; exact .let
+    | xLen sl => cases h; exact .len
 
 theorem effsTys_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} :
     ∀ {xs : List MEff} {ts : List Ty}, effsTys fuel env scope xs = some ts → ListRel (EffTy env.decls scope) xs ts

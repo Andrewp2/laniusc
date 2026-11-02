@@ -101,6 +101,7 @@ def closeEff (fuel : Nat) (t : Tables) (x : MEff) : Option SrcEff :=
   | .xHost id args => eCallClosed (some id) (closeEffs fuel t args)
   | .xIf c ty a b => eIfClosed (closeEff fuel t c) (closeTy fuel t ty) (closeEff fuel t a) (closeEff fuel t b)
   | .xLet id ty v rt b => eLetClosed id (closeTy fuel t ty) (closeEff fuel t v) (closeTy fuel t rt) (closeEff fuel t b)
+  | .xLen sl => some (SrcEff.eLen sl)
 def closeEffs (fuel : Nat) (t : Tables) (xs : List MEff) : Option (List SrcEff) :=
   match xs with
   | [] => some []

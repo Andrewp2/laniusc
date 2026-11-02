@@ -42,6 +42,7 @@ import all Lanius.Mini.Frontend.P.scalarOf
 import all Lanius.Mini.Frontend.P.shrFirst
 import all Lanius.Mini.Frontend.P.sliceHead
 import all Lanius.Mini.Frontend.P.textSelf
+import all Lanius.Mini.Frontend.P.textSliceLen
 import all Lanius.Mini.Frontend.P.tryLet
 import all Lanius.Mini.Frontend.P.typeDeclAt
 import all Lanius.Mini.Frontend.P.typePathSpellings
@@ -146,10 +147,10 @@ def ChainForm (c : CTree) : Prop :=
     ¬(nodeProd (kid c 0) = pIdent ∧ nodeProd (kid (kid c 0) 1) = pIdentPlain ∧ nodeProd (kid c 1) = pPostfixCall)
 
 /-- The paths the language reserves: the allocator's `alloc` and `dealloc`,
-`slice_from_raw_parts`, `slice_stride` and `assert`. No function or variant
-is read at them. -/
+`slice_from_raw_parts`, `slice_stride`, `slice_len` and `assert`. No
+function or variant is read at them. -/
 def builtinPaths : List ModPath :=
-  [allocPath, deallocPath, [textSliceFromRawParts], [textSliceStride], [textAssert]]
+  [allocPath, deallocPath, [textSliceFromRawParts], [textSliceStride], [textSliceLen], [textAssert]]
 
 theorem namedSplit_sound {ss : List Name} {s : Split} (h : namedSplit ss = some s) :
     ss ∉ builtinPaths ∧ ss = s.home ++ [s.name] := by
@@ -160,7 +161,7 @@ theorem namedSplit_sound {ss : List Name} {s : Split} (h : namedSplit ss = some 
     refine ⟨?_, splitLast_sound h⟩
     simp only [builtinPath, Bool.or_eq_true, sameSpellings_iff, not_or] at nb
     simp only [builtinPaths, List.mem_cons, List.not_mem_nil, or_false, not_or]
-    exact ⟨nb.1.1.1.1, nb.1.1.1.2, nb.1.1.2, nb.1.2, nb.2⟩
+    exact ⟨nb.1.1.1.1.1, nb.1.1.1.1.2, nb.1.1.1.2, nb.1.1.2, nb.1.2, nb.2⟩
 
 /-- A literal match's value from its chain (`litChain`): on its scrutinee s
 itself when s is pure, or else on the local id (numbered by the match token,
@@ -319,13 +320,17 @@ inductive EffList (env : FrontEnv) : List Local → Option (List Ty) → List CT
   | cons {scope : List Local} {E : Option (List Ty)} {c : CTree} {rest : List CTree} {x : MEff} {xs : List MEff} :
       EffR env scope (headTy E) c x → EffList env scope (tailTys E) rest xs → EffList env scope E (c :: rest) (x :: xs)
 
-/-- `path(args)`: `slice_stride(x)` of a slice local, or a named call or
-variant. -/
+/-- `path(args)`: `slice_stride(x)` or `slice_len(x)` of a slice local, or a
+named call or variant. -/
 inductive EffPathCall (env : FrontEnv) : List Local → Option Ty → CTree → CTree → MEff → Prop
   | stride {scope : List Local} {expected : Option Ty} {path args a pf : CTree} {l : Local} {e : Ty} :
       PathSpellings (kid path 0) (kid path 1) [textSliceStride] → Items args [a] → Peel a pf →
       nodeProd (kid pf 1) = pPostfixEnd → LocalOf scope (kid pf 0) l → l.ty = .tySlice e →
       EffPathCall env scope expected path args (.xStride l.id)
+  | len {scope : List Local} {expected : Option Ty} {path args a pf : CTree} {l : Local} {e : Ty} :
+      PathSpellings (kid path 0) (kid path 1) [textSliceLen] → Items args [a] → Peel a pf →
+      nodeProd (kid pf 1) = pPostfixEnd → LocalOf scope (kid pf 0) l → l.ty = .tySlice e →
+      EffPathCall env scope expected path args (.xLen l.id)
   | named {scope : List Local} {expected : Option Ty} {path args : CTree} {pr : PathRef} {front : ModPath} {name : Name}
       {items : List CTree} {x : MEff} : PathRefR (kid path 0) (kid path 1) pr → pr.segments ∉ builtinPaths →
       pr.segments = front ++ [name] → Items args items → EffNamed env scope expected front name pr.targs items x →
@@ -674,6 +679,35 @@ theorem strideArg_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {item
     | some pf =>
       rw [hp] at h
       simp only [strideOfPostfix, strideOfLocal] at h
+      split at h
+      · rename_i pl
+        cases hl : localOf env scope (kid pf 0) with
+        | none => rw [hl] at h; cases h
+        | some l =>
+          rw [hl] at h
+          simp only at h
+          cases he : sliceElem l.ty with
+          | none => rw [he] at h; cases h
+          | some e =>
+            rw [he] at h
+            simp only [Option.some.injEq] at h
+            exact ⟨a, pf, l, e, rfl, peel_sound hp, by simpa using pl, localOf_sound hl, sliceElem_eq he, h.symm⟩
+      · cases h
+
+theorem lenArg_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {items : List CTree} {x : MEff}
+    (h : lenArg fuel env scope items = some x) :
+    ∃ a pf l e, items = [a] ∧ Peel a pf ∧ nodeProd (kid pf 1) = pPostfixEnd ∧ LocalOf scope (kid pf 0) l ∧
+      l.ty = .tySlice e ∧ x = .xLen l.id := by
+  match items, h with
+  | [], h => simp [lenArg] at h
+  | _ :: _ :: _, h => simp [lenArg] at h
+  | [a], h =>
+    simp only [lenArg] at h
+    cases hp : peel fuel a with
+    | none => rw [hp] at h; simp [lenOfPostfix] at h
+    | some pf =>
+      rw [hp] at h
+      simp only [lenOfPostfix, lenOfLocal] at h
       split at h
       · rename_i pl
         cases hl : localOf env scope (kid pf 0) with
@@ -1284,6 +1318,15 @@ theorem effSound : ∀ fuel, EffSound fuel
           simp only at h
           obtain ⟨a, pf, l, e, rfl, pe, pl, hl, ht, rfl⟩ := strideArg_sound h
           exact .stride (pathSpellings_sound (isPath_eq st)) (listItems_sound hi) pe pl hl ht
+      split at h
+      · rename_i sl
+        cases hi : listItems (f + 1) args with
+        | none => rw [hi] at h; cases h
+        | some items =>
+          rw [hi] at h
+          simp only at h
+          obtain ⟨a, pf, l, e, rfl, pe, pl, hl, ht, rfl⟩ := lenArg_sound h
+          exact .len (pathSpellings_sound (isPath_eq sl)) (listItems_sound hi) pe pl hl ht
       cases hp : pathRef (f + 1) (kid path 0) (kid path 1) with
       | none => rw [hp] at h; cases h
       | some pr =>

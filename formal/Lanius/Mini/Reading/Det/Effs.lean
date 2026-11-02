@@ -4,6 +4,8 @@ public import Lanius.Mini.Reading.Det.Nested
 import all Lanius.Mini.Compiler.P.SrcType_size
 import all Lanius.Mini.Frontend.P.bindsOfTys
 import all Lanius.Mini.Frontend.P.distinct
+import all Lanius.Mini.Frontend.P.textSelf
+import all Lanius.Mini.Frontend.P.textSliceLen
 import all Lanius.Mini.Frontend.P.shrFirst
 
 @[expose] public section
@@ -429,12 +431,26 @@ theorem effPathCall_unique : ∀ {scope : List Local} {expected : Option Ty} {pa
       have e := peel_unique pe pe'
       subst e
       rw [localOf_unique lo lo']
+    | len ps' _ _ _ _ _ => exact absurd (pathSpellings_unique ps ps') (by decide)
+    | named pr nb _ _ _ =>
+      exact (nb (by rw [pathRefR_spellings ps pr]; simp [builtinPaths])).elim
+  | _, _, _, _, _, .len ps it pe pe1 lo lt, _, _, _, h₂ => by
+    cases h₂ with
+    | stride ps' _ _ _ _ _ => exact absurd (pathSpellings_unique ps ps') (by decide)
+    | len _ it' pe' _ lo' _ =>
+      have e := items_unique it it'
+      cases e
+      have e := peel_unique pe pe'
+      subst e
+      rw [localOf_unique lo lo']
     | named pr nb _ _ _ =>
       exact (nb (by rw [pathRefR_spellings ps pr]; simp [builtinPaths])).elim
   | _, _, _, _, _, .named pr nb e it en, nd, vn, _, h₂ => by
     have ih1 := fun {y} k' => effNamed_unique en nd vn (y := y) k'
     cases h₂ with
     | stride ps _ _ _ _ _ =>
+      exact (nb (by rw [pathRefR_spellings ps pr]; simp [builtinPaths])).elim
+    | len ps _ _ _ _ _ =>
       exact (nb (by rw [pathRefR_spellings ps pr]; simp [builtinPaths])).elim
     | named pr' _ e' it' en' =>
       have ep := pathRefR_unique pr pr'

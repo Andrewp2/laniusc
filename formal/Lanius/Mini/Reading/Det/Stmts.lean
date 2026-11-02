@@ -17,6 +17,7 @@ import all Lanius.Mini.Frontend.P.noToken
 import all Lanius.Mini.Frontend.P.shrFirst
 import all Lanius.Mini.Frontend.P.sliceHead
 import all Lanius.Mini.Frontend.P.textSelf
+import all Lanius.Mini.Frontend.P.textSliceLen
 
 @[expose] public section
 /-! # The reading is deterministic, F1: statements
@@ -122,11 +123,11 @@ theorem peel_noExpr : ∀ {env : FrontEnv} {scope : List Local} {c pf : CTree} {
     cases h with
     | _ => expr_clash
 
-/-- A call of a reserved path other than `slice_stride` is never an
-effectful expression. -/
+/-- A call of a reserved path other than `slice_stride` and `slice_len` is
+never an effectful expression. -/
 theorem peel_noEff : ∀ {env : FrontEnv} {scope : List Local} {E : Option Ty} {c pf : CTree} {ss : ModPath}
     {x : MEff}, Peel c pf → PathCallForm pf → PathSpellings (kid (kid (kid pf 0) 0) 0) (kid (kid (kid pf 0) 0) 1) ss →
-    ss ∈ builtinPaths → ss ≠ [textSliceStride] → EffR env scope E c x → False
+    ss ∈ builtinPaths → ss ∉ [[textSliceStride], [textSliceLen]] → EffR env scope E c x → False
   | _, _, _, _, _, _, _, .wrap w p, cf, ps, mb, ns, h => by
     cases h with
     | pure r => exact peel_noExpr (.wrap w p) cf.2.2.1 r
@@ -145,7 +146,8 @@ theorem peel_noEff : ∀ {env : FrontEnv} {scope : List Local} {E : Option Ty} {
     | pure r => exact peel_noExpr (.here pp) p1 r
     | pathCall _ _ _ _ _ pc =>
       cases pc with
-      | stride ps' _ _ _ _ _ => exact ns (pathSpellings_unique ps ps')
+      | stride ps' _ _ _ _ _ => exact ns (by rw [pathSpellings_unique ps ps']; simp)
+      | len ps' _ _ _ _ _ => exact ns (by rw [pathSpellings_unique ps ps']; simp)
       | named pr nb _ _ _ => exact nb (by rw [pathRefR_spellings ps pr]; exact mb)
     | callChain _ _ _ _ ne _ _ => exact ne p13
     | chainLocal _ cf _ _ => exact cf.2.2.2 ⟨p0, p01, p1⟩

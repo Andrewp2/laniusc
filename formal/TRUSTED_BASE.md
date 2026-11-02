@@ -835,7 +835,7 @@ when it is right; a stale cache entry is rejected, never used. Trusted:
     shift `k`. `slice_from_raw_parts(p, n)`, in a `let` of type `[T]`, is
     Core's raw view of `T`. These spellings are fixed: build does not look
     at the extern declarations in `alloc::allocator`, and these paths,
-    `slice_stride` and `assert` are never read as a function or variant
+    `slice_stride`, `slice_len` and `assert` are never read as a function or variant
     (`builtinPaths`);
   - `x op= e` is `x = x op e`, and `x.f op= e` is `x.f = x.f op e`, for
     `op` one of `+ - * & | ^`. Core has the compound form itself
@@ -873,6 +873,7 @@ when it is right; a stale cache entry is rejected, never used. Trusted:
     operands expect the type of whichever operand has one.
 
   - `slice_stride(x)` of a slice local x is `EStride(x)`;
+  - (F11b) `slice_len(x)` of a slice local x is `ELen(x)`, a `usize`;
   - (F11b) a call's argument at a parameter of type `[T]` that is an array
     local of element type T is `ArraySlice(T, x)` (`argView`), Core's
     `arrayToSlice T x`, so the callee's writes reach the array, as in

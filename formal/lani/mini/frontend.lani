@@ -896,6 +896,12 @@ pub fn member(names: List<List<usize>>, name: List<usize>) -> bool {
     };
 }
 
+// slice_len
+pub fn text_slice_len() -> List<usize> {
+    let t: List<usize> = cons(115, cons(108, cons(105, cons(99, cons(101, cons(95, cons(108, cons(101, single(110)))))))));
+    return t;
+}
+
 // No spelling occurs twice.
 pub fn distinct(names: List<List<usize>>) -> bool {
     return match (names) {
@@ -5519,6 +5525,8 @@ pub enum MEff {
     // let id: ty = value in body, of the body's type: a literal match's
     // effectful scrutinee bound to the match's local
     XLet(usize, Ty, Box<MEff>, Ty, Box<MEff>),
+    // slice_len(x) of a slice local x
+    XLen(usize),
 }
 
 // The expression, when it is pure.
@@ -5540,6 +5548,7 @@ pub fn pure_part(x: MEff) -> core::option::Option<SrcExpr> {
         XHost(id, args) -> None,
         XIf(c, t, a, b) -> None,
         XLet(id, t, v, rt, b) -> None,
+        XLen(sl) -> None,
     };
 }
 
@@ -5723,6 +5732,7 @@ pub fn bare_eff(x: MEff) -> bool {
         XHost(id, args) -> false,
         XIf(c, t, a, b) -> false,
         XLet(id, t, v, rt, b) -> false,
+        XLen(sl) -> false,
     };
 }
 
@@ -5747,6 +5757,7 @@ pub fn eff_ty(fuel: usize, env: FrontEnv, scope: List<Local>, x: MEff) -> core::
         XHost(id, args) -> Some(TyI32),
         XIf(c, t, a, b) -> Some(t),
         XLet(id, t, v, rt, b) -> Some(rt),
+        XLen(sl) -> Some(TyUint(Usize)),
     };
 }
 
@@ -6231,7 +6242,7 @@ pub fn dealloc_path() -> List<List<usize>> {
 // The allocator's calls, raw views, slice strides and `assert` are the
 // language's own: no function or variant is read at these paths.
 pub fn builtin_path(ss: List<List<usize>>) -> bool {
-    return same_spellings(ss, alloc_path()) || same_spellings(ss, dealloc_path()) || same_spellings(ss, single(text_slice_from_raw_parts())) || same_spellings(ss, single(text_slice_stride())) || same_spellings(ss, single(text_assert()));
+    return same_spellings(ss, alloc_path()) || same_spellings(ss, dealloc_path()) || same_spellings(ss, single(text_slice_from_raw_parts())) || same_spellings(ss, single(text_slice_stride())) || same_spellings(ss, single(text_slice_len())) || same_spellings(ss, single(text_assert()));
 }
 
 // A path's module and last name, the path not reserved.
@@ -7543,6 +7554,7 @@ pub fn call_parts(x: MEff) -> core::option::Option<Called> {
         XHost(id, args) -> None,
         XIf(c, t, a, b) -> None,
         XLet(id, t, v, rt, b) -> None,
+        XLen(sl) -> None,
     };
 }
 
@@ -7775,6 +7787,7 @@ pub fn diverge_eff(decls: Decls, t: Ty, x: MEff) -> MEff {
         XHost(id, args) -> x,
         XIf(c, it, a, b) -> x,
         XLet(id, lt, v, rt, b) -> x,
+        XLen(sl) -> x,
     };
 }
 
@@ -8295,6 +8308,37 @@ pub fn stride_of_local(plain: bool, l: core::option::Option<Local>) -> core::opt
     return None;
 }
 
+// slice_len(x): one argument, a slice local.
+pub fn len_arg(fuel: usize, env: FrontEnv, scope: List<Local>, items: List<CTree>) -> core::option::Option<MEff> {
+    return match (items) {
+        Nil -> None,
+        Cons(a, rest) -> match (unbox(rest)) {
+            Nil -> len_of_postfix(env, scope, peel(fuel, a)),
+            Cons(b, more) -> None,
+        },
+    };
+}
+
+pub fn len_of_postfix(env: FrontEnv, scope: List<Local>, pf: core::option::Option<CTree>) -> core::option::Option<MEff> {
+    return match (pf) {
+        None -> None,
+        Some(x) -> len_of_local(node_prod(kid(x, 1)) == p_postfix_end(), local_of(env, scope, kid(x, 0))),
+    };
+}
+
+pub fn len_of_local(plain: bool, l: core::option::Option<Local>) -> core::option::Option<MEff> {
+    if (plain) {
+        return match (l) {
+            None -> None,
+            Some(x) -> match (slice_elem(x.ty)) {
+                None -> None,
+                Some(e) -> Some(XLen(x.id)),
+            },
+        };
+    }
+    return None;
+}
+
 pub fn eff_path_call(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::option::Option<Ty>, path: CTree, args: CTree) -> core::option::Option<MEff> {
     if (fuel == 0) {
         return None;
@@ -8307,6 +8351,12 @@ pub fn eff_path_call(fuel: usize, env: FrontEnv, scope: List<Local>, expected: c
         return match (list_items(fuel, args)) {
             None -> None,
             Some(items) -> stride_arg(fuel, env, scope, items),
+        };
+    }
+    if (is_path(segments, single(text_slice_len()))) {
+        return match (list_items(fuel, args)) {
+            None -> None,
+            Some(items) -> len_arg(fuel, env, scope, items),
         };
     }
     return match (path_ref(fuel, kid(path, 0), kid(path, 1))) {
@@ -8719,6 +8769,7 @@ pub fn eval_let_head(ty: Ty, x: MEff) -> LetHead {
         XHost(id, args) -> EvalOf(x),
         XIf(c, t, a, b) -> EvalOf(x),
         XLet(id, t, v, rt, b) -> EvalOf(x),
+        XLen(sl) -> EvalOf(x),
     };
 }
 
@@ -8970,6 +9021,7 @@ pub fn inferred(x: MEff) -> bool {
         XHost(id, args) -> true,
         XIf(c, t, a, b) -> false,
         XLet(id, t, v, rt, b) -> false,
+        XLen(sl) -> true,
     };
 }
 
@@ -9235,6 +9287,7 @@ pub fn eff_acts(n: usize, x: MEff) -> bool {
         XHost(id, args) -> true,
         XIf(c, t, a, b) -> eff_acts(n, unbox(c)) || eff_acts(n, unbox(a)) || eff_acts(n, unbox(b)),
         XLet(id, t, v, rt, b) -> eff_acts(n, unbox(v)) || eff_acts(n, unbox(b)),
+        XLen(sl) -> false,
     };
 }
 
@@ -10663,6 +10716,7 @@ pub fn eff_calls(x: MEff) -> List<Inst> {
         XHost(id, args) -> effs_calls(unbox(args)),
         XIf(c, t, a, b) -> concat(eff_calls(unbox(c)), concat(eff_calls(unbox(a)), eff_calls(unbox(b)))),
         XLet(id, t, v, rt, b) -> concat(eff_calls(unbox(v)), eff_calls(unbox(b))),
+        XLen(sl) -> empty(),
     };
 }
 
@@ -10695,6 +10749,7 @@ pub fn eff_named_tys(x: MEff) -> List<Ty> {
         XHost(id, args) -> effs_named_tys(unbox(args)),
         XIf(c, t, a, b) -> concat(eff_named_tys(unbox(c)), cons(t, concat(eff_named_tys(unbox(a)), eff_named_tys(unbox(b))))),
         XLet(id, t, v, rt, b) -> concat(eff_named_tys(unbox(v)), cons(t, cons(rt, eff_named_tys(unbox(b))))),
+        XLen(sl) -> empty(),
     };
 }
 
@@ -11288,6 +11343,7 @@ pub fn close_eff(fuel: usize, t: Tables, x: MEff) -> core::option::Option<SrcEff
         XHost(id, args) -> e_call_closed(Some(id), close_effs(fuel, t, unbox(args))),
         XIf(c, ty, a, b) -> e_if_closed(close_eff(fuel, t, unbox(c)), close_ty(fuel, t, ty), close_eff(fuel, t, unbox(a)), close_eff(fuel, t, unbox(b))),
         XLet(id, ty, v, rt, b) -> e_let_closed(id, close_ty(fuel, t, ty), close_eff(fuel, t, unbox(v)), close_ty(fuel, t, rt), close_eff(fuel, t, unbox(b))),
+        XLen(sl) -> Some(ELen(sl)),
     };
 }
 

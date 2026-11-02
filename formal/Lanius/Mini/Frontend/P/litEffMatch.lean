@@ -37,6 +37,7 @@ import Lanius.Mini.Frontend.P.retBinds
 import Lanius.Mini.Frontend.P.rootInsts
 import Lanius.Mini.Frontend.P.sliceHead
 import Lanius.Mini.Frontend.P.textSelf
+import Lanius.Mini.Frontend.P.textSliceLen
 import Lanius.Mini.Frontend.P.typeDeclAt
 import Lanius.Mini.Frontend.P.typePathSpellings
 import Lanius.Mini.Frontend.P.variantIn
@@ -277,6 +278,28 @@ def strideOfLocal (plain : Bool) (l : Option Local) : Option MEff :=
       | some e => some (MEff.xStride x.id)
   else
     none
+/-- slice_len(x): one argument, a slice local. -/
+def lenArg (fuel : Nat) (env : FrontEnv) (scope : List Local) (items : List CTree) : Option MEff :=
+  match items with
+  | [] => none
+  | a :: rest =>
+    match rest with
+    | [] => lenOfPostfix env scope (peel fuel a)
+    | b :: more => none
+def lenOfPostfix (env : FrontEnv) (scope : List Local) (pf : Option CTree) : Option MEff :=
+  match pf with
+  | none => none
+  | some x => lenOfLocal (decide (nodeProd (kid x 1) = (164))) (localOf env scope (kid x 0))
+def lenOfLocal (plain : Bool) (l : Option Local) : Option MEff :=
+  if plain then
+    match l with
+    | none => none
+    | some x =>
+      match sliceElem x.ty with
+      | none => none
+      | some e => some (MEff.xLen x.id)
+  else
+    none
 def effPathCall (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Option Ty) (path : CTree) (args : CTree) : Option MEff :=
   if fuel = 0 then
     none
@@ -290,15 +313,20 @@ def effPathCall (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : O
         | none => none
         | some items => strideArg fuel env scope items
       else
-        match pathRef fuel (kid path 0) (kid path 1) with
-        | none => none
-        | some pr =>
-          match namedSplit pr.segments with
+        if isPath segments [textSliceLen] then
+          match listItems fuel args with
           | none => none
-          | some s =>
-            match listItems fuel args with
+          | some items => lenArg fuel env scope items
+        else
+          match pathRef fuel (kid path 0) (kid path 1) with
+          | none => none
+          | some pr =>
+            match namedSplit pr.segments with
             | none => none
-            | some items => effNamed (fuel - 1) env scope expected s pr.targs items
+            | some s =>
+              match listItems fuel args with
+              | none => none
+              | some items => effNamed (fuel - 1) env scope expected s pr.targs items
 def effNamed (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Option Ty) (s : Split) (targs : List CTree) (items : List CTree) : Option MEff :=
   if fuel = 0 then
     none
