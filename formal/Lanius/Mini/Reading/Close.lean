@@ -132,6 +132,9 @@ inductive EffClosed (decls : Decls) (fns types : List Inst) : MEff → SrcEff �
       LowerR decls types ty s → EffClosed decls fns types (.xArraySlice ty a) (.arraySlice s a)
   | host {id : Nat} {args : List MEff} {as : List SrcEff} : EffsClosed decls fns types args as →
       EffClosed decls fns types (.xHost id args) (.eCall id as)
+  | «if» {c x y : MEff} {c' x' y' : SrcEff} {ty : Ty} {s : SrcType} :
+      EffClosed decls fns types c c' → LowerR decls types ty s → EffClosed decls fns types x x' →
+      EffClosed decls fns types y y' → EffClosed decls fns types (.xIf c ty x y) (.eIf c' s x' y')
 
 inductive EffsClosed (decls : Decls) (fns types : List Inst) : List MEff → List SrcEff → Prop
   | nil : EffsClosed decls fns types [] []
@@ -207,6 +210,12 @@ theorem closeEff_sound {fuel : Nat} {t : Tables} (ok : LoweredOk t) :
     cases ha : closeEffs fuel t args <;> simp [ha, eCallClosed] at h
     subst h
     exact .host (closeEffs_sound ok _ _ ha)
+  | .xIf c ty x y, s, h => by
+    simp only [closeEff] at h
+    cases hc : closeEff fuel t c <;> cases ht : closeTy fuel t ty <;> cases hx : closeEff fuel t x <;>
+      cases hy : closeEff fuel t y <;> simp [hc, ht, hx, hy, eIfClosed] at h
+    subst h
+    exact .if (closeEff_sound ok _ _ hc) (closeTy_sound ok ht) (closeEff_sound ok _ _ hx) (closeEff_sound ok _ _ hy)
 
 theorem closeEffs_sound {fuel : Nat} {t : Tables} (ok : LoweredOk t) :
     ∀ (xs : List MEff) (ss : List SrcEff), closeEffs fuel t xs = some ss → EffsClosed t.decls t.fns t.types xs ss

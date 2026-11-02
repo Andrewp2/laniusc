@@ -1,10 +1,10 @@
 module
 
 public import Lanius.Mini.Frontend.Types
-import Lanius.Mini.Frontend.P.bindsOfTys
 import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.fnInstRet
 import Lanius.Mini.Frontend.P.ifEff
+import Lanius.Mini.Frontend.P.litEffMatch
 import Lanius.Mini.Frontend.P.matchLetHead
 import Lanius.Mini.Frontend.P.noBlock
 import Lanius.Mini.Frontend.P.pickTy
@@ -64,6 +64,7 @@ def inferred (x : MEff) : Bool :=
   | .xStride sl => true
   | .xArraySlice e sl => true
   | .xHost id args => true
+  | .xIf c t a b => false
 
 def untypedIf (ok : Bool) (t : Ty) (h : LetHead) : Option Untyped :=
   if ok then

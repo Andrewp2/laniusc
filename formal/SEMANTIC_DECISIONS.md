@@ -1637,8 +1637,25 @@ arm is never run, as in laniusc's first-match lowering. A match that is
 not exhaustive this way (no `_`, an integer match without one) is not
 read. The forms read are a match statement, a typed `let`'s value (each
 value arm followed by the rest of the block) and a returned value; a
-literal match elsewhere in an expression, a negative literal pattern and a
-literal inside a payload pattern are not read.
+negative literal pattern and a literal inside a payload pattern are not
+read.
+
+A literal match is also read anywhere in an expression, as a value: a
+chain of conditional expressions (`EIf`, below) in arm order, each
+literal arm's test on the scrutinee choosing its value, else the rest of
+the chain, and the `_` arm's value (or the last `bool` arm's) at the
+end. Each arm's value is read at the type the match's position expects,
+and the match has that type, or else its first arm's. The scrutinee must
+be pure, since each test reads it again. It is not bound to a local, so
+the chain needs no statement and fits any position. Reading a pure
+expression changes no state, so each read gives the first one's result,
+as laniusc's one evaluation does. A match with an effectful scrutinee, such as a
+call, is still read only in the statement forms, so a nested one is not
+read. A let or return of a literal match has both readings, so the
+statement form is taken only when the value form does not apply (the
+scrutinee is not pure, or some arm's value is a block: `lit_wanted`,
+`LitWanted`). The two readings mean the same, and each source then has
+one reading, as the front end's uniqueness proof needs.
 
 ## Conditional expressions (decided 11-01)
 
@@ -1658,9 +1675,8 @@ forward simulation (`eval_if`), in the stopping of failing runs
 (`eff_if`), in heap growth (`ifArms_grows`) and in Core typing
 (`SrcEff.eval_typed`). The self-simulation's pure meaning (`peff`) leaves
 it unmodelled, as it does `arraySlice`, so code that uses it is not live
-there. The compiler's own sources don't use it. The front end does not
-produce it yet: reading a literal match in any expression position is
-the next step.
+there. The compiler's own sources don't use it. The front end produces it
+for a literal match in an expression ("Literal patterns" above).
 
 ## `u16` views (decided 11-01)
 

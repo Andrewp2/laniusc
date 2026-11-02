@@ -2,6 +2,7 @@ module
 
 public import Lanius.Mini.Reading.Det.Nested
 import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Frontend.P.bindsOfTys
 import all Lanius.Mini.Frontend.P.distinct
 import all Lanius.Mini.Frontend.P.shrFirst
 
@@ -53,6 +54,13 @@ section
 variable {env : FrontEnv}
 
 set_option maxHeartbeats 4000000 in
+theorem litResult_unique {decls : Decls} {scope : List Local} {E : Option Ty} {vs : List MEff} {a b : Ty}
+    (h₁ : LitResult decls scope E vs a) (h₂ : LitResult decls scope E vs b) : a = b := by
+  cases h₁ with
+  | expected => cases h₂; rfl
+  | first t => cases h₂ with
+    | first t' => exact effTy_unique t t'
+
 mutual
 theorem effR_unique : ∀ {scope : List Local} {expected : Option Ty} {c : CTree} {x : MEff},
     EffR env scope expected c x → IdsFresh scope → VariantsNodup env.decls →
@@ -252,6 +260,41 @@ theorem effR_unique : ∀ {scope : List Local} {expected : Option Ty} {c : CTree
       subst eo
       have ag := ih2 arms'
       rw [armsAgree_binders ag, armsAgree_values ag, armsAgree_resultTy ag rt rt']
+    | litMatch _ k' et' lt' _ _ _ _ _ =>
+      have e := ih1 k'
+      subst e
+      have e := effTy_unique et et'
+      subst e
+      rw [ee] at lt'
+      simp [litTy] at lt'
+    | _ => eff_clash
+  | _, _, _, _, .litMatch pm k et lt pp it el lr hc, nd, vn, _, h₂ => by
+    have ih1 := fun {y} k' => effR_unique k nd vn (y := y) k'
+    have ih2 := fun {y} k' => effList_unique el nd vn (ys := y) k'
+    cases h₂ with
+    | pure p => exact pure_agree p nd (.litMatch pm k et lt pp it el lr hc)
+    | «match» _ k' et' ee' _ _ _ _ _ _ _ =>
+      have e := ih1 k'
+      subst e
+      have e := effTy_unique et et'
+      subst e
+      rw [ee'] at lt
+      simp [litTy] at lt
+    | litMatch _ k' et' _ pp' it' el' lr' hc' =>
+      have e := ih1 k'
+      subst e
+      have e := effTy_unique et et'
+      subst e
+      rw [pp] at pp'
+      cases pp'
+      have e := items_unique it it'
+      subst e
+      have e := ih2 el'
+      subst e
+      have e := litResult_unique lr lr'
+      subst e
+      rw [hc] at hc'
+      exact Option.some.inj hc'
     | _ => eff_clash
   | _, _, _, _, .array pa nr he it el len, nd, vn, _, h₂ => by
     have ih1 := fun {y} k' => effList_unique el nd vn (ys := y) k'

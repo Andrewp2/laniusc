@@ -266,6 +266,8 @@ inductive MEff where
   | xArraySlice : Ty → Nat → MEff
   /-- a call of the host service with this Core function id (see extern_func): only an extern's instance has one -/
   | xHost : Nat → (List MEff) → MEff
+  /-- if condition { then } else { otherwise }, of this type: a literal match's arms -/
+  | xIf : MEff → Ty → MEff → MEff → MEff
   deriving Repr
 
 /-- An arm of a match expression: its binders, its value and the value's type. -/

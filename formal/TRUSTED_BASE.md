@@ -673,8 +673,17 @@ when it is right; a stale cache entry is rejected, never used. Trusted:
     `!x` for `true` and `false` arms, the first matching arm's body run.
     Its last arm is `_`, or at `bool` some earlier arms are `true` and
     `false` and the chain ends unreachable; a let's rest follows each
-    arm's value (`LitBodyR.letValue`). SEMANTIC_DECISIONS "Literal
-    patterns";
+    arm's value (`LitBodyR.letValue`). A let or return reads it this way
+    only when its scrutinee is not pure or some arm's value is a block
+    (`LitWanted`). Otherwise, and anywhere in an expression, a match on a
+    pure scrutinee of such a type whose arms' values are expressions
+    (`EffR.litMatch`, `Reading/Effs.lean`) is the conditional expression
+    `XIf` (closing to `EIf`) chained in arm order (`litChain`): each
+    literal arm's test as above on the scrutinee, its value, else the rest;
+    the `_` arm's value, or at `bool` the last arm's once `true` and
+    `false` both have arms, untested. Each arm's value is read at the
+    expected type, and the type is that, or else the first arm's.
+    SEMANTIC_DECISIONS "Literal patterns";
   - (F11b) a payload pattern binds a name only when no enum of the program
     has a variant so spelled (`BindersR`'s `NoVariant`): laniusc reads one
     that resolves to a variant as a check. SEMANTIC_DECISIONS "Payload

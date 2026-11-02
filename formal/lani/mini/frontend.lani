@@ -5511,6 +5511,9 @@ pub enum MEff {
     // a call of the host service with this Core function id (see
     // extern_func): only an extern's instance has one
     XHost(usize, Box<List<MEff>>),
+    // if condition { then } else { otherwise }, of this type: a literal
+    // match's arms
+    XIf(Box<MEff>, Ty, Box<MEff>, Box<MEff>),
 }
 
 // The expression, when it is pure.
@@ -5530,6 +5533,7 @@ pub fn pure_part(x: MEff) -> core::option::Option<SrcExpr> {
         XStride(sl) -> None,
         XArraySlice(e, sl) -> None,
         XHost(id, args) -> None,
+        XIf(c, t, a, b) -> None,
     };
 }
 
@@ -5711,6 +5715,7 @@ pub fn bare_eff(x: MEff) -> bool {
         XStride(sl) -> false,
         XArraySlice(e, sl) -> false,
         XHost(id, args) -> false,
+        XIf(c, t, a, b) -> false,
     };
 }
 
@@ -5733,6 +5738,7 @@ pub fn eff_ty(fuel: usize, env: FrontEnv, scope: List<Local>, x: MEff) -> core::
         XStride(sl) -> Some(TyIsize),
         XArraySlice(e, sl) -> Some(TySlice(boxed(e))),
         XHost(id, args) -> Some(TyI32),
+        XIf(c, t, a, b) -> Some(t),
     };
 }
 
@@ -7527,6 +7533,7 @@ pub fn call_parts(x: MEff) -> core::option::Option<Called> {
         XStride(sl) -> None,
         XArraySlice(e, sl) -> None,
         XHost(id, args) -> None,
+        XIf(c, t, a, b) -> None,
     };
 }
 
@@ -7757,6 +7764,7 @@ pub fn diverge_eff(decls: Decls, t: Ty, x: MEff) -> MEff {
         XStride(sl) -> x,
         XArraySlice(e, sl) -> x,
         XHost(id, args) -> x,
+        XIf(c, it, a, b) -> x,
     };
 }
 
@@ -7826,6 +7834,169 @@ pub fn method_binds(fuel: usize, env: FrontEnv, fd: FnDecl, start: List<Bind>, t
     return match (list_items(fuel, targs)) {
         None -> None,
         Some(gs) -> binds_of_tys(fd.params, args_tys(fuel, env, gs), start),
+    };
+}
+
+// ---------------------------------------------------------------- literal matches in expressions
+
+// The types a literal match reads its scrutinee at: the integer types and
+// bool.
+pub fn lit_ty(t: Ty) -> bool {
+    return match (t) {
+        TyI32 -> true,
+        TyBool -> true,
+        TyUint(u) -> true,
+        TyPtr -> false,
+        TyIsize -> true,
+        TyChar -> false,
+        TyFloat(ft) -> false,
+        TySlice(e) -> false,
+        TyNamed(d, args) -> false,
+        TySint(u) -> true,
+        TyArray(e, n) -> false,
+    };
+}
+
+pub fn is_true_arm(a: CTree) -> bool {
+    return node_prod(kid(a, 0)) == p_pattern_true();
+}
+
+pub fn is_false_arm(a: CTree) -> bool {
+    return node_prod(kid(a, 0)) == p_pattern_false();
+}
+
+// The arms' value nodes.
+pub fn arm_value_trees(arms: List<CTree>) -> List<CTree> {
+    return match (arms) {
+        Nil -> empty(),
+        Cons(a, rest) -> cons(kid(a, 2), arm_value_trees(unbox(rest))),
+    };
+}
+
+// The type t once for each arm.
+pub fn ty_per_arm(t: Ty, arms: List<CTree>) -> List<Ty> {
+    return match (arms) {
+        Nil -> empty(),
+        Cons(a, rest) -> cons(t, ty_per_arm(t, unbox(rest))),
+    };
+}
+
+// Each arm's value is read at the expected type, when there is one.
+pub fn lit_wants(expected: core::option::Option<Ty>, arms: List<CTree>) -> core::option::Option<List<Ty>> {
+    return match (expected) {
+        None -> None,
+        Some(t) -> Some(ty_per_arm(t, arms)),
+    };
+}
+
+pub fn eq_on(s: SrcExpr, e: core::option::Option<SrcExpr>) -> core::option::Option<SrcExpr> {
+    return match (e) {
+        None -> None,
+        Some(n) -> Some(Apply(Equal, boxed(s), boxed(n))),
+    };
+}
+
+// What an arm's literal pattern tests of the scrutinee s: s == n for an
+// integer literal at an integer type, s for true and !s for false at bool.
+pub fn lit_test(s: SrcExpr, sty: Ty, p: CTree) -> core::option::Option<SrcExpr> {
+    let k: usize = node_prod(p);
+    let b: bool = same_ty(sty, TyBool);
+    if (k == p_pattern_int() && !b) {
+        return eq_on(s, int_literal(kid_token(p, 0).text));
+    }
+    if (k == p_pattern_true() && b) {
+        return Some(s);
+    }
+    if (k == p_pattern_false() && b) {
+        return Some(Not(boxed(s)));
+    }
+    return None;
+}
+
+pub fn lit_value_if(ok: bool, v: MEff) -> core::option::Option<MEff> {
+    if (ok) {
+        return Some(v);
+    }
+    return None;
+}
+
+// The last arm: a wildcard, or at bool a literal arm once both values have
+// arms; its value needs no test.
+pub fn lit_last_value(covered: bool, test: core::option::Option<SrcExpr>, v: MEff) -> core::option::Option<MEff> {
+    return match (test) {
+        None -> None,
+        Some(c) -> lit_value_if(covered, v),
+    };
+}
+
+pub fn lit_if_of(test: core::option::Option<SrcExpr>, rt: Ty, v: MEff, rest: core::option::Option<MEff>) -> core::option::Option<MEff> {
+    return match (test) {
+        None -> None,
+        Some(c) -> match (rest) {
+            None -> None,
+            Some(r) -> Some(XIf(boxed(XPure(c)), rt, boxed(v), boxed(r))),
+        },
+    };
+}
+
+// A wildcard arm is the last.
+pub fn lit_wild_value(more: List<CTree>, v: MEff) -> core::option::Option<MEff> {
+    return match (more) {
+        Nil -> Some(v),
+        Cons(b, others) -> None,
+    };
+}
+
+// One arm of the chain: the arm a with value v, more the arms after it and
+// rest the chain they read as.
+pub fn lit_link(s: SrcExpr, sty: Ty, rt: Ty, covered: bool, a: CTree, v: MEff, more: List<CTree>, rest: core::option::Option<MEff>) -> core::option::Option<MEff> {
+    if (is_wild_arm(a)) {
+        return lit_wild_value(more, v);
+    }
+    return match (more) {
+        Nil -> lit_last_value(covered, lit_test(s, sty, kid(a, 0)), v),
+        Cons(b, others) -> lit_if_of(lit_test(s, sty, kid(a, 0)), rt, v, rest),
+    };
+}
+
+// The arms from a in order, each a test of the scrutinee s and its value,
+// seen_t and seen_f whether an earlier arm was true or false.
+pub fn lit_chain(s: SrcExpr, sty: Ty, rt: Ty, seen_t: bool, seen_f: bool, arms: List<CTree>, values: List<MEff>) -> core::option::Option<MEff> {
+    return match (arms) {
+        Nil -> None,
+        Cons(a, more) -> match (values) {
+            Nil -> None,
+            Cons(v, rest) -> lit_link(s, sty, rt, (seen_t || is_true_arm(a)) && (seen_f || is_false_arm(a)), a, v, unbox(more), lit_chain(s, sty, rt, seen_t || is_true_arm(a), seen_f || is_false_arm(a), unbox(more), unbox(rest))),
+        },
+    };
+}
+
+// A literal match's type: the expected one, or else its first arm's.
+pub fn lit_result(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::option::Option<Ty>, values: List<MEff>) -> core::option::Option<Ty> {
+    return match (expected) {
+        Some(t) -> Some(t),
+        None -> match (values) {
+            Nil -> None,
+            Cons(v, rest) -> eff_ty(fuel, env, scope, v),
+        },
+    };
+}
+
+// A match on a pure scrutinee x of an integer type or bool, whose arms'
+// values read as values: the chain of its arms.
+pub fn lit_eff_match(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::option::Option<Ty>, x: MEff, ety: Ty, arms: List<CTree>, values: core::option::Option<List<MEff>>) -> core::option::Option<MEff> {
+    if (!lit_ty(ety)) {
+        return None;
+    }
+    return match (pure_part(x)) {
+        None -> None,
+        Some(s) -> match (values) {
+            None -> None,
+            Some(vs) -> match (lit_result(fuel, env, scope, expected, vs)) {
+                None -> None,
+                Some(rt) -> lit_chain(s, ety, rt, false, false, arms, vs),
+            },
+        },
     };
 }
 
@@ -8298,7 +8469,10 @@ pub fn eff_match_on(fuel: usize, env: FrontEnv, scope: List<Local>, expected: co
         Some(x) -> match (eff_ty(fuel, env, scope, x)) {
             None -> None,
             Some(ety) -> match (named_parts(ety)) {
-                None -> None,
+                None -> match (list_items(fuel, kid(m, 5))) {
+                    None -> None,
+                    Some(arms) -> lit_eff_match(fuel, env, scope, expected, x, ety, arms, eff_list(minus(fuel, 1), env, scope, lit_wants(expected, arms), arm_value_trees(arms))),
+                },
                 Some(n) -> match (get(env.decls.types, n.decl)) {
                     None -> None,
                     Some(t) -> eff_match_enum(minus(fuel, 1), env, scope, expected, x, ety, t, payload_tys(fuel, env.decls, n.decl, n.args), m),
@@ -8516,6 +8690,7 @@ pub fn eval_let_head(ty: Ty, x: MEff) -> LetHead {
         XStride(sl) -> EvalOf(x),
         XArraySlice(e, sl) -> EvalOf(x),
         XHost(id, args) -> EvalOf(x),
+        XIf(c, t, a, b) -> EvalOf(x),
     };
 }
 
@@ -8765,6 +8940,7 @@ pub fn inferred(x: MEff) -> bool {
         XStride(sl) -> true,
         XArraySlice(e, sl) -> true,
         XHost(id, args) -> true,
+        XIf(c, t, a, b) -> false,
     };
 }
 
@@ -9028,6 +9204,7 @@ pub fn eff_acts(n: usize, x: MEff) -> bool {
         XStride(sl) -> false,
         XArraySlice(e, sl) -> false,
         XHost(id, args) -> true,
+        XIf(c, t, a, b) -> eff_acts(n, unbox(c)) || eff_acts(n, unbox(a)) || eff_acts(n, unbox(b)),
     };
 }
 
@@ -9586,22 +9763,6 @@ pub enum LitForm {
 }
 
 // The scrutinee types a literal pattern can match.
-pub fn lit_ty(t: Ty) -> bool {
-    return match (t) {
-        TyI32 -> true,
-        TyBool -> true,
-        TyUint(u) -> true,
-        TyPtr -> false,
-        TyIsize -> true,
-        TyChar -> false,
-        TyFloat(ft) -> false,
-        TySlice(e) -> false,
-        TyNamed(d, args) -> false,
-        TySint(u) -> true,
-        TyArray(e, n) -> false,
-    };
-}
-
 // A literal pattern: `5`, `true` or `false`.
 pub fn lit_pattern(p: CTree) -> bool {
     let k: usize = node_prod(p);
@@ -9621,10 +9782,41 @@ pub fn is_lit_stmt(fuel: usize, e: CTree) -> bool {
     };
 }
 
-pub fn is_lit_init(fuel: usize, init: CTree) -> bool {
+// Whether an arm's value is a block.
+pub fn any_block_arm(fuel: usize, arms: List<CTree>) -> bool {
+    return match (arms) {
+        Nil -> false,
+        Cons(a, rest) -> match (arm_block_list(fuel, a)) {
+            Some(l) -> true,
+            None -> any_block_arm(fuel, unbox(rest)),
+        },
+    };
+}
+
+pub fn lit_stmt_needed(fuel: usize, p: core::option::Option<SrcExpr>, arms: CTree) -> bool {
+    return match (p) {
+        None -> true,
+        Some(e) -> match (list_items(fuel, arms)) {
+            None -> false,
+            Some(xs) -> any_block_arm(fuel, xs),
+        },
+    };
+}
+
+// A literal match a let or return reads as statements: its scrutinee is
+// not pure, or an arm's value is a block. The others are values (an XIf
+// chain).
+pub fn lit_wanted(fuel: usize, env: FrontEnv, scope: List<Local>, m: CTree) -> bool {
+    return match (eff_of(fuel, env, scope, None, kid(m, 2))) {
+        None -> false,
+        Some(x) -> lit_stmt_needed(fuel, pure_part(x), kid(m, 5)),
+    };
+}
+
+pub fn is_lit_init(fuel: usize, env: FrontEnv, scope: List<Local>, init: CTree) -> bool {
     return match (match_init(fuel, init)) {
         None -> false,
-        Some(m) -> lit_first(m),
+        Some(m) -> lit_first(m) && lit_wanted(fuel, env, scope, m),
     };
 }
 
@@ -9687,14 +9879,6 @@ pub fn lit_cond(id: usize, sty: Ty, p: CTree) -> core::option::Option<SrcExpr> {
         return Some(Not(boxed(Local(id))));
     }
     return None;
-}
-
-pub fn is_true_arm(a: CTree) -> bool {
-    return node_prod(kid(a, 0)) == p_pattern_true();
-}
-
-pub fn is_false_arm(a: CTree) -> bool {
-    return node_prod(kid(a, 0)) == p_pattern_false();
 }
 
 // After the last arm: Unreachable, when the arms covered the values.
@@ -9779,7 +9963,7 @@ pub fn let_first(fuel: usize, env: FrontEnv, scope: List<Local>, s: CTree, rest:
         return None;
     }
     let tok: Token = kid_token(s, 1);
-    if (node_prod(kid(s, 2)) == p_let_type() && node_prod(kid(s, 3)) == p_let_init() && !member(env.globals, tok.text) && fresh_id(scope, minus(tok.start, env.base)) && is_lit_init(fuel, kid(kid(s, 3), 1))) {
+    if (node_prod(kid(s, 2)) == p_let_type() && node_prod(kid(s, 3)) == p_let_init() && !member(env.globals, tok.text) && fresh_id(scope, minus(tok.start, env.base)) && is_lit_init(fuel, env, scope, kid(kid(s, 3), 1))) {
         return match (ty_of(fuel, env, kid(kid(s, 2), 1))) {
             None -> None,
             Some(t) -> lit_let_of(minus(fuel, 1), env, scope, Local { name: tok.text, id: minus(tok.start, env.base), ty: t }, kid(kid(s, 3), 1), stmts_of(minus(fuel, 1), env, cons(Local { name: tok.text, id: minus(tok.start, env.base), ty: t }, scope), rest)),
@@ -9813,7 +9997,7 @@ pub fn stmt_of(fuel: usize, env: FrontEnv, scope: List<Local>, s: CTree) -> core
     }
     let f: usize = minus(fuel, 1);
     let p: usize = node_prod(s);
-    if (p == p_return_stmt() && node_prod(kid(s, 1)) == p_return_value() && is_lit_init(f, kid(kid(s, 1), 0))) {
+    if (p == p_return_stmt() && node_prod(kid(s, 1)) == p_return_value() && is_lit_init(f, env, scope, kid(kid(s, 1), 0))) {
         return match (match_init(f, kid(kid(s, 1), 0))) {
             None -> None,
             Some(m) -> lit_match_of(f, env, scope, m, LitReturn),
@@ -10411,6 +10595,7 @@ pub fn eff_calls(x: MEff) -> List<Inst> {
         XStride(sl) -> empty(),
         XArraySlice(e, sl) -> empty(),
         XHost(id, args) -> effs_calls(unbox(args)),
+        XIf(c, t, a, b) -> concat(eff_calls(unbox(c)), concat(eff_calls(unbox(a)), eff_calls(unbox(b)))),
     };
 }
 
@@ -10441,6 +10626,7 @@ pub fn eff_named_tys(x: MEff) -> List<Ty> {
         XStride(sl) -> empty(),
         XArraySlice(e, sl) -> single(e),
         XHost(id, args) -> effs_named_tys(unbox(args)),
+        XIf(c, t, a, b) -> concat(eff_named_tys(unbox(c)), cons(t, concat(eff_named_tys(unbox(a)), eff_named_tys(unbox(b))))),
     };
 }
 
@@ -10971,6 +11157,22 @@ pub fn e_match_closed(s: core::option::Option<SrcEff>, ety: core::option::Option
     };
 }
 
+pub fn e_if_closed(c: core::option::Option<SrcEff>, t: core::option::Option<SrcType>, a: core::option::Option<SrcEff>, b: core::option::Option<SrcEff>) -> core::option::Option<SrcEff> {
+    return match (c) {
+        None -> None,
+        Some(x) -> match (t) {
+            None -> None,
+            Some(ty) -> match (a) {
+                None -> None,
+                Some(y) -> match (b) {
+                    None -> None,
+                    Some(z) -> Some(EIf(boxed(x), ty, boxed(y), boxed(z))),
+                },
+            },
+        },
+    };
+}
+
 pub fn cons_src_eff(head: core::option::Option<SrcEff>, tail: core::option::Option<List<SrcEff>>) -> core::option::Option<List<SrcEff>> {
     return match (head) {
         None -> None,
@@ -11000,6 +11202,7 @@ pub fn close_eff(fuel: usize, t: Tables, x: MEff) -> core::option::Option<SrcEff
         XStride(sl) -> Some(EStride(sl)),
         XArraySlice(e, sl) -> e_array_slice_closed(close_ty(fuel, t, e), sl),
         XHost(id, args) -> e_call_closed(Some(id), close_effs(fuel, t, unbox(args))),
+        XIf(c, ty, a, b) -> e_if_closed(close_eff(fuel, t, unbox(c)), close_ty(fuel, t, ty), close_eff(fuel, t, unbox(a)), close_eff(fuel, t, unbox(b))),
     };
 }
 

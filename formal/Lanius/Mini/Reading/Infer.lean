@@ -3,6 +3,9 @@ module
 public import Lanius.Mini.Reading.Lower
 public import Lanius.Mini.Reading.Exprs
 import all Lanius.Mini.Frontend.P.bindsOfTys
+import all Lanius.Mini.Frontend.P.litEffMatch
+import all Lanius.Mini.Frontend.P.litWants
+import all Lanius.Mini.Frontend.P.litWildValue
 import all Lanius.Mini.Frontend.P.divergeArm
 import all Lanius.Mini.Frontend.P.collect
 import all Lanius.Mini.Frontend.P.consTreeTail

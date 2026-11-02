@@ -13,6 +13,9 @@ import all Lanius.Mini.Frontend.P.consTreeTail
 import all Lanius.Mini.Frontend.P.consTys
 import all Lanius.Mini.Frontend.P.divergeArm
 import all Lanius.Mini.Frontend.P.bindsOfTys
+import all Lanius.Mini.Frontend.P.litEffMatch
+import all Lanius.Mini.Frontend.P.litWants
+import all Lanius.Mini.Frontend.P.litWildValue
 import all Lanius.Mini.Frontend.P.findConst
 import all Lanius.Mini.Frontend.P.floatTyped
 import all Lanius.Mini.Frontend.P.fnInstRet
@@ -158,6 +161,11 @@ theorem namedSplit_sound {ss : List Name} {s : Split} (h : namedSplit ss = some 
     simp only [builtinPaths, List.mem_cons, List.not_mem_nil, or_false, not_or]
     exact ⟨nb.1.1.1.1, nb.1.1.1.2, nb.1.1.2, nb.1.2, nb.2⟩
 
+/-- A literal match's type: the expected one, or else its first arm's. -/
+inductive LitResult (decls : Decls) (scope : List Local) : Option Ty → List MEff → Ty → Prop
+  | expected {t : Ty} {vs : List MEff} : LitResult decls scope (some t) vs t
+  | first {v : MEff} {vs : List MEff} {t : Ty} : EffTy decls scope v t → LitResult decls scope none (v :: vs) t
+
 mutual
 inductive EffR (env : FrontEnv) : List Local → Option Ty → CTree → MEff → Prop
   | pure {scope : List Local} {expected : Option Ty} {c : CTree} {e : SrcExpr} :
@@ -221,6 +229,14 @@ inductive EffR (env : FrontEnv) : List Local → Option Ty → CTree → MEff �
       MatchOrder env t (List.zipWith VariantTy.mk t.variants ps) arms os →
       EffArmsR env scope expected t (List.zipWith VariantTy.mk t.variants ps) os eas → resultTy expected eas = some rt →
       EffR env scope expected c (.xMatch s ety rt (armBinders eas) (armValues eas))
+  /-- (F11b) a match on a pure scrutinee of an integer type or `bool`: the chain of conditionals its arms' literal
+  patterns test, in order (`litChain`), each arm's value read at the expected type. -/
+  | litMatch {scope : List Local} {expected : Option Ty} {c : CTree} {s : MEff} {ety : Ty} {e : SrcExpr}
+      {arms : List CTree} {vs : List MEff} {rt : Ty} {x : MEff} :
+      nodeProd c = pMatchExpr → EffR env scope none (kid c 2) s → EffTy env.decls scope s ety → litTy ety = true →
+      purePart s = some e → Items (kid c 5) arms → EffList env scope (litWants expected arms) (armValueTrees arms) vs →
+      LitResult env.decls scope expected vs rt → litChain e ety rt false false arms vs = some x →
+      EffR env scope expected c x
   | array {scope : List Local} {expected : Option Ty} {c : CTree} {e : Ty} {n : Nat} {items : List CTree}
       {vs : List MEff} : nodeProd c = pArrayLit →
       ¬(nodeProd (kid c 1) = pArraySome ∧ nodeProd (kid (kid c 1) 1) = pArrayRepeat) → expected = some (.tyArray e n) →
@@ -700,11 +716,24 @@ def MatchEnumEff (env : FrontEnv) (scope : List Local) (expected : Option Ty) (s
     x = .xMatch s ety rt (armBinders eas) (armValues eas)
 
 def MatchOnEff (env : FrontEnv) (scope : List Local) (expected : Option Ty) (s : MEff) (m : CTree) (x : MEff) : Prop :=
-  ∃ ety d args t ps arms os eas rt, EffTy env.decls scope s ety ∧ ety = .tyNamed d args ∧
+  (∃ ety d args t ps arms os eas rt, EffTy env.decls scope s ety ∧ ety = .tyNamed d args ∧
     env.decls.types[d]? = some t ∧ t.isEnum = true ∧ PayloadTys env.decls d args ps ∧ Items (kid m 5) arms ∧
     MatchOrder env t (List.zipWith VariantTy.mk t.variants ps) arms os ∧
     EffArmsR env scope expected t (List.zipWith VariantTy.mk t.variants ps) os eas ∧ resultTy expected eas = some rt ∧
-    x = .xMatch s ety rt (armBinders eas) (armValues eas)
+    x = .xMatch s ety rt (armBinders eas) (armValues eas)) ∨
+  (∃ ety e arms vs rt, EffTy env.decls scope s ety ∧ litTy ety = true ∧ purePart s = some e ∧ Items (kid m 5) arms ∧
+    EffList env scope (litWants expected arms) (armValueTrees arms) vs ∧ LitResult env.decls scope expected vs rt ∧
+    litChain e ety rt false false arms vs = some x)
+
+theorem litResult_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {expected : Option Ty} {vs : List MEff}
+    {rt : Ty} (h : litResult fuel env scope expected vs = some rt) : LitResult env.decls scope expected vs rt := by
+  unfold litResult at h
+  cases expected with
+  | some t => simp only [Option.some.injEq] at h; subst h; exact .expected
+  | none =>
+    cases vs with
+    | nil => simp at h
+    | cons v rest => simp only at h; exact .first (effTy_sound h)
 
 /-- A free function's call: at type arguments inferred, or written. -/
 def FreeEff (env : FrontEnv) (scope : List Local) (expected : Option Ty) (d : Nat) (fd : FnDecl) (targs items : List CTree)
@@ -1481,9 +1510,11 @@ theorem effSound : ∀ fuel, EffSound fuel
     · intro env scope expected m x pm h
       rw [effMatch.eq_def] at h
       simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
-      obtain ⟨s, hs, ety, d, args, t, ps, arms, os, eas, rt, he, rfl, ht, en, hp, hi, ord, ar, hr, rfl⟩ :=
-        ihMatchOn h
-      exact .match pm (ihOf hs) he rfl ht en hp hi ord ar hr
+      obtain ⟨s, hs, on⟩ := ihMatchOn h
+      rcases on with ⟨ety, d, args, t, ps, arms, os, eas, rt, he, rfl, ht, en, hp, hi, ord, ar, hr, rfl⟩ |
+        ⟨ety, e, arms, vs, rt, he, lt, pp, hi, el, lr, hc⟩
+      · exact .match pm (ihOf hs) he rfl ht en hp hi ord ar hr
+      · exact .litMatch pm (ihOf hs) he lt pp hi el lr hc
     -- effMatchOn
     · intro env scope expected so m x h
       rw [effMatchOn.eq_def] at h
@@ -1499,7 +1530,34 @@ theorem effSound : ∀ fuel, EffSound fuel
           rw [he] at h
           simp only at h
           cases hn : namedParts ety with
-          | none => rw [hn] at h; cases h
+          | none =>
+            rw [hn] at h
+            simp only at h
+            cases hi : listItems (f + 1) (kid m 5) with
+            | none => rw [hi] at h; cases h
+            | some arms =>
+              rw [hi] at h
+              simp only [litEffMatch] at h
+              split at h
+              · cases h
+              rename_i lt
+              cases hp : purePart s with
+              | none => rw [hp] at h; cases h
+              | some e =>
+                rw [hp] at h
+                simp only at h
+                cases hl : effList f env scope (litWants expected arms) (armValueTrees arms) with
+                | none => rw [hl] at h; cases h
+                | some vs =>
+                  rw [hl] at h
+                  simp only at h
+                  cases hr : litResult (f + 1) env scope expected vs with
+                  | none => rw [hr] at h; cases h
+                  | some rt =>
+                    rw [hr] at h
+                    simp only at h
+                    exact .inr ⟨ety, e, arms, vs, rt, effTy_sound he, by simpa using lt, hp, listItems_sound hi,
+                      ihList hl, litResult_sound hr, h⟩
           | some n =>
             rw [hn] at h
             simp only at h
@@ -1509,7 +1567,7 @@ theorem effSound : ∀ fuel, EffSound fuel
               rw [ht] at h
               simp only at h
               obtain ⟨en, ps, arms, os, eas, rt, hps, hi, ord, ar, hr, rfl⟩ := ihMatchEnum h
-              exact ⟨ety, n.decl, n.args, t, ps, arms, os, eas, rt, effTy_sound he, namedParts_eq hn, ht, en,
+              exact .inl ⟨ety, n.decl, n.args, t, ps, arms, os, eas, rt, effTy_sound he, namedParts_eq hn, ht, en,
                 payloadTys_sound hps, hi, ord, ar, hr, rfl⟩
     -- effMatchEnum
     · intro env scope expected s ety t payloads m x h

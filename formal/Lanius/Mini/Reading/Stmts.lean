@@ -4,6 +4,7 @@ public import Lanius.Mini.Reading.Effs
 import all Lanius.Mini.Compiler.P.arithShiftRight
 import all Lanius.Mini.Compiler.P.indexOf
 import all Lanius.Mini.Frontend.P.blockArmsOf
+import all Lanius.Mini.Frontend.P.litWanted
 import all Lanius.Mini.Frontend.P.litIf
 import all Lanius.Mini.Frontend.P.compoundEval
 import all Lanius.Mini.Frontend.P.compoundOf
@@ -11,6 +12,9 @@ import all Lanius.Mini.Frontend.P.consBinder
 import all Lanius.Mini.Frontend.P.consTys
 import all Lanius.Mini.Frontend.P.divergeArm
 import all Lanius.Mini.Frontend.P.bindsOfTys
+import all Lanius.Mini.Frontend.P.litEffMatch
+import all Lanius.Mini.Frontend.P.litWants
+import all Lanius.Mini.Frontend.P.litWildValue
 import all Lanius.Mini.Frontend.P.fieldTyAt
 import all Lanius.Mini.Frontend.P.findConst
 import all Lanius.Mini.Frontend.P.floatTyped
@@ -992,6 +996,54 @@ theorem matchInit_sound {fuel : Nat} {init m : CTree} (h : matchInit fuel init =
       exact .mk (peel_sound hp) c.1 c.2
     · cases h
 
+/-- A literal match a let or return reads as statements (`letLit`,
+`retLit`), not as a value (`EffR.litMatch`): its scrutinee is not pure, or
+an arm's value is a block. -/
+inductive LitWanted (env : FrontEnv) (scope : List Local) (init : CTree) : Prop
+  | effect {m : CTree} {x : MEff} : MatchInit init m → EffR env scope none (kid m 2) x → purePart x = none →
+      LitWanted env scope init
+  | block {m a list : CTree} {arms : List CTree} : MatchInit init m → Items (kid m 5) arms → a ∈ arms →
+      ArmBlockR a list → LitWanted env scope init
+
+theorem anyBlockArm_sound {fuel : Nat} : ∀ {arms : List CTree}, anyBlockArm fuel arms = true →
+    ∃ a ∈ arms, ∃ list, ArmBlockR a list
+  | [], h => by simp [anyBlockArm] at h
+  | a :: rest, h => by
+    simp only [anyBlockArm] at h
+    cases hl : armBlockList fuel a with
+    | none =>
+      rw [hl] at h
+      obtain ⟨b, mb, list, ab⟩ := anyBlockArm_sound h
+      exact ⟨b, List.mem_cons_of_mem _ mb, list, ab⟩
+    | some list => exact ⟨a, List.mem_cons_self, list, armBlockList_sound hl⟩
+
+theorem isLitInit_wanted {fuel : Nat} {env : FrontEnv} {scope : List Local} {init : CTree}
+    (h : isLitInit fuel env scope init = true) : LitWanted env scope init := by
+  unfold isLitInit at h
+  cases hm : matchInit fuel init with
+  | none => rw [hm] at h; cases h
+  | some m =>
+    rw [hm] at h
+    simp only [Bool.and_eq_true] at h
+    have h := h.2
+    unfold litWanted at h
+    cases hx : effOf fuel env scope none (kid m 2) with
+    | none => rw [hx] at h; cases h
+    | some x =>
+      rw [hx] at h
+      simp only at h
+      unfold litStmtNeeded at h
+      cases hp : purePart x with
+      | none => exact .effect (matchInit_sound hm) (effOf_sound hx) hp
+      | some e =>
+        rw [hp] at h
+        cases hl : listItems fuel (kid m 5) with
+        | none => rw [hl] at h; cases h
+        | some xs =>
+          rw [hl] at h
+          obtain ⟨a, ma, list, ab⟩ := anyBlockArm_sound h
+          exact .block (matchInit_sound hm) (listItems_sound hl) ma ab
+
 theorem someBlockArm_sound {fuel : Nat} : ∀ {arms : List CTree}, someBlockArm fuel arms = true →
     ∃ a ∈ arms, ∃ list, ArmBlockR a list
   | [], h => by simp [someBlockArm] at h
@@ -1098,7 +1150,8 @@ inductive StmtsR (env : FrontEnv) : List Local → List CTree → MStmt → Prop
       {arms : List CTree} {body c mm : MStmt} :
       nodeProd s = pLetStmt → nodeProd (kid s 2) = pLetType → nodeProd (kid s 3) = pLetInit →
       (kidToken s 1).text ∉ env.globals → FreshId scope ((kidToken s 1).start - env.base) →
-      TyR env (kid (kid s 2) 1) t → MatchInit (kid (kid s 3) 1) m → LitMatchR env scope m h → Items (kid m 5) arms →
+      TyR env (kid (kid s 2) 1) t → MatchInit (kid (kid s 3) 1) m → LitWanted env scope (kid (kid s 3) 1) →
+      LitMatchR env scope m h → Items (kid m 5) arms →
       StmtsR env ({ name := (kidToken s 1).text, id := (kidToken s 1).start - env.base, ty := t } :: scope) rest body →
       LitArmsR env scope h (.litLet { name := (kidToken s 1).text, id := (kidToken s 1).start - env.base, ty := t } body)
         false false arms c →
@@ -1155,7 +1208,7 @@ inductive StmtR (env : FrontEnv) : List Local → CTree → MStmt → Prop
   /-- `return match (s) { arms };` with literal patterns: each value arm returns its value. -/
   | retLit {scope : List Local} {s m : CTree} {h : LitMatch} {arms : List CTree} {c mm : MStmt} :
       nodeProd s = pReturnStmt → nodeProd (kid s 1) = pReturnValue → MatchInit (kid (kid s 1) 0) m →
-      LitMatchR env scope m h → Items (kid m 5) arms → LitArmsR env scope h .litReturn false false arms c →
+      LitWanted env scope (kid (kid s 1) 0) → LitMatchR env scope m h → Items (kid m 5) arms → LitArmsR env scope h .litReturn false false arms c →
       litBind h (some c) = some mm → StmtR env scope s mm
   /-- `match (s) { arms };` with literal patterns, every arm a block. -/
   | litMatch {scope : List Local} {s m : CTree} {h : LitMatch} {arms : List CTree} {c mm : MStmt} :
@@ -1372,14 +1425,15 @@ theorem stmtSound : ∀ fuel, StmtSound fuel
       split at h
       · rename_i c
         simp only [Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true'] at c
-        obtain ⟨⟨⟨⟨lt, li⟩, ng⟩, fr⟩, -⟩ := c
+        obtain ⟨⟨⟨⟨lt, li⟩, ng⟩, fr⟩, lw⟩ := c
         cases ht : tyOf (f + 1) env (kid (kid s 2) 1) with
         | none => rw [ht] at h; cases h
         | some t =>
           rw [ht] at h
           simp only at h
           obtain ⟨mt, hd, arms, b, c, mi, mr, it, hb, la, mv⟩ := ihLitLet h
-          refine .letLit pl lt li (fun mem => ?_) ((freshId_iff _ _).1 fr) (tyOf_sound ht) mi mr it (ihStmts hb) la mv
+          refine .letLit pl lt li (fun mem => ?_) ((freshId_iff _ _).1 fr) (tyOf_sound ht) mi (isLitInit_wanted lw) mr it
+            (ihStmts hb) la mv
           rw [(member_iff _ _).2 mem] at ng
           cases ng
       split at h
@@ -1441,7 +1495,7 @@ theorem stmtSound : ∀ fuel, StmtSound fuel
     · intro env scope s m h
       rw [stmtOf.eq_def] at h
       simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
-      generalize isLitInit f (kid (kid s 1) 0) = li at h
+      generalize hli : isLitInit f env scope (kid (kid s 1) 0) = li at h
       generalize isLitStmt f (kid s 0) = ls at h
       by_cases c1 : (decide (nodeProd s = 76) && decide (nodeProd (kid s 1) = 90) && li) = true
       · rw [if_pos c1] at h
@@ -1452,7 +1506,7 @@ theorem stmtSound : ∀ fuel, StmtSound fuel
           rw [hm] at h
           simp only at h
           obtain ⟨hd, arms, c', mr, it, la, mv⟩ := ihLitMatch h
-          exact .retLit c1.1.1 c1.1.2 (matchInit_sound hm) mr it la mv
+          exact .retLit c1.1.1 c1.1.2 (matchInit_sound hm) (isLitInit_wanted (hli.trans c1.2)) mr it la mv
       rw [if_neg c1] at h
       by_cases c2 : (decide (nodeProd s = 76) && decide (nodeProd (kid s 1) = 90)) = true
       · rw [if_pos c2] at h

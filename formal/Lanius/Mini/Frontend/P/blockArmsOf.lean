@@ -1,13 +1,7 @@
 module
 
 public import Lanius.Mini.Frontend.Types
-import Lanius.Mini.Frontend.P.basedDigits
-import Lanius.Mini.Frontend.P.bindsOfTys
-import Lanius.Mini.Frontend.P.callParts
-import Lanius.Mini.Frontend.P.findConst
-import Lanius.Mini.Frontend.P.fnInstRet
 import Lanius.Mini.Frontend.P.forRange
-import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.matchStmtIf
@@ -31,22 +25,7 @@ def isBlockMatch (fuel : Nat) (init : CTree) : Bool :=
   | none => false
   | some m => blockArmsOf fuel (listItems fuel (kid m 5))
 
-/-- The scrutinee types a literal pattern can match. -/
-def litTy (t : Ty) : Bool :=
-  match t with
-  | .tyI32 => true
-  | .tyBool => true
-  | .tyUint u => true
-  | .tyPtr => false
-  | .tyIsize => true
-  | .tyChar => false
-  | .tyFloat ft => false
-  | .tySlice e => false
-  | .tyNamed d args => false
-  | .tySint u => true
-  | .tyArray e n => false
-
-/-- A literal pattern: `5`, `true` or `false`. -/
+/-- The scrutinee types a literal pattern can match. A literal pattern: `5`, `true` or `false`. -/
 def litPattern (p : CTree) : Bool :=
   let k : Nat := nodeProd p
   decide (k = (196)) || decide (k = (197)) || decide (k = (198))
@@ -61,76 +40,21 @@ def isLitStmt (fuel : Nat) (e : CTree) : Bool :=
   | none => false
   | some m => litFirst m
 
-def isLitInit (fuel : Nat) (init : CTree) : Bool :=
-  match matchInit fuel init with
-  | none => false
-  | some m => litFirst m
+/-- Whether an arm's value is a block. -/
+def anyBlockArm (fuel : Nat) (arms : List CTree) : Bool :=
+  match arms with
+  | [] => false
+  | a :: rest =>
+    match armBlockList fuel a with
+    | some l => true
+    | none => anyBlockArm fuel rest
 
-def litHeadIf (ok : Bool) (h : LitMatch) : Option LitMatch :=
-  if ok then
-    some h
-  else
-    none
-
-def litMatchHead (scope : List Local) (id : Nat) (closer : Nat) (x : MEff) (ety : Ty) (rt : Ty) : Option LitMatch :=
-  match effLocal x with
-  | some l => litHeadIf (freshId scope closer) ({ scrutinee := l, sty := ety, value := none, closer := closer, ret := rt } : LitMatch)
-  | none => litHeadIf (freshId scope id && freshId scope closer && decide (id ≠ closer)) ({ scrutinee := id, sty := ety, value := some x, closer := closer, ret := rt } : LitMatch)
-
-def litMatchTyped (env : FrontEnv) (scope : List Local) (m : CTree) (x : MEff) (ety : Ty) : Option LitMatch :=
-  if litTy ety then
-    match env.ret with
-    | none => none
-    | some rt => litMatchHead scope ((kidToken m 0).start - env.base) ((kidToken m 6).start - env.base) x ety rt
-  else
-    none
-
-/-- The scrutinee, read like a match expression's, of a type lit_ty takes; the function has a result. -/
-def litMatchParts (fuel : Nat) (env : FrontEnv) (scope : List Local) (m : CTree) : Option LitMatch :=
-  match effOf fuel env scope none (kid m 2) with
-  | none => none
-  | some x =>
-    match effTy fuel env scope x with
-    | none => none
-    | some ety => litMatchTyped env scope m x ety
-
-def eqLit (id : Nat) (e : Option SrcExpr) : Option SrcExpr :=
-  match e with
-  | none => none
-  | some n => some (SrcExpr.apply SrcOp.equal (SrcExpr.local id) n)
-
-/-- What an arm's literal pattern tests of the scrutinee local id: id == n for an integer literal n at an integer type (the literal pass gives n the local's type), id for true and !id for false at bool. -/
-def litCond (id : Nat) (sty : Ty) (p : CTree) : Option SrcExpr :=
-  let k : Nat := nodeProd p
-  let b : Bool := sameTy sty Ty.tyBool
-  if decide (k = (196)) && !b then
-    eqLit id (intLiteral (kidToken p 0).text)
-  else
-    if decide (k = (197)) && b then
-      some (SrcExpr.local id)
-    else
-      if decide (k = (198)) && b then
-        some (SrcExpr.not (SrcExpr.local id))
-      else
-        none
-
-def isTrueArm (a : CTree) : Bool :=
-  decide (nodeProd (kid a 0) = (197))
-
-def isFalseArm (a : CTree) : Bool :=
-  decide (nodeProd (kid a 0) = (198))
-
-/-- After the last arm: Unreachable, when the arms covered the values. -/
-def litEnd (covered : Bool) (h : LitMatch) : Option MStmt :=
-  if covered then
-    some (MStmt.mUnreachable h.closer h.ret)
-  else
-    none
-
-/-- A `_` arm is the last. -/
-def litLast (more : List CTree) (body : Option MStmt) : Option MStmt :=
-  match more with
-  | [] => body
-  | a :: rest => none
+def litStmtNeeded (fuel : Nat) (p : Option SrcExpr) (arms : CTree) : Bool :=
+  match p with
+  | none => true
+  | some e =>
+    match listItems fuel arms with
+    | none => false
+    | some xs => anyBlockArm fuel xs
 
 end Lanius.Mini

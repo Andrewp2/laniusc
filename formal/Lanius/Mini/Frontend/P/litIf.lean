@@ -14,6 +14,8 @@ import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.isMatchStmt
 import Lanius.Mini.Frontend.P.isUnderscore
+import Lanius.Mini.Frontend.P.litEffMatch
+import Lanius.Mini.Frontend.P.litWanted
 import Lanius.Mini.Frontend.P.matchStmtIf
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.textSelf
@@ -80,7 +82,7 @@ def letFirst (fuel : Nat) (env : FrontEnv) (scope : List Local) (s : CTree) (res
     none
   else
     let tok : Token := kidToken s 1
-    if decide (nodeProd (kid s 2) = (86)) && decide (nodeProd (kid s 3) = (88)) && !(member env.globals tok.text) && freshId scope (tok.start - env.base) && isLitInit fuel (kid (kid s 3) 1) then
+    if decide (nodeProd (kid s 2) = (86)) && decide (nodeProd (kid s 3) = (88)) && !(member env.globals tok.text) && freshId scope (tok.start - env.base) && isLitInit fuel env scope (kid (kid s 3) 1) then
       match tyOf fuel env (kid (kid s 2) 1) with
       | none => none
       | some t => litLetOf (fuel - 1) env scope ({ name := tok.text, id := tok.start - env.base, ty := t } : Local) (kid (kid s 3) 1) (stmtsOf (fuel - 1) env (({ name := tok.text, id := tok.start - env.base, ty := t } : Local) :: scope) rest)
@@ -108,7 +110,7 @@ def stmtOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (s : CTree) : Opti
   else
     let f : Nat := fuel - 1
     let p : Nat := nodeProd s
-    if decide (p = (76)) && decide (nodeProd (kid s 1) = (90)) && isLitInit f (kid (kid s 1) 0) then
+    if decide (p = (76)) && decide (nodeProd (kid s 1) = (90)) && isLitInit f env scope (kid (kid s 1) 0) then
       match matchInit f (kid (kid s 1) 0) with
       | none => none
       | some m => litMatchOf f env scope m LitForm.litReturn

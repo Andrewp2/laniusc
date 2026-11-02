@@ -27,6 +27,7 @@ def purePart (x : MEff) : Option SrcExpr :=
   | .xStride sl => none
   | .xArraySlice e sl => none
   | .xHost id args => none
+  | .xIf c t a b => none
 
 /-- The operators, casts and negations of pure operands are pure. -/
 def applyEff (op : SrcOp) (l : MEff) (r : MEff) : MEff :=

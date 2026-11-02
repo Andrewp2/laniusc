@@ -1,0 +1,21 @@
+// Literal matches as values anywhere in an expression: an argument, an
+// operand, a nested match, an untyped let; and a let of one whose
+// scrutinee is a call, still read as statements.
+fn twice(v: i32) -> i32 {
+    return v + v;
+}
+
+fn code(x: i32, b: bool) -> i32 {
+    let a = match (x) { 1 -> 10, _ -> 20, };
+    let c: i32 = twice(match (b) { true -> 3, false -> 4, }) + a;
+    return c * match (x) { 2 -> match (b) { true -> 5, _ -> 6, }, _ -> 7, };
+}
+
+fn called(n: i32) -> i32 {
+    let r: i32 = match (twice(n)) { 4 -> 1, _ -> 2, };
+    return r;
+}
+
+fn run(n: i32) -> i32 {
+    return code(n, n == 1) + code(2, true) + code(2, false) + called(n) + called(2);
+}

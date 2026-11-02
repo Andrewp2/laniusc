@@ -75,6 +75,7 @@ inductive EffTy (decls : Decls) (scope : List Local) : MEff → Ty → Prop
   | stride {sl : Nat} : EffTy decls scope (.xStride sl) .tyIsize
   | host {id : Nat} {args : List MEff} : EffTy decls scope (.xHost id args) .tyI32
   | arraySlice {e : Ty} {a : Nat} : EffTy decls scope (.xArraySlice e a) (.tySlice e)
+  | «if» {c a b : MEff} {t : Ty} : EffTy decls scope (.xIf c t a b) t
 
 theorem instRet_sound {fuel : Nat} {decls : Decls} {inst : Inst} {t : Ty} (h : instRet fuel decls inst = some t) :
     InstRet decls inst t := by
@@ -178,6 +179,7 @@ theorem effTy_sound : ∀ {fuel : Nat} {env : FrontEnv} {scope : List Local} {x 
     | xStride sl => cases h; exact .stride
     | xHost id args => cases h; exact .host
     | xArraySlice e a => cases h; exact .arraySlice
+    | xIf c t' a b => cases h; exact .if
 
 theorem effsTys_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} :
     ∀ {xs : List MEff} {ts : List Ty}, effsTys fuel env scope xs = some ts → ListRel (EffTy env.decls scope) xs ts

@@ -72,6 +72,9 @@ public import Lanius.Mini.Frontend.P.retBinds
 public import Lanius.Mini.Frontend.P.matchTysOrNone
 public import Lanius.Mini.Frontend.P.divergeArm
 public import Lanius.Mini.Frontend.P.bindsOfTys
+public import Lanius.Mini.Frontend.P.litWants
+public import Lanius.Mini.Frontend.P.litWildValue
+public import Lanius.Mini.Frontend.P.litEffMatch
 public import Lanius.Mini.Frontend.P.ifEff
 public import Lanius.Mini.Frontend.P.structHead
 public import Lanius.Mini.Frontend.P.variantLetHead
@@ -90,6 +93,7 @@ public import Lanius.Mini.Frontend.P.forRange
 public import Lanius.Mini.Frontend.P.isMatchStmt
 public import Lanius.Mini.Frontend.P.matchStmtIf
 public import Lanius.Mini.Frontend.P.blockArmsOf
+public import Lanius.Mini.Frontend.P.litWanted
 public import Lanius.Mini.Frontend.P.litIf
 public import Lanius.Mini.Frontend.P.selfRefOf
 public import Lanius.Mini.Frontend.P.ifNotWrites
@@ -174,6 +178,6 @@ operations become `Lists.name` with a spec theorem). `usize` is `Nat`, `i32` is
 prelude's `plus`/`minus`/`times` panic instead of wrapping, so they are
 `+`/`-`/`*` on `Nat` for every run that returns.
 
-The definitions are in 163 parts, `.P0` on, in source order, whose bodies
+The definitions are in 167 parts, `.P0` on, in source order, whose bodies
 are hidden from other modules: a proof that unfolds one imports its part with
 `import all`, so that it is rebuilt only when that part changes. -/
