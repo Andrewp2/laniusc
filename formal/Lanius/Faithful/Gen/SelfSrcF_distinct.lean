@@ -14,10 +14,10 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::cons_name -/
-def src_cons_name (ix_cons_name_tail : Nat) : SrcFunc := { params := [{ id := 10, ty := ty222 }, { id := 51, ty := ty150 }], ret := ty150, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 10)) ty222 ty150 [[204], []] [SrcEff.eCall ix_cons_name_tail [SrcEff.ePure (SrcExpr.local 204), SrcEff.ePure (SrcExpr.local 51)], SrcEff.eVariant ty150 1 []]) }
+def src_cons_name (ix_cons_name_tail : Nat) : SrcFunc := { params := [{ id := 10, ty := ty222 }, { id := 51, ty := ty149 }], ret := ty149, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 10)) ty222 ty149 [[204], []] [SrcEff.eCall ix_cons_name_tail [SrcEff.ePure (SrcExpr.local 204), SrcEff.ePure (SrcExpr.local 51)], SrcEff.eVariant ty149 1 []]) }
 
 /-- mini::selfhost::cons_name_tail -/
-def src_cons_name_tail (ix_cons_of_mini_selfhost_List_usize : Nat) : SrcFunc := { params := [{ id := 15, ty := ty20 }, { id := 31, ty := ty150 }], ret := ty150, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 31)) ty150 ty150 [[184], []] [SrcEff.eVariant ty150 0 [SrcEff.eCall ix_cons_of_mini_selfhost_List_usize [SrcEff.ePure (SrcExpr.local 15), SrcEff.ePure (SrcExpr.local 184)]], SrcEff.eVariant ty150 1 []]) }
+def src_cons_name_tail (ix_cons_of_mini_selfhost_List_usize : Nat) : SrcFunc := { params := [{ id := 15, ty := ty20 }, { id := 31, ty := ty149 }], ret := ty149, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 31)) ty149 ty149 [[184], []] [SrcEff.eVariant ty149 0 [SrcEff.eCall ix_cons_of_mini_selfhost_List_usize [SrcEff.ePure (SrcExpr.local 15), SrcEff.ePure (SrcExpr.local 184)]], SrcEff.eVariant ty149 1 []]) }
 
 /-- mini::selfhost::distinct -/
 def src_distinct (ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize : Nat) (ix_distinct : Nat) (ix_member : Nat) : SrcFunc := { params := [{ id := 9, ty := ty27 }], ret := SrcType.bool, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 9)) ty27 (SrcType.bool) [[], [106, 109]] [SrcEff.ePure (SrcExpr.boolean true), SrcEff.eApply (SrcOp.logicalAnd) (SrcEff.eNot (SrcEff.eCall ix_member [SrcEff.eCall ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize [SrcEff.ePure (SrcExpr.local 109)], SrcEff.ePure (SrcExpr.local 106)])) (SrcEff.eCall ix_distinct [SrcEff.eCall ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize [SrcEff.ePure (SrcExpr.local 109)]])]) }

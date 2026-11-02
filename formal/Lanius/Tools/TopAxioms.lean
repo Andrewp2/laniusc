@@ -74,7 +74,7 @@ def cuts : Array Name := #[
   `Lanius.Mini.compileSource, `Lanius.Mini.compileText, `Lanius.Mini.compileProgram,
   `Lanius.Mini.compileOptimized, `Lanius.Mini.compileModules, `Lanius.Mini.linkObjects,
   `Lanius.Mini.elfFile, `Lanius.Mini.sourceProgramFiles, `Lanius.Mini.compileWords,
-  `Lanius.Mini.frontEndWords, `Lanius.Faithful.Self.prog
+  `Lanius.Mini.frontEndWords, `Lanius.Faithful.Self.prog, `Lanius.Mini.funcNeeds
 ]
 
 def hex16 (h : UInt64) : String :=

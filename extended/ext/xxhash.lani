@@ -1,0 +1,89 @@
+// XXH64 (xxHash, 64-bit), one-shot and streaming, as zstd frames use it for
+// their content checksum. Pure Lanius over borrowed byte views; no
+// allocation. See docs/extended-zstd.md.
+module ext::xxhash;
+import core::mem;
+import core::slice;
+
+// The five 64-bit primes, built from their 32-bit halves.
+fn p1() -> u64 { return ((2654435761 as u64) << 32) | (2246822535 as u64); }
+fn p2() -> u64 { return ((3266489917 as u64) << 32) | (668265295 as u64); }
+fn p3() -> u64 { return ((374761393 as u64) << 32) | (2654435833 as u64); }
+fn p4() -> u64 { return ((2246822519 as u64) << 32) | (3266489955 as u64); }
+fn p5() -> u64 { return ((668265263 as u64) << 32) | (374761413 as u64); }
+fn rotl(value: u64, count: u64) -> u64 { return (value << count) | (value >> (64-count)); }
+fn round(accumulator: u64, lane: u64) -> u64 { return rotl(accumulator+lane*p2(),31)*p1(); }
+fn merge(hash: u64, lane: u64) -> u64 { let mixed: u64 = hash ^ round(0,lane); return mixed*p1()+p4(); }
+fn byte(view: core::slice::View<u8>, at: i32) -> u64 { return view.values[view.start+at] as u64; }
+fn le32(view: core::slice::View<u8>, at: i32) -> u64 { return byte(view,at) | (byte(view,at+1) << 8) | (byte(view,at+2) << 16) | (byte(view,at+3) << 24); }
+fn le64(view: core::slice::View<u8>, at: i32) -> u64 { return le32(view,at) | (le32(view,at+4) << 32); }
+
+// Streaming state: four lanes, the byte total and up to 31 buffered bytes
+// (kept as four little-endian words plus a count).
+pub struct State { v1: u64, v2: u64, v3: u64, v4: u64, total: u64, seed: u64, w0: u64, w1: u64, w2: u64, w3: u64, buffered: i32 }
+pub fn state(seed: u64) -> State {
+    return State { v1: seed+p1()+p2(), v2: seed+p2(), v3: seed, v4: seed-p1(), total: 0, seed: seed, w0: 0, w1: 0, w2: 0, w3: 0, buffered: 0 };
+}
+pub impl State {
+    pub fn borrow(&self) -> &State { return self; }
+    fn word(&self, index: i32) -> u64 { if (index == 0) { return self.w0; } if (index == 1) { return self.w1; } if (index == 2) { return self.w2; } return self.w3; }
+    fn put(&self, value: u8) {
+        let index: i32 = self.buffered >> 3; let shift: u64 = ((self.buffered & 7) << 3) as u64; let bits: u64 = (value as u64) << shift;
+        if (index == 0) { self.w0 = self.w0 | bits; } if (index == 1) { self.w1 = self.w1 | bits; }
+        if (index == 2) { self.w2 = self.w2 | bits; } if (index == 3) { self.w3 = self.w3 | bits; }
+        self.buffered += 1;
+    }
+    fn stripe(&self, a: u64, b: u64, c: u64, d: u64) { self.v1 = round(self.v1,a); self.v2 = round(self.v2,b); self.v3 = round(self.v3,c); self.v4 = round(self.v4,d); }
+    // Add bytes; an invalid view adds nothing.
+    pub fn update(&self, bytes: core::slice::View<u8>) {
+        if (bytes.start < 0 || bytes.length < 0) { return; }
+        self.total += bytes.length as u64; let at: i32 = 0;
+        while (self.buffered > 0 && at < bytes.length) {
+            self.put(bytes.values[bytes.start+at]); at += 1;
+            if (self.buffered == 32) { self.stripe(self.w0,self.w1,self.w2,self.w3); self.w0 = 0; self.w1 = 0; self.w2 = 0; self.w3 = 0; self.buffered = 0; }
+        }
+        let v1: u64 = self.v1; let v2: u64 = self.v2; let v3: u64 = self.v3; let v4: u64 = self.v4;
+        let stripes: i32 = (bytes.length-at) >> 5;
+        if (stripes > 0 && bytes.start >= 0 && core::mem::slice_stride(bytes.values) == 1) {
+            // Packed bytes: unaligned 8-byte loads through a raw u64 view,
+            // which runs downward (element k is the word at 8 * (n-1-k)).
+            let n: i32 = stripes << 2; let q1: u64 = p1(); let q2: u64 = p2();
+            let data: ptr = core::mem::i32_slice_data_ptr(bytes.values)+((bytes.start+at) as usize);
+            let words: [u64] = core::mem::slice_from_raw_parts(data+(((n-1) << 3) as usize),n); let k: i32 = n-1;
+            while (k >= 3) {
+                v1 = v1+words[k]*q2; v1 = ((v1 << 31) | (v1 >> 33))*q1;
+                v2 = v2+words[k-1]*q2; v2 = ((v2 << 31) | (v2 >> 33))*q1;
+                v3 = v3+words[k-2]*q2; v3 = ((v3 << 31) | (v3 >> 33))*q1;
+                v4 = v4+words[k-3]*q2; v4 = ((v4 << 31) | (v4 >> 33))*q1;
+                k -= 4;
+            }
+            at += stripes << 5;
+        }
+        while (at+32 <= bytes.length) {
+            v1 = round(v1,le64(bytes,at)); v2 = round(v2,le64(bytes,at+8)); v3 = round(v3,le64(bytes,at+16)); v4 = round(v4,le64(bytes,at+24)); at += 32;
+        }
+        self.v1 = v1; self.v2 = v2; self.v3 = v3; self.v4 = v4;
+        while (at < bytes.length) { self.put(bytes.values[bytes.start+at]); at += 1; }
+    }
+    pub fn digest(&self) -> u64 {
+        let h: u64 = self.seed+p5();
+        if (self.total >= 32) {
+            h = rotl(self.v1,1)+rotl(self.v2,7)+rotl(self.v3,12)+rotl(self.v4,18);
+            h = merge(h,self.v1); h = merge(h,self.v2); h = merge(h,self.v3); h = merge(h,self.v4);
+        }
+        h += self.total;
+        let at: i32 = 0;
+        while (at+8 <= self.buffered) { h = h ^ round(0,self.word(at >> 3)); h = rotl(h,27)*p1()+p4(); at += 8; }
+        if (at+4 <= self.buffered) {
+            let half: u64 = (self.word(at >> 3) >> (((at & 7) << 3) as u64)) & 4294967295;
+            h = h ^ (half*p1()); h = rotl(h,23)*p2()+p3(); at += 4;
+        }
+        while (at < self.buffered) {
+            let value: u64 = (self.word(at >> 3) >> (((at & 7) << 3) as u64)) & 255;
+            h = h ^ (value*p5()); h = rotl(h,11)*p1(); at += 1;
+        }
+        h = h ^ (h >> 33); h = h*p2(); h = h ^ (h >> 29); h = h*p3(); h = h ^ (h >> 32);
+        return h;
+    }
+}
+pub fn xxh64(bytes: core::slice::View<u8>, seed: u64) -> u64 { let s: State = state(seed); s.borrow().update(bytes); return s.borrow().digest(); }

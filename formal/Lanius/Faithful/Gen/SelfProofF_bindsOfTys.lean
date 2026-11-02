@@ -124,12 +124,12 @@ theorem step_eff_args_bound {prog : SrcProgram} {prims : Prims} {ix_eff_args_bou
   simp only [src_eff_args_bound] at h
   faithful [Lanius.Mini.effArgsBound]
 
-theorem step_eff_arm {prog : SrcProgram} {prims : Prims} {ix_eff_arm ix_minus ix_node_prod ix_list_items ix_kid ix_empty_of_usize ix_path_spellings ix_p_pattern_ident ix_arm_named ix_p_pattern_plain ix_binders_of ix_eff_arm_bound : Nat} (fn : prog.funcs[ix_eff_arm]? = some (src_eff_arm ix_minus ix_node_prod ix_list_items ix_kid ix_empty_of_usize ix_path_spellings ix_p_pattern_ident ix_arm_named ix_p_pattern_plain ix_binders_of ix_eff_arm_bound)) (np : prims.isPrim ix_eff_arm = false)
+theorem step_eff_arm {prog : SrcProgram} {prims : Prims} {ix_eff_arm ix_minus ix_empty_of_usize ix_node_prod ix_list_items ix_kid ix_path_spellings ix_p_pattern_ident ix_arm_named ix_p_pattern_plain ix_binders_of ix_eff_arm_bound : Nat} (fn : prog.funcs[ix_eff_arm]? = some (src_eff_arm ix_minus ix_empty_of_usize ix_node_prod ix_list_items ix_kid ix_path_spellings ix_p_pattern_ident ix_arm_named ix_p_pattern_plain ix_binders_of ix_eff_arm_bound)) (np : prims.isPrim ix_eff_arm = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_empty_of_usize : Certified (∀ {n : Nat}, Stmt_empty_of_usize prog prims ix_empty_of_usize n))
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_list_items : Certified (∀ {n : Nat}, Stmt_list_items prog prims ix_list_items n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
-    (ext_empty_of_usize : Certified (∀ {n : Nat}, Stmt_empty_of_usize prog prims ix_empty_of_usize n))
     (ext_path_spellings : Certified (∀ {n : Nat}, Stmt_path_spellings prog prims ix_path_spellings n))
     (ext_p_pattern_ident : Certified (∀ {n : Nat}, Stmt_p_pattern_ident prog prims ix_p_pattern_ident n))
     (ext_arm_named : Certified (∀ {n : Nat}, Stmt_arm_named prog prims ix_arm_named n))

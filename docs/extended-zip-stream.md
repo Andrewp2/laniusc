@@ -71,7 +71,8 @@ nothing is written. A negative view start or length is `Bounds`.
 
 `ext::compression` gains `crc32_update(state: u32, bytes: View<u8>) -> u32`,
 the CRC-32 that gzip and ZIP use. Start from `core::crc32::INITIAL` and end
-with `core::crc32::finish`. Packed spans of 2 KiB or more use slicing-by-8.
+with `core::crc32::finish`. Packed spans of 512 bytes or more use slicing-by-8;
+see [CRC-32](extended-compression.md#crc-32).
 
 ## Reading rules
 
@@ -209,7 +210,8 @@ With `--big`, the oracle also writes a sparse 4 GiB + 123,457 B file at
 `-L 1`, and `zipfile` reads it back with ZIP64 sizes and a matching CRC. That
 took 40 s. On this machine the sample creates 1 GiB of zeros in 5.4 s with
 `-0` and 9.7 s with `-L 2`. Verifying it takes 4.0 s stored and 8.7 s
-deflated. CRC-32 runs at about 280 MB/s. Creating 65,600 empty files takes
+deflated. Stored verification of 1 GiB of random data takes 1.85 s (2.59 s
+before the CRC-32 rewrite) at load average 22. Creating 65,600 empty files takes
 3.2 s, and listing them 1.5 s.
 
 ## Known limits

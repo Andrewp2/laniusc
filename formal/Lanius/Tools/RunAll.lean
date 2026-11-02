@@ -128,14 +128,14 @@ def diagLine (name : String) (bases : List String) : IO Unit := do
       let mut j := 0
       let mut failed := false
       for f in p.funcs do
-        match lowerFunc (sigs p.funcs) d f with
+        match lowerFunc (sigs p.funcs) ((sigs p.funcs).getD j { params := [], ret := .unit, need := 0, room := 0, block := 0 }) d f with
         | none =>
           failed := true
           IO.println s!"{name} lower fails {j}: {((reprStr f).take 600).replace "\n" " "}"
         | some _ => pure ()
         j := j + 1
       if !failed then
-        match lowerFuncs (sigs p.funcs) d p.funcs with
+        match lowerFuncs (sigs p.funcs) (sigs p.funcs) d p.funcs with
         | none => IO.println s!"{name} lowerFuncs fails"
         | some fs =>
           match compileOptimized ({ funcs := fs } : Program) with
@@ -163,7 +163,7 @@ def timeLine (name : String) (bases : List String) : IO Unit := do
     | IO.println s!"{name} unread"
   let some d ← stage "declare" (fun _ => declareProgram p) (fun r => r.map (·.structs.length) |>.getD 0)
     | IO.println s!"{name} declare fails"
-  let some fs ← stage "lower" (fun _ => lowerFuncs (sigs p.funcs) d p.funcs) (fun r => r.map List.length |>.getD 0)
+  let some fs ← stage "lower" (fun _ => lowerFuncs (sigs p.funcs) (sigs p.funcs) d p.funcs) (fun r => r.map List.length |>.getD 0)
     | IO.println s!"{name} lower fails"
   let prog : Program := { funcs := fs }
   let opt ← stage "optimize" (fun _ => optimizeProgram prog) (·.funcs.length)
