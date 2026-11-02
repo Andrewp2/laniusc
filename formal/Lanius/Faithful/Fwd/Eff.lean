@@ -98,9 +98,9 @@ theorem parms_of {env : Env} {v : Value} {id j : Nat} {binders : List (List Nat)
     parms (pcall sp prims N) env v id j binders values = some p := by
   rw [parms_eq (pcall_eq_qcall sp prims cost N), hq]; rfl
 
-theorem pstmt_of {env : Env} {s : SrcStmt} {d : Done} {h : Nat}
-    (hq : qstmt (qcall sp prims cost N) env s = some (d, h)) : pstmt (pcall sp prims N) env s = some d := by
-  rw [pstmt_eq (pcall_eq_qcall sp prims cost N), hq]; rfl
+theorem mstmt_of {env : Env} {s : SrcStmt} {o : Out} {h : Nat}
+    (hq : qstmt (qcall sp prims cost N) N env s = some (o, h)) : mstmt (pcall sp prims N) N env s = some o := by
+  rw [mstmt_eq (pcall_eq_qcall sp prims cost N) N, hq]; rfl
 
 variable (calls : ∀ m, FuncSim sp prims outside m)
 include calls

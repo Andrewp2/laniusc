@@ -27,34 +27,49 @@ section
 variable {sp : SrcProgram} {prims : Prims} {outside : List Nat}
 
 /-- The ending of a body the cost semantics gives a value to is a call's. -/
-theorem callResult_of {ret : SrcType} {heap : Memory.Heap} {c : Lanius.Semantics.Completion} {d : Done} {w : Value}
-    (dr : DoneRel sp.toCore (boxElem sp prims) heap ret c d) (hv : doneValue ret d = some w) :
+theorem callResult_of {ret : SrcType} {heap : Memory.Heap} {tenv : TEnv} {st : State}
+    {c : Lanius.Semantics.Completion} {o : Out} {w : Value}
+    (dr : OutRel sp.toCore (boxElem sp prims) heap ret tenv st c o) (hv : outValue ret o = some w) :
     ∃ v, CallResult ret c v := by
   cases c with
   | next =>
-    cases d with
-    | next =>
-      simp only [doneValue] at hv
+    cases o with
+    | next e =>
+      simp only [outValue] at hv
       split at hv
       · next isUnit => exact ⟨.unit, SrcType.toCore_eq_unit isUnit, rfl⟩
       · cases hv
-    | ret => exact dr.elim
+    | brk _ => exact False.elim dr
+    | cont _ => exact False.elim dr
+    | ret _ => exact False.elim dr
   | returned r =>
     cases r with
     | none =>
-      cases d with
-      | next => exact dr.elim
+      cases o with
       | ret dv =>
         cases dv with
         | none =>
-          simp only [doneValue] at hv
+          simp only [outValue] at hv
           split at hv
           · next isUnit => exact ⟨.unit, SrcType.toCore_eq_unit isUnit, rfl⟩
           · cases hv
         | some => exact dr.elim
+      | next _ => exact False.elim dr
+      | brk _ => exact False.elim dr
+      | cont _ => exact False.elim dr
     | some x => exact ⟨x, rfl⟩
-  | breakLoop => cases d <;> exact dr.elim
-  | continueLoop => cases d <;> exact dr.elim
+  | breakLoop =>
+    cases o with
+    | brk _ => simp [outValue] at hv
+    | next _ => exact False.elim dr
+    | cont _ => exact False.elim dr
+    | ret _ => exact False.elim dr
+  | continueLoop =>
+    cases o with
+    | cont _ => simp [outValue] at hv
+    | next _ => exact False.elim dr
+    | brk _ => exact False.elim dr
+    | ret _ => exact False.elim dr
 
 /-- Core completes, within the cost, every call the cost semantics gives a
 value with any fuel. -/
@@ -79,7 +94,8 @@ theorem func_live (pure : PureProg sp prims outside) (primsOk : PrimsOk sp prims
         (bindLocals_same _ _).1
       have rel := EnvRel.heap_eq heapE.symm (EnvRel.entry inv args)
       obtain ⟨compl, completed, ev, dr, -, grown, rem⟩ := stmt_live (func_sim pure primsOk) ih f.ret f.body
-        (pure c f found hp notOut) entryInv rel hd (by rw [heapE]; simpa using budget) (by rw [heapE]; exact fr)
+        (pure c f found hp notOut) entryInv (Locs.entry inv _) rel hd (by rw [heapE]; simpa using budget)
+        (by rw [heapE]; exact fr)
       rw [heapE] at grown
       obtain ⟨v, cr⟩ := callResult_of dr hd'
       exact ⟨compl, completed, v, ev, cr, by simpa using grown, rem⟩

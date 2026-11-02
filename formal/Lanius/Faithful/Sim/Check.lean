@@ -234,6 +234,15 @@ def armsOk (tenv : TEnv) (rty : SrcType) : List (List SrcType) → List (List Na
       armsOk tenv rty variants rest values
 end
 
+/-- An assignment `id = value` takes a bound local and a value of its type. -/
+def setOk (tenv : TEnv) (id : Nat) (value : Option SrcType) : Bool :=
+  match tenv.get? id with
+  | some t =>
+    match value with
+    | some t' => t'.same t
+    | none => false
+  | none => false
+
 /-- A body with a pure meaning, whose returns have type `ret`. -/
 def stmtOk (ret : SrcType) (tenv : TEnv) : SrcStmt → Bool
   | .nop => true
@@ -254,7 +263,7 @@ def stmtOk (ret : SrcType) (tenv : TEnv) : SrcStmt → Bool
     | some t => stmtOk ret ((id, t) :: tenv) body
     | none => false
   | .letMatch _ _ _ _ _ _ => false
-  | .set _ _ => false
+  | .set id value => setOk tenv id (exprTy boxes tenv value)
   | .setField _ _ _ => false
   | .setCall _ _ _ => false
   | .then first second => stmtOk ret tenv first && stmtOk ret tenv second
@@ -276,7 +285,7 @@ def stmtOk (ret : SrcType) (tenv : TEnv) : SrcStmt → Bool
     match effTy sp outside boxes tenv value with
     | some t => stmtOk ret ((id, t) :: tenv) body
     | none => false
-  | .setEval _ _ => false
+  | .setEval id value => setOk tenv id (effTy sp outside boxes tenv value)
   | .ifEval condition thenBranch elseBranch =>
     isBoolTy (effTy sp outside boxes tenv condition) && stmtOk ret tenv thenBranch && stmtOk ret tenv elseBranch
   | .whileEval _ _ => false

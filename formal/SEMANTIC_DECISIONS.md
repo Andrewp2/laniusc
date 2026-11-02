@@ -1802,17 +1802,20 @@ the environment, and a loop is recursion on fuel.
   type, `while c { b }` when `c` is a `bool` and `b` passes, and `break`
   and `continue` anywhere, since a body that ends with one has no value.
   The termination check (`chkStmt`) forgets the size class of every local a
-  statement may write (`SrcStmt.writes`) for the statements after it and,
-  for a loop, in its condition and body. A loop needs no measure for
-  `pcall_complete`: a loop whose body settles settles too, to its value
-  when it stops and to `none` when it does not, because a value at some
-  fuel is the value at every larger fuel. The liveness check (`liveStmt`)
+  statement may write (`SrcStmt.writes`, `AEnv.forget`) for the statements
+  after it and, for a loop, in its condition and body. Settling needs no
+  measure at all: since a value at some fuel is the value at every larger
+  fuel, every pure call settles (`pcall_settles`, by `pcall_mono`), to its
+  value when it stops and to `none` when it does not. `pcall_complete`
+  keeps its statement and no longer walks the check; the check's classes
+  now serve the liveness proof only. The liveness check (`liveStmt`)
   needs a measure, since a live call must have a value; it accepts the
   front end's counted loop, `while c < e { let x = c; c = c + 1; b }` with
   `b` writing neither `c` nor `e`, which runs `e - c` steps.
 - **The proofs** relate Core's state after a statement to the environment
-  it left. `Inv` gains that the cells of the locals are distinct and
-  allocated, so an assignment to `x` changes no other visible local.
+  it left. `Locs` (next to `Inv`) says that the cells of the locals are
+  distinct and allocated, so an assignment to `x` changes no other visible
+  local.
   Statements keep `Frame st st'` (in place of `Step`): every cell that no
   visible local names keeps its value, the others may change, and new
   cells come after. So a local a `let` shadowed keeps its value, and a

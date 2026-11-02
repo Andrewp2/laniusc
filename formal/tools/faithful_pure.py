@@ -447,6 +447,11 @@ class Checker:
         if c == 'assert':
             self.boolean(self.eff(tenv, a[0]), 'assertion')
             return
+        if c in ('set', 'setEval'):
+            t = self.expr(tenv, a[1]) if c == 'set' else self.eff(tenv, a[1])
+            if t != self.get(tenv, a[0][1]):
+                raise Impure('assignment of another type')
+            return
         raise Impure(f'statement `{c}`')
 
     def check(self, i):
@@ -595,11 +600,15 @@ class LiveChecker:
             return self.stmt(unit, a[2])
         if c in ('returnEval', 'discard'):
             return self.eff(a[0])
+        if c == 'set':
+            return self.expr(a[1])
+        if c == 'setEval':
+            return self.eff(a[1])
         raise Dead(f'statement `{c}`')
 
     def never_next(self, s):
         c, a = ctor(s)
-        if c in ('nop', 'discard', 'assert'):
+        if c in ('nop', 'discard', 'assert', 'set', 'setEval'):
             return False
         if c in ('let', 'letStruct', 'letEval'):
             return self.never_next(a[3])

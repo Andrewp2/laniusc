@@ -103,7 +103,7 @@ def stmtOkC (ret : SrcType) (tenv : TEnv) : SrcStmt → Bool
     | some t => stmtOkC ret ((id, t) :: tenv) body
     | none => false
   | .letMatch _ _ _ _ _ _ => false
-  | .set _ _ => false
+  | .set id value => setOk tenv id (exprTy boxes tenv value)
   | .setField _ _ _ => false
   | .setCall _ _ _ => false
   | .then first second => stmtOkC ret tenv first && stmtOkC ret tenv second
@@ -125,7 +125,7 @@ def stmtOkC (ret : SrcType) (tenv : TEnv) : SrcStmt → Bool
     match effTyC calls boxes tenv value with
     | some t => stmtOkC ret ((id, t) :: tenv) body
     | none => false
-  | .setEval _ _ => false
+  | .setEval id value => setOk tenv id (effTyC calls boxes tenv value)
   | .ifEval condition thenBranch elseBranch =>
     isBoolTy (effTyC calls boxes tenv condition) && stmtOkC ret tenv thenBranch && stmtOkC ret tenv elseBranch
   | .whileEval _ _ => false
@@ -212,7 +212,7 @@ theorem stmtOkC_eq (ret : SrcType) (s : SrcStmt) : ∀ tenv : TEnv,
   | letCall id _ callee args body ih => intro tenv; simp only [stmtOkC, stmtOk, ih] <;> rfl
   | letEnum id ty variant payload body ih => intro tenv; simp only [stmtOkC, stmtOk, ih] <;> rfl
   | letMatch => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
-  | set => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
+  | set => intro tenv; rw [stmtOkC, stmtOk]
   | setField => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
   | setCall => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
   | «then» first second ih1 ih2 => intro tenv; rw [stmtOkC, stmtOk, ih1, ih2] <;> rfl
@@ -227,7 +227,7 @@ theorem stmtOkC_eq (ret : SrcType) (s : SrcStmt) : ∀ tenv : TEnv,
   | letIndex => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
   | setIndex => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
   | letEval id _ value body ih => intro tenv; simp only [stmtOkC, stmtOk, effTyC_eq, ih] <;> rfl
-  | setEval => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
+  | setEval => intro tenv; rw [stmtOkC, stmtOk, effTyC_eq]
   | ifEval condition thenBranch elseBranch ih1 ih2 =>
     intro tenv; rw [stmtOkC, stmtOk, effTyC_eq, ih1, ih2] <;> rfl
   | whileEval => intro tenv; rw [stmtOkC, stmtOk] <;> rfl

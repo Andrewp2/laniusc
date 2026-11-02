@@ -167,6 +167,13 @@ def outValue (ret : SrcType) : Out → Option Value
   | .brk _ => none
   | .cont _ => none
 
+/-- The environment a statement left, unless it returned. -/
+def Out.env? : Out → Option Env
+  | .next env => some env
+  | .brk env => some env
+  | .cont env => some env
+  | .ret _ => none
+
 /-- A loop-free ending in the environment `env`. -/
 def Out.ofDone (env : Env) : Done → Out
   | .next => .next env
@@ -209,6 +216,44 @@ def _root_.Lanius.Mini.SrcStmt.loopFree : SrcStmt → Bool
   | .continue => false
   | .matchArm _ _ _ _ _ _ _ _ => true
   | .unreachable _ _ => true
+
+/-- The locals a statement may assign, with repeats; a `let`'s body's
+include assignments of its own local. -/
+def _root_.Lanius.Mini.SrcStmt.writes : SrcStmt → List Nat
+  | .nop => []
+  | .let _ _ _ body => body.writes
+  | .letStruct _ _ _ body => body.writes
+  | .letCall _ _ _ _ body => body.writes
+  | .letEnum _ _ _ _ body => body.writes
+  | .letMatch _ _ _ _ _ _ => []
+  | .set id _ => [id]
+  | .setField _ _ _ => []
+  | .setCall _ _ _ => []
+  | .then first second => first.writes ++ second.writes
+  | .if _ a b => a.writes ++ b.writes
+  | .while _ body => body.writes
+  | .return _ => []
+  | .letAlloc _ _ _ _ => []
+  | .letLoad _ _ _ _ => []
+  | .setByte _ _ _ => []
+  | .free _ _ _ => []
+  | .letSlice _ _ _ _ _ => []
+  | .letIndex _ _ _ _ _ => []
+  | .setIndex _ _ _ => []
+  | .letEval _ _ _ body => body.writes
+  | .setEval id _ => [id]
+  | .ifEval _ a b => a.writes ++ b.writes
+  | .whileEval _ body => body.writes
+  | .returnEval _ => []
+  | .discard _ => []
+  | .setIndexEval _ _ _ => []
+  | .setFieldEval _ _ _ => []
+  | .returnUnit => []
+  | .assert _ => []
+  | .break => []
+  | .continue => []
+  | .matchArm _ _ _ _ _ _ _ _ => []
+  | .unreachable _ _ => []
 
 /-- A call's meaning: the callee and the argument values to the value returned. -/
 abbrev Calls := Nat → List Value → Option Value
@@ -312,7 +357,7 @@ def mstmt (fuel : Nat) (env : Env) : SrcStmt → Option Out
       (pexprs env payload).bind fun vs =>
         (mstmt fuel ((id, .enumeration ty.typeId variant vs) :: env) body).map Out.pop
   | .letMatch _ _ _ _ _ _ => none
-  | .set _ _ => none
+  | .set id value => (pexpr env value).bind fun v => (env.set id v).map .next
   | .setField _ _ _ => none
   | .setCall _ _ _ => none
   | .then first second => (mstmt fuel env first).bind (Out.then fun e => mstmt fuel e second)
@@ -330,7 +375,7 @@ def mstmt (fuel : Nat) (env : Env) : SrcStmt → Option Out
   | .setIndex _ _ _ => none
   | .letEval id _ value body =>
       (peff call env value).bind fun v => (mstmt fuel ((id, v) :: env) body).map Out.pop
-  | .setEval _ _ => none
+  | .setEval id value => (peff call env value).bind fun v => (env.set id v).map .next
   | .ifEval condition thenBranch elseBranch =>
       ((peff call env condition).bind asBool).bind fun b =>
         if b then mstmt fuel env thenBranch else mstmt fuel env elseBranch
@@ -460,101 +505,10 @@ theorem mstmt_loopFree (call : Calls) (fuel : Nat) :
   | free _ _ _ | letSlice _ _ _ _ _ | letIndex _ _ _ _ _ | setIndex _ _ _ | setIndexEval _ _ _
   | setFieldEval _ _ _ | matchArm _ _ _ _ _ _ _ _ | unreachable _ _ => intro env _; rfl
 
-/-- Until loops and assignment have a meaning, `mstmt` is `pstmt`. -/
-theorem mstmt_pstmt (call : Calls) (fuel : Nat) :
-    ∀ (s : SrcStmt) (env : Env),
-      mstmt call fuel env s = (pstmt call env s).map (Out.ofDone env) := by
-  intro s
-  induction s with
-  | nop => intro env; rfl
-  | «let» id _ value body ih =>
-    intro env
-    simp only [mstmt, pstmt]
-    cases pexpr env value with
-    | none => rfl
-    | some v => simp only [Option.bind_some]; rw [ih _, map_pop_ofDone]
-  | letStruct id ty fields body ih =>
-    intro env
-    simp only [mstmt, pstmt]
-    cases pexprs env fields with
-    | none => rfl
-    | some vs => simp only [Option.bind_some]; rw [ih _, map_pop_ofDone]
-  | letCall id _ callee args body ih =>
-    intro env
-    simp only [mstmt, pstmt]
-    cases (pexprs env args).bind (call callee) with
-    | none => rfl
-    | some v => simp only [Option.bind_some]; rw [ih _, map_pop_ofDone]
-  | letEnum id ty k payload body ih =>
-    intro env
-    simp only [mstmt, pstmt]
-    cases pexprs env payload with
-    | none => rfl
-    | some vs => simp only [Option.bind_some]; rw [ih _, map_pop_ofDone]
-  | «then» first second ih1 ih2 =>
-    intro env
-    simp only [mstmt, pstmt]
-    rw [ih1 _]
-    cases pstmt call env first with
-    | none => rfl
-    | some d =>
-      cases d with
-      | next => exact ih2 _
-      | ret _ => rfl
-  | «if» condition a b iha ihb =>
-    intro env
-    simp only [mstmt, pstmt]
-    cases (pexpr env condition).bind asBool with
-    | none => rfl
-    | some bv => cases bv with
-      | true => exact iha _
-      | false => exact ihb _
-  | «return» value => intro env; simp only [mstmt, pstmt]; cases pexpr env value <;> rfl
-  | letEval id _ value body ih =>
-    intro env
-    simp only [mstmt, pstmt]
-    cases peff call env value with
-    | none => rfl
-    | some v => simp only [Option.bind_some]; rw [ih _, map_pop_ofDone]
-  | ifEval condition a b iha ihb =>
-    intro env
-    simp only [mstmt, pstmt]
-    cases (peff call env condition).bind asBool with
-    | none => rfl
-    | some bv => cases bv with
-      | true => exact iha _
-      | false => exact ihb _
-  | returnEval value => intro env; simp only [mstmt, pstmt]; cases peff call env value <;> rfl
-  | discard value => intro env; simp only [mstmt, pstmt]; cases peff call env value <;> rfl
-  | assert condition =>
-    intro env
-    simp only [mstmt, pstmt]
-    cases (peff call env condition).bind asBool with
-    | none => rfl
-    | some bv => cases bv <;> rfl
-  | returnUnit => intro env; rfl
-  | set _ _ | «while» _ _ | setEval _ _ | whileEval _ _ | «break» | «continue»
-  | letMatch _ _ _ _ _ _ | setField _ _ _ | setCall _ _ _ | letAlloc _ _ _ _ | letLoad _ _ _ _ | setByte _ _ _
-  | free _ _ _ | letSlice _ _ _ _ _ | letIndex _ _ _ _ _ | setIndex _ _ _ | setIndexEval _ _ _
-  | setFieldEval _ _ _ | matchArm _ _ _ _ _ _ _ _ | unreachable _ _ => intro env; rfl
-
 theorem outValue_ofDone (ret : SrcType) (env : Env) (d : Done) :
     outValue ret (Out.ofDone env d) = doneValue ret d := by
   cases d with
   | next => rfl
   | ret v => cases v <;> rfl
-
-/-- `pcall` as `pstmt` says, until loops and assignment have a meaning. -/
-theorem pcall_pstmt (sp : SrcProgram) (prims : Prims) (n c : Nat) (vs : List Value) :
-    pcall sp prims (n + 1) c vs =
-      if prims.isPrim c then single vs
-      else
-        match sp.funcs[c]? with
-        | none => none
-        | some f =>
-          if vs.length = f.params.length then
-            (pstmt (pcall sp prims n) (paramEnv f.params vs) f.body).bind (doneValue f.ret)
-          else none := by
-  simp only [pcall, mstmt_pstmt, Option.bind_map, Function.comp_def, outValue_ofDone]
 
 end Lanius.Faithful

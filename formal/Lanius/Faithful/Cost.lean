@@ -81,27 +81,34 @@ def qarms (env : Env) (v : Value) (id : Nat) : Nat → List (List Nat) → List 
       | some bindings => qeff (env.bindAll bindings) value
 end
 
-def Done.qthen (rest : Option (Done × Nat)) : Done → Option (Done × Nat)
-  | .next => rest
+/-- After a statement that ended so, the next one with its cost. -/
+def Out.qthen (rest : Env → Option (Out × Nat)) : Out → Option (Out × Nat)
+  | .next env => rest env
+  | .brk env => some (.brk env, 0)
+  | .cont env => some (.cont env, 0)
   | .ret value => some (.ret value, 0)
 
-def qstmt (env : Env) : SrcStmt → Option (Done × Nat)
-  | .nop => some (.next, 0)
-  | .let id _ value body => (pexpr env value).bind fun v => qstmt ((id, v) :: env) body
+/-- A `let`'s body's ending with its binding dropped, and its cost. -/
+def qpop (o : Option (Out × Nat)) : Option (Out × Nat) := o.map fun p => (p.1.pop, p.2)
+
+def qstmt (fuel : Nat) (env : Env) : SrcStmt → Option (Out × Nat)
+  | .nop => some (.next env, 0)
+  | .let id _ value body => (pexpr env value).bind fun v => qpop (qstmt fuel ((id, v) :: env) body)
   | .letStruct id ty fields body =>
-      (pexprs env fields).bind fun vs => qstmt ((id, .structure ty.typeId vs) :: env) body
+      (pexprs env fields).bind fun vs => qpop (qstmt fuel ((id, .structure ty.typeId vs) :: env) body)
   | .letCall id _ callee args body =>
-      qthen ((pexprs env args).bind (call callee)) fun v => qstmt ((id, v) :: env) body
+      qthen ((pexprs env args).bind (call callee)) fun v => qpop (qstmt fuel ((id, v) :: env) body)
   | .letEnum id ty variant payload body =>
-      (pexprs env payload).bind fun vs => qstmt ((id, .enumeration ty.typeId variant vs) :: env) body
+      (pexprs env payload).bind fun vs =>
+        qpop (qstmt fuel ((id, .enumeration ty.typeId variant vs) :: env) body)
   | .letMatch _ _ _ _ _ _ => none
-  | .set _ _ => none
+  | .set id value => qfree ((pexpr env value).bind fun v => (env.set id v).map .next)
   | .setField _ _ _ => none
   | .setCall _ _ _ => none
-  | .then first second => qthen (qstmt env first) (Done.qthen (qstmt env second))
+  | .then first second => qthen (qstmt fuel env first) (Out.qthen fun e => qstmt fuel e second)
   | .if condition thenBranch elseBranch =>
       ((pexpr env condition).bind asBool).bind fun b =>
-        if b then qstmt env thenBranch else qstmt env elseBranch
+        if b then qstmt fuel env thenBranch else qstmt fuel env elseBranch
   | .while _ _ => none
   | .return value => qfree ((pexpr env value).map fun v => .ret (some v))
   | .letAlloc _ _ _ _ => none
@@ -111,14 +118,14 @@ def qstmt (env : Env) : SrcStmt → Option (Done × Nat)
   | .letSlice _ _ _ _ _ => none
   | .letIndex _ _ _ _ _ => none
   | .setIndex _ _ _ => none
-  | .letEval id _ value body => qthen (qeff call env value) fun v => qstmt ((id, v) :: env) body
-  | .setEval _ _ => none
+  | .letEval id _ value body => qthen (qeff call env value) fun v => qpop (qstmt fuel ((id, v) :: env) body)
+  | .setEval id value => qthen (qeff call env value) fun v => qfree ((env.set id v).map .next)
   | .ifEval condition thenBranch elseBranch =>
       qthen (qeff call env condition) fun c => (asBool c).bind fun b =>
-        if b then qstmt env thenBranch else qstmt env elseBranch
+        if b then qstmt fuel env thenBranch else qstmt fuel env elseBranch
   | .whileEval _ _ => none
   | .returnEval value => qthen (qeff call env value) fun v => some (.ret (some v), 0)
-  | .discard value => qthen (qeff call env value) fun _ => some (.next, 0)
+  | .discard value => qthen (qeff call env value) fun _ => some (.next env, 0)
   | .setIndexEval _ _ _ => none
   | .setFieldEval _ _ _ => none
   | .returnUnit => some (.ret none, 0)
@@ -127,7 +134,7 @@ def qstmt (env : Env) : SrcStmt → Option (Done × Nat)
   | .matchArm _ _ _ _ _ _ _ _ => none
   | .unreachable _ _ => none
   | .assert condition =>
-      qthen (qeff call env condition) fun c => (asBool c).bind fun b => if b then some (.next, 0) else none
+      qthen (qeff call env condition) fun c => (asBool c).bind fun b => if b then some (.next env, 0) else none
 
 end
 
@@ -142,8 +149,8 @@ def qcall (sp : SrcProgram) (prims : Prims) (cost : Nat → Nat) : Nat → QCall
       | none => none
       | some f =>
         if values.length = f.params.length then
-          qthen (qstmt (qcall sp prims cost fuel) (paramEnv f.params values) f.body) fun d =>
-            qfree (doneValue f.ret d)
+          qthen (qstmt (qcall sp prims cost fuel) fuel (paramEnv f.params values) f.body) fun o =>
+            qfree (outValue f.ret o)
         else none
 
 /-- The heap cost of a call. -/
@@ -252,45 +259,53 @@ theorem parms_eq (hc : ∀ c vs, call c vs = (qc c vs).map Prod.fst) : ∀ (env 
     | some bindings => exact peff_eq hc (env.bindAll bindings) value
 end
 
-theorem pstmt_eq (hc : ∀ c vs, call c vs = (qc c vs).map Prod.fst) : ∀ (s : SrcStmt) (env : Env), pstmt call env s = (qstmt qc env s).map Prod.fst := by
+theorem fst_qpop {o : Option (Out × Nat)} {a : Option Out} (h : a = o.map Prod.fst) :
+    a.map Out.pop = (qpop o).map Prod.fst := by
+  subst h
+  cases o <;> rfl
+
+theorem mstmt_eq (hc : ∀ c vs, call c vs = (qc c vs).map Prod.fst) (fuel : Nat) :
+    ∀ (s : SrcStmt) (env : Env), mstmt call fuel env s = (qstmt qc fuel env s).map Prod.fst := by
   intro s
   induction s with
   | nop => intro env; rfl
   | «let» id _ value body ih =>
     intro env
-    rw [pstmt, qstmt]
+    rw [mstmt, qstmt]
     cases pexpr env value with
     | none => rfl
-    | some v => exact ih _
+    | some v => exact fst_qpop (ih _)
   | letStruct id ty fields body ih =>
     intro env
-    rw [pstmt, qstmt]
+    rw [mstmt, qstmt]
     cases pexprs env fields with
     | none => rfl
-    | some vs => exact ih _
+    | some vs => exact fst_qpop (ih _)
   | letCall id _ callee args body ih =>
     intro env
-    rw [pstmt, qstmt]
-    refine fst_qthen ?_ fun v => ih _
+    rw [mstmt, qstmt]
+    refine fst_qthen ?_ fun v => fst_qpop (ih _)
     cases pexprs env args with
     | none => rfl
     | some vs => exact hc callee vs
   | letEnum id ty k payload body ih =>
     intro env
-    rw [pstmt, qstmt]
+    rw [mstmt, qstmt]
     cases pexprs env payload with
     | none => rfl
-    | some vs => exact ih _
+    | some vs => exact fst_qpop (ih _)
   | «then» first second ih1 ih2 =>
     intro env
-    rw [pstmt, qstmt]
-    refine fst_qthen (ih1 env) fun d => ?_
-    cases d with
-    | next => exact ih2 env
+    rw [mstmt, qstmt]
+    refine fst_qthen (ih1 env) fun o => ?_
+    cases o with
+    | next e => exact ih2 e
+    | brk _ => rfl
+    | cont _ => rfl
     | ret _ => rfl
   | «if» condition a b iha ihb =>
     intro env
-    rw [pstmt, qstmt]
+    rw [mstmt, qstmt]
     cases (pexpr env condition).bind asBool with
     | none => rfl
     | some bv => cases bv with
@@ -299,11 +314,11 @@ theorem pstmt_eq (hc : ∀ c vs, call c vs = (qc c vs).map Prod.fst) : ∀ (s : 
   | «return» value => intro env; exact fst_qfree _
   | letEval id _ value body ih =>
     intro env
-    rw [pstmt, qstmt]
-    exact fst_qthen (peff_eq hc env value) fun v => ih _
+    rw [mstmt, qstmt]
+    exact fst_qthen (peff_eq hc env value) fun v => fst_qpop (ih _)
   | ifEval condition a b iha ihb =>
     intro env
-    rw [pstmt, qstmt, Option.bind_assoc]
+    rw [mstmt, qstmt, Option.bind_assoc]
     refine fst_qthen (peff_eq hc env condition) fun c => ?_
     cases asBool c with
     | none => rfl
@@ -312,25 +327,30 @@ theorem pstmt_eq (hc : ∀ c vs, call c vs = (qc c vs).map Prod.fst) : ∀ (s : 
       | false => exact ihb env
   | returnEval value =>
     intro env
-    rw [pstmt, qstmt, Option.map_eq_bind]
+    rw [mstmt, qstmt, Option.map_eq_bind]
     exact fst_qthen (peff_eq hc env value) fun _ => rfl
   | discard value =>
     intro env
-    rw [pstmt, qstmt, Option.map_eq_bind]
+    rw [mstmt, qstmt, Option.map_eq_bind]
     exact fst_qthen (peff_eq hc env value) fun _ => rfl
   | assert condition =>
     intro env
-    rw [pstmt, qstmt, Option.bind_assoc]
+    rw [mstmt, qstmt, Option.bind_assoc]
     refine fst_qthen (peff_eq hc env condition) fun c => ?_
     cases asBool c with
     | none => rfl
     | some bv => cases bv with
       | true => rfl
       | false => rfl
+  | set id value => intro env; exact fst_qfree _
+  | setEval id value =>
+    intro env
+    rw [mstmt, qstmt]
+    exact fst_qthen (peff_eq hc env value) fun _ => fst_qfree _
   | returnUnit => intro env; rfl
-  | letMatch _ _ _ _ _ _ | set _ _ | setField _ _ _ | setCall _ _ _ | «while» _ _ | letAlloc _ _ _ _
+  | letMatch _ _ _ _ _ _ | setField _ _ _ | setCall _ _ _ | «while» _ _ | letAlloc _ _ _ _
   | letLoad _ _ _ _ | setByte _ _ _ | free _ _ _ | letSlice _ _ _ _ _ | letIndex _ _ _ _ _
-  | setIndex _ _ _ | setEval _ _ | whileEval _ _ | setIndexEval _ _ _ | setFieldEval _ _ _ | «break»
+  | setIndex _ _ _ | whileEval _ _ | setIndexEval _ _ _ | setFieldEval _ _ _ | «break»
   | «continue» | matchArm _ _ _ _ _ _ _ _ | unreachable _ _ => intro env; rfl
 
 end
@@ -340,7 +360,7 @@ theorem pcall_eq_qcall (sp : SrcProgram) (prims : Prims) (cost : Nat → Nat) :
     ∀ (fuel c : Nat) (vs : List Value), pcall sp prims fuel c vs = (qcall sp prims cost fuel c vs).map Prod.fst
   | 0, _, _ => rfl
   | fuel + 1, c, vs => by
-    rw [pcall_pstmt, qcall]
+    rw [pcall, qcall]
     split
     · cases single vs <;> rfl
     · cases sp.funcs[c]? with
@@ -348,7 +368,7 @@ theorem pcall_eq_qcall (sp : SrcProgram) (prims : Prims) (cost : Nat → Nat) :
       | some f =>
         simp only
         split
-        · exact fst_qthen (pstmt_eq (pcall_eq_qcall sp prims cost fuel) f.body _) fun d => fst_qfree _
+        · exact fst_qthen (mstmt_eq (pcall_eq_qcall sp prims cost fuel) fuel f.body _) fun d => fst_qfree _
         · rfl
 
 /-- A pure call with a value has a heap cost. -/

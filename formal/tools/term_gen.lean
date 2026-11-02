@@ -59,11 +59,11 @@ partial def sitesStmt (A : AEnv) (W : Wit) : SrcStmt → List (Nat × List SizeC
   | .letCall id _ c args body =>
     (c, (args.map (exprCls A)).map (SizeCls.res W)) ::
       sitesStmt ((id, callCls prims T c (args.map (exprCls A))) :: A) W body
-  | .then a b => sitesStmt A W a ++ sitesStmt (A.after a) W b
+  | .then a b => sitesStmt A W a ++ sitesStmt ((A.after a).forget a.writes) W b
   | .if c a b => sitesStmt A W a ++ sitesStmt (match guardVar c with | some (x, k) => A.refine x k | none => A) W b
   | .letEval id _ v body => sitesEff prims T A W v ++ sitesStmt ((id, effCls prims T A v) :: A) W body
   | .ifEval c a b => sitesEff prims T A W c ++ sitesStmt A W a ++ sitesStmt A W b
-  | .returnEval v | .discard v | .assert v => sitesEff prims T A W v
+  | .returnEval v | .discard v | .assert v | .setEval _ v => sitesEff prims T A W v
   | _ => []
 
 def sitesFn (pos : List Nat) (f : SrcFunc) : List (Nat × List SizeCls) :=

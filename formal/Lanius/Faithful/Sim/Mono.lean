@@ -230,7 +230,7 @@ theorem mstmt_mono (le : CallsLe call call') {fuel fuel' : Nat} (fle : fuel ≤ 
     simp only [mstmt] at h ⊢
     exact bind_mono (fun _ hx => hx) (fun _ _ hx => map_mono (fun _ hy => ih hy) hx) h
   | letMatch => intro env o h; simp [mstmt] at h
-  | set => intro env o h; simp [mstmt] at h
+  | set => exact fun h => h
   | setField => intro env o h; simp [mstmt] at h
   | setCall => intro env o h; simp [mstmt] at h
   | «then» first second ih1 ih2 =>
@@ -262,7 +262,10 @@ theorem mstmt_mono (le : CallsLe call call') {fuel fuel' : Nat} (fle : fuel ≤ 
     intro env o h
     simp only [mstmt] at h ⊢
     exact bind_mono (fun _ hx => peff_mono le hx) (fun _ _ hx => map_mono (fun _ hy => ih hy) hx) h
-  | setEval => intro env o h; simp [mstmt] at h
+  | setEval =>
+    intro env o h
+    simp only [mstmt] at h ⊢
+    exact bind_mono (fun _ hx => peff_mono le hx) (fun _ _ hx => hx) h
   | ifEval condition thenBranch elseBranch ih1 ih2 =>
     intro env o h
     simp only [mstmt] at h ⊢

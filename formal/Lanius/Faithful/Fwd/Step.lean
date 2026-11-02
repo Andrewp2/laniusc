@@ -108,6 +108,19 @@ theorem sequence_ret_fwd {a b : Core.Stmt} {r : Option Value} {s1 : State}
   obtain ⟨j, rfl⟩ : ∃ j, k = j + 1 := ⟨k - 1, by omega⟩
   simp only [execStmt, hK j (by omega)]
 
+/-- A sequence whose first statement ends other than going on ends so. -/
+theorem sequence_stop_fwd {a b : Core.Stmt} {c : Completion} {s1 : State} (stop : c ≠ .next)
+    (first : Ev (fun k => execStmt k P st a) c s1) :
+    Ev (fun k => execStmt k P st (.sequence a b)) c s1 := by
+  obtain ⟨K, hK⟩ := first
+  refine ⟨K + 1, fun k hk => ?_⟩
+  obtain ⟨j, rfl⟩ : ∃ j, k = j + 1 := ⟨k - 1, by omega⟩
+  cases c with
+  | next => exact absurd rfl stop
+  | breakLoop => simp only [execStmt, hK j (by omega)]
+  | continueLoop => simp only [execStmt, hK j (by omega)]
+  | returned r => simp only [execStmt, hK j (by omega)]
+
 theorem if_fwd {cond : Core.Expr} {a b : Core.Stmt} {x : Bool} {c : Completion} {s1 s2 : State}
     (test : Ev (fun k => evalExpr k P st cond) (.boolean x) s1)
     (branch : Ev (fun k => execStmt k P s1 (if x then a else b)) c s2) :

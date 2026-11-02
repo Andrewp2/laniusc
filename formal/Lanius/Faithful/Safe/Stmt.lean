@@ -61,8 +61,8 @@ theorem stmt_safe (calls : ∀ m, FuncSim sp prims outside m) (funcs : ∀ i < N
     ∀ {k : Nat} {tenv : TEnv} {env : Env} {st : State} {r : Lanius.Trap} {st' : State},
       k ≤ N → execStmt k sp.toCore st s.toCore = .trapped r st' →
       stmtOk sp outside (boxElem sp prims) ret tenv s = true →
-      Inv st → EnvRel sp.toCore (boxElem sp prims) st.heap tenv env st → st'.heap.nextAddress ≤ 2 ^ 64 →
-      undefinedTrap r = false := by
+      Inv st → Locs st → EnvRel sp.toCore (boxElem sp prims) st.heap tenv env st →
+      st'.heap.nextAddress ≤ 2 ^ 64 → undefinedTrap r = false := by
   have effS : ∀ {j}, j < N → EffSafe sp prims outside j := fun {j} lt =>
     (eff_safe calls j (fun i lt' => funcs i (by omega))).1
   have effD : ∀ {j}, EffOk sp prims outside j j := fun {j} =>
@@ -71,10 +71,10 @@ theorem stmt_safe (calls : ∀ m, FuncSim sp prims outside m) (funcs : ∀ i < N
   have target := toCore_target sp
   induction s with
   | nop =>
-    intro k tenv env st r st' le run ok inv rel bound
+    intro k tenv env st r st' le run ok inv locs rel bound
     exact (skip_trap run).elim
   | «let» id ty value body ih =>
-    intro k tenv env st r st' le run ok inv rel bound
+    intro k tenv env st r st' le run ok inv locs rel bound
     simp only [stmtOk] at ok
     split at ok
     · rename_i t ht
@@ -83,10 +83,10 @@ theorem stmt_safe (calls : ∀ m, FuncSim sp prims outside m) (funcs : ∀ i < N
       · have e := value.eval_state vrun
         subst s1
         obtain ⟨p, -, r⟩ := expr_sim target tenv env value vrun ht rel
-        exact ih (by omega) brun ok (inv.bindLocal id v) (rel.bind inv r) bound
+        exact ih (by omega) brun ok (inv.bindLocal id v) (locs.bindLocal inv id v) (rel.bind inv r) bound
     · simp at ok
   | letStruct id ty fields body ih =>
-    intro k tenv env st r st' le run ok inv rel bound
+    intro k tenv env st r st' le run ok inv locs rel bound
     simp only [stmtOk] at ok
     split at ok
     · rename_i t ht
@@ -102,10 +102,10 @@ theorem stmt_safe (calls : ∀ m, FuncSim sp prims outside m) (funcs : ∀ i < N
         obtain ⟨ps, -, rs⟩ := exprs_sim target tenv env fields frun hts rel
         have r : VRel sp.toCore (boxElem sp prims) st.heap (.struct sid ts) (.structure sid vs) (.structure sid ps) :=
           .struct hb rs
-        exact ih (by omega) brun ok (inv.bindLocal id _) (rel.bind inv r) bound
+        exact ih (by omega) brun ok (inv.bindLocal id _) (locs.bindLocal inv id _) (rel.bind inv r) bound
     · simp at ok
   | letCall id ty callee args body ih =>
-    intro k tenv env st r st' le run ok inv rel bound
+    intro k tenv env st r st' le run ok inv locs rel bound
     simp only [stmtOk] at ok
     split at ok
     · rename_i t ht
@@ -141,10 +141,11 @@ theorem stmt_safe (calls : ∀ m, FuncSim sp prims outside m) (funcs : ∀ i < N
           (show completed.heap.nextAddress ≤ 2 ^ 64 from b1) rs bodyRun result
         have inv1 : Inv (restoreLocals st completed) := invc.restore st
         have rel1 := rel.step (stepc.restore st) rfl
-        exact ih (by omega) brun ok (inv1.bindLocal id v) (rel1.bind inv1 rw) bound
+        have locs1 : Locs (restoreLocals st completed) := locs.step (stepc.restore st) rfl
+        exact ih (by omega) brun ok (inv1.bindLocal id v) (locs1.bindLocal inv1 id v) (rel1.bind inv1 rw) bound
     · simp at ok
   | letEnum id ty variant payload body ih =>
-    intro k tenv env st r st' le run ok inv rel bound
+    intro k tenv env st r st' le run ok inv locs rel bound
     simp only [stmtOk] at ok
     split at ok
     · rename_i t ht
@@ -160,23 +161,40 @@ theorem stmt_safe (calls : ∀ m, FuncSim sp prims outside m) (funcs : ∀ i < N
         obtain ⟨ps, -, rs⟩ := exprs_sim target tenv env payload frun hts rel
         have r : VRel sp.toCore (boxElem sp prims) st.heap (.enum eid variants) (.enumeration eid variant vs)
             (.enumeration eid variant ps) := .enum hk rs
-        exact ih (by omega) brun ok (inv.bindLocal id _) (rel.bind inv r) bound
+        exact ih (by omega) brun ok (inv.bindLocal id _) (locs.bindLocal inv id _) (rel.bind inv r) bound
     · simp at ok
   | letMatch => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
-  | set => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
+  | set id value =>
+    intro k tenv env st r st' le run ok inv locs rel bound
+    simp only [stmtOk, setOk] at ok
+    split at ok
+    · rename_i t ht
+      split at ok
+      · rename_i t' ht'
+        rw [SrcType.same_eq ok] at ht'
+        simp only [SrcStmt.toCore] at run
+        obtain ⟨j, rfl, arun⟩ := expression_trap_inv run
+        obtain ⟨v, -, hv, -, -⟩ := rel id t ht
+        obtain ⟨i, -, vrun⟩ := assignLocal_trap arun bound hv
+          (fun _ _ s1 _ vrun => by rw [value.eval_state vrun]; exact inv.views)
+          (fun _ _ s1 c _ vrun hc _ => by rw [value.eval_state vrun]; exact locs.alloc id c hc)
+        exact (expr_safe target tenv env value vrun ht' rel).2
+      · simp at ok
+    · simp at ok
   | setField => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
   | setCall => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
   | «then» first second ih1 ih2 =>
-    intro k tenv env st r st' le run ok inv rel bound
+    intro k tenv env st r st' le run ok inv locs rel bound
     simp only [stmtOk, Bool.and_eq_true] at ok
     simp only [SrcStmt.toCore] at run
     obtain ⟨j, rfl, frun | ⟨s1, frun, srun⟩⟩ := sequence_trap_inv run
-    · exact ih1 (by omega) frun ok.1 inv rel bound
+    · exact ih1 (by omega) frun ok.1 inv locs rel bound
     · have b1 := Grows.bound (execStmt_grows frun) (execStmt_trap_grows srun) inv.views bound
-      obtain ⟨d1, -, -, ran1⟩ := stmtD ret first (by omega) frun ok.1 inv rel b1
-      exact ih2 (by omega) srun ok.2 ran1.inv (rel.step ran1.step ran1.locals) bound
+      obtain ⟨o1, -, orl1, ran1⟩ := stmtD ret first (by omega) frun ok.1 inv locs rel b1
+      obtain ⟨e1, rfl, rel1⟩ := orl1.next_inv
+      exact ih2 (by omega) srun ok.2 ran1.inv (ran1.locs locs) rel1 bound
   | «if» condition thenBranch elseBranch ih1 ih2 =>
-    intro k tenv env st r st' le run ok inv rel bound
+    intro k tenv env st r st' le run ok inv locs rel bound
     simp only [stmtOk, Bool.and_eq_true] at ok
     obtain ⟨⟨hc, ok1⟩, ok2⟩ := ok
     have htc := isBoolTy_some hc
@@ -191,11 +209,11 @@ theorem stmt_safe (calls : ∀ m, FuncSim sp prims outside m) (funcs : ∀ i < N
     · have e := condition.eval_state crun
       subst s1
       cases x
-      · exact ih2 (by omega) brun ok2 inv rel bound
-      · exact ih1 (by omega) brun ok1 inv rel bound
+      · exact ih2 (by omega) brun ok2 inv locs rel bound
+      · exact ih1 (by omega) brun ok1 inv locs rel bound
   | «while» => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
   | «return» value =>
-    intro k tenv env st r st' le run ok inv rel bound
+    intro k tenv env st r st' le run ok inv locs rel bound
     simp only [SrcStmt.toCore] at run
     obtain ⟨j, -, vrun⟩ := return_trap_inv run
     simp only [stmtOk] at ok
@@ -211,7 +229,7 @@ theorem stmt_safe (calls : ∀ m, FuncSim sp prims outside m) (funcs : ∀ i < N
   | letIndex => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
   | setIndex => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
   | letEval id ty value body ih =>
-    intro k tenv env st r st' le run ok inv rel bound
+    intro k tenv env st r st' le run ok inv locs rel bound
     simp only [stmtOk] at ok
     split at ok
     · rename_i t ht
@@ -222,11 +240,30 @@ theorem stmt_safe (calls : ∀ m, FuncSim sp prims outside m) (funcs : ∀ i < N
         have b1 := Grows.bound (effGrows vrun) g2 inv.views bound
         obtain ⟨p, -, r, ran1⟩ := effD vrun ht inv rel b1
         have rel1 := rel.step ran1.step ran1.locals
-        exact ih (by omega) brun ok (ran1.inv.bindLocal id v) (rel1.bind ran1.inv r) bound
+        have locs1 := locs.step ran1.step ran1.locals
+        exact ih (by omega) brun ok (ran1.inv.bindLocal id v) (locs1.bindLocal ran1.inv id v) (rel1.bind ran1.inv r) bound
     · simp at ok
-  | setEval => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
+  | setEval id value =>
+    intro k tenv env st r st' le run ok inv locs rel bound
+    simp only [stmtOk, setOk] at ok
+    split at ok
+    · rename_i t ht
+      split at ok
+      · rename_i t' ht'
+        rw [SrcType.same_eq ok] at ht'
+        simp only [SrcStmt.toCore] at run
+        obtain ⟨j, rfl, arun⟩ := expression_trap_inv run
+        obtain ⟨v, -, hv, -, -⟩ := rel id t ht
+        obtain ⟨i, rfl, vrun⟩ := assignLocal_trap arun bound hv
+          (fun _ _ _ _ vrun => (effGrows vrun inv.views).1)
+          (fun _ _ _ c _ vrun hc b => by
+            obtain ⟨-, -, -, ran1⟩ := effD vrun ht' inv rel b
+            exact ran1.step.frame.isSome (locs.alloc id c hc))
+        exact effS (by omega) vrun ht' inv rel bound
+      · simp at ok
+    · simp at ok
   | ifEval condition thenBranch elseBranch ih1 ih2 =>
-    intro k tenv env st r st' le run ok inv rel bound
+    intro k tenv env st r st' le run ok inv locs rel bound
     simp only [stmtOk, Bool.and_eq_true] at ok
     obtain ⟨⟨hc, ok1⟩, ok2⟩ := ok
     have htc := isBoolTy_some hc
@@ -241,15 +278,15 @@ theorem stmt_safe (calls : ∀ m, FuncSim sp prims outside m) (funcs : ∀ i < N
         simp only [if_true] at brun
         have b1 := Grows.bound (effGrows crun) (execStmt_trap_grows brun) inv.views bound
         obtain ⟨p, -, r, ran1⟩ := effD crun htc inv rel b1
-        exact ih1 (by omega) brun ok1 ran1.inv (rel.step ran1.step ran1.locals) bound
+        exact ih1 (by omega) brun ok1 ran1.inv (locs.step ran1.step ran1.locals) (rel.step ran1.step ran1.locals) bound
       | false =>
         simp only [Bool.false_eq_true, if_false] at brun
         have b1 := Grows.bound (effGrows crun) (execStmt_trap_grows brun) inv.views bound
         obtain ⟨p, -, r, ran1⟩ := effD crun htc inv rel b1
-        exact ih2 (by omega) brun ok2 ran1.inv (rel.step ran1.step ran1.locals) bound
+        exact ih2 (by omega) brun ok2 ran1.inv (locs.step ran1.step ran1.locals) (rel.step ran1.step ran1.locals) bound
   | whileEval => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
   | returnEval value =>
-    intro k tenv env st r st' le run ok inv rel bound
+    intro k tenv env st r st' le run ok inv locs rel bound
     simp only [SrcStmt.toCore] at run
     obtain ⟨j, rfl, vrun⟩ := return_trap_inv run
     simp only [stmtOk] at ok
@@ -258,7 +295,7 @@ theorem stmt_safe (calls : ∀ m, FuncSim sp prims outside m) (funcs : ∀ i < N
       exact effS (by omega) vrun ht inv rel bound
     · simp at ok
   | discard value =>
-    intro k tenv env st r st' le run ok inv rel bound
+    intro k tenv env st r st' le run ok inv locs rel bound
     simp only [stmtOk, Option.isSome_iff_exists] at ok
     obtain ⟨t, ht⟩ := ok
     simp only [SrcStmt.toCore] at run
@@ -271,11 +308,11 @@ theorem stmt_safe (calls : ∀ m, FuncSim sp prims outside m) (funcs : ∀ i < N
   | matchArm => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
   | unreachable => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
   | returnUnit =>
-    intro k tenv env st r st' le run ok inv rel bound
+    intro k tenv env st r st' le run ok inv locs rel bound
     simp only [SrcStmt.toCore] at run
     exact (returnUnit_trap run).elim
   | «assert» condition =>
-    intro k tenv env st r st' le run ok inv rel bound
+    intro k tenv env st r st' le run ok inv locs rel bound
     simp only [stmtOk] at ok
     have ht := isBoolTy_some ok
     simp only [SrcStmt.toCore] at run
@@ -300,7 +337,7 @@ theorem body_safe {m : Nat} (calls : ∀ i, FuncSim sp prims outside i) (funcs :
   have entryInv := Inv.bindLocals (paramBindings f.params values) inv.clear
   have rel := EnvRel.heap_eq (bindLocals_same (paramBindings f.params values) { st with locals := [] }).1.symm
     (EnvRel.entry inv args)
-  exact stmt_safe calls funcs f.ret f.body (Nat.le_refl m) run pure entryInv rel bound
+  exact stmt_safe calls funcs f.ret f.body (Nat.le_refl m) run pure entryInv (Locs.entry inv _) rel bound
 
 end
 
