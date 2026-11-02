@@ -29,7 +29,10 @@ lean = subprocess.run([so.RUN_ALL, manifest], capture_output=True, text=True, ti
 status = dict(l.split(' ', 1) for l in lean.stdout.split('\n') if ' ' in l)
 room = 1 << 22
 def lim():
-    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    try:
+        resource.setrlimit(resource.RLIMIT_CORE, (1, 1))  # 1 byte: the kernel skips apport
+    except ValueError:  # a hard limit of 0 cannot be raised to 1
+        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     resource.setrlimit(resource.RLIMIT_STACK, (4 << 30, 4 << 30))
 for k, p in enumerate(paths):
     name = os.path.basename(p)
