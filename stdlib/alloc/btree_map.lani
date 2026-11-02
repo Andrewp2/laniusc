@@ -1,0 +1,562 @@
+// Ordered map as a B+ tree: up to 16 entries per leaf, 16 keys and 17
+// children per inner node, leaves linked in key order. See
+// docs/stdlib-btree-map.md. Copies borrow nested resources; keep one active
+// owner of the allocation.
+module alloc::btree_map;
+import alloc::allocator;
+import core::cmp;
+import core::iter;
+import core::mem;
+import core::option;
+import core::result;
+
+pub enum Error { CapacityOverflow, AllocationFailed, InvalidRange }
+pub struct Entry<K, V> { key: K, value: V }
+// Node n owns key slots keys[16n .. 16n + 16], value slots values[16n ..]
+// (leaves only), its key count counts[n] and the words links[24n .. 24n + 24]:
+// unused, next leaf, previous leaf (-1 at the ends; next links the free
+// list), then 17 children for an inner node. The counts sit apart, 4 bytes a
+// node, so a lookup's count reads stay in cache. An inner node's key j
+// separates child j, whose keys are all below it, from child j + 1, whose
+// keys are all at least it.
+// Keys and values sit in one-field records, so both raw views run down from
+// slot zero's top word whatever K and V are; `keys`/`values` are those
+// words' addresses, so building a view needs no stride probe.
+struct KeyCell<K> { key: K }
+struct ValueCell<V> { value: V }
+pub struct BTreeMap<K, V> {
+    key_storage: ptr, keys: ptr, value_storage: ptr, values: ptr, links: ptr, counts: ptr,
+    nodes: i32, used: i32, free: i32, spare: i32, root: i32, height: i32, head: i32, tail: i32, length: i32,
+}
+// Front and back positions (node, slot), both inclusive; front node -1 once
+// the cursor is exhausted. Any map edit invalidates its cursors.
+pub struct Cursor<K, V> { keys: ptr, values: ptr, links: ptr, counts: ptr, nodes: i32, front: i32, front_at: i32, back: i32, back_at: i32 }
+const ALIGN: usize = 8;
+
+pub fn new<K, V>() -> BTreeMap<K, V> {
+    let empty: ptr = 0;
+    return BTreeMap { key_storage: empty, keys: empty, value_storage: empty, values: empty, links: empty, counts: empty,
+        nodes: 0, used: 0, free: -1, spare: 0, root: -1, height: 0, head: -1, tail: -1, length: 0 };
+}
+// Bytes of one array of `nodes` nodes (at least one word, for zero sizes).
+fn cell_bytes(size: usize, nodes: i32) -> usize {
+    let bytes: usize = size * 16 * (nodes as usize);
+    if (bytes < 8) { return 8; }
+    return bytes;
+}
+// Nodes whose arrays each stay within i32::MAX bytes.
+fn node_limit<K, V>() -> i32 {
+    let size: usize = core::mem::size_of<KeyCell<K>>();
+    let value_size: usize = core::mem::size_of<ValueCell<V>>();
+    if (value_size > size) { size = value_size; }
+    if (size < 7) { size = 7; }
+    return (2147483647 / (size * 16)) as i32;
+}
+fn key_at<K>(keys: [KeyCell<K>], index: i32) -> K { let cell: KeyCell<K> = keys[index]; return cell.key; }
+// Number of keys of `node` that are at most `key`: the child to descend into.
+fn descend<K>(keys: [KeyCell<K>], node: i32, count: i32, key: K) -> i32 where K: core::cmp::Ord<K> {
+    let low: i32 = 0; let high: i32 = count; let base: i32 = 16 * node;
+    while (low < high) {
+        let middle: i32 = (low + high) >> 1;
+        if (K::lt(key, keys[base + middle].key)) { high = middle; } else { low = middle + 1; }
+    }
+    return low;
+}
+// First slot of `node` whose key is not below `key` (count when none is).
+fn lower_slot<K>(keys: [KeyCell<K>], node: i32, count: i32, key: K) -> i32 where K: core::cmp::Ord<K> {
+    let low: i32 = 0; let high: i32 = count; let base: i32 = 16 * node;
+    while (low < high) {
+        let middle: i32 = (low + high) >> 1;
+        if (K::lt(keys[base + middle].key, key)) { low = middle + 1; } else { high = middle; }
+    }
+    return low;
+}
+// Move `count` cells from index `from` to `to` (overlap allowed).
+fn move_keys<K>(keys: [KeyCell<K>], from: i32, to: i32, count: i32) {
+    if (to > from) {
+        let index: i32 = count - 1;
+        while (index >= 0) { let cell: KeyCell<K> = keys[from + index]; keys[to + index] = cell; index -= 1; }
+    } else {
+        let index: i32 = 0;
+        while (index < count) { let cell: KeyCell<K> = keys[from + index]; keys[to + index] = cell; index += 1; }
+    }
+}
+fn move_values<V>(values: [ValueCell<V>], from: i32, to: i32, count: i32) {
+    if (to > from) {
+        let index: i32 = count - 1;
+        while (index >= 0) { let cell: ValueCell<V> = values[from + index]; values[to + index] = cell; index -= 1; }
+    } else {
+        let index: i32 = 0;
+        while (index < count) { let cell: ValueCell<V> = values[from + index]; values[to + index] = cell; index += 1; }
+    }
+}
+fn move_links(links: [i32], from: i32, to: i32, count: i32) {
+    if (to > from) {
+        let index: i32 = count - 1;
+        while (index >= 0) { let word: i32 = links[from + index]; links[to + index] = word; index -= 1; }
+    } else {
+        let index: i32 = 0;
+        while (index < count) { let word: i32 = links[from + index]; links[to + index] = word; index += 1; }
+    }
+}
+
+pub impl<K, V> BTreeMap<K, V> {
+    pub fn borrow(&self) -> &BTreeMap<K, V> { return self; }
+    pub fn len(&self) -> i32 { return self.length; }
+    pub fn is_empty(&self) -> bool { return self.length == 0; }
+    // Nodes allocated (16 entries each), live or free.
+    pub fn node_capacity(&self) -> i32 { return self.nodes; }
+    fn key_view(&self) -> [KeyCell<K>] { return slice_from_raw_parts(self.keys, self.nodes * 16); }
+    fn value_view(&self) -> [ValueCell<V>] { return slice_from_raw_parts(self.values, self.nodes * 16); }
+    fn link_view(&self) -> [i32] { return slice_from_raw_parts(self.links, self.nodes * 24); }
+    fn count_view(&self) -> [i32] { return slice_from_raw_parts(self.counts, self.nodes); }
+    // Make room for `wanted` more nodes before any edit, copying live nodes
+    // to larger allocations. Err leaves the map unchanged.
+    fn reserve_nodes(&self, wanted: i32) -> core::result::Result<i32, Error> {
+        if (self.nodes - self.used + self.spare >= wanted) { return core::result::Ok(self.nodes); }
+        let limit: i32 = node_limit<K, V>();
+        if (wanted > limit - self.used) { return core::result::Err(Error::CapacityOverflow); }
+        let target: i32 = 4;
+        if (self.nodes >= 4) { target = self.nodes; if (target <= limit / 2) { target = target * 2; } else { target = limit; } }
+        if (target - self.used + self.spare < wanted) { target = self.used - self.spare + wanted; }
+        let key_bytes: usize = cell_bytes(core::mem::size_of<KeyCell<K>>(), target);
+        let value_bytes: usize = cell_bytes(core::mem::size_of<ValueCell<V>>(), target);
+        let key_storage: ptr = alloc::allocator::alloc(key_bytes, ALIGN);
+        if (key_storage == 0) { return core::result::Err(Error::AllocationFailed); }
+        let value_storage: ptr = alloc::allocator::alloc(value_bytes, ALIGN);
+        if (value_storage == 0) { alloc::allocator::dealloc(key_storage, key_bytes, ALIGN); return core::result::Err(Error::AllocationFailed); }
+        let links: ptr = alloc::allocator::alloc(100 * (target as usize), ALIGN);
+        if (links == 0) {
+            alloc::allocator::dealloc(key_storage, key_bytes, ALIGN); alloc::allocator::dealloc(value_storage, value_bytes, ALIGN);
+            return core::result::Err(Error::AllocationFailed);
+        }
+        let counts: ptr = links + 96 * (target as usize);
+        let keys: ptr = key_storage + key_bytes - 8; let values: ptr = value_storage + value_bytes - 8;
+        if (self.nodes > 0) {
+            let old_keys: [KeyCell<K>] = self.key_view(); let old_values: [ValueCell<V>] = self.value_view(); let old_links: [i32] = self.link_view();
+            let new_keys: [KeyCell<K>] = slice_from_raw_parts(keys, target * 16);
+            let new_values: [ValueCell<V>] = slice_from_raw_parts(values, target * 16);
+            let new_links: [i32] = slice_from_raw_parts(links, target * 24);
+            let old_counts: [i32] = self.count_view(); let new_counts: [i32] = slice_from_raw_parts(counts, target);
+            let index: i32 = 0;
+            while (index < self.used * 16) {
+                let key: KeyCell<K> = old_keys[index]; new_keys[index] = key;
+                let value: ValueCell<V> = old_values[index]; new_values[index] = value;
+                index += 1;
+            }
+            index = 0;
+            while (index < self.used * 24) { let word: i32 = old_links[index]; new_links[index] = word; index += 1; }
+            index = 0;
+            while (index < self.used) { let count: i32 = old_counts[index]; new_counts[index] = count; index += 1; }
+            self.release();
+        }
+        self.key_storage = key_storage; self.keys = keys; self.value_storage = value_storage; self.values = values;
+        self.links = links; self.counts = counts; self.nodes = target;
+        return core::result::Ok(target);
+    }
+    fn release(&self) {
+        if (self.nodes > 0) {
+            alloc::allocator::dealloc(self.key_storage, cell_bytes(core::mem::size_of<KeyCell<K>>(), self.nodes), ALIGN);
+            alloc::allocator::dealloc(self.value_storage, cell_bytes(core::mem::size_of<ValueCell<V>>(), self.nodes), ALIGN);
+            alloc::allocator::dealloc(self.links, 100 * (self.nodes as usize), ALIGN);
+        }
+    }
+    // A reserved node: from the free list, else the next unused one.
+    fn take_node(&self) -> i32 {
+        let links: [i32] = self.link_view(); let counts: [i32] = self.count_view(); let node: i32 = self.free;
+        if (node >= 0) { self.free = links[24 * node + 1]; self.spare -= 1; }
+        else { node = self.used; assert(node < self.nodes); self.used += 1; }
+        counts[node] = 0; links[24 * node + 1] = -1; links[24 * node + 2] = -1;
+        return node;
+    }
+    fn free_node(&self, node: i32) {
+        let links: [i32] = self.link_view(); let counts: [i32] = self.count_view();
+        counts[node] = 0; links[24 * node + 1] = self.free; self.free = node; self.spare += 1;
+    }
+    // The leaf whose key range holds `key` (-1 for an empty map).
+    fn seek(&self, key: K) -> i32 where K: core::cmp::Ord<K> {
+        let keys: [KeyCell<K>] = self.key_view(); let links: [i32] = self.link_view(); let counts: [i32] = self.count_view();
+        let node: i32 = self.root; let level: i32 = 1;
+        while (level < self.height) {
+            let position: i32 = descend(keys, node, counts[node], key);
+            node = links[24 * node + 3 + position]; level += 1;
+        }
+        return node;
+    }
+    // Slot index (16 * node + slot) holding `key`, or -1. One loop over the
+    // levels, so a lookup makes no calls besides K::lt.
+    fn find(&self, key: K) -> i32 where K: core::cmp::Ord<K> {
+        let node: i32 = self.root;
+        if (node < 0) { return -1; }
+        let keys: [KeyCell<K>] = self.key_view(); let links: [i32] = self.link_view(); let counts: [i32] = self.count_view();
+        let level: i32 = self.height;
+        while (true) {
+            let base: i32 = 16 * node; let low: i32 = 0; let high: i32 = counts[node];
+            level -= 1;
+            if (level == 0) {
+                while (low < high) {
+                    let middle: i32 = (low + high) >> 1;
+                    if (K::lt(keys[base + middle].key, key)) { low = middle + 1; } else { high = middle; }
+                }
+                if (low == counts[node]) { return -1; }
+                if (K::lt(key, keys[base + low].key)) { return -1; }
+                return base + low;
+            }
+            while (low < high) {
+                let middle: i32 = (low + high) >> 1;
+                if (K::lt(key, keys[base + middle].key)) { high = middle; } else { low = middle + 1; }
+            }
+            node = links[24 * node + 3 + low];
+        }
+        return -1;
+    }
+    pub fn contains_key(&self, key: K) -> bool where K: core::cmp::Ord<K> { return self.find(key) >= 0; }
+    pub fn get(&self, key: K) -> core::option::Option<V> where K: core::cmp::Ord<K> {
+        let index: i32 = self.find(key);
+        if (index < 0) { return core::option::None(); }
+        let values: [ValueCell<V>] = self.value_view(); let cell: ValueCell<V> = values[index];
+        return core::option::Some(cell.value);
+    }
+    pub fn get_entry(&self, key: K) -> core::option::Option<Entry<K, V>> where K: core::cmp::Ord<K> {
+        return self.entry_at(self.find(key));
+    }
+    fn entry_at(&self, index: i32) -> core::option::Option<Entry<K, V>> {
+        if (index < 0) { return core::option::None(); }
+        let keys: [KeyCell<K>] = self.key_view(); let values: [ValueCell<V>] = self.value_view();
+        let key: KeyCell<K> = keys[index]; let value: ValueCell<V> = values[index];
+        return core::option::Some(Entry { key: key.key, value: value.value });
+    }
+    pub fn first(&self) -> core::option::Option<Entry<K, V>> {
+        if (self.head < 0) { return core::option::None(); }
+        return self.entry_at(16 * self.head);
+    }
+    pub fn last(&self) -> core::option::Option<Entry<K, V>> {
+        if (self.tail < 0) { return core::option::None(); }
+        let counts: [i32] = self.count_view();
+        return self.entry_at(16 * self.tail + counts[self.tail] - 1);
+    }
+    // First entry whose key is at least `key`, or strictly above it.
+    pub fn lower_bound(&self, key: K) -> core::option::Option<Entry<K, V>> where K: core::cmp::Ord<K> {
+        return self.entry_at(self.bound(key, false));
+    }
+    pub fn upper_bound(&self, key: K) -> core::option::Option<Entry<K, V>> where K: core::cmp::Ord<K> {
+        return self.entry_at(self.bound(key, true));
+    }
+    // Slot index of the first key >= key (> key when strict), or -1.
+    fn bound(&self, key: K, strict: bool) -> i32 where K: core::cmp::Ord<K> {
+        if (self.root < 0) { return -1; }
+        let node: i32 = self.seek(key);
+        let keys: [KeyCell<K>] = self.key_view(); let links: [i32] = self.link_view(); let counts: [i32] = self.count_view();
+        let count: i32 = counts[node];
+        let position: i32 = 0;
+        if (strict) { position = descend(keys, node, count, key); } else { position = lower_slot(keys, node, count, key); }
+        if (position == count) {
+            node = links[24 * node + 1]; position = 0;
+            if (node < 0) { return -1; }
+        }
+        return 16 * node + position;
+    }
+    fn cursor(&self, front: i32, front_at: i32, back: i32, back_at: i32) -> Cursor<K, V> {
+        return Cursor { keys: self.keys, values: self.values, links: self.links, counts: self.counts, nodes: self.nodes,
+            front: front, front_at: front_at, back: back, back_at: back_at };
+    }
+    pub fn iter(&self) -> Cursor<K, V> {
+        let back_at: i32 = -1;
+        if (self.tail >= 0) { let counts: [i32] = self.count_view(); back_at = counts[self.tail] - 1; }
+        return self.cursor(self.head, 0, self.tail, back_at);
+    }
+    // Half-open key interval [lower, upper); equivalent bounds yield empty.
+    pub fn range(&self, lower: K, upper: K) -> core::result::Result<Cursor<K, V>, Error> where K: core::cmp::Ord<K> {
+        if (K::lt(upper, lower)) { return core::result::Err(Error::InvalidRange); }
+        let start: i32 = self.bound(lower, false);
+        if (start < 0) { return core::result::Ok(self.cursor(-1, 0, -1, -1)); }
+        let keys: [KeyCell<K>] = self.key_view();
+        if (!K::lt(key_at(keys, start), upper)) { return core::result::Ok(self.cursor(-1, 0, -1, -1)); }
+        let links: [i32] = self.link_view(); let counts: [i32] = self.count_view();
+        let end: i32 = self.bound(upper, false); let back: i32 = self.tail; let back_at: i32 = counts[self.tail] - 1;
+        if (end >= 0) {
+            back = end / 16; back_at = end - 16 * back - 1;
+            if (back_at < 0) { back = links[24 * back + 2]; back_at = counts[back] - 1; }
+        }
+        return core::result::Ok(self.cursor(start / 16, start - 16 * (start / 16), back, back_at));
+    }
+    // An equivalent key replaces both stored key and value, returning the old
+    // entry; replacement never allocates. A new key may need one node per
+    // level plus a new root; they are reserved first, so Err leaves the map
+    // and the caller's key and value unchanged.
+    pub fn try_insert(&self, key: K, value: V) -> core::result::Result<core::option::Option<Entry<K, V>>, Error> where K: core::cmp::Ord<K> {
+        let path: [i32; 24] = [0; 24]; let places: [i32; 24] = [0; 24];
+        let node: i32 = self.root; let level: i32 = 0; let position: i32 = 0;
+        if (node >= 0) {
+            let keys: [KeyCell<K>] = self.key_view(); let links: [i32] = self.link_view(); let counts: [i32] = self.count_view();
+            while (level + 1 < self.height) {
+                position = descend(keys, node, counts[node], key);
+                path[level] = node; places[level] = position;
+                node = links[24 * node + 3 + position]; level += 1;
+            }
+            let count: i32 = counts[node];
+            position = lower_slot(keys, node, count, key);
+            if (position < count) {
+                let index: i32 = 16 * node + position;
+                let stored: KeyCell<K> = keys[index];
+                if (!K::lt(key, stored.key)) {
+                    let values: [ValueCell<V>] = self.value_view(); let previous: ValueCell<V> = values[index];
+                    let new_key: KeyCell<K> = KeyCell { key: key }; let new_value: ValueCell<V> = ValueCell { value: value };
+                    keys[index] = new_key; values[index] = new_value;
+                    return core::result::Ok(core::option::Some(Entry { key: stored.key, value: previous.value }));
+                }
+            }
+        }
+        let reserved: core::result::Result<i32, Error> = self.reserve_nodes(self.height + 1);
+        if (reserved.is_err()) { return core::result::Err(reserved.unwrap_err()); }
+        if (node < 0) {
+            node = self.take_node();
+            self.root = node; self.height = 1; self.head = node; self.tail = node;
+        }
+        self.length += 1;
+        let keys: [KeyCell<K>] = self.key_view(); let values: [ValueCell<V>] = self.value_view(); let links: [i32] = self.link_view(); let counts: [i32] = self.count_view();
+        let new_key: KeyCell<K> = KeyCell { key: key }; let new_value: ValueCell<V> = ValueCell { value: value };
+        let count: i32 = counts[node]; let base: i32 = 16 * node;
+        if (count < 16) {
+            move_keys(keys, base + position, base + position + 1, count - position);
+            move_values(values, base + position, base + position + 1, count - position);
+            keys[base + position] = new_key; values[base + position] = new_value; counts[node] = count + 1;
+            return core::result::Ok(core::option::None());
+        }
+        // Split the full leaf: of the 17 entries, 9 stay and 8 move right.
+        let right: i32 = self.take_node(); let target: i32 = 16 * right;
+        if (position >= 9) {
+            move_keys(keys, base + 9, target, position - 9); move_values(values, base + 9, target, position - 9);
+            keys[target + position - 9] = new_key; values[target + position - 9] = new_value;
+            move_keys(keys, base + position, target + position - 8, 16 - position);
+            move_values(values, base + position, target + position - 8, 16 - position);
+        } else {
+            move_keys(keys, base + 8, target, 8); move_values(values, base + 8, target, 8);
+            move_keys(keys, base + position, base + position + 1, 8 - position);
+            move_values(values, base + position, base + position + 1, 8 - position);
+            keys[base + position] = new_key; values[base + position] = new_value;
+        }
+        counts[node] = 9; counts[right] = 8;
+        let after: i32 = links[24 * node + 1];
+        links[24 * right + 1] = after; links[24 * right + 2] = node; links[24 * node + 1] = right;
+        if (after >= 0) { links[24 * after + 2] = right; } else { self.tail = right; }
+        let separator: KeyCell<K> = keys[target]; let sibling: i32 = right;
+        // Insert (separator, sibling) after child `place` of each parent,
+        // splitting full parents on the way up.
+        while (level > 0) {
+            level -= 1;
+            let parent: i32 = path[level]; let place: i32 = places[level]; let total: i32 = counts[parent];
+            let first: i32 = 16 * parent; let children: i32 = 24 * parent + 3;
+            if (total < 16) {
+                move_keys(keys, first + place, first + place + 1, total - place);
+                move_links(links, children + place + 1, children + place + 2, total - place);
+                keys[first + place] = separator; links[children + place + 1] = sibling; counts[parent] = total + 1;
+                return core::result::Ok(core::option::None());
+            }
+            // 17 keys and 18 children: 8 keys and 9 children stay, the ninth
+            // key moves up, the last 8 keys and 9 children move right.
+            let split: i32 = self.take_node(); let to: i32 = 16 * split; let to_children: i32 = 24 * split + 3;
+            let middle: KeyCell<K> = separator;
+            if (place < 8) { middle = keys[first + 7]; } else { if (place > 8) { middle = keys[first + 8]; } }
+            if (place > 8) {
+                move_keys(keys, first + 9, to, place - 9);
+                keys[to + place - 9] = separator;
+                move_keys(keys, first + place, to + place - 8, 16 - place);
+                move_links(links, children + 9, to_children, place - 8);
+                links[to_children + place - 8] = sibling;
+                move_links(links, children + place + 1, to_children + place - 7, 16 - place);
+            } else {
+                move_keys(keys, first + 8, to, 8);
+                if (place == 8) {
+                    links[to_children] = sibling;
+                    move_links(links, children + 9, to_children + 1, 8);
+                } else {
+                    move_links(links, children + 8, to_children, 9);
+                    move_keys(keys, first + place, first + place + 1, 7 - place);
+                    keys[first + place] = separator;
+                    move_links(links, children + place + 1, children + place + 2, 7 - place);
+                    links[children + place + 1] = sibling;
+                }
+            }
+            counts[parent] = 8; counts[split] = 8;
+            separator = middle; sibling = split;
+        }
+        let top: i32 = self.take_node();
+        keys[16 * top] = separator; links[24 * top + 3] = self.root; links[24 * top + 4] = sibling; counts[top] = 1;
+        self.root = top; self.height += 1;
+        return core::result::Ok(core::option::None());
+    }
+    pub fn remove(&self, key: K) -> core::option::Option<Entry<K, V>> where K: core::cmp::Ord<K> {
+        if (self.root < 0) { return core::option::None(); }
+        let path: [i32; 24] = [0; 24]; let places: [i32; 24] = [0; 24];
+        let keys: [KeyCell<K>] = self.key_view(); let values: [ValueCell<V>] = self.value_view(); let links: [i32] = self.link_view(); let counts: [i32] = self.count_view();
+        let node: i32 = self.root; let level: i32 = 0;
+        while (level + 1 < self.height) {
+            let position: i32 = descend(keys, node, counts[node], key);
+            path[level] = node; places[level] = position;
+            node = links[24 * node + 3 + position]; level += 1;
+        }
+        let count: i32 = counts[node];
+        let position: i32 = lower_slot(keys, node, count, key);
+        if (position == count) { return core::option::None(); }
+        let index: i32 = 16 * node + position;
+        let found: KeyCell<K> = keys[index];
+        if (K::lt(key, found.key)) { return core::option::None(); }
+        let held: ValueCell<V> = values[index];
+        move_keys(keys, index + 1, index, count - position - 1);
+        move_values(values, index + 1, index, count - position - 1);
+        counts[node] = count - 1; self.length -= 1;
+        if (self.length == 0) { self.clear(); }
+        else { self.repair(path, places, level, node); }
+        return core::option::Some(Entry { key: found.key, value: held.value });
+    }
+    // Restore at least 8 keys in `node` (at `level`, child places[level - 1]
+    // of path[level - 1]) by borrowing from or merging with a sibling,
+    // continuing upward while merges leave a parent short.
+    fn repair(&self, path: [i32; 24], places: [i32; 24], start: i32, start_node: i32) {
+        let keys: [KeyCell<K>] = self.key_view(); let values: [ValueCell<V>] = self.value_view(); let links: [i32] = self.link_view(); let counts: [i32] = self.count_view();
+        let level: i32 = start; let node: i32 = start_node;
+        while (level > 0 && counts[node] < 8) {
+            let leaf: bool = level + 1 == self.height;
+            let parent: i32 = path[level - 1]; let place: i32 = places[level - 1];
+            let count: i32 = counts[node]; let base: i32 = 16 * node; let children: i32 = 24 * node + 3;
+            let parent_children: i32 = 24 * parent + 3;
+            if (place > 0) {
+                let left: i32 = links[parent_children + place - 1]; let left_count: i32 = counts[left];
+                if (left_count > 8) {
+                    let last: i32 = 16 * left + left_count - 1;
+                    move_keys(keys, base, base + 1, count);
+                    if (leaf) {
+                        move_values(values, base, base + 1, count);
+                        let moved: KeyCell<K> = keys[last]; keys[base] = moved;
+                        let moved_value: ValueCell<V> = values[last]; values[base] = moved_value;
+                        keys[16 * parent + place - 1] = moved;
+                    } else {
+                        move_links(links, children, children + 1, count + 1);
+                        let lowered: KeyCell<K> = keys[16 * parent + place - 1]; keys[base] = lowered;
+                        let adopted: i32 = links[24 * left + 3 + left_count]; links[children] = adopted;
+                        let raised: KeyCell<K> = keys[last]; keys[16 * parent + place - 1] = raised;
+                    }
+                    counts[left] = left_count - 1; counts[node] = count + 1;
+                    return;
+                }
+                self.merge(parent, place - 1, left, node, leaf);
+            } else {
+                let right: i32 = links[parent_children + 1]; let right_count: i32 = counts[right];
+                if (right_count > 8) {
+                    let first: i32 = 16 * right;
+                    if (leaf) {
+                        let moved: KeyCell<K> = keys[first]; keys[base + count] = moved;
+                        let moved_value: ValueCell<V> = values[first]; values[base + count] = moved_value;
+                        move_keys(keys, first + 1, first, right_count - 1);
+                        move_values(values, first + 1, first, right_count - 1);
+                        let next: KeyCell<K> = keys[first]; keys[16 * parent] = next;
+                    } else {
+                        let lowered: KeyCell<K> = keys[16 * parent]; keys[base + count] = lowered;
+                        let adopted: i32 = links[24 * right + 3]; links[children + count + 1] = adopted;
+                        let raised: KeyCell<K> = keys[first]; keys[16 * parent] = raised;
+                        move_keys(keys, first + 1, first, right_count - 1);
+                        move_links(links, 24 * right + 4, 24 * right + 3, right_count);
+                    }
+                    counts[right] = right_count - 1; counts[node] = count + 1;
+                    return;
+                }
+                self.merge(parent, 0, node, right, leaf);
+            }
+            node = parent; level -= 1;
+        }
+        if (level == 0 && self.height > 1 && counts[node] == 0) {
+            self.root = links[24 * node + 3]; self.height -= 1; self.free_node(node);
+        }
+    }
+    // Append node `right` to its left neighbor `left`, both under `parent`
+    // around separator `divider`, then drop that separator and free `right`.
+    fn merge(&self, parent: i32, divider: i32, left: i32, right: i32, leaf: bool) {
+        let keys: [KeyCell<K>] = self.key_view(); let values: [ValueCell<V>] = self.value_view(); let links: [i32] = self.link_view(); let counts: [i32] = self.count_view();
+        let left_count: i32 = counts[left]; let right_count: i32 = counts[right];
+        let base: i32 = 16 * left + left_count;
+        if (leaf) {
+            move_keys(keys, 16 * right, base, right_count);
+            move_values(values, 16 * right, base, right_count);
+            counts[left] = left_count + right_count;
+            let after: i32 = links[24 * right + 1]; links[24 * left + 1] = after;
+            if (after >= 0) { links[24 * after + 2] = left; } else { self.tail = left; }
+        } else {
+            let lowered: KeyCell<K> = keys[16 * parent + divider]; keys[base] = lowered;
+            move_keys(keys, 16 * right, base + 1, right_count);
+            move_links(links, 24 * right + 3, 24 * left + 4 + left_count, right_count + 1);
+            counts[left] = left_count + right_count + 1;
+        }
+        let total: i32 = counts[parent];
+        move_keys(keys, 16 * parent + divider + 1, 16 * parent + divider, total - divider - 1);
+        move_links(links, 24 * parent + 5 + divider, 24 * parent + 4 + divider, total - divider - 1);
+        counts[parent] = total - 1;
+        self.free_node(right);
+    }
+    pub fn pop_first(&self) -> core::option::Option<Entry<K, V>> where K: core::cmp::Ord<K> {
+        let found: core::option::Option<Entry<K, V>> = self.first();
+        if (found.is_none()) { return found; }
+        let item: Entry<K, V> = found.unwrap();
+        return self.remove(item.key);
+    }
+    pub fn pop_last(&self) -> core::option::Option<Entry<K, V>> where K: core::cmp::Ord<K> {
+        let found: core::option::Option<Entry<K, V>> = self.last();
+        if (found.is_none()) { return found; }
+        let item: Entry<K, V> = found.unwrap();
+        return self.remove(item.key);
+    }
+    // Keep the allocation; drop every entry without destroying it.
+    pub fn clear(&self) {
+        self.used = 0; self.free = -1; self.spare = 0; self.root = -1; self.height = 0;
+        self.head = -1; self.tail = -1; self.length = 0;
+    }
+    pub fn destroy(&self) {
+        self.release();
+        let empty: ptr = 0;
+        self.key_storage = empty; self.keys = empty; self.value_storage = empty; self.values = empty; self.links = empty; self.counts = empty;
+        self.nodes = 0; self.clear();
+    }
+}
+
+pub impl<K, V> Cursor<K, V> {
+    pub fn borrow(&self) -> &Cursor<K, V> { return self; }
+    pub fn is_empty(&self) -> bool { return self.front < 0; }
+    fn entry(&self, node: i32, position: i32) -> Entry<K, V> {
+        let keys: [KeyCell<K>] = slice_from_raw_parts(self.keys, self.nodes * 16);
+        let values: [ValueCell<V>] = slice_from_raw_parts(self.values, self.nodes * 16);
+        let key: KeyCell<K> = keys[16 * node + position]; let value: ValueCell<V> = values[16 * node + position];
+        return Entry { key: key.key, value: value.value };
+    }
+    fn finish(&self) -> bool {
+        if (self.front == self.back && self.front_at == self.back_at) { self.front = -1; self.back = -1; return true; }
+        return false;
+    }
+}
+
+pub impl<K, V> core::iter::Iterator<Entry<K, V>> for Cursor<K, V> {
+    pub fn next(&self) -> core::option::Option<Entry<K, V>> {
+        if (self.front < 0) { return core::option::None(); }
+        let item: Entry<K, V> = self.entry(self.front, self.front_at);
+        if (!self.finish()) {
+            let links: [i32] = slice_from_raw_parts(self.links, self.nodes * 24);
+            let counts: [i32] = slice_from_raw_parts(self.counts, self.nodes);
+            self.front_at += 1;
+            if (self.front_at == counts[self.front]) { self.front = links[24 * self.front + 1]; self.front_at = 0; }
+        }
+        return core::option::Some(item);
+    }
+}
+
+pub impl<K, V> core::iter::DoubleEndedIterator<Entry<K, V>> for Cursor<K, V> {
+    pub fn next_back(&self) -> core::option::Option<Entry<K, V>> {
+        if (self.front < 0) { return core::option::None(); }
+        let item: Entry<K, V> = self.entry(self.back, self.back_at);
+        if (!self.finish()) {
+            let links: [i32] = slice_from_raw_parts(self.links, self.nodes * 24);
+            let counts: [i32] = slice_from_raw_parts(self.counts, self.nodes);
+            self.back_at -= 1;
+            if (self.back_at < 0) { self.back = links[24 * self.back + 2]; self.back_at = counts[self.back] - 1; }
+        }
+        return core::option::Some(item);
+    }
+}
