@@ -15,14 +15,16 @@ anonymous `mmap`, so each one also took a page fault, and every release was a
   free list. A freed block goes back on its class list and is never unmapped.
   When an arena runs out, a new one is mapped and the rest of the old one is
   left unused.
-- Larger requests keep one `mmap` each. `dealloc` releases them with
-  `munmap`, and `realloc` between two large sizes uses `mremap` with
-  `MREMAP_MAYMOVE`, which grows the mapping in place when the address range
-  after it is free and moves it without copying otherwise.
 - The classes from 64 KiB to 1 MiB (the mid tier) exist so that hash map
   tables and growing buffers reuse freed blocks instead of paying an `mmap`,
   page faults and an `munmap` on every growth. A 1 MiB block wastes the rest
   of its arena when the arena has less than 1 MiB left.
+- Requests above 1 MiB and up to 8 MiB use the classes 2, 4 and 8 MiB. Each
+  block is one mapping of its whole class. A freed one is kept in its pool's
+  cache (up to two 2 MiB mappings and one each of 4 and 8 MiB, so at most
+  16 MiB per pool) and unmapped once the cache is full. Freed or not, the
+  untouched part of a class mapping costs address space, not memory.
+- Requests above 8 MiB keep one exact `mmap` each, released with `munmap`.
 - `dealloc` and `realloc` pick the class from the size the caller passes, so
   blocks carry no header. Callers must pass the allocation's size, as the API
   already required.
@@ -30,9 +32,16 @@ anonymous `mmap`, so each one also took a page fault, and every release was a
   reads as zero, like a fresh mapping.
 - Alignment up to 8 is accepted, as before. Pooled blocks are 16-byte aligned,
   not page-aligned.
-- `realloc` with a pooled block on either side allocates the new size, copies
-  the common prefix and frees the old block. When the new allocation fails,
-  it returns null and the old block is unchanged.
+- `realloc` within one class returns the same block and zeroes the bytes it
+  gains. Across classes it first takes a free block of the new class (from
+  the class list or the large-mapping cache), copies the common prefix,
+  zeroes the bytes gained and frees the old block. Between two mappings
+  (2 MiB and up) with nothing cached, it uses `mremap` with `MREMAP_MAYMOVE`,
+  which grows the mapping in place when the address range after it is free
+  and moves its pages without copying otherwise; shrinking a mapping gives
+  its tail back in place. Anything else allocates, copies and frees. When an
+  allocation or `mremap` fails, `realloc` returns null and the old block is
+  unchanged. Either way the grown part reads as zero.
 - Size 0, a zero or non-power-of-two alignment, and alignment above 8 still
   return null.
 
@@ -41,7 +50,7 @@ arena cursor and the arena end. Its address is kept in the upper half of the
 argc word at `[R15 + 4]`, which was unused: the kernel and the CRT bridge
 store argc zero-extended, and every argc reader now loads 32 bits. The value 0
 means not decided yet, 1 means direct mode, and anything else is the state
-page. The first allocation of 1 MiB or less decides.
+page. The first allocation, of any size, decides.
 
 So allocation now needs the runtime's R15 context, as argument and
 environment access already did (see
@@ -102,8 +111,12 @@ to a direct `mmap` for each allocation and leaks a freed small block rather
 than unmapping an arena sub-range. This is safe and affects only programs with
 more than 1024 live threads.
 
-Large blocks (above 1 MiB) are direct `mmap`/`munmap`/`mremap` on every
-thread, with no shared state, as before.
+Blocks of 2 to 8 MiB are cached per pool like small blocks: a freed mapping
+joins the freeing thread's cache, which is capped, so memory stays bounded.
+Blocks above 8 MiB are direct `mmap`/`munmap`/`mremap` on every thread, with
+no shared state. A thread without a pool maps each block of 8 MiB or less as
+its whole class, so `dealloc` and `realloc`, which see only the size, agree
+on its length.
 
 ## Direct mode
 
@@ -167,23 +180,68 @@ grew past 32 KiB early and those allocations stayed direct; with the mid tier,
 tables up to 1 MiB come from the pool. The other bulk-caller phases, which
 move megabyte buffers, are unchanged.
 
-The mid tier (classes up to 1 MiB, 2 MiB arenas) has passed the CPU harnesses
-below, including sizes up to 1.2 MB, but its benchmark numbers (1M-key u64
-hash map insert, 10M u64 `Vec` push, `read_line`) are not measured yet.
-`Vec` growth cannot use `realloc`: `u64` elements are laid out downward from
-the top of the storage, so their positions depend on the capacity, and
-`Vec::relocate` keeps its typed allocate, copy and free. Hash map rehashing
-re-scatters entries and cannot use `realloc` either. So both still copy on
-growth, and the gain is only the cheaper allocation.
+### Mid tier and large classes
+
+[`stdlib_alloc_perf/bench.lani`](../tests/fixtures/stdlib_alloc_perf/bench.lani)
+times alloc/free-heavy work from 4 KiB to 1 MiB and growth across 1 MiB, and
+[`bench.c`](../tests/fixtures/stdlib_alloc_perf/bench.c) runs the same phases
+on glibc (`malloc`, and `calloc`, which zeroes as `alloc` does). Every phase
+writes one word per 4 KiB page of each block. Two interleaved runs per
+allocator on the 3070 laptop, 2026-11-01, at load average 53 to 62, in ms:
+
+| Phase | Before the mid tier | Mid tier only | Mid tier + 2..8 MiB classes | glibc `malloc` | glibc `calloc` |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 GiB of 4 KiB alloc/touch/free | 39–55 | 33 | 34–61 | 11 | 32–35 |
+| 1 GiB of 64 KiB | 1,360–1,458 | 25–27 | 27–48 | 1.3–1.5 | 19–23 |
+| 1 GiB of 256 KiB | 1,147–1,159 | 25–26 | 24–25 | 2.4–2.6 | 19–22 |
+| 1 GiB of 1 MiB | 1,245–1,256 | 28–31 | 32–39 | 4.0–4.1 | 22 |
+| mixed: 40,000 steps, 64 slots, 4 KiB–1 MiB | 4,956–5,012 | 480–492 | 465–538 | 428–453 | 815–822 |
+| double: realloc 4 KiB → 4 MiB, 400 rounds | 1,946–2,004 | 2,125–2,236 | 236–323 | 12–14 | 11–14 |
+| step: realloc +4 KiB to 2 MiB, 40 rounds | 173–182 | 349–476 | 5.3–6.4 | 0.34–0.36 | 0.35–0.39 |
+
+Whole run: 4.3 million minor faults before the mid tier, 759,000 with the
+mid tier only, 13,900 now (glibc 163,000); peak resident 13, 30 and 31 MiB
+(glibc 17 MiB). `LANIUS_ALLOC=mmap` takes 1.1–1.6 s per GiB in the fixed
+phases.
+
+- The fixed phases now cost what zeroing costs: 1 to 2.5x the time of
+  `calloc`. Plain `malloc` does not zero, so it is 3x faster at 4 KiB and 8
+  to 20x faster above.
+- The mid tier alone made `step` slower than before: every `realloc`, even
+  within one class, allocated, zeroed, copied and freed. Same-class `realloc`
+  in place fixed that (55 to 90x faster than the mid tier alone).
+- `double` was dominated by page faults on fresh mappings above 1 MiB; the
+  2..8 MiB classes and their cache took it from about 2 s to 0.24–0.32 s.
+  glibc is still about 20x faster there: it grows the block in place at the top of
+  its heap and does not zero, while each class change here copies the block
+  and zeroes the bytes gained.
+- The 1M-key u64 hash map insert (`stdlib_hash_map_perf`), 10M u64 `Vec`
+  pushes and the `read_line` phase of `stdlib_bulk_callers` are unchanged
+  within noise at that load (insert 287–637 ms against 298–470 ms before;
+  best push round 575–994 ms against 535–598 ms; `read_line` 159–333 ms
+  against 148–158 ms; three interleaved runs, which varied by 2x).
+  `Vec` growth cannot use `realloc`: `u64` elements are laid out downward
+  from the top of the storage, so their positions depend on the capacity,
+  and `Vec::relocate` keeps its typed allocate, copy and free. Hash map
+  rehashing re-scatters entries and cannot use `realloc` either.
 
 ## Verification
 
 - A CPU harness maps the assembled bytes and calls them with R15 pointing at
   a fake argument vector. It runs 200,000 random alloc, free and realloc
-  operations (1 byte to 1.2 MB, alignments 1 to 8) in each mode. It tags every
+  operations (1 byte to 20 MB, alignments 1 to 8) in each mode. It tags every
   live block and checks that no block is overwritten, that every allocation
-  reads as zero and that realloc keeps contents. Two mutations are caught:
-  skipping the zeroing on reuse, and the wrong class in `dealloc`.
+  reads as zero, that realloc keeps contents and, in pooled mode, that the
+  bytes a realloc gains read as zero. Two mutations are caught: skipping the
+  zeroing on reuse, and the wrong class in `dealloc`.
+- Open issue: with the 2..8 MiB classes, 5 of about 215 runs of that raw
+  harness reported one corrupted byte inside a block of a few MiB (at block
+  offsets 441,131, 2,132,459, 4,262,379, 8,878,571 and 13,613,547; three of
+  them at page offset `0x9eb`). All five ran while the machine was swapping
+  under compile jobs (1.9 GB of swap in use). The other runs, including 104
+  in a row after that, the debug build of the harness and the threaded
+  harness passed. The cause is not found: it may be an allocator path that
+  only memory pressure reaches, or the kernel.
 - A second harness maps the bytes at the fixed vector `0x100000000000`
   (so the allocator runs in its threaded path) and drives them from real
   pthreads, so each thread's `%fs:0` differs. 1 to 32 threads each run 150,000

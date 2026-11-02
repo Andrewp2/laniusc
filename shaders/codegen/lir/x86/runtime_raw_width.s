@@ -58,23 +58,33 @@
 # entries share local branches. DEALLOC/REALLOC offsets are alloc_dealloc and
 # alloc_realloc inside it.
 #
-# Blocks of 1..1048576 bytes come from power-of-two classes (16 B .. 1 MiB)
-# carved from 2 MiB arenas, with one free list per class; freed blocks are
-# reused, never unmapped. Larger blocks are one mmap each, freed by munmap and
-# resized in place by mremap. Callers pass the allocation's size to dealloc/realloc,
-# so no block carries a header. A reused block is zeroed up to its size, so
+# Every request of 1..8388608 bytes belongs to a power-of-two class (16 B ..
+# 8 MiB), and its block is the whole class, so callers pass the allocation's
+# size to dealloc/realloc and no block carries a header. Classes up to 1 MiB
+# are carved from 2 MiB arenas with one free list per class; freed blocks are
+# reused, never unmapped. The 2, 4 and 8 MiB classes are one mapping each of
+# the class size; a pool caches up to two freed 2 MiB mappings and one each of
+# 4 and 8 MiB (16 MiB at most) and unmaps the rest. Above 8 MiB a block is one
+# exact mmap, freed by munmap. A reused block is zeroed up to its size, so
 # every allocation reads as zero, as a fresh mapping does.
 #
-# The pool state is one MAP_32BIT page: class heads at 0..128 (classes 16 B ..
-# 1 MiB), per-class free counters at 1048..1176, the arena cursor at 2048 and
-# its end at 2056, and (state page only) shared per-class lists at 3024..3152
-# under the lock at 2072. Its address lives in the otherwise unused upper
-# half of the argc word at [R15 + 4] (argc readers load 32 bits): 0 = not
-# decided yet, 1 = direct mode, else the state page. The first small
-# allocation decides, claiming [R15+4] with a 32-bit lock cmpxchg so racing
-# threads agree. LANIUS_ALLOC=mmap in the environment, or a failed state
-# mapping, selects direct mode: every allocation is its own mmap and every
-# free a munmap, exactly as before pooling (trace-based tests rely on it).
+# realloc within one class stays in place (zeroing the bytes it gains). Across
+# classes it takes a cached or free-listed block of the new class when there
+# is one (copy, zero the gained bytes, free the old block); between two large
+# mappings it otherwise uses mremap(MREMAP_MAYMOVE), which moves pages without
+# copying; anything else allocates, copies and frees.
+#
+# The pool state is one MAP_32BIT page: class heads at 0..152 (16 B .. 8 MiB),
+# per-class free counters (small classes) and cache counts (2..8 MiB) at
+# 1048..1200, the arena cursor at 2048 and its end at 2056, and (state page
+# only) shared per-class lists at 3024..3152 under the lock at 2072. Its
+# address lives in the otherwise unused upper half of the argc word at
+# [R15 + 4] (argc readers load 32 bits): 0 = not decided yet, 1 = direct
+# mode, else the state page. The first allocation decides, claiming [R15+4]
+# with a 32-bit lock cmpxchg so racing threads agree. LANIUS_ALLOC=mmap in the
+# environment, or a failed state mapping, selects direct mode: every
+# allocation is its own exact mmap, every free a munmap and every realloc an
+# mremap, exactly as before pooling (trace-based tests rely on it).
 #
 # Thread-safe without locks on the hot path. All threads share R15 (the C
 # entry and crt_entry load the fixed process vector 0x100000000000), so a
@@ -86,8 +96,9 @@
 # free simply joins the freeing thread's own list (blocks migrate, memory
 # stays bounded). Raw mode (R15 != the fixed vector) is single-threaded and
 # never reads fs. A thread beyond the 1024 table slots, or whose pool mapping
-# fails, allocates directly by mmap and leaks a freed pooled block rather than
-# unmapping an arena sub-range (safe; only >1024-thread programs are affected).
+# fails, maps each block (of its whole class) directly and leaks a freed
+# pooled block rather than unmapping an arena sub-range (safe; only
+# >1024-thread programs are affected).
 alloc_entry:
     test rdi, rdi
     jz .Lalloc_null
@@ -98,12 +109,12 @@ alloc_entry:
     lea rax, [rsi - 1]
     test rax, rsi
     jnz .Lalloc_null
-    cmp rdi, 1048576
-    ja .Lalloc_direct
     mov eax, dword ptr [r15 + 4]
     cmp eax, 1
     je .Lalloc_direct
     jb .Lalloc_init
+    cmp rdi, 8388608
+    ja .Lalloc_direct                # above 8 MiB: one exact mapping
     # mode >= 2: RAX = state page. Find this thread's pool.
     movabs r11, 0x100000000000
     cmp r15, r11
@@ -113,9 +124,9 @@ alloc_entry:
     je .Lalloc_pool                  # main thread: state page is its pool
     call .Lresolve_pool              # in RAX = state page; out RAX = pool or 0
     test rax, rax
-    jz .Lalloc_direct
+    jz .Lalloc_classmap
 .Lalloc_pool:
-    # RCX = log2(class) - 1 for classes 16 .. 1048576; RDX = its list head.
+    # RCX = log2(class) - 1 for classes 16 .. 8388608; RDX = its list head.
     lea rcx, [rdi - 1]
     or rcx, 15
     bsr rcx, rcx
@@ -126,6 +137,10 @@ alloc_entry:
 .Lalloc_pop:
     mov r8, qword ptr [rsi]
     mov qword ptr [rdx], r8
+    cmp ecx, 19
+    jbe .Lalloc_zero
+    dec qword ptr [rdx + 1048]       # a cached large mapping leaves the cache
+.Lalloc_zero:
     lea rcx, [rdi + 7]
     shr rcx, 3
     mov rdi, rsi
@@ -134,6 +149,8 @@ alloc_entry:
     mov rax, rsi
     ret
 .Lalloc_refill:
+    cmp ecx, 19
+    ja .Lalloc_classmap              # 2..8 MiB with an empty cache: a fresh mapping
     # Local list empty: adopt the class's shared list (blocks other threads
     # trimmed off their lists) before carving new memory. Lock-free peek.
     mov r8d, dword ptr [r15 + 4]
@@ -181,6 +198,15 @@ alloc_entry:
     mov qword ptr [rcx + 2056], rsi
 .Lalloc_arena_done:
     ret
+.Lalloc_classmap:
+    # One mapping of the request's whole class (2 << RCX bytes), so dealloc
+    # and realloc, which see only the size, agree on its length.
+    lea rcx, [rdi - 1]
+    or rcx, 15
+    bsr rcx, rcx
+    mov edi, 2
+    shl rdi, cl
+    jmp .Lalloc_direct
 .Lalloc_init:
     mov r8d, dword ptr [r15]
     lea r8, [r15 + r8*8 + 16]
@@ -236,8 +262,7 @@ alloc_entry:
 .Lalloc_won:
     pop rdi
     pop rsi
-    mov rax, r9
-    jmp .Lalloc_pool
+    jmp alloc_entry                  # dispatch again now that the mode is set
 .Lalloc_mp_fail:
     pop rdi
     pop rsi
@@ -385,8 +410,8 @@ alloc_entry:
     ret
 alloc_dealloc:
     lea rax, [rsi - 1]
-    cmp rax, 1048575
-    ja .Lalloc_munmap
+    cmp rax, 8388607
+    ja .Lalloc_munmap                 # above 8 MiB: an exact mapping
     mov eax, dword ptr [r15 + 4]
     cmp eax, 1
     jbe .Lalloc_munmap
@@ -400,12 +425,14 @@ alloc_dealloc:
     je .Lalloc_free_pool
     call .Lresolve_pool
     test rax, rax
-    jz .Lalloc_free_done              # no pool: leak the block (never unmap an arena)
+    jz .Lalloc_free_nopool
 .Lalloc_free_pool:
     lea rcx, [rsi - 1]
     or rcx, 15
     bsr rcx, rcx
     lea rdx, [rax + rcx*8 - 24]
+    cmp ecx, 19
+    ja .Lalloc_free_large
     mov r8, qword ptr [rdx]
     mov qword ptr [rdi], r8
     mov qword ptr [rdx], rdi
@@ -456,6 +483,29 @@ alloc_dealloc:
     mov qword ptr [r9], r10
     mov dword ptr [rax + 2072], 0
     ret
+.Lalloc_free_large:
+    # Cache up to two 2 MiB mappings and one each of 4 and 8 MiB per pool.
+    mov r8, qword ptr [rdx + 1048]
+    xor r9d, r9d
+    cmp ecx, 20
+    sete r9b
+    cmp r8, r9
+    ja .Lalloc_free_unmap
+    inc r8
+    mov qword ptr [rdx + 1048], r8
+    mov r8, qword ptr [rdx]
+    mov qword ptr [rdi], r8
+    mov qword ptr [rdx], rdi
+    ret
+.Lalloc_free_nopool:
+    cmp rsi, 1048576
+    jbe .Lalloc_free_done             # no pool: leak the block (never unmap an arena)
+.Lalloc_free_unmap:
+    lea rcx, [rsi - 1]
+    bsr rcx, rcx
+    mov esi, 2
+    shl rsi, cl
+    jmp .Lalloc_munmap
 alloc_realloc:
     test rdi, rdi
     jz .Lalloc_null
@@ -473,15 +523,142 @@ alloc_realloc:
     mov eax, dword ptr [r15 + 4]
     cmp eax, 1
     jbe .Lalloc_remap
-    lea rax, [rsi - 1]
-    cmp rax, 1048575
+    # Pooled mode. R8 = old class index, R9 = new class index.
+    lea r8, [rsi - 1]
+    or r8, 15
+    bsr r8, r8
+    lea r9, [rdx - 1]
+    or r9, 15
+    bsr r9, r9
+    cmp rsi, 8388608
+    ja .Lre_old_exact
+    cmp rdx, 8388608
+    ja .Lre_new_exact
+    cmp r8, r9
+    je .Lre_inplace
+    cmp r9, r8
+    jae .Lre_find_pool
+    cmp r9d, 19
+    jbe .Lre_find_pool
+    # Shrink between two large classes: mremap gives the tail back in place.
+    mov ecx, r8d
+    mov esi, 2
+    shl rsi, cl
+    mov ecx, r9d
+    mov edx, 2
+    shl rdx, cl
+    jmp .Lalloc_remap
+.Lre_find_pool:
+    mov eax, dword ptr [r15 + 4]
+    movabs r11, 0x100000000000
+    cmp r15, r11
+    jne .Lre_pool
+    mov r10, qword ptr fs:[0]
+    cmp r10, qword ptr [rax + 2064]
+    je .Lre_pool
+    push rdx
+    push r8
+    push r9
+    call .Lresolve_pool
+    pop r9
+    pop r8
+    pop rdx
+    test rax, rax
+    jz .Lalloc_move
+.Lre_pool:
+    cmp qword ptr [rax + r9*8 - 24], 0
+    jne .Lre_take
+    cmp r8d, 19
     jbe .Lalloc_move
-    lea rax, [rdx - 1]
-    cmp rax, 1048575
-    ja .Lalloc_remap
+    cmp r9d, 19
+    jbe .Lalloc_move
+    # Growth between two large classes with an empty cache: mremap moves the
+    # pages without copying; zero what the old block's mapping held past it.
+    mov ecx, r9d
+    mov edx, 2
+    shl rdx, cl
+    mov ecx, r8d
+    mov r9d, 2
+    shl r9, cl
+    mov r8, rsi
+    mov rsi, r9
+    jmp .Lre_remap_zero
+.Lre_take:
+    # Take the head block of the new class: copy the common prefix, zero the
+    # bytes gained, free the old block.
+    lea r10, [rax + r9*8 - 24]
+    mov r11, qword ptr [r10]
+    mov rcx, qword ptr [r11]
+    mov qword ptr [r10], rcx
+    cmp r9d, 19
+    jbe .Lre_take_copy
+    dec qword ptr [r10 + 1048]
+.Lre_take_copy:
+    push r11
+    push rsi
+    push rdi
+    mov rcx, rsi
+    cmp rcx, rdx
+    cmova rcx, rdx
+    mov rsi, rdi
+    mov rdi, r11
+    rep movsb
+    mov rcx, rdx
+    sub rcx, qword ptr [rsp + 8]
+    jbe .Lre_take_free
+    xor eax, eax
+    rep stosb
+.Lre_take_free:
+    pop rdi
+    pop rsi
+    call alloc_dealloc
+    pop rax
+    ret
+.Lre_inplace:
+    # Same class: the block already holds the new size.
+    mov rax, rdi
+    mov rcx, rdx
+    sub rcx, rsi
+    jbe .Lre_inplace_done
+    add rdi, rsi
+    mov rdx, rax
+    xor eax, eax
+    rep stosb
+    mov rax, rdx
+.Lre_inplace_done:
+    ret
+.Lre_old_exact:
+    # The old block is an exact mapping (above 8 MiB).
+    cmp rdx, 1048576
+    jbe .Lalloc_move
+    cmp rdx, 8388608
+    ja .Lre_exact_both
+    mov ecx, r9d
+    mov edx, 2
+    shl rdx, cl
+    jmp .Lalloc_remap
+.Lre_exact_both:
+    # Zero [old, min(new, old rounded up to a page)): an earlier shrink may
+    # have left bytes in the old mapping's last page.
+    lea r9, [rsi + 4095]
+    and r9, -4096
+    cmp r9, rdx
+    cmova r9, rdx
+    mov r8, rsi
+    jmp .Lre_remap_zero
+.Lre_new_exact:
+    # The new block is an exact mapping (above 8 MiB).
+    cmp r8d, 19
+    jbe .Lalloc_move
+    mov ecx, r8d
+    mov r9d, 2
+    shl r9, cl
+    mov r8, rsi
+    mov rsi, r9
+    jmp .Lre_remap_zero
 .Lalloc_move:
-    # A pooled block on either side: allocate, copy the common prefix, free
-    # the old block. On failure the old block is untouched and null returns.
+    # Allocate, copy the common prefix, free the old block. On failure the
+    # old block is untouched and null returns.
     push rdi
     push rsi
     push rdx
@@ -507,6 +684,28 @@ alloc_realloc:
     call alloc_dealloc
     pop rax
 .Lalloc_move_done:
+    ret
+.Lre_remap_zero:
+    # mremap(RDI, RSI -> RDX bytes, MREMAP_MAYMOVE), then zero [R8, R9) of the
+    # result. Null on failure, with the old mapping unchanged.
+    push r8
+    push r9
+    mov r10d, 1
+    mov eax, 25
+    syscall
+    pop r9
+    pop r8
+    test rax, rax
+    js .Lalloc_null
+    mov rcx, r9
+    sub rcx, r8
+    jbe .Lre_rz_done
+    lea rdi, [rax + r8]
+    mov rdx, rax
+    xor eax, eax
+    rep stosb
+    mov rax, rdx
+.Lre_rz_done:
     ret
 .Lalloc_remap:
     mov r10d, 1
