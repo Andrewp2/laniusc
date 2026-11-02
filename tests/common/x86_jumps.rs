@@ -23,6 +23,14 @@
 //! code.
 //! A function reached only through an indirect call and without a prologue
 //! is not checked.
+//!
+//! The native runtime block (the literal byte arrays of
+//! `shaders/codegen/lir/x86/runtime_abi.slang`, emitted as one contiguous
+//! block) counts as one function. It is hand-written assembly whose entries
+//! call and jump to one another (the allocator calls its own mmap block and
+//! re-enters `alloc` after deciding its mode), and
+//! `raw_host_width_tables.py` checks its branches against the assembler.
+//! Calls into the block do not split it, and its jumps must stay inside it.
 
 use std::{
     collections::{BTreeSet, HashMap},
@@ -40,6 +48,58 @@ const PT_LOAD: u32 = 1;
 const PF_X: u32 = 1;
 const OBJDUMP_TIMEOUT: Duration = Duration::from_secs(45);
 const REPORTED_PROBLEMS: usize = 12;
+const RUNTIME_SOURCE: &str = "shaders/codegen/lir/x86/runtime_abi.slang";
+
+/// The runtime block's bytes: every `static const uint NAME[N] = { ... };`
+/// array of the runtime source, in order (the layout the compiler emits).
+fn runtime_block() -> &'static [u8] {
+    static BLOCK: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+    BLOCK.get_or_init(|| {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(RUNTIME_SOURCE);
+        let source = fs::read_to_string(&path)
+            .unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
+        let mut block = Vec::new();
+        let mut rest = source.as_str();
+        while let Some(at) = rest.find("static const uint ") {
+            rest = &rest[at + "static const uint ".len()..];
+            let header = rest.split('=').next().unwrap_or("");
+            let (Some(open), Some(close)) = (header.find('['), header.find(']')) else {
+                continue;
+            };
+            let count: usize = header[open + 1..close].trim().parse().expect("array length");
+            let body_start = rest.find('{').expect("array body") + 1;
+            let body_end = body_start + rest[body_start..].find("};").expect("array end");
+            let before = block.len();
+            for line in rest[body_start..body_end].lines() {
+                let line = line.split("//").next().unwrap_or("");
+                for token in line.split(',').map(str::trim).filter(|token| !token.is_empty()) {
+                    let digits = token.strip_suffix('u').expect("uint literal");
+                    let value = match digits.strip_prefix("0x") {
+                        Some(hex) => u32::from_str_radix(hex, 16),
+                        None => digits.parse(),
+                    }
+                    .expect("runtime byte literal");
+                    block.push(u8::try_from(value).expect("runtime byte"));
+                }
+            }
+            assert_eq!(block.len() - before, count, "runtime array length in {RUNTIME_SOURCE}");
+            rest = &rest[body_end..];
+        }
+        assert!(!block.is_empty(), "no runtime arrays in {RUNTIME_SOURCE}");
+        block
+    })
+}
+
+/// The runtime block's address range in the segment, when it is there.
+fn runtime_range(segment: &CodeSegment<'_>) -> Option<(u64, u64)> {
+    let block = runtime_block();
+    let offset = segment
+        .bytes
+        .windows(block.len())
+        .position(|window| window == block)?;
+    let low = segment.vaddr + offset as u64;
+    Some((low, low + block.len() as u64))
+}
 
 /// The executable load segment that holds the entry point.
 struct CodeSegment<'a> {
@@ -340,14 +400,23 @@ pub fn check_x86_64_jumps(elf: &[u8]) -> Result<Option<JumpCheck>, String> {
         ));
     }
 
+    let runtime = runtime_range(&segment);
+    // Inside the runtime block only its own start begins a function.
+    let in_runtime = |address: u64| runtime.is_some_and(|(low, high)| address > low && address < high);
     let mut starts = BTreeSet::from([segment.entry]);
     let mut work = vec![segment.entry];
+    if let Some((low, high)) = runtime {
+        starts.insert(low);
+        if high < segment.end() {
+            starts.insert(high);
+        }
+    }
     for (&address, instruction) in &instructions {
         let prologue = instruction.bytes == [0x55]
             && instructions
                 .get(&(address + instruction.length))
                 .is_some_and(|next| next.bytes == [0x48, 0x89, 0xe5]);
-        if prologue {
+        if prologue && !in_runtime(address) {
             starts.insert(address);
             work.push(address);
         }
@@ -392,7 +461,7 @@ pub fn check_x86_64_jumps(elf: &[u8]) -> Result<Option<JumpCheck>, String> {
             ));
             continue;
         }
-        if instruction.flow == Flow::Call {
+        if instruction.flow == Flow::Call && !in_runtime(target) {
             starts.insert(target);
         }
         work.push(target);
