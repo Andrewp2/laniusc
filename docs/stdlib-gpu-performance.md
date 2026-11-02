@@ -1,5 +1,25 @@
 # GPU compiler performance: stdlib fixes
 
+## MoonBit lanes (2026-11-01)
+
+`tools/run_runtime_comparison.py`, `tools/run_typical_comparison.py` and
+`tools/run_compiler_stress_matrix.py` include MoonBit. Each generates a moon
+project in its build directory: a `moon.mod` and an executable `main` package
+(`pkgtype(kind: "executable")` in `moon.pkg`). The typical project uses one
+package per module. Current toolchains reject `moon.mod.json` and
+`moon.pkg.json`. The lanes build the native backend with `moon build --target
+native --debug` (debug, `o0`) and `--release` (optimized). The runtime and
+stress tools add a `js` lane (`--target js --release`, run with node). The
+twins print the same masked checksums as the C and Rust twins. When `moon` is
+not on `PATH`, each tool prints `moon not found; install MoonBit to include it`
+and runs without the MoonBit lanes. To install the toolchain on Linux, run
+`curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash` (it needs git;
+native builds need gcc, clang or cc), then check it with `moon version --all`.
+The generated MoonBit has not yet been compiled on this machine. Its syntax
+follows the docs at <https://docs.moonbitlang.com>. Unit tests check the
+generated files and the commands. They also run Python translations of the
+runtime and stress twins and compare the checksums.
+
 ## Startup and shader caches (2026-10-15)
 
 A warm start creates about 570 compute pipelines from two caches. The first

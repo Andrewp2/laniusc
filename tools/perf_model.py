@@ -18,7 +18,7 @@ SCHEMA = "lanius.performance-run.v1"
 SLOC_POLICY = "nonblank physical lines excluding comment-only lines"
 SOURCE_SUFFIXES = {
     ".lani", ".c", ".h", ".cc", ".cpp", ".hpp", ".rs", ".zig", ".par",
-    ".go", ".d", ".v", ".vx", ".ts",
+    ".go", ".d", ".v", ".vx", ".ts", ".mbt",
 }
 COMPACT_RECORD_ARRAYS = {
     "edges",

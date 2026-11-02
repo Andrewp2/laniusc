@@ -1152,12 +1152,15 @@ def mapRawNominalSlice (program : Program) (state : State)
             | .error reason => .trapped reason state
             | .ok () => .done (.rawSlice element address length) state
 
-/-- `slice_stride(view)`: element i + 1 of a raw view starts this many bytes
-    after element i. i32 views run forward; nominal views run down by their
-    native size. Views of language arrays have no stride here. -/
+/-- `slice_stride(view)`: element i + 1 of a view starts this many bytes
+    after element i. i32 and u8 views run forward; nominal views run down by
+    their native size. A slice of a language array has its element's stride
+    too, as laniusc lays every slice out one way (SEMANTIC_DECISIONS
+    "Addressed locals" point 2). -/
 def rawSliceStride? (program : Program) (value : Value) : Option Int :=
   match value with
   | .rawSlice element _ _ => NativeLayout.elementStride? program element
+  | .slice element _ _ _ _ => NativeLayout.elementStride? program element
   | _ => none
 
 def mapI32SliceDataPtr

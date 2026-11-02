@@ -80,7 +80,7 @@ def reportSource (sp : SrcProgram) : String :=
   match declareProgram sp with
   | none => "none"
   | some decls =>
-    match lowerFuncs (sigs sp.funcs) decls sp.funcs with
+    match lowerFuncs (sigs sp.funcs) (sigs sp.funcs) decls sp.funcs with
     | none => "none"
     | some fs => report { funcs := fs }
 

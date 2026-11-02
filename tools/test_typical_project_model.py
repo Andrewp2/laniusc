@@ -60,6 +60,7 @@ class TypicalProjectModelTests(unittest.TestCase):
                     "cpp": ".cpp",
                     "rust": ".rs",
                     "zig": ".zig",
+                    "moonbit": ".mbt",
                     "lanius": ".lani",
                 }[language]
                 rendered_count = sum(
