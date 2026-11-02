@@ -18,6 +18,7 @@ import Lanius.Mini.Frontend.P.litEffMatch
 import Lanius.Mini.Frontend.P.matchStmtIf
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.noTrees
+import Lanius.Mini.Frontend.P.pickTy
 import Lanius.Mini.Frontend.P.textSelf
 import Lanius.Mini.Frontend.P.tryLet
 import Lanius.Mini.Frontend.P.typeDeclAt
@@ -177,7 +178,10 @@ def nestedOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (s : CTree) : Op
             | none => none
             | some l =>
               match arrayLocal l with
-              | none => none
+              | none =>
+                (match sliceElem l.ty with
+                 | none => none
+                 | some e => forSlice (freshId scope ((kidToken s 2).start - env.base)) ((kidToken s 0).start - env.base) (x.start - env.base) ((kidToken s 2).start - env.base) l.id e (blockOf f env (({ name := x.text, id := (kidToken s 2).start - env.base, ty := e } : Local) :: scope) (kid (kid s 4) 1)))
               | some al => forArray ((kidToken s 0).start - env.base) (x.start - env.base) al (blockOf f env (({ name := x.text, id := x.start - env.base, ty := al.element } : Local) :: scope) (kid (kid s 4) 1))
         else
           none

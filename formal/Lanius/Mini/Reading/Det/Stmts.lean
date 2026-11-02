@@ -11,6 +11,7 @@ import all Lanius.Mini.Frontend.P.projection
 import all Lanius.Mini.Frontend.P.repeatEff
 import all Lanius.Mini.Frontend.P.distinct
 import all Lanius.Mini.Frontend.P.forRange
+import all Lanius.Mini.Frontend.P.pickTy
 import all Lanius.Mini.Frontend.P.isEmptyUsize
 import all Lanius.Mini.Frontend.P.matchStmtIf
 import all Lanius.Mini.Frontend.P.noToken
@@ -1380,6 +1381,38 @@ theorem stmtR_unique : ∀ {scope : List Local} {s : CTree} {a : MStmt}, StmtR e
       cases (firstWith_unique f f').2
       rw [al] at al'
       cases al'
+      cases ih bb'
+      rw [fa'] at fa
+      exact (Option.some.inj fa).symm
+    | forSlice _ _ _ _ _ _ pn' ln' lt' _ _ =>
+      obtain ⟨_, _, _, e1⟩ := pn
+      obtain ⟨_, _, _, e2⟩ := pn'
+      subst e1 e2
+      obtain ⟨_, f⟩ := ln
+      obtain ⟨_, f'⟩ := ln'
+      cases (firstWith_unique f f').2
+      simp [arrayLocal, arrayLocalOf, arrayParts, lt'] at al
+    | _ => prod_clash
+  | _, _, _, .forSlice _ _ _ _ _ fn pn ln lt bb fa, nd, vn, _, h₂ => by
+    have ih := fun {y} k' => blockR_unique bb (idsFresh_cons nd fn) vn (b := y) k'
+    cases h₂ with
+    | forArray _ _ _ _ _ pn' ln' al' _ _ =>
+      obtain ⟨_, _, _, e1⟩ := pn
+      obtain ⟨_, _, _, e2⟩ := pn'
+      subst e1 e2
+      obtain ⟨_, f⟩ := ln
+      obtain ⟨_, f'⟩ := ln'
+      cases (firstWith_unique f f').2
+      simp [arrayLocal, arrayLocalOf, arrayParts, lt] at al'
+    | forSlice _ _ _ _ _ _ pn' ln' lt' bb' fa' =>
+      obtain ⟨_, _, _, e1⟩ := pn
+      obtain ⟨_, _, _, e2⟩ := pn'
+      subst e1 e2
+      obtain ⟨_, f⟩ := ln
+      obtain ⟨_, f'⟩ := ln'
+      cases (firstWith_unique f f').2
+      rw [lt] at lt'
+      cases lt'
       cases ih bb'
       rw [fa'] at fa
       exact (Option.some.inj fa).symm

@@ -9622,6 +9622,22 @@ pub fn for_array(i: usize, x: usize, a: ArrayLocal, body: core::option::Option<M
     return None;
 }
 
+// The reading of a loop over the slice local s of element type t (for_of):
+// the usize index i from 0, the length read once into the usize n before
+// the loop, then while i < n, x = s[i], i = i + 1 and the body. laniusc's
+// slice loop captures the slice and its length before the loop, so a body
+// that writes s itself is not read; writes to s's elements are seen by
+// later steps in both. fresh: the local x's id is fresh.
+pub fn for_slice(fresh: bool, i: usize, n: usize, x: usize, sl: usize, t: Ty, body: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
+    if (fresh) {
+        return match (body) {
+            None -> None,
+            Some(b) -> stmt_unless(writes_local(b, sl), MLet(i, TyUint(Usize), Unsigned(Usize, 0), boxed(MLetEval(n, TyUint(Usize), XLen(sl), boxed(MWhile(Apply(Less, boxed(Local(i)), boxed(Local(n))), boxed(MLetIndex(x, t, sl, Local(i), boxed(MThen(boxed(MSet(i, Apply(Plus, boxed(Local(i)), boxed(Unsigned(Usize, 1))))), boxed(b))))))))))),
+        };
+    }
+    return None;
+}
+
 // A match statement's scrutinee (a local, or else a value bound to a local
 // numbered by the `match`), its enum and variants, and the local numbered by
 // its `}` that the Unreachable after the last arm binds.
@@ -10391,7 +10407,9 @@ pub fn lit_let_of(fuel: usize, env: FrontEnv, scope: List<Local>, x: Local, init
 // token and x's token, and x by the `in` token, so that the locals are
 // numbered in the order the desugared text declares them. `for x in a {
 // body }`, a an array local, is for_array's loop, its index numbered by the
-// `for` token and x by its own.
+// `for` token and x by its own; a a slice local, for_slice's, numbered as
+// a range loop's: the index by the `for` token, the length by x's token and
+// x by the `in` token.
 // extract: inline
 fn for_of(ffuel: usize, fenv: FrontEnv, fscope: List<Local>, fs: CTree) -> core::option::Option<MStmt> {
     let x: Token = kid_token(fs, 1);
@@ -10412,7 +10430,10 @@ fn for_of(ffuel: usize, fenv: FrontEnv, fscope: List<Local>, fs: CTree) -> core:
             Some(name) -> match (find_local(fscope, name)) {
                 None -> None,
                 Some(l) -> match (array_local(l)) {
-                    None -> None,
+                    None -> match (slice_elem(l.ty)) {
+                        None -> None,
+                        Some(e) -> for_slice(fresh_id(fscope, minus(kid_token(fs, 2).start, fenv.base)), minus(kid_token(fs, 0).start, fenv.base), minus(x.start, fenv.base), minus(kid_token(fs, 2).start, fenv.base), l.id, e, block_of(ffuel, fenv, cons(Local { name: x.text, id: minus(kid_token(fs, 2).start, fenv.base), ty: e }, fscope), kid(kid(fs, 4), 1))),
+                    },
                     Some(al) -> for_array(minus(kid_token(fs, 0).start, fenv.base), minus(x.start, fenv.base), al, block_of(ffuel, fenv, cons(Local { name: x.text, id: minus(x.start, fenv.base), ty: al.element }, fscope), kid(kid(fs, 4), 1))),
                 },
             },

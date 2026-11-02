@@ -1037,10 +1037,17 @@ is an `i32`; here it is `usize`, which no source can observe, since the
 body cannot name it. Lengths from 2^31 up are not read (the lowering's
 array index takes no more).
 
-A loop over a slice is not read. laniusc reads the slice's length once
-before the loop (`SEMANTIC_LOOP_RECIPE_SLICE`), but Core has no
-slice-length expression and the mini syntax has no form to lower one to.
-Reading that loop needs a slice length in Core first.
+`for x in s { body }`, with `s` a slice local, is read as `let i: usize =
+0; let n: usize = slice_len(s); while (i < n) { let x: T = s[i]; i = i +
+1; body }` (`for_slice`, `StmtR.forSlice`; `slice_len` is "Slice length").
+This is laniusc's slice loop (`SEMANTIC_LOOP_RECIPE_SLICE`): the length is
+read once, before the loop, and each step reads element i. laniusc reads
+it from the slice it captured before the loop, here from `s`. The two agree
+unless the body writes `s` itself, so such a body is not read (as a range
+loop's body that writes its variable is not). Writes to `s`'s elements are
+seen by later steps in both, since both views name the same elements. The
+hidden locals are numbered as a range loop's: i by the `for` token, n by
+`x`'s token, and `x` by the `in` token.
 
 ## Match arm statements (decided 10-31, F4)
 

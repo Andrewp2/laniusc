@@ -39,6 +39,15 @@ def forArray (i : Nat) (x : Nat) (a : ArrayLocal) (body : Option MStmt) : Option
   else
     none
 
+/-- The reading of a loop over the slice local s of element type t (for_of): the usize index i from 0, the length read once into the usize n before the loop, then while i < n, x = s[i], i = i + 1 and the body. laniusc's slice loop captures the slice and its length before the loop, so a body that writes s itself is not read; writes to s's elements are seen by later steps in both. fresh: the local x's id is fresh. -/
+def forSlice (fresh : Bool) (i : Nat) (n : Nat) (x : Nat) (sl : Nat) (t : Ty) (body : Option MStmt) : Option MStmt :=
+  if fresh then
+    match body with
+    | none => none
+    | some b => stmtUnless (writesLocal b sl) (MStmt.mLet i (Ty.tyUint UintTy.usize) (SrcExpr.unsigned UintTy.usize 0) (MStmt.mLetEval n (Ty.tyUint UintTy.usize) (MEff.xLen sl) (MStmt.mWhile (SrcExpr.apply SrcOp.less (SrcExpr.local i) (SrcExpr.local n)) (MStmt.mLetIndex x t sl (SrcExpr.local i) (MStmt.mThen (MStmt.mSet i (SrcExpr.apply SrcOp.plus (SrcExpr.local i) (SrcExpr.unsigned UintTy.usize 1))) b)))))
+  else
+    none
+
 def matchOfPostfix (pf : CTree) : Option CTree :=
   if decide (nodeProd (kid pf 0) = (187)) && decide (nodeProd (kid pf 1) = (164)) then
     some (kid pf 0)

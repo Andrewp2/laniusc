@@ -21,6 +21,7 @@ public import Lanius.Mini.Frontend.P.lxSymbolStart
 public import Lanius.Mini.Frontend.P.noToken
 public import Lanius.Mini.Frontend.P.noTrees
 public import Lanius.Mini.Frontend.P.paramGoals
+public import Lanius.Mini.Frontend.P.pickTy
 public import Lanius.Mini.Frontend.P.sintAt
 public import Lanius.Mini.Frontend.P.sliceHead
 public import Lanius.Mini.Frontend.P.textSelf
@@ -51,7 +52,7 @@ namespace Lanius.Mini
   else
     none
 
-/-- `for x in a..n { body }`, a an integer literal and n a local (for_stmt -> For Ident In for_iterable block), read as `let c = a; let e = n; while (c < e) { let x = c; c = c + 1; body }`: n is read once, and a `continue` in body moves to the next value. The hidden c and e are numbered by the `for` token and x's token, and x by the `in` token, so that the locals are numbered in the order the desugared text declares them. `for x in a { body }`, a an array local, is for_array's loop, its index numbered by the `for` token and x by its own. -/
+/-- `for x in a..n { body }`, a an integer literal and n a local (for_stmt -> For Ident In for_iterable block), read as `let c = a; let e = n; while (c < e) { let x = c; c = c + 1; body }`: n is read once, and a `continue` in body moves to the next value. The hidden c and e are numbered by the `for` token and x's token, and x by the `in` token, so that the locals are numbered in the order the desugared text declares them. `for x in a { body }`, a an array local, is for_array's loop, its index numbered by the `for` token and x by its own; a a slice local, for_slice's, numbered as a range loop's: the index by the `for` token, the length by x's token and x by the `in` token. -/
 @[expose] def Inline.forOf (ffuel : Nat) (fenv : FrontEnv) (fscope : List Local) (fs : CTree) : Option MStmt :=
   let x : Token := kidToken fs 1
   let iter : CTree := kid fs 3
@@ -72,7 +73,10 @@ namespace Lanius.Mini
         | none => none
         | some l =>
           match arrayLocal l with
-          | none => none
+          | none =>
+            (match sliceElem l.ty with
+             | none => none
+             | some e => forSlice (freshId fscope ((kidToken fs 2).start - fenv.base)) ((kidToken fs 0).start - fenv.base) (x.start - fenv.base) ((kidToken fs 2).start - fenv.base) l.id e (blockOf ffuel fenv (({ name := x.text, id := (kidToken fs 2).start - fenv.base, ty := e } : Local) :: fscope) (kid (kid fs 4) 1)))
           | some al => forArray ((kidToken fs 0).start - fenv.base) (x.start - fenv.base) al (blockOf ffuel fenv (({ name := x.text, id := x.start - fenv.base, ty := al.element } : Local) :: fscope) (kid (kid fs 4) 1))
     else
       none

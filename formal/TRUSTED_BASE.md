@@ -722,7 +722,13 @@ when it is right; a stale cache entry is rejected, never used. Trusted:
     (`StmtR.forArray`, `Reading/Stmts.lean`), is `forArray`'s loop: a
     hidden `usize` index i (the `for` token's local) from 0 while i < n,
     `let x = a[i]` (x's token's local), i = i + 1, then the body; n below
-    2^31. A slice is not read. SEMANTIC_DECISIONS "`for` over an array";
+    2^31. SEMANTIC_DECISIONS "`for` over an array";
+  - (F11b) `for x in s { body }`, s a slice local (`StmtR.forSlice`), is
+    `forSlice`'s loop: the hidden `usize` index i (the `for` token's local)
+    from 0, the hidden `let n: usize = slice_len(s);` (x's token's local)
+    once before the loop, then while i < n, `let x = s[i]` (the `in`
+    token's local), i = i + 1, then the body. A body that writes s itself
+    is not read. SEMANTIC_DECISIONS "`for` over an array";
   - `x.f` is `Field` when `x` is a local, and otherwise the call of the
     projection `fn(v: T) -> F { return v.f; }` on `x`, an instance numbered
     like any other;
