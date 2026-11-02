@@ -185,8 +185,17 @@ native linking; older artifacts are not an accepted compatibility path.
 Version 5 records each object's body range and a Text section-offset
 relocation for every body reference into its native runtime copy. The GPU
 executable linker keeps only the entry object's runtime, CRT bridge and
-`_start` wrapper and points the other objects at it; native linking still
-hands every object's whole text to the system linker.
+`_start` wrapper and points the other objects at it. Native ELF export does
+the same: the entry object's `.text` stays whole and defines the hidden
+`__lanius_runtime` at its runtime, and every other object whose runtime is
+byte-identical exports only its body, with its runtime relocations rewritten
+against that symbol. Each such object saves 4144 bytes; for example the
+`native_c_startup` executable shrinks from 43040 to 34896 bytes.
+
+Object and library search paths may not contain a newline. GCC 15.2 rewrites
+a response-file command line into a second response file for ld and escapes a
+newline as backslash-newline, which binutils 2.46 ld drops as a line
+continuation, so such a path cannot reach the linker intact.
 
 Native entry/package linking supports source packs above one resident unit.
 The compiler privately spools each original object's opaque text/rodata before

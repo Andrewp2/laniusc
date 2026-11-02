@@ -223,6 +223,18 @@ impl GpuX86FileObject {
         self.copy_range(0, self.payload.text_len, output)
     }
 
+    /// Copies one range of the object's text section.
+    pub(crate) fn copy_text_range_to<W: Write>(
+        &self,
+        range: std::ops::Range<u32>,
+        output: &mut W,
+    ) -> Result<u64, String> {
+        if range.start > range.end || range.end > self.payload.text_len {
+            return Err("native object text range exceeds its text section".into());
+        }
+        self.copy_range(u64::from(range.start), range.end - range.start, output)
+    }
+
     pub(crate) fn copy_rodata_to<W: Write>(&self, output: &mut W) -> Result<u64, String> {
         self.copy_range(
             u64::from(self.payload.text_len),

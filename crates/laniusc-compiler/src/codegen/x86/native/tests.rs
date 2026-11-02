@@ -4,6 +4,7 @@ use super::*;
 use crate::codegen::x86::{
     GPU_X86_CRT_MAIN_BRIDGE_BYTES,
     GPU_X86_OBJECT_VERSION,
+    GpuX86ObjectBodyRange,
     GpuX86RelocatableObject,
     GpuX86RelocationRecord,
 };
@@ -681,6 +682,121 @@ fn system_cc_links_streamed_objects_and_enforces_the_output_limit() {
     );
 }
 
+/// An entry object and a library object, each laid out as GPU objects are:
+/// [wrapper][body][runtime][CRT bridge]. The library body calls its runtime
+/// (`mov eax, 37; ret`); the entry bridge calls the library function.
+fn shared_runtime_objects() -> [GpuX86RelocatableObject; 2] {
+    let runtime = [0xb8, 37, 0, 0, 0, 0xc3];
+    let bridge = |head: &[u8]| {
+        let mut bytes = head.to_vec();
+        bytes.resize(GPU_X86_CRT_MAIN_BRIDGE_BYTES as usize, 0x90);
+        bytes
+    };
+    let mut entry = GpuX86RelocatableObject {
+        version: GPU_X86_OBJECT_VERSION,
+        library_id: 1,
+        unit_id: 2,
+        entry_offset: Some(0),
+        body: Some(GpuX86ObjectBodyRange { start: 2, end: 3 }),
+        text: [&[0x90, 0x90, 0x90][..], &runtime, &bridge(&[0xe8, 0, 0, 0, 0, 0xc3])].concat(),
+        rodata: vec![],
+        relocations: vec![],
+        symbols: vec![],
+        identity_bytes: vec![],
+    };
+    let callee = add_symbol(&mut entry, LOCAL, GpuX86ObjectSection::Undefined, 0, 0);
+    entry.relocations.push(GpuX86RelocationRecord {
+        kind: GpuX86RelocationKind::CallRel32,
+        site_section: GpuX86ObjectSection::Text,
+        site_offset: 10,
+        target_kind: GpuX86RelocationTargetKind::Symbol,
+        target_index: callee,
+        target_offset: 0,
+        addend: -4,
+    });
+    let mut library = GpuX86RelocatableObject {
+        unit_id: 3,
+        entry_offset: None,
+        body: Some(GpuX86ObjectBodyRange { start: 2, end: 8 }),
+        text: [&[0x90, 0x90, 0xe8, 0, 0, 0, 0, 0xc3][..], &runtime, &bridge(&[])].concat(),
+        relocations: vec![GpuX86RelocationRecord {
+            kind: GpuX86RelocationKind::CallRel32,
+            site_section: GpuX86ObjectSection::Text,
+            site_offset: 3,
+            target_kind: GpuX86RelocationTargetKind::SectionOffset,
+            target_index: GpuX86ObjectSection::Text as u32,
+            target_offset: 8,
+            addend: -4,
+        }],
+        symbols: vec![],
+        identity_bytes: vec![],
+        ..entry.clone()
+    };
+    add_symbol(&mut library, LOCAL, GpuX86ObjectSection::Text, 2, 6);
+    [entry, library]
+}
+
+fn shared_runtime_bridge() -> NativeMainBridge {
+    NativeMainBridge {
+        object_index: 0,
+        text_offset: 9,
+        byte_len: GPU_X86_CRT_MAIN_BRIDGE_BYTES,
+    }
+}
+
+#[test]
+fn export_keeps_one_runtime_and_points_the_others_at_it() {
+    let objects = shared_runtime_objects();
+    let outputs = export_objects(&objects, &[], shared_runtime_bridge()).unwrap();
+    let entry = Elf::parse(&outputs[0]);
+    assert_eq!(entry.section(".text"), objects[0].text.as_slice(), "entry text stays whole");
+    let symbols = entry.symbols();
+    let (_, runtime) = symbols
+        .iter()
+        .find(|(name, _)| *name == "__lanius_runtime")
+        .expect("entry defines the shared runtime");
+    assert_eq!((runtime[4], runtime[5], read16(runtime, 6), read64(runtime, 8)), (0x10, 2, 1, 3));
+
+    let library = Elf::parse(&outputs[1]);
+    assert_eq!(library.section(".text"), &objects[1].text[2..8], "only the body is exported");
+    let symbols = library.symbols();
+    let (_, function) = symbols.iter().find(|(name, _)| *name == "__lanius_1_2_3").unwrap();
+    assert_eq!(read64(function, 8), 0, "symbols move with the body");
+    let records = library.section(".rela.text");
+    assert_eq!(records.len(), 24);
+    assert_eq!(read64(records, 0), 1, "relocation sites move with the body");
+    let target = &symbols[(read64(records, 8) >> 32) as usize];
+    assert_eq!((target.0, read16(target.1, 6)), ("__lanius_runtime", SHN_UNDEF));
+    assert_eq!(read64(records, 16) as i64, -4);
+
+    // An object whose runtime differs keeps its own whole text.
+    let mut distinct = objects.clone();
+    distinct[1].text[8 + 1] = 38;
+    let outputs = export_objects(&distinct, &[], shared_runtime_bridge()).unwrap();
+    assert_eq!(Elf::parse(&outputs[1]).section(".text"), distinct[1].text.as_slice());
+    assert!(!Elf::parse(&outputs[0]).symbols().iter().any(|(name, _)| *name == "__lanius_runtime"));
+}
+
+#[test]
+fn system_cc_links_library_objects_against_the_entry_runtime() {
+    let objects = shared_runtime_objects()
+        .into_iter()
+        .map(GpuX86FileObject::spill)
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .unwrap();
+    let output = link_native_file_executable(
+        &objects,
+        &[],
+        shared_runtime_bridge(),
+        &NativeLinkOptions::default(),
+    )
+    .unwrap();
+    let status = Command::new(output.directory.path.join("program"))
+        .status()
+        .unwrap();
+    assert_eq!(status.code(), Some(37));
+}
+
 #[test]
 fn actual_cc_response_grammar_preserves_quotes_backslashes_whitespace_and_many_paths() {
     let directory = NativeTempDirectory::create().unwrap();
@@ -700,7 +816,7 @@ fn actual_cc_response_grammar_preserves_quotes_backslashes_whitespace_and_many_p
         nested.push(format!("{index} {}", "q".repeat(220)));
     }
     fs::create_dir_all(&nested).unwrap();
-    let empty_object = nested.join("@empty \" quote ' slash\\ tab\t line\n.o");
+    let empty_object = nested.join("@empty \" quote ' slash\\ tab\t line.o");
     fs::write(&source, "/* no global symbols */\n").unwrap();
     let status = Command::new("cc")
         .arg("-c")
@@ -715,8 +831,20 @@ fn actual_cc_response_grammar_preserves_quotes_backslashes_whitespace_and_many_p
         ..Default::default()
     };
     validate_options(&options).unwrap();
-    let output = directory.path.join("program \" quote \\ tab\t line\n");
+    let output = directory.path.join("program \" quote \\ tab\t line");
     let response = directory.path.join("inputs.rsp");
+    // The driver's second response file for ld loses newlines; they are
+    // rejected before any linker runs.
+    let newline = nested.join("line\n.o");
+    fs::copy(&options.objects[0], &newline).unwrap();
+    let error = validate_options(&NativeLinkOptions {
+        objects: vec![newline.clone()],
+        ..Default::default()
+    })
+    .unwrap_err();
+    assert!(error.to_string().contains("newline"), "{error:#}");
+    let rejected = directory.path.join("rejected.rsp");
+    assert!(write_link_response(&options, &[newline], &output, &rejected).is_err());
     write_link_response(&options, &[main_object], &output, &response).unwrap();
     assert!(fs::metadata(&response).unwrap().len() > 2 * 1024 * 1024);
     let status = link_command(&options, &response).unwrap().status().unwrap();
