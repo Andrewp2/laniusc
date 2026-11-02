@@ -495,4 +495,81 @@ theorem bstep_dying_extent {spW sp : SrcProgram} {prims : Prims} {ix_dying_exten
     budget
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3⟩
 
+theorem bproof_kill_shared {spW sp : SrcProgram} {prims : Prims} {ix_kill_shared ix_kill_prefix ix_dying_extent : Nat}
+    (fnW : spW.funcs[ix_kill_shared]? = some (src_kill_shared ix_kill_prefix ix_dying_extent)) (fn : sp.funcs[ix_kill_shared]? = some (src_kill_shared ix_kill_prefix ix_dying_extent))
+    (np : prims.isPrim ix_kill_shared = false)
+    (back : Certified (∀ {n : Nat}, Stmt_kill_shared sp prims ix_kill_shared n))
+    (b_kill_prefix : Certified (∀ {n : Nat}, BStmt_kill_prefix spW sp prims ix_kill_prefix n))
+    (b_dying_extent : Certified (∀ {n : Nat}, BStmt_dying_extent spW sp prims ix_dying_extent n)) {n : Nat} :
+    BStmt_kill_shared spW sp prims ix_kill_shared n := by
+  intro x0 x1 v0 v1 w k b h r0 r1 hb pre
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_kill_shared [v0, v1] = some (w, k) ∧ Cost_kill_shared (n + 1) x0 x1 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_kill_shared, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_kill_shared.eq_def] at pre
+    simp only at pre
+    budget Cost_kill_shared
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
+
+theorem bstep_first_facts {spW sp : SrcProgram} {prims : Prims} {ix_first_facts ix_minus ix_empty_of_mini_selfhost_Fact ix_unbox_of_mini_selfhost_List_mini_selfhost_Fact ix_cons_of_mini_selfhost_Fact : Nat}
+    (fnW : spW.funcs[ix_first_facts]? = some (src_first_facts ix_minus ix_empty_of_mini_selfhost_Fact ix_unbox_of_mini_selfhost_List_mini_selfhost_Fact ix_cons_of_mini_selfhost_Fact ix_first_facts)) (fn : sp.funcs[ix_first_facts]? = some (src_first_facts ix_minus ix_empty_of_mini_selfhost_Fact ix_unbox_of_mini_selfhost_List_mini_selfhost_Fact ix_cons_of_mini_selfhost_Fact ix_first_facts))
+    (np : prims.isPrim ix_first_facts = false)
+    (back : Certified (∀ {n : Nat}, Stmt_first_facts sp prims ix_first_facts n))
+    (b_minus : Certified (∀ {n : Nat}, BStmt_minus spW sp prims ix_minus n))
+    (b_empty_of_mini_selfhost_Fact : Certified (∀ {n : Nat}, BStmt_empty_of_mini_selfhost_Fact spW sp prims ix_empty_of_mini_selfhost_Fact n))
+    (pp_unbox_of_mini_selfhost_List_mini_selfhost_Fact : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_Fact = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_Fact : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_Fact = false)
+    (b_cons_of_mini_selfhost_Fact : Certified (∀ {n : Nat}, BStmt_cons_of_mini_selfhost_Fact spW sp prims ix_cons_of_mini_selfhost_Fact n)) {n : Nat}
+    (bih_first_facts : Certified (BStmt_first_facts spW sp prims ix_first_facts n)) :
+    BStmt_first_facts spW sp prims ix_first_facts (n + 1) := by
+  intro x0 x1 v0 v1 w k h r0 r1
+  have key : qcall sp prims uc (n + 1) ix_first_facts [v0, v1] = some (w, k) ∧ Cost_first_facts (n + 1) x0 x1 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_first_facts, List.length_cons, List.length_nil, if_true] at h ⊢
+    budget Cost_first_facts
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
+
+theorem bproof_trim_facts {spW sp : SrcProgram} {prims : Prims} {ix_trim_facts ix_longer ix_first_facts : Nat}
+    (fnW : spW.funcs[ix_trim_facts]? = some (src_trim_facts ix_longer ix_first_facts)) (fn : sp.funcs[ix_trim_facts]? = some (src_trim_facts ix_longer ix_first_facts))
+    (np : prims.isPrim ix_trim_facts = false)
+    (back : Certified (∀ {n : Nat}, Stmt_trim_facts sp prims ix_trim_facts n))
+    (b_longer : Certified (∀ {n : Nat}, BStmt_longer spW sp prims ix_longer n))
+    (b_first_facts : Certified (∀ {n : Nat}, BStmt_first_facts spW sp prims ix_first_facts n)) {n : Nat} :
+    BStmt_trim_facts spW sp prims ix_trim_facts n := by
+  intro x0 v0 w k h r0
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_trim_facts [v0] = some (w, k) ∧ Cost_trim_facts (n + 1) x0 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_trim_facts, List.length_cons, List.length_nil, if_true] at h ⊢
+    budget Cost_trim_facts
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0⟩
+
+theorem bproof_assigned {spW sp : SrcProgram} {prims : Prims} {ix_assigned ix_Expr_subst ix_kill_shared ix_Expr_is_atom ix_Expr_mentions ix_cons_of_mini_selfhost_Fact ix_trim_facts : Nat}
+    (fnW : spW.funcs[ix_assigned]? = some (src_assigned ix_Expr_subst ix_kill_shared ix_Expr_is_atom ix_Expr_mentions ix_cons_of_mini_selfhost_Fact ix_trim_facts)) (fn : sp.funcs[ix_assigned]? = some (src_assigned ix_Expr_subst ix_kill_shared ix_Expr_is_atom ix_Expr_mentions ix_cons_of_mini_selfhost_Fact ix_trim_facts))
+    (np : prims.isPrim ix_assigned = false)
+    (back : Certified (∀ {n : Nat}, Stmt_assigned sp prims ix_assigned n))
+    (b_Expr_subst : Certified (∀ {n : Nat}, BStmt_Expr_subst spW sp prims ix_Expr_subst n))
+    (b_kill_shared : Certified (∀ {n : Nat}, BStmt_kill_shared spW sp prims ix_kill_shared n))
+    (b_Expr_is_atom : Certified (∀ {n : Nat}, BStmt_Expr_is_atom spW sp prims ix_Expr_is_atom n))
+    (b_Expr_mentions : Certified (∀ {n : Nat}, BStmt_Expr_mentions spW sp prims ix_Expr_mentions n))
+    (b_cons_of_mini_selfhost_Fact : Certified (∀ {n : Nat}, BStmt_cons_of_mini_selfhost_Fact spW sp prims ix_cons_of_mini_selfhost_Fact n))
+    (b_trim_facts : Certified (∀ {n : Nat}, BStmt_trim_facts spW sp prims ix_trim_facts n)) {n : Nat} :
+    BStmt_assigned spW sp prims ix_assigned n := by
+  intro x0 x1 x2 v0 v1 v2 w k b h r0 r1 r2 hb pre
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_assigned [v0, v1, v2] = some (w, k) ∧ Cost_assigned (n + 1) x0 x1 x2 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_assigned, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_assigned.eq_def] at pre
+    simp only at pre
+    budget Cost_assigned
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
+
 end Lanius.Faithful.SelfBudget

@@ -18,419 +18,442 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.SelfCert
 open Lanius.Faithful.Budget
 
-theorem bproof_cons_variant {spW sp : SrcProgram} {prims : Prims} {ix_cons_variant ix_cons_variant_tail : Nat}
-    (fnW : spW.funcs[ix_cons_variant]? = some (src_cons_variant ix_cons_variant_tail)) (fn : sp.funcs[ix_cons_variant]? = some (src_cons_variant ix_cons_variant_tail))
-    (np : prims.isPrim ix_cons_variant = false)
-    (back : Certified (∀ {n : Nat}, Stmt_cons_variant sp prims ix_cons_variant n))
-    (b_cons_variant_tail : Certified (∀ {n : Nat}, BStmt_cons_variant_tail spW sp prims ix_cons_variant_tail n)) {n : Nat} :
-    BStmt_cons_variant spW sp prims ix_cons_variant n := by
-  intro x0 x1 x2 v0 v1 v2 w k h r0 r1 r2
+theorem bstep_element_loads {spW sp : SrcProgram} {prims : Prims} {ix_element_loads ix_minus ix_plus ix_boxed_of_mini_selfhost_Stmt ix_block_load : Nat}
+    (fnW : spW.funcs[ix_element_loads]? = some (src_element_loads ix_minus ix_plus ix_boxed_of_mini_selfhost_Stmt ix_element_loads ix_block_load)) (fn : sp.funcs[ix_element_loads]? = some (src_element_loads ix_minus ix_plus ix_boxed_of_mini_selfhost_Stmt ix_element_loads ix_block_load))
+    (np : prims.isPrim ix_element_loads = false)
+    (back : Certified (∀ {n : Nat}, Stmt_element_loads sp prims ix_element_loads n))
+    (b_minus : Certified (∀ {n : Nat}, BStmt_minus spW sp prims ix_minus n))
+    (b_plus : Certified (∀ {n : Nat}, BStmt_plus spW sp prims ix_plus n))
+    (pp_boxed_of_mini_selfhost_Stmt : prims.isPrim ix_boxed_of_mini_selfhost_Stmt = true) (bx_boxed_of_mini_selfhost_Stmt : prims.boxed.contains ix_boxed_of_mini_selfhost_Stmt = true)
+    (b_block_load : Certified (∀ {n : Nat}, BStmt_block_load spW sp prims ix_block_load n)) {n : Nat}
+    (bih_element_loads : Certified (BStmt_element_loads spW sp prims ix_element_loads n)) :
+    BStmt_element_loads spW sp prims ix_element_loads (n + 1) := by
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w k b h r0 r1 r2 r3 r4 hb pre
+  have key : qcall sp prims uc (n + 1) ix_element_loads [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_element_loads (n + 1) x0 x1 x2 x3 x4 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_element_loads, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_element_loads.eq_def] at pre
+    simp only at pre
+    budget Cost_element_loads
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4⟩
+
+theorem bproof_array_arg_local {spW sp : SrcProgram} {prims : Prims} {ix_array_arg_local ix_plus ix_times ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_boxed_of_mini_selfhost_SrcType ix_SrcType_same ix_cons_of_usize ix_id_absent ix_cons_of_mini_selfhost_Expr ix_packed_width ix_array_arg_checked ix_element_stores ix_block_at ix_element_loads : Nat}
+    (fnW : spW.funcs[ix_array_arg_local]? = some (src_array_arg_local ix_plus ix_times ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_boxed_of_mini_selfhost_SrcType ix_SrcType_same ix_cons_of_usize ix_id_absent ix_cons_of_mini_selfhost_Expr ix_packed_width ix_array_arg_checked ix_element_stores ix_block_at ix_element_loads)) (fn : sp.funcs[ix_array_arg_local]? = some (src_array_arg_local ix_plus ix_times ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_boxed_of_mini_selfhost_SrcType ix_SrcType_same ix_cons_of_usize ix_id_absent ix_cons_of_mini_selfhost_Expr ix_packed_width ix_array_arg_checked ix_element_stores ix_block_at ix_element_loads))
+    (np : prims.isPrim ix_array_arg_local = false)
+    (back : Certified (∀ {n : Nat}, Stmt_array_arg_local sp prims ix_array_arg_local n))
+    (b_plus : Certified (∀ {n : Nat}, BStmt_plus spW sp prims ix_plus n))
+    (b_times : Certified (∀ {n : Nat}, BStmt_times spW sp prims ix_times n))
+    (b_SrcType_size : Certified (∀ {n : Nat}, BStmt_SrcType_size spW sp prims ix_SrcType_size n))
+    (pp_boxed_of_mini_selfhost_Stmt : prims.isPrim ix_boxed_of_mini_selfhost_Stmt = true) (bx_boxed_of_mini_selfhost_Stmt : prims.boxed.contains ix_boxed_of_mini_selfhost_Stmt = true)
+    (pp_boxed_of_mini_selfhost_SrcType : prims.isPrim ix_boxed_of_mini_selfhost_SrcType = true) (bx_boxed_of_mini_selfhost_SrcType : prims.boxed.contains ix_boxed_of_mini_selfhost_SrcType = true)
+    (b_SrcType_same : Certified (∀ {n : Nat}, BStmt_SrcType_same spW sp prims ix_SrcType_same n))
+    (b_cons_of_usize : Certified (∀ {n : Nat}, BStmt_cons_of_usize spW sp prims ix_cons_of_usize n))
+    (b_id_absent : Certified (∀ {n : Nat}, BStmt_id_absent spW sp prims ix_id_absent n))
+    (b_cons_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, BStmt_cons_of_mini_selfhost_Expr spW sp prims ix_cons_of_mini_selfhost_Expr n))
+    (b_packed_width : Certified (∀ {n : Nat}, BStmt_packed_width spW sp prims ix_packed_width n))
+    (b_array_arg_checked : Certified (∀ {n : Nat}, BStmt_array_arg_checked spW sp prims ix_array_arg_checked n))
+    (b_element_stores : Certified (∀ {n : Nat}, BStmt_element_stores spW sp prims ix_element_stores n))
+    (b_block_at : Certified (∀ {n : Nat}, BStmt_block_at spW sp prims ix_block_at n))
+    (b_element_loads : Certified (∀ {n : Nat}, BStmt_element_loads spW sp prims ix_element_loads n)) {n : Nat} :
+    BStmt_array_arg_local spW sp prims ix_array_arg_local n := by
+  intro x0 x1 x2 x3 x4 x5 x6 v0 v1 v2 v3 v4 v5 v6 w k b h r0 r1 r2 r3 r4 r5 r6 hb pre
   rcases n with _ | n
   · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_cons_variant [v0, v1, v2] = some (w, k) ∧ Cost_cons_variant (n + 1) x0 x1 x2 = k := by
+  have key : qcall sp prims uc (n + 1) ix_array_arg_local [v0, v1, v2, v3, v4, v5, v6] = some (w, k) ∧ Cost_array_arg_local (n + 1) x0 x1 x2 x3 x4 x5 x6 = k := by
     rw [qcall_succ np fnW] at h
     rw [qcall_succ np fn]
-    simp only [src_cons_variant, List.length_cons, List.length_nil, if_true] at h ⊢
-    budget Cost_cons_variant
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
+    simp only [src_array_arg_local, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_array_arg_local.eq_def] at pre
+    simp only at pre
+    budget Cost_array_arg_local
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4 r5 r6⟩
 
-theorem bproof_variant_payload {spW sp : SrcProgram} {prims : Prims} {ix_variant_payload ix_empty_of_mini_selfhost_CTree ix_node_prod ix_list_items ix_kid ix_p_enum_variant_unit : Nat}
-    (fnW : spW.funcs[ix_variant_payload]? = some (src_variant_payload ix_empty_of_mini_selfhost_CTree ix_node_prod ix_list_items ix_kid ix_p_enum_variant_unit)) (fn : sp.funcs[ix_variant_payload]? = some (src_variant_payload ix_empty_of_mini_selfhost_CTree ix_node_prod ix_list_items ix_kid ix_p_enum_variant_unit))
-    (np : prims.isPrim ix_variant_payload = false)
-    (back : Certified (∀ {n : Nat}, Stmt_variant_payload sp prims ix_variant_payload n))
-    (b_empty_of_mini_selfhost_CTree : Certified (∀ {n : Nat}, BStmt_empty_of_mini_selfhost_CTree spW sp prims ix_empty_of_mini_selfhost_CTree n))
-    (b_node_prod : Certified (∀ {n : Nat}, BStmt_node_prod spW sp prims ix_node_prod n))
-    (b_list_items : Certified (∀ {n : Nat}, BStmt_list_items spW sp prims ix_list_items n))
-    (b_kid : Certified (∀ {n : Nat}, BStmt_kid spW sp prims ix_kid n))
-    (b_p_enum_variant_unit : Certified (∀ {n : Nat}, BStmt_p_enum_variant_unit spW sp prims ix_p_enum_variant_unit n)) {n : Nat} :
-    BStmt_variant_payload spW sp prims ix_variant_payload n := by
-  intro x0 x1 v0 v1 w k h r0 r1
+theorem bproof_array_arg_slice {spW sp : SrcProgram} {prims : Prims} {ix_array_arg_slice ix_array_arg_local : Nat}
+    (fnW : spW.funcs[ix_array_arg_slice]? = some (src_array_arg_slice ix_array_arg_local)) (fn : sp.funcs[ix_array_arg_slice]? = some (src_array_arg_slice ix_array_arg_local))
+    (np : prims.isPrim ix_array_arg_slice = false)
+    (back : Certified (∀ {n : Nat}, Stmt_array_arg_slice sp prims ix_array_arg_slice n))
+    (b_array_arg_local : Certified (∀ {n : Nat}, BStmt_array_arg_local spW sp prims ix_array_arg_local n)) {n : Nat} :
+    BStmt_array_arg_slice spW sp prims ix_array_arg_slice n := by
+  intro x0 x1 x2 x3 x4 x5 x6 v0 v1 v2 v3 v4 v5 v6 w k b h r0 r1 r2 r3 r4 r5 r6 hb pre
   rcases n with _ | n
   · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_variant_payload [v0, v1] = some (w, k) ∧ Cost_variant_payload (n + 1) x0 x1 = k := by
+  have key : qcall sp prims uc (n + 1) ix_array_arg_slice [v0, v1, v2, v3, v4, v5, v6] = some (w, k) ∧ Cost_array_arg_slice (n + 1) x0 x1 x2 x3 x4 x5 x6 = k := by
     rw [qcall_succ np fnW] at h
     rw [qcall_succ np fn]
-    simp only [src_variant_payload, List.length_cons, List.length_nil, if_true] at h ⊢
-    budget Cost_variant_payload
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
+    simp only [src_array_arg_slice, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_array_arg_slice.eq_def] at pre
+    simp only at pre
+    budget Cost_array_arg_slice
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4 r5 r6⟩
 
-theorem bstep_variants_of {spW sp : SrcProgram} {prims : Prims} {ix_variants_of ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_empty_of_mini_selfhost_List_usize ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_empty_of_mini_selfhost_List_mini_selfhost_CTree ix_cons_variant ix_variant_payload : Nat}
-    (fnW : spW.funcs[ix_variants_of]? = some (src_variants_of ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_empty_of_mini_selfhost_List_usize ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_variants_of ix_empty_of_mini_selfhost_List_mini_selfhost_CTree ix_cons_variant ix_variant_payload)) (fn : sp.funcs[ix_variants_of]? = some (src_variants_of ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_empty_of_mini_selfhost_List_usize ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_variants_of ix_empty_of_mini_selfhost_List_mini_selfhost_CTree ix_cons_variant ix_variant_payload))
-    (np : prims.isPrim ix_variants_of = false)
-    (back : Certified (∀ {n : Nat}, Stmt_variants_of sp prims ix_variants_of n))
-    (pp_unbox_of_mini_selfhost_List_mini_selfhost_CTree : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_CTree : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree = false)
-    (b_empty_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, BStmt_empty_of_mini_selfhost_List_usize spW sp prims ix_empty_of_mini_selfhost_List_usize n))
-    (b_field_text_Token_of_mini_selfhost_Token : Certified (∀ {n : Nat}, BStmt_field_text_Token_of_mini_selfhost_Token spW sp prims ix_field_text_Token_of_mini_selfhost_Token n))
-    (b_kid_token : Certified (∀ {n : Nat}, BStmt_kid_token spW sp prims ix_kid_token n))
-    (b_empty_of_mini_selfhost_List_mini_selfhost_CTree : Certified (∀ {n : Nat}, BStmt_empty_of_mini_selfhost_List_mini_selfhost_CTree spW sp prims ix_empty_of_mini_selfhost_List_mini_selfhost_CTree n))
-    (b_cons_variant : Certified (∀ {n : Nat}, BStmt_cons_variant spW sp prims ix_cons_variant n))
-    (b_variant_payload : Certified (∀ {n : Nat}, BStmt_variant_payload spW sp prims ix_variant_payload n)) {n : Nat}
-    (bih_variants_of : Certified (BStmt_variants_of spW sp prims ix_variants_of n)) :
-    BStmt_variants_of spW sp prims ix_variants_of (n + 1) := by
-  intro x0 x1 v0 v1 w k h r0 r1
-  have key : qcall sp prims uc (n + 1) ix_variants_of [v0, v1] = some (w, k) ∧ Cost_variants_of (n + 1) x0 x1 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_variants_of, List.length_cons, List.length_nil, if_true] at h ⊢
-    budget Cost_variants_of
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
-
-theorem bproof_type_decl {spW sp : SrcProgram} {prims : Prims} {ix_type_decl ix_node_prod ix_list_items ix_kid ix_p_struct ix_p_enum ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_where_none ix_free_params ix_struct_decl_of ix_enum_decl_of ix_variants_of : Nat}
-    (fnW : spW.funcs[ix_type_decl]? = some (src_type_decl ix_node_prod ix_list_items ix_kid ix_p_struct ix_p_enum ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_where_none ix_free_params ix_struct_decl_of ix_enum_decl_of ix_variants_of)) (fn : sp.funcs[ix_type_decl]? = some (src_type_decl ix_node_prod ix_list_items ix_kid ix_p_struct ix_p_enum ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_where_none ix_free_params ix_struct_decl_of ix_enum_decl_of ix_variants_of))
-    (np : prims.isPrim ix_type_decl = false)
-    (back : Certified (∀ {n : Nat}, Stmt_type_decl sp prims ix_type_decl n))
-    (b_node_prod : Certified (∀ {n : Nat}, BStmt_node_prod spW sp prims ix_node_prod n))
-    (b_list_items : Certified (∀ {n : Nat}, BStmt_list_items spW sp prims ix_list_items n))
-    (b_kid : Certified (∀ {n : Nat}, BStmt_kid spW sp prims ix_kid n))
-    (b_p_struct : Certified (∀ {n : Nat}, BStmt_p_struct spW sp prims ix_p_struct n))
-    (b_p_enum : Certified (∀ {n : Nat}, BStmt_p_enum spW sp prims ix_p_enum n))
-    (b_field_text_Token_of_mini_selfhost_Token : Certified (∀ {n : Nat}, BStmt_field_text_Token_of_mini_selfhost_Token spW sp prims ix_field_text_Token_of_mini_selfhost_Token n))
-    (b_kid_token : Certified (∀ {n : Nat}, BStmt_kid_token spW sp prims ix_kid_token n))
-    (b_p_where_none : Certified (∀ {n : Nat}, BStmt_p_where_none spW sp prims ix_p_where_none n))
-    (b_free_params : Certified (∀ {n : Nat}, BStmt_free_params spW sp prims ix_free_params n))
-    (b_struct_decl_of : Certified (∀ {n : Nat}, BStmt_struct_decl_of spW sp prims ix_struct_decl_of n))
-    (b_enum_decl_of : Certified (∀ {n : Nat}, BStmt_enum_decl_of spW sp prims ix_enum_decl_of n))
-    (b_variants_of : Certified (∀ {n : Nat}, BStmt_variants_of spW sp prims ix_variants_of n)) {n : Nat} :
-    BStmt_type_decl spW sp prims ix_type_decl n := by
-  intro x0 x1 x2 v0 v1 v2 w k h r0 r1 r2
+theorem bproof_array_arg {spW sp : SrcProgram} {prims : Prims} {ix_array_arg ix_SrcExpr_guard ix_lower_value ix_lookup ix_array_arg_pure ix_array_arg_slice : Nat}
+    (fnW : spW.funcs[ix_array_arg]? = some (src_array_arg ix_SrcExpr_guard ix_lower_value ix_lookup ix_array_arg_pure ix_array_arg_slice)) (fn : sp.funcs[ix_array_arg]? = some (src_array_arg ix_SrcExpr_guard ix_lower_value ix_lookup ix_array_arg_pure ix_array_arg_slice))
+    (np : prims.isPrim ix_array_arg = false)
+    (back : Certified (∀ {n : Nat}, Stmt_array_arg sp prims ix_array_arg n))
+    (b_SrcExpr_guard : Certified (∀ {n : Nat}, BStmt_SrcExpr_guard spW sp prims ix_SrcExpr_guard n))
+    (b_lower_value : Certified (∀ {n : Nat}, BStmt_lower_value spW sp prims ix_lower_value n))
+    (b_lookup : Certified (∀ {n : Nat}, BStmt_lookup spW sp prims ix_lookup n))
+    (b_array_arg_pure : Certified (∀ {n : Nat}, BStmt_array_arg_pure spW sp prims ix_array_arg_pure n))
+    (b_array_arg_slice : Certified (∀ {n : Nat}, BStmt_array_arg_slice spW sp prims ix_array_arg_slice n)) {n : Nat} :
+    BStmt_array_arg spW sp prims ix_array_arg n := by
+  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w k b h r0 r1 r2 r3 r4 r5 hb pre
   rcases n with _ | n
   · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_type_decl [v0, v1, v2] = some (w, k) ∧ Cost_type_decl (n + 1) x0 x1 x2 = k := by
+  have key : qcall sp prims uc (n + 1) ix_array_arg [v0, v1, v2, v3, v4, v5] = some (w, k) ∧ Cost_array_arg (n + 1) x0 x1 x2 x3 x4 x5 = k := by
     rw [qcall_succ np fnW] at h
     rw [qcall_succ np fn]
-    simp only [src_type_decl, List.length_cons, List.length_nil, if_true] at h ⊢
-    budget Cost_type_decl
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
+    simp only [src_array_arg, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_array_arg.eq_def] at pre
+    simp only at pre
+    budget Cost_array_arg
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4 r5⟩
 
-theorem bproof_cons_of_mini_selfhost_FnDecl {spW sp : SrcProgram} {prims : Prims} {ix_cons_of_mini_selfhost_FnDecl ix_boxed_of_mini_selfhost_List_mini_selfhost_FnDecl : Nat}
-    (fnW : spW.funcs[ix_cons_of_mini_selfhost_FnDecl]? = some (src_cons_of_mini_selfhost_FnDecl ix_boxed_of_mini_selfhost_List_mini_selfhost_FnDecl)) (fn : sp.funcs[ix_cons_of_mini_selfhost_FnDecl]? = some (src_cons_of_mini_selfhost_FnDecl ix_boxed_of_mini_selfhost_List_mini_selfhost_FnDecl))
-    (np : prims.isPrim ix_cons_of_mini_selfhost_FnDecl = false)
-    (back : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_FnDecl sp prims ix_cons_of_mini_selfhost_FnDecl n))
-    (pp_boxed_of_mini_selfhost_List_mini_selfhost_FnDecl : prims.isPrim ix_boxed_of_mini_selfhost_List_mini_selfhost_FnDecl = true) (bx_boxed_of_mini_selfhost_List_mini_selfhost_FnDecl : prims.boxed.contains ix_boxed_of_mini_selfhost_List_mini_selfhost_FnDecl = true) {n : Nat} :
-    BStmt_cons_of_mini_selfhost_FnDecl spW sp prims ix_cons_of_mini_selfhost_FnDecl n := by
-  intro x0 x1 v0 v1 w k h r0 r1
+theorem bproof_binding_bytes {spW sp : SrcProgram} {prims : Prims} {ix_binding_bytes ix_times ix_SrcType_size : Nat}
+    (fnW : spW.funcs[ix_binding_bytes]? = some (src_binding_bytes ix_times ix_SrcType_size)) (fn : sp.funcs[ix_binding_bytes]? = some (src_binding_bytes ix_times ix_SrcType_size))
+    (np : prims.isPrim ix_binding_bytes = false)
+    (back : Certified (∀ {n : Nat}, Stmt_binding_bytes sp prims ix_binding_bytes n))
+    (b_times : Certified (∀ {n : Nat}, BStmt_times spW sp prims ix_times n))
+    (b_SrcType_size : Certified (∀ {n : Nat}, BStmt_SrcType_size spW sp prims ix_SrcType_size n)) {n : Nat} :
+    BStmt_binding_bytes spW sp prims ix_binding_bytes n := by
+  intro x0 v0 w k b h r0 hb pre
   rcases n with _ | n
   · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_cons_of_mini_selfhost_FnDecl [v0, v1] = some (w, k) ∧ Cost_cons_of_mini_selfhost_FnDecl (n + 1) x0 x1 = k := by
+  have key : qcall sp prims uc (n + 1) ix_binding_bytes [v0] = some (w, k) ∧ 0 = k := by
     rw [qcall_succ np fnW] at h
     rw [qcall_succ np fn]
-    simp only [src_cons_of_mini_selfhost_FnDecl, List.length_cons, List.length_nil, if_true] at h ⊢
-    budget Cost_cons_of_mini_selfhost_FnDecl
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
-
-theorem bproof_cons_fn_decl {spW sp : SrcProgram} {prims : Prims} {ix_cons_fn_decl ix_cons_of_mini_selfhost_FnDecl : Nat}
-    (fnW : spW.funcs[ix_cons_fn_decl]? = some (src_cons_fn_decl ix_cons_of_mini_selfhost_FnDecl)) (fn : sp.funcs[ix_cons_fn_decl]? = some (src_cons_fn_decl ix_cons_of_mini_selfhost_FnDecl))
-    (np : prims.isPrim ix_cons_fn_decl = false)
-    (back : Certified (∀ {n : Nat}, Stmt_cons_fn_decl sp prims ix_cons_fn_decl n))
-    (b_cons_of_mini_selfhost_FnDecl : Certified (∀ {n : Nat}, BStmt_cons_of_mini_selfhost_FnDecl spW sp prims ix_cons_of_mini_selfhost_FnDecl n)) {n : Nat} :
-    BStmt_cons_fn_decl spW sp prims ix_cons_fn_decl n := by
-  intro x0 x1 v0 v1 w k h r0 r1
-  rcases n with _ | n
-  · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_cons_fn_decl [v0, v1] = some (w, k) ∧ Cost_cons_fn_decl (n + 1) x0 x1 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_cons_fn_decl, List.length_cons, List.length_nil, if_true] at h ⊢
-    budget Cost_cons_fn_decl
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
-
-theorem bproof_type_params {spW sp : SrcProgram} {prims : Prims} {ix_type_params ix_list_items ix_param_spellings : Nat}
-    (fnW : spW.funcs[ix_type_params]? = some (src_type_params ix_list_items ix_param_spellings)) (fn : sp.funcs[ix_type_params]? = some (src_type_params ix_list_items ix_param_spellings))
-    (np : prims.isPrim ix_type_params = false)
-    (back : Certified (∀ {n : Nat}, Stmt_type_params sp prims ix_type_params n))
-    (b_list_items : Certified (∀ {n : Nat}, BStmt_list_items spW sp prims ix_list_items n))
-    (b_param_spellings : Certified (∀ {n : Nat}, BStmt_param_spellings spW sp prims ix_param_spellings n)) {n : Nat} :
-    BStmt_type_params spW sp prims ix_type_params n := by
-  intro x0 x1 v0 v1 w k h r0 r1
-  rcases n with _ | n
-  · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_type_params [v0, v1] = some (w, k) ∧ Cost_type_params (n + 1) x0 x1 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_type_params, List.length_cons, List.length_nil, if_true] at h ⊢
-    budget Cost_type_params
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
-
-theorem bproof_single_of_mini_selfhost_ConstDecl {spW sp : SrcProgram} {prims : Prims} {ix_single_of_mini_selfhost_ConstDecl ix_boxed_of_mini_selfhost_List_mini_selfhost_ConstDecl : Nat}
-    (fnW : spW.funcs[ix_single_of_mini_selfhost_ConstDecl]? = some (src_single_of_mini_selfhost_ConstDecl ix_boxed_of_mini_selfhost_List_mini_selfhost_ConstDecl)) (fn : sp.funcs[ix_single_of_mini_selfhost_ConstDecl]? = some (src_single_of_mini_selfhost_ConstDecl ix_boxed_of_mini_selfhost_List_mini_selfhost_ConstDecl))
-    (np : prims.isPrim ix_single_of_mini_selfhost_ConstDecl = false)
-    (back : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_ConstDecl sp prims ix_single_of_mini_selfhost_ConstDecl n))
-    (pp_boxed_of_mini_selfhost_List_mini_selfhost_ConstDecl : prims.isPrim ix_boxed_of_mini_selfhost_List_mini_selfhost_ConstDecl = true) (bx_boxed_of_mini_selfhost_List_mini_selfhost_ConstDecl : prims.boxed.contains ix_boxed_of_mini_selfhost_List_mini_selfhost_ConstDecl = true) {n : Nat} :
-    BStmt_single_of_mini_selfhost_ConstDecl spW sp prims ix_single_of_mini_selfhost_ConstDecl n := by
-  intro x0 v0 w k h r0
-  rcases n with _ | n
-  · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_single_of_mini_selfhost_ConstDecl [v0] = some (w, k) ∧ Cost_single_of_mini_selfhost_ConstDecl (n + 1) x0 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_single_of_mini_selfhost_ConstDecl, List.length_cons, List.length_nil, if_true] at h ⊢
-    budget Cost_single_of_mini_selfhost_ConstDecl
+    simp only [src_binding_bytes, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_binding_bytes.eq_def] at pre
+    simp only at pre
+    budget
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0⟩
 
-theorem bproof_method_decl {spW sp : SrcProgram} {prims : Prims} {ix_method_decl ix_node_prod ix_kid ix_fn_decl_of ix_type_params ix_p_impl_method ix_p_impl_fn ix_p_impl_method_pub : Nat}
-    (fnW : spW.funcs[ix_method_decl]? = some (src_method_decl ix_node_prod ix_kid ix_fn_decl_of ix_type_params ix_p_impl_method ix_p_impl_fn ix_p_impl_method_pub)) (fn : sp.funcs[ix_method_decl]? = some (src_method_decl ix_node_prod ix_kid ix_fn_decl_of ix_type_params ix_p_impl_method ix_p_impl_fn ix_p_impl_method_pub))
-    (np : prims.isPrim ix_method_decl = false)
-    (back : Certified (∀ {n : Nat}, Stmt_method_decl sp prims ix_method_decl n))
-    (b_node_prod : Certified (∀ {n : Nat}, BStmt_node_prod spW sp prims ix_node_prod n))
-    (b_kid : Certified (∀ {n : Nat}, BStmt_kid spW sp prims ix_kid n))
-    (b_fn_decl_of : Certified (∀ {n : Nat}, BStmt_fn_decl_of spW sp prims ix_fn_decl_of n))
-    (b_type_params : Certified (∀ {n : Nat}, BStmt_type_params spW sp prims ix_type_params n))
-    (b_p_impl_method : Certified (∀ {n : Nat}, BStmt_p_impl_method spW sp prims ix_p_impl_method n))
-    (b_p_impl_fn : Certified (∀ {n : Nat}, BStmt_p_impl_fn spW sp prims ix_p_impl_fn n))
-    (b_p_impl_method_pub : Certified (∀ {n : Nat}, BStmt_p_impl_method_pub spW sp prims ix_p_impl_method_pub n)) {n : Nat} :
-    BStmt_method_decl spW sp prims ix_method_decl n := by
-  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w k h r0 r1 r2 r3 r4 r5
+theorem bproof_arg_bytes {spW sp : SrcProgram} {prims : Prims} {ix_arg_bytes ix_lookup ix_binding_bytes : Nat}
+    (fnW : spW.funcs[ix_arg_bytes]? = some (src_arg_bytes ix_lookup ix_binding_bytes)) (fn : sp.funcs[ix_arg_bytes]? = some (src_arg_bytes ix_lookup ix_binding_bytes))
+    (np : prims.isPrim ix_arg_bytes = false)
+    (back : Certified (∀ {n : Nat}, Stmt_arg_bytes sp prims ix_arg_bytes n))
+    (b_lookup : Certified (∀ {n : Nat}, BStmt_lookup spW sp prims ix_lookup n))
+    (b_binding_bytes : Certified (∀ {n : Nat}, BStmt_binding_bytes spW sp prims ix_binding_bytes n)) {n : Nat} :
+    BStmt_arg_bytes spW sp prims ix_arg_bytes n := by
+  intro x0 x1 v0 v1 w k b h r0 r1 hb pre
   rcases n with _ | n
   · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_method_decl [v0, v1, v2, v3, v4, v5] = some (w, k) ∧ Cost_method_decl (n + 1) x0 x1 x2 x3 x4 x5 = k := by
+  have key : qcall sp prims uc (n + 1) ix_arg_bytes [v0, v1] = some (w, k) ∧ 0 = k := by
     rw [qcall_succ np fnW] at h
     rw [qcall_succ np fn]
-    simp only [src_method_decl, List.length_cons, List.length_nil, if_true] at h ⊢
-    budget Cost_method_decl
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4 r5⟩
-
-theorem bstep_methods_of {spW sp : SrcProgram} {prims : Prims} {ix_methods_of ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_empty_of_mini_selfhost_FnDecl ix_cons_fn_decl ix_method_decl : Nat}
-    (fnW : spW.funcs[ix_methods_of]? = some (src_methods_of ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_empty_of_mini_selfhost_FnDecl ix_cons_fn_decl ix_methods_of ix_method_decl)) (fn : sp.funcs[ix_methods_of]? = some (src_methods_of ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_empty_of_mini_selfhost_FnDecl ix_cons_fn_decl ix_methods_of ix_method_decl))
-    (np : prims.isPrim ix_methods_of = false)
-    (back : Certified (∀ {n : Nat}, Stmt_methods_of sp prims ix_methods_of n))
-    (pp_unbox_of_mini_selfhost_List_mini_selfhost_CTree : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_CTree : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree = false)
-    (b_empty_of_mini_selfhost_FnDecl : Certified (∀ {n : Nat}, BStmt_empty_of_mini_selfhost_FnDecl spW sp prims ix_empty_of_mini_selfhost_FnDecl n))
-    (b_cons_fn_decl : Certified (∀ {n : Nat}, BStmt_cons_fn_decl spW sp prims ix_cons_fn_decl n))
-    (b_method_decl : Certified (∀ {n : Nat}, BStmt_method_decl spW sp prims ix_method_decl n)) {n : Nat}
-    (bih_methods_of : Certified (BStmt_methods_of spW sp prims ix_methods_of n)) :
-    BStmt_methods_of spW sp prims ix_methods_of (n + 1) := by
-  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w k h r0 r1 r2 r3 r4 r5
-  have key : qcall sp prims uc (n + 1) ix_methods_of [v0, v1, v2, v3, v4, v5] = some (w, k) ∧ Cost_methods_of (n + 1) x0 x1 x2 x3 x4 x5 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_methods_of, List.length_cons, List.length_nil, if_true] at h ⊢
-    budget Cost_methods_of
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4 r5⟩
-
-theorem bproof_impl_methods {spW sp : SrcProgram} {prims : Prims} {ix_impl_methods ix_list_items ix_fns_decls ix_methods_of : Nat}
-    (fnW : spW.funcs[ix_impl_methods]? = some (src_impl_methods ix_list_items ix_fns_decls ix_methods_of)) (fn : sp.funcs[ix_impl_methods]? = some (src_impl_methods ix_list_items ix_fns_decls ix_methods_of))
-    (np : prims.isPrim ix_impl_methods = false)
-    (back : Certified (∀ {n : Nat}, Stmt_impl_methods sp prims ix_impl_methods n))
-    (b_list_items : Certified (∀ {n : Nat}, BStmt_list_items spW sp prims ix_list_items n))
-    (b_fns_decls : Certified (∀ {n : Nat}, BStmt_fns_decls spW sp prims ix_fns_decls n))
-    (b_methods_of : Certified (∀ {n : Nat}, BStmt_methods_of spW sp prims ix_methods_of n)) {n : Nat} :
-    BStmt_impl_methods spW sp prims ix_impl_methods n := by
-  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w k h r0 r1 r2 r3 r4 r5
-  rcases n with _ | n
-  · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_impl_methods [v0, v1, v2, v3, v4, v5] = some (w, k) ∧ Cost_impl_methods (n + 1) x0 x1 x2 x3 x4 x5 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_impl_methods, List.length_cons, List.length_nil, if_true] at h ⊢
-    budget Cost_impl_methods
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4 r5⟩
-
-theorem bproof_cons_of_mini_selfhost_ImplDecl {spW sp : SrcProgram} {prims : Prims} {ix_cons_of_mini_selfhost_ImplDecl ix_boxed_of_mini_selfhost_List_mini_selfhost_ImplDecl : Nat}
-    (fnW : spW.funcs[ix_cons_of_mini_selfhost_ImplDecl]? = some (src_cons_of_mini_selfhost_ImplDecl ix_boxed_of_mini_selfhost_List_mini_selfhost_ImplDecl)) (fn : sp.funcs[ix_cons_of_mini_selfhost_ImplDecl]? = some (src_cons_of_mini_selfhost_ImplDecl ix_boxed_of_mini_selfhost_List_mini_selfhost_ImplDecl))
-    (np : prims.isPrim ix_cons_of_mini_selfhost_ImplDecl = false)
-    (back : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_ImplDecl sp prims ix_cons_of_mini_selfhost_ImplDecl n))
-    (pp_boxed_of_mini_selfhost_List_mini_selfhost_ImplDecl : prims.isPrim ix_boxed_of_mini_selfhost_List_mini_selfhost_ImplDecl = true) (bx_boxed_of_mini_selfhost_List_mini_selfhost_ImplDecl : prims.boxed.contains ix_boxed_of_mini_selfhost_List_mini_selfhost_ImplDecl = true) {n : Nat} :
-    BStmt_cons_of_mini_selfhost_ImplDecl spW sp prims ix_cons_of_mini_selfhost_ImplDecl n := by
-  intro x0 x1 v0 v1 w k h r0 r1
-  rcases n with _ | n
-  · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_cons_of_mini_selfhost_ImplDecl [v0, v1] = some (w, k) ∧ Cost_cons_of_mini_selfhost_ImplDecl (n + 1) x0 x1 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_cons_of_mini_selfhost_ImplDecl, List.length_cons, List.length_nil, if_true] at h ⊢
-    budget Cost_cons_of_mini_selfhost_ImplDecl
+    simp only [src_arg_bytes, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_arg_bytes.eq_def] at pre
+    simp only at pre
+    budget
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
 
-theorem bproof_with_impl_decl {spW sp : SrcProgram} {prims : Prims} {ix_with_impl_decl ix_cons_of_mini_selfhost_ImplDecl : Nat}
-    (fnW : spW.funcs[ix_with_impl_decl]? = some (src_with_impl_decl ix_cons_of_mini_selfhost_ImplDecl)) (fn : sp.funcs[ix_with_impl_decl]? = some (src_with_impl_decl ix_cons_of_mini_selfhost_ImplDecl))
-    (np : prims.isPrim ix_with_impl_decl = false)
-    (back : Certified (∀ {n : Nat}, Stmt_with_impl_decl sp prims ix_with_impl_decl n))
-    (b_cons_of_mini_selfhost_ImplDecl : Certified (∀ {n : Nat}, BStmt_cons_of_mini_selfhost_ImplDecl spW sp prims ix_cons_of_mini_selfhost_ImplDecl n)) {n : Nat} :
-    BStmt_with_impl_decl spW sp prims ix_with_impl_decl n := by
-  intro x0 x1 v0 v1 w k h r0 r1
-  rcases n with _ | n
-  · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_with_impl_decl [v0, v1] = some (w, k) ∧ Cost_with_impl_decl (n + 1) x0 x1 = k := by
+theorem bstep_array_args {spW sp : SrcProgram} {prims : Prims} {ix_array_args ix_plus ix_empty_of_usize ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_empty_of_mini_selfhost_Expr ix_array_arg ix_arg_bytes : Nat}
+    (fnW : spW.funcs[ix_array_args]? = some (src_array_args ix_plus ix_empty_of_usize ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_empty_of_mini_selfhost_Expr ix_array_args ix_array_arg ix_arg_bytes)) (fn : sp.funcs[ix_array_args]? = some (src_array_args ix_plus ix_empty_of_usize ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_empty_of_mini_selfhost_Expr ix_array_args ix_array_arg ix_arg_bytes))
+    (np : prims.isPrim ix_array_args = false)
+    (back : Certified (∀ {n : Nat}, Stmt_array_args sp prims ix_array_args n))
+    (b_plus : Certified (∀ {n : Nat}, BStmt_plus spW sp prims ix_plus n))
+    (b_empty_of_usize : Certified (∀ {n : Nat}, BStmt_empty_of_usize spW sp prims ix_empty_of_usize n))
+    (pp_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType = false)
+    (pp_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff = false)
+    (b_empty_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, BStmt_empty_of_mini_selfhost_Expr spW sp prims ix_empty_of_mini_selfhost_Expr n))
+    (b_array_arg : Certified (∀ {n : Nat}, BStmt_array_arg spW sp prims ix_array_arg n))
+    (b_arg_bytes : Certified (∀ {n : Nat}, BStmt_arg_bytes spW sp prims ix_arg_bytes n)) {n : Nat}
+    (bih_array_args : Certified (BStmt_array_args spW sp prims ix_array_args n)) :
+    BStmt_array_args spW sp prims ix_array_args (n + 1) := by
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w k b h r0 r1 r2 r3 r4 hb pre
+  have key : qcall sp prims uc (n + 1) ix_array_args [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_array_args (n + 1) x0 x1 x2 x3 x4 = k := by
     rw [qcall_succ np fnW] at h
     rw [qcall_succ np fn]
-    simp only [src_with_impl_decl, List.length_cons, List.length_nil, if_true] at h ⊢
-    budget Cost_with_impl_decl
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
+    simp only [src_array_args, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_array_args.eq_def] at pre
+    simp only at pre
+    budget Cost_array_args
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4⟩
 
-theorem bproof_with_impl {spW sp : SrcProgram} {prims : Prims} {ix_with_impl ix_with_impl_decl : Nat}
-    (fnW : spW.funcs[ix_with_impl]? = some (src_with_impl ix_with_impl_decl)) (fn : sp.funcs[ix_with_impl]? = some (src_with_impl ix_with_impl_decl))
-    (np : prims.isPrim ix_with_impl = false)
-    (back : Certified (∀ {n : Nat}, Stmt_with_impl sp prims ix_with_impl n))
-    (b_with_impl_decl : Certified (∀ {n : Nat}, BStmt_with_impl_decl spW sp prims ix_with_impl_decl n)) {n : Nat} :
-    BStmt_with_impl spW sp prims ix_with_impl n := by
+theorem bproof_array_call_code {spW sp : SrcProgram} {prims : Prims} {ix_array_call_code ix_plus ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_SrcType_is_scalar : Nat}
+    (fnW : spW.funcs[ix_array_call_code]? = some (src_array_call_code ix_plus ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_SrcType_is_scalar)) (fn : sp.funcs[ix_array_call_code]? = some (src_array_call_code ix_plus ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_SrcType_is_scalar))
+    (np : prims.isPrim ix_array_call_code = false)
+    (back : Certified (∀ {n : Nat}, Stmt_array_call_code sp prims ix_array_call_code n))
+    (b_plus : Certified (∀ {n : Nat}, BStmt_plus spW sp prims ix_plus n))
+    (b_SrcType_size : Certified (∀ {n : Nat}, BStmt_SrcType_size spW sp prims ix_SrcType_size n))
+    (pp_boxed_of_mini_selfhost_Stmt : prims.isPrim ix_boxed_of_mini_selfhost_Stmt = true) (bx_boxed_of_mini_selfhost_Stmt : prims.boxed.contains ix_boxed_of_mini_selfhost_Stmt = true)
+    (b_check_then : Certified (∀ {n : Nat}, BStmt_check_then spW sp prims ix_check_then n))
+    (b_SrcType_is_scalar : Certified (∀ {n : Nat}, BStmt_SrcType_is_scalar spW sp prims ix_SrcType_is_scalar n)) {n : Nat} :
+    BStmt_array_call_code spW sp prims ix_array_call_code n := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w k b h r0 r1 r2 r3 hb pre
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_array_call_code [v0, v1, v2, v3] = some (w, k) ∧ Cost_array_call_code (n + 1) x0 x1 x2 x3 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_array_call_code, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_array_call_code.eq_def] at pre
+    simp only at pre
+    budget Cost_array_call_code
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3⟩
+
+theorem bproof_array_call_sig {spW sp : SrcProgram} {prims : Prims} {ix_array_call_sig ix_plus ix_SrcType_size ix_array_args ix_array_call_code : Nat}
+    (fnW : spW.funcs[ix_array_call_sig]? = some (src_array_call_sig ix_plus ix_SrcType_size ix_array_args ix_array_call_code)) (fn : sp.funcs[ix_array_call_sig]? = some (src_array_call_sig ix_plus ix_SrcType_size ix_array_args ix_array_call_code))
+    (np : prims.isPrim ix_array_call_sig = false)
+    (back : Certified (∀ {n : Nat}, Stmt_array_call_sig sp prims ix_array_call_sig n))
+    (b_plus : Certified (∀ {n : Nat}, BStmt_plus spW sp prims ix_plus n))
+    (b_SrcType_size : Certified (∀ {n : Nat}, BStmt_SrcType_size spW sp prims ix_SrcType_size n))
+    (b_array_args : Certified (∀ {n : Nat}, BStmt_array_args spW sp prims ix_array_args n))
+    (b_array_call_code : Certified (∀ {n : Nat}, BStmt_array_call_code spW sp prims ix_array_call_code n)) {n : Nat} :
+    BStmt_array_call_sig spW sp prims ix_array_call_sig n := by
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w k b h r0 r1 r2 r3 r4 hb pre
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_array_call_sig [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_array_call_sig (n + 1) x0 x1 x2 x3 x4 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_array_call_sig, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_array_call_sig.eq_def] at pre
+    simp only at pre
+    budget Cost_array_call_sig
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4⟩
+
+theorem bproof_array_call {spW sp : SrcProgram} {prims : Prims} {ix_array_call ix_get_of_mini_selfhost_Sig ix_array_call_sig : Nat}
+    (fnW : spW.funcs[ix_array_call]? = some (src_array_call ix_get_of_mini_selfhost_Sig ix_array_call_sig)) (fn : sp.funcs[ix_array_call]? = some (src_array_call ix_get_of_mini_selfhost_Sig ix_array_call_sig))
+    (np : prims.isPrim ix_array_call = false)
+    (back : Certified (∀ {n : Nat}, Stmt_array_call sp prims ix_array_call n))
+    (b_get_of_mini_selfhost_Sig : Certified (∀ {n : Nat}, BStmt_get_of_mini_selfhost_Sig spW sp prims ix_get_of_mini_selfhost_Sig n))
+    (b_array_call_sig : Certified (∀ {n : Nat}, BStmt_array_call_sig spW sp prims ix_array_call_sig n)) {n : Nat} :
+    BStmt_array_call spW sp prims ix_array_call n := by
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w k b h r0 r1 r2 r3 r4 hb pre
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_array_call [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_array_call (n + 1) x0 x1 x2 x3 x4 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_array_call, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_array_call.eq_def] at pre
+    simp only at pre
+    budget Cost_array_call
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4⟩
+
+theorem bproof_SrcEff_slice_call {spW sp : SrcProgram} {prims : Prims} {ix_SrcEff_slice_call ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_array_call : Nat}
+    (fnW : spW.funcs[ix_SrcEff_slice_call]? = some (src_SrcEff_slice_call ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_array_call)) (fn : sp.funcs[ix_SrcEff_slice_call]? = some (src_SrcEff_slice_call ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_array_call))
+    (np : prims.isPrim ix_SrcEff_slice_call = false)
+    (back : Certified (∀ {n : Nat}, Stmt_SrcEff_slice_call sp prims ix_SrcEff_slice_call n))
+    (pp_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff = false)
+    (b_array_call : Certified (∀ {n : Nat}, BStmt_array_call spW sp prims ix_array_call n)) {n : Nat} :
+    BStmt_SrcEff_slice_call spW sp prims ix_SrcEff_slice_call n := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w k b h r0 r1 r2 r3 hb pre
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_SrcEff_slice_call [v0, v1, v2, v3] = some (w, k) ∧ Cost_SrcEff_slice_call (n + 1) x0 x1 x2 x3 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_SrcEff_slice_call, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_SrcEff_slice_call.eq_def] at pre
+    simp only at pre
+    budget Cost_SrcEff_slice_call
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3⟩
+
+theorem bproof_stmt_eval {spW sp : SrcProgram} {prims : Prims} {ix_stmt_eval ix_SrcEff_eval ix_SrcEff_passes_slices ix_SrcEff_slice_call : Nat}
+    (fnW : spW.funcs[ix_stmt_eval]? = some (src_stmt_eval ix_SrcEff_eval ix_SrcEff_passes_slices ix_SrcEff_slice_call)) (fn : sp.funcs[ix_stmt_eval]? = some (src_stmt_eval ix_SrcEff_eval ix_SrcEff_passes_slices ix_SrcEff_slice_call))
+    (np : prims.isPrim ix_stmt_eval = false)
+    (back : Certified (∀ {n : Nat}, Stmt_stmt_eval sp prims ix_stmt_eval n))
+    (b_SrcEff_eval : Certified (∀ {n : Nat}, BStmt_SrcEff_eval spW sp prims ix_SrcEff_eval n))
+    (b_SrcEff_passes_slices : Certified (∀ {n : Nat}, BStmt_SrcEff_passes_slices spW sp prims ix_SrcEff_passes_slices n))
+    (b_SrcEff_slice_call : Certified (∀ {n : Nat}, BStmt_SrcEff_slice_call spW sp prims ix_SrcEff_slice_call n)) {n : Nat} :
+    BStmt_stmt_eval spW sp prims ix_stmt_eval n := by
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w k b h r0 r1 r2 r3 r4 hb pre
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_stmt_eval [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_stmt_eval (n + 1) x0 x1 x2 x3 x4 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_stmt_eval, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_stmt_eval.eq_def] at pre
+    simp only at pre
+    budget Cost_stmt_eval
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4⟩
+
+theorem bproof_lower_set_eval {spW sp : SrcProgram} {prims : Prims} {ix_lower_set_eval ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_assign_from ix_eval_same ix_slot_vars : Nat}
+    (fnW : spW.funcs[ix_lower_set_eval]? = some (src_lower_set_eval ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_assign_from ix_eval_same ix_slot_vars)) (fn : sp.funcs[ix_lower_set_eval]? = some (src_lower_set_eval ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_assign_from ix_eval_same ix_slot_vars))
+    (np : prims.isPrim ix_lower_set_eval = false)
+    (back : Certified (∀ {n : Nat}, Stmt_lower_set_eval sp prims ix_lower_set_eval n))
+    (b_SrcType_size : Certified (∀ {n : Nat}, BStmt_SrcType_size spW sp prims ix_SrcType_size n))
+    (pp_boxed_of_mini_selfhost_Stmt : prims.isPrim ix_boxed_of_mini_selfhost_Stmt = true) (bx_boxed_of_mini_selfhost_Stmt : prims.boxed.contains ix_boxed_of_mini_selfhost_Stmt = true)
+    (b_assign_from : Certified (∀ {n : Nat}, BStmt_assign_from spW sp prims ix_assign_from n))
+    (b_eval_same : Certified (∀ {n : Nat}, BStmt_eval_same spW sp prims ix_eval_same n))
+    (b_slot_vars : Certified (∀ {n : Nat}, BStmt_slot_vars spW sp prims ix_slot_vars n)) {n : Nat} :
+    BStmt_lower_set_eval spW sp prims ix_lower_set_eval n := by
+  intro x0 x1 x2 v0 v1 v2 w k b h r0 r1 r2 hb pre
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_lower_set_eval [v0, v1, v2] = some (w, k) ∧ Cost_lower_set_eval (n + 1) x0 x1 x2 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_lower_set_eval, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_lower_set_eval.eq_def] at pre
+    simp only at pre
+    budget Cost_lower_set_eval
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
+
+theorem bproof_lower_if_eval {spW sp : SrcProgram} {prims : Prims} {ix_lower_if_eval ix_boxed_of_mini_selfhost_Stmt ix_eval_same : Nat}
+    (fnW : spW.funcs[ix_lower_if_eval]? = some (src_lower_if_eval ix_boxed_of_mini_selfhost_Stmt ix_eval_same)) (fn : sp.funcs[ix_lower_if_eval]? = some (src_lower_if_eval ix_boxed_of_mini_selfhost_Stmt ix_eval_same))
+    (np : prims.isPrim ix_lower_if_eval = false)
+    (back : Certified (∀ {n : Nat}, Stmt_lower_if_eval sp prims ix_lower_if_eval n))
+    (pp_boxed_of_mini_selfhost_Stmt : prims.isPrim ix_boxed_of_mini_selfhost_Stmt = true) (bx_boxed_of_mini_selfhost_Stmt : prims.boxed.contains ix_boxed_of_mini_selfhost_Stmt = true)
+    (b_eval_same : Certified (∀ {n : Nat}, BStmt_eval_same spW sp prims ix_eval_same n)) {n : Nat} :
+    BStmt_lower_if_eval spW sp prims ix_lower_if_eval n := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w k h r0 r1 r2 r3
   rcases n with _ | n
   · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_with_impl [v0, v1, v2, v3] = some (w, k) ∧ Cost_with_impl (n + 1) x0 x1 x2 x3 = k := by
+  have key : qcall sp prims uc (n + 1) ix_lower_if_eval [v0, v1, v2, v3] = some (w, k) ∧ Cost_lower_if_eval (n + 1) x0 x1 x2 x3 = k := by
     rw [qcall_succ np fnW] at h
     rw [qcall_succ np fn]
-    simp only [src_with_impl, List.length_cons, List.length_nil, if_true] at h ⊢
-    budget Cost_with_impl
+    simp only [src_lower_if_eval, List.length_cons, List.length_nil, if_true] at h ⊢
+    budget Cost_lower_if_eval
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3⟩
 
-theorem bproof_single_of_mini_selfhost_ImportDecl {spW sp : SrcProgram} {prims : Prims} {ix_single_of_mini_selfhost_ImportDecl ix_boxed_of_mini_selfhost_List_mini_selfhost_ImportDecl : Nat}
-    (fnW : spW.funcs[ix_single_of_mini_selfhost_ImportDecl]? = some (src_single_of_mini_selfhost_ImportDecl ix_boxed_of_mini_selfhost_List_mini_selfhost_ImportDecl)) (fn : sp.funcs[ix_single_of_mini_selfhost_ImportDecl]? = some (src_single_of_mini_selfhost_ImportDecl ix_boxed_of_mini_selfhost_List_mini_selfhost_ImportDecl))
-    (np : prims.isPrim ix_single_of_mini_selfhost_ImportDecl = false)
-    (back : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_ImportDecl sp prims ix_single_of_mini_selfhost_ImportDecl n))
-    (pp_boxed_of_mini_selfhost_List_mini_selfhost_ImportDecl : prims.isPrim ix_boxed_of_mini_selfhost_List_mini_selfhost_ImportDecl = true) (bx_boxed_of_mini_selfhost_List_mini_selfhost_ImportDecl : prims.boxed.contains ix_boxed_of_mini_selfhost_List_mini_selfhost_ImportDecl = true) {n : Nat} :
-    BStmt_single_of_mini_selfhost_ImportDecl spW sp prims ix_single_of_mini_selfhost_ImportDecl n := by
-  intro x0 v0 w k h r0
+theorem bproof_lower_while_eval {spW sp : SrcProgram} {prims : Prims} {ix_lower_while_eval ix_boxed_of_mini_selfhost_Stmt ix_eval_same : Nat}
+    (fnW : spW.funcs[ix_lower_while_eval]? = some (src_lower_while_eval ix_boxed_of_mini_selfhost_Stmt ix_eval_same)) (fn : sp.funcs[ix_lower_while_eval]? = some (src_lower_while_eval ix_boxed_of_mini_selfhost_Stmt ix_eval_same))
+    (np : prims.isPrim ix_lower_while_eval = false)
+    (back : Certified (∀ {n : Nat}, Stmt_lower_while_eval sp prims ix_lower_while_eval n))
+    (pp_boxed_of_mini_selfhost_Stmt : prims.isPrim ix_boxed_of_mini_selfhost_Stmt = true) (bx_boxed_of_mini_selfhost_Stmt : prims.boxed.contains ix_boxed_of_mini_selfhost_Stmt = true)
+    (b_eval_same : Certified (∀ {n : Nat}, BStmt_eval_same spW sp prims ix_eval_same n)) {n : Nat} :
+    BStmt_lower_while_eval spW sp prims ix_lower_while_eval n := by
+  intro x0 x1 x2 v0 v1 v2 w k h r0 r1 r2
   rcases n with _ | n
   · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_single_of_mini_selfhost_ImportDecl [v0] = some (w, k) ∧ Cost_single_of_mini_selfhost_ImportDecl (n + 1) x0 = k := by
+  have key : qcall sp prims uc (n + 1) ix_lower_while_eval [v0, v1, v2] = some (w, k) ∧ Cost_lower_while_eval (n + 1) x0 x1 x2 = k := by
     rw [qcall_succ np fnW] at h
     rw [qcall_succ np fn]
-    simp only [src_single_of_mini_selfhost_ImportDecl, List.length_cons, List.length_nil, if_true] at h ⊢
-    budget Cost_single_of_mini_selfhost_ImportDecl
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0⟩
+    simp only [src_lower_while_eval, List.length_cons, List.length_nil, if_true] at h ⊢
+    budget Cost_lower_while_eval
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
 
-theorem bproof_import_decls {spW sp : SrcProgram} {prims : Prims} {ix_import_decls ix_empty_of_mini_selfhost_TypeDecl ix_empty_of_mini_selfhost_FnDecl ix_empty_of_mini_selfhost_ConstDecl ix_empty_of_mini_selfhost_AliasDecl ix_empty_of_mini_selfhost_ImplDecl ix_empty_of_mini_selfhost_List_mini_selfhost_List_usize ix_single_of_mini_selfhost_ImportDecl : Nat}
-    (fnW : spW.funcs[ix_import_decls]? = some (src_import_decls ix_empty_of_mini_selfhost_TypeDecl ix_empty_of_mini_selfhost_FnDecl ix_empty_of_mini_selfhost_ConstDecl ix_empty_of_mini_selfhost_AliasDecl ix_empty_of_mini_selfhost_ImplDecl ix_empty_of_mini_selfhost_List_mini_selfhost_List_usize ix_single_of_mini_selfhost_ImportDecl)) (fn : sp.funcs[ix_import_decls]? = some (src_import_decls ix_empty_of_mini_selfhost_TypeDecl ix_empty_of_mini_selfhost_FnDecl ix_empty_of_mini_selfhost_ConstDecl ix_empty_of_mini_selfhost_AliasDecl ix_empty_of_mini_selfhost_ImplDecl ix_empty_of_mini_selfhost_List_mini_selfhost_List_usize ix_single_of_mini_selfhost_ImportDecl))
-    (np : prims.isPrim ix_import_decls = false)
-    (back : Certified (∀ {n : Nat}, Stmt_import_decls sp prims ix_import_decls n))
-    (b_empty_of_mini_selfhost_TypeDecl : Certified (∀ {n : Nat}, BStmt_empty_of_mini_selfhost_TypeDecl spW sp prims ix_empty_of_mini_selfhost_TypeDecl n))
-    (b_empty_of_mini_selfhost_FnDecl : Certified (∀ {n : Nat}, BStmt_empty_of_mini_selfhost_FnDecl spW sp prims ix_empty_of_mini_selfhost_FnDecl n))
-    (b_empty_of_mini_selfhost_ConstDecl : Certified (∀ {n : Nat}, BStmt_empty_of_mini_selfhost_ConstDecl spW sp prims ix_empty_of_mini_selfhost_ConstDecl n))
-    (b_empty_of_mini_selfhost_AliasDecl : Certified (∀ {n : Nat}, BStmt_empty_of_mini_selfhost_AliasDecl spW sp prims ix_empty_of_mini_selfhost_AliasDecl n))
-    (b_empty_of_mini_selfhost_ImplDecl : Certified (∀ {n : Nat}, BStmt_empty_of_mini_selfhost_ImplDecl spW sp prims ix_empty_of_mini_selfhost_ImplDecl n))
-    (b_empty_of_mini_selfhost_List_mini_selfhost_List_usize : Certified (∀ {n : Nat}, BStmt_empty_of_mini_selfhost_List_mini_selfhost_List_usize spW sp prims ix_empty_of_mini_selfhost_List_mini_selfhost_List_usize n))
-    (b_single_of_mini_selfhost_ImportDecl : Certified (∀ {n : Nat}, BStmt_single_of_mini_selfhost_ImportDecl spW sp prims ix_single_of_mini_selfhost_ImportDecl n)) {n : Nat} :
-    BStmt_import_decls spW sp prims ix_import_decls n := by
-  intro x0 x1 v0 v1 w k h r0 r1
+theorem bproof_lower_return_eval {spW sp : SrcProgram} {prims : Prims} {ix_lower_return_eval ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_eval_same ix_slot_vars : Nat}
+    (fnW : spW.funcs[ix_lower_return_eval]? = some (src_lower_return_eval ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_eval_same ix_slot_vars)) (fn : sp.funcs[ix_lower_return_eval]? = some (src_lower_return_eval ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_eval_same ix_slot_vars))
+    (np : prims.isPrim ix_lower_return_eval = false)
+    (back : Certified (∀ {n : Nat}, Stmt_lower_return_eval sp prims ix_lower_return_eval n))
+    (b_SrcType_size : Certified (∀ {n : Nat}, BStmt_SrcType_size spW sp prims ix_SrcType_size n))
+    (pp_boxed_of_mini_selfhost_Stmt : prims.isPrim ix_boxed_of_mini_selfhost_Stmt = true) (bx_boxed_of_mini_selfhost_Stmt : prims.boxed.contains ix_boxed_of_mini_selfhost_Stmt = true)
+    (b_eval_same : Certified (∀ {n : Nat}, BStmt_eval_same spW sp prims ix_eval_same n))
+    (b_slot_vars : Certified (∀ {n : Nat}, BStmt_slot_vars spW sp prims ix_slot_vars n)) {n : Nat} :
+    BStmt_lower_return_eval spW sp prims ix_lower_return_eval n := by
+  intro x0 x1 x2 v0 v1 v2 w k b h r0 r1 r2 hb pre
   rcases n with _ | n
   · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_import_decls [v0, v1] = some (w, k) ∧ Cost_import_decls (n + 1) x0 x1 = k := by
+  have key : qcall sp prims uc (n + 1) ix_lower_return_eval [v0, v1, v2] = some (w, k) ∧ Cost_lower_return_eval (n + 1) x0 x1 x2 = k := by
     rw [qcall_succ np fnW] at h
     rw [qcall_succ np fn]
-    simp only [src_import_decls, List.length_cons, List.length_nil, if_true] at h ⊢
-    budget Cost_import_decls
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
+    simp only [src_lower_return_eval, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_lower_return_eval.eq_def] at pre
+    simp only at pre
+    budget Cost_lower_return_eval
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
 
-theorem bproof_single_of_mini_selfhost_AliasDecl {spW sp : SrcProgram} {prims : Prims} {ix_single_of_mini_selfhost_AliasDecl ix_boxed_of_mini_selfhost_List_mini_selfhost_AliasDecl : Nat}
-    (fnW : spW.funcs[ix_single_of_mini_selfhost_AliasDecl]? = some (src_single_of_mini_selfhost_AliasDecl ix_boxed_of_mini_selfhost_List_mini_selfhost_AliasDecl)) (fn : sp.funcs[ix_single_of_mini_selfhost_AliasDecl]? = some (src_single_of_mini_selfhost_AliasDecl ix_boxed_of_mini_selfhost_List_mini_selfhost_AliasDecl))
-    (np : prims.isPrim ix_single_of_mini_selfhost_AliasDecl = false)
-    (back : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_AliasDecl sp prims ix_single_of_mini_selfhost_AliasDecl n))
-    (pp_boxed_of_mini_selfhost_List_mini_selfhost_AliasDecl : prims.isPrim ix_boxed_of_mini_selfhost_List_mini_selfhost_AliasDecl = true) (bx_boxed_of_mini_selfhost_List_mini_selfhost_AliasDecl : prims.boxed.contains ix_boxed_of_mini_selfhost_List_mini_selfhost_AliasDecl = true) {n : Nat} :
-    BStmt_single_of_mini_selfhost_AliasDecl spW sp prims ix_single_of_mini_selfhost_AliasDecl n := by
-  intro x0 v0 w k h r0
-  rcases n with _ | n
-  · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_single_of_mini_selfhost_AliasDecl [v0] = some (w, k) ∧ Cost_single_of_mini_selfhost_AliasDecl (n + 1) x0 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_single_of_mini_selfhost_AliasDecl, List.length_cons, List.length_nil, if_true] at h ⊢
-    budget Cost_single_of_mini_selfhost_AliasDecl
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0⟩
-
-theorem bproof_alias_decls {spW sp : SrcProgram} {prims : Prims} {ix_alias_decls ix_empty_of_mini_selfhost_TypeDecl ix_empty_of_mini_selfhost_FnDecl ix_empty_of_mini_selfhost_ConstDecl ix_empty_of_mini_selfhost_ImportDecl ix_empty_of_mini_selfhost_ImplDecl ix_empty_of_mini_selfhost_List_mini_selfhost_List_usize ix_single_of_mini_selfhost_AliasDecl : Nat}
-    (fnW : spW.funcs[ix_alias_decls]? = some (src_alias_decls ix_empty_of_mini_selfhost_TypeDecl ix_empty_of_mini_selfhost_FnDecl ix_empty_of_mini_selfhost_ConstDecl ix_empty_of_mini_selfhost_ImportDecl ix_empty_of_mini_selfhost_ImplDecl ix_empty_of_mini_selfhost_List_mini_selfhost_List_usize ix_single_of_mini_selfhost_AliasDecl)) (fn : sp.funcs[ix_alias_decls]? = some (src_alias_decls ix_empty_of_mini_selfhost_TypeDecl ix_empty_of_mini_selfhost_FnDecl ix_empty_of_mini_selfhost_ConstDecl ix_empty_of_mini_selfhost_ImportDecl ix_empty_of_mini_selfhost_ImplDecl ix_empty_of_mini_selfhost_List_mini_selfhost_List_usize ix_single_of_mini_selfhost_AliasDecl))
-    (np : prims.isPrim ix_alias_decls = false)
-    (back : Certified (∀ {n : Nat}, Stmt_alias_decls sp prims ix_alias_decls n))
-    (b_empty_of_mini_selfhost_TypeDecl : Certified (∀ {n : Nat}, BStmt_empty_of_mini_selfhost_TypeDecl spW sp prims ix_empty_of_mini_selfhost_TypeDecl n))
-    (b_empty_of_mini_selfhost_FnDecl : Certified (∀ {n : Nat}, BStmt_empty_of_mini_selfhost_FnDecl spW sp prims ix_empty_of_mini_selfhost_FnDecl n))
-    (b_empty_of_mini_selfhost_ConstDecl : Certified (∀ {n : Nat}, BStmt_empty_of_mini_selfhost_ConstDecl spW sp prims ix_empty_of_mini_selfhost_ConstDecl n))
-    (b_empty_of_mini_selfhost_ImportDecl : Certified (∀ {n : Nat}, BStmt_empty_of_mini_selfhost_ImportDecl spW sp prims ix_empty_of_mini_selfhost_ImportDecl n))
-    (b_empty_of_mini_selfhost_ImplDecl : Certified (∀ {n : Nat}, BStmt_empty_of_mini_selfhost_ImplDecl spW sp prims ix_empty_of_mini_selfhost_ImplDecl n))
-    (b_empty_of_mini_selfhost_List_mini_selfhost_List_usize : Certified (∀ {n : Nat}, BStmt_empty_of_mini_selfhost_List_mini_selfhost_List_usize spW sp prims ix_empty_of_mini_selfhost_List_mini_selfhost_List_usize n))
-    (b_single_of_mini_selfhost_AliasDecl : Certified (∀ {n : Nat}, BStmt_single_of_mini_selfhost_AliasDecl spW sp prims ix_single_of_mini_selfhost_AliasDecl n)) {n : Nat} :
-    BStmt_alias_decls spW sp prims ix_alias_decls n := by
+theorem bproof_set_scalar_eval {spW sp : SrcProgram} {prims : Prims} {ix_set_scalar_eval ix_boxed_of_mini_selfhost_Stmt ix_SrcType_is_scalar ix_eval_same : Nat}
+    (fnW : spW.funcs[ix_set_scalar_eval]? = some (src_set_scalar_eval ix_boxed_of_mini_selfhost_Stmt ix_SrcType_is_scalar ix_eval_same)) (fn : sp.funcs[ix_set_scalar_eval]? = some (src_set_scalar_eval ix_boxed_of_mini_selfhost_Stmt ix_SrcType_is_scalar ix_eval_same))
+    (np : prims.isPrim ix_set_scalar_eval = false)
+    (back : Certified (∀ {n : Nat}, Stmt_set_scalar_eval sp prims ix_set_scalar_eval n))
+    (pp_boxed_of_mini_selfhost_Stmt : prims.isPrim ix_boxed_of_mini_selfhost_Stmt = true) (bx_boxed_of_mini_selfhost_Stmt : prims.boxed.contains ix_boxed_of_mini_selfhost_Stmt = true)
+    (b_SrcType_is_scalar : Certified (∀ {n : Nat}, BStmt_SrcType_is_scalar spW sp prims ix_SrcType_is_scalar n))
+    (b_eval_same : Certified (∀ {n : Nat}, BStmt_eval_same spW sp prims ix_eval_same n)) {n : Nat} :
+    BStmt_set_scalar_eval spW sp prims ix_set_scalar_eval n := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w k h r0 r1 r2 r3
   rcases n with _ | n
   · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_alias_decls [v0, v1, v2, v3] = some (w, k) ∧ Cost_alias_decls (n + 1) x0 x1 x2 x3 = k := by
+  have key : qcall sp prims uc (n + 1) ix_set_scalar_eval [v0, v1, v2, v3] = some (w, k) ∧ Cost_set_scalar_eval (n + 1) x0 x1 x2 x3 = k := by
     rw [qcall_succ np fnW] at h
     rw [qcall_succ np fn]
-    simp only [src_alias_decls, List.length_cons, List.length_nil, if_true] at h ⊢
-    budget Cost_alias_decls
+    simp only [src_set_scalar_eval, List.length_cons, List.length_nil, if_true] at h ⊢
+    budget Cost_set_scalar_eval
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3⟩
 
-theorem bproof_host_id {spW sp : SrcProgram} {prims : Prims} {ix_host_id ix_same_text ix_text_write_byte ix_text_write_stdout ix_text_write_stderr ix_text_read_stdin ix_text_sleep_ms_i32 ix_text_monotonic_read ix_text_system_read ix_text_fill_secure_bytes : Nat}
-    (fnW : spW.funcs[ix_host_id]? = some (src_host_id ix_same_text ix_text_write_byte ix_text_write_stdout ix_text_write_stderr ix_text_read_stdin ix_text_sleep_ms_i32 ix_text_monotonic_read ix_text_system_read ix_text_fill_secure_bytes)) (fn : sp.funcs[ix_host_id]? = some (src_host_id ix_same_text ix_text_write_byte ix_text_write_stdout ix_text_write_stderr ix_text_read_stdin ix_text_sleep_ms_i32 ix_text_monotonic_read ix_text_system_read ix_text_fill_secure_bytes))
-    (np : prims.isPrim ix_host_id = false)
-    (back : Certified (∀ {n : Nat}, Stmt_host_id sp prims ix_host_id n))
-    (b_same_text : Certified (∀ {n : Nat}, BStmt_same_text spW sp prims ix_same_text n))
-    (b_text_write_byte : Certified (∀ {n : Nat}, BStmt_text_write_byte spW sp prims ix_text_write_byte n))
-    (b_text_write_stdout : Certified (∀ {n : Nat}, BStmt_text_write_stdout spW sp prims ix_text_write_stdout n))
-    (b_text_write_stderr : Certified (∀ {n : Nat}, BStmt_text_write_stderr spW sp prims ix_text_write_stderr n))
-    (b_text_read_stdin : Certified (∀ {n : Nat}, BStmt_text_read_stdin spW sp prims ix_text_read_stdin n))
-    (b_text_sleep_ms_i32 : Certified (∀ {n : Nat}, BStmt_text_sleep_ms_i32 spW sp prims ix_text_sleep_ms_i32 n))
-    (b_text_monotonic_read : Certified (∀ {n : Nat}, BStmt_text_monotonic_read spW sp prims ix_text_monotonic_read n))
-    (b_text_system_read : Certified (∀ {n : Nat}, BStmt_text_system_read spW sp prims ix_text_system_read n))
-    (b_text_fill_secure_bytes : Certified (∀ {n : Nat}, BStmt_text_fill_secure_bytes spW sp prims ix_text_fill_secure_bytes n)) {n : Nat} :
-    BStmt_host_id spW sp prims ix_host_id n := by
+theorem bproof_set_field_eval_at {spW sp : SrcProgram} {prims : Prims} {ix_set_field_eval_at ix_set_scalar_eval : Nat}
+    (fnW : spW.funcs[ix_set_field_eval_at]? = some (src_set_field_eval_at ix_set_scalar_eval)) (fn : sp.funcs[ix_set_field_eval_at]? = some (src_set_field_eval_at ix_set_scalar_eval))
+    (np : prims.isPrim ix_set_field_eval_at = false)
+    (back : Certified (∀ {n : Nat}, Stmt_set_field_eval_at sp prims ix_set_field_eval_at n))
+    (b_set_scalar_eval : Certified (∀ {n : Nat}, BStmt_set_scalar_eval spW sp prims ix_set_scalar_eval n)) {n : Nat} :
+    BStmt_set_field_eval_at spW sp prims ix_set_field_eval_at n := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w k h r0 r1 r2 r3
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_set_field_eval_at [v0, v1, v2, v3] = some (w, k) ∧ Cost_set_field_eval_at (n + 1) x0 x1 x2 x3 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_set_field_eval_at, List.length_cons, List.length_nil, if_true] at h ⊢
+    budget Cost_set_field_eval_at
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3⟩
+
+theorem bproof_set_field_eval_of {spW sp : SrcProgram} {prims : Prims} {ix_set_field_eval_of ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_field_offset ix_get_of_mini_selfhost_SrcType ix_set_field_eval_at : Nat}
+    (fnW : spW.funcs[ix_set_field_eval_of]? = some (src_set_field_eval_of ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_field_offset ix_get_of_mini_selfhost_SrcType ix_set_field_eval_at)) (fn : sp.funcs[ix_set_field_eval_of]? = some (src_set_field_eval_of ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_field_offset ix_get_of_mini_selfhost_SrcType ix_set_field_eval_at))
+    (np : prims.isPrim ix_set_field_eval_of = false)
+    (back : Certified (∀ {n : Nat}, Stmt_set_field_eval_of sp prims ix_set_field_eval_of n))
+    (b_plus : Certified (∀ {n : Nat}, BStmt_plus spW sp prims ix_plus n))
+    (pp_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType = false)
+    (b_field_offset : Certified (∀ {n : Nat}, BStmt_field_offset spW sp prims ix_field_offset n))
+    (b_get_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, BStmt_get_of_mini_selfhost_SrcType spW sp prims ix_get_of_mini_selfhost_SrcType n))
+    (b_set_field_eval_at : Certified (∀ {n : Nat}, BStmt_set_field_eval_at spW sp prims ix_set_field_eval_at n)) {n : Nat} :
+    BStmt_set_field_eval_of spW sp prims ix_set_field_eval_of n := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w k b h r0 r1 r2 r3 hb pre
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_set_field_eval_of [v0, v1, v2, v3] = some (w, k) ∧ Cost_set_field_eval_of (n + 1) x0 x1 x2 x3 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_set_field_eval_of, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_set_field_eval_of.eq_def] at pre
+    simp only at pre
+    budget Cost_set_field_eval_of
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3⟩
+
+theorem bproof_lower_set_field_eval {spW sp : SrcProgram} {prims : Prims} {ix_lower_set_field_eval ix_set_field_eval_of : Nat}
+    (fnW : spW.funcs[ix_lower_set_field_eval]? = some (src_lower_set_field_eval ix_set_field_eval_of)) (fn : sp.funcs[ix_lower_set_field_eval]? = some (src_lower_set_field_eval ix_set_field_eval_of))
+    (np : prims.isPrim ix_lower_set_field_eval = false)
+    (back : Certified (∀ {n : Nat}, Stmt_lower_set_field_eval sp prims ix_lower_set_field_eval n))
+    (b_set_field_eval_of : Certified (∀ {n : Nat}, BStmt_set_field_eval_of spW sp prims ix_set_field_eval_of n)) {n : Nat} :
+    BStmt_lower_set_field_eval spW sp prims ix_lower_set_field_eval n := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w k b h r0 r1 r2 r3 hb pre
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_lower_set_field_eval [v0, v1, v2, v3] = some (w, k) ∧ Cost_lower_set_field_eval (n + 1) x0 x1 x2 x3 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_lower_set_field_eval, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_lower_set_field_eval.eq_def] at pre
+    simp only at pre
+    budget Cost_lower_set_field_eval
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3⟩
+
+theorem bproof_lower_return_unit {spW sp : SrcProgram} {prims : Prims} {ix_lower_return_unit ix_SrcType_is_unit ix_single_of_mini_selfhost_Expr : Nat}
+    (fnW : spW.funcs[ix_lower_return_unit]? = some (src_lower_return_unit ix_SrcType_is_unit ix_single_of_mini_selfhost_Expr)) (fn : sp.funcs[ix_lower_return_unit]? = some (src_lower_return_unit ix_SrcType_is_unit ix_single_of_mini_selfhost_Expr))
+    (np : prims.isPrim ix_lower_return_unit = false)
+    (back : Certified (∀ {n : Nat}, Stmt_lower_return_unit sp prims ix_lower_return_unit n))
+    (b_SrcType_is_unit : Certified (∀ {n : Nat}, BStmt_SrcType_is_unit spW sp prims ix_SrcType_is_unit n))
+    (b_single_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, BStmt_single_of_mini_selfhost_Expr spW sp prims ix_single_of_mini_selfhost_Expr n)) {n : Nat} :
+    BStmt_lower_return_unit spW sp prims ix_lower_return_unit n := by
   intro x0 v0 w k h r0
   rcases n with _ | n
   · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_host_id [v0] = some (w, k) ∧ Cost_host_id (n + 1) x0 = k := by
+  have key : qcall sp prims uc (n + 1) ix_lower_return_unit [v0] = some (w, k) ∧ Cost_lower_return_unit (n + 1) x0 = k := by
     rw [qcall_succ np fnW] at h
     rw [qcall_succ np fn]
-    simp only [src_host_id, List.length_cons, List.length_nil, if_true] at h ⊢
-    budget Cost_host_id
+    simp only [src_lower_return_unit, List.length_cons, List.length_nil, if_true] at h ⊢
+    budget Cost_lower_return_unit
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0⟩
 
-theorem bproof_host_extern {spW sp : SrcProgram} {prims : Prims} {ix_host_extern ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_where_none ix_p_extern_abi ix_same_text ix_text_lanius_std ix_host_id : Nat}
-    (fnW : spW.funcs[ix_host_extern]? = some (src_host_extern ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_where_none ix_p_extern_abi ix_same_text ix_text_lanius_std ix_host_id)) (fn : sp.funcs[ix_host_extern]? = some (src_host_extern ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_where_none ix_p_extern_abi ix_same_text ix_text_lanius_std ix_host_id))
-    (np : prims.isPrim ix_host_extern = false)
-    (back : Certified (∀ {n : Nat}, Stmt_host_extern sp prims ix_host_extern n))
-    (b_node_prod : Certified (∀ {n : Nat}, BStmt_node_prod spW sp prims ix_node_prod n))
-    (b_kid : Certified (∀ {n : Nat}, BStmt_kid spW sp prims ix_kid n))
-    (b_field_text_Token_of_mini_selfhost_Token : Certified (∀ {n : Nat}, BStmt_field_text_Token_of_mini_selfhost_Token spW sp prims ix_field_text_Token_of_mini_selfhost_Token n))
-    (b_kid_token : Certified (∀ {n : Nat}, BStmt_kid_token spW sp prims ix_kid_token n))
-    (b_p_where_none : Certified (∀ {n : Nat}, BStmt_p_where_none spW sp prims ix_p_where_none n))
-    (b_p_extern_abi : Certified (∀ {n : Nat}, BStmt_p_extern_abi spW sp prims ix_p_extern_abi n))
-    (b_same_text : Certified (∀ {n : Nat}, BStmt_same_text spW sp prims ix_same_text n))
-    (b_text_lanius_std : Certified (∀ {n : Nat}, BStmt_text_lanius_std spW sp prims ix_text_lanius_std n))
-    (b_host_id : Certified (∀ {n : Nat}, BStmt_host_id spW sp prims ix_host_id n)) {n : Nat} :
-    BStmt_host_extern spW sp prims ix_host_extern n := by
-  intro x0 v0 w k h r0
+theorem bproof_lower_assert {spW sp : SrcProgram} {prims : Prims} {ix_lower_assert ix_boxed_of_mini_selfhost_Stmt ix_eval_same : Nat}
+    (fnW : spW.funcs[ix_lower_assert]? = some (src_lower_assert ix_boxed_of_mini_selfhost_Stmt ix_eval_same)) (fn : sp.funcs[ix_lower_assert]? = some (src_lower_assert ix_boxed_of_mini_selfhost_Stmt ix_eval_same))
+    (np : prims.isPrim ix_lower_assert = false)
+    (back : Certified (∀ {n : Nat}, Stmt_lower_assert sp prims ix_lower_assert n))
+    (pp_boxed_of_mini_selfhost_Stmt : prims.isPrim ix_boxed_of_mini_selfhost_Stmt = true) (bx_boxed_of_mini_selfhost_Stmt : prims.boxed.contains ix_boxed_of_mini_selfhost_Stmt = true)
+    (b_eval_same : Certified (∀ {n : Nat}, BStmt_eval_same spW sp prims ix_eval_same n)) {n : Nat} :
+    BStmt_lower_assert spW sp prims ix_lower_assert n := by
+  intro x0 x1 v0 v1 w k h r0 r1
   rcases n with _ | n
   · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_host_extern [v0] = some (w, k) ∧ Cost_host_extern (n + 1) x0 = k := by
+  have key : qcall sp prims uc (n + 1) ix_lower_assert [v0, v1] = some (w, k) ∧ Cost_lower_assert (n + 1) x0 x1 = k := by
     rw [qcall_succ np fnW] at h
     rw [qcall_succ np fn]
-    simp only [src_host_extern, List.length_cons, List.length_nil, if_true] at h ⊢
-    budget Cost_host_extern
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0⟩
-
-theorem bproof_extern_tree {spW sp : SrcProgram} {prims : Prims} {ix_extern_tree ix_cons_of_mini_selfhost_CTree ix_kid ix_boxed_of_mini_selfhost_List_mini_selfhost_CTree ix_single_of_mini_selfhost_CTree ix_p_extern_fn : Nat}
-    (fnW : spW.funcs[ix_extern_tree]? = some (src_extern_tree ix_cons_of_mini_selfhost_CTree ix_kid ix_boxed_of_mini_selfhost_List_mini_selfhost_CTree ix_single_of_mini_selfhost_CTree ix_p_extern_fn)) (fn : sp.funcs[ix_extern_tree]? = some (src_extern_tree ix_cons_of_mini_selfhost_CTree ix_kid ix_boxed_of_mini_selfhost_List_mini_selfhost_CTree ix_single_of_mini_selfhost_CTree ix_p_extern_fn))
-    (np : prims.isPrim ix_extern_tree = false)
-    (back : Certified (∀ {n : Nat}, Stmt_extern_tree sp prims ix_extern_tree n))
-    (b_cons_of_mini_selfhost_CTree : Certified (∀ {n : Nat}, BStmt_cons_of_mini_selfhost_CTree spW sp prims ix_cons_of_mini_selfhost_CTree n))
-    (b_kid : Certified (∀ {n : Nat}, BStmt_kid spW sp prims ix_kid n))
-    (pp_boxed_of_mini_selfhost_List_mini_selfhost_CTree : prims.isPrim ix_boxed_of_mini_selfhost_List_mini_selfhost_CTree = true) (bx_boxed_of_mini_selfhost_List_mini_selfhost_CTree : prims.boxed.contains ix_boxed_of_mini_selfhost_List_mini_selfhost_CTree = true)
-    (b_single_of_mini_selfhost_CTree : Certified (∀ {n : Nat}, BStmt_single_of_mini_selfhost_CTree spW sp prims ix_single_of_mini_selfhost_CTree n))
-    (b_p_extern_fn : Certified (∀ {n : Nat}, BStmt_p_extern_fn spW sp prims ix_p_extern_fn n)) {n : Nat} :
-    BStmt_extern_tree spW sp prims ix_extern_tree n := by
-  intro x0 v0 w k h r0
-  rcases n with _ | n
-  · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_extern_tree [v0] = some (w, k) ∧ Cost_extern_tree (n + 1) x0 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_extern_tree, List.length_cons, List.length_nil, if_true] at h ⊢
-    budget Cost_extern_tree
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0⟩
-
-theorem bproof_single_of_mini_selfhost_List_mini_selfhost_List_usize {spW sp : SrcProgram} {prims : Prims} {ix_single_of_mini_selfhost_List_mini_selfhost_List_usize ix_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_List_usize : Nat}
-    (fnW : spW.funcs[ix_single_of_mini_selfhost_List_mini_selfhost_List_usize]? = some (src_single_of_mini_selfhost_List_mini_selfhost_List_usize ix_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_List_usize)) (fn : sp.funcs[ix_single_of_mini_selfhost_List_mini_selfhost_List_usize]? = some (src_single_of_mini_selfhost_List_mini_selfhost_List_usize ix_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_List_usize))
-    (np : prims.isPrim ix_single_of_mini_selfhost_List_mini_selfhost_List_usize = false)
-    (back : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_List_mini_selfhost_List_usize sp prims ix_single_of_mini_selfhost_List_mini_selfhost_List_usize n))
-    (pp_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_List_usize : prims.isPrim ix_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_List_usize = true) (bx_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_List_usize : prims.boxed.contains ix_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_List_usize = true) {n : Nat} :
-    BStmt_single_of_mini_selfhost_List_mini_selfhost_List_usize spW sp prims ix_single_of_mini_selfhost_List_mini_selfhost_List_usize n := by
-  intro x0 v0 w k h r0
-  rcases n with _ | n
-  · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_single_of_mini_selfhost_List_mini_selfhost_List_usize [v0] = some (w, k) ∧ Cost_single_of_mini_selfhost_List_mini_selfhost_List_usize (n + 1) x0 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_single_of_mini_selfhost_List_mini_selfhost_List_usize, List.length_cons, List.length_nil, if_true] at h ⊢
-    budget Cost_single_of_mini_selfhost_List_mini_selfhost_List_usize
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0⟩
+    simp only [src_lower_assert, List.length_cons, List.length_nil, if_true] at h ⊢
+    budget Cost_lower_assert
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
 
 end Lanius.Faithful.SelfBudget

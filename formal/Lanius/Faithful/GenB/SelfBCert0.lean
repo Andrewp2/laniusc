@@ -54,6 +54,24 @@ import Lanius.Faithful.GenB.SelfBProof52
 import Lanius.Faithful.GenB.SelfBProof53
 import Lanius.Faithful.GenB.SelfBProof54
 import Lanius.Faithful.GenB.SelfBProof55
+import Lanius.Faithful.GenB.SelfBProof56
+import Lanius.Faithful.GenB.SelfBProof57
+import Lanius.Faithful.GenB.SelfBProof58
+import Lanius.Faithful.GenB.SelfBProof59
+import Lanius.Faithful.GenB.SelfBProof60
+import Lanius.Faithful.GenB.SelfBProof61
+import Lanius.Faithful.GenB.SelfBProof62
+import Lanius.Faithful.GenB.SelfBProof63
+import Lanius.Faithful.GenB.SelfBProof64
+import Lanius.Faithful.GenB.SelfBProof65
+import Lanius.Faithful.GenB.SelfBProof66
+import Lanius.Faithful.GenB.SelfBProof67
+import Lanius.Faithful.GenB.SelfBProof68
+import Lanius.Faithful.GenB.SelfBProof69
+import Lanius.Faithful.GenB.SelfBProof70
+import Lanius.Faithful.GenB.SelfBProof71
+import Lanius.Faithful.GenB.SelfBProof72
+import Lanius.Faithful.GenB.SelfBProof73
 import Lanius.Faithful.BudgetClosed
 import Lanius.Faithful.GenB.SelfBFree
 
