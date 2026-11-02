@@ -62,8 +62,10 @@ def qeff (env : Env) : SrcEff → Option (Value × Nat)
   | .eDivide op left right => qbinary op.toCore (qeff env left) (qeff env right)
   | .eStride _ => none
   | .arraySlice _ _ => none
-  | .eIf _ _ _ _ => none
-  | .eLet _ _ _ _ _ => none
+  | .eIf condition _ thenValue elseValue =>
+      qthen (qeff env condition) fun c => (asBool c).bind fun b =>
+        if b then qeff env thenValue else qeff env elseValue
+  | .eLet id _ value _ body => qthen (qeff env value) fun v => qeff ((id, v) :: env) body
   | .eLen _ => none
 
 def qeffs (env : Env) : List SrcEff → Option (List Value × Nat)
@@ -217,8 +219,18 @@ theorem peff_eq (hc : ∀ c vs, call c vs = (qc c vs).map Prod.fst) : ∀ (env :
   | env, .eDivide op l r => fst_qbinary (peff_eq hc env l) (peff_eq hc env r)
   | env, .eStride _ => rfl
   | env, .arraySlice _ _ => rfl
-  | env, .eIf _ _ _ _ => rfl
-  | env, .eLet _ _ _ _ _ => rfl
+  | env, .eIf c _ a b => by
+    rw [peff, qeff]
+    refine fst_qthen (peff_eq hc env c) fun v => ?_
+    cases asBool v with
+    | none => rfl
+    | some x =>
+      cases x with
+      | true => exact peff_eq hc env a
+      | false => exact peff_eq hc env b
+  | env, .eLet id _ value _ body => by
+    rw [peff, qeff]
+    exact fst_qthen (peff_eq hc env value) fun v => peff_eq hc ((id, v) :: env) body
   | env, .eLen _ => rfl
 
 theorem peffs_eq (hc : ∀ c vs, call c vs = (qc c vs).map Prod.fst) : ∀ (env : Env) (es : List SrcEff), peffs call env es = (qeffs qc env es).map Prod.fst

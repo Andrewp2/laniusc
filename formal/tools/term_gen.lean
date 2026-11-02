@@ -36,7 +36,7 @@ partial def sitesEff (A : AEnv) (W : Wit) : SrcEff → List (Nat × List SizeCls
   | .eNeg a | .eNot a | .eCast _ a => sitesEff A W a
   | .eIndex _ _ | .eStride _ | .arraySlice _ _ => []
   | .eIf c _ a b => sitesEff A W c ++ sitesEff A W a ++ sitesEff A W b
-  | .eLet _ _ a _ b => sitesEff A W a ++ sitesEff A W b
+  | .eLet id _ a _ b => sitesEff A W a ++ sitesEff ((id, effCls prims T A a) :: A) W b
   | .eLen _ => []
   | .eStruct _ fs | .eVariant _ _ fs => sitesEffs A W fs
   | .eMatch s ety _ bs vs => sitesEff A W s ++ sitesArms A W (effCls prims T A s) ety.typeId 0 bs vs

@@ -152,8 +152,10 @@ def peff (env : Env) : SrcEff → Option Value
   | .eDivide op left right => binary op.toCore (peff env left) (peff env right)
   | .eStride _ => none
   | .arraySlice _ _ => none
-  | .eIf _ _ _ _ => none
-  | .eLet _ _ _ _ _ => none
+  | .eIf condition _ thenValue elseValue =>
+      (peff env condition).bind fun c => (asBool c).bind fun b =>
+        if b then peff env thenValue else peff env elseValue
+  | .eLet id _ value _ body => (peff env value).bind fun v => peff ((id, v) :: env) body
   | .eLen _ => none
 
 def peffs (env : Env) : List SrcEff → Option (List Value)

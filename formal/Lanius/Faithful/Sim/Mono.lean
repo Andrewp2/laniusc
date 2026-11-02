@@ -83,8 +83,16 @@ theorem peff_mono (le : CallsLe call call') :
       (fun _ _ hx => bind_mono (fun _ hy => peff_mono le hy) (fun _ _ hy => hy) hx) h
   | _, .eStride _, _, h => by simp [peff] at h
   | _, .arraySlice _ _, _, h => by simp [peff] at h
-  | _, .eIf _ _ _ _, _, h => by simp [peff] at h
-  | _, .eLet _ _ _ _ _, _, h => by simp [peff] at h
+  | env, .eIf c _ a b, _, h => by
+    simp only [peff] at h ⊢
+    refine bind_mono (fun _ hx => peff_mono le hx) (fun x w hx => ?_) h
+    refine bind_mono (fun _ hy => hy) (fun bb w hy => ?_) hx
+    cases bb
+    · exact peff_mono le hy
+    · exact peff_mono le hy
+  | env, .eLet id _ value _ body, _, h => by
+    simp only [peff] at h ⊢
+    exact bind_mono (fun _ hx => peff_mono le hx) (fun _ _ hx => peff_mono le hx) h
   | _, .eLen _, _, h => by simp [peff] at h
 
 theorem peffs_mono (le : CallsLe call call') :

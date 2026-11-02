@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Faithful.Sim.Eff
+public import Lanius.Semantics.Fuel
 
 @[expose] public section
 /-! # Effectful expressions, by Core's fuel
@@ -219,8 +220,53 @@ theorem eff_step (le : k + 1 ≤ N) (calls : FuncSim sp prims outside k) (eff : 
     rfl
   | eStride => simp [effTy] at ht
   | arraySlice => simp [effTy] at ht
-  | eIf => simp [effTy] at ht
-  | eLet => simp [effTy] at ht
+  | eIf c ty a b =>
+    simp only [SrcEff.toCore] at run
+    obtain ⟨j, sv, s1, hj, crun, arun⟩ := matchValue_inv run
+    obtain rfl : j = k := by omega
+    simp only [effTy] at ht
+    split at ht
+    · rename_i hc
+      have htc := isBoolTy_some hc
+      simp only [Option.bind_eq_some_iff] at ht
+      obtain ⟨ta, hta, tb, htb, hab⟩ := ht
+      split at hab
+      · rename_i same
+        simp only [Option.some.injEq] at hab
+        subst hab
+        have b1 := Grows.bound (effGrows crun) (ifArms_grows (eff_grows j (grows sp j)) arun) inv.views bound
+        obtain ⟨q, hq, rq, ran1⟩ := eff crun htc inv rel b1
+        obtain ⟨rfl, x, rfl⟩ := rq.scalar_ty rfl
+        obtain ⟨j', s2, lt, brun, rfl⟩ := ifArms_inv arun
+        have rel1 := rel.step ran1.step ran1.locals
+        cases x with
+        | true =>
+          have brun' := Semantics.evalExpr_of_le brun (by simp) (show j' ≤ j by omega)
+          obtain ⟨p, hp, r, ran2⟩ := eff brun' hta ran1.inv rel1 bound
+          refine ⟨p, by simp only [peff, hq, Option.bind_some, asBool, if_true]; exact hp, r,
+            ran1.trans ⟨ran2.inv.restore s1, ran2.step.restore s1, rfl⟩⟩
+        | false =>
+          have brun' := Semantics.evalExpr_of_le brun (by simp) (show j' ≤ j by omega)
+          obtain ⟨p, hp, r, ran2⟩ := eff brun' htb ran1.inv rel1 bound
+          rw [← SrcType.same_eq same] at r
+          refine ⟨p, by simp only [peff, hq, Option.bind_some, asBool, Bool.false_eq_true, if_false]; exact hp, r,
+            ran1.trans ⟨ran2.inv.restore s1, ran2.step.restore s1, rfl⟩⟩
+      · simp at hab
+    · simp at ht
+  | eLet id ty value rt body =>
+    simp only [SrcEff.toCore] at run
+    obtain ⟨j, sv, s1, hj, vrun, arun⟩ := matchValue_inv run
+    obtain rfl : j = k := by omega
+    simp only [effTy, Option.bind_eq_some_iff] at ht
+    obtain ⟨tv, htv, hb⟩ := ht
+    have b1 := Grows.bound (effGrows vrun) (letArm_grows (eff_grows j (grows sp j)) arun) inv.views bound
+    obtain ⟨q, hq, rq, ran1⟩ := eff vrun htv inv rel b1
+    obtain ⟨j', s2, lt, brun, rfl⟩ := letArm_inv arun
+    have rel1 := rel.step ran1.step ran1.locals
+    have brun' := Semantics.evalExpr_of_le brun (by simp) (show j' ≤ j by omega)
+    obtain ⟨p, hp, r, ran2⟩ := eff brun' hb (ran1.inv.bindLocal id sv) (rel1.bind ran1.inv rq) bound
+    refine ⟨p, by simp only [peff, hq, Option.bind_some]; exact hp, r,
+      ran1.trans ⟨ran2.inv.restore s1, ((Step.bindLocal s1 id sv).trans ran2.step).restore s1, rfl⟩⟩
   | eLen => simp [effTy] at ht
 
 /-- Every effectful expression Core completes with fuel `k ≤ N` has its pure value. -/

@@ -892,12 +892,21 @@ theorem eff_evConst (hO : ∀ m, OracleOk prims T (pcall sp prims m))
   | .arraySlice _ _, A, W, E, _, _, _ => by
     simp only [peff]
     exact EvConst.const _
-  | .eIf _ _ _ _, A, W, E, _, _, _ => by
+  | .eIf c _ a b, A, W, E, h, hW, hc => by
+    simp only [chkEff, Bool.and_eq_true] at hc
     simp only [peff]
-    exact EvConst.const _
-  | .eLet _ _ _ _ _, A, W, E, _, _, _ => by
+    refine EvConst.bind (eff_evConst hO IH c h hW hc.1.1) fun cv _ => ?_
+    cases hb : asBool cv with
+    | none => simp only [Option.bind_none]; exact EvConst.const _
+    | some bv =>
+      cases bv with
+      | true => simp only [Option.bind_some, if_true]; exact eff_evConst hO IH a h hW hc.1.2
+      | false => simp only [Option.bind_some, Bool.false_eq_true, if_false]; exact eff_evConst hO IH b h hW hc.2
+  | .eLet id _ value _ body, A, W, E, h, hW, hc => by
+    simp only [chkEff, Bool.and_eq_true] at hc
     simp only [peff]
-    exact EvConst.const _
+    refine EvConst.bind (eff_evConst hO IH value h hW hc.1) fun v ⟨m, hm⟩ => ?_
+    exact eff_evConst hO IH body (h.cons (effCls_holds (hO m) h value hm)) hW hc.2
   | .eLen _, A, W, E, _, _, _ => by
     simp only [peff]
     exact EvConst.const _

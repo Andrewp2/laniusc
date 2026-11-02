@@ -103,8 +103,8 @@ def liveEff : SrcEff → Bool
   | .eDivide _ l r => liveEff l && divisorOk r
   | .eStride _ => false
   | .arraySlice _ _ => false
-  | .eIf _ _ _ _ => false
-  | .eLet _ _ _ _ _ => false
+  | .eIf c _ a b => liveEff c && liveEff a && liveEff b
+  | .eLet _ _ value _ body => liveEff value && liveEff body
   | .eLen _ => false
 
 def liveEffs : List SrcEff → Bool
@@ -904,8 +904,39 @@ theorem eff_live (hO : ∀ m, OracleOk prims T (pcall sp prims m)) (hP : PrimsTy
     all_goals simp [divisorOk] at hl
   | .eStride _, A, W, E, tenv, t, _, _, _, _, ht, _ => by simp [effTy] at ht
   | .arraySlice _ _, A, W, E, tenv, t, _, _, _, _, ht, _ => by simp [effTy] at ht
-  | .eIf _ _ _ _, A, W, E, tenv, t, _, _, _, _, ht, _ => by simp [effTy] at ht
-  | .eLet _ _ _ _ _, A, W, E, tenv, t, _, _, _, _, ht, _ => by simp [effTy] at ht
+  | .eIf c ty a b, A, W, E, tenv, t, h, hW, hc, hE, ht, hl => by
+    simp only [chkEff, Bool.and_eq_true] at hc
+    simp only [liveEff, Bool.and_eq_true] at hl
+    simp only [effTy] at ht
+    split at ht
+    · rename_i hcb
+      have hct := isBoolTy_some hcb
+      simp only [Option.bind_eq_some_iff] at ht
+      obtain ⟨ta, hta, tb, htb, hab⟩ := ht
+      split at hab
+      · rename_i same
+        simp only [Option.some.injEq] at hab
+        subst hab
+        have e := SrcType.same_eq same
+        subst e
+        simp only [peff]
+        refine EvSome.bind (k := fun w m => (asBool w).bind fun bv =>
+            if bv then peff (pcall sp prims m) E a else peff (pcall sp prims m) E b)
+          (eff_live hO hP IH c h hW hc.1.1 hE hct hl.1.1) fun w hw _ => ?_
+        obtain ⟨bv, rfl⟩ := bool_value hw
+        cases bv with
+        | true => exact EvSome.of_eq (fun m => rfl) (eff_live hO hP IH a h hW hc.1.2 hE hta hl.1.2)
+        | false => exact EvSome.of_eq (fun m => rfl) (eff_live hO hP IH b h hW hc.2 hE htb hl.2)
+      · simp at hab
+    · simp at ht
+  | .eLet id ty value rt body, A, W, E, tenv, t, h, hW, hc, hE, ht, hl => by
+    simp only [chkEff, Bool.and_eq_true] at hc
+    simp only [liveEff, Bool.and_eq_true] at hl
+    simp only [effTy, Option.bind_eq_some_iff] at ht
+    obtain ⟨tv, htv, hb⟩ := ht
+    simp only [peff]
+    exact EvSome.bind (eff_live hO hP IH value h hW hc.1 hE htv hl.1) fun v hv ⟨M, hM⟩ =>
+      eff_live hO hP IH body (h.cons (effCls_holds (hO M) h value hM)) hW hc.2 (hE.cons hv) hb hl.2
   | .eLen _, A, W, E, tenv, t, _, _, _, _, ht, _ => by simp [effTy] at ht
 
 theorem effs_live (hO : ∀ m, OracleOk prims T (pcall sp prims m)) (hP : PrimsTy sp prims)

@@ -392,9 +392,15 @@ class Checker:
         if c == 'arraySlice':
             raise Impure('array slice')
         if c == 'eIf':
-            raise Impure('conditional')
+            self.boolean(self.eff(tenv, a[0]), 'condition')
+            then_t, else_t = self.eff(tenv, a[2]), self.eff(tenv, a[3])
+            if then_t != else_t:
+                raise Impure('conditional of two types')
+            return then_t
         if c == 'eLet':
-            raise Impure('let in an expression')
+            inner = list(tenv)
+            inner.insert(0, (a[0][1], self.eff(tenv, a[2])))
+            return self.eff(inner, a[4])
         if c == 'eLen':
             raise Impure('slice length')
         raise ValueError(c)
@@ -517,8 +523,15 @@ class LiveChecker:
             self.eff(a[0])
         elif c == 'eCast':
             self.eff(a[1])
-        elif c in ('eIndex', 'eStride', 'arraySlice', 'eIf', 'eLet', 'eLen'):
+        elif c in ('eIndex', 'eStride', 'arraySlice', 'eLen'):
             raise Dead(c)
+        elif c == 'eIf':
+            self.eff(a[0])
+            self.eff(a[2])
+            self.eff(a[3])
+        elif c == 'eLet':
+            self.eff(a[2])
+            self.eff(a[4])
         elif c == 'eStruct':
             for x in a[1][1]:
                 self.eff(x)

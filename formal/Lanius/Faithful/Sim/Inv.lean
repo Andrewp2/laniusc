@@ -339,6 +339,41 @@ theorem arms_cons_inv {sv v : Value} {pat : Core.Pattern} {body : Core.Expr} {ar
       | exited => simp [run, restoreOutcomeLocals] at h
       | outOfFuel => simp [run, restoreOutcomeLocals] at h
 
+/-- The one arm of a `let` in an expression (`SrcEff.eLet`): the body ran on
+the bound local, with less fuel, and the locals were restored. -/
+theorem letArm_inv {w v : Value} {id : Nat} {body : Core.Expr}
+    (h : evalMatchArms k P st w [(.bind id, body)] = .done v st') :
+    ∃ j s2, j < k ∧ evalExpr j P (st.bindLocal id w) body = .done v s2 ∧ st' = restoreLocals st s2 := by
+  obtain ⟨j, rfl, alt⟩ := arms_cons_inv h
+  rcases alt with ⟨none, -⟩ | ⟨bs, s2, hbs, run, rfl⟩
+  · simp [Semantics.matchPattern] at none
+  · simp only [Semantics.matchPattern, Option.some.injEq] at hbs
+    subst hbs
+    exact ⟨j, s2, by omega, run, rfl⟩
+
+/-- The two arms of an `if` in an expression (`SrcEff.eIf`) on a bool: the
+branch it picks ran, with less fuel, and the locals were restored. -/
+theorem ifArms_inv {x : Bool} {a b : Core.Expr} {v : Value}
+    (h : evalMatchArms k P st (.boolean x) [(.literal (.boolean true), a), (.wildcard, b)] = .done v st') :
+    ∃ j s2, j < k ∧ evalExpr j P st (if x then a else b) = .done v s2 ∧ st' = restoreLocals st s2 := by
+  obtain ⟨j, rfl, alt⟩ := arms_cons_inv h
+  cases x with
+  | true =>
+    rcases alt with ⟨none, -⟩ | ⟨bs, s2, hbs, run, rfl⟩
+    · simp [Semantics.matchPattern, Semantics.scalarEqual] at none
+    · have nil : bs = [] := by simp [Semantics.matchPattern, Semantics.scalarEqual] at hbs; first | exact hbs | exact hbs.symm
+      subst nil
+      exact ⟨j, s2, by omega, run, rfl⟩
+  | false =>
+    rcases alt with ⟨-, rest⟩ | ⟨bs, s2, hbs, -, -⟩
+    · obtain ⟨j2, rfl, alt2⟩ := arms_cons_inv rest
+      rcases alt2 with ⟨none, -⟩ | ⟨bs, s2, hbs, run, rfl⟩
+      · simp [Semantics.matchPattern] at none
+      · simp only [Semantics.matchPattern, Option.some.injEq] at hbs
+        subst hbs
+        exact ⟨j2, s2, by omega, run, rfl⟩
+    · simp [Semantics.matchPattern, Semantics.scalarEqual] at hbs
+
 theorem exprs_nil_inv {vs : List Value} (h : evalExprs k P st [] = .done vs st') : vs = [] ∧ st' = st := by
   cases k with
   | zero => simp [evalExprs] at h

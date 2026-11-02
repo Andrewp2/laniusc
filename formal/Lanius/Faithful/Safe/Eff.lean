@@ -434,8 +434,47 @@ theorem eff_safe_step (calls : ∀ m, FuncSim sp prims outside m) (funcs : FuncS
   | eIndex => simp [effTy] at ht
   | eStride => simp [effTy] at ht
   | arraySlice => simp [effTy] at ht
-  | eIf => simp [effTy] at ht
-  | eLet => simp [effTy] at ht
+  | eIf c ty a b =>
+    simp only [SrcEff.toCore] at run
+    simp only [effTy] at ht
+    split at ht
+    · rename_i hc
+      have htc := isBoolTy_some hc
+      simp only [Option.bind_eq_some_iff] at ht
+      obtain ⟨ta, hta, tb, htb, -⟩ := ht
+      obtain ⟨j, hj, crun | ⟨sv, s1, crun, arun⟩⟩ := matchValue_trap_inv run
+      all_goals obtain rfl : k = j := Nat.succ.inj hj
+      · exact eff crun htc inv rel bound
+      have b1 : s1.heap.nextAddress ≤ 2 ^ 64 := by
+        obtain ⟨j', s2, e', -, he, brun, rfl⟩ := ifArms_trap_any arun
+        have g2 : Grows s1 (restoreLocals s1 s2) := by
+          rcases he with rfl | rfl
+          · exact (effTrapGrows brun).trans (Grows.same rfl rfl)
+          · exact (effTrapGrows brun).trans (Grows.same rfl rfl)
+        exact Grows.bound (effGrows crun) g2 inv.views bound
+      obtain ⟨q, -, rq, ran1⟩ := effD crun htc inv rel b1
+      obtain ⟨-, x, rfl⟩ := rq.scalar_ty rfl
+      obtain ⟨j', s2, lt, brun, rfl⟩ := ifArms_trap_inv arun
+      have rel1 := rel.step ran1.step ran1.locals
+      have brun' := Semantics.evalExpr_of_le brun (by simp) (show j' ≤ k by omega)
+      cases x with
+      | true => exact eff brun' hta ran1.inv rel1 bound
+      | false => exact eff brun' htb ran1.inv rel1 bound
+    · simp at ht
+  | eLet id ty value rt body =>
+    simp only [SrcEff.toCore] at run
+    simp only [effTy, Option.bind_eq_some_iff] at ht
+    obtain ⟨tv, htv, hb⟩ := ht
+    obtain ⟨j, hj, vrun | ⟨sv, s1, vrun, arun⟩⟩ := matchValue_trap_inv run
+    all_goals obtain rfl : k = j := Nat.succ.inj hj
+    · exact eff vrun htv inv rel bound
+    obtain ⟨j', s2, lt, brun, rfl⟩ := letArm_trap_inv arun
+    have b1 := Grows.bound (effGrows vrun) ((Grows.same rfl rfl).trans (effTrapGrows brun) |>.trans (Grows.same rfl rfl))
+      inv.views bound
+    obtain ⟨q, -, rq, ran1⟩ := effD vrun htv inv rel b1
+    have rel1 := rel.step ran1.step ran1.locals
+    have brun' := Semantics.evalExpr_of_le brun (by simp) (show j' ≤ k by omega)
+    exact eff brun' hb (ran1.inv.bindLocal id sv) (rel1.bind ran1.inv rq) bound
   | eLen => simp [effTy] at ht
   | eStruct ty fields =>
     simp only [SrcEff.toCore] at run

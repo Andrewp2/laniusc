@@ -1720,10 +1720,17 @@ nothing needs a fresh local. It checks that the condition is a bool and
 that both branches have type `T`. The proofs are its cases in the
 forward simulation (`eval_if`), in the stopping of failing runs
 (`eff_if`), in heap growth (`ifArms_grows`) and in Core typing
-(`SrcEff.eval_typed`). The self-simulation's pure meaning (`peff`) leaves
-it unmodelled, as it does `arraySlice`, so code that uses it is not live
-there. The compiler's own sources don't use it. The front end produces it
-for a literal match in an expression ("Literal patterns" above).
+(`SrcEff.eval_typed`). The self-simulation's pure meaning has it (11-01,
+F11b): `peff` tests the condition's bool and gives the branch's value
+(`qeff` with its cost), `effTy` takes a bool condition and two branches of
+one type, the termination check checks all three parts, and `liveEff` needs
+all three live. Its cases are in `eff_step` (Core's run to the pure value,
+from `ifArms_inv`), `eff_live` in `Fwd/Eff.lean` (the converse), `eff_safe`
+(no undefined trap, from `ifArms_trap_inv`), `eff_evConst` (settling) and
+`eff_live` in `Sim/Live.lean` (a value of its type). So the compiler's own
+sources may use it once the certificates are regenerated. The front end
+produces it for a literal match in an expression ("Literal patterns"
+above).
 
 ## Lets in expressions (decided 11-01)
 
@@ -1740,7 +1747,10 @@ is then copied down to the slot. The proofs are its cases in the forward
 simulation (`eval_let`, from `armScope_layout`), in failing runs
 (`eff_let`), in heap growth (`letArm_grows`, and `letArm_trap_grows` in the
 Faithful layer) and in Core typing (`armScope_ok`, Core's `bind` pattern).
-The Faithful pure meaning leaves it unmodelled, as it does `EIf`. The front
+The Faithful pure meaning has it (11-01, F11b), as `EIf`: `peff` binds the
+value's pure value and evaluates the body, `effTy` types the body with the
+value's type, and the termination check gives the local the value's size
+class (`effCls`), as `letEval` does. The front
 end uses it to read a literal match whose scrutinee is effectful ("Literal
 patterns"): the scrutinee bound to the `match` token's local.
 

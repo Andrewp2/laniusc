@@ -331,8 +331,9 @@ def chkEff (A : AEnv) (W : Wit) : SrcEff → Bool
   | .eDivide _ left right => chkEff A W left && chkEff A W right
   | .eStride _ => true
   | .arraySlice _ _ => true
-  | .eIf _ _ _ _ => true
-  | .eLet _ _ _ _ _ => true
+  | .eIf condition _ thenValue elseValue =>
+      chkEff A W condition && chkEff A W thenValue && chkEff A W elseValue
+  | .eLet id _ value _ body => chkEff A W value && chkEff ((id, effCls prims T A value) :: A) W body
   | .eLen _ => true
 
 def chkEffs (A : AEnv) (W : Wit) : List SrcEff → Bool

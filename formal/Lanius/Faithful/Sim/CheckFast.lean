@@ -60,8 +60,11 @@ def effTyC (tenv : TEnv) : SrcEff → Option SrcType
   | .eDivide _ left right => (effTyC tenv left).bind fun l => (effTyC tenv right).bind (divTy l)
   | .eStride _ => none
   | .arraySlice _ _ => none
-  | .eIf _ _ _ _ => none
-  | .eLet _ _ _ _ _ => none
+  | .eIf condition _ thenValue elseValue =>
+    if isBoolTy (effTyC tenv condition) then
+      (effTyC tenv thenValue).bind fun a => (effTyC tenv elseValue).bind fun b => if a.same b then some a else none
+    else none
+  | .eLet id _ value _ body => (effTyC tenv value).bind fun t => effTyC ((id, t) :: tenv) body
   | .eLen _ => none
 
 def effTysC (tenv : TEnv) : List SrcEff → Option (List SrcType)
@@ -175,8 +178,12 @@ theorem effTyC_eq (tenv : TEnv) : ∀ e : SrcEff, effTyC (callTy sp outside) box
   | .eDivide _ left right => by rw [effTyC, effTy, effTyC_eq tenv left, effTyC_eq tenv right]
   | .eStride _ => by rw [effTyC, effTy]
   | .arraySlice _ _ => by rw [effTyC, effTy]
-  | .eIf _ _ _ _ => by rw [effTyC, effTy]
-  | .eLet _ _ _ _ _ => by rw [effTyC, effTy]
+  | .eIf c _ a b => by rw [effTyC, effTy, effTyC_eq tenv c, effTyC_eq tenv a, effTyC_eq tenv b]
+  | .eLet id _ value _ body => by
+    rw [effTyC, effTy, effTyC_eq tenv value]
+    congr 1
+    funext t
+    exact effTyC_eq _ body
   | .eLen _ => by rw [effTyC, effTy]
 
 theorem effTysC_eq (tenv : TEnv) : ∀ es : List SrcEff,

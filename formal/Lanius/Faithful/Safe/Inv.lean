@@ -340,6 +340,61 @@ theorem arms_cons_trap_inv {sv : Value} {pat : Core.Pattern} {body : Core.Expr} 
       | exited => simp [run, restoreOutcomeLocals] at h
       | outOfFuel => simp [run, restoreOutcomeLocals] at h
 
+/-- The one arm of a `let` in an expression trapped: its body did, on the
+bound local, with less fuel. -/
+theorem letArm_trap_inv {w : Value} {id : Nat} {body : Core.Expr}
+    (h : evalMatchArms k P st w [(.bind id, body)] = .trapped r st') :
+    ∃ j s2, j < k ∧ evalExpr j P (st.bindLocal id w) body = .trapped r s2 ∧ st' = restoreLocals st s2 := by
+  obtain ⟨j, rfl, alt⟩ := arms_cons_trap_inv h
+  rcases alt with ⟨none, -⟩ | ⟨bs, s2, hbs, run, rfl⟩
+  · simp [Semantics.matchPattern] at none
+  · simp only [Semantics.matchPattern, Option.some.injEq] at hbs
+    subst hbs
+    exact ⟨j, s2, by omega, run, rfl⟩
+
+/-- The two arms of an `if` in an expression, on a bool, trapped: the branch
+it picks did, with less fuel. -/
+theorem ifArms_trap_inv {x : Bool} {a b : Core.Expr}
+    (h : evalMatchArms k P st (.boolean x) [(.literal (.boolean true), a), (.wildcard, b)] = .trapped r st') :
+    ∃ j s2, j < k ∧ evalExpr j P st (if x then a else b) = .trapped r s2 ∧ st' = restoreLocals st s2 := by
+  obtain ⟨j, rfl, alt⟩ := arms_cons_trap_inv h
+  cases x with
+  | true =>
+    rcases alt with ⟨none, -⟩ | ⟨bs, s2, hbs, run, rfl⟩
+    · simp [Semantics.matchPattern, Semantics.scalarEqual] at none
+    · have nil : bs = [] := by
+        simp [Semantics.matchPattern, Semantics.scalarEqual] at hbs; first | exact hbs | exact hbs.symm
+      subst nil
+      exact ⟨j, s2, by omega, run, rfl⟩
+  | false =>
+    rcases alt with ⟨-, rest⟩ | ⟨bs, s2, hbs, -, -⟩
+    · obtain ⟨j2, rfl, alt2⟩ := arms_cons_trap_inv rest
+      rcases alt2 with ⟨none, -⟩ | ⟨bs, s2, hbs, run, rfl⟩
+      · simp [Semantics.matchPattern] at none
+      · simp only [Semantics.matchPattern, Option.some.injEq] at hbs
+        subst hbs
+        exact ⟨j2, s2, by omega, run, rfl⟩
+    · simp [Semantics.matchPattern, Semantics.scalarEqual] at hbs
+
+/-- The two arms of an `if` in an expression trapped: one of its branches
+did, with less fuel. -/
+theorem ifArms_trap_any {w : Value} {a b : Core.Expr}
+    (h : evalMatchArms k P st w [(.literal (.boolean true), a), (.wildcard, b)] = .trapped r st') :
+    ∃ j s2 e, j < k ∧ (e = a ∨ e = b) ∧ evalExpr j P st e = .trapped r s2 ∧ st' = restoreLocals st s2 := by
+  obtain ⟨j, rfl, alt⟩ := arms_cons_trap_inv h
+  rcases alt with ⟨-, rest⟩ | ⟨bs, s2, hbs, run, rfl⟩
+  · obtain ⟨j2, rfl, alt2⟩ := arms_cons_trap_inv rest
+    rcases alt2 with ⟨none, -⟩ | ⟨bs, s2, hbs, run, rfl⟩
+    · simp [Semantics.matchPattern] at none
+    · simp only [Semantics.matchPattern, Option.some.injEq] at hbs
+      subst hbs
+      exact ⟨j2, s2, b, by omega, .inr rfl, run, rfl⟩
+  · have nil : bs = [] := by
+      simp only [Semantics.matchPattern] at hbs
+      split at hbs <;> simp_all
+    subst nil
+    exact ⟨j, s2, a, by omega, .inl rfl, run, rfl⟩
+
 theorem assert_trap_inv {e : Core.Expr} (h : evalExpr k P st (.intrinsic .assert e) = .trapped r st') :
     ∃ j, k = j + 1 ∧ (evalExpr j P st e = .trapped r st' ∨
       ∃ v, evalExpr j P st e = .done v st' ∧ (v = .boolean false ∧ r = .assertionFailed ∨
