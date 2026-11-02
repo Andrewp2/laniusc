@@ -37,7 +37,7 @@ class SourceAllocationAuthority(unittest.TestCase):
             crt_start = base + len(image)
             crt_starts.append(crt_start)
             crt = bytearray(self.crt)
-            struct.pack_into("<i", crt, 182, entry - (crt_start + 186))
+            struct.pack_into("<i", crt, 190, entry - (crt_start + 194))
             image.extend(crt)
             if unit == 0:
                 functions.append(("main", crt_start, len(crt)))
@@ -54,7 +54,7 @@ class SourceAllocationAuthority(unittest.TestCase):
                 ends[base + at] = base + at + 2
                 del instructions[base + at + 1], ends[base + at + 1]
         for crt_start in crt_starts:
-            call = crt_start + 181
+            call = crt_start + 189
             ends[call] = call + 5
             for point in range(call + 1, call + 5):
                 instructions.pop(point, None)
@@ -204,7 +204,7 @@ class SourceAllocationAuthority(unittest.TestCase):
         destination = raw + 18
         struct.pack_into("<i", image, raw - 0x401000 + 4, destination - raw - 8)
         crt = item["crt_starts"][1]
-        struct.pack_into("<i", image, crt - 0x401000 + 182, destination - crt - 186)
+        struct.pack_into("<i", image, crt - 0x401000 + 190, destination - crt - 194)
         item["image"] = bytes(image)
         with self.assertRaisesRegex(ValueError, "dormant"):
             self.profile(item)

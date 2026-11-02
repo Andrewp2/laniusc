@@ -77,7 +77,12 @@ work on native Linux x86_64/glibc with libatomic:
   deadlines, and Mutex, Condvar, Once, Lazy64 and Barrier, all without
   poisoning.
 - `std::channel`: a bounded MPMC channel of any plain value type, with try,
-  blocking and deadline forms and endpoint-count disconnection.
+  blocking and deadline forms and endpoint-count disconnection. For threads:
+  a lock-free bounded MPMC `Ring<T>`, an unbounded MPSC `Mpsc<T>`, `drain`,
+  and `select` over any two of them, sleeping on both in one `futex_waitv`.
+- `std::pool`: thread pools over `std::pthread`: scoped spawn, a task pool
+  with `submit`/`try_submit`/`wait`/`wait_timeout_ms`, and `map`, ordered
+  `reduce` and `scan` on threads.
 - `std::steal`: work-stealing queues, one deque per worker, with
   pending-count termination and token cancellation that drains the pool
   cleanly.
