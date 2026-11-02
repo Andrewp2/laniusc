@@ -585,6 +585,12 @@ static const uint X86_HEADER_CACHE_FLAG = 1u << 16u;
 static const uint X86_HEADER_HOME_SHIFT = 17u;
 static const uint X86_HEADER_HOME_LIMIT = 0x7fffu;
 
+// Between allocation.words and allocation.locations only: a one-word scalar
+// spill that reuses the stack word of the earlier spill at position
+// `location & X86_SPILL_ALIAS_POSITION` (see allocation_words' SpillSlots).
+static const uint X86_SPILL_ALIAS = 0x20000000u;
+static const uint X86_SPILL_ALIAS_POSITION = 0x1fffffffu;
+
 bool x86_header_parameter(SemanticLirParam param, X86DeclarationAnalysis analysis,
                           uint4 place_storage)
 {

@@ -3,6 +3,7 @@
 
 import codegen.lowering_ir;
 import codegen.optimization_ir;
+import codegen.lir.x86.common;
 import gpu_index;
 
 struct Params
@@ -37,8 +38,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint total = min(gParams.semantic_capacity, opt_ir_total[0u]);
     if (position >= total) return;
     uint row = semantic_schedule_order[position];
-    if (row >= total || x86_stack_words_by_position[position] == 0u ||
-        x86_location_by_semantic[row] != INVALID) return;
+    if (row >= total) return;
+    // A reused spill word (allocation_words' SpillSlots) takes its owner's
+    // offset; the owner precedes it in the same function.
+    uint pending = x86_location_by_semantic[row];
+    bool alias = pending != INVALID && (pending & 0xe0000000u) == X86_SPILL_ALIAS;
+    if (!alias && (x86_stack_words_by_position[position] == 0u || pending != INVALID))
+        return;
+    uint slot = alias ? pending & X86_SPILL_ALIAS_POSITION : position;
     uint owner = opt_ir_source_hir[row];
     if (owner >= gParams.function_capacity) return;
     uint function_id = semantic_function_id_by_hir[owner];
@@ -46,6 +53,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint start = x86_function_start[function_id];
     if (start > position || start >= total) return;
     uint base = x86_stack_prefix_by_position[start];
-    uint prefix = x86_stack_prefix_by_position[position];
+    if (slot < start || slot > position) { x86_location_by_semantic[row] = INVALID; return; }
+    uint prefix = x86_stack_prefix_by_position[slot];
     x86_location_by_semantic[row] = prefix >= base ? prefix - base : INVALID;
 }

@@ -366,6 +366,82 @@ void hold_over_loop(inout RegisterEnds ends, uint label, uint source)
     ends.r14 = held_until(ends.r14, label, until);
 }
 
+// Reusable one-word spill slots, at most eight live at once: each entry is
+// the position of the spill that owns the stack word (INVALID when unused)
+// and one past the current interval in it. A later one-word scalar spill
+// whose definition comes after an entry's interval shares that word (its
+// location is X86_SPILL_ALIAS | owner and its own width is zero). Loops
+// hold entries the same way hold_over_loop holds registers.
+struct SpillSlots
+{
+    uint4 owner_low;
+    uint4 owner_high;
+    uint4 end_low;
+    uint4 end_high;
+};
+
+uint spill_owner(SpillSlots slots, uint index)
+{
+    return index < 4u ? slots.owner_low[index] : slots.owner_high[index - 4u];
+}
+
+uint spill_end(SpillSlots slots, uint index)
+{
+    return index < 4u ? slots.end_low[index] : slots.end_high[index - 4u];
+}
+
+void set_spill_slot(inout SpillSlots slots, uint index, uint owner, uint end)
+{
+    if (index < 4u) { slots.owner_low[index] = owner; slots.end_low[index] = end; }
+    else { slots.owner_high[index - 4u] = owner; slots.end_high[index - 4u] = end; }
+}
+
+void hold_spills_over_loop(inout SpillSlots slots, uint label, uint source)
+{
+    uint until = source + 1u;
+    for (uint index = 0u; index < 8u; index += 1u)
+        if (spill_owner(slots, index) != INVALID)
+            set_spill_slot(slots, index, spill_owner(slots, index),
+                held_until(spill_end(slots, index), label, until));
+}
+
+// A spilled value that is one plain scalar word: its stack word is only
+// stored and loaded, never addressed, so it may share the word with values
+// whose intervals do not overlap its own.
+bool reusable_spill(uint row)
+{
+    OptIrNodeCore core = opt_ir_core[row];
+    uint op = opt_ir_op(core);
+    return produces_scalar_value(op) && op != SEMANTIC_LIR_OP_PLACE_LOAD &&
+        op != SEMANTIC_LIR_OP_CONST_STRING && !semantic_lir_is_call(op) &&
+        core.type_id != SEMANTIC_LIR_TY_STRING &&
+        (core.flags & (SEMANTIC_LIR_FLAG_ARRAY_PAIR | SEMANTIC_LIR_FLAG_PLACE_VIEW)) == 0u &&
+        !x86_semantic_type_is_aggregate(core);
+}
+
+// The spill location of a reusable one-word value at `position`: an alias of
+// a free entry's owner, a new entry it owns (INVALID: it keeps its own
+// word), or INVALID when every entry is busy.
+uint reuse_spill(inout SpillSlots slots, uint position, uint end)
+{
+    for (uint index = 0u; index < 8u; index += 1u)
+    {
+        uint owner = spill_owner(slots, index);
+        if (owner != INVALID && spill_end(slots, index) <= position)
+        {
+            set_spill_slot(slots, index, owner, end);
+            return X86_SPILL_ALIAS | owner;
+        }
+    }
+    for (uint index = 0u; index < 8u; index += 1u)
+        if (spill_owner(slots, index) == INVALID)
+        {
+            set_spill_slot(slots, index, position, end);
+            return INVALID;
+        }
+    return INVALID;
+}
+
 uint free_register(RegisterEnds ends, uint allowed, uint position)
 {
     for (uint index = 0u; index < 8u; index += 1u)
@@ -556,6 +632,11 @@ void walk_function(uint function_id, uint start, uint end, uint total,
     ends.rbx = 0u; ends.r8 = 0u; ends.r9 = 0u; ends.r10 = 0u;
     ends.r11 = 0u; ends.r12 = 0u; ends.r13 = 0u; ends.r14 = 0u;
     uint saved = header ? X86_HEADER_REGISTERS | X86_HEADER_CACHE_FLAG : 0u;
+    SpillSlots spills;
+    spills.owner_low = uint4(INVALID, INVALID, INVALID, INVALID);
+    spills.owner_high = spills.owner_low;
+    spills.end_low = uint4(0u, 0u, 0u, 0u);
+    spills.end_high = spills.end_low;
 
     for (uint position = start; position < end; position += 1u)
     {
@@ -567,7 +648,11 @@ void walk_function(uint function_id, uint start, uint end, uint total,
         uint words = 0u;
         if (control_label(op))
         {
-            if (pending != INVALID) hold_over_loop(ends, position, pending);
+            if (pending != INVALID)
+            {
+                hold_over_loop(ends, position, pending);
+                hold_spills_over_loop(spills, position, pending);
+            }
         }
         if (x86_live_by_semantic[row] != 0u)
         {
@@ -590,7 +675,16 @@ void walk_function(uint function_id, uint start, uint end, uint total,
                 }
             }
             if (location == INVALID)
+            {
                 words = spill_word_count(row, total, function_total);
+                if (words == 1u && sound && position <= X86_SPILL_ALIAS_POSITION &&
+                    reusable_spill(row))
+                {
+                    uint last = x86_last_use_by_semantic[row];
+                    location = reuse_spill(spills, position, max(last, position) + 1u);
+                    if (location != INVALID) words = 0u;
+                }
+            }
         }
         x86_location_by_semantic[row] = location;
         x86_stack_words_by_position[position] = words;
