@@ -39,6 +39,8 @@ def syscallLinuxByte (kind : Syscall) : UInt8 :=
   | .poll => 7
   | .clock => 228
   | .random => 62
+  | .argCount => 0
+  | .argByte => 0
 
 /-- The second byte of a system call's Linux number (getrandom is 318). -/
 def syscallLinuxHigh (kind : Syscall) : UInt8 :=
@@ -48,6 +50,8 @@ def syscallLinuxHigh (kind : Syscall) : UInt8 :=
   | .poll => 0
   | .clock => 0
   | .random => 1
+  | .argCount => 0
+  | .argByte => 0
 
 /-- Which argument a system call makes a heap address: add rsi, r12 (the second) for write, read and clock_gettime, mov rsi, rsi (none) for poll, add rdi, r12 (the first) for getrandom. -/
 def syscallRsiBytes (kind : Syscall) : List UInt8 :=
@@ -57,13 +61,38 @@ def syscallRsiBytes (kind : Syscall) : List UInt8 :=
   | .poll => 72 :: 137 :: [246]
   | .clock => 76 :: 1 :: [230]
   | .random => 76 :: 1 :: [231]
+  | .argCount => 72 :: 137 :: [246]
+  | .argByte => 72 :: 137 :: [246]
 
 /-- mov rdi, [rbp + disp32] (the fd); mov rsi, [rbp + disp32]; add rsi, r12 (the heap address; mov rsi, rsi for poll); mov rdx, [rbp + disp32] (the count); mov eax, the call's number; syscall; mov r11, rcx (the kernel leaves RFLAGS in r11) -/
-def sysBytes (kind : Syscall) (slot : Nat) : List UInt8 :=
+def kernelCallBytes (kind : Syscall) (slot : Nat) : List UInt8 :=
   let fd : List UInt8 := 72 :: 139 :: [189] ++ le32 (slotOffset slot)
   let address : List UInt8 := 72 :: 139 :: [181] ++ le32 (slotOffset (slot + 1)) ++ syscallRsiBytes kind
   let count : List UInt8 := 72 :: 139 :: [149] ++ le32 (slotOffset (slot + 2))
   fd ++ address ++ (count ++ 184 :: syscallLinuxByte kind :: syscallLinuxHigh kind :: 0 :: 0 :: 15 :: 5 :: 73 :: 137 :: [203])
+
+/-- mov rdi, [slot]; mov rsi, [slot + 1]; mov rsi, rsi; mov rdx, [slot + 2] (as a system call's); mov rax, [r8 + 0] (argc); mov r11, rcx -/
+def argCountBytes (slot : Nat) : List UInt8 :=
+  let first : List UInt8 := 72 :: 139 :: [189] ++ le32 (slotOffset slot)
+  let second : List UInt8 := 72 :: 139 :: [181] ++ le32 (slotOffset (slot + 1)) ++ 72 :: 137 :: [246]
+  let third : List UInt8 := 72 :: 139 :: [149] ++ le32 (slotOffset (slot + 2))
+  first ++ second ++ (third ++ 73 :: 139 :: 128 :: 0 :: 0 :: 0 :: 0 :: 73 :: 137 :: [203])
+
+/-- mov rdi, [slot] (8 times the index); add rdi, r8; mov rax, [rdi + 8] (the argument's pointer, argv[index]); mov rsi, [slot + 1] (the offset); add rax, rsi; movzx eax, byte [rax + 0] -/
+def argByteBytes (slot : Nat) : List UInt8 :=
+  let pointer : List UInt8 := 72 :: 139 :: [189] ++ le32 (slotOffset slot) ++ 76 :: 1 :: 199 :: 72 :: 139 :: 135 :: 8 :: 0 :: 0 :: [0]
+  let offset : List UInt8 := 72 :: 139 :: [181] ++ le32 (slotOffset (slot + 1))
+  pointer ++ (offset ++ 72 :: 1 :: 240 :: 15 :: 182 :: 128 :: 0 :: 0 :: 0 :: [0])
+
+def sysBytes (kind : Syscall) (slot : Nat) : List UInt8 :=
+  match kind with
+  | .write => kernelCallBytes kind slot
+  | .read => kernelCallBytes kind slot
+  | .poll => kernelCallBytes kind slot
+  | .clock => kernelCallBytes kind slot
+  | .random => kernelCallBytes kind slot
+  | .argCount => argCountBytes slot
+  | .argByte => argByteBytes slot
 
 /-- mov rsp, rbp; pop rbp; ret -/
 def epilogue : List UInt8 :=
@@ -141,22 +170,5 @@ def layout (start : Nat) (codes : List Code) : List Nat :=
   match codes with
   | [] => []
   | code :: rest => start :: layout (start + Code.size code) rest
-
-def linkFrom (entries : List Nat) (start : Nat) (codes : List Code) : List UInt8 :=
-  match codes with
-  | [] => []
-  | code :: rest => Code.image code start entries ++ linkFrom entries (start + Code.size code) rest
-
-/-- The bytes of code followed by tail. -/
-def encodeOnto (place : Place) (pc : Nat) (code : List Instr) (tail : List UInt8) : List UInt8 :=
-  match code with
-  | [] => tail
-  | i :: rest => Instr.encode i place pc ++ encodeOnto place (pc + Instr.size i) rest tail
-
-/-- link_from's bytes, each function's built in front of the rest instead of concatenated onto it: concat copies its first list, and the heap of the self-built verified compiler is never freed (roadmap F12). -/
-def linkOnto (entries : List Nat) (start : Nat) (codes : List Code) : List UInt8 :=
-  match codes with
-  | [] => []
-  | code :: rest => prologue code.slots ++ encodeOnto ({ body := start + 24, slots := code.slots, entries := entries } : Place) 0 code.instrs (linkOnto entries (start + Code.size code) rest)
 
 end Lanius.Mini

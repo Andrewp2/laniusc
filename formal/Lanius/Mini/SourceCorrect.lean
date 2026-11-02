@@ -44,11 +44,12 @@ theorem evalExprs_values {P : Core.Program} {st : Semantics.State} :
         all_goals simp at run
 
 /-- Core's starting state for a process given the streams of `io`: an empty
-heap, no cells, and a world holding standard input, the clocks' readings and
-the secure bytes the process is given, and nothing else. -/
+heap, no cells, and a world holding standard input, the clocks' readings,
+the secure bytes and the arguments the process is given, and nothing else. -/
 def startState (io : Lanius.X86.Machine.Io) : Semantics.State :=
   { world :=
-      { standardInput := io.input
+      { arguments := io.arguments
+        standardInput := io.input
         monotonicReadings := io.monotonic
         systemReadings := io.realtime
         secureByteStream := io.entropy } }
@@ -72,7 +73,7 @@ theorem HeapCorr.empty {heap : Heap} (start : heap.cursor = 1) (zero : ∀ a, 1 
     err := by rw [silent]; rfl
     closed := rfl
     input := rfl
-    streams := ⟨rfl, rfl, rfl⟩ }
+    streams := ⟨rfl, rfl, rfl, rfl⟩ }
 
 /-- `compileSource_correct` from any Core state whose cells are fresh and
 whose heap the mini heap represents (`HeapCorr`), not just the empty one:

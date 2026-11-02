@@ -122,7 +122,8 @@ def Frame.entered (s : State) (window slots guard : Nat) : Frame :=
     saved := s.registers rbpRegister
     preserved := s.registers
     entry := s.memory
-    guard := guard }
+    guard := guard
+    arguments := s.io.arguments }
 
 /-- Entering compiled function `f`: the prologue's stack check fails and the
 run stops at a fault, or the prologue sets up the frame and the body starts
@@ -251,13 +252,16 @@ theorem function_enter {prog : Program} {binary : Binary} (compiled : compilePro
       saved := s.registers rbpRegister
       preserved := s.registers
       entry := s.memory
-      guard := binary.guard }
+      guard := binary.guard
+      arguments := s.io.arguments }
   have fits : frame.Fits :=
     ⟨limit, by show frameBytes code.slots + 16 ≤ window; omega, bounded,
       by show (s.registers topRegister).toNat < 2 ^ 62; rw [← heapAt.top]; exact heapAt.small,
       by show (s.registers limitRegister).toNat ≤ (s.registers topRegister).toNat
          rw [← heapAt.limit, ← heapAt.top]; exact heap.limit_le_top,
-      heapAt.apart, stackLimit, stackHigh, by show frameBytes code.slots + 8 + binary.guard ≤ window; omega⟩
+      heapAt.apart, stackLimit, stackHigh, by show frameBytes code.slots + 8 + binary.guard ≤ window; omega,
+      by show ArgsHeld s.memory (s.registers argRegister) s.io.arguments _
+         rw [heapAt.io]; exact heapAt.args⟩
   have body : Body frame binary imageBase ⟨offset + 24, code.slots, binary.entries⟩ code.instrs :=
     { loaded := by
         have := codeImage.suffix
@@ -337,6 +341,7 @@ theorem function_enter {prog : Program} {binary : Binary} (compiled : compilePro
           State.push64, rspRegister, rbpRegister, r11Register, fspRegister, this]
         rfl
       fspLe := heapAt.fspLe
+      arguments := by show heap.io.arguments = s.io.arguments; rw [heapAt.io]
       heap := by
         intro a inside
         have inside' : a < frame.heapTop := by rw [show frame.heapTop = heap.top from heapAt.top.symm]; exact inside
@@ -406,7 +411,8 @@ theorem function_contract {prog : Program} {binary : Binary} (compiled : compile
       limit := exit.limit
       top := exit.top
       heap := exit.heap
-      io := exit.io }
+      io := exit.io
+      arguments := exit.arguments }
 
 /-- Every compiled function meets its contract with the stack its call depth needs. -/
 theorem compiled_contract {prog : Program} {binary : Binary} (compiled : compileProgram prog = some binary)

@@ -1033,6 +1033,36 @@ theorem eff_call (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some 
     · rw [stmtEq]
       exact ⟨d, .seqFirst stops⟩
     exfalso
+    rcases shape with argShape | shape
+    · rcases argShape with ⟨rfl, tys⟩ | ⟨rfl, tys⟩ | ⟨rfl, tys⟩
+      · have vsNil : vs = [] := by
+          rw [tys] at holdsA
+          cases holdsA
+          rfl
+        subst vsNil
+        have outcome := fails (k + 1)
+        rw [host_call_eval outside hs rfl argsRun fresh1.2] at outcome
+        obtain ⟨v, world', called⟩ := argc_returns st1.heap st1.world
+        rw [called, worldCall_returned fresh1.2] at outcome
+        exact Nat.lt_irrefl _ (Nat.lt_of_lt_of_le outcome bound)
+      · obtain ⟨valuesA, -⟩ := one_i32 holdsA tys
+        subst valuesA
+        have outcome := fails (k + 1)
+        rw [host_call_eval outside hs rfl argsRun fresh1.2] at outcome
+        obtain ⟨v, world', called⟩ := argLen_returns st1.heap st1.world (low (env1 slot)).toInt
+        rw [called, worldCall_returned fresh1.2] at outcome
+        exact Nat.lt_irrefl _ (Nat.lt_of_lt_of_le outcome bound)
+      · obtain ⟨valuesA, -⟩ := i32_ptr_usize holdsA tys
+        subst valuesA
+        have outcome := fails (k + 1)
+        rw [host_call_eval outside hs rfl argsRun fresh1.2] at outcome
+        rcases argRead_outcome st1.heap st1.world (low (env1 slot)).toInt (env1 (slot + 1)).toNat
+            (env1 (slot + 2)).toNat with ⟨v, heap', world', called⟩ | ⟨r, world', called, _, stored⟩
+        · rw [called, worldCall_returned fresh1.2] at outcome
+          exact Nat.lt_irrefl _ (Nat.lt_of_lt_of_le outcome
+            (show heap'.nextAddress ≤ hp.limit by rw [hostCall_next hs called]; exact bound))
+        · rw [called] at outcome
+          exact trap_within outcome (storeBytes_undefined stored) bound
     have len : vs.length = service.parameterTypes.length := by
       rw [holdsA.length]
       rcases shape with ⟨rfl, tys⟩ | ⟨which, tys⟩ | ⟨rfl, tys⟩

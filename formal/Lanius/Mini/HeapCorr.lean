@@ -38,19 +38,23 @@ theorem outputOf_write (fd target : Nat) (bytes : List UInt8) :
   simp only [outputOf, List.append_nil]
 
 /-- The streams Core's world and the process have still to read, other than
-standard input: the clocks' readings and the secure bytes. -/
+standard input: the clocks' readings and the secure bytes; and the process's
+arguments. -/
 def Streams (w : World.State) (io : Lanius.X86.Machine.Io) : Prop :=
-  w.monotonicReadings = io.monotonic ∧ w.systemReadings = io.realtime ∧ w.secureByteStream = io.entropy
+  w.monotonicReadings = io.monotonic ∧ w.systemReadings = io.realtime ∧ w.secureByteStream = io.entropy ∧
+    w.arguments = io.arguments
 
 theorem Streams.congr {w w' : World.State} {io io' : Lanius.X86.Machine.Io} (s : Streams w io)
     (world : w'.monotonicReadings = w.monotonicReadings ∧ w'.systemReadings = w.systemReadings ∧
       w'.secureByteStream = w.secureByteStream)
-    (process : io'.monotonic = io.monotonic ∧ io'.realtime = io.realtime ∧ io'.entropy = io.entropy) :
+    (process : io'.monotonic = io.monotonic ∧ io'.realtime = io.realtime ∧ io'.entropy = io.entropy)
+    (arguments : w'.arguments = w.arguments := by rfl) (kept : io'.arguments = io.arguments := by rfl) :
     Streams w' io' := by
-  obtain ⟨m, r, e⟩ := s
+  obtain ⟨m, r, e, a⟩ := s
   obtain ⟨wm, wr, we⟩ := world
   obtain ⟨pm, pr, pe⟩ := process
-  exact ⟨wm.trans (m.trans pm.symm), wr.trans (r.trans pr.symm), we.trans (e.trans pe.symm)⟩
+  exact ⟨wm.trans (m.trans pm.symm), wr.trans (r.trans pr.symm), we.trans (e.trans pe.symm),
+    arguments.trans (a.trans kept.symm)⟩
 
 /-- Core's heap `h` and world `w`, and the mini heap `hp` with its trace. The
 world's standard output and error are what the trace wrote to fds 1 and 2

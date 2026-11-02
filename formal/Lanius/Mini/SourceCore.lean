@@ -292,6 +292,9 @@ def hostService? (id : Nat) : Option Core.HostService :=
   else if id = hostBase + 5 then some .monotonicRead
   else if id = hostBase + 6 then some .systemRead
   else if id = hostBase + 7 then some .fillSecureBytes
+  else if id = hostBase + 8 then some .argc
+  else if id = hostBase + 9 then some .argLen
+  else if id = hostBase + 10 then some .argRead
   else none
 
 /-- Parameters numbered from `n`. -/
@@ -311,7 +314,8 @@ def hostFunc (id : Nat) (service : Core.HostService) : Core.Function where
 def hostFuncs : List Core.Function :=
   [hostFunc hostBase .writeByte, hostFunc (hostBase + 1) .writeStdout, hostFunc (hostBase + 2) .writeStderr,
     hostFunc (hostBase + 3) .readStdin, hostFunc (hostBase + 4) .sleepMsI32, hostFunc (hostBase + 5) .monotonicRead,
-    hostFunc (hostBase + 6) .systemRead, hostFunc (hostBase + 7) .fillSecureBytes]
+    hostFunc (hostBase + 6) .systemRead, hostFunc (hostBase + 7) .fillSecureBytes, hostFunc (hostBase + 8) .argc,
+    hostFunc (hostBase + 9) .argLen, hostFunc (hostBase + 10) .argRead]
 
 def SrcStructDecl.toCore (decl : SrcStructDecl) : Core.StructDecl where
   id := decl.id

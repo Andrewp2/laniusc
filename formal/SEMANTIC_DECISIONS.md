@@ -813,7 +813,9 @@ loop's own exit runs; `Cont` compiles to `Jmp cont`, the loop's start
   (`Instr.sys kind slot`, `Mini/Semantics.lean`) is one system call; its
   arguments are evaluated into three consecutive frame slots, and the
   result lands in `target`. `Syscall.write`, `Syscall.read`, `Syscall.poll`,
-  `Syscall.clock` and `Syscall.random` exist.
+  `Syscall.clock` and `Syscall.random` are system calls; `Syscall.argCount`
+  and `Syscall.argByte` are loads from the entry stack ("Process
+  arguments").
 - **`Syscall.write` at the mini level.** `[fd, address, count]` with fd 1 or
   2, count at most `maxTransfer`, and `address + count` within the heap
   limit; it appends `.write fd (heap bytes address..address+count)` to
@@ -833,9 +835,8 @@ loop's own exit runs; `Cont` compiles to `Jmp cont`, the loop's start
   side is `World.State.standardOutput`/`standardError`; the link from
   Core's `write_byte`/`write_stdout` services to `.write` events (one event
   per call, the bytes Core appends) is the next part of F8.
-- **Not yet modeled (deferred).** Process
-  arguments and environment variables (the loader would have to place
-  `argv`/`envp`, now arbitrary memory), files, sockets and processes, the
+- **Not yet modeled (deferred).** Environment variables (the loader would
+  have to place `envp`, now arbitrary memory), files, sockets and processes, the
   general `syscall6`, the allocator externs (the verified compiler's `alloc` is the mini bump allocator over
   a heap the startup code provides, not `mmap`), and writes longer than
   `MAX_RW_COUNT` (Core would have to loop; a short write is not modeled).
@@ -951,6 +952,51 @@ loop's own exit runs; `Cont` compiles to `Jmp cont`, the loop's start
   `random_simulates`); the kernel calls are in TRUSTED_BASE.md section 8.
   The stdlib's callers pass a pointer the oracle cannot give, so there is
   no oracle step for them.
+
+## Process arguments (decided 10-31, F8)
+
+- **Fixed before the run, like the streams.** Core's world holds
+  `arguments`, the process's argv (its name first); the process side
+  (`Io.arguments`) has the same list, and `HeapCorr` says they are equal
+  (`Streams`). The top theorems start Core from `startState io`, so they
+  hold for every argument list Linux could pass. What Linux guarantees of
+  it is a field of `Io` (`argumentsOk`: fewer than 2^31 arguments, each
+  shorter than 2^31 bytes, with no 0 byte), so the theorems need no premise
+  for it.
+- **`argc()`, `arg_len(index)`, `arg_read(index, ptr, len)` (host ids 2^32
+  + 8, + 9, + 10).** Core's meanings (`World.callSimple`, `World.call`):
+  the count of arguments as `i32`; -1 for a negative index or one past the
+  last, else the argument's UTF-8 byte count; -1 likewise, else the first
+  `len` bytes, or all of them when fewer, stored from `ptr` (trapping
+  where Core's store traps), and how many as `i32`. The front end reads the
+  stdlib's `extern "lanius_std"` declarations of them as these host calls.
+- **No system call: loads from the entry stack.** The startup code keeps
+  Linux's entry stack address in r8 (`mov r8, rsp`, TRUSTED_BASE.md section
+  8), which no compiled code writes. Two mini `Sys` kinds read it, each 34
+  bytes like the system calls: `Syscall.argCount` returns argc
+  (`argCountSpec`: `mov rax, [r8]`), and `Syscall.argByte` of `8 * index`
+  and an offset at most the argument's length returns its byte there, 0 at
+  its end (`argByteSpec`: `mov rax, [r8 + 8 * index + 8]` and `movzx eax,
+  byte [rax + offset]`); neither changes the heap. The index is passed
+  multiplied so that no instruction scales it.
+- **Lowering.** `argc` is `host_argc_code`: `ArgCount` and the count as
+  `i32`. `arg_len` and `arg_read` are `host_arg_len_code` and
+  `host_arg_read_code`: `ArgCount`, then -1 when the index is negative or
+  not below the count (`host_arg_missing`), else a loop over `ArgByte` from
+  offset 0 that stops at the argument's 0 (and, for `arg_read`, after
+  `len` bytes), storing each byte from `ptr` on for `arg_read`. Proved
+  against `World.call` (`LowerEval.host_argc`, `host_argLen`,
+  `host_argRead`; the loops in `Mini/ArgTrace.lean`, which use that an
+  argument has no 0 byte) and through the simulation (`argCount_simulates`,
+  `argByte_simulates`).
+- **The oracle gives each run of an argument-reading call its own
+  arguments.** The stdlib oracle runs a program whose stdlib files call
+  `argc`, `arg_len` or `arg_read` one call per run, like a reading call:
+  call `n` of its harness gets the name `oracle` and `n` random arguments
+  (by seed, program and call; letters, digits, signs, spaces and two- to
+  four-byte UTF-8 characters), as laniusc's harness's argv and as the entry
+  stack r8 points to in the verified compiler's native run
+  (`Native.set_argv`). The harness numbers its call by its argument count.
 
 ## `for` over a range (decided 10-30, F4)
 

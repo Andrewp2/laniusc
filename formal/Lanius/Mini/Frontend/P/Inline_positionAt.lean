@@ -1,8 +1,8 @@
 module
 
 public import Lanius.Mini.Frontend.Types
-public import Lanius.Mini.Frontend.P.collectedWith
 public import Lanius.Mini.Frontend.P.distinct
+public import Lanius.Mini.Frontend.P.fileCollected
 public import Lanius.Mini.Frontend.P.findConst
 public import Lanius.Mini.Frontend.P.hasKids
 public import Lanius.Mini.Frontend.P.isEmptyUsize

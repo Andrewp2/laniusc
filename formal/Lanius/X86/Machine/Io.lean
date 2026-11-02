@@ -11,17 +11,32 @@ inductive Event where
   | write (fd : Nat) (bytes : List UInt8)
 deriving DecidableEq, Repr
 
+/-- An argument's bytes: its UTF-8 encoding (Core's `World.utf8Bytes`). -/
+def argumentBytes (argument : String) : List UInt8 := argument.toUTF8.data.toList
+
+/-- What Linux guarantees of the arguments it passes a process
+(TRUSTED_BASE.md section 8): fewer than 2^31 of them (`MAX_ARG_STRINGS`),
+each shorter than 2^31 bytes (`MAX_ARG_STRLEN`) and without a 0 byte (C
+strings). -/
+def ArgumentsOk (arguments : List String) : Prop :=
+  arguments.length < 2 ^ 31 ∧
+    ∀ argument ∈ arguments, (argumentBytes argument).length < 2 ^ 31 ∧ 0 ∉ argumentBytes argument
+
+theorem argumentsOk_nil : ArgumentsOk [] := by simp [ArgumentsOk]
+
 /-- The process's side of its environment: the trace of events so far, and
 what the kernel has still to deliver, streams fixed when the process starts
 (TRUSTED_BASE.md section 8): the bytes of standard input, the readings
 (seconds, nanoseconds) of the monotonic and the real-time clock, and the
-secure random bytes. -/
+secure random bytes; and its arguments, which never change. -/
 structure Io where
   trace : List Event := []
   input : List UInt8 := []
   monotonic : List (Int × Nat) := []
   realtime : List (Int × Nat) := []
   entropy : List UInt8 := []
+  arguments : List String := []
+  argumentsOk : ArgumentsOk arguments := by exact Lanius.X86.Machine.argumentsOk_nil
 deriving Repr
 
 /-- The readings left of the clock `clock_gettime` names: `CLOCK_MONOTONIC`

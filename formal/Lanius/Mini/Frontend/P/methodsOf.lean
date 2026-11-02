@@ -101,6 +101,21 @@ def textFillSecureBytes : List Nat :=
   let t : List Nat := 102 :: 105 :: 108 :: 108 :: 95 :: 115 :: 101 :: 99 :: 117 :: 114 :: 101 :: 95 :: 98 :: 121 :: 116 :: 101 :: [115]
   t
 
+/-- argc -/
+def textArgc : List Nat :=
+  let t : List Nat := 97 :: 114 :: 103 :: [99]
+  t
+
+/-- arg_len -/
+def textArgLen : List Nat :=
+  let t : List Nat := 97 :: 114 :: 103 :: 95 :: 108 :: 101 :: [110]
+  t
+
+/-- arg_read -/
+def textArgRead : List Nat :=
+  let t : List Nat := 97 :: 114 :: 103 :: 95 :: 114 :: 101 :: 97 :: [100]
+  t
+
 /-- The Core function id of the host service an `extern "lanius_std" fn` of this name stands for (hostFuncs in SrcProgram.toCore), 0 for none. -/
 def hostId (name : List Nat) : Nat :=
   if sameText name textWriteByte then
@@ -127,7 +142,16 @@ def hostId (name : List Nat) : Nat :=
                 if sameText name textFillSecureBytes then
                   4294967303
                 else
-                  0
+                  if sameText name textArgc then
+                    4294967304
+                  else
+                    if sameText name textArgLen then
+                      4294967305
+                    else
+                      if sameText name textArgRead then
+                        4294967306
+                      else
+                        0
 
 /-- An `extern "lanius_std" fn` naming a host service, without a where clause. -/
 def hostExtern (b : CTree) : Bool :=
@@ -178,23 +202,5 @@ def collect (fuel : Nat) (home : List (List Nat)) (items : List CTree) (acc : De
     match cacc with
     | none => none
     | some d => collect fuel home rest d
-
-def fileCollected (home : List (List Nat)) (decls : Option Decls) : Option FileDecls :=
-  match decls with
-  | none => none
-  | some d => some ({ home := home, decls := d } : FileDecls)
-
-def fileItems (fuel : Nat) (home : Option (List (List Nat))) (items : List CTree) : Option FileDecls :=
-  match home with
-  | none => none
-  | some m => fileCollected m (collect fuel m items noDecls)
-
-def fileDecls (fuel : Nat) (root : CTree) : Option FileDecls :=
-  if nodeProd root = (0) then
-    match listItems fuel (kid root 0) with
-    | none => none
-    | some items => fileItems fuel (modulePath fuel items) items
-  else
-    none
 
 end Lanius.Mini

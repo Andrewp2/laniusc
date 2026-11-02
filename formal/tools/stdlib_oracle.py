@@ -936,7 +936,8 @@ ARG_STORES = [bytes([0x48, 0x89, 0x7C, 0x24]), bytes([0x48, 0x89, 0x74, 0x24]), 
 
 
 class Native(oracle.Native):
-    """oracle_difftest's stub, with up to six arguments (rdi, rsi, rdx, rcx, r8, r9)."""
+    """oracle_difftest's stub, with up to six arguments (rdi, rsi, rdx, rcx, r8, r9);
+    r8 is stored before it is pointed at the entry stack."""
 
     def load(self, entries, image, arity):
         self.code[0:len(image)] = image
@@ -948,6 +949,7 @@ class Native(oracle.Native):
         stub += bytes([0x4C, 0x8D, 0xBC, 0x24]) + (-oracle.STACK_ROOM & 0xffffffff).to_bytes(4, 'little')
         for k in range(arity):
             stub += ARG_STORES[k] + bytes([(256 - (8 * k + 24)) & 0xff])
+        stub += self.args_stub()
         rel = entries[0] - (at + len(stub) + 5)
         stub += b'\xe8' + (rel & 0xffffffff).to_bytes(4, 'little')
         stub += bytes([0x41, 0x5F, 0x41, 0x5E, 0x41, 0x5D, 0x41, 0x5C, 0xC3])
@@ -988,11 +990,11 @@ def read_both(a, b):
     return got[a], got[b]
 
 
-def native_call(native, args, types, high=False, stdin_path=os.devnull):
+def native_call(native, args, types, high=False, stdin_path=os.devnull, argv=(oracle.ARGV0,)):
     """The wrapper's result (its high 32 bits when high), or 'trap' (a signal)
     or 'timeout', and the bytes
     it wrote to stdout and to stderr, from a forked child (both pipes) whose
-    fd 0 is the file stdin_path."""
+    fd 0 is the file stdin_path and whose arguments are argv."""
     r, w = os.pipe()
     out_r, out_w = os.pipe()
     err_r, err_w = os.pipe()
@@ -1010,6 +1012,7 @@ def native_call(native, args, types, high=False, stdin_path=os.devnull):
         os.close(given)
         signal.alarm(2)
         native.heap[0:native.HEAP] = bytes(native.HEAP)
+        native.set_argv(list(argv))
         value = native.fn(*[slot(a, t) for a, t in zip(args, types)])
         os.write(w, str(oracle.i32(value >> 32 if high else value)).encode())
         os._exit(0)
@@ -1037,6 +1040,27 @@ def reads_stdin(mods, p):
     """Whether a program's stdlib files call read_stdin (its extern line aside)."""
     return any(READS.search(line) and 'extern' not in line
                for dep in p['deps'] for line in open(mods[dep].path).read().split('\n'))
+
+
+ARGS_READ = re.compile(r'\b(argc|arg_len|arg_read)\s*\(')
+# The bytes of a generated argument: letters, digits, signs, spaces and UTF-8
+# characters of two, three and four bytes (an argument has no 0 byte).
+ARG_CHARS = 'abcXYZ019-=_./ é€😀'
+
+
+def reads_args(mods, p):
+    """Whether a program's stdlib files call argc, arg_len or arg_read (their
+    extern lines aside)."""
+    return any(ARGS_READ.search(line) and 'extern' not in line
+               for dep in p['deps'] for line in open(mods[dep].path).read().split('\n'))
+
+
+def gen_argv(seed, program, call, count):
+    """The arguments of one run of a single-call harness: its name, then
+    count more (the harness numbers its call by its argument count)."""
+    rng = random.Random(f'argv {seed} {program} {call}')
+    return [oracle.ARGV0] + [''.join(rng.choice(ARG_CHARS) for _ in range(rng.choice([0, 1, 2, 5, 12])))
+                             for _ in range(count)]
 
 
 def gen_stdin(seed, program, call):
@@ -1379,8 +1403,6 @@ def main():
         if p['status'] != 'image':
             continue
         entries_s, image_s = re.match(r'image \[(.*?)\] \[(.*?)\]$', status[k]).groups()
-        native.load([int(x) for x in entries_s.split(',')], bytes(int(x) for x in image_s.split(',')),
-                    len(p['wparams']))
         types = [ty for _, ty in p['wparams']]
         # A stdio handle is 1 or 2: the verified compiler's programs (and
         # Core's world) have no other file open, where laniusc's process has
@@ -1392,31 +1414,50 @@ def main():
         p['calls'] = [[rng.choice((1, 2)) if name in handles else rng.choice(SLEEP_MS) if name in sleeps
                        else gen_arg(rng, ty) for name, ty in p['wparams']]
                       for _ in range(args.calls if types else 1)]
-        high = p['target'].ret in FLOATS and p['part'] == 'hi'
-        p['reads'] = reads_stdin(mods, p)
-        p['stdin'] = [gen_stdin(args.seed, k, i) if p['reads'] else b'' for i in range(len(p['calls']))]
-        p['native'] = [native_call(native, a, types, high,
-                                   stdin_file(workdir, data) if p['reads'] else os.devnull)
-                       for a, data in zip(p['calls'], p['stdin'])]
+        p['image'] = ([int(x) for x in entries_s.split(',')], bytes(int(x) for x in image_s.split(',')))
+        p['stdin_reads'] = reads_stdin(mods, p)
+        p['args_reads'] = reads_args(mods, p)
+        p['reads'] = p['stdin_reads'] or p['args_reads']
+        p['stdin'] = [gen_stdin(args.seed, k, i) if p['stdin_reads'] else b'' for i in range(len(p['calls']))]
+        p['argv'] = [[oracle.ARGV0]] * len(p['calls'])
 
-    native_s = time.time() - began - parse_s - compile_s
-    # laniusc: the compiled wrappers, renamed, in harness binaries.
+    # laniusc's harness binaries: the compiled wrappers, renamed, in chunks
+    # (the wrappers that read standard input or their arguments after the
+    # others, in chunks of their own, one run per call).
     compiled = [p for p in programs if p['status'] == 'image']
-    disagreements = []
-    unbuilt = set()
-    agreed = calls_total = traps = written = 0
-    # (the wrappers that read standard input after the others, in chunks of their own)
     compiled = [p for p in compiled if not p['reads']] + [p for p in compiled if p['reads']]
     chunks = [compiled[i:i + args.chunk] for i in range(0, len(compiled), args.chunk)]
     chunks = [part for c in chunks for part in ([q for q in c if not q['reads']], [q for q in c if q['reads']]) if part]
+    # A run of a reading chunk's call n has n + 1 arguments, the first its
+    # name, the same in the native run of that call.
+    for chunk in chunks:
+        n = 0
+        for p in chunk:
+            if p['reads']:
+                p['argv'] = [gen_argv(args.seed, programs.index(p), i, n + i) for i in range(len(p['calls']))]
+            n += len(p['calls'])
+    for p in compiled:
+        native.load(*p['image'], len(p['wparams']))
+        types = [ty for _, ty in p['wparams']]
+        high = p['target'].ret in FLOATS and p['part'] == 'hi'
+        p['native'] = [native_call(native, a, types, high,
+                                   stdin_file(workdir, data) if p['reads'] else os.devnull, argv)
+                       for a, data, argv in zip(p['calls'], p['stdin'], p['argv'])]
+
+    native_s = time.time() - began - parse_s - compile_s
+    disagreements = []
+    unbuilt = set()
+    agreed = calls_total = traps = written = 0
     start = 0
     for chunk in chunks:
         results = laniusc_chunk(args, workdir, chunk, start)
         start += len(chunk)
         for p, got in zip(chunk, results):
-            for a, data, want, have in zip(p['calls'], p['stdin'], p['native'], got):
-                if p['reads']:
+            for a, data, argv, want, have in zip(p['calls'], p['stdin'], p['argv'], p['native'], got):
+                if p['stdin_reads']:
                     a = f'{a} stdin {data!r}'
+                if p['args_reads']:
+                    a = f'{a} argv {argv!r}'
                 if have[0] == 'laniusc fails':
                     unbuilt.add(p['target'].label)
                     continue
@@ -1524,18 +1565,20 @@ def build(args, workdir, name, text, roots=None):
     return run_cache.store_file('build', k, exe), ''
 
 
-def run_calls(exe, n, workdir, stdins=None):
+def run_calls(exe, n, workdir, stdins=None, argvs=None):
     """The binary's result for each of its n calls, with the call's stdout and
     stderr (each call's output ends with FRAME on both): a value, or 'trap'
     or 'timeout' for the call it stopped at (it is run again from the next).
     With stdins, a single-call binary is run once per call on that call's
-    standard input."""
+    standard input, and its arguments argvs (else the binary's path, then one
+    argument per call before the first it makes)."""
     got = []
     while len(got) < n:
         path = os.devnull if stdins is None else stdin_file(workdir, stdins[len(got)])
         try:
             with open(path, 'rb') as given:
-                run = subprocess.run([exe] + ['x'] * len(got), stdin=given, capture_output=True, timeout=10)
+                argv = [exe] + ['x'] * len(got) if argvs is None else argvs[len(got)]
+                run = subprocess.run(argv, executable=exe, stdin=given, capture_output=True, timeout=10)
             data, errors, code = run.stdout, run.stderr, run.returncode
         except subprocess.TimeoutExpired as e:
             data, errors, code = e.stdout or b'', e.stderr or b'', 'timeout'
@@ -1573,7 +1616,8 @@ def laniusc_chunk(args, workdir, chunk, start):
         tag = 'laniusc fails' if 'LNC0057' in error else 'laniusc rejects it'
         return [[(tag, b'', b'')] * len(chunk[0]['calls'])]
     got = iter(run_calls(exe, sum(len(p['calls']) for p in chunk), workdir,
-                         [data for p in chunk for data in p['stdin']] if single else None))
+                         [data for p in chunk for data in p['stdin']] if single else None,
+                         [argv for p in chunk for argv in p['argv']] if single else None))
     return [[next(got) for _ in p['calls']] for p in chunk]
 
 

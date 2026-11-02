@@ -140,6 +140,8 @@ def cursorRegister : Register := 13
 def limitRegister : Register := 14
 /-- r10 holds the heap's top: the end of frame memory, which lies above the limit. -/
 def topRegister : Register := 10
+/-- r8 holds the address of Linux's entry stack: argc, then argv's pointers. -/
+def argRegister : Register := 8
 
 /-- `mov r11, imm64` -/
 def r11Bytes (value : BitVec 64) : List UInt8 := immediateBytes .w64 r11Register (lowHalf value) (highHalf value)
@@ -208,6 +210,8 @@ def Syscall.linux : Syscall → BitVec 32
   | .poll => 7
   | .clock => 228
   | .random => 318
+  | .argCount => 0
+  | .argByte => 0
 
 /-- Which argument a system call makes a heap address: `add rsi, r12` the
 second for `write`, `read` and `clock_gettime`; `mov rsi, rsi` none for
@@ -218,6 +222,8 @@ def Syscall.rsiBytes : Syscall → List UInt8
   | .poll => moveBytes .w64 rsiRegister rsiRegister
   | .clock => aluBytes .w64 .add rsiRegister heapBaseRegister
   | .random => aluBytes .w64 .add rdiRegister heapBaseRegister
+  | .argCount => moveBytes .w64 rsiRegister rsiRegister
+  | .argByte => moveBytes .w64 rsiRegister rsiRegister
 
 /-- `mov rdi, [slot]; mov rsi, [slot + 1]; add rsi, r12; mov rdx, [slot + 2];
 mov eax, number; syscall; mov r11, rcx`. The kernel leaves r11 unknown; the last
@@ -228,6 +234,36 @@ def sysSpec (kind : Syscall) (slot : Nat) : List UInt8 :=
     (kind.rsiBytes ++
     (memoryBytes .w64 true rdxRegister rbpRegister (frameDisplacement (slot + 2)) ++
     (immediateBytes .w32 0 kind.linux 0 ++ (syscallBytes ++ moveBytes .w64 r11Register rcxRegister)))))
+
+/-- `mov rdi, [slot]; mov rsi, [slot + 1]; mov rsi, rsi; mov rdx, [slot + 2]`,
+as a system call's, then `mov rax, [r8 + 0]` (argc, at the entry stack's
+start) and `mov r11, rcx`. -/
+def argCountSpec (slot : Nat) : List UInt8 :=
+  memoryBytes .w64 true rdiRegister rbpRegister (frameDisplacement slot) ++
+    (memoryBytes .w64 true rsiRegister rbpRegister (frameDisplacement (slot + 1)) ++
+    (moveBytes .w64 rsiRegister rsiRegister ++
+    (memoryBytes .w64 true rdxRegister rbpRegister (frameDisplacement (slot + 2)) ++
+    (memoryBytes .w64 true 0 argRegister 0 ++ moveBytes .w64 r11Register rcxRegister))))
+
+/-- `mov rdi, [slot]` (8 times an argument's index); `add rdi, r8`; `mov rax,
+[rdi + 8]` (its pointer in argv); `mov rsi, [slot + 1]` (an offset); `add rax,
+rsi`; `movzx eax, byte [rax + 0]`. -/
+def argByteSpec (slot : Nat) : List UInt8 :=
+  memoryBytes .w64 true rdiRegister rbpRegister (frameDisplacement slot) ++
+    (aluBytes .w64 .add rdiRegister argRegister ++
+    (memoryBytes .w64 true 0 rdiRegister 8 ++
+    (memoryBytes .w64 true rsiRegister rbpRegister (frameDisplacement (slot + 1)) ++
+    (aluBytes .w64 .add 0 rsiRegister ++ loadByteBytes 0 0 0))))
+
+/-- A `sys` instruction's bytes: a system call's, or a read of the entry stack. -/
+def Syscall.spec : Syscall → Nat → List UInt8
+  | .write, slot => sysSpec .write slot
+  | .read, slot => sysSpec .read slot
+  | .poll, slot => sysSpec .poll slot
+  | .clock, slot => sysSpec .clock slot
+  | .random, slot => sysSpec .random slot
+  | .argCount, slot => argCountSpec slot
+  | .argByte, slot => argByteSpec slot
 
 /-- The bytes of the instruction at body offset `pc`, as the x86 encoders write them. -/
 def Instr.bytes (i : Instr) (place : Place) (pc : Nat) : List UInt8 :=
@@ -252,7 +288,7 @@ def Instr.bytes (i : Instr) (place : Place) (pc : Nat) : List UInt8 :=
   | .storeWordAt width slot => storeWordSpec width slot
   | .div word operation slot => operation.spec word slot
   | .fp operation slot => accToRcxBytes ++ slotLoadBytes slot ++ operation.opcodeBytes
-  | .sys kind slot => sysSpec kind slot
+  | .sys kind slot => kind.spec slot
   | .frame bytes => frameSpec bytes
 
 /-! The extracted encoders are the x86 ones. (A float operation's SSE bytes
@@ -357,9 +393,17 @@ theorem Instr.encode_eq (i : Instr) (place : Place) (pc : Nat) : i.encode place 
   | fp operation slot => rw [Instr.encode, FOp.bytes, slotOperands, slotLoad_eq]; rfl
   | sys kind slot =>
     cases kind <;>
-    · rw [Instr.encode, Instr.bytes, sysBytes, le32_i32Bytes _ _ (slotOffset_toNat slot),
-        le32_i32Bytes _ _ (slotOffset_toNat (slot + 1)), le32_i32Bytes _ _ (slotOffset_toNat (slot + 2))]
-      rfl
+    · rw [Instr.encode, Instr.bytes, sysBytes]
+      first
+        | rw [kernelCallBytes, le32_i32Bytes _ _ (slotOffset_toNat slot),
+            le32_i32Bytes _ _ (slotOffset_toNat (slot + 1)), le32_i32Bytes _ _ (slotOffset_toNat (slot + 2))]
+          rfl
+        | rw [argCountBytes, le32_i32Bytes _ _ (slotOffset_toNat slot),
+            le32_i32Bytes _ _ (slotOffset_toNat (slot + 1)), le32_i32Bytes _ _ (slotOffset_toNat (slot + 2))]
+          rfl
+        | rw [argByteBytes, le32_i32Bytes _ _ (slotOffset_toNat slot),
+            le32_i32Bytes _ _ (slotOffset_toNat (slot + 1))]
+          rfl
   | frame bytes => simp only [Instr.encode, Instr.bytes, frameMemoryBytes, le64_eq]; rfl
 
 /-- A transfer by `relative source target` from `base + source` lands on `base + target`. -/
@@ -470,8 +514,8 @@ theorem Instr.bytes_length (place : Place) (pc : Nat) (i : Instr) : (i.bytes pla
         List.length_cons, List.length_nil] <;> decide
   | sys kind slot =>
     cases kind <;>
-    · simp only [Instr.bytes, sysSpec, Syscall.rsiBytes, memoryBytes, memoryHeader, Lanius.Semantics.i32Bytes,
-        List.length_append, List.length_map, List.length_range, Instr.size]
+    · simp only [Instr.bytes, Syscall.spec, sysSpec, argCountSpec, argByteSpec, Syscall.rsiBytes, memoryBytes,
+        memoryHeader, Lanius.Semantics.i32Bytes, List.length_append, List.length_map, List.length_range, Instr.size]
       decide
   | frame bytes => rw [← Instr.encode_eq]; simp [Instr.encode, frameMemoryBytes, le64, Instr.size]
 

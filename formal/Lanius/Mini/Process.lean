@@ -44,6 +44,11 @@ structure Loaded (file : List UInt8) (s : State) : Prop where
   readings and secure bytes are the streams of `s.io` (TRUSTED_BASE.md
   section 8). -/
   io : s.io.trace = []
+  /-- Linux's entry stack at rsp (System V x86-64 ABI, 3.4.1): argc, then
+  argv's pointers, each to an argument's bytes and a 0, for the arguments of
+  `s.io`, all outside the segment (TRUSTED_BASE.md section 8). -/
+  args : ArgsHeld s.memory (s.registers rspRegister) s.io.arguments
+    fun address => ∀ i, i < fieldAt file 104 8 → address ≠ BitVec.ofNat 64 (fieldAt file 80 8 + i)
 
 /-- Linux's `exit`: a `syscall` with rax 60 ends the process with status
 rdi, of which a parent sees the low byte. -/
@@ -128,7 +133,7 @@ theorem fieldAt_le64n (pre post : List UInt8) (v : Nat) :
 @[simp] theorem le32_length (v : BitVec 32) : (le32 v).length = 4 := rfl
 @[simp] theorem le64n_length (v : Nat) : (le64n v).length = 8 := rfl
 @[simp] theorem elfStartup_length (binary : Binary) (entry stack heap : Nat) :
-    (elfStartup binary entry stack heap).length = 85 := rfl
+    (elfStartup binary entry stack heap).length = 88 := rfl
 
 theorem fieldAt_cons (a : UInt8) (l : List UInt8) (n k : Nat) : fieldAt (a :: l) (n + 1) k = fieldAt l n k := by
   simp [fieldAt]
@@ -165,7 +170,7 @@ theorem elfFits_spec {binary : Binary} {entry stack heap : Nat} (h : elfFits bin
 /-- The bytes before the image: the headers and the startup code. -/
 theorem elf_lengths (binary : Binary) (entry stack heap : Nat) :
     (elfHeader binary).length = 64 ∧ (elfProgramHeader binary stack heap).length = 56 ∧
-      (elfStartup binary entry stack heap).length = 85 := by
+      (elfStartup binary entry stack heap).length = 88 := by
   refine ⟨rfl, rfl, rfl⟩
 
 /-- The header fields `Loaded` reads. -/
@@ -175,9 +180,9 @@ theorem elf_fields {binary : Binary} {entry stack heap : Nat} {file : List UInt8
       fieldAt file 104 8 = elfStackBase binary - elfBase + stack + heap + stack := by
   obtain ⟨fits, rfl⟩ := elfFile_some h
   obtain ⟨imageLt, -, -, stackLt, -, heapLt⟩ := elfFits_spec fits
-  have below : elfBase + (205 + binary.image.length) ≤ elfStackBase binary := by
+  have below : elfBase + (208 + binary.image.length) ≤ elfStackBase binary := by
     simp only [elfStackBase, pageUp, elfBeforeImage]; omega
-  have upper : elfStackBase binary ≤ elfBase + (205 + binary.image.length) + 4095 := by
+  have upper : elfStackBase binary ≤ elfBase + (208 + binary.image.length) + 4095 := by
     simp only [elfStackBase, pageUp, elfBeforeImage]; omega
   simp only [elfHeader, elfProgramHeader, List.append_assoc, List.cons_append, List.nil_append, List.length_append,
     List.length_cons, fieldAt_cons, fieldAt_le64n_skip, fieldAt_le32_skip, fieldAt_le16_skip,
@@ -243,8 +248,8 @@ structure ElfSizes (binary : Binary) (entry stack heap : Nat) : Prop where
   stack : stack < 2 ^ 40
   room : 1 ≤ heap
   heap : heap < 2 ^ 40
-  low : elfBase + (205 + binary.image.length) ≤ elfStackBase binary
-  high : elfStackBase binary ≤ elfBase + (205 + binary.image.length) + 4095
+  low : elfBase + (208 + binary.image.length) ≤ elfStackBase binary
+  high : elfStackBase binary ≤ elfBase + (208 + binary.image.length) + 4095
   eight : 8 ≤ binary.guard
 
 theorem elfSizes {binary : Binary} {entry stack heap : Nat} {file : List UInt8}
@@ -271,17 +276,21 @@ structure AtEntry (binary : Binary) (entry stack heap : Nat) (file : List UInt8)
   top : t.registers topRegister = BitVec.ofNat 64 (heap + stack)
   /-- rbx: the frame pointer, at the heap's top. -/
   fsp : t.registers fspRegister = BitVec.ofNat 64 (heap + stack)
-  rip : t.rip = BitVec.ofNat 64 (elfBase + 205 + binary.entries.getD entry 0)
+  rip : t.rip = BitVec.ofNat 64 (elfBase + 208 + binary.entries.getD entry 0)
   code : ∀ i, i < file.length → t.memory (BitVec.ofNat 64 (elfBase + i)) = file.getD i 0
   zero : ∀ a, a < heap + stack → t.memory (BitVec.ofNat 64 (elfTop binary stack + a)) = 0
-  ret : read64 t.memory (BitVec.ofNat 64 (elfTop binary stack - 8)) = BitVec.ofNat 64 (elfBase + 195)
+  ret : read64 t.memory (BitVec.ofNat 64 (elfTop binary stack - 8)) = BitVec.ofNat 64 (elfBase + 198)
   io : t.io = given
+  /-- r8: Linux's entry stack, holding the arguments outside the segment. -/
+  args : ArgsHeld t.memory (t.registers argRegister) given.arguments
+    fun address => ∀ i, i < elfStackBase binary - elfBase + stack + heap + stack →
+      address ≠ BitVec.ofNat 64 (elfBase + i)
 
 theorem AtEntry.congr {binary : Binary} {entry stack heap : Nat} {file : List UInt8} {given : Io} {t u : State}
     (h : AtEntry binary entry stack heap file given t) (same : DataEq t u) : AtEntry binary entry stack heap file given u := by
   obtain ⟨r, i, m, -, o⟩ := same
   exact ⟨r ▸ h.rsp, r ▸ h.limit, r ▸ h.base, r ▸ h.heapLimit, r ▸ h.cursor, r ▸ h.top, r ▸ h.fsp, i ▸ h.rip, m ▸ h.code, m ▸ h.zero,
-    m ▸ h.ret, o ▸ h.io⟩
+    m ▸ h.ret, o ▸ h.io, by rw [← m, ← r]; exact h.args⟩
 
 theorem imm_bytes (r : Register) (v : Nat) (rex op : UInt8)
     (prefix_ : immediateBytes .w64 r (lowHalf (BitVec.ofNat 64 v)) (highHalf (BitVec.ofNat 64 v)) =
@@ -300,15 +309,15 @@ theorem movImm {s : State} {r : Register} {v : Nat} {rex op : UInt8} {rest : Lis
   refine ⟨immediate_step s _ .w64 r _ _ here ?_, immediate_noRead here, loaded.next rfl rfl⟩
   simp only [execute, immediateInstruction, lowHalf_highHalf, enc, List.length_cons, le64n_length]
 
-/-- The startup code's eight steps, from what Linux loads to the entry. -/
+/-- The startup code's nine steps, from what Linux loads to the entry. -/
 theorem startup {binary : Binary} {entry stack heap : Nat} {file : List UInt8} {s : State}
     (h : elfFile binary entry stack heap = some file) (loaded : Loaded file s) :
-    ∃ c, Steps 8 s c ∧ Det 8 s c ∧ AtEntry binary entry stack heap file s.io c := by
+    ∃ c, Steps 9 s c ∧ Det 9 s c ∧ AtEntry binary entry stack heap file s.io c := by
   obtain ⟨f24, f80, f96, f104⟩ := elf_fields h
   have sz := elfSizes h
   obtain ⟨-, shape⟩ := elfFile_some h
   have lens := elf_lengths binary entry stack heap
-  have flen : file.length = 205 + binary.image.length := by
+  have flen : file.length = 208 + binary.image.length := by
     rw [shape]; simp only [List.length_append, lens] <;> omega
   have code : CodeAt s.memory (BitVec.ofNat 64 elfBase) file := by
     intro i hi
@@ -322,22 +331,39 @@ theorem startup {binary : Binary} {entry stack heap : Nat} {file : List UInt8} {
       by rw [← List.append_assoc]; rw [← shape]; exact code).suffix
     rw [rip, ← ofNat_add64]
     simpa only [List.length_append, lens] using this
-  -- The eight instructions.
-  have c0 : CodeAt s.memory s.rip ((72 :: 188 :: le64n (elfTop binary stack)) ++
+  -- The nine instructions.
+  have c0 : CodeAt s.memory s.rip ((73 :: 137 :: 224 :: 72 :: 188 :: le64n (elfTop binary stack)) ++
       ((73 :: 191 :: le64n (elfStackBase binary + stackGuard binary)) ++
       ((73 :: 188 :: le64n (elfTop binary stack)) ++ ((73 :: 190 :: le64n heap) ++ ((73 :: 189 :: le64n 1) ++
       ((73 :: 186 :: le64n (heap + stack)) ++
       ((72 :: 187 :: le64n (heap + stack)) ++ ((232 :: le32 (BitVec.ofNat 32 (binary.entries.getD entry 0 + 10))) ++
       ((72 :: 137 :: 199 :: 184 :: 60 :: 0 :: 0 :: 0 :: 15 :: [5]) ++ binary.image))))))))) := by
     simpa only [elfStartup, elfTop, List.append_assoc] using atStart
-  obtain ⟨t1, n1, c1⟩ := movImm (r := rspRegister) (imm_bytes _ _ _ _ rfl) c0
+  have e0 : moveBytes .w64 argRegister rspRegister = [73, 137, 224] := by decide
+  have c0' : CodeAt s.memory s.rip ([73, 137, 224] ++ ((72 :: 188 :: le64n (elfTop binary stack)) ++
+      ((73 :: 191 :: le64n (elfStackBase binary + stackGuard binary)) ++
+      ((73 :: 188 :: le64n (elfTop binary stack)) ++ ((73 :: 190 :: le64n heap) ++ ((73 :: 189 :: le64n 1) ++
+      ((73 :: 186 :: le64n (heap + stack)) ++
+      ((72 :: 187 :: le64n (heap + stack)) ++ ((232 :: le32 (BitVec.ofNat 32 (binary.entries.getD entry 0 + 10))) ++
+      ((72 :: 137 :: 199 :: 184 :: 60 :: 0 :: 0 :: 0 :: 15 :: [5]) ++ binary.image)))))))))) := c0
+  have mv : CodeAt s.memory s.rip (moveBytes .w64 argRegister rspRegister) := by rw [e0]; exact c0'.prefix
+  generalize hs0 : execute (moveInstruction .w64 argRegister rspRegister) 3 s = s0
+  have t0 : Lanius.X86.Machine.Step s s0 := move_step s s0 .w64 _ _ mv (by rw [e0]; exact hs0.symm)
+  have n0 := move_noRead mv
+  have m0 : s0.memory = s.memory := by rw [← hs0]; rfl
+  have io0 : s0.io = s.io := by rw [← hs0]; rfl
+  have rip0 : s0.rip = s.rip + BitVec.ofNat 64 3 := by rw [← hs0]; rfl
+  have r0 : ∀ r, s0.registers r = if r = argRegister then s.registers rspRegister else s.registers r := by
+    intro r; rw [← hs0]; rfl
+  have c1' := c0'.next (s' := s0) m0 rip0
+  obtain ⟨t1, n1, c1⟩ := movImm (r := rspRegister) (imm_bytes _ _ _ _ rfl) c1'
   obtain ⟨t2, n2, c2⟩ := movImm (r := stackRegister) (imm_bytes _ _ _ _ rfl) c1
   obtain ⟨t3, n3, c3⟩ := movImm (r := heapBaseRegister) (imm_bytes _ _ _ _ rfl) c2
   obtain ⟨t4, n4, c4⟩ := movImm (r := limitRegister) (imm_bytes _ _ _ _ rfl) c3
   obtain ⟨t5, n5, c5'⟩ := movImm (r := cursorRegister) (imm_bytes _ _ _ _ rfl) c4
   obtain ⟨t5t, n5t, c5t⟩ := movImm (r := topRegister) (imm_bytes _ _ _ _ rfl) c5'
   obtain ⟨t5', n5', c5⟩ := movImm (r := fspRegister) (imm_bytes _ _ _ _ rfl) c5t
-  generalize hs5 : ((((((s.immediate64 rspRegister (BitVec.ofNat 64 (elfTop binary stack)) 10).immediate64 stackRegister
+  generalize hs5 : ((((((s0.immediate64 rspRegister (BitVec.ofNat 64 (elfTop binary stack)) 10).immediate64 stackRegister
     (BitVec.ofNat 64 (elfStackBase binary + stackGuard binary)) 10).immediate64 heapBaseRegister
     (BitVec.ofNat 64 (elfTop binary stack)) 10).immediate64 limitRegister (BitVec.ofNat 64 heap) 10).immediate64
     cursorRegister (BitVec.ofNat 64 1) 10).immediate64 topRegister (BitVec.ofNat 64 (heap + stack)) 10).immediate64
@@ -346,10 +372,10 @@ theorem startup {binary : Binary} {entry stack heap : Nat} {file : List UInt8} {
     rw [callBytes, ← le32_eq]; exact c5.prefix
   have t6 := call_step s5 _ _ callLoaded rfl
   have n6 := call_noRead callLoaded
-  refine ⟨_, .cons t1 (.cons t2 (.cons t3 (.cons t4 (.cons t5 (.cons t5t (.cons t5' (.cons t6 (.refl _)))))))),
-    (Det.step t1 n1).trans ((Det.step t2 n2).trans ((Det.step t3 n3).trans ((Det.step t4 n4).trans
-      ((Det.step t5 n5).trans ((Det.step t5t n5t).trans ((Det.step t5' n5').trans (Det.step t6 n6))))))), ?_⟩
-  -- What the eight instructions leave.
+  refine ⟨_, .cons t0 (.cons t1 (.cons t2 (.cons t3 (.cons t4 (.cons t5 (.cons t5t (.cons t5' (.cons t6 (.refl _))))))))),
+    (Det.step t0 n0).trans ((Det.step t1 n1).trans ((Det.step t2 n2).trans ((Det.step t3 n3).trans ((Det.step t4 n4).trans
+      ((Det.step t5 n5).trans ((Det.step t5t n5t).trans ((Det.step t5' n5').trans (Det.step t6 n6)))))))), ?_⟩
+  -- What the nine instructions leave.
   have top8 : 8 ≤ elfTop binary stack := by have := sz.low; have := sz.eight; have := sz.guard; simp only [elfTop]; omega
   have topLt : elfTop binary stack + heap + stack < 2 ^ 43 := by
     have := sz.high; have := sz.image; have := sz.stack; have := sz.heap; simp only [elfTop, elfBase] at *; omega
@@ -359,18 +385,18 @@ theorem startup {binary : Binary} {entry stack heap : Nat} {file : List UInt8} {
       if r = topRegister then BitVec.ofNat 64 (heap + stack) else if r = cursorRegister then BitVec.ofNat 64 1 else if r = limitRegister then
       BitVec.ofNat 64 heap else if r = heapBaseRegister then BitVec.ofNat 64 (elfTop binary stack) else
       if r = stackRegister then BitVec.ofNat 64 (elfStackBase binary + stackGuard binary) else
-      if r = rspRegister then BitVec.ofNat 64 (elfTop binary stack) else s.registers r := by
+      if r = rspRegister then BitVec.ofNat 64 (elfTop binary stack) else s0.registers r := by
     intro r; rw [← hs5]; rfl
-  have m5 : s5.memory = s.memory := by rw [← hs5]; rfl
-  have io5 : s5.io = s.io := by rw [← hs5]; rfl
-  have rip5 : s5.rip = BitVec.ofNat 64 (elfBase + 190) := by
-    rw [← hs5]; simp only [State.immediate64, rip, ofNat_add64]
+  have m5 : s5.memory = s.memory := by rw [← hs5, ← m0]; rfl
+  have io5 : s5.io = s.io := by rw [← hs5, ← io0]; rfl
+  have rip5 : s5.rip = BitVec.ofNat 64 (elfBase + 193) := by
+    rw [← hs5]; simp only [State.immediate64, rip0, rip, ofNat_add64]
   have sp5 : s5.registers 4 - 8 = BitVec.ofNat 64 (elfTop binary stack - 8) := by
     rw [r5]; simp only [fspRegister, topRegister, cursorRegister, limitRegister, heapBaseRegister, stackRegister,
       rspRegister]
     exact ofNat_sub8 top8 (by omega)
   have next5 : s5.rip + BitVec.ofNat 64 (callBytes (BitVec.ofNat 32 (binary.entries.getD entry 0 + 10))).length =
-      BitVec.ofNat 64 (elfBase + 195) := by
+      BitVec.ofNat 64 (elfBase + 198) := by
     rw [rip5]; exact ofNat_add64 _ _
   have frame : ∀ x, x + 8 < elfTop binary stack ∨ elfTop binary stack ≤ x → x < 2 ^ 64 →
       (s5.call (BitVec.ofNat 32 (binary.entries.getD entry 0 + 10))
@@ -413,6 +439,26 @@ theorem startup {binary : Binary} {entry stack heap : Nat} {file : List UInt8} {
   · simp only [State.call, m5]
     rw [sp5, read64_write64, next5]
   · exact io5
+  · have r8 : (s5.call (BitVec.ofNat 32 (binary.entries.getD entry 0 + 10))
+        (callBytes (BitVec.ofNat 32 (binary.entries.getD entry 0 + 10))).length).registers argRegister =
+        s.registers rspRegister := by
+      simp only [State.call, r5, r0, argRegister, rspRegister, fspRegister, topRegister, cursorRegister,
+        limitRegister, heapBaseRegister, stackRegister]
+      rfl
+    rw [r8]
+    have held := loaded.args
+    rw [f80, f104] at held
+    refine held.congr (fun address away => ?_) (fun _ away => away)
+    have notIn : ¬(elfTop binary stack - 8 ≤ address.toNat ∧ address.toNat < elfTop binary stack) := by
+      rintro ⟨lo, hi⟩
+      apply away (address.toNat - elfBase) (by simp only [elfTop] at *; omega)
+      apply BitVec.eq_of_toNat_eq
+      have := address.isLt
+      simp only [BitVec.toNat_ofNat]
+      simp only [elfTop] at *
+      omega
+    have := frame address.toNat (by omega) address.isLt
+    simpa only [BitVec.ofNat_toNat, BitVec.setWidth_eq] using this
 
 /-! ## The entry meets the compiled function's premises -/
 
@@ -435,16 +481,16 @@ theorem AtEntry.file {binary : Binary} {entry stack heap : Nat} {file : List UIn
   intro i hi
   rw [ofNat_add64, at_.code i hi, List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi, Option.getD_some]
 
-/-- The file is the 120 header bytes, the startup's 75 bytes up to the exit,
+/-- The file is the 120 header bytes, the startup's 78 bytes up to the exit,
 the 10 exit bytes and the image. -/
 theorem elf_shape {binary : Binary} {entry stack heap : Nat} {file : List UInt8}
     (h : elfFile binary entry stack heap = some file) :
-    ∃ pre start : List UInt8, pre.length = 120 ∧ start.length = 75 ∧
+    ∃ pre start : List UInt8, pre.length = 120 ∧ start.length = 78 ∧
       file = pre ++ (start ++ ([72, 137, 199, 184, 60, 0, 0, 0, 15, 5] ++ binary.image)) := by
   obtain ⟨-, shape⟩ := elfFile_some h
   have lens := elf_lengths binary entry stack heap
   refine ⟨elfHeader binary ++ elfProgramHeader binary stack heap,
-    (72 :: 188 :: le64n (elfTop binary stack)) ++ ((73 :: 191 :: le64n (elfStackBase binary + stackGuard binary)) ++
+    (73 :: 137 :: 224 :: 72 :: 188 :: le64n (elfTop binary stack)) ++ ((73 :: 191 :: le64n (elfStackBase binary + stackGuard binary)) ++
       ((73 :: 188 :: le64n (elfTop binary stack)) ++ ((73 :: 190 :: le64n heap) ++ ((73 :: 189 :: le64n 1) ++
       ((73 :: 186 :: le64n (heap + stack)) ++ ((72 :: 187 :: le64n (heap + stack)) ++
       (232 :: le32 (BitVec.ofNat 32 (binary.entries.getD entry 0 + 10))))))))),
@@ -453,15 +499,15 @@ theorem elf_shape {binary : Binary} {entry stack heap : Nat} {file : List UInt8}
   simp only [elfStartup, elfTop, List.append_assoc, List.cons_append, List.nil_append]
 
 /-- What the entry state gives the compiled function: the premises of its
-`Contract` with the image at `elfBase + 205`, a window of `stack - 8` bytes
+`Contract` with the image at `elfBase + 208`, a window of `stack - 8` bytes
 and the heap `elfHeap heap stack given`. -/
 theorem atEntry_premises {binary : Binary} {entry stack heap : Nat} {file : List UInt8} {given : Io} {c : State}
     (h : elfFile binary entry stack heap = some file) (at_ : AtEntry binary entry stack heap file given c) :
-    stack - 8 ≤ 2 ^ 62 ∧ CodeAt c.memory (BitVec.ofNat 64 (elfBase + 205)) binary.image ∧
+    stack - 8 ≤ 2 ^ 62 ∧ CodeAt c.memory (BitVec.ofNat 64 (elfBase + 208)) binary.image ∧
       (∀ index, index < binary.image.length →
-        ¬Below (c.registers rspRegister) (stack - 8) (BitVec.ofNat 64 (elfBase + 205) + BitVec.ofNat 64 index)) ∧
-      (∀ index, index < binary.image.length → ¬c.InHeap (BitVec.ofNat 64 (elfBase + 205) + BitVec.ofNat 64 index)) ∧
-      c.rip = BitVec.ofNat 64 (elfBase + 205) + BitVec.ofNat 64 (binary.entries.getD entry 0) ∧
+        ¬Below (c.registers rspRegister) (stack - 8) (BitVec.ofNat 64 (elfBase + 208) + BitVec.ofNat 64 index)) ∧
+      (∀ index, index < binary.image.length → ¬c.InHeap (BitVec.ofNat 64 (elfBase + 208) + BitVec.ofNat 64 index)) ∧
+      c.rip = BitVec.ofNat 64 (elfBase + 208) + BitVec.ofNat 64 (binary.entries.getD entry 0) ∧
       HeapAt (stack - 8) c (elfHeap heap stack given) ∧ StackAt binary.guard (stack - 8) c := by
   have sz := elfSizes h
   obtain ⟨pre, start, preLen, startLen, shape⟩ := elf_shape h
@@ -488,7 +534,7 @@ theorem atEntry_premises {binary : Binary} {entry stack heap : Nat} {file : List
   · rw [at_.rip, ofNat_add64]
   · have top : BitVec.ofNat 64 (elfTop binary stack - 8) + 8 = BitVec.ofNat 64 (elfTop binary stack) := by
       rw [show (8 : BitVec 64) = BitVec.ofNat 64 8 from rfl, ofNat_add64]; congr 1; omega
-    refine ⟨at_.cursor, ?_, ?_, at_.fsp, Nat.le_refl _, ?_, fun a aLt => ?_, fun address inHeap below => ?_, at_.io⟩
+    refine ⟨at_.cursor, ?_, ?_, at_.fsp, Nat.le_refl _, ?_, fun a aLt => ?_, fun address inHeap below => ?_, at_.io, ?_⟩
     · rw [at_.heapLimit, toNat_ofNat64 (by omega)]; rfl
     · rw [at_.top, toNat_ofNat64 (by omega)]; rfl
     · show heap + stack < 2 ^ 62; omega
@@ -498,6 +544,18 @@ theorem atEntry_premises {binary : Binary} {entry stack heap : Nat} {file : List
       rw [at_.top, toNat_ofNat64 (by omega)] at aLt
       rw [at_.rsp, top, at_.base, ofNat_add64, sub_toNat64 (by omega) (by omega)] at pos within
       omega
+    · refine at_.args.congr (fun _ _ => rfl) (fun address away => ⟨fun below => ?_, fun inHeap => ?_⟩)
+      · obtain ⟨pos, within⟩ := below
+        rw [at_.rsp, top, BitVec.toNat_sub, toNat_ofNat64 (by omega)] at pos within
+        have small := address.isLt
+        apply away (address.toNat - elfBase) (by omega)
+        apply BitVec.eq_of_toNat_eq
+        rw [toNat_ofNat64 (by omega)]
+        omega
+      · obtain ⟨a, aLt, rfl⟩ := inHeap
+        rw [at_.top, toNat_ofNat64 (by omega)] at aLt
+        rw [at_.base, ofNat_add64] at away
+        exact away (elfTop binary stack + a - elfBase) (by omega) (by rw [Nat.add_sub_cancel' (by omega)])
   · refine ⟨?_, ?_, by omega⟩
     · rw [at_.limit, at_.rsp, toNat_ofNat64 (by omega), toNat_ofNat64 (by omega)]; omega
     · rw [at_.limit, toNat_ofNat64 (by omega)]; omega
@@ -539,7 +597,7 @@ theorem returned_exits {binary : Binary} {entry stack heap : Nat} {file : List U
   have hB : elfBase = 2 ^ 32 := rfl
   have := sz.low; have := sz.high; have := sz.image; have := sz.stack; have := sz.heap; have := sz.guard
   have := sz.eight
-  have exitAt : CodeAt c.memory (BitVec.ofNat 64 (elfBase + 195)) [72, 137, 199, 184, 60, 0, 0, 0, 15, 5] := by
+  have exitAt : CodeAt c.memory (BitVec.ofNat 64 (elfBase + 198)) [72, 137, 199, 184, 60, 0, 0, 0, 15, 5] := by
     have whole : CodeAt c.memory (BitVec.ofNat 64 elfBase)
         ((pre ++ start) ++ ([72, 137, 199, 184, 60, 0, 0, 0, 15, 5] ++ binary.image)) := by
       have := at_.file; rw [shape] at this; simpa only [List.append_assoc] using this
@@ -609,10 +667,10 @@ theorem process_exits {sp : SrcProgram} {binary : Binary} {entry stack heap : Na
   obtain ⟨c, steps, det, at_⟩ := startup h loaded
   rw [same] at at_
   obtain ⟨bounded, code, apart, imageHeap, rip, heapAt, stackAt⟩ := atEntry_premises h at_
-  rcases contract (BitVec.ofNat 64 (elfBase + 205)) (stack - 8) c bounded code apart imageHeap rip
+  rcases contract (BitVec.ofNat 64 (elfBase + 208)) (stack - 8) c bounded code apart imageHeap rip
       (fun k bound => absurd bound (Nat.not_lt_zero k)) heapAt stackAt with ⟨n, s', run, det', ret⟩ | ⟨short, faults⟩
   · obtain ⟨e, run2, det2, exits, io⟩ := returned_exits h at_ ret
-    exact .inl ⟨8 + n + 2, e, (steps.trans run).trans run2, (det.trans det').trans det2, io.trans ret.io,
+    exact .inl ⟨9 + n + 2, e, (steps.trans run).trans run2, (det.trans det').trans det2, io.trans ret.io,
       s'.registers 0, exits, ret.value⟩
   · exact .inr ⟨short, det.faults faults⟩
 
@@ -635,12 +693,12 @@ theorem process_behaviour {sp : SrcProgram} {binary : Binary} {entry stack heap 
   have typed : FieldsHold (paramTypes func.params) [] (Func.entry []) 0 := by rw [noParams]; exact .nil
   have bitsLen : ([] : List (BitVec 64)).length = paramsSize func.params := by rw [noParams]; rfl
   obtain ⟨c, -, det, at_⟩ := startup h loaded
-  have past : 8 ≤ m := by
+  have past : 9 ≤ m := by
     apply Nat.le_of_not_lt
     intro less
     obtain ⟨w, step⟩ := det.2 m s u less (DataEq.refl s) run
     exact stuck w step
-  obtain ⟨c', first, rest⟩ := Steps.split (show Steps (8 + (m - 8)) s u by rw [Nat.add_sub_cancel' past]; exact run)
+  obtain ⟨c', first, rest⟩ := Steps.split (show Steps (9 + (m - 9)) s u by rw [Nat.add_sub_cancel' past]; exact run)
   obtain ⟨bounded, code, apart, imageHeap, rip, heapAt, stackAt⟩ := atEntry_premises h (at_.congr (det.final first))
   rcases compileSource_behaviour compiled found typed bitsLen (heap := elfHeap heap stack s.io) rfl (fun _ _ => rfl)
       (by show heap < 2 ^ 62; have := sz.heap; omega) loaded.io sz.room c' _ _ bounded code apart imageHeap rip

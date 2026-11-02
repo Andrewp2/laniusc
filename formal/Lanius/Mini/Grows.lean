@@ -11,7 +11,7 @@ import all Lanius.Mini.Compiler.P.arities
 import all Lanius.Mini.Compiler.P.FloatTy_rex
 import all Lanius.Mini.Compiler.P.FArith_opcode
 import all Lanius.Mini.Compiler.P.loadAtBytes
-import all Lanius.Mini.Compiler.P.imageLimit
+import all Lanius.Mini.Compiler.P.linkFrom
 import all Lanius.Mini.Compiler.P.moduleExports
 import all Lanius.Mini.Compiler.P.importOk
 import all Lanius.Mini.Compiler.P.importsOk
@@ -168,7 +168,17 @@ theorem hostFuncs_find (i : Nat) :
               · by_cases h : i = hostBase + 7
                 · subst h
                   simp [hostFunc, hostBase]
-                · simp [hostFunc, a, b, c, d, e, f, g, h, Ne.symm a, Ne.symm b, Ne.symm c, Ne.symm d, Ne.symm e, Ne.symm f, Ne.symm g, Ne.symm h]
+                · by_cases j : i = hostBase + 8
+                  · subst j
+                    simp [hostFunc, hostBase]
+                  · by_cases k : i = hostBase + 9
+                    · subst k
+                      simp [hostFunc, hostBase]
+                    · by_cases l : i = hostBase + 10
+                      · subst l
+                        simp [hostFunc, hostBase]
+                      · simp [hostFunc, a, b, c, d, e, f, g, h, j, k, l, Ne.symm a, Ne.symm b, Ne.symm c, Ne.symm d,
+                          Ne.symm e, Ne.symm f, Ne.symm g, Ne.symm h, Ne.symm j, Ne.symm k, Ne.symm l]
 
 /-- A function of the program, or else a host function. -/
 theorem SrcProgram.function?_toCore (sp : SrcProgram) (i : Nat) :
@@ -1103,6 +1113,163 @@ theorem call_fillSecureBytes_inv {heap : Memory.Heap} {world : World.State} {val
       | _ => simp [World.call, World.callSimple] at h
     | _ => simp [World.call, World.callSimple] at h
 
+/-- What `argc` did when it returned: the count of arguments, the heap as it was. -/
+theorem call_argc_inv {heap : Memory.Heap} {world : World.State} {values : List Value} {v : Value}
+    {heap' : Memory.Heap} {world' : World.State}
+    (h : World.call heap world .argc values = .returned v heap' world') :
+    values = [] ∧ heap' = heap ∧ v = World.i32Result world.arguments.length ∧ world' = World.record world .argc := by
+  match values, h with
+  | [], h =>
+    simp only [World.call, World.callSimple, World.EffectResult.returned.injEq] at h
+    obtain ⟨rfl, rfl, rfl⟩ := h
+    exact ⟨rfl, rfl, rfl, rfl⟩
+  | a :: rest, h => cases a <;> simp [World.call, World.callSimple] at h
+
+/-- What `arg_len` did when it returned: -1 for an index naming no argument,
+else the argument's byte count; the heap as it was. -/
+theorem call_argLen_inv {heap : Memory.Heap} {world : World.State} {values : List Value} {v : Value}
+    {heap' : Memory.Heap} {world' : World.State}
+    (h : World.call heap world .argLen values = .returned v heap' world') :
+    ∃ index, values = [.signed .i32 index] ∧ heap' = heap ∧ world' = World.record world .argLen ∧
+      ((index < 0 ∨ world.arguments[index.toNat]? = none) ∧ v = World.i32Result (-1) ∨
+        ∃ arg, 0 ≤ index ∧ world.arguments[index.toNat]? = some arg ∧ v = World.i32Result arg.toUTF8.size) := by
+  match values, h with
+  | [], h => simp [World.call, World.callSimple] at h
+  | a :: b :: rest, h =>
+    cases a with
+    | signed k x => cases k <;> simp [World.call, World.callSimple] at h
+    | _ => simp [World.call, World.callSimple] at h
+  | [a], h =>
+    cases a with
+    | signed k index =>
+      cases k
+      all_goals first
+        | (by_cases neg : index < 0
+           · simp only [World.call, World.callSimple, neg, ↓reduceIte, World.EffectResult.returned.injEq] at h
+             obtain ⟨rfl, rfl, rfl⟩ := h
+             exact ⟨index, rfl, rfl, rfl, .inl ⟨.inl neg, rfl⟩⟩
+           · cases found : (World.record world .argLen).arguments[index.toNat]? with
+             | none =>
+               simp only [World.call, World.callSimple, neg, ↓reduceIte, found,
+                 World.EffectResult.returned.injEq] at h
+               obtain ⟨rfl, rfl, rfl⟩ := h
+               exact ⟨index, rfl, rfl, rfl, .inl ⟨.inr (by simpa [World.record] using found), rfl⟩⟩
+             | some arg =>
+               simp only [World.call, World.callSimple, neg, ↓reduceIte, found,
+                 World.EffectResult.returned.injEq] at h
+               obtain ⟨rfl, rfl, rfl⟩ := h
+               exact ⟨index, rfl, rfl, rfl, .inr ⟨arg, Int.not_lt.mp neg, by simpa [World.record] using found, rfl⟩⟩)
+        | simp [World.call, World.callSimple] at h
+    | _ => simp [World.call, World.callSimple] at h
+
+theorem copyToHeap_ok {heap : Memory.Heap} {p n c : Nat} {bytes : List UInt8} {heap' : Memory.Heap}
+    (ok : World.copyToHeap heap p n bytes = .ok (c, heap')) :
+    c = min n bytes.length ∧ heap.storeBytes p (bytes.take (min n bytes.length)) = .ok heap' := by
+  simp only [World.copyToHeap] at ok
+  split at ok
+  · cases ok
+  · rename_i next stored
+    cases ok
+    exact ⟨rfl, stored⟩
+
+theorem copyToHeap_error {heap : Memory.Heap} {p n : Nat} {bytes : List UInt8} {r : Lanius.Trap}
+    (bad : World.copyToHeap heap p n bytes = .error r) :
+    heap.storeBytes p (bytes.take (min n bytes.length)) = .error r := by
+  simp only [World.copyToHeap] at bad
+  split at bad
+  · rename_i reason stored
+    cases bad
+    exact stored
+  · cases bad
+
+/-- What `arg_read` did when it returned: -1 for an index naming no argument,
+else the argument's first `len` bytes, or all of them, stored at the
+pointer, and their count. -/
+theorem call_argRead_inv {heap : Memory.Heap} {world : World.State} {values : List Value} {v : Value}
+    {heap' : Memory.Heap} {world' : World.State}
+    (h : World.call heap world .argRead values = .returned v heap' world') :
+    ∃ index p n, values = [.signed .i32 index, .pointer p, .unsigned .usize n] ∧ world' = World.record world .argRead ∧
+      ((index < 0 ∨ world.arguments[index.toNat]? = none) ∧ v = World.i32Result (-1) ∧ heap' = heap ∨
+        ∃ arg, 0 ≤ index ∧ world.arguments[index.toNat]? = some arg ∧
+          heap.storeBytes p ((World.utf8Bytes arg).take (min n (World.utf8Bytes arg).length)) = .ok heap' ∧
+          v = World.i32Result ((min n (World.utf8Bytes arg).length : Nat) : Int)) := by
+  match values, h with
+  | [], h => simp [World.call, World.callSimple] at h
+  | [a], h => cases a <;> simp [World.call, World.callSimple] at h
+  | [a, b], h => cases a <;> simp [World.call, World.callSimple] at h
+  | a :: b :: c :: d :: rest, h => cases a <;> simp [World.call, World.callSimple] at h
+  | [a, b, c], h =>
+    cases a with
+    | signed k index =>
+      cases k
+      all_goals
+        cases b with
+        | pointer p =>
+          cases c with
+          | unsigned k' n =>
+            cases k'
+            all_goals first
+              | (by_cases neg : index < 0
+                 · simp only [World.call, World.callSimple, neg, ↓reduceIte, World.EffectResult.returned.injEq] at h
+                   obtain ⟨rfl, rfl, rfl⟩ := h
+                   exact ⟨index, p, n, rfl, rfl, .inl ⟨.inl neg, rfl, rfl⟩⟩
+                 · cases found : (World.record world .argRead).arguments[index.toNat]? with
+                   | none =>
+                     simp only [World.call, World.callSimple, neg, ↓reduceIte, found,
+                       World.EffectResult.returned.injEq] at h
+                     obtain ⟨rfl, rfl, rfl⟩ := h
+                     exact ⟨index, p, n, rfl, rfl, .inl ⟨.inr (by simpa [World.record] using found), rfl, rfl⟩⟩
+                   | some arg =>
+                     cases copied : World.copyToHeap heap p n (World.utf8Bytes arg) with
+                     | error r =>
+                       simp [World.call, World.callSimple, neg, found, copied] at h
+                     | ok pair =>
+                       obtain ⟨count, next⟩ := pair
+                       simp only [World.call, World.callSimple, neg, ↓reduceIte, found, copied,
+                         World.EffectResult.returned.injEq] at h
+                       obtain ⟨rfl, rfl, rfl⟩ := h
+                       obtain ⟨rfl, stored⟩ := copyToHeap_ok copied
+                       exact ⟨index, p, n, rfl, rfl,
+                         .inr ⟨arg, Int.not_lt.mp neg, by simpa [World.record] using found, stored, rfl⟩⟩)
+              | simp [World.call, World.callSimple] at h
+          | _ => simp [World.call, World.callSimple] at h
+        | _ => cases c <;> simp [World.call, World.callSimple] at h
+    | _ => simp [World.call, World.callSimple] at h
+
+/-- `argc` returns. -/
+theorem argc_returns (heap : Memory.Heap) (world : World.State) :
+    ∃ v world', World.call heap world .argc [] = .returned v heap world' :=
+  ⟨_, _, rfl⟩
+
+/-- `arg_len` on an `i32` returns. -/
+theorem argLen_returns (heap : Memory.Heap) (world : World.State) (index : Int) :
+    ∃ v world', World.call heap world .argLen [.signed .i32 index] = .returned v heap world' := by
+  by_cases neg : index < 0
+  · exact ⟨_, _, by simp only [World.call, World.callSimple, neg, ↓reduceIte]; rfl⟩
+  · cases found : (World.record world .argLen).arguments[index.toNat]? with
+    | none => exact ⟨_, _, by simp only [World.call, World.callSimple, neg, ↓reduceIte, found]; rfl⟩
+    | some arg => exact ⟨_, _, by simp only [World.call, World.callSimple, neg, ↓reduceIte, found]; rfl⟩
+
+/-- `arg_read` on an `i32`, a pointer and a count returns, or traps as the
+heap's store of the bytes does. -/
+theorem argRead_outcome (heap : Memory.Heap) (world : World.State) (index : Int) (p n : Nat) :
+    (∃ v heap' world', World.call heap world .argRead [.signed .i32 index, .pointer p, .unsigned .usize n] =
+      .returned v heap' world') ∨
+    (∃ r world', World.call heap world .argRead [.signed .i32 index, .pointer p, .unsigned .usize n] =
+      .trapped r heap world' ∧ ∃ bytes, heap.storeBytes p bytes = .error r) := by
+  by_cases neg : index < 0
+  · exact .inl ⟨_, _, _, by simp only [World.call, World.callSimple, neg, ↓reduceIte]; rfl⟩
+  · cases found : (World.record world .argRead).arguments[index.toNat]? with
+    | none => exact .inl ⟨_, _, _, by simp only [World.call, World.callSimple, neg, ↓reduceIte, found]; rfl⟩
+    | some arg =>
+      cases copied : World.copyToHeap heap p n (World.utf8Bytes arg) with
+      | error r =>
+        exact .inr ⟨r, _, by simp only [World.call, World.callSimple, neg, ↓reduceIte, found, copied]; rfl,
+          _, copyToHeap_error copied⟩
+      | ok pair =>
+        obtain ⟨c, h'⟩ := pair
+        exact .inl ⟨_, _, _, by simp only [World.call, World.callSimple, neg, ↓reduceIte, found, copied]; rfl⟩
+
 /-- `monotonic_read`, `system_read` or `fill_secure_bytes` on a pointer and a
 count returns, or traps at the end of a stream or as the heap's store does. -/
 theorem stores_outcome {service : Core.HostService}
@@ -1123,7 +1290,8 @@ theorem stores_outcome {service : Core.HostService}
 /-- The services of the host functions. -/
 theorem hostService?_some {id : Nat} {service : Core.HostService} (hs : hostService? id = some service) :
     service = .writeByte ∨ service = .writeStdout ∨ service = .writeStderr ∨ service = .readStdin ∨
-      service = .sleepMsI32 ∨ service = .monotonicRead ∨ service = .systemRead ∨ service = .fillSecureBytes := by
+      service = .sleepMsI32 ∨ service = .monotonicRead ∨ service = .systemRead ∨ service = .fillSecureBytes ∨
+      service = .argc ∨ service = .argLen ∨ service = .argRead := by
   unfold hostService? at hs
   repeat' split at hs
   all_goals first | (cases hs; simp) | cases hs
@@ -1178,7 +1346,7 @@ theorem hostCall_next {id : Nat} {service : Core.HostService} (hs : hostService?
     {heap : Memory.Heap} {world : World.State} {values : List Value} {v : Value} {heap' : Memory.Heap}
     {world' : World.State} (h : World.call heap world service values = .returned v heap' world') :
     heap'.nextAddress = heap.nextAddress := by
-  rcases hostService?_some hs with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+  rcases hostService?_some hs with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
   · rw [hostCall_heap (.inl rfl) h]
   · rw [hostCall_heap (.inr (.inl rfl)) h]
   · rw [hostCall_heap (.inr (.inr (.inl rfl))) h]
@@ -1188,6 +1356,13 @@ theorem hostCall_next {id : Nat} {service : Core.HostService} (hs : hostService?
   · exact call_stores_next (.inl rfl) h
   · exact call_stores_next (.inr (.inl rfl)) h
   · exact call_stores_next (.inr (.inr rfl)) h
+  · rw [(call_argc_inv h).2.1]
+  · obtain ⟨_, _, same, _⟩ := call_argLen_inv h
+    rw [same]
+  · obtain ⟨_, _, _, _, _, result⟩ := call_argRead_inv h
+    rcases result with ⟨_, _, same⟩ | ⟨_, _, _, stored, _⟩
+    · rw [same]
+    · exact storeBytes_next stored
 
 theorem host_grows {id : Nat} {service : Core.HostService} (hs : hostService? id = some service)
     {st : State} {values : List Value} {v : Value} {st' : State} (returns : HostReturns st service values v st') :
@@ -1274,15 +1449,44 @@ def resultHeap : World.EffectResult → Memory.Heap
   | .trapped _ h _ => h
   | .typeMismatch h _ => h
 
+theorem hostCall_resultHeap_args {service : Core.HostService}
+    (which : service = .argc ∨ service = .argLen ∨ service = .argRead)
+    (heap : Memory.Heap) (world : World.State) (values : List Value)
+    (stopped : ∀ v heap' world', World.call heap world service values ≠ .returned v heap' world') :
+    resultHeap (World.call heap world service values) = heap := by
+  rcases which with rfl | rfl | rfl <;>
+  · simp only [World.call] at stopped ⊢
+    repeat' split
+    all_goals first | rfl | contradiction | simp_all
+
+theorem hostCall_resultHeap_io {service : Core.HostService}
+    (which : service = .writeByte ∨ service = .writeStdout ∨ service = .writeStderr ∨ service = .readStdin ∨
+      service = .sleepMsI32 ∨ service = .monotonicRead ∨ service = .systemRead ∨ service = .fillSecureBytes)
+    (heap : Memory.Heap) (world : World.State) (values : List Value)
+    (stopped : ∀ v heap' world', World.call heap world service values ≠ .returned v heap' world') :
+    resultHeap (World.call heap world service values) = heap := by
+  rcases which with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+  · simp only [World.call] at stopped ⊢
+    repeat' split
+    all_goals first | rfl | contradiction | simp_all
+
 /-- A host call that did not return leaves the heap as it was. -/
 theorem hostCall_resultHeap {id : Nat} {service : Core.HostService} (hs : hostService? id = some service)
     (heap : Memory.Heap) (world : World.State) (values : List Value)
     (stopped : ∀ v heap' world', World.call heap world service values ≠ .returned v heap' world') :
     resultHeap (World.call heap world service values) = heap := by
-  rcases hostService?_some hs with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
-  · simp only [World.call] at stopped ⊢
-    repeat' split
-    all_goals first | rfl | contradiction | simp_all
+  rcases hostService?_some hs with h | h | h | h | h | h | h | h | h | h | h
+  · exact hostCall_resultHeap_io (.inl h) heap world values stopped
+  · exact hostCall_resultHeap_io (.inr (.inl h)) heap world values stopped
+  · exact hostCall_resultHeap_io (.inr (.inr (.inl h))) heap world values stopped
+  · exact hostCall_resultHeap_io (.inr (.inr (.inr (.inl h)))) heap world values stopped
+  · exact hostCall_resultHeap_io (.inr (.inr (.inr (.inr (.inl h))))) heap world values stopped
+  · exact hostCall_resultHeap_io (.inr (.inr (.inr (.inr (.inr (.inl h)))))) heap world values stopped
+  · exact hostCall_resultHeap_io (.inr (.inr (.inr (.inr (.inr (.inr (.inl h))))))) heap world values stopped
+  · exact hostCall_resultHeap_io (.inr (.inr (.inr (.inr (.inr (.inr (.inr h))))))) heap world values stopped
+  · exact hostCall_resultHeap_args (.inl h) heap world values stopped
+  · exact hostCall_resultHeap_args (.inr (.inl h)) heap world values stopped
+  · exact hostCall_resultHeap_args (.inr (.inr h)) heap world values stopped
 
 /-- A host call that trapped after its arguments: the heap as it was. -/
 theorem host_trap_grows {sp : SrcProgram} {fuel : Nat} {st : State} {callee : Nat} {args : List Core.Expr}

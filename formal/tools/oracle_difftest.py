@@ -1898,6 +1898,9 @@ def lani_file(programs, calls):
 
 ARG_REGS = [0x7C, 0x74, 0x54]  # rdi, rsi, rdx as the reg field of mov [rsp+disp8], r64
 
+# A process's first argument, its name, in the native runs and laniusc's.
+ARGV0 = 'oracle'
+
 # The stack the compiled code may use below the stub's rsp; `lea r15, [rsp - STACK_ROOM]`.
 STACK_ROOM = 1 << 20
 
@@ -1906,15 +1909,40 @@ class Native:
     """The verified compiler's image in executable memory. A stub saves r12-r15,
     points r12 at a heap, sets the cursor r13 to 1 (the top theorem's premise),
     the limit r14 and the stack limit r15 (STACK_ROOM below rsp), stores the SysV arguments where the mini calling
-    convention expects them (below the return address) and calls."""
+    convention expects them (below the return address), points r8 at an entry
+    stack's argc, argv and strings, as the startup code keeps Linux's (roadmap
+    F8), and calls."""
 
     HEAP = 1 << 16
+    ARGS = 1 << 16
 
     def __init__(self):
         self.code = mmap.mmap(-1, 1 << 22, prot=mmap.PROT_READ | mmap.PROT_WRITE | mmap.PROT_EXEC)
         self.base = ctypes.addressof(ctypes.c_char.from_buffer(self.code))
         self.heap = mmap.mmap(-1, self.HEAP, prot=mmap.PROT_READ | mmap.PROT_WRITE)
         self.heap_base = ctypes.addressof(ctypes.c_char.from_buffer(self.heap))
+        self.args = mmap.mmap(-1, self.ARGS, prot=mmap.PROT_READ | mmap.PROT_WRITE)
+        self.args_base = ctypes.addressof(ctypes.c_char.from_buffer(self.args))
+        self.set_argv([ARGV0])
+
+    def set_argv(self, argv):
+        """Linux's layout of the arguments at the entry stack: argc, the
+        pointers to the strings, a null pointer, then the strings, each ending
+        in 0."""
+        strings = [a.encode() + b'\0' for a in argv]
+        at = self.args_base + 8 * (len(argv) + 2)
+        block = len(argv).to_bytes(8, 'little')
+        for text in strings:
+            block += at.to_bytes(8, 'little')
+            at += len(text)
+        block += bytes(8) + b''.join(strings)
+        if len(block) > self.ARGS:
+            raise ValueError('arguments too long for the entry stack block')
+        self.args[0:len(block)] = block
+
+    def args_stub(self):
+        """`mov r8, imm64`: the entry stack's address."""
+        return bytes([0x49, 0xB8]) + self.args_base.to_bytes(8, 'little')
 
     def load(self, entries, image, arity):
         self.code[0:len(image)] = image
@@ -1926,6 +1954,7 @@ class Native:
         stub += bytes([0x4C, 0x8D, 0xBC, 0x24]) + (-STACK_ROOM & 0xffffffff).to_bytes(4, 'little')
         for k, reg in zip(range(arity), ARG_REGS):
             stub += bytes([0x48, 0x89, reg, 0x24, (256 - (8 * k + 24)) & 0xff])
+        stub += self.args_stub()
         rel = entries[0] - (at + len(stub) + 5)
         stub += b'\xe8' + (rel & 0xffffffff).to_bytes(4, 'little')
         stub += bytes([0x41, 0x5F, 0x41, 0x5E, 0x41, 0x5D, 0x41, 0x5C, 0xC3])

@@ -13,7 +13,7 @@ import all Lanius.Mini.Compiler.P.arities
 import all Lanius.Mini.Compiler.P.FloatTy_rex
 import all Lanius.Mini.Compiler.P.FArith_opcode
 import all Lanius.Mini.Compiler.P.loadAtBytes
-import all Lanius.Mini.Compiler.P.imageLimit
+import all Lanius.Mini.Compiler.P.linkFrom
 import all Lanius.Mini.Compiler.P.moduleExports
 import all Lanius.Mini.Compiler.P.importOk
 import all Lanius.Mini.Compiler.P.importsOk
@@ -342,7 +342,11 @@ nonnegative `int`) polls no fd: it returns 0 and changes nothing.
 stores it as a `struct timespec` from `address` on (inside the heap) and
 returns 0. `getrandom(address, count, 0)` of at most 256 bytes, no more than
 the secure bytes left, stores the next `count` of them from `address` on
-(inside the heap) and returns `count`. No other call returns. -/
+(inside the heap) and returns `count`. The two reads of Linux's entry stack
+change nothing: `argCount` returns how many arguments the process has, and
+`argByte(8 * index, offset, _)`, of an argument's index and an offset at most
+its length, returns its byte at the offset, 0 at its end. No other call
+returns. -/
 def Syscall.run : Syscall → List (BitVec 64) → Heap → Option (BitVec 64 × Heap)
   | .write, [fd, address, count], heap =>
     if (fd = 1 ∨ fd = 2) ∧ count.toNat ≤ Lanius.X86.Machine.maxTransfer ∧
@@ -370,6 +374,13 @@ def Syscall.run : Syscall → List (BitVec 64) → Heap → Option (BitVec 64 ×
       some (count, { heap.writeAll address.toNat (heap.io.entropy.take count.toNat) with
         io := { heap.io with entropy := heap.io.entropy.drop count.toNat } })
     else none
+  | .argCount, [_first, _second, _third], heap => some (BitVec.ofNat 64 heap.io.arguments.length, heap)
+  | .argByte, [position, offset, _unused], heap =>
+    if position.toNat % 8 = 0 ∧ position.toNat / 8 < heap.io.arguments.length ∧
+        offset.toNat ≤ (Lanius.X86.Machine.argumentBytes (heap.io.arguments.getD (position.toNat / 8) "")).length then
+      some (BitVec.ofNat 64 ((Lanius.X86.Machine.argumentBytes (heap.io.arguments.getD (position.toNat / 8) "") ++ [0]).getD
+        offset.toNat 0).toNat, heap)
+    else none
   | .write, [], _ => none
   | .write, [_], _ => none
   | .write, [_, _], _ => none
@@ -390,6 +401,14 @@ def Syscall.run : Syscall → List (BitVec 64) → Heap → Option (BitVec 64 ×
   | .random, [_], _ => none
   | .random, [_, _], _ => none
   | .random, _ :: _ :: _ :: _ :: _, _ => none
+  | .argCount, [], _ => none
+  | .argCount, [_], _ => none
+  | .argCount, [_, _], _ => none
+  | .argCount, _ :: _ :: _ :: _ :: _, _ => none
+  | .argByte, [], _ => none
+  | .argByte, [_], _ => none
+  | .argByte, [_, _], _ => none
+  | .argByte, _ :: _ :: _ :: _ :: _, _ => none
 
 /-- A system call keeps the heap's limit and cursor. -/
 theorem Syscall.run_frame {call : Syscall} {args : List (BitVec 64)} {heap after : Heap} {result : BitVec 64}
@@ -398,9 +417,11 @@ theorem Syscall.run_frame {call : Syscall} {args : List (BitVec 64)} {heap after
   match args, ran with
   | [fd, address, count], ran =>
     rw [Syscall.run] at ran
-    split at ran
-    · cases ran; exact ⟨rfl, rfl⟩
-    · cases ran
+    first
+      | (cases ran; exact ⟨rfl, rfl⟩)
+      | (split at ran
+         · cases ran; exact ⟨rfl, rfl⟩
+         · cases ran)
   | [], ran => simp [Syscall.run] at ran
   | [_], ran => simp [Syscall.run] at ran
   | [_, _], ran => simp [Syscall.run] at ran
@@ -413,9 +434,31 @@ theorem Syscall.run_top {call : Syscall} {args : List (BitVec 64)} {heap after :
   match args, ran with
   | [fd, address, count], ran =>
     rw [Syscall.run] at ran
-    split at ran
-    · cases ran; rfl
-    · cases ran
+    first
+      | (cases ran; rfl)
+      | (split at ran
+         · cases ran; rfl
+         · cases ran)
+  | [], ran => simp [Syscall.run] at ran
+  | [_], ran => simp [Syscall.run] at ran
+  | [_, _], ran => simp [Syscall.run] at ran
+  | _ :: _ :: _ :: _ :: _, ran => simp [Syscall.run] at ran
+
+/-- A system call keeps the process's arguments. -/
+theorem Syscall.run_arguments {call : Syscall} {args : List (BitVec 64)} {heap after : Heap} {result : BitVec 64}
+    (ran : call.run args heap = some (result, after)) : after.io.arguments = heap.io.arguments := by
+  cases call <;>
+  match args, ran with
+  | [fd, address, count], ran =>
+    rw [Syscall.run] at ran
+    first
+      | (cases ran; rfl)
+      | (split at ran
+         · cases ran
+           first
+             | rfl
+             | (simp only [Lanius.X86.Machine.Io.afterReading]; split <;> rfl)
+         · cases ran)
   | [], ran => simp [Syscall.run] at ran
   | [_], ran => simp [Syscall.run] at ran
   | [_, _], ran => simp [Syscall.run] at ran

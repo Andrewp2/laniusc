@@ -27,6 +27,7 @@ theorem Returned.congr {window : Nat} {s s' t : State} {values : List (BitVec 64
   top := returned.top
   heap := by rw [← same.memory]; exact returned.heap
   io := by rw [← same.io]; exact returned.io
+  arguments := returned.arguments
 
 /-- **The mini compiler's code returns the same way on every run.** Under the
 hypotheses of `compileProgram_correct`, some `n`-step run returns, and every

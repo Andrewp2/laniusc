@@ -12,7 +12,7 @@ import all Lanius.Mini.Compiler.P.arities
 import all Lanius.Mini.Compiler.P.FloatTy_rex
 import all Lanius.Mini.Compiler.P.FArith_opcode
 import all Lanius.Mini.Compiler.P.loadAtBytes
-import all Lanius.Mini.Compiler.P.imageLimit
+import all Lanius.Mini.Compiler.P.linkFrom
 import all Lanius.Mini.Compiler.P.moduleExports
 import all Lanius.Mini.Compiler.P.importOk
 import all Lanius.Mini.Compiler.P.importsOk

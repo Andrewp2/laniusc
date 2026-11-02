@@ -94,13 +94,15 @@ inductive Expr where
   | fp : FOp → Expr → Expr → Expr
   deriving DecidableEq, Repr
 
-/-- A Linux system call (roadmap F8). Write: write(fd, the heap address, count), arguments in that order; Read: read(fd, the heap address, count); Poll: poll(fds, nfds, timeout), the second argument not made an address; Clock: clock_gettime(clock, the heap address, unused); Random: getrandom(the heap address, count, flags), the first argument made an address. -/
+/-- A Linux system call (roadmap F8). Write: write(fd, the heap address, count), arguments in that order; Read: read(fd, the heap address, count); Poll: poll(fds, nfds, timeout), the second argument not made an address; Clock: clock_gettime(clock, the heap address, unused); Random: getrandom(the heap address, count, flags), the first argument made an address. ArgCount and ArgByte are no system calls: they read the entry stack Linux leaves (argc, argv and the strings), whose address the startup code keeps in r8. ArgCount: argc, its arguments unused; ArgByte(8 times an argument's index, an offset, unused): the argument's byte at the offset, 0 at its end. -/
 inductive Syscall where
   | write : Syscall
   | read : Syscall
   | poll : Syscall
   | clock : Syscall
   | random : Syscall
+  | argCount : Syscall
+  | argByte : Syscall
   deriving DecidableEq, Repr
 
 inductive Stmt where

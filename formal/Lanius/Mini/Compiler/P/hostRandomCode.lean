@@ -24,6 +24,42 @@ def hostRandomCode (slot : Nat) : Stmt :=
   let looped : Stmt := Stmt.seq (Stmt.loop (Expr.compare Word.u64 CmpOp.ne (Expr.var count) (Expr.lit 0)) body) (Stmt.assign slot (Expr.binary Word.s32 BinOp.add (Expr.var total) (Expr.lit 0)))
   Stmt.seq (Stmt.assign total (Expr.var count)) looped
 
+/-- argc() to slot: the entry stack's count, as i32. -/
+def hostArgcCode (slot : Nat) : Stmt :=
+  Stmt.seq (Stmt.sys Syscall.argCount slot (Expr.lit 0 :: Expr.lit 0 :: [Expr.lit 0])) (Stmt.assign slot (Expr.binary Word.s32 BinOp.add (Expr.var slot) (Expr.lit 0)))
+
+/-- Whether the i32 index in slot names no argument: it is negative or not below the count in argc. -/
+def hostArgMissing (slot : Nat) (argc : Nat) : Expr :=
+  Expr.binary Word.u64 BinOp.or (Expr.compare Word.s32 CmpOp.lt (Expr.var slot) (Expr.lit 0)) (Expr.compare Word.u64 CmpOp.ge (Expr.var slot) (Expr.var argc))
+
+/-- arg_len(index), index in slot: -1 when it names no argument; else the argument's bytes up to its terminating 0 are counted, and the count as i32. -/
+def hostArgLenCode (slot : Nat) : Stmt :=
+  let count : Nat := slot + 1
+  let byte : Nat := slot + 2
+  let position : Nat := slot + 3
+  let argc : Nat := slot + 4
+  let step : Stmt := Stmt.seq (Stmt.assign count (Expr.binary Word.u64 BinOp.add (Expr.var count) (Expr.lit 1))) (Stmt.sys Syscall.argByte byte (Expr.var position :: Expr.var count :: [Expr.lit 0]))
+  let looped : Stmt := Stmt.seq (Stmt.loop (Expr.compare Word.u64 CmpOp.ne (Expr.var byte) (Expr.lit 0)) step) (Stmt.assign slot (Expr.binary Word.s32 BinOp.add (Expr.var count) (Expr.lit 0)))
+  let first : Stmt := Stmt.seq (Stmt.sys Syscall.argByte byte (Expr.var position :: Expr.lit 0 :: [Expr.lit 0])) looped
+  let scan : Stmt := Stmt.seq (Stmt.assign position (Expr.binary Word.u64 BinOp.mul (Expr.var slot) (Expr.lit 8))) (Stmt.seq (Stmt.assign count (Expr.lit 0)) first)
+  Stmt.seq (Stmt.sys Syscall.argCount argc (Expr.lit 0 :: Expr.lit 0 :: [Expr.lit 0])) (Stmt.ite (hostArgMissing slot argc) (Stmt.assign slot (Expr.lit 4294967295)) scan)
+
+/-- arg_read(index, pointer, len), in slot, slot + 1 and slot + 2: -1 when the index names no argument; else the argument's bytes, at most len of them, are stored from the pointer on, and their count as i32. -/
+def hostArgReadCode (slot : Nat) : Stmt :=
+  let pointer : Nat := slot + 1
+  let len : Nat := slot + 2
+  let argc : Nat := slot + 3
+  let position : Nat := slot + 4
+  let count : Nat := slot + 5
+  let byte : Nat := slot + 6
+  let more : Expr := Expr.binary Word.u64 BinOp.and (Expr.compare Word.u64 CmpOp.lt (Expr.var count) (Expr.var len)) (Expr.compare Word.u64 CmpOp.ne (Expr.var byte) (Expr.lit 0))
+  let next : Stmt := Stmt.seq (Stmt.assign count (Expr.binary Word.u64 BinOp.add (Expr.var count) (Expr.lit 1))) (Stmt.sys Syscall.argByte byte (Expr.var position :: Expr.var count :: [Expr.lit 0]))
+  let step : Stmt := Stmt.seq (Stmt.storeByte (Expr.binary Word.u64 BinOp.add (Expr.var pointer) (Expr.var count)) (Expr.var byte)) next
+  let looped : Stmt := Stmt.seq (Stmt.loop more step) (Stmt.assign slot (Expr.binary Word.s32 BinOp.add (Expr.var count) (Expr.lit 0)))
+  let first : Stmt := Stmt.seq (Stmt.sys Syscall.argByte byte (Expr.var position :: Expr.lit 0 :: [Expr.lit 0])) looped
+  let scan : Stmt := Stmt.seq (Stmt.assign position (Expr.binary Word.u64 BinOp.mul (Expr.var slot) (Expr.lit 8))) (Stmt.seq (Stmt.assign count (Expr.lit 0)) first)
+  Stmt.seq (Stmt.sys Syscall.argCount argc (Expr.lit 0 :: Expr.lit 0 :: [Expr.lit 0])) (Stmt.ite (hostArgMissing slot argc) (Stmt.assign slot (Expr.lit 4294967295)) scan)
+
 def evalHost (callee : Nat) (slot : Nat) (args : EvaluatedArgs) : Option Evaluated :=
   if decide (callee = 4294967296) && typesSame args.types (SrcType.i32 :: [SrcType.i32]) then
     some ({ stmt := Stmt.seq args.stmt (hostByteCode slot), ty := SrcType.i32 } : Evaluated)
@@ -49,7 +85,16 @@ def evalHost (callee : Nat) (slot : Nat) (args : EvaluatedArgs) : Option Evaluat
                 if decide (callee = 4294967303) && typesSame args.types (SrcType.ptr :: [SrcType.uint UintTy.usize]) then
                   some ({ stmt := Stmt.seq args.stmt (hostRandomCode slot), ty := SrcType.i32 } : Evaluated)
                 else
-                  none
+                  if decide (callee = 4294967304) && typesSame args.types [] then
+                    some ({ stmt := Stmt.seq args.stmt (hostArgcCode slot), ty := SrcType.i32 } : Evaluated)
+                  else
+                    if decide (callee = 4294967305) && typesSame args.types [SrcType.i32] then
+                      some ({ stmt := Stmt.seq args.stmt (hostArgLenCode slot), ty := SrcType.i32 } : Evaluated)
+                    else
+                      if decide (callee = 4294967306) && typesSame args.types (SrcType.i32 :: SrcType.ptr :: [SrcType.uint UintTy.usize]) then
+                        some ({ stmt := Stmt.seq args.stmt (hostArgReadCode slot), ty := SrcType.i32 } : Evaluated)
+                      else
+                        none
 
 def evalCall (sig : Option Sig) (callee : Nat) (slot : Nat) (args : Option EvaluatedArgs) : Option Evaluated :=
   match sig with

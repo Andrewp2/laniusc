@@ -236,8 +236,12 @@ pub enum Expr {
 // Poll: poll(fds, nfds, timeout), the second argument not made an address;
 // Clock: clock_gettime(clock, the heap address, unused); Random:
 // getrandom(the heap address, count, flags), the first argument made an
-// address.
-pub enum Syscall { Write, Read, Poll, Clock, Random, }
+// address. ArgCount and ArgByte are no system calls: they read the entry
+// stack Linux leaves (argc, argv and the strings), whose address the startup
+// code keeps in r8. ArgCount: argc, its arguments unused; ArgByte(8 times
+// an argument's index, an offset, unused): the argument's byte at the
+// offset, 0 at its end.
+pub enum Syscall { Write, Read, Poll, Clock, Random, ArgCount, ArgByte, }
 
 pub enum Stmt {
     Skip,
@@ -987,6 +991,8 @@ pub fn syscall_linux_byte(kind: Syscall) -> u8 {
         Poll -> 7,
         Clock -> 228,
         Random -> 62,
+        ArgCount -> 0,
+        ArgByte -> 0,
     };
 }
 
@@ -998,6 +1004,8 @@ pub fn syscall_linux_high(kind: Syscall) -> u8 {
         Poll -> 0,
         Clock -> 0,
         Random -> 1,
+        ArgCount -> 0,
+        ArgByte -> 0,
     };
 }
 
@@ -1011,6 +1019,8 @@ pub fn syscall_rsi_bytes(kind: Syscall) -> List<u8> {
         Poll -> cons(72, cons(137, single(246))),
         Clock -> cons(76, cons(1, single(230))),
         Random -> cons(76, cons(1, single(231))),
+        ArgCount -> cons(72, cons(137, single(246))),
+        ArgByte -> cons(72, cons(137, single(246))),
     };
 }
 
@@ -1018,11 +1028,41 @@ pub fn syscall_rsi_bytes(kind: Syscall) -> List<u8> {
 // (the heap address; mov rsi, rsi for poll); mov rdx, [rbp + disp32] (the
 // count); mov eax, the call's number; syscall; mov r11, rcx (the kernel
 // leaves RFLAGS in r11)
-pub fn sys_bytes(kind: Syscall, slot: usize) -> List<u8> {
+pub fn kernel_call_bytes(kind: Syscall, slot: usize) -> List<u8> {
     let fd: List<u8> = concat(cons(72, cons(139, single(189))), le32(slot_offset(slot)));
     let address: List<u8> = concat(concat(cons(72, cons(139, single(181))), le32(slot_offset(plus(slot, 1)))), syscall_rsi_bytes(kind));
     let count: List<u8> = concat(cons(72, cons(139, single(149))), le32(slot_offset(plus(slot, 2))));
     return concat(concat(fd, address), concat(count, cons(184, cons(syscall_linux_byte(kind), cons(syscall_linux_high(kind), cons(0, cons(0, cons(15, cons(5, cons(73, cons(137, single(203))))))))))));
+}
+
+// mov rdi, [slot]; mov rsi, [slot + 1]; mov rsi, rsi; mov rdx, [slot + 2]
+// (as a system call's); mov rax, [r8 + 0] (argc); mov r11, rcx
+pub fn arg_count_bytes(slot: usize) -> List<u8> {
+    let first: List<u8> = concat(cons(72, cons(139, single(189))), le32(slot_offset(slot)));
+    let second: List<u8> = concat(concat(cons(72, cons(139, single(181))), le32(slot_offset(plus(slot, 1)))), cons(72, cons(137, single(246))));
+    let third: List<u8> = concat(cons(72, cons(139, single(149))), le32(slot_offset(plus(slot, 2))));
+    return concat(concat(first, second), concat(third, cons(73, cons(139, cons(128, cons(0, cons(0, cons(0, cons(0, cons(73, cons(137, single(203))))))))))));
+}
+
+// mov rdi, [slot] (8 times the index); add rdi, r8; mov rax, [rdi + 8] (the
+// argument's pointer, argv[index]); mov rsi, [slot + 1] (the offset); add
+// rax, rsi; movzx eax, byte [rax + 0]
+pub fn arg_byte_bytes(slot: usize) -> List<u8> {
+    let pointer: List<u8> = concat(concat(cons(72, cons(139, single(189))), le32(slot_offset(slot))), cons(76, cons(1, cons(199, cons(72, cons(139, cons(135, cons(8, cons(0, cons(0, single(0)))))))))));
+    let offset: List<u8> = concat(cons(72, cons(139, single(181))), le32(slot_offset(plus(slot, 1))));
+    return concat(pointer, concat(offset, cons(72, cons(1, cons(240, cons(15, cons(182, cons(128, cons(0, cons(0, cons(0, single(0))))))))))));
+}
+
+pub fn sys_bytes(kind: Syscall, slot: usize) -> List<u8> {
+    return match (kind) {
+        Write -> kernel_call_bytes(kind, slot),
+        Read -> kernel_call_bytes(kind, slot),
+        Poll -> kernel_call_bytes(kind, slot),
+        Clock -> kernel_call_bytes(kind, slot),
+        Random -> kernel_call_bytes(kind, slot),
+        ArgCount -> arg_count_bytes(slot),
+        ArgByte -> arg_byte_bytes(slot),
+    };
 }
 
 // mov rsp, rbp; pop rbp; ret
@@ -3680,7 +3720,10 @@ pub fn eval_call_sig(sig: Sig, callee: usize, slot: usize, args: EvaluatedArgs) 
 // Core's host services (roadmap F8) are its functions from id 2^32 on
 // (`hostService?`, Mini/SourceCore.lean), past every program's own: 2^32 is
 // write_byte, 2^32 + 1 write_stdout, 2^32 + 2 write_stderr, 2^32 + 3
-// read_stdin, 2^32 + 4 sleep_ms_i32. Their code is system calls.
+// read_stdin, 2^32 + 4 sleep_ms_i32, 2^32 + 5 monotonic_read, 2^32 + 6
+// system_read, 2^32 + 7 fill_secure_bytes, 2^32 + 8 argc, 2^32 + 9 arg_len,
+// 2^32 + 10 arg_read. Their code is system calls, and reads of the entry
+// stack for the arguments.
 //
 // write_byte(handle, value), handle and value in slot and slot + 1: to handle
 // 1 or 2 the value's low byte goes through the heap's byte 0 (no block's,
@@ -3760,6 +3803,51 @@ pub fn host_random_code(slot: usize) -> Stmt {
     return Seq(boxed(Assign(total, Var(count))), boxed(looped));
 }
 
+// argc() to slot: the entry stack's count, as i32.
+pub fn host_argc_code(slot: usize) -> Stmt {
+    return Seq(boxed(Stmt::Sys(ArgCount, slot, cons(Lit(0), cons(Lit(0), single(Lit(0)))))), boxed(Assign(slot, Binary(S32, Add, boxed(Var(slot)), boxed(Lit(0))))));
+}
+
+// Whether the i32 index in slot names no argument: it is negative or not
+// below the count in argc.
+pub fn host_arg_missing(slot: usize, argc: usize) -> Expr {
+    return Binary(U64, Or, boxed(Compare(S32, Lt, boxed(Var(slot)), boxed(Lit(0)))), boxed(Compare(U64, Ge, boxed(Var(slot)), boxed(Var(argc)))));
+}
+
+// arg_len(index), index in slot: -1 when it names no argument; else the
+// argument's bytes up to its terminating 0 are counted, and the count as
+// i32.
+pub fn host_arg_len_code(slot: usize) -> Stmt {
+    let count: usize = plus(slot, 1);
+    let byte: usize = plus(slot, 2);
+    let position: usize = plus(slot, 3);
+    let argc: usize = plus(slot, 4);
+    let step: Stmt = Seq(boxed(Assign(count, Binary(U64, Add, boxed(Var(count)), boxed(Lit(1))))), boxed(Stmt::Sys(ArgByte, byte, cons(Var(position), cons(Var(count), single(Lit(0)))))));
+    let looped: Stmt = Seq(boxed(Stmt::Loop(Compare(U64, Ne, boxed(Var(byte)), boxed(Lit(0))), boxed(step))), boxed(Assign(slot, Binary(S32, Add, boxed(Var(count)), boxed(Lit(0))))));
+    let first: Stmt = Seq(boxed(Stmt::Sys(ArgByte, byte, cons(Var(position), cons(Lit(0), single(Lit(0)))))), boxed(looped));
+    let scan: Stmt = Seq(boxed(Assign(position, Binary(U64, Mul, boxed(Var(slot)), boxed(Lit(8))))), boxed(Seq(boxed(Assign(count, Lit(0))), boxed(first))));
+    return Seq(boxed(Stmt::Sys(ArgCount, argc, cons(Lit(0), cons(Lit(0), single(Lit(0)))))), boxed(Stmt::Ite(host_arg_missing(slot, argc), boxed(Assign(slot, Lit(4294967295))), boxed(scan))));
+}
+
+// arg_read(index, pointer, len), in slot, slot + 1 and slot + 2: -1 when the
+// index names no argument; else the argument's bytes, at most len of them,
+// are stored from the pointer on, and their count as i32.
+pub fn host_arg_read_code(slot: usize) -> Stmt {
+    let pointer: usize = plus(slot, 1);
+    let len: usize = plus(slot, 2);
+    let argc: usize = plus(slot, 3);
+    let position: usize = plus(slot, 4);
+    let count: usize = plus(slot, 5);
+    let byte: usize = plus(slot, 6);
+    let more: Expr = Binary(U64, And, boxed(Compare(U64, Lt, boxed(Var(count)), boxed(Var(len)))), boxed(Compare(U64, Ne, boxed(Var(byte)), boxed(Lit(0)))));
+    let next: Stmt = Seq(boxed(Assign(count, Binary(U64, Add, boxed(Var(count)), boxed(Lit(1))))), boxed(Stmt::Sys(ArgByte, byte, cons(Var(position), cons(Var(count), single(Lit(0)))))));
+    let step: Stmt = Seq(boxed(Stmt::StoreByte(Binary(U64, Add, boxed(Var(pointer)), boxed(Var(count))), Var(byte))), boxed(next));
+    let looped: Stmt = Seq(boxed(Stmt::Loop(more, boxed(step))), boxed(Assign(slot, Binary(S32, Add, boxed(Var(count)), boxed(Lit(0))))));
+    let first: Stmt = Seq(boxed(Stmt::Sys(ArgByte, byte, cons(Var(position), cons(Lit(0), single(Lit(0)))))), boxed(looped));
+    let scan: Stmt = Seq(boxed(Assign(position, Binary(U64, Mul, boxed(Var(slot)), boxed(Lit(8))))), boxed(Seq(boxed(Assign(count, Lit(0))), boxed(first))));
+    return Seq(boxed(Stmt::Sys(ArgCount, argc, cons(Lit(0), cons(Lit(0), single(Lit(0)))))), boxed(Stmt::Ite(host_arg_missing(slot, argc), boxed(Assign(slot, Lit(4294967295))), boxed(scan))));
+}
+
 pub fn eval_host(callee: usize, slot: usize, args: EvaluatedArgs) -> core::option::Option<Evaluated> {
     if ((callee == 4294967296) && types_same(args.types, cons(I32, single(I32)))) {
         return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_byte_code(slot))), ty: I32 });
@@ -3784,6 +3872,15 @@ pub fn eval_host(callee: usize, slot: usize, args: EvaluatedArgs) -> core::optio
     }
     if ((callee == 4294967303) && types_same(args.types, cons(Ptr, single(Uint(Usize))))) {
         return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_random_code(slot))), ty: I32 });
+    }
+    if ((callee == 4294967304) && types_same(args.types, empty())) {
+        return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_argc_code(slot))), ty: I32 });
+    }
+    if ((callee == 4294967305) && types_same(args.types, single(I32))) {
+        return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_arg_len_code(slot))), ty: I32 });
+    }
+    if ((callee == 4294967306) && types_same(args.types, cons(I32, cons(Ptr, single(Uint(Usize)))))) {
+        return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_arg_read_code(slot))), ty: I32 });
     }
     return None;
 }
@@ -5961,6 +6058,8 @@ impl Syscall {
             Poll -> 2,
             Clock -> 3,
             Random -> 4,
+            ArgCount -> 5,
+            ArgByte -> 6,
         };
     }
 }
@@ -7421,7 +7520,8 @@ pub fn compile_words(program: core::option::Option<SrcProgram>) -> core::option:
 // readable, writable and executable, from the file's first byte. The file is
 // the ELF header, its one program header, the startup code and the image;
 // the segment goes on, zero-filled by Linux, to a page boundary, then `stack`
-// bytes of stack, `heap` bytes of heap and `stack` bytes of frame memory. The startup code sets rsp to the
+// bytes of stack, `heap` bytes of heap and `stack` bytes of frame memory. The startup code keeps
+// Linux's entry stack pointer in r8 (argc, then argv's pointers), sets rsp to the
 // stack's top, r15 to the stack limit (`binary.guard` above its bottom),
 // r12, r14 and r13 to the heap's base, its limit and cursor 1, r10 and rbx
 // to the heap's top (the end of frame memory) and the frame pointer there,
@@ -7433,9 +7533,9 @@ pub fn elf_base() -> usize {
     return 4294967296;
 }
 
-// The bytes before the image: the headers (120) and the startup code (85).
+// The bytes before the image: the headers (120) and the startup code (88).
 pub fn elf_before_image() -> usize {
-    return 205;
+    return 208;
 }
 
 pub fn larger(a: usize, b: usize) -> usize {
@@ -7498,11 +7598,12 @@ pub fn elf_program_header(binary: Binary, stack: usize, heap: usize) -> List<u8>
     return concat(concat(concat(kinds, places), concat(le64n(file), le64n(memory))), le64n(4096));
 }
 
-// mov reg, imm64 for rsp, r15, r12, r14, r13, r10 and rbx; call the entry; exit.
+// mov r8, rsp (Linux's entry stack: argc, argv, the strings); mov reg, imm64
+// for rsp, r15, r12, r14, r13, r10 and rbx; call the entry; exit.
 pub fn elf_startup(binary: Binary, entry: usize, stack: usize, heap: usize) -> List<u8> {
     let bottom: usize = elf_stack_base(binary);
     let top: usize = plus(bottom, stack);
-    let sets: List<u8> = concat(concat(concat(cons(72, cons(188, le64n(top))), cons(73, cons(191, le64n(plus(bottom, stack_guard(binary)))))), concat(cons(73, cons(188, le64n(top))), cons(73, cons(190, le64n(heap))))), concat(concat(cons(73, cons(189, le64n(1))), cons(73, cons(186, le64n(plus(heap, stack))))), cons(72, cons(187, le64n(plus(heap, stack))))));
+    let sets: List<u8> = concat(concat(concat(cons(73, cons(137, cons(224, cons(72, cons(188, le64n(top)))))), cons(73, cons(191, le64n(plus(bottom, stack_guard(binary)))))), concat(cons(73, cons(188, le64n(top))), cons(73, cons(190, le64n(heap))))), concat(concat(cons(73, cons(189, le64n(1))), cons(73, cons(186, le64n(plus(heap, stack))))), cons(72, cons(187, le64n(plus(heap, stack))))));
     let call: List<u8> = cons(232, le32(plus(get_or(binary.entries, entry, 0), 10) as i32));
     let exit: List<u8> = cons(72, cons(137, cons(199, cons(184, cons(60, cons(0, cons(0, cons(0, cons(15, single(5))))))))));
     return concat(concat(sets, call), exit);

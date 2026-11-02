@@ -953,10 +953,31 @@ obligation on the x86 state below from what Linux does. Trusted about Linux:
   the run.
   No other system call is modeled (SEMANTIC_DECISIONS.md, "Externs and the
   runtime").
-- The startup code sets rsp, r12 to r15, r10 (the heap's top) and rbx (the
-  frame pointer, at the heap's top) and calls `entry` (the driver's
+- **The process's arguments (`Loaded.args`, roadmap F8, 10-31).** The
+  state's `io` also holds `arguments`, the strings Linux passes the process
+  (argv, its name first), fixed for the run like the streams, and
+  `argumentsOk`, what Linux guarantees of them (`ArgumentsOk`,
+  `X86/Machine/Io.lean`): fewer than 2^31 of them (`MAX_ARG_STRINGS` is
+  0x7FFFFFFF), each with fewer than 2^31 bytes (`MAX_ARG_STRLEN` is 32
+  pages) and no 0 byte, since each is a C string. `Loaded` says that at
+  entry rsp points to Linux's entry stack for them (System V x86-64 ABI,
+  section 3.4.1; `ArgsAt`, `Mini/Simulation.lean`): the quadword argc at
+  rsp, argv's pointers from rsp + 8, and at each pointer the argument's
+  UTF-8 bytes (`argumentBytes`: `String.toUTF8`) and a 0. That stack and
+  the strings (`ArgsCell`) are apart from the segment (`p_vaddr` to
+  `p_vaddr + p_memsz`). Linux puts them above the stack it gives the
+  process, outside the executable's mapping. A string is modeled as a Lean
+  `String`, so it is trusted that the arguments are valid UTF-8, as the
+  harnesses' are; Linux passes any bytes but 0. Core's world starts with
+  the same arguments (`startState`: `arguments`), so `argc`, `arg_len` and
+  `arg_read` (SEMANTIC_DECISIONS.md, "Process arguments") are read from
+  them. No system call reads them: the compiled code loads them from the
+  entry stack, whose address the startup code keeps in r8.
+- The startup code first saves rsp, the entry stack's address, in r8
+  (`mov r8, rsp`), then sets rsp, r12 to r15, r10 (the heap's top) and rbx
+  (the frame pointer, at the heap's top) and calls `entry` (the driver's
   convention is function 0, `main`), and `mov rdi, rax; mov eax, 60;
-  syscall` follows the call. Its 85 bytes are proved, not trusted. The
+  syscall` follows the call. Its 88 bytes are proved, not trusted. The
   program header maps frame memory, as many bytes as the stack, above the
   heap: the heap's top is `heap + stack`. `entry` must take
   no parameters.
@@ -1014,6 +1035,11 @@ and with a heap limit of at least 1.
     (`HeapAt.fsp`), at most the heap's top (`HeapAt.fspLe`). Frame memory
     is the bytes from `limit` up to the top in r10 (`HeapAt.top`); the
     startup code sets r10 and rbx to `heap + stack`.
+- **Arguments of the process (`Fits.args`, `HeapAt.args`).** r8 points to
+  an entry stack (`ArgsAt`) for the state's `io.arguments`, whose cells
+  (`ArgsCell`) are apart from the stack window, the return address and the
+  heap; the code only reads them. Every function keeps r8. The difftest
+  stubs set r8 to such a block (`Native.set_argv`).
 - **Registers after the call.**
   - rsp is restored to `rsp + 8` and rbp is restored.
   - rax, rbx, rcx, rdx, rsi, rdi, r11 and r13 may change (the code writes rdx,
