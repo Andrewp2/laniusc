@@ -1068,6 +1068,13 @@ mod tests {
             .collect()
     }
 
+    fn read_words_of(bytes: &[u8]) -> Vec<u32> {
+        bytes
+            .chunks_exact(4)
+            .map(|word| u32::from_le_bytes(word.try_into().unwrap()))
+            .collect()
+    }
+
     fn read_words(device: &wgpu::Device, buffer: &LaniusBuffer<u8>) -> Vec<u32> {
         let slice = buffer.slice(..);
         map_readback_blocking(device, &slice, "Wasm LIR readback").unwrap();
@@ -1087,20 +1094,20 @@ mod tests {
         let capacities = LoweringCapacities {
             source_bytes: 8,
             tokens: 16,
-            hir_nodes: 4,
-            semantic_instructions: 8,
+            hir_nodes: 9,
+            semantic_instructions: 11,
             call_arguments: 1,
             parameters: 4,
             aggregate_elements: 1,
-            target_instructions: 10,
+            target_instructions: 16,
             artifact_bytes: 2048,
         };
         // No row is a call statement: kind 0 HIR rows with no parent.
         let hir_core = storage_ro_from_bytes::<crate::parser::buffers::HirCore>(
             &gpu.device,
             "test.wasm_stage.hir_core",
-            &words(&[[0, u32::MAX, 0, 0]; 4]),
-            4,
+            &words(&[[0, u32::MAX, 0, 0]; 9]),
+            9,
         );
         let graph = lowering_compiler_graph(capacities, LoweringTarget::Wasm).unwrap();
         let workspace =
@@ -1113,145 +1120,118 @@ mod tests {
         let semantic_status: LaniusBuffer<LoweringStatus> = workspace
             .alias(&graph, graph.resource_id("lowering.status").unwrap(), 1)
             .unwrap();
+        // The status as lir.status.clear leaves it; this stage starts after
+        // semantic lowering, which runs that clear in production.
+        let cleared_status = words(&[[
+            0,
+            u32::MAX,
+            u32::MAX,
+            u32::MAX,
+            0,
+            u32::MAX,
+            0,
+            0,
+            u32::MAX,
+            u32::MAX,
+        ]]);
+        semantic_status.write(&gpu.queue, 0, &cleared_status);
+        // One function `f(p: i32, s: string)` with locals `t: string` and
+        // `x: i32`:
+        //     block { if 7 + 9 == 0 { break } x = sym() }  t = s;  return;
+        // A structured opener's CONTROL_END is the next row of the same owner
+        // (structure_region_scatter); the branch names that row as its target
+        // (structure_edge_scatter). The return is scheduled last: rows after
+        // it would be unreachable, and the optimizer removes them.
         let semantic_total =
-            storage_ro_from_u32s(&gpu.device, "test.wasm_stage.semantic_total", &[8]);
-        let semantic_page_core = storage_ro_from_bytes::<SemanticLirCore>(
-            &gpu.device,
-            "test.wasm_stage.semantic_page_core",
-            &words(&compact_semantic_core_records(&[
-                [
-                    opcode::SEMANTIC_LIR_OP_CONST_I32,
-                    3,
-                    0,
-                    u32::MAX,
-                    1,
-                    0,
-                    0,
-                    u32::MAX,
-                ],
-                [
-                    opcode::SEMANTIC_LIR_OP_CONST_I32,
-                    3,
-                    0,
-                    u32::MAX,
-                    0,
-                    0,
-                    0,
-                    u32::MAX,
-                ],
-                [
-                    opcode::SEMANTIC_LIR_OP_ADD,
-                    3,
-                    0,
-                    u32::MAX,
-                    2,
-                    0,
-                    0,
-                    u32::MAX,
-                ],
-                [
-                    opcode::SEMANTIC_LIR_OP_BRANCH_IF,
-                    0,
-                    0,
-                    u32::MAX,
-                    3,
-                    opcode::SEMANTIC_LIR_FLAG_BRANCH_DEPTH_VALID
-                        | opcode::SEMANTIC_LIR_FLAG_BRANCH_FALSE,
-                    0,
-                    u32::MAX,
-                ],
-                [
-                    opcode::SEMANTIC_LIR_OP_VALUE_GET,
-                    7,
-                    0,
-                    u32::MAX,
-                    5,
-                    0,
-                    0,
-                    u32::MAX,
-                ],
-                [
-                    opcode::SEMANTIC_LIR_OP_VALUE_SET,
-                    3,
-                    0,
-                    u32::MAX,
-                    6,
-                    0,
-                    0,
-                    u32::MAX,
-                ],
-                [
-                    opcode::SEMANTIC_LIR_OP_CALL_SYMBOL,
-                    3,
-                    0,
-                    u32::MAX,
-                    7,
-                    0,
-                    0,
-                    u32::MAX,
-                ],
-                [
-                    opcode::SEMANTIC_LIR_OP_RETURN,
-                    0,
-                    0,
-                    u32::MAX,
-                    4,
-                    0,
-                    0,
-                    u32::MAX,
-                ],
-            ])),
-            8,
-        );
-        let semantic_page_operands = storage_ro_from_bytes::<SemanticLirOperands>(
-            &gpu.device,
-            "test.wasm_stage.semantic_page_operands",
-            &words(&[
-                [1, 9, u32::MAX, u32::MAX],
-                [0, 7, u32::MAX, u32::MAX],
-                [2, 1, 0, u32::MAX],
-                [3, 2, 0, u32::MAX],
-                [5, 4, u32::MAX, u32::MAX],
-                [6, 8, 5, u32::MAX],
-                [7, 7, 11, 23],
-                [4, 2, u32::MAX, u32::MAX],
-            ]),
-            8,
-        );
+            storage_ro_from_u32s(&gpu.device, "test.wasm_stage.semantic_total", &[11]);
+        // OptIR takes ownership of the graph's semantic core and operand
+        // storage, so the rows are written into the workspace.
+        let core_bytes = words(&compact_semantic_core_records(&[
+            [opcode::SEMANTIC_LIR_OP_CONST_I32, 3, 0, u32::MAX, 0, 0, 0, u32::MAX],
+            [opcode::SEMANTIC_LIR_OP_CONST_I32, 3, 0, u32::MAX, 0, 0, 0, u32::MAX],
+            [opcode::SEMANTIC_LIR_OP_ADD, 3, 0, u32::MAX, 0, 0, 0, u32::MAX],
+            [opcode::SEMANTIC_LIR_OP_BLOCK_BEGIN, 0, 0, u32::MAX, 0, 0, 0, u32::MAX],
+            [opcode::SEMANTIC_LIR_OP_CONTROL_END, 0, 0, u32::MAX, 0, 0, 0, u32::MAX],
+            [
+                opcode::SEMANTIC_LIR_OP_BRANCH_IF,
+                0,
+                0,
+                u32::MAX,
+                0,
+                opcode::SEMANTIC_LIR_FLAG_BRANCH_DEPTH_VALID
+                    | opcode::SEMANTIC_LIR_FLAG_BRANCH_FALSE,
+                0,
+                u32::MAX,
+            ],
+            [opcode::SEMANTIC_LIR_OP_CALL_SYMBOL, 3, 0, u32::MAX, 0, 0, 0, u32::MAX],
+            [opcode::SEMANTIC_LIR_OP_VALUE_SET, 3, 0, u32::MAX, 0, 0, 0, u32::MAX],
+            [opcode::SEMANTIC_LIR_OP_VALUE_GET, 7, 0, u32::MAX, 0, 0, 0, u32::MAX],
+            [opcode::SEMANTIC_LIR_OP_VALUE_SET, 7, 0, u32::MAX, 0, 0, 0, u32::MAX],
+            // A bare `return;` has the void type and no value operand.
+            [opcode::SEMANTIC_LIR_OP_RETURN, 1, 0, u32::MAX, 0, 0, 0, u32::MAX],
+        ]));
+        let operand_bytes = words(&[
+            // [result HIR, a, b, c]
+            [1, 9, u32::MAX, u32::MAX],               // 0: 9
+            [0, 7, u32::MAX, u32::MAX],               // 1: 7
+            [2, 1, 0, u32::MAX],                      // 2: 7 + 9
+            [3, u32::MAX, u32::MAX, u32::MAX],        // 3: block
+            [3, u32::MAX, u32::MAX, u32::MAX],        // 4: its end
+            [3, 2, 0, 4],                             // 5: br_if (7 + 9 == 0) to row 4
+            [7, 7, 11, 23],                           // 6: sym()
+            [6, 8, 6, u32::MAX],                      // 7: x = row 6
+            [5, 4, u32::MAX, u32::MAX],               // 8: s
+            [8, 6, 8, u32::MAX],                      // 9: t = row 8
+            [4, u32::MAX, u32::MAX, u32::MAX],        // 10: return
+        ]);
+        let semantic_rows = |graph: &CompilerGraph,
+                             workspace: &CompilerGraphWorkspace|
+         -> (LaniusBuffer<SemanticLirCore>, LaniusBuffer<SemanticLirOperands>, LaniusBuffer<u32>) {
+            let core: LaniusBuffer<SemanticLirCore> = workspace
+                .alias(graph, graph.resource_id("lir.semantic.core").unwrap(), 11)
+                .unwrap();
+            core.write(&gpu.queue, 0, &core_bytes);
+            let operands: LaniusBuffer<SemanticLirOperands> = workspace
+                .alias(graph, graph.resource_id("lir.semantic.operands").unwrap(), 11)
+                .unwrap();
+            operands.write(&gpu.queue, 0, &operand_bytes);
+            // The optimizer reads the graph-owned total, not a fixture buffer.
+            let call_arg_total: LaniusBuffer<u32> = workspace
+                .alias(graph, graph.resource_id("lir.semantic.call_arg_total").unwrap(), 1)
+                .unwrap();
+            call_arg_total.write(&gpu.queue, 0, &0u32.to_le_bytes());
+            (core, operands, call_arg_total)
+        };
+        let (semantic_page_core, semantic_page_operands, semantic_call_arg_total) =
+            semantic_rows(&graph, &workspace);
         let semantic_order: LaniusBuffer<u32> = workspace
             .alias(
                 &graph,
                 graph.resource_id("lir.semantic.schedule_order").unwrap(),
-                8,
+                11,
             )
             .unwrap();
-        semantic_order.write(&gpu.queue, 0, &words(&[[1u32, 0, 2, 3, 5, 6, 7, 4]]));
+        // The condition is computed inside the block: an empty-typed Wasm
+        // block cannot consume a value pushed before it.
+        let schedule = words(&[[3u32, 1, 0, 2, 5, 6, 7, 4, 8, 9, 10]]);
+        semantic_order.write(&gpu.queue, 0, &schedule);
         let semantic_owners =
-            storage_ro_from_u32s(&gpu.device, "test.wasm_stage.semantic_owners", &[0; 8]);
+            storage_ro_from_u32s(&gpu.device, "test.wasm_stage.semantic_owners", &[0; 11]);
         let semantic_call_args = storage_ro_from_bytes::<SemanticLirCallArg>(
             &gpu.device,
             "test.wasm_stage.semantic_call_args",
             &words(&[[u32::MAX; 5]]),
             1,
         );
-        // The optimizer reads the graph-owned total, not a fixture buffer.
-        let semantic_call_arg_total: LaniusBuffer<u32> = workspace
-            .alias(
-                &graph,
-                graph.resource_id("lir.semantic.call_arg_total").unwrap(),
-                1,
-            )
-            .unwrap();
-        semantic_call_arg_total.write(&gpu.queue, 0, &0u32.to_le_bytes());
         let semantic_call_arg_start = storage_ro_from_u32s(
             &gpu.device,
             "test.wasm_stage.call_arg_start",
-            &[u32::MAX; 8],
+            &[u32::MAX; 11],
         );
         let semantic_call_arg_count_by_hir = storage_ro_from_u32s(
             &gpu.device,
             "test.wasm_stage.call_arg_count_by_hir",
-            &[0; 8],
+            &[0; 11],
         );
         let semantic_aggregate_elements = storage_ro_from_bytes::<SemanticLirAggregateElement>(
             &gpu.device,
@@ -1262,8 +1242,8 @@ mod tests {
         let semantic_string_rows = storage_ro_from_bytes::<SemanticLirString>(
             &gpu.device,
             "test.wasm_stage.strings",
-            &words(&[[u32::MAX; 4]; 4]),
-            4,
+            &words(&[[u32::MAX; 4]; 9]),
+            9,
         );
         let semantic_empty_count =
             storage_ro_from_u32s(&gpu.device, "test.wasm_stage.empty_count", &[0]);
@@ -1277,8 +1257,13 @@ mod tests {
                 [u32::MAX; 13],
                 [u32::MAX; 13],
                 [u32::MAX; 13],
+                [u32::MAX; 13],
+                [u32::MAX; 13],
+                [u32::MAX; 13],
+                [u32::MAX; 13],
+                [u32::MAX; 13],
             ]),
-            4,
+            9,
         );
         let semantic_params = storage_ro_from_bytes::<SemanticLirParam>(
             &gpu.device,
@@ -1286,24 +1271,15 @@ mod tests {
             &words(&[[0, 2, 0, 3, 0], [0, 4, 1, 7, 0], [u32::MAX; 5], [u32::MAX; 5]]),
             4,
         );
+        // Local rows are sized for three per HIR node.
+        let mut local_rows = vec![[u32::MAX; 4]; 27];
+        local_rows[0] = [0, 6, 0, 7];
+        local_rows[1] = [0, 8, 1, 3];
         let semantic_locals = storage_ro_from_bytes::<SemanticLirLocal>(
             &gpu.device,
             "test.wasm_stage.locals",
-            &words(&[
-                [0, 6, 0, 7],
-                [0, 8, 1, 3],
-                [u32::MAX; 4],
-                [u32::MAX; 4],
-                [u32::MAX; 4],
-                [u32::MAX; 4],
-                [u32::MAX; 4],
-                [u32::MAX; 4],
-                [u32::MAX; 4],
-                [u32::MAX; 4],
-                [u32::MAX; 4],
-                [u32::MAX; 4],
-            ]),
-            12,
+            &words(&local_rows),
+            27,
         );
         let semantic_function_count =
             storage_ro_from_u32s(&gpu.device, "test.wasm_stage.function_count", &[1]);
@@ -1319,16 +1295,16 @@ mod tests {
         let param_value_layout =
             storage_ro_from_u32s(&gpu.device, "test.parameter_value_layout", &[0u32; 128]);
         macro_rules! semantic_view {
-            ($status:expr, $order:expr) => {
+            ($status:expr, $order:expr, $core:expr, $operands:expr, $call_arg_total:expr) => {
                 GpuSemanticLirView {
                     count: &semantic_total,
-                    core: &semantic_page_core,
-                    operands: &semantic_page_operands,
+                    core: $core,
+                    operands: $operands,
                     layout_word_offset: &semantic_owners,
                     owner_by_instruction: &semantic_owners,
                     function_id_by_hir: &semantic_owners,
                     call_args: &semantic_call_args,
-                    call_arg_count: &semantic_call_arg_total,
+                    call_arg_count: $call_arg_total,
                     call_arg_start_by_hir: &semantic_call_arg_start,
                     call_arg_count_by_hir: &semantic_call_arg_count_by_hir,
                     aggregate_elements: &semantic_aggregate_elements,
@@ -1356,7 +1332,13 @@ mod tests {
             |_| true,
         )
         .unwrap();
-        let semantic = semantic_view!(&semantic_status, &semantic_order);
+        let semantic = semantic_view!(
+            &semantic_status,
+            &semantic_order,
+            &semantic_page_core,
+            &semantic_page_operands,
+            &semantic_call_arg_total
+        );
         let optimizer = GpuOptimizationStage::new(
             &gpu.device,
             &graph,
@@ -1396,9 +1378,10 @@ mod tests {
         let artifact = stage.module.output();
         let target_total = workspace_u32("lir.wasm.total", 1);
         let body_length = workspace_u32("lir.wasm.body_length", 1);
-        let body_words = workspace_u32("lir.wasm.body_bytes", 16);
+        let body_words = workspace_u32("lir.wasm.body_bytes", 8);
         let total_readback = readback_bytes(&gpu.device, "test.wasm_stage.total.rb", 4, 1);
-        let core_readback = readback_bytes(&gpu.device, "test.wasm_stage.core.rb", 160, 40);
+        let core_readback = readback_bytes(&gpu.device, "test.wasm_stage.core.rb", 224, 56);
+        let status_readback = readback_bytes(&gpu.device, "test.wasm_stage.status.rb", 40, 10);
         let function_count_readback =
             readback_bytes(&gpu.device, "test.wasm_stage.function_count.rb", 4, 1);
         let functions_readback =
@@ -1411,11 +1394,12 @@ mod tests {
             readback_bytes(&gpu.device, "test.wasm_stage.artifact.rb", 2048, 512);
         let body_length_readback =
             readback_bytes(&gpu.device, "test.wasm_stage.body_length.rb", 4, 1);
-        let body_readback = readback_bytes(&gpu.device, "test.wasm_stage.body.rb", 64, 16);
+        let body_readback = readback_bytes(&gpu.device, "test.wasm_stage.body.rb", 32, 8);
         target_total.copy_to(&mut encoder, 0, &total_readback, 0, 4);
         stage
             .instructions
-            .copy_to(&mut encoder, 0, &core_readback, 0, 160);
+            .copy_to(&mut encoder, 0, &core_readback, 0, 224);
+        semantic_status.copy_to(&mut encoder, 0, &status_readback, 0, 40);
         functions
             .count
             .copy_to(&mut encoder, 0, &function_count_readback, 0, 4);
@@ -1426,7 +1410,7 @@ mod tests {
             .abi_functions
             .copy_to(&mut encoder, 0, &abi_functions_readback, 0, 224);
         body_length.copy_to(&mut encoder, 0, &body_length_readback, 0, 4);
-        body_words.copy_to(&mut encoder, 0, &body_readback, 0, 64);
+        body_words.copy_to(&mut encoder, 0, &body_readback, 0, 32);
         stage.module.record(&mut encoder).unwrap();
         artifact
             .length
@@ -1436,59 +1420,63 @@ mod tests {
             .copy_to(&mut encoder, 0, &artifact_readback, 0, 2048);
         gpu.queue.submit(Some(encoder.finish()));
 
+        let status = read_words(&gpu.device, &status_readback);
+        assert_eq!(status, read_words_of(&cleared_status), "the fixture lowers cleanly");
         let core = read_words(&gpu.device, &core_readback);
-        assert_eq!(read_words(&gpu.device, &total_readback)[0], 10);
+        // Schedule: block, 7, 9, add, br_if (eqz + br_if), sym, x =, end,
+        // s (two words), t = (two words, last component first), return.
+        assert_eq!(read_words(&gpu.device, &total_readback)[0], 14);
         assert_eq!(
+            (0..14).map(|row| core[row * 4]).collect::<Vec<_>>(),
             [
-                core[0], core[4], core[8], core[12], core[16], core[20], core[24], core[28],
-                core[32], core[36],
-            ],
-            [
+                opcode::WASM_LIR_OP_BLOCK,
                 opcode::WASM_LIR_OP_I32_CONST,
                 opcode::WASM_LIR_OP_I32_CONST,
                 opcode::WASM_LIR_OP_I32_ADD,
                 opcode::WASM_LIR_OP_I32_EQZ,
                 opcode::WASM_LIR_OP_BRANCH_IF,
-                opcode::WASM_LIR_OP_LOCAL_SET,
                 opcode::WASM_LIR_OP_CALL_SYMBOL,
+                opcode::WASM_LIR_OP_LOCAL_SET,
+                opcode::WASM_LIR_OP_END,
+                opcode::WASM_LIR_OP_LOCAL_GET,
+                opcode::WASM_LIR_OP_LOCAL_GET,
+                opcode::WASM_LIR_OP_LOCAL_SET,
+                opcode::WASM_LIR_OP_LOCAL_SET,
                 opcode::WASM_LIR_OP_RETURN,
-                opcode::WASM_LIR_OP_LOCAL_GET,
-                opcode::WASM_LIR_OP_LOCAL_GET,
             ]
         );
-        assert_eq!(core[21], 5);
-        assert_eq!(core[33], 1);
-        assert_eq!(core[37], 2);
+        // Local indices: parameters p = 0 and s = 1, 2; locals t = 3, 4 and
+        // x = 5. The branch leaves the innermost block (depth 0).
         assert_eq!(
-            core[23],
-            1u32 << 8,
-            "resolved local.set must remain supported"
+            [5, 7, 9, 10, 11, 12].map(|row| core[row * 4 + 1]),
+            [0, 5, 1, 2, 4, 3]
         );
-        assert_eq!(
-            core[35],
-            1u32 << 8,
-            "the first word of a resolved string local.get must remain supported"
-        );
-        assert_eq!(
-            core[39],
-            1u32 << 8,
-            "the second word of a resolved string local.get must remain supported"
-        );
+        for row in [7, 9, 10, 11, 12] {
+            assert_eq!(
+                core[row * 4 + 3],
+                1u32 << 8,
+                "resolved local access at target row {row} must remain supported"
+            );
+        }
         assert_eq!(read_words(&gpu.device, &function_count_readback)[0], 1);
         assert_eq!(
             &read_words(&gpu.device, &functions_readback)[0..4],
-            &[0, 0, 10, 0]
+            &[0, 0, 14, 0]
         );
         let abi = read_words(&gpu.device, &abi_functions_readback);
-        assert_eq!(&abi[0..14], &[0, 10, 3, 3, 0, 10, 0, 21, 1, 0, 0, 2, 0, 2]);
-        assert_eq!(read_words(&gpu.device, &body_length_readback)[0], 21);
+        // Function 0: type 10, three parameter and three local values, 14
+        // instructions and 28 body bytes from 0, two parameters, two locals.
+        assert_eq!(&abi[0..14], &[0, 10, 3, 3, 0, 14, 0, 28, 1, 0, 0, 2, 0, 2]);
+        assert_eq!(read_words(&gpu.device, &body_length_readback)[0], 28);
         let body_bytes = read_words(&gpu.device, &body_readback)
             .into_iter()
             .flat_map(u32::to_le_bytes)
             .collect::<Vec<_>>();
         assert_eq!(
-            &body_bytes[..21],
+            &body_bytes[..28],
             &[
+                opcode::WASM_LIR_OP_BLOCK as u8,
+                0x40, // empty block type
                 opcode::WASM_LIR_OP_I32_CONST as u8,
                 7,
                 opcode::WASM_LIR_OP_I32_CONST as u8,
@@ -1497,24 +1485,35 @@ mod tests {
                 opcode::WASM_LIR_OP_I32_EQZ as u8,
                 opcode::WASM_LIR_OP_BRANCH_IF as u8,
                 0,
-                opcode::WASM_LIR_OP_LOCAL_SET as u8,
-                5,
+                // Every call has a five-byte padded LEB target; a symbol's is
+                // zero until the object link patches it.
                 opcode::WASM_LIR_OP_CALL as u8,
                 0x80,
                 0x80,
                 0x80,
                 0x80,
                 0,
-                opcode::WASM_LIR_OP_RETURN as u8,
+                opcode::WASM_LIR_OP_LOCAL_SET as u8,
+                5,
+                opcode::WASM_LIR_OP_END as u8,
                 opcode::WASM_LIR_OP_LOCAL_GET as u8,
                 1,
                 opcode::WASM_LIR_OP_LOCAL_GET as u8,
                 2,
+                opcode::WASM_LIR_OP_LOCAL_SET as u8,
+                4,
+                opcode::WASM_LIR_OP_LOCAL_SET as u8,
+                3,
+                opcode::WASM_LIR_OP_RETURN as u8,
             ]
         );
         // The module includes the target runtime's memory and mutable heap-pointer
         // global in addition to the function/table/export/code sections.
-        assert_eq!(read_words(&gpu.device, &artifact_length_readback)[0], 1020);
+        // module_layout: header 8, type section header 11, host types 132 and
+        // this function's 14, host imports 712, function section 11 + 5,
+        // memory 17, global 21, the entrypoint export 45, code section header
+        // 11 and the 81-byte code entry (see the object rows below) = 1068.
+        assert_eq!(read_words(&gpu.device, &artifact_length_readback)[0], 1068);
         let artifact_bytes = read_words(&gpu.device, &artifact_readback)
             .into_iter()
             .flat_map(u32::to_le_bytes)
@@ -1550,12 +1549,20 @@ mod tests {
                 executable_graph
                     .resource_id("lir.semantic.schedule_order")
                     .unwrap(),
-                8,
+                11,
             )
             .unwrap();
-        executable_status.write(&gpu.queue, 0, &words(&[[0, u32::MAX, 0, u32::MAX]]));
-        executable_order.write(&gpu.queue, 0, &words(&[[1u32, 0, 2, 3, 5, 6, 7, 4]]));
-        let executable_semantic = semantic_view!(&executable_status, &executable_order);
+        executable_status.write(&gpu.queue, 0, &cleared_status);
+        executable_order.write(&gpu.queue, 0, &schedule);
+        let (executable_core, executable_operands, executable_call_arg_total) =
+            semantic_rows(&executable_graph, &executable_workspace);
+        let executable_semantic = semantic_view!(
+            &executable_status,
+            &executable_order,
+            &executable_core,
+            &executable_operands,
+            &executable_call_arg_total
+        );
         let executable_optimizer = GpuOptimizationStage::new(
             &gpu.device,
             &executable_graph,
@@ -1594,14 +1601,14 @@ mod tests {
         let resident_artifact = executable_stage
             .finish_artifact(&gpu.device, &gpu.queue)
             .unwrap();
-        assert_eq!(resident_artifact.len(), 1020);
+        assert_eq!(resident_artifact.len(), 1068);
         assert_eq!(&resident_artifact[..8], b"\0asm\x01\0\0\0");
 
         // Object projection is a separate recording mode over the same
         // resident lowering graph. This fixture has one public function and
         // one imported call, exercising definition, symbol, and relocation
         // compaction together.
-        semantic_order.write(&gpu.queue, 0, &words(&[[1u32, 0, 2, 3, 5, 6, 7, 4]]));
+        semantic_order.write(&gpu.queue, 0, &schedule);
         let object = stage.object();
         let object_counts = readback_bytes(&gpu.device, "test.wasm_object.counts.rb", 12, 3);
         let object_function = readback_bytes(&gpu.device, "test.wasm_object.function.rb", 24, 6);
@@ -1637,25 +1644,31 @@ mod tests {
             .copy_to(&mut encoder, 0, &object_relocation, 0, 32);
         gpu.queue.submit(Some(encoder.finish()));
         assert_eq!(read_words(&gpu.device, &object_counts), &[1, 1, 1]);
+        // Type entry: 0x60, padded parameter count, three i32 values, padded
+        // result count = 14 bytes. Code entry (module_lengths): padded size,
+        // padded group count, five temporaries and the end (41 bytes), six
+        // bytes per local and the 28 instruction bytes = 81. The call's
+        // target LEB follows the 52 header bytes and the 10 instruction
+        // bytes before the call opcode: offset 63.
         assert_eq!(
             read_words(&gpu.device, &object_function),
-            &[0, 14, 0, 56, 1, 1]
+            &[0, 14, 0, 81, 1, 1]
         );
         assert_eq!(
             read_words(&gpu.device, &object_definition),
-            &[7, 11, 0, 0, 21, 0, 0, 0]
+            &[7, 11, 0, 0, 28, 0, 0, 0]
         );
         assert_eq!(
             read_words(&gpu.device, &object_relocation),
-            &[45, 2, 0, 0, 7, 11, 23, 0]
+            &[63, 2, 0, 0, 7, 11, 23, 0]
         );
         let (durable, _) = stage.finish_object(&gpu.device, &gpu.queue, 7, 11).unwrap();
         assert_eq!(durable.functions.len(), 1);
         assert_eq!(durable.functions[0].symbol_index, 1);
         assert_eq!(durable.type_bytes.len(), 14);
-        assert_eq!(durable.body_bytes.len(), 56);
+        assert_eq!(durable.body_bytes.len(), 81);
         assert_eq!(durable.relocations.len(), 1);
-        assert_eq!(durable.relocations[0].body_byte_offset, 45);
+        assert_eq!(durable.relocations[0].body_byte_offset, 63);
         assert_eq!(durable.relocations[0].target_index, 0);
         assert_eq!(durable.symbols.len(), 2);
         assert_eq!(durable.identity_bytes, words(&[[7, 11, 23], [7, 11, 0]]));
