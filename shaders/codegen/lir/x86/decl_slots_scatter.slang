@@ -167,9 +167,21 @@ uint parameter_register_slot(SemanticLirFunction function, uint ordinal, bool ha
     return slot < 4u ? slot : X86_LOCATION_INVALID;
 }
 
+// A local's claim on a register: its reads, each weighted by loop depth
+// (allocation_words' walk_function).
+uint local_read_weight(SemanticLirFunction function, uint index)
+{
+    uint declaration = semantic_lir_locals[function.local_start + index].declaration_id;
+    return declaration < gParams.token_capacity
+        ? x86_decl_analysis_by_token[declaration].read_count : 0u;
+}
+
 // The register slot of the function's local at `index`, or INVALID.
-// Register-typed locals take the slots parameters leave free, in order, so
-// a slice parameter or a non-register local does not use up a register.
+// Register-typed locals take the slots parameters leave free, the most-read
+// (by loop-weighted reads, then by order) first, so a slice parameter or a
+// non-register local does not use up a register. Whichever locals get them,
+// the slots taken are the first free ones (allocation_words'
+// declaration_register_mask).
 uint local_register_slot(SemanticLirFunction function, uint index, bool has_call,
                          bool header)
 {
@@ -187,18 +199,23 @@ uint local_register_slot(SemanticLirFunction function, uint index, bool has_call
         uint slot = parameter_register_slot(function, ordinal, has_call, header);
         if (slot != X86_LOCATION_INVALID) slots |= 1u << slot;
     }
-    uint cursor = 0u;
-    for (uint prior = 0u; prior <= index; prior += 1u)
+    if (!scalar_gpr_type(semantic_lir_locals[function.local_start + index].type_id))
+        return X86_LOCATION_INVALID;
+    uint weight = local_read_weight(function, index);
+    uint rank = 0u;
+    for (uint other = 0u; other < min(function.local_count, LOCAL_SLOT_SCAN_LIMIT); other += 1u)
     {
-        if (!scalar_gpr_type(semantic_lir_locals[function.local_start + prior].type_id))
-        {
-            if (prior == index) return X86_LOCATION_INVALID;
+        if (other == index ||
+            !scalar_gpr_type(semantic_lir_locals[function.local_start + other].type_id))
             continue;
-        }
-        while (cursor < limit && (slots & (1u << cursor)) != 0u) cursor += 1u;
-        if (cursor >= limit) return X86_LOCATION_INVALID;
-        if (prior == index) return cursor;
-        cursor += 1u;
+        uint other_weight = local_read_weight(function, other);
+        if (other_weight > weight || (other_weight == weight && other < index)) rank += 1u;
+    }
+    for (uint cursor = 0u; cursor < limit; cursor += 1u)
+    {
+        if ((slots & (1u << cursor)) != 0u) continue;
+        if (rank == 0u) return cursor;
+        rank -= 1u;
     }
     return X86_LOCATION_INVALID;
 }

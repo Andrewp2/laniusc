@@ -50,7 +50,9 @@ StructuredBuffer<SemanticLirLocal> semantic_lir_locals;
 RWStructuredBuffer<uint> x86_location_by_semantic;
 RWStructuredBuffer<uint> x86_stack_words_by_position;
 RWStructuredBuffer<uint> x86_saved_gpr_mask_by_function;
-StructuredBuffer<X86DeclarationAnalysis> x86_decl_analysis_by_token;
+// walk_function adds loop weight to read_count (only ever tested for zero
+// elsewhere), so decl_slots gives registers to the most-read locals.
+RWStructuredBuffer<X86DeclarationAnalysis> x86_decl_analysis_by_token;
 StructuredBuffer<uint4> semantic_place_storage_by_token;
 
 static const uint INVALID = 0xffffffffu;
@@ -499,16 +501,39 @@ void walk_function(uint function_id, uint start, uint end, uint total,
     // distances to the next call and the next back-edge target after it; a
     // back-edge target's word holds the farthest position that jumps back
     // to it. The forward pass replaces every one of these words.
+    //
+    // The same pass weighs every declaration read by its loop depth: the
+    // headers of the (at most three innermost) loops around `cursor`, which
+    // the back-edges met so far open, are `inner`, `middle` and `outer`.
     bool sound = true;
     bool has_loop = false;
     uint next_call = INVALID;
     uint next_target = INVALID;
+    uint inner = INVALID;
+    uint middle = INVALID;
+    uint outer = INVALID;
+    uint depth = 0u;
     for (uint cursor = end; cursor > start; )
     {
         cursor -= 1u;
+        if (depth != 0u && cursor < inner)
+        {
+            inner = middle;
+            middle = outer;
+            outer = INVALID;
+            depth -= 1u;
+        }
         uint row = semantic_schedule_order[cursor];
         if (row >= total || function_for_node(row) != function_id) continue;
         uint op = opt_ir_op(opt_ir_core[row]);
+        if (depth != 0u && (op == SEMANTIC_LIR_OP_VALUE_GET || op == SEMANTIC_LIR_OP_ADDRESS))
+        {
+            uint declaration = opt_ir_operands[row].a;
+            uint ignored;
+            if (declaration < gParams.token_capacity)
+                InterlockedAdd(x86_decl_analysis_by_token[declaration].read_count,
+                    (1u << (3u * depth)) - 1u, ignored);
+        }
         uint target = branch_target(op, opt_ir_operands[row]);
         if (target < total)
         {
@@ -521,6 +546,13 @@ void walk_function(uint function_id, uint start, uint end, uint total,
                     sound = false;
                 else
                 {
+                    if (depth == 0u || target_position > inner)
+                    {
+                        outer = middle;
+                        middle = inner;
+                        inner = target_position;
+                        depth = min(depth + 1u, 3u);
+                    }
                     has_loop = true;
                     uint prior = x86_location_by_semantic[target];
                     x86_location_by_semantic[target] =

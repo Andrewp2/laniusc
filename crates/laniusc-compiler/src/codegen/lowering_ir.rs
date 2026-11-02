@@ -8760,7 +8760,7 @@ fn lowering_compiler_graph_builder(
                     "x86_saved_gpr_mask_by_function",
                     x86_saved_gpr_mask_by_function.expect("x86 saved-register resource"),
                 ),
-                PassAccess::read(
+                PassAccess::read_write(
                     "x86_decl_analysis_by_token",
                     x86_decl_analysis_by_token.expect("x86 declaration analysis resource"),
                 ),
@@ -9776,6 +9776,11 @@ fn lowering_compiler_graph_builder(
                         x86_position_by_semantic.expect("x86 schedule position resource"),
                     ),
                     PassAccess::read("target_lir_offset", target_offsets),
+                    PassAccess::read("opt_ir_core", opt_core),
+                    PassAccess::read("opt_ir_operands", opt_operands),
+                    PassAccess::read("semantic_schedule_order", schedule_order),
+                    PassAccess::read("opt_ir_source_hir", opt_source_hir),
+                    PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
                 ],
             })?;
         }
@@ -10126,6 +10131,11 @@ fn lowering_compiler_graph_builder(
                     x86_position_by_semantic.expect("x86 schedule position resource"),
                 ),
                 PassAccess::read("target_lir_offset", target_offsets),
+                PassAccess::read("opt_ir_core", opt_core),
+                PassAccess::read("opt_ir_operands", opt_operands),
+                PassAccess::read("semantic_schedule_order", schedule_order),
+                PassAccess::read("opt_ir_source_hir", opt_source_hir),
+                PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
             ],
         })?;
         graph.add_pass(PassDesc {
