@@ -281,6 +281,14 @@ theorem index_trap {slice : Nat} {idx : Core.Expr} {element : Core.Ty} {address 
   have h' := Semantics.evalExpr_of_le h (by intro h; cases h) (Nat.le_succ j)
   rw [evalExpr.eq_def]; simp only [base, h']
 
+/-- A safe slice local's index that traps traps the read. -/
+theorem index_trap_any {slice : Nat} {idx : Core.Expr} {element : Core.Ty} {cell : Nat}
+    {projections : List Core.ValueProjection} {start length j : Nat} {r : Lanius.Trap} {s : State}
+    (base : evalExpr (j + 1) P st (.local slice) = .done (.slice element cell projections start length) st)
+    (h : evalExpr j P st idx = .trapped r s) : evalExpr (j + 2) P st (.index (.local slice) idx) = .trapped r s := by
+  have h' := Semantics.evalExpr_of_le h (by intro h; cases h) (Nat.le_succ j)
+  rw [evalExpr.eq_def]; simp only [base, h']
+
 /-- Core's read of `slice[idx]` from a raw slice local, the index evaluated
 from `st` to `st1` and in bounds: a value, or an undefined trap. -/
 theorem index_eff_outcome {k : Nat} {slice : Nat} {idx : Core.Expr} {element : Core.Ty}
@@ -301,6 +309,19 @@ theorem index_eff_outcome {k : Nat} {slice : Nat} {idx : Core.Expr} {element : C
   cases read : Semantics.readRawSliceIndex P st1 element address length pos with
   | ok v => exact .inl ⟨v, rfl⟩
   | error r => exact .inr ⟨r, rfl, readRawSliceIndex_undef lt r read⟩
+/-- Core's read of `slice[idx]` from a safe slice of a whole array, the index
+evaluated from `st` to `st1` and below the length: a value. -/
+theorem index_eff_outcome_safe {k : Nat} {slice : Nat} {idx : Core.Expr} {element : Core.Ty}
+    {cell length : Nat} {iv : Value} {pos : Nat} {st1 : State} {elems : List Value}
+    (base : evalExpr (k + 1) P st (.local slice) = .done (.slice element cell [] 0 length) st)
+    (idxRun : evalExpr (k + 1) P st idx = .done iv st1) (posOk : Semantics.integerIndex iv = .ok pos)
+    (lt : pos < length) (values : Semantics.sliceValues st1 cell [] 0 length = .ok elems)
+    (len : elems.length = length) :
+    ∃ v, evalExpr (k + 2) P st (.index (.local slice) idx) = .done v st1 := by
+  have got : elems[pos]? = some elems[pos] := List.getElem?_eq_getElem (by omega)
+  refine ⟨elems[pos], ?_⟩
+  rw [evalExpr.eq_def]
+  simp only [base, idxRun, posOk, lt, ↓reduceIte, values, got]
 
 theorem intrinsic_trap {op : Core.Intrinsic} {e : Core.Expr} {j : Nat} {r : Lanius.Trap} {s : State}
     (h : evalExpr j P st e = .trapped r s) : evalExpr (j + 1) P st (.intrinsic op e) = .trapped r s := by
@@ -698,7 +719,7 @@ theorem eff_stride {slice : Nat} : EffStops sp mp n (.eStride slice) := by
   obtain ⟨w, localRun, holdsW⟩ := corr.local found 0 sp.toCore
   rw [eq_of_elementOf elementOk] at holdsW
   cases holdsW with
-  | slice =>
+  | slice | borrowed =>
   have := fails 2
   simp only [SrcEff.toCore] at this
   rw [evalExpr.eq_def] at this
@@ -1034,6 +1055,27 @@ theorem eff_index (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some
   · have := fails (k + 2)
     simp only [trapRun, Failing] at this
     exact (trap_within this undefined bound).elim
+  | @borrowed _ len x _ _ mem sliced root xty _ pointerSlot lenSlot lenSmall =>
+  rcases eff_split lowered ih indexOk corr fr fresh hc fc within fails
+      (fun j r s h => ⟨j + 2, s, index_trap_any (value_after localRun0 (by omega)) h, rfl⟩) with
+    ⟨d, stops⟩ | ⟨k, iv, st1, run, bound, -, -, -, _, d1, env1, hp1, exec1, same1, holds1, -, fc1⟩
+  · exact ⟨d, .seqFirst stops⟩
+  by_cases zero : (boundsGuard b (.var slot)).eval env1 = 0
+  · exact ⟨_, Stops.after exec1 (Stops.check (d := 0) fun h => absurd zero h)⟩
+  have slot2 : b.slot + 1 < slot := by
+    have := fr.slots b (lookup_mem found).1
+    rw [bty] at this
+    simp only [SrcType.size] at this
+    omega
+  have inBounds := boundsGuard_ne zero
+  rw [same1 _ slot2, lenSlot] at inBounds
+  have scalar : i.ty.isScalar = true := by
+    cases hty : i.ty <;> simp_all [SrcType.isI32, SrcType.isUint, SrcType.isScalar]
+  have posOk := index_ok (t := { expr := .var slot, ty := i.ty }) kind (holds_var holds1 scalar) (by omega)
+  obtain ⟨elems, values, elemsLen⟩ := fc1.borrowed_values mem root xty
+  obtain ⟨v, done⟩ := index_eff_outcome_safe (value_after localRun0 (by omega : 0 + 1 ≤ k + 1))
+    (value_after run (Nat.le_succ k)) posOk inBounds values elemsLen
+  exact (fails.not_done done bound).elim
 
 theorem eff_struct (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {ty : SrcType}
     {fields : List SrcEff} (each : ∀ e ∈ fields, EffStops sp mp n e) : EffStops sp mp n (.eStruct ty fields) := by
@@ -1899,6 +1941,73 @@ theorem arraySet_done {vs : List Value} {iv : Value} {st1 : State} {pos : Nat} {
     List.nil_append, Semantics.replaceProjectedValue, assignCell_some entry2, synced, ite_self] at hout
   exact hout.symm
 
+/-- Core's store into a safe slice whose index traps traps. -/
+theorem setIndex_idx_trap_safe {cell : Nat} {r : Lanius.Trap} {s : State}
+    (base : Semantics.evalPlace (k + 1) P st .read (.local slice) =
+      .done { root, projections := [], value := some (.slice element cell [] 0 length) } st)
+    (h : evalExpr (k + 1) P st idx = .trapped r s) :
+    evalExpr (k + 3) P st (.assign .set (.index (.local slice) idx) e) = .trapped r s := by
+  generalize hout : evalExpr (k + 3) P st (.assign .set (.index (.local slice) idx) e) = out
+  rw [evalExpr] at hout
+  rw [Semantics.evalPlace] at hout
+  rw [base] at hout
+  simp only [h] at hout
+  exact hout.symm
+
+/-- Core's store into a safe slice of a whole array, below its length,
+whose value traps traps. -/
+theorem setIndex_value_trap_safe {cell : Nat} {iv : Value} {st1 : State} {pos : Nat} {elems : List Value}
+    {r : Lanius.Trap} {s : State}
+    (base : Semantics.evalPlace (k + 1) P st .read (.local slice) =
+      .done { root, projections := [], value := some (.slice element cell [] 0 length) } st)
+    (idxRun : evalExpr (k + 1) P st idx = .done iv st1) (posOk : Semantics.integerIndex iv = .ok pos)
+    (lt : pos < length) (values : Semantics.sliceValues st1 cell [] 0 length = .ok elems)
+    (len : elems.length = length) (h : evalExpr (k + 2) P st1 e = .trapped r s) :
+    evalExpr (k + 3) P st (.assign .set (.index (.local slice) idx) e) = .trapped r s := by
+  have got : elems[pos]? = some elems[pos] := List.getElem?_eq_getElem (by omega)
+  generalize hout : evalExpr (k + 3) P st (.assign .set (.index (.local slice) idx) e) = out
+  rw [evalExpr] at hout
+  rw [Semantics.evalPlace] at hout
+  rw [base] at hout
+  simp only [idxRun, posOk, lt, ↓reduceIte, values, got, h] at hout
+  exact hout.symm
+
+/-- Core's store into a safe slice of a whole array, below its length,
+whose value finishes, finishes, leaving the bump heap as the value did. -/
+theorem setIndex_value_done_safe {cell : Nat} {iv : Value} {st1 : State} {pos : Nat} {elems : List Value}
+    {right : Value} {st2 : State} {vs : List Value}
+    (views : st2.i32ArrayViews = [])
+    (base : Semantics.evalPlace (k + 1) P st .read (.local slice) =
+      .done { root, projections := [], value := some (.slice element cell [] 0 length) } st)
+    (idxRun : evalExpr (k + 1) P st idx = .done iv st1) (posOk : Semantics.integerIndex iv = .ok pos)
+    (lt : pos < length) (values : Semantics.sliceValues st1 cell [] 0 length = .ok elems)
+    (len : elems.length = length) (eRun : evalExpr (k + 2) P st1 e = .done right st2)
+    (read : Semantics.readCellProjection st2 cell [] = .ok (.array vs)) (vsLen : vs.length = length) :
+    ∃ st', evalExpr (k + 3) P st (.assign .set (.index (.local slice) idx) e) = .done .unit st' ∧
+      st'.heap.nextAddress = st2.heap.nextAddress := by
+  have got : elems[pos]? = some elems[pos] := List.getElem?_eq_getElem (by omega)
+  have got2 : vs[pos]? = some vs[pos] := List.getElem?_eq_getElem (by omega)
+  cases entry : st2.cellEntry? cell with
+  | none => simp [Semantics.readCellProjection, entry] at read
+  | some en =>
+    obtain ⟨eid, ev⟩ := en
+    cases ev with
+    | none => simp [Semantics.readCellProjection, entry] at read
+    | some rootValue =>
+      simp only [Semantics.readCellProjection, entry, Semantics.projectedValue, Except.ok.injEq] at read
+      subst read
+      refine ⟨{ st2 with cells := Semantics.replaceCell st2.cells cell (.array (Semantics.setValue vs pos right)) },
+        ?_, rfl⟩
+      rw [evalExpr]
+      rw [Semantics.evalPlace]
+      rw [base]
+      simp only [idxRun, posOk, lt, ↓reduceIte, values, got, eRun, Semantics.evalAssignValue,
+        Semantics.assignOpBinary?, Semantics.writeResolvedPlaceNative, Semantics.writeResolvedPlace,
+        List.nil_append, Nat.zero_add, entry, Semantics.replaceProjectedValue, got2, State.assignCell,
+        Option.isSome_some, if_true, Semantics.ResolvedPlace.viewFreeRootWrite, List.isEmpty_cons,
+        Bool.false_and, Bool.and_false, Bool.false_eq_true, if_false, Semantics.syncI32ViewsToHeap, views,
+        Semantics.syncI32ViewsToHeapFrom]
+
 end SetIndex
 
 /-- A failing `array[index] = value` on an array local: the index's code
@@ -2026,6 +2135,48 @@ theorem stops_setIndexEval (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.fun
   obtain ⟨w0, place0, holdsW⟩ := corr.readPlace found 0 sp.toCore
   rw [bty] at holdsW
   cases holdsW with
+  | @borrowed _ len x _ _ mem sliced root xty _ pointerSlot lenSlot lenSmall =>
+    have placeAt : ∀ f, Semantics.evalPlace (f + 1) sp.toCore st .read (.local slice) =
+        .done { root := frame b.slot, projections := [], value := some (.slice element.toCore x.cell [] 0 len) }
+          st := fun f => by
+      have refines := Semantics.evalPlace_refines (program := sp.toCore) (state := st) (access := .read)
+        (place := .local slice) (Nat.le_add_left 1 f)
+      rw [place0] at refines
+      exact refines.completed (by intro h; cases h)
+    simp only [SrcStmt.toCore] at fails
+    have efails := fails.expression
+    rcases eff_split lowered ihi indexOk corr fr fresh hc fc within efails
+        (fun j r s h => ⟨j + 3, s, setIndex_idx_trap_safe (placeAt j)
+          (Semantics.evalExpr_of_le h (by intro h; cases h) (Nat.le_succ j)), rfl⟩) with
+      ⟨d, stops⟩ | ⟨k, iv, st1, indexRun, bound1, fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, holds1, hc1, fc1⟩
+    · exact ⟨d, .seqFirst stops⟩
+    by_cases zero : (boundsGuard b (.var next)).eval env1 = 0
+    · exact ⟨_, Stops.after exec1 (Stops.check (d := 0) fun h => absurd zero h)⟩
+    have slot2 : b.slot + 1 < next := by
+      have := fr.slots b bmem
+      rw [bty] at this
+      simp only [SrcType.size] at this
+      omega
+    have inBounds := boundsGuard_ne zero
+    rw [same1 _ slot2, lenSlot] at inBounds
+    have scalar : i.ty.isScalar = true := by
+      cases hty : i.ty <;> simp_all [SrcType.isI32, SrcType.isUint, SrcType.isScalar]
+    have posOk := index_ok (t := { expr := .var next, ty := i.ty }) kind (holds_var holds1 scalar) (by omega)
+    have limit := exec1.limit_normal
+    obtain ⟨elems, values, elemsLen⟩ := fc1.borrowed_values mem root xty
+    have efails1 : EFails sp hp1.limit st (.assign .set (.index (.local slice) index.toCore) value.toCore) := by
+      rw [limit]; exact efails
+    rcases eff_split lowered ihv valueOk (corr.after fr fresh keeps1 locals1 same1) (fr.mono (Nat.le_succ _))
+        fresh1 hc1 fc1 (by rw [limit]; exact bound1) efails1
+        (fun j r s h => ⟨k + j + 3, s, setIndex_value_trap_safe (placeAt (k + j))
+          (value_after indexRun (by omega)) posOk inBounds values elemsLen
+          (Semantics.evalExpr_of_le h (by intro h; cases h) (by omega)), rfl⟩) with
+      ⟨d, stops⟩ | ⟨j, right, st2, valueRun, bound2, fresh2, -, -, _, -, -, hp2, -, -, -, -, fc2⟩
+    · exact ⟨_, Stops.after exec1 (Stops.check fun _ => .seqFirst stops)⟩
+    · obtain ⟨vs, read, vsLen, -⟩ := fc2.array mem root xty
+      obtain ⟨st', run, keepsNext⟩ := setIndex_value_done_safe fresh2.2 (placeAt (k + j))
+        (value_after indexRun (by omega)) posOk inBounds values elemsLen (value_after valueRun (by omega)) read vsLen
+      exact (efails1.not_done run (by rw [keepsNext]; exact bound2)).elim
   | @slice _ len _ _ lenSlot lenSmall =>
   have placeAt : ∀ f, Semantics.evalPlace (f + 1) sp.toCore st .read (.local slice) =
       .done { root := frame b.slot, projections := [], value := some (.rawSlice element.toCore (env b.slot).toNat len) }

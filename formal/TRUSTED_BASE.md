@@ -39,12 +39,21 @@ stopping at the computations the theorems are about (`compileSource`,
 `linkObjects`, `elfFile`, `sourceProgramFiles`, `compileWords`,
 `frontEndWords` and the self program `Lanius.Faithful.Self.prog`, which are
 not trusted, section 10), with each one's type and body:
-definitions `30cfc8a1287e8470` (4,477 constants). This covers Core's
+definitions `d230774a2b033659` (4,489 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
 the statements' own definitions (section 2). A private name is hashed
 without its module, so a definition that only moves between generated
-modules keeps its hash. The last change of the hash (11-01, step 3.3 of
-array-to-slice arguments): `Addressed` (`Mini/Source.lean`) has a field
+modules keeps its hash. The last change of the hash (11-01, steps 3.3 and 3.4 of
+array-to-slice arguments): `SrcType.HoldsAt` has a constructor `borrowed`,
+a slice of a caller's array in `places` (marked `sliced`, a whole array of
+`i32` or `u8` elements), the slot holding `Addressed.pointer` (new, with its
+match and case helpers) and the next slot its length, and Core's value the
+safe slice `.slice element cell [] 0 length` of the array's cell. Core's
+`rawSliceStride?` answers for a safe slice with its element's native stride,
+as it does for a raw slice (SEMANTIC_DECISIONS, "Addressed locals"). The
+top theorems pass `places := []`, where `borrowed` cannot hold, so their
+statements mean what they did. The hash before it was `30cfc8a1287e8470`.
+Before that (11-01, step 3.3 of array-to-slice arguments): `Addressed` (`Mini/Source.lean`) has a field
 `sliced`, which marks an array passed as a slice, laid out as a slice's
 elements in frame memory; no constructor of `SrcType.HoldsAt` reads it yet.
 The hash before it was `c1629d03f01a2c36`. Before that (11-01, merge of lang

@@ -1740,10 +1740,10 @@ theorem eq_of_elementOf {ty e : SrcType} (h : elementOf ty = some e) : ty = .sli
   cases ty <;> simp_all [elementOf]
 
 theorem stride_inv {P : Core.Program} {k : Nat} {st : State} {slice : Nat}
-    {element : Core.Ty} {address length : Nat} {v : Value} {st1 : State}
-    (base : evalExpr (k + 1) P st (.local slice) = .done (.rawSlice element address length) st)
+    {w : Value} {v : Value} {st1 : State}
+    (base : evalExpr (k + 1) P st (.local slice) = .done w st)
     (run : evalExpr (k + 2) P st (.intrinsic .sliceStride (.local slice)) = .done v st1) :
-    st1 = st ∧ ∃ stride, Semantics.rawSliceStride? P (.rawSlice element address length) = some stride ∧
+    st1 = st ∧ ∃ stride, Semantics.rawSliceStride? P w = some stride ∧
       v = .signed .isize stride := by
   simp only [evalExpr] at run base
   rw [base] at run
@@ -1771,9 +1771,12 @@ theorem eval_stride {k slice : Nat} (ok : evalStride sp.decls scope slice slot =
   have bty := eq_of_elementOf elementOk
   obtain ⟨w, localRun, holdsW⟩ := corr.local found k sp.toCore
   rw [bty] at holdsW
-  cases holdsW with
-  | @slice _ len _ _ lenSlot _ =>
   obtain ⟨rfl, stride, strideOk, rfl⟩ := stride_inv localRun run
+  obtain ⟨address, length, strideOk⟩ : ∃ a l,
+      Semantics.rawSliceStride? sp.toCore (.rawSlice element.toCore a l) = some stride := by
+    cases holdsW with
+    | slice => exact ⟨_, _, strideOk⟩
+    | borrowed => exact ⟨0, 0, by simpa [Semantics.rawSliceStride?] using strideOk⟩
   suffices code : ∃ e, ev = { stmt := .assign slot e, ty := .isize } ∧
       SrcType.isize.Holds (.signed .isize stride) (e.eval env) by
     obtain ⟨e, rfl, holds⟩ := code
@@ -1824,27 +1827,6 @@ theorem eval_stride {k slice : Nat} (ok : evalStride sp.decls scope slice slot =
     rw [stride_word_bits (by simpa [NativeLayout.maxWords] using small)]
     rfl
 
-theorem fieldsHold_replicate_get {e : SrcType} : ∀ {n : Nat} {vs : List Value} {env : Env} {slot pos : Nat}
-    {v : Value}, FieldsHold places (List.replicate n e) vs env slot → vs[pos]? = some v →
-      e.HoldsAt places v env (slot + pos * e.size)
-  | 0, _, _, _, _, _, h, found => by
-    cases h
-    simp at found
-  | n + 1, _, _, slot, pos, _, h, found => by
-    rw [List.replicate_succ] at h
-    cases h with
-    | cons head rest =>
-      cases pos with
-      | zero =>
-        simp only [List.getElem?_cons_zero, Option.some.injEq] at found
-        subst found
-        simpa using head
-      | succ pos =>
-        simp only [List.getElem?_cons_succ] at found
-        have := fieldsHold_replicate_get rest found
-        rw [show slot + (pos + 1) * e.size = slot + e.size + pos * e.size by rw [Nat.succ_mul]; omega]
-        exact this
-
 theorem pickElement_exec {mp : Program} {d : Nat} {hp : Heap} {out : Outcome} {slot base size pos : Nat} {env : Env}
     (at_ : (env slot).toNat = pos)
     (exec : Exec mp d (env.setFrom slot (slotVars (base + pos * size) size)) hp .skip out) :
@@ -1873,31 +1855,6 @@ theorem pickElement_exec {mp : Program} {d : Nat} {hp : Heap} {out : Outcome} {s
             exact eq this
           simp [Expr.eval, Word.holds, CmpOp.holdsU, ne]
         · exact ih (k + 1) (by omega) (by omega)
-
-theorem fieldsHold_replicate_set {e : SrcType} {v : Value} {env env' : Env} :
-    ∀ {n : Nat} {vs : List Value} {slot pos : Nat}, FieldsHold places (List.replicate n e) vs env slot → pos < n →
-      e.HoldsAt places v env' (slot + pos * e.size) →
-      (∀ j, j < slot + pos * e.size ∨ slot + pos * e.size + e.size ≤ j → env' j = env j) →
-      FieldsHold places (List.replicate n e) (Semantics.setValue vs pos v) env' slot
-  | 0, _, _, _, _, lt, _, _ => by omega
-  | n + 1, _, slot, pos, h, lt, held, away => by
-    rw [List.replicate_succ] at h ⊢
-    cases h with
-    | cons head rest =>
-      cases pos with
-      | zero =>
-        simp only [Semantics.setValue]
-        refine .cons (by simpa using held) (rest.congr fun i _ => ?_)
-        exact away _ (.inr (by simp only [Nat.zero_mul]; omega))
-      | succ pos =>
-        simp only [Semantics.setValue]
-        refine .cons (head.congr fun i below => away _ (.inl ?_)) ?_
-        · rw [Nat.succ_mul]; omega
-        · refine fieldsHold_replicate_set rest (by omega) ?_ ?_
-          · rw [show slot + e.size + pos * e.size = slot + (pos + 1) * e.size by rw [Nat.succ_mul]; omega]
-            exact held
-          · intro j hj
-            exact away j (by rw [Nat.succ_mul]; omega)
 
 theorem putElement_exec {mp : Program} {d : Nat} {hp : Heap} {out : Outcome} {slot base size pos : Nat} {env : Env}
     (at_ : (env slot).toNat = pos)
@@ -2079,6 +2036,43 @@ theorem eval_index {k : Nat} (ihe : EvalSound sp mp (k + 1)) {slice : Nat} {inde
       simp only [SrcType.Holds, Env.set, ↓reduceIte, address, BitVec.toNat_ofNat, UintTy.toCore, UintTy.width,
         Heap.readLE]
       exact ⟨by rw [Nat.mod_eq_of_lt (by omega)]; simp, by rw [Nat.mod_eq_of_lt (by omega)]; exact lt8⟩
+      | @borrowed _ len x _ _ mem sliced root xty _ pointerSlot lenSlot _ =>
+      obtain ⟨iv, pos, elems, indexRun, posOk, inBounds, values, got⟩ := eval_index_safe localRun run
+      obtain ⟨fresh1, keeps1, locals1, -, d1, env1, hp1, exec1, same1, holds1, hc1, fc1⟩ :=
+        ihe indexOk corr fr fresh hc fc indexRun bound
+      have scalar : i.ty.isScalar = true := by
+        cases hty : i.ty <;> simp_all [SrcType.isI32, SrcType.isUint, SrcType.isScalar]
+      have holdsI := holds_var holds1 scalar
+      have posEq := index_toNat (t := { expr := .var slot, ty := i.ty }) kind holdsI posOk
+      have bslot : env1 b.slot = env b.slot := same1 b.slot (by have := fr.slots b (lookup_mem found).1; have := fr.sized b (lookup_mem found).1; omega)
+      have slot2 : b.slot + 1 < slot := by
+        have := fr.slots b (lookup_mem found).1
+        rw [bty] at this
+        simp only [SrcType.size] at this
+        omega
+      have pass : (boundsGuard b (.var slot)).eval env1 = 1 :=
+        boundsGuard_one (by rw [same1 _ slot2, lenSlot]; simp only [Expr.eval] at posEq ⊢; omega)
+      obtain ⟨-, elementHolds⟩ := fc1.borrowed_get mem root xty values got
+      cases elementHolds with
+      | uint vHolds =>
+      simp only [SrcType.size, Nat.mul_one] at vHolds
+      rw [Addressed.view_u8 sliced xty, Addressed.pointer_u8 xty] at vHolds
+      have blk := fc1.block mem
+      have sz := Addressed.size_u8 xty
+      have ptr : (env b.slot).toNat = x.address := by rw [pointerSlot, Addressed.pointer_u8 xty]
+      have address : ((Expr.binary Word.u64 BinOp.add (Expr.var b.slot) (Expr.var slot)).eval env1).toNat =
+          x.address + pos := by
+        simp only [Expr.eval, Word.apply, BinOp.apply, BitVec.toNat_add, bslot]
+        simp only [Expr.eval] at posEq
+        rw [posEq, ptr]
+        rw [Nat.mod_eq_of_lt (by omega)]
+      have room : ((Expr.binary Word.u64 BinOp.add (Expr.var b.slot) (Expr.var slot)).eval env1).toNat < hp1.top := by
+        rw [address]; omega
+      refine ⟨fresh1, keeps1, locals1, by simp [SrcType.size], d1, _, hp1,
+        .seq exec1 ((Exec.loadByte room).checkThen pass),
+        fun j lt => by rw [set_below lt, same1 j lt], .uint ?_, hc1, fc1⟩
+      simp only [Env.set, ↓reduceIte, address]
+      simpa [Heap.readLE] using vHolds
     split at ok
     · simp at ok
     rename_i i indexOk
@@ -2122,6 +2116,13 @@ theorem eval_index {k : Nat} (ihe : EvalSound sp mp (k + 1)) {slice : Nat} {inde
     refine ⟨fresh1, keeps1, locals1, wordElement_size hel, d1, _, hp1,
       .seq exec1 ((load (assignFrom_exec _ slot .skip)).checkThen pass), fun j lt => ?_, copied, hc1, fc1⟩
     rw [agree j lt, agree2 j (.inl (by omega)), same1 j lt]
+    | @borrowed _ _ _ _ _ _ _ _ _ packed _ _ _ =>
+    simp only [evalWordElement] at ok
+    split at ok
+    case isFalse => simp at ok
+    rename_i cond
+    simp only [Bool.and_eq_true] at cond
+    rcases packed with rfl | rfl <;> simp [wordElement, SrcType.isUint, UintTy.code] at cond
   rename_i isI32
   have eltEq := eq_of_isI32 isI32
   subst eltEq
@@ -2187,6 +2188,46 @@ theorem eval_index {k : Nat} (ihe : EvalSound sp mp (k + 1)) {slice : Nat} {inde
     fun j lt => by rw [set_below lt, same1 j lt], .i32 ?_, hc1, fc1⟩
   simp only [Env.set, if_pos, address, MemWidth.bytes]
   exact i32_load_holds (by simpa using lt32)
+  | @borrowed _ len x _ _ mem sliced root xty _ pointerSlot lenSlot _ =>
+  obtain ⟨iv, pos, elems, indexRun, posOk, inBounds, values, got⟩ := eval_index_safe localRun run
+  obtain ⟨fresh1, keeps1, locals1, -, d1, env1, hp1, exec1, same1, holds1, hc1, fc1⟩ :=
+    ihe indexOk corr fr fresh hc fc indexRun bound
+  have scalar : i.ty.isScalar = true := by
+    cases hty : i.ty <;> simp_all [SrcType.isI32, SrcType.isUint, SrcType.isScalar]
+  have holdsI := holds_var holds1 scalar
+  have posEq := index_toNat (t := { expr := .var slot, ty := i.ty }) kind holdsI posOk
+  have bslot : env1 b.slot = env b.slot := same1 b.slot (by have := fr.slots b (lookup_mem found).1; have := fr.sized b (lookup_mem found).1; omega)
+  have slot2 : b.slot + 1 < slot := by
+    have := fr.slots b (lookup_mem found).1
+    rw [bty] at this
+    simp only [SrcType.size] at this
+    omega
+  have pass : (boundsGuard b (.var slot)).eval env1 = 1 :=
+    boundsGuard_one (by rw [same1 _ slot2, lenSlot]; simp only [Expr.eval] at posEq ⊢; omega)
+  obtain ⟨-, elementHolds⟩ := fc1.borrowed_get mem root xty values got
+  cases elementHolds with
+  | i32 vHolds =>
+  simp only [SrcType.size, Nat.mul_one] at vHolds
+  rw [Addressed.view_i32 sliced xty, Addressed.pointer_i32 xty] at vHolds
+  have blk := fc1.block mem
+  have sz := Addressed.size_i32 xty
+  have ptr : (env b.slot).toNat = x.address := by rw [pointerSlot, Addressed.pointer_i32 xty]
+  have address : ((Expr.binary Word.u64 BinOp.add (Expr.var b.slot)
+      (Expr.binary Word.u64 BinOp.mul (Expr.var slot) (Expr.lit 4))).eval env1).toNat = x.address + pos * 4 := by
+    have four : (4 : BitVec 64).toNat = 4 := rfl
+    simp only [Expr.eval, Word.apply, BinOp.apply, BitVec.toNat_add, BitVec.toNat_mul, four, bslot]
+    simp only [Expr.eval] at posEq
+    rw [posEq, ptr]
+    rw [Nat.mod_eq_of_lt (a := pos * 4) (by omega), Nat.mod_eq_of_lt (by omega)]
+  have room : ((Expr.binary Word.u64 BinOp.add (Expr.var b.slot)
+      (Expr.binary Word.u64 BinOp.mul (Expr.var slot) (Expr.lit 4))).eval env1).toNat + MemWidth.m32.bytes ≤
+      hp1.top := by
+    rw [address]; simp only [MemWidth.bytes]; omega
+  refine ⟨fresh1, keeps1, locals1, by simp [SrcType.size], d1, _, hp1, .seq exec1 ((Exec.loadWord room).checkThen pass),
+    fun j lt => by rw [set_below lt, same1 j lt], .i32 ?_, hc1, fc1⟩
+  simp only [Env.set, if_pos, address, MemWidth.bytes]
+  rw [Nat.mul_comm pos 4]
+  exact vHolds
 
 /-- A struct literal: its fields, one after another from `slot`. -/
 theorem eval_struct {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {ty : SrcType} {fields : List SrcEff}
@@ -2945,6 +2986,75 @@ theorem eval_setIndex_eff {P : Core.Program} {k : Nat} {st : State} {slice : Nat
     all_goals simp at placeRun
   all_goals simp at run
 
+/-- Core's `slice[idx] = e` on a safe slice of a whole array, with effects:
+the index, the value, then the array in the slice's cell, as the value left
+it, with that element replaced. -/
+theorem eval_setIndex_eff_safe {P : Core.Program} {k : Nat} {st : State} {slice : Nat} {idx e : Core.Expr}
+    {element : Core.Ty} {cell length root : Nat} {u : Value} {st' : State}
+    (views : st.i32ArrayViews = [])
+    (idxGrows : ∀ {v s}, evalExpr (k + 1) P st idx = .done v s → Grows st s)
+    (eGrows : ∀ {s1 v s2}, evalExpr (k + 2) P s1 e = .done v s2 → Grows s1 s2)
+    (base : Semantics.evalPlace (k + 1) P st .read (.local slice) =
+      .done { root, projections := [], value := some (.slice element cell [] 0 length) } st)
+    (run : evalExpr (k + 3) P st (.assign .set (.index (.local slice) idx) e) = .done u st') :
+    ∃ iv st1 pos right st2 entry vs, evalExpr (k + 1) P st idx = .done iv st1 ∧
+      Semantics.integerIndex iv = .ok pos ∧ pos < length ∧
+      evalExpr (k + 2) P st1 e = .done right st2 ∧
+      st2.cellEntry? cell = some entry ∧ entry.value = some (.array vs) ∧ pos < vs.length ∧
+      st' = { st2 with cells := Semantics.replaceCell st2.cells cell (.array (Semantics.setValue vs pos right)) } := by
+  rw [evalExpr] at run
+  rw [Semantics.evalPlace] at run
+  rw [base] at run
+  simp only at run
+  split at run
+  · rename_i resolved st1 placeRun
+    split at placeRun
+    · rename_i iv afterIndex indexRun
+      have views1 := (idxGrows indexRun views).1
+      split at placeRun
+      · simp at placeRun
+      rename_i pos posOk
+      split at placeRun
+      case isFalse => simp at placeRun
+      rename_i lt
+      split at placeRun
+      · simp at placeRun
+      rename_i elems values
+      split at placeRun
+      · simp at placeRun
+      rename_i old got
+      simp only [Semantics.Outcome.done.injEq] at placeRun
+      obtain ⟨rfl, rfl⟩ := placeRun
+      split at run
+      · rename_i right st2 valueRun
+        have views2 := (eGrows valueRun views1).1
+        simp only [Semantics.evalAssignValue, Semantics.assignOpBinary?, Semantics.writeResolvedPlaceNative,
+          Semantics.writeResolvedPlace, List.nil_append, Nat.zero_add] at run
+        cases entry : st2.cellEntry? cell with
+        | none => simp [entry] at run
+        | some en =>
+          obtain ⟨id, value⟩ := en
+          cases value with
+          | none => simp [entry] at run
+          | some rootValue =>
+            cases rootValue
+            all_goals simp only [entry, Semantics.replaceProjectedValue] at run
+            all_goals try simp at run
+            rename_i vs
+            cases got' : vs[pos]? with
+            | none => simp [got'] at run
+            | some old' =>
+            simp only [got', State.assignCell, entry, Option.isSome_some, if_true,
+              Semantics.ResolvedPlace.viewFreeRootWrite, List.isEmpty_cons, Bool.false_and, Bool.and_false,
+              Bool.false_eq_true, if_false, Semantics.syncI32ViewsToHeap, views2,
+              Semantics.syncI32ViewsToHeapFrom, Semantics.Outcome.done.injEq] at run
+            obtain ⟨-, rfl⟩ := run
+            exact ⟨iv, afterIndex, pos, right, st2, _, vs, indexRun, posOk, lt, valueRun, entry, rfl,
+              (List.getElem?_eq_some_iff.mp got').1, by rw [views2]⟩
+      all_goals simp at run
+    all_goals simp at placeRun
+  all_goals simp at run
+
 /-- `array[index] = value` on an array local: the index in `next`, checked
 below the length, the value in `next + 1`, then copied over the element. -/
 theorem stmt_setIndexEval_array (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat} {index value : SrcEff}
@@ -3110,6 +3220,97 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
         obtain ⟨wv, place, holdsW⟩ := corr.readPlace found k sp.toCore
         rw [bty] at holdsW
         cases holdsW with
+        | @borrowed _ len x _ _ mem sliced root xty _ pointerSlot lenSlot _ =>
+          obtain ⟨iv, st1, pos, right, st2, entry, vs, indexRun, posOk, posLt, valueRun, entryEq, entryVal, -, rfl⟩ :=
+            eval_setIndex_eff_safe fresh.2 (fun r => eff_grown r) (fun r => eff_grown r) place assignRun
+          obtain ⟨eid, ev⟩ := entry
+          simp only at entryVal
+          subst entryVal
+          have read : Semantics.readCellProjection st2 x.cell [] = .ok (.array vs) := by
+            simp [Semantics.readCellProjection, entryEq, Semantics.projectedValue]
+          have readNew : Semantics.readCellProjection
+              ({ st2 with cells := Semantics.replaceCell st2.cells x.cell (.array (Semantics.setValue vs pos right)) } : State)
+              x.cell [] = .ok (.array (Semantics.setValue vs pos right)) := by
+            simp [Semantics.readCellProjection, assigned_entry, entryEq, Semantics.projectedValue]
+          have bound2 : st2.heap.nextAddress ≤ hp.limit := bound
+          have views1 := (eff_grown indexRun fresh.2).1
+          obtain ⟨fresh1, keeps1, locals1, -, d1, env1, hp1, exec1, same1, holds1, hc1, fc1⟩ :=
+            ihe (k + 1) (by omega) indexOk corr fr fresh hc fc indexRun
+              (Nat.le_trans ((eff_grown valueRun views1).2) bound2)
+          have limit1 := exec1.limit_normal
+          obtain ⟨fresh2, keeps2, locals2, -, d2, env2, hp2, exec2, same2, holds2, hc2, fc2⟩ :=
+            ihe (k + 2) (by omega) valueOk (corr.after fr fresh keeps1 locals1 same1) (fr.mono (Nat.le_succ _))
+              fresh1 hc1 fc1 valueRun (by rw [limit1]; exact bound2)
+          have limit2 := exec2.limit_normal
+          have scalar : i.ty.isScalar = true := by
+            simp only [Bool.or_eq_true] at kind
+            rcases kind with c | c
+            · rw [eq_of_isI32 c]; rfl
+            · rw [eq_of_isUint c]; rfl
+          have holdsI := holds_var (holds1.congr (env' := env2) (slot' := next) fun _ below =>
+            same2 _ (by have := SrcType.size_scalar scalar; omega)) scalar
+          have posEq := index_toNat (t := { expr := .var next, ty := i.ty }) kind holdsI posOk
+          have bslot : env2 b.slot = env b.slot := by
+            have := fr.slots b bmem
+            have := fr.sized b bmem
+            rw [same2 b.slot (by omega), same1 b.slot (by omega)]
+          have slot2 : b.slot + 1 < next := by
+            have := fr.slots b bmem
+            rw [bty] at this
+            simp only [SrcType.size] at this
+            omega
+          have pass : (boundsGuard b (.var next)).eval env1 = 1 :=
+            boundsGuard_one (by
+              rw [same1 _ slot2, lenSlot]
+              simp only [Expr.eval] at posEq ⊢
+              rw [← same2 next (Nat.lt_succ_self _)]
+              omega)
+          have blk := fc2.block mem
+          have below2 : st2.heap.nextAddress ≤ hp2.limit := by rw [limit2, limit1]; exact bound
+
+          rw [eq_of_isUint wU8] at holds2
+          cases holds2 with
+          | uint holdsV =>
+          obtain ⟨rfl, bitsV⟩ := holdsV
+          simp only [UintTy.width] at bitsV
+          have sz := Addressed.size_u8 xty
+          have ptr : (env b.slot).toNat = x.address := by rw [pointerSlot, Addressed.pointer_u8 xty]
+          have address : ((Expr.binary Word.u64 BinOp.add (Expr.var b.slot) (Expr.var next)).eval env2).toNat =
+              x.pointer + pos := by
+            simp only [Expr.eval, Word.apply, BinOp.apply, BitVec.toNat_add, bslot]
+            simp only [Expr.eval] at posEq
+            rw [posEq, ptr]
+            rw [Nat.mod_eq_of_lt (by omega), Addressed.pointer_u8 xty]
+          have room : ((Expr.binary Word.u64 BinOp.add (Expr.var b.slot) (Expr.var next)).eval env2).toNat < hp2.top := by
+            rw [address, Addressed.pointer_u8 xty]; omega
+          have low : lowByte ((Expr.var (next + 1)).eval env2) = UInt8.ofNat (env2 (next + 1)).toNat := by
+            simp only [lowByte, Expr.eval, BitVec.toNat_setWidth]
+            rw [Nat.mod_eq_of_lt bitsV]
+          obtain ⟨viewNew, viewOld, outside⟩ :=
+            Addressed.view_store_u8 sliced xty hp2 posLt (lowByte ((Expr.var (next + 1)).eval env2))
+          refine ⟨assigned_fresh fresh2 _ _, ((keeps1.chain keeps2).lower le).trans
+              ⟨fun c _ apart => by rw [assigned_entry, if_neg (fun h => apart x mem h.symm)], Nat.le_refl _⟩, max d1 d2, _,
+            .seq (exec1.mono (Nat.le_max_left _ _))
+              ((Exec.seq (exec2.mono (Nat.le_max_right _ _)) (Exec.storeByte room)).checkThen pass),
+            .next (((corr.after fr fresh (keeps1.chain keeps2) (locals2.trans locals1)
+              (fun j lt => (same2 j (by omega)).trans (same1 j lt)))).cells_congr rfl fun b' mem' => by
+                rw [assigned_entry, if_neg (fun h => corr.apart x mem b' mem' h.symm)]) ?_ ?_⟩
+          · rw [address]
+            exact hc2.high below2 (fun a lt => by
+              rw [Heap.write_bytes, if_neg (by rw [Addressed.pointer_u8 xty]; omega)]) rfl rfl rfl
+          · rw [address]
+            refine fc2.borrowed_set mem root xty read posLt readNew (fun y _ ne => by rw [assigned_entry, if_neg ne])
+              ?_ (fun s h => viewOld s (by simp only [SrcType.size] at h; omega)) outside rfl rfl rfl
+            simp only [SrcType.size, Nat.mul_one]
+            refine .uint ?_
+            show (SrcType.uint _).Holds _ (x.view _ pos)
+            rw [viewNew, low]
+            have n64 := (env2 (next + 1)).isLt
+            simp only [SrcType.Holds]
+            refine ⟨?_, ?_⟩
+            · simp [UInt8.toNat_ofNat, Nat.mod_eq_of_lt bitsV, BitVec.toNat_ofNat]
+            · simp [UInt8.toNat_ofNat, Nat.mod_eq_of_lt bitsV, BitVec.toNat_ofNat, UintTy.width]
+              omega
         | @slice _ len _ _ lenSlot _ =>
         obtain ⟨iv, st1, pos, at_, right, st2, heap, indexRun, posOk, inside, located, valueRun, stored, rfl⟩ :=
           eval_setIndex_eff fresh.2 (fun r => eff_grown r) (fun r => eff_grown r) place assignRun
@@ -3286,6 +3487,12 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
       simp only [Semantics.writeRawNative, nb, Bool.false_eq_true, ↓reduceIte] at stored
       obtain ⟨hp', exec, hc', low⟩ := storeElement_sound (mp := mp) hc2 hel posEq located stored flat sOk bound3
       exact finish exec hc' low
+      | @borrowed _ _ _ _ _ _ _ _ _ packed _ _ _ =>
+      simp only [storeEvalWord] at ok
+      split at ok
+      case isFalse => simp at ok
+      rename_i hel
+      rcases packed with rfl | rfl <;> simp [wordElement, SrcType.isUint, UintTy.code] at hel
     all_goals simp at run
   rename_i isI32
   have eltEq := eq_of_isI32 isI32
@@ -3325,6 +3532,108 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
     obtain ⟨wv, place, holdsW⟩ := corr.readPlace found k sp.toCore
     rw [bty] at holdsW
     cases holdsW with
+    | @borrowed _ len x _ _ mem sliced root xty _ pointerSlot lenSlot _ =>
+      obtain ⟨iv, st1, pos, right, st2, entry, vs, indexRun, posOk, posLt, valueRun, entryEq, entryVal, -, rfl⟩ :=
+        eval_setIndex_eff_safe fresh.2 (fun r => eff_grown r) (fun r => eff_grown r) place assignRun
+      obtain ⟨eid, ev⟩ := entry
+      simp only at entryVal
+      subst entryVal
+      have read : Semantics.readCellProjection st2 x.cell [] = .ok (.array vs) := by
+        simp [Semantics.readCellProjection, entryEq, Semantics.projectedValue]
+      have readNew : Semantics.readCellProjection
+          ({ st2 with cells := Semantics.replaceCell st2.cells x.cell (.array (Semantics.setValue vs pos right)) } : State)
+          x.cell [] = .ok (.array (Semantics.setValue vs pos right)) := by
+        simp [Semantics.readCellProjection, assigned_entry, entryEq, Semantics.projectedValue]
+      have bound2 : st2.heap.nextAddress ≤ hp.limit := bound
+      have views1 := (eff_grown indexRun fresh.2).1
+      obtain ⟨fresh1, keeps1, locals1, -, d1, env1, hp1, exec1, same1, holds1, hc1, fc1⟩ :=
+        ihe (k + 1) (by omega) indexOk corr fr fresh hc fc indexRun
+          (Nat.le_trans ((eff_grown valueRun views1).2) bound2)
+      have limit1 := exec1.limit_normal
+      obtain ⟨fresh2, keeps2, locals2, -, d2, env2, hp2, exec2, same2, holds2, hc2, fc2⟩ :=
+        ihe (k + 2) (by omega) valueOk (corr.after fr fresh keeps1 locals1 same1) (fr.mono (Nat.le_succ _))
+          fresh1 hc1 fc1 valueRun (by rw [limit1]; exact bound2)
+      have limit2 := exec2.limit_normal
+      have scalar : i.ty.isScalar = true := by
+        simp only [Bool.or_eq_true] at kind
+        rcases kind with c | c
+        · rw [eq_of_isI32 c]; rfl
+        · rw [eq_of_isUint c]; rfl
+      have holdsI := holds_var (holds1.congr (env' := env2) (slot' := next) fun _ below =>
+        same2 _ (by have := SrcType.size_scalar scalar; omega)) scalar
+      have posEq := index_toNat (t := { expr := .var next, ty := i.ty }) kind holdsI posOk
+      have bslot : env2 b.slot = env b.slot := by
+        have := fr.slots b bmem
+        have := fr.sized b bmem
+        rw [same2 b.slot (by omega), same1 b.slot (by omega)]
+      have slot2 : b.slot + 1 < next := by
+        have := fr.slots b bmem
+        rw [bty] at this
+        simp only [SrcType.size] at this
+        omega
+      have pass : (boundsGuard b (.var next)).eval env1 = 1 :=
+        boundsGuard_one (by
+          rw [same1 _ slot2, lenSlot]
+          simp only [Expr.eval] at posEq ⊢
+          rw [← same2 next (Nat.lt_succ_self _)]
+          omega)
+      have blk := fc2.block mem
+      have below2 : st2.heap.nextAddress ≤ hp2.limit := by rw [limit2, limit1]; exact bound
+
+      rw [eq_of_isI32 wI32] at holds2
+      cases holds2 with
+      | i32 holdsV =>
+      obtain ⟨rfl, bitsV⟩ := holdsV
+      have sz := Addressed.size_i32 xty
+      have ptr : (env b.slot).toNat = x.address := by rw [pointerSlot, Addressed.pointer_i32 xty]
+      have address : ((Expr.binary Word.u64 BinOp.add (Expr.var b.slot)
+          (Expr.binary Word.u64 BinOp.mul (Expr.var next) (Expr.lit 4))).eval env2).toNat = x.pointer + 4 * pos := by
+        have four : (4 : BitVec 64).toNat = 4 := rfl
+        simp only [Expr.eval, Word.apply, BinOp.apply, BitVec.toNat_add, BitVec.toNat_mul, four, bslot]
+        simp only [Expr.eval] at posEq
+        rw [posEq, ptr]
+        rw [Nat.mod_eq_of_lt (a := pos * 4) (by omega), Nat.mod_eq_of_lt (by omega), Addressed.pointer_i32 xty,
+          Nat.mul_comm pos 4]
+      have room : ((Expr.binary Word.u64 BinOp.add (Expr.var b.slot)
+          (Expr.binary Word.u64 BinOp.mul (Expr.var next) (Expr.lit 4))).eval env2).toNat + MemWidth.m32.bytes ≤
+          hp2.top := by
+        rw [address, Addressed.pointer_i32 xty]; simp only [MemWidth.bytes]; omega
+      have small32 : (env2 (next + 1)).toNat < 2 ^ 32 := by
+        have := (low (env2 (next + 1))).isLt
+        have hx : (env2 (next + 1)).toNat = (low (env2 (next + 1))).toNat :=
+          calc (env2 (next + 1)).toNat = (widen (low (env2 (next + 1)))).toNat := by rw [← bitsV]
+            _ = (low (env2 (next + 1))).toNat := by
+              show (BitVec.setWidth 64 (low (env2 (next + 1)))).toNat = _
+              rw [BitVec.toNat_setWidth]
+              exact Nat.mod_eq_of_lt (Nat.lt_trans (low (env2 (next + 1))).isLt (by decide))
+        omega
+      have same : BitVec.ofNat 64 ((env2 (next + 1)).toNat % 256 ^ 4) = env2 (next + 1) := by
+        apply BitVec.eq_of_toNat_eq
+        simp only [BitVec.toNat_ofNat, Nat.reducePow]
+        omega
+      obtain ⟨viewNew, viewOld, outside⟩ := Addressed.view_store_i32 sliced xty hp2 posLt (env2 (next + 1)).toNat
+      refine ⟨assigned_fresh fresh2 _ _, ((keeps1.chain keeps2).lower le).trans
+          ⟨fun c _ apart => by rw [assigned_entry, if_neg (fun h => apart x mem h.symm)], Nat.le_refl _⟩, max d1 d2, _,
+        .seq (exec1.mono (Nat.le_max_left _ _))
+          ((Exec.seq (exec2.mono (Nat.le_max_right _ _)) (Exec.storeWord room)).checkThen pass),
+        .next (((corr.after fr fresh (keeps1.chain keeps2) (locals2.trans locals1)
+          (fun j lt => (same2 j (by omega)).trans (same1 j lt)))).cells_congr rfl fun b' mem' => by
+            rw [assigned_entry, if_neg (fun h => corr.apart x mem b' mem' h.symm)]) ?_ ?_⟩
+      · rw [address]
+        simp only [MemWidth.bytes, Expr.eval]
+        exact hc2.high below2 (fun a lt => Heap.writeLE_bytes_outside _ _ _ _ _ (.inl (by
+            rw [Addressed.pointer_i32 xty]; omega)))
+          (Heap.writeLE_limit _ _ _ _).2 (Heap.writeLE_limit _ _ _ _).1 (Heap.writeLE_io _ _ _ _)
+      · rw [address]
+        simp only [MemWidth.bytes, Expr.eval]
+        refine fc2.borrowed_set mem root xty read posLt readNew (fun y _ ne => by rw [assigned_entry, if_neg ne])
+          ?_ (fun s h => viewOld s (by simp only [SrcType.size] at h; omega)) outside
+          (Heap.writeLE_top _ _ _ _).2 (Heap.writeLE_limit _ _ _ _).1 (Heap.writeLE_top _ _ _ _).1
+        simp only [SrcType.size, Nat.mul_one]
+        refine .i32 ?_
+        show SrcType.i32.Holds _ (x.view _ pos)
+        rw [viewNew, same]
+        exact ⟨rfl, bitsV⟩
     | @slice _ len _ _ lenSlot _ =>
     obtain ⟨iv, st1, pos, at_, right, st2, heap, indexRun, posOk, inside, located, valueRun, stored, rfl⟩ :=
       eval_setIndex_eff fresh.2 (fun r => eff_grown r) (fun r => eff_grown r) place assignRun

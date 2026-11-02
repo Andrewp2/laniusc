@@ -233,9 +233,15 @@ limit) and the heap's top. -/
 structure FrameCorr (places : List Addressed) (st : State) (hp : Heap) : Prop where
   holds : ∀ x ∈ places, x.Holds places st hp
   inside : ∀ x ∈ places, hp.fsp ≤ x.address ∧ hp.limit ≤ x.address ∧ x.address + 8 * x.ty.size ≤ hp.top
+  /-- Every block is below `2 ^ 62`, so its addresses add without wrapping. -/
+  small : ∀ x ∈ places, x.address + 8 * x.ty.size < 2 ^ 62
+  /-- Two different places name different cells and have blocks apart. -/
+  apart : ∀ x ∈ places, ∀ y ∈ places, x ≠ y →
+    x.cell ≠ y.cell ∧ (x.address + 8 * x.ty.size ≤ y.address ∨ y.address + 8 * y.ty.size ≤ x.address)
 
 theorem FrameCorr.nil (st : State) (hp : Heap) : FrameCorr [] st hp :=
-  ⟨fun _ mem => by simp at mem, fun _ mem => by simp at mem⟩
+  ⟨fun _ mem => by simp at mem, fun _ mem => by simp at mem, fun _ mem => by simp at mem,
+    fun _ mem => by simp at mem⟩
 
 /-- Changes to bytes no place covers, to the frame pointer downward, to the
 cursor or the trace, and to Core cells no place names keep the correspondence. -/
@@ -245,7 +251,7 @@ theorem FrameCorr.congr {st st' : State} {hp hp' : Heap}
     (bytes : ∀ x ∈ places, ∀ a, x.Covers a → hp'.bytes a = hp.bytes a)
     (fsp : hp'.fsp ≤ hp.fsp) (limit : hp'.limit = hp.limit) (top : hp'.top = hp.top) :
     FrameCorr places st' hp' := by
-  refine ⟨fun x mem => ?_, fun x mem => ?_⟩
+  refine ⟨fun x mem => ?_, fun x mem => ?_, fc.small, fc.apart⟩
   · obtain ⟨v, read, holds⟩ := fc.holds x mem
     refine ⟨v, ?_, holds.congr (Addressed.view_congr (bytes x mem))⟩
     simp only [Semantics.readCellProjection, cells x mem] at read ⊢
@@ -340,7 +346,7 @@ theorem FrameCorr.restore {st : State} {hp : Heap}
   ⟨fun x mem => by
       obtain ⟨v, read, holds⟩ := fc.holds x mem
       exact ⟨v, read, holds.congr (Addressed.view_congr fun _ _ => rfl)⟩,
-    fun x mem => ⟨above x mem, (fc.inside x mem).2⟩⟩
+    fun x mem => ⟨above x mem, (fc.inside x mem).2⟩, fc.small, fc.apart⟩
 
 /-- A place's words are below the top, and so below `2 ^ 62` with the heap. -/
 theorem FrameCorr.covers_top {st : State} {hp : Heap}

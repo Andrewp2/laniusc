@@ -280,6 +280,7 @@ mutual
         | (obtain ⟨rfl, -⟩ := h; exact .signed _ _)
         | (cases h; exact .signed _ _)
     | .slice _ _ => exact .rawSlice _ _ _
+    | .borrowed .. => exact .slice _ _ _ _ _
     | .struct fields =>
       cases declared with
       | «struct» found inner =>
