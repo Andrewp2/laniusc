@@ -1080,8 +1080,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
                     right_constant ? immediate : left);
             op = X86_LIR_OP_SELECT_STORE;
             result = info.declaration;
-            a = immediate_compare && left_constant
-                ? compare.b : compare.a;
+            // The right constant is the immediate whenever there is one, as
+            // in an unfused compare; only a lone left constant swaps sides.
+            bool swap = immediate_compare && !right_constant;
+            a = swap ? compare.b : compare.a;
             b = immediate_compare
                 ? (right_constant ? immediate : left) : compare.b;
             c = info.true_value;
@@ -1089,7 +1091,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 (aggregate_compare ? X86_LIR_METADATA_AGGREGATE : 0u);
             if (immediate_compare)
                 metadata |= X86_LIR_METADATA_IMMEDIATE;
-            local_ordinal = immediate_compare && left_constant
+            local_ordinal = swap
                 ? x86_swapped_compare_predicate(compare.c) : compare.c;
         }
     }
@@ -1489,8 +1491,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 x86_width_immediate_operand(compare_core.type_id, opt_ir_core[compare.b],
                     opt_ir_operands[compare.b], x86_value_by_semantic[compare.b], width_immediate);
             op = X86_LIR_OP_COMPARE_BRANCH_FALSE;
-            a = immediate_compare && left_constant
-                ? compare.b : compare.a;
+            // The right constant is the immediate whenever there is one, as
+            // in an unfused compare; only a lone left constant swaps sides.
+            bool swap = immediate_compare && !right_constant;
+            a = swap ? compare.b : compare.a;
             b = immediate_compare
                 ? (right_constant ? immediate : left)
                 : width_compare ? width_immediate : compare.b;
@@ -1500,7 +1504,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 (aggregate_compare ? X86_LIR_METADATA_AGGREGATE : 0u);
             if (immediate_compare || width_compare)
                 metadata |= X86_LIR_METADATA_IMMEDIATE;
-            local_ordinal = immediate_compare && left_constant
+            local_ordinal = swap
                 ? x86_swapped_compare_predicate(compare.c) : compare.c;
             if (compare_core.type_id == SEMANTIC_LIR_TY_POINTER &&
                 compare.b < semantic_count &&
