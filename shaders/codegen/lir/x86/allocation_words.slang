@@ -114,9 +114,11 @@ bool interval_crosses_call(uint position, uint last, uint total)
 // for a stack home, RAX for a value returned at once, or an XMM register.
 // `gpr` is set when the value may instead take a general-purpose register,
 // which walk_function decides.
-uint parallel_register_location(uint row, uint position, uint total, out bool gpr)
+uint parallel_register_location(uint row, uint position, uint total, out bool gpr,
+                                out bool argument)
 {
     gpr = false;
+    argument = false;
     OptIrNodeCore core = opt_ir_core[row];
     uint op = opt_ir_op(core);
     if (!produces_scalar_value(op)) return INVALID;
@@ -158,20 +160,29 @@ uint parallel_register_location(uint row, uint position, uint total, out bool gp
     uint last = x86_last_use_by_semantic[row];
     if (last <= position) return INVALID;
 
-    // CALL_ARG rows are expanded only after allocation and perform a parallel
-    // assignment into the six SysV argument registers. Keeping an argument in
-    // one of those registers can make an earlier assignment overwrite a later
-    // source (for example r8 -> r9 after another value has been loaded into
-    // r8). Give every value whose final consumer is a call a stack home so the
-    // generated assignments all read stable sources. This is the simple,
-    // deterministic parallel-copy contract; a future allocator may coalesce
-    // provably non-conflicting argument moves without weakening it.
+    // CALL_ARG rows are expanded only after allocation and assign the SysV
+    // argument registers in ascending order (after any stack pushes). A
+    // source in one of those registers could be overwritten by an earlier
+    // assignment. Of the temporaries' registers only R8 and R9 are argument
+    // registers, and R9 is assigned last, so an integer value whose final
+    // consumer is a direct or imported call may take any register but R8
+    // (`argument`; walk_function). Every other call consumer (intrinsics,
+    // float arguments) keeps a stack home.
     if (last < total)
     {
         uint consumer = semantic_schedule_order[last];
-        if (consumer < total &&
-            semantic_lir_is_call(opt_ir_op(opt_ir_core[consumer])))
+        uint consumer_op = consumer < total ? opt_ir_op(opt_ir_core[consumer]) : 0u;
+        if (consumer < total && semantic_lir_is_call(consumer_op))
+        {
+            if ((consumer_op == SEMANTIC_LIR_OP_CALL ||
+                 consumer_op == SEMANTIC_LIR_OP_CALL_SYMBOL) &&
+                !scalar_is_float(core.type_id) && scalar_gpr_result(core))
+            {
+                gpr = true;
+                argument = true;
+            }
             return INVALID;
+        }
     }
 
     if (last == position + 1u && last < total)
@@ -396,13 +407,14 @@ uint declaration_register(uint ordinal, bool has_call)
 
 // Register slots (declaration ordinals for the RDI, RSI, R10, R11, R8, R9 or
 // RBX, R12-R14 sequences) that decl_slots_scatter may give this function's
-// declarations. A register-typed parameter keeps its own ordinal unless a
-// hidden result pointer or a (data, length, stride) parameter shifts the
-// incoming registers; then the first two take slots 2 and 3. Register-typed
-// locals take the remaining slots in order. decl_slots_scatter applies the
-// same rule (parameter_register_slot, local_register_slot). In a function
-// with calls a declaration read only before the first call uses the
-// call-free register of its slot, so both registers of each slot are held.
+// declarations. Without calls, a register-typed parameter keeps its own
+// ordinal unless a hidden result pointer or a (data, length, stride)
+// parameter shifts the incoming registers; then the first two take slots 2
+// and 3. Register-typed locals take the remaining slots in order
+// (parameter_register_slot, local_register_slot). With calls, register-typed
+// parameters and locals share the callee-saved slots by weight
+// (ranked_slot), so the first free slots, one per declaration, are held;
+// those declarations never use a caller-saved register.
 uint declaration_register_mask(SemanticLirFunction function, bool has_call,
                                bool header)
 {
@@ -412,13 +424,33 @@ uint declaration_register_mask(SemanticLirFunction function, bool has_call,
     if (function.param_start + function.param_count > param_total ||
         function.local_start + function.local_count > local_total)
         return 0xffffu;
+    if (has_call)
+    {
+        uint wanted = 0u;
+        for (uint ordinal = 0u; ordinal < min(function.param_count, LOCAL_SLOT_SCAN_LIMIT); ordinal += 1u)
+            if (declaration_register_type(
+                    semantic_lir_params[function.param_start + ordinal].type_id))
+                wanted += 1u;
+        for (uint index = 0u; index < min(function.local_count, LOCAL_SLOT_SCAN_LIMIT); index += 1u)
+            if (declaration_register_type(
+                    semantic_lir_locals[function.local_start + index].type_id))
+                wanted += 1u;
+        uint taken = header ? X86_HEADER_CALL_SLOTS : 0u;
+        uint held = 0u;
+        for (uint slot = 0u; slot < limit && wanted != 0u; slot += 1u)
+        {
+            if ((taken & (1u << slot)) != 0u) continue;
+            held |= 1u << declaration_register(slot, true);
+            wanted -= 1u;
+        }
+        return held;
+    }
     bool shifted = function.result_word_count > 2u;
     for (uint ordinal = 0u; ordinal < function.param_count; ordinal += 1u)
         if (x86_abi_param_width(semantic_lir_params[function.param_start + ordinal]) > 1u)
             shifted = true;
-    // Cached slice header registers (RBX, R12, R13) are slots 0-2 with calls.
-    uint slots = header && has_call ? X86_HEADER_CALL_SLOTS : 0u;
-    uint shifted_slot = header && has_call ? 3u : 2u;
+    uint slots = 0u;
+    uint shifted_slot = 2u;
     for (uint ordinal = 0u; ordinal < min(function.param_count, LOCAL_SLOT_SCAN_LIMIT); ordinal += 1u)
     {
         if (!declaration_register_type(
@@ -443,8 +475,7 @@ uint declaration_register_mask(SemanticLirFunction function, bool has_call,
     uint mask = 0u;
     for (uint slot = 0u; slot < limit; slot += 1u)
         if ((slots & (1u << slot)) != 0u)
-            mask |= (1u << declaration_register(slot, has_call)) |
-                (has_call ? 1u << x86_caller_declaration_register(slot) : 0u);
+            mask |= 1u << declaration_register(slot, false);
     return mask;
 }
 
@@ -492,6 +523,22 @@ bool event_inside(uint position, uint distance, uint last, bool inclusive)
 {
     if (distance == NEAR_MASK) return last - position >= NEAR_MASK;
     return inclusive ? position + distance <= last : position + distance < last;
+}
+
+// A VALUE_GET that locations' value_location reads from its declaration's
+// home: a coalesced alias (that home cannot change before its last use), or
+// a parameter read no call can reach before its last use (in a function with
+// calls a parameter's home is a callee-saved register or a stack slot, so a
+// call argument may read it there too). It needs no register or slot.
+bool in_place_read(uint row, uint op, bool across)
+{
+    if (op != SEMANTIC_LIR_OP_VALUE_GET ||
+        !declaration_register_type(opt_ir_core[row].type_id))
+        return false;
+    if (x86_live_by_semantic[row] == X86_SEMANTIC_COALESCED_ALIAS) return true;
+    uint declaration = opt_ir_operands[row].a;
+    return !across && declaration < gParams.token_capacity &&
+        x86_decl_analysis_by_token[declaration].definition == INVALID;
 }
 
 void walk_function(uint function_id, uint start, uint end, uint total,
@@ -562,7 +609,10 @@ void walk_function(uint function_id, uint start, uint end, uint total,
         }
         if (control_label(op))
         {
-            if (x86_location_by_semantic[row] != INVALID) next_target = cursor;
+            // Only a loop with a call in its body makes the values it holds
+            // need callee-saved registers.
+            uint source = x86_location_by_semantic[row];
+            if (source != INVALID && next_call <= source) next_target = cursor;
         }
         else
             x86_location_by_semantic[row] = near_distance(cursor, next_call) |
@@ -601,17 +651,21 @@ void walk_function(uint function_id, uint start, uint end, uint total,
         {
             if (pending != INVALID) hold_over_loop(ends, position, pending);
         }
+        bool in_place = false;
         if (x86_live_by_semantic[row] != 0u)
         {
             bool gpr;
-            location = parallel_register_location(row, position, total, gpr);
-            if (gpr && sound && !control_label(op))
+            bool argument;
+            location = parallel_register_location(row, position, total, gpr, argument);
+            uint last = x86_last_use_by_semantic[row];
+            bool across = has_call &&
+                (event_inside(position, pending & NEAR_MASK, last, false) ||
+                 event_inside(position, pending >> 16u, last, true));
+            in_place = gpr && sound && in_place_read(row, op, across);
+            if (gpr && sound && !control_label(op) && !in_place)
             {
-                uint last = x86_last_use_by_semantic[row];
-                bool crosses = event_inside(position, pending & NEAR_MASK, last, false);
-                bool loops = event_inside(position, pending >> 16u, last, true);
-                uint allowed = has_call && (crosses || loops)
-                    ? callee_free : caller_free | callee_free;
+                uint allowed = across ? callee_free : caller_free | callee_free;
+                if (argument) allowed &= ~(1u << 8u);
                 uint physical = free_register(ends, allowed, position);
                 if (physical != INVALID)
                 {
@@ -621,7 +675,7 @@ void walk_function(uint function_id, uint start, uint end, uint total,
                     location = X86_LOCATION_REGISTER | physical;
                 }
             }
-            if (location == INVALID)
+            if (location == INVALID && !in_place)
                 words = spill_word_count(row, total, function_total);
         }
         x86_location_by_semantic[row] = location;
@@ -658,7 +712,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (row < total && x86_live_by_semantic[row] != 0u)
     {
         bool gpr;
-        uint location = parallel_register_location(row, position, total, gpr);
+        bool argument;
+        uint location = parallel_register_location(row, position, total, gpr, argument);
         if (location != INVALID)
             x86_location_by_semantic[row] = location;
         else

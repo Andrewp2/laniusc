@@ -150,17 +150,85 @@ bool shifted_parameters(SemanticLirFunction function)
 // A cached slice header holds slots 0-2 (RBX, R12, R13) across calls, so
 // there only slot 3 is left. allocation_words reserves the same slots
 // (declaration_register_mask).
+// With calls every declaration register is callee-saved (register_location),
+// so no incoming argument register can be overwritten by a parameter's home:
+// register-typed parameters a register may hold (assign_declaration) and
+// register-typed locals share the free slots, the most-read (by loop-weighted
+// reads, then parameters before locals, then by order) first. `index` counts
+// parameters, then locals. allocation_words' declaration_register_mask holds
+// as many slots as there are register-typed declarations.
+bool ranked_declaration(SemanticLirFunction function, uint index, out uint weight)
+{
+    weight = 0u;
+    bool parameter = index < function.param_count;
+    uint type_id;
+    uint declaration;
+    if (parameter)
+    {
+        SemanticLirParam param = semantic_lir_params[function.param_start + index];
+        if (!shifted_parameters(function) && index >= 6u) return false;
+        type_id = param.type_id;
+        declaration = param.declaration_id;
+    }
+    else
+    {
+        SemanticLirLocal local = semantic_lir_locals[function.local_start + index - function.param_count];
+        type_id = local.type_id;
+        declaration = local.declaration_id;
+    }
+    if (!scalar_gpr_type(type_id) || declaration >= gParams.token_capacity ||
+        semantic_place_storage_by_token[declaration].x != 0u)
+        return false;
+    weight = x86_decl_analysis_by_token[declaration].read_count;
+    return true;
+}
+
+uint ranked_slot(SemanticLirFunction function, uint index, bool header)
+{
+    uint params = min(function.param_count, LOCAL_SLOT_SCAN_LIMIT);
+    uint locals = min(function.local_count, LOCAL_SLOT_SCAN_LIMIT);
+    if (function.param_start + function.param_count > semantic_lir_param_total[0u] ||
+        function.local_start + function.local_count >
+            min(gParams.local_capacity, semantic_lir_local_total[0u]))
+        return X86_LOCATION_INVALID;
+    // Copied parameters keep every parameter in its stack home.
+    bool copied = x86_parameter_storage_total(function, semantic_lir_params) != 0u;
+    bool parameter = index < function.param_count;
+    uint weight;
+    if ((parameter ? index >= params || copied : index - function.param_count >= locals) ||
+        !ranked_declaration(function, index, weight))
+        return X86_LOCATION_INVALID;
+    uint rank = 0u;
+    for (uint other = copied ? params : 0u; other < params + locals; other += 1u)
+    {
+        uint other_index = other < params ? other : function.param_count + other - params;
+        uint other_weight;
+        if (other_index != index && ranked_declaration(function, other_index, other_weight) &&
+            (other_weight > weight || (other_weight == weight && other_index < index)))
+            rank += 1u;
+    }
+    uint slots = header ? X86_HEADER_CALL_SLOTS : 0u;
+    for (uint cursor = 0u; cursor < 4u; cursor += 1u)
+    {
+        if ((slots & (1u << cursor)) != 0u) continue;
+        if (rank == 0u) return cursor;
+        rank -= 1u;
+    }
+    return X86_LOCATION_INVALID;
+}
+
 uint parameter_register_slot(SemanticLirFunction function, uint ordinal, bool has_call,
                              bool header)
 {
-    uint limit = has_call ? 4u : 6u;
+    if (has_call) return ranked_slot(function, ordinal, header);
+    uint limit = 6u;
     if (function.param_start + function.param_count > semantic_lir_param_total[0u] ||
         ordinal >= function.param_count ||
         !scalar_gpr_type(semantic_lir_params[function.param_start + ordinal].type_id))
         return X86_LOCATION_INVALID;
     if (!shifted_parameters(function))
         return ordinal < limit ? ordinal : X86_LOCATION_INVALID;
-    uint slot = header && has_call ? 3u : 2u;
+    uint slot = 2u;
     for (uint prior = 0u; prior < ordinal; prior += 1u)
         if (scalar_gpr_type(semantic_lir_params[function.param_start + prior].type_id))
             slot += 1u;
@@ -185,18 +253,18 @@ uint local_read_weight(SemanticLirFunction function, uint index)
 uint local_register_slot(SemanticLirFunction function, uint index, bool has_call,
                          bool header)
 {
-    uint limit = has_call ? 4u : 6u;
+    if (has_call) return ranked_slot(function, function.param_count + index, header);
+    uint limit = 6u;
     uint param_total = semantic_lir_param_total[0u];
     uint local_total = min(gParams.local_capacity, semantic_lir_local_total[0u]);
     if (index >= LOCAL_SLOT_SCAN_LIMIT ||
         function.param_start + function.param_count > param_total ||
         function.local_start + function.local_count > local_total)
         return X86_LOCATION_INVALID;
-    // Cached slice header registers (RBX, R12, R13) are slots 0-2 with calls.
-    uint slots = header && has_call ? X86_HEADER_CALL_SLOTS : 0u;
+    uint slots = 0u;
     for (uint ordinal = 0u; ordinal < min(function.param_count, LOCAL_SLOT_SCAN_LIMIT); ordinal += 1u)
     {
-        uint slot = parameter_register_slot(function, ordinal, has_call, header);
+        uint slot = parameter_register_slot(function, ordinal, false, header);
         if (slot != X86_LOCATION_INVALID) slots |= 1u << slot;
     }
     if (!scalar_gpr_type(semantic_lir_locals[function.local_start + index].type_id))
