@@ -1115,6 +1115,11 @@
         "docs/extended-gitignore.md"
       ]
     },
+    "ext::sed": {
+      "guides": [
+        "docs/extended-sed.md"
+      ]
+    },
     "ext::glob": {
       "guides": [
         "docs/extended-glob.md"
@@ -1622,7 +1627,32 @@
       "role": "support",
       "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
     },
+    "ext::text_args": {
+      "guides": [
+        "docs/extended-textutils.md"
+      ]
+    },
     "ext::text_cut": {
+      "guides": [
+        "docs/extended-textutils.md"
+      ]
+    },
+    "ext::text_cat": {
+      "guides": [
+        "docs/extended-textutils.md"
+      ]
+    },
+    "ext::text_head": {
+      "guides": [
+        "docs/extended-textutils.md"
+      ]
+    },
+    "ext::text_tee": {
+      "guides": [
+        "docs/extended-textutils.md"
+      ]
+    },
+    "ext::text_tail": {
       "guides": [
         "docs/extended-textutils.md"
       ]
@@ -1633,6 +1663,11 @@
       ]
     },
     "ext::text_sort": {
+      "guides": [
+        "docs/extended-textutils.md"
+      ]
+    },
+    "ext::text_source": {
       "guides": [
         "docs/extended-textutils.md"
       ]
@@ -1902,10 +1937,26 @@
       "guides": [
         "docs/extended-websocket-client.md",
         "docs/extended-websocket.md",
-        "docs/extended-http-agent.md",
-        "docs/extended-openssl-websocket.md"
+        "docs/extended-websocket-service.md",
+        "docs/extended-http-agent.md"
       ],
-      "note": "Synchronous RFC 6455 client for ws:// and verified wss:// URLs over ext::http_agent dial connections and the canonical ext::websocket wire engine in Role::Client. The opening handshake uses a fresh 16-byte OS-random key and validates the 101 (Upgrade, Connection, Accept, no extensions, offered protocol); frame bytes coalesced with the head are kept. Every frame is masked with a key from a 256-byte OS-random pool. Supports single-frame and fragmented sends, assembles fragmented messages with interleaved control frames, answers Pings, echoes peer Close codes, starts the close handshake with a bounded wait, and fails the connection with Close 1002/1007/1009 on protocol violations. Receive timeouts leave plain and TLS connections usable. The ws_cat sample passes ws (24 cases) and wss (26 cases) groups against a minimal asyncio RFC 6455 server."
+      "note": "Synchronous RFC 6455 client for ws:// and verified wss:// URLs over ext::http_agent dial connections and the canonical ext::websocket wire engine in Role::Client. The opening handshake uses a fresh 16-byte OS-random key and validates the 101 (Upgrade, Connection, Accept, offered protocol, permessage-deflate response); frame bytes coalesced with the head are kept. Every frame is masked with a key from a 256-byte OS-random pool and uses the shortest length encoding. Supports single-frame and fragmented sends, assembles fragmented messages with interleaved control frames, checks text UTF-8 as fragments arrive, answers Pings, echoes peer Close codes, refuses close codes and reasons an endpoint may not send, and fails the connection with Close 1002/1007/1009/1011. permessage-deflate (ext::ws_deflate) compresses whole and fragmented messages with context takeover on or off for each side and the server's window limit. The ws_cat sample passes ws (50 cases), wss (52) and deflate (24, against Python zlib) groups against a stdlib-only asyncio echo server."
+    },
+    "ext::websocket_service": {
+      "guides": [
+        "docs/extended-websocket-service.md",
+        "docs/extended-websocket.md",
+        "docs/extended-http-service.md"
+      ],
+      "note": "WebSocket sessions on one std::event loop, upgraded from ext::http_service (Hub.upgrade detaches the socket). Pings, fragmentation, UTF-8, close codes and limits per RFC 6455; permessage-deflate with server context takeover unless the offer or deflate_no_context asks for a reset, and the offered server_max_window_bits. ws_echo_server passes an 89-case hand-written-peer oracle."
+    },
+    "ext::ws_deflate": {
+      "guides": [
+        "docs/extended-websocket-client.md",
+        "docs/extended-websocket-service.md",
+        "docs/extended-streaming-deflate.md"
+      ],
+      "note": "permessage-deflate (RFC 7692): offers, server negotiation (negotiate, negotiate_no_context), response checking, and a per-connection Codec that compresses with a sync-flushed ext::deflate level-1 encoder (context takeover or reset, window 2^8..2^15) and inflates with a 32 KiB history. Passes deflate_oracle.py against Python zlib (9 cases)."
     },
     "ext::weighted_statistics": {
       "guides": [

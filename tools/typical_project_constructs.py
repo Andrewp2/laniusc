@@ -586,9 +586,11 @@ def _render_rare_score(language: str, module_name: str, index: int) -> str:
         body = [
             line[:-1] if line.endswith(";") else line for line in statements
         ]
+        # moon rejects a `mut` that is never assigned (unused_mut is an error).
+        mutable = any(line.lstrip().startswith("total = ") for line in body)
         return (
             "fn rare_construct_score(seed : Int) -> Int {\n"
-            "  let mut total : Int = 0\n"
+            f"  let {'mut ' if mutable else ''}total : Int = 0\n"
             + "\n".join(body)
             + "\n  total\n}\n\n"
         )

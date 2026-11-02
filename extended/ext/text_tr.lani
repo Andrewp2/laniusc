@@ -406,12 +406,13 @@ fn tr_foldable(t: [i32]) -> bool {
     return any;
 }
 // Runs of the bytes flagged in t[at..at+256].
-fn tr_flag_runs(p: &Plan, at: i32) -> Runs {
+// With `other`, the runs of the bytes not flagged.
+fn tr_flag_runs(p: &Plan, at: i32, other: bool) -> Runs {
     let rs: Runs = tr_new_runs(); let t: [i32] = p.t; let c: i32 = 0;
     while (c < 256 && rs.ok) {
-        if (t[at+c] == 0) { c += 1; continue; }
+        if ((t[at+c] == 0) != other) { c += 1; continue; }
         let limit: i32 = 128; if (c >= 128) { limit = 256; }
-        let e: i32 = c; while (e + 1 < limit && t[at+e+1] != 0) { e += 1; }
+        let e: i32 = c; while (e + 1 < limit && (t[at+e+1] != 0) != other) { e += 1; }
         tr_add_run(rs.borrow(), c, e, 0, 1); c = e + 1;
     }
     return rs;
@@ -578,18 +579,44 @@ pub fn filter(p: &Plan, st: &State, v: core::slice::View<u8>, o: &ext::text_line
     if (core::result::is_err(made)) { return core::result::Err(core::result::unwrap_err(made)); }
     let w: ext::text_lines::Words = core::result::unwrap(made);
     let n: i32 = v.length; let t: [i32] = p.t; let last: i32 = st.last;
-    let dr: Runs = tr_flag_runs(p, 256); let sr: Runs = tr_flag_runs(p, 512);
-    let del: Slots = tr_slots(dr.borrow(), true, 0, 0); let sq: Slots = tr_slots(sr.borrow(), true, 0, 0);
-    dr.destroy(); sr.destroy();
+    let dr: Runs = tr_flag_runs(p, 256, false); let sr: Runs = tr_flag_runs(p, 512, false); let kr: Runs = tr_flag_runs(p, 256, true);
+    let del: Slots = tr_slots(dr.borrow(), true, 0, 0); let sq: Slots = tr_slots(sr.borrow(), true, 0, 0); let kept: Slots = tr_slots(kr.borrow(), true, 0, 0);
+    dr.destroy(); sr.destroy(); kr.destroy();
     let deleting: bool = p.delete; let squeezing: bool = p.squeeze;
-    let fast: bool = dr.ok && sr.ok && del.ok && sq.ok && ext::text_lines::packed(v);
     let low: u64 = ext::text_lines::LOW7; let high: u64 = ext::text_lines::HIGH; let ones: u64 = ext::text_lines::ONES;
+    // Deleting alone, the kept bytes are tested instead when they form
+    // fewer runs (as with -c); flip turns their lanes into the dropped ones.
+    let flip: u64 = 0; let dok: bool = dr.ok && del.ok;
+    if (deleting && !squeezing && kr.ok && kept.ok && (!dok || kr.n < dr.n)) { del = kept; flip = high; dok = true; }
+    let fast: bool = dok && sr.ok && sq.ok && ext::text_lines::packed(v);
     let da0: u64 = del.a0; let db0: u64 = del.b0; let da1: u64 = del.a1; let db1: u64 = del.b1; let da2: u64 = del.a2; let db2: u64 = del.b2; let dah: u64 = del.ah; let dbh: u64 = del.bh;
     let sa0: u64 = sq.a0; let sb0: u64 = sq.b0; let sa1: u64 = sq.a1; let sb1: u64 = sq.b1; let sa2: u64 = sq.a2; let sb2: u64 = sq.b2; let sah: u64 = sq.ah; let sbh: u64 = sq.bh;
     let ws: [u64] = w.words; let nw: i32 = w.nw; let base: i32 = nw - 1;
     let acc: u64 = o.acc; let fill: i32 = o.fill; let at: i32 = o.at; let cap: i32 = o.cap; let wv: [u64] = o.w;
     let j: i32 = 0;
     let dsmall: bool = tr_one_slot(del); let ssmall: bool = tr_one_slot(sq);
+    // Unused slots are zero (a used one never is), so whole-word tests skip them.
+    let dthree: bool = del.a2 != 0; let dhigh: bool = del.high != 0;
+    // The gap-closing masks for each set of dropped lanes (bit i: lane i),
+    // five words per set: the kept lanes, the lanes that move down 1, 2
+    // and 4 bytes in turn, and the kept count. A word's set is its drop
+    // mask's high bits gathered into one byte by the multiply.
+    let cm: [u64; 1280] = [0; 1280]; let spread: u64 = 72624976668147840;
+    if (fast) {
+        let d: i32 = 0;
+        while (d < 256) {
+            let d1: u64 = 0; let lane: i32 = 0; let bit: u64 = 1;
+            while (lane < 8) { if (((d >> lane) & 1) != 0) { d1 = d1 | (bit << ((lane * 8) as u64)); } lane += 1; }
+            let incl: u64 = d1 * ones; let km: u64 = (d1 * 255) ^ ext::text_lines::ALL;
+            let e: u64 = (incl - d1) & km;
+            let m1: u64 = (e & ones) * 255; let em: u64 = e & m1; e = (e ^ em) | (em >> 8);
+            let m2: u64 = ((e >> 1) & ones) * 255; em = e & m2; e = (e ^ em) | (em >> 16);
+            let m4: u64 = ((e >> 2) & ones) * 255;
+            let c: i32 = d * 5;
+            cm[c] = km; cm[c+1] = m1; cm[c+2] = m2; cm[c+3] = m4; cm[c+4] = 8 - (incl >> 56);
+            d += 1;
+        }
+    }
     while (j <= nw) {
         if (fast && j < nw && deleting != squeezing) {
             // Every whole word: copied as is when it keeps every byte,
@@ -597,16 +624,18 @@ pub fn filter(p: &Plan, st: &State, v: core::slice::View<u8>, o: &ext::text_line
             // moves down by the count of dropped bytes below it, one bit of
             // that count at a time; no two bytes ever meet).
             let ff: u64 = (fill * 8) as u64; let back: u64 = (64 - ff) & 63; let keep: u64 = 0; if (fill != 0) { keep = ext::text_lines::ALL; }
+            let all: u64 = ext::text_lines::ALL;
             while (j + 1 < nw) {
                 // Two words at a time while both are whole.
                 let x0: u64 = ws[base-j]; let x1: u64 = ws[base-j-1]; let y0: u64 = x0 & low; let y1: u64 = x1 & low; let dm0: u64 = 0; let dm1: u64 = 0;
                 if (deleting) {
                     let l0: u64 = (y0 + da0) ^ (y0 + db0); let l1: u64 = (y1 + da0) ^ (y1 + db0); let h0: u64 = 0; let h1: u64 = 0;
                     if (!dsmall) {
-                        l0 = l0 | ((y0 + da1) ^ (y0 + db1)) | ((y0 + da2) ^ (y0 + db2)); h0 = ((y0 + dah) ^ (y0 + dbh)) & x0;
-                        l1 = l1 | ((y1 + da1) ^ (y1 + db1)) | ((y1 + da2) ^ (y1 + db2)); h1 = ((y1 + dah) ^ (y1 + dbh)) & x1;
+                        l0 = l0 | ((y0 + da1) ^ (y0 + db1)); l1 = l1 | ((y1 + da1) ^ (y1 + db1));
+                        if (dthree) { l0 = l0 | ((y0 + da2) ^ (y0 + db2)); l1 = l1 | ((y1 + da2) ^ (y1 + db2)); }
+                        if (dhigh) { h0 = ((y0 + dah) ^ (y0 + dbh)) & x0; h1 = ((y1 + dah) ^ (y1 + dbh)) & x1; }
                     }
-                    dm0 = (((l0 | x0) ^ x0) | h0) & high; dm1 = (((l1 | x1) ^ x1) | h1) & high;
+                    dm0 = ((((l0 | x0) ^ x0) | h0) & high) ^ flip; dm1 = ((((l1 | x1) ^ x1) | h1) & high) ^ flip;
                 } else {
                     let prev: u64 = x0 << 8; if (last >= 0) { prev = prev | (last as u64); } else { prev = prev | ((x0 & 255) ^ 255); }
                     let e0: u64 = x0 ^ prev; let e1: u64 = x1 ^ ((x1 << 8) | (x0 >> 56));
@@ -628,37 +657,22 @@ pub fn filter(p: &Plan, st: &State, v: core::slice::View<u8>, o: &ext::text_line
                     wv[cap-1-at] = w0; wv[cap-2-at] = w1; at += 2; acc = (x1 >> back) & keep;
                     continue;
                 }
-                let a1: u64 = dm0 >> 7; let b1: u64 = dm1 >> 7; let ia: u64 = a1 * ones; let ib: u64 = b1 * ones;
-                let ka: u64 = (a1 * 255) ^ ext::text_lines::ALL; let kb: u64 = (b1 * 255) ^ ext::text_lines::ALL;
-                let ea: u64 = (ia - a1) & ka; let eb: u64 = (ib - b1) & kb; let xa: u64 = x0 & ka; let xb: u64 = x1 & kb;
-                let ma: u64 = (ea & ones) * 255; let mb: u64 = (eb & ones) * 255;
-                let ta: u64 = xa & ma; let tb: u64 = xb & mb; xa = (xa ^ ta) | (ta >> 8); xb = (xb ^ tb) | (tb >> 8);
-                ta = ea & ma; tb = eb & mb; ea = (ea ^ ta) | (ta >> 8); eb = (eb ^ tb) | (tb >> 8);
-                ma = ((ea >> 1) & ones) * 255; mb = ((eb >> 1) & ones) * 255;
-                ta = xa & ma; tb = xb & mb; xa = (xa ^ ta) | (ta >> 16); xb = (xb ^ tb) | (tb >> 16);
-                ta = ea & ma; tb = eb & mb; ea = (ea ^ ta) | (ta >> 16); eb = (eb ^ tb) | (tb >> 16);
-                ma = ((ea >> 2) & ones) * 255; mb = ((eb >> 2) & ones) * 255;
-                ta = xa & ma; tb = xb & mb; xa = (xa ^ ta) | (ta >> 32); xb = (xb ^ tb) | (tb >> 32);
-                let k0: i32 = 8 - ((ia >> 56) as i32); let kk: i32 = 8 - ((ib >> 56) as i32);
-                // Append xa (k0 bytes, 0..8) then xb (kk bytes).
-                if (k0 > 0) {
-                    acc = acc | (xa << ff); fill += k0;
-                    if (fill >= 8) {
-                        if (at == cap) { o.acc = acc; o.fill = 0; o.at = at; ext::text_lines::spill(o); at = o.at; cap = o.cap; wv = o.w; }
-                        wv[cap-1-at] = acc; at += 1; fill -= 8;
-                        if (fill == 0) { acc = 0; } else { acc = xa >> (((k0 - fill) * 8) as u64); }
-                    }
-                    ff = (fill * 8) as u64;
-                }
-                if (kk > 0) {
-                    acc = acc | (xb << ff); fill += kk;
-                    if (fill >= 8) {
-                        if (at == cap) { o.acc = acc; o.fill = 0; o.at = at; ext::text_lines::spill(o); at = o.at; cap = o.cap; wv = o.w; }
-                        wv[cap-1-at] = acc; at += 1; fill -= 8;
-                        if (fill == 0) { acc = 0; } else { acc = xb >> (((kk - fill) * 8) as u64); }
-                    }
-                    ff = (fill * 8) as u64;
-                }
+                let ca: i32 = ((((dm0 >> 7) * spread) >> 56) as i32) * 5; let cb: i32 = ((((dm1 >> 7) * spread) >> 56) as i32) * 5;
+                let xa: u64 = x0 & cm[ca]; let xb: u64 = x1 & cm[cb];
+                let ta: u64 = xa & cm[ca+1]; let tb: u64 = xb & cm[cb+1]; xa = (xa ^ ta) | (ta >> 8); xb = (xb ^ tb) | (tb >> 8);
+                ta = xa & cm[ca+2]; tb = xb & cm[cb+2]; xa = (xa ^ ta) | (ta >> 16); xb = (xb ^ tb) | (tb >> 16);
+                ta = xa & cm[ca+3]; tb = xb & cm[cb+3]; xa = (xa ^ ta) | (ta >> 32); xb = (xb ^ tb) | (tb >> 32);
+                let k0: i32 = cm[ca+4] as i32; let kk: i32 = cm[cb+4] as i32;
+                // Append xa (k0 bytes, 0..8) then xb (kk bytes) without
+                // branches: the pending word is stored each time and counts
+                // once it is full; m is all ones then.
+                if (at + 2 > cap) { o.acc = acc; o.fill = 0; o.at = at; ext::text_lines::spill(o); at = o.at; cap = o.cap; wv = o.w; }
+                acc = acc | (xa << ff); let nf: i32 = fill + k0; wv[cap-1-at] = acc;
+                let m: u64 = 0 - ((nf >> 3) as u64); at += nf >> 3;
+                acc = (acc & (m ^ all)) | (((xa >> 1) >> (63 - ff)) & m); fill = nf & 7; ff = (fill * 8) as u64;
+                acc = acc | (xb << ff); nf = fill + kk; wv[cap-1-at] = acc;
+                m = 0 - ((nf >> 3) as u64); at += nf >> 3;
+                acc = (acc & (m ^ all)) | (((xb >> 1) >> (63 - ff)) & m); fill = nf & 7; ff = (fill * 8) as u64;
                 back = (64 - ff) & 63; keep = 0; if (fill != 0) { keep = ext::text_lines::ALL; }
             }
             while (j < nw) {
@@ -666,7 +680,7 @@ pub fn filter(p: &Plan, st: &State, v: core::slice::View<u8>, o: &ext::text_line
                 if (deleting) {
                     let l: u64 = (y + da0) ^ (y + db0); let h: u64 = 0;
                     if (!dsmall) { l = l | ((y + da1) ^ (y + db1)) | ((y + da2) ^ (y + db2)); h = ((y + dah) ^ (y + dbh)) & x; }
-                    dm = (((l | x) ^ x) | h) & high;
+                    dm = ((((l | x) ^ x) | h) & high) ^ flip;
                 } else {
                     let prev: u64 = x << 8; if (last >= 0) { prev = prev | (last as u64); } else { prev = prev | ((x & 255) ^ 255); }
                     let e: u64 = x ^ prev; let same: u64 = ((((e & low) + low) | e) & high) ^ high;
@@ -682,12 +696,11 @@ pub fn filter(p: &Plan, st: &State, v: core::slice::View<u8>, o: &ext::text_line
                     let word: u64 = acc | (x << ff); wv[cap-1-at] = word; at += 1; acc = (x >> back) & keep;
                     continue;
                 }
-                let d1: u64 = dm >> 7; let incl: u64 = d1 * ones; let km: u64 = (d1 * 255) ^ ext::text_lines::ALL;
-                let e: u64 = (incl - d1) & km; let xs: u64 = x & km;
-                let m1: u64 = (e & ones) * 255; let xm: u64 = xs & m1; xs = (xs ^ xm) | (xm >> 8); let em: u64 = e & m1; e = (e ^ em) | (em >> 8);
-                let m2: u64 = ((e >> 1) & ones) * 255; xm = xs & m2; xs = (xs ^ xm) | (xm >> 16); em = e & m2; e = (e ^ em) | (em >> 16);
-                let m4: u64 = ((e >> 2) & ones) * 255; xm = xs & m4; xs = (xs ^ xm) | (xm >> 32);
-                let k: i32 = 8 - ((incl >> 56) as i32);
+                let cc: i32 = ((((dm >> 7) * spread) >> 56) as i32) * 5; let xs: u64 = x & cm[cc];
+                let xm: u64 = xs & cm[cc+1]; xs = (xs ^ xm) | (xm >> 8);
+                xm = xs & cm[cc+2]; xs = (xs ^ xm) | (xm >> 16);
+                xm = xs & cm[cc+3]; xs = (xs ^ xm) | (xm >> 32);
+                let k: i32 = cm[cc+4] as i32;
                 if (k > 0) {
                     acc = acc | (xs << ff); fill += k;
                     if (fill >= 8) {
@@ -709,7 +722,7 @@ pub fn filter(p: &Plan, st: &State, v: core::slice::View<u8>, o: &ext::text_line
             let y: u64 = x & low;
             if (deleting) {
                 let l: u64 = ((y + da0) ^ (y + db0)) | ((y + da1) ^ (y + db1)) | ((y + da2) ^ (y + db2));
-                dm = ((((l | x) ^ x) | (((y + dah) ^ (y + dbh)) & x)) & high);
+                dm = ((((l | x) ^ x) | (((y + dah) ^ (y + dbh)) & x)) & high) ^ flip;
             }
             if (squeezing) {
                 if (dm != 0) { slow = true; }
@@ -726,12 +739,11 @@ pub fn filter(p: &Plan, st: &State, v: core::slice::View<u8>, o: &ext::text_line
             // Close the gaps in three steps: each kept byte moves down by
             // the count of dropped bytes below it, one bit of that count at
             // a time (no two bytes ever meet).
-            let d1: u64 = dm >> 7; let incl: u64 = d1 * ones; let km: u64 = (d1 * 255) ^ ext::text_lines::ALL;
-            let e: u64 = (incl - d1) & km; let xs: u64 = x & km;
-            let m1: u64 = (e & ones) * 255; let xm: u64 = xs & m1; xs = (xs ^ xm) | (xm >> 8); let em: u64 = e & m1; e = (e ^ em) | (em >> 8);
-            let m2: u64 = ((e >> 1) & ones) * 255; xm = xs & m2; xs = (xs ^ xm) | (xm >> 16); em = e & m2; e = (e ^ em) | (em >> 16);
-            let m4: u64 = ((e >> 2) & ones) * 255; xm = xs & m4; xs = (xs ^ xm) | (xm >> 32);
-            let k: i32 = 8 - ((incl >> 56) as i32);
+            let cc: i32 = ((((dm >> 7) * spread) >> 56) as i32) * 5; let xs: u64 = x & cm[cc];
+            let xm: u64 = xs & cm[cc+1]; xs = (xs ^ xm) | (xm >> 8);
+            xm = xs & cm[cc+2]; xs = (xs ^ xm) | (xm >> 16);
+            xm = xs & cm[cc+3]; xs = (xs ^ xm) | (xm >> 32);
+            let k: i32 = cm[cc+4] as i32;
             if (k > 0) {
                 acc = acc | (xs << ((fill * 8) as u64)); fill += k;
                 if (fill >= 8) {

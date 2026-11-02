@@ -79,7 +79,19 @@ def generate_tree(rng, root):
         if kind < 0.3:
             os.makedirs(os.path.join(root, path)); dirs.append(path)
         elif kind < 0.8:
-            lines = [b" ".join(rng.choice(WORDS) for _ in range(rng.randint(0, 4))) for _ in range(rng.randint(0, 12))]
+            # Some files are long (many selected lines, so output of earlier
+            # files fills the output area mid-file); NULs and invalid bytes
+            # then land anywhere, not only near the start. Invalid bytes
+            # follow a space: next to an encoding error GNU grep's ^, $ and
+            # \b differ from text_grep's (see extended-text-grep.md).
+            dense = rng.random() < 0.25
+            count = rng.randint(100, 900) if dense else rng.randint(0, 12)
+            lines = [b" ".join(rng.choice(WORDS) for _ in range(rng.randint(0, 6 if dense else 4))) for _ in range(count)]
+            if dense:
+                for _ in range(rng.choice([0, 0, 1, 3])):
+                    at = rng.randrange(len(lines)); lines[at] = lines[at] + rng.choice([b" \xff", b" \xc3", b" \xe6\x97", b" \xe9t\xe9 the"])
+                if rng.random() < 0.15:
+                    at = rng.randrange(len(lines)); lines[at] = lines[at][:2] + b"\0" + lines[at][2:]
             data = b"\n".join(lines) + (b"\n" if rng.random() < 0.8 else b"")
             if rng.random() < 0.08: data = data[:3] + b"\0" + data[3:]
             if rng.random() < 0.08: data = data + b"\xe9 the\n"

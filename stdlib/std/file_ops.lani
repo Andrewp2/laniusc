@@ -39,7 +39,8 @@ fn valid(view:View<u8>) -> bool { return view.start>=0 && view.length>=0 && view
 fn stage(path:core::path::Path,destination:[u8]) -> Result<i32,Error> {
     let bytes=path.as_bytes(); if(!valid(bytes)) { return Err(Error::InvalidInput); }
     if(bytes.len()>MAX_PATH_BYTES) { return Err(Error::Host(36)); } let i:i32=0;
-    while(i<bytes.len()) { let value=core::option::unwrap(bytes.get(i)); if(value==0) { return Err(Error::InvalidInput); } destination[i]=value; i+=1; } destination[i]=0; return Ok(i);
+    let values:[u8] =bytes.values; let at:i32=bytes.start;
+    while(i<bytes.length) { let value:u8=values[at+i]; if(value==0) { return Err(Error::InvalidInput); } destination[i]=value; i+=1; } destination[i]=0; return Ok(i);
 }
 fn flags(value:OpenOptions) -> Result<i64,Error> {
     let access:i64=match(value.access) { Access::Read->0, Access::Write->1, Access::ReadWrite->2 };

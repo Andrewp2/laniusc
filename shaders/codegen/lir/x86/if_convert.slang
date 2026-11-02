@@ -133,8 +133,11 @@ bool pure_select_arm(uint first_position, uint store_position, uint total,
 void mark_coalescible_value_get(uint row, uint position, uint total)
 {
     OptIrNodeCore core = opt_ir_core[row];
+    // 64-bit and 8/16-bit integers have register homes too (decl_slots_scatter).
+    bool wide = (core.type_id >= 9u && core.type_id <= 14u) ||
+        core.type_id == 16u || core.type_id == 17u;
     if (opt_ir_op(core) != SEMANTIC_LIR_OP_VALUE_GET ||
-        !scalar_gpr_type(core.type_id) ||
+        !(scalar_gpr_type(core.type_id) || wide) ||
         x86_live_by_semantic[row] != X86_SEMANTIC_LIVE)
         return;
     uint declaration = opt_ir_operands[row].a;
@@ -210,7 +213,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         opt_ir_op(opt_ir_core[branch.a]) !=
             SEMANTIC_LIR_OP_COMPARE ||
         scalar_is_float(opt_ir_core[branch.a].type_id) ||
-        x86_last_use_by_semantic[branch.a] != position ||
+        // optimize_close leaves a comparison read only by its branch dead
+        // (fused into COMPARE_BRANCH_FALSE); a live one must end here.
+        (x86_live_by_semantic[branch.a] != 0u &&
+         x86_last_use_by_semantic[branch.a] != position) ||
         opt_ir_op(opt_ir_core[branch.b]) != SEMANTIC_LIR_OP_ELSE)
         return;
 

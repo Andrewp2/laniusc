@@ -4,6 +4,10 @@ import codegen.lowering_ir;
 import codegen.lir.x86.location_common;
 
 StructuredBuffer<uint> semantic_param_value_layout;
+
+// Native by-value parameters of at most this many words are copied into
+// their fresh cells with one load and store per word instead of REP MOVSQ.
+static const uint X86_PARAMETER_MOVE_WORDS = 8u;
 StructuredBuffer<uint4> semantic_place_storage_by_token;
 
 uint x86_parameter_value_words(uint row)
@@ -74,20 +78,13 @@ uint x86_parameter_copy_bytes(TargetLirFunction target,
             slot += storage;
             continue;
         }
-        if (!packed && words <= 3u)
-        {
-            // Source load, destination LEA, home update, then per word
-            // mov rcx,[rsi+d8]; mov [rdi+d8],rcx (safety_emit's prologue).
-            bytes += 2u * x86_stack64_operand_bytes(home) +
-                x86_stack64_operand_bytes(base_slot) + words * 8u;
-            slot += storage;
-            continue;
-        }
-        // Source load, destination LEA, home update, optional native-word
-        // address adjustment, immediate count, and REP MOVS.
+        // Source load, destination LEA, home update, then either one load
+        // and store per word (small native values, see emit_prologue) or an
+        // optional native-word address adjustment, immediate count and REP MOVS.
         bytes += 2u * x86_stack64_operand_bytes(home) +
             x86_stack64_operand_bytes(base_slot) +
-            (!packed && words > 1u ? 14u : 0u) + 5u + (packed ? 2u : 3u);
+            (!packed && words <= X86_PARAMETER_MOVE_WORDS ? 8u * words - 2u :
+             (!packed && words > 1u ? 14u : 0u) + 5u + (packed ? 2u : 3u));
         slot += storage;
     }
     return bytes;

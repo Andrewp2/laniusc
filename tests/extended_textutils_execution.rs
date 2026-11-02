@@ -80,3 +80,23 @@ fn text_uniq_matches_gnu_uniq() {
 fn text_sort_matches_gnu_sort() {
     oracle("sort", "400");
 }
+
+#[test]
+fn text_head_matches_gnu_head() {
+    oracle("head", "600");
+}
+
+#[test]
+fn text_tail_matches_gnu_tail() {
+    oracle("tail", "600");
+}
+
+#[test]
+fn text_cat_matches_gnu_cat() {
+    oracle("cat", "600");
+}
+
+#[test]
+fn text_tee_matches_gnu_tee() {
+    oracle("tee", "600");
+}

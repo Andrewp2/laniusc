@@ -55,11 +55,16 @@ fn group(name: &str, expected: &str) {
 }
 
 #[test]
-fn ws_handshake_masking_fragments_ping_pong_and_close() {
-    group("ws", "cases=24 frames=38");
+fn ws_handshake_masking_lengths_fragments_control_frames_utf8_and_close() {
+    group("ws", "cases=50 frames=65");
 }
 
 #[test]
 fn wss_verifies_the_server_and_runs_the_same_cases_over_tls() {
-    group("wss", "cases=26 frames=38");
+    group("wss", "cases=52 frames=65");
+}
+
+#[test]
+fn permessage_deflate_against_zlib_with_and_without_context_takeover() {
+    group("deflate", "cases=24 frames=74");
 }

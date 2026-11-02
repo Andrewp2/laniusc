@@ -1,0 +1,121 @@
+// GNU head under LC_ALL=C over ext::text_head, with options parsed by
+// std::cli (GNU getopt_long rules) after GNU's obsolete first argument
+// (-NUM followed by any of b, c, k, l, m, q, v, z).
+// usage: text-head [-c [-]NUM] [-n [-]NUM] [-q] [-v] [-z] [FILE...]
+// Exit 0, or 1 on a bad option or count, or an input that cannot be read.
+module app::main;
+import alloc::vec;
+import core::option;
+import core::result;
+import core::slice;
+import ext::text_args;
+import ext::text_head;
+import ext::text_lines;
+import std::args;
+import std::cli;
+
+fn lit(value: str, count: i32) -> core::slice::View<u8> { return ext::text_args::lit(value, count); }
+fn tool() -> core::slice::View<u8> { return lit("text-head", 9); }
+
+// A count operand: a leading '-' elides; returns false (after the message)
+// when it is not a number.
+fn set_count(o: &ext::text_head::Options, v: core::slice::View<u8>, lines: bool) -> bool {
+    o.lines = lines; o.elide = false; let digits: core::slice::View<u8> = v;
+    if (v.length > 0 && ext::text_args::at(v, 0) == 45) { o.elide = true; digits = ext::text_args::tail(v, 1); }
+    let c: ext::text_args::Count = ext::text_args::count(digits);
+    if (c.status != 0) {
+        let what: core::slice::View<u8> = lit("invalid number of bytes", 23); if (lines) { what = lit("invalid number of lines", 23); }
+        ext::text_args::complain(tool(), what, v); return false;
+    }
+    o.count = c.value; return true;
+}
+
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(1, 65536, 16777216);
+    if (core::result::is_err(captured)) { ext::text_args::complain(tool(), lit("bad arguments", 13), lit("", 0)); return 1; }
+    let arguments: std::args::Arguments = core::result::unwrap(captured);
+    let all: core::slice::View<core::slice::View<u8>> = arguments.as_view();
+    let o: ext::text_head::Options = ext::text_head::default_options();
+    let headers: i32 = 0; // 0: when several files, 1: never, 2: always
+    // GNU's obsolete form: the first argument is - and digits, then letters.
+    if (all.length > 0) {
+        let a: core::slice::View<u8> = all.values[all.start];
+        if (a.length > 1 && ext::text_args::at(a, 0) == 45 && ext::text_args::at(a, 1) >= 48 && ext::text_args::at(a, 1) <= 57) {
+            let k: i32 = 1; while (k < a.length && ext::text_args::at(a, k) >= 48 && ext::text_args::at(a, k) <= 57) { k += 1; }
+            let digits: i32 = k; let mult: u8 = 0; let lines: bool = true;
+            while (k < a.length) {
+                let c: u8 = ext::text_args::at(a, k); k += 1;
+                if (c == 99) { lines = false; mult = 0; }
+                else { if (c == 98 || c == 107 || c == 109) { lines = false; mult = c; }
+                else { if (c == 108) { lines = true; }
+                else { if (c == 113) { headers = 1; }
+                else { if (c == 118) { headers = 2; }
+                else { if (c == 122) { o.eol = 0; }
+                else { ext::text_args::complain(tool(), lit("invalid trailing option -- ", 27), core::slice::View { values: a.values, start: a.start + k - 1, length: 1 }); arguments.destroy(); return 1; } } } } } }
+            }
+            let text: alloc::vec::Vec<u8> = alloc::vec::new(); let j: i32 = 1;
+            while (j < digits) { let pushed: core::result::Result<i32, alloc::vec::Error> = text.try_push(ext::text_args::at(a, j)); j += 1; }
+            if (mult != 0) { let pushed: core::result::Result<i32, alloc::vec::Error> = text.try_push(mult); }
+            let c: ext::text_args::Count = ext::text_args::count(text.as_view());
+            text.destroy();
+            if (c.status != 0) { ext::text_args::complain(tool(), lit("invalid number", 14), a); arguments.destroy(); return 1; }
+            o.lines = lines; o.count = c.value;
+            all = core::slice::View { values: all.values, start: all.start + 1, length: all.length - 1 };
+        }
+    }
+    let cli: std::cli::Command = std::cli::command(tool(), lit("Print the first 10 lines of each FILE to standard output.", 57));
+    cli.option(1, 99, lit("bytes", 5), lit("[-]NUM", 6), lit("print the first NUM bytes; with -, all but the last NUM", 55));
+    cli.option(2, 110, lit("lines", 5), lit("[-]NUM", 6), lit("print the first NUM lines; with -, all but the last NUM", 55));
+    cli.flag(3, 113, lit("quiet", 5), lit("never print headers giving file names", 37));
+    cli.flag(3, 0, lit("silent", 6), lit("same as --quiet", 15));
+    cli.flag(4, 118, lit("verbose", 7), lit("always print headers giving file names", 38));
+    cli.flag(5, 122, lit("zero-terminated", 15), lit("line delimiter is NUL, not newline", 34));
+    cli.help(6);
+    cli.operands(lit("FILE", 4), 0, -1);
+    let parsed: core::result::Result<std::cli::Matches, std::cli::Error> = cli.parse(all);
+    if (core::result::is_err(parsed)) { cli.print_error(core::result::unwrap_err(parsed), all); cli.destroy(); arguments.destroy(); return 1; }
+    let m: std::cli::Matches = core::result::unwrap(parsed);
+    let i: i32 = 0; let ok: bool = true; let help: bool = false;
+    while (i < m.occurrences() && ok) {
+        let id: i32 = m.occurrence_id(i);
+        if (id == 1 || id == 2) { ok = set_count(o.borrow(), core::option::unwrap(m.occurrence_value(i)), id == 2); }
+        if (id == 3) { headers = 1; } if (id == 4) { headers = 2; } if (id == 5) { o.eol = 0; } if (id == 6) { help = true; }
+        i += 1;
+    }
+    // GNU refuses an elided byte count past the largest file offset.
+    if (ok && !help && o.elide && !o.lines && o.count > 9223372036854775807) {
+        ext::text_args::complain(tool(), lit("invalid number of bytes", 23), lit("Value too large for defined data type", 37)); ok = false;
+    }
+    if (!ok || help) {
+        let status: i32 = 1; if (ok && help) { status = 0; if (!cli.print_help(-1)) { status = 1; } }
+        m.destroy(); cli.destroy(); arguments.destroy(); return status;
+    }
+    let names: alloc::vec::Vec<core::slice::View<u8>> = alloc::vec::new(); i = 0;
+    while (i < m.operand_count()) { let pushed: core::result::Result<i32, alloc::vec::Error> = names.try_push(m.operand(i)); i += 1; }
+    if (names.len() == 0) { let pushed: core::result::Result<i32, alloc::vec::Error> = names.try_push(lit("-", 1)); }
+    let show: bool = headers == 2 || (headers == 0 && names.len() > 1);
+    let first: bool = true; let status: i32 = 0; i = 0;
+    while (i < names.len()) {
+        let name: core::slice::View<u8> = core::option::unwrap(names.get(i)); i += 1;
+        let fd: i32 = ext::text_lines::open_input(name);
+        if (fd < 0) { ext::text_args::complain(tool(), lit("cannot open for reading", 23), name); status = 1; continue; }
+        if (show) {
+            let shown: core::slice::View<u8> = name; if (ext::text_args::same(name, lit("-", 1))) { shown = lit("standard input", 14); }
+            let h: alloc::vec::Vec<u8> = alloc::vec::new();
+            if (!first) { let a: core::result::Result<i32, alloc::vec::Error> = h.try_push(10); }
+            let b: core::result::Result<i32, alloc::vec::Error> = h.try_extend(lit("==> ", 4));
+            let c: core::result::Result<i32, alloc::vec::Error> = h.try_extend(shown);
+            let d: core::result::Result<i32, alloc::vec::Error> = h.try_extend(lit(" <==\n", 5));
+            let wrote: bool = ext::text_args::emit(1, h.as_view());
+            h.destroy(); first = false;
+            if (!wrote) { status = 1; ext::text_lines::close_input(fd); break; }
+        }
+        let r: i32 = 0;
+        if (o.elide) { r = ext::text_head::eliding(fd, o); } else { r = ext::text_head::leading(fd, o); }
+        ext::text_lines::close_input(fd);
+        if (r == 1) { ext::text_args::complain(tool(), lit("error reading", 13), name); status = 1; }
+        if (r == 2) { ext::text_args::complain(tool(), lit("write error", 11), lit("", 0)); status = 1; break; }
+    }
+    names.destroy(); m.destroy(); cli.destroy(); arguments.destroy();
+    return status;
+}

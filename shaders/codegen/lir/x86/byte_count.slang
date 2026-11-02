@@ -293,7 +293,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         bytes += (frameless ? 0u : stackless ? 1u :
             4u + (frame_slots == 0u ? 0u : 7u) +
             saved_bytes) +
-            param_store_bytes(function, semantic_function, hidden_sret);
+            param_store_bytes(function, semantic_function, hidden_sret) +
+            x86_header_load_bytes(saved_mask);
     }
     bool final_explicit_return = core.op == X86_LIR_OP_RETURN ||
         core.op == X86_LIR_OP_RETURN_VOID || core.op == X86_LIR_OP_TRAP;

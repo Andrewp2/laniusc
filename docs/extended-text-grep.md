@@ -183,7 +183,9 @@ blocks (`text-grep-numbers-receipt.log`) and after the counting scan
 (`text-grep-count-receipt.log`) and after the word-wise literal search
 (`text-grep-pair-receipt.log`) and after the file and recursive modes, which
 moved the record loop into a shared `block` function
-(`text-grep-recursive-scan-receipt.log`), tiny build included. A build with a 3-state DFA
+(`text-grep-recursive-scan-receipt.log`), and after the file-mode literal
+path and the inline UTF-8 check (`text-grep-speed-scan-receipt.log`, each
+seed in two halves with `--from 750`), tiny build included. A build with a 3-state DFA
 cache and 2 partials gave 800/800 on seeds 20261031 and 7, which forces the
 undecided-record path (log `target/claude-work/s3/text-grep-scan-receipt.log`).
 
@@ -367,7 +369,17 @@ one reused buffer and searched with the same scan as stdin. Records,
   record with encoding errors matches when one of its valid pieces does,
   each piece being searched as a record of its own. Selected records with
   errors are counted but not written, and they get the same stderr line at
-  the end of the file. Valid selected records are written as usual.
+  the end of the file. Valid selected records are written as usual. Next to
+  an encoding error the two programs differ: GNU grep treats the bad byte as
+  a word character that nothing matches, so `^` and `$` do not hold beside
+  it and `\b` does not either. text_grep's pieces start and end there, so
+  `^x` matches `\xffx` in text_grep and not in GNU grep. This follows the
+  same rule as `\b` and `\w` in [`ext::regex`](extended-regex.md), which use
+  ASCII word characters (GNU grep's `beta\b` does not match `betaé`, and
+  text_grep's does).
+- A file is binary when it contains a NUL anywhere. GNU grep decides this
+  per 96 KiB read buffer, so for a NUL after the first buffer it writes the
+  lines of the earlier buffers and text_grep writes none.
 - `-v` with an empty pattern exits 1 without reading anything.
 - A directory operand without `-r` is reported as `is-a-directory` and the
   search goes on.
@@ -394,11 +406,50 @@ not `.git/info/exclude`, the global excludes file or `.gitignore` files
 above the starting directory. A `.gitignore` that cannot be read is
 reported like any unreadable file, and none of its rules apply.
 
-When the required literal of the pattern occurs nowhere in a file, and no
-record could exceed `--max-line` or reach the work bound, the file is not
-validated or split into records at all; it has no match. This is most files
-of a typical search, and it took the repository search for an absent word
-from 1.15 s to 0.39 s user time.
+#### How a file is scanned
+
+A pattern with a required literal that has no NUL, CR or LF, in a file in
+which no record can exceed `--max-line` or reach the work bound, takes the
+literal path. That is every literal-bearing pattern on ordinary files. The
+path never splits the file into records. It looks only at the records that
+hold the literal, as GNU grep does:
+
+1. The literal is searched eight starts per word. The search tests the
+   literal's rarest byte (by `core::search::rank`) in each word, and for a
+   common rarest byte (a frequent letter) both probe bytes at once, so
+   `the` does not stop at every `h`. The same word tests also look for NUL.
+2. Around a hit, one backward and one forward word scan find the record's
+   LF bounds. They also note any byte >= 128 and stop at a NUL.
+3. Only that record is checked for UTF-8, and only when it is not all
+   ASCII. A record that is the literal alone (`the`, `fn main`) is then
+   selected without the matcher; otherwise the lazy DFA decides.
+4. With `-n`, the LFs between hits are counted eight bytes per step. With
+   `-v`, the records between hits are the selected ones. They are counted,
+   or checked and written, a region at a time.
+5. The search then goes on after the record.
+
+A NUL makes the file binary, but the file was read optimistically, so the
+first NUL can show up after records were selected. The file's output stays
+in the output area until then. Before a record could make the area flush,
+the rest of the file is checked for NUL first. On a NUL the file's output,
+counts and line number are dropped, and the file is searched again as a
+binary file. `-v` checks the whole file for NUL up front, since it writes
+most of it. A file without the literal is not looked at further.
+
+Other patterns (no required literal, as for `TODO|FIXME`, or a literal with
+a line break) still validate the whole file and run the stdin record scan,
+and are slower. On the repository, `TODO|FIXME` took 5–12x GNU grep's wall
+time under load.
+
+Two library changes also made the walk cheaper:
+- `std::directory::decode_entry` reads the dirent fields by direct
+  indexing, not through `Option` per byte.
+- `core::path::from_view` and `std::file_ops`'s path staging check bytes
+  directly too.
+
+The walk over 14,200 entries went from about 0.09 s to 0.03 s user. Reading
+a file no longer zero-fills the buffer. The buffer is used through its
+capacity and, when it grows, copies only the bytes read so far.
 
 Failures reading one file, opening it or reading a directory are reported
 with the path, for example `text-grep: src/a.c: io-failure stage=input
@@ -425,29 +476,39 @@ directories, symbolic links (to `.`, `..`, files and missing targets), NUL,
 Latin-1 and CRLF files, file names with spaces, and `.gitignore` files. It
 runs `-r` under 12 option sets mixing `-n`, `-c`, `-v`, repeated
 `--include`/`--exclude`, a `--exclude` that overrides an `--include`, and
-`--exclude-dir`, with patterns including the empty one. Seeds 20261101, 1 and
-2 gave 400/400 each. The same command checks `--gitignore` against git
-itself (see [.gitignore rules](extended-gitignore.md#verification)); it
-agreed in 231/231, 253/253 and 246/246 cases. Log:
-`target/claude-work/s3/text-grep-recursive-receipt.log`.
+`--exclude-dir`, with patterns including the empty one. A quarter of the
+files are long (100–900 lines), with invalid bytes and NULs placed anywhere
+in them. Many lines are selected, so the output area fills in the middle of
+a file, and the optimistic NUL handling above has to drop output and start
+the file again. Seeds 20261101, 1 and 2 gave 400/400 each. The same command
+checks `--gitignore` against git itself (see
+[.gitignore rules](extended-gitignore.md#verification)); it agreed in
+242/242, 217/217 and 246/246 cases. Log:
+`target/claude-work/s3/text-grep-speed-recursive-receipt.log` (before the
+literal path: `text-grep-recursive-receipt.log`).
 
-Timings on the repository tree with `--exclude-dir=target`, second of two
-runs, output to a file (GNU grep stops at the first match when stdout is
-`/dev/null`), on the laptop at load average 26–35:
+Timings on the repository tree with `--exclude-dir=target` and output to a
+file (GNU grep stops at the first match when stdout is `/dev/null`). Each is
+the best user+sys of five interleaved runs, on the laptop at load average
+6–15 (`target/claude-work/s3/bench_r.sh`):
 
-| Search | text_grep user | GNU grep user | text_grep wall | GNU grep wall |
+| Search | text_grep before | text_grep now | GNU grep | now / GNU |
 | --- | ---: | ---: | ---: | ---: |
-| `-r the` | 1.30 s | 0.33 s | 1.97 s | 0.84 s |
-| `-r -n the` | 1.27 s | 0.37 s | 1.95 s | 0.68 s |
-| `-r -c '\bmatch\b'` | 1.10 s | 0.27 s | 1.51 s | 0.66 s |
-| `-r -c zzqqxx` (absent) | 0.39 s | 0.10 s | 0.68 s | 0.31 s |
+| `-r the` | 0.90 s | 0.53 s | 0.37 s | 1.42 |
+| `-r -n the` | | 0.59 s | 0.40 s | 1.47 |
+| `-r -c the` | | 0.46 s | 0.33 s | 1.39 |
+| `-r -c zzqqxx` (absent) | 0.31 s | 0.32 s | 0.17 s | 1.88 |
 
-System time is about the same for both (0.2–0.3 s). The walk alone (12,654
-files and 1,535 directories) costs about 0.13 s user. Most of the rest is
-UTF-8 validation of every byte of every file that contains the literal: GNU
-grep checks encoding only in the lines it outputs. `--gitignore` over the
-same tree (without `--exclude-dir`, the root `.gitignore` ignores `target/`)
-took 1.59 s user. Log: `target/claude-work/s3/grep-recursive-timings.log`.
+Wall time for `-r the` was 0.53 s against 0.39 s. System time is lower than
+GNU grep's (0.09 s against 0.13 s). Of text_grep's 0.43 s user:
+- the walk, opens and reads take about 0.07 s;
+- the word search over the 273 MB takes about 0.15 s;
+- the hit records (116,000 of them, 29 MB of output) take the rest.
+
+The absent-word search is bound by the word search alone. GNU grep's
+`memchr` is vectorized, and this loop moves one 8-byte word per step. Log:
+`target/claude-work/s3/grep-speed-timings.log`. The earlier timings, under
+heavy load, are in `grep-recursive-timings.log`.
 
 ## Exit status and failures
 
@@ -544,7 +605,7 @@ mappings. The fixed output area saves two compared with the growing
 buffer it replaced. Before the fix above,
 failures 8 through 21 of the DFA pattern were silently absorbed: the search
 fell back to the VM and exited 0. Log:
-`target/claude-work/s3/text-grep-faults-recursive-receipt.log` (the stdin
+`target/claude-work/s3/text-grep-faults-speed-receipt.log` (counts unchanged by the literal path; the stdin
 rows alone: `text-grep-faults-pair-receipt.log`). The `(?:a|é)+` row goes through the line scan.
 
 ```sh

@@ -11,6 +11,9 @@
 // Output: "open secure=S protocol=P", then per received message
 // "KIND LENGTH FNV1A32 [DATA]" (DATA escaped, only up to 200 bytes) or
 // "close CODE REASON", and "closed CODE" after close; "error NAME" on failure.
+// --deflate offers permessage-deflate (context takeover allowed both ways);
+// --deflate-no-context offers it with both sides resetting per message. The
+// open line then ends " deflate=1" when the server accepted it.
 module app::main;
 import alloc::vec;
 import core::io;
@@ -106,7 +109,7 @@ fn error_name(e: ext::websocket_client::Error) -> core::slice::View<u8> {
             ext::websocket::Error::InvalidUtf8(n) -> literal("wire-utf8",9), ext::websocket::Error::Limit(n) -> literal("wire-limit",10),
             ext::websocket::Error::InvalidClose(n) -> literal("wire-close",10), _ -> literal("wire-protocol",13) },
         ext::websocket_client::Error::Closed -> literal("closed",6), ext::websocket_client::Error::Entropy -> literal("entropy",7),
-        ext::websocket_client::Error::AllocationFailed -> literal("out-of-memory",13), ext::websocket_client::Error::Clock -> literal("clock",5)
+        ext::websocket_client::Error::AllocationFailed -> literal("out-of-memory",13), ext::websocket_client::Error::Clock -> literal("clock",5), ext::websocket_client::Error::Inflate -> literal("inflate",7)
     };
 }
 fn fail(e: ext::websocket_client::Error) -> i32 {
@@ -237,7 +240,7 @@ fn read_stdin(out: &alloc::vec::Vec<u8>) -> bool {
     return false;
 }
 fn usage() -> i32 {
-    write_to(2,literal("Usage: ws-cat [--cacert FILE] [--protocol LIST] [-H 'Name: value']... [--timeout MS] [--max-message N] URL < SCRIPT\n",116));
+    write_to(2,literal("Usage: ws-cat [--cacert FILE] [--protocol LIST] [-H 'Name: value']... [--timeout MS] [--max-message N] [--deflate|--deflate-no-context] URL < SCRIPT\n",149));
     return 2;
 }
 fn run(args: std::args::Arguments) -> i32 {
@@ -246,6 +249,8 @@ fn run(args: std::args::Arguments) -> i32 {
     let i: i32 = 0;
     while (i < args.len()) {
         let a: core::slice::View<u8> = args.get(i).unwrap(); i += 1;
+        if (eq(a,"--deflate",9)) { options.deflate = true; continue; }
+        if (eq(a,"--deflate-no-context",20)) { options.deflate = true; options.deflate_no_context = true; continue; }
         if (a.len() > 0 && byte(a,0) == 45) {
             if (i >= args.len()) { headers.destroy(); return usage(); }
             let v: core::slice::View<u8> = args.get(i).unwrap(); i += 1;
@@ -274,6 +279,7 @@ fn run(args: std::args::Arguments) -> i32 {
     let line: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); let secure: i32 = 0; if (client.is_secure()) { secure = 1; }
     put(line.borrow(),"open secure=",12); push_number(line.borrow(),secure); put(line.borrow()," protocol=",10);
     let p = client.protocol(); if (p.is_some()) { line.try_extend(p.unwrap()); } else { put(line.borrow(),"-",1); }
+    if (client.compressed()) { put(line.borrow()," deflate=1",10); }
     put(line.borrow(),"\n",1); write_to(1,line.as_view()); line.destroy();
     let status: i32 = script(client.borrow(),input.as_view());
     client.destroy(); input.destroy(); headers.destroy(); return status;

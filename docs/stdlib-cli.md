@@ -40,7 +40,7 @@ Matches.destroy()
 
 - **Definitions:**
   - `short` is 0 for no short name, and `long` is empty for no long name; at least one must be given.
-  - Short names are ASCII letters or digits. Long names are letters, digits and inner `-`.
+  - Short names are ASCII letters or digits. Long names are letters, digits and inner `-`, or start with one `-` before a letter or digit for hidden options spelled with three dashes, such as GNU tail's `---presume-input-pipe`.
   - A duplicate name in the same scope, a bad name or a bad operand count marks the command invalid, and `parse` then returns `InvalidSpec`.
   - Ids are the caller's. Every occurrence is recorded in argument order, so repeated options, counters (`-vvv`) and last-one-wins policies all read from `Matches`.
 - **Borrowing:** names, help texts and parsed values borrow the caller's storage. `Matches` views borrow the arguments.

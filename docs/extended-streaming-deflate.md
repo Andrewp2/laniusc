@@ -194,6 +194,34 @@ returns `Bounds`, `ScratchTooSmall(65552)`, `Capacity(32784)` or
   does. Code lengths use the RFC 1951 run codes 16, 17 and 18. Symbols leave
   a 64-bit word at a time.
 
+### Sync flush
+
+```text
+Encoder.sync(input:View<u8>, output:View<u8>) -> Result<Step,Failure>
+```
+
+Levels 1-3 only (level 0 returns `Bounds`). `sync` takes all of `input`,
+writes the partial chunk as a nonfinal block, then an empty nonfinal stored
+block: three header bits, padding to the byte boundary and `00 00 FF FF`, as
+zlib's `Z_SYNC_FLUSH` does. Everything written so far then inflates
+completely. It returns `NeedOutput` while the flush is not yet published
+(call again with the rest of `input`) and `Done` once it is. The stream stays
+open: later `step` or `sync` calls continue it with the same 32 KiB history,
+and a chunk that starts mid-buffer after a flush ends at the window's end,
+where the window slides as usual. `reset` starts a new stream.
+
+`Encoder.limit_window(bits)` (levels 1-3, bits 8 to 15, before the first
+step; `reset` keeps it) makes matches reach no farther back than 2^bits
+bytes, for a decoder with a smaller window such as permessage-deflate's
+`max_window_bits`. A `zlib` inflater with that window accepts the output.
+
+permessage-deflate uses this for every message (RFC 7692 7.2.1): the
+message is the flushed bytes without the four-byte tail, and with context
+takeover the next message may refer back into earlier ones. The
+[WebSocket client](extended-websocket-client.md#permessage-deflate) oracle
+checks the output against Python's `zlib` across 1.3 MB of messages in one
+context.
+
 ### Level measurements
 
 These were measured on the Linux x86_64 laptop (load average 9–10) with the shared `lcc` of 2026-11-01.

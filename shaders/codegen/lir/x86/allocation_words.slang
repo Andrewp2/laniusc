@@ -50,6 +50,8 @@ StructuredBuffer<SemanticLirLocal> semantic_lir_locals;
 RWStructuredBuffer<uint> x86_location_by_semantic;
 RWStructuredBuffer<uint> x86_stack_words_by_position;
 RWStructuredBuffer<uint> x86_saved_gpr_mask_by_function;
+StructuredBuffer<X86DeclarationAnalysis> x86_decl_analysis_by_token;
+StructuredBuffer<uint4> semantic_place_storage_by_token;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -70,7 +72,8 @@ bool scalar_gpr_result(OptIrNodeCore core)
     return op == SEMANTIC_LIR_OP_COMPARE || core.type_id == 1u ||
         core.type_id == 2u || core.type_id == 3u || core.type_id == 4u ||
         core.type_id == 6u || core.type_id == 8u || core.type_id == 9u ||
-        core.type_id == 10u || core.type_id == 16u || core.type_id == 17u;
+        core.type_id == 10u || core.type_id == 16u || core.type_id == 17u ||
+        (core.type_id >= 11u && core.type_id <= 14u);
 }
 
 bool produces_float_value(uint op)
@@ -379,8 +382,8 @@ uint free_register(RegisterEnds ends, uint allowed, uint position)
 bool declaration_register_type(uint type_id)
 {
     return type_id == 1u || type_id == 2u || type_id == 3u ||
-        type_id == 4u || type_id == 6u || type_id == 8u ||
-        type_id == 9u || type_id == 10u || type_id == 16u || type_id == 17u;
+        type_id == 4u || type_id == 6u || (type_id >= 8u && type_id <= 14u) ||
+        type_id == 16u || type_id == 17u;
 }
 
 uint declaration_register(uint ordinal, bool has_call)
@@ -391,11 +394,15 @@ uint declaration_register(uint ordinal, bool has_call)
 
 // Register slots (declaration ordinals for the RDI, RSI, R10, R11, R8, R9 or
 // RBX, R12-R14 sequences) that decl_slots_scatter may give this function's
-// declarations: a register-typed parameter keeps its own ordinal unless a
-// hidden result pointer or a (data, length, stride) parameter keeps every
-// parameter on the stack, and register-typed locals take the remaining slots
-// in order. decl_slots_scatter applies the same rule (local_register_slot).
-uint declaration_register_mask(SemanticLirFunction function, bool has_call)
+// declarations. A register-typed parameter keeps its own ordinal unless a
+// hidden result pointer or a (data, length, stride) parameter shifts the
+// incoming registers; then the first two take slots 2 and 3. Register-typed
+// locals take the remaining slots in order. decl_slots_scatter applies the
+// same rule (parameter_register_slot, local_register_slot). In a function
+// with calls a declaration read only before the first call uses the
+// call-free register of its slot, so both registers of each slot are held.
+uint declaration_register_mask(SemanticLirFunction function, bool has_call,
+                               bool header)
 {
     uint limit = has_call ? 4u : 6u;
     uint param_total = semantic_lir_param_total[0u];
@@ -403,16 +410,22 @@ uint declaration_register_mask(SemanticLirFunction function, bool has_call)
     if (function.param_start + function.param_count > param_total ||
         function.local_start + function.local_count > local_total)
         return 0xffffu;
-    bool stack_parameters = function.result_word_count > 2u;
+    bool shifted = function.result_word_count > 2u;
     for (uint ordinal = 0u; ordinal < function.param_count; ordinal += 1u)
         if (x86_abi_param_width(semantic_lir_params[function.param_start + ordinal]) > 1u)
-            stack_parameters = true;
-    uint slots = 0u;
-    if (!stack_parameters)
-        for (uint ordinal = 0u; ordinal < min(function.param_count, limit); ordinal += 1u)
-            if (declaration_register_type(
-                    semantic_lir_params[function.param_start + ordinal].type_id))
-                slots |= 1u << ordinal;
+            shifted = true;
+    // Cached slice header registers (RBX, R12, R13) are slots 0-2 with calls.
+    uint slots = header && has_call ? X86_HEADER_CALL_SLOTS : 0u;
+    uint shifted_slot = header && has_call ? 3u : 2u;
+    for (uint ordinal = 0u; ordinal < min(function.param_count, LOCAL_SLOT_SCAN_LIMIT); ordinal += 1u)
+    {
+        if (!declaration_register_type(
+                semantic_lir_params[function.param_start + ordinal].type_id))
+            continue;
+        if (!shifted && ordinal < limit) slots |= 1u << ordinal;
+        if (shifted && shifted_slot < 4u) slots |= 1u << shifted_slot;
+        shifted_slot += 1u;
+    }
     uint cursor = 0u;
     uint scanned = min(function.local_count, LOCAL_SLOT_SCAN_LIMIT);
     for (uint index = 0u; index < scanned; index += 1u)
@@ -428,8 +441,27 @@ uint declaration_register_mask(SemanticLirFunction function, bool has_call)
     uint mask = 0u;
     for (uint slot = 0u; slot < limit; slot += 1u)
         if ((slots & (1u << slot)) != 0u)
-            mask |= 1u << declaration_register(slot, has_call);
+            mask |= (1u << declaration_register(slot, has_call)) |
+                (has_call ? 1u << x86_caller_declaration_register(slot) : 0u);
     return mask;
+}
+
+// The function's slice parameter whose header stays in registers (see
+// x86_header_parameter), or INVALID. decl_slots_scatter makes the same choice.
+uint header_parameter(SemanticLirFunction function)
+{
+    if (function.param_start + function.param_count > semantic_lir_param_total[0u])
+        return INVALID;
+    for (uint ordinal = 0u; ordinal < min(function.param_count, LOCAL_SLOT_SCAN_LIMIT); ordinal += 1u)
+    {
+        SemanticLirParam param = semantic_lir_params[function.param_start + ordinal];
+        uint declaration = param.declaration_id;
+        if (declaration < gParams.token_capacity &&
+            x86_header_parameter(param, x86_decl_analysis_by_token[declaration],
+                semantic_place_storage_by_token[declaration]))
+            return function.param_start + ordinal;
+    }
+    return INVALID;
 }
 
 bool control_label(uint op)
@@ -468,6 +500,7 @@ void walk_function(uint function_id, uint start, uint end, uint total,
     // back-edge target's word holds the farthest position that jumps back
     // to it. The forward pass replaces every one of these words.
     bool sound = true;
+    bool has_loop = false;
     uint next_call = INVALID;
     uint next_target = INVALID;
     for (uint cursor = end; cursor > start; )
@@ -488,6 +521,7 @@ void walk_function(uint function_id, uint start, uint end, uint total,
                     sound = false;
                 else
                 {
+                    has_loop = true;
                     uint prior = x86_location_by_semantic[target];
                     x86_location_by_semantic[target] =
                         prior == INVALID ? cursor : max(prior, cursor);
@@ -506,14 +540,22 @@ void walk_function(uint function_id, uint start, uint end, uint total,
 
     bool has_call =
         x86_register_analysis_by_function[function_id].first_call != INVALID;
-    uint reserved = declaration_register_mask(
-        semantic_lir_functions[function_id], has_call);
+    SemanticLirFunction function = semantic_lir_functions[function_id];
+    // Only a loop repays the saved registers (and the lost inlining), and the
+    // three header registers come out of the temporaries' pool: keep at
+    // least two temporaries free.
+    uint plain_free = countbits((TEMP_CALLER_REGISTERS | TEMP_CALLEE_REGISTERS) &
+        ~declaration_register_mask(function, has_call, false));
+    bool header = has_loop && sound && plain_free >= 5u &&
+        header_parameter(function) != INVALID;
+    uint reserved = declaration_register_mask(function, has_call, header);
+    if (header) reserved |= X86_HEADER_REGISTERS;
     uint caller_free = TEMP_CALLER_REGISTERS & ~reserved;
     uint callee_free = TEMP_CALLEE_REGISTERS & ~reserved;
     RegisterEnds ends;
     ends.rbx = 0u; ends.r8 = 0u; ends.r9 = 0u; ends.r10 = 0u;
     ends.r11 = 0u; ends.r12 = 0u; ends.r13 = 0u; ends.r14 = 0u;
-    uint saved = 0u;
+    uint saved = header ? X86_HEADER_REGISTERS | X86_HEADER_CACHE_FLAG : 0u;
 
     for (uint position = start; position < end; position += 1u)
     {
