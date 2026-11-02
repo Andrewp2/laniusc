@@ -16,12 +16,13 @@ import sys
 import time
 from pathlib import Path
 
+import moonbit_project
 from generate_typical_project import generate
 from perf_model import command_record, new_document, source_facts, summarize, write_document
 from run_typical_lanius_matrix import parse_counts
 
 
-LANGUAGES = ("c", "cpp", "rust", "zig", "tcc")
+LANGUAGES = ("c", "cpp", "rust", "zig", "tcc", "moonbit")
 LANES = ("o0", "optimized")
 
 
@@ -43,12 +44,25 @@ def entry_source(project: Path, language: str) -> Path:
         "cpp": "cpp/src/main.cpp",
         "rust": "rust/src/main.rs",
         "zig": "zig/main.zig",
+        "moonbit": "moonbit/main/main.mbt",
     }[language]
     return project / relative
 
 
 def source_language(language: str) -> str:
     return "c" if language == "tcc" else language
+
+
+def available_languages(languages: tuple[str, ...]) -> tuple[str, ...]:
+    """Drop MoonBit, with a message, when its toolchain is not installed."""
+    if "moonbit" in languages and not moonbit_project.moon_available():
+        print(f"run_typical_comparison: {moonbit_project.MISSING_MESSAGE}", file=sys.stderr)
+        return tuple(language for language in languages if language != "moonbit")
+    return languages
+
+
+def moonbit_profile(lane: str) -> str:
+    return "release" if lane == "optimized" else "debug"
 
 
 def lanes_for(language: str) -> tuple[str, ...]:
@@ -263,6 +277,16 @@ def command_for(
             command.append("--release")
             profile = "release"
         return command, root, root / "target" / profile / "typical_project", env
+    if language == "moonbit":
+        root = project / "moonbit"
+        run_checked([moonbit_project.MOON, "clean"], root, env)
+        profile = moonbit_profile(lane)
+        return (
+            moonbit_project.build_command("native", profile),
+            root,
+            moonbit_project.artifact_candidates(root, "native", profile)[0],
+            env,
+        )
     if language == "zig":
         root = project / "zig"
         cache = project / ".benchmark-cache" / f"zig-{lane}"
@@ -478,6 +502,10 @@ def main() -> int:
     if args.skip_tcc_serial and not args.tcc_parallel_shards:
         parser.error("--skip-tcc-serial requires --tcc-parallel-shards")
 
+    args.languages = available_languages(args.languages)
+    if not args.languages and args.skip_lanius:
+        parser.error("no requested compiler is available")
+
     repo = Path(__file__).resolve().parents[1]
     if Path(args.tcc).parent != Path("."):
         args.tcc = str((repo / args.tcc).resolve())
@@ -548,6 +576,11 @@ def main() -> int:
                             args.tcc_runtime_path,
                         )
                         wall_ms = timed_checked(command, cwd, env)
+                        if language == "moonbit":
+                            # Older moon toolchains write target/, not _build/.
+                            artifact = moonbit_project.artifact_path(
+                                cwd, "native", moonbit_profile(lane)
+                            )
                         artifact_hashes.append(validate(artifact, expected, project))
                         elapsed.append(wall_ms)
                         samples.append(
@@ -608,6 +641,8 @@ def main() -> int:
     }
     if "tcc" in args.languages:
         versions["tcc"] = tool_version([args.tcc, "-v"])
+    if "moonbit" in args.languages:
+        versions["moon"] = moonbit_project.version()
 
     document = {
         "schema": "lanius.typical-project-comparison.v1",
@@ -621,6 +656,10 @@ def main() -> int:
             "rust": (
                 "clean Cargo build with incremental compilation disabled, warnings "
                 f"suppressed, and nightly parallel frontend -Zthreads={args.rust_frontend_threads}"
+            ),
+            "moonbit": (
+                "clean moon build of the native backend (moon clean before the timed "
+                "interval); one package per module; o0 is --debug, optimized is --release"
             ),
             "validation": "every emitted artifact executed and exact stdout checked",
         },

@@ -688,6 +688,23 @@ verified compiler's locals are 64-bit slots with no address. The design:
    slice layout for an array passed as a slice. Element reads and writes of
    an addressed local itself are loads and stores at its address in its
    layout.
+   Core's `slice_stride` follows (decided 11-01, step 3.4): a safe slice
+   `.slice T cell projections start length` answers its element's native
+   stride (`rawSliceStride?`, `NativeLayout.elementStride?`), as a raw slice
+   of `T` does: 4 for `i32`, 1 for `u8`, -8 times the native words for a
+   struct, an enum or `u16`, and no stride (a `typeMismatch` trap) for the
+   element types a raw slice cannot hold. Before, a safe slice had no
+   stride, which disagreed with laniusc, whose one layout gives every slice
+   the same stride, and with the typing rule `ExprHasType.sliceStride`,
+   which accepts any slice.
+   The verified compiler passes only arrays of `i32` and `u8` as slices for
+   now (decided 11-01, step 3.4; `SrcType.HoldsAt.borrowed`): their
+   elements are packed, one 4-byte or 1-byte load or store each, so the
+   frame block holds exactly the bytes the slice's loads read. A struct or
+   enum element's scalar fields take their own widths inside 8-byte words
+   (a 4-byte `i32` field, the 4-byte tag), so the block's remaining bytes
+   would need a byte-level account of Core's native layout; such arrays are
+   rejected at a `[T]` argument until it is written.
 3. **The correspondence.** The simulation relation carries the addressed
    cells (cell, type, address); for each, frame memory at the address holds
    the cell's value in that layout (`FrameCorr`, beside `HeapCorr`). A safe
@@ -711,6 +728,26 @@ verified compiler's locals are 64-bit slots with no address. The design:
    above frame memory, a literal's bytes placed by the loader (Core's
    `.string` value names no address, so any region outside Core's heap
    will do).
+7. **A static need per function (decided 11-01, step 3.5).** A function
+   takes its whole block at entry (`frame_block`: 8 bytes per element of
+   each array, parameter or let, it passes as a slice), by a prologue
+   `Frame(count, block)` before its body, and its array calls place their
+   arrays in that block. Its need (`func_needs`) is its block plus the
+   largest need of a function it calls, computed by rounds from all zeros
+   until they repeat (at most one round per function). The call sequence's
+   check is static: a call is lowered only when the callee's need fits the
+   caller's room (`sig.need <= sig.room`, `Sig` carries the need, the room
+   and the block of the function being lowered), so no frame-memory check
+   runs per call and the proofs carry the budget in `FrameCorr` (its room
+   field: `limit + room ≤ fsp` when the budget is positive). A call that
+   passes arrays round a recursive cycle has no fixpoint, so its need
+   never fits and the call is rejected; ROADMAP F15 lifts this with per-call
+   blocks released on return and a dynamic premise. The top theorems take
+   the need of the function they run as a premise on the heap
+   (`0 < need → limit + need ≤ fsp`; for a process, `need ≤ stack`), which
+   holds for any heap when the need is 0, as it is for every function of
+   the self program (`SelfPure.prog_need`), since it passes no array as a
+   slice.
 
 Order: frame memory in the IR and on x86; addressed array locals passed as
 slices; `i32_array_data_ptr`; `str`.

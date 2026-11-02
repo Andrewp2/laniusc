@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Focused contracts for the synthetic compiler stress model."""
 
+import re
 import unittest
+from collections import namedtuple
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -53,7 +55,7 @@ class CompilerStressModelTests(unittest.TestCase):
         for profile in WORKLOAD_PROFILES:
             smaller = build_workload(23, 64, profile)
             larger = build_workload(23, 65, profile)
-            for language in ("rust", "c", "cpp", "zig", "lanius"):
+            for language in ("rust", "c", "cpp", "zig", "moonbit", "lanius"):
                 self.assertGreater(len(render(language, larger)), len(render(language, smaller)))
 
     def test_pareas_uses_the_same_scalar_common_subset_as_other_languages(self) -> None:
@@ -65,7 +67,7 @@ class CompilerStressModelTests(unittest.TestCase):
         self.assertIn("element_0", pareas)
         self.assertNotIn("values[", pareas)
         self.assertNotIn("Pair", pareas)
-        for language in ("rust", "c", "cpp", "zig", "lanius"):
+        for language in ("rust", "c", "cpp", "zig", "moonbit", "lanius"):
             source = render(language, workload)
             self.assertIn("element_0", source)
             self.assertNotIn("values[", source)
@@ -94,6 +96,33 @@ class CompilerStressModelTests(unittest.TestCase):
         self.assertIn('print("\\n");', render("vx", workload))
         self.assertIn("function leaf_0000000(x: number): number {", render("ts", workload))
         self.assertIn("import core.stdc.stdio : printf;", render("d", workload))
+
+    def test_moonbit_renders_every_profile_without_semicolons(self) -> None:
+        for profile in WORKLOAD_PROFILES:
+            workload = build_workload(19, 64, profile)
+            source = render("moonbit", workload)
+            self.assertFalse(
+                [line for line in source.splitlines() if line.rstrip().endswith(";")],
+                profile,
+            )
+            self.assertIn("fn leaf_0000000(x : Int) -> Int {", source)
+            self.assertIn("    let mut value : Int = ", source)
+            self.assertTrue(source.endswith(f"fn main {{\n    println({workload.root}(7))\n}}\n"))
+            self.assertNotIn("i32", source)
+        full = render("moonbit", build_workload(19, 64, "mixed-function-sizes"))
+        self.assertIn("struct Pair {\n    left : Int\n    right : Int\n}", full)
+        self.assertIn("let pair : Pair = Pair::{ left: ", full)
+        self.assertIn("let values : FixedArray[Int] = [", full)
+        self.assertIn("i = i + 1", full)
+
+    def test_moonbit_source_computes_the_model_checksum(self) -> None:
+        # The generated MoonBit uses one statement per line and braces only at
+        # line ends, so a line translation to Python executes it as written.
+        for profile in WORKLOAD_PROFILES:
+            workload = build_workload(23, 96, profile)
+            namespace = {"Pair": namedtuple("Pair", "left right")}
+            exec(moonbit_subset_to_python(render("moonbit", workload)), namespace)
+            self.assertEqual(namespace[workload.root](7), evaluate(workload), profile)
 
     def test_added_languages_require_the_common_subset(self) -> None:
         for language in COMMON_SUBSET_LANGUAGES:
@@ -124,6 +153,40 @@ class CompilerStressModelTests(unittest.TestCase):
             for record in manifest["sources"]:
                 if record["path"].startswith("src/"):
                     self.assertLessEqual(record["bytes"], 32_000)
+
+
+def moonbit_subset_to_python(source: str) -> str:
+    """Translate the stress generator's MoonBit (functions, mutable Int
+    locals, if/else, while, FixedArray and Pair) to Python; MoonBit's 32-bit
+    wrapping never triggers because every value is masked to 12 bits."""
+    lines = []
+    skipping = False
+    for line in source.splitlines():
+        stripped = line.strip()
+        indent = line[: len(line) - len(line.lstrip())]
+        if skipping:
+            skipping = stripped != "}"
+            continue
+        if stripped in ("struct Pair {", "fn main {"):
+            skipping = True
+            continue
+        if not stripped or stripped == "}" or stripped.startswith("//"):
+            continue
+        if match := re.fullmatch(r"fn (\w+)\(x : Int\) -> Int \{", stripped):
+            lines.append(f"def {match.group(1)}(x):")
+            continue
+        if stripped == "} else {":
+            lines.append(f"{indent}else:")
+            continue
+        if match := re.fullmatch(r"(if|while) \((.*)\) \{", stripped):
+            lines.append(f"{indent}{match.group(1)} {match.group(2)}:")
+            continue
+        stripped = re.sub(r"^let (?:mut )?(\w+) : [\w\[\]]+ = ", r"\1 = ", stripped)
+        stripped = re.sub(r"Pair::\{ left: (.*), right: (.*) \}", r"Pair(\1, \2)", stripped)
+        if "{" in stripped or "}" in stripped or "let " in stripped:
+            raise AssertionError(f"untranslated MoonBit line: {line!r}")
+        lines.append(indent + stripped)
+    return "\n".join(lines) + "\n"
 
 
 if __name__ == "__main__":

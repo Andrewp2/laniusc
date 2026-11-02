@@ -29,6 +29,7 @@ const COMPILER_NAMES: Record<string, string> = {
   go: 'Go',
   lanius: 'Lanius',
   ldc: 'D (LDC)',
+  moonbit: 'MoonBit',
   pareas: 'Pareas',
   rust: 'Rust',
   tcc: 'TCC',
@@ -46,6 +47,7 @@ const CONFIGURATION_NAMES: Record<string, string> = {
   o0: '-O0',
   cuda: 'CUDA',
   check_emit: 'type check + JS emit',
+  js: 'JS backend',
 };
 
 export function formatMs(value: number): string {
@@ -111,6 +113,7 @@ export function measurementColor(measurement: Measurement): string {
     d: 'var(--pink)',
     go: 'var(--sky)',
     ldc: 'var(--sand)',
+    moonbit: 'var(--coral)',
     pareas: 'var(--violet)',
     rust: 'var(--red)',
     tcc: 'var(--context-series)',

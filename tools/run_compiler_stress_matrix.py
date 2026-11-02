@@ -13,29 +13,39 @@ import shutil
 import statistics
 import subprocess
 import tempfile
+import sys
 import time
 from pathlib import Path
 
+import moonbit_project
 from compiler_stress_model import WORKLOAD_PROFILES
 
 
 EXTERNAL_COMPILERS = (
     "c", "cpp", "rust", "zig", "tcc", "pareas",
-    "d", "ldc", "go", "v", "vx", "tsc", "tsrs",
+    "d", "ldc", "go", "v", "vx", "tsc", "tsrs", "moonbit",
 )
 LANES = ("o0", "optimized")
+# MoonBit builds the native backend in both standard lanes and adds a lane for
+# its JavaScript backend, which node runs to check the output (as for tsc).
+MOONBIT_LANES = {
+    "o0": ("native", "debug"),
+    "optimized": ("native", "release"),
+    "js": ("js", "release"),
+}
 TYPESCRIPT_COMPILERS = ("tsc", "tsrs")
 # Compilers that read another compiler's rendering of the workload.
 SOURCE_LANGUAGE = {"tcc": "c", "ldc": "d", "tsc": "ts", "tsrs": "ts"}
 SOURCE_SUFFIX = {
     "c": "c", "cpp": "cpp", "rust": "rs", "zig": "zig", "lanius": "lani",
     "pareas": "par", "go": "go", "d": "d", "v": "v", "vx": "vx", "ts": "ts",
+    "moonbit": "mbt",
 }
 # Compilers added with the toolchains directory run in their per-sample work
 # directory (Go would otherwise pick up an enclosing go.mod, dmd and LDC drop
 # object files into the working directory). The original five keep the
 # repository as their working directory, as in the retained baselines.
-WORKDIR_COMPILERS = ("d", "ldc", "go", "v", "vx", "tsc", "tsrs")
+WORKDIR_COMPILERS = ("d", "ldc", "go", "v", "vx", "tsc", "tsrs", "moonbit")
 DEFAULT_TOOLCHAINS = Path(
     "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains"
 )
@@ -74,7 +84,28 @@ def lanes_for(language: str) -> tuple[str, ...]:
         return ("cuda",)
     if language in TYPESCRIPT_COMPILERS:
         return ("check_emit",)
+    if language == "moonbit":
+        return tuple(MOONBIT_LANES)
     return LANES
+
+
+def available_compilers(languages: tuple[str, ...]) -> tuple[str, ...]:
+    """Drop MoonBit, with a message, when its toolchain is not installed."""
+    if "moonbit" in languages and not moonbit_project.moon_available():
+        print(f"run_compiler_stress_matrix: {moonbit_project.MISSING_MESSAGE}", file=sys.stderr)
+        return tuple(language for language in languages if language != "moonbit")
+    return languages
+
+
+def available_lanes(language: str, lanes: tuple[str, ...]) -> tuple[str, ...]:
+    """MoonBit's js lane needs node to check the emitted JavaScript."""
+    if language == "moonbit" and "js" in lanes and shutil.which("node") is None:
+        print(
+            "run_compiler_stress_matrix: node not found; skipping the MoonBit js lane",
+            file=sys.stderr,
+        )
+        return tuple(lane for lane in lanes if lane != "js")
+    return lanes
 
 
 def source_language(compiler: str) -> str:
@@ -137,6 +168,7 @@ def main() -> int:
         default="pareas-common-subset",
     )
     args = parser.parse_args()
+    args.external_compilers = available_compilers(args.external_compilers)
     seeds = [int(value) for value in args.seeds.split(",")]
     if args.size <= 0 or not seeds or len(set(seeds)) != len(seeds):
         parser.error("--size must be positive and --seeds must be unique")
@@ -175,8 +207,13 @@ def main() -> int:
         else None
     )
     selected_lanes = {
-        language: tuple(
-            lane for lane in lanes_for(language) if lane_filter is None or lane in lane_filter
+        language: available_lanes(
+            language,
+            tuple(
+                lane
+                for lane in lanes_for(language)
+                if lane_filter is None or lane in lane_filter
+            ),
         )
         for language in args.external_compilers
     }
@@ -336,7 +373,7 @@ def main() -> int:
         "sample_policy": "all samples retained; median is primary, min/max/MAD are reported",
         "warmup_policy": "one unmeasured compile of the warm seed per external compiler configuration before the randomized measured tasks",
         "warmups": warmups,
-        "validation_policy": "native artifacts (C, C++, Rust, Zig, TCC, D, Go, V, Vx, Lanius) execute with exact model-derived stdout; tsc/tsrs emit JavaScript that node runs with exact model-derived stdout; Pareas emits raw RISC-V bytes, which must be nonempty, instruction-aligned, and deterministic",
+        "validation_policy": "native artifacts (C, C++, Rust, Zig, TCC, D, Go, V, Vx, MoonBit, Lanius) execute with exact model-derived stdout; tsc/tsrs and MoonBit's js lane emit JavaScript that node runs with exact model-derived stdout; Pareas emits raw RISC-V bytes, which must be nonempty, instruction-aligned, and deterministic",
         "cache_policy": "every measured seed is a distinct source compiled once per lane; Go (GOCACHE) and V (VTMP module cache) use caches private to this run, created empty and warmed only by the warm seed (Go standard library, V builtin/closure modules and third-party C objects); a Go or V sample that adds no cache entry (a hit: Go compile action, V whole-program executable) fails the run; cache_entries_added records that growth",
         "daemon_warmup_policy": "one pipeline warmup seed; after CPU trials, one unmeasured capacity warmup per measured seed, then a different-source primer before the contiguous randomized variable-project hot-daemon batch",
         "debug_info": "disabled in every applicable external compiler lane",
@@ -423,6 +460,8 @@ def compiler_commands(
             # warnings and notices (V reports a notice for every signed shift).
             "v": [v, "-w", "-n", "-o", "{output}", "{source}"],
             "vx": vx_commands(toolchains, "-O0"),
+            # moon builds the project materialized in {workdir}.
+            "moonbit": moonbit_project.build_command(*MOONBIT_LANES["o0"]),
         },
         "optimized": {
             "c": ["gcc", "-O2", "-g0", "{source}", "-o", "{output}"],
@@ -436,6 +475,10 @@ def compiler_commands(
             # -prod compiles the generated C with the system cc at -O3.
             "v": [v, "-w", "-n", "-prod", "-o", "{output}", "{source}"],
             "vx": vx_commands(toolchains, "-O2"),
+            "moonbit": moonbit_project.build_command(*MOONBIT_LANES["optimized"]),
+        },
+        "js": {
+            "moonbit": moonbit_project.build_command(*MOONBIT_LANES["js"]),
         },
         "default": {
             "tcc": [*tcc_command, "-std=c11", "{source}", "-o", "{output}"],
@@ -570,6 +613,9 @@ def run_external(
     if language in TYPESCRIPT_COMPILERS:
         write_tsconfig(workdir, source)
         artifact = workdir / "scaling.js"
+    if language == "moonbit":
+        # Project setup is outside the timed build, like tsconfig for tsc.
+        moonbit_project.write_single_file_project(workdir, source.read_text())
     command = materialize(templates[lane][language], source, output, workdir)
     cache = cache_directory(language, environment)
     before = count_files(cache, language)
@@ -585,9 +631,16 @@ def run_external(
         raise RuntimeError(
             f"{language} build of seed {seed} ({lane}) added no cache entry: a cache hit"
         )
+    if language == "moonbit":
+        backend, profile = MOONBIT_LANES[lane]
+        artifact = moonbit_project.artifact_path(workdir, backend, profile)
     if language == "pareas":
         validate_pareas_artifact(output)
         stdout = None
+    elif language == "moonbit" and lane == "js":
+        stdout = validate_javascript(artifact, expected[seed])
+    elif language == "moonbit":
+        stdout = validate_executable(artifact, expected[seed])
     elif language in TYPESCRIPT_COMPILERS:
         stdout = validate_javascript(artifact, expected[seed])
     else:
@@ -862,7 +915,10 @@ def collect_provenance(
             "version": tool_version(invoked, language, environments.get(language)),
         }
     extras = {}
-    if any(language in TYPESCRIPT_COMPILERS for language in external_compilers):
+    if any(
+        language in TYPESCRIPT_COMPILERS or language == "moonbit"
+        for language in external_compilers
+    ) and shutil.which("node") is not None:
         extras["node"] = command_output(["node", "--version"])
     if "v" in external_compilers:
         extras["cc (V -prod backend)"] = command_output(["cc", "--version"]).splitlines()[0]
@@ -915,6 +971,8 @@ def tool_version(path: Path, language: str, environment: dict[str, str] | None =
                 commit = command_output(["git", "-C", str(parent), "rev-parse", "HEAD"])
                 return f"git {commit}"
         return "Pareas CLI has no version flag; executable hash recorded"
+    if language == "moonbit":
+        return moonbit_project.version(str(path))
     if (language == "go" and path.name == "go") or language == "zig":
         argv = [str(path), "version"]
     elif path.name.startswith("tcc"):
