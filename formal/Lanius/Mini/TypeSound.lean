@@ -84,9 +84,14 @@ import all Lanius.Mini.Compiler.P.optimizeNeg
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.repeatType
 import all Lanius.Mini.Compiler.P.shortCircuit
-import all Lanius.Mini.Compiler.P.sigs
+import all Lanius.Mini.Compiler.P.withBudget
+import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.sintToUint
 import all Lanius.Mini.Compiler.P.storeArray
+import all Lanius.Mini.Compiler.P.arrayCallSig
+import all Lanius.Mini.Compiler.P.bindingBytes
+import all Lanius.Mini.Compiler.P.needRound
+import all Lanius.Mini.Compiler.P.needsAfter
 import all Lanius.Mini.Compiler.P.storeEvalWord
 import all Lanius.Mini.Compiler.P.storeType
 import all Lanius.Mini.Compiler.P.storeWordElement
@@ -137,9 +142,14 @@ public import Lanius.Mini.Compiler.P.matchVariants
 public import Lanius.Mini.Compiler.P.render
 public import Lanius.Mini.Compiler.P.repeatType
 public import Lanius.Mini.Compiler.P.shortCircuit
-public import Lanius.Mini.Compiler.P.sigs
+public import Lanius.Mini.Compiler.P.withBudget
+public import Lanius.Mini.Compiler.P.funcNeeds
 public import Lanius.Mini.Compiler.P.sintToUint
 public import Lanius.Mini.Compiler.P.storeArray
+public import Lanius.Mini.Compiler.P.arrayCallSig
+public import Lanius.Mini.Compiler.P.bindingBytes
+public import Lanius.Mini.Compiler.P.needRound
+public import Lanius.Mini.Compiler.P.needsAfter
 public import Lanius.Mini.Compiler.P.storeEvalWord
 public import Lanius.Mini.Compiler.P.storeWordElement
 public import Lanius.Mini.Compiler.P.structFields
@@ -1083,9 +1093,10 @@ theorem lowerCall_typed {P : Core.Program} (target : P.target = Core.Target.x86_
     unfold lowerCallSig at h
     split at h
     · rename_i same
+      simp only [Bool.and_eq_true] at same
       obtain ⟨f, found, params, ret⟩ := sigsOk.1 callee sig hsig
       have call := ExprHasType.call f found (by rw [params]; exact lowerArgs_typed target ok _ _ h)
-      rw [ret, same_toCore same] at call
+      rw [ret, same_toCore same.1] at call
       exact call
     · simp at h
 
@@ -1617,7 +1628,7 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
           subst h
           obtain ⟨f, found, params, ret⟩ := sigsOk.1 callee sig hsig
           have typedArgs := evalArgs_typed target sigsOk args ok (by simpa [SrcEff.types] using dd) hea
-          rw [typesSame_toCore checks.1, ← params] at typedArgs
+          rw [typesSame_toCore checks.1.1, ← params] at typedArgs
           have call := ExprHasType.call f found typedArgs
           rw [ret] at call
           exact call
@@ -2108,6 +2119,91 @@ theorem setIndexEval_array_typed {P : Core.Program} (target : P.target = Core.Ta
     · rw [eq_i32 c]; exact .signed _
     · rw [eq_uint c]; exact .unsigned _
   exact .expression (.assign (.indexArray (.local inCtx) typedIndex integer) typedValue .set)
+
+/-- The arguments of a call passing arrays as slices are well typed: a pure
+one at its parameter type, an array local's slice at the slice type. -/
+theorem arrayArgs_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
+    {scope : List Binding} {ctx : Typing.Context} (ok : ScopeOk P ctx scope) :
+    ∀ (args : List SrcEff) (types : List SrcType) {t offset : Nat} {a : ArrayArgs},
+      arrayArgs scope args types t offset = some a →
+      ExprsHaveTypes P ctx (SrcEff.toCoreList args) (types.map SrcType.toCore)
+  | [], [], _, _, _, _ => .nil
+  | [], _ :: _, _, _, _, h => by simp [arrayArgs] at h
+  | _ :: _, [], _, _, _, h => by simp [arrayArgs] at h
+  | arg :: rest, ty :: more, t, offset, a, h => by
+    simp only [arrayArgs] at h
+    cases arg
+    case ePure e =>
+      simp only [arrayArg, arrayArgPure] at h
+      split at h
+      · simp at h
+      rename_i vs hv
+      split at h
+      · simp at h
+      rename_i r hr
+      exact .cons (lowerValue_typed target ok hv) (arrayArgs_typed target ok rest more hr)
+    case arraySlice element id =>
+      simp only [arrayArg, arrayArgSlice] at h
+      split at h
+      · simp at h
+      rename_i b found
+      simp only [arrayArgLocal] at h
+      split at h
+      · simp at h
+      rename_i r hr
+      simp only [arrayArgChecked] at h
+      split at h
+      · rename_i checks
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+        obtain ⟨⟨⟨⟨_, arr⟩, sl⟩, _⟩, _⟩ := checks
+        have inCtx := (ok id b found).1
+        rw [same_toCore arr] at inCtx
+        simp only [SrcEff.toCoreList, SrcEff.toCore, List.map_cons, same_toCore sl]
+        exact .cons (.arrayToSlice (.local inCtx)) (arrayArgs_typed target ok rest more hr)
+      · simp at h
+    all_goals simp [arrayArg] at h
+
+/-- A call passing arrays as slices is a well-typed Core call. -/
+theorem arrayCall_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
+    {sigs : List Sig} (sigsOk : SigsOk P sigs) {scope : List Binding} {ctx : Typing.Context}
+    (ok : ScopeOk P ctx scope) {next callee : Nat} {args : List SrcEff} {ev : Evaluated}
+    (h : arrayCall sigs scope next callee args = some ev) :
+    ExprHasType P ctx (.call callee (SrcEff.toCoreList args)) ev.ty.toCore := by
+  simp only [arrayCall] at h
+  split at h
+  · simp at h
+  rename_i sig hsig
+  simp only [arrayCallSig] at h
+  split at h
+  · simp at h
+  rename_i a ha
+  simp only [arrayCallCode] at h
+  split at h
+  · simp only [Option.some.injEq] at h
+    subst h
+    obtain ⟨f, found, params, ret⟩ := sigsOk.1 callee sig hsig
+    have typedArgs := arrayArgs_typed target ok args sig.params ha
+    rw [← params] at typedArgs
+    have call := ExprHasType.call f found typedArgs
+    rw [ret] at call
+    exact call
+  · simp at h
+
+/-- A value a statement computes is well typed (`stmtEval`). -/
+theorem stmtEval_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
+    {sigs : List Sig} {decls : SrcDecls} (sigsOk : SigsOk P sigs) (e : SrcEff) {scope : List Binding}
+    {ctx : Typing.Context} {slot : Nat} {ev : Evaluated} (ok : ScopeOk P ctx scope)
+    (dd : ∀ t ∈ e.types, TypeDeclared P t) (h : stmtEval e sigs decls scope slot = some ev) :
+    ExprHasType P ctx e.toCore ev.ty.toCore := by
+  unfold stmtEval at h
+  split at h
+  · rename_i passes
+    cases e
+    case eCall callee args =>
+      simp only [SrcEff.sliceCall] at h
+      exact arrayCall_typed target sigsOk ok h
+    all_goals simp [SrcEff.passesSlices] at passes
+  · exact SrcEff.eval_typed target sigsOk e ok dd h
 
 theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
     {sigs : List Sig} {decls : SrcDecls} (sigsOk : SigsOk P sigs) {ret : SrcType} :
@@ -2806,11 +2902,19 @@ theorem paramTypes_toCore : ∀ (params : List SrcParam),
   | [] => rfl
   | param :: rest => by simp only [List.map_cons, paramTypes, paramTypes_toCore rest]
 
-theorem sigs_getElem : ∀ (funcs : List SrcFunc) (i : Nat),
-    (sigs funcs)[i]? = funcs[i]?.map fun func => ({ params := paramTypes func.params, ret := func.ret } : Sig)
-  | [], _ => rfl
-  | _ :: _, 0 => rfl
-  | _ :: rest, i + 1 => by simp only [sigs, List.getElem?_cons_succ, sigs_getElem rest i]
+theorem sigsWith_getElem : ∀ (funcs : List SrcFunc) (needs : List Nat) (i : Nat),
+    (sigsWith funcs needs)[i]? = funcs[i]?.map fun func =>
+      ({ params := paramTypes func.params, ret := func.ret, need := needs.getD i 0, room := 0, block := 0 } : Sig)
+  | [], _, _ => rfl
+  | _ :: _, _, 0 => rfl
+  | _ :: rest, needs, i + 1 => by
+    simp only [sigsWith, List.getElem?_cons_succ, sigsWith_getElem rest _ i]
+    cases needs <;> rfl
+
+theorem sigs_getElem (funcs : List SrcFunc) (i : Nat) :
+    (sigs funcs)[i]? = funcs[i]?.map fun func =>
+      ({ params := paramTypes func.params, ret := func.ret, need := (funcNeeds funcs).getD i 0, room := 0, block := 0 } : Sig) :=
+  sigsWith_getElem funcs _ i
 
 theorem find_coreFuncs : ∀ (funcs : List SrcFunc) (n i : Nat),
     (coreFuncs n funcs).find? (fun f => f.id == n + i) = funcs[i]?.map (SrcFunc.toCore (n + i))
@@ -2834,10 +2938,12 @@ theorem mem_coreFuncs : ∀ {funcs : List SrcFunc} {n : Nat} {f : Core.Function}
     · obtain ⟨i, g, hg, rfl⟩ := mem_coreFuncs h
       exact ⟨i, g, by simp [hg], rfl⟩
 
-theorem lowerFuncs_each {sigs : List Sig} {decls : SrcDecls} : ∀ {funcs : List SrcFunc} {out : List Func},
-    lowerFuncs sigs decls funcs = some out → ∀ func ∈ funcs, ∃ c, lowerFunc sigs decls func = some c
-  | [], _, _, _, h => by simp at h
-  | func :: rest, out, lowered, g, hg => by
+theorem lowerFuncs_each {sigs : List Sig} {decls : SrcDecls} :
+    ∀ {own : List Sig} {funcs : List SrcFunc} {out : List Func},
+    lowerFuncs sigs own decls funcs = some out → ∀ func ∈ funcs, ∃ c s, lowerFunc sigs s decls func = some c
+  | _, [], _, _, _, h => by simp at h
+  | [], _ :: _, _, lowered, _, _ => by simp [lowerFuncs] at lowered
+  | s :: _, func :: rest, out, lowered, g, hg => by
     simp only [lowerFuncs, lowerFuncCons] at lowered
     split at lowered
     · simp at lowered
@@ -2847,7 +2953,7 @@ theorem lowerFuncs_each {sigs : List Sig} {decls : SrcDecls} : ∀ {funcs : List
       · rename_i cs hcs
         simp only [List.mem_cons] at hg
         rcases hg with rfl | hg
-        · exact ⟨c, hc⟩
+        · exact ⟨c, s, hc⟩
         · exact lowerFuncs_each hcs g hg
 
 theorem unitTail_some {ret : SrcType} {body : Option Stmt} {b : Stmt} (h : unitTail ret body = some b) :
@@ -2859,19 +2965,31 @@ theorem unitTail_some {ret : SrcType} {body : Option Stmt} {b : Stmt} (h : unitT
     | some out => exact ⟨out, rfl⟩
   · exact ⟨b, h⟩
 
-theorem lowerFunc_body {sigs : List Sig} {decls : SrcDecls} {func : SrcFunc} {c : Func} (h : lowerFunc sigs decls func = some c) :
+theorem withFrame_some {slot block : Nat} {body : Option Stmt} {b : Stmt} (h : withFrame slot block body = some b) :
+    ∃ out, body = some out := by
+  simp only [withFrame] at h
+  split at h
+  · exact ⟨b, h⟩
+  · cases body with
+    | none => simp at h
+    | some out => exact ⟨out, rfl⟩
+
+theorem lowerFunc_body {sigs : List Sig} {own : Sig} {decls : SrcDecls} {func : SrcFunc} {c : Func}
+    (h : lowerFunc sigs own decls func = some c) :
     func.body.breaksOut = false ∧
-      ∃ out, func.body.lower sigs decls func.ret (paramScope func.params 0 []) (paramsSize func.params) = some out := by
+      ∃ out, func.body.lower (withBudget sigs (own.need - frameBlock func) (frameBlock func)) decls func.ret
+        (paramScope func.params 0 []) (paramsSize func.params) = some out := by
   unfold lowerFunc at h
+  dsimp only at h
   split at h
   · rename_i checks
     simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at checks
     unfold lowerBody at h
-    dsimp only at h
     split at h
     · simp at h
     · rename_i b hb
-      exact ⟨checks.2, unitTail_some hb⟩
+      obtain ⟨b', hb'⟩ := unitTail_some hb
+      exact ⟨checks.1.1.2, withFrame_some hb'⟩
   · simp at h
 
 
@@ -3393,6 +3511,30 @@ theorem hostFuncs_find (i : Nat) :
                   simp [hostFunc, hostBase]
                 · simp [hostFunc, a, b, c, d, e, f, g, h, Ne.symm a, Ne.symm b, Ne.symm c, Ne.symm d, Ne.symm e, Ne.symm f, Ne.symm g, Ne.symm h]
 
+theorem withBudget_getElem : ∀ (ss : List Sig) (room block i : Nat),
+    (withBudget ss room block)[i]? = ss[i]?.map fun s =>
+      ({ params := s.params, ret := s.ret, need := s.need, room := room, block := block } : Sig)
+  | [], _, _, _ => rfl
+  | _ :: _, _, _, 0 => rfl
+  | _ :: rest, room, block, i + 1 => by
+    simp only [withBudget, List.getElem?_cons_succ, withBudget_getElem rest room block i]
+
+/-- A budget changes no signature's types. -/
+theorem SigsOk.withBudget {P : Core.Program} {ss : List Sig} (ok : SigsOk P ss) (room block : Nat) :
+    SigsOk P (withBudget ss room block) := by
+  constructor
+  · intro callee sig found
+    rw [withBudget_getElem] at found
+    cases hs : ss[callee]? with
+    | none => simp [hs] at found
+    | some s =>
+      simp only [hs, Option.map_some, Option.some.injEq] at found
+      subst found
+      exact ok.1 callee s hs
+  · intro callee service none hs
+    rw [withBudget_getElem, Option.map_eq_none_iff] at none
+    exact ok.2 callee service none hs
+
 theorem sigsOk_program (sp : SrcProgram) : SigsOk sp.toCore (sigs sp.funcs) := by
   constructor
   · intro callee sig found
@@ -3420,7 +3562,7 @@ open TypeSound in
 is declared in `sp.toCore`, and every function body ends in a `return` on
 every path, the Core meaning of the program is well typed by Core's rules. -/
 theorem lowerFuncs_wellTyped {sp : SrcProgram} {funcs : List Func}
-    (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some funcs)
+    (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some funcs)
     (declared : sp.Declared sp.toCore)
     (returns : ∀ func ∈ sp.funcs, (func.ret.isUnit || func.body.returns) = true) :
     Typing.ProgramWellTyped sp.toCore := by
@@ -3432,10 +3574,10 @@ theorem lowerFuncs_wellTyped {sp : SrcProgram} {funcs : List Func}
     simp only [hostFuncs, List.mem_cons, List.not_mem_nil, or_false] at hf
     rcases hf with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> exact ⟨rfl, rfl⟩
   obtain ⟨i, func, mem, rfl⟩ := mem_coreFuncs (n := 0) (funcs := sp.funcs) hf
-  obtain ⟨c, hc⟩ := lowerFuncs_each lowered func mem
+  obtain ⟨c, s, hc⟩ := lowerFuncs_each lowered func mem
   obtain ⟨inside, out, hout⟩ := lowerFunc_body hc
   obtain ⟨dparams, dbody⟩ := declared func mem
-  have stmt := SrcStmt.lower_typed rfl (sigsOk_program sp) func.body (inLoop := false)
+  have stmt := SrcStmt.lower_typed rfl ((sigsOk_program sp).withBudget _ _) func.body (inLoop := false)
     (paramScope_ok func.params (scopeOk_empty _) dparams) dbody (fun e => by simp [inside] at e) hout
   simp only [Typing.FunctionWellTyped, SrcFunc.toCore]
   have r := returns func mem
@@ -3475,10 +3617,10 @@ def idClash : SrcProgram :=
       (SrcStmt.return (SrcExpr.field 1 0)))
   { funcs := [{ params := [], ret := .i32, body := body }] }
 
-theorem noReturn_lowers : ∃ funcs, lowerFuncs (sigs noReturn.funcs) noReturn.decls noReturn.funcs = some funcs :=
+theorem noReturn_lowers : ∃ funcs, lowerFuncs (sigs noReturn.funcs) (sigs noReturn.funcs) noReturn.decls noReturn.funcs = some funcs :=
   ⟨_, rfl⟩
 
-theorem idClash_lowers : ∃ funcs, lowerFuncs (sigs idClash.funcs) idClash.decls idClash.funcs = some funcs :=
+theorem idClash_lowers : ∃ funcs, lowerFuncs (sigs idClash.funcs) (sigs idClash.funcs) idClash.decls idClash.funcs = some funcs :=
   ⟨_, rfl⟩
 
 theorem noReturn_rejected : compileSource noReturn = none := by rfl
