@@ -31,6 +31,7 @@ test('the added cross-language compilers have display names and distinct colors'
     ['vx', 'optimized', 'Vx · optimized'],
     ['tsc', 'check_emit', 'TypeScript (tsc) · type check + JS emit'],
     ['tsrs', 'check_emit', 'TypeScript (tsrs) · type check + JS emit'],
+    ['moonbit', 'js', 'MoonBit · JS backend'],
   ];
   const colors = new Set<string>();
   for (const [name, configuration, label] of cases) {
