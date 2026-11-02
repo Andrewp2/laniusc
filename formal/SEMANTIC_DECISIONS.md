@@ -2079,6 +2079,29 @@ and extending the certificates to every function that `front_end_words`,
   (15.7 s against 30 s).
 - The generator's `/` was written as `%` (it compared against `divide`, the
   source says `quotient`); `frame_size` and `arg_base` exposed it.
+- Speed (11-02, after `let_first` took 70 s and `stmt_of` 45 s). Three
+  costs grew faster than the body:
+  - Instantiating the metavariables of a whole proof at once (17 s of
+    `let_first`). `budget` now works depth first and proves each case of a
+    split on a fresh goal, assigned with its proof instantiated
+    (`instantiateCase`). An auxiliary theorem per case did the same, but
+    its kernel checks cost more than the one check of the whole.
+  - `simp` over the whole run at every step. `qsimp` now simplifies a run's
+    head only (`headPre`, a `simp` pre-method). For `qthen`, `bind` and
+    `Out.qthen` it simplifies the first argument, for an `if` the condition,
+    and for the goal's `∧` its left side; then it tries the rules at the
+    node. A continuation is simplified when it becomes the head.
+  - Building `qsimp`'s simp context, with `qstmt`'s and the others'
+    equations, at every call (16 ms). It is made once per module
+    (`qsimpCache`).
+  A call's runs (`hc`, `hq`) are cleared once used. `let_first` went from
+  70 s to about 25 s of one thread, and `SelfBProof53` from 112 s to 69 s.
+  The proof modules are now cut by estimated work, not by characters:
+  `proof_work` is about `(body length / 1000) ^ 1.5` seconds, and each
+  module holds up to 30 of them. That gives 74 modules, with the few
+  25-35 s certificates (`let_first`, `for_of`, `SrcStmt_lower`,
+  `stmt_of`) about alone. A module takes 15-20 s alone (`SelfBProof3`:
+  16 s on 11-02, with other agents loading the machine).
 
 ## One-word scalar views (decided 11-01, F11b)
 
