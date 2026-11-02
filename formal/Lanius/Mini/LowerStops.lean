@@ -125,18 +125,18 @@ allocation completes and cannot fail. -/
 
 namespace Lanius.Mini
 
-variable {places : List Addressed}
+variable {bud : Budget} {places : List Addressed}
 
 open Lanius.Core (Value)
 open Lanius.Semantics (State Cell Completion evalExpr evalExprs execStmt restoreLocals)
 
 /-- A lowered statement whose Core run fails stops within `n` ticks. -/
 def SrcStops (sp : SrcProgram) (mp : Program) (n : Nat) (s : SrcStmt) : Prop :=
-  ∀ {places : List Addressed} {hp : Heap} {ret : SrcType} {scope : List Binding} {next : Nat} {stmt : Stmt}
+  ∀ {bud : Budget} {places : List Addressed} {hp : Heap} {ret : SrcType} {scope : List Binding} {next : Nat} {stmt : Stmt}
     {frame : Nat → Nat} {base : Nat} {st : State} {env : Env},
     s.lower (sigs sp.funcs) sp.decls ret scope next = some stmt →
     Corr places scope frame st env → Layout scope frame base next → st.Fresh → base ≤ st.nextCell →
-    HeapCorr st.heap st.world hp → FrameCorr places st hp → (∀ x ∈ places, x.cell < base) →
+    HeapCorr st.heap st.world hp → FrameCorr bud places st hp → (∀ x ∈ places, x.cell < base) →
     st.heap.nextAddress ≤ hp.limit →
     Fails sp hp.limit st s.toCore → ∃ d, Stops mp d env hp stmt n
 
@@ -604,7 +604,7 @@ theorem callee_frame (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = s
 theorem body_shapes (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     (returns : funcsReturn sp.funcs = true) {callee : Nat} {f : SrcFunc} (found : sp.funcs[callee]? = some f)
     {hp : Heap} {st : State} (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp)
-    (fc : FrameCorr places st hp) {values : List Value}
+    (fc : FrameCorr bud places st hp) {values : List Value}
     {bits : List (BitVec 64)} (holds : FieldsHold places (paramTypes f.params) values (Func.entry bits) 0)
     {j : Nat} {c : Completion} {completed : State}
     (run : execStmt j sp.toCore (calleeState f values st) f.body.toCore = .done c completed)
@@ -616,7 +616,7 @@ theorem body_shapes (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = so
     exact hc
   obtain ⟨-, -, _, _, _, matched⟩ := stmt_sound lowered j (hp := hp) bodyOk corr fr fresh0 keeps0.next hc0
     (fc.congr (fun x mem => keeps0.cells x.cell (fc.below fresh x mem) fun _ m => by simp at m) (fun _ _ _ _ => rfl)
-      (Nat.le_refl _) rfl rfl)
+      rfl rfl rfl)
     (fc.below fresh) run bound
   cases matched with
   | next =>
@@ -645,7 +645,7 @@ theorem callee_stops (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = s
     {callee : Nat} {args : List Core.Expr} {st afterArgs : State} {k : Nat} {values : List Value}
     (argsRun : evalExprs k sp.toCore st args = .done values afterArgs) {f : SrcFunc}
     (found : sp.funcs[callee]? = some f) {hp : Heap} (fresh : afterArgs.Fresh) (hc : HeapCorr afterArgs.heap afterArgs.world hp)
-    (fc : FrameCorr places afterArgs hp) (within : afterArgs.heap.nextAddress ≤ hp.limit) {bits : List (BitVec 64)}
+    (fc : FrameCorr bud places afterArgs hp) (within : afterArgs.heap.nextAddress ≤ hp.limit) {bits : List (BitVec 64)}
     (holds : FieldsHold places (paramTypes f.params) values (Func.entry bits) 0) (bitsLen : bits.length = paramsSize f.params)
     (fails : EFails sp hp.limit st (.call callee args)) :
     ∃ d g, mp.funcs[callee]? = some g ∧ bits.length = g.params ∧ Stops mp d (Func.entry bits) hp g.body n := by
@@ -662,7 +662,7 @@ theorem callee_stops (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = s
     exact within
   obtain ⟨d, stops⟩ := prev f.body bodyOk corr fr fresh0 keeps0.next hc0
     (fc.congr (fun x mem => keeps0.cells x.cell (fc.below fresh x mem) fun _ m => by simp at m) (fun _ _ _ _ => rfl)
-      (Nat.le_refl _) rfl rfl)
+      rfl rfl rfl)
     (fc.below fresh) within0 bodyFails
   refine ⟨d, g, gFound, by rw [gParams, bitsLen], ?_⟩
   simp only [unitTail] at tail
@@ -691,7 +691,7 @@ theorem lowerCall_found {callee : Nat} {scope : List Binding} {args : List SrcEx
 theorem call_stops (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     (returns : funcsReturn sp.funcs = true) (prev : StmtStops sp mp n) {scope frame st env}
     (corr : Corr places scope frame st env) (fresh : st.Fresh) {hp : Heap} (hc : HeapCorr st.heap st.world hp)
-    (fc : FrameCorr places st hp) (within : st.heap.nextAddress ≤ hp.limit) {callee : Nat} {args : List SrcExpr} {ty : SrcType}
+    (fc : FrameCorr bud places st hp) (within : st.heap.nextAddress ≤ hp.limit) {callee : Nat} {args : List SrcExpr} {ty : SrcType}
     {es : List Expr} (ok : lowerCall (sigs sp.funcs) scope callee args ty = some es)
     (g : (guardAll scope args).eval env ≠ 0)
     (fails : EFails sp hp.limit st (.call callee (args.map SrcExpr.toCore))) (target count : Nat) :
@@ -774,7 +774,7 @@ theorem field_assign_progress {P : Core.Program} {scope frame st env} (corr : Co
 
 end Assignments
 
-/-! ## Matches places -/
+/-! ## Matches bud places -/
 
 section Matches
 
@@ -1187,7 +1187,7 @@ theorem let_stops {body : SrcStmt} (ih : SrcStops sp mp n body) {ret : SrcType} 
     {frame base st env} (corr : Corr places scope frame st env) (fr : Layout scope frame base next)
     (fresh : st.Fresh) (le : base ≤ st.nextCell) (sized : 0 < ty.size) {v : Value} {env' : Env}
     (agree : ScopeAgree scope env env') (holds : ty.HoldsAt places v env' next)
-    (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr places st hp) (under : ∀ x ∈ places, x.cell < base)
+    (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp) (under : ∀ x ∈ places, x.cell < base)
     (within : st.heap.nextAddress ≤ hp.limit)
     (fails : Fails sp hp.limit (st.bindLocal id v) body.toCore) :
     ∃ d, Stops mp d env' hp bstmt n :=
@@ -1196,7 +1196,7 @@ theorem let_stops {body : SrcStmt} (ih : SrcStops sp mp n body) {ret : SrcType} 
     under within fails
 
 theorem stops_nop : SrcStops sp mp n .nop := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   have := fails 1
   simp only [SrcStmt.toCore, execStmt, Failing] at this
   exact absurd within (Nat.not_le.mpr this)
@@ -1204,7 +1204,7 @@ theorem stops_nop : SrcStops sp mp n .nop := by
 theorem stops_then (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     {first second : SrcStmt} (ih1 : SrcStops sp mp n first) (ih2 : SrcStops sp mp n second) :
     SrcStops sp mp n (.then first second) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower, lowerThen] at ok
   split at ok
   · simp at ok
@@ -1235,7 +1235,7 @@ theorem stops_then (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = som
 theorem stops_if (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     {condition : SrcExpr} {thenBranch elseBranch : SrcStmt} (ih1 : SrcStops sp mp n thenBranch)
     (ih2 : SrcStops sp mp n elseBranch) : SrcStops sp mp n (.if condition thenBranch elseBranch) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower] at ok
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
@@ -1267,7 +1267,7 @@ theorem stops_if (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some 
 theorem stops_while (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     {condition : SrcExpr} {body : SrcStmt} (prev : StmtStops sp mp n) (ih : SrcStops sp mp (n + 1) body) :
     SrcStops sp mp (n + 1) (.while condition body) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   have whileOk := ok
   simp only [SrcStmt.lower, lowerWhile] at ok
   split at ok
@@ -1320,7 +1320,7 @@ theorem stops_while (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = so
 
 theorem stops_let {id : Nat} {ty : SrcType} {value : SrcExpr} {body : SrcStmt} (ih : SrcStops sp mp n body) :
     SrcStops sp mp n (.let id ty value body) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower] at ok
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
@@ -1343,7 +1343,7 @@ theorem stops_let {id : Nat} {ty : SrcType} {value : SrcExpr} {body : SrcStmt} (
   exact ⟨d, Stops.assignFrom xs next stops⟩
 
 theorem stops_return {value : SrcExpr} : SrcStops sp mp n (.return value) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower] at ok
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
@@ -1361,7 +1361,7 @@ theorem stops_letCall (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = 
     (returns : funcsReturn sp.funcs = true) (prev : StmtStops sp mp n) {id : Nat} {ty : SrcType}
     {callee : Nat} {args : List SrcExpr} {body : SrcStmt} (ih : SrcStops sp mp (n + 1) body) :
     SrcStops sp mp (n + 1) (.letCall id ty callee args body) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower] at ok
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
@@ -1394,7 +1394,7 @@ theorem stops_letCall (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = 
 
 
 theorem stops_set {id : Nat} {value : SrcExpr} : SrcStops sp mp n (.set id value) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower] at ok
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
@@ -1415,7 +1415,7 @@ theorem stops_set {id : Nat} {value : SrcExpr} : SrcStops sp mp n (.set id value
 theorem stops_setCall (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     (returns : funcsReturn sp.funcs = true) (prev : StmtStops sp mp n) {id callee : Nat}
     {args : List SrcExpr} : SrcStops sp mp (n + 1) (.setCall id callee args) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower] at ok
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
@@ -1446,7 +1446,7 @@ theorem stops_setCall (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = 
 
 
 theorem stops_setField {id index : Nat} {value : SrcExpr} : SrcStops sp mp n (.setField id index value) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower] at ok
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
@@ -1496,7 +1496,7 @@ theorem stops_setField {id index : Nat} {value : SrcExpr} : SrcStops sp mp n (.s
 
 theorem stops_letStruct {id : Nat} {ty : SrcType} {fields : List SrcExpr} {body : SrcStmt}
     (ih : SrcStops sp mp n body) : SrcStops sp mp n (.letStruct id ty fields body) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower] at ok
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
@@ -1570,7 +1570,7 @@ theorem stops_letStruct {id : Nat} {ty : SrcType} {fields : List SrcExpr} {body 
 
 theorem stops_letEnum {id : Nat} {ty : SrcType} {variant : Nat} {payload : List SrcExpr} {body : SrcStmt}
     (ih : SrcStops sp mp n body) : SrcStops sp mp n (.letEnum id ty variant payload body) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower] at ok
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
@@ -1639,7 +1639,7 @@ theorem stops_letEnum {id : Nat} {ty : SrcType} {variant : Nat} {payload : List 
 
 theorem stops_letMatch {id : Nat} {ty : SrcType} {scrutinee enumId : Nat} {arms : List SrcArm} {body : SrcStmt}
     (ih : SrcStops sp mp n body) : SrcStops sp mp n (.letMatch id ty scrutinee enumId arms body) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower, lowerThen] at ok
   split at ok
   · simp at ok
@@ -1732,14 +1732,14 @@ theorem stops_letMatch {id : Nat} {ty : SrcType} {scrutinee enumId : Nat} {arms 
 
 /-- `Unreachable`: `1 / 0`, which has no step. -/
 theorem stops_unreachable {id : Nat} {ty : SrcType} : SrcStops sp mp n (.unreachable id ty) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   obtain ⟨-, rfl⟩ := unreachable_lower_inv ok
   exact ⟨0, .divide (by simp [Expr.eval, Word.divides, DivOp.defined])⟩
 
 theorem stops_matchArm {scrutinee enumId variant binder : Nat} {binds : Bool} {ty : SrcType} {body rest : SrcStmt}
     (ih1 : SrcStops sp mp n body) (ih2 : SrcStops sp mp n rest) :
     SrcStops sp mp n (.matchArm scrutinee enumId variant binds binder ty body rest) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   obtain ⟨b, variants, fields, vs, bstmt, rstmt, found, hty, fieldsFound, few, payloadOk, bodyOk, restOk, rfl⟩ :=
     matchArm_lower_inv ok
   have bmem := (lookup_mem found).1
@@ -1848,7 +1848,7 @@ theorem stops_matchArm {scrutinee enumId variant binder : Nat} {binds : Bool} {t
 
 theorem stops_letAlloc {id shift : Nat} {size : SrcExpr} {body : SrcStmt} (ih : SrcStops sp mp n body) :
     SrcStops sp mp n (.letAlloc id size shift body) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower] at ok
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
@@ -1895,7 +1895,7 @@ theorem stops_letAlloc {id shift : Nat} {size : SrcExpr} {body : SrcStmt} (ih : 
         (.ptr (by
           simp only [SrcType.Holds, Env.set, if_pos, Value.pointer.injEq, BitVec.toNat_ofNat]
           exact (Nat.mod_eq_of_lt (by omega)).symm))
-        hc' (fc.congr (fun _ _ => rfl) (fun _ _ _ _ => rfl) (Nat.le_refl _) rfl rfl) under fits (fails.letBody valueRun)
+        hc' (fc.congr (fun _ _ => rfl) (fun _ _ _ _ => rfl) rfl rfl rfl) under fits (fails.letBody valueRun)
       have step := Exec.alloc (prog := mp) (depth := 0) (env := env) (target := next) room
       rw [atLeastOne_eval] at step
       exact ⟨_, Stops.after step stops⟩
@@ -1907,7 +1907,7 @@ theorem stops_letAlloc {id shift : Nat} {size : SrcExpr} {body : SrcStmt} (ih : 
 
 theorem stops_letLoad {id : Nat} {pointer offset : SrcExpr} {body : SrcStmt} (ih : SrcStops sp mp n body) :
     SrcStops sp mp n (.letLoad id pointer offset body) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower] at ok
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
@@ -1966,7 +1966,7 @@ theorem stops_letLoad {id : Nat} {pointer offset : SrcExpr} {body : SrcStmt} (ih
     exact ⟨_, Stops.after (.loadByte (depth := 0) (Nat.lt_of_lt_of_le room hc.topped)) stops⟩
 
 theorem stops_setByte {pointer offset value : SrcExpr} : SrcStops sp mp n (.setByte pointer offset value) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower] at ok
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
@@ -2007,7 +2007,7 @@ theorem stops_setByte {pointer offset value : SrcExpr} : SrcStops sp mp n (.setB
     exact absurd within (Nat.not_le.mpr this)
 
 theorem stops_free {pointer size : SrcExpr} {shift : Nat} : SrcStops sp mp n (.free pointer size shift) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower] at ok
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
@@ -2049,7 +2049,7 @@ theorem stops_free {pointer size : SrcExpr} {shift : Nat} : SrcStops sp mp n (.f
 
 theorem stops_letSlice {id : Nat} {element : SrcType} {pointer length : SrcExpr} {body : SrcStmt}
     (ih : SrcStops sp mp n body) : SrcStops sp mp n (.letSlice id element pointer length body) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower] at ok
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
@@ -2138,7 +2138,7 @@ theorem stops_letIndex_i32 {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcE
     (ok : lowerLoadWord next (lowerElement (lookup scope slice) ty (lowerIndex scope index))
       (body.lower (sigs sp.funcs) sp.decls ret (⟨id, next, ty⟩ :: scope) (next + ty.size)) = some stmt)
     (corr : Corr places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr places st hp)
+    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
     (under : ∀ x ∈ places, x.cell < base) (within : st.heap.nextAddress ≤ hp.limit)
     (fails : Fails sp hp.limit st (SrcStmt.letIndex id ty slice index body).toCore) :
     ∃ d, Stops mp d env hp (checkThen next (guardAnd (index.guard scope) (indexGuard scope slice index)) stmt) n := by
@@ -2295,7 +2295,7 @@ theorem stops_letIndex_u8 {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcEx
     (ok : lowerLoad next (lowerElement (lookup scope slice) ty (lowerIndex scope index))
       (body.lower (sigs sp.funcs) sp.decls ret (⟨id, next, ty⟩ :: scope) (next + ty.size)) = some stmt)
     (corr : Corr places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr places st hp)
+    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
     (under : ∀ x ∈ places, x.cell < base) (within : st.heap.nextAddress ≤ hp.limit)
     (fails : Fails sp hp.limit st (SrcStmt.letIndex id ty slice index body).toCore) :
     ∃ d, Stops mp d env hp (checkThen next (guardAnd (index.guard scope) (indexGuard scope slice index)) stmt) n := by
@@ -2436,7 +2436,7 @@ theorem stops_letIndex_word {id : Nat} {ty : SrcType} {slice : Nat} {index : Src
     (ok : lowerLoadType sp.decls next (lookup scope slice) ty (lowerIndex scope index)
       (body.lower (sigs sp.funcs) sp.decls ret (⟨id, next, ty⟩ :: scope) (next + ty.size)) = some stmt)
     (corr : Corr places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr places st hp)
+    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
     (under : ∀ x ∈ places, x.cell < base) (within : st.heap.nextAddress ≤ hp.limit)
     (fails : Fails sp hp.limit st (SrcStmt.letIndex id ty slice index body).toCore) :
     ∃ d, Stops mp d env hp (checkThen next (guardAnd (index.guard scope) (indexGuard scope slice index)) stmt) n := by
@@ -2512,7 +2512,7 @@ theorem stops_letIndex_word {id : Nat} {ty : SrcType} {slice : Nat} {index : Src
 theorem stops_letIndex {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcExpr} {body : SrcStmt}
     (ih : SrcStops sp mp n body) (arrayCase : SrcStops sp mp n (.letEval id ty (.eIndex slice (.ePure index)) body)) :
     SrcStops sp mp n (.letIndex id ty slice index body) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower, lowerLetIndexAny] at ok
   split at ok
   case isTrue =>
@@ -2531,7 +2531,7 @@ theorem stops_letIndex {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcExpr}
 
 /-- A failing `slice[index] = value` whose operands are checked is impossible. -/
 theorem setIndex_fails {scope : List Binding} {frame : Nat → Nat} {st : State} {env : Env} {hp : Heap}
-    (corr : Corr places scope frame st env) (fresh : st.Fresh) (fc : FrameCorr places st hp)
+    (corr : Corr places scope frame st env) (fresh : st.Fresh) (fc : FrameCorr bud places st hp)
     (within : st.heap.nextAddress ≤ hp.limit)
     {slice : Nat} {b : Binding} (found : lookup scope slice = some b) {element : SrcType}
     (bty : b.ty = .slice element) {index value : SrcExpr} {x : Expr} (indexOk : lowerIndex scope index = some x)
@@ -2583,7 +2583,7 @@ theorem setIndex_fails {scope : List Binding} {frame : Nat → Nat} {st : State}
 theorem stops_setIndex {slice : Nat} {index value : SrcExpr}
     (arrayCase : SrcStops sp mp n (.setIndexEval slice (.ePure index) (.ePure value))) :
     SrcStops sp mp n (.setIndex slice index value) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower, lowerSetIndexAny] at ok
   split at ok
   case isTrue =>

@@ -21,7 +21,7 @@ namespace Lanius.Mini
 open Lanius.Core (Value)
 open Lanius.Semantics (State)
 
-variable {places : List Addressed}
+variable {bud : Budget} {places : List Addressed}
 
 /-! ## Arrays as fields -/
 
@@ -127,10 +127,11 @@ theorem Addressed.Packed.holdsAt {x : Addressed} (packed : x.Packed) {places' : 
 
 /-- The correspondence for more places holds for fewer: a caller's places
 after its callee, which borrowed more, returns. -/
-theorem FrameCorr.restrict {places' : List Addressed} {st : State} {hp : Heap} (fc : FrameCorr places' st hp)
-    (sub : ∀ x ∈ places, x ∈ places') : FrameCorr places st hp := by
+theorem FrameCorr.restrict {places' : List Addressed} {st : State} {hp : Heap} (fc : FrameCorr bud places' st hp)
+    (sub : ∀ x ∈ places, x ∈ places') : FrameCorr bud places st hp := by
   refine ⟨fun x mem => ?_, fun x mem => fc.inside x (sub x mem), fun x mem => fc.small x (sub x mem),
-    fun x mem y ymem ne => fc.apart x (sub x mem) y (sub y ymem) ne, fun x mem => fc.packed x (sub x mem)⟩
+    fun x mem y ymem ne => fc.apart x (sub x mem) y (sub y ymem) ne, fun x mem => fc.packed x (sub x mem),
+    fc.room⟩
   obtain ⟨v, read, h⟩ := fc.holds x (sub x mem)
   exact ⟨v, read, (fc.packed x (sub x mem)).holdsAt h⟩
 
@@ -138,7 +139,7 @@ theorem FrameCorr.restrict {places' : List Addressed} {st : State} {hp : Heap} (
 
 /-- A sliced array place: Core's array in its cell, as long as its type
 says, and its elements in the place's slots. -/
-theorem FrameCorr.array {st : State} {hp : Heap} (fc : FrameCorr places st hp) {x : Addressed} (mem : x ∈ places)
+theorem FrameCorr.array {st : State} {hp : Heap} (fc : FrameCorr bud places st hp) {x : Addressed} (mem : x ∈ places)
     (root : x.projections = []) {element : SrcType} {n : Nat} (ty : x.ty = .array element n) :
     ∃ vs, Semantics.readCellProjection st x.cell [] = .ok (.array vs) ∧ vs.length = n ∧
       FieldsHold places (List.replicate n element) vs (x.view hp) 0 := by
@@ -156,7 +157,7 @@ theorem sliceValues_whole {st : State} {cell : Nat} {vs : List Value}
 
 /-- Element `pos` of a borrowed slice, as Core reads it, is in the place's
 slots of that element. -/
-theorem FrameCorr.borrowed_get {st : State} {hp : Heap} (fc : FrameCorr places st hp) {x : Addressed}
+theorem FrameCorr.borrowed_get {st : State} {hp : Heap} (fc : FrameCorr bud places st hp) {x : Addressed}
     (mem : x ∈ places) (root : x.projections = []) {element : SrcType} {n : Nat} (ty : x.ty = .array element n)
     {elems : List Value} (values : Semantics.sliceValues st x.cell [] 0 n = .ok elems) {pos : Nat} {v : Value}
     (found : elems[pos]? = some v) : pos < n ∧ element.HoldsAt places v (x.view hp) (pos * element.size) := by
@@ -170,7 +171,7 @@ theorem FrameCorr.borrowed_get {st : State} {hp : Heap} (fc : FrameCorr places s
 
 /-- A borrowed slice's reads never fail: every index below its length has
 an element. -/
-theorem FrameCorr.borrowed_values {st : State} {hp : Heap} (fc : FrameCorr places st hp) {x : Addressed}
+theorem FrameCorr.borrowed_values {st : State} {hp : Heap} (fc : FrameCorr bud places st hp) {x : Addressed}
     (mem : x ∈ places) (root : x.projections = []) {element : SrcType} {n : Nat} (ty : x.ty = .array element n) :
     ∃ vs, Semantics.sliceValues st x.cell [] 0 n = .ok vs ∧ vs.length = n := by
   obtain ⟨vs, read, len, -⟩ := fc.array mem root ty
@@ -178,7 +179,7 @@ theorem FrameCorr.borrowed_values {st : State} {hp : Heap} (fc : FrameCorr place
 
 /-- The block of a sliced place: from its address, 8 bytes a slot, below
 the top and `2 ^ 62`. -/
-theorem FrameCorr.block {st : State} {hp : Heap} (fc : FrameCorr places st hp) {x : Addressed}
+theorem FrameCorr.block {st : State} {hp : Heap} (fc : FrameCorr bud places st hp) {x : Addressed}
     (mem : x ∈ places) : hp.limit ≤ x.address ∧ x.address + 8 * x.ty.size ≤ hp.top ∧
       x.address + 8 * x.ty.size < 2 ^ 62 :=
   ⟨(fc.inside x mem).2.1, (fc.inside x mem).2.2, fc.small x mem⟩
@@ -217,7 +218,7 @@ theorem HeapCorr.high {h : Memory.Heap} {w : Lanius.World.State} {hp hp' : Heap}
 array with that element replaced, and the mini heap changed only in the
 place's block, the element's slots holding the new value and the others
 unchanged. The correspondence still holds. -/
-theorem FrameCorr.borrowed_set {st st' : State} {hp hp' : Heap} (fc : FrameCorr places st hp) {x : Addressed}
+theorem FrameCorr.borrowed_set {st st' : State} {hp hp' : Heap} (fc : FrameCorr bud places st hp) {x : Addressed}
     (mem : x ∈ places) (root : x.projections = []) {element : SrcType} {n : Nat} (ty : x.ty = .array element n)
     {vs : List Value} (read : Semantics.readCellProjection st x.cell [] = .ok (.array vs)) {pos : Nat} (lt : pos < n)
     {v : Value} (readNew : Semantics.readCellProjection st' x.cell [] = .ok (.array (Semantics.setValue vs pos v)))
@@ -226,8 +227,8 @@ theorem FrameCorr.borrowed_set {st st' : State} {hp hp' : Heap} (fc : FrameCorr 
     (away : ∀ s, s < pos * element.size ∨ pos * element.size + element.size ≤ s → x.view hp' s = x.view hp s)
     (bytes : ∀ a, ¬ x.Covers a → hp'.bytes a = hp.bytes a)
     (fsp : hp'.fsp = hp.fsp) (limit : hp'.limit = hp.limit) (top : hp'.top = hp.top) :
-    FrameCorr places st' hp' := by
-  refine ⟨fun y ymem => ?_, fun y ymem => ?_, fc.small, fc.apart, fc.packed⟩
+    FrameCorr bud places st' hp' := by
+  refine ⟨fun y ymem => ?_, fun y ymem => ?_, fc.small, fc.apart, fc.packed, by rw [fsp, limit]; exact fc.room⟩
   · by_cases same : y = x
     · subst same
       obtain ⟨vs', read', -, elems⟩ := fc.array mem root ty

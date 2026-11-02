@@ -209,7 +209,7 @@ theorem compileSource_correct_from {sp : SrcProgram} {binary : Binary}
     obtain ⟨rfl, rfl⟩ := evalExprs_values argsRun
     obtain ⟨_, _, depth, results, after, returns, holds, len, hc', -⟩ :=
       body_sound (mp := { funcs := funcs }) (hp := heap) lowered (stmt_sound lowered k) found
-        fresh hc (FrameCorr.nil _ _) (fun _ mem => by simp at mem) typed bitsLen bodyRun result fits
+        fresh hc (FrameCorr.empty _ _) (fun _ mem => by simp at mem) typed bitsLen bodyRun result fits
     exact ⟨depth, results, after, holds, len, hc',
       fun s imageBase window enough bounded loaded apart imageHeap entry params heapAt stack =>
         compileOptimized_correct compiledProgram returns s imageBase window enough bounded loaded apart

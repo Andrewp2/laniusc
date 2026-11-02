@@ -118,7 +118,7 @@ theorem compileSource_deterministic {sp : SrcProgram} {binary : Binary}
     obtain ⟨_, _, depth, results, after, returns, holds, len, hc, -⟩ :=
       body_sound (mp := { funcs := funcs }) (hp := heap) lowered (stmt_sound lowered k) found
         (startState_fresh _) (HeapCorr.empty start zero small silent)
-        (FrameCorr.nil _ _) (fun _ mem => by simp at mem) typed bitsLen bodyRun result fits
+        (FrameCorr.empty _ _) (fun _ mem => by simp at mem) typed bitsLen bodyRun result fits
     exact ⟨depth, results, after, holds, len, hc.cursor,
       fun s imageBase window enough bounded loaded apart imageHeap entry params heapAt stack =>
         compileOptimized_deterministic compiledProgram returns s imageBase window enough bounded loaded apart
