@@ -24,6 +24,8 @@ StructuredBuffer<uint> compact_path_count;
 StructuredBuffer<HirPath> compact_paths;
 StructuredBuffer<uint> resolved_value_decl;
 StructuredBuffer<uint> resolved_value_status;
+StructuredBuffer<uint> decl_count_out;
+StructuredBuffer<uint> decl_hir_node;
 
 RWStructuredBuffer<uint> call_intrinsic_tag;
 RWStructuredBuffer<uint> call_return_type;
@@ -109,19 +111,38 @@ uint path_leaf_token_for_callee(uint callee_node)
 // Language intrinsics form an implicit prelude: a declaration that module
 // path resolution found for the callee (local, imported or qualified)
 // shadows the intrinsic of the same name, so the call resolves as an
-// ordinary function call.
-bool callee_path_resolves_to_declaration(uint call_node)
+// ordinary function call. Returns that declaration, or INVALID.
+uint callee_declaration(uint call_node)
 {
     uint callee_node = compact_hir_payload[call_node].a;
     uint path_node = path_node_for_callee(callee_node);
     if (!valid_node(path_node))
-        return false;
+        return INVALID;
     uint path_i = path_id_by_owner_hir[path_node];
     uint path_count = min(compact_path_count[0u], gParams.n_hir_nodes);
     if (path_i >= path_count || compact_paths[path_i].owner != path_node)
+        return INVALID;
+    uint decl = resolved_value_decl[path_i];
+    return resolved_value_status[path_i] == PATH_RESOLVE_STATUS_OK && decl < gParams.n_tokens
+        ? decl
+        : INVALID;
+}
+
+// Inside its own body, a declaration that shadows an intrinsic reaches the
+// intrinsic by that name. This is how wrappers such as verified::host's
+// `fn i32_slice_from_raw_parts(..) { return i32_slice_from_raw_parts(..); }`
+// give an intrinsic a declared signature; resolving the inner call to the
+// declaration would make it recurse forever.
+bool call_is_inside_declaration(uint call_node, uint decl)
+{
+    uint decl_count = min(decl_count_out[0u], gParams.n_tokens);
+    if (decl >= decl_count)
         return false;
-    return resolved_value_status[path_i] == PATH_RESOLVE_STATUS_OK &&
-           resolved_value_decl[path_i] < gParams.n_tokens;
+    uint owner = decl_hir_node[decl];
+    if (!valid_node(owner))
+        return false;
+    uint end = min(compact_hir_links[owner].subtree_end, active_hir_node_count());
+    return owner < call_node && call_node < end;
 }
 
 uint call_callee_token(uint call_node)
@@ -165,7 +186,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint intrinsic_tag = intrinsic_tag_for_name_id(name_id);
     if (intrinsic_tag == INTRINSIC_NONE)
         return;
-    if (callee_path_resolves_to_declaration(i))
+    uint declaration = callee_declaration(i);
+    if (declaration != INVALID && !call_is_inside_declaration(i, declaration))
         return;
 
     call_intrinsic_tag[callee_token] = intrinsic_tag;

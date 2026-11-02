@@ -1193,6 +1193,20 @@ low 32 bits as i32. Unresolved names keep their intrinsic meaning, so
 `std::io::print_i32` now runs its library body, which calls `print`. The fix
 is in `shaders/type_checker/calls/02c_intrinsics.slang`; the two
 `tests/codegen_x86.rs` intrinsic-shadowing tests are its regressions.
+Inside its own body, a function that shadows an intrinsic reaches the
+intrinsic by that name, so wrappers such as verified::host's
+`i32_slice_from_raw_parts`, whose body calls `i32_slice_from_raw_parts`, no
+longer recurse forever; a recursive function needs a name that is not an
+intrinsic. `tests/fixtures/compiler_defects/intrinsic_wrapper_self_call.lani`
+is the regression.
+Tested 2026-11-01 on a separate build of this change: the regression and
+both 3f0bb9922 shadowing tests pass, the minimal repros that segfaulted on
+lang's compiler exit 0, oracle_difftest agrees on 40 programs/320 calls, and
+the CRC-32 (2,400 cases) and quick zstd/XXH64 oracles show 0 failures.
+The jump-check failures in codegen_x86 and compiler_defect_fixtures_execution
+(24 and 2 tests) were already there before this change: the runtime allocator
+jumps forward into its out-of-line mmap block and back to its own entry, and
+lang's compiler emits exactly the same jumps.
 
 Inline fixed-capacity containers and an LRU cache follow ordered navigation.
 `core::ring::Ring<T, N>` is an allocation-free ring buffer with O(1) pushes and
