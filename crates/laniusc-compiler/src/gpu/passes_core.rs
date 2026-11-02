@@ -43,6 +43,7 @@ static PIPELINE_CREATION_COUNT: AtomicU64 = AtomicU64::new(0);
 /// Summed over threads: the time `create_compute_pipeline` took.
 static PIPELINE_CREATION_NANOS: AtomicU64 = AtomicU64::new(0);
 static BIND_GROUP_CREATION_COUNT: AtomicU64 = AtomicU64::new(0);
+static BIND_GROUP_CACHE_EVICTIONS: AtomicU64 = AtomicU64::new(0);
 static RECORDED_COMPUTE_PASS_COUNT: AtomicU64 = AtomicU64::new(0);
 static RECORDED_COMPUTE_DISPATCH_COUNT: AtomicU64 = AtomicU64::new(0);
 static RECORDED_INDIRECT_DISPATCH_COUNT: AtomicU64 = AtomicU64::new(0);
@@ -166,6 +167,7 @@ static PRUNED_AT_RELEASED_BUFFER_BYTES: AtomicU64 = AtomicU64::new(0);
 /// resident as long as the kernel's cache: one-shot parses (parse_fuzz) and
 /// growing resident workspaces kept every earlier allocation.
 pub(crate) fn prune_bind_groups_of_released_buffers() {
+    BIND_GROUP_CACHE_EVICTIONS.fetch_add(1, Ordering::Relaxed);
     let live = crate::gpu::buffers::live_tracked_allocation_ids();
     let mut caches = reflected_bind_group_caches()
         .lock()
@@ -238,6 +240,7 @@ pub(crate) fn finish_reflected_bind_group_job(epoch: u64, workspace_changed: boo
     if !workspace_changed {
         return;
     }
+    BIND_GROUP_CACHE_EVICTIONS.fetch_add(1, Ordering::Relaxed);
     let mut caches = reflected_bind_group_caches()
         .lock()
         .expect("reflected bind-group cache registry poisoned");
@@ -298,6 +301,14 @@ pub(crate) fn mark_reflected_bind_groups_used<'a>(
 
 type SharedReflectedBindGroupCache = Arc<std::sync::Mutex<ReflectedBindGroupCache>>;
 
+/// Counts process-wide evictions (release, prune, job finish). The caches are
+/// keyed by layout and shared by every compiler in the process, so a test that
+/// checks warm reuse can tell whether another compiler evicted entries.
+#[cfg(test)]
+pub(crate) fn reflected_bind_group_cache_eviction_count() -> u64 {
+    BIND_GROUP_CACHE_EVICTIONS.load(Ordering::Relaxed)
+}
+
 fn reflected_bind_group_caches() -> &'static std::sync::Mutex<
     HashMap<wgpu::BindGroupLayout, Weak<std::sync::Mutex<ReflectedBindGroupCache>>>,
 > {
@@ -325,6 +336,7 @@ fn register_reflected_bind_group_cache(
 /// pipelines and layouts alive. The daemon calls this at its idle trim
 /// boundary after dropping capacity-dependent workspace owners.
 pub(crate) fn release_reflected_bind_group_caches() {
+    BIND_GROUP_CACHE_EVICTIONS.fetch_add(1, Ordering::Relaxed);
     let mut caches = reflected_bind_group_caches()
         .lock()
         .expect("reflected bind-group cache registry poisoned");
