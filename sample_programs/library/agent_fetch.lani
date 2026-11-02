@@ -1,0 +1,244 @@
+// agent-fetch: download URLs through one ext::http_agent, streaming each
+// response body to stdout or -o FILE as it arrives (Agent fetch_to), so a
+// body of any size passes through a fixed buffer. Keep-alive pooling across
+// URLs, HTTP/2 when an https origin selects h2 by ALPN (unless --http1.1),
+// redirects with -L, a whole-transfer deadline (--max-time) and a connect
+// attempt timeout (--connect-timeout). Options are parsed by std::cli.
+module app::main;
+import alloc::vec;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import core::time;
+import ext::http;
+import ext::http_agent;
+import ext::openssl_tls;
+import std::args;
+import std::cli;
+import std::file;
+import std::file_ops;
+import std::signal;
+import std::stream;
+
+const O_OUTPUT: i32 = 1;
+const O_METHOD: i32 = 2;
+const O_HEADER: i32 = 3;
+const O_DATA: i32 = 4;
+const O_UPLOAD: i32 = 5;
+const O_LOCATION: i32 = 6;
+const O_MAX_REDIRS: i32 = 7;
+const O_MAX_TIME: i32 = 8;
+const O_CONNECT_TIMEOUT: i32 = 9;
+const O_DUMP_HEADER: i32 = 10;
+const O_HEAD: i32 = 11;
+const O_FAIL: i32 = 12;
+const O_CACERT: i32 = 13;
+const O_HTTP11: i32 = 14;
+const O_STATS: i32 = 15;
+const O_HELP: i32 = 16;
+
+fn literal(s: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(s),n); return core::slice::view<u8>(raw,n).unwrap(); }
+fn byte(v: core::slice::View<u8>, i: i32) -> u8 { return v.values[v.start+i]; }
+fn part(v: core::slice::View<u8>, start: i32, end: i32) -> core::slice::View<u8> { return v.subview(start,end).unwrap(); }
+fn eq(v: core::slice::View<u8>, s: str, n: i32) -> bool {
+    let w: core::slice::View<u8> = literal(s,n); if (v.len() != n) { return false; }
+    let i: i32 = 0; while (i < n) { if (byte(v,i) != byte(w,i)) { return false; } i += 1; } return true;
+}
+fn write_to(fd: i32, bytes: core::slice::View<u8>) -> bool {
+    let sink: std::stream::Descriptor = std::stream::from_handle(fd); let completed: i32 = 0;
+    while (completed < bytes.len()) {
+        let sent = sink.write(bytes.values,bytes.start + completed,bytes.len() - completed);
+        if (sent.is_err()) { if (core::io::is_interrupted(sent.unwrap_err())) { continue; } return false; }
+        let count: i32 = sent.unwrap(); if (count <= 0) { return false; } completed += count;
+    }
+    return true;
+}
+fn say(s: str, n: i32) { write_to(2,literal(s,n)); }
+fn push(out: &alloc::vec::Vec<u8>, v: core::slice::View<u8>) -> bool { return out.try_extend(v).is_ok(); }
+fn put(out: &alloc::vec::Vec<u8>, s: str, n: i32) -> bool { return out.try_extend(literal(s,n)).is_ok(); }
+fn push_number(out: &alloc::vec::Vec<u8>, value: i64) -> bool {
+    let digits: [u8;20] = [0;20]; let i: i32 = 20; let v: i64 = value; if (v < 0) { if (out.try_push(45).is_err()) { return false; } v = 0 - v; }
+    while (true) { i -= 1; digits[i] = (48 + v % 10) as u8; v = v / 10; if (v == 0) { break; } }
+    while (i < 20) { if (out.try_push(digits[i]).is_err()) { return false; } i += 1; }
+    return true;
+}
+fn field(out: &alloc::vec::Vec<u8>, s: str, n: i32, value: i64) -> bool { return put(out,s,n) && push_number(out,value); }
+// A millisecond or count value: 0..=1000000000, else -1.
+fn number(v: core::slice::View<u8>) -> i32 {
+    let parsed: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(v.values,v.start,v.len());
+    if (parsed.is_err() || parsed.unwrap() > 1000000000 as u64) { return -1; }
+    return parsed.unwrap() as i32;
+}
+fn flag(b: bool) -> i64 { if (b) { return 1; } return 0; }
+// curl's exit codes for the matching failures.
+fn code(e: ext::http_agent::Error) -> i32 {
+    return match(e) {
+        ext::http_agent::Error::InvalidRequest -> 2, ext::http_agent::Error::InvalidHeader -> 2, ext::http_agent::Error::Url(k) -> 3,
+        ext::http_agent::Error::UnsupportedScheme -> 1, ext::http_agent::Error::Connect(c) -> 7, ext::http_agent::Error::Io(i) -> 56,
+        ext::http_agent::Error::Timeout -> 28, ext::http_agent::Error::Truncated(n) -> match(n) { 0 -> 52, _ -> 18 },
+        ext::http_agent::Error::Parse(p) -> 8, ext::http_agent::Error::TooLarge -> 63, ext::http_agent::Error::TooManyRedirects(n) -> 47,
+        ext::http_agent::Error::BadLocation -> 3, ext::http_agent::Error::UnreplayableBody(s) -> 65, ext::http_agent::Error::UnexpectedUpgrade -> 8,
+        ext::http_agent::Error::Source(i) -> 26, ext::http_agent::Error::AllocationFailed -> 27, ext::http_agent::Error::Clock -> 2,
+        ext::http_agent::Error::Tls(t) -> match(t.cause) { ext::openssl_tls::Cause::Verification -> 60, ext::openssl_tls::Cause::PeerCertificate -> 60, _ -> 35 },
+        ext::http_agent::Error::Http2(h) -> 16, ext::http_agent::Error::Sink(i) -> 23
+    };
+}
+fn name(e: ext::http_agent::Error) -> core::slice::View<u8> {
+    return match(e) {
+        ext::http_agent::Error::InvalidRequest -> literal("invalid request",15), ext::http_agent::Error::InvalidHeader -> literal("invalid header",14),
+        ext::http_agent::Error::Url(k) -> literal("bad URL",7), ext::http_agent::Error::UnsupportedScheme -> literal("unsupported scheme",18),
+        ext::http_agent::Error::Connect(c) -> literal("connect failed",14), ext::http_agent::Error::Io(i) -> literal("connection error",16),
+        ext::http_agent::Error::Timeout -> literal("timed out",9), ext::http_agent::Error::Truncated(n) -> match(n) { 0 -> literal("empty reply",11), _ -> literal("truncated response",18) },
+        ext::http_agent::Error::Parse(p) -> literal("malformed response",18), ext::http_agent::Error::TooLarge -> literal("response too large",18),
+        ext::http_agent::Error::TooManyRedirects(n) -> literal("too many redirects",18), ext::http_agent::Error::BadLocation -> literal("bad redirect location",21),
+        ext::http_agent::Error::UnreplayableBody(s) -> literal("redirect needs the streamed body again",38), ext::http_agent::Error::UnexpectedUpgrade -> literal("unexpected upgrade",18),
+        ext::http_agent::Error::Source(i) -> literal("upload read error",17), ext::http_agent::Error::AllocationFailed -> literal("out of memory",13),
+        ext::http_agent::Error::Clock -> literal("clock error",11),
+        ext::http_agent::Error::Tls(t) -> match(t.cause) { ext::openssl_tls::Cause::Verification -> literal("certificate verification failed",31), ext::openssl_tls::Cause::PeerCertificate -> literal("certificate verification failed",31), _ -> literal("TLS error",9) },
+        ext::http_agent::Error::Http2(h) -> literal("HTTP/2 error",12), ext::http_agent::Error::Sink(i) -> literal("write error",11)
+    };
+}
+fn report(r: &ext::http_agent::Response) -> bool {
+    let line: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+    let ok: bool = field(line.borrow(),"response status=",16,r.status as i64) && field(line.borrow()," version=",9,r.version() as i64) && field(line.borrow()," streamed=",10,r.streamed())
+        && field(line.borrow()," redirects=",11,r.redirects as i64) && field(line.borrow()," reused=",8,flag(r.reused)) && field(line.borrow()," kept=",6,flag(r.kept))
+        && put(line.borrow()," url=",5) && push(line.borrow(),r.url()) && put(line.borrow(),"\n",1);
+    ok = ok && write_to(2,line.as_view()); line.destroy(); return ok;
+}
+fn totals(agent: &ext::http_agent::Agent) -> bool {
+    let s: ext::http_agent::Stats = agent.stats(); let line: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+    let ok: bool = field(line.borrow(),"pool connections=",17,s.connections as i64) && field(line.borrow()," reused=",8,s.reused as i64) && field(line.borrow()," requests=",10,s.requests as i64)
+        && field(line.borrow()," redirects=",11,s.redirects as i64) && field(line.borrow()," retries=",9,s.retries as i64) && field(line.borrow()," http2=",7,s.http2 as i64)
+        && field(line.borrow()," sessions=",10,agent.sessions() as i64) && field(line.borrow()," idle=",6,agent.idle() as i64) && put(line.borrow(),"\n",1);
+    ok = ok && write_to(2,line.as_view()); line.destroy(); return ok;
+}
+// "-" is stdin (upload) or stdout/stderr (output, dump); otherwise a path,
+// opened for reading or created and truncated for writing.
+fn open_path(path: core::slice::View<u8>, write: bool, dash: i32) -> core::option::Option<std::file::File> {
+    if (eq(path,"-",1)) { return core::option::Some(std::file::File { handle: dash }); }
+    let p = core::path::from_bytes_range(path.values,path.start,path.len()); if (p.is_err()) { return core::option::None(); }
+    let o: std::file_ops::OpenOptions = std::file_ops::options();
+    if (write) { o.access = std::file_ops::Access::Write; o.create = true; o.truncate = true; }
+    let opened = std::file_ops::open(p.unwrap(),o); if (opened.is_err()) { return core::option::None(); }
+    return core::option::Some(opened.unwrap());
+}
+fn command() -> std::cli::Command {
+    let cli: std::cli::Command = std::cli::command(literal("agent-fetch",11), literal("Fetch each URL through one keep-alive HTTP/1.1 and HTTP/2 agent, streaming bodies to stdout or FILE.",101));
+    cli.option(O_OUTPUT,111,literal("output",6),literal("FILE",4),literal("write the bodies to FILE instead of stdout",42));
+    cli.option(O_METHOD,88,literal("request",7),literal("METHOD",6),literal("request method (default GET, POST with -d, PUT with -T)",56));
+    cli.option(O_HEADER,72,literal("header",6),literal("'NAME: VALUE'",13),literal("add a request field (repeatable)",32));
+    cli.option(O_DATA,100,literal("data",4),literal("DATA",4),literal("send DATA as a fixed-length body",32));
+    cli.option(O_UPLOAD,84,literal("upload-file",11),literal("FILE",4),literal("stream FILE (- for stdin) as a chunked body",43));
+    cli.flag(O_LOCATION,76,literal("location",8),literal("follow redirects",16));
+    cli.option(O_MAX_REDIRS,0,literal("max-redirs",10),literal("N",1),literal("redirect hop limit with -L (default 10)",39));
+    cli.option(O_MAX_TIME,109,literal("max-time",8),literal("MS",2),literal("deadline for each exchange, transfer included (default 30000)",61));
+    cli.option(O_CONNECT_TIMEOUT,0,literal("connect-timeout",15),literal("MS",2),literal("limit for each connect attempt",30));
+    cli.option(O_DUMP_HEADER,68,literal("dump-header",11),literal("FILE",4),literal("write each final response head to FILE (- for stderr)",54));
+    cli.flag(O_HEAD,73,literal("head",4),literal("send HEAD requests",18));
+    cli.flag(O_FAIL,102,literal("fail",4),literal("exit 22 on a status of 400 or more (after its body)",51));
+    cli.option(O_CACERT,0,literal("cacert",6),literal("FILE",4),literal("trust the PEM certificates in FILE",34));
+    cli.flag(O_HTTP11,0,literal("no-http2",8),literal("do not offer HTTP/2 (HTTP/1.1 only)",35));
+    cli.flag(O_STATS,0,literal("stats",5),literal("write response and pool statistics to stderr",44));
+    cli.help(O_HELP);
+    cli.operands(literal("URL",3),1,-1);
+    return cli;
+}
+fn fail_with(e: ext::http_agent::Error) -> i32 { say("agent-fetch: ",13); write_to(2,name(e)); say("\n",1); return code(e); }
+fn bad(s: str, n: i32) -> i32 { say("agent-fetch: ",13); say(s,n); say("\nTry 'agent-fetch --help' for more information.\n",48); return 2; }
+
+// Settings gathered from the matches (later occurrences win).
+struct Plan {
+    options: ext::http_agent::Options, method: core::option::Option<core::slice::View<u8>>, data: core::option::Option<core::slice::View<u8>>,
+    upload: core::option::Option<core::slice::View<u8>>, output: core::option::Option<core::slice::View<u8>>, dump: core::option::Option<core::slice::View<u8>>,
+    head: bool, fail: bool, stats: bool, help: bool
+}
+impl Plan { fn borrow(&self) -> &Plan { return self; } }
+fn header(v: core::slice::View<u8>, headers: &alloc::vec::Vec<ext::http::Field>) -> bool {
+    let c: i32 = 0; while (c < v.len() && byte(v,c) != 58) { c += 1; }
+    if (c == 0 || c == v.len()) { return false; }
+    let s: i32 = c + 1; while (s < v.len() && (byte(v,s) == 32 || byte(v,s) == 9)) { s += 1; }
+    return headers.try_push(ext::http::Field { raw: v, name: part(v,0,c), value: part(v,s,v.len()), offset: 0 }).is_ok();
+}
+// 0, or an exit status for a bad value.
+fn gather(m: &std::cli::Matches, plan: &Plan, headers: &alloc::vec::Vec<ext::http::Field>) -> i32 {
+    let i: i32 = 0;
+    while (i < m.occurrences()) {
+        let id: i32 = m.occurrence_id(i); let value: core::option::Option<core::slice::View<u8>> = m.occurrence_value(i); i += 1;
+        let v: core::slice::View<u8> = literal("",0); if (value.is_some()) { v = value.unwrap(); }
+        let n: i32 = number(v);
+        if (id == O_OUTPUT) { plan.output = value; }
+        if (id == O_METHOD) { plan.method = value; }
+        if (id == O_HEADER && !header(v,headers)) { return bad("bad header (want 'NAME: VALUE')",31); }
+        if (id == O_DATA) { plan.data = value; }
+        if (id == O_UPLOAD) { plan.upload = value; }
+        if (id == O_LOCATION) { plan.options.follow_redirects = true; }
+        if (id == O_MAX_REDIRS) { if (n < 0) { return bad("bad --max-redirs",16); } plan.options.max_redirects = n; }
+        if (id == O_MAX_TIME) { if (n <= 0) { return bad("bad --max-time",14); } plan.options.timeout_ms = n; }
+        if (id == O_CONNECT_TIMEOUT) { if (n <= 0) { return bad("bad --connect-timeout",21); } plan.options.connect.attempt_timeout = core::time::from_millis(n as u64); }
+        if (id == O_DUMP_HEADER) { plan.dump = value; }
+        if (id == O_HEAD) { plan.head = true; }
+        if (id == O_FAIL) { plan.fail = true; }
+        if (id == O_CACERT) { plan.options.trust = ext::openssl_tls::Trust::CaFile(v); }
+        if (id == O_HTTP11) { plan.options.http2 = false; }
+        if (id == O_STATS) { plan.stats = true; }
+        if (id == O_HELP) { plan.help = true; }
+    }
+    if (plan.data.is_some() && plan.upload.is_some()) { return bad("-d and -T exclude each other",28); }
+    return 0;
+}
+// One URL: the body goes straight to out.
+fn one(agent: &ext::http_agent::Agent, plan: &Plan, verb: core::slice::View<u8>, url: core::slice::View<u8>, headers: core::slice::View<ext::http::Field>, out: &std::file::File, dump: &std::file::File) -> i32 {
+    let body: core::slice::View<u8> = literal("",0); if (plan.data.is_some()) { body = plan.data.unwrap(); }
+    let request: ext::http_agent::Request = ext::http_agent::Request { method: verb, url: url, headers: headers, body: body };
+    let got: core::result::Result<ext::http_agent::Response,ext::http_agent::Error> = core::result::Err(ext::http_agent::Error::InvalidRequest);
+    if (plan.upload.is_some()) {
+        let source = open_path(plan.upload.unwrap(),false,0);
+        if (source.is_none()) { say("agent-fetch: cannot open upload\n",32); return 26; }
+        let file: std::file::File = source.unwrap();
+        got = ext::http_agent::fetch_stream_to<std::file::File,std::file::File>(agent,request,file.borrow(),out);
+        if (file.handle != 0) { file.close(); }
+    } else { got = ext::http_agent::fetch_to<std::file::File>(agent,request,out); }
+    if (got.is_err()) { return fail_with(got.unwrap_err()); }
+    let r: ext::http_agent::Response = got.unwrap(); let status: i32 = 0;
+    if (plan.dump.is_some() && (!write_to(dump.handle,r.head()) || (r.version() == 20 && !write_to(dump.handle,literal("\r\n",2))))) { status = 23; }
+    if (plan.stats) { report(r.borrow()); }
+    if (status == 0 && plan.fail && r.status >= 400) { say("agent-fetch: HTTP error\n",24); status = 22; }
+    r.destroy(); return status;
+}
+fn run(args: std::args::Arguments) -> i32 {
+    let cli: std::cli::Command = command();
+    let parsed: core::result::Result<std::cli::Matches,std::cli::Error> = cli.parse(args.as_view());
+    if (parsed.is_err()) { cli.print_error(parsed.unwrap_err(),args.as_view()); cli.destroy(); return 2; }
+    let m: std::cli::Matches = parsed.unwrap();
+    let plan: Plan = Plan { options: ext::http_agent::default_options(), method: core::option::None(), data: core::option::None(), upload: core::option::None(),
+        output: core::option::None(), dump: core::option::None(), head: false, fail: false, stats: false, help: false };
+    plan.options.follow_redirects = false;
+    let headers: alloc::vec::Vec<ext::http::Field> = alloc::vec::new<ext::http::Field>();
+    let status: i32 = gather(m.borrow(),plan.borrow(),headers.borrow());
+    if (status == 0 && plan.help) { if (!cli.print_help(-1)) { status = 2; } m.destroy(); cli.destroy(); headers.destroy(); return status; }
+    let verb: core::slice::View<u8> = literal("GET",3);
+    if (plan.head) { verb = literal("HEAD",4); } if (plan.data.is_some()) { verb = literal("POST",4); } if (plan.upload.is_some()) { verb = literal("PUT",3); }
+    if (plan.method.is_some()) { verb = plan.method.unwrap(); }
+    let out: std::file::File = std::file::File { handle: 1 }; let dump: std::file::File = std::file::File { handle: 2 };
+    if (status == 0 && plan.output.is_some()) { let o = open_path(plan.output.unwrap(),true,1); if (o.is_none()) { say("agent-fetch: cannot create output\n",34); status = 23; } else { out = o.unwrap(); } }
+    if (status == 0 && plan.dump.is_some()) { let d = open_path(plan.dump.unwrap(),true,2); if (d.is_none()) { say("agent-fetch: cannot create header file\n",39); status = 23; } else { dump = d.unwrap(); } }
+    let made: core::result::Result<ext::http_agent::Agent,ext::http_agent::Error> = core::result::Err(ext::http_agent::Error::InvalidRequest);
+    if (status == 0) { made = ext::http_agent::agent(plan.options); if (made.is_err()) { status = fail_with(made.unwrap_err()); } }
+    if (status == 0) {
+        let agent: ext::http_agent::Agent = made.unwrap(); let u: i32 = 0;
+        while (status == 0 && u < m.operand_count()) { status = one(agent.borrow(),plan.borrow(),verb,m.operand(u),headers.as_view(),out.borrow(),dump.borrow()); u += 1; }
+        if (plan.stats) { totals(agent.borrow()); }
+        agent.close();
+    }
+    if (out.handle > 2) { out.close(); } if (dump.handle > 2) { dump.close(); }
+    m.destroy(); cli.destroy(); headers.destroy(); return status;
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 2; }
+    let got = std::args::snapshot(1,64,65536); if (got.is_err()) { return 2; }
+    let args = got.unwrap(); let status = run(args); args.destroy(); return status;
+}

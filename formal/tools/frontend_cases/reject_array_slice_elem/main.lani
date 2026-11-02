@@ -1,0 +1,10 @@
+// An array of another element type is not a slice of the parameter's.
+fn put(xs: [u16], n: i32) -> i32 {
+    xs[0] = 5;
+    return n;
+}
+
+fn run(n: i32) -> i32 {
+    let a: [u8; 2] = [1, 2];
+    return put(a, n);
+}

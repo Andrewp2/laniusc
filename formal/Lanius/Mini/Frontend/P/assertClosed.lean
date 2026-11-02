@@ -5,7 +5,7 @@ import Lanius.Mini.Compiler.P.BinOp_folds
 import Lanius.Mini.Frontend.P.allWeighed
 import Lanius.Mini.Frontend.P.allocClosed
 import Lanius.Mini.Frontend.P.distinct
-import Lanius.Mini.Frontend.P.eIndexClosed
+import Lanius.Mini.Frontend.P.eStructClosed
 import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.letClosed
 import Lanius.Mini.Frontend.P.letStructClosed

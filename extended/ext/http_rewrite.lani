@@ -38,8 +38,7 @@ pub fn lists(value: core::slice::View<u8>, name: core::slice::View<u8>) -> bool 
 }
 // The fixed hop-by-hop fields (RFC 9110 7.6.1).
 pub fn hop_by_hop(name: core::slice::View<u8>) -> bool {
-    return is(name, "connection", 10) || is(name, "proxy-connection", 16) || is(name, "keep-alive", 10) || is(name, "te", 2)
-        || is(name, "transfer-encoding", 17) || is(name, "upgrade", 7);
+    return hop_kind(kind(name));
 }
 // Hop-by-hop, or nominated by one of head's Connection fields.
 pub fn drops(head: ext::http::Head, name: core::slice::View<u8>) -> bool {
@@ -51,6 +50,67 @@ pub fn drops(head: ext::http::Head, name: core::slice::View<u8>) -> bool {
         if (is(f.name, "connection", 10) && lists(f.value, name)) { return true; }
     }
     return false;
+}
+
+// Field kinds, told apart by length and first byte before one name compare.
+const K_OTHER: i32 = 0;
+const K_CONNECTION: i32 = 1;
+const K_PROXY_CONNECTION: i32 = 2;
+const K_KEEP_ALIVE: i32 = 3;
+const K_TE: i32 = 4;
+const K_TRANSFER_ENCODING: i32 = 5;
+const K_UPGRADE: i32 = 6;
+const K_CONTENT_LENGTH: i32 = 7;
+const K_EXPECT: i32 = 8;
+const K_FORWARDED_FOR: i32 = 9;
+const K_VIA: i32 = 10;
+const K_FORWARDED_PROTO: i32 = 11;
+const K_HOST: i32 = 12;
+const K_COOKIE: i32 = 13;
+fn kind(name: core::slice::View<u8>) -> i32 {
+    let n: i32 = name.len(); if (n < 2 || n > 17) { return K_OTHER; }
+    let c: u8 = lower(name.values[name.start]);
+    if (n == 10 && c == 99 && is(name, "connection", 10)) { return K_CONNECTION; }
+    if (n == 16 && c == 112 && is(name, "proxy-connection", 16)) { return K_PROXY_CONNECTION; }
+    if (n == 10 && c == 107 && is(name, "keep-alive", 10)) { return K_KEEP_ALIVE; }
+    if (n == 2 && c == 116 && is(name, "te", 2)) { return K_TE; }
+    if (n == 17 && c == 116 && is(name, "transfer-encoding", 17)) { return K_TRANSFER_ENCODING; }
+    if (n == 7 && c == 117 && is(name, "upgrade", 7)) { return K_UPGRADE; }
+    if (n == 14 && c == 99 && is(name, "content-length", 14)) { return K_CONTENT_LENGTH; }
+    if (n == 6 && c == 101 && is(name, "expect", 6)) { return K_EXPECT; }
+    if (n == 15 && c == 120 && is(name, "x-forwarded-for", 15)) { return K_FORWARDED_FOR; }
+    if (n == 3 && c == 118 && is(name, "via", 3)) { return K_VIA; }
+    if (n == 17 && c == 120 && is(name, "x-forwarded-proto", 17)) { return K_FORWARDED_PROTO; }
+    if (n == 4 && c == 104 && is(name, "host", 4)) { return K_HOST; }
+    if (n == 6 && c == 99 && is(name, "cookie", 6)) { return K_COOKIE; }
+    return K_OTHER;
+}
+fn hop_kind(k: i32) -> bool { return k >= K_CONNECTION && k <= K_UPGRADE; }
+
+// One message's Connection-nominated names, gathered in one pass: the
+// values of its first two Connection fields (more falls back to a scan),
+// and which forwarding fields it carries.
+struct Tokens { first: core::slice::View<u8>, second: core::slice::View<u8>, count: i32, forwarded_for: bool, via: bool, proto: bool }
+fn connection_tokens(head: ext::http::Head) -> Tokens {
+    let t: Tokens = Tokens { first: literal("", 0), second: literal("", 0), count: 0, forwarded_for: false, via: false, proto: false };
+    let cursor: ext::http::Fields = head.headers();
+    while (true) {
+        let next: core::option::Option<ext::http::Field> = cursor.next(); if (next.is_none()) { break; }
+        let f: ext::http::Field = next.unwrap(); let k: i32 = kind(f.name);
+        if (k == K_CONNECTION) { if (t.count == 0) { t.first = f.value; } if (t.count == 1) { t.second = f.value; } t.count += 1; }
+        if (k == K_FORWARDED_FOR && f.value.len() > 0) { t.forwarded_for = true; }
+        if (k == K_VIA && f.value.len() > 0) { t.via = true; }
+        if (k == K_FORWARDED_PROTO) { t.proto = true; }
+    }
+    return t;
+}
+// drops(head, name) for a field of the given kind, with head's tokens.
+fn dropped(head: ext::http::Head, t: Tokens, name: core::slice::View<u8>, k: i32) -> bool {
+    if (hop_kind(k)) { return true; }
+    if (t.count == 0) { return false; }
+    if (t.count > 2) { return drops(head, name); }
+    if (name.len() <= t.first.len() && lists(t.first, name)) { return true; }
+    return t.count == 2 && name.len() <= t.second.len() && lists(t.second, name);
 }
 
 fn put(out: &alloc::vec::Vec<u8>, v: core::slice::View<u8>) -> bool { return out.try_extend(v).is_ok(); }
@@ -72,11 +132,11 @@ fn framing(out: &alloc::vec::Vec<u8>, length: i64) -> bool {
 }
 // Every value of the fields named name, joined with ", ", then ", " tail
 // (or just tail): the merged X-Forwarded-For or Via line.
-fn merged(out: &alloc::vec::Vec<u8>, head: ext::http::Head, label: str, n: i32, tail_a: core::slice::View<u8>, tail_b: core::slice::View<u8>) -> bool {
+fn merged(out: &alloc::vec::Vec<u8>, head: ext::http::Head, label: str, n: i32, tail_a: core::slice::View<u8>, tail_b: core::slice::View<u8>, present: bool) -> bool {
     let name: core::slice::View<u8> = literal(label, n);
     if (!put(out, name) || !put_str(out, ": ", 2)) { return false; }
     let cursor: ext::http::Fields = head.headers();
-    while (true) {
+    while (present) {
         let next: core::option::Option<ext::http::Field> = cursor.next(); if (next.is_none()) { break; }
         let f: ext::http::Field = next.unwrap();
         if (ext::http::equal_name(f.name, name) && f.value.len() > 0) { if (!put(out, f.value) || !put_str(out, ", ", 2)) { return false; } }
@@ -91,19 +151,18 @@ fn framing_length(head: ext::http::Head) -> i64 {
 // The upstream request head for an HTTP/1.x request.
 pub fn request_head(out: &alloc::vec::Vec<u8>, head: ext::http::Head, forward: Forward) -> bool {
     if (!put(out, head.method) || !put_str(out, " ", 1) || !put(out, head.target) || !put_str(out, " HTTP/1.1\r\n", 11)) { return false; }
-    let proto: bool = false;
+    let t: Tokens = connection_tokens(head);
     let cursor: ext::http::Fields = head.headers();
     while (true) {
         let next: core::option::Option<ext::http::Field> = cursor.next(); if (next.is_none()) { break; }
-        let f: ext::http::Field = next.unwrap();
-        if (is(f.name, "x-forwarded-proto", 17)) { proto = true; }
-        if (drops(head, f.name) || is(f.name, "content-length", 14) || is(f.name, "expect", 6) || is(f.name, "x-forwarded-for", 15) || is(f.name, "via", 3)) { continue; }
+        let f: ext::http::Field = next.unwrap(); let k: i32 = kind(f.name);
+        if (k == K_CONTENT_LENGTH || k == K_EXPECT || k == K_FORWARDED_FOR || k == K_VIA || dropped(head, t, f.name, k)) { continue; }
         if (!field(out, f.name, f.value)) { return false; }
     }
     if (!framing(out, framing_length(head))) { return false; }
-    if (!merged(out, head, "X-Forwarded-For", 15, forward.client, literal("", 0))) { return false; }
-    if (!proto && !field(out, literal("X-Forwarded-Proto", 17), forward.proto)) { return false; }
-    return merged(out, head, "Via", 3, version_token(head.version), forward.via) && put_str(out, "\r\n", 2);
+    if (!merged(out, head, "X-Forwarded-For", 15, forward.client, literal("", 0), t.forwarded_for)) { return false; }
+    if (!t.proto && !field(out, literal("X-Forwarded-Proto", 17), forward.proto)) { return false; }
+    return merged(out, head, "Via", 3, version_token(head.version), forward.via, t.via) && put_str(out, "\r\n", 2);
 }
 
 // The client response head for an HTTP/1.x upstream response. A body-less
@@ -111,16 +170,16 @@ pub fn request_head(out: &alloc::vec::Vec<u8>, head: ext::http::Head, forward: F
 pub fn response_head(out: &alloc::vec::Vec<u8>, head: ext::http::Head, keep_alive: bool, forward: Forward) -> bool {
     if (!put_str(out, "HTTP/1.1 ", 9) || !put_number(out, head.status as i64) || !put_str(out, " ", 1) || !put(out, head.reason) || !put_str(out, "\r\n", 2)) { return false; }
     let empty: bool = match (head.kind) { ext::http::BodyKind::Empty -> true, _ -> false };
+    let t: Tokens = connection_tokens(head);
     let cursor: ext::http::Fields = head.headers();
     while (true) {
         let next: core::option::Option<ext::http::Field> = cursor.next(); if (next.is_none()) { break; }
-        let f: ext::http::Field = next.unwrap();
-        if (drops(head, f.name) || is(f.name, "via", 3)) { continue; }
-        if (is(f.name, "content-length", 14) && !empty) { continue; }
+        let f: ext::http::Field = next.unwrap(); let k: i32 = kind(f.name);
+        if (k == K_VIA || (k == K_CONTENT_LENGTH && !empty) || dropped(head, t, f.name, k)) { continue; }
         if (!field(out, f.name, f.value)) { return false; }
     }
     if (!framing(out, framing_length(head))) { return false; }
-    if (!merged(out, head, "Via", 3, version_token(head.version), forward.via)) { return false; }
+    if (!merged(out, head, "Via", 3, version_token(head.version), forward.via, t.via)) { return false; }
     if (keep_alive) { return put_str(out, "Connection: keep-alive\r\n\r\n", 26); }
     return put_str(out, "Connection: close\r\n\r\n", 21);
 }
@@ -131,11 +190,11 @@ pub fn h2_request_head(out: &alloc::vec::Vec<u8>, method: core::slice::View<u8>,
     if (!put(out, method) || !put_str(out, " ", 1) || !put(out, path) || !put_str(out, " HTTP/1.1\r\n", 11)) { return false; }
     let host: bool = false; let proto: bool = false; let cookies: i32 = 0; let i: i32 = 0;
     while (i < fields.len()) {
-        let f: ext::hpack::Header = fields.values[fields.start + i]; i += 1;
-        if (is(f.name, "host", 4)) { host = true; }
-        if (is(f.name, "x-forwarded-proto", 17)) { proto = true; }
-        if (is(f.name, "cookie", 6)) { cookies += 1; continue; }
-        if (hop_by_hop(f.name) || is(f.name, "content-length", 14) || is(f.name, "expect", 6) || is(f.name, "x-forwarded-for", 15) || is(f.name, "via", 3)) { continue; }
+        let f: ext::hpack::Header = fields.values[fields.start + i]; i += 1; let k: i32 = kind(f.name);
+        if (k == K_HOST) { host = true; }
+        if (k == K_FORWARDED_PROTO) { proto = true; }
+        if (k == K_COOKIE) { cookies += 1; continue; }
+        if (hop_kind(k) || k == K_CONTENT_LENGTH || k == K_EXPECT || k == K_FORWARDED_FOR || k == K_VIA) { continue; }
         if (!field(out, f.name, f.value)) { return false; }
     }
     if (!host && authority.len() > 0 && !field(out, literal("Host", 4), authority)) { return false; }
@@ -145,7 +204,7 @@ pub fn h2_request_head(out: &alloc::vec::Vec<u8>, method: core::slice::View<u8>,
         let first: bool = true; i = 0;
         while (i < fields.len()) {
             let f: ext::hpack::Header = fields.values[fields.start + i]; i += 1;
-            if (!is(f.name, "cookie", 6)) { continue; }
+            if (kind(f.name) != K_COOKIE) { continue; }
             if (!first && !put_str(out, "; ", 2)) { return false; }
             if (!put(out, f.value)) { return false; } first = false;
         }
@@ -154,12 +213,12 @@ pub fn h2_request_head(out: &alloc::vec::Vec<u8>, method: core::slice::View<u8>,
     if (!framing(out, length)) { return false; }
     if (!put_str(out, "X-Forwarded-For: ", 17)) { return false; }
     i = 0;
-    while (i < fields.len()) { let f: ext::hpack::Header = fields.values[fields.start + i]; i += 1; if (is(f.name, "x-forwarded-for", 15) && f.value.len() > 0) { if (!put(out, f.value) || !put_str(out, ", ", 2)) { return false; } } }
+    while (i < fields.len()) { let f: ext::hpack::Header = fields.values[fields.start + i]; i += 1; if (f.value.len() > 0 && kind(f.name) == K_FORWARDED_FOR) { if (!put(out, f.value) || !put_str(out, ", ", 2)) { return false; } } }
     if (!put(out, forward.client) || !put_str(out, "\r\n", 2)) { return false; }
     if (!proto && !field(out, literal("X-Forwarded-Proto", 17), forward.proto)) { return false; }
     if (!put_str(out, "Via: ", 5)) { return false; }
     i = 0;
-    while (i < fields.len()) { let f: ext::hpack::Header = fields.values[fields.start + i]; i += 1; if (is(f.name, "via", 3) && f.value.len() > 0) { if (!put(out, f.value) || !put_str(out, ", ", 2)) { return false; } } }
+    while (i < fields.len()) { let f: ext::hpack::Header = fields.values[fields.start + i]; i += 1; if (f.value.len() > 0 && kind(f.name) == K_VIA) { if (!put(out, f.value) || !put_str(out, ", ", 2)) { return false; } } }
     return put_str(out, "2 ", 2) && put(out, forward.via) && put_str(out, "\r\n\r\n", 4);
 }
 
@@ -172,11 +231,12 @@ pub fn h2_response_fields(head: ext::http::Head, fields: &alloc::vec::Vec<ext::h
     // Reserve everything up front so the views below stay put.
     if (scratch.try_reserve(head.raw.len() + forward.via.len() + 16).is_err()) { return false; }
     let keep_length: bool = match (head.kind) { ext::http::BodyKind::Fixed -> true, ext::http::BodyKind::Empty -> true, _ -> false };
+    let t: Tokens = connection_tokens(head);
     let cursor: ext::http::Fields = head.headers();
     while (true) {
         let next: core::option::Option<ext::http::Field> = cursor.next(); if (next.is_none()) { break; }
-        let f: ext::http::Field = next.unwrap();
-        if (drops(head, f.name) || is(f.name, "via", 3) || (is(f.name, "content-length", 14) && !keep_length)) { continue; }
+        let f: ext::http::Field = next.unwrap(); let k: i32 = kind(f.name);
+        if (k == K_VIA || (k == K_CONTENT_LENGTH && !keep_length) || dropped(head, t, f.name, k)) { continue; }
         let at: i32 = scratch.len(); let k: i32 = 0;
         while (k < f.name.len()) { scratch.try_push(lower(f.name.values[f.name.start + k])); k += 1; }
         scratch.try_extend(f.value);
@@ -186,10 +246,10 @@ pub fn h2_response_fields(head: ext::http::Head, fields: &alloc::vec::Vec<ext::h
     }
     let at: i32 = scratch.len();
     let c2: ext::http::Fields = head.headers();
-    while (true) {
+    while (t.via) {
         let next: core::option::Option<ext::http::Field> = c2.next(); if (next.is_none()) { break; }
         let f: ext::http::Field = next.unwrap();
-        if (is(f.name, "via", 3) && f.value.len() > 0) { scratch.try_extend(f.value); scratch.try_extend(literal(", ", 2)); }
+        if (f.value.len() > 0 && kind(f.name) == K_VIA) { scratch.try_extend(f.value); scratch.try_extend(literal(", ", 2)); }
     }
     scratch.try_extend(version_token(head.version)); scratch.try_extend(forward.via);
     let raw: [u8] = scratch.as_slice();

@@ -1,0 +1,668 @@
+// Streaming Zstandard (RFC 8878) decoding: frames and skippable frames,
+// raw, RLE and compressed blocks, Huffman literals (one or four streams,
+// treeless reuse), FSE sequences (predefined, RLE, compressed and repeat
+// tables), repeat offsets, XXH64 content checksums, frame content sizes and a
+// window limit. Caller-owned workspace, staging, literal and window storage;
+// no allocation and no host services. Dictionaries are not supported.
+// See docs/extended-zstd.md.
+module ext::zstd;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::xxhash;
+
+pub enum Error { Bounds, Truncated, Magic, FrameHeader, Dictionary, WindowTooLarge, BlockType, BlockSize, Literals, Huffman, Fse, Sequences, Offset, ContentSize, Checksum, Failed }
+pub enum Status { NeedInput, NeedOutput, NeedWindow, Done }
+pub struct Step { read: i32, written: i32, status: Status }
+// max_window: the largest Window_Size accepted, in bytes (zstd's default is
+// 2^27 = 128 MiB; at most 2^30).
+pub struct Limits { max_window: i32 }
+pub fn default_limits() -> Limits { return Limits { max_window: 134217728 }; }
+
+pub const BLOCK_MAX: i32 = 131072;
+pub fn workspace_len() -> i32 { return 8192; }
+pub fn stage_len() -> i32 { return BLOCK_MAX+32; }
+pub fn literals_len() -> i32 { return BLOCK_MAX+32; }
+
+// Workspace (i32) layout.
+const LL_T: i32 = 0;
+const OF_T: i32 = 512;
+const ML_T: i32 = 768;
+const HUF_T: i32 = 4096;
+const NORM: i32 = 3328;
+const NEXT: i32 = 3392;
+const WEIGHT: i32 = 3456;
+const RANK: i32 = 3712;
+const LL_BASE: i32 = 3728;
+const LL_BITS: i32 = 3764;
+const ML_BASE: i32 = 3800;
+const ML_BITS: i32 = 3853;
+const WT_T: i32 = 3906;
+// Internal failure codes (negative results).
+const E_TRUNC: i32 = -1;
+const E_HEADER: i32 = -2;
+const E_BLOCK: i32 = -3;
+const E_SIZE: i32 = -4;
+const E_LIT: i32 = -5;
+const E_HUF: i32 = -6;
+const E_FSE: i32 = -7;
+const E_SEQ: i32 = -8;
+const E_OFFSET: i32 = -9;
+const E_CONTENT: i32 = -10;
+const E_CHECK: i32 = -11;
+const E_DICT: i32 = -12;
+const E_WINDOW: i32 = -13;
+const E_MAGIC: i32 = -14;
+// Phases.
+const P_MAGIC: i32 = 0;
+const P_SKIP_SIZE: i32 = 1;
+const P_SKIP: i32 = 2;
+const P_FHD: i32 = 3;
+const P_HEADER: i32 = 4;
+const P_WINDOW: i32 = 5;
+const P_BLOCK_HEADER: i32 = 6;
+const P_BLOCK: i32 = 7;
+const P_DRAIN: i32 = 8;
+const P_CHECKSUM: i32 = 9;
+const P_FRAME_END: i32 = 10;
+const P_DONE: i32 = 11;
+const P_FAILED: i32 = 12;
+
+pub struct Decoder {
+    ws: core::slice::View<i32>, stage: [u8], stage_ptr: ptr, lit: [u8], lit_ptr: ptr, win: [u8], win_ptr: ptr, win_len: i32, limits: Limits,
+    phase: i32, need: i32, have: i32, failure: i32, frames: u64,
+    // Frame.
+    fhd: i32, window_size: u64, want_window: i32, has_size: bool, content_size: u64, checksum: bool, produced: u64, block_max: i32,
+    last_block: bool, block_type: i32, block_size: i32, skip_left: u64, hash: ext::xxhash::State,
+    // Window: head is the next write position, out the next byte to deliver.
+    head: i32, out: i32, pending: i32,
+    rep0: u64, rep1: u64, rep2: u64, ll_al: i32, of_al: i32, ml_al: i32, ll_ok: bool, of_ok: bool, ml_ok: bool, huf_bits: i32, huf_ok: bool,
+    // Backward bit reader over stage bytes [br_start, br_pos).
+    br_acc: u64, br_bits: i32, br_pos: i32, br_start: i32, br_over: bool,
+    // Forward bit position for table descriptions; scratch results.
+    fw: i32, n_al: i32, n_sym: i32, lit_size: i32 }
+
+fn packed(view: core::slice::View<u8>) -> bool { return view.start >= 0 && view.length >= 0 && core::mem::slice_stride(view.values) == 1; }
+fn data_ptr(view: core::slice::View<u8>) -> ptr { return core::mem::i32_slice_data_ptr(view.values)+(view.start as usize); }
+fn digits(text: str, count: i32) -> [u8] { return core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(text),count); }
+// Raw u64 views run downward: element k of words(base, at, n) is the word
+// at byte at+8*(n-1-k). One view per copy is far cheaper than one per word.
+fn words(base: ptr, at: i32, n: i32) -> [u64] { return core::mem::slice_from_raw_parts(base+(at as usize)+(((n-1) << 3) as usize),n); }
+// Copy count bytes between disjoint buffers, a word at a time; a count of
+// 8 or more finishes with one overlapping word instead of a byte tail.
+fn copy_disjoint(to: ptr, at: i32, from: ptr, source: i32, count: i32) {
+    let n: i32 = count >> 3;
+    if (n > 0) {
+        let a: [u64] = words(to,at,n); let b: [u64] = words(from,source,n); let k: i32 = 0;
+        while (k < n) { a[k] = b[k]; k += 1; }
+        if ((count & 7) != 0) { let x: [u64] = words(to,at+count-8,1); let y: [u64] = words(from,source+count-8,1); x[0] = y[0]; }
+        return;
+    }
+    let tail: [u8] = core::mem::typed_slice_from_raw_parts<u8>(to+(at as usize),count); let head: [u8] = core::mem::typed_slice_from_raw_parts<u8>(from+(source as usize),count);
+    let index: i32 = 0; while (index < count) { tail[index] = head[index]; index += 1; }
+}
+// LZ77 copy inside one buffer: ascending words when the distance is 8 or
+// more (each word reads only finished bytes), a repeated-byte word for
+// distance 1, bytes otherwise.
+fn copy_within(base: ptr, at: i32, distance: i32, count: i32) {
+    let n: i32 = count >> 3;
+    if (distance >= 8 && n > 0) {
+        let a: [u64] = words(base,at,n); let b: [u64] = words(base,at-distance,n); let k: i32 = n-1;
+        while (k >= 0) { a[k] = b[k]; k -= 1; }
+        if ((count & 7) != 0) { let x: [u64] = words(base,at+count-8,1); let y: [u64] = words(base,at+count-8-distance,1); x[0] = y[0]; }
+        return;
+    }
+    let index: i32 = 0;
+    let all: [u8] = core::mem::typed_slice_from_raw_parts<u8>(base+((at-distance) as usize),distance+count);
+    if (distance == 1 && n > 0) {
+        let pattern: u64 = (all[0] as u64)*72340172838076673; let a: [u64] = words(base,at,n); let k: i32 = 0;
+        while (k < n) { a[k] = pattern; k += 1; }
+        index = n << 3;
+    }
+    while (index < count) { all[distance+index] = all[index]; index += 1; }
+}
+fn highbit(value: i32) -> i32 { let bit: i32 = 0; let rest: i32 = value; while (rest > 1) { rest = rest >> 1; bit += 1; } return bit; }
+
+pub fn decoder(workspace: core::slice::View<i32>, stage: core::slice::View<u8>, literals: core::slice::View<u8>, limits: Limits) -> core::result::Result<Decoder,Error> {
+    if (workspace.start < 0 || workspace.length < workspace_len() || !packed(stage) || stage.length < stage_len() || !packed(literals) || literals.length < literals_len()) { return core::result::Err(Error::Bounds); }
+    if (limits.max_window < 1024 || limits.max_window > 1073741824) { return core::result::Err(Error::Bounds); }
+    let sp: ptr = data_ptr(stage); let lp: ptr = data_ptr(literals);
+    let d: Decoder = Decoder { ws: workspace, stage: core::mem::typed_slice_from_raw_parts<u8>(sp,stage_len()), stage_ptr: sp, lit: core::mem::typed_slice_from_raw_parts<u8>(lp,literals_len()), lit_ptr: lp,
+        win: core::mem::typed_slice_from_raw_parts<u8>(lp,0), win_ptr: lp, win_len: 0, limits: limits,
+        phase: P_MAGIC, need: 4, have: 0, failure: 0, frames: 0,
+        fhd: 0, window_size: 0, want_window: 0, has_size: false, content_size: 0, checksum: false, produced: 0, block_max: BLOCK_MAX,
+        last_block: false, block_type: 0, block_size: 0, skip_left: 0, hash: ext::xxhash::state(0),
+        head: 0, out: 0, pending: 0, rep0: 1, rep1: 4, rep2: 8, ll_al: 0, of_al: 0, ml_al: 0, ll_ok: false, of_ok: false, ml_ok: false, huf_bits: 0, huf_ok: false,
+        br_acc: 0, br_bits: 0, br_pos: 0, br_start: 0, br_over: false, fw: 0, n_al: 0, n_sym: 0, lit_size: 0 };
+    d.borrow().init_tables();
+    return core::result::Ok(d);
+}
+fn failure(code: i32) -> Error {
+    if (code == E_TRUNC) { return Error::Truncated; } if (code == E_HEADER) { return Error::FrameHeader; } if (code == E_BLOCK) { return Error::BlockType; }
+    if (code == E_SIZE) { return Error::BlockSize; } if (code == E_LIT) { return Error::Literals; } if (code == E_HUF) { return Error::Huffman; }
+    if (code == E_FSE) { return Error::Fse; } if (code == E_SEQ) { return Error::Sequences; } if (code == E_OFFSET) { return Error::Offset; }
+    if (code == E_CONTENT) { return Error::ContentSize; } if (code == E_CHECK) { return Error::Checksum; } if (code == E_DICT) { return Error::Dictionary; }
+    if (code == E_WINDOW) { return Error::WindowTooLarge; } if (code == E_MAGIC) { return Error::Magic; } return Error::Failed;
+}
+
+pub impl Decoder {
+    pub fn borrow(&self) -> &Decoder { return self; }
+    pub fn is_done(&self) -> bool { return self.phase == P_DONE; }
+    // Frames finished so far, skippable frames included.
+    pub fn frames(&self) -> u64 { return self.frames; }
+    // After Status::NeedWindow: the window bytes the current frame needs.
+    pub fn window_len(&self) -> i32 { return self.want_window; }
+    // Provide (packed) window storage of at least window_len() bytes. Its
+    // contents need not be kept between frames.
+    pub fn set_window(&self, window: core::slice::View<u8>) -> core::result::Result<bool,Error> {
+        if (!packed(window) || window.length < self.want_window) { return core::result::Err(Error::Bounds); }
+        self.win_ptr = data_ptr(window); self.win = core::mem::typed_slice_from_raw_parts<u8>(self.win_ptr,window.length); self.win_len = window.length; return core::result::Ok(true);
+    }
+    fn w(&self, at: i32) -> i32 { return self.ws.values[self.ws.start+at]; }
+    fn set(&self, at: i32, value: i32) { self.ws.values[self.ws.start+at] = value; }
+    fn init_tables(&self) {
+        let code: i32 = 0;
+        while (code < 16) { self.set(LL_BASE+code,code); self.set(LL_BITS+code,0); code += 1; }
+        // Codes 16-35 (literal lengths) and 32-52 (match lengths): each
+        // baseline follows the previous code's range.
+        let extra: [i32;20] = [1,1,1,1,2,2,3,3,4,6,7,8,9,10,11,12,13,14,15,16];
+        let base: i32 = 16; code = 16;
+        while (code < 36) { let e: i32 = extra[code-16]; self.set(LL_BASE+code,base); self.set(LL_BITS+code,e); base += 1 << e; code += 1; }
+        code = 0;
+        while (code < 32) { self.set(ML_BASE+code,code+3); self.set(ML_BITS+code,0); code += 1; }
+        let mextra: [i32;21] = [1,1,1,1,2,2,3,3,4,4,5,7,8,9,10,11,12,13,14,15,16];
+        base = 35; code = 32;
+        while (code < 53) { let e: i32 = mextra[code-32]; self.set(ML_BASE+code,base); self.set(ML_BITS+code,e); base += 1 << e; code += 1; }
+    }
+
+    // ------------------------------------------------ backward bit reader
+    fn load64(&self, at: i32) -> u64 { let word: [u64] = core::mem::slice_from_raw_parts(self.stage_ptr+(at as usize),1); return word[0]; }
+    // The reader keeps an 8-byte container loaded at stage byte br_pos and
+    // br_bits bits of it consumed from the top; the bits left are
+    // 8 * (br_pos - br_start) + 64 - br_bits.
+    fn reload(&self) {
+        if (self.br_pos >= self.br_start+8) { self.br_pos -= self.br_bits >> 3; self.br_bits = self.br_bits & 7; self.br_acc = self.load64(self.br_pos); return; }
+        if (self.br_pos == self.br_start) { return; }
+        let n: i32 = self.br_bits >> 3; if (n > self.br_pos-self.br_start) { n = self.br_pos-self.br_start; }
+        self.br_pos -= n; self.br_bits -= n << 3; self.br_acc = self.load64(self.br_pos);
+    }
+    // Start at the end of stage[start, end): skip the zero padding and the
+    // marker bit of the last byte, which must be nonzero.
+    fn begin(&self, start: i32, end: i32) -> i32 {
+        if (end <= start) { return E_SEQ; }
+        let last: i32 = self.stage[8+end-1] as i32; if (last == 0) { return E_SEQ; }
+        self.br_start = 8+start; self.br_over = false;
+        if (end-start >= 8) { self.br_pos = 8+end-8; self.br_bits = 8-highbit(last); }
+        else { self.br_pos = 8+start; self.br_bits = 8*(8-(end-start))+8-highbit(last); }
+        self.br_acc = self.load64(self.br_pos); return 0;
+    }
+    // The next n (0-56) bits; reading past the start gives zeros and sets br_over.
+    fn read(&self, n: i32) -> i32 {
+        if (n == 0) { return 0; }
+        if (self.br_bits+n > 64) { self.reload(); if (self.br_bits+n > 64) { self.br_over = true; self.br_bits = 64; return 0; } }
+        let value: u64 = (self.br_acc >> ((64-self.br_bits-n) as u64)) & ((1 << (n as u64))-1); self.br_bits += n; return value as i32;
+    }
+    fn finished(&self) -> bool { return !self.br_over && self.br_bits == 64 && self.br_pos == self.br_start; }
+    // Forward bits (LSB first) at bit position self.fw within the stage.
+    fn forward(&self, n: i32) -> i32 { let word: u64 = self.load64(8+(self.fw >> 3)); return ((word >> ((self.fw & 7) as u64)) & ((1 << (n as u64))-1)) as i32; }
+
+    // ------------------------------------------------ FSE
+    // Read a table description at stage byte `at` (before `end`) into
+    // NORM; sets n_al and n_sym and returns the bytes it used.
+    fn read_counts(&self, at: i32, end: i32, max_symbol: i32, max_log: i32) -> i32 {
+        if (end-at < 1) { return E_FSE; }
+        let index: i32 = 0; while (index < 64) { self.set(NORM+index,0); index += 1; }
+        self.fw = at*8; let log: i32 = self.forward(4)+5; self.fw += 4;
+        if (log > max_log) { return E_FSE; }
+        let remaining: i32 = (1 << log)+1; let threshold: i32 = 1 << log; let nb: i32 = log+1; let symbol: i32 = 0; let zero: bool = false;
+        while (remaining > 1 && symbol <= max_symbol) {
+            if (zero) {
+                let more: bool = true;
+                while (more) { let repeat: i32 = self.forward(2); self.fw += 2; symbol += repeat; more = repeat == 3; if (self.fw > end*8) { return E_FSE; } }
+                zero = false;
+                if (symbol > max_symbol) { return E_FSE; }
+            }
+            let most: i32 = 2*threshold-1-remaining; let count: i32 = self.forward(nb-1) & (threshold-1);
+            if (count < most) { self.fw += nb-1; } else { count = self.forward(nb) & (2*threshold-1); if (count >= threshold) { count -= most; } self.fw += nb; }
+            count -= 1;
+            if (count < 0) { remaining -= 1; } else { remaining -= count; }
+            if (remaining < 1) { return E_FSE; }
+            self.set(NORM+symbol,count); symbol += 1; zero = count == 0;
+            while (remaining < threshold && nb > 1) { nb -= 1; threshold = threshold >> 1; }
+            if (self.fw > end*8) { return E_FSE; }
+        }
+        if (remaining != 1) { return E_FSE; }
+        let used: i32 = (self.fw-at*8+7) >> 3; if (at+used > end) { return E_FSE; }
+        self.n_al = log; self.n_sym = symbol; return used;
+    }
+    // Decode table at ws[table..] from NORM[0..symbols) with accuracy log.
+    // Entry: symbol | bits << 8 | baseline << 16.
+    fn build(&self, table: i32, symbols: i32, log: i32) -> i32 {
+        let size: i32 = 1 << log; let high: i32 = size-1; let s: i32 = 0;
+        while (s < symbols) {
+            let n: i32 = self.w(NORM+s);
+            if (n == -1) { self.set(table+high,s); high -= 1; self.set(NEXT+s,1); } else { self.set(NEXT+s,n); }
+            s += 1;
+        }
+        let step: i32 = (size >> 1)+(size >> 3)+3; let mask: i32 = size-1; let position: i32 = 0; s = 0;
+        while (s < symbols) {
+            let n: i32 = self.w(NORM+s); let i: i32 = 0;
+            while (i < n) { self.set(table+position,s); position = (position+step) & mask; while (position > high) { position = (position+step) & mask; } i += 1; }
+            s += 1;
+        }
+        if (position != 0) { return E_FSE; }
+        let u: i32 = 0;
+        while (u < size) {
+            let symbol: i32 = self.w(table+u) & 255; let next: i32 = self.w(NEXT+symbol); self.set(NEXT+symbol,next+1);
+            let bits: i32 = log-highbit(next); let baseline: i32 = (next << bits)-size;
+            self.set(table+u,symbol | (bits << 8) | (baseline << 16)); u += 1;
+        }
+        return 0;
+    }
+    fn predefined(&self, table: i32, kind: i32) -> i32 {
+        let text: [u8] = digits("543333333333322233333333343222220000",36); let count: i32 = 36; let log: i32 = 6;
+        if (kind == 1) { text = digits("22222233322222222222222200000",29); count = 29; log = 5; }
+        if (kind == 2) { text = digits("25433333322222222222222222222222222222222222220000000",53); count = 53; }
+        let index: i32 = 0; while (index < count) { let value: i32 = (text[index] as i32)-49; self.set(NORM+index,value); index += 1; }
+        let built: i32 = self.build(table,count,log); if (built < 0) { return built; } return log;
+    }
+    // One sequence table (kind 0 literal lengths, 1 offsets, 2 match
+    // lengths) in mode 0-3 at stage byte `at`; returns bytes used.
+    fn table(&self, kind: i32, mode: i32, at: i32, end: i32) -> i32 {
+        let base: i32 = LL_T; let max_symbol: i32 = 35; let max_log: i32 = 9;
+        if (kind == 1) { base = OF_T; max_symbol = 31; max_log = 8; }
+        if (kind == 2) { base = ML_T; max_symbol = 52; }
+        let log: i32 = 0; let used: i32 = 0;
+        if (mode == 0) { log = self.predefined(base,kind); if (log < 0) { return log; } }
+        if (mode == 1) {
+            if (at >= end) { return E_SEQ; }
+            let symbol: i32 = self.stage[8+at] as i32; if (symbol > max_symbol) { return E_SEQ; }
+            self.set(base,symbol); used = 1;
+        }
+        if (mode == 2) {
+            used = self.read_counts(at,end,max_symbol,max_log); if (used < 0) { return used; }
+            log = self.n_al; let built: i32 = self.build(base,self.n_sym,log); if (built < 0) { return built; }
+        }
+        if (mode == 3) {
+            let ready: bool = self.ll_ok; if (kind == 1) { ready = self.of_ok; } if (kind == 2) { ready = self.ml_ok; }
+            if (!ready) { return E_SEQ; } return 0;
+        }
+        if (kind == 0) { self.ll_al = log; self.ll_ok = true; } if (kind == 1) { self.of_al = log; self.of_ok = true; } if (kind == 2) { self.ml_al = log; self.ml_ok = true; }
+        return used;
+    }
+
+    // ------------------------------------------------ Huffman literals
+    // Tree description at stage byte `at`; returns bytes used.
+    fn huffman_tree(&self, at: i32, end: i32) -> i32 {
+        if (at >= end) { return E_HUF; }
+        let header: i32 = self.stage[8+at] as i32; let count: i32 = 0; let used: i32 = 0;
+        if (header >= 128) {
+            count = header-127; used = 1+(count+1)/2; if (at+used > end) { return E_HUF; }
+            let i: i32 = 0;
+            while (i < count) { let packed_byte: i32 = self.stage[8+at+1+i/2] as i32; let weight: i32 = packed_byte >> 4; if ((i & 1) == 1) { weight = packed_byte & 15; } self.set(WEIGHT+i,weight); i += 1; }
+        } else {
+            // FSE-compressed weights: two interleaved states.
+            used = 1+header; if (at+used > end || header == 0) { return E_HUF; }
+            let counts: i32 = self.read_counts(at+1,at+used,15,6); if (counts < 0) { return E_HUF; }
+            let log: i32 = self.n_al; let built: i32 = self.build(WT_T,self.n_sym,log); if (built < 0) { return E_HUF; }
+            if (self.begin(at+1+counts,at+used) < 0) { return E_HUF; }
+            let s1: i32 = self.read(log); let s2: i32 = self.read(log);
+            if (self.br_over) { return E_HUF; }
+            while (true) {
+                if (count >= 255) { return E_HUF; }
+                let e1: i32 = self.w(WT_T+s1); self.set(WEIGHT+count,e1 & 255); count += 1;
+                let low: i32 = self.read((e1 >> 8) & 255); s1 = (e1 >> 16)+low;
+                if (self.br_over) { let f2: i32 = self.w(WT_T+s2); self.set(WEIGHT+count,f2 & 255); count += 1; break; }
+                if (count >= 255) { return E_HUF; }
+                let e2: i32 = self.w(WT_T+s2); self.set(WEIGHT+count,e2 & 255); count += 1;
+                let low2: i32 = self.read((e2 >> 8) & 255); s2 = (e2 >> 16)+low2;
+                if (self.br_over) { let f1: i32 = self.w(WT_T+s1); self.set(WEIGHT+count,f1 & 255); count += 1; break; }
+            }
+        }
+        // The last weight completes a power of two.
+        let total: i32 = 0; let i: i32 = 0;
+        while (i < count) { let weight: i32 = self.w(WEIGHT+i); if (weight > 12) { return E_HUF; } if (weight > 0) { total += 1 << (weight-1); } i += 1; }
+        if (total == 0) { return E_HUF; }
+        let bits: i32 = highbit(total)+1; if (bits > 12) { return E_HUF; }
+        let rest: i32 = (1 << bits)-total; let last: i32 = highbit(rest)+1;
+        if ((1 << (last-1)) != rest || count >= 256) { return E_HUF; }
+        self.set(WEIGHT+count,last); count += 1;
+        // Ranks: weight w starts after all entries of lighter weights.
+        let weight: i32 = 0; while (weight < 16) { self.set(RANK+weight,0); weight += 1; }
+        i = 0; while (i < count) { let wt: i32 = self.w(WEIGHT+i); self.set(RANK+wt,self.w(RANK+wt)+1); i += 1; }
+        // Weight 1 needs an even count of at least two.
+        let ones: i32 = self.w(RANK+1); if (ones < 2 || (ones & 1) == 1) { return E_HUF; }
+        let next: i32 = 0; weight = 1;
+        while (weight <= bits) { let current: i32 = next; next += self.w(RANK+weight) << (weight-1); self.set(RANK+weight,current); weight += 1; }
+        i = 0;
+        while (i < count) {
+            let wt: i32 = self.w(WEIGHT+i);
+            if (wt > 0) {
+                let length: i32 = (1 << wt) >> 1; let start: i32 = self.w(RANK+wt); let entry: i32 = i | ((bits+1-wt) << 8); let k: i32 = 0;
+                while (k < length) { self.set(HUF_T+start+k,entry); k += 1; }
+                self.set(RANK+wt,start+length);
+            }
+            i += 1;
+        }
+        self.huf_bits = bits; self.huf_ok = true; return used;
+    }
+    // Decode `count` literals from the stream stage[start, end) into lit[at..].
+    fn huffman_stream(&self, start: i32, end: i32, at: i32, count: i32) -> i32 {
+        if (self.begin(start,end) < 0) { return E_HUF; }
+        let bits: i32 = self.huf_bits; let shift: u64 = (64-bits) as u64; let limit: i32 = 64-bits;
+        let t: [i32] = self.ws.values; let tb: i32 = self.ws.start+HUF_T; let out: [u8] = self.lit;
+        let c: u64 = self.br_acc; let used: i32 = self.br_bits; let pos: i32 = self.br_pos; let first: i32 = self.br_start;
+        let stop: i32 = at+count; let o: i32 = at;
+        while (o < stop) {
+            if (used > limit) {
+                if (pos >= first+8) { pos -= used >> 3; used = used & 7; c = self.load64(pos); }
+                else {
+                    let n: i32 = used >> 3; if (n > pos-first) { n = pos-first; }
+                    if (n > 0) { pos -= n; used -= n << 3; c = self.load64(pos); }
+                    if (used >= 64) { return E_HUF; }
+                }
+            }
+            let entry: i32 = t[tb+(((c << (used as u64)) >> shift) as i32)];
+            out[o] = (entry & 255) as u8; used += entry >> 8; o += 1;
+        }
+        if (pos != first || used != 64) { return E_HUF; }
+        return 0;
+    }
+    // Literals section at stage byte 0 of a block of `size` bytes; returns
+    // the section length and sets lit_size.
+    fn literals(&self, size: i32) -> i32 {
+        if (size < 1) { return E_LIT; }
+        let b0: i32 = self.stage[8] as i32; let kind: i32 = b0 & 3; let format: i32 = (b0 >> 2) & 3;
+        let regen: i32 = 0; let header: i32 = 1; let compressed: i32 = 0; let streams: i32 = 1;
+        if (kind < 2) {
+            if (format == 0 || format == 2) { regen = b0 >> 3; }
+            if (format == 1) { header = 2; if (size < 2) { return E_LIT; } regen = (b0 >> 4)+((self.stage[9] as i32) << 4); }
+            if (format == 3) { header = 3; if (size < 3) { return E_LIT; } regen = (b0 >> 4)+((self.stage[9] as i32) << 4)+((self.stage[10] as i32) << 12); }
+            if (regen > self.block_max) { return E_LIT; }
+            if (kind == 0) {
+                if (header+regen > size) { return E_LIT; }
+                copy_disjoint(self.lit_ptr,0,self.stage_ptr,8+header,regen);
+                self.lit_size = regen; return header+regen;
+            }
+            if (header+1 > size) { return E_LIT; }
+            let value: u8 = self.stage[8+header]; let i: i32 = 0; while (i < regen) { self.lit[i] = value; i += 1; }
+            self.lit_size = regen; return header+1;
+        }
+        // Compressed or treeless: 3-5 header bytes with both sizes.
+        header = 3; if (format == 2) { header = 4; } if (format == 3) { header = 5; }
+        if (format > 0) { streams = 4; }
+        if (size < header) { return E_LIT; }
+        let packed_bits: u64 = 0; let k: i32 = 0; while (k < header) { packed_bits = packed_bits | ((self.stage[8+k] as u64) << ((8*k) as u64)); k += 1; }
+        packed_bits = packed_bits >> 4;
+        let width: u64 = 10; if (format == 2) { width = 14; } if (format == 3) { width = 18; }
+        regen = (packed_bits & ((1 << width)-1)) as i32; compressed = ((packed_bits >> width) & ((1 << width)-1)) as i32;
+        if (regen > self.block_max || header+compressed > size) { return E_LIT; }
+        let at: i32 = header; let end: i32 = header+compressed;
+        if (kind == 2) { let tree: i32 = self.huffman_tree(at,end); if (tree < 0) { return tree; } at += tree; }
+        if (kind == 3 && !self.huf_ok) { return E_HUF; }
+        if (streams == 1) {
+            let done: i32 = self.huffman_stream(at,end,0,regen); if (done < 0) { return done; }
+        } else {
+            if (end-at < 10 || regen < 6) { return E_HUF; }
+            let s1: i32 = (self.stage[8+at] as i32)+((self.stage[9+at] as i32) << 8);
+            let s2: i32 = (self.stage[10+at] as i32)+((self.stage[11+at] as i32) << 8);
+            let s3: i32 = (self.stage[12+at] as i32)+((self.stage[13+at] as i32) << 8);
+            let first: i32 = at+6; let total: i32 = end-first;
+            if (s1+s2+s3 > total) { return E_HUF; }
+            let part: i32 = (regen+3)/4;
+            if (3*part > regen) { return E_HUF; }
+            let a: i32 = self.huffman_stream(first,first+s1,0,part); if (a < 0) { return a; }
+            let b: i32 = self.huffman_stream(first+s1,first+s1+s2,part,part); if (b < 0) { return b; }
+            let c: i32 = self.huffman_stream(first+s1+s2,first+s1+s2+s3,2*part,part); if (c < 0) { return c; }
+            let d: i32 = self.huffman_stream(first+s1+s2+s3,end,3*part,regen-3*part); if (d < 0) { return d; }
+        }
+        self.lit_size = regen; return end;
+    }
+
+    // ------------------------------------------------ blocks
+    fn emit(&self, value: u8) { self.win[self.head] = value; self.head += 1; if (self.head == self.win_len) { self.head = 0; } }
+    // Append count bytes from base[at..] to the circular window.
+    fn put(&self, base: ptr, at: i32, count: i32) {
+        let room: i32 = self.win_len-self.head;
+        if (count < room) { copy_disjoint(self.win_ptr,self.head,base,at,count); self.head += count; return; }
+        copy_disjoint(self.win_ptr,self.head,base,at,room); copy_disjoint(self.win_ptr,0,base,at+room,count-room); self.head = count-room;
+    }
+    // Append a match of count bytes from offset bytes back.
+    fn repeat(&self, offset: i32, count: i32) {
+        let head: i32 = self.head;
+        if (head >= offset && count < self.win_len-head) { copy_within(self.win_ptr,head,offset,count); self.head = head+count; return; }
+        let win: [u8] = self.win; let size: i32 = self.win_len; let from: i32 = head-offset; if (from < 0) { from += size; }
+        let i: i32 = 0;
+        while (i < count) { win[head] = win[from]; head += 1; if (head == size) { head = 0; } from += 1; if (from == size) { from = 0; } i += 1; }
+        self.head = head;
+    }
+    // Sequences section at stage byte `at` of a `size`-byte block; writes
+    // the block's output to the window.
+    fn sequences(&self, at: i32, size: i32) -> i32 {
+        if (at >= size) { return E_SEQ; }
+        let b0: i32 = self.stage[8+at] as i32; let count: i32 = b0; let p: i32 = at+1;
+        if (b0 >= 128 && b0 < 255) { if (p >= size) { return E_SEQ; } count = ((b0-128) << 8)+(self.stage[8+p] as i32); p += 1; }
+        if (b0 == 255) { if (p+2 > size) { return E_SEQ; } count = (self.stage[8+p] as i32)+((self.stage[9+p] as i32) << 8)+32512; p += 2; }
+        let produced: i32 = 0; let lit_at: i32 = 0;
+        if (count > 0) {
+            if (p >= size) { return E_SEQ; }
+            let modes: i32 = self.stage[8+p] as i32; p += 1;
+            if ((modes & 3) != 0) { return E_SEQ; }
+            let used: i32 = self.table(0,(modes >> 6) & 3,p,size); if (used < 0) { return used; } p += used;
+            used = self.table(1,(modes >> 4) & 3,p,size); if (used < 0) { return used; } p += used;
+            used = self.table(2,(modes >> 2) & 3,p,size); if (used < 0) { return used; } p += used;
+            if (self.begin(p,size) < 0) { return E_SEQ; }
+            let ll_state: i32 = self.read(self.ll_al); let of_state: i32 = self.read(self.of_al); let ml_state: i32 = self.read(self.ml_al);
+            let index: i32 = 0; let t: [i32] = self.ws.values; let tb: i32 = self.ws.start;
+            // The bit reader lives in locals here. A valid sequence needs at
+            // most 57 bits after the mid reload (literal and match lengths
+            // with 16 extra bits each would exceed a block), so running out
+            // of container bits always means corrupt input.
+            let c: u64 = self.br_acc; let used: i32 = self.br_bits; let pos: i32 = self.br_pos; let first: i32 = self.br_start;
+            if (self.br_over) { return E_SEQ; }
+            while (index < count) {
+                if (pos >= first+8) { pos -= used >> 3; used = used & 7; c = self.load64(pos); }
+                else { if (pos > first) { let back: i32 = used >> 3; if (back > pos-first) { back = pos-first; } pos -= back; used -= back << 3; c = self.load64(pos); } }
+                let lle: i32 = t[tb+LL_T+ll_state]; let ofe: i32 = t[tb+OF_T+of_state]; let mle: i32 = t[tb+ML_T+ml_state];
+                let of_code: i32 = ofe & 255; let ml_code: i32 = mle & 255; let ll_code: i32 = lle & 255;
+                if (of_code > 31) { return E_SEQ; }
+                let value: u64 = 1 << (of_code as u64);
+                if (of_code > 0) { if (used+of_code > 64) { return E_SEQ; } value += (c << (used as u64)) >> ((64-of_code) as u64); used += of_code; }
+                if (pos >= first+8) { pos -= used >> 3; used = used & 7; c = self.load64(pos); }
+                else { if (pos > first) { let back: i32 = used >> 3; if (back > pos-first) { back = pos-first; } pos -= back; used -= back << 3; c = self.load64(pos); } }
+                let nb: i32 = t[tb+ML_BITS+ml_code]; let match_len: i32 = t[tb+ML_BASE+ml_code];
+                if (nb > 0) { if (used+nb > 64) { return E_SEQ; } match_len += ((c << (used as u64)) >> ((64-nb) as u64)) as i32; used += nb; }
+                nb = t[tb+LL_BITS+ll_code]; let lit_len: i32 = t[tb+LL_BASE+ll_code];
+                if (nb > 0) { if (used+nb > 64) { return E_SEQ; } lit_len += ((c << (used as u64)) >> ((64-nb) as u64)) as i32; used += nb; }
+                if (index+1 < count) {
+                    nb = (lle >> 8) & 255; ll_state = lle >> 16;
+                    if (nb > 0) { if (used+nb > 64) { return E_SEQ; } ll_state += ((c << (used as u64)) >> ((64-nb) as u64)) as i32; used += nb; }
+                    nb = (mle >> 8) & 255; ml_state = mle >> 16;
+                    if (nb > 0) { if (used+nb > 64) { return E_SEQ; } ml_state += ((c << (used as u64)) >> ((64-nb) as u64)) as i32; used += nb; }
+                    nb = (ofe >> 8) & 255; of_state = ofe >> 16;
+                    if (nb > 0) { if (used+nb > 64) { return E_SEQ; } of_state += ((c << (used as u64)) >> ((64-nb) as u64)) as i32; used += nb; }
+                }
+                // Repeat offsets.
+                let offset: u64 = 0;
+                if (value > 3) { offset = value-3; self.rep2 = self.rep1; self.rep1 = self.rep0; self.rep0 = offset; }
+                else {
+                    let which: i32 = (value as i32)-1; if (lit_len == 0) { which += 1; }
+                    if (which == 0) { offset = self.rep0; }
+                    else {
+                        offset = self.rep1; if (which == 2) { offset = self.rep2; } if (which == 3) { offset = self.rep0-1; }
+                        if (which != 1) { self.rep2 = self.rep1; }
+                        self.rep1 = self.rep0; self.rep0 = offset;
+                    }
+                }
+                if (lit_len > self.lit_size-lit_at || match_len > self.block_max-produced-lit_len) { return E_SEQ; }
+                // Short copies move whole words and may write up to 16
+                // bytes past the end: the window keeps 32 spare bytes
+                // beyond its history and one block.
+                let head: i32 = self.head;
+                if (lit_len <= 16 && head+lit_len+16 <= self.win_len) {
+                    let d: [u64] = words(self.win_ptr,head,2); let e: [u64] = words(self.lit_ptr,lit_at,2); d[1] = e[1]; d[0] = e[0]; self.head = head+lit_len;
+                } else { self.put(self.lit_ptr,lit_at,lit_len); }
+                lit_at += lit_len; produced += lit_len;
+                let history: u64 = self.produced+(produced as u64);
+                if (offset == 0 || offset > history || offset > self.window_size) { return E_OFFSET; }
+                let distance: i32 = offset as i32; head = self.head;
+                if (distance >= 8 && match_len <= 64 && head >= distance && head+match_len+16 <= self.win_len) {
+                    // Word pairs, ascending: each word reads finished bytes.
+                    let k: i32 = 0; let wp: ptr = self.win_ptr;
+                    while (k < match_len) { let x: [u64] = words(wp,head+k,2); let y: [u64] = words(wp,head+k-distance,2); x[1] = y[1]; x[0] = y[0]; k += 16; }
+                    self.head = head+match_len;
+                } else { self.repeat(distance,match_len); }
+                produced += match_len; index += 1;
+            }
+            if (pos != first || used != 64) { return E_SEQ; }
+        } else { if (p != size) { return E_SEQ; } }
+        let rest: i32 = self.lit_size-lit_at;
+        if (rest > self.block_max-produced) { return E_SEQ; }
+        if (rest > 0) { self.put(self.lit_ptr,lit_at,rest); }
+        return produced+rest;
+    }
+    // Decode the staged block into the window; returns the bytes produced.
+    fn block(&self) -> i32 {
+        let size: i32 = self.block_size;
+        if (self.block_type == 0) { if (size > 0) { self.put(self.stage_ptr,8,size); } return size; }
+        if (self.block_type == 1) { let value: u8 = self.stage[8]; let i: i32 = 0; while (i < size) { self.emit(value); i += 1; } return size; }
+        let used: i32 = self.literals(size); if (used < 0) { return used; }
+        return self.sequences(used,size);
+    }
+    // Frame header in stage[8..8+need).
+    fn frame_header(&self) -> i32 {
+        let fhd: i32 = self.fhd; let fcs_flag: i32 = fhd >> 6; let single: bool = ((fhd >> 5) & 1) == 1; let did_flag: i32 = fhd & 3;
+        let at: i32 = 1; let window: u64 = 0;
+        if (!single) {
+            let wd: i32 = self.stage[9] as i32; let exponent: u64 = (wd >> 3) as u64; let mantissa: u64 = (wd & 7) as u64;
+            let base: u64 = 1 << (10+exponent); window = base+(base/8)*mantissa; at = 2;
+        }
+        let did_size: i32 = 0; if (did_flag == 1) { did_size = 1; } if (did_flag == 2) { did_size = 2; } if (did_flag == 3) { did_size = 4; }
+        let did: u64 = 0; let k: i32 = 0; while (k < did_size) { did = did | ((self.stage[8+at+k] as u64) << ((8*k) as u64)); k += 1; }
+        at += did_size;
+        if (did != 0) { return E_DICT; }
+        let fcs_size: i32 = 0; if (fcs_flag == 0 && single) { fcs_size = 1; } if (fcs_flag == 1) { fcs_size = 2; } if (fcs_flag == 2) { fcs_size = 4; } if (fcs_flag == 3) { fcs_size = 8; }
+        let fcs: u64 = 0; k = 0; while (k < fcs_size) { fcs = fcs | ((self.stage[8+at+k] as u64) << ((8*k) as u64)); k += 1; }
+        if (fcs_size == 2) { fcs += 256; }
+        self.has_size = fcs_size > 0; self.content_size = fcs;
+        if (single) { window = fcs; }
+        if (window > (self.limits.max_window as u64)) { return E_WINDOW; }
+        self.window_size = window; self.checksum = ((fhd >> 2) & 1) == 1;
+        let block_max: u64 = window; if (block_max > (BLOCK_MAX as u64)) { block_max = BLOCK_MAX as u64; }
+        self.block_max = block_max as i32;
+        // The window keeps window_size bytes of history, one block and 32
+        // spare bytes for word copies.
+        self.want_window = (window as i32)+self.block_max+32;
+        return 0;
+    }
+    fn start_frame(&self) {
+        self.produced = 0; self.head = 0; self.out = 0; self.pending = 0; self.rep0 = 1; self.rep1 = 4; self.rep2 = 8;
+        self.ll_ok = false; self.of_ok = false; self.ml_ok = false; self.huf_ok = false; self.hash = ext::xxhash::state(0);
+    }
+    fn fail(&self, code: i32) -> i32 { self.phase = P_FAILED; self.failure = code; return code; }
+    fn le32_stage(&self) -> u64 { return (self.stage[8] as u64) | ((self.stage[9] as u64) << 8) | ((self.stage[10] as u64) << 16) | ((self.stage[11] as u64) << 24); }
+
+    // Decode from input into output. final_input says no input follows.
+    pub fn step(&self, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<Step,Error> {
+        if (input.start < 0 || input.length < 0 || output.start < 0 || output.length < 0) { return core::result::Err(Error::Bounds); }
+        if (self.phase == P_FAILED) { return core::result::Err(failure(self.failure)); }
+        let read: i32 = 0; let written: i32 = 0;
+        while (true) {
+            if (self.phase == P_DONE) { return core::result::Ok(Step { read: read, written: written, status: Status::Done }); }
+            if (self.phase == P_DRAIN) {
+                while (self.pending > 0 && written < output.length) {
+                    let chunk: i32 = self.pending; if (chunk > output.length-written) { chunk = output.length-written; }
+                    if (chunk > self.win_len-self.out) { chunk = self.win_len-self.out; }
+                    let piece: core::slice::View<u8> = core::slice::View { values: self.win, start: self.out, length: chunk };
+                    if (self.checksum) { self.hash.borrow().update(piece); }
+                    if (packed(output)) { copy_disjoint(data_ptr(output),written,self.win_ptr,self.out,chunk); }
+                    else { let i: i32 = 0; while (i < chunk) { let value: u8 = self.win[self.out+i]; output.values[output.start+written+i] = value; i += 1; } }
+                    written += chunk; self.out += chunk; if (self.out == self.win_len) { self.out = 0; } self.pending -= chunk;
+                }
+                if (self.pending > 0) { return core::result::Ok(Step { read: read, written: written, status: Status::NeedOutput }); }
+                if (self.last_block) {
+                    if (self.has_size && self.produced != self.content_size) { self.fail(E_CONTENT); return core::result::Err(Error::ContentSize); }
+                    if (self.checksum) { self.phase = P_CHECKSUM; self.need = 4; self.have = 0; } else { self.phase = P_FRAME_END; }
+                } else { self.phase = P_BLOCK_HEADER; self.need = 3; self.have = 0; }
+                continue;
+            }
+            if (self.phase == P_FRAME_END) {
+                self.frames += 1;
+                if (read == input.length && final_input) { self.phase = P_DONE; continue; }
+                self.phase = P_MAGIC; self.need = 4; self.have = 0; continue;
+            }
+            if (self.phase == P_WINDOW) {
+                if (self.win_len < self.want_window) { return core::result::Ok(Step { read: read, written: written, status: Status::NeedWindow }); }
+                self.start_frame(); self.phase = P_BLOCK_HEADER; self.need = 3; self.have = 0; continue;
+            }
+            // Collect `need` bytes into the stage (skipping discards them).
+            if (self.phase == P_SKIP) {
+                let left: u64 = (input.length-read) as u64; if (left > self.skip_left) { left = self.skip_left; }
+                read += left as i32; self.skip_left -= left;
+                if (self.skip_left > 0) {
+                    if (final_input) { self.fail(E_TRUNC); return core::result::Err(Error::Truncated); }
+                    return core::result::Ok(Step { read: read, written: written, status: Status::NeedInput });
+                }
+                self.phase = P_FRAME_END; continue;
+            }
+            let take: i32 = self.need-self.have; if (take > input.length-read) { take = input.length-read; }
+            if (packed(input)) { copy_disjoint(self.stage_ptr,8+self.have,data_ptr(input),read,take); }
+            else { let i: i32 = 0; while (i < take) { let value: u8 = input.values[input.start+read+i]; self.stage[8+self.have+i] = value; i += 1; } }
+            self.have += take; read += take;
+            if (self.have < self.need) {
+                if (final_input) {
+                    // No frame at all, or input ending inside one.
+                    if (self.phase == P_MAGIC && self.have == 0 && self.frames > 0) { self.phase = P_DONE; continue; }
+                    self.fail(E_TRUNC); return core::result::Err(Error::Truncated);
+                }
+               
+                return core::result::Ok(Step { read: read, written: written, status: Status::NeedInput });
+            }
+            if (self.phase == P_MAGIC) {
+                let magic: u64 = self.le32_stage();
+                if (magic == 4247762216) { self.phase = P_FHD; self.need = 1; self.have = 0; continue; }
+                if ((magic >> 4) == 25481893) { self.phase = P_SKIP_SIZE; self.need = 4; self.have = 0; continue; }
+                self.fail(E_MAGIC); return core::result::Err(Error::Magic);
+            }
+            if (self.phase == P_SKIP_SIZE) { self.skip_left = self.le32_stage(); self.phase = P_SKIP; continue; }
+            if (self.phase == P_FHD) {
+                let fhd: i32 = self.stage[8] as i32; self.fhd = fhd;
+                if (((fhd >> 3) & 1) == 1) { self.fail(E_HEADER); return core::result::Err(Error::FrameHeader); }
+                let length: i32 = 1; let single: bool = ((fhd >> 5) & 1) == 1; if (!single) { length += 1; }
+                let did: i32 = fhd & 3; if (did == 1) { length += 1; } if (did == 2) { length += 2; } if (did == 3) { length += 4; }
+                let fcs: i32 = fhd >> 6; if (fcs == 0 && single) { length += 1; } if (fcs == 1) { length += 2; } if (fcs == 2) { length += 4; } if (fcs == 3) { length += 8; }
+                self.phase = P_HEADER; self.need = length; self.have = 1; continue;
+            }
+            if (self.phase == P_HEADER) {
+                let parsed: i32 = self.frame_header(); if (parsed < 0) { self.fail(parsed); return core::result::Err(failure(parsed)); }
+                self.phase = P_WINDOW; continue;
+            }
+            if (self.phase == P_BLOCK_HEADER) {
+                let header: i32 = (self.stage[8] as i32) | ((self.stage[9] as i32) << 8) | ((self.stage[10] as i32) << 16);
+                self.last_block = (header & 1) == 1; self.block_type = (header >> 1) & 3; self.block_size = header >> 3;
+                if (self.block_type == 3) { self.fail(E_BLOCK); return core::result::Err(Error::BlockType); }
+                if (self.block_size > self.block_max) { self.fail(E_SIZE); return core::result::Err(Error::BlockSize); }
+                self.need = self.block_size; if (self.block_type == 1) { self.need = 1; }
+                self.have = 0; self.phase = P_BLOCK;
+                // Zero bytes to stage zero padding after the block for 8-byte loads.
+                continue;
+            }
+            if (self.phase == P_BLOCK) {
+                let k: i32 = 0; while (k < 16) { self.stage[8+self.need+k] = 0; k += 1; }
+                let start: i32 = self.head; let made: i32 = self.block();
+                if (made < 0) { self.fail(made); return core::result::Err(failure(made)); }
+                if (made > self.block_max) { self.fail(E_SIZE); return core::result::Err(Error::BlockSize); }
+                self.produced += made as u64;
+                if (self.has_size && self.produced > self.content_size) { self.fail(E_CONTENT); return core::result::Err(Error::ContentSize); }
+                self.out = start; self.pending = made; self.phase = P_DRAIN; continue;
+            }
+            if (self.phase == P_CHECKSUM) {
+                let expected: u64 = self.le32_stage(); let actual: u64 = self.hash.borrow().digest() & 4294967295;
+                if (expected != actual) { self.fail(E_CHECK); return core::result::Err(Error::Checksum); }
+                self.phase = P_FRAME_END; continue;
+            }
+            self.fail(-99); return core::result::Err(Error::Failed);
+        }
+        return core::result::Err(Error::Failed);
+    }
+}

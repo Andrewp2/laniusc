@@ -1227,6 +1227,7 @@ partial def serEff : SrcEff → String
     s!"(.eMatch {serEff x} {serType e} {serType t} {bracket (bs.map fun b => bracket (b.map toString))} {bracket (vs.map serEff)})"
   | .eDivide o a b => s!"(.eDivide {serDiv o} {serEff a} {serEff b})"
   | .eStride sl => s!"(.eStride {sl})"
+  | .arraySlice t a => s!"(.arraySlice {serType t} {a})"
 
 def serArm (a : SrcArm) : String :=
   "{ binders := " ++ bracket (a.binders.map toString) ++ ", value := " ++ serExpr a.value ++ " }"
@@ -1350,7 +1351,7 @@ def checkMulti (bases : List String) (mutants : List (String × String)) : IO Un
 -- texts of one program (a generic one and its hand-monomorphized copy) can be
 -- compared.
 partial def effBinders : SrcEff → List Nat
-  | .ePure _ | .eStride _ => []
+  | .ePure _ | .eStride _ | .arraySlice _ _ => []
   | .eCall _ xs | .eStruct _ xs | .eVariant _ _ xs => xs.flatMap effBinders
   | .eApply _ a b | .eDivide _ a b => effBinders a ++ effBinders b
   | .eNeg a | .eNot a | .eCast _ a | .eIndex _ a => effBinders a
@@ -1393,6 +1394,7 @@ partial def renEff (f : Nat → Nat) : SrcEff → SrcEff
   | .eMatch x e t bs vs => .eMatch (renEff f x) e t (bs.map (·.map f)) (vs.map (renEff f))
   | .eDivide o a b => .eDivide o (renEff f a) (renEff f b)
   | .eStride sl => .eStride (f sl)
+  | .arraySlice t a => .arraySlice t (f a)
 
 partial def renStmt (f : Nat → Nat) : SrcStmt → SrcStmt
   | .nop => .nop
@@ -1472,6 +1474,7 @@ def run_cases(args, cases_dir):
     os.makedirs(workdir, exist_ok=True)
     lean = [LEAN_HEAD]
     checks = []
+    outputs = []
     for case in sorted(os.listdir(cases_dir)):
         src = os.path.join(cases_dir, case)
         if not os.path.isdir(src):
@@ -1492,14 +1495,16 @@ def run_cases(args, cases_dir):
                 open(base + '.prods', 'w').write(' '.join(map(str, prods)))
                 open(base + '.parents', 'w').write(' '.join(map(str, parents)))
                 bases.append(base)
+                outputs.append(base + '.leantokens')
             out = os.path.join(out_dir, kind + '.out')
+            outputs += [out, out + '.compile']
             lean.append(f'#eval checkFiles [{", ".join(chr(34) + b + chr(34) for b in bases)}] "{out}"')
         checks.append((case, out_dir, os.path.exists(os.path.join(src, 'reject'))))
     lean_path = os.path.join(workdir, 'cases_check.lean')
     lean.append(f'-- inputs {inputs_digest(workdir)}')
     open(lean_path, 'w').write('\n'.join(lean) + '\n')
     PARSE_SERVER.close()
-    run = run_cache.run_lean(lean_path)
+    run = run_cache.run_lean(lean_path, outputs=outputs)
     if run.returncode != 0:
         raise SystemExit('lean failed:\n' + run.stdout[-4000:] + run.stderr[-4000:])
     problems = unchecked = 0

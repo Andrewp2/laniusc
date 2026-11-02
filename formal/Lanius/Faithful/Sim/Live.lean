@@ -76,7 +76,8 @@ def divisorOk : SrcEff → Bool
   | .ePure (.int n) => n != 0 && n != BitVec.allOnes 32
   | .ePure (.unsigned _ n) => n != 0
   | .ePure _ | .eCall _ _ | .eApply _ _ _ | .eNeg _ | .eNot _ | .eCast _ _ | .eIndex _ _ | .eStruct _ _
-  | .eVariant _ _ _ | .eMatch _ _ _ _ _ | .eDivide _ _ _ | .eStride _ => false
+  | .eVariant _ _ _ | .eMatch _ _ _ _ _ | .eDivide _ _ _ | .eStride _
+  | .arraySlice _ _ => false
 
 /-- A match with an arm for every variant of its enum type. -/
 def armsFull : SrcType → List (List Nat) → Bool
@@ -101,6 +102,7 @@ def liveEff : SrcEff → Bool
   | .eMatch s ety _ binders vs => liveEff s && liveEffs vs && armsFull ety binders
   | .eDivide _ l r => liveEff l && divisorOk r
   | .eStride _ => false
+  | .arraySlice _ _ => false
 
 def liveEffs : List SrcEff → Bool
   | [] => true
@@ -898,6 +900,7 @@ theorem eff_live (hO : ∀ m, OracleOk prims T (pcall sp prims m)) (hP : PrimsTy
         .scalar (divide_sty sa hw)⟩
     all_goals simp [divisorOk] at hl
   | .eStride _, A, W, E, tenv, t, _, _, _, _, ht, _ => by simp [effTy] at ht
+  | .arraySlice _ _, A, W, E, tenv, t, _, _, _, _, ht, _ => by simp [effTy] at ht
 
 theorem effs_live (hO : ∀ m, OracleOk prims T (pcall sp prims m)) (hP : PrimsTy sp prims)
     (IH : CallsGood sp prims T me B outside bad) :

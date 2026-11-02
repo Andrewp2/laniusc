@@ -1,0 +1,331 @@
+// GNU `cut` under LC_ALL=C: byte lists (-b, and -c, which GNU treats as
+// bytes) and field lists (-f with -d, -s, --output-delimiter), each list
+// parsed, sorted, merged and optionally complemented exactly as GNU's
+// set_fields does. Lines end with `eol` (LF, or NUL for -z); a final line
+// without one is cut and given one. Field and line breaks are found eight
+// bytes at a time. See docs/extended-textutils.md.
+module ext::text_cut;
+import alloc::io;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::text_lines;
+
+pub enum Error {
+    NumberedFromOne, InvalidRange, NoEndpoint, Decreasing, TooLarge, InvalidValue, MissingList, AllocationFailed
+}
+// The open end of a range ("N-").
+pub const MAX: u64 = 18446744073709551615;
+
+// Sorted, disjoint ranges [lo, hi] of 1-based positions or field numbers.
+pub struct Ranges { mem: alloc::io::Buffer, lo: [u64], hi: [u64], n: i32, room: i32 }
+pub impl Ranges {
+    pub fn borrow(&self) -> &Ranges { return self; }
+    pub fn len(&self) -> i32 { return self.n; }
+    pub fn low(&self, i: i32) -> u64 { return self.lo[i]; }
+    pub fn high(&self, i: i32) -> u64 { return self.hi[i]; }
+    pub fn destroy(&self) { self.mem.destroy(); self.n = 0; }
+}
+fn cr_new(room: i32) -> core::result::Result<Ranges, Error> {
+    let made: core::result::Result<alloc::io::Buffer, core::io::Error> = alloc::io::with_limit(room * 16 + 16);
+    if (core::result::is_err(made)) { return core::result::Err(Error::AllocationFailed); }
+    let mem: alloc::io::Buffer = core::result::unwrap(made);
+    let p: core::result::Result<ptr, core::io::Error> = mem.reserve_raw(room * 16 + 16);
+    if (core::result::is_err(p)) { mem.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let base: ptr = core::result::unwrap(p);
+    return core::result::Ok(Ranges { mem: mem, lo: core::mem::typed_slice_from_storage<u64>(base, room), hi: core::mem::typed_slice_from_storage<u64>(base + ((room * 8) as usize), room), n: 0, room: room });
+}
+fn cr_add(r: &Ranges, lo: u64, hi: u64) -> bool {
+    if (r.n == r.room) {
+        if (r.room > 50000000) { return false; }
+        let made: core::result::Result<Ranges, Error> = cr_new(r.room * 2);
+        if (core::result::is_err(made)) { return false; }
+        let b: Ranges = core::result::unwrap(made); let i: i32 = 0;
+        while (i < r.n) { b.lo[i] = r.lo[i]; b.hi[i] = r.hi[i]; i += 1; }
+        r.mem.destroy(); r.mem = b.mem; r.lo = b.lo; r.hi = b.hi; r.room = b.room;
+    }
+    r.lo[r.n] = lo; r.hi[r.n] = hi; r.n += 1; return true;
+}
+
+// Parse a LIST ("N", "N-", "N-M", "-M", separated by commas or blanks).
+// `complement` selects every position the list does not.
+pub fn parse_list(list: core::slice::View<u8>, complement: bool) -> core::result::Result<Ranges, Error> {
+    let made: core::result::Result<Ranges, Error> = cr_new(16);
+    if (core::result::is_err(made)) { return made; }
+    let r: Ranges = core::result::unwrap(made);
+    let initial: u64 = 1; let value: u64 = 0; let lhs: bool = false; let rhs: bool = false; let dash: bool = false;
+    let i: i32 = 0; let n: i32 = list.length; let bad: i32 = -1;
+    while (bad < 0) {
+        let c: i32 = 0; if (i < n) { c = list.values[list.start+i] as i32; }
+        if (c == 45) {
+            if (dash) { bad = 1; break; }
+            dash = true; i += 1;
+            if (lhs && value == 0) { bad = 0; break; }
+            initial = 1; if (lhs) { initial = value; }
+            value = 0;
+        } else {
+            if (c == 44 || c == 32 || c == 9 || c == 0) {
+                if (dash) {
+                    dash = false;
+                    if (!lhs && !rhs) { bad = 2; break; }
+                    if (!rhs) { if (!cr_add(r.borrow(), initial, MAX)) { bad = 7; break; } }
+                    else { if (value < initial) { bad = 3; break; } if (!cr_add(r.borrow(), initial, value)) { bad = 7; break; } }
+                    value = 0;
+                } else {
+                    if (value == 0) { bad = 0; break; }
+                    if (!cr_add(r.borrow(), value, value)) { bad = 7; break; }
+                    value = 0;
+                }
+                if (i >= n) { break; }
+                i += 1; lhs = false; rhs = false;
+            } else {
+                if (c >= 48 && c <= 57) {
+                    if (dash) { rhs = true; } else { lhs = true; }
+                    let d: u64 = (c - 48) as u64;
+                    if (value > (MAX - d) / 10) { bad = 4; break; }
+                    value = value * 10 + d;
+                    if (value == MAX) { bad = 4; break; }
+                    i += 1;
+                } else { bad = 5; break; }
+            }
+        }
+    }
+    if (bad < 0 && r.n == 0) { bad = 6; }
+    if (bad >= 0) {
+        r.destroy();
+        let e: Error = match (bad) { 0 -> Error::NumberedFromOne, 1 -> Error::InvalidRange, 2 -> Error::NoEndpoint, 3 -> Error::Decreasing, 4 -> Error::TooLarge, 5 -> Error::InvalidValue, 6 -> Error::MissingList, _ -> Error::AllocationFailed };
+        return core::result::Err(e);
+    }
+    // Sort by low end (insertion sort), then merge overlapping ranges.
+    let k: i32 = 1;
+    while (k < r.n) {
+        let lo: u64 = r.lo[k]; let hi: u64 = r.hi[k]; let j: i32 = k - 1;
+        while (j >= 0 && r.lo[j] > lo) { r.lo[j+1] = r.lo[j]; r.hi[j+1] = r.hi[j]; j -= 1; }
+        r.lo[j+1] = lo; r.hi[j+1] = hi; k += 1;
+    }
+    let out: i32 = 0; k = 0;
+    while (k < r.n) {
+        let lo: u64 = r.lo[k]; let hi: u64 = r.hi[k]; k += 1;
+        while (k < r.n && r.lo[k] <= hi) { if (r.hi[k] > hi) { hi = r.hi[k]; } k += 1; }
+        r.lo[out] = lo; r.hi[out] = hi; out += 1;
+    }
+    r.n = out;
+    if (!complement) { return core::result::Ok(r); }
+    let cm: core::result::Result<Ranges, Error> = cr_new(r.n + 2);
+    if (core::result::is_err(cm)) { r.destroy(); return cm; }
+    let c: Ranges = core::result::unwrap(cm); let ok: bool = true;
+    if (r.lo[0] > 1) { ok = cr_add(c.borrow(), 1, r.lo[0] - 1); }
+    k = 1;
+    while (k < r.n) { if (r.hi[k-1] + 1 != r.lo[k]) { ok = ok && cr_add(c.borrow(), r.hi[k-1] + 1, r.lo[k] - 1); } k += 1; }
+    if (r.hi[r.n-1] < MAX) { ok = ok && cr_add(c.borrow(), r.hi[r.n-1] + 1, MAX); }
+    r.destroy();
+    if (!ok) { c.destroy(); return core::result::Err(Error::AllocationFailed); }
+    return core::result::Ok(c);
+}
+
+// What to cut. `out` is the output delimiter, used between fields, and
+// between byte ranges only when `out_given`.
+pub struct Spec { ranges: Ranges, fields: bool, delim: u8, out: core::slice::View<u8>, out_given: bool, suppress: bool, eol: u8 }
+pub impl Spec { pub fn borrow(&self) -> &Spec { return self; } pub fn destroy(&self) { self.ranges.destroy(); } }
+pub fn spec(ranges: Ranges, fields: bool, delim: u8, out: core::slice::View<u8>, out_given: bool, suppress: bool, eol: u8) -> Spec {
+    return Spec { ranges: ranges, fields: fields, delim: delim, out: out, out_given: out_given, suppress: suppress, eol: eol };
+}
+// True when `cut` needs the whole input in one view: fields split on the
+// line delimiter itself make the input one record.
+pub fn needs_whole(s: &Spec) -> bool { return s.fields && s.delim == s.eol; }
+
+fn cc_out(o: &ext::text_lines::Out, v: core::slice::View<u8>) {
+    let i: i32 = 0; while (i < v.length) { ext::text_lines::put_byte(o, v.values[v.start+i]); i += 1; }
+}
+
+// Cut `v`: whole lines, optionally followed (at the end of an input) by a
+// final line without `eol`. With needs_whole, `v` must be the whole input.
+pub fn cut(s: &Spec, v: core::slice::View<u8>, o: &ext::text_lines::Out) -> core::result::Result<i32, Error> {
+    if (needs_whole(s)) { cc_one_record(s, v, o); return core::result::Ok(0); }
+    let made: core::result::Result<ext::text_lines::Words, ext::text_lines::Error> = ext::text_lines::words(v);
+    if (core::result::is_err(made)) { return core::result::Err(Error::AllocationFailed); }
+    let w: ext::text_lines::Words = core::result::unwrap(made);
+    if (s.fields) { cc_fields(s, w.borrow(), o); w.destroy(); return core::result::Ok(0); }
+    let found: core::result::Result<ext::text_lines::Starts, ext::text_lines::Error> = ext::text_lines::byte_positions(w.borrow(), s.eol, s.eol);
+    if (core::result::is_err(found)) { w.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let hits: ext::text_lines::Starts = core::result::unwrap(found);
+    cc_bytes(s, w.borrow(), hits.borrow(), o);
+    hits.destroy(); w.destroy();
+    return core::result::Ok(0);
+}
+
+// The selected bytes of each line; the output delimiter (when given) goes
+// between ranges that contribute bytes.
+fn cc_bytes(s: &Spec, w: &ext::text_lines::Words, hits: &ext::text_lines::Starts, o: &ext::text_lines::Out) {
+    let r: Ranges = s.ranges; let nr: i32 = r.n; let lo: [u64] = r.lo; let hi: [u64] = r.hi; let at: [i32] = hits.at;
+    let n: i32 = w.length; let count: i32 = hits.count; let ls: i32 = 0; let h: i32 = 0; let eol: u8 = s.eol; let given: bool = s.out_given;
+    let simple: bool = nr == 1 && !given;
+    while (h <= count) {
+        let end: i32 = n; if (h < count) { end = at[h] >> 1; }
+        h += 1;
+        if (h > count && ls >= n) { break; }
+        let len: u64 = (end - ls) as u64;
+        if (simple) {
+            let l0: u64 = lo[0];
+            if (l0 <= len) { let e: u64 = hi[0]; if (e > len) { e = len; } ext::text_lines::put_span(o, w, ls + (l0 as i32) - 1, (e - l0 + 1) as i32); }
+        } else {
+            let ri: i32 = 0;
+            while (ri < nr) {
+                let l: u64 = lo[ri]; if (l > len) { break; }
+                let e: u64 = hi[ri]; if (e > len) { e = len; }
+                if (ri > 0 && given) { cc_out(o, s.out); }
+                ext::text_lines::put_span(o, w, ls + (l as i32) - 1, (e - l + 1) as i32); ri += 1;
+            }
+        }
+        ext::text_lines::put_byte(o, eol);
+        ls = end + 1;
+    }
+}
+
+// Fields between delimiters; a line without a delimiter is printed whole,
+// or left out with `suppress`. Delimiters and line ends are found a word at
+// a time. When the output delimiter is the input one, neighbouring selected
+// fields leave as one span.
+fn cc_fields(s: &Spec, w: &ext::text_lines::Words, o: &ext::text_lines::Out) {
+    let r: Ranges = s.ranges; let nr: i32 = r.n; let lo: [u64] = r.lo; let hi: [u64] = r.hi;
+    let n: i32 = w.length; let eol: u8 = s.eol; let delim: u8 = s.delim; let suppress: bool = s.suppress;
+    let single: bool = s.out.length == 1; let ob: u8 = 0; if (single) { ob = s.out.values[s.out.start]; }
+    let merge: bool = single && ob == delim;
+    let words: [u64] = w.words; let nw: i32 = w.nw; let low: u64 = ext::text_lines::LOW7; let all: u64 = ext::text_lines::ALL; let ranks: u64 = ext::text_lines::RANKS;
+    let pa: u64 = (delim as u64) * ext::text_lines::ONES; let pb: u64 = (eol as u64) * ext::text_lines::ONES;
+    let ls: i32 = 0; let fs: i32 = 0; let k: u64 = 1; let ri: i32 = 0; let found: bool = false; let delimited: bool = false;
+    let ss: i32 = -1; let se: i32 = 0;
+    let wi: i32 = 0; let last: bool = false;
+    while (!last) {
+        let ma: u64 = 0; let mb: u64 = 0;
+        if (wi <= nw) {
+            let x: u64 = w.tail; if (wi < nw) { x = words[nw-1-wi]; }
+            let xa: u64 = x ^ pa; let xb: u64 = x ^ pb;
+            ma = (((xa & low) + low) | xa | low) ^ all; mb = (((xb & low) + low) | xb | low) ^ all;
+        }
+        let m: u64 = ma | mb; let base: i32 = wi * 8 - 1;
+        if (wi > nw) { last = true; if (ls < n) { m = 1; } }
+        wi += 1;
+        while (m != 0) {
+            let bit: u64 = m & (0 - m); m = m ^ bit;
+            let pos: i32 = n; let is_eol: bool = true;
+            if (!last) {
+                pos = base + ((((bit >> 7) * ranks) >> 56) as i32);
+                if (pos >= n) { m = 0; break; }
+                is_eol = (mb & bit) != 0;
+            }
+            if (!is_eol || delimited) {
+                delimited = true;
+                while (ri < nr && k > hi[ri]) { ri += 1; }
+                if (ri < nr && lo[ri] <= k) {
+                    if (merge) {
+                        if (ss >= 0 && se + 1 == fs) { se = pos; }
+                        else {
+                            // A finished span leaves with the delimiter after it.
+                            if (ss >= 0) { ext::text_lines::put_span(o, w, ss, se - ss + 1); }
+                            ss = fs; se = pos;
+                        }
+                    } else {
+                        if (found) { if (single) { ext::text_lines::put_byte(o, ob); } else { cc_out(o, s.out); } }
+                        ext::text_lines::put_span(o, w, fs, pos - fs); found = true;
+                    }
+                }
+            }
+            if (is_eol) {
+                // A span that reaches the line end takes its eol along.
+                if (!delimited) {
+                    if (!suppress) {
+                        if (pos < n) { ext::text_lines::put_span(o, w, ls, pos - ls + 1); }
+                        else { ext::text_lines::put_span(o, w, ls, pos - ls); ext::text_lines::put_byte(o, eol); }
+                    }
+                } else {
+                    if (ss >= 0 && se == pos && pos < n) { ext::text_lines::put_span(o, w, ss, se - ss + 1); }
+                    else { if (ss >= 0) { ext::text_lines::put_span(o, w, ss, se - ss); } ext::text_lines::put_byte(o, eol); }
+                }
+                ls = pos + 1; fs = ls; k = 1; ri = 0; found = false; delimited = false; ss = -1;
+            } else { fs = pos + 1; k += 1; }
+        }
+    }
+}
+
+// GNU's cut_fields, byte by byte, for a delimiter equal to `eol`: every
+// `eol` but a final one separates fields.
+fn cc_one_record(s: &Spec, v: core::slice::View<u8>, o: &ext::text_lines::Out) {
+    let n: i32 = v.length; if (n == 0) { return; }
+    let r: Ranges = s.ranges; let nr: i32 = r.n; let delim: i32 = s.delim as i32; let eol: i32 = s.eol as i32;
+    let at: i32 = 0; let field: u64 = 1; let ri: i32 = 0; let found: bool = false; let c: i32 = 0;
+    let first: bool = nr > 0 && r.lo[0] <= 1; let buffer_first: bool = s.suppress != !first;
+    while (true) {
+        if (field == 1 && buffer_first) {
+            if (at >= n) { break; }
+            let st: i32 = at;
+            while (at < n && (v.values[v.start+at] as i32) != delim && (v.values[v.start+at] as i32) != eol) { at += 1; }
+            if (at < n) { at += 1; }
+            c = 0;
+            let lastb: i32 = v.values[v.start+at-1] as i32;
+            if (lastb != delim) {
+                if (!s.suppress) {
+                    let i: i32 = st; while (i < at) { ext::text_lines::put_byte(o, v.values[v.start+i]); i += 1; }
+                    if (lastb != eol) { ext::text_lines::put_byte(o, eol as u8); }
+                    c = eol;
+                }
+                continue;
+            }
+            if (ri < nr && r.lo[ri] <= 1) {
+                let i: i32 = st; while (i < at - 1) { ext::text_lines::put_byte(o, v.values[v.start+i]); i += 1; }
+                if (delim == eol) { if (at < n) { found = true; } } else { found = true; }
+            }
+            field += 1; if (ri < nr && field > r.hi[ri]) { ri += 1; }
+        }
+        let prev: i32 = c;
+        let selected: bool = ri < nr && r.lo[ri] <= field;
+        if (selected) { if (found) { cc_out(o, s.out); } found = true; }
+        while (true) {
+            c = -1; if (at < n) { c = v.values[v.start+at] as i32; at += 1; }
+            if (c == delim || c == eol || c < 0) { break; }
+            if (selected) { ext::text_lines::put_byte(o, c as u8); }
+            prev = c;
+        }
+        if (delim == eol && c == delim && at >= n) { c = -1; }
+        if (c == delim) { field += 1; if (ri < nr && field > r.hi[ri]) { ri += 1; } }
+        else {
+            if (found || !(s.suppress && field == 1)) {
+                if (c == eol || prev != eol || !found) { ext::text_lines::put_byte(o, eol as u8); }
+            }
+            if (c < 0) { break; }
+            field = 1; ri = 0; found = false;
+        }
+    }
+}
+
+// GNU's message for each list error.
+fn cc_text(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), count);
+    return core::slice::View { values: bytes, start: 0, length: count };
+}
+// `positions` picks the byte wording (-b, -c) over the field wording (-f).
+pub fn message(e: Error, positions: bool) -> core::slice::View<u8> {
+    if (positions) {
+        return match (e) {
+            Error::NumberedFromOne -> cc_text("byte/character positions are numbered from 1", 44),
+            Error::InvalidRange -> cc_text("invalid byte or character range", 31),
+            Error::NoEndpoint -> cc_text("invalid range with no endpoint: -", 33),
+            Error::Decreasing -> cc_text("invalid decreasing range", 24),
+            Error::TooLarge -> cc_text("byte/character offset is too large", 34),
+            Error::InvalidValue -> cc_text("invalid byte/character position", 31),
+            Error::MissingList -> cc_text("missing list of byte/character positions", 40),
+            Error::AllocationFailed -> cc_text("allocation failed", 17)
+        };
+    }
+    return match (e) {
+        Error::NumberedFromOne -> cc_text("fields are numbered from 1", 26),
+        Error::InvalidRange -> cc_text("invalid field range", 19),
+        Error::NoEndpoint -> cc_text("invalid range with no endpoint: -", 33),
+        Error::Decreasing -> cc_text("invalid decreasing range", 24),
+        Error::TooLarge -> cc_text("field number is too large", 25),
+        Error::InvalidValue -> cc_text("invalid field value", 19),
+        Error::MissingList -> cc_text("missing list of fields", 22),
+        Error::AllocationFailed -> cc_text("allocation failed", 17)
+    };
+}

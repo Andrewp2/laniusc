@@ -102,37 +102,37 @@ theorem ok_e_match_closed : FnOk prog prims info (1286, ⟨0, [], 0⟩) :=
 theorem ok_e_divide_closed : FnOk prog prims info (1287, ⟨0, [], 0⟩) :=
   fnOk_of fn_e_divide_closed (by decide +kernel)
 
-theorem ok_enum_src : FnOk prog prims info (1290, ⟨0, [], 0⟩) :=
+theorem ok_e_array_slice_closed : FnOk prog prims info (1288, ⟨0, [], 0⟩) :=
+  fnOk_of fn_e_array_slice_closed (by decide +kernel)
+
+theorem ok_enum_src : FnOk prog prims info (1291, ⟨0, [], 0⟩) :=
   fnOk_of fn_enum_src (by decide +kernel)
 
-theorem ok_lower_variants : FnOk prog prims info (1291, ⟨14, [0], 0⟩) :=
+theorem ok_lower_variants : FnOk prog prims info (1292, ⟨14, [0], 0⟩) :=
   fnOk_of fn_lower_variants (by decide +kernel)
 
-theorem ok_payload_tys : FnOk prog prims info (1292, ⟨13, [], 0⟩) :=
+theorem ok_payload_tys : FnOk prog prims info (1293, ⟨13, [], 0⟩) :=
   fnOk_of fn_payload_tys (by decide +kernel)
 
-theorem ok_struct_src : FnOk prog prims info (1293, ⟨0, [], 0⟩) :=
+theorem ok_struct_src : FnOk prog prims info (1294, ⟨0, [], 0⟩) :=
   fnOk_of fn_struct_src (by decide +kernel)
 
-theorem ok_lower_tys : FnOk prog prims info (1294, ⟨14, [0], 0⟩) :=
+theorem ok_lower_tys : FnOk prog prims info (1295, ⟨14, [0], 0⟩) :=
   fnOk_of fn_lower_tys (by decide +kernel)
 
-theorem ok_wide_left : FnOk prog prims info (1295, ⟨1, [0], 0⟩) :=
+theorem ok_wide_left : FnOk prog prims info (1296, ⟨1, [0], 0⟩) :=
   fnOk_of fn_wide_left (by decide +kernel)
 
-theorem ok_wide_left_exprs : FnOk prog prims info (1296, ⟨2, [0], 0⟩) :=
+theorem ok_wide_left_exprs : FnOk prog prims info (1297, ⟨2, [0], 0⟩) :=
   fnOk_of fn_wide_left_exprs (by decide +kernel)
 
-theorem ok_wide_left_arms : FnOk prog prims info (1297, ⟨2, [0], 0⟩) :=
+theorem ok_wide_left_arms : FnOk prog prims info (1298, ⟨2, [0], 0⟩) :=
   fnOk_of fn_wide_left_arms (by decide +kernel)
 
-theorem ok_wide_left_eff : FnOk prog prims info (1298, ⟨2, [0], 0⟩) :=
+theorem ok_wide_left_eff : FnOk prog prims info (1299, ⟨2, [0], 0⟩) :=
   fnOk_of fn_wide_left_eff (by decide +kernel)
 
-theorem ok_int_at : FnOk prog prims info (1300, ⟨3, [], 0⟩) :=
-  fnOk_of fn_int_at (by decide +kernel)
-
 theorem chunk27 : AllFns prog prims info part27 :=
-  ⟨ok_opens_block, ok_p_expr_stmt, ok_generic_path_at, ok_p_path_ident_args, ok_attach_after, ok_cons_field, ok_cons_variant_tail, ok_p_enum_variant_unit, ok_p_enum_type_param, ok_p_impl_method, ok_p_impl_fn, ok_p_impl_method_pub, ok_none_member, ok_spelled0, ok_cons_of_mini_selfhost_SrcParam, ok_slice_type, ok_close_named, ok_array_type, ok_inst_index_at, ok_e_call_closed, ok_close_effs, ok_e_apply_closed, ok_e_neg_closed, ok_e_not_closed, ok_e_cast_closed, ok_e_index_closed, ok_e_struct_closed, ok_e_variant_closed, ok_e_match_closed, ok_e_divide_closed, ok_enum_src, ok_lower_variants, ok_payload_tys, ok_struct_src, ok_lower_tys, ok_wide_left, ok_wide_left_exprs, ok_wide_left_arms, ok_wide_left_eff, ok_int_at, trivial⟩
+  ⟨ok_opens_block, ok_p_expr_stmt, ok_generic_path_at, ok_p_path_ident_args, ok_attach_after, ok_cons_field, ok_cons_variant_tail, ok_p_enum_variant_unit, ok_p_enum_type_param, ok_p_impl_method, ok_p_impl_fn, ok_p_impl_method_pub, ok_none_member, ok_spelled0, ok_cons_of_mini_selfhost_SrcParam, ok_slice_type, ok_close_named, ok_array_type, ok_inst_index_at, ok_e_call_closed, ok_close_effs, ok_e_apply_closed, ok_e_neg_closed, ok_e_not_closed, ok_e_cast_closed, ok_e_index_closed, ok_e_struct_closed, ok_e_variant_closed, ok_e_match_closed, ok_e_divide_closed, ok_e_array_slice_closed, ok_enum_src, ok_lower_variants, ok_payload_tys, ok_struct_src, ok_lower_tys, ok_wide_left, ok_wide_left_exprs, ok_wide_left_arms, ok_wide_left_eff, trivial⟩
 
 end Lanius.Faithful.SelfTerm

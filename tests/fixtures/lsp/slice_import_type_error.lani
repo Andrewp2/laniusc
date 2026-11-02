@@ -1,0 +1,6 @@
+// Language-server fixture (tests/cli_lsp.rs): a core::slice importer with a
+// type error on line 6. With a stdlib root the server loads core::slice and
+// labels the error here; without one it stopped at the import (LNC0010).
+module app::main;
+import core::slice;
+fn main() -> i32 { let flag: bool = 7; return 3; }

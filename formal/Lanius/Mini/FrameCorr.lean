@@ -1,4 +1,9 @@
-import Lanius.Mini.Source
+module
+
+public import Lanius.Mini.Source
+import all Lanius.Mini.Compiler.P.SrcType_size
+
+@[expose] public section
 
 /-! Frame memory and the places Core's references name (F5, SEMANTIC_DECISIONS
 "Addressed locals").
@@ -6,13 +11,15 @@ import Lanius.Mini.Source
 A reference in Core names a cell and a projection path into its value. When
 the verified compiler passes a reference, the value at that place lives in
 frame memory, one 64-bit word per slot from an address: the same layout the
-value has in a function's slots, so `ty.HoldsAt v (hp.words address) 0` says
+value has in a function's slots, so `ty.HoldsAt places v (hp.words address) 0` says
 the words represent it. `FrameCorr` carries those places beside `Corr` and
 `HeapCorr`: each one's value is in Core's cell, its words are in the mini
 heap between the frame pointer and the top, and nothing else writes there.
 -/
 
 namespace Lanius.Mini
+
+variable {places : List Addressed}
 
 open Lanius.Core (Value ValueProjection)
 open Lanius.Semantics (State)
@@ -65,9 +72,9 @@ theorem Heap.words_congr {hp hp' : Heap} {address count : Nat}
 
 /-- A value's representation in words depends only on its words' bytes. -/
 theorem SrcType.HoldsAt.words_congr {ty : SrcType} {v : Value} {hp hp' : Heap} {address : Nat}
-    (holds : ty.HoldsAt v (hp.words address) 0)
+    (holds : ty.HoldsAt places v (hp.words address) 0)
     (same : ∀ a, address ≤ a → a < address + 8 * ty.size → hp'.bytes a = hp.bytes a) :
-    ty.HoldsAt v (hp'.words address) 0 :=
+    ty.HoldsAt places v (hp'.words address) 0 :=
   holds.congr (Heap.words_congr same)
 
 /-! ## Storing slots as words -/
@@ -117,76 +124,226 @@ theorem Heap.storeSlots_words : ∀ (hp : Heap) (address : Nat) (env : Env) (slo
 
 /-- A value in slots, stored as words, is represented by the words. -/
 theorem SrcType.HoldsAt.storeSlots {ty : SrcType} {v : Value} {env : Env} {slot : Nat}
-    (holds : ty.HoldsAt v env slot) (hp : Heap) (address : Nat) :
-    ty.HoldsAt v ((hp.storeSlots address env slot ty.size).words address) 0 :=
+    (holds : ty.HoldsAt places v env slot) (hp : Heap) (address : Nat) :
+    ty.HoldsAt places v ((hp.storeSlots address env slot ty.size).words address) 0 :=
   holds.congr fun i lt => by rw [Nat.zero_add, Heap.storeSlots_words _ _ _ _ _ _ lt]
 
 /-- A value in words, loaded into slots, is represented by the slots. -/
 theorem SrcType.HoldsAt.loadSlots {ty : SrcType} {v : Value} {hp : Heap} {address : Nat}
-    (holds : ty.HoldsAt v (hp.words address) 0) {env : Env} {slot : Nat}
-    (loaded : ∀ i < ty.size, env (slot + i) = hp.words address i) : ty.HoldsAt v env slot :=
+    (holds : ty.HoldsAt places v (hp.words address) 0) {env : Env} {slot : Nat}
+    (loaded : ∀ i < ty.size, env (slot + i) = hp.words address i) : ty.HoldsAt places v env slot :=
   holds.congr fun i lt => by rw [Nat.zero_add]; exact loaded i lt
 
 /-! ## The correspondence -/
 
-/-- A place a reference names, held in frame memory: Core's cell `cell` at
-the projection path `projections` holds a value of `ty`, whose slots are the
-words from `address`. -/
-structure Addressed where
-  cell : Nat
-  projections : List ValueProjection
-  ty : SrcType
-  address : Nat
-
-/-- The bytes a place's words take. -/
+/-- The bytes a place's block takes: 8 for each slot of its type. -/
 def Addressed.Covers (x : Addressed) (a : Nat) : Prop := x.address ≤ a ∧ a < x.address + 8 * x.ty.size
 
-/-- Core's value at the place is represented by its words. -/
-def Addressed.Holds (st : State) (hp : Heap) (x : Addressed) : Prop :=
-  ∃ v, Semantics.readCellProjection st x.cell x.projections = .ok v ∧ x.ty.HoldsAt v (hp.words x.address) 0
+/-- Where slot `s` of a place's value lies, and how many bytes it takes. A
+place that is not sliced has one 8-byte word per slot, upward from its
+address. A sliced one, an array passed as a slice, has the slice layout: an
+`i32` element in 4 bytes and a `u8` element in 1, upward from the address,
+and the slots of other elements in 8-byte words running down from the
+pointer, the block's top word. -/
+def Addressed.slotBytes (x : Addressed) (s : Nat) : Nat × Nat :=
+  if x.sliced then
+    match x.ty with
+    | .array .i32 _ => (x.address + 4 * s, 4)
+    | .array (.uint .uint8) _ => (x.address + s, 1)
+    | _ => (x.address + 8 * (x.ty.size - 1 - s), 8)
+  else (x.address + 8 * s, 8)
+
+/-- A place's value as slots, read from the mini heap in its layout. -/
+def Addressed.view (x : Addressed) (hp : Heap) : Env :=
+  fun s => BitVec.ofNat 64 (hp.readLE (x.slotBytes s).1 (x.slotBytes s).2)
+
+/-- Each slot of a place lies in its block. -/
+theorem Addressed.slotBytes_inside (x : Addressed) {s : Nat} (lt : s < x.ty.size) :
+    x.address ≤ (x.slotBytes s).1 ∧ (x.slotBytes s).1 + (x.slotBytes s).2 ≤ x.address + 8 * x.ty.size := by
+  unfold Addressed.slotBytes
+  split
+  · split
+    · rename_i n h
+      rw [h] at lt ⊢
+      simp only [SrcType.size] at lt ⊢
+      omega
+    · rename_i n h
+      rw [h] at lt ⊢
+      simp only [SrcType.size] at lt ⊢
+      omega
+    · simp only
+      omega
+  · simp only
+    omega
+
+/-- A place that is not sliced: its words. -/
+theorem Addressed.view_words {x : Addressed} (h : x.sliced = false) (hp : Heap) : x.view hp = hp.words x.address := by
+  funext s
+  simp [Addressed.view, Addressed.slotBytes, h, Heap.words]
+
+/-- A sliced array of `i32`: element `s` is the 4 bytes `4 * s` above the
+pointer, as a raw slice's. -/
+theorem Addressed.view_i32 {x : Addressed} (h : x.sliced = true) {n : Nat} (ty : x.ty = .array .i32 n)
+    (hp : Heap) (s : Nat) : x.view hp s = BitVec.ofNat 64 (hp.readLE (x.pointer + 4 * s) 4) := by
+  simp [Addressed.view, Addressed.slotBytes, Addressed.pointer, h, ty]
+
+/-- A sliced array of `u8`: element `s` is the byte `s` above the pointer. -/
+theorem Addressed.view_u8 {x : Addressed} (h : x.sliced = true) {n : Nat} (ty : x.ty = .array (.uint .uint8) n)
+    (hp : Heap) (s : Nat) : x.view hp s = BitVec.ofNat 64 (hp.readLE (x.pointer + s) 1) := by
+  simp [Addressed.view, Addressed.slotBytes, Addressed.pointer, h, ty]
+
+/-- A sliced array of other elements: slot `s` is the word `8 * s` below the
+pointer, so element `i` of `w` slots starts `8 * w * i` below it, as a raw
+slice's (`NativeLayout.elementBase?`). -/
+theorem Addressed.view_word {x : Addressed} (h : x.sliced = true)
+    (other : ∀ n, x.ty ≠ .array .i32 n ∧ x.ty ≠ .array (.uint .uint8) n) (hp : Heap) {s : Nat}
+    (lt : s < x.ty.size) : x.view hp s = BitVec.ofNat 64 (hp.readLE (x.pointer - 8 * s) 8) := by
+  have pointer : x.pointer = x.address + 8 * (x.ty.size - 1) := by
+    unfold Addressed.pointer
+    split
+    · rename_i n e; exact absurd e (other n).1
+    · rename_i n e; exact absurd e (other n).2
+    · rfl
+  have bytes : x.slotBytes s = (x.address + 8 * (x.ty.size - 1 - s), 8) := by
+    unfold Addressed.slotBytes
+    rw [if_pos h]
+    split
+    · rename_i n e; exact absurd e (other n).1
+    · rename_i n e; exact absurd e (other n).2
+    · rfl
+  simp only [Addressed.view, bytes, pointer]
+  congr 2
+  omega
+
+/-- A place's slots agree in two heaps whose bytes agree on its block. -/
+theorem Addressed.view_congr {x : Addressed} {hp hp' : Heap} (same : ∀ a, x.Covers a → hp'.bytes a = hp.bytes a) :
+    ∀ i < x.ty.size, x.view hp' (0 + i) = x.view hp (0 + i) := by
+  intro i lt
+  have inside := x.slotBytes_inside lt
+  simp only [Addressed.view, Nat.zero_add]
+  rw [Heap.readLE_congr (fun a lo hi => same a ⟨by omega, by omega⟩)]
+
+/-- Core's value at the place is represented by its slots in its layout. -/
+def Addressed.Holds (places : List Addressed) (st : State) (hp : Heap) (x : Addressed) : Prop :=
+  ∃ v, Semantics.readCellProjection st x.cell x.projections = .ok v ∧ x.ty.HoldsAt places v (x.view hp) 0
 
 /-- The addressed places of the activations: each one's value is represented
-by its words, which lie between the frame pointer and the heap's top. -/
+by its words, which lie in frame memory, between the frame pointer (and the
+limit) and the heap's top. -/
 structure FrameCorr (places : List Addressed) (st : State) (hp : Heap) : Prop where
-  holds : ∀ x ∈ places, x.Holds st hp
-  inside : ∀ x ∈ places, hp.fsp ≤ x.address ∧ x.address + 8 * x.ty.size ≤ hp.top
+  holds : ∀ x ∈ places, x.Holds places st hp
+  inside : ∀ x ∈ places, hp.fsp ≤ x.address ∧ hp.limit ≤ x.address ∧ x.address + 8 * x.ty.size ≤ hp.top
 
 theorem FrameCorr.nil (st : State) (hp : Heap) : FrameCorr [] st hp :=
   ⟨fun _ mem => by simp at mem, fun _ mem => by simp at mem⟩
 
 /-- Changes to bytes no place covers, to the frame pointer downward, to the
 cursor or the trace, and to Core cells no place names keep the correspondence. -/
-theorem FrameCorr.congr {places : List Addressed} {st st' : State} {hp hp' : Heap}
+theorem FrameCorr.congr {st st' : State} {hp hp' : Heap}
     (fc : FrameCorr places st hp)
     (cells : ∀ x ∈ places, st'.cellEntry? x.cell = st.cellEntry? x.cell)
     (bytes : ∀ x ∈ places, ∀ a, x.Covers a → hp'.bytes a = hp.bytes a)
-    (fsp : hp'.fsp ≤ hp.fsp) (top : hp'.top = hp.top) :
+    (fsp : hp'.fsp ≤ hp.fsp) (limit : hp'.limit = hp.limit) (top : hp'.top = hp.top) :
     FrameCorr places st' hp' := by
   refine ⟨fun x mem => ?_, fun x mem => ?_⟩
   · obtain ⟨v, read, holds⟩ := fc.holds x mem
-    refine ⟨v, ?_, holds.words_congr fun a lo hi => bytes x mem a ⟨lo, hi⟩⟩
+    refine ⟨v, ?_, holds.congr (Addressed.view_congr (bytes x mem))⟩
     simp only [Semantics.readCellProjection, cells x mem] at read ⊢
     exact read
   · have := fc.inside x mem
-    exact ⟨Nat.le_trans fsp this.1, top ▸ this.2⟩
+    exact ⟨Nat.le_trans fsp this.1, limit ▸ this.2.1, top ▸ this.2.2⟩
 
-/-- A store below the frame pointer, or below the limit, misses every place. -/
-theorem FrameCorr.writeLE_below {places : List Addressed} {st : State} {hp : Heap}
+/-- A heap that differs only below the limit, with the same limit, top and
+frame pointer, and Core cells no place names, keep the correspondence: the
+bump heap is not frame memory. -/
+theorem FrameCorr.low {st st' : State} {hp hp' : Heap} (fc : FrameCorr places st hp)
+    (cells : ∀ x ∈ places, st'.cellEntry? x.cell = st.cellEntry? x.cell)
+    (bytes : ∀ a, hp.limit ≤ a → hp'.bytes a = hp.bytes a)
+    (fsp : hp'.fsp = hp.fsp) (limit : hp'.limit = hp.limit) (top : hp'.top = hp.top) :
+    FrameCorr places st' hp' :=
+  fc.congr cells (fun x mem a covers => bytes a (by
+      have := fc.inside x mem; unfold Addressed.Covers at covers; omega))
+    (Nat.le_of_eq fsp) limit top
+
+/-- A store below the frame pointer misses every place. -/
+theorem FrameCorr.writeLE_below {st : State} {hp : Heap}
     (fc : FrameCorr places st hp) {address value count : Nat} (below : address + count ≤ hp.fsp) :
     FrameCorr places st (hp.writeLE address value count) :=
   fc.congr (fun _ _ => rfl)
     (fun x mem a covers => Heap.writeLE_bytes_outside _ _ _ _ _ (.inr (by
       have := fc.inside x mem; unfold Addressed.Covers at covers; omega)))
-    (Nat.le_of_eq (Heap.writeLE_top _ _ _ _).2) (Heap.writeLE_top _ _ _ _).1
+    (Nat.le_of_eq (Heap.writeLE_top _ _ _ _).2) (Heap.writeLE_limit _ _ _ _).1 (Heap.writeLE_top _ _ _ _).1
+
+/-- A store below the limit, into the bump heap, misses every place. -/
+theorem FrameCorr.writeLE_low {st : State} {hp : Heap}
+    (fc : FrameCorr places st hp) {address value count : Nat} (below : address + count ≤ hp.limit) :
+    FrameCorr places st (hp.writeLE address value count) :=
+  fc.congr (fun _ _ => rfl)
+    (fun x mem a covers => Heap.writeLE_bytes_outside _ _ _ _ _ (.inr (by
+      have := fc.inside x mem; unfold Addressed.Covers at covers; omega)))
+    (Nat.le_of_eq (Heap.writeLE_top _ _ _ _).2) (Heap.writeLE_limit _ _ _ _).1 (Heap.writeLE_top _ _ _ _).1
+
+/-- A byte store below the limit misses every place. -/
+theorem FrameCorr.write_low {st : State} {hp : Heap}
+    (fc : FrameCorr places st hp) {address : Nat} {byte : UInt8} (below : address < hp.limit) :
+    FrameCorr places st (hp.write address byte) :=
+  fc.congr (fun _ _ => rfl)
+    (fun x mem a covers => by
+      have := fc.inside x mem; unfold Addressed.Covers at covers
+      rw [Heap.write_bytes, if_neg (by omega)])
+    (Nat.le_refl _) rfl rfl
+
+/-- `hp'` differs from `hp` only below the limit, in the bump heap: what a
+store into Core's heap does. -/
+structure Heap.LowOnly (hp hp' : Heap) : Prop where
+  bytes : ∀ a, hp.limit ≤ a → hp'.bytes a = hp.bytes a
+  fsp : hp'.fsp = hp.fsp
+  limit : hp'.limit = hp.limit
+  top : hp'.top = hp.top
+
+theorem Heap.LowOnly.refl (hp : Heap) : hp.LowOnly hp := ⟨fun _ _ => rfl, rfl, rfl, rfl⟩
+
+theorem Heap.LowOnly.trans {a b c : Heap} (first : a.LowOnly b) (second : b.LowOnly c) : a.LowOnly c :=
+  ⟨fun x le => (second.bytes x (first.limit ▸ le)).trans (first.bytes x le), second.fsp.trans first.fsp,
+    second.limit.trans first.limit, second.top.trans first.top⟩
+
+theorem Heap.LowOnly.writeLE {hp : Heap} {address value count : Nat} (below : address + count ≤ hp.limit) :
+    hp.LowOnly (hp.writeLE address value count) :=
+  ⟨fun _ le => Heap.writeLE_bytes_outside _ _ _ _ _ (.inr (by omega)), (Heap.writeLE_top _ _ _ _).2,
+    (Heap.writeLE_limit _ _ _ _).1, (Heap.writeLE_top _ _ _ _).1⟩
+
+theorem Heap.LowOnly.write {hp : Heap} {address : Nat} {byte : UInt8} (below : address < hp.limit) :
+    hp.LowOnly (hp.write address byte) :=
+  ⟨fun _ le => by rw [Heap.write_bytes, if_neg (by omega)], rfl, rfl, rfl⟩
+
+/-- The places hold over a change below the limit. -/
+theorem FrameCorr.lowOnly {st : State} {hp hp' : Heap} (fc : FrameCorr places st hp) (low : hp.LowOnly hp') :
+    FrameCorr places st hp' :=
+  fc.low (fun _ _ => rfl) low.bytes low.fsp low.limit low.top
+
+/-- Core's heap is not frame memory. -/
+theorem FrameCorr.withHeap {st : State} {hp : Heap} (fc : FrameCorr places st hp) (heap : Memory.Heap) :
+    FrameCorr places { st with heap } hp :=
+  fc.congr (fun _ _ => rfl) (fun _ _ _ _ => rfl) (Nat.le_refl _) rfl rfl
 
 /-- `frame` lowers the frame pointer and keeps every place. -/
-theorem FrameCorr.frame {places : List Addressed} {st : State} {hp : Heap}
+theorem FrameCorr.frame {st : State} {hp : Heap}
     (fc : FrameCorr places st hp) (bytes : Nat) :
     FrameCorr places st { hp with fsp := hp.fsp - bytes } :=
-  fc.congr (fun _ _ => rfl) (fun _ _ _ _ => rfl) (Nat.sub_le _ _) rfl
+  fc.congr (fun _ _ => rfl) (fun _ _ _ _ => rfl) (Nat.sub_le _ _) rfl rfl
+
+/-- A call's return gives the caller's frame pointer back: still at or
+below every place. -/
+theorem FrameCorr.restore {st : State} {hp : Heap}
+    (fc : FrameCorr places st hp) {fsp : Nat} (above : ∀ x ∈ places, fsp ≤ x.address) :
+    FrameCorr places st { hp with fsp := fsp } :=
+  ⟨fun x mem => by
+      obtain ⟨v, read, holds⟩ := fc.holds x mem
+      exact ⟨v, read, holds.congr (Addressed.view_congr fun _ _ => rfl)⟩,
+    fun x mem => ⟨above x mem, (fc.inside x mem).2⟩⟩
 
 /-- A place's words are below the top, and so below `2 ^ 62` with the heap. -/
-theorem FrameCorr.covers_top {places : List Addressed} {st : State} {hp : Heap}
+theorem FrameCorr.covers_top {st : State} {hp : Heap}
     (fc : FrameCorr places st hp) {x : Addressed} (mem : x ∈ places) {a : Nat} (covers : x.Covers a) :
     hp.fsp ≤ a ∧ a < hp.top := by
   have := fc.inside x mem

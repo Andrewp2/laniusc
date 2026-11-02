@@ -12,32 +12,32 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.Termination
 open Lanius.Faithful.SelfCert
 
-theorem ok_eval_load_byte : FnOk prog prims info (717, ⟨3, [], 0⟩) :=
+theorem ok_eval_load : FnOk prog prims info (717, ⟨3, [], 0⟩) :=
+  fnOk_of fn_eval_load (by decide +kernel)
+
+theorem ok_eval_load_byte : FnOk prog prims info (718, ⟨3, [], 0⟩) :=
   fnOk_of fn_eval_load_byte (by decide +kernel)
 
-theorem ok_eval_word_element : FnOk prog prims info (718, ⟨6, [], 0⟩) :=
+theorem ok_eval_word_element : FnOk prog prims info (719, ⟨6, [], 0⟩) :=
   fnOk_of fn_eval_word_element (by decide +kernel)
 
-theorem ok_eval_array_element : FnOk prog prims info (719, ⟨5, [], 0⟩) :=
+theorem ok_eval_array_element : FnOk prog prims info (720, ⟨5, [], 0⟩) :=
   fnOk_of fn_eval_array_element (by decide +kernel)
 
-theorem ok_eval_values : FnOk prog prims info (720, ⟨3, [], 0⟩) :=
+theorem ok_eval_values : FnOk prog prims info (721, ⟨3, [], 0⟩) :=
   fnOk_of fn_eval_values (by decide +kernel)
 
-theorem ok_eval_field_of : FnOk prog prims info (721, ⟨13, [], 0⟩) :=
+theorem ok_eval_field_of : FnOk prog prims info (722, ⟨13, [], 0⟩) :=
   fnOk_of fn_eval_field_of (by decide +kernel)
 
-theorem ok_checked_element : FnOk prog prims info (722, ⟨4, [], 0⟩) :=
+theorem ok_checked_element : FnOk prog prims info (723, ⟨4, [], 0⟩) :=
   fnOk_of fn_checked_element (by decide +kernel)
 
-theorem ok_checked_load : FnOk prog prims info (723, ⟨6, [], 0⟩) :=
+theorem ok_checked_load : FnOk prog prims info (724, ⟨6, [], 0⟩) :=
   fnOk_of fn_checked_load (by decide +kernel)
 
-theorem ok_store_any : FnOk prog prims info (724, ⟨13, [], 0⟩) :=
+theorem ok_store_any : FnOk prog prims info (725, ⟨13, [], 0⟩) :=
   fnOk_of fn_store_any (by decide +kernel)
-
-theorem ok_single_of_mini_selfhost_SrcType : FnOk prog prims info (725, ⟨0, [], 0⟩) :=
-  fnOk_of fn_single_of_mini_selfhost_SrcType (by decide +kernel)
 
 theorem ok_host_byte_code : FnOk prog prims info (726, ⟨2, [], 0⟩) :=
   fnOk_of fn_host_byte_code (by decide +kernel)
@@ -133,6 +133,6 @@ theorem ok_lower_arm_value : FnOk prog prims info (757, ⟨12, [], 0⟩) :=
   fnOk_of fn_lower_arm_value (by decide +kernel)
 
 theorem chunk15 : AllFns prog prims info part15 :=
-  ⟨ok_eval_load_byte, ok_eval_word_element, ok_eval_array_element, ok_eval_values, ok_eval_field_of, ok_checked_element, ok_checked_load, ok_store_any, ok_single_of_mini_selfhost_SrcType, ok_host_byte_code, ok_host_write_code, ok_host_read_code, ok_host_sleep_code, ok_host_clock_code, ok_host_random_code, ok_short_circuit, ok_then_check, ok_operand_guard, ok_eval_right, ok_SrcType_is_float_any, ok_negate_float, ok_SrcType_float_ty, ok_SrcType_sint_kind, ok_negate_signed, ok_eval_payload, ok_eval_arm, ok_arm_bind, ok_signed_div, ok_eval_divide_sint, ok_SrcType_uint_kind, ok_eval_divide_uint, ok_eval_word_stride, ok_store_eval_then, ok_store_type, ok_element_base, ok_store_pick, ok_set_scalar_eval, ok_unit_payload, ok_field_payload, ok_lower_arm_value, trivial⟩
+  ⟨ok_eval_load, ok_eval_load_byte, ok_eval_word_element, ok_eval_array_element, ok_eval_values, ok_eval_field_of, ok_checked_element, ok_checked_load, ok_store_any, ok_host_byte_code, ok_host_write_code, ok_host_read_code, ok_host_sleep_code, ok_host_clock_code, ok_host_random_code, ok_short_circuit, ok_then_check, ok_operand_guard, ok_eval_right, ok_SrcType_is_float_any, ok_negate_float, ok_SrcType_float_ty, ok_SrcType_sint_kind, ok_negate_signed, ok_eval_payload, ok_eval_arm, ok_arm_bind, ok_signed_div, ok_eval_divide_sint, ok_SrcType_uint_kind, ok_eval_divide_uint, ok_eval_word_stride, ok_store_eval_then, ok_store_type, ok_element_base, ok_store_pick, ok_set_scalar_eval, ok_unit_payload, ok_field_payload, ok_lower_arm_value, trivial⟩
 
 end Lanius.Faithful.SelfTerm

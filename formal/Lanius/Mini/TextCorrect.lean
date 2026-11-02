@@ -104,6 +104,7 @@ import all Lanius.Mini.Frontend.P.armsOf
 import all Lanius.Mini.Frontend.P.assertClosed
 import all Lanius.Mini.Frontend.P.blockArmsOf
 import all Lanius.Mini.Frontend.P.callParts
+import all Lanius.Mini.Frontend.P.projection
 import all Lanius.Mini.Frontend.P.closeFuncs
 import all Lanius.Mini.Frontend.P.collect
 import all Lanius.Mini.Frontend.P.compoundEval
@@ -114,8 +115,10 @@ import all Lanius.Mini.Frontend.P.consTreeTail
 import all Lanius.Mini.Frontend.P.consTys
 import all Lanius.Mini.Frontend.P.distinct
 import all Lanius.Mini.Frontend.P.divergeArm
+import all Lanius.Mini.Frontend.P.bindsOfTys
 import all Lanius.Mini.Frontend.P.eDivideClosed
 import all Lanius.Mini.Frontend.P.eIndexClosed
+import all Lanius.Mini.Frontend.P.eStructClosed
 import all Lanius.Mini.Frontend.P.effNamedTys
 import all Lanius.Mini.Frontend.P.externBody
 import all Lanius.Mini.Frontend.P.fieldTyAt
@@ -356,13 +359,13 @@ theorem compileText_correct {files : List SourceFile} {binary : Binary} (h : com
     ∃ sp, TextReading (files.map SourceFile.source) sp ∧
       (∀ sp', TextReading (files.map SourceFile.source) sp' → sp' = sp) ∧
       ∀ {f : Nat} {func : SrcFunc}, sp.funcs[f]? = some func →
-      ∀ {args : List Value} {bits : List (BitVec 64)}, FieldsHold (paramTypes func.params) args (Func.entry bits) 0 →
+      ∀ {args : List Value} {bits : List (BitVec 64)}, FieldsHold [] (paramTypes func.params) args (Func.entry bits) 0 →
       bits.length = paramsSize func.params →
       ∀ {fuel : Nat} {v : Value} {final : Semantics.State} {heap : Heap}, heap.cursor = 1 →
       (∀ a, 1 ≤ a → heap.bytes a = 0) → heap.limit < 2 ^ 62 → heap.io.trace = [] →
       Semantics.evalExpr fuel sp.toCore (startState heap.io) (.call f (args.map Core.Expr.value)) = .done v final →
       final.heap.nextAddress ≤ heap.limit →
-      ∃ depth results after, func.ret.HoldsAt v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
+      ∃ depth results after, func.ret.HoldsAt [] v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
         after.cursor = final.heap.nextAddress ∧ final.world.standardOutput = outputOf 1 after.io.trace ∧
         final.world.standardError = outputOf 2 after.io.trace ∧
         ∀ (s : State) (imageBase : BitVec 64) (window : Nat),
@@ -390,7 +393,7 @@ theorem compileText_behaviour {files : List SourceFile} {binary : Binary} (h : c
     ∃ sp, TextReading (files.map SourceFile.source) sp ∧
       (∀ sp', TextReading (files.map SourceFile.source) sp' → sp' = sp) ∧
       ∀ {f : Nat} {func : SrcFunc}, sp.funcs[f]? = some func →
-      ∀ {args : List Value} {bits : List (BitVec 64)}, FieldsHold (paramTypes func.params) args (Func.entry bits) 0 →
+      ∀ {args : List Value} {bits : List (BitVec 64)}, FieldsHold [] (paramTypes func.params) args (Func.entry bits) 0 →
       bits.length = paramsSize func.params →
       ∀ {heap : Heap}, heap.cursor = 1 → (∀ a, 1 ≤ a → heap.bytes a = 0) → heap.limit < 2 ^ 62 →
       heap.io.trace = [] → 1 ≤ heap.limit →

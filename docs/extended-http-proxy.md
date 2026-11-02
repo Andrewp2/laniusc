@@ -215,9 +215,28 @@ Numbers from the 3070 Laptop machine:
 | Plain, load average 27 | 0.79 s, proxy CPU 0.67 s | 0.55 s, proxy CPU 0.45 s | |
 | TLS, load average 27 | 1.04 s (1,915 req/s), proxy CPU 0.85 s | 0.82 s (2,454 req/s), proxy CPU 0.68 s | 200 handshakes. Peak RSS 73 MB. |
 
-Header parsing and rewriting take about half of the proxy's per-request
-CPU. `ext::http_rewrite` rescans Connection fields for each field, and
-that is the next thing to speed up.
+### Rewrite cost
+
+`ext::http_rewrite` reads each message's Connection fields once into a
+small token set (the first two field values; a third falls back to a full
+scan), classifies each field name by length and first byte before one
+name compare, and skips the X-Forwarded-For and Via merge scans when the
+message has neither. `ext::http::equal_name` now compares lengths before
+validating either name.
+
+Same-load comparison (load average 24-26), old against new, two
+interleaved runs each:
+
+| Measure | Before | After |
+| --- | --- | --- |
+| Rewrite a 10-field browser request head | 315 µs | 72 µs |
+| Rewrite a 9-field origin response head | 222 µs | 61 µs |
+| Load test, h2 phase proxy CPU | 0.47-0.49 s | 0.38-0.40 s |
+| Load test, HTTP/1.1 phase proxy CPU | 0.38-0.44 s | 0.33-0.35 s |
+
+The load test's heads carry only two fields, so its gain is smaller than
+the per-head gain. Parsing a 10-field head still costs about 57 µs, as
+much as rewriting it.
 
 ## Limits
 

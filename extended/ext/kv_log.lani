@@ -1,0 +1,607 @@
+// An embedded on-disk key/value store: an append-only log of CRC-checked
+// records with an in-memory hash index of keys (values stay on disk), in the
+// style of Bitcask. sync() is the commit point; open() replays the log and
+// truncates a torn or corrupt tail; compact() rewrites the live records and
+// renames the new log over the old one. See docs/extended-kv-log.md.
+module ext::kv_log;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import std::file;
+import std::file_ops;
+import std::linux;
+
+pub enum ErrorKind { Io, NotKvLog, KeyLimit, ValueLimit, AllocationFailed, Closed }
+// host is the errno of an Io error when known, else 0.
+pub struct Error { kind: ErrorKind, host: i32 }
+// buffer: bytes held before a write; sync_every: fsync after every put and
+// delete; auto_compact: compact when at least this many bytes are dead and
+// dead bytes exceed live bytes (0 disables).
+pub struct Options { max_key: i32, max_value: i32, buffer: i32, sync_every: bool, auto_compact: i64 }
+pub fn default_options() -> Options {
+    return Options { max_key: 65536, max_value: 67108864, buffer: 1048576, sync_every: false, auto_compact: 67108864 };
+}
+// What open() found: records replayed, and bytes cut from a torn tail.
+pub struct Recovery { records: i64, truncated: i64 }
+
+// Format limits, independent of Options, so that recovery never drops valid
+// records written under larger limits.
+const FORMAT_MAX_KEY: i32 = 1048576;
+const FORMAT_MAX_VALUE: i32 = 1073741824;
+const HEADER: i32 = 8;
+const RECORD_HEAD: i32 = 13;
+const KIND_PUT: u8 = 1;
+const KIND_DELETE: u8 = 2;
+const EMPTY: i32 = -1;
+const GONE: i32 = -2;
+// Reads come from a read-only shared mapping of the log's first MAP_LIMIT
+// bytes (a syscall per get costs more than the rest of the lookup); offsets
+// past the mapping, or a failed mmap, use pread.
+const MAP_LIMIT: i64 = 1073741824;
+
+struct Entry { key: i32, key_len: i32, value: i64, value_len: i32, hash: u32, live: bool }
+
+fn magic(index: i32) -> u8 {
+    // "LKVLOG01"
+    if (index == 0) { return 76; } if (index == 1) { return 75; } if (index == 2) { return 86; } if (index == 3) { return 76; }
+    if (index == 4) { return 79; } if (index == 5) { return 71; } if (index == 6) { return 48; } return 49;
+}
+fn fail(kind: ErrorKind) -> Error { return Error { kind: kind, host: 0 }; }
+fn io(error: core::io::Error) -> Error {
+    let host: i32 = match (error) { core::io::Error::Host(n) -> n, _ -> 0 };
+    return Error { kind: ErrorKind::Io, host: host };
+}
+fn hash_of(bytes: [u8], start: i32, length: i32) -> u32 {
+    let state: u32 = 2166136261; let index: i32 = 0;
+    while (index < length) { state = (state ^ (bytes[start + index] as u32)) * 16777619; index += 1; }
+    return state;
+}
+fn put32(bytes: [u8], at: i32, value: u32) {
+    bytes[at] = (value & 255) as u8; bytes[at + 1] = ((value >> 8) & 255) as u8;
+    bytes[at + 2] = ((value >> 16) & 255) as u8; bytes[at + 3] = ((value >> 24) & 255) as u8;
+}
+fn get32(bytes: [u8], at: i32) -> u32 {
+    return (bytes[at] as u32) | ((bytes[at + 1] as u32) << 8) | ((bytes[at + 2] as u32) << 16) | ((bytes[at + 3] as u32) << 24);
+}
+// Slicing-by-8 tables: table k maps a byte k positions back.
+fn crc_table() -> alloc::vec::Vec<u32> {
+    let table: alloc::vec::Vec<u32> = alloc::vec::new();
+    if (table.try_resize(2048, 0).is_err()) { return table; }
+    let t: [u32] = table.as_slice();
+    let index: i32 = 0;
+    while (index < 256) {
+        let value: u32 = index as u32; let bit: i32 = 0;
+        while (bit < 8) { if ((value & 1) != 0) { value = (value >> 1) ^ 3988292384; } else { value = value >> 1; } bit += 1; }
+        t[index] = value; index += 1;
+    }
+    index = 256;
+    while (index < 2048) { let previous: u32 = t[index - 256]; t[index] = (previous >> 8) ^ t[(previous & 255) as i32]; index += 1; }
+    return table;
+}
+// CRC-32 (IEEE, as zlib.crc32) of bytes[start, start + length).
+fn crc(t: [u32], bytes: [u8], start: i32, length: i32) -> u32 {
+    let state: u32 = 4294967295; let index: i32 = start; let end: i32 = start + length;
+    let n: i32 = length >> 3;
+    if (n > 0 && core::mem::slice_stride(bytes) == 1) {
+        // Raw u64 views run downward, so walk k from n - 1 for ascending bytes.
+        let data: ptr = core::mem::i32_slice_data_ptr(bytes) + (start as usize);
+        let words: [u64] = core::mem::slice_from_raw_parts(data + (((n - 1) << 3) as usize), n); let k: i32 = n - 1;
+        while (k >= 0) {
+            let v: u64 = words[k] ^ (state as u64);
+            state = t[1792 + ((v & 255) as i32)] ^ t[1536 + (((v >> 8) & 255) as i32)] ^ t[1280 + (((v >> 16) & 255) as i32)] ^ t[1024 + (((v >> 24) & 255) as i32)]
+                ^ t[768 + (((v >> 32) & 255) as i32)] ^ t[512 + (((v >> 40) & 255) as i32)] ^ t[256 + (((v >> 48) & 255) as i32)] ^ t[(v >> 56) as i32];
+            k -= 1;
+        }
+        index = start + (n << 3);
+    }
+    while (index < end) { state = t[((state ^ (bytes[index] as u32)) & 255) as i32] ^ (state >> 8); index += 1; }
+    return state ^ 4294967295;
+}
+// Grows bytes (never shrinks) so that at least need bytes are usable.
+fn room(bytes: &alloc::vec::Vec<u8>, need: i32) -> bool {
+    let size: i32 = bytes.len();
+    if (need <= size) { return true; }
+    let grown: i32 = 4096;
+    if (size > 0 && size < 1073741824) { grown = size * 2; }
+    if (grown < need) { grown = need; }
+    return bytes.try_resize(grown, 0).is_ok();
+}
+fn read_options() -> std::file_ops::OpenOptions {
+    let options: std::file_ops::OpenOptions = std::file_ops::options();
+    options.access = std::file_ops::Access::ReadWrite; options.create = true; options.mode = 420;
+    return options;
+}
+fn path_of(bytes: &alloc::vec::Vec<u8>) -> core::path::Path {
+    return core::result::unwrap(core::path::from_bytes_range(bytes.as_slice(), 0, bytes.len()));
+}
+fn write_all(file: &std::file::File, bytes: [u8], start: i32, length: i32, position: i64) -> core::result::Result<i32, Error> {
+    let done: i32 = 0;
+    while (done < length) {
+        let wrote = std::file_ops::write_at(file, core::slice::View { values: bytes, start: start + done, length: length - done }, (position + (done as i64)) as u64);
+        if (wrote.is_err()) { let failure: core::io::Error = wrote.unwrap_err(); let again: bool = match (failure) { core::io::Error::Interrupted -> true, _ -> false }; if (!again) { return core::result::Err(io(failure)); } }
+        else { let n: i32 = wrote.unwrap(); if (n <= 0) { return core::result::Err(fail(ErrorKind::Io)); } done += n; }
+    }
+    return core::result::Ok(length);
+}
+fn read_all(file: &std::file::File, bytes: [u8], start: i32, length: i32, position: i64) -> core::result::Result<i32, Error> {
+    let done: i32 = 0;
+    while (done < length) {
+        let got = std::file_ops::read_at(file, core::slice::View { values: bytes, start: start + done, length: length - done }, (position + (done as i64)) as u64);
+        if (got.is_err()) { let failure: core::io::Error = got.unwrap_err(); let again: bool = match (failure) { core::io::Error::Interrupted -> true, _ -> false }; if (!again) { return core::result::Err(io(failure)); } }
+        else { let n: i32 = got.unwrap(); if (n == 0) { break; } done += n; }
+    }
+    return core::result::Ok(done);
+}
+
+pub struct Store {
+    file: std::file::File, open: bool, path: alloc::vec::Vec<u8>, options: Options,
+    entries: alloc::vec::Vec<Entry>, keys: alloc::vec::Vec<u8>,
+    slots: alloc::vec::Vec<i32>, slot_cap: i32, slot_used: i32, live: i32,
+    // pending and keys are used up to pending_len and keys_len; growing them
+    // rarely keeps Vec calls off the per-operation path.
+    pending: alloc::vec::Vec<u8>, pending_len: i32, keys_len: i32, map: ptr, map_len: i64, flushed: i64, synced: i64, live_bytes: i64,
+    table: alloc::vec::Vec<u32>, recovery: Recovery,
+}
+
+// Opens or creates the log at path. Recovery replays every valid record and
+// truncates the file at the first torn or corrupt one (then syncs).
+pub fn open(path: core::slice::View<u8>, options: Options) -> core::result::Result<Store, Error> {
+    let owned: alloc::vec::Vec<u8> = alloc::vec::new();
+    if (owned.try_extend(path).is_err()) { return core::result::Err(fail(ErrorKind::AllocationFailed)); }
+    let opened = std::file_ops::open(path_of(owned.borrow()), read_options());
+    if (opened.is_err()) { owned.destroy(); return core::result::Err(io(opened.unwrap_err())); }
+    let nowhere: ptr = 0;
+    let store: Store = Store {
+        file: opened.unwrap(), open: true, path: owned, options: options,
+        entries: alloc::vec::new(), keys: alloc::vec::new(), slots: alloc::vec::new(), slot_cap: 0, slot_used: 0, live: 0,
+        pending: alloc::vec::new(), pending_len: 0, keys_len: 0, map: nowhere, map_len: 0, flushed: 0, synced: 0, live_bytes: 0, table: crc_table(), recovery: Recovery { records: 0, truncated: 0 },
+    };
+    // A compaction that crashed before its rename leaves PATH.compact behind.
+    let temp: alloc::vec::Vec<u8> = store.temp_path();
+    if (temp.len() > 0) { let removed = std::file_ops::remove_file_at(std::file_ops::AT_FDCWD, path_of(temp.borrow())); }
+    temp.destroy();
+    let replayed: core::result::Result<i32, Error> = store.replay();
+    if (replayed.is_err()) { store.release(); return core::result::Err(replayed.unwrap_err()); }
+    return core::result::Ok(store);
+}
+
+pub impl Store {
+    pub fn borrow(&self) -> &Store { return self; }
+    pub fn len(&self) -> i32 { return self.live; }
+    pub fn recovery(&self) -> Recovery { return self.recovery; }
+    // Log length including unwritten buffered records.
+    pub fn file_bytes(&self) -> i64 { return self.flushed + (self.pending_len as i64); }
+    pub fn synced_bytes(&self) -> i64 { return self.synced; }
+    pub fn live_bytes(&self) -> i64 { return self.live_bytes; }
+    pub fn dead_bytes(&self) -> i64 { return self.file_bytes() - (HEADER as i64) - self.live_bytes; }
+
+    fn release(&self) {
+        self.unmap();
+        if (self.open) { let closed = self.file.close(); self.open = false; }
+        self.path.destroy(); self.entries.destroy(); self.keys.destroy(); self.slots.destroy(); self.pending.destroy(); self.table.destroy();
+        self.slot_cap = 0; self.slot_used = 0; self.live = 0; self.pending_len = 0; self.keys_len = 0;
+    }
+    fn temp_path(&self) -> alloc::vec::Vec<u8> {
+        let temp: alloc::vec::Vec<u8> = alloc::vec::new();
+        if (temp.try_extend(self.path.as_view()).is_err()) { return temp; }
+        let suffix: [u8; 8] = [46, 99, 111, 109, 112, 97, 99, 116];
+        if (temp.try_extend_from_slice(suffix, 8).is_err()) { temp.clear(); }
+        return temp;
+    }
+
+    fn unmap(&self) {
+        if (self.map_len > 0) {
+            let args: [std::linux::Argument; 2] = [std::linux::Argument::Address(self.map), std::linux::Argument::Word(self.map_len)];
+            let done = std::linux::call(11, core::slice::view(args, 2).unwrap());
+        }
+        let nowhere: ptr = 0; self.map = nowhere; self.map_len = 0;
+    }
+    // Maps the log (twice its flushed length, at least 1 MiB) when the
+    // flushed bytes outgrow the mapping; force remaps after a file swap.
+    fn remap(&self, force: bool) {
+        if (!force && (self.flushed <= self.map_len || self.map_len >= MAP_LIMIT)) { return; }
+        self.unmap();
+        let want: i64 = self.flushed * 2;
+        if (want < 1048576) { want = 1048576; }
+        if (want > MAP_LIMIT) { want = MAP_LIMIT; }
+        let handle = self.file.raw_handle();
+        if (handle.is_none()) { return; }
+        let nowhere: ptr = 0;
+        let args: [std::linux::Argument; 6] = [std::linux::Argument::Address(nowhere), std::linux::Argument::Word(want), std::linux::Argument::Word(1), std::linux::Argument::Word(1), std::linux::Argument::Word(handle.unwrap() as i64), std::linux::Argument::Word(0)];
+        let done = std::linux::call(9, core::slice::view(args, 6).unwrap());
+        if (done.is_ok()) { self.map = nowhere + (done.unwrap() as usize); self.map_len = want; }
+    }
+
+    // Index -----------------------------------------------------------------
+    fn key_equals(&self, entry: Entry, bytes: [u8], start: i32, length: i32) -> bool {
+        if (entry.key_len != length) { return false; }
+        return core::slice::memcmp_range(self.keys.as_slice(), entry.key, bytes, start, length) == 0;
+    }
+    // The entry index for key, or -1.
+    fn find(&self, bytes: [u8], start: i32, length: i32, hash: u32) -> i32 {
+        if (self.slot_cap == 0) { return -1; }
+        let slots: [i32] = self.slots.as_slice(); let mask: i32 = self.slot_cap - 1;
+        let at: i32 = (hash as i32) & mask;
+        while (true) {
+            let value: i32 = slots[at];
+            if (value == EMPTY) { return -1; }
+            if (value >= 0) {
+                let entry: Entry = self.entries.at(value);
+                if (entry.hash == hash && self.key_equals(entry, bytes, start, length)) { return value; }
+            }
+            at = (at + 1) & mask;
+        }
+        return -1;
+    }
+    fn grow(&self) -> bool {
+        if ((self.slot_used + 1) * 2 <= self.slot_cap) { return true; }
+        let capacity: i32 = 16;
+        while (capacity < (self.live + 1) * 4) { capacity = capacity * 2; }
+        self.slots.clear();
+        if (self.slots.try_resize(capacity, EMPTY).is_err()) { self.slot_cap = 0; return false; }
+        self.slot_cap = capacity; self.slot_used = 0;
+        let slots: [i32] = self.slots.as_slice(); let mask: i32 = capacity - 1;
+        let index: i32 = 0;
+        while (index < self.entries.len()) {
+            let entry: Entry = self.entries.at(index);
+            if (entry.live) {
+                let at: i32 = (entry.hash as i32) & mask;
+                while (slots[at] != EMPTY) { at = (at + 1) & mask; }
+                slots[at] = index; self.slot_used += 1;
+            }
+            index += 1;
+        }
+        return true;
+    }
+    fn insert_slot(&self, index: i32, hash: u32) {
+        let slots: [i32] = self.slots.as_slice(); let mask: i32 = self.slot_cap - 1;
+        let at: i32 = (hash as i32) & mask;
+        while (slots[at] >= 0) { at = (at + 1) & mask; }
+        if (slots[at] == EMPTY) { self.slot_used += 1; }
+        slots[at] = index;
+    }
+    fn remove_slot(&self, index: i32, hash: u32) {
+        let slots: [i32] = self.slots.as_slice(); let mask: i32 = self.slot_cap - 1;
+        let at: i32 = (hash as i32) & mask;
+        while (slots[at] != index) { at = (at + 1) & mask; }
+        slots[at] = GONE;
+    }
+    // Applies a put or delete to the index; value is the file offset of the
+    // value bytes. False on allocation failure.
+    fn apply(&self, kind: u8, bytes: [u8], start: i32, key_len: i32, value: i64, value_len: i32) -> bool {
+        let hash: u32 = hash_of(bytes, start, key_len);
+        let found: i32 = self.find(bytes, start, key_len, hash);
+        let size: i64 = (RECORD_HEAD + key_len + value_len) as i64;
+        if (kind == KIND_DELETE) {
+            if (found < 0) { return true; }
+            let entry: Entry = self.entries.at(found);
+            self.live_bytes -= (RECORD_HEAD + entry.key_len + entry.value_len) as i64;
+            entry.live = false; core::result::unwrap(self.entries.set(found, entry));
+            self.remove_slot(found, hash); self.live -= 1;
+            return true;
+        }
+        if (found >= 0) {
+            let entry: Entry = self.entries.at(found);
+            self.live_bytes += size - ((RECORD_HEAD + entry.key_len + entry.value_len) as i64);
+            entry.value = value; entry.value_len = value_len;
+            core::result::unwrap(self.entries.set(found, entry));
+            return true;
+        }
+        if (!self.grow()) { return false; }
+        let key_at: i32 = self.keys_len;
+        if (!room(self.keys.borrow(), key_at + key_len)) { return false; }
+        if (key_len > 0) { core::slice::copy_nonoverlapping_range(self.keys.as_slice(), self.keys.len(), key_at, bytes, start + key_len, start, key_len); }
+        self.keys_len = key_at + key_len;
+        let index: i32 = self.entries.len();
+        if (self.entries.try_push(Entry { key: key_at, key_len: key_len, value: value, value_len: value_len, hash: hash, live: true }).is_err()) { return false; }
+        self.insert_slot(index, hash); self.live += 1; self.live_bytes += size;
+        return true;
+    }
+
+    // Recovery ----------------------------------------------------------------
+    fn replay(&self) -> core::result::Result<i32, Error> {
+        let size_result = std::file_ops::seek(self.file.borrow(), 0, std::file_ops::Origin::End);
+        if (size_result.is_err()) { return core::result::Err(io(size_result.unwrap_err())); }
+        let size: i64 = size_result.unwrap();
+        let chunk: alloc::vec::Vec<u8> = alloc::vec::new();
+        if (chunk.try_resize(1048576, 0).is_err()) { return core::result::Err(fail(ErrorKind::AllocationFailed)); }
+        // Header: absent or a torn prefix of it is rewritten; anything else is
+        // not a log.
+        let head: i32 = HEADER; if (size < (HEADER as i64)) { head = size as i32; }
+        let got = read_all(self.file.borrow(), chunk.as_slice(), 0, head, 0);
+        if (got.is_err()) { chunk.destroy(); return core::result::Err(got.unwrap_err()); }
+        let index: i32 = 0;
+        while (index < head) { if (chunk.at(index) != magic(index)) { chunk.destroy(); return core::result::Err(fail(ErrorKind::NotKvLog)); } index += 1; }
+        if (size < (HEADER as i64)) {
+            let bytes: [u8] = chunk.as_slice(); index = 0;
+            while (index < HEADER) { let byte: u8 = magic(index); bytes[index] = byte; index += 1; }
+            let wrote = write_all(self.file.borrow(), bytes, 0, HEADER, 0);
+            if (wrote.is_err()) { chunk.destroy(); return core::result::Err(wrote.unwrap_err()); }
+            let cut = std::file_ops::set_len(self.file.borrow(), HEADER as u64);
+            let synced = std::file_ops::sync_data(self.file.borrow());
+            if (cut.is_err() || synced.is_err()) { chunk.destroy(); return core::result::Err(fail(ErrorKind::Io)); }
+            self.recovery.truncated = 0; self.flushed = HEADER as i64; self.synced = self.flushed;
+            self.remap(true);
+            chunk.destroy(); return core::result::Ok(0);
+        }
+        // Records: [crc32][kind][key length][value length][key][value], the
+        // CRC covering everything after itself.
+        let position: i64 = HEADER as i64; let base: i64 = position; let filled: i32 = 0; let at: i32 = 0;
+        let good: bool = true;
+        while (good && position < size) {
+            if (filled - at < RECORD_HEAD) {
+                // Refill so that at least the head is in the chunk.
+                base = position; at = 0;
+                let want: i64 = size - position; if (want > (chunk.len() as i64)) { want = chunk.len() as i64; }
+                let read = read_all(self.file.borrow(), chunk.as_slice(), 0, want as i32, position);
+                if (read.is_err()) { chunk.destroy(); return core::result::Err(read.unwrap_err()); }
+                filled = read.unwrap();
+                if (filled < RECORD_HEAD) { good = false; break; }
+            }
+            let bytes: [u8] = chunk.as_slice();
+            let kind: u8 = bytes[at + 4];
+            let key_len: u32 = get32(bytes, at + 5); let value_len: u32 = get32(bytes, at + 9);
+            if ((kind != KIND_PUT && kind != KIND_DELETE) || key_len > (FORMAT_MAX_KEY as u32) || value_len > (FORMAT_MAX_VALUE as u32) || (kind == KIND_DELETE && value_len != 0)) { good = false; break; }
+            let total: i64 = (RECORD_HEAD as i64) + (key_len as i64) + (value_len as i64);
+            if (position + total > size) { good = false; break; }
+            if ((at as i64) + total > (filled as i64)) {
+                // The record runs past the chunk: grow if needed and reread it.
+                if (total > (chunk.len() as i64)) { if (chunk.try_resize(total as i32, 0).is_err()) { chunk.destroy(); return core::result::Err(fail(ErrorKind::AllocationFailed)); } }
+                base = position; at = 0;
+                let want: i64 = size - position; if (want > (chunk.len() as i64)) { want = chunk.len() as i64; }
+                let read = read_all(self.file.borrow(), chunk.as_slice(), 0, want as i32, position);
+                if (read.is_err()) { chunk.destroy(); return core::result::Err(read.unwrap_err()); }
+                filled = read.unwrap();
+                if ((filled as i64) < total) { good = false; break; }
+                bytes = chunk.as_slice();
+            }
+            let stored: u32 = get32(bytes, at);
+            if (crc(self.table.as_slice(), bytes, at + 4, (total as i32) - 4) != stored) { good = false; break; }
+            let key_start: i32 = at + RECORD_HEAD;
+            if (!self.apply(kind, bytes, key_start, key_len as i32, position + (RECORD_HEAD as i64) + (key_len as i64), value_len as i32)) {
+                chunk.destroy(); return core::result::Err(fail(ErrorKind::AllocationFailed));
+            }
+            self.recovery.records += 1;
+            at += total as i32; position += total;
+        }
+        chunk.destroy();
+        self.recovery.truncated = size - position;
+        if (position < size) {
+            let cut = std::file_ops::set_len(self.file.borrow(), position as u64);
+            if (cut.is_err()) { return core::result::Err(io(cut.unwrap_err())); }
+            let synced = std::file_ops::sync_data(self.file.borrow());
+            if (synced.is_err()) { return core::result::Err(io(synced.unwrap_err())); }
+        }
+        self.flushed = position; self.synced = position;
+        self.remap(true);
+        return core::result::Ok(0);
+    }
+
+    // Writing -------------------------------------------------------------------
+    fn record(&self, kind: u8, key: core::slice::View<u8>, value: core::slice::View<u8>) -> core::result::Result<i32, Error> {
+        let at: i32 = self.pending_len;
+        let total: i32 = RECORD_HEAD + key.length + value.length;
+        if (!room(self.pending.borrow(), at + total)) { return core::result::Err(fail(ErrorKind::AllocationFailed)); }
+        let bytes: [u8] = self.pending.as_slice(); let size: i32 = self.pending.len();
+        if (key.length > 0) { core::slice::copy_nonoverlapping_range(bytes, size, at + RECORD_HEAD, key.values, key.start + key.length, key.start, key.length); }
+        if (value.length > 0) { core::slice::copy_nonoverlapping_range(bytes, size, at + RECORD_HEAD + key.length, value.values, value.start + value.length, value.start, value.length); }
+        self.pending_len = at + total;
+        bytes[at + 4] = kind; put32(bytes, at + 5, key.length as u32); put32(bytes, at + 9, value.length as u32);
+        put32(bytes, at, crc(self.table.as_slice(), bytes, at + 4, total - 4));
+        return core::result::Ok(at);
+    }
+    // Writes buffered records to the file (no fsync).
+    pub fn flush(&self) -> core::result::Result<i32, Error> {
+        if (!self.open) { return core::result::Err(fail(ErrorKind::Closed)); }
+        let count: i32 = self.pending_len;
+        if (count == 0) { return core::result::Ok(0); }
+        let wrote = write_all(self.file.borrow(), self.pending.as_slice(), 0, count, self.flushed);
+        if (wrote.is_err()) { return wrote; }
+        self.flushed += count as i64; self.pending_len = 0;
+        self.remap(false);
+        return core::result::Ok(count);
+    }
+    // The commit point: everything put or deleted before it survives a crash.
+    pub fn sync(&self) -> core::result::Result<i32, Error> {
+        let flushed = self.flush();
+        if (flushed.is_err()) { return flushed; }
+        if (self.synced == self.flushed) { return core::result::Ok(0); }
+        let done = std::file_ops::sync_data(self.file.borrow());
+        if (done.is_err()) { return core::result::Err(io(done.unwrap_err())); }
+        self.synced = self.flushed;
+        return core::result::Ok(0);
+    }
+    fn after_write(&self) -> core::result::Result<i32, Error> {
+        if (self.options.sync_every) { let synced = self.sync(); if (synced.is_err()) { return synced; } }
+        else { if (self.pending_len >= self.options.buffer) { let flushed = self.flush(); if (flushed.is_err()) { return flushed; } } }
+        if (self.options.auto_compact > 0 && self.dead_bytes() >= self.options.auto_compact && self.dead_bytes() > self.live_bytes) { return self.compact(); }
+        return core::result::Ok(0);
+    }
+    pub fn put(&self, key: core::slice::View<u8>, value: core::slice::View<u8>) -> core::result::Result<i32, Error> {
+        if (!self.open) { return core::result::Err(fail(ErrorKind::Closed)); }
+        if (key.length > self.options.max_key || key.length > FORMAT_MAX_KEY) { return core::result::Err(fail(ErrorKind::KeyLimit)); }
+        if (value.length > self.options.max_value || value.length > FORMAT_MAX_VALUE) { return core::result::Err(fail(ErrorKind::ValueLimit)); }
+        let made = self.record(KIND_PUT, key, value);
+        if (made.is_err()) { return made; }
+        let at: i32 = made.unwrap();
+        let offset: i64 = self.flushed + ((at + RECORD_HEAD + key.length) as i64);
+        if (!self.apply(KIND_PUT, key.values, key.start, key.length, offset, value.length)) {
+            self.pending_len = at; return core::result::Err(fail(ErrorKind::AllocationFailed));
+        }
+        return self.after_write();
+    }
+    // Ok(true) when the key existed. Deleting a missing key writes nothing.
+    pub fn delete(&self, key: core::slice::View<u8>) -> core::result::Result<bool, Error> {
+        if (!self.open) { return core::result::Err(fail(ErrorKind::Closed)); }
+        if (!self.contains(key)) { return core::result::Ok(false); }
+        let made = self.record(KIND_DELETE, key, core::slice::View { values: key.values, start: key.start, length: 0 });
+        if (made.is_err()) { return core::result::Err(made.unwrap_err()); }
+        self.apply(KIND_DELETE, key.values, key.start, key.length, 0, 0);
+        let after = self.after_write();
+        if (after.is_err()) { return core::result::Err(after.unwrap_err()); }
+        return core::result::Ok(true);
+    }
+    pub fn contains(&self, key: core::slice::View<u8>) -> bool {
+        return self.find(key.values, key.start, key.length, hash_of(key.values, key.start, key.length)) >= 0;
+    }
+    // Replaces out with the value of key; Ok(false) when there is none.
+    pub fn get(&self, key: core::slice::View<u8>, out: &alloc::vec::Vec<u8>) -> core::result::Result<bool, Error> {
+        if (!self.open) { return core::result::Err(fail(ErrorKind::Closed)); }
+        let found: i32 = self.find(key.values, key.start, key.length, hash_of(key.values, key.start, key.length));
+        if (found < 0) { return core::result::Ok(false); }
+        let read = self.read_value(self.entries.at(found), out);
+        if (read.is_err()) { return core::result::Err(read.unwrap_err()); }
+        return core::result::Ok(true);
+    }
+    fn read_value(&self, entry: Entry, out: &alloc::vec::Vec<u8>) -> core::result::Result<i32, Error> {
+        out.clear();
+        if (out.try_resize(entry.value_len, 0).is_err()) { return core::result::Err(fail(ErrorKind::AllocationFailed)); }
+        if (entry.value >= self.flushed) {
+            let from: i32 = (entry.value - self.flushed) as i32;
+            if (entry.value_len > 0) { core::slice::copy_nonoverlapping_range(out.as_slice(), entry.value_len, 0, self.pending.as_slice(), from + entry.value_len, from, entry.value_len); }
+            return core::result::Ok(entry.value_len);
+        }
+        if (entry.value + (entry.value_len as i64) <= self.map_len && entry.value_len > 0) {
+            let mapped: [u8] = core::mem::typed_slice_from_raw_parts<u8>(self.map + (entry.value as usize), entry.value_len);
+            core::slice::copy_nonoverlapping_range(out.as_slice(), entry.value_len, 0, mapped, entry.value_len, 0, entry.value_len);
+            return core::result::Ok(entry.value_len);
+        }
+        let got = read_all(self.file.borrow(), out.as_slice(), 0, entry.value_len, entry.value);
+        if (got.is_err()) { return got; }
+        if (got.unwrap() != entry.value_len) { return core::result::Err(fail(ErrorKind::Io)); }
+        return core::result::Ok(entry.value_len);
+    }
+
+    // Iteration in insertion order (an overwrite keeps its place; a key put
+    // again after a delete moves to the end), as Python dicts do.
+    // first() and next() return a position, or -1 at the end.
+    pub fn first(&self) -> i32 { return self.next(-1); }
+    pub fn next(&self, position: i32) -> i32 {
+        let index: i32 = position + 1;
+        while (index < self.entries.len()) { if (self.entries.at(index).live) { return index; } index += 1; }
+        return -1;
+    }
+    pub fn key(&self, position: i32) -> core::slice::View<u8> {
+        let entry: Entry = self.entries.at(position);
+        return core::slice::View { values: self.keys.as_slice(), start: entry.key, length: entry.key_len };
+    }
+    pub fn value(&self, position: i32, out: &alloc::vec::Vec<u8>) -> core::result::Result<i32, Error> {
+        return self.read_value(self.entries.at(position), out);
+    }
+
+    // Compaction ------------------------------------------------------------------
+    // Writes the live records in order to PATH.compact, syncs it, renames it
+    // over PATH and syncs the directory. A crash at any point leaves either
+    // the old log or the new one.
+    pub fn compact(&self) -> core::result::Result<i32, Error> {
+        let flushed = self.flush();
+        if (flushed.is_err()) { return flushed; }
+        let temp: alloc::vec::Vec<u8> = self.temp_path();
+        if (temp.len() == 0) { return core::result::Err(fail(ErrorKind::AllocationFailed)); }
+        let options: std::file_ops::OpenOptions = read_options(); options.truncate = true;
+        let opened = std::file_ops::open(path_of(temp.borrow()), options);
+        if (opened.is_err()) { temp.destroy(); return core::result::Err(io(opened.unwrap_err())); }
+        let target: std::file::File = opened.unwrap();
+        let written = self.copy_live(target.borrow());
+        if (written.is_err()) { let closed = target.close(); let removed = std::file_ops::remove_file_at(std::file_ops::AT_FDCWD, path_of(temp.borrow())); temp.destroy(); return core::result::Err(written.unwrap_err()); }
+        let synced = std::file_ops::sync_data(target.borrow());
+        let renamed = std::file_ops::rename_at(std::file_ops::AT_FDCWD, path_of(temp.borrow()), std::file_ops::AT_FDCWD, path_of(self.path.borrow()), std::file_ops::RenamePolicy::Replace);
+        temp.destroy();
+        if (synced.is_err() || renamed.is_err()) { let closed = target.close(); return core::result::Err(fail(ErrorKind::Io)); }
+        self.sync_directory();
+        let closed = self.file.close();
+        self.file = target;
+        // Rebuild the index over the new offsets.
+        let size: i64 = written.unwrap();
+        let old_entries: alloc::vec::Vec<Entry> = self.entries; let old_keys: alloc::vec::Vec<u8> = self.keys;
+        self.entries = alloc::vec::new(); self.keys = alloc::vec::new(); self.keys_len = 0; self.slots.clear(); self.slot_cap = 0; self.slot_used = 0; self.live = 0; self.live_bytes = 0;
+        let position: i64 = HEADER as i64; let index: i32 = 0; let ok: bool = true;
+        while (index < old_entries.len() && ok) {
+            let entry: Entry = old_entries.at(index);
+            if (entry.live) {
+                ok = self.apply(KIND_PUT, old_keys.as_slice(), entry.key, entry.key_len, position + ((RECORD_HEAD + entry.key_len) as i64), entry.value_len);
+                position += (RECORD_HEAD + entry.key_len + entry.value_len) as i64;
+            }
+            index += 1;
+        }
+        old_entries.destroy(); old_keys.destroy();
+        self.flushed = size; self.synced = size;
+        self.remap(true);
+        if (!ok) { return core::result::Err(fail(ErrorKind::AllocationFailed)); }
+        return core::result::Ok(0);
+    }
+    // Returns the new log's length.
+    fn copy_live(&self, target: &std::file::File) -> core::result::Result<i64, Error> {
+        let out: alloc::vec::Vec<u8> = alloc::vec::new(); let value: alloc::vec::Vec<u8> = alloc::vec::new();
+        let header: [u8; 8] = [76, 75, 86, 76, 79, 71, 48, 49];
+        let ok: bool = out.try_extend_from_slice(header, 8).is_ok();
+        let position: i64 = 0; let index: i32 = 0; let failure: Error = fail(ErrorKind::AllocationFailed);
+        while (ok && index < self.entries.len()) {
+            let entry: Entry = self.entries.at(index);
+            if (entry.live) {
+                let read = self.read_value(entry, value.borrow());
+                if (read.is_err()) { failure = read.unwrap_err(); ok = false; break; }
+                let at: i32 = out.len(); let total: i32 = RECORD_HEAD + entry.key_len + entry.value_len;
+                if (out.try_resize(at + RECORD_HEAD, 0).is_err()
+                    || out.try_extend(core::slice::View { values: self.keys.as_slice(), start: entry.key, length: entry.key_len }).is_err()
+                    || out.try_extend(value.as_view()).is_err()) { ok = false; break; }
+                let bytes: [u8] = out.as_slice();
+                bytes[at + 4] = KIND_PUT; put32(bytes, at + 5, entry.key_len as u32); put32(bytes, at + 9, entry.value_len as u32);
+                put32(bytes, at, crc(self.table.as_slice(), bytes, at + 4, total - 4));
+                if (out.len() >= 1048576) {
+                    let wrote = write_all(target, out.as_slice(), 0, out.len(), position);
+                    if (wrote.is_err()) { failure = wrote.unwrap_err(); ok = false; break; }
+                    position += out.len() as i64; out.clear();
+                }
+            }
+            index += 1;
+        }
+        if (ok && out.len() > 0) {
+            let wrote = write_all(target, out.as_slice(), 0, out.len(), position);
+            if (wrote.is_err()) { failure = wrote.unwrap_err(); ok = false; } else { position += out.len() as i64; }
+        }
+        out.destroy(); value.destroy();
+        if (!ok) { return core::result::Err(failure); }
+        return core::result::Ok(position);
+    }
+    // Best effort: fsync the directory holding the log so the rename is durable.
+    fn sync_directory(&self) {
+        let bytes: [u8] = self.path.as_slice(); let end: i32 = self.path.len() - 1;
+        while (end >= 0 && bytes[end] != 47) { end -= 1; }
+        let options: std::file_ops::OpenOptions = std::file_ops::options(); options.directory = true;
+        let dot: [u8; 1] = [46];
+        let path: core::path::Path = core::result::unwrap(core::path::from_bytes_range(dot, 0, 1));
+        if (end == 0) { path = core::result::unwrap(core::path::from_bytes_range(bytes, 0, 1)); }
+        if (end > 0) { path = core::result::unwrap(core::path::from_bytes_range(bytes, 0, end)); }
+        let opened = std::file_ops::open(path, options);
+        if (opened.is_ok()) { let directory: std::file::File = opened.unwrap(); let synced = std::file_ops::sync_all(directory.borrow()); let closed = directory.close(); }
+    }
+
+    // Flushes, syncs and closes. The store is unusable afterwards except for
+    // destroy (close calls it).
+    pub fn close(&self) -> core::result::Result<i32, Error> {
+        if (!self.open) { return core::result::Err(fail(ErrorKind::Closed)); }
+        let synced = self.sync();
+        self.release();
+        return synced;
+    }
+    // Releases memory and the descriptor without flushing (buffered records
+    // are lost, as in a crash).
+    pub fn destroy(&self) { if (self.open) { self.release(); } }
+}
+
+pub fn kind_name(kind: ErrorKind) -> core::slice::View<u8> {
+    let text: str = match (kind) {
+        ErrorKind::Io -> "Io", ErrorKind::NotKvLog -> "NotKvLog", ErrorKind::KeyLimit -> "KeyLimit", ErrorKind::ValueLimit -> "ValueLimit",
+        ErrorKind::AllocationFailed -> "AllocationFailed", ErrorKind::Closed -> "Closed",
+    };
+    let count: i32 = match (kind) {
+        ErrorKind::Io -> 2, ErrorKind::NotKvLog -> 8, ErrorKind::KeyLimit -> 8, ErrorKind::ValueLimit -> 10,
+        ErrorKind::AllocationFailed -> 16, ErrorKind::Closed -> 6,
+    };
+    return core::slice::View { values: core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(text), count), start: 0, length: count };
+}

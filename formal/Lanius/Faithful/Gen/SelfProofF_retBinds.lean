@@ -54,10 +54,10 @@ theorem proof_bind_arg {prog : SrcProgram} {prims : Prims} {ix_bind_arg ix_match
   simp only [src_bind_arg] at h
   faithful [Lanius.Mini.bindArg]
 
-theorem proof_ret_binds {prog : SrcProgram} {prims : Prims} {ix_ret_binds ix_match_ty ix_ret_pattern ix_callee_env : Nat} (fn : prog.funcs[ix_ret_binds]? = some (src_ret_binds ix_match_ty ix_ret_pattern ix_callee_env)) (np : prims.isPrim ix_ret_binds = false)
+theorem proof_ret_binds {prog : SrcProgram} {prims : Prims} {ix_ret_binds ix_match_ty ix_callee_env ix_ret_pattern : Nat} (fn : prog.funcs[ix_ret_binds]? = some (src_ret_binds ix_match_ty ix_callee_env ix_ret_pattern)) (np : prims.isPrim ix_ret_binds = false)
     (ext_match_ty : Certified (∀ {n : Nat}, Stmt_match_ty prog prims ix_match_ty n))
-    (ext_ret_pattern : Certified (∀ {n : Nat}, Stmt_ret_pattern prog prims ix_ret_pattern n))
-    (ext_callee_env : Certified (∀ {n : Nat}, Stmt_callee_env prog prims ix_callee_env n)) {n : Nat} :
+    (ext_callee_env : Certified (∀ {n : Nat}, Stmt_callee_env prog prims ix_callee_env n))
+    (ext_ret_pattern : Certified (∀ {n : Nat}, Stmt_ret_pattern prog prims ix_ret_pattern n)) {n : Nat} :
     Stmt_ret_binds prog prims ix_ret_binds n := by
   intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5
   rcases n with _ | n

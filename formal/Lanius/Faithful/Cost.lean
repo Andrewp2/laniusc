@@ -61,6 +61,7 @@ def qeff (env : Env) : SrcEff → Option (Value × Nat)
       qthen (qeff env scrutinee) fun v => qarms env v ety.typeId 0 binders values
   | .eDivide op left right => qbinary op.toCore (qeff env left) (qeff env right)
   | .eStride _ => none
+  | .arraySlice _ _ => none
 
 def qeffs (env : Env) : List SrcEff → Option (List Value × Nat)
   | [] => some ([], 0)
@@ -212,6 +213,7 @@ theorem peff_eq (hc : ∀ c vs, call c vs = (qc c vs).map Prod.fst) : ∀ (env :
     fst_qthen (peff_eq hc env s) fun v => parms_eq hc env v ety.typeId 0 binders values
   | env, .eDivide op l r => fst_qbinary (peff_eq hc env l) (peff_eq hc env r)
   | env, .eStride _ => rfl
+  | env, .arraySlice _ _ => rfl
 
 theorem peffs_eq (hc : ∀ c vs, call c vs = (qc c vs).map Prod.fst) : ∀ (env : Env) (es : List SrcEff), peffs call env es = (qeffs qc env es).map Prod.fst
   | env, [] => rfl
