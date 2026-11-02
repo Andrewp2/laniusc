@@ -207,7 +207,8 @@ theorem pre_attach {K M : Nat} (hK : K < 2 ^ 62) (hM : M < 2 ^ 62) (n : Nat) :
                         have e44 : Inline.tShr = 44 := rfl
                         simp only [decide_eq_true_eq, e44] at hk
                         split
-                        · intro b4 _ _
+                        · intro b4 g1 g2
+                          clear g1 g2
                           refine ⟨?_, ?_⟩
                           · match m with
                             | 0 => trivial
@@ -215,7 +216,8 @@ theorem pre_attach {K M : Nat} (hK : K < 2 ^ 62) (hM : M < 2 ^ 62) (n : Nat) :
                               simp only [Pre_shr_second, Pre_plus]
                               have := (h3 tok (.inl rfl)).1 hk
                               omega
-                          · intro b5 _ _ b6 _ _
+                          · intro b5 g3 g4 b6 g5 g6
+                            clear g3 g4 g5 g6
                             refine ih m (by omega) _ _ _ _ _ _ ⟨h1, by simp only [List.length_cons]; omega, ?_⟩
                             intro t ht
                             simp only [List.mem_cons] at ht
@@ -262,14 +264,16 @@ theorem pre_attach {K M : Nat} (hK : K < 2 ^ 62) (hM : M < 2 ^ 62) (n : Nat) :
                                 · have c1 : CurOk K M ⟨ps, qs, cur.tokens, cur.index + 1⟩ :=
                                     ⟨by simp only; omega, h2, h3⟩
                                   refine ⟨by omega, ih r (by omega) _ _ _ _ _ _ c1, ?_⟩
-                                  intro b1 _ _
+                                  intro b1 g1 g2
+                                  clear g1 g2
                                   match r with
                                   | 0 => trivial
                                   | u + 1 =>
                                     simp only [Pre_attach_after]
                                     split
                                     · rename_i a ea
-                                      intro b2 _ _
+                                      intro b2 g3 g4
+                                      clear g3 g4
                                       exact ih u (by omega) _ _ _ _ _ _ (attach_ok g _ _ _ _ a c1 ea)
                                     · trivial
                             · trivial

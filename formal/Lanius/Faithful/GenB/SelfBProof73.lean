@@ -416,7 +416,7 @@ theorem bproof_grammar {spW sp : SrcProgram} {prims : Prims} {ix_grammar ix_conc
   have key : qcall sp prims uc (n + 1) ix_grammar [] = some (w, k) ∧ Cost_grammar (n + 1)  = k := by
     rw [qcall_succ np fnW] at h
     rw [qcall_succ np fn]
-    simp only [src_grammar, List.length_cons, List.length_nil, if_true] at h ⊢
+    simp only [src_grammar, List.length_nil, if_true] at h ⊢
     budget Cost_grammar
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) ⟩
 
