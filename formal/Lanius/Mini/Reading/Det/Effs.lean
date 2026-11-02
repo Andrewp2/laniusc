@@ -2,8 +2,12 @@ module
 
 public import Lanius.Mini.Reading.Det.Nested
 import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.callAgrees
+import all Lanius.Mini.Frontend.P.bindsOfTys
 import all Lanius.Mini.Frontend.P.distinct
 import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.textSelf
+import all Lanius.Mini.Frontend.P.textSliceLen
 
 @[expose] public section
 /-! # The reading is deterministic, F1: effectful expressions
@@ -53,6 +57,31 @@ section
 variable {env : FrontEnv}
 
 set_option maxHeartbeats 4000000 in
+theorem litResult_unique {decls : Decls} {scope : List Local} {E : Option Ty} {vs : List MEff} {a b : Ty}
+    (h₁ : LitResult decls scope E vs a) (h₂ : LitResult decls scope E vs b) : a = b := by
+  cases h₁ with
+  | expected => cases h₂; rfl
+  | first t => cases h₂ with
+    | first t' => exact effTy_unique t t'
+
+theorem litBound_unique {scope : List Local} {id : Nat} {s : MEff} {ety rt : Ty} {arms : List CTree}
+    {vs : List MEff} {a b : MEff} (h₁ : LitBound scope id s ety rt arms vs a)
+    (h₂ : LitBound scope id s ety rt arms vs b) : a = b := by
+  cases h₁ with
+  | pure p c => cases h₂ with
+    | pure p' c' =>
+      rw [p] at p'
+      cases p'
+      rw [c] at c'
+      exact Option.some.inj c'
+    | bound p' _ _ => rw [p] at p'; cases p'
+  | bound p _ c => cases h₂ with
+    | pure p' _ => rw [p] at p'; cases p'
+    | bound _ _ c' =>
+      rw [c] at c'
+      cases c'
+      rfl
+
 mutual
 theorem effR_unique : ∀ {scope : List Local} {expected : Option Ty} {c : CTree} {x : MEff},
     EffR env scope expected c x → IdsFresh scope → VariantsNodup env.decls →
@@ -252,6 +281,38 @@ theorem effR_unique : ∀ {scope : List Local} {expected : Option Ty} {c : CTree
       subst eo
       have ag := ih2 arms'
       rw [armsAgree_binders ag, armsAgree_values ag, armsAgree_resultTy ag rt rt']
+    | litMatch _ k' et' lt' _ _ _ _ =>
+      have e := ih1 k'
+      subst e
+      have e := effTy_unique et et'
+      subst e
+      rw [ee] at lt'
+      simp [litTy] at lt'
+    | _ => eff_clash
+  | _, _, _, _, .litMatch pm k et lt it el lr hb, nd, vn, _, h₂ => by
+    have ih1 := fun {y} k' => effR_unique k nd vn (y := y) k'
+    have ih2 := fun {y} k' => effList_unique el nd vn (ys := y) k'
+    cases h₂ with
+    | pure p => exact pure_agree p nd (.litMatch pm k et lt it el lr hb)
+    | «match» _ k' et' ee' _ _ _ _ _ _ _ =>
+      have e := ih1 k'
+      subst e
+      have e := effTy_unique et et'
+      subst e
+      rw [ee'] at lt
+      simp [litTy] at lt
+    | litMatch _ k' et' _ it' el' lr' hb' =>
+      have e := ih1 k'
+      subst e
+      have e := effTy_unique et et'
+      subst e
+      have e := items_unique it it'
+      subst e
+      have e := ih2 el'
+      subst e
+      have e := litResult_unique lr lr'
+      subst e
+      exact litBound_unique hb hb'
     | _ => eff_clash
   | _, _, _, _, .array pa nr he it el len, nd, vn, _, h₂ => by
     have ih1 := fun {y} k' => effList_unique el nd vn (ys := y) k'
@@ -371,12 +432,26 @@ theorem effPathCall_unique : ∀ {scope : List Local} {expected : Option Ty} {pa
       have e := peel_unique pe pe'
       subst e
       rw [localOf_unique lo lo']
+    | len ps' _ _ _ _ _ => exact absurd (pathSpellings_unique ps ps') (by decide)
+    | named pr nb _ _ _ =>
+      exact (nb (by rw [pathRefR_spellings ps pr]; simp [builtinPaths])).elim
+  | _, _, _, _, _, .len ps it pe pe1 lo lt, _, _, _, h₂ => by
+    cases h₂ with
+    | stride ps' _ _ _ _ _ => exact absurd (pathSpellings_unique ps ps') (by decide)
+    | len _ it' pe' _ lo' _ =>
+      have e := items_unique it it'
+      cases e
+      have e := peel_unique pe pe'
+      subst e
+      rw [localOf_unique lo lo']
     | named pr nb _ _ _ =>
       exact (nb (by rw [pathRefR_spellings ps pr]; simp [builtinPaths])).elim
   | _, _, _, _, _, .named pr nb e it en, nd, vn, _, h₂ => by
     have ih1 := fun {y} k' => effNamed_unique en nd vn (y := y) k'
     cases h₂ with
     | stride ps _ _ _ _ _ =>
+      exact (nb (by rw [pathRefR_spellings ps pr]; simp [builtinPaths])).elim
+    | len ps _ _ _ _ _ =>
       exact (nb (by rw [pathRefR_spellings ps pr]; simp [builtinPaths])).elim
     | named pr' _ e' it' en' =>
       have ep := pathRefR_unique pr pr'

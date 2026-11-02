@@ -22,11 +22,11 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_any_nested (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.CTree} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 82 RepCTree) x2 v2 →
-    (RepOption 297 RepBool) (Lanius.Mini.anyNested x0 x1 x2) w
+    (RepOption 302 RepBool) (Lanius.Mini.anyNested x0 x1 x2) w
 
 abbrev Stmt_arm_naming (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.TypeDecl} {x2 : List Nat} {x3 : Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepTypeDecl x1 v1 → (RepList 25 RepNat) x2 v2 → RepCTree x3 v3 →
-    (RepOption 297 RepBool) (Lanius.Mini.armNaming x0 x1 x2 x3) w
+    (RepOption 302 RepBool) (Lanius.Mini.armNaming x0 x1 x2 x3) w
 
 abbrev Stmt_col_fits (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : Lanius.Mini.CTree} {x2 : Lanius.Mini.CTree} {x3 : Bool} {x4 : Bool} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepFrontEnv x0 v0 → RepCTree x1 v1 → RepCTree x2 v2 → RepBool x3 v3 → RepBool x4 v4 →
@@ -66,11 +66,11 @@ abbrev Stmt_is_last (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev Stmt_mentions (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : List Lanius.Mini.CTree} {x2 : List Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → (RepList 82 RepCTree) x1 v1 → (RepList 25 RepNat) x2 v2 →
-    (RepOption 297 RepBool) (Lanius.Mini.mentions x0 x1 x2) w
+    (RepOption 302 RepBool) (Lanius.Mini.mentions x0 x1 x2) w
 
 abbrev Stmt_named_known (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.TypeDecl} {x1 : List Nat} {x2 : Option (List (List Nat))} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepTypeDecl x0 v0 → (RepList 25 RepNat) x1 v1 → (RepOption 138 (RepList 31 (RepList 25 RepNat))) x2 v2 →
-    (RepOption 297 RepBool) (Lanius.Mini.namedKnown x0 x1 x2) w
+    (RepOption 302 RepBool) (Lanius.Mini.namedKnown x0 x1 x2) w
 
 abbrev Stmt_named_path (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CTree} {x1 : List Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepCTree x0 v0 → (RepList 25 RepNat) x1 v1 →
@@ -81,15 +81,15 @@ abbrev Stmt_quiet_arm (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     (RepOption 128 RepCTree) (Lanius.Mini.quietArm x0 x1 x2) w
 
 abbrev Stmt_quiet_in (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Option (List Nat)} {x2 : Lanius.Mini.CTree} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → (RepOption 194 (RepList 25 RepNat)) x1 v1 → RepCTree x2 v2 →
-    (RepOption 297 RepBool) (Lanius.Mini.quietIn x0 x1 x2) w
+  ∀ {x0 : Nat} {x1 : Option (List Nat)} {x2 : Lanius.Mini.CTree} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → (RepOption 195 (RepList 25 RepNat)) x1 v1 → RepCTree x2 v2 →
+    (RepOption 302 RepBool) (Lanius.Mini.quietIn x0 x1 x2) w
 
 abbrev Stmt_quiet_sub (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.CTree} {x1 : Lanius.Mini.CTree} {x2 : Option Bool} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepCTree x0 v0 → RepCTree x1 v1 → (RepOption 297 RepBool) x2 v2 →
+  ∀ {x0 : Lanius.Mini.CTree} {x1 : Lanius.Mini.CTree} {x2 : Option Bool} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepCTree x0 v0 → RepCTree x1 v1 → (RepOption 302 RepBool) x2 v2 →
     (RepOption 128 RepCTree) (Lanius.Mini.quietSub x0 x1 x2) w
 
 abbrev Stmt_row_cons (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Bool} {x1 : Lanius.Mini.CTree} {x2 : Option (List Lanius.Mini.CTree)} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 297 RepBool) x0 v0 → RepCTree x1 v1 → (RepOption 81 (RepList 82 RepCTree)) x2 v2 →
+  ∀ {x0 : Option Bool} {x1 : Lanius.Mini.CTree} {x2 : Option (List Lanius.Mini.CTree)} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 302 RepBool) x0 v0 → RepCTree x1 v1 → (RepOption 81 (RepList 82 RepCTree)) x2 v2 →
     (RepOption 81 (RepList 82 RepCTree)) (Lanius.Mini.rowCons x0 x1 x2) w
 
 abbrev Stmt_row_fits (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -105,7 +105,7 @@ abbrev Stmt_rows_naming (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
     (RepOption 81 (RepList 82 RepCTree)) (Lanius.Mini.rowsNaming x0 x1 x2 x3) w
 
 abbrev Stmt_same_opt_name (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List Nat)} {x1 : Option (List Nat)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 194 (RepList 25 RepNat)) x0 v0 → (RepOption 194 (RepList 25 RepNat)) x1 v1 →
+  ∀ {x0 : Option (List Nat)} {x1 : Option (List Nat)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 195 (RepList 25 RepNat)) x0 v0 → (RepOption 195 (RepList 25 RepNat)) x1 v1 →
     RepBool (Lanius.Mini.sameOptName x0 x1) w
 
 abbrev Stmt_sub_arm (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

@@ -38,10 +38,10 @@ abbrev Stmt_src_enum_id (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
 
 abbrev Stmt_table_weighed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Inst} {x1 : Bool} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 139 RepInst) x0 v0 → RepBool x1 v1 →
-    (RepOption 195 (RepList 139 RepInst)) (Lanius.Mini.tableWeighed x0 x1) w
+    (RepOption 196 (RepList 139 RepInst)) (Lanius.Mini.tableWeighed x0 x1) w
 
 abbrev Stmt_types_weighed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Option (List Lanius.Mini.Inst)} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepDecls x1 v1 → (RepOption 195 (RepList 139 RepInst)) x2 v2 →
-    (RepOption 195 (RepList 139 RepInst)) (Lanius.Mini.typesWeighed x0 x1 x2) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Option (List Lanius.Mini.Inst)} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepDecls x1 v1 → (RepOption 196 (RepList 139 RepInst)) x2 v2 →
+    (RepOption 196 (RepList 139 RepInst)) (Lanius.Mini.typesWeighed x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

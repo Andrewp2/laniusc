@@ -83,6 +83,17 @@ theorem peff_mono (le : CallsLe call call') :
       (fun _ _ hx => bind_mono (fun _ hy => peff_mono le hy) (fun _ _ hy => hy) hx) h
   | _, .eStride _, _, h => by simp [peff] at h
   | _, .arraySlice _ _, _, h => by simp [peff] at h
+  | env, .eIf c _ a b, _, h => by
+    simp only [peff] at h ⊢
+    refine bind_mono (fun _ hx => peff_mono le hx) (fun x w hx => ?_) h
+    refine bind_mono (fun _ hy => hy) (fun bb w hy => ?_) hx
+    cases bb
+    · exact peff_mono le hy
+    · exact peff_mono le hy
+  | env, .eLet id _ value _ body, _, h => by
+    simp only [peff] at h ⊢
+    exact bind_mono (fun _ hx => peff_mono le hx) (fun _ _ hx => peff_mono le hx) h
+  | _, .eLen _, _, h => by simp [peff] at h
 
 theorem peffs_mono (le : CallsLe call call') :
     ∀ {env : Env} {es : List SrcEff} {vs : List Value}, peffs call env es = some vs → peffs call' env es = some vs
@@ -190,6 +201,130 @@ theorem pstmt_mono (le : CallsLe call call') (s : SrcStmt) :
   | matchArm => intro env d h; simp [pstmt] at h
   | unreachable => intro env d h; simp [pstmt] at h
 
+theorem map_mono {α β : Type} {a a' : Option α} {f : α → β} {w : β}
+    (ha : ∀ x, a = some x → a' = some x) (h : a.map f = some w) : a'.map f = some w := by
+  cases a with
+  | none => simp at h
+  | some x => rw [ha x rfl]; exact h
+
+/-- `ploop` keeps its value with tests and bodies that keep theirs, and more fuel. -/
+theorem ploop_mono {test test' : Env → Option Bool} {body body' : Env → Option Out}
+    (ht : ∀ e b, test e = some b → test' e = some b) (hb : ∀ e o, body e = some o → body' e = some o) :
+    ∀ {n n' : Nat} {env : Env} {o : Out}, n ≤ n' → ploop test body n env = some o → ploop test' body' n' env = some o
+  | 0, _, _, _, _, h => by simp [ploop] at h
+  | n + 1, n', env, o, le, h => by
+    obtain ⟨m, rfl⟩ : ∃ m, n' = m + 1 := ⟨n' - 1, by omega⟩
+    rw [ploop] at h ⊢
+    refine bind_mono (fun x hx => ht env x hx) (fun b w hx => ?_) h
+    cases b with
+    | false => exact hx
+    | true =>
+      rw [if_pos rfl] at hx ⊢
+      refine bind_mono (fun x hy => hb env x hy) (fun x w hy => ?_) hx
+      cases x with
+      | next e => exact ploop_mono ht hb (by omega) hy
+      | cont e => exact ploop_mono ht hb (by omega) hy
+      | brk e => exact hy
+      | ret value => exact hy
+
+/-- `mstmt` keeps its value with calls that give more values and more loop fuel. -/
+theorem mstmt_mono (le : CallsLe call call') {fuel fuel' : Nat} (fle : fuel ≤ fuel') (s : SrcStmt) :
+    ∀ {env : Env} {o : Out}, mstmt call fuel env s = some o → mstmt call' fuel' env s = some o := by
+  induction s with
+  | nop => exact fun h => h
+  | «let» id ty value body ih =>
+    intro env o h
+    simp only [mstmt] at h ⊢
+    exact bind_mono (fun _ hx => hx) (fun _ _ hx => map_mono (fun _ hy => ih hy) hx) h
+  | letStruct id ty fields body ih =>
+    intro env o h
+    simp only [mstmt] at h ⊢
+    exact bind_mono (fun _ hx => hx) (fun _ _ hx => map_mono (fun _ hy => ih hy) hx) h
+  | letCall id ty callee args body ih =>
+    intro env o h
+    simp only [mstmt] at h ⊢
+    exact bind_mono (fun _ hx => bind_mono (fun _ hy => hy) (fun _ _ hc => le _ _ _ hc) hx)
+      (fun _ _ hx => map_mono (fun _ hy => ih hy) hx) h
+  | letEnum id ty variant payload body ih =>
+    intro env o h
+    simp only [mstmt] at h ⊢
+    exact bind_mono (fun _ hx => hx) (fun _ _ hx => map_mono (fun _ hy => ih hy) hx) h
+  | letMatch => intro env o h; simp [mstmt] at h
+  | set => exact fun h => h
+  | setField => intro env o h; simp [mstmt] at h
+  | setCall => intro env o h; simp [mstmt] at h
+  | «then» first second ih1 ih2 =>
+    intro env o h
+    simp only [mstmt] at h ⊢
+    refine bind_mono (fun _ hx => ih1 hx) (fun x w hx => ?_) h
+    cases x with
+    | next e => exact ih2 hx
+    | brk e => exact hx
+    | cont e => exact hx
+    | ret value => exact hx
+  | «if» condition thenBranch elseBranch ih1 ih2 =>
+    intro env o h
+    simp only [mstmt] at h ⊢
+    refine bind_mono (fun _ hx => hx) (fun b w hx => ?_) h
+    cases b
+    · exact ih2 hx
+    · exact ih1 hx
+  | «while» condition body ih =>
+    intro env o h
+    simp only [mstmt] at h ⊢
+    exact ploop_mono (fun _ _ hx => hx) (fun _ _ hx => ih hx) fle h
+  | «return» => exact fun h => h
+  | letAlloc => intro env o h; simp [mstmt] at h
+  | letLoad => intro env o h; simp [mstmt] at h
+  | setByte => intro env o h; simp [mstmt] at h
+  | free => intro env o h; simp [mstmt] at h
+  | letSlice => intro env o h; simp [mstmt] at h
+  | letIndex => intro env o h; simp [mstmt] at h
+  | setIndex => intro env o h; simp [mstmt] at h
+  | letEval id ty value body ih =>
+    intro env o h
+    simp only [mstmt] at h ⊢
+    exact bind_mono (fun _ hx => peff_mono le hx) (fun _ _ hx => map_mono (fun _ hy => ih hy) hx) h
+  | setEval =>
+    intro env o h
+    simp only [mstmt] at h ⊢
+    exact bind_mono (fun _ hx => peff_mono le hx) (fun _ _ hx => hx) h
+  | ifEval condition thenBranch elseBranch ih1 ih2 =>
+    intro env o h
+    simp only [mstmt] at h ⊢
+    refine bind_mono (fun _ hx => bind_mono (fun _ hy => peff_mono le hy) (fun _ _ hy => hy) hx)
+      (fun b w hx => ?_) h
+    cases b
+    · exact ih2 hx
+    · exact ih1 hx
+  | whileEval condition body ih =>
+    intro env o h
+    simp only [mstmt] at h ⊢
+    exact ploop_mono (fun _ _ hx => bind_mono (fun _ hy => peff_mono le hy) (fun _ _ hy => hy) hx)
+      (fun _ _ hx => ih hx) fle h
+  | returnEval value =>
+    intro env o h
+    simp only [mstmt, Option.map_eq_some_iff] at h ⊢
+    obtain ⟨v, hv, rfl⟩ := h
+    exact ⟨v, peff_mono le hv, rfl⟩
+  | discard value =>
+    intro env o h
+    simp only [mstmt, Option.map_eq_some_iff] at h ⊢
+    obtain ⟨v, hv, rfl⟩ := h
+    exact ⟨v, peff_mono le hv, rfl⟩
+  | setIndexEval => intro env o h; simp [mstmt] at h
+  | setFieldEval => intro env o h; simp [mstmt] at h
+  | returnUnit => exact fun h => h
+  | «assert» condition =>
+    intro env o h
+    simp only [mstmt] at h ⊢
+    exact bind_mono (fun _ hx => bind_mono (fun _ hy => peff_mono le hy) (fun _ _ hy => hy) hx)
+      (fun _ _ hx => hx) h
+  | «break» => exact fun h => h
+  | «continue» => exact fun h => h
+  | matchArm => intro env o h; simp [mstmt] at h
+  | unreachable => intro env o h; simp [mstmt] at h
+
 end
 
 /-- `pcall` keeps its value with more fuel. -/
@@ -211,7 +346,7 @@ theorem pcall_mono (sp : SrcProgram) (prims : Prims) :
       · split at h
         · rename_i len
           rw [if_pos len]
-          exact bind_mono (fun _ hx => pstmt_mono (fun _ _ _ hc => pcall_mono sp prims n hc (by omega)) _ hx)
+          exact bind_mono (fun _ hx => mstmt_mono (fun _ _ _ hc => pcall_mono sp prims n hc (by omega)) (by omega) _ hx)
             (fun _ _ hx => hx) h
         · simp at h
 

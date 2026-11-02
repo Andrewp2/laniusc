@@ -189,6 +189,10 @@ def SrcEff.toCore : SrcEff → Core.Expr
   | .eDivide op left right => .binary op.toCore left.toCore right.toCore
   | .eStride slice => .intrinsic .sliceStride (.local slice)
   | .arraySlice element array => .arrayToSlice element.toCore (.local array)
+  | .eIf condition _ thenValue elseValue =>
+      .matchValue condition.toCore [(.literal (.boolean true), thenValue.toCore), (.wildcard, elseValue.toCore)]
+  | .eLet id _ value _ body => .matchValue value.toCore [(.bind id, body.toCore)]
+  | .eLen slice => .intrinsic .sliceLength (.local slice)
 
 def SrcEff.toCoreList : List SrcEff → List Core.Expr
   | [] => []

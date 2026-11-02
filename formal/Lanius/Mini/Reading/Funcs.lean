@@ -4,6 +4,8 @@ public import Lanius.Mini.Reading.Stmts
 public import Lanius.Mini.Reading.Bounds
 import all Lanius.Mini.Compiler.P.arithShiftRight
 import all Lanius.Mini.Frontend.P.blockArmsOf
+import all Lanius.Mini.Frontend.P.litBound
+import all Lanius.Mini.Frontend.P.litIf
 import all Lanius.Mini.Frontend.P.callParts
 import all Lanius.Mini.Frontend.P.projection
 import all Lanius.Mini.Frontend.P.collect
@@ -11,6 +13,9 @@ import all Lanius.Mini.Frontend.P.compoundOf
 import all Lanius.Mini.Frontend.P.consTreeTail
 import all Lanius.Mini.Frontend.P.divergeArm
 import all Lanius.Mini.Frontend.P.bindsOfTys
+import all Lanius.Mini.Frontend.P.litEffMatch
+import all Lanius.Mini.Frontend.P.litWants
+import all Lanius.Mini.Frontend.P.litWildValue
 import all Lanius.Mini.Frontend.P.effNamedTys
 import all Lanius.Mini.Frontend.P.externBody
 import all Lanius.Mini.Frontend.P.fieldTyAt

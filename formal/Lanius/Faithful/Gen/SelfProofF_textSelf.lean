@@ -116,9 +116,9 @@ theorem proof_spelled5 {prog : SrcProgram} {prims : Prims} {ix_spelled5 ix_unbox
   simp only [src_spelled5] at h
   faithful [Lanius.Mini.spelled5]
 
-theorem proof_text_alloc {prog : SrcProgram} {prims : Prims} {ix_text_alloc ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_alloc]? = some (src_text_alloc ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_alloc = false)
-    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
-    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+theorem proof_text_alloc {prog : SrcProgram} {prims : Prims} {ix_text_alloc ix_single_of_usize ix_cons_of_usize : Nat} (fn : prog.funcs[ix_text_alloc]? = some (src_text_alloc ix_single_of_usize ix_cons_of_usize)) (np : prims.isPrim ix_text_alloc = false)
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n))
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n)) {n : Nat} :
     Stmt_text_alloc prog prims ix_text_alloc n := by
   intro w h
   rcases n with _ | n
@@ -127,9 +127,9 @@ theorem proof_text_alloc {prog : SrcProgram} {prims : Prims} {ix_text_alloc ix_c
   simp only [src_text_alloc] at h
   faithful [Lanius.Mini.textAlloc]
 
-theorem proof_text_allocator {prog : SrcProgram} {prims : Prims} {ix_text_allocator ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_allocator]? = some (src_text_allocator ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_allocator = false)
-    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
-    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+theorem proof_text_allocator {prog : SrcProgram} {prims : Prims} {ix_text_allocator ix_single_of_usize ix_cons_of_usize : Nat} (fn : prog.funcs[ix_text_allocator]? = some (src_text_allocator ix_single_of_usize ix_cons_of_usize)) (np : prims.isPrim ix_text_allocator = false)
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n))
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n)) {n : Nat} :
     Stmt_text_allocator prog prims ix_text_allocator n := by
   intro w h
   rcases n with _ | n
@@ -138,9 +138,9 @@ theorem proof_text_allocator {prog : SrcProgram} {prims : Prims} {ix_text_alloca
   simp only [src_text_allocator] at h
   faithful [Lanius.Mini.textAllocator]
 
-theorem proof_text_assert {prog : SrcProgram} {prims : Prims} {ix_text_assert ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_assert]? = some (src_text_assert ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_assert = false)
-    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
-    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+theorem proof_text_assert {prog : SrcProgram} {prims : Prims} {ix_text_assert ix_single_of_usize ix_cons_of_usize : Nat} (fn : prog.funcs[ix_text_assert]? = some (src_text_assert ix_single_of_usize ix_cons_of_usize)) (np : prims.isPrim ix_text_assert = false)
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n))
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n)) {n : Nat} :
     Stmt_text_assert prog prims ix_text_assert n := by
   intro w h
   rcases n with _ | n
@@ -149,9 +149,9 @@ theorem proof_text_assert {prog : SrcProgram} {prims : Prims} {ix_text_assert ix
   simp only [src_text_assert] at h
   faithful [Lanius.Mini.textAssert]
 
-theorem proof_text_dealloc {prog : SrcProgram} {prims : Prims} {ix_text_dealloc ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_dealloc]? = some (src_text_dealloc ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_dealloc = false)
-    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
-    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+theorem proof_text_dealloc {prog : SrcProgram} {prims : Prims} {ix_text_dealloc ix_single_of_usize ix_cons_of_usize : Nat} (fn : prog.funcs[ix_text_dealloc]? = some (src_text_dealloc ix_single_of_usize ix_cons_of_usize)) (np : prims.isPrim ix_text_dealloc = false)
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n))
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n)) {n : Nat} :
     Stmt_text_dealloc prog prims ix_text_dealloc n := by
   intro w h
   rcases n with _ | n
@@ -160,9 +160,9 @@ theorem proof_text_dealloc {prog : SrcProgram} {prims : Prims} {ix_text_dealloc 
   simp only [src_text_dealloc] at h
   faithful [Lanius.Mini.textDealloc]
 
-theorem proof_text_self {prog : SrcProgram} {prims : Prims} {ix_text_self ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_self]? = some (src_text_self ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_self = false)
-    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
-    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+theorem proof_text_self {prog : SrcProgram} {prims : Prims} {ix_text_self ix_single_of_usize ix_cons_of_usize : Nat} (fn : prog.funcs[ix_text_self]? = some (src_text_self ix_single_of_usize ix_cons_of_usize)) (np : prims.isPrim ix_text_self = false)
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n))
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n)) {n : Nat} :
     Stmt_text_self prog prims ix_text_self n := by
   intro w h
   rcases n with _ | n
@@ -171,9 +171,9 @@ theorem proof_text_self {prog : SrcProgram} {prims : Prims} {ix_text_self ix_con
   simp only [src_text_self] at h
   faithful [Lanius.Mini.textSelf]
 
-theorem proof_text_slice_from_raw_parts {prog : SrcProgram} {prims : Prims} {ix_text_slice_from_raw_parts ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_slice_from_raw_parts]? = some (src_text_slice_from_raw_parts ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_slice_from_raw_parts = false)
-    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
-    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+theorem proof_text_slice_from_raw_parts {prog : SrcProgram} {prims : Prims} {ix_text_slice_from_raw_parts ix_single_of_usize ix_cons_of_usize : Nat} (fn : prog.funcs[ix_text_slice_from_raw_parts]? = some (src_text_slice_from_raw_parts ix_single_of_usize ix_cons_of_usize)) (np : prims.isPrim ix_text_slice_from_raw_parts = false)
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n))
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n)) {n : Nat} :
     Stmt_text_slice_from_raw_parts prog prims ix_text_slice_from_raw_parts n := by
   intro w h
   rcases n with _ | n
@@ -182,9 +182,9 @@ theorem proof_text_slice_from_raw_parts {prog : SrcProgram} {prims : Prims} {ix_
   simp only [src_text_slice_from_raw_parts] at h
   faithful [Lanius.Mini.textSliceFromRawParts]
 
-theorem proof_text_slice_stride {prog : SrcProgram} {prims : Prims} {ix_text_slice_stride ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_slice_stride]? = some (src_text_slice_stride ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_slice_stride = false)
-    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
-    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+theorem proof_text_slice_stride {prog : SrcProgram} {prims : Prims} {ix_text_slice_stride ix_single_of_usize ix_cons_of_usize : Nat} (fn : prog.funcs[ix_text_slice_stride]? = some (src_text_slice_stride ix_single_of_usize ix_cons_of_usize)) (np : prims.isPrim ix_text_slice_stride = false)
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n))
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n)) {n : Nat} :
     Stmt_text_slice_stride prog prims ix_text_slice_stride n := by
   intro w h
   rcases n with _ | n

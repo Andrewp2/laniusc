@@ -398,6 +398,18 @@ class Checker:
             raise Impure('stride')
         if c == 'arraySlice':
             raise Impure('array slice')
+        if c == 'eIf':
+            self.boolean(self.eff(tenv, a[0]), 'condition')
+            then_t, else_t = self.eff(tenv, a[2]), self.eff(tenv, a[3])
+            if then_t != else_t:
+                raise Impure('conditional of two types')
+            return then_t
+        if c == 'eLet':
+            inner = list(tenv)
+            inner.insert(0, (a[0][1], self.eff(tenv, a[2])))
+            return self.eff(inner, a[4])
+        if c == 'eLen':
+            raise Impure('slice length')
         raise ValueError(c)
 
     def stmt(self, ret, tenv, s):
@@ -442,7 +454,36 @@ class Checker:
         if c == 'assert':
             self.boolean(self.eff(tenv, a[0]), 'assertion')
             return
+        if c in ('set', 'setEval'):
+            t = self.expr(tenv, a[1]) if c == 'set' else self.eff(tenv, a[1])
+            if t != self.get(tenv, a[0][1]):
+                raise Impure('assignment of another type')
+            return
+        if c in ('while', 'whileEval'):
+            self.boolean(self.expr(tenv, a[0]) if c == 'while' else self.eff(tenv, a[0]), 'condition')
+            return self.stmt(ret, tenv, a[1])
+        if c in ('break', 'continue'):
+            return
         raise Impure(f'statement `{c}`')
+
+    def loose_jump(self, s):
+        """`looseJump`: a `break` or `continue` outside every loop."""
+        c, a = ctor(s)
+        if c in ('break', 'continue'):
+            return True
+        if c in ('let', 'letStruct', 'letEval', 'letAlloc', 'letLoad'):
+            return self.loose_jump(a[3])
+        if c in ('letCall', 'letEnum', 'letSlice', 'letIndex'):
+            return self.loose_jump(a[4])
+        if c == 'letMatch':
+            return self.loose_jump(a[5])
+        if c == 'then':
+            return self.loose_jump(a[0]) or self.loose_jump(a[1])
+        if c in ('if', 'ifEval'):
+            return self.loose_jump(a[1]) or self.loose_jump(a[2])
+        if c == 'matchArm':
+            return self.loose_jump(a[6]) or self.loose_jump(a[7])
+        return False
 
     def check(self, i):
         f = self.prog.funcs[i]
@@ -450,6 +491,8 @@ class Checker:
         for p in f['params']:
             tenv.insert(0, p)
         self.stmt(f['ret'], tenv, f['body'])
+        if self.loose_jump(f['body']):
+            raise Impure('a `break` or `continue` outside every loop')
 
 
 # ---------------------------------------------------------------- LiveFn, in Python
@@ -518,8 +561,15 @@ class LiveChecker:
             self.eff(a[0])
         elif c == 'eCast':
             self.eff(a[1])
-        elif c in ('eIndex', 'eStride', 'arraySlice'):
+        elif c in ('eIndex', 'eStride', 'arraySlice', 'eLen'):
             raise Dead(c)
+        elif c == 'eIf':
+            self.eff(a[0])
+            self.eff(a[2])
+            self.eff(a[3])
+        elif c == 'eLet':
+            self.eff(a[2])
+            self.eff(a[4])
         elif c == 'eStruct':
             for x in a[1][1]:
                 self.eff(x)
@@ -583,11 +633,15 @@ class LiveChecker:
             return self.stmt(unit, a[2])
         if c in ('returnEval', 'discard'):
             return self.eff(a[0])
+        if c == 'set':
+            return self.expr(a[1])
+        if c == 'setEval':
+            return self.eff(a[1])
         raise Dead(f'statement `{c}`')
 
     def never_next(self, s):
         c, a = ctor(s)
-        if c in ('nop', 'discard', 'assert'):
+        if c in ('nop', 'discard', 'assert', 'set', 'setEval'):
             return False
         if c in ('let', 'letStruct', 'letEval'):
             return self.never_next(a[3])
@@ -666,8 +720,12 @@ class Declarer:
 
     def eff_types(self, e):
         c, a = ctor(e)
-        if c in ('ePure', 'eStride', 'arraySlice'):
+        if c in ('ePure', 'eStride', 'arraySlice', 'eLen'):
             return []
+        if c == 'eIf':
+            return self.eff_types(a[0]) + self.eff_types(a[2]) + self.eff_types(a[3])
+        if c == 'eLet':
+            return [self.prog.type_of(a[1])] + self.eff_types(a[2]) + self.eff_types(a[4])
         if c == 'eCall':
             return [t for x in a[1][1] for t in self.eff_types(x)]
         if c in ('eApply', 'eDivide'):

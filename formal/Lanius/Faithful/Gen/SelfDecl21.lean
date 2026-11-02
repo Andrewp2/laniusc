@@ -1,41 +1,37 @@
 module
 
 public import Lanius.Faithful.Gen.SelfPureTab
-public import Lanius.Faithful.Gen.SelfSrc0
+public import Lanius.Faithful.Gen.SelfSrc1
 public import Lanius.Faithful.Gen.SelfSrc2
+public import Lanius.Faithful.Gen.SelfSrc3
 public import Lanius.Faithful.Gen.SelfSrc5
 public import Lanius.Faithful.Gen.SelfSrc6
-public import Lanius.Faithful.Gen.SelfSrc7
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_charOpen
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_pPathMore
-public import Lanius.Faithful.Gen.SelfSrcF_Inline_positionAt
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_variantsNamedAt
-public import Lanius.Faithful.Gen.SelfSrcF_argView
+public import Lanius.Faithful.Gen.SelfSrcF_anyNested
 public import Lanius.Faithful.Gen.SelfSrcF_bindsOfTys
 public import Lanius.Faithful.Gen.SelfSrcF_blockArmsOf
 public import Lanius.Faithful.Gen.SelfSrcF_callParts
-public import Lanius.Faithful.Gen.SelfSrcF_consTreeTail
-public import Lanius.Faithful.Gen.SelfSrcF_divergeArm
 public import Lanius.Faithful.Gen.SelfSrcF_fieldTyAt
-public import Lanius.Faithful.Gen.SelfSrcF_flExpFirst
-public import Lanius.Faithful.Gen.SelfSrcF_flLog2Or0
-public import Lanius.Faithful.Gen.SelfSrcF_flNatHalf
-public import Lanius.Faithful.Gen.SelfSrcF_flRoundUp
-public import Lanius.Faithful.Gen.SelfSrcF_floatTyped
 public import Lanius.Faithful.Gen.SelfSrcF_fnInstRet
+public import Lanius.Faithful.Gen.SelfSrcF_forRange
 public import Lanius.Faithful.Gen.SelfSrcF_hasConst
-public import Lanius.Faithful.Gen.SelfSrcF_intLiteral
 public import Lanius.Faithful.Gen.SelfSrcF_isPathCall
 public import Lanius.Faithful.Gen.SelfSrcF_isTryEnum
+public import Lanius.Faithful.Gen.SelfSrcF_isUnderscore
+public import Lanius.Faithful.Gen.SelfSrcF_litBound
+public import Lanius.Faithful.Gen.SelfSrcF_litEffMatch
+public import Lanius.Faithful.Gen.SelfSrcF_litIf
+public import Lanius.Faithful.Gen.SelfSrcF_litWildValue
 public import Lanius.Faithful.Gen.SelfSrcF_matchLetHead
-public import Lanius.Faithful.Gen.SelfSrcF_matchTysOrNone
+public import Lanius.Faithful.Gen.SelfSrcF_matchStmtIf
 public import Lanius.Faithful.Gen.SelfSrcF_noBlock
-public import Lanius.Faithful.Gen.SelfSrcF_nullConst
 public import Lanius.Faithful.Gen.SelfSrcF_paramGoals
 public import Lanius.Faithful.Gen.SelfSrcF_pickTy
 public import Lanius.Faithful.Gen.SelfSrcF_projection
 public import Lanius.Faithful.Gen.SelfSrcF_repeatEff
-public import Lanius.Faithful.Gen.SelfSrcF_retBinds
+public import Lanius.Faithful.Gen.SelfSrcF_rootInsts
 public import Lanius.Faithful.Gen.SelfSrcF_scalarOf
 public import Lanius.Faithful.Gen.SelfSrcF_setIndexOrEval
 public import Lanius.Faithful.Gen.SelfSrcF_sliceHead
@@ -45,45 +41,42 @@ public import Lanius.Faithful.Gen.SelfSrcF_tryLet
 public import Lanius.Faithful.Gen.SelfSrcF_tryLetHead
 public import Lanius.Faithful.Gen.SelfSrcF_tryLocalOf
 public import Lanius.Faithful.Gen.SelfSrcF_variantLetHead
+public import Lanius.Faithful.Gen.SelfSrcF_variantOfDecl
 public import Lanius.Faithful.Gen.SelfSrcF_whileEvalOf
 public import Lanius.Faithful.Gen.SelfSrcF_wideOf
 public import Lanius.Faithful.Gen.SelfSrcRest
 import all Lanius.Faithful.Gen.SelfPureTab
-import all Lanius.Faithful.Gen.SelfSrc0
+import all Lanius.Faithful.Gen.SelfSrc1
 import all Lanius.Faithful.Gen.SelfSrc2
+import all Lanius.Faithful.Gen.SelfSrc3
 import all Lanius.Faithful.Gen.SelfSrc5
 import all Lanius.Faithful.Gen.SelfSrc6
-import all Lanius.Faithful.Gen.SelfSrc7
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_charOpen
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pPathMore
-import all Lanius.Faithful.Gen.SelfSrcF_Inline_positionAt
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_variantsNamedAt
-import all Lanius.Faithful.Gen.SelfSrcF_argView
+import all Lanius.Faithful.Gen.SelfSrcF_anyNested
 import all Lanius.Faithful.Gen.SelfSrcF_bindsOfTys
 import all Lanius.Faithful.Gen.SelfSrcF_blockArmsOf
 import all Lanius.Faithful.Gen.SelfSrcF_callParts
-import all Lanius.Faithful.Gen.SelfSrcF_consTreeTail
-import all Lanius.Faithful.Gen.SelfSrcF_divergeArm
 import all Lanius.Faithful.Gen.SelfSrcF_fieldTyAt
-import all Lanius.Faithful.Gen.SelfSrcF_flExpFirst
-import all Lanius.Faithful.Gen.SelfSrcF_flLog2Or0
-import all Lanius.Faithful.Gen.SelfSrcF_flNatHalf
-import all Lanius.Faithful.Gen.SelfSrcF_flRoundUp
-import all Lanius.Faithful.Gen.SelfSrcF_floatTyped
 import all Lanius.Faithful.Gen.SelfSrcF_fnInstRet
+import all Lanius.Faithful.Gen.SelfSrcF_forRange
 import all Lanius.Faithful.Gen.SelfSrcF_hasConst
-import all Lanius.Faithful.Gen.SelfSrcF_intLiteral
 import all Lanius.Faithful.Gen.SelfSrcF_isPathCall
 import all Lanius.Faithful.Gen.SelfSrcF_isTryEnum
+import all Lanius.Faithful.Gen.SelfSrcF_isUnderscore
+import all Lanius.Faithful.Gen.SelfSrcF_litBound
+import all Lanius.Faithful.Gen.SelfSrcF_litEffMatch
+import all Lanius.Faithful.Gen.SelfSrcF_litIf
+import all Lanius.Faithful.Gen.SelfSrcF_litWildValue
 import all Lanius.Faithful.Gen.SelfSrcF_matchLetHead
-import all Lanius.Faithful.Gen.SelfSrcF_matchTysOrNone
+import all Lanius.Faithful.Gen.SelfSrcF_matchStmtIf
 import all Lanius.Faithful.Gen.SelfSrcF_noBlock
-import all Lanius.Faithful.Gen.SelfSrcF_nullConst
 import all Lanius.Faithful.Gen.SelfSrcF_paramGoals
 import all Lanius.Faithful.Gen.SelfSrcF_pickTy
 import all Lanius.Faithful.Gen.SelfSrcF_projection
 import all Lanius.Faithful.Gen.SelfSrcF_repeatEff
-import all Lanius.Faithful.Gen.SelfSrcF_retBinds
+import all Lanius.Faithful.Gen.SelfSrcF_rootInsts
 import all Lanius.Faithful.Gen.SelfSrcF_scalarOf
 import all Lanius.Faithful.Gen.SelfSrcF_setIndexOrEval
 import all Lanius.Faithful.Gen.SelfSrcF_sliceHead
@@ -93,6 +86,7 @@ import all Lanius.Faithful.Gen.SelfSrcF_tryLet
 import all Lanius.Faithful.Gen.SelfSrcF_tryLetHead
 import all Lanius.Faithful.Gen.SelfSrcF_tryLocalOf
 import all Lanius.Faithful.Gen.SelfSrcF_variantLetHead
+import all Lanius.Faithful.Gen.SelfSrcF_variantOfDecl
 import all Lanius.Faithful.Gen.SelfSrcF_whileEvalOf
 import all Lanius.Faithful.Gen.SelfSrcF_wideOf
 import all Lanius.Faithful.Gen.SelfSrcRest
@@ -130,12 +124,12 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 
 /-- Functions 2100 to 2199, and their signature entries. -/
-def dpart21 : List SrcFunc := [(src_call_path_head 155 406 615 1865 1866 1868 2026 2216 2217), (src_call_let_head), (src_call_parts 1176 2105), (src_index_let_head), (src_struct_head), (src_pure_list 1176 1345 1346 1757 2105), (src_variant_let_head), (src_match_let_head), (src_pure_arms 534 1176 1352 1353 1757 2108), (src_is_try_method 152 155 1683 1685 1740 1741 1743 1765 1874 2130), (src_try_method_of 56 155 596 1181 1484 1762 2131), (src_is_try_local 152 155 1740 2130), (src_try_local_of 56 155 596 1181 1484 1687 2218), (src_pure_inferred), (src_try_rest 1189 1190 2219), (src_stmt_unless), (src_arm_body_of 56 155 1505 2095 2220), (src_set_try_or_eval 1484 1547 1576 2123 2221), (src_checked_stmt), (src_has_ty), (src_field_ty_at 958 959), (src_field_eval_stmt 2222), (src_set_index_eval_of 2115 2223 2224), (src_set_eval_of 2102 2225), (src_compound_eff 1861 1863 2226 2227 2228), (src_compound_field_eval 1576 2118 2119 2120 2121 2124), (src_free_shifted), (src_shift_of 304 2229 2230 2231), (src_exprs_of 103 1345 1638 2128 2232), (src_assert_of), (src_p_postfix_try), (src_tried_call 1892 2233), (src_param_spelling 1108 1621 1965 2234), (src_bind_ty 1547 2034 2135 2235), (src_bare_prim 1621 1965 2236), (src_same_or_none), (src_match_decl 56 2237), (src_find_bind_at 897 2034), (src_unbox_of_mini_selfhost_List_mini_selfhost_Bind 2238), (src_has_wide), (src_wide_of 2239 2240 2241 2242), (src_concat_of_mini_selfhost_Token 166 1081 2141), (src_uint_in_range 1542), (src_null_const), (src_sint_const 1338 1612), (src_negated_int), (src_negated_float 304 1464 2243), (src_neg_sint_const 2144), (src_float_typed 1464), (src_char_close_opt 2043), (src_escaped_byte), (src_char_end), (src_char_tail_at 56 75 105 2043 2044), (src_fl_carry_out 1753 2055), (src_cons_of_bool 2172), (src_fl_xor), (src_fl_carry), (src_fl_nat_odd 56 2157), (src_fl_nat_half 56 75 2158), (src_fl_exp_sign 76 2244), (src_fl_low_bit), (src_core_mem_typed_slice_from_storage_of_mini_selfhost_List_bool), (src_fl_log2_or0 1953), (src_fl_sat 56), (src_fl_bit), (src_fl_ratio_ok 2163 2166 2168), (src_fl_shl 56 2154 2166), (src_fl_divmod 1753 2051 2167 2245), (src_fl_less 1753 2051 2168 2246), (src_fl_odd), (src_fl_round_up 1753 2045), (src_fl_to_nat 75 105 2051 2164 2171), (src_boxed_of_mini_selfhost_List_bool 50 2161 2247), (src_is_scalar_owner 621 622 1108), (src_is_owner_at 162 1108 1147), (src_find_fn_at 75 897 902 2059), (src_explicit_inst 359 423 1182 1564 2248), (src_checked_effs), (src_param_expects 904 1392 1393 2182), (src_views_of 2249), (src_eff_called 2069 2250 2251 2252), (src_skip_expects 1900), (src_param_patterns 154 155 2253), (src_eff_inferred 2250 2254), (src_eff_args_bound 56 103 1176 1382 1576 1880 1931 2119 2184 2255 2256 2257 2258 2259 2260), (src_ret_binds 1814 2188 2195), (src_binds_zip 534 634 2186 2235), (src_fit_ty 56 152 154 155 1488 1489 1494 1497 1929 2187 2261), (src_callee_env 259 425 1393), (src_is_misfit), (src_projection 75 935 957), (src_pure_local), (src_match_tys_next 56 2071), (src_concat_of_mini_selfhost_VariantAt 1979 2073 2193), (src_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_VariantAt), (src_ret_pattern 152 155 1376), (src_unbox_of_mini_selfhost_List_mini_selfhost_EffArm 2262), (src_order_by 2206 2263), (src_empty_of_mini_selfhost_EffArm), (src_cons_eff_arm 2264)]
+def dpart21 : List SrcFunc := [(src_is_type_owner 1571 1630 2231 2232), (src_is_some_index), (src_find_fn 268 2233), (src_eff_found 56 160 656 2105), (src_eff_free 56 1197 1391 1789 1829 1897 1993 2105 2234 2235 2236 2237), (src_eff_infer 56 430 432 911 1776 1789 1897 2236 2237 2238 2239 2240 2241 2242 2243), (src_binds_of_tys 2244), (src_impl_fit 1829 2245 2246), (src_unique_found), (src_no_method 268 904 2107 2109 2247), (src_field_value 1197 1894 2111 2248), (src_eff_local 1765 2249), (src_effs_tys 432 1183 1515 1909 2112), (src_named_inferred 646), (src_match_tys 56 103 642 1828 2250), (src_imported_variants_at 909 1904 2005 2251), (src_boxed_of_mini_selfhost_List_mini_selfhost_VariantAt 50 2117 2252), (src_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_VariantAt), (src_variant_of_decl 1667), (src_local_ty), (src_field_ty 965 966), (src_bare_int 304 1456 1465 1467 2121), (src_fn_inst_ret 911 959 1195 1388 1402 2253), (src_index_elem 944), (src_find_local_id_at 2017), (src_result_ty), (src_arm_binders 259 1114 2126 2254), (src_arm_values 1391 1392 2127 2254), (src_match_order 2141 2255), (src_eff_arms 56 103 2032 2129 2256 2257 2258), (src_empty_of_mini_selfhost_VariantTy), (src_cons_of_mini_selfhost_VariantTy 2259), (src_lit_chain 103 1183 2132 2169 2170 2260), (src_lit_bound 1766), (src_p_pattern_int), (src_p_pattern_true), (src_p_pattern_false), (src_arm_block_list 155 1935 2261), (src_is_block_arm 2137), (src_if_one), (src_match_stmt_enum 56 604 1188 2020 2262), (src_any_nested 103 2141 2263 2264), (src_stmt_order_by 2265 2266), (src_arm_binding 138 152 154 155 413 2267 2268 2269 2270), (src_arm_stmt 2271), (src_bound_scope), (src_let_body_of 56 152 155 1711 1797 1798 2272 2273 2274), (src_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_VariantTy), (src_call_path_head 155 413 623 1880 1881 1883 2066 2275 2276), (src_call_let_head), (src_call_parts 1183 2153), (src_index_let_head), (src_struct_head), (src_pure_list 1183 1354 1355 1765 2153), (src_variant_let_head), (src_match_let_head), (src_pure_arms 539 1183 1361 1362 1765 2156), (src_is_try_method 152 155 1692 1694 1749 1750 1752 1773 1891 2187), (src_try_method_of 56 155 604 1188 1493 1770 2188), (src_is_try_local 152 155 1749 2187), (src_try_local_of 56 155 604 1188 1493 1696 2277), (src_pure_inferred), (src_try_rest 1196 1197 2278), (src_lit_match_head 1493 2111 2279), (src_is_wild_arm 152 155 1754 2267 2269 2280), (src_lit_last), (src_lit_body_of 56 155 1514 1797 1798 1806 2137 2273 2274), (src_lit_if 1196), (src_lit_cond 152 603 604 1347 1556 1698 2134 2135 2136 2281), (src_is_true_arm 152 155 2135), (src_is_false_arm 152 155 2136), (src_stmt_unless), (src_array_local_of), (src_arm_body_of 56 155 1514 2137 2282), (src_set_try_or_eval 1493 1556 1585 2180 2283), (src_checked_stmt), (src_has_ty), (src_field_ty_at 965 966), (src_field_eval_stmt 2284), (src_set_index_eval_of 2171 2285 2286), (src_set_eval_of 2150 2287), (src_compound_eff 1876 1878 2288 2289 2290), (src_compound_field_eval 1585 2175 2176 2177 2178 2181), (src_free_shifted), (src_shift_of 304 2291 2292 2293), (src_exprs_of 103 1354 1647 2185 2294), (src_assert_of), (src_p_postfix_try), (src_tried_call 1909 2295), (src_param_spelling 1115 1630 1993 2296), (src_bind_ty 1556 2074 2192 2297), (src_bare_prim 1630 1993 2298), (src_same_or_none), (src_match_decl 56 2299), (src_find_bind_at 904 2074), (src_unbox_of_mini_selfhost_List_mini_selfhost_Bind 2300), (src_has_wide), (src_wide_of 2301 2302 2303 2304), (src_concat_of_mini_selfhost_Token 166 1088 2198), (src_uint_in_range 1551)]
 
-def dents21 : List SigEntry := [some ([(.uint .usize), ty271, ty287, ty84, ty84], ty342), some ([ty191, ty362], ty321), some ([ty191], ty362), some ([ty191, (.uint .usize), ty281], ty321), some ([.bool, ty191, ty359], ty321), some ([ty282], ty359), some ([.bool, ty191, (.uint .usize), ty359], ty321), some ([ty191, ty238, ty152, ty363], ty321), some ([ty27, ty282], ty363), some ([ty84], .bool), some ([(.uint .usize), ty271, ty287, ty84], ty343), some ([ty84], .bool), some ([(.uint .usize), ty271, ty287, ty84], ty343), some ([ty15], .bool), some ([ty320, ty192], ty192), some ([.bool, ty192], ty303), some ([(.uint .usize), ty271, ty287, ty84], ty303), some ([(.uint .usize), ty271, ty287, ty285, (.uint .usize), ty343, ty84], ty303), some ([.bool, ty303], ty303), some ([ty247], .bool), some ([(.uint .usize), ty127, ty152, (.uint .usize)], ty247), some ([(.uint .usize), (.uint .usize), ty311], ty303), some ([(.uint .usize), (.uint .usize), ty311, ty311], ty303), some ([(.uint .usize), ty311], ty303), some ([(.uint .usize), ty191, ty311], ty311), some ([(.uint .usize), ty271, ty287, ty285, ty238, (.uint .usize), ty84], ty303), some ([ty15, ty15, ty238, ty18], ty303), some ([ty15], ty238), some ([(.uint .usize), ty271, ty287, ty85], ty359), some ([ty311], ty303), some ([], (.uint .usize)), some ([(.uint .usize), ty271, ty287, (.uint .usize), (.uint .usize), ty311], ty343), some ([ty27, ty27, ty85], ty222), some ([ty326, ty20, ty152], ty327), some ([ty27, ty85], ty247), some ([.bool, ty326], ty327), some ([(.uint .usize), ty271, ty27, ty238, ty85, ty198, ty326], ty327), some ([ty324, ty326, ty20], ty247), some ([ty325], ty326), some ([ty230], .bool), some ([ty152, .bool, (.uint .usize)], ty281), some ([ty44, ty44], ty44), some ([ty4, (.uint .uint64)], ty281), some ([.i32], ty281), some ([ty4, .i32], ty281), some ([ty15, ty15], ty281), some ([ty8, ty15], ty281), some ([ty4, ty15], ty281), some ([ty152, ty9, ty15], ty281), some ([ty238, ty20], ty281), some ([(.uint .usize)], ty238), some ([(.uint .usize), (.uint .usize), ty20], ty281), some ([(.uint .usize), ty20, (.uint .usize), (.uint .usize), (.uint .usize), (.uint .usize)], ty281), some ([.bool], ty314), some ([.bool, ty314], ty314), some ([.bool, .bool], .bool), some ([.bool, .bool, .bool], .bool), some ([(.uint .usize)], .bool), some ([(.uint .usize)], (.uint .usize)), some ([ty20, ty314, (.uint .usize), (.uint .usize)], ty316), some ([.bool], ty238), none, some ([ty314], (.uint .usize)), some ([(.uint .usize), (.uint .usize)], (.uint .usize)), some ([.bool], (.uint .usize)), some ([(.uint .usize), (.uint .usize), ty314, ty314], .bool), some ([ty314, (.uint .usize)], ty314), some ([ty314, ty314], ty361), some ([ty314, ty314, .bool], .bool), some ([ty314], .bool), some ([.bool, ty314], ty314), some ([ty314], (.uint .usize)), some ([ty314], ty313), some ([ty271, ty222], .bool), some ([ty271, ty238, ty20], .bool), some ([ty110, ty112, ty27, ty20, (.uint .usize)], ty238), some ([(.uint .usize), ty271, (.uint .usize), ty110, ty85], ty198), some ([.bool, ty336], ty336), some ([(.uint .usize), ty127, ty110, ty248], ty248), some ([ty287, ty248, ty336], ty336), some ([(.uint .usize), ty271, ty287, ty247, (.uint .usize), ty110, ty326, ty282, ty336], ty311), some ([ty248, ty282], ty248), some ([(.uint .usize), ty110], ty86), some ([(.uint .usize), ty271, ty287, (.uint .usize), ty110, ty27, ty85, ty366], ty311), some ([(.uint .usize), ty271, ty287, ty110, ty27, ty85, ty282, ty85, ty327], ty366), some ([(.uint .usize), ty127, ty110, ty27, ty326, ty247], ty327), some ([ty27, ty153, ty326], ty327), some ([(.uint .usize), ty271, ty27, ty84, ty152, ty326], ty349), some ([ty127, ty110], ty271), some ([ty349], .bool), some ([ty127, ty152, (.uint .usize)], ty154), some ([ty15], ty238), some ([(.uint .usize), ty271, ty27, ty85, ty153, ty327], ty327), some ([ty348, ty348], ty348), none, some ([ty110], ty137), some ([ty352], ty353), some ([(.uint .usize), ty271, ty107, ty339, ty85, .bool], ty86), some ([], ty353), some ([ty368, ty354], ty354)]
+def dents21 : List SigEntry := [some ([ty271, ty27, ty20], .bool), some ([ty238], .bool), some ([ty112, ty27, ty20, (.uint .usize)], ty238), some ([(.uint .usize), ty271, ty287, ty247, ty349, ty282, ty85], ty311), some ([(.uint .usize), ty271, ty287, ty247, (.uint .usize), ty110, ty85, ty85], ty311), some ([(.uint .usize), ty271, ty287, ty247, (.uint .usize), ty110, ty327, ty282, ty85], ty311), some ([ty27, ty248, ty327], ty328), some ([(.uint .usize), ty127, ty110, ty152], ty354), some ([.bool, (.uint .usize), ty327], ty349), some ([(.uint .usize), ty127, ty112, ty20, ty152], .bool), some ([ty127, ty191, ty152, (.uint .usize)], ty191), some ([ty191], ty238), some ([(.uint .usize), ty271, ty287, ty282], ty248), some ([(.uint .usize), ty248], ty247), some ([(.uint .usize), ty271, ty27, ty85, ty153, ty327], ty328), some ([ty109, ty116, ty118, ty27, ty20], ty351), some ([ty351], ty350), none, some ([ty107, (.uint .usize), ty20], ty336), some ([ty312], ty247), some ([(.uint .usize), ty127, ty312, (.uint .usize)], ty247), some ([ty15], .bool), some ([(.uint .usize), ty127, ty110, ty154], ty247), some ([ty152], ty247), some ([ty285, ty287, (.uint .usize)], ty312), some ([ty247, ty358], ty247), some ([ty358], ty27), some ([ty358], ty282), some ([(.uint .usize), ty271, ty107, ty340, ty85], ty86), some ([(.uint .usize), ty271, ty287, ty247, ty107, ty340, ty85], ty359), some ([], ty340), some ([ty338, ty340], ty340), some ([ty15, ty152, ty152, .bool, .bool, ty85, ty282], ty311), some ([.bool, (.uint .usize), ty152, ty191, ty152, ty311], ty311), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([(.uint .usize), ty84], ty137), some ([(.uint .usize), ty84], .bool), some ([.bool], (.uint .usize)), some ([ty271, ty287, ty84, ty191, ty152, ty107, ty294], ty342), some ([(.uint .usize), ty271, ty85], ty360), some ([(.uint .usize), ty271, ty107, ty340, ty85, .bool], ty86), some ([(.uint .usize), ty271, ty287, ty107, ty338, ty84], ty362), some ([ty341, (.uint .usize), ty361, ty338, ty303, ty303], ty303), some ([ty361], ty287), some ([(.uint .usize), ty271, ty287, ty285, ty192, ty84], ty303), none, some ([(.uint .usize), ty271, ty287, ty84, ty84], ty343), some ([ty191, ty367], ty321), some ([ty191], ty367), some ([ty191, (.uint .usize), ty281], ty321), some ([.bool, ty191, ty364], ty321), some ([ty282], ty364), some ([.bool, ty191, (.uint .usize), ty364], ty321), some ([ty191, ty238, ty152, ty368], ty321), some ([ty27, ty282], ty368), some ([ty84], .bool), some ([(.uint .usize), ty271, ty287, ty84], ty344), some ([ty84], .bool), some ([(.uint .usize), ty271, ty287, ty84], ty344), some ([ty15], .bool), some ([ty320, ty192], ty192), some ([ty287, (.uint .usize), (.uint .usize), ty191, ty152, ty152], ty346), some ([ty84], .bool), some ([ty85, ty303], ty303), some ([(.uint .usize), ty271, ty287, ty324, ty84], ty303), some ([ty281, ty303, ty303], ty303), some ([(.uint .usize), ty152, ty84], ty281), some ([ty84], .bool), some ([ty84], .bool), some ([.bool, ty192], ty303), some ([(.uint .usize), ty318], ty353), some ([(.uint .usize), ty271, ty287, ty84], ty303), some ([(.uint .usize), ty271, ty287, ty285, (.uint .usize), ty344, ty84], ty303), some ([.bool, ty303], ty303), some ([ty247], .bool), some ([(.uint .usize), ty127, ty152, (.uint .usize)], ty247), some ([(.uint .usize), (.uint .usize), ty311], ty303), some ([(.uint .usize), (.uint .usize), ty311, ty311], ty303), some ([(.uint .usize), ty311], ty303), some ([(.uint .usize), ty191, ty311], ty311), some ([(.uint .usize), ty271, ty287, ty285, ty238, (.uint .usize), ty84], ty303), some ([ty15, ty15, ty238, ty18], ty303), some ([ty15], ty238), some ([(.uint .usize), ty271, ty287, ty85], ty364), some ([ty311], ty303), some ([], (.uint .usize)), some ([(.uint .usize), ty271, ty287, (.uint .usize), (.uint .usize), ty311], ty344), some ([ty27, ty27, ty85], ty223), some ([ty327, ty20, ty152], ty328), some ([ty27, ty85], ty247), some ([.bool, ty327], ty328), some ([(.uint .usize), ty271, ty27, ty238, ty85, ty198, ty327], ty328), some ([ty325, ty327, ty20], ty247), some ([ty326], ty327), some ([ty231], .bool), some ([ty152, .bool, (.uint .usize)], ty281), some ([ty44, ty44], ty44), some ([ty4, (.uint .uint64)], ty281)]
 
 /-- `declareFuncs` of functions 2100 to 2199. -/
-theorem dchunk21 : declsStep dpart21 decls 4 7 3 3 = true := by decide +kernel
+theorem dchunk21 : declsStep dpart21 decls 4 7 4 5 = true := by decide +kernel
 
 theorem dfit21 : entriesFit dpart21 dents21 = true := by decide +kernel
 

@@ -35,7 +35,7 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_assignment {prog : SrcProgram} {prims : Prims} {ix_assignment ix_minus ix_node_prod ix_kid ix_has_kids ix_kid_token ix_field_start_Token_of_mini_selfhost_Token ix_p_expr ix_p_assign ix_p_assign_end ix_p_assign_set ix_peel ix_assign_target ix_compound_of ix_call_stmt : Nat} (fn : prog.funcs[ix_assignment]? = some (src_assignment ix_minus ix_node_prod ix_kid ix_has_kids ix_kid_token ix_field_start_Token_of_mini_selfhost_Token ix_p_expr ix_p_assign ix_p_assign_end ix_p_assign_set ix_peel ix_assign_target ix_compound_of ix_call_stmt)) (np : prims.isPrim ix_assignment = false)
+theorem proof_assignment {prog : SrcProgram} {prims : Prims} {ix_assignment ix_minus ix_node_prod ix_kid ix_has_kids ix_kid_token ix_field_start_Token_of_mini_selfhost_Token ix_p_expr ix_p_assign ix_p_assign_end ix_peel ix_p_assign_set ix_assign_target ix_compound_of ix_call_stmt : Nat} (fn : prog.funcs[ix_assignment]? = some (src_assignment ix_minus ix_node_prod ix_kid ix_has_kids ix_kid_token ix_field_start_Token_of_mini_selfhost_Token ix_p_expr ix_p_assign ix_p_assign_end ix_peel ix_p_assign_set ix_assign_target ix_compound_of ix_call_stmt)) (np : prims.isPrim ix_assignment = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
@@ -45,8 +45,8 @@ theorem proof_assignment {prog : SrcProgram} {prims : Prims} {ix_assignment ix_m
     (ext_p_expr : Certified (∀ {n : Nat}, Stmt_p_expr prog prims ix_p_expr n))
     (ext_p_assign : Certified (∀ {n : Nat}, Stmt_p_assign prog prims ix_p_assign n))
     (ext_p_assign_end : Certified (∀ {n : Nat}, Stmt_p_assign_end prog prims ix_p_assign_end n))
-    (ext_p_assign_set : Certified (∀ {n : Nat}, Stmt_p_assign_set prog prims ix_p_assign_set n))
     (ext_peel : Certified (∀ {n : Nat}, Stmt_peel prog prims ix_peel n))
+    (ext_p_assign_set : Certified (∀ {n : Nat}, Stmt_p_assign_set prog prims ix_p_assign_set n))
     (ext_assign_target : Certified (∀ {n : Nat}, Stmt_assign_target prog prims ix_assign_target n))
     (ext_compound_of : Certified (∀ {n : Nat}, Stmt_compound_of prog prims ix_compound_of n))
     (ext_call_stmt : Certified (∀ {n : Nat}, Stmt_call_stmt prog prims ix_call_stmt n)) {n : Nat} :

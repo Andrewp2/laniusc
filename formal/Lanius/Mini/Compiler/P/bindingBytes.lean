@@ -42,6 +42,9 @@ def argBytes (scope : List Binding) (arg : SrcEff) : Nat :=
   | .eDivide op left right => 0
   | .eStride slice => 0
   | .arraySlice element array => bindingBytes (lookup scope array)
+  | .eIf condition ity thenValue elseValue => 0
+  | .eLet lid lty value rt body => 0
+  | .eLen slice => 0
 
 /-- A pure argument before the rest. -/
 def arrayArgPure (values : Option (List Expr)) (g : Expr) (rest : Option ArrayArgs) : Option ArrayArgs :=
@@ -87,6 +90,9 @@ def arrayArg (scope : List Binding) (arg : SrcEff) (ty : SrcType) (t : Nat) (off
   | .eDivide op left right => none
   | .eStride slice => none
   | .arraySlice element array => arrayArgSlice (lookup scope array) element ty array t offset rest
+  | .eIf condition ity thenValue elseValue => none
+  | .eLet lid lty value rt body => none
+  | .eLen slice => none
 
 /-- The arguments, one of each parameter type, the arrays from offset in the block on. -/
 def arrayArgs (scope : List Binding) (args : List SrcEff) (types : List SrcType) (t : Nat) (offset : Nat) : Option ArrayArgs :=

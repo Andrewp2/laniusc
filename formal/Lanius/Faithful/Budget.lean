@@ -93,10 +93,29 @@ theorem addC_peel {c : Nat} {o : Option (α × Nat)} {w : α} {k : Nat} (h : add
 
 end
 
-@[budget_rule] theorem Done.qthen_next (rest : Option (Done × Nat)) : Done.qthen rest .next = rest := rfl
+@[budget_rule] theorem Out.qthen_next (rest : Lanius.Faithful.Env → Option (Out × Nat)) (env : Lanius.Faithful.Env) :
+    Out.qthen rest (.next env) = rest env := rfl
 
-@[budget_rule] theorem Done.qthen_ret (rest : Option (Done × Nat)) (v : Option Value) :
-    Done.qthen rest (.ret v) = some (.ret v, 0) := rfl
+@[budget_rule] theorem Out.qthen_brk (rest : Lanius.Faithful.Env → Option (Out × Nat)) (env : Lanius.Faithful.Env) :
+    Out.qthen rest (.brk env) = some (.brk env, 0) := rfl
+
+@[budget_rule] theorem Out.qthen_cont (rest : Lanius.Faithful.Env → Option (Out × Nat)) (env : Lanius.Faithful.Env) :
+    Out.qthen rest (.cont env) = some (.cont env, 0) := rfl
+
+@[budget_rule] theorem Out.qthen_ret (rest : Lanius.Faithful.Env → Option (Out × Nat)) (v : Option Value) :
+    Out.qthen rest (.ret v) = some (.ret v, 0) := rfl
+
+@[budget_rule] theorem qpop_some (o : Out) (c : Nat) : qpop (some (o, c)) = some (o.pop, c) := rfl
+
+@[budget_rule] theorem qpop_none : qpop none = none := rfl
+
+@[budget_rule] theorem Out.pop_next (env : Lanius.Faithful.Env) : Out.pop (.next env) = .next env.tail := rfl
+
+@[budget_rule] theorem Out.pop_brk (env : Lanius.Faithful.Env) : Out.pop (.brk env) = .brk env.tail := rfl
+
+@[budget_rule] theorem Out.pop_cont (env : Lanius.Faithful.Env) : Out.pop (.cont env) = .cont env.tail := rfl
+
+@[budget_rule] theorem Out.pop_ret (v : Option Value) : Out.pop (.ret v) = .ret v := rfl
 
 @[budget_rule] theorem qarms_nil (call : QCalls) (env : Lanius.Faithful.Env) (v : Value) (id k : Nat)
     (values : List SrcEff) : qarms call env v id k [] values = none := by
@@ -125,7 +144,7 @@ theorem qcall_succ {sp : SrcProgram} {prims : Prims} {cost : Nat → Nat} {n c :
     {f : SrcFunc} (np : prims.isPrim c = false) (found : sp.funcs[c]? = some f) :
     qcall sp prims cost (n + 1) c vs =
       if vs.length = f.params.length then
-        qthen (qstmt (qcall sp prims cost n) (paramEnv f.params vs) f.body) fun d => qfree (doneValue f.ret d)
+        qthen (qstmt (qcall sp prims cost n) n (paramEnv f.params vs) f.body) fun o => qfree (outValue f.ret o)
       else none := by
   simp [qcall, np, found]
 
@@ -207,8 +226,8 @@ theorem bcert_plus {n : Nat} : BStmt_plus progW prog prims 75 n := by
     rw [qcall_succ np_plus fnW] at h
     rw [qcall_succ np_plus fn_plus]
     simp only [wrapFunc, src_plus, List.length_cons, List.length_nil, if_true] at h ⊢
-    have hw := SelfAgree.qplus_wrapped (qcall progW prims uc n) x0 x1
-    have hp := SelfAgree.qplus_body (qcall prog prims uc n) lt
+    have hw := SelfAgree.qplus_wrapped (qcall progW prims uc n) n x0 x1
+    have hp := SelfAgree.qplus_body (qcall prog prims uc n) n lt
     simp only [wrapFunc, src_plus] at hw hp
     rw [hw, Nat.mod_eq_of_lt lt] at h
     rw [hp]
@@ -231,8 +250,8 @@ theorem bcert_times {n : Nat} : BStmt_times progW prog prims 105 n := by
     rw [qcall_succ np_times fnW] at h
     rw [qcall_succ np_times fn_times]
     simp only [wrapFunc, src_times, List.length_cons, List.length_nil, if_true] at h ⊢
-    have hw := SelfAgree.qtimes_wrapped (qcall progW prims uc n) x0 x1
-    have hp := SelfAgree.qtimes_body (qcall prog prims uc n) lt
+    have hw := SelfAgree.qtimes_wrapped (qcall progW prims uc n) n x0 x1
+    have hp := SelfAgree.qtimes_body (qcall prog prims uc n) n lt
     simp only [wrapFunc, src_times] at hw hp
     rw [hw, Nat.mod_eq_of_lt lt] at h
     rw [hp]

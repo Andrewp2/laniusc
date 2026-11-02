@@ -1,0 +1,10 @@
+// A body that writes the slice itself is not read: laniusc's loop keeps the
+// slice it captured before the loop.
+fn total(s: [i32], u: [i32]) -> i32 {
+    let t: i32 = 0;
+    for x in s {
+        s = u;
+        t = t + x;
+    }
+    return t;
+}

@@ -25,7 +25,7 @@ abbrev Stmt_array_type (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
     (RepOption 158 RepSrcType) (Lanius.Mini.arrayType x0 x1) w
 
 abbrev Stmt_enum_src (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Nat} {x1 : Option (List (List Lanius.Mini.SrcType))} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 205 RepNat) x0 v0 → (RepOption 188 (RepList 77 (RepList 73 RepSrcType))) x1 v1 →
+  ∀ {x0 : Option Nat} {x1 : Option (List (List Lanius.Mini.SrcType))} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 205 RepNat) x0 v0 → (RepOption 189 (RepList 77 (RepList 73 RepSrcType))) x1 v1 →
     (RepOption 158 RepSrcType) (Lanius.Mini.enumSrc x0 x1) w
 
 abbrev Stmt_src_weight (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -37,7 +37,7 @@ abbrev Stmt_src_weights (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
     (RepOption 205 RepNat) (Lanius.Mini.srcWeights x0) w
 
 abbrev Stmt_struct_src (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Nat} {x1 : Option (List Lanius.Mini.SrcType)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 205 RepNat) x0 v0 → (RepOption 187 (RepList 73 RepSrcType)) x1 v1 →
+  ∀ {x0 : Option Nat} {x1 : Option (List Lanius.Mini.SrcType)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 205 RepNat) x0 v0 → (RepOption 188 (RepList 73 RepSrcType)) x1 v1 →
     (RepOption 158 RepSrcType) (Lanius.Mini.structSrc x0 x1) w
 
 abbrev Stmt_variant_weights (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

@@ -77,7 +77,7 @@ def divisorOk : SrcEff → Bool
   | .ePure (.unsigned _ n) => n != 0
   | .ePure _ | .eCall _ _ | .eApply _ _ _ | .eNeg _ | .eNot _ | .eCast _ _ | .eIndex _ _ | .eStruct _ _
   | .eVariant _ _ _ | .eMatch _ _ _ _ _ | .eDivide _ _ _ | .eStride _
-  | .arraySlice _ _ => false
+  | .arraySlice _ _ | .eIf _ _ _ _ | .eLet _ _ _ _ _ | .eLen _ => false
 
 /-- A match with an arm for every variant of its enum type. -/
 def armsFull : SrcType → List (List Nat) → Bool
@@ -103,6 +103,9 @@ def liveEff : SrcEff → Bool
   | .eDivide _ l r => liveEff l && divisorOk r
   | .eStride _ => false
   | .arraySlice _ _ => false
+  | .eIf c _ a b => liveEff c && liveEff a && liveEff b
+  | .eLet _ _ value _ body => liveEff value && liveEff body
+  | .eLen _ => false
 
 def liveEffs : List SrcEff → Bool
   | [] => true
@@ -124,9 +127,11 @@ def liveStmt (ret : SrcType) : SrcStmt → Bool
   | .returnEval value => liveEff bad value
   | .discard value => liveEff bad value
   | .returnUnit => decide (ret.toCore = .unit)
-  | .letMatch _ _ _ _ _ _ | .set _ _ | .setField _ _ _ | .setCall _ _ _ | .while _ _ | .letAlloc _ _ _ _
+  | .set _ value => liveExpr value
+  | .setEval _ value => liveEff bad value
+  | .letMatch _ _ _ _ _ _ | .setField _ _ _ | .setCall _ _ _ | .while _ _ | .letAlloc _ _ _ _
   | .letLoad _ _ _ _ | .setByte _ _ _ | .free _ _ _ | .letSlice _ _ _ _ _ | .letIndex _ _ _ _ _
-  | .setIndex _ _ _ | .setEval _ _ | .whileEval _ _ | .setIndexEval _ _ _ | .setFieldEval _ _ _
+  | .setIndex _ _ _ | .whileEval _ _ | .setIndexEval _ _ _ | .setFieldEval _ _ _
   | .assert _ | .break | .continue | .matchArm _ _ _ _ _ _ _ _ | .unreachable _ _ => false
 
 /-- A function whose body cannot fail but at a call, and that returns a value
@@ -901,6 +906,40 @@ theorem eff_live (hO : ∀ m, OracleOk prims T (pcall sp prims m)) (hP : PrimsTy
     all_goals simp [divisorOk] at hl
   | .eStride _, A, W, E, tenv, t, _, _, _, _, ht, _ => by simp [effTy] at ht
   | .arraySlice _ _, A, W, E, tenv, t, _, _, _, _, ht, _ => by simp [effTy] at ht
+  | .eIf c ty a b, A, W, E, tenv, t, h, hW, hc, hE, ht, hl => by
+    simp only [chkEff, Bool.and_eq_true] at hc
+    simp only [liveEff, Bool.and_eq_true] at hl
+    simp only [effTy] at ht
+    split at ht
+    · rename_i hcb
+      have hct := isBoolTy_some hcb
+      simp only [Option.bind_eq_some_iff] at ht
+      obtain ⟨ta, hta, tb, htb, hab⟩ := ht
+      split at hab
+      · rename_i same
+        simp only [Option.some.injEq] at hab
+        subst hab
+        have e := SrcType.same_eq same
+        subst e
+        simp only [peff]
+        refine EvSome.bind (k := fun w m => (asBool w).bind fun bv =>
+            if bv then peff (pcall sp prims m) E a else peff (pcall sp prims m) E b)
+          (eff_live hO hP IH c h hW hc.1.1 hE hct hl.1.1) fun w hw _ => ?_
+        obtain ⟨bv, rfl⟩ := bool_value hw
+        cases bv with
+        | true => exact EvSome.of_eq (fun m => rfl) (eff_live hO hP IH a h hW hc.1.2 hE hta hl.1.2)
+        | false => exact EvSome.of_eq (fun m => rfl) (eff_live hO hP IH b h hW hc.2 hE htb hl.2)
+      · simp at hab
+    · simp at ht
+  | .eLet id ty value rt body, A, W, E, tenv, t, h, hW, hc, hE, ht, hl => by
+    simp only [chkEff, Bool.and_eq_true] at hc
+    simp only [liveEff, Bool.and_eq_true] at hl
+    simp only [effTy, Option.bind_eq_some_iff] at ht
+    obtain ⟨tv, htv, hb⟩ := ht
+    simp only [peff]
+    exact EvSome.bind (eff_live hO hP IH value h hW hc.1 hE htv hl.1) fun v hv ⟨M, hM⟩ =>
+      eff_live hO hP IH body (h.cons (effCls_holds (hO M) h value hM)) hW hc.2 (hE.cons hv) hb hl.2
+  | .eLen _, A, W, E, tenv, t, _, _, _, _, ht, _ => by simp [effTy] at ht
 
 theorem effs_live (hO : ∀ m, OracleOk prims T (pcall sp prims m)) (hP : PrimsTy sp prims)
     (IH : CallsGood sp prims T me B outside bad) :
@@ -982,12 +1021,57 @@ end
 
 /-! ## Checked statements settle -/
 
-/-- How a statement of a function returning `ret` ended: on, or a return of
-a value of type `ret` (`return;` only when it is `()`). -/
-def DoneOk (boxes : Boxes) (ret : SrcType) : Done → Prop
-  | .next => True
+/-- How a statement of a function returning `ret` ended: on, with the locals
+of `tenv` of their types, or a return of a value of type `ret` (`return;`
+only when it is `()`). -/
+def OutOk (boxes : Boxes) (ret : SrcType) (tenv : TEnv) : Out → Prop
+  | .next env => EnvTy boxes tenv env
+  | .brk _ => False
+  | .cont _ => False
   | .ret (some v) => PTy boxes ret v
   | .ret none => ret.toCore = .unit
+
+/-- An assignment of a value of the local's type keeps the types. -/
+theorem EnvTy.set {boxes : Boxes} {tenv : TEnv} {env env' : Env} (hE : EnvTy boxes tenv env) {id : Nat}
+    {t : SrcType} {v : Value} (hg : tenv.get? id = some t) (rv : PTy boxes t v) (hs : env.set id v = some env') :
+    EnvTy boxes tenv env' := by
+  intro x t' ht
+  by_cases hx : x = id
+  · subst hx
+    rw [hg, Option.some.injEq] at ht
+    subst ht
+    exact ⟨v, Env.set_get_self hs, rv⟩
+  · rw [Env.set_get_ne hs hx]
+    exact hE x t' ht
+
+/-- After a `let`'s body, the types below its binding. -/
+theorem EnvTy.pop {boxes : Boxes} {tenv : TEnv} {env eb : Env} {id : Nat} {t : SrcType} {v : Value}
+    (hE : EnvTy boxes tenv env) (hb : EnvTy boxes ((id, t) :: tenv) eb) (ha : Agree [] ((id, v) :: env) eb) :
+    EnvTy boxes tenv eb.tail := by
+  intro x t' ht
+  obtain ⟨-, hid, w, hw⟩ := ha.pop
+  by_cases hx : x = id
+  · subst hx
+    rw [hid]
+    exact hE x t' ht
+  · have h := hb x t' (by rw [TEnv.get?_cons, if_neg (Ne.symm hx)]; exact ht)
+    rw [hw, Env.get?_cons'', if_neg (Ne.symm hx)] at h
+    exact h
+
+theorem OutOk.pop {boxes : Boxes} {ret : SrcType} {tenv : TEnv} {env : Env} {id : Nat} {t : SrcType}
+    {v : Value} {o : Out} (hE : EnvTy boxes tenv env) (ho : OutOk boxes ret ((id, t) :: tenv) o)
+    (ha : ∀ e, o.env? = some e → Agree [] ((id, v) :: env) e) : OutOk boxes ret tenv o.pop := by
+  cases o with
+  | next eb => exact EnvTy.pop hE ho (ha eb rfl)
+  | brk _ => exact ho.elim
+  | cont _ => exact ho.elim
+  | ret r => cases r <;> exact ho
+
+/-- A `let`'s ending from its body's. -/
+theorem EvSome.pop {P Q : Out → Prop} {g : Nat → Option Out} (h : EvSome g P)
+    (hq : ∀ o, P o → (∃ M, g M = some o) → Q o.pop) : EvSome (fun m => (g m).map Out.pop) Q := by
+  obtain ⟨N, a, pa, hN⟩ := h
+  exact ⟨N, a.pop, hq a pa ⟨N, hN N (Nat.le_refl _)⟩, fun m hm => by simp only [hN m hm, Option.map_some]⟩
 
 theorem unit_pty {boxes : Boxes} {ret : SrcType} (h : ret.toCore = .unit) : PTy boxes ret .unit := by
   cases ret with
@@ -1005,10 +1089,10 @@ theorem stmt_live {ret : SrcType} :
     ∀ (s : SrcStmt) {A : AEnv} {W : Wit} {E : Env} {tenv : TEnv}, EnvOk B A E → WitOk B W →
       chkStmt prims T me A W s = true → EnvTy (boxElem sp prims) tenv E →
       stmtOk sp outside (boxElem sp prims) ret tenv s = true → liveStmt bad ret s = true →
-      EvSome (fun m => pstmt (pcall sp prims m) E s) (DoneOk (boxElem sp prims) ret) := by
+      EvSome (fun m => mstmt (pcall sp prims m) m E s) (OutOk (boxElem sp prims) ret tenv) := by
   intro s
   induction s with
-  | nop => intro A W E tenv _ _ _ _ _ _; exact EvSome.const (a := .next) (fun m => rfl) trivial
+  | nop => intro A W E tenv _ _ _ hE _ _; exact EvSome.const (a := .next E) (fun m => rfl) hE
   | «let» id _ value body ih =>
     intro A W E tenv h hW hc hE hs hl
     simp only [chkStmt] at hc
@@ -1018,8 +1102,9 @@ theorem stmt_live {ret : SrcType} :
     | some t =>
       simp only [stmtOk, ht] at hs
       obtain ⟨v, hv, rv⟩ := expr_live hE value ht hl.1
-      simp only [pstmt, hv, Option.bind_some]
-      exact ih (h.cons (exprCls_holds h value hv)) hW hc (hE.cons rv) hs hl.2
+      simp only [mstmt, hv, Option.bind_some]
+      exact EvSome.pop (ih (h.cons (exprCls_holds h value hv)) hW hc (hE.cons rv) hs hl.2)
+        fun o ho ⟨M, hM⟩ => OutOk.pop hE ho (mstmt_agree _ _ body hM)
   | letStruct id ty fields body ih =>
     intro A W E tenv h hW hc hE hs hl
     simp only [chkStmt] at hc
@@ -1032,8 +1117,9 @@ theorem stmt_live {ret : SrcType} :
       obtain ⟨ts, hts, hst⟩ := ht
       obtain ⟨sid, fs, rfl, rfl, hb, rfl⟩ := structTy_some hst
       obtain ⟨vs, hvs, rvs⟩ := exprs_live hE fields hts hl.1
-      simp only [pstmt, hvs, Option.bind_some]
-      exact ih (h.cons (by trivial)) hW hc (hE.cons (.struct hb rvs)) hs hl.2
+      simp only [mstmt, hvs, Option.bind_some]
+      exact EvSome.pop (ih (h.cons (by trivial)) hW hc (hE.cons (.struct hb rvs)) hs hl.2)
+        fun o ho ⟨M, hM⟩ => OutOk.pop hE ho (mstmt_agree _ _ body hM)
   | letCall id _ callee args body ih =>
     intro A W E tenv h hW hc hE hs hl
     simp only [chkStmt, Bool.and_eq_true] at hc
@@ -1046,9 +1132,10 @@ theorem stmt_live {ret : SrcType} :
       obtain ⟨ts, hts, hct⟩ := ht
       obtain ⟨vs, hvs, rvs⟩ := exprs_live hE args hts hl.1.2
       have hr := exprsCls_holds h args hvs
-      simp only [pstmt, hvs, Option.bind_some]
+      simp only [mstmt, hvs, Option.bind_some]
       exact EvSome.bind (call_live hP IH hW hc.1 hr hct rvs hl.1.1) fun v hv ⟨M, hM⟩ =>
-        ih (h.cons (callCls_holds (hO M) hr hM)) hW hc.2 (hE.cons hv) hs hl.2
+        EvSome.pop (ih (h.cons (callCls_holds (hO M) hr hM)) hW hc.2 (hE.cons hv) hs hl.2)
+          fun o ho ⟨M', hM'⟩ => OutOk.pop hE ho (mstmt_agree _ _ body hM')
   | letEnum id ty k payload body ih =>
     intro A W E tenv h hW hc hE hs hl
     simp only [chkStmt] at hc
@@ -1061,19 +1148,22 @@ theorem stmt_live {ret : SrcType} :
       obtain ⟨ts, hts, hvt⟩ := ht
       obtain ⟨eid, variants, fs, rfl, rfl, hk, rfl⟩ := variantTy_some hvt
       obtain ⟨vs, hvs, rvs⟩ := exprs_live hE payload hts hl.1
-      simp only [pstmt, hvs, Option.bind_some]
-      exact ih (h.cons (by trivial)) hW hc (hE.cons (.enum hk rvs)) hs hl.2
+      simp only [mstmt, hvs, Option.bind_some]
+      exact EvSome.pop (ih (h.cons (by trivial)) hW hc (hE.cons (.enum hk rvs)) hs hl.2)
+        fun o ho ⟨M, hM⟩ => OutOk.pop hE ho (mstmt_agree _ _ body hM)
   | «then» first second ih1 ih2 =>
     intro A W E tenv h hW hc hE hs hl
     simp only [chkStmt, Bool.and_eq_true] at hc
     simp only [stmtOk, Bool.and_eq_true] at hs
     simp only [liveStmt, Bool.and_eq_true] at hl
-    simp only [pstmt]
-    refine EvSome.bind (k := fun d m => Done.then (pstmt (pcall sp prims m) E second) d)
-      (ih1 h hW hc.1 hE hs.1 hl.1) fun d hd ⟨M, hM⟩ => ?_
-    cases d with
-    | next => exact EvSome.of_eq (fun m => rfl) (ih2 (after_ok h _ first hM) hW hc.2 hE hs.2 hl.2)
-    | ret o => exact EvSome.const (fun m => rfl) hd
+    simp only [mstmt]
+    refine EvSome.bind (k := fun o m => Out.then (fun e => mstmt (pcall sp prims m) m e second) o)
+      (ih1 h hW hc.1 hE hs.1 hl.1) fun o ho ⟨M, hM⟩ => ?_
+    cases o with
+    | next e1 => exact EvSome.of_eq (fun m => rfl) (ih2 (after_ok h _ M first hM) hW hc.2 ho hs.2 hl.2)
+    | brk _ => exact ho.elim
+    | cont _ => exact ho.elim
+    | ret r => exact EvSome.const (fun m => rfl) ho
   | «if» condition a b iha ihb =>
     intro A W E tenv h hW hc hE hs hl
     simp only [chkStmt, Bool.and_eq_true] at hc
@@ -1084,10 +1174,10 @@ theorem stmt_live {ret : SrcType} :
     obtain ⟨bv, rfl⟩ := bool_value rw
     cases bv with
     | true =>
-      simp only [pstmt, hw, Option.bind_some, asBool, ↓reduceIte]
+      simp only [mstmt, hw, Option.bind_some, asBool, ↓reduceIte]
       exact iha h hW hc.1 hE hs.1.2 hl.1.2
     | false =>
-      simp only [pstmt, hw, Option.bind_some, asBool, Bool.false_eq_true, ↓reduceIte]
+      simp only [mstmt, hw, Option.bind_some, asBool, Bool.false_eq_true, ↓reduceIte]
       have hc2 := hc.2
       revert hc2
       cases hg : guardVar condition with
@@ -1103,7 +1193,7 @@ theorem stmt_live {ret : SrcType} :
       subst e
       simp only [liveStmt] at hl
       obtain ⟨v, hv, rv⟩ := expr_live hE value ht hl
-      exact EvSome.const (a := .ret (some v)) (fun m => by simp only [pstmt, hv, Option.map_some]) rv
+      exact EvSome.const (a := .ret (some v)) (fun m => by simp only [mstmt, hv, Option.map_some]) rv
   | letEval id _ value body ih =>
     intro A W E tenv h hW hc hE hs hl
     simp only [chkStmt, Bool.and_eq_true] at hc
@@ -1112,18 +1202,19 @@ theorem stmt_live {ret : SrcType} :
     | none => simp [stmtOk, ht] at hs
     | some t =>
       simp only [stmtOk, ht] at hs
-      simp only [pstmt]
+      simp only [mstmt]
       exact EvSome.bind (eff_live hO hP IH value h hW hc.1 hE ht hl.1) fun v hv ⟨M, hM⟩ =>
-        ih (h.cons (effCls_holds (hO M) h value hM)) hW hc.2 (hE.cons hv) hs hl.2
+        EvSome.pop (ih (h.cons (effCls_holds (hO M) h value hM)) hW hc.2 (hE.cons hv) hs hl.2)
+          fun o ho ⟨M', hM'⟩ => OutOk.pop hE ho (mstmt_agree _ _ body hM')
   | ifEval condition a b iha ihb =>
     intro A W E tenv h hW hc hE hs hl
     simp only [chkStmt, Bool.and_eq_true] at hc
     simp only [stmtOk, Bool.and_eq_true] at hs
     simp only [liveStmt, Bool.and_eq_true] at hl
     have hct := isBoolTy_some hs.1.1
-    simp only [pstmt]
+    simp only [mstmt]
     refine EvSome.bind (P := fun _ => True) (x := fun m => (peff (pcall sp prims m) E condition).bind asBool)
-      (k := fun bv m => if bv then pstmt (pcall sp prims m) E a else pstmt (pcall sp prims m) E b) ?_
+      (k := fun bv m => if bv then mstmt (pcall sp prims m) m E a else mstmt (pcall sp prims m) m E b) ?_
       fun bv _ _ => ?_
     · refine EvSome.bind (k := fun w _ => asBool w) (eff_live hO hP IH condition h hW hc.1.1 hE hct hl.1.1)
         fun w hw _ => ?_
@@ -1142,7 +1233,7 @@ theorem stmt_live {ret : SrcType} :
       subst e
       simp only [chkStmt] at hc
       simp only [liveStmt] at hl
-      simp only [pstmt]
+      simp only [mstmt]
       exact EvSome.map (eff_live hO hP IH value h hW hc hE ht hl) fun v hv => hv
   | discard value =>
     intro A W E tenv h hW hc hE hs hl
@@ -1150,17 +1241,54 @@ theorem stmt_live {ret : SrcType} :
     obtain ⟨t, ht⟩ := hs
     simp only [chkStmt] at hc
     simp only [liveStmt] at hl
-    simp only [pstmt]
-    exact EvSome.map (eff_live hO hP IH value h hW hc hE ht hl) fun _ _ => trivial
+    simp only [mstmt]
+    exact EvSome.map (eff_live hO hP IH value h hW hc hE ht hl) fun _ _ => hE
   | assert condition => intro A W E tenv _ _ _ _ _ hl; simp [liveStmt] at hl
   | returnUnit =>
     intro A W E tenv _ _ _ _ _ hl
     simp only [liveStmt, decide_eq_true_eq] at hl
     exact EvSome.const (a := .ret none) (fun m => rfl) hl
-  | letMatch _ _ _ _ _ _ | set _ _ | setField _ _ _ | setCall _ _ _ | «while» _ _ | letAlloc _ _ _ _
+  | set id value =>
+    intro A W E tenv _ _ _ hE hs hl
+    simp only [liveStmt] at hl
+    cases hg : tenv.get? id with
+    | none => simp [stmtOk, setOk, hg] at hs
+    | some t =>
+      cases ht : exprTy (boxElem sp prims) tenv value with
+      | none => simp [stmtOk, setOk, hg, ht] at hs
+      | some t' =>
+        simp only [stmtOk, setOk, hg, ht] at hs
+        have e := SrcType.same_eq hs
+        subst e
+        obtain ⟨v, hv, rv⟩ := expr_live hE value ht hl
+        obtain ⟨w, hw, -⟩ := hE id _ hg
+        obtain ⟨E', hE'⟩ := Env.set_isSome (env := E) (id := id) v (by simp [hw])
+        exact EvSome.const (a := .next E') (fun m => by simp only [mstmt, hv, Option.bind_some, hE', Option.map_some])
+          (hE.set hg rv hE')
+  | setEval id value =>
+    intro A W E tenv h hW hc hE hs hl
+    simp only [liveStmt] at hl
+    simp only [chkStmt] at hc
+    cases hg : tenv.get? id with
+    | none => simp [stmtOk, setOk, hg] at hs
+    | some t =>
+      cases ht : effTy sp outside (boxElem sp prims) tenv value with
+      | none => simp [stmtOk, setOk, hg, ht] at hs
+      | some t' =>
+        simp only [stmtOk, setOk, hg, ht] at hs
+        have e := SrcType.same_eq hs
+        subst e
+        obtain ⟨w, hw, -⟩ := hE id _ hg
+        simp only [mstmt]
+        refine EvSome.bind (eff_live hO hP IH value h hW hc hE ht hl) fun v rv _ => ?_
+        obtain ⟨E', hE'⟩ := Env.set_isSome (env := E) (id := id) v (by simp [hw])
+        exact EvSome.const (a := .next E') (fun m => by simp only [hE', Option.map_some]) (hE.set hg rv hE')
+  | «while» _ _ | whileEval _ _ | «break» | «continue» =>
+    intro A W E tenv _ _ _ _ _ hl; simp [liveStmt] at hl
+  | letMatch _ _ _ _ _ _ | setField _ _ _ | setCall _ _ _ | letAlloc _ _ _ _
   | letLoad _ _ _ _ | setByte _ _ _ | free _ _ _ | letSlice _ _ _ _ _ | letIndex _ _ _ _ _
-  | setIndex _ _ _ | setEval _ _ | whileEval _ _ | setIndexEval _ _ _ | setFieldEval _ _ _ | «break»
-  | «continue» | matchArm _ _ _ _ _ _ _ _ | unreachable _ _ =>
+  | setIndex _ _ _ | setIndexEval _ _ _ | setFieldEval _ _ _
+  | matchArm _ _ _ _ _ _ _ _ | unreachable _ _ =>
     intro A W E tenv _ _ _ _ hs _; simp [stmtOk] at hs
 
 end
@@ -1210,17 +1338,19 @@ theorem pcall_live {sp : SrcProgram} {prims : Prims} {T : TermInfo} {outside bad
   have hlive := hL c f hf hp hout hbad
   simp only [LiveFn, Bool.and_eq_true, Bool.or_eq_true, decide_eq_true_eq] at hlive
   obtain ⟨N, d, hd, hN⟩ := stmt_live (oracleOk_pcall hT.decs hT.consts) hP IH f.body henv (WitOk.nil _)
-    hchk (paramEnv_ty hvs) hpure hlive.1
-  have hdv : ∃ v, doneValue f.ret d = some v ∧ PTy (boxElem sp prims) f.ret v := by
+    hchk (paramEnv_ty hvs) (PureFunc.stmt hpure) hlive.1
+  have hdv : ∃ v, outValue f.ret d = some v ∧ PTy (boxElem sp prims) f.ret v := by
     cases d with
-    | next =>
+    | next e =>
       rcases hlive.2 with hu | hn
-      · exact ⟨.unit, by simp [doneValue, hu], unit_pty hu⟩
-      · exact absurd (hN N (Nat.le_refl _)) (neverNext_sound _ f.body _ hn)
+      · exact ⟨.unit, by simp [outValue, hu], unit_pty hu⟩
+      · exact absurd (hN N (Nat.le_refl _)) (neverNext_sound _ _ f.body _ e hn)
+    | brk _ => exact hd.elim
+    | cont _ => exact hd.elim
     | ret o =>
       cases o with
       | some v => exact ⟨v, rfl, hd⟩
-      | none => exact ⟨.unit, by simp [doneValue, show f.ret.toCore = .unit from hd], unit_pty hd⟩
+      | none => exact ⟨.unit, by simp [outValue, show f.ret.toCore = .unit from hd], unit_pty hd⟩
   obtain ⟨v, hv, rv⟩ := hdv
   refine ⟨N + 1, v, rv, fun m hm => ?_⟩
   obtain ⟨m, rfl⟩ : ∃ m', m = m' + 1 := ⟨m - 1, by omega⟩

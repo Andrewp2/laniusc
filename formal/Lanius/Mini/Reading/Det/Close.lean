@@ -41,6 +41,11 @@ theorem effClosed_unique : ∀ {x : MEff} {a b : SrcEff}, EffClosed decls fns ty
   | _, _, _, .stride, .stride => rfl
   | _, _, _, .arraySlice lw, .arraySlice lw' => by rw [lowerR_unique lw lw']
   | _, _, _, .host as, .host as' => by rw [effsClosed_unique as as']
+  | _, _, _, .if c lt x y, .if c' lt' x' y' => by
+    rw [effClosed_unique c c', lowerR_unique lt lt', effClosed_unique x x', effClosed_unique y y']
+  | _, _, _, .let lt v lr b, .let lt' v' lr' b' => by
+    rw [lowerR_unique lt lt', effClosed_unique v v', lowerR_unique lr lr', effClosed_unique b b']
+  | _, _, _, .len, .len => rfl
 termination_by structural _ _ _ h _ => h
 
 theorem effsClosed_unique : ∀ {xs : List MEff} {a b : List SrcEff}, EffsClosed decls fns types xs a →
@@ -184,6 +189,9 @@ theorem litEff_eq : ∀ {locals : List LocalTy} {want : Option SrcType} {x x' : 
   | _, _, _, _, .divide ha hb => by rw [litEff_eq ha, litEff_eq hb]; simp only [litEff]
   | _, _, _, _, .stride => by simp only [litEff]
   | _, _, _, _, .arraySlice => by simp only [litEff]
+  | _, _, _, _, .if hc ha hb => by rw [litEff_eq hc, litEff_eq ha, litEff_eq hb]; simp only [litEff]
+  | _, _, _, _, .let ha hb => by rw [litEff_eq ha, litEff_eq hb]; simp only [litEff]
+  | _, _, _, _, .len => by simp only [litEff]
 termination_by structural _ _ _ _ h => h
 
 theorem litEffs_eq : ∀ {locals : List LocalTy} {wants : Option (List SrcType)} {xs xs' : List SrcEff},

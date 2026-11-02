@@ -83,9 +83,10 @@ theorem proof_expected_array {prog : SrcProgram} {prims : Prims} {ix_expected_ar
   simp only [src_expected_array] at h
   faithful [Lanius.Mini.expectedArray]
 
-theorem step_expr_ty {prog : SrcProgram} {prims : Prims} {ix_expr_ty ix_minus ix_unbox_of_mini_selfhost_SrcExpr ix_src_ty ix_apply_ty ix_pick_ty ix_find_local_id ix_local_ty ix_field_ty ix_bare_int : Nat} (fn : prog.funcs[ix_expr_ty]? = some (src_expr_ty ix_minus ix_unbox_of_mini_selfhost_SrcExpr ix_src_ty ix_expr_ty ix_apply_ty ix_pick_ty ix_find_local_id ix_local_ty ix_field_ty ix_bare_int)) (np : prims.isPrim ix_expr_ty = false)
+theorem step_expr_ty {prog : SrcProgram} {prims : Prims} {ix_expr_ty ix_minus ix_unbox_of_mini_selfhost_SrcExpr ix_shift_op ix_src_ty ix_apply_ty ix_pick_ty ix_find_local_id ix_local_ty ix_field_ty ix_bare_int : Nat} (fn : prog.funcs[ix_expr_ty]? = some (src_expr_ty ix_minus ix_unbox_of_mini_selfhost_SrcExpr ix_shift_op ix_src_ty ix_expr_ty ix_apply_ty ix_pick_ty ix_find_local_id ix_local_ty ix_field_ty ix_bare_int)) (np : prims.isPrim ix_expr_ty = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_unbox_of_mini_selfhost_SrcExpr : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_SrcExpr prog prims ix_unbox_of_mini_selfhost_SrcExpr n))
+    (ext_shift_op : Certified (∀ {n : Nat}, Stmt_shift_op prog prims ix_shift_op n))
     (ext_src_ty : Certified (∀ {n : Nat}, Stmt_src_ty prog prims ix_src_ty n))
     (ext_apply_ty : Certified (∀ {n : Nat}, Stmt_apply_ty prog prims ix_apply_ty n))
     (ext_pick_ty : Certified (∀ {n : Nat}, Stmt_pick_ty prog prims ix_pick_ty n))

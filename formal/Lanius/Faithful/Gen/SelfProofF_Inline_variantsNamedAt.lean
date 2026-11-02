@@ -6,12 +6,13 @@ public import Lanius.Faithful.Gen.SelfSrcF_Inline_variantsNamedAt
 public import Lanius.Faithful.Gen.SelfStmt0
 public import Lanius.Faithful.Gen.SelfStmt1
 public import Lanius.Faithful.Gen.SelfStmt4
-public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_variantsNamedAt
+public import Lanius.Faithful.Gen.SelfStmtF_basedDigits
+public import Lanius.Faithful.Gen.SelfStmtF_basedLimit
+public import Lanius.Faithful.Gen.SelfStmtF_digitBelow
 public import Lanius.Faithful.Gen.SelfStmtF_distinct
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
-public import Lanius.Faithful.Gen.SelfStmtF_intLiteral
 public import Lanius.Faithful.Gen.SelfStmtF_itemOf
 public import Lanius.Faithful.Gen.SelfStmtF_joinInsts
 public import Lanius.Faithful.Gen.SelfStmtF_typeDeclAt
@@ -35,51 +36,17 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_char_end {prog : SrcProgram} {prims : Prims} {ix_char_end : Nat} (fn : prog.funcs[ix_char_end]? = some (src_char_end)) (np : prims.isPrim ix_char_end = false) {n : Nat} :
-    Stmt_char_end prog prims ix_char_end n := by
-  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_char_end] at h
-  faithful [Lanius.Mini.Inline.charEnd]
-
-theorem proof_char_escape {prog : SrcProgram} {prims : Prims} {ix_char_escape ix_unbox_of_mini_selfhost_List_usize ix_char_close_opt ix_escaped_byte : Nat} (fn : prog.funcs[ix_char_escape]? = some (src_char_escape ix_unbox_of_mini_selfhost_List_usize ix_char_close_opt ix_escaped_byte)) (np : prims.isPrim ix_char_escape = false)
-    (ext_unbox_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_usize n))
-    (ext_char_close_opt : Certified (∀ {n : Nat}, Stmt_char_close_opt prog prims ix_char_close_opt n))
-    (ext_escaped_byte : Certified (∀ {n : Nat}, Stmt_escaped_byte prog prims ix_escaped_byte n)) {n : Nat} :
-    Stmt_char_escape prog prims ix_char_escape n := by
-  intro x0 v0 w h r0
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_char_escape] at h
-  faithful [Lanius.Mini.Inline.charEscape]
-
-theorem proof_char_first {prog : SrcProgram} {prims : Prims} {ix_char_first ix_minus ix_char_escape ix_char_close ix_char_tail : Nat} (fn : prog.funcs[ix_char_first]? = some (src_char_first ix_minus ix_char_escape ix_char_close ix_char_tail)) (np : prims.isPrim ix_char_first = false)
-    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
-    (ext_char_escape : Certified (∀ {n : Nat}, Stmt_char_escape prog prims ix_char_escape n))
-    (ext_char_close : Certified (∀ {n : Nat}, Stmt_char_close prog prims ix_char_close n))
-    (ext_char_tail : Certified (∀ {n : Nat}, Stmt_char_tail prog prims ix_char_tail n)) {n : Nat} :
-    Stmt_char_first prog prims ix_char_first n := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_char_first] at h
-  faithful [Lanius.Mini.Inline.charFirst]
-
-theorem step_char_tail_at {prog : SrcProgram} {prims : Prims} {ix_char_tail_at ix_minus ix_plus ix_times ix_char_close ix_char_tail : Nat} (fn : prog.funcs[ix_char_tail_at]? = some (src_char_tail_at ix_minus ix_plus ix_times ix_char_close ix_char_tail)) (np : prims.isPrim ix_char_tail_at = false)
-    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+theorem step_based_digit {prog : SrcProgram} {prims : Prims} {ix_based_digit ix_plus ix_times ix_based_digits ix_based_limit ix_base_digit : Nat} (fn : prog.funcs[ix_based_digit]? = some (src_based_digit ix_plus ix_times ix_based_digits ix_based_limit ix_base_digit)) (np : prims.isPrim ix_based_digit = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_times : Certified (∀ {n : Nat}, Stmt_times prog prims ix_times n))
-    (ext_char_close : Certified (∀ {n : Nat}, Stmt_char_close prog prims ix_char_close n)) {n : Nat}
-    (ih_char_tail : Certified (Stmt_char_tail prog prims ix_char_tail n)) :
-    Stmt_char_tail_at prog prims ix_char_tail_at (n + 1) := by
-  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5
+    (ext_based_limit : Certified (∀ {n : Nat}, Stmt_based_limit prog prims ix_based_limit n))
+    (ext_base_digit : Certified (∀ {n : Nat}, Stmt_base_digit prog prims ix_base_digit n)) {n : Nat}
+    (ih_based_digits : Certified (Stmt_based_digits prog prims ix_based_digits n)) :
+    Stmt_based_digit prog prims ix_based_digit (n + 1) := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
   rw [pcall_succ np fn] at h
-  simp only [src_char_tail_at] at h
-  faithful [Lanius.Mini.Inline.charTailAt]
+  simp only [src_based_digit] at h
+  faithful [Lanius.Mini.Inline.basedDigit]
 
 theorem step_decimal_digit {prog : SrcProgram} {prims : Prims} {ix_decimal_digit ix_minus ix_plus ix_times ix_decimal : Nat} (fn : prog.funcs[ix_decimal_digit]? = some (src_decimal_digit ix_minus ix_plus ix_times ix_decimal)) (np : prims.isPrim ix_decimal_digit = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
@@ -102,15 +69,6 @@ theorem step_imported_variants_at {prog : SrcProgram} {prims : Prims} {ix_import
   rw [pcall_succ np fn] at h
   simp only [src_imported_variants_at] at h
   faithful [Lanius.Mini.Inline.importedVariantsAt]
-
-theorem proof_int_in_range {prog : SrcProgram} {prims : Prims} {ix_int_in_range : Nat} (fn : prog.funcs[ix_int_in_range]? = some (src_int_in_range)) (np : prims.isPrim ix_int_in_range = false) {n : Nat} :
-    Stmt_int_in_range prog prims ix_int_in_range n := by
-  intro x0 v0 w h r0
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_int_in_range] at h
-  faithful [Lanius.Mini.Inline.intInRange]
 
 theorem step_item_import_at {prog : SrcProgram} {prims : Prims} {ix_item_import_at ix_same_spellings ix_item_import ix_item_of : Nat} (fn : prog.funcs[ix_item_import_at]? = some (src_item_import_at ix_same_spellings ix_item_import ix_item_of)) (np : prims.isPrim ix_item_import_at = false)
     (ext_same_spellings : Certified (∀ {n : Nat}, Stmt_same_spellings prog prims ix_same_spellings n))

@@ -67,6 +67,9 @@ def SrcEff.sliceUses (self : SrcEff) : List Nat :=
   | .eDivide op left right => SrcEff.sliceUses left ++ SrcEff.sliceUses right
   | .eStride slice => []
   | .arraySlice element array => [array]
+  | .eIf condition ty thenValue elseValue => SrcEff.sliceUses condition ++ (SrcEff.sliceUses thenValue ++ SrcEff.sliceUses elseValue)
+  | .eLet id ty value rt body => SrcEff.sliceUses value ++ SrcEff.sliceUses body
+  | .eLen slice => []
 /-- The largest need of a function the expression calls, by needs (each function's, by index; 0 for a host service). -/
 def SrcEff.calleeNeed (self : SrcEff) (needs : List Nat) : Nat :=
   match self with
@@ -83,6 +86,9 @@ def SrcEff.calleeNeed (self : SrcEff) (needs : List Nat) : Nat :=
   | .eDivide op left right => max (SrcEff.calleeNeed left needs) (SrcEff.calleeNeed right needs)
   | .eStride slice => 0
   | .arraySlice element array => 0
+  | .eIf condition ty thenValue elseValue => max (SrcEff.calleeNeed condition needs) (max (SrcEff.calleeNeed thenValue needs) (SrcEff.calleeNeed elseValue needs))
+  | .eLet id ty value rt body => max (SrcEff.calleeNeed value needs) (SrcEff.calleeNeed body needs)
+  | .eLen slice => 0
 def effsSliceUses (es : List SrcEff) : List Nat :=
   match es with
   | [] => []

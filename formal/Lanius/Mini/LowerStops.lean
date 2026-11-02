@@ -966,20 +966,15 @@ theorem mapRawNominalSlice_cases {P : Core.Program} {st : State} {element : Core
 /-- Core's `slice_from_raw_parts` of evaluated operands completes or traps undefined. -/
 theorem sliceFrom_cases {P : Core.Program} {k : Nat} {st : State} {element : SrcType}
     (kind : element = .i32 ∨ element = .uint .uint8 ∨ (∃ sid fields, element = .struct sid fields) ∨
-      (∃ eid variants, element = .enum eid variants) ∨ element = .uint .uint16) {p l : Core.Expr} {a : Nat} {n : Int}
+      (∃ eid variants, element = .enum eid variants) ∨ element.WordScalar) {p l : Core.Expr} {a : Nat} {n : Int}
     (pRun : evalExpr k P st p = .done (.pointer a) st) (lRun : evalExpr k P st l = .done (.signed .i32 n) st) :
     (∃ v st1, evalExpr (k + 1) P st (element.sliceFrom p l) = .done v st1) ∨
       ∃ r, evalExpr (k + 1) P st (element.sliceFrom p l) = .trapped r st ∧ undefinedTrap r = true := by
-  rcases kind with rfl | rfl | ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩ | rfl
+  rcases kind with rfl | rfl | ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩ | (rfl | rfl | rfl | rfl | rfl)
   · simp only [SrcType.sliceFrom, evalExpr, pRun, lRun]
     exact mapRawI32Slice_cases rfl
-  · simp only [SrcType.sliceFrom, evalExpr, pRun, lRun]
-    exact mapRawNominalSlice_cases rfl
-  · simp only [SrcType.sliceFrom, evalExpr, pRun, lRun]
-    exact mapRawNominalSlice_cases rfl
-  · simp only [SrcType.sliceFrom, evalExpr, pRun, lRun]
-    exact mapRawNominalSlice_cases rfl
-  · simp only [SrcType.sliceFrom, evalExpr, pRun, lRun]
+  all_goals
+    simp only [SrcType.sliceFrom, evalExpr, pRun, lRun]
     exact mapRawNominalSlice_cases rfl
 
 end RawMemory

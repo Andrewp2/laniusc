@@ -3377,30 +3377,23 @@ theorem mapRawNominalSlice_inv {P : Core.Program} {st : State} {element : Core.T
 theorem slice_kind {ds : SrcDecls} {element : SrcType}
     (cond : (element.isI32 || element.isUint .uint8 || wordElement ds element) = true) :
     element = .i32 ∨ element = .uint .uint8 ∨ (∃ sid fields, element = .struct sid fields) ∨
-      (∃ eid variants, element = .enum eid variants) ∨ element = .uint .uint16 := by
-  cases element with
-  | i32 => exact .inl rfl
-  | uint kind =>
-    have c : (SrcType.uint kind).isUint .uint8 = true ∨ (SrcType.uint kind).isUint .uint16 = true := by
-      simpa [SrcType.isI32, wordElement] using cond
-    rcases c with c | c
-    · exact .inr (.inl (SrcType.eq_of_isUint c))
-    · exact .inr (.inr (.inr (.inr (SrcType.eq_of_isUint c))))
-  | struct sid fields => exact .inr (.inr (.inl ⟨sid, fields, rfl⟩))
-  | enum eid variants => exact .inr (.inr (.inr (.inl ⟨eid, variants, rfl⟩)))
-  | bool | ptr | slice | array | unit | isize | char | float | sint =>
-    simp [SrcType.isI32, SrcType.isUint, wordElement] at cond
+      (∃ eid variants, element = .enum eid variants) ∨ element.WordScalar := by
+  simp only [Bool.or_eq_true] at cond
+  rcases cond with (c | c) | c
+  · cases element <;> simp_all [SrcType.isI32]
+  · exact .inr (.inl (SrcType.eq_of_isUint c))
+  · exact .inr (.inr (wordElement_cases c))
 
 /-- What Core's `slice_from_raw_parts` of an accepted element type did. -/
 theorem sliceFrom_inv {P : Core.Program} {k : Nat} {st : State} {element : SrcType}
     (kind : element = .i32 ∨ element = .uint .uint8 ∨ (∃ sid fields, element = .struct sid fields) ∨
-      (∃ eid variants, element = .enum eid variants) ∨ element = .uint .uint16) {p l : Core.Expr}
+      (∃ eid variants, element = .enum eid variants) ∨ element.WordScalar) {p l : Core.Expr}
     {v : Value} {st1 : State} (run : evalExpr (k + 1) P st (element.sliceFrom p l) = .done v st1) :
     ∃ a afterPointer n afterLength len heap, evalExpr k P st p = .done (.pointer a) afterPointer ∧
       evalExpr k P afterPointer l = .done (.signed .i32 n) afterLength ∧
       v = .rawSlice element.toCore a len ∧ st1 = { afterLength with heap } ∧
       (∀ hp, HeapCorr afterLength.heap afterLength.world hp → HeapCorr heap afterLength.world hp) ∧ len = n.toNat ∧ 0 ≤ n := by
-  rcases kind with rfl | rfl | ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩ | rfl
+  rcases kind with rfl | rfl | ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩ | (rfl | rfl | rfl | rfl | rfl)
   all_goals
     simp only [SrcType.sliceFrom, evalExpr] at run
     split at run

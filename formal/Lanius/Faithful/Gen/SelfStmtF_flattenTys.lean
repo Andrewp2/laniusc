@@ -21,20 +21,20 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_cons_type (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcType} {x1 : Option (List Lanius.Mini.SrcType)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 158 RepSrcType) x0 v0 → (RepOption 187 (RepList 73 RepSrcType)) x1 v1 →
-    (RepOption 187 (RepList 73 RepSrcType)) (Lanius.Mini.consType x0 x1) w
+  ∀ {x0 : Option Lanius.Mini.SrcType} {x1 : Option (List Lanius.Mini.SrcType)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 158 RepSrcType) x0 v0 → (RepOption 188 (RepList 73 RepSrcType)) x1 v1 →
+    (RepOption 188 (RepList 73 RepSrcType)) (Lanius.Mini.consType x0 x1) w
 
 abbrev Stmt_cons_type_tail (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.SrcType} {x1 : Option (List Lanius.Mini.SrcType)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepSrcType x0 v0 → (RepOption 187 (RepList 73 RepSrcType)) x1 v1 →
-    (RepOption 187 (RepList 73 RepSrcType)) (Lanius.Mini.consTypeTail x0 x1) w
+  ∀ {x0 : Lanius.Mini.SrcType} {x1 : Option (List Lanius.Mini.SrcType)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepSrcType x0 v0 → (RepOption 188 (RepList 73 RepSrcType)) x1 v1 →
+    (RepOption 188 (RepList 73 RepSrcType)) (Lanius.Mini.consTypeTail x0 x1) w
 
 abbrev Stmt_cons_types (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List Lanius.Mini.SrcType)} {x1 : Option (List (List Lanius.Mini.SrcType))} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 187 (RepList 73 RepSrcType)) x0 v0 → (RepOption 188 (RepList 77 (RepList 73 RepSrcType))) x1 v1 →
-    (RepOption 188 (RepList 77 (RepList 73 RepSrcType))) (Lanius.Mini.consTypes x0 x1) w
+  ∀ {x0 : Option (List Lanius.Mini.SrcType)} {x1 : Option (List (List Lanius.Mini.SrcType))} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 188 (RepList 73 RepSrcType)) x0 v0 → (RepOption 189 (RepList 77 (RepList 73 RepSrcType))) x1 v1 →
+    (RepOption 189 (RepList 77 (RepList 73 RepSrcType))) (Lanius.Mini.consTypes x0 x1) w
 
 abbrev Stmt_cons_types_tail (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.SrcType} {x1 : Option (List (List Lanius.Mini.SrcType))} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 73 RepSrcType) x0 v0 → (RepOption 188 (RepList 77 (RepList 73 RepSrcType))) x1 v1 →
-    (RepOption 188 (RepList 77 (RepList 73 RepSrcType))) (Lanius.Mini.consTypesTail x0 x1) w
+  ∀ {x0 : List Lanius.Mini.SrcType} {x1 : Option (List (List Lanius.Mini.SrcType))} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 73 RepSrcType) x0 v0 → (RepOption 189 (RepList 77 (RepList 73 RepSrcType))) x1 v1 →
+    (RepOption 189 (RepList 77 (RepList 73 RepSrcType))) (Lanius.Mini.consTypesTail x0 x1) w
 
 abbrev Stmt_flat_payloads (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option (List (List Lanius.Mini.Ty))} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 240 (RepList 241 (RepList 141 RepTy))) x0 v0 →

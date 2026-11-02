@@ -51,6 +51,41 @@ def evalMatch (slot : Nat) (ety : SrcType) (ty : SrcType) (scrutinee : Option Ev
     | none => none
     | some a => evalMatchOf slot ety ty s a binders values
 
+/-- The condition is a bool and both values have type ty. -/
+def evalIfOf (slot : Nat) (ty : SrcType) (c : Evaluated) (t : Evaluated) (e : Evaluated) : Option Evaluated :=
+  if SrcType.same c.ty SrcType.bool && SrcType.same t.ty ty && SrcType.same e.ty ty then
+    some ({ stmt := Stmt.seq c.stmt (Stmt.ite (Expr.var slot) t.stmt e.stmt), ty := ty } : Evaluated)
+  else
+    none
+
+/-- The value has type ty and the body type rt: the value in slot, then the body from match_dst, then its value copied down to slot. -/
+def evalLetInOf (slot : Nat) (ty : SrcType) (rt : SrcType) (v : Evaluated) (b : Evaluated) : Option Evaluated :=
+  if SrcType.same v.ty ty && SrcType.same b.ty rt then
+    some ({ stmt := Stmt.seq v.stmt (Stmt.seq b.stmt (assignFrom slot (slotVars (matchDst slot ty rt) (SrcType.size rt)) Stmt.skip)), ty := rt } : Evaluated)
+  else
+    none
+
+/-- let id: ty = value in body: the value in slot, id bound to it there, and the body evaluated from match_dst, above the value and the result. -/
+def evalLetIn (slot : Nat) (ty : SrcType) (rt : SrcType) (value : Option Evaluated) (body : Option Evaluated) : Option Evaluated :=
+  match value with
+  | none => none
+  | some v =>
+    match body with
+    | none => none
+    | some b => evalLetInOf slot ty rt v b
+
+/-- The condition in slot, then the value its test picks, also from slot. -/
+def evalIf (slot : Nat) (ty : SrcType) (condition : Option Evaluated) (thenValue : Option Evaluated) (elseValue : Option Evaluated) : Option Evaluated :=
+  match condition with
+  | none => none
+  | some c =>
+    match thenValue with
+    | none => none
+    | some t =>
+      match elseValue with
+      | none => none
+      | some e => evalIfOf slot ty c t e
+
 mutual
 /-- The struct and enum types of the literals in this expression, which the program's declarations must give. -/
 def SrcEff.types (self : SrcEff) : List SrcType :=
@@ -68,6 +103,9 @@ def SrcEff.types (self : SrcEff) : List SrcType :=
   | .eDivide op left right => SrcEff.types left ++ SrcEff.types right
   | .eStride slice => []
   | .arraySlice element array => [element]
+  | .eIf condition ty thenValue elseValue => SrcEff.types condition ++ (SrcEff.types thenValue ++ SrcEff.types elseValue)
+  | .eLet id ty value rt body => ty :: (SrcEff.types value ++ SrcEff.types body)
+  | .eLen slice => []
 def effsTypes (es : List SrcEff) : List SrcType :=
   match es with
   | [] => []

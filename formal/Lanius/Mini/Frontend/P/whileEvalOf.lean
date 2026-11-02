@@ -1,11 +1,11 @@
 module
 
 public import Lanius.Mini.Frontend.Types
-import Lanius.Mini.Frontend.P.bindsOfTys
 import Lanius.Mini.Frontend.P.callParts
 import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.ifEff
+import Lanius.Mini.Frontend.P.litEffMatch
 import Lanius.Mini.Frontend.P.projection
 import Lanius.Mini.Frontend.P.shrFirst
 import Lanius.Mini.Frontend.P.tryLetHead
@@ -79,6 +79,9 @@ def effActs (n : Nat) (x : MEff) : Bool :=
   | .xStride sl => false
   | .xArraySlice e sl => false
   | .xHost id args => true
+  | .xIf c t a b => effActs n c || effActs n a || effActs n b
+  | .xLet id t v rt b => effActs n v || effActs n b
+  | .xLen sl => false
 def effsAct (n : Nat) (xs : List MEff) : Bool :=
   match xs with
   | [] => false

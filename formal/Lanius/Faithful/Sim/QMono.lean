@@ -80,6 +80,18 @@ theorem qeff_mono (le : QCallsLe call call') :
     exact qthen_mono (fun _ hx => qeff_mono le hx)
       (fun _ _ hx => qthen_mono (fun _ hy => qeff_mono le hy) (fun _ _ hy => hy) hx) h
   | _, .eStride _, _, h => by simp [qeff] at h
+  | _, .arraySlice _ _, _, h => by simp [qeff] at h
+  | env, .eIf c _ a b, _, h => by
+    simp only [qeff] at h ⊢
+    refine qthen_mono (fun _ hx => qeff_mono le hx) (fun x w hx => ?_) h
+    refine bind_mono (fun _ hy => hy) (fun bb w hy => ?_) hx
+    cases bb
+    · exact qeff_mono le hy
+    · exact qeff_mono le hy
+  | env, .eLet id _ value _ body, _, h => by
+    simp only [qeff] at h ⊢
+    exact qthen_mono (fun _ hx => qeff_mono le hx) (fun _ _ hx => qeff_mono le hx) h
+  | _, .eLen _, _, h => by simp [qeff] at h
 
 theorem qeffs_mono (le : QCallsLe call call') :
     ∀ {env : Env} {es : List SrcEff} {vs : List Value × Nat}, qeffs call env es = some vs →
@@ -102,28 +114,58 @@ theorem qarms_mono (le : QCallsLe call call') :
     · exact qeff_mono le h
 end
 
-theorem qstmt_mono (le : QCallsLe call call') (s : SrcStmt) :
-    ∀ {env : Env} {d : Done × Nat}, qstmt call env s = some d → qstmt call' env s = some d := by
+/-- `qloop` keeps its value and cost with tests and bodies that keep theirs, and more fuel. -/
+theorem qloop_mono {test test' : Env → Option (Bool × Nat)} {body body' : Env → Option (Out × Nat)}
+    (ht : ∀ e b, test e = some b → test' e = some b) (hb : ∀ e o, body e = some o → body' e = some o) :
+    ∀ {n n' : Nat} {env : Env} {o : Out × Nat}, n ≤ n' → qloop test body n env = some o →
+      qloop test' body' n' env = some o
+  | 0, _, _, _, _, h => by simp [qloop] at h
+  | n + 1, n', env, o, le, h => by
+    obtain ⟨m, rfl⟩ : ∃ m, n' = m + 1 := ⟨n' - 1, by omega⟩
+    rw [qloop] at h ⊢
+    refine qthen_mono (fun x hx => ht env x hx) (fun b w hx => ?_) h
+    cases b with
+    | false => exact hx
+    | true =>
+      rw [if_pos rfl] at hx ⊢
+      refine qthen_mono (fun x hy => hb env x hy) (fun x w hy => ?_) hx
+      cases x with
+      | next e => exact qloop_mono ht hb (by omega) hy
+      | cont e => exact qloop_mono ht hb (by omega) hy
+      | brk e => exact hy
+      | ret value => exact hy
+
+theorem qpop_mono {o o' : Option (Out × Nat)} {w : Out × Nat}
+    (ho : ∀ x, o = some x → o' = some x) (h : qpop o = some w) : qpop o' = some w := by
+  unfold qpop at h ⊢
+  cases o with
+  | none => simp at h
+  | some x => rw [ho x rfl]; exact h
+
+/-- `qstmt` keeps its value and cost with calls that keep theirs and more loop fuel. -/
+theorem qstmt_mono (le : QCallsLe call call') {fuel fuel' : Nat} (fle : fuel ≤ fuel') (s : SrcStmt) :
+    ∀ {env : Env} {d : Out × Nat}, qstmt call fuel env s = some d → qstmt call' fuel' env s = some d := by
   induction s with
   | nop => exact fun h => h
   | «let» id ty value body ih =>
     intro env d h
     simp only [qstmt] at h ⊢
-    exact bind_mono (fun _ hx => hx) (fun _ _ hx => ih hx) h
+    exact bind_mono (fun _ hx => hx) (fun _ _ hx => qpop_mono (fun _ hy => ih hy) hx) h
   | letStruct id ty fields body ih =>
     intro env d h
     simp only [qstmt] at h ⊢
-    exact bind_mono (fun _ hx => hx) (fun _ _ hx => ih hx) h
+    exact bind_mono (fun _ hx => hx) (fun _ _ hx => qpop_mono (fun _ hy => ih hy) hx) h
   | letCall id ty callee args body ih =>
     intro env d h
     simp only [qstmt] at h ⊢
-    exact qthen_mono (fun _ hx => bind_mono (fun _ hy => hy) (fun _ _ hc => le _ _ _ hc) hx) (fun _ _ hx => ih hx) h
+    exact qthen_mono (fun _ hx => bind_mono (fun _ hy => hy) (fun _ _ hc => le _ _ _ hc) hx)
+      (fun _ _ hx => qpop_mono (fun _ hy => ih hy) hx) h
   | letEnum id ty variant payload body ih =>
     intro env d h
     simp only [qstmt] at h ⊢
-    exact bind_mono (fun _ hx => hx) (fun _ _ hx => ih hx) h
+    exact bind_mono (fun _ hx => hx) (fun _ _ hx => qpop_mono (fun _ hy => ih hy) hx) h
   | letMatch => intro env d h; simp [qstmt] at h
-  | set => intro env d h; simp [qstmt] at h
+  | set => exact fun h => h
   | setField => intro env d h; simp [qstmt] at h
   | setCall => intro env d h; simp [qstmt] at h
   | «then» first second ih1 ih2 =>
@@ -131,7 +173,9 @@ theorem qstmt_mono (le : QCallsLe call call') (s : SrcStmt) :
     simp only [qstmt] at h ⊢
     refine qthen_mono (fun _ hx => ih1 hx) (fun x w hx => ?_) h
     cases x with
-    | next => exact ih2 hx
+    | next e => exact ih2 hx
+    | brk e => exact hx
+    | cont e => exact hx
     | ret value => exact hx
   | «if» condition thenBranch elseBranch ih1 ih2 =>
     intro env d h
@@ -140,7 +184,10 @@ theorem qstmt_mono (le : QCallsLe call call') (s : SrcStmt) :
     cases b
     · exact ih2 hx
     · exact ih1 hx
-  | «while» => intro env d h; simp [qstmt] at h
+  | «while» condition body ih =>
+    intro env d h
+    simp only [qstmt] at h ⊢
+    exact qloop_mono (fun _ _ hx => hx) (fun _ _ hx => ih hx) fle h
   | «return» => exact fun h => h
   | letAlloc => intro env d h; simp [qstmt] at h
   | letLoad => intro env d h; simp [qstmt] at h
@@ -152,8 +199,11 @@ theorem qstmt_mono (le : QCallsLe call call') (s : SrcStmt) :
   | letEval id ty value body ih =>
     intro env d h
     simp only [qstmt] at h ⊢
-    exact qthen_mono (fun _ hx => qeff_mono le hx) (fun _ _ hx => ih hx) h
-  | setEval => intro env d h; simp [qstmt] at h
+    exact qthen_mono (fun _ hx => qeff_mono le hx) (fun _ _ hx => qpop_mono (fun _ hy => ih hy) hx) h
+  | setEval =>
+    intro env d h
+    simp only [qstmt] at h ⊢
+    exact qthen_mono (fun _ hx => qeff_mono le hx) (fun _ _ hx => hx) h
   | ifEval condition thenBranch elseBranch ih1 ih2 =>
     intro env d h
     simp only [qstmt] at h ⊢
@@ -162,7 +212,11 @@ theorem qstmt_mono (le : QCallsLe call call') (s : SrcStmt) :
     cases b
     · exact ih2 hy
     · exact ih1 hy
-  | whileEval => intro env d h; simp [qstmt] at h
+  | whileEval condition body ih =>
+    intro env d h
+    simp only [qstmt] at h ⊢
+    exact qloop_mono (fun _ _ hx => qthen_mono (fun _ hy => qeff_mono le hy) (fun _ _ hy => hy) hx)
+      (fun _ _ hx => ih hx) fle h
   | returnEval value =>
     intro env d h
     simp only [qstmt] at h ⊢
@@ -178,8 +232,8 @@ theorem qstmt_mono (le : QCallsLe call call') (s : SrcStmt) :
     intro env d h
     simp only [qstmt] at h ⊢
     exact qthen_mono (fun _ hx => qeff_mono le hx) (fun _ _ hx => hx) h
-  | «break» => intro env d h; simp [qstmt] at h
-  | «continue» => intro env d h; simp [qstmt] at h
+  | «break» => exact fun h => h
+  | «continue» => exact fun h => h
   | matchArm => intro env d h; simp [qstmt] at h
   | unreachable => intro env d h; simp [qstmt] at h
 

@@ -101,6 +101,8 @@ import all Lanius.Mini.Frontend.P.armsNaming
 import all Lanius.Mini.Frontend.P.armsOf
 import all Lanius.Mini.Frontend.P.assertClosed
 import all Lanius.Mini.Frontend.P.blockArmsOf
+import all Lanius.Mini.Frontend.P.litBound
+import all Lanius.Mini.Frontend.P.litIf
 import all Lanius.Mini.Frontend.P.callParts
 import all Lanius.Mini.Frontend.P.projection
 import all Lanius.Mini.Frontend.P.closeFuncs
@@ -114,6 +116,9 @@ import all Lanius.Mini.Frontend.P.consTys
 import all Lanius.Mini.Frontend.P.distinct
 import all Lanius.Mini.Frontend.P.divergeArm
 import all Lanius.Mini.Frontend.P.bindsOfTys
+import all Lanius.Mini.Frontend.P.litEffMatch
+import all Lanius.Mini.Frontend.P.litWants
+import all Lanius.Mini.Frontend.P.litWildValue
 import all Lanius.Mini.Frontend.P.eDivideClosed
 import all Lanius.Mini.Frontend.P.eIndexClosed
 import all Lanius.Mini.Frontend.P.eStructClosed
@@ -144,7 +149,7 @@ import all Lanius.Mini.Frontend.P.hasConst
 import all Lanius.Mini.Frontend.P.hasKids
 import all Lanius.Mini.Frontend.P.ifEff
 import all Lanius.Mini.Frontend.P.ifNotWrites
-import all Lanius.Mini.Frontend.P.intLiteral
+import all Lanius.Mini.Frontend.P.basedDigits
 import all Lanius.Mini.Frontend.P.isEmptyUsize
 import all Lanius.Mini.Frontend.P.isMatchStmt
 import all Lanius.Mini.Frontend.P.isPathCall

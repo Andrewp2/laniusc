@@ -86,9 +86,10 @@ theorem step_arm_values {prog : SrcProgram} {prims : Prims} {ix_arm_values ix_em
   simp only [src_arm_values] at h
   faithful [Lanius.Mini.armValues]
 
-theorem step_bare_eff {prog : SrcProgram} {prims : Prims} {ix_bare_eff ix_unbox_of_mini_selfhost_MEff ix_gives_bool ix_bare_int : Nat} (fn : prog.funcs[ix_bare_eff]? = some (src_bare_eff ix_unbox_of_mini_selfhost_MEff ix_gives_bool ix_bare_eff ix_bare_int)) (np : prims.isPrim ix_bare_eff = false)
+theorem step_bare_eff {prog : SrcProgram} {prims : Prims} {ix_bare_eff ix_unbox_of_mini_selfhost_MEff ix_gives_bool ix_shift_op ix_bare_int : Nat} (fn : prog.funcs[ix_bare_eff]? = some (src_bare_eff ix_unbox_of_mini_selfhost_MEff ix_gives_bool ix_shift_op ix_bare_eff ix_bare_int)) (np : prims.isPrim ix_bare_eff = false)
     (ext_unbox_of_mini_selfhost_MEff : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_MEff prog prims ix_unbox_of_mini_selfhost_MEff n))
     (ext_gives_bool : Certified (∀ {n : Nat}, Stmt_gives_bool prog prims ix_gives_bool n))
+    (ext_shift_op : Certified (∀ {n : Nat}, Stmt_shift_op prog prims ix_shift_op n))
     (ext_bare_int : Certified (∀ {n : Nat}, Stmt_bare_int prog prims ix_bare_int n)) {n : Nat}
     (ih_bare_eff : Certified (Stmt_bare_eff prog prims ix_bare_eff n)) :
     Stmt_bare_eff prog prims ix_bare_eff (n + 1) := by
@@ -127,9 +128,10 @@ theorem proof_cons_expr_tail {prog : SrcProgram} {prims : Prims} {ix_cons_expr_t
   simp only [src_cons_expr_tail] at h
   faithful [Lanius.Mini.consExprTail]
 
-theorem step_eff_ty {prog : SrcProgram} {prims : Prims} {ix_eff_ty ix_minus ix_unbox_of_mini_selfhost_MEff ix_boxed_of_mini_selfhost_Ty ix_src_ty ix_expr_ty ix_inst_ret ix_apply_ty ix_pick_ty ix_bare_eff ix_index_ty ix_find_local_id : Nat} (fn : prog.funcs[ix_eff_ty]? = some (src_eff_ty ix_minus ix_unbox_of_mini_selfhost_MEff ix_boxed_of_mini_selfhost_Ty ix_src_ty ix_eff_ty ix_expr_ty ix_inst_ret ix_apply_ty ix_pick_ty ix_bare_eff ix_index_ty ix_find_local_id)) (np : prims.isPrim ix_eff_ty = false)
+theorem step_eff_ty {prog : SrcProgram} {prims : Prims} {ix_eff_ty ix_minus ix_unbox_of_mini_selfhost_MEff ix_shift_op ix_boxed_of_mini_selfhost_Ty ix_src_ty ix_expr_ty ix_inst_ret ix_apply_ty ix_pick_ty ix_bare_eff ix_index_ty ix_find_local_id : Nat} (fn : prog.funcs[ix_eff_ty]? = some (src_eff_ty ix_minus ix_unbox_of_mini_selfhost_MEff ix_shift_op ix_boxed_of_mini_selfhost_Ty ix_src_ty ix_eff_ty ix_expr_ty ix_inst_ret ix_apply_ty ix_pick_ty ix_bare_eff ix_index_ty ix_find_local_id)) (np : prims.isPrim ix_eff_ty = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_unbox_of_mini_selfhost_MEff : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_MEff prog prims ix_unbox_of_mini_selfhost_MEff n))
+    (ext_shift_op : Certified (∀ {n : Nat}, Stmt_shift_op prog prims ix_shift_op n))
     (ext_boxed_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Ty prog prims ix_boxed_of_mini_selfhost_Ty n))
     (ext_src_ty : Certified (∀ {n : Nat}, Stmt_src_ty prog prims ix_src_ty n))
     (ext_expr_ty : Certified (∀ {n : Nat}, Stmt_expr_ty prog prims ix_expr_ty n))

@@ -86,10 +86,10 @@ theorem signed_subtract (ty : Core.SignedIntTy) (a b : Int) :
 
 /-- A raw view of a struct or enum element type that Core made. -/
 theorem map_inv {P : Core.Program} {s s' : State} {T : Core.Ty} {a : Nat} {n : Int} {v : Value}
-    (kind : (∃ id, T = .structure id) ∨ (∃ id, T = .enumeration id) ∨ T = .scalar (.unsigned .u16))
+    (kind : (∃ id, T = .structure id) ∨ (∃ id, T = .enumeration id) ∨ CoreWordScalar T)
     (h : mapRawNominalSlice P s T a n = .done v s') :
     ∃ w, NativeLayout.valueWords? P T = some w ∧ 0 < w ∧ 0 ≤ n ∧ v = .rawSlice T a n.toNat ∧ s' = s := by
-  rcases kind with ⟨id, rfl⟩ | ⟨id, rfl⟩ | rfl <;>
+  rcases kind with ⟨id, rfl⟩ | ⟨id, rfl⟩ | (rfl | rfl | rfl | rfl | rfl) <;>
   · unfold mapRawNominalSlice at h
     dsimp only at h
     split at h
@@ -120,12 +120,12 @@ theorem map_inv {P : Core.Program} {s s' : State} {T : Core.Ty} {a : Nat} {n : I
 theorem sliceFrom_word {ds : SrcDecls} {t : SrcType} (el : wordElement ds t = true) :
     (∀ p n, t.sliceFrom p n = .typedSliceFromRawParts t.toCore p n) ∧
       ((∃ id, t.toCore = .structure id) ∨ (∃ id, t.toCore = .enumeration id) ∨
-        t.toCore = .scalar (.unsigned .u16)) := by
+        CoreWordScalar t.toCore) := by
   cases t with
   | struct id fs => exact ⟨fun _ _ => rfl, .inl ⟨id, rfl⟩⟩
   | enum id vs => exact ⟨fun _ _ => rfl, .inr (.inl ⟨id, rfl⟩)⟩
   | i32 => simp [wordElement] at el
-  | bool => simp [wordElement] at el
+  | bool => exact ⟨fun _ _ => rfl, wordElement_core el⟩
   | uint k => exact ⟨fun _ _ => rfl, wordElement_core el⟩
   | ptr => simp [wordElement] at el
   | slice => simp [wordElement] at el
@@ -133,17 +133,17 @@ theorem sliceFrom_word {ds : SrcDecls} {t : SrcType} (el : wordElement ds t = tr
   | isize => simp [wordElement] at el
   | char => simp [wordElement] at el
   | float => simp [wordElement] at el
-  | sint => simp [wordElement] at el
+  | sint k => exact ⟨fun _ _ => rfl, wordElement_core el⟩
   | array => simp [wordElement] at el
 
 theorem stride_word {P : Core.Program} {T : Core.Ty} {a len w : Nat}
-    (kind : ((∃ id, T = .structure id) ∨ (∃ id, T = .enumeration id) ∨ T = .scalar (.unsigned .u16))) (words : NativeLayout.valueWords? P T = some w) :
+    (kind : ((∃ id, T = .structure id) ∨ (∃ id, T = .enumeration id) ∨ CoreWordScalar T)) (words : NativeLayout.valueWords? P T = some w) :
     Semantics.rawSliceStride? P (.rawSlice T a len) = some (-((8 * w : Nat) : Int)) := by
-  rcases kind with ⟨id, rfl⟩ | ⟨id, rfl⟩ | rfl <;>
+  rcases kind with ⟨id, rfl⟩ | ⟨id, rfl⟩ | (rfl | rfl | rfl | rfl | rfl) <;>
     simp [Semantics.rawSliceStride?, NativeLayout.elementStride?, words, NativeLayout.wordBytes]
 
 theorem valueWords_le {P : Core.Program} {T : Core.Ty} {w : Nat}
-    (kind : ((∃ id, T = .structure id) ∨ (∃ id, T = .enumeration id) ∨ T = .scalar (.unsigned .u16))) (words : NativeLayout.valueWords? P T = some w) :
+    (kind : ((∃ id, T = .structure id) ∨ (∃ id, T = .enumeration id) ∨ CoreWordScalar T)) (words : NativeLayout.valueWords? P T = some w) :
     w ≤ NativeLayout.maxWords :=
   words_le_max3 (k := NativeLayout.maxDepth - 1) kind words
 

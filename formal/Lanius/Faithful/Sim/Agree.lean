@@ -39,7 +39,7 @@ noncomputable def pcallG (sp : SrcProgram) (prims : Prims) (safe : Nat → List 
         | none => none
         | some f =>
           if values.length = f.params.length then
-            (pstmt (pcallG sp prims safe fuel) (paramEnv f.params values) f.body).bind (doneValue f.ret)
+            (mstmt (pcallG sp prims safe fuel) fuel (paramEnv f.params values) f.body).bind (outValue f.ret)
           else none
     else none
 
@@ -48,9 +48,9 @@ where `safe` holds of the arguments, gives every value the body of `sp'`
 gives, with calls that give at least as much. -/
 def Agrees (sp sp' : SrcProgram) (safe : Nat → List Value → Prop) : Prop :=
   ∀ c f', sp'.funcs[c]? = some f' → ∃ f, sp.funcs[c]? = some f ∧ f.params = f'.params ∧
-    ∀ vs, safe c vs → ∀ (call call' : Calls) (v : Value), CallsLe call call' →
-      (pstmt call (paramEnv f'.params vs) f'.body).bind (doneValue f'.ret) = some v →
-      (pstmt call' (paramEnv f.params vs) f.body).bind (doneValue f.ret) = some v
+    ∀ vs, safe c vs → ∀ (call call' : Calls) (fuel : Nat) (v : Value), CallsLe call call' →
+      (mstmt call fuel (paramEnv f'.params vs) f'.body).bind (outValue f'.ret) = some v →
+      (mstmt call' fuel (paramEnv f.params vs) f.body).bind (outValue f.ret) = some v
 
 section
 variable {sp sp' sp'' : SrcProgram} {prims : Prims} {safe : Nat → List Value → Prop}
@@ -80,30 +80,30 @@ theorem pcall_of_pcallG (h : Agrees sp sp' safe) :
           split at hv
           · rename_i len
             rw [if_pos (hp ▸ len)]
-            exact hb vs hs _ _ v (fun _ _ _ hc => pcall_of_pcallG h n hc) hv
+            exact hb vs hs _ _ n v (fun _ _ _ hc => pcall_of_pcallG h n hc) hv
           · simp at hv
     · simp at hv
 
 /-- A program agrees with itself. -/
 theorem agrees_refl : Agrees sp sp safe := by
   intro c f hf
-  refine ⟨f, hf, rfl, fun vs _ call call' v le hv => ?_⟩
-  exact bind_mono (fun _ hx => pstmt_mono le _ hx) (fun _ _ hx => hx) hv
+  refine ⟨f, hf, rfl, fun vs _ call call' fuel v le hv => ?_⟩
+  exact bind_mono (fun _ hx => mstmt_mono le (Nat.le_refl fuel) _ hx) (fun _ _ hx => hx) hv
 
 theorem agrees_trans (h₁ : Agrees sp sp' safe) (h₂ : Agrees sp' sp'' safe) : Agrees sp sp'' safe := by
   intro c f'' hf''
   obtain ⟨f', hf', hp', hb'⟩ := h₂ c f'' hf''
   obtain ⟨f, hf, hp, hb⟩ := h₁ c f' hf'
-  refine ⟨f, hf, hp.trans hp', fun vs hs call call' v le hv => ?_⟩
-  exact hb vs hs call' call' v (fun _ _ _ hc => hc) (hb' vs hs call call' v le hv)
+  refine ⟨f, hf, hp.trans hp', fun vs hs call call' fuel v le hv => ?_⟩
+  exact hb vs hs call' call' fuel v (fun _ _ _ hc => hc) (hb' vs hs call call' fuel v le hv)
 
 /-- Wrapping function `i` keeps the agreement where its wrapped body agrees
 with its own. -/
 theorem agrees_wrapAt {i : Nat} {op : SrcOp}
-    (hw : ∀ f, sp.funcs[i]? = some f → ∀ vs, safe i vs → ∀ (call call' : Calls) (v : Value),
+    (hw : ∀ f, sp.funcs[i]? = some f → ∀ vs, safe i vs → ∀ (call call' : Calls) (fuel : Nat) (v : Value),
       CallsLe call call' →
-      (pstmt call (paramEnv f.params vs) (wrapFunc op f).body).bind (doneValue f.ret) = some v →
-      (pstmt call' (paramEnv f.params vs) f.body).bind (doneValue f.ret) = some v) :
+      (mstmt call fuel (paramEnv f.params vs) (wrapFunc op f).body).bind (outValue f.ret) = some v →
+      (mstmt call' fuel (paramEnv f.params vs) f.body).bind (outValue f.ret) = some v) :
     Agrees sp (wrapAt sp i op) safe := by
   intro c f' hf'
   rw [wrapAt_get] at hf'
@@ -115,7 +115,7 @@ theorem agrees_wrapAt {i : Nat} {op : SrcOp}
     | some f =>
       rw [hf] at hf'
       cases hf'
-      exact ⟨f, rfl, rfl, fun vs hs call call' v le hv => hw f hf vs hs call call' v le hv⟩
+      exact ⟨f, rfl, rfl, fun vs hs call call' fuel v le hv => hw f hf vs hs call call' fuel v le hv⟩
   · exact agrees_refl c f' hf'
 
 end
@@ -136,17 +136,17 @@ noncomputable def qcallG (sp : SrcProgram) (prims : Prims) (cost : Nat → Nat) 
         | none => none
         | some f =>
           if values.length = f.params.length then
-            qthen (qstmt (qcallG sp prims cost safe fuel) (paramEnv f.params values) f.body) fun d =>
-              qfree (doneValue f.ret d)
+            qthen (qstmt (qcallG sp prims cost safe fuel) fuel (paramEnv f.params values) f.body) fun d =>
+              qfree (outValue f.ret d)
           else none
     else none
 
 /-- `QAgrees`: `Agrees` with costs. -/
 def QAgrees (sp sp' : SrcProgram) (safe : Nat → List Value → Prop) : Prop :=
   ∀ c f', sp'.funcs[c]? = some f' → ∃ f, sp.funcs[c]? = some f ∧ f.params = f'.params ∧
-    ∀ vs, safe c vs → ∀ (call call' : QCalls) (p : Value × Nat), QCallsLe call call' →
-      qthen (qstmt call (paramEnv f'.params vs) f'.body) (fun d => qfree (doneValue f'.ret d)) = some p →
-      qthen (qstmt call' (paramEnv f.params vs) f.body) (fun d => qfree (doneValue f.ret d)) = some p
+    ∀ vs, safe c vs → ∀ (call call' : QCalls) (fuel : Nat) (p : Value × Nat), QCallsLe call call' →
+      qthen (qstmt call fuel (paramEnv f'.params vs) f'.body) (fun d => qfree (outValue f'.ret d)) = some p →
+      qthen (qstmt call' fuel (paramEnv f.params vs) f.body) (fun d => qfree (outValue f.ret d)) = some p
 
 section
 variable {sp sp' sp'' : SrcProgram} {prims : Prims} {cost : Nat → Nat} {safe : Nat → List Value → Prop}
@@ -166,7 +166,7 @@ theorem pcallG_eq_qcallG (sp : SrcProgram) (prims : Prims) (cost : Nat → Nat) 
         | some f =>
           simp only
           split
-          · exact fst_qthen (pstmt_eq (pcallG_eq_qcallG sp prims cost safe fuel) f.body _) fun d => fst_qfree _
+          · exact fst_qthen (mstmt_eq (pcallG_eq_qcallG sp prims cost safe fuel) fuel f.body _) fun d => fst_qfree _
           · rfl
     · rfl
 
@@ -196,27 +196,27 @@ theorem qcall_of_qcallG (h : QAgrees sp sp' safe) :
           split at hv
           · rename_i len
             rw [if_pos (hp ▸ len)]
-            exact hb vs hs _ _ p (fun _ _ _ hc => qcall_of_qcallG h n hc) hv
+            exact hb vs hs _ _ n p (fun _ _ _ hc => qcall_of_qcallG h n hc) hv
           · simp at hv
     · simp at hv
 
 theorem qagrees_refl : QAgrees sp sp safe := by
   intro c f hf
-  refine ⟨f, hf, rfl, fun vs _ call call' p le hv => ?_⟩
-  exact qthen_mono (fun _ hx => qstmt_mono le _ hx) (fun _ _ hx => hx) hv
+  refine ⟨f, hf, rfl, fun vs _ call call' fuel p le hv => ?_⟩
+  exact qthen_mono (fun _ hx => qstmt_mono le (Nat.le_refl fuel) _ hx) (fun _ _ hx => hx) hv
 
 theorem qagrees_trans (h₁ : QAgrees sp sp' safe) (h₂ : QAgrees sp' sp'' safe) : QAgrees sp sp'' safe := by
   intro c f'' hf''
   obtain ⟨f', hf', hp', hb'⟩ := h₂ c f'' hf''
   obtain ⟨f, hf, hp, hb⟩ := h₁ c f' hf'
-  refine ⟨f, hf, hp.trans hp', fun vs hs call call' p le hv => ?_⟩
-  exact hb vs hs call' call' p (fun _ _ _ hc => hc) (hb' vs hs call call' p le hv)
+  refine ⟨f, hf, hp.trans hp', fun vs hs call call' fuel p le hv => ?_⟩
+  exact hb vs hs call' call' fuel p (fun _ _ _ hc => hc) (hb' vs hs call call' fuel p le hv)
 
 theorem qagrees_wrapAt {i : Nat} {op : SrcOp}
-    (hw : ∀ f, sp.funcs[i]? = some f → ∀ vs, safe i vs → ∀ (call call' : QCalls) (p : Value × Nat),
+    (hw : ∀ f, sp.funcs[i]? = some f → ∀ vs, safe i vs → ∀ (call call' : QCalls) (fuel : Nat) (p : Value × Nat),
       QCallsLe call call' →
-      qthen (qstmt call (paramEnv f.params vs) (wrapFunc op f).body) (fun d => qfree (doneValue f.ret d)) = some p →
-      qthen (qstmt call' (paramEnv f.params vs) f.body) (fun d => qfree (doneValue f.ret d)) = some p) :
+      qthen (qstmt call fuel (paramEnv f.params vs) (wrapFunc op f).body) (fun d => qfree (outValue f.ret d)) = some p →
+      qthen (qstmt call' fuel (paramEnv f.params vs) f.body) (fun d => qfree (outValue f.ret d)) = some p) :
     QAgrees sp (wrapAt sp i op) safe := by
   intro c f' hf'
   rw [wrapAt_get] at hf'
@@ -228,7 +228,7 @@ theorem qagrees_wrapAt {i : Nat} {op : SrcOp}
     | some f =>
       rw [hf] at hf'
       cases hf'
-      exact ⟨f, rfl, rfl, fun vs hs call call' p le hv => hw f hf vs hs call call' p le hv⟩
+      exact ⟨f, rfl, rfl, fun vs hs call call' fuel p le hv => hw f hf vs hs call call' fuel p le hv⟩
   · exact qagrees_refl c f' hf'
 
 /-- **Where the guarded run has a value, the program and the wrapped one have

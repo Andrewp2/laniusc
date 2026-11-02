@@ -40,11 +40,29 @@ stopping at the computations the theorems are about (`compileSource`,
 `frontEndWords`, the self program `Lanius.Faithful.Self.prog` and
 `funcNeeds`, which are not trusted, section 10), with each one's type and
 body:
-definitions `70d594d3ee80699d` (4501 constants). This covers Core's
+definitions `f991f205862cd76e` (4649 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
 the statements' own definitions (section 2). A private name is hashed
 without its module, so a definition that only moves between generated
-modules keeps its hash. The last change of the hash (11-02, merge of front-fixes `d76509417115a874` into lang `339ca6217ec1aa8b`, giving `70d594d3ee80699d`): it combines step 3.5b's verified compiler changes with review-fixes' F14 changes, which did not change each other's definitions, beside the prim table `prims`, regenerated from the merged self program. Step 3.5b (11-01 of array-to-slice arguments):
+modules keeps its hash. The last change of the hash (11-02, merge of f11b `7eb93b7916d84bb4` and its step D into lang `70d594d3ee80699d`, giving `f991f205862cd76e`): it combines F11b's changes with lang's, which did not change each other's definitions, beside the prim table `prims`, regenerated from the merged self program. Step D (9af4023ad) adds `while`, `break` and `continue` to the pure fragment: `mstmt`, `ploop`, `Out` with `Out.then`, `Out.pop` and `outValue` (`Faithful/Pure.lean`), and the cost semantics' `qstmt` with `qloop` (`Faithful/Cost.lean`), are trusted; lang's F14 cost statements (`qcallG`, `qcallB`, the budget certificates) now run statements with `qstmt`'s loop fuel and end calls with `outValue`. F11b's (11-01, the
+front end's reading of int bases, literal patterns, `for` and `slice_len`):
+Core has the intrinsic `slice_len` (`Intrinsic.sliceLength`,
+`sliceLength?`, its `evalExpr` case and `ExprHasType.sliceLength`;
+SEMANTIC_DECISIONS "Slice length"), and raw nominal slices take `u32`,
+`u64`, `i64` and `bool` elements (`RawNominalSliceElement`,
+`mapRawNominalSlice`, `rawSliceElementAddress?`, `NativeLayout.words?` and
+`elementStride?`). The reading of source text reads based int literals
+(`basedDigits`, `intLiteral`, `Reading.intValue`), literal patterns in
+`match` (`LitMatch`, `LitMatchR`, `litChain` and their helpers), `for` over
+arrays and slices (`forArray`, `forSlice`, `StmtR.forArray`,
+`StmtR.forSlice`) and `if`, `let` and `slice_len` inside effects
+(`SrcEff.eIf`, `eLet`, `eLen`, `MEff.xIf`, `xLet`, `xLen`, and the cases
+of the functions over them); the float literal pieces were restated with
+the shared digit reader. The pure fragment's statements return an `Out`
+(next, break, continue or return) through `mstmt`, which replaces `Done`
+and `pstmt` and adds local assignment (`Env.set`), and `prims` names the
+self program's functions at their new indices. The hash before it was
+`8884c49974b65a57`. Before that (11-01, step 3.5a of array-to-slice arguments): lang's (11-02, merge of front-fixes `d76509417115a874` into lang `339ca6217ec1aa8b`, giving `70d594d3ee80699d`): it combines step 3.5b's verified compiler changes with review-fixes' F14 changes, which did not change each other's definitions, beside the prim table `prims`, regenerated from the merged self program. Step 3.5b (11-01 of array-to-slice arguments):
 the verified compiler lowers a `LetEval` or `Discard` value through
 `stmt_eval` and checks an array call's result and block
 (`array_call_code`), which adds functions to the self program and moves
@@ -52,7 +70,7 @@ the indices in the prim table `prims`; `ixTimes` stays 105. No other
 definition changed. The top theorems' frame-room premise grew
 `fsp ≤ top ∧ top < 2 ^ 62` (section 8, "Frame room"), which changes their
 statement hashes but no definition. The hash before it was
-`8884c49974b65a57`. Before that (11-01, step 3.5a): Before that, review-fixes (11-01, merge of lang `8884c49974b65a57` into
+`8884c49974b65a57`. Before that, review-fixes (11-01, merge of lang `8884c49974b65a57` into
 review-fixes `5aa62e3705d251c9`): it combines lang's frame-room steps and
 review-fixes' F14 changes, which did not change each other's definitions,
 beside the prim table `prims` (`Faithful/Gen/SelfPureTab.lean`) and `ixTimes`,
@@ -487,7 +505,7 @@ the statements, so a reader has to agree that each one says what is intended:
 
 | definition | file | says |
 |---|---|---|
-| `SrcProgram.toCore` and the `toCore` of each construct | `Mini/Source.lean` | which Core program a source program *is*: each construct is the Core construct of the same name (`Null` is Core's literal `.pointer 0`), and functions are numbered by position, then the host functions (`hostFuncs`, ids 2^32 up). A literal (`EStruct`, `LetStruct`) means `SrcType.literal`: Core's array value `.array T vs` at an array type `[T; N]`, and a struct value otherwise. `ArraySlice(T, x)` is Core's `arrayToSlice T (local x)` |
+| `SrcProgram.toCore` and the `toCore` of each construct | `Mini/Source.lean` | which Core program a source program *is*: each construct is the Core construct of the same name (`Null` is Core's literal `.pointer 0`), and functions are numbered by position, then the host functions (`hostFuncs`, ids 2^32 up). A literal (`EStruct`, `LetStruct`) means `SrcType.literal`: Core's array value `.array T vs` at an array type `[T; N]`, and a struct value otherwise. `ArraySlice(T, x)` is Core's `arrayToSlice T (local x)`. `EIf(c, T, a, b)` is Core's `matchValue c [(literal true, a), (_, b)]`, Core's match on the bool (Core has no conditional expression). `ELet(x, T, v, R, b)` is Core's `matchValue v [(bind x, b)]`, the one arm binding x (Core has no let expression). `ELen(x)` is Core's `intrinsic sliceLength (local x)` |
 | `FieldsHold`, `SrcType.HoldsAt` | `Mini/Source.lean` | how a Core value sits in 64-bit slots: an `i32` is zero-extended, a `bool` is 1/0, a struct is its fields in order, an enum is a tag then its payload, a pointer is its address, an array `[T; N]` is its N elements in order, as a struct of N fields of type T, a float is its bits. Their first argument, `places`, lists the caller's arrays held in memory (`Addressed`), which no constructor reads yet; the top theorems pass `[]` |
 | `startState`, `State.Fresh`, `HeapCorr`, `outputOf` | `Mini/SourceCorrect.lean`, `Mini/HeapCorr.lean` | Core's start state for a standard input (empty heap, the world with that input); a state with no live cells; the mini heap representing Core's heap and world (standard output and error are `outputOf 1` and `outputOf 2` of the mini heap's trace, the bytes its writes put on fds 1 and 2, no open files, the same standard input) |
 | `Returned`, `HeapAt`, `StackAt`, `Contract`, `Scratch`, `InHeap` | `Mini/Simulation.lean` | the calling convention and what "returns" means (section 8) |
@@ -599,6 +617,19 @@ the theorems say what it means.
   laniusc gives the same values. Core gives
   a view of a language array no stride (it traps), while laniusc gives that
   array's own layout. Programs that ask for one are outside the theorem.
+- **`slice_len`.** (added 11-01, F11b) `Intrinsic.sliceLength` gives a
+  slice's length as a `usize` (`sliceLength?`): the `length` of a slice of a
+  language array and of a raw view alike. Any other value traps. Its typing
+  rule is `ExprHasType.sliceLength`, from `[T]` to `usize`. laniusc reads
+  the same length from word 1 of the slice's descriptor, but it has no
+  surface intrinsic for it yet (SEMANTIC_DECISIONS "Slice length").
+- **One-word scalar views.** (added 11-01, F11b) A raw slice of `u32`,
+  `u64`, `i64` or `bool` is a word view, as a `[u16]` is: one descending
+  8-byte word per element (`rawSliceElementAddress?` and
+  `mapRawNominalSlice` take them as a struct or an enum,
+  `NativeLayout.elementStride?` is -8 and `words?` of such a slice is 3),
+  typed by `RawNominalSliceElement.word32`, `.word64`, `.signed64` and
+  `.boolean` (SEMANTIC_DECISIONS "One-word scalar views").
 - **Native layout.** Core reads and writes values in memory
   with laniusc's layout (`docs/wasm-memory-layout.md`). A value's address is
   its word 0, its highest word; word k is 8k bytes below it. A struct's field
@@ -731,7 +762,9 @@ when it is right; a stale cache entry is rejected, never used. Trusted:
     callee's result type with the type its value is stored at, then its
     parameter types with the argument types in order, each argument read at
     its parameter's type once all are bound; an integer literal argument
-    binds nothing unless a parameter is left unbound, when it counts as
+    (or arithmetic of literals, or a shift whose value is one: a shift's
+    type is its value's, whatever its amount, `bareInt`/`bareEff`) binds
+    nothing unless a parameter is left unbound, when it counts as
     `i32`; a conflict or an unbound parameter rejects;
   - `x.m(args)` (`x` any value) and `T::m(args)` (`T` a type parameter, or
     a primitive type as in `i32::hash(v)`) call
@@ -760,10 +793,43 @@ when it is right; a stale cache entry is rejected, never used. Trusted:
     When V's first arm is plain and a later one nested, the plain arm is
     V's arm and the later ones are not read (`VariantArm.shadow`).
     SEMANTIC_DECISIONS "Nested patterns";
+  - (F11b) a match whose first arm's pattern is an integer literal, `true`
+    or `false` (`LitMatchR`, `LitArmsR`, `Reading/Stmts.lean`), as a
+    statement, a `let`'s typed value or a returned value, has a scrutinee
+    of an integer type or `bool` (`litTy`); its value is bound to the
+    match token's local unless it is a local. It is read as a chain of ifs
+    in arm order: `x == n` (n read at x's type) for an integer arm, `x` or
+    `!x` for `true` and `false` arms, the first matching arm's body run.
+    Its last arm is `_`, or at `bool` some earlier arms are `true` and
+    `false` and the chain ends unreachable; a let's rest follows each
+    arm's value (`LitBodyR.letValue`). A let or return reads it this way
+    only when some arm's value is a block (`LitWanted`). Otherwise, and
+    anywhere in an expression, a match on a scrutinee of such a type whose
+    arms' values are expressions (`EffR.litMatch`, `Reading/Effs.lean`) is
+    the conditional expression `XIf` (closing to `EIf`) chained in arm
+    order (`litChain`), on the scrutinee when it is pure, or else on the
+    `match` token's local, fresh, bound to the scrutinee first by `XLet`
+    (closing to `ELet`; `LitBound`): each literal arm's test as above, its
+    value, else the rest;
+    the `_` arm's value, or at `bool` the last arm's once `true` and
+    `false` both have arms, untested. Each arm's value is read at the
+    expected type, and the type is that, or else the first arm's.
+    SEMANTIC_DECISIONS "Literal patterns";
   - (F11b) a payload pattern binds a name only when no enum of the program
     has a variant so spelled (`BindersR`'s `NoVariant`): laniusc reads one
     that resolves to a variant as a check. SEMANTIC_DECISIONS "Payload
     names that are variants";
+  - (F11b) `for x in a { body }`, a an array local of n elements
+    (`StmtR.forArray`, `Reading/Stmts.lean`), is `forArray`'s loop: a
+    hidden `usize` index i (the `for` token's local) from 0 while i < n,
+    `let x = a[i]` (x's token's local), i = i + 1, then the body; n below
+    2^31. SEMANTIC_DECISIONS "`for` over an array";
+  - (F11b) `for x in s { body }`, s a slice local (`StmtR.forSlice`), is
+    `forSlice`'s loop: the hidden `usize` index i (the `for` token's local)
+    from 0, the hidden `let n: usize = slice_len(s);` (x's token's local)
+    once before the loop, then while i < n, `let x = s[i]` (the `in`
+    token's local), i = i + 1, then the body. A body that writes s itself
+    is not read. SEMANTIC_DECISIONS "`for` over an array";
   - `x.f` is `Field` when `x` is a local, and otherwise the call of the
     projection `fn(v: T) -> F { return v.f; }` on `x`, an instance numbered
     like any other;
@@ -786,6 +852,12 @@ when it is right; a stale cache entry is rejected, never used. Trusted:
     type's literal of that value (`Int` of -2^31 for `i32`, `Unsigned` up to
     the type's largest value, the cast of the `u64` literal of its bits for
     `isize`);
+  - an integer literal's value (`intValue`, `Reading/Exprs.lean`) is that of
+    its decimal digits, or of the digits of base 16, 8 or 2 after `0x`,
+    `0o` or `0b` (the letter in either case, as laniusc's lexer takes it);
+    each `_` is a separator and skipped. Below 2^31 it is an `i32` literal,
+    up to 2^64 the wide marker (`IntLiteral`); a constant's `n` or `-` `n`
+    is read the same way (`WideConst`). An array length is still decimal;
   - a char literal (`CharLiteral`) is the code of the one
     Unicode scalar value (`ScalarValue`: below 0x110000, not a surrogate)
     whose UTF-8 encoding (`utf8Encode`) its text holds between the quotes,
@@ -870,7 +942,7 @@ when it is right; a stale cache entry is rejected, never used. Trusted:
     shift `k`. `slice_from_raw_parts(p, n)`, in a `let` of type `[T]`, is
     Core's raw view of `T`. These spellings are fixed: build does not look
     at the extern declarations in `alloc::allocator`, and these paths,
-    `slice_stride` and `assert` are never read as a function or variant
+    `slice_stride`, `slice_len` and `assert` are never read as a function or variant
     (`builtinPaths`);
   - `x op= e` is `x = x op e`, and `x.f op= e` is `x.f = x.f op e`, for
     `op` one of `+ - * & | ^`. Core has the compound form itself
@@ -908,6 +980,7 @@ when it is right; a stale cache entry is rejected, never used. Trusted:
     operands expect the type of whichever operand has one.
 
   - `slice_stride(x)` of a slice local x is `EStride(x)`;
+  - (F11b) `slice_len(x)` of a slice local x is `ELen(x)`, a `usize`;
   - (F11b) a call's argument at a parameter of type `[T]` that is an array
     local of element type T is `ArraySlice(T, x)` (`argView`), Core's
     `arrayToSlice T x`, so the callee's writes reach the array, as in

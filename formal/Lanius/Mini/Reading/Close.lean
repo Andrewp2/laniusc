@@ -134,6 +134,13 @@ inductive EffClosed (decls : Decls) (fns types : List Inst) : MEff → SrcEff �
       LowerR decls types ty s → EffClosed decls fns types (.xArraySlice ty a) (.arraySlice s a)
   | host {id : Nat} {args : List MEff} {as : List SrcEff} : EffsClosed decls fns types args as →
       EffClosed decls fns types (.xHost id args) (.eCall id as)
+  | «if» {c x y : MEff} {c' x' y' : SrcEff} {ty : Ty} {s : SrcType} :
+      EffClosed decls fns types c c' → LowerR decls types ty s → EffClosed decls fns types x x' →
+      EffClosed decls fns types y y' → EffClosed decls fns types (.xIf c ty x y) (.eIf c' s x' y')
+  | «let» {id : Nat} {ty rt : Ty} {v b : MEff} {s r : SrcType} {v' b' : SrcEff} :
+      LowerR decls types ty s → EffClosed decls fns types v v' → LowerR decls types rt r →
+      EffClosed decls fns types b b' → EffClosed decls fns types (.xLet id ty v rt b) (.eLet id s v' r b')
+  | len {sl : Nat} : EffClosed decls fns types (.xLen sl) (.eLen sl)
 
 inductive EffsClosed (decls : Decls) (fns types : List Inst) : List MEff → List SrcEff → Prop
   | nil : EffsClosed decls fns types [] []
@@ -209,6 +216,19 @@ theorem closeEff_sound {fuel : Nat} {t : Tables} (ok : LoweredOk t) :
     cases ha : closeEffs fuel t args <;> simp [ha, eCallClosed] at h
     subst h
     exact .host (closeEffs_sound ok _ _ ha)
+  | .xIf c ty x y, s, h => by
+    simp only [closeEff] at h
+    cases hc : closeEff fuel t c <;> cases ht : closeTy fuel t ty <;> cases hx : closeEff fuel t x <;>
+      cases hy : closeEff fuel t y <;> simp [hc, ht, hx, hy, eIfClosed] at h
+    subst h
+    exact .if (closeEff_sound ok _ _ hc) (closeTy_sound ok ht) (closeEff_sound ok _ _ hx) (closeEff_sound ok _ _ hy)
+  | .xLet id ty v rt b, s, h => by
+    simp only [closeEff] at h
+    cases ht : closeTy fuel t ty <;> cases hv : closeEff fuel t v <;> cases hr : closeTy fuel t rt <;>
+      cases hb : closeEff fuel t b <;> simp [ht, hv, hr, hb, eLetClosed] at h
+    subst h
+    exact .let (closeTy_sound ok ht) (closeEff_sound ok _ _ hv) (closeTy_sound ok hr) (closeEff_sound ok _ _ hb)
+  | .xLen sl, s, h => by simp only [closeEff, Option.some.injEq] at h; subst h; exact .len
 
 theorem closeEffs_sound {fuel : Nat} {t : Tables} (ok : LoweredOk t) :
     ∀ (xs : List MEff) (ss : List SrcEff), closeEffs fuel t xs = some ss → EffsClosed t.decls t.fns t.types xs ss

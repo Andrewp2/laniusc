@@ -31,74 +31,74 @@ def NoWrap (op : Nat → Nat → Nat) (vs : List Value) : Prop :=
 def safeW (c : Nat) (vs : List Value) : Prop :=
   (c = SelfPure.ixPlus → NoWrap (· + ·) vs) ∧ (c = SelfPure.ixTimes → NoWrap (· * ·) vs)
 
-theorem plus_body (call : Calls) {a b : Nat} (h : a + b < 2 ^ 64) :
-    (pstmt call (paramEnv (src_plus 50).params [.unsigned .usize a, .unsigned .usize b]) (src_plus 50).body).bind
-      (doneValue (src_plus 50).ret) = some (.unsigned .usize (a + b)) := by
-  simp [src_plus, pstmt, pexpr, paramEnv, paramBindings, Env.bindAll, Env.get?, applyOp, binary, usize_add,
+theorem plus_body (call : Calls) (fuel : Nat) {a b : Nat} (h : a + b < 2 ^ 64) :
+    (mstmt call fuel (paramEnv (src_plus 50).params [.unsigned .usize a, .unsigned .usize b]) (src_plus 50).body).bind
+      (outValue (src_plus 50).ret) = some (.unsigned .usize (a + b)) := by
+  simp [src_plus, mstmt, Out.pop, pexpr, paramEnv, paramBindings, Env.bindAll, Env.get?, applyOp, binary, usize_add,
     unsigned_greater, asBool, SrcOp.toCore, Nat.mod_eq_of_lt h, Except.toOption]
   rw [if_neg (by omega)]
   rfl
 
-theorem plus_wrapped (call : Calls) (a b : Nat) :
-    (pstmt call (paramEnv (src_plus 50).params [.unsigned .usize a, .unsigned .usize b])
+theorem plus_wrapped (call : Calls) (fuel : Nat) (a b : Nat) :
+    (mstmt call fuel (paramEnv (src_plus 50).params [.unsigned .usize a, .unsigned .usize b])
         (wrapFunc .plus (src_plus 50)).body).bind
-      (doneValue (src_plus 50).ret) = some (.unsigned .usize ((a + b) % 2 ^ 64)) := by
-  simp [src_plus, wrapFunc, pstmt, pexpr, paramEnv, paramBindings, Env.bindAll, Env.get?, applyOp, binary,
+      (outValue (src_plus 50).ret) = some (.unsigned .usize ((a + b) % 2 ^ 64)) := by
+  simp [src_plus, wrapFunc, mstmt, Out.pop, pexpr, paramEnv, paramBindings, Env.bindAll, Env.get?, applyOp, binary,
     usize_add, SrcOp.toCore, Except.toOption]
   rfl
 
-theorem times_body (call : Calls) {a b : Nat} (h : a * b < 2 ^ 64) :
-    (pstmt call (paramEnv (src_times 50).params [.unsigned .usize a, .unsigned .usize b]) (src_times 50).body).bind
-      (doneValue (src_times 50).ret) = some (.unsigned .usize (a * b)) := by
+theorem times_body (call : Calls) (fuel : Nat) {a b : Nat} (h : a * b < 2 ^ 64) :
+    (mstmt call fuel (paramEnv (src_times 50).params [.unsigned .usize a, .unsigned .usize b]) (src_times 50).body).bind
+      (outValue (src_times 50).ret) = some (.unsigned .usize (a * b)) := by
   by_cases a0 : a = 0
   · subst a0
-    simp [src_times, pstmt, pexpr, paramEnv, paramBindings, Env.bindAll, Env.get?, applyOp, binary,
-      unsigned_equal, asBool, Done.then, doneValue, SrcOp.toCore, Except.toOption, UintTy.toCore]
+    simp [src_times, mstmt, Out.pop, pexpr, paramEnv, paramBindings, Env.bindAll, Env.get?, applyOp, binary,
+      unsigned_equal, asBool, Out.then, outValue, SrcOp.toCore, Except.toOption, UintTy.toCore]
     done
   · have hb : b < 2 ^ 64 := Nat.lt_of_le_of_lt (Nat.le_mul_of_pos_left b (Nat.pos_of_ne_zero a0)) h
     have hd : a * b / a = b := Nat.mul_div_cancel_left b (Nat.pos_of_ne_zero a0)
-    simp [src_times, pstmt, pexpr, peff, paramEnv, paramBindings, Env.bindAll, Env.get?, applyOp, binary,
-      unsigned_equal, unsigned_notEqual, usize_multiply, usize_divide, asBool, Done.then, doneValue, SrcOp.toCore,
+    simp [src_times, mstmt, Out.pop, pexpr, peff, paramEnv, paramBindings, Env.bindAll, Env.get?, applyOp, binary,
+      unsigned_equal, unsigned_notEqual, usize_multiply, usize_divide, asBool, Out.then, outValue, SrcOp.toCore,
       SrcDivOp.toCore, Except.toOption, UintTy.toCore, a0, Nat.mod_eq_of_lt h, hd,
       Nat.mod_eq_of_lt hb]
     done
 
-theorem times_wrapped (call : Calls) (a b : Nat) :
-    (pstmt call (paramEnv (src_times 50).params [.unsigned .usize a, .unsigned .usize b])
+theorem times_wrapped (call : Calls) (fuel : Nat) (a b : Nat) :
+    (mstmt call fuel (paramEnv (src_times 50).params [.unsigned .usize a, .unsigned .usize b])
         (wrapFunc .times (src_times 50)).body).bind
-      (doneValue (src_times 50).ret) = some (.unsigned .usize (a * b % 2 ^ 64)) := by
-  simp [src_times, wrapFunc, pstmt, pexpr, paramEnv, paramBindings, Env.bindAll, Env.get?, applyOp, binary,
+      (outValue (src_times 50).ret) = some (.unsigned .usize (a * b % 2 ^ 64)) := by
+  simp [src_times, wrapFunc, mstmt, Out.pop, pexpr, paramEnv, paramBindings, Env.bindAll, Env.get?, applyOp, binary,
     usize_multiply, SrcOp.toCore, Except.toOption]
   rfl
 
 /-- `plus` in the self program agrees with `progW`'s where it does not wrap. -/
 theorem agrees_plus : Agrees prog (wrapAt prog SelfPure.ixPlus .plus) safeW := by
-  refine agrees_wrapAt fun f hf vs hs call call' v _ hv => ?_
+  refine agrees_wrapAt fun f hf vs hs call call' fuel v _ hv => ?_
   rw [show SelfPure.ixPlus = 75 from rfl, fn_plus] at hf
   cases hf
   obtain ⟨a, b, rfl, h⟩ := hs.1 rfl
-  have hw : (pstmt call (paramEnv (src_plus 50).params [.unsigned .usize a, .unsigned .usize b])
-      (wrapFunc .plus (src_plus 50)).body).bind (doneValue (src_plus 50).ret) =
+  have hw : (mstmt call fuel (paramEnv (src_plus 50).params [.unsigned .usize a, .unsigned .usize b])
+      (wrapFunc .plus (src_plus 50)).body).bind (outValue (src_plus 50).ret) =
         some (.unsigned .usize (a + b)) := by
     rw [plus_wrapped, Nat.mod_eq_of_lt h]
   rw [hw] at hv
   cases hv
-  exact plus_body call' h
+  exact plus_body call' fuel h
 
 /-- `times` likewise, in `progW`'s first step. -/
 theorem agrees_times :
     Agrees (wrapAt prog SelfPure.ixPlus .plus) progW safeW := by
-  refine agrees_wrapAt fun f hf vs hs call call' v _ hv => ?_
+  refine agrees_wrapAt fun f hf vs hs call call' fuel v _ hv => ?_
   rw [wrapAt_ne plus_ne_times, show SelfPure.ixTimes = 105 from rfl, fn_times] at hf
   cases hf
   obtain ⟨a, b, rfl, h⟩ := hs.2 rfl
-  have hw : (pstmt call (paramEnv (src_times 50).params [.unsigned .usize a, .unsigned .usize b])
-      (wrapFunc .times (src_times 50)).body).bind (doneValue (src_times 50).ret) =
+  have hw : (mstmt call fuel (paramEnv (src_times 50).params [.unsigned .usize a, .unsigned .usize b])
+      (wrapFunc .times (src_times 50)).body).bind (outValue (src_times 50).ret) =
         some (.unsigned .usize (a * b)) := by
     rw [times_wrapped, Nat.mod_eq_of_lt h]
   rw [hw] at hv
   cases hv
-  exact times_body call' h
+  exact times_body call' fuel h
 
 theorem agreesW : Agrees prog progW safeW := agrees_trans agrees_plus agrees_times
 
@@ -110,63 +110,63 @@ theorem pcall_of_safe {n c : Nat} {vs : List Value} {v : Value}
 
 /-! ## Costs: the bodies of `plus` and `times` cost nothing -/
 
-theorem qplus_body (call : QCalls) {a b : Nat} (h : a + b < 2 ^ 64) :
-    qthen (qstmt call (paramEnv (src_plus 50).params [.unsigned .usize a, .unsigned .usize b]) (src_plus 50).body)
-      (fun d => qfree (doneValue (src_plus 50).ret d)) = some (.unsigned .usize (a + b), 0) := by
-  simp [src_plus, qstmt, pexpr, paramEnv, paramBindings, Env.bindAll, Env.get?, applyOp, binary, usize_add,
+theorem qplus_body (call : QCalls) (fuel : Nat) {a b : Nat} (h : a + b < 2 ^ 64) :
+    qthen (qstmt call fuel (paramEnv (src_plus 50).params [.unsigned .usize a, .unsigned .usize b]) (src_plus 50).body)
+      (fun d => qfree (outValue (src_plus 50).ret d)) = some (.unsigned .usize (a + b), 0) := by
+  simp [src_plus, qstmt, qpop, Out.pop, pexpr, paramEnv, paramBindings, Env.bindAll, Env.get?, applyOp, binary, usize_add,
     unsigned_greater, asBool, SrcOp.toCore, Nat.mod_eq_of_lt h, Except.toOption, qthen, addC, qfree]
   rw [if_neg (by omega)]
   rfl
 
-theorem qplus_wrapped (call : QCalls) (a b : Nat) :
-    qthen (qstmt call (paramEnv (src_plus 50).params [.unsigned .usize a, .unsigned .usize b])
+theorem qplus_wrapped (call : QCalls) (fuel : Nat) (a b : Nat) :
+    qthen (qstmt call fuel (paramEnv (src_plus 50).params [.unsigned .usize a, .unsigned .usize b])
         (wrapFunc .plus (src_plus 50)).body)
-      (fun d => qfree (doneValue (src_plus 50).ret d)) = some (.unsigned .usize ((a + b) % 2 ^ 64), 0) := by
-  simp [src_plus, wrapFunc, qstmt, pexpr, paramEnv, paramBindings, Env.bindAll, Env.get?, applyOp, binary,
+      (fun d => qfree (outValue (src_plus 50).ret d)) = some (.unsigned .usize ((a + b) % 2 ^ 64), 0) := by
+  simp [src_plus, wrapFunc, qstmt, qpop, Out.pop, pexpr, paramEnv, paramBindings, Env.bindAll, Env.get?, applyOp, binary,
     usize_add, SrcOp.toCore, Except.toOption, qthen, addC, qfree]
   rfl
 
-theorem qtimes_body (call : QCalls) {a b : Nat} (h : a * b < 2 ^ 64) :
-    qthen (qstmt call (paramEnv (src_times 50).params [.unsigned .usize a, .unsigned .usize b]) (src_times 50).body)
-      (fun d => qfree (doneValue (src_times 50).ret d)) = some (.unsigned .usize (a * b), 0) := by
+theorem qtimes_body (call : QCalls) (fuel : Nat) {a b : Nat} (h : a * b < 2 ^ 64) :
+    qthen (qstmt call fuel (paramEnv (src_times 50).params [.unsigned .usize a, .unsigned .usize b]) (src_times 50).body)
+      (fun d => qfree (outValue (src_times 50).ret d)) = some (.unsigned .usize (a * b), 0) := by
   by_cases a0 : a = 0
   · subst a0
-    simp [src_times, qstmt, pexpr, paramEnv, paramBindings, Env.bindAll, Env.get?, applyOp, binary,
-      unsigned_equal, asBool, Done.qthen, doneValue, SrcOp.toCore, Except.toOption, UintTy.toCore, qthen, addC, qfree]
+    simp [src_times, qstmt, qpop, Out.pop, pexpr, paramEnv, paramBindings, Env.bindAll, Env.get?, applyOp, binary,
+      unsigned_equal, asBool, Out.qthen, outValue, SrcOp.toCore, Except.toOption, UintTy.toCore, qthen, addC, qfree]
     done
   · have hb : b < 2 ^ 64 := Nat.lt_of_le_of_lt (Nat.le_mul_of_pos_left b (Nat.pos_of_ne_zero a0)) h
     have hd : a * b / a = b := Nat.mul_div_cancel_left b (Nat.pos_of_ne_zero a0)
-    simp [src_times, qstmt, pexpr, qeff, qbinary, qapplyOp, paramEnv, paramBindings, Env.bindAll, Env.get?, applyOp,
-      binary, unsigned_equal, unsigned_notEqual, usize_multiply, usize_divide, asBool, Done.qthen, doneValue,
+    simp [src_times, qstmt, qpop, Out.pop, pexpr, qeff, qbinary, qapplyOp, paramEnv, paramBindings, Env.bindAll, Env.get?, applyOp,
+      binary, unsigned_equal, unsigned_notEqual, usize_multiply, usize_divide, asBool, Out.qthen, outValue,
       SrcOp.toCore, SrcDivOp.toCore, Except.toOption, UintTy.toCore, a0, Nat.mod_eq_of_lt h, hd,
       Nat.mod_eq_of_lt hb, qthen, addC, qfree]
     done
 
-theorem qtimes_wrapped (call : QCalls) (a b : Nat) :
-    qthen (qstmt call (paramEnv (src_times 50).params [.unsigned .usize a, .unsigned .usize b])
+theorem qtimes_wrapped (call : QCalls) (fuel : Nat) (a b : Nat) :
+    qthen (qstmt call fuel (paramEnv (src_times 50).params [.unsigned .usize a, .unsigned .usize b])
         (wrapFunc .times (src_times 50)).body)
-      (fun d => qfree (doneValue (src_times 50).ret d)) = some (.unsigned .usize (a * b % 2 ^ 64), 0) := by
-  simp [src_times, wrapFunc, qstmt, pexpr, paramEnv, paramBindings, Env.bindAll, Env.get?, applyOp, binary,
+      (fun d => qfree (outValue (src_times 50).ret d)) = some (.unsigned .usize (a * b % 2 ^ 64), 0) := by
+  simp [src_times, wrapFunc, qstmt, qpop, Out.pop, pexpr, paramEnv, paramBindings, Env.bindAll, Env.get?, applyOp, binary,
     usize_multiply, SrcOp.toCore, Except.toOption, qthen, addC, qfree]
   rfl
 
 theorem qagrees_plus : QAgrees prog (wrapAt prog SelfPure.ixPlus .plus) safeW := by
-  refine qagrees_wrapAt fun f hf vs hs call call' p _ hv => ?_
+  refine qagrees_wrapAt fun f hf vs hs call call' fuel p _ hv => ?_
   rw [show SelfPure.ixPlus = 75 from rfl, fn_plus] at hf
   cases hf
   obtain ⟨a, b, rfl, h⟩ := hs.1 rfl
   rw [qplus_wrapped, Nat.mod_eq_of_lt h] at hv
   cases hv
-  exact qplus_body call' h
+  exact qplus_body call' fuel h
 
 theorem qagrees_times : QAgrees (wrapAt prog SelfPure.ixPlus .plus) progW safeW := by
-  refine qagrees_wrapAt fun f hf vs hs call call' p _ hv => ?_
+  refine qagrees_wrapAt fun f hf vs hs call call' fuel p _ hv => ?_
   rw [wrapAt_ne plus_ne_times, show SelfPure.ixTimes = 105 from rfl, fn_times] at hf
   cases hf
   obtain ⟨a, b, rfl, h⟩ := hs.2 rfl
   rw [qtimes_wrapped, Nat.mod_eq_of_lt h] at hv
   cases hv
-  exact qtimes_body call' h
+  exact qtimes_body call' fuel h
 
 theorem qagreesW : QAgrees prog progW safeW := qagrees_trans qagrees_plus qagrees_times
 

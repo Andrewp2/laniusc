@@ -51,6 +51,15 @@ theorem proof_p_path_type_args_more {prog : SrcProgram} {prims : Prims} {ix_p_pa
   simp only [src_p_path_type_args_more] at h
   faithful [Lanius.Mini.Inline.pPathTypeArgsMore]
 
+theorem proof_p_pattern_false {prog : SrcProgram} {prims : Prims} {ix_p_pattern_false : Nat} (fn : prog.funcs[ix_p_pattern_false]? = some (src_p_pattern_false)) (np : prims.isPrim ix_p_pattern_false = false) {n : Nat} :
+    Stmt_p_pattern_false prog prims ix_p_pattern_false n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_p_pattern_false] at h
+  faithful [Lanius.Mini.Inline.pPatternFalse]
+
 theorem proof_p_pattern_ident {prog : SrcProgram} {prims : Prims} {ix_p_pattern_ident : Nat} (fn : prog.funcs[ix_p_pattern_ident]? = some (src_p_pattern_ident)) (np : prims.isPrim ix_p_pattern_ident = false) {n : Nat} :
     Stmt_p_pattern_ident prog prims ix_p_pattern_ident n := by
   intro w h
@@ -60,6 +69,15 @@ theorem proof_p_pattern_ident {prog : SrcProgram} {prims : Prims} {ix_p_pattern_
   simp only [src_p_pattern_ident] at h
   faithful [Lanius.Mini.Inline.pPatternIdent]
 
+theorem proof_p_pattern_int {prog : SrcProgram} {prims : Prims} {ix_p_pattern_int : Nat} (fn : prog.funcs[ix_p_pattern_int]? = some (src_p_pattern_int)) (np : prims.isPrim ix_p_pattern_int = false) {n : Nat} :
+    Stmt_p_pattern_int prog prims ix_p_pattern_int n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_p_pattern_int] at h
+  faithful [Lanius.Mini.Inline.pPatternInt]
+
 theorem proof_p_pattern_plain {prog : SrcProgram} {prims : Prims} {ix_p_pattern_plain : Nat} (fn : prog.funcs[ix_p_pattern_plain]? = some (src_p_pattern_plain)) (np : prims.isPrim ix_p_pattern_plain = false) {n : Nat} :
     Stmt_p_pattern_plain prog prims ix_p_pattern_plain n := by
   intro w h
@@ -68,6 +86,15 @@ theorem proof_p_pattern_plain {prog : SrcProgram} {prims : Prims} {ix_p_pattern_
   rw [pcall_succ np fn] at h
   simp only [src_p_pattern_plain] at h
   faithful [Lanius.Mini.Inline.pPatternPlain]
+
+theorem proof_p_pattern_true {prog : SrcProgram} {prims : Prims} {ix_p_pattern_true : Nat} (fn : prog.funcs[ix_p_pattern_true]? = some (src_p_pattern_true)) (np : prims.isPrim ix_p_pattern_true = false) {n : Nat} :
+    Stmt_p_pattern_true prog prims ix_p_pattern_true n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_p_pattern_true] at h
+  faithful [Lanius.Mini.Inline.pPatternTrue]
 
 theorem proof_p_pattern_tuple {prog : SrcProgram} {prims : Prims} {ix_p_pattern_tuple : Nat} (fn : prog.funcs[ix_p_pattern_tuple]? = some (src_p_pattern_tuple)) (np : prims.isPrim ix_p_pattern_tuple = false) {n : Nat} :
     Stmt_p_pattern_tuple prog prims ix_p_pattern_tuple n := by
@@ -212,23 +239,5 @@ theorem proof_p_range_exclusive {prog : SrcProgram} {prims : Prims} {ix_p_range_
   rw [pcall_succ np fn] at h
   simp only [src_p_range_exclusive] at h
   faithful [Lanius.Mini.Inline.pRangeExclusive]
-
-theorem proof_p_range_start_int {prog : SrcProgram} {prims : Prims} {ix_p_range_start_int : Nat} (fn : prog.funcs[ix_p_range_start_int]? = some (src_p_range_start_int)) (np : prims.isPrim ix_p_range_start_int = false) {n : Nat} :
-    Stmt_p_range_start_int prog prims ix_p_range_start_int n := by
-  intro w h
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_p_range_start_int] at h
-  faithful [Lanius.Mini.Inline.pRangeStartInt]
-
-theorem proof_p_ret_type {prog : SrcProgram} {prims : Prims} {ix_p_ret_type : Nat} (fn : prog.funcs[ix_p_ret_type]? = some (src_p_ret_type)) (np : prims.isPrim ix_p_ret_type = false) {n : Nat} :
-    Stmt_p_ret_type prog prims ix_p_ret_type n := by
-  intro w h
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_p_ret_type] at h
-  faithful [Lanius.Mini.Inline.pRetType]
 
 end Lanius.Faithful.SelfCert

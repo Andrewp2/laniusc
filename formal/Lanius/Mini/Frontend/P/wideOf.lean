@@ -1,13 +1,13 @@
 module
 
 public import Lanius.Mini.Frontend.Types
+import Lanius.Mini.Frontend.P.basedDigits
 import Lanius.Mini.Frontend.P.consTys
 import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.flExpFirst
 import Lanius.Mini.Frontend.P.floatTyped
 import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.hasKids
-import Lanius.Mini.Frontend.P.intLiteral
 import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.itemOf
 import Lanius.Mini.Frontend.P.joinInsts
@@ -66,10 +66,10 @@ def wideConst (t : Option Ty) (toks : List Token) : Option SrcExpr :=
     | [] => none
     | a :: rest =>
       match rest with
-      | [] => wideDigits ty false (wideDecimal a.text 0)
+      | [] => wideDigits ty false (litValue a.text)
       | b :: more =>
         match more with
-        | [] => wideSigned ty (sameText a.text dashText) (wideDecimal b.text 0)
+        | [] => wideSigned ty (sameText a.text dashText) (litValue b.text)
         | c :: tail => none
 
 mutual
@@ -352,7 +352,7 @@ def fieldTy (fuel : Nat) (decls : Decls) (l : Option Local) (j : Nat) : Option T
     | none => none
     | some ts => ts[j]?
 
-/-- An integer literal, or arithmetic of them: its type comes from its context (an isize literal is written bare beside a typed operand), so an operator's type is its other operand's. -/
+/-- An integer literal, or arithmetic of them: its type comes from its context (an isize literal is written bare beside a typed operand), so an operator's type is its other operand's. A shift's type is its value's, whatever its amount: `5 << (c & 31)` is bare. -/
 def bareInt (e : SrcExpr) : Bool :=
   match e with
   | .int k => true
@@ -362,7 +362,7 @@ def bareInt (e : SrcExpr) : Bool :=
   | .field id j => false
   | .negate x => bareInt x
   | .not x => false
-  | .apply op a b => !(givesBool op) && bareInt a && bareInt b
+  | .apply op a b => !(givesBool op) && bareInt a && (shiftOp op || bareInt b)
   | .cast t x => unitTy t
   | .null => false
   | .char code => false

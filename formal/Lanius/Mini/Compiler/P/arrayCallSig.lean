@@ -60,6 +60,9 @@ def SrcEff.isSlice (self : SrcEff) : Bool :=
   | .eDivide op left right => false
   | .eStride slice => false
   | .arraySlice element array => true
+  | .eIf condition ty thenValue elseValue => false
+  | .eLet id ty value rt body => false
+  | .eLen slice => false
 
 /-- Some argument is an array passed as a slice. -/
 def effsSlice (es : List SrcEff) : Bool :=
@@ -83,6 +86,9 @@ def SrcEff.passesSlices (self : SrcEff) : Bool :=
   | .eDivide op left right => false
   | .eStride slice => false
   | .arraySlice element array => false
+  | .eIf condition ty thenValue elseValue => false
+  | .eLet id ty value rt body => false
+  | .eLen slice => false
 
 /-- Its code as such a call. -/
 def SrcEff.sliceCall (self : SrcEff) (sigs : List Sig) (scope : List Binding) (next : Nat) : Option Evaluated :=
@@ -100,6 +106,9 @@ def SrcEff.sliceCall (self : SrcEff) (sigs : List Sig) (scope : List Binding) (n
   | .eDivide op left right => none
   | .eStride slice => none
   | .arraySlice element array => none
+  | .eIf condition ty thenValue elseValue => none
+  | .eLet id ty value rt body => none
+  | .eLen slice => none
 
 /-- The code of a value a statement computes (LetEval, Discard): a call passing arrays as slices (array_call), or any other expression's code. -/
 def stmtEval (value : SrcEff) (sigs : List Sig) (decls : SrcDecls) (scope : List Binding) (next : Nat) : Option Evaluated :=

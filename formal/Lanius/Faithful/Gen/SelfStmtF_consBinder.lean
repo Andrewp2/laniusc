@@ -42,14 +42,14 @@ abbrev Stmt_arms_naming_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
 
 abbrev Stmt_binders_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : List Lanius.Mini.Local} {x2 : List Lanius.Mini.CTree} {x3 : List Lanius.Mini.Ty} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepFrontEnv x0 v0 → (RepList 235 RepLocal) x1 v1 → (RepList 82 RepCTree) x2 v2 → (RepList 141 RepTy) x3 v3 →
-    (RepOption 298 RepBound) (Lanius.Mini.bindersOf x0 x1 x2 x3) w
+    (RepOption 303 RepBound) (Lanius.Mini.bindersOf x0 x1 x2 x3) w
 
 abbrev Stmt_cons_binder (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Option Lanius.Mini.Bound} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepOption 298 RepBound) x1 v1 →
-    (RepOption 298 RepBound) (Lanius.Mini.consBinder x0 x1) w
+  ∀ {x0 : Nat} {x1 : Option Lanius.Mini.Bound} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepOption 303 RepBound) x1 v1 →
+    (RepOption 303 RepBound) (Lanius.Mini.consBinder x0 x1) w
 
 abbrev Stmt_zip_variants (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (List Nat)} {x1 : List (List Lanius.Mini.Ty)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepList 241 (RepList 141 RepTy)) x1 v1 →
-    (RepList 282 RepVariantTy) (Lanius.Mini.zipVariants x0 x1) w
+    (RepList 283 RepVariantTy) (Lanius.Mini.zipVariants x0 x1) w
 
 end Lanius.Faithful.SelfCert

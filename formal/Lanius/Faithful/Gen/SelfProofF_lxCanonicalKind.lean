@@ -62,9 +62,9 @@ theorem proof_lex_source {prog : SrcProgram} {prims : Prims} {ix_lex_source ix_l
   simp only [src_lex_source] at h
   faithful [Lanius.Mini.lexSource]
 
-theorem proof_lx_as_text {prog : SrcProgram} {prims : Prims} {ix_lx_as_text ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_lx_as_text]? = some (src_lx_as_text ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_lx_as_text = false)
-    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
-    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+theorem proof_lx_as_text {prog : SrcProgram} {prims : Prims} {ix_lx_as_text ix_single_of_usize ix_cons_of_usize : Nat} (fn : prog.funcs[ix_lx_as_text]? = some (src_lx_as_text ix_single_of_usize ix_cons_of_usize)) (np : prims.isPrim ix_lx_as_text = false)
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n))
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n)) {n : Nat} :
     Stmt_lx_as_text prog prims ix_lx_as_text n := by
   intro w h
   rcases n with _ | n
@@ -96,9 +96,9 @@ theorem step_lx_filter {prog : SrcProgram} {prims : Prims} {ix_lx_filter ix_empt
   simp only [src_lx_filter] at h
   faithful [Lanius.Mini.lxFilter]
 
-theorem proof_lx_keyword_rules {prog : SrcProgram} {prims : Prims} {ix_lx_keyword_rules ix_cons_of_usize ix_single_of_usize ix_cons_of_mini_selfhost_SymRule ix_empty_of_mini_selfhost_SymRule : Nat} (fn : prog.funcs[ix_lx_keyword_rules]? = some (src_lx_keyword_rules ix_cons_of_usize ix_single_of_usize ix_cons_of_mini_selfhost_SymRule ix_empty_of_mini_selfhost_SymRule)) (np : prims.isPrim ix_lx_keyword_rules = false)
-    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
+theorem proof_lx_keyword_rules {prog : SrcProgram} {prims : Prims} {ix_lx_keyword_rules ix_single_of_usize ix_cons_of_usize ix_cons_of_mini_selfhost_SymRule ix_empty_of_mini_selfhost_SymRule : Nat} (fn : prog.funcs[ix_lx_keyword_rules]? = some (src_lx_keyword_rules ix_single_of_usize ix_cons_of_usize ix_cons_of_mini_selfhost_SymRule ix_empty_of_mini_selfhost_SymRule)) (np : prims.isPrim ix_lx_keyword_rules = false)
     (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n))
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
     (ext_cons_of_mini_selfhost_SymRule : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_SymRule prog prims ix_cons_of_mini_selfhost_SymRule n))
     (ext_empty_of_mini_selfhost_SymRule : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_SymRule prog prims ix_empty_of_mini_selfhost_SymRule n)) {n : Nat} :
     Stmt_lx_keyword_rules prog prims ix_lx_keyword_rules n := by
@@ -128,9 +128,9 @@ theorem step_lx_ranges {prog : SrcProgram} {prims : Prims} {ix_lx_ranges ix_empt
   simp only [src_lx_ranges] at h
   faithful [Lanius.Mini.lxRanges]
 
-theorem proof_lx_symbol_rules {prog : SrcProgram} {prims : Prims} {ix_lx_symbol_rules ix_cons_of_usize ix_single_of_usize ix_cons_of_mini_selfhost_SymRule ix_empty_of_mini_selfhost_SymRule : Nat} (fn : prog.funcs[ix_lx_symbol_rules]? = some (src_lx_symbol_rules ix_cons_of_usize ix_single_of_usize ix_cons_of_mini_selfhost_SymRule ix_empty_of_mini_selfhost_SymRule)) (np : prims.isPrim ix_lx_symbol_rules = false)
-    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
+theorem proof_lx_symbol_rules {prog : SrcProgram} {prims : Prims} {ix_lx_symbol_rules ix_single_of_usize ix_cons_of_usize ix_cons_of_mini_selfhost_SymRule ix_empty_of_mini_selfhost_SymRule : Nat} (fn : prog.funcs[ix_lx_symbol_rules]? = some (src_lx_symbol_rules ix_single_of_usize ix_cons_of_usize ix_cons_of_mini_selfhost_SymRule ix_empty_of_mini_selfhost_SymRule)) (np : prims.isPrim ix_lx_symbol_rules = false)
     (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n))
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
     (ext_cons_of_mini_selfhost_SymRule : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_SymRule prog prims ix_cons_of_mini_selfhost_SymRule n))
     (ext_empty_of_mini_selfhost_SymRule : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_SymRule prog prims ix_empty_of_mini_selfhost_SymRule n)) {n : Nat} :
     Stmt_lx_symbol_rules prog prims ix_lx_symbol_rules n := by

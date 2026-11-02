@@ -32,6 +32,14 @@ abbrev Stmt_cons_src_eff (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
   ∀ {x0 : Option Lanius.Mini.SrcEff} {x1 : Option (List Lanius.Mini.SrcEff)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 230 RepSrcEff) x0 v0 → (RepOption 239 (RepList 186 RepSrcEff)) x1 v1 →
     (RepOption 239 (RepList 186 RepSrcEff)) (Lanius.Mini.consSrcEff x0 x1) w
 
+abbrev Stmt_e_if_closed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Option Lanius.Mini.SrcEff} {x1 : Option Lanius.Mini.SrcType} {x2 : Option Lanius.Mini.SrcEff} {x3 : Option Lanius.Mini.SrcEff} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepOption 230 RepSrcEff) x0 v0 → (RepOption 158 RepSrcType) x1 v1 → (RepOption 230 RepSrcEff) x2 v2 → (RepOption 230 RepSrcEff) x3 v3 →
+    (RepOption 230 RepSrcEff) (Lanius.Mini.eIfClosed x0 x1 x2 x3) w
+
+abbrev Stmt_e_let_closed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Option Lanius.Mini.SrcType} {x2 : Option Lanius.Mini.SrcEff} {x3 : Option Lanius.Mini.SrcType} {x4 : Option Lanius.Mini.SrcEff} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → (RepOption 158 RepSrcType) x1 v1 → (RepOption 230 RepSrcEff) x2 v2 → (RepOption 158 RepSrcType) x3 v3 → (RepOption 230 RepSrcEff) x4 v4 →
+    (RepOption 230 RepSrcEff) (Lanius.Mini.eLetClosed x0 x1 x2 x3 x4) w
+
 abbrev Stmt_e_match_closed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.SrcEff} {x1 : Option Lanius.Mini.SrcType} {x2 : Option Lanius.Mini.SrcType} {x3 : List (List Nat)} {x4 : Option (List Lanius.Mini.SrcEff)} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepOption 230 RepSrcEff) x0 v0 → (RepOption 158 RepSrcType) x1 v1 → (RepOption 158 RepSrcType) x2 v2 → (RepList 31 (RepList 25 RepNat)) x3 v3 → (RepOption 239 (RepList 186 RepSrcEff)) x4 v4 →
     (RepOption 230 RepSrcEff) (Lanius.Mini.eMatchClosed x0 x1 x2 x3 x4) w

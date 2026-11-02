@@ -1,0 +1,16 @@
+// A shifted literal as the argument of a generic call whose type argument
+// is inferred: the shift's type is its value's, so the literal binds
+// nothing and is read at its parameter's type, whatever the amount names
+// (fuzz_oracle.py, n_generic_poslit).
+struct W2<T> { v: T, n: i32 }
+
+fn gr4<T>(w: W2<T>, k: i32) -> T {
+    let x: T = w.v;
+    return x;
+}
+
+fn f(a1: W2<u8>, c1: u16) -> u8 {
+    let l3 = gr4(a1, (5 << (c1 & 31)));
+    let l4: u8 = gr4(a1, (-2147483647) << ((c1 as u16) & 31));
+    return l3 + l4;
+}

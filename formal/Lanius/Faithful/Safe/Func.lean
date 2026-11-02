@@ -36,31 +36,22 @@ open Lanius.Semantics (State evalExprs)
 section
 variable {sp : SrcProgram} {prims : Prims} {outside : List Nat}
 
-/-- The purity checker accepts no `break` or `continue`, so a pure body has
-no loose one. -/
-theorem stmtOk_inside {boxes : Boxes} {ret : SrcType} :
-    ∀ {tenv : TEnv} {s : SrcStmt}, stmtOk sp outside boxes ret tenv s = true → s.breaksOut = false := by
-  intro tenv s
-  induction s generalizing tenv with
+theorem looseJump_eq (s : SrcStmt) : looseJump s = s.breaksOut := by
+  induction s with
   | «let» _ _ _ _ ih | letStruct _ _ _ _ ih | letCall _ _ _ _ _ ih | letEnum _ _ _ _ _ ih
-  | letEval _ _ _ _ ih =>
-    intro ok
-    simp only [stmtOk] at ok
-    split at ok
-    · exact ih ok
-    · simp at ok
-  | «then» _ _ ih1 ih2 =>
-    intro ok
-    simp only [stmtOk, Bool.and_eq_true] at ok
-    simp [SrcStmt.breaksOut, ih1 ok.1, ih2 ok.2]
-  | «if» _ _ _ ih1 ih2 | ifEval _ _ _ ih1 ih2 =>
-    intro ok
-    simp only [stmtOk, Bool.and_eq_true] at ok
-    simp [SrcStmt.breaksOut, ih1 ok.1.2, ih2 ok.2]
-  | nop | letMatch | set | setField | setCall | «while» | «return» | letAlloc | letLoad | setByte
-  | free | letSlice | letIndex | setIndex | setEval | whileEval | returnEval | discard | setIndexEval
-  | setFieldEval | returnUnit | «assert» | «break» | «continue» | matchArm | unreachable =>
-    intro ok; simp_all [stmtOk, SrcStmt.breaksOut]
+  | letMatch _ _ _ _ _ _ ih | letAlloc _ _ _ _ ih | letLoad _ _ _ _ ih | letSlice _ _ _ _ _ ih
+  | letIndex _ _ _ _ _ ih | letEval _ _ _ _ ih =>
+    simp only [looseJump, SrcStmt.breaksOut, ih]
+  | «then» _ _ ih1 ih2 | «if» _ _ _ ih1 ih2 | ifEval _ _ _ ih1 ih2 | matchArm _ _ _ _ _ _ _ _ ih1 ih2 =>
+    simp only [looseJump, SrcStmt.breaksOut, ih1, ih2]
+  | nop | set | setField | setCall | «while» | «return» | setByte | free | setIndex | setEval | whileEval
+  | returnEval | discard | setIndexEval | setFieldEval | returnUnit | «assert» | «break» | «continue»
+  | unreachable => rfl
+
+/-- A pure body has no loose `break` or `continue`. -/
+theorem PureFunc.inside {f : SrcFunc} (h : PureFunc sp prims outside f = true) : f.body.breaksOut = false := by
+  rw [← looseJump_eq]
+  exact PureFunc.noJump h
 
 theorem func_safe (pure : PureProg sp prims outside) (primsOk : PrimsOk sp prims) :
     ∀ m, FuncSafe sp prims outside m := by
@@ -74,7 +65,7 @@ theorem func_safe (pure : PureProg sp prims outside) (primsOk : PrimsOk sp prims
     rcases run with run | ⟨d, run, rfl | ⟨bad, -⟩⟩
     · exact body_safe calls (fun i lt => ih i lt) (pure c f found hp notOut) inv bound args run
     · rfl
-    · have ends := stmt_ends sp m (stmtOk_inside (pure c f found hp notOut)) run
+    · have ends := stmt_ends sp m (PureFunc.inside (pure c f found hp notOut)) run
       rcases bad with rfl | rfl <;> exact ends.elim
   | true =>
     have mem : c ∈ prims.boxed ∨ c ∈ prims.unbox := by simpa [Prims.isPrim] using hp

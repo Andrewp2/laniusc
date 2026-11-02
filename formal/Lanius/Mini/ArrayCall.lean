@@ -332,6 +332,9 @@ def argPlaces (scope : List Binding) (frame : Nat → Nat) (A offset : Nat) : Sr
   | .eDivide _ _ _ => []
   | .eStride _ => []
   | .arraySlice _ id => (lookup scope id).toList.map fun b => ⟨frame b.slot, [], b.ty, A + offset, true⟩
+  | .eIf _ _ _ _ => []
+  | .eLet _ _ _ _ _ => []
+  | .eLen _ => []
 
 /-- The places a call's arguments lend, their blocks from `offset` in the
 block at `A` on. -/

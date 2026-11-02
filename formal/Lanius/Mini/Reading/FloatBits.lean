@@ -6,7 +6,7 @@ import all Lanius.Mini.Frontend.P.flDecimal
 import all Lanius.Mini.Frontend.P.flLog2Or0
 import all Lanius.Mini.Frontend.P.flNatHalf
 import all Lanius.Mini.Frontend.P.flRoundUp
-import all Lanius.Mini.Frontend.P.intLiteral
+import all Lanius.Mini.Frontend.P.basedDigits
 import all Lanius.Mini.Frontend.P.shrFirst
 import all Lanius.Mini.Frontend.P.typeDeclAt
 

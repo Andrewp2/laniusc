@@ -21,7 +21,7 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_lx_best (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.SymRule} {x1 : List Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 189 RepSymRule) x0 v0 → (RepList 25 RepNat) x1 v1 →
+  ∀ {x0 : List Lanius.Mini.SymRule} {x1 : List Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 190 RepSymRule) x0 v0 → (RepList 25 RepNat) x1 v1 →
     (RepOption 248 RepSymRule) (Lanius.Mini.lxBest x0 x1) w
 
 abbrev Stmt_lx_best_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

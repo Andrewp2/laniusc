@@ -1,9 +1,11 @@
 module
 
 public import Lanius.Mini.Frontend.Types
+public import Lanius.Mini.Frontend.P.basedDigits
+public import Lanius.Mini.Frontend.P.basedLimit
+public import Lanius.Mini.Frontend.P.digitBelow
 public import Lanius.Mini.Frontend.P.distinct
 public import Lanius.Mini.Frontend.P.findConst
-public import Lanius.Mini.Frontend.P.intLiteral
 public import Lanius.Mini.Frontend.P.itemOf
 public import Lanius.Mini.Frontend.P.joinInsts
 public import Lanius.Mini.Frontend.P.typeDeclAt
@@ -43,77 +45,27 @@ namespace Lanius.Mini
   else
     none
 
-@[expose] def Inline.intInRange (iv : Nat) : Option SrcExpr :=
-  if iv ≤ 2147483647 then
-    some (SrcExpr.int (BitVec.ofNat 32 iv))
-  else
-    none
-
 @[expose] def Inline.wideDigit (wb : Nat) (wrest : List Nat) (wacc : Nat) : Option Nat :=
-  if decide (1844674407370955161 < wacc) || decide (wacc = 1844674407370955161) && decide (53 < wb) then
-    none
+  if wb = 95 then
+    wideDecimal wrest wacc
   else
-    if decide (48 ≤ wb) && decide (wb ≤ 57) then
-      wideDecimal wrest (wacc * 10 + (wb - 48))
-    else
-      none
-
-@[expose] def Inline.charEnd (ecode : Nat) (eq : Nat) (emore : List Nat) : Option SrcExpr :=
-  if eq = 39 then
-    match emore with
-    | [] => some (SrcExpr.char (BitVec.ofNat 32 ecode))
-    | b :: more => none
-  else
-    none
-
-@[expose] def Inline.charEscape (etext : List Nat) : Option SrcExpr :=
-  match etext with
-  | [] => none
-  | e :: rest => charCloseOpt (escapedByte e) rest
-
-@[expose] def Inline.charTailAt (tb : Nat) (trest : List Nat) (tmore : Nat) (tcode : Nat) (tlo : Nat) (thi : Nat) : Option SrcExpr :=
-  if decide (tlo ≤ tb) && decide (tb ≤ thi) then
-    let next : Nat := tcode * 64 + (tb - 128)
-    if tmore = 0 then
-      charClose next trest
-    else
-      charTail trest (tmore - 1) next 128 191
-  else
-    none
-
-@[expose] def Inline.charFirst (fb : Nat) (frest : List Nat) : Option SrcExpr :=
-  if fb = 92 then
-    match frest with
-    | [] => none
-    | e :: rest => charCloseOpt (escapedByte e) rest
-  else
-    if decide (fb = 39) || decide (fb = 10) then
+    if decide (1844674407370955161 < wacc) || decide (wacc = 1844674407370955161) && decide (53 < wb) then
       none
     else
-      if fb < 128 then
-        charClose fb frest
+      if decide (48 ≤ wb) && decide (wb ≤ 57) then
+        wideDecimal wrest (wacc * 10 + (wb - 48))
       else
-        if decide (194 ≤ fb) && decide (fb ≤ 223) then
-          charTail frest 0 (fb - 192) 128 191
-        else
-          if fb = 224 then
-            charTail frest 1 0 160 191
-          else
-            if fb = 237 then
-              charTail frest 1 13 128 159
-            else
-              if decide (225 ≤ fb) && decide (fb ≤ 239) then
-                charTail frest 1 (fb - 224) 128 191
-              else
-                if fb = 240 then
-                  charTail frest 2 0 144 191
-                else
-                  if fb = 244 then
-                    charTail frest 2 4 128 143
-                  else
-                    if decide (241 ≤ fb) && decide (fb ≤ 243) then
-                      charTail frest 2 (fb - 240) 128 191
-                    else
-                      none
+        none
+
+@[expose] def Inline.basedDigit (bbase : Nat) (bb : Nat) (brest : List Nat) (bacc : Nat) : Option Nat :=
+  if bb = 95 then
+    basedDigits bbase brest bacc
+  else
+    if basedLimit bbase < bacc then
+      none
+    else
+      match baseDigit bb bbase with
+      | none => none
+      | some d => basedDigits bbase brest (bacc * bbase + d)
 
 end Lanius.Mini

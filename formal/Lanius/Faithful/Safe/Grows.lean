@@ -7,6 +7,7 @@ import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
 import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.Stmt_kills
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_mask
@@ -16,6 +17,7 @@ import all Lanius.Mini.Compiler.P.arithUint
 import all Lanius.Mini.Compiler.P.armBodyScope
 import all Lanius.Mini.Compiler.P.armPayload
 import all Lanius.Mini.Compiler.P.armScope
+import all Lanius.Mini.Compiler.P.arrayCallSig
 import all Lanius.Mini.Compiler.P.assignFrom
 import all Lanius.Mini.Compiler.P.callAgrees
 import all Lanius.Mini.Compiler.P.codeSize
@@ -31,6 +33,7 @@ import all Lanius.Mini.Compiler.P.evalNot
 import all Lanius.Mini.Compiler.P.evalSame
 import all Lanius.Mini.Compiler.P.extentAfter
 import all Lanius.Mini.Compiler.P.floatApply
+import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.guardAnd
 import all Lanius.Mini.Compiler.P.hostRandomCode
 import all Lanius.Mini.Compiler.P.indexOf
@@ -52,16 +55,13 @@ import all Lanius.Mini.Compiler.P.lowerSlice
 import all Lanius.Mini.Compiler.P.lowerTagged
 import all Lanius.Mini.Compiler.P.matchDst
 import all Lanius.Mini.Compiler.P.matchVariants
+import all Lanius.Mini.Compiler.P.needRound
+import all Lanius.Mini.Compiler.P.needsAfter
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.repeatType
 import all Lanius.Mini.Compiler.P.shortCircuit
-import all Lanius.Mini.Compiler.P.withBudget
-import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.sintToUint
 import all Lanius.Mini.Compiler.P.storeArray
-import all Lanius.Mini.Compiler.P.arrayCallSig
-import all Lanius.Mini.Compiler.P.needRound
-import all Lanius.Mini.Compiler.P.needsAfter
 import all Lanius.Mini.Compiler.P.storeEvalWord
 import all Lanius.Mini.Compiler.P.storeType
 import all Lanius.Mini.Compiler.P.storeWordElement
@@ -69,6 +69,7 @@ import all Lanius.Mini.Compiler.P.structFields
 import all Lanius.Mini.Compiler.P.substAll
 import all Lanius.Mini.Compiler.P.usizeWidth
 import all Lanius.Mini.Compiler.P.widthOf
+import all Lanius.Mini.Compiler.P.withBudget
 import all Lanius.Mini.Compiler.P.wordElement
 import all Lanius.Mini.Compiler.P.wordStride
 import all Lanius.Mini.Compiler.P.wordWidth
@@ -572,6 +573,26 @@ theorem stride_trap_state {slice : Nat}
       exact local_trap_state localRun
     all_goals simp at run
 
+theorem len_trap_state {slice : Nat}
+    (run : evalExpr k P st (.intrinsic .sliceLength (.local slice)) = .trapped r st') : st' = st := by
+  cases k with
+  | zero => simp [evalExpr] at run
+  | succ k =>
+    simp only [evalExpr] at run
+    split at run
+    · rename_i localRun
+      have := eval_local_state localRun
+      subst this
+      repeat' split at run
+      all_goals first
+        | (simp only [Semantics.Outcome.trapped.injEq] at run; exact run.2.symm)
+        | simp at run
+    · rename_i localRun
+      simp only [Semantics.Outcome.trapped.injEq] at run
+      rw [← run.2]
+      exact local_trap_state localRun
+    all_goals simp at run
+
 theorem assert_trap_grows {e : Core.Expr}
     (hd : ∀ {j v st2}, j < k → evalExpr j P st e = .done v st2 → Grows st st2)
     (ht : ∀ {j r1 st2}, j < k → evalExpr j P st e = .trapped r1 st2 → Grows st st2)
@@ -812,6 +833,27 @@ theorem effArms_trap_grows {value : Value} :
     · exact effArms_trap_grows rest values id (j + 1) (ihT.lower (Nat.le_succ i)) restRun
     · exact Grows.restore st (Grows.unbind (ihT i (Nat.le_succ i) armRun))
 
+/-- A conditional's arms that trap grow as the arm Core runs does. -/
+theorem ifArms_trap_grows {value : Value} {a b : SrcEff} {k : Nat} (ihT : EffGrowsT sp k)
+    {st : State} {r : Lanius.Trap} {st' : State}
+    (run : evalMatchArms k sp.toCore st value [(.literal (.boolean true), a.toCore), (.wildcard, b.toCore)] =
+      .trapped r st') : Grows st st' := by
+  obtain ⟨i, rfl, ⟨-, restRun⟩ | ⟨bindings, s2, -, armRun, rfl⟩⟩ := arms_cons_trap_inv run
+  · obtain ⟨i', rfl, ⟨-, restRun'⟩ | ⟨bindings', s2', -, armRun', rfl⟩⟩ := arms_cons_trap_inv restRun
+    · obtain ⟨-, rfl⟩ := arms_nil_trap restRun'
+      exact Grows.refl _
+    · exact Grows.restore st (Grows.unbind (ihT i' (by omega) armRun'))
+  · exact Grows.restore st (Grows.unbind (ihT i (Nat.le_succ i) armRun))
+
+/-- A let in an expression that traps grows as its body does. -/
+theorem letArm_trap_grows {value : Value} {id : Nat} {b : SrcEff} {k : Nat} (ihT : EffGrowsT sp k)
+    {st : State} {r : Lanius.Trap} {st' : State}
+    (run : evalMatchArms k sp.toCore st value [(.bind id, b.toCore)] = .trapped r st') : Grows st st' := by
+  obtain ⟨i, rfl, ⟨-, restRun⟩ | ⟨bindings, s2, -, armRun, rfl⟩⟩ := arms_cons_trap_inv run
+  · obtain ⟨-, rfl⟩ := arms_nil_trap restRun
+    exact Grows.refl _
+  · exact Grows.restore st (Grows.unbind (ihT i (Nat.le_succ i) armRun))
+
 theorem eff_trap_step {k : Nat} (ih : GrowsBelow sp (k + 1)) (ihT : GrowsBelowT sp (k + 1))
     (ihe : EffGrows sp k) (iheT : EffGrowsT sp k) {e : SrcEff}
     (run : evalExpr (k + 1) sp.toCore st e.toCore = .trapped r st') : Grows st st' := by
@@ -904,6 +946,22 @@ theorem eff_trap_step {k : Nat} (ih : GrowsBelow sp (k + 1)) (ihT : GrowsBelowT 
     all_goals obtain rfl : k = j := Nat.succ.inj hj
     · exact subT srun
     · exact (sub srun).trans (effArms_trap_grows binders values ety.typeId 0 iheT armsRun)
+  | eIf c ty a b =>
+    simp only [SrcEff.toCore] at run
+    obtain ⟨j, hj, srun | ⟨sv, s1, srun, armsRun⟩⟩ := matchValue_trap_inv run
+    all_goals obtain rfl : k = j := Nat.succ.inj hj
+    · exact subT srun
+    · exact (sub srun).trans (ifArms_trap_grows iheT armsRun)
+  | eLet id ty a rt b =>
+    simp only [SrcEff.toCore] at run
+    obtain ⟨j, hj, srun | ⟨sv, s1, srun, armsRun⟩⟩ := matchValue_trap_inv run
+    all_goals obtain rfl : k = j := Nat.succ.inj hj
+    · exact subT srun
+    · exact (sub srun).trans (letArm_trap_grows iheT armsRun)
+  | eLen slice =>
+    simp only [SrcEff.toCore] at run
+    rw [len_trap_state run]
+    exact Grows.refl _
 
 /-- Every effectful expression Core runs until it traps grows the heap. -/
 theorem eff_trap_grows : ∀ k, GrowsBelow sp k → GrowsBelowT sp k → EffGrowsT sp k

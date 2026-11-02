@@ -63,6 +63,10 @@ theorem RunsExpr.intrinsic' {P : Program} {S S' : State} {e : Expr} {v r : Value
           match rawSliceStride? P view with
           | some stride => .done (.signed .isize stride) S'
           | none => .trapped .typeMismatch S'
+      | .sliceLength, view =>
+          match sliceLength? view with
+          | some length => .done (.unsigned .usize length) S'
+          | none => .trapped .typeMismatch S'
       | _, _ => .trapped .typeMismatch S') = .done r S') :
     RunsExpr P S (.intrinsic op e) r S' := by
   obtain ⟨n, run, locals⟩ := operand

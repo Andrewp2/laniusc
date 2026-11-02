@@ -37,6 +37,9 @@ def src_p_float : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize),
 /-- mini::selfhost::p_fn -/
 def src_p_fn : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x000000000000000b#64) }
 
+/-- mini::selfhost::p_for_iter_path -/
+def src_p_for_iter_path : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x000000000000005c#64) }
+
 /-- mini::selfhost::p_for_iter_range_from_start -/
 def src_p_for_iter_range_from_start : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x000000000000005d#64) }
 

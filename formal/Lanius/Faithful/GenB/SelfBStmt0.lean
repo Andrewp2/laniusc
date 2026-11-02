@@ -248,7 +248,7 @@ abbrev BStmt_lx_best_at (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
 
 abbrev BStmt_lx_best (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SymRule} {x1 : List Nat} {v0 v1 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 189 RepSymRule) x0 v0 → (RepList 25 RepNat) x1 v1 → k < b → Pre_lx_best n x0 x1 b →
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 190 RepSymRule) x0 v0 → (RepList 25 RepNat) x1 v1 → k < b → Pre_lx_best n x0 x1 b →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 248 RepSymRule) (Lanius.Mini.lxBest x0 x1) w
 
 abbrev BStmt_lx_line_run (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -293,7 +293,7 @@ abbrev BStmt_lx_fixed_at (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
 
 abbrev BStmt_lx_fixed (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SymRule} {x1 : List Nat} {x2 : Nat} {v0 v1 v2 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepList 189 RepSymRule) x0 v0 → (RepList 25 RepNat) x1 v1 → RepNat x2 v2 → k < b → Pre_lx_fixed n x0 x1 x2 b →
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepList 190 RepSymRule) x0 v0 → (RepList 25 RepNat) x1 v1 → RepNat x2 v2 → k < b → Pre_lx_fixed n x0 x1 x2 b →
     qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_lx_fixed n x0 x1 x2 = k ∧ RepOneTok (Lanius.Mini.lxFixed x0 x1 x2) w
 
 abbrev BStmt_lx_leading_dot (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -303,27 +303,27 @@ abbrev BStmt_lx_leading_dot (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) :
 
 abbrev BStmt_lx_dot_at (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SymRule} {x1 : List Nat} {x2 : Nat} {x3 : Nat} {v0 v1 v2 v3 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → (RepList 189 RepSymRule) x0 v0 → (RepList 25 RepNat) x1 v1 → RepNat x2 v2 → RepNat x3 v3 → k < b → Pre_lx_dot_at n x0 x1 x2 x3 b →
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → (RepList 190 RepSymRule) x0 v0 → (RepList 25 RepNat) x1 v1 → RepNat x2 v2 → RepNat x3 v3 → k < b → Pre_lx_dot_at n x0 x1 x2 x3 b →
     qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_lx_dot_at n x0 x1 x2 x3 = k ∧ RepOneTok (Lanius.Mini.lxDotAt x0 x1 x2 x3) w
 
 abbrev BStmt_lx_symbol_at (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SymRule} {x1 : List Nat} {x2 : Nat} {x3 : Nat} {v0 v1 v2 v3 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → (RepList 189 RepSymRule) x0 v0 → (RepList 25 RepNat) x1 v1 → RepNat x2 v2 → RepNat x3 v3 → k < b → Pre_lx_symbol_at n x0 x1 x2 x3 b →
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → (RepList 190 RepSymRule) x0 v0 → (RepList 25 RepNat) x1 v1 → RepNat x2 v2 → RepNat x3 v3 → k < b → Pre_lx_symbol_at n x0 x1 x2 x3 b →
     qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_lx_symbol_at n x0 x1 x2 x3 = k ∧ RepOneTok (Lanius.Mini.lxSymbolAt x0 x1 x2 x3) w
 
 abbrev BStmt_lx_symbol (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SymRule} {x1 : List Nat} {x2 : Nat} {v0 v1 v2 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepList 189 RepSymRule) x0 v0 → (RepList 25 RepNat) x1 v1 → RepNat x2 v2 → k < b → Pre_lx_symbol n x0 x1 x2 b →
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepList 190 RepSymRule) x0 v0 → (RepList 25 RepNat) x1 v1 → RepNat x2 v2 → k < b → Pre_lx_symbol n x0 x1 x2 b →
     qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_lx_symbol n x0 x1 x2 = k ∧ RepOneTok (Lanius.Mini.lxSymbol x0 x1 x2) w
 
 abbrev BStmt_lx_one_first (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SymRule} {x1 : List Nat} {x2 : Nat} {x3 : Nat} {v0 v1 v2 v3 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → (RepList 189 RepSymRule) x0 v0 → (RepList 25 RepNat) x1 v1 → RepNat x2 v2 → RepNat x3 v3 → k < b → Pre_lx_one_first n x0 x1 x2 x3 b →
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → (RepList 190 RepSymRule) x0 v0 → (RepList 25 RepNat) x1 v1 → RepNat x2 v2 → RepNat x3 v3 → k < b → Pre_lx_one_first n x0 x1 x2 x3 b →
     qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_lx_one_first n x0 x1 x2 x3 = k ∧ RepOneTok (Lanius.Mini.lxOneFirst x0 x1 x2 x3) w
 
 abbrev BStmt_lx_one_at (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SymRule} {x1 : List Nat} {x2 : Nat} {v0 v1 v2 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepList 189 RepSymRule) x0 v0 → (RepList 25 RepNat) x1 v1 → RepNat x2 v2 → k < b → Pre_lx_one_at n x0 x1 x2 b →
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepList 190 RepSymRule) x0 v0 → (RepList 25 RepNat) x1 v1 → RepNat x2 v2 → k < b → Pre_lx_one_at n x0 x1 x2 b →
     qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_lx_one_at n x0 x1 x2 = k ∧ RepOneTok (Lanius.Mini.lxOneAt x0 x1 x2) w
 
 abbrev BStmt_cons_of_mini_selfhost_RawTok (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -343,7 +343,7 @@ abbrev BStmt_lx_shift (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
 
 abbrev BStmt_lx_raw (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SymRule} {x1 : List Nat} {x2 : Nat} {x3 : Nat} {v0 v1 v2 v3 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → (RepList 189 RepSymRule) x0 v0 → (RepList 25 RepNat) x1 v1 → RepNat x2 v2 → RepNat x3 v3 → k < b → Pre_lx_raw n x0 x1 x2 x3 b →
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → (RepList 190 RepSymRule) x0 v0 → (RepList 25 RepNat) x1 v1 → RepNat x2 v2 → RepNat x3 v3 → k < b → Pre_lx_raw n x0 x1 x2 x3 b →
     qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_lx_raw n x0 x1 x2 x3 = k ∧ (RepOption 160 (RepList 161 RepRawTok)) (Lanius.Mini.lxRaw x0 x1 x2 x3) w
 
 end Lanius.Faithful.SelfBudget

@@ -3,10 +3,12 @@ import Lanius.Faithful.Pure
 /-! # Pure runs that settle: a termination check
 
 `pcall` with too little fuel gives `none`, the same as an error, so a pure run
-says nothing until we know that more fuel would not change it. `TermOk` is a
-syntactic check that a pure call settles: for every callee and arguments
-there is a fuel past which `pcall` gives one answer (`pcall_complete`,
-`Sim/TermSound.lean`).
+says nothing until we know that more fuel would not change it. More fuel
+keeps a value (`pcall_mono`), so every pure call settles: for every callee
+and arguments there is a fuel past which `pcall` gives one answer
+(`pcall_settles`, `Sim/TermSound.lean`). Whether that answer is a value
+takes a measure that every call descends: `TermOk` is a syntactic check of
+one, which `pcall_live` (`Sim/Live.lean`) uses.
 
 The check is the size-change argument of a recursive descent, with an
 annotation per function (`TermAnn`, generated and untrusted): a rank, the
@@ -26,7 +28,9 @@ caller's designated arguments (`SizeCls`), which the check follows through the
 body (`AEnv`), from `le` for the designated parameters. A field of a value no
 larger than `B`, and the payload of an enum matched on one, are smaller
 (structural descent through `match` and fields). `boxed` and `unbox` are the
-identity, so they keep their argument's class (descent through a `Box`).
+identity, so they keep their argument's class (descent through a `Box`). A
+local a statement may assign (`SrcStmt.writes`) is known as nothing after it
+(`AEnv.forget`).
 After `if x == 0 { .. }` or `if x < k { .. }` that does not go on, or in its
 `else`, `x` is a `usize` of at least 1 or `k` (`ge`), and a call of a
 decrement function (`DecOk`, the prelude's `minus`, checked once) on such an
@@ -194,12 +198,12 @@ def neverNext : SrcStmt → Bool
   | .letCall _ _ _ _ body => neverNext body
   | .letEnum _ _ _ _ body => neverNext body
   | .letMatch _ _ _ _ _ _ => true
-  | .set _ _ => true
+  | .set _ _ => false
   | .setField _ _ _ => true
   | .setCall _ _ _ => true
   | .then first second => neverNext first || neverNext second
   | .if _ a b => neverNext a && neverNext b
-  | .while _ _ => true
+  | .while _ _ => false
   | .return _ => true
   | .letAlloc _ _ _ _ => true
   | .letLoad _ _ _ _ => true
@@ -209,9 +213,9 @@ def neverNext : SrcStmt → Bool
   | .letIndex _ _ _ _ _ => true
   | .setIndex _ _ _ => true
   | .letEval _ _ _ body => neverNext body
-  | .setEval _ _ => true
+  | .setEval _ _ => false
   | .ifEval _ a b => neverNext a && neverNext b
-  | .whileEval _ _ => true
+  | .whileEval _ _ => false
   | .returnEval _ => true
   | .discard _ => false
   | .setIndexEval _ _ _ => true
@@ -237,6 +241,10 @@ def AEnv.after (A : AEnv) : SrcStmt → AEnv
   | .ifEval _ _ _ | .whileEval _ _ | .returnEval _ | .discard _ | .setIndexEval _ _ _
   | .setFieldEval _ _ _ | .returnUnit | .assert _ | .break | .continue | .matchArm _ _ _ _ _ _ _ _
   | .unreachable _ _ => A
+
+/-- Nothing known of the locals in `ws`, which a statement may have assigned. -/
+def AEnv.forget (A : AEnv) (ws : List Nat) : AEnv :=
+  A.map fun binding => if ws.contains binding.1 then (binding.1, .unk) else binding
 
 def SizeCls.isLt : SizeCls → Bool
   | .lt => true
@@ -306,6 +314,9 @@ def effCls (A : AEnv) : SrcEff → SizeCls
   | .eDivide _ _ _ => .unk
   | .eStride _ => .unk
   | .arraySlice _ _ => .unk
+  | .eIf _ _ _ _ => .unk
+  | .eLet _ _ _ _ _ => .unk
+  | .eLen _ => .unk
 
 def effsCls (A : AEnv) : List SrcEff → List SizeCls
   | [] => []
@@ -328,6 +339,10 @@ def chkEff (A : AEnv) (W : Wit) : SrcEff → Bool
   | .eDivide _ left right => chkEff A W left && chkEff A W right
   | .eStride _ => true
   | .arraySlice _ _ => true
+  | .eIf condition _ thenValue elseValue =>
+      chkEff A W condition && chkEff A W thenValue && chkEff A W elseValue
+  | .eLet id _ value _ body => chkEff A W value && chkEff ((id, effCls prims T A value) :: A) W body
+  | .eLen _ => true
 
 def chkEffs (A : AEnv) (W : Wit) : List SrcEff → Bool
   | [] => true
@@ -356,7 +371,7 @@ def chkStmt (A : AEnv) (W : Wit) : SrcStmt → Bool
   | .set _ _ => true
   | .setField _ _ _ => true
   | .setCall _ _ _ => true
-  | .then first second => chkStmt A W first && chkStmt (A.after first) W second
+  | .then first second => chkStmt A W first && chkStmt ((A.after first).forget first.writes) W second
   | .if condition thenBranch elseBranch =>
       chkStmt A W thenBranch &&
         chkStmt (match guardVar condition with
@@ -373,7 +388,7 @@ def chkStmt (A : AEnv) (W : Wit) : SrcStmt → Bool
   | .setIndex _ _ _ => true
   | .letEval id _ value body =>
       chkEff prims T me A W value && chkStmt ((id, effCls prims T A value) :: A) W body
-  | .setEval _ _ => true
+  | .setEval _ value => chkEff prims T me A W value
   | .ifEval condition thenBranch elseBranch =>
       chkEff prims T me A W condition && chkStmt A W thenBranch && chkStmt A W elseBranch
   | .whileEval _ _ => true

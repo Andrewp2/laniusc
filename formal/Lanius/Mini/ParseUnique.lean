@@ -11,11 +11,17 @@ import all Lanius.Mini.Compiler.P.equality
 import all Lanius.Mini.Compiler.P.floatApply
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.Types
+import all Lanius.Mini.Frontend.P.litBound
+import all Lanius.Mini.Frontend.P.litIf
+import all Lanius.Mini.Frontend.P.litEffMatch
+import all Lanius.Mini.Frontend.P.litWants
+import all Lanius.Mini.Frontend.P.litWildValue
 import all Lanius.Mini.Frontend.P.frontEndWords
 import all Lanius.Mini.Frontend.P.genericClose
 import all Lanius.Mini.Frontend.P.genericOpen
 import all Lanius.Mini.Frontend.P.grammarPart13
 import all Lanius.Mini.Frontend.P.grammarPart8
+import all Lanius.Mini.Frontend.P.basedDigits
 import all Lanius.Mini.Frontend.P.isEmptyUsize
 import all Lanius.Mini.Frontend.P.noToken
 import all Lanius.Mini.Frontend.P.shrFirst

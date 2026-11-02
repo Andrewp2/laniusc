@@ -6,9 +6,11 @@ import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
 import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.Stmt_kills
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_mask
+import all Lanius.Mini.Compiler.P.Word_narrows
 import all Lanius.Mini.Compiler.P.applyGuard
 import all Lanius.Mini.Compiler.P.arithShiftRight
 import all Lanius.Mini.Compiler.P.arithUint
@@ -731,6 +733,29 @@ theorem eff_stride {slice : Nat} : EffStops sp mp n (.eStride slice) := by
     rcases this with h | h
     · cases h
     · exact absurd within (Nat.not_le.mpr h)
+
+/-- `slice_len(slice)` of a slice local: Core reads the length and does not
+fail. -/
+theorem eff_len {slice : Nat} : EffStops sp mp n (.eLen slice) := by
+  intro bud places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
+  simp only [SrcEff.eval, evalLen] at ok
+  split at ok
+  · simp at ok
+  rename_i b found
+  simp only [evalLenOf] at ok
+  split at ok
+  · simp at ok
+  rename_i element elementOk
+  obtain ⟨w, localRun, holdsW⟩ := corr.local found 0 sp.toCore
+  rw [eq_of_elementOf elementOk] at holdsW
+  have := fails 2
+  simp only [SrcEff.toCore] at this
+  rw [evalExpr.eq_def] at this
+  simp only [localRun] at this
+  cases holdsW with
+  | slice | borrowed =>
+    simp only [Semantics.sliceLength?, Failing] at this
+    exact absurd within (Nat.not_le.mpr this)
 
 theorem eff_apply (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {op : SrcOp}
     {l r : SrcEff} (ihl : EffStops sp mp n l) (ihr : EffStops sp mp n r) : EffStops sp mp n (.eApply op l r) := by
@@ -1456,6 +1481,121 @@ theorem eff_match (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls
   | char => cases values <;> simp [matchVariants, evalArms] at armsOk
   | float => cases values <;> simp [matchVariants, evalArms] at armsOk
   | sint => cases values <;> simp [matchVariants, evalArms] at armsOk
+
+/-- A conditional: the condition's code stops, or its value picks the arm
+Core runs, and that arm's code stops. -/
+theorem eff_if (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {c a b : SrcEff}
+    {ty : SrcType} (ihc : EffStops sp mp n c) (iha : EffStops sp mp n a) (ihb : EffStops sp mp n b) :
+    EffStops sp mp n (.eIf c ty a b) := by
+  intro bud places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
+  simp only [SrcEff.eval, evalIf] at ok
+  split at ok
+  · simp at ok
+  rename_i co condOk
+  split at ok
+  · simp at ok
+  rename_i ta thenOk
+  split at ok
+  · simp at ok
+  rename_i eb elseOk
+  simp only [evalIfOf] at ok
+  split at ok
+  case isFalse => simp at ok
+  rename_i cond
+  simp only [Bool.and_eq_true] at cond
+  obtain ⟨⟨isB, _⟩, _⟩ := cond
+  simp only [Option.some.injEq] at ok
+  subst ok
+  simp only [SrcEff.toCore] at fails
+  rcases eff_split lowered ihc condOk corr fr fresh hc fc within fails (fun j r s h => ⟨j + 1, s, match_trap h, rfl⟩) with
+    ⟨d, stops⟩ | ⟨k, w, st1, condRun, bound1, fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, holds1, hc1, fc1⟩
+  · exact ⟨d, .seqFirst stops⟩
+  rw [SrcType.same_eq isB] at holds1
+  obtain ⟨bv, eq, bits⟩ := bool_bits ((SrcType.holdsAt_scalar rfl).mp holds1)
+  subst eq
+  have limit := exec1.limit_normal
+  have armsFails : ∀ j, Failing hp1.limit (Semantics.evalMatchArms j sp.toCore st1 (.boolean bv)
+      [(.literal (.boolean true), a.toCore), (.wildcard, b.toCore)]) := by
+    rw [limit]
+    refine failing_after (fun le => Semantics.evalMatchArms_refines le) (k := k) fun j le => ?_
+    have := fails (j + 1)
+    rw [match_arms condRun le] at this
+    exact this
+  have corr1 := corr.after fr fresh keeps1 locals1 same1
+  have within1 : st1.heap.nextAddress ≤ hp1.limit := by rw [limit]; exact bound1
+  cases bv with
+  | true =>
+    have aFails : EFails sp hp1.limit (st1.bindLocals []) a.toCore := fun j => by
+      have := armsFails (j + 1)
+      simp only [Semantics.evalMatchArms, Semantics.matchPattern, Semantics.scalarEqual] at this
+      exact (failing_restore _ _).mp this
+    obtain ⟨d, stops⟩ := iha thenOk corr1 fr fresh1 hc1 fc1 within1 aFails
+    exact ⟨_, Stops.after exec1 (.ifTrue (by simp [Expr.eval, bits, boolBits]) stops)⟩
+  | false =>
+    have bFails : EFails sp hp1.limit (st1.bindLocals []) b.toCore := fun j => by
+      have := armsFails (j + 2)
+      simp only [Semantics.evalMatchArms, Semantics.matchPattern, Semantics.scalarEqual] at this
+      exact (failing_restore _ _).mp this
+    obtain ⟨d, stops⟩ := ihb elseOk corr1 fr fresh1 hc1 fc1 within1 bFails
+    exact ⟨_, Stops.after exec1 (.ifFalse (by simp [Expr.eval, bits, boolBits]) stops)⟩
+
+/-- A let in an expression: the value's code stops, or its value is bound
+and the body's code stops. -/
+theorem eff_let (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {id : Nat}
+    {ty rt : SrcType} {a b : SrcEff} (iha : EffStops sp mp n a) (ihb : EffStops sp mp n b) :
+    EffStops sp mp n (.eLet id ty a rt b) := by
+  intro bud places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
+  simp only [SrcEff.eval, evalLetIn] at ok
+  split at ok
+  · simp at ok
+  rename_i va valueOk
+  cases hs : armScope [id] [ty] slot scope with
+  | none => simp [hs] at ok
+  | some s' =>
+  simp only [hs] at ok
+  split at ok
+  · simp at ok
+  rename_i bb bodyOk
+  simp only [evalLetInOf] at ok
+  split at ok
+  case isFalse => simp at ok
+  rename_i cond
+  simp only [Bool.and_eq_true] at cond
+  obtain ⟨sameA, _⟩ := cond
+  simp only [Option.some.injEq] at ok
+  subst ok
+  simp only [SrcEff.toCore] at fails
+  rcases eff_split lowered iha valueOk corr fr fresh hc fc within fails (fun j r s h => ⟨j + 1, s, match_trap h, rfl⟩) with
+    ⟨d, stops⟩ | ⟨k, w, st1, valueRun, bound1, fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, holds1, hc1, fc1⟩
+  · exact ⟨d, .seqFirst stops⟩
+  rw [SrcType.same_eq sameA] at holds1
+  have limit := exec1.limit_normal
+  have armsFails : ∀ j, Failing hp1.limit (Semantics.evalMatchArms j sp.toCore st1 w [(.bind id, b.toCore)]) := by
+    rw [limit]
+    refine failing_after (fun le => Semantics.evalMatchArms_refines le) (k := k) fun j le => ?_
+    have := fails (j + 1)
+    rw [match_arms valueRun le] at this
+    exact this
+  have fr0 : Layout scope frame 0 slot := ⟨fr.slots, fr.sized, fun _ _ => Nat.zero_le _, fr.inj, fr.apart⟩
+  obtain ⟨frame', corr', fr', fresh', keeps', -⟩ :=
+    armScope_layout [id] hs (.cons holds1 .nil) fr0 (corr.after fr fresh keeps1 locals1 same1) fresh1
+      (fc1.below fresh1)
+  have bFails : EFails sp hp1.limit (st1.bindLocals [(id, w)]) b.toCore := fun j => by
+    have := armsFails (j + 1)
+    simp only [Semantics.evalMatchArms, Semantics.matchPattern] at this
+    exact (failing_restore _ _).mp this
+  have hc' : HeapCorr (st1.bindLocals [(id, w)]).heap (st1.bindLocals [(id, w)]).world hp1 := by
+    rw [(bindLocals_same _ st1).1, bindLocals_world]
+    exact hc1
+  have within' : (st1.bindLocals [(id, w)]).heap.nextAddress ≤ hp1.limit := by
+    rw [(bindLocals_same _ st1).1, limit]
+    exact bound1
+  have hvd : slot + ty.size ≤ matchDst slot ty rt := by
+    have := Nat.le_max_left ty.size rt.size
+    simp only [matchDst]
+    omega
+  obtain ⟨d, stops⟩ := ihb bodyOk corr' (fr'.mono (by simp only [sizes]; omega)) fresh' hc' (fc1.after fresh1 keeps') within' bFails
+  exact ⟨_, Stops.after exec1 (.seqFirst stops)⟩
 
 end Cases
 
@@ -2377,6 +2517,10 @@ theorem effStops_all {sp : SrcProgram} {mp : Program} {n : Nat}
   | .eDivide _ l r => eff_divide lowered (effStops_all lowered returns prev l) (effStops_all lowered returns prev r)
   | .eStride _ => eff_stride
   | .arraySlice _ _ => eff_arraySlice
+  | .eIf c _ a b => eff_if lowered (effStops_all lowered returns prev c) (effStops_all lowered returns prev a)
+      (effStops_all lowered returns prev b)
+  | .eLet _ _ a _ b => eff_let lowered (effStops_all lowered returns prev a) (effStops_all lowered returns prev b)
+  | .eLen _ => eff_len
 termination_by e => sizeOf e
 
 /-- Every lowered statement whose Core run fails stops within `n + 1` ticks

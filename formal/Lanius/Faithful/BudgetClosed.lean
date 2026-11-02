@@ -35,8 +35,8 @@ def qcallB (sp : SrcProgram) (prims : Prims) (cost : Nat → Nat) (ok : Nat → 
         | none => none
         | some f =>
           if values.length = f.params.length then
-            qthen (qstmt (qcallB sp prims cost ok fuel) (paramEnv f.params values) f.body) fun d =>
-              qfree (doneValue f.ret d)
+            qthen (qstmt (qcallB sp prims cost ok fuel) fuel (paramEnv f.params values) f.body) fun d =>
+              qfree (outValue f.ret d)
           else none
     else none
 
@@ -77,7 +77,7 @@ theorem qcallB_succ (sp : SrcProgram) (prims : Prims) (cost : Nat → Nat) (ok :
           split at h
           · rename_i len
             rw [if_pos len]
-            exact qthen_mono (fun _ hx => qstmt_mono (qcallB_succ sp prims cost ok n) _ hx)
+            exact qthen_mono (fun _ hx => qstmt_mono (qcallB_succ sp prims cost ok n) (Nat.le_succ n) _ hx)
               (fun _ _ hx => hx) h
           · cases h
     · cases h
