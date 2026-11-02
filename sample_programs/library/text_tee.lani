@@ -1,0 +1,90 @@
+// GNU tee over ext::text_tee, with options parsed by std::cli (GNU
+// getopt_long rules).
+// usage: text-tee [-a] [-i] [-p] [--output-error[=MODE]] [FILE...]
+// Exit 0, or 1 on a bad option, a file that cannot be opened, or a failed
+// read or write.
+module app::main;
+import alloc::vec;
+import core::option;
+import core::result;
+import core::slice;
+import ext::text_args;
+import ext::text_lines;
+import ext::text_tee;
+import std::args;
+import std::cli;
+
+fn lit(value: str, count: i32) -> core::slice::View<u8> { return ext::text_args::lit(value, count); }
+fn tool() -> core::slice::View<u8> { return lit("text-tee", 8); }
+
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(1, 65536, 16777216);
+    if (core::result::is_err(captured)) { ext::text_args::complain(tool(), lit("bad arguments", 13), lit("", 0)); return 1; }
+    let arguments: std::args::Arguments = core::result::unwrap(captured);
+    let all: core::slice::View<core::slice::View<u8>> = arguments.as_view();
+    let cli: std::cli::Command = std::cli::command(tool(), lit("Copy standard input to each FILE, and also to standard output.", 62));
+    cli.flag(1, 97, lit("append", 6), lit("append to the given FILEs, do not overwrite", 43));
+    cli.flag(2, 105, lit("ignore-interrupts", 17), lit("ignore interrupt signals", 24));
+    cli.flag(3, 112, lit("", 0), lit("operate in a more appropriate MODE with pipes", 45));
+    cli.optional(4, 0, lit("output-error", 12), lit("MODE", 4), lit("set behavior on write error: warn, warn-nopipe, exit, exit-nopipe", 65));
+    cli.flag(5, 0, lit("version", 7), lit("output version information and exit", 35));
+    cli.help(6);
+    cli.operands(lit("FILE", 4), 0, -1);
+    let parsed: core::result::Result<std::cli::Matches, std::cli::Error> = cli.parse(all);
+    if (core::result::is_err(parsed)) { cli.print_error(core::result::unwrap_err(parsed), all); cli.destroy(); arguments.destroy(); return 1; }
+    let m: std::cli::Matches = core::result::unwrap(parsed);
+    let o: ext::text_tee::Options = ext::text_tee::default_options();
+    let i: i32 = 0; let help: bool = false; let version: bool = false; let ok: bool = true;
+    while (i < m.occurrences() && ok) {
+        let id: i32 = m.occurrence_id(i);
+        if (id == 1) { o.append = true; }
+        if (id == 2) { o.ignore_interrupts = true; }
+        if (id == 3) { o.mode = 2; }
+        if (id == 4) {
+            let given: core::option::Option<core::slice::View<u8>> = m.occurrence_value(i);
+            if (core::option::is_none(given)) { o.mode = 2; }
+            else {
+                let v: core::slice::View<u8> = core::option::unwrap(given);
+                let mode: i32 = ext::text_tee::output_mode(v);
+                if (mode < 0) {
+                    let what: core::slice::View<u8> = lit("invalid argument for --output-error", 35);
+                    if (mode == -2) { what = lit("ambiguous argument for --output-error", 37); }
+                    ext::text_args::complain(tool(), what, v); ok = false;
+                } else { o.mode = mode; }
+            }
+        }
+        if (id == 5) { version = true; } if (id == 6) { help = true; }
+        i += 1;
+    }
+    if (!ok || help || version) {
+        let status: i32 = 1;
+        if (ok && help) { status = 0; if (!cli.print_help(-1)) { status = 1; } }
+        if (ok && !help && version) { status = 0; if (!ext::text_args::emit(1, lit("text-tee (Lanius ext::text_tee)\n", 32))) { status = 1; } }
+        m.destroy(); cli.destroy(); arguments.destroy(); return status;
+    }
+    ext::text_tee::prepare(o.borrow());
+    let fds: alloc::vec::Vec<i32> = alloc::vec::new();
+    let names: alloc::vec::Vec<core::slice::View<u8>> = alloc::vec::new();
+    let a: core::result::Result<i32, alloc::vec::Error> = fds.try_push(1);
+    let b: core::result::Result<i32, alloc::vec::Error> = names.try_push(lit("standard output", 15));
+    let status: i32 = 0; i = 0;
+    while (i < m.operand_count()) {
+        let name: core::slice::View<u8> = m.operand(i); i += 1;
+        let fd: i32 = ext::text_tee::open_output(name, o.append);
+        if (fd < 0) {
+            ext::text_args::complain(tool(), name, lit("cannot open", 11)); status = 1;
+            // GNU's exit modes give up at the first file that cannot be opened.
+            if (o.mode == 3 || o.mode == 4) { fds.destroy(); names.destroy(); m.destroy(); cli.destroy(); arguments.destroy(); return 1; }
+        }
+        let c: core::result::Result<i32, alloc::vec::Error> = fds.try_push(fd);
+        let d: core::result::Result<i32, alloc::vec::Error> = names.try_push(name);
+    }
+    let run: ext::text_tee::Run = ext::text_tee::copy(fds.borrow(), names.borrow(), o.borrow(), tool());
+    if (run.status != 0) { status = 1; }
+    if (!run.stop) {
+        i = 1;
+        while (i < fds.len()) { let fd: i32 = core::option::unwrap(fds.get(i)); if (fd > 2) { ext::text_lines::close_input(fd); } i += 1; }
+    }
+    fds.destroy(); names.destroy(); m.destroy(); cli.destroy(); arguments.destroy();
+    return status;
+}

@@ -1,0 +1,117 @@
+// GNU `tee`: standard input copied to standard output and to each named
+// file ("-" is a file named "-", as POSIX asks), in 8 KiB reads like
+// GNU's BUFSIZ, writing each block to standard output first and then to
+// the files in order. GNU's --output-error modes decide what a failed
+// write does. See docs/extended-textutils.md.
+module ext::text_tee;
+import alloc::io;
+import alloc::vec;
+import core::io;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import ext::text_args;
+import std::file;
+import std::fs;
+import std::signal;
+
+// mode: 0 none given (a broken pipe kills, as by default), 1 warn,
+// 2 warn-nopipe (-p), 3 exit, 4 exit-nopipe.
+pub struct Options { append: bool, ignore_interrupts: bool, mode: i32 }
+pub impl Options { pub fn borrow(&self) -> &Options { return self; } }
+pub fn default_options() -> Options { return Options { append: false, ignore_interrupts: false, mode: 0 }; }
+
+pub const BLOCK: i32 = 8192;
+const EPIPE: i32 = 32;
+
+// GNU argmatch over warn, warn-nopipe, exit, exit-nopipe: an exact name, or
+// a prefix of exactly one. The mode, or -1 (invalid) or -2 (ambiguous).
+pub fn output_mode(v: core::slice::View<u8>) -> i32 {
+    let found: i32 = -1; let i: i32 = 0;
+    while (i < 4) {
+        let name: core::slice::View<u8> = ext::text_args::lit("warn", 4);
+        if (i == 1) { name = ext::text_args::lit("warn-nopipe", 11); }
+        if (i == 2) { name = ext::text_args::lit("exit", 4); }
+        if (i == 3) { name = ext::text_args::lit("exit-nopipe", 11); }
+        if (ext::text_args::same(name, v)) { return i + 1; }
+        if (v.length < name.length && ext::text_args::same(core::slice::View { values: name.values, start: name.start, length: v.length }, v)) {
+            if (found == -1) { found = i + 1; } else { found = -2; }
+        }
+        i += 1;
+    }
+    return found;
+}
+
+// Open a named output (truncating, or appending), mode 0666 less the
+// umask: the descriptor or -1.
+pub fn open_output(name: core::slice::View<u8>, append: bool) -> i32 {
+    let checked: core::result::Result<core::path::Path, core::path::Error> = core::path::from_view(name);
+    if (core::result::is_err(checked)) { return -1; }
+    let how: std::file::OpenMode = std::file::OpenMode::Create; if (append) { how = std::file::OpenMode::Append; }
+    let opened: core::result::Result<std::file::File, core::io::Error> = std::file::open(core::result::unwrap(checked), how);
+    if (core::result::is_err(opened)) { return -1; }
+    let file: std::file::File = core::result::unwrap(opened);
+    let fd: core::option::Option<i32> = file.take_handle();
+    if (core::option::is_none(fd)) { return -1; }
+    return core::option::unwrap(fd);
+}
+
+// Write all count bytes at p to fd: 0, or the errno of the failure.
+fn te_write(fd: i32, p: ptr, count: i32) -> i32 {
+    let sent: i32 = 0;
+    while (sent < count) {
+        let r: i32 = std::fs::write(fd, p + (sent as usize), (count - sent) as usize);
+        if (r == -4) { continue; }
+        if (r < 0) { return 0 - r; }
+        if (r == 0 || r > count - sent) { return 5; }
+        sent += r;
+    }
+    return 0;
+}
+
+// Set the signal dispositions GNU sets: SIGINT ignored for -i, SIGPIPE
+// ignored whenever an output-error mode is given.
+pub fn prepare(o: &Options) {
+    if (o.ignore_interrupts) { let a: core::result::Result<i32, core::io::Error> = std::signal::set_disposition(std::signal::Signal::Interrupt, std::signal::Disposition::Ignore); }
+    if (o.mode != 0) { let b: core::result::Result<i32, core::io::Error> = std::signal::set_disposition(std::signal::Signal::BrokenPipe, std::signal::Disposition::Ignore); }
+}
+
+// Copy standard input to fds (fds[0] is standard output; -1 marks an
+// output that failed to open). names label the messages. Returns 0, or 1
+// when a write or the read failed; exits are left to the caller through
+// `stop` (an exit mode met an error).
+pub struct Run { status: i32, stop: bool }
+pub fn copy(fds: &alloc::vec::Vec<i32>, names: &alloc::vec::Vec<core::slice::View<u8>>, o: &Options, tool: core::slice::View<u8>) -> Run {
+    let r: Run = Run { status: 0, stop: false };
+    let mem: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(BLOCK + 16));
+    let p: ptr = core::result::unwrap(mem.reserve_raw(BLOCK + 16));
+    let live: i32 = 0; let i: i32 = 0;
+    while (i < fds.len()) { if (core::option::unwrap(fds.get(i)) >= 0) { live += 1; } i += 1; }
+    while (live > 0) {
+        let got: i32 = std::fs::read(0, p, BLOCK as usize);
+        if (got == -4) { continue; }
+        if (got < 0) { ext::text_args::complain(tool, ext::text_args::lit("read error", 10), ext::text_args::lit("", 0)); r.status = 1; break; }
+        if (got == 0) { break; }
+        i = 0;
+        while (i < fds.len()) {
+            let fd: i32 = core::option::unwrap(fds.get(i));
+            if (fd >= 0) {
+                let e: i32 = te_write(fd, p, got);
+                if (e != 0) {
+                    let fail: bool = e != EPIPE || o.mode == 1 || o.mode == 3;
+                    if (fail) {
+                        ext::text_args::complain(tool, core::option::unwrap(names.get(i)), ext::text_args::lit("write error", 11));
+                        r.status = 1;
+                        if (o.mode == 3 || o.mode == 4) { r.stop = true; mem.destroy(); return r; }
+                    }
+                    let dropped: core::result::Result<i32, alloc::vec::Error> = fds.set(i, -1);
+                    live -= 1;
+                }
+            }
+            i += 1;
+        }
+    }
+    mem.destroy();
+    return r;
+}
