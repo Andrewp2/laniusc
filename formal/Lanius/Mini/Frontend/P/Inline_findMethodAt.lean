@@ -51,7 +51,7 @@ namespace Lanius.Mini
   else
     none
 
-/-- `for x in a..n { body }`, a an integer literal and n a local (for_stmt -> For Ident In for_iterable block), read as `let c = a; let e = n; while (c < e) { let x = c; c = c + 1; body }`: n is read once, and a `continue` in body moves to the next value. The hidden c and e are numbered by the `for` token and x's token, and x by the `in` token, so that the locals are numbered in the order the desugared text declares them. -/
+/-- `for x in a..n { body }`, a an integer literal and n a local (for_stmt -> For Ident In for_iterable block), read as `let c = a; let e = n; while (c < e) { let x = c; c = c + 1; body }`: n is read once, and a `continue` in body moves to the next value. The hidden c and e are numbered by the `for` token and x's token, and x by the `in` token, so that the locals are numbered in the order the desugared text declares them. `for x in a { body }`, a an array local, is for_array's loop, its index numbered by the `for` token and x by its own. -/
 @[expose] def Inline.forOf (ffuel : Nat) (fenv : FrontEnv) (fscope : List Local) (fs : CTree) : Option MStmt :=
   let x : Token := kidToken fs 1
   let iter : CTree := kid fs 3
@@ -64,7 +64,18 @@ namespace Lanius.Mini
       | none => none
       | some a => forRange ((kidToken fs 0).start - fenv.base) (x.start - fenv.base) ((kidToken fs 2).start - fenv.base) n.ty a n.id (blockOf ffuel fenv (({ name := x.text, id := (kidToken fs 2).start - fenv.base, ty := n.ty } : Local) :: fscope) (kid (kid fs 4) 1))
   else
-    none
+    if decide (nodeProd iter = (92)) && !(member fenv.globals x.text) && freshId fscope (x.start - fenv.base) && freshId fscope ((kidToken fs 0).start - fenv.base) then
+      match pathName (kid iter 0) with
+      | none => none
+      | some name =>
+        match findLocal fscope name with
+        | none => none
+        | some l =>
+          match arrayLocal l with
+          | none => none
+          | some al => forArray ((kidToken fs 0).start - fenv.base) (x.start - fenv.base) al (blockOf ffuel fenv (({ name := x.text, id := x.start - fenv.base, ty := al.element } : Local) :: fscope) (kid (kid fs 4) 1))
+    else
+      none
 
 @[expose] def Inline.paramOf (pfuel : Nat) (penv : FrontEnv) (pfd : FnDecl) (pscope : List Local) (pp : CTree) (prest : List CTree) : Option MParams :=
   let tok : Token := paramToken pp

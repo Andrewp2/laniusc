@@ -18,6 +18,7 @@ import Lanius.Mini.Frontend.P.litEffMatch
 import Lanius.Mini.Frontend.P.litWanted
 import Lanius.Mini.Frontend.P.matchStmtIf
 import Lanius.Mini.Frontend.P.noToken
+import Lanius.Mini.Frontend.P.noTrees
 import Lanius.Mini.Frontend.P.textSelf
 import Lanius.Mini.Frontend.P.tryLet
 import Lanius.Mini.Frontend.P.typeDeclAt
@@ -169,7 +170,18 @@ def nestedOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (s : CTree) : Op
           | none => none
           | some a => forRange ((kidToken s 0).start - env.base) (x.start - env.base) ((kidToken s 2).start - env.base) n.ty a n.id (blockOf f env (({ name := x.text, id := (kidToken s 2).start - env.base, ty := n.ty } : Local) :: scope) (kid (kid s 4) 1))
       else
-        none
+        if decide (nodeProd iter = (92)) && !(member env.globals x.text) && freshId scope (x.start - env.base) && freshId scope ((kidToken s 0).start - env.base) then
+          match pathName (kid iter 0) with
+          | none => none
+          | some name =>
+            match findLocal scope name with
+            | none => none
+            | some l =>
+              match arrayLocal l with
+              | none => none
+              | some al => forArray ((kidToken s 0).start - env.base) (x.start - env.base) al (blockOf f env (({ name := x.text, id := x.start - env.base, ty := al.element } : Local) :: scope) (kid (kid s 4) 1))
+        else
+          none
     else
       if nodeProd s = (84) then
         blockOf f env scope (kid (kid s 0) 1)

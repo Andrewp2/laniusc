@@ -1197,6 +1197,18 @@ inductive StmtR (env : FrontEnv) : List Local → CTree → MStmt → Prop
       forRange ((kidToken s 0).start - env.base) ((kidToken s 1).start - env.base) ((kidToken s 2).start - env.base)
         n.ty a n.id (some body) = some m →
       StmtR env scope s m
+  /-- `for x in a { body }`, a an array local (`arrayLocal`): `forArray`'s
+  loop `let i: usize = 0; while (i < n) { let x = a[i]; i = i + 1; body }`
+  over a's n elements, i numbered by the `for` token and x by its own. -/
+  | forArray {scope : List Local} {s : CTree} {nm : Name} {l : Local} {al : ArrayLocal} {body m : MStmt} :
+      nodeProd s = pForStmt → nodeProd (kid s 3) = pForIterPath →
+      (kidToken s 1).text ∉ env.globals → FreshId scope ((kidToken s 1).start - env.base) →
+      FreshId scope ((kidToken s 0).start - env.base) →
+      PathName (kid (kid s 3) 0) nm → LocalNamed scope nm l → arrayLocal l = some al →
+      BlockR env ({ name := (kidToken s 1).text, id := (kidToken s 1).start - env.base, ty := al.element } :: scope)
+        (kid (kid s 4) 1) body →
+      forArray ((kidToken s 0).start - env.base) ((kidToken s 1).start - env.base) al (some body) = some m →
+      StmtR env scope s m
   /-- `{ ... }`: its lets scope over the block only. -/
   | block {scope : List Local} {s : CTree} {m : MStmt} : nodeProd s = pBlockStmt →
       BlockR env scope (kid (kid s 0) 1) m → StmtR env scope s m
@@ -1611,7 +1623,35 @@ theorem stmtSound : ∀ fuel, StmtSound fuel
                   (ihBlock hb) hw h
                 rw [(member_iff _ _).2 mem] at ng
                 cases ng
-        · cases h
+        · split at h
+          · rename_i c
+            simp only [Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true'] at c
+            obtain ⟨⟨⟨pi, ng⟩, fx⟩, fi⟩ := c
+            cases hp : pathName (kid (kid s 3) 0) with
+            | none => rw [hp] at h; cases h
+            | some nm =>
+              rw [hp] at h
+              try dsimp only at h
+              cases hn : findLocal scope nm with
+              | none => rw [hn] at h; cases h
+              | some l =>
+                rw [hn] at h
+                try dsimp only at h
+                cases ha : arrayLocal l with
+                | none => rw [ha] at h; cases h
+                | some al =>
+                  rw [ha] at h
+                  try dsimp only at h
+                  cases hb : blockOf f env (⟨(kidToken s 1).text, (kidToken s 1).start - env.base, al.element⟩ :: scope)
+                      (kid (kid s 4) 1) with
+                  | none => rw [hb] at h; simp [forArray] at h
+                  | some body =>
+                    rw [hb] at h
+                    refine .forArray pf pi (fun mem => ?_) ((freshId_iff _ _).1 fx) ((freshId_iff _ _).1 fi)
+                      (pathName_eq hp) (findLocal_sound hn) ha (ihBlock hb) h
+                    rw [(member_iff _ _).2 mem] at ng
+                    cases ng
+          · cases h
       split at h
       · rename_i _ pb
         exact .block pb (ihBlock h)

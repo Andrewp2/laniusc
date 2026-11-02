@@ -33,6 +33,9 @@ namespace Lanius.Mini
 @[expose] def Inline.pFn : Nat :=
   11
 
+@[expose] def Inline.pForIterPath : Nat :=
+  92
+
 @[expose] def Inline.pForIterRangeFromStart : Nat :=
   93
 

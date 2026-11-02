@@ -395,6 +395,13 @@ structure Untyped where
   head : LetHead
   deriving Repr
 
+/-- An array local: its id, element type and length. -/
+structure ArrayLocal where
+  id : Nat
+  element : Ty
+  count : Nat
+  deriving Repr
+
 /-- A match statement's scrutinee (a local, or else a value bound to a local numbered by the `match`), its enum and variants, and the local numbered by its `}` that the Unreachable after the last arm binds. -/
 structure MatchStmt where
   scrutinee : Nat

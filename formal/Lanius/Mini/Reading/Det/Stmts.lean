@@ -1372,6 +1372,22 @@ theorem stmtR_unique : ∀ {scope : List Local} {s : CTree} {a : MStmt}, StmtR e
       rw [fr'] at fr
       exact (Option.some.inj fr).symm
     | _ => prod_clash
+  | _, _, _, .forArray _ _ _ fx _ pn ln al bb fa, nd, vn, _, h₂ => by
+    have ih := fun {y} k' => blockR_unique bb (idsFresh_cons nd fx) vn (b := y) k'
+    cases h₂ with
+    | forArray _ _ _ _ _ pn' ln' al' bb' fa' =>
+      obtain ⟨_, _, _, e1⟩ := pn
+      obtain ⟨_, _, _, e2⟩ := pn'
+      subst e1 e2
+      obtain ⟨_, f⟩ := ln
+      obtain ⟨_, f'⟩ := ln'
+      cases (firstWith_unique f f').2
+      rw [al] at al'
+      cases al'
+      cases ih bb'
+      rw [fa'] at fa
+      exact (Option.some.inj fa).symm
+    | _ => prod_clash
   | _, _, _, .block _ bb, nd, vn, _, h₂ => by
     have ih := fun {y} k' => blockR_unique bb nd vn (b := y) k'
     cases h₂ with

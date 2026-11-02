@@ -5,6 +5,7 @@ import Lanius.Mini.Frontend.P.compoundOf
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.noToken
+import Lanius.Mini.Frontend.P.pickTy
 import Lanius.Mini.Frontend.P.whileEvalOf
 import Lanius.Mini.Frontend.P.wideOf
 
@@ -20,6 +21,23 @@ def forRange (c : Nat) (e : Nat) (x : Nat) (t : Ty) (a : SrcExpr) (n : Nat) (bod
   match body with
   | none => none
   | some b => stmtUnless (writesLocal b x) (MStmt.mLet c t a (MStmt.mLet e t (SrcExpr.local n) (MStmt.mWhile (SrcExpr.apply SrcOp.less (SrcExpr.local c) (SrcExpr.local e)) (MStmt.mLet x t (SrcExpr.local c) (MStmt.mThen (MStmt.mSet c (SrcExpr.apply SrcOp.plus (SrcExpr.local c) (SrcExpr.int 1))) b)))))
+
+def arrayLocalOf (id : Nat) (p : Option ArrayParts) : Option ArrayLocal :=
+  match p with
+  | none => none
+  | some ap => some ({ id := id, element := ap.element, count := ap.count } : ArrayLocal)
+
+def arrayLocal (l : Local) : Option ArrayLocal :=
+  arrayLocalOf l.id (arrayParts l.ty)
+
+/-- The reading of a loop over the array local a (for_of): the usize index i from 0 while i < a's length, x = a[i], i = i + 1 and then the body. laniusc's array loop reads a[i] at each step before the body and steps i after it, so a `continue` in the body moves to the next element either way; the body cannot name i. -/
+def forArray (i : Nat) (x : Nat) (a : ArrayLocal) (body : Option MStmt) : Option MStmt :=
+  if a.count < 2147483648 then
+    match body with
+    | none => none
+    | some b => some (MStmt.mLet i (Ty.tyUint UintTy.usize) (SrcExpr.unsigned UintTy.usize 0) (MStmt.mWhile (SrcExpr.apply SrcOp.less (SrcExpr.local i) (SrcExpr.unsigned UintTy.usize (BitVec.ofNat 64 a.count))) (MStmt.mLetIndex x a.element a.id (SrcExpr.local i) (MStmt.mThen (MStmt.mSet i (SrcExpr.apply SrcOp.plus (SrcExpr.local i) (SrcExpr.unsigned UintTy.usize 1))) b))))
+  else
+    none
 
 def matchOfPostfix (pf : CTree) : Option CTree :=
   if decide (nodeProd (kid pf 0) = (187)) && decide (nodeProd (kid pf 1) = (164)) then

@@ -1003,6 +1003,28 @@ numbered by the `for` token and `x`'s token, and `x` by the `in` token, so the
 locals are numbered in the order the desugared text declares them and the
 front end's cases can write the desugaring as the expected reading.
 
+## `for` over an array (decided 11-01, F11b)
+
+`for x in a { body }`, with `a` a local of type `[T; n]` (grammar
+`for_iter_path`), is read as `let i: usize = 0; while (i < n) { let x: T =
+a[i]; i = i + 1; body }` (`for_array`, `StmtR.forArray`). This is
+laniusc's array loop (shaders/codegen/lir/semantic/loop_recipe.slang,
+`SEMANTIC_LOOP_RECIPE_ARRAY`): the index starts at 0 and is compared with
+the type's constant length; `x` is set from `a[i]`, which reads the array
+local again at each step, before the body; the index steps after the
+body's block, so `continue` goes to the next element and `break` leaves the
+loop. Writes to `a` in the body are seen by later steps in both, and `x`
+is a copy, so a body that writes `x` changes nothing else. `i` is hidden
+and numbered by the `for` token, and `x` by its own token. laniusc's index
+is an `i32`; here it is `usize`, which no source can observe, since the
+body cannot name it. Lengths from 2^31 up are not read (the lowering's
+array index takes no more).
+
+A loop over a slice is not read. laniusc reads the slice's length once
+before the loop (`SEMANTIC_LOOP_RECIPE_SLICE`), but Core has no
+slice-length expression and the mini syntax has no form to lower one to.
+Reading that loop needs a slice length in Core first.
+
 ## Match arm statements (decided 10-31, F4)
 
 The source statement `MatchArm(scrutinee, enum_id, variant, binds, binder,

@@ -40,6 +40,7 @@ abbrev pBitXor : Nat := 127
 abbrev pBlockStmt : Nat := 84
 abbrev pBreakStmt : Nat := 82
 abbrev pForStmt : Nat := 81
+abbrev pForIterPath : Nat := 92
 abbrev pForIterRangeFromStart : Nat := 93
 abbrev pRangeStartInt : Nat := 96
 abbrev pRangeExclusive : Nat := 97

@@ -688,6 +688,11 @@ when it is right; a stale cache entry is rejected, never used. Trusted:
     has a variant so spelled (`BindersR`'s `NoVariant`): laniusc reads one
     that resolves to a variant as a check. SEMANTIC_DECISIONS "Payload
     names that are variants";
+  - (F11b) `for x in a { body }`, a an array local of n elements
+    (`StmtR.forArray`, `Reading/Stmts.lean`), is `forArray`'s loop: a
+    hidden `usize` index i (the `for` token's local) from 0 while i < n,
+    `let x = a[i]` (x's token's local), i = i + 1, then the body; n below
+    2^31. A slice is not read. SEMANTIC_DECISIONS "`for` over an array";
   - `x.f` is `Field` when `x` is a local, and otherwise the call of the
     projection `fn(v: T) -> F { return v.f; }` on `x`, an instance numbered
     like any other;
