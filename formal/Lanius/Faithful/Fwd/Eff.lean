@@ -98,9 +98,9 @@ theorem parms_of {env : Env} {v : Value} {id j : Nat} {binders : List (List Nat)
     parms (pcall sp prims N) env v id j binders values = some p := by
   rw [parms_eq (pcall_eq_qcall sp prims cost N), hq]; rfl
 
-theorem pstmt_of {env : Env} {s : SrcStmt} {d : Done} {h : Nat}
-    (hq : qstmt (qcall sp prims cost N) env s = some (d, h)) : pstmt (pcall sp prims N) env s = some d := by
-  rw [pstmt_eq (pcall_eq_qcall sp prims cost N), hq]; rfl
+theorem mstmt_of {env : Env} {s : SrcStmt} {o : Out} {h : Nat}
+    (hq : qstmt (qcall sp prims cost N) N env s = some (o, h)) : mstmt (pcall sp prims N) N env s = some o := by
+  rw [mstmt_eq (pcall_eq_qcall sp prims cost N) N, hq]; rfl
 
 variable (calls : ∀ m, FuncSim sp prims outside m)
 include calls
@@ -453,6 +453,67 @@ theorem eff_live (live : FuncLive sp prims outside cost N) : ∀ (e : SrcEff) {t
     exact ⟨_, s2, ev, r', ran, g, f2⟩
   | .eStride _, _, _, _, _, _, _, ht, _, _, _, _, _ => by simp [effTy] at ht
   | .arraySlice _ _, _, _, _, _, _, _, ht, _, _, _, _, _ => by simp [effTy] at ht
+  | .eIf c ty a b, tenv, env, st, t, p, h, ht, inv, rel, hq, budget, fr => by
+    have ht' := ht
+    simp only [effTy] at ht'
+    split at ht'
+    · rename_i hc
+      have htc := isBoolTy_some hc
+      simp only [Option.bind_eq_some_iff] at ht'
+      obtain ⟨ta, hta, tb, htb, -⟩ := ht'
+      have hq' := hq
+      simp only [qeff] at hq'
+      obtain ⟨cq, h1, h2, hqc, hqb, rfl⟩ := qthen_some hq'
+      obtain ⟨cv, s1, evc, rc, ran1, g1, f1⟩ := eff_live live c htc inv rel hqc (part (by aomega) budget) fr
+      obtain ⟨rfl, x, rfl⟩ := rc.scalar_ty rfl
+      have rel1 := rel.step ran1.step ran1.locals
+      have arms : ∃ v s2, Ev (fun k => evalMatchArms k sp.toCore s1 (.boolean x)
+            [(.literal (.boolean true), a.toCore), (.wildcard, b.toCore)]) v (restoreLocals s1 s2) ∧
+          s2.heap.nextAddress ≤ s1.heap.nextAddress + h2 ∧ s2.heap.remaining = none := by
+        cases x with
+        | true =>
+          simp only [asBool, Option.bind_some, if_true] at hqb
+          obtain ⟨v, s2, evb, -, -, g2, f2⟩ := eff_live live a hta ran1.inv rel1 hqb (part (by aomega) budget) f1
+          exact ⟨v, s2, arms_hit_fwd (bs := []) (by simp [Semantics.matchPattern, Semantics.scalarEqual]) evb, g2, f2⟩
+        | false =>
+          simp only [asBool, Option.bind_some, Bool.false_eq_true, if_false] at hqb
+          obtain ⟨v, s2, evb, -, -, g2, f2⟩ := eff_live live b htb ran1.inv rel1 hqb (part (by aomega) budget) f1
+          exact ⟨v, s2, arms_skip_fwd (by simp [Semantics.matchPattern, Semantics.scalarEqual])
+            (arms_hit_fwd (bs := []) rfl evb), g2, f2⟩
+      obtain ⟨v, s2, eva, g2, f2⟩ := arms
+      have ev : Ev (fun k => evalExpr k sp.toCore st (SrcEff.eIf c ty a b).toCore) v (restoreLocals s1 s2) := by
+        simpa only [SrcEff.toCore] using match_fwd evc eva
+      have g : (restoreLocals s1 s2).heap.nextAddress ≤ st.heap.nextAddress + (h1 + h2) := by
+        show s2.heap.nextAddress ≤ _
+        aomega
+      obtain ⟨r', ran⟩ := eff_rel calls ht inv rel (peff_of hq) ev (part g budget)
+      exact ⟨_, _, ev, r', ran, g, f2⟩
+    · simp at ht'
+  | .eLet id ty value rt body, tenv, env, st, t, p, h, ht, inv, rel, hq, budget, fr => by
+    have ht' := ht
+    simp only [effTy, Option.bind_eq_some_iff] at ht'
+    obtain ⟨tv, htv, hb⟩ := ht'
+    have hq' := hq
+    simp only [qeff] at hq'
+    obtain ⟨q, h1, h2, hqv, hqb, rfl⟩ := qthen_some hq'
+    obtain ⟨sv, s1, evv, rq, ran1, g1, f1⟩ := eff_live live value htv inv rel hqv (part (by aomega) budget) fr
+    have rel1 := (rel.step ran1.step ran1.locals).bind ran1.inv (id := id) rq
+    have budget2 : (s1.bindLocal id sv).heap.nextAddress + h2 ≤ 2 ^ 64 := by
+      show s1.heap.nextAddress + h2 ≤ _
+      aomega
+    obtain ⟨v, s2, evb, -, -, g2, f2⟩ := eff_live live body hb (ran1.inv.bindLocal id sv) rel1 hqb budget2 f1
+    have g2' : s2.heap.nextAddress ≤ s1.heap.nextAddress + h2 := g2
+    have eva : Ev (fun k => evalMatchArms k sp.toCore s1 sv [(.bind id, body.toCore)]) v (restoreLocals s1 s2) :=
+      arms_hit_fwd (bs := [(id, sv)]) rfl evb
+    have ev : Ev (fun k => evalExpr k sp.toCore st (SrcEff.eLet id ty value rt body).toCore) v
+        (restoreLocals s1 s2) := by
+      simpa only [SrcEff.toCore] using match_fwd evv eva
+    have g : (restoreLocals s1 s2).heap.nextAddress ≤ st.heap.nextAddress + (h1 + h2) := by
+      show s2.heap.nextAddress ≤ _
+      aomega
+    obtain ⟨r', ran⟩ := eff_rel calls ht inv rel (peff_of hq) ev (part g budget)
+    exact ⟨_, _, ev, r', ran, g, f2⟩
+  | .eLen _, _, _, _, _, _, _, ht, _, _, _, _, _ => by simp [effTy] at ht
 
 theorem effs_live (live : FuncLive sp prims outside cost N) : ∀ (es : List SrcEff) {tenv : TEnv} {env : Env} {st : State} {ts : List SrcType}
     {ps : List Value} {h : Nat},

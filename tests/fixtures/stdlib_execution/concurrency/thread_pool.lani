@@ -1,0 +1,219 @@
+// Functional tests for std::pool. Prints "name value" per check
+// (" FAIL want W" on a mismatch) and exits 0 when every check passes:
+//   scoped.*   8 scoped threads sum disjoint ranges; all joined on return
+//   pool.*     10,000 tasks through a 4-worker Pool: every task runs once
+//              (completed, the run() total and an atomic side counter), a
+//              second batch after wait(), then shutdown
+//   pool.try_* try_submit refuses a full queue; wait_timeout_ms times out
+//              while a task is still running, then succeeds
+//   pool.replies 1,000 tasks send results back through an Mpsc
+//   map.*      x -> 3x + 1 over 1,000,003 i64 equals the serial map
+//   reduce.*   a sum, and an order-sensitive polynomial hash (associative,
+//              not commutative), equal the serial folds
+//   scan.*     prefix sums (grains 1,000 and auto) equal the serial scan
+//   edge.*     empty input and one worker
+// Build: laniusc --native-link --native-library atomic --stdlib-root stdlib
+module app::main;
+import core::function;
+import core::iter;
+import core::mem;
+import core::result;
+import std::atomic;
+import std::channel;
+import std::io;
+import std::parallel;
+import std::pool;
+import std::pthread;
+import std::sync;
+
+const N: i32 = 1000003;
+const M: i64 = 1000000007;
+const TASKS: i64 = 10000;
+
+fn get(at: ptr, word: i32) -> i64 { let v: [i64] = core::mem::typed_slice_from_raw_parts<i64>(at + (word as usize) * 8, 1); return v[0]; }
+fn set(at: ptr, word: i32, value: i64) { let v: [i64] = core::mem::typed_slice_from_raw_parts<i64>(at + (word as usize) * 8, 1); v[0] = value; }
+fn get_ptr(at: ptr, word: i32) -> ptr { let v: [ptr] = core::mem::typed_slice_from_raw_parts<ptr>(at + (word as usize) * 8, 1); return v[0]; }
+fn set_ptr(at: ptr, word: i32, value: ptr) { let v: [ptr] = core::mem::typed_slice_from_raw_parts<ptr>(at + (word as usize) * 8, 1); v[0] = value; }
+
+struct Score { failed: i32 }
+impl Score { pub fn borrow(&self) -> &Score { return self; } }
+fn report(score: &Score, label: str, got: i64, want: i64) {
+    std::io::write_text(1, label); std::io::write_text(1, " ");
+    std::io::write_i32(1, got as i32);
+    if (got != want) { std::io::write_text(1, " FAIL want "); std::io::write_i32(1, want as i32); score.failed += 1; }
+    std::io::write_newline(1);
+}
+fn flag(value: bool) -> i64 { if (value) { return 1; } return 0; }
+fn value_at(i: i32) -> i64 { let x: i64 = i as i64; return (x * 2654435761) % 1000003; }
+
+struct Affine3 { bias: i64 }
+pub impl core::function::Mapper<i64, i64> for Affine3 { pub fn apply(&self, value: i64) -> i64 { return value * 3 + self.bias; } }
+struct Add { unused: i64 }
+impl Add { pub fn borrow(&self) -> &Add { return self; } }
+pub impl core::iter::Folder<i64, i64> for Add { pub fn apply(&self, acc: i64, value: i64) -> i64 { return acc + value; } }
+// Polynomial hash of a sequence: h = sum x_i * 31^(n-1-i) mod M, with p = 31^n.
+struct Hash { h: i64, p: i64 }
+struct HashFold { base: i64 }
+pub impl core::iter::Folder<Hash, i64> for HashFold {
+    pub fn apply(&self, acc: Hash, value: i64) -> Hash { return Hash { h: (acc.h * self.base + value) % M, p: (acc.p * self.base) % M }; }
+}
+struct HashJoin { unused: i64 }
+impl HashJoin { pub fn borrow(&self) -> &HashJoin { return self; } }
+pub impl core::iter::Folder<Hash, Hash> for HashJoin {
+    pub fn apply(&self, left: Hash, right: Hash) -> Hash { return Hash { h: (left.h * right.p + right.h) % M, p: (left.p * right.p) % M }; }
+}
+
+// Per-type thread entries.
+fn map_affine(arg: ptr) -> ptr { return std::pool::map_entry<i64, i64, Affine3>(arg); }
+fn reduce_add(arg: ptr) -> ptr { return std::pool::reduce_entry<i64, i64, Add>(arg); }
+fn reduce_hash(arg: ptr) -> ptr { return std::pool::reduce_entry<i64, Hash, HashFold>(arg); }
+fn scan_add(arg: ptr) -> ptr { return std::pool::scan_entry<i64, Add>(arg); }
+fn pool_worker(arg: ptr) -> ptr { return std::pool::serve<Job>(arg); }
+
+// A pool task: add `amount` to the counter at `counter`, and return 2 * amount.
+struct Job { counter: ptr, amount: i64 }
+pub impl std::pool::Task for Job {
+    pub fn run(&self) -> i64 {
+        std::atomic::at64(self.counter).fetch_add(self.amount as u64, std::atomic::Ordering::SeqCst);
+        return self.amount * 2;
+    }
+}
+
+// Blocks its worker until the word at `gate` is nonzero.
+struct Hold { gate: ptr }
+fn hold_worker(arg: ptr) -> ptr { return std::pool::serve<Hold>(arg); }
+pub impl std::pool::Task for Hold {
+    pub fn run(&self) -> i64 {
+        while (std::atomic::at64(self.gate).load(std::atomic::Load::Acquire) == 0) { std::pthread::yield_now(); }
+        return 1;
+    }
+}
+// Sends key * key to the Mpsc at `replies`.
+struct Square { replies: ptr, key: i64 }
+fn square_worker(arg: ptr) -> ptr { return std::pool::serve<Square>(arg); }
+pub impl std::pool::Task for Square {
+    pub fn run(&self) -> i64 {
+        let back: std::channel::Mpsc<i64> = std::channel::mpsc_at<i64>(self.replies);
+        back.send(self.key * self.key).unwrap();
+        return 0;
+    }
+}
+
+// Scoped task words: 0 data, 1 lo, 2 hi, 3 result (8 words per task).
+fn range_sum(task: ptr) -> ptr {
+    let data: [i64] = core::mem::typed_slice_from_storage<i64>(get_ptr(task, 0), N);
+    let s: i64 = 0; let i: i32 = get(task, 1) as i32;
+    while (i < (get(task, 2) as i32)) { s += data[i]; i += 1; }
+    set(task, 3, s);
+    return task;
+}
+
+fn main() -> i32 {
+    let score: Score = Score { failed: 0 };
+    let region: std::sync::Region = std::sync::map_shared(67108864).unwrap();
+    let input: std::parallel::Shared<i64> = std::parallel::shared<i64>(region.borrow(), N).unwrap();
+    let output: std::parallel::Shared<i64> = std::parallel::shared<i64>(region.borrow(), N).unwrap();
+    let values: [i64] = input.view();
+    let i: i32 = 0; let serial_sum: i64 = 0;
+    let serial_hash: i64 = 0;
+    while (i < N) { let v: i64 = value_at(i); values[i] = v; serial_sum += v; serial_hash = (serial_hash * 31 + v) % M; i += 1; }
+
+    // Scoped spawn.
+    let tasks: ptr = region.allocate(8 * 64).unwrap();
+    let t: i32 = 0;
+    while (t < 8) {
+        let task: ptr = tasks + (t as usize) * 64;
+        set_ptr(task, 0, input.storage()); set(task, 1, ((N as i64) * (t as i64)) / 8); set(task, 2, ((N as i64) * ((t + 1) as i64)) / 8); set(task, 3, -1);
+        t += 1;
+    }
+    report(score.borrow(), "scoped.threads", std::pool::scoped(range_sum, tasks, 8, 64).unwrap() as i64, 8);
+    let scoped_sum: i64 = 0; t = 0;
+    while (t < 8) { scoped_sum += get(tasks + (t as usize) * 64, 3); t += 1; }
+    report(score.borrow(), "scoped.sum_ok", flag(scoped_sum == serial_sum), 1);
+    report(score.borrow(), "scoped.bad_count", flag(std::pool::scoped(range_sum, tasks, 0, 64).is_err()), 1);
+
+    // Task pool.
+    let counter: ptr = region.allocate(64).unwrap();
+    let pool: std::pool::Pool<Job> = std::pool::pool<Job>(4, 64, pool_worker).unwrap();
+    let k: i64 = 0; let want_counter: i64 = 0;
+    while (k < TASKS) { pool.submit(Job { counter: counter, amount: k % 97 }).unwrap(); want_counter += k % 97; k += 1; }
+    pool.wait().unwrap();
+    report(score.borrow(), "pool.workers", pool.workers() as i64, 4);
+    report(score.borrow(), "pool.completed", pool.completed(), TASKS);
+    report(score.borrow(), "pool.total_ok", flag(pool.total() == 2 * want_counter), 1);
+    report(score.borrow(), "pool.counter_ok", flag(get(counter, 0) == want_counter), 1);
+    k = 0;
+    while (k < 1000) { pool.submit(Job { counter: counter, amount: 1 }).unwrap(); k += 1; }
+    pool.wait().unwrap();
+    report(score.borrow(), "pool.second_batch", pool.completed(), TASKS + 1000);
+    report(score.borrow(), "pool.counter_after_ok", flag(get(counter, 0) == want_counter + 1000), 1);
+    pool.shutdown();
+
+    // try_submit and wait_timeout_ms: one worker held on a gate, queue of 2.
+    let gate: ptr = region.allocate(64).unwrap();
+    set(gate, 0, 0);
+    let held: std::pool::Pool<Hold> = std::pool::pool<Hold>(1, 2, hold_worker).unwrap();
+    let accepted: i64 = 0; k = 0;
+    while (k < 6) { if (held.try_submit(Hold { gate: gate }).unwrap()) { accepted += 1; } k += 1; }
+    // The worker takes at most one task off the queue, so 2 or 3 fit.
+    report(score.borrow(), "pool.try_refused", flag(accepted >= 2 && accepted <= 3), 1);
+    report(score.borrow(), "pool.try_submitted", flag(held.submitted() == accepted), 1);
+    report(score.borrow(), "pool.wait_timeout", flag(!held.wait_timeout_ms(20).unwrap()), 1);
+    std::atomic::at64(gate).store(1, std::atomic::Store::Release);
+    report(score.borrow(), "pool.wait_done", flag(held.wait_timeout_ms(10000).unwrap()), 1);
+    report(score.borrow(), "pool.try_completed", flag(held.completed() == accepted), 1);
+    held.shutdown();
+
+    // Results back through an Mpsc.
+    let replies: std::channel::Mpsc<i64> = std::channel::mpsc<i64>(1).unwrap();
+    let squares: std::pool::Pool<Square> = std::pool::pool<Square>(4, 64, square_worker).unwrap();
+    k = 0;
+    while (k < 1000) { squares.submit(Square { replies: replies.handle(), key: k }).unwrap(); k += 1; }
+    let got: i64 = 0; let square_sum: i64 = 0;
+    while (got < 1000) { square_sum += replies.recv().unwrap(); got += 1; }
+    squares.wait().unwrap();
+    report(score.borrow(), "pool.replies", got, 1000);
+    report(score.borrow(), "pool.replies_sum_ok", flag(square_sum == 332833500), 1);
+    report(score.borrow(), "pool.replies_extra", flag(replies.try_recv().is_err()), 1);
+    squares.shutdown();
+    replies.destroy();
+
+    // map
+    report(score.borrow(), "map.chunks_ok", flag(std::pool::map<i64, i64, Affine3>(8, input, output, Affine3 { bias: 1 }, 0, map_affine).unwrap() > 1), 1);
+    let mapped: [i64] = output.view(); let bad: i64 = 0; i = 0;
+    while (i < N) { if (mapped[i] != values[i] * 3 + 1) { bad += 1; } i += 1; }
+    report(score.borrow(), "map.mismatches", bad, 0);
+
+    // reduce
+    let add: Add = Add { unused: 0 };
+    let total: i64 = std::pool::reduce<i64, i64, Add, Add>(8, input, 0, Add { unused: 0 }, add.borrow(), 0, reduce_add).unwrap();
+    report(score.borrow(), "reduce.sum_ok", flag(total == serial_sum), 1);
+    let join: HashJoin = HashJoin { unused: 0 };
+    let hashed: Hash = std::pool::reduce<i64, Hash, HashFold, HashJoin>(8, input, Hash { h: 0, p: 1 }, HashFold { base: 31 }, join.borrow(), 1000, reduce_hash).unwrap();
+    report(score.borrow(), "reduce.hash_ok", flag(hashed.h == serial_hash), 1);
+
+    // scan, twice: grain 1,000 and the automatic grain.
+    let grain: i32 = 1000;
+    let round: i32 = 0;
+    while (round < 2) {
+        i = 0;
+        while (i < N) { mapped[i] = values[i]; i += 1; }
+        std::pool::scan<i64, Add>(8, output, 0, Add { unused: 0 }, grain, scan_add).unwrap();
+        let running: i64 = 0; bad = 0; i = 0;
+        while (i < N) { running += values[i]; if (mapped[i] != running) { bad += 1; } i += 1; }
+        if (round == 0) { report(score.borrow(), "scan.grain1000_mismatches", bad, 0); }
+        else { report(score.borrow(), "scan.auto_mismatches", bad, 0); }
+        grain = 0; round += 1;
+    }
+
+    // Edge cases: empty input, one worker.
+    let empty: std::parallel::Shared<i64> = std::parallel::shared<i64>(region.borrow(), 0).unwrap();
+    report(score.borrow(), "edge.empty_map", std::pool::map<i64, i64, Affine3>(4, empty, empty, Affine3 { bias: 1 }, 0, map_affine).unwrap() as i64, 0);
+    report(score.borrow(), "edge.empty_reduce", std::pool::reduce<i64, i64, Add, Add>(4, empty, 5, Add { unused: 0 }, add.borrow(), 0, reduce_add).unwrap(), 5);
+    report(score.borrow(), "edge.empty_scan", std::pool::scan<i64, Add>(4, empty, 0, Add { unused: 0 }, 0, scan_add).unwrap() as i64, 0);
+    let single: i64 = std::pool::reduce<i64, i64, Add, Add>(1, input, 0, Add { unused: 0 }, add.borrow(), 0, reduce_add).unwrap();
+    report(score.borrow(), "edge.one_worker_ok", flag(single == serial_sum), 1);
+    report(score.borrow(), "edge.bad_workers", flag(std::pool::map<i64, i64, Affine3>(0, input, output, Affine3 { bias: 1 }, 0, map_affine).is_err()), 1);
+    if (score.failed != 0) { return 1; }
+    return 0;
+}

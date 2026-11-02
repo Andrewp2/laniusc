@@ -870,7 +870,8 @@ def rawSliceElementAddress? (program : Program) (element : Ty)
   match element with
   | .scalar (.signed .i32) => .ok (address + index * 4)
   | .scalar (.unsigned .u8) => .ok (address + index)
-  | .structure _ | .enumeration _ | .scalar (.unsigned .u16) => do
+  | .structure _ | .enumeration _ | .scalar (.unsigned .u16) | .scalar (.unsigned .u32)
+  | .scalar (.unsigned .u64) | .scalar (.signed .i64) | .scalar .bool => do
       let some words := NativeLayout.valueWords? program element
         | .error .typeMismatch
       let some base := NativeLayout.elementBase? address index words
@@ -1132,7 +1133,8 @@ def mapRawNominalSlice (program : Program) (state : State)
       | .error reason => .trapped reason state
       | .ok () => .done (.rawSlice element address signedLength.toNat) state
   else if !(match element with
-      | .structure _ | .enumeration _ | .scalar (.unsigned .u16) => true
+      | .structure _ | .enumeration _ | .scalar (.unsigned .u16) | .scalar (.unsigned .u32)
+      | .scalar (.unsigned .u64) | .scalar (.signed .i64) | .scalar .bool => true
       | _ => false) then .trapped .typeMismatch state
   else
     match NativeLayout.valueWords? program element with
@@ -1151,6 +1153,27 @@ def mapRawNominalSlice (program : Program) (state : State)
             match state.heap.checkRange first bytes NativeLayout.wordBytes with
             | .error reason => .trapped reason state
             | .ok () => .done (.rawSlice element address length) state
+
+/-- `slice_len(view)`: the length of a slice, a language array's slice and a
+    raw view alike (SEMANTIC_DECISIONS "Slice length"). Other values have
+    none. -/
+def sliceLength? (value : Value) : Option Nat :=
+  match value with
+  | .unit => none
+  | .boolean _ => none
+  | .signed _ _ => none
+  | .unsigned _ _ => none
+  | .f32Bits _ => none
+  | .f64Bits _ => none
+  | .character _ => none
+  | .string _ => none
+  | .pointer _ => none
+  | .array _ => none
+  | .slice _ _ _ _ length => some length
+  | .rawSlice _ _ length => some length
+  | .structure _ _ => none
+  | .enumeration _ _ _ => none
+  | .reference _ _ _ => none
 
 /-- `slice_stride(view)`: element i + 1 of a view starts this many bytes
     after element i. i32 and u8 views run forward; nominal views run down by
@@ -1537,6 +1560,10 @@ mutual
                 | .sliceStride, view =>
                     match rawSliceStride? program view with
                     | some stride => .done (.signed .isize stride) next
+                    | none => .trapped .typeMismatch next
+                | .sliceLength, view =>
+                    match sliceLength? view with
+                    | some length => .done (.unsigned .usize length) next
                     | none => .trapped .typeMismatch next
                 | _, _ => .trapped .typeMismatch next
             | .trapped reason next => .trapped reason next

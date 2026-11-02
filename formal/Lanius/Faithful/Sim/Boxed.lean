@@ -3,29 +3,15 @@ module
 public import Lanius.Faithful.Sim.Unbox
 public import Lanius.Mini.Compiler.P.wordElement
 import all Lanius.Mini.Compiler.P.DivOp_size
-import all Lanius.Mini.Compiler.P.FArith_opcode
-import all Lanius.Mini.Compiler.P.FloatTy_rex
-import all Lanius.Mini.Compiler.P.Instr_pieces
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcType_size
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
-import all Lanius.Mini.Compiler.P.UintTy_mask
-import all Lanius.Mini.Compiler.P.arities
 import all Lanius.Mini.Compiler.P.codeSize
-import all Lanius.Mini.Compiler.P.compileArgs
-import all Lanius.Mini.Compiler.P.compileModules
 import all Lanius.Mini.Compiler.P.enumVariants
-import all Lanius.Mini.Compiler.P.imageLimit
-import all Lanius.Mini.Compiler.P.importOk
-import all Lanius.Mini.Compiler.P.importsOk
 import all Lanius.Mini.Compiler.P.loadAtBytes
-import all Lanius.Mini.Compiler.P.moduleExports
-import all Lanius.Mini.Compiler.P.moduleFirsts
-import all Lanius.Mini.Compiler.P.modulesOk
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.structFields
-import all Lanius.Mini.Compiler.P.usizeWidth
 import all Lanius.Mini.Compiler.P.wordElement
 import all Lanius.Mini.Compiler.P.wordWidth
 import all Lanius.Mini.Compiler.Types
@@ -183,7 +169,7 @@ theorem boxed_sim {c : Nat} {t : SrcType} {id sizeOf slice panic : Nat} {values 
   obtain ⟨hrv, hs14⟩ := local_eval x4 valueRun
   subst rv s14
   have nb : Semantics.isByte t.toCore = false := by
-    rcases kind with ⟨_, h⟩ | ⟨_, h⟩ | h <;> simp [h, Semantics.isByte]
+    rcases kind with ⟨_, h⟩ | ⟨_, h⟩ | (h | h | h | h | h) <;> simp [h, Semantics.isByte]
   simp only [Semantics.writeResolvedPlaceNative, raw, Semantics.writeRawNative, nb, Bool.false_eq_true,
     ↓reduceIte] at written
   obtain ⟨H2, stored, wrapped⟩ := except_bind_ok written

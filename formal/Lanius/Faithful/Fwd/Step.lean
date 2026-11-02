@@ -108,6 +108,19 @@ theorem sequence_ret_fwd {a b : Core.Stmt} {r : Option Value} {s1 : State}
   obtain ⟨j, rfl⟩ : ∃ j, k = j + 1 := ⟨k - 1, by omega⟩
   simp only [execStmt, hK j (by omega)]
 
+/-- A sequence whose first statement ends other than going on ends so. -/
+theorem sequence_stop_fwd {a b : Core.Stmt} {c : Completion} {s1 : State} (stop : c ≠ .next)
+    (first : Ev (fun k => execStmt k P st a) c s1) :
+    Ev (fun k => execStmt k P st (.sequence a b)) c s1 := by
+  obtain ⟨K, hK⟩ := first
+  refine ⟨K + 1, fun k hk => ?_⟩
+  obtain ⟨j, rfl⟩ : ∃ j, k = j + 1 := ⟨k - 1, by omega⟩
+  cases c with
+  | next => exact absurd rfl stop
+  | breakLoop => simp only [execStmt, hK j (by omega)]
+  | continueLoop => simp only [execStmt, hK j (by omega)]
+  | returned r => simp only [execStmt, hK j (by omega)]
+
 theorem if_fwd {cond : Core.Expr} {a b : Core.Stmt} {x : Bool} {c : Completion} {s1 s2 : State}
     (test : Ev (fun k => evalExpr k P st cond) (.boolean x) s1)
     (branch : Ev (fun k => execStmt k P s1 (if x then a else b)) c s2) :
@@ -120,6 +133,59 @@ theorem if_fwd {cond : Core.Expr} {a b : Core.Stmt} {x : Bool} {c : Completion} 
   cases x with
   | true => simp only [execStmt, h1 j (by omega)]; simpa using e2
   | false => simp only [execStmt, h1 j (by omega)]; simpa using e2
+
+theorem while_false_fwd {cond : Core.Expr} {body : Core.Stmt} {s1 : State}
+    (test : Ev (fun k => evalExpr k P st cond) (.boolean false) s1) :
+    Ev (fun k => execStmt k P st (.whileLoop cond body)) .next s1 := by
+  obtain ⟨K, hK⟩ := test
+  refine ⟨K + 1, fun k hk => ?_⟩
+  obtain ⟨j, rfl⟩ : ∃ j, k = j + 1 := ⟨k - 1, by omega⟩
+  simp only [execStmt, hK j (by omega)]
+
+/-- A loop whose body ends `next` or `continue` goes on as the loop from where the body left. -/
+theorem while_again_fwd {cond : Core.Expr} {body : Core.Stmt} {cb c : Completion} {s1 s2 s3 : State}
+    (test : Ev (fun k => evalExpr k P st cond) (.boolean true) s1)
+    (first : Ev (fun k => execStmt k P s1 body) cb s2) (again : cb = .next ∨ cb = .continueLoop)
+    (rest : Ev (fun k => execStmt k P s2 (.whileLoop cond body)) c s3) :
+    Ev (fun k => execStmt k P st (.whileLoop cond body)) c s3 := by
+  obtain ⟨K1, h1⟩ := test
+  obtain ⟨K2, h2⟩ := first
+  obtain ⟨K3, h3⟩ := rest
+  refine ⟨max K1 (max K2 K3) + 1, fun k hk => ?_⟩
+  obtain ⟨j, rfl⟩ : ∃ j, k = j + 1 := ⟨k - 1, by omega⟩
+  rcases again with rfl | rfl
+  · simp only [execStmt, h1 j (by omega), h2 j (by omega), h3 j (by omega)]
+  · simp only [execStmt, h1 j (by omega), h2 j (by omega), h3 j (by omega)]
+
+theorem while_break_fwd {cond : Core.Expr} {body : Core.Stmt} {s1 s2 : State}
+    (test : Ev (fun k => evalExpr k P st cond) (.boolean true) s1)
+    (first : Ev (fun k => execStmt k P s1 body) .breakLoop s2) :
+    Ev (fun k => execStmt k P st (.whileLoop cond body)) .next s2 := by
+  obtain ⟨K1, h1⟩ := test
+  obtain ⟨K2, h2⟩ := first
+  refine ⟨max K1 K2 + 1, fun k hk => ?_⟩
+  obtain ⟨j, rfl⟩ : ∃ j, k = j + 1 := ⟨k - 1, by omega⟩
+  simp only [execStmt, h1 j (by omega), h2 j (by omega)]
+
+theorem while_ret_fwd {cond : Core.Expr} {body : Core.Stmt} {r : Option Value} {s1 s2 : State}
+    (test : Ev (fun k => evalExpr k P st cond) (.boolean true) s1)
+    (first : Ev (fun k => execStmt k P s1 body) (.returned r) s2) :
+    Ev (fun k => execStmt k P st (.whileLoop cond body)) (.returned r) s2 := by
+  obtain ⟨K1, h1⟩ := test
+  obtain ⟨K2, h2⟩ := first
+  refine ⟨max K1 K2 + 1, fun k hk => ?_⟩
+  obtain ⟨j, rfl⟩ : ∃ j, k = j + 1 := ⟨k - 1, by omega⟩
+  simp only [execStmt, h1 j (by omega), h2 j (by omega)]
+
+theorem break_fwd : Ev (fun k => execStmt k P st .breakLoop) .breakLoop st :=
+  ⟨1, fun k hk => by
+    obtain ⟨j, rfl⟩ : ∃ j, k = j + 1 := ⟨k - 1, by omega⟩
+    simp only [execStmt]⟩
+
+theorem continue_fwd : Ev (fun k => execStmt k P st .continueLoop) .continueLoop st :=
+  ⟨1, fun k hk => by
+    obtain ⟨j, rfl⟩ : ∃ j, k = j + 1 := ⟨k - 1, by omega⟩
+    simp only [execStmt]⟩
 
 theorem return_fwd {e : Core.Expr} {v : Value} {s : State} (sub : Ev (fun k => evalExpr k P st e) v s) :
     Ev (fun k => execStmt k P st (.returnValue (some e))) (.returned (some v)) s := by

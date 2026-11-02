@@ -1,111 +1,85 @@
 module
 
 public import Lanius.Mini.LowerExpr
--- import all: Lanius.Mini.Compiler
-import all Lanius.Mini.Compiler.Types
-import all Lanius.Mini.Compiler.P.Lists_empty
+-- import all uses: Lanius.Mini.Compiler
+import all Lanius.Mini.Compiler.P.BinOp_folds
 import all Lanius.Mini.Compiler.P.DivOp_size
-import all Lanius.Mini.Compiler.P.codeSize
-import all Lanius.Mini.Compiler.P.compileArgs
-import all Lanius.Mini.Compiler.P.arities
-import all Lanius.Mini.Compiler.P.FloatTy_rex
 import all Lanius.Mini.Compiler.P.FArith_opcode
-import all Lanius.Mini.Compiler.P.loadAtBytes
-import all Lanius.Mini.Compiler.P.imageLimit
-import all Lanius.Mini.Compiler.P.moduleExports
-import all Lanius.Mini.Compiler.P.importOk
-import all Lanius.Mini.Compiler.P.importsOk
-import all Lanius.Mini.Compiler.P.modulesOk
-import all Lanius.Mini.Compiler.P.moduleFirsts
-import all Lanius.Mini.Compiler.P.Instr_pieces
-import all Lanius.Mini.Compiler.P.compileModules
-import all Lanius.Mini.Compiler.P.render
-import all Lanius.Mini.Compiler.P.UintTy_mask
-import all Lanius.Mini.Compiler.P.UintTy_isWide
-import all Lanius.Mini.Compiler.P.UintTy_half
-import all Lanius.Mini.Compiler.P.SrcType_size
-import all Lanius.Mini.Compiler.P.arithUint
-import all Lanius.Mini.Compiler.P.floatApply
-import all Lanius.Mini.Compiler.P.lowerShift
-import all Lanius.Mini.Compiler.P.arithShiftRight
-import all Lanius.Mini.Compiler.P.equality
-import all Lanius.Mini.Compiler.P.conjunction
-import all Lanius.Mini.Compiler.P.lowerLocal
-import all Lanius.Mini.Compiler.P.sintToUint
-import all Lanius.Mini.Compiler.P.lowerApply
-import all Lanius.Mini.Compiler.P.guardAnd
-import all Lanius.Mini.Compiler.P.leftTrue
-import all Lanius.Mini.Compiler.P.applyGuard
+import all Lanius.Mini.Compiler.P.FloatTy_rex
+import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.repeatType
-import all Lanius.Mini.Compiler.P.lowerTagged
-import all Lanius.Mini.Compiler.P.armScope
-import all Lanius.Mini.Compiler.P.assignFrom
+import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.Stmt_kills
+import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.UintTy_isWide
+import all Lanius.Mini.Compiler.P.UintTy_mask
+import all Lanius.Mini.Compiler.P.Word_narrows
+import all Lanius.Mini.Compiler.P.applyGuard
+import all Lanius.Mini.Compiler.P.arithShiftRight
+import all Lanius.Mini.Compiler.P.arithUint
+import all Lanius.Mini.Compiler.P.arities
 import all Lanius.Mini.Compiler.P.armBodyScope
 import all Lanius.Mini.Compiler.P.armPayload
-import all Lanius.Mini.Compiler.P.lowerCallSig
-import all Lanius.Mini.Compiler.P.hostRandomCode
+import all Lanius.Mini.Compiler.P.armScope
+import all Lanius.Mini.Compiler.P.arrayCallSig
+import all Lanius.Mini.Compiler.P.assignFrom
+import all Lanius.Mini.Compiler.P.bindingBytes
+import all Lanius.Mini.Compiler.P.callAgrees
+import all Lanius.Mini.Compiler.P.codeSize
+import all Lanius.Mini.Compiler.P.compileModules
+import all Lanius.Mini.Compiler.P.conjunction
 import all Lanius.Mini.Compiler.P.consArgs
-import all Lanius.Mini.Compiler.P.shortCircuit
-import all Lanius.Mini.Compiler.P.evalDivideSint
+import all Lanius.Mini.Compiler.P.elementAddress
+import all Lanius.Mini.Compiler.P.elementBase
+import all Lanius.Mini.Compiler.P.enumVariants
+import all Lanius.Mini.Compiler.P.equality
 import all Lanius.Mini.Compiler.P.evalDivide
+import all Lanius.Mini.Compiler.P.evalDivideSint
 import all Lanius.Mini.Compiler.P.evalNot
 import all Lanius.Mini.Compiler.P.evalSame
+import all Lanius.Mini.Compiler.P.extentAfter
+import all Lanius.Mini.Compiler.P.floatApply
+import all Lanius.Mini.Compiler.P.funcNeeds
+import all Lanius.Mini.Compiler.P.guardAnd
+import all Lanius.Mini.Compiler.P.hostRandomCode
+import all Lanius.Mini.Compiler.P.indexOf
+import all Lanius.Mini.Compiler.P.iteThen
+import all Lanius.Mini.Compiler.P.killShared
+import all Lanius.Mini.Compiler.P.leftTrue
+import all Lanius.Mini.Compiler.P.loadAtBytes
+import all Lanius.Mini.Compiler.P.longer
+import all Lanius.Mini.Compiler.P.lowerAddress
+import all Lanius.Mini.Compiler.P.lowerApply
+import all Lanius.Mini.Compiler.P.lowerCallSig
+import all Lanius.Mini.Compiler.P.lowerLoadType
+import all Lanius.Mini.Compiler.P.lowerLocal
+import all Lanius.Mini.Compiler.P.lowerReturn
+import all Lanius.Mini.Compiler.P.lowerSetCallArgs
+import all Lanius.Mini.Compiler.P.lowerSetValues
+import all Lanius.Mini.Compiler.P.lowerShift
+import all Lanius.Mini.Compiler.P.lowerSlice
+import all Lanius.Mini.Compiler.P.lowerTagged
 import all Lanius.Mini.Compiler.P.matchDst
 import all Lanius.Mini.Compiler.P.matchVariants
-import all Lanius.Mini.Compiler.P.lowerSetValues
-import all Lanius.Mini.Compiler.P.lowerSetCallArgs
-import all Lanius.Mini.Compiler.P.lowerReturn
-import all Lanius.Mini.Compiler.P.lowerAddress
-import all Lanius.Mini.Compiler.P.structFields
-import all Lanius.Mini.Compiler.P.enumVariants
-import all Lanius.Mini.Compiler.P.usizeWidth
-import all Lanius.Mini.Compiler.P.wordWidth
-import all Lanius.Mini.Compiler.P.wordElement
-import all Lanius.Mini.Compiler.P.widthOf
-import all Lanius.Mini.Compiler.P.elementBase
-import all Lanius.Mini.Compiler.P.iteThen
-import all Lanius.Mini.Compiler.P.storeType
-import all Lanius.Mini.Compiler.P.lowerSlice
-import all Lanius.Mini.Compiler.P.indexOf
-import all Lanius.Mini.Compiler.P.elementAddress
-import all Lanius.Mini.Compiler.P.storeWordElement
-import all Lanius.Mini.Compiler.P.lowerLoadType
-import all Lanius.Mini.Compiler.P.wordStride
-import all Lanius.Mini.Compiler.P.storeEvalWord
-import all Lanius.Mini.Compiler.P.storeArray
-import all Lanius.Mini.Compiler.P.bindingBytes
-import all Lanius.Mini.Compiler.P.arrayCallSig
-import all Lanius.Mini.Compiler.P.withBudget
 import all Lanius.Mini.Compiler.P.needRound
 import all Lanius.Mini.Compiler.P.needsAfter
-import all Lanius.Mini.Compiler.P.funcNeeds
-import all Lanius.Mini.Compiler.P.lowerBody
-import all Lanius.Mini.Compiler.P.declareFuncs
-import all Lanius.Mini.Compiler.P.declareProgram
-import all Lanius.Mini.Compiler.P.BinOp_folds
-import all Lanius.Mini.Compiler.P.Word_compute
-import all Lanius.Mini.Compiler.P.Word_narrows
-import all Lanius.Mini.Compiler.P.binaryConstant
-import all Lanius.Mini.Compiler.P.Expr_agrees
-import all Lanius.Mini.Compiler.P.assignAgrees
-import all Lanius.Mini.Compiler.P.callAgrees
+import all Lanius.Mini.Compiler.P.render
+import all Lanius.Mini.Compiler.P.repeatType
+import all Lanius.Mini.Compiler.P.shortCircuit
+import all Lanius.Mini.Compiler.P.sintToUint
+import all Lanius.Mini.Compiler.P.storeArray
+import all Lanius.Mini.Compiler.P.storeEvalWord
+import all Lanius.Mini.Compiler.P.storeType
+import all Lanius.Mini.Compiler.P.storeWordElement
+import all Lanius.Mini.Compiler.P.structFields
 import all Lanius.Mini.Compiler.P.substAll
-import all Lanius.Mini.Compiler.P.extentAfter
-import all Lanius.Mini.Compiler.P.killShared
-import all Lanius.Mini.Compiler.P.longer
-import all Lanius.Mini.Compiler.P.Stmt_kills
-import all Lanius.Mini.Compiler.P.optimizeNeg
-import all Lanius.Mini.Compiler.P.optimizeLeft
-import all Lanius.Mini.Compiler.P.optimizeIte
-import all Lanius.Mini.Compiler.P.compileOr
-import all Lanius.Mini.Compiler.P.compileSource
-import all Lanius.Mini.Compiler.P.packRound
-import all Lanius.Mini.Compiler.P.larger
-import all Lanius.Mini.Compiler.P.Inline_arithOf
-import all Lanius.Mini.Compiler.P.Inline_lowerSetScalar
-import all Lanius.Mini.Compiler.P.Inline_factOr
--- end import all
+import all Lanius.Mini.Compiler.P.usizeWidth
+import all Lanius.Mini.Compiler.P.widthOf
+import all Lanius.Mini.Compiler.P.withBudget
+import all Lanius.Mini.Compiler.P.wordElement
+import all Lanius.Mini.Compiler.P.wordStride
+import all Lanius.Mini.Compiler.P.wordWidth
+-- end import all uses
 
 @[expose] public section
 
@@ -1748,6 +1722,58 @@ theorem effArms_grows {sp : SrcProgram} {value : Value} :
         | exited => simp [armRun, Semantics.restoreOutcomeLocals] at run
         | outOfFuel => simp [armRun, Semantics.restoreOutcomeLocals] at run
 
+/-- A let in an expression grows as its body does. -/
+theorem letArm_grows {sp : SrcProgram} {w : Value} {id : Nat} {b : SrcEff} {k : Nat} (ih : EffGrows sp k)
+    {st : State} {v : Value} {st' : State}
+    (run : Semantics.evalMatchArms k sp.toCore st w [(.bind id, b.toCore)] = .done v st') : Grows st st' := by
+  cases k with
+  | zero => simp [Semantics.evalMatchArms] at run
+  | succ k =>
+    simp only [Semantics.evalMatchArms, Semantics.matchPattern] at run
+    cases armRun : evalExpr k sp.toCore (st.bindLocals [(id, w)]) b.toCore with
+    | done w' completed =>
+      simp only [armRun, Semantics.restoreOutcomeLocals, Semantics.Outcome.done.injEq] at run
+      obtain ⟨-, rfl⟩ := run
+      have entry := bindLocals_same [(id, w)] st
+      exact ((Grows.same entry.1 entry.2).trans (ih k (Nat.le_succ k) armRun)).trans (Grows.same rfl rfl)
+    | trapped => simp [armRun, Semantics.restoreOutcomeLocals] at run
+    | exited => simp [armRun, Semantics.restoreOutcomeLocals] at run
+    | outOfFuel => simp [armRun, Semantics.restoreOutcomeLocals] at run
+
+/-- A conditional's arms grow as the arm Core runs does. -/
+theorem ifArms_grows {sp : SrcProgram} {w : Value} {a b : SrcEff} {k : Nat} (ih : EffGrows sp k)
+    {st : State} {v : Value} {st' : State}
+    (run : Semantics.evalMatchArms k sp.toCore st w [(.literal (.boolean true), a.toCore), (.wildcard, b.toCore)] =
+      .done v st') : Grows st st' := by
+  have arm : ∀ {m : Nat} {e : SrcEff}, m ≤ k →
+      Semantics.restoreOutcomeLocals st (evalExpr m sp.toCore (st.bindLocals []) e.toCore) = .done v st' →
+      Grows st st' := by
+    intro m e le r
+    cases armRun : evalExpr m sp.toCore (st.bindLocals []) e.toCore with
+    | done w' completed =>
+      simp only [armRun, Semantics.restoreOutcomeLocals, Semantics.Outcome.done.injEq] at r
+      obtain ⟨-, rfl⟩ := r
+      exact (ih m le armRun).trans (Grows.same rfl rfl)
+    | trapped => simp [armRun, Semantics.restoreOutcomeLocals] at r
+    | exited => simp [armRun, Semantics.restoreOutcomeLocals] at r
+    | outOfFuel => simp [armRun, Semantics.restoreOutcomeLocals] at r
+  cases k with
+  | zero => simp [Semantics.evalMatchArms] at run
+  | succ k =>
+    simp only [Semantics.evalMatchArms] at run
+    split at run
+    · cases k with
+      | zero => simp [Semantics.evalMatchArms] at run
+      | succ k =>
+        simp only [Semantics.evalMatchArms, Semantics.matchPattern] at run
+        exact arm (by omega) run
+    · rename_i bindings found
+      have nil : bindings = [] := by
+        simp only [Semantics.matchPattern] at found
+        split at found <;> simp_all
+      subst nil
+      exact arm (by omega) run
+
 /-- Reading a slice element grows as its index does. -/
 theorem index_grows {P : Core.Program} {k : Nat} {st : State} {slice : Nat} {index : Core.Expr}
     {v : Value} {st' : State}
@@ -1880,6 +1906,29 @@ theorem eff_grows_step {sp : SrcProgram} {k : Nat} (ih : GrowsBelow sp (k + 1)) 
     split at run
     · rename_i w next scrutineeRun
       exact (sub scrutineeRun).trans (effArms_grows binders values ety.typeId 0 ihe run)
+    all_goals simp at run
+  | eIf c ty a b =>
+    simp only [SrcEff.toCore, evalExpr] at run
+    split at run
+    · rename_i w next condRun
+      exact (sub condRun).trans (ifArms_grows ihe run)
+    all_goals simp at run
+  | eLet id ty a rt b =>
+    simp only [SrcEff.toCore, evalExpr] at run
+    split at run
+    · rename_i w next valueRun
+      exact (sub valueRun).trans (letArm_grows ihe run)
+    all_goals simp at run
+  | eLen slice =>
+    simp only [SrcEff.toCore, evalExpr] at run
+    split at run
+    · rename_i w next localRun
+      have := eval_local_state localRun
+      subst this
+      repeat' split at run
+      all_goals first
+        | (simp only [Semantics.Outcome.done.injEq] at run; rw [← run.2]; exact Grows.refl _)
+        | simp at run
     all_goals simp at run
 
 /-- Every effectful expression Core completes grows the heap. -/

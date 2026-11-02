@@ -42,11 +42,11 @@ theorem proof_eval_call {prog : SrcProgram} {prims : Prims} {ix_eval_call ix_eva
   simp only [src_eval_call] at h
   faithful [Lanius.Mini.evalCall]
 
-theorem proof_eval_host {prog : SrcProgram} {prims : Prims} {ix_eval_host ix_boxed_of_mini_selfhost_Stmt ix_cons_of_mini_selfhost_SrcType ix_types_same ix_single_of_mini_selfhost_SrcType ix_host_byte_code ix_host_write_code ix_host_read_code ix_host_sleep_code ix_host_clock_code ix_host_random_code : Nat} (fn : prog.funcs[ix_eval_host]? = some (src_eval_host ix_boxed_of_mini_selfhost_Stmt ix_cons_of_mini_selfhost_SrcType ix_types_same ix_single_of_mini_selfhost_SrcType ix_host_byte_code ix_host_write_code ix_host_read_code ix_host_sleep_code ix_host_clock_code ix_host_random_code)) (np : prims.isPrim ix_eval_host = false)
+theorem proof_eval_host {prog : SrcProgram} {prims : Prims} {ix_eval_host ix_boxed_of_mini_selfhost_Stmt ix_cons_of_mini_selfhost_SrcType ix_single_of_mini_selfhost_SrcType ix_types_same ix_host_byte_code ix_host_write_code ix_host_read_code ix_host_sleep_code ix_host_clock_code ix_host_random_code : Nat} (fn : prog.funcs[ix_eval_host]? = some (src_eval_host ix_boxed_of_mini_selfhost_Stmt ix_cons_of_mini_selfhost_SrcType ix_single_of_mini_selfhost_SrcType ix_types_same ix_host_byte_code ix_host_write_code ix_host_read_code ix_host_sleep_code ix_host_clock_code ix_host_random_code)) (np : prims.isPrim ix_eval_host = false)
     (ext_boxed_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Stmt prog prims ix_boxed_of_mini_selfhost_Stmt n))
     (ext_cons_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_SrcType prog prims ix_cons_of_mini_selfhost_SrcType n))
-    (ext_types_same : Certified (∀ {n : Nat}, Stmt_types_same prog prims ix_types_same n))
     (ext_single_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_SrcType prog prims ix_single_of_mini_selfhost_SrcType n))
+    (ext_types_same : Certified (∀ {n : Nat}, Stmt_types_same prog prims ix_types_same n))
     (ext_host_byte_code : Certified (∀ {n : Nat}, Stmt_host_byte_code prog prims ix_host_byte_code n))
     (ext_host_write_code : Certified (∀ {n : Nat}, Stmt_host_write_code prog prims ix_host_write_code n))
     (ext_host_read_code : Certified (∀ {n : Nat}, Stmt_host_read_code prog prims ix_host_read_code n))

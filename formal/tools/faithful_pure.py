@@ -19,15 +19,18 @@ the prims). OUTDIR (default: DUMP's directory) gets
                      program `sp` with those tables' boxes and signatures
                      (`pureFunc_fast` and `decide +kernel` of `stmtOkC`,
                      Sim/CheckFast.lean);
-  SelfDecl<k>.lean   `declareFuncs` of functions kN to kN + N - 1, from the
-                     declarations before them to those after (`declsStep`,
-                     Sim/DeclStep.lean), in one kernel check;
-  SelfPureBase.lean  that the self program has the tables' boxes and
-                     signatures (`boxElem_self`, `callTy_self`);
+  SelfDecl<k>.lean   functions kN to kN + N - 1 (`dpart<k>`): their
+                     `declareFuncs`, from the declarations before them to
+                     those after (`declsStep`, Sim/DeclStep.lean), and that
+                     their signatures are the table's (`dfit<k>`), each in
+                     one kernel check;
+  SelfPureBase.lean  that the self program has the tables' boxes
+                     (`boxElem_self`), from the prims' sources only;
   SelfNeeds.lean     that no function takes a block of frame memory, so
                      the program needs none (`prog_need`);
   SelfDecls.lean     `prog.decls = decls`, the SelfDecl steps chained along
-                     SelfProg's tails;
+                     SelfProg's tails, and the signatures (`callTy_self`),
+                     the `dfit`s appended (`entriesFit_append`);
   SelfPrimTab.lean   the facts about the prims' types that only the tables
                      decide (`wordElement`, their layout);
   SelfPrims.lean     `PrimsOk prog prims`;
@@ -44,9 +47,11 @@ the prims). OUTDIR (default: DUMP's directory) gets
                      of `LiveFn`);
   SelfLiveAll.lean   the `lok`s in SelfPure's chunks, and `livesOk`.
 
-Only the SelfOk, SelfLiveOk and SelfDecl files read the functions' bodies, so an edit of
-one function rechecks its group and its run, and the files that put the
-facts together.
+Only the SelfOk, SelfLiveOk and SelfDecl files read the functions' bodies
+(SelfPureBase and SelfPrims read the prims'; each module `import all`s only
+what its kernel checks unfold), so an edit of one function rechecks its
+group and its run; of the files that put the facts together, only the
+SelfLive ones, which are not modules, rebuild.
 
 All proofs are `decide +kernel` or `rfl`. A file is only rewritten when its
 text changes. The generator also runs a Python copy of `PureFunc` and stops
@@ -393,6 +398,18 @@ class Checker:
             raise Impure('stride')
         if c == 'arraySlice':
             raise Impure('array slice')
+        if c == 'eIf':
+            self.boolean(self.eff(tenv, a[0]), 'condition')
+            then_t, else_t = self.eff(tenv, a[2]), self.eff(tenv, a[3])
+            if then_t != else_t:
+                raise Impure('conditional of two types')
+            return then_t
+        if c == 'eLet':
+            inner = list(tenv)
+            inner.insert(0, (a[0][1], self.eff(tenv, a[2])))
+            return self.eff(inner, a[4])
+        if c == 'eLen':
+            raise Impure('slice length')
         raise ValueError(c)
 
     def stmt(self, ret, tenv, s):
@@ -437,7 +454,36 @@ class Checker:
         if c == 'assert':
             self.boolean(self.eff(tenv, a[0]), 'assertion')
             return
+        if c in ('set', 'setEval'):
+            t = self.expr(tenv, a[1]) if c == 'set' else self.eff(tenv, a[1])
+            if t != self.get(tenv, a[0][1]):
+                raise Impure('assignment of another type')
+            return
+        if c in ('while', 'whileEval'):
+            self.boolean(self.expr(tenv, a[0]) if c == 'while' else self.eff(tenv, a[0]), 'condition')
+            return self.stmt(ret, tenv, a[1])
+        if c in ('break', 'continue'):
+            return
         raise Impure(f'statement `{c}`')
+
+    def loose_jump(self, s):
+        """`looseJump`: a `break` or `continue` outside every loop."""
+        c, a = ctor(s)
+        if c in ('break', 'continue'):
+            return True
+        if c in ('let', 'letStruct', 'letEval', 'letAlloc', 'letLoad'):
+            return self.loose_jump(a[3])
+        if c in ('letCall', 'letEnum', 'letSlice', 'letIndex'):
+            return self.loose_jump(a[4])
+        if c == 'letMatch':
+            return self.loose_jump(a[5])
+        if c == 'then':
+            return self.loose_jump(a[0]) or self.loose_jump(a[1])
+        if c in ('if', 'ifEval'):
+            return self.loose_jump(a[1]) or self.loose_jump(a[2])
+        if c == 'matchArm':
+            return self.loose_jump(a[6]) or self.loose_jump(a[7])
+        return False
 
     def check(self, i):
         f = self.prog.funcs[i]
@@ -445,6 +491,8 @@ class Checker:
         for p in f['params']:
             tenv.insert(0, p)
         self.stmt(f['ret'], tenv, f['body'])
+        if self.loose_jump(f['body']):
+            raise Impure('a `break` or `continue` outside every loop')
 
 
 # ---------------------------------------------------------------- LiveFn, in Python
@@ -513,8 +561,15 @@ class LiveChecker:
             self.eff(a[0])
         elif c == 'eCast':
             self.eff(a[1])
-        elif c in ('eIndex', 'eStride', 'arraySlice'):
+        elif c in ('eIndex', 'eStride', 'arraySlice', 'eLen'):
             raise Dead(c)
+        elif c == 'eIf':
+            self.eff(a[0])
+            self.eff(a[2])
+            self.eff(a[3])
+        elif c == 'eLet':
+            self.eff(a[2])
+            self.eff(a[4])
         elif c == 'eStruct':
             for x in a[1][1]:
                 self.eff(x)
@@ -578,11 +633,15 @@ class LiveChecker:
             return self.stmt(unit, a[2])
         if c in ('returnEval', 'discard'):
             return self.eff(a[0])
+        if c == 'set':
+            return self.expr(a[1])
+        if c == 'setEval':
+            return self.eff(a[1])
         raise Dead(f'statement `{c}`')
 
     def never_next(self, s):
         c, a = ctor(s)
-        if c in ('nop', 'discard', 'assert'):
+        if c in ('nop', 'discard', 'assert', 'set', 'setEval'):
             return False
         if c in ('let', 'letStruct', 'letEval'):
             return self.never_next(a[3])
@@ -661,8 +720,12 @@ class Declarer:
 
     def eff_types(self, e):
         c, a = ctor(e)
-        if c in ('ePure', 'eStride', 'arraySlice'):
+        if c in ('ePure', 'eStride', 'arraySlice', 'eLen'):
             return []
+        if c == 'eIf':
+            return self.eff_types(a[0]) + self.eff_types(a[2]) + self.eff_types(a[3])
+        if c == 'eLet':
+            return [self.prog.type_of(a[1])] + self.eff_types(a[2]) + self.eff_types(a[4])
         if c == 'eCall':
             return [t for x in a[1][1] for t in self.eff_types(x)]
         if c in ('eApply', 'eDivide'):
@@ -788,13 +851,18 @@ def modulize(name, text):
     while k < len(lines) and lines[k].startswith('import '):
         k += 1
     mods = [line.split()[1] for line in lines[:k]]
-    if re.fullmatch(r'SelfOk\d+|SelfDecl\d+|SelfPureBase', name):
+    if re.fullmatch(r'SelfOk\d+|SelfDecl\d+', name):
         bodies = gen_closure(mods) + checker_bodies()
     elif name == 'SelfDecls':
         bodies = checker_bodies()
     elif name == 'SelfPrims':
         # The prims' own sources (`src_X` of each `at_X` it uses).
         bodies = src_modules(set(re.findall(r'\bat_([A-Za-z0-9_]+)', text))) + checker_bodies()
+    elif name == 'SelfPureBase':
+        # The prims are generated (instances of the stdlib's templates), in the
+        # SelfSrc<k> and SelfSrcRest buckets, not the extracted programs' own.
+        bodies = [m for m in gen_closure(mods)
+                  if re.fullmatch(r'Lanius\.Faithful\.Gen\.SelfSrc(\d+|Rest)', m)] + checker_bodies()
     elif 'decide' in text:
         bodies = ['Lanius.Faithful.Gen.SelfTypes'] + checker_bodies()
     else:
@@ -928,6 +996,12 @@ def main(argv):
         ns, ne = decl.counts[i]
         return total_s - ns, total_e - ne
 
+    def entry(i):
+        """Function i's `SigEntry`: none for those outside."""
+        if i in outside:
+            return 'none'
+        return f'some ({lean_list([t for _, t in prog.funcs[i]["params"]])}, {lean_ty(prog.funcs[i]["ret"])})'
+
     tab = (f'import Lanius.Faithful.Gen.SelfTypes\nimport Lanius.Faithful.Sim.CheckFast\n'
            f'import Lanius.Faithful.Sim.DeclStep\n\n{HEADER}\n'
            f'namespace {NS}\n\n{open_lines}'
@@ -954,10 +1028,7 @@ def main(argv):
            '/-- The `sigEntries` of the functions, in blocks. -/\n'
            'def sigBlocks : List (Nat × List SigEntry) := [\n' +
            ',\n'.join(f'  ({min(prog.n, lo + BLOCK) - lo}, [' +
-                      ', '.join('none' if i in outside else
-                                f'some ({lean_list([t for _, t in prog.funcs[i]["params"]])}, '
-                                f'{lean_ty(prog.funcs[i]["ret"])})'
-                                for i in range(lo, min(prog.n, lo + BLOCK))) + '])'
+                      ', '.join(entry(i) for i in range(lo, min(prog.n, lo + BLOCK))) + '])'
                       for lo in range(0, prog.n, BLOCK)) +
            ']\n\nend\n\n'
            'theorem sigBlocks_len : blocksLen sigBlocks = true := by decide +kernel\n\n'
@@ -971,9 +1042,6 @@ def main(argv):
             'set_option maxRecDepth 100000\n\n'
             'theorem boxPairs_same : pairsSame (prims.boxed.map (boxPair prog)) boxPairs = true := by decide +kernel\n\n'
             'theorem boxElem_self : boxElem prog prims = lookupBox boxPairs := boxElem_eq boxPairs_same\n\n'
-            'theorem sigBlocks_fit : entriesFit prog.funcs (sigBlocks.map Prod.snd).flatten = true := by decide +kernel\n\n'
-            'theorem callTy_self : callTy prog outside = sigCall (blockGet sigBlocks) :=\n'
-            '  callTy_eq_blocks sigBlocks_len sigBlocks_fit sigBlocks_outside\n\n'
             f'end {NS}\n')
     write(os.path.join(outdir, 'SelfPureBase.lean'), base)
 
@@ -1019,6 +1087,15 @@ def main(argv):
     # check, which shares its work across the run's functions), chained along
     # SelfProg's tails.
     parts = [(k, lo, min(prog.n, lo + chunk)) for k, lo in enumerate(range(0, prog.n, chunk))]
+
+    def join_parts(pre):
+        return ' ++ ('.join(f'{pre}{k}' for k, _, _ in parts) + ')' * (len(parts) - 1)
+
+    def fit_chain():
+        expr = f'dfit{parts[-1][0]}'
+        for k, _, _ in reversed(parts[:-1]):
+            expr = f'entriesFit_append ({expr}) dfit{k}'
+        return expr
     tail = [f'tail_{keys[i]}' for i in range(prog.n)] + ['tail_end']
     for k, lo, hi in parts:
         mods = sorted({home[keys[i]] for i in range(lo, hi)})
@@ -1028,9 +1105,12 @@ def main(argv):
               'import Lanius.Faithful.Gen.SelfPureTab\n' +
               ''.join(f'import Lanius.Faithful.Gen.{m}\n' for m in mods) +
               f'\n{HEADER}\nnamespace {NS}\n\n{open_lines}'
+              f'/-- Functions {lo} to {hi - 1}, and their signature entries. -/\n'
+              f'def dpart{k} : List SrcFunc := [{", ".join(f"({rhs[i]})" for i in range(lo, hi))}]\n\n'
+              f'def dents{k} : List SigEntry := [{", ".join(entry(i) for i in range(lo, hi))}]\n\n'
               f'/-- `declareFuncs` of functions {lo} to {hi - 1}. -/\n'
-              f'theorem dchunk{k} : declsStep [{", ".join(f"({rhs[i]})" for i in range(lo, hi))}]\n'
-              f'    decls {a} {b} {a2} {b2} = true := by decide +kernel\n\n'
+              f'theorem dchunk{k} : declsStep dpart{k} decls {a} {b} {a2} {b2} = true := by decide +kernel\n\n'
+              f'theorem dfit{k} : entriesFit dpart{k} dents{k} = true := by decide +kernel\n\n'
               f'end {NS}\n')
     dl = ['import Lanius.Faithful.Gen.Self\n' + ''.join(f'import Lanius.Faithful.Gen.SelfDecl{k}\n' for k, _, _ in parts) +
           f'\n{HEADER}\nnamespace {NS}\n\n{open_lines}'
@@ -1041,7 +1121,7 @@ def main(argv):
     for k, lo, hi in reversed(parts):
         a, b = at(lo)
         dl.append(f'theorem dt{k} : declareFuncs {tail[lo]} (declAt decls {a} {b}) = some decls := by\n'
-                  f'  rw [show {tail[lo]} = [{", ".join(f"({rhs[i]})" for i in range(lo, hi))}] ++ {tail[hi]} from rfl]\n'
+                  f'  rw [show {tail[lo]} = dpart{k} ++ {tail[hi]} from rfl]\n'
                   f'  exact declareFuncs_append (declsStep_eq dchunk{k}) dt{k + 1}\n\n')
     a, b = at(0)
     dl.append(f'theorem decls_start : declAt decls {a} {b} = ⟨[], []⟩ := by\n'
@@ -1050,6 +1130,13 @@ def main(argv):
               f'    List.drop_eq_nil_of_le (by decide +kernel : decls.enums.length ≤ {b})]\n\n'
               'theorem prog_decls : prog.decls = decls :=\n'
               '  decls_of_funcs (by rw [← decls_start]; exact dt0)\n\n'
+              '-- The signatures fit a run of functions at a time.\n'
+              f'theorem funcs_dparts : prog.funcs = {join_parts("dpart")} := by rfl\n\n'
+              f'theorem entries_dents : (sigBlocks.map Prod.snd).flatten = {join_parts("dents")} := by rfl\n\n'
+              'theorem sigBlocks_fit : entriesFit prog.funcs (sigBlocks.map Prod.snd).flatten = true := by\n'
+              f'  rw [funcs_dparts, entries_dents]\n  exact {fit_chain()}\n\n'
+              'theorem callTy_self : callTy prog outside = sigCall (blockGet sigBlocks) :=\n'
+              '  callTy_eq_blocks sigBlocks_len sigBlocks_fit sigBlocks_outside\n\n'
               f'end {NS}\n')
     write(os.path.join(outdir, 'SelfDecls.lean'), ''.join(dl))
 

@@ -94,6 +94,106 @@ allocation in thread bodies, in the same format. Ten runs passed, in 1.1 to
 | `cross.taken`, `cross.bad`, `cross.main` | 2 producers allocate 40,000 tagged blocks and pass them through a 16-slot Condvar queue to 2 consumers, which verify and free them, while main allocates 2,000 more |
 | `spawn.pairs` | 1,000 sequential spawn/join pairs whose bodies allocate, check zeroing and free |
 
+## Thread pools: std::pool
+
+`std::pool` builds on `std::pthread` and the thread channels
+([Ring and Mpsc](stdlib-concurrency.md#thread-channels-ring-mpsc-and-select)).
+A thread runs one fixed, non-generic entry, so each generic operation is
+reached through a one-line wrapper that names its types:
+
+```lani
+fn workers(arg: ptr) -> ptr { return std::pool::serve<Job>(arg); }
+fn triple(arg: ptr) -> ptr { return std::pool::map_entry<i64, i64, Affine3>(arg); }
+```
+
+| Call | Effect |
+| --- | --- |
+| `scoped(entry, args, count, stride)` | Run `entry(args + i * stride)` on `count` threads (1 to 1,024) and join them all before returning, so the threads may use anything the caller owns. If a spawn fails, the threads already started are joined and the error is returned |
+| `pool<T>(workers, capacity, entry)` | Start 1 to 256 workers running `serve<T>`. Each receives a `T: Task` from a Ring of `capacity` slots and calls `run()` |
+| `Pool::submit(task)` / `try_submit(task)` | Queue a task; `submit` waits while the queue is full, `try_submit` returns `Ok(false)` |
+| `Pool::wait()` / `wait_timeout_ms(ms)` | Wait until every submitted task has finished; the timed form returns `Ok(false)` if time runs out first |
+| `Pool::completed()`, `submitted()`, `total()` | Counts, and the sum of every finished task's `run()` result |
+| `Pool::shutdown()` | Finish the queued tasks, join the workers and free the pool |
+| `map(workers, input, output, mapper, grain, entry)` | `output[i] = mapper.apply(input[i])` |
+| `reduce(workers, input, identity, fold, combine, grain, entry)` | Fold each chunk, then combine the chunk results in index order: `combine` must be associative, not necessarily commutative |
+| `scan(workers, data, identity, combine, grain, entry)` | In-place inclusive prefix scan in two passes |
+
+`map`, `reduce` and `scan` start `workers - 1` threads for the call. The
+caller works as the last thread, and every thread is joined before the call
+returns. Threads take `grain`-sized chunks from an atomic counter; `grain`
+of 0 or less picks `length / (8 * workers)`, at least 2,048. Task, mapper
+and folder values are copied by value into the pool's memory, so they must
+be plain values.
+
+Only the pool's owner thread submits and waits. A task returns an `i64`
+that the pool adds up. For a result per task, the task can send it back
+through a channel; the fixture's `Square` task sends `key * key` to an
+`Mpsc<i64>` that the owner receives from.
+
+### Pool checks
+
+`tests/fixtures/stdlib_execution/concurrency/thread_pool.lani` prints one
+line per check and exits 0 when all pass; it runs in about 0.2 s.
+
+| Check | Invariant |
+| --- | --- |
+| `scoped.*` | 8 scoped threads sum disjoint ranges of 1,000,003 values to the serial sum; a count of 0 is refused |
+| `pool.*` | 10,000 tasks through 4 workers: each runs once (completed count, `total()` and an atomic side counter agree), then a second batch of 1,000 after `wait()` |
+| `pool.try_*` | With its one worker held on a gate, a 2-slot pool accepts 2 or 3 of 6 `try_submit` calls; `wait_timeout_ms(20)` times out, and after the gate opens `wait` finishes every accepted task |
+| `pool.replies*` | 1,000 tasks send `key * key` through an Mpsc: 1,000 replies, sum 332,833,500, none extra |
+| `map.*`, `reduce.*`, `scan.*` | `3x + 1` over 1,000,003 values, a sum, an order-sensitive polynomial hash, and prefix sums (grain 1,000 and automatic) all equal the serial results |
+| `edge.*` | Empty input and one worker |
+
+### Pool against std::par
+
+`tests/fixtures/stdlib_execution/concurrency/pool_bench.lani` runs map
+(`3x + 1`), reduce (a sum) and scan (a prefix sum) over 10,000,000 i64 with
+grain 65,536 at 8 workers, through `std::pool` (threads) and `std::par`
+(forked workers on `std::steal`). Three interleaved rounds, ms, load average
+45 to 50:
+
+| Operation | std::pool | std::par |
+| --- | ---: | ---: |
+| map | 31–39 | 33–37 |
+| reduce | 10–12 | 13–17 |
+| scan | 23–35 | 31–39 |
+
+Every run printed the same check values for both. Threads skip the fork and
+the shared-region setup, which shows most in reduce, the shortest operation.
+
+## Small copies
+
+The x86 backend used to copy every aggregate with `rep movsq`. Its start-up
+cost (about 30 cycles on Zen 3) made a one-word enum argument copy cost
+more than the work around it: `Atomic64::load`, which passes its order enum
+by value, took 29 ns. Small values now copy through registers:
+
+- A copy of one to three words loads every word into RCX, RSI and RDI
+  before any store, which is overlap-safe without the direction test the
+  `rep movsq` body needs (`plan_memmove_tail` in
+  `shaders/codegen/lir/x86/instruction_plan.slang`).
+- A native parameter of up to eight words moves into its fresh frame cell
+  word by word through RAX (`safety_emit.slang`; `parameter_values.slang`
+  sizes it).
+
+Larger copies still use the shared `rep movsq` body.
+`tests/fixtures/stdlib_execution/concurrency/small_copy_bench.lani` runs 10M
+iterations of each kernel; its build has 6 `rep movsq` sites and prints
+checksum 58592112. Times are the minimum over 15 runs at load average 1.5,
+in ms (2026-11-02):
+
+| Kernel | ms |
+| --- | ---: |
+| one-word record through a call | 39 |
+| two-word record | 139 |
+| three-word record | 82 |
+| `Option<i64>` returns | 144 |
+| three-word record copies between array slots | 142 |
+| three-word enum through a call | 266 |
+
+The thread channels from `channel_bench.lani` (best of 5): Ring fan-in of
+1 × 1,000,000 takes 259 ms and 4 × 500,000 takes 563 ms.
+
 ## std::par on threads
 
 `std::par::sort_unstable_threads` and `sort_stable_threads` run the same

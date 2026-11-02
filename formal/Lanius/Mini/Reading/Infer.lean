@@ -3,6 +3,9 @@ module
 public import Lanius.Mini.Reading.Lower
 public import Lanius.Mini.Reading.Exprs
 import all Lanius.Mini.Frontend.P.bindsOfTys
+import all Lanius.Mini.Frontend.P.litEffMatch
+import all Lanius.Mini.Frontend.P.litWants
+import all Lanius.Mini.Frontend.P.litWildValue
 import all Lanius.Mini.Frontend.P.divergeArm
 import all Lanius.Mini.Frontend.P.collect
 import all Lanius.Mini.Frontend.P.consTreeTail
@@ -56,10 +59,10 @@ inductive ExprTy (decls : Decls) (scope : List Local) : SrcExpr → Ty → Prop
   | negate {x : SrcExpr} {t : Ty} : ExprTy decls scope x t → ExprTy decls scope (.negate x) t
   | not {x : SrcExpr} : ExprTy decls scope (.not x) .tyBool
   | compare {op : SrcOp} {a b : SrcExpr} : givesBool op = true → ExprTy decls scope (.apply op a b) .tyBool
-  | left {op : SrcOp} {a b : SrcExpr} {t : Ty} : givesBool op = false → bareInt a = false → ExprTy decls scope a t →
-      ExprTy decls scope (.apply op a b) t
-  | right {op : SrcOp} {a b : SrcExpr} {t : Ty} : givesBool op = false → bareInt a = true → ExprTy decls scope b t →
-      ExprTy decls scope (.apply op a b) t
+  | left {op : SrcOp} {a b : SrcExpr} {t : Ty} : givesBool op = false → (bareInt a && !shiftOp op) = false →
+      ExprTy decls scope a t → ExprTy decls scope (.apply op a b) t
+  | right {op : SrcOp} {a b : SrcExpr} {t : Ty} : givesBool op = false → (bareInt a && !shiftOp op) = true →
+      ExprTy decls scope b t → ExprTy decls scope (.apply op a b) t
   | cast {s : SrcType} {x : SrcExpr} {t : Ty} : ScalarTy t s → ExprTy decls scope (.cast s x) t
   | null : ExprTy decls scope .null .tyPtr
 
@@ -127,7 +130,7 @@ theorem exprTy_sound : ∀ {fuel : Nat} {env : FrontEnv} {scope : List Local} {e
       · rw [if_neg g] at h
         have g' : givesBool op = false := by simpa using g
         simp only [pickTy] at h
-        by_cases ba : bareInt a = true
+        by_cases ba : (bareInt a && !shiftOp op) = true
         · rw [if_pos ba] at h
           exact .right g' ba (exprTy_sound h)
         · rw [if_neg ba] at h

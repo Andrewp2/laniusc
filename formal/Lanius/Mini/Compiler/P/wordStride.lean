@@ -55,6 +55,17 @@ def evalStride (decls : SrcDecls) (scope : List Binding) (slice : Nat) (slot : N
     | none => none
     | some element => evalStrideOf decls element slot
 
+/-- slice_len(slice) of a slice local: its length, the slot after its pointer, as a usize. -/
+def evalLenOf (b : Binding) (slot : Nat) : Option Evaluated :=
+  match elementOf b.ty with
+  | none => none
+  | some element => some ({ stmt := Stmt.assign slot (Expr.var (b.slot + 1)), ty := SrcType.uint UintTy.usize } : Evaluated)
+
+def evalLen (scope : List Binding) (slice : Nat) (slot : Nat) : Option Evaluated :=
+  match lookup scope slice with
+  | none => none
+  | some b => evalLenOf b slot
+
 mutual
 /-- The code computing this expression into slot, slot + 1, ..., and its type. -/
 def SrcEff.eval (self : SrcEff) (sigs : List Sig) (decls : SrcDecls) (scope : List Binding) (slot : Nat) : Option Evaluated :=
@@ -72,6 +83,14 @@ def SrcEff.eval (self : SrcEff) (sigs : List Sig) (decls : SrcDecls) (scope : Li
   | .eDivide op left right => evalDivision op slot (SrcEff.eval left sigs decls scope slot) (SrcEff.eval right sigs decls scope (slot + 1))
   | .eStride slice => evalStride decls scope slice slot
   | .arraySlice element array => none
+  | .eIf condition ty thenValue elseValue => evalIf slot ty (SrcEff.eval condition sigs decls scope slot) (SrcEff.eval thenValue sigs decls scope slot) (SrcEff.eval elseValue sigs decls scope slot)
+  | .eLet id ty value rt body =>
+    evalLetIn slot ty rt (SrcEff.eval value sigs decls scope slot) (let bound : Option (List Binding) := armScope [id] [ty] slot scope
+     let dst : Nat := matchDst slot ty rt
+     match bound with
+     | none => none
+     | some s => SrcEff.eval body sigs decls s dst)
+  | .eLen slice => evalLen scope slice slot
 /-- The arguments, each in the slots after the one before. -/
 def evalArgs (sigs : List Sig) (decls : SrcDecls) (scope : List Binding) (args : List SrcEff) (slot : Nat) : Option EvaluatedArgs :=
   match args with

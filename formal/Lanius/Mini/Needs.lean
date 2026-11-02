@@ -43,6 +43,12 @@ mutual
       simp only [SrcEff.calleeNeed, SrcEff.calleeNeed_zeros z left, SrcEff.calleeNeed_zeros z right, Nat.max_self]
     | .eStride _ => simp only [SrcEff.calleeNeed]
     | .arraySlice _ _ => simp only [SrcEff.calleeNeed]
+    | .eIf condition _ a b =>
+      simp only [SrcEff.calleeNeed, SrcEff.calleeNeed_zeros z condition, SrcEff.calleeNeed_zeros z a,
+        SrcEff.calleeNeed_zeros z b, Nat.max_self]
+    | .eLet _ _ value _ body =>
+      simp only [SrcEff.calleeNeed, SrcEff.calleeNeed_zeros z value, SrcEff.calleeNeed_zeros z body, Nat.max_self]
+    | .eLen _ => simp only [SrcEff.calleeNeed]
   termination_by structural e
 
   theorem effsCalleeNeed_zeros {needs : List Nat} (z : Zeros needs) (es : List SrcEff) : effsCalleeNeed es needs = 0 := by

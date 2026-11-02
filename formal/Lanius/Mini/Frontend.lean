@@ -8,6 +8,7 @@ public import Lanius.Mini.Frontend.P.shrFirst
 public import Lanius.Mini.Frontend.P.isEmptyUsize
 public import Lanius.Mini.Frontend.P.hasKids
 public import Lanius.Mini.Frontend.P.textSelf
+public import Lanius.Mini.Frontend.P.textSliceLen
 public import Lanius.Mini.Frontend.P.distinct
 public import Lanius.Mini.Frontend.P.noTrees
 public import Lanius.Mini.Frontend.P.pathRef
@@ -23,11 +24,14 @@ public import Lanius.Mini.Frontend.P.variantIn
 public import Lanius.Mini.Frontend.P.typeDeclAt
 public import Lanius.Mini.Frontend.P.consTys
 public import Lanius.Mini.Frontend.P.flattenTys
+public import Lanius.Mini.Frontend.P.weightAdd
 public import Lanius.Mini.Frontend.P.lowerTy
 public import Lanius.Mini.Frontend.P.joinInsts
 public import Lanius.Mini.Frontend.P.unitTy
 public import Lanius.Mini.Frontend.P.wideMarker
-public import Lanius.Mini.Frontend.P.intLiteral
+public import Lanius.Mini.Frontend.P.digitBelow
+public import Lanius.Mini.Frontend.P.basedLimit
+public import Lanius.Mini.Frontend.P.basedDigits
 public import Lanius.Mini.Frontend.P.flNatHalf
 public import Lanius.Mini.Frontend.P.flLog2Or0
 public import Lanius.Mini.Frontend.P.flRoundUp
@@ -70,6 +74,10 @@ public import Lanius.Mini.Frontend.P.retBinds
 public import Lanius.Mini.Frontend.P.matchTysOrNone
 public import Lanius.Mini.Frontend.P.divergeArm
 public import Lanius.Mini.Frontend.P.bindsOfTys
+public import Lanius.Mini.Frontend.P.litWants
+public import Lanius.Mini.Frontend.P.litWildValue
+public import Lanius.Mini.Frontend.P.litBound
+public import Lanius.Mini.Frontend.P.litEffMatch
 public import Lanius.Mini.Frontend.P.ifEff
 public import Lanius.Mini.Frontend.P.structHead
 public import Lanius.Mini.Frontend.P.variantLetHead
@@ -88,6 +96,7 @@ public import Lanius.Mini.Frontend.P.forRange
 public import Lanius.Mini.Frontend.P.isMatchStmt
 public import Lanius.Mini.Frontend.P.matchStmtIf
 public import Lanius.Mini.Frontend.P.blockArmsOf
+public import Lanius.Mini.Frontend.P.litIf
 public import Lanius.Mini.Frontend.P.selfRefOf
 public import Lanius.Mini.Frontend.P.ifNotWrites
 public import Lanius.Mini.Frontend.P.externBody
@@ -95,6 +104,7 @@ public import Lanius.Mini.Frontend.P.readDeclInst
 public import Lanius.Mini.Frontend.P.readInst
 public import Lanius.Mini.Frontend.P.effNamedTys
 public import Lanius.Mini.Frontend.P.funcsOnto
+public import Lanius.Mini.Frontend.P.allWeighed
 public import Lanius.Mini.Frontend.P.letClosed
 public import Lanius.Mini.Frontend.P.letStructClosed
 public import Lanius.Mini.Frontend.P.allocClosed
@@ -126,6 +136,8 @@ public import Lanius.Mini.Frontend.P.Inline_attachNode
 public import Lanius.Mini.Frontend.P.Inline_attachParent
 public import Lanius.Mini.Frontend.P.Inline_positionAt
 public import Lanius.Mini.Frontend.P.Inline_variantsNamedAt
+public import Lanius.Mini.Frontend.P.Inline_litValueAt
+public import Lanius.Mini.Frontend.P.Inline_charEnd
 public import Lanius.Mini.Frontend.P.Inline_charOpen
 public import Lanius.Mini.Frontend.P.Inline_findMethodAt
 public import Lanius.Mini.Frontend.P.Inline_lxAfterFractionAt
@@ -145,6 +157,7 @@ public import Lanius.Mini.Frontend.P.Inline_pImplMethodsSome
 public import Lanius.Mini.Frontend.P.Inline_pLeTail
 public import Lanius.Mini.Frontend.P.Inline_pModTail
 public import Lanius.Mini.Frontend.P.Inline_pPathMore
+public import Lanius.Mini.Frontend.P.Inline_pRangeStartInt
 public import Lanius.Mini.Frontend.P.Inline_pRetVoid
 public import Lanius.Mini.Frontend.P.Inline_pSelfParamPlain
 public import Lanius.Mini.Frontend.P.Inline_pSelfParamTyped
@@ -168,6 +181,6 @@ operations become `Lists.name` with a spec theorem). `usize` is `Nat`, `i32` is
 prelude's `plus`/`minus`/`times` panic instead of wrapping, so they are
 `+`/`-`/`*` on `Nat` for every run that returns.
 
-The definitions are in 157 parts, `.P0` on, in source order, whose bodies
+The definitions are in 170 parts, `.P0` on, in source order, whose bodies
 are hidden from other modules: a proof that unfolds one imports its part with
 `import all`, so that it is rebuilt only when that part changes. -/

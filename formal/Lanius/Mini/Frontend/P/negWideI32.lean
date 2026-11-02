@@ -175,6 +175,9 @@ def knownEff (funcs : List SrcFunc) (locals : List LocalTy) (x : SrcEff) : Optio
   | .eDivide op a b => eitherTy (knownEff funcs locals a) (knownEff funcs locals b)
   | .eStride s => some SrcType.isize
   | .arraySlice e a => some (SrcType.slice e)
+  | .eIf c t a b => some t
+  | .eLet id t v rt b => some rt
+  | .eLen s => some (SrcType.uint UintTy.usize)
 
 mutual
 def litEff (funcs : List SrcFunc) (locals : List LocalTy) (want : Option SrcType) (x : SrcEff) : SrcEff :=
@@ -192,6 +195,9 @@ def litEff (funcs : List SrcFunc) (locals : List LocalTy) (want : Option SrcType
   | .eDivide op a b => SrcEff.eDivide op (litEff funcs locals (operandWant SrcOp.plus want (knownEff funcs locals a) (knownEff funcs locals b)) a) (litEff funcs locals (operandWant SrcOp.plus want (knownEff funcs locals a) (knownEff funcs locals b)) b)
   | .eStride s => SrcEff.eStride s
   | .arraySlice e a => SrcEff.arraySlice e a
+  | .eIf c t a b => SrcEff.eIf (litEff funcs locals (some SrcType.bool) c) t (litEff funcs locals (some t) a) (litEff funcs locals (some t) b)
+  | .eLet id t v rt b => SrcEff.eLet id t (litEff funcs locals (some t) v) rt (litEff funcs (({ id := id, ty := t } : LocalTy) :: locals) (some rt) b)
+  | .eLen s => SrcEff.eLen s
 def litEffs (funcs : List SrcFunc) (locals : List LocalTy) (wants : Option (List SrcType)) (xs : List SrcEff) : List SrcEff :=
   match xs with
   | [] => []
@@ -296,6 +302,9 @@ def wideLeftEff (x : SrcEff) : Bool :=
   | .eDivide op a b => wideLeftEff a || wideLeftEff b
   | .eStride sl => false
   | .arraySlice e a => false
+  | .eIf c t a b => wideLeftEff c || wideLeftEff a || wideLeftEff b
+  | .eLet id t v rt b => wideLeftEff v || wideLeftEff b
+  | .eLen sl => false
 def wideLeftEffs (xs : List SrcEff) : Bool :=
   match xs with
   | [] => false

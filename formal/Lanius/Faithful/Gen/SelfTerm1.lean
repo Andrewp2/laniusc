@@ -39,7 +39,7 @@ theorem ok_SrcStmt_returns : FnOk prog prims info (58, ⟨0, [0], 0⟩) :=
 theorem ok_compile_lowered : FnOk prog prims info (60, ⟨14, [], 0⟩) :=
   fnOk_of fn_compile_lowered (by decide +kernel)
 
-theorem ok_lower_funcs : FnOk prog prims info (61, ⟨19, [1], 0⟩) :=
+theorem ok_lower_funcs : FnOk prog prims info (61, ⟨20, [1], 0⟩) :=
   fnOk_of fn_lower_funcs (by decide +kernel)
 
 theorem ok_sigs : FnOk prog prims info (62, ⟨10, [], 0⟩) :=
@@ -93,7 +93,7 @@ theorem ok_empty_of_mini_selfhost_Func : FnOk prog prims info (84, ⟨0, [], 0�
 theorem ok_lower_func_cons : FnOk prog prims info (85, ⟨1, [], 0⟩) :=
   fnOk_of fn_lower_func_cons (by decide +kernel)
 
-theorem ok_lower_func : FnOk prog prims info (86, ⟨18, [], 0⟩) :=
+theorem ok_lower_func : FnOk prog prims info (86, ⟨19, [], 0⟩) :=
   fnOk_of fn_lower_func (by decide +kernel)
 
 theorem ok_sigs_with : FnOk prog prims info (88, ⟨2, [0], 0⟩) :=

@@ -1,0 +1,12 @@
+module app::main;
+
+// 8 * 10^27 slots: the front end rejects an array type past the weight
+// limit (SEMANTIC_DECISIONS "Type weights"), where the compiler's slot
+// count would overflow a usize.
+fn first(a: [[[i32; 2000000000]; 2000000000]; 2000000000]) -> i32 {
+    return 0;
+}
+
+fn main() -> i32 {
+    return 7;
+}

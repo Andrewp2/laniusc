@@ -35,6 +35,9 @@ partial def sitesEff (A : AEnv) (W : Wit) : SrcEff → List (Nat × List SizeCls
   | .eApply _ l r | .eDivide _ l r => sitesEff A W l ++ sitesEff A W r
   | .eNeg a | .eNot a | .eCast _ a => sitesEff A W a
   | .eIndex _ _ | .eStride _ | .arraySlice _ _ => []
+  | .eIf c _ a b => sitesEff A W c ++ sitesEff A W a ++ sitesEff A W b
+  | .eLet id _ a _ b => sitesEff A W a ++ sitesEff ((id, effCls prims T A a) :: A) W b
+  | .eLen _ => []
   | .eStruct _ fs | .eVariant _ _ fs => sitesEffs A W fs
   | .eMatch s ety _ bs vs => sitesEff A W s ++ sitesArms A W (effCls prims T A s) ety.typeId 0 bs vs
 
@@ -56,11 +59,11 @@ partial def sitesStmt (A : AEnv) (W : Wit) : SrcStmt → List (Nat × List SizeC
   | .letCall id _ c args body =>
     (c, (args.map (exprCls A)).map (SizeCls.res W)) ::
       sitesStmt ((id, callCls prims T c (args.map (exprCls A))) :: A) W body
-  | .then a b => sitesStmt A W a ++ sitesStmt (A.after a) W b
+  | .then a b => sitesStmt A W a ++ sitesStmt ((A.after a).forget a.writes) W b
   | .if c a b => sitesStmt A W a ++ sitesStmt (match guardVar c with | some (x, k) => A.refine x k | none => A) W b
   | .letEval id _ v body => sitesEff prims T A W v ++ sitesStmt ((id, effCls prims T A v) :: A) W body
   | .ifEval c a b => sitesEff prims T A W c ++ sitesStmt A W a ++ sitesStmt A W b
-  | .returnEval v | .discard v | .assert v => sitesEff prims T A W v
+  | .returnEval v | .discard v | .assert v | .setEval _ v => sitesEff prims T A W v
   | _ => []
 
 def sitesFn (pos : List Nat) (f : SrcFunc) : List (Nat × List SizeCls) :=
@@ -76,6 +79,9 @@ partial def effCalls : SrcEff → List Nat
   | .eNeg a | .eNot a | .eCast _ a | .eIndex _ a => effCalls a
   | .eStruct _ fs | .eVariant _ _ fs => fs.flatMap effCalls
   | .eMatch s _ _ _ vs => effCalls s ++ vs.flatMap effCalls
+  | .eIf c _ a b => effCalls c ++ effCalls a ++ effCalls b
+  | .eLet _ _ a _ b => effCalls a ++ effCalls b
+  | .eLen _ => []
   | .ePure _ | .eStride _ | .arraySlice _ _ => []
 end
 

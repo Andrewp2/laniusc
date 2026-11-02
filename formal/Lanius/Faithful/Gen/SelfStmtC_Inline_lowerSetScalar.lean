@@ -37,7 +37,7 @@ abbrev Stmt_compare_agrees (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
     RepBool (Lanius.Mini.Inline.compareAgrees x0 x1 x2 x3 x4) w
 
 abbrev Stmt_declare_enum_in (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : List (List Lanius.Mini.SrcType)} {x2 : Lanius.Mini.SrcDecls} {x3 : Option (List (List Lanius.Mini.SrcType))} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → (RepList 77 (RepList 73 RepSrcType)) x1 v1 → RepSrcDecls x2 v2 → (RepOption 188 (RepList 77 (RepList 73 RepSrcType))) x3 v3 →
+  ∀ {x0 : Nat} {x1 : List (List Lanius.Mini.SrcType)} {x2 : Lanius.Mini.SrcDecls} {x3 : Option (List (List Lanius.Mini.SrcType))} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → (RepList 77 (RepList 73 RepSrcType)) x1 v1 → RepSrcDecls x2 v2 → (RepOption 189 (RepList 77 (RepList 73 RepSrcType))) x3 v3 →
     (RepOption 69 RepSrcDecls) (Lanius.Mini.Inline.declareEnumIn x0 x1 x2 x3) w
 
 abbrev Stmt_declare_funcs_after (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -53,7 +53,7 @@ abbrev Stmt_declare_params_after (prog : SrcProgram) (prims : Prims) (ix n : Nat
     (RepOption 69 RepSrcDecls) (Lanius.Mini.Inline.declareParamsAfter x0 x1) w
 
 abbrev Stmt_declare_struct_in (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : List Lanius.Mini.SrcType} {x2 : Lanius.Mini.SrcDecls} {x3 : Option (List Lanius.Mini.SrcType)} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → (RepList 73 RepSrcType) x1 v1 → RepSrcDecls x2 v2 → (RepOption 187 (RepList 73 RepSrcType)) x3 v3 →
+  ∀ {x0 : Nat} {x1 : List Lanius.Mini.SrcType} {x2 : Lanius.Mini.SrcDecls} {x3 : Option (List Lanius.Mini.SrcType)} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → (RepList 73 RepSrcType) x1 v1 → RepSrcDecls x2 v2 → (RepOption 188 (RepList 73 RepSrcType)) x3 v3 →
     (RepOption 69 RepSrcDecls) (Lanius.Mini.Inline.declareStructIn x0 x1 x2 x3) w
 
 abbrev Stmt_declare_types_after (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -70,7 +70,11 @@ abbrev Stmt_element_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
 
 abbrev Stmt_enum_variants_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcEnumDecl} {x1 : List Lanius.Mini.SrcEnumDecl} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepSrcEnumDecl x0 v0 → (RepList 75 RepSrcEnumDecl) x1 v1 → RepNat x2 v2 →
-    (RepOption 188 (RepList 77 (RepList 73 RepSrcType))) (Lanius.Mini.Inline.enumVariantsAt x0 x1 x2) w
+    (RepOption 189 (RepList 77 (RepList 73 RepSrcType))) (Lanius.Mini.Inline.enumVariantsAt x0 x1 x2) w
+
+abbrev Stmt_eval_let_body (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List Lanius.Mini.Sig} {x1 : Lanius.Mini.SrcDecls} {x2 : Option (List Lanius.Mini.Binding)} {x3 : Nat} {x4 : Lanius.Mini.SrcEff} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepList 96 RepSig) x0 v0 → RepSrcDecls x1 v1 → (RepOption 187 (RepList 135 RepBinding)) x2 v2 → RepNat x3 v3 → RepSrcEff x4 v4 →
+    (RepOption 156 RepEvaluated) (Lanius.Mini.Inline.evalLetBody x0 x1 x2 x3 x4) w
 
 abbrev Stmt_fp_agrees (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FOp} {x1 : Lanius.Mini.Expr} {x2 : Lanius.Mini.Expr} {x3 : Lanius.Mini.Expr} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepFOp x0 v0 → RepExpr x1 v1 → RepExpr x2 v2 → RepExpr x3 v3 →
@@ -94,7 +98,7 @@ abbrev Stmt_store_element (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
 
 abbrev Stmt_struct_fields_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcStructDecl} {x1 : List Lanius.Mini.SrcStructDecl} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepSrcStructDecl x0 v0 → (RepList 71 RepSrcStructDecl) x1 v1 → RepNat x2 v2 →
-    (RepOption 187 (RepList 73 RepSrcType)) (Lanius.Mini.Inline.structFieldsAt x0 x1 x2) w
+    (RepOption 188 (RepList 73 RepSrcType)) (Lanius.Mini.Inline.structFieldsAt x0 x1 x2) w
 
 abbrev Stmt_unit_agrees (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Word} {x1 : Lanius.Mini.BinOp} {x2 : Lanius.Mini.Expr} {x3 : Lanius.Mini.Expr} {x4 : Lanius.Mini.Expr} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepWord x0 v0 → RepBinOp x1 v1 → RepExpr x2 v2 → RepExpr x3 v3 → RepExpr x4 v4 →

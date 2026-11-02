@@ -253,6 +253,8 @@ inductive Intrinsic where
   | assert
   /-- `slice_stride(view)`: a raw view's signed byte stride, as `isize`. -/
   | sliceStride
+  /-- `slice_len(view)`: a slice's length, as `usize`. -/
+  | sliceLength
 deriving DecidableEq, Repr
 
 mutual

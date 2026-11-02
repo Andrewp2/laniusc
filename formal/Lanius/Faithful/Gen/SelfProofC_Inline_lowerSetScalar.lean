@@ -25,6 +25,7 @@ public import Lanius.Faithful.Gen.SelfStmtC_lowerBody
 public import Lanius.Faithful.Gen.SelfStmtC_lowerSetValues
 public import Lanius.Faithful.Gen.SelfStmtC_structFields
 public import Lanius.Faithful.Gen.SelfStmtC_wordElement
+public import Lanius.Faithful.Gen.SelfStmtC_wordStride
 import all Lanius.Faithful.Gen.SelfSrcC_Inline_lowerSetScalar
 import all Lanius.Mini.Compiler.P.Inline_lowerSetScalar
 
@@ -177,6 +178,14 @@ theorem step_enum_variants_at {prog : SrcProgram} {prims : Prims} {ix_enum_varia
   rw [pcall_succ np fn] at h
   simp only [src_enum_variants_at] at h
   faithful [Lanius.Mini.Inline.enumVariantsAt]
+
+theorem step_eval_let_body {prog : SrcProgram} {prims : Prims} {ix_eval_let_body ix_SrcEff_eval : Nat} (fn : prog.funcs[ix_eval_let_body]? = some (src_eval_let_body ix_SrcEff_eval)) (np : prims.isPrim ix_eval_let_body = false) {n : Nat}
+    (ih_SrcEff_eval : Certified (Stmt_SrcEff_eval prog prims ix_SrcEff_eval n)) :
+    Stmt_eval_let_body prog prims ix_eval_let_body (n + 1) := by
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
+  rw [pcall_succ np fn] at h
+  simp only [src_eval_let_body] at h
+  faithful [Lanius.Mini.Inline.evalLetBody]
 
 theorem step_fp_agrees {prog : SrcProgram} {prims : Prims} {ix_fp_agrees ix_unbox_of_mini_selfhost_Expr ix_Expr_agrees ix_FOp_number : Nat} (fn : prog.funcs[ix_fp_agrees]? = some (src_fp_agrees ix_unbox_of_mini_selfhost_Expr ix_Expr_agrees ix_FOp_number)) (np : prims.isPrim ix_fp_agrees = false)
     (ext_unbox_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_Expr prog prims ix_unbox_of_mini_selfhost_Expr n))

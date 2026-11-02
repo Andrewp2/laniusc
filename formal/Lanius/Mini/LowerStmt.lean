@@ -6,19 +6,15 @@ public import Lanius.Mini.ElementLayout
 public import Lanius.Mini.Guard
 public import Lanius.Mini.Borrowed
 public import Lanius.Mini.Compiler.P.Lists_empty
-import all Lanius.Mini.Compiler.P.BinOp_folds
 import all Lanius.Mini.Compiler.P.DivOp_size
-import all Lanius.Mini.Compiler.P.Expr_agrees
 import all Lanius.Mini.Compiler.P.FArith_opcode
 import all Lanius.Mini.Compiler.P.FloatTy_rex
-import all Lanius.Mini.Compiler.P.Instr_pieces
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
 import all Lanius.Mini.Compiler.P.SrcType_size
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_mask
-import all Lanius.Mini.Compiler.P.Word_compute
 import all Lanius.Mini.Compiler.P.Word_narrows
 import all Lanius.Mini.Compiler.P.applyGuard
 import all Lanius.Mini.Compiler.P.arithShiftRight
@@ -28,15 +24,11 @@ import all Lanius.Mini.Compiler.P.armBodyScope
 import all Lanius.Mini.Compiler.P.armPayload
 import all Lanius.Mini.Compiler.P.armScope
 import all Lanius.Mini.Compiler.P.assignFrom
-import all Lanius.Mini.Compiler.P.binaryConstant
 import all Lanius.Mini.Compiler.P.callAgrees
 import all Lanius.Mini.Compiler.P.codeSize
-import all Lanius.Mini.Compiler.P.compileArgs
 import all Lanius.Mini.Compiler.P.compileModules
 import all Lanius.Mini.Compiler.P.conjunction
 import all Lanius.Mini.Compiler.P.consArgs
-import all Lanius.Mini.Compiler.P.declareFuncs
-import all Lanius.Mini.Compiler.P.declareProgram
 import all Lanius.Mini.Compiler.P.elementAddress
 import all Lanius.Mini.Compiler.P.elementBase
 import all Lanius.Mini.Compiler.P.enumVariants
@@ -49,9 +41,6 @@ import all Lanius.Mini.Compiler.P.extentAfter
 import all Lanius.Mini.Compiler.P.floatApply
 import all Lanius.Mini.Compiler.P.guardAnd
 import all Lanius.Mini.Compiler.P.hostRandomCode
-import all Lanius.Mini.Compiler.P.imageLimit
-import all Lanius.Mini.Compiler.P.importOk
-import all Lanius.Mini.Compiler.P.importsOk
 import all Lanius.Mini.Compiler.P.indexOf
 import all Lanius.Mini.Compiler.P.iteThen
 import all Lanius.Mini.Compiler.P.killShared
@@ -72,9 +61,6 @@ import all Lanius.Mini.Compiler.P.lowerSlice
 import all Lanius.Mini.Compiler.P.lowerTagged
 import all Lanius.Mini.Compiler.P.matchDst
 import all Lanius.Mini.Compiler.P.matchVariants
-import all Lanius.Mini.Compiler.P.moduleExports
-import all Lanius.Mini.Compiler.P.moduleFirsts
-import all Lanius.Mini.Compiler.P.modulesOk
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.repeatType
 import all Lanius.Mini.Compiler.P.shortCircuit
@@ -83,7 +69,6 @@ import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.sintToUint
 import all Lanius.Mini.Compiler.P.storeArray
 import all Lanius.Mini.Compiler.P.arrayCallSig
-import all Lanius.Mini.Compiler.P.bindingBytes
 import all Lanius.Mini.Compiler.P.needRound
 import all Lanius.Mini.Compiler.P.needsAfter
 import all Lanius.Mini.Compiler.P.storeEvalWord
@@ -1214,7 +1199,7 @@ theorem call_sound {sp : SrcProgram} {mp : Program}
     obtain ⟨g', s', -, -, gOk⟩ := lowerFuncs_get lowered found
     refine ⟨restore_fresh freshDone, keeps.trans (restore_keeps _ _ _), rfl, (lowerFunc_some gOk).2.1, d + 1, rs,
       { hp' with fsp := hp.fsp }, holdsRet, len, hcDone.withFsp _,
-      (fcDone.back fc exec.limit).restoreLocals _,
+      (fcDone.back fc exec.limit exec.top).restoreLocals _,
       fun target => .call gFound ?_ len (Nat.lt_succ_self d) exec⟩
     rw [← arity, evalAll_length]
   · simp at ok
@@ -3392,30 +3377,23 @@ theorem mapRawNominalSlice_inv {P : Core.Program} {st : State} {element : Core.T
 theorem slice_kind {ds : SrcDecls} {element : SrcType}
     (cond : (element.isI32 || element.isUint .uint8 || wordElement ds element) = true) :
     element = .i32 ∨ element = .uint .uint8 ∨ (∃ sid fields, element = .struct sid fields) ∨
-      (∃ eid variants, element = .enum eid variants) ∨ element = .uint .uint16 := by
-  cases element with
-  | i32 => exact .inl rfl
-  | uint kind =>
-    have c : (SrcType.uint kind).isUint .uint8 = true ∨ (SrcType.uint kind).isUint .uint16 = true := by
-      simpa [SrcType.isI32, wordElement] using cond
-    rcases c with c | c
-    · exact .inr (.inl (SrcType.eq_of_isUint c))
-    · exact .inr (.inr (.inr (.inr (SrcType.eq_of_isUint c))))
-  | struct sid fields => exact .inr (.inr (.inl ⟨sid, fields, rfl⟩))
-  | enum eid variants => exact .inr (.inr (.inr (.inl ⟨eid, variants, rfl⟩)))
-  | bool | ptr | slice | array | unit | isize | char | float | sint =>
-    simp [SrcType.isI32, SrcType.isUint, wordElement] at cond
+      (∃ eid variants, element = .enum eid variants) ∨ element.WordScalar := by
+  simp only [Bool.or_eq_true] at cond
+  rcases cond with (c | c) | c
+  · cases element <;> simp_all [SrcType.isI32]
+  · exact .inr (.inl (SrcType.eq_of_isUint c))
+  · exact .inr (.inr (wordElement_cases c))
 
 /-- What Core's `slice_from_raw_parts` of an accepted element type did. -/
 theorem sliceFrom_inv {P : Core.Program} {k : Nat} {st : State} {element : SrcType}
     (kind : element = .i32 ∨ element = .uint .uint8 ∨ (∃ sid fields, element = .struct sid fields) ∨
-      (∃ eid variants, element = .enum eid variants) ∨ element = .uint .uint16) {p l : Core.Expr}
+      (∃ eid variants, element = .enum eid variants) ∨ element.WordScalar) {p l : Core.Expr}
     {v : Value} {st1 : State} (run : evalExpr (k + 1) P st (element.sliceFrom p l) = .done v st1) :
     ∃ a afterPointer n afterLength len heap, evalExpr k P st p = .done (.pointer a) afterPointer ∧
       evalExpr k P afterPointer l = .done (.signed .i32 n) afterLength ∧
       v = .rawSlice element.toCore a len ∧ st1 = { afterLength with heap } ∧
       (∀ hp, HeapCorr afterLength.heap afterLength.world hp → HeapCorr heap afterLength.world hp) ∧ len = n.toNat ∧ 0 ≤ n := by
-  rcases kind with rfl | rfl | ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩ | rfl
+  rcases kind with rfl | rfl | ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩ | (rfl | rfl | rfl | rfl | rfl)
   all_goals
     simp only [SrcType.sliceFrom, evalExpr] at run
     split at run

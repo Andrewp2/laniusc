@@ -1,0 +1,14 @@
+// slice_len of a slice local: a raw view's length, and a borrowed array's
+// in the callee.
+fn count(s: [i32]) -> usize {
+    return slice_len(s);
+}
+
+fn run(n: i32) -> i32 {
+    let p: ptr = alloc::allocator::alloc((64 as usize), (8 as usize));
+    let s: [i32] = slice_from_raw_parts(p, 4);
+    let a: [i32; 3] = [n, 2, 3];
+    let k = slice_len(s);
+    let m: usize = k + count(a);
+    return m as i32;
+}

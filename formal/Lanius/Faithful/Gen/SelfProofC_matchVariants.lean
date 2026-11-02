@@ -35,13 +35,13 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem step_SrcEff_types {prog : SrcProgram} {prims : Prims} {ix_SrcEff_types ix_empty_of_mini_selfhost_SrcType ix_cons_of_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_concat_of_mini_selfhost_SrcType ix_effs_types ix_single_of_mini_selfhost_SrcType : Nat} (fn : prog.funcs[ix_SrcEff_types]? = some (src_SrcEff_types ix_empty_of_mini_selfhost_SrcType ix_cons_of_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_SrcEff_types ix_concat_of_mini_selfhost_SrcType ix_effs_types ix_single_of_mini_selfhost_SrcType)) (np : prims.isPrim ix_SrcEff_types = false)
+theorem step_SrcEff_types {prog : SrcProgram} {prims : Prims} {ix_SrcEff_types ix_empty_of_mini_selfhost_SrcType ix_cons_of_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_single_of_mini_selfhost_SrcType ix_concat_of_mini_selfhost_SrcType ix_effs_types : Nat} (fn : prog.funcs[ix_SrcEff_types]? = some (src_SrcEff_types ix_empty_of_mini_selfhost_SrcType ix_cons_of_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_single_of_mini_selfhost_SrcType ix_SrcEff_types ix_concat_of_mini_selfhost_SrcType ix_effs_types)) (np : prims.isPrim ix_SrcEff_types = false)
     (ext_empty_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_SrcType prog prims ix_empty_of_mini_selfhost_SrcType n))
     (ext_cons_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_SrcType prog prims ix_cons_of_mini_selfhost_SrcType n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff n))
     (ext_unbox_of_mini_selfhost_SrcEff : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_SrcEff prog prims ix_unbox_of_mini_selfhost_SrcEff n))
-    (ext_concat_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_SrcType prog prims ix_concat_of_mini_selfhost_SrcType n))
-    (ext_single_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_SrcType prog prims ix_single_of_mini_selfhost_SrcType n)) {n : Nat}
+    (ext_single_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_SrcType prog prims ix_single_of_mini_selfhost_SrcType n))
+    (ext_concat_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_SrcType prog prims ix_concat_of_mini_selfhost_SrcType n)) {n : Nat}
     (ih_SrcEff_types : Certified (Stmt_SrcEff_types prog prims ix_SrcEff_types n))
     (ih_effs_types : Certified (Stmt_effs_types prog prims ix_effs_types n)) :
     Stmt_SrcEff_types prog prims ix_SrcEff_types (n + 1) := by
@@ -62,6 +62,52 @@ theorem step_effs_types {prog : SrcProgram} {prims : Prims} {ix_effs_types ix_em
   simp only [src_effs_types] at h
   faithful [Lanius.Mini.effsTypes]
 
+theorem proof_eval_if {prog : SrcProgram} {prims : Prims} {ix_eval_if ix_eval_if_of : Nat} (fn : prog.funcs[ix_eval_if]? = some (src_eval_if ix_eval_if_of)) (np : prims.isPrim ix_eval_if = false)
+    (ext_eval_if_of : Certified (∀ {n : Nat}, Stmt_eval_if_of prog prims ix_eval_if_of n)) {n : Nat} :
+    Stmt_eval_if prog prims ix_eval_if n := by
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_eval_if] at h
+  faithful [Lanius.Mini.evalIf]
+
+theorem proof_eval_if_of {prog : SrcProgram} {prims : Prims} {ix_eval_if_of ix_boxed_of_mini_selfhost_Stmt ix_SrcType_same : Nat} (fn : prog.funcs[ix_eval_if_of]? = some (src_eval_if_of ix_boxed_of_mini_selfhost_Stmt ix_SrcType_same)) (np : prims.isPrim ix_eval_if_of = false)
+    (ext_boxed_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Stmt prog prims ix_boxed_of_mini_selfhost_Stmt n))
+    (ext_SrcType_same : Certified (∀ {n : Nat}, Stmt_SrcType_same prog prims ix_SrcType_same n)) {n : Nat} :
+    Stmt_eval_if_of prog prims ix_eval_if_of n := by
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_eval_if_of] at h
+  faithful [Lanius.Mini.evalIfOf]
+
+theorem proof_eval_let_in {prog : SrcProgram} {prims : Prims} {ix_eval_let_in ix_eval_let_in_of : Nat} (fn : prog.funcs[ix_eval_let_in]? = some (src_eval_let_in ix_eval_let_in_of)) (np : prims.isPrim ix_eval_let_in = false)
+    (ext_eval_let_in_of : Certified (∀ {n : Nat}, Stmt_eval_let_in_of prog prims ix_eval_let_in_of n)) {n : Nat} :
+    Stmt_eval_let_in prog prims ix_eval_let_in n := by
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_eval_let_in] at h
+  faithful [Lanius.Mini.evalLetIn]
+
+theorem proof_eval_let_in_of {prog : SrcProgram} {prims : Prims} {ix_eval_let_in_of ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_SrcType_same ix_assign_from ix_slot_vars ix_match_dst : Nat} (fn : prog.funcs[ix_eval_let_in_of]? = some (src_eval_let_in_of ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_SrcType_same ix_assign_from ix_slot_vars ix_match_dst)) (np : prims.isPrim ix_eval_let_in_of = false)
+    (ext_SrcType_size : Certified (∀ {n : Nat}, Stmt_SrcType_size prog prims ix_SrcType_size n))
+    (ext_boxed_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Stmt prog prims ix_boxed_of_mini_selfhost_Stmt n))
+    (ext_SrcType_same : Certified (∀ {n : Nat}, Stmt_SrcType_same prog prims ix_SrcType_same n))
+    (ext_assign_from : Certified (∀ {n : Nat}, Stmt_assign_from prog prims ix_assign_from n))
+    (ext_slot_vars : Certified (∀ {n : Nat}, Stmt_slot_vars prog prims ix_slot_vars n))
+    (ext_match_dst : Certified (∀ {n : Nat}, Stmt_match_dst prog prims ix_match_dst n)) {n : Nat} :
+    Stmt_eval_let_in_of prog prims ix_eval_let_in_of n := by
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_eval_let_in_of] at h
+  faithful [Lanius.Mini.evalLetInOf]
+
 theorem proof_eval_match {prog : SrcProgram} {prims : Prims} {ix_eval_match ix_eval_match_of : Nat} (fn : prog.funcs[ix_eval_match]? = some (src_eval_match ix_eval_match_of)) (np : prims.isPrim ix_eval_match = false)
     (ext_eval_match_of : Certified (∀ {n : Nat}, Stmt_eval_match_of prog prims ix_eval_match_of n)) {n : Nat} :
     Stmt_eval_match prog prims ix_eval_match n := by
@@ -72,14 +118,14 @@ theorem proof_eval_match {prog : SrcProgram} {prims : Prims} {ix_eval_match ix_e
   simp only [src_eval_match] at h
   faithful [Lanius.Mini.evalMatch]
 
-theorem proof_eval_match_of {prog : SrcProgram} {prims : Prims} {ix_eval_match_of ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_SrcType_same ix_assign_from ix_match_dst ix_match_variants ix_slot_vars ix_length_of_mini_selfhost_List_mini_selfhost_SrcType : Nat} (fn : prog.funcs[ix_eval_match_of]? = some (src_eval_match_of ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_SrcType_same ix_assign_from ix_match_dst ix_match_variants ix_slot_vars ix_length_of_mini_selfhost_List_mini_selfhost_SrcType)) (np : prims.isPrim ix_eval_match_of = false)
+theorem proof_eval_match_of {prog : SrcProgram} {prims : Prims} {ix_eval_match_of ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_SrcType_same ix_assign_from ix_slot_vars ix_match_dst ix_match_variants ix_length_of_mini_selfhost_List_mini_selfhost_SrcType : Nat} (fn : prog.funcs[ix_eval_match_of]? = some (src_eval_match_of ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_SrcType_same ix_assign_from ix_slot_vars ix_match_dst ix_match_variants ix_length_of_mini_selfhost_List_mini_selfhost_SrcType)) (np : prims.isPrim ix_eval_match_of = false)
     (ext_SrcType_size : Certified (∀ {n : Nat}, Stmt_SrcType_size prog prims ix_SrcType_size n))
     (ext_boxed_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Stmt prog prims ix_boxed_of_mini_selfhost_Stmt n))
     (ext_SrcType_same : Certified (∀ {n : Nat}, Stmt_SrcType_same prog prims ix_SrcType_same n))
     (ext_assign_from : Certified (∀ {n : Nat}, Stmt_assign_from prog prims ix_assign_from n))
+    (ext_slot_vars : Certified (∀ {n : Nat}, Stmt_slot_vars prog prims ix_slot_vars n))
     (ext_match_dst : Certified (∀ {n : Nat}, Stmt_match_dst prog prims ix_match_dst n))
     (ext_match_variants : Certified (∀ {n : Nat}, Stmt_match_variants prog prims ix_match_variants n))
-    (ext_slot_vars : Certified (∀ {n : Nat}, Stmt_slot_vars prog prims ix_slot_vars n))
     (ext_length_of_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_length_of_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_length_of_mini_selfhost_List_mini_selfhost_SrcType n)) {n : Nat} :
     Stmt_eval_match_of prog prims ix_eval_match_of n := by
   intro x0 x1 x2 x3 x4 x5 x6 v0 v1 v2 v3 v4 v5 v6 w h r0 r1 r2 r3 r4 r5 r6

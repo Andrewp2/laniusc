@@ -21,6 +21,15 @@ namespace Lanius.Mini
 @[expose] def Inline.pPatternIdent : Nat :=
   195
 
+@[expose] def Inline.pPatternInt : Nat :=
+  196
+
+@[expose] def Inline.pPatternTrue : Nat :=
+  197
+
+@[expose] def Inline.pPatternFalse : Nat :=
+  198
+
 @[expose] def Inline.pPatternPlain : Nat :=
   199
 
@@ -71,11 +80,5 @@ namespace Lanius.Mini
 
 @[expose] def Inline.pRangeExclusive : Nat :=
   97
-
-@[expose] def Inline.pRangeStartInt : Nat :=
-  96
-
-@[expose] def Inline.pRetType : Nat :=
-  34
 
 end Lanius.Mini

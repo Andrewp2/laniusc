@@ -218,17 +218,17 @@ def build():
         return
     env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
     with run_cache.lean_lock():
-        run = subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
+        run = subprocess.run(['systemd-run', '--user', '--scope', '--slice=work.slice', '-q',
                               'lake', 'build', *BUILT, 'LaniusMini', 'Lanius.Mini.FrontLex',
                               'Lanius.Mini.MutPilotCorrect', 'Lanius.Machines.SqliteStatementCorrect',
-                              'Lanius.Machines.TlsLifecycleCorrect', 'Lanius.Machines.RunLowering'],
+                              'Lanius.Machines.TlsLifecycleCorrect', 'Lanius.Machines.RunLowering',
+                              'Lanius.Faithful.GenB.SelfBudget'],
                              cwd=run_cache.FORMAL, env=env, capture_output=True, text=True)
     if run.returncode != 0:
         raise SystemExit('lake build failed:\n' + run.stdout[-3000:] + run.stderr[-3000:])
     run_cache.store('gate-build', build_stamp(), {})
 
 
-JOB_GB = 8  # memory a step needs available to start beside another
 RUNNING = set()  # the process groups of the steps running now
 
 
@@ -318,13 +318,13 @@ def main():
         return 1
 
     # Up to --jobs steps at once (GPU work queues in heavy, one job at a
-    # time; Lean scopes are capped in lean.slice); a step starts beside
-    # others only while JOB_GB of memory are available.
+    # time). Memory is not checked per step: each lean, laniusc and cargo
+    # process a step starts waits in target/claude-work/bin/memwait.
     import concurrent.futures
     with concurrent.futures.ThreadPoolExecutor(max(1, args.jobs)) as pool:
         running = {}
         while todo or running:
-            while todo and len(running) < args.jobs and (not running or run_cache.available_gb() >= JOB_GB):
+            while todo and len(running) < args.jobs:
                 name, argv, k, workdir = todo.pop(0)
                 running[pool.submit(run_step, argv, args.limit)] = (name, k, workdir)
             done, _ = concurrent.futures.wait(list(running), timeout=1,

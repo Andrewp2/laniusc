@@ -18,13 +18,13 @@ public import Lanius.Faithful.Gen.SelfStmtF_Inline_pModTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pPathMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pSelfValue
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pStructFieldsMore
+public import Lanius.Faithful.Gen.SelfStmtF_basedDigits
 public import Lanius.Faithful.Gen.SelfStmtF_consTys
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
 public import Lanius.Faithful.Gen.SelfStmtF_flExpFirst
 public import Lanius.Faithful.Gen.SelfStmtF_floatTyped
 public import Lanius.Faithful.Gen.SelfStmtF_freshId
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
-public import Lanius.Faithful.Gen.SelfStmtF_intLiteral
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfStmtF_itemOf
 public import Lanius.Faithful.Gen.SelfStmtF_joinInsts
@@ -38,11 +38,11 @@ public import Lanius.Faithful.Gen.SelfStmtF_typedLiteral
 public import Lanius.Faithful.Gen.SelfStmtF_unitTy
 public import Lanius.Faithful.Gen.SelfStmtF_wideOf
 import all Lanius.Faithful.Gen.SelfSrcF_wideOf
+import all Lanius.Mini.Frontend.P.basedDigits
 import all Lanius.Mini.Frontend.P.flExpFirst
 import all Lanius.Mini.Frontend.P.floatTyped
 import all Lanius.Mini.Frontend.P.freshId
 import all Lanius.Mini.Frontend.P.hasKids
-import all Lanius.Mini.Frontend.P.intLiteral
 import all Lanius.Mini.Frontend.P.isEmptyUsize
 import all Lanius.Mini.Frontend.P.joinInsts
 import all Lanius.Mini.Frontend.P.noToken
@@ -88,10 +88,11 @@ theorem step_assign_value {prog : SrcProgram} {prims : Prims} {ix_assign_value i
   simp only [src_assign_value] at h
   faithful [Lanius.Mini.assignValue]
 
-theorem step_bare_int {prog : SrcProgram} {prims : Prims} {ix_bare_int ix_unbox_of_mini_selfhost_SrcExpr ix_unit_ty ix_gives_bool : Nat} (fn : prog.funcs[ix_bare_int]? = some (src_bare_int ix_unbox_of_mini_selfhost_SrcExpr ix_unit_ty ix_gives_bool ix_bare_int)) (np : prims.isPrim ix_bare_int = false)
+theorem step_bare_int {prog : SrcProgram} {prims : Prims} {ix_bare_int ix_unbox_of_mini_selfhost_SrcExpr ix_unit_ty ix_gives_bool ix_shift_op : Nat} (fn : prog.funcs[ix_bare_int]? = some (src_bare_int ix_unbox_of_mini_selfhost_SrcExpr ix_unit_ty ix_gives_bool ix_shift_op ix_bare_int)) (np : prims.isPrim ix_bare_int = false)
     (ext_unbox_of_mini_selfhost_SrcExpr : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_SrcExpr prog prims ix_unbox_of_mini_selfhost_SrcExpr n))
     (ext_unit_ty : Certified (∀ {n : Nat}, Stmt_unit_ty prog prims ix_unit_ty n))
-    (ext_gives_bool : Certified (∀ {n : Nat}, Stmt_gives_bool prog prims ix_gives_bool n)) {n : Nat}
+    (ext_gives_bool : Certified (∀ {n : Nat}, Stmt_gives_bool prog prims ix_gives_bool n))
+    (ext_shift_op : Certified (∀ {n : Nat}, Stmt_shift_op prog prims ix_shift_op n)) {n : Nat}
     (ih_bare_int : Certified (Stmt_bare_int prog prims ix_bare_int n)) :
     Stmt_bare_int prog prims ix_bare_int (n + 1) := by
   intro x0 v0 w h r0
@@ -317,10 +318,10 @@ theorem proof_struct_field_tys {prog : SrcProgram} {prims : Prims} {ix_struct_fi
   simp only [src_struct_field_tys] at h
   faithful [Lanius.Mini.structFieldTys]
 
-theorem proof_wide_const {prog : SrcProgram} {prims : Prims} {ix_wide_const ix_unbox_of_mini_selfhost_List_mini_selfhost_Token ix_same_text ix_wide_decimal ix_wide_digits ix_wide_signed ix_dash_text : Nat} (fn : prog.funcs[ix_wide_const]? = some (src_wide_const ix_unbox_of_mini_selfhost_List_mini_selfhost_Token ix_same_text ix_wide_decimal ix_wide_digits ix_wide_signed ix_dash_text)) (np : prims.isPrim ix_wide_const = false)
+theorem proof_wide_const {prog : SrcProgram} {prims : Prims} {ix_wide_const ix_unbox_of_mini_selfhost_List_mini_selfhost_Token ix_same_text ix_lit_value ix_wide_digits ix_wide_signed ix_dash_text : Nat} (fn : prog.funcs[ix_wide_const]? = some (src_wide_const ix_unbox_of_mini_selfhost_List_mini_selfhost_Token ix_same_text ix_lit_value ix_wide_digits ix_wide_signed ix_dash_text)) (np : prims.isPrim ix_wide_const = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_Token : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Token prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Token n))
     (ext_same_text : Certified (∀ {n : Nat}, Stmt_same_text prog prims ix_same_text n))
-    (ext_wide_decimal : Certified (∀ {n : Nat}, Stmt_wide_decimal prog prims ix_wide_decimal n))
+    (ext_lit_value : Certified (∀ {n : Nat}, Stmt_lit_value prog prims ix_lit_value n))
     (ext_wide_digits : Certified (∀ {n : Nat}, Stmt_wide_digits prog prims ix_wide_digits n))
     (ext_wide_signed : Certified (∀ {n : Nat}, Stmt_wide_signed prog prims ix_wide_signed n))
     (ext_dash_text : Certified (∀ {n : Nat}, Stmt_dash_text prog prims ix_dash_text n)) {n : Nat} :

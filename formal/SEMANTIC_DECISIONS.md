@@ -715,7 +715,13 @@ verified compiler's locals are 64-bit slots with no address. The design:
    activation returns. The verified compiler therefore coerces a local only
    where the slice cannot outlive the activation: a direct call argument
    whose parameter is `[T]`, to a function whose result type contains no
-   slice. Other coercions are rejected.
+   slice. Other coercions are rejected. The verified compiler is stricter
+   for now (step 3.5b, `array_call_code`): the call is a statement's value
+   (`LetEval` or `Discard`, `stmt_eval`), its result is a scalar, and no
+   array is passed twice (`id_absent`), so the arrays lent are apart and
+   none is read while lent. After the return the caller loads each array's
+   elements back from the block into its slots, so the callee's writes
+   through the slice reach the caller's copy (`arrayCall_sound`).
 5. **`i32_array_data_ptr` uses the heap, not frame memory.** Core maps the
    array into a fresh heap block at `nextAddress` (`mapI32ArrayView`) and
    keeps block and cell equal from then on (`syncI32Views*`), and the
@@ -744,10 +750,16 @@ verified compiler's locals are 64-bit slots with no address. The design:
    never fits and the call is rejected; ROADMAP F15 lifts this with per-call
    blocks released on return and a dynamic premise. The top theorems take
    the need of the function they run as a premise on the heap
-   (`0 < need → limit + need ≤ fsp`; for a process, `need ≤ stack`), which
-   holds for any heap when the need is 0, as it is for every function of
-   the self program (`SelfPure.prog_need`), since it passes no array as a
-   slice.
+   (`0 < need → limit + need ≤ fsp ∧ fsp ≤ top ∧ top < 2 ^ 62`; for a
+   process, `need ≤ stack`), which holds for any heap when the need is 0,
+   as it is for every function of the self program (`SelfPure.prog_need`),
+   since it passes no array as a slice. `FrameCorr` carries the two other
+   parts as its `ceiling` (the block is below the top, so the stores reach
+   it) and `bounded` (the blocks taken are below `2 ^ 62`, the `small` of a
+   place lent) fields. An array call needs a positive block of its caller
+   (`sig.block > 0`), which with the room puts the frame pointer above the
+   limit, so `Frame(t, 0)`, which reads the block's address into slot `t`,
+   runs.
 
 Order: frame memory in the IR and on x86; addressed array locals passed as
 slices; `i32_array_data_ptr`; `str`.
@@ -812,8 +824,8 @@ one the relation can state exactly:
   assignments and let heads are gone. Only an allocation and a raw slice
   are decided by their spelling.
 - Reserved paths: `alloc::allocator::alloc`, `alloc::allocator::dealloc`,
-  `slice_from_raw_parts`, `slice_stride` and `assert` (`builtinPaths`) are
-  never read as a function or variant.
+  `slice_from_raw_parts`, `slice_stride`, `slice_len` and `assert`
+  (`builtinPaths`) are never read as a function or variant.
 - The pure and effectful expression readings agree: a node read as the
   pure expression `e` reads effectfully only as `XPure e` (`pure_agree`,
   `Reading/Det/Agree`).
@@ -1040,6 +1052,35 @@ numbered by the `for` token and `x`'s token, and `x` by the `in` token, so the
 locals are numbered in the order the desugared text declares them and the
 front end's cases can write the desugaring as the expected reading.
 
+## `for` over an array (decided 11-01, F11b)
+
+`for x in a { body }`, with `a` a local of type `[T; n]` (grammar
+`for_iter_path`), is read as `let i: usize = 0; while (i < n) { let x: T =
+a[i]; i = i + 1; body }` (`for_array`, `StmtR.forArray`). This is
+laniusc's array loop (shaders/codegen/lir/semantic/loop_recipe.slang,
+`SEMANTIC_LOOP_RECIPE_ARRAY`): the index starts at 0 and is compared with
+the type's constant length; `x` is set from `a[i]`, which reads the array
+local again at each step, before the body; the index steps after the
+body's block, so `continue` goes to the next element and `break` leaves the
+loop. Writes to `a` in the body are seen by later steps in both, and `x`
+is a copy, so a body that writes `x` changes nothing else. `i` is hidden
+and numbered by the `for` token, and `x` by its own token. laniusc's index
+is an `i32`; here it is `usize`, which no source can observe, since the
+body cannot name it. Lengths from 2^31 up are not read (the lowering's
+array index takes no more).
+
+`for x in s { body }`, with `s` a slice local, is read as `let i: usize =
+0; let n: usize = slice_len(s); while (i < n) { let x: T = s[i]; i = i +
+1; body }` (`for_slice`, `StmtR.forSlice`; `slice_len` is "Slice length").
+This is laniusc's slice loop (`SEMANTIC_LOOP_RECIPE_SLICE`): the length is
+read once, before the loop, and each step reads element i. laniusc reads
+it from the slice it captured before the loop, here from `s`. The two agree
+unless the body writes `s` itself, so such a body is not read (as a range
+loop's body that writes its variable is not). Writes to `s`'s elements are
+seen by later steps in both, since both views name the same elements. The
+hidden locals are numbered as a range loop's: i by the `for` token, n by
+`x`'s token, and `x` by the `in` token.
+
 ## Match arm statements (decided 10-31, F4)
 
 The source statement `MatchArm(scrutinee, enum_id, variant, binds, binder,
@@ -1159,7 +1200,7 @@ does: from the initializer alone, never from later uses. For `op?` that is
 the success payload's type. Otherwise `init` is read as an effectful
 expression with no expected type. Its type must be one no literal decides:
 a call (a method call included), a cast, an element, a struct literal, a
-`!`, `slice_stride`, or a local or field (`inferred`). A bare literal, an
+`!`, `slice_stride`, `slice_len`, or a local or field (`inferred`). A bare literal, an
 arithmetic expression, a variant and a `match` are not read untyped. Their
 type depends on a default for literals that the reader does not pick. The
 `let` then reads as the typed `let x: T = init;` would.
@@ -1645,6 +1686,219 @@ Lean's `wideDecimal` gave `none`; the self-built compiler then faulted on
 any source with such a literal instead of returning -1. `wideDecimal` gives
 the same answers as before.
 
+## Integer literal bases (decided 11-01)
+
+The verified front end reads integer literals as laniusc does: decimal
+digits, or `0x`, `0o` or `0b` (the letter in either case, as the lexer's
+`lx_base_of` takes it) and digits of base 16, 8 or 2, with `_` separators
+skipped (`lit_value` in `frontend.lani`; `intValue` in
+`Reading/Exprs.lean`). Before, only decimal digits without `_` were read,
+so such a program was rejected (found by `fuzz_oracle.py`'s EDGE_FORMS).
+The value then goes where a decimal one does: an `i32` literal below 2^31,
+the wide marker up to 2^64, a constant's value. A digit of base 2, 8 or 16
+may follow only a value at most `(2^64 - base) / base`, which is exact for
+those bases, so nothing past `2^64 - 1` is formed. An array length is still
+read only as decimal digits. A type suffix (`5u8`) is read by neither.
+
+## Literal patterns (decided 11-01)
+
+The verified front end reads a match on an integer or `bool` value whose
+arms' patterns are integer literals, `true` or `false` (found by the
+fuzzer: `match (x) { 1 -> 10, 3 -> 30, _ -> 0, }`). The arms are tried in
+order: the match becomes `if (x == n) arm else ..` on the scrutinee's local
+(bound first when the scrutinee is not a local), each literal typed at the
+scrutinee's type, so a `u8` match compares `u8` values. `true` and `false`
+test `x` and `!x`. The last arm must be `_`; at `bool` it may instead
+follow arms for both `true` and `false`, and the chain then ends in an
+unreachable statement, which no run reaches. A repeated literal's later
+arm is never run, as in laniusc's first-match lowering. A match that is
+not exhaustive this way (no `_`, an integer match without one) is not
+read. The forms read are a match statement, a typed `let`'s value (each
+value arm followed by the rest of the block) and a returned value; a
+negative literal pattern and a literal inside a payload pattern are not
+read.
+
+A literal match is also read anywhere in an expression, as a value: a
+chain of conditional expressions (`EIf`, below) in arm order, each
+literal arm's test on the scrutinee choosing its value, else the rest of
+the chain, and the `_` arm's value (or the last `bool` arm's) at the
+end. Each arm's value is read at the type the match's position expects,
+and the match has that type, or else its first arm's. A pure scrutinee
+is tested as it is: reading a pure expression changes no state, so each
+test gets the first read's result, as laniusc's one evaluation does. An
+effectful scrutinee, such as a call, is evaluated once and bound to the
+local the `match` token numbers, as the statement form binds it; the
+chain then tests that local. The binding is a let in the expression
+(`ELet`, "Lets in expressions"), so the match fits any position. A let or
+return of a literal match has both readings, so the statement form is
+taken only when the value form cannot apply, because some arm's value is a
+block (`lit_wanted`, `LitWanted`). The two readings mean the same, and
+each source then has one reading, as the front end's uniqueness proof
+needs.
+
+## Conditional expressions (decided 11-01)
+
+The verified compiler's mini syntax has a conditional expression,
+`SrcEff.eIf c T a b` (`EIf` in `compiler.lani`): `a` when the bool `c`
+is true, else `b`, both of type `T`. Core has no conditional expression,
+but its `matchValue` takes literal patterns, so the meaning
+(`SrcEff.toCore`) is Core's match on the condition's value, with an arm
+for the literal `true` and then a wildcard arm. Core needed no change.
+The lowering (`eval_if` in `compiler.lani`) is the smallest that fits the
+mini IR's way of computing a value into a slot. The condition goes into
+the slot, and `Ite` on that slot then runs either branch's code, which
+writes into the same slot. The condition has been tested by then, so
+nothing needs a fresh local. It checks that the condition is a bool and
+that both branches have type `T`. The proofs are its cases in the
+forward simulation (`eval_if`), in the stopping of failing runs
+(`eff_if`), in heap growth (`ifArms_grows`) and in Core typing
+(`SrcEff.eval_typed`). The self-simulation's pure meaning has it (11-01,
+F11b): `peff` tests the condition's bool and gives the branch's value
+(`qeff` with its cost), `effTy` takes a bool condition and two branches of
+one type, the termination check checks all three parts, and `liveEff` needs
+all three live. Its cases are in `eff_step` (Core's run to the pure value,
+from `ifArms_inv`), `eff_live` in `Fwd/Eff.lean` (the converse), `eff_safe`
+(no undefined trap, from `ifArms_trap_inv`), `eff_evConst` (settling) and
+`eff_live` in `Sim/Live.lean` (a value of its type). So the compiler's own
+sources may use it once the certificates are regenerated. The front end
+produces it for a literal match in an expression ("Literal patterns"
+above).
+
+## Lets in expressions (decided 11-01)
+
+The mini syntax has a let in an expression, `SrcEff.eLet x T v R b`
+(`ELet` in `compiler.lani`): `v`, of type `T`, is bound to the local `x`,
+then `b`, of type `R`, is the value. Core has no let expression, so the
+meaning (`SrcEff.toCore`) is Core's match of `v` with one arm, the pattern
+`bind x`: Core binds `x` for the arm and drops it after, as it does a match
+arm's payload binders. Core needed no change. The lowering (`eval_let_in`)
+is a match with one arm and no tag test. `v` goes into the slot, and `x`'s
+binding names that slot (`arm_scope`, as for a payload binder). `b` is
+evaluated from `match_dst(slot, T, R)`, above both values, and its value
+is then copied down to the slot. The proofs are its cases in the forward
+simulation (`eval_let`, from `armScope_layout`), in failing runs
+(`eff_let`), in heap growth (`letArm_grows`, and `letArm_trap_grows` in the
+Faithful layer) and in Core typing (`armScope_ok`, Core's `bind` pattern).
+The Faithful pure meaning has it (11-01, F11b), as `EIf`: `peff` binds the
+value's pure value and evaluates the body, `effTy` types the body with the
+value's type, and the termination check gives the local the value's size
+class (`effCls`), as `letEval` does. The front
+end uses it to read a literal match whose scrutinee is effectful ("Literal
+patterns"): the scrutinee bound to the `match` token's local.
+
+## Loops and assignment in the pure fragment (decided 11-01, F11b)
+
+The Faithful pure meaning (`Faithful/Pure.lean`) gave loops, assignment,
+`break` and `continue` no meaning, so a function with a `for` or a `while`
+had no certificate. They get one as follows. Neither `mut_pilot` nor the
+TLS lifecycle machine has a loop today: `extract.py` reads `+=`, `-=` and
+`&mut` writes as a rebinding (`let x := x + e`), and the machines' runs
+are Lean recursion on a fuel at least the number of steps
+(`Machine.lowered`, `lowered_eq_run` in `Machines/RunLowering.lean`). The
+pure meaning takes the same two shapes: an assignment rebinds the local in
+the environment, and a loop is recursion on fuel.
+
+- **The meaning of a statement** is `mstmt call fuel env s : Option Out`.
+  `Out` is how the statement ended and, unless it returned, the environment
+  it left: `next env`, `brk env`, `cont env` or `ret value`. `fuel` is the
+  loop fuel; `call` is still the meaning of calls.
+- **Assignment.** `x = e` (`set`, and `setEval` for an effectful value)
+  evaluates `e` and replaces the value of `x`'s newest binding
+  (`Env.set`), as Core's `assign` writes the cell `x`'s newest binding
+  names. It is `none` when `x` is not bound. `x += e` is read as
+  `x = x + e` by the front end already, so it needs nothing more.
+- **Scopes.** A `let` runs its body with the new binding first, then drops
+  it from the environment the body left (`Out.pop`), as Core's
+  `restoreLocals` drops the local and keeps the cells the body wrote. `a;
+  b` runs `b` in the environment `a` left. A `break`, `continue` or
+  `return` skips the rest.
+- **Loops.** `while c { b }` (and `whileEval`) is `ploop`, recursion on the
+  fuel: with fuel `n + 1` it tests `c`; on `false` it ends `next` in the
+  current environment; on `true` it runs `b`, then loops with fuel `n` in
+  the environment `b` left if `b` ended `next` or `cont`, ends `next` if it
+  ended `brk`, and returns if it returned. With fuel 0 it is `none`. Core's
+  `whileLoop` with fuel `k` runs fewer than `k` steps, so the loop fuel of a
+  body is its call's fuel: `pcall (n + 1)` runs the body with calls of
+  fuel `n` and loop fuel `n`. Both only grow the answer (`mstmt_mono`): a
+  value at some fuel is the value at every larger fuel.
+- **Function results.** A body that ends `brk` or `cont` has no value
+  (`outValue`), as Core traps (`typeMismatch`) on a body that ends so.
+- **Certificates.** The certificates go on with the loop-free meaning
+  `pstmt` they use now. `pcall_succ` unfolds a call to `pstmt` for a body
+  with no loop, assignment, `break` or `continue` (`SrcStmt.loopFree`,
+  checked by `rfl` in an `autoParam`), by `mstmt_loopFree`: such a body
+  leaves the environment it got, so `mstmt` is `pstmt` with that
+  environment. The generated certificates do not change while no self
+  function has a loop or an assignment.
+- **The checks.** `stmtOk` takes `x = e` when `x` is bound and `e` has its
+  type, `while c { b }` when `c` is a `bool` and `b` passes, and `break`
+  and `continue` anywhere. `PureFunc` also asks that the body has no
+  `break` or `continue` outside its loops (`looseJump`, which is
+  `SrcStmt.breaksOut`), since Core traps undefined (`typeMismatch`) on a
+  call whose body ends with one. A loop may go on, so `neverNext` of a loop
+  is `false`.
+  The termination check (`chkStmt`) forgets the size class of every local a
+  statement may write (`SrcStmt.writes`, `AEnv.forget`) for the statements
+  after it and, for a loop, in its condition and body. Settling needs no
+  measure at all: since a value at some fuel is the value at every larger
+  fuel, every pure call settles (`pcall_settles`, by `pcall_mono`), to its
+  value when it stops and to `none` when it does not. `pcall_complete`
+  keeps its statement and no longer walks the check; the check's classes
+  now serve the liveness proof only. The liveness check (`liveStmt`)
+  needs a measure, since a live call must have a value. It does not take
+  loops yet. The next step is to take the front end's counted loop, `while
+  c < e { let x = c; c = c + 1; b }` with `b` writing neither `c` nor `e`,
+  which runs `e - c` steps.
+- **The proofs** relate Core's state after a statement to the environment
+  it left. A loop is one induction on fuel in each direction:
+  `loop_sim` (Core's run with fuel `k` is `ploop` with fuel `k`, then more
+  fuel by `ploop_mono`), `loop_safe` (a trap is the test's, the body's or
+  a later step's) and `loop_live` (`qloop`'s ending is Core's, by
+  `while_again_fwd`, `while_break_fwd` and `while_ret_fwd`). `Locs` (next to `Inv`) says that the cells of the locals are
+  distinct and allocated, so an assignment to `x` changes no other visible
+  local.
+  Statements keep `Frame st st'` (in place of `Step`): every cell that no
+  visible local names keeps its value, the others may change, and new
+  cells come after. So a local a `let` shadowed keeps its value, and a
+  call's body, whose visible locals are its own new cells, leaves the
+  caller's cells as `Step` says.
+
+## Slice length (decided 11-01, F11b)
+
+Core gets `Intrinsic.sliceLength`, written `slice_len(s)` beside
+`slice_stride(s)`: the length of a slice as a `usize` (`sliceLength?`).
+It is the same for a slice of a language array (`Value.slice`, its
+`length`) and for a raw view (`Value.rawSlice`, its `length`). Any other
+value traps (`typeMismatch`), as `slice_stride` does. The typing rule is
+`ExprHasType.sliceLength`, from any `[T]` to `usize`, with its checker arm.
+It is spelled `slice_len`, not `len`, because `std::vec::len` and
+`core::set::len` already name free functions `len`, and `slice_stride` is
+the intrinsic it sits beside. It is a `usize` because Core's slice length is
+a natural number. The mini syntax's lengths are below 2^31, so the value
+also fits laniusc's `i32` lengths. laniusc keeps a slice's length in word 1
+of its descriptor (`NATIVE_SLICE_LENGTH`) and reads it there. It has no
+surface intrinsic for it yet. Adding `slice_len` to laniusc's intrinsics
+(`shaders/type_checker/calls/intrinsic_result.slang`, `stdlib/core/mem.lani`)
+is a laniusc step, not yet run.
+
+The mini syntax reads it as `SrcEff.eLen x` (`ELen` in `compiler.lani`), for
+a slice local `x`; its meaning is Core's `intrinsic sliceLength (local x)`.
+The lowering (`eval_len`) copies the slot after the slice's pointer, where
+the slice keeps its length, to the result slot: a raw slice is its address
+then its length, and a borrowed slice of a caller's array (`HoldsAt`'s
+`borrowed`) its pointer then its length, so one read covers both. The
+proofs are its cases in the forward simulation (`eval_len`, from
+`len_inv`), in failing runs (`eff_len`: Core does not fail on a slice
+local), in heap growth (and `len_trap_state` in the Faithful layer) and in
+Core typing (`ExprHasType.sliceLength`). The Faithful pure meaning leaves it
+unmodelled, as it does `ELet`.
+
+The front end reads `slice_len(x)`, with `x` a slice local named alone, as
+`ELen(x)` (`len_arg`, `EffPathCall.len`), as it reads `slice_stride(x)`.
+`slice_len` joins the reserved paths (`builtinPaths`), so no function or
+variant is read there. Its type is `usize`, so `let n = slice_len(s);`
+needs no annotation (`inferred`).
+
 ## `u16` views (decided 11-01)
 
 Core's raw slices had no `u16` element (`slice_from_raw_parts` of a `u16`
@@ -1678,6 +1932,139 @@ accepts `u16`): `s[i]` is a bounds check and a 32-bit load at
 and `slice_stride` is -8. The other one-word scalars (`u32`, `u64`, `i64`,
 `bool`, `char`, `ptr`, ...) have the same layout in laniusc and are later
 work.
+
+## Type weights (decided 11-01, F14)
+
+The self-built compiler trapped on a 7-line program. A parameter of type
+`[[[i32; 2000000000]; 2000000000]; 2000000000]` has 8 * 10^27 slots, so
+`SrcType::size`'s `times` overflowed a usize (SIGILL in laniusc's build of
+the verified compiler). Lean computed the size in `Nat` and rejected the
+program only later, at `frame_limit`. Structs whose fields double,
+`S_k { a: S_{k-1}, b: S_{k-1} }`, reach 2^64 slots in 64 links. The front
+end now rejects any type heavier than `weight_limit()` (2^22) before the
+compiler sizes it:
+
+- A type's weight is at least its slot count and its node count. A scalar
+  weighs 1, a slice 1 more than its element, `[T; n]` 1 + max(n, 1) times
+  T's weight, a struct 1 more than its fields together, and an enum 1 more
+  than all its payloads together (`src_weight` on source types, `ty_weight`
+  on the front end's types).
+- `array_type` keeps an array type only within the limit (`weighed`). This
+  covers arrays written at a use site.
+- `types_weighed` checks every instance in the type table before the
+  instances are lowered. It works bottom up in rounds: each round weighs the
+  instances whose parts already have weights, so a doubling chain is
+  rejected at its 21st link, not lowered at exponential cost. An instance
+  that never gets a weight (past the limit, or not lowerable) rejects the
+  program.
+- The arithmetic is guarded (`weight_sum`, `weight_times`), so weighing
+  itself cannot overflow. With every type's size at most 2^22, sums of
+  sizes over a function's lets, offsets (`times(8, ...)`) and frame sizes
+  stay far below 2^64 for inputs under 2^31 words.
+
+laniusc fails both programs too, but not cleanly: `LNC0057 compiler
+execution failed` ("a compiler diagnostic gap"). The cap is 4x the
+compiler's `frame_limit` (2^20 slots), and no checked-in program has a
+type near it (the largest arrays are 262144 elements). A type heavier than
+2^22 that fits no frame, for example one behind a slice that is never
+indexed, or a declared but unused struct, was accepted before and is
+rejected now.
+
+Still open: building the type table (`ty_insts`) expands every occurrence
+of an instance, so a doubling chain takes exponential time there, before
+`types_weighed` runs. The front end takes about 1 s at 18 links and about
+60 s at 24, where it rejects, and hangs at 70 links. This is time, not
+overflow: the pure compile still reaches its result at some fuel. A
+visited set in `ty_insts` would make it linear, but the reading's
+`TyInsts` relation is stated over the full expansion, so that change needs
+its own proof.
+
+## Budget certificates (decided 11-01, F14)
+
+`CompileBounded T` asks that the guarded run of `progW` has a value
+whenever `progW`'s run costs under `T`. It is proved function by function.
+For each self-program function `F` at index `ix`, with the unit cost
+`uc = fun _ => 1` (each boxed call costs 1),
+`formal/tools/budget_certs.py` generates three things into
+`Faithful/GenB/`: two Lean models `Pre_F` and `Cost_F` beside the
+function's Lean meaning `F`, and a budget certificate:
+
+    qcall progW prims uc n ix vs = some (w, k) → Rep x vs → k < b → Pre_F n x b →
+      qcall prog prims uc n ix vs = some (w, k) ∧ Cost_F n x = k ∧ Rep (F x) w
+
+If `F` cannot overflow along any path, it has no `b` and no `Pre_F`.
+
+- The models follow the source function, not the Lean meaning. Inline
+  functions are separate source functions. Values are Lean terms over the
+  parameters, with callee results written as the callee's Lean meaning
+  `G y`. Both models are fuel-indexed like `qcall`: `Pre_F 0 = True` and
+  `Cost_F 0 = 0`. The case `n = 0` is vacuous, because `qcall` at fuel 0
+  is `none`.
+- The Cost_F convention: `Cost_F (n + 1) x` is the sum along the taken path
+  of `Cost_G n y` for each costly callee, plus 1 per boxed prim call.
+  A callee that never reaches a boxed prim is free and adds nothing. Its
+  certificate states `0 = k`. Branches that are equal collapse.
+- The Pre_F generation rule: `Pre_F` is built in evaluation order, in
+  continuation-passing style, with `B` the budget still left. At a call of
+  a guarded `G` it adds `Pre_G n y B`. After a costly call the rest is
+  `∀ b1, Cost_G n y < B → b1 = B - Cost_G n y → REST` at `b1`. After a
+  boxed prim it is `∀ b1, 1 < B → b1 = B - 1 → REST`. The new budget gets
+  a name, so it does not grow along a path: written out as differences,
+  a long branch chain made one model 1.6 MB. A part that is `True` is
+  dropped. A condition that is the literal `true` or `false` is decided
+  by the generator, so a lazy `&&` chain copies its continuation once per
+  operand, not twice.
+  `plus` and `times` are the base cases:
+  `Pre_plus n x y b := x + y < 2 ^ 64`, likewise for `times`, and their
+  certificates are written by hand (`Budget.bcert_plus`, `bcert_times`).
+  Lazy `&&` and `||` and pure arguments follow the semantics: a condition
+  that is not evaluated adds nothing.
+- The premise is stated against the remaining budget, not the cost so far.
+  The run's total cost `k` is below `b`, so every prefix is below `b`, and
+  a callee's certificate gets `k_G < b - prefix`.
+- A function without arguments that reaches neither `plus` nor `times`,
+  through no recursion, for example a table builder such as
+  `grammar_part_0`, which makes hundreds of calls in a line, is not proved
+  step by step. The kernel evaluates its run instead (`decide +kernel`),
+  using `BudgetClosed.qcallB`: a computable `qcall` that has no value at a
+  call of `plus` or `times`, and whose value is the self program's
+  (`qcall_of_okW`). `bclosed` takes four premises: the run has a value at
+  the fuel `D` (its call depth), its cost there is `Cost_F D`, `Cost_F`
+  is the same past `D` (by `rfl`), and there is no run below `D`. From
+  these it gives the certificate at every fuel. 350 of the 2,255 functions
+  take this path.
+- Proofs: the `budget` tactic (`Faithful/BudgetTactic.lean`) runs the two
+  `qcall`s in lockstep. It steps through calls with the callee's
+  certificate, prims, `addC`, condition splits and `Rep` cases, and it
+  closes each path's cost with `omega`. Groups of recursive functions are
+  proved by induction on fuel.
+
+## One-word scalar views (decided 11-01, F11b)
+
+The other one-word scalars the stdlib oracle passes as slices, `u32`,
+`u64`, `i64` and `bool`, are word views like `u16` ("`u16` views"):
+laniusc's `stdlib/core/mem.lani` packs only `i32` and `u8`, and lays every
+other element out as descending 8-byte words. Core takes them where it takes
+a `u16` view: `rawSliceElementAddress?` puts element `i` at `pointer - 8 *
+i`, `mapRawNominalSlice` checks the view's words in one live block,
+`NativeLayout.elementStride?` is -8 and a slice of one is 3 words.
+Elements are read and written as the scalar is elsewhere in native layout
+(`readNativeValue`, `writeNativeValue`): `u32` and `bool` as the word's low
+4 bytes (a `bool` above 1 is `typeMismatch`), `u64` and `i64` as all 8.
+`typedSliceFromRawParts` types them (`RawNominalSliceElement.word32`,
+`word64`, `signed64`, `boolean`). As for struct fields, Core writes a
+`u32` or `bool` element as 4 bytes where laniusc writes the zero-extended
+word; the upper 4 bytes are never read as part of the element.
+
+The verified compiler takes them on its word path. `word_element` in
+`lani/mini/compiler.lani` accepts `u16`, `u32`, `u64`, `i64` (the source
+type `Sint(Uint64)`) and `bool`, so `slice_from_raw_parts`, `slice[i]`, the
+store `slice[i] = v` and `slice_stride` of such a view lower as they do for
+a struct or `u16` element. `Lanius/Mini/WordScalar.lean` names the five
+(`SrcType.WordScalar`, `CoreWordScalar`). The read, store and stride proofs
+(`ElementLayout`, `LowerStmt`, `LowerStops`, `LowerEval`, `TypeSound` and
+the Faithful raw-view modules) take that predicate where they took `u16`.
+Borrowed slices of a caller's array still hold only `i32` and `u8`.
 
 ## laniusc's process exit is `exit_group`; the verified compiler's stays `exit` (decided 11-01)
 

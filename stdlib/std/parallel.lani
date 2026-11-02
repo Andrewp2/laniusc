@@ -34,6 +34,8 @@ pub fn shared<T>(region: &std::sync::Region, length: i32) -> core::result::Resul
 pub impl<T> Shared<T> {
     pub fn borrow(&self) -> &Shared<T> { return self; }
     pub fn len(&self) -> i32 { return self.length; }
+    // The storage address, for code that rebuilds views itself (std::pool).
+    pub fn storage(&self) -> ptr { return self.storage; }
     // Every view of one Shared uses its full length, so all agree on layout.
     pub fn view(&self) -> [T] { return core::mem::typed_slice_from_storage<T>(self.storage, self.length); }
 }

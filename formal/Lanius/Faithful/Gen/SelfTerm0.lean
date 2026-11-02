@@ -15,7 +15,7 @@ open Lanius.Faithful.SelfCert
 theorem ok_empty_of_i32 : FnOk prog prims info (5, ⟨0, [], 0⟩) :=
   fnOk_of fn_empty_of_i32 (by decide +kernel)
 
-theorem ok_compile_words : FnOk prog prims info (6, ⟨22, [], 0⟩) :=
+theorem ok_compile_words : FnOk prog prims info (6, ⟨23, [], 0⟩) :=
   fnOk_of fn_compile_words (by decide +kernel)
 
 theorem ok_front_end_words : FnOk prog prims info (7, ⟨48, [], 0⟩) :=
@@ -30,7 +30,7 @@ theorem ok_cons_of_i32 : FnOk prog prims info (9, ⟨0, [], 0⟩) :=
 theorem ok_binary_words : FnOk prog prims info (11, ⟨5, [], 0⟩) :=
   fnOk_of fn_binary_words (by decide +kernel)
 
-theorem ok_compile_source : FnOk prog prims info (12, ⟨21, [], 0⟩) :=
+theorem ok_compile_source : FnOk prog prims info (12, ⟨22, [], 0⟩) :=
   fnOk_of fn_compile_source (by decide +kernel)
 
 theorem ok_read_counted_files : FnOk prog prims info (13, ⟨23, [], 0⟩) :=
@@ -102,7 +102,7 @@ theorem ok_pack_rounds : FnOk prog prims info (36, ⟨4, [1], 0⟩) :=
 theorem ok_funcs_return : FnOk prog prims info (37, ⟨1, [0], 0⟩) :=
   fnOk_of fn_funcs_return (by decide +kernel)
 
-theorem ok_compile_declared : FnOk prog prims info (38, ⟨20, [], 0⟩) :=
+theorem ok_compile_declared : FnOk prog prims info (38, ⟨21, [], 0⟩) :=
   fnOk_of fn_compile_declared (by decide +kernel)
 
 theorem ok_declare_program : FnOk prog prims info (39, ⟨9, [], 0⟩) :=

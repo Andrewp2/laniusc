@@ -61,7 +61,7 @@ abbrev Stmt_lower_unsigned (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
     (RepOption 154 RepTyped) (Lanius.Mini.lowerUnsigned x0 x1) w
 
 abbrev Stmt_negate_float (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Typed} {x1 : Option Lanius.Mini.FloatTy} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepTyped x0 v0 → (RepOption 210 RepFloatTy) x1 v1 →
+  ∀ {x0 : Lanius.Mini.Typed} {x1 : Option Lanius.Mini.FloatTy} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepTyped x0 v0 → (RepOption 214 RepFloatTy) x1 v1 →
     (RepOption 154 RepTyped) (Lanius.Mini.negateFloat x0 x1) w
 
 abbrev Stmt_negate_signed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

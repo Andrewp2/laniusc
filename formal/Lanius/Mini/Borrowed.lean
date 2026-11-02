@@ -131,7 +131,7 @@ theorem FrameCorr.restrict {places' : List Addressed} {st : State} {hp : Heap} (
     (sub : ∀ x ∈ places, x ∈ places') : FrameCorr bud places st hp := by
   refine ⟨fun x mem => ?_, fun x mem => fc.inside x (sub x mem), fun x mem => fc.small x (sub x mem),
     fun x mem y ymem ne => fc.apart x (sub x mem) y (sub y ymem) ne, fun x mem => fc.packed x (sub x mem),
-    fc.room⟩
+    fc.room, fc.ceiling, fc.bounded⟩
   obtain ⟨v, read, h⟩ := fc.holds x (sub x mem)
   exact ⟨v, read, (fc.packed x (sub x mem)).holdsAt h⟩
 
@@ -228,7 +228,8 @@ theorem FrameCorr.borrowed_set {st st' : State} {hp hp' : Heap} (fc : FrameCorr 
     (bytes : ∀ a, ¬ x.Covers a → hp'.bytes a = hp.bytes a)
     (fsp : hp'.fsp = hp.fsp) (limit : hp'.limit = hp.limit) (top : hp'.top = hp.top) :
     FrameCorr bud places st' hp' := by
-  refine ⟨fun y ymem => ?_, fun y ymem => ?_, fc.small, fc.apart, fc.packed, by rw [fsp, limit]; exact fc.room⟩
+  refine ⟨fun y ymem => ?_, fun y ymem => ?_, fc.small, fc.apart, fc.packed, by rw [fsp, limit]; exact fc.room,
+    by rw [fsp, top]; exact fc.ceiling, by rw [top]; exact fc.bounded⟩
   · by_cases same : y = x
     · subst same
       obtain ⟨vs', read', -, elems⟩ := fc.array mem root ty

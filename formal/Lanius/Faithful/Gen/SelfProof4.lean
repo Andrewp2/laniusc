@@ -144,6 +144,15 @@ theorem proof_cons_of_mini_selfhost_SrcArm {prog : SrcProgram} {prims : Prims} {
   simp only [src_cons_of_mini_selfhost_SrcArm] at h
   faithful []
 
+theorem proof_empty_of_core_option_Option_usize {prog : SrcProgram} {prims : Prims} {ix_empty_of_core_option_Option_usize : Nat} (fn : prog.funcs[ix_empty_of_core_option_Option_usize]? = some (src_empty_of_core_option_Option_usize)) (np : prims.isPrim ix_empty_of_core_option_Option_usize = false) {n : Nat} :
+    Stmt_empty_of_core_option_Option_usize prog prims ix_empty_of_core_option_Option_usize n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_empty_of_core_option_Option_usize] at h
+  faithful []
+
 theorem proof_empty_of_mini_selfhost_Binding {prog : SrcProgram} {prims : Prims} {ix_empty_of_mini_selfhost_Binding : Nat} (fn : prog.funcs[ix_empty_of_mini_selfhost_Binding]? = some (src_empty_of_mini_selfhost_Binding)) (np : prims.isPrim ix_empty_of_mini_selfhost_Binding = false) {n : Nat} :
     Stmt_empty_of_mini_selfhost_Binding prog prims ix_empty_of_mini_selfhost_Binding n := by
   intro w h

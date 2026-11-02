@@ -135,7 +135,13 @@ fn stream(score: &Score, slots: ptr) {
     report(score, "stream.completed", done, 10000);
     report(score, "stream.wrong", wrong, 0);
     report(score, "stream.bytes", sum, 6666);
-    report(score, "stream.backpressured", fulls, total - 15);
+    // Each Full is followed by one wait, so fulls is total less the
+    // completions still owed at the last push: 1 to 16 (the CQ size), as
+    // fast as the kernel completes the reads (15 and 16 both seen).
+    let tail_owed: i64 = total - fulls;
+    let in_range: i64 = 0;
+    if (tail_owed >= 1 && tail_owed <= 16) { in_range = 1; }
+    report(score, "stream.owed_after_last_push_in_1_16", in_range, 1);
     report(score, "stream.overflow", ring.overflowed() as i64, 0);
     report(score, "stream.dropped", ring.dropped() as i64, 0);
     ring.close(file as i32, 8);

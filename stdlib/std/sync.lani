@@ -90,6 +90,51 @@ pub fn futex_wake(word: ptr, count: i32) -> core::result::Result<i32, Error> {
     if (done.is_err()) { return core::result::Err(host(done.unwrap_err())); }
     return core::result::Ok(done.unwrap() as i32);
 }
+// Process-private variants (FUTEX_PRIVATE_FLAG) for words that only the
+// threads of one process wait on. They skip the kernel's shared-key lookup;
+// a forked worker must use the shared operations above.
+pub fn futex_wait_private(word: ptr, expected: u32) -> core::result::Result<Wait, Error> {
+    let nowhere: ptr = 0;
+    return wait_result(futex(word, 128, expected as i64, nowhere, 0));
+}
+pub fn futex_wait_until_private(word: ptr, expected: u32, deadline: Deadline) -> core::result::Result<Wait, Error> {
+    let storage: [i32; 4] = [0; 4];
+    let slot: ptr = core::mem::i32_array_data_ptr(storage);
+    store_i64(slot, deadline.seconds); store_i64(slot + 8, deadline.nanos);
+    return wait_result(futex(word, 137, expected as i64, slot, 4294967295));
+}
+pub fn futex_wake_private(word: ptr, count: i32) -> core::result::Result<i32, Error> {
+    let nowhere: ptr = 0;
+    let done: core::result::Result<i64, std::linux::Error> = futex(word, 129, count as i64, nowhere, 0);
+    if (done.is_err()) { return core::result::Err(host(done.unwrap_err())); }
+    return core::result::Ok(done.unwrap() as i32);
+}
+// Sleep while *first == first_seen and *second == second_seen: one
+// futex_waitv (syscall 449, Linux 5.16+) over two process-private u32 words.
+// A FUTEX_WAKE_PRIVATE on either word wakes it; a word that already differs
+// returns Changed at once. Like futex_wait, every outcome needs a recheck.
+fn store_ptr(slot: ptr, value: ptr) { let view: [ptr] = core::mem::typed_slice_from_raw_parts<ptr>(slot, 1); view[0] = value; }
+fn waitv(first: ptr, first_seen: u32, second: ptr, second_seen: u32, timeout: ptr) -> core::result::Result<Wait, Error> {
+    // Two struct futex_waitv { u64 val; u64 uaddr; u32 flags; u32 reserved; }.
+    let storage: [i32; 12] = [0; 12];
+    let waiters: ptr = core::mem::i32_array_data_ptr(storage);
+    store_i64(waiters, first_seen as i64); store_ptr(waiters + 8, first); store_i64(waiters + 16, 130);
+    store_i64(waiters + 24, second_seen as i64); store_ptr(waiters + 32, second); store_i64(waiters + 40, 130);
+    // flags 130 = FUTEX2_SIZE_U32 | FUTEX2_PRIVATE; the clock is CLOCK_MONOTONIC.
+    let args: [std::linux::Argument; 5] = [std::linux::Argument::Address(waiters), word_arg(2), word_arg(0),
+        std::linux::Argument::Address(timeout), word_arg(1)];
+    return wait_result(std::linux::call(449, core::slice::view(args, 5).unwrap()));
+}
+pub fn futex_wait_either_private(first: ptr, first_seen: u32, second: ptr, second_seen: u32) -> core::result::Result<Wait, Error> {
+    let nowhere: ptr = 0;
+    return waitv(first, first_seen, second, second_seen, nowhere);
+}
+pub fn futex_wait_either_until_private(first: ptr, first_seen: u32, second: ptr, second_seen: u32, deadline: Deadline) -> core::result::Result<Wait, Error> {
+    let storage: [i32; 4] = [0; 4];
+    let slot: ptr = core::mem::i32_array_data_ptr(storage);
+    store_i64(slot, deadline.seconds); store_i64(slot + 8, deadline.nanos);
+    return waitv(first, first_seen, second, second_seen, slot);
+}
 
 // A MAP_SHARED|MAP_ANONYMOUS mapping with a bump allocator. Allocations are
 // zeroed, 64-byte aligned (one cache line) and live until unmap. Map and

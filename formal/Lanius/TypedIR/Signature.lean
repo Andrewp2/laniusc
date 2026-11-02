@@ -77,6 +77,12 @@ theorem Signature.Realizes.nominal {signature : Signature} {program : Core.Progr
     (element : RawNominalSliceElement signature.declarations type) :
     RawNominalSliceElement program type := by
   cases element with
+  | byte => exact .byte
+  | word16 => exact .word16
+  | word32 => exact .word32
+  | word64 => exact .word64
+  | signed64 => exact .signed64
+  | boolean => exact .boolean
   | structureType id declaration found => exact .structureType id declaration (linked.structure found)
   | enumerationType id declaration found => exact .enumerationType id declaration (linked.enumeration found)
 

@@ -25,7 +25,7 @@ abbrev Stmt_eff_named_tys (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
     (RepList 141 RepTy) (Lanius.Mini.effNamedTys x0) w
 
 abbrev Stmt_effs_named_tys (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.MEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 228 RepMEff) x0 v0 →
+  ∀ {x0 : List Lanius.Mini.MEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 232 RepMEff) x0 v0 →
     (RepList 141 RepTy) (Lanius.Mini.effsNamedTys x0) w
 
 abbrev Stmt_stmt_calls (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

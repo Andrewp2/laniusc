@@ -22,7 +22,7 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_call_parts (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.MEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepMEff x0 v0 →
-    (RepOption 297 RepCalled) (Lanius.Mini.callParts x0) w
+    (RepOption 307 RepCalled) (Lanius.Mini.callParts x0) w
 
 abbrev Stmt_eff_local (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.MEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepMEff x0 v0 →
@@ -33,15 +33,15 @@ abbrev Stmt_pure_local (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
     (RepOption 205 RepNat) (Lanius.Mini.pureLocal x0) w
 
 abbrev Stmt_view_array (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.Ty} {x2 : Option Lanius.Mini.Local} {x3 : Lanius.Mini.MEff} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepTy x1 v1 → (RepOption 251 RepLocal) x2 v2 → RepMEff x3 v3 →
-    (RepOption 250 RepMEff) (Lanius.Mini.viewArray x0 x1 x2 x3) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.Ty} {x2 : Option Lanius.Mini.Local} {x3 : Lanius.Mini.MEff} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepTy x1 v1 → (RepOption 255 RepLocal) x2 v2 → RepMEff x3 v3 →
+    (RepOption 254 RepMEff) (Lanius.Mini.viewArray x0 x1 x2 x3) w
 
 abbrev Stmt_view_local (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Local} {x1 : Option Lanius.Mini.Ty} {x2 : Option Nat} {x3 : Lanius.Mini.MEff} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepList 231 RepLocal) x0 v0 → (RepOption 207 RepTy) x1 v1 → (RepOption 205 RepNat) x2 v2 → RepMEff x3 v3 →
-    (RepOption 250 RepMEff) (Lanius.Mini.viewLocal x0 x1 x2 x3) w
+  ∀ {x0 : List Lanius.Mini.Local} {x1 : Option Lanius.Mini.Ty} {x2 : Option Nat} {x3 : Lanius.Mini.MEff} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepList 235 RepLocal) x0 v0 → (RepOption 209 RepTy) x1 v1 → (RepOption 205 RepNat) x2 v2 → RepMEff x3 v3 →
+    (RepOption 254 RepMEff) (Lanius.Mini.viewLocal x0 x1 x2 x3) w
 
 abbrev Stmt_want_elem (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Ty} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 207 RepTy) x0 v0 →
-    (RepOption 207 RepTy) (Lanius.Mini.wantElem x0) w
+  ∀ {x0 : Option Lanius.Mini.Ty} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 209 RepTy) x0 v0 →
+    (RepOption 209 RepTy) (Lanius.Mini.wantElem x0) w
 
 end Lanius.Faithful.SelfCert

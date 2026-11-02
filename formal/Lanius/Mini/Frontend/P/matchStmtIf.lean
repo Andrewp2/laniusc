@@ -3,7 +3,6 @@ module
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Compiler.P.arithShiftRight
 import Lanius.Mini.Compiler.P.matchVariants
-import Lanius.Mini.Frontend.P.bindsOfTys
 import Lanius.Mini.Frontend.P.callParts
 import Lanius.Mini.Frontend.P.consBinder
 import Lanius.Mini.Frontend.P.consTys
@@ -12,6 +11,7 @@ import Lanius.Mini.Frontend.P.forRange
 import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.isEmptyUsize
+import Lanius.Mini.Frontend.P.litEffMatch
 import Lanius.Mini.Frontend.P.noBlock
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.noTrees

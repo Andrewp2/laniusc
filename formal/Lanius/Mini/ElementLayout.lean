@@ -1,50 +1,24 @@
 module
 
 public import Lanius.Mini.SliceLayout
+public import Lanius.Mini.WordScalar
 public import Lanius.Mini.Compiler.P.SrcType_size
 import all Lanius.Mini.Compiler.P.DivOp_size
-import all Lanius.Mini.Compiler.P.FArith_opcode
-import all Lanius.Mini.Compiler.P.FloatTy_rex
-import all Lanius.Mini.Compiler.P.Instr_pieces
 import all Lanius.Mini.Compiler.P.Lists_empty
-import all Lanius.Mini.Compiler.P.SrcExpr_guard
 import all Lanius.Mini.Compiler.P.SrcType_size
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
-import all Lanius.Mini.Compiler.P.UintTy_mask
-import all Lanius.Mini.Compiler.P.applyGuard
 import all Lanius.Mini.Compiler.P.arithShiftRight
-import all Lanius.Mini.Compiler.P.arithUint
 import all Lanius.Mini.Compiler.P.arities
-import all Lanius.Mini.Compiler.P.armScope
-import all Lanius.Mini.Compiler.P.assignFrom
 import all Lanius.Mini.Compiler.P.codeSize
-import all Lanius.Mini.Compiler.P.compileArgs
 import all Lanius.Mini.Compiler.P.compileModules
-import all Lanius.Mini.Compiler.P.conjunction
 import all Lanius.Mini.Compiler.P.elementBase
 import all Lanius.Mini.Compiler.P.enumVariants
 import all Lanius.Mini.Compiler.P.equality
 import all Lanius.Mini.Compiler.P.floatApply
-import all Lanius.Mini.Compiler.P.guardAnd
-import all Lanius.Mini.Compiler.P.imageLimit
-import all Lanius.Mini.Compiler.P.importOk
-import all Lanius.Mini.Compiler.P.importsOk
-import all Lanius.Mini.Compiler.P.iteThen
-import all Lanius.Mini.Compiler.P.leftTrue
 import all Lanius.Mini.Compiler.P.loadAtBytes
-import all Lanius.Mini.Compiler.P.lowerApply
-import all Lanius.Mini.Compiler.P.lowerCallSig
-import all Lanius.Mini.Compiler.P.lowerLocal
-import all Lanius.Mini.Compiler.P.lowerSetCallArgs
-import all Lanius.Mini.Compiler.P.lowerShift
 import all Lanius.Mini.Compiler.P.lowerSlice
-import all Lanius.Mini.Compiler.P.moduleExports
-import all Lanius.Mini.Compiler.P.moduleFirsts
-import all Lanius.Mini.Compiler.P.modulesOk
 import all Lanius.Mini.Compiler.P.render
-import all Lanius.Mini.Compiler.P.repeatType
-import all Lanius.Mini.Compiler.P.sintToUint
 import all Lanius.Mini.Compiler.P.storeType
 import all Lanius.Mini.Compiler.P.structFields
 import all Lanius.Mini.Compiler.P.usizeWidth
@@ -640,45 +614,43 @@ theorem FieldWrites.rebase {P : Core.Program} {st : Semantics.State} {a c : Nat}
     have := FieldWrites.rebase more ca
     rwa [← Nat.add_assoc] at this
 
-theorem isUint_uint16 {k : UintTy} (h : (SrcType.uint k).isUint .uint16 = true) : k = .uint16 := by
-  cases k <;> simp_all [SrcType.isUint, UintTy.code]
-
 theorem wordElement_wordType {ds : SrcDecls} {e : SrcType} (h : wordElement ds e = true) : wordType ds e = true := by
   cases e with
   | uint k => simp [wordType]
+  | sint k => simp [wordType]
+  | bool => simp [wordType]
   | _ => simp_all [wordElement]
 
 theorem wordElement_size {ds : SrcDecls} {e : SrcType} (h : wordElement ds e = true) : 0 < e.size := by
-  cases e with
-  | struct sid fields => exact (wordType_struct (wordElement_wordType h)).2.2
-  | enum => simp only [SrcType.size]; omega
-  | uint k => simp [SrcType.size]
-  | _ => simp [wordElement] at h
+  rcases wordElement_cases h with ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩ | w
+  · exact (wordType_struct (wordElement_wordType h)).2.2
+  · simp only [SrcType.size]; omega
+  · rw [w.size]; omega
 
 /-- A word element is not a byte view's `u8`. -/
 theorem wordElement_notByte {ds : SrcDecls} {e : SrcType} (h : wordElement ds e = true) :
     Semantics.isByte e.toCore = false := by
-  cases e with
-  | uint k => rw [isUint_uint16 h]; rfl
-  | _ => simp_all [wordElement, SrcType.toCore, Semantics.isByte]
+  rcases wordElement_cases h with ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩ | w
+  · rfl
+  · rfl
+  · exact w.toCore.notByte
 
-/-- A raw view's word element in Core: a struct, an enum or a `u16`. -/
+/-- A raw view's word element in Core: a struct, an enum or a one-word scalar. -/
 theorem words_le_max3 {P : Core.Program} {k n : Nat} {t : Core.Ty}
-    (agg : (∃ id, t = .structure id) ∨ (∃ id, t = .enumeration id) ∨ t = .scalar (.unsigned .u16))
+    (agg : (∃ id, t = .structure id) ∨ (∃ id, t = .enumeration id) ∨ CoreWordScalar t)
     (h : NativeLayout.words? (k + 1) P t = some n) : n ≤ NativeLayout.maxWords := by
-  rcases agg with a | a | rfl
+  rcases agg with a | a | w
   · exact words_le_max (.inl a) h
   · exact words_le_max (.inr a) h
-  · simp only [NativeLayout.words?, Option.some.injEq] at h
-    subst h; simp [NativeLayout.maxWords]
+  · rw [w.words h]; simp [NativeLayout.maxWords]
 
-/-- A word element's Core type: a struct, an enum or a `u16`. -/
+/-- A word element's Core type: a struct, an enum or a one-word scalar. -/
 theorem wordElement_core {ds : SrcDecls} {e : SrcType} (h : wordElement ds e = true) :
-    (∃ id, e.toCore = .structure id) ∨ (∃ id, e.toCore = .enumeration id) ∨
-      e.toCore = .scalar (.unsigned .u16) := by
-  cases e with
-  | uint k => exact .inr (.inr (by rw [isUint_uint16 h]; rfl))
-  | _ => simp_all [wordElement, SrcType.toCore]
+    (∃ id, e.toCore = .structure id) ∨ (∃ id, e.toCore = .enumeration id) ∨ CoreWordScalar e.toCore := by
+  rcases wordElement_cases h with ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩ | w
+  · exact .inl ⟨sid, rfl⟩
+  · exact .inr (.inl ⟨eid, rfl⟩)
+  · exact .inr (.inr w.toCore)
 
 /-- Where Core puts element `pos` of a raw slice of a word element type: its
 word 0, `pos * size` words below the descriptor. -/
@@ -689,7 +661,7 @@ theorem rawSliceElementAddress_word {sp : SrcProgram} {element : SrcType} (hel :
   have npos := wordElement_size hel
   have agg := wordElement_core hel
   have agg2 := agg
-  rcases agg2 with ⟨id, e⟩ | ⟨id, e⟩ | e <;>
+  rcases agg2 with ⟨id, e⟩ | ⟨id, e⟩ | (e | e | e | e | e) <;>
     (rw [e] at h; simp only [Semantics.rawSliceElementAddress?] at h; rw [← e] at h)
   all_goals
     cases hwords : NativeLayout.valueWords? sp.toCore element.toCore with

@@ -1,0 +1,115 @@
+// Thread channel benchmark; channel_bench_ref.c is the C pthread reference.
+//   channel_bench pingpong ring|mpsc ROUNDS     two threads bounce a counter
+//   channel_bench fanin ring|mpsc PRODUCERS ITEMS   producers -> one receiver
+// Prints "TEST KIND ms MS check VALUE". The ring has 1 slot for ping-pong
+// (the minimum is 2, so 2) and 1024 for fan-in.
+// Build: laniusc --native-link --native-library atomic --stdlib-root stdlib
+module app::main;
+import core::mem;
+import core::result;
+import core::slice;
+import std::args;
+import std::channel;
+import std::io;
+import std::pthread;
+import std::sync;
+
+fn get(at: ptr, word: i32) -> i64 { let v: [i64] = core::mem::typed_slice_from_raw_parts<i64>(at + (word as usize) * 8, 1); return v[0]; }
+fn set(at: ptr, word: i32, value: i64) { let v: [i64] = core::mem::typed_slice_from_raw_parts<i64>(at + (word as usize) * 8, 1); v[0] = value; }
+fn get_ptr(at: ptr, word: i32) -> ptr { let v: [ptr] = core::mem::typed_slice_from_raw_parts<ptr>(at + (word as usize) * 8, 1); return v[0]; }
+fn set_ptr(at: ptr, word: i32, value: ptr) { let v: [ptr] = core::mem::typed_slice_from_raw_parts<ptr>(at + (word as usize) * 8, 1); v[0] = value; }
+fn now_us() -> i64 { let d: std::sync::Deadline = std::sync::now().unwrap(); return d.seconds * 1000000 + d.nanos / 1000; }
+fn number(text: core::slice::View<u8>) -> i64 {
+    let value: i64 = 0; let i: i32 = 0;
+    while (i < text.length) { value = value * 10 + ((text.values[text.start + i] as i64) - 48); i += 1; }
+    return value;
+}
+
+// Task words: 0 there, 1 back, 2 rounds or items, 3 id.
+fn ring_echo(task: ptr) -> ptr {
+    let there: std::channel::Ring<i64> = std::channel::ring_at<i64>(get_ptr(task, 0));
+    let back: std::channel::Ring<i64> = std::channel::ring_at<i64>(get_ptr(task, 1));
+    let i: i64 = 0;
+    while (i < get(task, 2)) { let v: i64 = there.recv().unwrap(); back.send(v + 1).unwrap(); i += 1; }
+    return task;
+}
+fn mpsc_echo(task: ptr) -> ptr {
+    let there: std::channel::Mpsc<i64> = std::channel::mpsc_at<i64>(get_ptr(task, 0));
+    let back: std::channel::Mpsc<i64> = std::channel::mpsc_at<i64>(get_ptr(task, 1));
+    let i: i64 = 0;
+    while (i < get(task, 2)) { let v: i64 = there.recv().unwrap(); back.send(v + 1).unwrap(); i += 1; }
+    return task;
+}
+fn ring_feed(task: ptr) -> ptr {
+    let ring: std::channel::Ring<i64> = std::channel::ring_at<i64>(get_ptr(task, 0));
+    let i: i64 = 0;
+    while (i < get(task, 2)) { ring.send(i).unwrap(); i += 1; }
+    ring.close_sender().unwrap();
+    return task;
+}
+fn mpsc_feed(task: ptr) -> ptr {
+    let queue: std::channel::Mpsc<i64> = std::channel::mpsc_at<i64>(get_ptr(task, 0));
+    let i: i64 = 0;
+    while (i < get(task, 2)) { queue.send(i).unwrap(); i += 1; }
+    queue.close_sender().unwrap();
+    return task;
+}
+
+fn main() -> i32 {
+    let arguments: std::args::Arguments = std::args::snapshot(1, 4, 256).unwrap();
+    if (arguments.len() < 3) { std::io::write_text(2, "usage: channel_bench pingpong|fanin ring|mpsc N [ITEMS]\n"); return 2; }
+    let test: core::slice::View<u8> = arguments.get(0).unwrap();
+    let kind: core::slice::View<u8> = arguments.get(1).unwrap();
+    let ring_kind: bool = kind.values[kind.start] == 114;
+    let n: i64 = number(arguments.get(2).unwrap());
+    let region: std::sync::Region = std::sync::map_shared(65536).unwrap();
+    let tasks: ptr = region.allocate(4096).unwrap();
+    let check: i64 = 0;
+    let start: i64 = 0;
+    if (test.values[test.start] == 112) {
+        set(tasks, 2, n);
+        if (ring_kind) {
+            let there: std::channel::Ring<i64> = std::channel::ring<i64>(2, 1, 1).unwrap();
+            let back: std::channel::Ring<i64> = std::channel::ring<i64>(2, 1, 1).unwrap();
+            set_ptr(tasks, 0, there.handle()); set_ptr(tasks, 1, back.handle());
+            start = now_us();
+            let echo: std::pthread::Thread = std::pthread::spawn(ring_echo, tasks).unwrap();
+            let i: i64 = 0; let v: i64 = 0;
+            while (i < n) { there.send(v).unwrap(); v = back.recv().unwrap(); i += 1; }
+            echo.join(); check = v;
+        } else {
+            let there: std::channel::Mpsc<i64> = std::channel::mpsc<i64>(1).unwrap();
+            let back: std::channel::Mpsc<i64> = std::channel::mpsc<i64>(1).unwrap();
+            set_ptr(tasks, 0, there.handle()); set_ptr(tasks, 1, back.handle());
+            start = now_us();
+            let echo: std::pthread::Thread = std::pthread::spawn(mpsc_echo, tasks).unwrap();
+            let i: i64 = 0; let v: i64 = 0;
+            while (i < n) { there.send(v).unwrap(); v = back.recv().unwrap(); i += 1; }
+            echo.join(); check = v;
+        }
+    } else {
+        let items: i64 = number(arguments.get(3).unwrap());
+        let producers: i32 = n as i32;
+        let w: i32 = 0;
+        if (ring_kind) {
+            let ring: std::channel::Ring<i64> = std::channel::ring<i64>(1024, producers, 1).unwrap();
+            start = now_us();
+            while (w < producers) { let task: ptr = tasks + (w as usize) * 64; set_ptr(task, 0, ring.handle()); set(task, 2, items);
+                let t: std::pthread::Thread = std::pthread::spawn(ring_feed, task).unwrap(); set(task, 3, t.id() as i64); w += 1; }
+            while (true) { let got: core::result::Result<i64, std::channel::RecvError> = ring.recv(); if (got.is_err()) { break; } check += got.unwrap(); }
+        } else {
+            let queue: std::channel::Mpsc<i64> = std::channel::mpsc<i64>(producers).unwrap();
+            start = now_us();
+            while (w < producers) { let task: ptr = tasks + (w as usize) * 64; set_ptr(task, 0, queue.handle()); set(task, 2, items);
+                let t: std::pthread::Thread = std::pthread::spawn(mpsc_feed, task).unwrap(); set(task, 3, t.id() as i64); w += 1; }
+            while (true) { let got: core::result::Result<i64, std::channel::RecvError> = queue.recv(); if (got.is_err()) { break; } check += got.unwrap(); }
+        }
+        w = 0;
+        while (w < producers) { std::pthread::join_id(get(tasks + (w as usize) * 64, 3) as u64).unwrap(); w += 1; }
+    }
+    let elapsed: i64 = now_us() - start;
+    std::io::write_text(1, "ms "); std::io::write_i32(1, (elapsed / 1000) as i32);
+    std::io::write_text(1, "."); std::io::write_i32(1, ((elapsed % 1000) / 100) as i32);
+    std::io::write_text(1, " check "); std::io::write_i32(1, (check % 1000000007) as i32); std::io::write_newline(1);
+    return 0;
+}

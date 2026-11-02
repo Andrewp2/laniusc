@@ -3,7 +3,7 @@ module
 public import Lanius.Mini.Frontend.Types
 public import Lanius.Mini.Compiler.P.arithShiftRight
 public import Lanius.Mini.Compiler.P.matchVariants
-public import Lanius.Mini.Frontend.P.blockArmsOf
+public import Lanius.Mini.Frontend.P.basedDigits
 public import Lanius.Mini.Frontend.P.consBinder
 public import Lanius.Mini.Frontend.P.consTreeTail
 public import Lanius.Mini.Frontend.P.effNamedTys
@@ -13,14 +13,15 @@ public import Lanius.Mini.Frontend.P.forRange
 public import Lanius.Mini.Frontend.P.freshId
 public import Lanius.Mini.Frontend.P.funcsOnto
 public import Lanius.Mini.Frontend.P.hasKids
-public import Lanius.Mini.Frontend.P.intLiteral
 public import Lanius.Mini.Frontend.P.isEmptyUsize
+public import Lanius.Mini.Frontend.P.litIf
 public import Lanius.Mini.Frontend.P.lxBlockEnd
 public import Lanius.Mini.Frontend.P.lxSpaceEnd
 public import Lanius.Mini.Frontend.P.lxSymbolStart
 public import Lanius.Mini.Frontend.P.noToken
 public import Lanius.Mini.Frontend.P.noTrees
 public import Lanius.Mini.Frontend.P.paramGoals
+public import Lanius.Mini.Frontend.P.pickTy
 public import Lanius.Mini.Frontend.P.sintAt
 public import Lanius.Mini.Frontend.P.sliceHead
 public import Lanius.Mini.Frontend.P.textSelf
@@ -51,7 +52,7 @@ namespace Lanius.Mini
   else
     none
 
-/-- `for x in a..n { body }`, a an integer literal and n a local (for_stmt -> For Ident In for_iterable block), read as `let c = a; let e = n; while (c < e) { let x = c; c = c + 1; body }`: n is read once, and a `continue` in body moves to the next value. The hidden c and e are numbered by the `for` token and x's token, and x by the `in` token, so that the locals are numbered in the order the desugared text declares them. -/
+/-- `for x in a..n { body }`, a an integer literal and n a local (for_stmt -> For Ident In for_iterable block), read as `let c = a; let e = n; while (c < e) { let x = c; c = c + 1; body }`: n is read once, and a `continue` in body moves to the next value. The hidden c and e are numbered by the `for` token and x's token, and x by the `in` token, so that the locals are numbered in the order the desugared text declares them. `for x in a { body }`, a an array local, is for_array's loop, its index numbered by the `for` token and x by its own; a a slice local, for_slice's, numbered as a range loop's: the index by the `for` token, the length by x's token and x by the `in` token. -/
 @[expose] def Inline.forOf (ffuel : Nat) (fenv : FrontEnv) (fscope : List Local) (fs : CTree) : Option MStmt :=
   let x : Token := kidToken fs 1
   let iter : CTree := kid fs 3
@@ -64,7 +65,21 @@ namespace Lanius.Mini
       | none => none
       | some a => forRange ((kidToken fs 0).start - fenv.base) (x.start - fenv.base) ((kidToken fs 2).start - fenv.base) n.ty a n.id (blockOf ffuel fenv (({ name := x.text, id := (kidToken fs 2).start - fenv.base, ty := n.ty } : Local) :: fscope) (kid (kid fs 4) 1))
   else
-    none
+    if decide (nodeProd iter = (92)) && !(member fenv.globals x.text) && freshId fscope (x.start - fenv.base) && freshId fscope ((kidToken fs 0).start - fenv.base) then
+      match pathName (kid iter 0) with
+      | none => none
+      | some name =>
+        match findLocal fscope name with
+        | none => none
+        | some l =>
+          match arrayLocal l with
+          | none =>
+            (match sliceElem l.ty with
+             | none => none
+             | some e => forSlice (freshId fscope ((kidToken fs 2).start - fenv.base)) ((kidToken fs 0).start - fenv.base) (x.start - fenv.base) ((kidToken fs 2).start - fenv.base) l.id e (blockOf ffuel fenv (({ name := x.text, id := (kidToken fs 2).start - fenv.base, ty := e } : Local) :: fscope) (kid (kid fs 4) 1)))
+          | some al => forArray ((kidToken fs 0).start - fenv.base) (x.start - fenv.base) al (blockOf ffuel fenv (({ name := x.text, id := x.start - fenv.base, ty := al.element } : Local) :: fscope) (kid (kid fs 4) 1))
+    else
+      none
 
 @[expose] def Inline.paramOf (pfuel : Nat) (penv : FrontEnv) (pfd : FnDecl) (pscope : List Local) (pp : CTree) (prest : List CTree) : Option MParams :=
   let tok : Token := paramToken pp
@@ -93,6 +108,22 @@ namespace Lanius.Mini
     typeTableMore mfuel mdecls (some mtable) mrest
   else
     typeTableMore mfuel mdecls (typeTable mfuel mdecls mtable [mt]) mrest
+
+@[expose] def Inline.weighRoundAt (afuel : Nat) (adecls : Decls) (atable : List Inst) (aws : List (Option Nat)) (ax : Inst) (arest : List Inst) (aolds : List (Option Nat)) : List (Option Nat) :=
+  match aolds with
+  | [] => []
+  | aold :: amore => weighAgain afuel adecls atable aws ax aold :: weighRound afuel adecls atable aws arest amore
+
+@[expose] def Inline.weighedMoreAt (mold : Option Nat) (mrest : List (Option Nat)) (mnews : List (Option Nat)) : Bool :=
+  match mnews with
+  | [] => false
+  | mfresh :: mmore => isNoneWeight mold && !(isNoneWeight mfresh) || weighedMore mrest mmore
+
+@[expose] def Inline.weighNext (nrounds : Nat) (nfuel : Nat) (ndecls : Decls) (ntable : List Inst) (nws : List (Option Nat)) (nnews : List (Option Nat)) : List (Option Nat) :=
+  if weighedMore nws nnews then
+    weighRounds nrounds nfuel ndecls ntable nnews
+  else
+    nnews
 
 @[expose] def Inline.tyLocalAt (tl : LocalTy) (trest : List LocalTy) (tid : Nat) : Option SrcType :=
   if tl.id = tid then

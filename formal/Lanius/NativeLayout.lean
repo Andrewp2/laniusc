@@ -30,6 +30,10 @@ def words? : Nat → Program → Ty → Option Nat
       | .slice (.scalar (.signed .i32)) => some 3
       | .slice (.scalar (.unsigned .u8)) => some 3
       | .slice (.scalar (.unsigned .u16)) => some 3
+      | .slice (.scalar (.unsigned .u32)) => some 3
+      | .slice (.scalar (.unsigned .u64)) => some 3
+      | .slice (.scalar (.signed .i64)) => some 3
+      | .slice (.scalar .bool) => some 3
       | .slice (.structure id) =>
           if (program.structure? id).isSome then some 3 else none
       | .slice (.enumeration id) =>
@@ -72,13 +76,14 @@ def elementBase? (highWordPointer index words : Nat) : Option Nat :=
 
 /-- A raw view's signed byte stride: element i + 1 starts this many bytes
     after element i. i32 and u8 views are packed and run forward (4 and 1
-    bytes); views of structs, enums and u16 (one word, laniusc's layout) run
-    down by their native size. -/
+    bytes); views of structs, enums and the one-word scalars u16, u32, u64,
+    i64 and bool (laniusc's layout) run down by their native size. -/
 def elementStride? (program : Program) (element : Ty) : Option Int :=
   match element with
   | .scalar (.signed .i32) => some 4
   | .scalar (.unsigned .u8) => some 1
-  | .structure _ | .enumeration _ | .scalar (.unsigned .u16) =>
+  | .structure _ | .enumeration _ | .scalar (.unsigned .u16) | .scalar (.unsigned .u32)
+  | .scalar (.unsigned .u64) | .scalar (.signed .i64) | .scalar .bool =>
       match valueWords? program element with
       | some words => some (-((wordBytes * words : Nat) : Int))
       | none => none

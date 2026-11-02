@@ -365,6 +365,12 @@ inductive SrcEff where
   | eStride : Nat → SrcEff
   /-- the array local array as a slice of its elements, of type element: Core's array-to-slice, so a write through it reaches the array -/
   | arraySlice : SrcType → Nat → SrcEff
+  /-- if condition { then } else { otherwise } of type ty: Core's match on the bool, true's arm then the wildcard's -/
+  | eIf : SrcEff → SrcType → SrcEff → SrcEff → SrcEff
+  /-- let id: ty = value in body, of type rt: Core's match of value with the one arm binding id -/
+  | eLet : Nat → SrcType → SrcEff → SrcType → SrcEff → SrcEff
+  /-- slice_len(slice) of a slice local, a usize: the slot after its pointer -/
+  | eLen : Nat → SrcEff
   deriving Repr
 
 inductive SrcStmt where

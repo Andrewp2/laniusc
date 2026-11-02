@@ -352,3 +352,45 @@ fn pthread_bodies_allocate_and_free_across_threads() {
         assert!(text.contains(line), "{line:?} missing from {text}");
     }
 }
+
+// std::channel's thread channels: Ring<T> (bounded MPMC) and Mpsc<T>
+// (unbounded MPSC) with FIFO, Full/Empty, timeouts, close-then-drain and
+// Disconnected, drain into a buffer, and select over two channels: order,
+// timeout, a sleeping select woken by a late send, one side closed, Ring +
+// Mpsc fan-in, and selecting consumers sharing a ring with a plain receiver.
+#[test]
+fn thread_channels_deliver_every_value_once_and_select_over_two() {
+    let program = native("tests/fixtures/stdlib_execution/concurrency/thread_channels.lani", "thread_channels");
+    let text = run(&program, None);
+    assert!(!text.contains("FAIL"), "{text}");
+    for line in [
+        "ring.mpmc.count 200000\n", "ring.mpmc.order_failures 0\n", "ring.records 50000\n",
+        "mpsc.fanin.count 200000\n", "mpsc.fanin.order_failures 0\n", "mpsc.unbounded 100000\n",
+        "ring.close.drained 8\n", "ring.close.disconnected 2\n", "mpsc.close.send_refused 9\n",
+        "drain.sender_woken 1\n", "drain.second 4\n", "drain.mpsc 52\n",
+        "select.first_wins 8\n", "select.timeout 13\n", "select.woken 4242\n",
+        "select.closed_side_drains 1\n", "select.disconnected 12\n",
+        "select.fanin.first 50000\n", "select.fanin.second 50000\n", "select.fanin.order_failures 0\n",
+        "select.shared.count 100000\n", "select.shared.sum_ok 1\n",
+    ] {
+        assert!(text.contains(line), "{line:?} missing from {text}");
+    }
+}
+
+// std::pool: scoped spawn, a 4-worker task pool (every task once, totals,
+// try_submit on a full queue, wait_timeout_ms, results back through an
+// Mpsc), and map/reduce/scan on threads against the serial results.
+#[test]
+fn thread_pool_runs_every_task_once_and_matches_serial_map_reduce_scan() {
+    let program = native("tests/fixtures/stdlib_execution/concurrency/thread_pool.lani", "thread_pool");
+    let text = run(&program, None);
+    assert!(!text.contains("FAIL"), "{text}");
+    for line in [
+        "scoped.sum_ok 1\n", "pool.completed 10000\n", "pool.second_batch 11000\n",
+        "pool.try_refused 1\n", "pool.wait_timeout 1\n", "pool.wait_done 1\n", "pool.replies 1000\n",
+        "pool.replies_sum_ok 1\n", "map.mismatches 0\n", "reduce.sum_ok 1\n", "reduce.hash_ok 1\n",
+        "scan.grain1000_mismatches 0\n", "scan.auto_mismatches 0\n", "edge.one_worker_ok 1\n",
+    ] {
+        assert!(text.contains(line), "{line:?} missing from {text}");
+    }
+}

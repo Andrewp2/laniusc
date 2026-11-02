@@ -91,6 +91,16 @@ theorem proof_cons_of_core_option_Option_mini_selfhost_SrcType {prog : SrcProgra
   simp only [src_cons_of_core_option_Option_mini_selfhost_SrcType] at h
   faithful []
 
+theorem proof_cons_of_core_option_Option_usize {prog : SrcProgram} {prims : Prims} {ix_cons_of_core_option_Option_usize ix_boxed_of_mini_selfhost_List_core_option_Option_usize : Nat} (fn : prog.funcs[ix_cons_of_core_option_Option_usize]? = some (src_cons_of_core_option_Option_usize ix_boxed_of_mini_selfhost_List_core_option_Option_usize)) (np : prims.isPrim ix_cons_of_core_option_Option_usize = false)
+    (ext_boxed_of_mini_selfhost_List_core_option_Option_usize : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_core_option_Option_usize prog prims ix_boxed_of_mini_selfhost_List_core_option_Option_usize n)) {n : Nat} :
+    Stmt_cons_of_core_option_Option_usize prog prims ix_cons_of_core_option_Option_usize n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_cons_of_core_option_Option_usize] at h
+  faithful []
+
 theorem proof_cons_of_mini_selfhost_Fact {prog : SrcProgram} {prims : Prims} {ix_cons_of_mini_selfhost_Fact ix_boxed_of_mini_selfhost_List_mini_selfhost_Fact : Nat} (fn : prog.funcs[ix_cons_of_mini_selfhost_Fact]? = some (src_cons_of_mini_selfhost_Fact ix_boxed_of_mini_selfhost_List_mini_selfhost_Fact)) (np : prims.isPrim ix_cons_of_mini_selfhost_Fact = false)
     (ext_boxed_of_mini_selfhost_List_mini_selfhost_Fact : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_mini_selfhost_Fact prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_Fact n)) {n : Nat} :
     Stmt_cons_of_mini_selfhost_Fact prog prims ix_cons_of_mini_selfhost_Fact n := by
@@ -184,6 +194,16 @@ theorem proof_empty_of_mini_selfhost_RawTok {prog : SrcProgram} {prims : Prims} 
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
   simp only [src_empty_of_mini_selfhost_RawTok] at h
+  faithful []
+
+theorem step_get_of_core_option_Option_usize {prog : SrcProgram} {prims : Prims} {ix_get_of_core_option_Option_usize ix_minus ix_unbox_of_mini_selfhost_List_core_option_Option_usize : Nat} (fn : prog.funcs[ix_get_of_core_option_Option_usize]? = some (src_get_of_core_option_Option_usize ix_minus ix_unbox_of_mini_selfhost_List_core_option_Option_usize ix_get_of_core_option_Option_usize)) (np : prims.isPrim ix_get_of_core_option_Option_usize = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_unbox_of_mini_selfhost_List_core_option_Option_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_core_option_Option_usize prog prims ix_unbox_of_mini_selfhost_List_core_option_Option_usize n)) {n : Nat}
+    (ih_get_of_core_option_Option_usize : Certified (Stmt_get_of_core_option_Option_usize prog prims ix_get_of_core_option_Option_usize n)) :
+    Stmt_get_of_core_option_Option_usize prog prims ix_get_of_core_option_Option_usize (n + 1) := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rw [pcall_succ np fn] at h
+  simp only [src_get_of_core_option_Option_usize] at h
   faithful []
 
 theorem step_get_of_mini_selfhost_FnDecl {prog : SrcProgram} {prims : Prims} {ix_get_of_mini_selfhost_FnDecl ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_FnDecl : Nat} (fn : prog.funcs[ix_get_of_mini_selfhost_FnDecl]? = some (src_get_of_mini_selfhost_FnDecl ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_FnDecl ix_get_of_mini_selfhost_FnDecl)) (np : prims.isPrim ix_get_of_mini_selfhost_FnDecl = false)

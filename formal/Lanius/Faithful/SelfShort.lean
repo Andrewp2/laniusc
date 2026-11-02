@@ -1,6 +1,7 @@
 import Lanius.Faithful.SelfHost
 import Lanius.Faithful.SelfLive
 import Lanius.Faithful.SelfPanics
+import Lanius.Faithful.SelfAgree
 
 /-! # Why Core's run of `w` fails (review #5, piece (c))
 

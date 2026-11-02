@@ -15,7 +15,10 @@ public import Lanius.Faithful.Gen.SelfSrcC_UintTy_half
 public import Lanius.Faithful.Gen.SelfSrcC_UintTy_mask
 public import Lanius.Faithful.Gen.SelfSrcC_arities
 public import Lanius.Faithful.Gen.SelfSrcC_armBodyScope
+public import Lanius.Faithful.Gen.SelfSrcC_arrayCallSig
 public import Lanius.Faithful.Gen.SelfSrcC_assignFrom
+public import Lanius.Faithful.Gen.SelfSrcC_callAgrees
+public import Lanius.Faithful.Gen.SelfSrcC_codeSize
 public import Lanius.Faithful.Gen.SelfSrcC_compileArgs
 public import Lanius.Faithful.Gen.SelfSrcC_conjunction
 public import Lanius.Faithful.Gen.SelfSrcC_elementBase
@@ -37,15 +40,6 @@ public import Lanius.Faithful.Gen.SelfSrcC_storeWordElement
 public import Lanius.Faithful.Gen.SelfSrcC_withBudget
 public import Lanius.Faithful.Gen.SelfSrcC_wordStride
 public import Lanius.Faithful.Gen.SelfSrcC_wordWidth
-public import Lanius.Faithful.Gen.SelfSrcF_Inline_attachNode
-public import Lanius.Faithful.Gen.SelfSrcF_Inline_pBoundTypeArgsAfterCommaMore
-public import Lanius.Faithful.Gen.SelfSrcF_Inline_pImplMethodsSome
-public import Lanius.Faithful.Gen.SelfSrcF_Inline_pStmtsMore
-public import Lanius.Faithful.Gen.SelfSrcF_Inline_tRparen
-public import Lanius.Faithful.Gen.SelfSrcF_lxCanonicalKind
-public import Lanius.Faithful.Gen.SelfSrcF_lxDotAt
-public import Lanius.Faithful.Gen.SelfSrcF_noToken
-public import Lanius.Faithful.Gen.SelfSrcF_shrFirst
 public import Lanius.Faithful.Gen.SelfSrcRest
 import all Lanius.Faithful.Gen.SelfPureTab
 import all Lanius.Faithful.Gen.SelfSrc1
@@ -62,7 +56,10 @@ import all Lanius.Faithful.Gen.SelfSrcC_UintTy_half
 import all Lanius.Faithful.Gen.SelfSrcC_UintTy_mask
 import all Lanius.Faithful.Gen.SelfSrcC_arities
 import all Lanius.Faithful.Gen.SelfSrcC_armBodyScope
+import all Lanius.Faithful.Gen.SelfSrcC_arrayCallSig
 import all Lanius.Faithful.Gen.SelfSrcC_assignFrom
+import all Lanius.Faithful.Gen.SelfSrcC_callAgrees
+import all Lanius.Faithful.Gen.SelfSrcC_codeSize
 import all Lanius.Faithful.Gen.SelfSrcC_compileArgs
 import all Lanius.Faithful.Gen.SelfSrcC_conjunction
 import all Lanius.Faithful.Gen.SelfSrcC_elementBase
@@ -84,96 +81,28 @@ import all Lanius.Faithful.Gen.SelfSrcC_storeWordElement
 import all Lanius.Faithful.Gen.SelfSrcC_withBudget
 import all Lanius.Faithful.Gen.SelfSrcC_wordStride
 import all Lanius.Faithful.Gen.SelfSrcC_wordWidth
-import all Lanius.Faithful.Gen.SelfSrcF_Inline_attachNode
-import all Lanius.Faithful.Gen.SelfSrcF_Inline_pBoundTypeArgsAfterCommaMore
-import all Lanius.Faithful.Gen.SelfSrcF_Inline_pImplMethodsSome
-import all Lanius.Faithful.Gen.SelfSrcF_Inline_pStmtsMore
-import all Lanius.Faithful.Gen.SelfSrcF_Inline_tRparen
-import all Lanius.Faithful.Gen.SelfSrcF_lxCanonicalKind
-import all Lanius.Faithful.Gen.SelfSrcF_lxDotAt
-import all Lanius.Faithful.Gen.SelfSrcF_noToken
-import all Lanius.Faithful.Gen.SelfSrcF_shrFirst
 import all Lanius.Faithful.Gen.SelfSrcRest
 import all Lanius.Faithful.Gen.SelfTypes
 import all Lanius.Mini.Compiler.P.DivOp_size
-import all Lanius.Mini.Compiler.P.FArith_opcode
-import all Lanius.Mini.Compiler.P.FloatTy_rex
-import all Lanius.Mini.Compiler.P.Instr_pieces
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
 import all Lanius.Mini.Compiler.P.SrcType_size
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
-import all Lanius.Mini.Compiler.P.UintTy_mask
-import all Lanius.Mini.Compiler.P.applyGuard
 import all Lanius.Mini.Compiler.P.arithShiftRight
-import all Lanius.Mini.Compiler.P.arithUint
-import all Lanius.Mini.Compiler.P.arities
-import all Lanius.Mini.Compiler.P.armBodyScope
-import all Lanius.Mini.Compiler.P.armPayload
-import all Lanius.Mini.Compiler.P.armScope
 import all Lanius.Mini.Compiler.P.arrayCallSig
-import all Lanius.Mini.Compiler.P.assignFrom
-import all Lanius.Mini.Compiler.P.bindingBytes
 import all Lanius.Mini.Compiler.P.codeSize
-import all Lanius.Mini.Compiler.P.compileArgs
-import all Lanius.Mini.Compiler.P.compileModules
-import all Lanius.Mini.Compiler.P.conjunction
-import all Lanius.Mini.Compiler.P.consArgs
 import all Lanius.Mini.Compiler.P.declareFuncs
 import all Lanius.Mini.Compiler.P.declareProgram
-import all Lanius.Mini.Compiler.P.elementAddress
-import all Lanius.Mini.Compiler.P.elementBase
 import all Lanius.Mini.Compiler.P.enumVariants
 import all Lanius.Mini.Compiler.P.equality
-import all Lanius.Mini.Compiler.P.evalDivide
-import all Lanius.Mini.Compiler.P.evalDivideSint
-import all Lanius.Mini.Compiler.P.evalNot
-import all Lanius.Mini.Compiler.P.evalSame
 import all Lanius.Mini.Compiler.P.floatApply
-import all Lanius.Mini.Compiler.P.funcNeeds
-import all Lanius.Mini.Compiler.P.guardAnd
-import all Lanius.Mini.Compiler.P.hostRandomCode
-import all Lanius.Mini.Compiler.P.imageLimit
-import all Lanius.Mini.Compiler.P.importOk
-import all Lanius.Mini.Compiler.P.importsOk
-import all Lanius.Mini.Compiler.P.indexOf
-import all Lanius.Mini.Compiler.P.iteThen
-import all Lanius.Mini.Compiler.P.leftTrue
 import all Lanius.Mini.Compiler.P.loadAtBytes
-import all Lanius.Mini.Compiler.P.lowerAddress
-import all Lanius.Mini.Compiler.P.lowerApply
 import all Lanius.Mini.Compiler.P.lowerBody
-import all Lanius.Mini.Compiler.P.lowerCallSig
-import all Lanius.Mini.Compiler.P.lowerLoadType
-import all Lanius.Mini.Compiler.P.lowerLocal
-import all Lanius.Mini.Compiler.P.lowerReturn
-import all Lanius.Mini.Compiler.P.lowerSetCallArgs
-import all Lanius.Mini.Compiler.P.lowerSetValues
-import all Lanius.Mini.Compiler.P.lowerShift
-import all Lanius.Mini.Compiler.P.lowerSlice
-import all Lanius.Mini.Compiler.P.lowerTagged
-import all Lanius.Mini.Compiler.P.matchDst
 import all Lanius.Mini.Compiler.P.matchVariants
-import all Lanius.Mini.Compiler.P.moduleExports
-import all Lanius.Mini.Compiler.P.moduleFirsts
-import all Lanius.Mini.Compiler.P.modulesOk
-import all Lanius.Mini.Compiler.P.needRound
-import all Lanius.Mini.Compiler.P.needsAfter
 import all Lanius.Mini.Compiler.P.render
-import all Lanius.Mini.Compiler.P.repeatType
-import all Lanius.Mini.Compiler.P.shortCircuit
-import all Lanius.Mini.Compiler.P.sintToUint
-import all Lanius.Mini.Compiler.P.storeArray
-import all Lanius.Mini.Compiler.P.storeEvalWord
-import all Lanius.Mini.Compiler.P.storeType
-import all Lanius.Mini.Compiler.P.storeWordElement
 import all Lanius.Mini.Compiler.P.structFields
-import all Lanius.Mini.Compiler.P.usizeWidth
-import all Lanius.Mini.Compiler.P.widthOf
-import all Lanius.Mini.Compiler.P.withBudget
 import all Lanius.Mini.Compiler.P.wordElement
-import all Lanius.Mini.Compiler.P.wordStride
 import all Lanius.Mini.Compiler.P.wordWidth
 import all Lanius.Mini.Compiler.Types
 
@@ -187,8 +116,14 @@ open Lanius.Mini
 open Lanius.Faithful
 open Lanius.Faithful.Self
 
+/-- Functions 700 to 799, and their signature entries. -/
+def dpart7 : List SrcFunc := [(src_store_word_agrees 987 993), (src_divide_agrees 987 994 995), (src_sys_agrees 992 996), (src_frame_agrees), (src_Expr_temps 75 182 474 704), (src_args_temps 75 182 475 704 705), (src_Expr_within 474 706), (src_arity_is 997), (src_length_of_mini_selfhost_Expr 75 475 708), (src_all_within 475 706 709), (src_boxed_of_mini_selfhost_List_mini_selfhost_Instr 50 998 999), (src_empty_of_mini_selfhost_Instr), (src_unbox_of_mini_selfhost_List_mini_selfhost_Instr 999), (src_compile_expr 75 460 474 713 714), (src_single_of_mini_selfhost_Instr 710), (src_seq_code 75 460 461 462), (src_ite_code 75 460 461 462 714), (src_loop_code 75 460 461 462 714), (src_compile_args 75 460 475 711 713 714 718), (src_arg_slots 75 138 387 475 719), (src_Instr_size 52 75 105 1000 1001 1002 1003 1004), (src_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Code), (src_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Code), (src_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Arity), (src_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Arity), (src_boxed_of_mini_selfhost_List_u8 50 111 1005), (src_cons_of_u8 725), (src_single_of_u8 725), (src_le32 726 727), (src_frame_size 75 105), (src_stack_check 726 727), (src_Instr_encode 52 75 105 135 467 726 727 728 1006 1007 1008 1009 1010 1011 1012 1013 1014 1015 1016 1017 1018 1019 1020 1021 1022 1023 1024 1025 1026), (src_core_mem_size_of_of_mini_selfhost_List_usize), (src_amount_guard 328 1027), (src_shift_width 1028), (src_UintTy_mask), (src_lower_scalar_local 308), (src_lower_field_of 75 178 502 503 1029), (src_SrcOp_lower 1030 1031 1032 1033 1034 1035 1036 1037), (src_cast_to 1038 1039 1040 1041 1042), (src_FloatTy_mask), (src_copy_same 120 231 344), (src_copy_field_of 75 178 502 503 1043), (src_lower_append 1044), (src_lower_tag 524), (src_length_of_mini_selfhost_SrcArm 75 745 1045), (src_lower_arms 75 180 366 746 794 1045 1046 1047), (src_lower_set_scalar 203 308 1048), (src_offset_after 56 75 120 502), (src_declared_same 378), (src_word_types 178 507 750), (src_declared_variants 379), (src_word_variants 180 750 752), (src_eval_load 184 303 328 329 330 515), (src_eval_load_byte 184 303 328 329 330 515), (src_eval_word_element 75 120 184 303 307 329 330 331 344 515 789 1049), (src_eval_array_element 1050), (src_eval_values 307), (src_eval_field_of 178 503 1051), (src_checked_element 213 231 1052), (src_checked_load 120 213 231 331 789 1049), (src_store_any 329 330 331 1053 1054 1055), (src_SrcEff_is_slice), (src_array_call_sig 75 120 1056 1057), (src_host_byte_code 75 184 185 328 524), (src_host_write_code 75 184 185 328 524), (src_host_read_code 75 184 185 328 524), (src_host_sleep_code 75 184 185 328 524), (src_host_clock_code 75 184 185 328 524), (src_host_random_code 75 184 185 328 524), (src_short_circuit), (src_then_check 184 327 478), (src_operand_guard 733 734), (src_eval_right 75 184), (src_SrcType_is_float_any), (src_negate_float 328 1058 1059), (src_SrcType_float_ty), (src_SrcType_sint_kind), (src_negate_signed 328 1060 1061), (src_eval_payload 184 378), (src_eval_arm 184 328), (src_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_List_usize), (src_signed_div), (src_eval_divide_sint 75 184 303 384 782 1060 1062), (src_SrcType_uint_kind), (src_eval_divide_uint 75 184 330 1063), (src_eval_word_stride 120 331 1064), (src_store_eval_then 184 231 303 329 330), (src_store_type 75 178 180 196 1065 1066 1067 1068 1069 1070), (src_element_base 105 328), (src_store_pick 120 184 231 303 328 329 330 1071), (src_set_scalar_eval 184 308 341), (src_unit_payload 523), (src_field_payload), (src_lower_arm_value 189), (src_effs_callee_need 182 347 556 795), (src_boxed_of_mini_selfhost_List_mini_selfhost_SrcStructDecl 50 797 1072), (src_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SrcStructDecl), (src_boxed_of_mini_selfhost_List_mini_selfhost_SrcEnumDecl 50 799 1073), (src_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SrcEnumDecl)]
+
+def dents7 : List SigEntry := [some ([ty54, ty90, ty90, ty94], .bool), some ([ty51, ty55, (.uint .usize), ty90, ty90, ty94], .bool), some ([ty59, (.uint .usize), ty93, ty94], .bool), some ([(.uint .usize), (.uint .usize), ty94], .bool), some ([ty90], (.uint .usize)), some ([ty93, (.uint .usize)], (.uint .usize)), some ([ty90, (.uint .usize)], .bool), some ([ty161, (.uint .usize), (.uint .usize), (.uint .usize)], .bool), some ([ty93], (.uint .usize)), some ([(.uint .usize), ty93], .bool), some ([ty62], ty61), some ([], ty62), some ([ty61], ty62), some ([(.uint .usize), ty90, (.uint .usize)], ty62), some ([ty60], ty62), some ([(.uint .usize), (.uint .usize), (.uint .usize), (.uint .usize), ty62, ty94], ty62), some ([(.uint .usize), (.uint .usize), (.uint .usize), (.uint .usize), ty62, ty94, ty94], ty62), some ([(.uint .usize), (.uint .usize), ty62, ty94], ty62), some ([(.uint .usize), ty93, (.uint .usize)], ty62), some ([(.uint .usize), ty93, (.uint .usize)], ty20), some ([ty60], (.uint .usize)), none, none, none, none, some ([ty67], ty66), some ([(.uint .uint8), ty67], ty67), some ([(.uint .uint8)], ty67), some ([.i32], ty67), some ([(.uint .usize)], (.uint .usize)), some ([], ty67), some ([ty60, ty204, (.uint .usize)], ty67), none, some ([(.uint .uint64), ty90], ty90), some ([ty9], (.uint .uint64)), some ([ty4], (.uint .uint64)), some ([ty146], ty174), some ([ty146, (.uint .usize)], ty174), some ([ty14, ty173, ty173], ty174), some ([ty9, ty173], ty174), some ([ty8], (.uint .uint64)), some ([ty146, ty9], ty169), some ([ty146, (.uint .usize), ty9], ty169), some ([ty169, ty169], ty169), some ([(.uint .usize), ty169], ty169), some ([ty23], (.uint .usize)), some ([ty148, (.uint .usize), (.uint .usize), ty9, (.uint .usize), ty75, ty23], ty145), some ([(.uint .usize), ty9, ty148, ty15], ty145), some ([ty9, ty71, (.uint .usize)], (.uint .usize)), some ([ty216, ty71], .bool), some ([ty79, ty71], .bool), some ([ty217, ty75], .bool), some ([ty79, ty75], .bool), some ([ty146, (.uint .usize), ty175], ty176), some ([ty146, (.uint .usize), ty175], ty176), some ([ty79, ty146, ty9, (.uint .usize), ty175], ty176), some ([(.uint .usize), ty9, (.uint .usize), (.uint .usize), ty176], ty176), some ([(.uint .usize), ty9, ty169], ty176), some ([ty148, ty15, (.uint .usize), ty146, (.uint .usize)], ty176), some ([ty146, ty9, ty172], ty172), some ([ty79, ty146, ty9, ty90, (.uint .usize), ty94], ty145), some ([ty79, ty146, ty9, ty172, ty148, ty15], ty145), some ([ty29], .bool), some ([(.uint .usize), (.uint .usize), ty100, ty148, ty212], ty176), some ([(.uint .usize)], ty94), some ([(.uint .uint64), (.uint .usize)], ty94), some ([(.uint .usize)], ty94), some ([(.uint .usize)], ty94), some ([(.uint .uint64), (.uint .usize)], ty94), some ([(.uint .usize)], ty94), some ([ty14], (.uint .usize)), some ([(.uint .usize), ty90, ty94], ty94), some ([ty14, ty9, (.uint .usize)], ty90), some ([(.uint .usize), ty175], ty94), some ([ty9], .bool), some ([ty173, ty256], ty174), some ([ty9], ty256), some ([ty9], ty234), some ([ty4, ty90], ty90), some ([ty9, ty71, (.uint .usize), (.uint .usize), ty210], ty176), some ([(.uint .usize), (.uint .usize), ty145, ty212, ty145], ty145), none, some ([ty28], ty55), some ([ty28, (.uint .usize), ty175, ty175, ty4], ty176), some ([ty9], ty234), some ([ty28, (.uint .usize), ty175, ty175, ty4], ty176), some ([ty79, ty9, (.uint .usize)], ty176), some ([ty175, ty175, ty9, (.uint .usize), ty90, ty145], ty145), some ([ty9, ty93, (.uint .usize), ty90, (.uint .usize)], ty145), some ([(.uint .usize), (.uint .usize), ty90], ty90), some ([(.uint .usize), ty9, (.uint .usize), (.uint .usize), ty175, ty175], ty145), some ([(.uint .usize), ty9, (.uint .usize), ty175], ty145), some ([.bool], ty169), some ([.bool, ty169], ty169), some ([ty215, ty15, ty9], ty169), some ([ty212, ty20], (.uint .usize)), some ([ty74], ty73), none, some ([ty78], ty77), none]
+
 /-- `declareFuncs` of functions 700 to 799. -/
-theorem dchunk7 : declsStep [(src_arg_slots 75 138 377 465 700), (src_Instr_size 52 75 105 974 975 976 977 978), (src_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Code), (src_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Code), (src_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Arity), (src_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Arity), (src_boxed_of_mini_selfhost_List_u8 50 111 979), (src_cons_of_u8 706), (src_single_of_u8 706), (src_le32 707 708), (src_frame_size 75 105), (src_stack_check 707 708), (src_Instr_encode 52 75 105 135 456 707 708 709 980 981 982 983 984 985 986 987 988 989 990 991 992 993 994 995 996 997 998 999 1000), (src_core_mem_size_of_of_mini_selfhost_List_usize), (src_amount_guard 327 1001), (src_shift_width 1002), (src_UintTy_mask), (src_lower_scalar_local 307), (src_lower_field_of 75 178 492 493 1003), (src_SrcOp_lower 1004 1005 1006 1007 1008 1009 1010 1011), (src_cast_to 1012 1013 1014 1015 1016), (src_FloatTy_mask), (src_copy_same 120 230 359), (src_copy_field_of 75 178 492 493 1017), (src_lower_append 1018), (src_lower_tag 531), (src_length_of_mini_selfhost_SrcArm 75 726 1019), (src_lower_arms 75 180 525 727 774 1019 1020 1021), (src_lower_set_scalar 203 307 1022), (src_offset_after 56 75 120 492), (src_declared_same 368), (src_word_types 178 497 731), (src_declared_variants 369), (src_word_variants 180 731 733), (src_eval_load 184 302 327 328 329 505), (src_eval_load_byte 184 302 327 328 329 505), (src_eval_word_element 75 120 184 302 306 328 329 330 359 505 769 1023), (src_eval_array_element 1024), (src_eval_values 306), (src_eval_field_of 178 493 1025), (src_checked_element 213 230 1026), (src_checked_load 120 213 230 330 769 1023), (src_store_any 328 329 330 1027 1028 1029), (src_host_byte_code 75 184 185 327 531), (src_host_write_code 75 184 185 327 531), (src_host_read_code 75 184 185 327 531), (src_host_sleep_code 75 184 185 327 531), (src_host_clock_code 75 184 185 327 531), (src_host_random_code 75 184 185 327 531), (src_short_circuit), (src_then_check 184 326 468), (src_operand_guard 714 715), (src_eval_right 75 184), (src_SrcType_is_float_any), (src_negate_float 327 1030 1031), (src_SrcType_float_ty), (src_SrcType_sint_kind), (src_negate_signed 327 1032 1033), (src_eval_payload 184 368), (src_eval_arm 184 327), (src_arm_bind 75 120 190 525), (src_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_List_usize), (src_signed_div), (src_eval_divide_sint 75 184 302 374 762 1032 1034), (src_SrcType_uint_kind), (src_eval_divide_uint 75 184 329 1035), (src_eval_word_stride 120 330 1036), (src_store_eval_then 184 230 302 328 329), (src_store_type 75 178 180 196 1037 1038 1039 1040 1041 1042), (src_element_base 105 327), (src_store_pick 120 184 230 302 327 328 329 1043), (src_set_scalar_eval 184 307 340), (src_unit_payload 530), (src_field_payload), (src_lower_arm_value 189), (src_effs_callee_need 182 343 541 775), (src_boxed_of_mini_selfhost_List_mini_selfhost_SrcStructDecl 50 777 1044), (src_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SrcStructDecl), (src_boxed_of_mini_selfhost_List_mini_selfhost_SrcEnumDecl 50 779 1045), (src_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SrcEnumDecl), (src_get_of_usize 56 76 780), (src_lx_one_first 75 555 1046 1047 1048 1049 1050 1051 1052 1053 1054 1055 1056), (src_cons_of_mini_selfhost_RawTok 1057), (src_boxed_of_mini_selfhost_List_mini_selfhost_SymRule 50 1058 1059), (src_cons_of_mini_selfhost_Token 1060), (src_lx_token 56 1061 1062), (src_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_RawTok), (src_single_of_mini_selfhost_RawTok 1057), (src_lx_range_pair), (src_lx_trivia), (src_lx_canonical_kind 56 1062 1063), (src_with_kid 147), (src_t_shr), (src_t_gt), (src_shr_first 461 793), (src_shr_second 75 461 793), (src_attach_prod 1064 1065 1066), (src_p_items_more), (src_p_items_end), (src_p_stmts_more)]
-    decls 36 62 36 60 = true := by decide +kernel
+theorem dchunk7 : declsStep dpart7 decls 39 68 38 65 = true := by decide +kernel
+
+theorem dfit7 : entriesFit dpart7 dents7 = true := by decide +kernel
 
 end Lanius.Faithful.SelfPure

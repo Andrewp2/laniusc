@@ -40,11 +40,59 @@ stopping at the computations the theorems are about (`compileSource`,
 `frontEndWords`, the self program `Lanius.Faithful.Self.prog` and
 `funcNeeds`, which are not trusted, section 10), with each one's type and
 body:
-definitions `8884c49974b65a57` (4,490 constants). This covers Core's
+definitions `f991f205862cd76e` (4649 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
 the statements' own definitions (section 2). A private name is hashed
 without its module, so a definition that only moves between generated
-modules keeps its hash. The last change of the hash (11-01, step 3.5a of array-to-slice arguments):
+modules keeps its hash. The last change of the hash (11-02, merge of f11b `7eb93b7916d84bb4` and its step D into lang `70d594d3ee80699d`, giving `f991f205862cd76e`): it combines F11b's changes with lang's, which did not change each other's definitions, beside the prim table `prims`, regenerated from the merged self program. Step D (9af4023ad) adds `while`, `break` and `continue` to the pure fragment: `mstmt`, `ploop`, `Out` with `Out.then`, `Out.pop` and `outValue` (`Faithful/Pure.lean`), and the cost semantics' `qstmt` with `qloop` (`Faithful/Cost.lean`), are trusted; lang's F14 cost statements (`qcallG`, `qcallB`, the budget certificates) now run statements with `qstmt`'s loop fuel and end calls with `outValue`. F11b's (11-01, the
+front end's reading of int bases, literal patterns, `for` and `slice_len`):
+Core has the intrinsic `slice_len` (`Intrinsic.sliceLength`,
+`sliceLength?`, its `evalExpr` case and `ExprHasType.sliceLength`;
+SEMANTIC_DECISIONS "Slice length"), and raw nominal slices take `u32`,
+`u64`, `i64` and `bool` elements (`RawNominalSliceElement`,
+`mapRawNominalSlice`, `rawSliceElementAddress?`, `NativeLayout.words?` and
+`elementStride?`). The reading of source text reads based int literals
+(`basedDigits`, `intLiteral`, `Reading.intValue`), literal patterns in
+`match` (`LitMatch`, `LitMatchR`, `litChain` and their helpers), `for` over
+arrays and slices (`forArray`, `forSlice`, `StmtR.forArray`,
+`StmtR.forSlice`) and `if`, `let` and `slice_len` inside effects
+(`SrcEff.eIf`, `eLet`, `eLen`, `MEff.xIf`, `xLet`, `xLen`, and the cases
+of the functions over them); the float literal pieces were restated with
+the shared digit reader. The pure fragment's statements return an `Out`
+(next, break, continue or return) through `mstmt`, which replaces `Done`
+and `pstmt` and adds local assignment (`Env.set`), and `prims` names the
+self program's functions at their new indices. The hash before it was
+`8884c49974b65a57`. Before that (11-01, step 3.5a of array-to-slice arguments): lang's (11-02, merge of front-fixes `d76509417115a874` into lang `339ca6217ec1aa8b`, giving `70d594d3ee80699d`): it combines step 3.5b's verified compiler changes with review-fixes' F14 changes, which did not change each other's definitions, beside the prim table `prims`, regenerated from the merged self program. Step 3.5b (11-01 of array-to-slice arguments):
+the verified compiler lowers a `LetEval` or `Discard` value through
+`stmt_eval` and checks an array call's result and block
+(`array_call_code`), which adds functions to the self program and moves
+the indices in the prim table `prims`; `ixTimes` stays 105. No other
+definition changed. The top theorems' frame-room premise grew
+`fsp ≤ top ∧ top < 2 ^ 62` (section 8, "Frame room"), which changes their
+statement hashes but no definition. The hash before it was
+`8884c49974b65a57`. Before that, review-fixes (11-01, merge of lang `8884c49974b65a57` into
+review-fixes `5aa62e3705d251c9`): it combines lang's frame-room steps and
+review-fixes' F14 changes, which did not change each other's definitions,
+beside the prim table `prims` (`Faithful/Gen/SelfPureTab.lean`) and `ixTimes`,
+regenerated from the merged front end. Before that (11-01, merge of lang
+`30cfc8a1287e8470` into review-fixes `a3b90bcb2fad7cd0`, giving
+`5aa62e3705d251c9`): lang's array-to-slice steps and review-fixes' F14
+changes, beside `prims`. review-fixes' (11-01, F14):
+`CompileBounded` takes its cost threshold `T` as a parameter in place of
+`2 ^ 62`, and `SelfShortW`'s third reason says the wrapped compile costs
+more than the heap limit, in place of at least `2 ^ 62`; the hash before was
+`e5a4ad804bd2998c`. That one: the
+conditional top theorem `selfCompiler_total_reason_of_bounds` brings in 11
+new constants and changes none: `SelfFaultReasonW`, `SelfShortW`,
+`CompileBounded`, `costW` and `compileG` (`Faithful/SelfTotal.lean`),
+`safeW` and `NoWrap` (`Faithful/SelfAgree.lean`), and `pcallG` with its
+three auxiliary definitions (`Faithful/Sim/Agree.lean`). The hash before it
+was `feb6c15367fe3046`. That one (11-01, F14's type
+weights, SEMANTIC_DECISIONS "Type weights"): only the prim table `prims`
+(`Faithful/Gen/SelfPureTab.lean`) changed, because the front end's new
+weight functions shift the indices of the self program's later
+`boxed` and `unbox` instances. The weight functions themselves (`srcWeight`,
+`typesWeighed`, ...) are the front end's, not trusted. The hash before it was `a784f30fce5c9322`. lang's (11-01, step 3.5a of array-to-slice arguments):
 the top theorems on `compileSource`, `compileText` and processes take the
 frame room their function needs (section 8, "Frame room"), which brings in
 `SrcProgram.need` (`Mini/LowerStmt.lean`, new), whose `funcNeeds` is cut
@@ -195,7 +243,7 @@ statement `0000000004ab78ed`. `process_behaviour` from source text, as
 
 #### `Lanius.Mini.compileText_correct`
 
-statement `0000000099586fcd`. If `compileText files = some binary`, the
+statement `0000000000901ac2`. If `compileText files = some binary`, the
 files' texts have exactly one reading `sp`, and `compileSource_correct`'s
 conclusion holds of `sp` and `binary`, from the start state of the mini
 heap's streams (standard input, the clocks' readings, the secure bytes; the
@@ -203,7 +251,7 @@ read limits are any). Rests on sections 3, 4, 6 and 8.
 
 #### `Lanius.Mini.compileText_behaviour`
 
-statement `00000000d9b36706`. If `compileText files = some binary`, the
+statement `000000002e8af658`. If `compileText files = some binary`, the
 texts have one reading `sp`, and `compileSource_behaviour`'s conclusion
 holds of it.
 
@@ -216,7 +264,7 @@ Rests on section 4 only.
 
 #### `Lanius.Mini.compileSource_correct`
 
-statement `00000000530be8bb`. If `compileSource sp = some binary`, `f` is a
+statement `00000000ddd9beb6`. If `compileSource sp = some binary`, `f` is a
 function of `sp`, and `args` are values of its parameter types held in
 slots `bits` (`FieldsHold`), and Core runs `f(args)` from the start state
 (`startState` of the heap's streams: standard input, the clocks' readings
@@ -232,13 +280,13 @@ Rests on sections 3, 6 and 8.
 
 #### `Lanius.Mini.compileSource_correct_from`
 
-statement `00000000b5ce8edf`. The same from any Core state `st` with no
+statement `000000003b9d90f5`. The same from any Core state `st` with no
 live cells (`State.Fresh`) whose heap and world the mini heap represents
 (`HeapCorr`); the final heap and world are again represented.
 
 #### `Lanius.Mini.compileSource_stops`
 
-statement `0000000081768b6e`. Same premises on the compiler and the
+statement `000000003abfe55e`. Same premises on the compiler and the
 arguments, a fresh heap of limit at least 1 with the frame memory `f`
 needs, and the caller's obligations (any window up to 2^62): if every fuel of Core's run of `f(args)` fails
 (`Failing`: runs out, traps with a defined trap, or ends past the heap
@@ -246,20 +294,20 @@ limit), then every run of the code that stops, stops at a fault (`Faults`).
 
 #### `Lanius.Mini.compileSource_behaviour`
 
-statement `00000000c673cf71`. Same premises: a run to a state with no step
+statement `00000000590278c2`. Same premises: a run to a state with no step
 that is not a fault comes from a Core run of `f(args)` that finished within
 the heap limit, or reached an undefined trap within it.
 
 #### `Lanius.Mini.compileSource_behaviour_rawFree`
 
-statement `0000000003808338`. `compileSource_behaviour` for a program without raw
+statement `00000000c460dfe7`. `compileSource_behaviour` for a program without raw
 memory (`RawFree`: no `alloc`, `load_byte`, `store_byte`, `dealloc`, raw
 slices or `slice_stride`), from a fresh heap: the undefined trap its second
 case allows is not `typeMismatch` (`Lanius/Mini/ShapeSource.lean`).
 
 #### `Lanius.Mini.compileSource_deterministic`
 
-statement `0000000099c6cc2f`. `compileSource_correct` (without the output
+statement `00000000bfde3cb8`. `compileSource_correct` (without the output
 conjuncts) with: every run of the same length ends `DataEq` to the
 returning one (registers, `rip` and memory equal; section 7).
 
@@ -346,7 +394,7 @@ statement `00000000370c8fc9`. Under `driver_faithful`'s premises on the
 state and views, with the input and output ranges checked in Core's heap,
 Core's run of `w` never reaches an undefined trap, at any fuel (`SafeE`).
 
-### The self-built verified compiler (`Lanius/Faithful/SelfCompiler.lean`, `SelfHost.lean`, `SelfShort.lean`, `SelfPanics.lean`)
+### The self-built verified compiler (`Lanius/Faithful/SelfCompiler.lean`, `SelfHost.lean`, `SelfShort.lean`, `SelfPanics.lean`, `SelfTotal.lean`)
 
 #### `Lanius.Faithful.SelfCompiler.selfCompiler_outcome`
 
@@ -402,6 +450,29 @@ replaced by `SelfFaultReason`.
 statement `00000000b38b3b9b`. `selfHost_outcome` with `SelfFaults`
 replaced by `SelfFaultReason`.
 
+#### `Lanius.Faithful.SelfTotal.selfCompiler_total_reason_of_bounds`
+
+statement `00000000b986c107`. **Conditional**: it assumes
+`CompileBounded T (filesWords files)`, the open part of F14 (ROADMAP F14),
+for some threshold `T` above the heap limit (`limit < T`), and is not a
+replacement for `selfCompiler_reason` until per-function bounds prove that
+premise for all words. `CompileBounded T W`: whenever
+`progW`'s compile of `W` has a heap cost `k < T` (`costW`, which is
+`selfCost` run on `progW`), the guarded compile `compileG` has a value at
+some fuel. `compileG` is `compileW` run by `pcallG progW prims safeW`, the
+pure semantics in which a call of `plus` or `times` has no value unless both
+arguments are `usize` and the result is below `2 ^ 64` (`safeW`, `NoWrap`).
+Under that premise, the statement is `selfCompiler_reason` with
+`SelfFaultReasonW`, where `SelfShortW` replaces `SelfShort` and has no
+panic reason. A fault because Core's run of `w` fails at every fuel comes
+with one of three reasons:
+- the output room is short;
+- the heap limit is below `selfNext W room + h` for every cost `h` of
+  `selfCost`;
+- the self program's compile has no cost at any fuel, `progW`'s compile has
+  a cost, and every cost it has is more than the heap limit.
+Rests on sections 3, 4, 5, 6 and 8, as `selfCompiler_reason` does.
+
 #### `Lanius.Faithful.SelfPanics.compileW_total`
 
 statement `00000000cb6e99e6`. For any words `W`, the pure compile of the
@@ -434,7 +505,7 @@ the statements, so a reader has to agree that each one says what is intended:
 
 | definition | file | says |
 |---|---|---|
-| `SrcProgram.toCore` and the `toCore` of each construct | `Mini/Source.lean` | which Core program a source program *is*: each construct is the Core construct of the same name (`Null` is Core's literal `.pointer 0`), and functions are numbered by position, then the host functions (`hostFuncs`, ids 2^32 up). A literal (`EStruct`, `LetStruct`) means `SrcType.literal`: Core's array value `.array T vs` at an array type `[T; N]`, and a struct value otherwise. `ArraySlice(T, x)` is Core's `arrayToSlice T (local x)` |
+| `SrcProgram.toCore` and the `toCore` of each construct | `Mini/Source.lean` | which Core program a source program *is*: each construct is the Core construct of the same name (`Null` is Core's literal `.pointer 0`), and functions are numbered by position, then the host functions (`hostFuncs`, ids 2^32 up). A literal (`EStruct`, `LetStruct`) means `SrcType.literal`: Core's array value `.array T vs` at an array type `[T; N]`, and a struct value otherwise. `ArraySlice(T, x)` is Core's `arrayToSlice T (local x)`. `EIf(c, T, a, b)` is Core's `matchValue c [(literal true, a), (_, b)]`, Core's match on the bool (Core has no conditional expression). `ELet(x, T, v, R, b)` is Core's `matchValue v [(bind x, b)]`, the one arm binding x (Core has no let expression). `ELen(x)` is Core's `intrinsic sliceLength (local x)` |
 | `FieldsHold`, `SrcType.HoldsAt` | `Mini/Source.lean` | how a Core value sits in 64-bit slots: an `i32` is zero-extended, a `bool` is 1/0, a struct is its fields in order, an enum is a tag then its payload, a pointer is its address, an array `[T; N]` is its N elements in order, as a struct of N fields of type T, a float is its bits. Their first argument, `places`, lists the caller's arrays held in memory (`Addressed`), which no constructor reads yet; the top theorems pass `[]` |
 | `startState`, `State.Fresh`, `HeapCorr`, `outputOf` | `Mini/SourceCorrect.lean`, `Mini/HeapCorr.lean` | Core's start state for a standard input (empty heap, the world with that input); a state with no live cells; the mini heap representing Core's heap and world (standard output and error are `outputOf 1` and `outputOf 2` of the mini heap's trace, the bytes its writes put on fds 1 and 2, no open files, the same standard input) |
 | `Returned`, `HeapAt`, `StackAt`, `Contract`, `Scratch`, `InHeap` | `Mini/Simulation.lean` | the calling convention and what "returns" means (section 8) |
@@ -455,6 +526,7 @@ the statements, so a reader has to agree that each one says what is intended:
 | `SafeE` | `Faithful/Safe/Run.lean` | no fuel of Core's run reaches an undefined trap |
 | `SelfOutput`, `selfHeap`, `selfBits`, `selfNext` | `Faithful/SelfCompiler.lean` | what the self-built compiler's `w` returned in x86 memory; the heap layout and argument slots its caller sets up (the input words, then the output room, then the bump heap) |
 | `SelfFaultReason`, `SelfShort`, `selfCost`, `qcall`, `boxCost`, `prims` | `Faithful/SelfShort.lean`, `Faithful/SelfLive.lean`, `Faithful/Cost.lean`, `Faithful/Fwd/Prim.lean`, `Faithful/Gen/SelfPureTab.lean` | why the self-built compiler's `w` may fault when Core's run of it fails at every fuel: no pure cost, the output room short, or the heap limit below `selfNext` plus every cost. `selfCost` is `w`'s heap cost by the pure cost semantics `qcall` (the pure semantics of `pcall`, adding `boxCost`, the box's storage and 8 bytes of alignment, at each call of a `prims.boxed` function): one `List<i32>` box per input word, then `grammar()`, `front_end_words` and `compile_words` |
+| `SelfFaultReasonW`, `SelfShortW`, `CompileBounded`, `costW`, `compileG`, `pcallG`, `safeW`, `NoWrap` | `Faithful/SelfTotal.lean`, `Faithful/Sim/Agree.lean`, `Faithful/SelfAgree.lean` | the conditional theorem's reasons and its premise. `SelfShortW` is `SelfShort` with the panic reason replaced: the self program's compile has no cost, and `progW`'s compile costs more than the heap limit at every fuel where it has a cost (`costW` is `selfCost` on `progW`). The premise `CompileBounded T W`: a cost of `progW`'s compile below `T` means the guarded compile `compileG`, `compileW` run by `pcallG`, has a value. `pcallG sp prims safe` is `pcall` where a call ruled out by `safe` has no value. `safeW c vs`: if `c` is `ixPlus` or `ixTimes`, then `vs` is two `usize` values whose sum or product, respectively, is below `2 ^ 64` (`NoWrap`) |
 | `SelfPanics`, `compileW`, `progW`, `wrapAt`, `wrapFunc`, `pcall`, `ixPlus`, `ixTimes` | `Faithful/SelfPanics.lean`, `Faithful/Sim/Wrap.lean`, `Faithful/Pure.lean`, `Faithful/Gen/SelfLiveTab.lean` | `SelfShort`'s first reason: no cost at any fuel, and the pure compile (`pcall` of `grammar()`, `front_end_words` and `compile_words`, as `selfCost` runs them) of `progW` has a value. `progW` is `prog` with functions `ixPlus` and `ixTimes` (the prelude's `plus` and `times`, found by name by `faithful_pure.py`) wrapped: `wrapFunc op f` is `f` with the body `return a op b` of its first two parameters, which wraps, where the prelude's panics when the result overflows |
 
 The computations the theorems are about are not trusted (section 10):
@@ -545,6 +617,19 @@ the theorems say what it means.
   laniusc gives the same values. Core gives
   a view of a language array no stride (it traps), while laniusc gives that
   array's own layout. Programs that ask for one are outside the theorem.
+- **`slice_len`.** (added 11-01, F11b) `Intrinsic.sliceLength` gives a
+  slice's length as a `usize` (`sliceLength?`): the `length` of a slice of a
+  language array and of a raw view alike. Any other value traps. Its typing
+  rule is `ExprHasType.sliceLength`, from `[T]` to `usize`. laniusc reads
+  the same length from word 1 of the slice's descriptor, but it has no
+  surface intrinsic for it yet (SEMANTIC_DECISIONS "Slice length").
+- **One-word scalar views.** (added 11-01, F11b) A raw slice of `u32`,
+  `u64`, `i64` or `bool` is a word view, as a `[u16]` is: one descending
+  8-byte word per element (`rawSliceElementAddress?` and
+  `mapRawNominalSlice` take them as a struct or an enum,
+  `NativeLayout.elementStride?` is -8 and `words?` of such a slice is 3),
+  typed by `RawNominalSliceElement.word32`, `.word64`, `.signed64` and
+  `.boolean` (SEMANTIC_DECISIONS "One-word scalar views").
 - **Native layout.** Core reads and writes values in memory
   with laniusc's layout (`docs/wasm-memory-layout.md`). A value's address is
   its word 0, its highest word; word k is 8k bytes below it. A struct's field
@@ -677,7 +762,9 @@ when it is right; a stale cache entry is rejected, never used. Trusted:
     callee's result type with the type its value is stored at, then its
     parameter types with the argument types in order, each argument read at
     its parameter's type once all are bound; an integer literal argument
-    binds nothing unless a parameter is left unbound, when it counts as
+    (or arithmetic of literals, or a shift whose value is one: a shift's
+    type is its value's, whatever its amount, `bareInt`/`bareEff`) binds
+    nothing unless a parameter is left unbound, when it counts as
     `i32`; a conflict or an unbound parameter rejects;
   - `x.m(args)` (`x` any value) and `T::m(args)` (`T` a type parameter, or
     a primitive type as in `i32::hash(v)`) call
@@ -706,10 +793,43 @@ when it is right; a stale cache entry is rejected, never used. Trusted:
     When V's first arm is plain and a later one nested, the plain arm is
     V's arm and the later ones are not read (`VariantArm.shadow`).
     SEMANTIC_DECISIONS "Nested patterns";
+  - (F11b) a match whose first arm's pattern is an integer literal, `true`
+    or `false` (`LitMatchR`, `LitArmsR`, `Reading/Stmts.lean`), as a
+    statement, a `let`'s typed value or a returned value, has a scrutinee
+    of an integer type or `bool` (`litTy`); its value is bound to the
+    match token's local unless it is a local. It is read as a chain of ifs
+    in arm order: `x == n` (n read at x's type) for an integer arm, `x` or
+    `!x` for `true` and `false` arms, the first matching arm's body run.
+    Its last arm is `_`, or at `bool` some earlier arms are `true` and
+    `false` and the chain ends unreachable; a let's rest follows each
+    arm's value (`LitBodyR.letValue`). A let or return reads it this way
+    only when some arm's value is a block (`LitWanted`). Otherwise, and
+    anywhere in an expression, a match on a scrutinee of such a type whose
+    arms' values are expressions (`EffR.litMatch`, `Reading/Effs.lean`) is
+    the conditional expression `XIf` (closing to `EIf`) chained in arm
+    order (`litChain`), on the scrutinee when it is pure, or else on the
+    `match` token's local, fresh, bound to the scrutinee first by `XLet`
+    (closing to `ELet`; `LitBound`): each literal arm's test as above, its
+    value, else the rest;
+    the `_` arm's value, or at `bool` the last arm's once `true` and
+    `false` both have arms, untested. Each arm's value is read at the
+    expected type, and the type is that, or else the first arm's.
+    SEMANTIC_DECISIONS "Literal patterns";
   - (F11b) a payload pattern binds a name only when no enum of the program
     has a variant so spelled (`BindersR`'s `NoVariant`): laniusc reads one
     that resolves to a variant as a check. SEMANTIC_DECISIONS "Payload
     names that are variants";
+  - (F11b) `for x in a { body }`, a an array local of n elements
+    (`StmtR.forArray`, `Reading/Stmts.lean`), is `forArray`'s loop: a
+    hidden `usize` index i (the `for` token's local) from 0 while i < n,
+    `let x = a[i]` (x's token's local), i = i + 1, then the body; n below
+    2^31. SEMANTIC_DECISIONS "`for` over an array";
+  - (F11b) `for x in s { body }`, s a slice local (`StmtR.forSlice`), is
+    `forSlice`'s loop: the hidden `usize` index i (the `for` token's local)
+    from 0, the hidden `let n: usize = slice_len(s);` (x's token's local)
+    once before the loop, then while i < n, `let x = s[i]` (the `in`
+    token's local), i = i + 1, then the body. A body that writes s itself
+    is not read. SEMANTIC_DECISIONS "`for` over an array";
   - `x.f` is `Field` when `x` is a local, and otherwise the call of the
     projection `fn(v: T) -> F { return v.f; }` on `x`, an instance numbered
     like any other;
@@ -732,6 +852,12 @@ when it is right; a stale cache entry is rejected, never used. Trusted:
     type's literal of that value (`Int` of -2^31 for `i32`, `Unsigned` up to
     the type's largest value, the cast of the `u64` literal of its bits for
     `isize`);
+  - an integer literal's value (`intValue`, `Reading/Exprs.lean`) is that of
+    its decimal digits, or of the digits of base 16, 8 or 2 after `0x`,
+    `0o` or `0b` (the letter in either case, as laniusc's lexer takes it);
+    each `_` is a separator and skipped. Below 2^31 it is an `i32` literal,
+    up to 2^64 the wide marker (`IntLiteral`); a constant's `n` or `-` `n`
+    is read the same way (`WideConst`). An array length is still decimal;
   - a char literal (`CharLiteral`) is the code of the one
     Unicode scalar value (`ScalarValue`: below 0x110000, not a surrogate)
     whose UTF-8 encoding (`utf8Encode`) its text holds between the quotes,
@@ -816,7 +942,7 @@ when it is right; a stale cache entry is rejected, never used. Trusted:
     shift `k`. `slice_from_raw_parts(p, n)`, in a `let` of type `[T]`, is
     Core's raw view of `T`. These spellings are fixed: build does not look
     at the extern declarations in `alloc::allocator`, and these paths,
-    `slice_stride` and `assert` are never read as a function or variant
+    `slice_stride`, `slice_len` and `assert` are never read as a function or variant
     (`builtinPaths`);
   - `x op= e` is `x = x op e`, and `x.f op= e` is `x.f = x.f op e`, for
     `op` one of `+ - * & | ^`. Core has the compound form itself
@@ -854,6 +980,7 @@ when it is right; a stale cache entry is rejected, never used. Trusted:
     operands expect the type of whichever operand has one.
 
   - `slice_stride(x)` of a slice local x is `EStride(x)`;
+  - (F11b) `slice_len(x)` of a slice local x is `ELen(x)`, a `usize`;
   - (F11b) a call's argument at a parameter of type `[T]` that is an array
     local of element type T is `ArraySlice(T, x)` (`argView`), Core's
     `arrayToSlice T x`, so the callee's writes reach the array, as in
@@ -1225,12 +1352,16 @@ and with a heap limit of at least 1.
     is the bytes from `limit` up to the top in r10 (`HeapAt.top`); the
     startup code sets r10 and rbx to `heap + stack`.
   - **Frame room.** The theorems on `compileSource` and `compileText` take
-    `0 < sp.need f → limit + sp.need f ≤ fsp`: when the function run needs
-    frame memory (`SrcProgram.need`, its own block for the arrays it passes
-    as slices and the largest need of a function it calls; SEMANTIC_DECISIONS
-    "Addressed locals", point 7), the frame pointer is that many bytes above
-    the limit. The process theorems take `sp.need entry ≤ stack`, which gives
-    it for the loader's layout (frame memory is as large as the stack). It
+    `0 < sp.need f → limit + sp.need f ≤ fsp ∧ fsp ≤ top ∧ top < 2 ^ 62`:
+    when the function run needs frame memory (`SrcProgram.need`, its own
+    block for the arrays it passes as slices and the largest need of a
+    function it calls; SEMANTIC_DECISIONS "Addressed locals", point 7), the
+    frame pointer is that many bytes above the limit, at most the top (the
+    blocks taken below it are below the top, so their stores reach them),
+    and the top is below `2 ^ 62` (a block's addresses add without
+    wrapping). The process theorems take `sp.need entry ≤ stack`, which gives
+    it for the loader's layout (frame memory is as large as the stack, and
+    the frame pointer starts at the top, `heap + stack`, below `2 ^ 41`). It
     holds for any heap when the need is 0, as it is when no function the run
     can reach passes an array as a slice; the self program's need is 0 at
     every function (`SelfPure.prog_need`, a kernel check over its bodies in

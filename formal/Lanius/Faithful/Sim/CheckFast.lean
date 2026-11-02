@@ -3,23 +3,9 @@ module
 public import Lanius.Faithful.Sim.Check
 public import Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.DivOp_size
-import all Lanius.Mini.Compiler.P.FArith_opcode
-import all Lanius.Mini.Compiler.P.FloatTy_rex
-import all Lanius.Mini.Compiler.P.Instr_pieces
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
-import all Lanius.Mini.Compiler.P.arities
-import all Lanius.Mini.Compiler.P.codeSize
-import all Lanius.Mini.Compiler.P.compileArgs
-import all Lanius.Mini.Compiler.P.compileModules
-import all Lanius.Mini.Compiler.P.imageLimit
-import all Lanius.Mini.Compiler.P.importOk
-import all Lanius.Mini.Compiler.P.importsOk
-import all Lanius.Mini.Compiler.P.loadAtBytes
-import all Lanius.Mini.Compiler.P.moduleExports
-import all Lanius.Mini.Compiler.P.moduleFirsts
-import all Lanius.Mini.Compiler.P.modulesOk
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.Types
 
@@ -60,6 +46,12 @@ def effTyC (tenv : TEnv) : SrcEff → Option SrcType
   | .eDivide _ left right => (effTyC tenv left).bind fun l => (effTyC tenv right).bind (divTy l)
   | .eStride _ => none
   | .arraySlice _ _ => none
+  | .eIf condition _ thenValue elseValue =>
+    if isBoolTy (effTyC tenv condition) then
+      (effTyC tenv thenValue).bind fun a => (effTyC tenv elseValue).bind fun b => if a.same b then some a else none
+    else none
+  | .eLet id _ value _ body => (effTyC tenv value).bind fun t => effTyC ((id, t) :: tenv) body
+  | .eLen _ => none
 
 def effTysC (tenv : TEnv) : List SrcEff → Option (List SrcType)
   | [] => some []
@@ -97,13 +89,13 @@ def stmtOkC (ret : SrcType) (tenv : TEnv) : SrcStmt → Bool
     | some t => stmtOkC ret ((id, t) :: tenv) body
     | none => false
   | .letMatch _ _ _ _ _ _ => false
-  | .set _ _ => false
+  | .set id value => setOk tenv id (exprTy boxes tenv value)
   | .setField _ _ _ => false
   | .setCall _ _ _ => false
   | .then first second => stmtOkC ret tenv first && stmtOkC ret tenv second
   | .if condition thenBranch elseBranch =>
     isBoolTy (exprTy boxes tenv condition) && stmtOkC ret tenv thenBranch && stmtOkC ret tenv elseBranch
-  | .while _ _ => false
+  | .while condition body => isBoolTy (exprTy boxes tenv condition) && stmtOkC ret tenv body
   | .return value =>
     match exprTy boxes tenv value with
     | some t => t.same ret
@@ -119,10 +111,10 @@ def stmtOkC (ret : SrcType) (tenv : TEnv) : SrcStmt → Bool
     match effTyC calls boxes tenv value with
     | some t => stmtOkC ret ((id, t) :: tenv) body
     | none => false
-  | .setEval _ _ => false
+  | .setEval id value => setOk tenv id (effTyC calls boxes tenv value)
   | .ifEval condition thenBranch elseBranch =>
     isBoolTy (effTyC calls boxes tenv condition) && stmtOkC ret tenv thenBranch && stmtOkC ret tenv elseBranch
-  | .whileEval _ _ => false
+  | .whileEval condition body => isBoolTy (effTyC calls boxes tenv condition) && stmtOkC ret tenv body
   | .returnEval value =>
     match effTyC calls boxes tenv value with
     | some t => t.same ret
@@ -132,8 +124,8 @@ def stmtOkC (ret : SrcType) (tenv : TEnv) : SrcStmt → Bool
   | .setFieldEval _ _ _ => false
   | .returnUnit => true
   | .assert condition => isBoolTy (effTyC calls boxes tenv condition)
-  | .break => false
-  | .continue => false
+  | .break => true
+  | .continue => true
   | .matchArm _ _ _ _ _ _ _ _ => false
   | .unreachable _ _ => false
 
@@ -172,6 +164,13 @@ theorem effTyC_eq (tenv : TEnv) : ∀ e : SrcEff, effTyC (callTy sp outside) box
   | .eDivide _ left right => by rw [effTyC, effTy, effTyC_eq tenv left, effTyC_eq tenv right]
   | .eStride _ => by rw [effTyC, effTy]
   | .arraySlice _ _ => by rw [effTyC, effTy]
+  | .eIf c _ a b => by rw [effTyC, effTy, effTyC_eq tenv c, effTyC_eq tenv a, effTyC_eq tenv b]
+  | .eLet id _ value _ body => by
+    rw [effTyC, effTy, effTyC_eq tenv value]
+    congr 1
+    funext t
+    exact effTyC_eq _ body
+  | .eLen _ => by rw [effTyC, effTy]
 
 theorem effTysC_eq (tenv : TEnv) : ∀ es : List SrcEff,
     effTysC (callTy sp outside) boxes tenv es = effTys sp outside boxes tenv es
@@ -199,12 +198,12 @@ theorem stmtOkC_eq (ret : SrcType) (s : SrcStmt) : ∀ tenv : TEnv,
   | letCall id _ callee args body ih => intro tenv; simp only [stmtOkC, stmtOk, ih] <;> rfl
   | letEnum id ty variant payload body ih => intro tenv; simp only [stmtOkC, stmtOk, ih] <;> rfl
   | letMatch => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
-  | set => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
+  | set => intro tenv; rw [stmtOkC, stmtOk]
   | setField => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
   | setCall => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
   | «then» first second ih1 ih2 => intro tenv; rw [stmtOkC, stmtOk, ih1, ih2] <;> rfl
   | «if» condition thenBranch elseBranch ih1 ih2 => intro tenv; rw [stmtOkC, stmtOk, ih1, ih2] <;> rfl
-  | «while» => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
+  | «while» condition body ih => intro tenv; rw [stmtOkC, stmtOk, ih]
   | «return» value => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
   | letAlloc => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
   | letLoad => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
@@ -214,10 +213,10 @@ theorem stmtOkC_eq (ret : SrcType) (s : SrcStmt) : ∀ tenv : TEnv,
   | letIndex => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
   | setIndex => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
   | letEval id _ value body ih => intro tenv; simp only [stmtOkC, stmtOk, effTyC_eq, ih] <;> rfl
-  | setEval => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
+  | setEval => intro tenv; rw [stmtOkC, stmtOk, effTyC_eq]
   | ifEval condition thenBranch elseBranch ih1 ih2 =>
     intro tenv; rw [stmtOkC, stmtOk, effTyC_eq, ih1, ih2] <;> rfl
-  | whileEval => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
+  | whileEval condition body ih => intro tenv; rw [stmtOkC, stmtOk, effTyC_eq, ih]
   | returnEval value => intro tenv; rw [stmtOkC, stmtOk, effTyC_eq] <;> rfl
   | discard value => intro tenv; rw [stmtOkC, stmtOk, effTyC_eq] <;> rfl
   | setIndexEval => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
@@ -257,6 +256,20 @@ def entriesFit : List SrcFunc → List SigEntry → Bool
   | _ :: _, [] => false
   | _ :: fs, none :: es => entriesFit fs es
   | f :: fs, some (ps, r) :: es => typesSame (f.params.map SrcParam.ty) ps && f.ret.same r && entriesFit fs es
+
+/-- Fitting lists of functions and entries append: the self program's fit is
+checked a run of functions at a time. -/
+theorem entriesFit_append {fs' : List SrcFunc} {es' : List SigEntry} (h' : entriesFit fs' es' = true) :
+    ∀ {fs : List SrcFunc} {es : List SigEntry}, entriesFit fs es = true → entriesFit (fs ++ fs') (es ++ es') = true
+  | [], [], _ => h'
+  | [], _ :: _, h => nomatch h
+  | _ :: _, [], h => nomatch h
+  | _ :: fs, none :: es, h => by
+    simp only [List.cons_append, entriesFit] at h ⊢
+    exact entriesFit_append h' h
+  | f :: fs, some (ps, r) :: es, h => by
+    simp only [List.cons_append, entriesFit, Bool.and_eq_true] at h ⊢
+    exact ⟨h.1, entriesFit_append h' h.2⟩
 
 /-- The positions, from `n`, of the `none` entries. -/
 def noneAt : Nat → List SigEntry → List Nat
@@ -366,7 +379,8 @@ theorem callTy_eq_blocks {sp : SrcProgram} {outside : List Nat} {blocks : List (
 
 theorem pureFunc_fast {sp : SrcProgram} {prims : Prims} {outside : List Nat} {boxes : Boxes}
     {calls : Nat → List SrcType → Option SrcType} {f : SrcFunc} (hb : boxElem sp prims = boxes)
-    (hc : callTy sp outside = calls) (ok : stmtOkC calls boxes f.ret (paramTEnv f.params) f.body = true) :
+    (hc : callTy sp outside = calls)
+    (ok : (stmtOkC calls boxes f.ret (paramTEnv f.params) f.body && !looseJump f.body) = true) :
     PureFunc sp prims outside f = true := by
   unfold PureFunc
   rw [hb, ← stmtOkC_eq, hc]

@@ -3,29 +3,13 @@ module
 public import Lanius.Faithful.Sim.Slice
 public import Lanius.Mini.Compiler.P.wordElement
 import all Lanius.Mini.Compiler.P.DivOp_size
-import all Lanius.Mini.Compiler.P.FArith_opcode
-import all Lanius.Mini.Compiler.P.FloatTy_rex
-import all Lanius.Mini.Compiler.P.Instr_pieces
-import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcType_size
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
-import all Lanius.Mini.Compiler.P.UintTy_mask
-import all Lanius.Mini.Compiler.P.arities
-import all Lanius.Mini.Compiler.P.codeSize
-import all Lanius.Mini.Compiler.P.compileArgs
-import all Lanius.Mini.Compiler.P.compileModules
 import all Lanius.Mini.Compiler.P.enumVariants
-import all Lanius.Mini.Compiler.P.imageLimit
-import all Lanius.Mini.Compiler.P.importOk
-import all Lanius.Mini.Compiler.P.importsOk
 import all Lanius.Mini.Compiler.P.loadAtBytes
-import all Lanius.Mini.Compiler.P.moduleExports
-import all Lanius.Mini.Compiler.P.moduleFirsts
-import all Lanius.Mini.Compiler.P.modulesOk
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.structFields
-import all Lanius.Mini.Compiler.P.usizeWidth
 import all Lanius.Mini.Compiler.P.wordElement
 import all Lanius.Mini.Compiler.P.wordWidth
 import all Lanius.Mini.Compiler.Types
@@ -44,9 +28,9 @@ open Lanius.Semantics (State Completion evalExpr evalExprs execStmt restoreLocal
 
 /-- Element 0 of a view whose word 0 is the storage's last word. -/
 theorem elementAddress_zero {P : Core.Program} {T : Core.Ty} {a w : Nat}
-    (kind : (∃ id, T = .structure id) ∨ (∃ id, T = .enumeration id) ∨ T = .scalar (.unsigned .u16)) (words : NativeLayout.valueWords? P T = some w)
+    (kind : (∃ id, T = .structure id) ∨ (∃ id, T = .enumeration id) ∨ CoreWordScalar T) (words : NativeLayout.valueWords? P T = some w)
     (pos : 0 < w) : Semantics.rawSliceElementAddress? P T (a + 8 * w - 8) 0 = .ok (a + 8 * w - 8) := by
-  rcases kind with ⟨id, rfl⟩ | ⟨id, rfl⟩ | rfl <;>
+  rcases kind with ⟨id, rfl⟩ | ⟨id, rfl⟩ | (rfl | rfl | rfl | rfl | rfl) <;>
   · simp only [Semantics.rawSliceElementAddress?, words, NativeLayout.elementBase?]
     rw [if_neg (by
       simp only [NativeLayout.wordBytes, Bool.or_eq_true, beq_iff_eq]
@@ -57,10 +41,10 @@ theorem elementAddress_zero {P : Core.Program} {T : Core.Ty} {a w : Nat}
     rfl
 
 theorem raw_read_zero {P : Core.Program} {s : State} {T : Core.Ty} {a w : Nat} {v : Value}
-    (kind : (∃ id, T = .structure id) ∨ (∃ id, T = .enumeration id) ∨ T = .scalar (.unsigned .u16)) (words : NativeLayout.valueWords? P T = some w)
+    (kind : (∃ id, T = .structure id) ∨ (∃ id, T = .enumeration id) ∨ CoreWordScalar T) (words : NativeLayout.valueWords? P T = some w)
     (pos : 0 < w) (h : Semantics.readRawSliceIndex P s T (a + 8 * w - 8) 1 0 = .ok v) :
     readNativeValue NativeLayout.maxDepth P s.heap T (a + 8 * w - 8) = .ok v := by
-  have nb : Semantics.isByte T = false := by rcases kind with ⟨_, rfl⟩ | ⟨_, rfl⟩ | rfl <;> rfl
+  have nb : Semantics.isByte T = false := by rcases kind with ⟨_, rfl⟩ | ⟨_, rfl⟩ | w <;> first | rfl | exact w.notByte
   simp only [Semantics.readRawSliceIndex, show ¬ (0 ≥ 1) by decide, if_false,
     elementAddress_zero kind words pos, Semantics.readRawElement, nb, Bool.false_eq_true, ↓reduceIte] at h
   exact h

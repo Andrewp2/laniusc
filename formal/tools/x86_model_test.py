@@ -512,8 +512,7 @@ def run_lean(formal, path_cases, path_results):
     if os.environ.get('LANIUS_BUILT') != '1':
         env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
         with run_cache.lean_lock():
-            subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', 'MemoryMax=6G',
-                            '-p', 'MemorySwapMax=0', 'lake', 'build', 'x86ModelTest'], cwd=formal, env=env,
+            subprocess.run(['systemd-run', '--user', '--scope', '--slice=work.slice', '-q', 'lake', 'build', 'x86ModelTest'], cwd=formal, env=env,
                            capture_output=True, check=True)
     # In `parts` processes at once, on consecutive slices of the cases; the
     # encodings are taken from the first.
@@ -526,8 +525,7 @@ def run_lean(formal, path_cases, path_results):
         open(cases_i, 'w').write(''.join(line + '\n' for line in lines[i * size:(i + 1) * size]))
         if os.path.exists(results_i):
             os.remove(results_i)
-        procs.append(subprocess.Popen(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', 'MemoryMax=2G',
-                                       '-p', 'MemorySwapMax=0', X86_MODEL_TEST, cases_i, results_i],
+        procs.append(subprocess.Popen(['systemd-run', '--user', '--scope', '--slice=work.slice', '-q', X86_MODEL_TEST, cases_i, results_i],
                                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True))
     for proc in procs:
         out = proc.communicate()[0]

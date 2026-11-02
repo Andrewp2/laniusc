@@ -3,16 +3,25 @@ module
 public import Lanius.Mini.Reading.Det.Effs
 public import Lanius.Mini.Reading.Stmts
 import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.Stmt_kills
+import all Lanius.Mini.Compiler.P.callAgrees
+import all Lanius.Mini.Compiler.P.wordStride
+import all Lanius.Mini.Frontend.P.bindsOfTys
+import all Lanius.Mini.Frontend.P.blockArmsOf
 import all Lanius.Mini.Frontend.P.callParts
-import all Lanius.Mini.Frontend.P.projection
 import all Lanius.Mini.Frontend.P.distinct
 import all Lanius.Mini.Frontend.P.forRange
 import all Lanius.Mini.Frontend.P.isEmptyUsize
+import all Lanius.Mini.Frontend.P.litBound
 import all Lanius.Mini.Frontend.P.matchStmtIf
 import all Lanius.Mini.Frontend.P.noToken
+import all Lanius.Mini.Frontend.P.pickTy
+import all Lanius.Mini.Frontend.P.projection
+import all Lanius.Mini.Frontend.P.repeatEff
 import all Lanius.Mini.Frontend.P.shrFirst
 import all Lanius.Mini.Frontend.P.sliceHead
 import all Lanius.Mini.Frontend.P.textSelf
+import all Lanius.Mini.Frontend.P.textSliceLen
 
 @[expose] public section
 /-! # The reading is deterministic, F1: statements
@@ -118,11 +127,11 @@ theorem peel_noExpr : ∀ {env : FrontEnv} {scope : List Local} {c pf : CTree} {
     cases h with
     | _ => expr_clash
 
-/-- A call of a reserved path other than `slice_stride` is never an
-effectful expression. -/
+/-- A call of a reserved path other than `slice_stride` and `slice_len` is
+never an effectful expression. -/
 theorem peel_noEff : ∀ {env : FrontEnv} {scope : List Local} {E : Option Ty} {c pf : CTree} {ss : ModPath}
     {x : MEff}, Peel c pf → PathCallForm pf → PathSpellings (kid (kid (kid pf 0) 0) 0) (kid (kid (kid pf 0) 0) 1) ss →
-    ss ∈ builtinPaths → ss ≠ [textSliceStride] → EffR env scope E c x → False
+    ss ∈ builtinPaths → ss ∉ [[textSliceStride], [textSliceLen]] → EffR env scope E c x → False
   | _, _, _, _, _, _, _, .wrap w p, cf, ps, mb, ns, h => by
     cases h with
     | pure r => exact peel_noExpr (.wrap w p) cf.2.2.1 r
@@ -141,7 +150,8 @@ theorem peel_noEff : ∀ {env : FrontEnv} {scope : List Local} {E : Option Ty} {
     | pure r => exact peel_noExpr (.here pp) p1 r
     | pathCall _ _ _ _ _ pc =>
       cases pc with
-      | stride ps' _ _ _ _ _ => exact ns (pathSpellings_unique ps ps')
+      | stride ps' _ _ _ _ _ => exact ns (by rw [pathSpellings_unique ps ps']; simp)
+      | len ps' _ _ _ _ _ => exact ns (by rw [pathSpellings_unique ps ps']; simp)
       | named pr nb _ _ _ => exact nb (by rw [pathRefR_spellings ps pr]; exact mb)
     | callChain _ _ _ _ ne _ _ => exact ne p13
     | chainLocal _ cf _ _ => exact cf.2.2.2 ⟨p0, p01, p1⟩
@@ -807,6 +817,21 @@ theorem effArmsR_mem {env : FrontEnv} : ∀ {scope : List Local} {E : Option Ty}
     · exact ⟨_, _, r⟩
     · exact effArmsR_mem rest m
 
+theorem effList_mem {env : FrontEnv} : ∀ {scope : List Local} {Es : Option (List Ty)} {ts : List CTree}
+    {vs : List MEff} {t : CTree}, EffList env scope Es ts vs → t ∈ ts → ∃ E x, EffR env scope E t x
+  | _, _, _, _, _, .nil, m => by cases m
+  | _, _, _, _, _, .cons r rest, m => by
+    rcases List.mem_cons.1 m with rfl | m
+    · exact ⟨_, _, r⟩
+    · exact effList_mem rest m
+
+theorem armValueTrees_mem : ∀ {arms : List CTree} {a : CTree}, a ∈ arms → kid a 2 ∈ armValueTrees arms
+  | [], _, m => by cases m
+  | _ :: _, _, m => by
+    rcases List.mem_cons.1 m with rfl | m
+    · exact List.mem_cons_self
+    · exact List.mem_cons_of_mem _ (armValueTrees_mem m)
+
 theorem armBlockR_noEff {env : FrontEnv} {scope : List Local} {E : Option Ty} {a list : CTree} {x : MEff}
     (ab : ArmBlockR a list) (h : EffR env scope E (kid a 2) x) : False := by
   cases ab with
@@ -829,6 +854,10 @@ theorem matchR_noBlock {env : FrontEnv} {scope : List Local} {E : Option Ty} {m 
     cases r with
     | unit _ _ _ _ k _ _ => rw [ko] at k; exact armBlockR_noEff ab k
     | payload _ _ _ _ _ _ k _ _ => rw [ko] at k; exact armBlockR_noEff ab k
+  | litMatch _ _ _ _ it' el _ _ =>
+    cases items_unique it it'
+    obtain ⟨_, _, k⟩ := effList_mem el (armValueTrees_mem ma)
+    exact armBlockR_noEff ab k
   | _ => eff_clash
 
 theorem letInitR_noArmBlock {env : FrontEnv} {scope : List Local} {ty : Ty} {a list : CTree} {hd : LetHead}
@@ -878,6 +907,106 @@ theorem letInitR_noBlockMatch {env : FrontEnv} {scope : List Local} {ty : Ty} {i
       exact matchR_noBlock vn it ma ab k' pc
 
 
+/-! ## Literal matches -/
+
+theorem litMatchR_unique {env : FrontEnv} {scope : List Local} {m : CTree} {a b : LitMatch} (nd : IdsFresh scope)
+    (vn : VariantsNodup env.decls) (h₁ : LitMatchR env scope m a) (h₂ : LitMatchR env scope m b) : a = b := by
+  cases h₁ with
+  | mk k et _ hr hh => cases h₂ with
+    | mk k' et' _ hr' hh' =>
+      have e := effR_unique k nd vn k'
+      subst e
+      have e := effTy_unique et et'
+      subst e
+      rw [hr] at hr'
+      cases hr'
+      rw [hh] at hh'
+      exact Option.some.inj hh'
+
+theorem litTy_named {t : Ty} {n : Inst} (lt : litTy t = true) (hn : namedParts t = some n) : False := by
+  cases t <;> simp [litTy, namedParts] at lt hn
+
+/-- A match's scrutinee is of an enum type or of a literal one, not both. -/
+theorem litMatchR_noMatchStmt {env : FrontEnv} {scope : List Local} {m : CTree} {a : LitMatch} {b : MatchStmt}
+    (nd : IdsFresh scope) (vn : VariantsNodup env.decls) (h₁ : LitMatchR env scope m a)
+    (h₂ : MatchStmtR env scope m b) : False := by
+  cases h₁ with
+  | mk k et lt _ _ => cases h₂ with
+    | mk k' et' hn _ _ _ _ _ =>
+      have e := effR_unique k nd vn k'
+      subst e
+      have e := effTy_unique et et'
+      subst e
+      exact litTy_named lt hn
+
+/-- A literal match the statement forms read has no effectful reading: as
+a match on an enum its scrutinee's type is wrong, and as a value
+(`EffR.litMatch`) its scrutinee is pure and no arm is a block. -/
+theorem matchR_noLit {env : FrontEnv} {scope : List Local} {E : Option Ty} {init m : CTree} {x : MEff} {h : LitMatch}
+    (nd : IdsFresh scope) (vn : VariantsNodup env.decls) (lw : LitWanted env scope init) (mi : MatchInit init m)
+    (k : EffR env scope E m x) (lm : LitMatchR env scope m h) (pm : nodeProd m = pMatchExpr) : False := by
+  cases k with
+  | pure r => exact exprR_noPrim (.inl pm) r
+  | «match» _ ks ets ety _ _ _ _ _ _ _ =>
+    cases lm with
+    | mk k' et' lt _ _ =>
+      have e := effR_unique ks nd vn k'
+      subst e
+      have e := effTy_unique ets et'
+      subst e
+      rw [ety] at lt
+      simp [litTy] at lt
+  | litMatch _ _ _ _ it el _ _ =>
+    cases lw with
+    | block mi' it' ma ab =>
+      cases matchInit_unique mi mi'
+      cases items_unique it it'
+      obtain ⟨_, _, k⟩ := effList_mem el (armValueTrees_mem ma)
+      exact armBlockR_noEff ab k
+  | _ => eff_clash
+
+/-- A let of a literal match has no other reading. -/
+theorem letInitR_noLitMatch {env : FrontEnv} {scope : List Local} {ty : Ty} {init m : CTree} {h : LitMatch}
+    {hd : LetHead} (nd : IdsFresh scope) (vn : VariantsNodup env.decls) (mi : MatchInit init m)
+    (lw : LitWanted env scope init) (lm : LitMatchR env scope m h) (k : LetInitR env scope ty init hd) : False := by
+  cases mi with
+  | mk pl pc pe => cases k with
+    | head l => cases l with
+      | callPath pe' p0 _ _ _ _ => cases peel_unique pe' pl; prod_clash
+    | «try» t => cases t with
+      | call p c =>
+        cases peel_unique p pl
+        cases c with
+        | mk f _ _ _ _ _ _ => obtain ⟨f0, _⟩ := f; prod_clash
+      | method p m =>
+        cases peel_unique p pl
+        cases m with
+        | mk f _ _ _ _ _ _ => obtain ⟨f0 | ⟨f0, _⟩, _⟩ := f <;> prod_clash
+      | «local» p l =>
+        cases peel_unique p pl
+        cases l with
+        | mk t _ _ _ _ => prod_clash
+    | eval k _ =>
+      obtain ⟨_, _, k'⟩ := peel_effPrim pl pc pe k
+      exact matchR_noLit nd vn lw (.mk pl pc pe) k' lm pc
+
+theorem returnR_noLit {env : FrontEnv} {scope : List Local} {e m : CTree} {h : LitMatch} {x : MStmt}
+    (nd : IdsFresh scope) (vn : VariantsNodup env.decls) (mi : MatchInit e m) (lw : LitWanted env scope e)
+    (lm : LitMatchR env scope m h) (r : ReturnR env scope e x) : False := by
+  cases r with
+  | slice _ _ hh => exact letInitR_noLitMatch (ty := .tyI32) nd vn mi lw lm (.head hh)
+  | eval k =>
+    cases mi with
+    | mk pl pc pe =>
+      obtain ⟨_, _, k'⟩ := peel_effPrim pl pc pe k
+      exact matchR_noLit nd vn lw (.mk pl pc pe) k' lm pc
+
+theorem returnR_noArmBlock {env : FrontEnv} {scope : List Local} {a list : CTree} {x : MStmt}
+    (ab : ArmBlockR a list) (r : ReturnR env scope (kid a 2) x) : False := by
+  cases r with
+  | slice _ _ hh => exact letInitR_noArmBlock (ty := .tyI32) ab (.head hh)
+  | eval k => exact armBlockR_noEff ab k
+
 section
 variable {env : FrontEnv}
 
@@ -908,6 +1037,7 @@ theorem stmtsR_unique : ∀ {scope : List Local} {items : List CTree} {a : MStmt
     | letMatch _ _ _ _ _ _ bm _ _ _ _ _ _ =>
       obtain ⟨_, _, _, _, mi, it, ma, ab⟩ := bm
       exact (letInitR_noBlockMatch vn mi it ma ab li).elim
+    | letLit _ _ _ _ _ _ mi lw mr _ _ _ _ => exact (letInitR_noLitMatch nd vn mi lw mr li).elim
     | last np _ => exact absurd ps np
     | seq np _ _ => exact absurd ps np
   | _, _, _, .letMatch ps lt _ _ fr ty bm mi mr mo body la mv, nd, vn, _, h₂ => by
@@ -931,6 +1061,29 @@ theorem stmtsR_unique : ∀ {scope : List Local} {items : List CTree} {a : MStmt
       subst e
       rw [mv'] at mv
       exact (Option.some.inj mv).symm
+    | letLit _ _ _ _ _ _ mi' _ mr' _ _ _ _ =>
+      cases matchInit_unique mi mi'
+      exact (litMatchR_noMatchStmt nd vn mr' mr).elim
+    | last np _ => exact absurd ps np
+    | seq np _ _ => exact absurd ps np
+  | _, _, _, .letLit ps lt _ _ fr ty mi lw mr it body la mv, nd, vn, _, h₂ => by
+    have ih := fun {y} k' => stmtsR_unique body (idsFresh_cons nd fr) vn (b := y) k'
+    have iha := fun {y} k' => litArmsR_unique la nd vn (b := y) k'
+    cases h₂ with
+    | «let» _ _ _ _ _ _ li' _ _ => exact (letInitR_noLitMatch nd vn mi lw mr li').elim
+    | letUntyped _ lt' _ _ _ _ _ _ => prod_clash
+    | letMatch _ _ _ _ _ _ _ mi' mr' _ _ _ _ =>
+      cases matchInit_unique mi mi'
+      exact (litMatchR_noMatchStmt nd vn mr mr').elim
+    | letLit _ _ _ _ _ ty' mi' _ mr' it' body' la' mv' =>
+      cases tyR_unique ty ty'
+      cases matchInit_unique mi mi'
+      cases litMatchR_unique nd vn mr mr'
+      cases items_unique it it'
+      cases ih body'
+      cases iha la'
+      rw [mv'] at mv
+      exact (Option.some.inj mv).symm
     | last np _ => exact absurd ps np
     | seq np _ _ => exact absurd ps np
   | _, _, _, .letUntyped ps lt _ _ fr un body ls, nd, vn, _, h₂ => by
@@ -943,6 +1096,7 @@ theorem stmtsR_unique : ∀ {scope : List Local} {items : List CTree} {a : MStmt
       rw [ls'] at ls
       exact (Option.some.inj ls).symm
     | letMatch _ lt' _ _ _ _ _ _ _ _ _ _ _ => prod_clash
+    | letLit _ lt' _ _ _ _ _ _ _ _ _ _ _ => prod_clash
     | last np _ => exact absurd ps np
     | seq np _ _ => exact absurd ps np
   | _, _, _, .last np s, nd, vn, _, h₂ => by
@@ -951,6 +1105,7 @@ theorem stmtsR_unique : ∀ {scope : List Local} {items : List CTree} {a : MStmt
     | «let» ps _ _ _ _ _ _ _ _ => exact absurd ps np
     | letUntyped ps _ _ _ _ _ _ _ => exact absurd ps np
     | letMatch ps _ _ _ _ _ _ _ _ _ _ _ _ => exact absurd ps np
+    | letLit ps _ _ _ _ _ _ _ _ _ _ _ _ => exact absurd ps np
     | last _ s' => exact ih s'
   | _, _, _, .seq np s rest, nd, vn, _, h₂ => by
     have ih1 := fun {y} k' => stmtR_unique s nd vn (b := y) k'
@@ -959,6 +1114,7 @@ theorem stmtsR_unique : ∀ {scope : List Local} {items : List CTree} {a : MStmt
     | «let» ps _ _ _ _ _ _ _ _ => exact absurd ps np
     | letUntyped ps _ _ _ _ _ _ _ => exact absurd ps np
     | letMatch ps _ _ _ _ _ _ _ _ _ _ _ _ => exact absurd ps np
+    | letLit ps _ _ _ _ _ _ _ _ _ _ _ _ => exact absurd ps np
     | seq _ s' rest' => rw [ih1 s', ih2 rest']
 termination_by structural _ _ _ h _ _ _ _ => h
 
@@ -1066,11 +1222,68 @@ theorem letArmsR_unique : ∀ {scope : List Local} {h : MatchStmt} {x : Local} {
       exact (Option.some.inj hb).symm
 termination_by structural _ _ _ _ _ _ _ _ h _ _ _ _ => h
 
+theorem litArmsR_unique : ∀ {scope : List Local} {h : LitMatch} {form : LitForm} {t f : Bool} {arms : List CTree}
+    {a : MStmt}, LitArmsR env scope h form t f arms a → IdsFresh scope → VariantsNodup env.decls →
+    ∀ {b : MStmt}, LitArmsR env scope h form t f arms b → a = b
+  | _, _, _, _, _, _, _, .nil, _, _, _, h₂ => by cases h₂; rfl
+  | _, _, _, _, _, _, _, .wild w lb, nd, vn, _, h₂ => by
+    have ih := fun {y} k' => litBodyR_unique lb nd vn (y := y) k'
+    cases h₂ with
+    | wild _ lb' => exact ih lb'
+    | lit w' _ _ _ => rw [w] at w'; cases w'
+  | _, _, _, _, _, _, _, .lit w hc lb rest, nd, vn, _, h₂ => by
+    have ih1 := fun {y} k' => litBodyR_unique lb nd vn (y := y) k'
+    have ih2 := fun {y} k' => litArmsR_unique rest nd vn (b := y) k'
+    cases h₂ with
+    | wild w' _ => rw [w] at w'; cases w'
+    | lit _ hc' lb' rest' =>
+      rw [hc] at hc'
+      cases hc'
+      rw [ih1 lb', ih2 rest']
+termination_by structural _ _ _ _ _ _ _ h _ _ _ _ => h
+
+theorem litBodyR_unique : ∀ {scope : List Local} {form : LitForm} {a : CTree} {x : MStmt},
+    LitBodyR env scope form a x → IdsFresh scope → VariantsNodup env.decls →
+    ∀ {y : MStmt}, LitBodyR env scope form a y → x = y
+  | _, _, _, _, .block ab bb, nd, vn, _, h₂ => by
+    have ih := fun {y} k' => blockR_unique bb nd vn (b := y) k'
+    cases h₂ with
+    | block ab' bb' =>
+      cases armBlockR_unique ab ab'
+      exact ih bb'
+    | letValue li _ => exact (letInitR_noArmBlock ab li).elim
+    | retValue r => exact (returnR_noArmBlock ab r).elim
+  | _, _, _, _, .letValue li ls, nd, vn, _, h₂ => by
+    cases h₂ with
+    | block ab' _ => exact (letInitR_noArmBlock ab' li).elim
+    | letValue li' ls' =>
+      cases letInitR_unique nd vn li li'
+      rw [ls'] at ls
+      exact (Option.some.inj ls).symm
+  | _, _, _, _, .retValue r, nd, vn, _, h₂ => by
+    cases h₂ with
+    | block ab' _ => exact (returnR_noArmBlock ab' r).elim
+    | retValue r' => exact returnR_unique nd vn r r'
+termination_by structural _ _ _ _ h _ _ _ _ => h
+
 theorem stmtR_unique : ∀ {scope : List Local} {s : CTree} {a : MStmt}, StmtR env scope s a →
     IdsFresh scope → VariantsNodup env.decls → ∀ {b : MStmt}, StmtR env scope s b → a = b
   | _, _, _, .ret _ _ r, nd, vn, _, h₂ => by
     cases h₂ with
     | ret _ _ r' => exact returnR_unique nd vn r r'
+    | retLit _ _ mi lw mr _ _ _ => exact (returnR_noLit nd vn mi lw mr r).elim
+    | _ => prod_clash
+  | _, _, _, .retLit _ _ mi lw mr it la mv, nd, vn, _, h₂ => by
+    have ih := fun {y} k' => litArmsR_unique la nd vn (b := y) k'
+    cases h₂ with
+    | ret _ _ r => exact (returnR_noLit nd vn mi lw mr r).elim
+    | retLit _ _ mi' _ mr' it' la' mv' =>
+      cases matchInit_unique mi mi'
+      cases litMatchR_unique nd vn mr mr'
+      cases items_unique it it'
+      cases ih la'
+      rw [mv'] at mv
+      exact (Option.some.inj mv).symm
     | _ => prod_clash
   | _, _, _, .retUnit _ _, _, _, _, h₂ => by
     cases h₂ with
@@ -1111,6 +1324,7 @@ theorem stmtR_unique : ∀ {scope : List Local} {s : CTree} {a : MStmt}, StmtR e
     cases h₂ with
     | assign _ a' => exact assignR_unique nd vn a a'
     | «match» _ mp _ _ _ _ => exact (assignR_noMatch a mp).elim
+    | litMatch _ mp _ _ _ _ => exact (assignR_noMatch a mp).elim
     | _ => prod_clash
   | _, _, _, .match _ mp mr mo ar mv, nd, vn, _, h₂ => by
     have ih := fun {y} k' => armsStmtR_unique ar nd vn (b := y) k'
@@ -1127,6 +1341,24 @@ theorem stmtR_unique : ∀ {scope : List Local} {s : CTree} {a : MStmt}, StmtR e
       rw [mv'] at mv
       exact (Option.some.inj mv).symm
     | assign _ a' => exact (assignR_noMatch a' mp).elim
+    | litMatch _ mp' mr' _ _ _ =>
+      cases matchPrimary_unique mp mp'
+      exact (litMatchR_noMatchStmt nd vn mr' mr).elim
+    | _ => prod_clash
+  | _, _, _, .litMatch _ mp mr it la mv, nd, vn, _, h₂ => by
+    have ih := fun {y} k' => litArmsR_unique la nd vn (b := y) k'
+    cases h₂ with
+    | litMatch _ mp' mr' it' la' mv' =>
+      cases matchPrimary_unique mp mp'
+      cases litMatchR_unique nd vn mr mr'
+      cases items_unique it it'
+      cases ih la'
+      rw [mv'] at mv
+      exact (Option.some.inj mv).symm
+    | «match» _ mp' mr' _ _ _ =>
+      cases matchPrimary_unique mp mp'
+      exact (litMatchR_noMatchStmt nd vn mr mr').elim
+    | assign _ a' => exact (assignR_noMatch a' mp).elim
     | _ => prod_clash
   | _, _, _, .forRange _ _ _ _ _ _ _ _ _ _ fx ln il bb _ fr, nd, vn, _, h₂ => by
     have ih := fun {y} k' => blockR_unique bb (idsFresh_cons nd fx) vn (b := y) k'
@@ -1139,6 +1371,54 @@ theorem stmtR_unique : ∀ {scope : List Local} {s : CTree} {a : MStmt}, StmtR e
       cases ih bb'
       rw [fr'] at fr
       exact (Option.some.inj fr).symm
+    | _ => prod_clash
+  | _, _, _, .forArray _ _ _ fx _ pn ln al bb fa, nd, vn, _, h₂ => by
+    have ih := fun {y} k' => blockR_unique bb (idsFresh_cons nd fx) vn (b := y) k'
+    cases h₂ with
+    | forArray _ _ _ _ _ pn' ln' al' bb' fa' =>
+      obtain ⟨_, _, _, e1⟩ := pn
+      obtain ⟨_, _, _, e2⟩ := pn'
+      subst e1 e2
+      obtain ⟨_, f⟩ := ln
+      obtain ⟨_, f'⟩ := ln'
+      cases (firstWith_unique f f').2
+      rw [al] at al'
+      cases al'
+      cases ih bb'
+      rw [fa'] at fa
+      exact (Option.some.inj fa).symm
+    | forSlice _ _ _ _ _ _ pn' ln' lt' _ _ =>
+      obtain ⟨_, _, _, e1⟩ := pn
+      obtain ⟨_, _, _, e2⟩ := pn'
+      subst e1 e2
+      obtain ⟨_, f⟩ := ln
+      obtain ⟨_, f'⟩ := ln'
+      cases (firstWith_unique f f').2
+      simp [arrayLocal, arrayLocalOf, arrayParts, lt'] at al
+    | _ => prod_clash
+  | _, _, _, .forSlice _ _ _ _ _ fn pn ln lt bb fa, nd, vn, _, h₂ => by
+    have ih := fun {y} k' => blockR_unique bb (idsFresh_cons nd fn) vn (b := y) k'
+    cases h₂ with
+    | forArray _ _ _ _ _ pn' ln' al' _ _ =>
+      obtain ⟨_, _, _, e1⟩ := pn
+      obtain ⟨_, _, _, e2⟩ := pn'
+      subst e1 e2
+      obtain ⟨_, f⟩ := ln
+      obtain ⟨_, f'⟩ := ln'
+      cases (firstWith_unique f f').2
+      simp [arrayLocal, arrayLocalOf, arrayParts, lt] at al'
+    | forSlice _ _ _ _ _ _ pn' ln' lt' bb' fa' =>
+      obtain ⟨_, _, _, e1⟩ := pn
+      obtain ⟨_, _, _, e2⟩ := pn'
+      subst e1 e2
+      obtain ⟨_, f⟩ := ln
+      obtain ⟨_, f'⟩ := ln'
+      cases (firstWith_unique f f').2
+      rw [lt] at lt'
+      cases lt'
+      cases ih bb'
+      rw [fa'] at fa
+      exact (Option.some.inj fa).symm
     | _ => prod_clash
   | _, _, _, .block _ bb, nd, vn, _, h₂ => by
     have ih := fun {y} k' => blockR_unique bb nd vn (b := y) k'

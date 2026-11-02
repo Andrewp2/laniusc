@@ -46,7 +46,7 @@ theorem step_SrcEff_callee_need {prog : SrcProgram} {prims : Prims} {ix_SrcEff_c
   simp only [src_SrcEff_callee_need] at h
   faithful [Lanius.Mini.SrcEff.calleeNeed]
 
-theorem step_SrcEff_slice_uses {prog : SrcProgram} {prims : Prims} {ix_SrcEff_slice_uses ix_empty_of_usize ix_concat_of_usize ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_effs_slice_uses ix_single_of_usize : Nat} (fn : prog.funcs[ix_SrcEff_slice_uses]? = some (src_SrcEff_slice_uses ix_empty_of_usize ix_concat_of_usize ix_SrcEff_slice_uses ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_effs_slice_uses ix_single_of_usize)) (np : prims.isPrim ix_SrcEff_slice_uses = false)
+theorem step_SrcEff_slice_uses {prog : SrcProgram} {prims : Prims} {ix_SrcEff_slice_uses ix_empty_of_usize ix_concat_of_usize ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_single_of_usize ix_effs_slice_uses : Nat} (fn : prog.funcs[ix_SrcEff_slice_uses]? = some (src_SrcEff_slice_uses ix_empty_of_usize ix_concat_of_usize ix_SrcEff_slice_uses ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_single_of_usize ix_effs_slice_uses)) (np : prims.isPrim ix_SrcEff_slice_uses = false)
     (ext_empty_of_usize : Certified (∀ {n : Nat}, Stmt_empty_of_usize prog prims ix_empty_of_usize n))
     (ext_concat_of_usize : Certified (∀ {n : Nat}, Stmt_concat_of_usize prog prims ix_concat_of_usize n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff n))

@@ -1,0 +1,11 @@
+module app::main;
+
+// A struct past the weight limit, though no function uses it
+// (SEMANTIC_DECISIONS "Type weights").
+struct Big {
+    a: [i32; 4194304],
+}
+
+fn main() -> i32 {
+    return 7;
+}

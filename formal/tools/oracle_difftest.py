@@ -10,7 +10,7 @@ argument tuples must give the same result.
     python3 -I formal/tools/oracle_difftest.py WORKDIR [--count N] [--seed S] [--calls K] [--chunk C] [--only K,..] [--laniusc PATH]
 
 Run from the repository root. laniusc runs under target/claude-work/bin/heavy, in a
-systemd-run scope capped at 6 GB.
+systemd-run scope in work.slice (one soft memory budget, nothing killed).
 A Python interpreter of the generated programs gives a third answer, so a
 disagreement shows which side is wrong. Prints one line per disagreement and a
 summary; exits nonzero on any.
@@ -1994,7 +1994,7 @@ def main():
         exe_path = os.path.join(args.workdir, 'programs')
         open(lani_path, 'w').write(lani_file(programs[start:start + args.chunk], calls[start:start + args.chunk]))
         exe_path, build = run_cache.laniusc_build(
-            ['systemd-run', '--user', '--scope', '--slice=lean.slice', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
+            ['systemd-run', '--user', '--scope', '--slice=work.slice',
              'target/claude-work/bin/heavy', '-t', '20', args.laniusc, '--stdlib-root', 'stdlib',
              '-o', exe_path, lani_path], args.laniusc, lani_path, exe_path, ['stdlib'])
         if build is not None:

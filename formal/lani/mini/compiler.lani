@@ -1742,6 +1742,14 @@ pub enum SrcEff {
     // the array local array as a slice of its elements, of type element:
     // Core's array-to-slice, so a write through it reaches the array
     ArraySlice(SrcType, usize),
+    // if condition { then } else { otherwise } of type ty: Core's match on
+    // the bool, true's arm then the wildcard's
+    EIf(Box<SrcEff>, SrcType, Box<SrcEff>, Box<SrcEff>),
+    // let id: ty = value in body, of type rt: Core's match of value with
+    // the one arm binding id
+    ELet(usize, SrcType, Box<SrcEff>, SrcType, Box<SrcEff>),
+    // slice_len(slice) of a slice local, a usize: the slot after its pointer
+    ELen(usize),
 }
 
 pub enum SrcStmt {
@@ -4185,6 +4193,49 @@ pub fn eval_match(slot: usize, ety: SrcType, ty: SrcType, scrutinee: core::optio
     };
 }
 
+// The condition is a bool and both values have type ty.
+pub fn eval_if_of(slot: usize, ty: SrcType, c: Evaluated, t: Evaluated, e: Evaluated) -> core::option::Option<Evaluated> {
+    if (c.ty.same(Bool) && t.ty.same(ty) && e.ty.same(ty)) {
+        return Some(Evaluated { stmt: Seq(boxed(c.stmt), boxed(Ite(Var(slot), boxed(t.stmt), boxed(e.stmt)))), ty: ty });
+    }
+    return None;
+}
+
+// The value has type ty and the body type rt: the value in slot, then the
+// body from match_dst, then its value copied down to slot.
+pub fn eval_let_in_of(slot: usize, ty: SrcType, rt: SrcType, v: Evaluated, b: Evaluated) -> core::option::Option<Evaluated> {
+    if (v.ty.same(ty) && b.ty.same(rt)) {
+        return Some(Evaluated { stmt: Seq(boxed(v.stmt), boxed(Seq(boxed(b.stmt), boxed(assign_from(slot, slot_vars(match_dst(slot, ty, rt), rt.size()), Skip))))), ty: rt });
+    }
+    return None;
+}
+
+// let id: ty = value in body: the value in slot, id bound to it there, and
+// the body evaluated from match_dst, above the value and the result.
+pub fn eval_let_in(slot: usize, ty: SrcType, rt: SrcType, value: core::option::Option<Evaluated>, body: core::option::Option<Evaluated>) -> core::option::Option<Evaluated> {
+    return match (value) {
+        None -> None,
+        Some(v) -> match (body) {
+            None -> None,
+            Some(b) -> eval_let_in_of(slot, ty, rt, v, b),
+        },
+    };
+}
+
+// The condition in slot, then the value its test picks, also from slot.
+pub fn eval_if(slot: usize, ty: SrcType, condition: core::option::Option<Evaluated>, then_value: core::option::Option<Evaluated>, else_value: core::option::Option<Evaluated>) -> core::option::Option<Evaluated> {
+    return match (condition) {
+        None -> None,
+        Some(c) -> match (then_value) {
+            None -> None,
+            Some(t) -> match (else_value) {
+                None -> None,
+                Some(e) -> eval_if_of(slot, ty, c, t, e),
+            },
+        },
+    };
+}
+
 // extract: mutual begin
 impl SrcEff {
     // The struct and enum types of the literals in this expression, which
@@ -4204,6 +4255,9 @@ impl SrcEff {
             EDivide(op, left, right) -> concat(unbox(left).types(), unbox(right).types()),
             EStride(slice) -> empty(),
             ArraySlice(element, array) -> single(element),
+            EIf(condition, ty, then_value, else_value) -> concat(unbox(condition).types(), concat(unbox(then_value).types(), unbox(else_value).types())),
+            ELet(id, ty, value, rt, body) -> cons(ty, concat(unbox(value).types(), unbox(body).types())),
+            ELen(slice) -> empty(),
         };
     }
 }
@@ -4331,6 +4385,15 @@ fn lower_set_scalar(slot: usize, ty: SrcType, scope: List<Binding>, value: SrcEx
         return lower_set_value(slot, lower_as(scope, value, ty));
     }
     return None;
+}
+
+// The body of a let in an expression, under its binding.
+// extract: inline
+fn eval_let_body(sigs: List<Sig>, decls: SrcDecls, bound: core::option::Option<List<Binding>>, dst: usize, body: SrcEff) -> core::option::Option<Evaluated> {
+    return match (bound) {
+        None -> None,
+        Some(s) -> body.eval(sigs, decls, s, dst),
+    };
 }
 
 pub fn lower_set_field_of(b: Binding, field: usize, scope: List<Binding>, value: SrcExpr) -> core::option::Option<Stmt> {
@@ -4622,12 +4685,13 @@ pub fn word_variants(decls: SrcDecls, variants: List<List<SrcType>>) -> bool {
 // extract: mutual end
 
 // A raw slice element of words: a struct or an enum of a word type, or a
-// u16 (one word, laniusc's layout of a [u16]).
+// one-word scalar, u16, u32, u64, i64 or bool (laniusc's layout of their
+// slices).
 pub fn word_element(decls: SrcDecls, element: SrcType) -> bool {
     return match (element) {
         I32 -> false,
-        Bool -> false,
-        Uint(kind) -> element.is_uint(Uint16),
+        Bool -> true,
+        Uint(kind) -> element.is_uint(Uint16) || element.is_uint(Uint32) || element.is_uint(Uint64),
         Struct(id, fields) -> word_type(decls, element),
         Enum(id, variants) -> word_type(decls, element),
         Ptr -> false,
@@ -4637,7 +4701,7 @@ pub fn word_element(decls: SrcDecls, element: SrcType) -> bool {
         Isize -> false,
         SrcType::Char -> false,
         SrcType::Float(ft) -> false,
-        Sint(sk) -> false,
+        Sint(sk) -> element.is_sint(Uint64),
     };
 }
 
@@ -5149,6 +5213,22 @@ pub fn eval_stride(decls: SrcDecls, scope: List<Binding>, slice: usize, slot: us
     };
 }
 
+// slice_len(slice) of a slice local: its length, the slot after its
+// pointer, as a usize.
+pub fn eval_len_of(b: Binding, slot: usize) -> core::option::Option<Evaluated> {
+    return match (element_of(b.ty)) {
+        None -> None,
+        Some(element) -> Some(Evaluated { stmt: Assign(slot, Var(plus(b.slot, 1))), ty: Uint(Usize) }),
+    };
+}
+
+pub fn eval_len(scope: List<Binding>, slice: usize, slot: usize) -> core::option::Option<Evaluated> {
+    return match (lookup(scope, slice)) {
+        None -> None,
+        Some(b) -> eval_len_of(b, slot),
+    };
+}
+
 // extract: mutual begin
 impl SrcEff {
     // The code computing this expression into slot, slot + 1, ..., and its type.
@@ -5167,6 +5247,9 @@ impl SrcEff {
             EDivide(op, left, right) -> eval_division(op, slot, unbox(left).eval(sigs, decls, scope, slot), unbox(right).eval(sigs, decls, scope, plus(slot, 1))),
             EStride(slice) -> eval_stride(decls, scope, slice, slot),
             ArraySlice(element, array) -> None,
+            EIf(condition, ty, then_value, else_value) -> eval_if(slot, ty, unbox(condition).eval(sigs, decls, scope, slot), unbox(then_value).eval(sigs, decls, scope, slot), unbox(else_value).eval(sigs, decls, scope, slot)),
+            ELet(id, ty, value, rt, body) -> eval_let_in(slot, ty, rt, unbox(value).eval(sigs, decls, scope, slot), eval_let_body(sigs, decls, arm_scope(single(id), single(ty), slot, scope), match_dst(slot, ty, rt), unbox(body))),
+            ELen(slice) -> eval_len(scope, slice, slot),
         };
     }
 }
@@ -5510,6 +5593,9 @@ pub fn arg_bytes(scope: List<Binding>, arg: SrcEff) -> usize {
         EDivide(op, left, right) -> 0,
         EStride(slice) -> 0,
         ArraySlice(element, array) -> binding_bytes(lookup(scope, array)),
+        EIf(condition, ity, then_value, else_value) -> 0,
+        ELet(lid, lty, value, rt, body) -> 0,
+        ELen(slice) -> 0,
     };
 }
 
@@ -5566,6 +5652,9 @@ pub fn array_arg(scope: List<Binding>, arg: SrcEff, ty: SrcType, t: usize, offse
         EDivide(op, left, right) -> None,
         EStride(slice) -> None,
         ArraySlice(element, array) -> array_arg_slice(lookup(scope, array), element, ty, array, t, offset, rest),
+        EIf(condition, ity, then_value, else_value) -> None,
+        ELet(lid, lty, value, rt, body) -> None,
+        ELen(slice) -> None,
     };
 }
 
@@ -5586,11 +5675,14 @@ pub fn array_args(scope: List<Binding>, args: List<SrcEff>, types: List<SrcType>
 
 // The call's code: the check of the other arguments, the block's address
 // into t, the stores, the call (its result from slot next), the block's
-// address again and the loads.
+// address again and the loads. The caller's block is positive, so its room
+// lies above the limit and Frame(t, 0) runs. The result is a scalar, so no
+// slice of the block outlives the call (SEMANTIC_DECISIONS "Addressed
+// locals", point 4).
 pub fn array_call_code(next: usize, callee: usize, sig: Sig, a: ArrayArgs) -> core::option::Option<Evaluated> {
     let count: usize = sig.ret.size();
     let t: usize = plus(next, count);
-    if ((count > 0) && (sig.need <= sig.room) && (a.bytes <= sig.block)) {
+    if ((count > 0) && sig.ret.is_scalar() && (sig.need <= sig.room) && (sig.block > 0) && (a.bytes <= sig.block)) {
         return Some(Evaluated { stmt: check_then(next, a.guard, Seq(boxed(Stmt::Frame(t, 0)), boxed(Seq(boxed(a.stores), boxed(Seq(boxed(Stmt::Call(next, count, callee, a.args)), boxed(Seq(boxed(Stmt::Frame(t, 0)), boxed(a.loads))))))))), ty: sig.ret });
     }
     return None;
@@ -5626,6 +5718,9 @@ impl SrcEff {
             EDivide(op, left, right) -> false,
             EStride(slice) -> false,
             ArraySlice(element, array) -> true,
+            EIf(condition, ty, then_value, else_value) -> false,
+            ELet(id, ty, value, rt, body) -> false,
+            ELen(slice) -> false,
         };
     }
 
@@ -5656,6 +5751,9 @@ impl SrcEff {
             EDivide(op, left, right) -> false,
             EStride(slice) -> false,
             ArraySlice(element, array) -> false,
+            EIf(condition, ty, then_value, else_value) -> false,
+            ELet(id, ty, value, rt, body) -> false,
+            ELen(slice) -> false,
         };
     }
 
@@ -5675,13 +5773,16 @@ impl SrcEff {
             EDivide(op, left, right) -> None,
             EStride(slice) -> None,
             ArraySlice(element, array) -> None,
+            EIf(condition, ty, then_value, else_value) -> None,
+            ELet(id, ty, value, rt, body) -> None,
+            ELen(slice) -> None,
         };
     }
 }
 
 
-// The code of a value a statement computes: a call passing arrays as slices
-// (array_call), or any other expression's code.
+// The code of a value a statement computes (LetEval, Discard): a call
+// passing arrays as slices (array_call), or any other expression's code.
 pub fn stmt_eval(value: SrcEff, sigs: List<Sig>, decls: SrcDecls, scope: List<Binding>, next: usize) -> core::option::Option<Evaluated> {
     if (value.passes_slices()) {
         return value.slice_call(sigs, scope, next);
@@ -5712,12 +5813,12 @@ impl SrcStmt {
             LetSlice(id, element, pointer, length, body) -> guarded(next, guard_and(pointer.guard(scope), length.guard(scope)), lower_let(next, lower_slice(decls, element, lower_as(scope, pointer, Ptr), lower_as(scope, length, I32)), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Slice(boxed(element)) }, scope), plus(next, 2)))),
             LetIndex(id, ty, slice, index, body) -> lower_let_index_any(decls, scope, next, ty, slice, index, unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
             SetIndex(slice, index, value) -> lower_set_index_any(decls, scope, next, slice, index, value),
-            LetEval(id, ty, value, body) -> lower_let_eval(ty, value.eval(sigs, decls, scope, next), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
+            LetEval(id, ty, value, body) -> lower_let_eval(ty, stmt_eval(value, sigs, decls, scope, next), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
             SetEval(id, value) -> lower_set_eval(next, lookup(scope, id), value.eval(sigs, decls, scope, next)),
             IfEval(condition, then_branch, else_branch) -> lower_if_eval(next, condition.eval(sigs, decls, scope, next), unbox(then_branch).lower(sigs, decls, ret, scope, next), unbox(else_branch).lower(sigs, decls, ret, scope, next)),
             WhileEval(condition, body) -> lower_while_eval(next, condition.eval(sigs, decls, scope, next), unbox(body).lower(sigs, decls, ret, scope, next)),
             ReturnEval(value) -> lower_return_eval(next, ret, value.eval(sigs, decls, scope, next)),
-            Discard(value) -> lower_discard(value.eval(sigs, decls, scope, next)),
+            Discard(value) -> lower_discard(stmt_eval(value, sigs, decls, scope, next)),
             SetIndexEval(slice, index, value) -> lower_set_index_eval(decls, next, lookup(scope, slice), index.eval(sigs, decls, scope, next), value.eval(sigs, decls, scope, plus(next, 1))),
             SetFieldEval(id, field, value) -> lower_set_field_eval(next, lookup(scope, id), field, value.eval(sigs, decls, scope, next)),
             ReturnUnit -> lower_return_unit(ret),
@@ -5903,6 +6004,9 @@ impl SrcEff {
             EDivide(op, left, right) -> concat(unbox(left).slice_uses(), unbox(right).slice_uses()),
             EStride(slice) -> empty(),
             ArraySlice(element, array) -> single(array),
+            EIf(condition, ty, then_value, else_value) -> concat(unbox(condition).slice_uses(), concat(unbox(then_value).slice_uses(), unbox(else_value).slice_uses())),
+            ELet(id, ty, value, rt, body) -> concat(unbox(value).slice_uses(), unbox(body).slice_uses()),
+            ELen(slice) -> empty(),
         };
     }
 
@@ -5923,6 +6027,9 @@ impl SrcEff {
             EDivide(op, left, right) -> max_of(unbox(left).callee_need(needs), unbox(right).callee_need(needs)),
             EStride(slice) -> 0,
             ArraySlice(element, array) -> 0,
+            EIf(condition, ty, then_value, else_value) -> max_of(unbox(condition).callee_need(needs), max_of(unbox(then_value).callee_need(needs), unbox(else_value).callee_need(needs))),
+            ELet(id, ty, value, rt, body) -> max_of(unbox(value).callee_need(needs), unbox(body).callee_need(needs)),
+            ELen(slice) -> 0,
         };
     }
 }

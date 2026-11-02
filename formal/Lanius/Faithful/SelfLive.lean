@@ -57,11 +57,11 @@ theorem qcall_cons (N : Nat) (x t : Value) :
   have b33 : 33 ∈ prims.boxed := by decide +kernel
   simp [qcall, np_cons_of_i32, fn_cons_of_i32, src_cons_of_i32, qstmt, qeff, qeffs, qthen, qfree, addC,
     np_boxed_of_mini_selfhost_List_i32, b33, single, pexpr, paramEnv, ty1, SrcType.typeId, paramBindings,
-    Env.bindAll, Env.get?, doneValue, consCost]
+    Env.bindAll, Env.get?, outValue, consCost]
 
 theorem qcall_empty (N : Nat) : qcall prog prims (boxCost prog) (N + 1) 5 [] = some (nilVal, 0) := by
   simp [qcall, np_empty_of_i32, fn_empty_of_i32, src_empty_of_i32, qstmt, qeff, qeffs, qthen, qfree, addC,
-    ty1, SrcType.typeId, nilVal, doneValue]
+    ty1, SrcType.typeId, nilVal, outValue]
 
 /-! ## `oracle_read` -/
 

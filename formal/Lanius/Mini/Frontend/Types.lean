@@ -266,6 +266,12 @@ inductive MEff where
   | xArraySlice : Ty → Nat → MEff
   /-- a call of the host service with this Core function id (see extern_func): only an extern's instance has one -/
   | xHost : Nat → (List MEff) → MEff
+  /-- if condition { then } else { otherwise }, of this type: a literal match's arms -/
+  | xIf : MEff → Ty → MEff → MEff → MEff
+  /-- let id: ty = value in body, of the body's type: a literal match's effectful scrutinee bound to the match's local -/
+  | xLet : Nat → Ty → MEff → Ty → MEff → MEff
+  /-- slice_len(x) of a slice local x -/
+  | xLen : Nat → MEff
   deriving Repr
 
 /-- An arm of a match expression: its binders, its value and the value's type. -/
@@ -393,6 +399,13 @@ structure Untyped where
   head : LetHead
   deriving Repr
 
+/-- An array local: its id, element type and length. -/
+structure ArrayLocal where
+  id : Nat
+  element : Ty
+  count : Nat
+  deriving Repr
+
 /-- A match statement's scrutinee (a local, or else a value bound to a local numbered by the `match`), its enum and variants, and the local numbered by its `}` that the Unreachable after the last arm binds. -/
 structure MatchStmt where
   scrutinee : Nat
@@ -402,6 +415,22 @@ structure MatchStmt where
   variants : List VariantTy
   closer : Nat
   ret : Ty
+  deriving Repr
+
+/-- A match on an integer or bool value whose arms have literal patterns (`1 -> v`, `true -> v`, as laniusc reads them) is read as a chain of ifs on the scrutinee's local: an arm runs when the local equals its literal, else the next arm is tried; a last `_` arm runs otherwise. An integer match needs the `_` arm; a bool match needs it unless both true and false have arms. The scrutinee, if it is not a local, is bound first, as a match statement's is (match_stmt_head). -/
+structure LitMatch where
+  scrutinee : Nat
+  sty : Ty
+  value : Option MEff
+  closer : Nat
+  ret : Ty
+  deriving Repr
+
+/-- What a literal match does with an arm that is not a block: a match statement does not read one, `let x: t = match (s) { .. }; rest` binds x to its value and runs rest, and `return match (s) { .. };` returns it. -/
+inductive LitForm where
+  | litStmt : LitForm
+  | litLet : Local → MStmt → LitForm
+  | litReturn : LitForm
   deriving Repr
 
 structure MParam where

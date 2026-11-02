@@ -28,6 +28,22 @@ abbrev Stmt_effs_types (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
   ∀ {x0 : List Lanius.Mini.SrcEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 186 RepSrcEff) x0 v0 →
     (RepList 73 RepSrcType) (Lanius.Mini.effsTypes x0) w
 
+abbrev Stmt_eval_if (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.SrcType} {x2 : Option Lanius.Mini.Evaluated} {x3 : Option Lanius.Mini.Evaluated} {x4 : Option Lanius.Mini.Evaluated} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → RepSrcType x1 v1 → (RepOption 156 RepEvaluated) x2 v2 → (RepOption 156 RepEvaluated) x3 v3 → (RepOption 156 RepEvaluated) x4 v4 →
+    (RepOption 156 RepEvaluated) (Lanius.Mini.evalIf x0 x1 x2 x3 x4) w
+
+abbrev Stmt_eval_if_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.SrcType} {x2 : Lanius.Mini.Evaluated} {x3 : Lanius.Mini.Evaluated} {x4 : Lanius.Mini.Evaluated} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → RepSrcType x1 v1 → RepEvaluated x2 v2 → RepEvaluated x3 v3 → RepEvaluated x4 v4 →
+    (RepOption 156 RepEvaluated) (Lanius.Mini.evalIfOf x0 x1 x2 x3 x4) w
+
+abbrev Stmt_eval_let_in (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.SrcType} {x2 : Lanius.Mini.SrcType} {x3 : Option Lanius.Mini.Evaluated} {x4 : Option Lanius.Mini.Evaluated} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → RepSrcType x1 v1 → RepSrcType x2 v2 → (RepOption 156 RepEvaluated) x3 v3 → (RepOption 156 RepEvaluated) x4 v4 →
+    (RepOption 156 RepEvaluated) (Lanius.Mini.evalLetIn x0 x1 x2 x3 x4) w
+
+abbrev Stmt_eval_let_in_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.SrcType} {x2 : Lanius.Mini.SrcType} {x3 : Lanius.Mini.Evaluated} {x4 : Lanius.Mini.Evaluated} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → RepSrcType x1 v1 → RepSrcType x2 v2 → RepEvaluated x3 v3 → RepEvaluated x4 v4 →
+    (RepOption 156 RepEvaluated) (Lanius.Mini.evalLetInOf x0 x1 x2 x3 x4) w
+
 abbrev Stmt_eval_match (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.SrcType} {x2 : Lanius.Mini.SrcType} {x3 : Option Lanius.Mini.Evaluated} {x4 : Option Lanius.Mini.Stmt} {x5 : Nat} {x6 : Nat} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → RepNat x0 v0 → RepSrcType x1 v1 → RepSrcType x2 v2 → (RepOption 156 RepEvaluated) x3 v3 → (RepOption 134 RepStmt) x4 v4 → RepNat x5 v5 → RepNat x6 v6 →
     (RepOption 156 RepEvaluated) (Lanius.Mini.evalMatch x0 x1 x2 x3 x4 x5 x6) w

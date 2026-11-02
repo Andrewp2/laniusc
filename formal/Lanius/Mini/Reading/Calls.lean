@@ -54,10 +54,10 @@ inductive EffTy (decls : Decls) (scope : List Local) : MEff → Ty → Prop
   | pure {e : SrcExpr} {t : Ty} : ExprTy decls scope e t → EffTy decls scope (.xPure e) t
   | call {inst : Inst} {args : List MEff} {t : Ty} : InstRet decls inst t → EffTy decls scope (.xCall inst args) t
   | compare {op : SrcOp} {l r : MEff} : givesBool op = true → EffTy decls scope (.xApply op l r) .tyBool
-  | left {op : SrcOp} {l r : MEff} {t : Ty} : givesBool op = false → bareEff l = false → EffTy decls scope l t →
-      EffTy decls scope (.xApply op l r) t
-  | right {op : SrcOp} {l r : MEff} {t : Ty} : givesBool op = false → bareEff l = true → EffTy decls scope r t →
-      EffTy decls scope (.xApply op l r) t
+  | left {op : SrcOp} {l r : MEff} {t : Ty} : givesBool op = false → (bareEff l && !shiftOp op) = false →
+      EffTy decls scope l t → EffTy decls scope (.xApply op l r) t
+  | right {op : SrcOp} {l r : MEff} {t : Ty} : givesBool op = false → (bareEff l && !shiftOp op) = true →
+      EffTy decls scope r t → EffTy decls scope (.xApply op l r) t
   | neg {a : MEff} {t : Ty} : EffTy decls scope a t → EffTy decls scope (.xNeg a) t
   | not {a : MEff} : EffTy decls scope (.xNot a) .tyBool
   | cast {s : SrcType} {a : MEff} {t : Ty} : ScalarTy t s → EffTy decls scope (.xCast s a) t
@@ -75,6 +75,9 @@ inductive EffTy (decls : Decls) (scope : List Local) : MEff → Ty → Prop
   | stride {sl : Nat} : EffTy decls scope (.xStride sl) .tyIsize
   | host {id : Nat} {args : List MEff} : EffTy decls scope (.xHost id args) .tyI32
   | arraySlice {e : Ty} {a : Nat} : EffTy decls scope (.xArraySlice e a) (.tySlice e)
+  | «if» {c a b : MEff} {t : Ty} : EffTy decls scope (.xIf c t a b) t
+  | «let» {id : Nat} {t rt : Ty} {v b : MEff} : EffTy decls scope (.xLet id t v rt b) rt
+  | len {sl : Nat} : EffTy decls scope (.xLen sl) (.tyUint .usize)
 
 theorem instRet_sound {fuel : Nat} {decls : Decls} {inst : Inst} {t : Ty} (h : instRet fuel decls inst = some t) :
     InstRet decls inst t := by
@@ -137,7 +140,7 @@ theorem effTy_sound : ∀ {fuel : Nat} {env : FrontEnv} {scope : List Local} {x 
       · rw [if_neg g] at h
         have g' : givesBool op = false := by simpa using g
         simp only [pickTy] at h
-        by_cases bl : bareEff l = true
+        by_cases bl : (bareEff l && !shiftOp op) = true
         · rw [if_pos bl] at h
           exact .right g' bl (effTy_sound h)
         · rw [if_neg bl] at h
@@ -178,6 +181,9 @@ theorem effTy_sound : ∀ {fuel : Nat} {env : FrontEnv} {scope : List Local} {x 
     | xStride sl => cases h; exact .stride
     | xHost id args => cases h; exact .host
     | xArraySlice e a => cases h; exact .arraySlice
+    | xIf c t' a b => cases h; exact .if
+    | xLet id t' v rt b => cases h; exact .let
+    | xLen sl => cases h; exact .len
 
 theorem effsTys_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} :
     ∀ {xs : List MEff} {ts : List Ty}, effsTys fuel env scope xs = some ts → ListRel (EffTy env.decls scope) xs ts

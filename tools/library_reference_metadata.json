@@ -2038,7 +2038,8 @@
     },
     "std::channel": {
       "guides": [
-        "docs/stdlib-concurrency.md"
+        "docs/stdlib-concurrency.md",
+        "docs/stdlib-threads.md"
       ]
     },
     "std::clock": {
@@ -2203,6 +2204,11 @@
     "std::poll": {
       "guides": [
         "docs/stdlib-poll.md"
+      ]
+    },
+    "std::pool": {
+      "guides": [
+        "docs/stdlib-threads.md"
       ]
     },
     "std::pthread": {

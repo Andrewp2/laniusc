@@ -7,7 +7,6 @@ public import Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.FArith_opcode
 import all Lanius.Mini.Compiler.P.FloatTy_rex
-import all Lanius.Mini.Compiler.P.Instr_pieces
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
 import all Lanius.Mini.Compiler.P.SrcType_size
@@ -23,11 +22,9 @@ import all Lanius.Mini.Compiler.P.armPayload
 import all Lanius.Mini.Compiler.P.armScope
 import all Lanius.Mini.Compiler.P.assignFrom
 import all Lanius.Mini.Compiler.P.codeSize
-import all Lanius.Mini.Compiler.P.compileArgs
 import all Lanius.Mini.Compiler.P.compileModules
 import all Lanius.Mini.Compiler.P.conjunction
 import all Lanius.Mini.Compiler.P.consArgs
-import all Lanius.Mini.Compiler.P.declareFuncs
 import all Lanius.Mini.Compiler.P.declareProgram
 import all Lanius.Mini.Compiler.P.elementAddress
 import all Lanius.Mini.Compiler.P.elementBase
@@ -40,9 +37,6 @@ import all Lanius.Mini.Compiler.P.evalSame
 import all Lanius.Mini.Compiler.P.floatApply
 import all Lanius.Mini.Compiler.P.guardAnd
 import all Lanius.Mini.Compiler.P.hostRandomCode
-import all Lanius.Mini.Compiler.P.imageLimit
-import all Lanius.Mini.Compiler.P.importOk
-import all Lanius.Mini.Compiler.P.importsOk
 import all Lanius.Mini.Compiler.P.indexOf
 import all Lanius.Mini.Compiler.P.iteThen
 import all Lanius.Mini.Compiler.P.leftTrue
@@ -61,9 +55,6 @@ import all Lanius.Mini.Compiler.P.lowerSlice
 import all Lanius.Mini.Compiler.P.lowerTagged
 import all Lanius.Mini.Compiler.P.matchDst
 import all Lanius.Mini.Compiler.P.matchVariants
-import all Lanius.Mini.Compiler.P.moduleExports
-import all Lanius.Mini.Compiler.P.moduleFirsts
-import all Lanius.Mini.Compiler.P.modulesOk
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.repeatType
 import all Lanius.Mini.Compiler.P.shortCircuit
@@ -72,7 +63,6 @@ import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.sintToUint
 import all Lanius.Mini.Compiler.P.storeArray
 import all Lanius.Mini.Compiler.P.arrayCallSig
-import all Lanius.Mini.Compiler.P.bindingBytes
 import all Lanius.Mini.Compiler.P.needRound
 import all Lanius.Mini.Compiler.P.needsAfter
 import all Lanius.Mini.Compiler.P.storeEvalWord
@@ -976,20 +966,15 @@ theorem mapRawNominalSlice_cases {P : Core.Program} {st : State} {element : Core
 /-- Core's `slice_from_raw_parts` of evaluated operands completes or traps undefined. -/
 theorem sliceFrom_cases {P : Core.Program} {k : Nat} {st : State} {element : SrcType}
     (kind : element = .i32 ∨ element = .uint .uint8 ∨ (∃ sid fields, element = .struct sid fields) ∨
-      (∃ eid variants, element = .enum eid variants) ∨ element = .uint .uint16) {p l : Core.Expr} {a : Nat} {n : Int}
+      (∃ eid variants, element = .enum eid variants) ∨ element.WordScalar) {p l : Core.Expr} {a : Nat} {n : Int}
     (pRun : evalExpr k P st p = .done (.pointer a) st) (lRun : evalExpr k P st l = .done (.signed .i32 n) st) :
     (∃ v st1, evalExpr (k + 1) P st (element.sliceFrom p l) = .done v st1) ∨
       ∃ r, evalExpr (k + 1) P st (element.sliceFrom p l) = .trapped r st ∧ undefinedTrap r = true := by
-  rcases kind with rfl | rfl | ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩ | rfl
+  rcases kind with rfl | rfl | ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩ | (rfl | rfl | rfl | rfl | rfl)
   · simp only [SrcType.sliceFrom, evalExpr, pRun, lRun]
     exact mapRawI32Slice_cases rfl
-  · simp only [SrcType.sliceFrom, evalExpr, pRun, lRun]
-    exact mapRawNominalSlice_cases rfl
-  · simp only [SrcType.sliceFrom, evalExpr, pRun, lRun]
-    exact mapRawNominalSlice_cases rfl
-  · simp only [SrcType.sliceFrom, evalExpr, pRun, lRun]
-    exact mapRawNominalSlice_cases rfl
-  · simp only [SrcType.sliceFrom, evalExpr, pRun, lRun]
+  all_goals
+    simp only [SrcType.sliceFrom, evalExpr, pRun, lRun]
     exact mapRawNominalSlice_cases rfl
 
 end RawMemory

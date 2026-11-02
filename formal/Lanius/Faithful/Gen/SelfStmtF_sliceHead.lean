@@ -29,8 +29,8 @@ abbrev Stmt_builtin_path (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
     RepBool (Lanius.Mini.builtinPath x0) w
 
 abbrev Stmt_call_path_head (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.CTree} {x4 : Lanius.Mini.CTree} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 231 RepLocal) x2 v2 → RepCTree x3 v3 → RepCTree x4 v4 →
-    (RepOption 281 RepLetHead) (Lanius.Mini.callPathHead x0 x1 x2 x3 x4) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.CTree} {x4 : Lanius.Mini.CTree} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 235 RepLocal) x2 v2 → RepCTree x3 v3 → RepCTree x4 v4 →
+    (RepOption 286 RepLetHead) (Lanius.Mini.callPathHead x0 x1 x2 x3 x4) w
 
 abbrev Stmt_dealloc_path (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
@@ -45,19 +45,19 @@ abbrev Stmt_is_path (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     RepBool (Lanius.Mini.isPath x0 x1) w
 
 abbrev Stmt_is_some_name (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List Nat)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 194 (RepList 25 RepNat)) x0 v0 →
+  ∀ {x0 : Option (List Nat)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 195 (RepList 25 RepNat)) x0 v0 →
     RepBool (Lanius.Mini.isSomeName x0) w
 
 abbrev Stmt_named_split (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (List Nat)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 31 (RepList 25 RepNat)) x0 v0 →
-    (RepOption 247 RepSplit) (Lanius.Mini.namedSplit x0) w
+    (RepOption 251 RepSplit) (Lanius.Mini.namedSplit x0) w
 
 abbrev Stmt_same_names (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (List Nat)} {x1 : List Lanius.Mini.CTree} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepList 82 RepCTree) x1 v1 →
     RepBool (Lanius.Mini.sameNames x0 x1) w
 
 abbrev Stmt_slice_head (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List Lanius.Mini.SrcExpr)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 295 (RepList 21 RepSrcExpr)) x0 v0 →
-    (RepOption 281 RepLetHead) (Lanius.Mini.sliceHead x0) w
+  ∀ {x0 : Option (List Lanius.Mini.SrcExpr)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 305 (RepList 21 RepSrcExpr)) x0 v0 →
+    (RepOption 286 RepLetHead) (Lanius.Mini.sliceHead x0) w
 
 end Lanius.Faithful.SelfCert

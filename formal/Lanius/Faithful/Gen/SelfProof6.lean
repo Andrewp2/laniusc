@@ -150,6 +150,16 @@ theorem proof_empty_of_mini_selfhost_Token {prog : SrcProgram} {prims : Prims} {
   simp only [src_empty_of_mini_selfhost_Token] at h
   faithful []
 
+theorem step_length_of_mini_selfhost_Inst {prog : SrcProgram} {prims : Prims} {ix_length_of_mini_selfhost_Inst ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_Inst : Nat} (fn : prog.funcs[ix_length_of_mini_selfhost_Inst]? = some (src_length_of_mini_selfhost_Inst ix_plus ix_length_of_mini_selfhost_Inst ix_unbox_of_mini_selfhost_List_mini_selfhost_Inst)) (np : prims.isPrim ix_length_of_mini_selfhost_Inst = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_Inst : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Inst prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Inst n)) {n : Nat}
+    (ih_length_of_mini_selfhost_Inst : Certified (Stmt_length_of_mini_selfhost_Inst prog prims ix_length_of_mini_selfhost_Inst n)) :
+    Stmt_length_of_mini_selfhost_Inst prog prims ix_length_of_mini_selfhost_Inst (n + 1) := by
+  intro x0 v0 w h r0
+  rw [pcall_succ np fn] at h
+  simp only [src_length_of_mini_selfhost_Inst] at h
+  faithful []
+
 theorem step_length_of_mini_selfhost_SrcEff {prog : SrcProgram} {prims : Prims} {ix_length_of_mini_selfhost_SrcEff ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff : Nat} (fn : prog.funcs[ix_length_of_mini_selfhost_SrcEff]? = some (src_length_of_mini_selfhost_SrcEff ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_length_of_mini_selfhost_SrcEff)) (np : prims.isPrim ix_length_of_mini_selfhost_SrcEff = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff n)) {n : Nat}

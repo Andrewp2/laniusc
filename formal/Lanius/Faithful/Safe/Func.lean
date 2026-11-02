@@ -11,82 +11,13 @@ public import Lanius.Mini.Compiler.P.needRound
 public import Lanius.Mini.Compiler.P.needsAfter
 public import Lanius.Mini.Compiler.P.withBudget
 import all Lanius.Mini.Compiler.P.DivOp_size
-import all Lanius.Mini.Compiler.P.FArith_opcode
-import all Lanius.Mini.Compiler.P.FloatTy_rex
-import all Lanius.Mini.Compiler.P.Instr_pieces
-import all Lanius.Mini.Compiler.P.Lists_empty
-import all Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.SrcType_size
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
-import all Lanius.Mini.Compiler.P.UintTy_mask
-import all Lanius.Mini.Compiler.P.applyGuard
 import all Lanius.Mini.Compiler.P.arithShiftRight
-import all Lanius.Mini.Compiler.P.arithUint
-import all Lanius.Mini.Compiler.P.arities
-import all Lanius.Mini.Compiler.P.armBodyScope
-import all Lanius.Mini.Compiler.P.armPayload
-import all Lanius.Mini.Compiler.P.armScope
-import all Lanius.Mini.Compiler.P.assignFrom
-import all Lanius.Mini.Compiler.P.codeSize
-import all Lanius.Mini.Compiler.P.compileArgs
-import all Lanius.Mini.Compiler.P.compileModules
-import all Lanius.Mini.Compiler.P.conjunction
-import all Lanius.Mini.Compiler.P.consArgs
-import all Lanius.Mini.Compiler.P.elementAddress
-import all Lanius.Mini.Compiler.P.elementBase
-import all Lanius.Mini.Compiler.P.enumVariants
 import all Lanius.Mini.Compiler.P.equality
-import all Lanius.Mini.Compiler.P.evalDivide
-import all Lanius.Mini.Compiler.P.evalDivideSint
-import all Lanius.Mini.Compiler.P.evalNot
-import all Lanius.Mini.Compiler.P.evalSame
 import all Lanius.Mini.Compiler.P.floatApply
-import all Lanius.Mini.Compiler.P.guardAnd
-import all Lanius.Mini.Compiler.P.hostRandomCode
-import all Lanius.Mini.Compiler.P.imageLimit
-import all Lanius.Mini.Compiler.P.importOk
-import all Lanius.Mini.Compiler.P.importsOk
-import all Lanius.Mini.Compiler.P.indexOf
-import all Lanius.Mini.Compiler.P.iteThen
-import all Lanius.Mini.Compiler.P.leftTrue
-import all Lanius.Mini.Compiler.P.loadAtBytes
-import all Lanius.Mini.Compiler.P.lowerAddress
-import all Lanius.Mini.Compiler.P.lowerApply
-import all Lanius.Mini.Compiler.P.lowerCallSig
-import all Lanius.Mini.Compiler.P.lowerLoadType
-import all Lanius.Mini.Compiler.P.lowerLocal
-import all Lanius.Mini.Compiler.P.lowerReturn
-import all Lanius.Mini.Compiler.P.lowerSetCallArgs
-import all Lanius.Mini.Compiler.P.lowerSetValues
-import all Lanius.Mini.Compiler.P.lowerShift
-import all Lanius.Mini.Compiler.P.lowerSlice
-import all Lanius.Mini.Compiler.P.lowerTagged
-import all Lanius.Mini.Compiler.P.matchDst
-import all Lanius.Mini.Compiler.P.matchVariants
-import all Lanius.Mini.Compiler.P.moduleExports
-import all Lanius.Mini.Compiler.P.moduleFirsts
-import all Lanius.Mini.Compiler.P.modulesOk
 import all Lanius.Mini.Compiler.P.render
-import all Lanius.Mini.Compiler.P.repeatType
-import all Lanius.Mini.Compiler.P.shortCircuit
-import all Lanius.Mini.Compiler.P.sintToUint
-import all Lanius.Mini.Compiler.P.storeArray
 import all Lanius.Mini.Compiler.P.arrayCallSig
-import all Lanius.Mini.Compiler.P.bindingBytes
-import all Lanius.Mini.Compiler.P.funcNeeds
-import all Lanius.Mini.Compiler.P.needRound
-import all Lanius.Mini.Compiler.P.needsAfter
-import all Lanius.Mini.Compiler.P.withBudget
-import all Lanius.Mini.Compiler.P.storeEvalWord
-import all Lanius.Mini.Compiler.P.storeType
-import all Lanius.Mini.Compiler.P.storeWordElement
-import all Lanius.Mini.Compiler.P.structFields
-import all Lanius.Mini.Compiler.P.usizeWidth
-import all Lanius.Mini.Compiler.P.widthOf
-import all Lanius.Mini.Compiler.P.wordElement
-import all Lanius.Mini.Compiler.P.wordStride
-import all Lanius.Mini.Compiler.P.wordWidth
 import all Lanius.Mini.Compiler.Types
 
 @[expose] public section
@@ -105,31 +36,22 @@ open Lanius.Semantics (State evalExprs)
 section
 variable {sp : SrcProgram} {prims : Prims} {outside : List Nat}
 
-/-- The purity checker accepts no `break` or `continue`, so a pure body has
-no loose one. -/
-theorem stmtOk_inside {boxes : Boxes} {ret : SrcType} :
-    ∀ {tenv : TEnv} {s : SrcStmt}, stmtOk sp outside boxes ret tenv s = true → s.breaksOut = false := by
-  intro tenv s
-  induction s generalizing tenv with
+theorem looseJump_eq (s : SrcStmt) : looseJump s = s.breaksOut := by
+  induction s with
   | «let» _ _ _ _ ih | letStruct _ _ _ _ ih | letCall _ _ _ _ _ ih | letEnum _ _ _ _ _ ih
-  | letEval _ _ _ _ ih =>
-    intro ok
-    simp only [stmtOk] at ok
-    split at ok
-    · exact ih ok
-    · simp at ok
-  | «then» _ _ ih1 ih2 =>
-    intro ok
-    simp only [stmtOk, Bool.and_eq_true] at ok
-    simp [SrcStmt.breaksOut, ih1 ok.1, ih2 ok.2]
-  | «if» _ _ _ ih1 ih2 | ifEval _ _ _ ih1 ih2 =>
-    intro ok
-    simp only [stmtOk, Bool.and_eq_true] at ok
-    simp [SrcStmt.breaksOut, ih1 ok.1.2, ih2 ok.2]
-  | nop | letMatch | set | setField | setCall | «while» | «return» | letAlloc | letLoad | setByte
-  | free | letSlice | letIndex | setIndex | setEval | whileEval | returnEval | discard | setIndexEval
-  | setFieldEval | returnUnit | «assert» | «break» | «continue» | matchArm | unreachable =>
-    intro ok; simp_all [stmtOk, SrcStmt.breaksOut]
+  | letMatch _ _ _ _ _ _ ih | letAlloc _ _ _ _ ih | letLoad _ _ _ _ ih | letSlice _ _ _ _ _ ih
+  | letIndex _ _ _ _ _ ih | letEval _ _ _ _ ih =>
+    simp only [looseJump, SrcStmt.breaksOut, ih]
+  | «then» _ _ ih1 ih2 | «if» _ _ _ ih1 ih2 | ifEval _ _ _ ih1 ih2 | matchArm _ _ _ _ _ _ _ _ ih1 ih2 =>
+    simp only [looseJump, SrcStmt.breaksOut, ih1, ih2]
+  | nop | set | setField | setCall | «while» | «return» | setByte | free | setIndex | setEval | whileEval
+  | returnEval | discard | setIndexEval | setFieldEval | returnUnit | «assert» | «break» | «continue»
+  | unreachable => rfl
+
+/-- A pure body has no loose `break` or `continue`. -/
+theorem PureFunc.inside {f : SrcFunc} (h : PureFunc sp prims outside f = true) : f.body.breaksOut = false := by
+  rw [← looseJump_eq]
+  exact PureFunc.noJump h
 
 theorem func_safe (pure : PureProg sp prims outside) (primsOk : PrimsOk sp prims) :
     ∀ m, FuncSafe sp prims outside m := by
@@ -143,7 +65,7 @@ theorem func_safe (pure : PureProg sp prims outside) (primsOk : PrimsOk sp prims
     rcases run with run | ⟨d, run, rfl | ⟨bad, -⟩⟩
     · exact body_safe calls (fun i lt => ih i lt) (pure c f found hp notOut) inv bound args run
     · rfl
-    · have ends := stmt_ends sp m (stmtOk_inside (pure c f found hp notOut)) run
+    · have ends := stmt_ends sp m (PureFunc.inside (pure c f found hp notOut)) run
       rcases bad with rfl | rfl <;> exact ends.elim
   | true =>
     have mem : c ∈ prims.boxed ∨ c ∈ prims.unbox := by simpa [Prims.isPrim] using hp

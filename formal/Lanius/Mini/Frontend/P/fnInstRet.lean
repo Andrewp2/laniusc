@@ -49,7 +49,7 @@ def bareEff (x : MEff) : Bool :=
   match x with
   | .xPure e => bareInt e
   | .xCall inst args => false
-  | .xApply op l r => !(givesBool op) && bareEff l && bareEff r
+  | .xApply op l r => !(givesBool op) && bareEff l && (shiftOp op || bareEff r)
   | .xNeg a => bareEff a
   | .xNot a => false
   | .xCast t a => false
@@ -61,6 +61,9 @@ def bareEff (x : MEff) : Bool :=
   | .xStride sl => false
   | .xArraySlice e sl => false
   | .xHost id args => false
+  | .xIf c t a b => false
+  | .xLet id t v rt b => false
+  | .xLen sl => false
 
 def effTy (fuel : Nat) (env : FrontEnv) (scope : List Local) (x : MEff) : Option Ty :=
   if fuel = 0 then
@@ -69,7 +72,7 @@ def effTy (fuel : Nat) (env : FrontEnv) (scope : List Local) (x : MEff) : Option
     match x with
     | .xPure e => exprTy fuel env scope e
     | .xCall inst args => instRet fuel env.decls inst
-    | .xApply op l r => applyTy op (pickTy (bareEff l) (effTy (fuel - 1) env scope l) (effTy (fuel - 1) env scope r))
+    | .xApply op l r => applyTy op (pickTy (bareEff l && !(shiftOp op)) (effTy (fuel - 1) env scope l) (effTy (fuel - 1) env scope r))
     | .xNeg a => effTy (fuel - 1) env scope a
     | .xNot a => some Ty.tyBool
     | .xCast t a => srcTy t
@@ -81,6 +84,9 @@ def effTy (fuel : Nat) (env : FrontEnv) (scope : List Local) (x : MEff) : Option
     | .xStride sl => some Ty.tyIsize
     | .xArraySlice e sl => some (Ty.tySlice e)
     | .xHost id args => some Ty.tyI32
+    | .xIf c t a b => some t
+    | .xLet id t v rt b => some rt
+    | .xLen sl => some (Ty.tyUint UintTy.usize)
 
 def effsTys (fuel : Nat) (env : FrontEnv) (scope : List Local) (xs : List MEff) : Option (List Ty) :=
   match xs with

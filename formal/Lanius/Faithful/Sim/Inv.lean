@@ -3,29 +3,16 @@ module
 public import Lanius.Mini.Grows
 public import Lanius.Mini.Compiler.P.arithShiftRight
 import all Lanius.Mini.Compiler.P.DivOp_size
-import all Lanius.Mini.Compiler.P.FArith_opcode
-import all Lanius.Mini.Compiler.P.FloatTy_rex
-import all Lanius.Mini.Compiler.P.Instr_pieces
 import all Lanius.Mini.Compiler.P.Lists_empty
-import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.Stmt_kills
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
-import all Lanius.Mini.Compiler.P.UintTy_mask
+import all Lanius.Mini.Compiler.P.Word_compute
 import all Lanius.Mini.Compiler.P.arithShiftRight
-import all Lanius.Mini.Compiler.P.arithUint
-import all Lanius.Mini.Compiler.P.arities
-import all Lanius.Mini.Compiler.P.codeSize
-import all Lanius.Mini.Compiler.P.compileArgs
-import all Lanius.Mini.Compiler.P.compileModules
+import all Lanius.Mini.Compiler.P.callAgrees
 import all Lanius.Mini.Compiler.P.floatApply
-import all Lanius.Mini.Compiler.P.imageLimit
-import all Lanius.Mini.Compiler.P.importOk
-import all Lanius.Mini.Compiler.P.importsOk
 import all Lanius.Mini.Compiler.P.loadAtBytes
-import all Lanius.Mini.Compiler.P.lowerShift
-import all Lanius.Mini.Compiler.P.moduleExports
-import all Lanius.Mini.Compiler.P.moduleFirsts
-import all Lanius.Mini.Compiler.P.modulesOk
+import all Lanius.Mini.Compiler.P.lowerSetCallArgs
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.Types
 
@@ -117,6 +104,57 @@ theorem if_inv {cond : Core.Expr} {a b : Core.Stmt} {c : Completion}
     · rename_i next run
       exact ⟨j, next, false, rfl, run, h⟩
     all_goals simp at h
+
+/-- A loop's run: its test, and on `true` its body and the rest of the loop. -/
+theorem while_inv {cond : Core.Expr} {body : Core.Stmt} {c : Completion}
+    (h : execStmt k P st (.whileLoop cond body) = .done c st') :
+    ∃ j s1 x, k = j + 1 ∧ evalExpr j P st cond = .done (.boolean x) s1 ∧
+      ((x = false ∧ c = .next ∧ st' = s1) ∨
+       (x = true ∧ ∃ cb s2, execStmt j P s1 body = .done cb s2 ∧
+         (((cb = .next ∨ cb = .continueLoop) ∧ execStmt j P s2 (.whileLoop cond body) = .done c st') ∨
+          (cb = .breakLoop ∧ c = .next ∧ st' = s2) ∨
+          (∃ r, cb = .returned r ∧ c = cb ∧ st' = s2)))) := by
+  cases k with
+  | zero => simp [execStmt] at h
+  | succ j =>
+    simp only [execStmt] at h
+    split at h
+    · rename_i next run
+      simp only [Semantics.Outcome.done.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      exact ⟨j, next, false, rfl, run, .inl ⟨rfl, rfl, rfl⟩⟩
+    · rename_i next run
+      split at h
+      · rename_i completed brun
+        exact ⟨j, next, true, rfl, run, .inr ⟨rfl, .next, completed, brun, .inl ⟨.inl rfl, h⟩⟩⟩
+      · rename_i completed brun
+        exact ⟨j, next, true, rfl, run, .inr ⟨rfl, .continueLoop, completed, brun, .inl ⟨.inr rfl, h⟩⟩⟩
+      · rename_i completed brun
+        simp only [Semantics.Outcome.done.injEq] at h
+        obtain ⟨rfl, rfl⟩ := h
+        exact ⟨j, next, true, rfl, run, .inr ⟨rfl, .breakLoop, completed, brun, .inr (.inl ⟨rfl, rfl, rfl⟩)⟩⟩
+      · rename_i r completed brun
+        simp only [Semantics.Outcome.done.injEq] at h
+        obtain ⟨rfl, rfl⟩ := h
+        exact ⟨j, next, true, rfl, run, .inr ⟨rfl, .returned r, completed, brun, .inr (.inr ⟨r, rfl, rfl, rfl⟩)⟩⟩
+      all_goals simp at h
+    all_goals simp at h
+
+theorem break_inv {c : Completion} (h : execStmt k P st .breakLoop = .done c st') :
+    c = .breakLoop ∧ st' = st := by
+  cases k with
+  | zero => simp [execStmt] at h
+  | succ j =>
+    simp only [execStmt, Semantics.Outcome.done.injEq] at h
+    exact ⟨h.1.symm, h.2.symm⟩
+
+theorem continue_inv {c : Completion} (h : execStmt k P st .continueLoop = .done c st') :
+    c = .continueLoop ∧ st' = st := by
+  cases k with
+  | zero => simp [execStmt] at h
+  | succ j =>
+    simp only [execStmt, Semantics.Outcome.done.injEq] at h
+    exact ⟨h.1.symm, h.2.symm⟩
 
 theorem return_inv {e : Core.Expr} {c : Completion}
     (h : execStmt k P st (.returnValue (some e)) = .done c st') :
@@ -338,6 +376,41 @@ theorem arms_cons_inv {sv v : Value} {pat : Core.Pattern} {body : Core.Expr} {ar
       | trapped => simp [run, restoreOutcomeLocals] at h
       | exited => simp [run, restoreOutcomeLocals] at h
       | outOfFuel => simp [run, restoreOutcomeLocals] at h
+
+/-- The one arm of a `let` in an expression (`SrcEff.eLet`): the body ran on
+the bound local, with less fuel, and the locals were restored. -/
+theorem letArm_inv {w v : Value} {id : Nat} {body : Core.Expr}
+    (h : evalMatchArms k P st w [(.bind id, body)] = .done v st') :
+    ∃ j s2, j < k ∧ evalExpr j P (st.bindLocal id w) body = .done v s2 ∧ st' = restoreLocals st s2 := by
+  obtain ⟨j, rfl, alt⟩ := arms_cons_inv h
+  rcases alt with ⟨none, -⟩ | ⟨bs, s2, hbs, run, rfl⟩
+  · simp [Semantics.matchPattern] at none
+  · simp only [Semantics.matchPattern, Option.some.injEq] at hbs
+    subst hbs
+    exact ⟨j, s2, by omega, run, rfl⟩
+
+/-- The two arms of an `if` in an expression (`SrcEff.eIf`) on a bool: the
+branch it picks ran, with less fuel, and the locals were restored. -/
+theorem ifArms_inv {x : Bool} {a b : Core.Expr} {v : Value}
+    (h : evalMatchArms k P st (.boolean x) [(.literal (.boolean true), a), (.wildcard, b)] = .done v st') :
+    ∃ j s2, j < k ∧ evalExpr j P st (if x then a else b) = .done v s2 ∧ st' = restoreLocals st s2 := by
+  obtain ⟨j, rfl, alt⟩ := arms_cons_inv h
+  cases x with
+  | true =>
+    rcases alt with ⟨none, -⟩ | ⟨bs, s2, hbs, run, rfl⟩
+    · simp [Semantics.matchPattern, Semantics.scalarEqual] at none
+    · have nil : bs = [] := by simp [Semantics.matchPattern, Semantics.scalarEqual] at hbs; first | exact hbs | exact hbs.symm
+      subst nil
+      exact ⟨j, s2, by omega, run, rfl⟩
+  | false =>
+    rcases alt with ⟨-, rest⟩ | ⟨bs, s2, hbs, -, -⟩
+    · obtain ⟨j2, rfl, alt2⟩ := arms_cons_inv rest
+      rcases alt2 with ⟨none, -⟩ | ⟨bs, s2, hbs, run, rfl⟩
+      · simp [Semantics.matchPattern] at none
+      · simp only [Semantics.matchPattern, Option.some.injEq] at hbs
+        subst hbs
+        exact ⟨j2, s2, by omega, run, rfl⟩
+    · simp [Semantics.matchPattern, Semantics.scalarEqual] at hbs
 
 theorem exprs_nil_inv {vs : List Value} (h : evalExprs k P st [] = .done vs st') : vs = [] ∧ st' = st := by
   cases k with

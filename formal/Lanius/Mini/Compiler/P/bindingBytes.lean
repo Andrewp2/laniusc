@@ -42,6 +42,9 @@ def argBytes (scope : List Binding) (arg : SrcEff) : Nat :=
   | .eDivide op left right => 0
   | .eStride slice => 0
   | .arraySlice element array => bindingBytes (lookup scope array)
+  | .eIf condition ity thenValue elseValue => 0
+  | .eLet lid lty value rt body => 0
+  | .eLen slice => 0
 
 /-- A pure argument before the rest. -/
 def arrayArgPure (values : Option (List Expr)) (g : Expr) (rest : Option ArrayArgs) : Option ArrayArgs :=
@@ -87,6 +90,9 @@ def arrayArg (scope : List Binding) (arg : SrcEff) (ty : SrcType) (t : Nat) (off
   | .eDivide op left right => none
   | .eStride slice => none
   | .arraySlice element array => arrayArgSlice (lookup scope array) element ty array t offset rest
+  | .eIf condition ity thenValue elseValue => none
+  | .eLet lid lty value rt body => none
+  | .eLen slice => none
 
 /-- The arguments, one of each parameter type, the arrays from offset in the block on. -/
 def arrayArgs (scope : List Binding) (args : List SrcEff) (types : List SrcType) (t : Nat) (offset : Nat) : Option ArrayArgs :=
@@ -100,11 +106,11 @@ def arrayArgs (scope : List Binding) (args : List SrcEff) (types : List SrcType)
     | [] => none
     | ty :: more => arrayArg scope arg ty t offset (arrayArgs scope rest more t (offset + argBytes scope arg))
 
-/-- The call's code: the check of the other arguments, the block's address into t, the stores, the call (its result from slot next), the block's address again and the loads. -/
+/-- The call's code: the check of the other arguments, the block's address into t, the stores, the call (its result from slot next), the block's address again and the loads. The caller's block is positive, so its room lies above the limit and Frame(t, 0) runs. The result is a scalar, so no slice of the block outlives the call (SEMANTIC_DECISIONS "Addressed locals", point 4). -/
 def arrayCallCode (next : Nat) (callee : Nat) (sig : Sig) (a : ArrayArgs) : Option Evaluated :=
   let count : Nat := SrcType.size sig.ret
   let t : Nat := next + count
-  if decide (0 < count) && decide (sig.need ≤ sig.room) && decide (a.bytes ≤ sig.block) then
+  if decide (0 < count) && SrcType.isScalar sig.ret && decide (sig.need ≤ sig.room) && decide (0 < sig.block) && decide (a.bytes ≤ sig.block) then
     some ({ stmt := checkThen next a.guard (Stmt.seq (Stmt.frame t 0) (Stmt.seq a.stores (Stmt.seq (Stmt.call next count callee a.args) (Stmt.seq (Stmt.frame t 0) a.loads)))), ty := sig.ret } : Evaluated)
   else
     none

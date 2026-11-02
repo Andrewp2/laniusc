@@ -5,82 +5,17 @@ public import Lanius.Faithful.Safe.Expr
 public import Lanius.Faithful.Safe.Grows
 public import Lanius.Mini.Compiler.P.SrcExpr_guard
 import all Lanius.Mini.Compiler.P.DivOp_size
-import all Lanius.Mini.Compiler.P.FArith_opcode
-import all Lanius.Mini.Compiler.P.FloatTy_rex
-import all Lanius.Mini.Compiler.P.Instr_pieces
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.SrcType_size
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
-import all Lanius.Mini.Compiler.P.UintTy_mask
-import all Lanius.Mini.Compiler.P.applyGuard
 import all Lanius.Mini.Compiler.P.arithShiftRight
-import all Lanius.Mini.Compiler.P.arithUint
-import all Lanius.Mini.Compiler.P.arities
-import all Lanius.Mini.Compiler.P.armBodyScope
-import all Lanius.Mini.Compiler.P.armPayload
-import all Lanius.Mini.Compiler.P.armScope
-import all Lanius.Mini.Compiler.P.assignFrom
-import all Lanius.Mini.Compiler.P.codeSize
-import all Lanius.Mini.Compiler.P.compileArgs
-import all Lanius.Mini.Compiler.P.compileModules
-import all Lanius.Mini.Compiler.P.conjunction
-import all Lanius.Mini.Compiler.P.consArgs
-import all Lanius.Mini.Compiler.P.elementAddress
-import all Lanius.Mini.Compiler.P.elementBase
-import all Lanius.Mini.Compiler.P.enumVariants
 import all Lanius.Mini.Compiler.P.equality
-import all Lanius.Mini.Compiler.P.evalDivide
-import all Lanius.Mini.Compiler.P.evalDivideSint
-import all Lanius.Mini.Compiler.P.evalNot
-import all Lanius.Mini.Compiler.P.evalSame
 import all Lanius.Mini.Compiler.P.floatApply
-import all Lanius.Mini.Compiler.P.guardAnd
-import all Lanius.Mini.Compiler.P.hostRandomCode
-import all Lanius.Mini.Compiler.P.imageLimit
-import all Lanius.Mini.Compiler.P.importOk
-import all Lanius.Mini.Compiler.P.importsOk
 import all Lanius.Mini.Compiler.P.indexOf
-import all Lanius.Mini.Compiler.P.iteThen
-import all Lanius.Mini.Compiler.P.leftTrue
 import all Lanius.Mini.Compiler.P.loadAtBytes
-import all Lanius.Mini.Compiler.P.lowerAddress
-import all Lanius.Mini.Compiler.P.lowerApply
-import all Lanius.Mini.Compiler.P.lowerCallSig
-import all Lanius.Mini.Compiler.P.lowerLoadType
-import all Lanius.Mini.Compiler.P.lowerLocal
-import all Lanius.Mini.Compiler.P.lowerReturn
-import all Lanius.Mini.Compiler.P.lowerSetCallArgs
-import all Lanius.Mini.Compiler.P.lowerSetValues
-import all Lanius.Mini.Compiler.P.lowerShift
-import all Lanius.Mini.Compiler.P.lowerSlice
-import all Lanius.Mini.Compiler.P.lowerTagged
-import all Lanius.Mini.Compiler.P.matchDst
-import all Lanius.Mini.Compiler.P.matchVariants
-import all Lanius.Mini.Compiler.P.moduleExports
-import all Lanius.Mini.Compiler.P.moduleFirsts
-import all Lanius.Mini.Compiler.P.modulesOk
 import all Lanius.Mini.Compiler.P.render
-import all Lanius.Mini.Compiler.P.repeatType
-import all Lanius.Mini.Compiler.P.shortCircuit
-import all Lanius.Mini.Compiler.P.sintToUint
-import all Lanius.Mini.Compiler.P.storeArray
 import all Lanius.Mini.Compiler.P.arrayCallSig
-import all Lanius.Mini.Compiler.P.bindingBytes
-import all Lanius.Mini.Compiler.P.funcNeeds
-import all Lanius.Mini.Compiler.P.needRound
-import all Lanius.Mini.Compiler.P.needsAfter
-import all Lanius.Mini.Compiler.P.withBudget
-import all Lanius.Mini.Compiler.P.storeEvalWord
-import all Lanius.Mini.Compiler.P.storeType
-import all Lanius.Mini.Compiler.P.storeWordElement
-import all Lanius.Mini.Compiler.P.structFields
-import all Lanius.Mini.Compiler.P.usizeWidth
-import all Lanius.Mini.Compiler.P.widthOf
-import all Lanius.Mini.Compiler.P.wordElement
-import all Lanius.Mini.Compiler.P.wordStride
-import all Lanius.Mini.Compiler.P.wordWidth
 import all Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Compiler.P.storeArray
 public import Lanius.Mini.Compiler.P.arrayCallSig
@@ -446,6 +381,48 @@ theorem eff_safe_step (calls : ∀ m, FuncSim sp prims outside m) (funcs : FuncS
   | eIndex => simp [effTy] at ht
   | eStride => simp [effTy] at ht
   | arraySlice => simp [effTy] at ht
+  | eIf c ty a b =>
+    simp only [SrcEff.toCore] at run
+    simp only [effTy] at ht
+    split at ht
+    · rename_i hc
+      have htc := isBoolTy_some hc
+      simp only [Option.bind_eq_some_iff] at ht
+      obtain ⟨ta, hta, tb, htb, -⟩ := ht
+      obtain ⟨j, hj, crun | ⟨sv, s1, crun, arun⟩⟩ := matchValue_trap_inv run
+      all_goals obtain rfl : k = j := Nat.succ.inj hj
+      · exact eff crun htc inv rel bound
+      have b1 : s1.heap.nextAddress ≤ 2 ^ 64 := by
+        obtain ⟨j', s2, e', -, he, brun, rfl⟩ := ifArms_trap_any arun
+        have g2 : Grows s1 (restoreLocals s1 s2) := by
+          rcases he with rfl | rfl
+          · exact (effTrapGrows brun).trans (Grows.same rfl rfl)
+          · exact (effTrapGrows brun).trans (Grows.same rfl rfl)
+        exact Grows.bound (effGrows crun) g2 inv.views bound
+      obtain ⟨q, -, rq, ran1⟩ := effD crun htc inv rel b1
+      obtain ⟨-, x, rfl⟩ := rq.scalar_ty rfl
+      obtain ⟨j', s2, lt, brun, rfl⟩ := ifArms_trap_inv arun
+      have rel1 := rel.step ran1.step ran1.locals
+      have brun' := Semantics.evalExpr_of_le brun (by simp) (show j' ≤ k by omega)
+      cases x with
+      | true => exact eff brun' hta ran1.inv rel1 bound
+      | false => exact eff brun' htb ran1.inv rel1 bound
+    · simp at ht
+  | eLet id ty value rt body =>
+    simp only [SrcEff.toCore] at run
+    simp only [effTy, Option.bind_eq_some_iff] at ht
+    obtain ⟨tv, htv, hb⟩ := ht
+    obtain ⟨j, hj, vrun | ⟨sv, s1, vrun, arun⟩⟩ := matchValue_trap_inv run
+    all_goals obtain rfl : k = j := Nat.succ.inj hj
+    · exact eff vrun htv inv rel bound
+    obtain ⟨j', s2, lt, brun, rfl⟩ := letArm_trap_inv arun
+    have b1 := Grows.bound (effGrows vrun) ((Grows.same rfl rfl).trans (effTrapGrows brun) |>.trans (Grows.same rfl rfl))
+      inv.views bound
+    obtain ⟨q, -, rq, ran1⟩ := effD vrun htv inv rel b1
+    have rel1 := rel.step ran1.step ran1.locals
+    have brun' := Semantics.evalExpr_of_le brun (by simp) (show j' ≤ k by omega)
+    exact eff brun' hb (ran1.inv.bindLocal id sv) (rel1.bind ran1.inv rq) bound
+  | eLen => simp [effTy] at ht
   | eStruct ty fields =>
     simp only [SrcEff.toCore] at run
     simp only [effTy, Option.bind_eq_some_iff] at ht

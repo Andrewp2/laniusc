@@ -49,7 +49,7 @@ def build_extract():
     if run_cache.lake_current('extract', env):
         return
     with run_cache.lean_lock():
-        run = subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
+        run = subprocess.run(['systemd-run', '--user', '--scope', '--slice=work.slice', '-q',
                               'lake', 'build', 'extract'], cwd='formal', env=env, capture_output=True, text=True)
     if run.returncode != 0:
         raise SystemExit('lake build extract failed:\n' + run.stdout[-3000:] + run.stderr[-3000:])

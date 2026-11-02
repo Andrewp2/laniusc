@@ -200,6 +200,12 @@ mutual
            | ⟨.slice _, checked⟩ =>
                pure ⟨.scalar (.signed .isize), ⟨.sliceStride checked.down⟩⟩
            | _ => none
+    | .intrinsic .sliceLength argument =>
+        do let checked ← checkExprAnyFuel fuel program context argument
+           match checked with
+           | ⟨.slice _, checked⟩ =>
+               pure ⟨.scalar (.unsigned .usize), ⟨.sliceLength checked.down⟩⟩
+           | _ => none
     | .i32ArrayDataPtr array =>
         do let checked ← checkExprAnyFuel fuel program context array
            match checked with

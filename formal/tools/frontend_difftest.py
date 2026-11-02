@@ -1228,6 +1228,9 @@ partial def serEff : SrcEff → String
   | .eDivide o a b => s!"(.eDivide {serDiv o} {serEff a} {serEff b})"
   | .eStride sl => s!"(.eStride {sl})"
   | .arraySlice t a => s!"(.arraySlice {serType t} {a})"
+  | .eIf c t a b => s!"(.eIf {serEff c} {serType t} {serEff a} {serEff b})"
+  | .eLet i t a rt b => s!"(.eLet {i} {serType t} {serEff a} {serType rt} {serEff b})"
+  | .eLen s => s!"(.eLen {s})"
 
 def serArm (a : SrcArm) : String :=
   "{ binders := " ++ bracket (a.binders.map toString) ++ ", value := " ++ serExpr a.value ++ " }"
@@ -1352,6 +1355,9 @@ def checkMulti (bases : List String) (mutants : List (String × String)) : IO Un
 -- compared.
 partial def effBinders : SrcEff → List Nat
   | .ePure _ | .eStride _ | .arraySlice _ _ => []
+  | .eIf c _ a b => effBinders c ++ effBinders a ++ effBinders b
+  | .eLet i _ a _ b => i :: (effBinders a ++ effBinders b)
+  | .eLen _ => []
   | .eCall _ xs | .eStruct _ xs | .eVariant _ _ xs => xs.flatMap effBinders
   | .eApply _ a b | .eDivide _ a b => effBinders a ++ effBinders b
   | .eNeg a | .eNot a | .eCast _ a | .eIndex _ a => effBinders a
@@ -1395,6 +1401,9 @@ partial def renEff (f : Nat → Nat) : SrcEff → SrcEff
   | .eDivide o a b => .eDivide o (renEff f a) (renEff f b)
   | .eStride sl => .eStride (f sl)
   | .arraySlice t a => .arraySlice t (f a)
+  | .eIf c t a b => .eIf (renEff f c) t (renEff f a) (renEff f b)
+  | .eLet i t a rt b => .eLet (f i) t (renEff f a) rt (renEff f b)
+  | .eLen s => .eLen (f s)
 
 partial def renStmt (f : Nat → Nat) : SrcStmt → SrcStmt
   | .nop => .nop

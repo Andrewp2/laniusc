@@ -10,6 +10,7 @@ public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt6
+public import Lanius.Faithful.Gen.SelfStmtF_allWeighed
 public import Lanius.Faithful.Gen.SelfStmtF_closeFuncs
 public import Lanius.Faithful.Gen.SelfStmtF_collect
 public import Lanius.Faithful.Gen.SelfStmtF_funcsOnto
@@ -91,8 +92,9 @@ theorem proof_build_files {prog : SrcProgram} {prims : Prims} {ix_build_files ix
   simp only [src_build_files] at h
   faithful [Lanius.Mini.buildFiles]
 
-theorem proof_build_mono {prog : SrcProgram} {prims : Prims} {ix_build_mono ix_build_closed ix_type_table_more ix_type_table ix_seed_tys ix_funcs_tys : Nat} (fn : prog.funcs[ix_build_mono]? = some (src_build_mono ix_build_closed ix_type_table_more ix_type_table ix_seed_tys ix_funcs_tys)) (np : prims.isPrim ix_build_mono = false)
+theorem proof_build_mono {prog : SrcProgram} {prims : Prims} {ix_build_mono ix_build_closed ix_types_weighed ix_type_table_more ix_type_table ix_seed_tys ix_funcs_tys : Nat} (fn : prog.funcs[ix_build_mono]? = some (src_build_mono ix_build_closed ix_types_weighed ix_type_table_more ix_type_table ix_seed_tys ix_funcs_tys)) (np : prims.isPrim ix_build_mono = false)
     (ext_build_closed : Certified (∀ {n : Nat}, Stmt_build_closed prog prims ix_build_closed n))
+    (ext_types_weighed : Certified (∀ {n : Nat}, Stmt_types_weighed prog prims ix_types_weighed n))
     (ext_type_table_more : Certified (∀ {n : Nat}, Stmt_type_table_more prog prims ix_type_table_more n))
     (ext_type_table : Certified (∀ {n : Nat}, Stmt_type_table prog prims ix_type_table n))
     (ext_seed_tys : Certified (∀ {n : Nat}, Stmt_seed_tys prog prims ix_seed_tys n))
