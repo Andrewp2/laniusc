@@ -1731,6 +1731,17 @@ If `F` cannot overflow along any path, it has no `b` and no `Pre_F`.
 - The premise is stated against the remaining budget, not the cost so far.
   The run's total cost `k` is below `b`, so every prefix is below `b`, and
   a callee's certificate gets `k_G < b - prefix`.
+- A function without arguments that reaches neither `plus` nor `times`,
+  through no recursion, for example a table builder such as
+  `grammar_part_0`, which makes hundreds of calls in a line, is not proved
+  step by step. The kernel evaluates its run instead (`decide +kernel`),
+  using `BudgetClosed.qcallB`: a computable `qcall` that has no value at a
+  call of `plus` or `times`, and whose value is the self program's
+  (`qcall_of_okW`). `bclosed` takes four premises: the run has a value at
+  the fuel `D` (its call depth), its cost there is `Cost_F D`, `Cost_F`
+  is the same past `D` (by `rfl`), and there is no run below `D`. From
+  these it gives the certificate at every fuel. 350 of the 2,255 functions
+  take this path.
 - Proofs: the `budget` tactic (`Faithful/BudgetTactic.lean`) runs the two
   `qcall`s in lockstep. It steps through calls with the callee's
   certificate, prims, `addC`, condition splits and `Rep` cases, and it

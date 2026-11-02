@@ -16,6 +16,31 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.SelfCert
 open Lanius.Faithful.Budget
 
+abbrev BStmt_cons_of_mini_selfhost_Rule (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.Rule} {x1 : List Lanius.Mini.Rule} {v0 v1 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepRule x0 v0 → (RepList 35 RepRule) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_of_mini_selfhost_Rule n x0 x1 = k ∧ (RepList 35 RepRule) (x0 :: x1) w
+
+abbrev BStmt_cons_of_mini_selfhost_Sym (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.Sym} {x1 : List Lanius.Mini.Sym} {v0 v1 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepSym x0 v0 → (RepList 37 RepSym) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_of_mini_selfhost_Sym n x0 x1 = k ∧ (RepList 37 RepSym) (x0 :: x1) w
+
+abbrev BStmt_empty_of_mini_selfhost_Sym (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value} {k : Nat},
+    qcall spW prims uc n ix [] = some (w, k) →
+    qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ (RepList 37 RepSym) (([] : List Lanius.Mini.Sym)) w
+
+abbrev BStmt_empty_of_mini_selfhost_Rule (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value} {k : Nat},
+    qcall spW prims uc n ix [] = some (w, k) →
+    qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ (RepList 35 RepRule) (([] : List Lanius.Mini.Rule)) w
+
+abbrev BStmt_grammar_part_0 (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value} {k : Nat},
+    qcall spW prims uc n ix [] = some (w, k) →
+    qcall sp prims uc n ix [] = some (w, k) ∧ Cost_grammar_part_0 n  = k ∧ (RepList 35 RepRule) (Lanius.Mini.grammarPart0) w
+
 abbrev BStmt_length_of_usize (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Nat} {v0 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → (RepList 25 RepNat) x0 v0 → k < b → Pre_length_of_usize n x0 b →

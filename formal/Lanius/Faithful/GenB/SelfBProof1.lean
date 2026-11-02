@@ -18,6 +18,27 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.SelfCert
 open Lanius.Faithful.Budget
 
+theorem bproof_lx_number {spW sp : SrcProgram} {prims : Prims} {ix_lx_number ix_plus ix_lx_prefixed_base ix_lx_digit_run ix_lx_finish_decimal : Nat}
+    (fnW : spW.funcs[ix_lx_number]? = some (src_lx_number ix_plus ix_lx_prefixed_base ix_lx_digit_run ix_lx_finish_decimal)) (fn : sp.funcs[ix_lx_number]? = some (src_lx_number ix_plus ix_lx_prefixed_base ix_lx_digit_run ix_lx_finish_decimal))
+    (np : prims.isPrim ix_lx_number = false)
+    (back : Certified (∀ {n : Nat}, Stmt_lx_number sp prims ix_lx_number n))
+    (b_plus : Certified (∀ {n : Nat}, BStmt_plus spW sp prims ix_plus n))
+    (b_lx_prefixed_base : Certified (∀ {n : Nat}, BStmt_lx_prefixed_base spW sp prims ix_lx_prefixed_base n))
+    (b_lx_digit_run : Certified (∀ {n : Nat}, BStmt_lx_digit_run spW sp prims ix_lx_digit_run n))
+    (b_lx_finish_decimal : Certified (∀ {n : Nat}, BStmt_lx_finish_decimal spW sp prims ix_lx_finish_decimal n)) {n : Nat} :
+    BStmt_lx_number spW sp prims ix_lx_number n := by
+  intro x0 x1 v0 v1 w k b h r0 r1 hb pre
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_lx_number [v0, v1] = some (w, k) ∧ 0 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_lx_number, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_lx_number.eq_def] at pre
+    simp only at pre
+    budget
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
+
 theorem bproof_lx_space {spW sp : SrcProgram} {prims : Prims} {ix_lx_space : Nat}
     (fnW : spW.funcs[ix_lx_space]? = some (src_lx_space)) (fn : sp.funcs[ix_lx_space]? = some (src_lx_space))
     (np : prims.isPrim ix_lx_space = false)
@@ -568,22 +589,6 @@ theorem bproof_cons_of_mini_selfhost_RawTok {spW sp : SrcProgram} {prims : Prims
     rw [qcall_succ np fn]
     simp only [src_cons_of_mini_selfhost_RawTok, List.length_cons, List.length_nil, if_true] at h ⊢
     budget Cost_cons_of_mini_selfhost_RawTok
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
-
-theorem bproof_lx_prepend {spW sp : SrcProgram} {prims : Prims} {ix_lx_prepend ix_cons_of_mini_selfhost_RawTok : Nat}
-    (fnW : spW.funcs[ix_lx_prepend]? = some (src_lx_prepend ix_cons_of_mini_selfhost_RawTok)) (fn : sp.funcs[ix_lx_prepend]? = some (src_lx_prepend ix_cons_of_mini_selfhost_RawTok))
-    (np : prims.isPrim ix_lx_prepend = false)
-    (back : Certified (∀ {n : Nat}, Stmt_lx_prepend sp prims ix_lx_prepend n))
-    (b_cons_of_mini_selfhost_RawTok : Certified (∀ {n : Nat}, BStmt_cons_of_mini_selfhost_RawTok spW sp prims ix_cons_of_mini_selfhost_RawTok n)) {n : Nat} :
-    BStmt_lx_prepend spW sp prims ix_lx_prepend n := by
-  intro x0 x1 v0 v1 w k h r0 r1
-  rcases n with _ | n
-  · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_lx_prepend [v0, v1] = some (w, k) ∧ Cost_lx_prepend (n + 1) x0 x1 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_lx_prepend, List.length_cons, List.length_nil, if_true] at h ⊢
-    budget Cost_lx_prepend
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
 
 end Lanius.Faithful.SelfBudget

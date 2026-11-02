@@ -34,6 +34,33 @@ conditions (`hcond`) and results (`hx`), by `omega`. -/
 
 namespace Lanius.Faithful.Budget
 
+section
+open Lanius.Mini Lanius.Faithful Lanius.Faithful.Termination
+
+/-- Run the cost semantics of a body as far as its calls, `qthen` folded. -/
+syntax "qsimp" (" at " ident)? : tactic
+macro_rules
+  | `(tactic| qsimp at $h:ident) => `(tactic|
+    simp (maxSteps := 10000000) only [budget_rule, pure_rule, reduceCtorEq, qstmt, qeff, qeffs, qapplyOp, qbinary, pexpr, pexprs, paramEnv,
+      paramBindings, applyOp, binary, unary, Lanius.Faithful.cast, SrcOp.toCore, SrcDivOp.toCore, UintTy.toCore,
+      SrcType.toScalar, Nat.reduceLT, Nat.reduceEqDiff, Nat.reduceAdd, Nat.reduceSub, Nat.reduceMul, Nat.reduceMod,
+      Nat.reducePow, Nat.reduceBEq, Nat.reduceBNe, Nat.zero_add, Nat.add_zero, BitVec.reduceToNat, BitVec.reduceOfInt,
+      BitVec.reduceToInt, Except.toOption, ↓reduceIte] at $h:ident)
+  | `(tactic| qsimp) => `(tactic|
+    simp (maxSteps := 10000000) only [budget_rule, pure_rule, reduceCtorEq, qstmt, qeff, qeffs, qapplyOp, qbinary, pexpr, pexprs, paramEnv,
+      paramBindings, applyOp, binary, unary, Lanius.Faithful.cast, SrcOp.toCore, SrcDivOp.toCore, UintTy.toCore,
+      SrcType.toScalar, Nat.reduceLT, Nat.reduceEqDiff, Nat.reduceAdd, Nat.reduceSub, Nat.reduceMul, Nat.reduceMod,
+      Nat.reducePow, Nat.reduceBEq, Nat.reduceBNe, Nat.zero_add, Nat.add_zero, BitVec.reduceToNat, BitVec.reduceOfInt,
+      BitVec.reduceToInt, Except.toOption, ↓reduceIte])
+
+end
+
+attribute [budget_cond] and_true true_and and_false false_and or_true true_or or_false false_or not_true_eq_false
+  not_false_eq_true Bool.and_true Bool.true_and Bool.and_false Bool.false_and Bool.or_true Bool.true_or Bool.or_false
+  Bool.false_or Bool.not_true Bool.not_false decide_eq_true_eq decide_eq_false_iff_not decide_true decide_false
+  Bool.and_eq_true Bool.or_eq_true Bool.not_eq_true' ite_true ite_false Bool.false_eq_true Nat.add_zero Nat.zero_add
+  Bool.true_eq_false eq_self_iff_true ite_self beq_iff_eq beq_eq_false_iff_ne bne_iff_ne
+
 open Lean Elab Tactic Meta
 
 -- The tactics built here name the proof's hypotheses (`h`, `pre`, `rfl`
@@ -263,9 +290,11 @@ def closeCost (cost? : Option Ident) : TacticM Unit := do
   | some c =>
     let eqDef := mkIdent (c.getId ++ `eq_def)
     tac `(tactic| rw [$eqDef:ident])
-    let _ ← tryT `(tactic| simp only [$lemmas,*, budget_cond, pure_rule])
+    let _ ← tryT `(tactic| simp (config := { decide := true }) only [$lemmas,*, budget_cond, pure_rule])
     if (← getGoals).isEmpty then return
-    tac `(tactic| omega)
+    if ← tryT `(tactic| omega) then return
+    -- a cost that still branches on a condition the hypotheses decide
+    tac `(tactic| (repeat' split) <;> omega)
 
 /-- One step on the main goal. -/
 def step (cost? : Option Ident) (i : Nat) : TacticM Unit := do
@@ -340,6 +369,15 @@ def step (cost? : Option Ident) (i : Nat) : TacticM Unit := do
       -- a condition decided before (a call made twice): one case contradicts it
       if ← tryT `(tactic| contradiction) then continue
       let _ ← tryT `(tactic| simp only [$hc:ident, budget_cond] at $h:ident)
+      -- the run tests `a == b` where the models say `a = b`
+      let _ ← tryT `(tactic| simp only [budget_cond] at $hc:ident)
+      -- a case the conditions before rule out (`p = A` then `p = B`, constants)
+      let before := (← hypsNamed ["hcond"]).filter (·.getId != hc.getId)
+      let lemmas : Array (TSyntax `Lean.Parser.Tactic.simpLemma) ← before.mapM fun h =>
+        `(Lean.Parser.Tactic.simpLemma| $h:ident)
+      let probe := mkIdent `hprobe
+      if ← tryT `(tactic| (have $probe:ident := $hc:ident; simp (config := { decide := true }) only [$lemmas,*, budget_cond] at $probe:ident; done)) then
+        continue
       let _ ← tryT `(tactic| simp only [$hc:ident, budget_cond, pure_rule] at $pre:ident)
       let _ ← tryT `(tactic| simp only [$hc:ident, budget_cond])
       let now ← getGoals

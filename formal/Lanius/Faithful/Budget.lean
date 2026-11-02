@@ -164,26 +164,6 @@ theorem addC_step {β : Type} {o : Option (β × Nat)} {c c₂ : Nat} {w : β} {
   refine ⟨?_, h.2⟩
   rw [h.1, addC_some]
 
-attribute [budget_cond] and_true true_and and_false false_and or_true true_or or_false false_or not_true_eq_false
-  not_false_eq_true Bool.and_true Bool.true_and Bool.and_false Bool.false_and Bool.or_true Bool.true_or Bool.or_false
-  Bool.false_or Bool.not_true Bool.not_false decide_eq_true_eq decide_eq_false_iff_not decide_true decide_false
-  Bool.and_eq_true Bool.or_eq_true Bool.not_eq_true' ite_true ite_false Bool.false_eq_true Nat.add_zero Nat.zero_add
-  Bool.true_eq_false eq_self_iff_true ite_self
-
-/-- Run the cost semantics of a body as far as its calls, `qthen` folded. -/
-syntax "qsimp" (" at " ident)? : tactic
-macro_rules
-  | `(tactic| qsimp at $h:ident) => `(tactic|
-    simp (maxSteps := 10000000) only [budget_rule, pure_rule, reduceCtorEq, qstmt, qeff, qeffs, qapplyOp, qbinary, pexpr, pexprs, paramEnv,
-      paramBindings, applyOp, binary, unary, Lanius.Faithful.cast, SrcOp.toCore, SrcDivOp.toCore, UintTy.toCore,
-      SrcType.toScalar, Nat.reduceLT, Nat.reduceEqDiff, Nat.reduceAdd, Nat.reduceSub, Nat.reduceMul, Nat.reduceMod,
-      Nat.reducePow, Nat.reduceBEq, Nat.reduceBNe, Nat.zero_add, Nat.add_zero] at $h:ident)
-  | `(tactic| qsimp) => `(tactic|
-    simp (maxSteps := 10000000) only [budget_rule, pure_rule, reduceCtorEq, qstmt, qeff, qeffs, qapplyOp, qbinary, pexpr, pexprs, paramEnv,
-      paramBindings, applyOp, binary, unary, Lanius.Faithful.cast, SrcOp.toCore, SrcDivOp.toCore, UintTy.toCore,
-      SrcType.toScalar, Nat.reduceLT, Nat.reduceEqDiff, Nat.reduceAdd, Nat.reduceSub, Nat.reduceMul, Nat.reduceMod,
-      Nat.reducePow, Nat.reduceBEq, Nat.reduceBNe, Nat.zero_add, Nat.add_zero])
-
 /-! ## `plus` and `times`
 
 Their precondition is that they do not wrap; they cost nothing. -/
