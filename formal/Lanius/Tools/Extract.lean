@@ -1,5 +1,7 @@
 import Lanius.Mini.FrontLex
 import Lanius.Mini.Extract
+import Std.Data.HashMap
+import Std.Data.HashSet
 
 /-! The extractor in Lanius (`formal/lani/mini/extract.lani`), run on a file:
 
@@ -17,8 +19,9 @@ The front end's lexer and validator read the tree, so the extractor works on
 the same parse as the front end.
 
 As extract.py does, it also removes the module's parts it no longer writes,
-and rewrites the `-- import all: MODULE` and `-- import parts: MODULE name..`
-blocks of the Lean files under `FORMAL/Lanius` (written under OUTDIR). With
+and rewrites the `-- import all: MODULE`, `-- import all uses: MODULE` and
+`-- import parts: MODULE name..` blocks of the Lean files under
+`FORMAL/Lanius` (written under OUTDIR). With
 `--check` it writes nothing and fails if any of those files would change. -/
 
 open Lanius.Mini
@@ -76,16 +79,88 @@ def splitOnce (text sep : String) : Option (String × String) :=
   | [_] => none
   | head :: rest => some (head, sep.intercalate rest)
 
+/-- The identifier-like words of a text (letters, digits, `_`, `'` and `.`). -/
+def words (text : String) : List String := Id.run do
+  let mut out : Array String := #[]
+  let mut cur := ""
+  for c in text.toList do
+    if c.isAlphanum || c == '_' || c == '\'' || c == '.' then
+      cur := cur.push c
+    else if cur != "" then
+      out := out.push cur
+      cur := ""
+  if cur != "" then out := out.push cur
+  return out.toList
+
+/-- Each definition of a part's text, with its text: from its `def` line to
+the next line that starts at the margin. -/
+def defTexts (text : String) : List (String × String) := Id.run do
+  let mut out : Array (String × String) := #[]
+  let mut cur : Option (String × String) := none
+  for line in text.splitOn "\n" do
+    let top := match line.toList with
+      | c :: _ => c != ' ' && c != '\t'
+      | [] => false
+    if top then
+      if let some d := cur then out := out.push d
+      cur := (defName line).map (·, line)
+    else if let some (n, t) := cur then
+      cur := some (n, t ++ "\n" ++ line)
+  if let some d := cur then out := out.push d
+  return out.toList
+
+/-- The parts defining the definitions `text` names, and those they use, by
+name in each definition's text: a word `N` or `Lanius.Mini.N` names `N`, and
+a dotted word `x.f` also each definition whose last component is `f`. -/
+def usedParts (text : String) (defs : Std.HashMap String (String × String))
+    (byLast : Std.HashMap String (List String)) : List String := Id.run do
+  let named (w : String) : List String :=
+    let w := if w.startsWith "Lanius.Mini." then (w.drop 12).toString else w
+    let parts := w.splitOn "."
+    let whole := if defs.contains w then [w] else []
+    let front := match parts.reverse with
+      | _ :: rest@(_ :: _) =>
+        let p := ".".intercalate rest.reverse
+        if defs.contains p then [p] else []
+      | _ => []
+    let last := match parts.reverse with
+      | l :: _ :: _ => byLast.getD l []
+      | _ => []
+    whole ++ front ++ last
+  let mut seen : Std.HashSet String := {}
+  let mut todo := (words text).flatMap named
+  let mut out : Std.HashSet String := {}
+  while true do
+    match todo with
+    | [] => break
+    | n :: rest =>
+      todo := rest
+      if seen.contains n then continue
+      seen := seen.insert n
+      if let some (part, body) := defs.get? n then
+        out := out.insert part
+        todo := (words body).flatMap named ++ todo
+  return out.toList.toArray.qsort (fun a b => decide (a < b)) |>.toList
+
 /-- The text with its `-- import all: module` block listing `parts` (`import
-all`), and its `-- import parts: module names..` block listing the parts
-`where` says define the names (`public import`). -/
+all`), its `-- import all uses: module` block listing the parts its own text
+uses (`usedParts`), and its `-- import parts: module names..` block listing
+the parts `where` says define the names (`public import`). -/
 def importBlocks (path text module : String) (parts : List String)
-    (where_ : List (String × String)) : Except String String := do
+    (where_ : List (String × String)) (defs : Std.HashMap String (String × String))
+    (byLast : Std.HashMap String (List String)) : Except String String := do
   let mut new := text
   let begin := s!"-- import all: {module}\n"
   if let some (head, rest) := splitOnce new begin then
     if let some (_, tail) := splitOnce rest "-- end import all\n" then
       new := head ++ begin ++ String.join (parts.map (s!"import all {·}\n")) ++ "-- end import all\n" ++ tail
+  let uses := s!"-- import all uses: {module}\n"
+  if let some (head, rest) := splitOnce new uses then
+    if let some (_, tail) := splitOnce rest "-- end import all uses\n" then
+      let body := String.join ((head ++ tail).splitOn "\n" |>.filter (fun l => !(l.startsWith "import " ||
+        l.startsWith "public import " || l.startsWith "private import ")) |>.map (· ++ "\n"))
+      let mods := usedParts body defs byLast
+      new := head ++ uses ++ String.join (mods.map (s!"import all {·}\n")) ++ "-- end import all uses\n" ++ tail
   let lead := s!"-- import parts: {module}"
   let lines := new.splitOn "\n"
   let hit := lines.find? fun l => l == lead || l.startsWith (lead ++ " ")
@@ -162,10 +237,18 @@ def main (args : List String) : IO UInt32 := do
     let parts := (out.modules.map (stringOf ·.name)).filter (· ≠ module)
     let where_ := (out.modules.filter fun m => ((stringOf m.name).splitOn ".P.").length > 1).flatMap fun m =>
       ((stringOf m.text).splitOn "\n").filterMap fun l => (defName l).map (·, stringOf m.name)
+    let mut defs : Std.HashMap String (String × String) := {}
+    let mut byLast : Std.HashMap String (List String) := {}
+    for m in out.modules do
+      if ((stringOf m.name).splitOn ".P.").length > 1 then
+        for (n, body) in defTexts (stringOf m.text) do
+          defs := defs.insert n (stringOf m.name, body)
+          let l := (n.splitOn ".").getLast!
+          if l != n then byLast := byLast.insert l (n :: byLast.getD l [])
     for f in ← leanFiles formal (System.FilePath.mk formal / "Lanius") do
       if (List.lookup f files).isSome then continue
       let text ← IO.FS.readFile (System.FilePath.mk formal / f)
-      match importBlocks f text module parts where_ with
+      match importBlocks f text module parts where_ defs byLast with
       | .error e => IO.eprintln e; return 1
       | .ok new => if new != text then files := files ++ [(f, new)]
     let mut changed := []

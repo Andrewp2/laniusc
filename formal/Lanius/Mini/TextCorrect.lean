@@ -9,7 +9,6 @@ import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.Expr_agrees
 import all Lanius.Mini.Compiler.P.FArith_opcode
 import all Lanius.Mini.Compiler.P.FloatTy_rex
-import all Lanius.Mini.Compiler.P.Instr_pieces
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
 import all Lanius.Mini.Compiler.P.SrcType_size
@@ -52,8 +51,6 @@ import all Lanius.Mini.Compiler.P.floatApply
 import all Lanius.Mini.Compiler.P.guardAnd
 import all Lanius.Mini.Compiler.P.hostRandomCode
 import all Lanius.Mini.Compiler.P.imageLimit
-import all Lanius.Mini.Compiler.P.importOk
-import all Lanius.Mini.Compiler.P.importsOk
 import all Lanius.Mini.Compiler.P.indexOf
 import all Lanius.Mini.Compiler.P.iteThen
 import all Lanius.Mini.Compiler.P.killShared
@@ -74,9 +71,6 @@ import all Lanius.Mini.Compiler.P.lowerSlice
 import all Lanius.Mini.Compiler.P.lowerTagged
 import all Lanius.Mini.Compiler.P.matchDst
 import all Lanius.Mini.Compiler.P.matchVariants
-import all Lanius.Mini.Compiler.P.moduleExports
-import all Lanius.Mini.Compiler.P.moduleFirsts
-import all Lanius.Mini.Compiler.P.modulesOk
 import all Lanius.Mini.Compiler.P.optimizeIte
 import all Lanius.Mini.Compiler.P.optimizeLeft
 import all Lanius.Mini.Compiler.P.optimizeNeg
@@ -88,7 +82,6 @@ import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.sintToUint
 import all Lanius.Mini.Compiler.P.storeArray
 import all Lanius.Mini.Compiler.P.arrayCallSig
-import all Lanius.Mini.Compiler.P.bindingBytes
 import all Lanius.Mini.Compiler.P.needRound
 import all Lanius.Mini.Compiler.P.needsAfter
 import all Lanius.Mini.Compiler.P.storeEvalWord
@@ -139,7 +132,6 @@ import all Lanius.Mini.Frontend.P.floatTyped
 import all Lanius.Mini.Frontend.P.fnInstRet
 import all Lanius.Mini.Frontend.P.forRange
 import all Lanius.Mini.Frontend.P.freshId
-import all Lanius.Mini.Frontend.P.frontEndRead
 import all Lanius.Mini.Frontend.P.frontEndWords
 import all Lanius.Mini.Frontend.P.funcsOnto
 import all Lanius.Mini.Frontend.P.genericClose
@@ -161,14 +153,6 @@ import all Lanius.Mini.Frontend.P.joinInsts
 import all Lanius.Mini.Frontend.P.letClosed
 import all Lanius.Mini.Frontend.P.letStructClosed
 import all Lanius.Mini.Frontend.P.lowerTy
-import all Lanius.Mini.Frontend.P.lxBlockEnd
-import all Lanius.Mini.Frontend.P.lxCanonicalKind
-import all Lanius.Mini.Frontend.P.lxDotAt
-import all Lanius.Mini.Frontend.P.lxExponent
-import all Lanius.Mini.Frontend.P.lxFixed
-import all Lanius.Mini.Frontend.P.lxLeadingDot
-import all Lanius.Mini.Frontend.P.lxSpaceEnd
-import all Lanius.Mini.Frontend.P.lxSymbolStart
 import all Lanius.Mini.Frontend.P.matchLetHead
 import all Lanius.Mini.Frontend.P.matchStmtIf
 import all Lanius.Mini.Frontend.P.matchTysOrNone
@@ -188,7 +172,6 @@ import all Lanius.Mini.Frontend.P.pickTy
 import all Lanius.Mini.Frontend.P.plainNaming
 import all Lanius.Mini.Frontend.P.projectionRet
 import all Lanius.Mini.Frontend.P.purePart
-import all Lanius.Mini.Frontend.P.readCountedBytes
 import all Lanius.Mini.Frontend.P.readDeclInst
 import all Lanius.Mini.Frontend.P.readInst
 import all Lanius.Mini.Frontend.P.repeatEff
