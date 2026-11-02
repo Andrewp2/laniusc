@@ -150,6 +150,15 @@ uint x86_saved_gpr_frame_bytes(uint mask, uint first_slot)
     return bytes;
 }
 
+// emit_prologue's loads of a cached slice header (x86_header_home).
+uint x86_header_load_bytes(uint saved_mask)
+{
+    uint home = x86_header_home(saved_mask);
+    return home == X86_LOCATION_INVALID ? 0u :
+        x86_stack64_operand_bytes(home) + x86_stack64_operand_bytes(home + 1u) +
+        x86_stack64_operand_bytes(home + 2u);
+}
+
 bool x86_lea_add32_supported(uint left, uint right, uint destination)
 {
     if (!x86_location_is_register(left) ||

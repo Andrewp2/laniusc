@@ -365,7 +365,7 @@ pub fn decode_entry(input:core::slice::View<u8>,offset:i32) -> core::result::Res
 
 ### function: empty_directory
 
-[Source line 39](../../../stdlib/std/directory.lani#L39)
+[Source line 41](../../../stdlib/std/directory.lani#L41)
 
 ```lanius
 pub fn empty_directory() -> Reader
@@ -373,7 +373,7 @@ pub fn empty_directory() -> Reader
 
 ### function: open
 
-[Source line 40](../../../stdlib/std/directory.lani#L40)
+[Source line 42](../../../stdlib/std/directory.lani#L42)
 
 ```lanius
 pub fn open(path:core::path::Path,buffer_bytes:i32) -> core::result::Result<Reader,Error>
@@ -381,7 +381,7 @@ pub fn open(path:core::path::Path,buffer_bytes:i32) -> core::result::Result<Read
 
 ### function: open_at
 
-[Source line 41](../../../stdlib/std/directory.lani#L41)
+[Source line 43](../../../stdlib/std/directory.lani#L43)
 
 ```lanius
 pub fn open_at(directory_fd:i32,path:core::path::Path,buffer_bytes:i32) -> core::result::Result<Reader,Error>
@@ -389,7 +389,7 @@ pub fn open_at(directory_fd:i32,path:core::path::Path,buffer_bytes:i32) -> core:
 
 ### function: open_into
 
-[Source line 42](../../../stdlib/std/directory.lani#L42)
+[Source line 44](../../../stdlib/std/directory.lani#L44)
 
 ```lanius
 pub fn open_into(path:core::path::Path,buffer_bytes:i32,output:&Reader) -> core::result::Result<i32,Error>
@@ -397,7 +397,7 @@ pub fn open_into(path:core::path::Path,buffer_bytes:i32,output:&Reader) -> core:
 
 ### function: open_at_into
 
-[Source line 43](../../../stdlib/std/directory.lani#L43)
+[Source line 45](../../../stdlib/std/directory.lani#L45)
 
 ```lanius
 pub fn open_at_into(directory_fd:i32,path:core::path::Path,buffer_bytes:i32,output:&Reader) -> core::result::Result<i32,Error>
@@ -405,7 +405,7 @@ pub fn open_at_into(directory_fd:i32,path:core::path::Path,buffer_bytes:i32,outp
 
 ### function: empty_entry
 
-[Source line 83](../../../stdlib/std/directory.lani#L83)
+[Source line 85](../../../stdlib/std/directory.lani#L85)
 
 ```lanius
 pub fn empty_entry() -> WalkEntry
@@ -413,7 +413,7 @@ pub fn empty_entry() -> WalkEntry
 
 ### function: walk
 
-[Source line 97](../../../stdlib/std/directory.lani#L97)
+[Source line 99](../../../stdlib/std/directory.lani#L99)
 
 ```lanius
 pub fn walk(root:core::path::Path,depth:i32,limits:Limits) -> core::result::Result<Snapshot,Error>
@@ -421,9 +421,9 @@ pub fn walk(root:core::path::Path,depth:i32,limits:Limits) -> core::result::Resu
 
 ## Implementation blocks and public methods
 
-### impl at line 53
+### impl at line 55
 
-[Source line 53](../../../stdlib/std/directory.lani#L53)
+[Source line 55](../../../stdlib/std/directory.lani#L55)
 
 ```lanius
 pub impl Reader
@@ -431,7 +431,7 @@ pub impl Reader
 
 #### method: borrow
 
-[Source line 54](../../../stdlib/std/directory.lani#L54)
+[Source line 56](../../../stdlib/std/directory.lani#L56)
 
 ```lanius
 pub fn borrow(&self) -> &Reader
@@ -439,7 +439,7 @@ pub fn borrow(&self) -> &Reader
 
 #### method: raw_handle
 
-[Source line 55](../../../stdlib/std/directory.lani#L55)
+[Source line 57](../../../stdlib/std/directory.lani#L57)
 
 ```lanius
 pub fn raw_handle(&self) -> core::option::Option<i32>
@@ -447,7 +447,7 @@ pub fn raw_handle(&self) -> core::option::Option<i32>
 
 #### method: work_done
 
-[Source line 56](../../../stdlib/std/directory.lani#L56)
+[Source line 58](../../../stdlib/std/directory.lani#L58)
 
 ```lanius
 pub fn work_done(&self) -> u64
@@ -455,7 +455,7 @@ pub fn work_done(&self) -> u64
 
 #### method: next
 
-[Source line 58](../../../stdlib/std/directory.lani#L58)
+[Source line 60](../../../stdlib/std/directory.lani#L60)
 
 ```lanius
 pub fn next(&self) -> core::result::Result<core::option::Option<Entry>,Error>
@@ -463,15 +463,15 @@ pub fn next(&self) -> core::result::Result<core::option::Option<Entry>,Error>
 
 #### method: close
 
-[Source line 81](../../../stdlib/std/directory.lani#L81)
+[Source line 83](../../../stdlib/std/directory.lani#L83)
 
 ```lanius
 pub fn close(&self) -> core::result::Result<i32,Error>
 ```
 
-### impl at line 84
+### impl at line 86
 
-[Source line 84](../../../stdlib/std/directory.lani#L84)
+[Source line 86](../../../stdlib/std/directory.lani#L86)
 
 ```lanius
 pub impl WalkEntry
@@ -479,15 +479,15 @@ pub impl WalkEntry
 
 #### method: borrow
 
-[Source line 84](../../../stdlib/std/directory.lani#L84)
+[Source line 86](../../../stdlib/std/directory.lani#L86)
 
 ```lanius
 pub fn borrow(&self) -> &WalkEntry
 ```
 
-### impl at line 85
+### impl at line 87
 
-[Source line 85](../../../stdlib/std/directory.lani#L85)
+[Source line 87](../../../stdlib/std/directory.lani#L87)
 
 ```lanius
 pub impl Snapshot
@@ -495,7 +495,7 @@ pub impl Snapshot
 
 #### method: borrow
 
-[Source line 86](../../../stdlib/std/directory.lani#L86)
+[Source line 88](../../../stdlib/std/directory.lani#L88)
 
 ```lanius
 pub fn borrow(&self) -> &Snapshot
@@ -503,7 +503,7 @@ pub fn borrow(&self) -> &Snapshot
 
 #### method: len
 
-[Source line 87](../../../stdlib/std/directory.lani#L87)
+[Source line 89](../../../stdlib/std/directory.lani#L89)
 
 ```lanius
 pub fn len(&self) -> i32
@@ -511,7 +511,7 @@ pub fn len(&self) -> i32
 
 #### method: byte_len
 
-[Source line 88](../../../stdlib/std/directory.lani#L88)
+[Source line 90](../../../stdlib/std/directory.lani#L90)
 
 ```lanius
 pub fn byte_len(&self) -> i32
@@ -519,7 +519,7 @@ pub fn byte_len(&self) -> i32
 
 #### method: work_done
 
-[Source line 89](../../../stdlib/std/directory.lani#L89)
+[Source line 91](../../../stdlib/std/directory.lani#L91)
 
 ```lanius
 pub fn work_done(&self) -> u64
@@ -527,7 +527,7 @@ pub fn work_done(&self) -> u64
 
 #### method: entry_into
 
-[Source line 90](../../../stdlib/std/directory.lani#L90)
+[Source line 92](../../../stdlib/std/directory.lani#L92)
 
 ```lanius
 pub fn entry_into(&self,index:i32,output:&WalkEntry) -> core::result::Result<i32,Error>
@@ -535,7 +535,7 @@ pub fn entry_into(&self,index:i32,output:&WalkEntry) -> core::result::Result<i32
 
 #### method: destroy
 
-[Source line 91](../../../stdlib/std/directory.lani#L91)
+[Source line 93](../../../stdlib/std/directory.lani#L93)
 
 ```lanius
 pub fn destroy(&self)

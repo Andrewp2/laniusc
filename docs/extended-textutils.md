@@ -1,10 +1,10 @@
 # Text tools: sort, uniq, cut, tr, wc, head, tail, cat, tee, paste, join and comm
 
 `ext::text_sort`, `ext::text_uniq`, `ext::text_cut`, `ext::text_tr`,
-`ext::text_wc`, `ext::text_head` and `ext::text_tail` reimplement the GNU
-coreutils programs of the same names under `LC_ALL=C`. The sample programs
-`text-sort`, `text-uniq`, `text-cut`, `text-tr`, `text-wc`, `text-head` and
-`text-tail`
+`ext::text_wc`, `ext::text_head`, `ext::text_tail`, `ext::text_cat` and
+`ext::text_tee` reimplement the GNU coreutils programs of the same names
+under `LC_ALL=C`. The sample programs `text-sort`, `text-uniq`, `text-cut`,
+`text-tr`, `text-wc`, `text-head`, `text-tail`, `text-cat` and `text-tee`
 (`sample_programs/library/text_*.lani`) parse GNU's command lines and write
 GNU's output byte for byte. `ext::text_lines` holds the byte machinery they
 share.
@@ -207,6 +207,42 @@ operand or after `--`.
 - Every path leaves a regular file's offset at its end, as GNU's does, so
   a repeated `-` operand on the same standard input prints nothing more.
 
+## cat
+
+`text-cat [-AbeEnstTuv] [FILE...]`
+
+- With no option that changes bytes, inputs are copied in 256 KiB reads,
+  as GNU's `simple_cat` copies them.
+- Otherwise inputs go through GNU's `cat()` state machine. Its state is
+  the blank-line counter, the line number and a CR held back for `-E`, and
+  it carries across inputs as in GNU. So a line split between two files
+  gets one number, a blank run continues into the next file under `-s`, and
+  a CR ending one file shows as `^M$` when the next file starts with LF.
+- `-b` overrides `-n`. `-A` is `-vET`, `-e` is `-vE` and `-t` is `-vT`.
+  `-u` is ignored. `-v` writes `^X`, `^?` and `M-` as GNU does. `-E` writes
+  a CR just before a line end as `^M`.
+- Line ends are found eight bytes at a time. The text between them is
+  copied as spans, except under `-v` and `-T`, which go byte by byte.
+- Not done: GNU's "input file is output file" check.
+
+## tee
+
+`text-tee [-a] [-i] [-p] [--output-error[=MODE]] [FILE...]`
+
+- Standard input is read in 8 KiB blocks, GNU's `BUFSIZ`. Each block is
+  written to standard output and then to the files in order. `-` is a file
+  named `-`, as in GNU and POSIX.
+- `-a` appends. `-i` ignores SIGINT. `-p` and a bare `--output-error` mean
+  `warn-nopipe`. MODE is matched as GNU's `argmatch` matches it: an exact
+  name, or a prefix of exactly one of `warn`, `warn-nopipe`, `exit` and
+  `exit-nopipe`.
+- A file that cannot be opened is reported and skipped, and the status
+  becomes 1. In an exit mode the run stops there, before any input is read.
+- A failed write drops that output and sets status 1. Under the `nopipe`
+  modes a broken pipe is dropped silently. An exit mode stops at the first
+  failure, so later outputs miss that block, as in GNU. Any output-error
+  mode ignores SIGPIPE. Reading stops once no output is left.
+
 ## Oracles
 
 | Tool | Oracle | Cases | Failures |
@@ -218,6 +254,8 @@ operand or after `--`.
 | sort | `sort_oracle.py` | 2,000 | 0 |
 | head | `head_oracle.py` | 2,000 | 0 |
 | tail | `tail_oracle.py` | 2,000 | 0 |
+| cat | `cat_oracle.py` | 2,000 | 0 |
+| tee | `tee_oracle.py` | 2,000 | 0 |
 
 The sort oracle also passed 2,000 cases under each of two other seeds (7
 and 8). Every 25th sort case has 20,000 to 120,000 lines, so the forked
@@ -245,6 +283,22 @@ five runs, alternating with GNU, on the same shared laptop.
 | `text-tail -n +1000` | 13 | 42 | 0.31 | 11 | 40 | 0.27 |
 | `text-tail -n 1000000` | 34 | 31 | 1.12 | 33 | 29 | 1.12 |
 | `text-tail -c +1000` | 14 | 42 | 0.33 | 12 | 40 | 0.29 |
+| `text-cat` | 14 | 15 | 0.93 | 12 | 14 | 0.89 |
+| `text-cat -n` | 734 | 119 | 6.18 | 728 | 118 | 6.17 |
+| `text-cat -b` | 706 | 136 | 5.18 | 704 | 135 | 5.22 |
+| `text-cat -s` | 312 | 172 | 1.81 | 311 | 171 | 1.81 |
+| `text-cat -A` | 1473 | 118 | 12.45 | 1471 | 118 | 12.51 |
+| `text-cat -v` | 1846 | 114 | 16.14 | 1728 | 114 | 15.20 |
+| `text-tee` | 25 | 26 | 0.98 | 24 | 25 | 0.96 |
+| `text-tee /dev/null` | 31 | 32 | 0.95 | 30 | 31 | 0.95 |
+| `text-tee -a /dev/null /dev/null` | 42 | 41 | 1.03 | 40 | 39 | 1.03 |
+
+The cat rows are best of three. The formatted cat modes are slow. `-n`
+and `-b` spend about 200 ns a line, mostly in `put_number` and the
+per-line `put_span`. `-A` and `-v` write every byte through `put_byte`.
+Next steps: keep the line number as a preformatted word incremented in
+place, copy runs of printable bytes eight at a time, and copy unchanged
+runs of lines as one span.
 
 ## Speed
 

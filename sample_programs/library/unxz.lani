@@ -1,0 +1,228 @@
+// unxz / xzcat over streaming ext::xz: decode .xz files (concatenated
+// streams and stream padding included) and legacy .lzma files, chosen by the
+// first bytes, through fixed 128 KiB buffers plus a dictionary that grows
+// as the stream needs it. FILE.xz (or .lzma, .txz -> .tar) becomes FILE
+// (kept, like xz -k; -f overwrites); no FILE or "-" decodes standard input
+// to standard output; -c (or running as xzcat) writes to standard output;
+// -t tests only. A failed decode removes its partial output file.
+// Exit 2: arguments, existing output or invalid data; 3: I/O; 4: allocation.
+module app::main;
+
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import ext::xz;
+import std::args;
+import std::cli;
+import std::file;
+import std::file_ops;
+import std::filesystem;
+import std::fs;
+import std::stream;
+
+const CHUNK: i32 = 131072;
+enum Error { Usage, Suffix, Exists, Data, Io, Allocation }
+struct Options { stdout: bool, test: bool, force: bool, help: bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Work { input: alloc::vec::Vec<u8>, output: alloc::vec::Vec<u8>, probabilities: alloc::vec::Vec<i32>, stage: alloc::vec::Vec<u8>, dictionary: alloc::vec::Vec<u8>, name: core::slice::View<u8>, target: alloc::vec::Vec<u8>, detail: ext::xz::Error }
+impl Work { fn borrow(&self) -> &Work { return self; } }
+
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::result::unwrap(core::slice::view(bytes,count));
+}
+fn at(view: core::slice::View<u8>, index: i32) -> u8 { return core::option::unwrap(view.get(index)); }
+fn sub(view: core::slice::View<u8>, start: i32, end: i32) -> core::slice::View<u8> { return core::result::unwrap(view.subview(start,end)); }
+fn say(message: core::slice::View<u8>) { let sink: std::stream::Descriptor = std::stream::stderr(); core::io::write_all(sink.borrow(),message.values,message.start,message.len()); }
+fn detail(error: ext::xz::Error) -> core::slice::View<u8> {
+    return match (error) {
+        ext::xz::Error::Bounds -> literal("bad buffers",11), ext::xz::Error::Header -> literal("not in xz format",16),
+        ext::xz::Error::Options -> literal("unsupported options",19), ext::xz::Error::UnsupportedCheck -> literal("unsupported check",17),
+        ext::xz::Error::UnsupportedFilter -> literal("unsupported filter",18), ext::xz::Error::Corrupt -> literal("compressed data is corrupt",26),
+        ext::xz::Error::Checksum -> literal("checksum mismatch",17), ext::xz::Error::Index -> literal("bad index",9),
+        ext::xz::Error::Footer -> literal("bad stream footer",17), ext::xz::Error::SizeMismatch -> literal("size mismatch",13),
+        ext::xz::Error::Truncated -> literal("truncated input",15), ext::xz::Error::TrailingData -> literal("trailing data",13),
+        ext::xz::Error::Failed -> literal("decoder failure",15)
+    };
+}
+fn failed(work: &Work, error: Error) -> i32 {
+    say(literal("unxz: ",6)); if (work.name.len() > 0) { say(work.name); say(literal(": ",2)); }
+    let text: core::slice::View<u8> = match (error) {
+        Error::Usage -> literal("invalid arguments",17),
+        Error::Suffix -> literal("unknown suffix (expected .xz, .lzma or .txz)",44),
+        Error::Exists -> literal("output exists (use -f)",22),
+        Error::Data -> detail(work.detail),
+                Error::Io -> literal("I/O failed",10),
+        Error::Allocation -> literal("allocation failed",17)
+    };
+    say(text); say(literal("\n",1));
+    let status: i32 = match (error) { Error::Io -> 3, Error::Allocation -> 4, _ -> 2 };
+    return status;
+}
+fn path_of(bytes: core::slice::View<u8>) -> core::result::Result<core::path::Path,Error> {
+    let made: core::result::Result<core::path::Path,core::path::Error> = core::path::from_view(bytes);
+    if (core::result::is_err(made)) { return core::result::Err(Error::Usage); } return core::result::Ok(core::result::unwrap(made));
+}
+fn base(view: core::slice::View<u8>) -> ptr { return core::mem::i32_slice_data_ptr(view.values)+(view.start as usize); }
+fn write_fd(fd: i32, bytes: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    let done: i32 = 0;
+    while (done < bytes.len()) {
+        let put: i32 = std::fs::write(fd,base(bytes)+(done as usize),(bytes.len()-done) as usize);
+        if (put == -4) { continue; }
+        if (put <= 0) { return core::result::Err(Error::Io); }
+        done += put;
+    }
+    return core::result::Ok(done);
+}
+fn read_fd(fd: i32, into: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    while (true) {
+        let got: i32 = std::fs::read(fd,base(into),into.len() as usize);
+        if (got >= 0 && got <= into.len()) { return core::result::Ok(got); }
+        if (got != -4) { return core::result::Err(Error::Io); }
+    } return core::result::Err(Error::Io);
+}
+fn handle(file: std::file::File) -> i32 { return core::option::unwrap(file.raw_handle()); }
+fn close_fd(fd: i32) { if (fd > 2) { let file: std::file::File = core::result::unwrap(std::file::from_owned_handle(fd)); file.close(); } }
+fn exists(path: core::path::Path) -> core::result::Result<bool,Error> {
+    let meta: std::file_ops::Metadata = std::file_ops::empty_metadata();
+    let queried: core::result::Result<i32,core::io::Error> = std::file_ops::metadata_into(path,false,meta.borrow());
+    if (core::result::is_err(queried)) {
+        let missing: bool = match (core::result::unwrap_err(queried)) { core::io::Error::Host(code) -> code == 2, _ -> false };
+        if (missing) { return core::result::Ok(false); } return core::result::Err(Error::Io);
+    }
+    return core::result::Ok(true);
+}
+
+fn empty_work() -> Work {
+    return Work { input: alloc::vec::new(), output: alloc::vec::new(), probabilities: alloc::vec::new(), stage: alloc::vec::new(), dictionary: alloc::vec::new(), name: literal("",0), target: alloc::vec::new(), detail: ext::xz::Error::Failed };
+}
+fn work() -> core::result::Result<Work,Error> {
+    let w: Work = empty_work();
+    let ok: bool = core::result::is_ok(w.input.try_resize(CHUNK,0)) && core::result::is_ok(w.output.try_resize(CHUNK,0))
+        && core::result::is_ok(w.probabilities.try_resize(ext::xz::probabilities_len(),0)) && core::result::is_ok(w.stage.try_resize(ext::xz::stage_len(),0));
+    if (!ok) { destroy(w.borrow()); return core::result::Err(Error::Allocation); }
+    return core::result::Ok(w);
+}
+fn destroy(w: &Work) { w.input.destroy(); w.output.destroy(); w.probabilities.destroy(); w.stage.destroy(); w.dictionary.destroy(); w.target.destroy(); }
+fn data(w: &Work, error: ext::xz::Error) -> Error { w.detail = error; return match (error) { ext::xz::Error::Bounds -> Error::Allocation, _ -> Error::Data }; }
+// xz magic: fd 37 7a 58 5a 00. Anything else is read as .lzma.
+fn is_xz(view: core::slice::View<u8>) -> bool {
+    if (view.len() < 6) { return true; }
+    return at(view,0) == 253 && at(view,1) == 55 && at(view,2) == 122 && at(view,3) == 88 && at(view,4) == 90 && at(view,5) == 0;
+}
+// Decode every stream from fd_in to fd_out (no output when fd_out < 0).
+fn decode(w: &Work, fd_in: i32, fd_out: i32) -> core::result::Result<i32,Error> {
+    // Read at least six bytes (or to the end) to choose the format.
+    let len: i32 = 0; let eof: bool = false;
+    while (len < 6 && !eof) { let got: i32 = read_fd(fd_in,sub(w.input.as_view(),len,CHUNK))?; if (got == 0) { eof = true; } len += got; }
+    let format: ext::xz::Format = ext::xz::Format::Lzma; if (is_xz(sub(w.input.as_view(),0,len))) { format = ext::xz::Format::Xz; }
+    let made: core::result::Result<ext::xz::Decoder,ext::xz::Error> = ext::xz::decoder(w.probabilities.as_view(),w.stage.as_view(),format);
+    if (core::result::is_err(made)) { return core::result::Err(data(w,core::result::unwrap_err(made))); }
+    let d: ext::xz::Decoder = core::result::unwrap(made);
+    w.dictionary.clear();
+    let pos: i32 = 0;
+    while (true) {
+        if (pos == len && !eof) { len = read_fd(fd_in,w.input.as_view())?; pos = 0; if (len == 0) { eof = true; } }
+        let stepped: core::result::Result<ext::xz::Step,ext::xz::Error> = d.borrow().step(sub(w.input.as_view(),pos,len),w.output.as_view(),eof);
+        if (core::result::is_err(stepped)) { return core::result::Err(data(w,core::result::unwrap_err(stepped))); }
+        let progress: ext::xz::Step = core::result::unwrap(stepped); pos += progress.read;
+        if (fd_out >= 0 && progress.written > 0) { write_fd(fd_out,sub(w.output.as_view(),0,progress.written))?; }
+        let status: i32 = match (progress.status) { ext::xz::Status::Done -> 1, ext::xz::Status::NeedDictionary -> 2, ext::xz::Status::NeedInput -> 0, ext::xz::Status::NeedOutput -> 0 };
+        if (status == 1) { return core::result::Ok(0); }
+        if (status == 2) {
+            // The grown dictionary must start with the old bytes: resize keeps them.
+            if (core::result::is_err(w.dictionary.try_resize(d.borrow().dictionary_len(),0))) { return core::result::Err(Error::Allocation); }
+            let given: core::result::Result<bool,ext::xz::Error> = d.borrow().set_dictionary(w.dictionary.as_view());
+            if (core::result::is_err(given)) { return core::result::Err(Error::Allocation); }
+        }
+    } return core::result::Ok(0);
+}
+fn is_dash(name: core::slice::View<u8>) -> bool { return name.len() == 1 && at(name,0) == 45; }
+// FILE.xz or FILE.lzma -> FILE; FILE.txz -> FILE.tar. Returns the stem
+// length, or -1 (with tar = true for .txz).
+fn equal(a: core::slice::View<u8>, b: core::slice::View<u8>) -> bool {
+    if (a.len() != b.len()) { return false; } let i: i32 = 0; while (i < a.len()) { if (at(a,i) != at(b,i)) { return false; } i += 1; } return true;
+}
+fn ends(name: core::slice::View<u8>, suffix: core::slice::View<u8>) -> bool {
+    let n: i32 = name.len(); let k: i32 = suffix.len(); if (n <= k) { return false; }
+    let i: i32 = 0; while (i < k) { if (at(name,n-k+i) != at(suffix,i)) { return false; } i += 1; } return true;
+}
+fn one(options: Options, w: &Work, name: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    w.name = name;
+    let fd_in: i32 = 0;
+    if (!is_dash(name)) {
+        let opened: core::result::Result<std::file::File,core::io::Error> = std::file::open(path_of(name)?,std::file::OpenMode::Read);
+        if (core::result::is_err(opened)) { return core::result::Err(Error::Io); } fd_in = handle(core::result::unwrap(opened));
+    }
+    if (options.test || options.stdout || is_dash(name)) {
+        let fd_out: i32 = 1; if (options.test) { fd_out = -1; }
+        let result: core::result::Result<i32,Error> = decode(w,fd_in,fd_out); close_fd(fd_in); return result;
+    }
+    let n: i32 = name.len(); let cut: i32 = -1; let tar: bool = false;
+    if (ends(name,literal(".xz",3))) { cut = n-3; } if (ends(name,literal(".lzma",5))) { cut = n-5; } if (ends(name,literal(".txz",4))) { cut = n-4; tar = true; }
+    if (cut < 0) { close_fd(fd_in); return core::result::Err(Error::Suffix); }
+    w.target.clear();
+    if (core::result::is_err(w.target.try_extend(sub(name,0,cut)))) { close_fd(fd_in); return core::result::Err(Error::Allocation); }
+    if (tar && core::result::is_err(w.target.try_extend(literal(".tar",4)))) { close_fd(fd_in); return core::result::Err(Error::Allocation); }
+    let target: core::path::Path = path_of(w.target.as_view())?;
+    let present: core::result::Result<bool,Error> = exists(target);
+    if (core::result::is_err(present)) { close_fd(fd_in); return core::result::Err(Error::Io); }
+    if (core::result::unwrap(present) && !options.force) { close_fd(fd_in); return core::result::Err(Error::Exists); }
+    let created: core::result::Result<std::file::File,core::io::Error> = std::file::open(target,std::file::OpenMode::Create);
+    if (core::result::is_err(created)) { close_fd(fd_in); return core::result::Err(Error::Io); }
+    let fd_out: i32 = handle(core::result::unwrap(created));
+    let result: core::result::Result<i32,Error> = decode(w,fd_in,fd_out); close_fd(fd_in); close_fd(fd_out);
+    if (core::result::is_err(result)) { std::filesystem::remove_file(target); }
+    return result;
+}
+fn apply(options: &Options, id: i32) -> bool {
+    if (id == 1) { options.stdout = true; } if (id == 2) { options.test = true; } if (id == 3) { options.force = true; } if (id == 9) { options.help = true; }
+    return true;
+}
+fn arguments(values: std::args::Arguments) -> i32 {
+    let none: Work = empty_work();
+    let all: core::slice::View<core::slice::View<u8>> = values.as_view();
+    // Running as xzcat implies -c.
+    let program: core::slice::View<u8> = core::option::unwrap(all.get(0)); let cat: bool = ends(program,literal("/xzcat",6)) || equal(program,literal("xzcat",5));
+    let cli: std::cli::Command = std::cli::command(literal("unxz",4), literal("Decompress .xz and .lzma files; xzcat writes to standard output.",64));
+    cli.flag(1, 99, literal("stdout",6), literal("write to standard output",24));
+    cli.flag(2, 116, literal("test",4), literal("test integrity without writing",30));
+    cli.flag(3, 102, literal("force",5), literal("overwrite existing output files",31));
+    cli.flag(4, 100, literal("decompress",10), literal("decompress (the default)",24));
+    cli.flag(5, 107, literal("keep",4), literal("keep input files (the default)",30));
+    cli.flag(6, 113, literal("quiet",5), literal("no effect",9));
+    cli.help(9);
+    cli.operands(literal("FILE",4), 0, -1);
+    let parsed: core::result::Result<std::cli::Matches,std::cli::Error> = cli.parse(core::result::unwrap(all.subview(1,all.len())));
+    if (core::result::is_err(parsed)) { cli.print_error(core::result::unwrap_err(parsed), values.as_view()); cli.destroy(); return 2; }
+    let matches: std::cli::Matches = core::result::unwrap(parsed);
+    let options: Options = Options { stdout: cat, test: false, force: false, help: false };
+    let index: i32 = 0;
+    while (index < matches.occurrences()) { apply(options.borrow(), matches.occurrence_id(index)); index += 1; }
+    if (options.help) { let ok: bool = cli.print_help(-1); matches.destroy(); cli.destroy(); if (!ok) { return failed(none.borrow(),Error::Io); } return 0; }
+    let names: alloc::vec::Vec<core::slice::View<u8>> = alloc::vec::new(); let valid: bool = true;
+    index = 0;
+    while (index < matches.operand_count() && valid) { valid = core::result::is_ok(names.try_push(matches.operand(index))); index += 1; }
+    matches.destroy(); cli.destroy();
+    if (!valid) { names.destroy(); return failed(none.borrow(),Error::Allocation); }
+    if (names.len() == 0) { if (core::result::is_err(names.try_push(literal("-",1)))) { names.destroy(); return failed(none.borrow(),Error::Allocation); } }
+    let made: core::result::Result<Work,Error> = work();
+    if (core::result::is_err(made)) { names.destroy(); return failed(none.borrow(),Error::Allocation); }
+    let w: Work = core::result::unwrap(made); let status: i32 = 0;
+    index = 0;
+    while (index < names.len()) {
+        let name: core::slice::View<u8> = core::option::unwrap(names.get(index));
+        let result: core::result::Result<i32,Error> = one(options,w.borrow(),name);
+        if (core::result::is_err(result)) { let code: i32 = failed(w.borrow(),core::result::unwrap_err(result)); if (code > status) { status = code; } }
+        index += 1;
+    }
+    destroy(w.borrow()); names.destroy(); return status;
+}
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(0,256,65536);
+    if (core::result::is_err(captured)) { say(literal("unxz: cannot capture arguments\n",31)); return 2; }
+    let values: std::args::Arguments = core::result::unwrap(captured); let status: i32 = arguments(values); values.destroy(); return status;
+}

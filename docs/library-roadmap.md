@@ -80,8 +80,11 @@ included, and agrees with libc through `ctypes` on 3 x 200,000 generated
 cases. [`ext::gitignore`](extended-gitignore.md) applies `.gitignore` rules
 on top of it, and `text_grep -r` with `--include`, `--exclude`,
 `--exclude-dir` and `--gitignore` matches GNU grep 3.11 `-r` on the
-repository tree and 1,200 generated trees, and git's own listing in 730 of
-them.
+repository tree and 1,200 generated trees, and git's own listing in 705 of
+them. It runs `-r the` over the repository in 1.42x GNU grep's time. [`ext::sed`](extended-sed.md) and its `text_sed`
+sample run a GNU sed 4.9 subset (`s`, `y`, `p`, `d`, `n`, `q`, `Q`, `=`, blocks,
+all address forms, `-n -e -E -s -i`) and agree with `/usr/bin/sed` on 8,000
+generated scripts.
 
 [Checked filesystem mutations](stdlib-filesystem.md) provide allocation-free
 creation/removal of one directory, file unlinking and renaming over existing
@@ -340,13 +343,17 @@ default output (git's xdiff with the indent heuristic and hunk-header function
 names), `--histogram` and `-W`/`--function-context` (`ext::seqdiff::function_hunks`)
 match plain `git diff --no-index` on all 4,000 generated pairs in each mode.
 The [text tools](extended-textutils.md) add GNU-compatible `sort`, `uniq`,
-`cut`, `tr` and `wc` under `LC_ALL=C`. Each agrees with coreutils 9.4 on
-2,000 generated oracle cases. `sort` reproduces GNU's key, numeric (including
-its byte-0x80 thousands-separator quirk), stable, unique and last-resort
-rules. It sorts 1.2 million lines with up to eight forked workers. Remaining:
-`sort` ordering options `d g h i M R V`, `-c`, `-m`; `uniq -D`/`--group`;
-locales other than C; `wc -l` and `uniq -f1`, which run at 2.0 to 2.3
-times GNU's time (every other measured mode is within 2x).
+`cut`, `tr`, `wc`, `head`, `tail` (without following), `cat` and `tee` under
+`LC_ALL=C`. Each agrees with coreutils 9.4 on 2,000 generated oracle cases.
+`sort` reproduces GNU's key, numeric (including its byte-0x80
+thousands-separator quirk), stable, unique and last-resort rules. It sorts
+1.2 million lines with up to eight forked workers. `head` and `tail` work
+on regular files in place and leave the file offsets where GNU leaves
+them. Remaining: `paste`, `join` and `comm`; `sort` ordering options
+`d g h i M R V`, `-c`, `-m`; `uniq -D`/`--group`; `tail -f`; locales other
+than C; `wc -l` and `uniq -f1`, which run at 2.0 to 2.3 times GNU's time;
+and `cat -n`/`-b` (5 to 6 times) and `cat -A`/`-v` (12 to 16 times) on
+100 MB.
 
 [Runtime format strings and owned formatting](stdlib-format-strings.md) add
 typed positional/named arguments, scalar fill/alignment/truncation, signed radix
@@ -1186,6 +1193,20 @@ low 32 bits as i32. Unresolved names keep their intrinsic meaning, so
 `std::io::print_i32` now runs its library body, which calls `print`. The fix
 is in `shaders/type_checker/calls/02c_intrinsics.slang`; the two
 `tests/codegen_x86.rs` intrinsic-shadowing tests are its regressions.
+Inside its own body, a function that shadows an intrinsic reaches the
+intrinsic by that name, so wrappers such as verified::host's
+`i32_slice_from_raw_parts`, whose body calls `i32_slice_from_raw_parts`, no
+longer recurse forever; a recursive function needs a name that is not an
+intrinsic. `tests/fixtures/compiler_defects/intrinsic_wrapper_self_call.lani`
+is the regression.
+Tested 2026-11-01 on a separate build of this change: the regression and
+both 3f0bb9922 shadowing tests pass, the minimal repros that segfaulted on
+lang's compiler exit 0, oracle_difftest agrees on 40 programs/320 calls, and
+the CRC-32 (2,400 cases) and quick zstd/XXH64 oracles show 0 failures.
+The jump-check failures in codegen_x86 and compiler_defect_fixtures_execution
+(24 and 2 tests) were already there before this change: the runtime allocator
+jumps forward into its out-of-line mmap block and back to its own entry, and
+lang's compiler emits exactly the same jumps.
 
 Inline fixed-capacity containers and an LRU cache follow ordered navigation.
 `core::ring::Ring<T, N>` is an allocation-free ring buffer with O(1) pushes and

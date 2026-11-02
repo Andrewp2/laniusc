@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **359 modules**, **18824 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **363 modules**, **19000 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -314,6 +314,7 @@ Inventory: **359 modules**, **18824 declaration/member entries**. Counts include
 | [ext::regex_text](ext/regex_text.md) | [source](../../extended/ext/regex_text.lani#L3) | 44 | Source inventory | [extended-regex-text](../extended-regex-text.md), [library-regex-workspace-plan](../library-regex-workspace-plan.md) |
 | [ext::response](ext/response.md) | [source](../../extended/ext/response.lani#L5) | 20 | Source inventory | [extended-cli-response](../extended-cli-response.md), [library-response-files-plan](../library-response-files-plan.md) |
 | [ext::schema](ext/schema.md) | [source](../../extended/ext/schema.lani#L3) | 90 | Source inventory | [extended-schema](../extended-schema.md) |
+| [ext::sed](ext/sed.md) | [source](../../extended/ext/sed.lani#L8) | 76 | Source inventory | [extended-sed](../extended-sed.md) |
 | [ext::seqdiff](ext/seqdiff.md) | [source](../../extended/ext/seqdiff.lani#L2) | 110 | Source inventory | [extended-seqdiff](../extended-seqdiff.md) |
 | [ext::server_poll](ext/server_poll.md) | [source](../../extended/ext/server_poll.lani#L2) | 199 | Source inventory | [extended-server-poll](../extended-server-poll.md), [library-server-contract](../library-server-contract.md), [library-server-concurrency-plan](../library-server-concurrency-plan.md) |
 | [ext::settings](ext/settings.md) | [source](../../extended/ext/settings.lani#L3) | 118 | Source inventory | [extended-settings](../extended-settings.md) |
@@ -332,12 +333,14 @@ Inventory: **359 modules**, **18824 declaration/member entries**. Counts include
 | [ext::tar](ext/tar.md) | [source](../../extended/ext/tar.lani#L3) | 91 | Source inventory | [extended-tar](../extended-tar.md), [extended-pax](../extended-pax.md) |
 | [ext::terminal](ext/terminal.md) | [source](../../extended/ext/terminal.lani#L3) | 15 | Source inventory | [extended-terminal](../extended-terminal.md) |
 | [ext::text_args](ext/text_args.md) | [source](../../extended/ext/text_args.lani#L4) | 14 | Source inventory | [extended-textutils](../extended-textutils.md) |
+| [ext::text_cat](ext/text_cat.md) | [source](../../extended/ext/text_cat.lani#L6) | 21 | Source inventory | [extended-textutils](../extended-textutils.md) |
 | [ext::text_cut](ext/text_cut.md) | [source](../../extended/ext/text_cut.lani#L7) | 38 | Source inventory | [extended-textutils](../extended-textutils.md) |
 | [ext::text_head](ext/text_head.md) | [source](../../extended/ext/text_head.lani#L6) | 10 | Source inventory | [extended-textutils](../extended-textutils.md) |
 | [ext::text_lines](ext/text_lines.md) | [source](../../extended/ext/text_lines.lani#L6) | 97 | Source inventory | [extended-textutils](../extended-textutils.md) |
 | [ext::text_sort](ext/text_sort.md) | [source](../../extended/ext/text_sort.lani#L19) | 43 | Source inventory | [extended-textutils](../extended-textutils.md) |
 | [ext::text_source](ext/text_source.md) | [source](../../extended/ext/text_source.lani#L7) | 20 | Source inventory | [extended-textutils](../extended-textutils.md) |
 | [ext::text_tail](ext/text_tail.md) | [source](../../extended/ext/text_tail.lani#L7) | 10 | Source inventory | [extended-textutils](../extended-textutils.md) |
+| [ext::text_tee](ext/text_tee.md) | [source](../../extended/ext/text_tee.lani#L6) | 15 | Source inventory | [extended-textutils](../extended-textutils.md) |
 | [ext::text_tr](ext/text_tr.md) | [source](../../extended/ext/text_tr.lani#L8) | 47 | Source inventory | [extended-textutils](../extended-textutils.md) |
 | [ext::text_uniq](ext/text_uniq.md) | [source](../../extended/ext/text_uniq.lani#L10) | 33 | Source inventory | [extended-textutils](../extended-textutils.md) |
 | [ext::text_wc](ext/text_wc.md) | [source](../../extended/ext/text_wc.lani#L8) | 22 | Source inventory | [extended-textutils](../extended-textutils.md) |
@@ -377,6 +380,7 @@ Inventory: **359 modules**, **18824 declaration/member entries**. Counts include
 | [ext::zip](ext/zip.md) | [source](../../extended/ext/zip.lani#L2) | 82 | Source inventory | [extended-zip](../extended-zip.md), [extended-fetch-many](../extended-fetch-many.md) |
 | [ext::zip_stream](ext/zip_stream.md) | [source](../../extended/ext/zip_stream.lani#L8) | 83 | Source inventory | [extended-zip-stream](../extended-zip-stream.md) |
 | [ext::zstd](ext/zstd.md) | [source](../../extended/ext/zstd.lani#L8) | 92 | Source inventory | [extended-zstd](../extended-zstd.md) |
+| [ext::zstd_encode](ext/zstd_encode.md) | [source](../../extended/ext/zstd_encode.lani#L10) | 64 | Source inventory | **Unregistered** |
 
 ## Support and implementation data
 
@@ -461,3 +465,4 @@ These are discovery/contract-link gaps, not claims that their code is missing or
 - [ext::openssl_tls_lifecycle](ext/openssl_tls_lifecycle.md)
 - [ext::sha1](ext/sha1.md)
 - [ext::tls_clients](ext/tls_clients.md)
+- [ext::zstd_encode](ext/zstd_encode.md)

@@ -634,13 +634,18 @@ all 2,040 generated pairs for word diffs, character diffs and `--stat`, on
 1,500 `git diff --stat` reports over generated repositories and on 282
 `diff -ruN` patches.
 [Text tools](extended-textutils.md) (`ext::text_sort`, `ext::text_uniq`,
-`ext::text_cut`, `ext::text_tr`, `ext::text_wc`, `ext::text_lines`;
-`text-sort`, `text-uniq`, `text-cut`, `text-tr`, `text-wc`) reimplement GNU
-coreutils 9.4 `sort` (`-bfnrsuz`, `-k`, `-t`, `-o`), `uniq` (`-c -d -u -i
--f -s -w -z`), `cut` (`-b -c -f -d -s --complement --output-delimiter`),
-`tr` (sets, ranges, classes, `-c -d -s -t`) and `wc` under `LC_ALL=C`. Each
-matches GNU byte for byte, with the same exit status, on 2,000 generated
-cases from its own oracle. `sort` is a multikey MSD radix sort with forked
+`ext::text_cut`, `ext::text_tr`, `ext::text_wc`, `ext::text_head`,
+`ext::text_tail`, `ext::text_cat`, `ext::text_tee`, `ext::text_lines`,
+`ext::text_args`, `ext::text_source`; `text-sort`, `text-uniq`, `text-cut`,
+`text-tr`, `text-wc`, `text-head`, `text-tail`, `text-cat`, `text-tee`)
+reimplement GNU coreutils 9.4 `sort` (`-bfnrsuz`, `-k`, `-t`, `-o`), `uniq`
+(`-c -d -u -i -f -s -w -z`), `cut` (`-b -c -f -d -s --complement
+--output-delimiter`), `tr` (sets, ranges, classes, `-c -d -s -t`), `wc`,
+`head` (`-n -c`, negative counts, GNU's file offsets), `tail` (`-n -c`,
+`+N`, the obsolete form; no following), `cat` (`-AbeEnstTuv`) and `tee`
+(`-a -i -p --output-error`) under `LC_ALL=C`. Each matches GNU byte for
+byte, with the same exit status, on 2,000 generated cases from its own
+oracle. `sort` is a multikey MSD radix sort with forked
 workers from 50,000 lines up. Speeds are in the guide.
 [Multi-file patches](extended-patchset.md) (`ext::patchset`, `seq-patch -i`)
 read git extended headers (renames, copies, modes, creation, deletion,
@@ -2669,8 +2674,18 @@ deeper-file and later-line precedence, with components matched by
 stdout, status and binary-file messages match GNU grep 3.11 `-r` on 36
 searches of the repository tree and on 1,200 generated trees, and
 `--gitignore` matches the files `git ls-files -o --exclude-standard` lists in
-730 generated trees. It is about 4x GNU grep's user time on the repository,
-mostly because it validates every byte of each file that holds the literal.
+705 generated trees. Like GNU grep, its file search looks only at the
+records that hold the pattern's literal, and checks UTF-8 only in those. It
+runs `-r the` over the repository in 1.42x GNU grep's user+sys time (0.53 s
+against 0.37 s; it was 2.25x before).
+
+[`ext::sed`](extended-sed.md) runs sed scripts as GNU sed 4.9 does:
+`s///` (leftmost-longest, `g`, `p`, Nth), `y`, `p`, `d`, `n`, `q`, `Q`, `=`,
+blocks and `!` under line, `$`, regex, `first~step` and range addresses
+(`0,/re/`, `+N`, `~N`), with POSIX basic or `-E` regexes translated to
+`ext::regex`. Its `text_sed` sample (`-n`, `-e`, `-E`, `-s`, `-i`) agrees with
+`/usr/bin/sed` on 8,000 generated scripts over UTF-8 files: stdout, status,
+edited files and unreadable-file reports.
 
 The [regex differential oracle](extended-regex-oracle.md) runs the real
 `find_iter`, template-replacement and grep programs against CPython `re` on

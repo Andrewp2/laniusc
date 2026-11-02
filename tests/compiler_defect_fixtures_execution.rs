@@ -74,3 +74,8 @@ fn lnc0006_a_vec_field_taken_out_checks_against_its_element_type() {
 fn lnc0057_the_uring_read_window_condition_compiles() {
     compiles_and_exits_zero("lnc0057_start_and_window_condition");
 }
+
+#[test]
+fn intrinsic_wrappers_reach_the_intrinsic_inside_their_own_bodies() {
+    compiles_and_exits_zero("intrinsic_wrapper_self_call");
+}

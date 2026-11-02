@@ -1,0 +1,27 @@
+// Since 3f0bb9922 a declaration shadows the language intrinsic of the same
+// name. verified::host gives intrinsics declared signatures with wrappers
+// whose bodies call the intrinsic by that same name; the inner call resolved
+// to the wrapper itself and recursed until the stack overflowed (the
+// fuzzer's host.lani timeouts). Inside its own body a shadowing declaration
+// now reaches the intrinsic; everywhere else the declaration still wins.
+module wrapper;
+
+fn i32_slice_from_raw_parts(data: ptr, length: i32) -> [i32] {
+    return wrapper::i32_slice_from_raw_parts(data, length);
+}
+
+fn i32_slice_data_ptr(values: [i32]) -> ptr {
+    return i32_slice_data_ptr(values);
+}
+
+fn print_i32(value: i32) -> i32 { return value + 10; }
+
+fn main() -> i32 {
+    let storage: [i32; 4] = [0; 4];
+    let view: [i32] = wrapper::i32_slice_from_raw_parts(i32_array_data_ptr(storage), 4);
+    view[1] = 7;
+    let again: [i32] = i32_slice_from_raw_parts(i32_slice_data_ptr(view), 4);
+    if (again[1] != 7) { return 1; }
+    if (print_i32(0) != 10) { return 2; }
+    return 0;
+}

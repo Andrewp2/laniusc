@@ -1,0 +1,39 @@
+// zstd_encode_probe LEVEL IN OUT < DATA (zstd oracle): encode stdin with
+// ext::zstd_encode, offering at most IN input bytes and OUT output bytes per
+// step, and write the frame to stdout.
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::zstd_encode;
+import std::args;
+import std::fs;
+fn number(view: core::slice::View<u8>) -> i32 { let value: i32 = 0; let k: i32 = 0; while (k < view.length) { value = value*10+((view.values[view.start+k] as i32)-48); k += 1; } return value; }
+fn main() -> i32 {
+    let values: std::args::Arguments = core::result::unwrap(std::args::snapshot(1,8,4096));
+    let level: i32 = number(core::option::unwrap(values.get(0)));
+    let in_chunk: i32 = number(core::option::unwrap(values.get(1))); let out_chunk: i32 = number(core::option::unwrap(values.get(2)));
+    let data: alloc::vec::Vec<u8> = alloc::vec::new(); data.try_resize(33554432,0);
+    let base: ptr = core::mem::i32_slice_data_ptr(data.as_view().values); let size: i32 = 0;
+    while (size < 33554432) { let got: i32 = std::fs::read(0,base+(size as usize),(33554432-size) as usize); if (got <= 0) { break; } size += got; }
+    let ws: alloc::vec::Vec<i32> = alloc::vec::new(); ws.try_resize(ext::zstd_encode::workspace_len(level),0);
+    let window: alloc::vec::Vec<u8> = alloc::vec::new(); window.try_resize(ext::zstd_encode::window_len(level),0);
+    let lit: alloc::vec::Vec<u8> = alloc::vec::new(); lit.try_resize(ext::zstd_encode::literals_len(),0);
+    let stage: alloc::vec::Vec<u8> = alloc::vec::new(); stage.try_resize(ext::zstd_encode::stage_len(),0);
+    let out: alloc::vec::Vec<u8> = alloc::vec::new(); out.try_resize(out_chunk,0);
+    let e: ext::zstd_encode::Encoder = core::result::unwrap(ext::zstd_encode::encoder(ws.as_view(),window.as_view(),lit.as_view(),stage.as_view(),level));
+    let pos: i32 = 0;
+    while (true) {
+        let end: i32 = pos+in_chunk; if (end > size) { end = size; }
+        let piece: core::slice::View<u8> = core::result::unwrap(data.as_view().subview(pos,end));
+        let stepped: core::result::Result<ext::zstd_encode::Step,ext::zstd_encode::Error> = e.borrow().step(piece,out.as_view(),end == size);
+        if (core::result::is_err(stepped)) { return 2; }
+        let progress: ext::zstd_encode::Step = core::result::unwrap(stepped); pos += progress.read;
+        if (progress.written > 0) { std::fs::write(1,core::mem::i32_slice_data_ptr(out.as_view().values),progress.written as usize); }
+        let done: bool = match (progress.status) { ext::zstd_encode::Status::Done -> true, _ -> false };
+        if (done) { return 0; }
+    }
+    return 0;
+}
