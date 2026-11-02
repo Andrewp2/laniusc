@@ -1,0 +1,130 @@
+// alloc::btree_map sorted construction, cloning and the iterator sinks.
+// from_sorted at sizes around every leaf and inner-node boundary; each built
+// map is checked entry by entry, then edited at random against alloc::tree_map
+// so removal repair runs on built nodes. Exit 0, or the failing check.
+module app::main;
+import alloc::btree_map;
+import alloc::tree_map;
+import alloc::vec;
+import core::iter;
+import core::option;
+import core::result;
+fn sorted(count: i32) -> alloc::vec::Vec<alloc::btree_map::Entry<i32, i32>> {
+    let entries: alloc::vec::Vec<alloc::btree_map::Entry<i32, i32>> = alloc::vec::new(); core::result::unwrap(entries.try_reserve(count));
+    let index: i32 = 0;
+    while (index < count) { let item: alloc::btree_map::Entry<i32, i32> = alloc::btree_map::Entry { key: 3 * index, value: index }; core::result::unwrap(entries.try_push(item)); index += 1; }
+    return entries;
+}
+// Every entry in order from both ends, every hit and the misses between.
+fn exact(map: &alloc::btree_map::BTreeMap<i32, i32>, count: i32) -> bool {
+    if (map.len() != count) { return false; }
+    let forward: alloc::btree_map::Cursor<i32, i32> = map.iter(); let backward: alloc::btree_map::Cursor<i32, i32> = map.iter(); let index: i32 = 0;
+    while (index < count) {
+        let front: alloc::btree_map::Entry<i32, i32> = core::option::unwrap(forward.next());
+        let back: alloc::btree_map::Entry<i32, i32> = core::option::unwrap(backward.next_back());
+        if (front.key != 3 * index || front.value != index || back.value != count - 1 - index) { return false; }
+        if (core::option::unwrap(map.get(3 * index)) != index || map.contains_key(3 * index + 1) || map.contains_key(3 * index - 1)) { return false; }
+        index += 1;
+    }
+    return forward.is_empty() && backward.is_empty();
+}
+// Random inserts and removals, the same on both maps; then equal contents.
+fn edit(map: &alloc::btree_map::BTreeMap<i32, i32>, count: i32, seed: u32) -> bool {
+    let model: alloc::tree_map::TreeMap<i32, i32> = alloc::tree_map::new(); let index: i32 = 0;
+    while (index < count) { core::result::unwrap(model.try_insert(3 * index, index)); index += 1; }
+    let state: u32 = seed; let step: i32 = 0; let space: i32 = 3 * count + 30;
+    while (step < 4 * count + 200) {
+        state = state * 1664525 + 1013904223; let key: i32 = ((state >> 8) % (space as u32)) as i32;
+        if ((state >> 30) == 0) {
+            let a: bool = core::option::is_some(core::result::unwrap(map.try_insert(key, step)));
+            let b: bool = core::option::is_some(core::result::unwrap(model.try_insert(key, step)));
+            if (a != b) { return false; }
+        } else {
+            if (map.remove(key).is_some() != model.remove(key).is_some()) { return false; }
+        }
+        step += 1;
+    }
+    if (map.len() != model.len()) { return false; }
+    let mine: alloc::btree_map::Cursor<i32, i32> = map.iter(); let theirs: alloc::tree_map::Cursor<i32, i32> = model.iter();
+    while (!theirs.is_empty()) {
+        let a: alloc::btree_map::Entry<i32, i32> = core::option::unwrap(mine.next()); let b: alloc::tree_map::Entry<i32, i32> = core::option::unwrap(theirs.next());
+        if (a.key != b.key || a.value != b.value) { return false; }
+    }
+    model.destroy(); return mine.is_empty();
+}
+fn order_error(error: alloc::btree_map::Error) -> bool { let yes: bool = match (error) { alloc::btree_map::Error::InvalidOrder -> true, _ -> false }; return yes; }
+fn range_error(error: alloc::btree_map::Error) -> bool { let yes: bool = match (error) { alloc::btree_map::Error::InvalidRange -> true, _ -> false }; return yes; }
+fn duplicate(error: alloc::btree_map::SinkError) -> bool { let yes: bool = match (error) { alloc::btree_map::SinkError::Duplicate -> true, _ -> false }; return yes; }
+fn accept<S>(sink: &S, item: alloc::btree_map::Entry<i32, i32>) -> core::option::Option<alloc::btree_map::SinkError>
+    where S: core::iter::TrySink<alloc::btree_map::Entry<i32, i32>, alloc::btree_map::SinkError> { return sink.try_accept(item); }
+fn replace<S>(sink: &S, item: alloc::btree_map::Entry<i32, i32>) -> core::result::Result<core::option::Option<alloc::btree_map::Entry<i32, i32>>, alloc::btree_map::Error>
+    where S: core::iter::TryReplaceSink<alloc::btree_map::Entry<i32, i32>, alloc::btree_map::Error> { return sink.try_replace_item(item); }
+fn main() -> i32 {
+    let sizes: [i32; 22] = [0, 1, 2, 8, 15, 16, 17, 31, 32, 33, 255, 256, 257, 271, 272, 273, 289, 4623, 4624, 4625, 4913, 70000];
+    let which: i32 = 0;
+    while (which < 22) {
+        let count: i32 = sizes[which]; let entries: alloc::vec::Vec<alloc::btree_map::Entry<i32, i32>> = sorted(count);
+        let map: alloc::btree_map::BTreeMap<i32, i32> = core::result::unwrap(alloc::btree_map::from_sorted(entries.as_view()));
+        entries.destroy();
+        if (!exact(map.borrow(), count)) { return 1; }
+        if (count > 0 && (core::option::unwrap(map.first()).key != 0 || core::option::unwrap(map.last()).key != 3 * (count - 1))) { return 2; }
+        // Exactly sized: ceil(n/16) leaves, then ceil(c/17) per level (at least
+        // the four nodes of a first allocation).
+        let nodes: i32 = (count + 15) / 16; let level: i32 = nodes;
+        while (level > 1) { level = (level + 16) / 17; nodes += level; }
+        if (nodes > 0 && nodes < 4) { nodes = 4; }
+        if (map.node_capacity() != nodes) { return 3; }
+        // A clone is equal and independent.
+        let copy: alloc::btree_map::BTreeMap<i32, i32> = core::result::unwrap(map.try_clone());
+        if (!exact(copy.borrow(), count)) { return 4; }
+        if (core::result::unwrap(copy.try_insert(1, -1)).is_some() || map.contains_key(1)) { return 5; }
+        if (count > 0 && (copy.remove(0).is_none() || !map.contains_key(0))) { return 6; }
+        copy.destroy();
+        if (!edit(map.borrow(), count, (which as u32) * 2654435761 + 1)) { return 7; }
+        // Clone after edits (free nodes, uneven leaves) matches entry for entry.
+        let again: alloc::btree_map::BTreeMap<i32, i32> = core::result::unwrap(map.try_clone());
+        let a: alloc::btree_map::Cursor<i32, i32> = map.iter(); let b: alloc::btree_map::Cursor<i32, i32> = again.iter();
+        while (!a.is_empty()) {
+            let x: alloc::btree_map::Entry<i32, i32> = core::option::unwrap(a.next()); let y: alloc::btree_map::Entry<i32, i32> = core::option::unwrap(b.next());
+            if (x.key != y.key || x.value != y.value) { return 8; }
+        }
+        if (!b.is_empty() || again.len() != map.len()) { return 9; }
+        again.destroy(); map.destroy(); which += 1;
+    }
+    // Unsorted input: an equal or a descending neighbor, at either end.
+    let trial: i32 = 0;
+    while (trial < 4) {
+        let bad: alloc::vec::Vec<alloc::btree_map::Entry<i32, i32>> = alloc::vec::new(); let index: i32 = 0;
+        while (index < 40) {
+            let key: i32 = 3 * index;
+            if (trial == 0 && index == 39) { key = 3 * 38; }
+            if (trial == 1 && index == 1) { key = 0; }
+            if (trial == 2 && index == 20) { key = 3 * 19 - 1; }
+            if (trial == 3 && index == 0) { key = 1000; }
+            let item: alloc::btree_map::Entry<i32, i32> = alloc::btree_map::Entry { key: key, value: index }; core::result::unwrap(bad.try_push(item)); index += 1;
+        }
+        let built: core::result::Result<alloc::btree_map::BTreeMap<i32, i32>, alloc::btree_map::Error> = alloc::btree_map::from_sorted(bad.as_view());
+        if (core::result::is_ok(built) || !order_error(core::result::unwrap_err(built))) { return 10 + trial; }
+        bad.destroy(); trial += 1;
+    }
+    let negative: core::result::Result<alloc::btree_map::Builder<i32, i32>, alloc::btree_map::Error> = alloc::btree_map::builder<i32, i32>(-1);
+    if (core::result::is_ok(negative) || !range_error(core::result::unwrap_err(negative))) { return 14; }
+    // A partial build can be abandoned.
+    let partial: alloc::btree_map::Builder<i32, i32> = core::result::unwrap(alloc::btree_map::builder<i32, i32>(100));
+    partial.push(1, 1); partial.push(2, 2);
+    if (partial.remaining() != 98) { return 15; } partial.destroy();
+    // Sinks: TrySink rejects an equivalent key and keeps the stored entry;
+    // TryReplaceSink replaces it and returns the old entry.
+    let sink: alloc::btree_map::BTreeMap<i32, i32> = alloc::btree_map::new();
+    let first: alloc::btree_map::Entry<i32, i32> = alloc::btree_map::Entry { key: 5, value: 50 };
+    let again: alloc::btree_map::Entry<i32, i32> = alloc::btree_map::Entry { key: 5, value: 51 };
+    if (core::option::is_some(accept(sink.borrow(), first))) { return 16; }
+    let rejected: core::option::Option<alloc::btree_map::SinkError> = accept(sink.borrow(), again);
+    if (core::option::is_none(rejected) || !duplicate(core::option::unwrap(rejected)) || core::option::unwrap(sink.get(5)) != 50) { return 17; }
+    let old: core::option::Option<alloc::btree_map::Entry<i32, i32>> = core::result::unwrap(replace(sink.borrow(), again));
+    if (core::option::unwrap(old).value != 50 || core::option::unwrap(sink.get(5)) != 51 || sink.len() != 1) { return 18; }
+    let fresh: alloc::btree_map::Entry<i32, i32> = alloc::btree_map::Entry { key: 6, value: 60 };
+    if (core::option::is_some(core::result::unwrap(replace(sink.borrow(), fresh))) || sink.len() != 2) { return 19; }
+    sink.destroy();
+    return 0;
+}

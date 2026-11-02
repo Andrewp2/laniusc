@@ -2,7 +2,8 @@
 // RLIMIT_AS makes node growth fail. The failed insert must leave the map
 // unchanged (length, node capacity, every entry, both cursor directions);
 // replacing an existing key still works; after the limit is restored the
-// same insert succeeds. Exit 0, or the number of the failing check.
+// same insert succeeds. A clone under the limit fails cleanly or is
+// complete. Exit 0, or the number of the failing check.
 module app::main;
 import alloc::btree_map;
 import core::option;
@@ -43,6 +44,16 @@ fn main() -> i32 {
     // Replacing needs no memory.
     let replaced: alloc::btree_map::Entry<u64, u64> = core::option::unwrap(core::result::unwrap(map.try_insert(key(0), 77)));
     if (replaced.value != 0 || core::option::unwrap(map.get(key(0))) != 77 || map.len() != length || map.node_capacity() != capacity) { return 10; }
+    // A clone under the same limit either fails cleanly or is complete.
+    let cloned: core::result::Result<alloc::btree_map::BTreeMap<u64, u64>, alloc::btree_map::Error> = map.try_clone();
+    if (core::result::is_err(cloned)) {
+        if (!allocation(core::result::unwrap_err(cloned))) { return 16; }
+    } else {
+        let copy: alloc::btree_map::BTreeMap<u64, u64> = core::result::unwrap(cloned);
+        if (copy.len() != length || core::option::unwrap(copy.get(key(0))) != 77) { return 17; }
+        copy.destroy();
+    }
+    if (map.len() != length || map.node_capacity() != capacity || core::option::unwrap(map.get(key(index - 1))) != ((index - 1) as u64) * 3) { return 18; }
     // Restore the limit: the insert that failed now succeeds.
     if (core::result::is_err(std::rlimit::set(std::rlimit::Resource::AddressSpace, saved))) { return 11; }
     if (core::option::is_some(core::result::unwrap(map.try_insert(key(index), 1)))) { return 12; }

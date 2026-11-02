@@ -2805,8 +2805,11 @@ borrowed point lookup has the current increment above.
   iterates about 2.2x faster than the AVL map and does key-order lookups 23%
   and scattered lookups 8-14% faster. Lookups in insertion order are about 2x
   slower, because one-node-per-key trees get locality from their allocation
-  order. Set, clone, sorted
-  construction and the iterator sinks are not yet provided.
+  order. `from_sorted`, `try_clone` and a public `Builder` build exactly sized
+  trees in O(n); both iterator sinks are implemented. [`alloc::btree_set`](stdlib-btree-map.md#set)
+  runs on the same tree with tree_set's representative rules and linear
+  two-pass set algebra, checked against `alloc::tree_set`. Owning cursors,
+  interval edits and borrowed lookups are not yet provided.
 - CLI and host arguments: [`ext::cli` and `std::args`](extended-cli.md) execute
   borrowed option parsing and owned raw-byte argument snapshots. Eight test
   groups cover schema errors, 96 generated command lines, allocation failures,

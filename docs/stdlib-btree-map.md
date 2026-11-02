@@ -1,6 +1,7 @@
-# B-tree ordered map
+# B-tree ordered map and set
 
-`alloc::btree_map::BTreeMap<K, V>` is an ordered map stored as a B+ tree. It
+`alloc::btree_map::BTreeMap<K, V>` is an ordered map stored as a B+ tree, and
+`alloc::btree_set::BTreeSet<T>` is the [set](#set) on the same tree. The map
 has the same ordering rules, `Entry`/`Cursor` shape and error style as
 [`alloc::tree_map`](stdlib-tree-map.md), the AVL map. Use it when a workload
 iterates, looks keys up in key order, or looks them up in no particular order.
@@ -22,16 +23,28 @@ Execution evidence covers **x86_64 Linux using the GPU compiler** only.
 | `lower_bound(key)`, `upper_bound(key)` | First entry `>= key` / `> key` | O(log n) |
 | `iter()` | Cursor over every entry | O(1) to create |
 | `range(lower, upper)` | Cursor over `[lower, upper)`. `Err(InvalidRange)` when `upper < lower`; equivalent bounds give an empty cursor | O(log n) to create |
+| `from_sorted(view)` | Build from a `core::slice::View<Entry<K, V>>` of strictly increasing keys. `Err(InvalidOrder)` for an equal or descending neighbor, checked before anything is allocated | O(n) |
+| `try_clone()` | Independent, exactly sized copy. Keys and values copy shallowly | O(n) |
+| `builder(count)` | A `Builder<K, V>` for exactly `count` entries: `push(key, value)` in strictly increasing key order, then `finish()` returns the map. `remaining()` counts what is left, and `destroy()` abandons a partial build | O(n) in total |
 | `clear()` | Drop every entry and keep the allocation | O(1) |
 | `destroy()` | Release the allocation | O(1) |
 
 `Cursor<K, V>` implements `core::iter::Iterator` (`next`) and
 `DoubleEndedIterator` (`next_back`), and `is_empty()` reports when the two
-ends have met. Steps are O(1), because leaves are linked in both directions. Any edit to the map invalidates its
-cursors.
+ends have met. Steps are O(1), because leaves are linked in both directions.
+Any edit to the map invalidates its cursors.
 
-`Error` is `CapacityOverflow` (the node arrays would pass `i32::MAX` bytes),
-`AllocationFailed` or `InvalidRange`.
+`Error` is one of:
+
+- `CapacityOverflow`: the node arrays would pass `i32::MAX` bytes;
+- `AllocationFailed`;
+- `InvalidRange`: a reversed range, a negative builder count or a malformed view;
+- `InvalidOrder`: `from_sorted` input that is not strictly increasing.
+
+The map implements both iterator sinks for `Entry<K, V>`:
+
+- **`core::iter::TrySink`** rejects an equivalent key with `SinkError::Duplicate` and keeps the stored entry. An insert error comes back as `SinkError::Storage(Error)`.
+- **`core::iter::TryReplaceSink`** replaces the key and value and returns the old entry, as `try_insert` does.
 
 ## Ordering and ownership
 
@@ -65,13 +78,28 @@ Nodes hold between 8 and 16 keys, except the root.
 - **Remove:** a node with fewer than 8 keys borrows from a sibling with spare keys, or else merges with one. Merges continue up the tree, and an empty inner root collapses into its only child.
 - **Free list:** freed nodes go on the free list and are reused before new nodes.
 
+### Sorted construction
+
+`builder(n)` reserves every node the finished tree needs, so `push` and
+`finish` never allocate:
+
+- **Leaves:** `ceil(n/16)` of them, holding 8–16 entries.
+- **Inner levels:** each has `ceil(c/17)` nodes for the `c` nodes below, holding 9–17 children.
+- **Spread:** entries and children are spread evenly over each level, which stays within the bounds that edits keep.
+- **Separators:** each one is the smallest key under the child to its right.
+
+`from_sorted`, `try_clone` and the set algebra all build through it. A built
+map with fewer than four nodes still gets the four nodes of a first
+allocation.
+
 ### Atomic failure
 
 Before an insert changes anything, it reserves `height + 1` nodes, enough for
 one split per level plus a new root. If that allocation fails, the call returns
 `Err(AllocationFailed)`. The map, the caller's key and value, and the node
 capacity are all unchanged. Replacement, removal, lookup and iteration never
-allocate.
+allocate. `try_clone` and `from_sorted` either return a complete map or
+allocate nothing.
 
 ### Memory
 
@@ -81,9 +109,37 @@ and values that is 356 bytes per node, or 22–40 bytes per entry depending on
 how full the leaves are. Inner nodes also carry unused value slots. Memory is
 never returned until `destroy`.
 
+## Set
+
+`alloc::btree_set::BTreeSet<T>` holds the keys of a `BTreeMap<T, Nothing>`.
+The value is zero-sized, so the value array is a single word. Its
+representative rules follow [`alloc::tree_set`](stdlib-tree-map.md):
+
+- **Insert:** `try_insert(key)` returns `Ok(None)` when it stores the key. When an equal key is already stored, it keeps the stored representative and returns `Ok(Some(supplied))`.
+- **Replace:** `try_replace(key)` stores the supplied key and returns the displaced one.
+- **Lookups and removal:** `get` returns the stored representative. `remove`, `pop_first` and `pop_last` hand it to the caller.
+
+The rest of the API is `new`, `from_sorted(View<T>)`, `len`, `is_empty`,
+`node_capacity`, `contains`, `first`, `last`, `lower_bound`, `upper_bound`,
+`iter`, `range`, `try_clone`, `clear` and `destroy`. `Cursor<T>` is an
+`Iterator` and a `DoubleEndedIterator`, and the two sinks work as for the map.
+Errors are `alloc::btree_map::Error` and `SinkError`.
+
+`try_union`, `try_intersection`, `try_difference` and
+`try_symmetric_difference` work in two linear passes:
+
+- **Count:** merge both sets in key order and count the result.
+- **Build:** merge again into an exactly sized builder.
+
+That is O(n + m) comparisons, against O((n + m) log(n + m)) for `tree_set`'s
+insert-per-key approach. For equal keys the left operand's representative is
+kept. An operand may alias the other. On `Err` nothing is allocated and both
+sources are unchanged. `is_subset`, `is_disjoint` and `equals` are linear merges
+that stop at the first deciding key.
+
 ## Tests
 
-`tests/stdlib_btree_map_execution.rs` runs three fixtures in
+`tests/stdlib_btree_map_execution.rs` runs five fixtures in
 `tests/fixtures/stdlib_btree_map/`:
 
 - **`model.lani`** runs random inserts, replacements, removals and pops against `alloc::tree_map` as the reference, over key spaces of 40, 3,000 and 200,000. After every phase it compares length, endpoints, `lower_bound`/`upper_bound`, forward, backward and mixed iteration, and random ranges. It then drains the map and refills it. Two deliberate bugs were caught: a range cursor's back position off by one (exit 119), and a wrong divider when borrowing from the right sibling (exit 103).
@@ -92,9 +148,11 @@ never returned until `destroy`.
   - 600 record values across splits and merges;
   - a record key with its own `Ord`, where an equivalent insert replaces the stored key;
   - zero-sized keys and values, including a 5,000-key set with a range count.
-- **`failure.lani`** works without fault injection. It lowers the soft `RLIMIT_AS` to 48 MiB and inserts until the map returns `AllocationFailed`. It then checks that the length, the node capacity, every entry, both cursor directions and lookups are unchanged, and that replacing an existing key still works. Finally it restores the limit, retries the failed insert (which succeeds) and drains the map.
+- **`failure.lani`** works without fault injection. It lowers the soft `RLIMIT_AS` to 48 MiB and inserts until the map returns `AllocationFailed`. It then checks that the length, the node capacity, every entry, both cursor directions and lookups are unchanged, and that replacing an existing key still works. It also calls `try_clone` under the limit. In practice that returns `AllocationFailed` with the map unchanged; a clone that does fit is checked to be complete. Finally it restores the limit, retries the failed insert (which succeeds) and drains the map.
+- **`bulk.lani`** runs `from_sorted` at 22 sizes that sit around every leaf and inner-node boundary, from 0 to 70,000. Each built map is checked entry by entry from both ends, along with its misses, endpoints and exact node count. It is cloned and the clone edited independently, then edited at random against `alloc::tree_map`, so removal repair runs on built nodes, and cloned again. The fixture also covers order errors at four positions, a negative builder count, an abandoned partial build and both sinks. A wrong separator key was caught (trap).
+- **`set.lani`** runs 30,000 random inserts, replacements, removals and queries (bounds, endpoints, ranges) against `alloc::tree_set` over three key spaces. Each set is then cloned and drained from both ends. It checks all four set operations, `is_subset`, `is_disjoint` and `equals` on twelve random pairs, including empty and aliased operands, plus `from_sorted`, the sinks and the representative rules on a record key. Two deliberate bugs were caught: wrong difference sides (exit 43), and the right operand's representative winning a union (exit 65).
 
-All three fixtures exit 0 when built with the resident compiler. The Rust test
+All five fixtures exit 0 when built with the resident compiler. The Rust test
 also runs the shared x86 jump check on each executable. As of 11-02 that check
 rejects the dead CRT-bridge calls (`call 0x400088`) that every multi-object
 executable currently contains. That is a linker issue being handled on `lang`,

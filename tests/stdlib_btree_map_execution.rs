@@ -21,10 +21,11 @@ fn executable(name: &str) -> common::TempArtifact {
 
 // model: random edits checked against alloc::tree_map; types: every key and
 // value shape; failure: a low RLIMIT_AS fails node growth, which must leave
-// the map unchanged.
+// the map unchanged; bulk: from_sorted, try_clone and the sinks; set:
+// alloc::btree_set against alloc::tree_set, including set algebra.
 #[test]
 fn btree_map_fixtures_execute() {
-    for name in ["model", "types", "failure"] {
+    for name in ["model", "types", "failure", "bulk", "set"] {
         let exe = executable(name);
         let output =
             common::short_process_output_with_timeout("btree map", &mut Command::new(exe.path()));
