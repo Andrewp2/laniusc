@@ -19,10 +19,11 @@ Declaration counts: field: 9; function: 2; impl: 1; method: 7; struct: 1.
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
 - [alloc::io](../alloc/io.md) · [source](../../../extended/ext/text_source.lani#L8)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/text_source.lani#L9)
-- [core::result](../core/result.md) · [source](../../../extended/ext/text_source.lani#L10)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/text_source.lani#L11)
-- [ext::text_lines](text_lines.md) · [source](../../../extended/ext/text_source.lani#L12)
+- [core::io](../core/io.md) · [source](../../../extended/ext/text_source.lani#L9)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/text_source.lani#L10)
+- [core::result](../core/result.md) · [source](../../../extended/ext/text_source.lani#L11)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/text_source.lani#L12)
+- [ext::text_lines](text_lines.md) · [source](../../../extended/ext/text_source.lani#L13)
 
 ## Types, fields and variants
 
@@ -30,7 +31,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### struct: Source
 
-[Source line 14](../../../extended/ext/text_source.lani#L14)
+[Source line 15](../../../extended/ext/text_source.lani#L15)
 
 ```lanius
 pub struct Source
@@ -38,7 +39,7 @@ pub struct Source
 
 #### field: mem
 
-[Source line 15](../../../extended/ext/text_source.lani#L15)
+[Source line 16](../../../extended/ext/text_source.lani#L16)
 
 ```lanius
 mem: alloc::io::Buffer
@@ -46,7 +47,7 @@ mem: alloc::io::Buffer
 
 #### field: w
 
-[Source line 15](../../../extended/ext/text_source.lani#L15)
+[Source line 16](../../../extended/ext/text_source.lani#L16)
 
 ```lanius
 w: ext::text_lines::Words
@@ -54,7 +55,7 @@ w: ext::text_lines::Words
 
 #### field: ends
 
-[Source line 15](../../../extended/ext/text_source.lani#L15)
+[Source line 16](../../../extended/ext/text_source.lani#L16)
 
 ```lanius
 ends: ext::text_lines::Starts
@@ -62,7 +63,7 @@ ends: ext::text_lines::Starts
 
 #### field: length
 
-[Source line 16](../../../extended/ext/text_source.lani#L16)
+[Source line 17](../../../extended/ext/text_source.lani#L17)
 
 ```lanius
 length: i32
@@ -70,7 +71,7 @@ length: i32
 
 #### field: lines
 
-[Source line 16](../../../extended/ext/text_source.lani#L16)
+[Source line 17](../../../extended/ext/text_source.lani#L17)
 
 ```lanius
 lines: i32
@@ -78,7 +79,7 @@ lines: i32
 
 #### field: opened
 
-[Source line 16](../../../extended/ext/text_source.lani#L16)
+[Source line 17](../../../extended/ext/text_source.lani#L17)
 
 ```lanius
 opened: bool
@@ -86,7 +87,7 @@ opened: bool
 
 #### field: failed
 
-[Source line 16](../../../extended/ext/text_source.lani#L16)
+[Source line 17](../../../extended/ext/text_source.lani#L17)
 
 ```lanius
 failed: bool
@@ -94,7 +95,7 @@ failed: bool
 
 #### field: cursor
 
-[Source line 16](../../../extended/ext/text_source.lani#L16)
+[Source line 17](../../../extended/ext/text_source.lani#L17)
 
 ```lanius
 cursor: i32
@@ -102,7 +103,7 @@ cursor: i32
 
 #### field: eol
 
-[Source line 16](../../../extended/ext/text_source.lani#L16)
+[Source line 17](../../../extended/ext/text_source.lani#L17)
 
 ```lanius
 eol: u8
@@ -112,7 +113,7 @@ eol: u8
 
 ### function: read
 
-[Source line 37](../../../extended/ext/text_source.lani#L37)
+[Source line 38](../../../extended/ext/text_source.lani#L38)
 
 ```lanius
 pub fn read(fd: i32, eol: u8) -> Source
@@ -120,7 +121,7 @@ pub fn read(fd: i32, eol: u8) -> Source
 
 ### function: load
 
-[Source line 57](../../../extended/ext/text_source.lani#L57)
+[Source line 58](../../../extended/ext/text_source.lani#L58)
 
 ```lanius
 pub fn load(name: core::slice::View<u8>, eol: u8) -> Source
@@ -128,9 +129,9 @@ pub fn load(name: core::slice::View<u8>, eol: u8) -> Source
 
 ## Implementation blocks and public methods
 
-### impl at line 18
+### impl at line 19
 
-[Source line 18](../../../extended/ext/text_source.lani#L18)
+[Source line 19](../../../extended/ext/text_source.lani#L19)
 
 ```lanius
 pub impl Source
@@ -138,7 +139,7 @@ pub impl Source
 
 #### method: borrow
 
-[Source line 19](../../../extended/ext/text_source.lani#L19)
+[Source line 20](../../../extended/ext/text_source.lani#L20)
 
 ```lanius
 pub fn borrow(&self) -> &Source
@@ -146,7 +147,7 @@ pub fn borrow(&self) -> &Source
 
 #### method: view
 
-[Source line 20](../../../extended/ext/text_source.lani#L20)
+[Source line 21](../../../extended/ext/text_source.lani#L21)
 
 ```lanius
 pub fn view(&self) -> core::slice::View<u8>
@@ -154,7 +155,7 @@ pub fn view(&self) -> core::slice::View<u8>
 
 #### method: start
 
-[Source line 21](../../../extended/ext/text_source.lani#L21)
+[Source line 22](../../../extended/ext/text_source.lani#L22)
 
 ```lanius
 pub fn start(&self, i: i32) -> i32
@@ -162,7 +163,7 @@ pub fn start(&self, i: i32) -> i32
 
 #### method: stop
 
-[Source line 22](../../../extended/ext/text_source.lani#L22)
+[Source line 23](../../../extended/ext/text_source.lani#L23)
 
 ```lanius
 pub fn stop(&self, i: i32) -> i32
@@ -170,7 +171,7 @@ pub fn stop(&self, i: i32) -> i32
 
 #### method: ended
 
-[Source line 23](../../../extended/ext/text_source.lani#L23)
+[Source line 24](../../../extended/ext/text_source.lani#L24)
 
 ```lanius
 pub fn ended(&self, i: i32) -> bool
@@ -178,7 +179,7 @@ pub fn ended(&self, i: i32) -> bool
 
 #### method: byte
 
-[Source line 24](../../../extended/ext/text_source.lani#L24)
+[Source line 25](../../../extended/ext/text_source.lani#L25)
 
 ```lanius
 pub fn byte(&self, at: i32) -> u8
@@ -186,7 +187,7 @@ pub fn byte(&self, at: i32) -> u8
 
 #### method: destroy
 
-[Source line 25](../../../extended/ext/text_source.lani#L25)
+[Source line 26](../../../extended/ext/text_source.lani#L26)
 
 ```lanius
 pub fn destroy(&self)

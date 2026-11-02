@@ -82,6 +82,10 @@ fn main() -> i32 {
         if (id == 3) { headers = 1; } if (id == 4) { headers = 2; } if (id == 5) { o.eol = 0; } if (id == 6) { help = true; }
         i += 1;
     }
+    // GNU refuses an elided byte count past the largest file offset.
+    if (ok && !help && o.elide && !o.lines && o.count > 9223372036854775807) {
+        ext::text_args::complain(tool(), lit("invalid number of bytes", 23), lit("Value too large for defined data type", 37)); ok = false;
+    }
     if (!ok || help) {
         let status: i32 = 1; if (ok && help) { status = 0; if (!cli.print_help(-1)) { status = 1; } }
         m.destroy(); cli.destroy(); arguments.destroy(); return status;

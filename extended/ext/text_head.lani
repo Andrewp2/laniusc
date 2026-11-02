@@ -12,6 +12,7 @@ import ext::text_lines;
 import ext::text_source;
 
 pub struct Options { lines: bool, count: u64, elide: bool, eol: u8 }
+pub impl Options { pub fn borrow(&self) -> &Options { return self; } }
 pub fn default_options() -> Options { return Options { lines: true, count: 10, elide: false, eol: 10 }; }
 
 // Status of one input: 0, 1 (read error) or 2 (write error).
@@ -43,30 +44,72 @@ fn th_scan(p: ptr, k: i32, eol: u8, want: u64) -> Scan {
     return Scan { cut: -1, left: left };
 }
 
-// Copy the first o.count lines or bytes of fd to standard output.
+// The number of eol bytes among the k bytes at p.
+fn th_count(p: ptr, k: i32, eol: u8) -> u64 {
+    let view: core::slice::View<u8> = core::slice::View { values: core::mem::typed_slice_from_raw_parts<u8>(p, k), start: 0, length: k };
+    let w: ext::text_lines::Words = core::result::unwrap(ext::text_lines::words(view));
+    let ws: [u64] = w.words; let nw: i32 = w.nw; let low: u64 = ext::text_lines::LOW7; let all: u64 = ext::text_lines::ALL;
+    let ones: u64 = ext::text_lines::ONES; let pe: u64 = (eol as u64) * ones;
+    let total: u64 = 0; let q: i32 = 0;
+    while (q < nw) {
+        let xe: u64 = ws[nw-1-q] ^ pe; let m: u64 = (((xe & low) + low) | xe | low) ^ all;
+        total += ((m >> 7) * ones) >> 56;
+        q += 1;
+    }
+    let j: i32 = nw * 8; let b: [u8] = w.values;
+    while (j < k) { if (b[j] == eol) { total += 1; } j += 1; }
+    w.destroy();
+    return total;
+}
+
+// Copy the first o.count lines or bytes of fd to standard output. Like
+// GNU head, a regular file is left positioned just past the last byte
+// copied (the rest of the last chunk read is given back with lseek), so a
+// later "-" operand on the same standard input continues from there.
 pub fn leading(fd: i32, o: Options) -> i32 {
     if (o.count == 0) { return 0; }
+    return th_copy(fd, o.count, o.lines, o.eol);
+}
+fn th_copy(fd: i32, count: u64, lines: bool, eol: u8) -> i32 {
     let mem: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(CHUNK + 16));
     let p: ptr = core::result::unwrap(mem.reserve_raw(CHUNK + 16));
-    let left: u64 = o.count; let status: i32 = 0;
+    let left: u64 = count; let status: i32 = 0;
     while (left > 0) {
-        let room: i32 = CHUNK; if (!o.lines && left < (room as u64)) { room = left as i32; }
+        let room: i32 = CHUNK; if (!lines && left < (room as u64)) { room = left as i32; }
         let got: i32 = ext::text_lines::read_some(fd, p, room);
         if (got < 0) { status = 1; break; }
         if (got == 0) { break; }
         let take: i32 = got;
-        if (o.lines) {
-            let sc: Scan = th_scan(p, got, o.eol, left);
-            if (sc.cut >= 0) { take = sc.cut; left = 0; } else { left = sc.left; }
+        if (lines) {
+            let c: u64 = th_count(p, got, eol);
+            if (c < left) { left -= c; } else { take = th_scan(p, got, eol, left).cut; left = 0; }
         } else { left -= got as u64; }
         if (!ext::text_lines::write_all(1, p, take)) { status = 2; break; }
+        if (take < got) { let back: i64 = ext::text_lines::seek(fd, (take - got) as i64, 1); }
     }
     mem.destroy();
     return status;
 }
 
-// Copy all but the last o.count lines or bytes of fd.
+// Copy all but the last o.count lines or bytes of fd. A regular file larger
+// than its block size is handled in place as GNU does: bytes by copying up
+// to size - count, lines by scanning back from the end in 8 KiB blocks and
+// copying up to the line found, leaving the file offset just past the
+// copy (or, with too few lines, past the first block read), as GNU does. Anything else is read to its end and held.
 pub fn eliding(fd: i32, o: Options) -> i32 {
+    let st: ext::text_lines::Stat = ext::text_lines::stat(fd);
+    if (!st.ok) { return 1; }
+    let at: i64 = -1;
+    if (st.regular) { at = ext::text_lines::seek(fd, 0, 1); if (at < 0) { return 1; } }
+    if (at >= 0 && st.size > st.block) {
+        if (st.size <= at) { return 0; }
+        let rest: u64 = (st.size - at) as u64;
+        if (!o.lines) {
+            if (rest <= o.count) { return 0; }
+            return th_copy(fd, rest - o.count, false, o.eol);
+        }
+        return th_elide_seekable(fd, o.count, at, st.size, o.eol);
+    }
     let s: ext::text_source::Source = ext::text_source::read(fd, o.eol);
     let keep: i32 = 0;
     if (o.lines) {
@@ -79,4 +122,52 @@ pub fn eliding(fd: i32, o: Options) -> i32 {
     if (keep > 0 && !ext::text_lines::write_all(1, core::mem::i32_slice_data_ptr(v.values) + (v.start as usize), keep)) { status = 2; }
     s.destroy();
     return status;
+}
+
+const BLOCK: i32 = 8192;
+
+// GNU elide_tail_lines_seekable: blocks are aligned to BLOCK from `start`,
+// the last one partial; a final line without an end byte counts as a line.
+fn th_elide_seekable(fd: i32, count: u64, start: i64, size: i64, eol: u8) -> i32 {
+    let mem: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(BLOCK + 16));
+    let p: ptr = core::result::unwrap(mem.reserve_raw(BLOCK + 16));
+    let b: [u8] = core::mem::typed_slice_from_raw_parts<u8>(p, BLOCK);
+    let pos: i64 = size;
+    let got: i32 = ((pos - start) % (BLOCK as i64)) as i32; if (got == 0) { got = BLOCK; }
+    pos -= got as i64;
+    let status: i32 = 0;
+    if (ext::text_lines::seek(fd, pos, 0) < 0) { mem.destroy(); return 1; }
+    got = ext::text_lines::read_some(fd, p, got);
+    if (got < 0) { mem.destroy(); return 1; }
+    let n: u64 = count; let all: bool = n == 0;
+    if (n > 0 && got > 0 && b[got-1] != eol) { n -= 1; }
+    while (true) {
+        // Walking back from the end of this block, the end bytes found are
+        // the (count - n)-th, the (count - n - 1)-th, ... from its start;
+        // the one found with n == 0 is where the copy stops.
+        let k: i32 = -1;
+        if (all) { k = got - 1; }
+        else {
+            let c: u64 = th_count(p, got, eol);
+            if (c > n) { k = th_scan(p, got, eol, c - n).cut - 1; } else { n -= c; }
+        }
+        if (k >= 0) {
+            if (start < pos) {
+                if (ext::text_lines::seek(fd, start, 0) < 0) { mem.destroy(); return 1; }
+                status = th_copy(fd, (pos - start) as u64, false, eol);
+                if (status != 0) { mem.destroy(); return status; }
+            }
+            if (!ext::text_lines::write_all(1, p, k + 1)) { status = 2; }
+            let after: i64 = ext::text_lines::seek(fd, pos + ((k + 1) as i64), 0);
+            mem.destroy(); return status;
+        }
+        if (pos == start) { mem.destroy(); return 0; }
+        pos -= BLOCK as i64;
+        if (ext::text_lines::seek(fd, pos, 0) < 0) { mem.destroy(); return 1; }
+        got = ext::text_lines::read_some(fd, p, BLOCK);
+        if (got < 0) { mem.destroy(); return 1; }
+        if (got == 0) { mem.destroy(); return 0; }
+    }
+    mem.destroy();
+    return 0;
 }

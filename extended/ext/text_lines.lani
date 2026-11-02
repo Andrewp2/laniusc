@@ -309,6 +309,36 @@ pub fn input_size(fd: i32) -> i64 {
     if (!regular) { return -1; }
     return m.length.bytes as i64;
 }
+// What fstat tells about fd: a regular file (size and preferred block size
+// are then set), something else, or a descriptor that cannot be examined
+// (ok false).
+pub struct Stat { ok: bool, regular: bool, size: i64, block: i64 }
+pub fn stat(fd: i32) -> Stat {
+    let none: Stat = Stat { ok: false, regular: false, size: 0, block: 0 };
+    let owned: core::result::Result<std::file::File, core::io::Error> = std::file::from_owned_handle(fd);
+    if (core::result::is_err(owned)) { return none; }
+    let f: std::file::File = core::result::unwrap(owned);
+    let m: std::file_ops::Metadata = std::file_ops::empty_metadata();
+    let got: core::result::Result<i32, core::io::Error> = std::file_ops::metadata_file_into(f.borrow(), m.borrow());
+    let kept: core::option::Option<i32> = f.take_handle();
+    if (core::result::is_err(got)) { return none; }
+    let regular: bool = match (std::file_ops::kind(m.mode)) { std::file_ops::Kind::Regular -> true, _ -> false };
+    return Stat { ok: true, regular: regular, size: m.length.bytes as i64, block: m.length.block_size as i64 };
+}
+// lseek(fd, offset, whence) with whence 0 (from the start), 1 (from the
+// current offset) or 2 (from the end): the new offset, or -1.
+pub fn seek(fd: i32, offset: i64, whence: i32) -> i64 {
+    let owned: core::result::Result<std::file::File, core::io::Error> = std::file::from_owned_handle(fd);
+    if (core::result::is_err(owned)) { return -1; }
+    let f: std::file::File = core::result::unwrap(owned);
+    let origin: std::file_ops::Origin = std::file_ops::Origin::Start;
+    if (whence == 1) { origin = std::file_ops::Origin::Current; }
+    if (whence == 2) { origin = std::file_ops::Origin::End; }
+    let moved: core::result::Result<i64, core::io::Error> = std::file_ops::seek(f.borrow(), offset, origin);
+    let kept: core::option::Option<i32> = f.take_handle();
+    if (core::result::is_err(moved)) { return -1; }
+    return core::result::unwrap(moved);
+}
 // Append everything readable from fd to buf, sized up front from the file
 // length so the buffer does not regrow (growth copies byte by byte).
 pub fn read_all(fd: i32, buf: &alloc::io::Buffer) -> bool {

@@ -12,7 +12,7 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 
 - [extended-textutils](../../extended-textutils.md)
 
-Declaration counts: field: 4; function: 3; struct: 1.
+Declaration counts: field: 4; function: 3; impl: 1; method: 1; struct: 1.
 
 ## Declared imports
 
@@ -73,7 +73,7 @@ eol: u8
 
 ### function: default_options
 
-[Source line 15](../../../extended/ext/text_head.lani#L15)
+[Source line 16](../../../extended/ext/text_head.lani#L16)
 
 ```lanius
 pub fn default_options() -> Options
@@ -81,7 +81,7 @@ pub fn default_options() -> Options
 
 ### function: leading
 
-[Source line 47](../../../extended/ext/text_head.lani#L47)
+[Source line 69](../../../extended/ext/text_head.lani#L69)
 
 ```lanius
 pub fn leading(fd: i32, o: Options) -> i32
@@ -89,8 +89,26 @@ pub fn leading(fd: i32, o: Options) -> i32
 
 ### function: eliding
 
-[Source line 69](../../../extended/ext/text_head.lani#L69)
+[Source line 99](../../../extended/ext/text_head.lani#L99)
 
 ```lanius
 pub fn eliding(fd: i32, o: Options) -> i32
+```
+
+## Implementation blocks and public methods
+
+### impl at line 15
+
+[Source line 15](../../../extended/ext/text_head.lani#L15)
+
+```lanius
+pub impl Options
+```
+
+#### method: borrow
+
+[Source line 15](../../../extended/ext/text_head.lani#L15)
+
+```lanius
+pub fn borrow(&self) -> &Options
 ```

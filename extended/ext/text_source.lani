@@ -6,6 +6,7 @@
 // share standard input in GNU's tools. See docs/extended-textutils.md.
 module ext::text_source;
 import alloc::io;
+import core::io;
 import core::mem;
 import core::result;
 import core::slice;
@@ -18,7 +19,7 @@ pub struct Source {
 pub impl Source {
     pub fn borrow(&self) -> &Source { return self; }
     pub fn view(&self) -> core::slice::View<u8> { return core::slice::View { values: self.w.values, start: self.w.start, length: self.length }; }
-    pub fn start(&self, i: i32) -> i32 { if (i == 0) { return 0; } return (self.ends.at[i-1] >> 1) + 1; }
+    pub fn start(&self, i: i32) -> i32 { if (i == 0) { return 0; } if (i >= self.lines) { return self.length; } return (self.ends.at[i-1] >> 1) + 1; }
     pub fn stop(&self, i: i32) -> i32 { if (i < self.ends.count) { return self.ends.at[i] >> 1; } return self.length; }
     pub fn ended(&self, i: i32) -> bool { return i < self.ends.count; }
     pub fn byte(&self, at: i32) -> u8 { return self.w.values[self.w.start+at]; }

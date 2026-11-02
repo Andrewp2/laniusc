@@ -8,13 +8,17 @@ Each case draws counts for -n and -c (plain, with a leading '-' to elide,
 invalid text and values past 64 bits; short, attached, long and
 abbreviated long forms; repeated so the last one wins), GNU's obsolete
 first argument (-NUM with b c k l m q v z, and invalid letters), -q, -v,
---silent, -z, "--", unknown options, and one to three inputs (standard
-input, "-", named files, a missing file). stdout and the exit status must
+--silent, -z, "--", unknown options, and up to 13 inputs (standard
+input from a file or a pipe, "-" once or repeated so later ones continue
+where GNU leaves the file offset, named files, a missing file). stdout and the exit status must
 match. Input groups:
 
   lines     short lines, sometimes without a final LF
   records   NUL-terminated records, for -z
   binary    random bytes
+  crlf      CR LF line ends
+  long      a few lines of up to 300 KB
+  empty     no bytes at all
   large     300 KB to 1.5 MB, across the 256 KiB read chunks
 """
 import os
@@ -41,6 +45,12 @@ def gen(rng, group):
         t = b"".join(bytes(rng.choice(b"ab\n ") for _ in range(rng.randint(0, 6))) + b"\x00" for _ in range(rng.randint(0, 30)))
     elif group == "binary":
         t = bytes(rng.choice(b"ab\n\n\x00\x80\xff") for _ in range(rng.randint(0, 400)))
+    elif group == "crlf":
+        t = b"".join(bytes(rng.choice(b"ab \r") for _ in range(rng.randint(0, 8))) + b"\r\n" for _ in range(rng.randint(0, 30)))
+    elif group == "long":
+        t = b"".join(bytes([rng.choice(b"abc")]) * rng.randint(0, 300000) + b"\n" for _ in range(rng.randint(1, 6)))
+    elif group == "empty":
+        t = b""
     else:
         unit = b"".join(b"x" * rng.randint(0, 120) + b"\n" for _ in range(50))
         t = unit * (rng.randint(300000, 1500000) // max(1, len(unit)))
@@ -101,8 +111,10 @@ def options(rng):
     return opts, zero
 
 
-def run(cmd, stdin_path):
+def run(cmd, stdin_path, pipe):
     with open(stdin_path, "rb") as f:
+        if pipe:
+            return subprocess.run(cmd, input=f.read(), capture_output=True, cwd=WORK, env=ENV, timeout=60)
         return subprocess.run(cmd, stdin=f, capture_output=True, cwd=WORK, env=ENV, timeout=60)
 
 
@@ -121,23 +133,31 @@ def main():
     rng = random.Random(20261106)
     for case in range(CASES):
         opts, zero = options(rng)
-        group = "large" if case % 40 == 39 else ("records" if zero and rng.random() < 0.7 else rng.choice(["lines", "lines", "binary", "records"]))
+        mode = rng.choice(["stdin", "stdin", "named", "files", "dash", "missing", "dashdash", "many", "dashes", "pipe"])
+        group = "large" if case % 40 == 39 or (mode == "dashes" and rng.random() < 0.5) else ("records" if zero and rng.random() < 0.7 else rng.choice(["lines", "lines", "binary", "records", "crlf", "long", "empty"]))
         data = gen(rng, group)
         with open(os.path.join(WORK, "in"), "wb") as f:
             f.write(data)
         with open(os.path.join(WORK, "in2"), "wb") as f:
             f.write(gen(rng, "lines"))
-        mode = rng.choice(["stdin", "stdin", "named", "files", "dash", "missing", "dashdash"])
+        many = []
+        if mode == "many":
+            for j in range(rng.randint(3, 12)):
+                with open(os.path.join(WORK, f"m{j}"), "wb") as f:
+                    f.write(gen(rng, rng.choice(["lines", "empty", "crlf", "binary"])))
+                many.append(f"m{j}")
+            many.insert(rng.randint(0, len(many)), rng.choice(["in", "-", "nope"]))
         operands = {"stdin": [], "named": ["in"], "files": ["in", "in2"] + (["-"] if rng.random() < 0.3 else []),
-                    "dash": ["-"], "missing": ["in", "nope"], "dashdash": ["--", "in"]}[mode]
+                    "dash": ["-"], "missing": ["in", "nope"], "dashdash": ["--", "in"], "many": many,
+                    "dashes": rng.choice([["-", "-"], ["-", "in2", "-"], ["-", "-", "-"]]), "pipe": rng.choice([[], ["-"]])}[mode]
         args = opts + operands
         if operands and rng.random() < 0.3:
             k = rng.randint(0, len(opts))
             args = opts[:k] + operands + opts[k:]
         if rng.random() < 0.15:
             args = [obsolete(rng)] + args
-        mine = run([TOOL] + args, os.path.join(WORK, "in"))
-        ref = run(["head"] + args, os.path.join(WORK, "in"))
+        mine = run([TOOL] + args, os.path.join(WORK, "in"), mode == "pipe")
+        ref = run(["head"] + args, os.path.join(WORK, "in"), mode == "pipe")
         key = f"{group}/{mode}/{'ok' if ref.returncode == 0 else 'error'}"
         bump(key + "/cases")
         if mine.returncode != ref.returncode or mine.stdout != ref.stdout:

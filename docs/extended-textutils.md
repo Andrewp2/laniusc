@@ -1,15 +1,16 @@
-# Text tools: sort, uniq, cut, tr and wc
+# Text tools: sort, uniq, cut, tr, wc, head, tail, cat, tee, paste, join and comm
 
-`ext::text_sort`, `ext::text_uniq`, `ext::text_cut`, `ext::text_tr` and
-`ext::text_wc` reimplement the GNU coreutils programs of the same names under
-`LC_ALL=C`. The sample programs `text-sort`, `text-uniq`, `text-cut`,
-`text-tr` and `text-wc` (`sample_programs/library/text_*.lani`) parse GNU's
-command lines and write GNU's output byte for byte. `ext::text_lines` holds
-the byte machinery they share.
+`ext::text_sort`, `ext::text_uniq`, `ext::text_cut`, `ext::text_tr`,
+`ext::text_wc` and `ext::text_head` reimplement the GNU coreutils programs of
+the same names under `LC_ALL=C`. The sample programs `text-sort`,
+`text-uniq`, `text-cut`, `text-tr`, `text-wc` and `text-head`
+(`sample_programs/library/text_*.lani`) parse GNU's command lines and write
+GNU's output byte for byte. `ext::text_lines` holds the byte machinery they
+share.
 
-All five are checked against GNU coreutils 9.4 by one generated oracle per
-tool (`tests/fixtures/extended/TOOL_oracle.py`). Each oracle compares stdout,
-or the output file, and the exit status. Error message wording is not
+Each is checked against GNU coreutils 9.4 by one generated oracle per tool
+(`tests/fixtures/extended/TOOL_oracle.py`). Each oracle compares stdout, or
+the output file, and the exit status. Error message wording is not
 compared.
 
 ## Shared machinery: `ext::text_lines`
@@ -138,6 +139,47 @@ The output is the same as the single-process sort.
   longest line's display width, with GNU's column widths.
 - Lines and words are counted eight bytes at a time.
 
+## Shared command-line pieces: `ext::text_args` and `ext::text_source`
+
+- `ext::text_args::count(view)` parses a count as GNU's `xstrtoumax` with
+  the suffixes `bkKmMGTPEZYRQ0` does: leading blanks, an optional `+`, a
+  bare suffix meaning 1, `kB`/`KB`/`kD` for powers of 1000 and `KiB` for
+  1024. Its status is 0 (parsed), 1 (not a number) or 2 (past 64 bits).
+  `lit`, `same`, `at`, `tail`, `say`, `emit` and `complain` are the small
+  view and message helpers the sample programs share.
+- `ext::text_source::Source` is a whole input held in memory with its line
+  ends found up front: line i is bytes `[start(i), stop(i))` and
+  `ended(i)` says whether an end byte follows it. `load(name, eol)` opens
+  and reads a named input (`-` is standard input).
+- `ext::text_lines::stat(fd)` and `seek(fd, offset, whence)` give the file
+  kind, size, block size and `lseek`, for the tools that work on regular
+  files in place.
+
+## head
+
+`text-head [-c [-]NUM] [-n [-]NUM] [-q] [-v] [-z] [FILE...]`, and GNU's
+obsolete first argument `-NUM[bcklmqvz]`.
+
+- Counts use GNU's suffixes. A leading `-` copies all but the last NUM
+  lines or bytes. An elided byte count past 2^63 - 1 is an error, as in
+  GNU.
+- `==> NAME <==` headers appear when there are several operands (or with
+  `-v`), with a blank line before every header but the first. A file that
+  cannot be opened gets no header.
+- The first NUM lines are found by counting end bytes eight at a time in
+  256 KiB chunks. Only the chunk holding the last wanted line is scanned
+  for its position.
+- GNU leaves a regular file's offset just past what it printed, so a
+  second `-` operand on the same standard input carries on from there.
+  text-head does the same: it seeks back over the unused part of the last
+  chunk.
+- For a regular file larger than its block size, `-c -NUM` copies up to
+  the file's size less NUM. `-n -NUM` reads back from the end in 8 KiB
+  blocks aligned as GNU aligns them. It counts the end bytes in each block
+  and copies up to the line it finds. The file offset afterwards matches
+  GNU's, including when the file has too few lines. Other inputs, such as
+  pipes, are read to the end and held in memory.
+
 ## Oracles
 
 | Tool | Oracle | Cases | Failures |
@@ -147,6 +189,7 @@ The output is the same as the single-process sort.
 | cut | `cut_oracle.py` | 2,000 | 0 |
 | uniq | `uniq_oracle.py` | 2,000 | 0 |
 | sort | `sort_oracle.py` | 2,000 | 0 |
+| head | `head_oracle.py` | 2,000 | 0 |
 
 The sort oracle also passed 2,000 cases under each of two other seeds (7
 and 8). Every 25th sort case has 20,000 to 120,000 lines, so the forked
@@ -154,6 +197,21 @@ workers are checked as well.
 
 `tests/extended_textutils_execution.rs` builds each sample program and runs
 its oracle over fewer cases (600 each, 400 for sort).
+
+## Speed on 100 MB
+
+`big100.txt` is `big.txt` repeated to 100,000,000 bytes (2,851,521 lines,
+the last one cut short). It was read from a file on standard input with
+output to `/dev/null`, under `LC_ALL=C`, against GNU coreutils 9.4: best of
+five runs, alternating with GNU, on the same shared laptop.
+
+| Command | Wall (ms) | GNU wall (ms) | Wall ratio | CPU (ms) | GNU CPU (ms) | CPU ratio |
+|---|---|---|---|---|---|---|
+| `text-head -n 2000000` | 66 | 84 | 0.79 | 64 | 77 | 0.83 |
+| `text-head -c 90000000` | 15 | 44 | 0.35 | 15 | 43 | 0.34 |
+| `text-head -n -1000` | 20 | 53 | 0.37 | 18 | 49 | 0.38 |
+| `text-head -c -1000` | 22 | 76 | 0.28 | 20 | 49 | 0.40 |
+| `text-head -n -1000000` | 66 | 55 | 1.20 | 54 | 50 | 1.07 |
 
 ## Speed
 
