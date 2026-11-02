@@ -25,6 +25,8 @@ output.destroy(); run.destroy(); program.destroy();
 | `Program.run() -> Result<Run, Error>` | Execution state for one stream: line counter, range states, the regex workspace and the pattern-space buffers. |
 | `Program.execute(&Run, input: View<u8>, quiet: bool, &Vec<u8>) -> Result<bool, Error>` | Run every line of `input`, appending output. `$` is the last line of `input`. Returns whether `q` or `Q` ended the run. |
 | `Program.execute_joined(&Run, input, joins: View<i32>, quiet, &Vec<u8>)` | The same over several files joined into one input. `joins` are the ascending indexes in `input.values` of newlines added after files without a final newline. |
+| `Program.begin_joined(&Run, input, joins, quiet) -> Result<bool, Error>` | `execute_joined` in steps: sets the input up for `proceed`. |
+| `Program.proceed(&Run, &Vec<u8>, budget: i32) -> Result<bool, Error>` | Runs whole cycles until the input ends, `q`/`Q` ends the run, or output holds at least `budget` bytes. Returns whether the execution is over (`Run.ended()` then tells whether `q`/`Q` ended it); the caller takes output away between steps. |
 | `Run.restart(&Program)` | A new file of a separate-files run (`-s`, `-i`): line numbers restart and no range stays open. |
 | `Run.new_output()` | Output goes to a new destination, so no newline is owed to it. |
 | `Run.exit_status()`, `ended()`, `line_number()` | The `q`/`Q` exit code, whether the run ended, lines read. |
@@ -167,15 +169,28 @@ Results, eight seeds of 1,000 cases each: 8,000 of 8,000 agree, including
 589 scripts both reject; no case needed the character-split exemption. A
 seed takes 3 to 5 s. Log: `target/claude-work/s3/sed/oracle-receipt.log`.
 
-Timings for an 8 MB, 190,990-line UTF-8 file of repository text. User time
-is in seconds, with output to a file:
+Timings for a 100 MB, 2,230,652-line UTF-8 file of repository text, under
+`LC_ALL=C.UTF-8` (glibc's code-point ranges, as ext::regex). Best of three,
+user + system seconds, output to a file; every output is identical to GNU's.
+The machine was loaded (load average 30 to 50), so ratios are rough.
 
-| Script | text_sed | GNU sed |
-| --- | ---: | ---: |
-| `d` | 0.04 | 0.02 |
-| `p` | 0.14 | 0.03 |
-| `/the/d` | 0.16 | 0.02 |
-| `s/the/THE/g` | 0.41 | 0.02 |
-| `s/[a-z]*e /<&>/g` | 0.76 | 0.15 |
-| `s/\([a-z]*\)e /<\1>/g` | 1.17 | 0.29 |
-| `s/x*/-/g` | 12.0 | 1.5 |
+| Script | text_sed | GNU sed | ratio |
+| --- | ---: | ---: | ---: |
+| `s/the/THE/g` | 2.22 | 0.62 | 3.6 |
+| `s/zqxj/Z/g` (absent) | 1.46 | 0.49 | 3.0 |
+| `s/t[a-z]*e/X/g` | 18.91 | 2.50 | 7.6 |
+| `-E s/[0-9]+/N/g` | 16.18 | 1.35 | 12.0 |
+| `/the/d` | 1.73 | 0.53 | 3.3 |
+| `-n /the/p` | 1.45 | 0.33 | 4.4 |
+| `p` | 1.59 | 0.43 | 3.7 |
+| `-n $p` | 0.80 | 0.12 | 6.7 |
+
+What makes these: a regex that is only its literal (`s/the/THE/g`) is
+searched with `core::search::find` instead of the DFAs (8.6 s to 3.8 s wall
+before the other two changes). On an unchanged line, one literal search to
+the end of the input answers every line up to the hit it finds, so lines
+without the literal cost no search of their own. Unchanged lines written in a
+row are copied to output as one run, and text_sed writes output every 64 KiB
+(`begin_joined` and `proceed`) instead of holding all of it. The regex rows
+are the lazy DFAs' per-byte cost; the `$p` row is the per-line cost of the
+cycle itself.

@@ -12,7 +12,7 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 
 - [extended-sed](../../extended-sed.md)
 
-Declaration counts: enum: 1; field: 35; function: 1; impl: 2; method: 16; struct: 2; variant: 11.
+Declaration counts: enum: 1; field: 41; function: 1; impl: 2; method: 18; struct: 2; variant: 11.
 
 ## Declared imports
 
@@ -129,7 +129,7 @@ AllocationFailed
 
 ### struct: Program
 
-[Source line 34](../../../extended/ext/sed.lani#L34)
+[Source line 35](../../../extended/ext/sed.lani#L35)
 
 ```lanius
 pub struct Program
@@ -137,7 +137,7 @@ pub struct Program
 
 #### field: commands
 
-[Source line 35](../../../extended/ext/sed.lani#L35)
+[Source line 36](../../../extended/ext/sed.lani#L36)
 
 ```lanius
 commands: alloc::vec::Vec<Command>
@@ -145,7 +145,7 @@ commands: alloc::vec::Vec<Command>
 
 #### field: regexes
 
-[Source line 35](../../../extended/ext/sed.lani#L35)
+[Source line 36](../../../extended/ext/sed.lani#L36)
 
 ```lanius
 regexes: alloc::vec::Vec<ext::regex::Regex>
@@ -153,7 +153,7 @@ regexes: alloc::vec::Vec<ext::regex::Regex>
 
 #### field: parts
 
-[Source line 35](../../../extended/ext/sed.lani#L35)
+[Source line 36](../../../extended/ext/sed.lani#L36)
 
 ```lanius
 parts: alloc::vec::Vec<Part>
@@ -161,7 +161,7 @@ parts: alloc::vec::Vec<Part>
 
 #### field: pool
 
-[Source line 35](../../../extended/ext/sed.lani#L35)
+[Source line 36](../../../extended/ext/sed.lani#L36)
 
 ```lanius
 pool: alloc::vec::Vec<u8>
@@ -169,7 +169,7 @@ pool: alloc::vec::Vec<u8>
 
 #### field: states
 
-[Source line 35](../../../extended/ext/sed.lani#L35)
+[Source line 36](../../../extended/ext/sed.lani#L36)
 
 ```lanius
 states: i32
@@ -177,7 +177,7 @@ states: i32
 
 #### field: groups
 
-[Source line 35](../../../extended/ext/sed.lani#L35)
+[Source line 36](../../../extended/ext/sed.lani#L36)
 
 ```lanius
 groups: i32
@@ -185,7 +185,7 @@ groups: i32
 
 #### field: quiet
 
-[Source line 35](../../../extended/ext/sed.lani#L35)
+[Source line 36](../../../extended/ext/sed.lani#L36)
 
 ```lanius
 quiet: bool
@@ -193,7 +193,7 @@ quiet: bool
 
 #### field: dfas
 
-[Source line 36](../../../extended/ext/sed.lani#L36)
+[Source line 37](../../../extended/ext/sed.lani#L37)
 
 ```lanius
 dfas: alloc::vec::Vec<ext::regex::Dfa>
@@ -201,7 +201,7 @@ dfas: alloc::vec::Vec<ext::regex::Dfa>
 
 #### field: anchored
 
-[Source line 36](../../../extended/ext/sed.lani#L36)
+[Source line 37](../../../extended/ext/sed.lani#L37)
 
 ```lanius
 anchored: alloc::vec::Vec<ext::regex::PrefixSet>
@@ -209,7 +209,7 @@ anchored: alloc::vec::Vec<ext::regex::PrefixSet>
 
 #### field: ready
 
-[Source line 36](../../../extended/ext/sed.lani#L36)
+[Source line 37](../../../extended/ext/sed.lani#L37)
 
 ```lanius
 ready: alloc::vec::Vec<u8>
@@ -217,7 +217,7 @@ ready: alloc::vec::Vec<u8>
 
 #### field: needles
 
-[Source line 36](../../../extended/ext/sed.lani#L36)
+[Source line 37](../../../extended/ext/sed.lani#L37)
 
 ```lanius
 needles: alloc::vec::Vec<u8>
@@ -225,7 +225,7 @@ needles: alloc::vec::Vec<u8>
 
 #### field: needle_at
 
-[Source line 36](../../../extended/ext/sed.lani#L36)
+[Source line 37](../../../extended/ext/sed.lani#L37)
 
 ```lanius
 needle_at: alloc::vec::Vec<i32>
@@ -233,7 +233,7 @@ needle_at: alloc::vec::Vec<i32>
 
 ### struct: Run
 
-[Source line 41](../../../extended/ext/sed.lani#L41)
+[Source line 42](../../../extended/ext/sed.lani#L42)
 
 ```lanius
 pub struct Run
@@ -241,7 +241,7 @@ pub struct Run
 
 #### field: line
 
-[Source line 42](../../../extended/ext/sed.lani#L42)
+[Source line 43](../../../extended/ext/sed.lani#L43)
 
 ```lanius
 line: u64
@@ -249,7 +249,7 @@ line: u64
 
 #### field: quit
 
-[Source line 42](../../../extended/ext/sed.lani#L42)
+[Source line 43](../../../extended/ext/sed.lani#L43)
 
 ```lanius
 quit: bool
@@ -257,7 +257,7 @@ quit: bool
 
 #### field: status
 
-[Source line 42](../../../extended/ext/sed.lani#L42)
+[Source line 43](../../../extended/ext/sed.lani#L43)
 
 ```lanius
 status: i32
@@ -265,7 +265,7 @@ status: i32
 
 #### field: missing
 
-[Source line 42](../../../extended/ext/sed.lani#L42)
+[Source line 43](../../../extended/ext/sed.lani#L43)
 
 ```lanius
 missing: bool
@@ -273,7 +273,7 @@ missing: bool
 
 #### field: consumed
 
-[Source line 42](../../../extended/ext/sed.lani#L42)
+[Source line 43](../../../extended/ext/sed.lani#L43)
 
 ```lanius
 consumed: i32
@@ -281,7 +281,7 @@ consumed: i32
 
 #### field: previous
 
-[Source line 42](../../../extended/ext/sed.lani#L42)
+[Source line 43](../../../extended/ext/sed.lani#L43)
 
 ```lanius
 previous: i32
@@ -289,7 +289,7 @@ previous: i32
 
 #### field: active
 
-[Source line 43](../../../extended/ext/sed.lani#L43)
+[Source line 44](../../../extended/ext/sed.lani#L44)
 
 ```lanius
 active: alloc::vec::Vec<u8>
@@ -297,7 +297,7 @@ active: alloc::vec::Vec<u8>
 
 #### field: until
 
-[Source line 43](../../../extended/ext/sed.lani#L43)
+[Source line 44](../../../extended/ext/sed.lani#L44)
 
 ```lanius
 until: alloc::vec::Vec<u64>
@@ -305,7 +305,7 @@ until: alloc::vec::Vec<u64>
 
 #### field: workspace
 
-[Source line 43](../../../extended/ext/sed.lani#L43)
+[Source line 44](../../../extended/ext/sed.lani#L44)
 
 ```lanius
 workspace: ext::regex::Workspace
@@ -313,7 +313,7 @@ workspace: ext::regex::Workspace
 
 #### field: space
 
-[Source line 44](../../../extended/ext/sed.lani#L44)
+[Source line 45](../../../extended/ext/sed.lani#L45)
 
 ```lanius
 space: alloc::vec::Vec<u8>
@@ -321,7 +321,7 @@ space: alloc::vec::Vec<u8>
 
 #### field: spare
 
-[Source line 44](../../../extended/ext/sed.lani#L44)
+[Source line 45](../../../extended/ext/sed.lani#L45)
 
 ```lanius
 spare: alloc::vec::Vec<u8>
@@ -329,7 +329,7 @@ spare: alloc::vec::Vec<u8>
 
 #### field: input
 
-[Source line 45](../../../extended/ext/sed.lani#L45)
+[Source line 46](../../../extended/ext/sed.lani#L46)
 
 ```lanius
 input: [u8]
@@ -337,7 +337,7 @@ input: [u8]
 
 #### field: cursor
 
-[Source line 45](../../../extended/ext/sed.lani#L45)
+[Source line 46](../../../extended/ext/sed.lani#L46)
 
 ```lanius
 cursor: i32
@@ -345,7 +345,7 @@ cursor: i32
 
 #### field: limit
 
-[Source line 45](../../../extended/ext/sed.lani#L45)
+[Source line 46](../../../extended/ext/sed.lani#L46)
 
 ```lanius
 limit: i32
@@ -353,7 +353,7 @@ limit: i32
 
 #### field: failed
 
-[Source line 45](../../../extended/ext/sed.lani#L45)
+[Source line 46](../../../extended/ext/sed.lani#L46)
 
 ```lanius
 failed: bool
@@ -361,7 +361,7 @@ failed: bool
 
 #### field: error
 
-[Source line 45](../../../extended/ext/sed.lani#L45)
+[Source line 46](../../../extended/ext/sed.lani#L46)
 
 ```lanius
 error: Error
@@ -369,7 +369,7 @@ error: Error
 
 #### field: joins
 
-[Source line 46](../../../extended/ext/sed.lani#L46)
+[Source line 47](../../../extended/ext/sed.lani#L47)
 
 ```lanius
 joins: core::slice::View<i32>
@@ -377,7 +377,7 @@ joins: core::slice::View<i32>
 
 #### field: join
 
-[Source line 46](../../../extended/ext/sed.lani#L46)
+[Source line 47](../../../extended/ext/sed.lani#L47)
 
 ```lanius
 join: i32
@@ -385,7 +385,7 @@ join: i32
 
 #### field: no_joins
 
-[Source line 46](../../../extended/ext/sed.lani#L46)
+[Source line 47](../../../extended/ext/sed.lani#L47)
 
 ```lanius
 no_joins: alloc::vec::Vec<i32>
@@ -393,7 +393,7 @@ no_joins: alloc::vec::Vec<i32>
 
 #### field: probed
 
-[Source line 46](../../../extended/ext/sed.lani#L46)
+[Source line 47](../../../extended/ext/sed.lani#L47)
 
 ```lanius
 probed: bool
@@ -401,7 +401,7 @@ probed: bool
 
 #### field: found_start
 
-[Source line 48](../../../extended/ext/sed.lani#L48)
+[Source line 49](../../../extended/ext/sed.lani#L49)
 
 ```lanius
 found_start: i32
@@ -409,7 +409,7 @@ found_start: i32
 
 #### field: found_end
 
-[Source line 48](../../../extended/ext/sed.lani#L48)
+[Source line 49](../../../extended/ext/sed.lani#L49)
 
 ```lanius
 found_end: i32
@@ -417,17 +417,65 @@ found_end: i32
 
 #### field: whole
 
-[Source line 48](../../../extended/ext/sed.lani#L48)
+[Source line 49](../../../extended/ext/sed.lani#L49)
 
 ```lanius
 whole: bool
+```
+
+#### field: pending_from
+
+[Source line 53](../../../extended/ext/sed.lani#L53)
+
+```lanius
+pending_from: i32
+```
+
+#### field: pending_to
+
+[Source line 53](../../../extended/ext/sed.lani#L53)
+
+```lanius
+pending_to: i32
+```
+
+#### field: base
+
+[Source line 53](../../../extended/ext/sed.lani#L53)
+
+```lanius
+base: i32
+```
+
+#### field: quiet_run
+
+[Source line 53](../../../extended/ext/sed.lani#L53)
+
+```lanius
+quiet_run: bool
+```
+
+#### field: hit_from
+
+[Source line 56](../../../extended/ext/sed.lani#L56)
+
+```lanius
+hit_from: alloc::vec::Vec<i32>
+```
+
+#### field: hit_at
+
+[Source line 56](../../../extended/ext/sed.lani#L56)
+
+```lanius
+hit_at: alloc::vec::Vec<i32>
 ```
 
 ## Free functions and extern declarations
 
 ### function: compile
 
-[Source line 495](../../../extended/ext/sed.lani#L495)
+[Source line 506](../../../extended/ext/sed.lani#L506)
 
 ```lanius
 pub fn compile(script: core::slice::View<u8>, extended: bool) -> core::result::Result<Program, Error>
@@ -435,9 +483,9 @@ pub fn compile(script: core::slice::View<u8>, extended: bool) -> core::result::R
 
 ## Implementation blocks and public methods
 
-### impl at line 514
+### impl at line 525
 
-[Source line 514](../../../extended/ext/sed.lani#L514)
+[Source line 525](../../../extended/ext/sed.lani#L525)
 
 ```lanius
 pub impl Program
@@ -445,7 +493,7 @@ pub impl Program
 
 #### method: borrow
 
-[Source line 515](../../../extended/ext/sed.lani#L515)
+[Source line 526](../../../extended/ext/sed.lani#L526)
 
 ```lanius
 pub fn borrow(&self) -> &Program
@@ -453,7 +501,7 @@ pub fn borrow(&self) -> &Program
 
 #### method: quiet
 
-[Source line 517](../../../extended/ext/sed.lani#L517)
+[Source line 528](../../../extended/ext/sed.lani#L528)
 
 ```lanius
 pub fn quiet(&self) -> bool
@@ -461,7 +509,7 @@ pub fn quiet(&self) -> bool
 
 #### method: command_count
 
-[Source line 518](../../../extended/ext/sed.lani#L518)
+[Source line 529](../../../extended/ext/sed.lani#L529)
 
 ```lanius
 pub fn command_count(&self) -> i32
@@ -469,7 +517,7 @@ pub fn command_count(&self) -> i32
 
 #### method: destroy
 
-[Source line 519](../../../extended/ext/sed.lani#L519)
+[Source line 530](../../../extended/ext/sed.lani#L530)
 
 ```lanius
 pub fn destroy(&self)
@@ -477,7 +525,7 @@ pub fn destroy(&self)
 
 #### method: run
 
-[Source line 525](../../../extended/ext/sed.lani#L525)
+[Source line 536](../../../extended/ext/sed.lani#L536)
 
 ```lanius
 pub fn run(&self) -> core::result::Result<Run, Error>
@@ -485,7 +533,7 @@ pub fn run(&self) -> core::result::Result<Run, Error>
 
 #### method: execute
 
-[Source line 543](../../../extended/ext/sed.lani#L543)
+[Source line 556](../../../extended/ext/sed.lani#L556)
 
 ```lanius
 pub fn execute(&self, run: &Run, input: core::slice::View<u8>, quiet: bool, output: &alloc::vec::Vec<u8>) -> core::result::Result<bool, Error>
@@ -493,15 +541,31 @@ pub fn execute(&self, run: &Run, input: core::slice::View<u8>, quiet: bool, outp
 
 #### method: execute_joined
 
-[Source line 550](../../../extended/ext/sed.lani#L550)
+[Source line 563](../../../extended/ext/sed.lani#L563)
 
 ```lanius
 pub fn execute_joined(&self, run: &Run, input: core::slice::View<u8>, joins: core::slice::View<i32>, quiet: bool, output: &alloc::vec::Vec<u8>) -> core::result::Result<bool, Error>
 ```
 
-### impl at line 781
+#### method: begin_joined
 
-[Source line 781](../../../extended/ext/sed.lani#L781)
+[Source line 575](../../../extended/ext/sed.lani#L575)
+
+```lanius
+pub fn begin_joined(&self, run: &Run, input: core::slice::View<u8>, joins: core::slice::View<i32>, quiet: bool) -> core::result::Result<bool, Error>
+```
+
+#### method: proceed
+
+[Source line 585](../../../extended/ext/sed.lani#L585)
+
+```lanius
+pub fn proceed(&self, run: &Run, output: &alloc::vec::Vec<u8>, budget: i32) -> core::result::Result<bool, Error>
+```
+
+### impl at line 835
+
+[Source line 835](../../../extended/ext/sed.lani#L835)
 
 ```lanius
 pub impl Run
@@ -509,7 +573,7 @@ pub impl Run
 
 #### method: borrow
 
-[Source line 782](../../../extended/ext/sed.lani#L782)
+[Source line 836](../../../extended/ext/sed.lani#L836)
 
 ```lanius
 pub fn borrow(&self) -> &Run
@@ -517,7 +581,7 @@ pub fn borrow(&self) -> &Run
 
 #### method: line_number
 
-[Source line 783](../../../extended/ext/sed.lani#L783)
+[Source line 837](../../../extended/ext/sed.lani#L837)
 
 ```lanius
 pub fn line_number(&self) -> u64
@@ -525,7 +589,7 @@ pub fn line_number(&self) -> u64
 
 #### method: ended
 
-[Source line 784](../../../extended/ext/sed.lani#L784)
+[Source line 838](../../../extended/ext/sed.lani#L838)
 
 ```lanius
 pub fn ended(&self) -> bool
@@ -533,7 +597,7 @@ pub fn ended(&self) -> bool
 
 #### method: exit_status
 
-[Source line 785](../../../extended/ext/sed.lani#L785)
+[Source line 839](../../../extended/ext/sed.lani#L839)
 
 ```lanius
 pub fn exit_status(&self) -> i32
@@ -541,7 +605,7 @@ pub fn exit_status(&self) -> i32
 
 #### method: consumed
 
-[Source line 788](../../../extended/ext/sed.lani#L788)
+[Source line 842](../../../extended/ext/sed.lani#L842)
 
 ```lanius
 pub fn consumed(&self) -> i32
@@ -549,7 +613,7 @@ pub fn consumed(&self) -> i32
 
 #### method: looked_past
 
-[Source line 793](../../../extended/ext/sed.lani#L793)
+[Source line 847](../../../extended/ext/sed.lani#L847)
 
 ```lanius
 pub fn looked_past(&self) -> bool
@@ -557,7 +621,7 @@ pub fn looked_past(&self) -> bool
 
 #### method: restart
 
-[Source line 796](../../../extended/ext/sed.lani#L796)
+[Source line 850](../../../extended/ext/sed.lani#L850)
 
 ```lanius
 pub fn restart(&self, program: &Program)
@@ -565,7 +629,7 @@ pub fn restart(&self, program: &Program)
 
 #### method: new_output
 
-[Source line 806](../../../extended/ext/sed.lani#L806)
+[Source line 860](../../../extended/ext/sed.lani#L860)
 
 ```lanius
 pub fn new_output(&self)
@@ -573,7 +637,7 @@ pub fn new_output(&self)
 
 #### method: destroy
 
-[Source line 807](../../../extended/ext/sed.lani#L807)
+[Source line 861](../../../extended/ext/sed.lani#L861)
 
 ```lanius
 pub fn destroy(&self)

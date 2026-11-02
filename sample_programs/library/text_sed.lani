@@ -105,6 +105,8 @@ fn read_path(path: core::slice::View<u8>, buffer: &alloc::vec::Vec<u8>) -> bool 
     if (!ok) { core::result::unwrap(buffer.truncate(before)); }
     return ok;
 }
+// Output is written each time it reaches this many bytes.
+const OUTPUT_STEP: i32 = 65536;
 fn flush(output: &alloc::vec::Vec<u8>) -> bool { let ok: bool = write_fd(1,output.as_slice(),0,output.len()); output.clear(); return ok; }
 // One stream of all the files, as sed reads them: a file without a final
 // newline gets one when more input follows. Unreadable files are reported
@@ -131,7 +133,15 @@ fn stream(program: &ext::sed::Program, run: &ext::sed::Run, settings: Settings, 
     }
     if (failed) { say(literal("text-sed: allocation failure\n",29)); buffer.destroy(); missing.destroy(); joins.destroy(); return 4; }
     let output: alloc::vec::Vec<u8> = alloc::vec::new();
-    let done = program.execute_joined(run,buffer.as_view(),joins.as_view(),settings.quiet,output.borrow());
+    let done = program.begin_joined(run,buffer.as_view(),joins.as_view(),settings.quiet);
+    let written: bool = true;
+    while (core::result::is_ok(done) && written) {
+        done = program.proceed(run,output.borrow(),OUTPUT_STEP);
+        if (core::result::is_err(done)) { break; }
+        written = flush(output.borrow());
+        if (core::result::unwrap(done)) { break; }
+    }
+    if (core::result::is_ok(done)) { done = core::result::Ok(run.ended()); }
     joins.destroy();
     let status: i32 = 0;
     let k: i32 = 0;
@@ -141,7 +151,7 @@ fn stream(program: &ext::sed::Program, run: &ext::sed::Run, settings: Settings, 
     }
     if (core::result::is_err(done)) { flush(output.borrow()); status = run_error(core::result::unwrap_err(done)); }
     else {
-        if (!flush(output.borrow())) { say(literal("text-sed: couldn't write output\n",32)); status = 4; }
+        if (!written || !flush(output.borrow())) { say(literal("text-sed: couldn't write output\n",32)); status = 4; }
         if (status == 0 && core::result::unwrap(done)) { status = run.exit_status(); }
     }
     buffer.destroy(); missing.destroy(); output.destroy(); return status;
@@ -180,9 +190,17 @@ fn separate(program: &ext::sed::Program, run: &ext::sed::Run, settings: Settings
         buffer.clear();
         if (!read_path(item.bytes,buffer.borrow())) { complain(literal("can't read ",11),item.bytes,literal(": cannot open or read\n",22)); if (status == 0) { status = 2; } continue; }
         run.restart(program); if (settings.in_place) { run.new_output(); }
-        let done = program.execute(run,buffer.as_view(),settings.quiet,output.borrow());
+        // -i keeps the whole output for the file; -s writes it as it goes.
+        let step: i32 = OUTPUT_STEP; if (settings.in_place) { step = 2147483647; }
+        let none: alloc::vec::Vec<i32> = alloc::vec::new();
+        let done = program.begin_joined(run,buffer.as_view(),none.as_view(),settings.quiet);
+        while (core::result::is_ok(done)) {
+            done = program.proceed(run,output.borrow(),step);
+            if (core::result::is_err(done) || core::result::unwrap(done)) { break; }
+            if (!flush(output.borrow())) { say(literal("text-sed: couldn't write output\n",32)); buffer.destroy(); output.destroy(); return 4; }
+        }
         if (core::result::is_err(done)) { if (!settings.in_place) { flush(output.borrow()); } buffer.destroy(); output.destroy(); return run_error(core::result::unwrap_err(done)); }
-        ended = core::result::unwrap(done);
+        ended = run.ended();
         if (settings.in_place) {
             if (!replace(item.bytes,output.borrow())) { complain(literal("couldn't edit ",14),item.bytes,literal(": write failed\n",15)); buffer.destroy(); output.destroy(); return 4; }
         } else {

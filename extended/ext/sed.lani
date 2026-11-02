@@ -30,7 +30,8 @@ struct Command { name: i32, first: Address, second: Address, negated: bool, rege
 struct Part { kind: i32, a: i32, b: i32 }
 // Per regex: when ready[i] is 1, an unanchored lazy DFA (dfas) and an
 // anchored longest-prefix one (anchored); and the literal every match
-// contains, needles[needle_at[2i], + needle_at[2i + 1]) (length 0: none).
+// contains, needles[needle_at[2i], + |needle_at[2i + 1]|) (length 0: none),
+// negative when the regex is nothing but that literal.
 pub struct Program {
     commands: alloc::vec::Vec<Command>, regexes: alloc::vec::Vec<ext::regex::Regex>, parts: alloc::vec::Vec<Part>, pool: alloc::vec::Vec<u8>, states: i32, groups: i32, quiet: bool,
     dfas: alloc::vec::Vec<ext::regex::Dfa>, anchored: alloc::vec::Vec<ext::regex::PrefixSet>, ready: alloc::vec::Vec<u8>, needles: alloc::vec::Vec<u8>, needle_at: alloc::vec::Vec<i32>
@@ -45,11 +46,19 @@ pub struct Run {
     input: [u8], cursor: i32, limit: i32, failed: bool, error: Error,
     joins: core::slice::View<i32>, join: i32, no_joins: alloc::vec::Vec<i32>, probed: bool,
     // The current s/// match; whole: only group 0 is known (from the DFAs).
-    found_start: i32, found_end: i32, whole: bool
+    found_start: i32, found_end: i32, whole: bool,
+    // Unchanged input lines written so far but not yet copied to output:
+    // input[pending_from, pending_to), newlines included. base and quiet
+    // belong to the current execution (begin_joined).
+    pending_from: i32, pending_to: i32, base: i32, quiet_run: bool,
+    // Per regex: the first occurrence of its literal in input[hit_from[i],
+    // limit), or -1; hit_from[i] is 2147483647 when nothing is known.
+    hit_from: alloc::vec::Vec<i32>, hit_at: alloc::vec::Vec<i32>
 }
 // The pattern space: values[start, start + length). chomped: the line had
-// a newline. checked: known to be valid UTF-8.
-struct Space { values: [u8], start: i32, length: i32, chomped: bool, checked: bool }
+// a newline. checked: known to be valid UTF-8. original: values is the
+// input and the space is the line as read.
+struct Space { values: [u8], start: i32, length: i32, chomped: bool, checked: bool, original: bool }
 
 struct Parser { script: [u8], base: i32, length: i32, at: i32, extended: bool, failed: bool, error: Error, program: Program, blocks: alloc::vec::Vec<i32>, raw: alloc::vec::Vec<u8>, pattern: alloc::vec::Vec<u8> }
 
@@ -225,7 +234,9 @@ impl Parser {
             length = core::result::unwrap(found);
         }
         let at: i32 = self.program.needles.len();
-        let ok: bool = extend(self.program.needles.borrow(),scratch.as_slice(),0,length) && core::result::is_ok(self.program.needle_at.try_push(at)) && core::result::is_ok(self.program.needle_at.try_push(length));
+        // A regex that is only its literal: needle_at holds -length.
+        let stored: i32 = length; if (length > 0 && regex.literal_length() == length) { stored = 0 - length; }
+        let ok: bool = extend(self.program.needles.borrow(),scratch.as_slice(),0,length) && core::result::is_ok(self.program.needle_at.try_push(at)) && core::result::is_ok(self.program.needle_at.try_push(stored));
         scratch.destroy(); if (!ok) { self.oom(); return false; }
         return true;
     }
@@ -530,9 +541,11 @@ pub impl Program {
             line: 0, quit: false, status: 0, missing: false, consumed: 0, previous: -1,
             active: alloc::vec::new(), until: alloc::vec::new(), workspace: core::result::unwrap(made),
             space: alloc::vec::new(), spare: alloc::vec::new(), input: self.pool.as_slice(), cursor: 0, limit: 0, failed: false, error: Error::Limit,
-            joins: none.as_view(), join: 0, no_joins: none, probed: false, found_start: 0, found_end: -1, whole: false
+            joins: none.as_view(), join: 0, no_joins: none, probed: false, found_start: 0, found_end: -1, whole: false,
+            pending_from: 0, pending_to: 0, base: 0, quiet_run: false, hit_from: alloc::vec::new(), hit_at: alloc::vec::new()
         };
-        if (core::result::is_err(run.active.try_resize(self.commands.len(),0)) || core::result::is_err(run.until.try_resize(self.commands.len(),0))) { run.destroy(); return core::result::Err(Error::AllocationFailed); }
+        if (core::result::is_err(run.active.try_resize(self.commands.len(),0)) || core::result::is_err(run.until.try_resize(self.commands.len(),0))
+            || core::result::is_err(run.hit_from.try_resize(self.regexes.len(),2147483647)) || core::result::is_err(run.hit_at.try_resize(self.regexes.len(),-1))) { run.destroy(); return core::result::Err(Error::AllocationFailed); }
         run.restart(self);
         return core::result::Ok(run);
     }
@@ -548,18 +561,41 @@ pub impl Program {
     // Such a line is written without a newline unless more output follows,
     // as in GNU sed.
     pub fn execute_joined(&self, run: &Run, input: core::slice::View<u8>, joins: core::slice::View<i32>, quiet: bool, output: &alloc::vec::Vec<u8>) -> core::result::Result<bool, Error> {
+        let begun: core::result::Result<bool, Error> = self.begin_joined(run,input,joins,quiet);
+        if (core::result::is_err(begun)) { return begun; }
+        let done: core::result::Result<bool, Error> = self.proceed(run,output,2147483647);
+        if (core::result::is_err(done)) { return done; }
+        return core::result::Ok(run.quit);
+    }
+    // execute_joined in steps, so output can be written while it runs:
+    // begin_joined sets the input up, then each proceed runs whole cycles
+    // until the input ends, q or Q ends the run, or output holds at least
+    // budget bytes. proceed returns whether the execution is over; the
+    // caller takes output away between steps.
+    pub fn begin_joined(&self, run: &Run, input: core::slice::View<u8>, joins: core::slice::View<i32>, quiet: bool) -> core::result::Result<bool, Error> {
         if (input.start < 0 || input.length < 0 || input.start > 2147483647 - input.length) { return core::result::Err(Error::Limit); }
         run.joins = joins; run.join = 0;
         run.input = input.values; run.cursor = input.start; run.limit = input.start + input.length; run.consumed = 0;
-        let quiet_run: bool = quiet || self.quiet;
+        run.base = input.start; run.pending_from = input.start; run.pending_to = input.start;
+        let from: [i32] = run.hit_from.as_slice(); let k: i32 = 0; while (k < run.hit_from.len()) { from[k] = 2147483647; k += 1; }
+        run.quiet_run = quiet || self.quiet;
         run.probed = false;
+        return core::result::Ok(true);
+    }
+    pub fn proceed(&self, run: &Run, output: &alloc::vec::Vec<u8>, budget: i32) -> core::result::Result<bool, Error> {
+        let quiet_run: bool = run.quiet_run;
         while (!run.quit && !run.at_end()) {
-            let space: Space = Space { values: input.values, start: 0, length: 0, chomped: false, checked: false };
+            let space: Space = Space { values: run.input, start: 0, length: 0, chomped: false, checked: false, original: true };
             run.next(space.borrow());
-            if (!self.cycle(run,space.borrow(),quiet_run,output)) { run.mark(input.start); return core::result::Err(run.error); }
+            if (!self.cycle(run,space.borrow(),quiet_run,output)) { run.drain(output); run.mark(run.base); return core::result::Err(run.error); }
+            if (output.len() >= budget - (run.pending_to - run.pending_from)) {
+                if (!run.drain(output)) { return core::result::Err(run.error); }
+                run.mark(run.base); return core::result::Ok(false);
+            }
         }
-        run.mark(input.start);
-        return core::result::Ok(run.quit);
+        if (!run.drain(output)) { return core::result::Err(run.error); }
+        run.mark(run.base);
+        return core::result::Ok(true);
     }
     fn regex_for(&self, run: &Run, index: i32) -> i32 {
         let chosen: i32 = index; if (chosen == -2) { chosen = run.previous; }
@@ -567,8 +603,19 @@ pub impl Program {
         run.previous = chosen; return chosen;
     }
     // Whether the space lacks the literal every match of regex chosen has.
-    fn absent(&self, chosen: i32, space: &Space) -> bool {
-        let length: i32 = self.needle_at.at(2 * chosen + 1); if (length == 0) { return false; }
+    // On an unchanged line, one search to the end of the input serves
+    // every line up to the occurrence it finds.
+    fn absent(&self, run: &Run, chosen: i32, space: &Space) -> bool {
+        let length: i32 = self.needle_at.at(2 * chosen + 1); if (length == 0) { return false; } if (length < 0) { length = 0 - length; }
+        if (space.original) {
+            let from: [i32] = run.hit_from.as_slice(); let hits: [i32] = run.hit_at.as_slice();
+            let hit: i32 = hits[chosen];
+            if (space.start < from[chosen] || (hit >= 0 && hit < space.start)) {
+                hit = core::search::find(run.input,space.start,run.limit,self.needles.as_slice(),self.needle_at.at(2 * chosen),length);
+                from[chosen] = space.start; hits[chosen] = hit;
+            }
+            return hit < 0 || hit > space.start + space.length - length;
+        }
         return core::search::find(space.values,space.start,space.start + space.length,self.needles.as_slice(),self.needle_at.at(2 * chosen),length) < 0;
     }
     // The leftmost match start at or after position, or -1; -2 on failure.
@@ -577,6 +624,13 @@ pub impl Program {
     // and each candidate start up to it takes one anchored DFA run.
     fn leftmost(&self, run: &Run, chosen: i32, input: ext::regex::Input, position: i32) -> i32 {
         let regex: ext::regex::Regex = self.regexes.at(chosen); run.found_end = -1;
+        let pure: i32 = self.needle_at.at(2 * chosen + 1);
+        if (pure < 0) {
+            let base: i32 = input.text.start;
+            let at: i32 = core::search::find(input.text.bytes,base + position,base + input.text.length,self.needles.as_slice(),self.needle_at.at(2 * chosen),0 - pure);
+            if (at < 0) { return -1; }
+            run.found_end = at - base - pure; return at - base;
+        }
         if (self.ready.at(chosen) == 1) {
             let machine: ext::regex::Dfa = self.dfas.at(chosen);
             let probe: ext::regex::PrefixRun = machine.set.run(input,position);
@@ -602,7 +656,7 @@ pub impl Program {
     }
     fn matches(&self, run: &Run, index: i32, space: &Space) -> i32 {
         let chosen: i32 = self.regex_for(run,index); if (chosen < 0) { return -1; }
-        if (self.absent(chosen,space)) { return 0; }
+        if (self.absent(run,chosen,space)) { return 0; }
         if (!run.check(space)) { return -1; }
         let regex: ext::regex::Regex = self.regexes.at(chosen);
         let input: ext::regex::Input = ext::regex::input_unchecked(core::text::from_utf8_unchecked(space.values,space.start,space.length));
@@ -729,14 +783,14 @@ pub impl Program {
             i += n;
         }
         let held: alloc::vec::Vec<u8> = run.space; run.space = run.spare; run.spare = held;
-        space.values = run.space.as_slice(); space.start = 0; space.length = run.space.len();
+        space.values = run.space.as_slice(); space.start = 0; space.length = run.space.len(); space.original = false;
         return true;
     }
     // s///: POSIX leftmost-longest matches; with g, an empty match right
     // after the previous match is skipped, as in GNU sed.
     fn substitute(&self, run: &Run, command: Command, space: &Space, output: &alloc::vec::Vec<u8>) -> bool {
         let chosen: i32 = self.regex_for(run,command.regex); if (chosen < 0) { return false; }
-        if (self.absent(chosen,space)) { return true; }
+        if (self.absent(run,chosen,space)) { return true; }
         if (!run.check(space)) { return false; }
         let regex: ext::regex::Regex = self.regexes.at(chosen);
         let input: ext::regex::Input = ext::regex::input_unchecked(core::text::from_utf8_unchecked(space.values,space.start,space.length));
@@ -771,7 +825,7 @@ pub impl Program {
         if (!replaced) { return true; }
         if (!extend(run.spare.borrow(),space.values,space.start + copied,length - copied)) { run.fail(Error::AllocationFailed); return false; }
         let held: alloc::vec::Vec<u8> = run.space; run.space = run.spare; run.spare = held;
-        space.values = run.space.as_slice(); space.start = 0; space.length = run.space.len();
+        space.values = run.space.as_slice(); space.start = 0; space.length = run.space.len(); space.original = false;
         if (command.print && !run.emit(output,space)) { return false; }
         return true;
     }
@@ -804,7 +858,7 @@ pub impl Run {
     }
     // Output goes to a new destination: no newline is owed to it.
     pub fn new_output(&self) { self.missing = false; }
-    pub fn destroy(&self) { self.no_joins.destroy(); self.active.destroy(); self.until.destroy(); self.workspace.destroy(); self.space.destroy(); self.spare.destroy(); }
+    pub fn destroy(&self) { self.hit_from.destroy(); self.hit_at.destroy(); self.no_joins.destroy(); self.active.destroy(); self.until.destroy(); self.workspace.destroy(); self.space.destroy(); self.spare.destroy(); }
     fn fail(&self, error: Error) { self.failed = true; self.error = error; }
     // Whether no input follows the current line; GNU sed only looks for
     // the next file when it asks this.
@@ -818,7 +872,7 @@ pub impl Run {
     fn next(&self, space: &Space) {
         let start: i32 = self.cursor;
         let end: i32 = core::search::find_byte(self.input,start,self.limit,10);
-        space.values = self.input; space.start = start; space.checked = false;
+        space.values = self.input; space.start = start; space.checked = false; space.original = true;
         if (end < 0) { space.length = self.limit - start; space.chomped = false; self.cursor = self.limit; }
         else {
             space.length = end - start; space.chomped = true; self.cursor = end + 1;
@@ -832,13 +886,28 @@ pub impl Run {
         if (core::result::is_err(valid)) { self.fail(Error::InvalidUtf8(-1)); return false; }
         space.checked = true; return true;
     }
+    // Copies the pending input lines to output.
+    fn drain(&self, output: &alloc::vec::Vec<u8>) -> bool {
+        let count: i32 = self.pending_to - self.pending_from;
+        if (count > 0) {
+            if (!extend(output,self.input,self.pending_from,count)) { self.fail(Error::AllocationFailed); return false; }
+            self.pending_from = self.pending_to;
+        }
+        return true;
+    }
     fn owed(&self, output: &alloc::vec::Vec<u8>) -> bool {
+        if (!self.drain(output)) { return false; }
         if (self.missing) { if (!push(output,10)) { self.fail(Error::AllocationFailed); return false; } self.missing = false; }
         return true;
     }
     // The pattern space, and its newline when the line had one; a missing
     // final newline is written before any later output.
+    // An unchanged line that follows the pending ones joins them.
     fn emit(&self, output: &alloc::vec::Vec<u8>, space: &Space) -> bool {
+        if (space.original && space.chomped && !self.missing) {
+            if (self.pending_to != space.start) { if (!self.drain(output)) { return false; } self.pending_from = space.start; }
+            self.pending_to = space.start + space.length + 1; return true;
+        }
         if (!self.owed(output) || !extend(output,space.values,space.start,space.length)) { self.fail(Error::AllocationFailed); return false; }
         if (space.chomped) { if (!push(output,10)) { self.fail(Error::AllocationFailed); return false; } } else { self.missing = true; }
         return true;
