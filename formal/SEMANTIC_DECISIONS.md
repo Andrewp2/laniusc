@@ -1688,6 +1688,50 @@ visited set in `ty_insts` would make it linear, but the reading's
 `TyInsts` relation is stated over the full expansion, so that change needs
 its own proof.
 
+## Budget certificates (decided 11-01, F14)
+
+`CompileBounded T` asks that the guarded run of `progW` has a value
+whenever `progW`'s run costs under `T`. It is proved function by function.
+For each self-program function `F` at index `ix`, with the unit cost
+`uc = fun _ => 1` (each boxed call costs 1),
+`formal/tools/budget_certs.py` generates three things into
+`Faithful/GenB/`: two Lean models `Pre_F` and `Cost_F` beside the
+function's Lean meaning `F`, and a budget certificate:
+
+    qcall progW prims uc n ix vs = some (w, k) → Rep x vs → k < b → Pre_F n x b →
+      qcall prog prims uc n ix vs = some (w, k) ∧ Cost_F n x = k ∧ Rep (F x) w
+
+If `F` cannot overflow along any path, it has no `b` and no `Pre_F`.
+
+- The models follow the source function, not the Lean meaning. Inline
+  functions are separate source functions. Values are Lean terms over the
+  parameters, with callee results written as the callee's Lean meaning
+  `G y`. Both models are fuel-indexed like `qcall`: `Pre_F 0 = True` and
+  `Cost_F 0 = 0`. The case `n = 0` is vacuous, because `qcall` at fuel 0
+  is `none`.
+- The Cost_F convention: `Cost_F (n + 1) x` is the sum along the taken path
+  of `Cost_G n y` for each costly callee, plus 1 per boxed prim call.
+  A callee that never reaches a boxed prim is free and adds nothing. Its
+  certificate states `0 = k`. Branches that are equal collapse.
+- The Pre_F generation rule: `Pre_F` is built in evaluation order, in
+  continuation-passing style, with `B` the budget still left. At a call of
+  a guarded `G` it adds `Pre_G n y B`. After a costly call the rest is
+  `Cost_G n y < B → REST` at `B - Cost_G n y`. After a boxed prim the
+  rest is `1 < B → REST` at `B - 1`. A part that is `True` is dropped.
+  `plus` and `times` are the base cases:
+  `Pre_plus n x y b := x + y < 2 ^ 64`, likewise for `times`, and their
+  certificates are written by hand (`Budget.bcert_plus`, `bcert_times`).
+  Lazy `&&` and `||` and pure arguments follow the semantics: a condition
+  that is not evaluated adds nothing.
+- The premise is stated against the remaining budget, not the cost so far.
+  The run's total cost `k` is below `b`, so every prefix is below `b`, and
+  a callee's certificate gets `k_G < b - prefix`.
+- Proofs: the `budget` tactic (`Faithful/BudgetTactic.lean`) runs the two
+  `qcall`s in lockstep. It steps through calls with the callee's
+  certificate, prims, `addC`, condition splits and `Rep` cases, and it
+  closes each path's cost with `omega`. Groups of recursive functions are
+  proved by induction on fuel.
+
 ## laniusc's process exit is `exit_group`; the verified compiler's stays `exit` (decided 11-01)
 
 laniusc's x86 runtime now ends a process with Linux syscall 231,

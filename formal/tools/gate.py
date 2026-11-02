@@ -221,7 +221,8 @@ def build():
         run = subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
                               'lake', 'build', *BUILT, 'LaniusMini', 'Lanius.Mini.FrontLex',
                               'Lanius.Mini.MutPilotCorrect', 'Lanius.Machines.SqliteStatementCorrect',
-                              'Lanius.Machines.TlsLifecycleCorrect', 'Lanius.Machines.RunLowering'],
+                              'Lanius.Machines.TlsLifecycleCorrect', 'Lanius.Machines.RunLowering',
+                              'Lanius.Faithful.GenB.SelfBCert'],
                              cwd=run_cache.FORMAL, env=env, capture_output=True, text=True)
     if run.returncode != 0:
         raise SystemExit('lake build failed:\n' + run.stdout[-3000:] + run.stderr[-3000:])
