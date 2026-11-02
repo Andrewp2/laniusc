@@ -403,10 +403,19 @@ fn footer(d: &Decoder) -> core::result::Result<bool,Error> {
     if (((le32(s,4) as u64)+1)*4 != d.index_size) { return core::result::Err(Error::Footer); }
     d.pad = 0; begin(d,STREAM_PAD,0); return core::result::Ok(true);
 }
+// Like xz, a .lzma header must give a dictionary size of 2^n, 2^n+2^(n-1)
+// or 0xffffffff, and a known uncompressed size below 256 GiB: other values
+// are taken as "not a .lzma file".
+fn alone_dictionary_ok(size: u32) -> bool {
+    if (size == 0 || size == 4294967295) { return true; }
+    let d: u64 = (size as u64)-1; d = d | (d >> 2); d = d | (d >> 3); d = d | (d >> 4); d = d | (d >> 8); d = d | (d >> 16);
+    return d+1 == (size as u64);
+}
 fn alone_header(d: &Decoder) -> core::result::Result<bool,Error> {
     let s: core::slice::View<u8> = d.stage;
     if (!set_properties(d,byte(s,0))) { return core::result::Err(Error::Options); }
     let dictionary: u32 = le32(s,1); let size: u64 = le64(s,5);
+    if (!alone_dictionary_ok(dictionary) || (size != ALL64 && size >= 274877906944)) { return core::result::Err(Error::Header); }
     d.limited = size != ALL64; d.left = size;
     let needed: u64 = dictionary as u64; if (needed < 4096) { needed = 4096; }
     if (d.limited && size < needed) { needed = size; if (needed == 0) { needed = 1; } }
