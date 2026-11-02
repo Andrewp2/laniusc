@@ -39,7 +39,7 @@ theorem ok_SrcStmt_returns : FnOk prog prims info (58, ⟨0, [0], 0⟩) :=
 theorem ok_compile_lowered : FnOk prog prims info (60, ⟨14, [], 0⟩) :=
   fnOk_of fn_compile_lowered (by decide +kernel)
 
-theorem ok_lower_funcs : FnOk prog prims info (61, ⟨19, [2], 0⟩) :=
+theorem ok_lower_funcs : FnOk prog prims info (61, ⟨19, [1], 0⟩) :=
   fnOk_of fn_lower_funcs (by decide +kernel)
 
 theorem ok_sigs : FnOk prog prims info (62, ⟨2, [0], 0⟩) :=
@@ -96,40 +96,40 @@ theorem ok_lower_func_cons : FnOk prog prims info (85, ⟨1, [], 0⟩) :=
 theorem ok_lower_func : FnOk prog prims info (86, ⟨18, [], 0⟩) :=
   fnOk_of fn_lower_func (by decide +kernel)
 
-theorem ok_empty_of_mini_selfhost_Sig : FnOk prog prims info (87, ⟨0, [], 0⟩) :=
+theorem ok_empty_of_mini_selfhost_Sig : FnOk prog prims info (88, ⟨0, [], 0⟩) :=
   fnOk_of fn_empty_of_mini_selfhost_Sig (by decide +kernel)
 
-theorem ok_cons_of_mini_selfhost_Sig : FnOk prog prims info (88, ⟨0, [], 0⟩) :=
+theorem ok_cons_of_mini_selfhost_Sig : FnOk prog prims info (89, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_Sig (by decide +kernel)
 
-theorem ok_param_types : FnOk prog prims info (89, ⟨1, [0], 0⟩) :=
+theorem ok_param_types : FnOk prog prims info (90, ⟨1, [0], 0⟩) :=
   fnOk_of fn_param_types (by decide +kernel)
 
-theorem ok_declare_funcs_after : FnOk prog prims info (90, ⟨8, [1], 1⟩) :=
+theorem ok_declare_funcs_after : FnOk prog prims info (91, ⟨8, [1], 1⟩) :=
   fnOk_of fn_declare_funcs_after (by decide +kernel)
 
-theorem ok_declare_func : FnOk prog prims info (91, ⟨7, [], 0⟩) :=
+theorem ok_declare_func : FnOk prog prims info (92, ⟨7, [], 0⟩) :=
   fnOk_of fn_declare_func (by decide +kernel)
 
-theorem ok_read_counted_bytes : FnOk prog prims info (92, ⟨4, [], 0⟩) :=
+theorem ok_read_counted_bytes : FnOk prog prims info (93, ⟨4, [], 0⟩) :=
   fnOk_of fn_read_counted_bytes (by decide +kernel)
 
-theorem ok_read_file_parents : FnOk prog prims info (93, ⟨20, [], 0⟩) :=
+theorem ok_read_file_parents : FnOk prog prims info (94, ⟨20, [], 0⟩) :=
   fnOk_of fn_read_file_parents (by decide +kernel)
 
-theorem ok_read_counted_nums : FnOk prog prims info (94, ⟨3, [], 0⟩) :=
+theorem ok_read_counted_nums : FnOk prog prims info (95, ⟨3, [], 0⟩) :=
   fnOk_of fn_read_counted_nums (by decide +kernel)
 
-theorem ok_cons_of_mini_selfhost_FileInput : FnOk prog prims info (95, ⟨0, [], 0⟩) :=
+theorem ok_cons_of_mini_selfhost_FileInput : FnOk prog prims info (96, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_FileInput (by decide +kernel)
 
-theorem ok_empty_of_mini_selfhost_CTree : FnOk prog prims info (96, ⟨0, [], 0⟩) :=
+theorem ok_empty_of_mini_selfhost_CTree : FnOk prog prims info (97, ⟨0, [], 0⟩) :=
   fnOk_of fn_empty_of_mini_selfhost_CTree (by decide +kernel)
 
-theorem ok_cons_root : FnOk prog prims info (97, ⟨1, [], 0⟩) :=
+theorem ok_cons_root : FnOk prog prims info (98, ⟨1, [], 0⟩) :=
   fnOk_of fn_cons_root (by decide +kernel)
 
-theorem ok_validate_tree : FnOk prog prims info (98, ⟨7, [], 0⟩) :=
+theorem ok_validate_tree : FnOk prog prims info (99, ⟨7, [], 0⟩) :=
   fnOk_of fn_validate_tree (by decide +kernel)
 
 theorem chunk1 : AllFns prog prims info part1 :=

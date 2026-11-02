@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Mini.Compiler.Types
+import Lanius.Mini.Compiler.P.SrcType_size
 import Lanius.Mini.Compiler.P.storeArray
 
 public section
@@ -13,40 +14,16 @@ namespace Lanius.Mini
 def sigs (funcs : List SrcFunc) : List Sig :=
   match funcs with
   | [] => []
-  | func :: rest => ({ params := paramTypes func.params, ret := func.ret } : Sig) :: sigs rest
+  | func :: rest => ({ params := paramTypes func.params, ret := func.ret, need := 0, room := 0, block := 0 } : Sig) :: sigs rest
 
-def Expr.extent (self : Expr) : Nat :=
-  match self with
-  | .lit value => 0
-  | .var index => index + 1
-  | .neg operand => Expr.extent operand
-  | .binary word operation left right => max (Expr.extent left) (Expr.extent right)
-  | .compare word operation left right => max (Expr.extent left) (Expr.extent right)
-  | .fp operation left right => max (Expr.extent left) (Expr.extent right)
+/-- The signatures with the budget of the function lowered against them. -/
+def withBudget (sigs : List Sig) (room : Nat) (block : Nat) : List Sig :=
+  match sigs with
+  | [] => []
+  | sig :: rest => ({ params := sig.params, ret := sig.ret, need := sig.need, room := room, block := block } : Sig) :: withBudget rest room block
 
-def argsExtent (args : List Expr) : Nat :=
-  match args with
-  | [] => 0
-  | arg :: rest => max (Expr.extent arg) (argsExtent rest)
-
-def Stmt.extent (self : Stmt) : Nat :=
-  match self with
-  | .skip => 0
-  | .assign index value => max (index + 1) (Expr.extent value)
-  | .seq first second => max (Stmt.extent first) (Stmt.extent second)
-  | .ite condition thenBranch elseBranch => max (Expr.extent condition) (max (Stmt.extent thenBranch) (Stmt.extent elseBranch))
-  | .loop condition body => max (Expr.extent condition) (Stmt.extent body)
-  | .call target count callee args => max (target + count) (argsExtent args)
-  | .ret values => argsExtent values
-  | .brk => 0
-  | .cont => 0
-  | .alloc target shift size => max (target + 1) (Expr.extent size)
-  | .loadByte target address => max (target + 1) (Expr.extent address)
-  | .storeByte address value => max (Expr.extent address) (Expr.extent value)
-  | .loadWord width target address => max (target + 1) (Expr.extent address)
-  | .storeWord width address value => max (Expr.extent address) (Expr.extent value)
-  | .divide word operation target left right => max (target + 1) (max (Expr.extent left) (Expr.extent right))
-  | .sys kind target args => max (target + 1) (argsExtent args)
-  | .frame target bytes => target + 1
+/-- A function's own block of frame memory, taken at its entry (none yet: the caller lowering of arrays passed as slices, step 3.5, sizes it). -/
+def frameBlock (func : SrcFunc) : Nat :=
+  0
 
 end Lanius.Mini

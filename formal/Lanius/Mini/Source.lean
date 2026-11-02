@@ -77,6 +77,7 @@ import all Lanius.Mini.Compiler.P.wordStride
 import all Lanius.Mini.Compiler.P.storeEvalWord
 import all Lanius.Mini.Compiler.P.storeArray
 import all Lanius.Mini.Compiler.P.sigs
+import all Lanius.Mini.Compiler.P.Expr_extent
 import all Lanius.Mini.Compiler.P.lowerBody
 import all Lanius.Mini.Compiler.P.declareFuncs
 import all Lanius.Mini.Compiler.P.declareProgram
@@ -158,7 +159,7 @@ def SrcProgram.toCore (prog : SrcProgram) : Core.Program where
 functions. -/
 theorem compileSource_some {sp : SrcProgram} {binary : Binary} (compiled : compileSource sp = some binary) :
     funcsReturn sp.funcs = true ∧ (∃ decls, declareProgram sp = some decls) ∧
-      ∃ funcs, lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some funcs ∧
+      ∃ funcs, lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some funcs ∧
         compileOptimized { funcs := funcs } = some binary := by
   unfold compileSource at compiled
   split at compiled

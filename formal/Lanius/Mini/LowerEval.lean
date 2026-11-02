@@ -567,7 +567,7 @@ code leaving a representation of its value from `slot`. -/
 def EvalSound (sp : SrcProgram) (mp : Program) (fuel : Nat) : Prop :=
   ∀ {bud : Budget} {places : List Addressed} {hp : Heap} {e : SrcEff} {scope : List Binding} {slot : Nat} {ev : Evaluated}
     {frame : Nat → Nat} {base : Nat} {st : State} {env : Env} {v : Value} {st' : State},
-    e.eval (sigs sp.funcs) sp.decls scope slot = some ev →
+    e.eval (sp.sigsAt bud) sp.decls scope slot = some ev →
     Corr places scope frame st env → Layout scope frame base slot → st.Fresh →
     HeapCorr st.heap st.world hp → FrameCorr bud places st hp →
     evalExpr fuel sp.toCore st e.toCore = .done v st' → st'.heap.nextAddress ≤ hp.limit →
@@ -652,7 +652,7 @@ theorem eval_pure {e : SrcExpr} {fuel : Nat} (ok : evalPure scope e slot = some 
 /-- Arguments evaluated one after another into consecutive slots. -/
 theorem evalArgs_sound : ∀ (args : List SrcEff) {k : Nat}, (∀ m < k, EvalSound sp mp m) →
     ∀ {hp : Heap} {slot : Nat} {ea : EvaluatedArgs} {st : State} {env : Env} {vs : List Value} {st' : State},
-    evalArgs (sigs sp.funcs) sp.decls scope args slot = some ea → Corr places scope frame st env →
+    evalArgs (sp.sigsAt bud) sp.decls scope args slot = some ea → Corr places scope frame st env →
     Layout scope frame base slot → st.Fresh → HeapCorr st.heap st.world hp → FrameCorr bud places st hp →
     evalExprs k sp.toCore st (SrcEff.toCoreList args) = .done vs st' → st'.heap.nextAddress ≤ hp.limit →
     st'.Fresh ∧ Keeps places st.nextCell st st' ∧ st'.locals = st.locals ∧
@@ -1232,7 +1232,7 @@ set_option maxHeartbeats 1000000 in
 /-- A host call of one of the host services. -/
 theorem eval_host {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {callee : Nat} {args : List SrcEff}
     {ea : EvaluatedArgs} (outside : sp.funcs.length ≤ callee)
-    (argsOk : evalArgs (sigs sp.funcs) sp.decls scope args slot = some ea) (ok : evalHost callee slot ea = some ev)
+    (argsOk : evalArgs (sp.sigsAt bud) sp.decls scope args slot = some ea) (ok : evalHost callee slot ea = some ev)
     (corr : Corr places scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
     (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
     (run : evalExpr (k + 1) sp.toCore st (.call callee (SrcEff.toCoreList args)) = .done v st')
@@ -1443,9 +1443,9 @@ theorem eval_host {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {callee : Nat} 
     exact absurd (.inr (.inr (by simpa [hostService?, hostBase] using hs.symm))) stores
   · simp at ok
 
-theorem eval_call (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {k : Nat}
+theorem eval_call (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {k : Nat}
     (ih : StmtSound sp mp k) (ihe : ∀ m < k, EvalSound sp mp m) {callee : Nat} {args : List SrcEff}
-    (ok : evalCall (sigs sp.funcs)[callee]? callee slot (evalArgs (sigs sp.funcs) sp.decls scope args slot) = some ev)
+    (ok : evalCall (sp.sigsAt bud)[callee]? callee slot (evalArgs (sp.sigsAt bud) sp.decls scope args slot) = some ev)
     (corr : Corr places scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
     (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
     (run : evalExpr (k + 1) sp.toCore st (.call callee (SrcEff.toCoreList args)) = .done v st')
@@ -1453,18 +1453,18 @@ theorem eval_call (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some
     Evaluates bud places mp hp slot st env ev v st' := by
   by_cases inside : callee < sp.funcs.length
   case neg =>
-    rw [sigs_get, List.getElem?_eq_none (by omega)] at ok
+    rw [sigsAt_get, List.getElem?_eq_none (by omega)] at ok
     simp only [Option.map_none, evalCall] at ok
     split at ok
     · simp at ok
     rename_i ea argsOk
     exact eval_host ihe (by omega) argsOk ok corr fr fresh hc fc run bound
   obtain ⟨f, values, afterArgs, completed, c, argsRun, found, _, bodyRun, result, rfl⟩ := call_inv inside run
-  simp only [sigs_get, found, Option.map_some, evalCall] at ok
+  simp only [sigsAt_get, found, Option.map_some, evalCall] at ok
   split at ok
   · simp at ok
   rename_i ea argsOk
-  simp only [evalCallSig] at ok
+  simp only [evalCallSig, Nat.zero_le, decide_true, Bool.and_true] at ok
   split at ok
   · rename_i checks
     simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
@@ -1482,8 +1482,8 @@ theorem eval_call (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some
     have holdsEntry : FieldsHold places (paramTypes f.params) values
         (Func.entry (Expr.evalAll envA (slotVars slot (sizes (paramTypes f.params))))) 0 :=
       holdsA.congr fun i below => by rw [Nat.zero_add, entry_slotVars envA slot _ below]
-    obtain ⟨freshDone, keeps, d, rs, hp', ⟨g, gFound, arity, exec⟩, holdsRet, len, hcDone, fcDone⟩ :=
-      body_sound lowered ih found (hp := hpA) freshA hcA fcA (fcA.below freshA) holdsEntry
+    obtain ⟨freshDone, keeps, d, rs, hp', bud', ⟨g, gFound, arity, exec⟩, holdsRet, len, hcDone, fcDone⟩ :=
+      body_sound lowered ih found (hp := hpA) freshA hcA fcA (fun _ h => sigs_need_le h _) (fcA.below freshA) holdsEntry
         (by rw [evalAll_length, slotVars_length, paramsSize_eq]) bodyRun result (by rw [execA.limit_normal]; exact bound')
     refine ⟨restore_fresh freshDone, keepsA.chain (keeps.trans (restore_keeps _ _ _)), localsA, sized,
       max dA (d + 1), envA.setMany slot rs, { hp' with fsp := hpA.fsp }, .seq (execA.mono (Nat.le_max_left _ _))
@@ -1516,7 +1516,7 @@ theorem bool_bits {v : Value} {x : BitVec 64} (holds : SrcType.bool.Holds v x) :
     ∃ b, v = .boolean b ∧ x = boolBits b := holds
 
 theorem eval_apply {k : Nat} (ihe : EvalSound sp mp k) {op : SrcOp} {l r : SrcEff}
-    (ok : evalApply op slot (l.eval (sigs sp.funcs) sp.decls scope slot) (r.eval (sigs sp.funcs) sp.decls scope (slot + 1)) = some ev)
+    (ok : evalApply op slot (l.eval (sp.sigsAt bud) sp.decls scope slot) (r.eval (sp.sigsAt bud) sp.decls scope (slot + 1)) = some ev)
     (corr : Corr places scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
     (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
     (run : evalExpr (k + 1) sp.toCore st (.binary op.toCore l.toCore r.toCore) = .done v st')
@@ -1633,7 +1633,7 @@ theorem eval_apply {k : Nat} (ihe : EvalSound sp mp k) {op : SrcOp} {l r : SrcEf
 /-- A division: both operands, then the mini division, which has a run
 whenever Core's has a value. -/
 theorem eval_divide {k : Nat} (ihe : EvalSound sp mp k) {op : SrcDivOp} {l r : SrcEff}
-    (ok : evalDivision op slot (l.eval (sigs sp.funcs) sp.decls scope slot) (r.eval (sigs sp.funcs) sp.decls scope (slot + 1)) =
+    (ok : evalDivision op slot (l.eval (sp.sigsAt bud) sp.decls scope slot) (r.eval (sp.sigsAt bud) sp.decls scope (slot + 1)) =
       some ev)
     (corr : Corr places scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
     (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
@@ -1961,7 +1961,7 @@ theorem eval_index_array {P : Core.Program} {k : Nat} {st : State} {slice : Nat}
 the length, then the element it picks copied over it. -/
 theorem eval_arrayIndex {k : Nat} (ihe : EvalSound sp mp (k + 1)) {slice : Nat} {index : SrcEff} {b : Binding}
     (found : lookup scope slice = some b)
-    (ok : evalArrayIndex b slot (index.eval (sigs sp.funcs) sp.decls scope slot) = some ev)
+    (ok : evalArrayIndex b slot (index.eval (sp.sigsAt bud) sp.decls scope slot) = some ev)
     (corr : Corr places scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
     (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
     (run : evalExpr (k + 2) sp.toCore st (.index (.local slice) index.toCore) = .done v st')
@@ -2005,7 +2005,7 @@ theorem eval_arrayIndex {k : Nat} (ihe : EvalSound sp mp (k + 1)) {slice : Nat} 
 /-- `slice[index]` of a raw slice of `i32`: the index in `slot`, then the
 element loaded over it. -/
 theorem eval_index {k : Nat} (ihe : EvalSound sp mp (k + 1)) {slice : Nat} {index : SrcEff}
-    (ok : evalIndex sp.decls scope slice slot (index.eval (sigs sp.funcs) sp.decls scope slot) = some ev)
+    (ok : evalIndex sp.decls scope slice slot (index.eval (sp.sigsAt bud) sp.decls scope slot) = some ev)
     (corr : Corr places scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
     (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
     (run : evalExpr (k + 2) sp.toCore st (.index (.local slice) index.toCore) = .done v st')
@@ -2281,7 +2281,7 @@ theorem eval_index {k : Nat} (ihe : EvalSound sp mp (k + 1)) {slice : Nat} {inde
 
 /-- A struct literal: its fields, one after another from `slot`. -/
 theorem eval_struct {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {ty : SrcType} {fields : List SrcEff}
-    (ok : evalStruct ty (evalArgs (sigs sp.funcs) sp.decls scope fields slot) = some ev)
+    (ok : evalStruct ty (evalArgs (sp.sigsAt bud) sp.decls scope fields slot) = some ev)
     (corr : Corr places scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
     (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
     (run : evalExpr (k + 1) sp.toCore st (ty.literal (SrcEff.toCoreList fields)) = .done v st')
@@ -2347,7 +2347,7 @@ theorem eval_struct {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {ty : SrcType
 /-- An enum literal: its payload from `slot + 1`, then its tag in `slot`. -/
 theorem eval_variant {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {ty : SrcType} {variant : Nat}
     {payload : List SrcEff}
-    (ok : evalVariant ty variant slot (evalArgs (sigs sp.funcs) sp.decls scope payload (slot + 1)) = some ev)
+    (ok : evalVariant ty variant slot (evalArgs (sp.sigsAt bud) sp.decls scope payload (slot + 1)) = some ev)
     (corr : Corr places scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
     (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
     (run : evalExpr (k + 1) sp.toCore st (.enumValue ty.typeId variant (SrcEff.toCoreList payload)) = .done v st')
@@ -2445,7 +2445,7 @@ theorem evalArms_sound {dst eid : Nat} {ty : SrcType} :
       {hp : Heap} {frame : Nat → Nat} {st : State} {env : Env},
       (∀ m < k, EvalSound sp mp m) → Corr places scope frame st env → Layout scope frame 0 slot → st.Fresh →
       HeapCorr st.heap st.world hp → FrameCorr bud places st hp →
-      evalArms (sigs sp.funcs) sp.decls scope slot dst ty j variants binders values = some stmt →
+      evalArms (sp.sigsAt bud) sp.decls scope slot dst ty j variants binders values = some stmt →
       values.length = variants.length → binders.length = variants.length →
       (∀ fs ∈ variants, slot + 1 + sizes fs ≤ dst) → j ≤ kv → variants[kv - j]? = some fs → kv < 2 ^ 64 →
       env slot = BitVec.ofNat 64 kv → FieldsHold places fs vs env (slot + 1) →
@@ -2512,7 +2512,7 @@ theorem evalArms_sound {dst eid : Nat} {ty : SrcType} :
           subst ok
           exact exec
         | cons next more' =>
-          cases ho : evalArms (sigs sp.funcs) sp.decls scope slot dst ty (j + 1) more others (next :: more') with
+          cases ho : evalArms (sp.sigsAt bud) sp.decls scope slot dst ty (j + 1) more others (next :: more') with
           | none => simp [ho] at ok
           | some o =>
             simp only [ho, Option.some.injEq] at ok
@@ -2532,7 +2532,7 @@ theorem evalArms_sound {dst eid : Nat} {ty : SrcType} :
         simp only [List.length_cons, List.length_nil] at vlen
         omega
       | cons next more' =>
-        cases ho : evalArms (sigs sp.funcs) sp.decls scope slot dst ty (j + 1) more others (next :: more') with
+        cases ho : evalArms (sp.sigsAt bud) sp.decls scope slot dst ty (j + 1) more others (next :: more') with
         | none => simp [ho] at ok
         | some o =>
           simp only [ho, Option.some.injEq] at ok
@@ -2548,8 +2548,8 @@ theorem evalArms_sound {dst eid : Nat} {ty : SrcType} :
 `matchDst`, then that value copied down to `slot`. -/
 theorem eval_match {k : Nat} (ihe : ∀ m ≤ k, EvalSound sp mp m) {scrutinee : SrcEff} {ety ty : SrcType}
     {binders : List (List Nat)} {values : List SrcEff}
-    (ok : evalMatch slot ety ty (scrutinee.eval (sigs sp.funcs) sp.decls scope slot)
-      (evalArms (sigs sp.funcs) sp.decls scope slot (matchDst slot ety ty) ty 0 (matchVariants ety) binders values)
+    (ok : evalMatch slot ety ty (scrutinee.eval (sp.sigsAt bud) sp.decls scope slot)
+      (evalArms (sp.sigsAt bud) sp.decls scope slot (matchDst slot ety ty) ty 0 (matchVariants ety) binders values)
       binders.length values.length = some ev)
     (corr : Corr places scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
     (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
@@ -2624,7 +2624,7 @@ theorem eval_match {k : Nat} (ihe : ∀ m ≤ k, EvalSound sp mp m) {scrutinee :
 there, the body from `matchDst` above both, then its value copied down to
 `slot`. -/
 theorem eval_let {k : Nat} (ihe : ∀ m ≤ k, EvalSound sp mp m) {id : Nat} {ty rt : SrcType} {a b : SrcEff}
-    (ok : (SrcEff.eLet id ty a rt b).eval (sigs sp.funcs) sp.decls scope slot = some ev)
+    (ok : (SrcEff.eLet id ty a rt b).eval (sp.sigsAt bud) sp.decls scope slot = some ev)
     (corr : Corr places scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
     (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
     (run : evalExpr (k + 1) sp.toCore st (SrcEff.eLet id ty a rt b).toCore = .done v st')
@@ -2699,8 +2699,8 @@ theorem eval_let {k : Nat} (ihe : ∀ m ≤ k, EvalSound sp mp m) {id : Nat} {ty
 /-- A conditional: the condition in `slot`, then the value its test picks,
 also from `slot`. -/
 theorem eval_if {k : Nat} (ihe : ∀ m ≤ k, EvalSound sp mp m) {c a b : SrcEff} {ty : SrcType}
-    (ok : evalIf slot ty (c.eval (sigs sp.funcs) sp.decls scope slot) (a.eval (sigs sp.funcs) sp.decls scope slot)
-      (b.eval (sigs sp.funcs) sp.decls scope slot) = some ev)
+    (ok : evalIf slot ty (c.eval (sp.sigsAt bud) sp.decls scope slot) (a.eval (sp.sigsAt bud) sp.decls scope slot)
+      (b.eval (sp.sigsAt bud) sp.decls scope slot) = some ev)
     (corr : Corr places scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
     (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
     (run : evalExpr (k + 1) sp.toCore st (SrcEff.eIf c ty a b).toCore = .done v st')
@@ -2734,7 +2734,7 @@ theorem eval_if {k : Nat} (ihe : ∀ m ≤ k, EvalSound sp mp m) {c a b : SrcEff
       obtain ⟨bv, eq, bits⟩ := bool_bits ((SrcType.holdsAt_scalar rfl).mp holds1)
       subst eq
       have corr1 := corr.after fr fresh keeps1 locals1 same1
-      have arm : ∀ {m : Nat} {e : SrcEff} {o : Evaluated}, m < k → e.eval (sigs sp.funcs) sp.decls scope slot = some o →
+      have arm : ∀ {m : Nat} {e : SrcEff} {o : Evaluated}, m < k → e.eval (sp.sigsAt bud) sp.decls scope slot = some o →
           o.ty.same ty = true →
           Semantics.restoreOutcomeLocals st1 (evalExpr m sp.toCore (st1.bindLocals []) e.toCore) = .done v st' →
           0 < ty.size ∧ st'.Fresh ∧ Keeps places st1.nextCell st1 st' ∧ st'.locals = st1.locals ∧
@@ -2782,7 +2782,7 @@ theorem eval_if {k : Nat} (ihe : ∀ m ≤ k, EvalSound sp mp m) {c a b : SrcEff
 
 /-- An operator applied in place to its operand's slot. -/
 theorem eval_then {k : Nat} (ihe : EvalSound sp mp k) {operand : SrcEff} {o : Evaluated}
-    (operandOk : operand.eval (sigs sp.funcs) sp.decls scope slot = some o) {t : Typed}
+    (operandOk : operand.eval (sp.sigsAt bud) sp.decls scope slot = some o) {t : Typed}
     (ok : evalThen slot o (some t) = some ev) {w : Value}
     (corr : Corr places scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
     (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp) (operandRun : evalExpr k sp.toCore st operand.toCore = .done w st')
@@ -2840,7 +2840,7 @@ variable {sp : SrcProgram} {mp : Program} {fuel : Nat} {ret : SrcType} {scope : 
 
 theorem stmt_letEval (ih : StmtSound sp mp fuel) (ihe : EvalSound sp mp fuel) {id : Nat} {ty : SrcType}
     {value : SrcEff} {body : SrcStmt}
-    (ok : (SrcStmt.letEval id ty value body).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
+    (ok : (SrcStmt.letEval id ty value body).lower (sp.sigsAt bud) sp.decls ret scope next = some stmt)
     (corr : Corr places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
     (le : base ≤ st.nextCell)
     (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
@@ -2876,7 +2876,7 @@ theorem stmt_letEval (ih : StmtSound sp mp fuel) (ihe : EvalSound sp mp fuel) {i
   · simp at ok
 
 theorem stmt_setEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {id : Nat} {value : SrcEff}
-    (ok : (SrcStmt.setEval id value).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
+    (ok : (SrcStmt.setEval id value).lower (sp.sigsAt bud) sp.decls ret scope next = some stmt)
     (corr : Corr places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
     (le : base ≤ st.nextCell)
     (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
@@ -3052,7 +3052,7 @@ theorem index_assign_eff {P : Core.Program} {scope frame st env} (corr : Corr pl
 /-- `x.field = value` for a scalar field: the value in `next`, then copied
 to the field's slot. -/
 theorem stmt_setFieldEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {id index : Nat} {value : SrcEff}
-    (ok : (SrcStmt.setFieldEval id index value).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
+    (ok : (SrcStmt.setFieldEval id index value).lower (sp.sigsAt bud) sp.decls ret scope next = some stmt)
     (corr : Corr places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
     (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
     (under : ∀ x ∈ places, x.cell < base)
@@ -3269,8 +3269,8 @@ theorem eval_setIndex_eff_safe {P : Core.Program} {k : Nat} {st : State} {slice 
 below the length, the value in `next + 1`, then copied over the element. -/
 theorem stmt_setIndexEval_array (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat} {index value : SrcEff}
     {b : Binding} (found : lookup scope slice = some b)
-    (ok : storeArray b next (index.eval (sigs sp.funcs) sp.decls scope next)
-      (value.eval (sigs sp.funcs) sp.decls scope (next + 1)) = some stmt)
+    (ok : storeArray b next (index.eval (sp.sigsAt bud) sp.decls scope next)
+      (value.eval (sp.sigsAt bud) sp.decls scope (next + 1)) = some stmt)
     (corr : Corr places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
     (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
     (under : ∀ x ∈ places, x.cell < base)
@@ -3373,7 +3373,7 @@ theorem stmt_setIndexEval_array (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice
 /-- `slice[index] = value` on a raw `i32` slice: the index in `next`, the
 value in `next + 1`, then the 32-bit store. -/
 theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat} {index value : SrcEff}
-    (ok : (SrcStmt.setIndexEval slice index value).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
+    (ok : (SrcStmt.setIndexEval slice index value).lower (sp.sigsAt bud) sp.decls ret scope next = some stmt)
     (corr : Corr places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
     (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
     (under : ∀ x ∈ places, x.cell < base)
@@ -3923,7 +3923,7 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
 
 theorem stmt_ifEval (ih : StmtSound sp mp fuel) (ihe : EvalSound sp mp fuel) {condition : SrcEff}
     {thenBranch elseBranch : SrcStmt}
-    (ok : (SrcStmt.ifEval condition thenBranch elseBranch).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
+    (ok : (SrcStmt.ifEval condition thenBranch elseBranch).lower (sp.sigsAt bud) sp.decls ret scope next = some stmt)
     (corr : Corr places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
     (le : base ≤ st.nextCell)
     (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
@@ -3982,7 +3982,7 @@ breaks when it is false, so a continue reaches it too; Core's remaining
 iterations are the same statement with less fuel. -/
 theorem stmt_whileEval (ih : StmtSound sp mp fuel) (ihe : EvalSound sp mp fuel) {condition : SrcEff}
     {body : SrcStmt}
-    (ok : (SrcStmt.whileEval condition body).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
+    (ok : (SrcStmt.whileEval condition body).lower (sp.sigsAt bud) sp.decls ret scope next = some stmt)
     (corr : Corr places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
     (le : base ≤ st.nextCell)
     (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
@@ -4108,7 +4108,7 @@ theorem stmt_whileEval (ih : StmtSound sp mp fuel) (ihe : EvalSound sp mp fuel) 
   · simp at ok
 
 theorem stmt_returnEval (ihe : EvalSound sp mp fuel) {value : SrcEff}
-    (ok : (SrcStmt.returnEval value).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
+    (ok : (SrcStmt.returnEval value).lower (sp.sigsAt bud) sp.decls ret scope next = some stmt)
     (corr : Corr places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
     (le : base ≤ st.nextCell)
     (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
@@ -4140,7 +4140,7 @@ theorem stmt_returnEval (ihe : EvalSound sp mp fuel) {value : SrcEff}
   · simp at ok
 
 theorem stmt_discard (ihe : EvalSound sp mp fuel) {value : SrcEff}
-    (ok : (SrcStmt.discard value).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
+    (ok : (SrcStmt.discard value).lower (sp.sigsAt bud) sp.decls ret scope next = some stmt)
     (corr : Corr places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
     (le : base ≤ st.nextCell)
     (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
@@ -4177,7 +4177,7 @@ theorem stmt_unreachable {id : Nat} {ty : SrcType} (fresh : st.Fresh)
 condition's slot. Core continues only when the condition is true, and then
 the division has a run. -/
 theorem stmt_assert (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {condition : SrcEff}
-    (ok : (SrcStmt.assert condition).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
+    (ok : (SrcStmt.assert condition).lower (sp.sigsAt bud) sp.decls ret scope next = some stmt)
     (corr : Corr places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
     (le : base ≤ st.nextCell)
     (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
@@ -4230,7 +4230,7 @@ theorem stmt_assert (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {condition : SrcEf
 
 /-- `return;` in a unit function: one slot, whose bits do not matter. -/
 theorem stmt_returnUnit
-    (ok : SrcStmt.returnUnit.lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
+    (ok : SrcStmt.returnUnit.lower (sp.sigsAt bud) sp.decls ret scope next = some stmt)
     (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
     (under : ∀ x ∈ places, x.cell < base)
     (run : execStmt (fuel + 1) sp.toCore st SrcStmt.returnUnit.toCore = .done c st') :
@@ -4248,7 +4248,7 @@ theorem stmt_returnUnit
 
 /-- `break;` and `continue;` jump out of the body with the state unchanged. -/
 theorem stmt_break
-    (ok : SrcStmt.break.lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
+    (ok : SrcStmt.break.lower (sp.sigsAt bud) sp.decls ret scope next = some stmt)
     (corr : Corr places scope frame st env) (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
     (under : ∀ x ∈ places, x.cell < base)
     (run : execStmt (fuel + 1) sp.toCore st SrcStmt.break.toCore = .done c st') :
@@ -4260,7 +4260,7 @@ theorem stmt_break
   exact ⟨fresh, Keeps.refl _ _, 0, _, .brk, .broke corr hc fc⟩
 
 theorem stmt_continue
-    (ok : SrcStmt.continue.lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
+    (ok : SrcStmt.continue.lower (sp.sigsAt bud) sp.decls ret scope next = some stmt)
     (corr : Corr places scope frame st env) (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
     (under : ∀ x ∈ places, x.cell < base)
     (run : execStmt (fuel + 1) sp.toCore st SrcStmt.continue.toCore = .done c st') :
@@ -4277,7 +4277,7 @@ end Statements
 
 /-- Statements and effectful expressions together, by induction on Core's fuel. -/
 theorem sound_both {sp : SrcProgram} {mp : Program}
-    (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) :
+    (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) :
     ∀ fuel, StmtSound sp mp fuel ∧ EvalSound sp mp fuel := by
   intro fuel
   induction fuel using Nat.strongRecOn with
@@ -4413,7 +4413,7 @@ theorem sound_both {sp : SrcProgram} {mp : Program}
 
 /-- The simulation, by induction on Core's fuel. -/
 theorem stmt_sound {sp : SrcProgram} {mp : Program}
-    (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) : ∀ fuel, StmtSound sp mp fuel :=
+    (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) : ∀ fuel, StmtSound sp mp fuel :=
   fun fuel => (sound_both lowered fuel).1
 
 end Lanius.Mini

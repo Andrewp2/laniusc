@@ -35,6 +35,6 @@ def compileLowered (funcs : Option (List Func)) : Option Binary :=
 def compileDeclared (decls : Option SrcDecls) (prog : SrcProgram) : Option Binary :=
   match decls with
   | none => none
-  | some d => compileLowered (lowerFuncs (sigs prog.funcs) d prog.funcs)
+  | some d => compileLowered (lowerFuncs (sigs prog.funcs) (sigs prog.funcs) d prog.funcs)
 
 end Lanius.Mini

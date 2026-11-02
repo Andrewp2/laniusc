@@ -4,12 +4,14 @@ public import Lanius.Faithful.Gen.SelfPureTab
 public import Lanius.Faithful.Gen.SelfSrc0
 public import Lanius.Faithful.Gen.SelfSrcF_anyNested
 public import Lanius.Faithful.Gen.SelfSrcF_isUnderscore
+public import Lanius.Faithful.Gen.SelfSrcF_paramGoals
 public import Lanius.Faithful.Gen.SelfSrcF_plainNaming
 public import Lanius.Faithful.Gen.SelfSrcF_shadowUse
 import all Lanius.Faithful.Gen.SelfPureTab
 import all Lanius.Faithful.Gen.SelfSrc0
 import all Lanius.Faithful.Gen.SelfSrcF_anyNested
 import all Lanius.Faithful.Gen.SelfSrcF_isUnderscore
+import all Lanius.Faithful.Gen.SelfSrcF_paramGoals
 import all Lanius.Faithful.Gen.SelfSrcF_plainNaming
 import all Lanius.Faithful.Gen.SelfSrcF_shadowUse
 import all Lanius.Faithful.Gen.SelfTypes
@@ -100,8 +102,8 @@ open Lanius.Mini
 open Lanius.Faithful
 open Lanius.Faithful.Self
 
-/-- `declareFuncs` of functions 2300 to 2345. -/
-theorem dchunk23 : declsStep [(src_plain_use 2011 2304), (src_wild_binder 75 139 144 147 235 547 568), (src_row_pats 144 146 147 2126 2128), (src_nest_pats 2305 2306), (src_shadow_use 2307), (src_first_nested 75 103 2262 2305 2308), (src_nest_at 917 2309 2310 2311), (src_shadow_if), (src_first_at), (src_get_of_mini_selfhost_CTree 56 103 2309), (src_nest_inner 2312 2313), (src_column_arms 96 103 2302 2311 2314 2315), (src_wild_inner 2313 2316 2317 2318), (src_nest_arm 139 144 147 235 547 815 821 1625 2319 2320 2321), (src_column_arm 2309 2322 2323 2324), (src_is_last), (src_ends_wild 2188), (src_known_use 2325), (src_covers 154 1104 1813 2326), (src_replace_at 56 96 103 139 2319), (src_hidden_pat 96 139 235 547 2126 2128 2327), (src_hidden_expr 96 139 235 547 1606 1664 2327), (src_column_fit 2253), (src_row_fits 75 103 2323 2328), (src_column_sub 147 1666 2262 2329 2330 2331), (src_covered_use 147 2313 2332 2333), (src_covers_decl 2334), (src_hidden_path 2335 2336), (src_col_fits 147 1666 2262 2337), (src_quiet_sub 2338), (src_quiet_in 547 2258 2339), (src_sub_arm 139 144 147 235 547), (src_quiet_use 2340), (src_cols_quiet 75 103 2257 2333 2341), (src_covers_enum 2342), (src_named_path 96 139 147 235 547 568 585 586 1773), (src_text_hidden 533), (src_same_opt_name 861), (src_quiet_arm 2331 2343), (src_mentions 56 103 861 1045 2122 2339), (src_appended_use 547 1045 2313), (src_col_quiet 147 1666 2330), (src_covers_all 504 2257 2342 2344), (src_wild_pat 96 139 235 547 2126 2128 2292 2335), (src_covered_by 103 2122 2344 2345), (src_plain_naming 2123 2257 2258 2286)]
+/-- `declareFuncs` of functions 2300 to 2347. -/
+theorem dchunk23 : declsStep [(src_fit_arg 56 148 151 1589 2108), (src_nest_use 2304 2305), (src_plain_use 2013 2306), (src_wild_binder 75 143 148 151 238 549 570), (src_row_pats 148 150 151 2128 2130), (src_nest_pats 2307 2308), (src_shadow_use 2309), (src_first_nested 75 104 2264 2307 2310), (src_nest_at 919 2311 2312 2313), (src_shadow_if), (src_first_at), (src_get_of_mini_selfhost_CTree 56 104 2311), (src_nest_inner 2314 2315), (src_column_arms 97 104 2304 2313 2316 2317), (src_wild_inner 2315 2318 2319 2320), (src_nest_arm 143 148 151 238 549 817 823 1627 2321 2322 2323), (src_column_arm 2311 2324 2325 2326), (src_is_last), (src_ends_wild 2190), (src_known_use 2327), (src_covers 158 1106 1815 2328), (src_replace_at 56 97 104 143 2321), (src_hidden_pat 97 143 238 549 2128 2130 2329), (src_hidden_expr 97 143 238 549 1608 1666 2329), (src_column_fit 2255), (src_row_fits 75 104 2325 2330), (src_column_sub 151 1668 2264 2331 2332 2333), (src_covered_use 151 2315 2334 2335), (src_covers_decl 2336), (src_hidden_path 2337 2338), (src_col_fits 151 1668 2264 2339), (src_quiet_sub 2340), (src_quiet_in 549 2260 2341), (src_sub_arm 143 148 151 238 549), (src_quiet_use 2342), (src_cols_quiet 75 104 2259 2335 2343), (src_covers_enum 2344), (src_named_path 97 143 151 238 549 570 587 588 1775), (src_text_hidden 535), (src_same_opt_name 863), (src_quiet_arm 2333 2345), (src_mentions 56 104 863 1047 2124 2341), (src_appended_use 549 1047 2315), (src_col_quiet 151 1668 2332), (src_covers_all 506 2259 2344 2346), (src_wild_pat 97 143 238 549 2128 2130 2294 2337), (src_covered_by 104 2124 2346 2347), (src_plain_naming 2125 2259 2260 2288)]
     decls 0 0 0 0 = true := by decide +kernel
 
 end Lanius.Faithful.SelfPure

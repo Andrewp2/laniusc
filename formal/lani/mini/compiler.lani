@@ -3556,14 +3556,21 @@ pub fn lower_match(scope: List<Binding>, binding: core::option::Option<Binding>,
 }
 
 
-// A function's parameter types and result type.
+// A function's parameter types and result type, and the frame memory a
+// call to it takes (need: its block and its callees', TRUSTED_BASE "Frame
+// room"). room and block are the budget of the function whose body is
+// lowered against the signatures: the room its callees may take and its
+// own block. A call is lowered only when the callee's need fits the room.
 pub struct Sig {
     params: List<SrcType>,
     ret: SrcType,
+    need: usize,
+    room: usize,
+    block: usize,
 }
 
 pub fn lower_call_sig(scope: List<Binding>, sig: Sig, args: List<SrcExpr>, ty: SrcType) -> core::option::Option<List<Expr>> {
-    if (sig.ret.same(ty)) {
+    if (sig.ret.same(ty) && (sig.need <= sig.room)) {
         return lower_args(scope, args, sig.params);
     }
     return None;
@@ -3685,7 +3692,7 @@ pub fn eval_pure(scope: List<Binding>, e: SrcExpr, slot: usize) -> core::option:
 }
 
 pub fn eval_call_sig(sig: Sig, callee: usize, slot: usize, args: EvaluatedArgs) -> core::option::Option<Evaluated> {
-    if (types_same(args.types, sig.params) && (sig.ret.size() > 0)) {
+    if (types_same(args.types, sig.params) && (sig.ret.size() > 0) && (sig.need <= sig.room)) {
         return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(Stmt::Call(slot, sig.ret.size(), callee, slot_vars(slot, sizes(sig.params))))), ty: sig.ret });
     }
     return None;
@@ -5638,8 +5645,22 @@ pub fn param_types(params: List<SrcParam>) -> List<SrcType> {
 pub fn sigs(funcs: List<SrcFunc>) -> List<Sig> {
     return match (funcs) {
         Nil -> empty(),
-        Cons(func, rest) -> cons(Sig { params: param_types(func.params), ret: func.ret }, sigs(unbox(rest))),
+        Cons(func, rest) -> cons(Sig { params: param_types(func.params), ret: func.ret, need: 0, room: 0, block: 0 }, sigs(unbox(rest))),
     };
+}
+
+// The signatures with the budget of the function lowered against them.
+pub fn with_budget(sigs: List<Sig>, room: usize, block: usize) -> List<Sig> {
+    return match (sigs) {
+        Nil -> empty(),
+        Cons(sig, rest) -> cons(Sig { params: sig.params, ret: sig.ret, need: sig.need, room: room, block: block }, with_budget(unbox(rest), room, block)),
+    };
+}
+
+// A function's own block of frame memory, taken at its entry (none yet: the
+// caller lowering of arrays passed as slices, step 3.5, sizes it).
+pub fn frame_block(func: SrcFunc) -> usize {
+    return 0;
 }
 
 // One more than the largest slot an expression reads.
@@ -5709,10 +5730,12 @@ pub fn unit_tail(ret: SrcType, body: core::option::Option<Stmt>) -> core::option
 
 // Results and struct parameters have slots; a function returns its result
 // type's slots, so it has at least that many locals.
-pub fn lower_func(sigs: List<Sig>, decls: SrcDecls, func: SrcFunc) -> core::option::Option<Func> {
+// own is the function's signature: its body is lowered with its need less
+// its block as the room for its callees.
+pub fn lower_func(sigs: List<Sig>, own: Sig, decls: SrcDecls, func: SrcFunc) -> core::option::Option<Func> {
     let count: usize = params_size(func.params);
     if ((func.ret.size() > 0) && params_valid(func.params) && !func.body.breaks_out()) {
-        return lower_body(count, func.ret.size(), func.body.depth(), unit_tail(func.ret, func.body.lower(sigs, decls, func.ret, param_scope(func.params, 0, empty()), count)));
+        return lower_body(count, func.ret.size(), func.body.depth(), unit_tail(func.ret, func.body.lower(with_budget(sigs, minus(own.need, frame_block(func)), frame_block(func)), decls, func.ret, param_scope(func.params, 0, empty()), count)));
     }
     return None;
 }
@@ -5727,10 +5750,14 @@ pub fn lower_func_cons(first: core::option::Option<Func>, rest: core::option::Op
     };
 }
 
-pub fn lower_funcs(sigs: List<Sig>, decls: SrcDecls, funcs: List<SrcFunc>) -> core::option::Option<List<Func>> {
+// own runs alongside funcs: each function's own signature.
+pub fn lower_funcs(sigs: List<Sig>, own: List<Sig>, decls: SrcDecls, funcs: List<SrcFunc>) -> core::option::Option<List<Func>> {
     return match (funcs) {
         Nil -> Some(empty()),
-        Cons(func, rest) -> lower_func_cons(lower_func(sigs, decls, func), lower_funcs(sigs, decls, unbox(rest))),
+        Cons(func, rest) -> match (own) {
+            Nil -> None,
+            Cons(sig, others) -> lower_func_cons(lower_func(sigs, sig, decls, func), lower_funcs(sigs, unbox(others), decls, unbox(rest))),
+        },
     };
 }
 
@@ -7454,7 +7481,7 @@ pub fn compile_lowered(funcs: core::option::Option<List<Func>>) -> core::option:
 pub fn compile_declared(decls: core::option::Option<SrcDecls>, prog: SrcProgram) -> core::option::Option<Binary> {
     return match (decls) {
         None -> None,
-        Some(d) -> compile_lowered(lower_funcs(sigs(prog.funcs), d, prog.funcs)),
+        Some(d) -> compile_lowered(lower_funcs(sigs(prog.funcs), sigs(prog.funcs), d, prog.funcs)),
     };
 }
 

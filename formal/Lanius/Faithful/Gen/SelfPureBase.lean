@@ -16,6 +16,7 @@ import all Lanius.Faithful.Gen.SelfSrc7
 import all Lanius.Faithful.Gen.SelfSrcC_BinOp_folds
 import all Lanius.Faithful.Gen.SelfSrcC_DivOp_size
 import all Lanius.Faithful.Gen.SelfSrcC_Expr_agrees
+import all Lanius.Faithful.Gen.SelfSrcC_Expr_extent
 import all Lanius.Faithful.Gen.SelfSrcC_FArith_opcode
 import all Lanius.Faithful.Gen.SelfSrcC_FloatTy_rex
 import all Lanius.Faithful.Gen.SelfSrcC_Inline_arithOf
