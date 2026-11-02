@@ -78,7 +78,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         ? x86_call_result_instruction_bytes(
             target_operands.metadata, aggregate_words, locations.result) +
             (x86_symbol_call_stack_bytes(target_core.local_ordinal) != 0u
-                ? 7u : 0u)
+                ? 7u : 0u) +
+            (x86_symbol_call_padded(target_operands.metadata,
+                x86_symbol_call_stack_bytes(target_core.local_ordinal)) ? 4u : 0u)
         // STRING_ADDR is the first target row of a semantic string constant.
         // Its destination-dependent spill is not a fixed 17 bytes. Using the
         // exact row width keeps the ABS32 relocation after any prologue and at

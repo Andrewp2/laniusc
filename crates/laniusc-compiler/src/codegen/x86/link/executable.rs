@@ -341,6 +341,8 @@ impl GpuX86Linker {
             .map_err(|_| anyhow::anyhow!("x86 linked output exceeds the 32-bit ELF model"))?;
         let mut emitted_len = 0usize;
         let timing = std::env::var_os("LANIUS_X86_LINK_TIMING").is_some();
+        let splices =
+            super::splice::call_splices(input, relocations).map_err(anyhow::Error::msg)?;
         for (page_index, page) in plan.pages.iter().enumerate() {
             let started = std::time::Instant::now();
             if emitted_len != page.output_base as usize {
@@ -609,7 +611,7 @@ impl GpuX86Linker {
                     .and_then(|base| u32::try_from(base).ok())
                     .ok_or_else(|| anyhow::anyhow!("x86 relocation batch base exceeds u32"))?;
                 let (a_words, b_words, c_words) =
-                    relocation_words(input, relocations, resolved.object_bases, indices)?;
+                    relocation_words(input, relocations, resolved.object_bases, indices, &splices)?;
                 queue.write_buffer(&relocation_a.buffer, 0, u32_words_bytes(&a_words));
                 queue.write_buffer(&relocation_b.buffer, 0, u32_words_bytes(&b_words));
                 queue.write_buffer(&relocation_c.buffer, 0, u32_words_bytes(&c_words));
@@ -705,11 +707,15 @@ impl GpuX86Linker {
     }
 }
 
+/// Relocation columns for `indices`. `splices` (by relocation index, empty
+/// for none) holds the slot bytes of calls inlined at link time; their
+/// relocation c carries the nine bytes and bit 8 of its last word.
 pub(super) fn relocation_words(
     input: &GpuX86LinkInput,
     relocations: &[super::GpuX86LinkRelocationRecord],
     object_bases: &[[u32; 2]],
     indices: &[usize],
+    splices: &[Option<[u8; super::splice::SPLICE_SLOT_BYTES]>],
 ) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>)> {
     // Read once: an environment lookup per relocation is a measurable share
     // of the link on programs with tens of thousands of relocations.
@@ -754,7 +760,15 @@ pub(super) fn relocation_words(
         }
         a.extend_from_slice(&[site_file, relocation.kind, 0, 0]);
         b.extend_from_slice(&[target_file, relocation.target_kind, 0, relocation.addend_lo]);
-        c.extend_from_slice(&[relocation.addend_hi, 0, 0, 0]);
+        match splices.get(index).copied().flatten() {
+            Some(slot) => c.extend_from_slice(&[
+                relocation.addend_hi,
+                u32::from_le_bytes([slot[0], slot[1], slot[2], slot[3]]),
+                u32::from_le_bytes([slot[4], slot[5], slot[6], slot[7]]),
+                u32::from(slot[8]) | 0x100,
+            ]),
+            None => c.extend_from_slice(&[relocation.addend_hi, 0, 0, 0]),
+        }
     }
     Ok((a, b, c))
 }
@@ -863,7 +877,7 @@ mod tests {
             addend_hi: u32::MAX,
         }];
 
-        let (a, b, c) = relocation_words(&input, &relocations, &[[0, 0], [6, 0]], &[0])
+        let (a, b, c) = relocation_words(&input, &relocations, &[[0, 0], [6, 0]], &[0], &[])
             .expect("encode relocation batch");
 
         assert_eq!(a, [0x79, 2, 0, 0]);

@@ -20,7 +20,9 @@ ConstantBuffer<Params> gReloc;
 
 // relocation a: (object, kind, site section, site offset)
 // relocation b: (target kind, global target index, target offset, addend low)
-// relocation c: (addend high, 0, 0, 0)
+// relocation c: (addend high, slot bytes 0-3, slot bytes 4-7, slot byte 8 |
+// 0x100): with bit 8 set, a CALL_REL32 whose E8 and NOP pad the host link plan
+// checked is inlined: the nine slot bytes from its E8 replace the call.
 StructuredBuffer<uint4> link_relocation_a;
 StructuredBuffer<uint4> link_relocation_b;
 StructuredBuffer<uint4> link_relocation_c;
@@ -111,6 +113,21 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
     }
 
+    if (a.y == RELOC_CALL_REL32 && (c.w & 0x100u) != 0u)
+    {
+        if (site_file == 0u || site_file + 8u > x86_elf_layout[2u])
+        {
+            publish_error(2u, relocation_i);
+            return;
+        }
+        for (uint i = 0u; i < 4u; i++)
+        {
+            patch_byte(site_file - 1u + i, u32_le_byte(c.y, i));
+            patch_byte(site_file + 3u + i, u32_le_byte(c.z, i));
+        }
+        patch_byte(site_file + 7u, c.w);
+        return;
+    }
     patch_byte(site_file + 0u, u32_le_byte(value, 0u));
     patch_byte(site_file + 1u, u32_le_byte(value, 1u));
     patch_byte(site_file + 2u, u32_le_byte(value, 2u));

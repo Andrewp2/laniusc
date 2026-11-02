@@ -779,6 +779,8 @@ void plan_ordinary(X86PlanInput input)
         plan_op(X86_OP_BYTES | (1u << 8u) | X86_BYTES_ONE_WORD |
             select(local, (X86_RESOLVE_ROW << 13u) | X86_BYTES_REL, 0u),
             0xe8u, local ? input.callee_row : 0u, 0u);
+        if (!local && x86_symbol_call_padded(metadata, stack_bytes))
+            plan_bytes(4u, 0x00401f0fu); // nop dword [rax]: the link's inline slot
         if (stack_bytes != 0u) plan_bytes_word(3u, 0xc48148u, stack_bytes); // add rsp, imm32
         plan_call_result(input, words, storage_slot);
     }
@@ -1160,14 +1162,31 @@ uint plan_specialized(X86PlanInput input)
         x86_is_specialized_integer_instruction(core, operands))
     {
         bool branch = op == X86_LIR_OP_COMPARE_BRANCH_FALSE;
-        plan_move64(branch ? locations.a : locations.b, X86_REG);
-        if ((metadata & X86_LIR_METADATA_IMMEDIATE) != 0u)
-            plan_bytes_word(2u, 0x3d48u, branch ? operands.b : operands.c); // cmp rax, imm32
+        uint left = branch ? locations.a : locations.b;
+        uint right = branch ? locations.b : locations.c;
+        bool immediate = (metadata & X86_LIR_METADATA_IMMEDIATE) != 0u;
+        uint left_reg = x86_location_payload(left);
+        uint right_reg = x86_location_payload(right);
+        if (x86_location_is_register(left) && immediate)
+            // cmp left, imm32
+            plan_bytes_word(3u, 0xf88148u | select(left_reg >= 8u, 1u, 0u) |
+                ((left_reg & 7u) << 16u), branch ? operands.b : operands.c);
+        else if (x86_location_is_register(left) && x86_location_is_register(right) &&
+            (metadata & X86_LIR_METADATA_RHS_NARROW) == 0u)
+            // cmp left, right
+            plan_bytes(3u, 0xc03948u | select(right_reg >= 8u, 4u, 0u) |
+                select(left_reg >= 8u, 1u, 0u) |
+                ((((right_reg & 7u) << 3u) | (left_reg & 7u)) << 16u));
         else
         {
-            plan_move((metadata & X86_LIR_METADATA_RHS_NARROW) == 0u,
-                branch ? locations.b : locations.c, X86_REG | 1u);
-            plan_bytes(3u, 0xc83948u); // cmp rax, rcx
+            plan_move64(left, X86_REG);
+            if (immediate)
+                plan_bytes_word(2u, 0x3d48u, branch ? operands.b : operands.c); // cmp rax, imm32
+            else
+            {
+                plan_move((metadata & X86_LIR_METADATA_RHS_NARROW) == 0u, right, X86_REG | 1u);
+                plan_bytes(3u, 0xc83948u); // cmp rax, rcx
+            }
         }
         if (branch)
             plan_jump(2u, 0x0fu | (((plan_integer_setcc_opcode(core.local_ordinal, integer_type)
