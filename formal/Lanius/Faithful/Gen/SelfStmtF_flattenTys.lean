@@ -37,11 +37,11 @@ abbrev Stmt_cons_types_tail (prog : SrcProgram) (prims : Prims) (ix n : Nat) : P
     (RepOption 188 (RepList 77 (RepList 73 RepSrcType))) (Lanius.Mini.consTypesTail x0 x1) w
 
 abbrev Stmt_flat_payloads (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List (List Lanius.Mini.Ty))} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 238 (RepList 239 (RepList 141 RepTy))) x0 v0 →
+  ∀ {x0 : Option (List (List Lanius.Mini.Ty))} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 240 (RepList 241 (RepList 141 RepTy))) x0 v0 →
     (RepOption 210 (RepList 141 RepTy)) (Lanius.Mini.flatPayloads x0) w
 
 abbrev Stmt_flatten_tys (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List (List Lanius.Mini.Ty)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 239 (RepList 141 RepTy)) x0 v0 →
+  ∀ {x0 : List (List Lanius.Mini.Ty)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 241 (RepList 141 RepTy)) x0 v0 →
     (RepList 141 RepTy) (Lanius.Mini.flattenTys x0) w
 
 abbrev Stmt_slice_type (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

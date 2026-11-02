@@ -24,6 +24,7 @@ import all Lanius.Mini.Compiler.P.armPayload
 import all Lanius.Mini.Compiler.P.armScope
 import all Lanius.Mini.Compiler.P.arrayCallSig
 import all Lanius.Mini.Compiler.P.assignFrom
+import all Lanius.Mini.Compiler.P.bindingBytes
 import all Lanius.Mini.Compiler.P.codeSize
 import all Lanius.Mini.Compiler.P.compileModules
 import all Lanius.Mini.Compiler.P.conjunction

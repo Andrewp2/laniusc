@@ -21,11 +21,11 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_tried_err (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Option Lanius.Mini.MEff} {x2 : Lanius.Mini.Ty} {x3 : Option Lanius.Mini.Ty} {x4 : Nat} {x5 : Lanius.Mini.Ty} {x6 : Option (List Lanius.Mini.Ty)} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → RepNat x0 v0 → (RepOption 252 RepMEff) x1 v1 → RepTy x2 v2 → (RepOption 209 RepTy) x3 v3 → RepNat x4 v4 → RepTy x5 v5 → (RepOption 210 (RepList 141 RepTy)) x6 v6 →
-    (RepOption 284 RepTried) (Lanius.Mini.triedErr x0 x1 x2 x3 x4 x5 x6) w
+  ∀ {x0 : Nat} {x1 : Option Lanius.Mini.MEff} {x2 : Lanius.Mini.Ty} {x3 : Option Lanius.Mini.Ty} {x4 : Nat} {x5 : Lanius.Mini.Ty} {x6 : Option (List Lanius.Mini.Ty)} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → RepNat x0 v0 → (RepOption 254 RepMEff) x1 v1 → RepTy x2 v2 → (RepOption 209 RepTy) x3 v3 → RepNat x4 v4 → RepTy x5 v5 → (RepOption 210 (RepList 141 RepTy)) x6 v6 →
+    (RepOption 286 RepTried) (Lanius.Mini.triedErr x0 x1 x2 x3 x4 x5 x6) w
 
 abbrev Stmt_tried_shape (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Option Lanius.Mini.MEff} {x2 : Lanius.Mini.Ty} {x3 : Nat} {x4 : Lanius.Mini.Ty} {x5 : Option (List (List Lanius.Mini.Ty))} {x6 : Option (List (List Lanius.Mini.Ty))} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → RepNat x0 v0 → (RepOption 252 RepMEff) x1 v1 → RepTy x2 v2 → RepNat x3 v3 → RepTy x4 v4 → (RepOption 238 (RepList 239 (RepList 141 RepTy))) x5 v5 → (RepOption 238 (RepList 239 (RepList 141 RepTy))) x6 v6 →
-    (RepOption 284 RepTried) (Lanius.Mini.triedShape x0 x1 x2 x3 x4 x5 x6) w
+  ∀ {x0 : Nat} {x1 : Option Lanius.Mini.MEff} {x2 : Lanius.Mini.Ty} {x3 : Nat} {x4 : Lanius.Mini.Ty} {x5 : Option (List (List Lanius.Mini.Ty))} {x6 : Option (List (List Lanius.Mini.Ty))} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → RepNat x0 v0 → (RepOption 254 RepMEff) x1 v1 → RepTy x2 v2 → RepNat x3 v3 → RepTy x4 v4 → (RepOption 240 (RepList 241 (RepList 141 RepTy))) x5 v5 → (RepOption 240 (RepList 241 (RepList 141 RepTy))) x6 v6 →
+    (RepOption 286 RepTried) (Lanius.Mini.triedShape x0 x1 x2 x3 x4 x5 x6) w
 
 end Lanius.Faithful.SelfCert

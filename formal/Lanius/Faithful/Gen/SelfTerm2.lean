@@ -72,7 +72,7 @@ theorem ok_unit_tail : FnOk prog prims info (125, ⟨1, [], 0⟩) :=
 theorem ok_with_frame : FnOk prog prims info (126, ⟨0, [], 0⟩) :=
   fnOk_of fn_with_frame (by decide +kernel)
 
-theorem ok_SrcStmt_lower : FnOk prog prims info (127, ⟨17, [0], 0⟩) :=
+theorem ok_SrcStmt_lower : FnOk prog prims info (127, ⟨18, [0], 0⟩) :=
   fnOk_of fn_SrcStmt_lower (by decide +kernel)
 
 theorem ok_with_budget : FnOk prog prims info (128, ⟨1, [0], 0⟩) :=

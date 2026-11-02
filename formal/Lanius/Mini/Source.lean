@@ -29,6 +29,7 @@ import all Lanius.Mini.Compiler.P.arrayCallSig
 import all Lanius.Mini.Compiler.P.assignAgrees
 import all Lanius.Mini.Compiler.P.assignFrom
 import all Lanius.Mini.Compiler.P.binaryConstant
+import all Lanius.Mini.Compiler.P.bindingBytes
 import all Lanius.Mini.Compiler.P.callAgrees
 import all Lanius.Mini.Compiler.P.codeSize
 import all Lanius.Mini.Compiler.P.compileArgs

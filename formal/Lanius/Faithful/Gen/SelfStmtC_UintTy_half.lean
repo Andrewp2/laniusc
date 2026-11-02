@@ -22,7 +22,7 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_SrcType_float_ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcType x0 v0 →
-    (RepOption 212 RepFloatTy) (Lanius.Mini.SrcType.floatTy x0) w
+    (RepOption 214 RepFloatTy) (Lanius.Mini.SrcType.floatTy x0) w
 
 abbrev Stmt_SrcType_is_bool (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcType x0 v0 →

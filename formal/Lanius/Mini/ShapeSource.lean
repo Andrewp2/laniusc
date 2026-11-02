@@ -387,7 +387,7 @@ theorem compileSource_behaviour_rawFree {sp : SrcProgram} {binary : Binary}
     (typed : FieldsHold [] (paramTypes func.params) args (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize func.params) {heap : Heap} (start : heap.cursor = 1)
     (zero : ∀ a, 1 ≤ a → heap.bytes a = 0) (small : heap.limit < 2 ^ 62) (silent : heap.io.trace = [])
-    (room : 1 ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp)
+    (room : 1 ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp ∧ heap.fsp ≤ heap.top ∧ heap.top < 2 ^ 62)
     (s : State) (imageBase : BitVec 64) (window : Nat) (bounded : window ≤ 2 ^ 62)
     (loaded : CodeAt s.memory imageBase binary.image)
     (apart : ∀ index, index < binary.image.length →

@@ -16,8 +16,12 @@ import all Lanius.Mini.Compiler.P.arities
 import all Lanius.Mini.Compiler.P.armBodyScope
 import all Lanius.Mini.Compiler.P.armPayload
 import all Lanius.Mini.Compiler.P.armScope
+import all Lanius.Mini.Compiler.P.arrayCallSig
 import all Lanius.Mini.Compiler.P.assignFrom
+import all Lanius.Mini.Compiler.P.bindingBytes
+import all Lanius.Mini.Compiler.P.callAgrees
 import all Lanius.Mini.Compiler.P.codeSize
+import all Lanius.Mini.Compiler.P.compileArgs
 import all Lanius.Mini.Compiler.P.compileModules
 import all Lanius.Mini.Compiler.P.conjunction
 import all Lanius.Mini.Compiler.P.consArgs
@@ -31,6 +35,7 @@ import all Lanius.Mini.Compiler.P.evalDivideSint
 import all Lanius.Mini.Compiler.P.evalNot
 import all Lanius.Mini.Compiler.P.evalSame
 import all Lanius.Mini.Compiler.P.floatApply
+import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.guardAnd
 import all Lanius.Mini.Compiler.P.hostRandomCode
 import all Lanius.Mini.Compiler.P.indexOf
@@ -51,22 +56,20 @@ import all Lanius.Mini.Compiler.P.lowerSlice
 import all Lanius.Mini.Compiler.P.lowerTagged
 import all Lanius.Mini.Compiler.P.matchDst
 import all Lanius.Mini.Compiler.P.matchVariants
+import all Lanius.Mini.Compiler.P.needRound
+import all Lanius.Mini.Compiler.P.needsAfter
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.repeatType
 import all Lanius.Mini.Compiler.P.shortCircuit
-import all Lanius.Mini.Compiler.P.withBudget
-import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.sintToUint
 import all Lanius.Mini.Compiler.P.storeArray
-import all Lanius.Mini.Compiler.P.arrayCallSig
-import all Lanius.Mini.Compiler.P.needRound
-import all Lanius.Mini.Compiler.P.needsAfter
 import all Lanius.Mini.Compiler.P.storeEvalWord
 import all Lanius.Mini.Compiler.P.storeType
 import all Lanius.Mini.Compiler.P.storeWordElement
 import all Lanius.Mini.Compiler.P.structFields
 import all Lanius.Mini.Compiler.P.usizeWidth
 import all Lanius.Mini.Compiler.P.widthOf
+import all Lanius.Mini.Compiler.P.withBudget
 import all Lanius.Mini.Compiler.P.wordElement
 import all Lanius.Mini.Compiler.P.wordStride
 import all Lanius.Mini.Compiler.P.wordWidth
@@ -1508,9 +1511,92 @@ theorem field_assign_progress_eff {P : Core.Program} {scope frame st env} (corr 
     Semantics.writeResolvedPlaceNative, Semantics.writeResolvedPlace, entry2,
     Semantics.replaceProjectedValue, got, assignCell_some entry2, synced, ite_self]
 
-theorem stops_letEval (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {id : Nat}
-    {ty : SrcType} {value : SrcEff} {body : SrcStmt} (ihe : EffStops sp mp n value) (ih : SrcStops sp mp n body) :
-    SrcStops sp mp n (.letEval id ty value body) := by
+/-- A call's arguments whose checks pass complete in Core: pure values and
+slices of array locals. -/
+theorem arrayArgs_progress {scope : List Binding} {frame : Nat → Nat} {st : State} {env : Env}
+    {prog : Core.Program} (corr : Corr places scope frame st env) (target : prog.target = .x86_64) {t : Nat} :
+    ∀ {args : List SrcEff} {types : List SrcType} {offset : Nat} {a : ArrayArgs},
+      arrayArgs scope args types t offset = some a → a.guard.eval env ≠ 0 →
+      ∃ f vs, Semantics.evalExprs f prog st (SrcEff.toCoreList args) = .done vs st := by
+  intro args
+  induction args with
+  | nil => intro _ _ _ _ _; exact exprs_progress (by simp [SrcEff.toCoreList])
+  | cons arg rest ih =>
+    intro types offset a ok g
+    cases types with
+    | nil => simp [arrayArgs] at ok
+    | cons ty more =>
+    rcases arrayArgs_cons ok with ⟨e, xs, r, rfl, hv, hr, rfl⟩ |
+      ⟨element, id, b, r, rfl, found, hr, -, bty, -, -, -, rfl⟩
+    · obtain ⟨g1, g2⟩ := guardAnd_ne g
+      obtain ⟨f1, v, head⟩ := lowerValue_progress corr target hv g1
+      obtain ⟨f2, vs, restRun⟩ := ih hr g2
+      have head' := Semantics.evalExpr_of_le head (by intro h; cases h) (Nat.le_max_left f1 f2)
+      have rest' := (restRun ▸ Semantics.evalExprs_refines (program := prog) (state := st)
+        (expressions := SrcEff.toCoreList rest) (Nat.le_max_right f1 f2)).completed (by intro h; cases h)
+      exact ⟨max f1 f2 + 1, v :: vs, by simp only [SrcEff.toCoreList, SrcEff.toCore, Semantics.evalExprs, head', rest']⟩
+    · obtain ⟨f2, vs, restRun⟩ := ih hr g
+      obtain ⟨vb, place, holds⟩ := corr.readPlace found f2 prog
+      rw [bty] at holds
+      cases holds with
+      | array elems =>
+        have rest' := (restRun ▸ Semantics.evalExprs_refines (program := prog) (state := st)
+          (expressions := SrcEff.toCoreList rest) (Nat.le_add_right f2 2)).completed (by intro h; cases h)
+        have head : evalExpr (f2 + 2) prog st (SrcEff.arraySlice element id).toCore =
+            .done (.slice element.toCore (frame b.slot) [] 0 (b.ty.size)) st := by
+          simp only [SrcEff.toCore, evalExpr, Semantics.expressionPlace?, place, elems.length, List.length_replicate]
+        exact ⟨f2 + 2 + 1, .slice element.toCore (frame b.slot) [] 0 b.ty.size :: vs,
+          by simp only [SrcEff.toCoreList, Semantics.evalExprs, head, rest']⟩
+
+/-- A failing call passing arrays as slices stops, one tick more than its
+callee: its arguments' checks fail, or the block's stores run and the
+callee's body stops. -/
+theorem arrayCall_stops (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
+    (returns : funcsReturn sp.funcs = true) (prev : StmtStops sp mp n) {scope : List Binding}
+    {frame : Nat → Nat} {base next : Nat} {st : State} {env : Env} {hp : Heap} {callee : Nat}
+    {args : List SrcEff} {ev : Evaluated} (ok : arrayCall (sp.sigsAt bud) scope next callee args = some ev)
+    (corr : Corr places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
+    (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp) (within : st.heap.nextAddress ≤ hp.limit)
+    (fails : EFails sp hp.limit st (.call callee (SrcEff.toCoreList args))) :
+    ∃ d, Stops mp d env hp ev.stmt (n + 1) := by
+  simp only [arrayCall] at ok
+  split at ok
+  · simp at ok
+  rename_i sig sigFound
+  rw [sigsAt_get] at sigFound
+  cases found : sp.funcs[callee]? with
+  | none => rw [found] at sigFound; simp at sigFound
+  | some f =>
+  rw [found] at sigFound
+  simp only [Option.map_some, Option.some.injEq] at sigFound
+  subst sigFound
+  simp only [arrayCallSig] at ok
+  split at ok
+  · simp at ok
+  rename_i a argsOk
+  simp only [arrayCallCode] at ok
+  split at ok
+  case isFalse => simp at ok
+  rename_i checks
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+  obtain ⟨⟨⟨⟨-, -⟩, fits⟩, blockPos⟩, bytesLe⟩ := checks
+  simp only [Option.some.injEq] at ok
+  subst ok
+  refine Stops.checked fun g => ?_
+  obtain ⟨k, vs, argsRun⟩ := arrayArgs_progress corr (SrcProgram.target_toCore sp) argsOk g
+  obtain ⟨-, -, len, EC, -, -, frameExec, hpS, storesExec, hcS, fcS, holdsS, limitS, -, -⟩ :=
+    arrayCall_setup (sp := sp) (mp := mp) (d := 0) corr fr hc fc within (Nat.le_add_right _ _) argsOk blockPos
+      bytesLe argsRun
+  obtain ⟨d, func, gFound, arity, stops⟩ := callee_stops lowered returns prev argsRun found fresh hcS fcS fits
+    (by rw [limitS]; exact within) holdsS (by rw [evalAll_length, len, paramsSize_eq]) (by rw [limitS]; exact fails)
+  exact ⟨d + 1, .seqSecond (frameExec.mono (Nat.zero_le _)) (.seqSecond (storesExec.mono (Nat.zero_le _))
+    (.seqFirst (.call gFound (by rw [← arity, evalAll_length]) (Nat.lt_succ_self d) stops)))⟩
+
+theorem stops_letEval (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
+    (returns : funcsReturn sp.funcs = true) (prev : StmtStops sp mp n) {id : Nat}
+    {ty : SrcType} {value : SrcEff} {body : SrcStmt} (ihe : EffStops sp mp (n + 1) value)
+    (ih : SrcStops sp mp (n + 1) body) :
+    SrcStops sp mp (n + 1) (.letEval id ty value body) := by
   intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower, lowerLetEval] at ok
   split at ok
@@ -1527,6 +1613,30 @@ theorem stops_letEval (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.d
   simp only [Option.some.injEq] at ok
   subst ok
   simp only [SrcStmt.toCore] at fails
+  unfold stmtEval at valueOk
+  split at valueOk
+  · rename_i slices
+    cases value with
+    | eCall callee args =>
+      simp only [SrcEff.sliceCall] at valueOk
+      simp only [SrcEff.toCore] at fails
+      by_cases done : Completes hp.limit fun k => evalExpr k sp.toCore st (.call callee (SrcEff.toCoreList args))
+      · obtain ⟨k, v, st1, run1, bound1⟩ := done
+        cases k with
+        | zero => simp [evalExpr] at run1
+        | succ k =>
+          obtain ⟨fresh1, keeps1, -, sized, d1, env1, hp1, exec1, corr1, holds1, hc1, fc1⟩ :=
+            arrayCall_sound lowered (stmt_sound lowered k) valueOk corr fr fresh le hc fc run1 bound1
+          rw [tyEq] at sized holds1
+          have limit := exec1.limit_normal
+          obtain ⟨d2, stops⟩ := let_stops ih bodyOk corr1 fr fresh1 (Nat.le_trans le keeps1.next) sized
+            (fun _ _ _ _ => rfl) holds1 hc1 fc1 under (by rw [limit]; exact bound1)
+            (by rw [limit]; exact fails.letBody run1)
+          exact ⟨_, Stops.after exec1 stops⟩
+      · obtain ⟨d, stops⟩ := arrayCall_stops lowered returns prev valueOk corr fr fresh hc fc within
+          (fails.letInit done)
+        exact ⟨d, .seqFirst stops⟩
+    | _ => simp [SrcEff.passesSlices] at slices
   rcases eff_split lowered ihe valueOk corr fr fresh hc fc within fails
       (fun j r s h => ⟨j + 1, s, by simp only [execStmt, h], rfl⟩) with
     ⟨d, stops⟩ | ⟨k, v, st1, valueRun, bound1, fresh1, keeps1, locals1, sized, d1, env1, hp1, exec1, same1, holds1, hc1, fc1⟩
@@ -1773,7 +1883,9 @@ theorem stops_returnEval (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) s
     simp only [execStmt, valueRun, Failing] at this
     exact absurd bound (Nat.not_le.mpr this)
 
-theorem stops_discard {value : SrcEff} (ihe : EffStops sp mp n value) : SrcStops sp mp n (.discard value) := by
+theorem stops_discard (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
+    (returns : funcsReturn sp.funcs = true) (prev : StmtStops sp mp n) {value : SrcEff}
+    (ihe : EffStops sp mp (n + 1) value) : SrcStops sp mp (n + 1) (.discard value) := by
   intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower, lowerDiscard] at ok
   split at ok
@@ -1782,6 +1894,15 @@ theorem stops_discard {value : SrcEff} (ihe : EffStops sp mp n value) : SrcStops
   simp only [Option.some.injEq] at ok
   subst ok
   simp only [SrcStmt.toCore] at fails
+  unfold stmtEval at valueOk
+  split at valueOk
+  · rename_i slices
+    cases value with
+    | eCall callee args =>
+      simp only [SrcEff.sliceCall] at valueOk
+      simp only [SrcEff.toCore] at fails
+      exact arrayCall_stops lowered returns prev valueOk corr fr fresh hc fc within fails.expression
+    | _ => simp [SrcEff.passesSlices] at slices
   exact ihe valueOk corr fr fresh hc fc within fails.expression
 
 theorem stops_assert (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
@@ -2286,13 +2407,13 @@ theorem stmtStops_succ {sp : SrcProgram} {mp : Program} {n : Nat}
   | .free _ _ _ => stops_free
   | .letSlice _ _ _ _ body => stops_letSlice (stmtStops_succ lowered returns prev body)
   | .letIndex _ _ slice index body => stops_letIndex (stmtStops_succ lowered returns prev body)
-      (stops_letEval lowered (effStops_all lowered returns prev (.eIndex slice (.ePure index)))
+      (stops_letEval lowered returns prev (effStops_all lowered returns prev (.eIndex slice (.ePure index)))
         (stmtStops_succ lowered returns prev body))
   | .setIndex _ index value => stops_setIndex
       (stops_setIndexEval lowered (effStops_all lowered returns prev (.ePure index))
         (effStops_all lowered returns prev (.ePure value)))
   | .letEval _ _ value body =>
-      stops_letEval lowered (effStops_all lowered returns prev value) (stmtStops_succ lowered returns prev body)
+      stops_letEval lowered returns prev (effStops_all lowered returns prev value) (stmtStops_succ lowered returns prev body)
   | .setEval _ value => stops_setEval lowered (effStops_all lowered returns prev value)
   | .ifEval condition thenBranch elseBranch =>
       stops_ifEval lowered (effStops_all lowered returns prev condition)
@@ -2300,7 +2421,7 @@ theorem stmtStops_succ {sp : SrcProgram} {mp : Program} {n : Nat}
   | .whileEval condition body =>
       stops_whileEval lowered (effStops_all lowered returns prev condition) (stmtStops_succ lowered returns prev body)
   | .returnEval value => stops_returnEval lowered (effStops_all lowered returns prev value)
-  | .discard value => stops_discard (effStops_all lowered returns prev value)
+  | .discard value => stops_discard lowered returns prev (effStops_all lowered returns prev value)
   | .setIndexEval _ index value =>
       stops_setIndexEval lowered (effStops_all lowered returns prev index) (effStops_all lowered returns prev value)
   | .setFieldEval _ _ value => stops_setFieldEval lowered (effStops_all lowered returns prev value)

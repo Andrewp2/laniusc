@@ -91,7 +91,7 @@ theorem compileSource_contract {sp : SrcProgram} {binary : Binary}
     (zero : ∀ a, 1 ≤ a → heap.bytes a = 0) (small : heap.limit < 2 ^ 62) (silent : heap.io.trace = [])
     (runs : Semantics.evalExpr fuel sp.toCore (startState heap.io) (.call f (args.map Core.Expr.value)) =
       .done v final)
-    (fits : final.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp) :
+    (fits : final.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp ∧ heap.fsp ≤ heap.top ∧ heap.top < 2 ^ 62) :
     ∃ depth results, ∃ after : Heap, func.ret.HoldsAt [] v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
       final.world.standardOutput = outputOf 1 after.io.trace ∧ final.world.standardError = outputOf 2 after.io.trace ∧
       ∀ imageBase window, Contract binary imageBase (binary.stackNeed depth) window f bits heap results after := by
@@ -605,7 +605,7 @@ theorem process_exits {sp : SrcProgram} {binary : Binary} {entry stack heap : Na
   have bitsLen : ([] : List (BitVec 64)).length = paramsSize func.params := by rw [noParams]; rfl
   obtain ⟨depth, results, after, holds, len, out, err, contract⟩ := compileSource_contract compiled found typed bitsLen
     (heap := elfHeap heap stack given) rfl (fun _ _ => rfl) (by show heap < 2 ^ 62; have := sz.heap; omega) silent runs fits
-    (fun _ => by show heap + _ ≤ heap + stack; omega)
+    (fun _ => ⟨by show heap + _ ≤ heap + stack; omega, Nat.le_refl _, by show heap + stack < 2 ^ 62; have := sz.heap; have := sz.stack; omega⟩)
   refine ⟨depth, results, after, holds, len, out, err, fun s loaded same => ?_⟩
   obtain ⟨c, steps, det, at_⟩ := startup h loaded
   rw [same] at at_
@@ -645,7 +645,7 @@ theorem process_behaviour {sp : SrcProgram} {binary : Binary} {entry stack heap 
   obtain ⟨bounded, code, apart, imageHeap, rip, heapAt, stackAt⟩ := atEntry_premises h (at_.congr (det.final first))
   rcases compileSource_behaviour compiled found typed bitsLen (heap := elfHeap heap stack s.io) rfl (fun _ _ => rfl)
       (by show heap < 2 ^ 62; have := sz.heap; omega) loaded.io sz.room
-      (fun _ => by show heap + _ ≤ heap + stack; omega) c' _ _ bounded code apart imageHeap rip
+      (fun _ => ⟨by show heap + _ ≤ heap + stack; omega, Nat.le_refl _, by show heap + stack < 2 ^ 62; have := sz.heap; have := sz.stack; omega⟩) c' _ _ bounded code apart imageHeap rip
       (fun k bound => absurd bound (Nat.not_lt_zero k)) heapAt stackAt rest stuck clean with
     ⟨fuel, v, final, runs, fits⟩ | trap
   · obtain ⟨depth, results, _after, holds, len, -, -, cases⟩ := process_exits compiled h found noParams loaded.io runs fits frameRoom

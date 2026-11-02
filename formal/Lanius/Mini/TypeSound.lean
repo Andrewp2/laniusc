@@ -2623,7 +2623,7 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
         simp only [evalSame] at h
         split at h
         · rename_i same
-          have typed := SrcEff.eval_typed target sigsOk value ok d.2.1 hv
+          have typed := stmtEval_typed target sigsOk value ok d.2.1 hv
           rw [same_toCore same] at typed
           exact .letLocal typed (SrcStmt.lower_typed target sigsOk body (ok.cons d.1) d.2.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
         · simp at h
@@ -2695,7 +2695,7 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
     split at h
     · simp at h
     · rename_i v hv
-      exact .expression (SrcEff.eval_typed target sigsOk value ok d hv)
+      exact .expression (stmtEval_typed target sigsOk value ok d hv)
   | .returnUnit, scope, ctx, next, inLoop, out, ok, d, bo, h => by
     simp only [SrcStmt.lower, lowerReturnUnit] at h
     split at h

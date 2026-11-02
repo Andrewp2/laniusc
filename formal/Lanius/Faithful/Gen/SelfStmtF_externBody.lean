@@ -21,7 +21,7 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_extern_body (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.MParams} {x1 : Option Lanius.Mini.RetTy} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 231 RepMParams) x0 v0 → (RepOption 223 RepRetTy) x1 v1 → RepNat x2 v2 →
+  ∀ {x0 : Option Lanius.Mini.MParams} {x1 : Option Lanius.Mini.RetTy} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 233 RepMParams) x0 v0 → (RepOption 225 RepRetTy) x1 v1 → RepNat x2 v2 →
     (RepOption 200 RepMFunc) (Lanius.Mini.externBody x0 x1 x2) w
 
 abbrev Stmt_extern_func (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

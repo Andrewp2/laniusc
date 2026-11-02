@@ -91,7 +91,7 @@ theorem compileSource_deterministic {sp : SrcProgram} {binary : Binary}
     (zero : ∀ a, 1 ≤ a → heap.bytes a = 0) (small : heap.limit < 2 ^ 62) (silent : heap.io.trace = [])
     (runs : Semantics.evalExpr fuel sp.toCore (startState heap.io) (.call f (args.map Core.Expr.value)) =
       .done v final)
-    (fits : final.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp) :
+    (fits : final.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp ∧ heap.fsp ≤ heap.top ∧ heap.top < 2 ^ 62) :
     ∃ depth results after, func.ret.HoldsAt [] v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
       after.cursor = final.heap.nextAddress ∧
       ∀ (s : State) (imageBase : BitVec 64) (window : Nat),

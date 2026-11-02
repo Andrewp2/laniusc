@@ -1199,7 +1199,7 @@ theorem call_sound {sp : SrcProgram} {mp : Program}
     obtain ⟨g', s', -, -, gOk⟩ := lowerFuncs_get lowered found
     refine ⟨restore_fresh freshDone, keeps.trans (restore_keeps _ _ _), rfl, (lowerFunc_some gOk).2.1, d + 1, rs,
       { hp' with fsp := hp.fsp }, holdsRet, len, hcDone.withFsp _,
-      (fcDone.back fc exec.limit).restoreLocals _,
+      (fcDone.back fc exec.limit exec.top).restoreLocals _,
       fun target => .call gFound ?_ len (Nat.lt_succ_self d) exec⟩
     rw [← arity, evalAll_length]
   · simp at ok

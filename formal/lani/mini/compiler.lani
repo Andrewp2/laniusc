@@ -5586,11 +5586,14 @@ pub fn array_args(scope: List<Binding>, args: List<SrcEff>, types: List<SrcType>
 
 // The call's code: the check of the other arguments, the block's address
 // into t, the stores, the call (its result from slot next), the block's
-// address again and the loads.
+// address again and the loads. The caller's block is positive, so its room
+// lies above the limit and Frame(t, 0) runs. The result is a scalar, so no
+// slice of the block outlives the call (SEMANTIC_DECISIONS "Addressed
+// locals", point 4).
 pub fn array_call_code(next: usize, callee: usize, sig: Sig, a: ArrayArgs) -> core::option::Option<Evaluated> {
     let count: usize = sig.ret.size();
     let t: usize = plus(next, count);
-    if ((count > 0) && (sig.need <= sig.room) && (a.bytes <= sig.block)) {
+    if ((count > 0) && sig.ret.is_scalar() && (sig.need <= sig.room) && (sig.block > 0) && (a.bytes <= sig.block)) {
         return Some(Evaluated { stmt: check_then(next, a.guard, Seq(boxed(Stmt::Frame(t, 0)), boxed(Seq(boxed(a.stores), boxed(Seq(boxed(Stmt::Call(next, count, callee, a.args)), boxed(Seq(boxed(Stmt::Frame(t, 0)), boxed(a.loads))))))))), ty: sig.ret });
     }
     return None;
@@ -5680,8 +5683,8 @@ impl SrcEff {
 }
 
 
-// The code of a value a statement computes: a call passing arrays as slices
-// (array_call), or any other expression's code.
+// The code of a value a statement computes (LetEval, Discard): a call
+// passing arrays as slices (array_call), or any other expression's code.
 pub fn stmt_eval(value: SrcEff, sigs: List<Sig>, decls: SrcDecls, scope: List<Binding>, next: usize) -> core::option::Option<Evaluated> {
     if (value.passes_slices()) {
         return value.slice_call(sigs, scope, next);
@@ -5712,12 +5715,12 @@ impl SrcStmt {
             LetSlice(id, element, pointer, length, body) -> guarded(next, guard_and(pointer.guard(scope), length.guard(scope)), lower_let(next, lower_slice(decls, element, lower_as(scope, pointer, Ptr), lower_as(scope, length, I32)), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Slice(boxed(element)) }, scope), plus(next, 2)))),
             LetIndex(id, ty, slice, index, body) -> lower_let_index_any(decls, scope, next, ty, slice, index, unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
             SetIndex(slice, index, value) -> lower_set_index_any(decls, scope, next, slice, index, value),
-            LetEval(id, ty, value, body) -> lower_let_eval(ty, value.eval(sigs, decls, scope, next), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
+            LetEval(id, ty, value, body) -> lower_let_eval(ty, stmt_eval(value, sigs, decls, scope, next), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
             SetEval(id, value) -> lower_set_eval(next, lookup(scope, id), value.eval(sigs, decls, scope, next)),
             IfEval(condition, then_branch, else_branch) -> lower_if_eval(next, condition.eval(sigs, decls, scope, next), unbox(then_branch).lower(sigs, decls, ret, scope, next), unbox(else_branch).lower(sigs, decls, ret, scope, next)),
             WhileEval(condition, body) -> lower_while_eval(next, condition.eval(sigs, decls, scope, next), unbox(body).lower(sigs, decls, ret, scope, next)),
             ReturnEval(value) -> lower_return_eval(next, ret, value.eval(sigs, decls, scope, next)),
-            Discard(value) -> lower_discard(value.eval(sigs, decls, scope, next)),
+            Discard(value) -> lower_discard(stmt_eval(value, sigs, decls, scope, next)),
             SetIndexEval(slice, index, value) -> lower_set_index_eval(decls, next, lookup(scope, slice), index.eval(sigs, decls, scope, next), value.eval(sigs, decls, scope, plus(next, 1))),
             SetFieldEval(id, field, value) -> lower_set_field_eval(next, lookup(scope, id), field, value.eval(sigs, decls, scope, next)),
             ReturnUnit -> lower_return_unit(ret),

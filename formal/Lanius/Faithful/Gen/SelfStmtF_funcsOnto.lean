@@ -61,7 +61,7 @@ abbrev Stmt_param_tys (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     (RepList 141 RepTy) (Lanius.Mini.paramTys x0) w
 
 abbrev Stmt_payloads_weight (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Inst} {x1 : List (Option Nat)} {x2 : Option (List (List Lanius.Mini.Ty))} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 139 RepInst) x0 v0 → (RepList 207 (RepOption 205 RepNat)) x1 v1 → (RepOption 238 (RepList 239 (RepList 141 RepTy))) x2 v2 →
+  ∀ {x0 : List Lanius.Mini.Inst} {x1 : List (Option Nat)} {x2 : Option (List (List Lanius.Mini.Ty))} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 139 RepInst) x0 v0 → (RepList 207 (RepOption 205 RepNat)) x1 v1 → (RepOption 240 (RepList 241 (RepList 141 RepTy))) x2 v2 →
     (RepOption 205 RepNat) (Lanius.Mini.payloadsWeight x0 x1 x2) w
 
 abbrev Stmt_ret_tys (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

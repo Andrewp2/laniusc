@@ -100,11 +100,11 @@ def arrayArgs (scope : List Binding) (args : List SrcEff) (types : List SrcType)
     | [] => none
     | ty :: more => arrayArg scope arg ty t offset (arrayArgs scope rest more t (offset + argBytes scope arg))
 
-/-- The call's code: the check of the other arguments, the block's address into t, the stores, the call (its result from slot next), the block's address again and the loads. -/
+/-- The call's code: the check of the other arguments, the block's address into t, the stores, the call (its result from slot next), the block's address again and the loads. The caller's block is positive, so its room lies above the limit and Frame(t, 0) runs. The result is a scalar, so no slice of the block outlives the call (SEMANTIC_DECISIONS "Addressed locals", point 4). -/
 def arrayCallCode (next : Nat) (callee : Nat) (sig : Sig) (a : ArrayArgs) : Option Evaluated :=
   let count : Nat := SrcType.size sig.ret
   let t : Nat := next + count
-  if decide (0 < count) && decide (sig.need ≤ sig.room) && decide (a.bytes ≤ sig.block) then
+  if decide (0 < count) && SrcType.isScalar sig.ret && decide (sig.need ≤ sig.room) && decide (0 < sig.block) && decide (a.bytes ≤ sig.block) then
     some ({ stmt := checkThen next a.guard (Stmt.seq (Stmt.frame t 0) (Stmt.seq a.stores (Stmt.seq (Stmt.call next count callee a.args) (Stmt.seq (Stmt.frame t 0) a.loads)))), ty := sig.ret } : Evaluated)
   else
     none

@@ -2560,7 +2560,7 @@ theorem chunk23 : FuncsOk prog prims outside 2300 part23 :=
   funcsOk_cons (fok2399 boxElem_self callTy_self) <|
   funcsOk_nil
 
-def part24 : List SrcFunc := [src2400, src2401, src2402, src2403, src2404]
+def part24 : List SrcFunc := [src2400, src2401, src2402, src2403, src2404, src2405, src2406, src2407, src2408, src2409, src2410, src2411, src2412, src2413, src2414, src2415, src2416, src2417, src2418, src2419, src2420, src2421, src2422, src2423, src2424, src2425, src2426]
 
 theorem chunk24 : FuncsOk prog prims outside 2400 part24 :=
   funcsOk_cons (fok2400 boxElem_self callTy_self) <|
@@ -2568,6 +2568,28 @@ theorem chunk24 : FuncsOk prog prims outside 2400 part24 :=
   funcsOk_cons (fok2402 boxElem_self callTy_self) <|
   funcsOk_cons (fok2403 boxElem_self callTy_self) <|
   funcsOk_cons (fok2404 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2405 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2406 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2407 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2408 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2409 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2410 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2411 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2412 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2413 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2414 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2415 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2416 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2417 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2418 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2419 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2420 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2421 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2422 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2423 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2424 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2425 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2426 boxElem_self callTy_self) <|
   funcsOk_nil
 
 theorem funcs_parts : prog.funcs = part0 ++ (part1 ++ (part2 ++ (part3 ++ (part4 ++ (part5 ++ (part6 ++ (part7 ++ (part8 ++ (part9 ++ (part10 ++ (part11 ++ (part12 ++ (part13 ++ (part14 ++ (part15 ++ (part16 ++ (part17 ++ (part18 ++ (part19 ++ (part20 ++ (part21 ++ (part22 ++ (part23 ++ (part24)))))))))))))))))))))))) := rfl

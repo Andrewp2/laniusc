@@ -72,409 +72,409 @@ theorem boxed74 : BoxedAt prog prims 74 :=
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::FileInput>> -/
 theorem boxed146 : BoxedAt prog prims 146 :=
-  ⟨ty47, 48, 246, 151, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_FileInput, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_FileInput,
+  ⟨ty47, 48, 247, 151, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_FileInput, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_FileInput,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_FileInput, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
     by rw [prog_decls]; exact word146, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; exact words146⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::List<mini::selfhost::List<usize>>>> -/
 theorem boxed165 : BoxedAt prog prims 165 :=
-  ⟨ty126, 125, 271, 272, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_List_usize, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_List_usize,
+  ⟨ty126, 125, 272, 273, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_List_usize, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_List_usize,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_List_usize, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
     by rw [prog_decls]; exact word165, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; exact words165⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Func>> -/
 theorem boxed172 : BoxedAt prog prims 172 :=
-  ⟨ty97, 94, 287, 288, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_Func, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Func,
+  ⟨ty97, 94, 288, 289, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_Func, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Func,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Func, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
     by rw [prog_decls]; exact word172, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; exact words172⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::Stmt> -/
 theorem boxed184 : BoxedAt prog prims 184 :=
-  ⟨ty94, 91, 299, 300, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_Stmt, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_Stmt,
+  ⟨ty94, 91, 300, 301, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_Stmt, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_Stmt,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_Stmt, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
     by rw [prog_decls]; exact word184, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; exact words184⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::SrcType> -/
 theorem boxed213 : BoxedAt prog prims 213 :=
-  ⟨ty9, 13, 332, 295, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_SrcType, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_SrcType,
+  ⟨ty9, 13, 333, 296, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_SrcType, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_SrcType,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_SrcType, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
     by rw [prog_decls]; exact word213, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; exact words213⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Sig>> -/
-theorem boxed231 : BoxedAt prog prims 231 :=
-  ⟨ty102, 98, 375, 131, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_Sig, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Sig,
+theorem boxed232 : BoxedAt prog prims 232 :=
+  ⟨ty102, 98, 378, 131, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_Sig, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Sig,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Sig, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word231, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words231⟩
+    by rw [prog_decls]; exact word232, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words232⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::CTree>> -/
-theorem boxed247 : BoxedAt prog prims 247 :=
-  ⟨ty85, 84, 393, 164, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_CTree, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_CTree,
+theorem boxed248 : BoxedAt prog prims 248 :=
+  ⟨ty85, 84, 396, 164, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_CTree, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_CTree,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_CTree, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word247, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words247⟩
+    by rw [prog_decls]; exact word248, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words248⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Expr>> -/
-theorem boxed301 : BoxedAt prog prims 301 :=
-  ⟨ty93, 93, 467, 468, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_Expr, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Expr,
+theorem boxed302 : BoxedAt prog prims 302 :=
+  ⟨ty93, 93, 470, 471, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_Expr, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Expr,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Expr, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word301, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words301⟩
+    by rw [prog_decls]; exact word302, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words302⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Binding>> -/
-theorem boxed310 : BoxedAt prog prims 310 :=
-  ⟨ty148, 137, 486, 487, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_Binding, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Binding,
+theorem boxed311 : BoxedAt prog prims 311 :=
+  ⟨ty148, 137, 489, 490, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_Binding, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Binding,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Binding, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word310, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words310⟩
+    by rw [prog_decls]; exact word311, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words311⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::Expr> -/
-theorem boxed327 : BoxedAt prog prims 327 :=
-  ⟨ty90, 90, 495, 496, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_Expr, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_Expr,
+theorem boxed328 : BoxedAt prog prims 328 :=
+  ⟨ty90, 90, 498, 499, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_Expr, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_Expr,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_Expr, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word327, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words327⟩
+    by rw [prog_decls]; exact word328, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words328⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::SrcType>> -/
-theorem boxed376 : BoxedAt prog prims 376 :=
-  ⟨ty71, 11, 541, 293, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_SrcType, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_SrcType,
+theorem boxed379 : BoxedAt prog prims 379 :=
+  ⟨ty71, 11, 546, 294, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_SrcType, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_SrcType,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SrcType, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word376, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words376⟩
+    by rw [prog_decls]; exact word379, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words379⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Code>> -/
-theorem boxed453 : BoxedAt prog prims 453 :=
-  ⟨ty65, 65, 708, 709, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_Code, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Code,
+theorem boxed456 : BoxedAt prog prims 456 :=
+  ⟨ty65, 65, 713, 714, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_Code, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Code,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Code, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word453, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words453⟩
+    by rw [prog_decls]; exact word456, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words456⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Arity>> -/
-theorem boxed454 : BoxedAt prog prims 454 :=
-  ⟨ty161, 148, 710, 711, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_Arity, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Arity,
+theorem boxed457 : BoxedAt prog prims 457 :=
+  ⟨ty161, 148, 715, 716, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_Arity, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Arity,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Arity, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word454, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words454⟩
+    by rw [prog_decls]; exact word457, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words457⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<usize>> -/
-theorem boxed460 : BoxedAt prog prims 460 :=
-  ⟨ty20, 26, 719, 109, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_usize, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_usize,
+theorem boxed463 : BoxedAt prog prims 463 :=
+  ⟨ty20, 26, 724, 109, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_usize, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_usize,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_usize, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word460, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words460⟩
+    by rw [prog_decls]; exact word463, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words463⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Ty>> -/
-theorem boxed633 : BoxedAt prog prims 633 :=
-  ⟨ty153, 144, 933, 929, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_Ty, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Ty,
+theorem boxed638 : BoxedAt prog prims 638 :=
+  ⟨ty153, 144, 940, 936, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_Ty, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Ty,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Ty, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word633, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words633⟩
+    by rw [prog_decls]; exact word638, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words638⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Inst>> -/
-theorem boxed647 : BoxedAt prog prims 647 :=
-  ⟨ty156, 145, 953, 934, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_Inst, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Inst,
-    get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Inst, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word647, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words647⟩
-
-/-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::TypeDecl>> -/
-theorem boxed648 : BoxedAt prog prims 648 :=
-  ⟨ty109, 108, 954, 424, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_TypeDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_TypeDecl,
-    get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_TypeDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word648, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words648⟩
-
-/-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::FnDecl>> -/
-theorem boxed649 : BoxedAt prog prims 649 :=
-  ⟨ty112, 111, 955, 423, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_FnDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_FnDecl,
-    get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_FnDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word649, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words649⟩
-
-/-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::ConstDecl>> -/
-theorem boxed650 : BoxedAt prog prims 650 :=
-  ⟨ty115, 114, 956, 957, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_ConstDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_ConstDecl,
-    get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_ConstDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word650, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words650⟩
-
-/-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::ImportDecl>> -/
 theorem boxed652 : BoxedAt prog prims 652 :=
-  ⟨ty118, 117, 958, 959, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_ImportDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_ImportDecl,
-    get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_ImportDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
+  ⟨ty156, 145, 960, 941, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_Inst, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Inst,
+    get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Inst, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
     by rw [prog_decls]; exact word652, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; exact words652⟩
 
-/-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::AliasDecl>> -/
+/-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::TypeDecl>> -/
+theorem boxed653 : BoxedAt prog prims 653 :=
+  ⟨ty109, 108, 961, 427, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_TypeDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_TypeDecl,
+    get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_TypeDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
+    by rw [prog_decls]; exact word653, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words653⟩
+
+/-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::FnDecl>> -/
 theorem boxed654 : BoxedAt prog prims 654 :=
-  ⟨ty121, 120, 960, 907, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_AliasDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_AliasDecl,
-    get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_AliasDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
+  ⟨ty112, 111, 962, 426, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_FnDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_FnDecl,
+    get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_FnDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
     by rw [prog_decls]; exact word654, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; exact words654⟩
 
-/-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::ImplDecl>> -/
+/-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::ConstDecl>> -/
 theorem boxed655 : BoxedAt prog prims 655 :=
-  ⟨ty124, 123, 961, 962, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_ImplDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_ImplDecl,
-    get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_ImplDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
+  ⟨ty115, 114, 963, 964, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_ConstDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_ConstDecl,
+    get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_ConstDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
     by rw [prog_decls]; exact word655, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; exact words655⟩
 
+/-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::ImportDecl>> -/
+theorem boxed657 : BoxedAt prog prims 657 :=
+  ⟨ty118, 117, 965, 966, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_ImportDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_ImportDecl,
+    get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_ImportDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
+    by rw [prog_decls]; exact word657, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words657⟩
+
+/-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::AliasDecl>> -/
+theorem boxed659 : BoxedAt prog prims 659 :=
+  ⟨ty121, 120, 967, 914, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_AliasDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_AliasDecl,
+    get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_AliasDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
+    by rw [prog_decls]; exact word659, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words659⟩
+
+/-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::ImplDecl>> -/
+theorem boxed660 : BoxedAt prog prims 660 :=
+  ⟨ty124, 123, 968, 969, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_ImplDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_ImplDecl,
+    get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_ImplDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
+    by rw [prog_decls]; exact word660, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words660⟩
+
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Instr>> -/
-theorem boxed697 : BoxedAt prog prims 697 :=
-  ⟨ty62, 64, 984, 985, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_Instr, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Instr,
+theorem boxed702 : BoxedAt prog prims 702 :=
+  ⟨ty62, 64, 991, 992, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_Instr, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Instr,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Instr, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word697, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words697⟩
+    by rw [prog_decls]; exact word702, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words702⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<u8>> -/
-theorem boxed712 : BoxedAt prog prims 712 :=
-  ⟨ty67, 67, 991, 111, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_u8, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_u8,
+theorem boxed717 : BoxedAt prog prims 717 :=
+  ⟨ty67, 67, 998, 111, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_u8, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_u8,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_u8, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word712, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words712⟩
+    by rw [prog_decls]; exact word717, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words717⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::SrcStructDecl>> -/
-theorem boxed782 : BoxedAt prog prims 782 :=
-  ⟨ty74, 74, 1056, 783, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_SrcStructDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_SrcStructDecl,
-    get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SrcStructDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word782, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words782⟩
-
-/-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::SrcEnumDecl>> -/
-theorem boxed784 : BoxedAt prog prims 784 :=
-  ⟨ty78, 78, 1057, 785, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_SrcEnumDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_SrcEnumDecl,
-    get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SrcEnumDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word784, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words784⟩
-
-/-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::SymRule>> -/
 theorem boxed789 : BoxedAt prog prims 789 :=
-  ⟨ty219, 191, 1070, 1071, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_SymRule, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_SymRule,
-    get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SymRule, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
+  ⟨ty74, 74, 1065, 790, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_SrcStructDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_SrcStructDecl,
+    get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SrcStructDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
     by rw [prog_decls]; exact word789, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; exact words789⟩
 
+/-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::SrcEnumDecl>> -/
+theorem boxed791 : BoxedAt prog prims 791 :=
+  ⟨ty78, 78, 1066, 792, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_SrcEnumDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_SrcEnumDecl,
+    get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SrcEnumDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
+    by rw [prog_decls]; exact word791, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words791⟩
+
+/-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::SymRule>> -/
+theorem boxed796 : BoxedAt prog prims 796 :=
+  ⟨ty219, 191, 1079, 1080, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_SymRule, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_SymRule,
+    get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SymRule, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
+    by rw [prog_decls]; exact word796, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words796⟩
+
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::List<usize>>> -/
-theorem boxed893 : BoxedAt prog prims 893 :=
-  ⟨ty27, 32, 1097, 767, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_List_usize, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_List_usize,
+theorem boxed900 : BoxedAt prog prims 900 :=
+  ⟨ty27, 32, 1106, 774, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_List_usize, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_List_usize,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_List_usize, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word893, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words893⟩
+    by rw [prog_decls]; exact word900, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words900⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::MFunc>> -/
-theorem boxed943 : BoxedAt prog prims 943 :=
-  ⟨ty195, 178, 1170, 938, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_MFunc, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_MFunc,
+theorem boxed950 : BoxedAt prog prims 950 :=
+  ⟨ty195, 178, 1179, 945, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_MFunc, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_MFunc,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_MFunc, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word943, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words943⟩
+    by rw [prog_decls]; exact word950, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words950⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::RawTok>> -/
-theorem boxed1069 : BoxedAt prog prims 1069 :=
-  ⟨ty181, 163, 1271, 792, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_RawTok, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_RawTok,
+theorem boxed1078 : BoxedAt prog prims 1078 :=
+  ⟨ty181, 163, 1282, 799, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_RawTok, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_RawTok,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_RawTok, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word1069, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words1069⟩
+    by rw [prog_decls]; exact word1078, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words1078⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Token>> -/
-theorem boxed1072 : BoxedAt prog prims 1072 :=
-  ⟨ty44, 47, 1272, 273, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_Token, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Token,
+theorem boxed1081 : BoxedAt prog prims 1081 :=
+  ⟨ty44, 47, 1283, 274, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_Token, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Token,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Token, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word1072, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words1072⟩
+    by rw [prog_decls]; exact word1081, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words1081⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<core::option::Option<mini::selfhost::SrcType>>> -/
-theorem boxed1137 : BoxedAt prog prims 1137 :=
-  ⟨ty225, 198, 1311, 1312, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_core_option_Option_mini_selfhost_SrcType, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_core_option_Option_mini_selfhost_SrcType,
+theorem boxed1146 : BoxedAt prog prims 1146 :=
+  ⟨ty225, 198, 1322, 1323, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_core_option_Option_mini_selfhost_SrcType, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_core_option_Option_mini_selfhost_SrcType,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_core_option_Option_mini_selfhost_SrcType, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word1137, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words1137⟩
+    by rw [prog_decls]; exact word1146, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words1146⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::SrcFunc>> -/
-theorem boxed1141 : BoxedAt prog prims 1141 :=
-  ⟨ty33, 34, 1322, 82, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_SrcFunc, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_SrcFunc,
+theorem boxed1150 : BoxedAt prog prims 1150 :=
+  ⟨ty33, 34, 1333, 82, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_SrcFunc, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_SrcFunc,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SrcFunc, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word1141, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words1141⟩
+    by rw [prog_decls]; exact word1150, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words1150⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::SrcStmt> -/
-theorem boxed1143 : BoxedAt prog prims 1143 :=
-  ⟨ty30, 20, 1333, 112, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_SrcStmt, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_SrcStmt,
+theorem boxed1152 : BoxedAt prog prims 1152 :=
+  ⟨ty30, 20, 1344, 112, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_SrcStmt, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_SrcStmt,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_SrcStmt, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word1143, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words1143⟩
+    by rw [prog_decls]; exact word1152, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words1152⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<core::option::Option<usize>>> -/
-theorem boxed1160 : BoxedAt prog prims 1160 :=
-  ⟨ty243, 208, 1355, 1157, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_core_option_Option_usize, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_core_option_Option_usize,
+theorem boxed1169 : BoxedAt prog prims 1169 :=
+  ⟨ty243, 208, 1366, 1166, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_core_option_Option_usize, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_core_option_Option_usize,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_core_option_Option_usize, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word1160, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words1160⟩
+    by rw [prog_decls]; exact word1169, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words1169⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::MStmt> -/
-theorem boxed1180 : BoxedAt prog prims 1180 :=
-  ⟨ty192, 174, 1369, 1165, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_MStmt, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_MStmt,
+theorem boxed1189 : BoxedAt prog prims 1189 :=
+  ⟨ty192, 174, 1380, 1174, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_MStmt, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_MStmt,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_MStmt, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word1180, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words1180⟩
+    by rw [prog_decls]; exact word1189, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words1189⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::MEff>> -/
-theorem boxed1181 : BoxedAt prog prims 1181 :=
-  ⟨ty280, 176, 1370, 1359, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_MEff, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_MEff,
+theorem boxed1190 : BoxedAt prog prims 1190 :=
+  ⟨ty282, 176, 1381, 1370, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_MEff, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_MEff,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_MEff, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word1181, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words1181⟩
+    by rw [prog_decls]; exact word1190, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words1190⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::MParam>> -/
-theorem boxed1188 : BoxedAt prog prims 1188 :=
-  ⟨ty186, 171, 1380, 1164, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_MParam, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_MParam,
+theorem boxed1197 : BoxedAt prog prims 1197 :=
+  ⟨ty186, 171, 1391, 1173, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_MParam, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_MParam,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_MParam, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word1188, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words1188⟩
+    by rw [prog_decls]; exact word1197, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words1197⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::SrcExpr> -/
-theorem boxed1327 : BoxedAt prog prims 1327 :=
-  ⟨ty15, 18, 1441, 470, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_SrcExpr, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_SrcExpr,
+theorem boxed1338 : BoxedAt prog prims 1338 :=
+  ⟨ty15, 18, 1455, 473, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_SrcExpr, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_SrcExpr,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_SrcExpr, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word1327, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words1327⟩
+    by rw [prog_decls]; exact word1338, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words1338⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::SrcEff>> -/
-theorem boxed1347 : BoxedAt prog prims 1347 :=
-  ⟨ty212, 29, 1454, 515, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_SrcEff,
+theorem boxed1358 : BoxedAt prog prims 1358 :=
+  ⟨ty212, 29, 1468, 522, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_SrcEff,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SrcEff, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word1347, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words1347⟩
+    by rw [prog_decls]; exact word1358, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words1358⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::SrcEff> -/
-theorem boxed1349 : BoxedAt prog prims 1349 :=
-  ⟨ty29, 30, 1456, 517, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_SrcEff, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_SrcEff,
+theorem boxed1360 : BoxedAt prog prims 1360 :=
+  ⟨ty29, 30, 1470, 524, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_SrcEff, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_SrcEff,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_SrcEff, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word1349, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words1349⟩
+    by rw [prog_decls]; exact word1360, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words1360⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::LocalTy>> -/
-theorem boxed1352 : BoxedAt prog prims 1352 :=
-  ⟨ty264, 221, 1460, 1453, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_LocalTy, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_LocalTy,
+theorem boxed1363 : BoxedAt prog prims 1363 :=
+  ⟨ty266, 223, 1474, 1467, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_LocalTy, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_LocalTy,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_LocalTy, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word1352, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words1352⟩
+    by rw [prog_decls]; exact word1363, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words1363⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Fact>> -/
-theorem boxed1385 : BoxedAt prog prims 1385 :=
-  ⟨ty203, 182, 1494, 1199, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_Fact, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Fact,
+theorem boxed1396 : BoxedAt prog prims 1396 :=
+  ⟨ty203, 182, 1508, 1208, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_Fact, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Fact,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Fact, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word1385, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words1385⟩
+    by rw [prog_decls]; exact word1396, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words1396⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::SrcParam>> -/
-theorem boxed1422 : BoxedAt prog prims 1422 :=
-  ⟨ty12, 15, 1513, 289, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_SrcParam, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_SrcParam,
+theorem boxed1436 : BoxedAt prog prims 1436 :=
+  ⟨ty12, 15, 1528, 290, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_SrcParam, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_SrcParam,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SrcParam, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word1422, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words1422⟩
+    by rw [prog_decls]; exact word1436, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words1436⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::List<mini::selfhost::SrcType>>> -/
-theorem boxed1427 : BoxedAt prog prims 1427 :=
-  ⟨ty75, 12, 1516, 294, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType,
+theorem boxed1441 : BoxedAt prog prims 1441 :=
+  ⟨ty75, 12, 1531, 295, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word1427, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words1427⟩
+    by rw [prog_decls]; exact word1441, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words1441⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::SrcExpr>> -/
-theorem boxed1451 : BoxedAt prog prims 1451 :=
-  ⟨ty18, 22, 1529, 488, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_SrcExpr, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_SrcExpr,
+theorem boxed1465 : BoxedAt prog prims 1465 :=
+  ⟨ty18, 22, 1544, 491, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_SrcExpr, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_SrcExpr,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SrcExpr, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word1451, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words1451⟩
+    by rw [prog_decls]; exact word1465, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words1465⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::SrcArm>> -/
-theorem boxed1452 : BoxedAt prog prims 1452 :=
-  ⟨ty23, 27, 1530, 1254, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_SrcArm, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_SrcArm,
+theorem boxed1466 : BoxedAt prog prims 1466 :=
+  ⟨ty23, 27, 1545, 1263, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_SrcArm, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_SrcArm,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SrcArm, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word1452, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words1452⟩
+    by rw [prog_decls]; exact word1466, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words1466⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::List<mini::selfhost::CTree>>> -/
-theorem boxed1512 : BoxedAt prog prims 1512 :=
-  ⟨ty106, 107, 1584, 1585, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_CTree, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_CTree,
+theorem boxed1527 : BoxedAt prog prims 1527 :=
+  ⟨ty106, 107, 1604, 1605, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_CTree, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_CTree,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_CTree, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word1512, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words1512⟩
+    by rw [prog_decls]; exact word1527, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words1527⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Local>> -/
-theorem boxed1537 : BoxedAt prog prims 1537 :=
-  ⟨ty285, 235, 1598, 1597, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_Local, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Local,
+theorem boxed1552 : BoxedAt prog prims 1552 :=
+  ⟨ty287, 237, 1618, 1617, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_Local, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Local,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Local, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word1537, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words1537⟩
+    by rw [prog_decls]; exact word1552, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words1552⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::Ty> -/
-theorem boxed1538 : BoxedAt prog prims 1538 :=
-  ⟨ty152, 143, 1599, 1162, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_Ty, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_Ty,
+theorem boxed1553 : BoxedAt prog prims 1553 :=
+  ⟨ty152, 143, 1619, 1171, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_Ty, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_Ty,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_Ty, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word1538, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words1538⟩
+    by rw [prog_decls]; exact word1553, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words1553⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::BoundGoal>> -/
-theorem boxed1644 : BoxedAt prog prims 1644 :=
-  ⟨ty297, 245, 1699, 1614, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_BoundGoal, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_BoundGoal,
+theorem boxed1666 : BoxedAt prog prims 1666 :=
+  ⟨ty299, 247, 1721, 1634, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_BoundGoal, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_BoundGoal,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_BoundGoal, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word1644, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words1644⟩
+    by rw [prog_decls]; exact word1666, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words1666⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::List<mini::selfhost::Ty>>> -/
-theorem boxed1692 : BoxedAt prog prims 1692 :=
-  ⟨ty291, 240, 1789, 1518, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty,
+theorem boxed1714 : BoxedAt prog prims 1714 :=
+  ⟨ty293, 242, 1811, 1533, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word1692, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words1692⟩
+    by rw [prog_decls]; exact word1714, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words1714⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::MEff> -/
-theorem boxed1736 : BoxedAt prog prims 1736 :=
-  ⟨ty191, 177, 1842, 1360, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_MEff, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_MEff,
+theorem boxed1758 : BoxedAt prog prims 1758 :=
+  ⟨ty191, 177, 1864, 1371, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_MEff, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_MEff,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_MEff, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word1736, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words1736⟩
+    by rw [prog_decls]; exact word1758, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words1758⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::VariantAt>> -/
-theorem boxed2051 : BoxedAt prog prims 2051 :=
-  ⟨ty346, 289, 2172, 2052, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_VariantAt, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_VariantAt,
+theorem boxed2073 : BoxedAt prog prims 2073 :=
+  ⟨ty348, 291, 2194, 2074, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_VariantAt, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_VariantAt,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_VariantAt, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word2051, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words2051⟩
+    by rw [prog_decls]; exact word2073, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words2073⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<bool>> -/
-theorem boxed2150 : BoxedAt prog prims 2150 :=
-  ⟨ty312, 257, 2225, 2139, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_bool, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_bool,
+theorem boxed2172 : BoxedAt prog prims 2172 :=
+  ⟨ty314, 259, 2247, 2161, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_bool, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_bool,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_bool, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word2150, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words2150⟩
+    by rw [prog_decls]; exact word2172, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words2172⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::VariantTy>> -/
-theorem boxed2179 : BoxedAt prog prims 2179 :=
-  ⟨ty337, 282, 2244, 2077, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_VariantTy, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_VariantTy,
+theorem boxed2201 : BoxedAt prog prims 2201 :=
+  ⟨ty339, 284, 2266, 2099, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_VariantTy, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_VariantTy,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_VariantTy, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word2179, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words2179⟩
+    by rw [prog_decls]; exact word2201, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words2201⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Bind>> -/
-theorem boxed2269 : BoxedAt prog prims 2269 :=
-  ⟨ty324, 268, 2307, 2216, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_Bind, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Bind,
+theorem boxed2291 : BoxedAt prog prims 2291 :=
+  ⟨ty326, 270, 2329, 2238, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_Bind, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Bind,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Bind, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word2269, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words2269⟩
+    by rw [prog_decls]; exact word2291, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words2291⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::EffArm>> -/
-theorem boxed2280 : BoxedAt prog prims 2280 :=
-  ⟨ty351, 294, 2319, 2240, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_EffArm, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_EffArm,
+theorem boxed2302 : BoxedAt prog prims 2302 :=
+  ⟨ty353, 296, 2341, 2262, 50, get_of_drop Lanius.Faithful.SelfCert.at_boxed_of_mini_selfhost_List_mini_selfhost_EffArm, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_EffArm,
     get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_EffArm, get_of_drop Lanius.Faithful.SelfCert.at_core_panic_panic,
-    by rw [prog_decls]; exact word2280, by rw [boxElem_self]; rfl,
-    by rw [prog_decls]; exact words2280⟩
+    by rw [prog_decls]; exact word2302, by rw [boxElem_self]; rfl,
+    by rw [prog_decls]; exact words2302⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<i32>> -/
 theorem unbox10 : UnboxAt prog prims 10 :=
@@ -523,263 +523,263 @@ theorem unbox103 : UnboxAt prog prims 103 :=
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Token>> -/
 theorem unbox166 : UnboxAt prog prims 166 :=
-  ⟨ty44, 47, 273, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_Token, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Token,
+  ⟨ty44, 47, 274, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_Token, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Token,
     by rw [prog_decls]; exact word166, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::SrcParam>> -/
 theorem unbox173 : UnboxAt prog prims 173 :=
-  ⟨ty12, 15, 289, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SrcParam,
+  ⟨ty12, 15, 290, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SrcParam,
     by rw [prog_decls]; exact word173, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::SrcType>> -/
 theorem unbox178 : UnboxAt prog prims 178 :=
-  ⟨ty71, 11, 293, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_SrcType, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SrcType,
+  ⟨ty71, 11, 294, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_SrcType, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SrcType,
     by rw [prog_decls]; exact word178, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::List<mini::selfhost::SrcType>>> -/
 theorem unbox180 : UnboxAt prog prims 180 :=
-  ⟨ty75, 12, 294, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType,
+  ⟨ty75, 12, 295, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType,
     by rw [prog_decls]; exact word180, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::SrcType> -/
 theorem unbox181 : UnboxAt prog prims 181 :=
-  ⟨ty9, 13, 295, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_SrcType, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_SrcType,
+  ⟨ty9, 13, 296, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_SrcType, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_SrcType,
     by rw [prog_decls]; exact word181, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Sym>> -/
-theorem unbox249 : UnboxAt prog prims 249 :=
+theorem unbox250 : UnboxAt prog prims 250 :=
   ⟨ty38, 39, 108, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_Sym, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Sym,
-    by rw [prog_decls]; exact word249, by rw [boxElem_self]; rfl⟩
+    by rw [prog_decls]; exact word250, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::FnDecl>> -/
-theorem unbox267 : UnboxAt prog prims 267 :=
-  ⟨ty112, 111, 423, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_FnDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_FnDecl,
-    by rw [prog_decls]; exact word267, by rw [boxElem_self]; rfl⟩
+theorem unbox268 : UnboxAt prog prims 268 :=
+  ⟨ty112, 111, 426, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_FnDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_FnDecl,
+    by rw [prog_decls]; exact word268, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::TypeDecl>> -/
-theorem unbox269 : UnboxAt prog prims 269 :=
-  ⟨ty109, 108, 424, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_TypeDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_TypeDecl,
-    by rw [prog_decls]; exact word269, by rw [boxElem_self]; rfl⟩
+theorem unbox270 : UnboxAt prog prims 270 :=
+  ⟨ty109, 108, 427, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_TypeDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_TypeDecl,
+    by rw [prog_decls]; exact word270, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Func>> -/
-theorem unbox276 : UnboxAt prog prims 276 :=
-  ⟨ty97, 94, 288, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_Func, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Func,
-    by rw [prog_decls]; exact word276, by rw [boxElem_self]; rfl⟩
+theorem unbox277 : UnboxAt prog prims 277 :=
+  ⟨ty97, 94, 289, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_Func, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Func,
+    by rw [prog_decls]; exact word277, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::Stmt> -/
-theorem unbox297 : UnboxAt prog prims 297 :=
-  ⟨ty94, 91, 300, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_Stmt, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_Stmt,
-    by rw [prog_decls]; exact word297, by rw [boxElem_self]; rfl⟩
+theorem unbox298 : UnboxAt prog prims 298 :=
+  ⟨ty94, 91, 301, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_Stmt, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_Stmt,
+    by rw [prog_decls]; exact word298, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::SrcExpr> -/
-theorem unbox303 : UnboxAt prog prims 303 :=
-  ⟨ty15, 18, 470, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_SrcExpr, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_SrcExpr,
-    by rw [prog_decls]; exact word303, by rw [boxElem_self]; rfl⟩
+theorem unbox304 : UnboxAt prog prims 304 :=
+  ⟨ty15, 18, 473, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_SrcExpr, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_SrcExpr,
+    by rw [prog_decls]; exact word304, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::SrcExpr>> -/
-theorem unbox311 : UnboxAt prog prims 311 :=
-  ⟨ty18, 22, 488, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SrcExpr,
-    by rw [prog_decls]; exact word311, by rw [boxElem_self]; rfl⟩
+theorem unbox312 : UnboxAt prog prims 312 :=
+  ⟨ty18, 22, 491, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SrcExpr,
+    by rw [prog_decls]; exact word312, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Binding>> -/
-theorem unbox319 : UnboxAt prog prims 319 :=
-  ⟨ty148, 137, 487, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_Binding, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Binding,
-    by rw [prog_decls]; exact word319, by rw [boxElem_self]; rfl⟩
+theorem unbox320 : UnboxAt prog prims 320 :=
+  ⟨ty148, 137, 490, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_Binding, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Binding,
+    by rw [prog_decls]; exact word320, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::SrcEff>> -/
-theorem unbox343 : UnboxAt prog prims 343 :=
-  ⟨ty212, 29, 515, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SrcEff,
-    by rw [prog_decls]; exact word343, by rw [boxElem_self]; rfl⟩
+theorem unbox347 : UnboxAt prog prims 347 :=
+  ⟨ty212, 29, 522, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SrcEff,
+    by rw [prog_decls]; exact word347, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::SrcEff> -/
-theorem unbox345 : UnboxAt prog prims 345 :=
-  ⟨ty29, 30, 517, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_SrcEff, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_SrcEff,
-    by rw [prog_decls]; exact word345, by rw [boxElem_self]; rfl⟩
+theorem unbox349 : UnboxAt prog prims 349 :=
+  ⟨ty29, 30, 524, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_SrcEff, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_SrcEff,
+    by rw [prog_decls]; exact word349, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Code>> -/
-theorem unbox456 : UnboxAt prog prims 456 :=
-  ⟨ty65, 65, 709, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_Code, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Code,
-    by rw [prog_decls]; exact word456, by rw [boxElem_self]; rfl⟩
+theorem unbox459 : UnboxAt prog prims 459 :=
+  ⟨ty65, 65, 714, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_Code, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Code,
+    by rw [prog_decls]; exact word459, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::Expr> -/
-theorem unbox465 : UnboxAt prog prims 465 :=
-  ⟨ty90, 90, 496, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_Expr, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_Expr,
-    by rw [prog_decls]; exact word465, by rw [boxElem_self]; rfl⟩
+theorem unbox468 : UnboxAt prog prims 468 :=
+  ⟨ty90, 90, 499, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_Expr, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_Expr,
+    by rw [prog_decls]; exact word468, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Expr>> -/
-theorem unbox466 : UnboxAt prog prims 466 :=
-  ⟨ty93, 93, 468, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_Expr, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Expr,
-    by rw [prog_decls]; exact word466, by rw [boxElem_self]; rfl⟩
+theorem unbox469 : UnboxAt prog prims 469 :=
+  ⟨ty93, 93, 471, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_Expr, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Expr,
+    by rw [prog_decls]; exact word469, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::List<usize>>> -/
-theorem unbox527 : UnboxAt prog prims 527 :=
-  ⟨ty27, 32, 767, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_List_usize, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_List_usize,
-    by rw [prog_decls]; exact word527, by rw [boxElem_self]; rfl⟩
+theorem unbox534 : UnboxAt prog prims 534 :=
+  ⟨ty27, 32, 774, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_List_usize, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_List_usize,
+    by rw [prog_decls]; exact word534, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::SrcStructDecl>> -/
-theorem unbox548 : UnboxAt prog prims 548 :=
-  ⟨ty74, 74, 783, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_SrcStructDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SrcStructDecl,
-    by rw [prog_decls]; exact word548, by rw [boxElem_self]; rfl⟩
+theorem unbox553 : UnboxAt prog prims 553 :=
+  ⟨ty74, 74, 790, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_SrcStructDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SrcStructDecl,
+    by rw [prog_decls]; exact word553, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::SrcEnumDecl>> -/
-theorem unbox551 : UnboxAt prog prims 551 :=
-  ⟨ty78, 78, 785, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_SrcEnumDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SrcEnumDecl,
-    by rw [prog_decls]; exact word551, by rw [boxElem_self]; rfl⟩
+theorem unbox556 : UnboxAt prog prims 556 :=
+  ⟨ty78, 78, 792, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_SrcEnumDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SrcEnumDecl,
+    by rw [prog_decls]; exact word556, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::RawTok>> -/
-theorem unbox562 : UnboxAt prog prims 562 :=
-  ⟨ty181, 163, 792, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_RawTok, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_RawTok,
-    by rw [prog_decls]; exact word562, by rw [boxElem_self]; rfl⟩
+theorem unbox567 : UnboxAt prog prims 567 :=
+  ⟨ty181, 163, 799, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_RawTok, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_RawTok,
+    by rw [prog_decls]; exact word567, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::List<mini::selfhost::List<usize>>>> -/
-theorem unbox614 : UnboxAt prog prims 614 :=
-  ⟨ty126, 125, 272, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_List_usize, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_List_usize,
-    by rw [prog_decls]; exact word614, by rw [boxElem_self]; rfl⟩
+theorem unbox619 : UnboxAt prog prims 619 :=
+  ⟨ty126, 125, 273, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_List_usize, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_List_usize,
+    by rw [prog_decls]; exact word619, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::AliasDecl>> -/
-theorem unbox618 : UnboxAt prog prims 618 :=
-  ⟨ty121, 120, 907, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_AliasDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_AliasDecl,
-    by rw [prog_decls]; exact word618, by rw [boxElem_self]; rfl⟩
+theorem unbox623 : UnboxAt prog prims 623 :=
+  ⟨ty121, 120, 914, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_AliasDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_AliasDecl,
+    by rw [prog_decls]; exact word623, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Ty>> -/
-theorem unbox629 : UnboxAt prog prims 629 :=
-  ⟨ty153, 144, 929, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_Ty, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Ty,
-    by rw [prog_decls]; exact word629, by rw [boxElem_self]; rfl⟩
-
-/-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Inst>> -/
 theorem unbox634 : UnboxAt prog prims 634 :=
-  ⟨ty156, 145, 934, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_Inst, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Inst,
+  ⟨ty153, 144, 936, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_Ty, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Ty,
     by rw [prog_decls]; exact word634, by rw [boxElem_self]; rfl⟩
 
-/-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::MFunc>> -/
+/-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Inst>> -/
 theorem unbox639 : UnboxAt prog prims 639 :=
-  ⟨ty195, 178, 938, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_MFunc, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_MFunc,
+  ⟨ty156, 145, 941, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_Inst, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Inst,
     by rw [prog_decls]; exact word639, by rw [boxElem_self]; rfl⟩
 
+/-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::MFunc>> -/
+theorem unbox644 : UnboxAt prog prims 644 :=
+  ⟨ty195, 178, 945, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_MFunc, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_MFunc,
+    by rw [prog_decls]; exact word644, by rw [boxElem_self]; rfl⟩
+
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::ConstDecl>> -/
-theorem unbox651 : UnboxAt prog prims 651 :=
-  ⟨ty115, 114, 957, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_ConstDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_ConstDecl,
-    by rw [prog_decls]; exact word651, by rw [boxElem_self]; rfl⟩
-
-/-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::ImportDecl>> -/
-theorem unbox653 : UnboxAt prog prims 653 :=
-  ⟨ty118, 117, 959, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_ImportDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_ImportDecl,
-    by rw [prog_decls]; exact word653, by rw [boxElem_self]; rfl⟩
-
-/-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::ImplDecl>> -/
 theorem unbox656 : UnboxAt prog prims 656 :=
-  ⟨ty124, 123, 962, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_ImplDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_ImplDecl,
+  ⟨ty115, 114, 964, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_ConstDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_ConstDecl,
     by rw [prog_decls]; exact word656, by rw [boxElem_self]; rfl⟩
 
+/-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::ImportDecl>> -/
+theorem unbox658 : UnboxAt prog prims 658 :=
+  ⟨ty118, 117, 966, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_ImportDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_ImportDecl,
+    by rw [prog_decls]; exact word658, by rw [boxElem_self]; rfl⟩
+
+/-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::ImplDecl>> -/
+theorem unbox661 : UnboxAt prog prims 661 :=
+  ⟨ty124, 123, 969, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_ImplDecl, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_ImplDecl,
+    by rw [prog_decls]; exact word661, by rw [boxElem_self]; rfl⟩
+
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Instr>> -/
-theorem unbox699 : UnboxAt prog prims 699 :=
-  ⟨ty62, 64, 985, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_Instr, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Instr,
-    by rw [prog_decls]; exact word699, by rw [boxElem_self]; rfl⟩
+theorem unbox704 : UnboxAt prog prims 704 :=
+  ⟨ty62, 64, 992, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_Instr, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Instr,
+    by rw [prog_decls]; exact word704, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<core::option::Option<usize>>> -/
-theorem unbox922 : UnboxAt prog prims 922 :=
-  ⟨ty243, 208, 1157, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_core_option_Option_usize, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_core_option_Option_usize,
-    by rw [prog_decls]; exact word922, by rw [boxElem_self]; rfl⟩
+theorem unbox929 : UnboxAt prog prims 929 :=
+  ⟨ty243, 208, 1166, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_core_option_Option_usize, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_core_option_Option_usize,
+    by rw [prog_decls]; exact word929, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::Ty> -/
-theorem unbox930 : UnboxAt prog prims 930 :=
-  ⟨ty152, 143, 1162, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_Ty, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_Ty,
-    by rw [prog_decls]; exact word930, by rw [boxElem_self]; rfl⟩
+theorem unbox937 : UnboxAt prog prims 937 :=
+  ⟨ty152, 143, 1171, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_Ty, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_Ty,
+    by rw [prog_decls]; exact word937, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::MParam>> -/
-theorem unbox935 : UnboxAt prog prims 935 :=
-  ⟨ty186, 171, 1164, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_MParam, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_MParam,
-    by rw [prog_decls]; exact word935, by rw [boxElem_self]; rfl⟩
+theorem unbox942 : UnboxAt prog prims 942 :=
+  ⟨ty186, 171, 1173, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_MParam, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_MParam,
+    by rw [prog_decls]; exact word942, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::MStmt> -/
-theorem unbox936 : UnboxAt prog prims 936 :=
-  ⟨ty192, 174, 1165, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_MStmt, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_MStmt,
-    by rw [prog_decls]; exact word936, by rw [boxElem_self]; rfl⟩
+theorem unbox943 : UnboxAt prog prims 943 :=
+  ⟨ty192, 174, 1174, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_MStmt, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_MStmt,
+    by rw [prog_decls]; exact word943, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Fact>> -/
-theorem unbox969 : UnboxAt prog prims 969 :=
-  ⟨ty203, 182, 1199, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_Fact, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Fact,
-    by rw [prog_decls]; exact word969, by rw [boxElem_self]; rfl⟩
+theorem unbox976 : UnboxAt prog prims 976 :=
+  ⟨ty203, 182, 1208, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_Fact, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Fact,
+    by rw [prog_decls]; exact word976, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::SrcArm>> -/
-theorem unbox1031 : UnboxAt prog prims 1031 :=
-  ⟨ty23, 27, 1254, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SrcArm,
-    by rw [prog_decls]; exact word1031, by rw [boxElem_self]; rfl⟩
+theorem unbox1038 : UnboxAt prog prims 1038 :=
+  ⟨ty23, 27, 1263, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SrcArm,
+    by rw [prog_decls]; exact word1038, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::MEff>> -/
-theorem unbox1167 : UnboxAt prog prims 1167 :=
-  ⟨ty280, 176, 1359, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_MEff, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_MEff,
-    by rw [prog_decls]; exact word1167, by rw [boxElem_self]; rfl⟩
+theorem unbox1176 : UnboxAt prog prims 1176 :=
+  ⟨ty282, 176, 1370, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_MEff, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_MEff,
+    by rw [prog_decls]; exact word1176, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::MEff> -/
-theorem unbox1168 : UnboxAt prog prims 1168 :=
-  ⟨ty191, 177, 1360, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_MEff, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_MEff,
-    by rw [prog_decls]; exact word1168, by rw [boxElem_self]; rfl⟩
+theorem unbox1177 : UnboxAt prog prims 1177 :=
+  ⟨ty191, 177, 1371, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_MEff, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_MEff,
+    by rw [prog_decls]; exact word1177, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Arity>> -/
-theorem unbox1217 : UnboxAt prog prims 1217 :=
-  ⟨ty161, 148, 711, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_Arity, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Arity,
-    by rw [prog_decls]; exact word1217, by rw [boxElem_self]; rfl⟩
+theorem unbox1226 : UnboxAt prog prims 1226 :=
+  ⟨ty161, 148, 716, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_Arity, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Arity,
+    by rw [prog_decls]; exact word1226, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::SymRule>> -/
-theorem unbox1275 : UnboxAt prog prims 1275 :=
-  ⟨ty219, 191, 1071, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_SymRule, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SymRule,
-    by rw [prog_decls]; exact word1275, by rw [boxElem_self]; rfl⟩
+theorem unbox1286 : UnboxAt prog prims 1286 :=
+  ⟨ty219, 191, 1080, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_SymRule, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SymRule,
+    by rw [prog_decls]; exact word1286, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::LocalTy>> -/
-theorem unbox1346 : UnboxAt prog prims 1346 :=
-  ⟨ty264, 221, 1453, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_LocalTy, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_LocalTy,
-    by rw [prog_decls]; exact word1346, by rw [boxElem_self]; rfl⟩
+theorem unbox1357 : UnboxAt prog prims 1357 :=
+  ⟨ty266, 223, 1467, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_LocalTy, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_LocalTy,
+    by rw [prog_decls]; exact word1357, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::List<mini::selfhost::Ty>>> -/
-theorem unbox1429 : UnboxAt prog prims 1429 :=
-  ⟨ty291, 240, 1518, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty,
-    by rw [prog_decls]; exact word1429, by rw [boxElem_self]; rfl⟩
+theorem unbox1443 : UnboxAt prog prims 1443 :=
+  ⟨ty293, 242, 1533, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty,
+    by rw [prog_decls]; exact word1443, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<core::option::Option<mini::selfhost::SrcType>>> -/
-theorem unbox1514 : UnboxAt prog prims 1514 :=
-  ⟨ty225, 198, 1312, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_core_option_Option_mini_selfhost_SrcType, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_core_option_Option_mini_selfhost_SrcType,
-    by rw [prog_decls]; exact word1514, by rw [boxElem_self]; rfl⟩
+theorem unbox1529 : UnboxAt prog prims 1529 :=
+  ⟨ty225, 198, 1323, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_core_option_Option_mini_selfhost_SrcType, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_core_option_Option_mini_selfhost_SrcType,
+    by rw [prog_decls]; exact word1529, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::List<mini::selfhost::CTree>>> -/
-theorem unbox1521 : UnboxAt prog prims 1521 :=
-  ⟨ty106, 107, 1585, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_CTree, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_CTree,
-    by rw [prog_decls]; exact word1521, by rw [boxElem_self]; rfl⟩
+theorem unbox1536 : UnboxAt prog prims 1536 :=
+  ⟨ty106, 107, 1605, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_CTree, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_CTree,
+    by rw [prog_decls]; exact word1536, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Local>> -/
-theorem unbox1533 : UnboxAt prog prims 1533 :=
-  ⟨ty285, 235, 1597, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_Local, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Local,
-    by rw [prog_decls]; exact word1533, by rw [boxElem_self]; rfl⟩
+theorem unbox1548 : UnboxAt prog prims 1548 :=
+  ⟨ty287, 237, 1617, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_Local, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Local,
+    by rw [prog_decls]; exact word1548, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::BoundGoal>> -/
-theorem unbox1551 : UnboxAt prog prims 1551 :=
-  ⟨ty297, 245, 1614, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_BoundGoal, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_BoundGoal,
-    by rw [prog_decls]; exact word1551, by rw [boxElem_self]; rfl⟩
+theorem unbox1566 : UnboxAt prog prims 1566 :=
+  ⟨ty299, 247, 1634, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_BoundGoal, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_BoundGoal,
+    by rw [prog_decls]; exact word1566, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::VariantAt>> -/
-theorem unbox1957 : UnboxAt prog prims 1957 :=
-  ⟨ty346, 289, 2052, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_VariantAt, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_VariantAt,
-    by rw [prog_decls]; exact word1957, by rw [boxElem_self]; rfl⟩
+theorem unbox1979 : UnboxAt prog prims 1979 :=
+  ⟨ty348, 291, 2074, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_VariantAt, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_VariantAt,
+    by rw [prog_decls]; exact word1979, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::VariantTy>> -/
-theorem unbox1977 : UnboxAt prog prims 1977 :=
-  ⟨ty337, 282, 2077, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_VariantTy,
-    by rw [prog_decls]; exact word1977, by rw [boxElem_self]; rfl⟩
+theorem unbox1999 : UnboxAt prog prims 1999 :=
+  ⟨ty339, 284, 2099, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_VariantTy,
+    by rw [prog_decls]; exact word1999, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<bool>> -/
-theorem unbox2029 : UnboxAt prog prims 2029 :=
-  ⟨ty312, 257, 2139, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_bool, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_bool,
-    by rw [prog_decls]; exact word2029, by rw [boxElem_self]; rfl⟩
+theorem unbox2051 : UnboxAt prog prims 2051 :=
+  ⟨ty314, 259, 2161, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_bool, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_bool,
+    by rw [prog_decls]; exact word2051, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Bind>> -/
-theorem unbox2116 : UnboxAt prog prims 2116 :=
-  ⟨ty324, 268, 2216, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_Bind, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Bind,
-    by rw [prog_decls]; exact word2116, by rw [boxElem_self]; rfl⟩
+theorem unbox2138 : UnboxAt prog prims 2138 :=
+  ⟨ty326, 270, 2238, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_Bind, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Bind,
+    by rw [prog_decls]; exact word2138, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::EffArm>> -/
-theorem unbox2174 : UnboxAt prog prims 2174 :=
-  ⟨ty351, 294, 2240, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_EffArm, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_EffArm,
-    by rw [prog_decls]; exact word2174, by rw [boxElem_self]; rfl⟩
+theorem unbox2196 : UnboxAt prog prims 2196 :=
+  ⟨ty353, 296, 2262, get_of_drop Lanius.Faithful.SelfCert.at_unbox_of_mini_selfhost_List_mini_selfhost_EffArm, get_of_drop Lanius.Faithful.SelfCert.at_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_EffArm,
+    by rw [prog_decls]; exact word2196, by rw [boxElem_self]; rfl⟩
 
 theorem primsOk : PrimsOk prog prims :=
   ⟨List.forall_mem_cons.2 ⟨boxed33,
@@ -790,59 +790,59 @@ theorem primsOk : PrimsOk prog prims :=
     List.forall_mem_cons.2 ⟨boxed172,
     List.forall_mem_cons.2 ⟨boxed184,
     List.forall_mem_cons.2 ⟨boxed213,
-    List.forall_mem_cons.2 ⟨boxed231,
-    List.forall_mem_cons.2 ⟨boxed247,
-    List.forall_mem_cons.2 ⟨boxed301,
-    List.forall_mem_cons.2 ⟨boxed310,
-    List.forall_mem_cons.2 ⟨boxed327,
-    List.forall_mem_cons.2 ⟨boxed376,
-    List.forall_mem_cons.2 ⟨boxed453,
-    List.forall_mem_cons.2 ⟨boxed454,
-    List.forall_mem_cons.2 ⟨boxed460,
-    List.forall_mem_cons.2 ⟨boxed633,
-    List.forall_mem_cons.2 ⟨boxed647,
-    List.forall_mem_cons.2 ⟨boxed648,
-    List.forall_mem_cons.2 ⟨boxed649,
-    List.forall_mem_cons.2 ⟨boxed650,
+    List.forall_mem_cons.2 ⟨boxed232,
+    List.forall_mem_cons.2 ⟨boxed248,
+    List.forall_mem_cons.2 ⟨boxed302,
+    List.forall_mem_cons.2 ⟨boxed311,
+    List.forall_mem_cons.2 ⟨boxed328,
+    List.forall_mem_cons.2 ⟨boxed379,
+    List.forall_mem_cons.2 ⟨boxed456,
+    List.forall_mem_cons.2 ⟨boxed457,
+    List.forall_mem_cons.2 ⟨boxed463,
+    List.forall_mem_cons.2 ⟨boxed638,
     List.forall_mem_cons.2 ⟨boxed652,
+    List.forall_mem_cons.2 ⟨boxed653,
     List.forall_mem_cons.2 ⟨boxed654,
     List.forall_mem_cons.2 ⟨boxed655,
-    List.forall_mem_cons.2 ⟨boxed697,
-    List.forall_mem_cons.2 ⟨boxed712,
-    List.forall_mem_cons.2 ⟨boxed782,
-    List.forall_mem_cons.2 ⟨boxed784,
+    List.forall_mem_cons.2 ⟨boxed657,
+    List.forall_mem_cons.2 ⟨boxed659,
+    List.forall_mem_cons.2 ⟨boxed660,
+    List.forall_mem_cons.2 ⟨boxed702,
+    List.forall_mem_cons.2 ⟨boxed717,
     List.forall_mem_cons.2 ⟨boxed789,
-    List.forall_mem_cons.2 ⟨boxed893,
-    List.forall_mem_cons.2 ⟨boxed943,
-    List.forall_mem_cons.2 ⟨boxed1069,
-    List.forall_mem_cons.2 ⟨boxed1072,
-    List.forall_mem_cons.2 ⟨boxed1137,
-    List.forall_mem_cons.2 ⟨boxed1141,
-    List.forall_mem_cons.2 ⟨boxed1143,
-    List.forall_mem_cons.2 ⟨boxed1160,
-    List.forall_mem_cons.2 ⟨boxed1180,
-    List.forall_mem_cons.2 ⟨boxed1181,
-    List.forall_mem_cons.2 ⟨boxed1188,
-    List.forall_mem_cons.2 ⟨boxed1327,
-    List.forall_mem_cons.2 ⟨boxed1347,
-    List.forall_mem_cons.2 ⟨boxed1349,
-    List.forall_mem_cons.2 ⟨boxed1352,
-    List.forall_mem_cons.2 ⟨boxed1385,
-    List.forall_mem_cons.2 ⟨boxed1422,
-    List.forall_mem_cons.2 ⟨boxed1427,
-    List.forall_mem_cons.2 ⟨boxed1451,
-    List.forall_mem_cons.2 ⟨boxed1452,
-    List.forall_mem_cons.2 ⟨boxed1512,
-    List.forall_mem_cons.2 ⟨boxed1537,
-    List.forall_mem_cons.2 ⟨boxed1538,
-    List.forall_mem_cons.2 ⟨boxed1644,
-    List.forall_mem_cons.2 ⟨boxed1692,
-    List.forall_mem_cons.2 ⟨boxed1736,
-    List.forall_mem_cons.2 ⟨boxed2051,
-    List.forall_mem_cons.2 ⟨boxed2150,
-    List.forall_mem_cons.2 ⟨boxed2179,
-    List.forall_mem_cons.2 ⟨boxed2269,
-    List.forall_mem_cons.2 ⟨boxed2280,
+    List.forall_mem_cons.2 ⟨boxed791,
+    List.forall_mem_cons.2 ⟨boxed796,
+    List.forall_mem_cons.2 ⟨boxed900,
+    List.forall_mem_cons.2 ⟨boxed950,
+    List.forall_mem_cons.2 ⟨boxed1078,
+    List.forall_mem_cons.2 ⟨boxed1081,
+    List.forall_mem_cons.2 ⟨boxed1146,
+    List.forall_mem_cons.2 ⟨boxed1150,
+    List.forall_mem_cons.2 ⟨boxed1152,
+    List.forall_mem_cons.2 ⟨boxed1169,
+    List.forall_mem_cons.2 ⟨boxed1189,
+    List.forall_mem_cons.2 ⟨boxed1190,
+    List.forall_mem_cons.2 ⟨boxed1197,
+    List.forall_mem_cons.2 ⟨boxed1338,
+    List.forall_mem_cons.2 ⟨boxed1358,
+    List.forall_mem_cons.2 ⟨boxed1360,
+    List.forall_mem_cons.2 ⟨boxed1363,
+    List.forall_mem_cons.2 ⟨boxed1396,
+    List.forall_mem_cons.2 ⟨boxed1436,
+    List.forall_mem_cons.2 ⟨boxed1441,
+    List.forall_mem_cons.2 ⟨boxed1465,
+    List.forall_mem_cons.2 ⟨boxed1466,
+    List.forall_mem_cons.2 ⟨boxed1527,
+    List.forall_mem_cons.2 ⟨boxed1552,
+    List.forall_mem_cons.2 ⟨boxed1553,
+    List.forall_mem_cons.2 ⟨boxed1666,
+    List.forall_mem_cons.2 ⟨boxed1714,
+    List.forall_mem_cons.2 ⟨boxed1758,
+    List.forall_mem_cons.2 ⟨boxed2073,
+    List.forall_mem_cons.2 ⟨boxed2172,
+    List.forall_mem_cons.2 ⟨boxed2201,
+    List.forall_mem_cons.2 ⟨boxed2291,
+    List.forall_mem_cons.2 ⟨boxed2302,
     fun _ h => nomatch h⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩,
   List.forall_mem_cons.2 ⟨unbox10,
     List.forall_mem_cons.2 ⟨unbox44,
@@ -858,53 +858,53 @@ theorem primsOk : PrimsOk prog prims :=
     List.forall_mem_cons.2 ⟨unbox178,
     List.forall_mem_cons.2 ⟨unbox180,
     List.forall_mem_cons.2 ⟨unbox181,
-    List.forall_mem_cons.2 ⟨unbox249,
-    List.forall_mem_cons.2 ⟨unbox267,
-    List.forall_mem_cons.2 ⟨unbox269,
-    List.forall_mem_cons.2 ⟨unbox276,
-    List.forall_mem_cons.2 ⟨unbox297,
-    List.forall_mem_cons.2 ⟨unbox303,
-    List.forall_mem_cons.2 ⟨unbox311,
-    List.forall_mem_cons.2 ⟨unbox319,
-    List.forall_mem_cons.2 ⟨unbox343,
-    List.forall_mem_cons.2 ⟨unbox345,
-    List.forall_mem_cons.2 ⟨unbox456,
-    List.forall_mem_cons.2 ⟨unbox465,
-    List.forall_mem_cons.2 ⟨unbox466,
-    List.forall_mem_cons.2 ⟨unbox527,
-    List.forall_mem_cons.2 ⟨unbox548,
-    List.forall_mem_cons.2 ⟨unbox551,
-    List.forall_mem_cons.2 ⟨unbox562,
-    List.forall_mem_cons.2 ⟨unbox614,
-    List.forall_mem_cons.2 ⟨unbox618,
-    List.forall_mem_cons.2 ⟨unbox629,
+    List.forall_mem_cons.2 ⟨unbox250,
+    List.forall_mem_cons.2 ⟨unbox268,
+    List.forall_mem_cons.2 ⟨unbox270,
+    List.forall_mem_cons.2 ⟨unbox277,
+    List.forall_mem_cons.2 ⟨unbox298,
+    List.forall_mem_cons.2 ⟨unbox304,
+    List.forall_mem_cons.2 ⟨unbox312,
+    List.forall_mem_cons.2 ⟨unbox320,
+    List.forall_mem_cons.2 ⟨unbox347,
+    List.forall_mem_cons.2 ⟨unbox349,
+    List.forall_mem_cons.2 ⟨unbox459,
+    List.forall_mem_cons.2 ⟨unbox468,
+    List.forall_mem_cons.2 ⟨unbox469,
+    List.forall_mem_cons.2 ⟨unbox534,
+    List.forall_mem_cons.2 ⟨unbox553,
+    List.forall_mem_cons.2 ⟨unbox556,
+    List.forall_mem_cons.2 ⟨unbox567,
+    List.forall_mem_cons.2 ⟨unbox619,
+    List.forall_mem_cons.2 ⟨unbox623,
     List.forall_mem_cons.2 ⟨unbox634,
     List.forall_mem_cons.2 ⟨unbox639,
-    List.forall_mem_cons.2 ⟨unbox651,
-    List.forall_mem_cons.2 ⟨unbox653,
+    List.forall_mem_cons.2 ⟨unbox644,
     List.forall_mem_cons.2 ⟨unbox656,
-    List.forall_mem_cons.2 ⟨unbox699,
-    List.forall_mem_cons.2 ⟨unbox922,
-    List.forall_mem_cons.2 ⟨unbox930,
-    List.forall_mem_cons.2 ⟨unbox935,
-    List.forall_mem_cons.2 ⟨unbox936,
-    List.forall_mem_cons.2 ⟨unbox969,
-    List.forall_mem_cons.2 ⟨unbox1031,
-    List.forall_mem_cons.2 ⟨unbox1167,
-    List.forall_mem_cons.2 ⟨unbox1168,
-    List.forall_mem_cons.2 ⟨unbox1217,
-    List.forall_mem_cons.2 ⟨unbox1275,
-    List.forall_mem_cons.2 ⟨unbox1346,
-    List.forall_mem_cons.2 ⟨unbox1429,
-    List.forall_mem_cons.2 ⟨unbox1514,
-    List.forall_mem_cons.2 ⟨unbox1521,
-    List.forall_mem_cons.2 ⟨unbox1533,
-    List.forall_mem_cons.2 ⟨unbox1551,
-    List.forall_mem_cons.2 ⟨unbox1957,
-    List.forall_mem_cons.2 ⟨unbox1977,
-    List.forall_mem_cons.2 ⟨unbox2029,
-    List.forall_mem_cons.2 ⟨unbox2116,
-    List.forall_mem_cons.2 ⟨unbox2174,
+    List.forall_mem_cons.2 ⟨unbox658,
+    List.forall_mem_cons.2 ⟨unbox661,
+    List.forall_mem_cons.2 ⟨unbox704,
+    List.forall_mem_cons.2 ⟨unbox929,
+    List.forall_mem_cons.2 ⟨unbox937,
+    List.forall_mem_cons.2 ⟨unbox942,
+    List.forall_mem_cons.2 ⟨unbox943,
+    List.forall_mem_cons.2 ⟨unbox976,
+    List.forall_mem_cons.2 ⟨unbox1038,
+    List.forall_mem_cons.2 ⟨unbox1176,
+    List.forall_mem_cons.2 ⟨unbox1177,
+    List.forall_mem_cons.2 ⟨unbox1226,
+    List.forall_mem_cons.2 ⟨unbox1286,
+    List.forall_mem_cons.2 ⟨unbox1357,
+    List.forall_mem_cons.2 ⟨unbox1443,
+    List.forall_mem_cons.2 ⟨unbox1529,
+    List.forall_mem_cons.2 ⟨unbox1536,
+    List.forall_mem_cons.2 ⟨unbox1548,
+    List.forall_mem_cons.2 ⟨unbox1566,
+    List.forall_mem_cons.2 ⟨unbox1979,
+    List.forall_mem_cons.2 ⟨unbox1999,
+    List.forall_mem_cons.2 ⟨unbox2051,
+    List.forall_mem_cons.2 ⟨unbox2138,
+    List.forall_mem_cons.2 ⟨unbox2196,
     fun _ h => nomatch h⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩
 
 end Lanius.Faithful.SelfPure

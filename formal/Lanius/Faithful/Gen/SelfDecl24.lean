@@ -39,12 +39,12 @@ open Lanius.Mini
 open Lanius.Faithful
 open Lanius.Faithful.Self
 
-/-- Functions 2400 to 2404, and their signature entries. -/
-def dpart24 : List SrcFunc := [(src_col_quiet 155 1723 2389), (src_covers_all 527 2316 2401 2403), (src_wild_pat 96 147 247 570 2185 2187 2351 2394), (src_covered_by 103 2181 2403 2404), (src_plain_naming 2182 2316 2317 2345)]
+/-- Functions 2400 to 2426, and their signature entries. -/
+def dpart24 : List SrcFunc := [(src_replace_at 56 96 103 147 2400), (src_hidden_pat 96 147 248 575 2207 2209 2408), (src_hidden_expr 96 147 248 575 1683 1743 2408), (src_column_fit 2334), (src_row_fits 75 103 2404 2409), (src_column_sub 155 1745 2343 2410 2411 2412), (src_covered_use 155 2394 2413 2414), (src_covers_decl 2415), (src_hidden_path 2416 2417), (src_col_fits 155 1745 2343 2418), (src_quiet_sub 2419), (src_quiet_in 575 2339 2420), (src_sub_arm 147 152 155 248 575), (src_quiet_use 2421), (src_cols_quiet 75 103 2338 2414 2422), (src_covers_enum 2423), (src_named_path 96 147 155 248 575 596 613 614 1853), (src_text_hidden 465), (src_same_opt_name 897), (src_quiet_arm 2412 2424), (src_mentions 56 103 897 1088 2203 2420), (src_appended_use 575 1088 2394), (src_col_quiet 155 1745 2411), (src_covers_all 534 2338 2423 2425), (src_wild_pat 96 147 248 575 2207 2209 2373 2416), (src_covered_by 103 2203 2425 2426), (src_plain_naming 2204 2338 2339 2367)]
 
-def dents24 : List SigEntry := [some ([(.uint .usize), ty84, .bool, ty84], ty353), some ([(.uint .usize), ty269, ty107, ty27, ty85], ty353), some ([ty84], ty84), some ([(.uint .usize), ty269, ty107, ty20, ty85], ty353), some ([(.uint .usize), ty269, ty107, ty20, ty84], ty353)]
+def dents24 : List SigEntry := [some ([ty85, (.uint .usize), ty84], ty85), some ([ty84], ty84), some ([ty84], ty84), some ([.bool, ty137, ty86], ty86), some ([ty271, ty85, ty85, (.uint .usize), (.uint .usize), .bool], .bool), some ([(.uint .usize), ty271, ty84, ty84], ty137), some ([(.uint .usize), ty84, ty85, (.uint .usize), ty84, ty85, ty84, .bool], ty374), some ([(.uint .usize), ty271, ty240, ty85], ty355), some ([ty84], ty84), some ([ty271, ty84, ty84, .bool, .bool], .bool), some ([ty84, ty84, ty355], ty137), some ([(.uint .usize), ty222, ty84], ty355), some ([ty84, ty84], ty84), some ([ty84, ty85, (.uint .usize), ty84, ty85, ty84, ty355], ty374), some ([(.uint .usize), ty85, (.uint .usize), (.uint .usize), ty84], ty355), some ([(.uint .usize), ty271, ty107, ty85], ty355), some ([ty84, ty20], ty84), some ([], ty20), some ([ty222, ty222], .bool), some ([.bool, ty84, ty84], ty137), some ([(.uint .usize), ty85, ty20], ty355), some ([ty84, ty85, (.uint .usize), ty84, ty85, ty84, .bool], ty374), some ([(.uint .usize), ty84, .bool, ty84], ty355), some ([(.uint .usize), ty271, ty107, ty27, ty85], ty355), some ([ty84], ty84), some ([(.uint .usize), ty271, ty107, ty20, ty85], ty355), some ([(.uint .usize), ty271, ty107, ty20, ty84], ty355)]
 
-/-- `declareFuncs` of functions 2400 to 2404. -/
+/-- `declareFuncs` of functions 2400 to 2426. -/
 theorem dchunk24 : declsStep dpart24 decls 0 0 0 0 = true := by decide +kernel
 
 theorem dfit24 : entriesFit dpart24 dents24 = true := by decide +kernel

@@ -40,11 +40,19 @@ stopping at the computations the theorems are about (`compileSource`,
 `frontEndWords`, the self program `Lanius.Faithful.Self.prog` and
 `funcNeeds`, which are not trusted, section 10), with each one's type and
 body:
-definitions `339ca6217ec1aa8b` (4501 constants). This covers Core's
+definitions `70d594d3ee80699d` (4501 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
 the statements' own definitions (section 2). A private name is hashed
 without its module, so a definition that only moves between generated
-modules keeps its hash. The last change of the hash (11-01, merge of lang `8884c49974b65a57` into
+modules keeps its hash. The last change of the hash (11-02, merge of front-fixes `d76509417115a874` into lang `339ca6217ec1aa8b`, giving `70d594d3ee80699d`): it combines step 3.5b's verified compiler changes with review-fixes' F14 changes, which did not change each other's definitions, beside the prim table `prims`, regenerated from the merged self program. Step 3.5b (11-01 of array-to-slice arguments):
+the verified compiler lowers a `LetEval` or `Discard` value through
+`stmt_eval` and checks an array call's result and block
+(`array_call_code`), which adds functions to the self program and moves
+the indices in the prim table `prims`; `ixTimes` stays 105. No other
+definition changed. The top theorems' frame-room premise grew
+`fsp ≤ top ∧ top < 2 ^ 62` (section 8, "Frame room"), which changes their
+statement hashes but no definition. The hash before it was
+`8884c49974b65a57`. Before that (11-01, step 3.5a): Before that, review-fixes (11-01, merge of lang `8884c49974b65a57` into
 review-fixes `5aa62e3705d251c9`): it combines lang's frame-room steps and
 review-fixes' F14 changes, which did not change each other's definitions,
 beside the prim table `prims` (`Faithful/Gen/SelfPureTab.lean`) and `ixTimes`,
@@ -217,7 +225,7 @@ statement `0000000004ab78ed`. `process_behaviour` from source text, as
 
 #### `Lanius.Mini.compileText_correct`
 
-statement `0000000099586fcd`. If `compileText files = some binary`, the
+statement `0000000000901ac2`. If `compileText files = some binary`, the
 files' texts have exactly one reading `sp`, and `compileSource_correct`'s
 conclusion holds of `sp` and `binary`, from the start state of the mini
 heap's streams (standard input, the clocks' readings, the secure bytes; the
@@ -225,7 +233,7 @@ read limits are any). Rests on sections 3, 4, 6 and 8.
 
 #### `Lanius.Mini.compileText_behaviour`
 
-statement `00000000d9b36706`. If `compileText files = some binary`, the
+statement `000000002e8af658`. If `compileText files = some binary`, the
 texts have one reading `sp`, and `compileSource_behaviour`'s conclusion
 holds of it.
 
@@ -238,7 +246,7 @@ Rests on section 4 only.
 
 #### `Lanius.Mini.compileSource_correct`
 
-statement `00000000530be8bb`. If `compileSource sp = some binary`, `f` is a
+statement `00000000ddd9beb6`. If `compileSource sp = some binary`, `f` is a
 function of `sp`, and `args` are values of its parameter types held in
 slots `bits` (`FieldsHold`), and Core runs `f(args)` from the start state
 (`startState` of the heap's streams: standard input, the clocks' readings
@@ -254,13 +262,13 @@ Rests on sections 3, 6 and 8.
 
 #### `Lanius.Mini.compileSource_correct_from`
 
-statement `00000000b5ce8edf`. The same from any Core state `st` with no
+statement `000000003b9d90f5`. The same from any Core state `st` with no
 live cells (`State.Fresh`) whose heap and world the mini heap represents
 (`HeapCorr`); the final heap and world are again represented.
 
 #### `Lanius.Mini.compileSource_stops`
 
-statement `0000000081768b6e`. Same premises on the compiler and the
+statement `000000003abfe55e`. Same premises on the compiler and the
 arguments, a fresh heap of limit at least 1 with the frame memory `f`
 needs, and the caller's obligations (any window up to 2^62): if every fuel of Core's run of `f(args)` fails
 (`Failing`: runs out, traps with a defined trap, or ends past the heap
@@ -268,20 +276,20 @@ limit), then every run of the code that stops, stops at a fault (`Faults`).
 
 #### `Lanius.Mini.compileSource_behaviour`
 
-statement `00000000c673cf71`. Same premises: a run to a state with no step
+statement `00000000590278c2`. Same premises: a run to a state with no step
 that is not a fault comes from a Core run of `f(args)` that finished within
 the heap limit, or reached an undefined trap within it.
 
 #### `Lanius.Mini.compileSource_behaviour_rawFree`
 
-statement `0000000003808338`. `compileSource_behaviour` for a program without raw
+statement `00000000c460dfe7`. `compileSource_behaviour` for a program without raw
 memory (`RawFree`: no `alloc`, `load_byte`, `store_byte`, `dealloc`, raw
 slices or `slice_stride`), from a fresh heap: the undefined trap its second
 case allows is not `typeMismatch` (`Lanius/Mini/ShapeSource.lean`).
 
 #### `Lanius.Mini.compileSource_deterministic`
 
-statement `0000000099c6cc2f`. `compileSource_correct` (without the output
+statement `00000000bfde3cb8`. `compileSource_correct` (without the output
 conjuncts) with: every run of the same length ends `DataEq` to the
 returning one (registers, `rip` and memory equal; section 7).
 
@@ -1271,12 +1279,16 @@ and with a heap limit of at least 1.
     is the bytes from `limit` up to the top in r10 (`HeapAt.top`); the
     startup code sets r10 and rbx to `heap + stack`.
   - **Frame room.** The theorems on `compileSource` and `compileText` take
-    `0 < sp.need f → limit + sp.need f ≤ fsp`: when the function run needs
-    frame memory (`SrcProgram.need`, its own block for the arrays it passes
-    as slices and the largest need of a function it calls; SEMANTIC_DECISIONS
-    "Addressed locals", point 7), the frame pointer is that many bytes above
-    the limit. The process theorems take `sp.need entry ≤ stack`, which gives
-    it for the loader's layout (frame memory is as large as the stack). It
+    `0 < sp.need f → limit + sp.need f ≤ fsp ∧ fsp ≤ top ∧ top < 2 ^ 62`:
+    when the function run needs frame memory (`SrcProgram.need`, its own
+    block for the arrays it passes as slices and the largest need of a
+    function it calls; SEMANTIC_DECISIONS "Addressed locals", point 7), the
+    frame pointer is that many bytes above the limit, at most the top (the
+    blocks taken below it are below the top, so their stores reach them),
+    and the top is below `2 ^ 62` (a block's addresses add without
+    wrapping). The process theorems take `sp.need entry ≤ stack`, which gives
+    it for the loader's layout (frame memory is as large as the stack, and
+    the frame pointer starts at the top, `heap + stack`, below `2 ^ 41`). It
     holds for any heap when the need is 0, as it is when no function the run
     can reach passes an array as a slice; the self program's need is 0 at
     every function (`SelfPure.prog_need`, a kernel check over its bodies in

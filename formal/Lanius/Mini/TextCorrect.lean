@@ -358,7 +358,7 @@ theorem compileText_correct {files : List SourceFile} {binary : Binary} (h : com
       ∀ {fuel : Nat} {v : Value} {final : Semantics.State} {heap : Heap}, heap.cursor = 1 →
       (∀ a, 1 ≤ a → heap.bytes a = 0) → heap.limit < 2 ^ 62 → heap.io.trace = [] →
       Semantics.evalExpr fuel sp.toCore (startState heap.io) (.call f (args.map Core.Expr.value)) = .done v final →
-      final.heap.nextAddress ≤ heap.limit → (0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp) →
+      final.heap.nextAddress ≤ heap.limit → (0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp ∧ heap.fsp ≤ heap.top ∧ heap.top < 2 ^ 62) →
       ∃ depth results after, func.ret.HoldsAt [] v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
         after.cursor = final.heap.nextAddress ∧ final.world.standardOutput = outputOf 1 after.io.trace ∧
         final.world.standardError = outputOf 2 after.io.trace ∧
@@ -390,7 +390,7 @@ theorem compileText_behaviour {files : List SourceFile} {binary : Binary} (h : c
       ∀ {args : List Value} {bits : List (BitVec 64)}, FieldsHold [] (paramTypes func.params) args (Func.entry bits) 0 →
       bits.length = paramsSize func.params →
       ∀ {heap : Heap}, heap.cursor = 1 → (∀ a, 1 ≤ a → heap.bytes a = 0) → heap.limit < 2 ^ 62 →
-      heap.io.trace = [] → 1 ≤ heap.limit → (0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp) →
+      heap.io.trace = [] → 1 ≤ heap.limit → (0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp ∧ heap.fsp ≤ heap.top ∧ heap.top < 2 ^ 62) →
       ∀ (s : State) (imageBase : BitVec 64) (window : Nat), window ≤ 2 ^ 62 →
         CodeAt s.memory imageBase binary.image →
         (∀ index, index < binary.image.length →

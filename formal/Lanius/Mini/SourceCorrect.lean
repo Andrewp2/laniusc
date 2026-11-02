@@ -188,7 +188,7 @@ theorem compileSource_correct_from {sp : SrcProgram} {binary : Binary}
     (bitsLen : bits.length = paramsSize func.params) {fuel : Nat} {v : Value}
     {st final : Semantics.State} {heap : Heap} (fresh : st.Fresh) (hc : HeapCorr st.heap st.world heap)
     (runs : Semantics.evalExpr fuel sp.toCore st (.call f (args.map Core.Expr.value)) = .done v final)
-    (fits : final.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp) :
+    (fits : final.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp ∧ heap.fsp ≤ heap.top ∧ heap.top < 2 ^ 62) :
     ∃ depth results after, func.ret.HoldsAt [] v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
       HeapCorr final.heap final.world after ∧
       ∀ (s : State) (imageBase : BitVec 64) (window : Nat),
@@ -239,7 +239,7 @@ theorem compileSource_correct {sp : SrcProgram} {binary : Binary}
     (zero : ∀ a, 1 ≤ a → heap.bytes a = 0) (small : heap.limit < 2 ^ 62) (silent : heap.io.trace = [])
     (runs : Semantics.evalExpr fuel sp.toCore (startState heap.io) (.call f (args.map Core.Expr.value)) =
       .done v final)
-    (fits : final.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp) :
+    (fits : final.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp ∧ heap.fsp ≤ heap.top ∧ heap.top < 2 ^ 62) :
     ∃ depth results after, func.ret.HoldsAt [] v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
       after.cursor = final.heap.nextAddress ∧ final.world.standardOutput = outputOf 1 after.io.trace ∧
       final.world.standardError = outputOf 2 after.io.trace ∧
