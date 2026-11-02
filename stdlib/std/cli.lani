@@ -121,7 +121,13 @@ pub impl Command {
     fn add(&self, id: i32, short: u8, long: core::slice::View<u8>, arity: Arity, value_name: core::slice::View<u8>, help: core::slice::View<u8>) {
         let valid: bool = (short != 0 || long.length > 0) && (short == 0 || alphanumeric(short));
         let index: i32 = 0;
-        while (index < long.length) { let byte: u8 = at(long, index); if (!alphanumeric(byte) && (index == 0 || byte != 45)) { valid = false; } index += 1; }
+        // Letters, digits and '-'; a leading '-' (GNU's hidden
+        // ---presume-input-pipe style) only before a letter or digit.
+        while (index < long.length) {
+            let byte: u8 = at(long, index);
+            if (!alphanumeric(byte) && (byte != 45 || (index == 0 && (long.length == 1 || !alphanumeric(at(long, 1)))))) { valid = false; }
+            index += 1;
+        }
         index = 0;
         while (index < self.specs.len()) {
             let other: Spec = self.specs.at(index);

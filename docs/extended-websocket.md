@@ -19,9 +19,13 @@ retain the separate scopes described below.
 registered close codes through 1014. RFC 7936 changes subprotocol registration
 procedures, RFC 8307 permits `.well-known` WebSocket URI paths, and RFC 8441 adds
 an HTTP/2 bootstrap. The first two require no different wire processing here;
-HTTP/2 bootstrap and all negotiated extensions, including per-message deflate,
-are outside this HTTP/1 profile. Extension offers in a request are checked for
-syntax; the caller handles any negotiation outside this module.
+HTTP/2 bootstrap is outside this HTTP/1 profile. Extension offers in a request
+are checked for syntax; the caller handles negotiation outside this module.
+For permessage-deflate (RFC 7692), `ext::ws_deflate` negotiates and
+compresses, and `Connection.enable_compression` lets RSV1 mark the first
+frame of a compressed data message; the
+[WebSocket client](extended-websocket-client.md#permessage-deflate) and
+`ext::websocket_service` use both.
 
 ## HTTP upgrade request syntax
 

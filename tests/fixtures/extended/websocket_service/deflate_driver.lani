@@ -1,0 +1,78 @@
+// ext::ws_deflate driver. stdin and stdout are records: a 4-byte
+// big-endian length, then that many bytes.
+//   c ROLE: compress each record      d ROLE: inflate each record (limit 1 MiB)
+//   n: stdin is one request head; prints negotiate's response value or "-"
+//   a: each record is a response value; prints the agreed params or "error"
+// ROLE is s (server) or c (client); d accepts an extra "reset" flag set.
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::http;
+import ext::websocket;
+import ext::ws_deflate;
+import std::args;
+import std::stream;
+
+fn literal(s: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(s),n); return core::slice::View { values: raw, start: 0, length: n }; }
+fn write_out(v: core::slice::View<u8>) -> bool {
+    let out: std::stream::Descriptor = std::stream::stdout(); let done: i32 = 0;
+    while (done < v.len()) { let n = out.write(v.values, v.start + done, v.len() - done); if (n.is_err() || n.unwrap() <= 0) { return false; } done += n.unwrap(); }
+    return true;
+}
+fn record(v: core::slice::View<u8>) -> bool {
+    let h: [u8;4] = [0;4]; let n: i32 = v.len();
+    h[0] = ((n >> 24) & 255) as u8; h[1] = ((n >> 16) & 255) as u8; h[2] = ((n >> 8) & 255) as u8; h[3] = (n & 255) as u8;
+    return write_out(core::slice::View { values: h, start: 0, length: 4 }) && write_out(v);
+}
+fn flag(b: bool) -> core::slice::View<u8> { if (b) { return literal("1",1); } return literal("0",1); }
+fn number(out: &alloc::vec::Vec<u8>, n: i32) { if (n >= 10) { out.try_push((48 + n / 10) as u8); } out.try_push((48 + n % 10) as u8); }
+fn main() -> i32 {
+    let captured = std::args::snapshot(1, 4, 64); if (captured.is_err()) { return 2; }
+    let args = captured.unwrap(); if (args.len() < 1) { return 2; }
+    let mode: u8 = args.get(0).unwrap().values[args.get(0).unwrap().start];
+    let role: ext::websocket::Role = ext::websocket::Role::Server;
+    let params: ext::ws_deflate::Params = ext::ws_deflate::Params { server_no_context: false, client_no_context: false, server_bits: 15, client_bits: 15 };
+    if (args.len() > 1 && args.get(1).unwrap().values[args.get(1).unwrap().start] == 99) { role = ext::websocket::Role::Client; }
+    // A third argument "reset" makes both sides reset; "takeover" keeps it.
+    if (args.len() > 2 && args.get(2).unwrap().values[args.get(2).unwrap().start] == 114) { params.server_no_context = true; params.client_no_context = true; }
+    // A fourth argument: both window bits (8..15).
+    if (args.len() > 3) {
+        let w: core::slice::View<u8> = args.get(3).unwrap(); let bits: i32 = 0; let k: i32 = 0;
+        while (k < w.length) { bits = bits * 10 + ((w.values[w.start+k] - 48) as i32); k += 1; }
+        params.server_bits = bits; params.client_bits = bits;
+    }
+    let input: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); let chunk: [u8;4096] = [0;4096]; let src: std::stream::Descriptor = std::stream::stdin();
+    while (true) {
+        let got = src.read(chunk, 0, 4096); if (got.is_err()) { return 2; } let n: i32 = got.unwrap(); if (n == 0) { break; }
+        if (input.try_extend(core::slice::View { values: chunk, start: 0, length: n }).is_err()) { return 2; }
+    }
+    let all: core::slice::View<u8> = input.as_view();
+    if (mode == 110) {
+        let head = ext::http::parse_request_head(all, ext::http::default_limits()); if (head.is_err()) { return 3; }
+        let out: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+        let p = ext::ws_deflate::negotiate(head.unwrap(), out.borrow());
+        if (p.is_none()) { write_out(literal("-\n",2)); } else { out.try_push(10); write_out(out.as_view()); }
+        out.destroy(); input.destroy(); return 0;
+    }
+    let codec = ext::ws_deflate::codec(role, params); if (codec.is_err()) { return 4; }
+    let c: ext::ws_deflate::Codec = codec.unwrap();
+    let at: i32 = 0; let status: i32 = 0;
+    while (at + 4 <= all.len()) {
+        let n: i32 = ((all.values[all.start+at] as i32) << 24) | ((all.values[all.start+at+1] as i32) << 16) | ((all.values[all.start+at+2] as i32) << 8) | (all.values[all.start+at+3] as i32);
+        let item: core::slice::View<u8> = core::slice::View { values: all.values, start: all.start + at + 4, length: n }; at += 4 + n;
+        let out: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+        if (mode == 99) { if (c.compress(item, out.borrow()).is_err()) { status = 5; } else { record(out.as_view()); } }
+        if (mode == 100) { if (c.inflate(item, out.borrow(), 1048576).is_err()) { record(literal("error",5)); } else { record(out.as_view()); } }
+        if (mode == 97) {
+            let p = ext::ws_deflate::accepted(item);
+            if (p.is_err()) { record(literal("error",5)); }
+            else { let q: ext::ws_deflate::Params = p.unwrap(); out.try_extend(flag(q.server_no_context)); out.try_push(32); out.try_extend(flag(q.client_no_context)); out.try_push(32); number(out.borrow(), q.server_bits); out.try_push(32); number(out.borrow(), q.client_bits); record(out.as_view()); }
+        }
+        out.destroy();
+    }
+    c.destroy(); input.destroy(); args.destroy();
+    return status;
+}

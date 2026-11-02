@@ -1,15 +1,17 @@
-# Text tools: sort, uniq, cut, tr and wc
+# Text tools: sort, uniq, cut, tr, wc, head, tail, cat, tee, paste, join and comm
 
-`ext::text_sort`, `ext::text_uniq`, `ext::text_cut`, `ext::text_tr` and
-`ext::text_wc` reimplement the GNU coreutils programs of the same names under
-`LC_ALL=C`. The sample programs `text-sort`, `text-uniq`, `text-cut`,
-`text-tr` and `text-wc` (`sample_programs/library/text_*.lani`) parse GNU's
-command lines and write GNU's output byte for byte. `ext::text_lines` holds
-the byte machinery they share.
+`ext::text_sort`, `ext::text_uniq`, `ext::text_cut`, `ext::text_tr`,
+`ext::text_wc`, `ext::text_head` and `ext::text_tail` reimplement the GNU
+coreutils programs of the same names under `LC_ALL=C`. The sample programs
+`text-sort`, `text-uniq`, `text-cut`, `text-tr`, `text-wc`, `text-head` and
+`text-tail`
+(`sample_programs/library/text_*.lani`) parse GNU's command lines and write
+GNU's output byte for byte. `ext::text_lines` holds the byte machinery they
+share.
 
-All five are checked against GNU coreutils 9.4 by one generated oracle per
-tool (`tests/fixtures/extended/TOOL_oracle.py`). Each oracle compares stdout,
-or the output file, and the exit status. Error message wording is not
+Each is checked against GNU coreutils 9.4 by one generated oracle per tool
+(`tests/fixtures/extended/TOOL_oracle.py`). Each oracle compares stdout, or
+the output file, and the exit status. Error message wording is not
 compared.
 
 ## Shared machinery: `ext::text_lines`
@@ -125,7 +127,10 @@ The output is the same as the single-process sort.
 - Translation runs eight bytes at a time when the changed bytes form at most
   four ASCII runs with one offset each, two words at a time where possible.
   Other sets use a table.
-- `-d` and `-s` remove bytes eight at a time with a log-step compaction.
+- `-d` and `-s` remove bytes eight at a time. A word's dropped lanes are
+  gathered into a byte by one multiply, which indexes a 256-entry table of
+  the three masks that close the gaps. When deleting alone, the kept bytes
+  are tested instead if they form fewer runs (as with `-c`).
 
 ## wc
 
@@ -134,6 +139,73 @@ The output is the same as the single-process sort.
 - Counts lines, words, bytes, characters (bytes under `LC_ALL=C`) and the
   longest line's display width, with GNU's column widths.
 - Lines and words are counted eight bytes at a time.
+
+## Shared command-line pieces: `ext::text_args` and `ext::text_source`
+
+- `ext::text_args::count(view)` parses a count as GNU's `xstrtoumax` with
+  the suffixes `bkKmMGTPEZYRQ0` does: leading blanks, an optional `+`, a
+  bare suffix meaning 1, `kB`/`KB`/`kD` for powers of 1000 and `KiB` for
+  1024. Its status is 0 (parsed), 1 (not a number) or 2 (past 64 bits).
+  `lit`, `same`, `at`, `tail`, `say`, `emit` and `complain` are the small
+  view and message helpers the sample programs share.
+- `ext::text_source::Source` is a whole input held in memory with its line
+  ends found up front: line i is bytes `[start(i), stop(i))` and
+  `ended(i)` says whether an end byte follows it. `load(name, eol)` opens
+  and reads a named input (`-` is standard input).
+- `ext::text_lines::stat(fd)` and `seek(fd, offset, whence)` give the file
+  kind, size, block size and `lseek`, for the tools that work on regular
+  files in place.
+
+## head
+
+`text-head [-c [-]NUM] [-n [-]NUM] [-q] [-v] [-z] [FILE...]`, and GNU's
+obsolete first argument `-NUM[bcklmqvz]`.
+
+- Counts use GNU's suffixes. A leading `-` copies all but the last NUM
+  lines or bytes. An elided byte count past 2^63 - 1 is an error, as in
+  GNU.
+- `==> NAME <==` headers appear when there are several operands (or with
+  `-v`), with a blank line before every header but the first. A file that
+  cannot be opened gets no header.
+- The first NUM lines are found by counting end bytes eight at a time in
+  256 KiB chunks. Only the chunk holding the last wanted line is scanned
+  for its position.
+- GNU leaves a regular file's offset just past what it printed, so a
+  second `-` operand on the same standard input carries on from there.
+  text-head does the same: it seeks back over the unused part of the last
+  chunk.
+- For a regular file larger than its block size, `-c -NUM` copies up to
+  the file's size less NUM. `-n -NUM` reads back from the end in 8 KiB
+  blocks aligned as GNU aligns them. It counts the end bytes in each block
+  and copies up to the line it finds. The file offset afterwards matches
+  GNU's, including when the file has too few lines. Other inputs, such as
+  pipes, are read to the end and held in memory.
+
+## tail
+
+`text-tail [-c [+|-]NUM] [-n [+|-]NUM] [-q] [-v] [-z] [FILE...]`, and GNU's
+obsolete form `[-+]NUM[bcl]` as the only option, before at most one file
+operand or after `--`.
+
+- Following is not supported: `-f`, `-F`, `--follow` and an obsolete
+  `NUMf` exit with status 1. `-s`, `--pid`, `--retry`,
+  `--max-unchanged-stats` and `---disable-inotify` are checked as GNU
+  checks them (`-s` as `strtod`, at least 0) and then ignored, as GNU ignores
+  them when not following.
+- `+NUM` starts at line or byte NUM (`+0` is `+1`). Once given, the `+`
+  stays set for a later `-n` or `-c`, as in GNU. `-n 0` and `-c 0` read
+  nothing, so even a missing file is not an error.
+- The obsolete form follows GNU's `parse_obsolete_option`: `b` means 512
+  bytes, `-c` and `-` alone are not obsolete options, and a digit option
+  anywhere else is an error.
+- On a regular file the last NUM lines are found by reading back from the
+  end in 64 KiB blocks and counting end bytes eight at a time. The last NUM
+  bytes are a seek, as is `-c +NUM`. GNU stops when a regular file cannot
+  seek that far. `-n +NUM` skips lines by counting end bytes chunk by chunk.
+- Pipes, and regular files no larger than their block size, are read to the
+  end and held (`---presume-input-pipe` does this for every input).
+- Every path leaves a regular file's offset at its end, as GNU's does, so
+  a repeated `-` operand on the same standard input prints nothing more.
 
 ## Oracles
 
@@ -144,6 +216,8 @@ The output is the same as the single-process sort.
 | cut | `cut_oracle.py` | 2,000 | 0 |
 | uniq | `uniq_oracle.py` | 2,000 | 0 |
 | sort | `sort_oracle.py` | 2,000 | 0 |
+| head | `head_oracle.py` | 2,000 | 0 |
+| tail | `tail_oracle.py` | 2,000 | 0 |
 
 The sort oracle also passed 2,000 cases under each of two other seeds (7
 and 8). Every 25th sort case has 20,000 to 120,000 lines, so the forked
@@ -151,6 +225,26 @@ workers are checked as well.
 
 `tests/extended_textutils_execution.rs` builds each sample program and runs
 its oracle over fewer cases (600 each, 400 for sort).
+
+## Speed on 100 MB
+
+`big100.txt` is `big.txt` repeated to 100,000,000 bytes (2,851,521 lines,
+the last one cut short). It was read from a file on standard input with
+output to `/dev/null`, under `LC_ALL=C`, against GNU coreutils 9.4: best of
+five runs, alternating with GNU, on the same shared laptop.
+
+| Command | Wall (ms) | GNU wall (ms) | Wall ratio | CPU (ms) | GNU CPU (ms) | CPU ratio |
+|---|---|---|---|---|---|---|
+| `text-head -n 2000000` | 66 | 84 | 0.79 | 64 | 77 | 0.83 |
+| `text-head -c 90000000` | 15 | 44 | 0.35 | 15 | 43 | 0.34 |
+| `text-head -n -1000` | 20 | 53 | 0.37 | 18 | 49 | 0.38 |
+| `text-head -c -1000` | 22 | 76 | 0.28 | 20 | 49 | 0.40 |
+| `text-head -n -1000000` | 66 | 55 | 1.20 | 54 | 50 | 1.07 |
+| `text-tail -n 1000` | 2 | 3 | 0.82 | 2 | 2 | 0.85 |
+| `text-tail -c 1000` | 2 | 3 | 0.67 | 2 | 2 | 0.73 |
+| `text-tail -n +1000` | 13 | 42 | 0.31 | 11 | 40 | 0.27 |
+| `text-tail -n 1000000` | 34 | 31 | 1.12 | 33 | 29 | 1.12 |
+| `text-tail -c +1000` | 14 | 42 | 0.33 | 12 | 40 | 0.29 |
 
 ## Speed
 
@@ -190,9 +284,9 @@ is user plus system time, summed over sort's workers and GNU's threads.
 | `text-cut --complement -f2` | big.txt | 194 | 103 | 1.87 | 193 | 103 | 1.88 |
 | `text-cut -f1,3 --output-delimiter=:` | big.txt | 195 | 100 | 1.95 | 195 | 100 | 1.95 |
 | `text-tr a-z A-Z` | big.txt | 39 | 32 | 1.21 | 38 | 31 | 1.22 |
-| `text-tr -d 0-9` | big.txt | 151 | 64 | 2.36 | 150 | 63 | 2.38 |
+| `text-tr -d 0-9` | big.txt | 181 | 94 | 1.92 | 179 | 92 | 1.95 |
 | `text-tr -s ' '` | big.txt | 98 | 79 | 1.25 | 98 | 78 | 1.25 |
-| `text-tr -cd 'a-z\n'` | big.txt | 205 | 94 | 2.18 | 196 | 88 | 2.23 |
+| `text-tr -cd 'a-z\n'` | big.txt | 203 | 105 | 1.92 | 190 | 99 | 1.93 |
 | `text-tr '\t' ,` | big.txt | 52 | 44 | 1.19 | 51 | 41 | 1.24 |
 | `text-wc` | big.txt | 91 | 633 | 0.14 | 91 | 632 | 0.14 |
 | `text-wc -l` | big.txt | 31 | 14 | 2.22 | 29 | 13 | 2.26 |
@@ -200,12 +294,16 @@ is user plus system time, summed over sort's workers and GNU's threads.
 | `text-wc -L` | big.txt | 570 | 564 | 1.01 | 570 | 563 | 1.01 |
 | `text-wc -m` | big.txt | 1 | 2 | 0.78 | 1 | 1 | 0.74 |
 
-Four modes are over 2x GNU's wall time:
+The two `tr -d` rows were measured later, at a higher load, after the
+gap-closing masks moved into a table. Two modes are over 2x GNU's wall
+time:
 
-- `tr -d` and `tr -cd`. Removing bytes eight at a time takes several dozen
-  operations per word, and every local lives on the stack.
-- `wc -l` (31 ms against 14 ms). GNU counts LFs with AVX2.
-- `uniq -f1`, which is at 2.0.
+- `wc -l` (31 ms against 14 ms). GNU counts LFs with AVX2. Here each
+  word load spends most of its instructions on the slice header and the
+  bounds check, so the count waits on the x86 backend keeping slice
+  headers in registers.
+- `uniq -f1`, at 2.0 to 2.3. The field skip adds about 50 ns a line,
+  most of it the same per-access cost.
 
 Every other mode is within 2x. `text-wc` and `text-wc -w` count words
 eight bytes at a time and are about seven times as fast as GNU. On

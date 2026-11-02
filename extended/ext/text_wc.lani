@@ -42,18 +42,23 @@ fn wc_bytes(c: &Counter, w: &ext::text_lines::Words, from: i32, to: i32) {
 
 // LFs in the first nw words, in byte lanes folded every 248 words.
 fn wc_count_lf(ws: [u64], nw: i32) -> i64 {
-    let low: u64 = ext::text_lines::LOW7; let ones: u64 = ext::text_lines::ONES; let nl: u64 = ext::text_lines::NL;
+    let low: u64 = ext::text_lines::LOW7; let ones: u64 = ext::text_lines::ONES; let nl: u64 = ext::text_lines::NL; let high: u64 = ext::text_lines::HIGH;
     let m16: u64 = 71777214294589695;
     let total: i64 = 0; let k: i32 = 0; let base: i32 = nw - 1;
     while (k < nw) {
         let begin: i32 = k; let stop: i32 = k + 248; if (stop > nw) { stop = nw; }
         // Each lane counts the bytes that are not LF.
         let a0: u64 = 0; let a1: u64 = 0; let a2: u64 = 0; let a3: u64 = 0;
-        while (k + 3 < stop) {
-            let x0: u64 = ws[base-k] ^ nl; let x1: u64 = ws[base-k-1] ^ nl; let x2: u64 = ws[base-k-2] ^ nl; let x3: u64 = ws[base-k-3] ^ nl;
-            a0 = a0 + (((((x0 & low) + low) | x0) >> 7) & ones); a1 = a1 + (((((x1 & low) + low) | x1) >> 7) & ones);
-            a2 = a2 + (((((x2 & low) + low) | x2) >> 7) & ones); a3 = a3 + (((((x3 & low) + low) | x3) >> 7) & ones);
-            k += 4;
+        while (k + 7 < stop) {
+            // Eight words a turn; two words share each lane sum's shift.
+            let q: i32 = base - k;
+            let x0: u64 = ws[q] ^ nl; let x1: u64 = ws[q-1] ^ nl; let x2: u64 = ws[q-2] ^ nl; let x3: u64 = ws[q-3] ^ nl;
+            let x4: u64 = ws[q-4] ^ nl; let x5: u64 = ws[q-5] ^ nl; let x6: u64 = ws[q-6] ^ nl; let x7: u64 = ws[q-7] ^ nl;
+            a0 = a0 + ((((((x0 & low) + low) | x0) & high) >> 7) + (((((x1 & low) + low) | x1) & high) >> 7));
+            a1 = a1 + ((((((x2 & low) + low) | x2) & high) >> 7) + (((((x3 & low) + low) | x3) & high) >> 7));
+            a2 = a2 + ((((((x4 & low) + low) | x4) & high) >> 7) + (((((x5 & low) + low) | x5) & high) >> 7));
+            a3 = a3 + ((((((x6 & low) + low) | x6) & high) >> 7) + (((((x7 & low) + low) | x7) & high) >> 7));
+            k += 8;
         }
         while (k < stop) { let x: u64 = ws[base-k] ^ nl; a0 = a0 + (((((x & low) + low) | x) >> 7) & ones); k += 1; }
         let s: u64 = (a0 & m16) + ((a0 >> 8) & m16) + (a1 & m16) + ((a1 >> 8) & m16) + (a2 & m16) + ((a2 >> 8) & m16) + (a3 & m16) + ((a3 >> 8) & m16);

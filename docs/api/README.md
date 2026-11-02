@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **352 modules**, **18594 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **359 modules**, **18824 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -243,7 +243,7 @@ Inventory: **352 modules**, **18594 declaration/member entries**. Counts include
 | [ext::csv](ext/csv.md) | [source](../../extended/ext/csv.lani#L4) | 107 | Source inventory | [extended-csv](../extended-csv.md), [extended-csv-write](../extended-csv-write.md), [extended-csv-rewrite](../extended-csv-rewrite.md), [extended-json-stream](../extended-json-stream.md) |
 | [ext::csv_write](ext/csv_write.md) | [source](../../extended/ext/csv_write.lani#L2) | 17 | Source inventory | [extended-csv-write](../extended-csv-write.md), [extended-csv-rewrite](../extended-csv-rewrite.md) |
 | [ext::decimal](ext/decimal.md) | [source](../../extended/ext/decimal.lani#L3) | 92 | Source inventory | [extended-decimal](../extended-decimal.md) |
-| [ext::deflate](ext/deflate.md) | [source](../../extended/ext/deflate.lani#L4) | 53 | Source inventory | [extended-deflate](../extended-deflate.md), [extended-streaming-deflate](../extended-streaming-deflate.md) |
+| [ext::deflate](ext/deflate.md) | [source](../../extended/ext/deflate.lani#L4) | 57 | Source inventory | [extended-deflate](../extended-deflate.md), [extended-streaming-deflate](../extended-streaming-deflate.md) |
 | [ext::der](ext/der.md) | [source](../../extended/ext/der.lani#L3) | 92 | Source inventory | [extended-der](../extended-der.md) |
 | [ext::diff](ext/diff.md) | [source](../../extended/ext/diff.lani#L2) | 48 | Source inventory | [extended-diff](../extended-diff.md) |
 | [ext::diffstat](ext/diffstat.md) | [source](../../extended/ext/diffstat.lani#L3) | 39 | Source inventory | [extended-wordiff](../extended-wordiff.md) |
@@ -275,7 +275,7 @@ Inventory: **352 modules**, **18594 declaration/member entries**. Counts include
 | [ext::http_rewrite](ext/http_rewrite.md) | [source](../../extended/ext/http_rewrite.lani#L9) | 13 | Source inventory | **Unregistered** |
 | [ext::http_server](ext/http_server.md) | [source](../../extended/ext/http_server.lani#L2) | 236 | Source inventory | [extended-http-server](../extended-http-server.md), [library-server-concurrency-plan](../library-server-concurrency-plan.md), [extended-https-server-exchange](../extended-https-server-exchange.md), [library-server-contract](../library-server-contract.md) |
 | [ext::http_server_poll](ext/http_server_poll.md) | [source](../../extended/ext/http_server_poll.lani#L2) | 27 | Source inventory | [extended-server-poll](../extended-server-poll.md), [library-server-contract](../library-server-contract.md) |
-| [ext::http_service](ext/http_service.md) | [source](../../extended/ext/http_service.lani#L7) | 215 | Source inventory | [extended-http-service](../extended-http-service.md), [extended-http](../extended-http.md), [stdlib-event-loop](../stdlib-event-loop.md) |
+| [ext::http_service](ext/http_service.md) | [source](../../extended/ext/http_service.lani#L7) | 222 | Source inventory | [extended-http-service](../extended-http-service.md), [extended-http](../extended-http.md), [stdlib-event-loop](../stdlib-event-loop.md) |
 | [ext::http_service_tls](ext/http_service_tls.md) | [source](../../extended/ext/http_service_tls.lani#L8) | 18 | Source inventory | **Unregistered** |
 | [ext::http_url](ext/http_url.md) | [source](../../extended/ext/http_url.lani#L3) | 50 | Source inventory | [extended-http-url](../extended-http-url.md), [extended-url-client](../extended-url-client.md), [library-url-client-plan](../library-url-client-plan.md) |
 | [ext::https_batch](ext/https_batch.md) | [source](../../extended/ext/https_batch.lani#L2) | 5 | Source inventory | [extended-https-batch](../extended-https-batch.md), [extended-https-client](../extended-https-client.md), [extended-https-batch-testing](../extended-https-batch-testing.md), [extended-http-batch](../extended-http-batch.md) |
@@ -318,6 +318,7 @@ Inventory: **352 modules**, **18594 declaration/member entries**. Counts include
 | [ext::server_poll](ext/server_poll.md) | [source](../../extended/ext/server_poll.lani#L2) | 199 | Source inventory | [extended-server-poll](../extended-server-poll.md), [library-server-contract](../library-server-contract.md), [library-server-concurrency-plan](../library-server-concurrency-plan.md) |
 | [ext::settings](ext/settings.md) | [source](../../extended/ext/settings.lani#L3) | 118 | Source inventory | [extended-settings](../extended-settings.md) |
 | [ext::settings_env](ext/settings_env.md) | [source](../../extended/ext/settings_env.lani#L3) | 27 | Source inventory | [extended-settings](../extended-settings.md) |
+| [ext::sha1](ext/sha1.md) | [source](../../extended/ext/sha1.lani#L5) | 18 | Source inventory | **Unregistered** |
 | [ext::signal](ext/signal.md) | [source](../../extended/ext/signal.lani#L3) | 47 | Source inventory | [extended-signal](../extended-signal.md) |
 | [ext::sparse](ext/sparse.md) | [source](../../extended/ext/sparse.lani#L3) | 43 | Source inventory | [extended-sparse](../extended-sparse.md), [extended-graph-walk](../extended-graph-walk.md) |
 | [ext::sparse_cg](ext/sparse_cg.md) | [source](../../extended/ext/sparse_cg.lani#L4) | 42 | Source inventory | [extended-sparse-cg](../extended-sparse-cg.md), [extended-graph-diffuse](../extended-graph-diffuse.md) |
@@ -330,9 +331,13 @@ Inventory: **352 modules**, **18594 declaration/member entries**. Counts include
 | [ext::table](ext/table.md) | [source](../../extended/ext/table.lani#L2) | 27 | Source inventory | [extended-table](../extended-table.md) |
 | [ext::tar](ext/tar.md) | [source](../../extended/ext/tar.lani#L3) | 91 | Source inventory | [extended-tar](../extended-tar.md), [extended-pax](../extended-pax.md) |
 | [ext::terminal](ext/terminal.md) | [source](../../extended/ext/terminal.lani#L3) | 15 | Source inventory | [extended-terminal](../extended-terminal.md) |
+| [ext::text_args](ext/text_args.md) | [source](../../extended/ext/text_args.lani#L4) | 14 | Source inventory | [extended-textutils](../extended-textutils.md) |
 | [ext::text_cut](ext/text_cut.md) | [source](../../extended/ext/text_cut.lani#L7) | 38 | Source inventory | [extended-textutils](../extended-textutils.md) |
-| [ext::text_lines](ext/text_lines.md) | [source](../../extended/ext/text_lines.lani#L6) | 87 | Source inventory | [extended-textutils](../extended-textutils.md) |
+| [ext::text_head](ext/text_head.md) | [source](../../extended/ext/text_head.lani#L6) | 10 | Source inventory | [extended-textutils](../extended-textutils.md) |
+| [ext::text_lines](ext/text_lines.md) | [source](../../extended/ext/text_lines.lani#L6) | 97 | Source inventory | [extended-textutils](../extended-textutils.md) |
 | [ext::text_sort](ext/text_sort.md) | [source](../../extended/ext/text_sort.lani#L19) | 43 | Source inventory | [extended-textutils](../extended-textutils.md) |
+| [ext::text_source](ext/text_source.md) | [source](../../extended/ext/text_source.lani#L7) | 20 | Source inventory | [extended-textutils](../extended-textutils.md) |
+| [ext::text_tail](ext/text_tail.md) | [source](../../extended/ext/text_tail.lani#L7) | 10 | Source inventory | [extended-textutils](../extended-textutils.md) |
 | [ext::text_tr](ext/text_tr.md) | [source](../../extended/ext/text_tr.lani#L8) | 47 | Source inventory | [extended-textutils](../extended-textutils.md) |
 | [ext::text_uniq](ext/text_uniq.md) | [source](../../extended/ext/text_uniq.lani#L10) | 33 | Source inventory | [extended-textutils](../extended-textutils.md) |
 | [ext::text_wc](ext/text_wc.md) | [source](../../extended/ext/text_wc.lani#L8) | 22 | Source inventory | [extended-textutils](../extended-textutils.md) |
@@ -356,12 +361,14 @@ Inventory: **352 modules**, **18594 declaration/member entries**. Counts include
 | [ext::url_connect](ext/url_connect.md) | [source](../../extended/ext/url_connect.lani#L3) | 63 | Source inventory | [extended-url-client](../extended-url-client.md), [library-url-client-plan](../library-url-client-plan.md), [stdlib-resolve](../stdlib-resolve.md) |
 | [ext::url_tls](ext/url_tls.md) | [source](../../extended/ext/url_tls.lani#L3) | 40 | Source inventory | [extended-url-client](../extended-url-client.md), [extended-fetch-url](../extended-fetch-url.md), [extended-https-client](../extended-https-client.md), [library-url-client-plan](../library-url-client-plan.md) |
 | [ext::wave](ext/wave.md) | [source](../../extended/ext/wave.lani#L2) | 38 | Source inventory | [extended-wave](../extended-wave.md) |
-| [ext::websocket](ext/websocket.md) | [source](../../extended/ext/websocket.lani#L3) | 82 | Source inventory | [extended-websocket](../extended-websocket.md), [extended-openssl-websocket](../extended-openssl-websocket.md), [extended-websocket-upgrade-program](../extended-websocket-upgrade-program.md), [extended-websocket-stream](../extended-websocket-stream.md), [extended-websocket-upgrade](../extended-websocket-upgrade.md), [extended-websocket-once](../extended-websocket-once.md), [extended-websocket-echo](../extended-websocket-echo.md) |
-| [ext::websocket_client](ext/websocket_client.md) | [source](../../extended/ext/websocket_client.lani#L6) | 64 | Source inventory | [extended-websocket-client](../extended-websocket-client.md), [extended-websocket](../extended-websocket.md), [extended-http-agent](../extended-http-agent.md), [extended-openssl-websocket](../extended-openssl-websocket.md) |
+| [ext::websocket](ext/websocket.md) | [source](../../extended/ext/websocket.lani#L3) | 102 | Source inventory | [extended-websocket](../extended-websocket.md), [extended-openssl-websocket](../extended-openssl-websocket.md), [extended-websocket-upgrade-program](../extended-websocket-upgrade-program.md), [extended-websocket-stream](../extended-websocket-stream.md), [extended-websocket-upgrade](../extended-websocket-upgrade.md), [extended-websocket-once](../extended-websocket-once.md), [extended-websocket-echo](../extended-websocket-echo.md) |
+| [ext::websocket_client](ext/websocket_client.md) | [source](../../extended/ext/websocket_client.lani#L6) | 73 | Source inventory | [extended-websocket-client](../extended-websocket-client.md), [extended-websocket](../extended-websocket.md), [extended-websocket-service](../extended-websocket-service.md), [extended-http-agent](../extended-http-agent.md) |
+| [ext::websocket_service](ext/websocket_service.md) | [source](../../extended/ext/websocket_service.lani#L8) | 69 | Source inventory | [extended-websocket-service](../extended-websocket-service.md), [extended-websocket](../extended-websocket.md), [extended-http-service](../extended-http-service.md) |
 | [ext::websocket_stream](ext/websocket_stream.md) | [source](../../extended/ext/websocket_stream.lani#L3) | 59 | Source inventory | [extended-websocket-stream](../extended-websocket-stream.md), [extended-websocket-upgrade](../extended-websocket-upgrade.md), [extended-websocket-once](../extended-websocket-once.md), [extended-websocket](../extended-websocket.md), [extended-websocket-echo](../extended-websocket-echo.md) |
 | [ext::websocket_upgrade](ext/websocket_upgrade.md) | [source](../../extended/ext/websocket_upgrade.lani#L3) | 95 | Source inventory | [extended-websocket-upgrade](../extended-websocket-upgrade.md), [extended-websocket-stream](../extended-websocket-stream.md), [extended-websocket-once](../extended-websocket-once.md), [extended-websocket](../extended-websocket.md), [extended-websocket-echo](../extended-websocket-echo.md) |
 | [ext::weighted_statistics](ext/weighted_statistics.md) | [source](../../extended/ext/weighted_statistics.lani#L4) | 63 | Source inventory | [extended-weighted-statistics](../extended-weighted-statistics.md), [extended-statistics](../extended-statistics.md), [extended-sample-moments](../extended-sample-moments.md) |
 | [ext::wordiff](ext/wordiff.md) | [source](../../extended/ext/wordiff.lani#L3) | 19 | Source inventory | [extended-wordiff](../extended-wordiff.md) |
+| [ext::ws_deflate](ext/ws_deflate.md) | [source](../../extended/ext/ws_deflate.lani#L16) | 39 | Source inventory | [extended-websocket-client](../extended-websocket-client.md), [extended-websocket-service](../extended-websocket-service.md), [extended-streaming-deflate](../extended-streaming-deflate.md) |
 | [ext::x509](ext/x509.md) | [source](../../extended/ext/x509.lani#L3) | 141 | Source inventory | [extended-x509](../extended-x509.md), [extended-certificate-info](../extended-certificate-info.md) |
 | [ext::xxhash](ext/xxhash.md) | [source](../../extended/ext/xxhash.lani#L4) | 18 | Source inventory | [extended-zstd](../extended-zstd.md) |
 | [ext::xz](ext/xz.md) | [source](../../extended/ext/xz.lani#L4) | 168 | Source inventory | [extended-xz](../extended-xz.md) |
@@ -452,4 +459,5 @@ These are discovery/contract-link gaps, not claims that their code is missing or
 - [ext::http_rewrite](ext/http_rewrite.md)
 - [ext::http_service_tls](ext/http_service_tls.md)
 - [ext::openssl_tls_lifecycle](ext/openssl_tls_lifecycle.md)
+- [ext::sha1](ext/sha1.md)
 - [ext::tls_clients](ext/tls_clients.md)

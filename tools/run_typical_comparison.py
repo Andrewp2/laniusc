@@ -332,6 +332,8 @@ def validate(path: Path, expected: str, cwd: Path) -> str:
 
 
 def tool_version(command: list[str]) -> str:
+    if shutil.which(command[0]) is None and not Path(command[0]).is_file():
+        return "not installed"
     result = subprocess.run(command, capture_output=True, text=True)
     return (result.stdout or result.stderr).splitlines()[0]
 
