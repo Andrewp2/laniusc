@@ -6,6 +6,7 @@ public import Lanius.Mini.Shifts
 public import Lanius.Mini.Signed
 public import Lanius.Mini.ShiftBy
 public import Lanius.Mini.FloatLower
+public import Lanius.Mini.FrameCorr
 -- import all: Lanius.Mini.Compiler
 import all Lanius.Mini.Compiler.Types
 import all Lanius.Mini.Compiler.P.Lists_empty
@@ -28,7 +29,7 @@ import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.UintTy_mask
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_half
-import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.SrcType_isUint
 import all Lanius.Mini.Compiler.P.arithUint
 import all Lanius.Mini.Compiler.P.floatApply
 import all Lanius.Mini.Compiler.P.lowerShift
@@ -125,12 +126,31 @@ namespace Lanius.Mini
 open Lanius.Core (Value)
 open Lanius.Semantics (State evalExpr)
 
+variable {R : Option Addressed}
+
+/-- A binding's slots represent its cell's value, or, for a reference
+parameter, its slot is the address of the place `R` names (`RefHolds`). -/
+def SlotHolds (R : Option Addressed) (ty : SrcType) (v : Value) (env : Env) (slot : Nat) : Prop :=
+  ty.HoldsAt v env slot ∨ RefHolds R ty v (env slot)
+
+theorem SlotHolds.congr {ty : SrcType} {v : Value} {env : Env} {slot : Nat} (h : SlotHolds R ty v env slot)
+    {env' : Env} {slot' : Nat} (agree : ∀ i < ty.size, env' (slot' + i) = env (slot + i)) :
+    SlotHolds R ty v env' slot' := by
+  rcases h with holds | ⟨x, referent, rfl, rest⟩
+  · exact .inl (holds.congr agree)
+  · have same := agree 0 (by simp [SrcType.size])
+    simp only [Nat.add_zero] at same
+    exact .inr ⟨x, referent, rfl, by rw [same]; exact rest⟩
+
 /-- Core's locals are the scope's bindings in the same order, each slot's cell
-given by `frame`, and every binding's cell holds a value its slot represents. -/
-structure Corr (scope : List Binding) (frame : Nat → Nat) (st : State) (env : Env) : Prop where
+given by `frame`, and every binding's cell holds a value its slot represents, or, for a reference
+parameter, a reference to the place `R` names, its slot the place's address
+(`RefHolds`, `Frames`). -/
+structure Corr (R : Option Addressed) (scope : List Binding) (frame : Nat → Nat) (st : State) (env : Env) :
+    Prop where
   locals : st.locals = scope.map fun b => (b.id, frame b.slot)
   values : ∀ b ∈ scope, ∃ v, st.cellEntry? (frame b.slot) = some ⟨frame b.slot, some v⟩ ∧
-    b.ty.HoldsAt v env b.slot
+    SlotHolds R b.ty v env b.slot
 
 theorem lookup_mem {scope : List Binding} {id : Nat} {b : Binding}
     (found : lookup scope id = some b) : b ∈ scope ∧ b.id = id := by
@@ -154,15 +174,38 @@ theorem find_locals (scope : List Binding) (frame : Nat → Nat) (id : Nat) :
     · have : (head.id == id) = false := by simpa using h
       simp [h, ih, this]
 
-theorem Corr.cellId {scope frame st env} (corr : Corr scope frame st env) (id : Nat) :
+theorem Corr.cellId {scope frame st env} (corr : Corr R scope frame st env) (id : Nat) :
     st.cellId? id = (lookup scope id).map fun b => frame b.slot := by
   simp only [State.cellId?, corr.locals, find_locals, Option.map_map]
   rfl
 
-theorem Corr.local {scope frame st env} (corr : Corr scope frame st env) {id : Nat} {b : Binding}
-    (found : lookup scope id = some b) (fuel : Nat) (prog : Core.Program) :
+/-- A binding not of a reference type holds a value its slots represent. -/
+theorem Corr.holds {scope frame st env} (corr : Corr R scope frame st env) {b : Binding} (mem : b ∈ scope)
+    (notRef : ∀ referent, b.ty ≠ .ref referent) :
+    ∃ v, st.cellEntry? (frame b.slot) = some ⟨frame b.slot, some v⟩ ∧ b.ty.HoldsAt v env b.slot := by
+  obtain ⟨v, entry, holds | refHolds⟩ := corr.values b mem
+  · exact ⟨v, entry, holds⟩
+  · obtain ⟨referent, eq⟩ := refHolds.isRef
+    exact absurd eq (notRef referent)
+
+/-- A scalar type is not a reference type. -/
+theorem SrcType.notRef_of_scalar {ty : SrcType} (scalar : ty.isScalar = true) :
+    ∀ referent, ty ≠ .ref referent := by
+  intro referent eq
+  subst eq
+  simp [SrcType.isScalar] at scalar
+
+/-- A type `isRef` rejects is not a reference type. -/
+theorem SrcType.notRef_of_isRef {ty : SrcType} (h : ty.isRef = false) : ∀ referent, ty ≠ .ref referent := by
+  intro referent eq
+  subst eq
+  simp [SrcType.isRef] at h
+
+theorem Corr.local {scope frame st env} (corr : Corr R scope frame st env) {id : Nat} {b : Binding}
+    (found : lookup scope id = some b) (notRef : ∀ referent, b.ty ≠ .ref referent) (fuel : Nat)
+    (prog : Core.Program) :
     ∃ v, evalExpr (fuel + 1) prog st (.local id) = .done v st ∧ b.ty.HoldsAt v env b.slot := by
-  obtain ⟨v, entry, holds⟩ := corr.values b (lookup_mem found).1
+  obtain ⟨v, entry, holds⟩ := corr.holds (lookup_mem found).1 notRef
   refine ⟨v, ?_, holds⟩
   simp only [evalExpr, corr.cellId, found, Option.map_some, entry]
 
@@ -948,7 +991,7 @@ theorem SrcOp.lower_holds {op : SrcOp} {tl tr t : Typed} (lowered : op.lower tl 
   case logicalOr => exact absurd rfl strict.2
 
 theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat → Nat} {st : State}
-    {env : Env} {prog : Core.Program} (corr : Corr scope frame st env) (target : prog.target = .x86_64) :
+    {env : Env} {prog : Core.Program} (corr : Corr R scope frame st env) (target : prog.target = .x86_64) :
     ∀ {t : Typed} {fuel : Nat} {v : Value} {st' : State}, e.lower scope = some t →
       evalExpr fuel prog st e.toCore = .done v st' → st' = st ∧ t.ty.Holds v (t.expr.eval env) := by
   induction e with
@@ -1013,7 +1056,7 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
         · rename_i scalar
           simp only [Option.some.injEq] at lowered
           subst lowered
-          obtain ⟨w, eval, holds⟩ := corr.local found fuel prog
+          obtain ⟨w, eval, holds⟩ := corr.local found (SrcType.notRef_of_scalar scalar) fuel prog
           simp only [SrcExpr.toCore, eval, Semantics.Outcome.done.injEq] at run
           obtain ⟨rfl, rfl⟩ := run
           exact ⟨rfl, (SrcType.holdsAt_scalar scalar).mp holds⟩
@@ -1044,7 +1087,7 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
         · rename_i scalar
           simp only [Option.some.injEq] at lowered
           subst lowered
-          obtain ⟨w, eval, holds⟩ := corr.local found fuel prog
+          obtain ⟨w, eval, holds⟩ := corr.local found (fun _ eq => by rw [hty] at eq; cases eq) fuel prog
           rw [hty] at holds
           cases holds with
           | struct fieldsHold =>

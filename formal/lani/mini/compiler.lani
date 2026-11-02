@@ -1919,6 +1919,27 @@ impl SrcType {
         };
     }
 
+    // A reference: a parameter only, never copied (SEMANTIC_DECISIONS, "The
+    // design of writes through references").
+    pub fn is_ref(self) -> bool {
+        return match (self) {
+            I32 -> false,
+            Bool -> false,
+            Uint(kind) -> false,
+            Struct(id, fields) -> false,
+            Enum(id, variants) -> false,
+            Ptr -> false,
+            Slice(element) -> false,
+            SrcType::Array(array_element, array_length) -> false,
+            Unit -> false,
+            Isize -> false,
+            SrcType::Char -> false,
+            SrcType::Float(ft) -> false,
+            Sint(kind) -> false,
+            SrcType::Ref(referent) -> true,
+        };
+    }
+
     pub fn is_uint(self, kind: UintTy) -> bool {
         return match (self) {
             I32 -> false,
@@ -3243,7 +3264,7 @@ pub fn copy_binding(binding: core::option::Option<Binding>, ty: SrcType) -> core
 
 // extract: inline
 fn copy_same(b: Binding, ty: SrcType) -> core::option::Option<List<Expr>> {
-    if (b.ty.same(ty)) {
+    if (b.ty.same(ty) && !b.ty.is_ref()) {
         return Some(slot_vars(b.slot, b.ty.size()));
     }
     return None;

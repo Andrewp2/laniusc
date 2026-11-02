@@ -19,12 +19,14 @@ namespace Lanius.Mini
 open Lanius.Core (Value)
 open Lanius.Semantics (State Cell Completion evalExpr evalExprs execStmt restoreLocals)
 
+variable {R : Option Addressed}
+
 /-- A lowered statement whose Core run fails stops within `n` ticks. -/
 def SrcStops (sp : SrcProgram) (mp : Program) (n : Nat) (s : SrcStmt) : Prop :=
-  ∀ {hp : Heap} {ret : SrcType} {scope : List Binding} {next : Nat} {stmt : Stmt}
+  ∀ {R : Option Addressed} {hp : Heap} {ret : SrcType} {scope : List Binding} {next : Nat} {stmt : Stmt}
     {frame : Nat → Nat} {base : Nat} {st : State} {env : Env},
     s.lower (sigs sp.funcs) sp.decls ret scope next = some stmt →
-    Corr scope frame st env → Layout scope frame base next → st.Fresh → base ≤ st.nextCell →
+    Corr R scope frame st env → Layout scope frame base next → st.Fresh → base ≤ st.nextCell →
     HeapCorr st.heap st.world hp → st.heap.nextAddress ≤ hp.limit →
     Fails sp hp.limit st s.toCore → ∃ d, Stops mp d env hp stmt n
 
@@ -474,7 +476,7 @@ theorem callee_frame (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = s
     ∃ g b frame, mp.funcs[callee]? = some g ∧ g.params = paramsSize f.params ∧
       f.body.lower (sigs sp.funcs) sp.decls f.ret (paramScope f.params 0 []) (paramsSize f.params) = some b ∧
       unitTail f.ret (some b) = some g.body ∧
-      Corr (paramScope f.params 0 []) frame (calleeState f values st) (Func.entry bits) ∧
+      Corr R (paramScope f.params 0 []) frame (calleeState f values st) (Func.entry bits) ∧
       Layout (paramScope f.params 0 []) frame st.nextCell (paramsSize f.params) ∧
       (calleeState f values st).Fresh ∧ Keeps st.nextCell ({ st with locals := [] } : State) (calleeState f values st) := by
   obtain ⟨g, gFound, gOk⟩ := lowerFuncs_get lowered found
@@ -570,7 +572,7 @@ theorem lowerCall_found {callee : Nat} {scope : List Binding} {args : List SrcEx
 /-- A call that fails and whose guard holds stops, one tick more than its callee. -/
 theorem call_stops (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     (returns : funcsReturn sp.funcs = true) (prev : StmtStops sp mp n) {scope frame st env}
-    (corr : Corr scope frame st env) (fresh : st.Fresh) {hp : Heap} (hc : HeapCorr st.heap st.world hp)
+    (corr : Corr R scope frame st env) (fresh : st.Fresh) {hp : Heap} (hc : HeapCorr st.heap st.world hp)
     (within : st.heap.nextAddress ≤ hp.limit) {callee : Nat} {args : List SrcExpr} {ty : SrcType}
     {es : List Expr} (ok : lowerCall (sigs sp.funcs) scope callee args ty = some es)
     (g : (guardAll scope args).eval env ≠ 0)
@@ -592,7 +594,7 @@ section Assignments
 variable {sp : SrcProgram} {L : Nat}
 
 /-- Core's `id = e` on a local of the scope completes once `e` does. -/
-theorem assign_local_progress {P : Core.Program} {scope frame st env} (corr : Corr scope frame st env)
+theorem assign_local_progress {P : Core.Program} {scope frame st env} (corr : Corr R scope frame st env)
     {id : Nat} {b : Binding} (found : lookup scope id = some b) {e : Core.Expr} {k : Nat} {rv : Value}
     {st2 : State} (valueRun : evalExpr k P st e = .done rv st2) (views : st2.i32ArrayViews = [])
     (present : (st2.cellEntry? (frame b.slot)).isSome) :
@@ -610,7 +612,7 @@ theorem assign_local_progress {P : Core.Program} {scope frame st env} (corr : Co
     Semantics.writeResolvedPlaceNative, Semantics.writeResolvedPlace, assignCell_some entry2, synced, ite_self]
 
 /-- A failing `id = e` whose `e` completes within the limit is impossible. -/
-theorem Fails.assign_done {scope frame st env} (corr : Corr scope frame st env) {id : Nat} {b : Binding}
+theorem Fails.assign_done {scope frame st env} (corr : Corr R scope frame st env) {id : Nat} {b : Binding}
     (found : lookup scope id = some b) {e : Core.Expr}
     (fails : Fails sp L st (.expression (.assign .set (.local id) e))) {k : Nat} {rv : Value} {st2 : State}
     (valueRun : evalExpr k sp.toCore st e = .done rv st2) (views : st2.i32ArrayViews = [])
@@ -619,7 +621,7 @@ theorem Fails.assign_done {scope frame st env} (corr : Corr scope frame st env) 
   exact fails.not_done (k := k' + 1) (c := .next) (st' := st3) (by simp only [execStmt, run]) (by rw [heap]; exact within)
 
 /-- The value of a failing `id = e` that never completes fails. -/
-theorem EFails.assignValue {scope frame st env} (corr : Corr scope frame st env) {id : Nat} {b : Binding}
+theorem EFails.assignValue {scope frame st env} (corr : Corr R scope frame st env) {id : Nat} {b : Binding}
     (found : lookup scope id = some b) {e : Core.Expr} (fails : EFails sp L st (.assign .set (.local id) e))
     (none : ¬Completes L fun k => evalExpr k sp.toCore st e) : EFails sp L st e :=
   failing_of_not_completes fails (fun j reason s h => ⟨j + 2, s, by
@@ -631,7 +633,7 @@ theorem EFails.assignValue {scope frame st env} (corr : Corr scope frame st env)
     simp only [place, Semantics.evalExpr_of_le h (by intro h; cases h) (Nat.le_succ j)], rfl⟩) none
 
 /-- Core's `id.index = e` on a struct local of the scope completes once `e` does. -/
-theorem field_assign_progress {P : Core.Program} {scope frame st env} (corr : Corr scope frame st env)
+theorem field_assign_progress {P : Core.Program} {scope frame st env} (corr : Corr R scope frame st env)
     {id : Nat} {b : Binding} (found : lookup scope id = some b) {sid : Nat} {vs : List Value}
     (entry : st.cellEntry? (frame b.slot) = some ⟨frame b.slot, some (.structure sid vs)⟩)
     {index : Nat} {old : Value} (got : vs[index]? = some old) (views : st.i32ArrayViews = [])
@@ -660,7 +662,7 @@ section Matches
 
 /-- The arm Core picks either stops at its guard or has a value. -/
 theorem lowerArms_progress {P : Core.Program} {mp : Program} {hp : Heap} (target : P.target = .x86_64)
-    {scope frame st env} (corr : Corr scope frame st env) (fresh : st.Fresh)
+    {scope frame st env} (corr : Corr R scope frame st env) (fresh : st.Fresh)
     {slot dst eid : Nat} {ty : SrcType} {n : Nat} :
     ∀ (arms : List SrcArm) {variants : List (List SrcType)} {k kv : Nat} {stmt : Stmt}
       {fs : List SrcType} {vs : List Value},
@@ -1008,7 +1010,7 @@ variable {sp : SrcProgram} {mp : Program} {n : Nat}
 theorem let_stops {body : SrcStmt} (ih : SrcStops sp mp n body) {ret : SrcType} {scope : List Binding}
     {next : Nat} {bstmt : Stmt} {id : Nat} {ty : SrcType} {hp : Heap}
     (bodyOk : body.lower (sigs sp.funcs) sp.decls ret (⟨id, next, ty⟩ :: scope) (next + ty.size) = some bstmt)
-    {frame base st env} (corr : Corr scope frame st env) (fr : Layout scope frame base next)
+    {frame base st env} (corr : Corr R scope frame st env) (fr : Layout scope frame base next)
     (fresh : st.Fresh) (le : base ≤ st.nextCell) (sized : 0 < ty.size) {v : Value} {env' : Env}
     (agree : ScopeAgree scope env env') (holds : ty.HoldsAt v env' next)
     (hc : HeapCorr st.heap st.world hp) (within : st.heap.nextAddress ≤ hp.limit)
@@ -1963,7 +1965,7 @@ theorem stops_letIndex_i32 {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcE
     {frame : Nat → Nat} {base : Nat} {st : State} {env : Env}
     (ok : lowerLoadWord next (lowerElement (lookup scope slice) ty (lowerIndex scope index))
       (body.lower (sigs sp.funcs) sp.decls ret (⟨id, next, ty⟩ :: scope) (next + ty.size)) = some stmt)
-    (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
+    (corr : Corr R scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
     (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (within : st.heap.nextAddress ≤ hp.limit)
     (fails : Fails sp hp.limit st (SrcStmt.letIndex id ty slice index body).toCore) :
     ∃ d, Stops mp d env hp (checkThen next (guardAnd (index.guard scope) (indexGuard scope slice index)) stmt) n := by
@@ -2070,7 +2072,7 @@ theorem stops_letIndex_word {id : Nat} {ty : SrcType} {slice : Nat} {index : Src
     {frame : Nat → Nat} {base : Nat} {st : State} {env : Env}
     (ok : lowerLoadType sp.decls next (lookup scope slice) ty (lowerIndex scope index)
       (body.lower (sigs sp.funcs) sp.decls ret (⟨id, next, ty⟩ :: scope) (next + ty.size)) = some stmt)
-    (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
+    (corr : Corr R scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
     (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (within : st.heap.nextAddress ≤ hp.limit)
     (fails : Fails sp hp.limit st (SrcStmt.letIndex id ty slice index body).toCore) :
     ∃ d, Stops mp d env hp (checkThen next (guardAnd (index.guard scope) (indexGuard scope slice index)) stmt) n := by
@@ -2159,7 +2161,7 @@ theorem stops_letIndex {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcExpr}
 
 /-- A failing `slice[index] = value` whose operands are checked is impossible. -/
 theorem setIndex_fails {scope : List Binding} {frame : Nat → Nat} {st : State} {env : Env} {hp : Heap}
-    (corr : Corr scope frame st env) (fresh : st.Fresh) (within : st.heap.nextAddress ≤ hp.limit)
+    (corr : Corr R scope frame st env) (fresh : st.Fresh) (within : st.heap.nextAddress ≤ hp.limit)
     {slice : Nat} {b : Binding} (found : lookup scope slice = some b) {element : SrcType}
     (bty : b.ty = .slice element) {index value : SrcExpr} {x : Expr} (indexOk : lowerIndex scope index = some x)
     (gi : (index.guard scope).eval env ≠ 0) (gb : (indexGuard scope slice index).eval env ≠ 0)

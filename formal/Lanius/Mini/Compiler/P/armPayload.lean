@@ -3,7 +3,7 @@ module
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Lists_empty
-import Lanius.Mini.Compiler.P.SrcType_size
+import Lanius.Mini.Compiler.P.SrcType_isUint
 import Lanius.Mini.Compiler.P.armBodyScope
 import Lanius.Mini.Compiler.P.armScope
 import Lanius.Mini.Compiler.P.assignFrom

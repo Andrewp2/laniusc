@@ -24,7 +24,7 @@ import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.UintTy_mask
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_half
-import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.SrcType_isUint
 import all Lanius.Mini.Compiler.P.arithUint
 import all Lanius.Mini.Compiler.P.floatApply
 import all Lanius.Mini.Compiler.P.lowerShift
@@ -114,6 +114,8 @@ namespace Lanius.Mini
 
 open Lanius.Core (Value)
 open Lanius.Semantics (State evalExpr)
+
+variable {R : Option Addressed}
 
 theorem amountGuard_one {width : BitVec 64} {amount : Expr} {env : Env}
     (lt : (amount.eval env).toNat < width.toNat) : (amountGuard width amount).eval env = 1 := by
@@ -275,7 +277,7 @@ theorem shift_amount {op : SrcOp} (shift : op = .shiftLeft ∨ op = .shiftRight)
   rcases both with h | h | h <;> exact core h
 
 theorem SrcExpr.guard_sound (e : SrcExpr) {scope : List Binding} {frame : Nat → Nat} {st : State}
-    {env : Env} {prog : Core.Program} (corr : Corr scope frame st env) (target : prog.target = .x86_64) :
+    {env : Env} {prog : Core.Program} (corr : Corr R scope frame st env) (target : prog.target = .x86_64) :
     ∀ {t : Typed} {fuel : Nat} {v : Value} {st' : State}, e.lower scope = some t →
       evalExpr fuel prog st e.toCore = .done v st' → (e.guard scope).eval env = 1 := by
   induction e with

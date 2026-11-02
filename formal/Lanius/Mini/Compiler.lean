@@ -21,7 +21,7 @@ public import Lanius.Mini.Compiler.P.render
 public import Lanius.Mini.Compiler.P.UintTy_mask
 public import Lanius.Mini.Compiler.P.UintTy_isWide
 public import Lanius.Mini.Compiler.P.UintTy_half
-public import Lanius.Mini.Compiler.P.SrcType_size
+public import Lanius.Mini.Compiler.P.SrcType_isUint
 public import Lanius.Mini.Compiler.P.arithUint
 public import Lanius.Mini.Compiler.P.floatApply
 public import Lanius.Mini.Compiler.P.lowerShift

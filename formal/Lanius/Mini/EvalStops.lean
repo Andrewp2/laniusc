@@ -13,13 +13,15 @@ namespace Lanius.Mini
 open Lanius.Core (Value)
 open Lanius.Semantics (State Cell Completion evalExpr evalExprs execStmt restoreLocals)
 
+variable {R : Option Addressed}
+
 /-- A lowered effectful expression whose Core evaluation fails stops within
 `n` ticks. -/
 def EffStops (sp : SrcProgram) (mp : Program) (n : Nat) (e : SrcEff) : Prop :=
-  ∀ {hp : Heap} {scope : List Binding} {slot : Nat} {ev : Evaluated}
+  ∀ {R : Option Addressed} {hp : Heap} {scope : List Binding} {slot : Nat} {ev : Evaluated}
     {frame : Nat → Nat} {base : Nat} {st : State} {env : Env},
     e.eval (sigs sp.funcs) sp.decls scope slot = some ev →
-    Corr scope frame st env → Layout scope frame base slot → st.Fresh →
+    Corr R scope frame st env → Layout scope frame base slot → st.Fresh →
     HeapCorr st.heap st.world hp → st.heap.nextAddress ≤ hp.limit →
     EFails sp hp.limit st e.toCore → ∃ d, Stops mp d env hp ev.stmt n
 
@@ -358,7 +360,7 @@ theorem eff_split (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some
     {β : Type} {whole : Nat → Semantics.Outcome β} {e : SrcEff} (ih : EffStops sp mp n e)
     {hp : Heap} {scope : List Binding} {slot : Nat} {ev : Evaluated} {frame : Nat → Nat} {base : Nat}
     {st : State} {env : Env}
-    (ok : e.eval (sigs sp.funcs) sp.decls scope slot = some ev) (corr : Corr scope frame st env)
+    (ok : e.eval (sigs sp.funcs) sp.decls scope slot = some ev) (corr : Corr R scope frame st env)
     (fr : Layout scope frame base slot) (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp)
     (within : st.heap.nextAddress ≤ hp.limit) (fails : ∀ j, Failing hp.limit (whole j))
     (propagate : ∀ j reason s, evalExpr j sp.toCore st e.toCore = .trapped reason s →
@@ -375,7 +377,7 @@ theorem args_stops (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = som
     ∀ (args : List SrcEff), (∀ e ∈ args, EffStops sp mp n e) →
     ∀ {hp : Heap} {scope : List Binding} {slot : Nat} {ea : EvaluatedArgs} {frame : Nat → Nat} {base : Nat}
       {st : State} {env : Env},
-    evalArgs (sigs sp.funcs) sp.decls scope args slot = some ea → Corr scope frame st env →
+    evalArgs (sigs sp.funcs) sp.decls scope args slot = some ea → Corr R scope frame st env →
     Layout scope frame base slot → st.Fresh → HeapCorr st.heap st.world hp → st.heap.nextAddress ≤ hp.limit →
     (∀ j, Failing hp.limit (evalExprs j sp.toCore st (SrcEff.toCoreList args))) →
     ∃ d, Stops mp d env hp ea.stmt n
@@ -418,7 +420,7 @@ theorem args_split (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = som
     {β : Type} {whole : Nat → Semantics.Outcome β} {args : List SrcEff} (each : ∀ e ∈ args, EffStops sp mp n e)
     {hp : Heap} {scope : List Binding} {slot : Nat} {ea : EvaluatedArgs} {frame : Nat → Nat} {base : Nat}
     {st : State} {env : Env}
-    (ok : evalArgs (sigs sp.funcs) sp.decls scope args slot = some ea) (corr : Corr scope frame st env)
+    (ok : evalArgs (sigs sp.funcs) sp.decls scope args slot = some ea) (corr : Corr R scope frame st env)
     (fr : Layout scope frame base slot) (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp)
     (within : st.heap.nextAddress ≤ hp.limit) (fails : ∀ j, Failing hp.limit (whole j))
     (propagate : ∀ j reason s, evalExprs j sp.toCore st (SrcEff.toCoreList args) = .trapped reason s →
@@ -441,7 +443,7 @@ theorem pair_split (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = som
     (general : cop ≠ .logicalAnd ∧ cop ≠ .logicalOr) {hp : Heap} {scope : List Binding} {slot : Nat}
     {le re : Evaluated} {frame : Nat → Nat} {base : Nat} {st : State} {env : Env}
     (leOk : l.eval (sigs sp.funcs) sp.decls scope slot = some le)
-    (reOk : r.eval (sigs sp.funcs) sp.decls scope (slot + 1) = some re) (corr : Corr scope frame st env)
+    (reOk : r.eval (sigs sp.funcs) sp.decls scope (slot + 1) = some re) (corr : Corr R scope frame st env)
     (fr : Layout scope frame base slot) (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp)
     (within : st.heap.nextAddress ≤ hp.limit) (fails : EFails sp hp.limit st (.binary cop l.toCore r.toCore))
     (rest : Stmt) :
@@ -820,7 +822,7 @@ theorem eff_arrayIndex (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs =
     {ev : Evaluated} {frame : Nat → Nat} {base : Nat} {st : State} {env : Env} {b : Binding}
     (found : lookup scope slice = some b)
     (ok : evalArrayIndex b slot (index.eval (sigs sp.funcs) sp.decls scope slot) = some ev)
-    (corr : Corr scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
+    (corr : Corr R scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
     (hc : HeapCorr st.heap st.world hp) (within : st.heap.nextAddress ≤ hp.limit)
     (fails : EFails sp hp.limit st (.index (.local slice) index.toCore)) : ∃ d, Stops mp d env hp ev.stmt n := by
   obtain ⟨e, n', i, bty, indexOk, kind, -, nsmall, -, rfl⟩ := evalArrayIndex_some ok
@@ -1140,7 +1142,7 @@ theorem arms_stops {dst eid : Nat} {ty : SrcType} {scope : List Binding} {slot :
     ∀ (values : List SrcEff) {variants : List (List SrcType)} {binders : List (List Nat)} {j kv : Nat}
       {stmt : Stmt} {fs : List SrcType} {vs : List Value} {hp : Heap} {frame : Nat → Nat} {st : State}
       {env : Env},
-      (∀ e ∈ values, EffStops sp mp n e) → Corr scope frame st env → Layout scope frame 0 slot → st.Fresh →
+      (∀ e ∈ values, EffStops sp mp n e) → Corr R scope frame st env → Layout scope frame 0 slot → st.Fresh →
       HeapCorr st.heap st.world hp → st.heap.nextAddress ≤ hp.limit →
       evalArms (sigs sp.funcs) sp.decls scope slot dst ty j variants binders values = some stmt →
       values.length = variants.length → binders.length = variants.length →
@@ -1304,7 +1306,7 @@ section Statements
 
 variable {sp : SrcProgram} {mp : Program} {n : Nat}
 
-theorem local_assign_trap {P : Core.Program} {scope frame st env} (corr : Corr scope frame st env) {id : Nat}
+theorem local_assign_trap {P : Core.Program} {scope frame st env} (corr : Corr R scope frame st env) {id : Nat}
     {b : Binding} (found : lookup scope id = some b) {e : Core.Expr} {j : Nat} {r : Lanius.Trap} {s : State}
     (h : evalExpr j P st e = .trapped r s) : evalExpr (j + 2) P st (.assign .set (.local id) e) = .trapped r s := by
   obtain ⟨v0, entry, _⟩ := corr.values b (lookup_mem found).1
@@ -1314,7 +1316,7 @@ theorem local_assign_trap {P : Core.Program} {scope frame st env} (corr : Corr s
   rw [evalExpr.eq_def]
   simp only [place, Semantics.evalExpr_of_le h (by intro h; cases h) (Nat.le_succ j)]
 
-theorem field_assign_trap {P : Core.Program} {scope frame st env} (corr : Corr scope frame st env)
+theorem field_assign_trap {P : Core.Program} {scope frame st env} (corr : Corr R scope frame st env)
     {id : Nat} {b : Binding} (found : lookup scope id = some b) {sid : Nat} {vs : List Value}
     (entry : st.cellEntry? (frame b.slot) = some ⟨frame b.slot, some (.structure sid vs)⟩)
     {index : Nat} {old : Value} (got : vs[index]? = some old) {e : Core.Expr} {j : Nat} {r : Lanius.Trap}
@@ -1328,7 +1330,7 @@ theorem field_assign_trap {P : Core.Program} {scope frame st env} (corr : Corr s
 
 /-- Core's `id.index = e` on a struct local completes once `e` does, when the
 struct is still there. -/
-theorem field_assign_progress_eff {P : Core.Program} {scope frame st env} (corr : Corr scope frame st env)
+theorem field_assign_progress_eff {P : Core.Program} {scope frame st env} (corr : Corr R scope frame st env)
     {id : Nat} {b : Binding} (found : lookup scope id = some b) {sid : Nat} {vs : List Value}
     (entry : st.cellEntry? (frame b.slot) = some ⟨frame b.slot, some (.structure sid vs)⟩)
     {index : Nat} {old : Value} (got : vs[index]? = some old) {e : Core.Expr} {k : Nat} {rv : Value}
@@ -1510,7 +1512,7 @@ theorem loop_stops (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = som
     (bodyOk : body.lower (sigs sp.funcs) sp.decls ret scope next = some bstmt) (isBool : cv.ty = .bool)
     (fr : Layout scope frame base next) :
     ∀ j ≤ m, ∀ {hp : Heap} {st0 : State} {env0 : Env},
-      Corr scope frame st0 env0 → st0.Fresh → base ≤ st0.nextCell → HeapCorr st0.heap st0.world hp →
+      Corr R scope frame st0 env0 → st0.Fresh → base ≤ st0.nextCell → HeapCorr st0.heap st0.world hp →
       st0.heap.nextAddress ≤ hp.limit → Fails sp hp.limit st0 (.whileLoop c.toCore body.toCore) →
       ∃ d, Stops mp d env0 hp (.loop (.lit 1) (.seq cv.stmt (.ite (.var next) bstmt .brk))) j := by
   intro j
@@ -1791,7 +1793,7 @@ theorem stops_setIndexEval_array (lowered : lowerFuncs (sigs sp.funcs) sp.decls 
     {st : State} {env : Env} {b : Binding} (found : lookup scope slice = some b)
     (ok : storeArray b next (index.eval (sigs sp.funcs) sp.decls scope next)
       (value.eval (sigs sp.funcs) sp.decls scope (next + 1)) = some stmt)
-    (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
+    (corr : Corr R scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
     (hc : HeapCorr st.heap st.world hp) (within : st.heap.nextAddress ≤ hp.limit)
     (fails : Fails sp hp.limit st (SrcStmt.setIndexEval slice index value).toCore) :
     ∃ d, Stops mp d env hp stmt n := by
@@ -1954,6 +1956,8 @@ end Statements
 end Lanius.Mini
 
 namespace Lanius.Mini
+
+variable {R : Option Addressed}
 
 /-- Every lowered effectful expression whose Core evaluation fails stops
 within `n + 1` ticks, given that every failing statement stops within `n`

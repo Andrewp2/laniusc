@@ -25,7 +25,7 @@ import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.UintTy_mask
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_half
-import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.SrcType_isUint
 import all Lanius.Mini.Compiler.P.arithUint
 import all Lanius.Mini.Compiler.P.floatApply
 import all Lanius.Mini.Compiler.P.lowerShift
@@ -106,7 +106,7 @@ import all Lanius.Mini.Compiler.P.Inline_factOr
 public import Lanius.Mini.Compiler.P.DivOp_size
 public import Lanius.Mini.Compiler.P.Lists_empty
 public import Lanius.Mini.Compiler.P.SrcExpr_guard
-public import Lanius.Mini.Compiler.P.SrcType_size
+public import Lanius.Mini.Compiler.P.SrcType_isUint
 public import Lanius.Mini.Compiler.P.UintTy_half
 public import Lanius.Mini.Compiler.P.arithShiftRight
 public import Lanius.Mini.Compiler.P.compileModules
@@ -324,10 +324,10 @@ inductive SrcType.HoldsAt : SrcType → Value → Env → Nat → Prop where
       (SrcType.float t).Holds value (env slot) → SrcType.HoldsAt (.float t) value env slot
   | sint {kind : UintTy} {value : Value} {env : Env} {slot : Nat} :
       (SrcType.sint kind).Holds value (env slot) → SrcType.HoldsAt (.sint kind) value env slot
-  /-- A reference is a cell and a projection path in Core; its slot holds the
-  place's address, which `FrameCorr` relates to the cell. -/
-  | ref {referent : SrcType} {cell : Nat} {projections : List Core.ValueProjection} {env : Env} {slot : Nat} :
-      SrcType.HoldsAt (.ref referent) (.reference referent.toCore cell projections) env slot
+
+/- No value is represented at a reference type: a reference is a parameter
+only, its slot the address of the place it names (`Corr`'s `RefHolds`), so a
+result, field, element or payload of a reference type has no representation. -/
 
 /-- Values of these types, one after another from `slot`: a struct's fields,
 a payload, or arguments. -/
@@ -445,7 +445,6 @@ theorem SrcType.HoldsAt.congr : ∀ {ty : SrcType} {v : Value} {env : Env} {slot
     have := agree 0 (by simp [SrcType.size])
     simp only [Nat.add_zero] at this
     exact .sint (by rw [this]; exact holds)
-  | .ref _, _, _, _, .ref, _, _, _ => .ref
 
 theorem FieldsHold.congr : ∀ {fs : List SrcType} {vs : List Value} {env : Env} {slot : Nat},
     FieldsHold fs vs env slot → ∀ {env' : Env} {slot' : Nat},

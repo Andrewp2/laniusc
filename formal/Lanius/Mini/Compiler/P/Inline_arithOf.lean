@@ -4,7 +4,7 @@ public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Compiler.P.DivOp_size
 public import Lanius.Mini.Compiler.P.Lists_empty
 public import Lanius.Mini.Compiler.P.SrcExpr_guard
-public import Lanius.Mini.Compiler.P.SrcType_size
+public import Lanius.Mini.Compiler.P.SrcType_isUint
 public import Lanius.Mini.Compiler.P.UintTy_half
 public import Lanius.Mini.Compiler.P.UintTy_isWide
 public import Lanius.Mini.Compiler.P.arithShiftRight
@@ -76,7 +76,7 @@ namespace Lanius.Mini
     none
 
 @[expose] def Inline.copySame (b : Binding) (ty : SrcType) : Option (List Expr) :=
-  if SrcType.same b.ty ty then
+  if SrcType.same b.ty ty && !(SrcType.isRef b.ty) then
     some (slotVars b.slot (SrcType.size b.ty))
   else
     none
