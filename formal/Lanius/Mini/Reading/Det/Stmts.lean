@@ -523,6 +523,7 @@ theorem callStmtR_unique {pf : CTree} {a b : MStmt} (pp : nodeProd pf = pPostfix
       cases argsOfR_unique ar ar'
       rw [shiftOf_unique sh sh']
     | assert _ ps' _ _ => exact absurd (pathSpellings_unique ps ps') (by decide)
+    | print _ ps' _ _ => exact absurd (pathSpellings_unique ps ps') (by decide)
     | discard _ k => exact (peel_noEff (.here pp) cf ps (by simp [builtinPaths]) (by decide) k).elim
     | «try» c => cases c with
       | mk f _ _ _ _ _ _ =>
@@ -534,6 +535,19 @@ theorem callStmtR_unique {pf : CTree} {a b : MStmt} (pp : nodeProd pf = pPostfix
     | assert _ _ it' k' =>
       cases items_unique it it'
       rw [effR_unique k nd vn k']
+    | print _ ps' _ _ => exact absurd (pathSpellings_unique ps ps') (by decide)
+    | discard _ k' => exact (peel_noEff (.here pp) cf ps (by simp [builtinPaths]) (by decide) k').elim
+    | «try» c => cases c with
+      | mk f _ _ _ _ _ _ =>
+        obtain ⟨_, _, _, f3, _⟩ := f
+        obtain ⟨_, _, _, c3⟩ := cf
+        prod_clash
+  | print cf ps it k => cases h₂ with
+    | free _ ps' _ _ => exact absurd (pathSpellings_unique ps ps') (by decide)
+    | assert _ ps' _ _ => exact absurd (pathSpellings_unique ps ps') (by decide)
+    | print _ _ it' k' =>
+      cases items_unique it it'
+      rw [effR_unique k nd vn k']
     | discard _ k' => exact (peel_noEff (.here pp) cf ps (by simp [builtinPaths]) (by decide) k').elim
     | «try» c => cases c with
       | mk f _ _ _ _ _ _ =>
@@ -543,6 +557,7 @@ theorem callStmtR_unique {pf : CTree} {a b : MStmt} (pp : nodeProd pf = pPostfix
   | discard d k => cases h₂ with
     | free cf ps _ _ => exact (peel_noEff (.here pp) cf ps (by simp [builtinPaths]) (by decide) k).elim
     | assert cf ps _ _ => exact (peel_noEff (.here pp) cf ps (by simp [builtinPaths]) (by decide) k).elim
+    | print cf ps _ _ => exact (peel_noEff (.here pp) cf ps (by simp [builtinPaths]) (by decide) k).elim
     | discard _ k' => rw [effR_unique k nd vn k']
     | «try» c => cases c with
       | mk f _ _ _ _ _ _ =>
@@ -555,6 +570,11 @@ theorem callStmtR_unique {pf : CTree} {a b : MStmt} (pp : nodeProd pf = pPostfix
         obtain ⟨_, _, _, c3⟩ := cf
         prod_clash
     | assert cf _ _ _ => cases c with
+      | mk f _ _ _ _ _ _ =>
+        obtain ⟨_, _, _, f3, _⟩ := f
+        obtain ⟨_, _, _, c3⟩ := cf
+        prod_clash
+    | print cf _ _ _ => cases c with
       | mk f _ _ _ _ _ _ =>
         obtain ⟨_, _, _, f3, _⟩ := f
         obtain ⟨_, _, _, c3⟩ := cf
@@ -594,6 +614,7 @@ theorem callStmtR_noEnd {pf : CTree} {a : MStmt} (c : CallStmtR env scope pf a) 
   cases c with
   | free f _ _ _ => obtain ⟨_, _, f3, _⟩ := f; prod_clash
   | assert f _ _ _ => obtain ⟨_, _, f3, _⟩ := f; prod_clash
+  | print f _ _ _ => obtain ⟨_, _, f3, _⟩ := f; prod_clash
   | discard f _ =>
     rcases callEnd_prod f with f1 | f1
     · rw [pe] at f1; cases f1

@@ -423,6 +423,8 @@ inductive SrcStmt where
   | matchArm : Nat → Nat → Nat → Bool → Nat → SrcType → SrcStmt → SrcStmt → SrcStmt
   /-- Unreachable(id, ty): Core binds id, uninitialized, at type ty and returns it, so it traps; ty is the function's result type. -/
   | unreachable : Nat → SrcType → SrcStmt
+  /-- print(value): Core's printI32, the value's decimal and a newline -/
+  | print : SrcEff → SrcStmt
   deriving Repr
 
 structure SrcParam where

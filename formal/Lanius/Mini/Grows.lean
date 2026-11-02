@@ -2290,6 +2290,26 @@ theorem grows_step {sp : SrcProgram} {fuel : Nat} (ih : GrowsBelow sp fuel) {st 
             all_goals simp_all
           all_goals simp at assertRun
       all_goals simp at run
+    | print value =>
+      simp only [SrcStmt.toCore, execStmt] at run
+      split at run
+      · rename_i u next printRun
+        simp only [Semantics.Outcome.done.injEq] at run
+        obtain ⟨-, rfl⟩ := run
+        cases f with
+        | zero => simp [evalExpr] at printRun
+        | succ k =>
+          simp only [evalExpr] at printRun
+          split at printRun
+          · rename_i w mid valueRun
+            have g := eff_grows (k + 1) ihf k (Nat.le_succ _) valueRun
+            split at printRun
+            all_goals (try simp only [Semantics.Outcome.done.injEq, reduceCtorEq] at printRun)
+            all_goals (try obtain ⟨-, rfl⟩ := printRun)
+            all_goals (try exact g)
+            all_goals simp_all
+          all_goals simp at printRun
+      all_goals simp at run
     | «break» | «continue» =>
       simp only [SrcStmt.toCore, execStmt, Semantics.Outcome.done.injEq] at run
       obtain ⟨-, rfl⟩ := run

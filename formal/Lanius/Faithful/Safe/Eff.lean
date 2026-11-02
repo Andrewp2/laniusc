@@ -66,6 +66,7 @@ theorem stmt_ends (sp : SrcProgram) :
   | setIndexEval => exact exprCase run
   | setFieldEval => exact exprCase run
   | «assert» => exact exprCase run
+  | print => exact exprCase run
   | «then» first second =>
     simp only [SrcStmt.breaksOut, Bool.or_eq_false_iff] at inside
     obtain ⟨j, s1, c1, rfl, frun, ⟨-, srun⟩ | ⟨-, rfl, -⟩⟩ := sequence_inv run

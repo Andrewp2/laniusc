@@ -273,6 +273,8 @@ pub enum SrcStmt {
     // Unreachable(id, ty): Core binds id, uninitialized, at type ty and
     // returns it, so it traps; ty is the function's result type.
     Unreachable(usize, SrcType),
+    // print(value): Core's printI32, the value's decimal and a newline
+    Print(SrcEff),
 }
 
 pub struct SrcParam {
@@ -773,6 +775,12 @@ pub fn text_dealloc() -> List<usize> {
 // assert
 pub fn text_assert() -> List<usize> {
     let t: List<usize> = cons(97, cons(115, cons(115, cons(101, cons(114, single(116))))));
+    return t;
+}
+
+// print
+pub fn text_print() -> List<usize> {
+    let t: List<usize> = cons(112, cons(114, cons(105, cons(110, single(116)))));
     return t;
 }
 
@@ -5859,6 +5867,7 @@ pub enum MStmt {
     MMatchArm(usize, Ty, usize, bool, usize, Ty, Box<MStmt>, Box<MStmt>),
     // SrcStmt's Unreachable
     MUnreachable(usize, Ty),
+    MPrint(MEff),
 }
 
 // A call: the function instance and the arguments.
@@ -6211,7 +6220,7 @@ pub fn dealloc_path() -> List<List<usize>> {
 // The allocator's calls, raw views, slice strides and `assert` are the
 // language's own: no function or variant is read at these paths.
 pub fn builtin_path(ss: List<List<usize>>) -> bool {
-    return same_spellings(ss, alloc_path()) || same_spellings(ss, dealloc_path()) || same_spellings(ss, single(text_slice_from_raw_parts())) || same_spellings(ss, single(text_slice_stride())) || same_spellings(ss, single(text_assert()));
+    return same_spellings(ss, alloc_path()) || same_spellings(ss, dealloc_path()) || same_spellings(ss, single(text_slice_from_raw_parts())) || same_spellings(ss, single(text_slice_stride())) || same_spellings(ss, single(text_assert())) || same_spellings(ss, single(text_print()));
 }
 
 // A path's module and last name, the path not reserved.
@@ -8322,6 +8331,27 @@ pub fn assert_arg(fuel: usize, env: FrontEnv, scope: List<Local>, args: core::op
     };
 }
 
+pub fn print_of(x: core::option::Option<MEff>) -> core::option::Option<MStmt> {
+    return match (x) {
+        None -> None,
+        Some(e) -> Some(MPrint(e)),
+    };
+}
+
+// `print(v)`: its one argument, an i32.
+pub fn print_arg(fuel: usize, env: FrontEnv, scope: List<Local>, args: core::option::Option<List<CTree>>) -> core::option::Option<MStmt> {
+    return match (args) {
+        None -> None,
+        Some(items) -> match (items) {
+            Nil -> None,
+            Cons(c, rest) -> match (unbox(rest)) {
+                Nil -> print_of(eff_of(fuel, env, scope, Some(TyI32), c)),
+                Cons(d, more) -> None,
+            },
+        },
+    };
+}
+
 // A call statement: `alloc::allocator::dealloc(pointer, size, align);`,
 // `assert(c);`, or a call whose value (if any) is discarded.
 // A postfix tail part: a call `(args)`, a member `.name`, the end.
@@ -8359,6 +8389,9 @@ pub fn call_stmt(fuel: usize, env: FrontEnv, scope: List<Local>, pf: CTree) -> c
     }
     if (is_path_call(pf) && is_path(path_spellings(fuel, kid(path, 0), kid(path, 1)), single(text_assert()))) {
         return assert_arg(fuel, env, scope, list_items(fuel, kid(kid(pf, 1), 1)));
+    }
+    if (is_path_call(pf) && is_path(path_spellings(fuel, kid(path, 0), kid(path, 1)), single(text_print()))) {
+        return print_arg(fuel, env, scope, list_items(fuel, kid(kid(pf, 1), 1)));
     }
     if (ends_in_call(fuel, kid(pf, 1))) {
         return discard_of(eff_postfix(fuel, env, scope, None, pf));
@@ -9131,6 +9164,7 @@ pub fn writes_local(s: MStmt, id: usize) -> bool {
         MContinue -> false,
         MMatchArm(sc, st, v, binds, b, bt, body, rest) -> writes_local(unbox(body), id) || writes_local(unbox(rest), id),
         MUnreachable(x, t) -> false,
+        MPrint(e) -> false,
     };
 }
 
@@ -9387,6 +9421,7 @@ pub fn stmt_calls(m: MStmt) -> List<Inst> {
         MContinue -> empty(),
         MMatchArm(sc, sty, k, bs, x, ty, body, rest) -> concat(stmt_calls(unbox(body)), stmt_calls(unbox(rest))),
         MUnreachable(id, ty) -> empty(),
+        MPrint(x) -> eff_calls(x),
     };
 }
 
@@ -9453,6 +9488,7 @@ pub fn stmt_tys(m: MStmt) -> List<Ty> {
         MContinue -> empty(),
         MMatchArm(sc, sty, k, bs, x, ty, body, rest) -> cons(sty, cons(ty, concat(stmt_tys(unbox(body)), stmt_tys(unbox(rest))))),
         MUnreachable(id, ty) -> single(ty),
+        MPrint(x) -> eff_named_tys(x),
     };
 }
 
@@ -9967,6 +10003,13 @@ pub fn assert_closed(x: core::option::Option<SrcEff>) -> core::option::Option<Sr
     };
 }
 
+pub fn print_closed(x: core::option::Option<SrcEff>) -> core::option::Option<SrcStmt> {
+    return match (x) {
+        None -> None,
+        Some(e) -> Some(Print(e)),
+    };
+}
+
 pub fn set_field_eval_closed(id: usize, j: usize, x: core::option::Option<SrcEff>) -> core::option::Option<SrcStmt> {
     return match (x) {
         None -> None,
@@ -10009,6 +10052,7 @@ pub fn close_stmt(fuel: usize, t: Tables, m: MStmt) -> core::option::Option<SrcS
         MBreak -> Some(Break),
         MContinue -> Some(Continue),
         MUnreachable(id, ty) -> unreachable_closed(id, close_ty(fuel, t, ty)),
+        MPrint(x) -> print_closed(close_eff(fuel, t, x)),
         MMatchArm(sc, sty, k, bs, x, ty, body, rest) -> match_arm_closed(sc, src_enum_id(close_ty(fuel, t, sty)), k, bs, x, arm_ty_closed(bs, close_ty(fuel, t, ty)), close_stmt(fuel, t, unbox(body)), close_stmt(fuel, t, unbox(rest))),
     };
 }
@@ -10657,6 +10701,7 @@ pub fn lit_stmt(funcs: List<SrcFunc>, ret: SrcType, locals: List<LocalTy>, s: Sr
         Continue -> Continue,
         MatchArm(sc, en, k, bs, x, ty, body, rest) -> MatchArm(sc, en, k, bs, x, ty, boxed(lit_stmt(funcs, ret, with_local(x, ty, locals), unbox(body))), boxed(lit_stmt(funcs, ret, locals, unbox(rest)))),
         Unreachable(id, ty) -> Unreachable(id, ty),
+        Print(x) -> Print(lit_eff(funcs, locals, Some(I32), x)),
     };
 }
 
@@ -10771,6 +10816,7 @@ pub fn wide_left_stmt(s: SrcStmt) -> bool {
         Continue -> false,
         MatchArm(sc, en, k, bs, x, ty, body, rest) -> wide_left_stmt(unbox(body)) || wide_left_stmt(unbox(rest)),
         Unreachable(id, ty) -> false,
+        Print(x) -> wide_left_eff(x),
     };
 }
 

@@ -185,6 +185,7 @@ theorem pstmt_mono (le : CallsLe call call') (s : SrcStmt) :
   | «continue» => intro env d h; simp [pstmt] at h
   | matchArm => intro env d h; simp [pstmt] at h
   | unreachable => intro env d h; simp [pstmt] at h
+  | print => intro env d h; simp [pstmt] at h
 
 end
 

@@ -82,6 +82,7 @@ theorem stmtClosed_unique : ∀ {m : MStmt} {a b : SrcStmt}, StmtClosed decls fn
   | _, _, _, .break, .break => rfl
   | _, _, _, .continue, .continue => rfl
   | _, _, _, .assert x, .assert x' => by rw [effClosed_unique x x']
+  | _, _, _, .print x, .print x' => by rw [effClosed_unique x x']
   | _, _, _, .matchArmBound le lw b r, .matchArmBound le' lw' b' r' => by
     rw [lowerR_unique lw lw', stmtClosed_unique b b', stmtClosed_unique r r']
     cases lowerR_unique le le'
@@ -229,6 +230,7 @@ theorem litStmt_eq {ret : SrcType} : ∀ {locals : List LocalTy} {s s' : SrcStmt
   | _, _, _, .matchArm b r => by rw [litStmt_eq b, litStmt_eq r]; simp only [litStmt]
   | _, _, _, .unreachable => by simp only [litStmt]
   | _, _, _, .assert h => by rw [litEff_eq h]; simp only [litStmt]
+  | _, _, _, .print h => by rw [litEff_eq h]; simp only [litStmt]
 
 theorem litFunc_unique {g a b : SrcFunc} (h₁ : LitFunc funcs g a) (h₂ : LitFunc funcs g b) : a = b := by
   obtain ⟨p₁, r₁, s₁⟩ := h₁

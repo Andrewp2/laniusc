@@ -23,6 +23,11 @@ def assertClosed (x : Option SrcEff) : Option SrcStmt :=
   | none => none
   | some e => some (SrcStmt.assert e)
 
+def printClosed (x : Option SrcEff) : Option SrcStmt :=
+  match x with
+  | none => none
+  | some e => some (SrcStmt.print e)
+
 def setFieldEvalClosed (id : Nat) (j : Nat) (x : Option SrcEff) : Option SrcStmt :=
   match x with
   | none => none
@@ -62,6 +67,7 @@ def closeStmt (fuel : Nat) (t : Tables) (m : MStmt) : Option SrcStmt :=
   | .mBreak => some SrcStmt.break
   | .mContinue => some SrcStmt.continue
   | .mUnreachable id ty => unreachableClosed id (closeTy fuel t ty)
+  | .mPrint x => printClosed (closeEff fuel t x)
   | .mMatchArm sc sty k bs x ty body rest => matchArmClosed sc (srcEnumId (closeTy fuel t sty)) k bs x (armTyClosed bs (closeTy fuel t ty)) (closeStmt fuel t body) (closeStmt fuel t rest)
 
 def consSrcParam (id : Nat) (ty : Option SrcType) (rest : Option (List SrcParam)) : Option (List SrcParam) :=

@@ -85,6 +85,7 @@ def SrcStmt.Declared (P : Core.Program) (s : SrcStmt) : Prop :=
   | .setFieldEval _ _ value => ∀ t ∈ value.types, TypeDeclared P t
   | .returnUnit => True
   | .assert condition => ∀ t ∈ condition.types, TypeDeclared P t
+  | .print value => ∀ t ∈ value.types, TypeDeclared P t
   | .break => True
   | .continue => True
   | .matchArm _ _ _ _ _ ty body rest => TypeDeclared P ty ∧ SrcStmt.Declared P body ∧ SrcStmt.Declared P rest
@@ -135,6 +136,7 @@ theorem returns_sound : ∀ (s : SrcStmt), s.returns = true → Typing.Definitel
   | .setFieldEval _ _ _, h => by simp [SrcStmt.returns] at h
   | .returnUnit, _ => .returnValue
   | .assert _, h => by simp [SrcStmt.returns] at h
+  | .print _, h => by simp [SrcStmt.returns] at h
   | .break, h => by simp [SrcStmt.returns] at h
   | .continue, h => by simp [SrcStmt.returns] at h
   | .unreachable _ _, _ => .letUninitialized .returnValue
@@ -2457,6 +2459,18 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
         rw [same_toCore same] at typed
         exact .expression (.assert typed)
       · simp at h
+  | .print value, scope, ctx, next, inLoop, out, ok, d, bo, h => by
+    simp only [SrcStmt.lower, lowerPrint] at h
+    split at h
+    · simp at h
+    · rename_i c hc
+      simp only [evalSame] at h
+      split at h
+      · rename_i same
+        have typed := SrcEff.eval_typed target sigsOk value ok d hc
+        rw [same_toCore same] at typed
+        exact .expression (.printI32 typed)
+      · simp at h
   | .setIndexEval slice index value, scope, ctx, next, inLoop, out, ok, d, bo, h => by
     simp only [SrcStmt.lower, lowerSetIndexEval] at h
     split at h
@@ -3036,6 +3050,9 @@ theorem SrcStmt.declare_sound : ∀ (s : SrcStmt) {d d' : SrcDecls}, s.declare d
           ⟨head ((ext2.trans ext3).trans extD) agrees, declared2 (ext3.trans extD) agrees,
             declared3 extD agrees⟩⟩
   | .assert condition, d, d', h => by
+    simp only [SrcStmt.declare] at h
+    exact declareTypes_sound _ h
+  | .print value, d, d', h => by
     simp only [SrcStmt.declare] at h
     exact declareTypes_sound _ h
   | .unreachable _ ty, d, d', h => by

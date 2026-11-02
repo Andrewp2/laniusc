@@ -619,8 +619,8 @@ unique. Trusted:
     shift `k`. `slice_from_raw_parts(p, n)`, in a `let` of type `[T]`, is
     Core's raw view of `T`. These spellings are fixed: build does not look
     at the extern declarations in `alloc::allocator`, and these paths,
-    `slice_stride` and `assert` are never read as a function or variant
-    (`builtinPaths`);
+    `slice_stride`, `assert` and `print` are never read as a function or
+    variant (`builtinPaths`);
   - `x op= e` is `x = x op e`, and `x.f op= e` is `x.f = x.f op e`, for
     `op` one of `+ - * & | ^`. Core has the compound form itself
     (`assign .add` and so on, `evalAssignValue`), which evaluates `e` before
@@ -652,6 +652,10 @@ unique. Trusted:
     is `ReturnUnit`; `assert(c);` (that spelling, one argument) is
     `Assert(c)`, Core's assert intrinsic. So `core::panic::panic()`, whose
     body in `stdlib/core/panic.lani` is `assert(false);`, traps.
+    `print(v);` (that spelling, one argument, read at `i32`) is `Print(v)`,
+    Core's `printI32` intrinsic (F11): the decimal of `v` and a newline
+    appended to standard output (`afterPrintI32`). No declaration of
+    `print` is read or added.
 
   - `isize` is `Isize`. An integer literal whose expected type is `isize`
     is `Cast(Isize, Int(n))`, and one whose expected type is unsigned is

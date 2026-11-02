@@ -239,6 +239,7 @@ def stmtOk (ret : SrcType) (tenv : TEnv) : SrcStmt → Bool
   | .continue => false
   | .matchArm _ _ _ _ _ _ _ _ => false
   | .unreachable _ _ => false
+  | .print _ => false
 
 end
 

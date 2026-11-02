@@ -644,8 +644,9 @@ theorem callEnd_prod {t : CTree} (c : CallEnd t) : nodeProd t = pPostfixCall ∨
   | call pc _ => exact .inl pc
   | member pm _ => exact .inr pm
 
-/-- A call statement: `dealloc(pointer, size, align)`, `assert(c)`, or a
-call whose value is discarded. -/
+/-- A call statement: `dealloc(pointer, size, align)`, `assert(c)`,
+`print(v)` (F11, Core's `printI32` of an `i32`), or a call whose value is
+discarded. -/
 inductive CallStmtR (env : FrontEnv) (scope : List Local) (pf : CTree) : MStmt → Prop
   | free {pointer size align : SrcExpr} {k : Nat} : PathCallForm pf →
       PathSpellings (kid (kid (kid pf 0) 0) 0) (kid (kid (kid pf 0) 0) 1) deallocPath →
@@ -654,6 +655,9 @@ inductive CallStmtR (env : FrontEnv) (scope : List Local) (pf : CTree) : MStmt �
   | assert {c : CTree} {x : MEff} : PathCallForm pf →
       PathSpellings (kid (kid (kid pf 0) 0) 0) (kid (kid (kid pf 0) 0) 1) [textAssert] →
       Items (kid (kid pf 1) 1) [c] → EffR env scope (some .tyBool) c x → CallStmtR env scope pf (.mAssert x)
+  | print {c : CTree} {x : MEff} : PathCallForm pf →
+      PathSpellings (kid (kid (kid pf 0) 0) 0) (kid (kid (kid pf 0) 0) 1) [textPrint] →
+      Items (kid (kid pf 1) 1) [c] → EffR env scope (some .tyI32) c x → CallStmtR env scope pf (.mPrint x)
   | discard {x : MEff} : CallEnd (kid pf 1) → EffR env scope none pf x →
       CallStmtR env scope pf (.mDiscard x)
   | try {tr : Tried} : TryCallR env scope pf tr → CallStmtR env scope pf (tryRest tr .mNop)
@@ -711,6 +715,26 @@ theorem callStmt_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {pf : 
             (effOf_sound he)
   split at h
   · rename_i _ _ c
+    simp only [Bool.and_eq_true] at c
+    cases hi : listItems fuel (kid (kid pf 1) 1) with
+    | none => rw [hi] at h; simp [printArg] at h
+    | some items =>
+      rw [hi] at h
+      match items, h, hi with
+      | [], h, _ => simp [printArg] at h
+      | _ :: _ :: _, h, _ => simp [printArg] at h
+      | [a], h, hi =>
+        simp only [printArg] at h
+        cases he : effOf fuel env scope (some .tyI32) a with
+        | none => rw [he] at h; simp [printOf] at h
+        | some x =>
+          rw [he] at h
+          simp only [printOf, Option.some.injEq] at h
+          subst h
+          exact .print (isPathCall_sound c.1) (pathSpellings_sound (isPath_eq c.2)) (listItems_sound hi)
+            (effOf_sound he)
+  split at h
+  · rename_i _ _ _ c
     cases he : effPostfix fuel env scope none pf with
     | none => rw [he] at h; simp [discardOf] at h
     | some x =>
@@ -719,7 +743,7 @@ theorem callStmt_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {pf : 
       subst h
       exact .discard (endsInCall_sound c) (effPostfix_sound pp he)
   split at h
-  · rename_i _ _ _ c
+  · rename_i _ _ _ _ c
     cases ht : tryCallOf fuel env scope pf with
     | none => rw [ht] at h; simp [tryStmt] at h
     | some tr =>

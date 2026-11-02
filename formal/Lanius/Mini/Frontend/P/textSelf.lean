@@ -31,6 +31,11 @@ def textAssert : List Nat :=
   let t : List Nat := 97 :: 115 :: 115 :: 101 :: 114 :: [116]
   t
 
+/-- print -/
+def textPrint : List Nat :=
+  let t : List Nat := 112 :: 114 :: 105 :: 110 :: [116]
+  t
+
 /-- slice_stride -/
 def textSliceStride : List Nat :=
   let t : List Nat := 115 :: 108 :: 105 :: 99 :: 101 :: 95 :: 115 :: 116 :: 114 :: 105 :: 100 :: [101]

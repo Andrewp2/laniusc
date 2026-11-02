@@ -109,7 +109,7 @@ partial def stmtCalls : SrcStmt → List Nat
   | .if _ a b => stmtCalls a ++ stmtCalls b
   | .while _ b => stmtCalls b
   | .letEval _ _ v b => effCalls v ++ stmtCalls b
-  | .setEval _ v | .returnEval v | .discard v | .setFieldEval _ _ v | .assert v => effCalls v
+  | .setEval _ v | .returnEval v | .discard v | .setFieldEval _ _ v | .assert v | .print v => effCalls v
   | .ifEval c a b => effCalls c ++ stmtCalls a ++ stmtCalls b
   | .whileEval c b => effCalls c ++ stmtCalls b
   | .setIndexEval _ i v => effCalls i ++ effCalls v
@@ -268,6 +268,7 @@ partial def markStmt : SrcStmt → StateM Table SrcStmt
   | .setIndexEval s i v => return .setIndexEval s (← markEff i) (← markEff v)
   | .setFieldEval id j v => return .setFieldEval id j (← markEff v)
   | .assert c => return .assert (← markEff c)
+  | .print c => return .print (← markEff c)
   | s => pure s
 
 def markFunc (f : SrcFunc) : StateM Table SrcFunc := do

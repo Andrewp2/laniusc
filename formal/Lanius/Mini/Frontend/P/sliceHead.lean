@@ -48,7 +48,7 @@ def deallocPath : List (List Nat) :=
 
 /-- The allocator's calls, raw views, slice strides and `assert` are the language's own: no function or variant is read at these paths. -/
 def builtinPath (ss : List (List Nat)) : Bool :=
-  sameSpellings ss allocPath || sameSpellings ss deallocPath || sameSpellings ss [textSliceFromRawParts] || sameSpellings ss [textSliceStride] || sameSpellings ss [textAssert]
+  sameSpellings ss allocPath || sameSpellings ss deallocPath || sameSpellings ss [textSliceFromRawParts] || sameSpellings ss [textSliceStride] || sameSpellings ss [textAssert] || sameSpellings ss [textPrint]
 
 /-- A path's module and last name, the path not reserved. -/
 def namedSplit (ss : List (List Nat)) : Option Split :=

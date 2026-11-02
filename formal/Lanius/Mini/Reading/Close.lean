@@ -264,6 +264,8 @@ inductive StmtClosed (decls : Decls) (fns types : List Inst) : MStmt → SrcStmt
   | «continue» : StmtClosed decls fns types .mContinue .continue
   | «assert» {x : MEff} {a : SrcEff} :
       EffClosed decls fns types x a → StmtClosed decls fns types (.mAssert x) (.assert a)
+  | print {x : MEff} {a : SrcEff} :
+      EffClosed decls fns types x a → StmtClosed decls fns types (.mPrint x) (.print a)
   | matchArmBound {sc : Nat} {sty : Ty} {e : Nat} {sss : List (List SrcType)} {k x : Nat} {ty : Ty} {s : SrcType}
       {b r : MStmt} {c d : SrcStmt} :
       LowerR decls types sty (.enum e sss) → LowerR decls types ty s → StmtClosed decls fns types b c →
@@ -397,6 +399,11 @@ theorem closeStmt_sound {fuel : Nat} {t : Tables} (ok : LoweredOk t) :
     cases hx : closeEff fuel t x <;> simp [hx, assertClosed] at h
     subst h
     exact .assert (closeEff_sound ok _ _ hx)
+  | .mPrint x, s, h => by
+    simp only [closeStmt] at h
+    cases hx : closeEff fuel t x <;> simp [hx, printClosed] at h
+    subst h
+    exact .print (closeEff_sound ok _ _ hx)
   | .mUnreachable id ty, s, h => by
     simp only [closeStmt] at h
     cases ht : closeTy fuel t ty <;> simp [ht, unreachableClosed] at h

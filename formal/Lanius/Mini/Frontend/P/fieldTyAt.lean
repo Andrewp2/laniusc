@@ -4,20 +4,12 @@ public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Frontend.P.armsOf
 import Lanius.Mini.Frontend.P.divergeArm
 import Lanius.Mini.Frontend.P.floatTyped
-import Lanius.Mini.Frontend.P.fnInstRet
 import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.isEmptyUsize
-import Lanius.Mini.Frontend.P.isPathCall
 import Lanius.Mini.Frontend.P.isTryEnum
 import Lanius.Mini.Frontend.P.noToken
-import Lanius.Mini.Frontend.P.noTrees
-import Lanius.Mini.Frontend.P.purePart
 import Lanius.Mini.Frontend.P.setIndexOrEval
-import Lanius.Mini.Frontend.P.sliceHead
-import Lanius.Mini.Frontend.P.textSelf
-import Lanius.Mini.Frontend.P.triedIf
-import Lanius.Mini.Frontend.P.tryLet
 import Lanius.Mini.Frontend.P.whileEvalOf
 import Lanius.Mini.Frontend.P.wideOf
 
@@ -104,89 +96,9 @@ def assertArg (fuel : Nat) (env : FrontEnv) (scope : List Local) (args : Option 
       | [] => assertOf (effOf fuel env scope (some Ty.tyBool) c)
       | d :: more => none
 
-/-- A call statement: `alloc::allocator::dealloc(pointer, size, align);`, `assert(c);`, or a call whose value (if any) is discarded. A postfix tail part: a call `(args)`, a member `.name`, the end. -/
-def isCallPart (t : CTree) : Bool :=
-  decide (nodeProd t = (161))
-
-def isMemberPart (t : CTree) : Bool :=
-  decide (nodeProd t = (163))
-
-def isTailEnd (t : CTree) : Bool :=
-  decide (nodeProd t = (164))
-
-/-- A postfix tail of calls and members whose last part is a call, as in `f(x);`, `x.m(y);` or `x.f.m(y).n();`: a statement whose value is dropped. -/
-def endsInCall (fuel : Nat) (t : CTree) : Bool :=
-  if fuel = 0 then
-    false
-  else
-    if isCallPart t && isTailEnd (kid t 3) then
-      true
-    else
-      if isCallPart t || isMemberPart t then
-        endsInCall (fuel - 1) (kid t 3)
-      else
-        false
-
-def callStmt (fuel : Nat) (env : FrontEnv) (scope : List Local) (pf : CTree) : Option MStmt :=
-  let path : CTree := kid (kid pf 0) 0
-  if isPathCall pf && isPath (pathSpellings fuel (kid path 0) (kid path 1)) deallocPath then
-    freeOf (argsOf fuel env scope (kid (kid pf 1) 1))
-  else
-    if isPathCall pf && isPath (pathSpellings fuel (kid path 0) (kid path 1)) [textAssert] then
-      assertArg fuel env scope (listItems fuel (kid (kid pf 1) 1))
-    else
-      if endsInCall fuel (kid pf 1) then
-        discardOf (effPostfix fuel env scope none pf)
-      else
-        if isTryCall pf then
-          tryStmt (tryCallOf fuel env scope pf)
-        else
-          none
-
-/-- The operator of a compound assignment `+=`, `-=`, `*=`, `&=`, `|=`, `^=`, `<<=`, `>>=`. -/
-def compoundOp (p : Nat) : Option SrcOp :=
-  if p = (107) then
-    some SrcOp.plus
-  else
-    if p = (108) then
-      some SrcOp.minus
-    else
-      if p = (109) then
-        some SrcOp.times
-      else
-        if p = (115) then
-          some SrcOp.bitAnd
-        else
-          if p = (116) then
-            some SrcOp.bitOr
-          else
-            if p = (112) then
-              some SrcOp.bitXor
-            else
-              if p = (113) then
-                some SrcOp.shiftLeft
-              else
-                if p = (114) then
-                  some SrcOp.shiftRight
-                else
-                  none
-
-/-- `x op= e` as an effectful expression, also for `/=` and `%=`. -/
-def compoundEff (p : Nat) (left : MEff) (right : Option MEff) : Option MEff :=
-  if p = (110) then
-    xDivideOf SrcDivOp.quotient (some left) right
-  else
-    if p = (111) then
-      xDivideOf SrcDivOp.remainder (some left) right
-    else
-      match compoundOp p with
-      | none => none
-      | some o => xApplyOf o (some left) right
-
-/-- `x.f op= e`, when e or op is effectful. -/
-def compoundFieldEval (fuel : Nat) (env : FrontEnv) (scope : List Local) (l : Local) (index : Option Nat) (p : Nat) (value : CTree) : Option MStmt :=
-  match index with
+def printOf (x : Option MEff) : Option MStmt :=
+  match x with
   | none => none
-  | some j => checkedStmt (hasTy (fieldTyAt fuel env.decls l.ty j)) (fieldEvalStmt l.id j (compoundEff p (MEff.xPure (SrcExpr.field l.id j)) (effOf fuel env scope (fieldTyAt fuel env.decls l.ty j) value)))
+  | some e => some (MStmt.mPrint e)
 
 end Lanius.Mini

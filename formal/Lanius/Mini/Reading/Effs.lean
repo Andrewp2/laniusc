@@ -101,7 +101,7 @@ def ChainForm (c : CTree) : Prop :=
 `slice_from_raw_parts`, `slice_stride` and `assert`. No function or variant
 is read at them. -/
 def builtinPaths : List ModPath :=
-  [allocPath, deallocPath, [textSliceFromRawParts], [textSliceStride], [textAssert]]
+  [allocPath, deallocPath, [textSliceFromRawParts], [textSliceStride], [textAssert], [textPrint]]
 
 theorem namedSplit_sound {ss : List Name} {s : Split} (h : namedSplit ss = some s) :
     ss ∉ builtinPaths ∧ ss = s.home ++ [s.name] := by
@@ -112,7 +112,7 @@ theorem namedSplit_sound {ss : List Name} {s : Split} (h : namedSplit ss = some 
     refine ⟨?_, splitLast_sound h⟩
     simp only [builtinPath, Bool.or_eq_true, sameSpellings_iff, not_or] at nb
     simp only [builtinPaths, List.mem_cons, List.not_mem_nil, or_false, not_or]
-    exact ⟨nb.1.1.1.1, nb.1.1.1.2, nb.1.1.2, nb.1.2, nb.2⟩
+    exact ⟨nb.1.1.1.1.1, nb.1.1.1.1.2, nb.1.1.1.2, nb.1.1.2, nb.1.2, nb.2⟩
 
 mutual
 inductive EffR (env : FrontEnv) : List Local → Option Ty → CTree → MEff → Prop

@@ -44,5 +44,6 @@ def writesLocal (s : MStmt) (id : Nat) : Bool :=
   | .mContinue => false
   | .mMatchArm sc st v binds b bt body rest => writesLocal body id || writesLocal rest id
   | .mUnreachable x t => false
+  | .mPrint e => false
 
 end Lanius.Mini

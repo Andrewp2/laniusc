@@ -310,6 +310,7 @@ inductive MStmt where
   | mMatchArm : Nat → Ty → Nat → Bool → Nat → Ty → MStmt → MStmt → MStmt
   /-- SrcStmt's Unreachable -/
   | mUnreachable : Nat → Ty → MStmt
+  | mPrint : MEff → MStmt
   deriving Repr
 
 /-- A call: the function instance and the arguments. -/

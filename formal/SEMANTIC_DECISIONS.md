@@ -1406,3 +1406,19 @@ rejects the program, as the function's result is `i32` (case
 unit_main_return). A method spelled `main` keeps its own result type. The
 choice touches no Core semantics: the program read is an ordinary Source
 program whose `main` returns `i32`.
+
+## `print(v);` (decided 10-31, F11)
+
+laniusc's builtin `print` writes an `i32` in decimal and a newline to
+standard output. The front end reads the statement `print(v);` (one
+argument, read at `i32`) as the Source statement `Print(v)`, and Source's
+meaning is Core's `printI32` intrinsic, whose world appends
+`utf8Bytes (toString v) ++ [10]` (`afterPrintI32`). Nothing declares
+`print`: like `assert`, the path is a builtin (`builtinPaths`), so a program
+cannot define a function named `print` and call it. The verified compiler
+lowers it to code that writes `-` for a negative value, the digits of the
+magnitude from the place 10^9 down with the leading zeros skipped, and the
+newline, one `write` of one byte each through `write_byte`'s code
+(`printCode`); `printCode_exec` and `printBytes_eq` prove the bytes are
+Core's. Other argument types (`print` of a `u64` or a `bool`) are not read;
+case print_two_args rejects two arguments.

@@ -477,6 +477,14 @@ theorem assert_trap_grows {e : Core.Expr}
   · exact ht (Nat.lt_succ_self j) erun
   · exact hd (Nat.lt_succ_self j) erun
 
+theorem print_trap_grows {e : Core.Expr}
+    (hd : ∀ {j v st2}, j < k → evalExpr j P st e = .done v st2 → Grows st st2)
+    (ht : ∀ {j r1 st2}, j < k → evalExpr j P st e = .trapped r1 st2 → Grows st st2)
+    (run : evalExpr k P st (.intrinsic .printI32 e) = .trapped r st') : Grows st st' := by
+  obtain ⟨j, rfl, erun | ⟨v, erun⟩⟩ := print_trap_inv run
+  · exact ht (Nat.lt_succ_self j) erun
+  · exact hd (Nat.lt_succ_self j) erun
+
 /-! ## Places and assignments -/
 
 theorem evalPlace_local_trap {acc : Semantics.PlaceAccess} {id : Nat} {r1 : Lanius.Trap}
@@ -946,6 +954,10 @@ theorem grows_trap_step {fuel : Nat} (ih : GrowsBelow sp fuel) (ihT : GrowsBelow
       obtain ⟨j, hj, erun⟩ := expression_trap_inv run
       obtain rfl : f = j := Nat.succ.inj hj
       exact assert_trap_grows (fun lt r => effD _ (Nat.le_of_lt lt) r) (fun lt r => effT _ (Nat.le_of_lt lt) r) erun
+    | print value =>
+      obtain ⟨j, hj, erun⟩ := expression_trap_inv run
+      obtain rfl : f = j := Nat.succ.inj hj
+      exact print_trap_grows (fun lt r => effD _ (Nat.le_of_lt lt) r) (fun lt r => effT _ (Nat.le_of_lt lt) r) erun
     | «then» first second =>
       obtain ⟨j, hj, frun | ⟨s1, frun, srun⟩⟩ := sequence_trap_inv run
       all_goals obtain rfl : f = j := Nat.succ.inj hj

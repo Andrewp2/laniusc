@@ -1802,6 +1802,8 @@ pub enum SrcStmt {
     // Unreachable(id, ty): Core binds id, uninitialized, at type ty and
     // returns it, so it traps; ty is the function's result type.
     Unreachable(usize, SrcType),
+    // print(value): Core's printI32, the value's decimal and a newline
+    Print(SrcEff),
 }
 
 pub struct SrcParam {
@@ -5314,6 +5316,61 @@ pub fn lower_assert(condition: core::option::Option<Evaluated>, slot: usize) -> 
     };
 }
 
+// print(value) (F11): Core's printI32, the decimal of the i32 value in slot
+// (its low 32 bits) and a newline to fd 1, a byte at a time through
+// write_byte's code at slot + 4 (handle 1 in slot + 4, the byte in slot + 5).
+// slot + 1 holds the magnitude still to print, slot + 2 whether a digit has
+// been printed, slot + 3 the current digit.
+pub fn print_byte(slot: usize, byte: Expr) -> Stmt {
+    let w: usize = plus(slot, 4);
+    return Seq(boxed(Assign(w, Lit(1))), boxed(Seq(boxed(Assign(plus(w, 1), byte)), boxed(host_byte_code(w)))));
+}
+
+// 10^k.
+pub fn print_place_value(k: usize) -> usize {
+    if (k == 0) {
+        return 1;
+    }
+    return times(10, print_place_value(minus(k, 1)));
+}
+
+// The digit of place 10^k: the magnitude's quotient by it, printed when a
+// digit was printed before it or it is not 0 (the flag plus the digit is not
+// 0); the magnitude keeps the remainder.
+pub fn print_place(slot: usize, k: usize) -> Stmt {
+    let m: usize = plus(slot, 1);
+    let started: usize = plus(slot, 2);
+    let d: usize = plus(slot, 3);
+    let p: Expr = Lit(print_place_value(k) as u64);
+    let digit_out: Stmt = Seq(boxed(print_byte(slot, Binary(U64, Add, boxed(Lit(48)), boxed(Var(d))))), boxed(Assign(started, Lit(1))));
+    let maybe_out: Stmt = Stmt::Ite(Binary(U64, Add, boxed(Var(started)), boxed(Var(d))), boxed(digit_out), boxed(Skip));
+    return Seq(boxed(Stmt::Divide(U64, UDiv, d, Var(m), p)), boxed(Seq(boxed(maybe_out), boxed(Stmt::Divide(U64, URem, m, Var(m), p)))));
+}
+
+// The places 10^k down to 10, then the ones digit, always printed.
+pub fn print_places(slot: usize, k: usize) -> Stmt {
+    if (k == 0) {
+        return print_byte(slot, Binary(U64, Add, boxed(Lit(48)), boxed(Var(plus(slot, 1)))));
+    }
+    return Seq(boxed(print_place(slot, k)), boxed(print_places(slot, minus(k, 1))));
+}
+
+// `-` and the magnitude 2^32 - bits for a negative value, else the value;
+// its ten places; the newline.
+pub fn print_code(slot: usize) -> Stmt {
+    let m: usize = plus(slot, 1);
+    let negative: Stmt = Seq(boxed(print_byte(slot, Lit(45))), boxed(Assign(m, Binary(U64, Sub, boxed(Lit(4294967296)), boxed(Var(slot))))));
+    let sign: Stmt = Stmt::Ite(Compare(S32, Lt, boxed(Var(slot)), boxed(Lit(0))), boxed(negative), boxed(Assign(m, Var(slot))));
+    return Seq(boxed(sign), boxed(Seq(boxed(Assign(plus(slot, 2), Lit(0))), boxed(Seq(boxed(print_places(slot, 9)), boxed(print_byte(slot, Lit(10))))))));
+}
+
+pub fn lower_print(value: core::option::Option<Evaluated>, slot: usize) -> core::option::Option<Stmt> {
+    return match (value) {
+        None -> None,
+        Some(v) -> eval_same(v, I32, Seq(boxed(v.stmt), boxed(print_code(slot)))),
+    };
+}
+
 pub fn lower_set_index_eval(decls: SrcDecls, slot: usize, binding: core::option::Option<Binding>, index: core::option::Option<Evaluated>, value: core::option::Option<Evaluated>) -> core::option::Option<Stmt> {
     return match (binding) {
         None -> None,
@@ -5371,6 +5428,7 @@ impl SrcStmt {
             Continue -> Some(Cont),
             MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> lower_match_arm(scope, lookup(scope, scrutinee), enum_id, variant, binds, binder, ty, next, unbox(body).lower(sigs, decls, ret, arm_body_scope(binds, binder, ty, next, scope), plus(next, ty.size())), unbox(rest).lower(sigs, decls, ret, scope, next)),
             Unreachable(id, ty) -> lower_unreachable(ty.same(ret), next),
+            Print(value) -> lower_print(value.eval(sigs, decls, scope, next), next),
         };
     }
 
@@ -5412,6 +5470,7 @@ impl SrcStmt {
             Continue -> true,
             MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> unbox(body).breaks_out() || unbox(rest).breaks_out(),
             Unreachable(id, ty) -> false,
+            Print(value) -> false,
         };
     }
 
@@ -5452,6 +5511,7 @@ impl SrcStmt {
             Continue -> 0,
             MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> max_of(plus(unbox(body).depth(), ty.size()), unbox(rest).depth()),
             Unreachable(id, ty) -> 1,
+            Print(value) -> 0,
         };
     }
 }
@@ -5738,6 +5798,7 @@ impl SrcStmt {
             Continue -> Some(decls),
             MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> declare_in(declare_in(ty.declare(decls), unbox(body)), unbox(rest)),
             Unreachable(id, ty) -> ty.declare(decls),
+            Print(value) -> declare_types(value.types(), decls),
         };
     }
 
@@ -5779,6 +5840,7 @@ impl SrcStmt {
             Continue -> false,
             MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> unbox(body).returns() && unbox(rest).returns(),
             Unreachable(id, ty) -> true,
+            Print(value) -> false,
         };
     }
 }

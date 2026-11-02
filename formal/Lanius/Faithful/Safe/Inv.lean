@@ -310,6 +310,33 @@ theorem arms_cons_trap_inv {sv : Value} {pat : Core.Pattern} {body : Core.Expr} 
       | exited => simp [run, restoreOutcomeLocals] at h
       | outOfFuel => simp [run, restoreOutcomeLocals] at h
 
+theorem print_trap_inv {e : Core.Expr} (h : evalExpr k P st (.intrinsic .printI32 e) = .trapped r st') :
+    ∃ j, k = j + 1 ∧ (evalExpr j P st e = .trapped r st' ∨ ∃ v, evalExpr j P st e = .done v st') := by
+  cases k with
+  | zero => simp [evalExpr] at h
+  | succ j =>
+    simp only [evalExpr] at h
+    split at h
+    · rename_i v next run
+      refine ⟨j, rfl, .inr ⟨v, ?_⟩⟩
+      cases v
+      case signed kind x =>
+        cases kind
+        case i32 => simp at h
+        all_goals
+          simp only [Semantics.Outcome.trapped.injEq] at h
+          obtain ⟨-, rfl⟩ := h
+          exact run
+      all_goals
+        simp only [Semantics.Outcome.trapped.injEq] at h
+        obtain ⟨-, rfl⟩ := h
+        exact run
+    · rename_i reason s1 run
+      simp only [Semantics.Outcome.trapped.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      exact ⟨j, rfl, .inl run⟩
+    all_goals simp at h
+
 theorem assert_trap_inv {e : Core.Expr} (h : evalExpr k P st (.intrinsic .assert e) = .trapped r st') :
     ∃ j, k = j + 1 ∧ (evalExpr j P st e = .trapped r st' ∨
       ∃ v, evalExpr j P st e = .done v st' ∧ (v = .boolean false ∧ r = .assertionFailed ∨

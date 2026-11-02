@@ -69,5 +69,6 @@ def stmtCalls (m : MStmt) : List Inst :=
   | .mContinue => []
   | .mMatchArm sc sty k bs x ty body rest => stmtCalls body ++ stmtCalls rest
   | .mUnreachable id ty => []
+  | .mPrint x => effCalls x
 
 end Lanius.Mini

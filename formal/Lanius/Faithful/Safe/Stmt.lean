@@ -231,6 +231,7 @@ theorem stmt_safe (calls : ∀ m, FuncSim sp prims outside m) (funcs : ∀ i < N
   | «continue» => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
   | matchArm => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
   | unreachable => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
+  | print => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
   | returnUnit =>
     intro k tenv env st r st' le run ok inv rel bound
     simp only [SrcStmt.toCore] at run

@@ -207,6 +207,11 @@ theorem assert_true_done {e : Core.Expr} {k : Nat} {st1 : State}
     (h : evalExpr k P st e = .done (.boolean true) st1) : evalExpr (k + 1) P st (.intrinsic .assert e) = .done .unit st1 := by
   rw [evalExpr.eq_def]; simp only [h]
 
+theorem print_done {e : Core.Expr} {k : Nat} {st1 : State} {x : Int}
+    (h : evalExpr k P st e = .done (.signed .i32 x) st1) :
+    evalExpr (k + 1) P st (.intrinsic .printI32 e) = .done .unit { st1 with world := st1.world.afterPrintI32 x } := by
+  rw [evalExpr.eq_def]; simp only [h]
+
 end Traps
 
 /-! ## Operators with results on typed values -/
@@ -1652,6 +1657,30 @@ theorem stops_assert (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = s
   | false =>
     exact ⟨_, Stops.after (d' := 0) exec1 (.divide (by simp [Expr.eval, bits, boolBits, Word.divides, DivOp.defined]))⟩
 
+theorem stops_print (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
+    {value : SrcEff} (ihe : EffStops sp mp n value) : SrcStops sp mp n (.print value) := by
+  intro hp ret scope next stmt frame base st env ok corr fr fresh le hc within fails
+  simp only [SrcStmt.lower, lowerPrint] at ok
+  split at ok
+  · simp at ok
+  rename_i cv valueOk
+  simp only [evalSame] at ok
+  split at ok
+  case isFalse => simp at ok
+  rename_i same
+  have tyEq := SrcType.same_eq same
+  simp only [Option.some.injEq] at ok
+  subst ok
+  simp only [SrcStmt.toCore] at fails
+  rcases eff_split lowered ihe valueOk corr fr fresh hc within fails.expression
+      (fun j r s h => ⟨j + 1, s, intrinsic_trap h, rfl⟩) with
+    ⟨d, stops⟩ | ⟨k, v, st1, valueRun, bound, -, -, -, -, d1, env1, hp1, exec1, -, holds1, -⟩
+  · exact ⟨d, .seqFirst stops⟩
+  rw [tyEq] at holds1
+  obtain ⟨hv, -⟩ := (SrcType.holdsAt_scalar rfl).mp holds1
+  subst hv
+  exact (fails.expression.not_done (print_done valueRun) bound).elim
+
 theorem stops_returnUnit : SrcStops sp mp n .returnUnit := by
   intro hp ret scope next stmt frame base st env ok corr fr fresh le hc within fails
   have := fails 1
@@ -2027,6 +2056,7 @@ theorem stmtStops_succ {sp : SrcProgram} {mp : Program} {n : Nat}
       stops_matchArm (stmtStops_succ lowered returns prev body) (stmtStops_succ lowered returns prev rest)
   | .assert condition => stops_assert lowered (effStops_all lowered returns prev condition)
   | .unreachable _ _ => stops_unreachable
+  | .print value => stops_print lowered (effStops_all lowered returns prev value)
 
 /-- Every lowered statement whose Core run fails stops for every number of
 ticks. -/

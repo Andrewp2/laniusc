@@ -1,5 +1,6 @@
 import Lanius.Mini.LowerStmt
 import Lanius.Mini.WorldTrace
+import Lanius.Mini.PrintCode
 
 /-! Effectful expressions (`SrcEff`): calls anywhere in an expression, in
 Core's evaluation order. `e.eval sigs scope slot` is code that leaves the
@@ -3336,6 +3337,70 @@ theorem stmt_assert (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {condition : SrcEf
       all_goals simp at assertRun
   all_goals simp at run
 
+/-- The events of `bytes` written one at a time to fd 1 put exactly those
+bytes on fd 1. -/
+theorem outputOf_byteEvents (bytes : List UInt8) (k : Nat) :
+    outputOf k (bytes.map byteEvent) = if 1 = k then bytes else [] := by
+  induction bytes with
+  | nil => simp [outputOf]
+  | cons b rest ih =>
+    simp only [List.map_cons, byteEvent, outputOf, ih]
+    split <;> simp
+
+/-- `print(value)`: the value's code, then `printCode` at its slot, which
+writes Core's bytes (`afterPrintI32`) to fd 1. -/
+theorem stmt_print (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {value : SrcEff}
+    (ok : (SrcStmt.print value).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
+    (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
+    (le : base ≤ st.nextCell)
+    (hc : HeapCorr st.heap st.world hp) (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.print value).toCore = .done c st')
+    (bound : st'.heap.nextAddress ≤ hp.limit) :
+    Simulates mp hp ret scope frame base st env stmt c st' := by
+  simp only [SrcStmt.lower, lowerPrint] at ok
+  split at ok
+  · simp at ok
+  rename_i ev valueOk
+  simp only [evalSame] at ok
+  split at ok
+  case isFalse => simp at ok
+  rename_i same
+  simp only [Option.some.injEq] at ok
+  subst ok
+  simp only [SrcStmt.toCore, execStmt] at run
+  split at run
+  · rename_i u st1 printRun
+    simp only [Semantics.Outcome.done.injEq] at run
+    obtain ⟨rfl, rfl⟩ := run
+    cases fuel with
+    | zero => simp [evalExpr] at printRun
+    | succ k =>
+      simp only [evalExpr] at printRun
+      split at printRun
+      · rename_i w mid valueRun
+        obtain ⟨fresh1, keeps1, locals1, -, d1, env1, hp1, exec1, same1, holds1, hc1⟩ :=
+          ihe k (Nat.le_succ _) valueOk corr fr fresh hc valueRun bound
+        rw [SrcType.same_eq same] at holds1
+        obtain ⟨hw, bits⟩ := holds_var holds1 rfl
+        simp only [Expr.eval] at hw bits
+        subst hw
+        simp only [Semantics.Outcome.done.injEq] at printRun
+        obtain ⟨rfl, rfl⟩ := printRun
+        have pos : 0 < hp1.top :=
+          Nat.lt_of_lt_of_le (Nat.lt_of_lt_of_le hc1.pos (by rw [exec1.limit_normal]; exact bound)) hc1.topped
+        obtain ⟨E', H', exec, keep, wrote⟩ := printCode_exec (mp := mp) (d := d1) (E := env1) (H := hp1) next pos bits
+        have below : ∀ j < next, E' j = env j := fun j lt => (keep j (by omega)).trans (same1 j lt)
+        refine ⟨fresh1, keeps1.lower le, d1, _, .seq exec1 exec,
+          .next (corr.after fr fresh keeps1 locals1 below) ?_⟩
+        refine hc1.wrote (fd := 1) (bytes := World.utf8Bytes (toString (low (env1 next)).toInt) ++ [10])
+          wrote.bytes wrote.cursor wrote.limit wrote.trace (outputOf_byteEvents _) ?_ ?_ rfl ?_ ?_
+        · simp [World.State.afterPrintI32, List.append_assoc]
+        · simp [World.State.afterPrintI32]
+        · rw [wrote.input, ← hc1.input]
+          rfl
+        · exact hc1.streams.congr ⟨rfl, rfl, rfl⟩ ⟨wrote.monotonic, wrote.realtime, wrote.entropy⟩
+      all_goals simp at printRun
+  all_goals simp at run
+
 /-- `return;` in a unit function: one slot, whose bits do not matter. -/
 theorem stmt_returnUnit
     (ok : SrcStmt.returnUnit.lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
@@ -3434,6 +3499,7 @@ theorem sound_both {sp : SrcProgram} {mp : Program}
         | setFieldEval => exact stmt_setFieldEval belowE ok corr fr fresh le hc run bound
         | matchArm => exact stmt_matchArm below ok corr fr fresh le hc run bound
         | unreachable => exact stmt_unreachable fresh run
+        | print => exact stmt_print belowE ok corr fr fresh le hc run bound
       · intro hp e scope slot ev frame base st env v st' ok corr fr fresh hc run bound
         cases e with
         | ePure e => exact eval_pure ok corr fr fresh hc run

@@ -107,6 +107,47 @@ def lowerAssert (condition : Option Evaluated) (slot : Nat) : Option Stmt :=
   | none => none
   | some c => evalSame c SrcType.bool (Stmt.seq c.stmt (Stmt.divide Word.u64 DivOp.uDiv slot (Expr.lit 1) (Expr.var slot)))
 
+/-- print(value) (F11): Core's printI32, the decimal of the i32 value in slot (its low 32 bits) and a newline to fd 1, a byte at a time through write_byte's code at slot + 4 (handle 1 in slot + 4, the byte in slot + 5). slot + 1 holds the magnitude still to print, slot + 2 whether a digit has been printed, slot + 3 the current digit. -/
+def printByte (slot : Nat) (byte : Expr) : Stmt :=
+  let w : Nat := slot + 4
+  Stmt.seq (Stmt.assign w (Expr.lit 1)) (Stmt.seq (Stmt.assign (w + 1) byte) (hostByteCode w))
+
+/-- 10^k. -/
+def printPlaceValue (k : Nat) : Nat :=
+  if k = 0 then
+    1
+  else
+    10 * printPlaceValue (k - 1)
+
+/-- The digit of place 10^k: the magnitude's quotient by it, printed when a digit was printed before it or it is not 0 (the flag plus the digit is not 0); the magnitude keeps the remainder. -/
+def printPlace (slot : Nat) (k : Nat) : Stmt :=
+  let m : Nat := slot + 1
+  let started : Nat := slot + 2
+  let d : Nat := slot + 3
+  let p : Expr := Expr.lit (BitVec.ofNat 64 (printPlaceValue k))
+  let digitOut : Stmt := Stmt.seq (printByte slot (Expr.binary Word.u64 BinOp.add (Expr.lit 48) (Expr.var d))) (Stmt.assign started (Expr.lit 1))
+  let maybeOut : Stmt := Stmt.ite (Expr.binary Word.u64 BinOp.add (Expr.var started) (Expr.var d)) digitOut Stmt.skip
+  Stmt.seq (Stmt.divide Word.u64 DivOp.uDiv d (Expr.var m) p) (Stmt.seq maybeOut (Stmt.divide Word.u64 DivOp.uRem m (Expr.var m) p))
+
+/-- The places 10^k down to 10, then the ones digit, always printed. -/
+def printPlaces (slot : Nat) (k : Nat) : Stmt :=
+  if k = 0 then
+    printByte slot (Expr.binary Word.u64 BinOp.add (Expr.lit 48) (Expr.var (slot + 1)))
+  else
+    Stmt.seq (printPlace slot k) (printPlaces slot (k - 1))
+
+/-- `-` and the magnitude 2^32 - bits for a negative value, else the value; its ten places; the newline. -/
+def printCode (slot : Nat) : Stmt :=
+  let m : Nat := slot + 1
+  let negative : Stmt := Stmt.seq (printByte slot (Expr.lit 45)) (Stmt.assign m (Expr.binary Word.u64 BinOp.sub (Expr.lit 4294967296) (Expr.var slot)))
+  let sign : Stmt := Stmt.ite (Expr.compare Word.s32 CmpOp.lt (Expr.var slot) (Expr.lit 0)) negative (Stmt.assign m (Expr.var slot))
+  Stmt.seq sign (Stmt.seq (Stmt.assign (slot + 2) (Expr.lit 0)) (Stmt.seq (printPlaces slot 9) (printByte slot (Expr.lit 10))))
+
+def lowerPrint (value : Option Evaluated) (slot : Nat) : Option Stmt :=
+  match value with
+  | none => none
+  | some v => evalSame v SrcType.i32 (Stmt.seq v.stmt (printCode slot))
+
 def lowerSetIndexEval (decls : SrcDecls) (slot : Nat) (binding : Option Binding) (index : Option Evaluated) (value : Option Evaluated) : Option Stmt :=
   match binding with
   | none => none
@@ -158,6 +199,7 @@ def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (decls : SrcDecls) (ret : S
   | .continue => some Stmt.cont
   | .matchArm scrutinee enumId variant binds binder ty body rest => lowerMatchArm scope (lookup scope scrutinee) enumId variant binds binder ty next (SrcStmt.lower body sigs decls ret (armBodyScope binds binder ty next scope) (next + SrcType.size ty)) (SrcStmt.lower rest sigs decls ret scope next)
   | .unreachable id ty => lowerUnreachable (SrcType.same ty ret) next
+  | .print value => lowerPrint (SrcEff.eval value sigs decls scope next) next
 
 /-- A break or continue outside every loop of the statement: Core's typing rejects one outside every loop of the function. -/
 def SrcStmt.breaksOut (self : SrcStmt) : Bool :=
@@ -196,6 +238,7 @@ def SrcStmt.breaksOut (self : SrcStmt) : Bool :=
   | .continue => true
   | .matchArm scrutinee enumId variant binds binder ty body rest => SrcStmt.breaksOut body || SrcStmt.breaksOut rest
   | .unreachable id ty => false
+  | .print value => false
 
 /-- Slots the statement's lets need beyond the ones in scope. -/
 def SrcStmt.depth (self : SrcStmt) : Nat :=
@@ -234,6 +277,7 @@ def SrcStmt.depth (self : SrcStmt) : Nat :=
   | .continue => 0
   | .matchArm scrutinee enumId variant binds binder ty body rest => max (SrcStmt.depth body + SrcType.size ty) (SrcStmt.depth rest)
   | .unreachable id ty => 1
+  | .print value => 0
 
 /-- Parameters take slots from 0 in order, a struct one per field; a later parameter with the same id shadows an earlier one, as Core's bindLocals does. -/
 def paramScope (params : List SrcParam) (slot : Nat) (scope : List Binding) : List Binding :=
