@@ -47,8 +47,9 @@ theorem RunsExpr.assignRawFieldNative {before indexed ready : State} {id : TypeI
     simp only [cell, entry, indexResult]
     simp [integerIndex, Int.ofNat_eq_natCast, nonnegative, bound, location,
       declaration, fieldType, offset, Nat.not_lt.mpr fieldFits, replacement, evalAssignValue,
-      assignOpBinary?, writeResolvedPlaceNative, stored, ResolvedPlace.viewFreeRootWrite,
+      assignOpBinary?, writeResolvedPlaceNative, ResolvedPlace.viewFreeRootWrite,
       syncI32ViewsFromHeap, noViews]
+    simp only [writeRawNative, stored]
     rfl
 
 #print axioms RunsExpr.assignRawFieldNative

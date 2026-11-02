@@ -288,7 +288,7 @@ theorem effectfulWholeRule : ∃ heap,
     (sourceId := 0) (address := 8) (length := 1) (position := 0) (base := 8)
     (program := program) (indexExpression := wholeIndex) (expression := markedValue)
     rfl index (by decide) rfl ninetyNineCodec (by decide)
-    (Heap.Readable.of_loadBytes (bytes := encodeNatLE 4 2 ++ List.replicate 4 165) (by rfl)) initialUnique rfl right
+    (Heap.Readable.of_loadBytes (bytes := encodeNatLE 4 2 ++ List.replicate 4 165) (by rfl)) initialUnique rfl right rfl
   exact ⟨heap, run, snapshot, frame, rfl, rfl⟩
 
 theorem effectfulFieldRule : ∃ heap,
