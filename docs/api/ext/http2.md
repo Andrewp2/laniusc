@@ -16,7 +16,7 @@ I/O-free HTTP/2 client connection engine: the caller sends output() and feeds re
 - [extended-hpack](../../extended-hpack.md)
 - [extended-http-agent](../../extended-http-agent.md)
 
-Declaration counts: enum: 2; field: 43; function: 5; impl: 1; method: 35; struct: 3; variant: 13.
+Declaration counts: enum: 2; field: 43; function: 5; impl: 1; method: 36; struct: 3; variant: 13.
 
 ## Declared imports
 
@@ -838,9 +838,17 @@ pub fn field(&self, id: i32, i: i32) -> ext::hpack::Header
 pub fn body(&self, id: i32) -> core::slice::View<u8>
 ```
 
+#### method: take_body
+
+[Source line 594](../../../extended/ext/http2.lani#L594)
+
+```lanius
+pub fn take_body(&self, id: i32) -> bool
+```
+
 #### method: release
 
-[Source line 593](../../../extended/ext/http2.lani#L593)
+[Source line 597](../../../extended/ext/http2.lani#L597)
 
 ```lanius
 pub fn release(&self, id: i32) -> bool
@@ -848,7 +856,7 @@ pub fn release(&self, id: i32) -> bool
 
 #### method: destroy
 
-[Source line 600](../../../extended/ext/http2.lani#L600)
+[Source line 604](../../../extended/ext/http2.lani#L604)
 
 ```lanius
 pub fn destroy(&self) -> bool

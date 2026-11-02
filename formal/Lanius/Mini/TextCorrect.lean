@@ -83,9 +83,14 @@ import all Lanius.Mini.Compiler.P.optimizeNeg
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.repeatType
 import all Lanius.Mini.Compiler.P.shortCircuit
-import all Lanius.Mini.Compiler.P.sigs
+import all Lanius.Mini.Compiler.P.withBudget
+import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.sintToUint
 import all Lanius.Mini.Compiler.P.storeArray
+import all Lanius.Mini.Compiler.P.arrayCallSig
+import all Lanius.Mini.Compiler.P.bindingBytes
+import all Lanius.Mini.Compiler.P.needRound
+import all Lanius.Mini.Compiler.P.needsAfter
 import all Lanius.Mini.Compiler.P.storeEvalWord
 import all Lanius.Mini.Compiler.P.storeType
 import all Lanius.Mini.Compiler.P.storeWordElement
@@ -104,6 +109,7 @@ import all Lanius.Mini.Frontend.P.armsOf
 import all Lanius.Mini.Frontend.P.assertClosed
 import all Lanius.Mini.Frontend.P.blockArmsOf
 import all Lanius.Mini.Frontend.P.callParts
+import all Lanius.Mini.Frontend.P.projection
 import all Lanius.Mini.Frontend.P.closeFuncs
 import all Lanius.Mini.Frontend.P.collect
 import all Lanius.Mini.Frontend.P.compoundEval
@@ -114,8 +120,10 @@ import all Lanius.Mini.Frontend.P.consTreeTail
 import all Lanius.Mini.Frontend.P.consTys
 import all Lanius.Mini.Frontend.P.distinct
 import all Lanius.Mini.Frontend.P.divergeArm
+import all Lanius.Mini.Frontend.P.bindsOfTys
 import all Lanius.Mini.Frontend.P.eDivideClosed
 import all Lanius.Mini.Frontend.P.eIndexClosed
+import all Lanius.Mini.Frontend.P.eStructClosed
 import all Lanius.Mini.Frontend.P.effNamedTys
 import all Lanius.Mini.Frontend.P.externBody
 import all Lanius.Mini.Frontend.P.fieldTyAt
@@ -217,6 +225,12 @@ import all Lanius.Mini.Frontend.P.wideOf
 import all Lanius.Mini.Frontend.Types
 public import Lanius.Mini.Compiler.P.compileSource
 public import Lanius.Mini.Compiler.P.storeArray
+public import Lanius.Mini.Compiler.P.arrayCallSig
+public import Lanius.Mini.Compiler.P.bindingBytes
+public import Lanius.Mini.Compiler.P.funcNeeds
+public import Lanius.Mini.Compiler.P.needRound
+public import Lanius.Mini.Compiler.P.needsAfter
+public import Lanius.Mini.Compiler.P.withBudget
 public import Lanius.Mini.Frontend.P.grammarPart13
 public import Lanius.Mini.Frontend.P.shrFirst
 public import Lanius.Mini.Frontend.P.wideLeftStmt
@@ -354,13 +368,13 @@ theorem compileText_correct {files : List SourceFile} {binary : Binary} (h : com
     ∃ sp, TextReading (files.map SourceFile.source) sp ∧
       (∀ sp', TextReading (files.map SourceFile.source) sp' → sp' = sp) ∧
       ∀ {f : Nat} {func : SrcFunc}, sp.funcs[f]? = some func →
-      ∀ {args : List Value} {bits : List (BitVec 64)}, FieldsHold (paramTypes func.params) args (Func.entry bits) 0 →
+      ∀ {args : List Value} {bits : List (BitVec 64)}, FieldsHold [] (paramTypes func.params) args (Func.entry bits) 0 →
       bits.length = paramsSize func.params →
       ∀ {fuel : Nat} {v : Value} {final : Semantics.State} {heap : Heap}, heap.cursor = 1 →
       (∀ a, 1 ≤ a → heap.bytes a = 0) → heap.limit < 2 ^ 62 → heap.io.trace = [] →
       Semantics.evalExpr fuel sp.toCore (startState heap.io) (.call f (args.map Core.Expr.value)) = .done v final →
-      final.heap.nextAddress ≤ heap.limit →
-      ∃ depth results after, func.ret.HoldsAt v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
+      final.heap.nextAddress ≤ heap.limit → (0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp) →
+      ∃ depth results after, func.ret.HoldsAt [] v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
         after.cursor = final.heap.nextAddress ∧ final.world.standardOutput = outputOf 1 after.io.trace ∧
         final.world.standardError = outputOf 2 after.io.trace ∧
         ∀ (s : State) (imageBase : BitVec 64) (window : Nat),
@@ -376,8 +390,8 @@ theorem compileText_correct {files : List SourceFile} {binary : Binary} (h : com
           ∃ n s', Steps n s s' ∧ Det n s s' ∧ Returned window s s' results after := by
   obtain ⟨sp, reading, unique, compiled⟩ := compileText_reading h
   refine ⟨sp, reading, unique, ?_⟩
-  intro f func found args bits typed bitsLen fuel v final heap start zero small silent runs fits
-  exact compileSource_correct compiled found typed bitsLen start zero small silent runs fits
+  intro f func found args bits typed bitsLen fuel v final heap start zero small silent runs fits frameRoom
+  exact compileSource_correct compiled found typed bitsLen start zero small silent runs fits frameRoom
 
 /-- Every behaviour of the verified compiler's code from source text: a run of
 the binary's code for `f` (premises as in `compileSource_behaviour`) that
@@ -388,10 +402,10 @@ theorem compileText_behaviour {files : List SourceFile} {binary : Binary} (h : c
     ∃ sp, TextReading (files.map SourceFile.source) sp ∧
       (∀ sp', TextReading (files.map SourceFile.source) sp' → sp' = sp) ∧
       ∀ {f : Nat} {func : SrcFunc}, sp.funcs[f]? = some func →
-      ∀ {args : List Value} {bits : List (BitVec 64)}, FieldsHold (paramTypes func.params) args (Func.entry bits) 0 →
+      ∀ {args : List Value} {bits : List (BitVec 64)}, FieldsHold [] (paramTypes func.params) args (Func.entry bits) 0 →
       bits.length = paramsSize func.params →
       ∀ {heap : Heap}, heap.cursor = 1 → (∀ a, 1 ≤ a → heap.bytes a = 0) → heap.limit < 2 ^ 62 →
-      heap.io.trace = [] → 1 ≤ heap.limit →
+      heap.io.trace = [] → 1 ≤ heap.limit → (0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp) →
       ∀ (s : State) (imageBase : BitVec 64) (window : Nat), window ≤ 2 ^ 62 →
         CodeAt s.memory imageBase binary.image →
         (∀ index, index < binary.image.length →
@@ -408,9 +422,9 @@ theorem compileText_behaviour {files : List SourceFile} {binary : Binary} (h : c
           undefinedTrap r = true ∧ st.heap.nextAddress ≤ heap.limit := by
   obtain ⟨sp, reading, unique, compiled⟩ := compileText_reading h
   refine ⟨sp, reading, unique, ?_⟩
-  intro f func found args bits typed bitsLen heap start zero small silent room s imageBase window bounded loaded apart
-    imageHeap entry params heapAt stack m u run stuck clean
-  exact compileSource_behaviour compiled found typed bitsLen start zero small silent room s imageBase window bounded loaded
+  intro f func found args bits typed bitsLen heap start zero small silent room frameRoom s imageBase window bounded loaded
+    apart imageHeap entry params heapAt stack m u run stuck clean
+  exact compileSource_behaviour compiled found typed bitsLen start zero small silent room frameRoom s imageBase window bounded loaded
     apart imageHeap entry params heapAt stack run stuck clean
 
 end Lanius.Mini

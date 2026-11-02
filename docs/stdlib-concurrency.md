@@ -283,12 +283,41 @@ sort is 1.4–1.5x slower:
 | 4 | 130 | 120 | 567 | 790 |
 | 8 | 74 | 63 | 301 | 463 |
 
-The stable slowdown is user time: 18–19 s of CPU against 11.7 s forked,
-with fewer page faults (127k against 243k). Both crews run the same code on
-the same shared arrays, so the extra cycles look like threads contending on
-something processes keep private while sorting two-word records. A probe of
-record-returning calls (`target/claude-work/s4/thr/scale.lani`) gave exact
-results and showed no record-specific slowdown, so the cause is still open.
+Those stable numbers were measured before a code generation fix. The
+slowdown was user time: 18–19 s of CPU against 11.7 s forked. It came from
+the direction of record copies, not from contention. laniusc copies a
+multi-word value with `rep movsq` (`plan_memmove_tail` in
+`shaders/codegen/lir/x86/instruction_plan.slang`). It used to run the copy
+backward, with DF=1, whenever the destination address was above the
+source. On this machine's Zen 3, a DF=1 `rep movsq` is a slow microcoded
+loop. Every element store `b[i] = x` copies from a stack temporary into the
+array:
+
+- A forked child runs on the main stack, which sits above every mmap, so
+  its stores always copied forward.
+- A glibc thread stack is an mmap. When it lands below the data, every
+  record store went backward.
+
+The probes in `target/claude-work/s4/thr` (`crew.lani`, `solo.lani` and
+`sweep.lani`) showed this. One thread ran 3.7x slower than one forked
+child, so contention was ruled out. Sweeping `spawn_with_stack` sizes, a
+two-word record copy took 85–150 ms when the stack was mapped above the
+data and 360–470 ms when it was mapped below, with a step wherever glibc
+started placing stacks under the data region. i64 copies don't go through
+`rep movsq` and stayed flat. The copy now runs backward only when the two
+ranges really overlap (0 ≤ dst − src < 8 × words); disjoint copies always
+run forward.
+
+After the fix, sorting 10M (key, index) records at 8 workers with load
+17–27 took this much user time, in seconds:
+
+| Crew | Before | After |
+| --- | --- | --- |
+| Forked, mode 1 | 11.7–12.0 | 11.2–11.7 |
+| Threads, mode 11 | 17.2–20.2 | 11.3–12.3 |
+
+The stack-size sweep is now flat at 116–176 ms. The par oracle gave 1,440
+runs (seed 2, 120 cases, 12 modes) with 0 mismatches on the fixed compiler.
 The forked sorts stay the default.
 
 ## Samples

@@ -494,8 +494,12 @@ argument tokens; the verified compiler's validator checks it (`picks`).
 A method's `<` (`x.f<T>(..)`, ambiguous in the same way: `x.f < a > (b)`)
 opens type arguments by the same rule, from the `<` on (decided 10-31, F11b;
 before, a file with one was rejected, which rejected `alloc::vec` and every
-program importing it). The reader does not yet read a call with them, so
-such a call is still outside the subset, but the rest of its file is read.
+program importing it). The reader reads such a call as the call without
+them, with the method's own type parameters bound to the written types in
+order, after the binds the receiver's type gives the impl, instead of
+inferring them (`MethodBinds`; a count other than the method's type
+parameters rejects; decided 11-01, F11b). A field (`x.f`) with type
+arguments rejects.
 A statement that begins with `{` is a block statement, never an
 expression statement (decided 10-30, F4), as in Rust: `{ a } - b;` is the
 block `{ a }` and then `-b;`. Its lets scope over the block only
@@ -621,8 +625,15 @@ Core's array, held by value:
   is read as `slice[i] = v` is (`SetIndex`) and lowered as the effectful
   form (`lower_set_index_any`). The front end reads v at the element type
   (`index_elem`), so `bytes[i] = 48` is a `u8` store.
-- Not yet: an array passed where a slice is
-  expected (Core's coercion of `[T; N]` to `[T]`), `for` over an array,
+- An array local passed as a call's argument at a `[T]` parameter, its
+  element type T, is read as `ArraySlice(T, a)`, Core's `arrayToSlice`
+  of the local, so the callee's writes reach the array, as laniusc's do
+  (decided 11-01, F11b; before, the reading passed the array by value,
+  which disagreed with laniusc in `core::utf16_bytes`). An array local of
+  another element type rejects. The compiler does not lower it yet
+  (`SrcEff.eval` rejects it), so such a program is read but not compiled.
+- Not yet: an array other than a local passed where a slice is
+  expected, `for` over an array,
   `==` of arrays, `core::mem::i32_array_data_ptr`, a length that names a
   constant, and arrays of floats (no element layout for float slices yet;
   an array of floats is held by value and should work, but is untested).
@@ -677,6 +688,23 @@ verified compiler's locals are 64-bit slots with no address. The design:
    slice layout for an array passed as a slice. Element reads and writes of
    an addressed local itself are loads and stores at its address in its
    layout.
+   Core's `slice_stride` follows (decided 11-01, step 3.4): a safe slice
+   `.slice T cell projections start length` answers its element's native
+   stride (`rawSliceStride?`, `NativeLayout.elementStride?`), as a raw slice
+   of `T` does: 4 for `i32`, 1 for `u8`, -8 times the native words for a
+   struct, an enum or `u16`, and no stride (a `typeMismatch` trap) for the
+   element types a raw slice cannot hold. Before, a safe slice had no
+   stride, which disagreed with laniusc, whose one layout gives every slice
+   the same stride, and with the typing rule `ExprHasType.sliceStride`,
+   which accepts any slice.
+   The verified compiler passes only arrays of `i32` and `u8` as slices for
+   now (decided 11-01, step 3.4; `SrcType.HoldsAt.borrowed`): their
+   elements are packed, one 4-byte or 1-byte load or store each, so the
+   frame block holds exactly the bytes the slice's loads read. A struct or
+   enum element's scalar fields take their own widths inside 8-byte words
+   (a 4-byte `i32` field, the 4-byte tag), so the block's remaining bytes
+   would need a byte-level account of Core's native layout; such arrays are
+   rejected at a `[T]` argument until it is written.
 3. **The correspondence.** The simulation relation carries the addressed
    cells (cell, type, address); for each, frame memory at the address holds
    the cell's value in that layout (`FrameCorr`, beside `HeapCorr`). A safe
@@ -700,6 +728,26 @@ verified compiler's locals are 64-bit slots with no address. The design:
    above frame memory, a literal's bytes placed by the loader (Core's
    `.string` value names no address, so any region outside Core's heap
    will do).
+7. **A static need per function (decided 11-01, step 3.5).** A function
+   takes its whole block at entry (`frame_block`: 8 bytes per element of
+   each array, parameter or let, it passes as a slice), by a prologue
+   `Frame(count, block)` before its body, and its array calls place their
+   arrays in that block. Its need (`func_needs`) is its block plus the
+   largest need of a function it calls, computed by rounds from all zeros
+   until they repeat (at most one round per function). The call sequence's
+   check is static: a call is lowered only when the callee's need fits the
+   caller's room (`sig.need <= sig.room`, `Sig` carries the need, the room
+   and the block of the function being lowered), so no frame-memory check
+   runs per call and the proofs carry the budget in `FrameCorr` (its room
+   field: `limit + room ≤ fsp` when the budget is positive). A call that
+   passes arrays round a recursive cycle has no fixpoint, so its need
+   never fits and the call is rejected; ROADMAP F15 lifts this with per-call
+   blocks released on return and a dynamic premise. The top theorems take
+   the need of the function they run as a premise on the heap
+   (`0 < need → limit + need ≤ fsp`; for a process, `need ≤ stack`), which
+   holds for any heap when the need is 0, as it is for every function of
+   the self program (`SelfPure.prog_need`), since it passes no array as a
+   slice.
 
 Order: frame memory in the IR and on x86; addressed array locals passed as
 slices; `i32_array_data_ptr`; `str`.
@@ -1630,3 +1678,29 @@ accepts `u16`): `s[i]` is a bounds check and a 32-bit load at
 and `slice_stride` is -8. The other one-word scalars (`u32`, `u64`, `i64`,
 `bool`, `char`, `ptr`, ...) have the same layout in laniusc and are later
 work.
+
+## laniusc's process exit is `exit_group`; the verified compiler's stays `exit` (decided 11-01)
+
+laniusc's x86 runtime now ends a process with Linux syscall 231,
+`exit_group`, instead of 60, `exit`. This covers the `exit` service
+(`std::process::exit`) and allocation failure
+(`shaders/codegen/lir/x86/runtime_abi.slang`), the inline exits of failed
+safety guards such as bounds checks, status 101 (`emit_exit` in
+`safety_emit.slang`), and the static entry wrapper's exit after `main`
+(`emit.slang`).
+With `std::pthread`, `exit` ended only the calling thread. A worker that
+failed a bounds check vanished, `pthread_join` returned, and `main` went on
+to exit 0 (`tests/fixtures/stdlib_execution/concurrency/thread_exit.lani`).
+The native-link CRT bridge returns into glibc, whose `exit` already uses
+`exit_group`, so it is unchanged.
+
+The verified compiler keeps `mov eax, 60; syscall` (`lani/mini/compiler.lani`'s
+entry, `Lanius/Mini/Process.lean`'s `Exits`, `exit_steps` and the start bytes
+`[72, 137, 199, 184, 60, 0, 0, 0, 15, 5]`). Its programs have one thread:
+it emits no C entries and links no pthread. For a one-thread process, `exit`
+and `exit_group` end the same process with the same status, so `Exits` is
+exact for every program it compiles. Switching it would change the self
+source, the process theorems and the self-hosting fixpoint for no
+observable difference. It should switch when the verified compiler admits
+threads. The change is the byte 60 -> 231 in the entry and the immediate
+in `Exits.number` and `exit_steps`.

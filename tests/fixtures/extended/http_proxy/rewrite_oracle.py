@@ -44,6 +44,13 @@ CASES = [
     (["h2-request", "-2"],
      b":method: GET\n:scheme: http\n:authority: a\n:path: /\n\n",
      b"GET / HTTP/1.1\r\nHost: a\r\nX-Forwarded-For: 192.0.2.7\r\nX-Forwarded-Proto: http\r\nVia: 2 lanius\r\n\r\n"),
+    # Two Connection fields, then three (the token set's scan fallback).
+    (["request"],
+     b"GET /c HTTP/1.1\r\nHost: up\r\nconnection: X-A\r\nX-A: 1\r\nX: 2\r\nX-B: 3\r\nCONNECTION: , x-b ,x-c\r\nX-C: 4\r\nX-D: 5\r\nX-Forwarded-For:\r\n\r\n",
+     b"GET /c HTTP/1.1\r\nHost: up\r\nX: 2\r\nX-D: 5\r\nX-Forwarded-For: 192.0.2.7\r\nX-Forwarded-Proto: http\r\nVia: 1.1 lanius\r\n\r\n"),
+    (["response-keep"],
+     b"HTTP/1.1 200 OK\r\nConnection: x-a\r\nConnection: x-b\r\nX-A: 1\r\nX-B: 2\r\nX-C: 3\r\nconnection: X-C\r\nX-AB: 4\r\nContent-Length: 0\r\n\r\n",
+     b"HTTP/1.1 200 OK\r\nX-AB: 4\r\nContent-Length: 0\r\nVia: 1.1 lanius\r\nConnection: keep-alive\r\n\r\n"),
 ]
 
 def main():

@@ -187,6 +187,7 @@ def source_name(language: str) -> str:
         "c": "scaling.c",
         "cpp": "scaling.cpp",
         "zig": "scaling.zig",
+        "moonbit": "scaling.mbt",
         "lanius": "scaling.lani",
         "pareas": "scaling.par",
         "go": "scaling.go",

@@ -77,7 +77,7 @@ theorem step_SrcEff_eval {prog : SrcProgram} {prims : Prims} {ix_SrcEff_eval ix_
   simp only [src_SrcEff_eval] at h
   faithful [Lanius.Mini.SrcEff.eval]
 
-theorem step_eval_args {prog : SrcProgram} {prims : Prims} {ix_eval_args ix_plus ix_SrcType_size ix_empty_of_mini_selfhost_SrcType ix_SrcEff_eval ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_cons_args : Nat} (fn : prog.funcs[ix_eval_args]? = some (src_eval_args ix_plus ix_SrcType_size ix_empty_of_mini_selfhost_SrcType ix_SrcEff_eval ix_eval_args ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_cons_args)) (np : prims.isPrim ix_eval_args = false)
+theorem step_eval_args {prog : SrcProgram} {prims : Prims} {ix_eval_args ix_plus ix_SrcType_size ix_SrcEff_eval ix_empty_of_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_cons_args : Nat} (fn : prog.funcs[ix_eval_args]? = some (src_eval_args ix_plus ix_SrcType_size ix_SrcEff_eval ix_empty_of_mini_selfhost_SrcType ix_eval_args ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_cons_args)) (np : prims.isPrim ix_eval_args = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_SrcType_size : Certified (∀ {n : Nat}, Stmt_SrcType_size prog prims ix_SrcType_size n))
     (ext_empty_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_SrcType prog prims ix_empty_of_mini_selfhost_SrcType n))

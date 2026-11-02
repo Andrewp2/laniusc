@@ -1,7 +1,13 @@
 # Standard and extended library overview
 
-The full library goal remains open. The current increment replaces the
-native runtime's allocator, which made every allocation its own `mmap`, with a
+The full library goal remains open. The current increment makes the runtime
+allocator [thread-safe](runtime-allocator.md#threads), so `std::pthread`
+bodies may allocate and free. Each thread, keyed by its `%fs:0` thread
+pointer, gets its own pool, and there is no lock on the hot path. Blocks freed
+on another thread flow back through shared per-class lists, so a
+producer/consumer pair passing 1.9 GB of messages grows resident memory by
+about 1 MiB. Single-thread allocation is as fast as before, within noise.
+The preceding increment replaces the native runtime's allocator, which made every allocation its own `mmap`, with a
 [pooling allocator](runtime-allocator.md): power-of-two classes up to 32 KiB
 in 1 MiB arenas, free lists per class, and direct `mmap` above that.
 Allocating and freeing 1,000 bytes drops from 6.3 µs to 0.19 µs,
@@ -627,6 +633,15 @@ xdiff alignment (`Algorithm::Xdiff`). Their output is identical to git 2.43 on
 all 2,040 generated pairs for word diffs, character diffs and `--stat`, on
 1,500 `git diff --stat` reports over generated repositories and on 282
 `diff -ruN` patches.
+[Text tools](extended-textutils.md) (`ext::text_sort`, `ext::text_uniq`,
+`ext::text_cut`, `ext::text_tr`, `ext::text_wc`, `ext::text_lines`;
+`text-sort`, `text-uniq`, `text-cut`, `text-tr`, `text-wc`) reimplement GNU
+coreutils 9.4 `sort` (`-bfnrsuz`, `-k`, `-t`, `-o`), `uniq` (`-c -d -u -i
+-f -s -w -z`), `cut` (`-b -c -f -d -s --complement --output-delimiter`),
+`tr` (sets, ranges, classes, `-c -d -s -t`) and `wc` under `LC_ALL=C`. Each
+matches GNU byte for byte, with the same exit status, on 2,000 generated
+cases from its own oracle. `sort` is a multikey MSD radix sort with forked
+workers from 50,000 lines up. Speeds are in the guide.
 [Multi-file patches](extended-patchset.md) (`ext::patchset`, `seq-patch -i`)
 read git extended headers (renames, copies, modes, creation, deletion,
 binary sections), reverse patches, detect reversed patches as GNU `patch`
@@ -2008,6 +2023,48 @@ oracle adds 691 xz archive cases (now 4,160 in total) against Python
 300 exact decodes by Python, `xz -t` and the Lanius decoder (23,475 cases in
 all).
 
+**Streaming zip.** [`ext::zip_stream`](extended-zip-stream.md) reads and
+writes ZIP records one at a time with u64 offsets: end records with ZIP64,
+central and local headers, ZIP64 and timestamp extras, and data descriptors.
+The [`zip` program](../sample_programs/library/zip.lani) creates archives as
+a stream (to a file or a pipe), with stored or deflated members at levels 0-3
+and optional forced ZIP64. It lists and extracts archives after a full
+verifying pass that checks local headers, overlap, sizes and CRC-32, using
+`tgz`'s path guard. A seeded oracle (`tests/fixtures/extended/zip_oracle.py`)
+passes 8,662 cases with 0 failures against Python `zipfile` and Info-ZIP
+`unzip -t`:
+
+- 120 checks of the sample's archives;
+- 120 checks of `zipfile`'s archives (streamed, forced ZIP64, with comments);
+- 65,600-entry ZIP64 archives in both directions;
+- 26 guard cases;
+- 5,994 truncations rejected;
+- 2,400 bit-flipped archives handled without a signal or hang.
+
+An optional case writes and reads back a 4 GiB member. `ext::compression`
+exports `crc32_update`.
+
+**Zstandard.** [`ext::zstd`](extended-zstd.md) decodes zstd frames
+(RFC 8878) as a stream over caller-owned workspace, staging, literal and
+window views. It handles skippable and concatenated frames, raw, RLE and
+compressed blocks, one- and four-stream Huffman literals, all four FSE table
+modes, repeat offsets, content sizes, XXH64 checksums
+([`ext::xxhash`](extended-zstd.md#xxh64)) and a window limit (128 MiB by
+default). The [`unzstd`/`zstdcat` program](../sample_programs/library/unzstd.lani)
+decodes files or pipes. A seeded oracle
+(`tests/fixtures/extended/zstd_oracle/oracle.py`) passes 3,866 cases with 0
+failures against `/usr/bin/zstd` 1.5.5:
+
+- levels 1-22, piped frames, advanced parameters and `--long=27`;
+- multi-frame and skippable-frame files;
+- 50 step-size replays through the streaming API;
+- dictionary, window-limit and trailing-garbage refusals;
+- 3,493 truncated or bit-flipped frames, each exiting 0 or 2 and matching
+  zstd's output whenever both accept.
+
+It decodes at about 105 MB/s at `-3` and 300 MB/s at `-19`; zstd itself
+decodes at about 1 GB/s and 3 GB/s.
+
 **Accepted bounded archive increment.**
 
 The new production code is Lanius over the existing TAR/ZIP engines,
@@ -2054,6 +2111,16 @@ calibrations/overlap. They use frozen production `cf1347d5...` and probe ELF
 `268b8bed...`; full identities and each fixture correction remain in the
 [materializer guide](extended-archive-extraction.md). This selected workflow
 does not complete the full standard or extended library goal.
+
+**Append-only key/value log.**
+
+[`ext::kv_log`](extended-kv-log.md) is an embedded Bitcask-style store. It
+appends CRC-32 records to a single log and keeps a hash index of keys in memory.
+`sync()` is the commit point. Recovery truncates at the first torn or corrupt
+record, and compaction writes a new log and renames it over the old one. A
+Python dict model passes 300 generated op-sequence cases (with simulated crashes
+and exact file bytes) and 600 crash-injection cases (truncation, bit flips,
+garbage, stale compaction file). The `kv` sample is built on `std::cli`.
 
 **Atomic publication and key-value application checkpoint.**
 
@@ -2324,7 +2391,12 @@ Its `dial` opens an unpooled connection for protocols that take over after
 an HTTP/1.1 upgrade. Over https it offers `h2` by ALPN and runs requests to
 an origin that selects it as streams of one [HTTP/2](extended-http2.md)
 connection; `fetch_all` multiplexes them. That h2 group (21 cases) runs
-against libnghttp2's server session over TLS.
+against libnghttp2's server session over TLS. `fetch_to` streams a final
+response body of any size to a `core::io::Write` sink as it arrives, over
+HTTP/1.1 (through `ext::http_body`) and HTTP/2. The `agent-fetch` sample is
+built on it and on `std::cli`; it passes http12 against Python
+`http.server`, h2 6 against libnghttp2 over TLS and proxy4 through
+`ext::http_proxy` and its TLS front end.
 
 [HTTP/2](extended-http2.md) is three I/O-free modules:
 [`ext::hpack`](extended-hpack.md) (RFC 7541 with the canonical Huffman code,

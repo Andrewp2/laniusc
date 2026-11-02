@@ -462,9 +462,7 @@ pub impl Ring {
             while (s < depth) {
                 let f: i32 = s * 8;
                 let start: bool = v[f] == 0 && !ended && failure == 0;
-                // Not `start && reading >= window`: that form stops the compiler
-                // with LNC0057 when uring_copy.lani is built (cat builds).
-                if (reading >= window) { start = false; }
+                if (start && reading >= window) { start = false; }
                 if (start) {
                     v[f] = 1; v[f + 1] = next_offset; v[f + 2] = 0; v[f + 3] = 0; v[f + 4] = next_sequence; v[f + 5] = 1; v[f + 6] = 0;
                     let at: i64 = next_offset;

@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::cons_args -/
-def src_cons_args (ix_cons_of_mini_selfhost_SrcType : Nat) (ix_boxed_of_mini_selfhost_Stmt : Nat) : SrcFunc := { params := [{ id := 10, ty := ty175 }, { id := 28, ty := ty211 }], ret := ty211, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 28)) ty211 ty211 [[173], []] [SrcEff.eVariant ty211 0 [SrcEff.eStruct ty210 [SrcEff.eVariant ty94 2 [SrcEff.eCall ix_boxed_of_mini_selfhost_Stmt [SrcEff.ePure (SrcExpr.field 10 0)], SrcEff.eCall ix_boxed_of_mini_selfhost_Stmt [SrcEff.ePure (SrcExpr.field 173 0)]], SrcEff.eCall ix_cons_of_mini_selfhost_SrcType [SrcEff.ePure (SrcExpr.field 10 1), SrcEff.ePure (SrcExpr.field 173 1)]]], SrcEff.eVariant ty211 1 []]) }
+def src_cons_args (ix_boxed_of_mini_selfhost_Stmt : Nat) (ix_cons_of_mini_selfhost_SrcType : Nat) : SrcFunc := { params := [{ id := 10, ty := ty175 }, { id := 28, ty := ty211 }], ret := ty211, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 28)) ty211 ty211 [[173], []] [SrcEff.eVariant ty211 0 [SrcEff.eStruct ty210 [SrcEff.eVariant ty94 2 [SrcEff.eCall ix_boxed_of_mini_selfhost_Stmt [SrcEff.ePure (SrcExpr.field 10 0)], SrcEff.eCall ix_boxed_of_mini_selfhost_Stmt [SrcEff.ePure (SrcExpr.field 173 0)]], SrcEff.eCall ix_cons_of_mini_selfhost_SrcType [SrcEff.ePure (SrcExpr.field 10 1), SrcEff.ePure (SrcExpr.field 173 1)]]], SrcEff.eVariant ty211 1 []]) }
 
 end
 

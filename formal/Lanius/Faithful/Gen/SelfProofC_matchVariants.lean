@@ -35,12 +35,13 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem step_SrcEff_types {prog : SrcProgram} {prims : Prims} {ix_SrcEff_types ix_empty_of_mini_selfhost_SrcType ix_cons_of_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_concat_of_mini_selfhost_SrcType ix_effs_types : Nat} (fn : prog.funcs[ix_SrcEff_types]? = some (src_SrcEff_types ix_empty_of_mini_selfhost_SrcType ix_cons_of_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_SrcEff_types ix_concat_of_mini_selfhost_SrcType ix_effs_types)) (np : prims.isPrim ix_SrcEff_types = false)
+theorem step_SrcEff_types {prog : SrcProgram} {prims : Prims} {ix_SrcEff_types ix_empty_of_mini_selfhost_SrcType ix_cons_of_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_concat_of_mini_selfhost_SrcType ix_effs_types ix_single_of_mini_selfhost_SrcType : Nat} (fn : prog.funcs[ix_SrcEff_types]? = some (src_SrcEff_types ix_empty_of_mini_selfhost_SrcType ix_cons_of_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_SrcEff_types ix_concat_of_mini_selfhost_SrcType ix_effs_types ix_single_of_mini_selfhost_SrcType)) (np : prims.isPrim ix_SrcEff_types = false)
     (ext_empty_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_SrcType prog prims ix_empty_of_mini_selfhost_SrcType n))
     (ext_cons_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_SrcType prog prims ix_cons_of_mini_selfhost_SrcType n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff n))
     (ext_unbox_of_mini_selfhost_SrcEff : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_SrcEff prog prims ix_unbox_of_mini_selfhost_SrcEff n))
-    (ext_concat_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_SrcType prog prims ix_concat_of_mini_selfhost_SrcType n)) {n : Nat}
+    (ext_concat_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_SrcType prog prims ix_concat_of_mini_selfhost_SrcType n))
+    (ext_single_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_SrcType prog prims ix_single_of_mini_selfhost_SrcType n)) {n : Nat}
     (ih_SrcEff_types : Certified (Stmt_SrcEff_types prog prims ix_SrcEff_types n))
     (ih_effs_types : Certified (Stmt_effs_types prog prims ix_effs_types n)) :
     Stmt_SrcEff_types prog prims ix_SrcEff_types (n + 1) := by

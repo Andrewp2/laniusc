@@ -249,12 +249,14 @@ canary and syscall-argument evidence is recorded in
 
 ## Exit and status metadata
 
-`std::process::exit(code: i32)` uses native Linux syscall 60, `SYS_exit`. In the
-supported single-threaded process profile it terminates execution; it does not
-return through normal Lanius cleanup or run owner destructors, finalizers or
-userspace output flushing. Release resources and check output before calling
-it when those actions matter. Raw `SYS_exit` terminates the calling thread,
-not an entire externally created thread group; it is not `exit_group`.
+`std::process::exit(code: i32)` uses native Linux syscall 231, `SYS_exit_group`.
+It terminates every thread of the process, including `std::pthread` threads,
+from whichever thread calls it. It does not return through normal Lanius
+cleanup, and it runs no owner destructors, finalizers or userspace output
+flushing. Release resources and check output before calling it when those
+actions matter. Allocation failure, a failed bounds check or other safety
+guard (status 101) and the static entry wrapper's exit after `main` use the
+same syscall, so a trap on a worker thread also ends the process.
 The observed parent exit status uses the low eight bits. These kernel semantics
 are documented in the [Linux exit manual](https://man7.org/linux/man-pages/man2/_exit.2.html).
 

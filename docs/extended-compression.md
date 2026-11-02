@@ -38,7 +38,47 @@ encode_level(input: View<u8>, format: Format, max_output: i32, level: i32)
 decode(input: View<u8>, format: Format, limits: Limits)
     -> Result<alloc::vec::Vec<u8>, Error>
 default_limits() -> Limits
+crc32_update(state: u32, bytes: View<u8>) -> u32
 ```
+
+`crc32_update` continues the CRC-32 that gzip and ZIP use: start from
+`core::crc32::INITIAL` and finish with `core::crc32::finish`. An invalid view
+returns `state` unchanged.
+
+### CRC-32
+
+Packed spans of 512 bytes or more, both in `crc32_update` and in the gzip
+encoder, use slicing-by-8. The 8 KiB of tables live in a local array that is
+rebuilt in about 5 us per call: table 0 from its eight single-bit entries,
+then each later table from the one before. Each 8-byte word is processed as
+two i32 halves, because i32 masks and shifts compile to much less code than
+u64 ones. The gzip decoder uses the same local-table loop for output steps of
+16 KiB or more. For shorter steps it keeps the slicing tables in its
+workspace (`fast_workspace_len`). Other spans run per bit.
+
+`tests/fixtures/extended/crc32_oracle/oracle.py` checks 2,400 seeded spans
+against `zlib.crc32`. The spans have odd offsets and lengths from 0 to 2 MiB,
+across the 512-byte threshold, and are fed in pieces from 1 byte to 1 MiB.
+All 2,400 agree.
+
+Throughput, measured with a 64 KiB read loop (`crc32_update` per read) on a
+machine at load average 22 (min of 4 interleaved runs):
+
+| Input | Before | Now | zlib.crc32 |
+| --- | ---: | ---: | ---: |
+| 1 GiB random | 3.23 s | 2.55 s | 1.19 s |
+
+On an idle machine, the same loop over a 256 MiB in-memory buffer runs at
+about 1 GB/s. It runs at about 0.6 GB/s when compiled into other programs.
+The loop is limited by generated code. Each table lookup compiles to about
+24 instructions, including:
+
+- three dead immediate moves;
+- a spilled and reloaded shift result;
+- a bounds check with an inline trap stub;
+- a stack copy of the array base.
+
+One 8-byte step therefore takes about 1.1 KB of code.
 
 The default limits are 16 MiB of compressed input, 64 MiB of decoded output,
 and 1,024 members. The exported constants are `DEFAULT_MAX_INPUT`,

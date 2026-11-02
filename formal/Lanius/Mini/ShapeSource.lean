@@ -18,6 +18,8 @@ fact: the undefined trap its second case allows is not `typeMismatch`. -/
 
 namespace Lanius.Mini
 
+variable {places : List Addressed}
+
 open Lanius.Core (Value Ty)
 open Lanius.Semantics (evalExpr evalExprs)
 open Lanius.Typing
@@ -41,6 +43,7 @@ mutual
     | .eMatch scrutinee _ _ _ values => scrutinee.rawFree && SrcEff.rawFreeList values
     | .eDivide _ a b => a.rawFree && b.rawFree
     | .eStride _ => false
+    | .arraySlice _ _ => false
   termination_by structural e
 
   def SrcEff.rawFreeList (es : List SrcEff) : Bool :=
@@ -124,6 +127,7 @@ mutual
       simp only [SrcEff.toCore, ExprFrag, SrcEff.toCore_frag a h]
     | .eIndex _ _ => simp [SrcEff.rawFree] at h
     | .eStride _ => simp [SrcEff.rawFree] at h
+    | .arraySlice _ _ => simp [SrcEff.rawFree] at h
     | .eStruct ty fields =>
       simp only [SrcEff.rawFree] at h
       simp only [SrcEff.toCore]; exact literal_frag ty (SrcEff.toCoreList_frag fields h)
@@ -256,7 +260,7 @@ theorem toCore_progOk {sp : SrcProgram} (wt : ProgramWellTyped sp.toCore) (raw :
 
 mutual
   theorem holdsAt_shape {P : Core.Program} {ty : SrcType} {v : Value} {env : Env} {slot : Nat}
-      (declared : TypeDeclared P ty) (h : ty.HoldsAt v env slot) : Shape P v ty.toCore := by
+      (declared : TypeDeclared P ty) (h : ty.HoldsAt places v env slot) : Shape P v ty.toCore := by
     match h with
     | .i32 h => obtain ⟨rfl, -⟩ := h; exact .signed _ _
     | .bool h => obtain ⟨b, rfl, -⟩ := h; exact .boolean b
@@ -265,22 +269,23 @@ mutual
     | .unit => exact .unit
     | .isize h => cases h; exact .signed _ _
     | .char h => obtain ⟨rfl, -⟩ := h; exact .character _
-    | @SrcType.HoldsAt.float t _ _ _ h =>
+    | @SrcType.HoldsAt.float _ t _ _ _ h =>
       obtain ⟨rfl, -⟩ := h
       cases t
       · exact .f32 _
       · exact .f64 _
-    | @SrcType.HoldsAt.sint kind _ _ _ h =>
+    | @SrcType.HoldsAt.sint _ kind _ _ _ h =>
       cases kind
       all_goals first
         | (obtain ⟨rfl, -⟩ := h; exact .signed _ _)
         | (cases h; exact .signed _ _)
     | .slice _ _ => exact .rawSlice _ _ _
+    | .borrowed .. => exact .slice _ _ _ _ _
     | .struct fields =>
       cases declared with
       | «struct» found inner =>
         exact Shape.mk_struct found (fieldsHold_shapes inner fields)
-    | @SrcType.HoldsAt.enum id variants k fs vs _ _ variant tag payload =>
+    | @SrcType.HoldsAt.enum _ id variants k fs vs _ _ variant tag payload =>
       cases declared with
       | enum found inner =>
         have variantFound : (variants.map (List.map SrcType.toCore))[k]? = some (fs.map SrcType.toCore) := by
@@ -296,7 +301,7 @@ mutual
   termination_by structural h
 
   theorem fieldsHold_shapes {P : Core.Program} {tys : List SrcType} {vs : List Value} {env : Env} {slot : Nat}
-      (declared : ∀ ty ∈ tys, TypeDeclared P ty) (h : FieldsHold tys vs env slot) :
+      (declared : ∀ ty ∈ tys, TypeDeclared P ty) (h : FieldsHold places tys vs env slot) :
       Shapes P vs (tys.map SrcType.toCore) := by
     match h with
     | .nil => exact Shapes.nil P
@@ -353,7 +358,7 @@ program without raw memory, Core's call of any of its functions on arguments
 its parameters hold never traps with `typeMismatch`. -/
 theorem call_ne_typeMismatch {sp : SrcProgram} {binary : Binary} (compiled : compileSource sp = some binary)
     (raw : sp.RawFree) {f : Nat} {func : SrcFunc} (found : sp.funcs[f]? = some func) {args : List Value}
-    {env : Env} {slot : Nat} (typed : FieldsHold (paramTypes func.params) args env slot)
+    {env : Env} {slot : Nat} (typed : FieldsHold [] (paramTypes func.params) args env slot)
     (io : Lanius.X86.Machine.Io) (fuel : Nat) (r : Lanius.Trap) (st : Semantics.State)
     (run : evalExpr fuel sp.toCore (startState io) (.call f (args.map Core.Expr.value)) = .trapped r st) :
     r ≠ .typeMismatch := by
@@ -379,10 +384,10 @@ undefined trap its second case allows is not `typeMismatch`. -/
 theorem compileSource_behaviour_rawFree {sp : SrcProgram} {binary : Binary}
     (compiled : compileSource sp = some binary) (raw : sp.RawFree) {f : Nat} {func : SrcFunc}
     (found : sp.funcs[f]? = some func) {args : List Value} {bits : List (BitVec 64)}
-    (typed : FieldsHold (paramTypes func.params) args (Func.entry bits) 0)
+    (typed : FieldsHold [] (paramTypes func.params) args (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize func.params) {heap : Heap} (start : heap.cursor = 1)
     (zero : ∀ a, 1 ≤ a → heap.bytes a = 0) (small : heap.limit < 2 ^ 62) (silent : heap.io.trace = [])
-    (room : 1 ≤ heap.limit)
+    (room : 1 ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp)
     (s : State) (imageBase : BitVec 64) (window : Nat) (bounded : window ≤ 2 ^ 62)
     (loaded : CodeAt s.memory imageBase binary.image)
     (apart : ∀ index, index < binary.image.length →
@@ -398,7 +403,7 @@ theorem compileSource_behaviour_rawFree {sp : SrcProgram} {binary : Binary}
         .done v final ∧ final.heap.nextAddress ≤ heap.limit) ∨
     ∃ fuel r st, Semantics.evalExpr fuel sp.toCore (startState heap.io) (.call f (args.map Core.Expr.value)) =
         .trapped r st ∧ undefinedTrap r = true ∧ r ≠ .typeMismatch ∧ st.heap.nextAddress ≤ heap.limit := by
-  rcases compileSource_behaviour compiled found typed bitsLen start zero small silent room s imageBase window
+  rcases compileSource_behaviour compiled found typed bitsLen start zero small silent room frameRoom s imageBase window
       bounded loaded apart imageHeap entry params heapAt stack run stuck clean with
     done | ⟨fuel, r, st, trapped, undefined, within⟩
   · exact .inl done

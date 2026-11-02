@@ -363,6 +363,8 @@ inductive SrcEff where
   | eDivide : SrcDivOp → SrcEff → SrcEff → SrcEff
   /-- slice_stride(slice) of a slice local, an isize -/
   | eStride : Nat → SrcEff
+  /-- the array local array as a slice of its elements, of type element: Core's array-to-slice, so a write through it reaches the array -/
+  | arraySlice : SrcType → Nat → SrcEff
   deriving Repr
 
 inductive SrcStmt where
@@ -452,10 +454,13 @@ structure Typed where
   ty : SrcType
   deriving Repr
 
-/-- A function's parameter types and result type. -/
+/-- A function's parameter types and result type, and the frame memory a call to it takes (need: its block and its callees', TRUSTED_BASE "Frame room"). room and block are the budget of the function whose body is lowered against the signatures: the room its callees may take and its own block. A call is lowered only when the callee's need fits the room. -/
 structure Sig where
   params : List SrcType
   ret : SrcType
+  need : Nat
+  room : Nat
+  block : Nat
   deriving Repr
 
 /-- Code that leaves a value of type ty in slots slot, slot + 1, ...; it may write any slot from slot on, and no slot below. -/
@@ -486,6 +491,22 @@ structure SrcDecls where
   structs : List SrcStructDecl
   enums : List SrcEnumDecl
   deriving Repr
+
+/-- A call passing arrays as slices (SEMANTIC_DECISIONS "Addressed locals", step 3.5 of array-to-slice arguments), lowered at statement level only, since it writes the arrays' own slots: each array local passed at a [T] parameter is stored into the caller's block of frame memory, whose address slot t gets from the frame pointer (Frame(t, 0)); the callee gets the array's pointer there and its length; after the return the elements are loaded back into the local's slots. Only arrays of i32 and u8, which the slice layout packs, are passed, each at most once per call. -/
+structure ArrayArgs where
+  /-- the arrays' stores into the block, before the call -/
+  stores : Stmt
+  /-- the call's arguments -/
+  args : List Expr
+  /-- the arrays' loads from the block, after the return -/
+  loads : Stmt
+  /-- the check of the other arguments -/
+  guard : Expr
+  /-- the block's bytes the arrays take: 8 per element -/
+  bytes : Nat
+  /-- the arrays' ids -/
+  ids : List Nat
+  deriving DecidableEq, Repr
 
 /-- Copy and constant propagation. A fact says that a slot holds a literal or another slot's value. The validator reads each expression of the original program with the facts known before it substituted, and checks the optimized expression against that. -/
 structure Fact where

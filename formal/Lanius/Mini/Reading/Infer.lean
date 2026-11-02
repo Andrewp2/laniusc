@@ -2,6 +2,8 @@ module
 
 public import Lanius.Mini.Reading.Lower
 public import Lanius.Mini.Reading.Exprs
+import all Lanius.Mini.Frontend.P.bindsOfTys
+import all Lanius.Mini.Frontend.P.divergeArm
 import all Lanius.Mini.Frontend.P.collect
 import all Lanius.Mini.Frontend.P.consTreeTail
 import all Lanius.Mini.Frontend.P.findConst
@@ -665,5 +667,32 @@ theorem explicitInst_sound {fuel : Nat} {env : FrontEnv} {d : Nat} {fd : FnDecl}
       simp only [Bool.and_eq_true, noNames_iff, decide_eq_true_eq] at ok
       exact ⟨ts, (tySound fuel).2.2.2.2.2.1 ha, ok.1, ok.2, h.symm⟩
     · rw [if_neg ok] at h; cases h
+
+/-- A method call's bindings: the impl's, `start` (from the receiver's
+type); with type arguments `.m<T, ..>` (`targs` not the empty
+`member_type_args_none`), then the method's own type parameters bound to
+them in order, as many as it has (`bindsZip`). -/
+def MethodBinds (env : FrontEnv) (fd : FnDecl) (start : List Bind) (targs : CTree) (bs : List Bind) : Prop :=
+  (nodeProd targs = pMemberTypeArgsNone ∧ bs = start) ∨
+    (nodeProd targs ≠ pMemberTypeArgsNone ∧
+      ∃ gs ts, Items targs gs ∧ ArgsTy env gs ts ∧ bindsZip fd.params ts start = some bs)
+
+theorem methodBinds_sound {fuel : Nat} {env : FrontEnv} {fd : FnDecl} {start : List Bind} {targs : CTree}
+    {bs : List Bind} (h : methodBinds fuel env fd start targs = some bs) : MethodBinds env fd start targs bs := by
+  unfold methodBinds at h
+  by_cases n : nodeProd targs = 297
+  · rw [if_pos n, Option.some.injEq] at h
+    exact .inl ⟨n, h.symm⟩
+  · rw [if_neg n] at h
+    cases hi : listItems fuel targs with
+    | none => rw [hi] at h; cases h
+    | some gs =>
+      rw [hi] at h
+      simp only [bindsOfTys] at h
+      cases ha : argsTys fuel env gs with
+      | none => rw [ha] at h; cases h
+      | some ts =>
+        rw [ha] at h
+        exact .inr ⟨n, gs, ts, listItems_sound hi, (tySound fuel).2.2.2.2.2.1 ha, h⟩
 
 end Lanius.Mini.Reading

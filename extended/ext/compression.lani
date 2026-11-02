@@ -32,48 +32,74 @@ fn resize(output: &alloc::vec::Vec<u8>, length: i32) -> core::result::Result<i32
 // slicing-by-8 CRC32 tables. Smaller workspaces (707 words and up) keep the
 // bit-serial inflater and per-bit CRC32.
 pub fn fast_workspace_len() -> i32 { return ext::inflate::fast_workspace_len()+2048; }
+// Slicing-by-8 tables at w[at..at+2048]: table 0 from its single-bit
+// entries (t[i] = t[i & (i-1)] ^ t[i & -i]), table k from table k-1.
 fn crc_tables(w: core::slice::View<i32>, at: i32) {
-    let index: i32 = 0;
-    while (index < 256) { w.values[w.start+at+index] = core::crc32::update_byte(0,index as u8) as i32; index += 1; }
-    let table: i32 = 1;
-    while (table < 8) {
-        index = 0;
-        while (index < 256) {
-            let previous: u32 = w.values[w.start+at+(table-1)*256+index] as u32;
-            w.values[w.start+at+table*256+index] = ((previous >> 8) ^ (w.values[w.start+at+((previous & 255) as i32)] as u32)) as i32; index += 1;
-        }
-        table += 1;
-    }
+    let t: [i32] = w.values; let base: i32 = w.start+at; let bit: i32 = 1; t[base] = 0;
+    while (bit < 256) { let single: u32 = core::crc32::update_byte(0,bit as u8); t[base+bit] = single as i32; bit = bit << 1; }
+    let index: i32 = 3;
+    while (index < 256) { let high: i32 = t[base+(index & (index-1))]; let low: i32 = t[base+(index & (0-index))]; t[base+index] = high ^ low; index += 1; }
+    index = 256;
+    while (index < 2048) { let previous: i32 = t[base+index-256]; let low: i32 = t[base+(previous & 255)]; t[base+index] = ((previous >> 8) & 16777215) ^ low; index += 1; }
 }
-// CRC32 (unfinished state) over view[from..to) with slicing-by-8 tables.
+// CRC32 (unfinished state) over view[from..to) with the slicing-by-8 tables
+// at w[at..]. Each 8-byte word is split into i32 halves: i32 masks and
+// shifts compile to far less code than u64 ones.
 fn crc_fast(w: core::slice::View<i32>, at: i32, state: u32, view: core::slice::View<u8>, from: i32, to: i32) -> u32 {
-    let t: [i32] = w.values; let base: i32 = w.start+at; let current: u32 = state; let index: i32 = from;
+    let t: [i32] = w.values; let base: i32 = w.start+at; let c: i32 = state as i32; let index: i32 = from;
     let n: i32 = (to-from) >> 3;
     if (n > 0) {
         // Raw u64 views run downward, so walk k from n-1 for ascending bytes.
         let data: ptr = core::mem::i32_slice_data_ptr(view.values)+((view.start+from) as usize);
         let words: [u64] = core::mem::slice_from_raw_parts(data+(((n-1) << 3) as usize),n); let k: i32 = n-1;
         while (k >= 0) {
-            let v: u64 = words[k] ^ (current as u64);
-            current = (t[base+1792+((v & 255) as i32)] ^ t[base+1536+(((v >> 8) & 255) as i32)] ^ t[base+1280+(((v >> 16) & 255) as i32)] ^ t[base+1024+(((v >> 24) & 255) as i32)]
-                ^ t[base+768+(((v >> 32) & 255) as i32)] ^ t[base+512+(((v >> 40) & 255) as i32)] ^ t[base+256+(((v >> 48) & 255) as i32)] ^ t[base+((v >> 56) as i32)]) as u32;
+            let v: u64 = words[k]; let lo: i32 = (v as i32) ^ c; let hi: i32 = (v >> 32) as i32;
+            c = t[base+1792+(lo & 255)] ^ t[base+1536+((lo >> 8) & 255)] ^ t[base+1280+((lo >> 16) & 255)] ^ t[base+1024+((lo >> 24) & 255)]
+                ^ t[base+768+(hi & 255)] ^ t[base+512+((hi >> 8) & 255)] ^ t[base+256+((hi >> 16) & 255)] ^ t[base+((hi >> 24) & 255)];
             k -= 1;
         }
         index = from+(n << 3);
     }
-    while (index < to) { current = (t[base+(((current ^ (view.values[view.start+index] as u32)) & 255) as i32)] as u32) ^ (current >> 8); index += 1; }
-    return current;
+    while (index < to) { let value: i32 = view.values[view.start+index] as i32; c = t[base+((c ^ value) & 255)] ^ ((c >> 8) & 16777215); index += 1; }
+    return c as u32;
 }
-// CRC32 (unfinished state) over count bytes: slicing-by-8 with tables built
-// on the stack for large packed spans, per bit otherwise.
-fn crc_bytes(state: u32, view: core::slice::View<u8>, from: i32, count: i32) -> u32 {
-    if (count >= 2048 && core::mem::slice_stride(view.values) == 1) {
-        let words: [i32;2048] = [0;2048]; let tables: core::slice::View<i32> = core::slice::View { values: words, start: 0, length: 2048 };
-        crc_tables(tables,0); return crc_fast(tables,0,state,view,from,from+count);
+// The same over a packed view with the tables in a local array, which
+// indexes without a slice header: about 1.4x the speed of crc_fast. The
+// tables take about 5 us to build, so spans start at 512 bytes.
+fn crc_span(state: u32, view: core::slice::View<u8>, from: i32, to: i32) -> u32 {
+    let t: [i32;2048] = [0;2048]; let bit: i32 = 1;
+    while (bit < 256) { let single: u32 = core::crc32::update_byte(0,bit as u8); t[bit] = single as i32; bit = bit << 1; }
+    let index: i32 = 3;
+    while (index < 256) { let high: i32 = t[index & (index-1)]; let low: i32 = t[index & (0-index)]; t[index] = high ^ low; index += 1; }
+    index = 256;
+    while (index < 2048) { let previous: i32 = t[index-256]; let low: i32 = t[previous & 255]; t[index] = ((previous >> 8) & 16777215) ^ low; index += 1; }
+    let c: i32 = state as i32; index = from; let n: i32 = (to-from) >> 3;
+    if (n > 0) {
+        let data: ptr = core::mem::i32_slice_data_ptr(view.values)+((view.start+from) as usize);
+        let words: [u64] = core::mem::slice_from_raw_parts(data+(((n-1) << 3) as usize),n); let k: i32 = n-1;
+        while (k >= 0) {
+            let v: u64 = words[k]; let lo: i32 = (v as i32) ^ c; let hi: i32 = (v >> 32) as i32;
+            c = t[1792+(lo & 255)] ^ t[1536+((lo >> 8) & 255)] ^ t[1280+((lo >> 16) & 255)] ^ t[1024+((lo >> 24) & 255)]
+                ^ t[768+(hi & 255)] ^ t[512+((hi >> 8) & 255)] ^ t[256+((hi >> 16) & 255)] ^ t[(hi >> 24) & 255];
+            k -= 1;
+        }
+        index = from+(n << 3);
     }
+    while (index < to) { let value: i32 = view.values[view.start+index] as i32; c = t[(c ^ value) & 255] ^ ((c >> 8) & 16777215); index += 1; }
+    return c as u32;
+}
+// CRC32 (unfinished state) over count bytes: slicing-by-8 for packed spans
+// of 512 bytes or more, per bit otherwise.
+fn crc_bytes(state: u32, view: core::slice::View<u8>, from: i32, count: i32) -> u32 {
+    if (count >= 512 && core::mem::slice_stride(view.values) == 1) { return crc_span(state,view,from,from+count); }
     let current: u32 = state; let index: i32 = 0;
     while (index < count) { current = core::crc32::update_byte(current,byte(view,from+index)); index += 1; }
     return current;
+}
+// CRC-32 (IEEE, as in gzip and zip) continued over bytes: begin with
+// core::crc32::INITIAL and end with core::crc32::finish.
+pub fn crc32_update(state: u32, bytes: core::slice::View<u8>) -> u32 {
+    if (bytes.start < 0 || bytes.length < 0) { return state; } return crc_bytes(state,bytes,0,bytes.length);
 }
 fn crc(view: core::slice::View<u8>) -> u32 {
     return core::crc32::finish(crc_bytes(core::crc32::INITIAL,view,0,view.length));
@@ -403,13 +429,15 @@ fn account_body(state: &Decoder, call: &Call, read: i32, written: i32) {
         state.checksum = core::result::unwrap(core::adler32::update(state.checksum,part(call.output,call.written,call.written+written)));
     }
     if (state.kind == 2) {
-        if (state.crc_fast && core::mem::slice_stride(call.output.values) == 1) {
+        if (written >= 16384 && core::mem::slice_stride(call.output.values) == 1) {
+            state.checksum = crc_span(state.checksum,call.output,call.written,call.written+written);
+        } else { if (state.crc_fast && core::mem::slice_stride(call.output.values) == 1) {
             if (!state.crc_ready) { crc_tables(state.tables,ext::inflate::fast_workspace_len()); state.crc_ready = true; }
             state.checksum = crc_fast(state.tables,ext::inflate::fast_workspace_len(),state.checksum,call.output,call.written,call.written+written);
         } else {
             let index: i32 = 0;
             while (index < written) { state.checksum = core::crc32::update_byte(state.checksum,byte(call.output,call.written+index)); index += 1; }
-        }
+        } }
     }
     call.written += written; state.written_total += written as u64;
     state.member_size = (((state.member_size as u64)+(written as u64)) & 4294967295) as u32;
