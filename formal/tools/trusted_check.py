@@ -79,8 +79,8 @@ def main():
             print('the top theorems\' modules are not built from the current sources (lake build --no-build):')
             print((current.stdout + current.stderr)[-2000:])
             return 1
-        run = subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', 'MemoryMax=4G', '-p',
-                              'MemorySwapMax=0', os.path.join(FORMAL, '.lake/build/bin/topAxioms'), defs],
+        run = subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', 'MemoryHigh=4G', '-p',
+                              'MemorySwapMax=infinity', os.path.join(FORMAL, '.lake/build/bin/topAxioms'), defs],
                              cwd=FORMAL, env=env, capture_output=True, text=True, timeout=240)
     if run.returncode != 0 and not run.stdout:
         print('topAxioms failed:', run.stderr[-2000:])

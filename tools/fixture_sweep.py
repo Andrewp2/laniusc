@@ -97,7 +97,7 @@ class Daemon:
             Daemon.started += 1
             self.unit = f"lanius-sweep-{os.getpid()}-{Daemon.started}.scope"
             argv = ["systemd-run", "--user", "--scope", "-q", f"--unit={self.unit}",
-                    "-p", f"MemoryMax={memory_max}", "-p", "MemorySwapMax=0"] + argv
+                    "-p", f"MemoryHigh={memory_max}", "-p", "MemorySwapMax=infinity"] + argv
         self.stderr_path = stderr_path
         self.process = subprocess.Popen(argv, cwd=ROOT, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                         stderr=open(stderr_path, "a"), text=True, bufsize=1)

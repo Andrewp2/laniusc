@@ -117,7 +117,7 @@ class Daemon:
             Daemon.started += 1
             self.unit = f"lanius-matrix-{os.getpid()}-{Daemon.started}.scope"
             argv = ["systemd-run", "--user", "--scope", "-q", f"--unit={self.unit}",
-                    "-p", f"MemoryMax={args.memory_max}", "-p", "MemorySwapMax=0"] + command
+                    "-p", f"MemoryHigh={args.memory_max}", "-p", "MemorySwapMax=infinity"] + command
         self.process = subprocess.Popen(argv, cwd=ROOT, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                         stderr=open(stderr_path, "a"), text=True, bufsize=1)
         live_daemons.append(self)

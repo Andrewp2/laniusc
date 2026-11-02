@@ -40,7 +40,7 @@ for k, p in enumerate(paths):
     t0 = time.time()
     data = b''.join((x & 0xffffffff).to_bytes(4, 'little') for x in [len(words), room] + words)
     try:
-        run = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=3G', '-p', 'MemorySwapMax=0', driver], input=data, capture_output=True, timeout=60, preexec_fn=lim)
+        run = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryHigh=3G', '-p', 'MemorySwapMax=infinity', driver], input=data, capture_output=True, timeout=60, preexec_fn=lim)
         got = sh.decode(run.stdout) if run.returncode == 0 else f'exit {run.returncode} {run.stderr[-200:]!r}'
     except subprocess.TimeoutExpired:
         got = 'timeout'

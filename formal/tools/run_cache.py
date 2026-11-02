@@ -216,8 +216,8 @@ def run_lean(lean_path, memory='6G', outputs=()):
         return types.SimpleNamespace(returncode=0, stdout=hit['stdout'], stderr='')
     env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
     with lean_lock():
-        run = subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', f'MemoryMax={memory}', '-p',
-                              'MemorySwapMax=0', 'lake', 'env', 'lean', os.path.abspath(lean_path)], cwd=FORMAL,
+        run = subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', f'MemoryHigh={memory}', '-p',
+                              'MemorySwapMax=infinity', 'lake', 'env', 'lean', os.path.abspath(lean_path)], cwd=FORMAL,
                              env=env, capture_output=True, text=True)
     if run.returncode == 0 and digest:
         files = {path: open(path).read() for path in outputs if os.path.exists(path)}

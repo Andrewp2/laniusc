@@ -63,8 +63,8 @@ def fail(message):
 def capped(command, memory):
     """Runs `command` under a systemd memory cap when systemd-run exists."""
     if shutil.which("systemd-run"):
-        return ["systemd-run", "--user", "--scope", "-q", "-p", f"MemoryMax={memory}",
-                "-p", "MemorySwapMax=0"] + command
+        return ["systemd-run", "--user", "--scope", "-q", "-p", f"MemoryHigh={memory}",
+                "-p", "MemorySwapMax=infinity"] + command
     return command
 
 

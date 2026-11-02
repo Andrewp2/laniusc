@@ -1994,7 +1994,7 @@ def main():
         exe_path = os.path.join(args.workdir, 'programs')
         open(lani_path, 'w').write(lani_file(programs[start:start + args.chunk], calls[start:start + args.chunk]))
         exe_path, build = run_cache.laniusc_build(
-            ['systemd-run', '--user', '--scope', '--slice=lean.slice', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
+            ['systemd-run', '--user', '--scope', '--slice=lean.slice', '-p', 'MemoryHigh=6G', '-p', 'MemorySwapMax=infinity',
              'target/claude-work/bin/heavy', '-t', '20', args.laniusc, '--stdlib-root', 'stdlib',
              '-o', exe_path, lani_path], args.laniusc, lani_path, exe_path, ['stdlib'])
         if build is not None:
