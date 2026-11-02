@@ -1045,11 +1045,11 @@ mod tests {
             source_bytes: 8,
             tokens: 8,
             hir_nodes: 8,
-            semantic_instructions: 9,
+            semantic_instructions: 10,
             call_arguments: 2,
             parameters: 2,
             aggregate_elements: 2,
-            target_instructions: 10,
+            target_instructions: 11,
             artifact_bytes: 64,
         };
         let graph = lowering_compiler_graph(capacities, LoweringTarget::X86_64).unwrap();
@@ -1057,7 +1057,14 @@ mod tests {
         let status: LaniusBuffer<LoweringStatus> = workspace
             .alias(&graph, graph.resource_id("lowering.status").unwrap(), 1)
             .unwrap();
-        let total = storage_ro_from_u32s(&gpu.device, "test.x86_lir.total", &[8]);
+        // The status as lir.status.clear leaves it; this stage starts after
+        // semantic lowering, which runs that clear in production.
+        status.write(
+            &gpu.queue,
+            0,
+            &record_bytes(&[[0, u32::MAX, u32::MAX, u32::MAX, 0, u32::MAX, 0, 0, u32::MAX, u32::MAX]]),
+        );
+        let total = storage_ro_from_u32s(&gpu.device, "test.x86_lir.total", &[9]);
         let page_core: LaniusBuffer<SemanticLirCore> = workspace
             .alias(
                 &graph,
@@ -1129,6 +1136,19 @@ mod tests {
                     0,
                     u32::MAX,
                 ],
+                // A structured opener's CONTROL_END is the next row of the
+                // same owner HIR (structure_region_scatter); it is scheduled
+                // after the block's call and branch.
+                [
+                    opcode::SEMANTIC_LIR_OP_CONTROL_END,
+                    0,
+                    0,
+                    u32::MAX,
+                    6,
+                    0,
+                    0,
+                    u32::MAX,
+                ],
                 [
                     opcode::SEMANTIC_LIR_OP_CALL,
                     3,
@@ -1178,6 +1198,7 @@ mod tests {
                 [3, 2, u32::MAX, u32::MAX],
                 [5, 6, u32::MAX, u32::MAX],
                 [6, u32::MAX, u32::MAX, u32::MAX],
+                [6, u32::MAX, u32::MAX, u32::MAX],
                 [4, 0, 0, 2],
                 [7, 7, 11, 23],
                 [8, 42, u32::MAX, u32::MAX],
@@ -1187,27 +1208,29 @@ mod tests {
             .alias(
                 &graph,
                 graph.resource_id("lir.semantic.schedule_order").unwrap(),
-                9,
+                10,
             )
             .unwrap();
         semantic_order.write(
             &gpu.queue,
             0,
-            &record_bytes(&[[1u32, 0, 2, 3, 5, 6, 4, 7, 8]]),
+            // The return closes the function: rows scheduled after it would
+            // be unreachable, and the optimizer removes unreachable blocks.
+            &record_bytes(&[[1u32, 0, 2, 5, 7, 4, 6, 8, 3, 9]]),
         );
         let semantic_layout_metadata =
-            storage_ro_from_u32s(&gpu.device, "test.x86_lir.layout_metadata", &[0; 9]);
+            storage_ro_from_u32s(&gpu.device, "test.x86_lir.layout_metadata", &[0; 10]);
         let semantic_owners = storage_ro_from_u32s(
             &gpu.device,
             "test.x86_lir.semantic_owners",
-            &[1, 0, 2, 3, 5, 6, 4, 7, 7],
+            &[1, 0, 2, 3, 5, 6, 6, 4, 7, 7],
         );
         let semantic_function_ids =
             storage_ro_from_u32s(&gpu.device, "test.x86_lir.function_ids", &[0; 8]);
         let call_args = storage_ro_from_bytes::<SemanticLirCallArg>(
             &gpu.device,
             "test.x86_lir.call_args",
-            &record_bytes(&[[6, 0, 0, 0], [6, 2, 1, 0]]),
+            &record_bytes(&[[7, 0, 0, 0, 0], [7, 2, 1, 0, 0]]),
             2,
         );
         let call_arg_total: LaniusBuffer<u32> = workspace
@@ -1240,7 +1263,7 @@ mod tests {
         let aggregate_elements = storage_ro_from_bytes::<SemanticLirAggregateElement>(
             &gpu.device,
             "test.x86_lir.aggregate_elements",
-            &record_bytes(&[[u32::MAX; 7]; 4]),
+            &record_bytes(&[[u32::MAX; 8]; 4]),
             4,
         );
         let string_rows = storage_ro_from_bytes::<SemanticLirString>(
@@ -1269,7 +1292,7 @@ mod tests {
         let params = storage_ro_from_bytes::<SemanticLirParam>(
             &gpu.device,
             "test.x86_lir.params",
-            &record_bytes(&[[0, 3, 0, 3], [u32::MAX; 4]]),
+            &record_bytes(&[[0, 3, 0, 3, 0], [u32::MAX; 5]]),
             2,
         );
         let locals = storage_ro_from_bytes::<SemanticLirLocal>(
@@ -1303,9 +1326,18 @@ mod tests {
             ]),
             24,
         );
-        let function_count = storage_ro_from_u32s(&gpu.device, "test.x86_lir.fn_count", &[1]);
-        let param_count = storage_ro_from_u32s(&gpu.device, "test.x86_lir.param_count", &[1]);
-        let local_count = storage_ro_from_u32s(&gpu.device, "test.x86_lir.local_count", &[1]);
+        // Retained semantic totals are graph-owned; passes bind the workspace
+        // allocation, so the fixture writes its counts there.
+        let graph_total = |name: &str, value: u32| -> LaniusBuffer<u32> {
+            let buffer: LaniusBuffer<u32> = workspace
+                .alias(&graph, graph.resource_id(name).unwrap(), 1)
+                .unwrap();
+            buffer.write(&gpu.queue, 0, &value.to_le_bytes());
+            buffer
+        };
+        let function_count = graph_total("lir.semantic.function_total", 1);
+        let param_count = graph_total("lir.semantic.param_total", 1);
+        let local_count = graph_total("lir.semantic.local_total", 1);
         let kernels = KernelRegistry::prepare_prefixes(
             &gpu.device,
             crate::codegen::lowering::LOWERING_KERNEL_PREFIXES,
@@ -1327,7 +1359,7 @@ mod tests {
             owner_by_instruction: &semantic_owners,
             function_id_by_hir: &semantic_function_ids,
             call_args: &call_args,
-            call_arg_count: &empty_count,
+            call_arg_count: &call_arg_total,
             call_arg_start_by_hir: &call_arg_start_by_hir,
             call_arg_count_by_hir: &call_arg_count_by_hir,
             aggregate_elements: &aggregate_elements,
@@ -1394,7 +1426,7 @@ mod tests {
         let total_rb = readback_bytes(&gpu.device, "test.x86_lir.total.rb", 4, 1);
         let core_rb = readback_bytes(&gpu.device, "test.x86_lir.core.rb", 160, 40);
         let operands_rb = readback_bytes(&gpu.device, "test.x86_lir.operands.rb", 160, 40);
-        let locations_rb = readback_bytes(&gpu.device, "test.x86_lir.locations.rb", 160, 40);
+        let locations_rb = readback_bytes(&gpu.device, "test.x86_lir.locations.rb", 200, 50);
         let function_count_rb = readback_bytes(&gpu.device, "test.x86_lir.function_count.rb", 4, 1);
         let functions_rb = readback_bytes(&gpu.device, "test.x86_lir.functions.rb", 64, 16);
         let status_bytes = std::mem::size_of::<super::super::lowering_ir::LoweringStatus>();
@@ -1413,7 +1445,7 @@ mod tests {
             .copy_to(&mut encoder, 0, &operands_rb, 0, 160);
         output
             .locations
-            .copy_to(&mut encoder, 0, &locations_rb, 0, 160);
+            .copy_to(&mut encoder, 0, &locations_rb, 0, 200);
         functions
             .count
             .copy_to(&mut encoder, 0, &function_count_rb, 0, 4);
@@ -1429,30 +1461,23 @@ mod tests {
             .copy_to(&mut encoder, 0, &saved_mask_rb, 0, 4);
         gpu.queue.submit(Some(encoder.finish()));
 
-        assert_eq!(read_words(&gpu.device, &total_rb)[0], 9);
+        // Schedule: 7, 9, 7 + 9, block, call, branch, block end, symbol, return.
+        // The folded add reads neither constant, so the `7` producer is gone.
+        assert_eq!(read_words(&gpu.device, &total_rb)[0], 10);
         let core_words = read_words(&gpu.device, &core_rb);
         assert_eq!(
-            [
-                core_words[2],
-                core_words[6],
-                core_words[10],
-                core_words[14],
-                core_words[18],
-                core_words[22],
-                core_words[26],
-                core_words[30],
-                core_words[34],
-            ],
+            (0..10).map(|row| core_words[row * 4 + 2]).collect::<Vec<_>>(),
             [
                 opcode::X86_LIR_OP_IMM_I32,
                 opcode::X86_LIR_OP_IMM_I32,
-                opcode::X86_LIR_OP_RETURN,
                 opcode::X86_LIR_OP_LABEL,
                 opcode::X86_LIR_OP_CALL_ARG,
                 opcode::X86_LIR_OP_CALL_ARG,
                 opcode::X86_LIR_OP_CALL,
                 opcode::X86_LIR_OP_BRANCH,
+                opcode::X86_LIR_OP_LABEL,
                 opcode::X86_LIR_OP_CALL_SYMBOL,
+                opcode::X86_LIR_OP_RETURN,
             ]
         );
         let operand_words = read_words(&gpu.device, &operands_rb);
@@ -1461,32 +1486,32 @@ mod tests {
         // its otherwise-unused `7` producer disappears.
         assert_eq!([operand_words[0], operand_words[4]], [9, 16]);
         let location_words = read_words(&gpu.device, &locations_rb);
-        // Both surviving values are consumed before the call and remain in
-        // caller-saved registers. Folded immediates have no input locations.
-        assert_eq!(location_words[0], opcode::X86_LOCATION_REGISTER | 8);
-        assert_eq!(location_words[4], opcode::X86_LOCATION_REGISTER | 9);
-        assert_eq!(
-            &location_words[4..8],
-            &[
-                opcode::X86_LOCATION_REGISTER | 9,
-                u32::MAX,
-                u32::MAX,
-                u32::MAX,
-            ]
-        );
+        let location = |row: usize| &location_words[row * 5..row * 5 + 5];
+        // `9` is last read by the call, so it takes a stack home (stable
+        // sources for the argument moves, allocation_words). `16` is read
+        // again by the return after the call and takes a callee-saved
+        // register; RBX and R12 are held for the declaration slots.
+        let r13 = opcode::X86_LOCATION_REGISTER | 13;
+        assert_eq!(location(0), &[0, u32::MAX, u32::MAX, u32::MAX, u32::MAX]);
+        assert_eq!(location(1), &[r13, u32::MAX, u32::MAX, u32::MAX, u32::MAX]);
+        assert_eq!(location(3)[1], 0);
+        assert_eq!(location(4)[1], r13);
+        assert_eq!(location(9)[1], r13);
         assert_eq!(read_words(&gpu.device, &function_count_rb)[0], 1);
-        assert_eq!(&operand_words[28..32], &[u32::MAX, 6, 0, 0]);
+        // The branch targets the block's CONTROL_END, lowered to the label
+        // at target row 7.
+        assert_eq!(&operand_words[24..28], &[u32::MAX, 7, 0, 0]);
         assert_eq!(&operand_words[32..35], &[7, 11, 23]);
-        assert_eq!(&read_words(&gpu.device, &functions_rb)[..4], &[0, 0, 9, 2]);
+        // Ten rows from 0; six frame words: three temporaries (`9` and the two
+        // call results) and the parameter's three-word declaration home.
+        assert_eq!(&read_words(&gpu.device, &functions_rb)[..4], &[0, 0, 10, 6]);
         let frame_slots = read_words(&gpu.device, &frame_slots_rb);
-        // The entrypoint parameter has a register home. Declaration 4 has no
-        // live definition in this fixture, so dead-declaration filtering must
-        // leave it unassigned rather than reserving a register or stack slot.
-        assert_eq!(
-            (frame_slots[3], frame_slots[4]),
-            (opcode::X86_LOCATION_REGISTER | 7, u32::MAX)
-        );
-        assert_eq!(read_words(&gpu.device, &saved_mask_rb)[0], 0);
+        // The parameter is never read in a function with calls, so it keeps a
+        // stack home after the temporaries (decl_slots_scatter). Declaration
+        // 4 has no live definition in this fixture, so dead-declaration
+        // filtering must leave it unassigned rather than reserving a slot.
+        assert_eq!((frame_slots[3], frame_slots[4]), (3, u32::MAX));
+        assert_eq!(read_words(&gpu.device, &saved_mask_rb)[0], 1 << 13);
         let status_words = read_words(&gpu.device, &status_rb);
         // This fixture deliberately keeps one parameter on the entrypoint so
         // the LIR can exercise parameter/register placement. Artifact

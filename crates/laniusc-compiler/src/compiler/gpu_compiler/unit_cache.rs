@@ -1313,6 +1313,7 @@ mod tests {
                     library_id,
                     unit_id: 0,
                     entry_offset: None,
+                    body: None,
                     text: Vec::new(),
                     rodata: Vec::new(),
                     relocations: Vec::new(),

@@ -124,6 +124,7 @@ impl GpuX86FileObject {
                 library_id: object.library_id,
                 unit_id: object.unit_id,
                 entry_offset: object.entry_offset,
+                body: object.body,
                 text_byte_len: text_len,
                 rodata_byte_len: rodata_len,
                 relocation_count: 0,
@@ -190,6 +191,7 @@ impl GpuX86FileObject {
         validate_link_object_columns(
             self.layout.version,
             self.layout.entry_offset,
+            self.layout.body,
             self.layout.text_byte_len as usize,
             self.layout.rodata_byte_len as usize,
             &self.relocations,
@@ -219,6 +221,18 @@ impl GpuX86FileObject {
 
     pub(crate) fn copy_text_to<W: Write>(&self, output: &mut W) -> Result<u64, String> {
         self.copy_range(0, self.payload.text_len, output)
+    }
+
+    /// Copies one range of the object's text section.
+    pub(crate) fn copy_text_range_to<W: Write>(
+        &self,
+        range: std::ops::Range<u32>,
+        output: &mut W,
+    ) -> Result<u64, String> {
+        if range.start > range.end || range.end > self.payload.text_len {
+            return Err("native object text range exceeds its text section".into());
+        }
+        self.copy_range(u64::from(range.start), range.end - range.start, output)
     }
 
     pub(crate) fn copy_rodata_to<W: Write>(&self, output: &mut W) -> Result<u64, String> {
@@ -260,6 +274,7 @@ mod tests {
             library_id: 7,
             unit_id: 11,
             entry_offset: None,
+            body: None,
             text: vec![0, 255, 0x90, 0xc3],
             rodata: vec![0, 128, 255, 0],
             relocations: vec![],

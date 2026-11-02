@@ -335,7 +335,14 @@ struct X86ObjectGraphResources {
     definition_scan_block_prefix: ResourceId,
     definition_scan_hierarchy: ResourceId,
     definition_total: ResourceId,
+    runtime_relocation_prefix: ResourceId,
+    runtime_relocation_scan_local: ResourceId,
+    runtime_relocation_scan_block_sum: ResourceId,
+    runtime_relocation_scan_block_prefix: ResourceId,
+    runtime_relocation_scan_hierarchy: ResourceId,
+    runtime_relocation_total: ResourceId,
     relocations: ResourceId,
+    runtime_relocations: ResourceId,
     undefined_symbols: ResourceId,
     call_hir_by_symbol: ResourceId,
     definitions: ResourceId,
@@ -353,6 +360,10 @@ struct X86ArtifactGraphResources {
     artifact_length: ResourceId,
     artifact_bytes: ResourceId,
     artifact_length_readback: Option<ResourceId>,
+    /// Per target row: the row's native-runtime reference and its 0/1 flag.
+    /// Only an object build reads them, so an executable build reserves one row.
+    runtime_reference: ResourceId,
+    runtime_reference_flag: ResourceId,
 }
 
 #[derive(Clone, Copy)]
@@ -5434,12 +5445,32 @@ fn lowering_compiler_graph_builder(
                     LoweringCapacities::bytes::<u32>(1),
                 )?)
             },
+            runtime_reference: graph.add_resource(workspace(
+                "lir.x86.runtime_reference",
+                ResourceDomain::X86Instructions,
+                LoweringCapacities::bytes::<[u32; 2]>(if include_object {
+                    capacities.target_instructions
+                } else {
+                    1
+                }),
+            ))?,
+            runtime_reference_flag: graph.add_resource(workspace(
+                "lir.x86.runtime_reference_flag",
+                ResourceDomain::X86Instructions,
+                LoweringCapacities::bytes::<u32>(if include_object {
+                    capacities.target_instructions
+                } else {
+                    1
+                }),
+            ))?,
         })
     } else {
         None
     };
     let x86_object = if target == LoweringTarget::X86_64 && include_object {
         let relocation_capacity = capacities.semantic_instructions.max(1);
+        let target_row_capacity = capacities.target_instructions.max(1);
+        let target_row_blocks = target_row_capacity.div_ceil(256);
         let function_capacity = capacities.hir_nodes.max(1);
         let relocation_blocks = relocation_capacity.div_ceil(256);
         let function_blocks = function_capacity.div_ceil(256);
@@ -5584,11 +5615,55 @@ fn lowering_compiler_graph_builder(
                 bytes: LoweringCapacities::bytes::<u32>(1),
                 usage: WorkspaceUsageClass::Storage,
             })?,
+            runtime_relocation_prefix: u32_rows(
+                &mut graph,
+                "artifact.x86.object.runtime_relocation_prefix",
+                ResourceDomain::X86Instructions,
+                target_row_capacity,
+            )?,
+            runtime_relocation_scan_local: u32_rows(
+                &mut graph,
+                "artifact.x86.object.runtime_relocation_scan_local",
+                ResourceDomain::X86Instructions,
+                target_row_capacity,
+            )?,
+            runtime_relocation_scan_block_sum: u32_rows(
+                &mut graph,
+                "artifact.x86.object.runtime_relocation_scan_block_sum",
+                ResourceDomain::X86Instructions,
+                target_row_blocks,
+            )?,
+            runtime_relocation_scan_block_prefix: u32_rows(
+                &mut graph,
+                "artifact.x86.object.runtime_relocation_scan_block_prefix",
+                ResourceDomain::X86Instructions,
+                target_row_blocks,
+            )?,
+            runtime_relocation_scan_hierarchy: u32_rows(
+                &mut graph,
+                "artifact.x86.object.runtime_relocation_scan_hierarchy",
+                ResourceDomain::X86Instructions,
+                target_row_blocks,
+            )?,
+            runtime_relocation_total: graph.add_resource(ResourceDesc {
+                name: "artifact.x86.object.runtime_relocation_total",
+                domain: ResourceDomain::X86Instructions,
+                class: ResourceClass::Output,
+                bytes: LoweringCapacities::bytes::<u32>(1),
+                usage: WorkspaceUsageClass::Storage,
+            })?,
             relocations: graph.add_resource(ResourceDesc {
                 name: "artifact.x86.object.relocations",
                 domain: ResourceDomain::ArtifactBytes,
                 class: ResourceClass::Output,
                 bytes: LoweringCapacities::bytes::<X86ObjectRelocationRow>(relocation_capacity),
+                usage: WorkspaceUsageClass::Storage,
+            })?,
+            runtime_relocations: graph.add_resource(ResourceDesc {
+                name: "artifact.x86.object.runtime_relocations",
+                domain: ResourceDomain::ArtifactBytes,
+                class: ResourceClass::Output,
+                bytes: LoweringCapacities::bytes::<X86ObjectRelocationRow>(target_row_capacity),
                 usage: WorkspaceUsageClass::Storage,
             })?,
             undefined_symbols: graph.add_resource(ResourceDesc {
@@ -5630,7 +5705,7 @@ fn lowering_compiler_graph_builder(
                 "artifact.x86.object.metadata_readback",
                 ResourceDomain::ArtifactBytes,
                 ResourceClass::External,
-                64,
+                80,
             )?,
         })
     } else {
@@ -8685,7 +8760,7 @@ fn lowering_compiler_graph_builder(
                     "x86_saved_gpr_mask_by_function",
                     x86_saved_gpr_mask_by_function.expect("x86 saved-register resource"),
                 ),
-                PassAccess::read(
+                PassAccess::read_write(
                     "x86_decl_analysis_by_token",
                     x86_decl_analysis_by_token.expect("x86 declaration analysis resource"),
                 ),
@@ -9701,6 +9776,11 @@ fn lowering_compiler_graph_builder(
                         x86_position_by_semantic.expect("x86 schedule position resource"),
                     ),
                     PassAccess::read("target_lir_offset", target_offsets),
+                    PassAccess::read("opt_ir_core", opt_core),
+                    PassAccess::read("opt_ir_operands", opt_operands),
+                    PassAccess::read("semantic_schedule_order", schedule_order),
+                    PassAccess::read("opt_ir_source_hir", opt_source_hir),
+                    PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
                 ],
             })?;
         }
@@ -10051,6 +10131,11 @@ fn lowering_compiler_graph_builder(
                     x86_position_by_semantic.expect("x86 schedule position resource"),
                 ),
                 PassAccess::read("target_lir_offset", target_offsets),
+                PassAccess::read("opt_ir_core", opt_core),
+                PassAccess::read("opt_ir_operands", opt_operands),
+                PassAccess::read("semantic_schedule_order", schedule_order),
+                PassAccess::read("opt_ir_source_hir", opt_source_hir),
+                PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
             ],
         })?;
         graph.add_pass(PassDesc {
@@ -10128,6 +10213,8 @@ fn lowering_compiler_graph_builder(
                 PassAccess::read("target_byte_offset", byte_offsets),
                 PassAccess::read("x86_artifact_layout", x86.layout),
                 PassAccess::write("artifact_bytes", x86.artifact_bytes),
+                PassAccess::write("x86_runtime_reference", x86.runtime_reference),
+                PassAccess::write("x86_runtime_reference_flag", x86.runtime_reference_flag),
             ],
         })?;
         graph.repeat_pass_range(target_page_count, "lir.x86.scatter.replay", "lir.x86.emit")?;
@@ -10370,6 +10457,78 @@ fn lowering_compiler_graph_builder(
                 PassAccess::write("x86_object_relocations", object.relocations),
                 PassAccess::write("x86_object_undefined_symbols", object.undefined_symbols),
                 PassAccess::write("x86_object_call_hir_by_symbol", object.call_hir_by_symbol),
+            ],
+        })?;
+        for (name, accesses) in [
+            (
+                "artifact.x86.object.runtime_relocation_scan.local",
+                vec![
+                    PassAccess::read("scan_count", target_total),
+                    PassAccess::read("scan_input", artifact.runtime_reference_flag),
+                    PassAccess::write("scan_local_prefix", object.runtime_relocation_scan_local),
+                    PassAccess::write("scan_block_sum", object.runtime_relocation_scan_block_sum),
+                ],
+            ),
+            (
+                "artifact.x86.object.runtime_relocation_scan.hierarchy_up",
+                vec![
+                    PassAccess::read("scan_count", target_total),
+                    PassAccess::read("scan_block_sum", object.runtime_relocation_scan_block_sum),
+                    PassAccess::write(
+                        "scan_block_prefix",
+                        object.runtime_relocation_scan_block_prefix,
+                    ),
+                    PassAccess::write("scan_hierarchy", object.runtime_relocation_scan_hierarchy),
+                ],
+            ),
+            (
+                "artifact.x86.object.runtime_relocation_scan.hierarchy_down",
+                vec![
+                    PassAccess::read("scan_count", target_total),
+                    PassAccess::read_write(
+                        "scan_block_prefix",
+                        object.runtime_relocation_scan_block_prefix,
+                    ),
+                    PassAccess::read_write(
+                        "scan_hierarchy",
+                        object.runtime_relocation_scan_hierarchy,
+                    ),
+                ],
+            ),
+            (
+                "artifact.x86.object.runtime_relocation_scan.apply",
+                vec![
+                    PassAccess::read("scan_count", target_total),
+                    PassAccess::read("scan_local_prefix", object.runtime_relocation_scan_local),
+                    PassAccess::read(
+                        "scan_block_prefix",
+                        object.runtime_relocation_scan_block_prefix,
+                    ),
+                    PassAccess::write("scan_output_prefix", object.runtime_relocation_prefix),
+                    PassAccess::write("scan_total", object.runtime_relocation_total),
+                ],
+            ),
+        ] {
+            graph.add_pass(PassDesc {
+                name,
+                phase: CompilerPhase::Artifact,
+                dispatch_domain: ResourceDomain::X86Instructions,
+                accesses,
+            })?;
+        }
+        graph.add_pass(PassDesc {
+            name: "artifact.x86.object.runtime_relocations",
+            phase: CompilerPhase::Artifact,
+            dispatch_domain: ResourceDomain::X86Instructions,
+            accesses: vec![
+                PassAccess::read("target_lir_total", target_total),
+                PassAccess::read("x86_runtime_reference", artifact.runtime_reference),
+                PassAccess::read(
+                    "x86_runtime_relocation_prefix",
+                    object.runtime_relocation_prefix,
+                ),
+                PassAccess::read("x86_artifact_layout", artifact.layout),
+                PassAccess::write("x86_object_runtime_relocations", object.runtime_relocations),
             ],
         })?;
         graph.add_pass(PassDesc {
@@ -10812,6 +10971,11 @@ fn lowering_compiler_graph_builder(
                 "artifact.x86.object.layout.readback",
                 "artifact_layout",
                 x86_artifact.expect("x86 object has x86 artifact").layout,
+            ),
+            (
+                "artifact.x86.object.runtime_relocation_total.readback",
+                "runtime_relocation_total",
+                object.runtime_relocation_total,
             ),
         ] {
             graph.add_buffer_copy_pass(
@@ -12681,6 +12845,10 @@ mod tests {
             (
                 "artifact.x86.object.relocations",
                 "codegen/lir/x86/object_relocations",
+            ),
+            (
+                "artifact.x86.object.runtime_relocations",
+                "codegen/lir/x86/object_runtime_relocations",
             ),
             (
                 "artifact.x86.object.definitions",

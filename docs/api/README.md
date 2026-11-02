@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **364 modules**, **19095 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **366 modules**, **19225 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -110,6 +110,8 @@ Inventory: **364 modules**, **19095 declaration/member entries**. Counts include
 | [alloc::big_uint](alloc/big_uint.md) | [source](../../stdlib/alloc/big_uint.lani#L4) | 80 | Source inventory | [stdlib-big-integers](../stdlib-big-integers.md), [stdlib-big-uint](../stdlib-big-uint.md) |
 | [alloc::binary_heap](alloc/binary_heap.md) | [source](../../stdlib/alloc/binary_heap.lani#L4) | 54 | Source inventory | [stdlib-binary-heap](../stdlib-binary-heap.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-heap-iterators](../stdlib-heap-iterators.md), [stdlib-iterator-collection-sinks](../stdlib-iterator-collection-sinks.md), [stdlib-owning-heap](../stdlib-owning-heap.md), [stdlib-exact-size-iterators](../stdlib-exact-size-iterators.md) |
 | [alloc::bitset](alloc/bitset.md) | [source](../../stdlib/alloc/bitset.lani#L4) | 55 | Source inventory | [stdlib-bitset-owned](../stdlib-bitset-owned.md) |
+| [alloc::btree_map](alloc/btree_map.md) | [source](../../stdlib/alloc/btree_map.lani#L5) | 85 | Source inventory | [stdlib-btree-map](../stdlib-btree-map.md), [stdlib-tree-map](../stdlib-tree-map.md) |
+| [alloc::btree_set](alloc/btree_set.md) | [source](../../stdlib/alloc/btree_set.lani#L5) | 45 | Source inventory | [stdlib-btree-map](../stdlib-btree-map.md) |
 | [alloc::buffered](alloc/buffered.md) | [source](../../stdlib/alloc/buffered.lani#L4) | 49 | Source inventory | [stdlib-buffered](../stdlib-buffered.md), [stdlib-format-write](../stdlib-format-write.md), [stdlib-delimited-io](../stdlib-delimited-io.md), [stdlib-select-records](../stdlib-select-records.md), [stdlib-seek](../stdlib-seek.md), [stdlib-reverse-records](../stdlib-reverse-records.md) |
 | [alloc::clone](alloc/clone.md) | [source](../../stdlib/alloc/clone.lani#L2) | 8 | Source inventory | [stdlib-clone](../stdlib-clone.md), [stdlib-owning-iterators](../stdlib-owning-iterators.md) |
 | [alloc::clone_binary_heap](alloc/clone_binary_heap.md) | [source](../../stdlib/alloc/clone_binary_heap.lani#L4) | 10 | Source inventory | [stdlib-clone-binary-heap](../stdlib-clone-binary-heap.md), [stdlib-owning-heap](../stdlib-owning-heap.md) |

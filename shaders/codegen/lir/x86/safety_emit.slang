@@ -173,6 +173,34 @@ void emit_guards(inout uint cursor, X86LirCore core, X86LirOperands operands,
     if ((core.op == X86_LIR_OP_INDEX_LOAD || core.op == X86_LIR_OP_INDEX_STORE ||
          core.op == X86_LIR_OP_INDEX_ADDRESS) && core.local_ordinal != 0xffffffffu)
     {
+        if (x86_guard_index_in_place(core, operands, locations))
+        {
+            // The index's own register against the bound: cmp idx, len |
+            // cmp idx, [rbp - len] | cmp idx, imm32.
+            uint index = x86_location_payload(locations.b);
+            if (core.local_ordinal != SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME)
+            {
+                if (index >= 8u) emit_u8(cursor, 0x41u);
+                emit_u8(cursor, 0x81u); emit_u8(cursor, 0xf8u | (index & 7u));
+                emit_u32(cursor, core.local_ordinal);
+            }
+            else if (x86_location_is_register(locations.length))
+            {
+                uint length = x86_location_payload(locations.length);
+                uint rex = 0x40u | (length >= 8u ? 4u : 0u) | (index >= 8u ? 1u : 0u);
+                if (rex != 0x40u) emit_u8(cursor, rex);
+                emit_u8(cursor, 0x39u); emit_u8(cursor, 0xc0u | ((length & 7u) << 3u) | (index & 7u));
+            }
+            else
+            {
+                if (index >= 8u) emit_u8(cursor, 0x44u);
+                emit_u8(cursor, 0x3bu);
+                emit_stack_modrm(cursor, index,
+                    value_slot(x86_location_payload(locations.length), function));
+            }
+            emit_trap_jump(cursor, 0x83u, bounds_trap); // jae
+            return;
+        }
         if (rhs_wide) load_value64(cursor, locations.b, 1u, function);
         else load_value32(cursor, locations.b, 1u, function);
         if (core.local_ordinal == SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME)

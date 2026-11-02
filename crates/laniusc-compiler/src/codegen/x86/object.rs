@@ -8,13 +8,48 @@ use crate::compiler::stable_name_hash;
 
 // Version 3 introduced (data, length, signed byte stride) slice values.
 // Version 4 appends the GPU-emitted CRT main bridge to each text section.
-pub const GPU_X86_OBJECT_VERSION: u32 = 4;
+// Version 5 records the object's body range and a relocation for every
+// reference into its native runtime copy (see `GpuX86ObjectBodyRange`).
+pub const GPU_X86_OBJECT_VERSION: u32 = 5;
 pub const GPU_X86_CRT_MAIN_BRIDGE_BYTES: u32 = 233;
 const GPU_X86_OBJECT_MAGIC: [u8; 8] = *b"LNX86OBJ";
-const HEADER_U32S: usize = 9;
+const HEADER_U32S: usize = 11;
 const RELOCATION_U32S: usize = 8;
 const SYMBOL_U32S: usize = 8;
 pub(crate) const GPU_X86_OBJECT_HEADER_BYTES: usize = 8 + HEADER_U32S * 4;
+
+/// The part of an object's text that is its own code.
+///
+/// A GPU-emitted object also carries a private copy of the shared native
+/// runtime around its body: the entry wrapper at `text[..start]` and the
+/// native runtime plus CRT bridge at `text[end..]`. Those bytes are identical
+/// in every object of one compiler build and keep no state of their own (the
+/// allocator's state lives in a page it maps at run time), and every body
+/// reference into them is a Text section-offset relocation at or past `end`.
+/// An executable link therefore keeps the runtime only from its entry object,
+/// copies just the body of every other object, and points those objects'
+/// runtime relocations at the entry object's copy.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GpuX86ObjectBodyRange {
+    pub start: u32,
+    pub end: u32,
+}
+
+impl GpuX86ObjectBodyRange {
+    fn from_words(start: u32, end: u32) -> Result<Option<Self>, String> {
+        match (start, end) {
+            (u32::MAX, u32::MAX) => Ok(None),
+            (u32::MAX, _) | (_, u32::MAX) => {
+                Err("x86 object body range is half present".to_string())
+            }
+            (start, end) => Ok(Some(Self { start, end })),
+        }
+    }
+
+    fn words(range: Option<Self>) -> [u32; 2] {
+        range.map_or([u32::MAX; 2], |range| [range.start, range.end])
+    }
+}
 
 /// Fixed-size object layout available without loading section payloads.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -28,6 +63,7 @@ pub(crate) struct GpuX86RelocatableObjectLayout {
     pub relocation_count: u32,
     pub symbol_count: u32,
     pub identity_byte_len: u32,
+    pub body: Option<GpuX86ObjectBodyRange>,
     pub serialized_byte_len: u64,
 }
 
@@ -61,6 +97,9 @@ impl GpuX86RelocatableObjectLayout {
         let relocation_count = read_u32(bytes, &mut cursor)?;
         let symbol_count = read_u32(bytes, &mut cursor)?;
         let identity_byte_len = read_u32(bytes, &mut cursor)?;
+        let body_start = read_u32(bytes, &mut cursor)?;
+        let body = GpuX86ObjectBodyRange::from_words(body_start, read_u32(bytes, &mut cursor)?)?;
+        validate_body_range(body, text_byte_len as usize)?;
         if entry_offset.is_some_and(|offset| offset >= text_byte_len) {
             return Err(format!(
                 "x86 object entry offset {} exceeds text length {text_byte_len}",
@@ -84,6 +123,7 @@ impl GpuX86RelocatableObjectLayout {
             relocation_count,
             symbol_count,
             identity_byte_len,
+            body,
             serialized_byte_len,
         })
     }
@@ -202,6 +242,7 @@ impl GpuX86LinkObjectMetadata {
         validate_link_object_columns(
             layout.version,
             layout.entry_offset,
+            layout.body,
             layout.text_byte_len as usize,
             layout.rodata_byte_len as usize,
             &relocations,
@@ -310,6 +351,7 @@ pub struct GpuX86RelocatableObject {
     pub library_id: u32,
     pub unit_id: u32,
     pub entry_offset: Option<u32>,
+    pub body: Option<GpuX86ObjectBodyRange>,
     pub text: Vec<u8>,
     pub rodata: Vec<u8>,
     pub relocations: Vec<GpuX86RelocationRecord>,
@@ -343,6 +385,7 @@ impl GpuX86RelocatableObject {
         validate_link_object_columns(
             self.version,
             self.entry_offset,
+            self.body,
             self.text.len(),
             self.rodata.len(),
             &self.relocations,
@@ -384,6 +427,8 @@ impl GpuX86RelocatableObject {
             self.relocations.len() as u32,
             self.symbols.len() as u32,
             self.identity_bytes.len() as u32,
+            GpuX86ObjectBodyRange::words(self.body)[0],
+            GpuX86ObjectBodyRange::words(self.body)[1],
         ] {
             push_u32(&mut bytes, word);
         }
@@ -439,6 +484,8 @@ impl GpuX86RelocatableObject {
         let relocation_count = read_count(bytes, &mut cursor, "relocation")?;
         let symbol_count = read_count(bytes, &mut cursor, "symbol")?;
         let identity_len = read_count(bytes, &mut cursor, "identity byte")?;
+        let body_start = read_u32(bytes, &mut cursor)?;
+        let body = GpuX86ObjectBodyRange::from_words(body_start, read_u32(bytes, &mut cursor)?)?;
 
         let text = read_bytes(bytes, &mut cursor, text_len, "text")?.to_vec();
         let rodata = read_bytes(bytes, &mut cursor, rodata_len, "rodata")?.to_vec();
@@ -487,6 +534,7 @@ impl GpuX86RelocatableObject {
             library_id,
             unit_id,
             entry_offset,
+            body,
             text,
             rodata,
             relocations,
@@ -498,9 +546,23 @@ impl GpuX86RelocatableObject {
     }
 }
 
+fn validate_body_range(body: Option<GpuX86ObjectBodyRange>, text_len: usize) -> Result<(), String> {
+    if let Some(body) = body
+        && (body.start > body.end || body.end as usize > text_len)
+    {
+        return Err(format!(
+            "x86 object body range {}..{} exceeds text length {text_len}",
+            body.start, body.end
+        ));
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn validate_link_object_columns(
     version: u32,
     entry_offset: Option<u32>,
+    body: Option<GpuX86ObjectBodyRange>,
     text_len: usize,
     rodata_len: usize,
     relocations: &[GpuX86RelocationRecord],
@@ -518,6 +580,7 @@ pub(crate) fn validate_link_object_columns(
             entry_offset.expect("checked as present")
         ));
     }
+    validate_body_range(body, text_len)?;
     let section_len = |section| match section {
         GpuX86ObjectSection::Undefined => None,
         GpuX86ObjectSection::Text => Some(text_len),
@@ -654,6 +717,7 @@ mod tests {
             library_id: 7,
             unit_id: 11,
             entry_offset: Some(0),
+            body: Some(GpuX86ObjectBodyRange { start: 0, end: 5 }),
             text: vec![0xe8, 0, 0, 0, 0, 0xc3],
             rodata: b"hello\0".to_vec(),
             relocations: vec![GpuX86RelocationRecord {
@@ -694,6 +758,7 @@ mod tests {
             layout.identity_byte_len as usize,
             object.identity_bytes.len()
         );
+        assert_eq!(layout.body, object.body);
         assert_eq!(layout.serialized_byte_len as usize, bytes.len());
         assert_eq!(
             GpuX86RelocatableObject::from_bytes(&bytes).expect("parse object"),
@@ -703,7 +768,7 @@ mod tests {
 
     #[test]
     fn x86_objects_reject_pre_stride_abi_versions() {
-        for version in [1u32, 2u32] {
+        for version in [1u32, 2u32, 4u32] {
             let mut object = object_fixture();
             let mut bytes = object.to_bytes().expect("current object");
             bytes[8..12].copy_from_slice(&version.to_le_bytes());
@@ -719,6 +784,10 @@ mod tests {
         let mut bad_site = object_fixture();
         bad_site.relocations[0].site_offset = bad_site.text.len() as u32;
         assert!(bad_site.validate().is_err());
+
+        let mut bad_body = object_fixture();
+        bad_body.body = Some(GpuX86ObjectBodyRange { start: 0, end: 7 });
+        assert!(bad_body.validate().is_err());
 
         let mut bad_symbol = object_fixture();
         bad_symbol.symbols[0].identity_hash_lo ^= 1;

@@ -2158,13 +2158,98 @@ If `F` cannot overflow along any path, it has no `b` and no `Pre_F`.
   (`qcall_of_okW`). `bclosed` takes four premises: the run has a value at
   the fuel `D` (its call depth), its cost there is `Cost_F D`, `Cost_F`
   is the same past `D` (by `rfl`), and there is no run below `D`. From
-  these it gives the certificate at every fuel. 350 of the 2,255 functions
-  take this path.
+  these it gives the certificate at every fuel. (11-02: 54 functions, the
+  costly ones; the free ones take `bfree`, below.)
 - Proofs: the `budget` tactic (`Faithful/BudgetTactic.lean`) runs the two
   `qcall`s in lockstep. It steps through calls with the callee's
   certificate, prims, `addC`, condition splits and `Rep` cases, and it
   closes each path's cost with `omega`. Groups of recursive functions are
   proved by induction on fuel.
+
+Decided 11-02 (F14), regenerating against F11b's `qstmt`/`qloop`/`qpop`
+and extending the certificates to every function that `front_end_words`,
+`grammar` and `compile_words` reach:
+
+- A function that reaches neither `boxed`, `plus` nor `times` (and none of
+  its callees do) is not proved step by step either (`BudgetFree.lean`).
+  Its run of `progW` is the self program's at cost 0 for a syntactic
+  reason: its body calls only such functions (`SrcStmt.callsOk`), and
+  `qstmt_z` carries "same value, cost 0" (`ZLe`) through any body whose
+  calls have it. The set is the bits of one number, `GenB.SelfBFree.freeMask`
+  (the functions and the unboxed prims they call), and `freeCheck` checks
+  the whole self program against it once, by `decide +kernel` (11 s). Each
+  such function's certificate is then `bfree` plus its `SelfCert`
+  certificate, with no stepping. The set's soundness does not depend on the
+  generator: a wrong bit fails the kernel's check. 838 of the 2,244
+  functions take this path: 537 that were proved step by step, `is_link` (a
+  70-operand `||` chain, 2m46) among them, and 301 argument-free ones that
+  were evaluated by `bclosed`. 54 costly argument-free builders keep
+  `bclosed`; 1,352 are proved by `budget`.
+- The tactic runs `qpop` (a `let`'s body) by rules that move it inside
+  `qthen`, `addC`, `bind` and `ite`, and looks through it for the call a
+  run waits on.
+- No BitVec literal reductions in the tactic's simp set: they turned
+  `u64`/`i32` literals into forms `Rep` lemmas do not match. A shift by a
+  constant leaves a closed `Nat` comparison (`(8#32).toNat < 32`), which
+  two simprocs decide (`closedNatLt`, and `closedNatEq` for small terms).
+- Budgets are generalized (`B - c` to a fresh `bud`) as each cost is taken
+  off, so terms do not grow along a path. A boxed call `addC m` with
+  `m > 1` steps one block at a time.
+- Before `omega`, duplicate costs of one call made twice are merged
+  (`mergeCosts`), as are duplicate case splits (`mergeCases`); `omega` runs
+  on a goal with only the cost facts (`omegaAlone`), since with ~100
+  hypotheses in context it took minutes on `host_read_code`.
+- The models share an `if`'s branches through `let` when a lazy `&&`/`||`
+  condition would copy them (`Pre_let_first` 199 KB to under 20 KB), and the
+  model modules elaborate with `Elab.async false`: asynchronous elaboration
+  took one part 70 s instead of 10 s. Proof modules stay asynchronous
+  (15.7 s against 30 s).
+- The generator's `/` was written as `%` (it compared against `divide`, the
+  source says `quotient`); `frame_size` and `arg_base` exposed it.
+- Speed (11-02, after `let_first` took 70 s and `stmt_of` 45 s). Three
+  costs grew faster than the body:
+  - Instantiating the metavariables of a whole proof at once (17 s of
+    `let_first`). `budget` now works depth first and proves each case of a
+    split on a fresh goal, assigned with its proof instantiated
+    (`instantiateCase`). An auxiliary theorem per case did the same, but
+    its kernel checks cost more than the one check of the whole.
+  - `simp` over the whole run at every step. `qsimp` now simplifies a run's
+    head only (`headPre`, a `simp` pre-method). For `qthen`, `bind` and
+    `Out.qthen` it simplifies the first argument, for an `if` the condition,
+    and for the goal's `∧` its left side; then it tries the rules at the
+    node. A continuation is simplified when it becomes the head.
+  - Building `qsimp`'s simp context, with `qstmt`'s and the others'
+    equations, at every call (16 ms). It is made once per module
+    (`qsimpCache`).
+  A call's runs (`hc`, `hq`) are cleared once used. `let_first` went from
+  70 s to about 25 s of one thread, and `SelfBProof53` from 112 s to 69 s.
+  The proof modules are now cut by estimated work, not by characters:
+  `proof_work` is about `(body length / 1000) ^ 1.5` seconds, and each
+  module holds up to 30 of them. That gives 74 modules, with the few
+  25-35 s certificates (`let_first`, `for_of`, `SrcStmt_lower`,
+  `stmt_of`) about alone. A module takes 15-20 s alone (`SelfBProof3`:
+  16 s on 11-02, with other agents loading the machine).
+
+Decided 11-02 (F14, proving the roots' preconditions): a cost model whose
+fuel runs out costs `2 ^ 64`, not 0 (`Cost_F 0 x = 18446744073709551616`,
+the numeral, since Lean unfolds `2 ^ 64` one step at a time).
+- Why: `Pre_F n` follows a call of `G` with its cost at fuel `n`. Where a
+  list is bounded only by the blocks that built it (the monomorphizer's
+  instances, the compiler's code), the bound a later `plus` needs is "`G`'s
+  result is at most its arguments and `Cost_G n y`". With `Cost_G 0 = 0`
+  that fails wherever fuel `n` is too small for `G`: the Lean value is
+  whole and the cost cut short, so `Pre_F N` need not follow from Lean
+  facts at all. With `2 ^ 64`, a cut-short cost is above any budget, so
+  what follows the call in `Pre_F` is vacuous, and the bound only has to
+  hold where `Cost_G n y < 2 ^ 64`.
+- The certificates do not change: a run at fuel 0 has no value, so they
+  never use `Cost_F 0`. `bfree`'s functions have no cost model (their cost
+  is 0 at every fuel), and `bclosed` evaluates its model at the fuel `D`
+  the run needs, where no model is at fuel 0; both still hold as they were.
+- Proofs about the preconditions should not `match` on a fuel while a
+  hypothesis mentions a cost at it (Lean then reduces `Cost_G 0 ..` with
+  the numeral and runs out of recursion depth): the guards' hypotheses are
+  cleared first (`SelfPre/Validate.lean`).
 
 ## One-word scalar views (decided 11-01, F11b)
 

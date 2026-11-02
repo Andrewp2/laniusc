@@ -1,0 +1,143 @@
+// alloc::btree_set against alloc::tree_set: random inserts, replacements and
+// removals over three key spaces with endpoint, bound, iteration and range
+// checks; set algebra and subset/disjoint/equality on random pairs; sorted
+// construction, cloning, the sinks, and representative rules on a record key.
+// Exit 0, or the number of the failing check.
+module app::main;
+import alloc::btree_map;
+import alloc::btree_set;
+import alloc::tree_set;
+import alloc::vec;
+import core::cmp;
+import core::iter;
+import core::option;
+import core::result;
+fn same(a: core::option::Option<i32>, b: core::option::Option<i32>) -> bool {
+    if (a.is_none() || b.is_none()) { return a.is_none() && b.is_none(); }
+    return a.unwrap() == b.unwrap();
+}
+// Equal contents in both directions.
+fn equal(mine: &alloc::btree_set::BTreeSet<i32>, model: &alloc::tree_set::TreeSet<i32>) -> bool {
+    if (mine.len() != model.len()) { return false; }
+    let a: alloc::btree_set::Cursor<i32> = mine.iter(); let b: alloc::tree_set::Cursor<i32> = model.iter();
+    while (!b.is_empty()) { if (!same(a.next(), b.next())) { return false; } }
+    if (!a.is_empty()) { return false; }
+    a = mine.iter(); b = model.iter();
+    while (!b.is_empty()) { if (!same(a.next_back(), b.next_back())) { return false; } }
+    return a.is_empty();
+}
+struct Rng { state: u32 }
+impl Rng {
+    fn borrow(&self) -> &Rng { return self; }
+    fn next(&self) -> u32 { self.state = self.state * 1664525 + 1013904223; return self.state >> 8; }
+}
+fn filled(space: i32, count: i32, state: &Rng, mine: &alloc::btree_set::BTreeSet<i32>, model: &alloc::tree_set::TreeSet<i32>) {
+    let index: i32 = 0;
+    while (index < count) { let key: i32 = (state.next() % (space as u32)) as i32; core::result::unwrap(mine.try_insert(key)); core::result::unwrap(model.try_insert(key)); index += 1; }
+}
+fn algebra(space: i32, a_count: i32, b_count: i32, state: &Rng) -> i32 {
+    let a: alloc::btree_set::BTreeSet<i32> = alloc::btree_set::new(); let b: alloc::btree_set::BTreeSet<i32> = alloc::btree_set::new();
+    let ma: alloc::tree_set::TreeSet<i32> = alloc::tree_set::new(); let mb: alloc::tree_set::TreeSet<i32> = alloc::tree_set::new();
+    filled(space, a_count, state, a.borrow(), ma.borrow()); filled(space, b_count, state, b.borrow(), mb.borrow());
+    let mode: i32 = 1;
+    while (mode <= 4) {
+        let mine: alloc::btree_set::BTreeSet<i32> = alloc::btree_set::new(); let theirs: alloc::tree_set::TreeSet<i32> = alloc::tree_set::new();
+        if (mode == 1) { mine = core::result::unwrap(a.try_union(b.borrow())); theirs = core::result::unwrap(ma.try_union(mb.borrow())); }
+        if (mode == 2) { mine = core::result::unwrap(a.try_intersection(b.borrow())); theirs = core::result::unwrap(ma.try_intersection(mb.borrow())); }
+        if (mode == 3) { mine = core::result::unwrap(a.try_difference(b.borrow())); theirs = core::result::unwrap(ma.try_difference(mb.borrow())); }
+        if (mode == 4) { mine = core::result::unwrap(a.try_symmetric_difference(b.borrow())); theirs = core::result::unwrap(ma.try_symmetric_difference(mb.borrow())); }
+        if (!equal(mine.borrow(), theirs.borrow())) { return mode; }
+        // The result is a working set: edit it a little.
+        if (mine.len() > 0) { let low: i32 = core::option::unwrap(mine.first()); if (!same(mine.remove(low), theirs.remove(low)) || !equal(mine.borrow(), theirs.borrow())) { return 5; } }
+        mine.destroy(); theirs.destroy(); mode += 1;
+    }
+    if (a.is_subset(b.borrow()) != ma.is_subset(mb.borrow()) || b.is_subset(a.borrow()) != mb.is_subset(ma.borrow())) { return 6; }
+    if (a.is_disjoint(b.borrow()) != ma.is_disjoint(mb.borrow()) || a.equals(b.borrow()) != ma.equals(mb.borrow())) { return 7; }
+    // Aliased operands.
+    let self_union: alloc::btree_set::BTreeSet<i32> = core::result::unwrap(a.try_union(a.borrow()));
+    let self_difference: alloc::btree_set::BTreeSet<i32> = core::result::unwrap(a.try_difference(a.borrow()));
+    if (!equal(self_union.borrow(), ma.borrow()) || !self_difference.is_empty() || !a.is_subset(a.borrow()) || !a.equals(self_union.borrow())) { return 8; }
+    self_union.destroy(); self_difference.destroy(); a.destroy(); b.destroy(); ma.destroy(); mb.destroy();
+    return 0;
+}
+struct Identity { order: i32, id: i32 }
+pub impl core::cmp::Ord<Identity> for Identity {
+    pub fn lt(a: Identity, b: Identity) -> bool { return a.order < b.order; }
+    pub fn le(a: Identity, b: Identity) -> bool { return a.order <= b.order; }
+    pub fn gt(a: Identity, b: Identity) -> bool { return a.order > b.order; }
+    pub fn ge(a: Identity, b: Identity) -> bool { return a.order >= b.order; }
+}
+fn accept<S>(sink: &S, item: i32) -> core::option::Option<alloc::btree_map::SinkError> where S: core::iter::TrySink<i32, alloc::btree_map::SinkError> { return sink.try_accept(item); }
+fn replace<S>(sink: &S, item: Identity) -> core::result::Result<core::option::Option<Identity>, alloc::btree_map::Error> where S: core::iter::TryReplaceSink<Identity, alloc::btree_map::Error> { return sink.try_replace_item(item); }
+fn main() -> i32 {
+    let state: Rng = Rng { state: 12345 };
+    let spaces: [i32; 3] = [40, 3000, 200000]; let which: i32 = 0;
+    while (which < 3) {
+        let space: i32 = spaces[which];
+        let mine: alloc::btree_set::BTreeSet<i32> = alloc::btree_set::new(); let model: alloc::tree_set::TreeSet<i32> = alloc::tree_set::new();
+        let step: i32 = 0;
+        while (step < 30000) {
+            let key: i32 = (state.next() % (space as u32)) as i32; let choice: u32 = state.next() % 8;
+            if (choice < 4) {
+                let a: core::option::Option<i32> = core::result::unwrap(mine.try_insert(key)); let b: core::option::Option<i32> = core::result::unwrap(model.try_insert(key));
+                if (!same(a, b)) { return 20; }
+            } else {
+                if (choice < 5) { if (!same(core::result::unwrap(mine.try_replace(key)), core::result::unwrap(model.try_replace(key)))) { return 21; } }
+                else {
+                    if (choice < 7) { if (!same(mine.remove(key), model.remove(key))) { return 22; } }
+                    else {
+                        if (mine.contains(key) != model.contains(key) || !same(mine.get(key), model.get(key))) { return 23; }
+                        if (!same(mine.lower_bound(key), model.lower_bound(key)) || !same(mine.upper_bound(key), model.upper_bound(key))) { return 24; }
+                        if (!same(mine.first(), model.first()) || !same(mine.last(), model.last())) { return 25; }
+                        let upper: i32 = key + (state.next() % 64) as i32;
+                        let r: alloc::btree_set::Cursor<i32> = core::result::unwrap(mine.range(key, upper)); let s: alloc::tree_set::Cursor<i32> = core::result::unwrap(model.range(key, upper));
+                        while (!s.is_empty()) { if (!same(r.next_back(), s.next_back())) { return 26; } }
+                        if (!r.is_empty()) { return 27; }
+                    }
+                }
+            }
+            step += 1;
+        }
+        if (!equal(mine.borrow(), model.borrow())) { return 28; }
+        // Clone, then drain from both ends.
+        let copy: alloc::btree_set::BTreeSet<i32> = core::result::unwrap(mine.try_clone());
+        if (!equal(copy.borrow(), model.borrow())) { return 29; }
+        while (!model.is_empty()) {
+            if (!same(copy.pop_first(), model.pop_first())) { return 30; }
+            if (!same(copy.pop_last(), model.pop_last())) { return 31; }
+        }
+        if (!copy.is_empty() || mine.is_empty()) { return 32; }
+        copy.destroy(); mine.destroy(); model.destroy(); which += 1;
+    }
+    let trial: i32 = 0;
+    while (trial < 12) {
+        let space: i32 = 50; if (trial >= 4) { space = 5000; } if (trial >= 8) { space = 400000; }
+        let result: i32 = algebra(space, (trial % 4) * 700, ((trial + 1) % 4) * 500, state.borrow());
+        if (result != 0) { return 40 + result; }
+        trial += 1;
+    }
+    // Sorted construction and order errors.
+    let sorted: alloc::vec::Vec<i32> = alloc::vec::new(); let index: i32 = 0;
+    while (index < 5000) { core::result::unwrap(sorted.try_push(7 * index)); index += 1; }
+    let built: alloc::btree_set::BTreeSet<i32> = core::result::unwrap(alloc::btree_set::from_sorted(sorted.as_view()));
+    if (built.len() != 5000 || !built.contains(7 * 4999) || built.contains(1) || core::option::unwrap(built.upper_bound(7)) != 14) { return 60; }
+    built.destroy(); core::result::unwrap(sorted.try_push(7 * 4999));
+    let repeated: core::result::Result<alloc::btree_set::BTreeSet<i32>, alloc::btree_map::Error> = alloc::btree_set::from_sorted(sorted.as_view());
+    if (core::result::is_ok(repeated)) { return 61; } sorted.destroy();
+    // Sinks and representatives.
+    let sink: alloc::btree_set::BTreeSet<i32> = alloc::btree_set::new();
+    if (accept(sink.borrow(), 4).is_some() || accept(sink.borrow(), 4).is_none() || sink.len() != 1) { return 62; } sink.destroy();
+    let people: alloc::btree_set::BTreeSet<Identity> = alloc::btree_set::new();
+    core::result::unwrap(people.try_insert(Identity { order: 1, id: 10 }));
+    let kept: Identity = core::option::unwrap(core::result::unwrap(people.try_insert(Identity { order: 1, id: 11 })));
+    if (kept.id != 11 || core::option::unwrap(people.get(Identity { order: 1, id: 0 })).id != 10) { return 63; }
+    let displaced: Identity = core::option::unwrap(core::result::unwrap(replace(people.borrow(), Identity { order: 1, id: 12 })));
+    if (displaced.id != 10 || core::option::unwrap(people.get(Identity { order: 1, id: 0 })).id != 12) { return 64; }
+    let others: alloc::btree_set::BTreeSet<Identity> = alloc::btree_set::new();
+    core::result::unwrap(others.try_insert(Identity { order: 1, id: 20 })); core::result::unwrap(others.try_insert(Identity { order: 2, id: 21 }));
+    let union: alloc::btree_set::BTreeSet<Identity> = core::result::unwrap(people.try_union(others.borrow()));
+    let both: alloc::btree_set::BTreeSet<Identity> = core::result::unwrap(others.try_intersection(people.borrow()));
+    if (union.len() != 2 || core::option::unwrap(union.first()).id != 12 || core::option::unwrap(union.last()).id != 21 || core::option::unwrap(both.first()).id != 20) { return 65; }
+    union.destroy(); both.destroy(); people.destroy(); others.destroy();
+    return 0;
+}

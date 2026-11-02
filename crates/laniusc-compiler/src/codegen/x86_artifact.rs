@@ -35,7 +35,8 @@ struct X86ArtifactParams {
     target_start: u32,
     page_capacity: u32,
     semantic_capacity: u32,
-    reserved1: u32,
+    /// Rows of `x86_runtime_reference`; zero when no object is projected.
+    runtime_reference_capacity: u32,
 }
 
 #[derive(Clone, Copy)]
@@ -109,6 +110,14 @@ impl GpuX86ArtifactStage {
         let runtime_dispatch_args_buffer = alias_u32("lir.x86.runtime_dispatch_args", 3)?;
         let token_capacity = capacities.declaration_capacity();
         let function_capacity = capacities.hir_nodes.max(1);
+        let runtime_reference_capacity = if graph
+            .resource_id("artifact.x86.object.runtime_relocations")
+            .is_some()
+        {
+            target_capacity
+        } else {
+            0
+        };
         let params = (0..emit_capacity.div_ceil(TARGET_LIR_PAGE_ROWS))
             .map(|page_id| {
                 let target_start = page_id * TARGET_LIR_PAGE_ROWS;
@@ -125,7 +134,7 @@ impl GpuX86ArtifactStage {
                             .saturating_sub(target_start)
                             .min(TARGET_LIR_PAGE_ROWS),
                         semantic_capacity: capacities.semantic_instructions.max(1),
-                        reserved1: 0,
+                        runtime_reference_capacity,
                     },
                 )
             })
@@ -563,7 +572,7 @@ mod tests {
             parameters: 1,
             aggregate_elements: 1,
             target_instructions: 12,
-            artifact_bytes: 4096,
+            artifact_bytes: 8192,
         };
         let graph = lowering_compiler_graph_for_artifact(
             capacities,
@@ -576,8 +585,7 @@ mod tests {
         let status: LaniusBuffer<LoweringStatus> = workspace
             .alias(&graph, graph.resource_id("lowering.status").unwrap(), 1)
             .unwrap();
-        gpu.queue
-            .write_buffer(&status.buffer, 0, &records(&[[0, u32::MAX, 0, u32::MAX]]));
+        status.write(&gpu.queue, 0, &records(&[[0, u32::MAX, 0, u32::MAX]]));
 
         let semantic_total =
             storage_ro_from_u32s(&gpu.device, "test.x86_artifact.sem.total", &[12]);
@@ -615,7 +623,7 @@ mod tests {
         let aggregate_elements = storage_ro_from_bytes::<SemanticLirAggregateElement>(
             &gpu.device,
             "test.x86_artifact.sem.aggregate",
-            &records(&[[u32::MAX; 4]; 2]),
+            &records(&[[u32::MAX; 8]; 2]),
             2,
         );
         let strings = storage_ro_from_bytes::<SemanticLirString>(
@@ -640,7 +648,7 @@ mod tests {
         let semantic_params = storage_ro_from_bytes::<SemanticLirParam>(
             &gpu.device,
             "test.x86_artifact.sem.params",
-            &records(&[[0, 0, 0, 3]]),
+            &records(&[[0, 0, 0, 3, 0]]),
             1,
         );
         let semantic_locals = storage_ro_from_bytes::<SemanticLirLocal>(
@@ -744,12 +752,8 @@ mod tests {
                 2,
             )
             .unwrap();
-        gpu.queue
-            .write_buffer(&total.buffer, 0, &12u32.to_le_bytes());
-        gpu.queue.write_buffer(
-            &core.buffer,
-            0,
-            &records(&[
+        total.write(&gpu.queue, 0, &12u32.to_le_bytes());
+        core.write(&gpu.queue, 0, &records(&[
                 [0, 0, opcode::X86_LIR_OP_IMM_I32, 0],
                 [1, 0, opcode::X86_LIR_OP_IMM_I32, 1],
                 [2, 0, opcode::X86_LIR_OP_BINARY, 2],
@@ -764,10 +768,7 @@ mod tests {
                 [11, 0, opcode::X86_LIR_OP_RETURN, u32::MAX],
             ]),
         );
-        gpu.queue.write_buffer(
-            &operands.buffer,
-            0,
-            &records(&[
+        operands.write(&gpu.queue, 0, &records(&[
                 [1.5f32.to_bits(), 0, 0, 5],
                 [2.0f32.to_bits(), 0, 0, 5],
                 [opcode::X86_LIR_BINARY_ADD_FLOAT, 0, 1, 5],
@@ -782,42 +783,29 @@ mod tests {
                 [10, 0, 0, 0],
             ]),
         );
-        gpu.queue.write_buffer(
-            &locations.buffer,
-            0,
-            &records(&[
-                [0, 0, 0, 0],
-                [1, 0, 0, 0],
-                [2, 0, 1, 0],
-                [3, 0, 0, 0],
-                [4, 0, 2, 3],
-                [u32::MAX, 4, 0, 0],
-                [6, 0, 0, 0],
-                [u32::MAX, 6, 0, 0],
-                [8, 0, 0, 0],
-                [u32::MAX, 8, 0, 0],
-                [10, 0, 0, 0],
-                [u32::MAX, 10, 0, 0],
+        // X86LirLocations rows: result, a, b, c, slice-length home (none).
+        locations.write(&gpu.queue, 0, &records(&[
+                [0, 0, 0, 0, u32::MAX],
+                [1, 0, 0, 0, u32::MAX],
+                [2, 0, 1, 0, u32::MAX],
+                [3, 0, 0, 0, u32::MAX],
+                [4, 0, 2, 3, u32::MAX],
+                [u32::MAX, 4, 0, 0, u32::MAX],
+                [6, 0, 0, 0, u32::MAX],
+                [u32::MAX, 6, 0, 0, u32::MAX],
+                [8, 0, 0, 0, u32::MAX],
+                [u32::MAX, 8, 0, 0, u32::MAX],
+                [10, 0, 0, 0, u32::MAX],
+                [u32::MAX, 10, 0, 0, u32::MAX],
             ]),
         );
-        gpu.queue.write_buffer(
-            &semantic_origins.buffer,
-            0,
-            &records(&[[0], [1], [2], [3], [4], [5], [6], [7], [8], [9], [10], [11]]),
+        semantic_origins.write(&gpu.queue, 0, &records(&[[0], [1], [2], [3], [4], [5], [6], [7], [8], [9], [10], [11]]),
         );
-        gpu.queue
-            .write_buffer(&function_count.buffer, 0, &2u32.to_le_bytes());
-        gpu.queue.write_buffer(
-            &functions.buffer,
-            0,
-            &records(&[[0, 0, 6, 0], [1, 6, 6, 0]]),
+        function_count.write(&gpu.queue, 0, &2u32.to_le_bytes());
+        functions.write(&gpu.queue, 0, &records(&[[0, 0, 6, 0], [1, 6, 6, 0]]),
         );
-        gpu.queue
-            .write_buffer(&function_index_by_semantic.buffer, 0, &records(&[[0], [1]]));
-        gpu.queue.write_buffer(
-            &declaration_locations.buffer,
-            0,
-            &records(&[
+        function_index_by_semantic.write(&gpu.queue, 0, &records(&[[0], [1]]));
+        declaration_locations.write(&gpu.queue, 0, &records(&[
                 [6],
                 [u32::MAX],
                 [u32::MAX],
@@ -828,8 +816,7 @@ mod tests {
                 [u32::MAX],
             ]),
         );
-        gpu.queue
-            .write_buffer(&saved_masks.buffer, 0, &records(&[[0], [0]]));
+        saved_masks.write(&gpu.queue, 0, &records(&[[0], [0]]));
 
         let kernels = KernelRegistry::prepare_prefixes(
             &gpu.device,

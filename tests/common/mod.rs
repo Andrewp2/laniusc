@@ -16,6 +16,7 @@ use std::{
         Arc,
         Mutex,
         MutexGuard,
+        RwLock,
         atomic::{AtomicU64, Ordering},
         mpsc,
     },
@@ -60,6 +61,16 @@ use log::warn;
 static TEMP_ARTIFACT_COUNTER: AtomicU64 = AtomicU64::new(0);
 // libtest runs cases concurrently; start GPU timeouts after queued work gets the device.
 static GPU_TEST_LOCK: Mutex<()> = Mutex::new(());
+// Exec of a file fails with ETXTBSY while any process holds it open for
+// writing. Rust opens files O_CLOEXEC, but a thread that forks copies the
+// whole descriptor table into its child, which keeps a sibling thread's
+// still-open write descriptor until it execs. So artifact writes (open to
+// close) hold this lock shared and spawns hold it exclusively: no fork
+// copies a write descriptor of a test artifact. Forks outside this file (the
+// compiler's own children) are covered by retrying the spawn.
+static ARTIFACT_WRITE_LOCK: RwLock<()> = RwLock::new(());
+const ETXTBSY: i32 = 26;
+const ETXTBSY_RETRIES: u32 = 200;
 // Focused GPU behavior tests are intentionally tiny, but a cold process may
 // still pay one-time shader pipeline creation before it reaches the behavior
 // under test. Keep this guard above observed cold frontend/type-checker init
@@ -98,6 +109,7 @@ impl TempArtifact {
     pub fn write_bytes(&self, contents: impl AsRef<[u8]>) {
         let contents = contents.as_ref();
         x86_jumps::assert_x86_64_jumps_stay_in_functions(self.path.display(), contents);
+        let _no_fork = ARTIFACT_WRITE_LOCK.read().unwrap_or_else(|poison| poison.into_inner());
         fs::write(&self.path, contents).unwrap_or_else(|err| {
             panic!("write temporary artifact {}: {err}", self.path.display())
         });
@@ -390,6 +402,26 @@ const PIPE_READER_GRACE: Duration = Duration::from_secs(2);
 /// How much of each stream a timeout message repeats, from the end.
 const TIMEOUT_OUTPUT_TAIL_BYTES: usize = 4096;
 
+/// Spawns `command` while no artifact write is open (ARTIFACT_WRITE_LOCK),
+/// retrying while another process's fork still holds the executable open.
+fn spawn_without_artifact_writers(command: &mut Command) -> io::Result<std::process::Child> {
+    let mut attempt = 0;
+    loop {
+        let spawned = {
+            let _writers_closed =
+                ARTIFACT_WRITE_LOCK.write().unwrap_or_else(|poison| poison.into_inner());
+            command.spawn()
+        };
+        match spawned {
+            Err(err) if err.raw_os_error() == Some(ETXTBSY) && attempt < ETXTBSY_RETRIES => {
+                attempt += 1;
+                thread::sleep(Duration::from_millis(5));
+            }
+            result => return result,
+        }
+    }
+}
+
 fn command_output_result_with_timeout(
     context: impl fmt::Display,
     command: &mut Command,
@@ -397,14 +429,9 @@ fn command_output_result_with_timeout(
     details: TimeoutDetails,
 ) -> io::Result<Output> {
     let context = context.to_string();
-    let mut child = match command
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-    {
-        Ok(child) => child,
-        Err(err) => return Err(err),
-    };
+    let mut child = spawn_without_artifact_writers(
+        command.stdout(Stdio::piped()).stderr(Stdio::piped()),
+    )?;
     // Read both pipes while the child runs. A child that prints more than a
     // pipe holds (64 KiB on Linux) blocks in write until someone reads, so
     // reading only after it exits hangs it until the timeout. objdump's

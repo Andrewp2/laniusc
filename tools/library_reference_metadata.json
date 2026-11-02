@@ -40,6 +40,19 @@
         "docs/stdlib-bitset-owned.md"
       ]
     },
+    "alloc::btree_map": {
+      "guides": [
+        "docs/stdlib-btree-map.md",
+        "docs/stdlib-tree-map.md"
+      ],
+      "note": "B+ tree ordered map: 16 entries per leaf, linked leaves, parallel node arrays grown by doubling. Same Ord/Entry/Cursor conventions as alloc::tree_map. Inserts reserve height+1 nodes before editing, so AllocationFailed leaves the map unchanged; replacement, removal, lookup and iteration never allocate. Model (against alloc::tree_map), type and RLIMIT_AS failure fixtures exit 0 on native Linux x86_64; at 1,048,576 keys iteration is about 2.2x faster than the AVL map, key-order lookups 23% and scattered lookups 8-14% faster, insertion-order lookups about 2x slower (allocation-order locality favors one-node-per-key trees). from_sorted (InvalidOrder before allocating), try_clone and Builder build exactly sized trees in O(n) with leaves of 8-16 entries; TrySink rejects equivalent keys keeping the stored entry, TryReplaceSink replaces and returns the old entry."
+    },
+    "alloc::btree_set": {
+      "guides": [
+        "docs/stdlib-btree-map.md"
+      ],
+      "note": "Ordered set on alloc::btree_map's B+ tree (keys of a map with a zero-sized value). tree_set representative rules: try_insert keeps the stored equal key and returns the supplied one, try_replace returns the displaced one. Union/intersection/difference/symmetric difference are two linear merges (count, then an exactly sized build); left representatives win, operands may alias, Err allocates nothing. Errors are alloc::btree_map::Error and SinkError. Checked against alloc::tree_set on native Linux x86_64."
+    },
     "alloc::buffered": {
       "guides": [
         "docs/stdlib-buffered.md",

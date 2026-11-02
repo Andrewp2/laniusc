@@ -3823,6 +3823,18 @@ mod tests {
             "test.empty_type_instances",
             &vec![u32::MAX; (capacities.tokens * 4) as usize],
         );
+        // The constant arenas are writable bindings, so they need their own
+        // allocations rather than the shared read-only empty rows.
+        let empty_constant_projections = storage_ro_from_u32s(
+            &gpu.device,
+            "test.empty_constant_projections",
+            &vec![u32::MAX; (capacities.tokens * 4) as usize],
+        );
+        let empty_constant_atoms = storage_ro_from_u32s(
+            &gpu.device,
+            "test.empty_constant_atoms",
+            &vec![u32::MAX; (capacities.tokens * 4) as usize],
+        );
         let empty_instance_row_count =
             storage_ro_from_u32s(&gpu.device, "test.empty_instance_row_count", &[0]);
         let argument_modes = storage_ro_from_u32s(
@@ -3874,8 +3886,8 @@ mod tests {
             type_instance_arg_row_ref_payload: &empty_type_instances,
             type_generic_param_slot: &empty_type_instances,
             type_const_param_slot: &empty_type_instances,
-            checked_constant_atoms: &empty_type_instances,
-            checked_constant_projections: &empty_type_instances,
+            checked_constant_atoms: &empty_constant_atoms,
+            checked_constant_projections: &empty_constant_projections,
             type_const_param_scalar: &empty_type_instances,
             type_const_param_value: &empty_type_instances,
             array_length_by_hir: &semantic_array_lengths,
@@ -4181,6 +4193,18 @@ mod tests {
             "test.empty_type_instances",
             &vec![u32::MAX; (capacities.tokens * 4) as usize],
         );
+        // The constant arenas are writable bindings, so they need their own
+        // allocations rather than the shared read-only empty rows.
+        let empty_constant_projections = storage_ro_from_u32s(
+            &gpu.device,
+            "test.empty_constant_projections",
+            &vec![u32::MAX; (capacities.tokens * 4) as usize],
+        );
+        let empty_constant_atoms = storage_ro_from_u32s(
+            &gpu.device,
+            "test.empty_constant_atoms",
+            &vec![u32::MAX; (capacities.tokens * 4) as usize],
+        );
         let empty_instance_row_count =
             storage_ro_from_u32s(&gpu.device, "test.empty_instance_row_count", &[0]);
         let argument_modes = storage_ro_from_u32s(
@@ -4232,8 +4256,8 @@ mod tests {
             type_instance_arg_row_ref_payload: &empty_type_instances,
             type_generic_param_slot: &empty_type_instances,
             type_const_param_slot: &empty_type_instances,
-            checked_constant_atoms: &empty_type_instances,
-            checked_constant_projections: &empty_type_instances,
+            checked_constant_atoms: &empty_constant_atoms,
+            checked_constant_projections: &empty_constant_projections,
             type_const_param_scalar: &empty_type_instances,
             type_const_param_value: &empty_type_instances,
             array_length_by_hir: &semantic_array_lengths,
@@ -4409,7 +4433,9 @@ mod tests {
             semantic_instructions: 4,
             call_arguments: 1,
             parameters: 1,
-            aggregate_elements: 4,
+            // As LoweringCapacities sizes it: elements, then one `?` row per
+            // HIR node (semantic/aggregate_elements).
+            aggregate_elements: 8,
             target_instructions: 8,
             artifact_bytes: 64,
         };
@@ -4468,6 +4494,18 @@ mod tests {
             "test.empty_type_instances",
             &vec![u32::MAX; (capacities.tokens * 4) as usize],
         );
+        // The constant arenas are writable bindings, so they need their own
+        // allocations rather than the shared read-only empty rows.
+        let empty_constant_projections = storage_ro_from_u32s(
+            &gpu.device,
+            "test.empty_constant_projections",
+            &vec![u32::MAX; (capacities.tokens * 4) as usize],
+        );
+        let empty_constant_atoms = storage_ro_from_u32s(
+            &gpu.device,
+            "test.empty_constant_atoms",
+            &vec![u32::MAX; (capacities.tokens * 4) as usize],
+        );
         let empty_instance_row_count =
             storage_ro_from_u32s(&gpu.device, "test.empty_instance_row_count", &[0]);
         let argument_modes = storage_ro_from_u32s(
@@ -4519,8 +4557,8 @@ mod tests {
             type_instance_arg_row_ref_payload: &empty_type_instances,
             type_generic_param_slot: &empty_type_instances,
             type_const_param_slot: &empty_type_instances,
-            checked_constant_atoms: &empty_type_instances,
-            checked_constant_projections: &empty_type_instances,
+            checked_constant_atoms: &empty_constant_atoms,
+            checked_constant_projections: &empty_constant_projections,
             type_const_param_scalar: &empty_type_instances,
             type_const_param_value: &empty_type_instances,
             array_length_by_hir: &semantic_array_lengths,
@@ -4564,7 +4602,8 @@ mod tests {
         let operands = read_words(&gpu.device, &operands_rb);
         assert_eq!(read_words(&gpu.device, &core_rb), &[0; 16]);
         assert_eq!(operands, &[0; 16]);
-        assert_eq!(read_words(&gpu.device, &aggregate_count_rb), &[3]);
+        // Three element rows, then the four per-HIR `?` rows.
+        assert_eq!(read_words(&gpu.device, &aggregate_count_rb), &[7]);
         assert_eq!(
             read_words(&gpu.device, &aggregates_rb),
             [
@@ -4580,7 +4619,7 @@ mod tests {
     #[test]
     fn physical_gpu_materializes_control_events_and_unsupported_rows() {
         let gpu = device::global();
-        let hir_count = storage_ro_from_u32s(&gpu.device, "test.control.hir_count", &[5]);
+        let hir_count = storage_ro_from_u32s(&gpu.device, "test.control.hir_count", &[6]);
         let hir_core = storage_ro_from_bytes::<HirCore>(
             &gpu.device,
             "test.control.hir_core",
@@ -4590,8 +4629,9 @@ mod tests {
                 [34, u32::MAX, 9, 12],
                 [7, u32::MAX, 13, 20],
                 [3, u32::MAX, 0, 20],
+                [6, 1, 2, 8],
             ]),
-            5,
+            6,
         );
         let hir_links = storage_ro_from_bytes::<crate::parser::buffers::HirLinks>(
             &gpu.device,
@@ -4602,25 +4642,29 @@ mod tests {
                 [u32::MAX, 3, 3, 0],
                 [0, u32::MAX, 4, 0],
                 [1, u32::MAX, 5, 0],
+                [u32::MAX, u32::MAX, 6, 0],
             ]),
-            5,
+            6,
         );
         let hir_payload = storage_ro_from_bytes::<HirPayload>(
             &gpu.device,
             "test.control.hir_payload",
             &words(&[
                 [4, 0, u32::MAX, 1],
-                [3, 0, u32::MAX, u32::MAX],
+                // `if` names its then block (node 5); an `if` record with
+                // no then arm is a `requires` clause (semantic_lir_is_contract).
+                [3, 0, 5, u32::MAX],
                 [26, 0, 0, u32::MAX],
                 [6, 0, u32::MAX, u32::MAX],
                 [4, 0, u32::MAX, u32::MAX],
+                [u32::MAX, u32::MAX, u32::MAX, u32::MAX],
             ]),
-            5,
+            6,
         );
         let expr_parent =
-            storage_ro_from_u32s(&gpu.device, "test.control.expr_parent", &[u32::MAX; 5]);
+            storage_ro_from_u32s(&gpu.device, "test.control.expr_parent", &[u32::MAX; 6]);
         let expr_root =
-            storage_ro_from_u32s(&gpu.device, "test.control.expr_root", &[0, 1, 2, 3, 4]);
+            storage_ro_from_u32s(&gpu.device, "test.control.expr_root", &[0, 1, 2, 3, 4, 5]);
         let call_arg_count = storage_ro_from_u32s(&gpu.device, "test.control.arg_count", &[0]);
         let call_args = storage_ro_from_bytes::<HirCallArg>(
             &gpu.device,
@@ -4646,8 +4690,8 @@ mod tests {
         let param_ranges = storage_ro_from_bytes::<crate::parser::buffers::HirRange>(
             &gpu.device,
             "test.control.param_ranges",
-            &words(&[[u32::MAX, 0, 0, 0]; 5]),
-            5,
+            &words(&[[u32::MAX, 0, 0, 0]; 6]),
+            6,
         );
         let array_elements = storage_ro_from_bytes::<crate::parser::buffers::HirArrayElement>(
             &gpu.device,
@@ -4665,7 +4709,7 @@ mod tests {
         let expression_types = storage_ro_from_u32s(
             &gpu.device,
             "test.control.types",
-            &[packed_expression_scalar(SCALAR_BOOL), 0, packed_expression_scalar(SCALAR_I32), 0, 0],
+            &[packed_expression_scalar(SCALAR_BOOL), 0, packed_expression_scalar(SCALAR_I32), 0, 0, 0],
         );
         let visible = storage_ro_from_u32s(&gpu.device, "test.control.visible", &[u32::MAX; 16]);
         let _language_names =
@@ -4674,35 +4718,38 @@ mod tests {
             storage_ro_from_u32s(&gpu.device, "test.control.checked_layout_facts", &[0; 16]);
         let mut enclosing_fn = vec![0; 16];
         enclosing_fn[..4].fill(5);
+        enclosing_fn[5] = 5;
         let enclosing_fn =
             storage_ro_from_u32s(&gpu.device, "test.control.enclosing_fn", &enclosing_fn);
-        let checked_calls = absent_checked_calls(&gpu.device, "test.control.checked_calls", 5);
+        let checked_calls = absent_checked_calls(&gpu.device, "test.control.checked_calls", 6);
         let semantic_ref_tags =
-            storage_ro_from_u32s(&gpu.device, "test.control.semantic_ref_tags", &[0; 5]);
+            storage_ro_from_u32s(&gpu.device, "test.control.semantic_ref_tags", &[0; 6]);
         let semantic_ref_payloads = storage_ro_from_u32s(
             &gpu.device,
             "test.control.semantic_ref_payloads",
-            &[u32::MAX; 5],
+            &[u32::MAX; 6],
         );
         let semantic_array_lengths = storage_ro_from_u32s(
             &gpu.device,
             "test.control.semantic_array_lengths",
-            &[u32::MAX; 5],
+            &[u32::MAX; 6],
         );
         let capacities = LoweringCapacities {
             source_bytes: 16,
             tokens: 16,
-            hir_nodes: 5,
+            hir_nodes: 6,
             semantic_instructions: 13,
             call_arguments: 1,
             parameters: 1,
-            aggregate_elements: 1,
+            // As LoweringCapacities sizes it: elements, then one `?` row per
+            // HIR node (semantic/aggregate_elements).
+            aggregate_elements: 12,
             target_instructions: 8,
             artifact_bytes: 64,
         };
         let (method_count, method_cores, method_signatures) =
             empty_method_families(&gpu.device, "test.control.methods");
-        let patterns = empty_pattern_families(&gpu.device, "test.control.patterns", 5);
+        let patterns = empty_pattern_families(&gpu.device, "test.control.patterns", 6);
         let mut encoder = gpu
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -4753,6 +4800,18 @@ mod tests {
         let empty_type_instances = storage_ro_from_u32s(
             &gpu.device,
             "test.empty_type_instances",
+            &vec![u32::MAX; (capacities.tokens * 4) as usize],
+        );
+        // The constant arenas are writable bindings, so they need their own
+        // allocations rather than the shared read-only empty rows.
+        let empty_constant_projections = storage_ro_from_u32s(
+            &gpu.device,
+            "test.empty_constant_projections",
+            &vec![u32::MAX; (capacities.tokens * 4) as usize],
+        );
+        let empty_constant_atoms = storage_ro_from_u32s(
+            &gpu.device,
+            "test.empty_constant_atoms",
             &vec![u32::MAX; (capacities.tokens * 4) as usize],
         );
         let empty_instance_row_count =
@@ -4806,8 +4865,8 @@ mod tests {
             type_instance_arg_row_ref_payload: &empty_type_instances,
             type_generic_param_slot: &empty_type_instances,
             type_const_param_slot: &empty_type_instances,
-            checked_constant_atoms: &empty_type_instances,
-            checked_constant_projections: &empty_type_instances,
+            checked_constant_atoms: &empty_constant_atoms,
+            checked_constant_projections: &empty_constant_projections,
             type_const_param_scalar: &empty_type_instances,
             type_const_param_value: &empty_type_instances,
             array_length_by_hir: &semantic_array_lengths,

@@ -29,6 +29,7 @@ pub(crate) use object::{
 pub use object::{
     GPU_X86_OBJECT_VERSION,
     GPU_X86_CRT_MAIN_BRIDGE_BYTES,
+    GpuX86ObjectBodyRange,
     GpuX86ObjectSection,
     GpuX86ObjectSymbolRecord,
     GpuX86RelocatableObject,

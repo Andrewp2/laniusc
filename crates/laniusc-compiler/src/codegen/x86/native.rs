@@ -23,6 +23,7 @@ use anyhow::{Context, Result, bail, ensure};
 
 use super::{
     GpuX86FileObject,
+    link::{X86LinkTextPlan, shared_runtime_text_plans},
     GpuX86ObjectSection,
     GpuX86ObjectSymbolRecord,
     GpuX86RelocationKind,
@@ -86,9 +87,18 @@ const SECTION_HEADER_BYTES: usize = 64;
 const SYMBOL_BYTES: usize = 24;
 const RELA_BYTES: usize = 24;
 const INTERNAL_SYMBOL_PREFIX: &str = "__lanius_";
+/// The entry object's native runtime, shared by every object whose own
+/// byte-identical runtime copy the export drops. The prefix is reserved, and
+/// declaration names always end in three numbers, so it names nothing else.
+const SHARED_RUNTIME_SYMBOL: &str = "__lanius_runtime";
 const MAX_LINK_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_DIAGNOSTIC_BYTES: u64 = 64 * 1024;
 const MAX_RESPONSE_BYTES: u64 = 64 * 1024 * 1024;
+/// GCC's driver re-quotes a response-file command line into a second response
+/// file for collect2/ld (libiberty `writeargv`), escaping a newline as
+/// backslash-newline, which ld's `buildargv` then drops as a line
+/// continuation (GCC 15.2, binutils 2.46). No quoting on our side survives it.
+const NEWLINE_REASON: &str = "which the C driver's linker response file cannot carry";
 
 type Identity = [u32; 3];
 
@@ -270,6 +280,11 @@ fn symbol_identity(
 
 /// Validate the complete metadata inventory before streaming unchanged GPU
 /// payloads into one ELF file at a time. Only metadata remains resident.
+///
+/// As in the GPU link, the entry object keeps its whole text and every other
+/// object whose native runtime is byte-identical to the entry's contributes
+/// only its body; its runtime relocations name the entry's runtime instead, so
+/// the executable carries one runtime, one CRT bridge and one entry wrapper.
 fn emit_native_elf_objects(
     objects: &[GpuX86FileObject],
     bindings: &[NativeCFunction],
@@ -277,14 +292,39 @@ fn emit_native_elf_objects(
     directory: &NativeTempDirectory,
 ) -> Result<Vec<PathBuf>> {
     let symbols = NativeSymbols::validate(objects, bindings, main)?;
+    let plans = shared_runtime_text_plans(
+        &objects
+            .iter()
+            .map(|object| {
+                (
+                    object.layout.entry_offset,
+                    object.layout.body,
+                    object.layout.text_byte_len,
+                )
+            })
+            .collect::<Vec<_>>(),
+        |index, range| {
+            let mut bytes = Vec::with_capacity(range.len());
+            objects[index].copy_text_range_to(range, &mut bytes)?;
+            Ok(std::borrow::Cow::Owned(bytes))
+        },
+    )
+    .map_err(anyhow::Error::msg)?;
+    let runtime_shared = plans.iter().any(|plan| plan.shared_runtime.is_some());
     let mut paths = Vec::with_capacity(objects.len());
     for (object_index, object) in objects.iter().enumerate() {
+        let plan = &plans[object_index];
+        let shares = (object_index == main.object_index && runtime_shared)
+            .then(|| plan.runtime.as_ref().map(|runtime| runtime.start))
+            .flatten();
         let path = directory.path.join(format!("lanius-{object_index}.o"));
         let mut file = create_private_file(&path)?;
         emit_object(
             object,
             &symbols,
             (object_index == main.object_index).then_some(main),
+            plan,
+            shares,
             &mut file,
         )
         .with_context(|| format!("export native ELF object {object_index}"))?;
@@ -298,8 +338,25 @@ fn emit_object<W: Write + Seek>(
     object: &GpuX86FileObject,
     names: &NativeSymbols<'_>,
     main: Option<NativeMainBridge>,
+    plan: &X86LinkTextPlan,
+    shared_runtime_start: Option<u32>,
     output: &mut W,
 ) -> Result<()> {
+    // Offsets into this object's text, rebased onto the copied range.
+    let copied_text = |offset: u32, len: u32, what: &str| -> Result<u32> {
+        offset
+            .checked_add(len)
+            .filter(|&end| offset >= plan.copy.start && end <= plan.copy.end)
+            .map(|_| offset - plan.copy.start)
+            .with_context(|| {
+                format!(
+                    "native {what} {offset}..{} lies outside the copied text {}..{}",
+                    offset.saturating_add(len),
+                    plan.copy.start,
+                    plan.copy.end
+                )
+            })
+    };
     let mut strings = StringTable::new();
     let mut symbols = vec![0; SYMBOL_BYTES];
     // Section symbols are local and precede every global symbol. ELF sh_info
@@ -322,15 +379,37 @@ fn emit_object<W: Write + Seek>(
         symbol_indices.insert(identity, index);
         let section = section_index(symbol.section);
         let symbol_type = if section == RODATA { 1 } else { 2 };
+        let offset = if section == TEXT {
+            copied_text(symbol.offset, symbol.size, "symbol")?
+        } else {
+            symbol.offset
+        };
         push_symbol(
             &mut symbols,
             strings.insert(&names.name(identity))?,
             0x10 | symbol_type,
             section,
-            symbol.offset as u64,
+            offset as u64,
             symbol.size as u64,
         );
     }
+    // Defined by the entry object at its runtime, referenced by the others.
+    let shared_runtime_symbol = if shared_runtime_start.is_some() || plan.shared_runtime.is_some()
+    {
+        let index = checked_u32(symbols.len() / SYMBOL_BYTES, "ELF symbol count")?;
+        push_symbol_with_visibility(
+            &mut symbols,
+            strings.insert(SHARED_RUNTIME_SYMBOL)?,
+            0x10,
+            2, // STV_HIDDEN
+            shared_runtime_start.map_or(SHN_UNDEF, |_| TEXT),
+            u64::from(shared_runtime_start.unwrap_or(0)),
+            0,
+        );
+        Some(index)
+    } else {
+        None
+    };
     if let Some(main) = main {
         push_symbol(
             &mut symbols,
@@ -352,9 +431,24 @@ fn emit_object<W: Write + Seek>(
                     2 => RODATA as u32,
                     _ => bail!("native relocation targets an unsupported section"),
                 };
+                let (section, target_offset) = match (&plan.runtime, plan.shared_runtime) {
+                    (Some(runtime), Some(_))
+                        if section == TEXT as u32 && runtime.contains(&relocation.target_offset) =>
+                    {
+                        (
+                            shared_runtime_symbol.expect("shared runtime symbol"),
+                            relocation.target_offset - runtime.start,
+                        )
+                    }
+                    _ if section == TEXT as u32 => (
+                        section,
+                        copied_text(relocation.target_offset, 0, "relocation target")?,
+                    ),
+                    _ => (section, relocation.target_offset),
+                };
                 let addend = relocation
                     .addend
-                    .checked_add(i64::from(relocation.target_offset))
+                    .checked_add(i64::from(target_offset))
                     .context("native ELF relocation addend overflows i64")?;
                 (section, addend)
             }
@@ -384,7 +478,12 @@ fn emit_object<W: Write + Seek>(
                 bail!("native relocation has an undefined site section")
             }
         };
-        put_u64(output, u64::from(relocation.site_offset));
+        let site_offset = if relocation.site_section == GpuX86ObjectSection::Text {
+            copied_text(relocation.site_offset, 4, "relocation site")?
+        } else {
+            relocation.site_offset
+        };
+        put_u64(output, u64::from(site_offset));
         put_u64(output, (u64::from(symbol_index) << 32) | relocation_type);
         put_u64(output, addend as u64);
     }
@@ -403,7 +502,7 @@ fn emit_object<W: Write + Seek>(
     sections[TEXT as usize] = append_payload_section(
         output,
         object,
-        true,
+        Some(plan.copy.clone()),
         16,
         SectionHeader {
             name: text_name,
@@ -415,7 +514,7 @@ fn emit_object<W: Write + Seek>(
     sections[RODATA as usize] = append_payload_section(
         output,
         object,
-        false,
+        None,
         1,
         SectionHeader {
             name: rodata_name,
@@ -566,22 +665,20 @@ fn append_section<W: Write + Seek>(
 fn append_payload_section<W: Write + Seek>(
     output: &mut W,
     object: &GpuX86FileObject,
-    text: bool,
+    text: Option<std::ops::Range<u32>>,
     align: u64,
     mut header: SectionHeader,
 ) -> Result<SectionHeader> {
     align_output(output, align)?;
     header.offset = output.stream_position()?;
-    header.size = u64::from(if text {
-        object.layout.text_byte_len
-    } else {
-        object.layout.rodata_byte_len
+    header.size = u64::from(match &text {
+        Some(range) => range.end - range.start,
+        None => object.layout.rodata_byte_len,
     });
     header.align = align;
-    let copied = if text {
-        object.copy_text_to(output)
-    } else {
-        object.copy_rodata_to(output)
+    let copied = match text {
+        Some(range) => object.copy_text_range_to(range, output),
+        None => object.copy_rodata_to(output),
     }
     .map_err(anyhow::Error::msg)?;
     ensure!(
@@ -643,8 +740,20 @@ fn section_index(section: GpuX86ObjectSection) -> u16 {
 }
 
 fn push_symbol(output: &mut Vec<u8>, name: u32, info: u8, section: u16, value: u64, size: u64) {
+    push_symbol_with_visibility(output, name, info, 0, section, value, size);
+}
+
+fn push_symbol_with_visibility(
+    output: &mut Vec<u8>,
+    name: u32,
+    info: u8,
+    other: u8,
+    section: u16,
+    value: u64,
+    size: u64,
+) {
     put_u32(output, name);
-    output.extend_from_slice(&[info, 0]);
+    output.extend_from_slice(&[info, other]);
     put_u16(output, section);
     put_u64(output, value);
     put_u64(output, size);
@@ -892,6 +1001,13 @@ pub(crate) fn validate_options(options: &NativeLinkOptions) -> Result<()> {
             path.display()
         );
     }
+    for path in options.objects.iter().chain(&options.library_paths) {
+        ensure!(
+            !path.as_os_str().as_encoded_bytes().contains(&b'\n'),
+            "native link path {:?} contains a newline, {NEWLINE_REASON}",
+            path
+        );
+    }
     Ok(())
 }
 
@@ -907,6 +1023,10 @@ impl LinkResponse {
     fn argument(&mut self, value: &std::ffi::OsStr) -> Result<()> {
         let bytes = value.as_encoded_bytes();
         ensure!(!bytes.contains(&0), "native response argument contains NUL");
+        ensure!(
+            !bytes.contains(&b'\n'),
+            "native response argument contains a newline, {NEWLINE_REASON}"
+        );
         let escaped = bytes
             .iter()
             .filter(|byte| matches!(**byte, b'\\' | b'"'))

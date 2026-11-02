@@ -214,6 +214,7 @@ def digest(bs):
 
 def main():
     run_cache.no_core_dumps()
+    so.front.PARSE_SERVER.enable()
     parser = argparse.ArgumentParser()
     parser.add_argument('workdir')
     parser.add_argument('--count', type=int, default=20)

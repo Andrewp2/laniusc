@@ -1,0 +1,67 @@
+// alloc::btree_map allocation failure without fault injection: a low soft
+// RLIMIT_AS makes node growth fail. The failed insert must leave the map
+// unchanged (length, node capacity, every entry, both cursor directions);
+// replacing an existing key still works; after the limit is restored the
+// same insert succeeds. A clone under the limit fails cleanly or is
+// complete. Exit 0, or the number of the failing check.
+module app::main;
+import alloc::btree_map;
+import core::option;
+import core::result;
+import std::rlimit;
+fn key(index: i32) -> u64 { return ((index as u64) * 40503) % 4194304; }
+fn allocation(error: alloc::btree_map::Error) -> bool {
+    let yes: bool = match (error) { alloc::btree_map::Error::AllocationFailed -> true, _ -> false }; return yes;
+}
+fn main() -> i32 {
+    let saved: std::rlimit::Limit = core::result::unwrap(std::rlimit::get(std::rlimit::Resource::AddressSpace));
+    if (core::result::is_err(std::rlimit::set(std::rlimit::Resource::AddressSpace, saved.with_soft(48 * 1048576)))) { return 1; }
+    let map: alloc::btree_map::BTreeMap<u64, u64> = alloc::btree_map::new();
+    let index: i32 = 0; let failed: bool = false;
+    while (!failed && index < 4194304) {
+        let added: core::result::Result<core::option::Option<alloc::btree_map::Entry<u64, u64>>, alloc::btree_map::Error> = map.try_insert(key(index), (index as u64) * 3);
+        if (core::result::is_err(added)) {
+            if (!allocation(core::result::unwrap_err(added))) { return 2; } failed = true;
+        } else { index += 1; }
+    }
+    if (!failed || index < 1000) { return 3; }
+    // The map holds exactly keys 0..index, in key order, untouched.
+    let length: i32 = map.len(); let capacity: i32 = map.node_capacity();
+    if (length != index || map.contains_key(key(index))) { return 4; }
+    let forward: alloc::btree_map::Cursor<u64, u64> = map.iter(); let previous: u64 = 0; let seen: i32 = 0;
+    while (!forward.is_empty()) {
+        let entry: alloc::btree_map::Entry<u64, u64> = core::option::unwrap(forward.next());
+        if (seen > 0 && entry.key <= previous) { return 5; }
+        if ((entry.value / 3) as i32 >= index || key((entry.value / 3) as i32) != entry.key) { return 6; }
+        previous = entry.key; seen += 1;
+    }
+    if (seen != length) { return 7; }
+    let backward: alloc::btree_map::Cursor<u64, u64> = map.iter(); seen = 0;
+    while (backward.next_back().is_some()) { seen += 1; }
+    if (seen != length) { return 8; }
+    let probe: i32 = 0;
+    while (probe < index) { if (core::option::unwrap(map.get(key(probe))) != (probe as u64) * 3) { return 9; } probe += 997; }
+    // Replacing needs no memory.
+    let replaced: alloc::btree_map::Entry<u64, u64> = core::option::unwrap(core::result::unwrap(map.try_insert(key(0), 77)));
+    if (replaced.value != 0 || core::option::unwrap(map.get(key(0))) != 77 || map.len() != length || map.node_capacity() != capacity) { return 10; }
+    // A clone under the same limit either fails cleanly or is complete.
+    let cloned: core::result::Result<alloc::btree_map::BTreeMap<u64, u64>, alloc::btree_map::Error> = map.try_clone();
+    if (core::result::is_err(cloned)) {
+        if (!allocation(core::result::unwrap_err(cloned))) { return 16; }
+    } else {
+        let copy: alloc::btree_map::BTreeMap<u64, u64> = core::result::unwrap(cloned);
+        if (copy.len() != length || core::option::unwrap(copy.get(key(0))) != 77) { return 17; }
+        copy.destroy();
+    }
+    if (map.len() != length || map.node_capacity() != capacity || core::option::unwrap(map.get(key(index - 1))) != ((index - 1) as u64) * 3) { return 18; }
+    // Restore the limit: the insert that failed now succeeds.
+    if (core::result::is_err(std::rlimit::set(std::rlimit::Resource::AddressSpace, saved))) { return 11; }
+    if (core::option::is_some(core::result::unwrap(map.try_insert(key(index), 1)))) { return 12; }
+    if (map.len() != length + 1 || map.node_capacity() <= capacity || core::option::unwrap(map.get(key(index))) != 1) { return 13; }
+    // Drain everything: removal never allocates.
+    probe = 0;
+    while (probe <= index) { if (map.remove(key(probe)).is_none()) { return 14; } probe += 1; }
+    if (!map.is_empty() || map.first().is_some()) { return 15; }
+    map.destroy();
+    return 0;
+}

@@ -17,8 +17,8 @@ struct Params
     uint artifact_capacity;
     uint target_start;
     uint page_capacity;
-    uint reserved0;
-    uint reserved1;
+    uint semantic_capacity;
+    uint runtime_reference_capacity; // rows of emit's x86_runtime_reference; 0 without an object
 };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> target_lir_total;

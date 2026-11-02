@@ -46,6 +46,7 @@ CASES = [
 
 
 def main():
+    stdlib_oracle.front.PARSE_SERVER.enable()
     work = os.path.abspath(sys.argv[1])
     os.makedirs(work, exist_ok=True)
     problems = []

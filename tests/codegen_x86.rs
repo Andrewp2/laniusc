@@ -25,6 +25,33 @@ fn main() -> i32 {
 }
 
 #[test]
+fn x86_branches_and_selects_on_comparisons_of_two_literals() {
+    // Both operands are immediate candidates. The right one must stay the
+    // immediate, as for an unfused compare; swapping left the materialized
+    // left constant unread and compared an unassigned stack slot.
+    assert_source_exit(
+        "compare_two_literals",
+        r#"
+fn main() -> i32 {
+    let bits: i32 = 0;
+    if (1 < 2) { bits = bits + 1; }
+    if (2 < 1) { bits = bits + 100; }
+    if (1 <= 2) { bits = bits + 2; }
+    if (1 > 2) { bits = bits + 100; }
+    if (1 == 1) { bits = bits + 4; }
+    if (1 != 1) { bits = bits + 100; }
+    let selected: i32 = 7;
+    if (3 > 2) { selected = 8; }
+    let kept: i32 = 16;
+    if (2 > 3) { kept = 100; }
+    return bits + selected + kept;
+}
+"#,
+        31,
+    );
+}
+
+#[test]
 fn x86_forwards_sret_call_result_directly_from_return() {
     assert_source_exit(
         "forward_sret_call_result_from_return",
@@ -11061,6 +11088,20 @@ fn x86_executes_source_pack_path_rules_separator_helper() {
     let sources = [
         include_str!("../stdlib/core/utf8.lani"),
         include_str!("../stdlib/core/path_rules.lani"),
+        // core::utf8 imports core::slice (its bulk byte ops) and so these.
+        include_str!("../stdlib/core/cmp.lani"),
+        include_str!("../stdlib/core/function.lani"),
+        include_str!("../stdlib/core/mem.lani"),
+        include_str!("../stdlib/core/ops.lani"),
+        include_str!("../stdlib/core/option.lani"),
+        include_str!("../stdlib/core/ordering.lani"),
+        include_str!("../stdlib/core/panic.lani"),
+        include_str!("../stdlib/core/result.lani"),
+        include_str!("../stdlib/core/slice.lani"),
+        include_str!("../stdlib/core/u32.lani"),
+        include_str!("../stdlib/core/u64.lani"),
+        include_str!("../stdlib/core/wide_i64.lani"),
+        include_str!("../stdlib/core/wide_u64.lani"),
         r#"
 module app::main;
 

@@ -1,0 +1,132 @@
+// alloc::btree_map at 1,048,576 keys, on the tree map benchmark's keys and
+// phases (tests/fixtures/stdlib_tree_map_perf) plus three more. Two key
+// sets: u64 keys spread by an odd multiplier (distinct, high bits vary) and
+// dense i32 keys 0..N in a shuffled order. Each set times: insert all, look
+// up all in insertion order (hits), look up all in a scattered order
+// (scattered), for i32 only look up all in key order (sorted), look up N
+// absent keys (misses), iterate every entry in key order (iterate), remove
+// every other key, look up all again (half hits), and remove the rest.
+// Insertion order is Fibonacci hashing of the index, so it is not key order:
+// trees with one node per key, allocated in that order, get memory locality
+// from it that a B+ tree does not.
+// stdout: a "keyset phase" line, then its nanoseconds; results are checked
+// so no phase can be optimized into nothing.
+module app::main;
+import alloc::btree_map;
+import core::mem;
+import core::option;
+import core::result;
+import core::time;
+import std::clock;
+import std::io;
+
+const N: i32 = 1048576;
+const SPREAD: u64 = 11400714819323198485;
+
+fn now() -> core::time::Instant { return std::clock::monotonic_now().unwrap(); }
+fn since(start: core::time::Instant) -> u64 { return now().duration_since(start).unwrap().as_nanos().unwrap(); }
+
+fn emit_number(value: u64) {
+    let storage: [i32; 8] = [0; 8]; let base: ptr = core::mem::i32_array_data_ptr(storage);
+    let digits: [u8] = core::mem::typed_slice_from_raw_parts<u8>(base, 24);
+    let n: i32 = 23; let v: u64 = value; digits[n] = 10;
+    if (v == 0) { n -= 1; digits[n] = 48; }
+    while (v > 0) { n -= 1; digits[n] = ((v % 10) as u8) + 48; v = v / 10; }
+    assert(std::io::write_stdout(base + (n as usize), (24 - n) as usize) == 24 - n);
+    assert(storage[5] == storage[5]);
+}
+// Two lines per phase: "keyset phase", then the nanoseconds.
+fn report(label: str, nanos: u64) {
+    assert(std::io::println(label) >= 0);
+    emit_number(nanos);
+}
+
+fn wide_key(i: i32) -> u64 { return ((i as u64) + 1) * SPREAD; }
+// Another permutation of 0..N (odd multiplier modulo 2^20), so consecutive
+// lookups land on unrelated insertion positions.
+fn scatter(i: i32) -> i32 { return ((((i as u64) * 40503) % (N as u64)) as i32); }
+
+fn run_wide() {
+    let map: alloc::btree_map::BTreeMap<u64, u64> = alloc::btree_map::new<u64, u64>();
+    let start: core::time::Instant = now();
+    let i: i32 = 0;
+    while (i < N) { assert(map.try_insert(wide_key(i), i as u64).unwrap().is_none()); i += 1; }
+    report("u64 insert", since(start));
+    start = now(); let sum: u64 = 0; i = 0;
+    while (i < N) { sum += map.get(wide_key(i)).unwrap(); i += 1; }
+    report("u64 hit", since(start));
+    assert(sum == (N as u64) * ((N as u64) - 1) / 2);
+    start = now(); sum = 0; i = 0;
+    while (i < N) { sum += map.get(wide_key(scatter(i))).unwrap(); i += 1; }
+    report("u64 scattered", since(start));
+    assert(sum == (N as u64) * ((N as u64) - 1) / 2);
+    start = now(); let found: i32 = 0; i = 0;
+    while (i < N) { if (map.get(wide_key(i + N)).is_some()) { found += 1; } i += 1; }
+    report("u64 miss", since(start));
+    assert(found == 0);
+    start = now(); sum = 0; let cursor: alloc::btree_map::Cursor<u64, u64> = map.iter(); found = 0;
+    while (true) { let item: core::option::Option<alloc::btree_map::Entry<u64, u64>> = cursor.next(); if (item.is_none()) { break; } sum += item.unwrap().value; found += 1; }
+    report("u64 iterate", since(start));
+    assert(found == N && sum == (N as u64) * ((N as u64) - 1) / 2);
+    start = now(); i = 0;
+    while (i < N) { assert(map.remove(wide_key(i)).is_some()); i += 2; }
+    report("u64 remove_half", since(start));
+    start = now(); found = 0; i = 0;
+    while (i < N) { if (map.get(wide_key(i)).is_some()) { found += 1; } i += 1; }
+    report("u64 half_hit", since(start));
+    assert(found == N / 2);
+    start = now(); i = 1;
+    while (i < N) { assert(map.remove(wide_key(i)).is_some()); i += 2; }
+    report("u64 remove_rest", since(start));
+    assert(map.len() == 0);
+    map.destroy();
+}
+
+// A permutation of 0..N: multiplication by an odd constant modulo 2^20.
+fn dense_key(i: i32) -> i32 { return ((((i as u64) * 2654435761) % (N as u64)) as i32); }
+
+fn run_dense() {
+    let map: alloc::btree_map::BTreeMap<i32, i32> = alloc::btree_map::new<i32, i32>();
+    let start: core::time::Instant = now();
+    let i: i32 = 0;
+    while (i < N) { assert(map.try_insert(dense_key(i), i).unwrap().is_none()); i += 1; }
+    report("i32 insert", since(start));
+    start = now(); let sum: u64 = 0; i = 0;
+    while (i < N) { sum += map.get(dense_key(i)).unwrap() as u64; i += 1; }
+    report("i32 hit", since(start));
+    assert(sum == (N as u64) * ((N as u64) - 1) / 2);
+    start = now(); sum = 0; i = 0;
+    while (i < N) { sum += map.get(dense_key(scatter(i))).unwrap() as u64; i += 1; }
+    report("i32 scattered", since(start));
+    assert(sum == (N as u64) * ((N as u64) - 1) / 2);
+    start = now(); sum = 0; i = 0;
+    while (i < N) { sum += map.get(i).unwrap() as u64; i += 1; }
+    report("i32 sorted", since(start));
+    assert(sum == (N as u64) * ((N as u64) - 1) / 2);
+    start = now(); let found: i32 = 0; i = 0;
+    while (i < N) { if (map.get(i + N).is_some()) { found += 1; } i += 1; }
+    report("i32 miss", since(start));
+    assert(found == 0);
+    start = now(); sum = 0; let cursor: alloc::btree_map::Cursor<i32, i32> = map.iter(); found = 0;
+    while (true) { let item: core::option::Option<alloc::btree_map::Entry<i32, i32>> = cursor.next(); if (item.is_none()) { break; } sum += item.unwrap().value as u64; found += 1; }
+    report("i32 iterate", since(start));
+    assert(found == N && sum == (N as u64) * ((N as u64) - 1) / 2);
+    start = now(); i = 0;
+    while (i < N) { assert(map.remove(dense_key(i)).is_some()); i += 2; }
+    report("i32 remove_half", since(start));
+    start = now(); found = 0; i = 0;
+    while (i < N) { if (map.get(dense_key(i)).is_some()) { found += 1; } i += 1; }
+    report("i32 half_hit", since(start));
+    assert(found == N / 2);
+    start = now(); i = 1;
+    while (i < N) { assert(map.remove(dense_key(i)).is_some()); i += 2; }
+    report("i32 remove_rest", since(start));
+    assert(map.len() == 0);
+    map.destroy();
+}
+
+fn main() -> i32 {
+    run_wide();
+    run_dense();
+    return 0;
+}

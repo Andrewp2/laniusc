@@ -1,4 +1,5 @@
 import codegen.lowering_ir;
+import codegen.optimization_ir;
 import gpu_index;
 
 struct Params { uint semantic_capacity; uint target_capacity; uint target_start; uint page_capacity; };
@@ -13,6 +14,11 @@ StructuredBuffer<X86ValueAnalysis> x86_value_by_semantic;
 StructuredBuffer<uint> opt_ir_total;
 StructuredBuffer<uint> x86_position_by_semantic;
 StructuredBuffer<uint> target_lir_offset;
+StructuredBuffer<OptIrNodeCore> opt_ir_core;
+StructuredBuffer<OptIrNodeOperands> opt_ir_operands;
+StructuredBuffer<uint> semantic_schedule_order;
+StructuredBuffer<uint> opt_ir_source_hir;
+StructuredBuffer<uint> semantic_function_id_by_hir;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -28,6 +34,39 @@ uint target_value(uint semantic_row, uint total)
     uint target_row = semantic_row < gParams.semantic_capacity
         ? semantic_to_target_start[semantic_row] : INVALID;
     return target_row < total ? target_row : INVALID;
+}
+
+uint function_of_row(uint semantic_row)
+{
+    uint hir = opt_ir_source_hir[semantic_row];
+    return hir != INVALID ? semantic_function_id_by_hir[hir] : INVALID;
+}
+
+// The schedule position an unconditional jump at or after `position` (past
+// at most eight labels and empty rows) goes to, or INVALID.
+uint jump_after(uint position, uint semantic_count, uint function_id)
+{
+    for (uint skipped = 0u; skipped < 8u && position + 1u < semantic_count; skipped += 1u)
+    {
+        uint row = semantic_schedule_order[position];
+        if (row >= semantic_count || function_of_row(row) != function_id) return INVALID;
+        uint op = opt_ir_op(opt_ir_core[row]);
+        uint rows = target_lir_offset[position + 1u] - target_lir_offset[position];
+        if (rows != 0u && op != SEMANTIC_LIR_OP_BLOCK_BEGIN &&
+            op != SEMANTIC_LIR_OP_LOOP_BEGIN && op != SEMANTIC_LIR_OP_CONTROL_END)
+        {
+            if ((op != SEMANTIC_LIR_OP_BRANCH && op != SEMANTIC_LIR_OP_ELSE) || rows != 1u)
+                return INVALID;
+            uint target = opt_ir_operands[row].a;
+            if (target >= semantic_count || function_of_row(target) != function_id)
+                return INVALID;
+            uint target_position = x86_position_by_semantic[target];
+            return target_position < semantic_count && target_position != position
+                ? target_position : INVALID;
+        }
+        position += 1u;
+    }
+    return INVALID;
 }
 
 // A branch names its destination by a control row of the semantic schedule.
@@ -49,9 +88,18 @@ uint branch_target(uint semantic_row, uint after, bool inline_clone, uint total)
     uint position = semantic_row < semantic_count
         ? x86_position_by_semantic[semantic_row] : INVALID;
     if (position >= semantic_count) return INVALID;
-    uint target_row = after == 0u ? target_lir_offset[position]
-        : position + 1u < semantic_count ? target_lir_offset[position + 1u]
-        : total;
+    if (after != 0u) position += 1u;
+    // Thread through jumps: when the destination's next instruction is an
+    // unconditional jump of the same function (past labels and rows that
+    // emit nothing), go to that jump's destination instead.
+    uint function_id = function_of_row(semantic_row);
+    for (uint hop = 0u; hop < 4u && function_id != INVALID; hop += 1u)
+    {
+        uint next = jump_after(position, semantic_count, function_id);
+        if (next >= semantic_count) break;
+        position = next;
+    }
+    uint target_row = position < semantic_count ? target_lir_offset[position] : total;
     return target_row < total ? target_row : INVALID;
 }
 

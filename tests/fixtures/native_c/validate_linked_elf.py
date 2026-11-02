@@ -19,7 +19,14 @@ def check(condition, message):
         raise ValueError(message)
 
 
-def validate_function_instructions(functions, instructions, executable_range):
+# The native runtime's out-of-line safety traps (X86_RUNTIME_TRAP_BOUNDS_OFFSET
+# and X86_RUNTIME_TRAP_SHIFT_OFFSET in shaders/codegen/lir/x86/runtime_abi.slang):
+# `mov $101|$102,%edi; mov $231,%eax; syscall` (exit_group). A guard in any
+# function branches to them, as tests/common/x86_jumps.rs allows.
+RUNTIME_TRAPS = {bytes([0xbf, code, 0, 0, 0, 0xb8, 0xe7, 0, 0, 0, 0x0f, 0x05]) for code in (101, 102)}
+
+
+def validate_function_instructions(functions, instructions, executable_range, read=None):
     """Check every covered instruction, without scanning unrelated functions."""
     addresses = sorted(instructions)
     branches = 0
@@ -47,7 +54,9 @@ def validate_function_instructions(functions, instructions, executable_range):
             check(target in instructions, f"{name}: target {target:#x} is not an instruction boundary")
             if is_branch:
                 branches += 1
-                check(start < target < start + size,
+                trap = read is not None and read(target, 12) in RUNTIME_TRAPS and not any(
+                    other <= target < other + length for _, other, length in functions)
+                check(trap or start < target < start + size,
                       f"{name}: jump at {address:#x} leaves its function for {target:#x}")
             else:
                 check(executable_range(target), f"{name}: call target is outside executable PT_LOAD")
@@ -137,8 +146,11 @@ def inspect(path):
             tokens = match[3].split()
             while tokens and (tokens[0] in prefixes or tokens[0].startswith("rex")):
                 tokens.pop(0)
-            check(tokens, "instruction has no mnemonic")
-            instructions[address] = (tokens[0], tokens[1:])
+            # objdump prints a prefix byte with no instruction after it (data
+            # decoded as code, such as the allocator's environment key string
+            # "LANIUS_..." inside the native runtime) as a bare prefix. That
+            # is no instruction: it is only an error inside a checked function.
+            instructions[address] = (tokens[0], tokens[1:]) if tokens else ("(bad)", [])
         return instructions, ends
 
     instructions, instruction_ends = decoded(result.stdout)
@@ -148,7 +160,13 @@ def inspect(path):
                               capture_output=True, text=True, timeout=20, check=True)
     runtime_instructions, runtime_instruction_ends = decoded(complete.stdout)
 
-    branches = validate_function_instructions(functions, instructions, executable_range)
+    def read(address, size):
+        for _, _, offset, vaddr, _, filesz, _, _ in loads:
+            if vaddr <= address and address - vaddr + size <= filesz:
+                return image[offset + address - vaddr:offset + address - vaddr + size]
+        return b""
+
+    branches = validate_function_instructions(functions, instructions, executable_range, read)
     return dict(image=image, loads=loads, functions=functions, symbols=symbols,
                 instructions=instructions, instruction_ends=instruction_ends,
                 runtime_instructions=runtime_instructions, runtime_instruction_ends=runtime_instruction_ends,

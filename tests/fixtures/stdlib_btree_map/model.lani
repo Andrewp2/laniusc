@@ -1,0 +1,119 @@
+// alloc::btree_map against alloc::tree_map (itself checked against Rust's
+// BTreeMap) on random inserts, replacements, removals and pops over small
+// and large key spaces. After every batch it compares length, endpoints,
+// bounds, forward and backward iteration and random half-open ranges.
+// Exit 0 when every comparison holds; the failing check's number otherwise.
+module app::main;
+import alloc::btree_map;
+import alloc::tree_map;
+import core::option;
+import core::result;
+
+fn step(state: u64) -> u64 {
+    let x: u64 = state; x = x ^ (x << 13); x = x ^ (x >> 7); x = x ^ (x << 17); return x;
+}
+
+fn same_entry(a: core::option::Option<alloc::btree_map::Entry<i32, i32>>, b: core::option::Option<alloc::tree_map::Entry<i32, i32>>) -> bool {
+    if (a.is_none() || b.is_none()) { return a.is_none() && b.is_none(); }
+    let x: alloc::btree_map::Entry<i32, i32> = a.unwrap(); let y: alloc::tree_map::Entry<i32, i32> = b.unwrap();
+    return x.key == y.key && x.value == y.value;
+}
+
+// 0 when the two cursors yield the same entries in the same order.
+fn same_cursor(a: alloc::btree_map::Cursor<i32, i32>, b: alloc::tree_map::Cursor<i32, i32>, backward: bool) -> i32 {
+    let count: i32 = 0;
+    while (true) {
+        let x: core::option::Option<alloc::btree_map::Entry<i32, i32>> = core::option::None();
+        let y: core::option::Option<alloc::tree_map::Entry<i32, i32>> = core::option::None();
+        if (backward) { x = a.next_back(); y = b.next_back(); } else { x = a.next(); y = b.next(); }
+        if (!same_entry(x, y)) { return 1; }
+        if (x.is_none()) { return 0; }
+        count += 1;
+        if (count > 10000000) { return 2; }
+    }
+    return 0;
+}
+
+// Alternate ends of one cursor pair until both are exhausted.
+fn same_mixed(a: alloc::btree_map::Cursor<i32, i32>, b: alloc::tree_map::Cursor<i32, i32>, seed: u64) -> i32 {
+    let s: u64 = seed;
+    while (true) {
+        s = step(s);
+        let x: core::option::Option<alloc::btree_map::Entry<i32, i32>> = core::option::None();
+        let y: core::option::Option<alloc::tree_map::Entry<i32, i32>> = core::option::None();
+        if ((s & 1) == 0) { x = a.next_back(); y = b.next_back(); } else { x = a.next(); y = b.next(); }
+        if (!same_entry(x, y)) { return 1; }
+        if (x.is_none()) { return 0; }
+    }
+    return 0;
+}
+
+fn check(map: &alloc::btree_map::BTreeMap<i32, i32>, model: &alloc::tree_map::TreeMap<i32, i32>, space: i32, seed: u64) -> i32 {
+    if (map.len() != model.len()) { return 10; }
+    if (!same_entry(map.first(), model.first())) { return 11; }
+    if (!same_entry(map.last(), model.last())) { return 12; }
+    if (same_cursor(map.iter(), model.iter(), false) != 0) { return 13; }
+    if (same_cursor(map.iter(), model.iter(), true) != 0) { return 14; }
+    if (same_mixed(map.iter(), model.iter(), seed) != 0) { return 15; }
+    let s: u64 = seed; let round: i32 = 0;
+    while (round < 24) {
+        s = step(s); let low: i32 = ((s >> 8) % ((space + 2) as u64)) as i32 - 1;
+        s = step(s); let high: i32 = low + ((s >> 8) % ((space / 4 + 2) as u64)) as i32;
+        if (!same_entry(map.lower_bound(low), model.lower_bound(low))) { return 16; }
+        if (!same_entry(map.upper_bound(low), model.upper_bound(low))) { return 17; }
+        let a: core::result::Result<alloc::btree_map::Cursor<i32, i32>, alloc::btree_map::Error> = map.range(low, high);
+        let b: core::result::Result<alloc::tree_map::Cursor<i32, i32>, alloc::tree_map::Error> = model.range(low, high);
+        if (a.is_err() || b.is_err()) { return 18; }
+        if (same_mixed(a.unwrap(), b.unwrap(), s) != 0) { return 19; }
+        if (map.range(high + 1, low).is_ok()) { return 20; }
+        round += 1;
+    }
+    return 0;
+}
+
+// `ops` random operations over keys 0..space, checked every `every` ops.
+fn run(space: i32, ops: i32, every: i32, seed: u64) -> i32 {
+    let map: alloc::btree_map::BTreeMap<i32, i32> = alloc::btree_map::new<i32, i32>();
+    let model: alloc::tree_map::TreeMap<i32, i32> = alloc::tree_map::new<i32, i32>();
+    let s: u64 = seed; let op: i32 = 0;
+    while (op < ops) {
+        s = step(s); let key: i32 = ((s >> 11) % (space as u64)) as i32; let kind: u64 = (s >> 3) % 16;
+        // Growing phases favor inserts, shrinking ones removals.
+        let insert_bias: u64 = 9; if (((op / 4096) % 3) == 2) { insert_bias = 4; }
+        if (kind < insert_bias) {
+            let value: i32 = op;
+            let a: core::result::Result<core::option::Option<alloc::btree_map::Entry<i32, i32>>, alloc::btree_map::Error> = map.try_insert(key, value);
+            let b: core::result::Result<core::option::Option<alloc::tree_map::Entry<i32, i32>>, alloc::tree_map::Error> = model.try_insert(key, value);
+            if (a.is_err() || b.is_err()) { return 1; }
+            if (!same_entry(a.unwrap(), b.unwrap())) { return 2; }
+        } else { if (kind < 14) {
+            if (!same_entry(map.remove(key), model.remove(key))) { return 3; }
+        } else { if (kind == 14) {
+            if (!same_entry(map.pop_first(), model.pop_first())) { return 4; }
+        } else {
+            if (!same_entry(map.pop_last(), model.pop_last())) { return 5; }
+        } } }
+        if (map.get(key).is_some() != model.get(key).is_some()) { return 6; }
+        if (map.contains_key(key) != model.contains_key(key)) { return 7; }
+        op += 1;
+        if (op % every == 0) { let failed: i32 = check(map.borrow(), model.borrow(), space, s); if (failed != 0) { return failed; } }
+    }
+    // Drain to empty, then refill the cleared map.
+    while (!model.is_empty()) { if (!same_entry(map.pop_first(), model.pop_first())) { return 30; } }
+    if (!map.is_empty() || map.iter().next().is_some() || map.first().is_some()) { return 31; }
+    let i: i32 = 0;
+    while (i < 1000) { assert(map.try_insert(i, i).unwrap().is_none()); assert(model.try_insert(i, i).unwrap().is_none()); i += 1; }
+    let failed: i32 = check(map.borrow(), model.borrow(), space, s); if (failed != 0) { return 40 + failed; }
+    map.destroy(); model.destroy();
+    return 0;
+}
+
+fn main() -> i32 {
+    let failed: i32 = run(40, 20000, 97, 12345);
+    if (failed != 0) { return 100 + failed; }
+    failed = run(3000, 120000, 1999, 0x7aee2026);
+    if (failed != 0) { return 150 + failed; }
+    failed = run(200000, 150000, 29999, 99991);
+    if (failed != 0) { return 200 + failed; }
+    return 0;
+}

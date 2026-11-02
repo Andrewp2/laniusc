@@ -1829,6 +1829,7 @@ mod tests {
             library_id: 11,
             unit_id: 4,
             entry_offset: Some(0),
+            body: None,
             text: vec![0xc3],
             rodata: Vec::new(),
             relocations: Vec::new(),

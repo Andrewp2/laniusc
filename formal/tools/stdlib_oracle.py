@@ -958,6 +958,7 @@ def capture_tree(laniusc, lani_path, workdir, index):
     env = dict(os.environ, LANIUS_DEBUG_CAPTURE_PASS='parser/tree/parent_parallel', LANIUS_DEBUG_CAPTURE_DIR=cap,
                LANIUS_DEBUG_CAPTURE_INDEX=str(index))
     shutil.rmtree(cap, ignore_errors=True)
+    run_cache.release_gpu()
     subprocess.run([HEAVY, '-t', '10', laniusc, '--stdlib-root', STDLIB, *source_root_args(SOURCE_ROOTS), '-o',
                     os.path.join(workdir, 'a.out'), lani_path], env=env, capture_output=True, text=True)
     status = os.path.join(cap, 'post', '002_tree_count_status.bin')
@@ -1090,7 +1091,7 @@ def parse_stdlib_file(laniusc, lani_path, workdir):
     """laniusc's tree of a stdlib file: with its import lines blanked (one
     cached laniusc run, and the tree with the imports spliced back cached
     too), else as parse_tree finds it."""
-    k = run_cache.key('spliced', run_cache.file_digest(laniusc), open(lani_path, 'rb').read(),
+    k = run_cache.key('spliced', run_cache.parser_digest(laniusc), open(lani_path, 'rb').read(),
                       run_cache.file_digest(front.__file__))
     hit = run_cache.load('parse', k)
     if hit is not None:
@@ -1600,6 +1601,7 @@ def why(base_files, workdir, k):
 
 def main():
     run_cache.no_core_dumps()
+    front.PARSE_SERVER.enable()
     parser = argparse.ArgumentParser()
     parser.add_argument('workdir')
     parser.add_argument('--modules', help='comma-separated module names (default: every stdlib module)')
@@ -1656,6 +1658,7 @@ def main():
     for p, tree in zip(programs, parse_wrappers(args.laniusc, [open(p['base'] + '.lani').read() for p in programs],
                                                 files_dir)):
         trees[p['base']] = tree
+    run_cache.release_gpu()
     for b, tree in trees.items():
         if tree is not None:
             write_tree(b, tree)

@@ -380,6 +380,7 @@ def decode(data):
 
 def main():
     run_cache.no_core_dumps()
+    so.front.PARSE_SERVER.enable()
     parser = argparse.ArgumentParser()
     parser.add_argument('workdir')
     parser.add_argument('--cases', default='formal/tools/frontend_cases')

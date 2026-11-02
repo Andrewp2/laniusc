@@ -12,7 +12,8 @@ pipeline does, under WORKDIR: the files (the driver and the module closure of
 `lake exe srcDump` through faithful_dump.py, then faithful_certs.py and
 faithful_pure.py, and fails unless every generated file is as checked in.
 The one line allowed to differ is the dump's header line naming the files'
-paths. Then, with that program current, it builds `Lanius.Faithful.Gen.SelfProg`
+paths. GenB/ must be what budget_certs.py makes of the same dump for ROOTS.
+Then, with that program current, it builds `Lanius.Faithful.Gen.SelfProg`
 and has term_gen.lean write the termination modules (`Gen/SelfTerm*.lean`)
 for TERM_ROOTS, which must be as checked in too: a regeneration of the
 certificates must regenerate them. Run from the repository root; `srcDump`
@@ -31,6 +32,7 @@ import stdlib_oracle  # noqa: E402
 import cert_trees  # noqa: E402
 
 GEN = os.path.join(TOOLS, '..', 'Lanius', 'Faithful', 'Gen')
+GENB = os.path.join(TOOLS, '..', 'Lanius', 'Faithful', 'GenB')
 NS = 'Lanius.Faithful.Self'
 ROOTS = ['front_end_words', 'grammar', 'compile_words']
 # The functions whose pure calls `Gen/SelfTerm.lean` proves settle.
@@ -106,6 +108,20 @@ def main():
               + (f' and {len(differ) - 10} more' if len(differ) > 10 else '')
               + '; regenerate the certificates (target/claude-work/l2/pipeline.sh)')
         return 1
+    # The budget certificates (GenB/) are budget_certs.py's of the same program.
+    genb = os.path.join(workdir, 'genb')
+    shutil.rmtree(genb, ignore_errors=True)
+    subprocess.run(py + [os.path.join(TOOLS, 'budget_certs.py'), dump, genb] + ROOTS, check=True,
+                   stdout=subprocess.DEVNULL)
+    have_b, made_b = sorted(os.listdir(GENB)), sorted(os.listdir(genb))
+    differ = sorted(set(have_b) ^ set(made_b))
+    differ += [n for n in sorted(set(have_b) & set(made_b))
+               if open(os.path.join(GENB, n)).read() != open(os.path.join(genb, n)).read()]
+    if differ:
+        print(f'GenB/ is not what budget_certs.py makes of the program: {", ".join(differ[:10])}'
+              + '; rerun it (python3 -I formal/tools/budget_certs.py DUMP formal/Lanius/Faithful/GenB '
+              + ' '.join(ROOTS) + ')')
+        return 1
     term = os.path.join(workdir, 'term')
     shutil.rmtree(term, ignore_errors=True)
     os.makedirs(term)
@@ -120,7 +136,8 @@ def main():
               + '; rerun it (cd formal && lake env lean --run tools/term_gen.lean '
               + ' '.join(TERM_ROOTS) + ')')
         return 1
-    print(f'{len(bases)} files, {len(want)} generated files as checked in, {len(made)} of them termination modules')
+    print(f'{len(bases)} files, {len(want) + len(have_b)} generated files as checked in, {len(made)} of them termination modules'
+          f' and {len(have_b)} budget certificate modules')
     return 0
 
 
