@@ -225,7 +225,7 @@ def build():
                               'lake', 'build', *BUILT, 'LaniusMini', 'Lanius.Mini.FrontLex',
                               'Lanius.Mini.MutPilotCorrect', 'Lanius.Machines.SqliteStatementCorrect',
                               'Lanius.Machines.TlsLifecycleCorrect', 'Lanius.Machines.RunLowering',
-                              'Lanius.Faithful.GenB.SelfBudget'],
+                              'Lanius.Faithful.SelfBounded'],
                              cwd=run_cache.FORMAL, env=env, capture_output=True, text=True)
     if run.returncode != 0:
         raise SystemExit('lake build failed:\n' + run.stdout[-3000:] + run.stderr[-3000:])
