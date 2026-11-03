@@ -84,3 +84,6 @@
   per-function sums over parameters and fields. A replacement needs a per-function bound on the
   parameters' slots (as `SrcStmt.depth ≤ 2^55` for the lets), e.g. `paramsSize f.params ≤ 2^55`, from
   the front end as FrontEndStmtDepth does for depths (a parameter takes at least one word).
+- 11-03 (leafB): unused. Replaced by PreCompileSourceV4, which adds `∀ f ∈ p.funcs, paramsSize f.params
+  ≤ 2^40` (the parameters' slots; the counterexample above). PreCompileWords.red3 stays as written; a
+  red5 from V4 waits on the front end's leaf for that bound (leafA's FrontEndParamSlots).
