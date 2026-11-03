@@ -60,9 +60,40 @@ The merge procedure (from the worktree root; `LS` is
    imports of extracted parts that no longer exist from the files the merge
    unioned, and stages (`git add`) the generated files.
 4. Build: `cd formal && $LS timeout 290 ~/.elan/bin/lake build LaniusMini Lanius LaniusOpen`,
-   repeated until it exits 0.
+   repeated until it exits 0 (124 is a pass cut short at the limit; check the
+   exit code itself, not a summary script's). Most of this is the rebuild the
+   change causes, not regen: see "Where a regeneration's time goes" below.
 5. `HEAVY_PRIORITY=1 timeout 298 $LS timeout 295 python3 -I formal/tools/regen.py --only trusted --trusted`:
    writes the new definitions hash into `TRUSTED_BASE.md`; say in its
    last-change sentence what the merge combined.
 6. The quick gate: `HEAVY_PRIORITY=1 timeout 298 $LS timeout 295 python3 -I formal/tools/gate.py --tier quick --jobs 2`.
 7. `git commit`.
+
+## Where a regeneration's time goes (11-03, measured)
+
+regen.py itself: about 8 s when nothing changed, 25-45 s after a one-function
+change (extract 13-21 s, mostly the CPU parser's tree of the changed file;
+dump 6-20 s; gen 2.5 s; genb 1.5 s; term 1-8 s; hb 0.1 s; pre 1 s), plus the
+`srcDump` rebuild, 1-240 s: `Lanius.Tools.SrcDump` imports `Mini.FrontLex`,
+which `public import`s `Lanius.Mini.Compiler`, so a change to an `@[expose]`d
+extracted part (every `Inline.*`) rebuilds FrontLex and SrcDump.
+
+The old 30 minutes were the Lean builds. Renaming one local of `room_after`
+in compiler.lani rebuilt 362 modules, about 7100 s of lean time, three
+288-s build passes:
+
+- 3600 s: all 75 `GenB/SelfBProof*` parts, though one model (`Pre_room_after`,
+  used by one part) changed. GenB's files are not modules, `SelfBModel0`
+  imports `Gen.SelfCert` (so any change to the self program reaches it), the
+  model parts form a chain, and every proof part imports the last statement
+  part, so any change rebuilds every budget proof, then GenP (60-85 s each)
+  and Open/F14.
+- 1500 s: 93 `Faithful/Gen` modules.
+- 760 s: 72 `Open/F5` modules, and 24 `Lanius.Mini` proofs (Source, LowerEval,
+  TypeSound, ..), which `import all` the changed part `Compiler.P.linkedSize`
+  (Source without using it) and so rebuild, with what imports them.
+
+Making the builds narrower means changing those layouts (budget_certs.py's
+parts as modules with hidden bodies, bucketed per function like Gen's; the
+proofs' `import all` lists cut to the parts they unfold), not the generators'
+speed.

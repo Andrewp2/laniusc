@@ -88,16 +88,29 @@ def run(argv, what, cwd=ROOT, quiet=True):
     return r
 
 
-def lake_build(targets, limit=None):
-    """`lake build TARGETS` unless they are current; returns the seconds it took."""
+DEADLINE = [None]  # when the run must stop (--limit)
+WORK = [None]
+
+
+def lake_build(targets):
+    """`lake build TARGETS` unless they are current, within the run's time
+    limit (a build cut short keeps what it built: rerunning regen.py goes on
+    from there); returns the seconds it took. The build's output is in
+    WORK/lake-<first target>.log, with each module's time."""
     began = time.time()
     if all(run_cache.lake_current(t, ENV) for t in targets):
         return time.time() - began
+    left = int(DEADLINE[0] - time.time()) if DEADLINE[0] else 280
+    if left < 20:
+        raise SystemExit(f'no time left to build {" ".join(targets)}: rerun regen.py')
     with run_cache.lean_lock():
-        argv = SCOPE + ['lake', 'build'] + targets
-        if limit is not None:
-            argv = ['timeout', str(int(limit))] + argv
-        r = subprocess.run(argv, cwd=FORMAL, env=ENV, capture_output=True, text=True)
+        r = subprocess.run(['timeout', str(left)] + SCOPE + ['lake', 'build'] + targets, cwd=FORMAL, env=ENV,
+                           capture_output=True, text=True)
+    log = os.path.join(WORK[0], 'lake-' + targets[0].split('.')[-1] + '.log')
+    open(log, 'w').write(r.stdout + r.stderr)
+    if r.returncode == 124:
+        raise SystemExit(f'lake build {" ".join(targets)} was not done after {left} s (log {log}): '
+                         'rerun regen.py, which goes on from what it built')
     if r.returncode != 0:
         fail('lake build ' + ' '.join(targets), r)
     return time.time() - began
@@ -445,6 +458,7 @@ def main(argv):
         if s not in STAGES:
             raise SystemExit(f'no stage {s}: {", ".join(STAGES)}')
     os.makedirs(args.work, exist_ok=True)
+    DEADLINE[0], WORK[0] = began + args.limit, os.path.abspath(args.work)
     entries = stale_entries()
     if entries:
         kinds = {k: sum(1 for x, _ in entries if x == k) for k, _ in entries}
