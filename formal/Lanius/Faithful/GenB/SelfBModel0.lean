@@ -1888,9 +1888,14 @@ end
 noncomputable section
 
 mutual
-def Pre_params_array_bytes : Nat → List Lanius.Mini.SrcParam → List Nat → Nat → Prop
-  | 0, x19, x43, b => True
-  | n + 1, x19, x43, b => (match x19 with | [] => True | x132 :: x135 => ((Pre_decl_bytes n x43 x132.id x132.ty b) ∧ ((Pre_params_array_bytes n x135 x43 b) ∧ (Pre_plus n (Lanius.Mini.declBytes x43 x132.id x132.ty) (Lanius.Mini.paramsArrayBytes x135 x43) b))))
+def Pre_params_room : Nat → Nat → List Lanius.Mini.SrcParam → List Nat → Nat → Prop
+  | 0, x12, x25, x49, b => True
+  | n + 1, x12, x25, x49, b => (match x25 with | [] => True | x169 :: x172 => ((Pre_decl_bytes n x49 x169.id x169.ty b) ∧ (Pre_params_then n (Lanius.Mini.spend x12 ((Lanius.Mini.declBytes x49 x169.id x169.ty))) x172 x49 b)))
+termination_by structural fuel => fuel
+
+def Pre_params_then : Nat → Option Nat → List Lanius.Mini.SrcParam → List Nat → Nat → Prop
+  | 0, x12, x48, x73, b => True
+  | n + 1, x12, x48, x73, b => (match x12 with | some x188 => (Pre_params_room n x188 x48 x73 b) | none => True)
 termination_by structural fuel => fuel
 end
 
@@ -1899,9 +1904,14 @@ end
 noncomputable section
 
 mutual
-def Pre_SrcStmt_array_bytes : Nat → Lanius.Mini.SrcStmt → List Nat → Nat → Prop
-  | 0, x12, x18, b => True
-  | n + 1, x12, x18, b => (match x12 with | .nop => True | .let x116 x120 x124 x131 => ((Pre_decl_bytes n x18 x116 x120 b) ∧ ((Pre_SrcStmt_array_bytes n x131 x18 b) ∧ (Pre_plus n (Lanius.Mini.declBytes x18 x116 x120) (Lanius.Mini.SrcStmt.arrayBytes x131 x18) b))) | .letStruct x225 x229 x233 x241 => ((Pre_decl_bytes n x18 x225 x229 b) ∧ ((Pre_SrcStmt_array_bytes n x241 x18 b) ∧ (Pre_plus n (Lanius.Mini.declBytes x18 x225 x229) (Lanius.Mini.SrcStmt.arrayBytes x241 x18) b))) | .letCall x333 x337 x341 x349 x355 => ((Pre_decl_bytes n x18 x333 x337 b) ∧ ((Pre_SrcStmt_array_bytes n x355 x18 b) ∧ (Pre_plus n (Lanius.Mini.declBytes x18 x333 x337) (Lanius.Mini.SrcStmt.arrayBytes x355 x18) b))) | .letEnum x447 x451 x455 x464 x473 => ((Pre_decl_bytes n x18 x447 x451 b) ∧ ((Pre_SrcStmt_array_bytes n x473 x18 b) ∧ (Pre_plus n (Lanius.Mini.declBytes x18 x447 x451) (Lanius.Mini.SrcStmt.arrayBytes x473 x18) b))) | .letMatch x566 x570 x574 x585 x594 x600 => ((Pre_decl_bytes n x18 x566 x570 b) ∧ ((Pre_SrcStmt_array_bytes n x600 x18 b) ∧ (Pre_plus n (Lanius.Mini.declBytes x18 x566 x570) (Lanius.Mini.SrcStmt.arrayBytes x600 x18) b))) | .set x688 x692 => True | .setField x726 x730 x737 => True | .setCall x770 x774 x782 => True | .then x811 x818 => ((Pre_SrcStmt_array_bytes n x811 x18 b) ∧ ((Pre_SrcStmt_array_bytes n x818 x18 b) ∧ (Pre_plus n (Lanius.Mini.SrcStmt.arrayBytes x811 x18) (Lanius.Mini.SrcStmt.arrayBytes x818 x18) b))) | .if x915 x926 x939 => ((Pre_SrcStmt_array_bytes n x926 x18 b) ∧ ((Pre_SrcStmt_array_bytes n x939 x18 b) ∧ (Pre_plus n (Lanius.Mini.SrcStmt.arrayBytes x926 x18) (Lanius.Mini.SrcStmt.arrayBytes x939 x18) b))) | .while x1055 x1066 => (Pre_SrcStmt_array_bytes n x1066 x18 b) | .return x1125 => True | .letAlloc x1159 x1163 x1169 x1176 => (Pre_SrcStmt_array_bytes n x1176 x18 b) | .letLoad x1236 x1240 x1249 x1257 => (Pre_SrcStmt_array_bytes n x1257 x18 b) | .setByte x1317 x1326 x1334 => True | .free x1364 x1373 x1379 => True | .letSlice x1413 x1417 x1426 x1435 x1443 => (Pre_SrcStmt_array_bytes n x1443 x18 b) | .letIndex x1504 x1508 x1512 x1519 x1526 => ((Pre_decl_bytes n x18 x1504 x1508 b) ∧ ((Pre_SrcStmt_array_bytes n x1526 x18 b) ∧ (Pre_plus n (Lanius.Mini.declBytes x18 x1504 x1508) (Lanius.Mini.SrcStmt.arrayBytes x1526 x18) b))) | .setIndex x1619 x1626 x1633 => True | .letEval x1666 x1670 x1674 x1681 => ((Pre_decl_bytes n x18 x1666 x1670 b) ∧ ((Pre_SrcStmt_array_bytes n x1681 x18 b) ∧ (Pre_plus n (Lanius.Mini.declBytes x18 x1666 x1670) (Lanius.Mini.SrcStmt.arrayBytes x1681 x18) b))) | .setEval x1773 x1777 => True | .ifEval x1809 x1820 x1833 => ((Pre_SrcStmt_array_bytes n x1820 x18 b) ∧ ((Pre_SrcStmt_array_bytes n x1833 x18 b) ∧ (Pre_plus n (Lanius.Mini.SrcStmt.arrayBytes x1820 x18) (Lanius.Mini.SrcStmt.arrayBytes x1833 x18) b))) | .whileEval x1953 x1964 => (Pre_SrcStmt_array_bytes n x1964 x18 b) | .returnEval x2027 => True | .discard x2060 => True | .setIndexEval x2098 x2105 x2112 => True | .setFieldEval x2150 x2154 x2161 => True | .returnUnit => True | .assert x2222 => True | .break => True | .continue => True | .matchArm x2311 x2322 x2331 x2340 x2347 x2355 x2359 x2365 => ((Pre_SrcStmt_array_bytes n x2359 x18 b) ∧ ((Pre_SrcStmt_array_bytes n x2365 x18 b) ∧ (Pre_plus n (Lanius.Mini.SrcStmt.arrayBytes x2359 x18) (Lanius.Mini.SrcStmt.arrayBytes x2365 x18) b))) | .unreachable x2466 x2470 => True | .letView x2500 x2504 x2512 x2520 x2529 => (Pre_SrcStmt_array_bytes n x2529 x18 b) | .letStr x2588 x2597 x2604 => (Pre_SrcStmt_array_bytes n x2604 x18 b))
+def Pre_block_room : Nat → Nat → List Nat → Lanius.Mini.SrcStmt → Nat → Prop
+  | 0, x11, x24, x43, b => True
+  | n + 1, x11, x24, x43, b => (match x43 with | .nop => True | .let x150 x154 x158 x165 => ((Pre_decl_bytes n x24 x150 x154 b) ∧ (Pre_block_then n (Lanius.Mini.spend x11 ((Lanius.Mini.declBytes x24 x150 x154))) x24 x165 b)) | .letStruct x262 x266 x270 x278 => ((Pre_decl_bytes n x24 x262 x266 b) ∧ (Pre_block_then n (Lanius.Mini.spend x11 ((Lanius.Mini.declBytes x24 x262 x266))) x24 x278 b)) | .letCall x373 x377 x381 x389 x395 => ((Pre_decl_bytes n x24 x373 x377 b) ∧ (Pre_block_then n (Lanius.Mini.spend x11 ((Lanius.Mini.declBytes x24 x373 x377))) x24 x395 b)) | .letEnum x490 x494 x498 x507 x516 => ((Pre_decl_bytes n x24 x490 x494 b) ∧ (Pre_block_then n (Lanius.Mini.spend x11 ((Lanius.Mini.declBytes x24 x490 x494))) x24 x516 b)) | .letMatch x612 x616 x620 x631 x640 x646 => ((Pre_decl_bytes n x24 x612 x616 b) ∧ (Pre_block_then n (Lanius.Mini.spend x11 ((Lanius.Mini.declBytes x24 x612 x616))) x24 x646 b)) | .set x737 x741 => True | .setField x780 x784 x791 => True | .setCall x829 x833 x841 => True | .then x875 x882 => ((Pre_block_room n x11 x24 x875 b) ∧ (Pre_block_then n (Lanius.Mini.blockRoom x11 x24 x875) x24 x882 b)) | .if x975 x986 x999 => ((Pre_block_room n x11 x24 x986 b) ∧ (Pre_block_then n (Lanius.Mini.blockRoom x11 x24 x986) x24 x999 b)) | .while x1111 x1122 => (Pre_block_room n x11 x24 x1122 b) | .return x1183 => True | .letAlloc x1222 x1226 x1232 x1239 => (Pre_block_room n x11 x24 x1239 b) | .letLoad x1301 x1305 x1314 x1322 => (Pre_block_room n x11 x24 x1322 b) | .setByte x1384 x1393 x1401 => True | .free x1436 x1445 x1451 => True | .letSlice x1490 x1494 x1503 x1512 x1520 => (Pre_block_room n x11 x24 x1520 b) | .letIndex x1583 x1587 x1591 x1598 x1605 => ((Pre_decl_bytes n x24 x1583 x1587 b) ∧ (Pre_block_then n (Lanius.Mini.spend x11 ((Lanius.Mini.declBytes x24 x1583 x1587))) x24 x1605 b)) | .setIndex x1701 x1708 x1715 => True | .letEval x1753 x1757 x1761 x1768 => ((Pre_decl_bytes n x24 x1753 x1757 b) ∧ (Pre_block_then n (Lanius.Mini.spend x11 ((Lanius.Mini.declBytes x24 x1753 x1757))) x24 x1768 b)) | .setEval x1863 x1867 => True | .ifEval x1904 x1915 x1928 => ((Pre_block_room n x11 x24 x1915 b) ∧ (Pre_block_then n (Lanius.Mini.blockRoom x11 x24 x1915) x24 x1928 b)) | .whileEval x2044 x2055 => (Pre_block_room n x11 x24 x2055 b) | .returnEval x2120 => True | .discard x2158 => True | .setIndexEval x2201 x2208 x2215 => True | .setFieldEval x2258 x2262 x2269 => True | .returnUnit => True | .assert x2340 => True | .break => True | .continue => True | .matchArm x2444 x2455 x2464 x2473 x2480 x2488 x2492 x2498 => ((Pre_block_room n x11 x24 x2492 b) ∧ (Pre_block_then n (Lanius.Mini.blockRoom x11 x24 x2492) x24 x2498 b)) | .unreachable x2595 x2599 => True | .letView x2634 x2638 x2646 x2654 x2663 => (Pre_block_room n x11 x24 x2663 b) | .letStr x2724 x2733 x2740 => (Pre_block_room n x11 x24 x2740 b))
+termination_by structural fuel => fuel
+
+def Pre_block_then : Nat → Option Nat → List Nat → Lanius.Mini.SrcStmt → Nat → Prop
+  | 0, x11, x47, x67, b => True
+  | n + 1, x11, x47, x67, b => (match x11 with | some x175 => (Pre_block_room n x175 x47 x67 b) | none => True)
 termination_by structural fuel => fuel
 end
 
@@ -1919,7 +1929,7 @@ noncomputable section
 
 def Pre_frame_block : Nat → Lanius.Mini.SrcFunc → Nat → Prop
   | 0, x12, b => True
-  | n + 1, x12, b => (∀ b1 : Nat, (Cost_SrcStmt_slice_uses n x12.body) < b → b1 = b - (Cost_SrcStmt_slice_uses n x12.body) → ((Pre_params_array_bytes n x12.params (Lanius.Mini.SrcStmt.sliceUses x12.body) b1) ∧ ((Pre_SrcStmt_array_bytes n x12.body (Lanius.Mini.SrcStmt.sliceUses x12.body) b1) ∧ (Pre_plus n (Lanius.Mini.paramsArrayBytes x12.params ((Lanius.Mini.SrcStmt.sliceUses x12.body))) (Lanius.Mini.SrcStmt.arrayBytes x12.body ((Lanius.Mini.SrcStmt.sliceUses x12.body))) b1))))
+  | n + 1, x12, b => (∀ b1 : Nat, (Cost_SrcStmt_slice_uses n x12.body) < b → b1 = b - (Cost_SrcStmt_slice_uses n x12.body) → ((Pre_params_room n Lanius.Mini.blockLimit x12.params (Lanius.Mini.SrcStmt.sliceUses x12.body) b1) ∧ (match (Lanius.Mini.paramsRoom Lanius.Mini.blockLimit x12.params ((Lanius.Mini.SrcStmt.sliceUses x12.body))) with | some x198 => (Pre_block_room n x198 (Lanius.Mini.SrcStmt.sliceUses x12.body) x12.body b1) | none => True)))
 
 end
 
@@ -4733,6 +4743,14 @@ noncomputable section
 def Pre_eval_word_stride : Nat → Lanius.Mini.SrcDecls → Lanius.Mini.SrcType → Nat → Nat → Prop
   | 0, x17, x34, x52, b => True
   | n + 1, x17, x34, x52, b => ((Pre_word_element n x17 x34 b) ∧ (if (Lanius.Mini.wordElement x17 x34) = true then ((Pre_SrcType_size n x34 b) ∧ (Pre_word_stride n x52 (Lanius.Mini.SrcType.size x34) b)) else True))
+
+end
+
+noncomputable section
+
+def Cost_eval_stride_of : Nat → Lanius.Mini.SrcDecls → Lanius.Mini.SrcType → Nat → Nat
+  | 0, x15, x32, x50 => 18446744073709551616
+  | n + 1, x15, x32, x50 => (if (Lanius.Mini.SrcType.isI32 x32) = true then 0 else (if (Lanius.Mini.SrcType.isUint x32 Lanius.Mini.UintTy.uint8) = true then 0 else (Cost_eval_word_stride n x15 x32 x50)))
 
 end
 

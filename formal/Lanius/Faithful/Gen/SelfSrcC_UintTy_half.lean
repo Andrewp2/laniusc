@@ -80,7 +80,7 @@ def src_UintTy_spare : SrcFunc := { params := [{ id := 6, ty := ty4 }], ret := S
 def src_bool_bits : SrcFunc := { params := [{ id := 10, ty := SrcType.bool }], ret := SrcType.uint (UintTy.uint64), body := SrcStmt.then (SrcStmt.if (SrcExpr.local 10) (SrcStmt.return (SrcExpr.unsigned (UintTy.uint64) 0x0000000000000001#64)) (SrcStmt.nop)) (SrcStmt.return (SrcExpr.unsigned (UintTy.uint64) 0x0000000000000000#64)) }
 
 /-- mini::selfhost::lookup -/
-def src_lookup (ix_lookup_at : Nat) (ix_unbox_of_mini_selfhost_List_mini_selfhost_Binding : Nat) : SrcFunc := { params := [{ id := 7, ty := ty148 }, { id := 29, ty := SrcType.uint (UintTy.usize) }], ret := ty172, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 7)) ty148 ty172 [[], [136, 145]] [SrcEff.eVariant ty172 1 [], SrcEff.eCall ix_lookup_at [SrcEff.ePure (SrcExpr.local 136), SrcEff.eCall ix_unbox_of_mini_selfhost_List_mini_selfhost_Binding [SrcEff.ePure (SrcExpr.local 145)], SrcEff.ePure (SrcExpr.local 29)]]) }
+def src_lookup (ix_lookup_at : Nat) (ix_unbox_of_mini_selfhost_List_mini_selfhost_Binding : Nat) : SrcFunc := { params := [{ id := 7, ty := ty149 }, { id := 29, ty := SrcType.uint (UintTy.usize) }], ret := ty172, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 7)) ty149 ty172 [[], [136, 145]] [SrcEff.eVariant ty172 1 [], SrcEff.eCall ix_lookup_at [SrcEff.ePure (SrcExpr.local 136), SrcEff.eCall ix_unbox_of_mini_selfhost_List_mini_selfhost_Binding [SrcEff.ePure (SrcExpr.local 145)], SrcEff.ePure (SrcExpr.local 29)]]) }
 
 end
 

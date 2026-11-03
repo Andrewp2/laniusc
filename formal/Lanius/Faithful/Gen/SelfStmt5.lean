@@ -105,7 +105,7 @@ abbrev Stmt_empty_of_mini_selfhost_SrcType (prog : SrcProgram) (prims : Prims) (
 
 abbrev Stmt_empty_of_mini_selfhost_Ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    (RepList 141 RepTy) (([] : List Lanius.Mini.Ty)) w
+    (RepList 142 RepTy) (([] : List Lanius.Mini.Ty)) w
 
 abbrev Stmt_empty_of_mini_selfhost_TypeDecl (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
@@ -156,16 +156,16 @@ abbrev Stmt_unbox_of_mini_selfhost_List_core_option_Option_mini_selfhost_SrcType
     (RepList 200 (RepOption 159 RepSrcType)) x0 w
 
 abbrev Stmt_unbox_of_mini_selfhost_List_core_option_Option_usize (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List (Option Nat)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 209 (RepOption 150 RepNat)) x0 v0 →
-    (RepList 209 (RepOption 150 RepNat)) x0 w
+  ∀ {x0 : List (Option Nat)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 209 (RepOption 134 RepNat)) x0 v0 →
+    (RepList 209 (RepOption 134 RepNat)) x0 w
 
 abbrev Stmt_unbox_of_mini_selfhost_List_mini_selfhost_AliasDecl (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.AliasDecl} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 118 RepAliasDecl) x0 v0 →
     (RepList 118 RepAliasDecl) x0 w
 
 abbrev Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Binding (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Binding} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 135 RepBinding) x0 v0 →
-    (RepList 135 RepBinding) x0 w
+  ∀ {x0 : List Lanius.Mini.Binding} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 136 RepBinding) x0 v0 →
+    (RepList 136 RepBinding) x0 w
 
 abbrev Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Code (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Code} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 53 RepCode) x0 v0 →

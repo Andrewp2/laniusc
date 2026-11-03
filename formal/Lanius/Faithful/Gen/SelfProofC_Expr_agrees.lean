@@ -6,7 +6,7 @@ public import Lanius.Faithful.Gen.SelfSrcC_Expr_agrees
 public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmtC_Expr_agrees
-public import Lanius.Faithful.Gen.SelfStmtC_Inline_lowerSetScalar
+public import Lanius.Faithful.Gen.SelfStmtC_Inline_blockLeft
 public import Lanius.Faithful.Gen.SelfStmtC_binaryConstant
 import all Lanius.Faithful.Gen.SelfSrcC_Expr_agrees
 import all Lanius.Mini.Compiler.P.Expr_agrees

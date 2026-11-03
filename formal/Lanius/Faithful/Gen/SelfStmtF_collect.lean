@@ -57,7 +57,7 @@ abbrev Stmt_file_decls (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
     (RepOption 101 RepFileDecls) (Lanius.Mini.fileDecls x0 x1) w
 
 abbrev Stmt_file_items (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Option (List (List Nat))} {x2 : List Lanius.Mini.CTree} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → (RepOption 138 (RepList 31 (RepList 25 RepNat))) x1 v1 → (RepList 82 RepCTree) x2 v2 →
+  ∀ {x0 : Nat} {x1 : Option (List (List Nat))} {x2 : List Lanius.Mini.CTree} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → (RepOption 139 (RepList 31 (RepList 25 RepNat))) x1 v1 → (RepList 82 RepCTree) x2 v2 →
     (RepOption 101 RepFileDecls) (Lanius.Mini.fileItems x0 x1 x2) w
 
 abbrev Stmt_fn_names_in (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

@@ -4,7 +4,7 @@ public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcC_declareFuncs
 public import Lanius.Faithful.Gen.SelfStmt6
-public import Lanius.Faithful.Gen.SelfStmtC_Inline_lowerSetScalar
+public import Lanius.Faithful.Gen.SelfStmtC_Inline_blockLeft
 public import Lanius.Faithful.Gen.SelfStmtC_declareFuncs
 public import Lanius.Faithful.Gen.SelfStmtC_lowerBody
 import all Lanius.Faithful.Gen.SelfSrcC_declareFuncs

@@ -42,6 +42,6 @@ abbrev Stmt_lit_value_if (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
 
 abbrev Stmt_lit_wants (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.Ty} {x1 : List Lanius.Mini.CTree} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 211 RepTy) x0 v0 → (RepList 82 RepCTree) x1 v1 →
-    (RepOption 212 (RepList 141 RepTy)) (Lanius.Mini.litWants x0 x1) w
+    (RepOption 212 (RepList 142 RepTy)) (Lanius.Mini.litWants x0 x1) w
 
 end Lanius.Faithful.SelfCert

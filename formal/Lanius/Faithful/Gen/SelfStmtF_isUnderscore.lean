@@ -45,7 +45,7 @@ abbrev Stmt_wild_binder (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
     RepCTree (Lanius.Mini.wildBinder x0 x1) w
 
 abbrev Stmt_wild_binders (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.CTree} {x1 : Nat} {x2 : List Lanius.Mini.Ty} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepCTree x0 v0 → RepNat x1 v1 → (RepList 141 RepTy) x2 v2 →
+  ∀ {x0 : Lanius.Mini.CTree} {x1 : Nat} {x2 : List Lanius.Mini.Ty} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepCTree x0 v0 → RepNat x1 v1 → (RepList 142 RepTy) x2 v2 →
     (RepList 82 RepCTree) (Lanius.Mini.wildBinders x0 x1 x2) w
 
 abbrev Stmt_wild_split (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -53,7 +53,7 @@ abbrev Stmt_wild_split (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
     (RepOption 317 RepWildSplit) (Lanius.Mini.wildSplit x0) w
 
 abbrev Stmt_wild_tail (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.CTree} {x1 : List Lanius.Mini.Ty} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepCTree x0 v0 → (RepList 141 RepTy) x1 v1 →
+  ∀ {x0 : Lanius.Mini.CTree} {x1 : List Lanius.Mini.Ty} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepCTree x0 v0 → (RepList 142 RepTy) x1 v1 →
     RepCTree (Lanius.Mini.wildTail x0 x1) w
 
 end Lanius.Faithful.SelfCert

@@ -67,108 +67,108 @@ set_option maxRecDepth 100000
 theorem dt27 : declareFuncs tail_end (declAt decls 0 0) = some decls := by
   rw [declAt_zero]; rfl
 
-theorem dt26 : declareFuncs tail_covered_use (declAt decls 0 0) = some decls := by
-  rw [show tail_covered_use = dpart26 ++ tail_end from rfl]
+theorem dt26 : declareFuncs tail_hidden_expr (declAt decls 0 0) = some decls := by
+  rw [show tail_hidden_expr = dpart26 ++ tail_end from rfl]
   exact declareFuncs_append (declsStep_eq dchunk26) dt27
 
-theorem dt25 : declareFuncs tail_text_ok (declAt decls 1 1) = some decls := by
-  rw [show tail_text_ok = dpart25 ++ tail_covered_use from rfl]
+theorem dt25 : declareFuncs tail_cons_binder (declAt decls 1 1) = some decls := by
+  rw [show tail_cons_binder = dpart25 ++ tail_hidden_expr from rfl]
   exact declareFuncs_append (declsStep_eq dchunk25) dt26
 
-theorem dt24 : declareFuncs tail_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Bind (declAt decls 2 2) = some decls := by
-  rw [show tail_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Bind = dpart24 ++ tail_text_ok from rfl]
+theorem dt24 : declareFuncs tail_param_named (declAt decls 2 2) = some decls := by
+  rw [show tail_param_named = dpart24 ++ tail_cons_binder from rfl]
   exact declareFuncs_append (declsStep_eq dchunk24) dt25
 
-theorem dt23 : declareFuncs tail_based_digit (declAt decls 4 5) = some decls := by
-  rw [show tail_based_digit = dpart23 ++ tail_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Bind from rfl]
+theorem dt23 : declareFuncs tail_negated_int (declAt decls 4 5) = some decls := by
+  rw [show tail_negated_int = dpart23 ++ tail_param_named from rfl]
   exact declareFuncs_append (declsStep_eq dchunk23) dt24
 
-theorem dt22 : declareFuncs tail_effs_tys (declAt decls 4 7) = some decls := by
-  rw [show tail_effs_tys = dpart22 ++ tail_based_digit from rfl]
+theorem dt22 : declareFuncs tail_unique_found (declAt decls 4 7) = some decls := by
+  rw [show tail_unique_found = dpart22 ++ tail_negated_int from rfl]
   exact declareFuncs_append (declsStep_eq dchunk22) dt23
 
-theorem dt21 : declareFuncs tail_eff_arms_ordered (declAt decls 6 9) = some decls := by
-  rw [show tail_eff_arms_ordered = dpart21 ++ tail_effs_tys from rfl]
+theorem dt21 : declareFuncs tail_bare_eff (declAt decls 8 11) = some decls := by
+  rw [show tail_bare_eff = dpart21 ++ tail_unique_found from rfl]
   exact declareFuncs_append (declsStep_eq dchunk21) dt22
 
-theorem dt20 : declareFuncs tail_lit_wanted (declAt decls 9 13) = some decls := by
-  rw [show tail_lit_wanted = dpart20 ++ tail_eff_arms_ordered from rfl]
+theorem dt20 : declareFuncs tail_is_str_type (declAt decls 9 13) = some decls := by
+  rw [show tail_is_str_type = dpart20 ++ tail_bare_eff from rfl]
   exact declareFuncs_append (declsStep_eq dchunk20) dt21
 
-theorem dt19 : declareFuncs tail_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty (declAt decls 11 16) = some decls := by
-  rw [show tail_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty = dpart19 ++ tail_lit_wanted from rfl]
+theorem dt19 : declareFuncs tail_match_stmt_of (declAt decls 11 16) = some decls := by
+  rw [show tail_match_stmt_of = dpart19 ++ tail_is_str_type from rfl]
   exact declareFuncs_append (declsStep_eq dchunk19) dt20
 
-theorem dt18 : declareFuncs tail_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_BoundGoal (declAt decls 17 29) = some decls := by
-  rw [show tail_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_BoundGoal = dpart18 ++ tail_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty from rfl]
+theorem dt18 : declareFuncs tail_src_ty (declAt decls 19 31) = some decls := by
+  rw [show tail_src_ty = dpart18 ++ tail_match_stmt_of from rfl]
   exact declareFuncs_append (declsStep_eq dchunk18) dt19
 
-theorem dt17 : declareFuncs tail_same_float (declAt decls 26 39) = some decls := by
-  rw [show tail_same_float = dpart17 ++ tail_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_BoundGoal from rfl]
+theorem dt17 : declareFuncs tail_sint_fits (declAt decls 26 39) = some decls := by
+  rw [show tail_sint_fits = dpart17 ++ tail_src_ty from rfl]
   exact declareFuncs_append (declsStep_eq dchunk17) dt18
 
-theorem dt16 : declareFuncs tail_array_arg_local (declAt decls 27 42) = some decls := by
-  rw [show tail_array_arg_local = dpart16 ++ tail_same_float from rfl]
+theorem dt16 : declareFuncs tail_FCmp_predicate (declAt decls 27 43) = some decls := by
+  rw [show tail_FCmp_predicate = dpart16 ++ tail_sint_fits from rfl]
   exact declareFuncs_append (declsStep_eq dchunk16) dt17
 
-theorem dt15 : declareFuncs tail_generic_close (declAt decls 27 44) = some decls := by
-  rw [show tail_generic_close = dpart15 ++ tail_array_arg_local from rfl]
+theorem dt15 : declareFuncs tail_lx_space_run_at (declAt decls 27 45) = some decls := by
+  rw [show tail_lx_space_run_at = dpart15 ++ tail_FCmp_predicate from rfl]
   exact declareFuncs_append (declsStep_eq dchunk15) dt16
 
-theorem dt14 : declareFuncs tail_operand_want (declAt decls 30 47) = some decls := by
-  rw [show tail_operand_want = dpart14 ++ tail_generic_close from rfl]
+theorem dt14 : declareFuncs tail_wide_value (declAt decls 30 47) = some decls := by
+  rw [show tail_wide_value = dpart14 ++ tail_lx_space_run_at from rfl]
   exact declareFuncs_append (declsStep_eq dchunk14) dt15
 
-theorem dt13 : declareFuncs tail_from_i32 (declAt decls 31 51) = some decls := by
-  rw [show tail_from_i32 = dpart13 ++ tail_operand_want from rfl]
+theorem dt13 : declareFuncs tail_order_uint (declAt decls 31 51) = some decls := by
+  rw [show tail_order_uint = dpart13 ++ tail_wide_value from rfl]
   exact declareFuncs_append (declsStep_eq dchunk13) dt14
 
-theorem dt12 : declareFuncs tail_empty_of_mini_selfhost_LocalTy (declAt decls 34 54) = some decls := by
-  rw [show tail_empty_of_mini_selfhost_LocalTy = dpart12 ++ tail_from_i32 from rfl]
+theorem dt12 : declareFuncs tail_ty_at (declAt decls 34 54) = some decls := by
+  rw [show tail_ty_at = dpart12 ++ tail_order_uint from rfl]
   exact declareFuncs_append (declsStep_eq dchunk12) dt13
 
-theorem dt11 : declareFuncs tail_lx_symbol_start (declAt decls 35 56) = some decls := by
-  rw [show tail_lx_symbol_start = dpart11 ++ tail_empty_of_mini_selfhost_LocalTy from rfl]
+theorem dt11 : declareFuncs tail_lx_space (declAt decls 35 56) = some decls := by
+  rw [show tail_lx_space = dpart11 ++ tail_ty_at from rfl]
   exact declareFuncs_append (declsStep_eq dchunk11) dt12
 
-theorem dt10 : declareFuncs tail_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_ImportDecl (declAt decls 35 59) = some decls := by
-  rw [show tail_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_ImportDecl = dpart10 ++ tail_lx_symbol_start from rfl]
+theorem dt10 : declareFuncs tail_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_FnDecl (declAt decls 35 59) = some decls := by
+  rw [show tail_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_FnDecl = dpart10 ++ tail_lx_space from rfl]
   exact declareFuncs_append (declsStep_eq dchunk10) dt11
 
-theorem dt9 : declareFuncs tail_p_impl_methods_some (declAt decls 39 65) = some decls := by
-  rw [show tail_p_impl_methods_some = dpart9 ++ tail_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_ImportDecl from rfl]
+theorem dt9 : declareFuncs tail_p_type_args_more (declAt decls 39 65) = some decls := by
+  rw [show tail_p_type_args_more = dpart9 ++ tail_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_FnDecl from rfl]
   exact declareFuncs_append (declsStep_eq dchunk9) dt10
 
-theorem dt8 : declareFuncs tail_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_List_usize (declAt decls 39 67) = some decls := by
-  rw [show tail_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_List_usize = dpart8 ++ tail_p_impl_methods_some from rfl]
+theorem dt8 : declareFuncs tail_SrcType_sint_kind (declAt decls 39 67) = some decls := by
+  rw [show tail_SrcType_sint_kind = dpart8 ++ tail_p_type_args_more from rfl]
   exact declareFuncs_append (declsStep_eq dchunk8) dt9
 
-theorem dt7 : declareFuncs tail_seq_agrees (declAt decls 40 70) = some decls := by
-  rw [show tail_seq_agrees = dpart7 ++ tail_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_List_usize from rfl]
+theorem dt7 : declareFuncs tail_pick_branch (declAt decls 40 70) = some decls := by
+  rw [show tail_pick_branch = dpart7 ++ tail_SrcType_sint_kind from rfl]
   exact declareFuncs_append (declsStep_eq dchunk7) dt8
 
-theorem dt6 : declareFuncs tail_empty_of_mini_selfhost_TypeDecl (declAt decls 41 74) = some decls := by
-  rw [show tail_empty_of_mini_selfhost_TypeDecl = dpart6 ++ tail_seq_agrees from rfl]
+theorem dt6 : declareFuncs tail_attach_parent (declAt decls 41 74) = some decls := by
+  rw [show tail_attach_parent = dpart6 ++ tail_pick_branch from rfl]
   exact declareFuncs_append (declsStep_eq dchunk6) dt7
 
-theorem dt5 : declareFuncs tail_lower_negate (declAt decls 41 75) = some decls := by
-  rw [show tail_lower_negate = dpart5 ++ tail_empty_of_mini_selfhost_TypeDecl from rfl]
+theorem dt5 : declareFuncs tail_left_true (declAt decls 41 75) = some decls := by
+  rw [show tail_left_true = dpart5 ++ tail_attach_parent from rfl]
   exact declareFuncs_append (declsStep_eq dchunk5) dt6
 
-theorem dt4 : declareFuncs tail_concat_of_mini_selfhost_SrcType (declAt decls 46 86) = some decls := by
-  rw [show tail_concat_of_mini_selfhost_SrcType = dpart4 ++ tail_lower_negate from rfl]
+theorem dt4 : declareFuncs tail_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Sig (declAt decls 46 86) = some decls := by
+  rw [show tail_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Sig = dpart4 ++ tail_left_true from rfl]
   exact declareFuncs_append (declsStep_eq dchunk4) dt5
 
-theorem dt3 : declareFuncs tail_Expr_extent (declAt decls 48 91) = some decls := by
-  rw [show tail_Expr_extent = dpart3 ++ tail_concat_of_mini_selfhost_SrcType from rfl]
+theorem dt3 : declareFuncs tail_decl_bytes (declAt decls 48 91) = some decls := by
+  rw [show tail_decl_bytes = dpart3 ++ tail_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Sig from rfl]
   exact declareFuncs_append (declsStep_eq dchunk3) dt4
 
-theorem dt2 : declareFuncs tail_lower_set (declAt decls 62 107) = some decls := by
-  rw [show tail_lower_set = dpart2 ++ tail_Expr_extent from rfl]
+theorem dt2 : declareFuncs tail_lower_match (declAt decls 62 108) = some decls := by
+  rw [show tail_lower_match = dpart2 ++ tail_decl_bytes from rfl]
   exact declareFuncs_append (declsStep_eq dchunk2) dt3
 
 theorem dt1 : declareFuncs tail_file_decls (declAt decls 70 121) = some decls := by
-  rw [show tail_file_decls = dpart1 ++ tail_lower_set from rfl]
+  rw [show tail_file_decls = dpart1 ++ tail_lower_match from rfl]
   exact declareFuncs_append (declsStep_eq dchunk1) dt2
 
 theorem dt0 : declareFuncs tail_app_main_w (declAt decls 137 186) = some decls := by

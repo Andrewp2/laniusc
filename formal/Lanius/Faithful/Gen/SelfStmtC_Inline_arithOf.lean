@@ -29,8 +29,8 @@ abbrev Stmt_arith_signed_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : P
     (RepOption 155 RepTyped) (Lanius.Mini.Inline.arithSignedOf x0 x1 x2 x3) w
 
 abbrev Stmt_arm_bind (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.SrcType} {x2 : List Nat} {x3 : List Lanius.Mini.SrcType} {x4 : Nat} {x5 : List Lanius.Mini.Binding} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepSrcType x1 v1 → (RepList 25 RepNat) x2 v2 → (RepList 73 RepSrcType) x3 v3 → RepNat x4 v4 → (RepList 135 RepBinding) x5 v5 →
-    (RepOption 187 (RepList 135 RepBinding)) (Lanius.Mini.Inline.armBind x0 x1 x2 x3 x4 x5) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.SrcType} {x2 : List Nat} {x3 : List Lanius.Mini.SrcType} {x4 : Nat} {x5 : List Lanius.Mini.Binding} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepSrcType x1 v1 → (RepList 25 RepNat) x2 v2 → (RepList 73 RepSrcType) x3 v3 → RepNat x4 v4 → (RepList 136 RepBinding) x5 v5 →
+    (RepOption 187 (RepList 136 RepBinding)) (Lanius.Mini.Inline.armBind x0 x1 x2 x3 x4 x5) w
 
 abbrev Stmt_copy_same (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Binding} {x1 : Lanius.Mini.SrcType} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBinding x0 v0 → RepSrcType x1 v1 →
@@ -41,8 +41,8 @@ abbrev Stmt_copy_slots (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
     (RepOption 151 (RepList 92 RepExpr)) (Lanius.Mini.Inline.copySlots x0 x1 x2) w
 
 abbrev Stmt_eval_arm_in (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Sig} {x1 : Lanius.Mini.SrcDecls} {x2 : Option (List Lanius.Mini.Binding)} {x3 : Nat} {x4 : Nat} {x5 : Lanius.Mini.SrcType} {x6 : Nat} {x7 : Lanius.Mini.SrcEff} {x8 : List Lanius.Mini.SrcEff} {x9 : Option Lanius.Mini.Stmt} {v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6, v7, v8, v9] = some w → (RepList 96 RepSig) x0 v0 → RepSrcDecls x1 v1 → (RepOption 187 (RepList 135 RepBinding)) x2 v2 → RepNat x3 v3 → RepNat x4 v4 → RepSrcType x5 v5 → RepNat x6 v6 → RepSrcEff x7 v7 → (RepList 186 RepSrcEff) x8 v8 → (RepOption 134 RepStmt) x9 v9 →
-    (RepOption 134 RepStmt) (Lanius.Mini.Inline.evalArmIn x0 x1 x2 x3 x4 x5 x6 x7 x8 x9) w
+  ∀ {x0 : List Lanius.Mini.Sig} {x1 : Lanius.Mini.SrcDecls} {x2 : Option (List Lanius.Mini.Binding)} {x3 : Nat} {x4 : Nat} {x5 : Lanius.Mini.SrcType} {x6 : Nat} {x7 : Lanius.Mini.SrcEff} {x8 : List Lanius.Mini.SrcEff} {x9 : Option Lanius.Mini.Stmt} {v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6, v7, v8, v9] = some w → (RepList 96 RepSig) x0 v0 → RepSrcDecls x1 v1 → (RepOption 187 (RepList 136 RepBinding)) x2 v2 → RepNat x3 v3 → RepNat x4 v4 → RepSrcType x5 v5 → RepNat x6 v6 → RepSrcEff x7 v7 → (RepList 186 RepSrcEff) x8 v8 → (RepOption 135 RepStmt) x9 v9 →
+    (RepOption 135 RepStmt) (Lanius.Mini.Inline.evalArmIn x0 x1 x2 x3 x4 x5 x6 x7 x8 x9) w
 
 abbrev Stmt_eval_sized (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.SrcType} {x2 : Option (List Lanius.Mini.Expr)} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepSrcType x1 v1 → (RepOption 151 (RepList 92 RepExpr)) x2 v2 →

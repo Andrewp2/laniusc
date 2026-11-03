@@ -25,7 +25,7 @@ abbrev Stmt_tried_call (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
     (RepOption 293 RepTried) (Lanius.Mini.triedCall x0 x1 x2 x3 x4 x5) w
 
 abbrev Stmt_tried_if (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Bool} {x1 : Nat} {x2 : Option Lanius.Mini.MEff} {x3 : Lanius.Mini.Ty} {x4 : Nat} {x5 : Lanius.Mini.Ty} {x6 : Option (List (List Lanius.Mini.Ty))} {x7 : Option (List (List Lanius.Mini.Ty))} {v0 v1 v2 v3 v4 v5 v6 v7 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6, v7] = some w → RepBool x0 v0 → RepNat x1 v1 → (RepOption 257 RepMEff) x2 v2 → RepTy x3 v3 → RepNat x4 v4 → RepTy x5 v5 → (RepOption 243 (RepList 244 (RepList 141 RepTy))) x6 v6 → (RepOption 243 (RepList 244 (RepList 141 RepTy))) x7 v7 →
+  ∀ {x0 : Bool} {x1 : Nat} {x2 : Option Lanius.Mini.MEff} {x3 : Lanius.Mini.Ty} {x4 : Nat} {x5 : Lanius.Mini.Ty} {x6 : Option (List (List Lanius.Mini.Ty))} {x7 : Option (List (List Lanius.Mini.Ty))} {v0 v1 v2 v3 v4 v5 v6 v7 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6, v7] = some w → RepBool x0 v0 → RepNat x1 v1 → (RepOption 257 RepMEff) x2 v2 → RepTy x3 v3 → RepNat x4 v4 → RepTy x5 v5 → (RepOption 243 (RepList 244 (RepList 142 RepTy))) x6 v6 → (RepOption 243 (RepList 244 (RepList 142 RepTy))) x7 v7 →
     (RepOption 293 RepTried) (Lanius.Mini.triedIf x0 x1 x2 x3 x4 x5 x6 x7) w
 
 abbrev Stmt_tried_local (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

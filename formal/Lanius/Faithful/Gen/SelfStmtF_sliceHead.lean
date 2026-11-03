@@ -41,7 +41,7 @@ abbrev Stmt_field_values (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
     (RepList 82 RepCTree) (Lanius.Mini.fieldValues x0) w
 
 abbrev Stmt_is_path (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List (List Nat))} {x1 : List (List Nat)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 138 (RepList 31 (RepList 25 RepNat))) x0 v0 → (RepList 31 (RepList 25 RepNat)) x1 v1 →
+  ∀ {x0 : Option (List (List Nat))} {x1 : List (List Nat)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 139 (RepList 31 (RepList 25 RepNat))) x0 v0 → (RepList 31 (RepList 25 RepNat)) x1 v1 →
     RepBool (Lanius.Mini.isPath x0 x1) w
 
 abbrev Stmt_is_some_name (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

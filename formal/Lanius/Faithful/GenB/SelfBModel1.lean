@@ -20,14 +20,6 @@ open Lanius.Faithful.Budget
 
 noncomputable section
 
-def Cost_eval_stride_of : Nat → Lanius.Mini.SrcDecls → Lanius.Mini.SrcType → Nat → Nat
-  | 0, x15, x32, x50 => 18446744073709551616
-  | n + 1, x15, x32, x50 => (if (Lanius.Mini.SrcType.isI32 x32) = true then 0 else (if (Lanius.Mini.SrcType.isUint x32 Lanius.Mini.UintTy.uint8) = true then 0 else (Cost_eval_word_stride n x15 x32 x50)))
-
-end
-
-noncomputable section
-
 def Pre_eval_stride_of : Nat → Lanius.Mini.SrcDecls → Lanius.Mini.SrcType → Nat → Nat → Prop
   | 0, x15, x32, x50, b => True
   | n + 1, x15, x32, x50, b => (if (Lanius.Mini.SrcType.isI32 x32) = true then True else (if (Lanius.Mini.SrcType.isUint x32 Lanius.Mini.UintTy.uint8) = true then True else (Pre_eval_word_stride n x15 x32 x50 b)))

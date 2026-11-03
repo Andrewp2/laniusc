@@ -26,6 +26,6 @@ abbrev Stmt_compile_program (prog : SrcProgram) (prims : Prims) (ix n : Nat) : P
 
 abbrev Stmt_room_after (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : List Lanius.Mini.Code} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepList 53 RepCode) x1 v1 →
-    (RepOption 150 RepNat) (Lanius.Mini.roomAfter x0 x1) w
+    (RepOption 134 RepNat) (Lanius.Mini.roomAfter x0 x1) w
 
 end Lanius.Faithful.SelfCert

@@ -4,6 +4,7 @@ public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.SrcType_same
+import Lanius.Mini.Compiler.P.compileArgs
 import Lanius.Mini.Compiler.P.compileModules
 import Lanius.Mini.Compiler.P.loadAtBytes
 import Lanius.Mini.Compiler.P.strStores
@@ -48,10 +49,15 @@ def declBytes (uses : List Nat) (id : Nat) (ty : SrcType) : Nat :=
   else
     arrayBytesOf ty
 
-def paramsArrayBytes (params : List SrcParam) (uses : List Nat) : Nat :=
+/-- The room left of room after each parameter's block bytes are taken out, None as soon as one does not fit (as room_after does for code). -/
+def paramsRoom (room : Nat) (params : List SrcParam) (uses : List Nat) : Option Nat :=
   match params with
-  | [] => 0
-  | p :: rest => declBytes uses p.id p.ty + paramsArrayBytes rest uses
+  | [] => some room
+  | p :: rest =>
+    let proom : Option Nat := spend room (declBytes uses p.id p.ty)
+    match proom with
+    | none => none
+    | some pr => paramsRoom pr rest uses
 
 mutual
 /-- The ids of the arrays the expression passes as slices. -/
@@ -144,46 +150,6 @@ def SrcStmt.sliceUses (self : SrcStmt) : List Nat :=
   | .letView id length fields pointer body => SrcStmt.sliceUses body
   | .letStr pointer chars body => SrcStmt.sliceUses body
 
-/-- The block bytes of the statement's declarations (decl_bytes). -/
-def SrcStmt.arrayBytes (self : SrcStmt) (uses : List Nat) : Nat :=
-  match self with
-  | .nop => 0
-  | .let id ty value body => declBytes uses id ty + SrcStmt.arrayBytes body uses
-  | .letStruct id ty fields body => declBytes uses id ty + SrcStmt.arrayBytes body uses
-  | .letCall id ty callee args body => declBytes uses id ty + SrcStmt.arrayBytes body uses
-  | .letEnum id ty variant payload body => declBytes uses id ty + SrcStmt.arrayBytes body uses
-  | .letMatch id ty scrutinee enumId arms body => declBytes uses id ty + SrcStmt.arrayBytes body uses
-  | .set id value => 0
-  | .setField id index value => 0
-  | .setCall id callee args => 0
-  | .then first second => SrcStmt.arrayBytes first uses + SrcStmt.arrayBytes second uses
-  | .if condition thenBranch elseBranch => SrcStmt.arrayBytes thenBranch uses + SrcStmt.arrayBytes elseBranch uses
-  | .while condition body => SrcStmt.arrayBytes body uses
-  | .return value => 0
-  | .letAlloc id size shift body => SrcStmt.arrayBytes body uses
-  | .letLoad id pointer offset body => SrcStmt.arrayBytes body uses
-  | .setByte pointer offset value => 0
-  | .free pointer size shift => 0
-  | .letSlice id element pointer length body => SrcStmt.arrayBytes body uses
-  | .letIndex id ty slice index body => declBytes uses id ty + SrcStmt.arrayBytes body uses
-  | .setIndex slice index value => 0
-  | .letEval id ty value body => declBytes uses id ty + SrcStmt.arrayBytes body uses
-  | .setEval id value => 0
-  | .ifEval condition thenBranch elseBranch => SrcStmt.arrayBytes thenBranch uses + SrcStmt.arrayBytes elseBranch uses
-  | .whileEval condition body => SrcStmt.arrayBytes body uses
-  | .returnEval value => 0
-  | .discard value => 0
-  | .setIndexEval slice index value => 0
-  | .setFieldEval id field value => 0
-  | .returnUnit => 0
-  | .assert condition => 0
-  | .break => 0
-  | .continue => 0
-  | .matchArm scrutinee enumId variant binds binder ty body rest => SrcStmt.arrayBytes body uses + SrcStmt.arrayBytes rest uses
-  | .unreachable id ty => 0
-  | .letView id length fields pointer body => SrcStmt.arrayBytes body uses
-  | .letStr pointer chars body => SrcStmt.arrayBytes body uses
-
 /-- The largest need of a function the statement calls (SrcEff.callee_need). -/
 def SrcStmt.calleeNeed (self : SrcStmt) (needs : List Nat) : Nat :=
   match self with
@@ -224,9 +190,103 @@ def SrcStmt.calleeNeed (self : SrcStmt) (needs : List Nat) : Nat :=
   | .letView id length fields pointer body => SrcStmt.calleeNeed body needs
   | .letStr pointer chars body => SrcStmt.calleeNeed body needs
 
-/-- A function's own block of frame memory, taken at its entry: 8 bytes per element of each array it declares (a parameter or a let) whose id it passes as a slice somewhere. A call passing arrays places them in it (array_call), at most its bytes. -/
+/-- The room left of room after each declaration's block bytes (decl_bytes) are taken out, None as soon as one does not fit: every let of the body, both branches of an if and every arm. -/
+def blockRoom (room : Nat) (uses : List Nat) (s : SrcStmt) : Option Nat :=
+  match s with
+  | .nop => some room
+  | .let id ty value body =>
+    (let broom : Option Nat := spend room (declBytes uses id ty)
+     match broom with
+     | none => none
+     | some br => blockRoom br uses body)
+  | .letStruct id ty fields body =>
+    (let broom : Option Nat := spend room (declBytes uses id ty)
+     match broom with
+     | none => none
+     | some br => blockRoom br uses body)
+  | .letCall id ty callee args body =>
+    (let broom : Option Nat := spend room (declBytes uses id ty)
+     match broom with
+     | none => none
+     | some br => blockRoom br uses body)
+  | .letEnum id ty variant payload body =>
+    (let broom : Option Nat := spend room (declBytes uses id ty)
+     match broom with
+     | none => none
+     | some br => blockRoom br uses body)
+  | .letMatch id ty scrutinee enumId arms body =>
+    (let broom : Option Nat := spend room (declBytes uses id ty)
+     match broom with
+     | none => none
+     | some br => blockRoom br uses body)
+  | .set id value => some room
+  | .setField id index value => some room
+  | .setCall id callee args => some room
+  | .then first second =>
+    (let broom : Option Nat := blockRoom room uses first
+     match broom with
+     | none => none
+     | some br => blockRoom br uses second)
+  | .if condition thenBranch elseBranch =>
+    (let broom : Option Nat := blockRoom room uses thenBranch
+     match broom with
+     | none => none
+     | some br => blockRoom br uses elseBranch)
+  | .while condition body => blockRoom room uses body
+  | .return value => some room
+  | .letAlloc id size shift body => blockRoom room uses body
+  | .letLoad id pointer offset body => blockRoom room uses body
+  | .setByte pointer offset value => some room
+  | .free pointer size shift => some room
+  | .letSlice id element pointer length body => blockRoom room uses body
+  | .letIndex id ty slice index body =>
+    (let broom : Option Nat := spend room (declBytes uses id ty)
+     match broom with
+     | none => none
+     | some br => blockRoom br uses body)
+  | .setIndex slice index value => some room
+  | .letEval id ty value body =>
+    (let broom : Option Nat := spend room (declBytes uses id ty)
+     match broom with
+     | none => none
+     | some br => blockRoom br uses body)
+  | .setEval id value => some room
+  | .ifEval condition thenBranch elseBranch =>
+    (let broom : Option Nat := blockRoom room uses thenBranch
+     match broom with
+     | none => none
+     | some br => blockRoom br uses elseBranch)
+  | .whileEval condition body => blockRoom room uses body
+  | .returnEval value => some room
+  | .discard value => some room
+  | .setIndexEval slice index value => some room
+  | .setFieldEval id field value => some room
+  | .returnUnit => some room
+  | .assert condition => some room
+  | .break => some room
+  | .continue => some room
+  | .matchArm scrutinee enumId variant binds binder ty body rest =>
+    (let broom : Option Nat := blockRoom room uses body
+     match broom with
+     | none => none
+     | some br => blockRoom br uses rest)
+  | .unreachable id ty => some room
+  | .letView id length fields pointer body => blockRoom room uses body
+  | .letStr pointer chars body => blockRoom room uses body
+
+/-- The largest block lower_func takes: below 2^31 bytes. -/
+def blockLimit : Nat :=
+  2147483647
+
+/-- A function's own block of frame memory, taken at its entry: 8 bytes per element of each array it declares (a parameter or a let) whose id it passes as a slice somewhere. A call passing arrays places them in it (array_call), at most its bytes. The bytes are taken out of block_limit as they add up, so no sum passes 2^64 (F14); a block over the limit is 2^31, which lower_func rejects, as it rejects the sum itself. -/
 def frameBlock (func : SrcFunc) : Nat :=
   let uses : List Nat := SrcStmt.sliceUses func.body
-  paramsArrayBytes func.params uses + SrcStmt.arrayBytes func.body uses
+  match paramsRoom blockLimit func.params uses with
+  | none => 2147483648
+  | some room =>
+    let left : Option Nat := blockRoom room uses func.body
+    match left with
+    | none => 2147483648
+    | some l => blockLimit - l
 
 end Lanius.Mini

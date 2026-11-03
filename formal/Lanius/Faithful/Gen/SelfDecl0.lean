@@ -9,7 +9,7 @@ public import Lanius.Faithful.Gen.SelfSrc4
 public import Lanius.Faithful.Gen.SelfSrc5
 public import Lanius.Faithful.Gen.SelfSrc6
 public import Lanius.Faithful.Gen.SelfSrc7
-public import Lanius.Faithful.Gen.SelfSrcC_Inline_lowerSetScalar
+public import Lanius.Faithful.Gen.SelfSrcC_Inline_blockLeft
 public import Lanius.Faithful.Gen.SelfSrcC_UintTy_half
 public import Lanius.Faithful.Gen.SelfSrcC_compileOr
 public import Lanius.Faithful.Gen.SelfSrcC_compileSource
@@ -36,7 +36,7 @@ import all Lanius.Faithful.Gen.SelfSrc4
 import all Lanius.Faithful.Gen.SelfSrc5
 import all Lanius.Faithful.Gen.SelfSrc6
 import all Lanius.Faithful.Gen.SelfSrc7
-import all Lanius.Faithful.Gen.SelfSrcC_Inline_lowerSetScalar
+import all Lanius.Faithful.Gen.SelfSrcC_Inline_blockLeft
 import all Lanius.Faithful.Gen.SelfSrcC_UintTy_half
 import all Lanius.Faithful.Gen.SelfSrcC_compileOr
 import all Lanius.Faithful.Gen.SelfSrcC_compileSource

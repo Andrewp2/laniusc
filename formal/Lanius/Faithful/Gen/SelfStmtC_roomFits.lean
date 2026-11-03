@@ -21,11 +21,11 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_compile_func (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Arity} {x1 : Lanius.Mini.Func} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 146 RepArity) x0 v0 → RepFunc x1 v1 →
-    (RepOption 149 RepCode) (Lanius.Mini.compileFunc x0 x1) w
+  ∀ {x0 : List Lanius.Mini.Arity} {x1 : Lanius.Mini.Func} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 147 RepArity) x0 v0 → RepFunc x1 v1 →
+    (RepOption 150 RepCode) (Lanius.Mini.compileFunc x0 x1) w
 
 abbrev Stmt_room_fits (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 150 RepNat) x0 v0 →
+  ∀ {x0 : Option Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 134 RepNat) x0 v0 →
     RepBool (Lanius.Mini.roomFits x0) w
 
 end Lanius.Faithful.SelfCert

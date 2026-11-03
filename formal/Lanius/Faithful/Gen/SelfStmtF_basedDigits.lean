@@ -22,7 +22,7 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_based_digits (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : List Nat} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → (RepList 25 RepNat) x1 v1 → RepNat x2 v2 →
-    (RepOption 150 RepNat) (Lanius.Mini.basedDigits x0 x1 x2) w
+    (RepOption 134 RepNat) (Lanius.Mini.basedDigits x0 x1 x2) w
 
 abbrev Stmt_char_body (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 25 RepNat) x0 v0 →
@@ -33,7 +33,7 @@ abbrev Stmt_char_close (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
     (RepOption 234 RepSrcExpr) (Lanius.Mini.charClose x0 x1) w
 
 abbrev Stmt_char_close_opt (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Nat} {x1 : List Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 150 RepNat) x0 v0 → (RepList 25 RepNat) x1 v1 →
+  ∀ {x0 : Option Nat} {x1 : List Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 134 RepNat) x0 v0 → (RepList 25 RepNat) x1 v1 →
     (RepOption 234 RepSrcExpr) (Lanius.Mini.charCloseOpt x0 x1) w
 
 abbrev Stmt_char_literal (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -46,7 +46,7 @@ abbrev Stmt_char_tail (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev Stmt_escaped_byte (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
-    (RepOption 150 RepNat) (Lanius.Mini.escapedByte x0) w
+    (RepOption 134 RepNat) (Lanius.Mini.escapedByte x0) w
 
 abbrev Stmt_fl_add (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Bool} {x1 : List Bool} {x2 : Bool} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 261 RepBool) x0 v0 → (RepList 261 RepBool) x1 v1 → RepBool x2 v2 →
@@ -94,11 +94,11 @@ abbrev Stmt_int_literal (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
 
 abbrev Stmt_lit_base (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
-    (RepOption 150 RepNat) (Lanius.Mini.litBase x0) w
+    (RepOption 134 RepNat) (Lanius.Mini.litBase x0) w
 
 abbrev Stmt_lit_prefixed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Nat} {x1 : List Nat} {x2 : List Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 150 RepNat) x0 v0 → (RepList 25 RepNat) x1 v1 → (RepList 25 RepNat) x2 v2 →
-    (RepOption 150 RepNat) (Lanius.Mini.litPrefixed x0 x1 x2) w
+  ∀ {x0 : Option Nat} {x1 : List Nat} {x2 : List Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 134 RepNat) x0 v0 → (RepList 25 RepNat) x1 v1 → (RepList 25 RepNat) x2 v2 →
+    (RepOption 134 RepNat) (Lanius.Mini.litPrefixed x0 x1 x2) w
 
 abbrev Stmt_lit_sized (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
@@ -106,6 +106,6 @@ abbrev Stmt_lit_sized (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev Stmt_lit_value (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 25 RepNat) x0 v0 →
-    (RepOption 150 RepNat) (Lanius.Mini.litValue x0) w
+    (RepOption 134 RepNat) (Lanius.Mini.litValue x0) w
 
 end Lanius.Faithful.SelfCert

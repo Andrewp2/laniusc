@@ -28,8 +28,8 @@ abbrev Stmt_boxed_of_mini_selfhost_List_core_option_Option_mini_selfhost_SrcType
     (RepList 200 (RepOption 159 RepSrcType)) x0 w
 
 abbrev Stmt_boxed_of_mini_selfhost_List_core_option_Option_usize (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List (Option Nat)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 209 (RepOption 150 RepNat)) x0 v0 →
-    (RepList 209 (RepOption 150 RepNat)) x0 w
+  ∀ {x0 : List (Option Nat)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 209 (RepOption 134 RepNat)) x0 v0 →
+    (RepList 209 (RepOption 134 RepNat)) x0 w
 
 abbrev Stmt_boxed_of_mini_selfhost_List_mini_selfhost_BoundGoal (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.BoundGoal} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 247 RepBoundGoal) x0 v0 →
@@ -40,8 +40,8 @@ abbrev Stmt_boxed_of_mini_selfhost_List_mini_selfhost_CTree (prog : SrcProgram) 
     (RepList 82 RepCTree) x0 w
 
 abbrev Stmt_boxed_of_mini_selfhost_List_mini_selfhost_Inst (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Inst} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 139 RepInst) x0 v0 →
-    (RepList 139 RepInst) x0 w
+  ∀ {x0 : List Lanius.Mini.Inst} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 140 RepInst) x0 v0 →
+    (RepList 140 RepInst) x0 w
 
 abbrev Stmt_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_CTree (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (List Lanius.Mini.CTree)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 106 (RepList 82 RepCTree)) x0 v0 →
@@ -76,12 +76,12 @@ abbrev Stmt_concat_of_mini_selfhost_List_mini_selfhost_List_usize (prog : SrcPro
     (RepList 124 (RepList 31 (RepList 25 RepNat))) (x0 ++ x1) w
 
 abbrev Stmt_concat_of_mini_selfhost_Ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Ty} {x1 : List Lanius.Mini.Ty} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 141 RepTy) x0 v0 → (RepList 141 RepTy) x1 v1 →
-    (RepList 141 RepTy) (x0 ++ x1) w
+  ∀ {x0 : List Lanius.Mini.Ty} {x1 : List Lanius.Mini.Ty} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 142 RepTy) x0 v0 → (RepList 142 RepTy) x1 v1 →
+    (RepList 142 RepTy) (x0 ++ x1) w
 
 abbrev Stmt_cons_of_mini_selfhost_Inst (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Inst} {x1 : List Lanius.Mini.Inst} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepInst x0 v0 → (RepList 139 RepInst) x1 v1 →
-    (RepList 139 RepInst) (x0 :: x1) w
+  ∀ {x0 : Lanius.Mini.Inst} {x1 : List Lanius.Mini.Inst} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepInst x0 v0 → (RepList 140 RepInst) x1 v1 →
+    (RepList 140 RepInst) (x0 :: x1) w
 
 abbrev Stmt_cons_of_mini_selfhost_List_usize (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Nat} {x1 : List (List Nat)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 25 RepNat) x0 v0 → (RepList 31 (RepList 25 RepNat)) x1 v1 →
@@ -152,7 +152,7 @@ abbrev Stmt_get_of_core_option_Option_mini_selfhost_SrcType (prog : SrcProgram) 
     (RepOption 241 (RepOption 159 RepSrcType)) (x0[x1]?) w
 
 abbrev Stmt_get_of_mini_selfhost_Inst (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Inst} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 139 RepInst) x0 v0 → RepNat x1 v1 →
+  ∀ {x0 : List Lanius.Mini.Inst} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 140 RepInst) x0 v0 → RepNat x1 v1 →
     (RepOption 180 RepInst) (x0[x1]?) w
 
 abbrev Stmt_length_of_mini_selfhost_List_usize (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

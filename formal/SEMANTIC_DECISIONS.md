@@ -2632,6 +2632,28 @@ without the check (`compileProgramUnchecked`): it accepts the same programs
 with the same binary. `stmtRoom_eq` gives the check's closed form,
 `stmtRoom room s = if s.weight ≤ room then some (room - s.weight) else none`.
 
+
+## A function's frame block checked as it adds up (decided 11-03, F14)
+
+`frame_block` added each parameter's and each let's block bytes
+(`decl_bytes`, at most `8 * 2^22` each) over the whole source body: every
+let, both branches of an `if` and every arm. It runs in lowering, before
+`compile_func`'s weight check (`room_fits`) and with only `slice_uses`
+charged before it, so the number of lets was bounded only by the budget and
+the sum could pass 2^64 (leafB, PreCompileSourceV4/NOTES.md). Now
+`params_room` and `block_room` take each declaration's bytes out of
+`block_limit()` (2^31 - 1) as they add up, the way `room_after` takes each
+function's code out of the image limit, and fail at once when it runs out.
+`frame_block` is then the sum when it fits and 2^31 when not, so it is at
+most 2^31 and so are the needs' addends.
+
+`lower_func` already rejected a block of 2^31 or more, and `lower_funcs`
+fails when one function does, so the check changes no result:
+`compileSource_unchecked` (`Lanius/Mini/FrameRoom.lean`) shows
+`compileSource` is the compiler with the unchecked sums
+(`compileSourceUnchecked`). The needs differ only for a program with a
+function over the limit, which both reject.
+
 ## Budget certificates (decided 11-01, F14)
 
 `CompileBounded T` asks that the guarded run of `progW` has a value

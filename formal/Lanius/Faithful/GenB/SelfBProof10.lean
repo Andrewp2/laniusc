@@ -75,52 +75,86 @@ theorem bproof_decl_bytes {spW sp : SrcProgram} {prims : Prims} {ix_decl_bytes i
     budget
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
 
-theorem bstep_params_array_bytes {spW sp : SrcProgram} {prims : Prims} {ix_params_array_bytes ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam ix_decl_bytes : Nat}
-    (fnW : spW.funcs[ix_params_array_bytes]? = some (src_params_array_bytes ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam ix_params_array_bytes ix_decl_bytes)) (fn : sp.funcs[ix_params_array_bytes]? = some (src_params_array_bytes ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam ix_params_array_bytes ix_decl_bytes))
-    (np : prims.isPrim ix_params_array_bytes = false)
-    (back : Certified (∀ {n : Nat}, Stmt_params_array_bytes sp prims ix_params_array_bytes n))
-    (b_plus : Certified (∀ {n : Nat}, BStmt_plus spW sp prims ix_plus n))
+theorem bstep_params_room {spW sp : SrcProgram} {prims : Prims} {ix_params_room ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam ix_params_then ix_spend ix_decl_bytes : Nat}
+    (fnW : spW.funcs[ix_params_room]? = some (src_params_room ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam ix_params_then ix_spend ix_decl_bytes)) (fn : sp.funcs[ix_params_room]? = some (src_params_room ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam ix_params_then ix_spend ix_decl_bytes))
+    (np : prims.isPrim ix_params_room = false)
+    (back : Certified (∀ {n : Nat}, Stmt_params_room sp prims ix_params_room n))
     (pp_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam = false)
+    (b_spend : Certified (∀ {n : Nat}, BStmt_spend spW sp prims ix_spend n))
     (b_decl_bytes : Certified (∀ {n : Nat}, BStmt_decl_bytes spW sp prims ix_decl_bytes n)) {n : Nat}
-    (bih_params_array_bytes : Certified (BStmt_params_array_bytes spW sp prims ix_params_array_bytes n)) :
-    BStmt_params_array_bytes spW sp prims ix_params_array_bytes (n + 1) := by
-  intro x0 x1 v0 v1 w k b h r0 r1 hb pre
-  have key : qcall sp prims uc (n + 1) ix_params_array_bytes [v0, v1] = some (w, k) ∧ 0 = k := by
+    (bih_params_then : Certified (BStmt_params_then spW sp prims ix_params_then n)) :
+    BStmt_params_room spW sp prims ix_params_room (n + 1) := by
+  intro x0 x1 x2 v0 v1 v2 w k b h r0 r1 r2 hb pre
+  have key : qcall sp prims uc (n + 1) ix_params_room [v0, v1, v2] = some (w, k) ∧ 0 = k := by
     rw [qcall_succ np fnW] at h
     rw [qcall_succ np fn]
-    simp only [src_params_array_bytes, List.length_cons, List.length_nil, if_true] at h ⊢
-    rw [Pre_params_array_bytes.eq_def] at pre
+    simp only [src_params_room, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_params_room.eq_def] at pre
     simp only at pre
     budget
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
 
-theorem bstep_SrcStmt_array_bytes {spW sp : SrcProgram} {prims : Prims} {ix_SrcStmt_array_bytes ix_plus ix_unbox_of_mini_selfhost_SrcStmt ix_decl_bytes : Nat}
-    (fnW : spW.funcs[ix_SrcStmt_array_bytes]? = some (src_SrcStmt_array_bytes ix_plus ix_unbox_of_mini_selfhost_SrcStmt ix_SrcStmt_array_bytes ix_decl_bytes)) (fn : sp.funcs[ix_SrcStmt_array_bytes]? = some (src_SrcStmt_array_bytes ix_plus ix_unbox_of_mini_selfhost_SrcStmt ix_SrcStmt_array_bytes ix_decl_bytes))
-    (np : prims.isPrim ix_SrcStmt_array_bytes = false)
-    (back : Certified (∀ {n : Nat}, Stmt_SrcStmt_array_bytes sp prims ix_SrcStmt_array_bytes n))
-    (b_plus : Certified (∀ {n : Nat}, BStmt_plus spW sp prims ix_plus n))
+theorem bstep_params_then {spW sp : SrcProgram} {prims : Prims} {ix_params_then ix_params_room : Nat}
+    (fnW : spW.funcs[ix_params_then]? = some (src_params_then ix_params_room)) (fn : sp.funcs[ix_params_then]? = some (src_params_then ix_params_room))
+    (np : prims.isPrim ix_params_then = false)
+    (back : Certified (∀ {n : Nat}, Stmt_params_then sp prims ix_params_then n)) {n : Nat}
+    (bih_params_room : Certified (BStmt_params_room spW sp prims ix_params_room n)) :
+    BStmt_params_then spW sp prims ix_params_then (n + 1) := by
+  intro x0 x1 x2 v0 v1 v2 w k b h r0 r1 r2 hb pre
+  have key : qcall sp prims uc (n + 1) ix_params_then [v0, v1, v2] = some (w, k) ∧ 0 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_params_then, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_params_then.eq_def] at pre
+    simp only at pre
+    budget
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
+
+theorem bstep_block_room {spW sp : SrcProgram} {prims : Prims} {ix_block_room ix_unbox_of_mini_selfhost_SrcStmt ix_spend ix_decl_bytes ix_block_then : Nat}
+    (fnW : spW.funcs[ix_block_room]? = some (src_block_room ix_unbox_of_mini_selfhost_SrcStmt ix_block_room ix_spend ix_decl_bytes ix_block_then)) (fn : sp.funcs[ix_block_room]? = some (src_block_room ix_unbox_of_mini_selfhost_SrcStmt ix_block_room ix_spend ix_decl_bytes ix_block_then))
+    (np : prims.isPrim ix_block_room = false)
+    (back : Certified (∀ {n : Nat}, Stmt_block_room sp prims ix_block_room n))
     (pp_unbox_of_mini_selfhost_SrcStmt : prims.isPrim ix_unbox_of_mini_selfhost_SrcStmt = true) (bx_unbox_of_mini_selfhost_SrcStmt : prims.boxed.contains ix_unbox_of_mini_selfhost_SrcStmt = false)
+    (b_spend : Certified (∀ {n : Nat}, BStmt_spend spW sp prims ix_spend n))
     (b_decl_bytes : Certified (∀ {n : Nat}, BStmt_decl_bytes spW sp prims ix_decl_bytes n)) {n : Nat}
-    (bih_SrcStmt_array_bytes : Certified (BStmt_SrcStmt_array_bytes spW sp prims ix_SrcStmt_array_bytes n)) :
-    BStmt_SrcStmt_array_bytes spW sp prims ix_SrcStmt_array_bytes (n + 1) := by
-  intro x0 x1 v0 v1 w k b h r0 r1 hb pre
-  have key : qcall sp prims uc (n + 1) ix_SrcStmt_array_bytes [v0, v1] = some (w, k) ∧ 0 = k := by
+    (bih_block_room : Certified (BStmt_block_room spW sp prims ix_block_room n))
+    (bih_block_then : Certified (BStmt_block_then spW sp prims ix_block_then n)) :
+    BStmt_block_room spW sp prims ix_block_room (n + 1) := by
+  intro x0 x1 x2 v0 v1 v2 w k b h r0 r1 r2 hb pre
+  have key : qcall sp prims uc (n + 1) ix_block_room [v0, v1, v2] = some (w, k) ∧ 0 = k := by
     rw [qcall_succ np fnW] at h
     rw [qcall_succ np fn]
-    simp only [src_SrcStmt_array_bytes, List.length_cons, List.length_nil, if_true] at h ⊢
-    rw [Pre_SrcStmt_array_bytes.eq_def] at pre
+    simp only [src_block_room, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_block_room.eq_def] at pre
     simp only at pre
     budget
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
 
-theorem bproof_frame_block {spW sp : SrcProgram} {prims : Prims} {ix_frame_block ix_plus ix_SrcStmt_slice_uses ix_params_array_bytes ix_SrcStmt_array_bytes : Nat}
-    (fnW : spW.funcs[ix_frame_block]? = some (src_frame_block ix_plus ix_SrcStmt_slice_uses ix_params_array_bytes ix_SrcStmt_array_bytes)) (fn : sp.funcs[ix_frame_block]? = some (src_frame_block ix_plus ix_SrcStmt_slice_uses ix_params_array_bytes ix_SrcStmt_array_bytes))
+theorem bstep_block_then {spW sp : SrcProgram} {prims : Prims} {ix_block_then ix_block_room : Nat}
+    (fnW : spW.funcs[ix_block_then]? = some (src_block_then ix_block_room)) (fn : sp.funcs[ix_block_then]? = some (src_block_then ix_block_room))
+    (np : prims.isPrim ix_block_then = false)
+    (back : Certified (∀ {n : Nat}, Stmt_block_then sp prims ix_block_then n)) {n : Nat}
+    (bih_block_room : Certified (BStmt_block_room spW sp prims ix_block_room n)) :
+    BStmt_block_then spW sp prims ix_block_then (n + 1) := by
+  intro x0 x1 x2 v0 v1 v2 w k b h r0 r1 r2 hb pre
+  have key : qcall sp prims uc (n + 1) ix_block_then [v0, v1, v2] = some (w, k) ∧ 0 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_block_then, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_block_then.eq_def] at pre
+    simp only at pre
+    budget
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
+
+theorem bproof_frame_block {spW sp : SrcProgram} {prims : Prims} {ix_frame_block ix_SrcStmt_slice_uses ix_params_room ix_block_limit ix_block_left ix_block_room : Nat}
+    (fnW : spW.funcs[ix_frame_block]? = some (src_frame_block ix_SrcStmt_slice_uses ix_params_room ix_block_limit ix_block_left ix_block_room)) (fn : sp.funcs[ix_frame_block]? = some (src_frame_block ix_SrcStmt_slice_uses ix_params_room ix_block_limit ix_block_left ix_block_room))
     (np : prims.isPrim ix_frame_block = false)
     (back : Certified (∀ {n : Nat}, Stmt_frame_block sp prims ix_frame_block n))
-    (b_plus : Certified (∀ {n : Nat}, BStmt_plus spW sp prims ix_plus n))
     (b_SrcStmt_slice_uses : Certified (∀ {n : Nat}, BStmt_SrcStmt_slice_uses spW sp prims ix_SrcStmt_slice_uses n))
-    (b_params_array_bytes : Certified (∀ {n : Nat}, BStmt_params_array_bytes spW sp prims ix_params_array_bytes n))
-    (b_SrcStmt_array_bytes : Certified (∀ {n : Nat}, BStmt_SrcStmt_array_bytes spW sp prims ix_SrcStmt_array_bytes n)) {n : Nat} :
+    (b_params_room : Certified (∀ {n : Nat}, BStmt_params_room spW sp prims ix_params_room n))
+    (b_block_limit : Certified (∀ {n : Nat}, BStmt_block_limit spW sp prims ix_block_limit n))
+    (b_block_left : Certified (∀ {n : Nat}, BStmt_block_left spW sp prims ix_block_left n))
+    (b_block_room : Certified (∀ {n : Nat}, BStmt_block_room spW sp prims ix_block_room n)) {n : Nat} :
     BStmt_frame_block spW sp prims ix_frame_block n := by
   intro x0 v0 w k b h r0 hb pre
   rcases n with _ | n

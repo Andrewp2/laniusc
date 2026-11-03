@@ -25,11 +25,11 @@ abbrev Stmt_diverges (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     RepBool (Lanius.Mini.diverges x0 x1) w
 
 abbrev Stmt_init_tys (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Ty} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 141 RepTy) x0 v0 →
-    (RepList 141 RepTy) (Lanius.Mini.initTys x0) w
+  ∀ {x0 : List Lanius.Mini.Ty} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 142 RepTy) x0 v0 →
+    (RepList 142 RepTy) (Lanius.Mini.initTys x0) w
 
 abbrev Stmt_last_ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Ty} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 141 RepTy) x0 v0 →
+  ∀ {x0 : List Lanius.Mini.Ty} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 142 RepTy) x0 v0 →
     (RepOption 211 RepTy) (Lanius.Mini.lastTy x0) w
 
 abbrev Stmt_never_ret (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

@@ -41,7 +41,7 @@ def src_try_set (ix_boxed_of_mini_selfhost_MStmt : Nat) (ix_try_rest : Nat) : Sr
 def src_while_eval_of (ix_while_eff : Nat) : SrcFunc := { params := [{ id := 14, ty := ty315 }, { id := 45, ty := ty307 }], ret := ty307, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 14)) ty315 ty307 [[171], []] [SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 45)) ty307 ty307 [[235], []] [SrcEff.eVariant ty307 0 [SrcEff.eCall ix_while_eff [SrcEff.ePure (SrcExpr.local 171), SrcEff.ePure (SrcExpr.local 235)]], SrcEff.eVariant ty307 1 []], SrcEff.eVariant ty307 1 []]) }
 
 /-- mini::selfhost::while_or_eval -/
-def src_while_or_eval (ix_eff_of : Nat) (ix_while_eval_of : Nat) : SrcFunc := { params := [{ id := 14, ty := SrcType.uint (UintTy.usize) }, { id := 27, ty := ty275 }, { id := 42, ty := ty291 }, { id := 62, ty := ty84 }, { id := 72, ty := ty307 }], ret := ty307, body := SrcStmt.returnEval (SrcEff.eCall ix_while_eval_of [SrcEff.eCall ix_eff_of [SrcEff.ePure (SrcExpr.local 14), SrcEff.ePure (SrcExpr.local 27), SrcEff.ePure (SrcExpr.local 42), SrcEff.eVariant ty250 0 [SrcEff.eVariant ty152 1 []], SrcEff.ePure (SrcExpr.local 62)], SrcEff.ePure (SrcExpr.local 72)]) }
+def src_while_or_eval (ix_eff_of : Nat) (ix_while_eval_of : Nat) : SrcFunc := { params := [{ id := 14, ty := SrcType.uint (UintTy.usize) }, { id := 27, ty := ty275 }, { id := 42, ty := ty291 }, { id := 62, ty := ty84 }, { id := 72, ty := ty307 }], ret := ty307, body := SrcStmt.returnEval (SrcEff.eCall ix_while_eval_of [SrcEff.eCall ix_eff_of [SrcEff.ePure (SrcExpr.local 14), SrcEff.ePure (SrcExpr.local 27), SrcEff.ePure (SrcExpr.local 42), SrcEff.eVariant ty250 0 [SrcEff.eVariant ty153 1 []], SrcEff.ePure (SrcExpr.local 62)], SrcEff.ePure (SrcExpr.local 72)]) }
 
 end
 

@@ -25,7 +25,7 @@ abbrev Stmt_arm_value_trees (prog : SrcProgram) (prims : Prims) (ix n : Nat) : P
     (RepList 82 RepCTree) (Lanius.Mini.armValueTrees x0) w
 
 abbrev Stmt_binds_of_tys (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List (List Nat)} {x1 : Option (List Lanius.Mini.Ty)} {x2 : List Lanius.Mini.Bind} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepOption 212 (RepList 141 RepTy)) x1 v1 → (RepList 274 RepBind) x2 v2 →
+  ∀ {x0 : List (List Nat)} {x1 : Option (List Lanius.Mini.Ty)} {x2 : List Lanius.Mini.Bind} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepOption 212 (RepList 142 RepTy)) x1 v1 → (RepList 274 RepBind) x2 v2 →
     (RepOption 273 (RepList 274 RepBind)) (Lanius.Mini.bindsOfTys x0 x1 x2) w
 
 abbrev Stmt_is_false_arm (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -46,6 +46,6 @@ abbrev Stmt_method_binds (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
 
 abbrev Stmt_ty_per_arm (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Ty} {x1 : List Lanius.Mini.CTree} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepTy x0 v0 → (RepList 82 RepCTree) x1 v1 →
-    (RepList 141 RepTy) (Lanius.Mini.tyPerArm x0 x1) w
+    (RepList 142 RepTy) (Lanius.Mini.tyPerArm x0 x1) w
 
 end Lanius.Faithful.SelfCert

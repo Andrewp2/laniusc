@@ -21,3 +21,9 @@
   front-end or lowering check, e.g. `frameBlock` summed against a limit as it adds up (as `stmt_room`
   does), or a per-function bound on the source body's lets before `frame_block`; the same goes for
   any other whole-body sum in lowering (`SrcStmt_array_bytes`, `params_array_bytes`).
+- 11-03 (leafA): `frame_block` is now checked as it adds up (compiler.lani `params_room`,
+  `block_room`, `block_limit` = 2^31 - 1): each parameter's and let's bytes come out of the room,
+  and a block over it is 2^31. So `frameBlock f ≤ 2^31` (`frameBlock_le`, Mini/FrameRoom.lean), with
+  no premise, and V4 holds as stated as far as `frame_block` goes. The check changes no result of the
+  compiler (`compileSource_unchecked`). The needs (`need_round`) still add one block per round:
+  after k rounds a need is at most (k + 1) * 2^31, with k at most the number of functions.

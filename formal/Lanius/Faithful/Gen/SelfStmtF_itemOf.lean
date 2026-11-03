@@ -30,11 +30,11 @@ abbrev Stmt_imported_variants (prog : SrcProgram) (prims : Prims) (ix n : Nat) :
 
 abbrev Stmt_item_import (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Decls} {x1 : List Lanius.Mini.ImportDecl} {x2 : List (List Nat)} {x3 : List Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepDecls x0 v0 → (RepList 115 RepImportDecl) x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → (RepList 25 RepNat) x3 v3 →
-    (RepOption 138 (RepList 31 (RepList 25 RepNat))) (Lanius.Mini.itemImport x0 x1 x2 x3) w
+    (RepOption 139 (RepList 31 (RepList 25 RepNat))) (Lanius.Mini.itemImport x0 x1 x2 x3) w
 
 abbrev Stmt_item_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Decls} {x1 : List (List Nat)} {x2 : List Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepDecls x0 v0 → (RepList 31 (RepList 25 RepNat)) x1 v1 → (RepList 25 RepNat) x2 v2 →
-    (RepOption 138 (RepList 31 (RepList 25 RepNat))) (Lanius.Mini.itemOf x0 x1 x2) w
+    (RepOption 139 (RepList 31 (RepList 25 RepNat))) (Lanius.Mini.itemOf x0 x1 x2) w
 
 abbrev Stmt_only_variant (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.VariantAt} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 299 RepVariantAt) x0 v0 →

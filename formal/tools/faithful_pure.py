@@ -1067,7 +1067,7 @@ def main(argv):
     piece_arms = ''.join(f'    | {k}, _ => decide +kernel\n' for k in range(pieces))
     needs = ('module\n\npublic import Lanius.Faithful.Gen.SelfProg\npublic import Lanius.Mini.Needs\n' +
              ''.join(f'import all {m}\n' for m in gen_closure(['Lanius.Faithful.Gen.SelfProg'])) +
-             ''.join(f'import all Lanius.Mini.Compiler.P.{m}\n' for m in ('withBudget', 'storeArray', 'strStores', 'SrcType_same')) +
+             ''.join(f'import all Lanius.Mini.Compiler.P.{m}\n' for m in ('withBudget', 'compileArgs', 'storeArray', 'strStores', 'SrcType_same')) +
              f'\n{HEADER}\n@[expose] public section\n\nnamespace {NS}\n\n{open_lines}'
              '/-- No function of the self program takes a block of frame memory. -/\n'
              'theorem frameBlocks_zero : (prog.funcs.all fun f => frameBlock f == 0) = true :=\n'
