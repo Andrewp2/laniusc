@@ -62,6 +62,7 @@ import all Lanius.Mini.Compiler.P.repeatType
 import all Lanius.Mini.Compiler.P.shortCircuit
 import all Lanius.Mini.Compiler.P.sintToUint
 import all Lanius.Mini.Compiler.P.storeArray
+import all Lanius.Mini.Compiler.P.strStores
 import all Lanius.Mini.Compiler.P.storeEvalWord
 import all Lanius.Mini.Compiler.P.storeType
 import all Lanius.Mini.Compiler.P.storeWordElement
@@ -578,6 +579,18 @@ theorem mapView_trap_grows {root : Nat} {projections : List Core.ValueProjection
           exact Grows.same rfl rfl
         · simp at mapped
 
+/-- `string_data_ptr` of a string literal never traps. -/
+theorem strPtr_trap_grows {text : String}
+    (run : evalExpr k P st (.stringDataPtr (.value (.string text))) = .trapped r st') : Grows st st' := by
+  have valid : Memory.validAlignment 4 = true := by decide
+  cases k with
+  | zero => simp [evalExpr] at run
+  | succ k =>
+    cases k with
+    | zero => simp [evalExpr] at run
+    | succ k =>
+      simp [evalExpr, Semantics.mapStringDataPtr, Memory.Heap.mapBorrowed, valid] at run
+
 /-- `i32_array_data_ptr` of a local that traps grows the state. -/
 theorem view_trap_grows {id : Nat}
     (run : evalExpr k P st (.i32ArrayDataPtr (.local id)) = .trapped r st') : Grows st st' := by
@@ -1078,6 +1091,9 @@ theorem grows_trap_step {fuel : Nat} (ih : GrowsBelow sp fuel) (ihT : GrowsBelow
       | succ g =>
         exact letLocal_trap_grows (fun r' => view_grows r') (fun r' => view_trap_grows r')
           (fun r' => ihT g (by omega) (s := body) r') r
+    | letStr pointer chars body =>
+      exact letLocal_trap_grows (fun r => strPtr_grows r) (fun r => strPtr_trap_grows r)
+        (fun r => belowT (s := body) r) run
     | letLoad id pointer offset body =>
       exact letLocal_trap_grows (fun r => loadByte_grows r) (fun r => loadByte_trap_grows r)
         (fun r => belowT (s := body) r) run

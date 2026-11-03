@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::literal -/
-def src_Expr_literal : SrcFunc := { params := [{ id := 8, ty := ty90 }], ret := ty231, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 8)) ty90 ty231 [[91], [130], [168], [205, 211, 222, 228], [264, 270, 281, 287], [324, 335, 341]] [SrcEff.eVariant ty231 0 [SrcEff.ePure (SrcExpr.local 91)], SrcEff.eVariant ty231 1 [], SrcEff.eVariant ty231 1 [], SrcEff.eVariant ty231 1 [], SrcEff.eVariant ty231 1 [], SrcEff.eVariant ty231 1 []]) }
+def src_Expr_literal : SrcFunc := { params := [{ id := 8, ty := ty90 }], ret := ty233, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 8)) ty90 ty233 [[91], [130], [168], [205, 211, 222, 228], [264, 270, 281, 287], [324, 335, 341]] [SrcEff.eVariant ty233 0 [SrcEff.ePure (SrcExpr.local 91)], SrcEff.eVariant ty233 1 [], SrcEff.eVariant ty233 1 [], SrcEff.eVariant ty233 1 [], SrcEff.eVariant ty233 1 [], SrcEff.eVariant ty233 1 []]) }
 
 /-- mini::selfhost::agrees -/
 def src_Func_agrees (ix_empty_of_mini_selfhost_Fact : Nat) (ix_Stmt_agrees : Nat) : SrcFunc := { params := [{ id := 7, ty := ty95 }, { id := 13, ty := ty95 }], ret := SrcType.bool, body := SrcStmt.returnEval (SrcEff.eApply (SrcOp.logicalAnd) (SrcEff.ePure (SrcExpr.apply (SrcOp.logicalAnd) (SrcExpr.apply (SrcOp.logicalAnd) (SrcExpr.apply (SrcOp.equal) (SrcExpr.field 7 0) (SrcExpr.field 13 0)) (SrcExpr.apply (SrcOp.equal) (SrcExpr.field 7 1) (SrcExpr.field 13 1))) (SrcExpr.apply (SrcOp.equal) (SrcExpr.field 7 2) (SrcExpr.field 13 2)))) (SrcEff.eCall ix_Stmt_agrees [SrcEff.ePure (SrcExpr.field 7 3), SrcEff.eCall ix_empty_of_mini_selfhost_Fact [], SrcEff.ePure (SrcExpr.field 13 3)])) }

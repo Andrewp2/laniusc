@@ -251,6 +251,7 @@ def litStmt (funcs : List SrcFunc) (ret : SrcType) (locals : List LocalTy) (s : 
   | .matchArm sc en k bs x ty body rest => SrcStmt.matchArm sc en k bs x ty (litStmt funcs ret (withLocal x ty locals) body) (litStmt funcs ret locals rest)
   | .unreachable id ty => SrcStmt.unreachable id ty
   | .letView id n es p body => SrcStmt.letView id n (litExprs locals (some (repeatSrc SrcType.i32 n)) es) p (litStmt funcs ret (withLocal p SrcType.ptr (withLocal id (SrcType.array SrcType.i32 n) locals)) body)
+  | .letStr p cs body => SrcStmt.letStr p cs (litStmt funcs ret (withLocal p SrcType.ptr locals) body)
 
 def paramLocals (ps : List SrcParam) : List LocalTy :=
   match ps with

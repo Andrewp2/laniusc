@@ -102,6 +102,7 @@ def stmtOkC (ret : SrcType) (tenv : TEnv) : SrcStmt → Bool
     | none => false
   | .letAlloc _ _ _ _ => false
   | .letView _ _ _ _ _ => false
+  | .letStr _ _ _ => false
   | .letLoad _ _ _ _ => false
   | .setByte _ _ _ => false
   | .free _ _ _ => false
@@ -209,6 +210,7 @@ theorem stmtOkC_eq (ret : SrcType) (s : SrcStmt) : ∀ tenv : TEnv,
   | «return» value => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
   | letAlloc => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
   | letView => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
+  | letStr => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
   | letLoad => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
   | setByte => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
   | free => intro tenv; rw [stmtOkC, stmtOk] <;> rfl

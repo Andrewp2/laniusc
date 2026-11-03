@@ -29,7 +29,7 @@ abbrev Stmt_int_literal_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
     RepSrcExpr (Lanius.Mini.intLiteralAt x0 x1 x2) w
 
 abbrev Stmt_payload_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List (List Lanius.Mini.SrcType))} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 189 (RepList 77 (RepList 73 RepSrcType))) x0 v0 → RepNat x1 v1 →
+  ∀ {x0 : Option (List (List Lanius.Mini.SrcType))} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 191 (RepList 77 (RepList 73 RepSrcType))) x0 v0 → RepNat x1 v1 →
     (RepOption 188 (RepList 73 RepSrcType)) (Lanius.Mini.payloadAt x0 x1) w
 
 abbrev Stmt_repeat_src (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -50,14 +50,14 @@ abbrev Stmt_src_fields (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
 
 abbrev Stmt_src_variants (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 158 RepSrcType) x0 v0 →
-    (RepOption 189 (RepList 77 (RepList 73 RepSrcType))) (Lanius.Mini.srcVariants x0) w
+    (RepOption 191 (RepList 77 (RepList 73 RepSrcType))) (Lanius.Mini.srcVariants x0) w
 
 abbrev Stmt_ty_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option (List Lanius.Mini.SrcType)} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 188 (RepList 73 RepSrcType)) x0 v0 → RepNat x1 v1 →
     (RepOption 158 RepSrcType) (Lanius.Mini.tyAt x0 x1) w
 
 abbrev Stmt_ty_local (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.LocalTy} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 221 RepLocalTy) x0 v0 → RepNat x1 v1 →
+  ∀ {x0 : List Lanius.Mini.LocalTy} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 223 RepLocalTy) x0 v0 → RepNat x1 v1 →
     (RepOption 158 RepSrcType) (Lanius.Mini.tyLocal x0 x1) w
 
 end Lanius.Faithful.SelfCert

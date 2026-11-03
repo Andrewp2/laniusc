@@ -16,7 +16,7 @@ public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
 public import Lanius.Faithful.Gen.SelfStmtC_bindingBytes
 public import Lanius.Faithful.Gen.SelfStmtC_guardAnd
 public import Lanius.Faithful.Gen.SelfStmtC_repeatType
-public import Lanius.Faithful.Gen.SelfStmtC_storeArray
+public import Lanius.Faithful.Gen.SelfStmtC_strStores
 import all Lanius.Faithful.Gen.SelfSrcC_bindingBytes
 import all Lanius.Mini.Compiler.P.bindingBytes
 

@@ -1283,6 +1283,7 @@ partial def serStmt : SrcStmt → String
   | .return e => s!"(.return {serExpr e})"
   | .letAlloc n size shift r => s!"(.letAlloc {n} {serExpr size} {shift} {serStmt r})"
   | .letView n len es p r => s!"(.letView {n} {len} {serExprs es} {p} {serStmt r})"
+  | .letStr p cs r => s!"(.letStr {p} {cs} {serStmt r})"
   | .letLoad n p o r => s!"(.letLoad {n} {serExpr p} {serExpr o} {serStmt r})"
   | .setByte p o v => s!"(.setByte {serExpr p} {serExpr o} {serExpr v})"
   | .free p size shift => s!"(.free {serExpr p} {serExpr size} {shift})"
@@ -1401,6 +1402,7 @@ partial def bindersOf : SrcStmt → List Nat
   | .letMatch n _ _ _ arms r => n :: arms.flatMap (·.binders) ++ bindersOf r
   | .letAlloc n _ _ r | .letLoad n _ _ r | .letSlice n _ _ _ r | .letIndex n _ _ _ r => n :: bindersOf r
   | .letView n _ _ p r => n :: p :: bindersOf r
+  | .letStr p _ r => p :: bindersOf r
   | .then a b | .if _ a b => bindersOf a ++ bindersOf b
   | .while _ b => bindersOf b
   | .letEval n _ x r => n :: effBinders x ++ bindersOf r
@@ -1456,6 +1458,7 @@ partial def renStmt (f : Nat → Nat) : SrcStmt → SrcStmt
   | .return e => .return (renExpr f e)
   | .letAlloc n s k r => .letAlloc (f n) (renExpr f s) k (renStmt f r)
   | .letView n len es p r => .letView (f n) len (es.map (renExpr f)) (f p) (renStmt f r)
+  | .letStr p cs r => .letStr (f p) cs (renStmt f r)
   | .letLoad n p o r => .letLoad (f n) (renExpr f p) (renExpr f o) (renStmt f r)
   | .setByte p o v => .setByte (renExpr f p) (renExpr f o) (renExpr f v)
   | .free p s k => .free (renExpr f p) (renExpr f s) k

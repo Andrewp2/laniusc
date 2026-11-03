@@ -4,6 +4,7 @@ public import Lanius.Faithful.Safe.Stmt
 public import Lanius.Faithful.Safe.Prims
 public import Lanius.Faithful.Sim.Func
 public import Lanius.Mini.Compiler.P.storeArray
+public import Lanius.Mini.Compiler.P.strStores
 public import Lanius.Mini.Compiler.P.arrayCallSig
 public import Lanius.Mini.Compiler.P.bindingBytes
 public import Lanius.Mini.Compiler.P.funcNeeds
@@ -39,7 +40,7 @@ variable {sp : SrcProgram} {prims : Prims} {outside : List Nat}
 theorem looseJump_eq (s : SrcStmt) : looseJump s = s.breaksOut := by
   induction s with
   | «let» _ _ _ _ ih | letStruct _ _ _ _ ih | letCall _ _ _ _ _ ih | letEnum _ _ _ _ _ ih
-  | letMatch _ _ _ _ _ _ ih | letAlloc _ _ _ _ ih | letView _ _ _ _ _ ih | letLoad _ _ _ _ ih | letSlice _ _ _ _ _ ih
+  | letMatch _ _ _ _ _ _ ih | letAlloc _ _ _ _ ih | letView _ _ _ _ _ ih | letStr _ _ _ ih | letLoad _ _ _ _ ih | letSlice _ _ _ _ _ ih
   | letIndex _ _ _ _ _ ih | letEval _ _ _ _ ih =>
     simp only [looseJump, SrcStmt.breaksOut, ih]
   | «then» _ _ ih1 ih2 | «if» _ _ _ ih1 ih2 | ifEval _ _ _ ih1 ih2 | matchArm _ _ _ _ _ _ _ _ ih1 ih2 =>

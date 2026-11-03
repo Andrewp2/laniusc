@@ -65,6 +65,7 @@ import all Lanius.Mini.Compiler.P.repeatType
 import all Lanius.Mini.Compiler.P.shortCircuit
 import all Lanius.Mini.Compiler.P.sintToUint
 import all Lanius.Mini.Compiler.P.storeArray
+import all Lanius.Mini.Compiler.P.strStores
 import all Lanius.Mini.Compiler.P.storeEvalWord
 import all Lanius.Mini.Compiler.P.storeType
 import all Lanius.Mini.Compiler.P.storeWordElement
@@ -96,6 +97,7 @@ public import Lanius.Mini.Compiler.P.shortCircuit
 public import Lanius.Mini.Compiler.P.withBudget
 public import Lanius.Mini.Compiler.P.funcNeeds
 public import Lanius.Mini.Compiler.P.storeArray
+public import Lanius.Mini.Compiler.P.strStores
 public import Lanius.Mini.Compiler.P.arrayCallSig
 public import Lanius.Mini.Compiler.P.bindingBytes
 public import Lanius.Mini.Compiler.P.needRound
@@ -2565,6 +2567,7 @@ theorem stmtStops_succ {sp : SrcProgram} {mp : Program} {n : Nat}
   | .let _ _ _ body => stops_let (stmtStops_succ lowered returns prev body)
   | .letStruct _ _ _ body => stops_letStruct (stmtStops_succ lowered returns prev body)
   | .letView _ _ _ _ body => stops_letView (stmtStops_succ lowered returns prev body)
+  | .letStr _ _ body => stops_letStr (stmtStops_succ lowered returns prev body)
   | .letCall _ _ _ _ body => stops_letCall lowered returns prev (stmtStops_succ lowered returns prev body)
   | .letEnum _ _ _ _ body => stops_letEnum (stmtStops_succ lowered returns prev body)
   | .letMatch _ _ _ _ _ body => stops_letMatch (stmtStops_succ lowered returns prev body)

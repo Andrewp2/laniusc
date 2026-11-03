@@ -191,6 +191,7 @@ theorem qstmt_mono (le : QCallsLe call call') {fuel fuel' : Nat} (fle : fuel ≤
   | «return» => exact fun h => h
   | letAlloc => intro env d h; simp [qstmt] at h
   | letView => intro env d h; simp [qstmt] at h
+  | letStr => intro env d h; simp [qstmt] at h
   | letLoad => intro env d h; simp [qstmt] at h
   | setByte => intro env d h; simp [qstmt] at h
   | free => intro env d h; simp [qstmt] at h

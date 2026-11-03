@@ -4,6 +4,7 @@ public import Lanius.Mini.Progress
 public import Lanius.Mini.TypeSound
 public import Lanius.Mini.UndefTraps
 public import Lanius.Mini.ViewLower
+public import Lanius.Mini.StrLower
 public import Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.FArith_opcode
@@ -63,6 +64,7 @@ import all Lanius.Mini.Compiler.P.withBudget
 import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.sintToUint
 import all Lanius.Mini.Compiler.P.storeArray
+import all Lanius.Mini.Compiler.P.strStores
 import all Lanius.Mini.Compiler.P.arrayCallSig
 import all Lanius.Mini.Compiler.P.needRound
 import all Lanius.Mini.Compiler.P.needsAfter
@@ -104,6 +106,7 @@ public import Lanius.Mini.Compiler.P.shortCircuit
 public import Lanius.Mini.Compiler.P.withBudget
 public import Lanius.Mini.Compiler.P.funcNeeds
 public import Lanius.Mini.Compiler.P.storeArray
+public import Lanius.Mini.Compiler.P.strStores
 public import Lanius.Mini.Compiler.P.arrayCallSig
 public import Lanius.Mini.Compiler.P.bindingBytes
 public import Lanius.Mini.Compiler.P.needRound
@@ -310,6 +313,7 @@ theorem returns_noNext : ∀ (s : SrcStmt), s.returns = true → NoNext P s.toCo
   | .let _ _ _ body, h => NoNext.letLocal (returns_noNext body h)
   | .letStruct _ _ _ body, h => NoNext.letLocal (returns_noNext body h)
   | .letView _ _ _ _ body, h => NoNext.letLocal (NoNext.letLocal (returns_noNext body h))
+  | .letStr _ _ body, h => NoNext.letLocal (returns_noNext body h)
   | .letCall _ _ _ _ body, h => NoNext.letLocal (returns_noNext body h)
   | .letEnum _ _ _ _ body, h => NoNext.letLocal (returns_noNext body h)
   | .letMatch _ _ _ _ _ body, h => NoNext.letLocal (returns_noNext body h)
@@ -487,6 +491,7 @@ theorem breaksOut_noEscape : ∀ (s : SrcStmt), s.breaksOut = false → NoEscape
   | .let _ _ _ body, h => NoEscape.letLocal (breaksOut_noEscape body h)
   | .letStruct _ _ _ body, h => NoEscape.letLocal (breaksOut_noEscape body h)
   | .letView _ _ _ _ body, h => NoEscape.letLocal (NoEscape.letLocal (breaksOut_noEscape body h))
+  | .letStr _ _ body, h => NoEscape.letLocal (breaksOut_noEscape body h)
   | .letCall _ _ _ _ body, h => NoEscape.letLocal (breaksOut_noEscape body h)
   | .letEnum _ _ _ _ body, h => NoEscape.letLocal (breaksOut_noEscape body h)
   | .letMatch _ _ _ _ _ body, h => NoEscape.letLocal (breaksOut_noEscape body h)
@@ -1644,6 +1649,43 @@ theorem stops_letView {id length pointer : Nat} {fields : List SrcExpr} {body : 
     simp only [Expr.eval, BitVec.toNat_ofNat]
     rw [Nat.mod_eq_of_lt (by omega), ← pEq]
     exact past
+
+theorem stops_letStr {pointer : Nat} {chars : List Nat} {body : SrcStmt}
+    (ih : SrcStops sp mp n body) : SrcStops sp mp n (.letStr pointer chars body) := by
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  obtain ⟨bstmt, nonempty, short, ascii, bodyOk, rfl⟩ := letStr_lower_inv ok
+  simp only [SrcStmt.toCore] at fails
+  have valid : Lanius.Memory.validAlignment 4 = true := by decide
+  cases map : st.heap.mapBorrowed (Semantics.stringStorage (strValue chars)) 4 with
+  | exhausted h => simp [Lanius.Memory.Heap.mapBorrowed, valid] at map
+  | trapped r h => simp [Lanius.Memory.Heap.mapBorrowed, valid] at map
+  | allocated p heap' =>
+    have valueRun : evalExpr 2 sp.toCore st (.stringDataPtr (.value (.string (strValue chars)))) =
+        .done (.pointer p) { st with heap := heap' } := by
+      simp only [evalExpr, Semantics.mapStringDataPtr, map]
+    by_cases fits : heap'.nextAddress ≤ hp.limit
+    · obtain ⟨hp3, pBits, hc3, fc3, limit3, -, stopsT⟩ :=
+        str_entered (mp := mp) (env := env) (next := next) ascii nonempty hc fc map fits
+      obtain ⟨d, stops⟩ := let_stops ih (ty := .ptr) (st := { st with heap := heap' }) (v := .pointer p)
+        (env' := env.set next (BitVec.ofNat 64 p)) (hp := hp3) bodyOk (corr.sameCells rfl fun _ => rfl) fr
+        ⟨fresh.1, fresh.2.heapOf rfl rfl fun _ o bf => o.mapBorrowed bf map⟩ le Nat.one_pos
+        (fr.agree fun j below => by simp only [Env.set]; rw [if_neg (by omega)])
+        (.ptr (by simp only [SrcType.Holds, Env.set, if_pos, Value.pointer.injEq]; exact pBits.symm))
+        hc3 fc3 under (by rw [limit3]; exact fits) (by rw [limit3]; exact fails.letBody valueRun)
+      exact ⟨d, stopsT stops⟩
+    · rw [← strWords_storage ascii] at map
+      obtain ⟨pEq, nextEq, -⟩ := hc.mapView map
+      have pos := strWords_pos nonempty
+      have few := strWords_length ascii
+      have small := hc.small
+      have maxEq : max (wordBytes (strWords chars)).length 1 = 4 * (strWords chars).length := by
+        rw [wordBytes_length]; omega
+      rw [maxEq] at nextEq
+      refine ⟨0, .seqFirst (.alloc (by rw [hc.cursor]; exact within) ?_)⟩
+      simp only [Expr.eval, BitVec.toNat_ofNat]
+      rw [Nat.mod_eq_of_lt (by addr_omega), ← pEq]
+      rw [nextEq] at fits
+      exact Nat.lt_of_not_le fits
 
 theorem stops_letEnum {id : Nat} {ty : SrcType} {variant : Nat} {payload : List SrcExpr} {body : SrcStmt}
     (ih : SrcStops sp mp n body) : SrcStops sp mp n (.letEnum id ty variant payload body) := by

@@ -104,6 +104,16 @@ theorem proof_cons_of_mini_selfhost_LocalTy {prog : SrcProgram} {prims : Prims} 
   simp only [src_cons_of_mini_selfhost_LocalTy] at h
   faithful []
 
+theorem proof_cons_of_u64 {prog : SrcProgram} {prims : Prims} {ix_cons_of_u64 ix_boxed_of_mini_selfhost_List_u64 : Nat} (fn : prog.funcs[ix_cons_of_u64]? = some (src_cons_of_u64 ix_boxed_of_mini_selfhost_List_u64)) (np : prims.isPrim ix_cons_of_u64 = false)
+    (ext_boxed_of_mini_selfhost_List_u64 : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_u64 prog prims ix_boxed_of_mini_selfhost_List_u64 n)) {n : Nat} :
+    Stmt_cons_of_u64 prog prims ix_cons_of_u64 n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_cons_of_u64] at h
+  faithful []
+
 theorem proof_cons_of_u8 {prog : SrcProgram} {prims : Prims} {ix_cons_of_u8 ix_boxed_of_mini_selfhost_List_u8 : Nat} (fn : prog.funcs[ix_cons_of_u8]? = some (src_cons_of_u8 ix_boxed_of_mini_selfhost_List_u8)) (np : prims.isPrim ix_cons_of_u8 = false)
     (ext_boxed_of_mini_selfhost_List_u8 : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_u8 prog prims ix_boxed_of_mini_selfhost_List_u8 n)) {n : Nat} :
     Stmt_cons_of_u8 prog prims ix_cons_of_u8 n := by

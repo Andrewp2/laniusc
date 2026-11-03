@@ -26,6 +26,7 @@ import Lanius.Mini.Compiler.P.lowerTagged
 import Lanius.Mini.Compiler.P.matchVariants
 import Lanius.Mini.Compiler.P.repeatType
 import Lanius.Mini.Compiler.P.storeArray
+import Lanius.Mini.Compiler.P.strStores
 import Lanius.Mini.Compiler.P.wordStride
 
 public section
@@ -154,6 +155,7 @@ def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (decls : SrcDecls) (ret : S
   | .matchArm scrutinee enumId variant binds binder ty body rest => lowerMatchArm scope (lookup scope scrutinee) enumId variant binds binder ty next (SrcStmt.lower body sigs decls ret (armBodyScope binds binder ty next scope) (next + SrcType.size ty)) (SrcStmt.lower rest sigs decls ret scope next)
   | .unreachable id ty => lowerUnreachable (SrcType.same ty ret) next
   | .letView id length fields pointer body => guarded next (guardAll scope fields) (lowerView next length (lowerLiteral scope (SrcType.array SrcType.i32 length) fields) (SrcStmt.lower body sigs decls ret (({ id := pointer, slot := next + length, ty := SrcType.ptr } : Binding) :: ({ id := id, slot := next, ty := SrcType.view length } : Binding) :: scope) (next + length + 1)))
+  | .letStr pointer chars body => lowerStr next chars (SrcStmt.lower body sigs decls ret (({ id := pointer, slot := next, ty := SrcType.ptr } : Binding) :: scope) (next + 1))
 
 /-- A break or continue outside every loop of the statement: Core's typing rejects one outside every loop of the function. -/
 def SrcStmt.breaksOut (self : SrcStmt) : Bool :=
@@ -193,6 +195,7 @@ def SrcStmt.breaksOut (self : SrcStmt) : Bool :=
   | .matchArm scrutinee enumId variant binds binder ty body rest => SrcStmt.breaksOut body || SrcStmt.breaksOut rest
   | .unreachable id ty => false
   | .letView id length fields pointer body => SrcStmt.breaksOut body
+  | .letStr pointer chars body => SrcStmt.breaksOut body
 
 /-- Slots the statement's lets need beyond the ones in scope. -/
 def SrcStmt.depth (self : SrcStmt) : Nat :=
@@ -232,6 +235,7 @@ def SrcStmt.depth (self : SrcStmt) : Nat :=
   | .matchArm scrutinee enumId variant binds binder ty body rest => max (SrcStmt.depth body + SrcType.size ty) (SrcStmt.depth rest)
   | .unreachable id ty => 1
   | .letView id length fields pointer body => SrcStmt.depth body + (length + 1)
+  | .letStr pointer chars body => SrcStmt.depth body + 1
 
 /-- Parameters take slots from 0 in order, a struct one per field; a later parameter with the same id shadows an earlier one, as Core's bindLocals does. -/
 def paramScope (params : List SrcParam) (slot : Nat) (scope : List Binding) : List Binding :=

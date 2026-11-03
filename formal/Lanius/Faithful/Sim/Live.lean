@@ -129,7 +129,7 @@ def liveStmt (ret : SrcType) : SrcStmt → Bool
   | .returnUnit => decide (ret.toCore = .unit)
   | .set _ value => liveExpr value
   | .setEval _ value => liveEff bad value
-  | .letMatch _ _ _ _ _ _ | .setField _ _ _ | .setCall _ _ _ | .while _ _ | .letAlloc _ _ _ _ | .letView _ _ _ _ _
+  | .letMatch _ _ _ _ _ _ | .setField _ _ _ | .setCall _ _ _ | .while _ _ | .letAlloc _ _ _ _ | .letView _ _ _ _ _ | .letStr _ _ _
   | .letLoad _ _ _ _ | .setByte _ _ _ | .free _ _ _ | .letSlice _ _ _ _ _ | .letIndex _ _ _ _ _
   | .setIndex _ _ _ | .whileEval _ _ | .setIndexEval _ _ _ | .setFieldEval _ _ _
   | .assert _ | .break | .continue | .matchArm _ _ _ _ _ _ _ _ | .unreachable _ _ => false
@@ -1287,7 +1287,7 @@ theorem stmt_live {ret : SrcType} :
         exact EvSome.const (a := .next E') (fun m => by simp only [hE', Option.map_some]) (hE.set hg rv hE')
   | «while» _ _ | whileEval _ _ | «break» | «continue» =>
     intro A W E tenv _ _ _ _ _ hl; simp [liveStmt] at hl
-  | letMatch _ _ _ _ _ _ | setField _ _ _ | setCall _ _ _ | letAlloc _ _ _ _ | letView _ _ _ _ _
+  | letMatch _ _ _ _ _ _ | setField _ _ _ | setCall _ _ _ | letAlloc _ _ _ _ | letView _ _ _ _ _ | letStr _ _ _
   | letLoad _ _ _ _ | setByte _ _ _ | free _ _ _ | letSlice _ _ _ _ _ | letIndex _ _ _ _ _
   | setIndex _ _ _ | setIndexEval _ _ _ | setFieldEval _ _ _
   | matchArm _ _ _ _ _ _ _ _ | unreachable _ _ =>

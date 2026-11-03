@@ -396,6 +396,7 @@ theorem stmt_sim (calls : ∀ i < N, FuncSim sp prims outside i) (ret : SrcType)
     · simp at ok
   | letAlloc => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
   | letView => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
+  | letStr => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
   | letLoad => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
   | setByte => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
   | free => intro k tenv env st c st' le run ok; simp [stmtOk] at ok

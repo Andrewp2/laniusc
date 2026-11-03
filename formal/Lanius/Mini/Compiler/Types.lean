@@ -442,6 +442,8 @@ inductive SrcStmt where
   | unreachable : Nat → SrcType → SrcStmt
   /-- LetView(id, length, elements, pointer, body): let id: [i32; length] = [elements]; let pointer: ptr = core::mem::i32_array_data_ptr(id); then body. Core maps the array into a fresh heap block (its view), which pointer addresses; the verified compiler stores the elements there and the body sees id as a View. -/
   | letView : Nat → Nat → (List SrcExpr) → Nat → SrcStmt → SrcStmt
+  /-- LetStr(pointer, chars, body): let pointer: ptr = core::mem::string_data_ptr("chars"); then body, chars the string's Unicode scalar values. Core maps the string's UTF-8 bytes, zero-padded to whole words, into a fresh heap block, which pointer addresses; the verified compiler stores them there as words. -/
+  | letStr : Nat → (List Nat) → SrcStmt → SrcStmt
   deriving Repr
 
 structure SrcParam where

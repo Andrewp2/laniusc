@@ -276,6 +276,16 @@ theorem step_length_of_mini_selfhost_VariantTy {prog : SrcProgram} {prims : Prim
   simp only [src_length_of_mini_selfhost_VariantTy] at h
   faithful []
 
+theorem step_length_of_u64 {prog : SrcProgram} {prims : Prims} {ix_length_of_u64 ix_plus ix_unbox_of_mini_selfhost_List_u64 : Nat} (fn : prog.funcs[ix_length_of_u64]? = some (src_length_of_u64 ix_plus ix_length_of_u64 ix_unbox_of_mini_selfhost_List_u64)) (np : prims.isPrim ix_length_of_u64 = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_unbox_of_mini_selfhost_List_u64 : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_u64 prog prims ix_unbox_of_mini_selfhost_List_u64 n)) {n : Nat}
+    (ih_length_of_u64 : Certified (Stmt_length_of_u64 prog prims ix_length_of_u64 n)) :
+    Stmt_length_of_u64 prog prims ix_length_of_u64 (n + 1) := by
+  intro x0 v0 w h r0
+  rw [pcall_succ np fn] at h
+  simp only [src_length_of_u64] at h
+  faithful []
+
 theorem step_length_of_usize {prog : SrcProgram} {prims : Prims} {ix_length_of_usize ix_plus ix_unbox_of_mini_selfhost_List_usize : Nat} (fn : prog.funcs[ix_length_of_usize]? = some (src_length_of_usize ix_length_of_usize ix_plus ix_unbox_of_mini_selfhost_List_usize)) (np : prims.isPrim ix_length_of_usize = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_unbox_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_usize n)) {n : Nat}

@@ -283,6 +283,9 @@ pub enum SrcStmt {
     // LetView(id, length, elements, pointer, body): let id: [i32; length] =
     // [elements]; let pointer: ptr = core::mem::i32_array_data_ptr(id); body
     LetView(usize, usize, List<SrcExpr>, usize, Box<SrcStmt>),
+    // LetStr(pointer, chars, body): let pointer: ptr =
+    // core::mem::string_data_ptr("chars"); body
+    LetStr(usize, List<usize>, Box<SrcStmt>),
 }
 
 pub struct SrcParam {
@@ -12593,6 +12596,7 @@ pub fn lit_stmt(funcs: List<SrcFunc>, ret: SrcType, locals: List<LocalTy>, s: Sr
         MatchArm(sc, en, k, bs, x, ty, body, rest) -> MatchArm(sc, en, k, bs, x, ty, boxed(lit_stmt(funcs, ret, with_local(x, ty, locals), unbox(body))), boxed(lit_stmt(funcs, ret, locals, unbox(rest)))),
         Unreachable(id, ty) -> Unreachable(id, ty),
         LetView(id, n, es, p, body) -> LetView(id, n, lit_exprs(locals, Some(repeat_src(I32, n)), es), p, boxed(lit_stmt(funcs, ret, with_local(p, Ptr, with_local(id, SrcType::Array(boxed(I32), n), locals)), unbox(body)))),
+        LetStr(p, cs, body) -> LetStr(p, cs, boxed(lit_stmt(funcs, ret, with_local(p, Ptr, locals), unbox(body)))),
     };
 }
 
@@ -12712,6 +12716,7 @@ pub fn wide_left_stmt(s: SrcStmt) -> bool {
         MatchArm(sc, en, k, bs, x, ty, body, rest) -> wide_left_stmt(unbox(body)) || wide_left_stmt(unbox(rest)),
         Unreachable(id, ty) -> false,
         LetView(id, n, es, p, body) -> wide_left_exprs(es) || wide_left_stmt(unbox(body)),
+        LetStr(p, cs, body) -> wide_left_stmt(unbox(body)),
     };
 }
 

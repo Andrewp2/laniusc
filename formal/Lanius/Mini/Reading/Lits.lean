@@ -325,6 +325,9 @@ inductive LitStmt (funcs : List SrcFunc) (ret : SrcType) : List LocalTy → SrcS
       LitExprs locals (some (repeatSrc .i32 n)) es es' →
       LitStmt funcs ret (withLocal p .ptr (withLocal id (.array .i32 n) locals)) b b' →
       LitStmt funcs ret locals (.letView id n es p b) (.letView id n es' p b')
+  | letStr {locals : List LocalTy} {p : Nat} {cs : List Nat} {b b' : SrcStmt} :
+      LitStmt funcs ret (withLocal p .ptr locals) b b' →
+      LitStmt funcs ret locals (.letStr p cs b) (.letStr p cs b')
 
 theorem litStmt_sound (funcs : List SrcFunc) (ret : SrcType) :
     ∀ (locals : List LocalTy) (s : SrcStmt), LitStmt funcs ret locals s (litStmt funcs ret locals s)
@@ -387,6 +390,8 @@ theorem litStmt_sound (funcs : List SrcFunc) (ret : SrcType) :
   | locals, .unreachable id ty => by simp only [litStmt]; exact .unreachable
   | locals, .letView id n es p b => by
     simp only [litStmt]; exact .letView (litExprs_sound _ _ _) (litStmt_sound funcs ret _ b)
+  | locals, .letStr p cs b => by
+    simp only [litStmt]; exact .letStr (litStmt_sound funcs ret _ b)
   | locals, .assert x => by simp only [litStmt]; exact .assert (litEff_sound _ _ _ _)
 
 /-! ## Functions and the closed program -/

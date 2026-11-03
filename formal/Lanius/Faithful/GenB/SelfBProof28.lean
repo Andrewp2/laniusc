@@ -440,22 +440,4 @@ theorem bproof_lx_digit_run {spW sp : SrcProgram} {prims : Prims} {ix_lx_digit_r
     budget
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
 
-theorem bproof_lx_exponent_sign {spW sp : SrcProgram} {prims : Prims} {ix_lx_exponent_sign ix_plus : Nat}
-    (fnW : spW.funcs[ix_lx_exponent_sign]? = some (src_lx_exponent_sign ix_plus)) (fn : sp.funcs[ix_lx_exponent_sign]? = some (src_lx_exponent_sign ix_plus))
-    (np : prims.isPrim ix_lx_exponent_sign = false)
-    (back : Certified (∀ {n : Nat}, Stmt_lx_exponent_sign sp prims ix_lx_exponent_sign n))
-    (b_plus : Certified (∀ {n : Nat}, BStmt_plus spW sp prims ix_plus n)) {n : Nat} :
-    BStmt_lx_exponent_sign spW sp prims ix_lx_exponent_sign n := by
-  intro x0 x1 v0 v1 w k b h r0 r1 hb pre
-  rcases n with _ | n
-  · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_lx_exponent_sign [v0, v1] = some (w, k) ∧ 0 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_lx_exponent_sign, List.length_cons, List.length_nil, if_true] at h ⊢
-    rw [Pre_lx_exponent_sign.eq_def] at pre
-    simp only at pre
-    budget
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
-
 end Lanius.Faithful.SelfBudget

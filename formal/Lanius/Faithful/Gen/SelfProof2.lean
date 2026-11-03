@@ -329,6 +329,16 @@ theorem proof_single_of_mini_selfhost_MEff {prog : SrcProgram} {prims : Prims} {
   simp only [src_single_of_mini_selfhost_MEff] at h
   faithful []
 
+theorem proof_single_of_u64 {prog : SrcProgram} {prims : Prims} {ix_single_of_u64 ix_boxed_of_mini_selfhost_List_u64 : Nat} (fn : prog.funcs[ix_single_of_u64]? = some (src_single_of_u64 ix_boxed_of_mini_selfhost_List_u64)) (np : prims.isPrim ix_single_of_u64 = false)
+    (ext_boxed_of_mini_selfhost_List_u64 : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_u64 prog prims ix_boxed_of_mini_selfhost_List_u64 n)) {n : Nat} :
+    Stmt_single_of_u64 prog prims ix_single_of_u64 n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_single_of_u64] at h
+  faithful []
+
 theorem proof_unbox_of_mini_selfhost_List_bool {prog : SrcProgram} {prims : Prims} {ix_unbox_of_mini_selfhost_List_bool : Nat} (np : prims.isPrim ix_unbox_of_mini_selfhost_List_bool = true) {n : Nat} :
     Stmt_unbox_of_mini_selfhost_List_bool prog prims ix_unbox_of_mini_selfhost_List_bool n :=
   fun h r => prim_cert np h r

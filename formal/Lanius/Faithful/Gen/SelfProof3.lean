@@ -70,6 +70,10 @@ theorem proof_boxed_of_mini_selfhost_List_mini_selfhost_VariantAt {prog : SrcPro
     Stmt_boxed_of_mini_selfhost_List_mini_selfhost_VariantAt prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_VariantAt n :=
   fun h r => prim_cert np h r
 
+theorem proof_boxed_of_mini_selfhost_List_u64 {prog : SrcProgram} {prims : Prims} {ix_boxed_of_mini_selfhost_List_u64 : Nat} (np : prims.isPrim ix_boxed_of_mini_selfhost_List_u64 = true) {n : Nat} :
+    Stmt_boxed_of_mini_selfhost_List_u64 prog prims ix_boxed_of_mini_selfhost_List_u64 n :=
+  fun h r => prim_cert np h r
+
 theorem proof_boxed_of_mini_selfhost_SrcEff {prog : SrcProgram} {prims : Prims} {ix_boxed_of_mini_selfhost_SrcEff : Nat} (np : prims.isPrim ix_boxed_of_mini_selfhost_SrcEff = true) {n : Nat} :
     Stmt_boxed_of_mini_selfhost_SrcEff prog prims ix_boxed_of_mini_selfhost_SrcEff n :=
   fun h r => prim_cert np h r
@@ -349,6 +353,10 @@ theorem proof_unbox_of_mini_selfhost_List_mini_selfhost_SrcEnumDecl {prog : SrcP
 
 theorem proof_unbox_of_mini_selfhost_List_mini_selfhost_SymRule {prog : SrcProgram} {prims : Prims} {ix_unbox_of_mini_selfhost_List_mini_selfhost_SymRule : Nat} (np : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_SymRule = true) {n : Nat} :
     Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SymRule prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SymRule n :=
+  fun h r => prim_cert np h r
+
+theorem proof_unbox_of_mini_selfhost_List_u64 {prog : SrcProgram} {prims : Prims} {ix_unbox_of_mini_selfhost_List_u64 : Nat} (np : prims.isPrim ix_unbox_of_mini_selfhost_List_u64 = true) {n : Nat} :
+    Stmt_unbox_of_mini_selfhost_List_u64 prog prims ix_unbox_of_mini_selfhost_List_u64 n :=
   fun h r => prim_cert np h r
 
 end Lanius.Faithful.SelfCert

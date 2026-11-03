@@ -21,7 +21,7 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_lx_filter_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.SymRule} {x1 : List Nat} {x2 : List Nat} {x3 : Lanius.Mini.RawTok} {x4 : List Lanius.Mini.RawTok} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepList 190 RepSymRule) x0 v0 → (RepList 25 RepNat) x1 v1 → (RepList 25 RepNat) x2 v2 → RepRawTok x3 v3 → (RepList 161 RepRawTok) x4 v4 →
+  ∀ {x0 : List Lanius.Mini.SymRule} {x1 : List Nat} {x2 : List Nat} {x3 : Lanius.Mini.RawTok} {x4 : List Lanius.Mini.RawTok} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepList 192 RepSymRule) x0 v0 → (RepList 25 RepNat) x1 v1 → (RepList 25 RepNat) x2 v2 → RepRawTok x3 v3 → (RepList 161 RepRawTok) x4 v4 →
     (RepList 161 RepRawTok) (Lanius.Mini.Inline.lxFilterAt x0 x1 x2 x3 x4) w
 
 abbrev Stmt_lx_ranges_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

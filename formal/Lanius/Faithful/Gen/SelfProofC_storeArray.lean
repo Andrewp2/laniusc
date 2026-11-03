@@ -11,16 +11,9 @@ public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtC_Inline_lowerSetScalar
-public import Lanius.Faithful.Gen.SelfStmtC_SrcExpr_guard
 public import Lanius.Faithful.Gen.SelfStmtC_SrcType_size
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
-public import Lanius.Faithful.Gen.SelfStmtC_evalSame
-public import Lanius.Faithful.Gen.SelfStmtC_guardAnd
-public import Lanius.Faithful.Gen.SelfStmtC_indexOf
-public import Lanius.Faithful.Gen.SelfStmtC_lowerCallSig
-public import Lanius.Faithful.Gen.SelfStmtC_lowerLoadType
 public import Lanius.Faithful.Gen.SelfStmtC_matchVariants
-public import Lanius.Faithful.Gen.SelfStmtC_shortCircuit
 public import Lanius.Faithful.Gen.SelfStmtC_storeArray
 public import Lanius.Faithful.Gen.SelfStmtC_storeEvalWord
 import all Lanius.Faithful.Gen.SelfSrcC_storeArray
@@ -43,80 +36,6 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_block_at {prog : SrcProgram} {prims : Prims} {ix_block_at ix_boxed_of_mini_selfhost_Expr : Nat} (fn : prog.funcs[ix_block_at]? = some (src_block_at ix_boxed_of_mini_selfhost_Expr)) (np : prims.isPrim ix_block_at = false)
-    (ext_boxed_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Expr prog prims ix_boxed_of_mini_selfhost_Expr n)) {n : Nat} :
-    Stmt_block_at prog prims ix_block_at n := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_block_at] at h
-  faithful [Lanius.Mini.blockAt]
-
-theorem proof_block_load {prog : SrcProgram} {prims : Prims} {ix_block_load ix_block_at : Nat} (fn : prog.funcs[ix_block_load]? = some (src_block_load ix_block_at)) (np : prims.isPrim ix_block_load = false)
-    (ext_block_at : Certified (∀ {n : Nat}, Stmt_block_at prog prims ix_block_at n)) {n : Nat} :
-    Stmt_block_load prog prims ix_block_load n := by
-  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_block_load] at h
-  faithful [Lanius.Mini.blockLoad]
-
-theorem proof_block_store {prog : SrcProgram} {prims : Prims} {ix_block_store ix_block_at : Nat} (fn : prog.funcs[ix_block_store]? = some (src_block_store ix_block_at)) (np : prims.isPrim ix_block_store = false)
-    (ext_block_at : Certified (∀ {n : Nat}, Stmt_block_at prog prims ix_block_at n)) {n : Nat} :
-    Stmt_block_store prog prims ix_block_store n := by
-  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_block_store] at h
-  faithful [Lanius.Mini.blockStore]
-
-theorem step_element_loads {prog : SrcProgram} {prims : Prims} {ix_element_loads ix_minus ix_plus ix_boxed_of_mini_selfhost_Stmt ix_block_load : Nat} (fn : prog.funcs[ix_element_loads]? = some (src_element_loads ix_minus ix_plus ix_boxed_of_mini_selfhost_Stmt ix_element_loads ix_block_load)) (np : prims.isPrim ix_element_loads = false)
-    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
-    (ext_boxed_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Stmt prog prims ix_boxed_of_mini_selfhost_Stmt n))
-    (ext_block_load : Certified (∀ {n : Nat}, Stmt_block_load prog prims ix_block_load n)) {n : Nat}
-    (ih_element_loads : Certified (Stmt_element_loads prog prims ix_element_loads n)) :
-    Stmt_element_loads prog prims ix_element_loads (n + 1) := by
-  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
-  rw [pcall_succ np fn] at h
-  simp only [src_element_loads] at h
-  faithful [Lanius.Mini.elementLoads]
-
-theorem step_element_stores {prog : SrcProgram} {prims : Prims} {ix_element_stores ix_minus ix_plus ix_boxed_of_mini_selfhost_Stmt ix_block_store : Nat} (fn : prog.funcs[ix_element_stores]? = some (src_element_stores ix_minus ix_plus ix_boxed_of_mini_selfhost_Stmt ix_element_stores ix_block_store)) (np : prims.isPrim ix_element_stores = false)
-    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
-    (ext_boxed_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Stmt prog prims ix_boxed_of_mini_selfhost_Stmt n))
-    (ext_block_store : Certified (∀ {n : Nat}, Stmt_block_store prog prims ix_block_store n)) {n : Nat}
-    (ih_element_stores : Certified (Stmt_element_stores prog prims ix_element_stores n)) :
-    Stmt_element_stores prog prims ix_element_stores (n + 1) := by
-  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
-  rw [pcall_succ np fn] at h
-  simp only [src_element_stores] at h
-  faithful [Lanius.Mini.elementStores]
-
-theorem step_id_absent {prog : SrcProgram} {prims : Prims} {ix_id_absent ix_unbox_of_mini_selfhost_List_usize : Nat} (fn : prog.funcs[ix_id_absent]? = some (src_id_absent ix_unbox_of_mini_selfhost_List_usize ix_id_absent)) (np : prims.isPrim ix_id_absent = false)
-    (ext_unbox_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_usize n)) {n : Nat}
-    (ih_id_absent : Certified (Stmt_id_absent prog prims ix_id_absent n)) :
-    Stmt_id_absent prog prims ix_id_absent (n + 1) := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rw [pcall_succ np fn] at h
-  simp only [src_id_absent] at h
-  faithful [Lanius.Mini.idAbsent]
-
-theorem proof_lower_assert {prog : SrcProgram} {prims : Prims} {ix_lower_assert ix_boxed_of_mini_selfhost_Stmt ix_eval_same : Nat} (fn : prog.funcs[ix_lower_assert]? = some (src_lower_assert ix_boxed_of_mini_selfhost_Stmt ix_eval_same)) (np : prims.isPrim ix_lower_assert = false)
-    (ext_boxed_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Stmt prog prims ix_boxed_of_mini_selfhost_Stmt n))
-    (ext_eval_same : Certified (∀ {n : Nat}, Stmt_eval_same prog prims ix_eval_same n)) {n : Nat} :
-    Stmt_lower_assert prog prims ix_lower_assert n := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_lower_assert] at h
-  faithful [Lanius.Mini.lowerAssert]
-
 theorem proof_lower_return_unit {prog : SrcProgram} {prims : Prims} {ix_lower_return_unit ix_SrcType_is_unit ix_single_of_mini_selfhost_Expr : Nat} (fn : prog.funcs[ix_lower_return_unit]? = some (src_lower_return_unit ix_SrcType_is_unit ix_single_of_mini_selfhost_Expr)) (np : prims.isPrim ix_lower_return_unit = false)
     (ext_SrcType_is_unit : Certified (∀ {n : Nat}, Stmt_SrcType_is_unit prog prims ix_SrcType_is_unit n))
     (ext_single_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_Expr prog prims ix_single_of_mini_selfhost_Expr n)) {n : Nat} :
@@ -137,38 +56,6 @@ theorem proof_lower_set_field_eval {prog : SrcProgram} {prims : Prims} {ix_lower
   rw [pcall_succ np fn] at h
   simp only [src_lower_set_field_eval] at h
   faithful [Lanius.Mini.lowerSetFieldEval]
-
-theorem proof_lower_set_index_any {prog : SrcProgram} {prims : Prims} {ix_lower_set_index_any ix_plus ix_guarded ix_SrcExpr_guard ix_lookup ix_guard_and ix_lower_set_index_eval ix_is_array_local ix_eval_pure ix_index_guard ix_lower_index ix_lower_set_index : Nat} (fn : prog.funcs[ix_lower_set_index_any]? = some (src_lower_set_index_any ix_plus ix_guarded ix_SrcExpr_guard ix_lookup ix_guard_and ix_lower_set_index_eval ix_is_array_local ix_eval_pure ix_index_guard ix_lower_index ix_lower_set_index)) (np : prims.isPrim ix_lower_set_index_any = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
-    (ext_guarded : Certified (∀ {n : Nat}, Stmt_guarded prog prims ix_guarded n))
-    (ext_SrcExpr_guard : Certified (∀ {n : Nat}, Stmt_SrcExpr_guard prog prims ix_SrcExpr_guard n))
-    (ext_lookup : Certified (∀ {n : Nat}, Stmt_lookup prog prims ix_lookup n))
-    (ext_guard_and : Certified (∀ {n : Nat}, Stmt_guard_and prog prims ix_guard_and n))
-    (ext_lower_set_index_eval : Certified (∀ {n : Nat}, Stmt_lower_set_index_eval prog prims ix_lower_set_index_eval n))
-    (ext_is_array_local : Certified (∀ {n : Nat}, Stmt_is_array_local prog prims ix_is_array_local n))
-    (ext_eval_pure : Certified (∀ {n : Nat}, Stmt_eval_pure prog prims ix_eval_pure n))
-    (ext_index_guard : Certified (∀ {n : Nat}, Stmt_index_guard prog prims ix_index_guard n))
-    (ext_lower_index : Certified (∀ {n : Nat}, Stmt_lower_index prog prims ix_lower_index n))
-    (ext_lower_set_index : Certified (∀ {n : Nat}, Stmt_lower_set_index prog prims ix_lower_set_index n)) {n : Nat} :
-    Stmt_lower_set_index_any prog prims ix_lower_set_index_any n := by
-  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_lower_set_index_any] at h
-  faithful [Lanius.Mini.lowerSetIndexAny]
-
-theorem proof_lower_set_index_eval {prog : SrcProgram} {prims : Prims} {ix_lower_set_index_eval ix_element_of ix_store_eval_element ix_store_array : Nat} (fn : prog.funcs[ix_lower_set_index_eval]? = some (src_lower_set_index_eval ix_element_of ix_store_eval_element ix_store_array)) (np : prims.isPrim ix_lower_set_index_eval = false)
-    (ext_element_of : Certified (∀ {n : Nat}, Stmt_element_of prog prims ix_element_of n))
-    (ext_store_eval_element : Certified (∀ {n : Nat}, Stmt_store_eval_element prog prims ix_store_eval_element n))
-    (ext_store_array : Certified (∀ {n : Nat}, Stmt_store_array prog prims ix_store_array n)) {n : Nat} :
-    Stmt_lower_set_index_eval prog prims ix_lower_set_index_eval n := by
-  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_lower_set_index_eval] at h
-  faithful [Lanius.Mini.lowerSetIndexEval]
 
 theorem proof_lower_unreachable {prog : SrcProgram} {prims : Prims} {ix_lower_unreachable : Nat} (fn : prog.funcs[ix_lower_unreachable]? = some (src_lower_unreachable)) (np : prims.isPrim ix_lower_unreachable = false) {n : Nat} :
     Stmt_lower_unreachable prog prims ix_lower_unreachable n := by
@@ -192,16 +79,6 @@ theorem proof_lower_view {prog : SrcProgram} {prims : Prims} {ix_lower_view ix_p
   rw [pcall_succ np fn] at h
   simp only [src_lower_view] at h
   faithful [Lanius.Mini.lowerView]
-
-theorem proof_packed_width {prog : SrcProgram} {prims : Prims} {ix_packed_width ix_SrcType_same : Nat} (fn : prog.funcs[ix_packed_width]? = some (src_packed_width ix_SrcType_same)) (np : prims.isPrim ix_packed_width = false)
-    (ext_SrcType_same : Certified (∀ {n : Nat}, Stmt_SrcType_same prog prims ix_SrcType_same n)) {n : Nat} :
-    Stmt_packed_width prog prims ix_packed_width n := by
-  intro x0 v0 w h r0
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_packed_width] at h
-  faithful [Lanius.Mini.packedWidth]
 
 theorem proof_set_field_eval_at {prog : SrcProgram} {prims : Prims} {ix_set_field_eval_at ix_set_scalar_eval : Nat} (fn : prog.funcs[ix_set_field_eval_at]? = some (src_set_field_eval_at ix_set_scalar_eval)) (np : prims.isPrim ix_set_field_eval_at = false)
     (ext_set_scalar_eval : Certified (∀ {n : Nat}, Stmt_set_scalar_eval prog prims ix_set_scalar_eval n)) {n : Nat} :
@@ -237,6 +114,28 @@ theorem proof_store_array {prog : SrcProgram} {prims : Prims} {ix_store_array ix
   rw [pcall_succ np fn] at h
   simp only [src_store_array] at h
   faithful [Lanius.Mini.storeArray]
+
+theorem step_str_ascii {prog : SrcProgram} {prims : Prims} {ix_str_ascii ix_unbox_of_mini_selfhost_List_usize : Nat} (fn : prog.funcs[ix_str_ascii]? = some (src_str_ascii ix_unbox_of_mini_selfhost_List_usize ix_str_ascii)) (np : prims.isPrim ix_str_ascii = false)
+    (ext_unbox_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_usize n)) {n : Nat}
+    (ih_str_ascii : Certified (Stmt_str_ascii prog prims ix_str_ascii n)) :
+    Stmt_str_ascii prog prims ix_str_ascii (n + 1) := by
+  intro x0 v0 w h r0
+  rw [pcall_succ np fn] at h
+  simp only [src_str_ascii] at h
+  faithful [Lanius.Mini.strAscii]
+
+theorem step_str_words {prog : SrcProgram} {prims : Prims} {ix_str_words ix_plus ix_unbox_of_mini_selfhost_List_usize ix_times ix_single_of_u64 ix_cons_of_u64 : Nat} (fn : prog.funcs[ix_str_words]? = some (src_str_words ix_plus ix_unbox_of_mini_selfhost_List_usize ix_times ix_str_words ix_single_of_u64 ix_cons_of_u64)) (np : prims.isPrim ix_str_words = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_unbox_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_usize n))
+    (ext_times : Certified (∀ {n : Nat}, Stmt_times prog prims ix_times n))
+    (ext_single_of_u64 : Certified (∀ {n : Nat}, Stmt_single_of_u64 prog prims ix_single_of_u64 n))
+    (ext_cons_of_u64 : Certified (∀ {n : Nat}, Stmt_cons_of_u64 prog prims ix_cons_of_u64 n)) {n : Nat}
+    (ih_str_words : Certified (Stmt_str_words prog prims ix_str_words n)) :
+    Stmt_str_words prog prims ix_str_words (n + 1) := by
+  intro x0 v0 w h r0
+  rw [pcall_succ np fn] at h
+  simp only [src_str_words] at h
+  faithful [Lanius.Mini.strWords]
 
 theorem step_view_stores {prog : SrcProgram} {prims : Prims} {ix_view_stores ix_minus ix_plus ix_boxed_of_mini_selfhost_Stmt ix_boxed_of_mini_selfhost_Expr : Nat} (fn : prog.funcs[ix_view_stores]? = some (src_view_stores ix_minus ix_plus ix_boxed_of_mini_selfhost_Stmt ix_boxed_of_mini_selfhost_Expr ix_view_stores)) (np : prims.isPrim ix_view_stores = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))

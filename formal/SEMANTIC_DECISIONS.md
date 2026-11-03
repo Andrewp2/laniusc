@@ -928,6 +928,37 @@ verified compiler's locals are 64-bit slots with no address. The design:
      compiler's image is the code, then the statics). The front-pass
      lowering still emits no statics, so the compiled programs are
      unchanged but for the startup's `mov r8`.
+   - *Stage (b), decided and done (11-02, f6v): one statement, not a `str`
+     value.* What the stdlib does with a literal is always `let text: str =
+     "..."; ... core::mem::string_data_ptr(text) ...` (or
+     `string_data_ptr("...")` directly), so the front-pass program gets
+     `LetStr(pointer, chars, body)`, meaning Core's `let pointer: rawPtr =
+     core::mem::string_data_ptr("chars"); body`, and no `SrcType.str`. This
+     departs from the plan above in three ways. (1) No two-slot `str` value
+     and no `Corr.str`: the reading (stage (c)) reads the `str` let and its
+     `string_data_ptr` use as one `LetStr`, the literal put where the local
+     was, which is Core's meaning when the local has no other use (its cell
+     is never read again); a `str` local used any other way, and `str`
+     parameters, are not read yet. (2) The block is filled by stores of
+     constant words, not copied from the static region: Core's block is the
+     string's UTF-8 bytes zero-padded to whole words (`stringStorage`), so
+     the lowering packs them four to a word (`str_words`) and stores each
+     (`StoreWord(M32, pointer + 4k, word)`), with no loop to prove and no
+     static-region fact to carry through the lowering's correspondence
+     (stage (a)'s region stays for `str` values: parameters, results). The
+     code is about one store per four bytes of the literal; the copy loop
+     would have been smaller code but slower and a loop invariant in the
+     proof. (3) Only nonempty ASCII literals below `2^31` bytes are lowered
+     (`lower_str` rejects others), since their UTF-8 bytes are their
+     scalar values (`utf8Bytes_strValue`); a UTF-8 encoder proved against
+     `String.toUTF8` lifts this. The values are `usize` scalar values, as
+     the front end reads char literals. The proof (`Mini/StrLower.lean`):
+     Core's `mapStringDataPtr` maps `stringStorage` at the cursor rounded to
+     4 (`strPtr_run`), which the words' bytes equal (`strWords_storage`);
+     the mini code allocates the same block and writes the same bytes
+     (`str_entered`), so the heap correspondence holds after it
+     (`HeapCorr.mapView`), and the body runs with the pointer bound
+     (`stmt_letStr`, `stops_letStr`).
 7. **A static need per function (decided 11-01, step 3.5).** A function
    takes its whole block at entry (`frame_block`: 8 bytes per element of
    each array, parameter or let, it passes as a slice), by a prologue
