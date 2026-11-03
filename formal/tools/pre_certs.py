@@ -28,6 +28,7 @@ BIG = '18446744073709551616'
 
 # Extra hypotheses of a precondition lemma, over its parameters p0.. and the budget b.
 OVERRIDES = {
+    'decimal_digit': ['p2 ≤ 2147483647'],
     'inst_index': ['p2 + hb p0 + b ≤ K'],
     'inst_index_at': ['p3 + hb (p0 :: p1) + b ≤ K'],
     'find_type': ['p3 + hb p0 + b ≤ K'],

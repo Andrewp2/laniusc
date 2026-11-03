@@ -75,6 +75,12 @@ def lookup? (nm : Name) : TacticM (Option Expr) := do
   if env.contains nm then return some (← mkConstWithFreshMVarLevels nm)
   return none
 
+/-- A product of two numbers below `2 ^ 32` does not wrap. -/
+theorem mul_lt_two64 {x y : Nat} (hx : x < 4294967296) (hy : y < 4294967296) :
+    x * y < 18446744073709551616 := by
+  have := Nat.mul_le_mul (Nat.le_of_lt_succ hx) (Nat.le_of_lt_succ hy)
+  omega
+
 /-- `max` on the left of `≤` as a conjunction, so `omega` meets no `max`. -/
 theorem max_le_iff' {a b c : Nat} : max a b ≤ c ↔ a ≤ c ∧ b ≤ c := by omega
 theorem max_add_le_iff' {a b k c : Nat} : max a b + k ≤ c ↔ a + k ≤ c ∧ b + k ≤ c := by omega
@@ -504,7 +510,10 @@ where
     unless ← m.mvarId!.isAssigned do
       let t ← instantiateMVars (← inferType m)
       if ← isProp t then
-        let some p ← proveArith? t | saved.restore; return none
+        let some p ← proveArith? t |
+          if lanius.hb.debug.get (← getOptions) then
+            IO.eprintln s!"premise failed: {← ppExpr t}\n{← ppGoal (← getMainGoal)}"
+          saved.restore; return none
         m.mvarId!.assign p
       else if (← isClass? t).isSome then
         let some i ← (try some <$> synthInstance t catch _ => pure none) | saved.restore; return none
@@ -540,7 +549,7 @@ def postLemma? (c : Expr) : TacticM (Option Expr) := do
 /-- Upper bounds for every value the context's heights and cost-model calls
 stand for, at the potential `base`: each value at most `base` plus the boxes
 allocated for it and for the values inside it. Returns the registry. -/
-def hbFacts (fuel : Option Expr) (base : Expr) : TacticM Registry := do
+def hbFacts (fuel : Option Expr) (base : Expr) (extra : Array Expr := #[]) : TacticM Registry := do
   let mut reg : Registry := #[]
   let mut seen : Std.HashSet Expr := {}
   let mut k := 0
@@ -572,6 +581,15 @@ def hbFacts (fuel : Option Expr) (base : Expr) : TacticM Registry := do
   -- the values with no cost: the arguments of `hb` and the values above
   let mut todo : Array Expr := #[]
   for t in ts do todo := todo ++ hbTerms t
+  todo := todo ++ extra
+  -- a list's length is at most its height: the lists whose lengths occur
+  let mut lens : Array Expr := #[]
+  for t in ts do
+    for s in subterms (fun e => (lengthArg? e).isSome) t do
+      if hasLoose s then continue
+      if let some l := lengthArg? s then
+        unless lens.contains l do lens := lens.push l
+  todo := todo ++ lens
   for (v, _, _) in pending do todo := todo.push v
   let mut free : Array (Expr × Expr) := #[]   -- (value, lemma)
   let mut projs : Array Expr := #[]
@@ -590,6 +608,10 @@ def hbFacts (fuel : Option Expr) (base : Expr) : TacticM Registry := do
           free := free.push (s, c)
   dbg s!"free {free.size} projs {projs.size} seen {seenV.size}"
   for p in projs do
+    addFact (Name.mkSimple s!"hbp{k}") p
+    k := k + 1
+  for l in lens do
+    let some p ← withMainContext (try some <$> mkAppM ``length_le_hb #[l] catch _ => pure none) | continue
     addFact (Name.mkSimple s!"hbp{k}") p
     k := k + 1
   -- inner values first
@@ -805,7 +827,10 @@ def preKey? (e : Expr) : Option String :=
 
 
 /-- Take a precondition apart and close its pieces. -/
-partial def preGoal (fuel base : Expr) : TacticM Unit := withMainContext do
+partial def preGoal (nStx mStx : Term) : TacticM Unit := withMainContext do
+  -- the fuel and the potential, read again in each goal (a split may reintroduce them)
+  let fuel ← Term.elabTerm nStx (some (mkConst ``Nat))
+  let base ← Term.elabTerm mStx (some (mkConst ``Nat))
   let g ← getMainGoal
   let t ← whnfR (← instantiateMVars (← g.getType))
   if t.isConstOf ``True then
@@ -814,18 +839,18 @@ partial def preGoal (fuel base : Expr) : TacticM Unit := withMainContext do
     return
   if t.isAppOfArity ``And 2 then
     let gs ← g.apply (mkConst ``And.intro)
-    onGoals gs (preGoal fuel base)
+    onGoals gs (preGoal nStx mStx)
     return
   if t.isLet then
     evalTactic (← `(tactic| intro _))
     evalTactic (← `(tactic| simp only [] at *))
-    preGoal fuel base
+    preGoal nStx mStx
     return
   if let .forallE _ ty _ _ := t then
     if ty.isConstOf ``Nat then
       evalTactic (← `(tactic| intro b' hc he))
       evalTactic (← `(tactic| subst b'))
-      preGoal fuel base
+      preGoal nStx mStx
       return
   if t.isAppOfArity ``ite 5 then
     let gs ← g.apply (← mkConstWithFreshMVarLevels ``ite_intro)
@@ -834,22 +859,36 @@ partial def preGoal (fuel base : Expr) : TacticM Unit := withMainContext do
       evalTactic (← `(tactic| intro $h:ident))
       evalTactic (← `(tactic| try simp only [decide_eq_true_eq, decide_eq_false_iff_not, Bool.and_eq_true,
         Bool.or_eq_true, Bool.not_eq_true', not_and, not_or, Bool.not_eq_eq_eq_not, Bool.not_true] at $h:ident))
-      preGoal fuel base
+      preGoal nStx mStx
     return
   if (← matchMatcherApp? t).isSome then
     evalTactic (← `(tactic| split))
-    onGoals (← getGoals) (preGoal fuel base)
+    onGoals (← getGoals) (preGoal nStx mStx)
     return
   if t.isAppOf ``Lanius.Faithful.Budget.Pre_plus || t.isAppOf ``Lanius.Faithful.Budget.Pre_times then
-    evalTactic (← `(tactic| simp only [Lanius.Faithful.Budget.Pre_plus, Lanius.Faithful.Budget.Pre_times]))
-    closeArith (some fuel) base
+    evalTactic (← `(tactic| simp only [Lanius.Faithful.Budget.Pre_plus, Lanius.Faithful.Budget.Pre_times, Nat.reducePow]))
+    let saved ← saveState
+    let t ← withMainContext do instantiateMVars (← (← getMainGoal).getType)
+    try
+      closeArith (some fuel) base
+      unless (← getGoals).isEmpty do throwError "pre_auto: arithmetic left"
+    catch e =>
+      -- a product of two values: each below `2 ^ 32`
+      unless t.isAppOfArity ``LT.lt 4 && (t.getArg! 2).isAppOfArity ``HMul.hMul 6 do throw e
+      saved.restore
+      let gs ← (← getMainGoal).apply (← mkConstWithFreshMVarLevels ``mul_lt_two64)
+      onGoals gs (closeArith (some fuel) base)
     return
   if let some key := preKey? t then
-    let some lem ← preLemma? key | throwError "pre_auto: no lemma pre_{key}"
     eqnFacts
     hbNorm
-    let reg ← hbFacts (some fuel) base
+    -- the call's arguments: their projections' facts
+    let args ← withMainContext do
+      return (← whnfR (← instantiateMVars (← (← getMainGoal).getType))).getAppArgs
+    let reg ← hbFacts (some fuel) base args
     let r ← withMainContext do
+      -- looked up after the facts: `simp at *` may have replaced a local lemma
+      let some lem ← preLemma? key | throwError "pre_auto: no lemma pre_{key}"
       let g ← getMainGoal
       let t ← instantiateMVars (← g.getType)
       let unify : Expr → TacticM Bool := fun concl => isDefEq concl t
@@ -865,11 +904,7 @@ partial def preGoal (fuel base : Expr) : TacticM Unit := withMainContext do
 
 syntax "pre_auto" term "," term : tactic
 elab_rules : tactic
-  | `(tactic| pre_auto $n, $m) => do
-    let g ← getMainGoal
-    let (fuel, base) ← g.withContext do
-      return (← Term.elabTerm n (some (mkConst ``Nat)), ← Term.elabTerm m (some (mkConst ``Nat)))
-    preGoal fuel base
+  | `(tactic| pre_auto $n, $m) => preGoal n m
 
 /-- The first case split of a cost model's body, outermost first: an `if`'s
 condition or a `match`'s scrutinee. -/
