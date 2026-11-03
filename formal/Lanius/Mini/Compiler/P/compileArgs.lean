@@ -145,13 +145,157 @@ def zeroLocals (first : Nat) (count : Nat) : List Instr :=
 def frameLimit : Nat :=
   1048576
 
-/-- A function returns at least one value, and its results fit in its locals. -/
-def compileFunc (arities : List Arity) (func : Func) : Option Code :=
-  let slots : Nat := func.locals + Stmt.temps func.body
-  if decide (func.params ≤ func.locals) && decide (0 < func.results) && decide (func.results ≤ func.locals) && Stmt.within func.body func.locals arities func.results && decide (slots ≤ frameLimit) then
-    let init : List Instr := Instr.imm 0 :: zeroLocals func.params (func.locals - func.params)
-    some ({ slots := slots, instrs := init ++ compileStmt func.locals (codeSize init) 0 0 func.body } : Code)
+/-- Images are small enough for every rel32 displacement. -/
+def imageLimit : Nat :=
+  1073741824
+
+/-- The room left of room after k is taken out, None when k does not fit. -/
+def spend (room : Nat) (k : Nat) : Option Nat :=
+  if k ≤ room then
+    some (room - k)
   else
     none
+
+/-- A function's code is checked against the image limit before it is generated (F14): each node of its body takes one out of the room, a call one more for each result it copies back, so no pc or code size that compile_stmt adds up can pass 2^64. A body's code is at least as many bytes as it has nodes, and at most 64 times as many, so this rejects only bodies whose code passes the image limit, which link rejects too. -/
+def exprRoom (room : Nat) (e : Expr) : Option Nat :=
+  match e with
+  | .lit value => spend room 1
+  | .var index => spend room 1
+  | .neg operand =>
+    (let eroom : Option Nat := spend room 1
+     match eroom with
+     | none => none
+     | some er => exprRoom er operand)
+  | .binary word operation left right =>
+    (let eroom : Option Nat := (let eroom : Option Nat := spend room 1
+      match eroom with
+      | none => none
+      | some er => exprRoom er left)
+     match eroom with
+     | none => none
+     | some er => exprRoom er right)
+  | .compare word operation left right =>
+    (let eroom : Option Nat := (let eroom : Option Nat := spend room 1
+      match eroom with
+      | none => none
+      | some er => exprRoom er left)
+     match eroom with
+     | none => none
+     | some er => exprRoom er right)
+  | .fp operation left right =>
+    let eroom : Option Nat := (let eroom : Option Nat := spend room 1
+     match eroom with
+     | none => none
+     | some er => exprRoom er left)
+    match eroom with
+    | none => none
+    | some er => exprRoom er right
+
+/-- Each argument: its expression and the store of its value. -/
+def argsRoom (room : Nat) (args : List Expr) : Option Nat :=
+  match args with
+  | [] => some room
+  | arg :: rest =>
+    let aroom : Option Nat := (let eroom : Option Nat := spend room 1
+     match eroom with
+     | none => none
+     | some er => exprRoom er arg)
+    match aroom with
+    | none => none
+    | some ar => argsRoom ar rest
+
+def stmtRoom (room : Nat) (s : Stmt) : Option Nat :=
+  match s with
+  | .skip => some room
+  | .assign index value =>
+    (let eroom : Option Nat := spend room 1
+     match eroom with
+     | none => none
+     | some er => exprRoom er value)
+  | .seq first second =>
+    (let troom : Option Nat := stmtRoom room first
+     match troom with
+     | none => none
+     | some tr => stmtRoom tr second)
+  | .ite condition thenBranch elseBranch =>
+    (let troom : Option Nat := (let troom : Option Nat := (let eroom : Option Nat := spend room 1
+       match eroom with
+       | none => none
+       | some er => exprRoom er condition)
+      match troom with
+      | none => none
+      | some tr => stmtRoom tr thenBranch)
+     match troom with
+     | none => none
+     | some tr => stmtRoom tr elseBranch)
+  | .loop condition body =>
+    (let troom : Option Nat := (let eroom : Option Nat := spend room 1
+      match eroom with
+      | none => none
+      | some er => exprRoom er condition)
+     match troom with
+     | none => none
+     | some tr => stmtRoom tr body)
+  | .call target count callee args =>
+    (let aroom : Option Nat := (let sroom : Option Nat := spend room 1
+      match sroom with
+      | none => none
+      | some sr => spend sr count)
+     match aroom with
+     | none => none
+     | some ar => argsRoom ar args)
+  | .ret values =>
+    (let aroom : Option Nat := spend room 1
+     match aroom with
+     | none => none
+     | some ar => argsRoom ar values)
+  | .brk => spend room 1
+  | .cont => spend room 1
+  | .alloc target shift size =>
+    (let eroom : Option Nat := spend room 1
+     match eroom with
+     | none => none
+     | some er => exprRoom er size)
+  | .loadByte target address =>
+    (let eroom : Option Nat := spend room 1
+     match eroom with
+     | none => none
+     | some er => exprRoom er address)
+  | .storeByte address value =>
+    (let eroom : Option Nat := (let eroom : Option Nat := spend room 1
+      match eroom with
+      | none => none
+      | some er => exprRoom er address)
+     match eroom with
+     | none => none
+     | some er => exprRoom er value)
+  | .loadWord width target address =>
+    (let eroom : Option Nat := spend room 1
+     match eroom with
+     | none => none
+     | some er => exprRoom er address)
+  | .storeWord width address value =>
+    (let eroom : Option Nat := (let eroom : Option Nat := spend room 1
+      match eroom with
+      | none => none
+      | some er => exprRoom er address)
+     match eroom with
+     | none => none
+     | some er => exprRoom er value)
+  | .divide word operation target left right =>
+    (let eroom : Option Nat := (let eroom : Option Nat := spend room 1
+      match eroom with
+      | none => none
+      | some er => exprRoom er left)
+     match eroom with
+     | none => none
+     | some er => exprRoom er right)
+  | .sys kind target args =>
+    (let aroom : Option Nat := spend room 1
+     match aroom with
+     | none => none
+     | some ar => argsRoom ar args)
+  | .frame target bytes => spend room 1
+  | .static target offset => spend room 1
 
 end Lanius.Mini

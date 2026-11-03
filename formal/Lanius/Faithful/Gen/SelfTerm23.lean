@@ -12,127 +12,127 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.Termination
 open Lanius.Faithful.SelfCert
 
-theorem ok_lx_ident_end : FnOk prog prims info (1077, ⟨3, [], 0⟩) :=
+theorem ok_word_stride : FnOk prog prims info (1074, ⟨2, [], 0⟩) :=
+  fnOk_of fn_word_stride (by decide +kernel)
+
+theorem ok_store_one : FnOk prog prims info (1075, ⟨0, [], 0⟩) :=
+  fnOk_of fn_store_one (by decide +kernel)
+
+theorem ok_width_of : FnOk prog prims info (1076, ⟨2, [], 0⟩) :=
+  fnOk_of fn_width_of (by decide +kernel)
+
+theorem ok_address_below : FnOk prog prims info (1077, ⟨0, [], 0⟩) :=
+  fnOk_of fn_address_below (by decide +kernel)
+
+theorem ok_get_of_mini_selfhost_Expr : FnOk prog prims info (1078, ⟨1, [0], 0⟩) :=
+  fnOk_of fn_get_of_mini_selfhost_Expr (by decide +kernel)
+
+theorem ok_store_types : FnOk prog prims info (1079, ⟨3, [0], 0⟩) :=
+  fnOk_of fn_store_types (by decide +kernel)
+
+theorem ok_store_cases : FnOk prog prims info (1080, ⟨3, [6], 0⟩) :=
+  fnOk_of fn_store_cases (by decide +kernel)
+
+theorem ok_put_element : FnOk prog prims info (1081, ⟨3, [4], 0⟩) :=
+  fnOk_of fn_put_element (by decide +kernel)
+
+theorem ok_lx_ident_start : FnOk prog prims info (1085, ⟨0, [], 0⟩) :=
+  fnOk_of fn_lx_ident_start (by decide +kernel)
+
+theorem ok_lx_ident_end : FnOk prog prims info (1086, ⟨3, [], 0⟩) :=
   fnOk_of fn_lx_ident_end (by decide +kernel)
 
-theorem ok_lx_digit : FnOk prog prims info (1078, ⟨0, [], 0⟩) :=
+theorem ok_lx_digit : FnOk prog prims info (1087, ⟨0, [], 0⟩) :=
   fnOk_of fn_lx_digit (by decide +kernel)
 
-theorem ok_lx_from_number : FnOk prog prims info (1079, ⟨0, [], 0⟩) :=
+theorem ok_lx_from_number : FnOk prog prims info (1088, ⟨0, [], 0⟩) :=
   fnOk_of fn_lx_from_number (by decide +kernel)
 
-theorem ok_lx_number : FnOk prog prims info (1080, ⟨14, [], 0⟩) :=
+theorem ok_lx_number : FnOk prog prims info (1089, ⟨14, [], 0⟩) :=
   fnOk_of fn_lx_number (by decide +kernel)
 
-theorem ok_lx_space : FnOk prog prims info (1081, ⟨0, [], 0⟩) :=
+theorem ok_lx_space : FnOk prog prims info (1090, ⟨0, [], 0⟩) :=
   fnOk_of fn_lx_space (by decide +kernel)
 
-theorem ok_lx_space_end : FnOk prog prims info (1082, ⟨3, [], 0⟩) :=
+theorem ok_lx_space_end : FnOk prog prims info (1091, ⟨3, [], 0⟩) :=
   fnOk_of fn_lx_space_end (by decide +kernel)
 
-theorem ok_lx_delimited : FnOk prog prims info (1083, ⟨0, [], 0⟩) :=
+theorem ok_lx_delimited : FnOk prog prims info (1092, ⟨0, [], 0⟩) :=
   fnOk_of fn_lx_delimited (by decide +kernel)
 
-theorem ok_lx_quoted : FnOk prog prims info (1084, ⟨2, [2], 0⟩) :=
+theorem ok_lx_quoted : FnOk prog prims info (1093, ⟨2, [2], 0⟩) :=
   fnOk_of fn_lx_quoted (by decide +kernel)
 
-theorem ok_lx_symbol_start : FnOk prog prims info (1085, ⟨0, [], 0⟩) :=
+theorem ok_lx_symbol_start : FnOk prog prims info (1094, ⟨0, [], 0⟩) :=
   fnOk_of fn_lx_symbol_start (by decide +kernel)
 
-theorem ok_lx_symbol : FnOk prog prims info (1086, ⟨13, [], 0⟩) :=
+theorem ok_lx_symbol : FnOk prog prims info (1095, ⟨13, [], 0⟩) :=
   fnOk_of fn_lx_symbol (by decide +kernel)
 
-theorem ok_lx_token_text : FnOk prog prims info (1091, ⟨2, [], 0⟩) :=
+theorem ok_lx_token_text : FnOk prog prims info (1100, ⟨2, [], 0⟩) :=
   fnOk_of fn_lx_token_text (by decide +kernel)
 
-theorem ok_lx_take : FnOk prog prims info (1092, ⟨1, [0], 0⟩) :=
+theorem ok_lx_take : FnOk prog prims info (1101, ⟨1, [0], 0⟩) :=
   fnOk_of fn_lx_take (by decide +kernel)
 
-theorem ok_lx_keyword : FnOk prog prims info (1093, ⟨1, [1], 0⟩) :=
+theorem ok_lx_keyword : FnOk prog prims info (1102, ⟨1, [1], 0⟩) :=
   fnOk_of fn_lx_keyword (by decide +kernel)
 
-theorem ok_picks : FnOk prog prims info (1094, ⟨5, [], 0⟩) :=
+theorem ok_picks : FnOk prog prims info (1103, ⟨5, [], 0⟩) :=
   fnOk_of fn_picks (by decide +kernel)
 
-theorem ok_get_of_mini_selfhost_Rule : FnOk prog prims info (1095, ⟨1, [0], 0⟩) :=
+theorem ok_get_of_mini_selfhost_Rule : FnOk prog prims info (1104, ⟨1, [0], 0⟩) :=
   fnOk_of fn_get_of_mini_selfhost_Rule (by decide +kernel)
 
-theorem ok_attach_node : FnOk prog prims info (1096, ⟨6, [1], 2⟩) :=
+theorem ok_attach_node : FnOk prog prims info (1105, ⟨6, [1], 2⟩) :=
   fnOk_of fn_attach_node (by decide +kernel)
 
-theorem ok_concat_of_mini_selfhost_CTree : FnOk prog prims info (1097, ⟨0, [0], 0⟩) :=
+theorem ok_concat_of_mini_selfhost_CTree : FnOk prog prims info (1106, ⟨0, [0], 0⟩) :=
   fnOk_of fn_concat_of_mini_selfhost_CTree (by decide +kernel)
 
-theorem ok_struct_decl_fields : FnOk prog prims info (1098, ⟨3, [], 0⟩) :=
+theorem ok_struct_decl_fields : FnOk prog prims info (1107, ⟨3, [], 0⟩) :=
   fnOk_of fn_struct_decl_fields (by decide +kernel)
 
-theorem ok_fields_of : FnOk prog prims info (1099, ⟨5, [0], 0⟩) :=
+theorem ok_fields_of : FnOk prog prims info (1108, ⟨5, [0], 0⟩) :=
   fnOk_of fn_fields_of (by decide +kernel)
 
-theorem ok_empty_of_mini_selfhost_List_mini_selfhost_CTree : FnOk prog prims info (1100, ⟨0, [], 0⟩) :=
+theorem ok_empty_of_mini_selfhost_List_mini_selfhost_CTree : FnOk prog prims info (1109, ⟨0, [], 0⟩) :=
   fnOk_of fn_empty_of_mini_selfhost_List_mini_selfhost_CTree (by decide +kernel)
 
-theorem ok_cons_variant : FnOk prog prims info (1101, ⟨2, [], 0⟩) :=
+theorem ok_cons_variant : FnOk prog prims info (1110, ⟨2, [], 0⟩) :=
   fnOk_of fn_cons_variant (by decide +kernel)
 
-theorem ok_variant_payload : FnOk prog prims info (1102, ⟨4, [], 0⟩) :=
+theorem ok_variant_payload : FnOk prog prims info (1111, ⟨4, [], 0⟩) :=
   fnOk_of fn_variant_payload (by decide +kernel)
 
-theorem ok_param_spelling_at : FnOk prog prims info (1103, ⟨4, [1], 1⟩) :=
+theorem ok_param_spelling_at : FnOk prog prims info (1112, ⟨4, [1], 1⟩) :=
   fnOk_of fn_param_spelling_at (by decide +kernel)
 
-theorem ok_method_decl : FnOk prog prims info (1104, ⟨6, [], 0⟩) :=
+theorem ok_method_decl : FnOk prog prims info (1113, ⟨6, [], 0⟩) :=
   fnOk_of fn_method_decl (by decide +kernel)
 
-theorem ok_cons_of_mini_selfhost_ImplDecl : FnOk prog prims info (1105, ⟨0, [], 0⟩) :=
+theorem ok_cons_of_mini_selfhost_ImplDecl : FnOk prog prims info (1114, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_ImplDecl (by decide +kernel)
 
-theorem ok_p_type_param_bound_none : FnOk prog prims info (1106, ⟨0, [], 0⟩) :=
+theorem ok_p_type_param_bound_none : FnOk prog prims info (1115, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_type_param_bound_none (by decide +kernel)
 
-theorem ok_text_write_byte : FnOk prog prims info (1107, ⟨1, [], 0⟩) :=
+theorem ok_text_write_byte : FnOk prog prims info (1116, ⟨1, [], 0⟩) :=
   fnOk_of fn_text_write_byte (by decide +kernel)
 
-theorem ok_text_write_stdout : FnOk prog prims info (1108, ⟨1, [], 0⟩) :=
+theorem ok_text_write_stdout : FnOk prog prims info (1117, ⟨1, [], 0⟩) :=
   fnOk_of fn_text_write_stdout (by decide +kernel)
 
-theorem ok_text_write_stderr : FnOk prog prims info (1109, ⟨1, [], 0⟩) :=
+theorem ok_text_write_stderr : FnOk prog prims info (1118, ⟨1, [], 0⟩) :=
   fnOk_of fn_text_write_stderr (by decide +kernel)
 
-theorem ok_text_read_stdin : FnOk prog prims info (1110, ⟨1, [], 0⟩) :=
+theorem ok_text_read_stdin : FnOk prog prims info (1119, ⟨1, [], 0⟩) :=
   fnOk_of fn_text_read_stdin (by decide +kernel)
 
-theorem ok_text_sleep_ms_i32 : FnOk prog prims info (1111, ⟨1, [], 0⟩) :=
+theorem ok_text_sleep_ms_i32 : FnOk prog prims info (1120, ⟨1, [], 0⟩) :=
   fnOk_of fn_text_sleep_ms_i32 (by decide +kernel)
 
-theorem ok_text_monotonic_read : FnOk prog prims info (1112, ⟨1, [], 0⟩) :=
-  fnOk_of fn_text_monotonic_read (by decide +kernel)
-
-theorem ok_text_system_read : FnOk prog prims info (1113, ⟨1, [], 0⟩) :=
-  fnOk_of fn_text_system_read (by decide +kernel)
-
-theorem ok_text_fill_secure_bytes : FnOk prog prims info (1114, ⟨1, [], 0⟩) :=
-  fnOk_of fn_text_fill_secure_bytes (by decide +kernel)
-
-theorem ok_cons_of_mini_selfhost_List_usize : FnOk prog prims info (1116, ⟨0, [], 0⟩) :=
-  fnOk_of fn_cons_of_mini_selfhost_List_usize (by decide +kernel)
-
-theorem ok_member : FnOk prog prims info (1117, ⟨1, [0], 0⟩) :=
-  fnOk_of fn_member (by decide +kernel)
-
-theorem ok_fn_name_at : FnOk prog prims info (1118, ⟨2, [1], 1⟩) :=
-  fnOk_of fn_fn_name_at (by decide +kernel)
-
-theorem ok_type_only_at : FnOk prog prims info (1119, ⟨2, [1], 1⟩) :=
-  fnOk_of fn_type_only_at (by decide +kernel)
-
-theorem ok_alias_name_at : FnOk prog prims info (1120, ⟨2, [1], 1⟩) :=
-  fnOk_of fn_alias_name_at (by decide +kernel)
-
-theorem ok_const_name_at : FnOk prog prims info (1121, ⟨2, [1], 1⟩) :=
-  fnOk_of fn_const_name_at (by decide +kernel)
-
 theorem chunk23 : AllFns prog prims info part23 :=
-  ⟨ok_lx_ident_end, ok_lx_digit, ok_lx_from_number, ok_lx_number, ok_lx_space, ok_lx_space_end, ok_lx_delimited, ok_lx_quoted, ok_lx_symbol_start, ok_lx_symbol, ok_lx_token_text, ok_lx_take, ok_lx_keyword, ok_picks, ok_get_of_mini_selfhost_Rule, ok_attach_node, ok_concat_of_mini_selfhost_CTree, ok_struct_decl_fields, ok_fields_of, ok_empty_of_mini_selfhost_List_mini_selfhost_CTree, ok_cons_variant, ok_variant_payload, ok_param_spelling_at, ok_method_decl, ok_cons_of_mini_selfhost_ImplDecl, ok_p_type_param_bound_none, ok_text_write_byte, ok_text_write_stdout, ok_text_write_stderr, ok_text_read_stdin, ok_text_sleep_ms_i32, ok_text_monotonic_read, ok_text_system_read, ok_text_fill_secure_bytes, ok_cons_of_mini_selfhost_List_usize, ok_member, ok_fn_name_at, ok_type_only_at, ok_alias_name_at, ok_const_name_at, trivial⟩
+  ⟨ok_word_stride, ok_store_one, ok_width_of, ok_address_below, ok_get_of_mini_selfhost_Expr, ok_store_types, ok_store_cases, ok_put_element, ok_lx_ident_start, ok_lx_ident_end, ok_lx_digit, ok_lx_from_number, ok_lx_number, ok_lx_space, ok_lx_space_end, ok_lx_delimited, ok_lx_quoted, ok_lx_symbol_start, ok_lx_symbol, ok_lx_token_text, ok_lx_take, ok_lx_keyword, ok_picks, ok_get_of_mini_selfhost_Rule, ok_attach_node, ok_concat_of_mini_selfhost_CTree, ok_struct_decl_fields, ok_fields_of, ok_empty_of_mini_selfhost_List_mini_selfhost_CTree, ok_cons_variant, ok_variant_payload, ok_param_spelling_at, ok_method_decl, ok_cons_of_mini_selfhost_ImplDecl, ok_p_type_param_bound_none, ok_text_write_byte, ok_text_write_stdout, ok_text_write_stderr, ok_text_read_stdin, ok_text_sleep_ms_i32, trivial⟩
 
 end Lanius.Faithful.SelfTerm

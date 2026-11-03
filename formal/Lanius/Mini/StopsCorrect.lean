@@ -10,12 +10,14 @@ import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.arities
 import all Lanius.Mini.Compiler.P.codeSize
 import all Lanius.Mini.Compiler.P.compileArgs
-import all Lanius.Mini.Compiler.P.imageLimit
+import all Lanius.Mini.Compiler.P.roomFits
+import all Lanius.Mini.Compiler.P.linkedSize
 import all Lanius.Mini.Compiler.P.loadAtBytes
 import all Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Compiler.P.arities
 public import Lanius.Mini.Compiler.P.compileArgs
-public import Lanius.Mini.Compiler.P.imageLimit
+public import Lanius.Mini.Compiler.P.roomFits
+public import Lanius.Mini.Compiler.P.linkedSize
 
 @[expose] public section
 /-! The compiled code of a run that does not return does not return either.

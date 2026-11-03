@@ -20,6 +20,14 @@ open Lanius.Faithful.Budget
 
 noncomputable section
 
+def Cost_eval_let_in : Nat → Nat → Lanius.Mini.SrcType → Lanius.Mini.SrcType → Option Lanius.Mini.Evaluated → Option Lanius.Mini.Evaluated → Nat
+  | 0, x12, x25, x38, x51, x91 => 18446744073709551616
+  | n + 1, x12, x25, x38, x51, x91 => (match x51 with | some x229 => (match x91 with | some x293 => (Cost_eval_let_in_of n x12 x25 x38 x229 x293) | none => 0) | none => 0)
+
+end
+
+noncomputable section
+
 def Pre_eval_let_in : Nat → Nat → Lanius.Mini.SrcType → Lanius.Mini.SrcType → Option Lanius.Mini.Evaluated → Option Lanius.Mini.Evaluated → Nat → Prop
   | 0, x12, x25, x38, x51, x91, b => True
   | n + 1, x12, x25, x38, x51, x91, b => (match x51 with | some x229 => (match x91 with | some x293 => (Pre_eval_let_in_of n x12 x25 x38 x229 x293 b) | none => True) | none => True)
