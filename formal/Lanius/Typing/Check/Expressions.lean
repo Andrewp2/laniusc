@@ -312,8 +312,11 @@ mutual
                pure ⟨elementType, ⟨.indexSlice baseTyped.down indexTyped.2.down
                  integerIndex.down⟩⟩
            | _ => none
-    -- The typing judgment has no rule for writes through a reference yet.
-    | .deref _ => none
+    | .deref reference =>
+        do let typed ← checkExprAnyFuel fuel program context reference
+           match typed with
+           | ⟨.reference referent, typed⟩ => some ⟨referent, ⟨.deref typed.down⟩⟩
+           | _ => none
 
   def checkMatchArmsFuel (fuel : Nat) (program : Program) (context : Context)
       (arms : List (Pattern × Expr)) (scrutineeType resultType : Ty) :
