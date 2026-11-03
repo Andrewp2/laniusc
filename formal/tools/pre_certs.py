@@ -263,12 +263,6 @@ HAND_CASE = {
 }
 
 
-def group_beats(size):
-    """A mutual group proves all its members in one command: the heartbeat
-    limit (per command) grows with the group."""
-    return f'set_option maxHeartbeats {200000 * size + 200000} in\n' if size > 1 else ''
-
-
 class Emit:
     """The height and precondition lemmas, at a potential `M`:
     `post_F : ∀ n xs M, hb x ≤ M → .. → Cost_F n xs < 2 ^ 64 → hb (F xs) ≤ M + Cost_F n xs`,
@@ -292,13 +286,13 @@ class Emit:
 
     # heights -----------------------------------------------------------
 
-    def post_parts(self, k):
+    def post_parts(self, k, fuel='n'):
         """(binders, xs, premise names, statement after the binders)."""
         ps, costly, rep, term = self.m.stmt[k]
         xs = ' '.join(x for x, _ in ps)
         binders = ' '.join(f'({x} : {t})' for x, t in ps)
         live = self.live(ps)
-        cost = f'Cost_{k} n{(" " + xs) if xs else ""}'
+        cost = f'Cost_{k} {fuel}{(" " + xs) if xs else ""}'
         hyps = [f'hb {x} ≤ M' for x in live]
         extra = ''.join(f'{x} + ' for x in POST_EXTRA.get(k, []))
         st = '∀ M : Nat, ' + ' → '.join(hyps + [f'{cost} < {BIG}', f'hb {paren(term)} ≤ M + {extra}{cost}'])
@@ -362,19 +356,23 @@ class Emit:
         zero = [f'fun {p[1]} M {p[2]} h => absurd h (Nat.lt_irrefl _)'.replace('  ', ' ')
                 for k, p in zip(ks, map(self.post_parts, ks))]
         names = [f'post_{k}' for k in ks]
-        cases = ''.join(f'    · intro {p[1]} M {p[2]}\n' + (HAND_CASE[k] if k in HAND_CASE else
-                        f'      rw [Cost_{k}.eq_def]; dsimp only\n' +
-                        (f'      rw [{self.head(k)}.eq_def{(" " + p[1]) if p[1] else ""}]\n' if self.head(k) else '') +
-                        f'      post_auto n, M\n')
-                        for k, p in zip(ks, map(self.post_parts, ks)))
-        out.append(group_beats(len(ks)) + f'theorem post_group_{first} : ∀ n : Nat,\n    {conj} := by\n'
+        # one step lemma per member (its own command: heartbeats, errors)
+        for k in ks:
+            binders, xs, nm, st = self.post_parts(k, '(n + 1)')
+            h = self.head(k)
+            out.append(f'theorem post_step_{k} (n : Nat) (ih :\n    {conj}) :\n    {"∀ " + binders + ", " if binders else ""}{st} := by\n'
+                       f'  {"obtain " + tuple_(names) + " := ih" if len(ks) > 1 else "have " + names[0] + " := ih"}\n'
+                       '  ' + ' '.join(['intro', xs, 'M', nm]).replace('  ', ' ').strip() + '\n' +
+                       (HAND_CASE[k].replace('\n    ', '\n').lstrip(' ').join(['  ', '']) if k in HAND_CASE else
+                        f'  rw [Cost_{k}.eq_def]; dsimp only\n' +
+                        (f'  rw [{h}.eq_def{(" " + xs) if xs else ""}]\n' if h else '') +
+                        f'  post_auto n, M\n'))
+        steps = [f'post_step_{k} n ih' for k in ks]
+        out.append(f'theorem post_group_{first} : ∀ n : Nat,\n    {conj} := by\n'
                    f'  intro n\n'
                    f'  induction n with\n'
                    f'  | zero => exact {tuple_(zero)}\n'
-                   f'  | succ n ih =>\n'
-                   f'    {"obtain " + tuple_(names) + " := ih" if len(ks) > 1 else "have " + names[0] + " := ih"}\n'
-                   f'    refine {tuple_(["?_"] * len(ks))}\n'
-                   f'{cases}')
+                   f'  | succ n ih => exact {tuple_(steps)}\n')
         for i, k in enumerate(ks):
             binders, xs, nm, st = self.post_parts(k)
             out.append(f'theorem post_{k} : ∀ (n : Nat) {binders}, {st} :=\n'
@@ -415,7 +413,7 @@ class Emit:
 
     # preconditions -----------------------------------------------------
 
-    def pre_parts(self, k):
+    def pre_parts(self, k, fuel='n'):
         tys = self.m.sig[f'Pre_{k}']
         xs = [f'x{i}' for i in range(len(tys))]
         binders = ' '.join(f'({x} : {t})' for x, t in zip(xs, tys))
@@ -423,7 +421,7 @@ class Emit:
         hyps.append(f'M + b ≤ {K}')
         for h in OVERRIDES.get(k, []):
             hyps.append(re.sub(r'\bp(\d+)\b', lambda mm: xs[int(mm.group(1))], h).replace('≤ K', f'≤ {K}'))
-        concl = f'Pre_{k} n {" ".join(xs)} b'.replace('  ', ' ')
+        concl = f'Pre_{k} {fuel} {" ".join(xs)} b'.replace('  ', ' ')
         st = '∀ M : Nat, ' + ' → '.join(hyps + [concl])
         names = ' '.join(f'h{i}' for i in range(len(hyps)))
         return binders, ' '.join(xs), names, st
@@ -444,17 +442,20 @@ class Emit:
         zero = [f'fun {p[1]} b M {" ".join("_" for _ in p[2].split())} => trivial'
                 for k, p in zip(ks, parts)]
         names = [f'pre_{k}' for k in ks]
-        cases = ''.join(f'    · intro {p[1]} b M {p[2]}\n'
-                        f'      rw [Pre_{k}.eq_def]; dsimp only\n'
-                        f'      pre_auto n, M\n' for k, p in zip(ks, parts))
-        out = [group_beats(len(ks)) + f'theorem pre_group_{first} : ∀ n : Nat,\n    {conj} := by\n'
-               f'  intro n\n'
-               f'  induction n with\n'
-               f'  | zero => exact {tuple_(zero)}\n'
-               f'  | succ n ih =>\n'
-               f'    {"obtain " + tuple_(names) + " := ih" if len(ks) > 1 else "have " + names[0] + " := ih"}\n'
-               f'    refine {tuple_(["?_"] * len(ks))}\n'
-               f'{cases}']
+        out = []
+        for k in ks:
+            binders, xs, nm, st = self.pre_parts(k, '(n + 1)')
+            out.append(f'theorem pre_step_{k} (n : Nat) (ih :\n    {conj}) :\n    ∀ {binders} (b : Nat), {st} := by\n'
+                       f'  {"obtain " + tuple_(names) + " := ih" if len(ks) > 1 else "have " + names[0] + " := ih"}\n'
+                       f'  intro {xs} b M {nm}\n'
+                       f'  rw [Pre_{k}.eq_def]; dsimp only\n'
+                       f'  pre_auto n, M\n')
+        steps = [f'pre_step_{k} n ih' for k in ks]
+        out.append(f'theorem pre_group_{first} : ∀ n : Nat,\n    {conj} := by\n'
+                   f'  intro n\n'
+                   f'  induction n with\n'
+                   f'  | zero => exact {tuple_(zero)}\n'
+                   f'  | succ n ih => exact {tuple_(steps)}\n')
         for i, k in enumerate(ks):
             binders, xs, nm, st = self.pre_parts(k)
             out.append(f'theorem pre_{k} : ∀ (n : Nat) {binders} (b : Nat), {st} :=\n'
@@ -473,7 +474,7 @@ HEADER = """{imports}
 
 /-! Generated by formal/tools/pre_certs.py: {what} (F14). Do not edit. -/
 
-set_option maxHeartbeats 400000
+set_option maxHeartbeats 1000000
 set_option maxRecDepth 100000
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false

@@ -270,23 +270,26 @@ partial def constraintsOf (atoms : Array Expr) (p : Expr) : Array (Lin × Lin) :
 
 /-- Hypotheses (by index) that give `L ≤ R`: replace a part `L'` of the left side
 by `R'` (`L' ≤ R'`), or weaken the left side to such an `L'`, until the right side
-covers it. -/
+covers it. The state bounds the nodes searched (a failing search over many
+hypotheses is otherwise exponential). -/
 partial def certify (cs : Array (Lin × Lin × Nat)) (l r : Lin) (fuel : Nat) (used : Array Nat) :
-    Option (Array Nat) :=
-  if (r.sub l).nonneg then some used
-  else if fuel = 0 then none
-  else Id.run do
-    for (l', r', i) in cs do
-      if used.contains i then continue
-      -- a part of the left side
-      if (l.sub l').nonneg then
-        if let some u := certify cs ((l.sub l').add r') r (fuel - 1) (used.push i) then return some u
-    for (l', r', i) in cs do
-      if used.contains i then continue
-      -- the left side below a hypothesis's left side
-      if (l'.sub l).nonneg then
-        if let some u := certify cs r' r (fuel - 1) (used.push i) then return some u
-    return none
+    StateM Nat (Option (Array Nat)) := do
+  if (r.sub l).nonneg then return some used
+  if fuel = 0 then return none
+  let k ← get
+  if k = 0 then return none
+  set (k - 1)
+  for (l', r', i) in cs do
+    if used.contains i then continue
+    -- a part of the left side
+    if (l.sub l').nonneg then
+      if let some u ← certify cs ((l.sub l').add r') r (fuel - 1) (used.push i) then return some u
+  for (l', r', i) in cs do
+    if used.contains i then continue
+    -- the left side below a hypothesis's left side
+    if (l'.sub l).nonneg then
+      if let some u ← certify cs r' r (fuel - 1) (used.push i) then return some u
+  return none
 
 /-- The hypotheses (by index) a goal's conjuncts need, if the search finds them. -/
 def selectHyps (atoms : Array Expr) (goal : Expr) (hyps : Array Expr) : Option (Array Nat) := Id.run do
@@ -297,10 +300,18 @@ def selectHyps (atoms : Array Expr) (goal : Expr) (hyps : Array Expr) : Option (
     for (l, r) in constraintsOf atoms hyps[i] do cs := cs.push (l, r, i)
   let mut out : Array Nat := #[]
   for (l, r) in gs do
-    let some u := certify cs l r 6 #[] | return none
+    let some u := ((certify cs l r 6 #[]).run' 40 : Id _) | return none
     for i in u do
       unless out.contains i do out := out.push i
   return some out
+
+/-- Run `x` within its own heartbeat budget (`k` thousands): `omega` over many
+hypotheses can take exponential time; past the budget `x` fails (an ordinary
+error, so callers try the next way). -/
+def budgeted (k : Nat) (x : TacticM α) : TacticM α :=
+  tryCatchRuntimeEx
+    (withCurrHeartbeats <| withTheReader Core.Context (fun c => { c with maxHeartbeats := k * 1000 }) x)
+    (fun e => throwError "budget exceeded: {e.toMessageData}")
 
 /-- Prove the main goal by `omega` over its and the hypotheses' atoms. -/
 def omegaAtoms : TacticM Unit := withMainContext do
@@ -329,7 +340,7 @@ def omegaAtoms : TacticM Unit := withMainContext do
       return
     catch _ => saved.restore
   | none => pure ()
-  omegaOver atomsArr goal hyps
+  budgeted 40000 (omegaOver atomsArr goal hyps)
 where
   /-- `omega` over the atoms, from the hypotheses `hyps`. -/
   omegaOver (atomsArr : Array Expr) (goal : Expr) (hyps : Array (Expr × Expr)) : TacticM Unit := do
@@ -475,6 +486,7 @@ def instM? (reg : Registry) (base : Expr) (lem : Expr) (unify : Expr → TacticM
 where
   instM1? (dense : Bool) : TacticM (Option (Expr × Expr)) := do
   let saved ← saveState
+  dbg s!"inst {dense}"
   let ty ← instantiateMVars (← inferType lem)
   let names := binderNames ty #[]
   let (ms, _, concl) ← forallMetaTelescopeReducing ty
@@ -591,6 +603,7 @@ def hbFacts (fuel : Option Expr) (base : Expr) : TacticM Registry := do
    progress := false
    for (v, c?, lem) in items do
     if done.contains v then continue
+    dbg s!"item {v.getAppFn.constName?} {v.approxDepth} {c?.isSome}"
     let r ← withMainContext do
       let unify : Expr → TacticM Bool := fun concl => do
         let some (_, lhs, rhs) := concl.app4? ``LE.le |>.map (fun (a, _, l, r) => (a, l, r)) | return false
