@@ -433,7 +433,11 @@ theorem buildClosed_sound {fuel : Nat} {decls : Decls} {fns : List Inst} {types 
       | true => rw [hw] at h; cases h
       | false =>
         rw [hw] at h
-        simp only [Bool.false_eq_true, if_false, Option.some.injEq] at h
+        cases hl : limFuncs (litFuncs fs fs) with
+        | false => rw [hl] at h; simp at h
+        | true =>
+        rw [hl] at h
+        simp only [Bool.false_eq_true, Bool.not_true, Bool.or_false, if_false, Option.some.injEq] at h
         subst h
         exact ⟨ts, rfl, fs, closeFuncs_sound (loweredAll_ok rfl) _ _ hc, litFuncs_sound fs fs, hw, rfl⟩
 

@@ -10,3 +10,6 @@
     over v variants is a chain of v `matchArm`s, and nesting k of them gives a depth of k * v from
     O(k + v) words. `depth` takes the max over a match arm's body and the rest, so it does not grow with
     the chain.
+- 11-03 (leafA): unused; replaced by FrontEndStmtDepthV2 (`depth <= 2 ^ 40`, from the front end's depth check in
+  `untyped_rejected`). PreCompileWords.red4 uses V2. Proving this one needs a W-linear simulation through
+  monomorphization and match lowering.

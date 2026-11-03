@@ -15,6 +15,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_closeFuncs
 public import Lanius.Faithful.Gen.SelfStmtF_collect
 public import Lanius.Faithful.Gen.SelfStmtF_funcsOnto
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
+public import Lanius.Faithful.Gen.SelfStmtF_limLeaf
 public import Lanius.Faithful.Gen.SelfStmtF_negWideI32
 public import Lanius.Faithful.Gen.SelfStmtF_rootInsts
 public import Lanius.Faithful.Gen.SelfStmtF_wideLeftStmt
@@ -180,9 +181,10 @@ theorem proof_lx_space {prog : SrcProgram} {prims : Prims} {ix_lx_space : Nat} (
   simp only [src_lx_space] at h
   faithful [Lanius.Mini.lxSpace]
 
-theorem proof_untyped_rejected {prog : SrcProgram} {prims : Prims} {ix_untyped_rejected ix_empty_of_u8 ix_wide_left_funcs : Nat} (fn : prog.funcs[ix_untyped_rejected]? = some (src_untyped_rejected ix_empty_of_u8 ix_wide_left_funcs)) (np : prims.isPrim ix_untyped_rejected = false)
+theorem proof_untyped_rejected {prog : SrcProgram} {prims : Prims} {ix_untyped_rejected ix_empty_of_u8 ix_wide_left_funcs ix_lim_funcs : Nat} (fn : prog.funcs[ix_untyped_rejected]? = some (src_untyped_rejected ix_empty_of_u8 ix_wide_left_funcs ix_lim_funcs)) (np : prims.isPrim ix_untyped_rejected = false)
     (ext_empty_of_u8 : Certified (∀ {n : Nat}, Stmt_empty_of_u8 prog prims ix_empty_of_u8 n))
-    (ext_wide_left_funcs : Certified (∀ {n : Nat}, Stmt_wide_left_funcs prog prims ix_wide_left_funcs n)) {n : Nat} :
+    (ext_wide_left_funcs : Certified (∀ {n : Nat}, Stmt_wide_left_funcs prog prims ix_wide_left_funcs n))
+    (ext_lim_funcs : Certified (∀ {n : Nat}, Stmt_lim_funcs prog prims ix_lim_funcs n)) {n : Nat} :
     Stmt_untyped_rejected prog prims ix_untyped_rejected n := by
   intro x0 v0 w h r0
   rcases n with _ | n

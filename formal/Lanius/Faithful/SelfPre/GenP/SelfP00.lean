@@ -123,6 +123,12 @@ theorem upost_param_ty : ∀ (x0 : Lanius.Mini.FrontEnv) (x1 : List Nat), ∀ M 
   all_goals upost_auto M
 theorem HBPost.Lanius.Mini.paramTy.p0 : ∀ (x0 : Lanius.Mini.FrontEnv) (x1 : List Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb (Lanius.Mini.paramTy x0 x1) ≤ M := upost_param_ty
 
+theorem upost_untyped_rejected : ∀ (x0 : List Lanius.Mini.SrcFunc), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.untypedRejected x0) ≤ M := by
+  intro x0 M hM0
+  first | fun_induction Lanius.Mini.untypedRejected x0 | fun_cases Lanius.Mini.untypedRejected x0 | unfold Lanius.Mini.untypedRejected
+  all_goals upost_auto M
+theorem HBPost.Lanius.Mini.untypedRejected.p0 : ∀ (x0 : List Lanius.Mini.SrcFunc), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.untypedRejected x0) ≤ M := upost_untyped_rejected
+
 theorem upost_weighed : ∀ (x0 : Lanius.Mini.SrcType), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.weighed x0) ≤ M := by
   intro x0 M hM0
   first | fun_induction Lanius.Mini.weighed x0 | fun_cases Lanius.Mini.weighed x0 | unfold Lanius.Mini.weighed
@@ -932,12 +938,6 @@ theorem upost_table_weighed : ∀ (x0 : List Lanius.Mini.Inst) (x1 : Bool), ∀ 
   first | fun_induction Lanius.Mini.tableWeighed x0 x1 | fun_cases Lanius.Mini.tableWeighed x0 x1 | unfold Lanius.Mini.tableWeighed
   all_goals upost_auto M
 theorem HBPost.Lanius.Mini.tableWeighed.p0 : ∀ (x0 : List Lanius.Mini.Inst) (x1 : Bool), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.tableWeighed x0 x1) ≤ M := upost_table_weighed
-
-theorem upost_untyped_rejected : ∀ (x0 : List Lanius.Mini.SrcFunc), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.untypedRejected x0) ≤ M := by
-  intro x0 M hM0
-  first | fun_induction Lanius.Mini.untypedRejected x0 | fun_cases Lanius.Mini.untypedRejected x0 | unfold Lanius.Mini.untypedRejected
-  all_goals upost_auto M
-theorem HBPost.Lanius.Mini.untypedRejected.p0 : ∀ (x0 : List Lanius.Mini.SrcFunc), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.untypedRejected x0) ≤ M := upost_untyped_rejected
 
 theorem upost_payload_at : ∀ (x0 : Option (List (List Lanius.Mini.SrcType))) (x1 : Nat), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.payloadAt x0 x1) ≤ M := by
   intro x0 x1 M hM0

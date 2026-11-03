@@ -3308,14 +3308,6 @@ end
 
 noncomputable section
 
-def Pre_weight_add : Nat → Option Nat → Option Nat → Nat → Prop
-  | 0, x11, x43, b => True
-  | n + 1, x11, x43, b => (match x11 with | some x166 => (Pre_weight_add_to n x166 x43 b) | none => True)
-
-end
-
-noncomputable section
-
 def Pre_weight_times : Nat → Nat → Nat → Nat → Prop
   | 0, x13, x23, b => True
   | n + 1, x13, x23, b => (let k2 := fun (b1 : Nat) => True; let k3 := fun (b1 : Nat) => ((Pre_times n x13 x23 b1) ∧ (Pre_weight_sum n 1 (x13 * x23) b1)); (if (decide (Lanius.Mini.weightLimit < x13)) = true then (k2 b) else (if (decide (Lanius.Mini.weightLimit < x23)) = true then (k2 b) else (k3 b))))
@@ -3327,6 +3319,14 @@ noncomputable section
 def Pre_weight_array : Nat → Nat → Option Nat → Nat → Prop
   | 0, x13, x23, b => True
   | n + 1, x13, x23, b => (match x23 with | some x146 => (Pre_weight_times n (max x13 1) x146 b) | none => True)
+
+end
+
+noncomputable section
+
+def Pre_weight_add : Nat → Option Nat → Option Nat → Nat → Prop
+  | 0, x11, x43, b => True
+  | n + 1, x11, x43, b => (match x11 with | some x166 => (Pre_weight_add_to n x166 x43 b) | none => True)
 
 end
 
@@ -3958,14 +3958,6 @@ def Pre_lowered_all : Nat → Nat → Lanius.Mini.Decls → List Lanius.Mini.Ins
   | n + 1, x12, x25, x39, x58, b => (match x58 with | [] => True | x182 :: x185 => ((Pre_lower_named n (x12 - 1) x25 x39 x182.decl x182.args b) ∧ (∀ b1 : Nat, (Cost_lower_named n (x12 - 1) x25 x39 x182.decl x182.args) < b → b1 = b - (Cost_lower_named n (x12 - 1) x25 x39 x182.decl x182.args) → (Pre_lowered_all n x12 x25 x39 x185 b1))))
 termination_by structural fuel => fuel
 end
-
-end
-
-noncomputable section
-
-def Cost_sint_at : Nat → Lanius.Mini.UintTy → BitVec 32 → Lanius.Mini.SrcExpr → Nat
-  | 0, x8, x19, x27 => 18446744073709551616
-  | n + 1, x8, x19, x27 => (if (Lanius.Mini.sintFits x8 x19) = true then 1 else 0)
 
 end
 
