@@ -42,6 +42,8 @@ RWStructuredBuffer<uint> interface_predicate_arguments;
 RWStructuredBuffer<uint> interface_predicate_argument_written;
 RWStructuredBuffer<uint> interface_status;
 static const uint INVALID = 0xffffffffu;
+static const uint INTERFACE_PREDICATE_SCALAR_SUBJECT = 0x80000000u;
+static const uint TYPE_KIND_SCALAR = 1u;
 void fail(uint row, uint detail)
 {
     atomic_u32_or(interface_status, 0u, 65536u);
@@ -65,13 +67,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
         first > interface_predicate_argument_total[0u] || count > interface_predicate_argument_total[0u] - first)
     { fail(row, 7u); return; }
     uint parameter = interface_predicate_subject_row[row];
-    uint member = parameter < gParams.token_capacity ? interface_member_index_by_generic_row[parameter] : INVALID;
     uint owner = interface_predicate_owner[row];
     uint scope = interface_predicate_scope[row];
-    if (member >= interface_member_total[0u]) { fail(row, 8u); return; }
+    // A concrete scalar subject has no parameter member to own; 00_classify
+    // already bound the predicate to its exported callable.
+    bool scalar_subject = (parameter & INTERFACE_PREDICATE_SCALAR_SUBJECT) != 0u;
+    uint member = !scalar_subject && parameter < gParams.token_capacity
+        ? interface_member_index_by_generic_row[parameter] : INVALID;
+    if (!scalar_subject && member >= interface_member_total[0u]) { fail(row, 8u); return; }
     uint member_base = member * SEMANTIC_INTERFACE_MEMBER_WORDS;
     uint source_owner = compact_predicates[row].owner;
-    uint member_scope = interface_member_words[member_base + 9u];
+    uint member_scope = scalar_subject ? scope : interface_member_words[member_base + 9u];
     bool allowed_scope = member_scope == scope;
     if (!allowed_scope && (scope & 0xc0000000u) == 0x80000000u)
     {
@@ -85,8 +91,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 : member_scope == 0u && method_core.owner < active;
         }
     }
-    if (!allowed_scope || interface_member_words[member_base] != owner ||
-        interface_member_words[member_base + 1u] != 2u)
+    if (!scalar_subject && (!allowed_scope || interface_member_words[member_base] != owner ||
+        interface_member_words[member_base + 1u] != 2u))
     { fail(row, 9u); return; }
     uint bound = compact_predicates[row].bound;
     uint reference = bound < active ? predicate_bound_reference[bound] : INVALID;
@@ -102,8 +108,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint subject = interface_type_count[0u] + INTERFACE_SCALAR_LEAF_COUNT + interface_signature_type_total[0u] + destination;
     uint type_base = subject * 9u;
     for (uint word = 0u; word < 9u; word++) interface_types[type_base + word] = 0u;
-    interface_types[type_base] = 2u;
-    interface_types[type_base + 1u] = member;
+    // The subject row is the subject parameter, or a copy of the scalar leaf
+    // (signature/01_totals) for a concrete scalar subject.
+    interface_types[type_base] = scalar_subject ? TYPE_KIND_SCALAR : 2u;
+    interface_types[type_base + 1u] = scalar_subject
+        ? parameter & ~INTERFACE_PREDICATE_SCALAR_SUBJECT : member;
     uint base = destination * SEMANTIC_INTERFACE_PREDICATE_WORDS;
     interface_predicate_words[base] = owner;
     interface_predicate_words[base + 1u] = scope;

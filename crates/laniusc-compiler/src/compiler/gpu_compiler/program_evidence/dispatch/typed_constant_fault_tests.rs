@@ -584,21 +584,34 @@ fn gpu_rejected_append_preserves_accepted_constant_rows_and_receipts() {
         CatalogInput { facts: &appended }]).unwrap();
     let mut gpu = GpuProgramEvidence::admit(
         compiler.program_evidence_workspace.checkout(), catalog).unwrap();
+    // Every original inventory precedes the first submission (packet
+    // prepare_submission), as in a native session. The later append is the
+    // marker unit's calls as instance-closure origins, a second submission.
+    let marker = |packet: &GpuPacket| packet.packet.catalog.snapshot_by_unit[&[192, 1]];
+    let append_both = |packet: &mut GpuPacket| {
+        let packet = packet.packet_mut().unwrap();
+        packet.append_original_unit_calls(&first).unwrap();
+        packet.append_original_unit_calls(&appended).unwrap();
+    };
 
-    // A complete two-submission control establishes that appending the second
-    // inventory is valid without any injected pending-store fault.
+    // A complete two-submission control establishes that the closure append
+    // is valid without any injected pending-store fault.
     let mut control = gpu.new_packet().unwrap();
-    control.packet_mut().unwrap().append_original_unit_calls(&first).unwrap();
+    append_both(&mut control);
     assert!(!gpu.check(&mut control).expect("first accepted constant proof").is_empty());
-    control.packet_mut().unwrap().append_original_unit_calls(&appended).unwrap();
+    let snapshot = marker(&control);
+    assert!(!control.packet_mut().unwrap()
+        .append_closure_calls(snapshot, appended.generic_calls().clone()).unwrap().is_empty());
     assert!(!gpu.check(&mut control).expect("valid appended marker proof").is_empty());
     assert_eq!(control.completed_serial, 2);
 
     let mut packet = gpu.new_packet().unwrap();
-    packet.packet_mut().unwrap().append_original_unit_calls(&first).unwrap();
+    append_both(&mut packet);
     assert!(!gpu.check(&mut packet).expect("accepted prefix before failed append").is_empty());
     let before = accepted_snapshot(&gpu, &packet);
-    packet.packet_mut().unwrap().append_original_unit_calls(&appended).unwrap();
+    let snapshot = marker(&packet);
+    packet.packet_mut().unwrap()
+        .append_closure_calls(snapshot, appended.generic_calls().clone()).unwrap();
     arm(&packet, FaultKind::OrphanSubstitution, None);
     let error = gpu.check(&mut packet).expect_err("appended orphan substitution must fail");
     let fault = observation(&packet);

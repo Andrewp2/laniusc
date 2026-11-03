@@ -4,6 +4,8 @@ import hir_records;
 import atomics;
 import type_checker.interface.method_parameters;
 import type_checker.type.instances.generic_param_lookup;
+import type_checker.predicates.scalar_subject;
+import primitive_types;
 
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; uint unit_id; };
 ConstantBuffer<Params> gParams;
@@ -26,6 +28,7 @@ StructuredBuffer<uint> predicate_bound_arg_count;
 StructuredBuffer<uint> predicate_status;
 StructuredBuffer<uint> generic_decl_owner_by_node_a;
 StructuredBuffer<uint> name_id_by_token;
+StructuredBuffer<uint> language_type_code_by_name_id;
 StructuredBuffer<uint> generic_param_count_out;
 StructuredBuffer<uint> generic_param_owner_token;
 StructuredBuffer<uint> generic_param_name_id;
@@ -42,6 +45,9 @@ RWStructuredBuffer<uint> interface_status;
 #define LEXICAL_TOKEN_CAPACITY gParams.token_capacity
 #include "../../type/instances/lexical_parameter_lookup.slang"
 static const uint INVALID = 0xffffffffu;
+// A subject row with this bit set holds a scalar type code, not a generic
+// parameter row: `where bool: Rel<[i32; N]>` (01_scatter).
+static const uint INTERFACE_PREDICATE_SCALAR_SUBJECT = 0x80000000u;
 void fail(uint row, uint detail)
 {
     atomic_u32_or(interface_status, 0u, 65536u);
@@ -119,7 +125,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     { fail(row, 4u); return; }
     uint parameter = lexical_parameter_row(bound, subject, 1u);
     if (parameter >= min(generic_param_count_out[0u], gParams.token_capacity))
-    { fail(row, 5u); return; }
+    {
+        // A concrete subject is a language scalar (scalar_subject.slang).
+        uint scalar = predicate_scalar_subject_code(subject, name_id_by_token,
+            language_type_code_by_name_id);
+        if (scalar == INVALID || !scalar_is_identity(scalar)) { fail(row, 5u); return; }
+        parameter = INTERFACE_PREDICATE_SCALAR_SUBJECT | scalar;
+    }
     interface_predicate_owner[row] = exported;
     interface_predicate_scope[row] = scope;
     interface_predicate_subject_row[row] = parameter;

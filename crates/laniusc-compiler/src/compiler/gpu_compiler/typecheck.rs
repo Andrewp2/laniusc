@@ -6120,6 +6120,31 @@ fn main() -> i32 {
     }
 
     #[test]
+    fn missing_associated_item_is_lnc0027_without_methods_or_imports() {
+        let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
+        // No impl and no import: the method resolver does not run, so the
+        // qualified path itself must report the missing associated item.
+        for (source, expected) in [
+            (
+                "module app::main; struct S { x: i32 } fn main() -> i32 { let wrong = S::nope(42); return 0; }",
+                "LNC0027",
+            ),
+            (
+                "module app::main; enum E { A(i32) } fn main() -> i32 { let wrong = E::Nope(42); return 0; }",
+                "LNC0027",
+            ),
+            (
+                "module app::main; fn main() -> i32 { let wrong = foo::nope(42); return 0; }",
+                "LNC0005",
+            ),
+        ] {
+            let error = pollster::block_on(compiler.semantic_interface_for_source_pack(12, &[source]))
+                .expect_err("missing qualified item");
+            assert_eq!(error.to_public_diagnostic().code, expected, "{source}: {error:?}");
+        }
+    }
+
+    #[test]
     fn qualified_path_relations_survive_unrelated_module_declarations() {
         let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
         let noise = (0..32)

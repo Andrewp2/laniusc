@@ -38,6 +38,7 @@ static const uint TY_UNKNOWN = 0u;
 static const uint INTRINSIC_NONE = 0u;
 static const uint PATH_RESOLVE_STATUS_OK = 0u;
 static const uint PATH_RESOLVE_STATUS_INVALID = 0xffffffffu;
+static const uint PATH_RESOLVE_STATUS_MISSING_ASSOCIATED_ITEM = 8u;
 static const uint ERR_UNRESOLVED_IDENT = 2u;
 static const uint ERR_CALL_MISMATCH = 10u;
 static const uint LANGUAGE_SYMBOL_COUNT = 79u;
@@ -191,6 +192,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 known_non_free_declaration_name(leaf)
                     ? ERR_CALL_MISMATCH
                     : ERR_UNRESOLVED_IDENT;
+    // `Type::name(..)` where the type has no such associated item: the same
+    // call-resolution failure the method resolver reports (methods/03
+    // resolve_associated_call), with the missing name as its detail.
+    if (path_status == PATH_RESOLVE_STATUS_MISSING_ASSOCIATED_ITEM)
+    {
+        code = ERR_CALL_MISMATCH;
+        detail = valid_token(leaf) ? name_id_by_token[leaf] : 0u;
+    }
     record_min_token_error(
         status,
         valid_token(error_token) ? error_token : 0u,
