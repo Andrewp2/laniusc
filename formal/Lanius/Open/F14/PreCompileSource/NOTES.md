@@ -21,3 +21,7 @@
     `x + 1 < 2 ^ 64`. These need value bounds (OVERRIDES on the callees plus value facts at the callers),
     not one open statement each.
 - Not imported by LaniusOpen: GenPC SelfP01 alone takes 72 s of its own (cold chain over 2 minutes).
+- 11-03 (leafB): replaced by `PreCompileSourceV2` (PreCompileWords.red2). The M-form premise
+  `M + b <= 2 ^ 62` bounds a value by the potential plus the cost so far, which the budget (up to `2 ^ 61`
+  in PreCompileWords) allows to be near `2 ^ 62`; the compile side multiplies and sums such values
+  (`codeSize`, `14 * count`), so this statement is not provable that way. Left unused.
