@@ -959,6 +959,37 @@ verified compiler's locals are 64-bit slots with no address. The design:
      (`str_entered`), so the heap correspondence holds after it
      (`HeapCorr.mapView`), and the body runs with the pointer bound
      (`stmt_letStr`, `stops_letStr`).
+   - *Stage (c), decided and done (11-02, f6v): the stdlib's one spelling.*
+     The front end reads `let x: str = "chars";` when the next statement,
+     the last of its block, is `return
+     core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(x),
+     n);` (with or without `<u8>`), `n` an integer literal, in a function
+     returning `[u8]`: as `LetStr(x, chars, LetSlice(r, u8, x, n,
+     Return(r)))`, `x` the pointer's id (the str local's token) and `r` the
+     slice's (the value's first token, as `return slice_from_raw_parts(..)`
+     numbers it) (`StmtsR.letStr`, sound and unique). This is exactly what
+     `core::unicode_*_data` write. Three readings are decisions. (1) `str`
+     is the builtin type whenever the type is the bare path `str`, as in
+     laniusc (builtin type names take precedence, `Elaboration.lean`); a
+     `str` let of any other shape is not read. (2) A literal is read only
+     when every byte between its quotes is printable ASCII other than the
+     quote and the backslash, so no escape is decoded and laniusc's string
+     is those bytes. (3) `core::mem::typed_slice_from_raw_parts` is a
+     stdlib function, `assert(length >= 0); return
+     slice_from_raw_parts(data, length);`, not a builtin; with a literal
+     length (never negative) its call is the raw view itself, so the
+     reading inlines it, taking `core::mem` to be the stdlib's. The inlined
+     form has one call frame fewer than laniusc's, which only lowers its
+     stack use. The two-statement `let p: ptr =
+     core::mem::string_data_ptr("chars");` of the stage (b) plan is not read:
+     no stdlib function writes it. Stdlib oracle on the 9 modules that call
+     `string_data_ptr` (`core::mem`, the 4 `core::unicode_*_data`,
+     `std::cli`, `std::resolver_config`, `std::command_raw`, `test::check`;
+     `--calls 16 --seed 1`): compiled 11 to 18, unread 16 to 9 (all 7
+     `str` targets now compiled), calls agreeing 75 to 157 (and 30 calls
+     that trap natively stop laniusc's binary too), 0 disagreements. The 9 left call host externs (8) or take an array
+     (1); `std::cli`, `std::resolver_config` and `test::check` pass `str`
+     parameters, not testable yet.
 7. **A static need per function (decided 11-01, step 3.5).** A function
    takes its whole block at entry (`frame_block`: 8 bytes per element of
    each array, parameter or let, it passes as a slice), by a prologue
