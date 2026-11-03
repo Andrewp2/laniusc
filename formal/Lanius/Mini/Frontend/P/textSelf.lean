@@ -36,6 +36,21 @@ def textSliceStride : List Nat :=
   let t : List Nat := 115 :: 108 :: 105 :: 99 :: 101 :: 95 :: 115 :: 116 :: 114 :: 105 :: 100 :: [101]
   t
 
+/-- str -/
+def textStr : List Nat :=
+  let t : List Nat := 115 :: 116 :: [114]
+  t
+
+/-- string_data_ptr -/
+def textStringDataPtr : List Nat :=
+  let t : List Nat := 115 :: 116 :: 114 :: 105 :: 110 :: 103 :: 95 :: 100 :: 97 :: 116 :: 97 :: 95 :: 112 :: 116 :: [114]
+  t
+
+/-- typed_slice_from_raw_parts -/
+def textTypedSliceFromRawParts : List Nat :=
+  let t : List Nat := 116 :: 121 :: 112 :: 101 :: 100 :: 95 :: 115 :: 108 :: 105 :: 99 :: 101 :: 95 :: 102 :: 114 :: 111 :: 109 :: 95 :: 114 :: 97 :: 119 :: 95 :: 112 :: 97 :: 114 :: 116 :: [115]
+  t
+
 def textSliceFromRawParts : List Nat :=
   let t : List Nat := 115 :: 108 :: 105 :: 99 :: 101 :: 95 :: 102 :: 114 :: 111 :: 109 :: 95 :: 114 :: 97 :: 119 :: 95 :: 112 :: 97 :: 114 :: 116 :: [115]
   t

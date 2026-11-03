@@ -304,6 +304,8 @@ inductive MStmt where
   | mLetIndex : Nat → Ty → Nat → SrcExpr → MStmt → MStmt
   /-- let array: [i32; length] = [elements]; let pointer: ptr = core::mem::i32_array_data_ptr(array); body -/
   | mLetView : Nat → Nat → (List SrcExpr) → Nat → MStmt → MStmt
+  /-- let pointer: ptr = core::mem::string_data_ptr("chars"); body -/
+  | mLetStr : Nat → (List Nat) → MStmt → MStmt
   | mSetIndex : Nat → SrcExpr → SrcExpr → MStmt
   /-- the effectful forms -/
   | mLetEval : Nat → Ty → MEff → MStmt → MStmt

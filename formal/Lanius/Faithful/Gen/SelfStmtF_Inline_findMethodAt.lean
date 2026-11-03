@@ -80,6 +80,10 @@ abbrev Stmt_param_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.FnDecl} {x3 : List Lanius.Mini.Local} {x4 : Lanius.Mini.CTree} {x5 : List Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → RepFnDecl x2 v2 → (RepList 237 RepLocal) x3 v3 → RepCTree x4 v4 → (RepList 82 RepCTree) x5 v5 →
     (RepOption 235 RepMParams) (Lanius.Mini.Inline.paramOf x0 x1 x2 x3 x4 x5) w
 
+abbrev Stmt_string_byte (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : List Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepList 25 RepNat) x1 v1 →
+    (RepOption 197 (RepList 25 RepNat)) (Lanius.Mini.Inline.stringByte x0 x1) w
+
 abbrev Stmt_ty_local_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.LocalTy} {x1 : List Lanius.Mini.LocalTy} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepLocalTy x0 v0 → (RepList 223 RepLocalTy) x1 v1 → RepNat x2 v2 →
     (RepOption 158 RepSrcType) (Lanius.Mini.Inline.tyLocalAt x0 x1 x2) w

@@ -16,6 +16,11 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.SelfCert
 open Lanius.Faithful.Budget
 
+abbrev BStmt_covers_enum (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.TypeDecl} {x3 : List Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → RepTypeDecl x2 v2 → (RepList 82 RepCTree) x3 v3 →
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_covers_enum n x0 x1 x2 x3 = k ∧ (RepOption 307 RepBool) (Lanius.Mini.coversEnum x0 x1 x2 x3) w
+
 abbrev BStmt_covers_decl (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Option Lanius.Mini.TypeDecl} {x3 : List Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepOption 208 RepTypeDecl) x2 v2 → (RepList 82 RepCTree) x3 v3 →
@@ -585,6 +590,196 @@ abbrev BStmt_p_let_init (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
   ∀ {w : Value} {k : Nat},
     qcall spW prims uc n ix [] = some (w, k) →
     qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.Inline.pLetInit) w
+
+abbrev BStmt_text_str (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value} {k : Nat},
+    qcall spW prims uc n ix [] = some (w, k) →
+    qcall sp prims uc n ix [] = some (w, k) ∧ Cost_text_str n  = k ∧ (RepList 25 RepNat) (Lanius.Mini.textStr) w
+
+abbrev BStmt_is_str_type (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.CTree} {v0 v1 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepNat x0 v0 → RepCTree x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_is_str_type n x0 x1 = k ∧ RepBool (Lanius.Mini.isStrType x0 x1) w
+
+abbrev BStmt_is_str_let (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 237 RepLocal) x2 v2 → RepCTree x3 v3 →
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_is_str_let n x0 x1 x2 x3 = k ∧ RepBool (Lanius.Mini.isStrLet x0 x1 x2 x3) w
+
+abbrev BStmt_p_string (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value} {k : Nat},
+    qcall spW prims uc n ix [] = some (w, k) →
+    qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.Inline.pString) w
+
+abbrev BStmt_string_close (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Bool} {v0 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → RepBool x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 197 (RepList 25 RepNat)) (Lanius.Mini.stringClose x0) w
+
+abbrev BStmt_string_cons (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Bool} {x1 : Nat} {x2 : Option (List Nat)} {v0 v1 v2 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepBool x0 v0 → RepNat x1 v1 → (RepOption 197 (RepList 25 RepNat)) x2 v2 →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_string_cons n x0 x1 x2 = k ∧ (RepOption 197 (RepList 25 RepNat)) (Lanius.Mini.stringCons x0 x1 x2) w
+
+abbrev BStmt_plain_string_byte (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {v0 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → RepNat x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.plainStringByte x0) w
+
+abbrev BStmt_string_body (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List Nat} {v0 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 25 RepNat) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_string_body n x0 = k ∧ (RepOption 197 (RepList 25 RepNat)) (Lanius.Mini.stringBody x0) w
+
+abbrev BStmt_string_byte (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : List Nat} {v0 v1 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepNat x0 v0 → (RepList 25 RepNat) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_string_byte n x0 x1 = k ∧ (RepOption 197 (RepList 25 RepNat)) (Lanius.Mini.Inline.stringByte x0 x1) w
+
+abbrev BStmt_string_open (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Bool} {x1 : List Nat} {v0 v1 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepBool x0 v0 → (RepList 25 RepNat) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_string_open n x0 x1 = k ∧ (RepOption 197 (RepList 25 RepNat)) (Lanius.Mini.stringOpen x0 x1) w
+
+abbrev BStmt_string_literal (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List Nat} {v0 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 25 RepNat) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_string_literal n x0 = k ∧ (RepOption 197 (RepList 25 RepNat)) (Lanius.Mini.stringLiteral x0) w
+
+abbrev BStmt_string_primary (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.CTree} {x1 : Lanius.Mini.CTree} {v0 v1 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepCTree x0 v0 → RepCTree x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_string_primary n x0 x1 = k ∧ (RepOption 197 (RepList 25 RepNat)) (Lanius.Mini.stringPrimary x0 x1) w
+
+abbrev BStmt_string_init (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.CTree} {v0 v1 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepNat x0 v0 → RepCTree x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_string_init n x0 x1 = k ∧ (RepOption 197 (RepList 25 RepNat)) (Lanius.Mini.stringInit x0 x1) w
+
+abbrev BStmt_p_return_stmt (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value} {k : Nat},
+    qcall spW prims uc n ix [] = some (w, k) →
+    qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.Inline.pReturnStmt) w
+
+abbrev BStmt_p_return_value (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value} {k : Nat},
+    qcall spW prims uc n ix [] = some (w, k) →
+    qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.Inline.pReturnValue) w
+
+abbrev BStmt_is_u8_slice (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Option Lanius.Mini.Ty} {v0 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 211 RepTy) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_is_u8_slice n x0 = k ∧ RepBool (Lanius.Mini.isU8Slice x0) w
+
+abbrev BStmt_text_typed_slice_from_raw_parts (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value} {k : Nat},
+    qcall spW prims uc n ix [] = some (w, k) →
+    qcall sp prims uc n ix [] = some (w, k) ∧ Cost_text_typed_slice_from_raw_parts n  = k ∧ (RepList 25 RepNat) (Lanius.Mini.textTypedSliceFromRawParts) w
+
+abbrev BStmt_typed_slice_spellings (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value} {k : Nat},
+    qcall spW prims uc n ix [] = some (w, k) →
+    qcall sp prims uc n ix [] = some (w, k) ∧ Cost_typed_slice_spellings n  = k ∧ (RepList 31 (RepList 25 RepNat)) (Lanius.Mini.typedSliceSpellings) w
+
+abbrev BStmt_is_empty_trees (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List Lanius.Mini.CTree} {v0 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 82 RepCTree) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.isEmptyTrees x0) w
+
+abbrev BStmt_is_u8_ty (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Option Lanius.Mini.Ty} {v0 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 211 RepTy) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.isU8Ty x0) w
+
+abbrev BStmt_u8_args (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.CTree} {v0 v1 v2 w : Value} {k b : Nat},
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 82 RepCTree) x2 v2 → k < b → Pre_u8_args n x0 x1 x2 b →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_u8_args n x0 x1 x2 = k ∧ RepBool (Lanius.Mini.u8Args x0 x1 x2) w
+
+abbrev BStmt_is_typed_slice_path (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.CTree} {v0 v1 v2 w : Value} {k b : Nat},
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → RepCTree x2 v2 → k < b → Pre_is_typed_slice_path n x0 x1 x2 b →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_is_typed_slice_path n x0 x1 x2 = k ∧ RepBool (Lanius.Mini.isTypedSlicePath x0 x1 x2) w
+
+abbrev BStmt_string_slice (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Bool} {x1 : Option Lanius.Mini.SrcExpr} {x2 : Nat} {x3 : List Nat} {x4 : Nat} {v0 v1 v2 v3 v4 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → RepBool x0 v0 → (RepOption 233 RepSrcExpr) x1 v1 → RepNat x2 v2 → (RepList 25 RepNat) x3 v3 → RepNat x4 v4 →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_string_slice n x0 x1 x2 x3 x4 = k ∧ (RepOption 251 RepMStmt) (Lanius.Mini.stringSlice x0 x1 x2 x3 x4) w
+
+abbrev BStmt_text_string_data_ptr (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value} {k : Nat},
+    qcall spW prims uc n ix [] = some (w, k) →
+    qcall sp prims uc n ix [] = some (w, k) ∧ Cost_text_string_data_ptr n  = k ∧ (RepList 25 RepNat) (Lanius.Mini.textStringDataPtr) w
+
+abbrev BStmt_string_data_ptr_path (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value} {k : Nat},
+    qcall spW prims uc n ix [] = some (w, k) →
+    qcall sp prims uc n ix [] = some (w, k) ∧ Cost_string_data_ptr_path n  = k ∧ (RepList 31 (RepList 25 RepNat)) (Lanius.Mini.stringDataPtrPath) w
+
+abbrev BStmt_is_text (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Option (List Nat)} {x1 : List Nat} {v0 v1 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 197 (RepList 25 RepNat)) x0 v0 → (RepList 25 RepNat) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.isText x0 x1) w
+
+abbrev BStmt_tree_names (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.CTree} {x2 : List Nat} {v0 v1 v2 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepCTree x1 v1 → (RepList 25 RepNat) x2 v2 →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.treeNames x0 x1 x2) w
+
+abbrev BStmt_one_tree_names (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Option (List Lanius.Mini.CTree)} {x2 : List Nat} {v0 v1 v2 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → (RepOption 81 (RepList 82 RepCTree)) x1 v1 → (RepList 25 RepNat) x2 v2 →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.oneTreeNames x0 x1 x2) w
+
+abbrev BStmt_is_data_ptr_of (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.CTree} {x2 : List Nat} {v0 v1 v2 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepCTree x1 v1 → (RepList 25 RepNat) x2 v2 →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_is_data_ptr_of n x0 x1 x2 = k ∧ RepBool (Lanius.Mini.isDataPtrOf x0 x1 x2) w
+
+abbrev BStmt_int_primary (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.CTree} {x1 : Lanius.Mini.CTree} {v0 v1 w : Value} {k b : Nat},
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepCTree x0 v0 → RepCTree x1 v1 → k < b → Pre_int_primary n x0 x1 b →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_int_primary n x0 x1 = k ∧ (RepOption 233 RepSrcExpr) (Lanius.Mini.intPrimary x0 x1) w
+
+abbrev BStmt_int_tree (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.CTree} {v0 v1 w : Value} {k b : Nat},
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepNat x0 v0 → RepCTree x1 v1 → k < b → Pre_int_tree n x0 x1 b →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_int_tree n x0 x1 = k ∧ (RepOption 233 RepSrcExpr) (Lanius.Mini.intTree x0 x1) w
+
+abbrev BStmt_string_args (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Option (List Lanius.Mini.CTree)} {x2 : Nat} {x3 : List Nat} {x4 : List Nat} {x5 : Nat} {v0 v1 v2 v3 v4 v5 w : Value} {k b : Nat},
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) → RepNat x0 v0 → (RepOption 81 (RepList 82 RepCTree)) x1 v1 → RepNat x2 v2 → (RepList 25 RepNat) x3 v3 → (RepList 25 RepNat) x4 v4 → RepNat x5 v5 → k < b → Pre_string_args n x0 x1 x2 x3 x4 x5 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) ∧ Cost_string_args n x0 x1 x2 x3 x4 x5 = k ∧ (RepOption 251 RepMStmt) (Lanius.Mini.stringArgs x0 x1 x2 x3 x4 x5) w
+
+abbrev BStmt_string_call (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Nat} {x3 : List Nat} {x4 : List Nat} {x5 : Nat} {x6 : Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 v6 w : Value} {k b : Nat},
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5, v6] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → RepNat x2 v2 → (RepList 25 RepNat) x3 v3 → (RepList 25 RepNat) x4 v4 → RepNat x5 v5 → RepCTree x6 v6 → k < b → Pre_string_call n x0 x1 x2 x3 x4 x5 x6 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5, v6] = some (w, k) ∧ Cost_string_call n x0 x1 x2 x3 x4 x5 x6 = k ∧ (RepOption 251 RepMStmt) (Lanius.Mini.stringCall x0 x1 x2 x3 x4 x5 x6) w
+
+abbrev BStmt_string_peeled (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Nat} {x3 : List Nat} {x4 : List Nat} {x5 : Nat} {x6 : Option Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 v6 w : Value} {k b : Nat},
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5, v6] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → RepNat x2 v2 → (RepList 25 RepNat) x3 v3 → (RepList 25 RepNat) x4 v4 → RepNat x5 v5 → (RepOption 128 RepCTree) x6 v6 → k < b → Pre_string_peeled n x0 x1 x2 x3 x4 x5 x6 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5, v6] = some (w, k) ∧ Cost_string_peeled n x0 x1 x2 x3 x4 x5 x6 = k ∧ (RepOption 251 RepMStmt) (Lanius.Mini.stringPeeled x0 x1 x2 x3 x4 x5 x6) w
+
+abbrev BStmt_string_value (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Nat} {x3 : List Nat} {x4 : List Nat} {x5 : Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 w : Value} {k b : Nat},
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → RepNat x2 v2 → (RepList 25 RepNat) x3 v3 → (RepList 25 RepNat) x4 v4 → RepCTree x5 v5 → k < b → Pre_string_value n x0 x1 x2 x3 x4 x5 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) ∧ Cost_string_value n x0 x1 x2 x3 x4 x5 = k ∧ (RepOption 251 RepMStmt) (Lanius.Mini.stringValue x0 x1 x2 x3 x4 x5) w
+
+abbrev BStmt_string_return (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Nat} {x3 : List Nat} {x4 : List Nat} {x5 : Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 w : Value} {k b : Nat},
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → RepNat x2 v2 → (RepList 25 RepNat) x3 v3 → (RepList 25 RepNat) x4 v4 → RepCTree x5 v5 → k < b → Pre_string_return n x0 x1 x2 x3 x4 x5 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) ∧ Cost_string_return n x0 x1 x2 x3 x4 x5 = k ∧ (RepOption 251 RepMStmt) (Lanius.Mini.stringReturn x0 x1 x2 x3 x4 x5) w
+
+abbrev BStmt_string_last (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Nat} {x3 : List Nat} {x4 : List Nat} {x5 : List Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 w : Value} {k b : Nat},
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → RepNat x2 v2 → (RepList 25 RepNat) x3 v3 → (RepList 25 RepNat) x4 v4 → (RepList 82 RepCTree) x5 v5 → k < b → Pre_string_last n x0 x1 x2 x3 x4 x5 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) ∧ Cost_string_last n x0 x1 x2 x3 x4 x5 = k ∧ (RepOption 251 RepMStmt) (Lanius.Mini.stringLast x0 x1 x2 x3 x4 x5) w
+
+abbrev BStmt_string_let (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Nat} {x3 : List Nat} {x4 : Lanius.Mini.CTree} {x5 : List Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 w : Value} {k b : Nat},
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → RepNat x2 v2 → (RepList 25 RepNat) x3 v3 → RepCTree x4 v4 → (RepList 82 RepCTree) x5 v5 → k < b → Pre_string_let n x0 x1 x2 x3 x4 x5 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) ∧ Cost_string_let n x0 x1 x2 x3 x4 x5 = k ∧ (RepOption 251 RepMStmt) (Lanius.Mini.stringLet x0 x1 x2 x3 x4 x5) w
 
 abbrev BStmt_match_of_postfix (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CTree} {v0 w : Value} {k : Nat},
@@ -1215,16 +1410,6 @@ abbrev BStmt_untyped_head (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : P
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 237 RepLocal) x2 v2 → RepCTree x3 v3 → k < b → Pre_untyped_head n x0 x1 x2 x3 b →
     qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_untyped_head n x0 x1 x2 x3 = k ∧ (RepOption 266 RepUntyped) (Lanius.Mini.untypedHead x0 x1 x2 x3) w
-
-abbrev BStmt_p_return_stmt (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {w : Value} {k : Nat},
-    qcall spW prims uc n ix [] = some (w, k) →
-    qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.Inline.pReturnStmt) w
-
-abbrev BStmt_p_return_value (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {w : Value} {k : Nat},
-    qcall spW prims uc n ix [] = some (w, k) →
-    qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.Inline.pReturnValue) w
 
 abbrev BStmt_p_return_void (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value} {k : Nat},

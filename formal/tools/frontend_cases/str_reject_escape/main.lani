@@ -1,0 +1,5 @@
+// A string literal with an escape is not read.
+fn chunk(index: i32) -> [u8] {
+    let text: str = "a\nb";
+    return core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(text), 3);
+}

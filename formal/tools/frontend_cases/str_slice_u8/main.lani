@@ -1,0 +1,9 @@
+// typed_slice_from_raw_parts with its type argument spelled out.
+fn chunk(index: i32) -> [u8] {
+    let text: str = "0000A1";
+    return core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(text), 6);
+}
+
+fn run(n: i32) -> i32 {
+    return n;
+}

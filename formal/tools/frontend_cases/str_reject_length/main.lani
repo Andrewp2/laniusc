@@ -1,0 +1,6 @@
+// The view's length must be an integer literal (the stdlib function asserts
+// it is not negative).
+fn chunk(index: i32) -> [u8] {
+    let text: str = "abc";
+    return core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(text), index);
+}

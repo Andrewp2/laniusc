@@ -693,36 +693,38 @@ inductive RepMStmt : Lanius.Mini.MStmt → Value → Prop where
       RepNat x0 v0 → RepTy x1 v1 → RepNat x2 v2 → RepSrcExpr x3 v3 → RepMStmt x4 v4 → RepMStmt (Lanius.Mini.MStmt.mLetIndex x0 x1 x2 x3 x4) (.enumeration 173 16 [v0, v1, v2, v3, v4])
   | c17 {x0 : Nat} {x1 : Nat} {x2 : List Lanius.Mini.SrcExpr} {x3 : Nat} {x4 : Lanius.Mini.MStmt} {v0 v1 v2 v3 v4 : Value} :
       RepNat x0 v0 → RepNat x1 v1 → (RepList 21 RepSrcExpr) x2 v2 → RepNat x3 v3 → RepMStmt x4 v4 → RepMStmt (Lanius.Mini.MStmt.mLetView x0 x1 x2 x3 x4) (.enumeration 173 17 [v0, v1, v2, v3, v4])
-  | c18 {x0 : Nat} {x1 : Lanius.Mini.SrcExpr} {x2 : Lanius.Mini.SrcExpr} {v0 v1 v2 : Value} :
-      RepNat x0 v0 → RepSrcExpr x1 v1 → RepSrcExpr x2 v2 → RepMStmt (Lanius.Mini.MStmt.mSetIndex x0 x1 x2) (.enumeration 173 18 [v0, v1, v2])
-  | c19 {x0 : Nat} {x1 : Lanius.Mini.Ty} {x2 : Lanius.Mini.MEff} {x3 : Lanius.Mini.MStmt} {v0 v1 v2 v3 : Value} :
-      RepNat x0 v0 → RepTy x1 v1 → RepMEff x2 v2 → RepMStmt x3 v3 → RepMStmt (Lanius.Mini.MStmt.mLetEval x0 x1 x2 x3) (.enumeration 173 19 [v0, v1, v2, v3])
-  | c20 {x0 : Nat} {x1 : Lanius.Mini.MEff} {v0 v1 : Value} :
-      RepNat x0 v0 → RepMEff x1 v1 → RepMStmt (Lanius.Mini.MStmt.mSetEval x0 x1) (.enumeration 173 20 [v0, v1])
-  | c21 {x0 : Lanius.Mini.MEff} {x1 : Lanius.Mini.MStmt} {x2 : Lanius.Mini.MStmt} {v0 v1 v2 : Value} :
-      RepMEff x0 v0 → RepMStmt x1 v1 → RepMStmt x2 v2 → RepMStmt (Lanius.Mini.MStmt.mIfEval x0 x1 x2) (.enumeration 173 21 [v0, v1, v2])
-  | c22 {x0 : Lanius.Mini.MEff} {x1 : Lanius.Mini.MStmt} {v0 v1 : Value} :
-      RepMEff x0 v0 → RepMStmt x1 v1 → RepMStmt (Lanius.Mini.MStmt.mWhileEval x0 x1) (.enumeration 173 22 [v0, v1])
-  | c23 {x0 : Lanius.Mini.MEff} {v0 : Value} :
-      RepMEff x0 v0 → RepMStmt (Lanius.Mini.MStmt.mReturnEval x0) (.enumeration 173 23 [v0])
+  | c18 {x0 : Nat} {x1 : List Nat} {x2 : Lanius.Mini.MStmt} {v0 v1 v2 : Value} :
+      RepNat x0 v0 → (RepList 25 RepNat) x1 v1 → RepMStmt x2 v2 → RepMStmt (Lanius.Mini.MStmt.mLetStr x0 x1 x2) (.enumeration 173 18 [v0, v1, v2])
+  | c19 {x0 : Nat} {x1 : Lanius.Mini.SrcExpr} {x2 : Lanius.Mini.SrcExpr} {v0 v1 v2 : Value} :
+      RepNat x0 v0 → RepSrcExpr x1 v1 → RepSrcExpr x2 v2 → RepMStmt (Lanius.Mini.MStmt.mSetIndex x0 x1 x2) (.enumeration 173 19 [v0, v1, v2])
+  | c20 {x0 : Nat} {x1 : Lanius.Mini.Ty} {x2 : Lanius.Mini.MEff} {x3 : Lanius.Mini.MStmt} {v0 v1 v2 v3 : Value} :
+      RepNat x0 v0 → RepTy x1 v1 → RepMEff x2 v2 → RepMStmt x3 v3 → RepMStmt (Lanius.Mini.MStmt.mLetEval x0 x1 x2 x3) (.enumeration 173 20 [v0, v1, v2, v3])
+  | c21 {x0 : Nat} {x1 : Lanius.Mini.MEff} {v0 v1 : Value} :
+      RepNat x0 v0 → RepMEff x1 v1 → RepMStmt (Lanius.Mini.MStmt.mSetEval x0 x1) (.enumeration 173 21 [v0, v1])
+  | c22 {x0 : Lanius.Mini.MEff} {x1 : Lanius.Mini.MStmt} {x2 : Lanius.Mini.MStmt} {v0 v1 v2 : Value} :
+      RepMEff x0 v0 → RepMStmt x1 v1 → RepMStmt x2 v2 → RepMStmt (Lanius.Mini.MStmt.mIfEval x0 x1 x2) (.enumeration 173 22 [v0, v1, v2])
+  | c23 {x0 : Lanius.Mini.MEff} {x1 : Lanius.Mini.MStmt} {v0 v1 : Value} :
+      RepMEff x0 v0 → RepMStmt x1 v1 → RepMStmt (Lanius.Mini.MStmt.mWhileEval x0 x1) (.enumeration 173 23 [v0, v1])
   | c24 {x0 : Lanius.Mini.MEff} {v0 : Value} :
-      RepMEff x0 v0 → RepMStmt (Lanius.Mini.MStmt.mDiscard x0) (.enumeration 173 24 [v0])
-  | c25 {x0 : Nat} {x1 : Lanius.Mini.MEff} {x2 : Lanius.Mini.MEff} {v0 v1 v2 : Value} :
-      RepNat x0 v0 → RepMEff x1 v1 → RepMEff x2 v2 → RepMStmt (Lanius.Mini.MStmt.mSetIndexEval x0 x1 x2) (.enumeration 173 25 [v0, v1, v2])
-  | c26 {x0 : Nat} {x1 : Nat} {x2 : Lanius.Mini.MEff} {v0 v1 v2 : Value} :
-      RepNat x0 v0 → RepNat x1 v1 → RepMEff x2 v2 → RepMStmt (Lanius.Mini.MStmt.mSetFieldEval x0 x1 x2) (.enumeration 173 26 [v0, v1, v2])
-  | c27 :
-      RepMStmt (Lanius.Mini.MStmt.mReturnUnit) (.enumeration 173 27 [])
-  | c28 {x0 : Lanius.Mini.MEff} {v0 : Value} :
-      RepMEff x0 v0 → RepMStmt (Lanius.Mini.MStmt.mAssert x0) (.enumeration 173 28 [v0])
-  | c29 :
-      RepMStmt (Lanius.Mini.MStmt.mBreak) (.enumeration 173 29 [])
+      RepMEff x0 v0 → RepMStmt (Lanius.Mini.MStmt.mReturnEval x0) (.enumeration 173 24 [v0])
+  | c25 {x0 : Lanius.Mini.MEff} {v0 : Value} :
+      RepMEff x0 v0 → RepMStmt (Lanius.Mini.MStmt.mDiscard x0) (.enumeration 173 25 [v0])
+  | c26 {x0 : Nat} {x1 : Lanius.Mini.MEff} {x2 : Lanius.Mini.MEff} {v0 v1 v2 : Value} :
+      RepNat x0 v0 → RepMEff x1 v1 → RepMEff x2 v2 → RepMStmt (Lanius.Mini.MStmt.mSetIndexEval x0 x1 x2) (.enumeration 173 26 [v0, v1, v2])
+  | c27 {x0 : Nat} {x1 : Nat} {x2 : Lanius.Mini.MEff} {v0 v1 v2 : Value} :
+      RepNat x0 v0 → RepNat x1 v1 → RepMEff x2 v2 → RepMStmt (Lanius.Mini.MStmt.mSetFieldEval x0 x1 x2) (.enumeration 173 27 [v0, v1, v2])
+  | c28 :
+      RepMStmt (Lanius.Mini.MStmt.mReturnUnit) (.enumeration 173 28 [])
+  | c29 {x0 : Lanius.Mini.MEff} {v0 : Value} :
+      RepMEff x0 v0 → RepMStmt (Lanius.Mini.MStmt.mAssert x0) (.enumeration 173 29 [v0])
   | c30 :
-      RepMStmt (Lanius.Mini.MStmt.mContinue) (.enumeration 173 30 [])
-  | c31 {x0 : Nat} {x1 : Lanius.Mini.Ty} {x2 : Nat} {x3 : Bool} {x4 : Nat} {x5 : Lanius.Mini.Ty} {x6 : Lanius.Mini.MStmt} {x7 : Lanius.Mini.MStmt} {v0 v1 v2 v3 v4 v5 v6 v7 : Value} :
-      RepNat x0 v0 → RepTy x1 v1 → RepNat x2 v2 → RepBool x3 v3 → RepNat x4 v4 → RepTy x5 v5 → RepMStmt x6 v6 → RepMStmt x7 v7 → RepMStmt (Lanius.Mini.MStmt.mMatchArm x0 x1 x2 x3 x4 x5 x6 x7) (.enumeration 173 31 [v0, v1, v2, v3, v4, v5, v6, v7])
-  | c32 {x0 : Nat} {x1 : Lanius.Mini.Ty} {v0 v1 : Value} :
-      RepNat x0 v0 → RepTy x1 v1 → RepMStmt (Lanius.Mini.MStmt.mUnreachable x0 x1) (.enumeration 173 32 [v0, v1])
+      RepMStmt (Lanius.Mini.MStmt.mBreak) (.enumeration 173 30 [])
+  | c31 :
+      RepMStmt (Lanius.Mini.MStmt.mContinue) (.enumeration 173 31 [])
+  | c32 {x0 : Nat} {x1 : Lanius.Mini.Ty} {x2 : Nat} {x3 : Bool} {x4 : Nat} {x5 : Lanius.Mini.Ty} {x6 : Lanius.Mini.MStmt} {x7 : Lanius.Mini.MStmt} {v0 v1 v2 v3 v4 v5 v6 v7 : Value} :
+      RepNat x0 v0 → RepTy x1 v1 → RepNat x2 v2 → RepBool x3 v3 → RepNat x4 v4 → RepTy x5 v5 → RepMStmt x6 v6 → RepMStmt x7 v7 → RepMStmt (Lanius.Mini.MStmt.mMatchArm x0 x1 x2 x3 x4 x5 x6 x7) (.enumeration 173 32 [v0, v1, v2, v3, v4, v5, v6, v7])
+  | c33 {x0 : Nat} {x1 : Lanius.Mini.Ty} {v0 v1 : Value} :
+      RepNat x0 v0 → RepTy x1 v1 → RepMStmt (Lanius.Mini.MStmt.mUnreachable x0 x1) (.enumeration 173 33 [v0, v1])
 
 inductive RepMFunc : Lanius.Mini.MFunc → Value → Prop where
   | c0 {x0 : List Lanius.Mini.MParam} {x1 : Lanius.Mini.RetTy} {x2 : Lanius.Mini.MStmt} {v0 v1 v2 : Value} :
@@ -970,14 +972,15 @@ attribute [rep_rule] RepMEff.c15 RepMEff.c16 RepMStmt.c0 RepMStmt.c1 RepMStmt.c2
 attribute [rep_rule] RepMStmt.c6 RepMStmt.c7 RepMStmt.c8 RepMStmt.c9 RepMStmt.c10 RepMStmt.c11 RepMStmt.c12 RepMStmt.c13
 attribute [rep_rule] RepMStmt.c14 RepMStmt.c15 RepMStmt.c16 RepMStmt.c17 RepMStmt.c18 RepMStmt.c19 RepMStmt.c20 RepMStmt.c21
 attribute [rep_rule] RepMStmt.c22 RepMStmt.c23 RepMStmt.c24 RepMStmt.c25 RepMStmt.c26 RepMStmt.c27 RepMStmt.c28 RepMStmt.c29
-attribute [rep_rule] RepMStmt.c30 RepMStmt.c31 RepMStmt.c32 RepMFunc.c0 RepMono.c0 RepFact.c0 RepPlace.c0 RepEvaluatedArgs.c0
-attribute [rep_rule] RepSymRule.c0 RepOneTok.c0 RepOneTok.c1 RepTables.c0 RepArrayArgs.c0 RepVariants.c0 RepLocalTy.c0 RepFrontEnv.c0
-attribute [rep_rule] RepNumScan.c0 RepNumScan.c1 RepScan.c0 RepScan.c1 RepFields.c0 RepLocal.c0 RepMParams.c0 RepTraitRef.c0
-attribute [rep_rule] RepBoundGoal.c0 RepSplit.c0 RepFlDec.c0 RepArrayParts.c0 RepViewRead.c0 RepCalled.c0 RepTried.c0 RepLetHead.c0
-attribute [rep_rule] RepLetHead.c1 RepLetHead.c2 RepLetHead.c3 RepLetHead.c4 RepLetHead.c5 RepLetHead.c6 RepLetHead.c7 RepLetHead.c8
-attribute [rep_rule] RepLetHead.c9 RepLetHead.c10 RepUntyped.c0 RepLitForm.c0 RepLitForm.c1 RepLitForm.c2 RepBind.c0 RepPathRef.c0
-attribute [rep_rule] RepVariantAt.c0 RepVariantTy.c0 RepMatchStmt.c0 RepLitMatch.c0 RepFound.c0 RepArrayLocal.c0 RepFit.c0 RepFit.c1
-attribute [rep_rule] RepFit.c2 RepEffArm.c0 RepBound.c0 RepFlDiv.c0 RepArgsBound.c0 RepWildSplit.c0 RepArmsUse.c0 RepArmUse.c0
+attribute [rep_rule] RepMStmt.c30 RepMStmt.c31 RepMStmt.c32 RepMStmt.c33 RepMFunc.c0 RepMono.c0 RepFact.c0 RepPlace.c0
+attribute [rep_rule] RepEvaluatedArgs.c0 RepSymRule.c0 RepOneTok.c0 RepOneTok.c1 RepTables.c0 RepArrayArgs.c0 RepVariants.c0 RepLocalTy.c0
+attribute [rep_rule] RepFrontEnv.c0 RepNumScan.c0 RepNumScan.c1 RepScan.c0 RepScan.c1 RepFields.c0 RepLocal.c0 RepMParams.c0
+attribute [rep_rule] RepTraitRef.c0 RepBoundGoal.c0 RepSplit.c0 RepFlDec.c0 RepArrayParts.c0 RepViewRead.c0 RepCalled.c0 RepTried.c0
+attribute [rep_rule] RepLetHead.c0 RepLetHead.c1 RepLetHead.c2 RepLetHead.c3 RepLetHead.c4 RepLetHead.c5 RepLetHead.c6 RepLetHead.c7
+attribute [rep_rule] RepLetHead.c8 RepLetHead.c9 RepLetHead.c10 RepUntyped.c0 RepLitForm.c0 RepLitForm.c1 RepLitForm.c2 RepBind.c0
+attribute [rep_rule] RepPathRef.c0 RepVariantAt.c0 RepVariantTy.c0 RepMatchStmt.c0 RepLitMatch.c0 RepFound.c0 RepArrayLocal.c0 RepFit.c0
+attribute [rep_rule] RepFit.c1 RepFit.c2 RepEffArm.c0 RepBound.c0 RepFlDiv.c0 RepArgsBound.c0 RepWildSplit.c0 RepArmsUse.c0
+attribute [rep_rule] RepArmUse.c0
 
 @[pure_rule] theorem ty0_typeId : ty0.typeId = 1 := rfl
 @[pure_rule] theorem ty1_typeId : ty1.typeId = 0 := rfl

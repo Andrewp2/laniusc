@@ -21,6 +21,7 @@ import Lanius.Mini.Frontend.P.matchStmtIf
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.noTrees
 import Lanius.Mini.Frontend.P.pickTy
+import Lanius.Mini.Frontend.P.stringLast
 import Lanius.Mini.Frontend.P.textSelf
 import Lanius.Mini.Frontend.P.tryLet
 import Lanius.Mini.Frontend.P.typeDeclAt
@@ -85,30 +86,33 @@ def letFirst (fuel : Nat) (env : FrontEnv) (scope : List Local) (s : CTree) (res
     none
   else
     let tok : Token := kidToken s 1
-    if decide (nodeProd (kid s 2) = (86)) && decide (nodeProd (kid s 3) = (88)) && !(member env.globals tok.text) && freshId scope (tok.start - env.base) && isLitInit fuel env scope (kid (kid s 3) 1) then
-      match tyOf fuel env (kid (kid s 2) 1) with
-      | none => none
-      | some t => litLetOf (fuel - 1) env scope ({ name := tok.text, id := tok.start - env.base, ty := t } : Local) (kid (kid s 3) 1) (stmtsOf (fuel - 1) env (({ name := tok.text, id := tok.start - env.base, ty := t } : Local) :: scope) rest)
+    if isStrLet fuel env scope s then
+      stringLet (fuel - 1) env (tok.start - env.base) tok.text (kid (kid s 3) 1) rest
     else
-      if decide (nodeProd (kid s 2) = (86)) && decide (nodeProd (kid s 3) = (88)) && !(member env.globals tok.text) && freshId scope (tok.start - env.base) && isBlockMatch fuel (kid (kid s 3) 1) then
+      if decide (nodeProd (kid s 2) = (86)) && decide (nodeProd (kid s 3) = (88)) && !(member env.globals tok.text) && freshId scope (tok.start - env.base) && isLitInit fuel env scope (kid (kid s 3) 1) then
         match tyOf fuel env (kid (kid s 2) 1) with
         | none => none
-        | some t => letMatchOf (fuel - 1) env scope ({ name := tok.text, id := tok.start - env.base, ty := t } : Local) (kid (kid s 3) 1) (stmtsOf (fuel - 1) env (({ name := tok.text, id := tok.start - env.base, ty := t } : Local) :: scope) rest)
+        | some t => litLetOf (fuel - 1) env scope ({ name := tok.text, id := tok.start - env.base, ty := t } : Local) (kid (kid s 3) 1) (stmtsOf (fuel - 1) env (({ name := tok.text, id := tok.start - env.base, ty := t } : Local) :: scope) rest)
       else
-        if decide (nodeProd (kid s 2) = (86)) && decide (nodeProd (kid s 3) = (88)) && !(member env.globals tok.text) && freshId scope (tok.start - env.base) then
+        if decide (nodeProd (kid s 2) = (86)) && decide (nodeProd (kid s 3) = (88)) && !(member env.globals tok.text) && freshId scope (tok.start - env.base) && isBlockMatch fuel (kid (kid s 3) 1) then
           match tyOf fuel env (kid (kid s 2) 1) with
           | none => none
-          | some t =>
-            match viewRead (fuel - 1) env (({ name := tok.text, id := tok.start - env.base, ty := t } : Local) :: scope) ({ name := tok.text, id := tok.start - env.base, ty := t } : Local) (letHeadOrEval (fuel - 1) env scope t (kid (kid s 3) 1)) rest with
-            | some r => viewStmt (tok.start - env.base) r.length r.fields r.pointer.id (stmtsOf (fuel - 1) env (r.pointer :: ({ name := tok.text, id := tok.start - env.base, ty := t } : Local) :: scope) r.more)
-            | none => letOf (tok.start - env.base) t (letHeadOrEval (fuel - 1) env scope t (kid (kid s 3) 1)) (stmtsOf (fuel - 1) env (({ name := tok.text, id := tok.start - env.base, ty := t } : Local) :: scope) rest)
+          | some t => letMatchOf (fuel - 1) env scope ({ name := tok.text, id := tok.start - env.base, ty := t } : Local) (kid (kid s 3) 1) (stmtsOf (fuel - 1) env (({ name := tok.text, id := tok.start - env.base, ty := t } : Local) :: scope) rest)
         else
-          if decide (nodeProd (kid s 2) = (87)) && decide (nodeProd (kid s 3) = (88)) && !(member env.globals tok.text) && freshId scope (tok.start - env.base) then
-            match untypedHead (fuel - 1) env scope (kid (kid s 3) 1) with
+          if decide (nodeProd (kid s 2) = (86)) && decide (nodeProd (kid s 3) = (88)) && !(member env.globals tok.text) && freshId scope (tok.start - env.base) then
+            match tyOf fuel env (kid (kid s 2) 1) with
             | none => none
-            | some u => letBody (tok.start - env.base) u.ty u.head (stmtsOf (fuel - 1) env (({ name := tok.text, id := tok.start - env.base, ty := u.ty } : Local) :: scope) rest)
+            | some t =>
+              match viewRead (fuel - 1) env (({ name := tok.text, id := tok.start - env.base, ty := t } : Local) :: scope) ({ name := tok.text, id := tok.start - env.base, ty := t } : Local) (letHeadOrEval (fuel - 1) env scope t (kid (kid s 3) 1)) rest with
+              | some r => viewStmt (tok.start - env.base) r.length r.fields r.pointer.id (stmtsOf (fuel - 1) env (r.pointer :: ({ name := tok.text, id := tok.start - env.base, ty := t } : Local) :: scope) r.more)
+              | none => letOf (tok.start - env.base) t (letHeadOrEval (fuel - 1) env scope t (kid (kid s 3) 1)) (stmtsOf (fuel - 1) env (({ name := tok.text, id := tok.start - env.base, ty := t } : Local) :: scope) rest)
           else
-            none
+            if decide (nodeProd (kid s 2) = (87)) && decide (nodeProd (kid s 3) = (88)) && !(member env.globals tok.text) && freshId scope (tok.start - env.base) then
+              match untypedHead (fuel - 1) env scope (kid (kid s 3) 1) with
+              | none => none
+              | some u => letBody (tok.start - env.base) u.ty u.head (stmtsOf (fuel - 1) env (({ name := tok.text, id := tok.start - env.base, ty := u.ty } : Local) :: scope) rest)
+            else
+              none
 /-- return, break, continue, if, while, for, block statements, and assignments. -/
 def stmtOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (s : CTree) : Option MStmt :=
   if fuel = 0 then

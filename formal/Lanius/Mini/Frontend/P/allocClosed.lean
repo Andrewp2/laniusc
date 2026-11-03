@@ -19,6 +19,11 @@ def letViewClosed (id : Nat) (length : Nat) (es : List SrcExpr) (pointer : Nat) 
   | none => none
   | some b => some (SrcStmt.letView id length es pointer b)
 
+def letStrClosed (id : Nat) (chars : List Nat) (body : Option SrcStmt) : Option SrcStmt :=
+  match body with
+  | none => none
+  | some b => some (SrcStmt.letStr id chars b)
+
 def letSliceClosed (id : Nat) (element : Option SrcType) (p : SrcExpr) (n : SrcExpr) (body : Option SrcStmt) : Option SrcStmt :=
   match element with
   | none => none

@@ -2639,6 +2639,43 @@ theorem lchunk25 : LivesOk prims outside liveBad liveWrap 2500 part25 :=
   livesOk_cons (.inr lok2524) <|
   livesOk_cons (.inr lok2525) <|
   livesOk_cons (.inr lok2526) <|
+  livesOk_cons (.inr lok2527) <|
+  livesOk_cons (.inr lok2528) <|
+  livesOk_cons (.inr lok2529) <|
+  livesOk_cons (.inr lok2530) <|
+  livesOk_cons (.inr lok2531) <|
+  livesOk_cons (.inr lok2532) <|
+  livesOk_cons (.inr lok2533) <|
+  livesOk_cons (.inr lok2534) <|
+  livesOk_cons (.inr lok2535) <|
+  livesOk_cons (.inr lok2536) <|
+  livesOk_cons (.inr lok2537) <|
+  livesOk_cons (.inr lok2538) <|
+  livesOk_cons (.inr lok2539) <|
+  livesOk_cons (.inr lok2540) <|
+  livesOk_cons (.inr lok2541) <|
+  livesOk_cons (.inr lok2542) <|
+  livesOk_cons (.inr lok2543) <|
+  livesOk_cons (.inr lok2544) <|
+  livesOk_cons (.inr lok2545) <|
+  livesOk_cons (.inr lok2546) <|
+  livesOk_cons (.inr lok2547) <|
+  livesOk_cons (.inr lok2548) <|
+  livesOk_cons (.inr lok2549) <|
+  livesOk_cons (.inr lok2550) <|
+  livesOk_cons (.inr lok2551) <|
+  livesOk_cons (.inr lok2552) <|
+  livesOk_cons (.inr lok2553) <|
+  livesOk_cons (.inr lok2554) <|
+  livesOk_cons (.inr lok2555) <|
+  livesOk_cons (.inr lok2556) <|
+  livesOk_cons (.inr lok2557) <|
+  livesOk_cons (.inr lok2558) <|
+  livesOk_cons (.inr lok2559) <|
+  livesOk_cons (.inr lok2560) <|
+  livesOk_cons (.inr lok2561) <|
+  livesOk_cons (.inr lok2562) <|
+  livesOk_cons (.inr lok2563) <|
   livesOk_nil
 
 /-- Every function of the self program but the prims, those `outside`, those in

@@ -18,65 +18,44 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.SelfCert
 open Lanius.Faithful.Budget
 
-theorem bstep_stmt_of {spW sp : SrcProgram} {prims : Prims} {ix_stmt_of ix_minus ix_node_prod ix_kid ix_p_block_stmt ix_p_expr_stmt ix_block_of ix_is_lit_init ix_p_return_stmt ix_p_return_value ix_match_init ix_lit_match_of ix_return_or_eval ix_p_return_void ix_p_break_stmt ix_p_continue_stmt ix_p_if_stmt ix_p_else_stmt ix_if_or_eval ix_p_else_none ix_p_while_stmt ix_while_or_eval ix_p_for_stmt ix_nested_of ix_is_lit_stmt ix_match_primary ix_is_match_stmt ix_match_stmt_of ix_assignment : Nat}
-    (fnW : spW.funcs[ix_stmt_of]? = some (src_stmt_of ix_minus ix_node_prod ix_kid ix_p_block_stmt ix_p_expr_stmt ix_block_of ix_is_lit_init ix_p_return_stmt ix_p_return_value ix_match_init ix_lit_match_of ix_return_or_eval ix_p_return_void ix_p_break_stmt ix_p_continue_stmt ix_p_if_stmt ix_p_else_stmt ix_if_or_eval ix_p_else_none ix_p_while_stmt ix_while_or_eval ix_p_for_stmt ix_nested_of ix_is_lit_stmt ix_match_primary ix_is_match_stmt ix_match_stmt_of ix_assignment)) (fn : sp.funcs[ix_stmt_of]? = some (src_stmt_of ix_minus ix_node_prod ix_kid ix_p_block_stmt ix_p_expr_stmt ix_block_of ix_is_lit_init ix_p_return_stmt ix_p_return_value ix_match_init ix_lit_match_of ix_return_or_eval ix_p_return_void ix_p_break_stmt ix_p_continue_stmt ix_p_if_stmt ix_p_else_stmt ix_if_or_eval ix_p_else_none ix_p_while_stmt ix_while_or_eval ix_p_for_stmt ix_nested_of ix_is_lit_stmt ix_match_primary ix_is_match_stmt ix_match_stmt_of ix_assignment))
-    (np : prims.isPrim ix_stmt_of = false)
-    (back : Certified (∀ {n : Nat}, Stmt_stmt_of sp prims ix_stmt_of n))
+theorem bstep_let_first {spW sp : SrcProgram} {prims : Prims} {ix_let_first ix_minus ix_node_prod ix_kid ix_kid_token ix_member ix_ty_of ix_fresh_id ix_cons_of_mini_selfhost_Local ix_stmts_of ix_is_str_let ix_string_let ix_p_let_type ix_p_let_init ix_is_lit_init ix_lit_let_of ix_is_block_match ix_let_match_of ix_view_read ix_let_head_or_eval ix_view_stmt ix_field_id_Local_of_mini_selfhost_Local ix_let_of ix_p_let_type_none ix_untyped_head ix_let_body : Nat}
+    (fnW : spW.funcs[ix_let_first]? = some (src_let_first ix_minus ix_node_prod ix_kid ix_kid_token ix_member ix_ty_of ix_fresh_id ix_cons_of_mini_selfhost_Local ix_stmts_of ix_is_str_let ix_string_let ix_p_let_type ix_p_let_init ix_is_lit_init ix_lit_let_of ix_is_block_match ix_let_match_of ix_view_read ix_let_head_or_eval ix_view_stmt ix_field_id_Local_of_mini_selfhost_Local ix_let_of ix_p_let_type_none ix_untyped_head ix_let_body)) (fn : sp.funcs[ix_let_first]? = some (src_let_first ix_minus ix_node_prod ix_kid ix_kid_token ix_member ix_ty_of ix_fresh_id ix_cons_of_mini_selfhost_Local ix_stmts_of ix_is_str_let ix_string_let ix_p_let_type ix_p_let_init ix_is_lit_init ix_lit_let_of ix_is_block_match ix_let_match_of ix_view_read ix_let_head_or_eval ix_view_stmt ix_field_id_Local_of_mini_selfhost_Local ix_let_of ix_p_let_type_none ix_untyped_head ix_let_body))
+    (np : prims.isPrim ix_let_first = false)
+    (back : Certified (∀ {n : Nat}, Stmt_let_first sp prims ix_let_first n))
     (b_minus : Certified (∀ {n : Nat}, BStmt_minus spW sp prims ix_minus n))
     (b_node_prod : Certified (∀ {n : Nat}, BStmt_node_prod spW sp prims ix_node_prod n))
     (b_kid : Certified (∀ {n : Nat}, BStmt_kid spW sp prims ix_kid n))
-    (b_p_block_stmt : Certified (∀ {n : Nat}, BStmt_p_block_stmt spW sp prims ix_p_block_stmt n))
-    (b_p_expr_stmt : Certified (∀ {n : Nat}, BStmt_p_expr_stmt spW sp prims ix_p_expr_stmt n))
+    (b_kid_token : Certified (∀ {n : Nat}, BStmt_kid_token spW sp prims ix_kid_token n))
+    (b_member : Certified (∀ {n : Nat}, BStmt_member spW sp prims ix_member n))
+    (b_ty_of : Certified (∀ {n : Nat}, BStmt_ty_of spW sp prims ix_ty_of n))
+    (b_fresh_id : Certified (∀ {n : Nat}, BStmt_fresh_id spW sp prims ix_fresh_id n))
+    (b_cons_of_mini_selfhost_Local : Certified (∀ {n : Nat}, BStmt_cons_of_mini_selfhost_Local spW sp prims ix_cons_of_mini_selfhost_Local n))
+    (b_is_str_let : Certified (∀ {n : Nat}, BStmt_is_str_let spW sp prims ix_is_str_let n))
+    (b_string_let : Certified (∀ {n : Nat}, BStmt_string_let spW sp prims ix_string_let n))
+    (b_p_let_type : Certified (∀ {n : Nat}, BStmt_p_let_type spW sp prims ix_p_let_type n))
+    (b_p_let_init : Certified (∀ {n : Nat}, BStmt_p_let_init spW sp prims ix_p_let_init n))
     (b_is_lit_init : Certified (∀ {n : Nat}, BStmt_is_lit_init spW sp prims ix_is_lit_init n))
-    (b_p_return_stmt : Certified (∀ {n : Nat}, BStmt_p_return_stmt spW sp prims ix_p_return_stmt n))
-    (b_p_return_value : Certified (∀ {n : Nat}, BStmt_p_return_value spW sp prims ix_p_return_value n))
-    (b_match_init : Certified (∀ {n : Nat}, BStmt_match_init spW sp prims ix_match_init n))
-    (b_return_or_eval : Certified (∀ {n : Nat}, BStmt_return_or_eval spW sp prims ix_return_or_eval n))
-    (b_p_return_void : Certified (∀ {n : Nat}, BStmt_p_return_void spW sp prims ix_p_return_void n))
-    (b_p_break_stmt : Certified (∀ {n : Nat}, BStmt_p_break_stmt spW sp prims ix_p_break_stmt n))
-    (b_p_continue_stmt : Certified (∀ {n : Nat}, BStmt_p_continue_stmt spW sp prims ix_p_continue_stmt n))
-    (b_p_if_stmt : Certified (∀ {n : Nat}, BStmt_p_if_stmt spW sp prims ix_p_if_stmt n))
-    (b_p_else_stmt : Certified (∀ {n : Nat}, BStmt_p_else_stmt spW sp prims ix_p_else_stmt n))
-    (b_if_or_eval : Certified (∀ {n : Nat}, BStmt_if_or_eval spW sp prims ix_if_or_eval n))
-    (b_p_else_none : Certified (∀ {n : Nat}, BStmt_p_else_none spW sp prims ix_p_else_none n))
-    (b_p_while_stmt : Certified (∀ {n : Nat}, BStmt_p_while_stmt spW sp prims ix_p_while_stmt n))
-    (b_while_or_eval : Certified (∀ {n : Nat}, BStmt_while_or_eval spW sp prims ix_while_or_eval n))
-    (b_p_for_stmt : Certified (∀ {n : Nat}, BStmt_p_for_stmt spW sp prims ix_p_for_stmt n))
-    (b_is_lit_stmt : Certified (∀ {n : Nat}, BStmt_is_lit_stmt spW sp prims ix_is_lit_stmt n))
-    (b_match_primary : Certified (∀ {n : Nat}, BStmt_match_primary spW sp prims ix_match_primary n))
-    (b_is_match_stmt : Certified (∀ {n : Nat}, BStmt_is_match_stmt spW sp prims ix_is_match_stmt n))
-    (b_assignment : Certified (∀ {n : Nat}, BStmt_assignment spW sp prims ix_assignment n)) {n : Nat}
-    (bih_block_of : Certified (BStmt_block_of spW sp prims ix_block_of n))
-    (bih_lit_match_of : Certified (BStmt_lit_match_of spW sp prims ix_lit_match_of n))
-    (bih_nested_of : Certified (BStmt_nested_of spW sp prims ix_nested_of n))
-    (bih_match_stmt_of : Certified (BStmt_match_stmt_of spW sp prims ix_match_stmt_of n)) :
-    BStmt_stmt_of spW sp prims ix_stmt_of (n + 1) := by
-  intro x0 x1 x2 x3 v0 v1 v2 v3 w k b h r0 r1 r2 r3 hb pre
-  have key : qcall sp prims uc (n + 1) ix_stmt_of [v0, v1, v2, v3] = some (w, k) ∧ Cost_stmt_of (n + 1) x0 x1 x2 x3 = k := by
+    (b_is_block_match : Certified (∀ {n : Nat}, BStmt_is_block_match spW sp prims ix_is_block_match n))
+    (b_view_read : Certified (∀ {n : Nat}, BStmt_view_read spW sp prims ix_view_read n))
+    (b_let_head_or_eval : Certified (∀ {n : Nat}, BStmt_let_head_or_eval spW sp prims ix_let_head_or_eval n))
+    (b_view_stmt : Certified (∀ {n : Nat}, BStmt_view_stmt spW sp prims ix_view_stmt n))
+    (b_field_id_Local_of_mini_selfhost_Local : Certified (∀ {n : Nat}, BStmt_field_id_Local_of_mini_selfhost_Local spW sp prims ix_field_id_Local_of_mini_selfhost_Local n))
+    (b_let_of : Certified (∀ {n : Nat}, BStmt_let_of spW sp prims ix_let_of n))
+    (b_p_let_type_none : Certified (∀ {n : Nat}, BStmt_p_let_type_none spW sp prims ix_p_let_type_none n))
+    (b_untyped_head : Certified (∀ {n : Nat}, BStmt_untyped_head spW sp prims ix_untyped_head n))
+    (b_let_body : Certified (∀ {n : Nat}, BStmt_let_body spW sp prims ix_let_body n)) {n : Nat}
+    (bih_stmts_of : Certified (BStmt_stmts_of spW sp prims ix_stmts_of n))
+    (bih_lit_let_of : Certified (BStmt_lit_let_of spW sp prims ix_lit_let_of n))
+    (bih_let_match_of : Certified (BStmt_let_match_of spW sp prims ix_let_match_of n)) :
+    BStmt_let_first spW sp prims ix_let_first (n + 1) := by
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w k b h r0 r1 r2 r3 r4 hb pre
+  have key : qcall sp prims uc (n + 1) ix_let_first [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_let_first (n + 1) x0 x1 x2 x3 x4 = k := by
     rw [qcall_succ np fnW] at h
     rw [qcall_succ np fn]
-    simp only [src_stmt_of, List.length_cons, List.length_nil, if_true] at h ⊢
-    rw [Pre_stmt_of.eq_def] at pre
+    simp only [src_let_first, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_let_first.eq_def] at pre
     simp only at pre
-    budget Cost_stmt_of
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3⟩
-
-theorem bstep_lit_let_of {spW sp : SrcProgram} {prims : Prims} {ix_lit_let_of ix_minus ix_match_init ix_lit_match_of : Nat}
-    (fnW : spW.funcs[ix_lit_let_of]? = some (src_lit_let_of ix_minus ix_match_init ix_lit_match_of)) (fn : sp.funcs[ix_lit_let_of]? = some (src_lit_let_of ix_minus ix_match_init ix_lit_match_of))
-    (np : prims.isPrim ix_lit_let_of = false)
-    (back : Certified (∀ {n : Nat}, Stmt_lit_let_of sp prims ix_lit_let_of n))
-    (b_minus : Certified (∀ {n : Nat}, BStmt_minus spW sp prims ix_minus n))
-    (b_match_init : Certified (∀ {n : Nat}, BStmt_match_init spW sp prims ix_match_init n)) {n : Nat}
-    (bih_lit_match_of : Certified (BStmt_lit_match_of spW sp prims ix_lit_match_of n)) :
-    BStmt_lit_let_of spW sp prims ix_lit_let_of (n + 1) := by
-  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w k b h r0 r1 r2 r3 r4 r5 hb pre
-  have key : qcall sp prims uc (n + 1) ix_lit_let_of [v0, v1, v2, v3, v4, v5] = some (w, k) ∧ Cost_lit_let_of (n + 1) x0 x1 x2 x3 x4 x5 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_lit_let_of, List.length_cons, List.length_nil, if_true] at h ⊢
-    rw [Pre_lit_let_of.eq_def] at pre
-    simp only at pre
-    budget Cost_lit_let_of
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4 r5⟩
+    budget Cost_let_first
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4⟩
 
 end Lanius.Faithful.SelfBudget

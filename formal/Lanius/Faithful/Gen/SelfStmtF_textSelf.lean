@@ -80,4 +80,16 @@ abbrev Stmt_text_slice_stride (prog : SrcProgram) (prims : Prims) (ix n : Nat) :
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     (RepList 25 RepNat) (Lanius.Mini.textSliceStride) w
 
+abbrev Stmt_text_str (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    (RepList 25 RepNat) (Lanius.Mini.textStr) w
+
+abbrev Stmt_text_string_data_ptr (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    (RepList 25 RepNat) (Lanius.Mini.textStringDataPtr) w
+
+abbrev Stmt_text_typed_slice_from_raw_parts (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    (RepList 25 RepNat) (Lanius.Mini.textTypedSliceFromRawParts) w
+
 end Lanius.Faithful.SelfCert

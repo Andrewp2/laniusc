@@ -1131,6 +1131,11 @@ abbrev BStmt_let_view_closed (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) 
     qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → RepNat x0 v0 → RepNat x1 v1 → (RepList 21 RepSrcExpr) x2 v2 → RepNat x3 v3 → (RepOption 222 RepSrcStmt) x4 v4 →
     qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_let_view_closed n x0 x1 x2 x3 x4 = k ∧ (RepOption 222 RepSrcStmt) (Lanius.Mini.letViewClosed x0 x1 x2 x3 x4) w
 
+abbrev BStmt_let_str_closed (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : List Nat} {x2 : Option Lanius.Mini.SrcStmt} {v0 v1 v2 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → (RepList 25 RepNat) x1 v1 → (RepOption 222 RepSrcStmt) x2 v2 →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_let_str_closed n x0 x1 x2 = k ∧ (RepOption 222 RepSrcStmt) (Lanius.Mini.letStrClosed x0 x1 x2) w
+
 abbrev BStmt_let_eval_closed (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Option Lanius.Mini.SrcType} {x2 : Option Lanius.Mini.SrcEff} {x3 : Option Lanius.Mini.SrcStmt} {v0 v1 v2 v3 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → (RepOption 158 RepSrcType) x1 v1 → (RepOption 232 RepSrcEff) x2 v2 → (RepOption 222 RepSrcStmt) x3 v3 →
@@ -4645,10 +4650,5 @@ abbrev BStmt_covers_all (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.TypeDecl} {x3 : List (List Nat)} {x4 : List Lanius.Mini.CTree} {v0 v1 v2 v3 v4 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → RepTypeDecl x2 v2 → (RepList 31 (RepList 25 RepNat)) x3 v3 → (RepList 82 RepCTree) x4 v4 →
     qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_covers_all n x0 x1 x2 x3 x4 = k ∧ (RepOption 307 RepBool) (Lanius.Mini.coversAll x0 x1 x2 x3 x4) w
-
-abbrev BStmt_covers_enum (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.TypeDecl} {x3 : List Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → RepTypeDecl x2 v2 → (RepList 82 RepCTree) x3 v3 →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_covers_enum n x0 x1 x2 x3 = k ∧ (RepOption 307 RepBool) (Lanius.Mini.coversEnum x0 x1 x2 x3) w
 
 end Lanius.Faithful.SelfBudget

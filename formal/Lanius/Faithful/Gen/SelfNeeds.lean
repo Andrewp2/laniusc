@@ -236,6 +236,7 @@ import all Lanius.Faithful.Gen.SelfSrcF_noToken
 import all Lanius.Faithful.Gen.SelfSrcF_noTrees
 import all Lanius.Faithful.Gen.SelfSrcF_nullAt
 import all Lanius.Faithful.Gen.SelfSrcF_nullConst
+import all Lanius.Faithful.Gen.SelfSrcF_oneTreeNames
 import all Lanius.Faithful.Gen.SelfSrcF_paramGoals
 import all Lanius.Faithful.Gen.SelfSrcF_pathRef
 import all Lanius.Faithful.Gen.SelfSrcF_pickTy
@@ -257,6 +258,11 @@ import all Lanius.Faithful.Gen.SelfSrcF_shadowUse
 import all Lanius.Faithful.Gen.SelfSrcF_shrFirst
 import all Lanius.Faithful.Gen.SelfSrcF_sintAt
 import all Lanius.Faithful.Gen.SelfSrcF_sliceHead
+import all Lanius.Faithful.Gen.SelfSrcF_stringCall
+import all Lanius.Faithful.Gen.SelfSrcF_stringCons
+import all Lanius.Faithful.Gen.SelfSrcF_stringLast
+import all Lanius.Faithful.Gen.SelfSrcF_stringOpen
+import all Lanius.Faithful.Gen.SelfSrcF_stringReturn
 import all Lanius.Faithful.Gen.SelfSrcF_structHead
 import all Lanius.Faithful.Gen.SelfSrcF_textSelf
 import all Lanius.Faithful.Gen.SelfSrcF_textSliceLen

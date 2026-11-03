@@ -79,6 +79,7 @@ theorem stmtClosed_unique : ∀ {m : MStmt} {a b : SrcStmt}, StmtClosed decls fn
   | _, _, _, .letSlice lw b, .letSlice lw' b' => by rw [lowerR_unique lw lw', stmtClosed_unique b b']
   | _, _, _, .letIndex lw b, .letIndex lw' b' => by rw [lowerR_unique lw lw', stmtClosed_unique b b']
   | _, _, _, .letView b, .letView b' => by rw [stmtClosed_unique b b']
+  | _, _, _, .letStr b, .letStr b' => by rw [stmtClosed_unique b b']
   | _, _, _, .setIndex, .setIndex => rfl
   | _, _, _, .letEval lw x b, .letEval lw' x' b' => by
     rw [lowerR_unique lw lw', effClosed_unique x x', stmtClosed_unique b b']

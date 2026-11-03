@@ -30,7 +30,6 @@ public import Lanius.Faithful.Gen.SelfStmtF_frontEndWords
 public import Lanius.Faithful.Gen.SelfStmtF_funcsOnto
 public import Lanius.Faithful.Gen.SelfStmtF_grammarPart13
 public import Lanius.Faithful.Gen.SelfStmtF_grammarPart8
-public import Lanius.Faithful.Gen.SelfStmtF_i32ArrayLength
 public import Lanius.Faithful.Gen.SelfStmtF_ifEff
 public import Lanius.Faithful.Gen.SelfStmtF_ifNotWrites
 public import Lanius.Faithful.Gen.SelfStmtF_isMatchStmt
@@ -41,6 +40,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_readInst
 public import Lanius.Faithful.Gen.SelfStmtF_rootInsts
 public import Lanius.Faithful.Gen.SelfStmtF_selfRefOf
 public import Lanius.Faithful.Gen.SelfStmtF_setIndexOrEval
+public import Lanius.Faithful.Gen.SelfStmtF_stringLast
 public import Lanius.Faithful.Gen.SelfStmtF_tryLet
 public import Lanius.Faithful.Gen.SelfStmtF_whileEvalOf
 public import Lanius.Faithful.Gen.SelfStmtF_wideLeftStmt
@@ -73,7 +73,6 @@ import Lanius.Faithful.Gen.SelfProofF_frontEndWords
 import Lanius.Faithful.Gen.SelfProofF_funcsOnto
 import Lanius.Faithful.Gen.SelfProofF_grammarPart13
 import Lanius.Faithful.Gen.SelfProofF_grammarPart8
-import Lanius.Faithful.Gen.SelfProofF_i32ArrayLength
 import Lanius.Faithful.Gen.SelfProofF_ifEff
 import Lanius.Faithful.Gen.SelfProofF_ifNotWrites
 import Lanius.Faithful.Gen.SelfProofF_isMatchStmt
@@ -84,6 +83,7 @@ import Lanius.Faithful.Gen.SelfProofF_readInst
 import Lanius.Faithful.Gen.SelfProofF_rootInsts
 import Lanius.Faithful.Gen.SelfProofF_selfRefOf
 import Lanius.Faithful.Gen.SelfProofF_setIndexOrEval
+import Lanius.Faithful.Gen.SelfProofF_stringLast
 import Lanius.Faithful.Gen.SelfProofF_tryLet
 import Lanius.Faithful.Gen.SelfProofF_whileEvalOf
 import Lanius.Faithful.Gen.SelfProofF_wideLeftStmt
@@ -105,409 +105,421 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
+theorem cert_untyped_try {n : Nat} :
+    Stmt_untyped_try prog prims 1961 n :=
+  @proof_untyped_try prog prims 1961 fn_untyped_try np_untyped_try n
+
+theorem cert_untyped_if {n : Nat} :
+    Stmt_untyped_if prog prims 2072 n :=
+  @proof_untyped_if prog prims 2072 fn_untyped_if np_untyped_if n
+
+theorem cert_pure_inferred {n : Nat} :
+    Stmt_pure_inferred prog prims 2203 n :=
+  @proof_pure_inferred prog prims 2203 fn_pure_inferred np_pure_inferred n
+
+theorem cert_inferred {n : Nat} :
+    Stmt_inferred prog prims 2073 n :=
+  @proof_inferred prog prims 2073 2203 fn_inferred np_inferred ⟨@cert_pure_inferred⟩ n
+
+theorem cert_untyped_eval {n : Nat} :
+    Stmt_untyped_eval prog prims 1962 n :=
+  @proof_untyped_eval prog prims 1962 1932 2070 2072 2073 fn_untyped_eval np_untyped_eval ⟨@cert_eff_ty⟩ ⟨@cert_eval_let_head⟩ ⟨@cert_untyped_if⟩ ⟨@cert_inferred⟩ n
+
 theorem cert_untyped_head {n : Nat} :
-    Stmt_untyped_head prog prims 1820 n :=
-  @proof_untyped_head prog prims 1820 1603 1954 1955 1956 fn_untyped_head np_untyped_head ⟨@cert_eff_of⟩ ⟨@cert_try_of_init⟩ ⟨@cert_untyped_try⟩ ⟨@cert_untyped_eval⟩ n
-
-theorem cert_p_return_stmt {n : Nat} :
-    Stmt_p_return_stmt prog prims 1822 n :=
-  @proof_p_return_stmt prog prims 1822 fn_p_return_stmt np_p_return_stmt n
-
-theorem cert_p_return_value {n : Nat} :
-    Stmt_p_return_value prog prims 1823 n :=
-  @proof_p_return_value prog prims 1823 fn_p_return_value np_p_return_value n
+    Stmt_untyped_head prog prims 1823 n :=
+  @proof_untyped_head prog prims 1823 1604 1960 1961 1962 fn_untyped_head np_untyped_head ⟨@cert_eff_of⟩ ⟨@cert_try_of_init⟩ ⟨@cert_untyped_try⟩ ⟨@cert_untyped_eval⟩ n
 
 theorem cert_p_return_void {n : Nat} :
-    Stmt_p_return_void prog prims 1827 n :=
-  @proof_p_return_void prog prims 1827 fn_p_return_void np_p_return_void n
+    Stmt_p_return_void prog prims 1830 n :=
+  @proof_p_return_void prog prims 1830 fn_p_return_void np_p_return_void n
 
 theorem cert_p_break_stmt {n : Nat} :
-    Stmt_p_break_stmt prog prims 1828 n :=
-  @proof_p_break_stmt prog prims 1828 fn_p_break_stmt np_p_break_stmt n
+    Stmt_p_break_stmt prog prims 1831 n :=
+  @proof_p_break_stmt prog prims 1831 fn_p_break_stmt np_p_break_stmt n
 
 theorem cert_p_continue_stmt {n : Nat} :
-    Stmt_p_continue_stmt prog prims 1829 n :=
-  @proof_p_continue_stmt prog prims 1829 fn_p_continue_stmt np_p_continue_stmt n
+    Stmt_p_continue_stmt prog prims 1832 n :=
+  @proof_p_continue_stmt prog prims 1832 fn_p_continue_stmt np_p_continue_stmt n
 
 theorem cert_p_if_stmt {n : Nat} :
-    Stmt_p_if_stmt prog prims 1830 n :=
-  @proof_p_if_stmt prog prims 1830 fn_p_if_stmt np_p_if_stmt n
+    Stmt_p_if_stmt prog prims 1833 n :=
+  @proof_p_if_stmt prog prims 1833 fn_p_if_stmt np_p_if_stmt n
 
 theorem cert_p_else_stmt {n : Nat} :
-    Stmt_p_else_stmt prog prims 1831 n :=
-  @proof_p_else_stmt prog prims 1831 fn_p_else_stmt np_p_else_stmt n
+    Stmt_p_else_stmt prog prims 1834 n :=
+  @proof_p_else_stmt prog prims 1834 fn_p_else_stmt np_p_else_stmt n
 
 theorem cert_if_eff {n : Nat} :
-    Stmt_if_eff prog prims 2074 n :=
-  @proof_if_eff prog prims 2074 1216 1782 fn_if_eff np_if_eff ⟨@cert_boxed_of_mini_selfhost_MStmt⟩ ⟨@cert_pure_part⟩ n
+    Stmt_if_eff prog prims 2083 n :=
+  @proof_if_eff prog prims 2083 1217 1783 fn_if_eff np_if_eff ⟨@cert_boxed_of_mini_selfhost_MStmt⟩ ⟨@cert_pure_part⟩ n
 
 theorem cert_if_eval_of {n : Nat} :
-    Stmt_if_eval_of prog prims 1965 n :=
-  @proof_if_eval_of prog prims 1965 2074 fn_if_eval_of np_if_eval_of ⟨@cert_if_eff⟩ n
+    Stmt_if_eval_of prog prims 1971 n :=
+  @proof_if_eval_of prog prims 1971 2083 fn_if_eval_of np_if_eval_of ⟨@cert_if_eff⟩ n
 
 theorem cert_if_or_eval {n : Nat} :
-    Stmt_if_or_eval prog prims 1832 n :=
-  @proof_if_or_eval prog prims 1832 1603 1965 fn_if_or_eval np_if_or_eval ⟨@cert_eff_of⟩ ⟨@cert_if_eval_of⟩ n
+    Stmt_if_or_eval prog prims 1835 n :=
+  @proof_if_or_eval prog prims 1835 1604 1971 fn_if_or_eval np_if_or_eval ⟨@cert_eff_of⟩ ⟨@cert_if_eval_of⟩ n
 
 theorem cert_p_else_none {n : Nat} :
-    Stmt_p_else_none prog prims 1833 n :=
-  @proof_p_else_none prog prims 1833 fn_p_else_none np_p_else_none n
+    Stmt_p_else_none prog prims 1836 n :=
+  @proof_p_else_none prog prims 1836 fn_p_else_none np_p_else_none n
 
 theorem cert_p_while_stmt {n : Nat} :
-    Stmt_p_while_stmt prog prims 1834 n :=
-  @proof_p_while_stmt prog prims 1834 fn_p_while_stmt np_p_while_stmt n
+    Stmt_p_while_stmt prog prims 1837 n :=
+  @proof_p_while_stmt prog prims 1837 fn_p_while_stmt np_p_while_stmt n
 
 theorem cert_while_eff {n : Nat} :
-    Stmt_while_eff prog prims 2075 n :=
-  @proof_while_eff prog prims 2075 1216 1782 fn_while_eff np_while_eff ⟨@cert_boxed_of_mini_selfhost_MStmt⟩ ⟨@cert_pure_part⟩ n
+    Stmt_while_eff prog prims 2084 n :=
+  @proof_while_eff prog prims 2084 1217 1783 fn_while_eff np_while_eff ⟨@cert_boxed_of_mini_selfhost_MStmt⟩ ⟨@cert_pure_part⟩ n
 
 theorem cert_while_eval_of {n : Nat} :
-    Stmt_while_eval_of prog prims 1966 n :=
-  @proof_while_eval_of prog prims 1966 2075 fn_while_eval_of np_while_eval_of ⟨@cert_while_eff⟩ n
+    Stmt_while_eval_of prog prims 1972 n :=
+  @proof_while_eval_of prog prims 1972 2084 fn_while_eval_of np_while_eval_of ⟨@cert_while_eff⟩ n
 
 theorem cert_while_or_eval {n : Nat} :
-    Stmt_while_or_eval prog prims 1835 n :=
-  @proof_while_or_eval prog prims 1835 1603 1966 fn_while_or_eval np_while_or_eval ⟨@cert_eff_of⟩ ⟨@cert_while_eval_of⟩ n
+    Stmt_while_or_eval prog prims 1838 n :=
+  @proof_while_or_eval prog prims 1838 1604 1972 fn_while_or_eval np_while_or_eval ⟨@cert_eff_of⟩ ⟨@cert_while_eval_of⟩ n
 
 theorem cert_p_for_stmt {n : Nat} :
-    Stmt_p_for_stmt prog prims 1836 n :=
-  @proof_p_for_stmt prog prims 1836 fn_p_for_stmt np_p_for_stmt n
+    Stmt_p_for_stmt prog prims 1839 n :=
+  @proof_p_for_stmt prog prims 1839 fn_p_for_stmt np_p_for_stmt n
 
 theorem cert_p_for_iter_range_from_start {n : Nat} :
-    Stmt_p_for_iter_range_from_start prog prims 2076 n :=
-  @proof_p_for_iter_range_from_start prog prims 2076 fn_p_for_iter_range_from_start np_p_for_iter_range_from_start n
+    Stmt_p_for_iter_range_from_start prog prims 2085 n :=
+  @proof_p_for_iter_range_from_start prog prims 2085 fn_p_for_iter_range_from_start np_p_for_iter_range_from_start n
 
 theorem cert_p_range_start_int {n : Nat} :
-    Stmt_p_range_start_int prog prims 2077 n :=
-  @proof_p_range_start_int prog prims 2077 fn_p_range_start_int np_p_range_start_int n
+    Stmt_p_range_start_int prog prims 2086 n :=
+  @proof_p_range_start_int prog prims 2086 fn_p_range_start_int np_p_range_start_int n
 
 theorem cert_p_range_exclusive {n : Nat} :
-    Stmt_p_range_exclusive prog prims 2078 n :=
-  @proof_p_range_exclusive prog prims 2078 fn_p_range_exclusive np_p_range_exclusive n
+    Stmt_p_range_exclusive prog prims 2087 n :=
+  @proof_p_range_exclusive prog prims 2087 fn_p_range_exclusive np_p_range_exclusive n
 
 theorem cert_p_range_bound {n : Nat} :
-    Stmt_p_range_bound prog prims 2079 n :=
-  @proof_p_range_bound prog prims 2079 fn_p_range_bound np_p_range_bound n
+    Stmt_p_range_bound prog prims 2088 n :=
+  @proof_p_range_bound prog prims 2088 fn_p_range_bound np_p_range_bound n
 
 theorem cert_p_range_bound_name {n : Nat} :
-    Stmt_p_range_bound_name prog prims 2080 n :=
-  @proof_p_range_bound_name prog prims 2080 fn_p_range_bound_name np_p_range_bound_name n
+    Stmt_p_range_bound_name prog prims 2089 n :=
+  @proof_p_range_bound_name prog prims 2089 fn_p_range_bound_name np_p_range_bound_name n
 
 theorem cert_stmt_unless {n : Nat} :
-    Stmt_stmt_unless prog prims 2200 n :=
-  @proof_stmt_unless prog prims 2200 fn_stmt_unless np_stmt_unless n
+    Stmt_stmt_unless prog prims 2213 n :=
+  @proof_stmt_unless prog prims 2213 fn_stmt_unless np_stmt_unless n
 
 theorem cert_for_range {n : Nat} :
-    Stmt_for_range prog prims 2081 n :=
-  @proof_for_range prog prims 2081 1216 1367 1416 2200 fn_for_range np_for_range ⟨@cert_boxed_of_mini_selfhost_MStmt⟩ ⟨@cert_boxed_of_mini_selfhost_SrcExpr⟩ ⟨@cert_writes_local⟩ ⟨@cert_stmt_unless⟩ n
+    Stmt_for_range prog prims 2090 n :=
+  @proof_for_range prog prims 2090 1217 1368 1417 2213 fn_for_range np_for_range ⟨@cert_boxed_of_mini_selfhost_MStmt⟩ ⟨@cert_boxed_of_mini_selfhost_SrcExpr⟩ ⟨@cert_writes_local⟩ ⟨@cert_stmt_unless⟩ n
 
 theorem cert_p_for_iter_path {n : Nat} :
-    Stmt_p_for_iter_path prog prims 2082 n :=
-  @proof_p_for_iter_path prog prims 2082 fn_p_for_iter_path np_p_for_iter_path n
+    Stmt_p_for_iter_path prog prims 2091 n :=
+  @proof_p_for_iter_path prog prims 2091 fn_p_for_iter_path np_p_for_iter_path n
 
 theorem cert_array_local_of {n : Nat} :
-    Stmt_array_local_of prog prims 2201 n :=
-  @proof_array_local_of prog prims 2201 fn_array_local_of np_array_local_of n
+    Stmt_array_local_of prog prims 2214 n :=
+  @proof_array_local_of prog prims 2214 fn_array_local_of np_array_local_of n
 
 theorem cert_array_local {n : Nat} :
-    Stmt_array_local prog prims 2083 n :=
-  @proof_array_local prog prims 2083 1935 2201 fn_array_local np_array_local ⟨@cert_array_parts⟩ ⟨@cert_array_local_of⟩ n
+    Stmt_array_local prog prims 2092 n :=
+  @proof_array_local prog prims 2092 1938 2214 fn_array_local np_array_local ⟨@cert_array_parts⟩ ⟨@cert_array_local_of⟩ n
 
 theorem cert_for_array {n : Nat} :
-    Stmt_for_array prog prims 2084 n :=
-  @proof_for_array prog prims 2084 1216 1367 fn_for_array np_for_array ⟨@cert_boxed_of_mini_selfhost_MStmt⟩ ⟨@cert_boxed_of_mini_selfhost_SrcExpr⟩ n
+    Stmt_for_array prog prims 2093 n :=
+  @proof_for_array prog prims 2093 1217 1368 fn_for_array np_for_array ⟨@cert_boxed_of_mini_selfhost_MStmt⟩ ⟨@cert_boxed_of_mini_selfhost_SrcExpr⟩ n
 
 theorem cert_for_slice {n : Nat} :
-    Stmt_for_slice prog prims 2085 n :=
-  @proof_for_slice prog prims 2085 1216 1367 1416 2200 fn_for_slice np_for_slice ⟨@cert_boxed_of_mini_selfhost_MStmt⟩ ⟨@cert_boxed_of_mini_selfhost_SrcExpr⟩ ⟨@cert_writes_local⟩ ⟨@cert_stmt_unless⟩ n
+    Stmt_for_slice prog prims 2094 n :=
+  @proof_for_slice prog prims 2094 1217 1368 1417 2213 fn_for_slice np_for_slice ⟨@cert_boxed_of_mini_selfhost_MStmt⟩ ⟨@cert_boxed_of_mini_selfhost_SrcExpr⟩ ⟨@cert_writes_local⟩ ⟨@cert_stmt_unless⟩ n
 
 theorem cert_match_primary {n : Nat} :
-    Stmt_match_primary prog prims 1839 n :=
-  @proof_match_primary prog prims 1839 152 155 594 1694 1696 1751 1958 1959 fn_match_primary np_match_primary ⟨@cert_node_prod⟩ ⟨@cert_kid⟩ ⟨@cert_has_kids⟩ ⟨@cert_p_expr⟩ ⟨@cert_p_assign⟩ ⟨@cert_p_assign_end⟩ ⟨@cert_peel⟩ ⟨@cert_match_of_postfix⟩ n
+    Stmt_match_primary prog prims 1842 n :=
+  @proof_match_primary prog prims 1842 152 155 594 1695 1697 1752 1964 1965 fn_match_primary np_match_primary ⟨@cert_node_prod⟩ ⟨@cert_kid⟩ ⟨@cert_has_kids⟩ ⟨@cert_p_expr⟩ ⟨@cert_p_assign⟩ ⟨@cert_p_assign_end⟩ ⟨@cert_peel⟩ ⟨@cert_match_of_postfix⟩ n
 
 theorem cert_is_lit_stmt {n : Nat} :
-    Stmt_is_lit_stmt prog prims 1838 n :=
-  @proof_is_lit_stmt prog prims 1838 1839 1941 fn_is_lit_stmt np_is_lit_stmt ⟨@cert_match_primary⟩ ⟨@cert_lit_first⟩ n
+    Stmt_is_lit_stmt prog prims 1841 n :=
+  @proof_is_lit_stmt prog prims 1841 1842 1947 fn_is_lit_stmt np_is_lit_stmt ⟨@cert_match_primary⟩ ⟨@cert_lit_first⟩ n
 
 theorem cert_is_match_stmt {n : Nat} :
-    Stmt_is_match_stmt prog prims 1840 n :=
-  @proof_is_match_stmt prog prims 1840 1839 fn_is_match_stmt np_is_match_stmt ⟨@cert_match_primary⟩ n
+    Stmt_is_match_stmt prog prims 1843 n :=
+  @proof_is_match_stmt prog prims 1843 1842 fn_is_match_stmt np_is_match_stmt ⟨@cert_match_primary⟩ n
 
 theorem cert_p_assign_set {n : Nat} :
-    Stmt_p_assign_set prog prims 1969 n :=
-  @proof_p_assign_set prog prims 1969 fn_p_assign_set np_p_assign_set n
+    Stmt_p_assign_set prog prims 1975 n :=
+  @proof_p_assign_set prog prims 1975 fn_p_assign_set np_p_assign_set n
 
 theorem cert_set_eff {n : Nat} :
-    Stmt_set_eff prog prims 2319 n :=
-  @proof_set_eff prog prims 2319 1782 fn_set_eff np_set_eff ⟨@cert_pure_part⟩ n
+    Stmt_set_eff prog prims 2334 n :=
+  @proof_set_eff prog prims 2334 1783 fn_set_eff np_set_eff ⟨@cert_pure_part⟩ n
 
 theorem cert_set_eval_of {n : Nat} :
-    Stmt_set_eval_of prog prims 2209 n :=
-  @proof_set_eval_of prog prims 2209 2179 2319 fn_set_eval_of np_set_eval_of ⟨@cert_call_parts⟩ ⟨@cert_set_eff⟩ n
+    Stmt_set_eval_of prog prims 2222 n :=
+  @proof_set_eval_of prog prims 2222 2192 2334 fn_set_eval_of np_set_eval_of ⟨@cert_call_parts⟩ ⟨@cert_set_eff⟩ n
 
 theorem cert_try_set {n : Nat} :
-    Stmt_try_set prog prims 2315 n :=
-  @proof_try_set prog prims 2315 1216 2191 fn_try_set np_try_set ⟨@cert_boxed_of_mini_selfhost_MStmt⟩ ⟨@cert_try_rest⟩ n
+    Stmt_try_set prog prims 2330 n :=
+  @proof_try_set prog prims 2330 1217 2204 fn_try_set np_try_set ⟨@cert_boxed_of_mini_selfhost_MStmt⟩ ⟨@cert_try_rest⟩ n
 
 theorem cert_set_try_or_eval {n : Nat} :
-    Stmt_set_try_or_eval prog prims 2203 n :=
-  @proof_set_try_or_eval prog prims 2203 1512 1575 1603 2209 2315 fn_set_try_or_eval np_set_try_or_eval ⟨@cert_fresh_id⟩ ⟨@cert_same_ty⟩ ⟨@cert_eff_of⟩ ⟨@cert_set_eval_of⟩ ⟨@cert_try_set⟩ n
+    Stmt_set_try_or_eval prog prims 2216 n :=
+  @proof_set_try_or_eval prog prims 2216 1513 1576 1604 2222 2330 fn_set_try_or_eval np_set_try_or_eval ⟨@cert_fresh_id⟩ ⟨@cert_same_ty⟩ ⟨@cert_eff_of⟩ ⟨@cert_set_eval_of⟩ ⟨@cert_try_set⟩ n
 
 theorem cert_set_or_eval {n : Nat} :
-    Stmt_set_or_eval prog prims 2087 n :=
-  @proof_set_or_eval prog prims 2087 1954 2203 fn_set_or_eval np_set_or_eval ⟨@cert_try_of_init⟩ ⟨@cert_set_try_or_eval⟩ n
+    Stmt_set_or_eval prog prims 2096 n :=
+  @proof_set_or_eval prog prims 2096 1960 2216 fn_set_or_eval np_set_or_eval ⟨@cert_try_of_init⟩ ⟨@cert_set_try_or_eval⟩ n
 
 theorem cert_checked_stmt {n : Nat} :
-    Stmt_checked_stmt prog prims 2204 n :=
-  @proof_checked_stmt prog prims 2204 fn_checked_stmt np_checked_stmt n
+    Stmt_checked_stmt prog prims 2217 n :=
+  @proof_checked_stmt prog prims 2217 fn_checked_stmt np_checked_stmt n
 
 theorem cert_field_ty_at {n : Nat} :
-    Stmt_field_ty_at prog prims 2206 n :=
-  @proof_field_ty_at prog prims 2206 981 982 fn_field_ty_at np_field_ty_at ⟨@cert_struct_field_tys⟩ ⟨@cert_get_of_mini_selfhost_Ty⟩ n
+    Stmt_field_ty_at prog prims 2219 n :=
+  @proof_field_ty_at prog prims 2219 981 982 fn_field_ty_at np_field_ty_at ⟨@cert_struct_field_tys⟩ ⟨@cert_get_of_mini_selfhost_Ty⟩ n
 
 theorem cert_set_field_eff {n : Nat} :
-    Stmt_set_field_eff prog prims 2316 n :=
-  @proof_set_field_eff prog prims 2316 1782 fn_set_field_eff np_set_field_eff ⟨@cert_pure_part⟩ n
+    Stmt_set_field_eff prog prims 2331 n :=
+  @proof_set_field_eff prog prims 2331 1783 fn_set_field_eff np_set_field_eff ⟨@cert_pure_part⟩ n
 
 theorem cert_field_eval_stmt {n : Nat} :
-    Stmt_field_eval_stmt prog prims 2207 n :=
-  @proof_field_eval_stmt prog prims 2207 2316 fn_field_eval_stmt np_field_eval_stmt ⟨@cert_set_field_eff⟩ n
+    Stmt_field_eval_stmt prog prims 2220 n :=
+  @proof_field_eval_stmt prog prims 2220 2331 fn_field_eval_stmt np_field_eval_stmt ⟨@cert_set_field_eff⟩ n
 
 theorem cert_set_field_or_eval {n : Nat} :
-    Stmt_set_field_or_eval prog prims 2088 n :=
-  @proof_set_field_or_eval prog prims 2088 1603 1885 2204 2205 2206 2207 fn_set_field_or_eval np_set_field_or_eval ⟨@cert_eff_of⟩ ⟨@cert_field_index⟩ ⟨@cert_checked_stmt⟩ ⟨@cert_has_ty⟩ ⟨@cert_field_ty_at⟩ ⟨@cert_field_eval_stmt⟩ n
+    Stmt_set_field_or_eval prog prims 2097 n :=
+  @proof_set_field_or_eval prog prims 2097 1604 1888 2217 2218 2219 2220 fn_set_field_or_eval np_set_field_or_eval ⟨@cert_eff_of⟩ ⟨@cert_field_index⟩ ⟨@cert_checked_stmt⟩ ⟨@cert_has_ty⟩ ⟨@cert_field_ty_at⟩ ⟨@cert_field_eval_stmt⟩ n
 
-theorem certs_eff_acts : ∀ n, (Stmt_eff_acts prog prims 2317 n) ∧ (Stmt_effs_act prog prims 2378 n) := by
+theorem certs_eff_acts : ∀ n, (Stmt_eff_acts prog prims 2332 n) ∧ (Stmt_effs_act prog prims 2395 n) := by
   intro n
   induction n with
   | zero =>
     exact ⟨(by intro x0 x1 v0 v1 w h r0 r1; simp [pcall] at h), (by intro x0 x1 v0 v1 w h r0 r1; simp [pcall] at h)⟩
   | succ n ih =>
     obtain ⟨ih_eff_acts, ih_effs_act⟩ := ih
-    exact ⟨@step_eff_acts prog prims 2317 1203 1204 2378 fn_eff_acts np_eff_acts ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_MEff⟩ ⟨@cert_unbox_of_mini_selfhost_MEff⟩ n ⟨ih_eff_acts⟩ ⟨ih_effs_act⟩, @step_effs_act prog prims 2378 1203 2317 fn_effs_act np_effs_act ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_MEff⟩ n ⟨ih_eff_acts⟩ ⟨ih_effs_act⟩⟩
+    exact ⟨@step_eff_acts prog prims 2332 1204 1205 2395 fn_eff_acts np_eff_acts ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_MEff⟩ ⟨@cert_unbox_of_mini_selfhost_MEff⟩ n ⟨ih_eff_acts⟩ ⟨ih_effs_act⟩, @step_effs_act prog prims 2395 1204 2332 fn_effs_act np_effs_act ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_MEff⟩ n ⟨ih_eff_acts⟩ ⟨ih_effs_act⟩⟩
 
 theorem cert_eff_acts {n : Nat} :
-    Stmt_eff_acts prog prims 2317 n :=
+    Stmt_eff_acts prog prims 2332 n :=
   (certs_eff_acts n).1
 theorem cert_effs_act {n : Nat} :
-    Stmt_effs_act prog prims 2378 n :=
+    Stmt_effs_act prog prims 2395 n :=
   (certs_eff_acts n).2
 
 theorem cert_set_index_pure {n : Nat} :
-    Stmt_set_index_pure prog prims 2379 n :=
-  @proof_set_index_pure prog prims 2379 1782 fn_set_index_pure np_set_index_pure ⟨@cert_pure_part⟩ n
+    Stmt_set_index_pure prog prims 2396 n :=
+  @proof_set_index_pure prog prims 2396 1783 fn_set_index_pure np_set_index_pure ⟨@cert_pure_part⟩ n
 
 theorem cert_set_index_eff {n : Nat} :
-    Stmt_set_index_eff prog prims 2318 n :=
-  @proof_set_index_eff prog prims 2318 1782 2379 fn_set_index_eff np_set_index_eff ⟨@cert_pure_part⟩ ⟨@cert_set_index_pure⟩ n
+    Stmt_set_index_eff prog prims 2333 n :=
+  @proof_set_index_eff prog prims 2333 1783 2396 fn_set_index_eff np_set_index_eff ⟨@cert_pure_part⟩ ⟨@cert_set_index_pure⟩ n
 
 theorem cert_set_index_eval_of {n : Nat} :
-    Stmt_set_index_eval_of prog prims 2208 n :=
-  @proof_set_index_eval_of prog prims 2208 2200 2317 2318 fn_set_index_eval_of np_set_index_eval_of ⟨@cert_stmt_unless⟩ ⟨@cert_eff_acts⟩ ⟨@cert_set_index_eff⟩ n
+    Stmt_set_index_eval_of prog prims 2221 n :=
+  @proof_set_index_eval_of prog prims 2221 2213 2332 2333 fn_set_index_eval_of np_set_index_eval_of ⟨@cert_stmt_unless⟩ ⟨@cert_eff_acts⟩ ⟨@cert_set_index_eff⟩ n
 
 theorem cert_set_index_or_eval {n : Nat} :
-    Stmt_set_index_or_eval prog prims 2089 n :=
-  @proof_set_index_or_eval prog prims 2089 160 980 1603 2150 2208 fn_set_index_or_eval np_set_index_or_eval ⟨@cert_field_fns_Decls_of_mini_selfhost_Decls⟩ ⟨@cert_length_of_mini_selfhost_FnDecl⟩ ⟨@cert_eff_of⟩ ⟨@cert_index_elem⟩ ⟨@cert_set_index_eval_of⟩ n
+    Stmt_set_index_or_eval prog prims 2098 n :=
+  @proof_set_index_or_eval prog prims 2098 160 980 1604 2159 2221 fn_set_index_or_eval np_set_index_or_eval ⟨@cert_field_fns_Decls_of_mini_selfhost_Decls⟩ ⟨@cert_length_of_mini_selfhost_FnDecl⟩ ⟨@cert_eff_of⟩ ⟨@cert_index_elem⟩ ⟨@cert_set_index_eval_of⟩ n
 
 theorem cert_assign_target {n : Nat} :
-    Stmt_assign_target prog prims 1970 n :=
-  @proof_assign_target prog prims 1970 152 155 615 616 1316 1713 1766 1767 1788 2087 2088 2089 fn_assign_target np_assign_target ⟨@cert_node_prod⟩ ⟨@cert_kid⟩ ⟨@cert_field_text_Token_of_mini_selfhost_Token⟩ ⟨@cert_kid_token⟩ ⟨@cert_p_member_type_args_none⟩ ⟨@cert_local_of⟩ ⟨@cert_p_postfix_end⟩ ⟨@cert_p_postfix_member⟩ ⟨@cert_p_postfix_index⟩ ⟨@cert_set_or_eval⟩ ⟨@cert_set_field_or_eval⟩ ⟨@cert_set_index_or_eval⟩ n
+    Stmt_assign_target prog prims 1976 n :=
+  @proof_assign_target prog prims 1976 152 155 615 616 1317 1714 1767 1768 1789 2096 2097 2098 fn_assign_target np_assign_target ⟨@cert_node_prod⟩ ⟨@cert_kid⟩ ⟨@cert_field_text_Token_of_mini_selfhost_Token⟩ ⟨@cert_kid_token⟩ ⟨@cert_p_member_type_args_none⟩ ⟨@cert_local_of⟩ ⟨@cert_p_postfix_end⟩ ⟨@cert_p_postfix_member⟩ ⟨@cert_p_postfix_index⟩ ⟨@cert_set_or_eval⟩ ⟨@cert_set_field_or_eval⟩ ⟨@cert_set_index_or_eval⟩ n
 
 theorem cert_p_assign_div {n : Nat} :
-    Stmt_p_assign_div prog prims 2320 n :=
-  @proof_p_assign_div prog prims 2320 fn_p_assign_div np_p_assign_div n
+    Stmt_p_assign_div prog prims 2335 n :=
+  @proof_p_assign_div prog prims 2335 fn_p_assign_div np_p_assign_div n
 
 theorem cert_p_assign_mod {n : Nat} :
-    Stmt_p_assign_mod prog prims 2321 n :=
-  @proof_p_assign_mod prog prims 2321 fn_p_assign_mod np_p_assign_mod n
+    Stmt_p_assign_mod prog prims 2336 n :=
+  @proof_p_assign_mod prog prims 2336 fn_p_assign_mod np_p_assign_mod n
 
 theorem cert_p_assign_add {n : Nat} :
-    Stmt_p_assign_add prog prims 2380 n :=
-  @proof_p_assign_add prog prims 2380 fn_p_assign_add np_p_assign_add n
+    Stmt_p_assign_add prog prims 2397 n :=
+  @proof_p_assign_add prog prims 2397 fn_p_assign_add np_p_assign_add n
 
 theorem cert_p_assign_sub {n : Nat} :
-    Stmt_p_assign_sub prog prims 2381 n :=
-  @proof_p_assign_sub prog prims 2381 fn_p_assign_sub np_p_assign_sub n
+    Stmt_p_assign_sub prog prims 2398 n :=
+  @proof_p_assign_sub prog prims 2398 fn_p_assign_sub np_p_assign_sub n
 
 theorem cert_p_assign_mul {n : Nat} :
-    Stmt_p_assign_mul prog prims 2382 n :=
-  @proof_p_assign_mul prog prims 2382 fn_p_assign_mul np_p_assign_mul n
+    Stmt_p_assign_mul prog prims 2399 n :=
+  @proof_p_assign_mul prog prims 2399 fn_p_assign_mul np_p_assign_mul n
 
 theorem cert_p_assign_band {n : Nat} :
-    Stmt_p_assign_band prog prims 2383 n :=
-  @proof_p_assign_band prog prims 2383 fn_p_assign_band np_p_assign_band n
+    Stmt_p_assign_band prog prims 2400 n :=
+  @proof_p_assign_band prog prims 2400 fn_p_assign_band np_p_assign_band n
 
 theorem cert_p_assign_bor {n : Nat} :
-    Stmt_p_assign_bor prog prims 2384 n :=
-  @proof_p_assign_bor prog prims 2384 fn_p_assign_bor np_p_assign_bor n
+    Stmt_p_assign_bor prog prims 2401 n :=
+  @proof_p_assign_bor prog prims 2401 fn_p_assign_bor np_p_assign_bor n
 
 theorem cert_p_assign_xor {n : Nat} :
-    Stmt_p_assign_xor prog prims 2385 n :=
-  @proof_p_assign_xor prog prims 2385 fn_p_assign_xor np_p_assign_xor n
+    Stmt_p_assign_xor prog prims 2402 n :=
+  @proof_p_assign_xor prog prims 2402 fn_p_assign_xor np_p_assign_xor n
 
 theorem cert_p_assign_shl {n : Nat} :
-    Stmt_p_assign_shl prog prims 2386 n :=
-  @proof_p_assign_shl prog prims 2386 fn_p_assign_shl np_p_assign_shl n
+    Stmt_p_assign_shl prog prims 2403 n :=
+  @proof_p_assign_shl prog prims 2403 fn_p_assign_shl np_p_assign_shl n
 
 theorem cert_p_assign_shr {n : Nat} :
-    Stmt_p_assign_shr prog prims 2387 n :=
-  @proof_p_assign_shr prog prims 2387 fn_p_assign_shr np_p_assign_shr n
+    Stmt_p_assign_shr prog prims 2404 n :=
+  @proof_p_assign_shr prog prims 2404 fn_p_assign_shr np_p_assign_shr n
 
 theorem cert_compound_op {n : Nat} :
-    Stmt_compound_op prog prims 2322 n :=
-  @proof_compound_op prog prims 2322 2380 2381 2382 2383 2384 2385 2386 2387 fn_compound_op np_compound_op ⟨@cert_p_assign_add⟩ ⟨@cert_p_assign_sub⟩ ⟨@cert_p_assign_mul⟩ ⟨@cert_p_assign_band⟩ ⟨@cert_p_assign_bor⟩ ⟨@cert_p_assign_xor⟩ ⟨@cert_p_assign_shl⟩ ⟨@cert_p_assign_shr⟩ n
+    Stmt_compound_op prog prims 2337 n :=
+  @proof_compound_op prog prims 2337 2397 2398 2399 2400 2401 2402 2403 2404 fn_compound_op np_compound_op ⟨@cert_p_assign_add⟩ ⟨@cert_p_assign_sub⟩ ⟨@cert_p_assign_mul⟩ ⟨@cert_p_assign_band⟩ ⟨@cert_p_assign_bor⟩ ⟨@cert_p_assign_xor⟩ ⟨@cert_p_assign_shl⟩ ⟨@cert_p_assign_shr⟩ n
 
 theorem cert_compound_eff {n : Nat} :
-    Stmt_compound_eff prog prims 2210 n :=
-  @proof_compound_eff prog prims 2210 1896 1898 2320 2321 2322 fn_compound_eff np_compound_eff ⟨@cert_x_divide_of⟩ ⟨@cert_x_apply_of⟩ ⟨@cert_p_assign_div⟩ ⟨@cert_p_assign_mod⟩ ⟨@cert_compound_op⟩ n
+    Stmt_compound_eff prog prims 2223 n :=
+  @proof_compound_eff prog prims 2223 1899 1901 2335 2336 2337 fn_compound_eff np_compound_eff ⟨@cert_x_divide_of⟩ ⟨@cert_x_apply_of⟩ ⟨@cert_p_assign_div⟩ ⟨@cert_p_assign_mod⟩ ⟨@cert_compound_op⟩ n
 
 theorem cert_compound_field_eval {n : Nat} :
-    Stmt_compound_field_eval prog prims 2211 n :=
-  @proof_compound_field_eval prog prims 2211 1603 2204 2205 2206 2207 2210 fn_compound_field_eval np_compound_field_eval ⟨@cert_eff_of⟩ ⟨@cert_checked_stmt⟩ ⟨@cert_has_ty⟩ ⟨@cert_field_ty_at⟩ ⟨@cert_field_eval_stmt⟩ ⟨@cert_compound_eff⟩ n
+    Stmt_compound_field_eval prog prims 2224 n :=
+  @proof_compound_field_eval prog prims 2224 1604 2217 2218 2219 2220 2223 fn_compound_field_eval np_compound_field_eval ⟨@cert_eff_of⟩ ⟨@cert_checked_stmt⟩ ⟨@cert_has_ty⟩ ⟨@cert_field_ty_at⟩ ⟨@cert_field_eval_stmt⟩ ⟨@cert_compound_eff⟩ n
 
 theorem cert_compound_eval {n : Nat} :
-    Stmt_compound_eval prog prims 2090 n :=
-  @proof_compound_eval prog prims 2090 152 155 615 616 1316 1603 1713 1766 1767 1885 2209 2210 2211 fn_compound_eval np_compound_eval ⟨@cert_node_prod⟩ ⟨@cert_kid⟩ ⟨@cert_field_text_Token_of_mini_selfhost_Token⟩ ⟨@cert_kid_token⟩ ⟨@cert_p_member_type_args_none⟩ ⟨@cert_eff_of⟩ ⟨@cert_local_of⟩ ⟨@cert_p_postfix_end⟩ ⟨@cert_p_postfix_member⟩ ⟨@cert_field_index⟩ ⟨@cert_set_eval_of⟩ ⟨@cert_compound_eff⟩ ⟨@cert_compound_field_eval⟩ n
+    Stmt_compound_eval prog prims 2099 n :=
+  @proof_compound_eval prog prims 2099 152 155 615 616 1317 1604 1714 1767 1768 1888 2222 2223 2224 fn_compound_eval np_compound_eval ⟨@cert_node_prod⟩ ⟨@cert_kid⟩ ⟨@cert_field_text_Token_of_mini_selfhost_Token⟩ ⟨@cert_kid_token⟩ ⟨@cert_p_member_type_args_none⟩ ⟨@cert_eff_of⟩ ⟨@cert_local_of⟩ ⟨@cert_p_postfix_end⟩ ⟨@cert_p_postfix_member⟩ ⟨@cert_field_index⟩ ⟨@cert_set_eval_of⟩ ⟨@cert_compound_eff⟩ ⟨@cert_compound_field_eval⟩ n
 
 theorem cert_compound_of {n : Nat} :
-    Stmt_compound_of prog prims 1971 n :=
-  @proof_compound_of prog prims 1971 2090 fn_compound_of np_compound_of ⟨@cert_compound_eval⟩ n
+    Stmt_compound_of prog prims 1977 n :=
+  @proof_compound_of prog prims 1977 2099 fn_compound_of np_compound_of ⟨@cert_compound_eval⟩ n
 
 theorem cert_free_shifted {n : Nat} :
-    Stmt_free_shifted prog prims 2212 n :=
-  @proof_free_shifted prog prims 2212 fn_free_shifted np_free_shifted n
+    Stmt_free_shifted prog prims 2225 n :=
+  @proof_free_shifted prog prims 2225 fn_free_shifted np_free_shifted n
 
 theorem cert_free_of {n : Nat} :
-    Stmt_free_of prog prims 2091 n :=
-  @proof_free_of prog prims 2091 316 2212 2213 fn_free_of np_free_of ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr⟩ ⟨@cert_free_shifted⟩ ⟨@cert_shift_of⟩ n
+    Stmt_free_of prog prims 2100 n :=
+  @proof_free_of prog prims 2100 316 2225 2226 fn_free_of np_free_of ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr⟩ ⟨@cert_free_shifted⟩ ⟨@cert_shift_of⟩ n
 
 theorem cert_assert_of {n : Nat} :
-    Stmt_assert_of prog prims 2215 n :=
-  @proof_assert_of prog prims 2215 fn_assert_of np_assert_of n
+    Stmt_assert_of prog prims 2228 n :=
+  @proof_assert_of prog prims 2228 fn_assert_of np_assert_of n
 
 theorem cert_assert_arg {n : Nat} :
-    Stmt_assert_arg prog prims 2094 n :=
-  @proof_assert_arg prog prims 2094 104 1603 2215 fn_assert_arg np_assert_arg ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_CTree⟩ ⟨@cert_eff_of⟩ ⟨@cert_assert_of⟩ n
+    Stmt_assert_arg prog prims 2103 n :=
+  @proof_assert_arg prog prims 2103 104 1604 2228 fn_assert_arg np_assert_arg ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_CTree⟩ ⟨@cert_eff_of⟩ ⟨@cert_assert_of⟩ n
 
 theorem cert_discard_of {n : Nat} :
-    Stmt_discard_of prog prims 2095 n :=
-  @proof_discard_of prog prims 2095 fn_discard_of np_discard_of n
+    Stmt_discard_of prog prims 2104 n :=
+  @proof_discard_of prog prims 2104 fn_discard_of np_discard_of n
 
 theorem cert_try_stmt {n : Nat} :
-    Stmt_try_stmt prog prims 2097 n :=
-  @proof_try_stmt prog prims 2097 2191 fn_try_stmt np_try_stmt ⟨@cert_try_rest⟩ n
+    Stmt_try_stmt prog prims 2106 n :=
+  @proof_try_stmt prog prims 2106 2204 fn_try_stmt np_try_stmt ⟨@cert_try_rest⟩ n
 
 theorem cert_call_stmt {n : Nat} :
-    Stmt_call_stmt prog prims 1972 n :=
-  @proof_call_stmt prog prims 1972 154 155 422 635 1726 1784 1786 1900 1902 2091 2092 2093 2094 2095 2096 2097 2098 fn_call_stmt np_call_stmt ⟨@cert_list_items⟩ ⟨@cert_kid⟩ ⟨@cert_path_spellings⟩ ⟨@cert_single_of_mini_selfhost_List_usize⟩ ⟨@cert_eff_postfix⟩ ⟨@cert_is_path_call⟩ ⟨@cert_is_method_form⟩ ⟨@cert_is_path⟩ ⟨@cert_dealloc_path⟩ ⟨@cert_free_of⟩ ⟨@cert_args_of⟩ ⟨@cert_text_assert⟩ ⟨@cert_assert_arg⟩ ⟨@cert_discard_of⟩ ⟨@cert_is_try_call⟩ ⟨@cert_try_stmt⟩ ⟨@cert_try_call_of⟩ n
+    Stmt_call_stmt prog prims 1978 n :=
+  @proof_call_stmt prog prims 1978 154 155 422 635 1727 1785 1787 1903 1905 2100 2101 2102 2103 2104 2105 2106 2107 fn_call_stmt np_call_stmt ⟨@cert_list_items⟩ ⟨@cert_kid⟩ ⟨@cert_path_spellings⟩ ⟨@cert_single_of_mini_selfhost_List_usize⟩ ⟨@cert_eff_postfix⟩ ⟨@cert_is_path_call⟩ ⟨@cert_is_method_form⟩ ⟨@cert_is_path⟩ ⟨@cert_dealloc_path⟩ ⟨@cert_free_of⟩ ⟨@cert_args_of⟩ ⟨@cert_text_assert⟩ ⟨@cert_assert_arg⟩ ⟨@cert_discard_of⟩ ⟨@cert_is_try_call⟩ ⟨@cert_try_stmt⟩ ⟨@cert_try_call_of⟩ n
 
 theorem cert_assignment {n : Nat} :
-    Stmt_assignment prog prims 1842 n :=
-  @proof_assignment prog prims 1842 56 152 155 594 616 1208 1694 1696 1751 1958 1969 1970 1971 1972 fn_assignment np_assignment ⟨@cert_minus⟩ ⟨@cert_node_prod⟩ ⟨@cert_kid⟩ ⟨@cert_has_kids⟩ ⟨@cert_kid_token⟩ ⟨@cert_field_start_Token_of_mini_selfhost_Token⟩ ⟨@cert_p_expr⟩ ⟨@cert_p_assign⟩ ⟨@cert_p_assign_end⟩ ⟨@cert_peel⟩ ⟨@cert_p_assign_set⟩ ⟨@cert_assign_target⟩ ⟨@cert_compound_of⟩ ⟨@cert_call_stmt⟩ n
+    Stmt_assignment prog prims 1845 n :=
+  @proof_assignment prog prims 1845 56 152 155 594 616 1209 1695 1697 1752 1964 1975 1976 1977 1978 fn_assignment np_assignment ⟨@cert_minus⟩ ⟨@cert_node_prod⟩ ⟨@cert_kid⟩ ⟨@cert_has_kids⟩ ⟨@cert_kid_token⟩ ⟨@cert_field_start_Token_of_mini_selfhost_Token⟩ ⟨@cert_p_expr⟩ ⟨@cert_p_assign⟩ ⟨@cert_p_assign_end⟩ ⟨@cert_peel⟩ ⟨@cert_p_assign_set⟩ ⟨@cert_assign_target⟩ ⟨@cert_compound_of⟩ ⟨@cert_call_stmt⟩ n
 
 theorem cert_then_rest {n : Nat} :
-    Stmt_then_rest prog prims 1843 n :=
-  @proof_then_rest prog prims 1843 1216 fn_then_rest np_then_rest ⟨@cert_boxed_of_mini_selfhost_MStmt⟩ n
+    Stmt_then_rest prog prims 1846 n :=
+  @proof_then_rest prog prims 1846 1217 fn_then_rest np_then_rest ⟨@cert_boxed_of_mini_selfhost_MStmt⟩ n
 
 theorem cert_then_of {n : Nat} :
-    Stmt_then_of prog prims 1735 n :=
-  @proof_then_of prog prims 1735 1843 fn_then_of np_then_of ⟨@cert_then_rest⟩ n
+    Stmt_then_of prog prims 1736 n :=
+  @proof_then_of prog prims 1736 1846 fn_then_of np_then_of ⟨@cert_then_rest⟩ n
 
-theorem certs_block_of : ∀ n, (Stmt_block_of prog prims 1533 n) ∧ (Stmt_stmts_of prog prims 1604 n) ∧ (Stmt_stmt_first prog prims 1666 n) ∧ (Stmt_let_first prog prims 1733 n) ∧ (Stmt_stmt_of prog prims 1734 n) ∧ (Stmt_lit_let_of prog prims 1811 n) ∧ (Stmt_let_match_of prog prims 1813 n) ∧ (Stmt_lit_match_of prog prims 1825 n) ∧ (Stmt_nested_of prog prims 1837 n) ∧ (Stmt_match_stmt_of prog prims 1841 n) ∧ (Stmt_let_arms_of prog prims 1947 n) ∧ (Stmt_lit_arms_of prog prims 1962 n) ∧ (Stmt_for_of prog prims 1967 n) ∧ (Stmt_match_arms_of prog prims 1968 n) ∧ (Stmt_let_arm_of prog prims 2054 n) ∧ (Stmt_lit_arm_of prog prims 2071 n) ∧ (Stmt_match_arm_of prog prims 2086 n) ∧ (Stmt_let_body_of prog prims 2173 n) ∧ (Stmt_lit_body_of prog prims 2195 n) ∧ (Stmt_arm_body_of prog prims 2202 n) ∧ (Stmt_inner_let_of prog prims 2303 n) ∧ (Stmt_inner_match_of prog prims 2314 n) := by
+theorem certs_block_of : ∀ n, (Stmt_block_of prog prims 1534 n) ∧ (Stmt_stmts_of prog prims 1605 n) ∧ (Stmt_stmt_first prog prims 1667 n) ∧ (Stmt_let_first prog prims 1734 n) ∧ (Stmt_stmt_of prog prims 1735 n) ∧ (Stmt_lit_let_of prog prims 1814 n) ∧ (Stmt_let_match_of prog prims 1816 n) ∧ (Stmt_lit_match_of prog prims 1828 n) ∧ (Stmt_nested_of prog prims 1840 n) ∧ (Stmt_match_stmt_of prog prims 1844 n) ∧ (Stmt_let_arms_of prog prims 1953 n) ∧ (Stmt_lit_arms_of prog prims 1968 n) ∧ (Stmt_for_of prog prims 1973 n) ∧ (Stmt_match_arms_of prog prims 1974 n) ∧ (Stmt_let_arm_of prog prims 2063 n) ∧ (Stmt_lit_arm_of prog prims 2080 n) ∧ (Stmt_match_arm_of prog prims 2095 n) ∧ (Stmt_let_body_of prog prims 2186 n) ∧ (Stmt_lit_body_of prog prims 2208 n) ∧ (Stmt_arm_body_of prog prims 2215 n) ∧ (Stmt_inner_let_of prog prims 2318 n) ∧ (Stmt_inner_match_of prog prims 2329 n) := by
   intro n
   induction n with
   | zero =>
     exact ⟨(by intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3; simp [pcall] at h), (by intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3; simp [pcall] at h), (by intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4; simp [pcall] at h), (by intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4; simp [pcall] at h), (by intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3; simp [pcall] at h), (by intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5; simp [pcall] at h), (by intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5; simp [pcall] at h), (by intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4; simp [pcall] at h), (by intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3; simp [pcall] at h), (by intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3; simp [pcall] at h), (by intro x0 x1 x2 x3 x4 x5 x6 x7 x8 v0 v1 v2 v3 v4 v5 v6 v7 v8 w h r0 r1 r2 r3 r4 r5 r6 r7 r8; simp [pcall] at h), (by intro x0 x1 x2 x3 x4 x5 x6 x7 v0 v1 v2 v3 v4 v5 v6 v7 w h r0 r1 r2 r3 r4 r5 r6 r7; simp [pcall] at h), (by intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3; simp [pcall] at h), (by intro x0 x1 x2 x3 x4 x5 x6 v0 v1 v2 v3 v4 v5 v6 w h r0 r1 r2 r3 r4 r5 r6; simp [pcall] at h), (by intro x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 w h r0 r1 r2 r3 r4 r5 r6 r7 r8 r9; simp [pcall] at h), (by intro x0 x1 x2 x3 x4 x5 x6 x7 x8 v0 v1 v2 v3 v4 v5 v6 v7 v8 w h r0 r1 r2 r3 r4 r5 r6 r7 r8; simp [pcall] at h), (by intro x0 x1 x2 x3 x4 x5 x6 x7 v0 v1 v2 v3 v4 v5 v6 v7 w h r0 r1 r2 r3 r4 r5 r6 r7; simp [pcall] at h), (by intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5; simp [pcall] at h), (by intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4; simp [pcall] at h), (by intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3; simp [pcall] at h), (by intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5; simp [pcall] at h), (by intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3; simp [pcall] at h)⟩
   | succ n ih =>
     obtain ⟨ih_block_of, ih_stmts_of, ih_stmt_first, ih_let_first, ih_stmt_of, ih_lit_let_of, ih_let_match_of, ih_lit_match_of, ih_nested_of, ih_match_stmt_of, ih_let_arms_of, ih_lit_arms_of, ih_for_of, ih_match_arms_of, ih_let_arm_of, ih_lit_arm_of, ih_match_arm_of, ih_let_body_of, ih_lit_body_of, ih_arm_body_of, ih_inner_let_of, ih_inner_match_of⟩ := ih
-    exact ⟨@step_block_of prog prims 1533 56 154 1604 fn_block_of np_block_of ⟨@cert_minus⟩ ⟨@cert_list_items⟩ n ⟨ih_stmts_of⟩, @step_stmts_of prog prims 1604 56 104 1666 fn_stmts_of np_stmts_of ⟨@cert_minus⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_CTree⟩ n ⟨ih_stmt_first⟩, @step_stmt_first prog prims 1666 56 152 1604 1732 1733 1734 1735 fn_stmt_first np_stmt_first ⟨@cert_minus⟩ ⟨@cert_node_prod⟩ ⟨@cert_p_let_stmt⟩ ⟨@cert_then_of⟩ n ⟨ih_stmts_of⟩ ⟨ih_let_first⟩ ⟨ih_stmt_of⟩, @step_let_first prog prims 1733 56 152 155 616 1132 1407 1512 1515 1604 1808 1809 1810 1811 1812 1813 1814 1815 1816 1817 1818 1819 1820 1821 fn_let_first np_let_first ⟨@cert_minus⟩ ⟨@cert_node_prod⟩ ⟨@cert_kid⟩ ⟨@cert_kid_token⟩ ⟨@cert_member⟩ ⟨@cert_ty_of⟩ ⟨@cert_fresh_id⟩ ⟨@cert_cons_of_mini_selfhost_Local⟩ ⟨@cert_p_let_type⟩ ⟨@cert_p_let_init⟩ ⟨@cert_is_lit_init⟩ ⟨@cert_is_block_match⟩ ⟨@cert_view_read⟩ ⟨@cert_let_head_or_eval⟩ ⟨@cert_view_stmt⟩ ⟨@cert_field_id_Local_of_mini_selfhost_Local⟩ ⟨@cert_let_of⟩ ⟨@cert_p_let_type_none⟩ ⟨@cert_untyped_head⟩ ⟨@cert_let_body⟩ n ⟨ih_stmts_of⟩ ⟨ih_lit_let_of⟩ ⟨ih_let_match_of⟩, @step_stmt_of prog prims 1734 56 152 155 1317 1319 1533 1810 1822 1823 1824 1825 1826 1827 1828 1829 1830 1831 1832 1833 1834 1835 1836 1837 1838 1839 1840 1841 1842 fn_stmt_of np_stmt_of ⟨@cert_minus⟩ ⟨@cert_node_prod⟩ ⟨@cert_kid⟩ ⟨@cert_p_block_stmt⟩ ⟨@cert_p_expr_stmt⟩ ⟨@cert_is_lit_init⟩ ⟨@cert_p_return_stmt⟩ ⟨@cert_p_return_value⟩ ⟨@cert_match_init⟩ ⟨@cert_return_or_eval⟩ ⟨@cert_p_return_void⟩ ⟨@cert_p_break_stmt⟩ ⟨@cert_p_continue_stmt⟩ ⟨@cert_p_if_stmt⟩ ⟨@cert_p_else_stmt⟩ ⟨@cert_if_or_eval⟩ ⟨@cert_p_else_none⟩ ⟨@cert_p_while_stmt⟩ ⟨@cert_while_or_eval⟩ ⟨@cert_p_for_stmt⟩ ⟨@cert_is_lit_stmt⟩ ⟨@cert_match_primary⟩ ⟨@cert_is_match_stmt⟩ ⟨@cert_assignment⟩ n ⟨ih_block_of⟩ ⟨ih_lit_match_of⟩ ⟨ih_nested_of⟩ ⟨ih_match_stmt_of⟩, @step_lit_let_of prog prims 1811 56 1824 1825 fn_lit_let_of np_lit_let_of ⟨@cert_minus⟩ ⟨@cert_match_init⟩ n ⟨ih_lit_match_of⟩, @step_let_match_of prog prims 1813 56 1824 1944 1945 1946 1947 fn_let_match_of np_let_match_of ⟨@cert_minus⟩ ⟨@cert_match_init⟩ ⟨@cert_match_stmt_parts⟩ ⟨@cert_stmt_arms⟩ ⟨@cert_match_stmt_value⟩ n ⟨ih_let_arms_of⟩, @step_lit_match_of prog prims 1825 56 154 155 1960 1961 1962 fn_lit_match_of np_lit_match_of ⟨@cert_minus⟩ ⟨@cert_list_items⟩ ⟨@cert_kid⟩ ⟨@cert_lit_match_parts⟩ ⟨@cert_lit_bind⟩ n ⟨ih_lit_arms_of⟩, @step_nested_of prog prims 1837 56 152 155 1317 1533 1836 1967 fn_nested_of np_nested_of ⟨@cert_minus⟩ ⟨@cert_node_prod⟩ ⟨@cert_kid⟩ ⟨@cert_p_block_stmt⟩ ⟨@cert_p_for_stmt⟩ n ⟨ih_block_of⟩ ⟨ih_for_of⟩, @step_match_stmt_of prog prims 1841 56 1839 1944 1945 1946 1968 fn_match_stmt_of np_match_stmt_of ⟨@cert_minus⟩ ⟨@cert_match_primary⟩ ⟨@cert_match_stmt_parts⟩ ⟨@cert_stmt_arms⟩ ⟨@cert_match_stmt_value⟩ n ⟨ih_match_arms_of⟩, @step_let_arms_of prog prims 1947 56 75 104 2054 2055 fn_let_arms_of np_let_arms_of ⟨@cert_minus⟩ ⟨@cert_plus⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_CTree⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy⟩ n ⟨ih_let_arms_of⟩ ⟨ih_let_arm_of⟩, @step_lit_arms_of prog prims 1962 56 104 2070 2071 fn_lit_arms_of np_lit_arms_of ⟨@cert_minus⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_CTree⟩ ⟨@cert_lit_end⟩ n ⟨ih_lit_arm_of⟩, @step_for_of prog prims 1967 56 152 155 615 616 1132 1208 1512 1515 1533 1715 1766 1771 1772 1976 2076 2077 2078 2079 2080 2081 2082 2083 2084 2085 fn_for_of np_for_of ⟨@cert_minus⟩ ⟨@cert_node_prod⟩ ⟨@cert_kid⟩ ⟨@cert_field_text_Token_of_mini_selfhost_Token⟩ ⟨@cert_kid_token⟩ ⟨@cert_member⟩ ⟨@cert_field_start_Token_of_mini_selfhost_Token⟩ ⟨@cert_fresh_id⟩ ⟨@cert_cons_of_mini_selfhost_Local⟩ ⟨@cert_int_literal⟩ ⟨@cert_p_postfix_end⟩ ⟨@cert_path_name⟩ ⟨@cert_find_local⟩ ⟨@cert_slice_elem⟩ ⟨@cert_p_for_iter_range_from_start⟩ ⟨@cert_p_range_start_int⟩ ⟨@cert_p_range_exclusive⟩ ⟨@cert_p_range_bound⟩ ⟨@cert_p_range_bound_name⟩ ⟨@cert_for_range⟩ ⟨@cert_p_for_iter_path⟩ ⟨@cert_array_local⟩ ⟨@cert_for_array⟩ ⟨@cert_for_slice⟩ n ⟨ih_block_of⟩, @step_match_arms_of prog prims 1968 56 75 104 2055 2086 fn_match_arms_of np_match_arms_of ⟨@cert_minus⟩ ⟨@cert_plus⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_CTree⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy⟩ n ⟨ih_match_arms_of⟩ ⟨ih_match_arm_of⟩, @step_let_arm_of prog prims 2054 56 1533 2164 2170 2171 2172 2173 fn_let_arm_of np_let_arm_of ⟨@cert_minus⟩ ⟨@cert_arm_block_list⟩ ⟨@cert_arm_binding⟩ ⟨@cert_arm_stmt⟩ ⟨@cert_bound_scope⟩ n ⟨ih_block_of⟩ ⟨ih_let_body_of⟩, @step_lit_arm_of prog prims 2071 56 155 1962 2193 2194 2195 2196 2197 2198 2199 fn_lit_arm_of np_lit_arm_of ⟨@cert_minus⟩ ⟨@cert_kid⟩ ⟨@cert_is_wild_arm⟩ ⟨@cert_lit_last⟩ ⟨@cert_lit_if⟩ ⟨@cert_lit_cond⟩ ⟨@cert_is_true_arm⟩ ⟨@cert_is_false_arm⟩ n ⟨ih_lit_arms_of⟩ ⟨ih_lit_body_of⟩, @step_match_arm_of prog prims 2086 56 2170 2171 2172 2202 fn_match_arm_of np_match_arm_of ⟨@cert_minus⟩ ⟨@cert_arm_binding⟩ ⟨@cert_arm_stmt⟩ ⟨@cert_bound_scope⟩ n ⟨ih_arm_body_of⟩, @step_let_body_of prog prims 2173 56 152 155 1728 1815 1818 2303 2304 2305 fn_let_body_of np_let_body_of ⟨@cert_minus⟩ ⟨@cert_node_prod⟩ ⟨@cert_kid⟩ ⟨@cert_p_match_expr⟩ ⟨@cert_let_head_or_eval⟩ ⟨@cert_let_of⟩ ⟨@cert_local_id_of⟩ ⟨@cert_local_ty_of⟩ n ⟨ih_inner_let_of⟩, @step_lit_body_of prog prims 2195 56 155 1533 1815 1818 1826 2164 2304 2305 fn_lit_body_of np_lit_body_of ⟨@cert_minus⟩ ⟨@cert_kid⟩ ⟨@cert_let_head_or_eval⟩ ⟨@cert_let_of⟩ ⟨@cert_return_or_eval⟩ ⟨@cert_arm_block_list⟩ ⟨@cert_local_id_of⟩ ⟨@cert_local_ty_of⟩ n ⟨ih_block_of⟩, @step_arm_body_of prog prims 2202 56 155 1533 2164 2314 fn_arm_body_of np_arm_body_of ⟨@cert_minus⟩ ⟨@cert_kid⟩ ⟨@cert_arm_block_list⟩ n ⟨ih_block_of⟩ ⟨ih_inner_match_of⟩, @step_inner_let_of prog prims 2303 56 1944 1945 1946 1947 fn_inner_let_of np_inner_let_of ⟨@cert_minus⟩ ⟨@cert_match_stmt_parts⟩ ⟨@cert_stmt_arms⟩ ⟨@cert_match_stmt_value⟩ n ⟨ih_let_arms_of⟩, @step_inner_match_of prog prims 2314 56 152 1728 1944 1945 1946 1968 fn_inner_match_of np_inner_match_of ⟨@cert_minus⟩ ⟨@cert_node_prod⟩ ⟨@cert_p_match_expr⟩ ⟨@cert_match_stmt_parts⟩ ⟨@cert_stmt_arms⟩ ⟨@cert_match_stmt_value⟩ n ⟨ih_match_arms_of⟩⟩
+    exact ⟨@step_block_of prog prims 1534 56 154 1605 fn_block_of np_block_of ⟨@cert_minus⟩ ⟨@cert_list_items⟩ n ⟨ih_stmts_of⟩, @step_stmts_of prog prims 1605 56 104 1667 fn_stmts_of np_stmts_of ⟨@cert_minus⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_CTree⟩ n ⟨ih_stmt_first⟩, @step_stmt_first prog prims 1667 56 152 1605 1733 1734 1735 1736 fn_stmt_first np_stmt_first ⟨@cert_minus⟩ ⟨@cert_node_prod⟩ ⟨@cert_p_let_stmt⟩ ⟨@cert_then_of⟩ n ⟨ih_stmts_of⟩ ⟨ih_let_first⟩ ⟨ih_stmt_of⟩, @step_let_first prog prims 1734 56 152 155 616 1132 1408 1513 1516 1605 1809 1810 1811 1812 1813 1814 1815 1816 1817 1818 1819 1820 1821 1822 1823 1824 fn_let_first np_let_first ⟨@cert_minus⟩ ⟨@cert_node_prod⟩ ⟨@cert_kid⟩ ⟨@cert_kid_token⟩ ⟨@cert_member⟩ ⟨@cert_ty_of⟩ ⟨@cert_fresh_id⟩ ⟨@cert_cons_of_mini_selfhost_Local⟩ ⟨@cert_is_str_let⟩ ⟨@cert_string_let⟩ ⟨@cert_p_let_type⟩ ⟨@cert_p_let_init⟩ ⟨@cert_is_lit_init⟩ ⟨@cert_is_block_match⟩ ⟨@cert_view_read⟩ ⟨@cert_let_head_or_eval⟩ ⟨@cert_view_stmt⟩ ⟨@cert_field_id_Local_of_mini_selfhost_Local⟩ ⟨@cert_let_of⟩ ⟨@cert_p_let_type_none⟩ ⟨@cert_untyped_head⟩ ⟨@cert_let_body⟩ n ⟨ih_stmts_of⟩ ⟨ih_lit_let_of⟩ ⟨ih_let_match_of⟩, @step_stmt_of prog prims 1735 56 152 155 1318 1320 1534 1813 1825 1826 1827 1828 1829 1830 1831 1832 1833 1834 1835 1836 1837 1838 1839 1840 1841 1842 1843 1844 1845 fn_stmt_of np_stmt_of ⟨@cert_minus⟩ ⟨@cert_node_prod⟩ ⟨@cert_kid⟩ ⟨@cert_p_block_stmt⟩ ⟨@cert_p_expr_stmt⟩ ⟨@cert_is_lit_init⟩ ⟨@cert_p_return_stmt⟩ ⟨@cert_p_return_value⟩ ⟨@cert_match_init⟩ ⟨@cert_return_or_eval⟩ ⟨@cert_p_return_void⟩ ⟨@cert_p_break_stmt⟩ ⟨@cert_p_continue_stmt⟩ ⟨@cert_p_if_stmt⟩ ⟨@cert_p_else_stmt⟩ ⟨@cert_if_or_eval⟩ ⟨@cert_p_else_none⟩ ⟨@cert_p_while_stmt⟩ ⟨@cert_while_or_eval⟩ ⟨@cert_p_for_stmt⟩ ⟨@cert_is_lit_stmt⟩ ⟨@cert_match_primary⟩ ⟨@cert_is_match_stmt⟩ ⟨@cert_assignment⟩ n ⟨ih_block_of⟩ ⟨ih_lit_match_of⟩ ⟨ih_nested_of⟩ ⟨ih_match_stmt_of⟩, @step_lit_let_of prog prims 1814 56 1827 1828 fn_lit_let_of np_lit_let_of ⟨@cert_minus⟩ ⟨@cert_match_init⟩ n ⟨ih_lit_match_of⟩, @step_let_match_of prog prims 1816 56 1827 1950 1951 1952 1953 fn_let_match_of np_let_match_of ⟨@cert_minus⟩ ⟨@cert_match_init⟩ ⟨@cert_match_stmt_parts⟩ ⟨@cert_stmt_arms⟩ ⟨@cert_match_stmt_value⟩ n ⟨ih_let_arms_of⟩, @step_lit_match_of prog prims 1828 56 154 155 1966 1967 1968 fn_lit_match_of np_lit_match_of ⟨@cert_minus⟩ ⟨@cert_list_items⟩ ⟨@cert_kid⟩ ⟨@cert_lit_match_parts⟩ ⟨@cert_lit_bind⟩ n ⟨ih_lit_arms_of⟩, @step_nested_of prog prims 1840 56 152 155 1318 1534 1839 1973 fn_nested_of np_nested_of ⟨@cert_minus⟩ ⟨@cert_node_prod⟩ ⟨@cert_kid⟩ ⟨@cert_p_block_stmt⟩ ⟨@cert_p_for_stmt⟩ n ⟨ih_block_of⟩ ⟨ih_for_of⟩, @step_match_stmt_of prog prims 1844 56 1842 1950 1951 1952 1974 fn_match_stmt_of np_match_stmt_of ⟨@cert_minus⟩ ⟨@cert_match_primary⟩ ⟨@cert_match_stmt_parts⟩ ⟨@cert_stmt_arms⟩ ⟨@cert_match_stmt_value⟩ n ⟨ih_match_arms_of⟩, @step_let_arms_of prog prims 1953 56 75 104 2063 2064 fn_let_arms_of np_let_arms_of ⟨@cert_minus⟩ ⟨@cert_plus⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_CTree⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy⟩ n ⟨ih_let_arms_of⟩ ⟨ih_let_arm_of⟩, @step_lit_arms_of prog prims 1968 56 104 2079 2080 fn_lit_arms_of np_lit_arms_of ⟨@cert_minus⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_CTree⟩ ⟨@cert_lit_end⟩ n ⟨ih_lit_arm_of⟩, @step_for_of prog prims 1973 56 152 155 615 616 1132 1209 1513 1516 1534 1716 1767 1772 1773 1982 2085 2086 2087 2088 2089 2090 2091 2092 2093 2094 fn_for_of np_for_of ⟨@cert_minus⟩ ⟨@cert_node_prod⟩ ⟨@cert_kid⟩ ⟨@cert_field_text_Token_of_mini_selfhost_Token⟩ ⟨@cert_kid_token⟩ ⟨@cert_member⟩ ⟨@cert_field_start_Token_of_mini_selfhost_Token⟩ ⟨@cert_fresh_id⟩ ⟨@cert_cons_of_mini_selfhost_Local⟩ ⟨@cert_int_literal⟩ ⟨@cert_p_postfix_end⟩ ⟨@cert_path_name⟩ ⟨@cert_find_local⟩ ⟨@cert_slice_elem⟩ ⟨@cert_p_for_iter_range_from_start⟩ ⟨@cert_p_range_start_int⟩ ⟨@cert_p_range_exclusive⟩ ⟨@cert_p_range_bound⟩ ⟨@cert_p_range_bound_name⟩ ⟨@cert_for_range⟩ ⟨@cert_p_for_iter_path⟩ ⟨@cert_array_local⟩ ⟨@cert_for_array⟩ ⟨@cert_for_slice⟩ n ⟨ih_block_of⟩, @step_match_arms_of prog prims 1974 56 75 104 2064 2095 fn_match_arms_of np_match_arms_of ⟨@cert_minus⟩ ⟨@cert_plus⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_CTree⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy⟩ n ⟨ih_match_arms_of⟩ ⟨ih_match_arm_of⟩, @step_let_arm_of prog prims 2063 56 1534 2177 2183 2184 2185 2186 fn_let_arm_of np_let_arm_of ⟨@cert_minus⟩ ⟨@cert_arm_block_list⟩ ⟨@cert_arm_binding⟩ ⟨@cert_arm_stmt⟩ ⟨@cert_bound_scope⟩ n ⟨ih_block_of⟩ ⟨ih_let_body_of⟩, @step_lit_arm_of prog prims 2080 56 155 1968 2206 2207 2208 2209 2210 2211 2212 fn_lit_arm_of np_lit_arm_of ⟨@cert_minus⟩ ⟨@cert_kid⟩ ⟨@cert_is_wild_arm⟩ ⟨@cert_lit_last⟩ ⟨@cert_lit_if⟩ ⟨@cert_lit_cond⟩ ⟨@cert_is_true_arm⟩ ⟨@cert_is_false_arm⟩ n ⟨ih_lit_arms_of⟩ ⟨ih_lit_body_of⟩, @step_match_arm_of prog prims 2095 56 2183 2184 2185 2215 fn_match_arm_of np_match_arm_of ⟨@cert_minus⟩ ⟨@cert_arm_binding⟩ ⟨@cert_arm_stmt⟩ ⟨@cert_bound_scope⟩ n ⟨ih_arm_body_of⟩, @step_let_body_of prog prims 2186 56 152 155 1729 1818 1821 2318 2319 2320 fn_let_body_of np_let_body_of ⟨@cert_minus⟩ ⟨@cert_node_prod⟩ ⟨@cert_kid⟩ ⟨@cert_p_match_expr⟩ ⟨@cert_let_head_or_eval⟩ ⟨@cert_let_of⟩ ⟨@cert_local_id_of⟩ ⟨@cert_local_ty_of⟩ n ⟨ih_inner_let_of⟩, @step_lit_body_of prog prims 2208 56 155 1534 1818 1821 1829 2177 2319 2320 fn_lit_body_of np_lit_body_of ⟨@cert_minus⟩ ⟨@cert_kid⟩ ⟨@cert_let_head_or_eval⟩ ⟨@cert_let_of⟩ ⟨@cert_return_or_eval⟩ ⟨@cert_arm_block_list⟩ ⟨@cert_local_id_of⟩ ⟨@cert_local_ty_of⟩ n ⟨ih_block_of⟩, @step_arm_body_of prog prims 2215 56 155 1534 2177 2329 fn_arm_body_of np_arm_body_of ⟨@cert_minus⟩ ⟨@cert_kid⟩ ⟨@cert_arm_block_list⟩ n ⟨ih_block_of⟩ ⟨ih_inner_match_of⟩, @step_inner_let_of prog prims 2318 56 1950 1951 1952 1953 fn_inner_let_of np_inner_let_of ⟨@cert_minus⟩ ⟨@cert_match_stmt_parts⟩ ⟨@cert_stmt_arms⟩ ⟨@cert_match_stmt_value⟩ n ⟨ih_let_arms_of⟩, @step_inner_match_of prog prims 2329 56 152 1729 1950 1951 1952 1974 fn_inner_match_of np_inner_match_of ⟨@cert_minus⟩ ⟨@cert_node_prod⟩ ⟨@cert_p_match_expr⟩ ⟨@cert_match_stmt_parts⟩ ⟨@cert_stmt_arms⟩ ⟨@cert_match_stmt_value⟩ n ⟨ih_match_arms_of⟩⟩
 
 theorem cert_block_of {n : Nat} :
-    Stmt_block_of prog prims 1533 n :=
+    Stmt_block_of prog prims 1534 n :=
   (certs_block_of n).1
 theorem cert_stmts_of {n : Nat} :
-    Stmt_stmts_of prog prims 1604 n :=
+    Stmt_stmts_of prog prims 1605 n :=
   (certs_block_of n).2.1
 theorem cert_stmt_first {n : Nat} :
-    Stmt_stmt_first prog prims 1666 n :=
+    Stmt_stmt_first prog prims 1667 n :=
   (certs_block_of n).2.2.1
 theorem cert_let_first {n : Nat} :
-    Stmt_let_first prog prims 1733 n :=
+    Stmt_let_first prog prims 1734 n :=
   (certs_block_of n).2.2.2.1
 theorem cert_stmt_of {n : Nat} :
-    Stmt_stmt_of prog prims 1734 n :=
+    Stmt_stmt_of prog prims 1735 n :=
   (certs_block_of n).2.2.2.2.1
 theorem cert_lit_let_of {n : Nat} :
-    Stmt_lit_let_of prog prims 1811 n :=
+    Stmt_lit_let_of prog prims 1814 n :=
   (certs_block_of n).2.2.2.2.2.1
 theorem cert_let_match_of {n : Nat} :
-    Stmt_let_match_of prog prims 1813 n :=
+    Stmt_let_match_of prog prims 1816 n :=
   (certs_block_of n).2.2.2.2.2.2.1
 theorem cert_lit_match_of {n : Nat} :
-    Stmt_lit_match_of prog prims 1825 n :=
+    Stmt_lit_match_of prog prims 1828 n :=
   (certs_block_of n).2.2.2.2.2.2.2.1
 theorem cert_nested_of {n : Nat} :
-    Stmt_nested_of prog prims 1837 n :=
+    Stmt_nested_of prog prims 1840 n :=
   (certs_block_of n).2.2.2.2.2.2.2.2.1
 theorem cert_match_stmt_of {n : Nat} :
-    Stmt_match_stmt_of prog prims 1841 n :=
+    Stmt_match_stmt_of prog prims 1844 n :=
   (certs_block_of n).2.2.2.2.2.2.2.2.2.1
 theorem cert_let_arms_of {n : Nat} :
-    Stmt_let_arms_of prog prims 1947 n :=
+    Stmt_let_arms_of prog prims 1953 n :=
   (certs_block_of n).2.2.2.2.2.2.2.2.2.2.1
 theorem cert_lit_arms_of {n : Nat} :
-    Stmt_lit_arms_of prog prims 1962 n :=
+    Stmt_lit_arms_of prog prims 1968 n :=
   (certs_block_of n).2.2.2.2.2.2.2.2.2.2.2.1
 theorem cert_for_of {n : Nat} :
-    Stmt_for_of prog prims 1967 n :=
+    Stmt_for_of prog prims 1973 n :=
   (certs_block_of n).2.2.2.2.2.2.2.2.2.2.2.2.1
 theorem cert_match_arms_of {n : Nat} :
-    Stmt_match_arms_of prog prims 1968 n :=
+    Stmt_match_arms_of prog prims 1974 n :=
   (certs_block_of n).2.2.2.2.2.2.2.2.2.2.2.2.2.1
 theorem cert_let_arm_of {n : Nat} :
-    Stmt_let_arm_of prog prims 2054 n :=
+    Stmt_let_arm_of prog prims 2063 n :=
   (certs_block_of n).2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 theorem cert_lit_arm_of {n : Nat} :
-    Stmt_lit_arm_of prog prims 2071 n :=
+    Stmt_lit_arm_of prog prims 2080 n :=
   (certs_block_of n).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 theorem cert_match_arm_of {n : Nat} :
-    Stmt_match_arm_of prog prims 2086 n :=
+    Stmt_match_arm_of prog prims 2095 n :=
   (certs_block_of n).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 theorem cert_let_body_of {n : Nat} :
-    Stmt_let_body_of prog prims 2173 n :=
+    Stmt_let_body_of prog prims 2186 n :=
   (certs_block_of n).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 theorem cert_lit_body_of {n : Nat} :
-    Stmt_lit_body_of prog prims 2195 n :=
+    Stmt_lit_body_of prog prims 2208 n :=
   (certs_block_of n).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 theorem cert_arm_body_of {n : Nat} :
-    Stmt_arm_body_of prog prims 2202 n :=
+    Stmt_arm_body_of prog prims 2215 n :=
   (certs_block_of n).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 theorem cert_inner_let_of {n : Nat} :
-    Stmt_inner_let_of prog prims 2303 n :=
+    Stmt_inner_let_of prog prims 2318 n :=
   (certs_block_of n).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 theorem cert_inner_match_of {n : Nat} :
-    Stmt_inner_match_of prog prims 2314 n :=
+    Stmt_inner_match_of prog prims 2329 n :=
   (certs_block_of n).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
 theorem cert_func_ret {n : Nat} :
-    Stmt_func_ret prog prims 1417 n :=
-  @proof_func_ret prog prims 1417 1531 1532 1533 fn_func_ret np_func_ret ⟨@cert_func_body⟩ ⟨@cert_contracts_of⟩ ⟨@cert_block_of⟩ n
+    Stmt_func_ret prog prims 1418 n :=
+  @proof_func_ret prog prims 1418 1532 1533 1534 fn_func_ret np_func_ret ⟨@cert_func_body⟩ ⟨@cert_contracts_of⟩ ⟨@cert_block_of⟩ n
 
 theorem cert_func_params {n : Nat} :
-    Stmt_func_params prog prims 1222 n :=
-  @proof_func_params prog prims 1222 1417 fn_func_params np_func_params ⟨@cert_func_ret⟩ n
+    Stmt_func_params prog prims 1223 n :=
+  @proof_func_params prog prims 1223 1418 fn_func_params np_func_params ⟨@cert_func_ret⟩ n
 
 theorem cert_self_ref_of {n : Nat} :
-    Stmt_self_ref_of prog prims 1418 n :=
-  @proof_self_ref_of prog prims 1418 56 152 616 1208 1511 fn_self_ref_of np_self_ref_of ⟨@cert_minus⟩ ⟨@cert_node_prod⟩ ⟨@cert_kid_token⟩ ⟨@cert_field_start_Token_of_mini_selfhost_Token⟩ ⟨@cert_p_param_self_ref⟩ n
+    Stmt_self_ref_of prog prims 1419 n :=
+  @proof_self_ref_of prog prims 1419 56 152 616 1209 1512 fn_self_ref_of np_self_ref_of ⟨@cert_minus⟩ ⟨@cert_node_prod⟩ ⟨@cert_kid_token⟩ ⟨@cert_field_start_Token_of_mini_selfhost_Token⟩ ⟨@cert_p_param_self_ref⟩ n
 
 theorem cert_self_ref_id {n : Nat} :
-    Stmt_self_ref_id prog prims 1223 n :=
-  @proof_self_ref_id prog prims 1223 1418 fn_self_ref_id np_self_ref_id ⟨@cert_self_ref_of⟩ n
+    Stmt_self_ref_id prog prims 1224 n :=
+  @proof_self_ref_id prog prims 1224 1419 fn_self_ref_id np_self_ref_id ⟨@cert_self_ref_of⟩ n
 
 theorem cert_read_fn {n : Nat} :
     Stmt_read_fn prog prims 977 n :=
-  @proof_read_fn prog prims 977 154 155 363 616 926 1207 1208 1209 1211 1212 1213 1219 1220 1221 1222 1223 fn_read_fn np_read_fn ⟨@cert_list_items⟩ ⟨@cert_kid⟩ ⟨@cert_length_of_mini_selfhost_List_usize⟩ ⟨@cert_kid_token⟩ ⟨@cert_concat_of_mini_selfhost_List_usize⟩ ⟨@cert_module_globals⟩ ⟨@cert_field_start_Token_of_mini_selfhost_Token⟩ ⟨@cert_length_of_mini_selfhost_Ty⟩ ⟨@cert_params_of⟩ ⟨@cert_empty_of_mini_selfhost_Local⟩ ⟨@cert_result_of⟩ ⟨@cert_ret_expected⟩ ⟨@cert_fn_bounds_ok⟩ ⟨@cert_ref_checked⟩ ⟨@cert_func_params⟩ ⟨@cert_self_ref_id⟩ n
+  @proof_read_fn prog prims 977 154 155 363 616 926 1208 1209 1210 1212 1213 1214 1220 1221 1222 1223 1224 fn_read_fn np_read_fn ⟨@cert_list_items⟩ ⟨@cert_kid⟩ ⟨@cert_length_of_mini_selfhost_List_usize⟩ ⟨@cert_kid_token⟩ ⟨@cert_concat_of_mini_selfhost_List_usize⟩ ⟨@cert_module_globals⟩ ⟨@cert_field_start_Token_of_mini_selfhost_Token⟩ ⟨@cert_length_of_mini_selfhost_Ty⟩ ⟨@cert_params_of⟩ ⟨@cert_empty_of_mini_selfhost_Local⟩ ⟨@cert_result_of⟩ ⟨@cert_ret_expected⟩ ⟨@cert_fn_bounds_ok⟩ ⟨@cert_ref_checked⟩ ⟨@cert_func_params⟩ ⟨@cert_self_ref_id⟩ n
 
 theorem cert_read_decl_inst {n : Nat} :
     Stmt_read_decl_inst prog prims 669 n :=
@@ -515,7 +527,7 @@ theorem cert_read_decl_inst {n : Nat} :
 
 theorem cert_single_of_mini_selfhost_MParam {n : Nat} :
     Stmt_single_of_mini_selfhost_MParam prog prims 979 n :=
-  @proof_single_of_mini_selfhost_MParam prog prims 979 1224 fn_single_of_mini_selfhost_MParam np_single_of_mini_selfhost_MParam ⟨@cert_boxed_of_mini_selfhost_List_mini_selfhost_MParam⟩ n
+  @proof_single_of_mini_selfhost_MParam prog prims 979 1225 fn_single_of_mini_selfhost_MParam np_single_of_mini_selfhost_MParam ⟨@cert_boxed_of_mini_selfhost_List_mini_selfhost_MParam⟩ n
 
 theorem cert_projection_func {n : Nat} :
     Stmt_projection_func prog prims 670 n :=

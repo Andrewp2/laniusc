@@ -117,22 +117,22 @@ theorem ok_let_index_closed : FnOk prog prims info (1156, ⟨0, [], 0⟩) :=
 theorem ok_let_view_closed : FnOk prog prims info (1157, ⟨0, [], 0⟩) :=
   fnOk_of fn_let_view_closed (by decide +kernel)
 
-theorem ok_let_eval_closed : FnOk prog prims info (1158, ⟨0, [], 0⟩) :=
+theorem ok_let_str_closed : FnOk prog prims info (1158, ⟨0, [], 0⟩) :=
+  fnOk_of fn_let_str_closed (by decide +kernel)
+
+theorem ok_let_eval_closed : FnOk prog prims info (1159, ⟨0, [], 0⟩) :=
   fnOk_of fn_let_eval_closed (by decide +kernel)
 
-theorem ok_close_eff : FnOk prog prims info (1159, ⟨17, [2], 0⟩) :=
+theorem ok_close_eff : FnOk prog prims info (1160, ⟨17, [2], 0⟩) :=
   fnOk_of fn_close_eff (by decide +kernel)
 
-theorem ok_set_eval_closed : FnOk prog prims info (1160, ⟨0, [], 0⟩) :=
+theorem ok_set_eval_closed : FnOk prog prims info (1161, ⟨0, [], 0⟩) :=
   fnOk_of fn_set_eval_closed (by decide +kernel)
 
-theorem ok_if_eval_closed : FnOk prog prims info (1161, ⟨0, [], 0⟩) :=
+theorem ok_if_eval_closed : FnOk prog prims info (1162, ⟨0, [], 0⟩) :=
   fnOk_of fn_if_eval_closed (by decide +kernel)
 
-theorem ok_while_eval_closed : FnOk prog prims info (1162, ⟨0, [], 0⟩) :=
-  fnOk_of fn_while_eval_closed (by decide +kernel)
-
 theorem chunk24 : AllFns prog prims info part24 :=
-  ⟨ok_text_write_byte, ok_text_write_stdout, ok_text_write_stderr, ok_text_read_stdin, ok_text_sleep_ms_i32, ok_text_monotonic_read, ok_text_system_read, ok_text_fill_secure_bytes, ok_cons_of_mini_selfhost_List_usize, ok_member, ok_fn_name_at, ok_type_only_at, ok_alias_name_at, ok_const_name_at, ok_enum_named_ok, ok_spelled1, ok_cons_func_tail, ok_empty_of_mini_selfhost_SrcParam, ok_cons_src_param, ok_close_ty, ok_let_closed, ok_let_struct_closed, ok_let_call_closed, ok_inst_index, ok_let_enum_closed, ok_let_match_closed, ok_src_enum_id, ok_set_call_closed, ok_then_closed, ok_if_closed, ok_while_closed, ok_alloc_closed, ok_let_slice_closed, ok_let_index_closed, ok_let_view_closed, ok_let_eval_closed, ok_close_eff, ok_set_eval_closed, ok_if_eval_closed, ok_while_eval_closed, trivial⟩
+  ⟨ok_text_write_byte, ok_text_write_stdout, ok_text_write_stderr, ok_text_read_stdin, ok_text_sleep_ms_i32, ok_text_monotonic_read, ok_text_system_read, ok_text_fill_secure_bytes, ok_cons_of_mini_selfhost_List_usize, ok_member, ok_fn_name_at, ok_type_only_at, ok_alias_name_at, ok_const_name_at, ok_enum_named_ok, ok_spelled1, ok_cons_func_tail, ok_empty_of_mini_selfhost_SrcParam, ok_cons_src_param, ok_close_ty, ok_let_closed, ok_let_struct_closed, ok_let_call_closed, ok_inst_index, ok_let_enum_closed, ok_let_match_closed, ok_src_enum_id, ok_set_call_closed, ok_then_closed, ok_if_closed, ok_while_closed, ok_alloc_closed, ok_let_slice_closed, ok_let_index_closed, ok_let_view_closed, ok_let_str_closed, ok_let_eval_closed, ok_close_eff, ok_set_eval_closed, ok_if_eval_closed, trivial⟩
 
 end Lanius.Faithful.SelfTerm

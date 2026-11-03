@@ -24,6 +24,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_forRange
 public import Lanius.Faithful.Gen.SelfStmtF_freshId
 public import Lanius.Faithful.Gen.SelfStmtF_funcsOnto
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
+public import Lanius.Faithful.Gen.SelfStmtF_i32ArrayLength
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfStmtF_litIf
 public import Lanius.Faithful.Gen.SelfStmtF_lxBlockEnd
@@ -35,6 +36,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_paramGoals
 public import Lanius.Faithful.Gen.SelfStmtF_pickTy
 public import Lanius.Faithful.Gen.SelfStmtF_sintAt
 public import Lanius.Faithful.Gen.SelfStmtF_sliceHead
+public import Lanius.Faithful.Gen.SelfStmtF_stringCons
 public import Lanius.Faithful.Gen.SelfStmtF_textSelf
 public import Lanius.Faithful.Gen.SelfStmtF_typeDeclAt
 public import Lanius.Faithful.Gen.SelfStmtF_wideLeftStmt
@@ -256,6 +258,17 @@ theorem step_param_of {prog : SrcProgram} {prims : Prims} {ix_param_of ix_minus 
   rw [pcall_succ np fn] at h
   simp only [src_param_of] at h
   faithful [Lanius.Mini.Inline.paramOf]
+
+theorem step_string_byte {prog : SrcProgram} {prims : Prims} {ix_string_byte ix_string_body ix_string_close ix_string_cons ix_plain_string_byte : Nat} (fn : prog.funcs[ix_string_byte]? = some (src_string_byte ix_string_body ix_string_close ix_string_cons ix_plain_string_byte)) (np : prims.isPrim ix_string_byte = false)
+    (ext_string_close : Certified (∀ {n : Nat}, Stmt_string_close prog prims ix_string_close n))
+    (ext_string_cons : Certified (∀ {n : Nat}, Stmt_string_cons prog prims ix_string_cons n))
+    (ext_plain_string_byte : Certified (∀ {n : Nat}, Stmt_plain_string_byte prog prims ix_plain_string_byte n)) {n : Nat}
+    (ih_string_body : Certified (Stmt_string_body prog prims ix_string_body n)) :
+    Stmt_string_byte prog prims ix_string_byte (n + 1) := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rw [pcall_succ np fn] at h
+  simp only [src_string_byte] at h
+  faithful [Lanius.Mini.Inline.stringByte]
 
 theorem step_ty_local_at {prog : SrcProgram} {prims : Prims} {ix_ty_local_at ix_ty_local : Nat} (fn : prog.funcs[ix_ty_local_at]? = some (src_ty_local_at ix_ty_local)) (np : prims.isPrim ix_ty_local_at = false) {n : Nat}
     (ih_ty_local : Certified (Stmt_ty_local prog prims ix_ty_local n)) :

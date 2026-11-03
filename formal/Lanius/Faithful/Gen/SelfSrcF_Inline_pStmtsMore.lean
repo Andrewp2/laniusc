@@ -16,6 +16,9 @@ noncomputable section
 /-- mini::selfhost::p_stmts_more -/
 def src_p_stmts_more : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000049#64) }
 
+/-- mini::selfhost::p_string -/
+def src_p_string : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x00000000000000b1#64) }
+
 /-- mini::selfhost::p_struct -/
 def src_p_struct : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000102#64) }
 
