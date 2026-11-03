@@ -553,4 +553,11 @@ theorem val_paramScope : ∀ (ps : List SrcParam) (slot : Nat) (scope : List Bin
     have hp : ts p = tySlots p.ty := rfl
     simp only [paramScope, ts_cons, ts_Binding_mk, ts_SrcType, hp] at ih ⊢; omega
 
+/-- A field's offset is at most its struct's size. -/
+theorem val_fieldOffset : ∀ (l : List SrcType) (i : Nat), fieldOffset l i ≤ sizes l
+  | [], i => by simp only [fieldOffset, sizes]; omega
+  | t :: l, i => by
+    have := val_fieldOffset l (i - 1)
+    simp only [fieldOffset, sizes]; split <;> omega
+
 end Lanius.Faithful.SelfPre

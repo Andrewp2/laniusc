@@ -553,7 +553,7 @@ COMPILE_NUM_SKIP = {
     'frame_block', 'link', 'link_fitting', 'link_onto', 'lower_arm_found',
     'lower_arm_stmt', 'lower_arms', 'lower_body', 'lower_field', 'lower_field_of',
     'lower_func', 'lower_match_arms', 'lower_match_on', 'lower_set_field_of',
-    'lower_set_values', 'need_round', 'needs_after', 'offset_after', 'pack_round',
+    'lower_set_values', 'need_round', 'needs_after', 'pack_round',
     'pack_rounds', 'pick_element', 'put_element', 'round_cons', 'round_join',
     'set_field_eval_of', 'slot_vars', 'store_any', 'store_array', 'store_array_element',
     'store_eval', 'store_eval_byte', 'store_eval_element', 'store_eval_word',
@@ -608,6 +608,8 @@ COMPILE_OVERRIDES = {
 COMPILE_NUM_DROP = {
     'compile_expr': {2}, 'compile_args': {2}, 'compile_stmt': {1, 2, 3}, 'seq_code': {1, 2, 3, 4, 5},
     'ite_code': {1, 2, 3, 4, 5, 6}, 'loop_code': {1, 2, 3}, 'code_size': {0}, 'Instr_size': {0},
+    # a field's offset: its fields' sizes (below `K`), not their numbers
+    'offset_after': {1, 2}, 'field_offset': {0, 1},
 }
 # The definitions the invariants' terms unfold by on constructors (the pre
 # modules' `hb_simp`, locally).
@@ -625,7 +627,8 @@ PRE_PREAMBLE = ''
 # a list's sum ('sz', `sizes`) or largest ('ms', `maxSize`) below `K`, which their
 # callers pass on (a list of types taken apart has its own, `TS_HYPS`).
 COMPILE_TS_SEED = {'Pre_SrcType_size': {0: {'ts'}}, 'Pre_sizes': {0: {'ts', 'sz'}},
-                   'Pre_max_size': {0: {'ts', 'ms'}}}
+                   'Pre_max_size': {0: {'ts', 'ms'}}, 'Pre_field_offset': {0: {'sz'}},
+                   'Pre_offset_after': {1: {'sz'}}}
 # The Mini program's compile: the functions these reach bound the program's
 # numbers by `K` rather than `M` (they do not grow as it compiles: its slots,
 # indices and counts; the pc offsets and depths have their own invariants).
@@ -702,11 +705,13 @@ def num_used(genb):
                 else:
                     continue
                 for j, kinds in pos.items():
-                    if j >= len(args) or j in COMPILE_NUM_DROP.get(callee[4:], ()):
+                    if j in COMPILE_NUM_DROP.get(callee[4:], ()):
+                        kinds = kinds - {'nb'}  # (the numbers only: their types' sizes still count)
+                    if j >= len(args) or not kinds:
                         continue
                     for v, kind in occurrences(args[j], kinds):
                         for i, x in enumerate(ps):
-                            if i in COMPILE_NUM_DROP.get(k[4:], ()):
+                            if kind == 'nb' and i in COMPILE_NUM_DROP.get(k[4:], ()):
                                 continue
                             al = alias_ts[k] if kind == 'ts' else {} if kind in ('sz', 'ms') else alias[k]
                             kd = kind
@@ -774,7 +779,7 @@ def match_aliases(body, ps):
     """Per parameter, the pattern variables of the `match`es on it (at any depth of
     the match's own patterns' variables, transitively)."""
     out = {x: set() for x in ps}
-    owner = {x: x for x in ps}
+    owner = {x: {x} for x in ps}  # each variable's parameters (all the scrutinee's)
     stack = []  # (paren depth, the parameters the scrutinee mentions)
     depth = 0
     i = 0
@@ -788,7 +793,7 @@ def match_aliases(body, ps):
             depth -= 1
         m = re.match(r'match (.*?) with', body[i:]) if body.startswith('match ', i) else None
         if m:
-            src = {owner[v] for v in re.findall(r'\bx\d+\b', m.group(1)) if v in owner}
+            src = set().union(*[owner[v] for v in re.findall(r'\bx\d+\b', m.group(1)) if v in owner])
             stack.append((depth, src))
             i += m.end()
             continue
@@ -798,7 +803,7 @@ def match_aliases(body, ps):
                 for v in re.findall(r'\bx\d+\b', a.group(1)):
                     for x in stack[-1][1]:
                         out[x].add(v)
-                        owner[v] = x
+                    owner[v] = set(stack[-1][1])
                 i += a.end()
                 continue
         i += 1
