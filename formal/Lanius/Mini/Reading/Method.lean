@@ -233,6 +233,7 @@ theorem fitSound : ∀ fuel, FitSound fuel
             | tyPtr => cases ha
             | tyIsize => cases ha
             | tyChar => cases ha
+            | tyStr => cases ha
             | tyFloat ft => cases ha
             | tySint _ => cases ha
             | tyArray _ _ => cases ha

@@ -1994,6 +1994,37 @@ theorem bytesAt_heap (rel : Rel frame s m) :
         rw [BitVec.add_assoc]; congr 1; bv_omega,
       bytesAt_heap rel count (a + 1) (by omega)]
 
+/-- The static bytes from `k` on are in memory where the heap's offset
+`staticBase + k` names them. -/
+theorem bytesAt_static (rel : Rel frame s m) :
+    ∀ (count k : Nat), k + count ≤ m.heap.statics.length →
+      bytesAt s.memory (frame.heapBase + BitVec.ofNat 64 (m.heap.staticBase + k)) count =
+        (m.heap.statics.drop k).take count
+  | 0, _, _ => by simp [bytesAt]
+  | count + 1, k, within => by
+    have byte := rel.statics k (by omega)
+    rw [bytesAt, rel.unchanged _ byte.apart byte.notHeap, byte.entry,
+      show frame.heapBase + BitVec.ofNat 64 (m.heap.staticBase + k) + 1 =
+        frame.heapBase + BitVec.ofNat 64 (m.heap.staticBase + (k + 1)) by
+        rw [BitVec.add_assoc]; congr 1; bv_omega,
+      bytesAt_static rel count (k + 1) (by omega), List.drop_eq_getElem_cons (show k < m.heap.statics.length by omega),
+      List.take_succ_cons]
+    simp [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem (show k < m.heap.statics.length by omega)]
+
+/-- What a `write` the mini machine allows sends: the heap's bytes, or the
+static region's. -/
+theorem bytesAt_span (rel : Rel frame s m) {a count : Nat}
+    (inside : a + count ≤ m.heap.top ∨ (m.heap.top ≤ m.heap.staticBase ∧ m.heap.staticBase ≤ a ∧
+      a + count ≤ m.heap.staticBase + m.heap.statics.length)) :
+    bytesAt s.memory (frame.heapBase + BitVec.ofNat 64 a) count = m.heap.span a count := by
+  unfold Heap.span
+  split
+  next heap => exact bytesAt_heap rel count a heap
+  next past =>
+    obtain ⟨-, from_, within⟩ := inside.resolve_left past
+    have := bytesAt_static rel count (a - m.heap.staticBase) (by omega)
+    rwa [show m.heap.staticBase + (a - m.heap.staticBase) = a by omega] at this
+
 theorem memoryBytes_length7 (reg : Register) (slot : Nat) :
     (memoryBytes .w64 true reg rbpRegister (frameDisplacement slot)).length =
       (memoryHeader .w64 true reg rbpRegister).length + 4 := by
@@ -2788,7 +2819,7 @@ theorem sys_simulates (rel : Rel frame s m) (fits : frame.Fits) (inFrame : slot 
         limit := rel.limit
         top := rel.top
         heap := rel.heap
-        io := by rw [io7, r7, r6, r2, rel.io, address, bytesAt_heap rel _ _ inside]
+        io := by rw [io7, r7, r6, r2, rel.io, address, bytesAt_span rel inside]
         static := rel.static
         statics := rel.statics }
   next => cases ran

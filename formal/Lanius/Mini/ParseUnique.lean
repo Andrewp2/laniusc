@@ -14,6 +14,7 @@ import all Lanius.Mini.Compiler.Types
 import all Lanius.Mini.Frontend.P.litBound
 import all Lanius.Mini.Frontend.P.litIf
 import all Lanius.Mini.Frontend.P.litEffMatch
+import all Lanius.Mini.Frontend.P.stringOpen
 import all Lanius.Mini.Frontend.P.litWants
 import all Lanius.Mini.Frontend.P.litWildValue
 import all Lanius.Mini.Frontend.P.frontEndWords

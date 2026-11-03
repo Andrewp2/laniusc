@@ -79,6 +79,8 @@ public import Lanius.Mini.Frontend.P.litWants
 public import Lanius.Mini.Frontend.P.litWildValue
 public import Lanius.Mini.Frontend.P.litBound
 public import Lanius.Mini.Frontend.P.litEffMatch
+public import Lanius.Mini.Frontend.P.stringCons
+public import Lanius.Mini.Frontend.P.stringOpen
 public import Lanius.Mini.Frontend.P.ifEff
 public import Lanius.Mini.Frontend.P.structHead
 public import Lanius.Mini.Frontend.P.variantLetHead
@@ -90,8 +92,6 @@ public import Lanius.Mini.Frontend.P.tryLetHead
 public import Lanius.Mini.Frontend.P.tryLet
 public import Lanius.Mini.Frontend.P.ifSome
 public import Lanius.Mini.Frontend.P.i32ArrayLength
-public import Lanius.Mini.Frontend.P.stringCons
-public import Lanius.Mini.Frontend.P.stringOpen
 public import Lanius.Mini.Frontend.P.isTypedSliceSegments
 public import Lanius.Mini.Frontend.P.oneTreeNames
 public import Lanius.Mini.Frontend.P.stringCall
@@ -128,6 +128,8 @@ public import Lanius.Mini.Frontend.P.nullAt
 public import Lanius.Mini.Frontend.P.sintAt
 public import Lanius.Mini.Frontend.P.firstSrc
 public import Lanius.Mini.Frontend.P.negWideI32
+public import Lanius.Mini.Frontend.P.strBytes
+public import Lanius.Mini.Frontend.P.funcsBytes
 public import Lanius.Mini.Frontend.P.wideLeftStmt
 public import Lanius.Mini.Frontend.P.lxSymbolStart
 public import Lanius.Mini.Frontend.P.lxSpaceEnd
@@ -191,6 +193,6 @@ operations become `Lists.name` with a spec theorem). `usize` is `Nat`, `i32` is
 prelude's `plus`/`minus`/`times` panic instead of wrapping, so they are
 `+`/`-`/`*` on `Nat` for every run that returns.
 
-The definitions are in 180 parts, `.P0` on, in source order, whose bodies
+The definitions are in 182 parts, `.P0` on, in source order, whose bodies
 are hidden from other modules: a proof that unfolds one imports its part with
 `import all`, so that it is rebuilt only when that part changes. -/

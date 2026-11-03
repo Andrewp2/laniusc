@@ -53,6 +53,7 @@ def closeTy (fuel : Nat) (t : Tables) (ty : Ty) : Option SrcType :=
     | .tyPtr => some SrcType.ptr
     | .tyIsize => some SrcType.isize
     | .tyChar => some SrcType.char
+    | .tyStr => some SrcType.str
     | .tyFloat ft => some (SrcType.float ft)
     | .tySlice e => sliceType (closeTy (fuel - 1) t e)
     | .tyArray e n => arrayType (closeTy (fuel - 1) t e) n

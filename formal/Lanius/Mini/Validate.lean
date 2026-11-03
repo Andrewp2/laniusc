@@ -42,6 +42,7 @@ import all Lanius.Mini.Compiler.P.extentAfter
 import all Lanius.Mini.Compiler.P.floatApply
 import all Lanius.Mini.Compiler.P.guardAnd
 import all Lanius.Mini.Compiler.P.hostRandomCode
+import all Lanius.Mini.Compiler.P.evalHost
 import all Lanius.Mini.Compiler.P.roomFits
 import all Lanius.Mini.Compiler.P.linkedSize
 import all Lanius.Mini.Compiler.P.killShared

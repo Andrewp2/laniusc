@@ -17,6 +17,22 @@ open Lanius.Faithful.Budget
 open Lanius.Faithful.SelfBudget
 open Lanius.Faithful.SelfPre.Tactic
 
+theorem pre_step_length_of_u8 (n : Nat) (ih :
+    (∀ (x0 : List UInt8) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_length_of_u8 n x0 b)) :
+    ∀ (x0 : List UInt8) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_length_of_u8 (n + 1) x0 b := by
+  have pre_length_of_u8 := ih
+  intro x0 b M h0 h1
+  rw [Pre_length_of_u8.eq_def]; dsimp only
+  pre_auto n, M
+theorem pre_group_length_of_u8 : ∀ n : Nat,
+    (∀ (x0 : List UInt8) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_length_of_u8 n x0 b) := by
+  intro n
+  induction n with
+  | zero => exact fun x0 b M _ _ => trivial
+  | succ n ih => exact pre_step_length_of_u8 n ih
+theorem pre_length_of_u8 : ∀ (n : Nat) (x0 : List UInt8) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_length_of_u8 n x0 b :=
+  fun n => (pre_group_length_of_u8 n)
+
 theorem pre_step_length_of_mini_selfhost_List_usize (n : Nat) (ih :
     (∀ (x0 : List (List Nat)) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_length_of_mini_selfhost_List_usize n x0 b)) :
     ∀ (x0 : List (List Nat)) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_length_of_mini_selfhost_List_usize (n + 1) x0 b := by
@@ -632,6 +648,82 @@ theorem pre_group_lowered_all : ∀ n : Nat,
   | succ n ih => exact pre_step_lowered_all n ih
 theorem pre_lowered_all : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.Decls) (x2 : List Lanius.Mini.Inst) (x3 : List Lanius.Mini.Inst) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → M + b ≤ 4611686018427387904 → Pre_lowered_all n x0 x1 x2 x3 b :=
   fun n => (pre_group_lowered_all n)
+
+/-- The preconditions' lemmas of `place_eff`'s group at fuel `n`. -/
+def PreIH_place_eff (n : Nat) : Prop :=
+    (∀ (x0 : List UInt8) (x1 : Lanius.Mini.SrcEff) (b : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → M + b ≤ 4611686018427387904 → Pre_place_eff n x0 x1 b) ∧
+    (∀ (x0 : List UInt8) (x1 : List Lanius.Mini.SrcEff) (b : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → M + b ≤ 4611686018427387904 → Pre_place_effs n x0 x1 b)
+theorem pre_step_place_eff (n : Nat) (ih :
+    PreIH_place_eff n) :
+    ∀ (x0 : List UInt8) (x1 : Lanius.Mini.SrcEff) (b : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → M + b ≤ 4611686018427387904 → Pre_place_eff (n + 1) x0 x1 b := by
+  obtain ⟨pre_place_eff, pre_place_effs⟩ := ih
+  intro x0 x1 b M h0 h1 h2
+  rw [Pre_place_eff.eq_def]; dsimp only
+  pre_auto n, M
+theorem pre_step_place_effs (n : Nat) (ih :
+    PreIH_place_eff n) :
+    ∀ (x0 : List UInt8) (x1 : List Lanius.Mini.SrcEff) (b : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → M + b ≤ 4611686018427387904 → Pre_place_effs (n + 1) x0 x1 b := by
+  obtain ⟨pre_place_eff, pre_place_effs⟩ := ih
+  intro x0 x1 b M h0 h1 h2
+  rw [Pre_place_effs.eq_def]; dsimp only
+  pre_auto n, M
+theorem pre_group_place_eff : ∀ n : Nat,
+    (∀ (x0 : List UInt8) (x1 : Lanius.Mini.SrcEff) (b : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → M + b ≤ 4611686018427387904 → Pre_place_eff n x0 x1 b) ∧
+    (∀ (x0 : List UInt8) (x1 : List Lanius.Mini.SrcEff) (b : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → M + b ≤ 4611686018427387904 → Pre_place_effs n x0 x1 b) := by
+  intro n
+  induction n with
+  | zero => exact ⟨fun x0 x1 b M _ _ _ => trivial, fun x0 x1 b M _ _ _ => trivial⟩
+  | succ n ih => exact ⟨pre_step_place_eff n ih, pre_step_place_effs n ih⟩
+theorem pre_place_eff : ∀ (n : Nat) (x0 : List UInt8) (x1 : Lanius.Mini.SrcEff) (b : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → M + b ≤ 4611686018427387904 → Pre_place_eff n x0 x1 b :=
+  fun n => (pre_group_place_eff n).1
+theorem pre_place_effs : ∀ (n : Nat) (x0 : List UInt8) (x1 : List Lanius.Mini.SrcEff) (b : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → M + b ≤ 4611686018427387904 → Pre_place_effs n x0 x1 b :=
+  fun n => (pre_group_place_eff n).2
+
+theorem pre_step_place_stmt (n : Nat) (ih :
+    (∀ (x0 : List UInt8) (x1 : Lanius.Mini.SrcStmt) (b : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → M + b ≤ 4611686018427387904 → Pre_place_stmt n x0 x1 b)) :
+    ∀ (x0 : List UInt8) (x1 : Lanius.Mini.SrcStmt) (b : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → M + b ≤ 4611686018427387904 → Pre_place_stmt (n + 1) x0 x1 b := by
+  have pre_place_stmt := ih
+  intro x0 x1 b M h0 h1 h2
+  rw [Pre_place_stmt.eq_def]; dsimp only
+  pre_auto n, M
+theorem pre_group_place_stmt : ∀ n : Nat,
+    (∀ (x0 : List UInt8) (x1 : Lanius.Mini.SrcStmt) (b : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → M + b ≤ 4611686018427387904 → Pre_place_stmt n x0 x1 b) := by
+  intro n
+  induction n with
+  | zero => exact fun x0 x1 b M _ _ _ => trivial
+  | succ n ih => exact pre_step_place_stmt n ih
+theorem pre_place_stmt : ∀ (n : Nat) (x0 : List UInt8) (x1 : Lanius.Mini.SrcStmt) (b : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → M + b ≤ 4611686018427387904 → Pre_place_stmt n x0 x1 b :=
+  fun n => (pre_group_place_stmt n)
+
+theorem pre_step_place_funcs (n : Nat) (ih :
+    (∀ (x0 : List UInt8) (x1 : List Lanius.Mini.SrcFunc) (b : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → M + b ≤ 4611686018427387904 → Pre_place_funcs n x0 x1 b)) :
+    ∀ (x0 : List UInt8) (x1 : List Lanius.Mini.SrcFunc) (b : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → M + b ≤ 4611686018427387904 → Pre_place_funcs (n + 1) x0 x1 b := by
+  have pre_place_funcs := ih
+  intro x0 x1 b M h0 h1 h2
+  rw [Pre_place_funcs.eq_def]; dsimp only
+  pre_auto n, M
+theorem pre_group_place_funcs : ∀ n : Nat,
+    (∀ (x0 : List UInt8) (x1 : List Lanius.Mini.SrcFunc) (b : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → M + b ≤ 4611686018427387904 → Pre_place_funcs n x0 x1 b) := by
+  intro n
+  induction n with
+  | zero => exact fun x0 x1 b M _ _ _ => trivial
+  | succ n ih => exact pre_step_place_funcs n ih
+theorem pre_place_funcs : ∀ (n : Nat) (x0 : List UInt8) (x1 : List Lanius.Mini.SrcFunc) (b : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → M + b ≤ 4611686018427387904 → Pre_place_funcs n x0 x1 b :=
+  fun n => (pre_group_place_funcs n)
+
+theorem pre_placed_program : ∀ (n : Nat) (x0 : List Lanius.Mini.SrcFunc) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_placed_program n x0 b := by
+  intro n x0 b M h0 h1
+  rcases n with _ | n
+  · exact trivial
+  rw [Pre_placed_program.eq_def]; dsimp only
+  pre_auto n, M
+
+theorem pre_untyped_rejected : ∀ (n : Nat) (x0 : List Lanius.Mini.SrcFunc) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_untyped_rejected n x0 b := by
+  intro n x0 b M h0 h1
+  rcases n with _ | n
+  · exact trivial
+  rw [Pre_untyped_rejected.eq_def]; dsimp only
+  pre_auto n, M
 
 theorem pre_build_closed : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.Decls) (x2 : List Lanius.Mini.Inst) (x3 : Option (List Lanius.Mini.Inst)) (x4 : List Lanius.Mini.MFunc) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → M + b ≤ 4611686018427387904 → Pre_build_closed n x0 x1 x2 x3 x4 b := by
   intro n x0 x1 x2 x3 x4 b M h0 h1 h2 h3 h4
@@ -2943,217 +3035,233 @@ def PreIH_eff_of (n : Nat) : Prop :=
     (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Nat) (x5 : Lanius.Mini.FnDecl) (x6 : List Lanius.Mini.CTree) (x7 : List Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x5 ≤ M → hb x6 ≤ M → hb x7 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_free n x0 x1 x2 x3 x4 x5 x6 x7 b) ∧
     (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Nat) (x5 : Lanius.Mini.FnDecl) (x6 : List Lanius.Mini.Bind) (x7 : List Lanius.Mini.MEff) (x8 : List Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x5 ≤ M → hb x6 ≤ M → hb x7 ≤ M → hb x8 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_infer n x0 x1 x2 x3 x4 x5 x6 x7 x8 b) ∧
     (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Lanius.Mini.TypeDecl) (x5 : List Lanius.Mini.VariantTy) (x6 : List Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → hb x6 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_arms n x0 x1 x2 x3 x4 x5 x6 b) ∧
+    (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option (List Lanius.Mini.Ty)) (x4 : List Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → M + b ≤ 4611686018427387904 → Pre_arg_list n x0 x1 x2 x3 x4 b) ∧
     (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Lanius.Mini.FnDecl) (x4 : List (List Nat)) (x5 : List Lanius.Mini.CTree) (x6 : List Lanius.Mini.MEff) (x7 : List Lanius.Mini.CTree) (x8 : Option (List Lanius.Mini.Bind)) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → hb x6 ≤ M → hb x7 ≤ M → hb x8 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_args_bound n x0 x1 x2 x3 x4 x5 x6 x7 x8 b) ∧
     (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Lanius.Mini.TypeDecl) (x5 : Lanius.Mini.VariantTy) (x6 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → hb x6 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_arm n x0 x1 x2 x3 x4 x5 x6 b) ∧
+    (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → M + b ≤ 4611686018427387904 → Pre_arg_eff n x0 x1 x2 x3 x4 b) ∧
     (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Lanius.Mini.FnDecl) (x4 : List (List Nat)) (x5 : Lanius.Mini.CTree) (x6 : List Lanius.Mini.CTree) (x7 : List Lanius.Mini.CTree) (x8 : List Lanius.Mini.Bind) (x9 : Option Lanius.Mini.MEff) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → hb x6 ≤ M → hb x7 ≤ M → hb x8 ≤ M → hb x9 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_arg_next n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 b) ∧
     (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : Option Lanius.Mini.Ty) (x3 : Option Lanius.Mini.Bound) (x4 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_arm_bound n x0 x1 x2 x3 x4 b)
 theorem pre_step_eff_of (n : Nat) (ih :
     PreIH_eff_of n) :
     ∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_of (n + 1) x0 x1 x2 x3 x4 b := by
-  obtain ⟨-, pre_eff_node, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
+  obtain ⟨-, pre_eff_node, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
   intro x0 x1 x2 x3 x4 b M h0 h1 h2 h3 h4
   rw [Pre_eff_of.eq_def]; dsimp only
   pre_auto n, M
 theorem pre_step_eff_node (n : Nat) (ih :
     PreIH_eff_of n) :
     ∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_node (n + 1) x0 x1 x2 x3 x4 b := by
-  obtain ⟨pre_eff_of, -, pre_eff_fold, pre_eff_postfix, pre_eff_ident, pre_eff_match, pre_eff_array, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
+  obtain ⟨pre_eff_of, -, pre_eff_fold, pre_eff_postfix, pre_eff_ident, pre_eff_match, pre_eff_array, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
   intro x0 x1 x2 x3 x4 b M h0 h1 h2 h3 h4
   rw [Pre_eff_node.eq_def]; dsimp only
   pre_auto n, M
 theorem pre_step_eff_fold (n : Nat) (ih :
     PreIH_eff_of n) :
     ∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.MEff) (x4 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_fold (n + 1) x0 x1 x2 x3 x4 b := by
-  obtain ⟨pre_eff_of, -, pre_eff_fold, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
+  obtain ⟨pre_eff_of, -, pre_eff_fold, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
   intro x0 x1 x2 x3 x4 b M h0 h1 h2 h3 h4
   rw [Pre_eff_fold.eq_def]; dsimp only
   pre_auto n, M
 theorem pre_step_eff_postfix (n : Nat) (ih :
     PreIH_eff_of n) :
     ∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_postfix (n + 1) x0 x1 x2 x3 x4 b := by
-  obtain ⟨pre_eff_of, pre_eff_node, -, -, -, -, -, pre_eff_path_call, pre_eff_method, pre_eff_chain, pre_eff_primary, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
+  obtain ⟨pre_eff_of, pre_eff_node, -, -, -, -, -, pre_eff_path_call, pre_eff_method, pre_eff_chain, pre_eff_primary, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
   intro x0 x1 x2 x3 x4 b M h0 h1 h2 h3 h4
   rw [Pre_eff_postfix.eq_def]; dsimp only
   pre_auto n, M
 theorem pre_step_eff_ident (n : Nat) (ih :
     PreIH_eff_of n) :
     ∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_ident (n + 1) x0 x1 x2 x3 x4 b := by
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, pre_eff_variant, pre_eff_literal, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, pre_eff_variant, pre_eff_literal, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
   intro x0 x1 x2 x3 x4 b M h0 h1 h2 h3 h4
   rw [Pre_eff_ident.eq_def]; dsimp only
   pre_auto n, M
 theorem pre_step_eff_match (n : Nat) (ih :
     PreIH_eff_of n) :
     ∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_match (n + 1) x0 x1 x2 x3 x4 b := by
-  obtain ⟨pre_eff_of, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_match_on, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
+  obtain ⟨pre_eff_of, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_match_on, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
   intro x0 x1 x2 x3 x4 b M h0 h1 h2 h3 h4
   rw [Pre_eff_match.eq_def]; dsimp only
   pre_auto n, M
 theorem pre_step_eff_array (n : Nat) (ih :
     PreIH_eff_of n) :
     ∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_array (n + 1) x0 x1 x2 x3 x4 b := by
-  obtain ⟨pre_eff_of, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_list, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
+  obtain ⟨pre_eff_of, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_list, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
   intro x0 x1 x2 x3 x4 b M h0 h1 h2 h3 h4
   rw [Pre_eff_array.eq_def]; dsimp only
   pre_auto n, M
 theorem pre_step_eff_path_call (n : Nat) (ih :
     PreIH_eff_of n) :
     ∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Lanius.Mini.CTree) (x5 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_path_call (n + 1) x0 x1 x2 x3 x4 x5 b := by
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_named, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_named, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
   intro x0 x1 x2 x3 x4 x5 b M h0 h1 h2 h3 h4 h5
   rw [Pre_eff_path_call.eq_def]; dsimp only
   pre_auto n, M
 theorem pre_step_eff_method (n : Nat) (ih :
     PreIH_eff_of n) :
     ∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_method (n + 1) x0 x1 x2 x3 x4 b := by
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_found_with, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_found_with, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
   intro x0 x1 x2 x3 x4 b M h0 h1 h2 h3 h4
   rw [Pre_eff_method.eq_def]; dsimp only
   pre_auto n, M
 theorem pre_step_eff_chain (n : Nat) (ih :
     PreIH_eff_of n) :
     ∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Option Lanius.Mini.MEff) (x5 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_chain (n + 1) x0 x1 x2 x3 x4 x5 b := by
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_step, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_step, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
   intro x0 x1 x2 x3 x4 x5 b M h0 h1 h2 h3 h4 h5
   rw [Pre_eff_chain.eq_def]; dsimp only
   pre_auto n, M
 theorem pre_step_eff_primary (n : Nat) (ih :
     PreIH_eff_of n) :
     ∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_primary (n + 1) x0 x1 x2 x3 b := by
-  obtain ⟨-, pre_eff_node, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
+  obtain ⟨-, pre_eff_node, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
   intro x0 x1 x2 x3 b M h0 h1 h2 h3
   rw [Pre_eff_primary.eq_def]; dsimp only
   pre_auto n, M
 theorem pre_step_eff_variant (n : Nat) (ih :
     PreIH_eff_of n) :
     ∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Option Lanius.Mini.VariantAt) (x5 : List Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x5 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_variant (n + 1) x0 x1 x2 x3 x4 x5 b := by
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_list, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_list, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
   intro x0 x1 x2 x3 x4 x5 b M h0 h1 h2 h3 h4
   rw [Pre_eff_variant.eq_def]; dsimp only
   pre_auto n, M
 theorem pre_step_eff_literal (n : Nat) (ih :
     PreIH_eff_of n) :
     ∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Nat) (x5 : Lanius.Mini.TypeDecl) (x6 : List Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x5 ≤ M → hb x6 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_literal (n + 1) x0 x1 x2 x3 x4 x5 x6 b := by
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_list, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_list, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
   intro x0 x1 x2 x3 x4 x5 x6 b M h0 h1 h2 h3 h4 h5
   rw [Pre_eff_literal.eq_def]; dsimp only
   pre_auto n, M
 theorem pre_step_eff_match_on (n : Nat) (ih :
     PreIH_eff_of n) :
     ∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Option Lanius.Mini.MEff) (x5 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_match_on (n + 1) x0 x1 x2 x3 x4 x5 b := by
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_list, -, -, -, pre_eff_match_enum, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_list, -, -, -, pre_eff_match_enum, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
   intro x0 x1 x2 x3 x4 x5 b M h0 h1 h2 h3 h4 h5
   rw [Pre_eff_match_on.eq_def]; dsimp only
   pre_auto n, M
 theorem pre_step_eff_list (n : Nat) (ih :
     PreIH_eff_of n) :
     ∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option (List Lanius.Mini.Ty)) (x4 : List Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_list (n + 1) x0 x1 x2 x3 x4 b := by
-  obtain ⟨pre_eff_of, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_list, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
+  obtain ⟨pre_eff_of, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_list, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
   intro x0 x1 x2 x3 x4 b M h0 h1 h2 h3 h4
   rw [Pre_eff_list.eq_def]; dsimp only
   pre_auto n, M
 theorem pre_step_eff_named (n : Nat) (ih :
     PreIH_eff_of n) :
     ∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Lanius.Mini.Split) (x5 : List Lanius.Mini.CTree) (x6 : List Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → hb x6 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_named (n + 1) x0 x1 x2 x3 x4 x5 x6 b := by
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, pre_eff_variant, -, -, -, -, -, -, -, pre_eff_fn_path, -, -, -, -, -, -, -, -, -, -⟩ := ih
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, pre_eff_variant, -, -, -, -, -, -, -, pre_eff_fn_path, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
   intro x0 x1 x2 x3 x4 x5 x6 b M h0 h1 h2 h3 h4 h5 h6
   rw [Pre_eff_named.eq_def]; dsimp only
   pre_auto n, M
 theorem pre_step_eff_found_with (n : Nat) (ih :
     PreIH_eff_of n) :
     ∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Option Lanius.Mini.Found) (x5 : Lanius.Mini.CTree) (x6 : List Lanius.Mini.MEff) (x7 : List Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → hb x6 ≤ M → hb x7 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_found_with (n + 1) x0 x1 x2 x3 x4 x5 x6 x7 b := by
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_bound, -, -, -, -, -, -, -, -, -⟩ := ih
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_bound, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
   intro x0 x1 x2 x3 x4 x5 x6 x7 b M h0 h1 h2 h3 h4 h5 h6 h7
   rw [Pre_eff_found_with.eq_def]; dsimp only
   pre_auto n, M
 theorem pre_step_eff_step (n : Nat) (ih :
     PreIH_eff_of n) :
     ∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Lanius.Mini.MEff) (x5 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_step (n + 1) x0 x1 x2 x3 x4 x5 b := by
-  obtain ⟨pre_eff_of, -, -, -, -, -, -, -, -, pre_eff_chain, -, -, -, -, -, -, pre_eff_found_with, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
+  obtain ⟨pre_eff_of, -, -, -, -, -, -, -, -, pre_eff_chain, -, -, -, -, -, -, pre_eff_found_with, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
   intro x0 x1 x2 x3 x4 x5 b M h0 h1 h2 h3 h4 h5
   rw [Pre_eff_step.eq_def]; dsimp only
   pre_auto n, M
 theorem pre_step_eff_match_enum (n : Nat) (ih :
     PreIH_eff_of n) :
     ∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Lanius.Mini.MEff) (x5 : Lanius.Mini.Ty) (x6 : Lanius.Mini.TypeDecl) (x7 : Option (List (List Lanius.Mini.Ty))) (x8 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → hb x6 ≤ M → hb x7 ≤ M → hb x8 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_match_enum (n + 1) x0 x1 x2 x3 x4 x5 x6 x7 x8 b := by
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_arms_ordered, -, -, -, -, -, -, -, -⟩ := ih
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_arms_ordered, -, -, -, -, -, -, -, -, -, -⟩ := ih
   intro x0 x1 x2 x3 x4 x5 x6 x7 x8 b M h0 h1 h2 h3 h4 h5 h6 h7 h8
   rw [Pre_eff_match_enum.eq_def]; dsimp only
   pre_auto n, M
 theorem pre_step_eff_fn_path (n : Nat) (ih :
     PreIH_eff_of n) :
     ∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Lanius.Mini.Split) (x5 : List Lanius.Mini.CTree) (x6 : List Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → hb x6 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_fn_path (n + 1) x0 x1 x2 x3 x4 x5 x6 b := by
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_found, pre_eff_free, -, -, -, -, -, -⟩ := ih
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_found, pre_eff_free, -, -, -, -, -, -, -, -⟩ := ih
   intro x0 x1 x2 x3 x4 x5 x6 b M h0 h1 h2 h3 h4 h5 h6
   rw [Pre_eff_fn_path.eq_def]; dsimp only
   pre_auto n, M
 theorem pre_step_eff_bound (n : Nat) (ih :
     PreIH_eff_of n) :
     ∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Nat) (x5 : Lanius.Mini.FnDecl) (x6 : Option (List Lanius.Mini.Bind)) (x7 : List Lanius.Mini.MEff) (x8 : List Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x5 ≤ M → hb x6 ≤ M → hb x7 ≤ M → hb x8 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_bound (n + 1) x0 x1 x2 x3 x4 x5 x6 x7 x8 b := by
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_infer, -, -, -, -, -⟩ := ih
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_infer, -, -, -, -, -, -, -⟩ := ih
   intro x0 x1 x2 x3 x4 x5 x6 x7 x8 b M h0 h1 h2 h3 h4 h5 h6 h7
   rw [Pre_eff_bound.eq_def]; dsimp only
   pre_auto n, M
 theorem pre_step_eff_arms_ordered (n : Nat) (ih :
     PreIH_eff_of n) :
     ∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Lanius.Mini.TypeDecl) (x5 : List Lanius.Mini.VariantTy) (x6 : List Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → hb x6 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_arms_ordered (n + 1) x0 x1 x2 x3 x4 x5 x6 b := by
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_arms, -, -, -, -⟩ := ih
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_arms, -, -, -, -, -, -⟩ := ih
   intro x0 x1 x2 x3 x4 x5 x6 b M h0 h1 h2 h3 h4 h5 h6
   rw [Pre_eff_arms_ordered.eq_def]; dsimp only
   pre_auto n, M
 theorem pre_step_eff_found (n : Nat) (ih :
     PreIH_eff_of n) :
     ∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Option Lanius.Mini.Found) (x5 : List Lanius.Mini.MEff) (x6 : List Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → hb x6 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_found (n + 1) x0 x1 x2 x3 x4 x5 x6 b := by
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_infer, -, -, -, -, -⟩ := ih
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_infer, -, -, -, -, -, -, -⟩ := ih
   intro x0 x1 x2 x3 x4 x5 x6 b M h0 h1 h2 h3 h4 h5 h6
   rw [Pre_eff_found.eq_def]; dsimp only
   pre_auto n, M
 theorem pre_step_eff_free (n : Nat) (ih :
     PreIH_eff_of n) :
     ∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Nat) (x5 : Lanius.Mini.FnDecl) (x6 : List Lanius.Mini.CTree) (x7 : List Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x5 ≤ M → hb x6 ≤ M → hb x7 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_free (n + 1) x0 x1 x2 x3 x4 x5 x6 x7 b := by
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_list, -, -, -, -, -, -, -, -, -, pre_eff_infer, -, -, -, -, -⟩ := ih
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_list, -, -, -, -, -, -, -, -, -, pre_eff_infer, -, -, -, -, -, -, -⟩ := ih
   intro x0 x1 x2 x3 x4 x5 x6 x7 b M h0 h1 h2 h3 h4 h5 h6
   rw [Pre_eff_free.eq_def]; dsimp only
   pre_auto n, M
 theorem pre_step_eff_infer (n : Nat) (ih :
     PreIH_eff_of n) :
     ∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Nat) (x5 : Lanius.Mini.FnDecl) (x6 : List Lanius.Mini.Bind) (x7 : List Lanius.Mini.MEff) (x8 : List Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x5 ≤ M → hb x6 ≤ M → hb x7 ≤ M → hb x8 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_infer (n + 1) x0 x1 x2 x3 x4 x5 x6 x7 x8 b := by
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_list, -, -, -, -, -, -, -, -, -, -, -, pre_eff_args_bound, -, -, -⟩ := ih
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_arg_list, pre_eff_args_bound, -, -, -, -⟩ := ih
   intro x0 x1 x2 x3 x4 x5 x6 x7 x8 b M h0 h1 h2 h3 h4 h5 h6 h7
   rw [Pre_eff_infer.eq_def]; dsimp only
   pre_auto n, M
 theorem pre_step_eff_arms (n : Nat) (ih :
     PreIH_eff_of n) :
     ∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Lanius.Mini.TypeDecl) (x5 : List Lanius.Mini.VariantTy) (x6 : List Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → hb x6 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_arms (n + 1) x0 x1 x2 x3 x4 x5 x6 b := by
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_arms, -, pre_eff_arm, -, -⟩ := ih
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_arms, -, -, pre_eff_arm, -, -, -⟩ := ih
   intro x0 x1 x2 x3 x4 x5 x6 b M h0 h1 h2 h3 h4 h5 h6
   rw [Pre_eff_arms.eq_def]; dsimp only
+  pre_auto n, M
+theorem pre_step_arg_list (n : Nat) (ih :
+    PreIH_eff_of n) :
+    ∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option (List Lanius.Mini.Ty)) (x4 : List Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → M + b ≤ 4611686018427387904 → Pre_arg_list (n + 1) x0 x1 x2 x3 x4 b := by
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_arg_list, -, -, pre_arg_eff, -, -⟩ := ih
+  intro x0 x1 x2 x3 x4 b M h0 h1 h2 h3 h4
+  rw [Pre_arg_list.eq_def]; dsimp only
   pre_auto n, M
 theorem pre_step_eff_args_bound (n : Nat) (ih :
     PreIH_eff_of n) :
     ∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Lanius.Mini.FnDecl) (x4 : List (List Nat)) (x5 : List Lanius.Mini.CTree) (x6 : List Lanius.Mini.MEff) (x7 : List Lanius.Mini.CTree) (x8 : Option (List Lanius.Mini.Bind)) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → hb x6 ≤ M → hb x7 ≤ M → hb x8 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_args_bound (n + 1) x0 x1 x2 x3 x4 x5 x6 x7 x8 b := by
-  obtain ⟨pre_eff_of, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_args_bound, -, pre_eff_arg_next, -⟩ := ih
+  obtain ⟨pre_eff_of, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_args_bound, -, -, pre_eff_arg_next, -⟩ := ih
   intro x0 x1 x2 x3 x4 x5 x6 x7 x8 b M h0 h1 h2 h3 h4 h5 h6 h7 h8
   rw [Pre_eff_args_bound.eq_def]; dsimp only
   pre_auto n, M
 theorem pre_step_eff_arm (n : Nat) (ih :
     PreIH_eff_of n) :
     ∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Lanius.Mini.TypeDecl) (x5 : Lanius.Mini.VariantTy) (x6 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → hb x6 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_arm (n + 1) x0 x1 x2 x3 x4 x5 x6 b := by
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_arm_bound⟩ := ih
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_arm_bound⟩ := ih
   intro x0 x1 x2 x3 x4 x5 x6 b M h0 h1 h2 h3 h4 h5 h6
   rw [Pre_eff_arm.eq_def]; dsimp only
+  pre_auto n, M
+theorem pre_step_arg_eff (n : Nat) (ih :
+    PreIH_eff_of n) :
+    ∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → M + b ≤ 4611686018427387904 → Pre_arg_eff (n + 1) x0 x1 x2 x3 x4 b := by
+  obtain ⟨pre_eff_of, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
+  intro x0 x1 x2 x3 x4 b M h0 h1 h2 h3 h4
+  rw [Pre_arg_eff.eq_def]; dsimp only
   pre_auto n, M
 theorem pre_step_eff_arg_next (n : Nat) (ih :
     PreIH_eff_of n) :
     ∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Lanius.Mini.FnDecl) (x4 : List (List Nat)) (x5 : Lanius.Mini.CTree) (x6 : List Lanius.Mini.CTree) (x7 : List Lanius.Mini.CTree) (x8 : List Lanius.Mini.Bind) (x9 : Option Lanius.Mini.MEff) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → hb x6 ≤ M → hb x7 ≤ M → hb x8 ≤ M → hb x9 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_arg_next (n + 1) x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 b := by
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_args_bound, -, -, -⟩ := ih
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, pre_eff_args_bound, -, -, -, -⟩ := ih
   intro x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 b M h0 h1 h2 h3 h4 h5 h6 h7 h8 h9
   rw [Pre_eff_arg_next.eq_def]; dsimp only
   pre_auto n, M
 theorem pre_step_eff_arm_bound (n : Nat) (ih :
     PreIH_eff_of n) :
     ∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : Option Lanius.Mini.Ty) (x3 : Option Lanius.Mini.Bound) (x4 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_arm_bound (n + 1) x0 x1 x2 x3 x4 b := by
-  obtain ⟨pre_eff_of, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
+  obtain ⟨pre_eff_of, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := ih
   intro x0 x1 x2 x3 x4 b M h0 h1 h2 h3 h4
   rw [Pre_eff_arm_bound.eq_def]; dsimp only
   pre_auto n, M
@@ -3184,14 +3292,16 @@ theorem pre_group_eff_of : ∀ n : Nat,
     (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Nat) (x5 : Lanius.Mini.FnDecl) (x6 : List Lanius.Mini.CTree) (x7 : List Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x5 ≤ M → hb x6 ≤ M → hb x7 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_free n x0 x1 x2 x3 x4 x5 x6 x7 b) ∧
     (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Nat) (x5 : Lanius.Mini.FnDecl) (x6 : List Lanius.Mini.Bind) (x7 : List Lanius.Mini.MEff) (x8 : List Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x5 ≤ M → hb x6 ≤ M → hb x7 ≤ M → hb x8 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_infer n x0 x1 x2 x3 x4 x5 x6 x7 x8 b) ∧
     (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Lanius.Mini.TypeDecl) (x5 : List Lanius.Mini.VariantTy) (x6 : List Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → hb x6 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_arms n x0 x1 x2 x3 x4 x5 x6 b) ∧
+    (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option (List Lanius.Mini.Ty)) (x4 : List Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → M + b ≤ 4611686018427387904 → Pre_arg_list n x0 x1 x2 x3 x4 b) ∧
     (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Lanius.Mini.FnDecl) (x4 : List (List Nat)) (x5 : List Lanius.Mini.CTree) (x6 : List Lanius.Mini.MEff) (x7 : List Lanius.Mini.CTree) (x8 : Option (List Lanius.Mini.Bind)) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → hb x6 ≤ M → hb x7 ≤ M → hb x8 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_args_bound n x0 x1 x2 x3 x4 x5 x6 x7 x8 b) ∧
     (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Lanius.Mini.TypeDecl) (x5 : Lanius.Mini.VariantTy) (x6 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → hb x6 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_arm n x0 x1 x2 x3 x4 x5 x6 b) ∧
+    (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → M + b ≤ 4611686018427387904 → Pre_arg_eff n x0 x1 x2 x3 x4 b) ∧
     (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Lanius.Mini.FnDecl) (x4 : List (List Nat)) (x5 : Lanius.Mini.CTree) (x6 : List Lanius.Mini.CTree) (x7 : List Lanius.Mini.CTree) (x8 : List Lanius.Mini.Bind) (x9 : Option Lanius.Mini.MEff) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → hb x6 ≤ M → hb x7 ≤ M → hb x8 ≤ M → hb x9 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_arg_next n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 b) ∧
     (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : Option Lanius.Mini.Ty) (x3 : Option Lanius.Mini.Bound) (x4 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_arm_bound n x0 x1 x2 x3 x4 b) := by
   intro n
   induction n with
-  | zero => exact ⟨fun x0 x1 x2 x3 x4 b M _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 b M _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 b M _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 b M _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 b M _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 b M _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 b M _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 b M _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 b M _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 b M _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 b M _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 b M _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 x6 b M _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 b M _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 b M _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 x6 b M _ _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 x6 x7 b M _ _ _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 b M _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 x6 x7 x8 b M _ _ _ _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 x6 b M _ _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 x6 x7 x8 b M _ _ _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 x6 b M _ _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 x6 b M _ _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 x6 x7 b M _ _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 x6 x7 x8 b M _ _ _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 x6 b M _ _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 x6 x7 x8 b M _ _ _ _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 x6 b M _ _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 b M _ _ _ _ _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 b M _ _ _ _ _ => trivial⟩
-  | succ n ih => exact ⟨pre_step_eff_of n ih, pre_step_eff_node n ih, pre_step_eff_fold n ih, pre_step_eff_postfix n ih, pre_step_eff_ident n ih, pre_step_eff_match n ih, pre_step_eff_array n ih, pre_step_eff_path_call n ih, pre_step_eff_method n ih, pre_step_eff_chain n ih, pre_step_eff_primary n ih, pre_step_eff_variant n ih, pre_step_eff_literal n ih, pre_step_eff_match_on n ih, pre_step_eff_list n ih, pre_step_eff_named n ih, pre_step_eff_found_with n ih, pre_step_eff_step n ih, pre_step_eff_match_enum n ih, pre_step_eff_fn_path n ih, pre_step_eff_bound n ih, pre_step_eff_arms_ordered n ih, pre_step_eff_found n ih, pre_step_eff_free n ih, pre_step_eff_infer n ih, pre_step_eff_arms n ih, pre_step_eff_args_bound n ih, pre_step_eff_arm n ih, pre_step_eff_arg_next n ih, pre_step_eff_arm_bound n ih⟩
+  | zero => exact ⟨fun x0 x1 x2 x3 x4 b M _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 b M _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 b M _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 b M _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 b M _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 b M _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 b M _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 b M _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 b M _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 b M _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 b M _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 b M _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 x6 b M _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 b M _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 b M _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 x6 b M _ _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 x6 x7 b M _ _ _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 b M _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 x6 x7 x8 b M _ _ _ _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 x6 b M _ _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 x6 x7 x8 b M _ _ _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 x6 b M _ _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 x6 b M _ _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 x6 x7 b M _ _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 x6 x7 x8 b M _ _ _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 x6 b M _ _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 b M _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 x6 x7 x8 b M _ _ _ _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 x6 b M _ _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 b M _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 b M _ _ _ _ _ _ _ _ _ _ => trivial, fun x0 x1 x2 x3 x4 b M _ _ _ _ _ => trivial⟩
+  | succ n ih => exact ⟨pre_step_eff_of n ih, pre_step_eff_node n ih, pre_step_eff_fold n ih, pre_step_eff_postfix n ih, pre_step_eff_ident n ih, pre_step_eff_match n ih, pre_step_eff_array n ih, pre_step_eff_path_call n ih, pre_step_eff_method n ih, pre_step_eff_chain n ih, pre_step_eff_primary n ih, pre_step_eff_variant n ih, pre_step_eff_literal n ih, pre_step_eff_match_on n ih, pre_step_eff_list n ih, pre_step_eff_named n ih, pre_step_eff_found_with n ih, pre_step_eff_step n ih, pre_step_eff_match_enum n ih, pre_step_eff_fn_path n ih, pre_step_eff_bound n ih, pre_step_eff_arms_ordered n ih, pre_step_eff_found n ih, pre_step_eff_free n ih, pre_step_eff_infer n ih, pre_step_eff_arms n ih, pre_step_arg_list n ih, pre_step_eff_args_bound n ih, pre_step_eff_arm n ih, pre_step_arg_eff n ih, pre_step_eff_arg_next n ih, pre_step_eff_arm_bound n ih⟩
 theorem pre_eff_of : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_of n x0 x1 x2 x3 x4 b :=
   fun n => (pre_group_eff_of n).1
 theorem pre_eff_node : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_node n x0 x1 x2 x3 x4 b :=
@@ -3244,14 +3354,18 @@ theorem pre_eff_infer : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2
   fun n => (pre_group_eff_of n).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 theorem pre_eff_arms : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Lanius.Mini.TypeDecl) (x5 : List Lanius.Mini.VariantTy) (x6 : List Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → hb x6 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_arms n x0 x1 x2 x3 x4 x5 x6 b :=
   fun n => (pre_group_eff_of n).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
-theorem pre_eff_args_bound : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Lanius.Mini.FnDecl) (x4 : List (List Nat)) (x5 : List Lanius.Mini.CTree) (x6 : List Lanius.Mini.MEff) (x7 : List Lanius.Mini.CTree) (x8 : Option (List Lanius.Mini.Bind)) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → hb x6 ≤ M → hb x7 ≤ M → hb x8 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_args_bound n x0 x1 x2 x3 x4 x5 x6 x7 x8 b :=
+theorem pre_arg_list : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option (List Lanius.Mini.Ty)) (x4 : List Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → M + b ≤ 4611686018427387904 → Pre_arg_list n x0 x1 x2 x3 x4 b :=
   fun n => (pre_group_eff_of n).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
-theorem pre_eff_arm : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Lanius.Mini.TypeDecl) (x5 : Lanius.Mini.VariantTy) (x6 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → hb x6 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_arm n x0 x1 x2 x3 x4 x5 x6 b :=
+theorem pre_eff_args_bound : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Lanius.Mini.FnDecl) (x4 : List (List Nat)) (x5 : List Lanius.Mini.CTree) (x6 : List Lanius.Mini.MEff) (x7 : List Lanius.Mini.CTree) (x8 : Option (List Lanius.Mini.Bind)) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → hb x6 ≤ M → hb x7 ≤ M → hb x8 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_args_bound n x0 x1 x2 x3 x4 x5 x6 x7 x8 b :=
   fun n => (pre_group_eff_of n).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
-theorem pre_eff_arg_next : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Lanius.Mini.FnDecl) (x4 : List (List Nat)) (x5 : Lanius.Mini.CTree) (x6 : List Lanius.Mini.CTree) (x7 : List Lanius.Mini.CTree) (x8 : List Lanius.Mini.Bind) (x9 : Option Lanius.Mini.MEff) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → hb x6 ≤ M → hb x7 ≤ M → hb x8 ≤ M → hb x9 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_arg_next n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 b :=
+theorem pre_eff_arm : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Lanius.Mini.TypeDecl) (x5 : Lanius.Mini.VariantTy) (x6 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → hb x6 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_arm n x0 x1 x2 x3 x4 x5 x6 b :=
   fun n => (pre_group_eff_of n).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+theorem pre_arg_eff : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.Ty) (x4 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → M + b ≤ 4611686018427387904 → Pre_arg_eff n x0 x1 x2 x3 x4 b :=
+  fun n => (pre_group_eff_of n).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+theorem pre_eff_arg_next : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Lanius.Mini.FnDecl) (x4 : List (List Nat)) (x5 : Lanius.Mini.CTree) (x6 : List Lanius.Mini.CTree) (x7 : List Lanius.Mini.CTree) (x8 : List Lanius.Mini.Bind) (x9 : Option Lanius.Mini.MEff) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → hb x6 ≤ M → hb x7 ≤ M → hb x8 ≤ M → hb x9 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_arg_next n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 b :=
+  fun n => (pre_group_eff_of n).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 theorem pre_eff_arm_bound : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : Option Lanius.Mini.Ty) (x3 : Option Lanius.Mini.Bound) (x4 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → M + b ≤ 4611686018427387904 → Pre_eff_arm_bound n x0 x1 x2 x3 x4 b :=
-  fun n => (pre_group_eff_of n).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  fun n => (pre_group_eff_of n).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
 theorem pre_step_contracts_of (n : Nat) (ih :
     (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Lanius.Mini.CTree) (x4 : Option Lanius.Mini.MStmt) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → M + b ≤ 4611686018427387904 → Pre_contracts_of n x0 x1 x2 x3 x4 b)) :

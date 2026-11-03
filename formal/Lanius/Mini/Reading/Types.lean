@@ -64,7 +64,7 @@ def primTys : List (Name × Ty) :=
    ([117, 51, 50], .tyUint .uint32), ([117, 54, 52], .tyUint .uint64), ([117, 115, 105, 122, 101], .tyUint .usize),
    ([112, 116, 114], .tyPtr), ([105, 115, 105, 122, 101], .tyIsize), ([105, 56], .tySint .uint8),
    ([105, 49, 54], .tySint .uint16), ([105, 54, 52], .tySint .uint64), ([99, 104, 97, 114], .tyChar),
-   ([102, 51, 50], .tyFloat .f32), ([102, 54, 52], .tyFloat .f64)]
+   ([102, 51, 50], .tyFloat .f32), ([102, 54, 52], .tyFloat .f64), ([115, 116, 114], .tyStr)]
 
 /-- The path names the declared type `d`. -/
 def DeclAt (env : FrontEnv) (ss : List Name) (d : Nat) : Prop :=

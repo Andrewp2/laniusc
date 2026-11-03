@@ -2,10 +2,10 @@ module
 
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Frontend.P.fnInstRet
-import Lanius.Mini.Frontend.P.litEffMatch
 import Lanius.Mini.Frontend.P.matchLetHead
 import Lanius.Mini.Frontend.P.noBlock
 import Lanius.Mini.Frontend.P.shrFirst
+import Lanius.Mini.Frontend.P.stringOpen
 import Lanius.Mini.Frontend.P.tryLetHead
 import Lanius.Mini.Frontend.P.tryLocalOf
 
@@ -63,6 +63,7 @@ def inferred (x : MEff) : Bool :=
   | .xIf c t a b => false
   | .xLet id t v rt b => false
   | .xLen sl => true
+  | .xStr cs => true
 
 def untypedIf (ok : Bool) (t : Ty) (h : LetHead) : Option Untyped :=
   if ok then
@@ -116,6 +117,7 @@ def isPtrTy (t : Ty) : Bool :=
   | .tyPtr => true
   | .tyIsize => false
   | .tyChar => false
+  | .tyStr => false
   | .tyFloat ft => false
   | .tySlice e => false
   | .tyArray e n => false

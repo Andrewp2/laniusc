@@ -65,7 +65,10 @@ def compileLine (name : String) (bases : List String) : IO Unit := do
     | some p =>
       match compileSource p with
       | none => IO.println s!"{name} uncompiled"
-      | some b => IO.println s!"{name} image {b.entries} {b.image.map (·.toNat)}"
+      | some b =>
+        -- the static bytes, when there are any (the ELF puts them after the code)
+        let st := if b.statics.isEmpty then "" else s!" statics {b.statics.map (·.toNat)}"
+        IO.println s!"{name} image {b.entries} {b.image.map (·.toNat)}{st}"
 
 /-- `elfFile` of the compiled program, written to `out`: NAME and elf with
 the file's length, or why there is none. -/

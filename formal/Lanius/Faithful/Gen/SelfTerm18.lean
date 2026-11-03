@@ -13,127 +13,127 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.Termination
 open Lanius.Faithful.SelfCert
 
-theorem ok_p_params_after_comma_more : FnOk prog prims info (847, ⟨0, [], 0⟩) :=
+theorem ok_p_params_end : FnOk prog prims info (847, ⟨0, [], 0⟩) :=
+  fnOk_of fn_p_params_end (by decide +kernel)
+
+theorem ok_p_params_after_comma_more : FnOk prog prims info (848, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_params_after_comma_more (by decide +kernel)
 
-theorem ok_p_params_after_comma_trailing : FnOk prog prims info (848, ⟨0, [], 0⟩) :=
+theorem ok_p_params_after_comma_trailing : FnOk prog prims info (849, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_params_after_comma_trailing (by decide +kernel)
 
-theorem ok_p_args_none : FnOk prog prims info (849, ⟨0, [], 0⟩) :=
+theorem ok_p_args_none : FnOk prog prims info (850, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_args_none (by decide +kernel)
 
-theorem ok_p_args_some : FnOk prog prims info (850, ⟨0, [], 0⟩) :=
+theorem ok_p_args_some : FnOk prog prims info (851, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_args_some (by decide +kernel)
 
-theorem ok_p_args_more : FnOk prog prims info (851, ⟨0, [], 0⟩) :=
+theorem ok_p_args_more : FnOk prog prims info (852, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_args_more (by decide +kernel)
 
-theorem ok_p_args_end : FnOk prog prims info (852, ⟨0, [], 0⟩) :=
+theorem ok_p_args_end : FnOk prog prims info (853, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_args_end (by decide +kernel)
 
-theorem ok_p_args_after_comma_more : FnOk prog prims info (853, ⟨0, [], 0⟩) :=
+theorem ok_p_args_after_comma_more : FnOk prog prims info (854, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_args_after_comma_more (by decide +kernel)
 
-theorem ok_p_args_after_comma_trailing : FnOk prog prims info (854, ⟨0, [], 0⟩) :=
+theorem ok_p_args_after_comma_trailing : FnOk prog prims info (855, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_args_after_comma_trailing (by decide +kernel)
 
-theorem ok_p_struct_fields_none : FnOk prog prims info (855, ⟨0, [], 0⟩) :=
+theorem ok_p_struct_fields_none : FnOk prog prims info (856, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_struct_fields_none (by decide +kernel)
 
-theorem ok_p_struct_fields_some : FnOk prog prims info (856, ⟨0, [], 0⟩) :=
+theorem ok_p_struct_fields_some : FnOk prog prims info (857, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_struct_fields_some (by decide +kernel)
 
-theorem ok_p_struct_fields_more : FnOk prog prims info (857, ⟨0, [], 0⟩) :=
+theorem ok_p_struct_fields_more : FnOk prog prims info (858, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_struct_fields_more (by decide +kernel)
 
-theorem ok_p_struct_fields_end : FnOk prog prims info (858, ⟨0, [], 0⟩) :=
+theorem ok_p_struct_fields_end : FnOk prog prims info (859, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_struct_fields_end (by decide +kernel)
 
-theorem ok_p_struct_fields_after_comma_more : FnOk prog prims info (859, ⟨0, [], 0⟩) :=
+theorem ok_p_struct_fields_after_comma_more : FnOk prog prims info (860, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_struct_fields_after_comma_more (by decide +kernel)
 
-theorem ok_p_struct_fields_after_comma_trailing : FnOk prog prims info (860, ⟨0, [], 0⟩) :=
+theorem ok_p_struct_fields_after_comma_trailing : FnOk prog prims info (861, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_struct_fields_after_comma_trailing (by decide +kernel)
 
-theorem ok_p_struct_lit_fields_none : FnOk prog prims info (861, ⟨0, [], 0⟩) :=
+theorem ok_p_struct_lit_fields_none : FnOk prog prims info (862, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_struct_lit_fields_none (by decide +kernel)
 
-theorem ok_p_struct_lit_fields_some : FnOk prog prims info (862, ⟨0, [], 0⟩) :=
+theorem ok_p_struct_lit_fields_some : FnOk prog prims info (863, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_struct_lit_fields_some (by decide +kernel)
 
-theorem ok_p_struct_lit_fields_more : FnOk prog prims info (863, ⟨0, [], 0⟩) :=
+theorem ok_p_struct_lit_fields_more : FnOk prog prims info (864, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_struct_lit_fields_more (by decide +kernel)
 
-theorem ok_p_struct_lit_fields_end : FnOk prog prims info (864, ⟨0, [], 0⟩) :=
+theorem ok_p_struct_lit_fields_end : FnOk prog prims info (865, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_struct_lit_fields_end (by decide +kernel)
 
-theorem ok_p_struct_lit_fields_after_comma_more : FnOk prog prims info (865, ⟨0, [], 0⟩) :=
+theorem ok_p_struct_lit_fields_after_comma_more : FnOk prog prims info (866, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_struct_lit_fields_after_comma_more (by decide +kernel)
 
-theorem ok_p_struct_lit_fields_after_comma_trailing : FnOk prog prims info (866, ⟨0, [], 0⟩) :=
+theorem ok_p_struct_lit_fields_after_comma_trailing : FnOk prog prims info (867, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_struct_lit_fields_after_comma_trailing (by decide +kernel)
 
-theorem ok_p_enum_variants_none : FnOk prog prims info (867, ⟨0, [], 0⟩) :=
+theorem ok_p_enum_variants_none : FnOk prog prims info (868, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_enum_variants_none (by decide +kernel)
 
-theorem ok_p_enum_variants_some : FnOk prog prims info (868, ⟨0, [], 0⟩) :=
+theorem ok_p_enum_variants_some : FnOk prog prims info (869, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_enum_variants_some (by decide +kernel)
 
-theorem ok_p_enum_variants_more : FnOk prog prims info (869, ⟨0, [], 0⟩) :=
+theorem ok_p_enum_variants_more : FnOk prog prims info (870, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_enum_variants_more (by decide +kernel)
 
-theorem ok_p_enum_variants_end : FnOk prog prims info (870, ⟨0, [], 0⟩) :=
+theorem ok_p_enum_variants_end : FnOk prog prims info (871, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_enum_variants_end (by decide +kernel)
 
-theorem ok_p_enum_variants_after_comma_more : FnOk prog prims info (871, ⟨0, [], 0⟩) :=
+theorem ok_p_enum_variants_after_comma_more : FnOk prog prims info (872, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_enum_variants_after_comma_more (by decide +kernel)
 
-theorem ok_p_enum_variants_after_comma_trailing : FnOk prog prims info (872, ⟨0, [], 0⟩) :=
+theorem ok_p_enum_variants_after_comma_trailing : FnOk prog prims info (873, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_enum_variants_after_comma_trailing (by decide +kernel)
 
-theorem ok_p_enum_variant_fields_none : FnOk prog prims info (873, ⟨0, [], 0⟩) :=
+theorem ok_p_enum_variant_fields_none : FnOk prog prims info (874, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_enum_variant_fields_none (by decide +kernel)
 
-theorem ok_p_enum_variant_fields_some : FnOk prog prims info (874, ⟨0, [], 0⟩) :=
+theorem ok_p_enum_variant_fields_some : FnOk prog prims info (875, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_enum_variant_fields_some (by decide +kernel)
 
-theorem ok_p_enum_variant_fields_more : FnOk prog prims info (875, ⟨0, [], 0⟩) :=
+theorem ok_p_enum_variant_fields_more : FnOk prog prims info (876, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_enum_variant_fields_more (by decide +kernel)
 
-theorem ok_p_enum_variant_fields_end : FnOk prog prims info (876, ⟨0, [], 0⟩) :=
+theorem ok_p_enum_variant_fields_end : FnOk prog prims info (877, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_enum_variant_fields_end (by decide +kernel)
 
-theorem ok_p_enum_variant_fields_after_comma_more : FnOk prog prims info (877, ⟨0, [], 0⟩) :=
+theorem ok_p_enum_variant_fields_after_comma_more : FnOk prog prims info (878, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_enum_variant_fields_after_comma_more (by decide +kernel)
 
-theorem ok_p_enum_variant_fields_after_comma_trailing : FnOk prog prims info (878, ⟨0, [], 0⟩) :=
+theorem ok_p_enum_variant_fields_after_comma_trailing : FnOk prog prims info (879, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_enum_variant_fields_after_comma_trailing (by decide +kernel)
 
-theorem ok_p_match_arms_none : FnOk prog prims info (879, ⟨0, [], 0⟩) :=
+theorem ok_p_match_arms_none : FnOk prog prims info (880, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_match_arms_none (by decide +kernel)
 
-theorem ok_p_match_arms_some : FnOk prog prims info (880, ⟨0, [], 0⟩) :=
+theorem ok_p_match_arms_some : FnOk prog prims info (881, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_match_arms_some (by decide +kernel)
 
-theorem ok_p_match_arms_more : FnOk prog prims info (881, ⟨0, [], 0⟩) :=
+theorem ok_p_match_arms_more : FnOk prog prims info (882, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_match_arms_more (by decide +kernel)
 
-theorem ok_p_match_arms_end : FnOk prog prims info (882, ⟨0, [], 0⟩) :=
+theorem ok_p_match_arms_end : FnOk prog prims info (883, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_match_arms_end (by decide +kernel)
 
-theorem ok_p_match_arms_after_comma_more : FnOk prog prims info (883, ⟨0, [], 0⟩) :=
+theorem ok_p_match_arms_after_comma_more : FnOk prog prims info (884, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_match_arms_after_comma_more (by decide +kernel)
 
-theorem ok_p_match_arms_after_comma_trailing : FnOk prog prims info (884, ⟨0, [], 0⟩) :=
+theorem ok_p_match_arms_after_comma_trailing : FnOk prog prims info (885, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_match_arms_after_comma_trailing (by decide +kernel)
 
-theorem ok_p_patterns_none : FnOk prog prims info (885, ⟨0, [], 0⟩) :=
+theorem ok_p_patterns_none : FnOk prog prims info (886, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_patterns_none (by decide +kernel)
 
-theorem ok_p_patterns_some : FnOk prog prims info (886, ⟨0, [], 0⟩) :=
-  fnOk_of fn_p_patterns_some (by decide +kernel)
-
 theorem chunk18 : AllFns prog prims info part18 :=
-  ⟨ok_p_params_after_comma_more, ok_p_params_after_comma_trailing, ok_p_args_none, ok_p_args_some, ok_p_args_more, ok_p_args_end, ok_p_args_after_comma_more, ok_p_args_after_comma_trailing, ok_p_struct_fields_none, ok_p_struct_fields_some, ok_p_struct_fields_more, ok_p_struct_fields_end, ok_p_struct_fields_after_comma_more, ok_p_struct_fields_after_comma_trailing, ok_p_struct_lit_fields_none, ok_p_struct_lit_fields_some, ok_p_struct_lit_fields_more, ok_p_struct_lit_fields_end, ok_p_struct_lit_fields_after_comma_more, ok_p_struct_lit_fields_after_comma_trailing, ok_p_enum_variants_none, ok_p_enum_variants_some, ok_p_enum_variants_more, ok_p_enum_variants_end, ok_p_enum_variants_after_comma_more, ok_p_enum_variants_after_comma_trailing, ok_p_enum_variant_fields_none, ok_p_enum_variant_fields_some, ok_p_enum_variant_fields_more, ok_p_enum_variant_fields_end, ok_p_enum_variant_fields_after_comma_more, ok_p_enum_variant_fields_after_comma_trailing, ok_p_match_arms_none, ok_p_match_arms_some, ok_p_match_arms_more, ok_p_match_arms_end, ok_p_match_arms_after_comma_more, ok_p_match_arms_after_comma_trailing, ok_p_patterns_none, ok_p_patterns_some, trivial⟩
+  ⟨ok_p_params_end, ok_p_params_after_comma_more, ok_p_params_after_comma_trailing, ok_p_args_none, ok_p_args_some, ok_p_args_more, ok_p_args_end, ok_p_args_after_comma_more, ok_p_args_after_comma_trailing, ok_p_struct_fields_none, ok_p_struct_fields_some, ok_p_struct_fields_more, ok_p_struct_fields_end, ok_p_struct_fields_after_comma_more, ok_p_struct_fields_after_comma_trailing, ok_p_struct_lit_fields_none, ok_p_struct_lit_fields_some, ok_p_struct_lit_fields_more, ok_p_struct_lit_fields_end, ok_p_struct_lit_fields_after_comma_more, ok_p_struct_lit_fields_after_comma_trailing, ok_p_enum_variants_none, ok_p_enum_variants_some, ok_p_enum_variants_more, ok_p_enum_variants_end, ok_p_enum_variants_after_comma_more, ok_p_enum_variants_after_comma_trailing, ok_p_enum_variant_fields_none, ok_p_enum_variant_fields_some, ok_p_enum_variant_fields_more, ok_p_enum_variant_fields_end, ok_p_enum_variant_fields_after_comma_more, ok_p_enum_variant_fields_after_comma_trailing, ok_p_match_arms_none, ok_p_match_arms_some, ok_p_match_arms_more, ok_p_match_arms_end, ok_p_match_arms_after_comma_more, ok_p_match_arms_after_comma_trailing, ok_p_patterns_none, trivial⟩
 
 end Lanius.Faithful.SelfTerm

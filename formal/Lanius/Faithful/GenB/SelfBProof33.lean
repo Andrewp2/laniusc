@@ -178,8 +178,8 @@ theorem bproof_alias_decls {spW sp : SrcProgram} {prims : Prims} {ix_alias_decls
     budget Cost_alias_decls
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3⟩
 
-theorem bproof_host_id {spW sp : SrcProgram} {prims : Prims} {ix_host_id ix_same_text ix_text_write_byte ix_text_write_stdout ix_text_write_stderr ix_text_read_stdin ix_text_sleep_ms_i32 ix_text_monotonic_read ix_text_system_read ix_text_fill_secure_bytes : Nat}
-    (fnW : spW.funcs[ix_host_id]? = some (src_host_id ix_same_text ix_text_write_byte ix_text_write_stdout ix_text_write_stderr ix_text_read_stdin ix_text_sleep_ms_i32 ix_text_monotonic_read ix_text_system_read ix_text_fill_secure_bytes)) (fn : sp.funcs[ix_host_id]? = some (src_host_id ix_same_text ix_text_write_byte ix_text_write_stdout ix_text_write_stderr ix_text_read_stdin ix_text_sleep_ms_i32 ix_text_monotonic_read ix_text_system_read ix_text_fill_secure_bytes))
+theorem bproof_host_id {spW sp : SrcProgram} {prims : Prims} {ix_host_id ix_same_text ix_text_write_byte ix_text_write_stdout ix_text_write_stderr ix_text_read_stdin ix_text_sleep_ms_i32 ix_text_monotonic_read ix_text_system_read ix_text_fill_secure_bytes ix_text_write_text ix_text_write_newline : Nat}
+    (fnW : spW.funcs[ix_host_id]? = some (src_host_id ix_same_text ix_text_write_byte ix_text_write_stdout ix_text_write_stderr ix_text_read_stdin ix_text_sleep_ms_i32 ix_text_monotonic_read ix_text_system_read ix_text_fill_secure_bytes ix_text_write_text ix_text_write_newline)) (fn : sp.funcs[ix_host_id]? = some (src_host_id ix_same_text ix_text_write_byte ix_text_write_stdout ix_text_write_stderr ix_text_read_stdin ix_text_sleep_ms_i32 ix_text_monotonic_read ix_text_system_read ix_text_fill_secure_bytes ix_text_write_text ix_text_write_newline))
     (np : prims.isPrim ix_host_id = false)
     (back : Certified (∀ {n : Nat}, Stmt_host_id sp prims ix_host_id n))
     (b_same_text : Certified (∀ {n : Nat}, BStmt_same_text spW sp prims ix_same_text n))
@@ -190,7 +190,9 @@ theorem bproof_host_id {spW sp : SrcProgram} {prims : Prims} {ix_host_id ix_same
     (b_text_sleep_ms_i32 : Certified (∀ {n : Nat}, BStmt_text_sleep_ms_i32 spW sp prims ix_text_sleep_ms_i32 n))
     (b_text_monotonic_read : Certified (∀ {n : Nat}, BStmt_text_monotonic_read spW sp prims ix_text_monotonic_read n))
     (b_text_system_read : Certified (∀ {n : Nat}, BStmt_text_system_read spW sp prims ix_text_system_read n))
-    (b_text_fill_secure_bytes : Certified (∀ {n : Nat}, BStmt_text_fill_secure_bytes spW sp prims ix_text_fill_secure_bytes n)) {n : Nat} :
+    (b_text_fill_secure_bytes : Certified (∀ {n : Nat}, BStmt_text_fill_secure_bytes spW sp prims ix_text_fill_secure_bytes n))
+    (b_text_write_text : Certified (∀ {n : Nat}, BStmt_text_write_text spW sp prims ix_text_write_text n))
+    (b_text_write_newline : Certified (∀ {n : Nat}, BStmt_text_write_newline spW sp prims ix_text_write_newline n)) {n : Nat} :
     BStmt_host_id spW sp prims ix_host_id n := by
   intro x0 v0 w k h r0
   rcases n with _ | n

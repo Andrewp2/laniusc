@@ -851,6 +851,7 @@ theorem typedLiteral_sound {t : Ty} {v e : SrcExpr} (h : typedLiteral t v = some
       · rw [if_neg z] at h; cases h
     | tyIsize => cases h; exact .isize
     | tyChar => cases h
+    | tyStr => cases h
     | tyFloat ft => cases h
     | tyBool => cases h
     | tySlice _ => cases h
@@ -871,6 +872,7 @@ theorem typedLiteral_sound {t : Ty} {v e : SrcExpr} (h : typedLiteral t v = some
     | tyPtr => cases h
     | tyIsize => cases h
     | tyChar => cases h
+    | tyStr => cases h
     | tyFloat ft => cases h
     | tySlice _ => cases h
     | tyArray _ _ => cases h
@@ -888,6 +890,7 @@ theorem typedLiteral_sound {t : Ty} {v e : SrcExpr} (h : typedLiteral t v = some
       exact .negIsize
     | tyBool => cases h
     | tyChar => cases h
+    | tyStr => cases h
     | tyFloat ft =>
       simp only [typedLiteral] at h
       cases x with
@@ -943,6 +946,7 @@ theorem typedLiteral_sound {t : Ty} {v e : SrcExpr} (h : typedLiteral t v = some
     | tyPtr => cases h
     | tyIsize => cases h
     | tyChar => cases h
+    | tyStr => cases h
     | tySlice _ => cases h
     | tyArray _ _ => cases h
     | tyNamed _ _ => cases h
@@ -1019,6 +1023,7 @@ theorem wideOf_sound {t : Ty} {negative : Bool} {n : Nat} {e : SrcExpr} (h : wid
       · rw [if_neg (by cases negative <;> simp_all)] at h; cases h
   | tyBool => cases h
   | tyChar => cases h
+  | tyStr => cases h
   | tyFloat ft => cases h
   | tyPtr => cases h
   | tySlice _ => cases h
@@ -1197,6 +1202,7 @@ theorem memberOf_sound {env : FrontEnv} {scope : List Local} {primary tail : CTr
         | tyPtr => rw [ht] at hf; cases hf
         | tyIsize => rw [ht] at hf; cases hf
         | tyChar => rw [ht] at hf; cases hf
+        | tyStr => rw [ht] at hf; cases hf
         | tyFloat ft => rw [ht] at hf; cases hf
         | tySlice _ => rw [ht] at hf; cases hf
         | tyArray _ _ => rw [ht] at hf; cases hf
@@ -1215,6 +1221,8 @@ inductive ScalarTy : Ty → SrcType → Prop
   | char : ScalarTy .tyChar .char
   | float {ft : FloatTy} : ScalarTy (.tyFloat ft) (.float ft)
   | sint {k : UintTy} : ScalarTy (.tySint k) (.sint k)
+  /-- `str`: never a cast's target (`scalarSrc` has none), only `srcTy`'s image of Core's string type -/
+  | str : ScalarTy .tyStr .str
 
 theorem scalarSrc_sound {t : Ty} {s : SrcType} (h : scalarSrc t = some s) : ScalarTy t s := by
   cases t <;> simp [scalarSrc] at h <;> subst h <;> constructor

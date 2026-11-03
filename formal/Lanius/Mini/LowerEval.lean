@@ -44,6 +44,7 @@ import all Lanius.Mini.Compiler.P.floatApply
 import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.guardAnd
 import all Lanius.Mini.Compiler.P.hostRandomCode
+import all Lanius.Mini.Compiler.P.evalHost
 import all Lanius.Mini.Compiler.P.indexOf
 import all Lanius.Mini.Compiler.P.iteThen
 import all Lanius.Mini.Compiler.P.killShared
@@ -783,6 +784,24 @@ theorem two_i32 {tys : List SrcType} {vs : List Value} {env : Env} {slot : Nat} 
       obtain ⟨rfl, wb⟩ := (SrcType.holdsAt_scalar rfl).mp b
       exact ⟨_, _, rfl, wa, wb, rfl, rfl⟩
 
+/-- An `i32` and a `str` in consecutive slots: the handle, then the str's
+static address and byte count. -/
+theorem i32_str {tys : List SrcType} {vs : List Value} {env : Env} {slot : Nat} (holds : FieldsHold sx places tys vs env slot)
+    (tyEq : tys = [.i32, .str]) :
+    ∃ text k, vs = [.signed .i32 (low (env slot)).toInt, .string text] ∧ env slot = widen (low (env slot)) ∧
+      (env (slot + 1)).toNat = sx.base + k ∧ (env (slot + 2)).toNat = (World.utf8Bytes text).length ∧
+      (World.utf8Bytes text).length < 2 ^ 31 ∧
+      (sx.bytes.drop k).take (World.utf8Bytes text).length = World.utf8Bytes text := by
+  subst tyEq
+  cases holds with
+  | cons a rest =>
+    cases rest with
+    | cons b nil =>
+      cases nil
+      obtain ⟨rfl, wa⟩ := (SrcType.holdsAt_scalar rfl).mp a
+      cases b with
+      | str addr count small bytes => exact ⟨_, _, rfl, wa, addr, count, small, bytes⟩
+
 /-- One `i32` in a slot. -/
 theorem one_i32 {tys : List SrcType} {vs : List Value} {env : Env} {slot : Nat} (holds : FieldsHold sx places tys vs env slot)
     (tyEq : tys = [.i32]) : vs = [.signed .i32 (low (env slot)).toInt] ∧ env slot = widen (low (env slot)) := by
@@ -822,8 +841,9 @@ theorem evalHost_some {callee slot : Nat} {ea : EvaluatedArgs} {ev : Evaluated} 
       (service = .writeByte ∧ ea.types = [.i32, .i32] ∨
         (service = .writeStdout ∨ service = .writeStderr ∨ service = .readStdin ∨ service = .monotonicRead ∨
           service = .systemRead ∨ service = .fillSecureBytes) ∧ ea.types = [.ptr, .uint .usize] ∨
-        service = .sleepMsI32 ∧ ea.types = [.i32]) := by
-  simp only [evalHost] at ok
+        service = .sleepMsI32 ∧ ea.types = [.i32] ∨ service = .writeText ∧ ea.types = [.i32, .str] ∨
+        service = .writeNewline ∧ ea.types = [.i32]) := by
+  simp only [evalHost, evalHostText] at ok
   split at ok
   · rename_i checks
     simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
@@ -858,7 +878,7 @@ theorem evalHost_some {callee slot : Nat} {ea : EvaluatedArgs} {ev : Evaluated} 
     obtain ⟨rfl, same⟩ := checks
     simp only [Option.some.injEq] at ok
     subst ok
-    exact ⟨.sleepMsI32, _, by simp [hostService?, hostBase], rfl, .inr (.inr ⟨rfl, typesSame_eq _ same⟩)⟩
+    exact ⟨.sleepMsI32, _, by simp [hostService?, hostBase], rfl, .inr (.inr (.inl ⟨rfl, typesSame_eq _ same⟩))⟩
   split at ok
   · rename_i _ _ _ _ _ checks
     simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
@@ -883,17 +903,31 @@ theorem evalHost_some {callee slot : Nat} {ea : EvaluatedArgs} {ev : Evaluated} 
     subst ok
     exact ⟨.fillSecureBytes, _, by simp [hostService?, hostBase], rfl,
       .inr (.inl ⟨.inr (.inr (.inr (.inr (.inr rfl)))), typesSame_eq _ same⟩)⟩
+  split at ok
+  · rename_i _ _ _ _ _ _ _ _ checks
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+    obtain ⟨rfl, same⟩ := checks
+    simp only [Option.some.injEq] at ok
+    subst ok
+    exact ⟨.writeText, _, by simp [hostService?, hostBase], rfl, .inr (.inr (.inr (.inl ⟨rfl, typesSame_eq _ same⟩)))⟩
+  split at ok
+  · rename_i _ _ _ _ _ _ _ _ _ checks
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+    obtain ⟨rfl, same⟩ := checks
+    simp only [Option.some.injEq] at ok
+    subst ok
+    exact ⟨.writeNewline, _, by simp [hostService?, hostBase], rfl, .inr (.inr (.inr (.inr ⟨rfl, typesSame_eq _ same⟩)))⟩
   · simp at ok
 
 /-- A lowered host call past `sleep_ms_i32`: a clock read or
 `fill_secure_bytes`, after its arguments, a pointer and a `usize`. -/
 theorem evalHost_at {k slot : Nat} {ea : EvaluatedArgs} {ev : Evaluated} (ok : evalHost (hostBase + k) slot ea = some ev)
-    (five : 5 ≤ k) :
+    (five : 5 ≤ k) (seven : k ≤ 7) :
     typesSame ea.types [.ptr, .uint .usize] = true ∧
       (k = 5 ∧ ev = { stmt := .seq ea.stmt (hostClockCode 1 slot), ty := .i32 } ∨
         k = 6 ∧ ev = { stmt := .seq ea.stmt (hostClockCode 0 slot), ty := .i32 } ∨
         k = 7 ∧ ev = { stmt := .seq ea.stmt (hostRandomCode slot), ty := .i32 }) := by
-  simp only [evalHost] at ok
+  simp only [evalHost, evalHostText] at ok
   split at ok
   · rename_i checks
     simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
@@ -945,6 +979,18 @@ theorem evalHost_at {k slot : Nat} {ea : EvaluatedArgs} {ev : Evaluated} (ok : e
     simp only [hostBase] at eq
     simp only [Option.some.injEq] at ok
     exact ⟨same, .inr (.inr ⟨by omega, ok.symm⟩)⟩
+  split at ok
+  · rename_i checks
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+    obtain ⟨eq, -⟩ := checks
+    simp only [hostBase] at eq
+    omega
+  split at ok
+  · rename_i checks
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+    obtain ⟨eq, -⟩ := checks
+    simp only [hostBase] at eq
+    omega
   · simp at ok
 
 /-- A host call's bytes land in Core's heap, below the limit. -/
@@ -1259,7 +1305,7 @@ theorem eval_host_stores {callee : Nat} {service : Core.HostService} {ea : Evalu
            | (rcases stores with h | h | h <;> cases h))
       | cases hs
   obtain ⟨k, rfl, five, which⟩ := calleeK
-  obtain ⟨same, evs⟩ := evalHost_at ok five
+  obtain ⟨same, evs⟩ := evalHost_at ok five (by rcases which with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ <;> decide)
   have tyEq := typesSame_eq _ same
   rcases which with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
   · rcases evs with ⟨-, rfl⟩ | ⟨h, -⟩ | ⟨h, -⟩
@@ -1278,6 +1324,256 @@ theorem host_frame {afterArgs : State} {hpA hp' : Heap} {heap : Memory.Heap} {wo
     (fcA : FrameCorr sx bud places afterArgs hpA) (low : hpA.LowOnly hp') :
     FrameCorr sx bud places { afterArgs with heap, world } hp' :=
   (fcA.lowOnly low).congr (fun _ _ => rfl) (fun _ _ _ _ => rfl) rfl rfl rfl
+
+/-- `write_text` after its arguments: to handle 1 or 2 the mini code writes
+the str's bytes from the static region, which `statics` places, and returns
+Core's count; any other handle returns -1, as Core's does with no file open. -/
+theorem eval_host_writeText {callee : Nat} {ea : EvaluatedArgs} {ev : Evaluated}
+    {dA : Nat} {envA : Env} {hpA : Heap} {values : List Value} {afterArgs : State} {heap : Memory.Heap}
+    {world : World.State} (hs : hostService? callee = some .writeText)
+    (ok : evalHost callee slot ea = some ev)
+    (execA : Exec mp dA env hp ea.stmt (.normal envA hpA)) (sameA : ∀ j < slot, envA j = env j)
+    (holdsA : FieldsHold sx places ea.types values envA slot)
+    (hcA : HeapCorr afterArgs.heap afterArgs.world hpA) (statics : hpA.StaticsAt sx) (posA : 0 < hpA.top)
+    (called : World.call afterArgs.heap afterArgs.world .writeText values = .returned v heap world) :
+    ∃ code, ev = { stmt := .seq ea.stmt code, ty := .i32 } ∧
+      ∃ env' hp', Exec mp dA env hp (.seq ea.stmt code) (.normal env' hp') ∧
+        (∀ j < slot, env' j = env j) ∧ SrcType.i32.HoldsAt sx places v env' slot ∧ HeapCorr heap world hp' ∧
+        hpA.LowOnly hp' := by
+  have heapEq := textCall_heap (.inl rfl) called
+  subst heapEq
+  have callee8 : callee = hostBase + 8 := by
+    unfold hostService? at hs
+    repeat' split at hs
+    all_goals first | assumption | cases hs
+  subst callee8
+  have unfolded : evalHost (hostBase + 8) slot ea =
+      if typesSame ea.types [.i32, .str] = true then
+        some { stmt := .seq ea.stmt (hostTextCode slot), ty := .i32 } else none := by
+    simp [evalHost, evalHostText, hostBase]
+  rw [unfolded] at ok
+  split at ok
+  case isFalse => cases ok
+  rename_i same
+  simp only [Option.some.injEq] at ok
+  subst ok
+  refine ⟨_, rfl, ?_⟩
+  obtain ⟨text, k, valuesA, wa, addr, count, small, bytesK⟩ := i32_str holdsA (typesSame_eq _ same)
+  obtain ⟨handle, text', valuesEq, -, result⟩ := call_writeText_inv called
+  rw [valuesA] at valuesEq
+  simp only [List.cons.injEq, Value.signed.injEq, Value.string.injEq, true_and, and_true] at valuesEq
+  obtain ⟨rfl, rfl⟩ := valuesEq
+  have baseEq := statics.base
+  have bytesEq := statics.bytes
+  by_cases which : envA slot = 1 ∨ envA slot = 2
+  · have fdNat : ((low (envA slot)).toInt : Int) = ((envA slot).toNat : Int) := by
+      rcases which with one | two
+      · rw [one]; decide
+      · rw [two]; decide
+    have lenLe : 0 < (World.utf8Bytes text).length → k + (World.utf8Bytes text).length ≤ sx.bytes.length := by
+      intro pos
+      have := congrArg List.length bytesK
+      simp only [List.length_take, List.length_drop] at this
+      omega
+    obtain ⟨E', events, exec, keep, wrote, outs⟩ := hostText_exec (mp := mp) (d := dA) (E := envA) (H := hpA) slot which
+      (fun pos => by
+        rw [count] at pos
+        have le := lenLe pos
+        have nonempty : hpA.statics ≠ [] := by
+          intro empty
+          rw [bytesEq] at empty
+          rw [empty, List.length_nil] at le
+          omega
+        refine ⟨statics.above nonempty, ?_, ?_⟩
+        · rw [addr, baseEq]; omega
+        · rw [addr, count, baseEq, bytesEq]; omega)
+      statics.fits
+    have sent : (hpA.statics.drop ((envA (slot + 1)).toNat - hpA.staticBase)).take (envA (slot + 2)).toNat =
+        World.utf8Bytes text := by
+      rw [addr, count, baseEq, bytesEq, show sx.base + k - sx.base = k by omega, bytesK]
+    rw [fdNat] at result
+    have wroteSome : ∃ w', World.writeBytes (World.record afterArgs.world .writeText) ((envA slot).toNat : Int)
+        (World.utf8Bytes text) = some w' := by
+      rcases which with one | two
+      · rw [one]; exact ⟨_, rfl⟩
+      · rw [two]; exact ⟨_, rfl⟩
+    obtain ⟨w', wroteW⟩ := wroteSome
+    rcases result with ⟨wrote', rfl⟩ | ⟨none, -⟩
+    · rw [wroteW] at wrote'
+      cases wrote'
+      refine ⟨E', _, .seq execA exec, fun j below => (keep j below).trans (sameA j below), ?_, ?_,
+        ⟨fun _ _ => rfl, rfl, rfl, rfl, rfl, rfl⟩⟩
+      · refine .i32 ?_
+        have lenBits : envA (slot + 2) = BitVec.ofNat 64 (World.utf8Bytes text).length := by
+          apply BitVec.eq_of_toNat_eq
+          rw [count, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]
+        rw [wrote, lenBits, low_ofNat, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega), i32Result_nat]
+        exact holds_i32 _
+      · refine (hcA.record .writeText).wrote (fd := (envA slot).toNat) (bytes := World.utf8Bytes text) rfl rfl rfl rfl
+          (fun k => by rw [outs k, sent]) ?_ ?_ ?_ ?_ ?_
+        all_goals rcases which with h | h
+        all_goals simp only [h] at wroteW ⊢
+        all_goals simp [World.writeBytes] at wroteW
+        all_goals subst wroteW
+        all_goals simp [World.record, hcA.input, Streams, hcA.streams.1, hcA.streams.2.1, hcA.streams.2.2]
+    · rw [wroteW] at none
+      cases none
+  · have other : envA slot ≠ 1 ∧ envA slot ≠ 2 := by
+      constructor <;> intro h <;> exact which (by simp [h])
+    have notStd : World.writeBytes (World.record afterArgs.world .writeText) (low (envA slot)).toInt
+        (World.utf8Bytes text) = none := by
+      have n1 : (low (envA slot)).toInt ≠ 1 := fun h => other.1 (by
+        rw [wa, show low (envA slot) = 1 from BitVec.eq_of_toInt_eq (by rw [h]; decide)]; decide)
+      have n2 : (low (envA slot)).toInt ≠ 2 := fun h => other.2 (by
+        rw [wa, show low (envA slot) = 2 from BitVec.eq_of_toInt_eq (by rw [h]; decide)]; decide)
+      unfold World.writeBytes
+      rw [if_neg (by simpa using n1), if_neg (by simpa using n2)]
+    rcases result with ⟨wrote, -⟩ | ⟨-, ⟨file, -⟩ | ⟨-, rfl, rfl⟩⟩
+    · rw [notStd] at wrote
+      cases wrote
+    · rw [writeFileBytes_closed (hcA.record .writeText).closed] at file
+      cases file
+    · refine ⟨_, hpA, .seq execA (hostText_other slot other), fun j below => ?_, ?_, hcA.record .writeText, .refl _⟩
+      · rw [set_get, if_neg (by omega)]
+        exact sameA j below
+      · refine .i32 ?_
+        rw [set_get, if_pos rfl]
+        exact holds_m1
+/-- `write_newline` after its argument: `write_byte` of 10. -/
+theorem eval_host_writeNewline {callee : Nat} {ea : EvaluatedArgs} {ev : Evaluated}
+    {dA : Nat} {envA : Env} {hpA : Heap} {values : List Value} {afterArgs : State} {heap : Memory.Heap}
+    {world : World.State} (hs : hostService? callee = some .writeNewline)
+    (ok : evalHost callee slot ea = some ev)
+    (execA : Exec mp dA env hp ea.stmt (.normal envA hpA)) (sameA : ∀ j < slot, envA j = env j)
+    (holdsA : FieldsHold sx places ea.types values envA slot)
+    (hcA : HeapCorr afterArgs.heap afterArgs.world hpA) (statics : hpA.StaticsAt sx) (posA : 0 < hpA.top)
+    (called : World.call afterArgs.heap afterArgs.world .writeNewline values = .returned v heap world) :
+    ∃ code, ev = { stmt := .seq ea.stmt code, ty := .i32 } ∧
+      ∃ env' hp', Exec mp dA env hp (.seq ea.stmt code) (.normal env' hp') ∧
+        (∀ j < slot, env' j = env j) ∧ SrcType.i32.HoldsAt sx places v env' slot ∧ HeapCorr heap world hp' ∧
+        hpA.LowOnly hp' := by
+  have heapEq := textCall_heap (.inr rfl) called
+  subst heapEq
+  have callee9 : callee = hostBase + 9 := by
+    unfold hostService? at hs
+    repeat' split at hs
+    all_goals first | assumption | cases hs
+  subst callee9
+  have unfolded : evalHost (hostBase + 9) slot ea =
+      if typesSame ea.types [.i32] = true then
+        some { stmt := .seq ea.stmt (hostNewlineCode slot), ty := .i32 } else none := by
+    simp [evalHost, evalHostText, hostBase]
+  rw [unfolded] at ok
+  split at ok
+  case isFalse => cases ok
+  rename_i same
+  simp only [Option.some.injEq] at ok
+  subst ok
+  refine ⟨_, rfl, ?_⟩
+  obtain ⟨valuesA, wa⟩ := one_i32 holdsA (typesSame_eq _ same)
+  obtain ⟨handle, valuesEq, -, result⟩ := call_writeNewline_inv called
+  rw [valuesA] at valuesEq
+  simp only [List.cons.injEq, Value.signed.injEq, true_and, and_true] at valuesEq
+  subst valuesEq
+  let E1 := envA.set (slot + 1) ((Expr.lit 10).eval envA)
+  have e1s : E1 slot = envA slot := by simp [E1, set_get]
+  have e1v : E1 (slot + 1) = 10 := by simp [E1, set_get, Expr.eval]
+  by_cases which : envA slot = 1 ∨ envA slot = 2
+  · have fdNat : ((low (envA slot)).toInt : Int) = ((envA slot).toNat : Int) := by
+      rcases which with one | two
+      · rw [one]; decide
+      · rw [two]; decide
+    obtain ⟨E', H', exec, keep, one, sameBytes, cursor, limit, top, fspSame, trace, input, sameM, sameR, sameE⟩ :=
+      hostByte_exec (mp := mp) (d := dA) (E := E1) (H := hpA) slot posA (by rw [e1s]; exact which)
+    rw [e1v, e1s, show lowByte (10 : BitVec 64) = 10 from rfl] at trace
+    rw [fdNat] at result
+    have wroteSome : ∃ w', World.writeBytes (World.record afterArgs.world .writeNewline) ((envA slot).toNat : Int)
+        [10] = some w' := by
+      rcases which with one | two
+      · rw [one]; exact ⟨_, rfl⟩
+      · rw [two]; exact ⟨_, rfl⟩
+    obtain ⟨w', wroteW⟩ := wroteSome
+    have code : Exec mp dA envA hpA (hostNewlineCode slot) (.normal E' H') := .seq .assign exec
+    rcases result with ⟨wrote', rfl⟩ | ⟨none, -⟩
+    · rw [wroteW] at wrote'
+      cases wrote'
+      refine ⟨E', H', .seq execA code, fun j below => ?_, ?_, ?_,
+        ⟨fun _ _ => by rw [sameBytes], fspSame, limit, top, exec.statics.1, exec.statics.2⟩⟩
+      · rw [keep j below]
+        simp only [E1, set_get]
+        rw [if_neg (by omega)]
+        exact sameA j below
+      · refine .i32 ?_
+        rw [one]
+        exact holds_one
+      · refine (hcA.record .writeNewline).wrote sameBytes cursor limit trace (fun k => outputOf_write _ _ _) ?_ ?_ ?_
+          (by
+            rw [input, ← hcA.input]
+            rcases which with one | two
+            · simp only [one] at wroteW; simp [World.writeBytes] at wroteW; subst wroteW; rfl
+            · simp only [two] at wroteW; simp [World.writeBytes] at wroteW; subst wroteW; rfl)
+          (hcA.streams.congr (by
+            rcases which with one | two
+            · simp only [one] at wroteW; simp [World.writeBytes] at wroteW; subst wroteW; exact ⟨rfl, rfl, rfl⟩
+            · simp only [two] at wroteW; simp [World.writeBytes] at wroteW; subst wroteW; exact ⟨rfl, rfl, rfl⟩)
+            ⟨sameM, sameR, sameE⟩)
+        · rcases which with one | two
+          · simp only [one] at wroteW ⊢; simp [World.writeBytes] at wroteW; subst wroteW; simp
+          · simp only [two] at wroteW ⊢; simp [World.writeBytes] at wroteW; subst wroteW; simp
+        · rcases which with one | two
+          · simp only [one] at wroteW ⊢; simp [World.writeBytes] at wroteW; subst wroteW; simp
+          · simp only [two] at wroteW ⊢; simp [World.writeBytes] at wroteW; subst wroteW; simp
+        · rcases which with one | two
+          · simp only [one] at wroteW; simp [World.writeBytes] at wroteW; subst wroteW; rfl
+          · simp only [two] at wroteW; simp [World.writeBytes] at wroteW; subst wroteW; rfl
+    · rw [wroteW] at none
+      cases none
+  · have other : envA slot ≠ 1 ∧ envA slot ≠ 2 := by
+      constructor <;> intro h <;> exact which (by simp [h])
+    have notStd : World.writeBytes (World.record afterArgs.world .writeNewline) (low (envA slot)).toInt
+        [10] = none := by
+      have n1 : (low (envA slot)).toInt ≠ 1 := fun h => other.1 (by
+        rw [wa, show low (envA slot) = 1 from BitVec.eq_of_toInt_eq (by rw [h]; decide)]; decide)
+      have n2 : (low (envA slot)).toInt ≠ 2 := fun h => other.2 (by
+        rw [wa, show low (envA slot) = 2 from BitVec.eq_of_toInt_eq (by rw [h]; decide)]; decide)
+      unfold World.writeBytes
+      rw [if_neg (by simpa using n1), if_neg (by simpa using n2)]
+    rcases result with ⟨wrote, -⟩ | ⟨-, ⟨file, -⟩ | ⟨-, rfl, rfl⟩⟩
+    · rw [notStd] at wrote
+      cases wrote
+    · rw [writeFileBytes_closed (hcA.record .writeNewline).closed] at file
+      cases file
+    · have code : Exec mp dA envA hpA (hostNewlineCode slot) (.normal (E1.set slot 4294967295) hpA) :=
+        .seq .assign (hostByte_other slot (show E1 slot ≠ 1 ∧ E1 slot ≠ 2 by rw [e1s]; exact other))
+      refine ⟨_, hpA, .seq execA code, fun j below => ?_, ?_, hcA.record .writeNewline, .refl _⟩
+      · rw [set_get, if_neg (by omega)]
+        simp only [E1, set_get]
+        rw [if_neg (by omega)]
+        exact sameA j below
+      · refine .i32 ?_
+        rw [set_get, if_pos rfl]
+        exact holds_m1
+
+/-- `write_text` or `write_newline` after its arguments: to handle 1 or 2 the
+mini code writes what Core's world gained (a str's bytes come from the static
+region, which `statics` places), and returns Core's count; any other handle
+returns -1, as Core's does with no file open. -/
+theorem eval_host_text {callee : Nat} {service : Core.HostService} {ea : EvaluatedArgs} {ev : Evaluated}
+    {dA : Nat} {envA : Env} {hpA : Heap} {values : List Value} {afterArgs : State} {heap : Memory.Heap}
+    {world : World.State} (hs : hostService? callee = some service)
+    (texts : service = .writeText ∨ service = .writeNewline)
+    (ok : evalHost callee slot ea = some ev)
+    (execA : Exec mp dA env hp ea.stmt (.normal envA hpA)) (sameA : ∀ j < slot, envA j = env j)
+    (holdsA : FieldsHold sx places ea.types values envA slot)
+    (hcA : HeapCorr afterArgs.heap afterArgs.world hpA) (statics : hpA.StaticsAt sx) (posA : 0 < hpA.top)
+    (called : World.call afterArgs.heap afterArgs.world service values = .returned v heap world) :
+    ∃ code, ev = { stmt := .seq ea.stmt code, ty := .i32 } ∧
+      ∃ env' hp', Exec mp dA env hp (.seq ea.stmt code) (.normal env' hp') ∧
+        (∀ j < slot, env' j = env j) ∧ SrcType.i32.HoldsAt sx places v env' slot ∧ HeapCorr heap world hp' ∧
+        hpA.LowOnly hp' := by
+  rcases texts with rfl | rfl
+  · exact eval_host_writeText hs ok execA sameA holdsA hcA statics posA called
+  · exact eval_host_writeNewline hs ok execA sameA holdsA hcA statics posA called
 
 theorem host_wrap {afterArgs : State} {hpA : Heap} {heap : Memory.Heap} {world : World.State} {d : Nat}
     {s : Stmt} (fcA : FrameCorr sx bud places afterArgs hpA)
@@ -1319,7 +1615,7 @@ theorem eval_host {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {callee : Nat} 
       repeat' split at hs
       all_goals first | assumption | cases hs
     subst callee3
-    simp only [evalHost] at ok
+    simp only [evalHost, evalHostText] at ok
     split at ok
     · rename_i checks; simp [hostBase] at checks
     split at ok
@@ -1342,15 +1638,23 @@ theorem eval_host {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {callee : Nat} 
     · rename_i checks; simp [hostBase] at checks
     split at ok
     · rename_i checks; simp [hostBase] at checks
+    split at ok
+    · rename_i checks; simp [hostBase] at checks
+    split at ok
+    · rename_i checks; simp [hostBase] at checks
     · simp at ok
   by_cases stores : service = .monotonicRead ∨ service = .systemRead ∨ service = .fillSecureBytes
   · obtain ⟨code, rfl, sim⟩ := eval_host_stores hs stores ok execA sameA holdsA hcA limitA called
+    exact ⟨⟨keepsA.cells, keepsA.next, keepsA.views, keepsA.persist, keepsA.arrays⟩, localsA, (by decide : 0 < SrcType.i32.size), dA, host_wrap fcA sim⟩
+  by_cases texts : service = .writeText ∨ service = .writeNewline
+  · obtain ⟨code, rfl, sim⟩ := eval_host_text hs texts ok execA sameA holdsA hcA fcA.statics
+      (Nat.lt_of_lt_of_le (Nat.lt_of_lt_of_le hcA.pos limitA) hcA.topped) called
     exact ⟨⟨keepsA.cells, keepsA.next, keepsA.views, keepsA.persist, keepsA.arrays⟩, localsA, (by decide : 0 < SrcType.i32.size), dA, host_wrap fcA sim⟩
   have keeps : service = .writeByte ∨ service = .writeStdout ∨ service = .writeStderr ∨ service = .sleepMsI32 := by
     obtain ⟨service', _, hs', -, shape⟩ := evalHost_some ok
     rw [hs] at hs'
     cases hs'
-    rcases shape with ⟨rfl, -⟩ | ⟨rfl | rfl | rfl | rfl | rfl | rfl, -⟩ | ⟨rfl, -⟩
+    rcases shape with ⟨rfl, -⟩ | ⟨rfl | rfl | rfl | rfl | rfl | rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩
     · exact .inl rfl
     · exact .inr (.inl rfl)
     · exact .inr (.inr (.inl rfl))
@@ -1359,10 +1663,12 @@ theorem eval_host {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {callee : Nat} 
     · exact absurd (.inr (.inl rfl)) stores
     · exact absurd (.inr (.inr rfl)) stores
     · exact .inr (.inr (.inr rfl))
+    · exact absurd (.inl rfl) texts
+    · exact absurd (.inr rfl) texts
   have heapEq := hostCall_heap keeps called
   subst heapEq
   have posA : 0 < hpA.limit := Nat.lt_of_lt_of_le hcA.pos limitA
-  simp only [evalHost] at ok
+  simp only [evalHost, evalHostText] at ok
   split at ok
   · rename_i checks
     simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
@@ -1505,6 +1811,16 @@ theorem eval_host {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {callee : Nat} 
     simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
     obtain ⟨rfl, -⟩ := checks
     exact absurd (.inr (.inr (by simpa [hostService?, hostBase] using hs.symm))) stores
+  split at ok
+  · rename_i checks
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+    obtain ⟨rfl, -⟩ := checks
+    exact absurd (.inl (by simpa [hostService?, hostBase] using hs.symm)) texts
+  split at ok
+  · rename_i checks
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+    obtain ⟨rfl, -⟩ := checks
+    exact absurd (.inr (by simpa [hostService?, hostBase] using hs.symm)) texts
   · simp at ok
 
 theorem eval_call (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {k : Nat}

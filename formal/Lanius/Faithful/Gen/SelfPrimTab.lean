@@ -165,184 +165,184 @@ theorem word732 : wordElement decls ty64 = true := by decide +kernel
 theorem words732 : (NativeLayout.valueWords? (declsCore decls) (ty64).toCore).isSome = true := by
   decide +kernel
 
-theorem word816 : wordElement decls ty218 = true := by decide +kernel
+theorem word817 : wordElement decls ty218 = true := by decide +kernel
 
-theorem words816 : (NativeLayout.valueWords? (declsCore decls) (ty218).toCore).isSome = true := by
+theorem words817 : (NativeLayout.valueWords? (declsCore decls) (ty218).toCore).isSome = true := by
   decide +kernel
 
-theorem word818 : wordElement decls ty74 = true := by decide +kernel
+theorem word819 : wordElement decls ty74 = true := by decide +kernel
 
-theorem words818 : (NativeLayout.valueWords? (declsCore decls) (ty74).toCore).isSome = true := by
+theorem words819 : (NativeLayout.valueWords? (declsCore decls) (ty74).toCore).isSome = true := by
   decide +kernel
 
-theorem word820 : wordElement decls ty78 = true := by decide +kernel
+theorem word821 : wordElement decls ty78 = true := by decide +kernel
 
-theorem words820 : (NativeLayout.valueWords? (declsCore decls) (ty78).toCore).isSome = true := by
+theorem words821 : (NativeLayout.valueWords? (declsCore decls) (ty78).toCore).isSome = true := by
   decide +kernel
 
-theorem word825 : wordElement decls ty222 = true := by decide +kernel
+theorem word826 : wordElement decls ty222 = true := by decide +kernel
 
-theorem words825 : (NativeLayout.valueWords? (declsCore decls) (ty222).toCore).isSome = true := by
+theorem words826 : (NativeLayout.valueWords? (declsCore decls) (ty222).toCore).isSome = true := by
   decide +kernel
 
-theorem word929 : wordElement decls ty27 = true := by decide +kernel
+theorem word930 : wordElement decls ty27 = true := by decide +kernel
 
-theorem words929 : (NativeLayout.valueWords? (declsCore decls) (ty27).toCore).isSome = true := by
+theorem words930 : (NativeLayout.valueWords? (declsCore decls) (ty27).toCore).isSome = true := by
   decide +kernel
 
-theorem word973 : wordElement decls ty152 = true := by decide +kernel
+theorem word975 : wordElement decls ty152 = true := by decide +kernel
 
-theorem words973 : (NativeLayout.valueWords? (declsCore decls) (ty152).toCore).isSome = true := by
+theorem words975 : (NativeLayout.valueWords? (declsCore decls) (ty152).toCore).isSome = true := by
   decide +kernel
 
-theorem word980 : wordElement decls ty196 = true := by decide +kernel
+theorem word982 : wordElement decls ty196 = true := by decide +kernel
 
-theorem words980 : (NativeLayout.valueWords? (declsCore decls) (ty196).toCore).isSome = true := by
+theorem words982 : (NativeLayout.valueWords? (declsCore decls) (ty196).toCore).isSome = true := by
   decide +kernel
 
-theorem word1030 : wordElement decls ty35 = true := by decide +kernel
+theorem word1032 : wordElement decls ty35 = true := by decide +kernel
 
-theorem words1030 : (NativeLayout.valueWords? (declsCore decls) (ty35).toCore).isSome = true := by
+theorem words1032 : (NativeLayout.valueWords? (declsCore decls) (ty35).toCore).isSome = true := by
   decide +kernel
 
-theorem word1096 : wordElement decls ty182 = true := by decide +kernel
+theorem word1100 : wordElement decls ty182 = true := by decide +kernel
 
-theorem words1096 : (NativeLayout.valueWords? (declsCore decls) (ty182).toCore).isSome = true := by
+theorem words1100 : (NativeLayout.valueWords? (declsCore decls) (ty182).toCore).isSome = true := by
   decide +kernel
 
-theorem word1099 : wordElement decls ty46 = true := by decide +kernel
+theorem word1103 : wordElement decls ty46 = true := by decide +kernel
 
-theorem words1099 : (NativeLayout.valueWords? (declsCore decls) (ty46).toCore).isSome = true := by
+theorem words1103 : (NativeLayout.valueWords? (declsCore decls) (ty46).toCore).isSome = true := by
   decide +kernel
 
-theorem word1166 : wordElement decls ty228 = true := by decide +kernel
+theorem word1172 : wordElement decls ty228 = true := by decide +kernel
 
-theorem words1166 : (NativeLayout.valueWords? (declsCore decls) (ty228).toCore).isSome = true := by
+theorem words1172 : (NativeLayout.valueWords? (declsCore decls) (ty228).toCore).isSome = true := by
   decide +kernel
 
-theorem word1170 : wordElement decls ty33 = true := by decide +kernel
+theorem word1178 : wordElement decls ty33 = true := by decide +kernel
 
-theorem words1170 : (NativeLayout.valueWords? (declsCore decls) (ty33).toCore).isSome = true := by
+theorem words1178 : (NativeLayout.valueWords? (declsCore decls) (ty33).toCore).isSome = true := by
   decide +kernel
 
-theorem word1172 : wordElement decls ty30 = true := by decide +kernel
+theorem word1180 : wordElement decls ty30 = true := by decide +kernel
 
-theorem words1172 : (NativeLayout.valueWords? (declsCore decls) (ty30).toCore).isSome = true := by
+theorem words1180 : (NativeLayout.valueWords? (declsCore decls) (ty30).toCore).isSome = true := by
   decide +kernel
 
-theorem word1190 : wordElement decls ty246 = true := by decide +kernel
+theorem word1198 : wordElement decls ty246 = true := by decide +kernel
 
-theorem words1190 : (NativeLayout.valueWords? (declsCore decls) (ty246).toCore).isSome = true := by
+theorem words1198 : (NativeLayout.valueWords? (declsCore decls) (ty246).toCore).isSome = true := by
   decide +kernel
 
-theorem word1211 : wordElement decls ty193 = true := by decide +kernel
+theorem word1219 : wordElement decls ty193 = true := by decide +kernel
 
-theorem words1211 : (NativeLayout.valueWords? (declsCore decls) (ty193).toCore).isSome = true := by
+theorem words1219 : (NativeLayout.valueWords? (declsCore decls) (ty193).toCore).isSome = true := by
   decide +kernel
 
-theorem word1212 : wordElement decls ty286 = true := by decide +kernel
+theorem word1220 : wordElement decls ty286 = true := by decide +kernel
 
-theorem words1212 : (NativeLayout.valueWords? (declsCore decls) (ty286).toCore).isSome = true := by
+theorem words1220 : (NativeLayout.valueWords? (declsCore decls) (ty286).toCore).isSome = true := by
   decide +kernel
 
-theorem word1219 : wordElement decls ty187 = true := by decide +kernel
+theorem word1227 : wordElement decls ty187 = true := by decide +kernel
 
-theorem words1219 : (NativeLayout.valueWords? (declsCore decls) (ty187).toCore).isSome = true := by
+theorem words1227 : (NativeLayout.valueWords? (declsCore decls) (ty187).toCore).isSome = true := by
   decide +kernel
 
-theorem word1370 : wordElement decls ty15 = true := by decide +kernel
+theorem word1380 : wordElement decls ty15 = true := by decide +kernel
 
-theorem words1370 : (NativeLayout.valueWords? (declsCore decls) (ty15).toCore).isSome = true := by
+theorem words1380 : (NativeLayout.valueWords? (declsCore decls) (ty15).toCore).isSome = true := by
   decide +kernel
 
-theorem word1389 : wordElement decls ty212 = true := by decide +kernel
+theorem word1399 : wordElement decls ty212 = true := by decide +kernel
 
-theorem words1389 : (NativeLayout.valueWords? (declsCore decls) (ty212).toCore).isSome = true := by
+theorem words1399 : (NativeLayout.valueWords? (declsCore decls) (ty212).toCore).isSome = true := by
   decide +kernel
 
-theorem word1391 : wordElement decls ty29 = true := by decide +kernel
+theorem word1401 : wordElement decls ty29 = true := by decide +kernel
 
-theorem words1391 : (NativeLayout.valueWords? (declsCore decls) (ty29).toCore).isSome = true := by
+theorem words1401 : (NativeLayout.valueWords? (declsCore decls) (ty29).toCore).isSome = true := by
   decide +kernel
 
-theorem word1394 : wordElement decls ty270 = true := by decide +kernel
+theorem word1404 : wordElement decls ty270 = true := by decide +kernel
 
-theorem words1394 : (NativeLayout.valueWords? (declsCore decls) (ty270).toCore).isSome = true := by
+theorem words1404 : (NativeLayout.valueWords? (declsCore decls) (ty270).toCore).isSome = true := by
   decide +kernel
 
-theorem word1427 : wordElement decls ty204 = true := by decide +kernel
+theorem word1437 : wordElement decls ty204 = true := by decide +kernel
 
-theorem words1427 : (NativeLayout.valueWords? (declsCore decls) (ty204).toCore).isSome = true := by
+theorem words1437 : (NativeLayout.valueWords? (declsCore decls) (ty204).toCore).isSome = true := by
   decide +kernel
 
-theorem word1474 : wordElement decls ty12 = true := by decide +kernel
+theorem word1484 : wordElement decls ty12 = true := by decide +kernel
 
-theorem words1474 : (NativeLayout.valueWords? (declsCore decls) (ty12).toCore).isSome = true := by
+theorem words1484 : (NativeLayout.valueWords? (declsCore decls) (ty12).toCore).isSome = true := by
   decide +kernel
 
-theorem word1479 : wordElement decls ty75 = true := by decide +kernel
+theorem word1489 : wordElement decls ty75 = true := by decide +kernel
 
-theorem words1479 : (NativeLayout.valueWords? (declsCore decls) (ty75).toCore).isSome = true := by
+theorem words1489 : (NativeLayout.valueWords? (declsCore decls) (ty75).toCore).isSome = true := by
   decide +kernel
 
-theorem word1503 : wordElement decls ty18 = true := by decide +kernel
+theorem word1515 : wordElement decls ty18 = true := by decide +kernel
 
-theorem words1503 : (NativeLayout.valueWords? (declsCore decls) (ty18).toCore).isSome = true := by
+theorem words1515 : (NativeLayout.valueWords? (declsCore decls) (ty18).toCore).isSome = true := by
   decide +kernel
 
-theorem word1504 : wordElement decls ty23 = true := by decide +kernel
+theorem word1516 : wordElement decls ty23 = true := by decide +kernel
 
-theorem words1504 : (NativeLayout.valueWords? (declsCore decls) (ty23).toCore).isSome = true := by
+theorem words1516 : (NativeLayout.valueWords? (declsCore decls) (ty23).toCore).isSome = true := by
   decide +kernel
 
-theorem word1571 : wordElement decls ty106 = true := by decide +kernel
+theorem word1583 : wordElement decls ty106 = true := by decide +kernel
 
-theorem words1571 : (NativeLayout.valueWords? (declsCore decls) (ty106).toCore).isSome = true := by
+theorem words1583 : (NativeLayout.valueWords? (declsCore decls) (ty106).toCore).isSome = true := by
   decide +kernel
 
-theorem word1596 : wordElement decls ty291 = true := by decide +kernel
+theorem word1611 : wordElement decls ty291 = true := by decide +kernel
 
-theorem words1596 : (NativeLayout.valueWords? (declsCore decls) (ty291).toCore).isSome = true := by
+theorem words1611 : (NativeLayout.valueWords? (declsCore decls) (ty291).toCore).isSome = true := by
   decide +kernel
 
-theorem word1709 : wordElement decls ty303 = true := by decide +kernel
+theorem word1724 : wordElement decls ty303 = true := by decide +kernel
 
-theorem words1709 : (NativeLayout.valueWords? (declsCore decls) (ty303).toCore).isSome = true := by
+theorem words1724 : (NativeLayout.valueWords? (declsCore decls) (ty303).toCore).isSome = true := by
   decide +kernel
 
-theorem word1757 : wordElement decls ty297 = true := by decide +kernel
+theorem word1772 : wordElement decls ty297 = true := by decide +kernel
 
-theorem words1757 : (NativeLayout.valueWords? (declsCore decls) (ty297).toCore).isSome = true := by
+theorem words1772 : (NativeLayout.valueWords? (declsCore decls) (ty297).toCore).isSome = true := by
   decide +kernel
 
-theorem word1800 : wordElement decls ty192 = true := by decide +kernel
+theorem word1815 : wordElement decls ty192 = true := by decide +kernel
 
-theorem words1800 : (NativeLayout.valueWords? (declsCore decls) (ty192).toCore).isSome = true := by
+theorem words1815 : (NativeLayout.valueWords? (declsCore decls) (ty192).toCore).isSome = true := by
   decide +kernel
 
-theorem word2168 : wordElement decls ty358 = true := by decide +kernel
+theorem word2183 : wordElement decls ty358 = true := by decide +kernel
 
-theorem words2168 : (NativeLayout.valueWords? (declsCore decls) (ty358).toCore).isSome = true := by
+theorem words2183 : (NativeLayout.valueWords? (declsCore decls) (ty358).toCore).isSome = true := by
   decide +kernel
 
-theorem word2288 : wordElement decls ty318 = true := by decide +kernel
+theorem word2303 : wordElement decls ty318 = true := by decide +kernel
 
-theorem words2288 : (NativeLayout.valueWords? (declsCore decls) (ty318).toCore).isSome = true := by
+theorem words2303 : (NativeLayout.valueWords? (declsCore decls) (ty318).toCore).isSome = true := by
   decide +kernel
 
-theorem word2319 : wordElement decls ty346 = true := by decide +kernel
+theorem word2335 : wordElement decls ty346 = true := by decide +kernel
 
-theorem words2319 : (NativeLayout.valueWords? (declsCore decls) (ty346).toCore).isSome = true := by
+theorem words2335 : (NativeLayout.valueWords? (declsCore decls) (ty346).toCore).isSome = true := by
   decide +kernel
 
-theorem word2425 : wordElement decls ty333 = true := by decide +kernel
+theorem word2442 : wordElement decls ty333 = true := by decide +kernel
 
-theorem words2425 : (NativeLayout.valueWords? (declsCore decls) (ty333).toCore).isSome = true := by
+theorem words2442 : (NativeLayout.valueWords? (declsCore decls) (ty333).toCore).isSome = true := by
   decide +kernel
 
-theorem word2437 : wordElement decls ty365 = true := by decide +kernel
+theorem word2454 : wordElement decls ty365 = true := by decide +kernel
 
-theorem words2437 : (NativeLayout.valueWords? (declsCore decls) (ty365).toCore).isSome = true := by
+theorem words2454 : (NativeLayout.valueWords? (declsCore decls) (ty365).toCore).isSome = true := by
   decide +kernel
 
 theorem word10 : wordElement decls ty1 = true := by decide +kernel
@@ -427,46 +427,46 @@ theorem word685 : wordElement decls ty124 = true := by decide +kernel
 
 theorem word734 : wordElement decls ty64 = true := by decide +kernel
 
-theorem word958 : wordElement decls ty246 = true := by decide +kernel
+theorem word960 : wordElement decls ty246 = true := by decide +kernel
 
-theorem word966 : wordElement decls ty152 = true := by decide +kernel
+theorem word968 : wordElement decls ty152 = true := by decide +kernel
 
-theorem word971 : wordElement decls ty187 = true := by decide +kernel
+theorem word973 : wordElement decls ty187 = true := by decide +kernel
 
-theorem word972 : wordElement decls ty193 = true := by decide +kernel
+theorem word974 : wordElement decls ty193 = true := by decide +kernel
 
-theorem word1006 : wordElement decls ty204 = true := by decide +kernel
+theorem word1008 : wordElement decls ty204 = true := by decide +kernel
 
-theorem word1055 : wordElement decls ty23 = true := by decide +kernel
+theorem word1057 : wordElement decls ty23 = true := by decide +kernel
 
-theorem word1198 : wordElement decls ty286 = true := by decide +kernel
+theorem word1206 : wordElement decls ty286 = true := by decide +kernel
 
-theorem word1199 : wordElement decls ty192 = true := by decide +kernel
+theorem word1207 : wordElement decls ty192 = true := by decide +kernel
 
-theorem word1248 : wordElement decls ty161 = true := by decide +kernel
+theorem word1256 : wordElement decls ty161 = true := by decide +kernel
 
-theorem word1316 : wordElement decls ty222 = true := by decide +kernel
+theorem word1324 : wordElement decls ty222 = true := by decide +kernel
 
-theorem word1388 : wordElement decls ty270 = true := by decide +kernel
+theorem word1398 : wordElement decls ty270 = true := by decide +kernel
 
-theorem word1481 : wordElement decls ty297 = true := by decide +kernel
+theorem word1491 : wordElement decls ty297 = true := by decide +kernel
 
-theorem word1573 : wordElement decls ty228 = true := by decide +kernel
+theorem word1585 : wordElement decls ty228 = true := by decide +kernel
 
-theorem word1580 : wordElement decls ty106 = true := by decide +kernel
+theorem word1592 : wordElement decls ty106 = true := by decide +kernel
 
-theorem word1592 : wordElement decls ty291 = true := by decide +kernel
+theorem word1607 : wordElement decls ty291 = true := by decide +kernel
 
-theorem word1609 : wordElement decls ty303 = true := by decide +kernel
+theorem word1624 : wordElement decls ty303 = true := by decide +kernel
 
-theorem word2052 : wordElement decls ty358 = true := by decide +kernel
+theorem word2067 : wordElement decls ty358 = true := by decide +kernel
 
-theorem word2080 : wordElement decls ty346 = true := by decide +kernel
+theorem word2095 : wordElement decls ty346 = true := by decide +kernel
 
-theorem word2144 : wordElement decls ty318 = true := by decide +kernel
+theorem word2159 : wordElement decls ty318 = true := by decide +kernel
 
-theorem word2253 : wordElement decls ty333 = true := by decide +kernel
+theorem word2268 : wordElement decls ty333 = true := by decide +kernel
 
-theorem word2314 : wordElement decls ty365 = true := by decide +kernel
+theorem word2330 : wordElement decls ty365 = true := by decide +kernel
 
 end Lanius.Faithful.SelfPure

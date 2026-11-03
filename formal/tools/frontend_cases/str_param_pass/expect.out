@@ -1,0 +1,3 @@
+{ params := [{ id := 0, ty := .i32 }, { id := 1, ty := .str }], ret := .i32, body := (.return (.local 0)) }
+{ params := [{ id := 0, ty := .str }], ret := .i32, body := (.returnEval (.eCall 0 [(.ePure (.int 2)), (.ePure (.local 0))])) }
+{ params := [{ id := 0, ty := .i32 }], ret := .i32, body := (.letEval 1 .i32 (.eCall 1 [(.eStr 0 [97, 98])]) (.letEval 2 .i32 (.eCall 1 [(.eStr 2 [99, 100, 101])]) (.return (.apply .plus (.local 1) (.local 2))))) }

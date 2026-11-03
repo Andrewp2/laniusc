@@ -117,6 +117,7 @@ def tyKnown (table : List Inst) (t : Ty) : Bool :=
   | .tyPtr => true
   | .tyIsize => true
   | .tyChar => true
+  | .tyStr => true
   | .tyFloat ft => true
   | .tySlice e => tyKnown table e
   | .tyArray e n => tyKnown table e
@@ -158,6 +159,7 @@ def tyWeight (table : List Inst) (ws : List (Option Nat)) (t : Ty) : Option Nat 
   | .tyPtr => some 1
   | .tyIsize => some 1
   | .tyChar => some 1
+  | .tyStr => some 1
   | .tyFloat ft => some 1
   | .tySlice e => weightAddTo 1 (tyWeight table ws e)
   | .tyArray e n => weightArray n (tyWeight table ws e)

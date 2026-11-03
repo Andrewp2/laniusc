@@ -19,8 +19,8 @@ public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
 public import Lanius.Faithful.Gen.SelfStmtC_armScope
 public import Lanius.Faithful.Gen.SelfStmtC_consArgs
 public import Lanius.Faithful.Gen.SelfStmtC_evalDivide
+public import Lanius.Faithful.Gen.SelfStmtC_evalHost
 public import Lanius.Faithful.Gen.SelfStmtC_evalNot
-public import Lanius.Faithful.Gen.SelfStmtC_hostRandomCode
 public import Lanius.Faithful.Gen.SelfStmtC_lowerCallSig
 public import Lanius.Faithful.Gen.SelfStmtC_lowerLoadType
 public import Lanius.Faithful.Gen.SelfStmtC_matchDst

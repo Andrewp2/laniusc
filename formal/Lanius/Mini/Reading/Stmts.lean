@@ -122,6 +122,7 @@ theorem fieldTyAt_sound {fuel : Nat} {decls : Decls} {t : Ty} {j : Nat} :
   | tyPtr => cases h
   | tyIsize => cases h
   | tyChar => cases h
+  | tyStr => cases h
   | tyFloat ft => cases h
   | tySint _ => cases h
   | tyArray _ _ => cases h
@@ -135,7 +136,7 @@ theorem effPostfix_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {exp
 theorem effPathCall_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {expected : Option Ty}
     {path args : CTree} {x : MEff} (h : effPathCall fuel env scope expected path args = some x) :
     EffPathCall env scope expected path args x :=
-  (effSound fuel).2.2.2.2.2.2.2.2.2.2.2.1 h
+  (effSound fuel).2.2.2.2.2.2.2.2.2.2.2.2.2.1 h
 
 /-- `path(args)?` with no further postfix, the path a plain name. -/
 def TryCallForm (pf : CTree) : Prop :=
@@ -147,7 +148,7 @@ theorem isTryCall_sound {pf : CTree} (h : isTryCall pf = true) : TryCallForm pf 
 
 theorem effMethod_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {expected : Option Ty} {pf : CTree}
     {x : MEff} (h : effMethod fuel env scope expected pf = some x) : MethodEff env scope expected pf x :=
-  (effSound fuel).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1 h
+  (effSound fuel).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1 h
 
 /-- `x.m(args)?` or `x.m<T, ..>(args)?` with no further postfix, x a plain
 name or `self`. -/
@@ -1081,7 +1082,7 @@ theorem i32ArrayLength_some {t : Ty} {n : Nat} (e : i32ArrayLength t = some n) :
       simp only [Option.some.injEq] at e
       rw [(sameTy_iff _ _).1 same, e]
     · cases e
-  | tyI32 | tyBool | tyUint _ | tyPtr | tyIsize | tyChar | tyFloat _ | tySlice _ | tyNamed _ _ | tySint _ =>
+  | tyI32 | tyBool | tyUint _ | tyPtr | tyIsize | tyChar | tyStr | tyFloat _ | tySlice _ | tyNamed _ _ | tySint _ =>
     simp [i32ArrayLength, arrayParts] at e
 
 theorem isPtrOf_some {t : Option Ty} (e : isPtrOf t = true) : t = some .tyPtr := by
@@ -1186,20 +1187,6 @@ theorem litMatchParts_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {
 
 /-! ## String literals (SEMANTIC_DECISIONS "Addressed locals" point 6) -/
 
-/-- A byte a string literal holds as itself: printable ASCII other than the
-quote and the backslash, so no escape is read. -/
-def PlainStringByte (b : Nat) : Prop := 32 ≤ b ∧ b < 127 ∧ b ≠ 34 ∧ b ≠ 92
-
-/-- A string literal's text, its quotes included, and its bytes: laniusc's
-literal is exactly these bytes. -/
-def StringLiteral (text chars : List Nat) : Prop :=
-  text = 34 :: (chars ++ [34]) ∧ ∀ b ∈ chars, PlainStringByte b
-
-/-- The initializer is a string literal. -/
-inductive StringInit (init : CTree) : List Nat → Prop
-  | mk {pf : CTree} {chars : List Nat} : Peel init pf → nodeProd (kid pf 0) = pString →
-      nodeProd (kid pf 1) = pPostfixEnd → StringLiteral (kidToken (kid pf 0) 0).text chars → StringInit init chars
-
 /-- The type `str`: a bare one-segment path (laniusc's builtin type names
 take precedence over declared ones). -/
 inductive StrType (t : CTree) : Prop
@@ -1237,72 +1224,11 @@ inductive StringReturnR (env : FrontEnv) (name : Name) (r : CTree) : Nat → Src
       Peel b pb → nodeProd (kid pb 0) = pInt → nodeProd (kid pb 1) = pPostfixEnd →
       IntLiteral (kidToken (kid pb 0) 0).text n → StringReturnR env name r (first.start - env.base) n
 
-theorem plainStringByte_iff (b : Nat) : plainStringByte b = true ↔ PlainStringByte b := by
-  simp [plainStringByte, PlainStringByte, and_assoc]
-
-theorem stringBody_sound : ∀ {bs cs : List Nat}, stringBody bs = some cs →
-    bs = cs ++ [34] ∧ ∀ b ∈ cs, PlainStringByte b
-  | [], _, h => by simp [stringBody] at h
-  | [b], cs, h => by
-    rw [stringBody.eq_def] at h
-    simp only [stringClose] at h
-    by_cases e : b = 34
-    · subst e
-      simp only [decide_true, if_true, Option.some.injEq] at h
-      subst h
-      exact ⟨rfl, fun _ m => by cases m⟩
-    · simp [e] at h
-  | b :: c :: more, cs, h => by
-    rw [stringBody.eq_def] at h
-    simp only [stringCons] at h
-    cases hp : plainStringByte b with
-    | false => rw [hp] at h; simp at h
-    | true =>
-      rw [hp] at h
-      simp only [if_true] at h
-      cases hr : stringBody (c :: more) with
-      | none => rw [hr] at h; cases h
-      | some cs' =>
-        rw [hr, Option.some.injEq] at h
-        subst h
-        obtain ⟨e, all⟩ := stringBody_sound hr
-        refine ⟨by rw [e]; rfl, fun x m => ?_⟩
-        rcases List.mem_cons.1 m with rfl | m
-        · exact (plainStringByte_iff _).1 hp
-        · exact all x m
-
-theorem stringLiteral_sound {text cs : List Nat} (h : stringLiteral text = some cs) : StringLiteral text cs := by
-  unfold stringLiteral at h
-  cases text with
-  | nil => cases h
-  | cons q rest =>
-    simp only [stringOpen] at h
-    by_cases e : q = 34
-    · subst e
-      simp only [decide_true, if_true] at h
-      obtain ⟨e, all⟩ := stringBody_sound h
-      exact ⟨by rw [e], all⟩
-    · simp [e] at h
-
 theorem isStrType_sound {fuel : Nat} {t : CTree} (h : isStrType fuel t = true) : StrType t := by
   unfold isStrType at h
   simp only [Bool.and_eq_true, decide_eq_true_eq] at h
   obtain ⟨⟨a, b⟩, c⟩ := h
   exact .mk a b (typePathSpellings_sound (isPath_eq c))
-
-theorem stringInit_sound {fuel : Nat} {init : CTree} {cs : List Nat} (h : stringInit fuel init = some cs) :
-    StringInit init cs := by
-  unfold stringInit at h
-  cases hp : peel fuel init with
-  | none => rw [hp] at h; cases h
-  | some pf =>
-    rw [hp] at h
-    simp only [stringPrimary] at h
-    split at h
-    · rename_i c
-      simp only [Bool.and_eq_true, decide_eq_true_eq] at c
-      exact .mk (peel_sound hp) c.1 c.2 (stringLiteral_sound h)
-    · cases h
 
 theorem isText_sound {t : Option Name} {n : Name} (h : isText t n = true) : t = some n := by
   cases t with

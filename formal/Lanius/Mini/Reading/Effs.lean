@@ -27,6 +27,8 @@ import all Lanius.Mini.Frontend.P.isPathCall
 import all Lanius.Mini.Frontend.P.itemOf
 import all Lanius.Mini.Frontend.P.litBound
 import all Lanius.Mini.Frontend.P.litEffMatch
+import all Lanius.Mini.Frontend.P.stringOpen
+import all Lanius.Mini.Frontend.P.stringCons
 import all Lanius.Mini.Frontend.P.litWants
 import all Lanius.Mini.Frontend.P.litWildValue
 import all Lanius.Mini.Frontend.P.matchTysOrNone
@@ -203,6 +205,83 @@ inductive LitResult (decls : Decls) (scope : List Local) : Option Ty → List ME
   | expected {t : Ty} {vs : List MEff} : LitResult decls scope (some t) vs t
   | first {v : MEff} {vs : List MEff} {t : Ty} : EffTy decls scope v t → LitResult decls scope none (v :: vs) t
 
+/-! ## String literals (SEMANTIC_DECISIONS "Addressed locals" point 6, "str values") -/
+
+/-- A byte a string literal holds as itself: printable ASCII other than the
+quote and the backslash, so no escape is read. -/
+def PlainStringByte (b : Nat) : Prop := 32 ≤ b ∧ b < 127 ∧ b ≠ 34 ∧ b ≠ 92
+
+/-- A string literal's text, its quotes included, and its bytes: laniusc's
+literal is exactly these bytes. -/
+def StringLiteral (text chars : List Nat) : Prop :=
+  text = 34 :: (chars ++ [34]) ∧ ∀ b ∈ chars, PlainStringByte b
+
+/-- The initializer is a string literal. -/
+inductive StringInit (init : CTree) : List Nat → Prop
+  | mk {pf : CTree} {chars : List Nat} : Peel init pf → nodeProd (kid pf 0) = pString →
+      nodeProd (kid pf 1) = pPostfixEnd → StringLiteral (kidToken (kid pf 0) 0).text chars → StringInit init chars
+
+theorem plainStringByte_iff (b : Nat) : plainStringByte b = true ↔ PlainStringByte b := by
+  simp [plainStringByte, PlainStringByte, and_assoc]
+
+theorem stringBody_sound : ∀ {bs cs : List Nat}, stringBody bs = some cs →
+    bs = cs ++ [34] ∧ ∀ b ∈ cs, PlainStringByte b
+  | [], _, h => by simp [stringBody] at h
+  | [b], cs, h => by
+    rw [stringBody.eq_def] at h
+    simp only [stringClose] at h
+    by_cases e : b = 34
+    · subst e
+      simp only [decide_true, if_true, Option.some.injEq] at h
+      subst h
+      exact ⟨rfl, fun _ m => by cases m⟩
+    · simp [e] at h
+  | b :: c :: more, cs, h => by
+    rw [stringBody.eq_def] at h
+    simp only [stringCons] at h
+    cases hp : plainStringByte b with
+    | false => rw [hp] at h; simp at h
+    | true =>
+      rw [hp] at h
+      simp only [if_true] at h
+      cases hr : stringBody (c :: more) with
+      | none => rw [hr] at h; cases h
+      | some cs' =>
+        rw [hr, Option.some.injEq] at h
+        subst h
+        obtain ⟨e, all⟩ := stringBody_sound hr
+        refine ⟨by rw [e]; rfl, fun x m => ?_⟩
+        rcases List.mem_cons.1 m with rfl | m
+        · exact (plainStringByte_iff _).1 hp
+        · exact all x m
+
+theorem stringLiteral_sound {text cs : List Nat} (h : stringLiteral text = some cs) : StringLiteral text cs := by
+  unfold stringLiteral at h
+  cases text with
+  | nil => cases h
+  | cons q rest =>
+    simp only [stringOpen] at h
+    by_cases e : q = 34
+    · subst e
+      simp only [decide_true, if_true] at h
+      obtain ⟨e, all⟩ := stringBody_sound h
+      exact ⟨by rw [e], all⟩
+    · simp [e] at h
+
+theorem stringInit_sound {fuel : Nat} {init : CTree} {cs : List Nat} (h : stringInit fuel init = some cs) :
+    StringInit init cs := by
+  unfold stringInit at h
+  cases hp : peel fuel init with
+  | none => rw [hp] at h; cases h
+  | some pf =>
+    rw [hp] at h
+    simp only [stringPrimary] at h
+    split at h
+    · rename_i c
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at c
+      exact .mk (peel_sound hp) c.1 c.2 (stringLiteral_sound h)
+    · cases h
+
 mutual
 inductive EffR (env : FrontEnv) : List Local → Option Ty → CTree → MEff → Prop
   | pure {scope : List Local} {expected : Option Ty} {c : CTree} {e : SrcExpr} :
@@ -323,6 +402,16 @@ inductive EffList (env : FrontEnv) : List Local → Option (List Ty) → List CT
   | cons {scope : List Local} {E : Option (List Ty)} {c : CTree} {rest : List CTree} {x : MEff} {xs : List MEff} :
       EffR env scope (headTy E) c x → EffList env scope (tailTys E) rest xs → EffList env scope E (c :: rest) (x :: xs)
 
+/-- A call's arguments: each a string literal, its bytes (only a call's
+argument reads one: `str` values, SEMANTIC_DECISIONS "str values"), or
+else an expression read at its parameter's type. -/
+inductive ArgList (env : FrontEnv) : List Local → Option (List Ty) → List CTree → List MEff → Prop
+  | nil {scope : List Local} {E : Option (List Ty)} : ArgList env scope E [] []
+  | cons {scope : List Local} {E : Option (List Ty)} {c : CTree} {rest : List CTree} {x : MEff} {xs : List MEff} :
+      EffR env scope (headTy E) c x → ArgList env scope (tailTys E) rest xs → ArgList env scope E (c :: rest) (x :: xs)
+  | str {scope : List Local} {E : Option (List Ty)} {c : CTree} {rest : List CTree} {cs : List Nat} {xs : List MEff} :
+      StringInit c cs → ArgList env scope (tailTys E) rest xs → ArgList env scope E (c :: rest) (.xStr cs :: xs)
+
 /-- `path(args)`: `slice_stride(x)` or `slice_len(x)` of a slice local, or a
 named call or variant. -/
 inductive EffPathCall (env : FrontEnv) : List Local → Option Ty → CTree → CTree → MEff → Prop
@@ -366,7 +455,7 @@ bindings `start`: the arguments after `pre` (the receiver, if any). -/
 inductive EffInfer (env : FrontEnv) : List Local → Option Ty → Nat → FnDecl → List Bind → List MEff → List CTree → MEff → Prop
   | plain {scope : List Local} {expected : Option Ty} {d : Nat} {fd : FnDecl} {start : List Bind} {pre : List MEff}
       {items : List CTree} {ts : List Ty} {xs ys : List MEff} : fd.implParams ++ fd.params = [] →
-      ParamExpects env.decls fd [] ts → EffList env scope (skipExpects (some ts) pre) items xs →
+      ParamExpects env.decls fd [] ts → ArgList env scope (skipExpects (some ts) pre) items xs →
       argViews scope (skipExpects (some ts) pre) xs = some ys →
       EffInfer env scope expected d fd start pre items (.xCall ⟨d, []⟩ (pre ++ ys))
   | infer {scope : List Local} {expected : Option Ty} {d : Nat} {fd : FnDecl} {start : List Bind} {pre : List MEff}
@@ -643,6 +732,7 @@ theorem fieldIndex_sound {env : FrontEnv} {t : Ty} {name : Name} {j : Nat} (h : 
   | tyPtr => cases h
   | tyIsize => cases h
   | tyChar => cases h
+  | tyStr => cases h
   | tyFloat ft => cases h
   | tySint _ => cases h
   | tyArray _ _ => cases h
@@ -843,6 +933,7 @@ theorem expectedArray_some {expected : Option Ty} {a : ArrayParts} (h : expected
     | tyPtr => cases h
     | tyIsize => cases h
     | tyChar => cases h
+    | tyStr => cases h
     | tyFloat _ => cases h
     | tySlice _ => cases h
     | tyNamed _ _ => cases h
@@ -877,6 +968,9 @@ def EffSound (fuel : Nat) : Prop :=
   (∀ {env scope expected v items x}, effVariant fuel env scope expected v items = some x →
     ∃ u, v = some u ∧ EffVariant env scope expected u items x) ∧
   (∀ {env scope E items xs}, effList fuel env scope E items = some xs → EffList env scope E items xs) ∧
+  (∀ {env scope E c x}, argEff fuel env scope E c = some x →
+    (∃ cs, StringInit c cs ∧ x = .xStr cs) ∨ EffR env scope E c x) ∧
+  (∀ {env scope E items xs}, argList fuel env scope E items = some xs → ArgList env scope E items xs) ∧
   (∀ {env scope expected path args x}, effPathCall fuel env scope expected path args = some x →
     EffPathCall env scope expected path args x) ∧
   (∀ {env scope expected s targs items x}, effNamed fuel env scope expected s targs items = some x →
@@ -922,7 +1016,7 @@ set_option maxHeartbeats 1000000 in
 theorem effSound : ∀ fuel, EffSound fuel
   | 0 => by
     refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-      ?_, ?_⟩
+      ?_, ?_, ?_, ?_⟩
     all_goals intros
     all_goals rename_i h
     · rw [effOf.eq_def] at h; simp at h
@@ -941,6 +1035,8 @@ theorem effSound : ∀ fuel, EffSound fuel
     · rw [effLiteral.eq_def] at h; simp at h
     · rw [effVariant.eq_def] at h; simp at h
     · rw [effList.eq_def] at h; simp at h
+    · rw [argEff.eq_def] at h; simp at h
+    · rw [argList.eq_def] at h; simp at h
     · rw [effPathCall.eq_def] at h; simp at h
     · rw [effNamed.eq_def] at h; simp at h
     · rw [effFnPath.eq_def] at h; simp at h
@@ -961,7 +1057,7 @@ theorem effSound : ∀ fuel, EffSound fuel
     · rw [effArmBound.eq_def] at h; simp at h
     · rw [effArray.eq_def] at h; simp at h
   | f + 1 => by
-    obtain ⟨ihOf, ihNode, ihFold, ihPostfix, ihPrimary, ihChain, ihStep, ihIdent, ihLiteral, ihVariant, ihList,
+    obtain ⟨ihOf, ihNode, ihFold, ihPostfix, ihPrimary, ihChain, ihStep, ihIdent, ihLiteral, ihVariant, ihList, ihArgEff, ihArgList,
       ihPathCall, ihNamed, ihFnPath, ihFree, ihInfer, ihArgs, ihArgNext, ihFound, ihBound, ihFoundWith, ihMethod, ihMatch, ihMatchOn,
       ihMatchEnum, ihArmsOrdered, ihArms, ihArm, ihArmBound, ihArray⟩ := effSound f
     have node : ∀ {env scope expected c x}, effNode (f + 1) env scope expected c = some x →
@@ -1018,7 +1114,7 @@ theorem effSound : ∀ fuel, EffSound fuel
       · rename_i pa
         exact ihArray pa h
       cases h
-    refine ⟨?_, node, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨?_, node, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     -- effOf
     · intro env scope expected c x h
       rw [effOf.eq_def] at h
@@ -1306,6 +1402,43 @@ theorem effSound : ∀ fuel, EffSound fuel
             simp only [Option.some.injEq] at h
             subst h
             exact .cons (ihOf hx) (ihList hr)
+    -- argEff
+    · intro env scope E c x h
+      rw [argEff.eq_def] at h
+      simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
+      cases hs : stringInit (f + 1) c with
+      | some cs =>
+        rw [hs, Option.some.injEq] at h
+        subst h
+        exact .inl ⟨cs, stringInit_sound hs, rfl⟩
+      | none =>
+        rw [hs] at h
+        exact .inr (ihOf h)
+    -- argList
+    · intro env scope E items xs h
+      rw [argList.eq_def] at h
+      simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
+      cases items with
+      | nil =>
+        simp only [Option.some.injEq] at h
+        subst h
+        exact .nil
+      | cons c rest =>
+        simp only [consEff] at h
+        cases hx : argEff f env scope (headTy E) c with
+        | none => rw [hx] at h; cases h
+        | some x =>
+          rw [hx] at h
+          simp only at h
+          cases hr : argList f env scope (tailTys E) rest with
+          | none => rw [hr] at h; cases h
+          | some ys =>
+            rw [hr] at h
+            simp only [Option.some.injEq] at h
+            subst h
+            rcases ihArgEff hx with ⟨cs, si, rfl⟩ | k
+            · exact .str si (ihArgList hr)
+            · exact .cons k (ihArgList hr)
     -- effPathCall
     · intro env scope expected path args x h
       rw [effPathCall.eq_def] at h
@@ -1434,7 +1567,7 @@ theorem effSound : ∀ fuel, EffSound fuel
         | none => simp [hp, checkedEff, hasTys] at h
         | some ts =>
         simp only [hp, checkedEff, hasTys, ↓reduceIte, effCalled] at h
-        cases hl : effList f env scope (skipExpects (some ts) pre) items with
+        cases hl : argList f env scope (skipExpects (some ts) pre) items with
         | none => rw [hl] at h; cases h
         | some xs =>
           rw [hl] at h
@@ -1450,7 +1583,7 @@ theorem effSound : ∀ fuel, EffSound fuel
           rw [ie] at h
           simp only [xCallOf, Option.some.injEq] at h
           subst h
-          exact .plain e (paramExpects_sound ts hp) (ihList hl) hv
+          exact .plain e (paramExpects_sound ts hp) (ihArgList hl) hv
       · rename_i nn
         cases hp : paramPatterns (f + 1) fd with
         | none => rw [hp] at h; cases h

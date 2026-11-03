@@ -921,6 +921,9 @@ pub fn primitive(name: List<usize>) -> core::option::Option<SrcType> {
     if (spelled3(name, 102, 54, 52)) {
         return Some(SrcType::Float(F64));
     }
+    if (spelled3(name, 115, 116, 114)) {
+        return Some(Str);
+    }
     return None;
 }
 
@@ -1142,6 +1145,8 @@ pub enum Ty {
     TySint(UintTy),
     // [element; length]
     TyArray(Box<Ty>, usize),
+    // str: a string's static address and byte count
+    TyStr,
 }
 
 // A declaration at type arguments: a type instance (the declaration is a
@@ -1552,6 +1557,18 @@ pub fn text_fill_secure_bytes() -> List<usize> {
     return t;
 }
 
+// write_text
+pub fn text_write_text() -> List<usize> {
+    let t: List<usize> = cons(119, cons(114, cons(105, cons(116, cons(101, cons(95, cons(116, cons(101, cons(120, single(116))))))))));
+    return t;
+}
+
+// write_newline
+pub fn text_write_newline() -> List<usize> {
+    let t: List<usize> = cons(119, cons(114, cons(105, cons(116, cons(101, cons(95, cons(110, cons(101, cons(119, cons(108, cons(105, cons(110, single(101)))))))))))));
+    return t;
+}
+
 // The Core function id of the host service an `extern "lanius_std" fn` of
 // this name stands for (hostFuncs in SrcProgram.toCore), 0 for none.
 pub fn host_id(name: List<usize>) -> usize {
@@ -1578,6 +1595,12 @@ pub fn host_id(name: List<usize>) -> usize {
     }
     if (same_text(name, text_fill_secure_bytes())) {
         return 4294967303;
+    }
+    if (same_text(name, text_write_text())) {
+        return 4294967304;
+    }
+    if (same_text(name, text_write_newline())) {
+        return 4294967305;
     }
     return 0;
 }
@@ -2018,6 +2041,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyPtr -> false,
             TyIsize -> false,
             TyChar -> false,
+            TyStr -> false,
             TyFloat(g) -> false,
             TySlice(f) -> false,
             TyArray(f, n) -> false,
@@ -2031,6 +2055,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyPtr -> false,
             TyIsize -> false,
             TyChar -> false,
+            TyStr -> false,
             TyFloat(g) -> false,
             TySlice(f) -> false,
             TyArray(f, n) -> false,
@@ -2044,6 +2069,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyPtr -> false,
             TyIsize -> false,
             TyChar -> false,
+            TyStr -> false,
             TyFloat(g) -> false,
             TySlice(f) -> false,
             TyArray(f, n) -> false,
@@ -2057,6 +2083,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyPtr -> true,
             TyIsize -> false,
             TyChar -> false,
+            TyStr -> false,
             TyFloat(g) -> false,
             TySlice(f) -> false,
             TyArray(f, n) -> false,
@@ -2070,6 +2097,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyPtr -> false,
             TyIsize -> true,
             TyChar -> false,
+            TyStr -> false,
             TyFloat(g) -> false,
             TySlice(f) -> false,
             TyArray(f, n) -> false,
@@ -2083,6 +2111,21 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyPtr -> false,
             TyIsize -> false,
             TyChar -> true,
+            TyStr -> false,
+            TyFloat(g) -> false,
+            TySlice(f) -> false,
+            TyArray(f, n) -> false,
+            TyNamed(e, bs) -> false,
+            TySint(v) -> false,
+        },
+        TyStr -> match (b) {
+            TyI32 -> false,
+            TyBool -> false,
+            TyUint(v) -> false,
+            TyPtr -> false,
+            TyIsize -> false,
+            TyChar -> false,
+            TyStr -> true,
             TyFloat(g) -> false,
             TySlice(f) -> false,
             TyArray(f, n) -> false,
@@ -2096,6 +2139,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyPtr -> false,
             TyIsize -> false,
             TyChar -> false,
+            TyStr -> false,
             TyFloat(g) -> same_float(f, g),
             TySlice(f) -> false,
             TyArray(f, n) -> false,
@@ -2109,6 +2153,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyPtr -> false,
             TyIsize -> false,
             TyChar -> false,
+            TyStr -> false,
             TyFloat(g) -> false,
             TySlice(f) -> same_ty(unbox(x), unbox(f)),
             TyArray(f, n) -> false,
@@ -2122,6 +2167,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyPtr -> false,
             TyIsize -> false,
             TyChar -> false,
+            TyStr -> false,
             TyFloat(g) -> false,
             TySlice(f) -> false,
             TyArray(f, n) -> false,
@@ -2135,6 +2181,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyPtr -> false,
             TyIsize -> false,
             TyChar -> false,
+            TyStr -> false,
             TyFloat(g) -> false,
             TySlice(f) -> false,
             TyArray(f, n) -> false,
@@ -2148,6 +2195,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyPtr -> false,
             TyIsize -> false,
             TyChar -> false,
+            TyStr -> false,
             TyFloat(g) -> false,
             TySlice(f) -> false,
             TyArray(f, m) -> (n == m) && same_ty(unbox(x), unbox(f)),
@@ -2402,7 +2450,7 @@ pub fn src_ty(t: SrcType) -> core::option::Option<Ty> {
         SrcType::Float(ft) -> Some(TyFloat(ft)),
         Sint(sk) -> Some(TySint(sk)),
         View(view_length) -> None,
-        Str -> None,
+        Str -> Some(TyStr),
         Ref(referent) -> None,
     };
 }
@@ -2415,6 +2463,7 @@ pub fn scalar_src(t: Ty) -> core::option::Option<SrcType> {
         TyPtr -> Some(Ptr),
         TyIsize -> Some(Isize),
         TyChar -> Some(SrcType::Char),
+        TyStr -> None,
         TyFloat(ft) -> Some(SrcType::Float(ft)),
         TySlice(e) -> None,
         TyArray(e, n) -> None,
@@ -2899,6 +2948,7 @@ pub fn lower_ty(fuel: usize, decls: Decls, table: List<Inst>, t: Ty) -> core::op
         TyPtr -> Some(Ptr),
         TyIsize -> Some(Isize),
         TyChar -> Some(SrcType::Char),
+        TyStr -> Some(Str),
         TyFloat(ft) -> Some(SrcType::Float(ft)),
         TySlice(e) -> slice_type(lower_ty(minus(fuel, 1), decls, table, unbox(e))),
         TyArray(e, n) -> array_type(lower_ty(minus(fuel, 1), decls, table, unbox(e)), n),
@@ -2985,6 +3035,7 @@ pub fn ty_insts(fuel: usize, decls: Decls, t: Ty) -> core::option::Option<List<I
         TyPtr -> Some(empty()),
         TyIsize -> Some(empty()),
         TyChar -> Some(empty()),
+        TyStr -> Some(empty()),
         TyFloat(ft) -> Some(empty()),
         TySlice(e) -> ty_insts(minus(fuel, 1), decls, unbox(e)),
         TyArray(e, n) -> ty_insts(minus(fuel, 1), decls, unbox(e)),
@@ -3879,6 +3930,7 @@ pub fn float_typed(t: Ty, s: SrcType, x: SrcExpr) -> core::option::Option<SrcExp
         TyPtr -> None,
         TyIsize -> None,
         TyChar -> None,
+        TyStr -> None,
         TyFloat(ft) -> float_pick(ft, s, x),
         TySlice(y) -> None,
         TyArray(y, n) -> None,
@@ -3997,6 +4049,7 @@ pub fn field_index(env: FrontEnv, t: Ty, name: List<usize>) -> core::option::Opt
         TyPtr -> None,
         TyIsize -> None,
         TyChar -> None,
+        TyStr -> None,
         TyFloat(ft) -> None,
         TySlice(e) -> None,
         TyArray(e, n) -> None,
@@ -4184,6 +4237,7 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
             TyPtr -> null_const(k),
             TyIsize -> Some(Cast(Isize, boxed(e))),
             TyChar -> None,
+            TyStr -> None,
             TyFloat(ft) -> None,
             TySlice(x) -> None,
             TyArray(x, n) -> None,
@@ -4197,6 +4251,7 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
             TyPtr -> None,
             TyIsize -> None,
             TyChar -> None,
+            TyStr -> None,
             TyFloat(ft) -> None,
             TySlice(x) -> None,
             TyArray(x, n) -> None,
@@ -4213,6 +4268,7 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
             TyPtr -> None,
             TyIsize -> negated_int(unbox(x), Negate(boxed(Cast(Isize, x)))),
             TyChar -> None,
+            TyStr -> None,
             TyFloat(ft) -> negated_float(ft, unbox(x)),
             TySlice(y) -> None,
             TyArray(y, n) -> None,
@@ -4230,6 +4286,7 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
             TyPtr -> None,
             TyIsize -> None,
             TyChar -> Some(e),
+            TyStr -> None,
             TyFloat(ft) -> None,
             TySlice(x) -> None,
             TyArray(x, n) -> None,
@@ -4313,6 +4370,7 @@ pub fn wide_of(ty: Ty, negative: bool, n: usize) -> core::option::Option<SrcExpr
         TyPtr -> None,
         TyIsize -> wide_isize(negative, n),
         TyChar -> None,
+        TyStr -> None,
         TyFloat(ft) -> None,
         TySlice(e) -> None,
         TyArray(e, n) -> None,
@@ -4676,6 +4734,7 @@ pub fn struct_field_tys(fuel: usize, decls: Decls, t: Ty) -> core::option::Optio
         TyPtr -> None,
         TyIsize -> None,
         TyChar -> None,
+        TyStr -> None,
         TyFloat(ft) -> None,
         TySlice(e) -> None,
         TyArray(e, n) -> None,
@@ -4827,6 +4886,7 @@ pub fn slice_elem(t: Ty) -> core::option::Option<Ty> {
         TyPtr -> None,
         TyIsize -> None,
         TyChar -> None,
+        TyStr -> None,
         TyFloat(ft) -> None,
         TySlice(e) -> Some(unbox(e)),
         TyArray(e, n) -> None,
@@ -4844,6 +4904,7 @@ pub fn index_elem(t: Ty) -> core::option::Option<Ty> {
         TyPtr -> None,
         TyIsize -> None,
         TyChar -> None,
+        TyStr -> None,
         TyFloat(ft) -> None,
         TySlice(e) -> Some(unbox(e)),
         TyArray(e, n) -> Some(unbox(e)),
@@ -4867,6 +4928,7 @@ pub fn array_parts(t: Ty) -> core::option::Option<ArrayParts> {
         TyPtr -> None,
         TyIsize -> None,
         TyChar -> None,
+        TyStr -> None,
         TyFloat(ft) -> None,
         TySlice(e) -> None,
         TyArray(e, n) -> Some(ArrayParts { ty: t, element: unbox(e), count: n }),
@@ -4906,6 +4968,7 @@ pub fn named_parts(t: Ty) -> core::option::Option<Inst> {
         TyPtr -> None,
         TyIsize -> None,
         TyChar -> None,
+        TyStr -> None,
         TyFloat(ft) -> None,
         TySlice(e) -> None,
         TyArray(e, n) -> None,
@@ -5667,6 +5730,8 @@ pub enum MEff {
     XLet(usize, Ty, Box<MEff>, Ty, Box<MEff>),
     // slice_len(x) of a slice local x
     XLen(usize),
+    // a string literal's bytes: only as a call's argument (arg_eff)
+    XStr(List<usize>),
 }
 
 // The expression, when it is pure.
@@ -5689,6 +5754,7 @@ pub fn pure_part(x: MEff) -> core::option::Option<SrcExpr> {
         XIf(c, t, a, b) -> None,
         XLet(id, t, v, rt, b) -> None,
         XLen(sl) -> None,
+        XStr(cs) -> None,
     };
 }
 
@@ -5873,6 +5939,7 @@ pub fn bare_eff(x: MEff) -> bool {
         XIf(c, t, a, b) -> false,
         XLet(id, t, v, rt, b) -> false,
         XLen(sl) -> false,
+        XStr(cs) -> false,
     };
 }
 
@@ -5898,6 +5965,7 @@ pub fn eff_ty(fuel: usize, env: FrontEnv, scope: List<Local>, x: MEff) -> core::
         XIf(c, t, a, b) -> Some(t),
         XLet(id, t, v, rt, b) -> Some(rt),
         XLen(sl) -> Some(TyUint(Usize)),
+        XStr(cs) -> Some(TyStr),
     };
 }
 
@@ -7741,6 +7809,7 @@ pub fn call_parts(x: MEff) -> core::option::Option<Called> {
         XIf(c, t, a, b) -> None,
         XLet(id, t, v, rt, b) -> None,
         XLen(sl) -> None,
+        XStr(cs) -> None,
     };
 }
 
@@ -7974,6 +8043,7 @@ pub fn diverge_eff(decls: Decls, t: Ty, x: MEff) -> MEff {
         XIf(c, it, a, b) -> x,
         XLet(id, lt, v, rt, b) -> x,
         XLen(sl) -> x,
+        XStr(cs) -> x,
     };
 }
 
@@ -8058,6 +8128,7 @@ pub fn lit_ty(t: Ty) -> bool {
         TyPtr -> false,
         TyIsize -> true,
         TyChar -> false,
+        TyStr -> false,
         TyFloat(ft) -> false,
         TySlice(e) -> false,
         TyNamed(d, args) -> false,
@@ -8223,6 +8294,84 @@ pub fn lit_eff_match(fuel: usize, env: FrontEnv, scope: List<Local>, expected: c
             None -> None,
             Some(rt) -> lit_scrut_chain(scope, id, x, ety, rt, arms, vs),
         },
+    };
+}
+
+// ---------------------------------------------------------------- string literals
+
+pub fn string_close(ok: bool) -> core::option::Option<List<usize>> {
+    if (ok) {
+        return Some(empty());
+    }
+    return None;
+}
+
+pub fn string_cons(ok: bool, b: usize, rest: core::option::Option<List<usize>>) -> core::option::Option<List<usize>> {
+    if (ok) {
+        return match (rest) {
+            None -> None,
+            Some(cs) -> Some(cons(b, cs)),
+        };
+    }
+    return None;
+}
+
+pub fn plain_string_byte(b: usize) -> bool {
+    return (b >= 32) && (127 > b) && !(b == 34) && !(b == 92);
+}
+
+// extract: inline
+fn string_byte(sb: usize, srest: List<usize>) -> core::option::Option<List<usize>> {
+    return match (srest) {
+        Nil -> string_close(sb == 34),
+        Cons(sc, smore) -> string_cons(plain_string_byte(sb), sb, string_body(srest)),
+    };
+}
+
+// A string literal's bytes after its opening quote: printable ASCII other
+// than the quote and the backslash, then the closing quote, last. No escape
+// is read, so laniusc's literal is exactly these bytes.
+pub fn string_body(bs: List<usize>) -> core::option::Option<List<usize>> {
+    return match (bs) {
+        Nil -> None,
+        Cons(b, rest) -> string_byte(b, unbox(rest)),
+    };
+}
+
+pub fn string_open(ok: bool, rest: List<usize>) -> core::option::Option<List<usize>> {
+    if (ok) {
+        return string_body(rest);
+    }
+    return None;
+}
+
+// A string literal's text, its quotes included.
+pub fn string_literal(text: List<usize>) -> core::option::Option<List<usize>> {
+    return match (text) {
+        Nil -> None,
+        Cons(q, rest) -> string_open(q == 34, unbox(rest)),
+    };
+}
+
+// The type is `str`, a bare one-segment path: laniusc's builtin type names
+// take precedence over declared ones.
+pub fn is_str_type(fuel: usize, t: CTree) -> bool {
+    let path: CTree = kid(t, 0);
+    return node_prod(t) == p_type_ident() && node_prod(kid(t, 1)) == p_type_args_none() && is_path(type_path_spellings(fuel, kid(path, 0), kid(path, 1)), single(text_str()));
+}
+
+pub fn string_primary(primary: CTree, tail: CTree) -> core::option::Option<List<usize>> {
+    if (node_prod(primary) == p_string() && node_prod(tail) == p_postfix_end()) {
+        return string_literal(kid_token(primary, 0).text);
+    }
+    return None;
+}
+
+// The initializer is a string literal: its bytes.
+pub fn string_init(fuel: usize, init: CTree) -> core::option::Option<List<usize>> {
+    return match (peel(fuel, init)) {
+        None -> None,
+        Some(pf) -> string_primary(kid(pf, 0), kid(pf, 1)),
     };
 }
 
@@ -8462,6 +8611,29 @@ pub fn eff_list(fuel: usize, env: FrontEnv, scope: List<Local>, expects: core::o
     };
 }
 
+// A call's argument: a string literal, its bytes (only an argument reads
+// one), or else an expression read at its parameter's type.
+pub fn arg_eff(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::option::Option<Ty>, c: CTree) -> core::option::Option<MEff> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (string_init(fuel, c)) {
+        Some(cs) -> Some(XStr(cs)),
+        None -> eff_of(minus(fuel, 1), env, scope, expected, c),
+    };
+}
+
+// A call's arguments, as arg_eff reads each.
+pub fn arg_list(fuel: usize, env: FrontEnv, scope: List<Local>, expects: core::option::Option<List<Ty>>, items: List<CTree>) -> core::option::Option<List<MEff>> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (items) {
+        Nil -> Some(empty()),
+        Cons(c, rest) -> cons_eff(arg_eff(minus(fuel, 1), env, scope, head_ty(expects), c), arg_list(minus(fuel, 1), env, scope, tail_tys(expects), unbox(rest))),
+    };
+}
+
 // `path(args)`: a function, `T::m` for a type parameter T, or a variant.
 // slice_stride(x): one argument, a slice local.
 pub fn stride_arg(fuel: usize, env: FrontEnv, scope: List<Local>, items: List<CTree>) -> core::option::Option<MEff> {
@@ -8616,7 +8788,7 @@ pub fn eff_infer(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core:
     let names: List<List<usize>> = concat(fd.impl_params, fd.params);
     if (no_names(names)) {
         let expects: core::option::Option<List<Ty>> = param_expects(fuel, env.decls, fd, Some(empty()));
-        return checked_eff(has_tys(expects), eff_called(fuel, env, scope, expected, d, fd, start, pre, views_of(scope, skip_expects(expects, pre), eff_list(minus(fuel, 1), env, scope, skip_expects(expects, pre), items))));
+        return checked_eff(has_tys(expects), eff_called(fuel, env, scope, expected, d, fd, start, pre, views_of(scope, skip_expects(expects, pre), arg_list(minus(fuel, 1), env, scope, skip_expects(expects, pre), items))));
     }
     return match (param_patterns(fuel, fd)) {
         None -> None,
@@ -8956,6 +9128,7 @@ pub fn eval_let_head(ty: Ty, x: MEff) -> LetHead {
         XIf(c, t, a, b) -> EvalOf(x),
         XLet(id, t, v, rt, b) -> EvalOf(x),
         XLen(sl) -> EvalOf(x),
+        XStr(cs) -> EvalOf(x),
     };
 }
 
@@ -9208,6 +9381,7 @@ pub fn inferred(x: MEff) -> bool {
         XIf(c, t, a, b) -> false,
         XLet(id, t, v, rt, b) -> false,
         XLen(sl) -> true,
+        XStr(cs) -> true,
     };
 }
 
@@ -9278,6 +9452,7 @@ pub fn is_ptr_ty(t: Ty) -> bool {
         TyPtr -> true,
         TyIsize -> false,
         TyChar -> false,
+        TyStr -> false,
         TyFloat(ft) -> false,
         TySlice(e) -> false,
         TyArray(e, n) -> false,
@@ -9393,84 +9568,6 @@ pub fn view_read(fuel: usize, env: FrontEnv, scope: List<Local>, a: Local, h: co
                 Cons(v, more) -> view_pointer(fuel, env, scope, a.id, n, fields, v, unbox(more)),
             },
         },
-    };
-}
-
-// ---------------------------------------------------------------- string literals
-
-pub fn string_close(ok: bool) -> core::option::Option<List<usize>> {
-    if (ok) {
-        return Some(empty());
-    }
-    return None;
-}
-
-pub fn string_cons(ok: bool, b: usize, rest: core::option::Option<List<usize>>) -> core::option::Option<List<usize>> {
-    if (ok) {
-        return match (rest) {
-            None -> None,
-            Some(cs) -> Some(cons(b, cs)),
-        };
-    }
-    return None;
-}
-
-pub fn plain_string_byte(b: usize) -> bool {
-    return (b >= 32) && (127 > b) && !(b == 34) && !(b == 92);
-}
-
-// extract: inline
-fn string_byte(sb: usize, srest: List<usize>) -> core::option::Option<List<usize>> {
-    return match (srest) {
-        Nil -> string_close(sb == 34),
-        Cons(sc, smore) -> string_cons(plain_string_byte(sb), sb, string_body(srest)),
-    };
-}
-
-// A string literal's bytes after its opening quote: printable ASCII other
-// than the quote and the backslash, then the closing quote, last. No escape
-// is read, so laniusc's literal is exactly these bytes.
-pub fn string_body(bs: List<usize>) -> core::option::Option<List<usize>> {
-    return match (bs) {
-        Nil -> None,
-        Cons(b, rest) -> string_byte(b, unbox(rest)),
-    };
-}
-
-pub fn string_open(ok: bool, rest: List<usize>) -> core::option::Option<List<usize>> {
-    if (ok) {
-        return string_body(rest);
-    }
-    return None;
-}
-
-// A string literal's text, its quotes included.
-pub fn string_literal(text: List<usize>) -> core::option::Option<List<usize>> {
-    return match (text) {
-        Nil -> None,
-        Cons(q, rest) -> string_open(q == 34, unbox(rest)),
-    };
-}
-
-// The type is `str`, a bare one-segment path: laniusc's builtin type names
-// take precedence over declared ones.
-pub fn is_str_type(fuel: usize, t: CTree) -> bool {
-    let path: CTree = kid(t, 0);
-    return node_prod(t) == p_type_ident() && node_prod(kid(t, 1)) == p_type_args_none() && is_path(type_path_spellings(fuel, kid(path, 0), kid(path, 1)), single(text_str()));
-}
-
-pub fn string_primary(primary: CTree, tail: CTree) -> core::option::Option<List<usize>> {
-    if (node_prod(primary) == p_string() && node_prod(tail) == p_postfix_end()) {
-        return string_literal(kid_token(primary, 0).text);
-    }
-    return None;
-}
-
-// The initializer is a string literal: its bytes.
-pub fn string_init(fuel: usize, init: CTree) -> core::option::Option<List<usize>> {
-    return match (peel(fuel, init)) {
-        None -> None,
-        Some(pf) -> string_primary(kid(pf, 0), kid(pf, 1)),
     };
 }
 
@@ -9870,6 +9967,7 @@ pub fn eff_acts(n: usize, x: MEff) -> bool {
         XIf(c, t, a, b) -> eff_acts(n, unbox(c)) || eff_acts(n, unbox(a)) || eff_acts(n, unbox(b)),
         XLet(id, t, v, rt, b) -> eff_acts(n, unbox(v)) || eff_acts(n, unbox(b)),
         XLen(sl) -> false,
+        XStr(cs) -> false,
     };
 }
 
@@ -11328,6 +11426,7 @@ pub fn eff_calls(x: MEff) -> List<Inst> {
         XIf(c, t, a, b) -> concat(eff_calls(unbox(c)), concat(eff_calls(unbox(a)), eff_calls(unbox(b)))),
         XLet(id, t, v, rt, b) -> concat(eff_calls(unbox(v)), eff_calls(unbox(b))),
         XLen(sl) -> empty(),
+        XStr(cs) -> empty(),
     };
 }
 
@@ -11361,6 +11460,7 @@ pub fn eff_named_tys(x: MEff) -> List<Ty> {
         XIf(c, t, a, b) -> concat(eff_named_tys(unbox(c)), cons(t, concat(eff_named_tys(unbox(a)), eff_named_tys(unbox(b))))),
         XLet(id, t, v, rt, b) -> concat(eff_named_tys(unbox(v)), cons(t, cons(rt, eff_named_tys(unbox(b))))),
         XLen(sl) -> empty(),
+        XStr(cs) -> empty(),
     };
 }
 
@@ -11545,6 +11645,7 @@ pub fn ty_known(table: List<Inst>, t: Ty) -> bool {
         TyPtr -> true,
         TyIsize -> true,
         TyChar -> true,
+        TyStr -> true,
         TyFloat(ft) -> true,
         TySlice(e) -> ty_known(table, unbox(e)),
         TyArray(e, n) -> ty_known(table, unbox(e)),
@@ -11620,6 +11721,7 @@ pub fn ty_weight(table: List<Inst>, ws: List<core::option::Option<usize>>, t: Ty
         TyPtr -> Some(1),
         TyIsize -> Some(1),
         TyChar -> Some(1),
+        TyStr -> Some(1),
         TyFloat(ft) -> Some(1),
         TySlice(e) -> weight_add_to(1, ty_weight(table, ws, unbox(e))),
         TyArray(e, n) -> weight_array(n, ty_weight(table, ws, unbox(e))),
@@ -11779,6 +11881,7 @@ pub fn close_ty(fuel: usize, t: Tables, ty: Ty) -> core::option::Option<SrcType>
         TyPtr -> Some(Ptr),
         TyIsize -> Some(Isize),
         TyChar -> Some(SrcType::Char),
+        TyStr -> Some(Str),
         TyFloat(ft) -> Some(SrcType::Float(ft)),
         TySlice(e) -> slice_type(close_ty(minus(fuel, 1), t, unbox(e))),
         TyArray(e, n) -> array_type(close_ty(minus(fuel, 1), t, unbox(e)), n),
@@ -12138,6 +12241,7 @@ pub fn close_eff(fuel: usize, t: Tables, x: MEff) -> core::option::Option<SrcEff
         XIf(c, ty, a, b) -> e_if_closed(close_eff(fuel, t, unbox(c)), close_ty(fuel, t, ty), close_eff(fuel, t, unbox(a)), close_eff(fuel, t, unbox(b))),
         XLet(id, ty, v, rt, b) -> e_let_closed(id, close_ty(fuel, t, ty), close_eff(fuel, t, unbox(v)), close_ty(fuel, t, rt), close_eff(fuel, t, unbox(b))),
         XLen(sl) -> Some(ELen(sl)),
+        XStr(cs) -> Some(EStr(0, cs)),
     };
 }
 
@@ -13036,6 +13140,187 @@ pub fn wide_left_effs(xs: List<SrcEff>) -> bool {
 }
 // extract: mutual end
 
+// ---------------------------------------------------------------- string literals placed
+
+// A string literal's bytes (its chars are ASCII: string_body).
+pub fn str_bytes(cs: List<usize>) -> List<u8> {
+    return match (cs) {
+        Nil -> empty(),
+        Cons(c, rest) -> cons((c as u64) as u8, str_bytes(unbox(rest))),
+    };
+}
+
+// extract: mutual begin
+// The bytes of an expression's string literals, in order.
+pub fn eff_bytes(x: SrcEff) -> List<u8> {
+    return match (x) {
+        EPure(e) -> empty(),
+        ECall(f, args) -> effs_bytes(unbox(args)),
+        EApply(op, a, b) -> concat(eff_bytes(unbox(a)), eff_bytes(unbox(b))),
+        ENeg(a) -> eff_bytes(unbox(a)),
+        ENot(a) -> eff_bytes(unbox(a)),
+        ECast(t, a) -> eff_bytes(unbox(a)),
+        EIndex(sl, i) -> eff_bytes(unbox(i)),
+        EStruct(t, fs) -> effs_bytes(unbox(fs)),
+        EVariant(t, k, ps) -> effs_bytes(unbox(ps)),
+        EMatch(sc, ety, t, bs, vs) -> concat(eff_bytes(unbox(sc)), effs_bytes(unbox(vs))),
+        EDivide(op, a, b) -> concat(eff_bytes(unbox(a)), eff_bytes(unbox(b))),
+        EStride(sl) -> empty(),
+        ArraySlice(e, a) -> empty(),
+        EIf(c, t, a, b) -> concat(eff_bytes(unbox(c)), concat(eff_bytes(unbox(a)), eff_bytes(unbox(b)))),
+        ELet(id, t, v, rt, b) -> concat(eff_bytes(unbox(v)), eff_bytes(unbox(b))),
+        ELen(sl) -> empty(),
+        EStr(offset, chars) -> str_bytes(chars),
+    };
+}
+
+pub fn effs_bytes(xs: List<SrcEff>) -> List<u8> {
+    return match (xs) {
+        Nil -> empty(),
+        Cons(x, rest) -> concat(eff_bytes(x), effs_bytes(unbox(rest))),
+    };
+}
+// extract: mutual end
+
+// extract: mutual begin
+// The expression with its string literals placed after the bytes before, in
+// order eff_bytes lists their bytes.
+pub fn place_eff(before: List<u8>, x: SrcEff) -> SrcEff {
+    return match (x) {
+        EPure(e) -> EPure(e),
+        ECall(f, args) -> ECall(f, boxed(place_effs(before, unbox(args)))),
+        EApply(op, a, b) -> EApply(op, boxed(place_eff(before, unbox(a))), boxed(place_eff(concat(before, eff_bytes(unbox(a))), unbox(b)))),
+        ENeg(a) -> ENeg(boxed(place_eff(before, unbox(a)))),
+        ENot(a) -> ENot(boxed(place_eff(before, unbox(a)))),
+        ECast(t, a) -> ECast(t, boxed(place_eff(before, unbox(a)))),
+        EIndex(sl, i) -> EIndex(sl, boxed(place_eff(before, unbox(i)))),
+        EStruct(t, fs) -> EStruct(t, boxed(place_effs(before, unbox(fs)))),
+        EVariant(t, k, ps) -> EVariant(t, k, boxed(place_effs(before, unbox(ps)))),
+        EMatch(sc, ety, t, bs, vs) -> EMatch(boxed(place_eff(before, unbox(sc))), ety, t, bs, boxed(place_effs(concat(before, eff_bytes(unbox(sc))), unbox(vs)))),
+        EDivide(op, a, b) -> EDivide(op, boxed(place_eff(before, unbox(a))), boxed(place_eff(concat(before, eff_bytes(unbox(a))), unbox(b)))),
+        EStride(sl) -> EStride(sl),
+        ArraySlice(e, a) -> ArraySlice(e, a),
+        EIf(c, t, a, b) -> EIf(boxed(place_eff(before, unbox(c))), t, boxed(place_eff(concat(before, eff_bytes(unbox(c))), unbox(a))), boxed(place_eff(concat(concat(before, eff_bytes(unbox(c))), eff_bytes(unbox(a))), unbox(b)))),
+        ELet(id, t, v, rt, b) -> ELet(id, t, boxed(place_eff(before, unbox(v))), rt, boxed(place_eff(concat(before, eff_bytes(unbox(v))), unbox(b)))),
+        ELen(sl) -> ELen(sl),
+        EStr(offset, chars) -> EStr(length(before), chars),
+    };
+}
+
+pub fn place_effs(before: List<u8>, xs: List<SrcEff>) -> List<SrcEff> {
+    return match (xs) {
+        Nil -> empty(),
+        Cons(x, rest) -> cons(place_eff(before, x), place_effs(concat(before, eff_bytes(x)), unbox(rest))),
+    };
+}
+// extract: mutual end
+
+// The bytes of a statement's string literals, in order.
+pub fn stmt_bytes(s: SrcStmt) -> List<u8> {
+    return match (s) {
+        Nop -> empty(),
+        Let(id, ty, e, body) -> stmt_bytes(unbox(body)),
+        LetStruct(id, ty, es, body) -> stmt_bytes(unbox(body)),
+        LetCall(id, ty, f, args, body) -> stmt_bytes(unbox(body)),
+        LetEnum(id, ty, k, es, body) -> stmt_bytes(unbox(body)),
+        LetMatch(id, ty, sc, eid, arms, body) -> stmt_bytes(unbox(body)),
+        Set(id, e) -> empty(),
+        SetField(id, j, e) -> empty(),
+        SetCall(id, f, args) -> empty(),
+        Then(a, b) -> concat(stmt_bytes(unbox(a)), stmt_bytes(unbox(b))),
+        If(c, a, b) -> concat(stmt_bytes(unbox(a)), stmt_bytes(unbox(b))),
+        While(c, body) -> stmt_bytes(unbox(body)),
+        Return(e) -> empty(),
+        LetAlloc(id, size, shift, body) -> stmt_bytes(unbox(body)),
+        LetLoad(id, pt, o, body) -> stmt_bytes(unbox(body)),
+        SetByte(pt, o, v) -> empty(),
+        Free(pt, size, shift) -> empty(),
+        LetSlice(id, el, pt, n, body) -> stmt_bytes(unbox(body)),
+        LetIndex(id, ty, sl, i, body) -> stmt_bytes(unbox(body)),
+        SetIndex(sl, i, v) -> empty(),
+        LetEval(id, ty, x, body) -> concat(eff_bytes(x), stmt_bytes(unbox(body))),
+        SetEval(id, x) -> eff_bytes(x),
+        IfEval(c, a, b) -> concat(eff_bytes(c), concat(stmt_bytes(unbox(a)), stmt_bytes(unbox(b)))),
+        WhileEval(c, body) -> concat(eff_bytes(c), stmt_bytes(unbox(body))),
+        ReturnEval(x) -> eff_bytes(x),
+        Discard(x) -> eff_bytes(x),
+        SetIndexEval(sl, i, v) -> concat(eff_bytes(i), eff_bytes(v)),
+        SetFieldEval(id, j, x) -> eff_bytes(x),
+        ReturnUnit -> empty(),
+        Assert(x) -> eff_bytes(x),
+        Break -> empty(),
+        Continue -> empty(),
+        MatchArm(sc, en, k, bs, x, ty, body, rest) -> concat(stmt_bytes(unbox(body)), stmt_bytes(unbox(rest))),
+        Unreachable(id, ty) -> empty(),
+        LetView(id, n, es, pt, body) -> stmt_bytes(unbox(body)),
+        LetStr(pt, cs, body) -> stmt_bytes(unbox(body)),
+    };
+}
+
+// The statement with its string literals placed after the bytes before, in
+// order stmt_bytes lists their bytes.
+pub fn place_stmt(before: List<u8>, s: SrcStmt) -> SrcStmt {
+    return match (s) {
+        Nop -> Nop,
+        Let(id, ty, e, body) -> Let(id, ty, e, boxed(place_stmt(before, unbox(body)))),
+        LetStruct(id, ty, es, body) -> LetStruct(id, ty, es, boxed(place_stmt(before, unbox(body)))),
+        LetCall(id, ty, f, args, body) -> LetCall(id, ty, f, args, boxed(place_stmt(before, unbox(body)))),
+        LetEnum(id, ty, k, es, body) -> LetEnum(id, ty, k, es, boxed(place_stmt(before, unbox(body)))),
+        LetMatch(id, ty, sc, eid, arms, body) -> LetMatch(id, ty, sc, eid, arms, boxed(place_stmt(before, unbox(body)))),
+        Set(id, e) -> Set(id, e),
+        SetField(id, j, e) -> SetField(id, j, e),
+        SetCall(id, f, args) -> SetCall(id, f, args),
+        Then(a, b) -> Then(boxed(place_stmt(before, unbox(a))), boxed(place_stmt(concat(before, stmt_bytes(unbox(a))), unbox(b)))),
+        If(c, a, b) -> If(c, boxed(place_stmt(before, unbox(a))), boxed(place_stmt(concat(before, stmt_bytes(unbox(a))), unbox(b)))),
+        While(c, body) -> While(c, boxed(place_stmt(before, unbox(body)))),
+        Return(e) -> Return(e),
+        LetAlloc(id, size, shift, body) -> LetAlloc(id, size, shift, boxed(place_stmt(before, unbox(body)))),
+        LetLoad(id, pt, o, body) -> LetLoad(id, pt, o, boxed(place_stmt(before, unbox(body)))),
+        SetByte(pt, o, v) -> SetByte(pt, o, v),
+        Free(pt, size, shift) -> Free(pt, size, shift),
+        LetSlice(id, el, pt, n, body) -> LetSlice(id, el, pt, n, boxed(place_stmt(before, unbox(body)))),
+        LetIndex(id, ty, sl, i, body) -> LetIndex(id, ty, sl, i, boxed(place_stmt(before, unbox(body)))),
+        SetIndex(sl, i, v) -> SetIndex(sl, i, v),
+        LetEval(id, ty, x, body) -> LetEval(id, ty, place_eff(before, x), boxed(place_stmt(concat(before, eff_bytes(x)), unbox(body)))),
+        SetEval(id, x) -> SetEval(id, place_eff(before, x)),
+        IfEval(c, a, b) -> IfEval(place_eff(before, c), boxed(place_stmt(concat(before, eff_bytes(c)), unbox(a))), boxed(place_stmt(concat(concat(before, eff_bytes(c)), stmt_bytes(unbox(a))), unbox(b)))),
+        WhileEval(c, body) -> WhileEval(place_eff(before, c), boxed(place_stmt(concat(before, eff_bytes(c)), unbox(body)))),
+        ReturnEval(x) -> ReturnEval(place_eff(before, x)),
+        Discard(x) -> Discard(place_eff(before, x)),
+        SetIndexEval(sl, i, v) -> SetIndexEval(sl, place_eff(before, i), place_eff(concat(before, eff_bytes(i)), v)),
+        SetFieldEval(id, j, x) -> SetFieldEval(id, j, place_eff(before, x)),
+        ReturnUnit -> ReturnUnit,
+        Assert(x) -> Assert(place_eff(before, x)),
+        Break -> Break,
+        Continue -> Continue,
+        MatchArm(sc, en, k, bs, x, ty, body, rest) -> MatchArm(sc, en, k, bs, x, ty, boxed(place_stmt(before, unbox(body))), boxed(place_stmt(concat(before, stmt_bytes(unbox(body))), unbox(rest)))),
+        Unreachable(id, ty) -> Unreachable(id, ty),
+        LetView(id, n, es, pt, body) -> LetView(id, n, es, pt, boxed(place_stmt(before, unbox(body)))),
+        LetStr(pt, cs, body) -> LetStr(pt, cs, boxed(place_stmt(before, unbox(body)))),
+    };
+}
+
+pub fn funcs_bytes(fs: List<SrcFunc>) -> List<u8> {
+    return match (fs) {
+        Nil -> empty(),
+        Cons(g, rest) -> concat(stmt_bytes(g.body), funcs_bytes(unbox(rest))),
+    };
+}
+
+pub fn place_funcs(before: List<u8>, fs: List<SrcFunc>) -> List<SrcFunc> {
+    return match (fs) {
+        Nil -> empty(),
+        Cons(g, rest) -> cons(SrcFunc { params: g.params, ret: g.ret, body: place_stmt(before, g.body) }, place_funcs(concat(before, stmt_bytes(g.body)), unbox(rest))),
+    };
+}
+
+// The program with each string literal argument placed: its bytes appended
+// to the statics, which hold them in order, and the literal naming their
+// offset (EStr). The compiler checks each placement (eval_str).
+pub fn placed_program(fs: List<SrcFunc>) -> SrcProgram {
+    return SrcProgram { funcs: place_funcs(empty(), fs), statics: funcs_bytes(fs) };
+}
+
 pub fn wide_left_stmt(s: SrcStmt) -> bool {
     return match (s) {
         Nop -> false,
@@ -13088,7 +13373,7 @@ pub fn untyped_rejected(fs: List<SrcFunc>) -> core::option::Option<SrcProgram> {
     if (wide_left_funcs(fs)) {
         return None;
     }
-    return Some(SrcProgram { funcs: fs, statics: empty() });
+    return Some(placed_program(fs));
 }
 
 // ---------------------------------------------------------------- the program

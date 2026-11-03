@@ -752,6 +752,7 @@ def szTy : Lanius.Mini.Ty → Nat
   | .tyNamed a0 a1 => (szTy0 a1) + 1
   | .tySint a0 => 1
   | .tyArray a0 a1 => (szTy a0) + 1
+  | .tyStr => 1
 def szTy0 : List Lanius.Mini.Ty → Nat
   | [] => 0
   | a :: l => szTy a + szTy0 l + 1
@@ -773,6 +774,7 @@ theorem szTy0_eq : ∀ l : List Lanius.Mini.Ty, szTy0 l = SZ.sz l
 @[simp, sz_simp] theorem sz_Ty_tyNamed (a0 : Nat) (a1 : List Lanius.Mini.Ty) : sz (Lanius.Mini.Ty.tyNamed a0 a1) = sz a1 + 1 := by show szTy _ = _; simp only [szTy, szTy0_eq] <;> rfl
 @[simp, sz_simp] theorem sz_Ty_tySint (a0 : Lanius.Mini.UintTy) : sz (Lanius.Mini.Ty.tySint a0) = 1 := rfl
 @[simp, sz_simp] theorem sz_Ty_tyArray (a0 : Lanius.Mini.Ty) (a1 : Nat) : sz (Lanius.Mini.Ty.tyArray a0 a1) = sz a0 + 1 := rfl
+@[simp, sz_simp] theorem sz_Ty_tyStr  : sz (Lanius.Mini.Ty.tyStr) = 1 := rfl
 
 instance : SZ Lanius.Mini.Inst := ⟨fun s => sz s.args⟩
 @[simp, sz_simp] theorem sz_Inst_mk (a0 : Nat) (a1 : List Lanius.Mini.Ty) : sz (Lanius.Mini.Inst.mk a0 a1) = sz a1 := rfl
@@ -1061,6 +1063,7 @@ def szMEff : Lanius.Mini.MEff → Nat
   | .xIf a0 a1 a2 a3 => (szMEff a0) + sz a1 + (szMEff a2) + (szMEff a3) + 1
   | .xLet a0 a1 a2 a3 a4 => sz a1 + (szMEff a2) + sz a3 + (szMEff a4) + 1
   | .xLen a0 => 1
+  | .xStr a0 => sz a0 + 1
 def szMEff0 : List Lanius.Mini.MEff → Nat
   | [] => 0
   | a :: l => szMEff a + szMEff0 l + 1
@@ -1088,6 +1091,7 @@ theorem szMEff0_eq : ∀ l : List Lanius.Mini.MEff, szMEff0 l = SZ.sz l
 @[simp, sz_simp] theorem sz_MEff_xIf (a0 : Lanius.Mini.MEff) (a1 : Lanius.Mini.Ty) (a2 : Lanius.Mini.MEff) (a3 : Lanius.Mini.MEff) : sz (Lanius.Mini.MEff.xIf a0 a1 a2 a3) = sz a0 + sz a1 + sz a2 + sz a3 + 1 := rfl
 @[simp, sz_simp] theorem sz_MEff_xLet (a0 : Nat) (a1 : Lanius.Mini.Ty) (a2 : Lanius.Mini.MEff) (a3 : Lanius.Mini.Ty) (a4 : Lanius.Mini.MEff) : sz (Lanius.Mini.MEff.xLet a0 a1 a2 a3 a4) = sz a1 + sz a2 + sz a3 + sz a4 + 1 := rfl
 @[simp, sz_simp] theorem sz_MEff_xLen (a0 : Nat) : sz (Lanius.Mini.MEff.xLen a0) = 1 := rfl
+@[simp, sz_simp] theorem sz_MEff_xStr (a0 : List Nat) : sz (Lanius.Mini.MEff.xStr a0) = sz a0 + 1 := rfl
 
 instance : SZ Lanius.Mini.EffArm := ⟨fun s => sz s.binders + sz s.value + sz s.ty⟩
 @[simp, sz_simp] theorem sz_EffArm_mk (a0 : List Nat) (a1 : Lanius.Mini.MEff) (a2 : Option Lanius.Mini.Ty) : sz (Lanius.Mini.EffArm.mk a0 a1 a2) = sz a0 + sz a1 + sz a2 := rfl

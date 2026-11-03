@@ -74,6 +74,8 @@ inductive Ty where
   | tySint : UintTy → Ty
   /-- [element; length] -/
   | tyArray : Ty → Nat → Ty
+  /-- str: a string's static address and byte count -/
+  | tyStr : Ty
   deriving Repr
 
 /-- A declaration at type arguments: a type instance (the declaration is a type's index) or a function instance (a function's index). -/
@@ -272,6 +274,8 @@ inductive MEff where
   | xLet : Nat → Ty → MEff → Ty → MEff → MEff
   /-- slice_len(x) of a slice local x -/
   | xLen : Nat → MEff
+  /-- a string literal's bytes: only as a call's argument (arg_eff) -/
+  | xStr : (List Nat) → MEff
   deriving Repr
 
 /-- An arm of a match expression: its binders, its value and the value's type. -/

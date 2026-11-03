@@ -7,9 +7,9 @@ import Lanius.Mini.Frontend.P.fnInstRet
 import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.isTryEnum
-import Lanius.Mini.Frontend.P.litEffMatch
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.repeatEff
+import Lanius.Mini.Frontend.P.stringOpen
 import Lanius.Mini.Frontend.P.triedErr
 
 public section

@@ -18,7 +18,7 @@ theorem ok_SrcEff_slice_call : FnOk prog prims info (346, ⟨16, [], 0⟩) :=
 theorem ok_slot_vars : FnOk prog prims info (347, ⟨2, [1], 0⟩) :=
   fnOk_of fn_slot_vars (by decide +kernel)
 
-theorem ok_eval_call : FnOk prog prims info (348, ⟨4, [], 0⟩) :=
+theorem ok_eval_call : FnOk prog prims info (348, ⟨6, [], 0⟩) :=
   fnOk_of fn_eval_call (by decide +kernel)
 
 theorem ok_eval_args : FnOk prog prims info (349, ⟨16, [3], 0⟩) :=

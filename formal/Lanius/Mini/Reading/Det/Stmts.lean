@@ -24,6 +24,7 @@ import all Lanius.Mini.Frontend.P.textSelf
 import all Lanius.Mini.Frontend.P.textSliceLen
 import all Lanius.Mini.Frontend.P.isPathCall
 import all Lanius.Mini.Frontend.P.i32ArrayLength
+import all Lanius.Mini.Frontend.P.litEffMatch
 import all Lanius.Mini.Frontend.P.stringLast
 
 @[expose] public section
@@ -1017,55 +1018,6 @@ theorem returnR_noArmBlock {env : FrontEnv} {scope : List Local} {a list : CTree
   | slice _ _ hh => exact letInitR_noArmBlock (ty := .tyI32) ab (.head hh)
   | eval k => exact armBlockR_noEff ab k
 
-/-! ## String literals: no expression reads one -/
-
-theorem exprR_noString {env : FrontEnv} {scope : List Local} {c : CTree} {e : SrcExpr}
-    (p : nodeProd c = pString) (h : ExprR env scope c e) : False := by
-  cases h <;> expr_clash
-
-theorem peel_noExprString : ∀ {env : FrontEnv} {scope : List Local} {c pf : CTree} {e : SrcExpr},
-    Peel c pf → nodeProd (kid pf 0) = pString → nodeProd (kid pf 1) = pPostfixEnd → ExprR env scope c e → False
-  | _, _, _, _, _, .wrap _ p, pc, pe, h => by
-    cases h with
-    | wrap _ r => exact peel_noExprString p pc pe r
-    | _ => expr_clash
-  | _, _, _, _, _, .bare _ _ p, pc, pe, h => by
-    cases h with
-    | assign _ _ r => exact peel_noExprString p pc pe r
-    | level _ r _ => exact peel_noExprString p pc pe r
-    | cast _ r _ => exact peel_noExprString p pc pe r
-    | _ => expr_clash
-  | _, _, _, _, _, .here _, pc, pe, h => by
-    cases h with
-    | «postfix» _ _ r => exact exprR_noString pc r
-    | _ => expr_clash
-
-theorem effR_noString {env : FrontEnv} {scope : List Local} {E : Option Ty} {c : CTree} {x : MEff}
-    (p : nodeProd c = pString) (h : EffR env scope E c x) : False := by
-  cases h with
-  | pure r => exact exprR_noString p r
-  | _ => eff_clash
-
-theorem peel_noEffString : ∀ {env : FrontEnv} {scope : List Local} {E : Option Ty} {c pf : CTree} {x : MEff},
-    Peel c pf → nodeProd (kid pf 0) = pString → nodeProd (kid pf 1) = pPostfixEnd → EffR env scope E c x → False
-  | _, _, _, _, _, _, .wrap w p, pc, pe, h => by
-    cases h with
-    | pure r => exact peel_noExprString (.wrap w p) pc pe r
-    | wrap _ k => exact peel_noEffString p pc pe k
-    | _ => eff_clash
-  | _, _, _, _, _, _, .bare w kn p, pc, pe, h => by
-    cases h with
-    | pure r => exact peel_noExprString (.bare w kn p) pc pe r
-    | bare _ _ k => exact peel_noEffString p pc pe k
-    | level _ kn' _ _ => exact kn' kn
-    | cast _ kn' _ _ => exact kn' kn
-    | _ => eff_clash
-  | _, _, _, _, _, _, .here pp, pc, pe, h => by
-    cases h with
-    | pure r => exact peel_noExprString (.here pp) pc pe r
-    | primary _ _ k => exact effR_noString pc k
-    | _ => eff_clash
-
 /-- A let of a string literal has no other head. -/
 theorem letInitR_noString {env : FrontEnv} {scope : List Local} {ty : Ty} {init : CTree} {chars : List Nat}
     {hd : LetHead} (si : StringInit init chars) (h : LetInitR env scope ty init hd) : False := by
@@ -1093,14 +1045,6 @@ theorem matchInit_noString {init m : CTree} {chars : List Nat} (si : StringInit 
   cases si with
   | mk pl pc _ _ => cases mi with
     | mk pl' pc' _ => cases peel_unique pl pl'; prod_clash
-
-theorem stringInit_unique {init : CTree} {a b : List Nat} (h₁ : StringInit init a) (h₂ : StringInit init b) :
-    a = b := by
-  cases h₁ with
-  | mk pl _ _ l => cases h₂ with
-    | mk pl' _ _ l' =>
-      cases peel_unique pl pl'
-      exact List.append_cancel_right (List.cons.inj (l.1.symm.trans l'.1)).2
 
 theorem stringReturnR_unique {env : FrontEnv} {name : Name} {r : CTree} {s₁ s₂ : Nat} {n₁ n₂ : SrcExpr}
     (h₁ : StringReturnR env name r s₁ n₁) (h₂ : StringReturnR env name r s₂ n₂) : s₁ = s₂ ∧ n₁ = n₂ := by
