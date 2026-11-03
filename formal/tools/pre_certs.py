@@ -58,6 +58,10 @@ OVERRIDES = {
     'root_at': ['p2 + hb (p0 :: p1) + b ≤ K'],
     'seed_insts': ['p1 + hb p0 + b ≤ K'],
     'seed_at': ['p2 + hb (p0 :: p1) + b ≤ K'],
+    # the literal's base (litBase): the digits' accumulator then cannot wrap
+    'based_digits': ['p0 = 2 ∨ p0 = 8 ∨ p0 = 16'],
+    'based_digit': ['p0 = 2 ∨ p0 = 8 ∨ p0 = 16'],
+    'lit_prefixed': ['(∀ v, p0 = some v → v = 2 ∨ v = 8 ∨ v = 16)'],
     'char_tail': ['p4 ≤ 191', '(p1 = 0 ∧ p2 < 16777216) ∨ (p1 = 1 ∧ p2 < 262144) ∨ (p1 = 2 ∧ p2 < 4096)'],
     'char_tail_at': ['p5 ≤ 191', '(p2 = 0 ∧ p3 < 16777216) ∨ (p2 = 1 ∧ p3 < 262144) ∨ (p2 = 2 ∧ p3 < 4096)'],
 }
@@ -244,6 +248,41 @@ POST_EXTRA = {
 # Hand-written recursive cases (the body after `intro xs M hMs` in the group's
 # `succ` case). wild_binders: its index grows by one per binder, absorbed by
 # the binder's own cost (at least 1); the potential choice cannot see that.
+# Hand proofs of precondition lemmas, in place of `pre_auto n, M` (after the
+# model's `eq_def`): numbers' values, which heights do not bound, from the
+# lemmas of SelfPre/Values.lean.
+PRE_HAND = {
+    'wide_isize': '''  cases x0 <;> by_cases hz : x1 = 0 <;> simp_all [Pre_plus] <;> omega
+''',
+    'wide_sint': '''  split
+  · trivial
+  · cases x1 <;> by_cases hz : x2 = 0 <;> simp_all [Pre_plus] <;> omega
+''',
+    'based_digit': '''  split
+  · exact pre_based_digits x0 x2 x3 b M h0 h1 h2
+  · split
+    · trivial
+    · rename_i hlim
+      split
+      · rename_i d hd
+        have hdl := baseDigit_lt hd
+        refine ⟨?_, ?_, pre_based_digits x0 x2 _ b M h0 h1 h2⟩ <;> simp only [Pre_times, Pre_plus] <;>
+          rcases h2 with rfl | rfl | rfl <;> simp [Lanius.Mini.basedLimit] at hlim <;> omega
+      · trivial
+''',
+    'lit_prefixed': '''  rcases x0 with _ | v
+  · exact pre_wide_decimal n x2 0 b M h1 h2
+  · exact pre_based_digits n v x1 0 b M h0 h2 (h3 v rfl)
+''',
+    'lit_value_at': '''  split
+  · rcases x1 with _ | ⟨c, rest⟩
+    · trivial
+    · exact pre_lit_prefixed n _ rest x2 b M (by simp only [hb_cons] at h0; omega) h1 h2
+        (fun v hv => litBase_cases hv)
+  · exact pre_wide_decimal n x2 0 b M h1 h2
+''',
+}
+
 HAND_CASE = {
     'wild_binders': '''      intro h
       cases x2 with
@@ -285,7 +324,7 @@ class Emit:
     def used(self, k, ks, model, lemma):
         """The group's induction hypotheses `k`'s step uses (the members its model
         calls), the others dropped (`-`): fewer hypotheses for the tactic to scan."""
-        body = self.m.body.get(f'{model}_{k}', '') + HAND_CASE.get(k, '')
+        body = self.m.body.get(f'{model}_{k}', '') + HAND_CASE.get(k, '') + PRE_HAND.get(k, '')
         calls = set(re.findall(rf'\b{model}_(\w+)', body)) | set(re.findall(rf'\b{lemma}_(\w+)', body))
         return [f'{lemma}_{m}' if m in calls else '-' for m in ks]
 
@@ -442,8 +481,8 @@ class Emit:
                     f'  intro n {xs} b M {names}\n'
                     f'  rcases n with _ | n\n'
                     f'  · exact trivial\n'
-                    f'  rw [Pre_{k}.eq_def]; dsimp only\n'
-                    f'  pre_auto n, M\n']
+                    f'  rw [Pre_{k}.eq_def]; dsimp only\n' +
+                    PRE_HAND.get(k, '  pre_auto n, M\n')]
         first = ks[0]
         parts = list(map(self.pre_parts, ks))
         conj = ' ∧\n    '.join(f'(∀ {p[0]} (b : Nat), {p[3]})' for p in parts)
@@ -456,8 +495,8 @@ class Emit:
             out.append(f'theorem pre_step_{k} (n : Nat) (ih :\n    {conj}) :\n    ∀ {binders} (b : Nat), {st} := by\n'
                        f'  {"obtain " + tuple_(self.used(k, ks, "Pre", "pre")) + " := ih" if len(ks) > 1 else "have " + names[0] + " := ih"}\n'
                        f'  intro {xs} b M {nm}\n'
-                       f'  rw [Pre_{k}.eq_def]; dsimp only\n'
-                       f'  pre_auto n, M\n')
+                       f'  rw [Pre_{k}.eq_def]; dsimp only\n' +
+                       PRE_HAND.get(k, '  pre_auto n, M\n'))
         steps = [f'pre_step_{k} n ih' for k in ks]
         out.append(f'theorem pre_group_{first} : ∀ n : Nat,\n    {conj} := by\n'
                    f'  intro n\n'
@@ -649,7 +688,7 @@ def main():
     # each module imports the uposts' modules before it (found by name, not
     # tracked) and those defining the lemmas its models call (not a chain:
     # independent modules build in parallel)
-    base = ['Lanius.Faithful.SelfPre.HBLib', 'Lanius.Faithful.GenB.SelfBModel4']
+    base = ['Lanius.Faithful.SelfPre.Values', 'Lanius.Faithful.GenB.SelfBModel4']
     mods = []
     for i, (kind, items, defs, needs) in enumerate(chunks):
         name = f'SelfP{i:02d}'
