@@ -1,12 +1,14 @@
 module
 
 public import Lanius.Mini.Refs.Model
+public import Lanius.Mini.Views
 
 @[expose] public section
 
 /-! # References: facts about Core's reads of places (F5)
 
-Reads at a path through its prefixes, and a local's evaluation, for F5's
+Reads at a path through its prefixes, a local's evaluation, and a write
+through a resolved place with the views' sync, for F5's
 Core statements (`Lanius/Open/F5/Core*`). Untrusted; kept apart from
 `Refs/Lemmas.lean`.
 -/
@@ -105,5 +107,36 @@ theorem evalExpr_local {prog : Lanius.Core.Program} {st : State} {id : Lanius.Va
         simp only [hc, he, Option.some.injEq] at h
         subst h
         simp [Semantics.evalExpr, hc, he]
+
+/-- Core's write at a resolved place with no raw storage: the cell's value
+with the path replaced (`writeResolvedPlace`). -/
+theorem write_ok {prog : Lanius.Core.Program} {st₁ st' : State} {cell : Lanius.CellId}
+    {path : List ValueProjection} {value : Option Value} {rawByte : Bool} {x root root' : Value}
+    (hroot : Semantics.readCellProjection st₁ cell [] = .ok root)
+    (hrep : Semantics.replaceProjectedValue root path x = .ok root')
+    (hassign : st₁.assignCell cell root' = some st') :
+    Semantics.writeResolvedPlaceNative prog st₁
+      { root := cell, projections := path, value := value, raw := none, rawByte := rawByte } x = .ok st' := by
+  obtain ⟨id, r, he, hr⟩ := readCell_ok hroot
+  simp only [Semantics.projectedValue, Except.ok.injEq] at hr
+  subst hr
+  simp only [Semantics.writeResolvedPlaceNative, Semantics.writeResolvedPlace]
+  cases path with
+  | nil =>
+    simp only [Semantics.replaceProjectedValue, Except.ok.injEq] at hrep
+    subst hrep
+    simp only [hassign]
+  | cons q rest =>
+    simp only [he, hrep, hassign]
+
+/-- After a write that keeps the views holding, Core's sync is the identity,
+whichever way the write goes. -/
+theorem sync_ok {st' : State} {r : Semantics.ResolvedPlace} {x : Value} (hraw : r.raw = none)
+    (hold : Views.ViewsHold st') :
+    (if r.viewFreeRootWrite x then (.ok st' : Except Lanius.Trap State) else
+      match r.raw with
+      | none => Semantics.syncI32ViewsToHeap st'
+      | some _ => Semantics.syncI32ViewsFromHeap st') = .ok st' := by
+  rw [hraw, Views.syncTo_ok hold, ite_self]
 
 end Lanius.Mini.CoreRefs
