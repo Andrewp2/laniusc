@@ -794,7 +794,11 @@ class Declarer:
 
 # ---------------------------------------------------------------- Lean text
 
+# The generated modules' directory, the one main writes (OUTDIR): the import
+# closures below read the files this run wrote, not a stale Gen/, so one run
+# gives the final text (regen.py).
 GEN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Lanius', 'Faithful', 'Gen')
+SIM_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Lanius', 'Faithful', 'Sim')
 
 
 def gen_closure(mods):
@@ -820,7 +824,7 @@ def checker_bodies():
     """The extracted modules whose bodies the checkers (Sim/CheckFast.lean, ..)
     unfold (their own `import all`s), which a kernel check of them unfolds too."""
     if not _bodies:
-        sim = os.path.join(GEN_DIR, '..', 'Sim')
+        sim = SIM_DIR
         found = set()
         for c in CHECKERS:
             found |= set(re.findall(r'^import all (\S+)', open(os.path.join(sim, c + '.lean')).read(), re.M))
@@ -901,6 +905,8 @@ def main(argv):
     here = os.path.dirname(os.path.abspath(__file__))
     gen = os.path.join(here, '..', 'Lanius', 'Faithful', 'Gen')
     dump, rep, outdir = argv if argv else (os.path.join(gen, 'Self.lean'), os.path.join(gen, 'SelfProg.lean'), gen)
+    global GEN_DIR
+    GEN_DIR = os.path.abspath(outdir)
 
     names = {}
     with open(dump + '.meta' if os.path.exists(dump + '.meta') else
