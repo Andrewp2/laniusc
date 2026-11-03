@@ -375,6 +375,7 @@ theorem same_toCore : ∀ {a b : SrcType}, a.same b = true → a.toCore = b.toCo
     subst this; rfl
   | .view n, b, h => by cases b <;> simp [SrcType.same] at h
   | .str, b, h => by cases b <;> simp [SrcType.same, SrcType.isStr] at h ⊢
+  | .ref _, b, h => by cases b <;> simp [SrcType.same, SrcType.isStr] at h ⊢
 
 /-- An integer type of the front pass. -/
 inductive IsInt : SrcType → Prop where
@@ -423,7 +424,7 @@ theorem equalityTy {ty : SrcType} (scalar : ty.isScalar = true) : Typing.Equalit
   | float ft => cases ft <;> first | exact .f32 | exact .f64
   | sint => exact .signed _
   | view => simp [SrcType.isScalar] at scalar
-  | str => simp [SrcType.isScalar] at scalar
+  | str | ref => simp [SrcType.isScalar] at scalar
 
 theorem floatArithTy (ft : FloatTy) : Typing.ArithmeticTy (SrcType.float ft).toCore := by
   cases ft <;> first | exact .f32 | exact .f64
@@ -581,7 +582,7 @@ theorem shiftTy_of {ty : SrcType} (int : ty.isInteger = true) : Typing.ShiftTy t
   | slice => simp [SrcType.isInteger] at int
   | array => simp [SrcType.isInteger] at int
   | view => simp [SrcType.isInteger] at int
-  | str => simp [SrcType.isInteger] at int
+  | str | ref => simp [SrcType.isInteger] at int
 
 /-- A shift by an amount of any integer type keeps its left operand's type. -/
 theorem lowerShift_typed {op : BinOp} {cop : Core.BinaryOp} {l r t : Typed}
@@ -996,7 +997,7 @@ theorem SrcExpr.lower_typed {P : Core.Program} (target : P.target = Core.Target.
         rw [castToFloat_ty h]
         rfl
       | view => simp [castTo] at h
-      | str => simp [castTo] at h
+      | str | ref => simp [castTo] at h
 
 theorem lowerAs_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
     {scope : List Binding} {ctx : Typing.Context} (ok : ScopeOk P ctx scope) {e : SrcExpr}
@@ -1161,7 +1162,7 @@ theorem lowerLiteral_typed {P : Core.Program} (target : P.target = Core.Target.x
   | float => simp [lowerLiteral] at h
   | sint => simp [lowerLiteral] at h
   | view => simp [lowerLiteral] at h
-  | str => simp [lowerLiteral] at h
+  | str | ref => simp [lowerLiteral] at h
 
 theorem lowerEnumValue_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
     {scope : List Binding} {ctx : Typing.Context} (ok : ScopeOk P ctx scope) {ty : SrcType}
@@ -1196,7 +1197,7 @@ theorem lowerEnumValue_typed {P : Core.Program} (target : P.target = Core.Target
   | float => simp [lowerEnumValue] at h
   | sint => simp [lowerEnumValue] at h
   | view => simp [lowerEnumValue] at h
-  | str => simp [lowerEnumValue] at h
+  | str | ref => simp [lowerEnumValue] at h
 
 /-! ## Match -/
 
@@ -1291,6 +1292,7 @@ theorem lowerMatch_typed {P : Core.Program} (target : P.target = Core.Target.x86
         exact .matchValue (.local inCtx)
           (lowerArms_typed target ok decl 0 variants arms (fun j fs hj => by simp [hj]) inner h)
       · simp at h
+    · simp at h
     · simp at h
     · simp at h
     · simp at h
@@ -1486,7 +1488,7 @@ theorem castTo_typed {P : Core.Program} {ctx : Typing.Context} {ce : Core.Expr} 
   | float ft => exact castToFloat_typed inner h
   | unit => simp [castTo] at h
   | view => simp [castTo] at h
-  | str => simp [castTo] at h
+  | str | ref => simp [castTo] at h
 
 /-- An element read of a word struct or enum slice has the element's type. -/
 theorem evalWordElement_ty {decls : SrcDecls} {b : Binding} {element : SrcType} {slot : Nat}
@@ -1883,7 +1885,7 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
       | float => simp at h
       | sint => simp at h
       | view => simp at h
-      | str => simp at h
+      | str | ref => simp at h
   | .eVariant ty variant payload, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalVariant] at h
     split at h
@@ -1920,7 +1922,7 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
       | float => simp at h
       | sint => simp at h
       | view => simp at h
-      | str => simp at h
+      | str | ref => simp at h
   | .eMatch scrutinee ety ty binders values, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalMatch] at h
     split at h
@@ -1958,7 +1960,7 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
           | float => cases values <;> simp [matchVariants, evalArms] at ha
           | sint => cases values <;> simp [matchVariants, evalArms] at ha
           | view => cases values <;> simp [matchVariants, evalArms] at ha
-          | str => cases values <;> simp [matchVariants, evalArms] at ha
+          | str | ref => cases values <;> simp [matchVariants, evalArms] at ha
         · simp at h
   | .eDivide op left right, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalDivision] at h

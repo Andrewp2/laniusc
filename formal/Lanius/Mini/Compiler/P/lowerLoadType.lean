@@ -124,6 +124,7 @@ def evalArrayIndex (b : Binding) (slot : Nat) (index : Option Evaluated) : Optio
   | .sint sk => none
   | .view viewLength => none
   | .str => none
+  | .ref referent => none
 
 def evalIndex (decls : SrcDecls) (scope : List Binding) (slice : Nat) (slot : Nat) (index : Option Evaluated) : Option Evaluated :=
   match lookup scope slice with
@@ -154,6 +155,7 @@ def isArrayLocal (binding : Option Binding) : Bool :=
     | .sint sk => false
     | .view viewLength => false
     | .str => false
+    | .ref referent => false
 
 /-- let id: ty = local[index]; then body: an array's element as the let of the effectful array[index] (LetEval of EIndex), a raw slice's loaded. -/
 def lowerLetIndexAny (decls : SrcDecls) (scope : List Binding) (next : Nat) (ty : SrcType) (slice : Nat) (index : SrcExpr) (body : Option Stmt) : Option Stmt :=

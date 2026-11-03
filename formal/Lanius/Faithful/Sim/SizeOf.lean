@@ -135,7 +135,7 @@ theorem sliceFrom_word {ds : SrcDecls} {t : SrcType} (el : wordElement ds t = tr
   | float => simp [wordElement] at el
   | sint k => exact ⟨fun _ _ => rfl, wordElement_core el⟩
   | array => simp [wordElement] at el
-  | view | str => simp [wordElement] at el
+  | view | str | ref => simp [wordElement] at el
 
 theorem stride_word {P : Core.Program} {T : Core.Ty} {a len w : Nat}
     (kind : ((∃ id, T = .structure id) ∨ (∃ id, T = .enumeration id) ∨ CoreWordScalar T)) (words : NativeLayout.valueWords? P T = some w) :

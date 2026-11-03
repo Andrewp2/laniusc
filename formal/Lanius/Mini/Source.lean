@@ -3,6 +3,7 @@ module
 public import Lanius.Mini.Semantics
 public import Lanius.Semantics
 public import Lanius.Mini.SourceCore
+public import Lanius.Mini.Layout
 -- import all uses: Lanius.Mini.Compiler
 import all Lanius.Mini.Compiler.P.BinOp_folds
 import all Lanius.Mini.Compiler.P.DivOp_size
@@ -280,28 +281,7 @@ def SrcType.Holds : SrcType → Value → BitVec 64 → Prop
   | .sint kind, value, bits => kind.SintHolds value bits
   | .view _, _, _ => False
   | .str, _, _ => False
-
-/-- A place a reference or a borrowed slice names, held in frame memory:
-Core's cell `cell` at the projection path `projections` holds a value of
-`ty`, whose representation is in the mini heap from `address` (`FrameCorr`).
-A `sliced` place is an array passed as a slice, laid out as a slice's
-elements (`Addressed.view`); the others take one word per slot. -/
-structure Addressed where
-  cell : Nat
-  projections : List Lanius.Core.ValueProjection
-  ty : SrcType
-  address : Nat
-  sliced : Bool
-
-/-- The pointer of a slice of a sliced place: its lowest byte for packed
-`i32` and `u8` elements, which run up from it, and its top word for the
-others, whose words run down from it (SEMANTIC_DECISIONS "Addressed locals"
-point 2). -/
-def Addressed.pointer (x : Addressed) : Nat :=
-  match x.ty with
-  | .array .i32 _ => x.address
-  | .array (.uint .uint8) _ => x.address
-  | _ => x.address + 8 * (x.ty.size - 1)
+  | .ref _, _, _ => False
 
 /-- The static region as `str` values see it: the mini address it starts at
 and its bytes, the heap's `staticBase` and `statics` (`Heap.StaticsAt`),
@@ -397,6 +377,11 @@ inductive SrcType.HoldsAt (sx : Statics) (places : List Addressed) : SrcType →
       (env slot).toNat = sx.base + k → (env (slot + 1)).toNat = (World.utf8Bytes s).length →
       (World.utf8Bytes s).length < 2 ^ 31 → (sx.bytes.drop k).take (World.utf8Bytes s).length = World.utf8Bytes s →
       SrcType.HoldsAt sx places .str (.string s) env slot
+  /-- A reference to a `referent`: one slot, the lowest byte of the sub-place
+  it names in one of `places` (`RefHeld`, SEMANTIC_DECISIONS "References: the
+  memory model" point 5). -/
+  | ref {referent : SrcType} {value : Value} {env : Env} {slot : Nat} :
+      RefHeld places referent value (env slot) → SrcType.HoldsAt sx places (.ref referent) value env slot
 
 /-- Values of these types, one after another from `slot`: a struct's fields,
 a payload, or arguments. -/
@@ -423,7 +408,7 @@ theorem SrcType.holdsAt_scalar {ty : SrcType} (scalar : ty.isScalar = true) {v :
   | float => exact ⟨fun | .float h => h, .float⟩
   | sint => exact ⟨fun | .sint h => h, .sint⟩
   | view => simp [SrcType.isScalar] at scalar
-  | str => simp [SrcType.isScalar] at scalar
+  | str | ref => simp [SrcType.isScalar] at scalar
 
 theorem FieldsHold.length : ∀ {fs vs env slot}, FieldsHold sx places fs vs env slot → vs.length = fs.length
   | [], _, _, _, .nil => rfl
@@ -526,6 +511,10 @@ theorem SrcType.HoldsAt.congr : ∀ {ty : SrcType} {v : Value} {env : Env} {slot
     have second := agree 1 (by simp [SrcType.size])
     simp only [Nat.add_zero] at first
     exact .str (by rw [first]; exact pointer) (by rw [second]; exact len) small bytes
+  | .ref _, _, _, _, .ref held, _, _, agree => by
+    have := agree 0 (by simp [SrcType.size])
+    simp only [Nat.add_zero] at this
+    exact .ref (by rw [this]; exact held)
 
 theorem FieldsHold.congr : ∀ {fs : List SrcType} {vs : List Value} {env : Env} {slot : Nat},
     FieldsHold sx places fs vs env slot → ∀ {env' : Env} {slot' : Nat},

@@ -63,6 +63,7 @@ def SrcType.toCore : SrcType → Core.Ty
   | .sint kind => .scalar (.signed kind.toSigned)
   | .view length => .array (.scalar (.signed .i32)) length
   | .str => .scalar .string
+  | .ref referent => .reference referent.toCore
 
 /-- The Core type id of a struct or enum type. -/
 def SrcType.typeId : SrcType → Nat
@@ -81,6 +82,7 @@ def SrcType.typeId : SrcType → Nat
   | .sint _ => 0
   | .view _ => 0
   | .str => 0
+  | .ref _ => 0
 
 /-- Core's literal of this type from its fields' expressions: an array's
 elements, or a struct's fields (no other type has a literal of this form). -/
@@ -100,6 +102,7 @@ def SrcType.literal : SrcType → List Core.Expr → Core.Expr
   | .sint _, xs => .structValue 0 xs
   | .view _, xs => .array (.scalar (.signed .i32)) xs
   | .str, xs => .structValue 0 xs
+  | .ref _, xs => .structValue 0 xs
 
 /-- The Core type a cast to this type names. Lowering only casts to `i32`
 and the unsigned types. -/
@@ -119,6 +122,7 @@ def SrcType.toScalar : SrcType → Core.ScalarTy
   | .sint kind => .signed kind.toSigned
   | .view _ => .bool
   | .str => .string
+  | .ref _ => .bool
 
 /-- Core's raw slice of this element type from a pointer and a length:
 `slice_from_raw_parts` for `i32`, the typed form for the rest. -/
@@ -138,6 +142,7 @@ def SrcType.sliceFrom : SrcType → Core.Expr → Core.Expr → Core.Expr
   | .sint kind, pointer, length => .typedSliceFromRawParts (.scalar (.signed kind.toSigned)) pointer length
   | .view n, pointer, length => .typedSliceFromRawParts (.array (.scalar (.signed .i32)) n) pointer length
   | .str, pointer, length => .typedSliceFromRawParts (.scalar .string) pointer length
+  | .ref referent, pointer, length => .typedSliceFromRawParts (.reference referent.toCore) pointer length
 
 def SrcDivOp.toCore : SrcDivOp → Core.BinaryOp
   | .quotient => .divide

@@ -51,7 +51,7 @@ theorem wordElement_cases {ds : SrcDecls} {e : SrcType} (h : wordElement ds e = 
     refine .inr (.inr ?_)
     cases k <;> simp_all [wordElement, SrcType.isSint, UintTy.code, SrcType.WordScalar]
   | bool => exact .inr (.inr (.inr (.inr (.inr (.inr rfl)))))
-  | i32 | ptr | slice | array | unit | isize | char | float | view | str => simp [wordElement] at h
+  | i32 | ptr | slice | array | unit | isize | char | float | view | str | ref => simp [wordElement] at h
 
 /-- A one-word scalar takes one word. -/
 theorem CoreWordScalar.words {P : Core.Program} {k n : Nat} {t : Core.Ty} (w : CoreWordScalar t)

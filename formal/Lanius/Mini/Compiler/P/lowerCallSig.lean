@@ -83,6 +83,7 @@ def evalFieldOf (scope : List Binding) (e : SrcExpr) (slot : Nat) (b : Binding) 
   | .sint sk => none
   | .view viewLength => none
   | .str => none
+  | .ref referent => none
 
 /-- A struct local's field of any type (a scalar field lowers as an expression first), copied slot by slot. -/
 def evalFieldCopy (scope : List Binding) (e : SrcExpr) (slot : Nat) (binding : Option Binding) (index : Nat) : Option Evaluated :=

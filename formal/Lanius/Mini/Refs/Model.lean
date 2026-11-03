@@ -20,10 +20,10 @@ slot holding the lowest byte of a sub-place of a home (a field or element at a
 projection path). Reads and writes through it are loads and stores at fixed
 offsets from that address, fixed by the referent's type.
 
-None of these definitions is trusted yet. Stage 1's `SrcType.HoldsAt.ref`
-will be `RefHeld`, which makes `RefTo`, `Addressed.sub`, `SrcType.sub`,
-`SrcType.subStep`, `SrcType.slotAt` and what they use part of the trusted
-base (the trusted-base delta of the design note). F5's open statements
+The definitions a reference's representation reaches (`Access`, `words`,
+`subStep`, `sub`, `Addressed.sub`, `RefTo`, `RefHeld`) are in
+`Mini/Layout.lean`, trusted, since `SrcType.HoldsAt.ref` is `RefHeld`
+(stage 1, S2). The rest here is not trusted. F5's open statements
 (`Lanius/Open/F5`) are about them.
 -/
 
@@ -33,22 +33,6 @@ open Lanius.Core (Value ValueProjection)
 open Lanius.Semantics (State)
 
 /-! ## Scalars -/
-
-/-- How one slot of a value is read and written in memory: one byte, or a
-4- or 8-byte little-endian word. -/
-inductive Access where
-  | byte
-  | word (width : MemWidth)
-
-def Access.bytes : Access → Nat
-  | .byte => 1
-  | .word width => width.bytes
-
-/-- A narrow access: an element of this width is packed in an array. -/
-def Access.narrow : Access → Bool
-  | .byte => true
-  | .word .m32 => true
-  | .word .m64 => false
 
 /-- `target` = the slot at `address`, at this width. A 1- or 4-byte load
 zero-extends. -/
@@ -60,88 +44,6 @@ def Access.load : Access → Nat → Expr → Stmt
 def Access.store : Access → Expr → Expr → Stmt
   | .byte, address, value => .storeByte address value
   | .word width, address, value => .storeWord width address value
-
-/-- How an element of an array of this type is packed: an `i32` at 4 bytes
-and a `u8` at 1 (`narrow`, the packed arrays); the others are not packed and
-take whole native words. A scalar outside a packed array is accessed at its
-native width instead (`widthOf`, `SrcType.slotAt`). -/
-def SrcType.accessKind : SrcType → Access
-  | .i32 => .word .m32
-  | .bool => .word .m64
-  | .uint .uint8 => .byte
-  | .uint .uint32 => .word .m64
-  | .uint .uint64 => .word .m64
-  | .uint .usize => .word .m64
-  | .uint .uint16 => .word .m64
-  | .struct _ _ => .word .m64
-  | .enum _ _ => .word .m64
-  | .ptr => .word .m64
-  | .slice _ => .word .m64
-  | .array _ _ => .word .m64
-  | .unit => .word .m64
-  | .isize => .word .m64
-  | .char => .word .m64
-  | .float _ => .word .m64
-  | .sint _ => .word .m64
-  | .view _ => .word .m64
-  | .str => .word .m64
-
-/-- A packed type: an array of `i32` or `u8`, its elements 4 or 1 bytes
-apart, ascending (the slice layout, SEMANTIC_DECISIONS "Addressed locals"
-point 2). -/
-def SrcType.packed : SrcType → Bool
-  | .array element _ => element.accessKind.narrow
-  | .i32 => false
-  | .bool => false
-  | .uint _ => false
-  | .struct _ _ => false
-  | .enum _ _ => false
-  | .ptr => false
-  | .slice _ => false
-  | .unit => false
-  | .isize => false
-  | .char => false
-  | .float _ => false
-  | .sint _ => false
-  | .view _ => false
-  | .str => false
-
-/-! ## Native layout -/
-
-mutual
-/-- A value's native words (`NativeLayout.words?`, extended to arrays): one
-per scalar, two for a `str`, three for a slice (pointer, length, stride), a
-struct its fields' (at least one), an enum its tag and its largest payload,
-a packed array its bytes rounded up to words, any other array its elements'. -/
-def SrcType.words : SrcType → Nat
-  | .i32 => 1
-  | .bool => 1
-  | .uint _ => 1
-  | .struct _ fields => max 1 (fieldWords fields)
-  | .enum _ variants => 1 + variantWords variants
-  | .ptr => 1
-  | .slice _ => 3
-  | .array element length =>
-      if element.accessKind.narrow then (element.accessKind.bytes * length + 7) / 8
-      else length * element.words
-  | .unit => 1
-  | .isize => 1
-  | .char => 1
-  | .float _ => 1
-  | .sint _ => 1
-  | .view _ => 1
-  | .str => 2
-
-/-- The words of fields one after another. -/
-def fieldWords : List SrcType → Nat
-  | [] => 0
-  | t :: rest => t.words + fieldWords rest
-
-/-- The largest payload's words. -/
-def variantWords : List (List SrcType) → Nat
-  | [] => 0
-  | fields :: rest => max (fieldWords fields) (variantWords rest)
-end
 
 /-- Two lists of widths, the first's where both have one, then the longer's
 rest. -/
@@ -181,6 +83,7 @@ def SrcType.widths : SrcType → List MemWidth
   | .sint kind => [widthOf (.sint kind)]
   | .view n => [widthOf (.view n)]
   | .str => [.m64, .m64]
+  | .ref _ => [.m64]
 
 def fieldsWidths : List SrcType → List MemWidth
   | [] => []
@@ -235,6 +138,7 @@ def SrcType.slotAt : SrcType → Nat → Nat × Access
   | .sint kind, _ => (0, .word (widthOf (.sint kind)))
   | .view n, _ => (0, .word (widthOf (.view n)))
   | .str, s => (8 * (1 - s), .word .m64)
+  | .ref _, _ => (0, .word .m64)
 
 /-- Slot `s` of fields whose first one starts `above` words below the top of
 a `total`-word value. -/
@@ -274,6 +178,7 @@ def SrcType.span (ty : SrcType) : Nat :=
   | .sint kind => (widthOf (.sint kind)).bytes
   | .view _ => 8 * ty.words
   | .str => 8 * ty.words
+  | .ref _ => 8 * ty.words
 
 /-- The slots of a value of `ty` whose block's lowest byte is `address`,
 read from memory in native layout. -/
@@ -300,6 +205,7 @@ def SrcType.homeOk : SrcType → Bool
   | .float _ => true
   | .sint _ => true
   | .str => true
+  | .ref _ => true
 
 def fieldsHomeOk : List SrcType → Bool
   | [] => true
@@ -324,6 +230,7 @@ def SrcType.uniform : SrcType → Bool
   | .float _ => true
   | .sint _ => true
   | .str => true
+  | .ref _ => true
 
 def fieldsUniform : List SrcType → Bool
   | [] => true
@@ -355,6 +262,7 @@ def SrcType.tagsFit : SrcType → Bool
   | .sint _ => true
   | .view _ => true
   | .str => true
+  | .ref _ => true
 
 def fieldsTagsFit : List SrcType → Bool
   | [] => true
@@ -364,76 +272,6 @@ def variantsTagsFit : List (List SrcType) → Bool
   | [] => true
   | fields :: rest => fieldsTagsFit fields && variantsTagsFit rest
 end
-
-/-! ## Sub-places -/
-
-/-- One projection into a value of `ty`: the byte offset of the field's or
-element's block from the lowest byte of the value's block, and its type. A
-struct's field `f` is the words of the fields before it below the top; a
-packed array's element `i` is `i` widths up; another array's element `i` is
-`i + 1` elements below the top. -/
-def SrcType.subStep (ty : SrcType) (p : ValueProjection) : Option (Nat × SrcType) :=
-  match ty with
-  | .struct _ fields =>
-      match p with
-      | .field f =>
-          match fields[f]? with
-          | some fieldTy =>
-              some (8 * (max 1 (fieldWords fields) - fieldWords (fields.take f) - fieldTy.words), fieldTy)
-          | none => none
-      | .index _ => none
-  | .array element length =>
-      match p with
-      | .field _ => none
-      | .index i =>
-          if i < length then
-            if element.accessKind.narrow then some (element.accessKind.bytes * i, element)
-            else some (8 * (length * element.words - (i + 1) * element.words), element)
-          else none
-  | .i32 => none
-  | .bool => none
-  | .uint _ => none
-  | .enum _ _ => none
-  | .ptr => none
-  | .slice _ => none
-  | .unit => none
-  | .isize => none
-  | .char => none
-  | .float _ => none
-  | .sint _ => none
-  | .view _ => none
-  | .str => none
-
-/-- The byte offset and type of the sub-place at `path` of a value of `ty`.
-None when a projection does not fit the type or an element is out of range. -/
-def SrcType.sub : SrcType → List ValueProjection → Option (Nat × SrcType)
-  | ty, [] => some (0, ty)
-  | ty, p :: rest =>
-      match ty.subStep p with
-      | none => none
-      | some (offset, child) =>
-          match child.sub rest with
-          | none => none
-          | some (inner, target) => some (offset + inner, target)
-
-/-- The lowest byte and type of the sub-place of `x` at `path`. -/
-def Addressed.sub (x : Addressed) (path : List ValueProjection) : Option (Nat × SrcType) :=
-  match x.ty.sub path with
-  | none => none
-  | some (offset, ty) => some (x.address + offset, ty)
-
-/-- `RefTo places ty cell path w`: the word `w` is the lowest byte of the
-sub-place at `path`, of type `ty`, of the place whose cell is `cell`. -/
-def RefTo (places : List Addressed) (ty : SrcType) (cell : Lanius.CellId) (path : List ValueProjection)
-    (w : BitVec 64) : Prop :=
-  ∃ x ∈ places, x.cell = cell ∧ x.sub path = some (w.toNat, ty)
-
-/-- `RefHeld places ty v w`: the word `w` represents the reference `v` to a
-`ty`. Stage 1's `SrcType.HoldsAt.ref ty` is this. It names the source type
-`ty`, since `SrcType.toCore` is not one-to-one (`i32` and `sint .uint32`,
-an `[i32; n]` and a view, structs' field lists). -/
-def RefHeld (places : List Addressed) (ty : SrcType) (v : Value) (w : BitVec 64) : Prop :=
-  ∃ cell path, v = .reference ty.toCore cell path ∧ RefTo places ty cell path w
 
 /-! ## Homes -/
 
@@ -564,6 +402,7 @@ def SrcType.indexInfo (ty : SrcType) : Option (Nat × SrcType) :=
   | .sint _ => none
   | .view _ => none
   | .str => none
+  | .ref _ => none
 
 /-- `t` = the address in `t` plus element `slot`'s offset in an array of
 `length` `element`s: `slot` widths up when packed, else `length - 1 - slot`

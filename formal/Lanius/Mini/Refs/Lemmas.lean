@@ -63,7 +63,7 @@ theorem SrcType.narrow_cases {e : SrcType} (h : e.accessKind.narrow = true) : e 
   | float => simp [SrcType.accessKind, Access.narrow] at h
   | sint => simp [SrcType.accessKind, Access.narrow] at h
   | view => simp [SrcType.accessKind, Access.narrow] at h
-  | str => simp [SrcType.accessKind, Access.narrow] at h
+  | str | ref => simp [SrcType.accessKind, Access.narrow] at h
 
 theorem SrcType.isUint_u8 {ty : SrcType} (h : ty.isUint .uint8 = true) : ty = .uint .uint8 := by
   cases ty with
@@ -81,7 +81,7 @@ theorem SrcType.isUint_u8 {ty : SrcType} (h : ty.isUint .uint8 = true) : ty = .u
   | float => simp [SrcType.isUint] at h
   | sint => simp [SrcType.isUint] at h
   | view => simp [SrcType.isUint] at h
-  | str => simp [SrcType.isUint] at h
+  | str | ref => simp [SrcType.isUint] at h
 
 theorem SrcType.refSlotAt_u8 (s : Nat) : (SrcType.uint .uint8).refSlotAt s = (0, .byte) := by
   simp [SrcType.refSlotAt, SrcType.isUint, UintTy.code]
@@ -190,6 +190,8 @@ theorem SrcType.slot_fits : ∀ (ty : SrcType) (s : Nat), s < ty.size →
     simp only [SrcType.size] at lt
     simp only [SrcType.slotAt, SrcType.words, Access.bytes, MemWidth.bytes]
     omega
+  | .ref _, s, _ => by
+    simp [SrcType.slotAt, SrcType.words, Access.bytes, MemWidth.bytes]
 termination_by structural ty => ty
 
 theorem fieldsSlot_fits : ∀ (fs : List SrcType) (total above s : Nat), s < sizes fs →
@@ -325,7 +327,7 @@ theorem SrcType.step_holds {ty : SrcType} {p : ValueProjection} {o : Nat} {child
   | float => simp [SrcType.subStep] at h
   | sint => simp [SrcType.subStep] at h
   | view => simp [SrcType.subStep] at h
-  | str => simp [SrcType.subStep] at h
+  | str | ref => simp [SrcType.subStep] at h
 
 /-- Down a projection path: the sub-place's value is held `j` slots into
 its parent's, and its slots are the parent's (`SlotsIn`). -/

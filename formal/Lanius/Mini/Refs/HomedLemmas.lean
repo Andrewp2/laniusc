@@ -107,6 +107,7 @@ theorem SrcType.subStep_ext {ty : SrcType} {p : ValueProjection} {o : Nat} {chil
   | sint => simp [SrcType.subStep] at h
   | view => simp [SrcType.subStep] at h
   | str => simp [SrcType.subStep] at h
+  | ref => simp [SrcType.subStep] at h
 
 theorem SrcType.sub_ext : ∀ (path : List ValueProjection) {ty t : SrcType} {off : Nat},
     ty.sub path = some (off, t) → off + t.ext ≤ 8 * ty.words
@@ -347,6 +348,11 @@ theorem SrcType.HoldsAt.drop {sx : Statics} {own places : List Addressed} :
   | _, _, _, _, .sint h, _ => .sint h
   | _, _, _, _, .view len h, _ => .view len h
   | _, _, _, _, .str base len small bytes, _ => .str base len small bytes
+  | _, _, _, _, .ref ⟨cell, path, hv, x, mem, hc, hs⟩, no => by
+    subst hv
+    rcases List.mem_append.mp mem with m | m
+    · exact absurd (by rw [hc]; exact .reference) (no _ m)
+    · exact .ref ⟨cell, path, rfl, x, m, hc, hs⟩
 
 theorem FieldsHold.drop {sx : Statics} {own places : List Addressed} :
     ∀ {fs : List SrcType} {vs : List Value} {env : Env} {slot : Nat},

@@ -1219,6 +1219,7 @@ partial def serType : SrcType → String
   | .array t n => s!"(.array {serType t} {n})"
   | .view n => s!"(.view {n})"
   | .str => ".str"
+  | .ref t => s!"(.ref {serType t})"
   | .unit => ".unit"
   | .isize => ".isize"
   | .char => ".char"

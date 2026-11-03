@@ -139,6 +139,7 @@ theorem type_grows : ∀ (t : SrcType) (d : SrcDecls), GrowsTo d (SrcType.declar
   | .sint _, _ => by unfold SrcType.declare; exact growsTo_some
   | .view _, _ => by unfold SrcType.declare; exact fun _ h => nomatch h
   | .str, _ => by unfold SrcType.declare; exact growsTo_some
+  | .ref _, _ => by unfold SrcType.declare; exact fun _ h => nomatch h
   termination_by structural t => t
 theorem types_grows : ∀ (ts : List SrcType) (d : SrcDecls), GrowsTo d (declareTypes ts d)
   | [], _ => by unfold declareTypes; exact growsTo_some

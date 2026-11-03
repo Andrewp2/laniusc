@@ -64,6 +64,7 @@ def lowerMatchArm (scope : List Binding) (binding : Option Binding) (enumId : Na
     | .sint sk => none
     | .view viewLength => none
     | .str => none
+    | .ref referent => none
 
 /-- The match is exhaustive, its value takes slots, and its tags fit in 32 bits. -/
 def lowerMatchArms (scope : List Binding) (slot : Nat) (same : Bool) (variants : List (List SrcType)) (arms : List SrcArm) (ty : SrcType) (target : Nat) : Option Stmt :=
@@ -89,6 +90,7 @@ def lowerMatchOn (scope : List Binding) (b : Binding) (enumId : Nat) (arms : Lis
   | .sint sk => none
   | .view viewLength => none
   | .str => none
+  | .ref referent => none
 
 def lowerMatch (scope : List Binding) (binding : Option Binding) (enumId : Nat) (arms : List SrcArm) (ty : SrcType) (target : Nat) : Option Stmt :=
   match binding with

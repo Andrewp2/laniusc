@@ -496,6 +496,7 @@ def tySlots : SrcType → Nat
   | .sint k => SrcType.size (.sint k)
   | .view length => SrcType.size (.view length)
   | .str => SrcType.size .str
+  | .ref referent => max (SrcType.size (.ref referent)) (tySlots referent)
 def tySlotsList : List SrcType → Nat
   | [] => 0
   | t :: rest => max (tySlots t) (tySlotsList rest)
@@ -521,6 +522,7 @@ theorem size_le_tySlots : ∀ t : SrcType, SrcType.size t ≤ tySlots t
   | .sint k => Nat.le_refl _
   | .view length => Nat.le_refl _
   | .str => Nat.le_refl _
+  | .ref referent => Nat.le_max_left _ _
 
 /-- The largest slot count of a type anywhere in a value. -/
 class TS (α : Type) where

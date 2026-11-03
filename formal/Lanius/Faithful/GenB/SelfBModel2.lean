@@ -20,9 +20,41 @@ open Lanius.Faithful.Budget
 
 noncomputable section
 
+def Cost_int_literal_at : Nat → Lanius.Mini.SrcType → BitVec 32 → Lanius.Mini.SrcExpr → Nat
+  | 0, x15, x27, x35 => 18446744073709551616
+  | n + 1, x15, x27, x35 => (match x15 with | .i32 => 0 | .bool => 0 | .uint x133 => 0 | .struct x186 x190 => 0 | .enum x217 x221 => 0 | .ptr => 0 | .slice x281 => 0 | .array x314 x318 => 0 | .unit => 0 | .isize => 1 | .char => 0 | .float x448 => 0 | .sint x471 => (Cost_sint_at n x471 x27 x35) | .view x510 => 0 | .str => 0 | .ref x559 => 0)
+
+end
+
+noncomputable section
+
+def Cost_int_at : Nat → Option Lanius.Mini.SrcType → BitVec 32 → Lanius.Mini.SrcExpr → Nat
+  | 0, x7, x44, x52 => 18446744073709551616
+  | n + 1, x7, x44, x52 => (match x7 with | some x135 => (Cost_int_literal_at n x135 x44 x52) | none => 0)
+
+end
+
+noncomputable section
+
+def Cost_neg_wide_isize : Nat → BitVec 64 → Lanius.Mini.SrcExpr → Nat
+  | 0, x15, x23 => 18446744073709551616
+  | n + 1, x15, x23 => (if (decide (x15.toNat ≤ (9223372036854775808#64).toNat)) = true then 1 else 0)
+
+end
+
+noncomputable section
+
+def Cost_neg_wide_sint : Nat → Lanius.Mini.UintTy → BitVec 64 → Lanius.Mini.SrcExpr → Nat
+  | 0, x14, x25, x33 => 18446744073709551616
+  | n + 1, x14, x25, x33 => (if ((Lanius.Mini.sintWide x14) && (decide (x25.toNat ≤ (9223372036854775808#64).toNat))) = true then 1 else 0)
+
+end
+
+noncomputable section
+
 def Cost_neg_wide_at : Nat → Option Lanius.Mini.SrcType → BitVec 64 → Lanius.Mini.SrcExpr → Nat
   | 0, x12, x49, x57 => 18446744073709551616
-  | n + 1, x12, x49, x57 => (match x12 with | some x157 => (match x157 with | .i32 => 0 | .bool => 0 | .uint x254 => 0 | .struct x282 x286 => 0 | .enum x317 x321 => 0 | .ptr => 0 | .slice x377 => 0 | .array x414 x418 => 0 | .unit => 0 | .isize => (Cost_neg_wide_isize n x49 x57) | .char => 0 | .float x563 => 0 | .sint x590 => (Cost_neg_wide_sint n x590 x49 x57) | .view x639 => 0 | .str => 0) | none => 0)
+  | n + 1, x12, x49, x57 => (match x12 with | some x157 => (match x157 with | .i32 => 0 | .bool => 0 | .uint x254 => 0 | .struct x282 x286 => 0 | .enum x317 x321 => 0 | .ptr => 0 | .slice x377 => 0 | .array x414 x418 => 0 | .unit => 0 | .isize => (Cost_neg_wide_isize n x49 x57) | .char => 0 | .float x563 => 0 | .sint x590 => (Cost_neg_wide_sint n x590 x49 x57) | .view x639 => 0 | .str => 0 | .ref x696 => 0) | none => 0)
 
 end
 
@@ -46,7 +78,7 @@ noncomputable section
 
 def Cost_neg_least : Nat → Option Lanius.Mini.SrcType → Lanius.Mini.SrcExpr → Lanius.Mini.SrcExpr → Nat
   | 0, x10, x47, x59 => 18446744073709551616
-  | n + 1, x10, x47, x59 => (match x10 with | some x142 => (match x142 with | .i32 => 0 | .bool => 0 | .uint x222 => 0 | .struct x250 x254 => 0 | .enum x285 x289 => 0 | .ptr => 0 | .slice x345 => 0 | .array x382 x386 => 0 | .unit => 0 | .isize => 0 | .char => 0 | .float x512 => 0 | .sint x539 => (Cost_neg_least_at n x539 x47 x59) | .view x587 => 0 | .str => 0) | none => 0)
+  | n + 1, x10, x47, x59 => (match x10 with | some x142 => (match x142 with | .i32 => 0 | .bool => 0 | .uint x222 => 0 | .struct x250 x254 => 0 | .enum x285 x289 => 0 | .ptr => 0 | .slice x345 => 0 | .array x382 x386 => 0 | .unit => 0 | .isize => 0 | .char => 0 | .float x512 => 0 | .sint x539 => (Cost_neg_least_at n x539 x47 x59) | .view x587 => 0 | .str => 0 | .ref x644 => 0) | none => 0)
 
 end
 
@@ -65,7 +97,7 @@ noncomputable section
 
 def Cost_src_fields : Nat → Option Lanius.Mini.SrcType → Nat
   | 0, x11 => 18446744073709551616
-  | n + 1, x11 => (match x11 with | some x144 => (match x144 with | .i32 => 0 | .bool => 0 | .uint x230 => 0 | .struct x261 x265 => 0 | .enum x314 x318 => 0 | .ptr => 0 | .slice x380 => 0 | .array x419 x422 => (Cost_repeat_src n x419 x422) | .unit => 0 | .isize => 0 | .char => 0 | .float x596 => 0 | .sint x626 => 0 | .view x656 => 0 | .str => 0) | none => 0)
+  | n + 1, x11 => (match x11 with | some x144 => (match x144 with | .i32 => 0 | .bool => 0 | .uint x230 => 0 | .struct x261 x265 => 0 | .enum x314 x318 => 0 | .ptr => 0 | .slice x380 => 0 | .array x419 x422 => (Cost_repeat_src n x419 x422) | .unit => 0 | .isize => 0 | .char => 0 | .float x596 => 0 | .sint x626 => 0 | .view x656 => 0 | .str => 0 | .ref x719 => 0) | none => 0)
 
 end
 
@@ -100,7 +132,7 @@ noncomputable section
 
 def Cost_wide_at : Nat → Option Lanius.Mini.SrcType → BitVec 64 → Lanius.Mini.SrcExpr → Nat
   | 0, x8, x45, x53 => 18446744073709551616
-  | n + 1, x8, x45, x53 => (match x8 with | some x136 => (match x136 with | .i32 => 0 | .bool => 0 | .uint x216 => 0 | .struct x264 x268 => 0 | .enum x299 x303 => 0 | .ptr => 0 | .slice x359 => 0 | .array x396 x400 => 0 | .unit => 0 | .isize => (Cost_wide_isize_at n x45 x53) | .char => 0 | .float x544 => 0 | .sint x571 => (Cost_wide_sint_at n x571 x45 x53) | .view x619 => 0 | .str => 0) | none => 0)
+  | n + 1, x8, x45, x53 => (match x8 with | some x136 => (match x136 with | .i32 => 0 | .bool => 0 | .uint x216 => 0 | .struct x264 x268 => 0 | .enum x299 x303 => 0 | .ptr => 0 | .slice x359 => 0 | .array x396 x400 => 0 | .unit => 0 | .isize => (Cost_wide_isize_at n x45 x53) | .char => 0 | .float x544 => 0 | .sint x571 => (Cost_wide_sint_at n x571 x45 x53) | .view x619 => 0 | .str => 0 | .ref x676 => 0) | none => 0)
 
 end
 

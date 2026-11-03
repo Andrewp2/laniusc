@@ -118,6 +118,7 @@ def SrcType.declare (self : SrcType) (decls : SrcDecls) : Option SrcDecls :=
   | .sint kind => some decls
   | .view viewLength => none
   | .str => some decls
+  | .ref referent => none
 def declareTypes (types : List SrcType) (decls : SrcDecls) : Option SrcDecls :=
   match types with
   | [] => some decls

@@ -83,7 +83,7 @@ theorem wordType_pos {ds : SrcDecls} : ∀ {t : SrcType}, wordType ds t = true �
   | .slice _, ok => by simp [wordType] at ok
   | .unit, ok => by simp [wordType] at ok
   | .array _ _, ok => by simp [wordType] at ok
-  | .view _, ok | .str, ok => by simp [wordType] at ok
+  | .view _, ok | .str, ok | .ref _, ok => by simp [wordType] at ok
 
 section
 variable {sp : SrcProgram} {boxes : Boxes}
@@ -256,7 +256,7 @@ theorem store_spec : ∀ n, StoreAt sp boxes n
       | float => exact s.elim
       | sint _ => exact s.elim
       | array _ _ => exact s.elim
-      | view _ | str => exact s.elim
+      | view _ | str | ref => exact s.elim
       | isize => exact NativeStoreSpec.sty s notUnit
       | unit => exact absurd rfl notUnit
     | struct none rs =>

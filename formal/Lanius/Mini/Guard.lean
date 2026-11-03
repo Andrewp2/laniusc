@@ -598,6 +598,7 @@ theorem matchArm_lower_inv {sigs : List Sig} {decls : SrcDecls} {ret : SrcType} 
   case h_13 => simp at ok
   case h_14 => simp at ok
   case h_15 => simp at ok
+  case h_16 => simp at ok
   rename_i eid variants hty
   simp only [lowerArmFound] at ok
   split at ok
