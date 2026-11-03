@@ -18,15 +18,18 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.SelfCert
 open Lanius.Faithful.Budget
 
-theorem bproof_compile_func {spW sp : SrcProgram} {prims : Prims} {ix_compile_func ix_minus ix_plus ix_Stmt_temps ix_Stmt_within ix_frame_limit ix_cons_of_mini_selfhost_Instr ix_zero_locals ix_concat_of_mini_selfhost_Instr ix_compile_stmt ix_code_size : Nat}
-    (fnW : spW.funcs[ix_compile_func]? = some (src_compile_func ix_minus ix_plus ix_Stmt_temps ix_Stmt_within ix_frame_limit ix_cons_of_mini_selfhost_Instr ix_zero_locals ix_concat_of_mini_selfhost_Instr ix_compile_stmt ix_code_size)) (fn : sp.funcs[ix_compile_func]? = some (src_compile_func ix_minus ix_plus ix_Stmt_temps ix_Stmt_within ix_frame_limit ix_cons_of_mini_selfhost_Instr ix_zero_locals ix_concat_of_mini_selfhost_Instr ix_compile_stmt ix_code_size))
+theorem bproof_compile_func {spW sp : SrcProgram} {prims : Prims} {ix_compile_func ix_minus ix_plus ix_image_limit ix_Stmt_temps ix_Stmt_within ix_frame_limit ix_room_fits ix_stmt_room ix_cons_of_mini_selfhost_Instr ix_zero_locals ix_concat_of_mini_selfhost_Instr ix_compile_stmt ix_code_size : Nat}
+    (fnW : spW.funcs[ix_compile_func]? = some (src_compile_func ix_minus ix_plus ix_image_limit ix_Stmt_temps ix_Stmt_within ix_frame_limit ix_room_fits ix_stmt_room ix_cons_of_mini_selfhost_Instr ix_zero_locals ix_concat_of_mini_selfhost_Instr ix_compile_stmt ix_code_size)) (fn : sp.funcs[ix_compile_func]? = some (src_compile_func ix_minus ix_plus ix_image_limit ix_Stmt_temps ix_Stmt_within ix_frame_limit ix_room_fits ix_stmt_room ix_cons_of_mini_selfhost_Instr ix_zero_locals ix_concat_of_mini_selfhost_Instr ix_compile_stmt ix_code_size))
     (np : prims.isPrim ix_compile_func = false)
     (back : Certified (∀ {n : Nat}, Stmt_compile_func sp prims ix_compile_func n))
     (b_minus : Certified (∀ {n : Nat}, BStmt_minus spW sp prims ix_minus n))
     (b_plus : Certified (∀ {n : Nat}, BStmt_plus spW sp prims ix_plus n))
+    (b_image_limit : Certified (∀ {n : Nat}, BStmt_image_limit spW sp prims ix_image_limit n))
     (b_Stmt_temps : Certified (∀ {n : Nat}, BStmt_Stmt_temps spW sp prims ix_Stmt_temps n))
     (b_Stmt_within : Certified (∀ {n : Nat}, BStmt_Stmt_within spW sp prims ix_Stmt_within n))
     (b_frame_limit : Certified (∀ {n : Nat}, BStmt_frame_limit spW sp prims ix_frame_limit n))
+    (b_room_fits : Certified (∀ {n : Nat}, BStmt_room_fits spW sp prims ix_room_fits n))
+    (b_stmt_room : Certified (∀ {n : Nat}, BStmt_stmt_room spW sp prims ix_stmt_room n))
     (b_cons_of_mini_selfhost_Instr : Certified (∀ {n : Nat}, BStmt_cons_of_mini_selfhost_Instr spW sp prims ix_cons_of_mini_selfhost_Instr n))
     (b_zero_locals : Certified (∀ {n : Nat}, BStmt_zero_locals spW sp prims ix_zero_locals n))
     (b_concat_of_mini_selfhost_Instr : Certified (∀ {n : Nat}, BStmt_concat_of_mini_selfhost_Instr spW sp prims ix_concat_of_mini_selfhost_Instr n))

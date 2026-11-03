@@ -103,6 +103,17 @@ theorem step_arg_slots {prog : SrcProgram} {prims : Prims} {ix_arg_slots ix_plus
   simp only [src_arg_slots] at h
   faithful [Lanius.Mini.argSlots]
 
+theorem step_args_room {prog : SrcProgram} {prims : Prims} {ix_args_room ix_unbox_of_mini_selfhost_List_mini_selfhost_Expr ix_expr_then ix_spend ix_args_then : Nat} (fn : prog.funcs[ix_args_room]? = some (src_args_room ix_unbox_of_mini_selfhost_List_mini_selfhost_Expr ix_expr_then ix_spend ix_args_then)) (np : prims.isPrim ix_args_room = false)
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Expr prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Expr n))
+    (ext_expr_then : Certified (∀ {n : Nat}, Stmt_expr_then prog prims ix_expr_then n))
+    (ext_spend : Certified (∀ {n : Nat}, Stmt_spend prog prims ix_spend n)) {n : Nat}
+    (ih_args_then : Certified (Stmt_args_then prog prims ix_args_then n)) :
+    Stmt_args_room prog prims ix_args_room (n + 1) := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rw [pcall_succ np fn] at h
+  simp only [src_args_room] at h
+  faithful [Lanius.Mini.argsRoom]
+
 theorem step_args_temps {prog : SrcProgram} {prims : Prims} {ix_args_temps ix_plus ix_max_of ix_unbox_of_mini_selfhost_List_mini_selfhost_Expr ix_Expr_temps : Nat} (fn : prog.funcs[ix_args_temps]? = some (src_args_temps ix_plus ix_max_of ix_unbox_of_mini_selfhost_List_mini_selfhost_Expr ix_Expr_temps ix_args_temps)) (np : prims.isPrim ix_args_temps = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_max_of : Certified (∀ {n : Nat}, Stmt_max_of prog prims ix_max_of n))
@@ -139,25 +150,6 @@ theorem step_compile_args {prog : SrcProgram} {prims : Prims} {ix_compile_args i
   simp only [src_compile_args] at h
   faithful [Lanius.Mini.compileArgs]
 
-theorem proof_compile_func {prog : SrcProgram} {prims : Prims} {ix_compile_func ix_minus ix_plus ix_Stmt_temps ix_Stmt_within ix_frame_limit ix_cons_of_mini_selfhost_Instr ix_zero_locals ix_concat_of_mini_selfhost_Instr ix_compile_stmt ix_code_size : Nat} (fn : prog.funcs[ix_compile_func]? = some (src_compile_func ix_minus ix_plus ix_Stmt_temps ix_Stmt_within ix_frame_limit ix_cons_of_mini_selfhost_Instr ix_zero_locals ix_concat_of_mini_selfhost_Instr ix_compile_stmt ix_code_size)) (np : prims.isPrim ix_compile_func = false)
-    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
-    (ext_Stmt_temps : Certified (∀ {n : Nat}, Stmt_Stmt_temps prog prims ix_Stmt_temps n))
-    (ext_Stmt_within : Certified (∀ {n : Nat}, Stmt_Stmt_within prog prims ix_Stmt_within n))
-    (ext_frame_limit : Certified (∀ {n : Nat}, Stmt_frame_limit prog prims ix_frame_limit n))
-    (ext_cons_of_mini_selfhost_Instr : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_Instr prog prims ix_cons_of_mini_selfhost_Instr n))
-    (ext_zero_locals : Certified (∀ {n : Nat}, Stmt_zero_locals prog prims ix_zero_locals n))
-    (ext_concat_of_mini_selfhost_Instr : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_Instr prog prims ix_concat_of_mini_selfhost_Instr n))
-    (ext_compile_stmt : Certified (∀ {n : Nat}, Stmt_compile_stmt prog prims ix_compile_stmt n))
-    (ext_code_size : Certified (∀ {n : Nat}, Stmt_code_size prog prims ix_code_size n)) {n : Nat} :
-    Stmt_compile_func prog prims ix_compile_func n := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_compile_func] at h
-  faithful [Lanius.Mini.compileFunc]
-
 theorem step_compile_stmt {prog : SrcProgram} {prims : Prims} {ix_compile_stmt ix_unbox_of_mini_selfhost_Stmt ix_cons_of_mini_selfhost_Instr ix_concat_of_mini_selfhost_Instr ix_empty_of_mini_selfhost_Instr ix_compile_expr ix_single_of_mini_selfhost_Instr ix_seq_code ix_ite_code ix_loop_code ix_compile_args ix_arg_slots : Nat} (fn : prog.funcs[ix_compile_stmt]? = some (src_compile_stmt ix_unbox_of_mini_selfhost_Stmt ix_cons_of_mini_selfhost_Instr ix_concat_of_mini_selfhost_Instr ix_compile_stmt ix_empty_of_mini_selfhost_Instr ix_compile_expr ix_single_of_mini_selfhost_Instr ix_seq_code ix_ite_code ix_loop_code ix_compile_args ix_arg_slots)) (np : prims.isPrim ix_compile_stmt = false)
     (ext_unbox_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_Stmt prog prims ix_unbox_of_mini_selfhost_Stmt n))
     (ext_cons_of_mini_selfhost_Instr : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_Instr prog prims ix_cons_of_mini_selfhost_Instr n))
@@ -177,6 +169,16 @@ theorem step_compile_stmt {prog : SrcProgram} {prims : Prims} {ix_compile_stmt i
   simp only [src_compile_stmt] at h
   faithful [Lanius.Mini.compileStmt]
 
+theorem step_expr_room {prog : SrcProgram} {prims : Prims} {ix_expr_room ix_unbox_of_mini_selfhost_Expr ix_expr_then ix_spend : Nat} (fn : prog.funcs[ix_expr_room]? = some (src_expr_room ix_unbox_of_mini_selfhost_Expr ix_expr_then ix_spend)) (np : prims.isPrim ix_expr_room = false)
+    (ext_unbox_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_Expr prog prims ix_unbox_of_mini_selfhost_Expr n))
+    (ext_spend : Certified (∀ {n : Nat}, Stmt_spend prog prims ix_spend n)) {n : Nat}
+    (ih_expr_then : Certified (Stmt_expr_then prog prims ix_expr_then n)) :
+    Stmt_expr_room prog prims ix_expr_room (n + 1) := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rw [pcall_succ np fn] at h
+  simp only [src_expr_room] at h
+  faithful [Lanius.Mini.exprRoom]
+
 theorem proof_frame_limit {prog : SrcProgram} {prims : Prims} {ix_frame_limit : Nat} (fn : prog.funcs[ix_frame_limit]? = some (src_frame_limit)) (np : prims.isPrim ix_frame_limit = false) {n : Nat} :
     Stmt_frame_limit prog prims ix_frame_limit n := by
   intro w h
@@ -185,6 +187,39 @@ theorem proof_frame_limit {prog : SrcProgram} {prims : Prims} {ix_frame_limit : 
   rw [pcall_succ np fn] at h
   simp only [src_frame_limit] at h
   faithful [Lanius.Mini.frameLimit]
+
+theorem proof_image_limit {prog : SrcProgram} {prims : Prims} {ix_image_limit : Nat} (fn : prog.funcs[ix_image_limit]? = some (src_image_limit)) (np : prims.isPrim ix_image_limit = false) {n : Nat} :
+    Stmt_image_limit prog prims ix_image_limit n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_image_limit] at h
+  faithful [Lanius.Mini.imageLimit]
+
+theorem proof_spend {prog : SrcProgram} {prims : Prims} {ix_spend ix_minus : Nat} (fn : prog.funcs[ix_spend]? = some (src_spend ix_minus)) (np : prims.isPrim ix_spend = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n)) {n : Nat} :
+    Stmt_spend prog prims ix_spend n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_spend] at h
+  faithful [Lanius.Mini.spend]
+
+theorem step_stmt_room {prog : SrcProgram} {prims : Prims} {ix_stmt_room ix_unbox_of_mini_selfhost_Stmt ix_expr_then ix_spend ix_stmt_then ix_args_then ix_spend_then : Nat} (fn : prog.funcs[ix_stmt_room]? = some (src_stmt_room ix_unbox_of_mini_selfhost_Stmt ix_stmt_room ix_expr_then ix_spend ix_stmt_then ix_args_then ix_spend_then)) (np : prims.isPrim ix_stmt_room = false)
+    (ext_unbox_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_Stmt prog prims ix_unbox_of_mini_selfhost_Stmt n))
+    (ext_expr_then : Certified (∀ {n : Nat}, Stmt_expr_then prog prims ix_expr_then n))
+    (ext_spend : Certified (∀ {n : Nat}, Stmt_spend prog prims ix_spend n))
+    (ext_args_then : Certified (∀ {n : Nat}, Stmt_args_then prog prims ix_args_then n))
+    (ext_spend_then : Certified (∀ {n : Nat}, Stmt_spend_then prog prims ix_spend_then n)) {n : Nat}
+    (ih_stmt_room : Certified (Stmt_stmt_room prog prims ix_stmt_room n))
+    (ih_stmt_then : Certified (Stmt_stmt_then prog prims ix_stmt_then n)) :
+    Stmt_stmt_room prog prims ix_stmt_room (n + 1) := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rw [pcall_succ np fn] at h
+  simp only [src_stmt_room] at h
+  faithful [Lanius.Mini.stmtRoom]
 
 theorem step_zero_locals {prog : SrcProgram} {prims : Prims} {ix_zero_locals ix_minus ix_plus ix_cons_of_mini_selfhost_Instr ix_empty_of_mini_selfhost_Instr : Nat} (fn : prog.funcs[ix_zero_locals]? = some (src_zero_locals ix_minus ix_plus ix_cons_of_mini_selfhost_Instr ix_zero_locals ix_empty_of_mini_selfhost_Instr)) (np : prims.isPrim ix_zero_locals = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))

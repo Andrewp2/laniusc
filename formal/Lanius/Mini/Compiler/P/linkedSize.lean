@@ -4,6 +4,7 @@ public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.arities
+import Lanius.Mini.Compiler.P.compileArgs
 import Lanius.Mini.Compiler.P.loadAtBytes
 
 public section
@@ -12,10 +13,6 @@ public section
 set_option linter.unusedVariables false
 
 namespace Lanius.Mini
-
-/-- Images are small enough for every rel32 displacement. -/
-def imageLimit : Nat :=
-  1073741824
 
 /-- The size of functions laid out back to back: the image's length, found without a walk over the image. -/
 def linkedSize (codes : List Code) : Nat :=

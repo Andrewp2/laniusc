@@ -9,6 +9,7 @@ import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.arities
 import all Lanius.Mini.Compiler.P.codeSize
 import all Lanius.Mini.Compiler.P.compileArgs
+import all Lanius.Mini.Compiler.P.roomFits
 import all Lanius.Mini.Compiler.P.compileModules
 import all Lanius.Mini.Compiler.P.loadAtBytes
 import all Lanius.Mini.Compiler.P.render
@@ -17,6 +18,7 @@ public import Lanius.Mini.Compiler.P.UintTy_half
 public import Lanius.Mini.Compiler.P.arities
 public import Lanius.Mini.Compiler.P.codeSize
 public import Lanius.Mini.Compiler.P.compileArgs
+public import Lanius.Mini.Compiler.P.roomFits
 
 @[expose] public section
 /-! The compiler against the abstract machine: induction on expression syntax
@@ -708,7 +710,7 @@ theorem compileFunc_spec {arities : List Arity} {func : Func} {code : Code}
   · rename_i checks
     cases compiled
     simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
-    exact ⟨checks.1.1.1.1, checks.1.2, rfl, checks.2, rfl, checks.1.1.1.2, checks.1.1.2⟩
+    exact ⟨checks.1.1.1.1.1, checks.1.1.2, rfl, checks.1.2, rfl, checks.1.1.1.1.2, checks.1.1.1.2⟩
   · contradiction
 
 /-- A compiled function, entered with its parameters in the first slots, runs

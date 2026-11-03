@@ -1054,7 +1054,7 @@ noncomputable section
 
 def Cost_compile_func : Nat → List Lanius.Mini.Arity → Lanius.Mini.Func → Nat
   | 0, x13, x35 => 18446744073709551616
-  | n + 1, x13, x35 => (let k2 := ((Cost_zero_locals n x35.params (x35.locals - x35.params)) + ((Cost_cons_of_mini_selfhost_Instr n (Lanius.Mini.Instr.imm (0#64)) (Lanius.Mini.zeroLocals x35.params ((x35.locals - x35.params)))) + ((Cost_compile_stmt n x35.locals (Lanius.Mini.codeSize (((Lanius.Mini.Instr.imm (0#64)) :: (Lanius.Mini.zeroLocals x35.params ((x35.locals - x35.params)))))) 0 0 x35.body) + (Cost_concat_of_mini_selfhost_Instr n ((Lanius.Mini.Instr.imm (0#64)) :: (Lanius.Mini.zeroLocals x35.params ((x35.locals - x35.params)))) (Lanius.Mini.compileStmt x35.locals ((Lanius.Mini.codeSize (((Lanius.Mini.Instr.imm (0#64)) :: (Lanius.Mini.zeroLocals x35.params ((x35.locals - x35.params))))))) 0 0 x35.body))))); let k3 := 0; (if (((decide (x35.params ≤ x35.locals)) && (decide (0 < x35.results))) && (decide (x35.results ≤ x35.locals))) = true then (if (Lanius.Mini.Stmt.within x35.body x35.locals x13 x35.results) = true then (if (decide ((x35.locals + (Lanius.Mini.Stmt.temps x35.body)) ≤ Lanius.Mini.frameLimit)) = true then k2 else k3) else k3) else k3))
+  | n + 1, x13, x35 => (let k2 := ((Cost_zero_locals n x35.params (x35.locals - x35.params)) + ((Cost_cons_of_mini_selfhost_Instr n (Lanius.Mini.Instr.imm (0#64)) (Lanius.Mini.zeroLocals x35.params ((x35.locals - x35.params)))) + ((Cost_compile_stmt n x35.locals (Lanius.Mini.codeSize (((Lanius.Mini.Instr.imm (0#64)) :: (Lanius.Mini.zeroLocals x35.params ((x35.locals - x35.params)))))) 0 0 x35.body) + (Cost_concat_of_mini_selfhost_Instr n ((Lanius.Mini.Instr.imm (0#64)) :: (Lanius.Mini.zeroLocals x35.params ((x35.locals - x35.params)))) (Lanius.Mini.compileStmt x35.locals ((Lanius.Mini.codeSize (((Lanius.Mini.Instr.imm (0#64)) :: (Lanius.Mini.zeroLocals x35.params ((x35.locals - x35.params))))))) 0 0 x35.body))))); let k3 := 0; (if (((decide (x35.params ≤ x35.locals)) && (decide (0 < x35.results))) && (decide (x35.results ≤ x35.locals))) = true then (if (Lanius.Mini.Stmt.within x35.body x35.locals x13 x35.results) = true then (if (decide ((x35.locals + (Lanius.Mini.Stmt.temps x35.body)) ≤ Lanius.Mini.frameLimit)) = true then (if (Lanius.Mini.roomFits ((Lanius.Mini.stmtRoom Lanius.Mini.imageLimit x35.body))) = true then k2 else k3) else k3) else k3) else k3))
 
 end
 
@@ -1062,7 +1062,7 @@ noncomputable section
 
 def Pre_compile_func : Nat → List Lanius.Mini.Arity → Lanius.Mini.Func → Nat → Prop
   | 0, x13, x35, b => True
-  | n + 1, x13, x35, b => ((Pre_Stmt_temps n x35.body b) ∧ ((Pre_plus n x35.locals (Lanius.Mini.Stmt.temps x35.body) b) ∧ (let k6 := fun (b1 : Nat) => ((Pre_zero_locals n x35.params (x35.locals - x35.params) b1) ∧ (∀ b2 : Nat, (Cost_zero_locals n x35.params (x35.locals - x35.params)) < b1 → b2 = b1 - (Cost_zero_locals n x35.params (x35.locals - x35.params)) → (∀ b3 : Nat, (Cost_cons_of_mini_selfhost_Instr n (Lanius.Mini.Instr.imm (0#64)) (Lanius.Mini.zeroLocals x35.params ((x35.locals - x35.params)))) < b2 → b3 = b2 - (Cost_cons_of_mini_selfhost_Instr n (Lanius.Mini.Instr.imm (0#64)) (Lanius.Mini.zeroLocals x35.params ((x35.locals - x35.params)))) → ((Pre_code_size n ((Lanius.Mini.Instr.imm (0#64)) :: (Lanius.Mini.zeroLocals x35.params ((x35.locals - x35.params)))) b3) ∧ (Pre_compile_stmt n x35.locals (Lanius.Mini.codeSize (((Lanius.Mini.Instr.imm (0#64)) :: (Lanius.Mini.zeroLocals x35.params ((x35.locals - x35.params)))))) 0 0 x35.body b3))))); let k7 := fun (b1 : Nat) => True; (if (((decide (x35.params ≤ x35.locals)) && (decide (0 < x35.results))) && (decide (x35.results ≤ x35.locals))) = true then ((Pre_Stmt_within n x35.body x35.locals x13 x35.results b) ∧ (if (Lanius.Mini.Stmt.within x35.body x35.locals x13 x35.results) = true then (if (decide ((x35.locals + (Lanius.Mini.Stmt.temps x35.body)) ≤ Lanius.Mini.frameLimit)) = true then (k6 b) else (k7 b)) else (k7 b))) else (k7 b)))))
+  | n + 1, x13, x35, b => ((Pre_Stmt_temps n x35.body b) ∧ ((Pre_plus n x35.locals (Lanius.Mini.Stmt.temps x35.body) b) ∧ (let k6 := fun (b1 : Nat) => ((Pre_zero_locals n x35.params (x35.locals - x35.params) b1) ∧ (∀ b2 : Nat, (Cost_zero_locals n x35.params (x35.locals - x35.params)) < b1 → b2 = b1 - (Cost_zero_locals n x35.params (x35.locals - x35.params)) → (∀ b3 : Nat, (Cost_cons_of_mini_selfhost_Instr n (Lanius.Mini.Instr.imm (0#64)) (Lanius.Mini.zeroLocals x35.params ((x35.locals - x35.params)))) < b2 → b3 = b2 - (Cost_cons_of_mini_selfhost_Instr n (Lanius.Mini.Instr.imm (0#64)) (Lanius.Mini.zeroLocals x35.params ((x35.locals - x35.params)))) → ((Pre_code_size n ((Lanius.Mini.Instr.imm (0#64)) :: (Lanius.Mini.zeroLocals x35.params ((x35.locals - x35.params)))) b3) ∧ (Pre_compile_stmt n x35.locals (Lanius.Mini.codeSize (((Lanius.Mini.Instr.imm (0#64)) :: (Lanius.Mini.zeroLocals x35.params ((x35.locals - x35.params)))))) 0 0 x35.body b3))))); let k7 := fun (b1 : Nat) => True; (if (((decide (x35.params ≤ x35.locals)) && (decide (0 < x35.results))) && (decide (x35.results ≤ x35.locals))) = true then ((Pre_Stmt_within n x35.body x35.locals x13 x35.results b) ∧ (if (Lanius.Mini.Stmt.within x35.body x35.locals x13 x35.results) = true then (if (decide ((x35.locals + (Lanius.Mini.Stmt.temps x35.body)) ≤ Lanius.Mini.frameLimit)) = true then (if (Lanius.Mini.roomFits ((Lanius.Mini.stmtRoom Lanius.Mini.imageLimit x35.body))) = true then (k6 b) else (k7 b)) else (k7 b)) else (k7 b))) else (k7 b)))))
 
 end
 
@@ -4733,14 +4733,6 @@ noncomputable section
 def Pre_eval_word_stride : Nat → Lanius.Mini.SrcDecls → Lanius.Mini.SrcType → Nat → Nat → Prop
   | 0, x17, x34, x52, b => True
   | n + 1, x17, x34, x52, b => ((Pre_word_element n x17 x34 b) ∧ (if (Lanius.Mini.wordElement x17 x34) = true then ((Pre_SrcType_size n x34 b) ∧ (Pre_word_stride n x52 (Lanius.Mini.SrcType.size x34) b)) else True))
-
-end
-
-noncomputable section
-
-def Cost_eval_stride_of : Nat → Lanius.Mini.SrcDecls → Lanius.Mini.SrcType → Nat → Nat
-  | 0, x15, x32, x50 => 18446744073709551616
-  | n + 1, x15, x32, x50 => (if (Lanius.Mini.SrcType.isI32 x32) = true then 0 else (if (Lanius.Mini.SrcType.isUint x32 Lanius.Mini.UintTy.uint8) = true then 0 else (Cost_eval_word_stride n x15 x32 x50)))
 
 end
 

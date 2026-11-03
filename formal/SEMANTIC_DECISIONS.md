@@ -2567,6 +2567,38 @@ accepted program, and a rejected one is still rejected as `None`. Whole-
 program sums need no size lemmas now. Per-function sums (a function's
 `code_size` and its pc offsets) are not covered by this check.
 
+## A function's code checked against the image limit first (decided 11-03, F14)
+
+`room_after` bounds the sums over a whole image, but not the sums inside one
+function: `compile_stmt` adds up pc offsets and `code_size`, and `Instr.size`
+multiplies an argument count by 14. These sums need a bound on the size of
+one function's code. There were two ways to get it:
+
+- An argument about cost: the compile spends at least 1/8 cost per byte it
+  emits, so the budget bounds the code. This needs a new generated measure
+  that is relative to cost, and a hand argument per statement form. It may
+  not even hold: a call emits 14 bytes per argument for one step of cost.
+- A check in the compiler, in the same pattern as `room_after`. This was
+  chosen, because its proof is short and needs no new measure.
+
+`compile_func` now also asks `room_fits(stmt_room(image_limit(), func.body))`.
+`stmt_room`, `expr_room` and `args_room` take one out of the room for each
+node of the body, and a call takes one more for each result it copies back.
+They only compare and subtract, so they add nothing up. Once the check
+passes, a body weighs at most 2^30. Its code is at most 64 bytes per unit of
+weight (`codeSize_le`, a call's 14 bytes per argument and per result
+included), so at most 2^36 bytes, and every pc and `code_size` that
+`compile_stmt` adds up stays far below 2^64.
+
+This changes no result of the compiler. A body's code is at least as many
+bytes as its weight (`weight_le_codeSize` in `Lanius/Mini/Room.lean`). So a
+body that fails the check compiles, without the check, to more than the
+image limit, and `compileProgram` rejects that program anyway.
+`compileProgram_unchecked` proves that `compileProgram` is the compiler
+without the check (`compileProgramUnchecked`): it accepts the same programs
+with the same binary. `stmtRoom_eq` gives the check's closed form,
+`stmtRoom room s = if s.weight ≤ room then some (room - s.weight) else none`.
+
 ## Budget certificates (decided 11-01, F14)
 
 `CompileBounded T` asks that the guarded run of `progW` has a value

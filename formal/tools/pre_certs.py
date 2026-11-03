@@ -24,6 +24,7 @@ imports (GenPC: `Lanius.Faithful.SelfPre.CompileValues`, which imports it).
 `--compile` adds the compile side's hand proofs (COMPILE_POST_HAND,
 COMPILE_HAND_CASE), kept apart so that build_files' GenP never takes them.
 """
+import glob
 import os
 import re
 import sys
@@ -532,6 +533,165 @@ COMPILE_HAND_CASE = {
 ''',
 }
 
+# Numbers (compile side only, `--compile`): `hb` counts no number, so a
+# precondition that adds to a number parameter or field cannot follow from
+# `hb x ≤ M`. A parameter whose numbers the precondition uses (in a `plus` or
+# `times`, directly or through a callee's precondition) gets `x ≤ M` (a `Nat`)
+# or `nb x ≤ M` (`SelfPre/NB.lean`, the largest number in a value), and the
+# proof states the bounds of its structure's number fields for `omega`.
+NUMS = {'on': False, 'used': {}, 'fields': {}, 'ftype': {}, 'types': set()}
+
+
+# Functions whose callers pass numbers they cannot bound: no number hypotheses
+# (their own preconditions are then open, PreCompileSourceV3/NOTES.md).
+COMPILE_NUM_SKIP = {
+    'Code_size', 'SrcStmt_lower', 'arm_bind', 'arm_payload', 'array_arg_local',
+    'array_arg_slice', 'array_call_sig', 'assign_from', 'bounds_guard', 'compile_func',
+    'copy_field', 'copy_field_of', 'copy_same', 'element_base', 'eval_array_element',
+    'eval_array_index', 'eval_element', 'eval_len_of', 'eval_load', 'eval_load_byte',
+    'eval_pick', 'eval_stride_of', 'eval_word_element', 'eval_word_stride',
+    'frame_block', 'ite_code', 'link', 'link_fitting', 'link_onto', 'loop_code',
+    'lower_arm_found', 'lower_arm_stmt', 'lower_arms', 'lower_body', 'lower_field',
+    'lower_field_of', 'lower_func', 'lower_match_arms', 'lower_match_on',
+    'lower_set_field_of', 'lower_set_values', 'need_round', 'needs_after',
+    'offset_after', 'pack_round', 'pack_rounds', 'pick_element', 'put_element',
+    'round_cons', 'round_join', 'seq_code', 'set_field_eval_of', 'slot_vars',
+    'store_any', 'store_array', 'store_array_element', 'store_eval', 'store_eval_byte',
+    'store_eval_element', 'store_eval_word', 'store_pick', 'store_word_element',
+    'within_layout', 'within_layouts', 'within_payloads', 'word_stride',
+}
+
+
+def args_after(text, i):
+    """The space-separated arguments of the application whose head ends at i."""
+    out, cur, depth = [], '', 0
+    while i < len(text):
+        ch = text[i]
+        if depth == 0 and ch in ')∧→,':
+            break
+        if ch == '(':
+            depth += 1
+        elif ch == ')':
+            depth -= 1
+        if ch == ' ' and depth == 0:
+            if cur:
+                out.append(cur)
+            cur = ''
+        else:
+            cur += ch
+        i += 1
+    if cur:
+        out.append(cur)
+    return out
+
+
+def num_used(genb):
+    """Per `Pre_k`, the parameter positions whose numbers it uses (a fixpoint)."""
+    params, bodies = {}, {}
+    for path in sorted(glob.glob(os.path.join(genb, 'SelfBModel*.lean'))):
+        cur = None
+        for line in open(path).read().split('\n'):
+            m = re.match(r'def (Pre_\w+) :', line)
+            if m:
+                cur = m.group(1)
+                continue
+            if cur and line.startswith('  | n + 1, '):
+                head, body = line.split('=>', 1)
+                params[cur] = [x.strip() for x in head.split(',')[1:-1]]
+                bodies[cur] = body
+                cur = None
+    used = {k: set() for k in params}
+    changed = True
+    while changed:
+        changed = False
+        for k, body in bodies.items():
+            ps = params[k]
+            for m in re.finditer(r'\b(Pre_\w+) n ', body):
+                callee = m.group(1)
+                args = args_after(body, m.end())
+                if callee in ('Pre_plus', 'Pre_times'):
+                    pos = range(len(args))
+                elif callee in used:
+                    pos = sorted(used[callee])
+                else:
+                    continue
+                for j in pos:
+                    if j >= len(args):
+                        continue
+                    for i, x in enumerate(ps):
+                        if i not in used[k] and re.search(rf'\b{x}\b', args[j]):
+                            used[k].add(i)
+                            changed = True
+    return used
+
+
+def nb_fields(formal):
+    """Per structure (its full name), its fields: [(field, is_nat)]; their types in NUMS['ftype']."""
+    types = [os.path.join(formal, 'Lanius', 'Mini', d, 'Types.lean') for d in ('Compiler', 'Frontend')]
+    out = {}
+    for kind, name, items in hb_gen.parse(types):
+        if kind == 'structure':
+            q = 'Lanius.Mini.' + name
+            out[q] = [(f, t.strip() == 'Nat') for f, t in items]
+            for f, t in items:
+                NUMS['ftype'][(q, f)] = re.sub(r'\b([A-Z]\w*)\b', lambda mm: mm.group(1) if mm.group(1) in
+                                               ('List', 'Option', 'Nat', 'Bool', 'UInt8', 'BitVec') else 'Lanius.Mini.' + mm.group(1), t)
+    return out
+
+
+def num_hyps(e, k, xs, tys):
+    """The number hypotheses of `pre_k` (none outside `--compile`)."""
+    if not NUMS['on']:
+        return []
+    out = []
+    if k in COMPILE_NUM_SKIP or k in os.environ.get('PRE_NUMS_SKIP', '').split(','):
+        return []
+    for i in sorted(NUMS['used'].get(f'Pre_{k}', ())):
+        if i >= len(xs):
+            continue
+        t = tys[i].strip()
+        if t == 'Nat':
+            out.append(f'{xs[i]} ≤ M')
+        elif not nb_flat(t):
+            out.append(f'nb {xs[i]} ≤ M')
+    return out
+
+
+def nb_flat(t):
+    t = t.strip()
+    while t.startswith('(') and t.endswith(')'):
+        t = t[1:-1].strip()
+    m = re.match(r'(List|Option) (.+)$', t)
+    if m:
+        return nb_flat(m.group(2))
+    if t == 'Nat':
+        return False
+    if t in ('Bool', 'UInt8') or t.startswith('BitVec'):
+        return True
+    return t not in NUMS['types']
+
+
+def num_facts(e, k, xs, tys, names):
+    """`have`s bounding the number fields of `pre_k`'s structure parameters."""
+    if not NUMS['on']:
+        return ''
+    hyps = names.split()
+    nhb = sum(1 for x, t in zip(xs.split(), tys) if not e.g.flat(t))
+    out = ''
+    j = nhb
+    for h in num_hyps(e, k, xs.split(), tys):
+        x = h.split()[1] if h.startswith('nb ') else None
+        if x is not None:
+            t = tys[xs.split().index(x)].strip()
+            for f, is_nat in NUMS['fields'].get(t, []):
+                if not is_nat and nb_flat(NUMS['ftype'][(t, f)]):
+                    continue
+                lhs = f'{x}.{f}' if is_nat else f'nb {x}.{f}'
+                out += f'  have hn_{x}_{f} : {lhs} ≤ M := Nat.le_trans (nb_le_{t.split(".")[-1]}_{f} {x}) {hyps[j]}\n'
+        j += 1
+    return out
+
+
 # --- end of the compile side -----------------------------------------------
 
 
@@ -709,6 +869,7 @@ class Emit:
         xs = [f'x{i}' for i in range(len(tys))]
         binders = ' '.join(f'({x} : {t})' for x, t in zip(xs, tys))
         hyps = [f'hb {x} ≤ M' for x, t in zip(xs, tys) if not self.g.flat(t)]
+        hyps += num_hyps(self, k, xs, tys)  # compile side only
         hyps.append(f'M + b ≤ {K}')
         for h in OVERRIDES.get(k, []):
             hyps.append(re.sub(r'\bp(\d+)\b', lambda mm: xs[int(mm.group(1))], h).replace('≤ K', f'≤ {K}'))
@@ -722,7 +883,8 @@ class Emit:
             k = ks[0]
             binders, xs, names, st = self.pre_parts(k)
             return [f'theorem pre_{k} : ∀ (n : Nat) {binders} (b : Nat), {st} := by\n'
-                    f'  intro n {xs} b M {names}\n'
+                    f'  intro n {xs} b M {names}\n' +
+                    num_facts(self, k, xs, self.m.sig[f'Pre_{k}'], names) +
                     f'  rcases n with _ | n\n'
                     f'  · exact trivial\n'
                     f'  rw [Pre_{k}.eq_def]; dsimp only\n' +
@@ -744,7 +906,8 @@ class Emit:
             binders, xs, nm, st = self.pre_parts(k, '(n + 1)')
             out.append(f'theorem pre_step_{k} (n : Nat) (ih :\n    {ih}) :\n    ∀ {binders} (b : Nat), {st} := by\n'
                        f'  {"obtain " + tuple_(self.used(k, ks, "Pre", "pre")) + " := ih" if len(ks) > 1 else "have " + names[0] + " := ih"}\n'
-                       f'  intro {xs} b M {nm}\n'
+                       f'  intro {xs} b M {nm}\n' +
+                       num_facts(self, k, xs, self.m.sig[f'Pre_{k}'], nm) +
                        f'  rw [Pre_{k}.eq_def]; dsimp only\n' +
                        PRE_HAND.get(k, '  pre_auto n, M\n'))
         steps = [f'pre_step_{k} n ih' for k in ks]
@@ -901,6 +1064,9 @@ def main():
     prefix = rel.replace(os.sep, '.') if rel.startswith('Lanius' + os.sep) else 'Lanius.Faithful.SelfPre.GenP'
     g = Gen(genb, roots)
     if compile_side:
+        nb_path = os.path.join(formal, 'Lanius', 'Faithful', 'SelfPre', 'NB.lean')
+        NUMS.update(on=True, used=num_used(genb), fields=nb_fields(formal))
+        NUMS['types'] = set(re.findall(r'instance : NB (Lanius\.Mini\.\w+) := ⟨(?!fun _ => 0)', open(nb_path).read()))
         POST_HAND.update(auto_bytes(g))
         POST_HAND.update(COMPILE_POST_HAND)
     e = Emit(g)

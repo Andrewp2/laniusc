@@ -8,7 +8,7 @@ public import Lanius.Mini.Compiler.P.UintTy_half
 public import Lanius.Mini.Compiler.P.codeSize
 public import Lanius.Mini.Compiler.P.compileArgs
 public import Lanius.Mini.Compiler.P.compileModules
-public import Lanius.Mini.Compiler.P.imageLimit
+public import Lanius.Mini.Compiler.P.linkedSize
 public import Lanius.Mini.Compiler.P.loadAtBytes
 import Lanius.Mini.Compiler.P.SrcExpr_guard
 import Lanius.Mini.Compiler.P.arities
@@ -101,6 +101,26 @@ def elfFile (binary : Binary) (entry : Nat) (stack : Nat) (heap : Nat) : Option 
   let bodyStart : Nat := pos + codeSize conditionCode + 9
   let bodyCode : List Instr := compileStmt base bodyStart (pos + codeSize conditionCode) pos body
   conditionCode ++ [Instr.jz (bodyStart + codeSize bodyCode + 5)] ++ bodyCode ++ [Instr.jmp pos]
+
+@[expose] def Inline.spendThen (sroom : Option Nat) (sk : Nat) : Option Nat :=
+  match sroom with
+  | none => none
+  | some sr => spend sr sk
+
+@[expose] def Inline.exprThen (eroom : Option Nat) (ee : Expr) : Option Nat :=
+  match eroom with
+  | none => none
+  | some er => exprRoom er ee
+
+@[expose] def Inline.argsThen (aroom : Option Nat) (aargs : List Expr) : Option Nat :=
+  match aroom with
+  | none => none
+  | some ar => argsRoom ar aargs
+
+@[expose] def Inline.stmtThen (troom : Option Nat) (ts : Stmt) : Option Nat :=
+  match troom with
+  | none => none
+  | some tr => stmtRoom tr ts
 
 @[expose] def Inline.roomNext (room : Nat) (size : Nat) (rest : List Code) : Option Nat :=
   if size ≤ room then

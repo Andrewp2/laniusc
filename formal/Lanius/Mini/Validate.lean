@@ -43,7 +43,8 @@ import all Lanius.Mini.Compiler.P.floatApply
 import all Lanius.Mini.Compiler.P.guardAnd
 import all Lanius.Mini.Compiler.P.hostRandomCode
 import all Lanius.Mini.Compiler.P.evalHost
-import all Lanius.Mini.Compiler.P.imageLimit
+import all Lanius.Mini.Compiler.P.roomFits
+import all Lanius.Mini.Compiler.P.linkedSize
 import all Lanius.Mini.Compiler.P.killShared
 import all Lanius.Mini.Compiler.P.leftTrue
 import all Lanius.Mini.Compiler.P.loadAtBytes
@@ -89,7 +90,9 @@ public import Lanius.Mini.Compiler.P.callAgrees
 public import Lanius.Mini.Compiler.P.compileOr
 public import Lanius.Mini.Compiler.P.declareProgram
 public import Lanius.Mini.Compiler.P.extentAfter
-public import Lanius.Mini.Compiler.P.imageLimit
+public import Lanius.Mini.Compiler.P.compileArgs
+public import Lanius.Mini.Compiler.P.roomFits
+public import Lanius.Mini.Compiler.P.linkedSize
 public import Lanius.Mini.Compiler.P.killShared
 public import Lanius.Mini.Compiler.P.longer
 public import Lanius.Mini.Compiler.P.optimizeIte

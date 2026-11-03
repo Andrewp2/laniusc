@@ -11,3 +11,45 @@
   cons and its `Instr` box, and concat copies it again). If that fails, a cheap fix is in the
   compiler: check each function's code against `image_limit` as `compile_stmt`'s pc advances, as
   `room_after` does for the whole image.
+- 11-03 (leafB): per-function sums are now checked in the compiler (SEMANTIC_DECISIONS "A function's
+  code checked against the image limit first"). `compile_func` asks `room_fits(stmt_room(image_limit(),
+  body))`; `Mini/Room.lean` proves `stmtRoom_eq` (the check is `s.weight ≤ room`), `codeSize_le` (code is
+  at most 64 bytes per unit of weight, so at most 2^36 bytes once the check passes) and
+  `compileProgram_unchecked` (no result changes). The cost argument ("at least 1/8 cost per byte") was
+  not taken: it needs a cost-relative measure, and a call emits 14 bytes per argument for one step.
+- 11-03 (leafB): why GenPC's SelfP02 pre lemmas fail (regenerated after the check above). 97 of the
+  390 step/pre lemmas fail, every one with `omega could not prove the goal`, on an overflow side
+  condition (`a + b < 2^64`, `14 * n < 2^64`, `x + 24 < 2^64`). In 96 of them an atom of that
+  condition is unconstrained in omega's counterexample. One cause covers them all: `hb` counts no
+  numbers (`hb (x : Nat) = 0`, and a structure's `hb` is the highest of its lists), so `hb x ≤ M`
+  bounds no number in `x`, and a post lemma `hb (F x) ≤ M + Cost` says nothing about a number `F`
+  returns. It is not a missing hand case or a tactic gap.
+  - About 40 add a constant to a number parameter or field (`round_cons`, `eval_right`,
+    `bounds_guard`, `host_*_code`, `slot_offset`, `zero_locals`, ...). These are false as stated:
+    the number can be 2^64 - 1 under the hypotheses.
+  - About 40 add numbers a callee computes (`Code_size`, `seq_code`, `ite_code`, `loop_code`,
+    `compile_func`'s `locals + temps`, `layout`, `link_onto`, `offset_after`, `frame_block`,
+    `lower_field_of`, ...). Not provable from the posts, which bound no number.
+  - About 16 multiply or add type sizes (`binding_bytes`, `array_bytes_of`, `params_size`,
+    `match_dst`, ...). These need `ts p ≤ weightLimit`, which the M-form does not carry.
+  - `Instr_size` also needs `14 * args.length < 2^64`, more than `length ≤ M ≤ 2^62` gives; the new
+    `eval_str` and `str_placed` (f6v's str values) are in the first group.
+  So the generated M-form is the wrong split of V3 for the compile side, and these are not leaves.
+  The front end got by with `OVERRIDES` and `val_` lemmas because few of its numbers are not
+  positions. A fix of the cause: a number measure (an `hb_gen.py` mode, a max over every number in a
+  value, like `ts`), with `nb x ≤ N` hypotheses in the compile pres and posts
+  `nb (F x) ≤ N + Cost` where a function only adds constants. Sums of two numbers (pc plus code
+  size, slot plus offset) still need the program's bounds (`ts`, `SrcStmt.depth`, the new weight
+  check), stated per family as hand lemmas. This touches `pre_parts`, the core of pre_certs.py
+  (f14c's), so it waits for the coordinator.
+- 11-03 (leafB): the number measure. `hb_gen.py --nums` generates `SelfPre/NB.lean` (`nb`, the largest
+  number in a value, a max). With `--compile` (only), pre_certs.py gives a pre lemma `x ≤ M` or
+  `nb x ≤ M` for each parameter whose numbers its precondition uses (`num_used`, a fixpoint over the
+  `Pre_` models: in a `plus`/`times` or a callee's used position), and states its structure fields'
+  bounds (`have hn_x_f`). GenP is unchanged. P02: 97 failing -> 83. A function in `COMPILE_NUM_SKIP`
+  (66, found by iterating: a caller failed on its number premise) keeps no number hypotheses: its
+  callers pass a number they cannot bound from `M`, mostly a recursion that counts up
+  (`zero_locals (first + 1) (count - 1)`, `slot_vars`, `compile_expr`'s depth) or a type size
+  (`x.size`), or a callee's result (`Code_size`, `seq_code`, `offset_after`). Next: invariant
+  hypotheses for the counting recursions (`first + count ≤ M`, as the front end's OVERRIDES), and
+  value lemmas for the computed numbers.

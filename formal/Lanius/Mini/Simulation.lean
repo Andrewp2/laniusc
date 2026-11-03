@@ -29,7 +29,8 @@ import all Lanius.Mini.Compiler.P.declareProgram
 import all Lanius.Mini.Compiler.P.equality
 import all Lanius.Mini.Compiler.P.floatApply
 import all Lanius.Mini.Compiler.P.guardAnd
-import all Lanius.Mini.Compiler.P.imageLimit
+import all Lanius.Mini.Compiler.P.roomFits
+import all Lanius.Mini.Compiler.P.linkedSize
 import all Lanius.Mini.Compiler.P.larger
 import all Lanius.Mini.Compiler.P.leftTrue
 import all Lanius.Mini.Compiler.P.loadAtBytes
@@ -42,7 +43,8 @@ import all Lanius.Mini.Compiler.P.sintToUint
 import all Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Compiler.P.codeSize
 public import Lanius.Mini.Compiler.P.compileArgs
-public import Lanius.Mini.Compiler.P.imageLimit
+public import Lanius.Mini.Compiler.P.roomFits
+public import Lanius.Mini.Compiler.P.linkedSize
 public import Lanius.Mini.Compiler.P.larger
 public import Lanius.Mini.Compiler.P.loadAtBytes
 

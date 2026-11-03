@@ -3,7 +3,7 @@ module
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.Stmt_kills
 import Lanius.Mini.Compiler.P.funcNeeds
-import Lanius.Mini.Compiler.P.imageLimit
+import Lanius.Mini.Compiler.P.linkedSize
 import Lanius.Mini.Compiler.P.lowerBody
 import Lanius.Mini.Compiler.P.optimizeIte
 
