@@ -886,6 +886,13 @@ def valueFacts : TacticM Unit := do
         if (← isTypeCorrect p) && (← isProp (← inferType p)) then facts := facts.push p
     for (h, t) in hyps do
       let some (_, l, r) := t.eq? | continue
+      -- an index that finds an element: `l[i]? = some v`
+      if l.isAppOfArity ``GetElem?.getElem? 7 && r.isAppOfArity ``Option.some 2 then
+        let nm := `Lanius.Faithful.SelfPre.vals_getElem
+        if env.contains nm then
+          let p ← try some <$> mkAppM nm #[l.getArg! 5, l.getArg! 6, r.appArg!, h] catch _ => pure none
+          if let some p := p then facts := facts.push p
+        continue
       let .const fn _ := l.getAppFn | continue
       unless (`Lanius.Mini).isPrefixOf fn && r.isAppOfArity ``Option.some 2 do continue
       let nm := `Lanius.Faithful.SelfPre ++ Name.mkSimple s!"vals_{lastName fn}"

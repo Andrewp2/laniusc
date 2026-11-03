@@ -83,6 +83,8 @@ OVERRIDES = {
     'fl_decimal_at': ['(p0 = 8 ∧ p1 = 23) ∨ (p0 = 11 ∧ p1 = 52)', 'p5 < hb p2'],
     # an alignment's shift: shift_of_u64(31, k, 0, 1) doubles p at most 31 times
     'shift_of_u64': ['p2 + p0 ≤ 63', 'p3 * 2 ^ p0 ≤ 2 ^ 63'],
+    # mono_loop's index: it found a table entry before mono_next moves it on
+    'mono_next': ['p5 < hb p3'],
     # a struct field's index (below the environment's height, vals_fieldIndex)
     'projection': ['p2 + b ≤ K'],
     'field_value': ['p3 + b ≤ K'],

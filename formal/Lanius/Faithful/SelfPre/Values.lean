@@ -232,4 +232,23 @@ theorem vals_fieldIndex (env : Lanius.Mini.FrontEnv) (t : Lanius.Mini.Ty) (name 
     have h6 := hb_le_FrontEnv_decls env
     omega
 
+theorem val_ifOne (x : Bool) : Lanius.Mini.ifOne x ≤ 1 := by
+  unfold Lanius.Mini.ifOne
+  split <;> omega
+
+theorem val_valueArms (k : Nat) : ∀ (l : List Lanius.Mini.CTree), Lanius.Mini.valueArms k l ≤ hb l
+  | [] => by simp [Lanius.Mini.valueArms]
+  | a :: rest => by
+    have := val_valueArms k rest
+    have := val_ifOne (!Lanius.Mini.isBlockArm k a)
+    simp only [Lanius.Mini.valueArms, hb_cons]
+    omega
+
+/-- An index that finds an element is below the list's height (`valueFacts`
+reads `l[i]? = some v` this way). -/
+theorem vals_getElem {α : Type} [HB α] (l : List α) (i : Nat) (v : α) (h : l[i]? = some v) : i < hb l := by
+  have := (List.getElem?_eq_some_iff.1 h).1
+  have := length_le_hb l
+  omega
+
 end Lanius.Faithful.SelfPre
