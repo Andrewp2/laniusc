@@ -2660,6 +2660,19 @@ Decided 11-02 (F14, the size measure for the roots' preconditions): the
   parallel but checks them in the kernel one at a time, and a module waits
   for all of each module it imports. The chain from Tactic to SelfP02 went
   from over 5 minutes (it hit the 290 s limit) to 101 s.
+- Build time (11-03). An arithmetic goal is proved by a linear certificate
+  (`SelfPre/LinCert.lean`: `L + Σ Rᵢ ≤ R + Σ Lᵢ` coefficientwise, checked by
+  the kernel on numerals) over variables for its atoms, `omega` only where the
+  search finds none; a budget chain's subtractions `a - c` are replaced first
+  (`a - c + c ≤ a` where the left side has `c`). Sibling goals share a run's
+  proved premises and normalized facts (a proof is reused when a hypothesis it
+  used is replaced by one of the same type), each run with caches of its own.
+  A literal's height lemma unfolds its cost by `delta` (the equation lemmas of
+  `Cost_text_*` took 16-22 s each to make). GenP is one module of each kind
+  (uposts, posts, preconditions: SelfP00-02); with the preconditions in five
+  modules each waited for the one before. The chain from Tactic went from
+  about 4 minutes to about 2 at load 8 (let_first's step from about 70 s, out
+  of heartbeats, to 15 s).
 - Open statements (11-03). F14's remaining work is a graph under
   `Lanius/Open/F14` (OPEN_STATEMENTS.md): the root `SelfCompilerTotalReason`
   is `selfCompiler_total_reason_of_bounds` without `CompileBounded`, for a
