@@ -1,3 +1,4 @@
+import Lanius.Faithful.SelfPre.HB
 import Lanius.Faithful.SelfPre.Tactic
 
 /-! # Heights of the library functions the self program's Lean model calls (F14)

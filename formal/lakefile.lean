@@ -17,6 +17,21 @@ lean_lib Lanius
 lean_lib LaniusMini where
   globs := #[.submodules `Lanius.Mini]
 
+/-- The precondition tactic (`pre_auto`, `post_auto`), compiled to native code
+so the generated SelfPre/GenP proofs do not run it in the interpreter. It
+imports only Lean and HBAttr; declared after `Lanius` so it owns these
+modules (Lake takes the last library that matches). -/
+lean_lib LaniusTactic where
+  roots := #[`Lanius.Faithful.SelfPre.Tactic]
+  precompileModules := true
+
+/-- The `hb_simp` attribute and the tactic's options, which the tactic and
+SelfPre/HB import: a library of its own, so HB need not wait for the tactic's
+native code. -/
+lean_lib LaniusHBAttr where
+  roots := #[`Lanius.Faithful.SelfPre.HBAttr]
+  precompileModules := true
+
 /-- The front end and `compileSource`, compiled, for formal/tools/self_host.py. -/
 lean_exe runAll where
   root := `Lanius.Tools.RunAll

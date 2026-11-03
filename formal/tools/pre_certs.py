@@ -640,8 +640,11 @@ def main():
                 cur, defs, needs, n = [], set(), set(), 0
         if cur:
             chunks.append((kind, cur, defs, needs))
-    flush('UPost', uposts, int(os.environ.get('UPOST_PER', '80')))
-    flush('Post', posts, int(os.environ.get('POST_PER', '60')))
+    # Large modules: Lean proves a module's theorems in parallel, while each
+    # module waits for the whole of the ones it imports (and pays its own
+    # imports and its kernel checks, which run one at a time).
+    flush('UPost', uposts, int(os.environ.get('UPOST_PER', '200')))
+    flush('Post', posts, int(os.environ.get('POST_PER', '300')))
     flush('Pre', pres, int(os.environ.get('PRE_PER', '60')))
     # each module imports the uposts' modules before it (found by name, not
     # tracked) and those defining the lemmas its models call (not a chain:

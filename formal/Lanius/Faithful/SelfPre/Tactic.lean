@@ -1,5 +1,5 @@
-import Lanius.Faithful.SelfPre.HB
-import Lanius.Faithful.Budget
+import Lean
+import Lanius.Faithful.SelfPre.HBAttr
 
 /-! # `pre_auto` and `post_auto`: preconditions and heights by the potential (F14)
 
@@ -47,7 +47,7 @@ where
 
 /-- `hb e`'s argument. -/
 def hbArg? (e : Expr) : Option Expr :=
-  if e.isAppOfArity ``HB.hb 3 then some e.appArg! else none
+  if e.isAppOfArity `Lanius.Faithful.SelfPre.HB.hb 3 then some e.appArg! else none
 
 /-- `List.length l`'s list. -/
 def lengthArg? (e : Expr) : Option Expr :=
@@ -68,11 +68,19 @@ def costKey? (e : Expr) : Option String :=
 
 def hasLoose (e : Expr) : Bool := e.hasLooseBVars
 
+/-- The constant `nm` with fresh universe metavariables. Unlike
+`mkConstWithFreshMVarLevels` it reads only the signature (`getConstVal`), so it
+does not wait for the proof of a theorem earlier in the same module, which the
+asynchronous elaborator may still be checking: waiting serialized the modules. -/
+def constFresh (nm : Name) : MetaM Expr := do
+  let val ← getConstVal nm
+  return mkConst nm (← val.levelParams.mapM fun _ => mkFreshLevelMVar)
+
 /-- A local hypothesis or a constant called `nm`, as a term. -/
 def lookup? (nm : Name) : TacticM (Option Expr) := do
   if let some d := (← getLCtx).findFromUserName? nm then return some d.toExpr
   let env ← getEnv
-  if env.contains nm then return some (← mkConstWithFreshMVarLevels nm)
+  if env.contains nm then return some (← constFresh nm)
   return none
 
 /-- A product of two numbers below `2 ^ 32` does not wrap. -/
@@ -319,6 +327,10 @@ def budgeted (k : Nat) (x : TacticM α) : TacticM α :=
     (withCurrHeartbeats <| withTheReader Core.Context (fun c => { c with maxHeartbeats := k * 1000 }) x)
     (fun e => throwError "budget exceeded: {e.toMessageData}")
 
+/-- `Nat.add_assoc` reversed, stated once: `simp only [← Nat.add_assoc]` adds an
+auxiliary theorem at every use (one per `omega` call), each checked by the kernel. -/
+theorem add_nest_left (a b c : Nat) : a + (b + c) = a + b + c := (Nat.add_assoc a b c).symm
+
 /-- Prove the main goal by `omega` over its and the hypotheses' atoms. -/
 def omegaAtoms : TacticM Unit := withMainContext do
   let g ← getMainGoal
@@ -358,11 +370,14 @@ where
       | none => none
     let body := hyps.foldr (fun (_, t) acc => mkForall `h .default (abst t) acc) (abst goal)
     mkForallFVars xs body
-  let m ← mkFreshExprMVar stmt
+  -- The statement is closed (its atoms are variables): prove it in an empty context,
+  -- or `simp at *` and `omega` read all of the goal's (big) hypotheses too.
+  let m ← if stmt.hasFVar || stmt.hasMVar then mkFreshExprMVar stmt
+    else mkFreshExprMVarAt {} {} stmt
   let t0 ← IO.monoMsNow
   -- `omega` takes time exponential in the depth of a right-nested sum: nest them left
   let gs ← try Tactic.run m.mvarId! (withoutRecover (evalTactic (← `(tactic|
-      intros; (try simp only [← Nat.add_assoc] at *); omega))))
+      intros; (try simp only [add_nest_left] at *); omega))))
     catch e =>
       if lanius.hb.debug.get (← getOptions) then
         IO.eprintln s!"omegaAtoms: failed, {atomsArr.size} atoms, {hyps.size} hyps, {(← IO.monoMsNow) - t0} ms"
@@ -432,7 +447,7 @@ def projFact? (e : Expr) : TacticM (Option Expr) := do
   let f := lastName fn
   let nm := `Lanius.Faithful.SelfPre ++ Name.mkSimple s!"hb_le_{s}_{f}"
   unless env.contains nm do return none
-  return some (mkApp (← mkConstWithFreshMVarLevels nm) e.appArg!)
+  return some (mkApp (← constFresh nm) e.appArg!)
 
 /-- The values the context's heights stand for, with the boxes their computation
 allocated (`0` for a value the cost model does not see). -/
@@ -611,7 +626,7 @@ def hbFacts (fuel : Option Expr) (base : Expr) (extra : Array Expr := #[]) : Tac
     addFact (Name.mkSimple s!"hbp{k}") p
     k := k + 1
   for l in lens do
-    let some p ← withMainContext (try some <$> mkAppM ``length_le_hb #[l] catch _ => pure none) | continue
+    let some p ← withMainContext (try some <$> mkAppM `Lanius.Faithful.SelfPre.length_le_hb #[l] catch _ => pure none) | continue
     addFact (Name.mkSimple s!"hbp{k}") p
     k := k + 1
   -- inner values first
@@ -661,11 +676,11 @@ def eqnFacts : TacticM Unit := do
       let some (α, l, _) := t.eq? | continue
       unless l.getAppFn.isConst || l.isFVar do continue
       let ok ← try
-          let _ ← synthInstance (← mkAppM ``HB #[α])
+          let _ ← synthInstance (← mkAppM `Lanius.Faithful.SelfPre.HB #[α])
           pure true
         catch _ => pure false
       if ok then
-        let e ← mkAppM ``congrArg #[← mkAppOptM ``HB.hb #[α, none], d.toExpr]
+        let e ← mkAppM ``congrArg #[← mkAppOptM `Lanius.Faithful.SelfPre.HB.hb #[α, none], d.toExpr]
         out := out.push (← mkAppM ``Nat.le_of_eq #[← mkAppM ``Eq.symm #[e]])
     return out
   let mut k := 0
@@ -770,11 +785,17 @@ partial def closeArith (fuel : Option Expr) (base : Expr) (depth : Nat := 0) : T
     logInfo m!"hb: leaf{indentD g}"
   omegaAtoms
 
+/-- Run a tactic of this file without recording info trees for its steps. Each
+`evalTactic` inside would otherwise keep a tree with the goals before and after;
+saving them is single-threaded at the end of the module and took most of a
+GenP module's build time. -/
+def quietly (x : TacticM Unit) : TacticM Unit := withEnableInfoTree false x
+
 /-- Close `hb (f xs) ≤ M` for a function the cost model does not see, one case of
 its functional induction. -/
 syntax "upost_auto" term : tactic
 elab_rules : tactic
-  | `(tactic| upost_auto $m) => do
+  | `(tactic| upost_auto $m) => quietly do
     let g ← getMainGoal
     let base ← g.withContext (Term.elabTerm m (some (mkConst ``Nat)))
     normSimp0
@@ -783,16 +804,16 @@ elab_rules : tactic
 /-- The pieces of `closeArith`, for looking at a goal. -/
 syntax "hb_norm" : tactic
 elab_rules : tactic
-  | `(tactic| hb_norm) => hbNorm
+  | `(tactic| hb_norm) => quietly (hbNorm)
 syntax "hb_norm0" : tactic
 elab_rules : tactic
-  | `(tactic| hb_norm0) => normSimp0
+  | `(tactic| hb_norm0) => quietly (normSimp0)
 syntax "hb_eqns" : tactic
 elab_rules : tactic
-  | `(tactic| hb_eqns) => eqnFacts
+  | `(tactic| hb_eqns) => quietly (eqnFacts)
 syntax "hb_facts" term "," term : tactic
 elab_rules : tactic
-  | `(tactic| hb_facts $n, $m) => do
+  | `(tactic| hb_facts $n, $m) => quietly do
     let g ← getMainGoal
     let (fuel, base) ← g.withContext do
       return (← Term.elabTerm n (some (mkConst ``Nat)), ← Term.elabTerm m (some (mkConst ``Nat)))
@@ -800,7 +821,7 @@ elab_rules : tactic
 
 syntax "hb_close" term "," term : tactic
 elab_rules : tactic
-  | `(tactic| hb_close $n, $m) => do
+  | `(tactic| hb_close $n, $m) => quietly do
     let g ← getMainGoal
     let (fuel, base) ← g.withContext do
       return (← Term.elabTerm n (some (mkConst ``Nat)), ← Term.elabTerm m (some (mkConst ``Nat)))
@@ -865,8 +886,10 @@ partial def preGoal (nStx mStx : Term) : TacticM Unit := withMainContext do
     evalTactic (← `(tactic| split))
     onGoals (← getGoals) (preGoal nStx mStx)
     return
-  if t.isAppOf ``Lanius.Faithful.Budget.Pre_plus || t.isAppOf ``Lanius.Faithful.Budget.Pre_times then
-    evalTactic (← `(tactic| simp only [Lanius.Faithful.Budget.Pre_plus, Lanius.Faithful.Budget.Pre_times, Nat.reducePow]))
+  if t.isAppOf `Lanius.Faithful.Budget.Pre_plus || t.isAppOf `Lanius.Faithful.Budget.Pre_times then
+    let plus := mkIdent `Lanius.Faithful.Budget.Pre_plus
+    let times := mkIdent `Lanius.Faithful.Budget.Pre_times
+    evalTactic (← `(tactic| simp only [$plus:ident, $times:ident, Nat.reducePow]))
     let saved ← saveState
     let t ← withMainContext do instantiateMVars (← (← getMainGoal).getType)
     try
@@ -904,7 +927,7 @@ partial def preGoal (nStx mStx : Term) : TacticM Unit := withMainContext do
 
 syntax "pre_auto" term "," term : tactic
 elab_rules : tactic
-  | `(tactic| pre_auto $n, $m) => preGoal n m
+  | `(tactic| pre_auto $n, $m) => quietly (preGoal n m)
 
 /-- The first case split of a cost model's body, outermost first: an `if`'s
 condition or a `match`'s scrutinee. -/
@@ -991,7 +1014,7 @@ partial def postGoal (fuel base : Expr) : TacticM Unit := withMainContext do
 
 syntax "post_auto" term "," term : tactic
 elab_rules : tactic
-  | `(tactic| post_auto $n, $m) => do
+  | `(tactic| post_auto $n, $m) => quietly do
     let g ← getMainGoal
     let (fuel, base) ← g.withContext do
       return (← Term.elabTerm n (some (mkConst ``Nat)), ← Term.elabTerm m (some (mkConst ``Nat)))

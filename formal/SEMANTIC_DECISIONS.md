@@ -2356,6 +2356,19 @@ Decided 11-02 (F14, the size measure for the roots' preconditions): the
   hypothesis's), with sums nested to the left: with every fact in context,
   or with a sum nested 23 deep to the right, `omega` took over 100 s on one
   goal of `nest_arm`.
+- Build time (11-02). The tactic is compiled to native code (lakefile
+  `LaniusTactic`, `HBAttr` in `LaniusHBAttr`; `Tactic.lean` imports only
+  Lean and HBAttr and names HB's and Budget's constants without checking
+  them). Its steps record no info trees (`quietly`): the trees, saved one
+  at a time at the end of a module, were most of its build time. The
+  atoms' statement is proved in an empty context, so neither `simp at *`
+  nor `omega` reads the goal's hypotheses (one goal of `eff_path_call` went
+  from 185 ms to 14 ms). Lemmas are looked up by signature (`getConstVal`).
+  Modules are large (200 uposts, 300 post groups; pre groups 60 while
+  SelfP04-07 do not build), because Lean proves one module's theorems in
+  parallel but checks them in the kernel one at a time, and a module waits
+  for all of each module it imports. The chain from Tactic to SelfP02 went
+  from over 5 minutes (it hit the 290 s limit) to 101 s.
 
 ## One-word scalar views (decided 11-01, F11b)
 
