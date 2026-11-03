@@ -107,11 +107,52 @@ theorem linkOnto_eq (entries : List Nat) (tail : List UInt8) : ∀ (start : Nat)
   | start, code :: rest => by
     simp only [linkOnto, linkFrom, Code.image, encodeOnto_eq, linkOnto_eq entries tail _ rest, List.append_assoc]
 
+/-- `roomAfter` checks the image limit as the functions' sizes add up: it is
+`some` exactly when their sum `linkedSize` fits the room. -/
+theorem roomAfter_eq : ∀ (room : Nat) (codes : List Code),
+    roomAfter room codes = if linkedSize codes ≤ room then some (room - linkedSize codes) else none
+  | room, [] => by simp [roomAfter, linkedSize]
+  | room, code :: rest => by
+    simp only [roomAfter, linkedSize, roomAfter_eq (room - code.size) rest]
+    by_cases a : code.size ≤ room
+    · by_cases b : linkedSize rest ≤ room - code.size
+      · have c : code.size + linkedSize rest ≤ room := by omega
+        simp [a, b, c, Nat.sub_sub]
+      · have c : ¬ code.size + linkedSize rest ≤ room := by omega
+        simp [a, b, c]
+    · have c : ¬ code.size + linkedSize rest ≤ room := by omega
+      simp [a, c]
+
+/-- `compileProgram` checks the image limit as the sizes add up (`roomAfter`),
+which accepts exactly the programs whose whole image fits. -/
+theorem compileProgram_eq (prog : Program) : compileProgram prog =
+    match compileFuncs (arities prog.funcs) prog.funcs with
+    | none => none
+    | some codes =>
+      if linkedSize codes + prog.statics.length ≤ imageLimit then
+        some ({ codes := codes, entries := layout 0 codes,
+                image := linkOnto (layout 0 codes) 0 codes prog.statics, statics := prog.statics } : Binary)
+      else
+        none := by
+  simp only [compileProgram]
+  cases compileFuncs (arities prog.funcs) prog.funcs with
+  | none => rfl
+  | some codes =>
+    simp only [roomAfter_eq]
+    by_cases a : prog.statics.length ≤ imageLimit
+    · by_cases b : linkedSize codes ≤ imageLimit - prog.statics.length
+      · have c : linkedSize codes + prog.statics.length ≤ imageLimit := by omega
+        simp [a, b, c]
+      · have c : ¬ linkedSize codes + prog.statics.length ≤ imageLimit := by omega
+        simp [a, b, c]
+    · have c : ¬ linkedSize codes + prog.statics.length ≤ imageLimit := by omega
+      simp [a, c]
+
 theorem compileProgram_spec {prog : Program} {binary : Binary} (compiled : compileProgram prog = some binary) :
     compileFuncs (arities prog.funcs) prog.funcs = some binary.codes ∧ binary.entries = layout 0 binary.codes ∧
       binary.image = linkFrom binary.entries 0 binary.codes ++ binary.statics ∧ binary.image.length ≤ imageLimit ∧
       binary.statics = prog.statics := by
-  simp only [compileProgram] at compiled
+  rw [compileProgram_eq] at compiled
   split at compiled
   · contradiction
   · rename_i codes codesCompiled

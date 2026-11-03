@@ -102,13 +102,28 @@ def elfFile (binary : Binary) (entry : Nat) (stack : Nat) (heap : Nat) : Option 
   let bodyCode : List Instr := compileStmt base bodyStart (pos + codeSize conditionCode) pos body
   conditionCode ++ [Instr.jz (bodyStart + codeSize bodyCode + 5)] ++ bodyCode ++ [Instr.jmp pos]
 
-@[expose] def Inline.link (codes : List Code) (statics : List UInt8) : Option Binary :=
-  let entries : List Nat := layout 0 codes
-  let image : List UInt8 := linkOnto entries 0 codes statics
-  if linkedSize codes + statics.length ≤ imageLimit then
-    some ({ codes := codes, entries := entries, image := image, statics := statics } : Binary)
+@[expose] def Inline.roomNext (room : Nat) (size : Nat) (rest : List Code) : Option Nat :=
+  if size ≤ room then
+    roomAfter (room - size) rest
   else
     none
+
+/-- The image fits when the static bytes and then each function do, checked before any offset is added up (room_after). -/
+@[expose] def Inline.link (codes : List Code) (statics : List UInt8) : Option Binary :=
+  if statics.length ≤ imageLimit then
+    match roomAfter (imageLimit - statics.length) codes with
+    | none => none
+    | some room =>
+      let entries : List Nat := layout 0 codes
+      let image : List UInt8 := linkOnto entries 0 codes statics
+      some ({ codes := codes, entries := entries, image := image, statics := statics } : Binary)
+  else
+    none
+
+@[expose] def Inline.linkFitting (codes : List Code) (statics : List UInt8) : Option Binary :=
+  let entries : List Nat := layout 0 codes
+  let image : List UInt8 := linkOnto entries 0 codes statics
+  some ({ codes := codes, entries := entries, image := image, statics := statics } : Binary)
 
 @[expose] def Inline.lookupAt (binding : Binding) (rest : List Binding) (id : Nat) : Option Binding :=
   if binding.id = id then

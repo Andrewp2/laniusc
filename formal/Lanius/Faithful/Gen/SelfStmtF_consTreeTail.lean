@@ -66,7 +66,7 @@ abbrev Stmt_goals_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev Stmt_inst_from (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Option (List Lanius.Mini.Ty)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepOption 212 (RepList 141 RepTy)) x1 v1 →
-    (RepOption 179 RepInst) (Lanius.Mini.instFrom x0 x1) w
+    (RepOption 180 RepInst) (Lanius.Mini.instFrom x0 x1) w
 
 abbrev Stmt_join_goals (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option (List Lanius.Mini.BoundGoal)} {x1 : Option (List Lanius.Mini.BoundGoal)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 246 (RepList 247 RepBoundGoal)) x0 v0 → (RepOption 246 (RepList 247 RepBoundGoal)) x1 v1 →

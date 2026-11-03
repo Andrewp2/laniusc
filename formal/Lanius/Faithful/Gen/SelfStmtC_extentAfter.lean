@@ -21,7 +21,7 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_dying_extent (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Fact} {x1 : Nat} {x2 : Nat} {x3 : Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepList 180 RepFact) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepNat x3 v3 →
+  ∀ {x0 : List Lanius.Mini.Fact} {x1 : Nat} {x2 : Nat} {x3 : Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepList 181 RepFact) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepNat x3 v3 →
     RepNat (Lanius.Mini.dyingExtent x0 x1 x2 x3) w
 
 abbrev Stmt_extent_after (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -29,11 +29,11 @@ abbrev Stmt_extent_after (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
     RepNat (Lanius.Mini.extentAfter x0 x1 x2) w
 
 abbrev Stmt_kill_prefix (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Fact} {x1 : Nat} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 180 RepFact) x0 v0 → RepNat x1 v1 → RepNat x2 v2 →
-    (RepList 180 RepFact) (Lanius.Mini.killPrefix x0 x1 x2) w
+  ∀ {x0 : List Lanius.Mini.Fact} {x1 : Nat} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 181 RepFact) x0 v0 → RepNat x1 v1 → RepNat x2 v2 →
+    (RepList 181 RepFact) (Lanius.Mini.killPrefix x0 x1 x2) w
 
 abbrev Stmt_kill_prefix_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Fact} {x1 : Nat} {x2 : List Lanius.Mini.Fact} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepFact x0 v0 → RepNat x1 v1 → (RepList 180 RepFact) x2 v2 →
-    (RepList 180 RepFact) (Lanius.Mini.killPrefixAt x0 x1 x2) w
+  ∀ {x0 : Lanius.Mini.Fact} {x1 : Nat} {x2 : List Lanius.Mini.Fact} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepFact x0 v0 → RepNat x1 v1 → (RepList 181 RepFact) x2 v2 →
+    (RepList 181 RepFact) (Lanius.Mini.killPrefixAt x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

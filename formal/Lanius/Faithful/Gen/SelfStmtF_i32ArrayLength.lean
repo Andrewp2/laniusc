@@ -22,14 +22,14 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_i32_array_length (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Ty} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepTy x0 v0 →
-    (RepOption 207 RepNat) (Lanius.Mini.i32ArrayLength x0) w
+    (RepOption 150 RepNat) (Lanius.Mini.i32ArrayLength x0) w
 
 abbrev Stmt_is_ptr_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.Ty} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 211 RepTy) x0 v0 →
     RepBool (Lanius.Mini.isPtrOf x0) w
 
 abbrev Stmt_names_local (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 207 RepNat) x0 v0 → RepNat x1 v1 →
+  ∀ {x0 : Option Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 150 RepNat) x0 v0 → RepNat x1 v1 →
     RepBool (Lanius.Mini.namesLocal x0 x1) w
 
 abbrev Stmt_string_close (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

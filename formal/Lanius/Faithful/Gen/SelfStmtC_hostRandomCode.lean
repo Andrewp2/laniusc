@@ -21,12 +21,12 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_eval_call (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Sig} {x1 : Nat} {x2 : Nat} {x3 : Option Lanius.Mini.EvaluatedArgs} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepOption 151 RepSig) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → (RepOption 184 RepEvaluatedArgs) x3 v3 →
-    (RepOption 156 RepEvaluated) (Lanius.Mini.evalCall x0 x1 x2 x3) w
+  ∀ {x0 : Option Lanius.Mini.Sig} {x1 : Nat} {x2 : Nat} {x3 : Option Lanius.Mini.EvaluatedArgs} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepOption 152 RepSig) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → (RepOption 184 RepEvaluatedArgs) x3 v3 →
+    (RepOption 157 RepEvaluated) (Lanius.Mini.evalCall x0 x1 x2 x3) w
 
 abbrev Stmt_eval_host (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {x2 : Lanius.Mini.EvaluatedArgs} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepNat x1 v1 → RepEvaluatedArgs x2 v2 →
-    (RepOption 156 RepEvaluated) (Lanius.Mini.evalHost x0 x1 x2) w
+    (RepOption 157 RepEvaluated) (Lanius.Mini.evalHost x0 x1 x2) w
 
 abbrev Stmt_host_random_code (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →

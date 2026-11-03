@@ -57,7 +57,7 @@ abbrev Stmt_float_pick_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
     (RepOption 234 RepSrcExpr) (Lanius.Mini.floatPickOf x0 x1 x2) w
 
 abbrev Stmt_float_want (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcType} {x1 : Lanius.Mini.SrcType} {x2 : Lanius.Mini.SrcExpr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 158 RepSrcType) x0 v0 → RepSrcType x1 v1 → RepSrcExpr x2 v2 →
+  ∀ {x0 : Option Lanius.Mini.SrcType} {x1 : Lanius.Mini.SrcType} {x2 : Lanius.Mini.SrcExpr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 159 RepSrcType) x0 v0 → RepSrcType x1 v1 → RepSrcExpr x2 v2 →
     (RepOption 234 RepSrcExpr) (Lanius.Mini.floatWant x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

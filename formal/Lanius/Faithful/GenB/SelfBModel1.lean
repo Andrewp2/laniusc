@@ -20,6 +20,22 @@ open Lanius.Faithful.Budget
 
 noncomputable section
 
+def Pre_eval_let_in : Nat → Nat → Lanius.Mini.SrcType → Lanius.Mini.SrcType → Option Lanius.Mini.Evaluated → Option Lanius.Mini.Evaluated → Nat → Prop
+  | 0, x12, x25, x38, x51, x91, b => True
+  | n + 1, x12, x25, x38, x51, x91, b => (match x51 with | some x229 => (match x91 with | some x293 => (Pre_eval_let_in_of n x12 x25 x38 x229 x293 b) | none => True) | none => True)
+
+end
+
+noncomputable section
+
+def Pre_eval_len_of : Nat → Lanius.Mini.Binding → Nat → Nat → Prop
+  | 0, x12, x24, b => True
+  | n + 1, x12, x24, b => (match (Lanius.Mini.elementOf x12.ty) with | some x147 => (Pre_plus n x12.slot 1 b) | none => True)
+
+end
+
+noncomputable section
+
 def Pre_eval_len : Nat → List Lanius.Mini.Binding → Nat → Nat → Nat → Prop
   | 0, x9, x31, x45, b => True
   | n + 1, x9, x31, x45, b => (match (Lanius.Mini.lookup x9 x31) with | some x172 => (Pre_eval_len_of n x172 x45 b) | none => True)
@@ -3966,22 +3982,6 @@ noncomputable section
 def Cost_neg_wide_sint : Nat → Lanius.Mini.UintTy → BitVec 64 → Lanius.Mini.SrcExpr → Nat
   | 0, x14, x25, x33 => 18446744073709551616
   | n + 1, x14, x25, x33 => (if ((Lanius.Mini.sintWide x14) && (decide (x25.toNat ≤ (9223372036854775808#64).toNat))) = true then 1 else 0)
-
-end
-
-noncomputable section
-
-def Cost_neg_wide_at : Nat → Option Lanius.Mini.SrcType → BitVec 64 → Lanius.Mini.SrcExpr → Nat
-  | 0, x12, x49, x57 => 18446744073709551616
-  | n + 1, x12, x49, x57 => (match x12 with | some x157 => (match x157 with | .i32 => 0 | .bool => 0 | .uint x254 => 0 | .struct x282 x286 => 0 | .enum x317 x321 => 0 | .ptr => 0 | .slice x377 => 0 | .array x414 x418 => 0 | .unit => 0 | .isize => (Cost_neg_wide_isize n x49 x57) | .char => 0 | .float x563 => 0 | .sint x590 => (Cost_neg_wide_sint n x590 x49 x57) | .view x639 => 0 | .str => 0) | none => 0)
-
-end
-
-noncomputable section
-
-def Cost_least_cast : Nat → Lanius.Mini.UintTy → BitVec 32 → Lanius.Mini.SrcExpr → Nat
-  | 0, x11, x22, x30 => 18446744073709551616
-  | n + 1, x11, x22, x30 => (let k2 := 1; let k3 := 0; (if (!(Lanius.Mini.sintFits x11 x22)) = true then (if (Lanius.Mini.sintFits x11 (((0#32) - x22))) = true then k2 else k3) else k3))
 
 end
 

@@ -1117,9 +1117,36 @@ end
 
 noncomputable section
 
+mutual
+def Pre_length_of_u8 : Nat → List UInt8 → Nat → Prop
+  | 0, x10, b => True
+  | n + 1, x10, b => (match x10 with | [] => True | x95 :: x101 => ((Pre_length_of_u8 n x101 b) ∧ (Pre_plus n x101.length 1 b)))
+termination_by structural fuel => fuel
+end
+
+end
+
+noncomputable section
+
 def Pre_Code_size : Nat → Lanius.Mini.Code → Nat → Prop
   | 0, x5, b => True
   | n + 1, x5, b => ((Pre_code_size n x5.instrs b) ∧ (Pre_plus n 24 (Lanius.Mini.codeSize x5.instrs) b))
+
+end
+
+noncomputable section
+
+mutual
+def Pre_room_after : Nat → Nat → List Lanius.Mini.Code → Nat → Prop
+  | 0, x11, x24, b => True
+  | n + 1, x11, x24, b => (match x24 with | [] => True | x143 :: x149 => ((Pre_Code_size n x143 b) ∧ (Pre_room_next n x11 (Lanius.Mini.Code.size x143) x149 b)))
+termination_by structural fuel => fuel
+
+def Pre_room_next : Nat → Nat → Nat → List Lanius.Mini.Code → Nat → Prop
+  | 0, x10, x23, x36, b => True
+  | n + 1, x10, x23, x36, b => (if (decide (x23 ≤ x10)) = true then (Pre_room_after n (x10 - x23) x36 b) else True)
+termination_by structural fuel => fuel
+end
 
 end
 
@@ -1662,23 +1689,17 @@ end
 
 noncomputable section
 
-mutual
-def Pre_linked_size : Nat → List Lanius.Mini.Code → Nat → Prop
-  | 0, x12, b => True
-  | n + 1, x12, b => (match x12 with | [] => True | x100 :: x106 => ((Pre_Code_size n x100 b) ∧ ((Pre_linked_size n x106 b) ∧ (Pre_plus n (Lanius.Mini.Code.size x100) (Lanius.Mini.linkedSize x106) b))))
-termination_by structural fuel => fuel
-end
+def Cost_link_fitting : Nat → List Lanius.Mini.Code → List UInt8 → Nat
+  | 0, x13, x32 => 18446744073709551616
+  | n + 1, x13, x32 => ((Cost_layout n 0 x13) + (Cost_link_onto n (Lanius.Mini.layout 0 x13) 0 x13 x32))
 
 end
 
 noncomputable section
 
-mutual
-def Pre_length_of_u8 : Nat → List UInt8 → Nat → Prop
-  | 0, x10, b => True
-  | n + 1, x10, b => (match x10 with | [] => True | x95 :: x101 => ((Pre_length_of_u8 n x101 b) ∧ (Pre_plus n x101.length 1 b)))
-termination_by structural fuel => fuel
-end
+def Pre_link_fitting : Nat → List Lanius.Mini.Code → List UInt8 → Nat → Prop
+  | 0, x13, x32, b => True
+  | n + 1, x13, x32, b => ((Pre_layout n 0 x13 b) ∧ (∀ b1 : Nat, (Cost_layout n 0 x13) < b → b1 = b - (Cost_layout n 0 x13) → (Pre_link_onto n (Lanius.Mini.layout 0 x13) 0 x13 x32 b1)))
 
 end
 
@@ -1686,7 +1707,7 @@ noncomputable section
 
 def Cost_link : Nat → List Lanius.Mini.Code → List UInt8 → Nat
   | 0, x5, x24 => 18446744073709551616
-  | n + 1, x5, x24 => ((Cost_layout n 0 x5) + (Cost_link_onto n (Lanius.Mini.layout 0 x5) 0 x5 x24))
+  | n + 1, x5, x24 => (if (decide (x24.length ≤ Lanius.Mini.imageLimit)) = true then (match (Lanius.Mini.roomAfter ((Lanius.Mini.imageLimit - x24.length)) x5) with | some x246 => (Cost_link_fitting n x5 x24) | none => 0) else 0)
 
 end
 
@@ -1694,7 +1715,7 @@ noncomputable section
 
 def Pre_link : Nat → List Lanius.Mini.Code → List UInt8 → Nat → Prop
   | 0, x5, x24, b => True
-  | n + 1, x5, x24, b => ((Pre_layout n 0 x5 b) ∧ (∀ b1 : Nat, (Cost_layout n 0 x5) < b → b1 = b - (Cost_layout n 0 x5) → ((Pre_link_onto n (Lanius.Mini.layout 0 x5) 0 x5 x24 b1) ∧ (∀ b2 : Nat, (Cost_link_onto n (Lanius.Mini.layout 0 x5) 0 x5 x24) < b1 → b2 = b1 - (Cost_link_onto n (Lanius.Mini.layout 0 x5) 0 x5 x24) → ((Pre_linked_size n x5 b2) ∧ ((Pre_length_of_u8 n x24 b2) ∧ (Pre_plus n (Lanius.Mini.linkedSize x5) x24.length b2)))))))
+  | n + 1, x5, x24, b => ((Pre_length_of_u8 n x24 b) ∧ (if (decide (x24.length ≤ Lanius.Mini.imageLimit)) = true then ((Pre_length_of_u8 n x24 b) ∧ ((Pre_room_after n (Lanius.Mini.imageLimit - x24.length) x5 b) ∧ (match (Lanius.Mini.roomAfter ((Lanius.Mini.imageLimit - x24.length)) x5) with | some x246 => (Pre_link_fitting n x5 x24 b) | none => True))) else True))
 
 end
 
@@ -4736,22 +4757,6 @@ noncomputable section
 def Cost_eval_let_in : Nat → Nat → Lanius.Mini.SrcType → Lanius.Mini.SrcType → Option Lanius.Mini.Evaluated → Option Lanius.Mini.Evaluated → Nat
   | 0, x12, x25, x38, x51, x91 => 18446744073709551616
   | n + 1, x12, x25, x38, x51, x91 => (match x51 with | some x229 => (match x91 with | some x293 => (Cost_eval_let_in_of n x12 x25 x38 x229 x293) | none => 0) | none => 0)
-
-end
-
-noncomputable section
-
-def Pre_eval_let_in : Nat → Nat → Lanius.Mini.SrcType → Lanius.Mini.SrcType → Option Lanius.Mini.Evaluated → Option Lanius.Mini.Evaluated → Nat → Prop
-  | 0, x12, x25, x38, x51, x91, b => True
-  | n + 1, x12, x25, x38, x51, x91, b => (match x51 with | some x229 => (match x91 with | some x293 => (Pre_eval_let_in_of n x12 x25 x38 x229 x293 b) | none => True) | none => True)
-
-end
-
-noncomputable section
-
-def Pre_eval_len_of : Nat → Lanius.Mini.Binding → Nat → Nat → Prop
-  | 0, x12, x24, b => True
-  | n + 1, x12, x24, b => (match (Lanius.Mini.elementOf x12.ty) with | some x147 => (Pre_plus n x12.slot 1 b) | none => True)
 
 end
 

@@ -2464,6 +2464,33 @@ visited set in `ty_insts` would make it linear, but the reading's
 `TyInsts` relation is stated over the full expansion, so that change needs
 its own proof.
 
+## The image limit checked as the sizes add up (decided 11-03, F14)
+
+`link` checked the image limit only after it had added up every function's
+size (`linked_size`) and laid the functions out (`layout`, `link_onto`).
+Monomorphization copies a body once per instance, and the front end allows
+up to its fuel, about `4 * (tokens + prods)`, instances. So a program under
+2^31 words can compile to more than 2^64 bytes of code (PreCompileSourceV2's
+NOTES.md, 11-03), and those sums would overflow a usize before the check
+rejects the program. The compiler now checks as it goes:
+
+- `room_after(room, codes)` walks the functions and takes each one's size
+  out of the room left. It returns None as soon as a function does not fit.
+  It only compares and subtracts, so it adds nothing up.
+- `link` first checks that the static bytes fit the image limit. It then
+  takes the room left after them through `room_after`, and only then lays
+  the functions out and builds the image (`link_fitting`). Every offset
+  `layout` and `link_onto` add up is at most the image limit, 2^30.
+
+This only rejects programs that the old final check already rejected.
+`room_after(room, codes)` is Some exactly when `linked_size(codes) <= room`,
+which is `roomAfter_eq` in `Lanius/Mini/Correct.lean`. `compileProgram_eq`
+shows that `compileProgram` is the same function as before: it accepts the
+same programs with the same binary. So the behaviour is unchanged for every
+accepted program, and a rejected one is still rejected as `None`. Whole-
+program sums need no size lemmas now. Per-function sums (a function's
+`code_size` and its pc offsets) are not covered by this check.
+
 ## Budget certificates (decided 11-01, F14)
 
 `CompileBounded T` asks that the guarded run of `progW` has a value

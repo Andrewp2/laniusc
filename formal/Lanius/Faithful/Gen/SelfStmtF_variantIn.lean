@@ -34,7 +34,7 @@ abbrev Stmt_prim_ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev Stmt_scalar_src (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Ty} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepTy x0 v0 →
-    (RepOption 158 RepSrcType) (Lanius.Mini.scalarSrc x0) w
+    (RepOption 159 RepSrcType) (Lanius.Mini.scalarSrc x0) w
 
 abbrev Stmt_src_ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcType x0 v0 →
@@ -45,7 +45,7 @@ abbrev Stmt_variant_by_path (prog : SrcProgram) (prims : Prims) (ix n : Nat) : P
     (RepOption 283 RepVariantAt) (Lanius.Mini.variantByPath x0 x1) w
 
 abbrev Stmt_variant_in (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.TypeDecl} {x1 : Option Nat} {x2 : List Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 104 RepTypeDecl) x0 v0 → (RepOption 207 RepNat) x1 v1 → (RepList 25 RepNat) x2 v2 →
+  ∀ {x0 : List Lanius.Mini.TypeDecl} {x1 : Option Nat} {x2 : List Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 104 RepTypeDecl) x0 v0 → (RepOption 150 RepNat) x1 v1 → (RepList 25 RepNat) x2 v2 →
     (RepOption 283 RepVariantAt) (Lanius.Mini.variantIn x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert
