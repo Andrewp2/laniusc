@@ -168,6 +168,7 @@ import all Lanius.Faithful.Gen.SelfSrcF_consBinder
 import all Lanius.Faithful.Gen.SelfSrcF_consBound
 import all Lanius.Faithful.Gen.SelfSrcF_consTreeTail
 import all Lanius.Faithful.Gen.SelfSrcF_consTys
+import all Lanius.Faithful.Gen.SelfSrcF_depthLimit
 import all Lanius.Faithful.Gen.SelfSrcF_digitBelow
 import all Lanius.Faithful.Gen.SelfSrcF_distinct
 import all Lanius.Faithful.Gen.SelfSrcF_divergeArm
@@ -213,6 +214,8 @@ import all Lanius.Faithful.Gen.SelfSrcF_itemOf
 import all Lanius.Faithful.Gen.SelfSrcF_joinInsts
 import all Lanius.Faithful.Gen.SelfSrcF_letClosed
 import all Lanius.Faithful.Gen.SelfSrcF_letStructClosed
+import all Lanius.Faithful.Gen.SelfSrcF_limExprs
+import all Lanius.Faithful.Gen.SelfSrcF_limLeaf
 import all Lanius.Faithful.Gen.SelfSrcF_litBound
 import all Lanius.Faithful.Gen.SelfSrcF_litEffMatch
 import all Lanius.Faithful.Gen.SelfSrcF_litIf
@@ -309,7 +312,24 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 
 /-- No function of the self program takes a block of frame memory. -/
-theorem frameBlocks_zero : (prog.funcs.all fun f => frameBlock f == 0) = true := by decide +kernel
+theorem frameBlocks_zero : (prog.funcs.all fun f => frameBlock f == 0) = true :=
+  all_of_pieces _ 200 14 prog.funcs (by decide +kernel) fun k lt => by
+    match k, lt with
+    | 0, _ => decide +kernel
+    | 1, _ => decide +kernel
+    | 2, _ => decide +kernel
+    | 3, _ => decide +kernel
+    | 4, _ => decide +kernel
+    | 5, _ => decide +kernel
+    | 6, _ => decide +kernel
+    | 7, _ => decide +kernel
+    | 8, _ => decide +kernel
+    | 9, _ => decide +kernel
+    | 10, _ => decide +kernel
+    | 11, _ => decide +kernel
+    | 12, _ => decide +kernel
+    | 13, _ => decide +kernel
+    | k + 14, h => exact absurd h (by omega)
 
 /-- The self program needs no frame memory at any function. -/
 theorem prog_need (i : Nat) : prog.need i = 0 := SrcProgram.need_zero_of_all frameBlocks_zero i

@@ -13321,6 +13321,248 @@ pub fn placed_program(fs: List<SrcFunc>) -> SrcProgram {
     return SrcProgram { funcs: place_funcs(empty(), fs), statics: funcs_bytes(fs) };
 }
 
+// ---------------------------------------------------------------- implementation limits
+
+// Implementation limits on the program (decided 11-03, F14, as the image
+// limit): every type anywhere in it has at most weight_limit() slots
+// (SrcType::size), and a function's lets need at most depth_limit() slots
+// along any scope (SrcStmt::depth). A program past either is rejected; no
+// real program comes near them. So the compiler's slot numbers, offsets and
+// frame sizes stay far below 2^64.
+pub fn depth_limit() -> usize {
+    return 1099511627776;
+}
+
+pub fn depth_sum(x: usize, y: usize) -> core::option::Option<usize> {
+    if (x > depth_limit() || y > minus(depth_limit(), x)) {
+        return None;
+    }
+    return Some(plus(x, y));
+}
+
+// extract: mutual begin
+// At least t's slot count, when t and every type inside it are within
+// weight_limit() (a type's weight, with a str's two slots and a view's
+// length counted).
+pub fn lim_slots(t: SrcType) -> core::option::Option<usize> {
+    return match (t) {
+        I32 -> Some(1),
+        Bool -> Some(1),
+        Uint(k) -> Some(1),
+        Struct(id, fields) -> weight_add_to(1, lim_slots_list(unbox(fields))),
+        Enum(id, variants) -> weight_add_to(1, lim_slots_variants(unbox(variants))),
+        Ptr -> Some(1),
+        Slice(element) -> weight_add_to(1, lim_slots(unbox(element))),
+        SrcType::Array(element, length) -> weight_array(length, lim_slots(unbox(element))),
+        Unit -> Some(1),
+        Isize -> Some(1),
+        SrcType::Char -> Some(1),
+        SrcType::Float(ft) -> Some(1),
+        Sint(sk) -> Some(1),
+        View(view_length) -> weight_sum(1, view_length),
+        Str -> Some(2),
+        Ref(referent) -> weight_add_to(1, lim_slots(unbox(referent))),
+    };
+}
+
+pub fn lim_slots_list(ts: List<SrcType>) -> core::option::Option<usize> {
+    return match (ts) {
+        Nil -> Some(0),
+        Cons(t, rest) -> weight_add(lim_slots(t), lim_slots_list(unbox(rest))),
+    };
+}
+
+pub fn lim_slots_variants(vs: List<List<SrcType>>) -> core::option::Option<usize> {
+    return match (vs) {
+        Nil -> Some(0),
+        Cons(v, rest) -> weight_add(lim_slots_list(v), lim_slots_variants(unbox(rest))),
+    };
+}
+// extract: mutual end
+
+pub fn lim_ty(t: SrcType) -> bool {
+    return !is_none_weight(lim_slots(t));
+}
+
+pub fn lim_expr(e: SrcExpr) -> bool {
+    return match (e) {
+        Int(k) -> true,
+        Boolean(b) -> true,
+        Unsigned(u, k) -> true,
+        Local(id) -> true,
+        Field(id, j) -> true,
+        Negate(x) -> lim_expr(unbox(x)),
+        Not(x) -> lim_expr(unbox(x)),
+        Apply(op, a, b) -> lim_expr(unbox(a)) && lim_expr(unbox(b)),
+        Cast(t, x) -> lim_ty(t) && lim_expr(unbox(x)),
+        Null -> true,
+        SrcExpr::Char(code) -> true,
+        SrcExpr::Float(ft, bits) -> true,
+    };
+}
+
+pub fn lim_exprs(es: List<SrcExpr>) -> bool {
+    return match (es) {
+        Nil -> true,
+        Cons(e, rest) -> lim_expr(e) && lim_exprs(unbox(rest)),
+    };
+}
+
+pub fn lim_arms(arms: List<SrcArm>) -> bool {
+    return match (arms) {
+        Nil -> true,
+        Cons(a, rest) -> lim_expr(a.value) && lim_arms(unbox(rest)),
+    };
+}
+
+// extract: mutual begin
+pub fn lim_eff(x: SrcEff) -> bool {
+    return match (x) {
+        EPure(e) -> lim_expr(e),
+        ECall(f, args) -> lim_effs(unbox(args)),
+        EApply(op, a, b) -> lim_eff(unbox(a)) && lim_eff(unbox(b)),
+        ENeg(a) -> lim_eff(unbox(a)),
+        ENot(a) -> lim_eff(unbox(a)),
+        ECast(t, a) -> lim_ty(t) && lim_eff(unbox(a)),
+        EIndex(sl, i) -> lim_eff(unbox(i)),
+        EStruct(t, fs) -> lim_ty(t) && lim_effs(unbox(fs)),
+        EVariant(t, k, ps) -> lim_ty(t) && lim_effs(unbox(ps)),
+        EMatch(sc, ety, t, bs, vs) -> lim_eff(unbox(sc)) && lim_ty(ety) && lim_ty(t) && lim_effs(unbox(vs)),
+        EDivide(op, a, b) -> lim_eff(unbox(a)) && lim_eff(unbox(b)),
+        EStride(sl) -> true,
+        ArraySlice(e, a) -> lim_ty(e),
+        EIf(c, t, a, b) -> lim_eff(unbox(c)) && lim_ty(t) && lim_eff(unbox(a)) && lim_eff(unbox(b)),
+        ELet(id, t, v, rt, b) -> lim_ty(t) && lim_eff(unbox(v)) && lim_ty(rt) && lim_eff(unbox(b)),
+        ELen(sl) -> true,
+        EStr(offset, chars) -> true,
+    };
+}
+
+pub fn lim_effs(xs: List<SrcEff>) -> bool {
+    return match (xs) {
+        Nil -> true,
+        Cons(x, rest) -> lim_eff(x) && lim_effs(unbox(rest)),
+    };
+}
+// extract: mutual end
+
+// A binding's slots k around its body's depth d, when its parts are within the limits.
+pub fn lim_bind(k: core::option::Option<usize>, ok: bool, d: core::option::Option<usize>) -> core::option::Option<usize> {
+    if (!ok) {
+        return None;
+    }
+    return match (k) {
+        None -> None,
+        Some(x) -> match (d) {
+            None -> None,
+            Some(y) -> depth_sum(y, x),
+        },
+    };
+}
+
+pub fn lim_leaf(ok: bool) -> core::option::Option<usize> {
+    if (ok) {
+        return Some(0);
+    }
+    return None;
+}
+
+pub fn lim_guard(ok: bool, d: core::option::Option<usize>) -> core::option::Option<usize> {
+    if (ok) {
+        return d;
+    }
+    return None;
+}
+
+pub fn lim_max(a: core::option::Option<usize>, b: core::option::Option<usize>) -> core::option::Option<usize> {
+    return match (a) {
+        None -> None,
+        Some(x) -> match (b) {
+            None -> None,
+            Some(y) -> Some(max_of(x, y)),
+        },
+    };
+}
+
+// n when t is within the limits.
+pub fn lim_const(t: core::option::Option<usize>, n: usize) -> core::option::Option<usize> {
+    return match (t) {
+        None -> None,
+        Some(x) -> Some(n),
+    };
+}
+
+// One slot (laniusc does not type a bare Some(1) argument as Option<usize>).
+pub fn lim_one() -> core::option::Option<usize> {
+    return Some(1);
+}
+
+// At least the statement's depth, when it is within depth_limit() and
+// every type in it within weight_limit().
+pub fn lim_stmt(s: SrcStmt) -> core::option::Option<usize> {
+    return match (s) {
+        Nop -> Some(0),
+        Let(id, ty, e, body) -> lim_bind(lim_slots(ty), lim_expr(e), lim_stmt(unbox(body))),
+        LetStruct(id, ty, es, body) -> lim_bind(lim_slots(ty), lim_exprs(es), lim_stmt(unbox(body))),
+        LetCall(id, ty, f, args, body) -> lim_bind(lim_slots(ty), lim_exprs(args), lim_stmt(unbox(body))),
+        LetEnum(id, ty, k, es, body) -> lim_bind(lim_slots(ty), lim_exprs(es), lim_stmt(unbox(body))),
+        LetMatch(id, ty, sc, eid, arms, body) -> lim_bind(lim_slots(ty), lim_arms(arms), lim_stmt(unbox(body))),
+        Set(id, e) -> lim_leaf(lim_expr(e)),
+        SetField(id, j, e) -> lim_leaf(lim_expr(e)),
+        SetCall(id, f, args) -> lim_leaf(lim_exprs(args)),
+        Then(a, b) -> lim_max(lim_stmt(unbox(a)), lim_stmt(unbox(b))),
+        If(c, a, b) -> lim_guard(lim_expr(c), lim_max(lim_stmt(unbox(a)), lim_stmt(unbox(b)))),
+        While(c, body) -> lim_guard(lim_expr(c), lim_stmt(unbox(body))),
+        Return(e) -> lim_leaf(lim_expr(e)),
+        LetAlloc(id, size, shift, body) -> lim_bind(lim_one(), lim_expr(size), lim_stmt(unbox(body))),
+        LetLoad(id, p, o, body) -> lim_bind(lim_one(), lim_expr(p) && lim_expr(o), lim_stmt(unbox(body))),
+        SetByte(p, o, v) -> lim_leaf(lim_expr(p) && lim_expr(o) && lim_expr(v)),
+        Free(p, size, shift) -> lim_leaf(lim_expr(p) && lim_expr(size)),
+        LetSlice(id, el, p, n, body) -> lim_bind(lim_const(lim_slots(el), 2), lim_expr(p) && lim_expr(n), lim_stmt(unbox(body))),
+        LetIndex(id, ty, sl, i, body) -> lim_bind(lim_slots(ty), lim_expr(i), lim_stmt(unbox(body))),
+        SetIndex(sl, i, v) -> lim_leaf(lim_expr(i) && lim_expr(v)),
+        LetEval(id, ty, x, body) -> lim_bind(lim_slots(ty), lim_eff(x), lim_stmt(unbox(body))),
+        SetEval(id, x) -> lim_leaf(lim_eff(x)),
+        IfEval(c, a, b) -> lim_guard(lim_eff(c), lim_max(lim_stmt(unbox(a)), lim_stmt(unbox(b)))),
+        WhileEval(c, body) -> lim_guard(lim_eff(c), lim_stmt(unbox(body))),
+        ReturnEval(x) -> lim_leaf(lim_eff(x)),
+        Discard(x) -> lim_leaf(lim_eff(x)),
+        SetIndexEval(sl, i, v) -> lim_leaf(lim_eff(i) && lim_eff(v)),
+        SetFieldEval(id, j, x) -> lim_leaf(lim_eff(x)),
+        ReturnUnit -> Some(0),
+        Assert(x) -> lim_leaf(lim_eff(x)),
+        Break -> Some(0),
+        Continue -> Some(0),
+        MatchArm(sc, en, k, bs, x, ty, body, rest) -> lim_max(lim_bind(lim_slots(ty), true, lim_stmt(unbox(body))), lim_stmt(unbox(rest))),
+        Unreachable(id, ty) -> lim_const(lim_slots(ty), 1),
+        LetView(id, n, es, p, body) -> lim_bind(depth_sum(n, 1), lim_exprs(es), lim_stmt(unbox(body))),
+        LetStr(p, cs, body) -> lim_bind(lim_one(), true, lim_stmt(unbox(body))),
+    };
+}
+
+pub fn lim_params(ps: List<SrcParam>) -> bool {
+    return match (ps) {
+        Nil -> true,
+        Cons(p, rest) -> lim_ty(p.ty) && lim_params(unbox(rest)),
+    };
+}
+
+// At least the parameters' slots together (params_size), when that is within
+// depth_limit() and each parameter's type within weight_limit().
+pub fn lim_param_slots(ps: List<SrcParam>) -> core::option::Option<usize> {
+    return match (ps) {
+        Nil -> Some(0),
+        Cons(p, rest) -> lim_bind(lim_slots(p.ty), true, lim_param_slots(unbox(rest))),
+    };
+}
+
+pub fn lim_funcs(fs: List<SrcFunc>) -> bool {
+    return match (fs) {
+        Nil -> true,
+        Cons(g, rest) -> lim_params(g.params) && !is_none_weight(lim_param_slots(g.params)) && lim_ty(g.ret) && !is_none_weight(lim_stmt(g.body)) && lim_funcs(unbox(rest)),
+    };
+}
+
 pub fn wide_left_stmt(s: SrcStmt) -> bool {
     return match (s) {
         Nop -> false,
@@ -13370,7 +13612,7 @@ pub fn wide_left_funcs(fs: List<SrcFunc>) -> bool {
 }
 
 pub fn untyped_rejected(fs: List<SrcFunc>) -> core::option::Option<SrcProgram> {
-    if (wide_left_funcs(fs)) {
+    if (wide_left_funcs(fs) || !lim_funcs(place_funcs(empty(), fs))) {
         return None;
     }
     return Some(placed_program(fs));

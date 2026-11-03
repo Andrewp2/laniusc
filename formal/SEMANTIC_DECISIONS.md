@@ -1914,6 +1914,23 @@ its reference type. Besides these leaves it needs, at least:
 - `Keeps` that lets a callee change the caller's cells through references;
 - right-hand sides with effects (a call that writes the place's cell).
 
+**Stage 2's design points (decided 11-03, coordinator, on leafA's
+stage 2 plan).**
+- What a return may name: a function that has homes and returns a type
+  containing a slice is rejected unless the slice comes from a parameter.
+  It is conservative, it follows point 9's rule (rejected until a static
+  check shows it), and it can be relaxed later. The proof reads it as a
+  decidable fact on the lowered function: its return type has no slice, or
+  it has no homes. The same rule covers a `return` from inside a homed let,
+  and lets holding slices of inner homes.
+- Homed reads appear in statement positions only: the lowering never puts
+  a homed local's read or a dereference into a pure `Expr`.
+- The homes are recorded in the scope (`Binding.home`), and the reference
+  context is `RCtx.ofScope`, not a separate context; S3 and S6 are shaped
+  that way.
+- The proof's `under` bound becomes `< st.nextCell` (internal to the
+  proof; nothing in the compiler changes).
+
 **The trusted-base delta.** `Heap`, `Exec`, `Step` and the x86 side do not
 change: frame memory, `Frame`, and the 1-, 4- and 8-byte loads and stores
 are already there. The graph itself adds only untrusted definitions. Stage 1
@@ -2566,6 +2583,39 @@ same programs with the same binary. So the behaviour is unchanged for every
 accepted program, and a rejected one is still rejected as `None`. Whole-
 program sums need no size lemmas now. Per-function sums (a function's
 `code_size` and its pc offsets) are not covered by this check.
+
+## The front end's implementation limits (decided 11-03, F14)
+
+The type weights bound types that are weighed, but not every type is: a
+slice is never weighed, and a slice field or a let of slice type carries an
+element type whose weight grows with its depth through generic arguments.
+And nothing bounded the slots a function's lets need along one scope
+(`SrcStmt::depth`): monomorphization copies bodies, and wildcard arms are
+copied once per variant. The compiler's slot numbers, offsets and frame
+sizes are sums of these, so they had no bound below 2^64. The front end now
+checks both on the program it returns, the same kind of limit as the image
+limit:
+
+- Every type anywhere in the program, and every type inside one, has at most
+  `weight_limit()` (2^22) slots. `lim_slots` is the type's weight with a
+  `str`'s two slots and a view's length counted, and None past the limit.
+- Every function's lets need at most `depth_limit()` (2^40) slots along any
+  scope. `lim_stmt` follows `SrcStmt::depth`: a binding adds its type's
+  slots around its scope, and branches and match arms take the max.
+- Every function's parameters need at most `depth_limit()` slots together
+  (`params_size`; `lim_param_slots`). A struct's fields together are its
+  slot count, so the first limit already bounds them.
+- `untyped_rejected` rejects a program past any of these (`lim_funcs`). It runs
+  last, on the closed, monomorphized functions with their string
+  literals placed, so it sees the copies.
+
+A program past a limit is rejected as `None`. No real program comes
+near any of them: the largest checked-in arrays are 262144 elements, and 2^40
+slots along one scope is 2^18 nested lets of the largest type. The proof
+that the front end's output is within both is `frontEndWords_limits` in
+`Lanius/Faithful/SelfPre/Limits.lean` (FrontEndTypeSlots,
+FrontEndStmtDepthV2, FrontEndParamSlots). `buildClosed_sound` (`Mini/Reading/Lits.lean`) covers
+the new rejection: a program the front end returns is still the reading's.
 
 ## A function's code checked against the image limit first (decided 11-03, F14)
 

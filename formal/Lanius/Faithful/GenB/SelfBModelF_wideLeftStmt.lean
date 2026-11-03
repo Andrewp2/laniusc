@@ -5,6 +5,7 @@ import Lanius.Faithful.GenB.SelfBModelF_allWeighed
 import Lanius.Faithful.GenB.SelfBModelF_closeFuncs
 import Lanius.Faithful.GenB.SelfBModelF_funcsBytes
 import Lanius.Faithful.GenB.SelfBModelF_isEmptyUsize
+import Lanius.Faithful.GenB.SelfBModelF_limLeaf
 import Lanius.Faithful.GenB.SelfBModelF_negWideI32
 import Lanius.Faithful.GenB.SelfBModelN1
 import Lanius.Faithful.GenB.SelfBModelN2
@@ -14,8 +15,10 @@ import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Frontend.P.allWeighed
 import Lanius.Mini.Frontend.P.closeFuncs
 import Lanius.Mini.Frontend.P.collect
+import Lanius.Mini.Frontend.P.funcsBytes
 import Lanius.Mini.Frontend.P.funcsOnto
 import Lanius.Mini.Frontend.P.isEmptyUsize
+import Lanius.Mini.Frontend.P.limLeaf
 import Lanius.Mini.Frontend.P.negWideI32
 import Lanius.Mini.Frontend.P.rootInsts
 import Lanius.Mini.Frontend.P.wideLeftStmt
@@ -69,14 +72,14 @@ noncomputable section
 
 def Cost_untyped_rejected : Nat → List Lanius.Mini.SrcFunc → Nat
   | 0, x17 => 18446744073709551616
-  | n + 1, x17 => (if (Lanius.Mini.wideLeftFuncs x17) = true then 0 else (Cost_placed_program n x17))
+  | n + 1, x17 => (let k2 := 0; let k3 := (Cost_placed_program n x17); (if (Lanius.Mini.wideLeftFuncs x17) = true then k2 else ((Cost_place_funcs n ([] : List UInt8) x17) + (if (!(Lanius.Mini.limFuncs ((Lanius.Mini.placeFuncs (([] : List UInt8)) x17)))) = true then k2 else k3))))
 
 end
 noncomputable section
 
 def Pre_untyped_rejected : Nat → List Lanius.Mini.SrcFunc → Nat → Prop
   | 0, x17, b => True
-  | n + 1, x17, b => (if (Lanius.Mini.wideLeftFuncs x17) = true then True else (Pre_placed_program n x17 b))
+  | n + 1, x17, b => (let k3 := fun (b1 : Nat) => True; let k4 := fun (b1 : Nat) => (Pre_placed_program n x17 b1); (if (Lanius.Mini.wideLeftFuncs x17) = true then (k3 b) else ((Pre_place_funcs n ([] : List UInt8) x17 b) ∧ (∀ b5 : Nat, (Cost_place_funcs n ([] : List UInt8) x17) < b → b5 = b - (Cost_place_funcs n ([] : List UInt8) x17) → ((Pre_lim_funcs n (Lanius.Mini.placeFuncs (([] : List UInt8)) x17) b5) ∧ (if (!(Lanius.Mini.limFuncs ((Lanius.Mini.placeFuncs (([] : List UInt8)) x17)))) = true then (k3 b5) else (k4 b5)))))))
 
 end
 

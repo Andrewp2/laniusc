@@ -98,12 +98,12 @@ theorem bstep_tys_weight {spW sp : SrcProgram} {prims : Prims} {ix_tys_weight ix
     budget
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
 
-theorem bproof_payloads_weight {spW sp : SrcProgram} {prims : Prims} {ix_payloads_weight ix_flatten_tys ix_weight_add_to ix_tys_weight : Nat}
-    (fnW : spW.funcs[ix_payloads_weight]? = some (src_payloads_weight ix_flatten_tys ix_weight_add_to ix_tys_weight)) (fn : sp.funcs[ix_payloads_weight]? = some (src_payloads_weight ix_flatten_tys ix_weight_add_to ix_tys_weight))
+theorem bproof_payloads_weight {spW sp : SrcProgram} {prims : Prims} {ix_payloads_weight ix_weight_add_to ix_flatten_tys ix_tys_weight : Nat}
+    (fnW : spW.funcs[ix_payloads_weight]? = some (src_payloads_weight ix_weight_add_to ix_flatten_tys ix_tys_weight)) (fn : sp.funcs[ix_payloads_weight]? = some (src_payloads_weight ix_weight_add_to ix_flatten_tys ix_tys_weight))
     (np : prims.isPrim ix_payloads_weight = false)
     (back : Certified (∀ {n : Nat}, Stmt_payloads_weight sp prims ix_payloads_weight n))
-    (b_flatten_tys : Certified (∀ {n : Nat}, BStmt_flatten_tys spW sp prims ix_flatten_tys n))
     (b_weight_add_to : Certified (∀ {n : Nat}, BStmt_weight_add_to spW sp prims ix_weight_add_to n))
+    (b_flatten_tys : Certified (∀ {n : Nat}, BStmt_flatten_tys spW sp prims ix_flatten_tys n))
     (b_tys_weight : Certified (∀ {n : Nat}, BStmt_tys_weight spW sp prims ix_tys_weight n)) {n : Nat} :
     BStmt_payloads_weight spW sp prims ix_payloads_weight n := by
   intro x0 x1 x2 v0 v1 v2 w k b h r0 r1 r2 hb pre

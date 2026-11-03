@@ -39,24 +39,6 @@ theorem bproof_enum_src {spW sp : SrcProgram} {prims : Prims} {ix_enum_src ix_bo
     budget Cost_enum_src
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
 
-theorem bproof_weight_add {spW sp : SrcProgram} {prims : Prims} {ix_weight_add ix_weight_add_to : Nat}
-    (fnW : spW.funcs[ix_weight_add]? = some (src_weight_add ix_weight_add_to)) (fn : sp.funcs[ix_weight_add]? = some (src_weight_add ix_weight_add_to))
-    (np : prims.isPrim ix_weight_add = false)
-    (back : Certified (∀ {n : Nat}, Stmt_weight_add sp prims ix_weight_add n))
-    (b_weight_add_to : Certified (∀ {n : Nat}, BStmt_weight_add_to spW sp prims ix_weight_add_to n)) {n : Nat} :
-    BStmt_weight_add spW sp prims ix_weight_add n := by
-  intro x0 x1 v0 v1 w k b h r0 r1 hb pre
-  rcases n with _ | n
-  · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_weight_add [v0, v1] = some (w, k) ∧ 0 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_weight_add, List.length_cons, List.length_nil, if_true] at h ⊢
-    rw [Pre_weight_add.eq_def] at pre
-    simp only at pre
-    budget
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
-
 theorem bproof_weight_times {spW sp : SrcProgram} {prims : Prims} {ix_weight_times ix_times ix_weight_sum ix_weight_limit : Nat}
     (fnW : spW.funcs[ix_weight_times]? = some (src_weight_times ix_times ix_weight_sum ix_weight_limit)) (fn : sp.funcs[ix_weight_times]? = some (src_weight_times ix_times ix_weight_sum ix_weight_limit))
     (np : prims.isPrim ix_weight_times = false)
@@ -96,8 +78,26 @@ theorem bproof_weight_array {spW sp : SrcProgram} {prims : Prims} {ix_weight_arr
     budget
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
 
-theorem bstep_src_weight {spW sp : SrcProgram} {prims : Prims} {ix_src_weight ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_SrcType ix_weight_add_to ix_src_weights ix_variant_weights ix_weight_array : Nat}
-    (fnW : spW.funcs[ix_src_weight]? = some (src_src_weight ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_SrcType ix_src_weight ix_weight_add_to ix_src_weights ix_variant_weights ix_weight_array)) (fn : sp.funcs[ix_src_weight]? = some (src_src_weight ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_SrcType ix_src_weight ix_weight_add_to ix_src_weights ix_variant_weights ix_weight_array))
+theorem bproof_weight_add {spW sp : SrcProgram} {prims : Prims} {ix_weight_add ix_weight_add_to : Nat}
+    (fnW : spW.funcs[ix_weight_add]? = some (src_weight_add ix_weight_add_to)) (fn : sp.funcs[ix_weight_add]? = some (src_weight_add ix_weight_add_to))
+    (np : prims.isPrim ix_weight_add = false)
+    (back : Certified (∀ {n : Nat}, Stmt_weight_add sp prims ix_weight_add n))
+    (b_weight_add_to : Certified (∀ {n : Nat}, BStmt_weight_add_to spW sp prims ix_weight_add_to n)) {n : Nat} :
+    BStmt_weight_add spW sp prims ix_weight_add n := by
+  intro x0 x1 v0 v1 w k b h r0 r1 hb pre
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_weight_add [v0, v1] = some (w, k) ∧ 0 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_weight_add, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_weight_add.eq_def] at pre
+    simp only at pre
+    budget
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
+
+theorem bstep_src_weight {spW sp : SrcProgram} {prims : Prims} {ix_src_weight ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_SrcType ix_weight_add_to ix_weight_array ix_src_weights ix_variant_weights : Nat}
+    (fnW : spW.funcs[ix_src_weight]? = some (src_src_weight ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_SrcType ix_weight_add_to ix_weight_array ix_src_weight ix_src_weights ix_variant_weights)) (fn : sp.funcs[ix_src_weight]? = some (src_src_weight ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_SrcType ix_weight_add_to ix_weight_array ix_src_weight ix_src_weights ix_variant_weights))
     (np : prims.isPrim ix_src_weight = false)
     (back : Certified (∀ {n : Nat}, Stmt_src_weight sp prims ix_src_weight n))
     (pp_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType = false)
@@ -120,7 +120,7 @@ theorem bstep_src_weight {spW sp : SrcProgram} {prims : Prims} {ix_src_weight ix
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0⟩
 
 theorem bstep_src_weights {spW sp : SrcProgram} {prims : Prims} {ix_src_weights ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_src_weight ix_weight_add : Nat}
-    (fnW : spW.funcs[ix_src_weights]? = some (src_src_weights ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_src_weight ix_src_weights ix_weight_add)) (fn : sp.funcs[ix_src_weights]? = some (src_src_weights ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_src_weight ix_src_weights ix_weight_add))
+    (fnW : spW.funcs[ix_src_weights]? = some (src_src_weights ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_src_weight ix_weight_add ix_src_weights)) (fn : sp.funcs[ix_src_weights]? = some (src_src_weights ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_src_weight ix_weight_add ix_src_weights))
     (np : prims.isPrim ix_src_weights = false)
     (back : Certified (∀ {n : Nat}, Stmt_src_weights sp prims ix_src_weights n))
     (pp_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType = false)
@@ -138,8 +138,8 @@ theorem bstep_src_weights {spW sp : SrcProgram} {prims : Prims} {ix_src_weights 
     budget
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0⟩
 
-theorem bstep_variant_weights {spW sp : SrcProgram} {prims : Prims} {ix_variant_weights ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_src_weights ix_weight_add : Nat}
-    (fnW : spW.funcs[ix_variant_weights]? = some (src_variant_weights ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_src_weights ix_variant_weights ix_weight_add)) (fn : sp.funcs[ix_variant_weights]? = some (src_variant_weights ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_src_weights ix_variant_weights ix_weight_add))
+theorem bstep_variant_weights {spW sp : SrcProgram} {prims : Prims} {ix_variant_weights ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_weight_add ix_src_weights : Nat}
+    (fnW : spW.funcs[ix_variant_weights]? = some (src_variant_weights ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_weight_add ix_src_weights ix_variant_weights)) (fn : sp.funcs[ix_variant_weights]? = some (src_variant_weights ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_weight_add ix_src_weights ix_variant_weights))
     (np : prims.isPrim ix_variant_weights = false)
     (back : Certified (∀ {n : Nat}, Stmt_variant_weights sp prims ix_variant_weights n))
     (pp_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType = false)

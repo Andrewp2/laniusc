@@ -20,8 +20,9 @@ Run from the repository root. The stages, in dependency order:
   hb       hb_gen.py in its four modes: Faithful/SelfPre/{HB,SZ,TS,NB}.lean;
   pre      pre_certs.py: Faithful/SelfPre/GenP (build_files) and GenPC (the
            compile side, `--compile`). Only the modules already checked in are
-           written (lang keeps GenPC's SelfP02, whose proofs fail, out); a
-           module the generator makes beyond them is reported, not added;
+           written (lang keeps GenPC's SelfP02, whose proofs fail, out:
+           PRE_HELD_OUT, silently); any other module the generator makes beyond
+           them is reported, not added;
   trusted  (with --trusted only) builds topAxioms and the top theorems' modules
            (one pass of at most the time left) and runs trusted_check.py; when
            the definitions hash is the only problem, the new hash and constant
@@ -70,6 +71,10 @@ HB_TYPES = ['Lanius/Mini/Compiler/Types.lean', 'Lanius/Mini/Frontend/Types.lean'
 PRE = (('GenP', [], ['build_files']),
        ('GenPC', ['--compile', '--ns', 'Lanius.Faithful.SelfPre.Compile', '--base',
                   'Lanius.Faithful.SelfPre.CompileValues'], ['compile_source', 'binary_words']))
+# The modules the generator makes that lang keeps out on purpose: GenPC's
+# SelfP02 (the compile side's pre lemmas) has failing proofs until its open
+# leaves are proved (PreCompileSourceV4/NOTES.md); not written, not reported.
+PRE_HELD_OUT = {'GenPC': {'SelfP02.lean'}}
 # What the extraction's digest leaves out of formal/Lanius: the files the later stages write.
 DOWNSTREAM = ('Faithful/Gen/', 'Faithful/GenB/', 'Faithful/SelfPre/GenP/', 'Faithful/SelfPre/GenPC/') + tuple(
     'Faithful/SelfPre/' + name for _, name in HB_MODES)
@@ -334,6 +339,7 @@ class Regen:
                                                                     'Lanius/Faithful/GenB', out] + roots,
                 'pre_certs.py ' + d, cwd=FORMAL)
             ch, skipped = sync(out, os.path.join(SELFPRE, d), lambda n: n.endswith('.lean'), only_present=True)
+            skipped = [n for n in skipped if n not in PRE_HELD_OUT.get(d, ())]
             changed += [f'{d}/{n}' for n in ch]
             notes.append(f'{d} {time.time() - t:.1f} s' + (f' (not added: {", ".join(skipped)})' if skipped else ''))
         record('pre', digest(), changed)

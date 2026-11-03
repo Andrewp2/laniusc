@@ -25,7 +25,7 @@ open Lanius.Faithful.SelfCert
 open Lanius.Faithful.Budget
 
 theorem bstep_place_funcs {spW sp : SrcProgram} {prims : Prims} {ix_place_funcs ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc ix_concat_of_u8 ix_empty_of_mini_selfhost_SrcFunc ix_cons_of_mini_selfhost_SrcFunc ix_place_stmt ix_stmt_bytes : Nat}
-    (fnW : spW.funcs[ix_place_funcs]? = some (src_place_funcs ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc ix_concat_of_u8 ix_empty_of_mini_selfhost_SrcFunc ix_cons_of_mini_selfhost_SrcFunc ix_place_funcs ix_place_stmt ix_stmt_bytes)) (fn : sp.funcs[ix_place_funcs]? = some (src_place_funcs ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc ix_concat_of_u8 ix_empty_of_mini_selfhost_SrcFunc ix_cons_of_mini_selfhost_SrcFunc ix_place_funcs ix_place_stmt ix_stmt_bytes))
+    (fnW : spW.funcs[ix_place_funcs]? = some (src_place_funcs ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc ix_concat_of_u8 ix_empty_of_mini_selfhost_SrcFunc ix_place_funcs ix_cons_of_mini_selfhost_SrcFunc ix_place_stmt ix_stmt_bytes)) (fn : sp.funcs[ix_place_funcs]? = some (src_place_funcs ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc ix_concat_of_u8 ix_empty_of_mini_selfhost_SrcFunc ix_place_funcs ix_cons_of_mini_selfhost_SrcFunc ix_place_stmt ix_stmt_bytes))
     (np : prims.isPrim ix_place_funcs = false)
     (back : Certified (∀ {n : Nat}, Stmt_place_funcs sp prims ix_place_funcs n))
     (pp_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc = false)
@@ -47,7 +47,7 @@ theorem bstep_place_funcs {spW sp : SrcProgram} {prims : Prims} {ix_place_funcs 
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
 
 theorem bstep_funcs_bytes {spW sp : SrcProgram} {prims : Prims} {ix_funcs_bytes ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc ix_empty_of_u8 ix_concat_of_u8 ix_stmt_bytes : Nat}
-    (fnW : spW.funcs[ix_funcs_bytes]? = some (src_funcs_bytes ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc ix_empty_of_u8 ix_concat_of_u8 ix_funcs_bytes ix_stmt_bytes)) (fn : sp.funcs[ix_funcs_bytes]? = some (src_funcs_bytes ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc ix_empty_of_u8 ix_concat_of_u8 ix_funcs_bytes ix_stmt_bytes))
+    (fnW : spW.funcs[ix_funcs_bytes]? = some (src_funcs_bytes ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc ix_empty_of_u8 ix_concat_of_u8 ix_stmt_bytes ix_funcs_bytes)) (fn : sp.funcs[ix_funcs_bytes]? = some (src_funcs_bytes ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc ix_empty_of_u8 ix_concat_of_u8 ix_stmt_bytes ix_funcs_bytes))
     (np : prims.isPrim ix_funcs_bytes = false)
     (back : Certified (∀ {n : Nat}, Stmt_funcs_bytes sp prims ix_funcs_bytes n))
     (pp_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc = false)

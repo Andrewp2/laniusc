@@ -22,14 +22,14 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.SelfCert
 open Lanius.Faithful.Budget
 
-theorem bstep_place_stmt {spW sp : SrcProgram} {prims : Prims} {ix_place_stmt ix_unbox_of_mini_selfhost_SrcStmt ix_concat_of_u8 ix_boxed_of_mini_selfhost_SrcStmt ix_stmt_bytes ix_place_eff ix_eff_bytes : Nat}
-    (fnW : spW.funcs[ix_place_stmt]? = some (src_place_stmt ix_unbox_of_mini_selfhost_SrcStmt ix_concat_of_u8 ix_boxed_of_mini_selfhost_SrcStmt ix_place_stmt ix_stmt_bytes ix_place_eff ix_eff_bytes)) (fn : sp.funcs[ix_place_stmt]? = some (src_place_stmt ix_unbox_of_mini_selfhost_SrcStmt ix_concat_of_u8 ix_boxed_of_mini_selfhost_SrcStmt ix_place_stmt ix_stmt_bytes ix_place_eff ix_eff_bytes))
+theorem bstep_place_stmt {spW sp : SrcProgram} {prims : Prims} {ix_place_stmt ix_unbox_of_mini_selfhost_SrcStmt ix_concat_of_u8 ix_stmt_bytes ix_boxed_of_mini_selfhost_SrcStmt ix_place_eff ix_eff_bytes : Nat}
+    (fnW : spW.funcs[ix_place_stmt]? = some (src_place_stmt ix_unbox_of_mini_selfhost_SrcStmt ix_concat_of_u8 ix_place_stmt ix_stmt_bytes ix_boxed_of_mini_selfhost_SrcStmt ix_place_eff ix_eff_bytes)) (fn : sp.funcs[ix_place_stmt]? = some (src_place_stmt ix_unbox_of_mini_selfhost_SrcStmt ix_concat_of_u8 ix_place_stmt ix_stmt_bytes ix_boxed_of_mini_selfhost_SrcStmt ix_place_eff ix_eff_bytes))
     (np : prims.isPrim ix_place_stmt = false)
     (back : Certified (∀ {n : Nat}, Stmt_place_stmt sp prims ix_place_stmt n))
     (pp_unbox_of_mini_selfhost_SrcStmt : prims.isPrim ix_unbox_of_mini_selfhost_SrcStmt = true) (bx_unbox_of_mini_selfhost_SrcStmt : prims.boxed.contains ix_unbox_of_mini_selfhost_SrcStmt = false)
     (b_concat_of_u8 : Certified (∀ {n : Nat}, BStmt_concat_of_u8 spW sp prims ix_concat_of_u8 n))
-    (pp_boxed_of_mini_selfhost_SrcStmt : prims.isPrim ix_boxed_of_mini_selfhost_SrcStmt = true) (bx_boxed_of_mini_selfhost_SrcStmt : prims.boxed.contains ix_boxed_of_mini_selfhost_SrcStmt = true)
     (b_stmt_bytes : Certified (∀ {n : Nat}, BStmt_stmt_bytes spW sp prims ix_stmt_bytes n))
+    (pp_boxed_of_mini_selfhost_SrcStmt : prims.isPrim ix_boxed_of_mini_selfhost_SrcStmt = true) (bx_boxed_of_mini_selfhost_SrcStmt : prims.boxed.contains ix_boxed_of_mini_selfhost_SrcStmt = true)
     (b_place_eff : Certified (∀ {n : Nat}, BStmt_place_eff spW sp prims ix_place_eff n))
     (b_eff_bytes : Certified (∀ {n : Nat}, BStmt_eff_bytes spW sp prims ix_eff_bytes n)) {n : Nat}
     (bih_place_stmt : Certified (BStmt_place_stmt spW sp prims ix_place_stmt n)) :

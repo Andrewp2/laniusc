@@ -111,7 +111,7 @@ theorem ok_close_funcs : FnOk prog prims info (648, ⟨19, [2], 0⟩) :=
 theorem ok_lowered_all : FnOk prog prims info (649, ⟨15, [3], 0⟩) :=
   fnOk_of fn_lowered_all (by decide +kernel)
 
-theorem ok_untyped_rejected : FnOk prog prims info (650, ⟨7, [], 0⟩) :=
+theorem ok_untyped_rejected : FnOk prog prims info (650, ⟨11, [], 0⟩) :=
   fnOk_of fn_untyped_rejected (by decide +kernel)
 
 theorem ok_lit_funcs : FnOk prog prims info (651, ⟨7, [1], 0⟩) :=

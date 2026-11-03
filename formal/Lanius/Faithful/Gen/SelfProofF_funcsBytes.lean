@@ -28,7 +28,7 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem step_funcs_bytes {prog : SrcProgram} {prims : Prims} {ix_funcs_bytes ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc ix_empty_of_u8 ix_concat_of_u8 ix_stmt_bytes : Nat} (fn : prog.funcs[ix_funcs_bytes]? = some (src_funcs_bytes ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc ix_empty_of_u8 ix_concat_of_u8 ix_funcs_bytes ix_stmt_bytes)) (np : prims.isPrim ix_funcs_bytes = false)
+theorem step_funcs_bytes {prog : SrcProgram} {prims : Prims} {ix_funcs_bytes ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc ix_empty_of_u8 ix_concat_of_u8 ix_stmt_bytes : Nat} (fn : prog.funcs[ix_funcs_bytes]? = some (src_funcs_bytes ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc ix_empty_of_u8 ix_concat_of_u8 ix_stmt_bytes ix_funcs_bytes)) (np : prims.isPrim ix_funcs_bytes = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc n))
     (ext_empty_of_u8 : Certified (∀ {n : Nat}, Stmt_empty_of_u8 prog prims ix_empty_of_u8 n))
     (ext_concat_of_u8 : Certified (∀ {n : Nat}, Stmt_concat_of_u8 prog prims ix_concat_of_u8 n))
@@ -40,7 +40,7 @@ theorem step_funcs_bytes {prog : SrcProgram} {prims : Prims} {ix_funcs_bytes ix_
   simp only [src_funcs_bytes] at h
   faithful [Lanius.Mini.funcsBytes]
 
-theorem step_place_funcs {prog : SrcProgram} {prims : Prims} {ix_place_funcs ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc ix_concat_of_u8 ix_empty_of_mini_selfhost_SrcFunc ix_cons_of_mini_selfhost_SrcFunc ix_place_stmt ix_stmt_bytes : Nat} (fn : prog.funcs[ix_place_funcs]? = some (src_place_funcs ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc ix_concat_of_u8 ix_empty_of_mini_selfhost_SrcFunc ix_cons_of_mini_selfhost_SrcFunc ix_place_funcs ix_place_stmt ix_stmt_bytes)) (np : prims.isPrim ix_place_funcs = false)
+theorem step_place_funcs {prog : SrcProgram} {prims : Prims} {ix_place_funcs ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc ix_concat_of_u8 ix_empty_of_mini_selfhost_SrcFunc ix_cons_of_mini_selfhost_SrcFunc ix_place_stmt ix_stmt_bytes : Nat} (fn : prog.funcs[ix_place_funcs]? = some (src_place_funcs ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc ix_concat_of_u8 ix_empty_of_mini_selfhost_SrcFunc ix_place_funcs ix_cons_of_mini_selfhost_SrcFunc ix_place_stmt ix_stmt_bytes)) (np : prims.isPrim ix_place_funcs = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc n))
     (ext_concat_of_u8 : Certified (∀ {n : Nat}, Stmt_concat_of_u8 prog prims ix_concat_of_u8 n))
     (ext_empty_of_mini_selfhost_SrcFunc : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_SrcFunc prog prims ix_empty_of_mini_selfhost_SrcFunc n))

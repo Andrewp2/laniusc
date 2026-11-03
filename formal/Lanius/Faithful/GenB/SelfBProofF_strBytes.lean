@@ -99,17 +99,17 @@ theorem bstep_stmt_bytes {spW sp : SrcProgram} {prims : Prims} {ix_stmt_bytes ix
     budget Cost_stmt_bytes
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0⟩
 
-theorem bstep_place_eff {spW sp : SrcProgram} {prims : Prims} {ix_place_eff ix_length_of_u8 ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_concat_of_u8 ix_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff ix_boxed_of_mini_selfhost_SrcEff ix_eff_bytes ix_place_effs : Nat}
-    (fnW : spW.funcs[ix_place_eff]? = some (src_place_eff ix_length_of_u8 ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_concat_of_u8 ix_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff ix_boxed_of_mini_selfhost_SrcEff ix_place_eff ix_eff_bytes ix_place_effs)) (fn : sp.funcs[ix_place_eff]? = some (src_place_eff ix_length_of_u8 ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_concat_of_u8 ix_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff ix_boxed_of_mini_selfhost_SrcEff ix_place_eff ix_eff_bytes ix_place_effs))
+theorem bstep_place_eff {spW sp : SrcProgram} {prims : Prims} {ix_place_eff ix_length_of_u8 ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_concat_of_u8 ix_eff_bytes ix_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff ix_boxed_of_mini_selfhost_SrcEff ix_place_effs : Nat}
+    (fnW : spW.funcs[ix_place_eff]? = some (src_place_eff ix_length_of_u8 ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_concat_of_u8 ix_place_eff ix_eff_bytes ix_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff ix_boxed_of_mini_selfhost_SrcEff ix_place_effs)) (fn : sp.funcs[ix_place_eff]? = some (src_place_eff ix_length_of_u8 ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_concat_of_u8 ix_place_eff ix_eff_bytes ix_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff ix_boxed_of_mini_selfhost_SrcEff ix_place_effs))
     (np : prims.isPrim ix_place_eff = false)
     (back : Certified (∀ {n : Nat}, Stmt_place_eff sp prims ix_place_eff n))
     (b_length_of_u8 : Certified (∀ {n : Nat}, BStmt_length_of_u8 spW sp prims ix_length_of_u8 n))
     (pp_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff = false)
     (pp_unbox_of_mini_selfhost_SrcEff : prims.isPrim ix_unbox_of_mini_selfhost_SrcEff = true) (bx_unbox_of_mini_selfhost_SrcEff : prims.boxed.contains ix_unbox_of_mini_selfhost_SrcEff = false)
     (b_concat_of_u8 : Certified (∀ {n : Nat}, BStmt_concat_of_u8 spW sp prims ix_concat_of_u8 n))
+    (b_eff_bytes : Certified (∀ {n : Nat}, BStmt_eff_bytes spW sp prims ix_eff_bytes n))
     (pp_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff : prims.isPrim ix_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff = true) (bx_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff : prims.boxed.contains ix_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff = true)
-    (pp_boxed_of_mini_selfhost_SrcEff : prims.isPrim ix_boxed_of_mini_selfhost_SrcEff = true) (bx_boxed_of_mini_selfhost_SrcEff : prims.boxed.contains ix_boxed_of_mini_selfhost_SrcEff = true)
-    (b_eff_bytes : Certified (∀ {n : Nat}, BStmt_eff_bytes spW sp prims ix_eff_bytes n)) {n : Nat}
+    (pp_boxed_of_mini_selfhost_SrcEff : prims.isPrim ix_boxed_of_mini_selfhost_SrcEff = true) (bx_boxed_of_mini_selfhost_SrcEff : prims.boxed.contains ix_boxed_of_mini_selfhost_SrcEff = true) {n : Nat}
     (bih_place_eff : Certified (BStmt_place_eff spW sp prims ix_place_eff n))
     (bih_place_effs : Certified (BStmt_place_effs spW sp prims ix_place_effs n)) :
     BStmt_place_eff spW sp prims ix_place_eff (n + 1) := by
@@ -123,14 +123,14 @@ theorem bstep_place_eff {spW sp : SrcProgram} {prims : Prims} {ix_place_eff ix_l
     budget Cost_place_eff
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
 
-theorem bstep_place_effs {spW sp : SrcProgram} {prims : Prims} {ix_place_effs ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_concat_of_u8 ix_empty_of_mini_selfhost_SrcEff ix_place_eff ix_eff_bytes ix_cons_of_mini_selfhost_SrcEff : Nat}
-    (fnW : spW.funcs[ix_place_effs]? = some (src_place_effs ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_concat_of_u8 ix_empty_of_mini_selfhost_SrcEff ix_place_eff ix_eff_bytes ix_cons_of_mini_selfhost_SrcEff ix_place_effs)) (fn : sp.funcs[ix_place_effs]? = some (src_place_effs ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_concat_of_u8 ix_empty_of_mini_selfhost_SrcEff ix_place_eff ix_eff_bytes ix_cons_of_mini_selfhost_SrcEff ix_place_effs))
+theorem bstep_place_effs {spW sp : SrcProgram} {prims : Prims} {ix_place_effs ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_concat_of_u8 ix_place_eff ix_eff_bytes ix_empty_of_mini_selfhost_SrcEff ix_cons_of_mini_selfhost_SrcEff : Nat}
+    (fnW : spW.funcs[ix_place_effs]? = some (src_place_effs ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_concat_of_u8 ix_place_eff ix_eff_bytes ix_empty_of_mini_selfhost_SrcEff ix_place_effs ix_cons_of_mini_selfhost_SrcEff)) (fn : sp.funcs[ix_place_effs]? = some (src_place_effs ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_concat_of_u8 ix_place_eff ix_eff_bytes ix_empty_of_mini_selfhost_SrcEff ix_place_effs ix_cons_of_mini_selfhost_SrcEff))
     (np : prims.isPrim ix_place_effs = false)
     (back : Certified (∀ {n : Nat}, Stmt_place_effs sp prims ix_place_effs n))
     (pp_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff = false)
     (b_concat_of_u8 : Certified (∀ {n : Nat}, BStmt_concat_of_u8 spW sp prims ix_concat_of_u8 n))
-    (b_empty_of_mini_selfhost_SrcEff : Certified (∀ {n : Nat}, BStmt_empty_of_mini_selfhost_SrcEff spW sp prims ix_empty_of_mini_selfhost_SrcEff n))
     (b_eff_bytes : Certified (∀ {n : Nat}, BStmt_eff_bytes spW sp prims ix_eff_bytes n))
+    (b_empty_of_mini_selfhost_SrcEff : Certified (∀ {n : Nat}, BStmt_empty_of_mini_selfhost_SrcEff spW sp prims ix_empty_of_mini_selfhost_SrcEff n))
     (b_cons_of_mini_selfhost_SrcEff : Certified (∀ {n : Nat}, BStmt_cons_of_mini_selfhost_SrcEff spW sp prims ix_cons_of_mini_selfhost_SrcEff n)) {n : Nat}
     (bih_place_eff : Certified (BStmt_place_eff spW sp prims ix_place_eff n))
     (bih_place_effs : Certified (BStmt_place_effs spW sp prims ix_place_effs n)) :

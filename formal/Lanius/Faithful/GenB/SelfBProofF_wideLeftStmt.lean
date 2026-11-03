@@ -8,6 +8,7 @@ import Lanius.Faithful.GenB.SelfBStmtF_collect
 import Lanius.Faithful.GenB.SelfBStmtF_funcsBytes
 import Lanius.Faithful.GenB.SelfBStmtF_funcsOnto
 import Lanius.Faithful.GenB.SelfBStmtF_isEmptyUsize
+import Lanius.Faithful.GenB.SelfBStmtF_limLeaf
 import Lanius.Faithful.GenB.SelfBStmtF_negWideI32
 import Lanius.Faithful.GenB.SelfBStmtF_rootInsts
 import Lanius.Faithful.GenB.SelfBStmtF_wideLeftStmt
@@ -71,11 +72,14 @@ theorem bstep_validate_files {spW sp : SrcProgram} {prims : Prims} {ix_validate_
     budget Cost_validate_files
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
 
-theorem bproof_untyped_rejected {spW sp : SrcProgram} {prims : Prims} {ix_untyped_rejected ix_wide_left_funcs ix_placed_program : Nat}
-    (fnW : spW.funcs[ix_untyped_rejected]? = some (src_untyped_rejected ix_wide_left_funcs ix_placed_program)) (fn : sp.funcs[ix_untyped_rejected]? = some (src_untyped_rejected ix_wide_left_funcs ix_placed_program))
+theorem bproof_untyped_rejected {spW sp : SrcProgram} {prims : Prims} {ix_untyped_rejected ix_empty_of_u8 ix_wide_left_funcs ix_lim_funcs ix_place_funcs ix_placed_program : Nat}
+    (fnW : spW.funcs[ix_untyped_rejected]? = some (src_untyped_rejected ix_empty_of_u8 ix_wide_left_funcs ix_lim_funcs ix_place_funcs ix_placed_program)) (fn : sp.funcs[ix_untyped_rejected]? = some (src_untyped_rejected ix_empty_of_u8 ix_wide_left_funcs ix_lim_funcs ix_place_funcs ix_placed_program))
     (np : prims.isPrim ix_untyped_rejected = false)
     (back : Certified (∀ {n : Nat}, Stmt_untyped_rejected sp prims ix_untyped_rejected n))
+    (b_empty_of_u8 : Certified (∀ {n : Nat}, BStmt_empty_of_u8 spW sp prims ix_empty_of_u8 n))
     (b_wide_left_funcs : Certified (∀ {n : Nat}, BStmt_wide_left_funcs spW sp prims ix_wide_left_funcs n))
+    (b_lim_funcs : Certified (∀ {n : Nat}, BStmt_lim_funcs spW sp prims ix_lim_funcs n))
+    (b_place_funcs : Certified (∀ {n : Nat}, BStmt_place_funcs spW sp prims ix_place_funcs n))
     (b_placed_program : Certified (∀ {n : Nat}, BStmt_placed_program spW sp prims ix_placed_program n)) {n : Nat} :
     BStmt_untyped_rejected spW sp prims ix_untyped_rejected n := by
   intro x0 v0 w k b h r0 hb pre

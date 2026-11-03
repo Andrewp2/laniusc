@@ -23,11 +23,6 @@ abbrev BStmt_enum_src (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
     qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 150 RepNat) x0 v0 → (RepOption 191 (RepList 77 (RepList 73 RepSrcType))) x1 v1 →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_enum_src n x0 x1 = k ∧ (RepOption 159 RepSrcType) (Lanius.Mini.enumSrc x0 x1) w
 
-abbrev BStmt_weight_add (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Nat} {x1 : Option Nat} {v0 v1 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 150 RepNat) x0 v0 → (RepOption 150 RepNat) x1 v1 → k < b → Pre_weight_add n x0 x1 b →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 150 RepNat) (Lanius.Mini.weightAdd x0 x1) w
-
 abbrev BStmt_weight_times (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {v0 v1 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepNat x0 v0 → RepNat x1 v1 → k < b → Pre_weight_times n x0 x1 b →
@@ -37,6 +32,11 @@ abbrev BStmt_weight_array (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : P
   ∀ {x0 : Nat} {x1 : Option Nat} {v0 v1 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepNat x0 v0 → (RepOption 150 RepNat) x1 v1 → k < b → Pre_weight_array n x0 x1 b →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 150 RepNat) (Lanius.Mini.weightArray x0 x1) w
+
+abbrev BStmt_weight_add (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Option Nat} {x1 : Option Nat} {v0 v1 w : Value} {k b : Nat},
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 150 RepNat) x0 v0 → (RepOption 150 RepNat) x1 v1 → k < b → Pre_weight_add n x0 x1 b →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 150 RepNat) (Lanius.Mini.weightAdd x0 x1) w
 
 abbrev BStmt_src_weight (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value} {k b : Nat},
