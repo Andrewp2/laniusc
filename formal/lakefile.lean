@@ -17,6 +17,11 @@ lean_lib Lanius
 lean_lib LaniusMini where
   globs := #[.submodules `Lanius.Mini]
 
+/-- Open statements, their reductions and proofs (OPEN_STATEMENTS.md): the
+gate builds the whole library. -/
+lean_lib LaniusOpen where
+  globs := #[.andSubmodules `Lanius.Open]
+
 /-- The precondition tactic (`pre_auto`, `post_auto`), compiled to native code
 so the generated SelfPre/GenP proofs do not run it in the interpreter. It
 imports only Lean and HBAttr; declared after `Lanius` so it owns these
