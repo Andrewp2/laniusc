@@ -97,6 +97,7 @@ theorem SrcType.HoldsAt.mono {places places' : List Addressed} (sub : ∀ x ∈ 
   | _, _, _, _, .sint h => .sint h
   | _, _, _, _, .view len h => .view len h
   | _, _, _, _, .str base len small bytes => .str base len small bytes
+  | _, _, _, _, .ref ⟨cell, path, value, x, mem, at_⟩ => .ref ⟨cell, path, value, x, sub _ mem, at_⟩
 
 theorem FieldsHold.mono {places places' : List Addressed} (sub : ∀ x ∈ places, x ∈ places') :
     ∀ {fs : List SrcType} {vs : List Value} {env : Env} {slot : Nat},

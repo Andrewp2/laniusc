@@ -690,6 +690,10 @@ theorem SrcType.HoldsAt.trunc : ∀ {ty : SrcType} {v : Value} {env : Env} {slot
     simp only [Nat.add_zero] at h0
     exact .str (by rw [slot_trunc h0 (fit64 _)]; exact pointer) (by rw [slot_trunc h1 (fit64 _)]; exact len)
       small bytes
+  | .ref _, _, env, slot, .ref held, _, _, _, _, agree => by
+    have h := agree 0 (by simp [SrcType.size])
+    simp only [Nat.add_zero] at h
+    exact .ref (by rw [slot_trunc h (fit64 _)]; exact held)
 
 theorem FieldsHold.trunc : ∀ {fs : List SrcType} {vs : List Value} {env : Env} {slot : Nat},
     FieldsHold sx places fs vs env slot → fieldsHomeOk fs = true → fieldsTagsFit fs = true →

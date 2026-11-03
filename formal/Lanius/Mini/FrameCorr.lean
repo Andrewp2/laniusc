@@ -193,18 +193,13 @@ theorem Addressed.view_u8 {x : Addressed} (h : x.sliced = true) {n : Nat} (ty : 
     (hp : Heap) (s : Nat) : x.view hp s = BitVec.ofNat 64 (hp.readLE (x.pointer + s) 1) := by
   simp [Addressed.view, Addressed.slotBytes, Addressed.pointer, h, ty]
 
-/-- A sliced array of other elements: slot `s` is the word `8 * s` below the
-pointer, so element `i` of `w` slots starts `8 * w * i` below it, as a raw
-slice's (`NativeLayout.elementBase?`). -/
+/-- A sliced place of another type: slot `s` is the word `8 * s` below the
+block's top slot, so element `i` of `w` slots starts `8 * w * i` below it, as
+a raw slice's (`NativeLayout.elementBase?`). -/
 theorem Addressed.view_word {x : Addressed} (h : x.sliced = true)
     (other : ∀ n, x.ty ≠ .array .i32 n ∧ x.ty ≠ .array (.uint .uint8) n) (hp : Heap) {s : Nat}
-    (lt : s < x.ty.size) : x.view hp s = BitVec.ofNat 64 (hp.readLE (x.pointer - 8 * s) 8) := by
-  have pointer : x.pointer = x.address + 8 * (x.ty.size - 1) := by
-    unfold Addressed.pointer
-    split
-    · rename_i n e; exact absurd e (other n).1
-    · rename_i n e; exact absurd e (other n).2
-    · rfl
+    (lt : s < x.ty.size) :
+    x.view hp s = BitVec.ofNat 64 (hp.readLE (x.address + 8 * (x.ty.size - 1) - 8 * s) 8) := by
   have bytes : x.slotBytes s = (x.address + 8 * (x.ty.size - 1 - s), 8) := by
     unfold Addressed.slotBytes
     rw [if_pos h]
@@ -212,7 +207,7 @@ theorem Addressed.view_word {x : Addressed} (h : x.sliced = true)
     · rename_i n e; exact absurd e (other n).1
     · rename_i n e; exact absurd e (other n).2
     · rfl
-  simp only [Addressed.view, bytes, pointer]
+  simp only [Addressed.view, bytes]
   congr 2
   omega
 
