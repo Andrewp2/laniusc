@@ -1,6 +1,7 @@
 import Lanius.Faithful.SelfPre.HBLib
 import Lanius.Faithful.GenB.SelfBModel4
 import Lanius.Mini.Reading.FloatBits
+import Lanius.Faithful.SelfPre.LinCert
 
 /-! # Values of the self compiler's numeric functions (F14)
 
