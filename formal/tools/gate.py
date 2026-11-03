@@ -93,6 +93,8 @@ STEPS = [
     ('self-current', ['faithful_current.py', '{w}'], ['src_dump', 'gen', 'genb', 'term', 'lani', 'laniusc', 'stdlib'], True),
     # F13: the top theorems' axioms are the standard three, and each statement is the one TRUSTED_BASE.md lists.
     ('trusted', ['trusted_check.py', '{w}'], ['trusted'], True),
+    # The open statements (OPEN_STATEMENTS.md): unchanged statements, well-formed reductions and proofs.
+    ('open', ['open_graph.py', 'check', '{w}'], ['open'], True),
     # The full tier: larger counts and the rest.
     ('mini-200', ['mini_difftest.py', '{w}', '--count', '200', '--seed', '{s}'], ['lean', 'laniusc', 'stdlib'], False),
     ('oracle-300', ['oracle_difftest.py', '{w}', '--count', '300', '--seed', '{s}'], ['lean', 'laniusc', 'stdlib'],
@@ -155,6 +157,7 @@ def inputs():
         'extract': run_cache.file_digest(os.path.join(run_cache.FORMAL, '.lake/build/bin/extract'))
         + run_cache.tree_digest(os.path.join(run_cache.FORMAL, 'Lanius')),
         'lani': run_cache.tree_digest(os.path.join(run_cache.FORMAL, 'lani')),
+        'open': run_cache.tree_digest(os.path.join(run_cache.FORMAL, 'Lanius/Open')),
         'tools': run_cache.tree_digest(os.path.join(ROOT, T)),
         # laniusc loads its kernels at run time from the shader artifacts its
         # build compiled from shaders/, so a shader-only change can leave the
@@ -225,7 +228,7 @@ def build():
                               'lake', 'build', *BUILT, 'LaniusMini', 'Lanius.Mini.FrontLex',
                               'Lanius.Mini.MutPilotCorrect', 'Lanius.Machines.SqliteStatementCorrect',
                               'Lanius.Machines.TlsLifecycleCorrect', 'Lanius.Machines.RunLowering',
-                              'Lanius.Faithful.SelfBounded', 'Lanius.Faithful.SelfPre'],
+                              'Lanius.Faithful.SelfBounded', 'Lanius.Faithful.SelfPre', 'LaniusOpen'],
                              cwd=run_cache.FORMAL, env=env, capture_output=True, text=True)
     if run.returncode != 0:
         raise SystemExit('lake build failed:\n' + run.stdout[-3000:] + run.stderr[-3000:])
