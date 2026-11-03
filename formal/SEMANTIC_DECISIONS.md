@@ -1040,7 +1040,29 @@ verified compiler's locals are 64-bit slots with no address. The design:
      (`((b as i32) as u32) as u64`): the extracted subset compares no
      `i32` and casts no `u8` to `u64`, and the `u8` comparison of a
      variable left the self program's certificate stuck. The self program
-     has no literals (its statics are empty: `selfHeap_statics`).
+     has no literals (its statics are empty: `selfHeap_statics`). (7) S2
+     (11-03): the front end reads `str`. `str` is a primitive type (`Ty.tyStr`,
+     `primNames`/`primTys`; a user type named `str` is no longer
+     well named), lowered to `SrcType.str`; no cast to `str` is read. A
+     string literal is read only as an argument of a non-generic call
+     (`MEff.xStr chars`, the Reading's `ArgList.str`, used by
+     `EffInfer.plain`), never as an expression on its own, so `let x: str =
+     "..";` is still read only in the raw-view shape (`LetStr`) and every
+     other reading stays deterministic; its bytes are plain ASCII, no
+     escapes (`StringInit`). Closing gives `eStr 0 chars`, and the last pass
+     places the literals (`placed_program`, a P function: each literal's
+     offset is the count of literal bytes before it in the program, functions
+     in order and each expression left to right, `eff_bytes`/`stmt_bytes`,
+     and the statics are all those bytes, `funcs_bytes`). The pass carries
+     the bytes before as a list, not a `Nat` sum, so F14's precondition
+     lemmas need no bound on an offset. The Reading's `ClosedProgram` is
+     `p = placedProgram gs`; this changes no meaning (`toCore` ignores
+     offsets and statics), and the compiler checks the placement anyway.
+     `write_text` and `write_newline` are the host ids `2^32 + 8` and
+     `2^32 + 9` (`hostId`). For leafA's memory model: a `str` value is two
+     slots (static address, byte count) and is read-only; nothing yet
+     makes a `str` from heap bytes, and a later `&str` or owned string would
+     be a separate type, not this one.
 7. **A static need per function (decided 11-01, step 3.5).** A function
    takes its whole block at entry (`frame_block`: 8 bytes per element of
    each array, parameter or let, it passes as a slice), by a prologue

@@ -66,6 +66,7 @@ theorem closeTy_sound {t : Tables} (ok : LoweredOk t) :
     | tyPtr => cases h; exact .ptr
     | tyIsize => cases h; exact .isize
     | tyChar => cases h; exact .char
+    | tyStr => cases h; exact .str
     | tyFloat ft => cases h; exact .float
     | tySint _ => cases h; exact .sint
     | tySlice e =>
@@ -141,6 +142,8 @@ inductive EffClosed (decls : Decls) (fns types : List Inst) : MEff → SrcEff �
       LowerR decls types ty s → EffClosed decls fns types v v' → LowerR decls types rt r →
       EffClosed decls fns types b b' → EffClosed decls fns types (.xLet id ty v rt b) (.eLet id s v' r b')
   | len {sl : Nat} : EffClosed decls fns types (.xLen sl) (.eLen sl)
+  /-- a string literal, at offset 0 until the literals are placed (`placedProgram`) -/
+  | str {cs : List Nat} : EffClosed decls fns types (.xStr cs) (.eStr 0 cs)
 
 inductive EffsClosed (decls : Decls) (fns types : List Inst) : List MEff → List SrcEff → Prop
   | nil : EffsClosed decls fns types [] []
@@ -229,6 +232,7 @@ theorem closeEff_sound {fuel : Nat} {t : Tables} (ok : LoweredOk t) :
     subst h
     exact .let (closeTy_sound ok ht) (closeEff_sound ok _ _ hv) (closeTy_sound ok hr) (closeEff_sound ok _ _ hb)
   | .xLen sl, s, h => by simp only [closeEff, Option.some.injEq] at h; subst h; exact .len
+  | .xStr cs, s, h => by simp only [closeEff, Option.some.injEq] at h; subst h; exact .str
 
 theorem closeEffs_sound {fuel : Nat} {t : Tables} (ok : LoweredOk t) :
     ∀ (xs : List MEff) (ss : List SrcEff), closeEffs fuel t xs = some ss → EffsClosed t.decls t.fns t.types xs ss

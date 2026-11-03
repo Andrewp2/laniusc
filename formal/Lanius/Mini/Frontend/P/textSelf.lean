@@ -133,7 +133,10 @@ def primitive (name : List Nat) : Option SrcType :=
                               if spelled3 name 102 54 52 then
                                 some (SrcType.float FloatTy.f64)
                               else
-                                none
+                                if spelled3 name 115 116 114 then
+                                  some SrcType.str
+                                else
+                                  none
 
 def member (names : List (List Nat)) (name : List Nat) : Bool :=
   match names with

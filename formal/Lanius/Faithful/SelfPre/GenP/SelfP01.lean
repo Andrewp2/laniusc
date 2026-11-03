@@ -22,6 +22,22 @@ theorem post_cons_of_usize : ∀ (n : Nat) (x0 : Nat) (x1 : List Nat), ∀ M : N
   · exact absurd h (Nat.lt_irrefl _)
   · simp only [Cost_cons_of_usize, hb_cons, hb_nil, hb_simp]; omega
 
+theorem post_concat_of_u8 : ∀ (n : Nat) (x0 : List UInt8) (x1 : List UInt8), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_concat_of_u8 n x0 x1 < 18446744073709551616 → hb (x0 ++ x1) ≤ M + Cost_concat_of_u8 n x0 x1
+  | 0, x0, x1, M, hM0, hM1, h => absurd h (Nat.lt_irrefl _)
+  | n + 1, [], x1, M, hM0, hM1, h => by simp only [List.nil_append]; omega
+  | n + 1, a :: x0, x1, M, hM0, hM1, h => by
+    simp only [Cost_concat_of_u8] at h ⊢
+    simp only [hb_cons, hb_simp] at hM0
+    have := post_concat_of_u8 n x0 x1 M (by omega) hM1 (by omega)
+    simp only [List.cons_append, hb_cons, hb_simp]
+    omega
+
+theorem post_cons_of_u8 : ∀ (n : Nat) (x0 : UInt8) (x1 : List UInt8), ∀ M : Nat, hb x1 ≤ M → Cost_cons_of_u8 n x0 x1 < 18446744073709551616 → hb (x0 :: x1) ≤ M + Cost_cons_of_u8 n x0 x1 := by
+  intro n x0 x1 M hM0 h
+  rcases n with _ | n
+  · exact absurd h (Nat.lt_irrefl _)
+  · simp only [Cost_cons_of_u8, hb_cons, hb_nil, hb_simp]; omega
+
 theorem post_single_of_usize : ∀ (n : Nat) (x0 : Nat), ∀ M : Nat, Cost_single_of_usize n x0 < 18446744073709551616 → hb ([x0]) ≤ M + Cost_single_of_usize n x0 := by
   intro n x0 M  h
   rcases n with _ | n
@@ -569,6 +585,22 @@ theorem post_text_fill_secure_bytes : ∀ (n : Nat), ∀ M : Nat, Cost_text_fill
   · simp [Cost_text_fill_secure_bytes] at h
   · simp [Cost_text_fill_secure_bytes, Cost_cons_of_usize, Cost_single_of_usize] at h
   · simp only [Cost_text_fill_secure_bytes, Cost_cons_of_usize, Cost_single_of_usize, Lanius.Mini.textFillSecureBytes, hb_cons, hb_nil, hb_simp]
+    omega
+
+theorem post_text_write_text : ∀ (n : Nat), ∀ M : Nat, Cost_text_write_text n < 18446744073709551616 → hb (Lanius.Mini.textWriteText) ≤ M + Cost_text_write_text n := by
+  intro n M h
+  rcases n with _ | _ | n
+  · simp [Cost_text_write_text] at h
+  · simp [Cost_text_write_text, Cost_cons_of_usize, Cost_single_of_usize] at h
+  · simp only [Cost_text_write_text, Cost_cons_of_usize, Cost_single_of_usize, Lanius.Mini.textWriteText, hb_cons, hb_nil, hb_simp]
+    omega
+
+theorem post_text_write_newline : ∀ (n : Nat), ∀ M : Nat, Cost_text_write_newline n < 18446744073709551616 → hb (Lanius.Mini.textWriteNewline) ≤ M + Cost_text_write_newline n := by
+  intro n M h
+  rcases n with _ | _ | n
+  · simp [Cost_text_write_newline] at h
+  · simp [Cost_text_write_newline, Cost_cons_of_usize, Cost_single_of_usize] at h
+  · simp only [Cost_text_write_newline, Cost_cons_of_usize, Cost_single_of_usize, Lanius.Mini.textWriteNewline, hb_cons, hb_nil, hb_simp]
     omega
 
 theorem post_extern_tree : ∀ (n : Nat) (x0 : Lanius.Mini.CTree), ∀ M : Nat, hb x0 ≤ M → Cost_extern_tree n x0 < 18446744073709551616 → hb (Lanius.Mini.externTree x0) ≤ M + Cost_extern_tree n x0 := by
@@ -1726,6 +1758,167 @@ theorem post_group_lowered_all : ∀ n : Nat,
   | succ n ih => exact post_step_lowered_all n ih
 theorem post_lowered_all : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.Decls) (x2 : List Lanius.Mini.Inst) (x3 : List Lanius.Mini.Inst), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → Cost_lowered_all n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.loweredAll x0 x1 x2 x3) ≤ M + Cost_lowered_all n x0 x1 x2 x3 :=
   fun n => (post_group_lowered_all n)
+
+theorem post_step_str_bytes (n : Nat) (ih :
+    (∀ (x0 : List Nat), ∀ M : Nat, hb x0 ≤ M → Cost_str_bytes n x0 < 18446744073709551616 → hb (Lanius.Mini.strBytes x0) ≤ M + Cost_str_bytes n x0)) :
+    ∀ (x0 : List Nat), ∀ M : Nat, hb x0 ≤ M → Cost_str_bytes (n + 1) x0 < 18446744073709551616 → hb (Lanius.Mini.strBytes x0) ≤ M + Cost_str_bytes (n + 1) x0 := by
+  have post_str_bytes := ih
+  intro x0 M hM0
+  rw [Cost_str_bytes.eq_def]; dsimp only
+  rw [Lanius.Mini.strBytes.eq_def x0]
+  post_auto n, M
+theorem post_group_str_bytes : ∀ n : Nat,
+    (∀ (x0 : List Nat), ∀ M : Nat, hb x0 ≤ M → Cost_str_bytes n x0 < 18446744073709551616 → hb (Lanius.Mini.strBytes x0) ≤ M + Cost_str_bytes n x0) := by
+  intro n
+  induction n with
+  | zero => exact fun x0 M hM0 h => absurd h (Nat.lt_irrefl _)
+  | succ n ih => exact post_step_str_bytes n ih
+theorem post_str_bytes : ∀ (n : Nat) (x0 : List Nat), ∀ M : Nat, hb x0 ≤ M → Cost_str_bytes n x0 < 18446744073709551616 → hb (Lanius.Mini.strBytes x0) ≤ M + Cost_str_bytes n x0 :=
+  fun n => (post_group_str_bytes n)
+
+theorem post_step_eff_bytes (n : Nat) (ih :
+    (∀ (x0 : Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → Cost_eff_bytes n x0 < 18446744073709551616 → hb (Lanius.Mini.effBytes x0) ≤ M + Cost_eff_bytes n x0) ∧
+    (∀ (x0 : List Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → Cost_effs_bytes n x0 < 18446744073709551616 → hb (Lanius.Mini.effsBytes x0) ≤ M + Cost_effs_bytes n x0)) :
+    ∀ (x0 : Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → Cost_eff_bytes (n + 1) x0 < 18446744073709551616 → hb (Lanius.Mini.effBytes x0) ≤ M + Cost_eff_bytes (n + 1) x0 := by
+  obtain ⟨post_eff_bytes, post_effs_bytes⟩ := ih
+  intro x0 M hM0
+  rw [Cost_eff_bytes.eq_def]; dsimp only
+  rw [Lanius.Mini.effBytes.eq_def x0]
+  post_auto n, M
+theorem post_step_effs_bytes (n : Nat) (ih :
+    (∀ (x0 : Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → Cost_eff_bytes n x0 < 18446744073709551616 → hb (Lanius.Mini.effBytes x0) ≤ M + Cost_eff_bytes n x0) ∧
+    (∀ (x0 : List Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → Cost_effs_bytes n x0 < 18446744073709551616 → hb (Lanius.Mini.effsBytes x0) ≤ M + Cost_effs_bytes n x0)) :
+    ∀ (x0 : List Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → Cost_effs_bytes (n + 1) x0 < 18446744073709551616 → hb (Lanius.Mini.effsBytes x0) ≤ M + Cost_effs_bytes (n + 1) x0 := by
+  obtain ⟨post_eff_bytes, post_effs_bytes⟩ := ih
+  intro x0 M hM0
+  rw [Cost_effs_bytes.eq_def]; dsimp only
+  rw [Lanius.Mini.effsBytes.eq_def x0]
+  post_auto n, M
+theorem post_group_eff_bytes : ∀ n : Nat,
+    (∀ (x0 : Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → Cost_eff_bytes n x0 < 18446744073709551616 → hb (Lanius.Mini.effBytes x0) ≤ M + Cost_eff_bytes n x0) ∧
+    (∀ (x0 : List Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → Cost_effs_bytes n x0 < 18446744073709551616 → hb (Lanius.Mini.effsBytes x0) ≤ M + Cost_effs_bytes n x0) := by
+  intro n
+  induction n with
+  | zero => exact ⟨fun x0 M hM0 h => absurd h (Nat.lt_irrefl _), fun x0 M hM0 h => absurd h (Nat.lt_irrefl _)⟩
+  | succ n ih => exact ⟨post_step_eff_bytes n ih, post_step_effs_bytes n ih⟩
+theorem post_eff_bytes : ∀ (n : Nat) (x0 : Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → Cost_eff_bytes n x0 < 18446744073709551616 → hb (Lanius.Mini.effBytes x0) ≤ M + Cost_eff_bytes n x0 :=
+  fun n => (post_group_eff_bytes n).1
+theorem post_effs_bytes : ∀ (n : Nat) (x0 : List Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → Cost_effs_bytes n x0 < 18446744073709551616 → hb (Lanius.Mini.effsBytes x0) ≤ M + Cost_effs_bytes n x0 :=
+  fun n => (post_group_eff_bytes n).2
+
+theorem post_step_stmt_bytes (n : Nat) (ih :
+    (∀ (x0 : Lanius.Mini.SrcStmt), ∀ M : Nat, hb x0 ≤ M → Cost_stmt_bytes n x0 < 18446744073709551616 → hb (Lanius.Mini.stmtBytes x0) ≤ M + Cost_stmt_bytes n x0)) :
+    ∀ (x0 : Lanius.Mini.SrcStmt), ∀ M : Nat, hb x0 ≤ M → Cost_stmt_bytes (n + 1) x0 < 18446744073709551616 → hb (Lanius.Mini.stmtBytes x0) ≤ M + Cost_stmt_bytes (n + 1) x0 := by
+  have post_stmt_bytes := ih
+  intro x0 M hM0
+  rw [Cost_stmt_bytes.eq_def]; dsimp only
+  rw [Lanius.Mini.stmtBytes.eq_def x0]
+  post_auto n, M
+theorem post_group_stmt_bytes : ∀ n : Nat,
+    (∀ (x0 : Lanius.Mini.SrcStmt), ∀ M : Nat, hb x0 ≤ M → Cost_stmt_bytes n x0 < 18446744073709551616 → hb (Lanius.Mini.stmtBytes x0) ≤ M + Cost_stmt_bytes n x0) := by
+  intro n
+  induction n with
+  | zero => exact fun x0 M hM0 h => absurd h (Nat.lt_irrefl _)
+  | succ n ih => exact post_step_stmt_bytes n ih
+theorem post_stmt_bytes : ∀ (n : Nat) (x0 : Lanius.Mini.SrcStmt), ∀ M : Nat, hb x0 ≤ M → Cost_stmt_bytes n x0 < 18446744073709551616 → hb (Lanius.Mini.stmtBytes x0) ≤ M + Cost_stmt_bytes n x0 :=
+  fun n => (post_group_stmt_bytes n)
+
+theorem post_step_place_eff (n : Nat) (ih :
+    (∀ (x0 : List UInt8) (x1 : Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_place_eff n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.placeEff x0 x1) ≤ M + Cost_place_eff n x0 x1) ∧
+    (∀ (x0 : List UInt8) (x1 : List Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_place_effs n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.placeEffs x0 x1) ≤ M + Cost_place_effs n x0 x1)) :
+    ∀ (x0 : List UInt8) (x1 : Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_place_eff (n + 1) x0 x1 < 18446744073709551616 → hb (Lanius.Mini.placeEff x0 x1) ≤ M + Cost_place_eff (n + 1) x0 x1 := by
+  obtain ⟨post_place_eff, post_place_effs⟩ := ih
+  intro x0 x1 M hM0 hM1
+  rw [Cost_place_eff.eq_def]; dsimp only
+  rw [Lanius.Mini.placeEff.eq_def x0 x1]
+  post_auto n, M
+theorem post_step_place_effs (n : Nat) (ih :
+    (∀ (x0 : List UInt8) (x1 : Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_place_eff n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.placeEff x0 x1) ≤ M + Cost_place_eff n x0 x1) ∧
+    (∀ (x0 : List UInt8) (x1 : List Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_place_effs n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.placeEffs x0 x1) ≤ M + Cost_place_effs n x0 x1)) :
+    ∀ (x0 : List UInt8) (x1 : List Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_place_effs (n + 1) x0 x1 < 18446744073709551616 → hb (Lanius.Mini.placeEffs x0 x1) ≤ M + Cost_place_effs (n + 1) x0 x1 := by
+  obtain ⟨post_place_eff, post_place_effs⟩ := ih
+  intro x0 x1 M hM0 hM1
+  rw [Cost_place_effs.eq_def]; dsimp only
+  rw [Lanius.Mini.placeEffs.eq_def x0 x1]
+  post_auto n, M
+theorem post_group_place_eff : ∀ n : Nat,
+    (∀ (x0 : List UInt8) (x1 : Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_place_eff n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.placeEff x0 x1) ≤ M + Cost_place_eff n x0 x1) ∧
+    (∀ (x0 : List UInt8) (x1 : List Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_place_effs n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.placeEffs x0 x1) ≤ M + Cost_place_effs n x0 x1) := by
+  intro n
+  induction n with
+  | zero => exact ⟨fun x0 x1 M hM0 hM1 h => absurd h (Nat.lt_irrefl _), fun x0 x1 M hM0 hM1 h => absurd h (Nat.lt_irrefl _)⟩
+  | succ n ih => exact ⟨post_step_place_eff n ih, post_step_place_effs n ih⟩
+theorem post_place_eff : ∀ (n : Nat) (x0 : List UInt8) (x1 : Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_place_eff n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.placeEff x0 x1) ≤ M + Cost_place_eff n x0 x1 :=
+  fun n => (post_group_place_eff n).1
+theorem post_place_effs : ∀ (n : Nat) (x0 : List UInt8) (x1 : List Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_place_effs n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.placeEffs x0 x1) ≤ M + Cost_place_effs n x0 x1 :=
+  fun n => (post_group_place_eff n).2
+
+theorem post_step_place_stmt (n : Nat) (ih :
+    (∀ (x0 : List UInt8) (x1 : Lanius.Mini.SrcStmt), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_place_stmt n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.placeStmt x0 x1) ≤ M + Cost_place_stmt n x0 x1)) :
+    ∀ (x0 : List UInt8) (x1 : Lanius.Mini.SrcStmt), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_place_stmt (n + 1) x0 x1 < 18446744073709551616 → hb (Lanius.Mini.placeStmt x0 x1) ≤ M + Cost_place_stmt (n + 1) x0 x1 := by
+  have post_place_stmt := ih
+  intro x0 x1 M hM0 hM1
+  rw [Cost_place_stmt.eq_def]; dsimp only
+  rw [Lanius.Mini.placeStmt.eq_def x0 x1]
+  post_auto n, M
+theorem post_group_place_stmt : ∀ n : Nat,
+    (∀ (x0 : List UInt8) (x1 : Lanius.Mini.SrcStmt), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_place_stmt n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.placeStmt x0 x1) ≤ M + Cost_place_stmt n x0 x1) := by
+  intro n
+  induction n with
+  | zero => exact fun x0 x1 M hM0 hM1 h => absurd h (Nat.lt_irrefl _)
+  | succ n ih => exact post_step_place_stmt n ih
+theorem post_place_stmt : ∀ (n : Nat) (x0 : List UInt8) (x1 : Lanius.Mini.SrcStmt), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_place_stmt n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.placeStmt x0 x1) ≤ M + Cost_place_stmt n x0 x1 :=
+  fun n => (post_group_place_stmt n)
+
+theorem post_step_place_funcs (n : Nat) (ih :
+    (∀ (x0 : List UInt8) (x1 : List Lanius.Mini.SrcFunc), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_place_funcs n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.placeFuncs x0 x1) ≤ M + Cost_place_funcs n x0 x1)) :
+    ∀ (x0 : List UInt8) (x1 : List Lanius.Mini.SrcFunc), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_place_funcs (n + 1) x0 x1 < 18446744073709551616 → hb (Lanius.Mini.placeFuncs x0 x1) ≤ M + Cost_place_funcs (n + 1) x0 x1 := by
+  have post_place_funcs := ih
+  intro x0 x1 M hM0 hM1
+  rw [Cost_place_funcs.eq_def]; dsimp only
+  rw [Lanius.Mini.placeFuncs.eq_def x0 x1]
+  post_auto n, M
+theorem post_group_place_funcs : ∀ n : Nat,
+    (∀ (x0 : List UInt8) (x1 : List Lanius.Mini.SrcFunc), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_place_funcs n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.placeFuncs x0 x1) ≤ M + Cost_place_funcs n x0 x1) := by
+  intro n
+  induction n with
+  | zero => exact fun x0 x1 M hM0 hM1 h => absurd h (Nat.lt_irrefl _)
+  | succ n ih => exact post_step_place_funcs n ih
+theorem post_place_funcs : ∀ (n : Nat) (x0 : List UInt8) (x1 : List Lanius.Mini.SrcFunc), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_place_funcs n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.placeFuncs x0 x1) ≤ M + Cost_place_funcs n x0 x1 :=
+  fun n => (post_group_place_funcs n)
+
+theorem post_step_funcs_bytes (n : Nat) (ih :
+    (∀ (x0 : List Lanius.Mini.SrcFunc), ∀ M : Nat, hb x0 ≤ M → Cost_funcs_bytes n x0 < 18446744073709551616 → hb (Lanius.Mini.funcsBytes x0) ≤ M + Cost_funcs_bytes n x0)) :
+    ∀ (x0 : List Lanius.Mini.SrcFunc), ∀ M : Nat, hb x0 ≤ M → Cost_funcs_bytes (n + 1) x0 < 18446744073709551616 → hb (Lanius.Mini.funcsBytes x0) ≤ M + Cost_funcs_bytes (n + 1) x0 := by
+  have post_funcs_bytes := ih
+  intro x0 M hM0
+  rw [Cost_funcs_bytes.eq_def]; dsimp only
+  rw [Lanius.Mini.funcsBytes.eq_def x0]
+  post_auto n, M
+theorem post_group_funcs_bytes : ∀ n : Nat,
+    (∀ (x0 : List Lanius.Mini.SrcFunc), ∀ M : Nat, hb x0 ≤ M → Cost_funcs_bytes n x0 < 18446744073709551616 → hb (Lanius.Mini.funcsBytes x0) ≤ M + Cost_funcs_bytes n x0) := by
+  intro n
+  induction n with
+  | zero => exact fun x0 M hM0 h => absurd h (Nat.lt_irrefl _)
+  | succ n ih => exact post_step_funcs_bytes n ih
+theorem post_funcs_bytes : ∀ (n : Nat) (x0 : List Lanius.Mini.SrcFunc), ∀ M : Nat, hb x0 ≤ M → Cost_funcs_bytes n x0 < 18446744073709551616 → hb (Lanius.Mini.funcsBytes x0) ≤ M + Cost_funcs_bytes n x0 :=
+  fun n => (post_group_funcs_bytes n)
+
+theorem post_placed_program : ∀ (n : Nat) (x0 : List Lanius.Mini.SrcFunc), ∀ M : Nat, hb x0 ≤ M → Cost_placed_program n x0 < 18446744073709551616 → hb (Lanius.Mini.placedProgram x0) ≤ M + Cost_placed_program n x0 := by
+  intro n x0 M hM0
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_placed_program.eq_def]; dsimp only
+  rw [Lanius.Mini.placedProgram.eq_def x0]
+  post_auto n, M
+
+theorem post_untyped_rejected : ∀ (n : Nat) (x0 : List Lanius.Mini.SrcFunc), ∀ M : Nat, hb x0 ≤ M → Cost_untyped_rejected n x0 < 18446744073709551616 → hb (Lanius.Mini.untypedRejected x0) ≤ M + Cost_untyped_rejected n x0 := by
+  intro n x0 M hM0
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_untyped_rejected.eq_def]; dsimp only
+  rw [Lanius.Mini.untypedRejected.eq_def x0]
+  post_auto n, M
 
 theorem post_sint_at : ∀ (n : Nat) (x0 : Lanius.Mini.UintTy) (x1 : BitVec 32) (x2 : Lanius.Mini.SrcExpr), ∀ M : Nat, hb x2 ≤ M → Cost_sint_at n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.sintAt x0 x1 x2) ≤ M + Cost_sint_at n x0 x1 x2 := by
   intro n x0 x1 x2 M hM0
@@ -3481,190 +3674,6 @@ theorem post_fl_push : ∀ (n : Nat) (x0 : List Bool) (x1 : Nat), ∀ M : Nat, h
   · intro h; exact absurd h (Nat.lt_irrefl _)
   rw [Cost_fl_push.eq_def]; dsimp only
   rw [Lanius.Mini.flPush.eq_def x0 x1]
-  post_auto n, M
-
-theorem post_fl_exp_sign_at : ∀ (n : Nat) (x0 : Nat) (x1 : List Nat) (x2 : List Bool) (x3 : Nat) (x4 : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → Cost_fl_exp_sign_at n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.Inline.flExpSignAt x0 x1 x2 x3 x4) ≤ M + Cost_fl_exp_sign_at n x0 x1 x2 x3 x4 := by
-  intro n x0 x1 x2 x3 x4 M hM0 hM1
-  rcases n with _ | n
-  · intro h; exact absurd h (Nat.lt_irrefl _)
-  rw [Cost_fl_exp_sign_at.eq_def]; dsimp only
-  rw [Lanius.Mini.Inline.flExpSignAt.eq_def x0 x1 x2 x3 x4]
-  post_auto n, M
-
-theorem post_fl_exp_sign : ∀ (n : Nat) (x0 : List Nat) (x1 : List Bool) (x2 : Nat) (x3 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_fl_exp_sign n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.flExpSign x0 x1 x2 x3) ≤ M + Cost_fl_exp_sign n x0 x1 x2 x3 := by
-  intro n x0 x1 x2 x3 M hM0 hM1
-  rcases n with _ | n
-  · intro h; exact absurd h (Nat.lt_irrefl _)
-  rw [Cost_fl_exp_sign.eq_def]; dsimp only
-  rw [Lanius.Mini.flExpSign.eq_def x0 x1 x2 x3]
-  post_auto n, M
-
-theorem post_fl_exp_at : ∀ (n : Nat) (x0 : Nat) (x1 : List Nat) (x2 : List Bool) (x3 : Nat) (x4 : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → Cost_fl_exp_at n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.Inline.flExpAt x0 x1 x2 x3 x4) ≤ M + Cost_fl_exp_at n x0 x1 x2 x3 x4 := by
-  intro n x0 x1 x2 x3 x4 M hM0 hM1
-  rcases n with _ | n
-  · intro h; exact absurd h (Nat.lt_irrefl _)
-  rw [Cost_fl_exp_at.eq_def]; dsimp only
-  rw [Lanius.Mini.Inline.flExpAt.eq_def x0 x1 x2 x3 x4]
-  post_auto n, M
-
-theorem post_fl_exp_part : ∀ (n : Nat) (x0 : List Nat) (x1 : List Bool) (x2 : Nat) (x3 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_fl_exp_part n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.flExpPart x0 x1 x2 x3) ≤ M + Cost_fl_exp_part n x0 x1 x2 x3 := by
-  intro n x0 x1 x2 x3 M hM0 hM1
-  rcases n with _ | n
-  · intro h; exact absurd h (Nat.lt_irrefl _)
-  rw [Cost_fl_exp_part.eq_def]; dsimp only
-  rw [Lanius.Mini.flExpPart.eq_def x0 x1 x2 x3]
-  post_auto n, M
-
-theorem post_step_fl_frac_part (n : Nat) (ih :
-    (∀ (x0 : List Nat) (x1 : List Bool) (x2 : Nat) (x3 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_fl_frac_part n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.flFracPart x0 x1 x2 x3) ≤ M + Cost_fl_frac_part n x0 x1 x2 x3) ∧
-    (∀ (x0 : Nat) (x1 : List Nat) (x2 : List Bool) (x3 : Nat) (x4 : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → Cost_fl_frac_at n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.Inline.flFracAt x0 x1 x2 x3 x4) ≤ M + Cost_fl_frac_at n x0 x1 x2 x3 x4)) :
-    ∀ (x0 : List Nat) (x1 : List Bool) (x2 : Nat) (x3 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_fl_frac_part (n + 1) x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.flFracPart x0 x1 x2 x3) ≤ M + Cost_fl_frac_part (n + 1) x0 x1 x2 x3 := by
-  obtain ⟨-, post_fl_frac_at⟩ := ih
-  intro x0 x1 x2 x3 M hM0 hM1
-  rw [Cost_fl_frac_part.eq_def]; dsimp only
-  rw [Lanius.Mini.flFracPart.eq_def x0 x1 x2 x3]
-  post_auto n, M
-theorem post_step_fl_frac_at (n : Nat) (ih :
-    (∀ (x0 : List Nat) (x1 : List Bool) (x2 : Nat) (x3 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_fl_frac_part n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.flFracPart x0 x1 x2 x3) ≤ M + Cost_fl_frac_part n x0 x1 x2 x3) ∧
-    (∀ (x0 : Nat) (x1 : List Nat) (x2 : List Bool) (x3 : Nat) (x4 : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → Cost_fl_frac_at n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.Inline.flFracAt x0 x1 x2 x3 x4) ≤ M + Cost_fl_frac_at n x0 x1 x2 x3 x4)) :
-    ∀ (x0 : Nat) (x1 : List Nat) (x2 : List Bool) (x3 : Nat) (x4 : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → Cost_fl_frac_at (n + 1) x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.Inline.flFracAt x0 x1 x2 x3 x4) ≤ M + Cost_fl_frac_at (n + 1) x0 x1 x2 x3 x4 := by
-  obtain ⟨post_fl_frac_part, -⟩ := ih
-  intro x0 x1 x2 x3 x4 M hM0 hM1
-  rw [Cost_fl_frac_at.eq_def]; dsimp only
-  rw [Lanius.Mini.Inline.flFracAt.eq_def x0 x1 x2 x3 x4]
-  post_auto n, M
-theorem post_group_fl_frac_part : ∀ n : Nat,
-    (∀ (x0 : List Nat) (x1 : List Bool) (x2 : Nat) (x3 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_fl_frac_part n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.flFracPart x0 x1 x2 x3) ≤ M + Cost_fl_frac_part n x0 x1 x2 x3) ∧
-    (∀ (x0 : Nat) (x1 : List Nat) (x2 : List Bool) (x3 : Nat) (x4 : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → Cost_fl_frac_at n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.Inline.flFracAt x0 x1 x2 x3 x4) ≤ M + Cost_fl_frac_at n x0 x1 x2 x3 x4) := by
-  intro n
-  induction n with
-  | zero => exact ⟨fun x0 x1 x2 x3 M hM0 hM1 h => absurd h (Nat.lt_irrefl _), fun x0 x1 x2 x3 x4 M hM0 hM1 h => absurd h (Nat.lt_irrefl _)⟩
-  | succ n ih => exact ⟨post_step_fl_frac_part n ih, post_step_fl_frac_at n ih⟩
-theorem post_fl_frac_part : ∀ (n : Nat) (x0 : List Nat) (x1 : List Bool) (x2 : Nat) (x3 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_fl_frac_part n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.flFracPart x0 x1 x2 x3) ≤ M + Cost_fl_frac_part n x0 x1 x2 x3 :=
-  fun n => (post_group_fl_frac_part n).1
-theorem post_fl_frac_at : ∀ (n : Nat) (x0 : Nat) (x1 : List Nat) (x2 : List Bool) (x3 : Nat) (x4 : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → Cost_fl_frac_at n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.Inline.flFracAt x0 x1 x2 x3 x4) ≤ M + Cost_fl_frac_at n x0 x1 x2 x3 x4 :=
-  fun n => (post_group_fl_frac_part n).2
-
-theorem post_step_fl_int_part (n : Nat) (ih :
-    (∀ (x0 : List Nat) (x1 : List Bool) (x2 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_fl_int_part n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.flIntPart x0 x1 x2) ≤ M + Cost_fl_int_part n x0 x1 x2) ∧
-    (∀ (x0 : Nat) (x1 : List Nat) (x2 : List Bool) (x3 : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → Cost_fl_int_at n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.Inline.flIntAt x0 x1 x2 x3) ≤ M + Cost_fl_int_at n x0 x1 x2 x3)) :
-    ∀ (x0 : List Nat) (x1 : List Bool) (x2 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_fl_int_part (n + 1) x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.flIntPart x0 x1 x2) ≤ M + Cost_fl_int_part (n + 1) x0 x1 x2 := by
-  obtain ⟨-, post_fl_int_at⟩ := ih
-  intro x0 x1 x2 M hM0 hM1
-  rw [Cost_fl_int_part.eq_def]; dsimp only
-  rw [Lanius.Mini.flIntPart.eq_def x0 x1 x2]
-  post_auto n, M
-theorem post_step_fl_int_at (n : Nat) (ih :
-    (∀ (x0 : List Nat) (x1 : List Bool) (x2 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_fl_int_part n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.flIntPart x0 x1 x2) ≤ M + Cost_fl_int_part n x0 x1 x2) ∧
-    (∀ (x0 : Nat) (x1 : List Nat) (x2 : List Bool) (x3 : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → Cost_fl_int_at n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.Inline.flIntAt x0 x1 x2 x3) ≤ M + Cost_fl_int_at n x0 x1 x2 x3)) :
-    ∀ (x0 : Nat) (x1 : List Nat) (x2 : List Bool) (x3 : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → Cost_fl_int_at (n + 1) x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.Inline.flIntAt x0 x1 x2 x3) ≤ M + Cost_fl_int_at (n + 1) x0 x1 x2 x3 := by
-  obtain ⟨post_fl_int_part, -⟩ := ih
-  intro x0 x1 x2 x3 M hM0 hM1
-  rw [Cost_fl_int_at.eq_def]; dsimp only
-  rw [Lanius.Mini.Inline.flIntAt.eq_def x0 x1 x2 x3]
-  post_auto n, M
-theorem post_group_fl_int_part : ∀ n : Nat,
-    (∀ (x0 : List Nat) (x1 : List Bool) (x2 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_fl_int_part n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.flIntPart x0 x1 x2) ≤ M + Cost_fl_int_part n x0 x1 x2) ∧
-    (∀ (x0 : Nat) (x1 : List Nat) (x2 : List Bool) (x3 : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → Cost_fl_int_at n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.Inline.flIntAt x0 x1 x2 x3) ≤ M + Cost_fl_int_at n x0 x1 x2 x3) := by
-  intro n
-  induction n with
-  | zero => exact ⟨fun x0 x1 x2 M hM0 hM1 h => absurd h (Nat.lt_irrefl _), fun x0 x1 x2 x3 M hM0 hM1 h => absurd h (Nat.lt_irrefl _)⟩
-  | succ n ih => exact ⟨post_step_fl_int_part n ih, post_step_fl_int_at n ih⟩
-theorem post_fl_int_part : ∀ (n : Nat) (x0 : List Nat) (x1 : List Bool) (x2 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_fl_int_part n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.flIntPart x0 x1 x2) ≤ M + Cost_fl_int_part n x0 x1 x2 :=
-  fun n => (post_group_fl_int_part n).1
-theorem post_fl_int_at : ∀ (n : Nat) (x0 : Nat) (x1 : List Nat) (x2 : List Bool) (x3 : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → Cost_fl_int_at n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.Inline.flIntAt x0 x1 x2 x3) ≤ M + Cost_fl_int_at n x0 x1 x2 x3 :=
-  fun n => (post_group_fl_int_part n).2
-
-theorem post_step_fl_shl (n : Nat) (ih :
-    (∀ (x0 : List Bool) (x1 : Nat), ∀ M : Nat, hb x0 ≤ M → Cost_fl_shl n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.flShl x0 x1) ≤ M + Cost_fl_shl n x0 x1)) :
-    ∀ (x0 : List Bool) (x1 : Nat), ∀ M : Nat, hb x0 ≤ M → Cost_fl_shl (n + 1) x0 x1 < 18446744073709551616 → hb (Lanius.Mini.flShl x0 x1) ≤ M + Cost_fl_shl (n + 1) x0 x1 := by
-  have post_fl_shl := ih
-  intro x0 x1 M hM0
-  rw [Cost_fl_shl.eq_def]; dsimp only
-  rw [Lanius.Mini.flShl.eq_def x0 x1]
-  post_auto n, M
-theorem post_group_fl_shl : ∀ n : Nat,
-    (∀ (x0 : List Bool) (x1 : Nat), ∀ M : Nat, hb x0 ≤ M → Cost_fl_shl n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.flShl x0 x1) ≤ M + Cost_fl_shl n x0 x1) := by
-  intro n
-  induction n with
-  | zero => exact fun x0 x1 M hM0 h => absurd h (Nat.lt_irrefl _)
-  | succ n ih => exact post_step_fl_shl n ih
-theorem post_fl_shl : ∀ (n : Nat) (x0 : List Bool) (x1 : Nat), ∀ M : Nat, hb x0 ≤ M → Cost_fl_shl n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.flShl x0 x1) ≤ M + Cost_fl_shl n x0 x1 :=
-  fun n => (post_group_fl_shl n)
-
-theorem post_step_fl_sub (n : Nat) (ih :
-    (∀ (x0 : List Bool) (x1 : List Bool) (x2 : Bool), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_fl_sub n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.flSub x0 x1 x2) ≤ M + Cost_fl_sub n x0 x1 x2)) :
-    ∀ (x0 : List Bool) (x1 : List Bool) (x2 : Bool), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_fl_sub (n + 1) x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.flSub x0 x1 x2) ≤ M + Cost_fl_sub (n + 1) x0 x1 x2 := by
-  have post_fl_sub := ih
-  intro x0 x1 x2 M hM0 hM1
-  rw [Cost_fl_sub.eq_def]; dsimp only
-  rw [Lanius.Mini.flSub.eq_def x0 x1 x2]
-  post_auto n, M
-theorem post_group_fl_sub : ∀ n : Nat,
-    (∀ (x0 : List Bool) (x1 : List Bool) (x2 : Bool), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_fl_sub n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.flSub x0 x1 x2) ≤ M + Cost_fl_sub n x0 x1 x2) := by
-  intro n
-  induction n with
-  | zero => exact fun x0 x1 x2 M hM0 hM1 h => absurd h (Nat.lt_irrefl _)
-  | succ n ih => exact post_step_fl_sub n ih
-theorem post_fl_sub : ∀ (n : Nat) (x0 : List Bool) (x1 : List Bool) (x2 : Bool), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_fl_sub n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.flSub x0 x1 x2) ≤ M + Cost_fl_sub n x0 x1 x2 :=
-  fun n => (post_group_fl_sub n)
-
-theorem post_fl_div_step : ∀ (n : Nat) (x0 : Lanius.Mini.FlDiv) (x1 : Bool) (x2 : List Bool), ∀ M : Nat, hb x0 ≤ M → hb x2 ≤ M → Cost_fl_div_step n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.flDivStep x0 x1 x2) ≤ M + Cost_fl_div_step n x0 x1 x2 := by
-  intro n x0 x1 x2 M hM0 hM1
-  rcases n with _ | n
-  · intro h; exact absurd h (Nat.lt_irrefl _)
-  rw [Cost_fl_div_step.eq_def]; dsimp only
-  rw [Lanius.Mini.flDivStep.eq_def x0 x1 x2]
-  post_auto n, M
-
-theorem post_step_fl_divmod (n : Nat) (ih :
-    (∀ (x0 : List Bool) (x1 : List Bool), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_fl_divmod n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.flDivmod x0 x1) ≤ M + Cost_fl_divmod n x0 x1)) :
-    ∀ (x0 : List Bool) (x1 : List Bool), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_fl_divmod (n + 1) x0 x1 < 18446744073709551616 → hb (Lanius.Mini.flDivmod x0 x1) ≤ M + Cost_fl_divmod (n + 1) x0 x1 := by
-  have post_fl_divmod := ih
-  intro x0 x1 M hM0 hM1
-  rw [Cost_fl_divmod.eq_def]; dsimp only
-  rw [Lanius.Mini.flDivmod.eq_def x0 x1]
-  post_auto n, M
-theorem post_group_fl_divmod : ∀ n : Nat,
-    (∀ (x0 : List Bool) (x1 : List Bool), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_fl_divmod n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.flDivmod x0 x1) ≤ M + Cost_fl_divmod n x0 x1) := by
-  intro n
-  induction n with
-  | zero => exact fun x0 x1 M hM0 hM1 h => absurd h (Nat.lt_irrefl _)
-  | succ n ih => exact post_step_fl_divmod n ih
-theorem post_fl_divmod : ∀ (n : Nat) (x0 : List Bool) (x1 : List Bool), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_fl_divmod n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.flDivmod x0 x1) ≤ M + Cost_fl_divmod n x0 x1 :=
-  fun n => (post_group_fl_divmod n)
-
-theorem post_fl_round_up : ∀ (n : Nat) (x0 : Bool) (x1 : List Bool), ∀ M : Nat, hb x1 ≤ M → Cost_fl_round_up n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.flRoundUp x0 x1) ≤ M + Cost_fl_round_up n x0 x1 := by
-  intro n x0 x1 M hM0
-  rcases n with _ | n
-  · intro h; exact absurd h (Nat.lt_irrefl _)
-  rw [Cost_fl_round_up.eq_def]; dsimp only
-  rw [Lanius.Mini.flRoundUp.eq_def x0 x1]
-  post_auto n, M
-
-theorem post_step_fl_times10 (n : Nat) (ih :
-    (∀ (x0 : List Bool) (x1 : Nat), ∀ M : Nat, hb x0 ≤ M → Cost_fl_times10 n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.flTimes10 x0 x1) ≤ M + Cost_fl_times10 n x0 x1)) :
-    ∀ (x0 : List Bool) (x1 : Nat), ∀ M : Nat, hb x0 ≤ M → Cost_fl_times10 (n + 1) x0 x1 < 18446744073709551616 → hb (Lanius.Mini.flTimes10 x0 x1) ≤ M + Cost_fl_times10 (n + 1) x0 x1 := by
-  have post_fl_times10 := ih
-  intro x0 x1 M hM0
-  rw [Cost_fl_times10.eq_def]; dsimp only
-  rw [Lanius.Mini.flTimes10.eq_def x0 x1]
-  post_auto n, M
-theorem post_group_fl_times10 : ∀ n : Nat,
-    (∀ (x0 : List Bool) (x1 : Nat), ∀ M : Nat, hb x0 ≤ M → Cost_fl_times10 n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.flTimes10 x0 x1) ≤ M + Cost_fl_times10 n x0 x1) := by
-  intro n
-  induction n with
-  | zero => exact fun x0 x1 M hM0 h => absurd h (Nat.lt_irrefl _)
-  | succ n ih => exact post_step_fl_times10 n ih
-theorem post_fl_times10 : ∀ (n : Nat) (x0 : List Bool) (x1 : Nat), ∀ M : Nat, hb x0 ≤ M → Cost_fl_times10 n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.flTimes10 x0 x1) ≤ M + Cost_fl_times10 n x0 x1 :=
-  fun n => (post_group_fl_times10 n)
-
-theorem post_float_marker : ∀ (n : Nat) (x0 : Lanius.Mini.FlDec), ∀ M : Nat, hb x0 ≤ M → Cost_float_marker n x0 < 18446744073709551616 → hb (Lanius.Mini.floatMarker x0) ≤ M + Cost_float_marker n x0 := by
-  intro n x0 M hM0
-  rcases n with _ | n
-  · intro h; exact absurd h (Nat.lt_irrefl _)
-  rw [Cost_float_marker.eq_def]; dsimp only
-  rw [Lanius.Mini.floatMarker.eq_def x0]
   post_auto n, M
 
 end Lanius.Faithful.SelfPre

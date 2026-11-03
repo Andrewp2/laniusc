@@ -12,6 +12,7 @@ import all Lanius.Mini.Frontend.P.negWideI32
 import all Lanius.Mini.Frontend.P.shrFirst
 import all Lanius.Mini.Frontend.P.sintAt
 import all Lanius.Mini.Frontend.P.wideLeftStmt
+import all Lanius.Mini.Frontend.P.funcsBytes
 import all Lanius.Mini.Frontend.P.wideOf
 
 @[expose] public section
@@ -411,10 +412,14 @@ theorem litFuncs_sound (all : List SrcFunc) :
     simp only [litFuncs]; exact .cons ⟨rfl, rfl, litStmt_sound _ _ _ _⟩ (litFuncs_sound all rest)
 
 /-- The closed program: the functions closed against the tables, their
-literals typed, and no wide literal left without a type. -/
+literals typed, no wide literal left without a type, and the string
+literals placed (`placedProgram`: each literal's bytes appended to the
+statics in order and the literal naming their offset; a placement changes
+no Core meaning, `SrcEff.toCore` and `SrcProgram.toCore` ignore it, and the
+compiler checks it). -/
 def ClosedProgram (decls : Decls) (fns types : List Inst) (funcs : List MFunc) (p : SrcProgram) : Prop :=
-  ∃ fs, ListRel (FuncClosed decls fns types) funcs fs ∧ ListRel (LitFunc fs) fs p.funcs ∧
-    wideLeftFuncs p.funcs = false ∧ p.statics = []
+  ∃ fs gs, ListRel (FuncClosed decls fns types) funcs fs ∧ ListRel (LitFunc fs) fs gs ∧
+    wideLeftFuncs gs = false ∧ p = placedProgram gs
 
 theorem buildClosed_sound {fuel : Nat} {decls : Decls} {fns : List Inst} {types : Option (List Inst)}
     {funcs : List MFunc} {p : SrcProgram} (h : buildClosed fuel decls fns types funcs = some p) :
@@ -435,6 +440,6 @@ theorem buildClosed_sound {fuel : Nat} {decls : Decls} {fns : List Inst} {types 
         rw [hw] at h
         simp only [Bool.false_eq_true, if_false, Option.some.injEq] at h
         subst h
-        exact ⟨ts, rfl, fs, closeFuncs_sound (loweredAll_ok rfl) _ _ hc, litFuncs_sound fs fs, hw, rfl⟩
+        exact ⟨ts, rfl, fs, litFuncs fs fs, closeFuncs_sound (loweredAll_ok rfl) _ _ hc, litFuncs_sound fs fs, hw, rfl⟩
 
 end Lanius.Mini.Reading

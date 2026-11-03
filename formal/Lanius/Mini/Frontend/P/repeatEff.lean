@@ -32,6 +32,7 @@ def namedParts (t : Ty) : Option Inst :=
   | .tyPtr => none
   | .tyIsize => none
   | .tyChar => none
+  | .tyStr => none
   | .tyFloat ft => none
   | .tySlice e => none
   | .tyArray e n => none

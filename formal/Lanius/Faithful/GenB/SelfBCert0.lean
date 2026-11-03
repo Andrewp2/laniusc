@@ -73,6 +73,8 @@ import Lanius.Faithful.GenB.SelfBProof71
 import Lanius.Faithful.GenB.SelfBProof72
 import Lanius.Faithful.GenB.SelfBProof73
 import Lanius.Faithful.GenB.SelfBProof74
+import Lanius.Faithful.GenB.SelfBProof75
+import Lanius.Faithful.GenB.SelfBProof76
 import Lanius.Faithful.BudgetClosed
 import Lanius.Faithful.GenB.SelfBFree
 
@@ -275,101 +277,101 @@ theorem bcert_Expr_literal {n : Nat} :
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_low_bits {n : Nat} :
-    BStmt_low_bits progW prog prims 999 n := by
+    BStmt_low_bits progW prog prims 1000 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 999) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_low_bits prog prims 999 n) from ⟨@cert_low_bits⟩).out
+  have key := bfree (ix := 1000) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_low_bits prog prims 1000 n) from ⟨@cert_low_bits⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_optimize_neg {n : Nat} :
     BStmt_optimize_neg progW prog prims 686 n :=
-  @bproof_optimize_neg progW prog prims 686 332 693 999 (fnW_of (by decide) (by decide) fn_optimize_neg) fn_optimize_neg np_optimize_neg ⟨@cert_optimize_neg⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_Expr_literal⟩ ⟨@bcert_low_bits⟩ n
+  @bproof_optimize_neg progW prog prims 686 332 693 1000 (fnW_of (by decide) (by decide) fn_optimize_neg) fn_optimize_neg np_optimize_neg ⟨@cert_optimize_neg⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_Expr_literal⟩ ⟨@bcert_low_bits⟩ n
 
 theorem bcert_BinOp_folds {n : Nat} :
-    BStmt_BinOp_folds progW prog prims 1235 n := by
+    BStmt_BinOp_folds progW prog prims 1240 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1235) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_BinOp_folds prog prims 1235 n) from ⟨@cert_BinOp_folds⟩).out
+  have key := bfree (ix := 1240) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_BinOp_folds prog prims 1240 n) from ⟨@cert_BinOp_folds⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_BinOp_compute {n : Nat} :
-    BStmt_BinOp_compute progW prog prims 1431 n := by
+    BStmt_BinOp_compute progW prog prims 1438 n := by
   intro x0 x1 x2 v0 v1 v2 w k h r0 r1 r2
-  have key := bfree (ix := 1431) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_BinOp_compute prog prims 1431 n) from ⟨@cert_BinOp_compute⟩).out
+  have key := bfree (ix := 1438) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_BinOp_compute prog prims 1438 n) from ⟨@cert_BinOp_compute⟩).out
     (pcall_of_q key.1) r0 r1 r2⟩
 
 theorem bcert_Word_compute {n : Nat} :
-    BStmt_Word_compute progW prog prims 1236 n := by
+    BStmt_Word_compute progW prog prims 1241 n := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w k h r0 r1 r2 r3
-  have key := bfree (ix := 1236) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_Word_compute prog prims 1236 n) from ⟨@cert_Word_compute⟩).out
+  have key := bfree (ix := 1241) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_Word_compute prog prims 1241 n) from ⟨@cert_Word_compute⟩).out
     (pcall_of_q key.1) r0 r1 r2 r3⟩
 
 theorem bcert_optimize_both {n : Nat} :
-    BStmt_optimize_both progW prog prims 1000 n :=
-  @bproof_optimize_both progW prog prims 1000 332 1235 1236 (fnW_of (by decide) (by decide) fn_optimize_both) fn_optimize_both np_optimize_both ⟨@cert_optimize_both⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_BinOp_folds⟩ ⟨@bcert_Word_compute⟩ n
+    BStmt_optimize_both progW prog prims 1001 n :=
+  @bproof_optimize_both progW prog prims 1001 332 1240 1241 (fnW_of (by decide) (by decide) fn_optimize_both) fn_optimize_both np_optimize_both ⟨@cert_optimize_both⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_BinOp_folds⟩ ⟨@bcert_Word_compute⟩ n
 
 theorem bcert_BinOp_annihilates {n : Nat} :
-    BStmt_BinOp_annihilates progW prog prims 1237 n := by
+    BStmt_BinOp_annihilates progW prog prims 1242 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1237) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_BinOp_annihilates prog prims 1237 n) from ⟨@cert_BinOp_annihilates⟩).out
+  have key := bfree (ix := 1242) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_BinOp_annihilates prog prims 1242 n) from ⟨@cert_BinOp_annihilates⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_BinOp_commutes {n : Nat} :
-    BStmt_BinOp_commutes progW prog prims 1238 n := by
+    BStmt_BinOp_commutes progW prog prims 1243 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1238) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_BinOp_commutes prog prims 1238 n) from ⟨@cert_BinOp_commutes⟩).out
+  have key := bfree (ix := 1243) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_BinOp_commutes prog prims 1243 n) from ⟨@cert_BinOp_commutes⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_Word_same_operand {n : Nat} :
-    BStmt_Word_same_operand progW prog prims 1239 n := by
+    BStmt_Word_same_operand progW prog prims 1244 n := by
   intro x0 x1 x2 v0 v1 v2 w k h r0 r1 r2
-  have key := bfree (ix := 1239) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_Word_same_operand prog prims 1239 n) from ⟨@cert_Word_same_operand⟩).out
+  have key := bfree (ix := 1244) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_Word_same_operand prog prims 1244 n) from ⟨@cert_Word_same_operand⟩).out
     (pcall_of_q key.1) r0 r1 r2⟩
 
 theorem bcert_BinOp_unit {n : Nat} :
-    BStmt_BinOp_unit progW prog prims 1240 n := by
+    BStmt_BinOp_unit progW prog prims 1245 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1240) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_BinOp_unit prog prims 1240 n) from ⟨@cert_BinOp_unit⟩).out
+  have key := bfree (ix := 1245) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_BinOp_unit prog prims 1245 n) from ⟨@cert_BinOp_unit⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_Word_narrows {n : Nat} :
-    BStmt_Word_narrows progW prog prims 1544 n := by
+    BStmt_Word_narrows progW prog prims 1553 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1544) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_Word_narrows prog prims 1544 n) from ⟨@cert_Word_narrows⟩).out
+  have key := bfree (ix := 1553) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_Word_narrows prog prims 1553 n) from ⟨@cert_Word_narrows⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_Expr_narrow {n : Nat} :
-    BStmt_Expr_narrow progW prog prims 1432 n := by
+    BStmt_Expr_narrow progW prog prims 1439 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1432) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_Expr_narrow prog prims 1432 n) from ⟨@cert_Expr_narrow⟩).out
+  have key := bfree (ix := 1439) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_Expr_narrow prog prims 1439 n) from ⟨@cert_Expr_narrow⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_Word_keeps {n : Nat} :
-    BStmt_Word_keeps progW prog prims 1241 n := by
+    BStmt_Word_keeps progW prog prims 1246 n := by
   intro x0 x1 v0 v1 w k h r0 r1
-  have key := bfree (ix := 1241) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_Word_keeps prog prims 1241 n) from ⟨@cert_Word_keeps⟩).out
+  have key := bfree (ix := 1246) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_Word_keeps prog prims 1246 n) from ⟨@cert_Word_keeps⟩).out
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_optimize_left {n : Nat} :
-    BStmt_optimize_left progW prog prims 1001 n :=
-  @bproof_optimize_left progW prog prims 1001 332 1237 1238 1239 1240 1241 (fnW_of (by decide) (by decide) fn_optimize_left) fn_optimize_left np_optimize_left ⟨@cert_optimize_left⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_BinOp_annihilates⟩ ⟨@bcert_BinOp_commutes⟩ ⟨@bcert_Word_same_operand⟩ ⟨@bcert_BinOp_unit⟩ ⟨@bcert_Word_keeps⟩ n
+    BStmt_optimize_left progW prog prims 1002 n :=
+  @bproof_optimize_left progW prog prims 1002 332 1242 1243 1244 1245 1246 (fnW_of (by decide) (by decide) fn_optimize_left) fn_optimize_left np_optimize_left ⟨@cert_optimize_left⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_BinOp_annihilates⟩ ⟨@bcert_BinOp_commutes⟩ ⟨@bcert_Word_same_operand⟩ ⟨@bcert_BinOp_unit⟩ ⟨@bcert_Word_keeps⟩ n
 
 theorem bcert_optimize_right {n : Nat} :
-    BStmt_optimize_right progW prog prims 1002 n :=
-  @bproof_optimize_right progW prog prims 1002 332 1237 1239 1240 1241 (fnW_of (by decide) (by decide) fn_optimize_right) fn_optimize_right np_optimize_right ⟨@cert_optimize_right⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_BinOp_annihilates⟩ ⟨@bcert_Word_same_operand⟩ ⟨@bcert_BinOp_unit⟩ ⟨@bcert_Word_keeps⟩ n
+    BStmt_optimize_right progW prog prims 1003 n :=
+  @bproof_optimize_right progW prog prims 1003 332 1242 1244 1245 1246 (fnW_of (by decide) (by decide) fn_optimize_right) fn_optimize_right np_optimize_right ⟨@cert_optimize_right⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_BinOp_annihilates⟩ ⟨@bcert_Word_same_operand⟩ ⟨@bcert_BinOp_unit⟩ ⟨@bcert_Word_keeps⟩ n
 
 theorem bcert_optimize_binary {n : Nat} :
     BStmt_optimize_binary progW prog prims 687 n :=
-  @bproof_optimize_binary progW prog prims 687 332 693 1000 1001 1002 (fnW_of (by decide) (by decide) fn_optimize_binary) fn_optimize_binary np_optimize_binary ⟨@cert_optimize_binary⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_Expr_literal⟩ ⟨@bcert_optimize_both⟩ ⟨@bcert_optimize_left⟩ ⟨@bcert_optimize_right⟩ n
+  @bproof_optimize_binary progW prog prims 687 332 693 1001 1002 1003 (fnW_of (by decide) (by decide) fn_optimize_binary) fn_optimize_binary np_optimize_binary ⟨@cert_optimize_binary⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_Expr_literal⟩ ⟨@bcert_optimize_both⟩ ⟨@bcert_optimize_left⟩ ⟨@bcert_optimize_right⟩ n
 
 theorem bcert_bool_bits {n : Nat} :
     BStmt_bool_bits progW prog prims 495 n := by
@@ -379,29 +381,29 @@ theorem bcert_bool_bits {n : Nat} :
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_CmpOp_test {n : Nat} :
-    BStmt_CmpOp_test progW prog prims 1242 n := by
+    BStmt_CmpOp_test progW prog prims 1247 n := by
   intro x0 x1 x2 v0 v1 v2 w k h r0 r1 r2
-  have key := bfree (ix := 1242) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_CmpOp_test prog prims 1242 n) from ⟨@cert_CmpOp_test⟩).out
+  have key := bfree (ix := 1247) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_CmpOp_test prog prims 1247 n) from ⟨@cert_CmpOp_test⟩).out
     (pcall_of_q key.1) r0 r1 r2⟩
 
 theorem bcert_signed_key {n : Nat} :
-    BStmt_signed_key progW prog prims 1243 n := by
+    BStmt_signed_key progW prog prims 1248 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1243) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_signed_key prog prims 1243 n) from ⟨@cert_signed_key⟩).out
+  have key := bfree (ix := 1248) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_signed_key prog prims 1248 n) from ⟨@cert_signed_key⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_Word_test {n : Nat} :
-    BStmt_Word_test progW prog prims 1003 n := by
+    BStmt_Word_test progW prog prims 1004 n := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w k h r0 r1 r2 r3
-  have key := bfree (ix := 1003) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_Word_test prog prims 1003 n) from ⟨@cert_Word_test⟩).out
+  have key := bfree (ix := 1004) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_Word_test prog prims 1004 n) from ⟨@cert_Word_test⟩).out
     (pcall_of_q key.1) r0 r1 r2 r3⟩
 
 theorem bcert_optimize_compare {n : Nat} :
     BStmt_optimize_compare progW prog prims 688 n :=
-  @bproof_optimize_compare progW prog prims 688 332 495 693 1003 (fnW_of (by decide) (by decide) fn_optimize_compare) fn_optimize_compare np_optimize_compare ⟨@cert_optimize_compare⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_bool_bits⟩ ⟨@bcert_Expr_literal⟩ ⟨@bcert_Word_test⟩ n
+  @bproof_optimize_compare progW prog prims 688 332 495 693 1004 (fnW_of (by decide) (by decide) fn_optimize_compare) fn_optimize_compare np_optimize_compare ⟨@cert_optimize_compare⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_bool_bits⟩ ⟨@bcert_Expr_literal⟩ ⟨@bcert_Word_test⟩ n
 
 theorem bcerts_Expr_optimize : ∀ n, (BStmt_Expr_optimize progW prog prims 458 n) := by
   intro n
@@ -424,10 +426,10 @@ theorem bcert_fact_value {n : Nat} :
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_fact_or {n : Nat} :
-    BStmt_fact_or progW prog prims 1004 n := by
+    BStmt_fact_or progW prog prims 1005 n := by
   intro x0 x1 x2 v0 v1 v2 w k h r0 r1 r2
-  have key := bfree (ix := 1004) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_fact_or prog prims 1004 n) from ⟨@cert_fact_or⟩).out
+  have key := bfree (ix := 1005) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_fact_or prog prims 1005 n) from ⟨@cert_fact_or⟩).out
     (pcall_of_q key.1) r0 r1 r2⟩
 
 theorem bcerts_Expr_subst : ∀ n, (BStmt_Expr_subst progW prog prims 459 n) := by
@@ -444,126 +446,126 @@ theorem bcert_Expr_subst {n : Nat} :
   (bcerts_Expr_subst n)
 
 theorem bcert_Expr_mentions {n : Nat} :
-    BStmt_Expr_mentions progW prog prims 1246 n := by
+    BStmt_Expr_mentions progW prog prims 1251 n := by
   intro x0 x1 v0 v1 w k h r0 r1
-  have key := bfree (ix := 1246) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_Expr_mentions prog prims 1246 n) from ⟨@cert_Expr_mentions⟩).out
+  have key := bfree (ix := 1251) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_Expr_mentions prog prims 1251 n) from ⟨@cert_Expr_mentions⟩).out
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_fact_dies {n : Nat} :
-    BStmt_fact_dies progW prog prims 1439 n := by
+    BStmt_fact_dies progW prog prims 1446 n := by
   intro x0 x1 v0 v1 w k h r0 r1
-  have key := bfree (ix := 1439) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_fact_dies prog prims 1439 n) from ⟨@cert_fact_dies⟩).out
+  have key := bfree (ix := 1446) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_fact_dies prog prims 1446 n) from ⟨@cert_fact_dies⟩).out
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_none_dies {n : Nat} :
-    BStmt_none_dies progW prog prims 1546 n := by
+    BStmt_none_dies progW prog prims 1555 n := by
   intro x0 x1 v0 v1 w k h r0 r1
-  have key := bfree (ix := 1546) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_none_dies prog prims 1546 n) from ⟨@cert_none_dies⟩).out
+  have key := bfree (ix := 1555) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_none_dies prog prims 1555 n) from ⟨@cert_none_dies⟩).out
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_cons_of_mini_selfhost_Fact {n : Nat} :
-    BStmt_cons_of_mini_selfhost_Fact progW prog prims 1247 n :=
-  @bproof_cons_of_mini_selfhost_Fact progW prog prims 1247 1433 (fnW_of (by decide) (by decide) fn_cons_of_mini_selfhost_Fact) fn_cons_of_mini_selfhost_Fact np_cons_of_mini_selfhost_Fact ⟨@cert_cons_of_mini_selfhost_Fact⟩ np_boxed_of_mini_selfhost_List_mini_selfhost_Fact (by decide +kernel) n
+    BStmt_cons_of_mini_selfhost_Fact progW prog prims 1252 n :=
+  @bproof_cons_of_mini_selfhost_Fact progW prog prims 1252 1440 (fnW_of (by decide) (by decide) fn_cons_of_mini_selfhost_Fact) fn_cons_of_mini_selfhost_Fact np_cons_of_mini_selfhost_Fact ⟨@cert_cons_of_mini_selfhost_Fact⟩ np_boxed_of_mini_selfhost_List_mini_selfhost_Fact (by decide +kernel) n
 
 theorem bcert_kept {n : Nat} :
-    BStmt_kept progW prog prims 1615 n :=
-  @bproof_kept progW prog prims 1615 1246 1247 (fnW_of (by decide) (by decide) fn_kept) fn_kept np_kept ⟨@cert_kept⟩ ⟨@bcert_Expr_mentions⟩ ⟨@bcert_cons_of_mini_selfhost_Fact⟩ n
+    BStmt_kept progW prog prims 1627 n :=
+  @bproof_kept progW prog prims 1627 1251 1252 (fnW_of (by decide) (by decide) fn_kept) fn_kept np_kept ⟨@cert_kept⟩ ⟨@bcert_Expr_mentions⟩ ⟨@bcert_cons_of_mini_selfhost_Fact⟩ n
 
-theorem bcerts_kill : ∀ n, (BStmt_kill progW prog prims 1547 n) := by
+theorem bcerts_kill : ∀ n, (BStmt_kill progW prog prims 1556 n) := by
   intro n
   induction n with
   | zero =>
     exact (by intro x0 x1 v0 v1 w k h; simp only [qcall_zero, reduceCtorEq] at h)
   | succ n ih =>
-    have bih_kill : BStmt_kill progW prog prims 1547 n := ih
-    exact @bstep_kill progW prog prims 1547 279 1005 1615 (fnW_of (by decide) (by decide) fn_kill) fn_kill np_kill ⟨@cert_kill⟩ ⟨@bcert_empty_of_mini_selfhost_Fact⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_Fact (by decide +kernel) ⟨@bcert_kept⟩ n ⟨bih_kill⟩
+    have bih_kill : BStmt_kill progW prog prims 1556 n := ih
+    exact @bstep_kill progW prog prims 1556 279 1006 1627 (fnW_of (by decide) (by decide) fn_kill) fn_kill np_kill ⟨@cert_kill⟩ ⟨@bcert_empty_of_mini_selfhost_Fact⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_Fact (by decide +kernel) ⟨@bcert_kept⟩ n ⟨bih_kill⟩
 
 theorem bcert_kill {n : Nat} :
-    BStmt_kill progW prog prims 1547 n :=
+    BStmt_kill progW prog prims 1556 n :=
   (bcerts_kill n)
 
 theorem bcert_kill_tail {n : Nat} :
-    BStmt_kill_tail progW prog prims 1436 n :=
-  @bproof_kill_tail progW prog prims 1436 1546 1547 (fnW_of (by decide) (by decide) fn_kill_tail) fn_kill_tail np_kill_tail ⟨@cert_kill_tail⟩ ⟨@bcert_none_dies⟩ ⟨@bcert_kill⟩ n
+    BStmt_kill_tail progW prog prims 1443 n :=
+  @bproof_kill_tail progW prog prims 1443 1555 1556 (fnW_of (by decide) (by decide) fn_kill_tail) fn_kill_tail np_kill_tail ⟨@cert_kill_tail⟩ ⟨@bcert_none_dies⟩ ⟨@bcert_kill⟩ n
 
 theorem bcert_kill_prefix_at {n : Nat} :
-    BStmt_kill_prefix_at progW prog prims 1437 n :=
-  @bproof_kill_prefix_at progW prog prims 1437 1247 1439 (fnW_of (by decide) (by decide) fn_kill_prefix_at) fn_kill_prefix_at np_kill_prefix_at ⟨@cert_kill_prefix_at⟩ ⟨@bcert_cons_of_mini_selfhost_Fact⟩ ⟨@bcert_fact_dies⟩ n
+    BStmt_kill_prefix_at progW prog prims 1444 n :=
+  @bproof_kill_prefix_at progW prog prims 1444 1252 1446 (fnW_of (by decide) (by decide) fn_kill_prefix_at) fn_kill_prefix_at np_kill_prefix_at ⟨@cert_kill_prefix_at⟩ ⟨@bcert_cons_of_mini_selfhost_Fact⟩ ⟨@bcert_fact_dies⟩ n
 
-theorem bcerts_kill_prefix : ∀ n, (BStmt_kill_prefix progW prog prims 1249 n) := by
+theorem bcerts_kill_prefix : ∀ n, (BStmt_kill_prefix progW prog prims 1254 n) := by
   intro n
   induction n with
   | zero =>
     exact (by intro x0 x1 x2 v0 v1 v2 w k h; simp only [qcall_zero, reduceCtorEq] at h)
   | succ n ih =>
-    have bih_kill_prefix : BStmt_kill_prefix progW prog prims 1249 n := ih
-    exact @bstep_kill_prefix progW prog prims 1249 56 279 1005 1436 1437 (fnW_of (by decide) (by decide) fn_kill_prefix) fn_kill_prefix np_kill_prefix ⟨@cert_kill_prefix⟩ ⟨@bcert_minus⟩ ⟨@bcert_empty_of_mini_selfhost_Fact⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_Fact (by decide +kernel) ⟨@bcert_kill_tail⟩ ⟨@bcert_kill_prefix_at⟩ n ⟨bih_kill_prefix⟩
+    have bih_kill_prefix : BStmt_kill_prefix progW prog prims 1254 n := ih
+    exact @bstep_kill_prefix progW prog prims 1254 56 279 1006 1443 1444 (fnW_of (by decide) (by decide) fn_kill_prefix) fn_kill_prefix np_kill_prefix ⟨@cert_kill_prefix⟩ ⟨@bcert_minus⟩ ⟨@bcert_empty_of_mini_selfhost_Fact⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_Fact (by decide +kernel) ⟨@bcert_kill_tail⟩ ⟨@bcert_kill_prefix_at⟩ n ⟨bih_kill_prefix⟩
 
 theorem bcert_kill_prefix {n : Nat} :
-    BStmt_kill_prefix progW prog prims 1249 n :=
+    BStmt_kill_prefix progW prog prims 1254 n :=
   (bcerts_kill_prefix n)
 
 theorem bcert_extent_after {n : Nat} :
-    BStmt_extent_after progW prog prims 1438 n := by
+    BStmt_extent_after progW prog prims 1445 n := by
   intro x0 x1 x2 v0 v1 v2 w k h r0 r1 r2
-  have key := bfree (ix := 1438) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_extent_after prog prims 1438 n) from ⟨@cert_extent_after⟩).out
+  have key := bfree (ix := 1445) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_extent_after prog prims 1445 n) from ⟨@cert_extent_after⟩).out
     (pcall_of_q key.1) r0 r1 r2⟩
 
-theorem bcerts_dying_extent : ∀ n, (BStmt_dying_extent progW prog prims 1250 n) := by
+theorem bcerts_dying_extent : ∀ n, (BStmt_dying_extent progW prog prims 1255 n) := by
   intro n
   induction n with
   | zero =>
     exact (by intro x0 x1 x2 x3 v0 v1 v2 v3 w k b h; simp only [qcall_zero, reduceCtorEq] at h)
   | succ n ih =>
-    have bih_dying_extent : BStmt_dying_extent progW prog prims 1250 n := ih
-    exact @bstep_dying_extent progW prog prims 1250 75 1005 1438 1439 (fnW_of (by decide) (by decide) fn_dying_extent) fn_dying_extent np_dying_extent ⟨@cert_dying_extent⟩ ⟨@bcert_plus⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_Fact (by decide +kernel) ⟨@bcert_extent_after⟩ ⟨@bcert_fact_dies⟩ n ⟨bih_dying_extent⟩
+    have bih_dying_extent : BStmt_dying_extent progW prog prims 1255 n := ih
+    exact @bstep_dying_extent progW prog prims 1255 75 1006 1445 1446 (fnW_of (by decide) (by decide) fn_dying_extent) fn_dying_extent np_dying_extent ⟨@cert_dying_extent⟩ ⟨@bcert_plus⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_Fact (by decide +kernel) ⟨@bcert_extent_after⟩ ⟨@bcert_fact_dies⟩ n ⟨bih_dying_extent⟩
 
 theorem bcert_dying_extent {n : Nat} :
-    BStmt_dying_extent progW prog prims 1250 n :=
+    BStmt_dying_extent progW prog prims 1255 n :=
   (bcerts_dying_extent n)
 
 theorem bcert_kill_shared {n : Nat} :
-    BStmt_kill_shared progW prog prims 1007 n :=
-  @bproof_kill_shared progW prog prims 1007 1249 1250 (fnW_of (by decide) (by decide) fn_kill_shared) fn_kill_shared np_kill_shared ⟨@cert_kill_shared⟩ ⟨@bcert_kill_prefix⟩ ⟨@bcert_dying_extent⟩ n
+    BStmt_kill_shared progW prog prims 1008 n :=
+  @bproof_kill_shared progW prog prims 1008 1254 1255 (fnW_of (by decide) (by decide) fn_kill_shared) fn_kill_shared np_kill_shared ⟨@cert_kill_shared⟩ ⟨@bcert_kill_prefix⟩ ⟨@bcert_dying_extent⟩ n
 
 theorem bcert_Expr_is_atom {n : Nat} :
-    BStmt_Expr_is_atom progW prog prims 1245 n := by
+    BStmt_Expr_is_atom progW prog prims 1250 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1245) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_Expr_is_atom prog prims 1245 n) from ⟨@cert_Expr_is_atom⟩).out
+  have key := bfree (ix := 1250) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_Expr_is_atom prog prims 1250 n) from ⟨@cert_Expr_is_atom⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_longer {n : Nat} :
-    BStmt_longer progW prog prims 1434 n := by
+    BStmt_longer progW prog prims 1441 n := by
   intro x0 x1 v0 v1 w k h r0 r1
-  have key := bfree (ix := 1434) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_longer prog prims 1434 n) from ⟨@cert_longer⟩).out
+  have key := bfree (ix := 1441) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_longer prog prims 1441 n) from ⟨@cert_longer⟩).out
     (pcall_of_q key.1) r0 r1⟩
 
-theorem bcerts_first_facts : ∀ n, (BStmt_first_facts progW prog prims 1435 n) := by
+theorem bcerts_first_facts : ∀ n, (BStmt_first_facts progW prog prims 1442 n) := by
   intro n
   induction n with
   | zero =>
     exact (by intro x0 x1 v0 v1 w k h; simp only [qcall_zero, reduceCtorEq] at h)
   | succ n ih =>
-    have bih_first_facts : BStmt_first_facts progW prog prims 1435 n := ih
-    exact @bstep_first_facts progW prog prims 1435 56 279 1005 1247 (fnW_of (by decide) (by decide) fn_first_facts) fn_first_facts np_first_facts ⟨@cert_first_facts⟩ ⟨@bcert_minus⟩ ⟨@bcert_empty_of_mini_selfhost_Fact⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_Fact (by decide +kernel) ⟨@bcert_cons_of_mini_selfhost_Fact⟩ n ⟨bih_first_facts⟩
+    have bih_first_facts : BStmt_first_facts progW prog prims 1442 n := ih
+    exact @bstep_first_facts progW prog prims 1442 56 279 1006 1252 (fnW_of (by decide) (by decide) fn_first_facts) fn_first_facts np_first_facts ⟨@cert_first_facts⟩ ⟨@bcert_minus⟩ ⟨@bcert_empty_of_mini_selfhost_Fact⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_Fact (by decide +kernel) ⟨@bcert_cons_of_mini_selfhost_Fact⟩ n ⟨bih_first_facts⟩
 
 theorem bcert_first_facts {n : Nat} :
-    BStmt_first_facts progW prog prims 1435 n :=
+    BStmt_first_facts progW prog prims 1442 n :=
   (bcerts_first_facts n)
 
 theorem bcert_trim_facts {n : Nat} :
-    BStmt_trim_facts progW prog prims 1248 n :=
-  @bproof_trim_facts progW prog prims 1248 1434 1435 (fnW_of (by decide) (by decide) fn_trim_facts) fn_trim_facts np_trim_facts ⟨@cert_trim_facts⟩ ⟨@bcert_longer⟩ ⟨@bcert_first_facts⟩ n
+    BStmt_trim_facts progW prog prims 1253 n :=
+  @bproof_trim_facts progW prog prims 1253 1441 1442 (fnW_of (by decide) (by decide) fn_trim_facts) fn_trim_facts np_trim_facts ⟨@cert_trim_facts⟩ ⟨@bcert_longer⟩ ⟨@bcert_first_facts⟩ n
 
 theorem bcert_assigned {n : Nat} :
-    BStmt_assigned progW prog prims 1006 n :=
-  @bproof_assigned progW prog prims 1006 459 1007 1245 1246 1247 1248 (fnW_of (by decide) (by decide) fn_assigned) fn_assigned np_assigned ⟨@cert_assigned⟩ ⟨@bcert_Expr_subst⟩ ⟨@bcert_kill_shared⟩ ⟨@bcert_Expr_is_atom⟩ ⟨@bcert_Expr_mentions⟩ ⟨@bcert_cons_of_mini_selfhost_Fact⟩ ⟨@bcert_trim_facts⟩ n
+    BStmt_assigned progW prog prims 1007 n :=
+  @bproof_assigned progW prog prims 1007 459 1008 1250 1251 1252 1253 (fnW_of (by decide) (by decide) fn_assigned) fn_assigned np_assigned ⟨@cert_assigned⟩ ⟨@bcert_Expr_subst⟩ ⟨@bcert_kill_shared⟩ ⟨@bcert_Expr_is_atom⟩ ⟨@bcert_Expr_mentions⟩ ⟨@bcert_cons_of_mini_selfhost_Fact⟩ ⟨@bcert_trim_facts⟩ n
 
 theorem bcerts_Stmt_facts_after : ∀ n, (BStmt_Stmt_facts_after progW prog prims 690 n) := by
   intro n
@@ -572,38 +574,38 @@ theorem bcerts_Stmt_facts_after : ∀ n, (BStmt_Stmt_facts_after progW prog prim
     exact (by intro x0 x1 v0 v1 w k b h; simp only [qcall_zero, reduceCtorEq] at h)
   | succ n ih =>
     have bih_Stmt_facts_after : BStmt_Stmt_facts_after progW prog prims 690 n := ih
-    exact @bstep_Stmt_facts_after progW prog prims 690 279 302 1006 1007 (fnW_of (by decide) (by decide) fn_Stmt_facts_after) fn_Stmt_facts_after np_Stmt_facts_after ⟨@cert_Stmt_facts_after⟩ ⟨@bcert_empty_of_mini_selfhost_Fact⟩ np_unbox_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_assigned⟩ ⟨@bcert_kill_shared⟩ n ⟨bih_Stmt_facts_after⟩
+    exact @bstep_Stmt_facts_after progW prog prims 690 279 302 1007 1008 (fnW_of (by decide) (by decide) fn_Stmt_facts_after) fn_Stmt_facts_after np_Stmt_facts_after ⟨@cert_Stmt_facts_after⟩ ⟨@bcert_empty_of_mini_selfhost_Fact⟩ np_unbox_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_assigned⟩ ⟨@bcert_kill_shared⟩ n ⟨bih_Stmt_facts_after⟩
 
 theorem bcert_Stmt_facts_after {n : Nat} :
     BStmt_Stmt_facts_after progW prog prims 690 n :=
   (bcerts_Stmt_facts_after n)
 
 theorem bcert_mentions_any {n : Nat} :
-    BStmt_mentions_any progW prog prims 1253 n := by
+    BStmt_mentions_any progW prog prims 1258 n := by
   intro x0 x1 v0 v1 w k h r0 r1
-  have key := bfree (ix := 1253) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_mentions_any prog prims 1253 n) from ⟨@cert_mentions_any⟩).out
+  have key := bfree (ix := 1258) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_mentions_any prog prims 1258 n) from ⟨@cert_mentions_any⟩).out
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_Stmt_ignores {n : Nat} :
-    BStmt_Stmt_ignores progW prog prims 1251 n := by
+    BStmt_Stmt_ignores progW prog prims 1256 n := by
   intro x0 x1 v0 v1 w k h r0 r1
-  have key := bfree (ix := 1251) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_Stmt_ignores prog prims 1251 n) from ⟨@cert_Stmt_ignores⟩).out
+  have key := bfree (ix := 1256) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_Stmt_ignores prog prims 1256 n) from ⟨@cert_Stmt_ignores⟩).out
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_Stmt_jumps {n : Nat} :
-    BStmt_Stmt_jumps progW prog prims 1252 n := by
+    BStmt_Stmt_jumps progW prog prims 1257 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1252) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_Stmt_jumps prog prims 1252 n) from ⟨@cert_Stmt_jumps⟩).out
+  have key := bfree (ix := 1257) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_Stmt_jumps prog prims 1257 n) from ⟨@cert_Stmt_jumps⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_Stmt_kills {n : Nat} :
-    BStmt_Stmt_kills progW prog prims 1008 n := by
+    BStmt_Stmt_kills progW prog prims 1009 n := by
   intro x0 x1 v0 v1 w k h r0 r1
-  have key := bfree (ix := 1008) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_Stmt_kills prog prims 1008 n) from ⟨@cert_Stmt_kills⟩).out
+  have key := bfree (ix := 1009) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_Stmt_kills prog prims 1009 n) from ⟨@cert_Stmt_kills⟩).out
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_Stmt_dead_before {n : Nat} :
@@ -718,38 +720,38 @@ theorem bcert_optimize_program {n : Nat} :
   @bproof_optimize_program progW prog prims 113 167 (fnW_of (by decide) (by decide) fn_optimize_program) fn_optimize_program np_optimize_program ⟨@cert_optimize_program⟩ ⟨@bcert_optimize_funcs⟩ n
 
 theorem bcert_negate_constant {n : Nat} :
-    BStmt_negate_constant progW prog prims 1010 n := by
+    BStmt_negate_constant progW prog prims 1011 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1010) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_negate_constant prog prims 1010 n) from ⟨@cert_negate_constant⟩).out
+  have key := bfree (ix := 1011) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_negate_constant prog prims 1011 n) from ⟨@cert_negate_constant⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_fold_constant {n : Nat} :
-    BStmt_fold_constant progW prog prims 1260 n := by
+    BStmt_fold_constant progW prog prims 1265 n := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w k h r0 r1 r2 r3
-  have key := bfree (ix := 1260) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_fold_constant prog prims 1260 n) from ⟨@cert_fold_constant⟩).out
+  have key := bfree (ix := 1265) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_fold_constant prog prims 1265 n) from ⟨@cert_fold_constant⟩).out
     (pcall_of_q key.1) r0 r1 r2 r3⟩
 
 theorem bcert_absorbed {n : Nat} :
-    BStmt_absorbed progW prog prims 1261 n := by
+    BStmt_absorbed progW prog prims 1266 n := by
   intro x0 x1 v0 v1 w k h r0 r1
-  have key := bfree (ix := 1261) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_absorbed prog prims 1261 n) from ⟨@cert_absorbed⟩).out
+  have key := bfree (ix := 1266) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_absorbed prog prims 1266 n) from ⟨@cert_absorbed⟩).out
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_binary_constant {n : Nat} :
-    BStmt_binary_constant progW prog prims 1011 n := by
+    BStmt_binary_constant progW prog prims 1012 n := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w k h r0 r1 r2 r3
-  have key := bfree (ix := 1011) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_binary_constant prog prims 1011 n) from ⟨@cert_binary_constant⟩).out
+  have key := bfree (ix := 1012) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_binary_constant prog prims 1012 n) from ⟨@cert_binary_constant⟩).out
     (pcall_of_q key.1) r0 r1 r2 r3⟩
 
 theorem bcert_compare_constant {n : Nat} :
-    BStmt_compare_constant progW prog prims 1012 n := by
+    BStmt_compare_constant progW prog prims 1013 n := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w k h r0 r1 r2 r3
-  have key := bfree (ix := 1012) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_compare_constant prog prims 1012 n) from ⟨@cert_compare_constant⟩).out
+  have key := bfree (ix := 1013) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_compare_constant prog prims 1013 n) from ⟨@cert_compare_constant⟩).out
     (pcall_of_q key.1) r0 r1 r2 r3⟩
 
 theorem bcert_Expr_constant {n : Nat} :
@@ -760,45 +762,45 @@ theorem bcert_Expr_constant {n : Nat} :
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_constant_is {n : Nat} :
-    BStmt_constant_is progW prog prims 1013 n := by
+    BStmt_constant_is progW prog prims 1014 n := by
   intro x0 x1 v0 v1 w k h r0 r1
-  have key := bfree (ix := 1013) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_constant_is prog prims 1013 n) from ⟨@cert_constant_is⟩).out
+  have key := bfree (ix := 1014) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_constant_is prog prims 1014 n) from ⟨@cert_constant_is⟩).out
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_Expr_is_constant {n : Nat} :
-    BStmt_Expr_is_constant progW prog prims 1254 n := by
+    BStmt_Expr_is_constant progW prog prims 1259 n := by
   intro x0 x1 v0 v1 w k h r0 r1
-  have key := bfree (ix := 1254) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_Expr_is_constant prog prims 1254 n) from ⟨@cert_Expr_is_constant⟩).out
+  have key := bfree (ix := 1259) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_Expr_is_constant prog prims 1259 n) from ⟨@cert_Expr_is_constant⟩).out
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_Word_number {n : Nat} :
-    BStmt_Word_number progW prog prims 1016 n := by
+    BStmt_Word_number progW prog prims 1017 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1016) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_Word_number prog prims 1016 n) from ⟨@cert_Word_number⟩).out
+  have key := bfree (ix := 1017) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_Word_number prog prims 1017 n) from ⟨@cert_Word_number⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_BinOp_number {n : Nat} :
-    BStmt_BinOp_number progW prog prims 1440 n := by
+    BStmt_BinOp_number progW prog prims 1447 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1440) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_BinOp_number prog prims 1440 n) from ⟨@cert_BinOp_number⟩).out
+  have key := bfree (ix := 1447) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_BinOp_number prog prims 1447 n) from ⟨@cert_BinOp_number⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_Expr_unit_of {n : Nat} :
-    BStmt_Expr_unit_of progW prog prims 1441 n := by
+    BStmt_Expr_unit_of progW prog prims 1448 n := by
   intro x0 x1 x2 v0 v1 v2 w k h r0 r1 r2
-  have key := bfree (ix := 1441) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_Expr_unit_of prog prims 1441 n) from ⟨@cert_Expr_unit_of⟩).out
+  have key := bfree (ix := 1448) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_Expr_unit_of prog prims 1448 n) from ⟨@cert_Expr_unit_of⟩).out
     (pcall_of_q key.1) r0 r1 r2⟩
 
 theorem bcert_CmpOp_number {n : Nat} :
-    BStmt_CmpOp_number progW prog prims 1442 n := by
+    BStmt_CmpOp_number progW prog prims 1449 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1442) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_CmpOp_number prog prims 1442 n) from ⟨@cert_CmpOp_number⟩).out
+  have key := bfree (ix := 1449) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_CmpOp_number prog prims 1449 n) from ⟨@cert_CmpOp_number⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_FloatTy_number {n : Nat} :
@@ -809,54 +811,54 @@ theorem bcert_FloatTy_number {n : Nat} :
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_FArith_number {n : Nat} :
-    BStmt_FArith_number progW prog prims 1548 n := by
+    BStmt_FArith_number progW prog prims 1557 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1548) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_FArith_number prog prims 1548 n) from ⟨@cert_FArith_number⟩).out
+  have key := bfree (ix := 1557) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_FArith_number prog prims 1557 n) from ⟨@cert_FArith_number⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_FCmp_number {n : Nat} :
-    BStmt_FCmp_number progW prog prims 1549 n := by
+    BStmt_FCmp_number progW prog prims 1558 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1549) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_FCmp_number prog prims 1549 n) from ⟨@cert_FCmp_number⟩).out
+  have key := bfree (ix := 1558) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_FCmp_number prog prims 1558 n) from ⟨@cert_FCmp_number⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_FOp_number {n : Nat} :
-    BStmt_FOp_number progW prog prims 1443 n :=
-  @bproof_FOp_number progW prog prims 1443 75 105 566 1016 1548 1549 (fnW_of (by decide) (by decide) fn_FOp_number) fn_FOp_number np_FOp_number ⟨@cert_FOp_number⟩ ⟨@bcert_plus⟩ ⟨@bcert_times⟩ ⟨@bcert_FloatTy_number⟩ ⟨@bcert_Word_number⟩ ⟨@bcert_FArith_number⟩ ⟨@bcert_FCmp_number⟩ n
+    BStmt_FOp_number progW prog prims 1450 n :=
+  @bproof_FOp_number progW prog prims 1450 75 105 566 1017 1557 1558 (fnW_of (by decide) (by decide) fn_FOp_number) fn_FOp_number np_FOp_number ⟨@cert_FOp_number⟩ ⟨@bcert_plus⟩ ⟨@bcert_times⟩ ⟨@bcert_FloatTy_number⟩ ⟨@bcert_Word_number⟩ ⟨@bcert_FArith_number⟩ ⟨@bcert_FCmp_number⟩ n
 
-theorem bcerts_Expr_agrees : ∀ n, (BStmt_Expr_agrees progW prog prims 1009 n) ∧ (BStmt_neg_agrees progW prog prims 1255 n) ∧ (BStmt_binary_agrees progW prog prims 1256 n) ∧ (BStmt_unit_agrees progW prog prims 1257 n) ∧ (BStmt_compare_agrees progW prog prims 1258 n) ∧ (BStmt_fp_agrees progW prog prims 1259 n) := by
+theorem bcerts_Expr_agrees : ∀ n, (BStmt_Expr_agrees progW prog prims 1010 n) ∧ (BStmt_neg_agrees progW prog prims 1260 n) ∧ (BStmt_binary_agrees progW prog prims 1261 n) ∧ (BStmt_unit_agrees progW prog prims 1262 n) ∧ (BStmt_compare_agrees progW prog prims 1263 n) ∧ (BStmt_fp_agrees progW prog prims 1264 n) := by
   intro n
   induction n with
   | zero =>
     exact ⟨(by intro x0 x1 v0 v1 w k b h; simp only [qcall_zero, reduceCtorEq] at h), (by intro x0 x1 v0 v1 w k b h; simp only [qcall_zero, reduceCtorEq] at h), (by intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w k b h; simp only [qcall_zero, reduceCtorEq] at h), (by intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w k b h; simp only [qcall_zero, reduceCtorEq] at h), (by intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w k b h; simp only [qcall_zero, reduceCtorEq] at h), (by intro x0 x1 x2 x3 v0 v1 v2 v3 w k b h; simp only [qcall_zero, reduceCtorEq] at h)⟩
   | succ n ih =>
     obtain ⟨bih_Expr_agrees, bih_neg_agrees, bih_binary_agrees, bih_unit_agrees, bih_compare_agrees, bih_fp_agrees⟩ := ih
-    exact ⟨@bstep_Expr_agrees progW prog prims 1009 485 685 703 1254 1255 1256 1257 1258 1259 (fnW_of (by decide) (by decide) fn_Expr_agrees) fn_Expr_agrees np_Expr_agrees ⟨@cert_Expr_agrees⟩ np_unbox_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_Expr_is_var⟩ ⟨@bcert_Expr_constant⟩ ⟨@bcert_Expr_is_constant⟩ n ⟨bih_neg_agrees⟩ ⟨bih_binary_agrees⟩ ⟨bih_unit_agrees⟩ ⟨bih_compare_agrees⟩ ⟨bih_fp_agrees⟩, @bstep_neg_agrees progW prog prims 1255 485 1009 (fnW_of (by decide) (by decide) fn_neg_agrees) fn_neg_agrees np_neg_agrees ⟨@cert_neg_agrees⟩ np_unbox_of_mini_selfhost_Expr (by decide +kernel) n ⟨bih_Expr_agrees⟩, @bstep_binary_agrees progW prog prims 1256 485 1009 1016 1440 (fnW_of (by decide) (by decide) fn_binary_agrees) fn_binary_agrees np_binary_agrees ⟨@cert_binary_agrees⟩ np_unbox_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_Word_number⟩ ⟨@bcert_BinOp_number⟩ n ⟨bih_Expr_agrees⟩, @bstep_unit_agrees progW prog prims 1257 1009 1238 1241 1441 (fnW_of (by decide) (by decide) fn_unit_agrees) fn_unit_agrees np_unit_agrees ⟨@cert_unit_agrees⟩ ⟨@bcert_BinOp_commutes⟩ ⟨@bcert_Word_keeps⟩ ⟨@bcert_Expr_unit_of⟩ n ⟨bih_Expr_agrees⟩, @bstep_compare_agrees progW prog prims 1258 485 1009 1016 1442 (fnW_of (by decide) (by decide) fn_compare_agrees) fn_compare_agrees np_compare_agrees ⟨@cert_compare_agrees⟩ np_unbox_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_Word_number⟩ ⟨@bcert_CmpOp_number⟩ n ⟨bih_Expr_agrees⟩, @bstep_fp_agrees progW prog prims 1259 485 1009 1443 (fnW_of (by decide) (by decide) fn_fp_agrees) fn_fp_agrees np_fp_agrees ⟨@cert_fp_agrees⟩ np_unbox_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_FOp_number⟩ n ⟨bih_Expr_agrees⟩⟩
+    exact ⟨@bstep_Expr_agrees progW prog prims 1010 485 685 703 1259 1260 1261 1262 1263 1264 (fnW_of (by decide) (by decide) fn_Expr_agrees) fn_Expr_agrees np_Expr_agrees ⟨@cert_Expr_agrees⟩ np_unbox_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_Expr_is_var⟩ ⟨@bcert_Expr_constant⟩ ⟨@bcert_Expr_is_constant⟩ n ⟨bih_neg_agrees⟩ ⟨bih_binary_agrees⟩ ⟨bih_unit_agrees⟩ ⟨bih_compare_agrees⟩ ⟨bih_fp_agrees⟩, @bstep_neg_agrees progW prog prims 1260 485 1010 (fnW_of (by decide) (by decide) fn_neg_agrees) fn_neg_agrees np_neg_agrees ⟨@cert_neg_agrees⟩ np_unbox_of_mini_selfhost_Expr (by decide +kernel) n ⟨bih_Expr_agrees⟩, @bstep_binary_agrees progW prog prims 1261 485 1010 1017 1447 (fnW_of (by decide) (by decide) fn_binary_agrees) fn_binary_agrees np_binary_agrees ⟨@cert_binary_agrees⟩ np_unbox_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_Word_number⟩ ⟨@bcert_BinOp_number⟩ n ⟨bih_Expr_agrees⟩, @bstep_unit_agrees progW prog prims 1262 1010 1243 1246 1448 (fnW_of (by decide) (by decide) fn_unit_agrees) fn_unit_agrees np_unit_agrees ⟨@cert_unit_agrees⟩ ⟨@bcert_BinOp_commutes⟩ ⟨@bcert_Word_keeps⟩ ⟨@bcert_Expr_unit_of⟩ n ⟨bih_Expr_agrees⟩, @bstep_compare_agrees progW prog prims 1263 485 1010 1017 1449 (fnW_of (by decide) (by decide) fn_compare_agrees) fn_compare_agrees np_compare_agrees ⟨@cert_compare_agrees⟩ np_unbox_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_Word_number⟩ ⟨@bcert_CmpOp_number⟩ n ⟨bih_Expr_agrees⟩, @bstep_fp_agrees progW prog prims 1264 485 1010 1450 (fnW_of (by decide) (by decide) fn_fp_agrees) fn_fp_agrees np_fp_agrees ⟨@cert_fp_agrees⟩ np_unbox_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_FOp_number⟩ n ⟨bih_Expr_agrees⟩⟩
 
 theorem bcert_Expr_agrees {n : Nat} :
-    BStmt_Expr_agrees progW prog prims 1009 n :=
+    BStmt_Expr_agrees progW prog prims 1010 n :=
   (bcerts_Expr_agrees n).1
 theorem bcert_neg_agrees {n : Nat} :
-    BStmt_neg_agrees progW prog prims 1255 n :=
+    BStmt_neg_agrees progW prog prims 1260 n :=
   (bcerts_Expr_agrees n).2.1
 theorem bcert_binary_agrees {n : Nat} :
-    BStmt_binary_agrees progW prog prims 1256 n :=
+    BStmt_binary_agrees progW prog prims 1261 n :=
   (bcerts_Expr_agrees n).2.2.1
 theorem bcert_unit_agrees {n : Nat} :
-    BStmt_unit_agrees progW prog prims 1257 n :=
+    BStmt_unit_agrees progW prog prims 1262 n :=
   (bcerts_Expr_agrees n).2.2.2.1
 theorem bcert_compare_agrees {n : Nat} :
-    BStmt_compare_agrees progW prog prims 1258 n :=
+    BStmt_compare_agrees progW prog prims 1263 n :=
   (bcerts_Expr_agrees n).2.2.2.2.1
 theorem bcert_fp_agrees {n : Nat} :
-    BStmt_fp_agrees progW prog prims 1259 n :=
+    BStmt_fp_agrees progW prog prims 1264 n :=
   (bcerts_Expr_agrees n).2.2.2.2.2
 
 theorem bcert_assign_agrees {n : Nat} :
     BStmt_assign_agrees progW prog prims 698 n :=
-  @bproof_assign_agrees progW prog prims 698 1009 (fnW_of (by decide) (by decide) fn_assign_agrees) fn_assign_agrees np_assign_agrees ⟨@cert_assign_agrees⟩ ⟨@bcert_Expr_agrees⟩ n
+  @bproof_assign_agrees progW prog prims 698 1010 (fnW_of (by decide) (by decide) fn_assign_agrees) fn_assign_agrees np_assign_agrees ⟨@cert_assign_agrees⟩ ⟨@bcert_Expr_agrees⟩ n
 
 theorem bcert_unknown {n : Nat} :
     BStmt_unknown progW prog prims 704 n := by
@@ -872,26 +874,26 @@ theorem bcert_Expr_is_zero {n : Nat} :
   exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_Expr_is_zero prog prims 705 n) from ⟨@cert_Expr_is_zero⟩).out
     (pcall_of_q key.1) r0⟩
 
-theorem bcerts_args_agree : ∀ n, (BStmt_args_agree progW prog prims 1014 n) := by
+theorem bcerts_args_agree : ∀ n, (BStmt_args_agree progW prog prims 1015 n) := by
   intro n
   induction n with
   | zero =>
     exact (by intro x0 x1 v0 v1 w k b h; simp only [qcall_zero, reduceCtorEq] at h)
   | succ n ih =>
-    have bih_args_agree : BStmt_args_agree progW prog prims 1014 n := ih
-    exact @bstep_args_agree progW prog prims 1014 486 1009 (fnW_of (by decide) (by decide) fn_args_agree) fn_args_agree np_args_agree ⟨@cert_args_agree⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_Expr_agrees⟩ n ⟨bih_args_agree⟩
+    have bih_args_agree : BStmt_args_agree progW prog prims 1015 n := ih
+    exact @bstep_args_agree progW prog prims 1015 486 1010 (fnW_of (by decide) (by decide) fn_args_agree) fn_args_agree np_args_agree ⟨@cert_args_agree⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_Expr_agrees⟩ n ⟨bih_args_agree⟩
 
 theorem bcert_args_agree {n : Nat} :
-    BStmt_args_agree progW prog prims 1014 n :=
+    BStmt_args_agree progW prog prims 1015 n :=
   (bcerts_args_agree n)
 
 theorem bcert_call_agrees {n : Nat} :
     BStmt_call_agrees progW prog prims 707 n :=
-  @bproof_call_agrees progW prog prims 707 1014 (fnW_of (by decide) (by decide) fn_call_agrees) fn_call_agrees np_call_agrees ⟨@cert_call_agrees⟩ ⟨@bcert_args_agree⟩ n
+  @bproof_call_agrees progW prog prims 707 1015 (fnW_of (by decide) (by decide) fn_call_agrees) fn_call_agrees np_call_agrees ⟨@cert_call_agrees⟩ ⟨@bcert_args_agree⟩ n
 
 theorem bcert_ret_agrees {n : Nat} :
     BStmt_ret_agrees progW prog prims 708 n :=
-  @bproof_ret_agrees progW prog prims 708 1014 (fnW_of (by decide) (by decide) fn_ret_agrees) fn_ret_agrees np_ret_agrees ⟨@cert_ret_agrees⟩ ⟨@bcert_args_agree⟩ n
+  @bproof_ret_agrees progW prog prims 708 1015 (fnW_of (by decide) (by decide) fn_ret_agrees) fn_ret_agrees np_ret_agrees ⟨@cert_ret_agrees⟩ ⟨@bcert_args_agree⟩ n
 
 theorem bcert_Stmt_is_brk {n : Nat} :
     BStmt_Stmt_is_brk progW prog prims 709 n := by
@@ -909,52 +911,52 @@ theorem bcert_Stmt_is_cont {n : Nat} :
 
 theorem bcert_alloc_agrees {n : Nat} :
     BStmt_alloc_agrees progW prog prims 711 n :=
-  @bproof_alloc_agrees progW prog prims 711 1009 (fnW_of (by decide) (by decide) fn_alloc_agrees) fn_alloc_agrees np_alloc_agrees ⟨@cert_alloc_agrees⟩ ⟨@bcert_Expr_agrees⟩ n
+  @bproof_alloc_agrees progW prog prims 711 1010 (fnW_of (by decide) (by decide) fn_alloc_agrees) fn_alloc_agrees np_alloc_agrees ⟨@cert_alloc_agrees⟩ ⟨@bcert_Expr_agrees⟩ n
 
 theorem bcert_load_byte_agrees {n : Nat} :
     BStmt_load_byte_agrees progW prog prims 712 n :=
-  @bproof_load_byte_agrees progW prog prims 712 1009 (fnW_of (by decide) (by decide) fn_load_byte_agrees) fn_load_byte_agrees np_load_byte_agrees ⟨@cert_load_byte_agrees⟩ ⟨@bcert_Expr_agrees⟩ n
+  @bproof_load_byte_agrees progW prog prims 712 1010 (fnW_of (by decide) (by decide) fn_load_byte_agrees) fn_load_byte_agrees np_load_byte_agrees ⟨@cert_load_byte_agrees⟩ ⟨@bcert_Expr_agrees⟩ n
 
 theorem bcert_store_byte_agrees {n : Nat} :
     BStmt_store_byte_agrees progW prog prims 713 n :=
-  @bproof_store_byte_agrees progW prog prims 713 1009 (fnW_of (by decide) (by decide) fn_store_byte_agrees) fn_store_byte_agrees np_store_byte_agrees ⟨@cert_store_byte_agrees⟩ ⟨@bcert_Expr_agrees⟩ n
+  @bproof_store_byte_agrees progW prog prims 713 1010 (fnW_of (by decide) (by decide) fn_store_byte_agrees) fn_store_byte_agrees np_store_byte_agrees ⟨@cert_store_byte_agrees⟩ ⟨@bcert_Expr_agrees⟩ n
 
 theorem bcert_MemWidth_bytes {n : Nat} :
-    BStmt_MemWidth_bytes progW prog prims 1015 n := by
+    BStmt_MemWidth_bytes progW prog prims 1016 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1015) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_MemWidth_bytes prog prims 1015 n) from ⟨@cert_MemWidth_bytes⟩).out
+  have key := bfree (ix := 1016) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_MemWidth_bytes prog prims 1016 n) from ⟨@cert_MemWidth_bytes⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_load_word_agrees {n : Nat} :
     BStmt_load_word_agrees progW prog prims 714 n :=
-  @bproof_load_word_agrees progW prog prims 714 1009 1015 (fnW_of (by decide) (by decide) fn_load_word_agrees) fn_load_word_agrees np_load_word_agrees ⟨@cert_load_word_agrees⟩ ⟨@bcert_Expr_agrees⟩ ⟨@bcert_MemWidth_bytes⟩ n
+  @bproof_load_word_agrees progW prog prims 714 1010 1016 (fnW_of (by decide) (by decide) fn_load_word_agrees) fn_load_word_agrees np_load_word_agrees ⟨@cert_load_word_agrees⟩ ⟨@bcert_Expr_agrees⟩ ⟨@bcert_MemWidth_bytes⟩ n
 
 theorem bcert_store_word_agrees {n : Nat} :
     BStmt_store_word_agrees progW prog prims 715 n :=
-  @bproof_store_word_agrees progW prog prims 715 1009 1015 (fnW_of (by decide) (by decide) fn_store_word_agrees) fn_store_word_agrees np_store_word_agrees ⟨@cert_store_word_agrees⟩ ⟨@bcert_Expr_agrees⟩ ⟨@bcert_MemWidth_bytes⟩ n
+  @bproof_store_word_agrees progW prog prims 715 1010 1016 (fnW_of (by decide) (by decide) fn_store_word_agrees) fn_store_word_agrees np_store_word_agrees ⟨@cert_store_word_agrees⟩ ⟨@bcert_Expr_agrees⟩ ⟨@bcert_MemWidth_bytes⟩ n
 
 theorem bcert_DivOp_number {n : Nat} :
-    BStmt_DivOp_number progW prog prims 1017 n := by
+    BStmt_DivOp_number progW prog prims 1018 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1017) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_DivOp_number prog prims 1017 n) from ⟨@cert_DivOp_number⟩).out
+  have key := bfree (ix := 1018) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_DivOp_number prog prims 1018 n) from ⟨@cert_DivOp_number⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_divide_agrees {n : Nat} :
     BStmt_divide_agrees progW prog prims 716 n :=
-  @bproof_divide_agrees progW prog prims 716 1009 1016 1017 (fnW_of (by decide) (by decide) fn_divide_agrees) fn_divide_agrees np_divide_agrees ⟨@cert_divide_agrees⟩ ⟨@bcert_Expr_agrees⟩ ⟨@bcert_Word_number⟩ ⟨@bcert_DivOp_number⟩ n
+  @bproof_divide_agrees progW prog prims 716 1010 1017 1018 (fnW_of (by decide) (by decide) fn_divide_agrees) fn_divide_agrees np_divide_agrees ⟨@cert_divide_agrees⟩ ⟨@bcert_Expr_agrees⟩ ⟨@bcert_Word_number⟩ ⟨@bcert_DivOp_number⟩ n
 
 theorem bcert_Syscall_number {n : Nat} :
-    BStmt_Syscall_number progW prog prims 1018 n := by
+    BStmt_Syscall_number progW prog prims 1019 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1018) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_Syscall_number prog prims 1018 n) from ⟨@cert_Syscall_number⟩).out
+  have key := bfree (ix := 1019) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_Syscall_number prog prims 1019 n) from ⟨@cert_Syscall_number⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_sys_agrees {n : Nat} :
     BStmt_sys_agrees progW prog prims 717 n :=
-  @bproof_sys_agrees progW prog prims 717 1014 1018 (fnW_of (by decide) (by decide) fn_sys_agrees) fn_sys_agrees np_sys_agrees ⟨@cert_sys_agrees⟩ ⟨@bcert_args_agree⟩ ⟨@bcert_Syscall_number⟩ n
+  @bproof_sys_agrees progW prog prims 717 1015 1019 (fnW_of (by decide) (by decide) fn_sys_agrees) fn_sys_agrees np_sys_agrees ⟨@cert_sys_agrees⟩ ⟨@bcert_args_agree⟩ ⟨@bcert_Syscall_number⟩ n
 
 theorem bcert_frame_agrees {n : Nat} :
     BStmt_frame_agrees progW prog prims 718 n := by
@@ -977,7 +979,7 @@ theorem bcerts_Stmt_agrees : ∀ n, (BStmt_Stmt_agrees progW prog prims 465 n) �
     exact ⟨(by intro x0 x1 x2 v0 v1 v2 w k b h; simp only [qcall_zero, reduceCtorEq] at h), (by intro x0 x1 x2 x3 v0 v1 v2 v3 w k b h; simp only [qcall_zero, reduceCtorEq] at h), (by intro x0 x1 x2 x3 v0 v1 v2 v3 w k b h; simp only [qcall_zero, reduceCtorEq] at h), (by intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w k b h; simp only [qcall_zero, reduceCtorEq] at h), (by intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w k b h; simp only [qcall_zero, reduceCtorEq] at h), (by intro x0 x1 x2 v0 v1 v2 w k b h; simp only [qcall_zero, reduceCtorEq] at h)⟩
   | succ n ih =>
     obtain ⟨bih_Stmt_agrees, bih_seq_agrees, bih_dead_agrees, bih_ite_agrees, bih_branch_agrees, bih_loop_agrees⟩ := ih
-    exact ⟨@bstep_Stmt_agrees progW prog prims 465 302 459 464 690 697 698 699 700 701 702 703 704 705 706 707 708 709 710 711 712 713 714 715 716 717 718 719 (fnW_of (by decide) (by decide) fn_Stmt_agrees) fn_Stmt_agrees np_Stmt_agrees ⟨@cert_Stmt_agrees⟩ np_unbox_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_Expr_subst⟩ ⟨@bcert_subst_all⟩ ⟨@bcert_Stmt_facts_after⟩ ⟨@bcert_Stmt_is_skip⟩ ⟨@bcert_assign_agrees⟩ ⟨@bcert_Expr_constant⟩ ⟨@bcert_unknown⟩ ⟨@bcert_Expr_is_zero⟩ ⟨@bcert_call_agrees⟩ ⟨@bcert_ret_agrees⟩ ⟨@bcert_Stmt_is_brk⟩ ⟨@bcert_Stmt_is_cont⟩ ⟨@bcert_alloc_agrees⟩ ⟨@bcert_load_byte_agrees⟩ ⟨@bcert_store_byte_agrees⟩ ⟨@bcert_load_word_agrees⟩ ⟨@bcert_store_word_agrees⟩ ⟨@bcert_divide_agrees⟩ ⟨@bcert_sys_agrees⟩ ⟨@bcert_frame_agrees⟩ ⟨@bcert_static_agrees⟩ n ⟨bih_Stmt_agrees⟩ ⟨bih_seq_agrees⟩ ⟨bih_dead_agrees⟩ ⟨bih_ite_agrees⟩ ⟨bih_branch_agrees⟩ ⟨bih_loop_agrees⟩, @bstep_seq_agrees progW prog prims 699 302 465 690 (fnW_of (by decide) (by decide) fn_seq_agrees) fn_seq_agrees np_seq_agrees ⟨@cert_seq_agrees⟩ np_unbox_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_Stmt_facts_after⟩ n ⟨bih_Stmt_agrees⟩, @bstep_dead_agrees progW prog prims 700 465 1006 1008 (fnW_of (by decide) (by decide) fn_dead_agrees) fn_dead_agrees np_dead_agrees ⟨@cert_dead_agrees⟩ ⟨@bcert_assigned⟩ ⟨@bcert_Stmt_kills⟩ n ⟨bih_Stmt_agrees⟩, @bstep_ite_agrees progW prog prims 701 302 465 1009 (fnW_of (by decide) (by decide) fn_ite_agrees) fn_ite_agrees np_ite_agrees ⟨@cert_ite_agrees⟩ np_unbox_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_Expr_agrees⟩ n ⟨bih_Stmt_agrees⟩, @bstep_branch_agrees progW prog prims 702 465 (fnW_of (by decide) (by decide) fn_branch_agrees) fn_branch_agrees np_branch_agrees ⟨@cert_branch_agrees⟩ n ⟨bih_Stmt_agrees⟩, @bstep_loop_agrees progW prog prims 706 279 302 465 1009 (fnW_of (by decide) (by decide) fn_loop_agrees) fn_loop_agrees np_loop_agrees ⟨@cert_loop_agrees⟩ ⟨@bcert_empty_of_mini_selfhost_Fact⟩ np_unbox_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_Expr_agrees⟩ n ⟨bih_Stmt_agrees⟩⟩
+    exact ⟨@bstep_Stmt_agrees progW prog prims 465 302 459 464 690 697 698 699 700 701 702 703 704 705 706 707 708 709 710 711 712 713 714 715 716 717 718 719 (fnW_of (by decide) (by decide) fn_Stmt_agrees) fn_Stmt_agrees np_Stmt_agrees ⟨@cert_Stmt_agrees⟩ np_unbox_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_Expr_subst⟩ ⟨@bcert_subst_all⟩ ⟨@bcert_Stmt_facts_after⟩ ⟨@bcert_Stmt_is_skip⟩ ⟨@bcert_assign_agrees⟩ ⟨@bcert_Expr_constant⟩ ⟨@bcert_unknown⟩ ⟨@bcert_Expr_is_zero⟩ ⟨@bcert_call_agrees⟩ ⟨@bcert_ret_agrees⟩ ⟨@bcert_Stmt_is_brk⟩ ⟨@bcert_Stmt_is_cont⟩ ⟨@bcert_alloc_agrees⟩ ⟨@bcert_load_byte_agrees⟩ ⟨@bcert_store_byte_agrees⟩ ⟨@bcert_load_word_agrees⟩ ⟨@bcert_store_word_agrees⟩ ⟨@bcert_divide_agrees⟩ ⟨@bcert_sys_agrees⟩ ⟨@bcert_frame_agrees⟩ ⟨@bcert_static_agrees⟩ n ⟨bih_Stmt_agrees⟩ ⟨bih_seq_agrees⟩ ⟨bih_dead_agrees⟩ ⟨bih_ite_agrees⟩ ⟨bih_branch_agrees⟩ ⟨bih_loop_agrees⟩, @bstep_seq_agrees progW prog prims 699 302 465 690 (fnW_of (by decide) (by decide) fn_seq_agrees) fn_seq_agrees np_seq_agrees ⟨@cert_seq_agrees⟩ np_unbox_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_Stmt_facts_after⟩ n ⟨bih_Stmt_agrees⟩, @bstep_dead_agrees progW prog prims 700 465 1007 1009 (fnW_of (by decide) (by decide) fn_dead_agrees) fn_dead_agrees np_dead_agrees ⟨@cert_dead_agrees⟩ ⟨@bcert_assigned⟩ ⟨@bcert_Stmt_kills⟩ n ⟨bih_Stmt_agrees⟩, @bstep_ite_agrees progW prog prims 701 302 465 1010 (fnW_of (by decide) (by decide) fn_ite_agrees) fn_ite_agrees np_ite_agrees ⟨@cert_ite_agrees⟩ np_unbox_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_Expr_agrees⟩ n ⟨bih_Stmt_agrees⟩, @bstep_branch_agrees progW prog prims 702 465 (fnW_of (by decide) (by decide) fn_branch_agrees) fn_branch_agrees np_branch_agrees ⟨@cert_branch_agrees⟩ n ⟨bih_Stmt_agrees⟩, @bstep_loop_agrees progW prog prims 706 279 302 465 1010 (fnW_of (by decide) (by decide) fn_loop_agrees) fn_loop_agrees np_loop_agrees ⟨@cert_loop_agrees⟩ ⟨@bcert_empty_of_mini_selfhost_Fact⟩ np_unbox_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_Expr_agrees⟩ n ⟨bih_Stmt_agrees⟩⟩
 
 theorem bcert_Stmt_agrees {n : Nat} :
     BStmt_Stmt_agrees progW prog prims 465 n :=
@@ -1080,10 +1082,10 @@ theorem bcert_Expr_within {n : Nat} :
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_get_of_mini_selfhost_Arity {n : Nat} :
-    BStmt_get_of_mini_selfhost_Arity progW prog prims 1019 n := by
+    BStmt_get_of_mini_selfhost_Arity progW prog prims 1020 n := by
   intro x0 x1 v0 v1 w k h r0 r1
-  have key := bfree (ix := 1019) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_get_of_mini_selfhost_Arity prog prims 1019 n) from ⟨@cert_get_of_mini_selfhost_Arity⟩).out
+  have key := bfree (ix := 1020) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_get_of_mini_selfhost_Arity prog prims 1020 n) from ⟨@cert_get_of_mini_selfhost_Arity⟩).out
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_arity_is {n : Nat} :
@@ -1188,44 +1190,44 @@ theorem bcert_compile_expr {n : Nat} :
   (bcerts_compile_expr n)
 
 theorem bcert_BinOp_size {n : Nat} :
-    BStmt_BinOp_size progW prog prims 1022 n := by
+    BStmt_BinOp_size progW prog prims 1023 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1022) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_BinOp_size prog prims 1022 n) from ⟨@cert_BinOp_size⟩).out
+  have key := bfree (ix := 1023) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_BinOp_size prog prims 1023 n) from ⟨@cert_BinOp_size⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_Word_prefix {n : Nat} :
-    BStmt_Word_prefix progW prog prims 1023 n := by
+    BStmt_Word_prefix progW prog prims 1024 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1023) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_Word_prefix prog prims 1023 n) from ⟨@cert_Word_prefix⟩).out
+  have key := bfree (ix := 1024) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_Word_prefix prog prims 1024 n) from ⟨@cert_Word_prefix⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_MemWidth_prefix {n : Nat} :
-    BStmt_MemWidth_prefix progW prog prims 1024 n := by
+    BStmt_MemWidth_prefix progW prog prims 1025 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1024) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_MemWidth_prefix prog prims 1024 n) from ⟨@cert_MemWidth_prefix⟩).out
+  have key := bfree (ix := 1025) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_MemWidth_prefix prog prims 1025 n) from ⟨@cert_MemWidth_prefix⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_DivOp_size {n : Nat} :
-    BStmt_DivOp_size progW prog prims 1025 n :=
-  @bproof_DivOp_size progW prog prims 1025 75 1023 (fnW_of (by decide) (by decide) fn_DivOp_size) fn_DivOp_size np_DivOp_size ⟨@cert_DivOp_size⟩ ⟨@bcert_plus⟩ ⟨@bcert_Word_prefix⟩ n
+    BStmt_DivOp_size progW prog prims 1026 n :=
+  @bproof_DivOp_size progW prog prims 1026 75 1024 (fnW_of (by decide) (by decide) fn_DivOp_size) fn_DivOp_size np_DivOp_size ⟨@cert_DivOp_size⟩ ⟨@bcert_plus⟩ ⟨@bcert_Word_prefix⟩ n
 
 theorem bcert_FloatTy_rex_size {n : Nat} :
-    BStmt_FloatTy_rex_size progW prog prims 1263 n := by
+    BStmt_FloatTy_rex_size progW prog prims 1268 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1263) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_FloatTy_rex_size prog prims 1263 n) from ⟨@cert_FloatTy_rex_size⟩).out
+  have key := bfree (ix := 1268) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_FloatTy_rex_size prog prims 1268 n) from ⟨@cert_FloatTy_rex_size⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_FOp_size {n : Nat} :
-    BStmt_FOp_size progW prog prims 1026 n :=
-  @bproof_FOp_size progW prog prims 1026 75 105 1023 1263 (fnW_of (by decide) (by decide) fn_FOp_size) fn_FOp_size np_FOp_size ⟨@cert_FOp_size⟩ ⟨@bcert_plus⟩ ⟨@bcert_times⟩ ⟨@bcert_Word_prefix⟩ ⟨@bcert_FloatTy_rex_size⟩ n
+    BStmt_FOp_size progW prog prims 1027 n :=
+  @bproof_FOp_size progW prog prims 1027 75 105 1024 1268 (fnW_of (by decide) (by decide) fn_FOp_size) fn_FOp_size np_FOp_size ⟨@cert_FOp_size⟩ ⟨@bcert_plus⟩ ⟨@bcert_times⟩ ⟨@bcert_Word_prefix⟩ ⟨@bcert_FloatTy_rex_size⟩ n
 
 theorem bcert_Instr_size {n : Nat} :
     BStmt_Instr_size progW prog prims 736 n :=
-  @bproof_Instr_size progW prog prims 736 52 75 105 1022 1023 1024 1025 1026 (fnW_of (by decide) (by decide) fn_Instr_size) fn_Instr_size np_Instr_size ⟨@cert_Instr_size⟩ ⟨@bcert_length_of_usize⟩ ⟨@bcert_plus⟩ ⟨@bcert_times⟩ ⟨@bcert_BinOp_size⟩ ⟨@bcert_Word_prefix⟩ ⟨@bcert_MemWidth_prefix⟩ ⟨@bcert_DivOp_size⟩ ⟨@bcert_FOp_size⟩ n
+  @bproof_Instr_size progW prog prims 736 52 75 105 1023 1024 1025 1026 1027 (fnW_of (by decide) (by decide) fn_Instr_size) fn_Instr_size np_Instr_size ⟨@cert_Instr_size⟩ ⟨@bcert_length_of_usize⟩ ⟨@bcert_plus⟩ ⟨@bcert_times⟩ ⟨@bcert_BinOp_size⟩ ⟨@bcert_Word_prefix⟩ ⟨@bcert_MemWidth_prefix⟩ ⟨@bcert_DivOp_size⟩ ⟨@bcert_FOp_size⟩ n
 
 theorem bcerts_code_size : ∀ n, (BStmt_code_size progW prog prims 473 n) := by
   intro n
@@ -1411,238 +1413,238 @@ theorem bcert_get_or_of_usize {n : Nat} :
     (pcall_of_q key.1) r0 r1 r2⟩
 
 theorem bcert_le64 {n : Nat} :
-    BStmt_le64 progW prog prims 1028 n :=
-  @bproof_le64 progW prog prims 1028 742 743 (fnW_of (by decide) (by decide) fn_le64) fn_le64 np_le64 ⟨@cert_le64⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ n
+    BStmt_le64 progW prog prims 1029 n :=
+  @bproof_le64 progW prog prims 1029 742 743 (fnW_of (by decide) (by decide) fn_le64) fn_le64 np_le64 ⟨@cert_le64⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ n
 
 theorem bcert_slot_offset {n : Nat} :
-    BStmt_slot_offset progW prog prims 1264 n :=
-  @bproof_slot_offset progW prog prims 1264 75 105 (fnW_of (by decide) (by decide) fn_slot_offset) fn_slot_offset np_slot_offset ⟨@cert_slot_offset⟩ ⟨@bcert_plus⟩ ⟨@bcert_times⟩ n
+    BStmt_slot_offset progW prog prims 1269 n :=
+  @bproof_slot_offset progW prog prims 1269 75 105 (fnW_of (by decide) (by decide) fn_slot_offset) fn_slot_offset np_slot_offset ⟨@cert_slot_offset⟩ ⟨@bcert_plus⟩ ⟨@bcert_times⟩ n
 
 theorem bcert_slot_load {n : Nat} :
-    BStmt_slot_load progW prog prims 1029 n :=
-  @bproof_slot_load progW prog prims 1029 478 742 743 744 1264 (fnW_of (by decide) (by decide) fn_slot_load) fn_slot_load np_slot_load ⟨@cert_slot_load⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_le32⟩ ⟨@bcert_slot_offset⟩ n
+    BStmt_slot_load progW prog prims 1030 n :=
+  @bproof_slot_load progW prog prims 1030 478 742 743 744 1269 (fnW_of (by decide) (by decide) fn_slot_load) fn_slot_load np_slot_load ⟨@cert_slot_load⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_le32⟩ ⟨@bcert_slot_offset⟩ n
 
 theorem bcert_slot_store {n : Nat} :
-    BStmt_slot_store progW prog prims 1030 n :=
-  @bproof_slot_store progW prog prims 1030 478 742 743 744 1264 (fnW_of (by decide) (by decide) fn_slot_store) fn_slot_store np_slot_store ⟨@cert_slot_store⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_le32⟩ ⟨@bcert_slot_offset⟩ n
+    BStmt_slot_store progW prog prims 1031 n :=
+  @bproof_slot_store progW prog prims 1031 478 742 743 744 1269 (fnW_of (by decide) (by decide) fn_slot_store) fn_slot_store np_slot_store ⟨@cert_slot_store⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_le32⟩ ⟨@bcert_slot_offset⟩ n
 
 theorem bcert_slot_operands {n : Nat} :
-    BStmt_slot_operands progW prog prims 1265 n :=
-  @bproof_slot_operands progW prog prims 1265 478 742 743 1029 (fnW_of (by decide) (by decide) fn_slot_operands) fn_slot_operands np_slot_operands ⟨@cert_slot_operands⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_slot_load⟩ n
+    BStmt_slot_operands progW prog prims 1270 n :=
+  @bproof_slot_operands progW prog prims 1270 478 742 743 1030 (fnW_of (by decide) (by decide) fn_slot_operands) fn_slot_operands np_slot_operands ⟨@cert_slot_operands⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_slot_load⟩ n
 
 theorem bcert_Word_rex {n : Nat} :
-    BStmt_Word_rex progW prog prims 1266 n :=
-  @bproof_Word_rex progW prog prims 1266 110 743 (fnW_of (by decide) (by decide) fn_Word_rex) fn_Word_rex np_Word_rex ⟨@cert_Word_rex⟩ ⟨@bcert_empty_of_u8⟩ ⟨@bcert_single_of_u8⟩ n
+    BStmt_Word_rex progW prog prims 1271 n :=
+  @bproof_Word_rex progW prog prims 1271 110 743 (fnW_of (by decide) (by decide) fn_Word_rex) fn_Word_rex np_Word_rex ⟨@cert_Word_rex⟩ ⟨@bcert_empty_of_u8⟩ ⟨@bcert_single_of_u8⟩ n
 
 theorem bcert_BinOp_opcode {n : Nat} :
-    BStmt_BinOp_opcode progW prog prims 1267 n :=
-  @bproof_BinOp_opcode progW prog prims 1267 742 743 (fnW_of (by decide) (by decide) fn_BinOp_opcode) fn_BinOp_opcode np_BinOp_opcode ⟨@cert_BinOp_opcode⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ n
+    BStmt_BinOp_opcode progW prog prims 1272 n :=
+  @bproof_BinOp_opcode progW prog prims 1272 742 743 (fnW_of (by decide) (by decide) fn_BinOp_opcode) fn_BinOp_opcode np_BinOp_opcode ⟨@cert_BinOp_opcode⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ n
 
 theorem bcert_BinOp_bytes {n : Nat} :
-    BStmt_BinOp_bytes progW prog prims 1031 n :=
-  @bproof_BinOp_bytes progW prog prims 1031 478 1265 1266 1267 (fnW_of (by decide) (by decide) fn_BinOp_bytes) fn_BinOp_bytes np_BinOp_bytes ⟨@cert_BinOp_bytes⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_slot_operands⟩ ⟨@bcert_Word_rex⟩ ⟨@bcert_BinOp_opcode⟩ n
+    BStmt_BinOp_bytes progW prog prims 1032 n :=
+  @bproof_BinOp_bytes progW prog prims 1032 478 1270 1271 1272 (fnW_of (by decide) (by decide) fn_BinOp_bytes) fn_BinOp_bytes np_BinOp_bytes ⟨@cert_BinOp_bytes⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_slot_operands⟩ ⟨@bcert_Word_rex⟩ ⟨@bcert_BinOp_opcode⟩ n
 
 theorem bcert_CmpOp_setcc_signed {n : Nat} :
-    BStmt_CmpOp_setcc_signed progW prog prims 1444 n := by
+    BStmt_CmpOp_setcc_signed progW prog prims 1451 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1444) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_CmpOp_setcc_signed prog prims 1444 n) from ⟨@cert_CmpOp_setcc_signed⟩).out
+  have key := bfree (ix := 1451) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_CmpOp_setcc_signed prog prims 1451 n) from ⟨@cert_CmpOp_setcc_signed⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_CmpOp_setcc_unsigned {n : Nat} :
-    BStmt_CmpOp_setcc_unsigned progW prog prims 1445 n := by
+    BStmt_CmpOp_setcc_unsigned progW prog prims 1452 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1445) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_CmpOp_setcc_unsigned prog prims 1445 n) from ⟨@cert_CmpOp_setcc_unsigned⟩).out
+  have key := bfree (ix := 1452) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_CmpOp_setcc_unsigned prog prims 1452 n) from ⟨@cert_CmpOp_setcc_unsigned⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_CmpOp_setcc {n : Nat} :
-    BStmt_CmpOp_setcc progW prog prims 1268 n := by
+    BStmt_CmpOp_setcc progW prog prims 1273 n := by
   intro x0 x1 v0 v1 w k h r0 r1
-  have key := bfree (ix := 1268) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_CmpOp_setcc prog prims 1268 n) from ⟨@cert_CmpOp_setcc⟩).out
+  have key := bfree (ix := 1273) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_CmpOp_setcc prog prims 1273 n) from ⟨@cert_CmpOp_setcc⟩).out
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_slot_compare {n : Nat} :
-    BStmt_slot_compare progW prog prims 1032 n :=
-  @bproof_slot_compare progW prog prims 1032 478 742 743 1265 1266 1268 (fnW_of (by decide) (by decide) fn_slot_compare) fn_slot_compare np_slot_compare ⟨@cert_slot_compare⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_slot_operands⟩ ⟨@bcert_Word_rex⟩ ⟨@bcert_CmpOp_setcc⟩ n
+    BStmt_slot_compare progW prog prims 1033 n :=
+  @bproof_slot_compare progW prog prims 1033 478 742 743 1270 1271 1273 (fnW_of (by decide) (by decide) fn_slot_compare) fn_slot_compare np_slot_compare ⟨@cert_slot_compare⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_slot_operands⟩ ⟨@bcert_Word_rex⟩ ⟨@bcert_CmpOp_setcc⟩ n
 
 theorem bcert_relative {n : Nat} :
-    BStmt_relative progW prog prims 1033 n := by
+    BStmt_relative progW prog prims 1034 n := by
   intro x0 x1 v0 v1 w k h r0 r1
-  have key := bfree (ix := 1033) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_relative prog prims 1033 n) from ⟨@cert_relative⟩).out
+  have key := bfree (ix := 1034) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_relative prog prims 1034 n) from ⟨@cert_relative⟩).out
     (pcall_of_q key.1) r0 r1⟩
 
-theorem bcerts_copy_bytes : ∀ n, (BStmt_copy_bytes progW prog prims 1034 n) := by
+theorem bcerts_copy_bytes : ∀ n, (BStmt_copy_bytes progW prog prims 1035 n) := by
   intro n
   induction n with
   | zero =>
     exact (by intro x0 x1 x2 v0 v1 v2 w k b h; simp only [qcall_zero, reduceCtorEq] at h)
   | succ n ih =>
-    have bih_copy_bytes : BStmt_copy_bytes progW prog prims 1034 n := ih
-    exact @bstep_copy_bytes progW prog prims 1034 75 76 110 478 1029 1030 (fnW_of (by decide) (by decide) fn_copy_bytes) fn_copy_bytes np_copy_bytes ⟨@cert_copy_bytes⟩ ⟨@bcert_plus⟩ np_unbox_of_mini_selfhost_List_usize (by decide +kernel) ⟨@bcert_empty_of_u8⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_slot_load⟩ ⟨@bcert_slot_store⟩ n ⟨bih_copy_bytes⟩
+    have bih_copy_bytes : BStmt_copy_bytes progW prog prims 1035 n := ih
+    exact @bstep_copy_bytes progW prog prims 1035 75 76 110 478 1030 1031 (fnW_of (by decide) (by decide) fn_copy_bytes) fn_copy_bytes np_copy_bytes ⟨@cert_copy_bytes⟩ ⟨@bcert_plus⟩ np_unbox_of_mini_selfhost_List_usize (by decide +kernel) ⟨@bcert_empty_of_u8⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_slot_load⟩ ⟨@bcert_slot_store⟩ n ⟨bih_copy_bytes⟩
 
 theorem bcert_copy_bytes {n : Nat} :
-    BStmt_copy_bytes progW prog prims 1034 n :=
+    BStmt_copy_bytes progW prog prims 1035 n :=
   (bcerts_copy_bytes n)
 
 theorem bcert_arg_base {n : Nat} :
-    BStmt_arg_base progW prog prims 1035 n :=
-  @bproof_arg_base progW prog prims 1035 75 745 (fnW_of (by decide) (by decide) fn_arg_base) fn_arg_base np_arg_base ⟨@cert_arg_base⟩ ⟨@bcert_plus⟩ ⟨@bcert_frame_size⟩ n
+    BStmt_arg_base progW prog prims 1036 n :=
+  @bproof_arg_base progW prog prims 1036 75 745 (fnW_of (by decide) (by decide) fn_arg_base) fn_arg_base np_arg_base ⟨@cert_arg_base⟩ ⟨@bcert_plus⟩ ⟨@bcert_frame_size⟩ n
 
 theorem bcert_fsp_save {n : Nat} :
-    BStmt_fsp_save progW prog prims 1036 n :=
-  @bproof_fsp_save progW prog prims 1036 478 742 743 744 1264 (fnW_of (by decide) (by decide) fn_fsp_save) fn_fsp_save np_fsp_save ⟨@cert_fsp_save⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_le32⟩ ⟨@bcert_slot_offset⟩ n
+    BStmt_fsp_save progW prog prims 1037 n :=
+  @bproof_fsp_save progW prog prims 1037 478 742 743 744 1269 (fnW_of (by decide) (by decide) fn_fsp_save) fn_fsp_save np_fsp_save ⟨@cert_fsp_save⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_le32⟩ ⟨@bcert_slot_offset⟩ n
 
 theorem bcert_fsp_load {n : Nat} :
-    BStmt_fsp_load progW prog prims 1037 n :=
-  @bproof_fsp_load progW prog prims 1037 478 742 743 744 1264 (fnW_of (by decide) (by decide) fn_fsp_load) fn_fsp_load np_fsp_load ⟨@cert_fsp_load⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_le32⟩ ⟨@bcert_slot_offset⟩ n
+    BStmt_fsp_load progW prog prims 1038 n :=
+  @bproof_fsp_load progW prog prims 1038 478 742 743 744 1269 (fnW_of (by decide) (by decide) fn_fsp_load) fn_fsp_load np_fsp_load ⟨@cert_fsp_load⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_le32⟩ ⟨@bcert_slot_offset⟩ n
 
-theorem bcerts_slot_range : ∀ n, (BStmt_slot_range progW prog prims 1038 n) := by
+theorem bcerts_slot_range : ∀ n, (BStmt_slot_range progW prog prims 1039 n) := by
   intro n
   induction n with
   | zero =>
     exact (by intro x0 x1 v0 v1 w k b h; simp only [qcall_zero, reduceCtorEq] at h)
   | succ n ih =>
-    have bih_slot_range : BStmt_slot_range progW prog prims 1038 n := ih
-    exact @bstep_slot_range progW prog prims 1038 56 75 138 398 (fnW_of (by decide) (by decide) fn_slot_range) fn_slot_range np_slot_range ⟨@cert_slot_range⟩ ⟨@bcert_minus⟩ ⟨@bcert_plus⟩ ⟨@bcert_empty_of_usize⟩ ⟨@bcert_cons_of_usize⟩ n ⟨bih_slot_range⟩
+    have bih_slot_range : BStmt_slot_range progW prog prims 1039 n := ih
+    exact @bstep_slot_range progW prog prims 1039 56 75 138 398 (fnW_of (by decide) (by decide) fn_slot_range) fn_slot_range np_slot_range ⟨@cert_slot_range⟩ ⟨@bcert_minus⟩ ⟨@bcert_plus⟩ ⟨@bcert_empty_of_usize⟩ ⟨@bcert_cons_of_usize⟩ n ⟨bih_slot_range⟩
 
 theorem bcert_slot_range {n : Nat} :
-    BStmt_slot_range progW prog prims 1038 n :=
+    BStmt_slot_range progW prog prims 1039 n :=
   (bcerts_slot_range n)
 
 theorem bcert_epilogue {n : Nat} :
-    BStmt_epilogue progW prog prims 1039 n := by
+    BStmt_epilogue progW prog prims 1040 n := by
   intro w k h
-  have key := bclosed (ix := 1039) (D := 3) (C := Cost_epilogue) (by decide +kernel) (by decide +kernel)
+  have key := bclosed (ix := 1040) (D := 3) (C := Cost_epilogue) (by decide +kernel) (by decide +kernel)
     (fun _ => rfl)
     (fun m hm => by rcases m with _ | _ | _ | m <;> first | decide +kernel | omega) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_epilogue prog prims 1039 n) from ⟨@cert_epilogue⟩).out
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_epilogue prog prims 1040 n) from ⟨@cert_epilogue⟩).out
     (pcall_of_q key.1)⟩
 
 theorem bcert_pow2 {n : Nat} :
-    BStmt_pow2 progW prog prims 1269 n := by
+    BStmt_pow2 progW prog prims 1274 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1269) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_pow2 prog prims 1269 n) from ⟨@cert_pow2⟩).out
+  have key := bfree (ix := 1274) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_pow2 prog prims 1274 n) from ⟨@cert_pow2⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_bump_bytes {n : Nat} :
-    BStmt_bump_bytes progW prog prims 1040 n :=
-  @bproof_bump_bytes progW prog prims 1040 478 742 743 1028 1269 (fnW_of (by decide) (by decide) fn_bump_bytes) fn_bump_bytes np_bump_bytes ⟨@cert_bump_bytes⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_le64⟩ ⟨@bcert_pow2⟩ n
+    BStmt_bump_bytes progW prog prims 1041 n :=
+  @bproof_bump_bytes progW prog prims 1041 478 742 743 1029 1274 (fnW_of (by decide) (by decide) fn_bump_bytes) fn_bump_bytes np_bump_bytes ⟨@cert_bump_bytes⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_le64⟩ ⟨@bcert_pow2⟩ n
 
 theorem bcert_load_at_bytes {n : Nat} :
-    BStmt_load_at_bytes progW prog prims 1041 n := by
+    BStmt_load_at_bytes progW prog prims 1042 n := by
   intro w k h
-  have key := bclosed (ix := 1041) (D := 3) (C := Cost_load_at_bytes) (by decide +kernel) (by decide +kernel)
+  have key := bclosed (ix := 1042) (D := 3) (C := Cost_load_at_bytes) (by decide +kernel) (by decide +kernel)
     (fun _ => rfl)
     (fun m hm => by rcases m with _ | _ | _ | m <;> first | decide +kernel | omega) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_load_at_bytes prog prims 1041 n) from ⟨@cert_load_at_bytes⟩).out
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_load_at_bytes prog prims 1042 n) from ⟨@cert_load_at_bytes⟩).out
     (pcall_of_q key.1)⟩
 
 theorem bcert_store_at_bytes {n : Nat} :
-    BStmt_store_at_bytes progW prog prims 1042 n :=
-  @bproof_store_at_bytes progW prog prims 1042 478 742 743 744 1264 (fnW_of (by decide) (by decide) fn_store_at_bytes) fn_store_at_bytes np_store_at_bytes ⟨@cert_store_at_bytes⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_le32⟩ ⟨@bcert_slot_offset⟩ n
+    BStmt_store_at_bytes progW prog prims 1043 n :=
+  @bproof_store_at_bytes progW prog prims 1043 478 742 743 744 1269 (fnW_of (by decide) (by decide) fn_store_at_bytes) fn_store_at_bytes np_store_at_bytes ⟨@cert_store_at_bytes⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_le32⟩ ⟨@bcert_slot_offset⟩ n
 
 theorem bcert_MemWidth_rex {n : Nat} :
-    BStmt_MemWidth_rex progW prog prims 1270 n :=
-  @bproof_MemWidth_rex progW prog prims 1270 110 743 (fnW_of (by decide) (by decide) fn_MemWidth_rex) fn_MemWidth_rex np_MemWidth_rex ⟨@cert_MemWidth_rex⟩ ⟨@bcert_empty_of_u8⟩ ⟨@bcert_single_of_u8⟩ n
+    BStmt_MemWidth_rex progW prog prims 1275 n :=
+  @bproof_MemWidth_rex progW prog prims 1275 110 743 (fnW_of (by decide) (by decide) fn_MemWidth_rex) fn_MemWidth_rex np_MemWidth_rex ⟨@cert_MemWidth_rex⟩ ⟨@bcert_empty_of_u8⟩ ⟨@bcert_single_of_u8⟩ n
 
 theorem bcert_load_word_bytes {n : Nat} :
-    BStmt_load_word_bytes progW prog prims 1043 n :=
-  @bproof_load_word_bytes progW prog prims 1043 478 742 743 1270 (fnW_of (by decide) (by decide) fn_load_word_bytes) fn_load_word_bytes np_load_word_bytes ⟨@cert_load_word_bytes⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_MemWidth_rex⟩ n
+    BStmt_load_word_bytes progW prog prims 1044 n :=
+  @bproof_load_word_bytes progW prog prims 1044 478 742 743 1275 (fnW_of (by decide) (by decide) fn_load_word_bytes) fn_load_word_bytes np_load_word_bytes ⟨@cert_load_word_bytes⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_MemWidth_rex⟩ n
 
 theorem bcert_store_word_bytes {n : Nat} :
-    BStmt_store_word_bytes progW prog prims 1044 n :=
-  @bproof_store_word_bytes progW prog prims 1044 478 742 743 744 1264 1270 (fnW_of (by decide) (by decide) fn_store_word_bytes) fn_store_word_bytes np_store_word_bytes ⟨@cert_store_word_bytes⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_le32⟩ ⟨@bcert_slot_offset⟩ ⟨@bcert_MemWidth_rex⟩ n
+    BStmt_store_word_bytes progW prog prims 1045 n :=
+  @bproof_store_word_bytes progW prog prims 1045 478 742 743 744 1269 1275 (fnW_of (by decide) (by decide) fn_store_word_bytes) fn_store_word_bytes np_store_word_bytes ⟨@cert_store_word_bytes⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_le32⟩ ⟨@bcert_slot_offset⟩ ⟨@bcert_MemWidth_rex⟩ n
 
 theorem bcert_DivOp_extend {n : Nat} :
-    BStmt_DivOp_extend progW prog prims 1271 n :=
-  @bproof_DivOp_extend progW prog prims 1271 478 742 743 1266 (fnW_of (by decide) (by decide) fn_DivOp_extend) fn_DivOp_extend np_DivOp_extend ⟨@cert_DivOp_extend⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_Word_rex⟩ n
+    BStmt_DivOp_extend progW prog prims 1276 n :=
+  @bproof_DivOp_extend progW prog prims 1276 478 742 743 1271 (fnW_of (by decide) (by decide) fn_DivOp_extend) fn_DivOp_extend np_DivOp_extend ⟨@cert_DivOp_extend⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_Word_rex⟩ n
 
 theorem bcert_DivOp_opcode {n : Nat} :
-    BStmt_DivOp_opcode progW prog prims 1272 n :=
-  @bproof_DivOp_opcode progW prog prims 1272 742 743 (fnW_of (by decide) (by decide) fn_DivOp_opcode) fn_DivOp_opcode np_DivOp_opcode ⟨@cert_DivOp_opcode⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ n
+    BStmt_DivOp_opcode progW prog prims 1277 n :=
+  @bproof_DivOp_opcode progW prog prims 1277 742 743 (fnW_of (by decide) (by decide) fn_DivOp_opcode) fn_DivOp_opcode np_DivOp_opcode ⟨@cert_DivOp_opcode⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ n
 
 theorem bcert_DivOp_result {n : Nat} :
-    BStmt_DivOp_result progW prog prims 1273 n :=
-  @bproof_DivOp_result progW prog prims 1273 110 742 743 (fnW_of (by decide) (by decide) fn_DivOp_result) fn_DivOp_result np_DivOp_result ⟨@cert_DivOp_result⟩ ⟨@bcert_empty_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ n
+    BStmt_DivOp_result progW prog prims 1278 n :=
+  @bproof_DivOp_result progW prog prims 1278 110 742 743 (fnW_of (by decide) (by decide) fn_DivOp_result) fn_DivOp_result np_DivOp_result ⟨@cert_DivOp_result⟩ ⟨@bcert_empty_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ n
 
 theorem bcert_DivOp_bytes {n : Nat} :
-    BStmt_DivOp_bytes progW prog prims 1045 n :=
-  @bproof_DivOp_bytes progW prog prims 1045 478 742 743 1265 1266 1271 1272 1273 (fnW_of (by decide) (by decide) fn_DivOp_bytes) fn_DivOp_bytes np_DivOp_bytes ⟨@cert_DivOp_bytes⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_slot_operands⟩ ⟨@bcert_Word_rex⟩ ⟨@bcert_DivOp_extend⟩ ⟨@bcert_DivOp_opcode⟩ ⟨@bcert_DivOp_result⟩ n
+    BStmt_DivOp_bytes progW prog prims 1046 n :=
+  @bproof_DivOp_bytes progW prog prims 1046 478 742 743 1270 1271 1276 1277 1278 (fnW_of (by decide) (by decide) fn_DivOp_bytes) fn_DivOp_bytes np_DivOp_bytes ⟨@cert_DivOp_bytes⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_slot_operands⟩ ⟨@bcert_Word_rex⟩ ⟨@bcert_DivOp_extend⟩ ⟨@bcert_DivOp_opcode⟩ ⟨@bcert_DivOp_result⟩ n
 
 theorem bcert_FloatTy_rex {n : Nat} :
-    BStmt_FloatTy_rex progW prog prims 1550 n :=
-  @bproof_FloatTy_rex progW prog prims 1550 110 743 (fnW_of (by decide) (by decide) fn_FloatTy_rex) fn_FloatTy_rex np_FloatTy_rex ⟨@cert_FloatTy_rex⟩ ⟨@bcert_empty_of_u8⟩ ⟨@bcert_single_of_u8⟩ n
+    BStmt_FloatTy_rex progW prog prims 1559 n :=
+  @bproof_FloatTy_rex progW prog prims 1559 110 743 (fnW_of (by decide) (by decide) fn_FloatTy_rex) fn_FloatTy_rex np_FloatTy_rex ⟨@cert_FloatTy_rex⟩ ⟨@bcert_empty_of_u8⟩ ⟨@bcert_single_of_u8⟩ n
 
 theorem bcert_float_operands {n : Nat} :
-    BStmt_float_operands progW prog prims 1446 n :=
-  @bproof_float_operands progW prog prims 1446 478 742 743 1550 (fnW_of (by decide) (by decide) fn_float_operands) fn_float_operands np_float_operands ⟨@cert_float_operands⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_FloatTy_rex⟩ n
+    BStmt_float_operands progW prog prims 1453 n :=
+  @bproof_float_operands progW prog prims 1453 478 742 743 1559 (fnW_of (by decide) (by decide) fn_float_operands) fn_float_operands np_float_operands ⟨@cert_float_operands⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_FloatTy_rex⟩ n
 
 theorem bcert_FloatTy_scalar_prefix {n : Nat} :
-    BStmt_FloatTy_scalar_prefix progW prog prims 1447 n := by
+    BStmt_FloatTy_scalar_prefix progW prog prims 1454 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1447) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_FloatTy_scalar_prefix prog prims 1447 n) from ⟨@cert_FloatTy_scalar_prefix⟩).out
+  have key := bfree (ix := 1454) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_FloatTy_scalar_prefix prog prims 1454 n) from ⟨@cert_FloatTy_scalar_prefix⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_FArith_opcode {n : Nat} :
-    BStmt_FArith_opcode progW prog prims 1448 n := by
+    BStmt_FArith_opcode progW prog prims 1455 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1448) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_FArith_opcode prog prims 1448 n) from ⟨@cert_FArith_opcode⟩).out
+  have key := bfree (ix := 1455) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_FArith_opcode prog prims 1455 n) from ⟨@cert_FArith_opcode⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_float_result {n : Nat} :
-    BStmt_float_result progW prog prims 1449 n :=
-  @bproof_float_result progW prog prims 1449 478 742 743 1550 (fnW_of (by decide) (by decide) fn_float_result) fn_float_result np_float_result ⟨@cert_float_result⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_FloatTy_rex⟩ n
+    BStmt_float_result progW prog prims 1456 n :=
+  @bproof_float_result progW prog prims 1456 478 742 743 1559 (fnW_of (by decide) (by decide) fn_float_result) fn_float_result np_float_result ⟨@cert_float_result⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_FloatTy_rex⟩ n
 
 theorem bcert_FCmp_predicate {n : Nat} :
-    BStmt_FCmp_predicate progW prog prims 1450 n := by
+    BStmt_FCmp_predicate progW prog prims 1457 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1450) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_FCmp_predicate prog prims 1450 n) from ⟨@cert_FCmp_predicate⟩).out
+  have key := bfree (ix := 1457) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_FCmp_predicate prog prims 1457 n) from ⟨@cert_FCmp_predicate⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_FOp_opcode_bytes {n : Nat} :
-    BStmt_FOp_opcode_bytes progW prog prims 1274 n :=
-  @bproof_FOp_opcode_bytes progW prog prims 1274 478 742 743 1266 1446 1447 1448 1449 1450 (fnW_of (by decide) (by decide) fn_FOp_opcode_bytes) fn_FOp_opcode_bytes np_FOp_opcode_bytes ⟨@cert_FOp_opcode_bytes⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_Word_rex⟩ ⟨@bcert_float_operands⟩ ⟨@bcert_FloatTy_scalar_prefix⟩ ⟨@bcert_FArith_opcode⟩ ⟨@bcert_float_result⟩ ⟨@bcert_FCmp_predicate⟩ n
+    BStmt_FOp_opcode_bytes progW prog prims 1279 n :=
+  @bproof_FOp_opcode_bytes progW prog prims 1279 478 742 743 1271 1453 1454 1455 1456 1457 (fnW_of (by decide) (by decide) fn_FOp_opcode_bytes) fn_FOp_opcode_bytes np_FOp_opcode_bytes ⟨@cert_FOp_opcode_bytes⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_Word_rex⟩ ⟨@bcert_float_operands⟩ ⟨@bcert_FloatTy_scalar_prefix⟩ ⟨@bcert_FArith_opcode⟩ ⟨@bcert_float_result⟩ ⟨@bcert_FCmp_predicate⟩ n
 
 theorem bcert_FOp_bytes {n : Nat} :
-    BStmt_FOp_bytes progW prog prims 1046 n :=
-  @bproof_FOp_bytes progW prog prims 1046 478 1265 1274 (fnW_of (by decide) (by decide) fn_FOp_bytes) fn_FOp_bytes np_FOp_bytes ⟨@cert_FOp_bytes⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_slot_operands⟩ ⟨@bcert_FOp_opcode_bytes⟩ n
+    BStmt_FOp_bytes progW prog prims 1047 n :=
+  @bproof_FOp_bytes progW prog prims 1047 478 1270 1279 (fnW_of (by decide) (by decide) fn_FOp_bytes) fn_FOp_bytes np_FOp_bytes ⟨@cert_FOp_bytes⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_slot_operands⟩ ⟨@bcert_FOp_opcode_bytes⟩ n
 
 theorem bcert_syscall_rsi_bytes {n : Nat} :
-    BStmt_syscall_rsi_bytes progW prog prims 1275 n :=
-  @bproof_syscall_rsi_bytes progW prog prims 1275 742 743 (fnW_of (by decide) (by decide) fn_syscall_rsi_bytes) fn_syscall_rsi_bytes np_syscall_rsi_bytes ⟨@cert_syscall_rsi_bytes⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ n
+    BStmt_syscall_rsi_bytes progW prog prims 1280 n :=
+  @bproof_syscall_rsi_bytes progW prog prims 1280 742 743 (fnW_of (by decide) (by decide) fn_syscall_rsi_bytes) fn_syscall_rsi_bytes np_syscall_rsi_bytes ⟨@cert_syscall_rsi_bytes⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ n
 
 theorem bcert_syscall_linux_byte {n : Nat} :
-    BStmt_syscall_linux_byte progW prog prims 1276 n := by
+    BStmt_syscall_linux_byte progW prog prims 1281 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1276) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_syscall_linux_byte prog prims 1276 n) from ⟨@cert_syscall_linux_byte⟩).out
+  have key := bfree (ix := 1281) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_syscall_linux_byte prog prims 1281 n) from ⟨@cert_syscall_linux_byte⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_syscall_linux_high {n : Nat} :
-    BStmt_syscall_linux_high progW prog prims 1277 n := by
+    BStmt_syscall_linux_high progW prog prims 1282 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1277) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_syscall_linux_high prog prims 1277 n) from ⟨@cert_syscall_linux_high⟩).out
+  have key := bfree (ix := 1282) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_syscall_linux_high prog prims 1282 n) from ⟨@cert_syscall_linux_high⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_sys_bytes {n : Nat} :
-    BStmt_sys_bytes progW prog prims 1047 n :=
-  @bproof_sys_bytes progW prog prims 1047 75 478 742 743 744 1264 1275 1276 1277 (fnW_of (by decide) (by decide) fn_sys_bytes) fn_sys_bytes np_sys_bytes ⟨@cert_sys_bytes⟩ ⟨@bcert_plus⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_le32⟩ ⟨@bcert_slot_offset⟩ ⟨@bcert_syscall_rsi_bytes⟩ ⟨@bcert_syscall_linux_byte⟩ ⟨@bcert_syscall_linux_high⟩ n
+    BStmt_sys_bytes progW prog prims 1048 n :=
+  @bproof_sys_bytes progW prog prims 1048 75 478 742 743 744 1269 1280 1281 1282 (fnW_of (by decide) (by decide) fn_sys_bytes) fn_sys_bytes np_sys_bytes ⟨@cert_sys_bytes⟩ ⟨@bcert_plus⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_le32⟩ ⟨@bcert_slot_offset⟩ ⟨@bcert_syscall_rsi_bytes⟩ ⟨@bcert_syscall_linux_byte⟩ ⟨@bcert_syscall_linux_high⟩ n
 
 theorem bcert_frame_memory_bytes {n : Nat} :
-    BStmt_frame_memory_bytes progW prog prims 1048 n :=
-  @bproof_frame_memory_bytes progW prog prims 1048 478 742 743 1028 (fnW_of (by decide) (by decide) fn_frame_memory_bytes) fn_frame_memory_bytes np_frame_memory_bytes ⟨@cert_frame_memory_bytes⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_le64⟩ n
+    BStmt_frame_memory_bytes progW prog prims 1049 n :=
+  @bproof_frame_memory_bytes progW prog prims 1049 478 742 743 1029 (fnW_of (by decide) (by decide) fn_frame_memory_bytes) fn_frame_memory_bytes np_frame_memory_bytes ⟨@cert_frame_memory_bytes⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_le64⟩ n
 
 theorem bcert_Instr_encode {n : Nat} :
     BStmt_Instr_encode progW prog prims 747 n :=
-  @bproof_Instr_encode progW prog prims 747 52 75 105 135 478 742 743 744 1028 1029 1030 1031 1032 1033 1034 1035 1036 1037 1038 1039 1040 1041 1042 1043 1044 1045 1046 1047 1048 (fnW_of (by decide) (by decide) fn_Instr_encode) fn_Instr_encode np_Instr_encode ⟨@cert_Instr_encode⟩ ⟨@bcert_length_of_usize⟩ ⟨@bcert_plus⟩ ⟨@bcert_times⟩ ⟨@bcert_get_or_of_usize⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_le32⟩ ⟨@bcert_le64⟩ ⟨@bcert_slot_load⟩ ⟨@bcert_slot_store⟩ ⟨@bcert_BinOp_bytes⟩ ⟨@bcert_slot_compare⟩ ⟨@bcert_relative⟩ ⟨@bcert_copy_bytes⟩ ⟨@bcert_arg_base⟩ ⟨@bcert_fsp_save⟩ ⟨@bcert_fsp_load⟩ ⟨@bcert_slot_range⟩ ⟨@bcert_epilogue⟩ ⟨@bcert_bump_bytes⟩ ⟨@bcert_load_at_bytes⟩ ⟨@bcert_store_at_bytes⟩ ⟨@bcert_load_word_bytes⟩ ⟨@bcert_store_word_bytes⟩ ⟨@bcert_DivOp_bytes⟩ ⟨@bcert_FOp_bytes⟩ ⟨@bcert_sys_bytes⟩ ⟨@bcert_frame_memory_bytes⟩ n
+  @bproof_Instr_encode progW prog prims 747 52 75 105 135 478 742 743 744 1029 1030 1031 1032 1033 1034 1035 1036 1037 1038 1039 1040 1041 1042 1043 1044 1045 1046 1047 1048 1049 (fnW_of (by decide) (by decide) fn_Instr_encode) fn_Instr_encode np_Instr_encode ⟨@cert_Instr_encode⟩ ⟨@bcert_length_of_usize⟩ ⟨@bcert_plus⟩ ⟨@bcert_times⟩ ⟨@bcert_get_or_of_usize⟩ ⟨@bcert_concat_of_u8⟩ ⟨@bcert_cons_of_u8⟩ ⟨@bcert_single_of_u8⟩ ⟨@bcert_le32⟩ ⟨@bcert_le64⟩ ⟨@bcert_slot_load⟩ ⟨@bcert_slot_store⟩ ⟨@bcert_BinOp_bytes⟩ ⟨@bcert_slot_compare⟩ ⟨@bcert_relative⟩ ⟨@bcert_copy_bytes⟩ ⟨@bcert_arg_base⟩ ⟨@bcert_fsp_save⟩ ⟨@bcert_fsp_load⟩ ⟨@bcert_slot_range⟩ ⟨@bcert_epilogue⟩ ⟨@bcert_bump_bytes⟩ ⟨@bcert_load_at_bytes⟩ ⟨@bcert_store_at_bytes⟩ ⟨@bcert_load_word_bytes⟩ ⟨@bcert_store_word_bytes⟩ ⟨@bcert_DivOp_bytes⟩ ⟨@bcert_FOp_bytes⟩ ⟨@bcert_sys_bytes⟩ ⟨@bcert_frame_memory_bytes⟩ n
 
 theorem bcerts_encode_onto : ∀ n, (BStmt_encode_onto progW prog prims 480 n) := by
   intro n
@@ -1972,21 +1974,21 @@ theorem bcert_guard_and {n : Nat} :
   @bproof_guard_and progW prog prims 208 331 332 (fnW_of (by decide) (by decide) fn_guard_and) fn_guard_and np_guard_and ⟨@cert_guard_and⟩ ⟨@bcert_is_one⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) n
 
 theorem bcert_literal_below {n : Nat} :
-    BStmt_literal_below progW prog prims 1049 n := by
+    BStmt_literal_below progW prog prims 1050 n := by
   intro x0 x1 v0 v1 w k h r0 r1
-  have key := bfree (ix := 1049) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_literal_below prog prims 1049 n) from ⟨@cert_literal_below⟩).out
+  have key := bfree (ix := 1050) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_literal_below prog prims 1050 n) from ⟨@cert_literal_below⟩).out
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_amount_guard {n : Nat} :
     BStmt_amount_guard progW prog prims 749 n :=
-  @bproof_amount_guard progW prog prims 749 332 1049 (fnW_of (by decide) (by decide) fn_amount_guard) fn_amount_guard np_amount_guard ⟨@cert_amount_guard⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_literal_below⟩ n
+  @bproof_amount_guard progW prog prims 749 332 1050 (fnW_of (by decide) (by decide) fn_amount_guard) fn_amount_guard np_amount_guard ⟨@cert_amount_guard⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_literal_below⟩ n
 
 theorem bcert_UintTy_bits {n : Nat} :
-    BStmt_UintTy_bits progW prog prims 1050 n := by
+    BStmt_UintTy_bits progW prog prims 1051 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1050) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_UintTy_bits prog prims 1050 n) from ⟨@cert_UintTy_bits⟩).out
+  have key := bfree (ix := 1051) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_UintTy_bits prog prims 1051 n) from ⟨@cert_UintTy_bits⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_shift_width {n : Nat} :
@@ -2092,22 +2094,22 @@ theorem bcert_get_of_mini_selfhost_SrcType {n : Nat} :
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_lower_scalar_slot {n : Nat} :
-    BStmt_lower_scalar_slot progW prog prims 1278 n := by
+    BStmt_lower_scalar_slot progW prog prims 1283 n := by
   intro x0 x1 v0 v1 w k h r0 r1
-  have key := bfree (ix := 1278) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_lower_scalar_slot prog prims 1278 n) from ⟨@cert_lower_scalar_slot⟩).out
+  have key := bfree (ix := 1283) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_lower_scalar_slot prog prims 1283 n) from ⟨@cert_lower_scalar_slot⟩).out
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_lower_field_at {n : Nat} :
-    BStmt_lower_field_at progW prog prims 1051 n := by
+    BStmt_lower_field_at progW prog prims 1052 n := by
   intro x0 x1 v0 v1 w k h r0 r1
-  have key := bfree (ix := 1051) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_lower_field_at prog prims 1051 n) from ⟨@cert_lower_field_at⟩).out
+  have key := bfree (ix := 1052) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_lower_field_at prog prims 1052 n) from ⟨@cert_lower_field_at⟩).out
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_lower_field_of {n : Nat} :
     BStmt_lower_field_of progW prog prims 753 n :=
-  @bproof_lower_field_of progW prog prims 753 75 178 513 514 1051 (fnW_of (by decide) (by decide) fn_lower_field_of) fn_lower_field_of np_lower_field_of ⟨@cert_lower_field_of⟩ ⟨@bcert_plus⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_SrcType (by decide +kernel) ⟨@bcert_field_offset⟩ ⟨@bcert_get_of_mini_selfhost_SrcType⟩ ⟨@bcert_lower_field_at⟩ n
+  @bproof_lower_field_of progW prog prims 753 75 178 513 514 1052 (fnW_of (by decide) (by decide) fn_lower_field_of) fn_lower_field_of np_lower_field_of ⟨@cert_lower_field_of⟩ ⟨@bcert_plus⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_SrcType (by decide +kernel) ⟨@bcert_field_offset⟩ ⟨@bcert_get_of_mini_selfhost_SrcType⟩ ⟨@bcert_lower_field_at⟩ n
 
 theorem bcert_lower_field {n : Nat} :
     BStmt_lower_field progW prog prims 498 n :=
@@ -2135,22 +2137,22 @@ theorem bcert_SrcType_is_float_any {n : Nat} :
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_FloatTy_sign_word {n : Nat} :
-    BStmt_FloatTy_sign_word progW prog prims 1082 n := by
+    BStmt_FloatTy_sign_word progW prog prims 1083 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1082) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_FloatTy_sign_word prog prims 1082 n) from ⟨@cert_FloatTy_sign_word⟩).out
+  have key := bfree (ix := 1083) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_FloatTy_sign_word prog prims 1083 n) from ⟨@cert_FloatTy_sign_word⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_FloatTy_sign_bit {n : Nat} :
-    BStmt_FloatTy_sign_bit progW prog prims 1083 n := by
+    BStmt_FloatTy_sign_bit progW prog prims 1084 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1083) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_FloatTy_sign_bit prog prims 1083 n) from ⟨@cert_FloatTy_sign_bit⟩).out
+  have key := bfree (ix := 1084) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_FloatTy_sign_bit prog prims 1084 n) from ⟨@cert_FloatTy_sign_bit⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_negate_float {n : Nat} :
     BStmt_negate_float progW prog prims 792 n :=
-  @bproof_negate_float progW prog prims 792 332 1082 1083 (fnW_of (by decide) (by decide) fn_negate_float) fn_negate_float np_negate_float ⟨@cert_negate_float⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_FloatTy_sign_word⟩ ⟨@bcert_FloatTy_sign_bit⟩ n
+  @bproof_negate_float progW prog prims 792 332 1083 1084 (fnW_of (by decide) (by decide) fn_negate_float) fn_negate_float np_negate_float ⟨@cert_negate_float⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_FloatTy_sign_word⟩ ⟨@bcert_FloatTy_sign_bit⟩ n
 
 theorem bcert_SrcType_float_ty {n : Nat} :
     BStmt_SrcType_float_ty progW prog prims 793 n := by
@@ -2167,26 +2169,26 @@ theorem bcert_SrcType_sint_kind {n : Nat} :
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_UintTy_is_wide {n : Nat} :
-    BStmt_UintTy_is_wide progW prog prims 1084 n := by
+    BStmt_UintTy_is_wide progW prog prims 1085 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1084) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_UintTy_is_wide prog prims 1084 n) from ⟨@cert_UintTy_is_wide⟩).out
+  have key := bfree (ix := 1085) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_UintTy_is_wide prog prims 1085 n) from ⟨@cert_UintTy_is_wide⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_UintTy_spare {n : Nat} :
-    BStmt_UintTy_spare progW prog prims 1307 n := by
+    BStmt_UintTy_spare progW prog prims 1312 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1307) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_UintTy_spare prog prims 1307 n) from ⟨@cert_UintTy_spare⟩).out
+  have key := bfree (ix := 1312) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_UintTy_spare prog prims 1312 n) from ⟨@cert_UintTy_spare⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_norm {n : Nat} :
-    BStmt_norm progW prog prims 1085 n :=
-  @bproof_norm progW prog prims 1085 332 1307 (fnW_of (by decide) (by decide) fn_norm) fn_norm np_norm ⟨@cert_norm⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_UintTy_spare⟩ n
+    BStmt_norm progW prog prims 1086 n :=
+  @bproof_norm progW prog prims 1086 332 1312 (fnW_of (by decide) (by decide) fn_norm) fn_norm np_norm ⟨@cert_norm⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_UintTy_spare⟩ n
 
 theorem bcert_negate_signed {n : Nat} :
     BStmt_negate_signed progW prog prims 795 n :=
-  @bproof_negate_signed progW prog prims 795 332 1084 1085 (fnW_of (by decide) (by decide) fn_negate_signed) fn_negate_signed np_negate_signed ⟨@cert_negate_signed⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_UintTy_is_wide⟩ ⟨@bcert_norm⟩ n
+  @bproof_negate_signed progW prog prims 795 332 1085 1086 (fnW_of (by decide) (by decide) fn_negate_signed) fn_negate_signed np_negate_signed ⟨@cert_negate_signed⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_UintTy_is_wide⟩ ⟨@bcert_norm⟩ n
 
 theorem bcert_lower_negate_typed {n : Nat} :
     BStmt_lower_negate_typed progW prog prims 543 n :=
@@ -2247,29 +2249,29 @@ theorem bcert_SrcType_is_float {n : Nat} :
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_float_apply {n : Nat} :
-    BStmt_float_apply progW prog prims 1551 n :=
-  @bproof_float_apply progW prog prims 1551 332 (fnW_of (by decide) (by decide) fn_float_apply) fn_float_apply np_float_apply ⟨@cert_float_apply⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) n
+    BStmt_float_apply progW prog prims 1560 n :=
+  @bproof_float_apply progW prog prims 1560 332 (fnW_of (by decide) (by decide) fn_float_apply) fn_float_apply np_float_apply ⟨@cert_float_apply⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) n
 
 theorem bcert_float_op {n : Nat} :
-    BStmt_float_op progW prog prims 1552 n := by
+    BStmt_float_op progW prog prims 1561 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1552) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_float_op prog prims 1552 n) from ⟨@cert_float_op⟩).out
+  have key := bfree (ix := 1561) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_float_op prog prims 1561 n) from ⟨@cert_float_op⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_float_arith_of {n : Nat} :
-    BStmt_float_arith_of progW prog prims 1451 n :=
-  @bproof_float_arith_of progW prog prims 1451 388 1551 1552 (fnW_of (by decide) (by decide) fn_float_arith_of) fn_float_arith_of np_float_arith_of ⟨@cert_float_arith_of⟩ ⟨@bcert_SrcType_is_float⟩ ⟨@bcert_float_apply⟩ ⟨@bcert_float_op⟩ n
+    BStmt_float_arith_of progW prog prims 1458 n :=
+  @bproof_float_arith_of progW prog prims 1458 388 1560 1561 (fnW_of (by decide) (by decide) fn_float_arith_of) fn_float_arith_of np_float_arith_of ⟨@cert_float_arith_of⟩ ⟨@bcert_SrcType_is_float⟩ ⟨@bcert_float_apply⟩ ⟨@bcert_float_op⟩ n
 
 theorem bcert_float_arith {n : Nat} :
-    BStmt_float_arith progW prog prims 1279 n :=
-  @bproof_float_arith progW prog prims 1279 1451 (fnW_of (by decide) (by decide) fn_float_arith) fn_float_arith np_float_arith ⟨@cert_float_arith⟩ ⟨@bcert_float_arith_of⟩ n
+    BStmt_float_arith progW prog prims 1284 n :=
+  @bproof_float_arith progW prog prims 1284 1458 (fnW_of (by decide) (by decide) fn_float_arith) fn_float_arith np_float_arith ⟨@cert_float_arith⟩ ⟨@bcert_float_arith_of⟩ n
 
 theorem bcert_SrcType_is_sint_any {n : Nat} :
-    BStmt_SrcType_is_sint_any progW prog prims 1280 n := by
+    BStmt_SrcType_is_sint_any progW prog prims 1285 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1280) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_SrcType_is_sint_any prog prims 1280 n) from ⟨@cert_SrcType_is_sint_any⟩).out
+  have key := bfree (ix := 1285) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_SrcType_is_sint_any prog prims 1285 n) from ⟨@cert_SrcType_is_sint_any⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_SrcType_is_sint {n : Nat} :
@@ -2280,47 +2282,47 @@ theorem bcert_SrcType_is_sint {n : Nat} :
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_arith_signed_of {n : Nat} :
-    BStmt_arith_signed_of progW prog prims 1452 n :=
-  @bproof_arith_signed_of progW prog prims 1452 332 389 1084 1085 (fnW_of (by decide) (by decide) fn_arith_signed_of) fn_arith_signed_of np_arith_signed_of ⟨@cert_arith_signed_of⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_SrcType_is_sint⟩ ⟨@bcert_UintTy_is_wide⟩ ⟨@bcert_norm⟩ n
+    BStmt_arith_signed_of progW prog prims 1459 n :=
+  @bproof_arith_signed_of progW prog prims 1459 332 389 1085 1086 (fnW_of (by decide) (by decide) fn_arith_signed_of) fn_arith_signed_of np_arith_signed_of ⟨@cert_arith_signed_of⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_SrcType_is_sint⟩ ⟨@bcert_UintTy_is_wide⟩ ⟨@bcert_norm⟩ n
 
 theorem bcert_arith_sint {n : Nat} :
-    BStmt_arith_sint progW prog prims 1281 n :=
-  @bproof_arith_sint progW prog prims 1281 1452 (fnW_of (by decide) (by decide) fn_arith_sint) fn_arith_sint np_arith_sint ⟨@cert_arith_sint⟩ ⟨@bcert_arith_signed_of⟩ n
+    BStmt_arith_sint progW prog prims 1286 n :=
+  @bproof_arith_sint progW prog prims 1286 1459 (fnW_of (by decide) (by decide) fn_arith_sint) fn_arith_sint np_arith_sint ⟨@cert_arith_sint⟩ ⟨@bcert_arith_signed_of⟩ n
 
 theorem bcert_wrap {n : Nat} :
-    BStmt_wrap progW prog prims 1289 n :=
-  @bproof_wrap progW prog prims 1289 332 751 1084 (fnW_of (by decide) (by decide) fn_wrap) fn_wrap np_wrap ⟨@cert_wrap⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_UintTy_mask⟩ ⟨@bcert_UintTy_is_wide⟩ n
+    BStmt_wrap progW prog prims 1294 n :=
+  @bproof_wrap progW prog prims 1294 332 751 1085 (fnW_of (by decide) (by decide) fn_wrap) fn_wrap np_wrap ⟨@cert_wrap⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_UintTy_mask⟩ ⟨@bcert_UintTy_is_wide⟩ n
 
 theorem bcert_arith_of {n : Nat} :
-    BStmt_arith_of progW prog prims 1453 n :=
-  @bproof_arith_of progW prog prims 1453 332 334 1289 (fnW_of (by decide) (by decide) fn_arith_of) fn_arith_of np_arith_of ⟨@cert_arith_of⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_SrcType_is_uint⟩ ⟨@bcert_wrap⟩ n
+    BStmt_arith_of progW prog prims 1460 n :=
+  @bproof_arith_of progW prog prims 1460 332 334 1294 (fnW_of (by decide) (by decide) fn_arith_of) fn_arith_of np_arith_of ⟨@cert_arith_of⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_SrcType_is_uint⟩ ⟨@bcert_wrap⟩ n
 
 theorem bcert_arith_uint {n : Nat} :
-    BStmt_arith_uint progW prog prims 1282 n :=
-  @bproof_arith_uint progW prog prims 1282 1453 (fnW_of (by decide) (by decide) fn_arith_uint) fn_arith_uint np_arith_uint ⟨@cert_arith_uint⟩ ⟨@bcert_arith_of⟩ n
+    BStmt_arith_uint progW prog prims 1287 n :=
+  @bproof_arith_uint progW prog prims 1287 1460 (fnW_of (by decide) (by decide) fn_arith_uint) fn_arith_uint np_arith_uint ⟨@cert_arith_uint⟩ ⟨@bcert_arith_of⟩ n
 
 theorem bcert_arith {n : Nat} :
-    BStmt_arith progW prog prims 1053 n :=
-  @bproof_arith progW prog prims 1053 332 333 386 791 793 794 801 1279 1280 1281 1282 (fnW_of (by decide) (by decide) fn_arith) fn_arith np_arith ⟨@cert_arith⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_SrcType_is_i32⟩ ⟨@bcert_SrcType_is_isize⟩ ⟨@bcert_SrcType_is_float_any⟩ ⟨@bcert_SrcType_float_ty⟩ ⟨@bcert_SrcType_sint_kind⟩ ⟨@bcert_SrcType_uint_kind⟩ ⟨@bcert_float_arith⟩ ⟨@bcert_SrcType_is_sint_any⟩ ⟨@bcert_arith_sint⟩ ⟨@bcert_arith_uint⟩ n
+    BStmt_arith progW prog prims 1054 n :=
+  @bproof_arith progW prog prims 1054 332 333 386 791 793 794 801 1284 1285 1286 1287 (fnW_of (by decide) (by decide) fn_arith) fn_arith np_arith ⟨@cert_arith⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_SrcType_is_i32⟩ ⟨@bcert_SrcType_is_isize⟩ ⟨@bcert_SrcType_is_float_any⟩ ⟨@bcert_SrcType_float_ty⟩ ⟨@bcert_SrcType_sint_kind⟩ ⟨@bcert_SrcType_uint_kind⟩ ⟨@bcert_float_arith⟩ ⟨@bcert_SrcType_is_sint_any⟩ ⟨@bcert_arith_sint⟩ ⟨@bcert_arith_uint⟩ n
 
 theorem bcert_offset_or_arith {n : Nat} :
-    BStmt_offset_or_arith progW prog prims 1052 n :=
-  @bproof_offset_or_arith progW prog prims 1052 332 334 385 1053 (fnW_of (by decide) (by decide) fn_offset_or_arith) fn_offset_or_arith np_offset_or_arith ⟨@cert_offset_or_arith⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_SrcType_is_uint⟩ ⟨@bcert_SrcType_is_ptr⟩ ⟨@bcert_arith⟩ n
+    BStmt_offset_or_arith progW prog prims 1053 n :=
+  @bproof_offset_or_arith progW prog prims 1053 332 334 385 1054 (fnW_of (by decide) (by decide) fn_offset_or_arith) fn_offset_or_arith np_offset_or_arith ⟨@cert_offset_or_arith⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_SrcType_is_uint⟩ ⟨@bcert_SrcType_is_ptr⟩ ⟨@bcert_arith⟩ n
 
 theorem bcert_SrcType_is_integer {n : Nat} :
-    BStmt_SrcType_is_integer progW prog prims 1283 n := by
+    BStmt_SrcType_is_integer progW prog prims 1288 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1283) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_SrcType_is_integer prog prims 1283 n) from ⟨@cert_SrcType_is_integer⟩).out
+  have key := bfree (ix := 1288) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_SrcType_is_integer prog prims 1288 n) from ⟨@cert_SrcType_is_integer⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_lower_shift {n : Nat} :
-    BStmt_lower_shift progW prog prims 1054 n :=
-  @bproof_lower_shift progW prog prims 1054 1053 1283 (fnW_of (by decide) (by decide) fn_lower_shift) fn_lower_shift np_lower_shift ⟨@cert_lower_shift⟩ ⟨@bcert_arith⟩ ⟨@bcert_SrcType_is_integer⟩ n
+    BStmt_lower_shift progW prog prims 1055 n :=
+  @bproof_lower_shift progW prog prims 1055 1054 1288 (fnW_of (by decide) (by decide) fn_lower_shift) fn_lower_shift np_lower_shift ⟨@cert_lower_shift⟩ ⟨@bcert_arith⟩ ⟨@bcert_SrcType_is_integer⟩ n
 
 theorem bcert_arith_shift_right {n : Nat} :
-    BStmt_arith_shift_right progW prog prims 1055 n :=
-  @bproof_arith_shift_right progW prog prims 1055 333 386 1054 1280 (fnW_of (by decide) (by decide) fn_arith_shift_right) fn_arith_shift_right np_arith_shift_right ⟨@cert_arith_shift_right⟩ ⟨@bcert_SrcType_is_i32⟩ ⟨@bcert_SrcType_is_isize⟩ ⟨@bcert_lower_shift⟩ ⟨@bcert_SrcType_is_sint_any⟩ n
+    BStmt_arith_shift_right progW prog prims 1056 n :=
+  @bproof_arith_shift_right progW prog prims 1056 333 386 1055 1285 (fnW_of (by decide) (by decide) fn_arith_shift_right) fn_arith_shift_right np_arith_shift_right ⟨@cert_arith_shift_right⟩ ⟨@bcert_SrcType_is_i32⟩ ⟨@bcert_SrcType_is_isize⟩ ⟨@bcert_lower_shift⟩ ⟨@bcert_SrcType_is_sint_any⟩ n
 
 theorem bcert_SrcType_is_char {n : Nat} :
     BStmt_SrcType_is_char progW prog prims 387 n := by
@@ -2330,40 +2332,40 @@ theorem bcert_SrcType_is_char {n : Nat} :
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_float_compare {n : Nat} :
-    BStmt_float_compare progW prog prims 1553 n :=
-  @bproof_float_compare progW prog prims 1553 332 (fnW_of (by decide) (by decide) fn_float_compare) fn_float_compare np_float_compare ⟨@cert_float_compare⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) n
+    BStmt_float_compare progW prog prims 1562 n :=
+  @bproof_float_compare progW prog prims 1562 332 (fnW_of (by decide) (by decide) fn_float_compare) fn_float_compare np_float_compare ⟨@cert_float_compare⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) n
 
 theorem bcert_float_order_of {n : Nat} :
-    BStmt_float_order_of progW prog prims 1454 n :=
-  @bproof_float_order_of progW prog prims 1454 388 1553 (fnW_of (by decide) (by decide) fn_float_order_of) fn_float_order_of np_float_order_of ⟨@cert_float_order_of⟩ ⟨@bcert_SrcType_is_float⟩ ⟨@bcert_float_compare⟩ n
+    BStmt_float_order_of progW prog prims 1461 n :=
+  @bproof_float_order_of progW prog prims 1461 388 1562 (fnW_of (by decide) (by decide) fn_float_order_of) fn_float_order_of np_float_order_of ⟨@cert_float_order_of⟩ ⟨@bcert_SrcType_is_float⟩ ⟨@bcert_float_compare⟩ n
 
 theorem bcert_float_order {n : Nat} :
-    BStmt_float_order progW prog prims 1284 n :=
-  @bproof_float_order progW prog prims 1284 1454 (fnW_of (by decide) (by decide) fn_float_order) fn_float_order np_float_order ⟨@cert_float_order⟩ ⟨@bcert_float_order_of⟩ n
+    BStmt_float_order progW prog prims 1289 n :=
+  @bproof_float_order progW prog prims 1289 1461 (fnW_of (by decide) (by decide) fn_float_order) fn_float_order np_float_order ⟨@cert_float_order⟩ ⟨@bcert_float_order_of⟩ n
 
 theorem bcert_sign_key {n : Nat} :
-    BStmt_sign_key progW prog prims 1285 n :=
-  @bproof_sign_key progW prog prims 1285 332 (fnW_of (by decide) (by decide) fn_sign_key) fn_sign_key np_sign_key ⟨@cert_sign_key⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) n
+    BStmt_sign_key progW prog prims 1290 n :=
+  @bproof_sign_key progW prog prims 1290 332 (fnW_of (by decide) (by decide) fn_sign_key) fn_sign_key np_sign_key ⟨@cert_sign_key⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) n
 
 theorem bcert_order_signed_of {n : Nat} :
-    BStmt_order_signed_of progW prog prims 1455 n :=
-  @bproof_order_signed_of progW prog prims 1455 332 389 1084 1285 (fnW_of (by decide) (by decide) fn_order_signed_of) fn_order_signed_of np_order_signed_of ⟨@cert_order_signed_of⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_SrcType_is_sint⟩ ⟨@bcert_UintTy_is_wide⟩ ⟨@bcert_sign_key⟩ n
+    BStmt_order_signed_of progW prog prims 1462 n :=
+  @bproof_order_signed_of progW prog prims 1462 332 389 1085 1290 (fnW_of (by decide) (by decide) fn_order_signed_of) fn_order_signed_of np_order_signed_of ⟨@cert_order_signed_of⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_SrcType_is_sint⟩ ⟨@bcert_UintTy_is_wide⟩ ⟨@bcert_sign_key⟩ n
 
 theorem bcert_order_sint {n : Nat} :
-    BStmt_order_sint progW prog prims 1286 n :=
-  @bproof_order_sint progW prog prims 1286 1455 (fnW_of (by decide) (by decide) fn_order_sint) fn_order_sint np_order_sint ⟨@cert_order_sint⟩ ⟨@bcert_order_signed_of⟩ n
+    BStmt_order_sint progW prog prims 1291 n :=
+  @bproof_order_sint progW prog prims 1291 1462 (fnW_of (by decide) (by decide) fn_order_sint) fn_order_sint np_order_sint ⟨@cert_order_sint⟩ ⟨@bcert_order_signed_of⟩ n
 
 theorem bcert_order_of {n : Nat} :
-    BStmt_order_of progW prog prims 1456 n :=
-  @bproof_order_of progW prog prims 1456 332 334 (fnW_of (by decide) (by decide) fn_order_of) fn_order_of np_order_of ⟨@cert_order_of⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_SrcType_is_uint⟩ n
+    BStmt_order_of progW prog prims 1463 n :=
+  @bproof_order_of progW prog prims 1463 332 334 (fnW_of (by decide) (by decide) fn_order_of) fn_order_of np_order_of ⟨@cert_order_of⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_SrcType_is_uint⟩ n
 
 theorem bcert_order_uint {n : Nat} :
-    BStmt_order_uint progW prog prims 1287 n :=
-  @bproof_order_uint progW prog prims 1287 1456 (fnW_of (by decide) (by decide) fn_order_uint) fn_order_uint np_order_uint ⟨@cert_order_uint⟩ ⟨@bcert_order_of⟩ n
+    BStmt_order_uint progW prog prims 1292 n :=
+  @bproof_order_uint progW prog prims 1292 1463 (fnW_of (by decide) (by decide) fn_order_uint) fn_order_uint np_order_uint ⟨@cert_order_uint⟩ ⟨@bcert_order_of⟩ n
 
 theorem bcert_order {n : Nat} :
-    BStmt_order progW prog prims 1056 n :=
-  @bproof_order progW prog prims 1056 332 333 386 387 791 793 794 801 1280 1284 1285 1286 1287 (fnW_of (by decide) (by decide) fn_order) fn_order np_order ⟨@cert_order⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_SrcType_is_i32⟩ ⟨@bcert_SrcType_is_isize⟩ ⟨@bcert_SrcType_is_char⟩ ⟨@bcert_SrcType_is_float_any⟩ ⟨@bcert_SrcType_float_ty⟩ ⟨@bcert_SrcType_sint_kind⟩ ⟨@bcert_SrcType_uint_kind⟩ ⟨@bcert_SrcType_is_sint_any⟩ ⟨@bcert_float_order⟩ ⟨@bcert_sign_key⟩ ⟨@bcert_order_sint⟩ ⟨@bcert_order_uint⟩ n
+    BStmt_order progW prog prims 1057 n :=
+  @bproof_order progW prog prims 1057 332 333 386 387 791 793 794 801 1285 1289 1290 1291 1292 (fnW_of (by decide) (by decide) fn_order) fn_order np_order ⟨@cert_order⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_SrcType_is_i32⟩ ⟨@bcert_SrcType_is_isize⟩ ⟨@bcert_SrcType_is_char⟩ ⟨@bcert_SrcType_is_float_any⟩ ⟨@bcert_SrcType_float_ty⟩ ⟨@bcert_SrcType_sint_kind⟩ ⟨@bcert_SrcType_uint_kind⟩ ⟨@bcert_SrcType_is_sint_any⟩ ⟨@bcert_float_order⟩ ⟨@bcert_sign_key⟩ ⟨@bcert_order_sint⟩ ⟨@bcert_order_uint⟩ n
 
 theorem bcert_SrcType_is_str {n : Nat} :
     BStmt_SrcType_is_str progW prog prims 390 n := by
@@ -2394,93 +2396,93 @@ theorem bcert_variants_same {n : Nat} :
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_UintTy_signed_word {n : Nat} :
-    BStmt_UintTy_signed_word progW prog prims 1297 n := by
+    BStmt_UintTy_signed_word progW prog prims 1302 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1297) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_UintTy_signed_word prog prims 1297 n) from ⟨@cert_UintTy_signed_word⟩).out
+  have key := bfree (ix := 1302) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_UintTy_signed_word prog prims 1302 n) from ⟨@cert_UintTy_signed_word⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_SrcType_word {n : Nat} :
-    BStmt_SrcType_word progW prog prims 1288 n := by
+    BStmt_SrcType_word progW prog prims 1293 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1288) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_SrcType_word prog prims 1288 n) from ⟨@cert_SrcType_word⟩).out
+  have key := bfree (ix := 1293) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_SrcType_word prog prims 1293 n) from ⟨@cert_SrcType_word⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_equality {n : Nat} :
-    BStmt_equality progW prog prims 1057 n :=
-  @bproof_equality progW prog prims 1057 232 332 791 793 1284 1288 (fnW_of (by decide) (by decide) fn_equality) fn_equality np_equality ⟨@cert_equality⟩ ⟨@bcert_SrcType_same⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_SrcType_is_float_any⟩ ⟨@bcert_SrcType_float_ty⟩ ⟨@bcert_float_order⟩ ⟨@bcert_SrcType_word⟩ n
+    BStmt_equality progW prog prims 1058 n :=
+  @bproof_equality progW prog prims 1058 232 332 791 793 1289 1293 (fnW_of (by decide) (by decide) fn_equality) fn_equality np_equality ⟨@cert_equality⟩ ⟨@bcert_SrcType_same⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_SrcType_is_float_any⟩ ⟨@bcert_SrcType_float_ty⟩ ⟨@bcert_float_order⟩ ⟨@bcert_SrcType_word⟩ n
 
 theorem bcert_conjunction {n : Nat} :
-    BStmt_conjunction progW prog prims 1058 n :=
-  @bproof_conjunction progW prog prims 1058 332 382 (fnW_of (by decide) (by decide) fn_conjunction) fn_conjunction np_conjunction ⟨@cert_conjunction⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_SrcType_is_bool⟩ n
+    BStmt_conjunction progW prog prims 1059 n :=
+  @bproof_conjunction progW prog prims 1059 332 382 (fnW_of (by decide) (by decide) fn_conjunction) fn_conjunction np_conjunction ⟨@cert_conjunction⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_SrcType_is_bool⟩ n
 
 theorem bcert_disjunction {n : Nat} :
-    BStmt_disjunction progW prog prims 1059 n :=
-  @bproof_disjunction progW prog prims 1059 332 382 (fnW_of (by decide) (by decide) fn_disjunction) fn_disjunction np_disjunction ⟨@cert_disjunction⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_SrcType_is_bool⟩ n
+    BStmt_disjunction progW prog prims 1060 n :=
+  @bproof_disjunction progW prog prims 1060 332 382 (fnW_of (by decide) (by decide) fn_disjunction) fn_disjunction np_disjunction ⟨@cert_disjunction⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_SrcType_is_bool⟩ n
 
 theorem bcert_SrcOp_lower {n : Nat} :
     BStmt_SrcOp_lower progW prog prims 754 n :=
-  @bproof_SrcOp_lower progW prog prims 754 1052 1053 1054 1055 1056 1057 1058 1059 (fnW_of (by decide) (by decide) fn_SrcOp_lower) fn_SrcOp_lower np_SrcOp_lower ⟨@cert_SrcOp_lower⟩ ⟨@bcert_offset_or_arith⟩ ⟨@bcert_arith⟩ ⟨@bcert_lower_shift⟩ ⟨@bcert_arith_shift_right⟩ ⟨@bcert_order⟩ ⟨@bcert_equality⟩ ⟨@bcert_conjunction⟩ ⟨@bcert_disjunction⟩ n
+  @bproof_SrcOp_lower progW prog prims 754 1053 1054 1055 1056 1057 1058 1059 1060 (fnW_of (by decide) (by decide) fn_SrcOp_lower) fn_SrcOp_lower np_SrcOp_lower ⟨@cert_SrcOp_lower⟩ ⟨@bcert_offset_or_arith⟩ ⟨@bcert_arith⟩ ⟨@bcert_lower_shift⟩ ⟨@bcert_arith_shift_right⟩ ⟨@bcert_order⟩ ⟨@bcert_equality⟩ ⟨@bcert_conjunction⟩ ⟨@bcert_disjunction⟩ n
 
 theorem bcert_lower_apply {n : Nat} :
     BStmt_lower_apply progW prog prims 501 n :=
   @bproof_lower_apply progW prog prims 501 754 (fnW_of (by decide) (by decide) fn_lower_apply) fn_lower_apply np_lower_apply ⟨@cert_lower_apply⟩ ⟨@bcert_SrcOp_lower⟩ n
 
 theorem bcert_sint_to_i32 {n : Nat} :
-    BStmt_sint_to_i32 progW prog prims 1290 n :=
-  @bproof_sint_to_i32 progW prog prims 1290 1084 1289 (fnW_of (by decide) (by decide) fn_sint_to_i32) fn_sint_to_i32 np_sint_to_i32 ⟨@cert_sint_to_i32⟩ ⟨@bcert_UintTy_is_wide⟩ ⟨@bcert_wrap⟩ n
+    BStmt_sint_to_i32 progW prog prims 1295 n :=
+  @bproof_sint_to_i32 progW prog prims 1295 1085 1294 (fnW_of (by decide) (by decide) fn_sint_to_i32) fn_sint_to_i32 np_sint_to_i32 ⟨@cert_sint_to_i32⟩ ⟨@bcert_UintTy_is_wide⟩ ⟨@bcert_wrap⟩ n
 
 theorem bcert_cast_to_i32 {n : Nat} :
-    BStmt_cast_to_i32 progW prog prims 1060 n :=
-  @bproof_cast_to_i32 progW prog prims 1060 1289 1290 (fnW_of (by decide) (by decide) fn_cast_to_i32) fn_cast_to_i32 np_cast_to_i32 ⟨@cert_cast_to_i32⟩ ⟨@bcert_wrap⟩ ⟨@bcert_sint_to_i32⟩ n
+    BStmt_cast_to_i32 progW prog prims 1061 n :=
+  @bproof_cast_to_i32 progW prog prims 1061 1294 1295 (fnW_of (by decide) (by decide) fn_cast_to_i32) fn_cast_to_i32 np_cast_to_i32 ⟨@cert_cast_to_i32⟩ ⟨@bcert_wrap⟩ ⟨@bcert_sint_to_i32⟩ n
 
 theorem bcert_from_i32 {n : Nat} :
-    BStmt_from_i32 progW prog prims 1291 n :=
-  @bproof_from_i32 progW prog prims 1291 332 1084 1289 (fnW_of (by decide) (by decide) fn_from_i32) fn_from_i32 np_from_i32 ⟨@cert_from_i32⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_UintTy_is_wide⟩ ⟨@bcert_wrap⟩ n
+    BStmt_from_i32 progW prog prims 1296 n :=
+  @bproof_from_i32 progW prog prims 1296 332 1085 1294 (fnW_of (by decide) (by decide) fn_from_i32) fn_from_i32 np_from_i32 ⟨@cert_from_i32⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_UintTy_is_wide⟩ ⟨@bcert_wrap⟩ n
 
 theorem bcert_sint_to_uint {n : Nat} :
-    BStmt_sint_to_uint progW prog prims 1292 n :=
-  @bproof_sint_to_uint progW prog prims 1292 1084 1289 1291 (fnW_of (by decide) (by decide) fn_sint_to_uint) fn_sint_to_uint np_sint_to_uint ⟨@cert_sint_to_uint⟩ ⟨@bcert_UintTy_is_wide⟩ ⟨@bcert_wrap⟩ ⟨@bcert_from_i32⟩ n
+    BStmt_sint_to_uint progW prog prims 1297 n :=
+  @bproof_sint_to_uint progW prog prims 1297 1085 1294 1296 (fnW_of (by decide) (by decide) fn_sint_to_uint) fn_sint_to_uint np_sint_to_uint ⟨@cert_sint_to_uint⟩ ⟨@bcert_UintTy_is_wide⟩ ⟨@bcert_wrap⟩ ⟨@bcert_from_i32⟩ n
 
 theorem bcert_cast_to_uint {n : Nat} :
-    BStmt_cast_to_uint progW prog prims 1061 n :=
-  @bproof_cast_to_uint progW prog prims 1061 1289 1291 1292 (fnW_of (by decide) (by decide) fn_cast_to_uint) fn_cast_to_uint np_cast_to_uint ⟨@cert_cast_to_uint⟩ ⟨@bcert_wrap⟩ ⟨@bcert_from_i32⟩ ⟨@bcert_sint_to_uint⟩ n
+    BStmt_cast_to_uint progW prog prims 1062 n :=
+  @bproof_cast_to_uint progW prog prims 1062 1294 1296 1297 (fnW_of (by decide) (by decide) fn_cast_to_uint) fn_cast_to_uint np_cast_to_uint ⟨@cert_cast_to_uint⟩ ⟨@bcert_wrap⟩ ⟨@bcert_from_i32⟩ ⟨@bcert_sint_to_uint⟩ n
 
 theorem bcert_sint_to_wide {n : Nat} :
-    BStmt_sint_to_wide progW prog prims 1293 n :=
-  @bproof_sint_to_wide progW prog prims 1293 1084 1291 (fnW_of (by decide) (by decide) fn_sint_to_wide) fn_sint_to_wide np_sint_to_wide ⟨@cert_sint_to_wide⟩ ⟨@bcert_UintTy_is_wide⟩ ⟨@bcert_from_i32⟩ n
+    BStmt_sint_to_wide progW prog prims 1298 n :=
+  @bproof_sint_to_wide progW prog prims 1298 1085 1296 (fnW_of (by decide) (by decide) fn_sint_to_wide) fn_sint_to_wide np_sint_to_wide ⟨@cert_sint_to_wide⟩ ⟨@bcert_UintTy_is_wide⟩ ⟨@bcert_from_i32⟩ n
 
 theorem bcert_cast_to_isize {n : Nat} :
-    BStmt_cast_to_isize progW prog prims 1062 n :=
-  @bproof_cast_to_isize progW prog prims 1062 1291 1293 (fnW_of (by decide) (by decide) fn_cast_to_isize) fn_cast_to_isize np_cast_to_isize ⟨@cert_cast_to_isize⟩ ⟨@bcert_from_i32⟩ ⟨@bcert_sint_to_wide⟩ n
+    BStmt_cast_to_isize progW prog prims 1063 n :=
+  @bproof_cast_to_isize progW prog prims 1063 1296 1298 (fnW_of (by decide) (by decide) fn_cast_to_isize) fn_cast_to_isize np_cast_to_isize ⟨@cert_cast_to_isize⟩ ⟨@bcert_from_i32⟩ ⟨@bcert_sint_to_wide⟩ n
 
 theorem bcert_int_to_float {n : Nat} :
-    BStmt_int_to_float progW prog prims 1294 n :=
-  @bproof_int_to_float progW prog prims 1294 332 (fnW_of (by decide) (by decide) fn_int_to_float) fn_int_to_float np_int_to_float ⟨@cert_int_to_float⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) n
+    BStmt_int_to_float progW prog prims 1299 n :=
+  @bproof_int_to_float progW prog prims 1299 332 (fnW_of (by decide) (by decide) fn_int_to_float) fn_int_to_float np_int_to_float ⟨@cert_int_to_float⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) n
 
 theorem bcert_if_narrow {n : Nat} :
-    BStmt_if_narrow progW prog prims 1295 n := by
+    BStmt_if_narrow progW prog prims 1300 n := by
   intro x0 x1 v0 v1 w k h r0 r1
-  have key := bfree (ix := 1295) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_if_narrow prog prims 1295 n) from ⟨@cert_if_narrow⟩).out
+  have key := bfree (ix := 1300) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_if_narrow prog prims 1300 n) from ⟨@cert_if_narrow⟩).out
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_float_to_float {n : Nat} :
-    BStmt_float_to_float progW prog prims 1296 n :=
-  @bproof_float_to_float progW prog prims 1296 332 (fnW_of (by decide) (by decide) fn_float_to_float) fn_float_to_float np_float_to_float ⟨@cert_float_to_float⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) n
+    BStmt_float_to_float progW prog prims 1301 n :=
+  @bproof_float_to_float progW prog prims 1301 332 (fnW_of (by decide) (by decide) fn_float_to_float) fn_float_to_float np_float_to_float ⟨@cert_float_to_float⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) n
 
 theorem bcert_cast_to_float {n : Nat} :
-    BStmt_cast_to_float progW prog prims 1063 n :=
-  @bproof_cast_to_float progW prog prims 1063 1294 1295 1296 1297 (fnW_of (by decide) (by decide) fn_cast_to_float) fn_cast_to_float np_cast_to_float ⟨@cert_cast_to_float⟩ ⟨@bcert_int_to_float⟩ ⟨@bcert_if_narrow⟩ ⟨@bcert_float_to_float⟩ ⟨@bcert_UintTy_signed_word⟩ n
+    BStmt_cast_to_float progW prog prims 1064 n :=
+  @bproof_cast_to_float progW prog prims 1064 1299 1300 1301 1302 (fnW_of (by decide) (by decide) fn_cast_to_float) fn_cast_to_float np_cast_to_float ⟨@cert_cast_to_float⟩ ⟨@bcert_int_to_float⟩ ⟨@bcert_if_narrow⟩ ⟨@bcert_float_to_float⟩ ⟨@bcert_UintTy_signed_word⟩ n
 
 theorem bcert_cast_to_sint {n : Nat} :
-    BStmt_cast_to_sint progW prog prims 1064 n :=
-  @bproof_cast_to_sint progW prog prims 1064 312 382 385 791 1062 1084 1085 (fnW_of (by decide) (by decide) fn_cast_to_sint) fn_cast_to_sint np_cast_to_sint ⟨@cert_cast_to_sint⟩ ⟨@bcert_SrcType_is_scalar⟩ ⟨@bcert_SrcType_is_bool⟩ ⟨@bcert_SrcType_is_ptr⟩ ⟨@bcert_SrcType_is_float_any⟩ ⟨@bcert_cast_to_isize⟩ ⟨@bcert_UintTy_is_wide⟩ ⟨@bcert_norm⟩ n
+    BStmt_cast_to_sint progW prog prims 1065 n :=
+  @bproof_cast_to_sint progW prog prims 1065 312 382 385 791 1063 1085 1086 (fnW_of (by decide) (by decide) fn_cast_to_sint) fn_cast_to_sint np_cast_to_sint ⟨@cert_cast_to_sint⟩ ⟨@bcert_SrcType_is_scalar⟩ ⟨@bcert_SrcType_is_bool⟩ ⟨@bcert_SrcType_is_ptr⟩ ⟨@bcert_SrcType_is_float_any⟩ ⟨@bcert_cast_to_isize⟩ ⟨@bcert_UintTy_is_wide⟩ ⟨@bcert_norm⟩ n
 
 theorem bcert_cast_to {n : Nat} :
     BStmt_cast_to progW prog prims 755 n :=
-  @bproof_cast_to progW prog prims 755 1060 1061 1062 1063 1064 (fnW_of (by decide) (by decide) fn_cast_to) fn_cast_to np_cast_to ⟨@cert_cast_to⟩ ⟨@bcert_cast_to_i32⟩ ⟨@bcert_cast_to_uint⟩ ⟨@bcert_cast_to_isize⟩ ⟨@bcert_cast_to_float⟩ ⟨@bcert_cast_to_sint⟩ n
+  @bproof_cast_to progW prog prims 755 1061 1062 1063 1064 1065 (fnW_of (by decide) (by decide) fn_cast_to) fn_cast_to np_cast_to ⟨@cert_cast_to⟩ ⟨@bcert_cast_to_i32⟩ ⟨@bcert_cast_to_uint⟩ ⟨@bcert_cast_to_isize⟩ ⟨@bcert_cast_to_float⟩ ⟨@bcert_cast_to_sint⟩ n
 
 theorem bcert_lower_cast {n : Nat} :
     BStmt_lower_cast progW prog prims 502 n :=
@@ -2580,16 +2582,16 @@ theorem bcert_copy_binding {n : Nat} :
   @bproof_copy_binding progW prog prims 504 757 (fnW_of (by decide) (by decide) fn_copy_binding) fn_copy_binding np_copy_binding ⟨@cert_copy_binding⟩ ⟨@bcert_copy_same⟩ n
 
 theorem bcert_copy_slots {n : Nat} :
-    BStmt_copy_slots progW prog prims 1298 n :=
-  @bproof_copy_slots progW prog prims 1298 120 232 348 (fnW_of (by decide) (by decide) fn_copy_slots) fn_copy_slots np_copy_slots ⟨@cert_copy_slots⟩ ⟨@bcert_SrcType_size⟩ ⟨@bcert_SrcType_same⟩ ⟨@bcert_slot_vars⟩ n
+    BStmt_copy_slots progW prog prims 1303 n :=
+  @bproof_copy_slots progW prog prims 1303 120 232 348 (fnW_of (by decide) (by decide) fn_copy_slots) fn_copy_slots np_copy_slots ⟨@cert_copy_slots⟩ ⟨@bcert_SrcType_size⟩ ⟨@bcert_SrcType_same⟩ ⟨@bcert_slot_vars⟩ n
 
 theorem bcert_copy_field_at {n : Nat} :
-    BStmt_copy_field_at progW prog prims 1065 n :=
-  @bproof_copy_field_at progW prog prims 1065 1298 (fnW_of (by decide) (by decide) fn_copy_field_at) fn_copy_field_at np_copy_field_at ⟨@cert_copy_field_at⟩ ⟨@bcert_copy_slots⟩ n
+    BStmt_copy_field_at progW prog prims 1066 n :=
+  @bproof_copy_field_at progW prog prims 1066 1303 (fnW_of (by decide) (by decide) fn_copy_field_at) fn_copy_field_at np_copy_field_at ⟨@cert_copy_field_at⟩ ⟨@bcert_copy_slots⟩ n
 
 theorem bcert_copy_field_of {n : Nat} :
     BStmt_copy_field_of progW prog prims 758 n :=
-  @bproof_copy_field_of progW prog prims 758 75 178 513 514 1065 (fnW_of (by decide) (by decide) fn_copy_field_of) fn_copy_field_of np_copy_field_of ⟨@cert_copy_field_of⟩ ⟨@bcert_plus⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_SrcType (by decide +kernel) ⟨@bcert_field_offset⟩ ⟨@bcert_get_of_mini_selfhost_SrcType⟩ ⟨@bcert_copy_field_at⟩ n
+  @bproof_copy_field_of progW prog prims 758 75 178 513 514 1066 (fnW_of (by decide) (by decide) fn_copy_field_of) fn_copy_field_of np_copy_field_of ⟨@cert_copy_field_of⟩ ⟨@bcert_plus⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_SrcType (by decide +kernel) ⟨@bcert_field_offset⟩ ⟨@bcert_get_of_mini_selfhost_SrcType⟩ ⟨@bcert_copy_field_at⟩ n
 
 theorem bcert_copy_field {n : Nat} :
     BStmt_copy_field progW prog prims 505 n :=
@@ -2620,22 +2622,22 @@ theorem bcert_guard_all {n : Nat} :
     BStmt_guard_all progW prog prims 192 n :=
   (bcerts_guard_all n)
 
-theorem bcerts_concat_of_mini_selfhost_Expr : ∀ n, (BStmt_concat_of_mini_selfhost_Expr progW prog prims 1066 n) := by
+theorem bcerts_concat_of_mini_selfhost_Expr : ∀ n, (BStmt_concat_of_mini_selfhost_Expr progW prog prims 1067 n) := by
   intro n
   induction n with
   | zero =>
     exact (by intro x0 x1 v0 v1 w k h; simp only [qcall_zero, reduceCtorEq] at h)
   | succ n ih =>
-    have bih_concat_of_mini_selfhost_Expr : BStmt_concat_of_mini_selfhost_Expr progW prog prims 1066 n := ih
-    exact @bstep_concat_of_mini_selfhost_Expr progW prog prims 1066 306 486 (fnW_of (by decide) (by decide) fn_concat_of_mini_selfhost_Expr) fn_concat_of_mini_selfhost_Expr np_concat_of_mini_selfhost_Expr ⟨@cert_concat_of_mini_selfhost_Expr⟩ np_boxed_of_mini_selfhost_List_mini_selfhost_Expr (by decide +kernel) np_unbox_of_mini_selfhost_List_mini_selfhost_Expr (by decide +kernel) n ⟨bih_concat_of_mini_selfhost_Expr⟩
+    have bih_concat_of_mini_selfhost_Expr : BStmt_concat_of_mini_selfhost_Expr progW prog prims 1067 n := ih
+    exact @bstep_concat_of_mini_selfhost_Expr progW prog prims 1067 306 486 (fnW_of (by decide) (by decide) fn_concat_of_mini_selfhost_Expr) fn_concat_of_mini_selfhost_Expr np_concat_of_mini_selfhost_Expr ⟨@cert_concat_of_mini_selfhost_Expr⟩ np_boxed_of_mini_selfhost_List_mini_selfhost_Expr (by decide +kernel) np_unbox_of_mini_selfhost_List_mini_selfhost_Expr (by decide +kernel) n ⟨bih_concat_of_mini_selfhost_Expr⟩
 
 theorem bcert_concat_of_mini_selfhost_Expr {n : Nat} :
-    BStmt_concat_of_mini_selfhost_Expr progW prog prims 1066 n :=
+    BStmt_concat_of_mini_selfhost_Expr progW prog prims 1067 n :=
   (bcerts_concat_of_mini_selfhost_Expr n)
 
 theorem bcert_lower_append {n : Nat} :
     BStmt_lower_append progW prog prims 759 n :=
-  @bproof_lower_append progW prog prims 759 1066 (fnW_of (by decide) (by decide) fn_lower_append) fn_lower_append np_lower_append ⟨@cert_lower_append⟩ ⟨@bcert_concat_of_mini_selfhost_Expr⟩ n
+  @bproof_lower_append progW prog prims 759 1067 (fnW_of (by decide) (by decide) fn_lower_append) fn_lower_append np_lower_append ⟨@cert_lower_append⟩ ⟨@bcert_concat_of_mini_selfhost_Expr⟩ n
 
 theorem bcerts_lower_args : ∀ n, (BStmt_lower_args progW prog prims 509 n) := by
   intro n
@@ -2748,7 +2750,7 @@ theorem bcerts_length_of_mini_selfhost_SrcArm : ∀ n, (BStmt_length_of_mini_sel
     exact (by intro x0 v0 w k b h; simp only [qcall_zero, reduceCtorEq] at h)
   | succ n ih =>
     have bih_length_of_mini_selfhost_SrcArm : BStmt_length_of_mini_selfhost_SrcArm progW prog prims 761 n := ih
-    exact @bstep_length_of_mini_selfhost_SrcArm progW prog prims 761 75 1067 (fnW_of (by decide) (by decide) fn_length_of_mini_selfhost_SrcArm) fn_length_of_mini_selfhost_SrcArm np_length_of_mini_selfhost_SrcArm ⟨@cert_length_of_mini_selfhost_SrcArm⟩ ⟨@bcert_plus⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm (by decide +kernel) n ⟨bih_length_of_mini_selfhost_SrcArm⟩
+    exact @bstep_length_of_mini_selfhost_SrcArm progW prog prims 761 75 1068 (fnW_of (by decide) (by decide) fn_length_of_mini_selfhost_SrcArm) fn_length_of_mini_selfhost_SrcArm np_length_of_mini_selfhost_SrcArm ⟨@cert_length_of_mini_selfhost_SrcArm⟩ ⟨@bcert_plus⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm (by decide +kernel) n ⟨bih_length_of_mini_selfhost_SrcArm⟩
 
 theorem bcert_length_of_mini_selfhost_SrcArm {n : Nat} :
     BStmt_length_of_mini_selfhost_SrcArm progW prog prims 761 n :=
@@ -2775,12 +2777,12 @@ theorem bcert_lower_arm_value {n : Nat} :
   @bproof_lower_arm_value progW prog prims 813 190 (fnW_of (by decide) (by decide) fn_lower_arm_value) fn_lower_arm_value np_lower_arm_value ⟨@cert_lower_arm_value⟩ ⟨@bcert_lower_value⟩ n
 
 theorem bcert_lower_arm {n : Nat} :
-    BStmt_lower_arm progW prog prims 1068 n :=
-  @bproof_lower_arm progW prog prims 1068 185 307 311 332 (fnW_of (by decide) (by decide) fn_lower_arm) fn_lower_arm np_lower_arm ⟨@cert_lower_arm⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_check_then⟩ ⟨@bcert_assign_from⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) n
+    BStmt_lower_arm progW prog prims 1069 n :=
+  @bproof_lower_arm progW prog prims 1069 185 307 311 332 (fnW_of (by decide) (by decide) fn_lower_arm) fn_lower_arm np_lower_arm ⟨@cert_lower_arm⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_check_then⟩ ⟨@bcert_assign_from⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) n
 
 theorem bcert_arm_guard {n : Nat} :
-    BStmt_arm_guard progW prog prims 1069 n :=
-  @bproof_arm_guard progW prog prims 1069 188 (fnW_of (by decide) (by decide) fn_arm_guard) fn_arm_guard np_arm_guard ⟨@cert_arm_guard⟩ ⟨@bcert_SrcExpr_guard⟩ n
+    BStmt_arm_guard progW prog prims 1070 n :=
+  @bproof_arm_guard progW prog prims 1070 188 (fnW_of (by decide) (by decide) fn_arm_guard) fn_arm_guard np_arm_guard ⟨@cert_arm_guard⟩ ⟨@bcert_SrcExpr_guard⟩ n
 
 theorem bcerts_lower_arms : ∀ n, (BStmt_lower_arms progW prog prims 762 n) := by
   intro n
@@ -2789,7 +2791,7 @@ theorem bcerts_lower_arms : ∀ n, (BStmt_lower_arms progW prog prims 762 n) := 
     exact (by intro x0 x1 x2 x3 x4 x5 x6 v0 v1 v2 v3 v4 v5 v6 w k b h; simp only [qcall_zero, reduceCtorEq] at h)
   | succ n ih =>
     have bih_lower_arms : BStmt_lower_arms progW prog prims 762 n := ih
-    exact @bstep_lower_arms progW prog prims 762 75 180 370 813 1067 1068 1069 (fnW_of (by decide) (by decide) fn_lower_arms) fn_lower_arms np_lower_arms ⟨@cert_lower_arms⟩ ⟨@bcert_plus⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType (by decide +kernel) ⟨@bcert_arm_scope⟩ ⟨@bcert_lower_arm_value⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm (by decide +kernel) ⟨@bcert_lower_arm⟩ ⟨@bcert_arm_guard⟩ n ⟨bih_lower_arms⟩
+    exact @bstep_lower_arms progW prog prims 762 75 180 370 813 1068 1069 1070 (fnW_of (by decide) (by decide) fn_lower_arms) fn_lower_arms np_lower_arms ⟨@cert_lower_arms⟩ ⟨@bcert_plus⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType (by decide +kernel) ⟨@bcert_arm_scope⟩ ⟨@bcert_lower_arm_value⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm (by decide +kernel) ⟨@bcert_lower_arm⟩ ⟨@bcert_arm_guard⟩ n ⟨bih_lower_arms⟩
 
 theorem bcert_lower_arms {n : Nat} :
     BStmt_lower_arms progW prog prims 762 n :=
@@ -2816,15 +2818,15 @@ theorem bcert_lower_set {n : Nat} :
   @bproof_lower_set progW prog prims 200 190 325 (fnW_of (by decide) (by decide) fn_lower_set) fn_lower_set np_lower_set ⟨@cert_lower_set⟩ ⟨@bcert_lower_value⟩ ⟨@bcert_lower_set_values⟩ n
 
 theorem bcert_lower_set_value {n : Nat} :
-    BStmt_lower_set_value progW prog prims 1070 n := by
+    BStmt_lower_set_value progW prog prims 1071 n := by
   intro x0 x1 v0 v1 w k h r0 r1
-  have key := bfree (ix := 1070) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_lower_set_value prog prims 1070 n) from ⟨@cert_lower_set_value⟩).out
+  have key := bfree (ix := 1071) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_lower_set_value prog prims 1071 n) from ⟨@cert_lower_set_value⟩).out
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_lower_set_scalar {n : Nat} :
     BStmt_lower_set_scalar progW prog prims 763 n :=
-  @bproof_lower_set_scalar progW prog prims 763 204 312 1070 (fnW_of (by decide) (by decide) fn_lower_set_scalar) fn_lower_set_scalar np_lower_set_scalar ⟨@cert_lower_set_scalar⟩ ⟨@bcert_lower_as⟩ ⟨@bcert_SrcType_is_scalar⟩ ⟨@bcert_lower_set_value⟩ n
+  @bproof_lower_set_scalar progW prog prims 763 204 312 1071 (fnW_of (by decide) (by decide) fn_lower_set_scalar) fn_lower_set_scalar np_lower_set_scalar ⟨@cert_lower_set_scalar⟩ ⟨@bcert_lower_as⟩ ⟨@bcert_SrcType_is_scalar⟩ ⟨@bcert_lower_set_value⟩ n
 
 theorem bcert_lower_set_field_at {n : Nat} :
     BStmt_lower_set_field_at progW prog prims 512 n :=
@@ -3028,77 +3030,77 @@ theorem bcert_element_base {n : Nat} :
   @bproof_element_base progW prog prims 808 105 332 (fnW_of (by decide) (by decide) fn_element_base) fn_element_base np_element_base ⟨@cert_element_base⟩ ⟨@bcert_times⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) n
 
 theorem bcert_usize_width {n : Nat} :
-    BStmt_usize_width progW prog prims 1460 n := by
+    BStmt_usize_width progW prog prims 1467 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1460) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_usize_width prog prims 1460 n) from ⟨@cert_usize_width⟩).out
+  have key := bfree (ix := 1467) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_usize_width prog prims 1467 n) from ⟨@cert_usize_width⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_word_width {n : Nat} :
-    BStmt_word_width progW prog prims 1309 n := by
+    BStmt_word_width progW prog prims 1314 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1309) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_word_width prog prims 1309 n) from ⟨@cert_word_width⟩).out
+  have key := bfree (ix := 1314) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_word_width prog prims 1314 n) from ⟨@cert_word_width⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_width_of {n : Nat} :
-    BStmt_width_of progW prog prims 1090 n := by
+    BStmt_width_of progW prog prims 1091 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1090) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_width_of prog prims 1090 n) from ⟨@cert_width_of⟩).out
+  have key := bfree (ix := 1091) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_width_of prog prims 1091 n) from ⟨@cert_width_of⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_address_below {n : Nat} :
-    BStmt_address_below progW prog prims 1091 n :=
-  @bproof_address_below progW prog prims 1091 332 (fnW_of (by decide) (by decide) fn_address_below) fn_address_below np_address_below ⟨@cert_address_below⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) n
+    BStmt_address_below progW prog prims 1092 n :=
+  @bproof_address_below progW prog prims 1092 332 (fnW_of (by decide) (by decide) fn_address_below) fn_address_below np_address_below ⟨@cert_address_below⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) n
 
-theorem bcerts_load_type : ∀ n, (BStmt_load_type progW prog prims 1071 n) ∧ (BStmt_load_types progW prog prims 1300 n) ∧ (BStmt_load_cases progW prog prims 1301 n) := by
+theorem bcerts_load_type : ∀ n, (BStmt_load_type progW prog prims 1072 n) ∧ (BStmt_load_types progW prog prims 1305 n) ∧ (BStmt_load_cases progW prog prims 1306 n) := by
   intro n
   induction n with
   | zero =>
     exact ⟨(by intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w k b h; simp only [qcall_zero, reduceCtorEq] at h), (by intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w k b h; simp only [qcall_zero, reduceCtorEq] at h), (by intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w k b h; simp only [qcall_zero, reduceCtorEq] at h)⟩
   | succ n ih =>
     obtain ⟨bih_load_type, bih_load_types, bih_load_cases⟩ := ih
-    exact ⟨@bstep_load_type progW prog prims 1071 178 180 185 1090 1091 1300 1301 (fnW_of (by decide) (by decide) fn_load_type) fn_load_type np_load_type ⟨@cert_load_type⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_SrcType (by decide +kernel) np_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType (by decide +kernel) np_boxed_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_width_of⟩ ⟨@bcert_address_below⟩ n ⟨bih_load_types⟩ ⟨bih_load_cases⟩, @bstep_load_types progW prog prims 1300 75 105 120 178 1071 (fnW_of (by decide) (by decide) fn_load_types) fn_load_types np_load_types ⟨@cert_load_types⟩ ⟨@bcert_plus⟩ ⟨@bcert_times⟩ ⟨@bcert_SrcType_size⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_SrcType (by decide +kernel) n ⟨bih_load_type⟩ ⟨bih_load_types⟩, @bstep_load_cases progW prog prims 1301 75 180 185 332 1300 (fnW_of (by decide) (by decide) fn_load_cases) fn_load_cases np_load_cases ⟨@cert_load_cases⟩ ⟨@bcert_plus⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType (by decide +kernel) np_boxed_of_mini_selfhost_Stmt (by decide +kernel) np_boxed_of_mini_selfhost_Expr (by decide +kernel) n ⟨bih_load_types⟩ ⟨bih_load_cases⟩⟩
+    exact ⟨@bstep_load_type progW prog prims 1072 178 180 185 1091 1092 1305 1306 (fnW_of (by decide) (by decide) fn_load_type) fn_load_type np_load_type ⟨@cert_load_type⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_SrcType (by decide +kernel) np_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType (by decide +kernel) np_boxed_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_width_of⟩ ⟨@bcert_address_below⟩ n ⟨bih_load_types⟩ ⟨bih_load_cases⟩, @bstep_load_types progW prog prims 1305 75 105 120 178 1072 (fnW_of (by decide) (by decide) fn_load_types) fn_load_types np_load_types ⟨@cert_load_types⟩ ⟨@bcert_plus⟩ ⟨@bcert_times⟩ ⟨@bcert_SrcType_size⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_SrcType (by decide +kernel) n ⟨bih_load_type⟩ ⟨bih_load_types⟩, @bstep_load_cases progW prog prims 1306 75 180 185 332 1305 (fnW_of (by decide) (by decide) fn_load_cases) fn_load_cases np_load_cases ⟨@cert_load_cases⟩ ⟨@bcert_plus⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType (by decide +kernel) np_boxed_of_mini_selfhost_Stmt (by decide +kernel) np_boxed_of_mini_selfhost_Expr (by decide +kernel) n ⟨bih_load_types⟩ ⟨bih_load_cases⟩⟩
 
 theorem bcert_load_type {n : Nat} :
-    BStmt_load_type progW prog prims 1071 n :=
+    BStmt_load_type progW prog prims 1072 n :=
   (bcerts_load_type n).1
 theorem bcert_load_types {n : Nat} :
-    BStmt_load_types progW prog prims 1300 n :=
+    BStmt_load_types progW prog prims 1305 n :=
   (bcerts_load_type n).2.1
 theorem bcert_load_cases {n : Nat} :
-    BStmt_load_cases progW prog prims 1301 n :=
+    BStmt_load_cases progW prog prims 1306 n :=
   (bcerts_load_type n).2.2
 
 theorem bcert_eval_word_element {n : Nat} :
     BStmt_eval_word_element progW prog prims 771 n :=
-  @bproof_eval_word_element progW prog prims 771 75 120 185 307 311 333 334 335 348 526 808 1071 (fnW_of (by decide) (by decide) fn_eval_word_element) fn_eval_word_element np_eval_word_element ⟨@cert_eval_word_element⟩ ⟨@bcert_plus⟩ ⟨@bcert_SrcType_size⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_check_then⟩ ⟨@bcert_assign_from⟩ ⟨@bcert_SrcType_is_i32⟩ ⟨@bcert_SrcType_is_uint⟩ ⟨@bcert_word_element⟩ ⟨@bcert_slot_vars⟩ ⟨@bcert_bounds_guard⟩ ⟨@bcert_element_base⟩ ⟨@bcert_load_type⟩ n
+  @bproof_eval_word_element progW prog prims 771 75 120 185 307 311 333 334 335 348 526 808 1072 (fnW_of (by decide) (by decide) fn_eval_word_element) fn_eval_word_element np_eval_word_element ⟨@cert_eval_word_element⟩ ⟨@bcert_plus⟩ ⟨@bcert_SrcType_size⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_check_then⟩ ⟨@bcert_assign_from⟩ ⟨@bcert_SrcType_is_i32⟩ ⟨@bcert_SrcType_is_uint⟩ ⟨@bcert_word_element⟩ ⟨@bcert_slot_vars⟩ ⟨@bcert_bounds_guard⟩ ⟨@bcert_element_base⟩ ⟨@bcert_load_type⟩ n
 
 theorem bcert_eval_element {n : Nat} :
     BStmt_eval_element progW prog prims 521 n :=
   @bproof_eval_element progW prog prims 521 333 334 769 770 771 (fnW_of (by decide) (by decide) fn_eval_element) fn_eval_element np_eval_element ⟨@cert_eval_element⟩ ⟨@bcert_SrcType_is_i32⟩ ⟨@bcert_SrcType_is_uint⟩ ⟨@bcert_eval_load⟩ ⟨@bcert_eval_load_byte⟩ ⟨@bcert_eval_word_element⟩ n
 
-theorem bcerts_pick_element : ∀ n, (BStmt_pick_element progW prog prims 1302 n) := by
+theorem bcerts_pick_element : ∀ n, (BStmt_pick_element progW prog prims 1307 n) := by
   intro n
   induction n with
   | zero =>
     exact (by intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w k b h; simp only [qcall_zero, reduceCtorEq] at h)
   | succ n ih =>
-    have bih_pick_element : BStmt_pick_element progW prog prims 1302 n := ih
-    exact @bstep_pick_element progW prog prims 1302 56 75 105 185 311 332 348 (fnW_of (by decide) (by decide) fn_pick_element) fn_pick_element np_pick_element ⟨@cert_pick_element⟩ ⟨@bcert_minus⟩ ⟨@bcert_plus⟩ ⟨@bcert_times⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_assign_from⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_slot_vars⟩ n ⟨bih_pick_element⟩
+    have bih_pick_element : BStmt_pick_element progW prog prims 1307 n := ih
+    exact @bstep_pick_element progW prog prims 1307 56 75 105 185 311 332 348 (fnW_of (by decide) (by decide) fn_pick_element) fn_pick_element np_pick_element ⟨@cert_pick_element⟩ ⟨@bcert_minus⟩ ⟨@bcert_plus⟩ ⟨@bcert_times⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_assign_from⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_slot_vars⟩ n ⟨bih_pick_element⟩
 
 theorem bcert_pick_element {n : Nat} :
-    BStmt_pick_element progW prog prims 1302 n :=
+    BStmt_pick_element progW prog prims 1307 n :=
   (bcerts_pick_element n)
 
 theorem bcert_eval_pick {n : Nat} :
-    BStmt_eval_pick progW prog prims 1072 n :=
-  @bproof_eval_pick progW prog prims 1072 120 185 307 332 333 334 1302 (fnW_of (by decide) (by decide) fn_eval_pick) fn_eval_pick np_eval_pick ⟨@cert_eval_pick⟩ ⟨@bcert_SrcType_size⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_check_then⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_SrcType_is_i32⟩ ⟨@bcert_SrcType_is_uint⟩ ⟨@bcert_pick_element⟩ n
+    BStmt_eval_pick progW prog prims 1073 n :=
+  @bproof_eval_pick progW prog prims 1073 120 185 307 332 333 334 1307 (fnW_of (by decide) (by decide) fn_eval_pick) fn_eval_pick np_eval_pick ⟨@cert_eval_pick⟩ ⟨@bcert_SrcType_size⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_check_then⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_SrcType_is_i32⟩ ⟨@bcert_SrcType_is_uint⟩ ⟨@bcert_pick_element⟩ n
 
 theorem bcert_eval_array_element {n : Nat} :
     BStmt_eval_array_element progW prog prims 772 n :=
-  @bproof_eval_array_element progW prog prims 772 1072 (fnW_of (by decide) (by decide) fn_eval_array_element) fn_eval_array_element np_eval_array_element ⟨@cert_eval_array_element⟩ ⟨@bcert_eval_pick⟩ n
+  @bproof_eval_array_element progW prog prims 772 1073 (fnW_of (by decide) (by decide) fn_eval_array_element) fn_eval_array_element np_eval_array_element ⟨@cert_eval_array_element⟩ ⟨@bcert_eval_pick⟩ n
 
 theorem bcert_eval_array_index {n : Nat} :
     BStmt_eval_array_index progW prog prims 522 n :=
@@ -3121,16 +3123,16 @@ theorem bcert_eval_copy {n : Nat} :
   @bproof_eval_copy progW prog prims 524 190 773 (fnW_of (by decide) (by decide) fn_eval_copy) fn_eval_copy np_eval_copy ⟨@cert_eval_copy⟩ ⟨@bcert_lower_value⟩ ⟨@bcert_eval_values⟩ n
 
 theorem bcert_eval_sized {n : Nat} :
-    BStmt_eval_sized progW prog prims 1303 n :=
-  @bproof_eval_sized progW prog prims 1303 120 773 (fnW_of (by decide) (by decide) fn_eval_sized) fn_eval_sized np_eval_sized ⟨@cert_eval_sized⟩ ⟨@bcert_SrcType_size⟩ ⟨@bcert_eval_values⟩ n
+    BStmt_eval_sized progW prog prims 1308 n :=
+  @bproof_eval_sized progW prog prims 1308 120 773 (fnW_of (by decide) (by decide) fn_eval_sized) fn_eval_sized np_eval_sized ⟨@cert_eval_sized⟩ ⟨@bcert_SrcType_size⟩ ⟨@bcert_eval_values⟩ n
 
 theorem bcert_eval_field_type {n : Nat} :
-    BStmt_eval_field_type progW prog prims 1073 n :=
-  @bproof_eval_field_type progW prog prims 1073 190 1303 (fnW_of (by decide) (by decide) fn_eval_field_type) fn_eval_field_type np_eval_field_type ⟨@cert_eval_field_type⟩ ⟨@bcert_lower_value⟩ ⟨@bcert_eval_sized⟩ n
+    BStmt_eval_field_type progW prog prims 1074 n :=
+  @bproof_eval_field_type progW prog prims 1074 190 1308 (fnW_of (by decide) (by decide) fn_eval_field_type) fn_eval_field_type np_eval_field_type ⟨@cert_eval_field_type⟩ ⟨@bcert_lower_value⟩ ⟨@bcert_eval_sized⟩ n
 
 theorem bcert_eval_field_of {n : Nat} :
     BStmt_eval_field_of progW prog prims 774 n :=
-  @bproof_eval_field_of progW prog prims 774 178 514 1073 (fnW_of (by decide) (by decide) fn_eval_field_of) fn_eval_field_of np_eval_field_of ⟨@cert_eval_field_of⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_SrcType (by decide +kernel) ⟨@bcert_get_of_mini_selfhost_SrcType⟩ ⟨@bcert_eval_field_type⟩ n
+  @bproof_eval_field_of progW prog prims 774 178 514 1074 (fnW_of (by decide) (by decide) fn_eval_field_of) fn_eval_field_of np_eval_field_of ⟨@cert_eval_field_of⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_SrcType (by decide +kernel) ⟨@bcert_get_of_mini_selfhost_SrcType⟩ ⟨@bcert_eval_field_type⟩ n
 
 theorem bcert_eval_field_copy {n : Nat} :
     BStmt_eval_field_copy progW prog prims 525 n :=
@@ -3160,16 +3162,16 @@ theorem bcert_lower_load_word {n : Nat} :
   @bproof_lower_load_word progW prog prims 527 185 (fnW_of (by decide) (by decide) fn_lower_load_word) fn_lower_load_word np_lower_load_word ⟨@cert_lower_load_word⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) n
 
 theorem bcert_element_at {n : Nat} :
-    BStmt_element_at progW prog prims 1304 n :=
-  @bproof_element_at progW prog prims 1304 332 333 334 (fnW_of (by decide) (by decide) fn_element_at) fn_element_at np_element_at ⟨@cert_element_at⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_SrcType_is_i32⟩ ⟨@bcert_SrcType_is_uint⟩ n
+    BStmt_element_at progW prog prims 1309 n :=
+  @bproof_element_at progW prog prims 1309 332 333 334 (fnW_of (by decide) (by decide) fn_element_at) fn_element_at np_element_at ⟨@cert_element_at⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_SrcType_is_i32⟩ ⟨@bcert_SrcType_is_uint⟩ n
 
 theorem bcert_element_address {n : Nat} :
-    BStmt_element_address progW prog prims 1074 n :=
-  @bproof_element_address progW prog prims 1074 375 1304 (fnW_of (by decide) (by decide) fn_element_address) fn_element_address np_element_address ⟨@cert_element_address⟩ ⟨@bcert_element_of⟩ ⟨@bcert_element_at⟩ n
+    BStmt_element_address progW prog prims 1075 n :=
+  @bproof_element_address progW prog prims 1075 375 1309 (fnW_of (by decide) (by decide) fn_element_address) fn_element_address np_element_address ⟨@cert_element_address⟩ ⟨@bcert_element_of⟩ ⟨@bcert_element_at⟩ n
 
 theorem bcert_checked_element {n : Nat} :
     BStmt_checked_element progW prog prims 775 n :=
-  @bproof_checked_element progW prog prims 775 214 232 1074 (fnW_of (by decide) (by decide) fn_checked_element) fn_checked_element np_checked_element ⟨@cert_checked_element⟩ np_boxed_of_mini_selfhost_SrcType (by decide +kernel) ⟨@bcert_SrcType_same⟩ ⟨@bcert_element_address⟩ n
+  @bproof_checked_element progW prog prims 775 214 232 1075 (fnW_of (by decide) (by decide) fn_checked_element) fn_checked_element np_checked_element ⟨@cert_checked_element⟩ np_boxed_of_mini_selfhost_SrcType (by decide +kernel) ⟨@bcert_SrcType_same⟩ ⟨@bcert_element_address⟩ n
 
 theorem bcert_lower_element {n : Nat} :
     BStmt_lower_element progW prog prims 528 n :=
@@ -3177,7 +3179,7 @@ theorem bcert_lower_element {n : Nat} :
 
 theorem bcert_checked_load {n : Nat} :
     BStmt_checked_load progW prog prims 776 n :=
-  @bproof_checked_load progW prog prims 776 120 214 232 335 808 1071 (fnW_of (by decide) (by decide) fn_checked_load) fn_checked_load np_checked_load ⟨@cert_checked_load⟩ ⟨@bcert_SrcType_size⟩ np_boxed_of_mini_selfhost_SrcType (by decide +kernel) ⟨@bcert_SrcType_same⟩ ⟨@bcert_word_element⟩ ⟨@bcert_element_base⟩ ⟨@bcert_load_type⟩ n
+  @bproof_checked_load progW prog prims 776 120 214 232 335 808 1072 (fnW_of (by decide) (by decide) fn_checked_load) fn_checked_load np_checked_load ⟨@cert_checked_load⟩ ⟨@bcert_SrcType_size⟩ np_boxed_of_mini_selfhost_SrcType (by decide +kernel) ⟨@bcert_SrcType_same⟩ ⟨@bcert_word_element⟩ ⟨@bcert_element_base⟩ ⟨@bcert_load_type⟩ n
 
 theorem bcert_lower_load_type {n : Nat} :
     BStmt_lower_load_type progW prog prims 529 n :=
@@ -3204,40 +3206,40 @@ theorem bcert_store_eval_then {n : Nat} :
   @bproof_store_eval_then progW prog prims 806 185 232 307 333 334 (fnW_of (by decide) (by decide) fn_store_eval_then) fn_store_eval_then np_store_eval_then ⟨@cert_store_eval_then⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_SrcType_same⟩ ⟨@bcert_check_then⟩ ⟨@bcert_SrcType_is_i32⟩ ⟨@bcert_SrcType_is_uint⟩ n
 
 theorem bcert_store_one {n : Nat} :
-    BStmt_store_one progW prog prims 1089 n := by
+    BStmt_store_one progW prog prims 1090 n := by
   intro x0 x1 x2 v0 v1 v2 w k h r0 r1 r2
-  have key := bfree (ix := 1089) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_store_one prog prims 1089 n) from ⟨@cert_store_one⟩).out
+  have key := bfree (ix := 1090) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_store_one prog prims 1090 n) from ⟨@cert_store_one⟩).out
     (pcall_of_q key.1) r0 r1 r2⟩
 
 theorem bcert_get_of_mini_selfhost_Expr {n : Nat} :
-    BStmt_get_of_mini_selfhost_Expr progW prog prims 1092 n := by
+    BStmt_get_of_mini_selfhost_Expr progW prog prims 1093 n := by
   intro x0 x1 v0 v1 w k h r0 r1
-  have key := bfree (ix := 1092) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_get_of_mini_selfhost_Expr prog prims 1092 n) from ⟨@cert_get_of_mini_selfhost_Expr⟩).out
+  have key := bfree (ix := 1093) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_get_of_mini_selfhost_Expr prog prims 1093 n) from ⟨@cert_get_of_mini_selfhost_Expr⟩).out
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_ite_then {n : Nat} :
-    BStmt_ite_then progW prog prims 1310 n :=
-  @bproof_ite_then progW prog prims 1310 185 (fnW_of (by decide) (by decide) fn_ite_then) fn_ite_then np_ite_then ⟨@cert_ite_then⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) n
+    BStmt_ite_then progW prog prims 1315 n :=
+  @bproof_ite_then progW prog prims 1315 185 (fnW_of (by decide) (by decide) fn_ite_then) fn_ite_then np_ite_then ⟨@cert_ite_then⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) n
 
-theorem bcerts_store_type : ∀ n, (BStmt_store_type progW prog prims 807 n) ∧ (BStmt_store_types progW prog prims 1093 n) ∧ (BStmt_store_cases progW prog prims 1094 n) := by
+theorem bcerts_store_type : ∀ n, (BStmt_store_type progW prog prims 807 n) ∧ (BStmt_store_types progW prog prims 1094 n) ∧ (BStmt_store_cases progW prog prims 1095 n) := by
   intro n
   induction n with
   | zero =>
     exact ⟨(by intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w k b h; simp only [qcall_zero, reduceCtorEq] at h), (by intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w k b h; simp only [qcall_zero, reduceCtorEq] at h), (by intro x0 x1 x2 x3 x4 x5 x6 v0 v1 v2 v3 v4 v5 v6 w k b h; simp only [qcall_zero, reduceCtorEq] at h)⟩
   | succ n ih =>
     obtain ⟨bih_store_type, bih_store_types, bih_store_cases⟩ := ih
-    exact ⟨@bstep_store_type progW prog prims 807 75 178 180 197 1089 1090 1091 1092 1093 1094 (fnW_of (by decide) (by decide) fn_store_type) fn_store_type np_store_type ⟨@cert_store_type⟩ ⟨@bcert_plus⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_SrcType (by decide +kernel) np_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType (by decide +kernel) ⟨@bcert_lower_then⟩ ⟨@bcert_store_one⟩ ⟨@bcert_width_of⟩ ⟨@bcert_address_below⟩ ⟨@bcert_get_of_mini_selfhost_Expr⟩ n ⟨bih_store_types⟩ ⟨bih_store_cases⟩, @bstep_store_types progW prog prims 1093 75 105 120 178 197 807 (fnW_of (by decide) (by decide) fn_store_types) fn_store_types np_store_types ⟨@cert_store_types⟩ ⟨@bcert_plus⟩ ⟨@bcert_times⟩ ⟨@bcert_SrcType_size⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_SrcType (by decide +kernel) ⟨@bcert_lower_then⟩ n ⟨bih_store_type⟩ ⟨bih_store_types⟩, @bstep_store_cases progW prog prims 1094 75 180 332 1093 1310 (fnW_of (by decide) (by decide) fn_store_cases) fn_store_cases np_store_cases ⟨@cert_store_cases⟩ ⟨@bcert_plus⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType (by decide +kernel) np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_ite_then⟩ n ⟨bih_store_types⟩ ⟨bih_store_cases⟩⟩
+    exact ⟨@bstep_store_type progW prog prims 807 75 178 180 197 1090 1091 1092 1093 1094 1095 (fnW_of (by decide) (by decide) fn_store_type) fn_store_type np_store_type ⟨@cert_store_type⟩ ⟨@bcert_plus⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_SrcType (by decide +kernel) np_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType (by decide +kernel) ⟨@bcert_lower_then⟩ ⟨@bcert_store_one⟩ ⟨@bcert_width_of⟩ ⟨@bcert_address_below⟩ ⟨@bcert_get_of_mini_selfhost_Expr⟩ n ⟨bih_store_types⟩ ⟨bih_store_cases⟩, @bstep_store_types progW prog prims 1094 75 105 120 178 197 807 (fnW_of (by decide) (by decide) fn_store_types) fn_store_types np_store_types ⟨@cert_store_types⟩ ⟨@bcert_plus⟩ ⟨@bcert_times⟩ ⟨@bcert_SrcType_size⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_SrcType (by decide +kernel) ⟨@bcert_lower_then⟩ n ⟨bih_store_type⟩ ⟨bih_store_types⟩, @bstep_store_cases progW prog prims 1095 75 180 332 1094 1315 (fnW_of (by decide) (by decide) fn_store_cases) fn_store_cases np_store_cases ⟨@cert_store_cases⟩ ⟨@bcert_plus⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType (by decide +kernel) np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_ite_then⟩ n ⟨bih_store_types⟩ ⟨bih_store_cases⟩⟩
 
 theorem bcert_store_type {n : Nat} :
     BStmt_store_type progW prog prims 807 n :=
   (bcerts_store_type n).1
 theorem bcert_store_types {n : Nat} :
-    BStmt_store_types progW prog prims 1093 n :=
+    BStmt_store_types progW prog prims 1094 n :=
   (bcerts_store_type n).2.1
 theorem bcert_store_cases {n : Nat} :
-    BStmt_store_cases progW prog prims 1094 n :=
+    BStmt_store_cases progW prog prims 1095 n :=
   (bcerts_store_type n).2.2
 
 theorem bcert_store_eval_word {n : Nat} :
@@ -3248,22 +3250,22 @@ theorem bcert_store_eval_element {n : Nat} :
     BStmt_store_eval_element progW prog prims 376 n :=
   @bproof_store_eval_element progW prog prims 376 333 334 559 560 561 (fnW_of (by decide) (by decide) fn_store_eval_element) fn_store_eval_element np_store_eval_element ⟨@cert_store_eval_element⟩ ⟨@bcert_SrcType_is_i32⟩ ⟨@bcert_SrcType_is_uint⟩ ⟨@bcert_store_eval⟩ ⟨@bcert_store_eval_byte⟩ ⟨@bcert_store_eval_word⟩ n
 
-theorem bcerts_put_element : ∀ n, (BStmt_put_element progW prog prims 1095 n) := by
+theorem bcerts_put_element : ∀ n, (BStmt_put_element progW prog prims 1096 n) := by
   intro n
   induction n with
   | zero =>
     exact (by intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w k b h; simp only [qcall_zero, reduceCtorEq] at h)
   | succ n ih =>
-    have bih_put_element : BStmt_put_element progW prog prims 1095 n := ih
-    exact @bstep_put_element progW prog prims 1095 56 75 105 185 311 332 348 (fnW_of (by decide) (by decide) fn_put_element) fn_put_element np_put_element ⟨@cert_put_element⟩ ⟨@bcert_minus⟩ ⟨@bcert_plus⟩ ⟨@bcert_times⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_assign_from⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_slot_vars⟩ n ⟨bih_put_element⟩
+    have bih_put_element : BStmt_put_element progW prog prims 1096 n := ih
+    exact @bstep_put_element progW prog prims 1096 56 75 105 185 311 332 348 (fnW_of (by decide) (by decide) fn_put_element) fn_put_element np_put_element ⟨@cert_put_element⟩ ⟨@bcert_minus⟩ ⟨@bcert_plus⟩ ⟨@bcert_times⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_assign_from⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_slot_vars⟩ n ⟨bih_put_element⟩
 
 theorem bcert_put_element {n : Nat} :
-    BStmt_put_element progW prog prims 1095 n :=
+    BStmt_put_element progW prog prims 1096 n :=
   (bcerts_put_element n)
 
 theorem bcert_store_pick {n : Nat} :
     BStmt_store_pick progW prog prims 809 n :=
-  @bproof_store_pick progW prog prims 809 120 185 232 307 332 333 334 1095 (fnW_of (by decide) (by decide) fn_store_pick) fn_store_pick np_store_pick ⟨@cert_store_pick⟩ ⟨@bcert_SrcType_size⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_SrcType_same⟩ ⟨@bcert_check_then⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_SrcType_is_i32⟩ ⟨@bcert_SrcType_is_uint⟩ ⟨@bcert_put_element⟩ n
+  @bproof_store_pick progW prog prims 809 120 185 232 307 332 333 334 1096 (fnW_of (by decide) (by decide) fn_store_pick) fn_store_pick np_store_pick ⟨@cert_store_pick⟩ ⟨@bcert_SrcType_size⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_SrcType_same⟩ ⟨@bcert_check_then⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_SrcType_is_i32⟩ ⟨@bcert_SrcType_is_uint⟩ ⟨@bcert_put_element⟩ n
 
 theorem bcert_store_array_element {n : Nat} :
     BStmt_store_array_element progW prog prims 562 n :=
@@ -3278,20 +3280,20 @@ theorem bcert_lower_set_index_eval {n : Nat} :
   @bproof_lower_set_index_eval progW prog prims 225 375 376 377 (fnW_of (by decide) (by decide) fn_lower_set_index_eval) fn_lower_set_index_eval np_lower_set_index_eval ⟨@cert_lower_set_index_eval⟩ ⟨@bcert_element_of⟩ ⟨@bcert_store_eval_element⟩ ⟨@bcert_store_array⟩ n
 
 theorem bcert_store_element {n : Nat} :
-    BStmt_store_element progW prog prims 1075 n :=
-  @bproof_store_element progW prog prims 1075 204 1074 (fnW_of (by decide) (by decide) fn_store_element) fn_store_element np_store_element ⟨@cert_store_element⟩ ⟨@bcert_lower_as⟩ ⟨@bcert_element_address⟩ n
+    BStmt_store_element progW prog prims 1076 n :=
+  @bproof_store_element progW prog prims 1076 204 1075 (fnW_of (by decide) (by decide) fn_store_element) fn_store_element np_store_element ⟨@cert_store_element⟩ ⟨@bcert_lower_as⟩ ⟨@bcert_element_address⟩ n
 
 theorem bcert_store_byte_element {n : Nat} :
-    BStmt_store_byte_element progW prog prims 1076 n :=
-  @bproof_store_byte_element progW prog prims 1076 204 1074 (fnW_of (by decide) (by decide) fn_store_byte_element) fn_store_byte_element np_store_byte_element ⟨@cert_store_byte_element⟩ ⟨@bcert_lower_as⟩ ⟨@bcert_element_address⟩ n
+    BStmt_store_byte_element progW prog prims 1077 n :=
+  @bproof_store_byte_element progW prog prims 1077 204 1075 (fnW_of (by decide) (by decide) fn_store_byte_element) fn_store_byte_element np_store_byte_element ⟨@cert_store_byte_element⟩ ⟨@bcert_lower_as⟩ ⟨@bcert_element_address⟩ n
 
 theorem bcert_store_word_element {n : Nat} :
-    BStmt_store_word_element progW prog prims 1077 n :=
-  @bproof_store_word_element progW prog prims 1077 120 190 807 808 (fnW_of (by decide) (by decide) fn_store_word_element) fn_store_word_element np_store_word_element ⟨@cert_store_word_element⟩ ⟨@bcert_SrcType_size⟩ ⟨@bcert_lower_value⟩ ⟨@bcert_store_type⟩ ⟨@bcert_element_base⟩ n
+    BStmt_store_word_element progW prog prims 1078 n :=
+  @bproof_store_word_element progW prog prims 1078 120 190 807 808 (fnW_of (by decide) (by decide) fn_store_word_element) fn_store_word_element np_store_word_element ⟨@cert_store_word_element⟩ ⟨@bcert_SrcType_size⟩ ⟨@bcert_lower_value⟩ ⟨@bcert_store_type⟩ ⟨@bcert_element_base⟩ n
 
 theorem bcert_store_any {n : Nat} :
     BStmt_store_any progW prog prims 777 n :=
-  @bproof_store_any progW prog prims 777 333 334 335 1075 1076 1077 (fnW_of (by decide) (by decide) fn_store_any) fn_store_any np_store_any ⟨@cert_store_any⟩ ⟨@bcert_SrcType_is_i32⟩ ⟨@bcert_SrcType_is_uint⟩ ⟨@bcert_word_element⟩ ⟨@bcert_store_element⟩ ⟨@bcert_store_byte_element⟩ ⟨@bcert_store_word_element⟩ n
+  @bproof_store_any progW prog prims 777 333 334 335 1076 1077 1078 (fnW_of (by decide) (by decide) fn_store_any) fn_store_any np_store_any ⟨@cert_store_any⟩ ⟨@bcert_SrcType_is_i32⟩ ⟨@bcert_SrcType_is_uint⟩ ⟨@bcert_word_element⟩ ⟨@bcert_store_element⟩ ⟨@bcert_store_byte_element⟩ ⟨@bcert_store_word_element⟩ n
 
 theorem bcert_lower_set_index_of {n : Nat} :
     BStmt_lower_set_index_of progW prog prims 531 n :=
@@ -3338,16 +3340,16 @@ theorem bcert_host_random_code {n : Nat} :
   @bproof_host_random_code progW prog prims 785 75 185 186 332 535 (fnW_of (by decide) (by decide) fn_host_random_code) fn_host_random_code np_host_random_code ⟨@cert_host_random_code⟩ ⟨@bcert_plus⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_single_of_mini_selfhost_Expr⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_cons_of_mini_selfhost_Expr⟩ n
 
 theorem bcert_host_text_code {n : Nat} :
-    BStmt_host_text_code progW prog prims 1080 n :=
-  @bproof_host_text_code progW prog prims 1080 75 185 332 781 (fnW_of (by decide) (by decide) fn_host_text_code) fn_host_text_code np_host_text_code ⟨@cert_host_text_code⟩ ⟨@bcert_plus⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_host_write_code⟩ n
+    BStmt_host_text_code progW prog prims 1081 n :=
+  @bproof_host_text_code progW prog prims 1081 75 185 332 781 (fnW_of (by decide) (by decide) fn_host_text_code) fn_host_text_code np_host_text_code ⟨@cert_host_text_code⟩ ⟨@bcert_plus⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_host_write_code⟩ n
 
 theorem bcert_host_newline_code {n : Nat} :
-    BStmt_host_newline_code progW prog prims 1081 n :=
-  @bproof_host_newline_code progW prog prims 1081 75 185 780 (fnW_of (by decide) (by decide) fn_host_newline_code) fn_host_newline_code np_host_newline_code ⟨@cert_host_newline_code⟩ ⟨@bcert_plus⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_host_byte_code⟩ n
+    BStmt_host_newline_code progW prog prims 1082 n :=
+  @bproof_host_newline_code progW prog prims 1082 75 185 780 (fnW_of (by decide) (by decide) fn_host_newline_code) fn_host_newline_code np_host_newline_code ⟨@cert_host_newline_code⟩ ⟨@bcert_plus⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_host_byte_code⟩ n
 
 theorem bcert_eval_host_text {n : Nat} :
     BStmt_eval_host_text progW prog prims 786 n :=
-  @bproof_eval_host_text progW prog prims 786 185 237 372 383 1080 1081 (fnW_of (by decide) (by decide) fn_eval_host_text) fn_eval_host_text np_eval_host_text ⟨@cert_eval_host_text⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_cons_of_mini_selfhost_SrcType⟩ ⟨@bcert_single_of_mini_selfhost_SrcType⟩ ⟨@bcert_types_same⟩ ⟨@bcert_host_text_code⟩ ⟨@bcert_host_newline_code⟩ n
+  @bproof_eval_host_text progW prog prims 786 185 237 372 383 1081 1082 (fnW_of (by decide) (by decide) fn_eval_host_text) fn_eval_host_text np_eval_host_text ⟨@cert_eval_host_text⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_cons_of_mini_selfhost_SrcType⟩ ⟨@bcert_single_of_mini_selfhost_SrcType⟩ ⟨@bcert_types_same⟩ ⟨@bcert_host_text_code⟩ ⟨@bcert_host_newline_code⟩ n
 
 theorem bcert_eval_host {n : Nat} :
     BStmt_eval_host progW prog prims 537 n :=
@@ -3492,30 +3494,30 @@ theorem bcert_signed_div {n : Nat} :
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_UintTy_least_bits {n : Nat} :
-    BStmt_UintTy_least_bits progW prog prims 1308 n := by
+    BStmt_UintTy_least_bits progW prog prims 1313 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1308) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_UintTy_least_bits prog prims 1308 n) from ⟨@cert_UintTy_least_bits⟩).out
+  have key := bfree (ix := 1313) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_UintTy_least_bits prog prims 1313 n) from ⟨@cert_UintTy_least_bits⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_overflow_guard {n : Nat} :
-    BStmt_overflow_guard progW prog prims 1086 n :=
-  @bproof_overflow_guard progW prog prims 1086 75 332 1308 (fnW_of (by decide) (by decide) fn_overflow_guard) fn_overflow_guard np_overflow_guard ⟨@cert_overflow_guard⟩ ⟨@bcert_plus⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_UintTy_least_bits⟩ n
+    BStmt_overflow_guard progW prog prims 1087 n :=
+  @bproof_overflow_guard progW prog prims 1087 75 332 1313 (fnW_of (by decide) (by decide) fn_overflow_guard) fn_overflow_guard np_overflow_guard ⟨@cert_overflow_guard⟩ ⟨@bcert_plus⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) ⟨@bcert_UintTy_least_bits⟩ n
 
 theorem bcert_eval_divide_sint {n : Nat} :
     BStmt_eval_divide_sint progW prog prims 800 n :=
-  @bproof_eval_divide_sint progW prog prims 800 75 185 307 389 799 1084 1086 (fnW_of (by decide) (by decide) fn_eval_divide_sint) fn_eval_divide_sint np_eval_divide_sint ⟨@cert_eval_divide_sint⟩ ⟨@bcert_plus⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_check_then⟩ ⟨@bcert_SrcType_is_sint⟩ ⟨@bcert_signed_div⟩ ⟨@bcert_UintTy_is_wide⟩ ⟨@bcert_overflow_guard⟩ n
+  @bproof_eval_divide_sint progW prog prims 800 75 185 307 389 799 1085 1087 (fnW_of (by decide) (by decide) fn_eval_divide_sint) fn_eval_divide_sint np_eval_divide_sint ⟨@cert_eval_divide_sint⟩ ⟨@bcert_plus⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_check_then⟩ ⟨@bcert_SrcType_is_sint⟩ ⟨@bcert_signed_div⟩ ⟨@bcert_UintTy_is_wide⟩ ⟨@bcert_overflow_guard⟩ n
 
 theorem bcert_unsigned_div {n : Nat} :
-    BStmt_unsigned_div progW prog prims 1087 n := by
+    BStmt_unsigned_div progW prog prims 1088 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1087) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_unsigned_div prog prims 1087 n) from ⟨@cert_unsigned_div⟩).out
+  have key := bfree (ix := 1088) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_unsigned_div prog prims 1088 n) from ⟨@cert_unsigned_div⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_eval_divide_uint {n : Nat} :
     BStmt_eval_divide_uint progW prog prims 802 n :=
-  @bproof_eval_divide_uint progW prog prims 802 75 185 334 1087 (fnW_of (by decide) (by decide) fn_eval_divide_uint) fn_eval_divide_uint np_eval_divide_uint ⟨@cert_eval_divide_uint⟩ ⟨@bcert_plus⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_SrcType_is_uint⟩ ⟨@bcert_unsigned_div⟩ n
+  @bproof_eval_divide_uint progW prog prims 802 75 185 334 1088 (fnW_of (by decide) (by decide) fn_eval_divide_uint) fn_eval_divide_uint np_eval_divide_uint ⟨@cert_eval_divide_uint⟩ ⟨@bcert_plus⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_SrcType_is_uint⟩ ⟨@bcert_unsigned_div⟩ n
 
 theorem bcert_eval_divide {n : Nat} :
     BStmt_eval_divide progW prog prims 552 n :=
@@ -3526,12 +3528,12 @@ theorem bcert_eval_division {n : Nat} :
   @bproof_eval_division progW prog prims 365 552 (fnW_of (by decide) (by decide) fn_eval_division) fn_eval_division np_eval_division ⟨@cert_eval_division⟩ ⟨@bcert_eval_divide⟩ n
 
 theorem bcert_word_stride {n : Nat} :
-    BStmt_word_stride progW prog prims 1088 n :=
-  @bproof_word_stride progW prog prims 1088 105 332 (fnW_of (by decide) (by decide) fn_word_stride) fn_word_stride np_word_stride ⟨@cert_word_stride⟩ ⟨@bcert_times⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) n
+    BStmt_word_stride progW prog prims 1089 n :=
+  @bproof_word_stride progW prog prims 1089 105 332 (fnW_of (by decide) (by decide) fn_word_stride) fn_word_stride np_word_stride ⟨@cert_word_stride⟩ ⟨@bcert_times⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) n
 
 theorem bcert_eval_word_stride {n : Nat} :
     BStmt_eval_word_stride progW prog prims 803 n :=
-  @bproof_eval_word_stride progW prog prims 803 120 335 1088 (fnW_of (by decide) (by decide) fn_eval_word_stride) fn_eval_word_stride np_eval_word_stride ⟨@cert_eval_word_stride⟩ ⟨@bcert_SrcType_size⟩ ⟨@bcert_word_element⟩ ⟨@bcert_word_stride⟩ n
+  @bproof_eval_word_stride progW prog prims 803 120 335 1089 (fnW_of (by decide) (by decide) fn_eval_word_stride) fn_eval_word_stride np_eval_word_stride ⟨@cert_eval_word_stride⟩ ⟨@bcert_SrcType_size⟩ ⟨@bcert_word_element⟩ ⟨@bcert_word_stride⟩ n
 
 theorem bcert_eval_stride_of {n : Nat} :
     BStmt_eval_stride_of progW prog prims 553 n :=
@@ -3643,101 +3645,101 @@ theorem bcert_SrcEff_passes_slices {n : Nat} :
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_array_arg_pure {n : Nat} :
-    BStmt_array_arg_pure progW prog prims 1457 n :=
-  @bproof_array_arg_pure progW prog prims 1457 208 1066 (fnW_of (by decide) (by decide) fn_array_arg_pure) fn_array_arg_pure np_array_arg_pure ⟨@cert_array_arg_pure⟩ ⟨@bcert_guard_and⟩ ⟨@bcert_concat_of_mini_selfhost_Expr⟩ n
+    BStmt_array_arg_pure progW prog prims 1464 n :=
+  @bproof_array_arg_pure progW prog prims 1464 208 1067 (fnW_of (by decide) (by decide) fn_array_arg_pure) fn_array_arg_pure np_array_arg_pure ⟨@cert_array_arg_pure⟩ ⟨@bcert_guard_and⟩ ⟨@bcert_concat_of_mini_selfhost_Expr⟩ n
 
 theorem bcert_packed_width {n : Nat} :
-    BStmt_packed_width progW prog prims 1616 n := by
+    BStmt_packed_width progW prog prims 1628 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1616) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_packed_width prog prims 1616 n) from ⟨@cert_packed_width⟩).out
+  have key := bfree (ix := 1628) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_packed_width prog prims 1628 n) from ⟨@cert_packed_width⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_array_arg_checked {n : Nat} :
-    BStmt_array_arg_checked progW prog prims 1617 n := by
+    BStmt_array_arg_checked progW prog prims 1629 n := by
   intro x0 x1 v0 v1 w k h r0 r1
-  have key := bfree (ix := 1617) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_array_arg_checked prog prims 1617 n) from ⟨@cert_array_arg_checked⟩).out
+  have key := bfree (ix := 1629) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_array_arg_checked prog prims 1629 n) from ⟨@cert_array_arg_checked⟩).out
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_block_at {n : Nat} :
-    BStmt_block_at progW prog prims 1619 n :=
-  @bproof_block_at progW prog prims 1619 332 (fnW_of (by decide) (by decide) fn_block_at) fn_block_at np_block_at ⟨@cert_block_at⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) n
+    BStmt_block_at progW prog prims 1631 n :=
+  @bproof_block_at progW prog prims 1631 332 (fnW_of (by decide) (by decide) fn_block_at) fn_block_at np_block_at ⟨@cert_block_at⟩ np_boxed_of_mini_selfhost_Expr (by decide +kernel) n
 
 theorem bcert_block_store {n : Nat} :
-    BStmt_block_store progW prog prims 1676 n :=
-  @bproof_block_store progW prog prims 1676 1619 (fnW_of (by decide) (by decide) fn_block_store) fn_block_store np_block_store ⟨@cert_block_store⟩ ⟨@bcert_block_at⟩ n
+    BStmt_block_store progW prog prims 1688 n :=
+  @bproof_block_store progW prog prims 1688 1631 (fnW_of (by decide) (by decide) fn_block_store) fn_block_store np_block_store ⟨@cert_block_store⟩ ⟨@bcert_block_at⟩ n
 
-theorem bcerts_element_stores : ∀ n, (BStmt_element_stores progW prog prims 1618 n) := by
+theorem bcerts_element_stores : ∀ n, (BStmt_element_stores progW prog prims 1630 n) := by
   intro n
   induction n with
   | zero =>
     exact (by intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w k b h; simp only [qcall_zero, reduceCtorEq] at h)
   | succ n ih =>
-    have bih_element_stores : BStmt_element_stores progW prog prims 1618 n := ih
-    exact @bstep_element_stores progW prog prims 1618 56 75 185 1676 (fnW_of (by decide) (by decide) fn_element_stores) fn_element_stores np_element_stores ⟨@cert_element_stores⟩ ⟨@bcert_minus⟩ ⟨@bcert_plus⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_block_store⟩ n ⟨bih_element_stores⟩
+    have bih_element_stores : BStmt_element_stores progW prog prims 1630 n := ih
+    exact @bstep_element_stores progW prog prims 1630 56 75 185 1688 (fnW_of (by decide) (by decide) fn_element_stores) fn_element_stores np_element_stores ⟨@cert_element_stores⟩ ⟨@bcert_minus⟩ ⟨@bcert_plus⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_block_store⟩ n ⟨bih_element_stores⟩
 
 theorem bcert_element_stores {n : Nat} :
-    BStmt_element_stores progW prog prims 1618 n :=
+    BStmt_element_stores progW prog prims 1630 n :=
   (bcerts_element_stores n)
 
 theorem bcert_block_load {n : Nat} :
-    BStmt_block_load progW prog prims 1677 n :=
-  @bproof_block_load progW prog prims 1677 1619 (fnW_of (by decide) (by decide) fn_block_load) fn_block_load np_block_load ⟨@cert_block_load⟩ ⟨@bcert_block_at⟩ n
+    BStmt_block_load progW prog prims 1689 n :=
+  @bproof_block_load progW prog prims 1689 1631 (fnW_of (by decide) (by decide) fn_block_load) fn_block_load np_block_load ⟨@cert_block_load⟩ ⟨@bcert_block_at⟩ n
 
-theorem bcerts_element_loads : ∀ n, (BStmt_element_loads progW prog prims 1620 n) := by
+theorem bcerts_element_loads : ∀ n, (BStmt_element_loads progW prog prims 1632 n) := by
   intro n
   induction n with
   | zero =>
     exact (by intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w k b h; simp only [qcall_zero, reduceCtorEq] at h)
   | succ n ih =>
-    have bih_element_loads : BStmt_element_loads progW prog prims 1620 n := ih
-    exact @bstep_element_loads progW prog prims 1620 56 75 185 1677 (fnW_of (by decide) (by decide) fn_element_loads) fn_element_loads np_element_loads ⟨@cert_element_loads⟩ ⟨@bcert_minus⟩ ⟨@bcert_plus⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_block_load⟩ n ⟨bih_element_loads⟩
+    have bih_element_loads : BStmt_element_loads progW prog prims 1632 n := ih
+    exact @bstep_element_loads progW prog prims 1632 56 75 185 1689 (fnW_of (by decide) (by decide) fn_element_loads) fn_element_loads np_element_loads ⟨@cert_element_loads⟩ ⟨@bcert_minus⟩ ⟨@bcert_plus⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_block_load⟩ n ⟨bih_element_loads⟩
 
 theorem bcert_element_loads {n : Nat} :
-    BStmt_element_loads progW prog prims 1620 n :=
+    BStmt_element_loads progW prog prims 1632 n :=
   (bcerts_element_loads n)
 
 theorem bcert_array_arg_local {n : Nat} :
-    BStmt_array_arg_local progW prog prims 1554 n :=
-  @bproof_array_arg_local progW prog prims 1554 75 105 120 185 214 232 398 483 535 1616 1617 1618 1619 1620 (fnW_of (by decide) (by decide) fn_array_arg_local) fn_array_arg_local np_array_arg_local ⟨@cert_array_arg_local⟩ ⟨@bcert_plus⟩ ⟨@bcert_times⟩ ⟨@bcert_SrcType_size⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) np_boxed_of_mini_selfhost_SrcType (by decide +kernel) ⟨@bcert_SrcType_same⟩ ⟨@bcert_cons_of_usize⟩ ⟨@bcert_id_absent⟩ ⟨@bcert_cons_of_mini_selfhost_Expr⟩ ⟨@bcert_packed_width⟩ ⟨@bcert_array_arg_checked⟩ ⟨@bcert_element_stores⟩ ⟨@bcert_block_at⟩ ⟨@bcert_element_loads⟩ n
+    BStmt_array_arg_local progW prog prims 1563 n :=
+  @bproof_array_arg_local progW prog prims 1563 75 105 120 185 214 232 398 483 535 1628 1629 1630 1631 1632 (fnW_of (by decide) (by decide) fn_array_arg_local) fn_array_arg_local np_array_arg_local ⟨@cert_array_arg_local⟩ ⟨@bcert_plus⟩ ⟨@bcert_times⟩ ⟨@bcert_SrcType_size⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) np_boxed_of_mini_selfhost_SrcType (by decide +kernel) ⟨@bcert_SrcType_same⟩ ⟨@bcert_cons_of_usize⟩ ⟨@bcert_id_absent⟩ ⟨@bcert_cons_of_mini_selfhost_Expr⟩ ⟨@bcert_packed_width⟩ ⟨@bcert_array_arg_checked⟩ ⟨@bcert_element_stores⟩ ⟨@bcert_block_at⟩ ⟨@bcert_element_loads⟩ n
 
 theorem bcert_array_arg_slice {n : Nat} :
-    BStmt_array_arg_slice progW prog prims 1458 n :=
-  @bproof_array_arg_slice progW prog prims 1458 1554 (fnW_of (by decide) (by decide) fn_array_arg_slice) fn_array_arg_slice np_array_arg_slice ⟨@cert_array_arg_slice⟩ ⟨@bcert_array_arg_local⟩ n
+    BStmt_array_arg_slice progW prog prims 1465 n :=
+  @bproof_array_arg_slice progW prog prims 1465 1563 (fnW_of (by decide) (by decide) fn_array_arg_slice) fn_array_arg_slice np_array_arg_slice ⟨@cert_array_arg_slice⟩ ⟨@bcert_array_arg_local⟩ n
 
 theorem bcert_array_arg {n : Nat} :
-    BStmt_array_arg progW prog prims 1305 n :=
-  @bproof_array_arg progW prog prims 1305 188 190 199 1457 1458 (fnW_of (by decide) (by decide) fn_array_arg) fn_array_arg np_array_arg ⟨@cert_array_arg⟩ ⟨@bcert_SrcExpr_guard⟩ ⟨@bcert_lower_value⟩ ⟨@bcert_lookup⟩ ⟨@bcert_array_arg_pure⟩ ⟨@bcert_array_arg_slice⟩ n
+    BStmt_array_arg progW prog prims 1310 n :=
+  @bproof_array_arg progW prog prims 1310 188 190 199 1464 1465 (fnW_of (by decide) (by decide) fn_array_arg) fn_array_arg np_array_arg ⟨@cert_array_arg⟩ ⟨@bcert_SrcExpr_guard⟩ ⟨@bcert_lower_value⟩ ⟨@bcert_lookup⟩ ⟨@bcert_array_arg_pure⟩ ⟨@bcert_array_arg_slice⟩ n
 
 theorem bcert_binding_bytes {n : Nat} :
-    BStmt_binding_bytes progW prog prims 1459 n :=
-  @bproof_binding_bytes progW prog prims 1459 105 120 (fnW_of (by decide) (by decide) fn_binding_bytes) fn_binding_bytes np_binding_bytes ⟨@cert_binding_bytes⟩ ⟨@bcert_times⟩ ⟨@bcert_SrcType_size⟩ n
+    BStmt_binding_bytes progW prog prims 1466 n :=
+  @bproof_binding_bytes progW prog prims 1466 105 120 (fnW_of (by decide) (by decide) fn_binding_bytes) fn_binding_bytes np_binding_bytes ⟨@cert_binding_bytes⟩ ⟨@bcert_times⟩ ⟨@bcert_SrcType_size⟩ n
 
 theorem bcert_arg_bytes {n : Nat} :
-    BStmt_arg_bytes progW prog prims 1306 n :=
-  @bproof_arg_bytes progW prog prims 1306 199 1459 (fnW_of (by decide) (by decide) fn_arg_bytes) fn_arg_bytes np_arg_bytes ⟨@cert_arg_bytes⟩ ⟨@bcert_lookup⟩ ⟨@bcert_binding_bytes⟩ n
+    BStmt_arg_bytes progW prog prims 1311 n :=
+  @bproof_arg_bytes progW prog prims 1311 199 1466 (fnW_of (by decide) (by decide) fn_arg_bytes) fn_arg_bytes np_arg_bytes ⟨@cert_arg_bytes⟩ ⟨@bcert_lookup⟩ ⟨@bcert_binding_bytes⟩ n
 
-theorem bcerts_array_args : ∀ n, (BStmt_array_args progW prog prims 1078 n) := by
+theorem bcerts_array_args : ∀ n, (BStmt_array_args progW prog prims 1079 n) := by
   intro n
   induction n with
   | zero =>
     exact (by intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w k b h; simp only [qcall_zero, reduceCtorEq] at h)
   | succ n ih =>
-    have bih_array_args : BStmt_array_args progW prog prims 1078 n := ih
-    exact @bstep_array_args progW prog prims 1078 75 138 178 351 534 1305 1306 (fnW_of (by decide) (by decide) fn_array_args) fn_array_args np_array_args ⟨@cert_array_args⟩ ⟨@bcert_plus⟩ ⟨@bcert_empty_of_usize⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_SrcType (by decide +kernel) np_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff (by decide +kernel) ⟨@bcert_empty_of_mini_selfhost_Expr⟩ ⟨@bcert_array_arg⟩ ⟨@bcert_arg_bytes⟩ n ⟨bih_array_args⟩
+    have bih_array_args : BStmt_array_args progW prog prims 1079 n := ih
+    exact @bstep_array_args progW prog prims 1079 75 138 178 351 534 1310 1311 (fnW_of (by decide) (by decide) fn_array_args) fn_array_args np_array_args ⟨@cert_array_args⟩ ⟨@bcert_plus⟩ ⟨@bcert_empty_of_usize⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_SrcType (by decide +kernel) np_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff (by decide +kernel) ⟨@bcert_empty_of_mini_selfhost_Expr⟩ ⟨@bcert_array_arg⟩ ⟨@bcert_arg_bytes⟩ n ⟨bih_array_args⟩
 
 theorem bcert_array_args {n : Nat} :
-    BStmt_array_args progW prog prims 1078 n :=
+    BStmt_array_args progW prog prims 1079 n :=
   (bcerts_array_args n)
 
 theorem bcert_array_call_code {n : Nat} :
-    BStmt_array_call_code progW prog prims 1079 n :=
-  @bproof_array_call_code progW prog prims 1079 75 120 185 307 312 (fnW_of (by decide) (by decide) fn_array_call_code) fn_array_call_code np_array_call_code ⟨@cert_array_call_code⟩ ⟨@bcert_plus⟩ ⟨@bcert_SrcType_size⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_check_then⟩ ⟨@bcert_SrcType_is_scalar⟩ n
+    BStmt_array_call_code progW prog prims 1080 n :=
+  @bproof_array_call_code progW prog prims 1080 75 120 185 307 312 (fnW_of (by decide) (by decide) fn_array_call_code) fn_array_call_code np_array_call_code ⟨@cert_array_call_code⟩ ⟨@bcert_plus⟩ ⟨@bcert_SrcType_size⟩ np_boxed_of_mini_selfhost_Stmt (by decide +kernel) ⟨@bcert_check_then⟩ ⟨@bcert_SrcType_is_scalar⟩ n
 
 theorem bcert_array_call_sig {n : Nat} :
     BStmt_array_call_sig progW prog prims 779 n :=
-  @bproof_array_call_sig progW prog prims 779 75 120 1078 1079 (fnW_of (by decide) (by decide) fn_array_call_sig) fn_array_call_sig np_array_call_sig ⟨@cert_array_call_sig⟩ ⟨@bcert_plus⟩ ⟨@bcert_SrcType_size⟩ ⟨@bcert_array_args⟩ ⟨@bcert_array_call_code⟩ n
+  @bproof_array_call_sig progW prog prims 779 75 120 1079 1080 (fnW_of (by decide) (by decide) fn_array_call_sig) fn_array_call_sig np_array_call_sig ⟨@cert_array_call_sig⟩ ⟨@bcert_plus⟩ ⟨@bcert_SrcType_size⟩ ⟨@bcert_array_args⟩ ⟨@bcert_array_call_code⟩ n
 
 theorem bcert_array_call {n : Nat} :
     BStmt_array_call progW prog prims 533 n :=
@@ -4348,314 +4350,314 @@ theorem bcert_lx_drop {n : Nat} :
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_lx_ident_start {n : Nat} :
-    BStmt_lx_ident_start progW prog prims 1099 n := by
+    BStmt_lx_ident_start progW prog prims 1100 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1099) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_lx_ident_start prog prims 1099 n) from ⟨@cert_lx_ident_start⟩).out
+  have key := bfree (ix := 1100) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_lx_ident_start prog prims 1100 n) from ⟨@cert_lx_ident_start⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_lx_digit {n : Nat} :
-    BStmt_lx_digit progW prog prims 1101 n := by
+    BStmt_lx_digit progW prog prims 1102 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1101) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_lx_digit prog prims 1101 n) from ⟨@cert_lx_digit⟩).out
+  have key := bfree (ix := 1102) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_lx_digit prog prims 1102 n) from ⟨@cert_lx_digit⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_lx_ident_continue {n : Nat} :
-    BStmt_lx_ident_continue progW prog prims 1555 n := by
+    BStmt_lx_ident_continue progW prog prims 1564 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1555) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_lx_ident_continue prog prims 1555 n) from ⟨@cert_lx_ident_continue⟩).out
+  have key := bfree (ix := 1564) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_lx_ident_continue prog prims 1564 n) from ⟨@cert_lx_ident_continue⟩).out
     (pcall_of_q key.1) r0⟩
 
-theorem bcerts_lx_ident_run : ∀ n, (BStmt_lx_ident_run progW prog prims 1311 n) ∧ (BStmt_lx_ident_run_at progW prog prims 1461 n) := by
+theorem bcerts_lx_ident_run : ∀ n, (BStmt_lx_ident_run progW prog prims 1316 n) ∧ (BStmt_lx_ident_run_at progW prog prims 1468 n) := by
   intro n
   induction n with
   | zero =>
     exact ⟨(by intro x0 v0 w k b h; simp only [qcall_zero, reduceCtorEq] at h), (by intro x0 x1 v0 v1 w k b h; simp only [qcall_zero, reduceCtorEq] at h)⟩
   | succ n ih =>
     obtain ⟨bih_lx_ident_run, bih_lx_ident_run_at⟩ := ih
-    exact ⟨@bstep_lx_ident_run progW prog prims 1311 76 1461 (fnW_of (by decide) (by decide) fn_lx_ident_run) fn_lx_ident_run np_lx_ident_run ⟨@cert_lx_ident_run⟩ np_unbox_of_mini_selfhost_List_usize (by decide +kernel) n ⟨bih_lx_ident_run_at⟩, @bstep_lx_ident_run_at progW prog prims 1461 75 1311 1555 (fnW_of (by decide) (by decide) fn_lx_ident_run_at) fn_lx_ident_run_at np_lx_ident_run_at ⟨@cert_lx_ident_run_at⟩ ⟨@bcert_plus⟩ ⟨@bcert_lx_ident_continue⟩ n ⟨bih_lx_ident_run⟩⟩
+    exact ⟨@bstep_lx_ident_run progW prog prims 1316 76 1468 (fnW_of (by decide) (by decide) fn_lx_ident_run) fn_lx_ident_run np_lx_ident_run ⟨@cert_lx_ident_run⟩ np_unbox_of_mini_selfhost_List_usize (by decide +kernel) n ⟨bih_lx_ident_run_at⟩, @bstep_lx_ident_run_at progW prog prims 1468 75 1316 1564 (fnW_of (by decide) (by decide) fn_lx_ident_run_at) fn_lx_ident_run_at np_lx_ident_run_at ⟨@cert_lx_ident_run_at⟩ ⟨@bcert_plus⟩ ⟨@bcert_lx_ident_continue⟩ n ⟨bih_lx_ident_run⟩⟩
 
 theorem bcert_lx_ident_run {n : Nat} :
-    BStmt_lx_ident_run progW prog prims 1311 n :=
+    BStmt_lx_ident_run progW prog prims 1316 n :=
   (bcerts_lx_ident_run n).1
 theorem bcert_lx_ident_run_at {n : Nat} :
-    BStmt_lx_ident_run_at progW prog prims 1461 n :=
+    BStmt_lx_ident_run_at progW prog prims 1468 n :=
   (bcerts_lx_ident_run n).2
 
 theorem bcert_lx_ident_end {n : Nat} :
-    BStmt_lx_ident_end progW prog prims 1100 n :=
-  @bproof_lx_ident_end progW prog prims 1100 75 584 1311 (fnW_of (by decide) (by decide) fn_lx_ident_end) fn_lx_ident_end np_lx_ident_end ⟨@cert_lx_ident_end⟩ ⟨@bcert_plus⟩ ⟨@bcert_lx_drop⟩ ⟨@bcert_lx_ident_run⟩ n
+    BStmt_lx_ident_end progW prog prims 1101 n :=
+  @bproof_lx_ident_end progW prog prims 1101 75 584 1316 (fnW_of (by decide) (by decide) fn_lx_ident_end) fn_lx_ident_end np_lx_ident_end ⟨@cert_lx_ident_end⟩ ⟨@bcert_plus⟩ ⟨@bcert_lx_drop⟩ ⟨@bcert_lx_ident_run⟩ n
 
 theorem bcert_lx_from_number {n : Nat} :
-    BStmt_lx_from_number progW prog prims 1102 n := by
+    BStmt_lx_from_number progW prog prims 1103 n := by
   intro x0 x1 v0 v1 w k h r0 r1
-  have key := bfree (ix := 1102) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_lx_from_number prog prims 1102 n) from ⟨@cert_lx_from_number⟩).out
+  have key := bfree (ix := 1103) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_lx_from_number prog prims 1103 n) from ⟨@cert_lx_from_number⟩).out
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_lx_is_byte {n : Nat} :
-    BStmt_lx_is_byte progW prog prims 1462 n := by
+    BStmt_lx_is_byte progW prog prims 1469 n := by
   intro x0 x1 v0 v1 w k h r0 r1
-  have key := bfree (ix := 1462) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_lx_is_byte prog prims 1462 n) from ⟨@cert_lx_is_byte⟩).out
+  have key := bfree (ix := 1469) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_lx_is_byte prog prims 1469 n) from ⟨@cert_lx_is_byte⟩).out
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_lx_base_of {n : Nat} :
-    BStmt_lx_base_of progW prog prims 1463 n := by
+    BStmt_lx_base_of progW prog prims 1470 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1463) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_lx_base_of prog prims 1463 n) from ⟨@cert_lx_base_of⟩).out
+  have key := bfree (ix := 1470) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_lx_base_of prog prims 1470 n) from ⟨@cert_lx_base_of⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_lx_prefixed_base {n : Nat} :
-    BStmt_lx_prefixed_base progW prog prims 1312 n :=
-  @bproof_lx_prefixed_base progW prog prims 1312 75 821 1462 1463 (fnW_of (by decide) (by decide) fn_lx_prefixed_base) fn_lx_prefixed_base np_lx_prefixed_base ⟨@cert_lx_prefixed_base⟩ ⟨@bcert_plus⟩ ⟨@bcert_get_of_usize⟩ ⟨@bcert_lx_is_byte⟩ ⟨@bcert_lx_base_of⟩ n
+    BStmt_lx_prefixed_base progW prog prims 1317 n :=
+  @bproof_lx_prefixed_base progW prog prims 1317 75 821 1469 1470 (fnW_of (by decide) (by decide) fn_lx_prefixed_base) fn_lx_prefixed_base np_lx_prefixed_base ⟨@cert_lx_prefixed_base⟩ ⟨@bcert_plus⟩ ⟨@bcert_get_of_usize⟩ ⟨@bcert_lx_is_byte⟩ ⟨@bcert_lx_base_of⟩ n
 
 theorem bcert_lx_base_digit {n : Nat} :
-    BStmt_lx_base_digit progW prog prims 1556 n :=
-  @bproof_lx_base_digit progW prog prims 1556 56 75 (fnW_of (by decide) (by decide) fn_lx_base_digit) fn_lx_base_digit np_lx_base_digit ⟨@cert_lx_base_digit⟩ ⟨@bcert_minus⟩ ⟨@bcert_plus⟩ n
+    BStmt_lx_base_digit progW prog prims 1565 n :=
+  @bproof_lx_base_digit progW prog prims 1565 56 75 (fnW_of (by decide) (by decide) fn_lx_base_digit) fn_lx_base_digit np_lx_base_digit ⟨@cert_lx_base_digit⟩ ⟨@bcert_minus⟩ ⟨@bcert_plus⟩ n
 
-theorem bcerts_lx_digit_tail : ∀ n, (BStmt_lx_digit_tail progW prog prims 1557 n) ∧ (BStmt_lx_digit_tail_at progW prog prims 1621 n) ∧ (BStmt_lx_digit_sep progW prog prims 1678 n) := by
+theorem bcerts_lx_digit_tail : ∀ n, (BStmt_lx_digit_tail progW prog prims 1566 n) ∧ (BStmt_lx_digit_tail_at progW prog prims 1633 n) ∧ (BStmt_lx_digit_sep progW prog prims 1690 n) := by
   intro n
   induction n with
   | zero =>
     exact ⟨(by intro x0 x1 x2 v0 v1 v2 w k b h; simp only [qcall_zero, reduceCtorEq] at h), (by intro x0 x1 x2 x3 v0 v1 v2 v3 w k b h; simp only [qcall_zero, reduceCtorEq] at h), (by intro x0 x1 x2 x3 v0 v1 v2 v3 w k b h; simp only [qcall_zero, reduceCtorEq] at h)⟩
   | succ n ih =>
     obtain ⟨bih_lx_digit_tail, bih_lx_digit_tail_at, bih_lx_digit_sep⟩ := ih
-    exact ⟨@bstep_lx_digit_tail progW prog prims 1557 76 1621 (fnW_of (by decide) (by decide) fn_lx_digit_tail) fn_lx_digit_tail np_lx_digit_tail ⟨@cert_lx_digit_tail⟩ np_unbox_of_mini_selfhost_List_usize (by decide +kernel) n ⟨bih_lx_digit_tail_at⟩, @bstep_lx_digit_tail_at progW prog prims 1621 75 76 1556 1557 1678 (fnW_of (by decide) (by decide) fn_lx_digit_tail_at) fn_lx_digit_tail_at np_lx_digit_tail_at ⟨@cert_lx_digit_tail_at⟩ ⟨@bcert_plus⟩ np_unbox_of_mini_selfhost_List_usize (by decide +kernel) ⟨@bcert_lx_base_digit⟩ n ⟨bih_lx_digit_tail⟩ ⟨bih_lx_digit_sep⟩, @bstep_lx_digit_sep progW prog prims 1678 75 1556 1557 (fnW_of (by decide) (by decide) fn_lx_digit_sep) fn_lx_digit_sep np_lx_digit_sep ⟨@cert_lx_digit_sep⟩ ⟨@bcert_plus⟩ ⟨@bcert_lx_base_digit⟩ n ⟨bih_lx_digit_tail⟩⟩
+    exact ⟨@bstep_lx_digit_tail progW prog prims 1566 76 1633 (fnW_of (by decide) (by decide) fn_lx_digit_tail) fn_lx_digit_tail np_lx_digit_tail ⟨@cert_lx_digit_tail⟩ np_unbox_of_mini_selfhost_List_usize (by decide +kernel) n ⟨bih_lx_digit_tail_at⟩, @bstep_lx_digit_tail_at progW prog prims 1633 75 76 1565 1566 1690 (fnW_of (by decide) (by decide) fn_lx_digit_tail_at) fn_lx_digit_tail_at np_lx_digit_tail_at ⟨@cert_lx_digit_tail_at⟩ ⟨@bcert_plus⟩ np_unbox_of_mini_selfhost_List_usize (by decide +kernel) ⟨@bcert_lx_base_digit⟩ n ⟨bih_lx_digit_tail⟩ ⟨bih_lx_digit_sep⟩, @bstep_lx_digit_sep progW prog prims 1690 75 1565 1566 (fnW_of (by decide) (by decide) fn_lx_digit_sep) fn_lx_digit_sep np_lx_digit_sep ⟨@cert_lx_digit_sep⟩ ⟨@bcert_plus⟩ ⟨@bcert_lx_base_digit⟩ n ⟨bih_lx_digit_tail⟩⟩
 
 theorem bcert_lx_digit_tail {n : Nat} :
-    BStmt_lx_digit_tail progW prog prims 1557 n :=
+    BStmt_lx_digit_tail progW prog prims 1566 n :=
   (bcerts_lx_digit_tail n).1
 theorem bcert_lx_digit_tail_at {n : Nat} :
-    BStmt_lx_digit_tail_at progW prog prims 1621 n :=
+    BStmt_lx_digit_tail_at progW prog prims 1633 n :=
   (bcerts_lx_digit_tail n).2.1
 theorem bcert_lx_digit_sep {n : Nat} :
-    BStmt_lx_digit_sep progW prog prims 1678 n :=
+    BStmt_lx_digit_sep progW prog prims 1690 n :=
   (bcerts_lx_digit_tail n).2.2
 
 theorem bcert_lx_digit_run_at {n : Nat} :
-    BStmt_lx_digit_run_at progW prog prims 1464 n :=
-  @bproof_lx_digit_run_at progW prog prims 1464 75 1556 1557 (fnW_of (by decide) (by decide) fn_lx_digit_run_at) fn_lx_digit_run_at np_lx_digit_run_at ⟨@cert_lx_digit_run_at⟩ ⟨@bcert_plus⟩ ⟨@bcert_lx_base_digit⟩ ⟨@bcert_lx_digit_tail⟩ n
+    BStmt_lx_digit_run_at progW prog prims 1471 n :=
+  @bproof_lx_digit_run_at progW prog prims 1471 75 1565 1566 (fnW_of (by decide) (by decide) fn_lx_digit_run_at) fn_lx_digit_run_at np_lx_digit_run_at ⟨@cert_lx_digit_run_at⟩ ⟨@bcert_plus⟩ ⟨@bcert_lx_base_digit⟩ ⟨@bcert_lx_digit_tail⟩ n
 
 theorem bcert_lx_digit_run {n : Nat} :
-    BStmt_lx_digit_run progW prog prims 1313 n :=
-  @bproof_lx_digit_run progW prog prims 1313 76 584 1464 (fnW_of (by decide) (by decide) fn_lx_digit_run) fn_lx_digit_run np_lx_digit_run ⟨@cert_lx_digit_run⟩ np_unbox_of_mini_selfhost_List_usize (by decide +kernel) ⟨@bcert_lx_drop⟩ ⟨@bcert_lx_digit_run_at⟩ n
+    BStmt_lx_digit_run progW prog prims 1318 n :=
+  @bproof_lx_digit_run progW prog prims 1318 76 584 1471 (fnW_of (by decide) (by decide) fn_lx_digit_run) fn_lx_digit_run np_lx_digit_run ⟨@cert_lx_digit_run⟩ np_unbox_of_mini_selfhost_List_usize (by decide +kernel) ⟨@bcert_lx_drop⟩ ⟨@bcert_lx_digit_run_at⟩ n
 
 theorem bcert_lx_exponent_sign {n : Nat} :
-    BStmt_lx_exponent_sign progW prog prims 1679 n :=
-  @bproof_lx_exponent_sign progW prog prims 1679 75 (fnW_of (by decide) (by decide) fn_lx_exponent_sign) fn_lx_exponent_sign np_lx_exponent_sign ⟨@cert_lx_exponent_sign⟩ ⟨@bcert_plus⟩ n
+    BStmt_lx_exponent_sign progW prog prims 1691 n :=
+  @bproof_lx_exponent_sign progW prog prims 1691 75 (fnW_of (by decide) (by decide) fn_lx_exponent_sign) fn_lx_exponent_sign np_lx_exponent_sign ⟨@cert_lx_exponent_sign⟩ ⟨@bcert_plus⟩ n
 
 theorem bcert_lx_exponent_digits {n : Nat} :
-    BStmt_lx_exponent_digits progW prog prims 1622 n :=
-  @bproof_lx_exponent_digits progW prog prims 1622 75 821 1679 (fnW_of (by decide) (by decide) fn_lx_exponent_digits) fn_lx_exponent_digits np_lx_exponent_digits ⟨@cert_lx_exponent_digits⟩ ⟨@bcert_plus⟩ ⟨@bcert_get_of_usize⟩ ⟨@bcert_lx_exponent_sign⟩ n
+    BStmt_lx_exponent_digits progW prog prims 1634 n :=
+  @bproof_lx_exponent_digits progW prog prims 1634 75 821 1691 (fnW_of (by decide) (by decide) fn_lx_exponent_digits) fn_lx_exponent_digits np_lx_exponent_digits ⟨@cert_lx_exponent_digits⟩ ⟨@bcert_plus⟩ ⟨@bcert_get_of_usize⟩ ⟨@bcert_lx_exponent_sign⟩ n
 
 theorem bcert_lx_exponent {n : Nat} :
-    BStmt_lx_exponent progW prog prims 1558 n :=
-  @bproof_lx_exponent progW prog prims 1558 1313 1622 (fnW_of (by decide) (by decide) fn_lx_exponent) fn_lx_exponent np_lx_exponent ⟨@cert_lx_exponent⟩ ⟨@bcert_lx_digit_run⟩ ⟨@bcert_lx_exponent_digits⟩ n
+    BStmt_lx_exponent progW prog prims 1567 n :=
+  @bproof_lx_exponent progW prog prims 1567 1318 1634 (fnW_of (by decide) (by decide) fn_lx_exponent) fn_lx_exponent np_lx_exponent ⟨@cert_lx_exponent⟩ ⟨@bcert_lx_digit_run⟩ ⟨@bcert_lx_exponent_digits⟩ n
 
 theorem bcert_lx_after_fraction_at {n : Nat} :
-    BStmt_lx_after_fraction_at progW prog prims 1745 n :=
-  @bproof_lx_after_fraction_at progW prog prims 1745 1558 (fnW_of (by decide) (by decide) fn_lx_after_fraction_at) fn_lx_after_fraction_at np_lx_after_fraction_at ⟨@cert_lx_after_fraction_at⟩ ⟨@bcert_lx_exponent⟩ n
+    BStmt_lx_after_fraction_at progW prog prims 1757 n :=
+  @bproof_lx_after_fraction_at progW prog prims 1757 1567 (fnW_of (by decide) (by decide) fn_lx_after_fraction_at) fn_lx_after_fraction_at np_lx_after_fraction_at ⟨@cert_lx_after_fraction_at⟩ ⟨@bcert_lx_exponent⟩ n
 
 theorem bcert_lx_after_fraction {n : Nat} :
-    BStmt_lx_after_fraction progW prog prims 1680 n :=
-  @bproof_lx_after_fraction progW prog prims 1680 821 1745 (fnW_of (by decide) (by decide) fn_lx_after_fraction) fn_lx_after_fraction np_lx_after_fraction ⟨@cert_lx_after_fraction⟩ ⟨@bcert_get_of_usize⟩ ⟨@bcert_lx_after_fraction_at⟩ n
+    BStmt_lx_after_fraction progW prog prims 1692 n :=
+  @bproof_lx_after_fraction progW prog prims 1692 821 1757 (fnW_of (by decide) (by decide) fn_lx_after_fraction) fn_lx_after_fraction np_lx_after_fraction ⟨@cert_lx_after_fraction⟩ ⟨@bcert_get_of_usize⟩ ⟨@bcert_lx_after_fraction_at⟩ n
 
 theorem bcert_lx_fraction_digits {n : Nat} :
-    BStmt_lx_fraction_digits progW prog prims 1624 n :=
-  @bproof_lx_fraction_digits progW prog prims 1624 1680 (fnW_of (by decide) (by decide) fn_lx_fraction_digits) fn_lx_fraction_digits np_lx_fraction_digits ⟨@cert_lx_fraction_digits⟩ ⟨@bcert_lx_after_fraction⟩ n
+    BStmt_lx_fraction_digits progW prog prims 1636 n :=
+  @bproof_lx_fraction_digits progW prog prims 1636 1692 (fnW_of (by decide) (by decide) fn_lx_fraction_digits) fn_lx_fraction_digits np_lx_fraction_digits ⟨@cert_lx_fraction_digits⟩ ⟨@bcert_lx_after_fraction⟩ n
 
 theorem bcert_lx_fraction_at {n : Nat} :
-    BStmt_lx_fraction_at progW prog prims 1623 n :=
-  @bproof_lx_fraction_at progW prog prims 1623 1313 1558 1624 (fnW_of (by decide) (by decide) fn_lx_fraction_at) fn_lx_fraction_at np_lx_fraction_at ⟨@cert_lx_fraction_at⟩ ⟨@bcert_lx_digit_run⟩ ⟨@bcert_lx_exponent⟩ ⟨@bcert_lx_fraction_digits⟩ n
+    BStmt_lx_fraction_at progW prog prims 1635 n :=
+  @bproof_lx_fraction_at progW prog prims 1635 1318 1567 1636 (fnW_of (by decide) (by decide) fn_lx_fraction_at) fn_lx_fraction_at np_lx_fraction_at ⟨@cert_lx_fraction_at⟩ ⟨@bcert_lx_digit_run⟩ ⟨@bcert_lx_exponent⟩ ⟨@bcert_lx_fraction_digits⟩ n
 
 theorem bcert_lx_fraction {n : Nat} :
-    BStmt_lx_fraction progW prog prims 1559 n :=
-  @bproof_lx_fraction progW prog prims 1559 821 1623 (fnW_of (by decide) (by decide) fn_lx_fraction) fn_lx_fraction np_lx_fraction ⟨@cert_lx_fraction⟩ ⟨@bcert_get_of_usize⟩ ⟨@bcert_lx_fraction_at⟩ n
+    BStmt_lx_fraction progW prog prims 1568 n :=
+  @bproof_lx_fraction progW prog prims 1568 821 1635 (fnW_of (by decide) (by decide) fn_lx_fraction) fn_lx_fraction np_lx_fraction ⟨@cert_lx_fraction⟩ ⟨@bcert_get_of_usize⟩ ⟨@bcert_lx_fraction_at⟩ n
 
 theorem bcert_lx_decimal_next {n : Nat} :
-    BStmt_lx_decimal_next progW prog prims 1465 n :=
-  @bproof_lx_decimal_next progW prog prims 1465 75 821 1462 1558 1559 (fnW_of (by decide) (by decide) fn_lx_decimal_next) fn_lx_decimal_next np_lx_decimal_next ⟨@cert_lx_decimal_next⟩ ⟨@bcert_plus⟩ ⟨@bcert_get_of_usize⟩ ⟨@bcert_lx_is_byte⟩ ⟨@bcert_lx_exponent⟩ ⟨@bcert_lx_fraction⟩ n
+    BStmt_lx_decimal_next progW prog prims 1472 n :=
+  @bproof_lx_decimal_next progW prog prims 1472 75 821 1469 1567 1568 (fnW_of (by decide) (by decide) fn_lx_decimal_next) fn_lx_decimal_next np_lx_decimal_next ⟨@cert_lx_decimal_next⟩ ⟨@bcert_plus⟩ ⟨@bcert_get_of_usize⟩ ⟨@bcert_lx_is_byte⟩ ⟨@bcert_lx_exponent⟩ ⟨@bcert_lx_fraction⟩ n
 
 theorem bcert_lx_finish_decimal {n : Nat} :
-    BStmt_lx_finish_decimal progW prog prims 1314 n :=
-  @bproof_lx_finish_decimal progW prog prims 1314 821 1465 (fnW_of (by decide) (by decide) fn_lx_finish_decimal) fn_lx_finish_decimal np_lx_finish_decimal ⟨@cert_lx_finish_decimal⟩ ⟨@bcert_get_of_usize⟩ ⟨@bcert_lx_decimal_next⟩ n
+    BStmt_lx_finish_decimal progW prog prims 1319 n :=
+  @bproof_lx_finish_decimal progW prog prims 1319 821 1472 (fnW_of (by decide) (by decide) fn_lx_finish_decimal) fn_lx_finish_decimal np_lx_finish_decimal ⟨@cert_lx_finish_decimal⟩ ⟨@bcert_get_of_usize⟩ ⟨@bcert_lx_decimal_next⟩ n
 
 theorem bcert_lx_number {n : Nat} :
-    BStmt_lx_number progW prog prims 1103 n :=
-  @bproof_lx_number progW prog prims 1103 75 1312 1313 1314 (fnW_of (by decide) (by decide) fn_lx_number) fn_lx_number np_lx_number ⟨@cert_lx_number⟩ ⟨@bcert_plus⟩ ⟨@bcert_lx_prefixed_base⟩ ⟨@bcert_lx_digit_run⟩ ⟨@bcert_lx_finish_decimal⟩ n
+    BStmt_lx_number progW prog prims 1104 n :=
+  @bproof_lx_number progW prog prims 1104 75 1317 1318 1319 (fnW_of (by decide) (by decide) fn_lx_number) fn_lx_number np_lx_number ⟨@cert_lx_number⟩ ⟨@bcert_plus⟩ ⟨@bcert_lx_prefixed_base⟩ ⟨@bcert_lx_digit_run⟩ ⟨@bcert_lx_finish_decimal⟩ n
 
 theorem bcert_lx_space {n : Nat} :
-    BStmt_lx_space progW prog prims 1104 n := by
+    BStmt_lx_space progW prog prims 1105 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1104) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_lx_space prog prims 1104 n) from ⟨@cert_lx_space⟩).out
+  have key := bfree (ix := 1105) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_lx_space prog prims 1105 n) from ⟨@cert_lx_space⟩).out
     (pcall_of_q key.1) r0⟩
 
-theorem bcerts_lx_space_run : ∀ n, (BStmt_lx_space_run progW prog prims 1315 n) ∧ (BStmt_lx_space_run_at progW prog prims 1466 n) := by
+theorem bcerts_lx_space_run : ∀ n, (BStmt_lx_space_run progW prog prims 1320 n) ∧ (BStmt_lx_space_run_at progW prog prims 1473 n) := by
   intro n
   induction n with
   | zero =>
     exact ⟨(by intro x0 v0 w k b h; simp only [qcall_zero, reduceCtorEq] at h), (by intro x0 x1 v0 v1 w k b h; simp only [qcall_zero, reduceCtorEq] at h)⟩
   | succ n ih =>
     obtain ⟨bih_lx_space_run, bih_lx_space_run_at⟩ := ih
-    exact ⟨@bstep_lx_space_run progW prog prims 1315 76 1466 (fnW_of (by decide) (by decide) fn_lx_space_run) fn_lx_space_run np_lx_space_run ⟨@cert_lx_space_run⟩ np_unbox_of_mini_selfhost_List_usize (by decide +kernel) n ⟨bih_lx_space_run_at⟩, @bstep_lx_space_run_at progW prog prims 1466 75 1104 1315 (fnW_of (by decide) (by decide) fn_lx_space_run_at) fn_lx_space_run_at np_lx_space_run_at ⟨@cert_lx_space_run_at⟩ ⟨@bcert_plus⟩ ⟨@bcert_lx_space⟩ n ⟨bih_lx_space_run⟩⟩
+    exact ⟨@bstep_lx_space_run progW prog prims 1320 76 1473 (fnW_of (by decide) (by decide) fn_lx_space_run) fn_lx_space_run np_lx_space_run ⟨@cert_lx_space_run⟩ np_unbox_of_mini_selfhost_List_usize (by decide +kernel) n ⟨bih_lx_space_run_at⟩, @bstep_lx_space_run_at progW prog prims 1473 75 1105 1320 (fnW_of (by decide) (by decide) fn_lx_space_run_at) fn_lx_space_run_at np_lx_space_run_at ⟨@cert_lx_space_run_at⟩ ⟨@bcert_plus⟩ ⟨@bcert_lx_space⟩ n ⟨bih_lx_space_run⟩⟩
 
 theorem bcert_lx_space_run {n : Nat} :
-    BStmt_lx_space_run progW prog prims 1315 n :=
+    BStmt_lx_space_run progW prog prims 1320 n :=
   (bcerts_lx_space_run n).1
 theorem bcert_lx_space_run_at {n : Nat} :
-    BStmt_lx_space_run_at progW prog prims 1466 n :=
+    BStmt_lx_space_run_at progW prog prims 1473 n :=
   (bcerts_lx_space_run n).2
 
 theorem bcert_lx_space_end {n : Nat} :
-    BStmt_lx_space_end progW prog prims 1105 n :=
-  @bproof_lx_space_end progW prog prims 1105 75 584 1315 (fnW_of (by decide) (by decide) fn_lx_space_end) fn_lx_space_end np_lx_space_end ⟨@cert_lx_space_end⟩ ⟨@bcert_plus⟩ ⟨@bcert_lx_drop⟩ ⟨@bcert_lx_space_run⟩ n
+    BStmt_lx_space_end progW prog prims 1106 n :=
+  @bproof_lx_space_end progW prog prims 1106 75 584 1320 (fnW_of (by decide) (by decide) fn_lx_space_end) fn_lx_space_end np_lx_space_end ⟨@cert_lx_space_end⟩ ⟨@bcert_plus⟩ ⟨@bcert_lx_drop⟩ ⟨@bcert_lx_space_run⟩ n
 
 theorem bcert_lx_delimited {n : Nat} :
-    BStmt_lx_delimited progW prog prims 1106 n := by
+    BStmt_lx_delimited progW prog prims 1107 n := by
   intro x0 x1 x2 v0 v1 v2 w k h r0 r1 r2
-  have key := bfree (ix := 1106) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_lx_delimited prog prims 1106 n) from ⟨@cert_lx_delimited⟩).out
+  have key := bfree (ix := 1107) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_lx_delimited prog prims 1107 n) from ⟨@cert_lx_delimited⟩).out
     (pcall_of_q key.1) r0 r1 r2⟩
 
-theorem bcerts_lx_quoted : ∀ n, (BStmt_lx_quoted progW prog prims 1107 n) ∧ (BStmt_lx_quoted_at progW prog prims 1316 n) := by
+theorem bcerts_lx_quoted : ∀ n, (BStmt_lx_quoted progW prog prims 1108 n) ∧ (BStmt_lx_quoted_at progW prog prims 1321 n) := by
   intro n
   induction n with
   | zero =>
     exact ⟨(by intro x0 x1 x2 x3 v0 v1 v2 v3 w k b h; simp only [qcall_zero, reduceCtorEq] at h), (by intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w k b h; simp only [qcall_zero, reduceCtorEq] at h)⟩
   | succ n ih =>
     obtain ⟨bih_lx_quoted, bih_lx_quoted_at⟩ := ih
-    exact ⟨@bstep_lx_quoted progW prog prims 1107 76 1316 (fnW_of (by decide) (by decide) fn_lx_quoted) fn_lx_quoted np_lx_quoted ⟨@cert_lx_quoted⟩ np_unbox_of_mini_selfhost_List_usize (by decide +kernel) n ⟨bih_lx_quoted_at⟩, @bstep_lx_quoted_at progW prog prims 1316 75 1107 (fnW_of (by decide) (by decide) fn_lx_quoted_at) fn_lx_quoted_at np_lx_quoted_at ⟨@cert_lx_quoted_at⟩ ⟨@bcert_plus⟩ n ⟨bih_lx_quoted⟩⟩
+    exact ⟨@bstep_lx_quoted progW prog prims 1108 76 1321 (fnW_of (by decide) (by decide) fn_lx_quoted) fn_lx_quoted np_lx_quoted ⟨@cert_lx_quoted⟩ np_unbox_of_mini_selfhost_List_usize (by decide +kernel) n ⟨bih_lx_quoted_at⟩, @bstep_lx_quoted_at progW prog prims 1321 75 1108 (fnW_of (by decide) (by decide) fn_lx_quoted_at) fn_lx_quoted_at np_lx_quoted_at ⟨@cert_lx_quoted_at⟩ ⟨@bcert_plus⟩ n ⟨bih_lx_quoted⟩⟩
 
 theorem bcert_lx_quoted {n : Nat} :
-    BStmt_lx_quoted progW prog prims 1107 n :=
+    BStmt_lx_quoted progW prog prims 1108 n :=
   (bcerts_lx_quoted n).1
 theorem bcert_lx_quoted_at {n : Nat} :
-    BStmt_lx_quoted_at progW prog prims 1316 n :=
+    BStmt_lx_quoted_at progW prog prims 1321 n :=
   (bcerts_lx_quoted n).2
 
 theorem bcert_lx_symbol_start {n : Nat} :
-    BStmt_lx_symbol_start progW prog prims 1108 n := by
+    BStmt_lx_symbol_start progW prog prims 1109 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1108) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_lx_symbol_start prog prims 1108 n) from ⟨@cert_lx_symbol_start⟩).out
+  have key := bfree (ix := 1109) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_lx_symbol_start prog prims 1109 n) from ⟨@cert_lx_symbol_start⟩).out
     (pcall_of_q key.1) r0⟩
 
-theorem bcerts_lx_take : ∀ n, (BStmt_lx_take progW prog prims 1115 n) := by
+theorem bcerts_lx_take : ∀ n, (BStmt_lx_take progW prog prims 1116 n) := by
   intro n
   induction n with
   | zero =>
     exact (by intro x0 x1 v0 v1 w k h; simp only [qcall_zero, reduceCtorEq] at h)
   | succ n ih =>
-    have bih_lx_take : BStmt_lx_take progW prog prims 1115 n := ih
-    exact @bstep_lx_take progW prog prims 1115 56 76 138 398 (fnW_of (by decide) (by decide) fn_lx_take) fn_lx_take np_lx_take ⟨@cert_lx_take⟩ ⟨@bcert_minus⟩ np_unbox_of_mini_selfhost_List_usize (by decide +kernel) ⟨@bcert_empty_of_usize⟩ ⟨@bcert_cons_of_usize⟩ n ⟨bih_lx_take⟩
+    have bih_lx_take : BStmt_lx_take progW prog prims 1116 n := ih
+    exact @bstep_lx_take progW prog prims 1116 56 76 138 398 (fnW_of (by decide) (by decide) fn_lx_take) fn_lx_take np_lx_take ⟨@cert_lx_take⟩ ⟨@bcert_minus⟩ np_unbox_of_mini_selfhost_List_usize (by decide +kernel) ⟨@bcert_empty_of_usize⟩ ⟨@bcert_cons_of_usize⟩ n ⟨bih_lx_take⟩
 
 theorem bcert_lx_take {n : Nat} :
-    BStmt_lx_take progW prog prims 1115 n :=
+    BStmt_lx_take progW prog prims 1116 n :=
   (bcerts_lx_take n)
 
 theorem bcert_lx_starts_with {n : Nat} :
-    BStmt_lx_starts_with progW prog prims 1681 n := by
+    BStmt_lx_starts_with progW prog prims 1693 n := by
   intro x0 x1 v0 v1 w k h r0 r1
-  have key := bfree (ix := 1681) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_lx_starts_with prog prims 1681 n) from ⟨@cert_lx_starts_with⟩).out
+  have key := bfree (ix := 1693) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_lx_starts_with prog prims 1693 n) from ⟨@cert_lx_starts_with⟩).out
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_lx_longer {n : Nat} :
-    BStmt_lx_longer progW prog prims 1682 n :=
-  @bproof_lx_longer progW prog prims 1682 52 (fnW_of (by decide) (by decide) fn_lx_longer) fn_lx_longer np_lx_longer ⟨@cert_lx_longer⟩ ⟨@bcert_length_of_usize⟩ n
+    BStmt_lx_longer progW prog prims 1694 n :=
+  @bproof_lx_longer progW prog prims 1694 52 (fnW_of (by decide) (by decide) fn_lx_longer) fn_lx_longer np_lx_longer ⟨@cert_lx_longer⟩ ⟨@bcert_length_of_usize⟩ n
 
 theorem bcert_lx_best_at {n : Nat} :
-    BStmt_lx_best_at progW prog prims 1625 n :=
-  @bproof_lx_best_at progW prog prims 1625 1681 1682 (fnW_of (by decide) (by decide) fn_lx_best_at) fn_lx_best_at np_lx_best_at ⟨@cert_lx_best_at⟩ ⟨@bcert_lx_starts_with⟩ ⟨@bcert_lx_longer⟩ n
+    BStmt_lx_best_at progW prog prims 1637 n :=
+  @bproof_lx_best_at progW prog prims 1637 1693 1694 (fnW_of (by decide) (by decide) fn_lx_best_at) fn_lx_best_at np_lx_best_at ⟨@cert_lx_best_at⟩ ⟨@bcert_lx_starts_with⟩ ⟨@bcert_lx_longer⟩ n
 
-theorem bcerts_lx_best : ∀ n, (BStmt_lx_best progW prog prims 1561 n) := by
+theorem bcerts_lx_best : ∀ n, (BStmt_lx_best progW prog prims 1570 n) := by
   intro n
   induction n with
   | zero =>
     exact (by intro x0 x1 v0 v1 w k b h; simp only [qcall_zero, reduceCtorEq] at h)
   | succ n ih =>
-    have bih_lx_best : BStmt_lx_best progW prog prims 1561 n := ih
-    exact @bstep_lx_best progW prog prims 1561 1322 1625 (fnW_of (by decide) (by decide) fn_lx_best) fn_lx_best np_lx_best ⟨@cert_lx_best⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_SymRule (by decide +kernel) ⟨@bcert_lx_best_at⟩ n ⟨bih_lx_best⟩
+    have bih_lx_best : BStmt_lx_best progW prog prims 1570 n := ih
+    exact @bstep_lx_best progW prog prims 1570 1327 1637 (fnW_of (by decide) (by decide) fn_lx_best) fn_lx_best np_lx_best ⟨@cert_lx_best⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_SymRule (by decide +kernel) ⟨@bcert_lx_best_at⟩ n ⟨bih_lx_best⟩
 
 theorem bcert_lx_best {n : Nat} :
-    BStmt_lx_best progW prog prims 1561 n :=
+    BStmt_lx_best progW prog prims 1570 n :=
   (bcerts_lx_best n)
 
-theorem bcerts_lx_line_run : ∀ n, (BStmt_lx_line_run progW prog prims 1683 n) ∧ (BStmt_lx_line_run_at progW prog prims 1746 n) := by
+theorem bcerts_lx_line_run : ∀ n, (BStmt_lx_line_run progW prog prims 1695 n) ∧ (BStmt_lx_line_run_at progW prog prims 1758 n) := by
   intro n
   induction n with
   | zero =>
     exact ⟨(by intro x0 v0 w k b h; simp only [qcall_zero, reduceCtorEq] at h), (by intro x0 x1 v0 v1 w k b h; simp only [qcall_zero, reduceCtorEq] at h)⟩
   | succ n ih =>
     obtain ⟨bih_lx_line_run, bih_lx_line_run_at⟩ := ih
-    exact ⟨@bstep_lx_line_run progW prog prims 1683 76 1746 (fnW_of (by decide) (by decide) fn_lx_line_run) fn_lx_line_run np_lx_line_run ⟨@cert_lx_line_run⟩ np_unbox_of_mini_selfhost_List_usize (by decide +kernel) n ⟨bih_lx_line_run_at⟩, @bstep_lx_line_run_at progW prog prims 1746 75 1683 (fnW_of (by decide) (by decide) fn_lx_line_run_at) fn_lx_line_run_at np_lx_line_run_at ⟨@cert_lx_line_run_at⟩ ⟨@bcert_plus⟩ n ⟨bih_lx_line_run⟩⟩
+    exact ⟨@bstep_lx_line_run progW prog prims 1695 76 1758 (fnW_of (by decide) (by decide) fn_lx_line_run) fn_lx_line_run np_lx_line_run ⟨@cert_lx_line_run⟩ np_unbox_of_mini_selfhost_List_usize (by decide +kernel) n ⟨bih_lx_line_run_at⟩, @bstep_lx_line_run_at progW prog prims 1758 75 1695 (fnW_of (by decide) (by decide) fn_lx_line_run_at) fn_lx_line_run_at np_lx_line_run_at ⟨@cert_lx_line_run_at⟩ ⟨@bcert_plus⟩ n ⟨bih_lx_line_run⟩⟩
 
 theorem bcert_lx_line_run {n : Nat} :
-    BStmt_lx_line_run progW prog prims 1683 n :=
+    BStmt_lx_line_run progW prog prims 1695 n :=
   (bcerts_lx_line_run n).1
 theorem bcert_lx_line_run_at {n : Nat} :
-    BStmt_lx_line_run_at progW prog prims 1746 n :=
+    BStmt_lx_line_run_at progW prog prims 1758 n :=
   (bcerts_lx_line_run n).2
 
 theorem bcert_lx_line_end {n : Nat} :
-    BStmt_lx_line_end progW prog prims 1626 n :=
-  @bproof_lx_line_end progW prog prims 1626 75 584 1683 (fnW_of (by decide) (by decide) fn_lx_line_end) fn_lx_line_end np_lx_line_end ⟨@cert_lx_line_end⟩ ⟨@bcert_plus⟩ ⟨@bcert_lx_drop⟩ ⟨@bcert_lx_line_run⟩ n
+    BStmt_lx_line_end progW prog prims 1638 n :=
+  @bproof_lx_line_end progW prog prims 1638 75 584 1695 (fnW_of (by decide) (by decide) fn_lx_line_end) fn_lx_line_end np_lx_line_end ⟨@cert_lx_line_end⟩ ⟨@bcert_plus⟩ ⟨@bcert_lx_drop⟩ ⟨@bcert_lx_line_run⟩ n
 
-theorem bcerts_lx_block : ∀ n, (BStmt_lx_block progW prog prims 1684 n) ∧ (BStmt_lx_block_at progW prog prims 1747 n) ∧ (BStmt_lx_block_next progW prog prims 1855 n) := by
+theorem bcerts_lx_block : ∀ n, (BStmt_lx_block progW prog prims 1696 n) ∧ (BStmt_lx_block_at progW prog prims 1759 n) ∧ (BStmt_lx_block_next progW prog prims 1867 n) := by
   intro n
   induction n with
   | zero =>
     exact ⟨(by intro x0 x1 v0 v1 w k b h; simp only [qcall_zero, reduceCtorEq] at h), (by intro x0 x1 x2 v0 v1 v2 w k b h; simp only [qcall_zero, reduceCtorEq] at h), (by intro x0 x1 x2 x3 v0 v1 v2 v3 w k b h; simp only [qcall_zero, reduceCtorEq] at h)⟩
   | succ n ih =>
     obtain ⟨bih_lx_block, bih_lx_block_at, bih_lx_block_next⟩ := ih
-    exact ⟨@bstep_lx_block progW prog prims 1684 76 1747 (fnW_of (by decide) (by decide) fn_lx_block) fn_lx_block np_lx_block ⟨@cert_lx_block⟩ np_unbox_of_mini_selfhost_List_usize (by decide +kernel) n ⟨bih_lx_block_at⟩, @bstep_lx_block_at progW prog prims 1747 75 1855 (fnW_of (by decide) (by decide) fn_lx_block_at) fn_lx_block_at np_lx_block_at ⟨@cert_lx_block_at⟩ ⟨@bcert_plus⟩ n ⟨bih_lx_block_next⟩, @bstep_lx_block_next progW prog prims 1855 75 1684 (fnW_of (by decide) (by decide) fn_lx_block_next) fn_lx_block_next np_lx_block_next ⟨@cert_lx_block_next⟩ ⟨@bcert_plus⟩ n ⟨bih_lx_block⟩⟩
+    exact ⟨@bstep_lx_block progW prog prims 1696 76 1759 (fnW_of (by decide) (by decide) fn_lx_block) fn_lx_block np_lx_block ⟨@cert_lx_block⟩ np_unbox_of_mini_selfhost_List_usize (by decide +kernel) n ⟨bih_lx_block_at⟩, @bstep_lx_block_at progW prog prims 1759 75 1867 (fnW_of (by decide) (by decide) fn_lx_block_at) fn_lx_block_at np_lx_block_at ⟨@cert_lx_block_at⟩ ⟨@bcert_plus⟩ n ⟨bih_lx_block_next⟩, @bstep_lx_block_next progW prog prims 1867 75 1696 (fnW_of (by decide) (by decide) fn_lx_block_next) fn_lx_block_next np_lx_block_next ⟨@cert_lx_block_next⟩ ⟨@bcert_plus⟩ n ⟨bih_lx_block⟩⟩
 
 theorem bcert_lx_block {n : Nat} :
-    BStmt_lx_block progW prog prims 1684 n :=
+    BStmt_lx_block progW prog prims 1696 n :=
   (bcerts_lx_block n).1
 theorem bcert_lx_block_at {n : Nat} :
-    BStmt_lx_block_at progW prog prims 1747 n :=
+    BStmt_lx_block_at progW prog prims 1759 n :=
   (bcerts_lx_block n).2.1
 theorem bcert_lx_block_next {n : Nat} :
-    BStmt_lx_block_next progW prog prims 1855 n :=
+    BStmt_lx_block_next progW prog prims 1867 n :=
   (bcerts_lx_block n).2.2
 
 theorem bcert_lx_block_end {n : Nat} :
-    BStmt_lx_block_end progW prog prims 1627 n :=
-  @bproof_lx_block_end progW prog prims 1627 75 584 1684 (fnW_of (by decide) (by decide) fn_lx_block_end) fn_lx_block_end np_lx_block_end ⟨@cert_lx_block_end⟩ ⟨@bcert_plus⟩ ⟨@bcert_lx_drop⟩ ⟨@bcert_lx_block⟩ n
+    BStmt_lx_block_end progW prog prims 1639 n :=
+  @bproof_lx_block_end progW prog prims 1639 75 584 1696 (fnW_of (by decide) (by decide) fn_lx_block_end) fn_lx_block_end np_lx_block_end ⟨@cert_lx_block_end⟩ ⟨@bcert_plus⟩ ⟨@bcert_lx_drop⟩ ⟨@bcert_lx_block⟩ n
 
 theorem bcert_lx_fixed_at {n : Nat} :
-    BStmt_lx_fixed_at progW prog prims 1562 n :=
-  @bproof_lx_fixed_at progW prog prims 1562 52 75 1106 1626 1627 (fnW_of (by decide) (by decide) fn_lx_fixed_at) fn_lx_fixed_at np_lx_fixed_at ⟨@cert_lx_fixed_at⟩ ⟨@bcert_length_of_usize⟩ ⟨@bcert_plus⟩ ⟨@bcert_lx_delimited⟩ ⟨@bcert_lx_line_end⟩ ⟨@bcert_lx_block_end⟩ n
+    BStmt_lx_fixed_at progW prog prims 1571 n :=
+  @bproof_lx_fixed_at progW prog prims 1571 52 75 1107 1638 1639 (fnW_of (by decide) (by decide) fn_lx_fixed_at) fn_lx_fixed_at np_lx_fixed_at ⟨@cert_lx_fixed_at⟩ ⟨@bcert_length_of_usize⟩ ⟨@bcert_plus⟩ ⟨@bcert_lx_delimited⟩ ⟨@bcert_lx_line_end⟩ ⟨@bcert_lx_block_end⟩ n
 
 theorem bcert_lx_fixed {n : Nat} :
-    BStmt_lx_fixed progW prog prims 1468 n :=
-  @bproof_lx_fixed progW prog prims 1468 584 1115 1561 1562 (fnW_of (by decide) (by decide) fn_lx_fixed) fn_lx_fixed np_lx_fixed ⟨@cert_lx_fixed⟩ ⟨@bcert_lx_drop⟩ ⟨@bcert_lx_take⟩ ⟨@bcert_lx_best⟩ ⟨@bcert_lx_fixed_at⟩ n
+    BStmt_lx_fixed progW prog prims 1475 n :=
+  @bproof_lx_fixed progW prog prims 1475 584 1116 1570 1571 (fnW_of (by decide) (by decide) fn_lx_fixed) fn_lx_fixed np_lx_fixed ⟨@cert_lx_fixed⟩ ⟨@bcert_lx_drop⟩ ⟨@bcert_lx_take⟩ ⟨@bcert_lx_best⟩ ⟨@bcert_lx_fixed_at⟩ n
 
 theorem bcert_lx_leading_dot {n : Nat} :
-    BStmt_lx_leading_dot progW prog prims 1560 n :=
-  @bproof_lx_leading_dot progW prog prims 1560 75 1313 1624 (fnW_of (by decide) (by decide) fn_lx_leading_dot) fn_lx_leading_dot np_lx_leading_dot ⟨@cert_lx_leading_dot⟩ ⟨@bcert_plus⟩ ⟨@bcert_lx_digit_run⟩ ⟨@bcert_lx_fraction_digits⟩ n
+    BStmt_lx_leading_dot progW prog prims 1569 n :=
+  @bproof_lx_leading_dot progW prog prims 1569 75 1318 1636 (fnW_of (by decide) (by decide) fn_lx_leading_dot) fn_lx_leading_dot np_lx_leading_dot ⟨@cert_lx_leading_dot⟩ ⟨@bcert_plus⟩ ⟨@bcert_lx_digit_run⟩ ⟨@bcert_lx_fraction_digits⟩ n
 
 theorem bcert_lx_dot_at {n : Nat} :
-    BStmt_lx_dot_at progW prog prims 1467 n :=
-  @bproof_lx_dot_at progW prog prims 1467 1101 1102 1468 1560 (fnW_of (by decide) (by decide) fn_lx_dot_at) fn_lx_dot_at np_lx_dot_at ⟨@cert_lx_dot_at⟩ ⟨@bcert_lx_digit⟩ ⟨@bcert_lx_from_number⟩ ⟨@bcert_lx_fixed⟩ ⟨@bcert_lx_leading_dot⟩ n
+    BStmt_lx_dot_at progW prog prims 1474 n :=
+  @bproof_lx_dot_at progW prog prims 1474 1102 1103 1475 1569 (fnW_of (by decide) (by decide) fn_lx_dot_at) fn_lx_dot_at np_lx_dot_at ⟨@cert_lx_dot_at⟩ ⟨@bcert_lx_digit⟩ ⟨@bcert_lx_from_number⟩ ⟨@bcert_lx_fixed⟩ ⟨@bcert_lx_leading_dot⟩ n
 
 theorem bcert_lx_symbol_at {n : Nat} :
-    BStmt_lx_symbol_at progW prog prims 1317 n :=
-  @bproof_lx_symbol_at progW prog prims 1317 75 821 1467 1468 (fnW_of (by decide) (by decide) fn_lx_symbol_at) fn_lx_symbol_at np_lx_symbol_at ⟨@cert_lx_symbol_at⟩ ⟨@bcert_plus⟩ ⟨@bcert_get_of_usize⟩ ⟨@bcert_lx_dot_at⟩ ⟨@bcert_lx_fixed⟩ n
+    BStmt_lx_symbol_at progW prog prims 1322 n :=
+  @bproof_lx_symbol_at progW prog prims 1322 75 821 1474 1475 (fnW_of (by decide) (by decide) fn_lx_symbol_at) fn_lx_symbol_at np_lx_symbol_at ⟨@cert_lx_symbol_at⟩ ⟨@bcert_plus⟩ ⟨@bcert_get_of_usize⟩ ⟨@bcert_lx_dot_at⟩ ⟨@bcert_lx_fixed⟩ n
 
 theorem bcert_lx_symbol {n : Nat} :
-    BStmt_lx_symbol progW prog prims 1109 n :=
-  @bproof_lx_symbol progW prog prims 1109 821 1317 (fnW_of (by decide) (by decide) fn_lx_symbol) fn_lx_symbol np_lx_symbol ⟨@cert_lx_symbol⟩ ⟨@bcert_get_of_usize⟩ ⟨@bcert_lx_symbol_at⟩ n
+    BStmt_lx_symbol progW prog prims 1110 n :=
+  @bproof_lx_symbol progW prog prims 1110 821 1322 (fnW_of (by decide) (by decide) fn_lx_symbol) fn_lx_symbol np_lx_symbol ⟨@cert_lx_symbol⟩ ⟨@bcert_get_of_usize⟩ ⟨@bcert_lx_symbol_at⟩ n
 
 theorem bcert_lx_one_first {n : Nat} :
     BStmt_lx_one_first progW prog prims 822 n :=
-  @bproof_lx_one_first progW prog prims 822 75 584 1099 1100 1101 1102 1103 1104 1105 1106 1107 1108 1109 (fnW_of (by decide) (by decide) fn_lx_one_first) fn_lx_one_first np_lx_one_first ⟨@cert_lx_one_first⟩ ⟨@bcert_plus⟩ ⟨@bcert_lx_drop⟩ ⟨@bcert_lx_ident_start⟩ ⟨@bcert_lx_ident_end⟩ ⟨@bcert_lx_digit⟩ ⟨@bcert_lx_from_number⟩ ⟨@bcert_lx_number⟩ ⟨@bcert_lx_space⟩ ⟨@bcert_lx_space_end⟩ ⟨@bcert_lx_delimited⟩ ⟨@bcert_lx_quoted⟩ ⟨@bcert_lx_symbol_start⟩ ⟨@bcert_lx_symbol⟩ n
+  @bproof_lx_one_first progW prog prims 822 75 584 1100 1101 1102 1103 1104 1105 1106 1107 1108 1109 1110 (fnW_of (by decide) (by decide) fn_lx_one_first) fn_lx_one_first np_lx_one_first ⟨@cert_lx_one_first⟩ ⟨@bcert_plus⟩ ⟨@bcert_lx_drop⟩ ⟨@bcert_lx_ident_start⟩ ⟨@bcert_lx_ident_end⟩ ⟨@bcert_lx_digit⟩ ⟨@bcert_lx_from_number⟩ ⟨@bcert_lx_number⟩ ⟨@bcert_lx_space⟩ ⟨@bcert_lx_space_end⟩ ⟨@bcert_lx_delimited⟩ ⟨@bcert_lx_quoted⟩ ⟨@bcert_lx_symbol_start⟩ ⟨@bcert_lx_symbol⟩ n
 
 theorem bcert_lx_one_at {n : Nat} :
     BStmt_lx_one_at progW prog prims 581 n :=
@@ -4663,7 +4665,7 @@ theorem bcert_lx_one_at {n : Nat} :
 
 theorem bcert_cons_of_mini_selfhost_RawTok {n : Nat} :
     BStmt_cons_of_mini_selfhost_RawTok progW prog prims 823 n :=
-  @bproof_cons_of_mini_selfhost_RawTok progW prog prims 823 1110 (fnW_of (by decide) (by decide) fn_cons_of_mini_selfhost_RawTok) fn_cons_of_mini_selfhost_RawTok np_cons_of_mini_selfhost_RawTok ⟨@cert_cons_of_mini_selfhost_RawTok⟩ np_boxed_of_mini_selfhost_List_mini_selfhost_RawTok (by decide +kernel) n
+  @bproof_cons_of_mini_selfhost_RawTok progW prog prims 823 1111 (fnW_of (by decide) (by decide) fn_cons_of_mini_selfhost_RawTok) fn_cons_of_mini_selfhost_RawTok np_cons_of_mini_selfhost_RawTok ⟨@cert_cons_of_mini_selfhost_RawTok⟩ np_boxed_of_mini_selfhost_List_mini_selfhost_RawTok (by decide +kernel) n
 
 theorem bcert_lx_prepend {n : Nat} :
     BStmt_lx_prepend progW prog prims 582 n :=
@@ -4715,7 +4717,7 @@ theorem bcert_empty_of_mini_selfhost_Token {n : Nat} :
 
 theorem bcert_cons_of_mini_selfhost_Token {n : Nat} :
     BStmt_cons_of_mini_selfhost_Token progW prog prims 825 n :=
-  @bproof_cons_of_mini_selfhost_Token progW prog prims 825 1113 (fnW_of (by decide) (by decide) fn_cons_of_mini_selfhost_Token) fn_cons_of_mini_selfhost_Token np_cons_of_mini_selfhost_Token ⟨@cert_cons_of_mini_selfhost_Token⟩ np_boxed_of_mini_selfhost_List_mini_selfhost_Token (by decide +kernel) n
+  @bproof_cons_of_mini_selfhost_Token progW prog prims 825 1114 (fnW_of (by decide) (by decide) fn_cons_of_mini_selfhost_Token) fn_cons_of_mini_selfhost_Token np_cons_of_mini_selfhost_Token ⟨@cert_cons_of_mini_selfhost_Token⟩ np_boxed_of_mini_selfhost_List_mini_selfhost_Token (by decide +kernel) n
 
 theorem bcert_same_text {n : Nat} :
     BStmt_same_text progW prog prims 925 n := by
@@ -4725,21 +4727,21 @@ theorem bcert_same_text {n : Nat} :
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_lx_as_text {n : Nat} :
-    BStmt_lx_as_text progW prog prims 1320 n := by
+    BStmt_lx_as_text progW prog prims 1325 n := by
   intro w k h
-  have key := bclosed (ix := 1320) (D := 3) (C := Cost_lx_as_text) (by decide +kernel) (by decide +kernel)
+  have key := bclosed (ix := 1325) (D := 3) (C := Cost_lx_as_text) (by decide +kernel) (by decide +kernel)
     (fun _ => rfl)
     (fun m hm => by rcases m with _ | _ | _ | m <;> first | decide +kernel | omega) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_lx_as_text prog prims 1320 n) from ⟨@cert_lx_as_text⟩).out
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_lx_as_text prog prims 1325 n) from ⟨@cert_lx_as_text⟩).out
     (pcall_of_q key.1)⟩
 
 theorem bcert_lx_token_text {n : Nat} :
-    BStmt_lx_token_text progW prog prims 1114 n :=
-  @bproof_lx_token_text progW prog prims 1114 925 1320 (fnW_of (by decide) (by decide) fn_lx_token_text) fn_lx_token_text np_lx_token_text ⟨@cert_lx_token_text⟩ ⟨@bcert_same_text⟩ ⟨@bcert_lx_as_text⟩ n
+    BStmt_lx_token_text progW prog prims 1115 n :=
+  @bproof_lx_token_text progW prog prims 1115 925 1325 (fnW_of (by decide) (by decide) fn_lx_token_text) fn_lx_token_text np_lx_token_text ⟨@cert_lx_token_text⟩ ⟨@bcert_same_text⟩ ⟨@bcert_lx_as_text⟩ n
 
 theorem bcert_lx_token {n : Nat} :
     BStmt_lx_token progW prog prims 826 n :=
-  @bproof_lx_token progW prog prims 826 56 1114 1115 (fnW_of (by decide) (by decide) fn_lx_token) fn_lx_token np_lx_token ⟨@cert_lx_token⟩ ⟨@bcert_minus⟩ ⟨@bcert_lx_token_text⟩ ⟨@bcert_lx_take⟩ n
+  @bproof_lx_token progW prog prims 826 56 1115 1116 (fnW_of (by decide) (by decide) fn_lx_token) fn_lx_token np_lx_token ⟨@cert_lx_token⟩ ⟨@bcert_minus⟩ ⟨@bcert_lx_token_text⟩ ⟨@bcert_lx_take⟩ n
 
 theorem bcert_lx_drop_to {n : Nat} :
     BStmt_lx_drop_to progW prog prims 589 n := by
@@ -4766,7 +4768,7 @@ theorem bcert_lx_tokens_at {n : Nat} :
 
 theorem bcert_single_of_mini_selfhost_RawTok {n : Nat} :
     BStmt_single_of_mini_selfhost_RawTok progW prog prims 828 n :=
-  @bproof_single_of_mini_selfhost_RawTok progW prog prims 828 1110 (fnW_of (by decide) (by decide) fn_single_of_mini_selfhost_RawTok) fn_single_of_mini_selfhost_RawTok np_single_of_mini_selfhost_RawTok ⟨@cert_single_of_mini_selfhost_RawTok⟩ np_boxed_of_mini_selfhost_List_mini_selfhost_RawTok (by decide +kernel) n
+  @bproof_single_of_mini_selfhost_RawTok progW prog prims 828 1111 (fnW_of (by decide) (by decide) fn_single_of_mini_selfhost_RawTok) fn_single_of_mini_selfhost_RawTok np_single_of_mini_selfhost_RawTok ⟨@cert_single_of_mini_selfhost_RawTok⟩ np_boxed_of_mini_selfhost_List_mini_selfhost_RawTok (by decide +kernel) n
 
 theorem bcert_lx_range_pair {n : Nat} :
     BStmt_lx_range_pair progW prog prims 829 n := by
@@ -4799,22 +4801,22 @@ theorem bcert_lx_trivia {n : Nat} :
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_lx_keyword {n : Nat} :
-    BStmt_lx_keyword progW prog prims 1116 n := by
+    BStmt_lx_keyword progW prog prims 1117 n := by
   intro x0 x1 v0 v1 w k h r0 r1
-  have key := bfree (ix := 1116) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_lx_keyword prog prims 1116 n) from ⟨@cert_lx_keyword⟩).out
+  have key := bfree (ix := 1117) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_lx_keyword prog prims 1117 n) from ⟨@cert_lx_keyword⟩).out
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_lx_keyword_at {n : Nat} :
-    BStmt_lx_keyword_at progW prog prims 1321 n := by
+    BStmt_lx_keyword_at progW prog prims 1326 n := by
   intro x0 x1 x2 v0 v1 v2 w k h r0 r1 r2
-  have key := bfree (ix := 1321) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_lx_keyword_at prog prims 1321 n) from ⟨@cert_lx_keyword_at⟩).out
+  have key := bfree (ix := 1326) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_lx_keyword_at prog prims 1326 n) from ⟨@cert_lx_keyword_at⟩).out
     (pcall_of_q key.1) r0 r1 r2⟩
 
 theorem bcert_lx_canonical_kind {n : Nat} :
     BStmt_lx_canonical_kind progW prog prims 831 n :=
-  @bproof_lx_canonical_kind progW prog prims 831 56 1115 1116 (fnW_of (by decide) (by decide) fn_lx_canonical_kind) fn_lx_canonical_kind np_lx_canonical_kind ⟨@cert_lx_canonical_kind⟩ ⟨@bcert_minus⟩ ⟨@bcert_lx_take⟩ ⟨@bcert_lx_keyword⟩ n
+  @bproof_lx_canonical_kind progW prog prims 831 56 1116 1117 (fnW_of (by decide) (by decide) fn_lx_canonical_kind) fn_lx_canonical_kind np_lx_canonical_kind ⟨@cert_lx_canonical_kind⟩ ⟨@bcert_minus⟩ ⟨@bcert_lx_take⟩ ⟨@bcert_lx_keyword⟩ n
 
 theorem bcerts_lx_filter : ∀ n, (BStmt_lx_filter progW prog prims 412 n) ∧ (BStmt_lx_filter_at progW prog prims 592 n) := by
   intro n
@@ -4944,202 +4946,202 @@ theorem bcert_p_path_ident {n : Nat} :
     (pcall_of_q key.1)⟩
 
 theorem bcert_p_member_type_args_some {n : Nat} :
-    BStmt_p_member_type_args_some progW prog prims 1323 n := by
+    BStmt_p_member_type_args_some progW prog prims 1328 n := by
   intro w k h
-  have key := bfree (ix := 1323) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_p_member_type_args_some prog prims 1323 n) from ⟨@cert_p_member_type_args_some⟩).out
+  have key := bfree (ix := 1328) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_p_member_type_args_some prog prims 1328 n) from ⟨@cert_p_member_type_args_some⟩).out
     (pcall_of_q key.1)⟩
 
 theorem bcert_t_lt {n : Nat} :
-    BStmt_t_lt progW prog prims 1469 n := by
+    BStmt_t_lt progW prog prims 1476 n := by
   intro w k h
-  have key := bfree (ix := 1469) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_t_lt prog prims 1469 n) from ⟨@cert_t_lt⟩).out
+  have key := bfree (ix := 1476) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_t_lt prog prims 1476 n) from ⟨@cert_t_lt⟩).out
     (pcall_of_q key.1)⟩
 
 theorem bcert_t_lbrace {n : Nat} :
-    BStmt_t_lbrace progW prog prims 1471 n := by
+    BStmt_t_lbrace progW prog prims 1478 n := by
   intro w k h
-  have key := bfree (ix := 1471) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_t_lbrace prog prims 1471 n) from ⟨@cert_t_lbrace⟩).out
+  have key := bfree (ix := 1478) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_t_lbrace prog prims 1478 n) from ⟨@cert_t_lbrace⟩).out
     (pcall_of_q key.1)⟩
 
 theorem bcert_t_oror {n : Nat} :
-    BStmt_t_oror progW prog prims 1628 n := by
+    BStmt_t_oror progW prog prims 1640 n := by
   intro w k h
-  have key := bfree (ix := 1628) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_t_oror prog prims 1628 n) from ⟨@cert_t_oror⟩).out
+  have key := bfree (ix := 1640) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_t_oror prog prims 1640 n) from ⟨@cert_t_oror⟩).out
     (pcall_of_q key.1)⟩
 
 theorem bcert_t_eqeq {n : Nat} :
-    BStmt_t_eqeq progW prog prims 1629 n := by
+    BStmt_t_eqeq progW prog prims 1641 n := by
   intro w k h
-  have key := bfree (ix := 1629) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_t_eqeq prog prims 1629 n) from ⟨@cert_t_eqeq⟩).out
+  have key := bfree (ix := 1641) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_t_eqeq prog prims 1641 n) from ⟨@cert_t_eqeq⟩).out
     (pcall_of_q key.1)⟩
 
 theorem bcert_t_not_equal {n : Nat} :
-    BStmt_t_not_equal progW prog prims 1630 n := by
+    BStmt_t_not_equal progW prog prims 1642 n := by
   intro w k h
-  have key := bfree (ix := 1630) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_t_not_equal prog prims 1630 n) from ⟨@cert_t_not_equal⟩).out
+  have key := bfree (ix := 1642) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_t_not_equal prog prims 1642 n) from ⟨@cert_t_not_equal⟩).out
     (pcall_of_q key.1)⟩
 
 theorem bcert_t_le {n : Nat} :
-    BStmt_t_le progW prog prims 1631 n := by
+    BStmt_t_le progW prog prims 1643 n := by
   intro w k h
-  have key := bfree (ix := 1631) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_t_le prog prims 1631 n) from ⟨@cert_t_le⟩).out
+  have key := bfree (ix := 1643) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_t_le prog prims 1643 n) from ⟨@cert_t_le⟩).out
     (pcall_of_q key.1)⟩
 
 theorem bcert_t_ge {n : Nat} :
-    BStmt_t_ge progW prog prims 1632 n := by
+    BStmt_t_ge progW prog prims 1644 n := by
   intro w k h
-  have key := bfree (ix := 1632) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_t_ge prog prims 1632 n) from ⟨@cert_t_ge⟩).out
+  have key := bfree (ix := 1644) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_t_ge prog prims 1644 n) from ⟨@cert_t_ge⟩).out
     (pcall_of_q key.1)⟩
 
 theorem bcert_t_lparen {n : Nat} :
-    BStmt_t_lparen progW prog prims 1633 n := by
+    BStmt_t_lparen progW prog prims 1645 n := by
   intro w k h
-  have key := bfree (ix := 1633) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_t_lparen prog prims 1633 n) from ⟨@cert_t_lparen⟩).out
+  have key := bfree (ix := 1645) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_t_lparen prog prims 1645 n) from ⟨@cert_t_lparen⟩).out
     (pcall_of_q key.1)⟩
 
 theorem bcert_t_lbracket {n : Nat} :
-    BStmt_t_lbracket progW prog prims 1634 n := by
+    BStmt_t_lbracket progW prog prims 1646 n := by
   intro w k h
-  have key := bfree (ix := 1634) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_t_lbracket prog prims 1634 n) from ⟨@cert_t_lbracket⟩).out
+  have key := bfree (ix := 1646) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_t_lbracket prog prims 1646 n) from ⟨@cert_t_lbracket⟩).out
     (pcall_of_q key.1)⟩
 
 theorem bcert_t_rparen {n : Nat} :
-    BStmt_t_rparen progW prog prims 1635 n := by
+    BStmt_t_rparen progW prog prims 1647 n := by
   intro w k h
-  have key := bfree (ix := 1635) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_t_rparen prog prims 1635 n) from ⟨@cert_t_rparen⟩).out
+  have key := bfree (ix := 1647) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_t_rparen prog prims 1647 n) from ⟨@cert_t_rparen⟩).out
     (pcall_of_q key.1)⟩
 
 theorem bcert_t_rbracket {n : Nat} :
-    BStmt_t_rbracket progW prog prims 1636 n := by
+    BStmt_t_rbracket progW prog prims 1648 n := by
   intro w k h
-  have key := bfree (ix := 1636) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_t_rbracket prog prims 1636 n) from ⟨@cert_t_rbracket⟩).out
+  have key := bfree (ix := 1648) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_t_rbracket prog prims 1648 n) from ⟨@cert_t_rbracket⟩).out
     (pcall_of_q key.1)⟩
 
 theorem bcert_t_rbrace {n : Nat} :
-    BStmt_t_rbrace progW prog prims 1637 n := by
+    BStmt_t_rbrace progW prog prims 1649 n := by
   intro w k h
-  have key := bfree (ix := 1637) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_t_rbrace prog prims 1637 n) from ⟨@cert_t_rbrace⟩).out
+  have key := bfree (ix := 1649) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_t_rbrace prog prims 1649 n) from ⟨@cert_t_rbrace⟩).out
     (pcall_of_q key.1)⟩
 
 theorem bcert_t_semicolon {n : Nat} :
-    BStmt_t_semicolon progW prog prims 1638 n := by
+    BStmt_t_semicolon progW prog prims 1650 n := by
   intro w k h
-  have key := bfree (ix := 1638) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_t_semicolon prog prims 1638 n) from ⟨@cert_t_semicolon⟩).out
+  have key := bfree (ix := 1650) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_t_semicolon prog prims 1650 n) from ⟨@cert_t_semicolon⟩).out
     (pcall_of_q key.1)⟩
 
 theorem bcert_t_colon {n : Nat} :
-    BStmt_t_colon progW prog prims 1685 n := by
+    BStmt_t_colon progW prog prims 1697 n := by
   intro w k h
-  have key := bfree (ix := 1685) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_t_colon prog prims 1685 n) from ⟨@cert_t_colon⟩).out
+  have key := bfree (ix := 1697) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_t_colon prog prims 1697 n) from ⟨@cert_t_colon⟩).out
     (pcall_of_q key.1)⟩
 
 theorem bcert_starts_with_kind {n : Nat} :
-    BStmt_starts_with_kind progW prog prims 1686 n := by
+    BStmt_starts_with_kind progW prog prims 1698 n := by
   intro x0 x1 v0 v1 w k h r0 r1
-  have key := bfree (ix := 1686) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_starts_with_kind prog prims 1686 n) from ⟨@cert_starts_with_kind⟩).out
+  have key := bfree (ix := 1698) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_starts_with_kind prog prims 1698 n) from ⟨@cert_starts_with_kind⟩).out
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_generic_tail {n : Nat} :
-    BStmt_generic_tail progW prog prims 1639 n := by
+    BStmt_generic_tail progW prog prims 1651 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1639) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_generic_tail prog prims 1639 n) from ⟨@cert_generic_tail⟩).out
+  have key := bfree (ix := 1651) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_generic_tail prog prims 1651 n) from ⟨@cert_generic_tail⟩).out
     (pcall_of_q key.1) r0⟩
 
-theorem bcerts_generic_close : ∀ n, (BStmt_generic_close progW prog prims 1470 n) ∧ (BStmt_generic_close_at progW prog prims 1563 n) := by
+theorem bcerts_generic_close : ∀ n, (BStmt_generic_close progW prog prims 1477 n) ∧ (BStmt_generic_close_at progW prog prims 1572 n) := by
   intro n
   induction n with
   | zero =>
     exact ⟨(by intro x0 x1 x2 v0 v1 v2 w k b h; simp only [qcall_zero, reduceCtorEq] at h), (by intro x0 x1 x2 x3 v0 v1 v2 v3 w k b h; simp only [qcall_zero, reduceCtorEq] at h)⟩
   | succ n ih =>
     obtain ⟨bih_generic_close, bih_generic_close_at⟩ := ih
-    exact ⟨@bstep_generic_close progW prog prims 1470 166 1563 (fnW_of (by decide) (by decide) fn_generic_close) fn_generic_close np_generic_close ⟨@cert_generic_close⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_Token (by decide +kernel) n ⟨bih_generic_close_at⟩, @bstep_generic_close_at progW prog prims 1563 56 75 833 834 1469 1470 1471 1628 1629 1630 1631 1632 1633 1634 1635 1636 1637 1638 1639 (fnW_of (by decide) (by decide) fn_generic_close_at) fn_generic_close_at np_generic_close_at ⟨@cert_generic_close_at⟩ ⟨@bcert_minus⟩ ⟨@bcert_plus⟩ ⟨@bcert_t_shr⟩ ⟨@bcert_t_gt⟩ ⟨@bcert_t_lt⟩ ⟨@bcert_t_lbrace⟩ ⟨@bcert_t_oror⟩ ⟨@bcert_t_eqeq⟩ ⟨@bcert_t_not_equal⟩ ⟨@bcert_t_le⟩ ⟨@bcert_t_ge⟩ ⟨@bcert_t_lparen⟩ ⟨@bcert_t_lbracket⟩ ⟨@bcert_t_rparen⟩ ⟨@bcert_t_rbracket⟩ ⟨@bcert_t_rbrace⟩ ⟨@bcert_t_semicolon⟩ ⟨@bcert_generic_tail⟩ n ⟨bih_generic_close⟩⟩
+    exact ⟨@bstep_generic_close progW prog prims 1477 166 1572 (fnW_of (by decide) (by decide) fn_generic_close) fn_generic_close np_generic_close ⟨@cert_generic_close⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_Token (by decide +kernel) n ⟨bih_generic_close_at⟩, @bstep_generic_close_at progW prog prims 1572 56 75 833 834 1476 1477 1478 1640 1641 1642 1643 1644 1645 1646 1647 1648 1649 1650 1651 (fnW_of (by decide) (by decide) fn_generic_close_at) fn_generic_close_at np_generic_close_at ⟨@cert_generic_close_at⟩ ⟨@bcert_minus⟩ ⟨@bcert_plus⟩ ⟨@bcert_t_shr⟩ ⟨@bcert_t_gt⟩ ⟨@bcert_t_lt⟩ ⟨@bcert_t_lbrace⟩ ⟨@bcert_t_oror⟩ ⟨@bcert_t_eqeq⟩ ⟨@bcert_t_not_equal⟩ ⟨@bcert_t_le⟩ ⟨@bcert_t_ge⟩ ⟨@bcert_t_lparen⟩ ⟨@bcert_t_lbracket⟩ ⟨@bcert_t_rparen⟩ ⟨@bcert_t_rbracket⟩ ⟨@bcert_t_rbrace⟩ ⟨@bcert_t_semicolon⟩ ⟨@bcert_generic_tail⟩ n ⟨bih_generic_close⟩⟩
 
 theorem bcert_generic_close {n : Nat} :
-    BStmt_generic_close progW prog prims 1470 n :=
+    BStmt_generic_close progW prog prims 1477 n :=
   (bcerts_generic_close n).1
 theorem bcert_generic_close_at {n : Nat} :
-    BStmt_generic_close_at progW prog prims 1563 n :=
+    BStmt_generic_close_at progW prog prims 1572 n :=
   (bcerts_generic_close n).2
 
 theorem bcert_generic_open {n : Nat} :
-    BStmt_generic_open progW prog prims 1324 n :=
-  @bproof_generic_open progW prog prims 1324 166 1469 1470 (fnW_of (by decide) (by decide) fn_generic_open) fn_generic_open np_generic_open ⟨@cert_generic_open⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_Token (by decide +kernel) ⟨@bcert_t_lt⟩ ⟨@bcert_generic_close⟩ n
+    BStmt_generic_open progW prog prims 1329 n :=
+  @bproof_generic_open progW prog prims 1329 166 1476 1477 (fnW_of (by decide) (by decide) fn_generic_open) fn_generic_open np_generic_open ⟨@cert_generic_open⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_Token (by decide +kernel) ⟨@bcert_t_lt⟩ ⟨@bcert_generic_close⟩ n
 
 theorem bcert_p_member_type_args_none {n : Nat} :
-    BStmt_p_member_type_args_none progW prog prims 1325 n := by
+    BStmt_p_member_type_args_none progW prog prims 1330 n := by
   intro w k h
-  have key := bfree (ix := 1325) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_p_member_type_args_none prog prims 1325 n) from ⟨@cert_p_member_type_args_none⟩).out
+  have key := bfree (ix := 1330) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_p_member_type_args_none prog prims 1330 n) from ⟨@cert_p_member_type_args_none⟩).out
     (pcall_of_q key.1)⟩
 
 theorem bcert_p_block_stmt {n : Nat} :
-    BStmt_p_block_stmt progW prog prims 1326 n := by
+    BStmt_p_block_stmt progW prog prims 1331 n := by
   intro w k h
-  have key := bfree (ix := 1326) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_p_block_stmt prog prims 1326 n) from ⟨@cert_p_block_stmt⟩).out
+  have key := bfree (ix := 1331) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_p_block_stmt prog prims 1331 n) from ⟨@cert_p_block_stmt⟩).out
     (pcall_of_q key.1)⟩
 
 theorem bcert_opens_block {n : Nat} :
-    BStmt_opens_block progW prog prims 1327 n := by
+    BStmt_opens_block progW prog prims 1332 n := by
   intro x0 v0 w k h r0
-  have key := bfree (ix := 1327) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_opens_block prog prims 1327 n) from ⟨@cert_opens_block⟩).out
+  have key := bfree (ix := 1332) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_opens_block prog prims 1332 n) from ⟨@cert_opens_block⟩).out
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_p_expr_stmt {n : Nat} :
-    BStmt_p_expr_stmt progW prog prims 1328 n := by
+    BStmt_p_expr_stmt progW prog prims 1333 n := by
   intro w k h
-  have key := bfree (ix := 1328) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_p_expr_stmt prog prims 1328 n) from ⟨@cert_p_expr_stmt⟩).out
+  have key := bfree (ix := 1333) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_p_expr_stmt prog prims 1333 n) from ⟨@cert_p_expr_stmt⟩).out
     (pcall_of_q key.1)⟩
 
 theorem bcert_generic_path_at {n : Nat} :
-    BStmt_generic_path_at progW prog prims 1329 n :=
-  @bproof_generic_path_at progW prog prims 1329 166 1324 (fnW_of (by decide) (by decide) fn_generic_path_at) fn_generic_path_at np_generic_path_at ⟨@cert_generic_path_at⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_Token (by decide +kernel) ⟨@bcert_generic_open⟩ n
+    BStmt_generic_path_at progW prog prims 1334 n :=
+  @bproof_generic_path_at progW prog prims 1334 166 1329 (fnW_of (by decide) (by decide) fn_generic_path_at) fn_generic_path_at np_generic_path_at ⟨@cert_generic_path_at⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_Token (by decide +kernel) ⟨@bcert_generic_open⟩ n
 
 theorem bcert_p_path_ident_args {n : Nat} :
-    BStmt_p_path_ident_args progW prog prims 1330 n := by
+    BStmt_p_path_ident_args progW prog prims 1335 n := by
   intro w k h
-  have key := bfree (ix := 1330) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_p_path_ident_args prog prims 1330 n) from ⟨@cert_p_path_ident_args⟩).out
+  have key := bfree (ix := 1335) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_p_path_ident_args prog prims 1335 n) from ⟨@cert_p_path_ident_args⟩).out
     (pcall_of_q key.1)⟩
 
 theorem bcert_picks {n : Nat} :
-    BStmt_picks progW prog prims 1117 n :=
-  @bproof_picks progW prog prims 1117 636 1323 1324 1325 1326 1327 1328 1329 1330 (fnW_of (by decide) (by decide) fn_picks) fn_picks np_picks ⟨@cert_picks⟩ ⟨@bcert_p_path_ident⟩ ⟨@bcert_p_member_type_args_some⟩ ⟨@bcert_generic_open⟩ ⟨@bcert_p_member_type_args_none⟩ ⟨@bcert_p_block_stmt⟩ ⟨@bcert_opens_block⟩ ⟨@bcert_p_expr_stmt⟩ ⟨@bcert_generic_path_at⟩ ⟨@bcert_p_path_ident_args⟩ n
+    BStmt_picks progW prog prims 1118 n :=
+  @bproof_picks progW prog prims 1118 636 1328 1329 1330 1331 1332 1333 1334 1335 (fnW_of (by decide) (by decide) fn_picks) fn_picks np_picks ⟨@cert_picks⟩ ⟨@bcert_p_path_ident⟩ ⟨@bcert_p_member_type_args_some⟩ ⟨@bcert_generic_open⟩ ⟨@bcert_p_member_type_args_none⟩ ⟨@bcert_p_block_stmt⟩ ⟨@bcert_opens_block⟩ ⟨@bcert_p_expr_stmt⟩ ⟨@bcert_generic_path_at⟩ ⟨@bcert_p_path_ident_args⟩ n
 
 theorem bcert_get_of_mini_selfhost_Rule {n : Nat} :
-    BStmt_get_of_mini_selfhost_Rule progW prog prims 1118 n := by
+    BStmt_get_of_mini_selfhost_Rule progW prog prims 1119 n := by
   intro x0 x1 v0 v1 w k h r0 r1
-  have key := bfree (ix := 1118) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_get_of_mini_selfhost_Rule prog prims 1118 n) from ⟨@cert_get_of_mini_selfhost_Rule⟩).out
+  have key := bfree (ix := 1119) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_get_of_mini_selfhost_Rule prog prims 1119 n) from ⟨@cert_get_of_mini_selfhost_Rule⟩).out
     (pcall_of_q key.1) r0 r1⟩
 
-theorem bcerts_attach : ∀ n, (BStmt_attach progW prog prims 148 n) ∧ (BStmt_attach_sym progW prog prims 252 n) ∧ (BStmt_attach_term progW prog prims 415 n) ∧ (BStmt_attach_nonterm progW prog prims 416 n) ∧ (BStmt_attach_leaf progW prog prims 593 n) ∧ (BStmt_attach_parent progW prog prims 594 n) ∧ (BStmt_attach_prod progW prog prims 837 n) ∧ (BStmt_attach_node progW prog prims 1119 n) ∧ (BStmt_attach_after progW prog prims 1331 n) := by
+theorem bcerts_attach : ∀ n, (BStmt_attach progW prog prims 148 n) ∧ (BStmt_attach_sym progW prog prims 252 n) ∧ (BStmt_attach_term progW prog prims 415 n) ∧ (BStmt_attach_nonterm progW prog prims 416 n) ∧ (BStmt_attach_leaf progW prog prims 593 n) ∧ (BStmt_attach_parent progW prog prims 594 n) ∧ (BStmt_attach_prod progW prog prims 837 n) ∧ (BStmt_attach_node progW prog prims 1120 n) ∧ (BStmt_attach_after progW prog prims 1336 n) := by
   intro n
   induction n with
   | zero =>
     exact ⟨(by intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w k b h; simp only [qcall_zero, reduceCtorEq] at h), (by intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w k b h; simp only [qcall_zero, reduceCtorEq] at h), (by intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w k b h; simp only [qcall_zero, reduceCtorEq] at h), (by intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w k b h; simp only [qcall_zero, reduceCtorEq] at h), (by intro x0 x1 x2 x3 x4 x5 x6 x7 v0 v1 v2 v3 v4 v5 v6 v7 w k b h; simp only [qcall_zero, reduceCtorEq] at h), (by intro x0 x1 x2 x3 x4 x5 x6 x7 v0 v1 v2 v3 v4 v5 v6 v7 w k b h; simp only [qcall_zero, reduceCtorEq] at h), (by intro x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 w k b h; simp only [qcall_zero, reduceCtorEq] at h), (by intro x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 w k b h; simp only [qcall_zero, reduceCtorEq] at h), (by intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w k b h; simp only [qcall_zero, reduceCtorEq] at h)⟩
   | succ n ih =>
     obtain ⟨bih_attach, bih_attach_sym, bih_attach_term, bih_attach_nonterm, bih_attach_leaf, bih_attach_parent, bih_attach_prod, bih_attach_node, bih_attach_after⟩ := ih
-    exact ⟨@bstep_attach progW prog prims 148 56 96 252 253 (fnW_of (by decide) (by decide) fn_attach) fn_attach np_attach ⟨@cert_attach⟩ ⟨@bcert_minus⟩ ⟨@bcert_empty_of_mini_selfhost_CTree⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_Sym (by decide +kernel) n ⟨bih_attach_sym⟩, @bstep_attach_sym progW prog prims 252 415 416 (fnW_of (by decide) (by decide) fn_attach_sym) fn_attach_sym np_attach_sym ⟨@cert_attach_sym⟩ n ⟨bih_attach_term⟩ ⟨bih_attach_nonterm⟩, @bstep_attach_term progW prog prims 415 166 593 (fnW_of (by decide) (by decide) fn_attach_term) fn_attach_term np_attach_term ⟨@cert_attach_term⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_Token (by decide +kernel) n ⟨bih_attach_leaf⟩, @bstep_attach_nonterm progW prog prims 416 76 594 (fnW_of (by decide) (by decide) fn_attach_nonterm) fn_attach_nonterm np_attach_nonterm ⟨@cert_attach_nonterm⟩ np_unbox_of_mini_selfhost_List_usize (by decide +kernel) n ⟨bih_attach_parent⟩, @bstep_attach_leaf progW prog prims 593 148 825 832 833 834 835 836 (fnW_of (by decide) (by decide) fn_attach_leaf) fn_attach_leaf np_attach_leaf ⟨@cert_attach_leaf⟩ ⟨@bcert_cons_of_mini_selfhost_Token⟩ ⟨@bcert_with_kid⟩ ⟨@bcert_t_shr⟩ ⟨@bcert_t_gt⟩ ⟨@bcert_shr_first⟩ ⟨@bcert_shr_second⟩ n ⟨bih_attach⟩, @bstep_attach_parent progW prog prims 594 76 837 (fnW_of (by decide) (by decide) fn_attach_parent) fn_attach_parent np_attach_parent ⟨@cert_attach_parent⟩ np_unbox_of_mini_selfhost_List_usize (by decide +kernel) n ⟨bih_attach_prod⟩, @bstep_attach_prod progW prog prims 837 1117 1118 1119 (fnW_of (by decide) (by decide) fn_attach_prod) fn_attach_prod np_attach_prod ⟨@cert_attach_prod⟩ ⟨@bcert_picks⟩ ⟨@bcert_get_of_mini_selfhost_Rule⟩ n ⟨bih_attach_node⟩, @bstep_attach_node progW prog prims 1119 75 148 1331 (fnW_of (by decide) (by decide) fn_attach_node) fn_attach_node np_attach_node ⟨@cert_attach_node⟩ ⟨@bcert_plus⟩ n ⟨bih_attach⟩ ⟨bih_attach_after⟩, @bstep_attach_after progW prog prims 1331 148 251 832 (fnW_of (by decide) (by decide) fn_attach_after) fn_attach_after np_attach_after ⟨@cert_attach_after⟩ np_boxed_of_mini_selfhost_List_mini_selfhost_CTree (by decide +kernel) ⟨@bcert_with_kid⟩ n ⟨bih_attach⟩⟩
+    exact ⟨@bstep_attach progW prog prims 148 56 96 252 253 (fnW_of (by decide) (by decide) fn_attach) fn_attach np_attach ⟨@cert_attach⟩ ⟨@bcert_minus⟩ ⟨@bcert_empty_of_mini_selfhost_CTree⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_Sym (by decide +kernel) n ⟨bih_attach_sym⟩, @bstep_attach_sym progW prog prims 252 415 416 (fnW_of (by decide) (by decide) fn_attach_sym) fn_attach_sym np_attach_sym ⟨@cert_attach_sym⟩ n ⟨bih_attach_term⟩ ⟨bih_attach_nonterm⟩, @bstep_attach_term progW prog prims 415 166 593 (fnW_of (by decide) (by decide) fn_attach_term) fn_attach_term np_attach_term ⟨@cert_attach_term⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_Token (by decide +kernel) n ⟨bih_attach_leaf⟩, @bstep_attach_nonterm progW prog prims 416 76 594 (fnW_of (by decide) (by decide) fn_attach_nonterm) fn_attach_nonterm np_attach_nonterm ⟨@cert_attach_nonterm⟩ np_unbox_of_mini_selfhost_List_usize (by decide +kernel) n ⟨bih_attach_parent⟩, @bstep_attach_leaf progW prog prims 593 148 825 832 833 834 835 836 (fnW_of (by decide) (by decide) fn_attach_leaf) fn_attach_leaf np_attach_leaf ⟨@cert_attach_leaf⟩ ⟨@bcert_cons_of_mini_selfhost_Token⟩ ⟨@bcert_with_kid⟩ ⟨@bcert_t_shr⟩ ⟨@bcert_t_gt⟩ ⟨@bcert_shr_first⟩ ⟨@bcert_shr_second⟩ n ⟨bih_attach⟩, @bstep_attach_parent progW prog prims 594 76 837 (fnW_of (by decide) (by decide) fn_attach_parent) fn_attach_parent np_attach_parent ⟨@cert_attach_parent⟩ np_unbox_of_mini_selfhost_List_usize (by decide +kernel) n ⟨bih_attach_prod⟩, @bstep_attach_prod progW prog prims 837 1118 1119 1120 (fnW_of (by decide) (by decide) fn_attach_prod) fn_attach_prod np_attach_prod ⟨@cert_attach_prod⟩ ⟨@bcert_picks⟩ ⟨@bcert_get_of_mini_selfhost_Rule⟩ n ⟨bih_attach_node⟩, @bstep_attach_node progW prog prims 1120 75 148 1336 (fnW_of (by decide) (by decide) fn_attach_node) fn_attach_node np_attach_node ⟨@cert_attach_node⟩ ⟨@bcert_plus⟩ n ⟨bih_attach⟩ ⟨bih_attach_after⟩, @bstep_attach_after progW prog prims 1336 148 251 832 (fnW_of (by decide) (by decide) fn_attach_after) fn_attach_after np_attach_after ⟨@cert_attach_after⟩ np_boxed_of_mini_selfhost_List_mini_selfhost_CTree (by decide +kernel) ⟨@bcert_with_kid⟩ n ⟨bih_attach⟩⟩
 
 theorem bcert_attach {n : Nat} :
     BStmt_attach progW prog prims 148 n :=
@@ -5163,10 +5165,10 @@ theorem bcert_attach_prod {n : Nat} :
     BStmt_attach_prod progW prog prims 837 n :=
   (bcerts_attach n).2.2.2.2.2.2.1
 theorem bcert_attach_node {n : Nat} :
-    BStmt_attach_node progW prog prims 1119 n :=
+    BStmt_attach_node progW prog prims 1120 n :=
   (bcerts_attach n).2.2.2.2.2.2.2.1
 theorem bcert_attach_after {n : Nat} :
-    BStmt_attach_after progW prog prims 1331 n :=
+    BStmt_attach_after progW prog prims 1336 n :=
   (bcerts_attach n).2.2.2.2.2.2.2.2
 
 theorem bcert_single_of_mini_selfhost_Sym {n : Nat} :
@@ -5750,22 +5752,22 @@ theorem bcert_is_link {n : Nat} :
   exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_is_link prog prims 595 n) from ⟨@cert_is_link⟩).out
     (pcall_of_q key.1) r0⟩
 
-theorem bcerts_concat_of_mini_selfhost_CTree : ∀ n, (BStmt_concat_of_mini_selfhost_CTree progW prog prims 1120 n) := by
+theorem bcerts_concat_of_mini_selfhost_CTree : ∀ n, (BStmt_concat_of_mini_selfhost_CTree progW prog prims 1121 n) := by
   intro n
   induction n with
   | zero =>
     exact (by intro x0 x1 v0 v1 w k h; simp only [qcall_zero, reduceCtorEq] at h)
   | succ n ih =>
-    have bih_concat_of_mini_selfhost_CTree : BStmt_concat_of_mini_selfhost_CTree progW prog prims 1120 n := ih
-    exact @bstep_concat_of_mini_selfhost_CTree progW prog prims 1120 103 251 (fnW_of (by decide) (by decide) fn_concat_of_mini_selfhost_CTree) fn_concat_of_mini_selfhost_CTree np_concat_of_mini_selfhost_CTree ⟨@cert_concat_of_mini_selfhost_CTree⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_CTree (by decide +kernel) np_boxed_of_mini_selfhost_List_mini_selfhost_CTree (by decide +kernel) n ⟨bih_concat_of_mini_selfhost_CTree⟩
+    have bih_concat_of_mini_selfhost_CTree : BStmt_concat_of_mini_selfhost_CTree progW prog prims 1121 n := ih
+    exact @bstep_concat_of_mini_selfhost_CTree progW prog prims 1121 103 251 (fnW_of (by decide) (by decide) fn_concat_of_mini_selfhost_CTree) fn_concat_of_mini_selfhost_CTree np_concat_of_mini_selfhost_CTree ⟨@cert_concat_of_mini_selfhost_CTree⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_CTree (by decide +kernel) np_boxed_of_mini_selfhost_List_mini_selfhost_CTree (by decide +kernel) n ⟨bih_concat_of_mini_selfhost_CTree⟩
 
 theorem bcert_concat_of_mini_selfhost_CTree {n : Nat} :
-    BStmt_concat_of_mini_selfhost_CTree progW prog prims 1120 n :=
+    BStmt_concat_of_mini_selfhost_CTree progW prog prims 1121 n :=
   (bcerts_concat_of_mini_selfhost_CTree n)
 
 theorem bcert_join_second {n : Nat} :
     BStmt_join_second progW prog prims 910 n :=
-  @bproof_join_second progW prog prims 910 1120 (fnW_of (by decide) (by decide) fn_join_second) fn_join_second np_join_second ⟨@cert_join_second⟩ ⟨@bcert_concat_of_mini_selfhost_CTree⟩ n
+  @bproof_join_second progW prog prims 910 1121 (fnW_of (by decide) (by decide) fn_join_second) fn_join_second np_join_second ⟨@cert_join_second⟩ ⟨@bcert_concat_of_mini_selfhost_CTree⟩ n
 
 theorem bcert_join_items {n : Nat} :
     BStmt_join_items progW prog prims 596 n :=
@@ -6059,12 +6061,12 @@ theorem bcert_p_path_more {n : Nat} :
     (pcall_of_q key.1)⟩
 
 theorem bcert_cons_of_mini_selfhost_List_usize {n : Nat} :
-    BStmt_cons_of_mini_selfhost_List_usize progW prog prims 1139 n :=
-  @bproof_cons_of_mini_selfhost_List_usize progW prog prims 1139 928 (fnW_of (by decide) (by decide) fn_cons_of_mini_selfhost_List_usize) fn_cons_of_mini_selfhost_List_usize np_cons_of_mini_selfhost_List_usize ⟨@cert_cons_of_mini_selfhost_List_usize⟩ np_boxed_of_mini_selfhost_List_mini_selfhost_List_usize (by decide +kernel) n
+    BStmt_cons_of_mini_selfhost_List_usize progW prog prims 1142 n :=
+  @bproof_cons_of_mini_selfhost_List_usize progW prog prims 1142 928 (fnW_of (by decide) (by decide) fn_cons_of_mini_selfhost_List_usize) fn_cons_of_mini_selfhost_List_usize np_cons_of_mini_selfhost_List_usize ⟨@cert_cons_of_mini_selfhost_List_usize⟩ np_boxed_of_mini_selfhost_List_mini_selfhost_List_usize (by decide +kernel) n
 
 theorem bcert_cons_name_tail {n : Nat} :
     BStmt_cons_name_tail progW prog prims 929 n :=
-  @bproof_cons_name_tail progW prog prims 929 1139 (fnW_of (by decide) (by decide) fn_cons_name_tail) fn_cons_name_tail np_cons_name_tail ⟨@cert_cons_name_tail⟩ ⟨@bcert_cons_of_mini_selfhost_List_usize⟩ n
+  @bproof_cons_name_tail progW prog prims 929 1142 (fnW_of (by decide) (by decide) fn_cons_name_tail) fn_cons_name_tail np_cons_name_tail ⟨@cert_cons_name_tail⟩ ⟨@bcert_cons_of_mini_selfhost_List_usize⟩ n
 
 theorem bcert_cons_name {n : Nat} :
     BStmt_cons_name progW prog prims 640 n :=
@@ -6113,26 +6115,26 @@ theorem bcert_p_where_none {n : Nat} :
     (pcall_of_q key.1)⟩
 
 theorem bcert_p_enum_type_param {n : Nat} :
-    BStmt_p_enum_type_param progW prog prims 1335 n := by
+    BStmt_p_enum_type_param progW prog prims 1340 n := by
   intro w k h
-  have key := bfree (ix := 1335) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_p_enum_type_param prog prims 1335 n) from ⟨@cert_p_enum_type_param⟩).out
+  have key := bfree (ix := 1340) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_p_enum_type_param prog prims 1340 n) from ⟨@cert_p_enum_type_param⟩).out
     (pcall_of_q key.1)⟩
 
-theorem bcerts_param_spellings : ∀ n, (BStmt_param_spellings progW prog prims 916 n) ∧ (BStmt_param_spelling_at progW prog prims 1126 n) := by
+theorem bcerts_param_spellings : ∀ n, (BStmt_param_spellings progW prog prims 916 n) ∧ (BStmt_param_spelling_at progW prog prims 1127 n) := by
   intro n
   induction n with
   | zero =>
     exact ⟨(by intro x0 v0 w k h; simp only [qcall_zero, reduceCtorEq] at h), (by intro x0 x1 v0 v1 w k h; simp only [qcall_zero, reduceCtorEq] at h)⟩
   | succ n ih =>
     obtain ⟨bih_param_spellings, bih_param_spelling_at⟩ := ih
-    exact ⟨@bstep_param_spellings progW prog prims 916 103 262 1126 (fnW_of (by decide) (by decide) fn_param_spellings) fn_param_spellings np_param_spellings ⟨@cert_param_spellings⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_CTree (by decide +kernel) ⟨@bcert_empty_of_mini_selfhost_List_usize⟩ n ⟨bih_param_spelling_at⟩, @bstep_param_spelling_at progW prog prims 1126 152 618 619 640 916 1335 (fnW_of (by decide) (by decide) fn_param_spelling_at) fn_param_spelling_at np_param_spelling_at ⟨@cert_param_spelling_at⟩ ⟨@bcert_node_prod⟩ ⟨@bcert_field_text_Token_of_mini_selfhost_Token⟩ ⟨@bcert_kid_token⟩ ⟨@bcert_cons_name⟩ ⟨@bcert_p_enum_type_param⟩ n ⟨bih_param_spellings⟩⟩
+    exact ⟨@bstep_param_spellings progW prog prims 916 103 262 1127 (fnW_of (by decide) (by decide) fn_param_spellings) fn_param_spellings np_param_spellings ⟨@cert_param_spellings⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_CTree (by decide +kernel) ⟨@bcert_empty_of_mini_selfhost_List_usize⟩ n ⟨bih_param_spelling_at⟩, @bstep_param_spelling_at progW prog prims 1127 152 618 619 640 916 1340 (fnW_of (by decide) (by decide) fn_param_spelling_at) fn_param_spelling_at np_param_spelling_at ⟨@cert_param_spelling_at⟩ ⟨@bcert_node_prod⟩ ⟨@bcert_field_text_Token_of_mini_selfhost_Token⟩ ⟨@bcert_kid_token⟩ ⟨@bcert_cons_name⟩ ⟨@bcert_p_enum_type_param⟩ n ⟨bih_param_spellings⟩⟩
 
 theorem bcert_param_spellings {n : Nat} :
     BStmt_param_spellings progW prog prims 916 n :=
   (bcerts_param_spellings n).1
 theorem bcert_param_spelling_at {n : Nat} :
-    BStmt_param_spelling_at progW prog prims 1126 n :=
+    BStmt_param_spelling_at progW prog prims 1127 n :=
   (bcerts_param_spellings n).2
 
 theorem bcert_if_unbounded {n : Nat} :
@@ -6143,10 +6145,10 @@ theorem bcert_if_unbounded {n : Nat} :
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_p_type_param_bound_none {n : Nat} :
-    BStmt_p_type_param_bound_none progW prog prims 1129 n := by
+    BStmt_p_type_param_bound_none progW prog prims 1130 n := by
   intro w k h
-  have key := bfree (ix := 1129) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_p_type_param_bound_none prog prims 1129 n) from ⟨@cert_p_type_param_bound_none⟩).out
+  have key := bfree (ix := 1130) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_p_type_param_bound_none prog prims 1130 n) from ⟨@cert_p_type_param_bound_none⟩).out
     (pcall_of_q key.1)⟩
 
 theorem bcert_unbounded {n : Nat} :
@@ -6161,10 +6163,10 @@ theorem bcert_free_params {n : Nat} :
   @bproof_free_params progW prog prims 630 154 916 922 923 (fnW_of (by decide) (by decide) fn_free_params) fn_free_params np_free_params ⟨@cert_free_params⟩ ⟨@bcert_list_items⟩ ⟨@bcert_param_spellings⟩ ⟨@bcert_if_unbounded⟩ ⟨@bcert_unbounded⟩ n
 
 theorem bcert_member {n : Nat} :
-    BStmt_member progW prog prims 1140 n := by
+    BStmt_member progW prog prims 1143 n := by
   intro x0 x1 v0 v1 w k h r0 r1
-  have key := bfree (ix := 1140) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_member prog prims 1140 n) from ⟨@cert_member⟩).out
+  have key := bfree (ix := 1143) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_member prog prims 1143 n) from ⟨@cert_member⟩).out
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_distinct {n : Nat} :
@@ -6175,34 +6177,34 @@ theorem bcert_distinct {n : Nat} :
     (pcall_of_q key.1) r0⟩
 
 theorem bcert_empty_of_mini_selfhost_List_mini_selfhost_CTree {n : Nat} :
-    BStmt_empty_of_mini_selfhost_List_mini_selfhost_CTree progW prog prims 1123 n := by
+    BStmt_empty_of_mini_selfhost_List_mini_selfhost_CTree progW prog prims 1124 n := by
   intro w k h
-  have key := bfree (ix := 1123) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_List_mini_selfhost_CTree prog prims 1123 n) from ⟨@cert_empty_of_mini_selfhost_List_mini_selfhost_CTree⟩).out
+  have key := bfree (ix := 1124) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_List_mini_selfhost_CTree prog prims 1124 n) from ⟨@cert_empty_of_mini_selfhost_List_mini_selfhost_CTree⟩).out
     (pcall_of_q key.1)⟩
 
 theorem bcert_struct_decl_fields {n : Nat} :
-    BStmt_struct_decl_fields progW prog prims 1121 n := by
+    BStmt_struct_decl_fields progW prog prims 1122 n := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w k h r0 r1 r2 r3
-  have key := bfree (ix := 1121) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_struct_decl_fields prog prims 1121 n) from ⟨@cert_struct_decl_fields⟩).out
+  have key := bfree (ix := 1122) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_struct_decl_fields prog prims 1122 n) from ⟨@cert_struct_decl_fields⟩).out
     (pcall_of_q key.1) r0 r1 r2 r3⟩
 
 theorem bcert_cons_field {n : Nat} :
-    BStmt_cons_field progW prog prims 1332 n :=
-  @bproof_cons_field progW prog prims 1332 147 155 618 619 1139 (fnW_of (by decide) (by decide) fn_cons_field) fn_cons_field np_cons_field ⟨@cert_cons_field⟩ ⟨@bcert_cons_of_mini_selfhost_CTree⟩ ⟨@bcert_kid⟩ ⟨@bcert_field_text_Token_of_mini_selfhost_Token⟩ ⟨@bcert_kid_token⟩ ⟨@bcert_cons_of_mini_selfhost_List_usize⟩ n
+    BStmt_cons_field progW prog prims 1337 n :=
+  @bproof_cons_field progW prog prims 1337 147 155 618 619 1142 (fnW_of (by decide) (by decide) fn_cons_field) fn_cons_field np_cons_field ⟨@cert_cons_field⟩ ⟨@bcert_cons_of_mini_selfhost_CTree⟩ ⟨@bcert_kid⟩ ⟨@bcert_field_text_Token_of_mini_selfhost_Token⟩ ⟨@bcert_kid_token⟩ ⟨@bcert_cons_of_mini_selfhost_List_usize⟩ n
 
-theorem bcerts_fields_of : ∀ n, (BStmt_fields_of progW prog prims 1122 n) := by
+theorem bcerts_fields_of : ∀ n, (BStmt_fields_of progW prog prims 1123 n) := by
   intro n
   induction n with
   | zero =>
     exact (by intro x0 v0 w k h; simp only [qcall_zero, reduceCtorEq] at h)
   | succ n ih =>
-    have bih_fields_of : BStmt_fields_of progW prog prims 1122 n := ih
-    exact @bstep_fields_of progW prog prims 1122 96 103 262 1332 (fnW_of (by decide) (by decide) fn_fields_of) fn_fields_of np_fields_of ⟨@cert_fields_of⟩ ⟨@bcert_empty_of_mini_selfhost_CTree⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_CTree (by decide +kernel) ⟨@bcert_empty_of_mini_selfhost_List_usize⟩ ⟨@bcert_cons_field⟩ n ⟨bih_fields_of⟩
+    have bih_fields_of : BStmt_fields_of progW prog prims 1123 n := ih
+    exact @bstep_fields_of progW prog prims 1123 96 103 262 1337 (fnW_of (by decide) (by decide) fn_fields_of) fn_fields_of np_fields_of ⟨@cert_fields_of⟩ ⟨@bcert_empty_of_mini_selfhost_CTree⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_CTree (by decide +kernel) ⟨@bcert_empty_of_mini_selfhost_List_usize⟩ ⟨@bcert_cons_field⟩ n ⟨bih_fields_of⟩
 
 theorem bcert_fields_of {n : Nat} :
-    BStmt_fields_of progW prog prims 1122 n :=
+    BStmt_fields_of progW prog prims 1123 n :=
   (bcerts_fields_of n)
 
 end Lanius.Faithful.SelfBudget

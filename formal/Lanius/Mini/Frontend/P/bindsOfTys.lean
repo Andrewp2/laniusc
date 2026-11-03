@@ -37,6 +37,7 @@ def litTy (t : Ty) : Bool :=
   | .tyPtr => false
   | .tyIsize => true
   | .tyChar => false
+  | .tyStr => false
   | .tyFloat ft => false
   | .tySlice e => false
   | .tyNamed d args => false

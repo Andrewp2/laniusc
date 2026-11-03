@@ -118,6 +118,7 @@ import all Lanius.Mini.Frontend.P.distinct
 import all Lanius.Mini.Frontend.P.divergeArm
 import all Lanius.Mini.Frontend.P.bindsOfTys
 import all Lanius.Mini.Frontend.P.litEffMatch
+import all Lanius.Mini.Frontend.P.stringOpen
 import all Lanius.Mini.Frontend.P.litWants
 import all Lanius.Mini.Frontend.P.litWildValue
 import all Lanius.Mini.Frontend.P.eDivideClosed

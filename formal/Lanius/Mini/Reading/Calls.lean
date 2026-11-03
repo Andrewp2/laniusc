@@ -78,6 +78,7 @@ inductive EffTy (decls : Decls) (scope : List Local) : MEff → Ty → Prop
   | «if» {c a b : MEff} {t : Ty} : EffTy decls scope (.xIf c t a b) t
   | «let» {id : Nat} {t rt : Ty} {v b : MEff} : EffTy decls scope (.xLet id t v rt b) rt
   | len {sl : Nat} : EffTy decls scope (.xLen sl) (.tyUint .usize)
+  | str {cs : List Nat} : EffTy decls scope (.xStr cs) .tyStr
 
 theorem instRet_sound {fuel : Nat} {decls : Decls} {inst : Inst} {t : Ty} (h : instRet fuel decls inst = some t) :
     InstRet decls inst t := by
@@ -117,6 +118,7 @@ theorem instRet_sound {fuel : Nat} {decls : Decls} {inst : Inst} {t : Ty} (h : i
         | tyPtr => cases hs
         | tyIsize => cases hs
         | tyChar => cases hs
+        | tyStr => cases hs
         | tyFloat ft => cases hs
         | tySint _ => cases hs
         | tyArray _ _ => cases hs
@@ -164,6 +166,7 @@ theorem effTy_sound : ∀ {fuel : Nat} {env : FrontEnv} {scope : List Local} {x 
         | tyPtr => rw [hty] at h; cases h
         | tyIsize => rw [hty] at h; cases h
         | tyChar => rw [hty] at h; cases h
+        | tyStr => rw [hty] at h; cases h
         | tyFloat ft => rw [hty] at h; cases h
         | tySint _ => rw [hty] at h; cases h
         | tyArray e n => rw [hty] at h; cases h; exact .indexArray (findLocalId_sound hl) hty
@@ -184,6 +187,7 @@ theorem effTy_sound : ∀ {fuel : Nat} {env : FrontEnv} {scope : List Local} {x 
     | xIf c t' a b => cases h; exact .if
     | xLet id t' v rt b => cases h; exact .let
     | xLen sl => cases h; exact .len
+    | xStr cs => cases h; exact .str
 
 theorem effsTys_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} :
     ∀ {xs : List MEff} {ts : List Ty}, effsTys fuel env scope xs = some ts → ListRel (EffTy env.decls scope) xs ts

@@ -743,6 +743,7 @@ def hbTy : Lanius.Mini.Ty → Nat
   | .tyNamed a0 a1 => hbTy0 a1
   | .tySint a0 => 0
   | .tyArray a0 a1 => hbTy a0
+  | .tyStr => 0
 def hbTy0 : List Lanius.Mini.Ty → Nat
   | [] => 0
   | a :: l => max (hbTy a) (hbTy0 l) + 1
@@ -764,6 +765,7 @@ theorem hbTy0_eq : ∀ l : List Lanius.Mini.Ty, hbTy0 l = HB.hb l
 @[simp, hb_simp] theorem hb_Ty_tyNamed (a0 : Nat) (a1 : List Lanius.Mini.Ty) : hb (Lanius.Mini.Ty.tyNamed a0 a1) = hb a1 := by show hbTy _ = _; simp only [hbTy, hbTy0_eq] <;> rfl
 @[simp, hb_simp] theorem hb_Ty_tySint (a0 : Lanius.Mini.UintTy) : hb (Lanius.Mini.Ty.tySint a0) = 0 := rfl
 @[simp, hb_simp] theorem hb_Ty_tyArray (a0 : Lanius.Mini.Ty) (a1 : Nat) : hb (Lanius.Mini.Ty.tyArray a0 a1) = hb a0 := rfl
+@[simp, hb_simp] theorem hb_Ty_tyStr  : hb (Lanius.Mini.Ty.tyStr) = 0 := rfl
 
 instance : HB Lanius.Mini.Inst := ⟨fun s => hb s.args⟩
 @[simp, hb_simp] theorem hb_Inst_mk (a0 : Nat) (a1 : List Lanius.Mini.Ty) : hb (Lanius.Mini.Inst.mk a0 a1) = hb a1 := rfl
@@ -1052,6 +1054,7 @@ def hbMEff : Lanius.Mini.MEff → Nat
   | .xIf a0 a1 a2 a3 => max (hbMEff a0) (max (hb a1) (max (hbMEff a2) (hbMEff a3)))
   | .xLet a0 a1 a2 a3 a4 => max (hb a1) (max (hbMEff a2) (max (hb a3) (hbMEff a4)))
   | .xLen a0 => 0
+  | .xStr a0 => hb a0
 def hbMEff0 : List Lanius.Mini.MEff → Nat
   | [] => 0
   | a :: l => max (hbMEff a) (hbMEff0 l) + 1
@@ -1079,6 +1082,7 @@ theorem hbMEff0_eq : ∀ l : List Lanius.Mini.MEff, hbMEff0 l = HB.hb l
 @[simp, hb_simp] theorem hb_MEff_xIf (a0 : Lanius.Mini.MEff) (a1 : Lanius.Mini.Ty) (a2 : Lanius.Mini.MEff) (a3 : Lanius.Mini.MEff) : hb (Lanius.Mini.MEff.xIf a0 a1 a2 a3) = max (hb a0) (max (hb a1) (max (hb a2) (hb a3))) := rfl
 @[simp, hb_simp] theorem hb_MEff_xLet (a0 : Nat) (a1 : Lanius.Mini.Ty) (a2 : Lanius.Mini.MEff) (a3 : Lanius.Mini.Ty) (a4 : Lanius.Mini.MEff) : hb (Lanius.Mini.MEff.xLet a0 a1 a2 a3 a4) = max (hb a1) (max (hb a2) (max (hb a3) (hb a4))) := rfl
 @[simp, hb_simp] theorem hb_MEff_xLen (a0 : Nat) : hb (Lanius.Mini.MEff.xLen a0) = 0 := rfl
+@[simp, hb_simp] theorem hb_MEff_xStr (a0 : List Nat) : hb (Lanius.Mini.MEff.xStr a0) = hb a0 := rfl
 
 instance : HB Lanius.Mini.EffArm := ⟨fun s => max (hb s.binders) (max (hb s.value) (hb s.ty))⟩
 @[simp, hb_simp] theorem hb_EffArm_mk (a0 : List Nat) (a1 : Lanius.Mini.MEff) (a2 : Option Lanius.Mini.Ty) : hb (Lanius.Mini.EffArm.mk a0 a1 a2) = max (hb a0) (max (hb a1) (hb a2)) := rfl

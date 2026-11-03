@@ -88,6 +88,10 @@ abbrev Stmt_text_write_byte (prog : SrcProgram) (prims : Prims) (ix n : Nat) : P
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     (RepList 25 RepNat) (Lanius.Mini.textWriteByte) w
 
+abbrev Stmt_text_write_newline (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    (RepList 25 RepNat) (Lanius.Mini.textWriteNewline) w
+
 abbrev Stmt_text_write_stderr (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     (RepList 25 RepNat) (Lanius.Mini.textWriteStderr) w
@@ -95,6 +99,10 @@ abbrev Stmt_text_write_stderr (prog : SrcProgram) (prims : Prims) (ix n : Nat) :
 abbrev Stmt_text_write_stdout (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     (RepList 25 RepNat) (Lanius.Mini.textWriteStdout) w
+
+abbrev Stmt_text_write_text (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    (RepList 25 RepNat) (Lanius.Mini.textWriteText) w
 
 abbrev Stmt_type_decls (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.TypeDecl} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 208 RepTypeDecl) x0 v0 →

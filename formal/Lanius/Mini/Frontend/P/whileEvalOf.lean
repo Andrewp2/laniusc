@@ -5,9 +5,9 @@ import Lanius.Mini.Frontend.P.callParts
 import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.ifEff
-import Lanius.Mini.Frontend.P.litEffMatch
 import Lanius.Mini.Frontend.P.projection
 import Lanius.Mini.Frontend.P.shrFirst
+import Lanius.Mini.Frontend.P.stringOpen
 import Lanius.Mini.Frontend.P.tryLetHead
 import Lanius.Mini.Frontend.P.tryLocalOf
 
@@ -82,6 +82,7 @@ def effActs (n : Nat) (x : MEff) : Bool :=
   | .xIf c t a b => effActs n c || effActs n a || effActs n b
   | .xLet id t v rt b => effActs n v || effActs n b
   | .xLen sl => false
+  | .xStr cs => false
 def effsAct (n : Nat) (xs : List MEff) : Bool :=
   match xs with
   | [] => false

@@ -81,58 +81,58 @@ theorem ok_lower_named : FnOk prog prims info (951, ⟨14, [0], 0⟩) :=
 theorem ok_wide_left_funcs : FnOk prog prims info (952, ⟨4, [0], 0⟩) :=
   fnOk_of fn_wide_left_funcs (by decide +kernel)
 
-theorem ok_cons_of_mini_selfhost_SrcFunc : FnOk prog prims info (953, ⟨0, [], 0⟩) :=
+theorem ok_placed_program : FnOk prog prims info (953, ⟨6, [], 0⟩) :=
+  fnOk_of fn_placed_program (by decide +kernel)
+
+theorem ok_cons_of_mini_selfhost_SrcFunc : FnOk prog prims info (954, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_SrcFunc (by decide +kernel)
 
-theorem ok_lit_stmt : FnOk prog prims info (954, ⟨6, [3], 0⟩) :=
+theorem ok_lit_stmt : FnOk prog prims info (955, ⟨6, [3], 0⟩) :=
   fnOk_of fn_lit_stmt (by decide +kernel)
 
-theorem ok_param_locals : FnOk prog prims info (955, ⟨1, [0], 0⟩) :=
+theorem ok_param_locals : FnOk prog prims info (956, ⟨1, [0], 0⟩) :=
   fnOk_of fn_param_locals (by decide +kernel)
 
-theorem ok_is_none_weight : FnOk prog prims info (956, ⟨0, [], 0⟩) :=
+theorem ok_is_none_weight : FnOk prog prims info (957, ⟨0, [], 0⟩) :=
   fnOk_of fn_is_none_weight (by decide +kernel)
 
-theorem ok_weigh_next : FnOk prog prims info (958, ⟨18, [0], 1⟩) :=
+theorem ok_weigh_next : FnOk prog prims info (959, ⟨18, [0], 1⟩) :=
   fnOk_of fn_weigh_next (by decide +kernel)
 
-theorem ok_weigh_round : FnOk prog prims info (959, ⟨17, [4], 0⟩) :=
+theorem ok_weigh_round : FnOk prog prims info (960, ⟨17, [4], 0⟩) :=
   fnOk_of fn_weigh_round (by decide +kernel)
 
-theorem ok_empty_of_core_option_Option_usize : FnOk prog prims info (960, ⟨0, [], 0⟩) :=
+theorem ok_empty_of_core_option_Option_usize : FnOk prog prims info (961, ⟨0, [], 0⟩) :=
   fnOk_of fn_empty_of_core_option_Option_usize (by decide +kernel)
 
-theorem ok_cons_of_core_option_Option_usize : FnOk prog prims info (961, ⟨0, [], 0⟩) :=
+theorem ok_cons_of_core_option_Option_usize : FnOk prog prims info (962, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_core_option_Option_usize (by decide +kernel)
 
-theorem ok_ty_known : FnOk prog prims info (962, ⟨5, [1], 0⟩) :=
+theorem ok_ty_known : FnOk prog prims info (963, ⟨5, [1], 0⟩) :=
   fnOk_of fn_ty_known (by decide +kernel)
 
-theorem ok_single_of_mini_selfhost_Ty : FnOk prog prims info (963, ⟨0, [], 0⟩) :=
+theorem ok_single_of_mini_selfhost_Ty : FnOk prog prims info (964, ⟨0, [], 0⟩) :=
   fnOk_of fn_single_of_mini_selfhost_Ty (by decide +kernel)
 
-theorem ok_cons_inst : FnOk prog prims info (966, ⟨1, [], 0⟩) :=
+theorem ok_cons_inst : FnOk prog prims info (967, ⟨1, [], 0⟩) :=
   fnOk_of fn_cons_inst (by decide +kernel)
 
-theorem ok_named_insts : FnOk prog prims info (967, ⟨14, [0], 0⟩) :=
+theorem ok_named_insts : FnOk prog prims info (968, ⟨14, [0], 0⟩) :=
   fnOk_of fn_named_insts (by decide +kernel)
 
-theorem ok_eff_named_tys : FnOk prog prims info (973, ⟨1, [0], 0⟩) :=
+theorem ok_eff_named_tys : FnOk prog prims info (974, ⟨1, [0], 0⟩) :=
   fnOk_of fn_eff_named_tys (by decide +kernel)
 
-theorem ok_add_inst : FnOk prog prims info (975, ⟨5, [], 0⟩) :=
+theorem ok_add_inst : FnOk prog prims info (976, ⟨5, [], 0⟩) :=
   fnOk_of fn_add_inst (by decide +kernel)
 
-theorem ok_single_of_mini_selfhost_Inst : FnOk prog prims info (976, ⟨0, [], 0⟩) :=
+theorem ok_single_of_mini_selfhost_Inst : FnOk prog prims info (977, ⟨0, [], 0⟩) :=
   fnOk_of fn_single_of_mini_selfhost_Inst (by decide +kernel)
 
-theorem ok_concat_of_mini_selfhost_Inst : FnOk prog prims info (977, ⟨0, [0], 0⟩) :=
+theorem ok_concat_of_mini_selfhost_Inst : FnOk prog prims info (978, ⟨0, [0], 0⟩) :=
   fnOk_of fn_concat_of_mini_selfhost_Inst (by decide +kernel)
 
-theorem ok_eff_calls : FnOk prog prims info (978, ⟨1, [0], 0⟩) :=
-  fnOk_of fn_eff_calls (by decide +kernel)
-
 theorem chunk20 : AllFns prog prims info part20 :=
-  ⟨ok_cons_name_tail, ok_same_spellings, ok_distinct, ok_concat_of_mini_selfhost_List_usize, ok_fn_names_in, ok_type_only_names_in, ok_alias_names_in, ok_const_names_in, ok_enums_named_ok, ok_spelled3, ok_spelled4, ok_spelled2, ok_spelled5, ok_empty_of_mini_selfhost_SrcFunc, ok_cons_func, ok_src_func, ok_close_params, ok_close_ret, ok_close_stmt, ok_empty_of_core_option_Option_mini_selfhost_SrcType, ok_cons_of_core_option_Option_mini_selfhost_SrcType, ok_lower_named, ok_wide_left_funcs, ok_cons_of_mini_selfhost_SrcFunc, ok_lit_stmt, ok_param_locals, ok_is_none_weight, ok_weigh_next, ok_weigh_round, ok_empty_of_core_option_Option_usize, ok_cons_of_core_option_Option_usize, ok_ty_known, ok_single_of_mini_selfhost_Ty, ok_cons_inst, ok_named_insts, ok_eff_named_tys, ok_add_inst, ok_single_of_mini_selfhost_Inst, ok_concat_of_mini_selfhost_Inst, ok_eff_calls, trivial⟩
+  ⟨ok_cons_name_tail, ok_same_spellings, ok_distinct, ok_concat_of_mini_selfhost_List_usize, ok_fn_names_in, ok_type_only_names_in, ok_alias_names_in, ok_const_names_in, ok_enums_named_ok, ok_spelled3, ok_spelled4, ok_spelled2, ok_spelled5, ok_empty_of_mini_selfhost_SrcFunc, ok_cons_func, ok_src_func, ok_close_params, ok_close_ret, ok_close_stmt, ok_empty_of_core_option_Option_mini_selfhost_SrcType, ok_cons_of_core_option_Option_mini_selfhost_SrcType, ok_lower_named, ok_wide_left_funcs, ok_placed_program, ok_cons_of_mini_selfhost_SrcFunc, ok_lit_stmt, ok_param_locals, ok_is_none_weight, ok_weigh_next, ok_weigh_round, ok_empty_of_core_option_Option_usize, ok_cons_of_core_option_Option_usize, ok_ty_known, ok_single_of_mini_selfhost_Ty, ok_cons_inst, ok_named_insts, ok_eff_named_tys, ok_add_inst, ok_single_of_mini_selfhost_Inst, ok_concat_of_mini_selfhost_Inst, trivial⟩
 
 end Lanius.Faithful.SelfTerm

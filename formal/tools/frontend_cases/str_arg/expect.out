@@ -1,0 +1,2 @@
+{ params := [{ id := 0, ty := .str }], ret := .i32, body := (.return (.int 7)) }
+{ params := [{ id := 0, ty := .i32 }], ret := .i32, body := (.returnEval (.eCall 0 [(.eStr 0 [104, 105, 32, 116, 104, 101, 114, 101])])) }

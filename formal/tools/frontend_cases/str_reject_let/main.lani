@@ -1,0 +1,6 @@
+// A string literal is read only as a call's argument: a str let of one is
+// not read (unless a raw view of its bytes follows: LetStr).
+fn run(n: i32) -> i32 {
+    let text: str = "abc";
+    return n;
+}

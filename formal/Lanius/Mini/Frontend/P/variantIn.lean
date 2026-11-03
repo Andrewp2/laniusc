@@ -60,7 +60,7 @@ def srcTy (t : SrcType) : Option Ty :=
   | .float ft => some (Ty.tyFloat ft)
   | .sint sk => some (Ty.tySint sk)
   | .view viewLength => none
-  | .str => none
+  | .str => some Ty.tyStr
 
 def scalarSrc (t : Ty) : Option SrcType :=
   match t with
@@ -70,6 +70,7 @@ def scalarSrc (t : Ty) : Option SrcType :=
   | .tyPtr => some SrcType.ptr
   | .tyIsize => some SrcType.isize
   | .tyChar => some SrcType.char
+  | .tyStr => none
   | .tyFloat ft => some (SrcType.float ft)
   | .tySlice e => none
   | .tyArray e n => none

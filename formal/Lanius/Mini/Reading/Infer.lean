@@ -4,6 +4,7 @@ public import Lanius.Mini.Reading.Lower
 public import Lanius.Mini.Reading.Exprs
 import all Lanius.Mini.Frontend.P.bindsOfTys
 import all Lanius.Mini.Frontend.P.litEffMatch
+import all Lanius.Mini.Frontend.P.stringOpen
 import all Lanius.Mini.Frontend.P.litWants
 import all Lanius.Mini.Frontend.P.litWildValue
 import all Lanius.Mini.Frontend.P.divergeArm
@@ -115,6 +116,7 @@ theorem exprTy_sound : ∀ {fuel : Nat} {env : FrontEnv} {scope : List Local} {e
           | tyPtr => rw [hty] at hs; cases hs
           | tyIsize => rw [hty] at hs; cases hs
           | tyChar => rw [hty] at hs; cases hs
+          | tyStr => rw [hty] at hs; cases hs
           | tyFloat ft => rw [hty] at hs; cases hs
           | tySint _ => rw [hty] at hs; cases hs
           | tyArray _ _ => rw [hty] at hs; cases hs
@@ -351,6 +353,7 @@ theorem matchSound : ∀ fuel, MatchSound fuel
         | tyPtr => cases h
         | tyIsize => cases h
         | tyChar => cases h
+        | tyStr => cases h
         | tyFloat ft => cases h
         | tySint _ => cases h
         | tyArray _ _ => cases h
@@ -409,6 +412,7 @@ theorem matchSound : ∀ fuel, MatchSound fuel
           | tyPtr => cases ha
           | tyIsize => cases ha
           | tyChar => cases ha
+          | tyStr => cases ha
           | tyFloat ft => cases ha
           | tySint _ => cases ha
           | tyArray _ _ => cases ha
