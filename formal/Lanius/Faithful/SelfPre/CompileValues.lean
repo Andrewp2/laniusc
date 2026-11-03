@@ -68,4 +68,22 @@ theorem pc_le32_ge (n : Nat) (h : pcLe32 n < 18446744073709551616) : 4 ≤ pcLe3
     have := pc_single_u8_pos n
     omega
 
+/-! The encoder's small numbers (for `valueFacts`, as `val_<T>_<f>`). -/
+
+theorem val_FloatTy_number (x : FloatTy) : FloatTy.number x ≤ 1 := by cases x <;> decide
+theorem val_FArith_number (x : FArith) : FArith.number x ≤ 3 := by cases x <;> decide
+theorem val_FCmp_number (x : FCmp) : FCmp.number x ≤ 2 := by cases x <;> decide
+theorem val_Word_number (x : Word) : Word.number x ≤ 1 := by cases x <;> decide
+theorem val_Word_prefix (x : Word) : Word.prefix x ≤ 1 := by cases x <;> decide
+theorem val_MemWidth_prefix (x : MemWidth) : MemWidth.prefix x ≤ 1 := by cases x <;> decide
+theorem val_FloatTy_rexSize (x : FloatTy) : FloatTy.rexSize x ≤ 1 := by cases x <;> decide
+theorem val_BinOp_size (x : BinOp) : BinOp.size x ≤ 13 := by cases x <;> decide
+theorem val_DivOp_size (x : DivOp) (w : Word) : DivOp.size x w ≤ 5 := by cases x <;> cases w <;> decide
+theorem val_FOp_size (x : FOp) : FOp.size x ≤ 22 := by
+  cases x <;> simp only [FOp.size] <;>
+    first | omega | (rename_i a b; cases a <;> cases b <;> decide) | (rename_i a _; cases a <;> decide)
+theorem val_FOp_number (x : FOp) : FOp.number x ≤ 19 := by
+  cases x <;> simp only [FOp.number] <;>
+    first | omega | (rename_i a b; cases a <;> cases b <;> decide)
+
 end Lanius.Faithful.SelfPre
