@@ -103,22 +103,6 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem certs_lx_space_run : ∀ n, (Stmt_lx_space_run prog prims 1307 n) ∧ (Stmt_lx_space_run_at prog prims 1458 n) := by
-  intro n
-  induction n with
-  | zero =>
-    exact ⟨(by intro x0 v0 w h r0; simp [pcall] at h), (by intro x0 x1 v0 v1 w h r0 r1; simp [pcall] at h)⟩
-  | succ n ih =>
-    obtain ⟨ih_lx_space_run, ih_lx_space_run_at⟩ := ih
-    exact ⟨@step_lx_space_run prog prims 1307 76 1458 fn_lx_space_run np_lx_space_run ⟨@cert_unbox_of_mini_selfhost_List_usize⟩ n ⟨ih_lx_space_run_at⟩, @step_lx_space_run_at prog prims 1458 75 1096 1307 fn_lx_space_run_at np_lx_space_run_at ⟨@cert_plus⟩ ⟨@cert_lx_space⟩ n ⟨ih_lx_space_run⟩⟩
-
-theorem cert_lx_space_run {n : Nat} :
-    Stmt_lx_space_run prog prims 1307 n :=
-  (certs_lx_space_run n).1
-theorem cert_lx_space_run_at {n : Nat} :
-    Stmt_lx_space_run_at prog prims 1458 n :=
-  (certs_lx_space_run n).2
-
 theorem cert_lx_space_end {n : Nat} :
     Stmt_lx_space_end prog prims 1097 n :=
   @proof_lx_space_end prog prims 1097 75 581 1307 fn_lx_space_end np_lx_space_end ⟨@cert_plus⟩ ⟨@cert_lx_drop⟩ ⟨@cert_lx_space_run⟩ n
@@ -867,5 +851,9 @@ theorem cert_p_struct_fields_end {n : Nat} :
 theorem cert_p_struct_fields_after_comma_more {n : Nat} :
     Stmt_p_struct_fields_after_comma_more prog prims 852 n :=
   @proof_p_struct_fields_after_comma_more prog prims 852 fn_p_struct_fields_after_comma_more np_p_struct_fields_after_comma_more n
+
+theorem cert_p_struct_fields_after_comma_trailing {n : Nat} :
+    Stmt_p_struct_fields_after_comma_trailing prog prims 853 n :=
+  @proof_p_struct_fields_after_comma_trailing prog prims 853 fn_p_struct_fields_after_comma_trailing np_p_struct_fields_after_comma_trailing n
 
 end Lanius.Faithful.SelfCert

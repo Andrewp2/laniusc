@@ -461,7 +461,7 @@ theorem fok2474 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
 /-- mini::selfhost::one_tree_names -/
 theorem fok2493 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 2493 (src_one_tree_names 104 2472 2509) :=
+    FuncOk sp prims outside 2493 (src_one_tree_names 104 2472 2510) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::int_primary -/

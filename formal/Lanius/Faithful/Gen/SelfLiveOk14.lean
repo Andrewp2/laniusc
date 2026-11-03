@@ -497,10 +497,10 @@ theorem lok2440 : LiveOk prims outside liveBad 2440 (src_is_some_name) := by dec
 /-- mini::selfhost::string_close -/
 theorem lok2466 : LiveOk prims outside liveBad 2466 (src_string_close 138) := by decide +kernel
 
-/-- mini::selfhost::text_typed_slice_from_raw_parts -/
-theorem lok2490 : LiveOk prims outside liveBad 2490 (src_text_typed_slice_from_raw_parts 371 396) := by decide +kernel
-
 /-- mini::selfhost::text_string_data_ptr -/
-theorem lok2508 : LiveOk prims outside liveBad 2508 (src_text_string_data_ptr 371 396) := by decide +kernel
+theorem lok2509 : LiveOk prims outside liveBad 2509 (src_text_string_data_ptr 371 396) := by decide +kernel
+
+/-- mini::selfhost::text_typed_slice_from_raw_parts -/
+theorem lok2517 : LiveOk prims outside liveBad 2517 (src_text_typed_slice_from_raw_parts 396 1906) := by decide +kernel
 
 end Lanius.Faithful.SelfPure

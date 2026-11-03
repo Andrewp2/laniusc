@@ -60,8 +60,8 @@ theorem ok_string_cons : FnOk prog prims info (2467, ⟨1, [], 0⟩) :=
 theorem ok_plain_string_byte : FnOk prog prims info (2468, ⟨0, [], 0⟩) :=
   fnOk_of fn_plain_string_byte (by decide +kernel)
 
-theorem ok_typed_slice_spellings : FnOk prog prims info (2469, ⟨2, [], 0⟩) :=
-  fnOk_of fn_typed_slice_spellings (by decide +kernel)
+theorem ok_is_typed_slice_segments : FnOk prog prims info (2469, ⟨5, [], 0⟩) :=
+  fnOk_of fn_is_typed_slice_segments (by decide +kernel)
 
 theorem ok_u8_args : FnOk prog prims info (2470, ⟨11, [], 0⟩) :=
   fnOk_of fn_u8_args (by decide +kernel)
@@ -123,8 +123,8 @@ theorem ok_fit_same_decl : FnOk prog prims info (2488, ⟨10, [0], 0⟩) :=
 theorem ok_diverge_call : FnOk prog prims info (2489, ⟨4, [], 0⟩) :=
   fnOk_of fn_diverge_call (by decide +kernel)
 
-theorem ok_text_typed_slice_from_raw_parts : FnOk prog prims info (2490, ⟨1, [], 0⟩) :=
-  fnOk_of fn_text_typed_slice_from_raw_parts (by decide +kernel)
+theorem ok_is_mem_typed : FnOk prog prims info (2490, ⟨4, [], 0⟩) :=
+  fnOk_of fn_is_mem_typed (by decide +kernel)
 
 theorem ok_is_u8_ty : FnOk prog prims info (2491, ⟨3, [], 0⟩) :=
   fnOk_of fn_is_u8_ty (by decide +kernel)
@@ -133,6 +133,6 @@ theorem ok_string_data_ptr_path : FnOk prog prims info (2492, ⟨2, [], 0⟩) :=
   fnOk_of fn_string_data_ptr_path (by decide +kernel)
 
 theorem chunk55 : AllFns prog prims info part55 :=
-  ⟨ok_text_none, ok_fl_exp_first_at, ok_view_local, ok_want_elem, ok_infer_ret, ok_cons_tree_tail, ok_fit_of, ok_fit_if, ok_fit_decl, ok_and_known, ok_not_known, ok_block_value, ok_diverge_eff, ok_string_close, ok_string_cons, ok_plain_string_byte, ok_typed_slice_spellings, ok_u8_args, ok_string_slice, ok_is_empty_trees, ok_is_data_ptr_of, ok_int_tree, ok_is_binder_pat, ok_names_some, ok_wild_used, ok_cons_use, ok_variant_arm, ok_rows_naming, ok_arms_naming, ok_wild_arm_for, ok_tried_err, ok_single_ty, ok_if_same_tys, ok_fl_exp_digits, ok_view_array, ok_fit_same_decl, ok_diverge_call, ok_text_typed_slice_from_raw_parts, ok_is_u8_ty, ok_string_data_ptr_path, trivial⟩
+  ⟨ok_text_none, ok_fl_exp_first_at, ok_view_local, ok_want_elem, ok_infer_ret, ok_cons_tree_tail, ok_fit_of, ok_fit_if, ok_fit_decl, ok_and_known, ok_not_known, ok_block_value, ok_diverge_eff, ok_string_close, ok_string_cons, ok_plain_string_byte, ok_is_typed_slice_segments, ok_u8_args, ok_string_slice, ok_is_empty_trees, ok_is_data_ptr_of, ok_int_tree, ok_is_binder_pat, ok_names_some, ok_wild_used, ok_cons_use, ok_variant_arm, ok_rows_naming, ok_arms_naming, ok_wild_arm_for, ok_tried_err, ok_single_ty, ok_if_same_tys, ok_fl_exp_digits, ok_view_array, ok_fit_same_decl, ok_diverge_call, ok_is_mem_typed, ok_is_u8_ty, ok_string_data_ptr_path, trivial⟩
 
 end Lanius.Faithful.SelfTerm

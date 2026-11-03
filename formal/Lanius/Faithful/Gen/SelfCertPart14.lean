@@ -2,7 +2,6 @@ module
 
 public import Lanius.Faithful.Gen.SelfCertPart13
 public import Lanius.Faithful.Gen.SelfStmt1
-public import Lanius.Faithful.Gen.SelfStmtF_Inline_findMethodAt
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pLeTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pPathMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pRetVoid
@@ -15,6 +14,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_i32ArrayLength
 public import Lanius.Faithful.Gen.SelfStmtF_ifSome
 public import Lanius.Faithful.Gen.SelfStmtF_isPathCall
 public import Lanius.Faithful.Gen.SelfStmtF_isTryEnum
+public import Lanius.Faithful.Gen.SelfStmtF_isTypedSliceSegments
 public import Lanius.Faithful.Gen.SelfStmtF_litEffMatch
 public import Lanius.Faithful.Gen.SelfStmtF_litIf
 public import Lanius.Faithful.Gen.SelfStmtF_matchLetHead
@@ -23,7 +23,6 @@ public import Lanius.Faithful.Gen.SelfStmtF_noBlock
 public import Lanius.Faithful.Gen.SelfStmtF_oneTreeNames
 public import Lanius.Faithful.Gen.SelfStmtF_sliceHead
 public import Lanius.Faithful.Gen.SelfStmtF_stringCall
-public import Lanius.Faithful.Gen.SelfStmtF_stringCons
 public import Lanius.Faithful.Gen.SelfStmtF_stringLast
 public import Lanius.Faithful.Gen.SelfStmtF_stringOpen
 public import Lanius.Faithful.Gen.SelfStmtF_stringReturn
@@ -37,7 +36,6 @@ public import Lanius.Faithful.Gen.SelfStmtF_tryLocalOf
 public import Lanius.Faithful.Gen.SelfStmtF_variantLetHead
 public import Lanius.Faithful.Gen.SelfStmtF_viewHead
 import Lanius.Faithful.Gen.SelfProof1
-import Lanius.Faithful.Gen.SelfProofF_Inline_findMethodAt
 import Lanius.Faithful.Gen.SelfProofF_Inline_pLeTail
 import Lanius.Faithful.Gen.SelfProofF_Inline_pPathMore
 import Lanius.Faithful.Gen.SelfProofF_Inline_pRetVoid
@@ -50,6 +48,7 @@ import Lanius.Faithful.Gen.SelfProofF_i32ArrayLength
 import Lanius.Faithful.Gen.SelfProofF_ifSome
 import Lanius.Faithful.Gen.SelfProofF_isPathCall
 import Lanius.Faithful.Gen.SelfProofF_isTryEnum
+import Lanius.Faithful.Gen.SelfProofF_isTypedSliceSegments
 import Lanius.Faithful.Gen.SelfProofF_litEffMatch
 import Lanius.Faithful.Gen.SelfProofF_litIf
 import Lanius.Faithful.Gen.SelfProofF_matchLetHead
@@ -58,7 +57,6 @@ import Lanius.Faithful.Gen.SelfProofF_noBlock
 import Lanius.Faithful.Gen.SelfProofF_oneTreeNames
 import Lanius.Faithful.Gen.SelfProofF_sliceHead
 import Lanius.Faithful.Gen.SelfProofF_stringCall
-import Lanius.Faithful.Gen.SelfProofF_stringCons
 import Lanius.Faithful.Gen.SelfProofF_stringLast
 import Lanius.Faithful.Gen.SelfProofF_stringOpen
 import Lanius.Faithful.Gen.SelfProofF_stringReturn
@@ -89,26 +87,6 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem cert_plain_string_byte {n : Nat} :
-    Stmt_plain_string_byte prog prims 2468 n :=
-  @proof_plain_string_byte prog prims 2468 fn_plain_string_byte np_plain_string_byte n
-
-theorem certs_string_body : ∀ n, (Stmt_string_body prog prims 2382 n) ∧ (Stmt_string_byte prog prims 2426 n) := by
-  intro n
-  induction n with
-  | zero =>
-    exact ⟨(by intro x0 v0 w h r0; simp [pcall] at h), (by intro x0 x1 v0 v1 w h r0 r1; simp [pcall] at h)⟩
-  | succ n ih =>
-    obtain ⟨ih_string_body, ih_string_byte⟩ := ih
-    exact ⟨@step_string_body prog prims 2382 76 2426 fn_string_body np_string_body ⟨@cert_unbox_of_mini_selfhost_List_usize⟩ n ⟨ih_string_byte⟩, @step_string_byte prog prims 2426 2382 2466 2467 2468 fn_string_byte np_string_byte ⟨@cert_string_close⟩ ⟨@cert_string_cons⟩ ⟨@cert_plain_string_byte⟩ n ⟨ih_string_body⟩⟩
-
-theorem cert_string_body {n : Nat} :
-    Stmt_string_body prog prims 2382 n :=
-  (certs_string_body n).1
-theorem cert_string_byte {n : Nat} :
-    Stmt_string_byte prog prims 2426 n :=
-  (certs_string_body n).2
-
 theorem cert_string_open {n : Nat} :
     Stmt_string_open prog prims 2305 n :=
   @proof_string_open prog prims 2305 2382 fn_string_open np_string_open ⟨@cert_string_body⟩ n
@@ -138,12 +116,24 @@ theorem cert_is_u8_slice {n : Nat} :
   @proof_is_u8_slice prog prims 2172 966 1576 fn_is_u8_slice np_is_u8_slice ⟨@cert_boxed_of_mini_selfhost_Ty⟩ ⟨@cert_same_ty⟩ n
 
 theorem cert_text_typed_slice_from_raw_parts {n : Nat} :
-    Stmt_text_typed_slice_from_raw_parts prog prims 2490 n :=
-  @proof_text_typed_slice_from_raw_parts prog prims 2490 371 396 fn_text_typed_slice_from_raw_parts np_text_typed_slice_from_raw_parts ⟨@cert_single_of_usize⟩ ⟨@cert_cons_of_usize⟩ n
+    Stmt_text_typed_slice_from_raw_parts prog prims 2517 n :=
+  @proof_text_typed_slice_from_raw_parts prog prims 2517 396 1906 fn_text_typed_slice_from_raw_parts np_text_typed_slice_from_raw_parts ⟨@cert_cons_of_usize⟩ ⟨@cert_text_slice_from_raw_parts⟩ n
 
-theorem cert_typed_slice_spellings {n : Nat} :
-    Stmt_typed_slice_spellings prog prims 2469 n :=
-  @proof_typed_slice_spellings prog prims 2469 635 1131 2273 2274 2490 fn_typed_slice_spellings np_typed_slice_spellings ⟨@cert_single_of_mini_selfhost_List_usize⟩ ⟨@cert_cons_of_mini_selfhost_List_usize⟩ ⟨@cert_text_core⟩ ⟨@cert_text_mem⟩ ⟨@cert_text_typed_slice_from_raw_parts⟩ n
+theorem cert_is_empty_texts {n : Nat} :
+    Stmt_is_empty_texts prog prims 2518 n :=
+  @proof_is_empty_texts prog prims 2518 fn_is_empty_texts np_is_empty_texts n
+
+theorem cert_is_last_typed {n : Nat} :
+    Stmt_is_last_typed prog prims 2508 n :=
+  @proof_is_last_typed prog prims 2508 548 919 2517 2518 fn_is_last_typed np_is_last_typed ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_List_usize⟩ ⟨@cert_same_text⟩ ⟨@cert_text_typed_slice_from_raw_parts⟩ ⟨@cert_is_empty_texts⟩ n
+
+theorem cert_is_mem_typed {n : Nat} :
+    Stmt_is_mem_typed prog prims 2490 n :=
+  @proof_is_mem_typed prog prims 2490 548 919 2274 2508 fn_is_mem_typed np_is_mem_typed ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_List_usize⟩ ⟨@cert_same_text⟩ ⟨@cert_text_mem⟩ ⟨@cert_is_last_typed⟩ n
+
+theorem cert_is_typed_slice_segments {n : Nat} :
+    Stmt_is_typed_slice_segments prog prims 2469 n :=
+  @proof_is_typed_slice_segments prog prims 2469 548 919 2273 2490 fn_is_typed_slice_segments np_is_typed_slice_segments ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_List_usize⟩ ⟨@cert_same_text⟩ ⟨@cert_text_core⟩ ⟨@cert_is_mem_typed⟩ n
 
 theorem cert_is_empty_trees {n : Nat} :
     Stmt_is_empty_trees prog prims 2472 n :=
@@ -159,31 +149,31 @@ theorem cert_u8_args {n : Nat} :
 
 theorem cert_is_typed_slice_path {n : Nat} :
     Stmt_is_typed_slice_path prog prims 2427 n :=
-  @proof_is_typed_slice_path prog prims 2427 155 924 1911 2469 2470 fn_is_typed_slice_path np_is_typed_slice_path ⟨@cert_kid⟩ ⟨@cert_same_spellings⟩ ⟨@cert_path_ref⟩ ⟨@cert_typed_slice_spellings⟩ ⟨@cert_u8_args⟩ n
+  @proof_is_typed_slice_path prog prims 2427 155 1911 2469 2470 fn_is_typed_slice_path np_is_typed_slice_path ⟨@cert_kid⟩ ⟨@cert_path_ref⟩ ⟨@cert_is_typed_slice_segments⟩ ⟨@cert_u8_args⟩ n
 
 theorem cert_string_slice {n : Nat} :
     Stmt_string_slice prog prims 2471 n :=
   @proof_string_slice prog prims 2471 1217 fn_string_slice np_string_slice ⟨@cert_boxed_of_mini_selfhost_MStmt⟩ n
 
 theorem cert_text_string_data_ptr {n : Nat} :
-    Stmt_text_string_data_ptr prog prims 2508 n :=
-  @proof_text_string_data_ptr prog prims 2508 371 396 fn_text_string_data_ptr np_text_string_data_ptr ⟨@cert_single_of_usize⟩ ⟨@cert_cons_of_usize⟩ n
+    Stmt_text_string_data_ptr prog prims 2509 n :=
+  @proof_text_string_data_ptr prog prims 2509 371 396 fn_text_string_data_ptr np_text_string_data_ptr ⟨@cert_single_of_usize⟩ ⟨@cert_cons_of_usize⟩ n
 
 theorem cert_string_data_ptr_path {n : Nat} :
     Stmt_string_data_ptr_path prog prims 2492 n :=
-  @proof_string_data_ptr_path prog prims 2492 635 1131 2273 2274 2508 fn_string_data_ptr_path np_string_data_ptr_path ⟨@cert_single_of_mini_selfhost_List_usize⟩ ⟨@cert_cons_of_mini_selfhost_List_usize⟩ ⟨@cert_text_core⟩ ⟨@cert_text_mem⟩ ⟨@cert_text_string_data_ptr⟩ n
+  @proof_string_data_ptr_path prog prims 2492 635 1131 2273 2274 2509 fn_string_data_ptr_path np_string_data_ptr_path ⟨@cert_single_of_mini_selfhost_List_usize⟩ ⟨@cert_cons_of_mini_selfhost_List_usize⟩ ⟨@cert_text_core⟩ ⟨@cert_text_mem⟩ ⟨@cert_text_string_data_ptr⟩ n
 
 theorem cert_is_text {n : Nat} :
-    Stmt_is_text prog prims 2516 n :=
-  @proof_is_text prog prims 2516 919 fn_is_text np_is_text ⟨@cert_same_text⟩ n
+    Stmt_is_text prog prims 2519 n :=
+  @proof_is_text prog prims 2519 919 fn_is_text np_is_text ⟨@cert_same_text⟩ n
 
 theorem cert_tree_names {n : Nat} :
-    Stmt_tree_names prog prims 2509 n :=
-  @proof_tree_names prog prims 2509 152 155 1710 1767 1770 1772 1964 2516 fn_tree_names np_tree_names ⟨@cert_node_prod⟩ ⟨@cert_kid⟩ ⟨@cert_p_ident⟩ ⟨@cert_p_postfix_end⟩ ⟨@cert_p_ident_plain⟩ ⟨@cert_path_name⟩ ⟨@cert_peel⟩ ⟨@cert_is_text⟩ n
+    Stmt_tree_names prog prims 2510 n :=
+  @proof_tree_names prog prims 2510 152 155 1710 1767 1770 1772 1964 2519 fn_tree_names np_tree_names ⟨@cert_node_prod⟩ ⟨@cert_kid⟩ ⟨@cert_p_ident⟩ ⟨@cert_p_postfix_end⟩ ⟨@cert_p_ident_plain⟩ ⟨@cert_path_name⟩ ⟨@cert_peel⟩ ⟨@cert_is_text⟩ n
 
 theorem cert_one_tree_names {n : Nat} :
     Stmt_one_tree_names prog prims 2493 n :=
-  @proof_one_tree_names prog prims 2493 104 2472 2509 fn_one_tree_names np_one_tree_names ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_CTree⟩ ⟨@cert_is_empty_trees⟩ ⟨@cert_tree_names⟩ n
+  @proof_one_tree_names prog prims 2493 104 2472 2510 fn_one_tree_names np_one_tree_names ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_CTree⟩ ⟨@cert_is_empty_trees⟩ ⟨@cert_tree_names⟩ n
 
 theorem cert_is_data_ptr_of {n : Nat} :
     Stmt_is_data_ptr_of prog prims 2473 n :=

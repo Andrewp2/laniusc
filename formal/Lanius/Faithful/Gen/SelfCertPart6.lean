@@ -23,7 +23,6 @@ public import Lanius.Faithful.Gen.SelfStmtF_Inline_pLeTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pModTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pPathMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pStmtsMore
-public import Lanius.Faithful.Gen.SelfStmtF_Inline_pStructFieldsAfterCommaMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pStructFieldsMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pTypeArgsNone
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pTypeSliceTail
@@ -58,7 +57,6 @@ import Lanius.Faithful.Gen.SelfProofF_Inline_pLeTail
 import Lanius.Faithful.Gen.SelfProofF_Inline_pModTail
 import Lanius.Faithful.Gen.SelfProofF_Inline_pPathMore
 import Lanius.Faithful.Gen.SelfProofF_Inline_pStmtsMore
-import Lanius.Faithful.Gen.SelfProofF_Inline_pStructFieldsAfterCommaMore
 import Lanius.Faithful.Gen.SelfProofF_Inline_pStructFieldsMore
 import Lanius.Faithful.Gen.SelfProofF_Inline_pTypeArgsNone
 import Lanius.Faithful.Gen.SelfProofF_Inline_pTypeSliceTail
@@ -88,10 +86,6 @@ open Lanius.Core (Value)
 open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
-
-theorem cert_p_struct_fields_after_comma_trailing {n : Nat} :
-    Stmt_p_struct_fields_after_comma_trailing prog prims 853 n :=
-  @proof_p_struct_fields_after_comma_trailing prog prims 853 fn_p_struct_fields_after_comma_trailing np_p_struct_fields_after_comma_trailing n
 
 theorem cert_p_struct_lit_fields_none {n : Nat} :
     Stmt_p_struct_lit_fields_none prog prims 854 n :=
@@ -846,5 +840,18 @@ theorem cert_p_impl_method_pub {n : Nat} :
 theorem cert_method_decl {n : Nat} :
     Stmt_method_decl prog prims 1119 n :=
   @proof_method_decl prog prims 1119 152 155 611 612 1328 1329 1330 fn_method_decl np_method_decl ⟨@cert_node_prod⟩ ⟨@cert_kid⟩ ⟨@cert_fn_decl_of⟩ ⟨@cert_type_params⟩ ⟨@cert_p_impl_method⟩ ⟨@cert_p_impl_fn⟩ ⟨@cert_p_impl_method_pub⟩ n
+
+theorem certs_methods_of : ∀ n, (Stmt_methods_of prog prims 912 n) := by
+  intro n
+  induction n with
+  | zero =>
+    exact (by intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5; simp [pcall] at h)
+  | succ n ih =>
+    have ih_methods_of : Stmt_methods_of prog prims 912 n := ih
+    exact @step_methods_of prog prims 912 104 597 610 1119 fn_methods_of np_methods_of ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_CTree⟩ ⟨@cert_empty_of_mini_selfhost_FnDecl⟩ ⟨@cert_cons_fn_decl⟩ ⟨@cert_method_decl⟩ n ⟨ih_methods_of⟩
+
+theorem cert_methods_of {n : Nat} :
+    Stmt_methods_of prog prims 912 n :=
+  (certs_methods_of n)
 
 end Lanius.Faithful.SelfCert

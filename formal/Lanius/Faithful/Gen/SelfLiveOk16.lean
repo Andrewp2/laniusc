@@ -345,6 +345,6 @@ theorem lok2337 : LiveOk prims outside liveBad 2337 (src_compound_op 2397 2398 2
 theorem lok2363 : LiveOk prims outside liveBad 2363 (src_concat_of_mini_selfhost_MEff 1204 1218 2363) := by decide +kernel
 
 /-- mini::selfhost::get<mini::selfhost::CTree> -/
-theorem lok2527 : LiveOk prims outside liveBad 2527 (src_get_of_mini_selfhost_CTree 56 104 2527) := by decide +kernel
+theorem lok2530 : LiveOk prims outside liveBad 2530 (src_get_of_mini_selfhost_CTree 56 104 2530) := by decide +kernel
 
 end Lanius.Faithful.SelfPure

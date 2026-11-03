@@ -339,12 +339,12 @@ theorem lok2460 : LiveOk prims outside liveBad 2460 (src_fit_decl 56 2488) := by
 theorem lok2488 : LiveOk prims outside liveBad 2488 (src_fit_same_decl 56 2506) := by decide +kernel
 
 /-- mini::selfhost::fit_args -/
-theorem lok2506 : LiveOk prims outside liveBad 2506 (src_fit_args 56 104 654 2514 2515) := by decide +kernel
+theorem lok2506 : LiveOk prims outside liveBad 2506 (src_fit_args 56 104 654 2515 2516) := by decide +kernel
 
 /-- mini::selfhost::fit_args_next -/
-theorem lok2514 : LiveOk prims outside liveBad 2514 (src_fit_args_next 56 2506) := by decide +kernel
+theorem lok2515 : LiveOk prims outside liveBad 2515 (src_fit_args_next 56 2506) := by decide +kernel
 
 /-- mini::selfhost::fit_arg -/
-theorem lok2515 : LiveOk prims outside liveBad 2515 (src_fit_arg 56 152 155 1691 2290) := by decide +kernel
+theorem lok2516 : LiveOk prims outside liveBad 2516 (src_fit_arg 56 152 155 1691 2290) := by decide +kernel
 
 end Lanius.Faithful.SelfPure

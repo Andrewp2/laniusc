@@ -2,7 +2,6 @@ module
 
 public import Lanius.Faithful.Gen.SelfCertPart9
 public import Lanius.Faithful.Gen.SelfStmt0
-public import Lanius.Faithful.Gen.SelfStmt2
 public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt5
@@ -40,14 +39,12 @@ public import Lanius.Faithful.Gen.SelfStmtF_litIf
 public import Lanius.Faithful.Gen.SelfStmtF_noTrees
 public import Lanius.Faithful.Gen.SelfStmtF_nullConst
 public import Lanius.Faithful.Gen.SelfStmtF_paramGoals
-public import Lanius.Faithful.Gen.SelfStmtF_repeatEff
 public import Lanius.Faithful.Gen.SelfStmtF_scalarOf
 public import Lanius.Faithful.Gen.SelfStmtF_textSelf
 public import Lanius.Faithful.Gen.SelfStmtF_treeTokens
 public import Lanius.Faithful.Gen.SelfStmtF_variantIn
 public import Lanius.Faithful.Gen.SelfStmtF_wideOf
 import Lanius.Faithful.Gen.SelfProof0
-import Lanius.Faithful.Gen.SelfProof2
 import Lanius.Faithful.Gen.SelfProof3
 import Lanius.Faithful.Gen.SelfProof4
 import Lanius.Faithful.Gen.SelfProof5
@@ -85,7 +82,6 @@ import Lanius.Faithful.Gen.SelfProofF_litIf
 import Lanius.Faithful.Gen.SelfProofF_noTrees
 import Lanius.Faithful.Gen.SelfProofF_nullConst
 import Lanius.Faithful.Gen.SelfProofF_paramGoals
-import Lanius.Faithful.Gen.SelfProofF_repeatEff
 import Lanius.Faithful.Gen.SelfProofF_scalarOf
 import Lanius.Faithful.Gen.SelfProofF_textSelf
 import Lanius.Faithful.Gen.SelfProofF_treeTokens
@@ -108,23 +104,6 @@ open Lanius.Core (Value)
 open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
-
-theorem cert_empty_of_mini_selfhost_Bind {n : Nat} :
-    Stmt_empty_of_mini_selfhost_Bind prog prims 1852 n :=
-  @proof_empty_of_mini_selfhost_Bind prog prims 1852 fn_empty_of_mini_selfhost_Bind np_empty_of_mini_selfhost_Bind n
-
-theorem certs_bound_args : ∀ n, (Stmt_bound_args prog prims 1984 n) := by
-  intro n
-  induction n with
-  | zero =>
-    exact (by intro x0 x1 v0 v1 w h r0 r1; simp [pcall] at h)
-  | succ n ih =>
-    have ih_bound_args : Stmt_bound_args prog prims 1984 n := ih
-    exact @step_bound_args prog prims 1984 441 548 1535 2109 fn_bound_args np_bound_args ⟨@cert_empty_of_mini_selfhost_Ty⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_List_usize⟩ ⟨@cert_cons_ty⟩ ⟨@cert_find_bind⟩ n ⟨ih_bound_args⟩
-
-theorem cert_bound_args {n : Nat} :
-    Stmt_bound_args prog prims 1984 n :=
-  (certs_bound_args n)
 
 theorem cert_bound_or_none {n : Nat} :
     Stmt_bound_or_none prog prims 1853 n :=
@@ -845,5 +824,13 @@ theorem cert_sint_const {n : Nat} :
 theorem cert_negated_int {n : Nat} :
     Stmt_negated_int prog prims 2244 n :=
   @proof_negated_int prog prims 2244 fn_negated_int np_negated_int n
+
+theorem cert_negate_some {n : Nat} :
+    Stmt_negate_some prog prims 2352 n :=
+  @proof_negate_some prog prims 2352 1368 fn_negate_some np_negate_some ⟨@cert_boxed_of_mini_selfhost_SrcExpr⟩ n
+
+theorem cert_negated_float {n : Nat} :
+    Stmt_negated_float prog prims 2245 n :=
+  @proof_negated_float prog prims 2245 308 1493 2352 fn_negated_float np_negated_float ⟨@cert_unbox_of_mini_selfhost_SrcExpr⟩ ⟨@cert_float_pick⟩ ⟨@cert_negate_some⟩ n
 
 end Lanius.Faithful.SelfCert

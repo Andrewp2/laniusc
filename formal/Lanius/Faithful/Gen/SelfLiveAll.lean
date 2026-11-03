@@ -2676,6 +2676,9 @@ theorem lchunk25 : LivesOk prims outside liveBad liveWrap 2500 part25 :=
   livesOk_cons (.inr lok2561) <|
   livesOk_cons (.inr lok2562) <|
   livesOk_cons (.inr lok2563) <|
+  livesOk_cons (.inr lok2564) <|
+  livesOk_cons (.inr lok2565) <|
+  livesOk_cons (.inr lok2566) <|
   livesOk_nil
 
 /-- Every function of the self program but the prims, those `outside`, those in

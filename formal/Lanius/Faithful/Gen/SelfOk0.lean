@@ -409,25 +409,25 @@ theorem fok2499 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
 /-- mini::selfhost::rows_use -/
 theorem fok2500 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 2500 (src_rows_use 2510) :=
+    FuncOk sp prims outside 2500 (src_rows_use 2511) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::nested_or_plain -/
-theorem fok2510 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok2511 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 2510 (src_nested_or_plain 2517 2518) :=
+    FuncOk sp prims outside 2511 (src_nested_or_plain 2520 2521) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::plain_use -/
-theorem fok2518 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok2521 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 2518 (src_plain_use 2181 2522) :=
+    FuncOk sp prims outside 2521 (src_plain_use 2181 2525) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::shadow_use -/
-theorem fok2522 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok2525 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 2522 (src_shadow_use 2525) :=
+    FuncOk sp prims outside 2525 (src_shadow_use 2528) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 end Lanius.Faithful.SelfPure

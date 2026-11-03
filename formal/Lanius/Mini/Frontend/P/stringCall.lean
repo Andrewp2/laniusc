@@ -3,9 +3,9 @@ module
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.isPathCall
+import Lanius.Mini.Frontend.P.isTypedSliceSegments
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.oneTreeNames
-import Lanius.Mini.Frontend.P.stringOpen
 import Lanius.Mini.Frontend.P.treeTokens
 import Lanius.Mini.Frontend.P.wideOf
 

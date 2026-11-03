@@ -91,10 +91,6 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem cert_eval_let_in_of {n : Nat} :
-    Stmt_eval_let_in_of prog prims 553 n :=
-  @proof_eval_let_in_of prog prims 553 120 185 232 311 348 361 fn_eval_let_in_of np_eval_let_in_of ⟨@cert_SrcType_size⟩ ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_SrcType_same⟩ ⟨@cert_assign_from⟩ ⟨@cert_slot_vars⟩ ⟨@cert_match_dst⟩ n
-
 theorem cert_eval_let_in {n : Nat} :
     Stmt_eval_let_in prog prims 368 n :=
   @proof_eval_let_in prog prims 368 553 fn_eval_let_in np_eval_let_in ⟨@cert_eval_let_in_of⟩ n
@@ -988,5 +984,21 @@ theorem cert_lx_number {n : Nat} :
 theorem cert_lx_space {n : Nat} :
     Stmt_lx_space prog prims 1096 n :=
   @proof_lx_space prog prims 1096 fn_lx_space np_lx_space n
+
+theorem certs_lx_space_run : ∀ n, (Stmt_lx_space_run prog prims 1307 n) ∧ (Stmt_lx_space_run_at prog prims 1458 n) := by
+  intro n
+  induction n with
+  | zero =>
+    exact ⟨(by intro x0 v0 w h r0; simp [pcall] at h), (by intro x0 x1 v0 v1 w h r0 r1; simp [pcall] at h)⟩
+  | succ n ih =>
+    obtain ⟨ih_lx_space_run, ih_lx_space_run_at⟩ := ih
+    exact ⟨@step_lx_space_run prog prims 1307 76 1458 fn_lx_space_run np_lx_space_run ⟨@cert_unbox_of_mini_selfhost_List_usize⟩ n ⟨ih_lx_space_run_at⟩, @step_lx_space_run_at prog prims 1458 75 1096 1307 fn_lx_space_run_at np_lx_space_run_at ⟨@cert_plus⟩ ⟨@cert_lx_space⟩ n ⟨ih_lx_space_run⟩⟩
+
+theorem cert_lx_space_run {n : Nat} :
+    Stmt_lx_space_run prog prims 1307 n :=
+  (certs_lx_space_run n).1
+theorem cert_lx_space_run_at {n : Nat} :
+    Stmt_lx_space_run_at prog prims 1458 n :=
+  (certs_lx_space_run n).2
 
 end Lanius.Faithful.SelfCert

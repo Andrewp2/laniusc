@@ -204,6 +204,7 @@ import all Lanius.Faithful.Gen.SelfSrcF_isEmptyUsize
 import all Lanius.Faithful.Gen.SelfSrcF_isMatchStmt
 import all Lanius.Faithful.Gen.SelfSrcF_isPathCall
 import all Lanius.Faithful.Gen.SelfSrcF_isTryEnum
+import all Lanius.Faithful.Gen.SelfSrcF_isTypedSliceSegments
 import all Lanius.Faithful.Gen.SelfSrcF_isUnderscore
 import all Lanius.Faithful.Gen.SelfSrcF_itemOf
 import all Lanius.Faithful.Gen.SelfSrcF_joinInsts

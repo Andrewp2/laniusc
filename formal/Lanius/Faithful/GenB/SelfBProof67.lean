@@ -18,6 +18,23 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.SelfCert
 open Lanius.Faithful.Budget
 
+theorem bproof_set_eval_of {spW sp : SrcProgram} {prims : Prims} {ix_set_eval_of ix_call_parts ix_set_eff : Nat}
+    (fnW : spW.funcs[ix_set_eval_of]? = some (src_set_eval_of ix_call_parts ix_set_eff)) (fn : sp.funcs[ix_set_eval_of]? = some (src_set_eval_of ix_call_parts ix_set_eff))
+    (np : prims.isPrim ix_set_eval_of = false)
+    (back : Certified (∀ {n : Nat}, Stmt_set_eval_of sp prims ix_set_eval_of n))
+    (b_call_parts : Certified (∀ {n : Nat}, BStmt_call_parts spW sp prims ix_call_parts n))
+    (b_set_eff : Certified (∀ {n : Nat}, BStmt_set_eff spW sp prims ix_set_eff n)) {n : Nat} :
+    BStmt_set_eval_of spW sp prims ix_set_eval_of n := by
+  intro x0 x1 v0 v1 w k h r0 r1
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_set_eval_of [v0, v1] = some (w, k) ∧ Cost_set_eval_of (n + 1) x0 x1 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_set_eval_of, List.length_cons, List.length_nil, if_true] at h ⊢
+    budget Cost_set_eval_of
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
+
 theorem bproof_try_set {spW sp : SrcProgram} {prims : Prims} {ix_try_set ix_boxed_of_mini_selfhost_MStmt ix_try_rest : Nat}
     (fnW : spW.funcs[ix_try_set]? = some (src_try_set ix_boxed_of_mini_selfhost_MStmt ix_try_rest)) (fn : sp.funcs[ix_try_set]? = some (src_try_set ix_boxed_of_mini_selfhost_MStmt ix_try_rest))
     (np : prims.isPrim ix_try_set = false)

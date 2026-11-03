@@ -99,14 +99,6 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem cert_negate_some {n : Nat} :
-    Stmt_negate_some prog prims 2352 n :=
-  @proof_negate_some prog prims 2352 1368 fn_negate_some np_negate_some ⟨@cert_boxed_of_mini_selfhost_SrcExpr⟩ n
-
-theorem cert_negated_float {n : Nat} :
-    Stmt_negated_float prog prims 2245 n :=
-  @proof_negated_float prog prims 2245 308 1493 2352 fn_negated_float np_negated_float ⟨@cert_unbox_of_mini_selfhost_SrcExpr⟩ ⟨@cert_float_pick⟩ ⟨@cert_negate_some⟩ n
-
 theorem cert_neg_sint_const {n : Nat} :
     Stmt_neg_sint_const prog prims 2246 n :=
   @proof_neg_sint_const prog prims 2246 2243 fn_neg_sint_const np_neg_sint_const ⟨@cert_sint_const⟩ n
@@ -927,5 +919,31 @@ theorem cert_index_elem {n : Nat} :
 theorem cert_index_ty {n : Nat} :
     Stmt_index_ty prog prims 2045 n :=
   @proof_index_ty prog prims 2045 2159 fn_index_ty np_index_ty ⟨@cert_index_elem⟩ n
+
+theorem certs_eff_ty : ∀ n, (Stmt_eff_ty prog prims 1932 n) := by
+  intro n
+  induction n with
+  | zero =>
+    exact (by intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3; simp [pcall] at h)
+  | succ n ih =>
+    have ih_eff_ty : Stmt_eff_ty prog prims 1932 n := ih
+    exact @step_eff_ty prog prims 1932 56 966 1205 1487 1744 2040 2041 2042 2043 2044 2045 2046 fn_eff_ty np_eff_ty ⟨@cert_minus⟩ ⟨@cert_boxed_of_mini_selfhost_Ty⟩ ⟨@cert_unbox_of_mini_selfhost_MEff⟩ ⟨@cert_shift_op⟩ ⟨@cert_src_ty⟩ ⟨@cert_expr_ty⟩ ⟨@cert_inst_ret⟩ ⟨@cert_apply_ty⟩ ⟨@cert_pick_ty⟩ ⟨@cert_bare_eff⟩ ⟨@cert_index_ty⟩ ⟨@cert_find_local_id⟩ n ⟨ih_eff_ty⟩
+
+theorem cert_eff_ty {n : Nat} :
+    Stmt_eff_ty prog prims 1932 n :=
+  (certs_eff_ty n)
+
+theorem certs_effs_tys : ∀ n, (Stmt_effs_tys prog prims 2148 n) := by
+  intro n
+  induction n with
+  | zero =>
+    exact (by intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3; simp [pcall] at h)
+  | succ n ih =>
+    have ih_effs_tys : Stmt_effs_tys prog prims 2148 n := ih
+    exact @step_effs_tys prog prims 2148 441 1204 1535 1932 fn_effs_tys np_effs_tys ⟨@cert_empty_of_mini_selfhost_Ty⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_MEff⟩ ⟨@cert_cons_ty⟩ ⟨@cert_eff_ty⟩ n ⟨ih_effs_tys⟩
+
+theorem cert_effs_tys {n : Nat} :
+    Stmt_effs_tys prog prims 2148 n :=
+  (certs_effs_tys n)
 
 end Lanius.Faithful.SelfCert

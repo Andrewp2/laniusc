@@ -567,19 +567,19 @@ theorem fok2498 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
 /-- mini::selfhost::wild_tail -/
 theorem fok2504 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 2504 (src_wild_tail 147 155 251 595 879 2512 2513) :=
+    FuncOk sp prims outside 2504 (src_wild_tail 147 155 251 595 879 2513 2514) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::wild_binders -/
-theorem fok2513 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok2514 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 2513 (src_wild_binders 75 97 147 654 2513 2519) :=
+    FuncOk sp prims outside 2514 (src_wild_binders 75 97 147 654 2514 2522) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::wild_binder -/
-theorem fok2519 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok2522 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 2519 (src_wild_binder 75 147 152 155 251 595 616) :=
+    FuncOk sp prims outside 2522 (src_wild_binder 75 147 152 155 251 595 616) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 end Lanius.Faithful.SelfPure

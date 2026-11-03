@@ -997,6 +997,13 @@ theorem wideOf_sound {t : Ty} {negative : Bool} {n : Nat} {e : SrcExpr} (h : wid
     · rw [if_neg (by cases negative <;> simp_all)] at h; cases h
   | tyIsize =>
     simp only [wideOf, wideIsize] at h
+    by_cases z : negative = true ∧ n = 0
+    · -- `-0`: the literal 0, the bits of 2 ^ 64 - 0
+      obtain ⟨rfl, rfl⟩ := z
+      rw [if_pos (by decide), Option.some.injEq] at h
+      subst h
+      rw [show BitVec.ofNat 64 0 = BitVec.ofNat 64 (2 ^ 64 - 0) by decide]
+      exact .isizeNeg (by omega)
     by_cases c : negative = false ∧ n ≤ 9223372036854775807
     · obtain ⟨rfl, le⟩ := c
       rw [if_pos (by simpa using le), Option.some.injEq] at h
@@ -1022,6 +1029,12 @@ theorem wideOf_sound {t : Ty} {negative : Bool} {n : Nat} {e : SrcExpr} (h : wid
     by_cases w : sintWide u = true
     · have bits : uintBits u = 64 := by cases u <;> simp_all [sintWide, uintBits]
       rw [if_neg (by simp [w])] at h
+      by_cases z : negative = true ∧ n = 0
+      · obtain ⟨rfl, rfl⟩ := z
+        rw [if_pos (by decide), Option.some.injEq] at h
+        subst h
+        rw [show BitVec.ofNat 64 0 = BitVec.ofNat 64 (2 ^ 64 - 0) by decide]
+        exact .sintNeg bits (by omega)
       by_cases c : negative = false ∧ n ≤ 9223372036854775807
       · obtain ⟨rfl, le⟩ := c
         rw [if_pos (by simpa using le), Option.some.injEq] at h

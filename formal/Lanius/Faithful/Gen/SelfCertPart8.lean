@@ -87,10 +87,6 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem cert_field_tys {n : Nat} :
-    Stmt_field_tys prog prims 1226 n :=
-  @proof_field_tys prog prims 1226 1173 1421 1422 fn_field_tys np_field_tys ⟨@cert_get_of_mini_selfhost_TypeDecl⟩ ⟨@cert_ty_list⟩ ⟨@cert_decl_env⟩ n
-
 theorem cert_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType {n : Nat} :
     Stmt_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType prog prims 1470 n :=
   @proof_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType prog prims 1470 np_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType n
@@ -865,5 +861,22 @@ theorem cert_cons_of_mini_selfhost_SrcExpr {n : Nat} :
 theorem cert_first_src {n : Nat} :
     Stmt_first_src prog prims 1377 n :=
   @proof_first_src prog prims 1377 1187 fn_first_src np_first_src ⟨@cert_ty_at⟩ n
+
+theorem cert_rest_src {n : Nat} :
+    Stmt_rest_src prog prims 1378 n :=
+  @proof_rest_src prog prims 1378 178 fn_rest_src np_rest_src ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_SrcType⟩ n
+
+theorem certs_lit_exprs : ∀ n, (Stmt_lit_exprs prog prims 1180 n) := by
+  intro n
+  induction n with
+  | zero =>
+    exact (by intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2; simp [pcall] at h)
+  | succ n ih =>
+    have ih_lit_exprs : Stmt_lit_exprs prog prims 1180 n := ih
+    exact @step_lit_exprs prog prims 1180 316 1177 1375 1376 1377 1378 fn_lit_exprs np_lit_exprs ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr⟩ ⟨@cert_lit_expr⟩ ⟨@cert_empty_of_mini_selfhost_SrcExpr⟩ ⟨@cert_cons_of_mini_selfhost_SrcExpr⟩ ⟨@cert_first_src⟩ ⟨@cert_rest_src⟩ n ⟨ih_lit_exprs⟩
+
+theorem cert_lit_exprs {n : Nat} :
+    Stmt_lit_exprs prog prims 1180 n :=
+  (certs_lit_exprs n)
 
 end Lanius.Faithful.SelfCert

@@ -21,6 +21,7 @@ public import Lanius.Faithful.Gen.SelfSrcF_fnInstRet
 public import Lanius.Faithful.Gen.SelfSrcF_hasConst
 public import Lanius.Faithful.Gen.SelfSrcF_i32ArrayLength
 public import Lanius.Faithful.Gen.SelfSrcF_isPathCall
+public import Lanius.Faithful.Gen.SelfSrcF_isTypedSliceSegments
 public import Lanius.Faithful.Gen.SelfSrcF_litBound
 public import Lanius.Faithful.Gen.SelfSrcF_litEffMatch
 public import Lanius.Faithful.Gen.SelfSrcF_litIf
@@ -67,6 +68,7 @@ import all Lanius.Faithful.Gen.SelfSrcF_fnInstRet
 import all Lanius.Faithful.Gen.SelfSrcF_hasConst
 import all Lanius.Faithful.Gen.SelfSrcF_i32ArrayLength
 import all Lanius.Faithful.Gen.SelfSrcF_isPathCall
+import all Lanius.Faithful.Gen.SelfSrcF_isTypedSliceSegments
 import all Lanius.Faithful.Gen.SelfSrcF_litBound
 import all Lanius.Faithful.Gen.SelfSrcF_litEffMatch
 import all Lanius.Faithful.Gen.SelfSrcF_litIf

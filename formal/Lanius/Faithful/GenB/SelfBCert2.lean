@@ -433,22 +433,32 @@ theorem bcert_is_u8_slice {n : Nat} :
   @bproof_is_u8_slice progW prog prims 2172 966 1576 (fnW_of (by decide) (by decide) fn_is_u8_slice) fn_is_u8_slice np_is_u8_slice ⟨@cert_is_u8_slice⟩ np_boxed_of_mini_selfhost_Ty (by decide +kernel) ⟨@bcert_same_ty⟩ n
 
 theorem bcert_text_typed_slice_from_raw_parts {n : Nat} :
-    BStmt_text_typed_slice_from_raw_parts progW prog prims 2490 n := by
+    BStmt_text_typed_slice_from_raw_parts progW prog prims 2517 n := by
   intro w k h
-  have key := bclosed (ix := 2490) (D := 3) (C := Cost_text_typed_slice_from_raw_parts) (by decide +kernel) (by decide +kernel)
-    (fun _ => rfl)
-    (fun m hm => by rcases m with _ | _ | _ | m <;> first | decide +kernel | omega) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_text_typed_slice_from_raw_parts prog prims 2490 n) from ⟨@cert_text_typed_slice_from_raw_parts⟩).out
-    (pcall_of_q key.1)⟩
-
-theorem bcert_typed_slice_spellings {n : Nat} :
-    BStmt_typed_slice_spellings progW prog prims 2469 n := by
-  intro w k h
-  have key := bclosed (ix := 2469) (D := 4) (C := Cost_typed_slice_spellings) (by decide +kernel) (by decide +kernel)
+  have key := bclosed (ix := 2517) (D := 4) (C := Cost_text_typed_slice_from_raw_parts) (by decide +kernel) (by decide +kernel)
     (fun _ => rfl)
     (fun m hm => by rcases m with _ | _ | _ | _ | m <;> first | decide +kernel | omega) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_typed_slice_spellings prog prims 2469 n) from ⟨@cert_typed_slice_spellings⟩).out
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_text_typed_slice_from_raw_parts prog prims 2517 n) from ⟨@cert_text_typed_slice_from_raw_parts⟩).out
     (pcall_of_q key.1)⟩
+
+theorem bcert_is_empty_texts {n : Nat} :
+    BStmt_is_empty_texts progW prog prims 2518 n := by
+  intro x0 v0 w k h r0
+  have key := bfree (ix := 2518) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_is_empty_texts prog prims 2518 n) from ⟨@cert_is_empty_texts⟩).out
+    (pcall_of_q key.1) r0⟩
+
+theorem bcert_is_last_typed {n : Nat} :
+    BStmt_is_last_typed progW prog prims 2508 n :=
+  @bproof_is_last_typed progW prog prims 2508 548 919 2517 2518 (fnW_of (by decide) (by decide) fn_is_last_typed) fn_is_last_typed np_is_last_typed ⟨@cert_is_last_typed⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_List_usize (by decide +kernel) ⟨@bcert_same_text⟩ ⟨@bcert_text_typed_slice_from_raw_parts⟩ ⟨@bcert_is_empty_texts⟩ n
+
+theorem bcert_is_mem_typed {n : Nat} :
+    BStmt_is_mem_typed progW prog prims 2490 n :=
+  @bproof_is_mem_typed progW prog prims 2490 548 919 2274 2508 (fnW_of (by decide) (by decide) fn_is_mem_typed) fn_is_mem_typed np_is_mem_typed ⟨@cert_is_mem_typed⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_List_usize (by decide +kernel) ⟨@bcert_same_text⟩ ⟨@bcert_text_mem⟩ ⟨@bcert_is_last_typed⟩ n
+
+theorem bcert_is_typed_slice_segments {n : Nat} :
+    BStmt_is_typed_slice_segments progW prog prims 2469 n :=
+  @bproof_is_typed_slice_segments progW prog prims 2469 548 919 2273 2490 (fnW_of (by decide) (by decide) fn_is_typed_slice_segments) fn_is_typed_slice_segments np_is_typed_slice_segments ⟨@cert_is_typed_slice_segments⟩ np_unbox_of_mini_selfhost_List_mini_selfhost_List_usize (by decide +kernel) ⟨@bcert_same_text⟩ ⟨@bcert_text_core⟩ ⟨@bcert_is_mem_typed⟩ n
 
 theorem bcert_is_empty_trees {n : Nat} :
     BStmt_is_empty_trees progW prog prims 2472 n := by
@@ -470,19 +480,19 @@ theorem bcert_u8_args {n : Nat} :
 
 theorem bcert_is_typed_slice_path {n : Nat} :
     BStmt_is_typed_slice_path progW prog prims 2427 n :=
-  @bproof_is_typed_slice_path progW prog prims 2427 155 924 1911 2469 2470 (fnW_of (by decide) (by decide) fn_is_typed_slice_path) fn_is_typed_slice_path np_is_typed_slice_path ⟨@cert_is_typed_slice_path⟩ ⟨@bcert_kid⟩ ⟨@bcert_same_spellings⟩ ⟨@bcert_path_ref⟩ ⟨@bcert_typed_slice_spellings⟩ ⟨@bcert_u8_args⟩ n
+  @bproof_is_typed_slice_path progW prog prims 2427 155 1911 2469 2470 (fnW_of (by decide) (by decide) fn_is_typed_slice_path) fn_is_typed_slice_path np_is_typed_slice_path ⟨@cert_is_typed_slice_path⟩ ⟨@bcert_kid⟩ ⟨@bcert_path_ref⟩ ⟨@bcert_is_typed_slice_segments⟩ ⟨@bcert_u8_args⟩ n
 
 theorem bcert_string_slice {n : Nat} :
     BStmt_string_slice progW prog prims 2471 n :=
   @bproof_string_slice progW prog prims 2471 1217 (fnW_of (by decide) (by decide) fn_string_slice) fn_string_slice np_string_slice ⟨@cert_string_slice⟩ np_boxed_of_mini_selfhost_MStmt (by decide +kernel) n
 
 theorem bcert_text_string_data_ptr {n : Nat} :
-    BStmt_text_string_data_ptr progW prog prims 2508 n := by
+    BStmt_text_string_data_ptr progW prog prims 2509 n := by
   intro w k h
-  have key := bclosed (ix := 2508) (D := 3) (C := Cost_text_string_data_ptr) (by decide +kernel) (by decide +kernel)
+  have key := bclosed (ix := 2509) (D := 3) (C := Cost_text_string_data_ptr) (by decide +kernel) (by decide +kernel)
     (fun _ => rfl)
     (fun m hm => by rcases m with _ | _ | _ | m <;> first | decide +kernel | omega) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_text_string_data_ptr prog prims 2508 n) from ⟨@cert_text_string_data_ptr⟩).out
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_text_string_data_ptr prog prims 2509 n) from ⟨@cert_text_string_data_ptr⟩).out
     (pcall_of_q key.1)⟩
 
 theorem bcert_string_data_ptr_path {n : Nat} :
@@ -495,17 +505,17 @@ theorem bcert_string_data_ptr_path {n : Nat} :
     (pcall_of_q key.1)⟩
 
 theorem bcert_is_text {n : Nat} :
-    BStmt_is_text progW prog prims 2516 n := by
+    BStmt_is_text progW prog prims 2519 n := by
   intro x0 x1 v0 v1 w k h r0 r1
-  have key := bfree (ix := 2516) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_is_text prog prims 2516 n) from ⟨@cert_is_text⟩).out
+  have key := bfree (ix := 2519) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_is_text prog prims 2519 n) from ⟨@cert_is_text⟩).out
     (pcall_of_q key.1) r0 r1⟩
 
 theorem bcert_tree_names {n : Nat} :
-    BStmt_tree_names progW prog prims 2509 n := by
+    BStmt_tree_names progW prog prims 2510 n := by
   intro x0 x1 x2 v0 v1 v2 w k h r0 r1 r2
-  have key := bfree (ix := 2509) (by decide +kernel) h
-  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_tree_names prog prims 2509 n) from ⟨@cert_tree_names⟩).out
+  have key := bfree (ix := 2510) (by decide +kernel) h
+  exact ⟨key.1, key.2, (show Certified (∀ {n : Nat}, Stmt_tree_names prog prims 2510 n) from ⟨@cert_tree_names⟩).out
     (pcall_of_q key.1) r0 r1 r2⟩
 
 theorem bcert_one_tree_names {n : Nat} :

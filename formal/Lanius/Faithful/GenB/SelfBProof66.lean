@@ -18,6 +18,45 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.SelfCert
 open Lanius.Faithful.Budget
 
+theorem bproof_match_stmt_parts {spW sp : SrcProgram} {prims : Prims} {ix_match_stmt_parts ix_kid ix_eff_of ix_match_stmt_on : Nat}
+    (fnW : spW.funcs[ix_match_stmt_parts]? = some (src_match_stmt_parts ix_kid ix_eff_of ix_match_stmt_on)) (fn : sp.funcs[ix_match_stmt_parts]? = some (src_match_stmt_parts ix_kid ix_eff_of ix_match_stmt_on))
+    (np : prims.isPrim ix_match_stmt_parts = false)
+    (back : Certified (∀ {n : Nat}, Stmt_match_stmt_parts sp prims ix_match_stmt_parts n))
+    (b_kid : Certified (∀ {n : Nat}, BStmt_kid spW sp prims ix_kid n))
+    (b_eff_of : Certified (∀ {n : Nat}, BStmt_eff_of spW sp prims ix_eff_of n))
+    (b_match_stmt_on : Certified (∀ {n : Nat}, BStmt_match_stmt_on spW sp prims ix_match_stmt_on n)) {n : Nat} :
+    BStmt_match_stmt_parts spW sp prims ix_match_stmt_parts n := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w k b h r0 r1 r2 r3 hb pre
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_match_stmt_parts [v0, v1, v2, v3] = some (w, k) ∧ Cost_match_stmt_parts (n + 1) x0 x1 x2 x3 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_match_stmt_parts, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_match_stmt_parts.eq_def] at pre
+    simp only at pre
+    budget Cost_match_stmt_parts
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3⟩
+
+theorem bproof_stmt_order_by {spW sp : SrcProgram} {prims : Prims} {ix_stmt_order_by ix_nested_checked ix_arms_in_order : Nat}
+    (fnW : spW.funcs[ix_stmt_order_by]? = some (src_stmt_order_by ix_nested_checked ix_arms_in_order)) (fn : sp.funcs[ix_stmt_order_by]? = some (src_stmt_order_by ix_nested_checked ix_arms_in_order))
+    (np : prims.isPrim ix_stmt_order_by = false)
+    (back : Certified (∀ {n : Nat}, Stmt_stmt_order_by sp prims ix_stmt_order_by n))
+    (b_nested_checked : Certified (∀ {n : Nat}, BStmt_nested_checked spW sp prims ix_nested_checked n))
+    (b_arms_in_order : Certified (∀ {n : Nat}, BStmt_arms_in_order spW sp prims ix_arms_in_order n)) {n : Nat} :
+    BStmt_stmt_order_by spW sp prims ix_stmt_order_by n := by
+  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w k b h r0 r1 r2 r3 r4 r5 hb pre
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_stmt_order_by [v0, v1, v2, v3, v4, v5] = some (w, k) ∧ Cost_stmt_order_by (n + 1) x0 x1 x2 x3 x4 x5 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_stmt_order_by, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_stmt_order_by.eq_def] at pre
+    simp only at pre
+    budget Cost_stmt_order_by
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4 r5⟩
+
 theorem bproof_stmt_arm_order {spW sp : SrcProgram} {prims : Prims} {ix_stmt_arm_order ix_any_nested ix_stmt_order_by : Nat}
     (fnW : spW.funcs[ix_stmt_arm_order]? = some (src_stmt_arm_order ix_any_nested ix_stmt_order_by)) (fn : sp.funcs[ix_stmt_arm_order]? = some (src_stmt_arm_order ix_any_nested ix_stmt_order_by))
     (np : prims.isPrim ix_stmt_arm_order = false)
@@ -397,22 +436,5 @@ theorem bproof_for_slice {spW sp : SrcProgram} {prims : Prims} {ix_for_slice ix_
     simp only [src_for_slice, List.length_cons, List.length_nil, if_true] at h ⊢
     budget Cost_for_slice
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4 r5 r6⟩
-
-theorem bproof_set_eval_of {spW sp : SrcProgram} {prims : Prims} {ix_set_eval_of ix_call_parts ix_set_eff : Nat}
-    (fnW : spW.funcs[ix_set_eval_of]? = some (src_set_eval_of ix_call_parts ix_set_eff)) (fn : sp.funcs[ix_set_eval_of]? = some (src_set_eval_of ix_call_parts ix_set_eff))
-    (np : prims.isPrim ix_set_eval_of = false)
-    (back : Certified (∀ {n : Nat}, Stmt_set_eval_of sp prims ix_set_eval_of n))
-    (b_call_parts : Certified (∀ {n : Nat}, BStmt_call_parts spW sp prims ix_call_parts n))
-    (b_set_eff : Certified (∀ {n : Nat}, BStmt_set_eff spW sp prims ix_set_eff n)) {n : Nat} :
-    BStmt_set_eval_of spW sp prims ix_set_eval_of n := by
-  intro x0 x1 v0 v1 w k h r0 r1
-  rcases n with _ | n
-  · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_set_eval_of [v0, v1] = some (w, k) ∧ Cost_set_eval_of (n + 1) x0 x1 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_set_eval_of, List.length_cons, List.length_nil, if_true] at h ⊢
-    budget Cost_set_eval_of
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
 
 end Lanius.Faithful.SelfBudget

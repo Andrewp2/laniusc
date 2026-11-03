@@ -5,9 +5,9 @@ public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_stringReturn
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pRetVoid
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
+public import Lanius.Faithful.Gen.SelfStmtF_isTypedSliceSegments
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_stringCall
-public import Lanius.Faithful.Gen.SelfStmtF_stringOpen
 public import Lanius.Faithful.Gen.SelfStmtF_stringReturn
 import all Lanius.Faithful.Gen.SelfSrcF_stringReturn
 import all Lanius.Mini.Frontend.P.stringReturn

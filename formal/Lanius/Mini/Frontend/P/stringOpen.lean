@@ -1,18 +1,13 @@
 module
 
 public import Lanius.Mini.Frontend.Types
-import Lanius.Mini.Frontend.P.distinct
-import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.isPathCall
 import Lanius.Mini.Frontend.P.noToken
-import Lanius.Mini.Frontend.P.noTrees
-import Lanius.Mini.Frontend.P.pathRef
 import Lanius.Mini.Frontend.P.sliceHead
 import Lanius.Mini.Frontend.P.stringCons
 import Lanius.Mini.Frontend.P.textSelf
-import Lanius.Mini.Frontend.P.typeDeclAt
 import Lanius.Mini.Frontend.P.typePathSpellings
 import Lanius.Mini.Frontend.P.wideOf
 
@@ -56,46 +51,19 @@ def stringInit (fuel : Nat) (init : CTree) : Option (List Nat) :=
 def stringDataPtrPath : List (List Nat) :=
   textCore :: textMem :: [textStringDataPtr]
 
-/-- core::mem::typed_slice_from_raw_parts -/
-def typedSliceSpellings : List (List Nat) :=
-  textCore :: textMem :: [textTypedSliceFromRawParts]
-
-def isU8Ty (t : Option Ty) : Bool :=
-  match t with
-  | none => false
-  | some x => sameTy x (Ty.tyUint UintTy.uint8)
-
-def isU8Slice (t : Option Ty) : Bool :=
-  match t with
-  | none => false
-  | some x => sameTy x (Ty.tySlice (Ty.tyUint UintTy.uint8))
-
-def isEmptyTrees (ts : List CTree) : Bool :=
+def isEmptyTexts (ts : List (List Nat)) : Bool :=
   match ts with
   | [] => true
   | t :: rest => false
 
-/-- No type arguments, or the one `u8`. -/
-def u8Args (fuel : Nat) (env : FrontEnv) (gs : List CTree) : Bool :=
-  match gs with
-  | [] => true
-  | g :: rest => isEmptyTrees rest && isU8Ty (argTy fuel env g)
+def isLastTyped (ss : List (List Nat)) : Bool :=
+  match ss with
+  | [] => false
+  | c :: rest => sameText c textTypedSliceFromRawParts && isEmptyTexts rest
 
-/-- `core::mem::typed_slice_from_raw_parts` or `core::mem::typed_slice_from_raw_parts<u8>`. -/
-def isTypedSlicePath (fuel : Nat) (env : FrontEnv) (path : CTree) : Bool :=
-  match pathRef fuel (kid path 0) (kid path 1) with
-  | none => false
-  | some r => sameSpellings r.segments typedSliceSpellings && u8Args fuel env r.targs
-
-def isText (t : Option (List Nat)) (name : List Nat) : Bool :=
-  match t with
-  | none => false
-  | some x => sameText x name
-
-/-- The expression is the bare name. -/
-def treeNames (fuel : Nat) (c : CTree) (name : List Nat) : Bool :=
-  match peel fuel c with
-  | none => false
-  | some pf => decide (nodeProd (kid pf 0) = (173)) && decide (nodeProd (kid (kid pf 0) 1) = (274)) && decide (nodeProd (kid pf 1) = (164)) && isText (pathName (kid (kid pf 0) 0)) name
+def isMemTyped (ss : List (List Nat)) : Bool :=
+  match ss with
+  | [] => false
+  | b :: rest => sameText b textMem && isLastTyped rest
 
 end Lanius.Mini

@@ -215,9 +215,9 @@ theorem proof_text_string_data_ptr {prog : SrcProgram} {prims : Prims} {ix_text_
   simp only [src_text_string_data_ptr] at h
   faithful [Lanius.Mini.textStringDataPtr]
 
-theorem proof_text_typed_slice_from_raw_parts {prog : SrcProgram} {prims : Prims} {ix_text_typed_slice_from_raw_parts ix_single_of_usize ix_cons_of_usize : Nat} (fn : prog.funcs[ix_text_typed_slice_from_raw_parts]? = some (src_text_typed_slice_from_raw_parts ix_single_of_usize ix_cons_of_usize)) (np : prims.isPrim ix_text_typed_slice_from_raw_parts = false)
-    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n))
-    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n)) {n : Nat} :
+theorem proof_text_typed_slice_from_raw_parts {prog : SrcProgram} {prims : Prims} {ix_text_typed_slice_from_raw_parts ix_cons_of_usize ix_text_slice_from_raw_parts : Nat} (fn : prog.funcs[ix_text_typed_slice_from_raw_parts]? = some (src_text_typed_slice_from_raw_parts ix_cons_of_usize ix_text_slice_from_raw_parts)) (np : prims.isPrim ix_text_typed_slice_from_raw_parts = false)
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
+    (ext_text_slice_from_raw_parts : Certified (∀ {n : Nat}, Stmt_text_slice_from_raw_parts prog prims ix_text_slice_from_raw_parts n)) {n : Nat} :
     Stmt_text_typed_slice_from_raw_parts prog prims ix_text_typed_slice_from_raw_parts n := by
   intro w h
   rcases n with _ | n

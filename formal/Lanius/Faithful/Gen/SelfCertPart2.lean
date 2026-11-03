@@ -852,4 +852,8 @@ theorem cert_lower_match_on {n : Nat} :
     Stmt_lower_match_on prog prims 322 n :=
   @proof_lower_match_on prog prims 322 180 509 fn_lower_match_on np_lower_match_on ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType⟩ ⟨@cert_lower_match_arms⟩ n
 
+theorem cert_lower_match {n : Nat} :
+    Stmt_lower_match prog prims 198 n :=
+  @proof_lower_match prog prims 198 322 fn_lower_match np_lower_match ⟨@cert_lower_match_on⟩ n
+
 end Lanius.Faithful.SelfCert

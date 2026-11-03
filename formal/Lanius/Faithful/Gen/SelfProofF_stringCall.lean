@@ -6,10 +6,10 @@ public import Lanius.Faithful.Gen.SelfSrcF_stringCall
 public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_isPathCall
+public import Lanius.Faithful.Gen.SelfStmtF_isTypedSliceSegments
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_oneTreeNames
 public import Lanius.Faithful.Gen.SelfStmtF_stringCall
-public import Lanius.Faithful.Gen.SelfStmtF_stringOpen
 public import Lanius.Faithful.Gen.SelfStmtF_treeTokens
 public import Lanius.Faithful.Gen.SelfStmtF_wideOf
 import all Lanius.Faithful.Gen.SelfSrcF_stringCall

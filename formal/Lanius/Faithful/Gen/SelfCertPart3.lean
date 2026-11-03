@@ -11,7 +11,6 @@ public import Lanius.Faithful.Gen.SelfStmtC_Inline_arithOf
 public import Lanius.Faithful.Gen.SelfStmtC_Inline_lowerSetScalar
 public import Lanius.Faithful.Gen.SelfStmtC_SrcExpr_guard
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
-public import Lanius.Faithful.Gen.SelfStmtC_armPayload
 public import Lanius.Faithful.Gen.SelfStmtC_consArgs
 public import Lanius.Faithful.Gen.SelfStmtC_elementAddress
 public import Lanius.Faithful.Gen.SelfStmtC_elementBase
@@ -54,7 +53,6 @@ import Lanius.Faithful.Gen.SelfProofC_Inline_arithOf
 import Lanius.Faithful.Gen.SelfProofC_Inline_lowerSetScalar
 import Lanius.Faithful.Gen.SelfProofC_SrcExpr_guard
 import Lanius.Faithful.Gen.SelfProofC_UintTy_half
-import Lanius.Faithful.Gen.SelfProofC_armPayload
 import Lanius.Faithful.Gen.SelfProofC_consArgs
 import Lanius.Faithful.Gen.SelfProofC_elementAddress
 import Lanius.Faithful.Gen.SelfProofC_elementBase
@@ -104,10 +102,6 @@ open Lanius.Core (Value)
 open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
-
-theorem cert_lower_match {n : Nat} :
-    Stmt_lower_match prog prims 198 n :=
-  @proof_lower_match prog prims 198 322 fn_lower_match np_lower_match ⟨@cert_lower_match_on⟩ n
 
 theorem cert_lower_set_values {n : Nat} :
     Stmt_lower_set_values prog prims 325 n :=
@@ -801,5 +795,9 @@ theorem cert_eval_if_of {n : Nat} :
 theorem cert_eval_if {n : Nat} :
     Stmt_eval_if prog prims 367 n :=
   @proof_eval_if prog prims 367 552 fn_eval_if np_eval_if ⟨@cert_eval_if_of⟩ n
+
+theorem cert_eval_let_in_of {n : Nat} :
+    Stmt_eval_let_in_of prog prims 553 n :=
+  @proof_eval_let_in_of prog prims 553 120 185 232 311 348 361 fn_eval_let_in_of np_eval_let_in_of ⟨@cert_SrcType_size⟩ ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_SrcType_same⟩ ⟨@cert_assign_from⟩ ⟨@cert_slot_vars⟩ ⟨@cert_match_dst⟩ n
 
 end Lanius.Faithful.SelfCert

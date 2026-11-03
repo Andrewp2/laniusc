@@ -222,7 +222,7 @@ theorem lok2473 : LiveOk prims outside liveBad 2473 (src_is_data_ptr_of 154 155 
 theorem lok2474 : LiveOk prims outside liveBad 2474 (src_int_tree 155 1964 2494) := by decide +kernel
 
 /-- mini::selfhost::one_tree_names -/
-theorem lok2493 : LiveOk prims outside liveBad 2493 (src_one_tree_names 104 2472 2509) := by decide +kernel
+theorem lok2493 : LiveOk prims outside liveBad 2493 (src_one_tree_names 104 2472 2510) := by decide +kernel
 
 /-- mini::selfhost::int_primary -/
 theorem lok2494 : LiveOk prims outside liveBad 2494 (src_int_primary 152 615 616 1715 1716 1767) := by decide +kernel

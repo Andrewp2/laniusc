@@ -201,6 +201,7 @@ public import Lanius.Faithful.Gen.SelfSrcF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfSrcF_isMatchStmt
 public import Lanius.Faithful.Gen.SelfSrcF_isPathCall
 public import Lanius.Faithful.Gen.SelfSrcF_isTryEnum
+public import Lanius.Faithful.Gen.SelfSrcF_isTypedSliceSegments
 public import Lanius.Faithful.Gen.SelfSrcF_isUnderscore
 public import Lanius.Faithful.Gen.SelfSrcF_itemOf
 public import Lanius.Faithful.Gen.SelfSrcF_joinInsts
@@ -302,19 +303,19 @@ def tail_end : List SrcFunc := []
 def tail_plain_naming : List SrcFunc :=
   src_plain_naming 2310 2461 2462 2502 :: tail_end
 def tail_covered_by : List SrcFunc :=
-  src_covered_by 104 2309 2562 2563 :: tail_plain_naming
+  src_covered_by 104 2309 2565 2566 :: tail_plain_naming
 def tail_wild_pat : List SrcFunc :=
-  src_wild_pat 97 147 251 595 2313 2315 2394 2553 :: tail_covered_by
+  src_wild_pat 97 147 251 595 2313 2315 2394 2556 :: tail_covered_by
 def tail_covers_all : List SrcFunc :=
-  src_covers_all 548 2461 2560 2562 :: tail_wild_pat
+  src_covers_all 548 2461 2563 2565 :: tail_wild_pat
 def tail_col_quiet : List SrcFunc :=
-  src_col_quiet 155 1772 2548 :: tail_covers_all
+  src_col_quiet 155 1772 2551 :: tail_covers_all
 def tail_appended_use : List SrcFunc :=
-  src_appended_use 595 1112 2531 :: tail_col_quiet
+  src_appended_use 595 1112 2534 :: tail_col_quiet
 def tail_mentions : List SrcFunc :=
-  src_mentions 56 104 919 1112 2309 2557 :: tail_appended_use
+  src_mentions 56 104 919 1112 2309 2560 :: tail_appended_use
 def tail_quiet_arm : List SrcFunc :=
-  src_quiet_arm 2549 2561 :: tail_mentions
+  src_quiet_arm 2552 2564 :: tail_mentions
 def tail_same_opt_name : List SrcFunc :=
   src_same_opt_name 919 :: tail_quiet_arm
 def tail_text_hidden : List SrcFunc :=
@@ -322,111 +323,117 @@ def tail_text_hidden : List SrcFunc :=
 def tail_named_path : List SrcFunc :=
   src_named_path 97 147 155 251 595 616 633 634 1890 :: tail_text_hidden
 def tail_covers_enum : List SrcFunc :=
-  src_covers_enum 2560 :: tail_named_path
+  src_covers_enum 2563 :: tail_named_path
 def tail_cols_quiet : List SrcFunc :=
-  src_cols_quiet 75 104 2461 2551 2559 :: tail_covers_enum
+  src_cols_quiet 75 104 2461 2554 2562 :: tail_covers_enum
 def tail_quiet_use : List SrcFunc :=
-  src_quiet_use 2558 :: tail_cols_quiet
+  src_quiet_use 2561 :: tail_cols_quiet
 def tail_sub_arm : List SrcFunc :=
   src_sub_arm 147 152 155 251 595 :: tail_quiet_use
 def tail_quiet_in : List SrcFunc :=
-  src_quiet_in 595 2462 2557 :: tail_sub_arm
+  src_quiet_in 595 2462 2560 :: tail_sub_arm
 def tail_quiet_sub : List SrcFunc :=
-  src_quiet_sub 2556 :: tail_quiet_in
+  src_quiet_sub 2559 :: tail_quiet_in
 def tail_col_fits : List SrcFunc :=
-  src_col_fits 155 1772 2475 2555 :: tail_quiet_sub
+  src_col_fits 155 1772 2475 2558 :: tail_quiet_sub
 def tail_hidden_path : List SrcFunc :=
-  src_hidden_path 2553 2554 :: tail_col_fits
+  src_hidden_path 2556 2557 :: tail_col_fits
 def tail_covers_decl : List SrcFunc :=
-  src_covers_decl 2552 :: tail_hidden_path
+  src_covers_decl 2555 :: tail_hidden_path
 def tail_covered_use : List SrcFunc :=
-  src_covered_use 155 2531 2550 2551 :: tail_covers_decl
+  src_covered_use 155 2534 2553 2554 :: tail_covers_decl
 def tail_column_sub : List SrcFunc :=
-  src_column_sub 155 1772 2475 2547 2548 2549 :: tail_covered_use
+  src_column_sub 155 1772 2475 2550 2551 2552 :: tail_covered_use
 def tail_row_fits : List SrcFunc :=
-  src_row_fits 75 104 2541 2546 :: tail_column_sub
+  src_row_fits 75 104 2544 2549 :: tail_column_sub
 def tail_column_fit : List SrcFunc :=
   src_column_fit 2457 :: tail_row_fits
 def tail_hidden_expr : List SrcFunc :=
-  src_hidden_expr 97 147 251 595 1710 1770 2545 :: tail_column_fit
+  src_hidden_expr 97 147 251 595 1710 1770 2548 :: tail_column_fit
 def tail_hidden_pat : List SrcFunc :=
-  src_hidden_pat 97 147 251 595 2313 2315 2545 :: tail_hidden_expr
+  src_hidden_pat 97 147 251 595 2313 2315 2548 :: tail_hidden_expr
 def tail_replace_at : List SrcFunc :=
-  src_replace_at 56 97 104 147 2537 :: tail_hidden_pat
+  src_replace_at 56 97 104 147 2540 :: tail_hidden_pat
 def tail_covers : List SrcFunc :=
-  src_covers 162 1173 1933 2544 :: tail_replace_at
+  src_covers 162 1173 1933 2547 :: tail_replace_at
 def tail_known_use : List SrcFunc :=
-  src_known_use 2543 :: tail_covers
+  src_known_use 2546 :: tail_covers
 def tail_ends_wild : List SrcFunc :=
   src_ends_wild 2387 :: tail_known_use
 def tail_is_last : List SrcFunc :=
   src_is_last :: tail_ends_wild
 def tail_column_arm : List SrcFunc :=
-  src_column_arm 2527 2540 2541 2542 :: tail_is_last
+  src_column_arm 2530 2543 2544 2545 :: tail_is_last
 def tail_nest_arm : List SrcFunc :=
-  src_nest_arm 147 152 155 251 595 873 879 1729 2537 2538 2539 :: tail_column_arm
+  src_nest_arm 147 152 155 251 595 873 879 1729 2540 2541 2542 :: tail_column_arm
 def tail_wild_inner : List SrcFunc :=
-  src_wild_inner 2531 2534 2535 2536 :: tail_nest_arm
+  src_wild_inner 2534 2537 2538 2539 :: tail_nest_arm
 def tail_column_arms : List SrcFunc :=
-  src_column_arms 97 104 2520 2529 2532 2533 :: tail_wild_inner
+  src_column_arms 97 104 2523 2532 2535 2536 :: tail_wild_inner
 def tail_nest_inner : List SrcFunc :=
-  src_nest_inner 2530 2531 :: tail_column_arms
+  src_nest_inner 2533 2534 :: tail_column_arms
 def tail_get_of_mini_selfhost_CTree : List SrcFunc :=
-  src_get_of_mini_selfhost_CTree 56 104 2527 :: tail_nest_inner
+  src_get_of_mini_selfhost_CTree 56 104 2530 :: tail_nest_inner
 def tail_first_at : List SrcFunc :=
   src_first_at :: tail_get_of_mini_selfhost_CTree
 def tail_shadow_if : List SrcFunc :=
   src_shadow_if :: tail_first_at
 def tail_nest_at : List SrcFunc :=
-  src_nest_at 982 2527 2528 2529 :: tail_shadow_if
+  src_nest_at 982 2530 2531 2532 :: tail_shadow_if
 def tail_first_nested : List SrcFunc :=
-  src_first_nested 75 104 2475 2523 2526 :: tail_nest_at
+  src_first_nested 75 104 2475 2526 2529 :: tail_nest_at
 def tail_shadow_use : List SrcFunc :=
-  src_shadow_use 2525 :: tail_first_nested
+  src_shadow_use 2528 :: tail_first_nested
 def tail_nest_pats : List SrcFunc :=
-  src_nest_pats 2523 2524 :: tail_shadow_use
+  src_nest_pats 2526 2527 :: tail_shadow_use
 def tail_row_pats : List SrcFunc :=
   src_row_pats 152 154 155 2313 2315 :: tail_nest_pats
 def tail_wild_binder : List SrcFunc :=
   src_wild_binder 75 147 152 155 251 595 616 :: tail_row_pats
 def tail_plain_use : List SrcFunc :=
-  src_plain_use 2181 2522 :: tail_wild_binder
+  src_plain_use 2181 2525 :: tail_wild_binder
 def tail_nest_use : List SrcFunc :=
-  src_nest_use 2520 2521 :: tail_plain_use
+  src_nest_use 2523 2524 :: tail_plain_use
 def tail_is_text : List SrcFunc :=
   src_is_text 919 :: tail_nest_use
+def tail_is_empty_texts : List SrcFunc :=
+  src_is_empty_texts :: tail_is_text
+def tail_text_typed_slice_from_raw_parts : List SrcFunc :=
+  src_text_typed_slice_from_raw_parts 396 1906 :: tail_is_empty_texts
 def tail_fit_arg : List SrcFunc :=
-  src_fit_arg 56 152 155 1691 2290 :: tail_is_text
+  src_fit_arg 56 152 155 1691 2290 :: tail_text_typed_slice_from_raw_parts
 def tail_fit_args_next : List SrcFunc :=
   src_fit_args_next 56 2506 :: tail_fit_arg
 def tail_wild_binders : List SrcFunc :=
-  src_wild_binders 75 97 147 654 2513 2519 :: tail_fit_args_next
+  src_wild_binders 75 97 147 654 2514 2522 :: tail_fit_args_next
 def tail_p_pattern_tuple : List SrcFunc :=
   src_p_pattern_tuple :: tail_wild_binders
 def tail_named_known : List SrcFunc :=
   src_named_known 2314 :: tail_p_pattern_tuple
 def tail_nested_or_plain : List SrcFunc :=
-  src_nested_or_plain 2517 2518 :: tail_named_known
+  src_nested_or_plain 2520 2521 :: tail_named_known
 def tail_tree_names : List SrcFunc :=
-  src_tree_names 152 155 1710 1767 1770 1772 1964 2516 :: tail_nested_or_plain
+  src_tree_names 152 155 1710 1767 1770 1772 1964 2519 :: tail_nested_or_plain
 def tail_text_string_data_ptr : List SrcFunc :=
   src_text_string_data_ptr 371 396 :: tail_tree_names
+def tail_is_last_typed : List SrcFunc :=
+  src_is_last_typed 548 919 2517 2518 :: tail_text_string_data_ptr
 def tail_diverge_checked : List SrcFunc :=
-  src_diverge_checked 660 957 :: tail_text_string_data_ptr
+  src_diverge_checked 660 957 :: tail_is_last_typed
 def tail_fit_args : List SrcFunc :=
-  src_fit_args 56 104 654 2514 2515 :: tail_diverge_checked
+  src_fit_args 56 104 654 2515 2516 :: tail_diverge_checked
 def tail_fl_exp_digit_at : List SrcFunc :=
   src_fl_exp_digit_at 56 75 106 2005 2486 :: tail_fit_args
 def tail_wild_tail : List SrcFunc :=
-  src_wild_tail 147 155 251 595 879 2512 2513 :: tail_fl_exp_digit_at
+  src_wild_tail 147 155 251 595 879 2513 2514 :: tail_fl_exp_digit_at
 def tail_arms_naming_at : List SrcFunc :=
   src_arms_naming_at 147 :: tail_wild_tail
 def tail_arm_naming : List SrcFunc :=
-  src_arm_naming 155 422 2511 :: tail_arms_naming_at
+  src_arm_naming 155 422 2512 :: tail_arms_naming_at
 def tail_row_cons : List SrcFunc :=
   src_row_cons 2503 :: tail_arm_naming
 def tail_rows_use : List SrcFunc :=
-  src_rows_use 2510 :: tail_row_cons
+  src_rows_use 2511 :: tail_row_cons
 def tail_wild_use : List SrcFunc :=
   src_wild_use 2482 :: tail_rows_use
 def tail_join_use : List SrcFunc :=
@@ -440,15 +447,15 @@ def tail_binder_name_ok : List SrcFunc :=
 def tail_int_primary : List SrcFunc :=
   src_int_primary 152 615 616 1715 1716 1767 :: tail_binder_name_ok
 def tail_one_tree_names : List SrcFunc :=
-  src_one_tree_names 104 2472 2509 :: tail_int_primary
+  src_one_tree_names 104 2472 2510 :: tail_int_primary
 def tail_string_data_ptr_path : List SrcFunc :=
-  src_string_data_ptr_path 635 1131 2273 2274 2508 :: tail_one_tree_names
+  src_string_data_ptr_path 635 1131 2273 2274 2509 :: tail_one_tree_names
 def tail_is_u8_ty : List SrcFunc :=
   src_is_u8_ty 1576 :: tail_string_data_ptr_path
-def tail_text_typed_slice_from_raw_parts : List SrcFunc :=
-  src_text_typed_slice_from_raw_parts 371 396 :: tail_is_u8_ty
+def tail_is_mem_typed : List SrcFunc :=
+  src_is_mem_typed 548 919 2274 2508 :: tail_is_u8_ty
 def tail_diverge_call : List SrcFunc :=
-  src_diverge_call 363 668 926 1210 1215 2507 :: tail_text_typed_slice_from_raw_parts
+  src_diverge_call 363 668 926 1210 1215 2507 :: tail_is_mem_typed
 def tail_fit_same_decl : List SrcFunc :=
   src_fit_same_decl 56 2506 :: tail_diverge_call
 def tail_view_array : List SrcFunc :=
@@ -487,10 +494,10 @@ def tail_string_slice : List SrcFunc :=
   src_string_slice 1217 :: tail_is_empty_trees
 def tail_u8_args : List SrcFunc :=
   src_u8_args 104 1659 2472 2491 :: tail_string_slice
-def tail_typed_slice_spellings : List SrcFunc :=
-  src_typed_slice_spellings 635 1131 2273 2274 2490 :: tail_u8_args
+def tail_is_typed_slice_segments : List SrcFunc :=
+  src_is_typed_slice_segments 548 919 2273 2490 :: tail_u8_args
 def tail_plain_string_byte : List SrcFunc :=
-  src_plain_string_byte :: tail_typed_slice_spellings
+  src_plain_string_byte :: tail_is_typed_slice_segments
 def tail_string_cons : List SrcFunc :=
   src_string_cons 396 :: tail_plain_string_byte
 def tail_string_close : List SrcFunc :=
@@ -572,7 +579,7 @@ def tail_all_binders : List SrcFunc :=
 def tail_string_args : List SrcFunc :=
   src_string_args 104 2471 2472 2473 2474 :: tail_all_binders
 def tail_is_typed_slice_path : List SrcFunc :=
-  src_is_typed_slice_path 155 924 1911 2469 2470 :: tail_string_args
+  src_is_typed_slice_path 155 1911 2469 2470 :: tail_string_args
 def tail_string_byte : List SrcFunc :=
   src_string_byte 2382 2466 2467 2468 :: tail_is_typed_slice_path
 def tail_eq_on : List SrcFunc :=
@@ -7861,7 +7868,7 @@ abbrev src2423 : SrcFunc := src_diverge_arm 2465
 abbrev src2424 : SrcFunc := src_lit_value_if
 abbrev src2425 : SrcFunc := src_eq_on 1368
 abbrev src2426 : SrcFunc := src_string_byte 2382 2466 2467 2468
-abbrev src2427 : SrcFunc := src_is_typed_slice_path 155 924 1911 2469 2470
+abbrev src2427 : SrcFunc := src_is_typed_slice_path 155 1911 2469 2470
 abbrev src2428 : SrcFunc := src_string_args 104 2471 2472 2473 2474
 abbrev src2429 : SrcFunc := src_all_binders 104 2429 2475
 abbrev src2430 : SrcFunc := src_wild_alone 97 2206
@@ -7903,7 +7910,7 @@ abbrev src2465 : SrcFunc := src_diverge_eff 2489
 abbrev src2466 : SrcFunc := src_string_close 138
 abbrev src2467 : SrcFunc := src_string_cons 396
 abbrev src2468 : SrcFunc := src_plain_string_byte
-abbrev src2469 : SrcFunc := src_typed_slice_spellings 635 1131 2273 2274 2490
+abbrev src2469 : SrcFunc := src_is_typed_slice_segments 548 919 2273 2490
 abbrev src2470 : SrcFunc := src_u8_args 104 1659 2472 2491
 abbrev src2471 : SrcFunc := src_string_slice 1217
 abbrev src2472 : SrcFunc := src_is_empty_trees
@@ -7924,80 +7931,83 @@ abbrev src2486 : SrcFunc := src_fl_exp_digits 76 1895 2505
 abbrev src2487 : SrcFunc := src_view_array 1576 1794 1938
 abbrev src2488 : SrcFunc := src_fit_same_decl 56 2506
 abbrev src2489 : SrcFunc := src_diverge_call 363 668 926 1210 1215 2507
-abbrev src2490 : SrcFunc := src_text_typed_slice_from_raw_parts 371 396
+abbrev src2490 : SrcFunc := src_is_mem_typed 548 919 2274 2508
 abbrev src2491 : SrcFunc := src_is_u8_ty 1576
-abbrev src2492 : SrcFunc := src_string_data_ptr_path 635 1131 2273 2274 2508
-abbrev src2493 : SrcFunc := src_one_tree_names 104 2472 2509
+abbrev src2492 : SrcFunc := src_string_data_ptr_path 635 1131 2273 2274 2509
+abbrev src2493 : SrcFunc := src_one_tree_names 104 2472 2510
 abbrev src2494 : SrcFunc := src_int_primary 152 615 616 1715 1716 1767
 abbrev src2495 : SrcFunc := src_binder_name_ok 162 1132 2441
 abbrev src2496 : SrcFunc := src_arm_names 152 155 422 2313 2314
 abbrev src2497 : SrcFunc := src_used_arms
 abbrev src2498 : SrcFunc := src_join_use 147
 abbrev src2499 : SrcFunc := src_wild_use 2482
-abbrev src2500 : SrcFunc := src_rows_use 2510
+abbrev src2500 : SrcFunc := src_rows_use 2511
 abbrev src2501 : SrcFunc := src_row_cons 2503
-abbrev src2502 : SrcFunc := src_arm_naming 155 422 2511
+abbrev src2502 : SrcFunc := src_arm_naming 155 422 2512
 abbrev src2503 : SrcFunc := src_arms_naming_at 147
-abbrev src2504 : SrcFunc := src_wild_tail 147 155 251 595 879 2512 2513
+abbrev src2504 : SrcFunc := src_wild_tail 147 155 251 595 879 2513 2514
 abbrev src2505 : SrcFunc := src_fl_exp_digit_at 56 75 106 2005 2486
-abbrev src2506 : SrcFunc := src_fit_args 56 104 654 2514 2515
+abbrev src2506 : SrcFunc := src_fit_args 56 104 654 2515 2516
 abbrev src2507 : SrcFunc := src_diverge_checked 660 957
-abbrev src2508 : SrcFunc := src_text_string_data_ptr 371 396
-abbrev src2509 : SrcFunc := src_tree_names 152 155 1710 1767 1770 1772 1964 2516
-abbrev src2510 : SrcFunc := src_nested_or_plain 2517 2518
-abbrev src2511 : SrcFunc := src_named_known 2314
-abbrev src2512 : SrcFunc := src_p_pattern_tuple
-abbrev src2513 : SrcFunc := src_wild_binders 75 97 147 654 2513 2519
-abbrev src2514 : SrcFunc := src_fit_args_next 56 2506
-abbrev src2515 : SrcFunc := src_fit_arg 56 152 155 1691 2290
-abbrev src2516 : SrcFunc := src_is_text 919
-abbrev src2517 : SrcFunc := src_nest_use 2520 2521
-abbrev src2518 : SrcFunc := src_plain_use 2181 2522
-abbrev src2519 : SrcFunc := src_wild_binder 75 147 152 155 251 595 616
-abbrev src2520 : SrcFunc := src_row_pats 152 154 155 2313 2315
-abbrev src2521 : SrcFunc := src_nest_pats 2523 2524
-abbrev src2522 : SrcFunc := src_shadow_use 2525
-abbrev src2523 : SrcFunc := src_first_nested 75 104 2475 2523 2526
-abbrev src2524 : SrcFunc := src_nest_at 982 2527 2528 2529
-abbrev src2525 : SrcFunc := src_shadow_if
-abbrev src2526 : SrcFunc := src_first_at
-abbrev src2527 : SrcFunc := src_get_of_mini_selfhost_CTree 56 104 2527
-abbrev src2528 : SrcFunc := src_nest_inner 2530 2531
-abbrev src2529 : SrcFunc := src_column_arms 97 104 2520 2529 2532 2533
-abbrev src2530 : SrcFunc := src_wild_inner 2531 2534 2535 2536
-abbrev src2531 : SrcFunc := src_nest_arm 147 152 155 251 595 873 879 1729 2537 2538 2539
-abbrev src2532 : SrcFunc := src_column_arm 2527 2540 2541 2542
-abbrev src2533 : SrcFunc := src_is_last
-abbrev src2534 : SrcFunc := src_ends_wild 2387
-abbrev src2535 : SrcFunc := src_known_use 2543
-abbrev src2536 : SrcFunc := src_covers 162 1173 1933 2544
-abbrev src2537 : SrcFunc := src_replace_at 56 97 104 147 2537
-abbrev src2538 : SrcFunc := src_hidden_pat 97 147 251 595 2313 2315 2545
-abbrev src2539 : SrcFunc := src_hidden_expr 97 147 251 595 1710 1770 2545
-abbrev src2540 : SrcFunc := src_column_fit 2457
-abbrev src2541 : SrcFunc := src_row_fits 75 104 2541 2546
-abbrev src2542 : SrcFunc := src_column_sub 155 1772 2475 2547 2548 2549
-abbrev src2543 : SrcFunc := src_covered_use 155 2531 2550 2551
-abbrev src2544 : SrcFunc := src_covers_decl 2552
-abbrev src2545 : SrcFunc := src_hidden_path 2553 2554
-abbrev src2546 : SrcFunc := src_col_fits 155 1772 2475 2555
-abbrev src2547 : SrcFunc := src_quiet_sub 2556
-abbrev src2548 : SrcFunc := src_quiet_in 595 2462 2557
-abbrev src2549 : SrcFunc := src_sub_arm 147 152 155 251 595
-abbrev src2550 : SrcFunc := src_quiet_use 2558
-abbrev src2551 : SrcFunc := src_cols_quiet 75 104 2461 2551 2559
-abbrev src2552 : SrcFunc := src_covers_enum 2560
-abbrev src2553 : SrcFunc := src_named_path 97 147 155 251 595 616 633 634 1890
-abbrev src2554 : SrcFunc := src_text_hidden 371
-abbrev src2555 : SrcFunc := src_same_opt_name 919
-abbrev src2556 : SrcFunc := src_quiet_arm 2549 2561
-abbrev src2557 : SrcFunc := src_mentions 56 104 919 1112 2309 2557
-abbrev src2558 : SrcFunc := src_appended_use 595 1112 2531
-abbrev src2559 : SrcFunc := src_col_quiet 155 1772 2548
-abbrev src2560 : SrcFunc := src_covers_all 548 2461 2560 2562
-abbrev src2561 : SrcFunc := src_wild_pat 97 147 251 595 2313 2315 2394 2553
-abbrev src2562 : SrcFunc := src_covered_by 104 2309 2562 2563
-abbrev src2563 : SrcFunc := src_plain_naming 2310 2461 2462 2502
+abbrev src2508 : SrcFunc := src_is_last_typed 548 919 2517 2518
+abbrev src2509 : SrcFunc := src_text_string_data_ptr 371 396
+abbrev src2510 : SrcFunc := src_tree_names 152 155 1710 1767 1770 1772 1964 2519
+abbrev src2511 : SrcFunc := src_nested_or_plain 2520 2521
+abbrev src2512 : SrcFunc := src_named_known 2314
+abbrev src2513 : SrcFunc := src_p_pattern_tuple
+abbrev src2514 : SrcFunc := src_wild_binders 75 97 147 654 2514 2522
+abbrev src2515 : SrcFunc := src_fit_args_next 56 2506
+abbrev src2516 : SrcFunc := src_fit_arg 56 152 155 1691 2290
+abbrev src2517 : SrcFunc := src_text_typed_slice_from_raw_parts 396 1906
+abbrev src2518 : SrcFunc := src_is_empty_texts
+abbrev src2519 : SrcFunc := src_is_text 919
+abbrev src2520 : SrcFunc := src_nest_use 2523 2524
+abbrev src2521 : SrcFunc := src_plain_use 2181 2525
+abbrev src2522 : SrcFunc := src_wild_binder 75 147 152 155 251 595 616
+abbrev src2523 : SrcFunc := src_row_pats 152 154 155 2313 2315
+abbrev src2524 : SrcFunc := src_nest_pats 2526 2527
+abbrev src2525 : SrcFunc := src_shadow_use 2528
+abbrev src2526 : SrcFunc := src_first_nested 75 104 2475 2526 2529
+abbrev src2527 : SrcFunc := src_nest_at 982 2530 2531 2532
+abbrev src2528 : SrcFunc := src_shadow_if
+abbrev src2529 : SrcFunc := src_first_at
+abbrev src2530 : SrcFunc := src_get_of_mini_selfhost_CTree 56 104 2530
+abbrev src2531 : SrcFunc := src_nest_inner 2533 2534
+abbrev src2532 : SrcFunc := src_column_arms 97 104 2523 2532 2535 2536
+abbrev src2533 : SrcFunc := src_wild_inner 2534 2537 2538 2539
+abbrev src2534 : SrcFunc := src_nest_arm 147 152 155 251 595 873 879 1729 2540 2541 2542
+abbrev src2535 : SrcFunc := src_column_arm 2530 2543 2544 2545
+abbrev src2536 : SrcFunc := src_is_last
+abbrev src2537 : SrcFunc := src_ends_wild 2387
+abbrev src2538 : SrcFunc := src_known_use 2546
+abbrev src2539 : SrcFunc := src_covers 162 1173 1933 2547
+abbrev src2540 : SrcFunc := src_replace_at 56 97 104 147 2540
+abbrev src2541 : SrcFunc := src_hidden_pat 97 147 251 595 2313 2315 2548
+abbrev src2542 : SrcFunc := src_hidden_expr 97 147 251 595 1710 1770 2548
+abbrev src2543 : SrcFunc := src_column_fit 2457
+abbrev src2544 : SrcFunc := src_row_fits 75 104 2544 2549
+abbrev src2545 : SrcFunc := src_column_sub 155 1772 2475 2550 2551 2552
+abbrev src2546 : SrcFunc := src_covered_use 155 2534 2553 2554
+abbrev src2547 : SrcFunc := src_covers_decl 2555
+abbrev src2548 : SrcFunc := src_hidden_path 2556 2557
+abbrev src2549 : SrcFunc := src_col_fits 155 1772 2475 2558
+abbrev src2550 : SrcFunc := src_quiet_sub 2559
+abbrev src2551 : SrcFunc := src_quiet_in 595 2462 2560
+abbrev src2552 : SrcFunc := src_sub_arm 147 152 155 251 595
+abbrev src2553 : SrcFunc := src_quiet_use 2561
+abbrev src2554 : SrcFunc := src_cols_quiet 75 104 2461 2554 2562
+abbrev src2555 : SrcFunc := src_covers_enum 2563
+abbrev src2556 : SrcFunc := src_named_path 97 147 155 251 595 616 633 634 1890
+abbrev src2557 : SrcFunc := src_text_hidden 371
+abbrev src2558 : SrcFunc := src_same_opt_name 919
+abbrev src2559 : SrcFunc := src_quiet_arm 2552 2564
+abbrev src2560 : SrcFunc := src_mentions 56 104 919 1112 2309 2560
+abbrev src2561 : SrcFunc := src_appended_use 595 1112 2534
+abbrev src2562 : SrcFunc := src_col_quiet 155 1772 2551
+abbrev src2563 : SrcFunc := src_covers_all 548 2461 2563 2565
+abbrev src2564 : SrcFunc := src_wild_pat 97 147 251 595 2313 2315 2394 2556
+abbrev src2565 : SrcFunc := src_covered_by 104 2309 2565 2566
+abbrev src2566 : SrcFunc := src_plain_naming 2310 2461 2462 2502
 
 end
 

@@ -695,19 +695,19 @@ theorem fok2488 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
 /-- mini::selfhost::fit_args -/
 theorem fok2506 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 2506 (src_fit_args 56 104 654 2514 2515) :=
+    FuncOk sp prims outside 2506 (src_fit_args 56 104 654 2515 2516) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::fit_args_next -/
-theorem fok2514 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok2515 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 2514 (src_fit_args_next 56 2506) :=
+    FuncOk sp prims outside 2515 (src_fit_args_next 56 2506) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::fit_arg -/
-theorem fok2515 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok2516 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 2515 (src_fit_arg 56 152 155 1691 2290) :=
+    FuncOk sp prims outside 2516 (src_fit_arg 56 152 155 1691 2290) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 end Lanius.Faithful.SelfPure

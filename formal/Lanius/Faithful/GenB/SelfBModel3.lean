@@ -444,15 +444,31 @@ noncomputable section
 
 def Cost_text_typed_slice_from_raw_parts : Nat → Nat
   | 0 => 18446744073709551616
-  | n + 1 => ((Cost_single_of_usize n 115) + ((Cost_cons_of_usize n 116 ([115])) + ((Cost_cons_of_usize n 114 (116 :: ([115]))) + ((Cost_cons_of_usize n 97 (114 :: (116 :: ([115])))) + ((Cost_cons_of_usize n 112 (97 :: (114 :: (116 :: ([115]))))) + ((Cost_cons_of_usize n 95 (112 :: (97 :: (114 :: (116 :: ([115])))))) + ((Cost_cons_of_usize n 119 (95 :: (112 :: (97 :: (114 :: (116 :: ([115]))))))) + ((Cost_cons_of_usize n 97 (119 :: (95 :: (112 :: (97 :: (114 :: (116 :: ([115])))))))) + ((Cost_cons_of_usize n 114 (97 :: (119 :: (95 :: (112 :: (97 :: (114 :: (116 :: ([115]))))))))) + ((Cost_cons_of_usize n 95 (114 :: (97 :: (119 :: (95 :: (112 :: (97 :: (114 :: (116 :: ([115])))))))))) + ((Cost_cons_of_usize n 109 (95 :: (114 :: (97 :: (119 :: (95 :: (112 :: (97 :: (114 :: (116 :: ([115]))))))))))) + ((Cost_cons_of_usize n 111 (109 :: (95 :: (114 :: (97 :: (119 :: (95 :: (112 :: (97 :: (114 :: (116 :: ([115])))))))))))) + ((Cost_cons_of_usize n 114 (111 :: (109 :: (95 :: (114 :: (97 :: (119 :: (95 :: (112 :: (97 :: (114 :: (116 :: ([115]))))))))))))) + ((Cost_cons_of_usize n 102 (114 :: (111 :: (109 :: (95 :: (114 :: (97 :: (119 :: (95 :: (112 :: (97 :: (114 :: (116 :: ([115])))))))))))))) + ((Cost_cons_of_usize n 95 (102 :: (114 :: (111 :: (109 :: (95 :: (114 :: (97 :: (119 :: (95 :: (112 :: (97 :: (114 :: (116 :: ([115]))))))))))))))) + ((Cost_cons_of_usize n 101 (95 :: (102 :: (114 :: (111 :: (109 :: (95 :: (114 :: (97 :: (119 :: (95 :: (112 :: (97 :: (114 :: (116 :: ([115])))))))))))))))) + ((Cost_cons_of_usize n 99 (101 :: (95 :: (102 :: (114 :: (111 :: (109 :: (95 :: (114 :: (97 :: (119 :: (95 :: (112 :: (97 :: (114 :: (116 :: ([115]))))))))))))))))) + ((Cost_cons_of_usize n 105 (99 :: (101 :: (95 :: (102 :: (114 :: (111 :: (109 :: (95 :: (114 :: (97 :: (119 :: (95 :: (112 :: (97 :: (114 :: (116 :: ([115])))))))))))))))))) + ((Cost_cons_of_usize n 108 (105 :: (99 :: (101 :: (95 :: (102 :: (114 :: (111 :: (109 :: (95 :: (114 :: (97 :: (119 :: (95 :: (112 :: (97 :: (114 :: (116 :: ([115]))))))))))))))))))) + ((Cost_cons_of_usize n 115 (108 :: (105 :: (99 :: (101 :: (95 :: (102 :: (114 :: (111 :: (109 :: (95 :: (114 :: (97 :: (119 :: (95 :: (112 :: (97 :: (114 :: (116 :: ([115])))))))))))))))))))) + ((Cost_cons_of_usize n 95 (115 :: (108 :: (105 :: (99 :: (101 :: (95 :: (102 :: (114 :: (111 :: (109 :: (95 :: (114 :: (97 :: (119 :: (95 :: (112 :: (97 :: (114 :: (116 :: ([115]))))))))))))))))))))) + ((Cost_cons_of_usize n 100 (95 :: (115 :: (108 :: (105 :: (99 :: (101 :: (95 :: (102 :: (114 :: (111 :: (109 :: (95 :: (114 :: (97 :: (119 :: (95 :: (112 :: (97 :: (114 :: (116 :: ([115])))))))))))))))))))))) + ((Cost_cons_of_usize n 101 (100 :: (95 :: (115 :: (108 :: (105 :: (99 :: (101 :: (95 :: (102 :: (114 :: (111 :: (109 :: (95 :: (114 :: (97 :: (119 :: (95 :: (112 :: (97 :: (114 :: (116 :: ([115]))))))))))))))))))))))) + ((Cost_cons_of_usize n 112 (101 :: (100 :: (95 :: (115 :: (108 :: (105 :: (99 :: (101 :: (95 :: (102 :: (114 :: (111 :: (109 :: (95 :: (114 :: (97 :: (119 :: (95 :: (112 :: (97 :: (114 :: (116 :: ([115])))))))))))))))))))))))) + ((Cost_cons_of_usize n 121 (112 :: (101 :: (100 :: (95 :: (115 :: (108 :: (105 :: (99 :: (101 :: (95 :: (102 :: (114 :: (111 :: (109 :: (95 :: (114 :: (97 :: (119 :: (95 :: (112 :: (97 :: (114 :: (116 :: ([115]))))))))))))))))))))))))) + (Cost_cons_of_usize n 116 (121 :: (112 :: (101 :: (100 :: (95 :: (115 :: (108 :: (105 :: (99 :: (101 :: (95 :: (102 :: (114 :: (111 :: (109 :: (95 :: (114 :: (97 :: (119 :: (95 :: (112 :: (97 :: (114 :: (116 :: ([115])))))))))))))))))))))))))))))))))))))))))))))))))))
+  | n + 1 => ((Cost_text_slice_from_raw_parts n ) + ((Cost_cons_of_usize n 95 Lanius.Mini.textSliceFromRawParts) + ((Cost_cons_of_usize n 100 (95 :: Lanius.Mini.textSliceFromRawParts)) + ((Cost_cons_of_usize n 101 (100 :: (95 :: Lanius.Mini.textSliceFromRawParts))) + ((Cost_cons_of_usize n 112 (101 :: (100 :: (95 :: Lanius.Mini.textSliceFromRawParts)))) + ((Cost_cons_of_usize n 121 (112 :: (101 :: (100 :: (95 :: Lanius.Mini.textSliceFromRawParts))))) + (Cost_cons_of_usize n 116 (121 :: (112 :: (101 :: (100 :: (95 :: Lanius.Mini.textSliceFromRawParts))))))))))))
 
 end
 
 noncomputable section
 
-def Cost_typed_slice_spellings : Nat → Nat
-  | 0 => 18446744073709551616
-  | n + 1 => ((Cost_text_core n ) + ((Cost_text_mem n ) + ((Cost_text_typed_slice_from_raw_parts n ) + ((Cost_single_of_mini_selfhost_List_usize n Lanius.Mini.textTypedSliceFromRawParts) + ((Cost_cons_of_mini_selfhost_List_usize n Lanius.Mini.textMem ([Lanius.Mini.textTypedSliceFromRawParts])) + (Cost_cons_of_mini_selfhost_List_usize n Lanius.Mini.textCore (Lanius.Mini.textMem :: ([Lanius.Mini.textTypedSliceFromRawParts]))))))))
+def Cost_is_last_typed : Nat → List (List Nat) → Nat
+  | 0, x14 => 18446744073709551616
+  | n + 1, x14 => (match x14 with | [] => 0 | x106 :: x109 => (Cost_text_typed_slice_from_raw_parts n ))
+
+end
+
+noncomputable section
+
+def Cost_is_mem_typed : Nat → List (List Nat) → Nat
+  | 0, x13 => 18446744073709551616
+  | n + 1, x13 => (match x13 with | [] => 0 | x105 :: x108 => ((Cost_text_mem n ) + (if (Lanius.Mini.sameText x105 Lanius.Mini.textMem) = true then (Cost_is_last_typed n x108) else 0)))
+
+end
+
+noncomputable section
+
+def Cost_is_typed_slice_segments : Nat → List (List Nat) → Nat
+  | 0, x24 => 18446744073709551616
+  | n + 1, x24 => (match x24 with | [] => 0 | x116 :: x119 => ((Cost_text_core n ) + (if (Lanius.Mini.sameText x116 Lanius.Mini.textCore) = true then (Cost_is_mem_typed n x119) else 0)))
 
 end
 
@@ -476,7 +492,7 @@ noncomputable section
 
 def Cost_is_typed_slice_path : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.CTree → Nat
   | 0, x20, x33, x48 => 18446744073709551616
-  | n + 1, x20, x33, x48 => ((Cost_path_ref n x20 (Lanius.Mini.kid x48 0) (Lanius.Mini.kid x48 1)) + (match (Lanius.Mini.pathRef x20 ((Lanius.Mini.kid x48 0)) ((Lanius.Mini.kid x48 1))) with | some x171 => ((Cost_typed_slice_spellings n ) + (if (Lanius.Mini.sameSpellings x171.segments Lanius.Mini.typedSliceSpellings) = true then (Cost_u8_args n x20 x33 x171.targs) else 0)) | none => 0))
+  | n + 1, x20, x33, x48 => ((Cost_path_ref n x20 (Lanius.Mini.kid x48 0) (Lanius.Mini.kid x48 1)) + (match (Lanius.Mini.pathRef x20 ((Lanius.Mini.kid x48 0)) ((Lanius.Mini.kid x48 1))) with | some x171 => ((Cost_is_typed_slice_segments n x171.segments) + (if (Lanius.Mini.isTypedSliceSegments x171.segments) = true then (Cost_u8_args n x20 x33 x171.targs) else 0)) | none => 0))
 
 end
 
@@ -484,7 +500,7 @@ noncomputable section
 
 def Pre_is_typed_slice_path : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.CTree → Nat → Prop
   | 0, x20, x33, x48, b => True
-  | n + 1, x20, x33, x48, b => (∀ b1 : Nat, (Cost_path_ref n x20 (Lanius.Mini.kid x48 0) (Lanius.Mini.kid x48 1)) < b → b1 = b - (Cost_path_ref n x20 (Lanius.Mini.kid x48 0) (Lanius.Mini.kid x48 1)) → (match (Lanius.Mini.pathRef x20 ((Lanius.Mini.kid x48 0)) ((Lanius.Mini.kid x48 1))) with | some x171 => (∀ b2 : Nat, (Cost_typed_slice_spellings n ) < b1 → b2 = b1 - (Cost_typed_slice_spellings n ) → (if (Lanius.Mini.sameSpellings x171.segments Lanius.Mini.typedSliceSpellings) = true then (Pre_u8_args n x20 x33 x171.targs b2) else True)) | none => True))
+  | n + 1, x20, x33, x48, b => (∀ b1 : Nat, (Cost_path_ref n x20 (Lanius.Mini.kid x48 0) (Lanius.Mini.kid x48 1)) < b → b1 = b - (Cost_path_ref n x20 (Lanius.Mini.kid x48 0) (Lanius.Mini.kid x48 1)) → (match (Lanius.Mini.pathRef x20 ((Lanius.Mini.kid x48 0)) ((Lanius.Mini.kid x48 1))) with | some x171 => (∀ b2 : Nat, (Cost_is_typed_slice_segments n x171.segments) < b1 → b2 = b1 - (Cost_is_typed_slice_segments n x171.segments) → (if (Lanius.Mini.isTypedSliceSegments x171.segments) = true then (Pre_u8_args n x20 x33 x171.targs b2) else True)) | none => True))
 
 end
 

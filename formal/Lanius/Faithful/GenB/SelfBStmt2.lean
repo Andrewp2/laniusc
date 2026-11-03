@@ -676,10 +676,25 @@ abbrev BStmt_text_typed_slice_from_raw_parts (spW sp : SrcProgram) (prims : Prim
     qcall spW prims uc n ix [] = some (w, k) →
     qcall sp prims uc n ix [] = some (w, k) ∧ Cost_text_typed_slice_from_raw_parts n  = k ∧ (RepList 25 RepNat) (Lanius.Mini.textTypedSliceFromRawParts) w
 
-abbrev BStmt_typed_slice_spellings (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {w : Value} {k : Nat},
-    qcall spW prims uc n ix [] = some (w, k) →
-    qcall sp prims uc n ix [] = some (w, k) ∧ Cost_typed_slice_spellings n  = k ∧ (RepList 31 (RepList 25 RepNat)) (Lanius.Mini.typedSliceSpellings) w
+abbrev BStmt_is_empty_texts (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List (List Nat)} {v0 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 31 (RepList 25 RepNat)) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.isEmptyTexts x0) w
+
+abbrev BStmt_is_last_typed (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List (List Nat)} {v0 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 31 (RepList 25 RepNat)) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_is_last_typed n x0 = k ∧ RepBool (Lanius.Mini.isLastTyped x0) w
+
+abbrev BStmt_is_mem_typed (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List (List Nat)} {v0 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 31 (RepList 25 RepNat)) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_is_mem_typed n x0 = k ∧ RepBool (Lanius.Mini.isMemTyped x0) w
+
+abbrev BStmt_is_typed_slice_segments (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List (List Nat)} {v0 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 31 (RepList 25 RepNat)) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_is_typed_slice_segments n x0 = k ∧ RepBool (Lanius.Mini.isTypedSliceSegments x0) w
 
 abbrev BStmt_is_empty_trees (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.CTree} {v0 w : Value} {k : Nat},

@@ -62,6 +62,7 @@ import all Lanius.Mini.Frontend.P.stringOpen
 import all Lanius.Mini.Frontend.P.oneTreeNames
 import all Lanius.Mini.Frontend.P.stringCall
 import all Lanius.Mini.Frontend.P.stringReturn
+import all Lanius.Mini.Frontend.P.isTypedSliceSegments
 import all Lanius.Mini.Frontend.P.ifSome
 import all Lanius.Mini.Frontend.P.callParts
 
@@ -1218,7 +1219,8 @@ inductive DataPtrOf (a : CTree) (name : Name) : Prop
 
 /-- `core::mem::typed_slice_from_raw_parts`, with no type argument or with `<u8>`. -/
 inductive TypedSlicePath (env : FrontEnv) (path : CTree) : Prop
-  | mk {pr : PathRef} : PathRefR (kid path 0) (kid path 1) pr → pr.segments = typedSliceSpellings →
+  | mk {pr : PathRef} : PathRefR (kid path 0) (kid path 1) pr →
+      pr.segments = [textCore, textMem, textTypedSliceFromRawParts] →
       (pr.targs = [] ∨ ArgsTy env pr.targs [.tyUint .uint8]) → TypedSlicePath env path
 
 /-- `return core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(name), n);`
@@ -1346,6 +1348,20 @@ theorem isDataPtrOf_sound {fuel : Nat} {a : CTree} {n : Name} (h : isDataPtrOf f
     obtain ⟨c, hi, tn⟩ := oneTreeNames_sound one
     exact .mk (peel_sound hp) (isPathCall_sound pc) (pathSpellings_sound (isPath_eq ps)) (listItems_sound hi) tn
 
+theorem isTypedSliceSegments_eq {ss : List Name} (h : isTypedSliceSegments ss = true) :
+    ss = [textCore, textMem, textTypedSliceFromRawParts] := by
+  match ss, h with
+  | [], h => simp [isTypedSliceSegments] at h
+  | [_], h => simp [isTypedSliceSegments, isMemTyped] at h
+  | [_, _], h => simp [isTypedSliceSegments, isMemTyped, isLastTyped] at h
+  | a :: b :: c :: rest, h =>
+    simp only [isTypedSliceSegments, isMemTyped, isLastTyped, Bool.and_eq_true] at h
+    obtain ⟨ha, hb, hc, he⟩ := h
+    rw [(sameText_iff _ _).1 ha, (sameText_iff _ _).1 hb, (sameText_iff _ _).1 hc]
+    cases rest with
+    | nil => rfl
+    | cons _ _ => simp [isEmptyTexts] at he
+
 theorem isTypedSlicePath_sound {fuel : Nat} {env : FrontEnv} {path : CTree} (h : isTypedSlicePath fuel env path = true) :
     TypedSlicePath env path := by
   unfold isTypedSlicePath at h
@@ -1355,7 +1371,7 @@ theorem isTypedSlicePath_sound {fuel : Nat} {env : FrontEnv} {path : CTree} (h :
     rw [hr] at h
     simp only [Bool.and_eq_true] at h
     obtain ⟨ss, ua⟩ := h
-    refine .mk (pathRef_sound hr) ((sameSpellings_iff _ _).1 ss) ?_
+    refine .mk (pathRef_sound hr) (isTypedSliceSegments_eq ss) ?_
     unfold u8Args at ua
     cases ht : r.targs with
     | nil => exact .inl rfl

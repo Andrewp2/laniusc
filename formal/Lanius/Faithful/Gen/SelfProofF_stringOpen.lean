@@ -6,24 +6,18 @@ public import Lanius.Faithful.Gen.SelfSrcF_stringOpen
 public import Lanius.Faithful.Gen.SelfStmt2
 public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt6
-public import Lanius.Faithful.Gen.SelfStmtF_Inline_pExpr
-public import Lanius.Faithful.Gen.SelfStmtF_Inline_pIdentPlain
+public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pPathMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pStmtsMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pTypeArgsNone
-public import Lanius.Faithful.Gen.SelfStmtF_distinct
-public import Lanius.Faithful.Gen.SelfStmtF_findConst
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfStmtF_isPathCall
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
-public import Lanius.Faithful.Gen.SelfStmtF_noTrees
-public import Lanius.Faithful.Gen.SelfStmtF_pathRef
 public import Lanius.Faithful.Gen.SelfStmtF_sliceHead
 public import Lanius.Faithful.Gen.SelfStmtF_stringCons
 public import Lanius.Faithful.Gen.SelfStmtF_stringOpen
 public import Lanius.Faithful.Gen.SelfStmtF_textSelf
-public import Lanius.Faithful.Gen.SelfStmtF_typeDeclAt
 public import Lanius.Faithful.Gen.SelfStmtF_typePathSpellings
 public import Lanius.Faithful.Gen.SelfStmtF_wideOf
 import all Lanius.Faithful.Gen.SelfSrcF_stringOpen
@@ -46,14 +40,40 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_is_empty_trees {prog : SrcProgram} {prims : Prims} {ix_is_empty_trees : Nat} (fn : prog.funcs[ix_is_empty_trees]? = some (src_is_empty_trees)) (np : prims.isPrim ix_is_empty_trees = false) {n : Nat} :
-    Stmt_is_empty_trees prog prims ix_is_empty_trees n := by
+theorem proof_is_empty_texts {prog : SrcProgram} {prims : Prims} {ix_is_empty_texts : Nat} (fn : prog.funcs[ix_is_empty_texts]? = some (src_is_empty_texts)) (np : prims.isPrim ix_is_empty_texts = false) {n : Nat} :
+    Stmt_is_empty_texts prog prims ix_is_empty_texts n := by
   intro x0 v0 w h r0
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
-  simp only [src_is_empty_trees] at h
-  faithful [Lanius.Mini.isEmptyTrees]
+  simp only [src_is_empty_texts] at h
+  faithful [Lanius.Mini.isEmptyTexts]
+
+theorem proof_is_last_typed {prog : SrcProgram} {prims : Prims} {ix_is_last_typed ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize ix_same_text ix_text_typed_slice_from_raw_parts ix_is_empty_texts : Nat} (fn : prog.funcs[ix_is_last_typed]? = some (src_is_last_typed ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize ix_same_text ix_text_typed_slice_from_raw_parts ix_is_empty_texts)) (np : prims.isPrim ix_is_last_typed = false)
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize n))
+    (ext_same_text : Certified (∀ {n : Nat}, Stmt_same_text prog prims ix_same_text n))
+    (ext_text_typed_slice_from_raw_parts : Certified (∀ {n : Nat}, Stmt_text_typed_slice_from_raw_parts prog prims ix_text_typed_slice_from_raw_parts n))
+    (ext_is_empty_texts : Certified (∀ {n : Nat}, Stmt_is_empty_texts prog prims ix_is_empty_texts n)) {n : Nat} :
+    Stmt_is_last_typed prog prims ix_is_last_typed n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_is_last_typed] at h
+  faithful [Lanius.Mini.isLastTyped]
+
+theorem proof_is_mem_typed {prog : SrcProgram} {prims : Prims} {ix_is_mem_typed ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize ix_same_text ix_text_mem ix_is_last_typed : Nat} (fn : prog.funcs[ix_is_mem_typed]? = some (src_is_mem_typed ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize ix_same_text ix_text_mem ix_is_last_typed)) (np : prims.isPrim ix_is_mem_typed = false)
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize n))
+    (ext_same_text : Certified (∀ {n : Nat}, Stmt_same_text prog prims ix_same_text n))
+    (ext_text_mem : Certified (∀ {n : Nat}, Stmt_text_mem prog prims ix_text_mem n))
+    (ext_is_last_typed : Certified (∀ {n : Nat}, Stmt_is_last_typed prog prims ix_is_last_typed n)) {n : Nat} :
+    Stmt_is_mem_typed prog prims ix_is_mem_typed n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_is_mem_typed] at h
+  faithful [Lanius.Mini.isMemTyped]
 
 theorem proof_is_str_type {prog : SrcProgram} {prims : Prims} {ix_is_str_type ix_node_prod ix_kid ix_single_of_mini_selfhost_List_usize ix_p_type_ident ix_p_type_args_none ix_type_path_spellings ix_is_path ix_text_str : Nat} (fn : prog.funcs[ix_is_str_type]? = some (src_is_str_type ix_node_prod ix_kid ix_single_of_mini_selfhost_List_usize ix_p_type_ident ix_p_type_args_none ix_type_path_spellings ix_is_path ix_text_str)) (np : prims.isPrim ix_is_str_type = false)
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
@@ -71,51 +91,6 @@ theorem proof_is_str_type {prog : SrcProgram} {prims : Prims} {ix_is_str_type ix
   rw [pcall_succ np fn] at h
   simp only [src_is_str_type] at h
   faithful [Lanius.Mini.isStrType]
-
-theorem proof_is_text {prog : SrcProgram} {prims : Prims} {ix_is_text ix_same_text : Nat} (fn : prog.funcs[ix_is_text]? = some (src_is_text ix_same_text)) (np : prims.isPrim ix_is_text = false)
-    (ext_same_text : Certified (∀ {n : Nat}, Stmt_same_text prog prims ix_same_text n)) {n : Nat} :
-    Stmt_is_text prog prims ix_is_text n := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_is_text] at h
-  faithful [Lanius.Mini.isText]
-
-theorem proof_is_typed_slice_path {prog : SrcProgram} {prims : Prims} {ix_is_typed_slice_path ix_kid ix_same_spellings ix_path_ref ix_typed_slice_spellings ix_u8_args : Nat} (fn : prog.funcs[ix_is_typed_slice_path]? = some (src_is_typed_slice_path ix_kid ix_same_spellings ix_path_ref ix_typed_slice_spellings ix_u8_args)) (np : prims.isPrim ix_is_typed_slice_path = false)
-    (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
-    (ext_same_spellings : Certified (∀ {n : Nat}, Stmt_same_spellings prog prims ix_same_spellings n))
-    (ext_path_ref : Certified (∀ {n : Nat}, Stmt_path_ref prog prims ix_path_ref n))
-    (ext_typed_slice_spellings : Certified (∀ {n : Nat}, Stmt_typed_slice_spellings prog prims ix_typed_slice_spellings n))
-    (ext_u8_args : Certified (∀ {n : Nat}, Stmt_u8_args prog prims ix_u8_args n)) {n : Nat} :
-    Stmt_is_typed_slice_path prog prims ix_is_typed_slice_path n := by
-  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_is_typed_slice_path] at h
-  faithful [Lanius.Mini.isTypedSlicePath]
-
-theorem proof_is_u8_slice {prog : SrcProgram} {prims : Prims} {ix_is_u8_slice ix_boxed_of_mini_selfhost_Ty ix_same_ty : Nat} (fn : prog.funcs[ix_is_u8_slice]? = some (src_is_u8_slice ix_boxed_of_mini_selfhost_Ty ix_same_ty)) (np : prims.isPrim ix_is_u8_slice = false)
-    (ext_boxed_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Ty prog prims ix_boxed_of_mini_selfhost_Ty n))
-    (ext_same_ty : Certified (∀ {n : Nat}, Stmt_same_ty prog prims ix_same_ty n)) {n : Nat} :
-    Stmt_is_u8_slice prog prims ix_is_u8_slice n := by
-  intro x0 v0 w h r0
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_is_u8_slice] at h
-  faithful [Lanius.Mini.isU8Slice]
-
-theorem proof_is_u8_ty {prog : SrcProgram} {prims : Prims} {ix_is_u8_ty ix_same_ty : Nat} (fn : prog.funcs[ix_is_u8_ty]? = some (src_is_u8_ty ix_same_ty)) (np : prims.isPrim ix_is_u8_ty = false)
-    (ext_same_ty : Certified (∀ {n : Nat}, Stmt_same_ty prog prims ix_same_ty n)) {n : Nat} :
-    Stmt_is_u8_ty prog prims ix_is_u8_ty n := by
-  intro x0 v0 w h r0
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_is_u8_ty] at h
-  faithful [Lanius.Mini.isU8Ty]
 
 theorem proof_string_data_ptr_path {prog : SrcProgram} {prims : Prims} {ix_string_data_ptr_path ix_single_of_mini_selfhost_List_usize ix_cons_of_mini_selfhost_List_usize ix_text_core ix_text_mem ix_text_string_data_ptr : Nat} (fn : prog.funcs[ix_string_data_ptr_path]? = some (src_string_data_ptr_path ix_single_of_mini_selfhost_List_usize ix_cons_of_mini_selfhost_List_usize ix_text_core ix_text_mem ix_text_string_data_ptr)) (np : prims.isPrim ix_string_data_ptr_path = false)
     (ext_single_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_List_usize prog prims ix_single_of_mini_selfhost_List_usize n))
@@ -178,49 +153,5 @@ theorem proof_string_primary {prog : SrcProgram} {prims : Prims} {ix_string_prim
   rw [pcall_succ np fn] at h
   simp only [src_string_primary] at h
   faithful [Lanius.Mini.stringPrimary]
-
-theorem proof_tree_names {prog : SrcProgram} {prims : Prims} {ix_tree_names ix_node_prod ix_kid ix_p_ident ix_p_postfix_end ix_p_ident_plain ix_path_name ix_peel ix_is_text : Nat} (fn : prog.funcs[ix_tree_names]? = some (src_tree_names ix_node_prod ix_kid ix_p_ident ix_p_postfix_end ix_p_ident_plain ix_path_name ix_peel ix_is_text)) (np : prims.isPrim ix_tree_names = false)
-    (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
-    (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
-    (ext_p_ident : Certified (∀ {n : Nat}, Stmt_p_ident prog prims ix_p_ident n))
-    (ext_p_postfix_end : Certified (∀ {n : Nat}, Stmt_p_postfix_end prog prims ix_p_postfix_end n))
-    (ext_p_ident_plain : Certified (∀ {n : Nat}, Stmt_p_ident_plain prog prims ix_p_ident_plain n))
-    (ext_path_name : Certified (∀ {n : Nat}, Stmt_path_name prog prims ix_path_name n))
-    (ext_peel : Certified (∀ {n : Nat}, Stmt_peel prog prims ix_peel n))
-    (ext_is_text : Certified (∀ {n : Nat}, Stmt_is_text prog prims ix_is_text n)) {n : Nat} :
-    Stmt_tree_names prog prims ix_tree_names n := by
-  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_tree_names] at h
-  faithful [Lanius.Mini.treeNames]
-
-theorem proof_typed_slice_spellings {prog : SrcProgram} {prims : Prims} {ix_typed_slice_spellings ix_single_of_mini_selfhost_List_usize ix_cons_of_mini_selfhost_List_usize ix_text_core ix_text_mem ix_text_typed_slice_from_raw_parts : Nat} (fn : prog.funcs[ix_typed_slice_spellings]? = some (src_typed_slice_spellings ix_single_of_mini_selfhost_List_usize ix_cons_of_mini_selfhost_List_usize ix_text_core ix_text_mem ix_text_typed_slice_from_raw_parts)) (np : prims.isPrim ix_typed_slice_spellings = false)
-    (ext_single_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_List_usize prog prims ix_single_of_mini_selfhost_List_usize n))
-    (ext_cons_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_List_usize prog prims ix_cons_of_mini_selfhost_List_usize n))
-    (ext_text_core : Certified (∀ {n : Nat}, Stmt_text_core prog prims ix_text_core n))
-    (ext_text_mem : Certified (∀ {n : Nat}, Stmt_text_mem prog prims ix_text_mem n))
-    (ext_text_typed_slice_from_raw_parts : Certified (∀ {n : Nat}, Stmt_text_typed_slice_from_raw_parts prog prims ix_text_typed_slice_from_raw_parts n)) {n : Nat} :
-    Stmt_typed_slice_spellings prog prims ix_typed_slice_spellings n := by
-  intro w h
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_typed_slice_spellings] at h
-  faithful [Lanius.Mini.typedSliceSpellings]
-
-theorem proof_u8_args {prog : SrcProgram} {prims : Prims} {ix_u8_args ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_arg_ty ix_is_empty_trees ix_is_u8_ty : Nat} (fn : prog.funcs[ix_u8_args]? = some (src_u8_args ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_arg_ty ix_is_empty_trees ix_is_u8_ty)) (np : prims.isPrim ix_u8_args = false)
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_CTree prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree n))
-    (ext_arg_ty : Certified (∀ {n : Nat}, Stmt_arg_ty prog prims ix_arg_ty n))
-    (ext_is_empty_trees : Certified (∀ {n : Nat}, Stmt_is_empty_trees prog prims ix_is_empty_trees n))
-    (ext_is_u8_ty : Certified (∀ {n : Nat}, Stmt_is_u8_ty prog prims ix_is_u8_ty n)) {n : Nat} :
-    Stmt_u8_args prog prims ix_u8_args n := by
-  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_u8_args] at h
-  faithful [Lanius.Mini.u8Args]
 
 end Lanius.Faithful.SelfCert

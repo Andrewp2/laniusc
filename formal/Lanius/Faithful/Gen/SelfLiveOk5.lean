@@ -366,6 +366,6 @@ theorem lok2439 : LiveOk prims outside liveBad 2439 (src_arms_by_variant 97 104 
 theorem lok2481 : LiveOk prims outside liveBad 2481 (src_arms_naming 97 104 2481 2496 2503) := by decide +kernel
 
 /-- mini::selfhost::p_pattern_tuple -/
-theorem lok2512 : LiveOk prims outside liveBad 2512 (src_p_pattern_tuple) := by decide +kernel
+theorem lok2513 : LiveOk prims outside liveBad 2513 (src_p_pattern_tuple) := by decide +kernel
 
 end Lanius.Faithful.SelfPure

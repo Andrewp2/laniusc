@@ -95,23 +95,6 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem cert_rest_src {n : Nat} :
-    Stmt_rest_src prog prims 1378 n :=
-  @proof_rest_src prog prims 1378 178 fn_rest_src np_rest_src ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_SrcType⟩ n
-
-theorem certs_lit_exprs : ∀ n, (Stmt_lit_exprs prog prims 1180 n) := by
-  intro n
-  induction n with
-  | zero =>
-    exact (by intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2; simp [pcall] at h)
-  | succ n ih =>
-    have ih_lit_exprs : Stmt_lit_exprs prog prims 1180 n := ih
-    exact @step_lit_exprs prog prims 1180 316 1177 1375 1376 1377 1378 fn_lit_exprs np_lit_exprs ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr⟩ ⟨@cert_lit_expr⟩ ⟨@cert_empty_of_mini_selfhost_SrcExpr⟩ ⟨@cert_cons_of_mini_selfhost_SrcExpr⟩ ⟨@cert_first_src⟩ ⟨@cert_rest_src⟩ n ⟨ih_lit_exprs⟩
-
-theorem cert_lit_exprs {n : Nat} :
-    Stmt_lit_exprs prog prims 1180 n :=
-  (certs_lit_exprs n)
-
 theorem certs_get_of_mini_selfhost_SrcFunc : ∀ n, (Stmt_get_of_mini_selfhost_SrcFunc prog prims 1379 n) := by
   intro n
   induction n with
@@ -1085,5 +1068,22 @@ theorem cert_match_decl {n : Nat} :
 theorem cert_match_same_decl {n : Nat} :
     Stmt_match_same_decl prog prims 2346 n :=
   (certs_match_ty n).2.2.2.2.2.2.2
+
+theorem cert_empty_of_mini_selfhost_Bind {n : Nat} :
+    Stmt_empty_of_mini_selfhost_Bind prog prims 1852 n :=
+  @proof_empty_of_mini_selfhost_Bind prog prims 1852 fn_empty_of_mini_selfhost_Bind np_empty_of_mini_selfhost_Bind n
+
+theorem certs_bound_args : ∀ n, (Stmt_bound_args prog prims 1984 n) := by
+  intro n
+  induction n with
+  | zero =>
+    exact (by intro x0 x1 v0 v1 w h r0 r1; simp [pcall] at h)
+  | succ n ih =>
+    have ih_bound_args : Stmt_bound_args prog prims 1984 n := ih
+    exact @step_bound_args prog prims 1984 441 548 1535 2109 fn_bound_args np_bound_args ⟨@cert_empty_of_mini_selfhost_Ty⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_List_usize⟩ ⟨@cert_cons_ty⟩ ⟨@cert_find_bind⟩ n ⟨ih_bound_args⟩
+
+theorem cert_bound_args {n : Nat} :
+    Stmt_bound_args prog prims 1984 n :=
+  (certs_bound_args n)
 
 end Lanius.Faithful.SelfCert

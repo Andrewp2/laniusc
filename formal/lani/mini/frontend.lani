@@ -811,14 +811,15 @@ pub fn text_string_data_ptr() -> List<usize> {
     return t;
 }
 
-// typed_slice_from_raw_parts
-pub fn text_typed_slice_from_raw_parts() -> List<usize> {
-    let t: List<usize> = cons(116, cons(121, cons(112, cons(101, cons(100, cons(95, cons(115, cons(108, cons(105, cons(99, cons(101, cons(95, cons(102, cons(114, cons(111, cons(109, cons(95, cons(114, cons(97, cons(119, cons(95, cons(112, cons(97, cons(114, cons(116, single(115))))))))))))))))))))))))));
+pub fn text_slice_from_raw_parts() -> List<usize> {
+    let t: List<usize> = cons(115, cons(108, cons(105, cons(99, cons(101, cons(95, cons(102, cons(114, cons(111, cons(109, cons(95, cons(114, cons(97, cons(119, cons(95, cons(112, cons(97, cons(114, cons(116, single(115))))))))))))))))))));
     return t;
 }
 
-pub fn text_slice_from_raw_parts() -> List<usize> {
-    let t: List<usize> = cons(115, cons(108, cons(105, cons(99, cons(101, cons(95, cons(102, cons(114, cons(111, cons(109, cons(95, cons(114, cons(97, cons(119, cons(95, cons(112, cons(97, cons(114, cons(116, single(115))))))))))))))))))));
+// typed_slice_from_raw_parts: "typed_" then slice_from_raw_parts (one long
+// literal list is slow to unfold in the height lemmas)
+pub fn text_typed_slice_from_raw_parts() -> List<usize> {
+    let t: List<usize> = cons(116, cons(121, cons(112, cons(101, cons(100, cons(95, text_slice_from_raw_parts()))))));
     return t;
 }
 
@@ -4265,7 +4266,7 @@ pub fn wide_uint(u: UintTy, negative: bool, n: usize) -> core::option::Option<Sr
 }
 
 pub fn wide_isize(negative: bool, n: usize) -> core::option::Option<SrcExpr> {
-    if (!negative && n <= 9223372036854775807) {
+    if ((!negative || n == 0) && n <= 9223372036854775807) {
         return Some(Cast(Isize, boxed(Unsigned(Uint64, n as u64))));
     }
     if (negative && n <= 9223372036854775808) {
@@ -4280,7 +4281,7 @@ pub fn wide_sint(u: UintTy, negative: bool, n: usize) -> core::option::Option<Sr
     if (!sint_wide(u)) {
         return None;
     }
-    if (!negative && n <= 9223372036854775807) {
+    if ((!negative || n == 0) && n <= 9223372036854775807) {
         return Some(Cast(Sint(u), boxed(Unsigned(Uint64, n as u64))));
     }
     if (negative && n <= 9223372036854775808) {
@@ -9461,9 +9462,34 @@ pub fn string_data_ptr_path() -> List<List<usize>> {
     return cons(text_core(), cons(text_mem(), single(text_string_data_ptr())));
 }
 
-// core::mem::typed_slice_from_raw_parts
-pub fn typed_slice_spellings() -> List<List<usize>> {
-    return cons(text_core(), cons(text_mem(), single(text_typed_slice_from_raw_parts())));
+pub fn is_empty_texts(ts: List<List<usize>>) -> bool {
+    return match (ts) {
+        Nil -> true,
+        Cons(t, rest) -> false,
+    };
+}
+
+pub fn is_last_typed(ss: List<List<usize>>) -> bool {
+    return match (ss) {
+        Nil -> false,
+        Cons(c, rest) -> same_text(c, text_typed_slice_from_raw_parts()) && is_empty_texts(unbox(rest)),
+    };
+}
+
+pub fn is_mem_typed(ss: List<List<usize>>) -> bool {
+    return match (ss) {
+        Nil -> false,
+        Cons(b, rest) -> same_text(b, text_mem()) && is_last_typed(unbox(rest)),
+    };
+}
+
+// The segments spell core::mem::typed_slice_from_raw_parts (compared one by
+// one, with no list of them built).
+pub fn is_typed_slice_segments(ss: List<List<usize>>) -> bool {
+    return match (ss) {
+        Nil -> false,
+        Cons(a, rest) -> same_text(a, text_core()) && is_mem_typed(unbox(rest)),
+    };
 }
 
 pub fn is_u8_ty(t: core::option::Option<Ty>) -> bool {
@@ -9499,7 +9525,7 @@ pub fn u8_args(fuel: usize, env: FrontEnv, gs: List<CTree>) -> bool {
 pub fn is_typed_slice_path(fuel: usize, env: FrontEnv, path: CTree) -> bool {
     return match (path_ref(fuel, kid(path, 0), kid(path, 1))) {
         None -> false,
-        Some(r) -> same_spellings(r.segments, typed_slice_spellings()) && u8_args(fuel, env, r.targs),
+        Some(r) -> is_typed_slice_segments(r.segments) && u8_args(fuel, env, r.targs),
     };
 }
 

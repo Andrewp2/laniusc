@@ -196,15 +196,15 @@ theorem lok2487 : LiveOk prims outside liveBad 2487 (src_view_array 1576 1794 19
 theorem lok2499 : LiveOk prims outside liveBad 2499 (src_wild_use 2482) := by decide +kernel
 
 /-- mini::selfhost::rows_use -/
-theorem lok2500 : LiveOk prims outside liveBad 2500 (src_rows_use 2510) := by decide +kernel
+theorem lok2500 : LiveOk prims outside liveBad 2500 (src_rows_use 2511) := by decide +kernel
 
 /-- mini::selfhost::nested_or_plain -/
-theorem lok2510 : LiveOk prims outside liveBad 2510 (src_nested_or_plain 2517 2518) := by decide +kernel
+theorem lok2511 : LiveOk prims outside liveBad 2511 (src_nested_or_plain 2520 2521) := by decide +kernel
 
 /-- mini::selfhost::plain_use -/
-theorem lok2518 : LiveOk prims outside liveBad 2518 (src_plain_use 2181 2522) := by decide +kernel
+theorem lok2521 : LiveOk prims outside liveBad 2521 (src_plain_use 2181 2525) := by decide +kernel
 
 /-- mini::selfhost::shadow_use -/
-theorem lok2522 : LiveOk prims outside liveBad 2522 (src_shadow_use 2525) := by decide +kernel
+theorem lok2525 : LiveOk prims outside liveBad 2525 (src_shadow_use 2528) := by decide +kernel
 
 end Lanius.Faithful.SelfPure

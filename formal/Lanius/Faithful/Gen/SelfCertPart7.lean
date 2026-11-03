@@ -19,6 +19,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_Inline_positionAt
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_variantsNamedAt
 public import Lanius.Faithful.Gen.SelfStmtF_assertClosed
 public import Lanius.Faithful.Gen.SelfStmtF_collect
+public import Lanius.Faithful.Gen.SelfStmtF_consTys
 public import Lanius.Faithful.Gen.SelfStmtF_distinct
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
 public import Lanius.Faithful.Gen.SelfStmtF_flattenTys
@@ -48,6 +49,7 @@ import Lanius.Faithful.Gen.SelfProofF_Inline_positionAt
 import Lanius.Faithful.Gen.SelfProofF_Inline_variantsNamedAt
 import Lanius.Faithful.Gen.SelfProofF_assertClosed
 import Lanius.Faithful.Gen.SelfProofF_collect
+import Lanius.Faithful.Gen.SelfProofF_consTys
 import Lanius.Faithful.Gen.SelfProofF_distinct
 import Lanius.Faithful.Gen.SelfProofF_findConst
 import Lanius.Faithful.Gen.SelfProofF_flattenTys
@@ -76,19 +78,6 @@ open Lanius.Core (Value)
 open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
-
-theorem certs_methods_of : ∀ n, (Stmt_methods_of prog prims 912 n) := by
-  intro n
-  induction n with
-  | zero =>
-    exact (by intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5; simp [pcall] at h)
-  | succ n ih =>
-    have ih_methods_of : Stmt_methods_of prog prims 912 n := ih
-    exact @step_methods_of prog prims 912 104 597 610 1119 fn_methods_of np_methods_of ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_CTree⟩ ⟨@cert_empty_of_mini_selfhost_FnDecl⟩ ⟨@cert_cons_fn_decl⟩ ⟨@cert_method_decl⟩ n ⟨ih_methods_of⟩
-
-theorem cert_methods_of {n : Nat} :
-    Stmt_methods_of prog prims 912 n :=
-  (certs_methods_of n)
 
 theorem cert_impl_methods {n : Nat} :
     Stmt_impl_methods prog prims 618 n :=
@@ -936,5 +925,9 @@ theorem certs_ty_list : ∀ n, (Stmt_ty_list prog prims 1421 n) := by
 theorem cert_ty_list {n : Nat} :
     Stmt_ty_list prog prims 1421 n :=
   (certs_ty_list n)
+
+theorem cert_field_tys {n : Nat} :
+    Stmt_field_tys prog prims 1226 n :=
+  @proof_field_tys prog prims 1226 1173 1421 1422 fn_field_tys np_field_tys ⟨@cert_get_of_mini_selfhost_TypeDecl⟩ ⟨@cert_ty_list⟩ ⟨@cert_decl_env⟩ n
 
 end Lanius.Faithful.SelfCert
