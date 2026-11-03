@@ -1,0 +1,26 @@
+# Merge drivers (formal/tools/merge_driver.py; the procedure and the `git config`
+# commands that define them are in formal/tools/README.md). Without those config
+# entries git merges these files as plain text.
+
+# Lean files: git's merge, with conflicts between import lines at the top of a
+# file settled by taking both sides' lines.
+*.lean merge=lanius-lean
+
+# What formal/tools/regen.py writes: the merge keeps ours, never a conflict, and
+# regen.py then rewrites them from the merged sources.
+Lanius/Mini/Compiler.lean merge=lanius-generated
+Lanius/Mini/Compiler/** merge=lanius-generated
+Lanius/Mini/Frontend.lean merge=lanius-generated
+Lanius/Mini/Frontend/** merge=lanius-generated
+Lanius/Mini/Extract.lean merge=lanius-generated
+Lanius/Mini/Extract/** merge=lanius-generated
+Lanius/Machines/SqliteStatement.lean merge=lanius-generated
+Lanius/Machines/SqliteStatement/** merge=lanius-generated
+Lanius/Faithful/Gen/** merge=lanius-generated
+Lanius/Faithful/GenB/** merge=lanius-generated
+Lanius/Faithful/SelfPre/GenP/** merge=lanius-generated
+Lanius/Faithful/SelfPre/GenPC/** merge=lanius-generated
+Lanius/Faithful/SelfPre/HB.lean merge=lanius-generated
+Lanius/Faithful/SelfPre/SZ.lean merge=lanius-generated
+Lanius/Faithful/SelfPre/TS.lean merge=lanius-generated
+Lanius/Faithful/SelfPre/NB.lean merge=lanius-generated

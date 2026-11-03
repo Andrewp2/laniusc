@@ -13,10 +13,10 @@ From the budget certificates' models and statements in `Faithful/GenB/`:
 * `pre_K`: `Pre_K n xs b` from `hb x + b ≤ K` for the arguments (and a
   walker's index plus its list's height, `OVERRIDES`), by `pre_auto`.
 
-Usage: pre_certs.py [--ns NAMESPACE] [--base MODULE] [--compile] GENB OUTDIR ROOT...
+Usage: pre_certs.py [--ns NAMESPACE] [--base MODULE] [--compile] [--prefix MODULE] GENB OUTDIR ROOT...
 
 The modules are named after OUTDIR (under formal/), e.g. `Lanius.Faithful.SelfPre.GenP`
-for build_files. `--ns` puts the lemmas in a namespace of their own below
+for build_files, or after `--prefix` (regen.py writes them to its workdir first). `--ns` puts the lemmas in a namespace of their own below
 `Lanius.Faithful.SelfPre` (the tactic looks there first), so the compile side's
 (GenPC, `--ns Lanius.Faithful.SelfPre.Compile`) can share names with build_files'.
 `--base` replaces the value lemmas' module `SelfPre.Values` in every module's
@@ -1047,13 +1047,16 @@ def main():
     ns = 'Lanius.Faithful.SelfPre'
     values = 'Lanius.Faithful.SelfPre.Values'
     compile_side = False
-    while args[:1] in (['--ns'], ['--base'], ['--compile']):
+    prefix = None
+    while args[:1] in (['--ns'], ['--base'], ['--compile'], ['--prefix']):
         if args[0] == '--compile':
             HAND_CASE.update(COMPILE_HAND_CASE)
             args, compile_side = args[1:], True
             continue
         if args[0] == '--ns':
             ns = args[1]
+        elif args[0] == '--prefix':
+            prefix = args[1]
         else:
             values = args[1]
         args = args[2:]
@@ -1061,7 +1064,8 @@ def main():
     roots = args[2:]
     formal = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     rel = os.path.relpath(os.path.abspath(outdir), formal)
-    prefix = rel.replace(os.sep, '.') if rel.startswith('Lanius' + os.sep) else 'Lanius.Faithful.SelfPre.GenP'
+    if prefix is None:
+        prefix = rel.replace(os.sep, '.') if rel.startswith('Lanius' + os.sep) else 'Lanius.Faithful.SelfPre.GenP'
     g = Gen(genb, roots)
     if compile_side:
         nb_path = os.path.join(formal, 'Lanius', 'Faithful', 'SelfPre', 'NB.lean')
