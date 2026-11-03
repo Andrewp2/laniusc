@@ -180,6 +180,7 @@ theorem post_e_let_closed : ∀ (n : Nat) (x0 : Nat) (x1 : Option Lanius.Mini.Sr
   rw [Lanius.Mini.eLetClosed.eq_def x0 x1 x2 x3 x4]
   post_auto n, M
 
+set_option maxHeartbeats 600000 in
 theorem post_group_close_eff : ∀ n : Nat,
     (∀ (x0 : Nat) (x1 : Lanius.Mini.Tables) (x2 : Lanius.Mini.MEff), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → Cost_close_eff n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.closeEff x0 x1 x2) ≤ M + Cost_close_eff n x0 x1 x2) ∧
     (∀ (x0 : Nat) (x1 : Lanius.Mini.Tables) (x2 : List Lanius.Mini.MEff), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → Cost_close_effs n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.closeEffs x0 x1 x2) ≤ M + Cost_close_effs n x0 x1 x2) := by
@@ -535,6 +536,7 @@ theorem post_group_known_eff : ∀ n : Nat,
 theorem post_known_eff : ∀ (n : Nat) (x0 : List Lanius.Mini.SrcFunc) (x1 : List Lanius.Mini.LocalTy) (x2 : Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → Cost_known_eff n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.knownEff x0 x1 x2) ≤ M + Cost_known_eff n x0 x1 x2 :=
   fun n => (post_group_known_eff n)
 
+set_option maxHeartbeats 800000 in
 theorem post_group_lit_eff : ∀ n : Nat,
     (∀ (x0 : List Lanius.Mini.SrcFunc) (x1 : List Lanius.Mini.LocalTy) (x2 : Option Lanius.Mini.SrcType) (x3 : Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → Cost_lit_eff n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.litEff x0 x1 x2 x3) ≤ M + Cost_lit_eff n x0 x1 x2 x3) ∧
     (∀ (x0 : List Lanius.Mini.SrcFunc) (x1 : List Lanius.Mini.LocalTy) (x2 : Option (List Lanius.Mini.SrcType)) (x3 : List Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → Cost_lit_effs n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.litEffs x0 x1 x2 x3) ≤ M + Cost_lit_effs n x0 x1 x2 x3) ∧

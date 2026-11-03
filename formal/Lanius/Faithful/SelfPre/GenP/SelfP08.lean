@@ -337,6 +337,7 @@ theorem post_named_inferred : ∀ (n : Nat) (x0 : Nat) (x1 : Option (List Lanius
   rw [Lanius.Mini.namedInferred.eq_def x0 x1]
   post_auto n, M
 
+set_option maxHeartbeats 600000 in
 theorem post_group_match_tys : ∀ n : Nat,
     (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List (List Nat)) (x3 : List Lanius.Mini.CTree) (x4 : List Lanius.Mini.Ty) (x5 : List Lanius.Mini.Bind), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → Cost_match_tys n x0 x1 x2 x3 x4 x5 < 18446744073709551616 → hb (Lanius.Mini.matchTys x0 x1 x2 x3 x4 x5) ≤ M + Cost_match_tys n x0 x1 x2 x3 x4 x5) ∧
     (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List (List Nat)) (x3 : List Lanius.Mini.CTree) (x4 : List Lanius.Mini.Ty) (x5 : Option (List Lanius.Mini.Bind)), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → Cost_match_tys_next n x0 x1 x2 x3 x4 x5 < 18446744073709551616 → hb (Lanius.Mini.matchTysNext x0 x1 x2 x3 x4 x5) ≤ M + Cost_match_tys_next n x0 x1 x2 x3 x4 x5) := by
@@ -381,6 +382,7 @@ theorem post_cons_of_mini_selfhost_VariantAt : ∀ (n : Nat) (x0 : Lanius.Mini.V
   · exact absurd h (Nat.lt_irrefl _)
   · simp only [Cost_cons_of_mini_selfhost_VariantAt, hb_cons, hb_nil, hb_simp]; omega
 
+set_option maxHeartbeats 600000 in
 theorem post_group_variants_named : ∀ n : Nat,
     (∀ (x0 : List Lanius.Mini.TypeDecl) (x1 : List (List Nat)) (x2 : List Nat) (x3 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → Cost_variants_named n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.variantsNamed x0 x1 x2 x3) ≤ M + Cost_variants_named n x0 x1 x2 x3) ∧
     (∀ (x0 : Lanius.Mini.TypeDecl) (x1 : List Lanius.Mini.TypeDecl) (x2 : List (List Nat)) (x3 : List Nat) (x4 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → Cost_variants_named_at n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.Inline.variantsNamedAt x0 x1 x2 x3 x4) ≤ M + Cost_variants_named_at n x0 x1 x2 x3 x4) := by
@@ -413,6 +415,7 @@ theorem post_concat_of_mini_selfhost_VariantAt : ∀ (n : Nat) (x0 : List Lanius
     simp only [List.cons_append, hb_cons, hb_simp]
     omega
 
+set_option maxHeartbeats 600000 in
 theorem post_group_imported_variants : ∀ n : Nat,
     (∀ (x0 : List Lanius.Mini.TypeDecl) (x1 : List Lanius.Mini.ImportDecl) (x2 : List (List Nat)) (x3 : List Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → Cost_imported_variants n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.importedVariants x0 x1 x2 x3) ≤ M + Cost_imported_variants n x0 x1 x2 x3) ∧
     (∀ (x0 : List Lanius.Mini.TypeDecl) (x1 : Lanius.Mini.ImportDecl) (x2 : List Lanius.Mini.ImportDecl) (x3 : List (List Nat)) (x4 : List Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → Cost_imported_variants_at n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.Inline.importedVariantsAt x0 x1 x2 x3 x4) ≤ M + Cost_imported_variants_at n x0 x1 x2 x3 x4) := by
@@ -435,6 +438,7 @@ theorem post_imported_variants : ∀ (n : Nat) (x0 : List Lanius.Mini.TypeDecl) 
 theorem post_imported_variants_at : ∀ (n : Nat) (x0 : List Lanius.Mini.TypeDecl) (x1 : Lanius.Mini.ImportDecl) (x2 : List Lanius.Mini.ImportDecl) (x3 : List (List Nat)) (x4 : List Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → Cost_imported_variants_at n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.Inline.importedVariantsAt x0 x1 x2 x3 x4) ≤ M + Cost_imported_variants_at n x0 x1 x2 x3 x4 :=
   fun n => (post_group_imported_variants n).2
 
+set_option maxHeartbeats 1800000 in
 theorem post_group_fit_ty : ∀ n : Nat,
     (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List (List Nat)) (x3 : Lanius.Mini.CTree) (x4 : Lanius.Mini.Ty) (x5 : List Lanius.Mini.Bind), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → Cost_fit_ty n x0 x1 x2 x3 x4 x5 < 18446744073709551616 → hb (Lanius.Mini.fitTy x0 x1 x2 x3 x4 x5) ≤ M + Cost_fit_ty n x0 x1 x2 x3 x4 x5) ∧
     (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List (List Nat)) (x3 : Option (List (List Nat))) (x4 : Option (List Lanius.Mini.CTree)) (x5 : Lanius.Mini.Ty) (x6 : List Lanius.Mini.Bind), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → hb x6 ≤ M → Cost_fit_path n x0 x1 x2 x3 x4 x5 x6 < 18446744073709551616 → hb (Lanius.Mini.fitPath x0 x1 x2 x3 x4 x5 x6) ≤ M + Cost_fit_path n x0 x1 x2 x3 x4 x5 x6) ∧
@@ -507,6 +511,7 @@ theorem post_impl_fit : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.Decls) (x2 : 
   rw [Lanius.Mini.implFit.eq_def x0 x1 x2 x3]
   post_auto n, M
 
+set_option maxHeartbeats 600000 in
 theorem post_group_find_method : ∀ n : Nat,
     (∀ (x0 : Nat) (x1 : Lanius.Mini.Decls) (x2 : List Lanius.Mini.FnDecl) (x3 : Nat) (x4 : List Nat) (x5 : Lanius.Mini.Ty), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x4 ≤ M → hb x5 ≤ M → Cost_find_method n x0 x1 x2 x3 x4 x5 < 18446744073709551616 → hb (Lanius.Mini.findMethod x0 x1 x2 x3 x4 x5) ≤ M + Cost_find_method n x0 x1 x2 x3 x4 x5) ∧
     (∀ (x0 : Nat) (x1 : Lanius.Mini.Decls) (x2 : Lanius.Mini.FnDecl) (x3 : List Lanius.Mini.FnDecl) (x4 : Nat) (x5 : List Nat) (x6 : Lanius.Mini.Ty), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x5 ≤ M → hb x6 ≤ M → Cost_find_method_at n x0 x1 x2 x3 x4 x5 x6 < 18446744073709551616 → hb (Lanius.Mini.Inline.findMethodAt x0 x1 x2 x3 x4 x5 x6) ≤ M + Cost_find_method_at n x0 x1 x2 x3 x4 x5 x6) := by

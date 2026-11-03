@@ -259,6 +259,7 @@ theorem post_concat_of_mini_selfhost_Token : ∀ (n : Nat) (x0 : List Lanius.Min
     simp only [List.cons_append, hb_cons, hb_simp]
     omega
 
+set_option maxHeartbeats 600000 in
 theorem post_group_tree_tokens : ∀ n : Nat,
     (∀ (x0 : Lanius.Mini.CTree), ∀ M : Nat, hb x0 ≤ M → Cost_tree_tokens n x0 < 18446744073709551616 → hb (Lanius.Mini.treeTokens x0) ≤ M + Cost_tree_tokens n x0) ∧
     (∀ (x0 : List Lanius.Mini.CTree), ∀ M : Nat, hb x0 ≤ M → Cost_trees_tokens n x0 < 18446744073709551616 → hb (Lanius.Mini.treesTokens x0) ≤ M + Cost_trees_tokens n x0) := by
@@ -451,6 +452,7 @@ theorem post_fl_exp_part : ∀ (n : Nat) (x0 : List Nat) (x1 : List Bool) (x2 : 
   rw [Lanius.Mini.flExpPart.eq_def x0 x1 x2 x3]
   post_auto n, M
 
+set_option maxHeartbeats 600000 in
 theorem post_group_fl_frac_part : ∀ n : Nat,
     (∀ (x0 : List Nat) (x1 : List Bool) (x2 : Nat) (x3 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_fl_frac_part n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.flFracPart x0 x1 x2 x3) ≤ M + Cost_fl_frac_part n x0 x1 x2 x3) ∧
     (∀ (x0 : Nat) (x1 : List Nat) (x2 : List Bool) (x3 : Nat) (x4 : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → Cost_fl_frac_at n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.Inline.flFracAt x0 x1 x2 x3 x4) ≤ M + Cost_fl_frac_at n x0 x1 x2 x3 x4) := by
@@ -473,6 +475,7 @@ theorem post_fl_frac_part : ∀ (n : Nat) (x0 : List Nat) (x1 : List Bool) (x2 :
 theorem post_fl_frac_at : ∀ (n : Nat) (x0 : Nat) (x1 : List Nat) (x2 : List Bool) (x3 : Nat) (x4 : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → Cost_fl_frac_at n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.Inline.flFracAt x0 x1 x2 x3 x4) ≤ M + Cost_fl_frac_at n x0 x1 x2 x3 x4 :=
   fun n => (post_group_fl_frac_part n).2
 
+set_option maxHeartbeats 600000 in
 theorem post_group_fl_int_part : ∀ n : Nat,
     (∀ (x0 : List Nat) (x1 : List Bool) (x2 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_fl_int_part n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.flIntPart x0 x1 x2) ≤ M + Cost_fl_int_part n x0 x1 x2) ∧
     (∀ (x0 : Nat) (x1 : List Nat) (x2 : List Bool) (x3 : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → Cost_fl_int_at n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.Inline.flIntAt x0 x1 x2 x3) ≤ M + Cost_fl_int_at n x0 x1 x2 x3) := by
@@ -587,6 +590,7 @@ theorem post_float_literal : ∀ (n : Nat) (x0 : List Nat), ∀ M : Nat, hb x0 �
   rw [Lanius.Mini.floatLiteral.eq_def x0]
   post_auto n, M
 
+set_option maxHeartbeats 2000000 in
 theorem post_group_expr_of : ∀ n : Nat,
     (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Lanius.Mini.CTree), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → Cost_expr_of n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.exprOf x0 x1 x2 x3) ≤ M + Cost_expr_of n x0 x1 x2 x3) ∧
     (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Lanius.Mini.CTree), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → Cost_assign_value n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.assignValue x0 x1 x2 x3) ≤ M + Cost_assign_value n x0 x1 x2 x3) ∧

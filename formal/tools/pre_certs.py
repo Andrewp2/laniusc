@@ -240,6 +240,34 @@ POST_EXTRA = {
     'wild_binders': ['x1'],
 }
 
+# Hand-written recursive cases (the body after `intro xs M hMs` in the group's
+# `succ` case). wild_binders: its index grows by one per binder, absorbed by
+# the binder's own cost (at least 1); the potential choice cannot see that.
+HAND_CASE = {
+    'wild_binders': '''      intro h
+      cases x2 with
+      | nil => rw [Lanius.Mini.wildBinders.eq_def]; simp only [hb_nil]; omega
+      | cons t rest =>
+        rw [Cost_wild_binders.eq_def] at h ⊢; dsimp only at h ⊢
+        rw [Lanius.Mini.wildBinders.eq_def]; dsimp only
+        simp only [hb_cons] at hM1 ⊢
+        have h1 := post_wild_binder n x0 x1 M hM0 (by omega)
+        have h2 := post_wild_binders x0 (x1 + 1) rest M hM0 (by omega) (by omega)
+        have h3 : 1 ≤ Cost_cons_of_mini_selfhost_CTree n (Lanius.Mini.wildBinder x0 x1)
+            (Lanius.Mini.wildBinders x0 (x1 + 1) rest) := by
+          rcases n with _ | n <;> simp only [Cost_cons_of_mini_selfhost_CTree] <;> omega
+        have h4 : 1 ≤ Cost_wild_binder n x0 x1 := by
+          rcases n with _ | n <;> rw [Cost_wild_binder.eq_def] <;> dsimp only <;> omega
+        omega
+''',
+}
+
+
+def group_beats(size):
+    """A mutual group proves all its members in one command: the heartbeat
+    limit (per command) grows with the group."""
+    return f'set_option maxHeartbeats {200000 * size + 200000} in\n' if size > 1 else ''
+
 
 class Emit:
     """The height and precondition lemmas, at a potential `M`:
@@ -334,12 +362,12 @@ class Emit:
         zero = [f'fun {p[1]} M {p[2]} h => absurd h (Nat.lt_irrefl _)'.replace('  ', ' ')
                 for k, p in zip(ks, map(self.post_parts, ks))]
         names = [f'post_{k}' for k in ks]
-        cases = ''.join(f'    · intro {p[1]} M {p[2]}\n'
+        cases = ''.join(f'    · intro {p[1]} M {p[2]}\n' + (HAND_CASE[k] if k in HAND_CASE else
                         f'      rw [Cost_{k}.eq_def]; dsimp only\n' +
                         (f'      rw [{self.head(k)}.eq_def{(" " + p[1]) if p[1] else ""}]\n' if self.head(k) else '') +
-                        f'      post_auto n, M\n'
+                        f'      post_auto n, M\n')
                         for k, p in zip(ks, map(self.post_parts, ks)))
-        out.append(f'theorem post_group_{first} : ∀ n : Nat,\n    {conj} := by\n'
+        out.append(group_beats(len(ks)) + f'theorem post_group_{first} : ∀ n : Nat,\n    {conj} := by\n'
                    f'  intro n\n'
                    f'  induction n with\n'
                    f'  | zero => exact {tuple_(zero)}\n'
@@ -419,7 +447,7 @@ class Emit:
         cases = ''.join(f'    · intro {p[1]} b M {p[2]}\n'
                         f'      rw [Pre_{k}.eq_def]; dsimp only\n'
                         f'      pre_auto n, M\n' for k, p in zip(ks, parts))
-        out = [f'theorem pre_group_{first} : ∀ n : Nat,\n    {conj} := by\n'
+        out = [group_beats(len(ks)) + f'theorem pre_group_{first} : ∀ n : Nat,\n    {conj} := by\n'
                f'  intro n\n'
                f'  induction n with\n'
                f'  | zero => exact {tuple_(zero)}\n'

@@ -70,6 +70,7 @@ theorem post_single_of_mini_selfhost_CTree : ∀ (n : Nat) (x0 : Lanius.Mini.CTr
   · exact absurd h (Nat.lt_irrefl _)
   · simp only [Cost_single_of_mini_selfhost_CTree, hb_cons, hb_nil, hb_simp]; omega
 
+set_option maxHeartbeats 800000 in
 theorem post_group_list_items : ∀ n : Nat,
     (∀ (x0 : Nat) (x1 : Lanius.Mini.CTree), ∀ M : Nat, hb x1 ≤ M → Cost_list_items n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.listItems x0 x1) ≤ M + Cost_list_items n x0 x1) ∧
     (∀ (x0 : Nat) (x1 : List Lanius.Mini.CTree), ∀ M : Nat, hb x1 ≤ M → Cost_items_in n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.itemsIn x0 x1) ≤ M + Cost_items_in n x0 x1) ∧
@@ -242,6 +243,7 @@ theorem post_type_decls : ∀ (n : Nat) (x0 : Option Lanius.Mini.TypeDecl), ∀ 
   rw [Lanius.Mini.typeDecls.eq_def x0]
   post_auto n, M
 
+set_option maxHeartbeats 600000 in
 theorem post_group_param_spellings : ∀ n : Nat,
     (∀ (x0 : List Lanius.Mini.CTree), ∀ M : Nat, hb x0 ≤ M → Cost_param_spellings n x0 < 18446744073709551616 → hb (Lanius.Mini.paramSpellings x0) ≤ M + Cost_param_spellings n x0) ∧
     (∀ (x0 : Lanius.Mini.CTree) (x1 : List Lanius.Mini.CTree), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_param_spelling_at n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Inline.paramSpellingAt x0 x1) ≤ M + Cost_param_spelling_at n x0 x1) := by

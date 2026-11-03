@@ -45,6 +45,7 @@ theorem post_group_flatten_tys : ∀ n : Nat,
 theorem post_flatten_tys : ∀ (n : Nat) (x0 : List (List Lanius.Mini.Ty)), ∀ M : Nat, hb x0 ≤ M → Cost_flatten_tys n x0 < 18446744073709551616 → hb (Lanius.Mini.flattenTys x0) ≤ M + Cost_flatten_tys n x0 :=
   fun n => (post_group_flatten_tys n)
 
+set_option maxHeartbeats 600000 in
 theorem post_group_weigh_round : ∀ n : Nat,
     (∀ (x0 : Nat) (x1 : Lanius.Mini.Decls) (x2 : List Lanius.Mini.Inst) (x3 : List (Option Nat)) (x4 : List Lanius.Mini.Inst) (x5 : List (Option Nat)), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → Cost_weigh_round n x0 x1 x2 x3 x4 x5 < 18446744073709551616 → hb (Lanius.Mini.weighRound x0 x1 x2 x3 x4 x5) ≤ M + Cost_weigh_round n x0 x1 x2 x3 x4 x5) ∧
     (∀ (x0 : Nat) (x1 : Lanius.Mini.Decls) (x2 : List Lanius.Mini.Inst) (x3 : List (Option Nat)) (x4 : Lanius.Mini.Inst) (x5 : List Lanius.Mini.Inst) (x6 : List (Option Nat)), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → hb x6 ≤ M → Cost_weigh_round_at n x0 x1 x2 x3 x4 x5 x6 < 18446744073709551616 → hb (Lanius.Mini.Inline.weighRoundAt x0 x1 x2 x3 x4 x5 x6) ≤ M + Cost_weigh_round_at n x0 x1 x2 x3 x4 x5 x6) := by
@@ -67,6 +68,7 @@ theorem post_weigh_round : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.Decls) (x2
 theorem post_weigh_round_at : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.Decls) (x2 : List Lanius.Mini.Inst) (x3 : List (Option Nat)) (x4 : Lanius.Mini.Inst) (x5 : List Lanius.Mini.Inst) (x6 : List (Option Nat)), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → hb x6 ≤ M → Cost_weigh_round_at n x0 x1 x2 x3 x4 x5 x6 < 18446744073709551616 → hb (Lanius.Mini.Inline.weighRoundAt x0 x1 x2 x3 x4 x5 x6) ≤ M + Cost_weigh_round_at n x0 x1 x2 x3 x4 x5 x6 :=
   fun n => (post_group_weigh_round n).2
 
+set_option maxHeartbeats 600000 in
 theorem post_group_weigh_rounds : ∀ n : Nat,
     (∀ (x0 : Nat) (x1 : Nat) (x2 : Lanius.Mini.Decls) (x3 : List Lanius.Mini.Inst) (x4 : List (Option Nat)), ∀ M : Nat, hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → Cost_weigh_rounds n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.weighRounds x0 x1 x2 x3 x4) ≤ M + Cost_weigh_rounds n x0 x1 x2 x3 x4) ∧
     (∀ (x0 : Nat) (x1 : Nat) (x2 : Lanius.Mini.Decls) (x3 : List Lanius.Mini.Inst) (x4 : List (Option Nat)) (x5 : List (Option Nat)), ∀ M : Nat, hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → Cost_weigh_next n x0 x1 x2 x3 x4 x5 < 18446744073709551616 → hb (Lanius.Mini.Inline.weighNext x0 x1 x2 x3 x4 x5) ≤ M + Cost_weigh_next n x0 x1 x2 x3 x4 x5) := by
@@ -181,6 +183,7 @@ theorem post_flat_payloads : ∀ (n : Nat) (x0 : Option (List (List Lanius.Mini.
   rw [Lanius.Mini.flatPayloads.eq_def x0]
   post_auto n, M
 
+set_option maxHeartbeats 1000000 in
 theorem post_group_ty_insts : ∀ n : Nat,
     (∀ (x0 : Nat) (x1 : Lanius.Mini.Decls) (x2 : Lanius.Mini.Ty), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → Cost_ty_insts n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.tyInsts x0 x1 x2) ≤ M + Cost_ty_insts n x0 x1 x2) ∧
     (∀ (x0 : Nat) (x1 : Lanius.Mini.Decls) (x2 : Nat) (x3 : List Lanius.Mini.Ty), ∀ M : Nat, hb x1 ≤ M → hb x3 ≤ M → Cost_named_insts n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.namedInsts x0 x1 x2 x3) ≤ M + Cost_named_insts n x0 x1 x2 x3) ∧
@@ -217,6 +220,7 @@ theorem post_decl_insts : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.Decls) (x2 
 theorem post_tys_insts : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.Decls) (x2 : Option (List Lanius.Mini.Ty)), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → Cost_tys_insts n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.tysInsts x0 x1 x2) ≤ M + Cost_tys_insts n x0 x1 x2 :=
   fun n => (post_group_ty_insts n).2.2.2
 
+set_option maxHeartbeats 600000 in
 theorem post_group_type_table : ∀ n : Nat,
     (∀ (x0 : Nat) (x1 : Lanius.Mini.Decls) (x2 : List Lanius.Mini.Inst) (x3 : List Lanius.Mini.Ty), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → Cost_type_table n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.typeTable x0 x1 x2 x3) ≤ M + Cost_type_table n x0 x1 x2 x3) ∧
     (∀ (x0 : Nat) (x1 : Lanius.Mini.Decls) (x2 : List Lanius.Mini.Inst) (x3 : Option (List Lanius.Mini.Inst)) (x4 : List Lanius.Mini.Ty), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → Cost_type_table_next n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.Inline.typeTableNext x0 x1 x2 x3 x4) ≤ M + Cost_type_table_next n x0 x1 x2 x3 x4) := by
@@ -245,6 +249,7 @@ theorem post_single_of_mini_selfhost_Ty : ∀ (n : Nat) (x0 : Lanius.Mini.Ty), �
   · exact absurd h (Nat.lt_irrefl _)
   · simp only [Cost_single_of_mini_selfhost_Ty, hb_cons, hb_nil, hb_simp]; omega
 
+set_option maxHeartbeats 600000 in
 theorem post_group_type_table_more : ∀ n : Nat,
     (∀ (x0 : Nat) (x1 : Lanius.Mini.Decls) (x2 : Option (List Lanius.Mini.Inst)) (x3 : List Lanius.Mini.Ty), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → Cost_type_table_more n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.typeTableMore x0 x1 x2 x3) ≤ M + Cost_type_table_more n x0 x1 x2 x3) ∧
     (∀ (x0 : Nat) (x1 : Lanius.Mini.Decls) (x2 : List Lanius.Mini.Inst) (x3 : Lanius.Mini.Ty) (x4 : List Lanius.Mini.Ty), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → Cost_type_table_more_at n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.Inline.typeTableMoreAt x0 x1 x2 x3 x4) ≤ M + Cost_type_table_more_at n x0 x1 x2 x3 x4) := by
@@ -305,6 +310,7 @@ theorem post_ret_tys : ∀ (n : Nat) (x0 : Lanius.Mini.RetTy), ∀ M : Nat, hb x
   rw [Lanius.Mini.retTys.eq_def x0]
   post_auto n, M
 
+set_option maxHeartbeats 600000 in
 theorem post_group_eff_named_tys : ∀ n : Nat,
     (∀ (x0 : Lanius.Mini.MEff), ∀ M : Nat, hb x0 ≤ M → Cost_eff_named_tys n x0 < 18446744073709551616 → hb (Lanius.Mini.effNamedTys x0) ≤ M + Cost_eff_named_tys n x0) ∧
     (∀ (x0 : List Lanius.Mini.MEff), ∀ M : Nat, hb x0 ≤ M → Cost_effs_named_tys n x0 < 18446744073709551616 → hb (Lanius.Mini.effsNamedTys x0) ≤ M + Cost_effs_named_tys n x0) := by
@@ -365,6 +371,7 @@ theorem post_build_mono : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.Decls) (x2 
   rw [Lanius.Mini.buildMono.eq_def x0 x1 x2 x3]
   post_auto n, M
 
+set_option maxHeartbeats 600000 in
 theorem post_group_eff_calls : ∀ n : Nat,
     (∀ (x0 : Lanius.Mini.MEff), ∀ M : Nat, hb x0 ≤ M → Cost_eff_calls n x0 < 18446744073709551616 → hb (Lanius.Mini.effCalls x0) ≤ M + Cost_eff_calls n x0) ∧
     (∀ (x0 : List Lanius.Mini.MEff), ∀ M : Nat, hb x0 ≤ M → Cost_effs_calls n x0 < 18446744073709551616 → hb (Lanius.Mini.effsCalls x0) ≤ M + Cost_effs_calls n x0) := by
@@ -408,6 +415,7 @@ theorem post_cons_of_mini_selfhost_MFunc : ∀ (n : Nat) (x0 : Lanius.Mini.MFunc
   · exact absurd h (Nat.lt_irrefl _)
   · simp only [Cost_cons_of_mini_selfhost_MFunc, hb_cons, hb_nil, hb_simp]; omega
 
+set_option maxHeartbeats 600000 in
 theorem post_group_type_names_in : ∀ n : Nat,
     (∀ (x0 : List Lanius.Mini.TypeDecl) (x1 : List (List Nat)), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_type_names_in n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.typeNamesIn x0 x1) ≤ M + Cost_type_names_in n x0 x1) ∧
     (∀ (x0 : Lanius.Mini.TypeDecl) (x1 : List Lanius.Mini.TypeDecl) (x2 : List (List Nat)), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → Cost_type_name_at n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.Inline.typeNameAt x0 x1 x2) ≤ M + Cost_type_name_at n x0 x1 x2) := by
@@ -487,6 +495,7 @@ theorem post_cons_of_mini_selfhost_Local : ∀ (n : Nat) (x0 : Lanius.Mini.Local
   · exact absurd h (Nat.lt_irrefl _)
   · simp only [Cost_cons_of_mini_selfhost_Local, hb_cons, hb_nil, hb_simp]; omega
 
+set_option maxHeartbeats 600000 in
 theorem post_group_params_of : ∀ n : Nat,
     (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : Lanius.Mini.FnDecl) (x3 : List Lanius.Mini.Local) (x4 : List Lanius.Mini.CTree), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → Cost_params_of n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.paramsOf x0 x1 x2 x3 x4) ≤ M + Cost_params_of n x0 x1 x2 x3 x4) ∧
     (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : Lanius.Mini.FnDecl) (x3 : List Lanius.Mini.Local) (x4 : Lanius.Mini.CTree) (x5 : List Lanius.Mini.CTree), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → Cost_param_of n x0 x1 x2 x3 x4 x5 < 18446744073709551616 → hb (Lanius.Mini.Inline.paramOf x0 x1 x2 x3 x4 x5) ≤ M + Cost_param_of n x0 x1 x2 x3 x4 x5) := by
@@ -562,6 +571,7 @@ theorem post_bind_ty : ∀ (n : Nat) (x0 : List Lanius.Mini.Bind) (x1 : List Nat
   rw [Lanius.Mini.bindTy.eq_def x0 x1 x2]
   post_auto n, M
 
+set_option maxHeartbeats 1800000 in
 theorem post_group_match_ty : ∀ n : Nat,
     (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List (List Nat)) (x3 : Lanius.Mini.CTree) (x4 : Lanius.Mini.Ty) (x5 : List Lanius.Mini.Bind), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → Cost_match_ty n x0 x1 x2 x3 x4 x5 < 18446744073709551616 → hb (Lanius.Mini.matchTy x0 x1 x2 x3 x4 x5) ≤ M + Cost_match_ty n x0 x1 x2 x3 x4 x5) ∧
     (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List (List Nat)) (x3 : List Lanius.Mini.CTree) (x4 : List Lanius.Mini.Ty) (x5 : List Lanius.Mini.Bind), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → Cost_match_args n x0 x1 x2 x3 x4 x5 < 18446744073709551616 → hb (Lanius.Mini.matchArgs x0 x1 x2 x3 x4 x5) ≤ M + Cost_match_args n x0 x1 x2 x3 x4 x5) ∧

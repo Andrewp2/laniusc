@@ -59,6 +59,7 @@ theorem post_file_items : ∀ (n : Nat) (x0 : Nat) (x1 : Option (List (List Nat)
   rw [Lanius.Mini.fileItems.eq_def x0 x1 x2]
   post_auto n, M
 
+set_option maxHeartbeats 600000 in
 theorem post_group_module_path : ∀ n : Nat,
     (∀ (x0 : Nat) (x1 : List Lanius.Mini.CTree), ∀ M : Nat, hb x1 ≤ M → Cost_module_path n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.modulePath x0 x1) ≤ M + Cost_module_path n x0 x1) ∧
     (∀ (x0 : Nat) (x1 : Lanius.Mini.CTree) (x2 : List Lanius.Mini.CTree), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → Cost_module_at n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.Inline.moduleAt x0 x1 x2) ≤ M + Cost_module_at n x0 x1 x2) := by
@@ -99,6 +100,7 @@ theorem post_concat_of_mini_selfhost_List_usize : ∀ (n : Nat) (x0 : List (List
     simp only [List.cons_append, hb_cons, hb_simp]
     omega
 
+set_option maxHeartbeats 600000 in
 theorem post_group_fn_names_in : ∀ n : Nat,
     (∀ (x0 : List Lanius.Mini.FnDecl) (x1 : List (List Nat)), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_fn_names_in n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.fnNamesIn x0 x1) ≤ M + Cost_fn_names_in n x0 x1) ∧
     (∀ (x0 : Lanius.Mini.FnDecl) (x1 : List Lanius.Mini.FnDecl) (x2 : List (List Nat)), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → Cost_fn_name_at n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.Inline.fnNameAt x0 x1 x2) ≤ M + Cost_fn_name_at n x0 x1 x2) := by
@@ -121,6 +123,7 @@ theorem post_fn_names_in : ∀ (n : Nat) (x0 : List Lanius.Mini.FnDecl) (x1 : Li
 theorem post_fn_name_at : ∀ (n : Nat) (x0 : Lanius.Mini.FnDecl) (x1 : List Lanius.Mini.FnDecl) (x2 : List (List Nat)), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → Cost_fn_name_at n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.Inline.fnNameAt x0 x1 x2) ≤ M + Cost_fn_name_at n x0 x1 x2 :=
   fun n => (post_group_fn_names_in n).2
 
+set_option maxHeartbeats 600000 in
 theorem post_group_type_only_names_in : ∀ n : Nat,
     (∀ (x0 : List Lanius.Mini.TypeDecl) (x1 : List (List Nat)), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_type_only_names_in n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.typeOnlyNamesIn x0 x1) ≤ M + Cost_type_only_names_in n x0 x1) ∧
     (∀ (x0 : Lanius.Mini.TypeDecl) (x1 : List Lanius.Mini.TypeDecl) (x2 : List (List Nat)), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → Cost_type_only_at n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.Inline.typeOnlyAt x0 x1 x2) ≤ M + Cost_type_only_at n x0 x1 x2) := by
@@ -143,6 +146,7 @@ theorem post_type_only_names_in : ∀ (n : Nat) (x0 : List Lanius.Mini.TypeDecl)
 theorem post_type_only_at : ∀ (n : Nat) (x0 : Lanius.Mini.TypeDecl) (x1 : List Lanius.Mini.TypeDecl) (x2 : List (List Nat)), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → Cost_type_only_at n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.Inline.typeOnlyAt x0 x1 x2) ≤ M + Cost_type_only_at n x0 x1 x2 :=
   fun n => (post_group_type_only_names_in n).2
 
+set_option maxHeartbeats 600000 in
 theorem post_group_alias_names_in : ∀ n : Nat,
     (∀ (x0 : List Lanius.Mini.AliasDecl) (x1 : List (List Nat)), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_alias_names_in n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.aliasNamesIn x0 x1) ≤ M + Cost_alias_names_in n x0 x1) ∧
     (∀ (x0 : Lanius.Mini.AliasDecl) (x1 : List Lanius.Mini.AliasDecl) (x2 : List (List Nat)), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → Cost_alias_name_at n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.Inline.aliasNameAt x0 x1 x2) ≤ M + Cost_alias_name_at n x0 x1 x2) := by
@@ -165,6 +169,7 @@ theorem post_alias_names_in : ∀ (n : Nat) (x0 : List Lanius.Mini.AliasDecl) (x
 theorem post_alias_name_at : ∀ (n : Nat) (x0 : Lanius.Mini.AliasDecl) (x1 : List Lanius.Mini.AliasDecl) (x2 : List (List Nat)), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → Cost_alias_name_at n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.Inline.aliasNameAt x0 x1 x2) ≤ M + Cost_alias_name_at n x0 x1 x2 :=
   fun n => (post_group_alias_names_in n).2
 
+set_option maxHeartbeats 600000 in
 theorem post_group_const_names_in : ∀ n : Nat,
     (∀ (x0 : List Lanius.Mini.ConstDecl) (x1 : List (List Nat)), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_const_names_in n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.constNamesIn x0 x1) ≤ M + Cost_const_names_in n x0 x1) ∧
     (∀ (x0 : Lanius.Mini.ConstDecl) (x1 : List Lanius.Mini.ConstDecl) (x2 : List (List Nat)), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → Cost_const_name_at n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.Inline.constNameAt x0 x1 x2) ≤ M + Cost_const_name_at n x0 x1 x2) := by
@@ -278,6 +283,7 @@ theorem post_item_of : ∀ (n : Nat) (x0 : Lanius.Mini.Decls) (x1 : List (List N
   rw [Lanius.Mini.itemOf.eq_def x0 x1 x2]
   post_auto n, M
 
+set_option maxHeartbeats 600000 in
 theorem post_group_item_import : ∀ n : Nat,
     (∀ (x0 : Lanius.Mini.Decls) (x1 : List Lanius.Mini.ImportDecl) (x2 : List (List Nat)) (x3 : List Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → Cost_item_import n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.itemImport x0 x1 x2 x3) ≤ M + Cost_item_import n x0 x1 x2 x3) ∧
     (∀ (x0 : Lanius.Mini.Decls) (x1 : Lanius.Mini.ImportDecl) (x2 : List Lanius.Mini.ImportDecl) (x3 : List (List Nat)) (x4 : List Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → Cost_item_import_at n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.Inline.itemImportAt x0 x1 x2 x3 x4) ≤ M + Cost_item_import_at n x0 x1 x2 x3 x4) := by
@@ -385,6 +391,7 @@ theorem post_cons_ty : ∀ (n : Nat) (x0 : Option Lanius.Mini.Ty) (x1 : Option (
   rw [Lanius.Mini.consTy.eq_def x0 x1]
   post_auto n, M
 
+set_option maxHeartbeats 1600000 in
 theorem post_group_ty_of : ∀ n : Nat,
     (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : Lanius.Mini.CTree), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → Cost_ty_of n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.tyOf x0 x1 x2) ≤ M + Cost_ty_of n x0 x1 x2) ∧
     (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : Option (List (List Nat))), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → Cost_bare_or_alias n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.bareOrAlias x0 x1 x2) ≤ M + Cost_bare_or_alias n x0 x1 x2) ∧
@@ -572,6 +579,7 @@ theorem post_struct_src : ∀ (n : Nat) (x0 : Option Nat) (x1 : Option (List Lan
   rw [Lanius.Mini.structSrc.eq_def x0 x1]
   post_auto n, M
 
+set_option maxHeartbeats 1200000 in
 theorem post_group_lower_named : ∀ n : Nat,
     (∀ (x0 : Nat) (x1 : Lanius.Mini.Decls) (x2 : List Lanius.Mini.Inst) (x3 : Nat) (x4 : List Lanius.Mini.Ty), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x4 ≤ M → Cost_lower_named n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.lowerNamed x0 x1 x2 x3 x4) ≤ M + Cost_lower_named n x0 x1 x2 x3 x4) ∧
     (∀ (x0 : Nat) (x1 : Lanius.Mini.Decls) (x2 : List Lanius.Mini.Inst) (x3 : Bool) (x4 : Option Nat) (x5 : Nat) (x6 : List Lanius.Mini.Ty), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x6 ≤ M → Cost_lower_decl n x0 x1 x2 x3 x4 x5 x6 < 18446744073709551616 → hb (Lanius.Mini.lowerDecl x0 x1 x2 x3 x4 x5 x6) ≤ M + Cost_lower_decl n x0 x1 x2 x3 x4 x5 x6) ∧
