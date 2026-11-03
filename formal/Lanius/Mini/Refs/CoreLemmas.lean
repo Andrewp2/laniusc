@@ -139,4 +139,22 @@ theorem sync_ok {st' : State} {r : Semantics.ResolvedPlace} {x : Value} (hraw : 
       | some _ => Semantics.syncI32ViewsFromHeap st') = .ok st' := by
   rw [hraw, Views.syncTo_ok hold, ite_self]
 
+/-- A home's view reads only the heap's bytes. -/
+theorem homeView_bytes {hp hp' : Heap} (h : hp'.bytes = hp.bytes) (ty : SrcType) (a : Nat) :
+    ty.homeView a hp' = ty.homeView a hp := by
+  funext s
+  simp only [SrcType.homeView]
+  exact congrArg (BitVec.ofNat 64) (Heap.readLE_congr fun b _ _ => by rw [h])
+
+/-- A home's view does not read the frame pointer. -/
+theorem homeView_fsp (hp : Heap) (f : Nat) (ty : SrcType) (a : Nat) :
+    ty.homeView a { hp with fsp := f } = ty.homeView a hp :=
+  homeView_bytes (hp := hp) (hp' := { hp with fsp := f }) rfl ty a
+
+/-- The static region, with the same top, is kept. -/
+theorem staticsAt_frame {hp hp' : Heap} {sx : Statics} (at_ : hp.StaticsAt sx) (limit : hp'.limit = hp.limit)
+    (size : hp'.frameSize = hp.frameSize) (base : hp'.staticBase = hp.staticBase)
+    (bytes : hp'.statics = hp.statics) : hp'.StaticsAt sx :=
+  at_.congr base bytes (by simp only [Heap.top, limit, size])
+
 end Lanius.Mini.CoreRefs
