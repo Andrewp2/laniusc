@@ -4,7 +4,7 @@ public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.SrcExpr_guard
-import Lanius.Mini.Compiler.P.SrcType_size
+import Lanius.Mini.Compiler.P.SrcType_same
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.assignFrom
 import Lanius.Mini.Compiler.P.compileModules
@@ -123,6 +123,7 @@ def evalArrayIndex (b : Binding) (slot : Nat) (index : Option Evaluated) : Optio
   | .float ft => none
   | .sint sk => none
   | .view viewLength => none
+  | .str => none
 
 def evalIndex (decls : SrcDecls) (scope : List Binding) (slice : Nat) (slot : Nat) (index : Option Evaluated) : Option Evaluated :=
   match lookup scope slice with
@@ -152,6 +153,7 @@ def isArrayLocal (binding : Option Binding) : Bool :=
     | .float ft => false
     | .sint sk => false
     | .view viewLength => false
+    | .str => false
 
 /-- let id: ty = local[index]; then body: an array's element as the let of the effectful array[index] (LetEval of EIndex), a raw slice's loaded. -/
 def lowerLetIndexAny (decls : SrcDecls) (scope : List Binding) (next : Nat) (ty : SrcType) (slice : Nat) (index : SrcExpr) (body : Option Stmt) : Option Stmt :=

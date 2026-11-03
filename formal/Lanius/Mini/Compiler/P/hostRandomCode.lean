@@ -1,7 +1,7 @@
 module
 
 public import Lanius.Mini.Compiler.Types
-import Lanius.Mini.Compiler.P.UintTy_half
+import Lanius.Mini.Compiler.P.SrcType_same
 import Lanius.Mini.Compiler.P.lowerCallSig
 
 public section
@@ -23,6 +23,18 @@ def hostRandomCode (slot : Nat) : Stmt :=
   let body : Stmt := Stmt.seq pick fill
   let looped : Stmt := Stmt.seq (Stmt.loop (Expr.compare Word.u64 CmpOp.ne (Expr.var count) (Expr.lit 0)) body) (Stmt.assign slot (Expr.binary Word.s32 BinOp.add (Expr.var total) (Expr.lit 0)))
   Stmt.seq (Stmt.assign total (Expr.var count)) looped
+
+/-- write_text(handle, text), handle in slot and the str in slot + 1 (the mini address of its bytes in the static region) and slot + 2 (their count): to handle 1 or 2 they go out as write_stdout's do (the system call reads the static region as it reads the heap), and the count is the result (laniusc's); any other handle returns -1, as Core's does with no file open. -/
+def hostTextCode (slot : Nat) : Stmt :=
+  let result : Stmt := Stmt.assign slot (Expr.var (slot + 1))
+  let toOne : Stmt := Stmt.seq (hostWriteCode 1 (slot + 1)) result
+  let toTwo : Stmt := Stmt.seq (hostWriteCode 2 (slot + 1)) result
+  let other : Stmt := Stmt.ite (Expr.compare Word.u64 CmpOp.eq (Expr.var slot) (Expr.lit 2)) toTwo (Stmt.assign slot (Expr.lit 4294967295))
+  Stmt.ite (Expr.compare Word.u64 CmpOp.eq (Expr.var slot) (Expr.lit 1)) toOne other
+
+/-- write_newline(handle), handle in slot: write_byte of 10. -/
+def hostNewlineCode (slot : Nat) : Stmt :=
+  Stmt.seq (Stmt.assign (slot + 1) (Expr.lit 10)) (hostByteCode slot)
 
 def evalHost (callee : Nat) (slot : Nat) (args : EvaluatedArgs) : Option Evaluated :=
   if decide (callee = 4294967296) && typesSame args.types (SrcType.i32 :: [SrcType.i32]) then

@@ -57,7 +57,7 @@ abbrev Stmt_ty_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     (RepOption 158 RepSrcType) (Lanius.Mini.tyAt x0 x1) w
 
 abbrev Stmt_ty_local (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.LocalTy} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 223 RepLocalTy) x0 v0 → RepNat x1 v1 →
+  ∀ {x0 : List Lanius.Mini.LocalTy} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 224 RepLocalTy) x0 v0 → RepNat x1 v1 →
     (RepOption 158 RepSrcType) (Lanius.Mini.tyLocal x0 x1) w
 
 end Lanius.Faithful.SelfCert

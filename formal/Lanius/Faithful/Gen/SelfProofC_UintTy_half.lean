@@ -3,9 +3,6 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcC_UintTy_half
-public import Lanius.Faithful.Gen.SelfStmt2
-public import Lanius.Faithful.Gen.SelfStmt3
-public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmtC_DivOp_size
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
@@ -142,6 +139,15 @@ theorem proof_SrcType_is_sint_any {prog : SrcProgram} {prims : Prims} {ix_SrcTyp
   simp only [src_SrcType_is_sint_any] at h
   faithful [Lanius.Mini.SrcType.isSintAny]
 
+theorem proof_SrcType_is_str {prog : SrcProgram} {prims : Prims} {ix_SrcType_is_str : Nat} (fn : prog.funcs[ix_SrcType_is_str]? = some (src_SrcType_is_str)) (np : prims.isPrim ix_SrcType_is_str = false) {n : Nat} :
+    Stmt_SrcType_is_str prog prims ix_SrcType_is_str n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_SrcType_is_str] at h
+  faithful [Lanius.Mini.SrcType.isStr]
+
 theorem proof_SrcType_is_uint {prog : SrcProgram} {prims : Prims} {ix_SrcType_is_uint ix_UintTy_code : Nat} (fn : prog.funcs[ix_SrcType_is_uint]? = some (src_SrcType_is_uint ix_UintTy_code)) (np : prims.isPrim ix_SrcType_is_uint = false)
     (ext_UintTy_code : Certified (∀ {n : Nat}, Stmt_UintTy_code prog prims ix_UintTy_code n)) {n : Nat} :
     Stmt_SrcType_is_uint prog prims ix_SrcType_is_uint n := by
@@ -160,28 +166,6 @@ theorem proof_SrcType_is_unit {prog : SrcProgram} {prims : Prims} {ix_SrcType_is
   rw [pcall_succ np fn] at h
   simp only [src_SrcType_is_unit] at h
   faithful [Lanius.Mini.SrcType.isUnit]
-
-theorem step_SrcType_same {prog : SrcProgram} {prims : Prims} {ix_SrcType_same ix_SrcType_is_unit ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_SrcType ix_SrcType_is_i32 ix_SrcType_is_uint ix_SrcType_is_bool ix_types_same ix_variants_same ix_SrcType_is_ptr ix_SrcType_is_isize ix_SrcType_is_char ix_SrcType_is_float ix_SrcType_is_sint : Nat} (fn : prog.funcs[ix_SrcType_same]? = some (src_SrcType_same ix_SrcType_is_unit ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_SrcType ix_SrcType_same ix_SrcType_is_i32 ix_SrcType_is_uint ix_SrcType_is_bool ix_types_same ix_variants_same ix_SrcType_is_ptr ix_SrcType_is_isize ix_SrcType_is_char ix_SrcType_is_float ix_SrcType_is_sint)) (np : prims.isPrim ix_SrcType_same = false)
-    (ext_SrcType_is_unit : Certified (∀ {n : Nat}, Stmt_SrcType_is_unit prog prims ix_SrcType_is_unit n))
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType n))
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType n))
-    (ext_unbox_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_SrcType n))
-    (ext_SrcType_is_i32 : Certified (∀ {n : Nat}, Stmt_SrcType_is_i32 prog prims ix_SrcType_is_i32 n))
-    (ext_SrcType_is_uint : Certified (∀ {n : Nat}, Stmt_SrcType_is_uint prog prims ix_SrcType_is_uint n))
-    (ext_SrcType_is_bool : Certified (∀ {n : Nat}, Stmt_SrcType_is_bool prog prims ix_SrcType_is_bool n))
-    (ext_SrcType_is_ptr : Certified (∀ {n : Nat}, Stmt_SrcType_is_ptr prog prims ix_SrcType_is_ptr n))
-    (ext_SrcType_is_isize : Certified (∀ {n : Nat}, Stmt_SrcType_is_isize prog prims ix_SrcType_is_isize n))
-    (ext_SrcType_is_char : Certified (∀ {n : Nat}, Stmt_SrcType_is_char prog prims ix_SrcType_is_char n))
-    (ext_SrcType_is_float : Certified (∀ {n : Nat}, Stmt_SrcType_is_float prog prims ix_SrcType_is_float n))
-    (ext_SrcType_is_sint : Certified (∀ {n : Nat}, Stmt_SrcType_is_sint prog prims ix_SrcType_is_sint n)) {n : Nat}
-    (ih_SrcType_same : Certified (Stmt_SrcType_same prog prims ix_SrcType_same n))
-    (ih_types_same : Certified (Stmt_types_same prog prims ix_types_same n))
-    (ih_variants_same : Certified (Stmt_variants_same prog prims ix_variants_same n)) :
-    Stmt_SrcType_same prog prims ix_SrcType_same (n + 1) := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rw [pcall_succ np fn] at h
-  simp only [src_SrcType_same] at h
-  faithful [Lanius.Mini.SrcType.same]
 
 theorem proof_SrcType_sint_kind {prog : SrcProgram} {prims : Prims} {ix_SrcType_sint_kind : Nat} (fn : prog.funcs[ix_SrcType_sint_kind]? = some (src_SrcType_sint_kind)) (np : prims.isPrim ix_SrcType_sint_kind = false) {n : Nat} :
     Stmt_SrcType_sint_kind prog prims ix_SrcType_sint_kind n := by
@@ -256,25 +240,5 @@ theorem step_lookup {prog : SrcProgram} {prims : Prims} {ix_lookup ix_lookup_at 
   rw [pcall_succ np fn] at h
   simp only [src_lookup] at h
   faithful [Lanius.Mini.lookup]
-
-theorem step_types_same {prog : SrcProgram} {prims : Prims} {ix_types_same ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_SrcType_same : Nat} (fn : prog.funcs[ix_types_same]? = some (src_types_same ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_SrcType_same ix_types_same)) (np : prims.isPrim ix_types_same = false)
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType n)) {n : Nat}
-    (ih_SrcType_same : Certified (Stmt_SrcType_same prog prims ix_SrcType_same n))
-    (ih_types_same : Certified (Stmt_types_same prog prims ix_types_same n)) :
-    Stmt_types_same prog prims ix_types_same (n + 1) := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rw [pcall_succ np fn] at h
-  simp only [src_types_same] at h
-  faithful [Lanius.Mini.typesSame]
-
-theorem step_variants_same {prog : SrcProgram} {prims : Prims} {ix_variants_same ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_types_same : Nat} (fn : prog.funcs[ix_variants_same]? = some (src_variants_same ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_types_same ix_variants_same)) (np : prims.isPrim ix_variants_same = false)
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType n)) {n : Nat}
-    (ih_types_same : Certified (Stmt_types_same prog prims ix_types_same n))
-    (ih_variants_same : Certified (Stmt_variants_same prog prims ix_variants_same n)) :
-    Stmt_variants_same prog prims ix_variants_same (n + 1) := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rw [pcall_succ np fn] at h
-  simp only [src_variants_same] at h
-  faithful [Lanius.Mini.variantsSame]
 
 end Lanius.Faithful.SelfCert

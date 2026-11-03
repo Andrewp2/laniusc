@@ -40,11 +40,11 @@ stopping at the computations the theorems are about (`compileSource`,
 `frontEndWords`, the self program `Lanius.Faithful.Self.prog` and
 `funcNeeds`, which are not trusted, section 10), with each one's type and
 body:
-definitions `8e49c84069f2b7bf` (4700 constants). This covers Core's
+definitions `9c1a21481238db7d` (4741 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
 the statements' own definitions (section 2). A private name is hashed
 without its module, so a definition that only moves between generated
-modules keeps its hash. The last change of the hash (11-02, f6v, merging lang into f6v, giving `8e49c84069f2b7bf`): `TypedSlicePath` states the path's segments as the list `[textCore, textMem, textTypedSliceFromRawParts]` (the definition `typedSliceSpellings` is gone: the reading compares the segments one by one, `isTypedSliceSegments`), and `textTypedSliceFromRawParts` is `typed_` consed onto `textSliceFromRawParts` (the same text; one 26-element literal was too slow for F14's height lemmas). The prim table `prims` was regenerated. The change before (11-02, f6v, giving `85851955686d2177`, SEMANTIC_DECISIONS "Addressed locals" point 6, stage (c)): the reading of source text reads `let x: str = "chars";` directly followed by `return core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(x), n);` (or `typed_slice_from_raw_parts<u8>`), the last statement of its block, in a function returning `[u8]`, as one string literal's pointer and its raw view. `StmtsR.letStr` (`Reading/Stmts.lean`) reads the two statements as `MStmt.mLetStr x chars (.mLetSlice r u8 (.local x) n (.mReturn (.local r))))`, x numbered by the str local's token and r by the value's first token (as `ReturnR.slice` numbers it); `StmtClosed.letStr` (`Reading/Close.lean`) closes `mLetStr` to `SrcStmt.letStr`. Its parts: `StrType` (the type is the bare path `str`), `StringInit` and `StringLiteral` (the initializer is a string literal whose bytes between the quotes are each `PlainStringByte`, printable ASCII other than the quote and the backslash, so no escape is read and laniusc's literal is these bytes), and `StringReturnR` with `TypedSlicePath` (the path `core::mem::typed_slice_from_raw_parts` with no type argument or the one `u8`), `DataPtrOf` (`core::mem::string_data_ptr(x)`, `stringDataPtrPath`), `TreeNames` (the argument is the bare name x) and an integer literal n (`IntLiteral`). The stdlib function is `assert(length >= 0); return slice_from_raw_parts(data, length);`, and a literal is never negative, so its call is read as the raw view itself; the reading takes `core::mem` to be the stdlib's. The grammar's production `pString` (177) is named. `MStmt` gains `mLetStr` (`Frontend/Types.lean`, extracted). The self program's functions moved (`frontend.lani` gained the string reading), so the prim table `prims` was regenerated. The change before (11-02, f6v, giving `a2b318bf5c30f9cb`, SEMANTIC_DECISIONS "Addressed locals" point 6, stage (b)): the front-pass program has a string literal's pointer, `SrcStmt.letStr pointer chars body` (`Compiler/Types.lean`, extracted), `chars` the string's Unicode scalar values. Its Core meaning (`SourceCore.lean`) is `let pointer: rawPtr = string_data_ptr("chars"); body` (`letLocal` of `stringDataPtr` of the string value), the string being `strValue chars`, the string of the characters `Char.ofNat` of each value. The literal pass of the reading (`Reading/Lits.lean`) gains `LitStmt.letStr`, which reads the body with the pointer's local in scope, as `letView` does. The self program's functions moved (`compiler.lani` gained `lower_str` and its helpers), so the prim table `prims` was regenerated. The change before (11-02, f6v, giving `64acd215bab52adb`, SEMANTIC_DECISIONS "Addressed locals" point 6, stage (a)): the mini language gets a read-only static region. `Heap` gains `staticBase` and `statics` (the region's heap offset and its bytes). The mini program carries the bytes (`Program.statics`, extracted) and the binary puts them after the code in its image (`Binary.statics`, `link`, `linkOnto`'s tail). `Stmt.static target offset` sets `target` to `staticBase + offset` (`Exec.static`), and a `loadByte` at `staticBase + k`, for `k` below the region's length and the region at or above the heap's top, reads byte `k` (`Exec.loadByteStatic`); no statement writes the region. The machine (`Mini/Asm.lean`) has `Instr.static` and the `loadAt` of a static byte (`Step.loadAtStatic`), and its call step asks that the callee leave the region as it was (`Step.call`; a mini callee does, `Exec.statics`). On x86 `Instr.static offset` is `lea rax, [r8 + offset]; sub rax, r12` (10 bytes), and `HeapAt` gains `static` (r8 is r12 plus `staticBase`) and `statics` (each static byte is in memory at r12 plus its offset, apart from the stack window and the heap). The startup code sets r8 to the address of the image's static bytes, after its code (`mov r8, imm64`: the startup is 95 bytes and the image starts at `elfBase + 215`). The self program's functions moved (`compiler.lani` gained `static_agrees`), so the prim table `prims` was regenerated. The change before (11-02, f6v, giving `cbbfa2c060f54f28`, SEMANTIC_DECISIONS "Addressed locals" point 5, stage (d)): the reading of source text reads `let a: [i32; n] = [..]; let p: ptr = core::mem::i32_array_data_ptr(a);` as one viewed array. `core::mem::i32_array_data_ptr` is a reserved path (`textMem`, `textI32ArrayDataPtr`, `viewPath`, a seventh entry of `builtinPaths`), read by `CallPathHeadR.view` as the let head `LetHead.viewOf x` (one argument), which `letStmt` and `sliceReturned` give no statement of their own. `StmtsR.letView` reads the two lets, the first typed `[i32; n]` with a literal of `n` elements and the second, directly after it, typed `ptr`, fresh, not a global, with head `viewOf` of the first's local, as `MStmt.mLetView a n elements p body`, its body read in a scope with both locals; `StmtClosed.letView` closes it to `SrcStmt.letView`, and `stmt_tys` counts the array's type. The self program's functions moved, so the prim table `prims` was regenerated. The change before (11-02, f6v, giving `e8d6d7939ebcedcf`, SEMANTIC_DECISIONS "Addressed locals" point 5): the front-pass program has a viewed array, `SrcType.view length` and `SrcStmt.letView id length elements pointer body` (`Compiler/Types.lean`, extracted). Its Core meaning (`SourceCore.lean`): `letView` is `let id: [i32; length] = [elements]; let pointer: rawPtr = i32_array_data_ptr(id); body` (`letLocal` twice), and `view n` is the Core type `[i32; n]` in `SrcType.toCore`, `literal` and the slice of raw parts (the other type functions give it their default). `SrcType.HoldsAt` gains `view`: Core's cell holds `length` in-range i32s, and the slots hold nothing that matters (the truth is the view's heap block, `Views.ViewsHold`). The pure and cost meanings of `letView` (`mstmt`, `pstmt`, `qstmt`, `Faithful/Pure.lean`, `Faithful/Cost.lean`) are `none`, as for `letAlloc`: the self program uses no views. The change before (11-02, f6v, giving `a593873d90485ed8`): `State.Fresh` no longer asks that Core have no i32 array views; it asks that every view hold its cell (`Views.ViewsHold`: the view has no projections, its root cell holds an array of as many i32s as the view is long, and the view's address is the base of a live, borrowed heap block whose bytes encode those elements, which nothing overlaps (`Views.Owns`) and which ends below the cursor (`Views.Before`); no two views share a root), so Core's syncs change nothing. `Views.Before`, `Views.IsI32`, `Views.Owns`, `Views.ViewHolds` and `Views.ViewsHold` (`Mini/Views.lean`) are trusted. This weakens a premise of `compileSource_correct_from`: a state with no views still satisfies it (`ViewsHold.nil`). The change before (11-02, merge of f11b `7eb93b7916d84bb4` and its step D into lang `70d594d3ee80699d`, giving `f991f205862cd76e`): it combines F11b's changes with lang's, which did not change each other's definitions, beside the prim table `prims`, regenerated from the merged self program. Step D (9af4023ad) adds `while`, `break` and `continue` to the pure fragment: `mstmt`, `ploop`, `Out` with `Out.then`, `Out.pop` and `outValue` (`Faithful/Pure.lean`), and the cost semantics' `qstmt` with `qloop` (`Faithful/Cost.lean`), are trusted; lang's F14 cost statements (`qcallG`, `qcallB`, the budget certificates) now run statements with `qstmt`'s loop fuel and end calls with `outValue`. F11b's (11-01, the
+modules keeps its hash. The last change of the hash (11-03, f6v, giving `9c1a21481238db7d`, SEMANTIC_DECISIONS "str values"): the front-pass program has str values. `SrcType.str` and `SrcEff.eStr offset chars` (a string literal, its bytes at `offset` of the program's statics) are extracted (`Compiler/Types.lean`), and `SrcProgram` and `SrcDecls` carry the static bytes (`statics`; `SrcProgram.decls` of a rejected program keeps the program's). Their Core meaning (`SourceCore.lean`): `str` is Core's `string` scalar (`toCore`, `toScalar`; `typeId`, `literal` and `sliceFrom` give it the defaults), and `eStr _ chars` is the value `.string (strValue chars)`. `hostService?` names the host ids `2^32 + 8` and `2^32 + 9` `writeText` and `writeNewline` (the verified compiler lowers no call of them yet). `Statics` (a region's mini base and bytes) and `Heap.StaticsAt hp sx` (the heap's `staticBase` and `statics` are `sx`'s, the region is at or above the heap's top when it holds bytes, and it ends below `2^64`) are new (`Source.lean`); `SrcType.HoldsAt` and `FieldsHold` take the region `sx`, and `HoldsAt.str` says a str's two slots are the mini address `sx.base + k` and the byte count, below `2^31`, with the region's bytes from `k` on the string's UTF-8 bytes. Core's `writeText` (`World.lean`, `callSimple` and `call`) returns the number of bytes written instead of 0, as laniusc's `std::io::write_text` does (`write_line` adds the counts). The pure and cost meanings of `eStr` (`peff`, `qeff`) are `none` (the self program has no str values). The self program's functions moved (`compiler.lani` gained `eval_str`, `str_placed`, `static_byte_is`), so the prim table `prims` was regenerated. The change before (11-02, f6v, merging lang into f6v, giving `8e49c84069f2b7bf`): `TypedSlicePath` states the path's segments as the list `[textCore, textMem, textTypedSliceFromRawParts]` (the definition `typedSliceSpellings` is gone: the reading compares the segments one by one, `isTypedSliceSegments`), and `textTypedSliceFromRawParts` is `typed_` consed onto `textSliceFromRawParts` (the same text; one 26-element literal was too slow for F14's height lemmas). The prim table `prims` was regenerated. The change before (11-02, f6v, giving `85851955686d2177`, SEMANTIC_DECISIONS "Addressed locals" point 6, stage (c)): the reading of source text reads `let x: str = "chars";` directly followed by `return core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(x), n);` (or `typed_slice_from_raw_parts<u8>`), the last statement of its block, in a function returning `[u8]`, as one string literal's pointer and its raw view. `StmtsR.letStr` (`Reading/Stmts.lean`) reads the two statements as `MStmt.mLetStr x chars (.mLetSlice r u8 (.local x) n (.mReturn (.local r))))`, x numbered by the str local's token and r by the value's first token (as `ReturnR.slice` numbers it); `StmtClosed.letStr` (`Reading/Close.lean`) closes `mLetStr` to `SrcStmt.letStr`. Its parts: `StrType` (the type is the bare path `str`), `StringInit` and `StringLiteral` (the initializer is a string literal whose bytes between the quotes are each `PlainStringByte`, printable ASCII other than the quote and the backslash, so no escape is read and laniusc's literal is these bytes), and `StringReturnR` with `TypedSlicePath` (the path `core::mem::typed_slice_from_raw_parts` with no type argument or the one `u8`), `DataPtrOf` (`core::mem::string_data_ptr(x)`, `stringDataPtrPath`), `TreeNames` (the argument is the bare name x) and an integer literal n (`IntLiteral`). The stdlib function is `assert(length >= 0); return slice_from_raw_parts(data, length);`, and a literal is never negative, so its call is read as the raw view itself; the reading takes `core::mem` to be the stdlib's. The grammar's production `pString` (177) is named. `MStmt` gains `mLetStr` (`Frontend/Types.lean`, extracted). The self program's functions moved (`frontend.lani` gained the string reading), so the prim table `prims` was regenerated. The change before (11-02, f6v, giving `a2b318bf5c30f9cb`, SEMANTIC_DECISIONS "Addressed locals" point 6, stage (b)): the front-pass program has a string literal's pointer, `SrcStmt.letStr pointer chars body` (`Compiler/Types.lean`, extracted), `chars` the string's Unicode scalar values. Its Core meaning (`SourceCore.lean`) is `let pointer: rawPtr = string_data_ptr("chars"); body` (`letLocal` of `stringDataPtr` of the string value), the string being `strValue chars`, the string of the characters `Char.ofNat` of each value. The literal pass of the reading (`Reading/Lits.lean`) gains `LitStmt.letStr`, which reads the body with the pointer's local in scope, as `letView` does. The self program's functions moved (`compiler.lani` gained `lower_str` and its helpers), so the prim table `prims` was regenerated. The change before (11-02, f6v, giving `64acd215bab52adb`, SEMANTIC_DECISIONS "Addressed locals" point 6, stage (a)): the mini language gets a read-only static region. `Heap` gains `staticBase` and `statics` (the region's heap offset and its bytes). The mini program carries the bytes (`Program.statics`, extracted) and the binary puts them after the code in its image (`Binary.statics`, `link`, `linkOnto`'s tail). `Stmt.static target offset` sets `target` to `staticBase + offset` (`Exec.static`), and a `loadByte` at `staticBase + k`, for `k` below the region's length and the region at or above the heap's top, reads byte `k` (`Exec.loadByteStatic`); no statement writes the region. The machine (`Mini/Asm.lean`) has `Instr.static` and the `loadAt` of a static byte (`Step.loadAtStatic`), and its call step asks that the callee leave the region as it was (`Step.call`; a mini callee does, `Exec.statics`). On x86 `Instr.static offset` is `lea rax, [r8 + offset]; sub rax, r12` (10 bytes), and `HeapAt` gains `static` (r8 is r12 plus `staticBase`) and `statics` (each static byte is in memory at r12 plus its offset, apart from the stack window and the heap). The startup code sets r8 to the address of the image's static bytes, after its code (`mov r8, imm64`: the startup is 95 bytes and the image starts at `elfBase + 215`). The self program's functions moved (`compiler.lani` gained `static_agrees`), so the prim table `prims` was regenerated. The change before (11-02, f6v, giving `cbbfa2c060f54f28`, SEMANTIC_DECISIONS "Addressed locals" point 5, stage (d)): the reading of source text reads `let a: [i32; n] = [..]; let p: ptr = core::mem::i32_array_data_ptr(a);` as one viewed array. `core::mem::i32_array_data_ptr` is a reserved path (`textMem`, `textI32ArrayDataPtr`, `viewPath`, a seventh entry of `builtinPaths`), read by `CallPathHeadR.view` as the let head `LetHead.viewOf x` (one argument), which `letStmt` and `sliceReturned` give no statement of their own. `StmtsR.letView` reads the two lets, the first typed `[i32; n]` with a literal of `n` elements and the second, directly after it, typed `ptr`, fresh, not a global, with head `viewOf` of the first's local, as `MStmt.mLetView a n elements p body`, its body read in a scope with both locals; `StmtClosed.letView` closes it to `SrcStmt.letView`, and `stmt_tys` counts the array's type. The self program's functions moved, so the prim table `prims` was regenerated. The change before (11-02, f6v, giving `e8d6d7939ebcedcf`, SEMANTIC_DECISIONS "Addressed locals" point 5): the front-pass program has a viewed array, `SrcType.view length` and `SrcStmt.letView id length elements pointer body` (`Compiler/Types.lean`, extracted). Its Core meaning (`SourceCore.lean`): `letView` is `let id: [i32; length] = [elements]; let pointer: rawPtr = i32_array_data_ptr(id); body` (`letLocal` twice), and `view n` is the Core type `[i32; n]` in `SrcType.toCore`, `literal` and the slice of raw parts (the other type functions give it their default). `SrcType.HoldsAt` gains `view`: Core's cell holds `length` in-range i32s, and the slots hold nothing that matters (the truth is the view's heap block, `Views.ViewsHold`). The pure and cost meanings of `letView` (`mstmt`, `pstmt`, `qstmt`, `Faithful/Pure.lean`, `Faithful/Cost.lean`) are `none`, as for `letAlloc`: the self program uses no views. The change before (11-02, f6v, giving `a593873d90485ed8`): `State.Fresh` no longer asks that Core have no i32 array views; it asks that every view hold its cell (`Views.ViewsHold`: the view has no projections, its root cell holds an array of as many i32s as the view is long, and the view's address is the base of a live, borrowed heap block whose bytes encode those elements, which nothing overlaps (`Views.Owns`) and which ends below the cursor (`Views.Before`); no two views share a root), so Core's syncs change nothing. `Views.Before`, `Views.IsI32`, `Views.Owns`, `Views.ViewHolds` and `Views.ViewsHold` (`Mini/Views.lean`) are trusted. This weakens a premise of `compileSource_correct_from`: a state with no views still satisfies it (`ViewsHold.nil`). The change before (11-02, merge of f11b `7eb93b7916d84bb4` and its step D into lang `70d594d3ee80699d`, giving `f991f205862cd76e`): it combines F11b's changes with lang's, which did not change each other's definitions, beside the prim table `prims`, regenerated from the merged self program. Step D (9af4023ad) adds `while`, `break` and `continue` to the pure fragment: `mstmt`, `ploop`, `Out` with `Out.then`, `Out.pop` and `outValue` (`Faithful/Pure.lean`), and the cost semantics' `qstmt` with `qloop` (`Faithful/Cost.lean`), are trusted; lang's F14 cost statements (`qcallG`, `qcallB`, the budget certificates) now run statements with `qstmt`'s loop fuel and end calls with `outValue`. F11b's (11-01, the
 front end's reading of int bases, literal patterns, `for` and `slice_len`):
 Core has the intrinsic `slice_len` (`Intrinsic.sliceLength`,
 `sliceLength?`, its `evalExpr` case and `ExprHasType.sliceLength`;
@@ -204,7 +204,7 @@ its work directory's `definitions.txt`, to find which one changed.
 
 #### `Lanius.Mini.process_exits`
 
-statement `0000000057644e2a`. If `compileSource sp = some binary`,
+statement `00000000ca619f9e`. If `compileSource sp = some binary`,
 `elfFile binary entry stack heap = some file`, and function `entry` of `sp`
 has no parameters and needs at most `stack` bytes of frame memory
 (`sp.need entry ≤ stack`, section 8, "Frame room"): whenever Core runs
@@ -216,12 +216,14 @@ whose streams are `given` (standard input, the clocks' readings, the
 secure bytes and the read limits, `s.io = given`), either some run reaches `exit`
 (`Exits`) with that trace and the last of `v`'s slots as the status, every
 run of that length agreeing but for flags (`Det`), or the stack is too
-small for the call's depth and the process faults. Rests on sections 3, 6,
-7 and 8 (Linux: `Loaded`, `Exits`, the kernel calls).
+small for the call's depth and the process faults. The result slots hold `v`
+with the process's static region (`elfStatics binary stack`: the binary's
+static bytes after its code in the image, below the heap's base). Rests on
+sections 3, 6, 7 and 8 (Linux: `Loaded`, `Exits`, the kernel calls).
 
 #### `Lanius.Mini.process_behaviour`
 
-statement `00000000e0b98139`. Same premises, for any run from a `Loaded`
+statement `00000000a1f74da3`. Same premises, for any run from a `Loaded`
 state to a state with no step that is not a fault: Core's run of `entry()`
 finishes within the heap and the run is at `exit` with the last result
 slot, or Core's run reaches an undefined trap (`undefinedTrap`) within the
@@ -229,29 +231,30 @@ heap. Rests on the same sections.
 
 #### `Lanius.Mini.textProcess_exits`
 
-statement `000000000eec597a`. `process_exits` from source text: if
+statement `00000000006822ab`. `process_exits` from source text: if
 `compileText files = some binary` and `elfFile` gives `file`, the files'
 texts have a reading `sp` (`TextReading`, section 4), the only one, and
 `process_exits`'s conclusion holds of `sp`. Adds section 4.
 
 #### `Lanius.Mini.textProcess_behaviour`
 
-statement `0000000004ab78ed`. `process_behaviour` from source text, as
+statement `0000000062e7f29e`. `process_behaviour` from source text, as
 `textProcess_exits` is `process_exits`.
 
 ### Source text (`Lanius/Mini/TextCorrect.lean`)
 
 #### `Lanius.Mini.compileText_correct`
 
-statement `0000000000901ac2`. If `compileText files = some binary`, the
+statement `000000000f320c4d`. If `compileText files = some binary`, the
 files' texts have exactly one reading `sp`, and `compileSource_correct`'s
 conclusion holds of `sp` and `binary`, from the start state of the mini
 heap's streams (standard input, the clocks' readings, the secure bytes; the
-read limits are any). Rests on sections 3, 4, 6 and 8.
+read limits are any), for a static region holding the reading's static
+bytes. Rests on sections 3, 4, 6 and 8.
 
 #### `Lanius.Mini.compileText_behaviour`
 
-statement `000000002e8af658`. If `compileText files = some binary`, the
+statement `00000000901618e1`. If `compileText files = some binary`, the
 texts have one reading `sp`, and `compileSource_behaviour`'s conclusion
 holds of it.
 
@@ -264,9 +267,11 @@ Rests on section 4 only.
 
 #### `Lanius.Mini.compileSource_correct`
 
-statement `00000000ddd9beb6`. If `compileSource sp = some binary`, `f` is a
+statement `000000009e264115`. If `compileSource sp = some binary`, `f` is a
 function of `sp`, and `args` are values of its parameter types held in
-slots `bits` (`FieldsHold`), and Core runs `f(args)` from the start state
+slots `bits` (`FieldsHold`), the mini heap's static region `sx` holds the
+program's static bytes (`heap.StaticsAt sx`, `sx.bytes = sp.decls.statics`;
+str values are read against `sx`), and Core runs `f(args)` from the start state
 (`startState` of the heap's streams: standard input, the clocks' readings
 and the secure bytes; the heap's read limits are any) to `v` with the heap ending within the limit: there are a
 depth and result slots representing `v` (`HoldsAt`), with Core's final
@@ -280,14 +285,14 @@ Rests on sections 3, 6 and 8.
 
 #### `Lanius.Mini.compileSource_correct_from`
 
-statement `000000003b9d90f5`. The same from any Core state `st` with no
+statement `00000000217bb1c2`. The same from any Core state `st` with no
 live cells (`State.Fresh`, which also asks that every i32 array view hold its
 cell) whose heap and world the mini heap represents
 (`HeapCorr`); the final heap and world are again represented.
 
 #### `Lanius.Mini.compileSource_stops`
 
-statement `000000003abfe55e`. Same premises on the compiler and the
+statement `000000007d45a3a2`. Same premises on the compiler and the
 arguments, a fresh heap of limit at least 1 with the frame memory `f`
 needs, and the caller's obligations (any window up to 2^62): if every fuel of Core's run of `f(args)` fails
 (`Failing`: runs out, traps with a defined trap, or ends past the heap
@@ -295,20 +300,20 @@ limit), then every run of the code that stops, stops at a fault (`Faults`).
 
 #### `Lanius.Mini.compileSource_behaviour`
 
-statement `00000000590278c2`. Same premises: a run to a state with no step
+statement `00000000e4da78be`. Same premises: a run to a state with no step
 that is not a fault comes from a Core run of `f(args)` that finished within
 the heap limit, or reached an undefined trap within it.
 
 #### `Lanius.Mini.compileSource_behaviour_rawFree`
 
-statement `00000000c460dfe7`. `compileSource_behaviour` for a program without raw
+statement `00000000ca0b8475`. `compileSource_behaviour` for a program without raw
 memory (`RawFree`: no `alloc`, `load_byte`, `store_byte`, `dealloc`, raw
 slices or `slice_stride`), from a fresh heap: the undefined trap its second
 case allows is not `typeMismatch` (`Lanius/Mini/ShapeSource.lean`).
 
 #### `Lanius.Mini.compileSource_deterministic`
 
-statement `00000000bfde3cb8`. `compileSource_correct` (without the output
+statement `00000000e21cfd67`. `compileSource_correct` (without the output
 conjuncts) with: every run of the same length ends `DataEq` to the
 returning one (registers, `rip` and memory equal; section 7).
 

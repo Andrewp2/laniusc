@@ -296,28 +296,4 @@ theorem bstep_pick_element {spW sp : SrcProgram} {prims : Prims} {ix_pick_elemen
     budget Cost_pick_element
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4⟩
 
-theorem bproof_eval_pick {spW sp : SrcProgram} {prims : Prims} {ix_eval_pick ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_SrcType_is_uint ix_pick_element : Nat}
-    (fnW : spW.funcs[ix_eval_pick]? = some (src_eval_pick ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_SrcType_is_uint ix_pick_element)) (fn : sp.funcs[ix_eval_pick]? = some (src_eval_pick ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_SrcType_is_uint ix_pick_element))
-    (np : prims.isPrim ix_eval_pick = false)
-    (back : Certified (∀ {n : Nat}, Stmt_eval_pick sp prims ix_eval_pick n))
-    (b_SrcType_size : Certified (∀ {n : Nat}, BStmt_SrcType_size spW sp prims ix_SrcType_size n))
-    (pp_boxed_of_mini_selfhost_Stmt : prims.isPrim ix_boxed_of_mini_selfhost_Stmt = true) (bx_boxed_of_mini_selfhost_Stmt : prims.boxed.contains ix_boxed_of_mini_selfhost_Stmt = true)
-    (b_check_then : Certified (∀ {n : Nat}, BStmt_check_then spW sp prims ix_check_then n))
-    (pp_boxed_of_mini_selfhost_Expr : prims.isPrim ix_boxed_of_mini_selfhost_Expr = true) (bx_boxed_of_mini_selfhost_Expr : prims.boxed.contains ix_boxed_of_mini_selfhost_Expr = true)
-    (b_SrcType_is_i32 : Certified (∀ {n : Nat}, BStmt_SrcType_is_i32 spW sp prims ix_SrcType_is_i32 n))
-    (b_SrcType_is_uint : Certified (∀ {n : Nat}, BStmt_SrcType_is_uint spW sp prims ix_SrcType_is_uint n))
-    (b_pick_element : Certified (∀ {n : Nat}, BStmt_pick_element spW sp prims ix_pick_element n)) {n : Nat} :
-    BStmt_eval_pick spW sp prims ix_eval_pick n := by
-  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w k b h r0 r1 r2 r3 r4 hb pre
-  rcases n with _ | n
-  · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_eval_pick [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_eval_pick (n + 1) x0 x1 x2 x3 x4 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_eval_pick, List.length_cons, List.length_nil, if_true] at h ⊢
-    rw [Pre_eval_pick.eq_def] at pre
-    simp only at pre
-    budget Cost_eval_pick
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4⟩
-
 end Lanius.Faithful.SelfBudget

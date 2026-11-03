@@ -33,57 +33,6 @@ def Agree (base : Nat) (env : Env) (m : Machine) : Prop := ∀ index, index < ba
 def SourceCalls (prog : Program) (depth : Nat) : Calls :=
   fun callee args heap values after => ∃ inner, inner < depth ∧ prog.Returns inner callee args heap values after
 
-theorem Heap.writeLE_statics : ∀ (heap : Heap) (address value count : Nat),
-    (heap.writeLE address value count).staticBase = heap.staticBase ∧
-      (heap.writeLE address value count).statics = heap.statics
-  | _, _, _, 0 => ⟨rfl, rfl⟩
-  | heap, address, value, count + 1 => by
-    have := Heap.writeLE_statics (heap.write address (UInt8.ofNat value)) (address + 1) (value / 256) count
-    exact ⟨this.1, this.2⟩
-
-theorem Syscall.run_statics {call : Syscall} {args : List (BitVec 64)} {heap after : Heap} {result : BitVec 64}
-    (ran : call.run args heap = some (result, after)) :
-    after.staticBase = heap.staticBase ∧ after.statics = heap.statics := by
-  cases call <;>
-  match args, ran with
-  | [fd, address, count], ran =>
-    rw [Syscall.run] at ran
-    split at ran
-    · cases ran; exact ⟨rfl, rfl⟩
-    · cases ran
-  | [], ran => simp [Syscall.run] at ran
-  | [_], ran => simp [Syscall.run] at ran
-  | [_, _], ran => simp [Syscall.run] at ran
-  | _ :: _ :: _ :: _ :: _, ran => simp [Syscall.run] at ran
-
-/-- The heap an outcome ends with. -/
-def Outcome.finalHeap : Outcome → Heap
-  | .normal _ heap => heap
-  | .returned _ heap => heap
-  | .broke _ heap => heap
-  | .continued _ heap => heap
-
-/-- No statement moves or writes the static region. -/
-theorem Exec.statics {prog : Program} {d : Nat} {env : Env} {heap : Heap} {s : Stmt} {out : Outcome}
-    (exec : Exec prog d env heap s out) :
-    out.finalHeap.staticBase = heap.staticBase ∧ out.finalHeap.statics = heap.statics := by
-  induction exec with
-  | seq _ _ ih1 ih2 => exact ⟨ih2.1.trans ih1.1, ih2.2.trans ih1.2⟩
-  | loopNext _ _ _ ih1 ih2 => exact ⟨ih2.1.trans ih1.1, ih2.2.trans ih1.2⟩
-  | call _ _ _ _ _ ih => exact ih
-  | seqReturned _ ih => exact ih
-  | ifTrue _ _ ih => exact ih
-  | ifFalse _ _ ih => exact ih
-  | loopReturned _ _ ih => exact ih
-  | seqBroke _ ih => exact ih
-  | seqContinued _ ih => exact ih
-  | loopBroke _ _ ih => exact ih
-  | loopContinued _ _ _ ih1 ih2 => exact ⟨ih2.1.trans ih1.1, ih2.2.trans ih1.2⟩
-  | skip | assign | loopDone | ret | brk | cont | alloc | loadByte | storeByte | loadWord | divide | frame | static
-    | loadByteStatic => exact ⟨rfl, rfl⟩
-  | storeWord => exact Heap.writeLE_statics _ _ _ _
-  | sys ran => exact Syscall.run_statics ran
-
 theorem Instr.exec_singleton (i : Instr) (m : Machine) : Instr.exec [i] m = i.step m := rfl
 
 theorem Agree.of_slots (agree : Agree base env m) (same : ∀ slot, slot < base → m'.slots slot = m.slots slot) :

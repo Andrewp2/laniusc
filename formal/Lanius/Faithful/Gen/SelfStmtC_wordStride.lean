@@ -40,6 +40,10 @@ abbrev Stmt_eval_len_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
   ∀ {x0 : Lanius.Mini.Binding} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBinding x0 v0 → RepNat x1 v1 →
     (RepOption 156 RepEvaluated) (Lanius.Mini.evalLenOf x0 x1) w
 
+abbrev Stmt_eval_str (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.SrcDecls} {x1 : Nat} {x2 : List Nat} {x3 : Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepSrcDecls x0 v0 → RepNat x1 v1 → (RepList 25 RepNat) x2 v2 → RepNat x3 v3 →
+    (RepOption 156 RepEvaluated) (Lanius.Mini.evalStr x0 x1 x2 x3) w
+
 abbrev Stmt_eval_stride (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcDecls} {x1 : List Lanius.Mini.Binding} {x2 : Nat} {x3 : Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepSrcDecls x0 v0 → (RepList 135 RepBinding) x1 v1 → RepNat x2 v2 → RepNat x3 v3 →
     (RepOption 156 RepEvaluated) (Lanius.Mini.evalStride x0 x1 x2 x3) w
@@ -52,9 +56,17 @@ abbrev Stmt_eval_word_stride (prog : SrcProgram) (prims : Prims) (ix n : Nat) : 
   ∀ {x0 : Lanius.Mini.SrcDecls} {x1 : Lanius.Mini.SrcType} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepSrcDecls x0 v0 → RepSrcType x1 v1 → RepNat x2 v2 →
     (RepOption 156 RepEvaluated) (Lanius.Mini.evalWordStride x0 x1 x2) w
 
+abbrev Stmt_static_byte_is (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Option UInt8} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 217 RepU8) x0 v0 → RepNat x1 v1 →
+    RepBool (Lanius.Mini.staticByteIs x0 x1) w
+
 abbrev Stmt_store_eval_then (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Evaluated} {x1 : Lanius.Mini.Evaluated} {x2 : Lanius.Mini.SrcType} {x3 : Nat} {x4 : Lanius.Mini.Expr} {x5 : Option Lanius.Mini.Stmt} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepEvaluated x0 v0 → RepEvaluated x1 v1 → RepSrcType x2 v2 → RepNat x3 v3 → RepExpr x4 v4 → (RepOption 134 RepStmt) x5 v5 →
     (RepOption 134 RepStmt) (Lanius.Mini.storeEvalThen x0 x1 x2 x3 x4 x5) w
+
+abbrev Stmt_str_placed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List UInt8} {x1 : Nat} {x2 : List Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 35 RepU8) x0 v0 → RepNat x1 v1 → (RepList 25 RepNat) x2 v2 →
+    RepBool (Lanius.Mini.strPlaced x0 x1 x2) w
 
 abbrev Stmt_word_stride (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → RepNat x1 v1 →

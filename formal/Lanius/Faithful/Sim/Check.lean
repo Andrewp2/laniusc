@@ -6,7 +6,7 @@ public import Lanius.Mini.Compiler.P.SrcExpr_guard
 import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.SrcType_same
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.arithShiftRight
@@ -47,12 +47,12 @@ open Lanius.Mini
 /-- The scalar types `==` compares as Core does on the pure side. -/
 def scalarTy : SrcType → Bool
   | .i32 | .bool | .uint _ | .isize | .unit => true
-  | .struct _ _ | .enum _ _ | .ptr | .slice _ | .char | .float _ | .sint _ | .array _ _ | .view _ => false
+  | .struct _ _ | .enum _ _ | .ptr | .slice _ | .char | .float _ | .sint _ | .array _ _ | .view _ | .str => false
 
 /-- The number types: Core's arithmetic, comparisons and casts take them. -/
 def numTy : SrcType → Bool
   | .i32 | .uint _ | .isize => true
-  | .bool | .struct _ _ | .enum _ _ | .ptr | .slice _ | .unit | .char | .float _ | .sint _ | .array _ _ | .view _ => false
+  | .bool | .struct _ _ | .enum _ _ | .ptr | .slice _ | .unit | .char | .float _ | .sint _ | .array _ _ | .view _ | .str => false
 
 /-- The type of `left op right`, on operands of one type: comparisons of
 numbers and `==` of scalars give `bool`, `&&` and `||` take `bool`s, and
@@ -121,13 +121,13 @@ theorem isBoolTy_some {o : Option SrcType} (h : isBoolTy o = true) : o = some .b
 /-- Field `index` of a struct that is not a box. -/
 def fieldTy (boxes : Boxes) : SrcType → Nat → Option SrcType
   | .struct id fs, index => if (boxes id).isNone then fs[index]? else none
-  | .i32, _ | .bool, _ | .uint _, _ | .enum _ _, _ | .ptr, _ | .slice _, _ | .unit, _ | .isize, _ | .char, _ | .float _, _ | .sint _, _ | .array _ _, _ | .view _, _ => none
+  | .i32, _ | .bool, _ | .uint _, _ | .enum _ _, _ | .ptr, _ | .slice _, _ | .unit, _ | .isize, _ | .char, _ | .float _, _ | .sint _, _ | .array _ _, _ | .view _, _ | .str, _ => none
 
 /-- A struct literal of type `ty` from fields of types `ts`. -/
 def structTy (boxes : Boxes) (ty : SrcType) (ts : List SrcType) : Option SrcType :=
   match ty with
   | .struct id fs => if (boxes id).isNone && typesSame ts fs then some ty else none
-  | .i32 | .bool | .uint _ | .enum _ _ | .ptr | .slice _ | .unit | .isize | .char | .float _ | .sint _ | .array _ _ | .view _ => none
+  | .i32 | .bool | .uint _ | .enum _ _ | .ptr | .slice _ | .unit | .isize | .char | .float _ | .sint _ | .array _ _ | .view _ | .str => none
 
 /-- Variant `k` of the enum type `ty` from a payload of types `ts`. -/
 def variantTy (ty : SrcType) (k : Nat) (ts : List SrcType) : Option SrcType :=
@@ -136,7 +136,7 @@ def variantTy (ty : SrcType) (k : Nat) (ts : List SrcType) : Option SrcType :=
     match variants[k]? with
     | some fs => if typesSame ts fs then some ty else none
     | none => none
-  | .i32 | .bool | .uint _ | .struct _ _ | .ptr | .slice _ | .unit | .isize | .char | .float _ | .sint _ | .array _ _ | .view _ => none
+  | .i32 | .bool | .uint _ | .struct _ _ | .ptr | .slice _ | .unit | .isize | .char | .float _ | .sint _ | .array _ _ | .view _ | .str => none
 
 /-- A call of `callee` on arguments of types `ts`, a function not `outside`
 the pure fragment. -/
@@ -183,7 +183,7 @@ def effTy (tenv : TEnv) : SrcEff → Option SrcType
     (effTy tenv scrutinee).bind fun st =>
       match ety with
       | .enum _ variants => if st.same ety && armsOk tenv rty variants binders values then some rty else none
-      | .i32 | .bool | .uint _ | .struct _ _ | .ptr | .slice _ | .unit | .isize | .char | .float _ | .sint _ | .array _ _ | .view _ => none
+      | .i32 | .bool | .uint _ | .struct _ _ | .ptr | .slice _ | .unit | .isize | .char | .float _ | .sint _ | .array _ _ | .view _ | .str => none
   | .eDivide _ left right => (effTy tenv left).bind fun l => (effTy tenv right).bind (divTy l)
   | .eStride _ => none
   | .arraySlice _ _ => none
@@ -192,7 +192,7 @@ def effTy (tenv : TEnv) : SrcEff → Option SrcType
       (effTy tenv thenValue).bind fun a => (effTy tenv elseValue).bind fun b => if a.same b then some a else none
     else none
   | .eLet id _ value _ body => (effTy tenv value).bind fun t => effTy ((id, t) :: tenv) body
-  | .eLen _ => none
+  | .eLen _ | .eStr _ _ => none
 
 def effTys (tenv : TEnv) : List SrcEff → Option (List SrcType)
   | [] => some []

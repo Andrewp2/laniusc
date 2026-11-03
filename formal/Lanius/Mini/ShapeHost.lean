@@ -16,7 +16,7 @@ open Lanius.Core (Value Ty HostService)
 /-- The host services the verified compiler lowers. -/
 def LoweredService (s : HostService) : Prop :=
   s = .writeByte ∨ s = .writeStdout ∨ s = .writeStderr ∨ s = .readStdin ∨ s = .sleepMsI32 ∨
-    s = .monotonicRead ∨ s = .systemRead ∨ s = .fillSecureBytes
+    s = .monotonicRead ∨ s = .systemRead ∨ s = .fillSecureBytes ∨ s = .writeText ∨ s = .writeNewline
 
 /-- What a host call gives on shaped arguments: no `typeMismatch`, and a
 returned value of the service's result shape. -/
@@ -86,7 +86,7 @@ theorem i32Result_shape (P : Core.Program) (v : Int) : Shape P (Lanius.World.i32
 theorem host_ok {P : Core.Program} {heap : Memory.Heap} {world : Lanius.World.State} {s : HostService}
     {args : List Value} (lowered : LoweredService s) (shaped : Shapes P args s.parameterTypes) :
     HostOk P s (Lanius.World.call heap world s args) := by
-  rcases lowered with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+  rcases lowered with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
   all_goals first
     | (obtain ⟨x, y, rfl, hx, hy⟩ := shapes_two shaped; cases hx; cases hy)
     | (obtain ⟨x, rfl, hx⟩ := shapes_one shaped; cases hx)

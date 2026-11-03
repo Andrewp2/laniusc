@@ -4,8 +4,7 @@ public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.SrcExpr_guard
-import Lanius.Mini.Compiler.P.SrcType_size
-import Lanius.Mini.Compiler.P.UintTy_half
+import Lanius.Mini.Compiler.P.SrcType_same
 import Lanius.Mini.Compiler.P.assignFrom
 import Lanius.Mini.Compiler.P.compileModules
 import Lanius.Mini.Compiler.P.evalSame
@@ -35,6 +34,7 @@ def matchVariants (ty : SrcType) : List (List SrcType) :=
   | .float ft => []
   | .sint sk => []
   | .view viewLength => []
+  | .str => []
 
 /-- The match is exhaustive, its value takes slots, and its tags fit in 32 bits. -/
 def evalMatchOf (slot : Nat) (ety : SrcType) (ty : SrcType) (s : Evaluated) (arms : Stmt) (binders : Nat) (values : Nat) : Option Evaluated :=
@@ -107,6 +107,7 @@ def SrcEff.types (self : SrcEff) : List SrcType :=
   | .eIf condition ty thenValue elseValue => SrcEff.types condition ++ (SrcEff.types thenValue ++ SrcEff.types elseValue)
   | .eLet id ty value rt body => ty :: (SrcEff.types value ++ SrcEff.types body)
   | .eLen slice => []
+  | .eStr offset chars => []
 def effsTypes (es : List SrcEff) : List SrcType :=
   match es with
   | [] => []

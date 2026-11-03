@@ -78,5 +78,6 @@ def srcEnumId (t : Option SrcType) : Option Nat :=
     | .float ft => none
     | .sint sk => none
     | .view viewLength => none
+    | .str => none
 
 end Lanius.Mini

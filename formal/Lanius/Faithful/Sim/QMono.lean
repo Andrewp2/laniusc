@@ -91,7 +91,7 @@ theorem qeff_mono (le : QCallsLe call call') :
   | env, .eLet id _ value _ body, _, h => by
     simp only [qeff] at h ⊢
     exact qthen_mono (fun _ hx => qeff_mono le hx) (fun _ _ hx => qeff_mono le hx) h
-  | _, .eLen _, _, h => by simp [qeff] at h
+  | _, .eLen _, _, h | _, .eStr _ _, _, h => by simp [qeff] at h
 
 theorem qeffs_mono (le : QCallsLe call call') :
     ∀ {env : Env} {es : List SrcEff} {vs : List Value × Nat}, qeffs call env es = some vs →

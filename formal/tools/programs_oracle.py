@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """The verified compiler on laniusc's own test programs (roadmap F11).
 
-    python3 -I formal/tools/programs_oracle.py WORKDIR [--sample N] [--seed S] [--laniusc PATH]
+    python3 -I formal/tools/programs_oracle.py WORKDIR [--sample N] [--seed S] [--laniusc PATH] [--match RE]
 
 Run from the repository root. The programs are the single-file `.lani`
 programs with a `fn main` under tests/fixtures/ and sample_programs/; --sample
-takes N of them at random (seeded), as one run over all of them takes far
+takes N of them at random (seeded), --match only those whose text the
+regular expression matches, as one run over all of them takes far
 longer than the gate's limit. Each program is read by the verified front end
 with the stdlib modules it reaches (laniusc's parse trees, checked by the
 verified validator, as in stdlib_oracle.py), compiled by the verified compiler
@@ -136,6 +137,7 @@ def main():
     parser.add_argument('--sample', type=int, default=60)
     parser.add_argument('--seed', type=int, default=1)
     parser.add_argument('--laniusc', default='target/release/laniusc')
+    parser.add_argument('--match', help='only the programs whose text this regular expression matches')
     args = parser.parse_args()
     workdir = os.path.abspath(args.workdir)
     files_dir = os.path.join(workdir, 'files')
@@ -143,6 +145,8 @@ def main():
 
     began = time.time()
     every = programs()
+    if args.match:
+        every = [p for p in every if re.search(args.match, open(p).read())]
     picked = sorted(random.Random(args.seed).sample(every, min(args.sample, len(every))))
     mods = so.load_modules()
     ext = so.load_modules(EXTENDED)

@@ -5,7 +5,7 @@ public import Lanius.Mini.Compiler.P.SrcExpr_guard
 import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.SrcType_same
 import all Lanius.Mini.Compiler.P.Stmt_kills
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
@@ -77,7 +77,7 @@ import all Lanius.Mini.Compiler.P.wordElement
 import all Lanius.Mini.Compiler.P.wordStride
 import all Lanius.Mini.Compiler.P.wordWidth
 import all Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Compiler.P.SrcType_size
+public import Lanius.Mini.Compiler.P.SrcType_same
 public import Lanius.Mini.Compiler.P.UintTy_half
 public import Lanius.Mini.Compiler.P.UintTy_isWide
 public import Lanius.Mini.Compiler.P.consArgs
@@ -116,7 +116,7 @@ run cannot do, traps undefined, or traps where the mini code's own check
 
 namespace Lanius.Mini
 
-variable {bud : Budget} {places : List Addressed}
+variable {bud : Budget} {sx : Statics} {places : List Addressed}
 
 open Lanius.Core (Value)
 open Lanius.Semantics (State Cell Completion evalExpr evalExprs execStmt restoreLocals)
@@ -124,11 +124,11 @@ open Lanius.Semantics (State Cell Completion evalExpr evalExprs execStmt restore
 /-- A lowered effectful expression whose Core evaluation fails stops within
 `n` ticks. -/
 def EffStops (sp : SrcProgram) (mp : Program) (n : Nat) (e : SrcEff) : Prop :=
-  ∀ {bud : Budget} {places : List Addressed} {hp : Heap} {scope : List Binding} {slot : Nat} {ev : Evaluated}
+  ∀ {bud : Budget} {sx : Statics} [StaticsOf sp sx] {places : List Addressed} {hp : Heap} {scope : List Binding} {slot : Nat} {ev : Evaluated}
     {frame : Nat → Nat} {base : Nat} {st : State} {env : Env},
     e.eval (sp.sigsAt bud) sp.decls scope slot = some ev →
-    Corr places scope frame st env → Layout scope frame base slot → st.Fresh →
-    HeapCorr st.heap st.world hp → FrameCorr bud places st hp → st.heap.nextAddress ≤ hp.limit →
+    Corr sx places scope frame st env → Layout scope frame base slot → st.Fresh →
+    HeapCorr st.heap st.world hp → FrameCorr sx bud places st hp → st.heap.nextAddress ≤ hp.limit →
     EFails sp hp.limit st e.toCore → ∃ d, Stops mp d env hp ev.stmt n
 
 /-! ## Core's traps pass outward -/
@@ -480,6 +480,7 @@ theorem wide_div_ok {k : UintTy} (wide : k.isWide = true) {op : DivOp} {cop : Co
 section Split
 
 variable {sp : SrcProgram} {mp : Program} {n : Nat}
+variable [StaticsOf sp sx]
 
 /-- A sub-expression Core evaluates first: its code stops, or Core completes
 it within the limit and its code runs. -/
@@ -487,13 +488,13 @@ theorem eff_split (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls
     {β : Type} {whole : Nat → Semantics.Outcome β} {e : SrcEff} (ih : EffStops sp mp n e)
     {hp : Heap} {scope : List Binding} {slot : Nat} {ev : Evaluated} {frame : Nat → Nat} {base : Nat}
     {st : State} {env : Env}
-    (ok : e.eval (sp.sigsAt bud) sp.decls scope slot = some ev) (corr : Corr places scope frame st env)
+    (ok : e.eval (sp.sigsAt bud) sp.decls scope slot = some ev) (corr : Corr sx places scope frame st env)
     (fr : Layout scope frame base slot) (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp)
-    (fc : FrameCorr bud places st hp) (within : st.heap.nextAddress ≤ hp.limit) (fails : ∀ j, Failing hp.limit (whole j))
+    (fc : FrameCorr sx bud places st hp) (within : st.heap.nextAddress ≤ hp.limit) (fails : ∀ j, Failing hp.limit (whole j))
     (propagate : ∀ j reason s, evalExpr j sp.toCore st e.toCore = .trapped reason s →
       ∃ j' s', whole j' = .trapped reason s' ∧ s'.heap.nextAddress = s.heap.nextAddress) :
     (∃ d, Stops mp d env hp ev.stmt n) ∨ ∃ k v st1, evalExpr k sp.toCore st e.toCore = .done v st1 ∧
-      st1.heap.nextAddress ≤ hp.limit ∧ Evaluates bud places mp hp slot st env ev v st1 := by
+      st1.heap.nextAddress ≤ hp.limit ∧ Evaluates sx bud places mp hp slot st env ev v st1 := by
   by_cases done : Completes hp.limit fun k => evalExpr k sp.toCore st e.toCore
   · obtain ⟨k, v, st1, run, bound⟩ := done
     exact .inr ⟨k, v, st1, run, bound, (sound_both lowered k).2 ok corr fr fresh hc fc run bound⟩
@@ -504,8 +505,8 @@ theorem args_stops (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decl
     ∀ (args : List SrcEff), (∀ e ∈ args, EffStops sp mp n e) →
     ∀ {hp : Heap} {scope : List Binding} {slot : Nat} {ea : EvaluatedArgs} {frame : Nat → Nat} {base : Nat}
       {st : State} {env : Env},
-    evalArgs (sp.sigsAt bud) sp.decls scope args slot = some ea → Corr places scope frame st env →
-    Layout scope frame base slot → st.Fresh → HeapCorr st.heap st.world hp → FrameCorr bud places st hp →
+    evalArgs (sp.sigsAt bud) sp.decls scope args slot = some ea → Corr sx places scope frame st env →
+    Layout scope frame base slot → st.Fresh → HeapCorr st.heap st.world hp → FrameCorr sx bud places st hp →
     st.heap.nextAddress ≤ hp.limit → (∀ j, Failing hp.limit (evalExprs j sp.toCore st (SrcEff.toCoreList args))) →
     ∃ d, Stops mp d env hp ea.stmt n
   | [], _, hp, scope, slot, ea, frame, base, st, env, ok, corr, fr, fresh, hc, fc, within, fails => by
@@ -547,15 +548,15 @@ theorem args_split (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decl
     {β : Type} {whole : Nat → Semantics.Outcome β} {args : List SrcEff} (each : ∀ e ∈ args, EffStops sp mp n e)
     {hp : Heap} {scope : List Binding} {slot : Nat} {ea : EvaluatedArgs} {frame : Nat → Nat} {base : Nat}
     {st : State} {env : Env}
-    (ok : evalArgs (sp.sigsAt bud) sp.decls scope args slot = some ea) (corr : Corr places scope frame st env)
+    (ok : evalArgs (sp.sigsAt bud) sp.decls scope args slot = some ea) (corr : Corr sx places scope frame st env)
     (fr : Layout scope frame base slot) (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp)
-    (fc : FrameCorr bud places st hp) (within : st.heap.nextAddress ≤ hp.limit) (fails : ∀ j, Failing hp.limit (whole j))
+    (fc : FrameCorr sx bud places st hp) (within : st.heap.nextAddress ≤ hp.limit) (fails : ∀ j, Failing hp.limit (whole j))
     (propagate : ∀ j reason s, evalExprs j sp.toCore st (SrcEff.toCoreList args) = .trapped reason s →
       ∃ j' s', whole j' = .trapped reason s' ∧ s'.heap.nextAddress = s.heap.nextAddress) :
     (∃ d, Stops mp d env hp ea.stmt n) ∨ ∃ k vs st1, evalExprs k sp.toCore st (SrcEff.toCoreList args) = .done vs st1 ∧
       st1.heap.nextAddress ≤ hp.limit ∧ st1.Fresh ∧ Keeps places st.nextCell st st1 ∧ st1.locals = st.locals ∧
       ∃ d env' hp', Exec mp d env hp ea.stmt (.normal env' hp') ∧ (∀ j < slot, env' j = env j) ∧
-        FieldsHold places ea.types vs env' slot ∧ HeapCorr st1.heap st1.world hp' ∧ FrameCorr bud places st1 hp' := by
+        FieldsHold sx places ea.types vs env' slot ∧ HeapCorr st1.heap st1.world hp' ∧ FrameCorr sx bud places st1 hp' := by
   by_cases done : Completes hp.limit fun k => evalExprs k sp.toCore st (SrcEff.toCoreList args)
   · obtain ⟨k, vs, st1, run, bound⟩ := done
     exact .inr ⟨k, vs, st1, run, bound,
@@ -570,15 +571,15 @@ theorem pair_split (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decl
     (general : cop ≠ .logicalAnd ∧ cop ≠ .logicalOr) {hp : Heap} {scope : List Binding} {slot : Nat}
     {le re : Evaluated} {frame : Nat → Nat} {base : Nat} {st : State} {env : Env}
     (leOk : l.eval (sp.sigsAt bud) sp.decls scope slot = some le)
-    (reOk : r.eval (sp.sigsAt bud) sp.decls scope (slot + 1) = some re) (corr : Corr places scope frame st env)
+    (reOk : r.eval (sp.sigsAt bud) sp.decls scope (slot + 1) = some re) (corr : Corr sx places scope frame st env)
     (fr : Layout scope frame base slot) (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp)
-    (fc : FrameCorr bud places st hp) (within : st.heap.nextAddress ≤ hp.limit) (fails : EFails sp hp.limit st (.binary cop l.toCore r.toCore))
+    (fc : FrameCorr sx bud places st hp) (within : st.heap.nextAddress ≤ hp.limit) (fails : EFails sp hp.limit st (.binary cop l.toCore r.toCore))
     (rest : Stmt) :
     (∃ d, Stops mp d env hp (.seq le.stmt (.seq re.stmt rest)) n) ∨
     ∃ k1 vl st1 k2 vr st2 env1 env2 hp2,
       evalExpr k1 sp.toCore st l.toCore = .done vl st1 ∧ evalExpr k2 sp.toCore st1 r.toCore = .done vr st2 ∧
-      st2.heap.nextAddress ≤ hp.limit ∧ le.ty.HoldsAt places vl env1 slot ∧ (∀ j < slot + 1, env2 j = env1 j) ∧
-      re.ty.HoldsAt places vr env2 (slot + 1) ∧
+      st2.heap.nextAddress ≤ hp.limit ∧ le.ty.HoldsAt sx places vl env1 slot ∧ (∀ j < slot + 1, env2 j = env1 j) ∧
+      re.ty.HoldsAt sx places vr env2 (slot + 1) ∧
       ∀ d', Stops mp d' env2 hp2 rest n → ∃ d, Stops mp d env hp (.seq le.stmt (.seq re.stmt rest)) n := by
   rcases eff_split lowered ihl leOk corr fr fresh hc fc within fails (fun j r s h => ⟨j + 1, s, binary_trap_left h, rfl⟩) with
     ⟨d, stops⟩ | ⟨k1, vl, st1, run1, bound1, fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, holds1, hc1, fc1⟩
@@ -599,9 +600,10 @@ end Split
 section Cases
 
 variable {sp : SrcProgram} {mp : Program} {n : Nat}
+variable [StaticsOf sp sx]
 
 theorem eff_pure {e : SrcExpr} : EffStops sp mp n (.ePure e) := by
-  intro bud places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
+  intro bud sx _ places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
   simp only [SrcEff.toCore] at fails
   simp only [SrcEff.eval, evalPure] at ok
   split at ok
@@ -645,7 +647,7 @@ theorem eff_pure {e : SrcExpr} : EffStops sp mp n (.ePure e) := by
 
 theorem eff_neg (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {operand : SrcEff}
     (ih : EffStops sp mp n operand) : EffStops sp mp n (.eNeg operand) := by
-  intro bud places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
+  intro bud sx _ places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
   simp only [SrcEff.eval, evalNegate] at ok
   split at ok
   · simp at ok
@@ -665,7 +667,7 @@ theorem eff_neg (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls s
 
 theorem eff_not (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {operand : SrcEff}
     (ih : EffStops sp mp n operand) : EffStops sp mp n (.eNot operand) := by
-  intro bud places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
+  intro bud sx _ places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
   simp only [SrcEff.eval, evalNot] at ok
   split at ok
   · simp at ok
@@ -685,7 +687,7 @@ theorem eff_not (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls s
 
 theorem eff_cast (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {ty : SrcType}
     {operand : SrcEff} (ih : EffStops sp mp n operand) : EffStops sp mp n (.eCast ty operand) := by
-  intro bud places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
+  intro bud sx _ places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
   simp only [SrcEff.eval, evalCast] at ok
   split at ok
   · simp at ok
@@ -709,11 +711,11 @@ theorem eff_cast (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls 
 
 /-- An array's slice is not lowered yet (`SrcEff.eval` rejects it). -/
 theorem eff_arraySlice {element : SrcType} {array : Nat} : EffStops sp mp n (.arraySlice element array) := by
-  intro bud places hp scope slot ev frame base st env ok
+  intro bud sx _ places hp scope slot ev frame base st env ok
   simp [SrcEff.eval] at ok
 
 theorem eff_stride {slice : Nat} : EffStops sp mp n (.eStride slice) := by
-  intro bud places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
+  intro bud sx _ places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
   simp only [SrcEff.eval, evalStride] at ok
   split at ok
   · simp at ok
@@ -736,10 +738,17 @@ theorem eff_stride {slice : Nat} : EffStops sp mp n (.eStride slice) := by
     · cases h
     · exact absurd within (Nat.not_le.mpr h)
 
+/-- A `str` literal: Core's value, which does not fail. -/
+theorem eff_str {offset : Nat} {chars : List Nat} : EffStops sp mp n (.eStr offset chars) := by
+  intro bud sx _ places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
+  have run : evalExpr 1 sp.toCore st (SrcEff.eStr offset chars).toCore = .done (.string (strValue chars)) st := by
+    simp only [SrcEff.toCore, evalExpr]
+  exact (fails.not_done run within).elim
+
 /-- `slice_len(slice)` of a slice local: Core reads the length and does not
 fail. -/
 theorem eff_len {slice : Nat} : EffStops sp mp n (.eLen slice) := by
-  intro bud places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
+  intro bud sx _ places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
   simp only [SrcEff.eval, evalLen] at ok
   split at ok
   · simp at ok
@@ -761,7 +770,7 @@ theorem eff_len {slice : Nat} : EffStops sp mp n (.eLen slice) := by
 
 theorem eff_apply (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {op : SrcOp}
     {l r : SrcEff} (ihl : EffStops sp mp n l) (ihr : EffStops sp mp n r) : EffStops sp mp n (.eApply op l r) := by
-  intro bud places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
+  intro bud sx _ places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
   simp only [SrcEff.eval, evalApply] at ok
   split at ok
   · simp at ok
@@ -859,7 +868,7 @@ theorem eff_apply (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls
 
 theorem eff_divide (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {op : SrcDivOp}
     {l r : SrcEff} (ihl : EffStops sp mp n l) (ihr : EffStops sp mp n r) : EffStops sp mp n (.eDivide op l r) := by
-  intro bud places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
+  intro bud sx _ places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
   simp only [SrcEff.eval, evalDivision] at ok
   split at ok
   · simp at ok
@@ -977,8 +986,8 @@ theorem eff_arrayIndex (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.
     {ev : Evaluated} {frame : Nat → Nat} {base : Nat} {st : State} {env : Env} {b : Binding}
     (found : lookup scope slice = some b)
     (ok : evalArrayIndex b slot (index.eval (sp.sigsAt bud) sp.decls scope slot) = some ev)
-    (corr : Corr places scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
-    (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp) (within : st.heap.nextAddress ≤ hp.limit)
+    (corr : Corr sx places scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
+    (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp) (within : st.heap.nextAddress ≤ hp.limit)
     (fails : EFails sp hp.limit st (.index (.local slice) index.toCore)) : ∃ d, Stops mp d env hp ev.stmt n := by
   obtain ⟨e, n', i, bty, indexOk, kind, -, nsmall, -, rfl⟩ := evalArrayIndex_some ok
   obtain ⟨w0, localRun0, holdsW⟩ := corr.local found 0 sp.toCore
@@ -1007,7 +1016,7 @@ theorem eff_arrayIndex (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.
 
 theorem eff_index (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {slice : Nat}
     {index : SrcEff} (ih : EffStops sp mp n index) : EffStops sp mp n (.eIndex slice index) := by
-  intro bud places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
+  intro bud sx _ places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
   simp only [SrcEff.eval, evalIndex] at ok
   split at ok
   · simp at ok
@@ -1107,7 +1116,7 @@ theorem eff_index (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls
 
 theorem eff_struct (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {ty : SrcType}
     {fields : List SrcEff} (each : ∀ e ∈ fields, EffStops sp mp n e) : EffStops sp mp n (.eStruct ty fields) := by
-  intro bud places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
+  intro bud sx _ places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
   simp only [SrcEff.eval, evalStruct] at ok
   split at ok
   · simp at ok
@@ -1141,7 +1150,7 @@ theorem eff_struct (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decl
 theorem eff_variant (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {ty : SrcType}
     {variant : Nat} {payload : List SrcEff} (each : ∀ e ∈ payload, EffStops sp mp n e) :
     EffStops sp mp n (.eVariant ty variant payload) := by
-  intro bud places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
+  intro bud sx _ places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
   simp only [SrcEff.eval, evalVariant] at ok
   split at ok
   · simp at ok
@@ -1218,7 +1227,7 @@ theorem host_failing {id : Nat} {service : Core.HostService} (hs : hostService? 
 theorem eff_call (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     (returns : funcsReturn sp.funcs = true) (prev : StmtStops sp mp n) {callee : Nat} {args : List SrcEff}
     (each : ∀ e ∈ args, EffStops sp mp (n + 1) e) : EffStops sp mp (n + 1) (.eCall callee args) := by
-  intro bud places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
+  intro bud sx _ places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
   simp only [SrcEff.eval, evalCall, sigsAt_get] at ok
   cases found : sp.funcs[callee]? with
   | none =>
@@ -1333,7 +1342,7 @@ theorem eff_call (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls 
     ⟨d, stops⟩ | ⟨k, vs, st1, argsRun, bound, fresh1, keeps1, locals1, d1, env1, hp1, exec1, same1, holdsA, hc1, fc1⟩
   · exact ⟨d, .seqFirst stops⟩
   rw [tyEq] at holdsA
-  have holdsEntry : FieldsHold places (paramTypes f.params) vs
+  have holdsEntry : FieldsHold sx places (paramTypes f.params) vs
       (Func.entry (Expr.evalAll env1 (slotVars slot (sizes (paramTypes f.params))))) 0 :=
     holdsA.congr fun i below => by rw [Nat.zero_add, entry_slotVars env1 slot _ below]
   have limit := exec1.limit_normal
@@ -1348,12 +1357,12 @@ theorem arms_stops {dst eid : Nat} {ty : SrcType} {scope : List Binding} {slot :
     ∀ (values : List SrcEff) {variants : List (List SrcType)} {binders : List (List Nat)} {j kv : Nat}
       {stmt : Stmt} {fs : List SrcType} {vs : List Value} {hp : Heap} {frame : Nat → Nat} {st : State}
       {env : Env},
-      (∀ e ∈ values, EffStops sp mp n e) → Corr places scope frame st env → Layout scope frame 0 slot → st.Fresh →
-      HeapCorr st.heap st.world hp → FrameCorr bud places st hp → st.heap.nextAddress ≤ hp.limit →
+      (∀ e ∈ values, EffStops sp mp n e) → Corr sx places scope frame st env → Layout scope frame 0 slot → st.Fresh →
+      HeapCorr st.heap st.world hp → FrameCorr sx bud places st hp → st.heap.nextAddress ≤ hp.limit →
       evalArms (sp.sigsAt bud) sp.decls scope slot dst ty j variants binders values = some stmt →
       values.length = variants.length → binders.length = variants.length →
       (∀ fs ∈ variants, slot + 1 + sizes fs ≤ dst) → j ≤ kv → variants[kv - j]? = some fs → kv < 2 ^ 64 →
-      env slot = BitVec.ofNat 64 kv → FieldsHold places fs vs env (slot + 1) →
+      env slot = BitVec.ofNat 64 kv → FieldsHold sx places fs vs env (slot + 1) →
       (∀ k, Failing hp.limit (Semantics.evalMatchArms k sp.toCore st (.enumeration eid kv vs)
         (SrcEff.coreArms eid j binders values))) →
       ∃ d, Stops mp d env hp stmt n := by
@@ -1446,7 +1455,7 @@ theorem arms_stops {dst eid : Nat} {ty : SrcType} {scope : List Binding} {slot :
 theorem eff_match (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {scrutinee : SrcEff}
     {ety ty : SrcType} {binders : List (List Nat)} {values : List SrcEff} (ih : EffStops sp mp n scrutinee)
     (each : ∀ e ∈ values, EffStops sp mp n e) : EffStops sp mp n (.eMatch scrutinee ety ty binders values) := by
-  intro bud places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
+  intro bud sx _ places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
   simp only [SrcEff.eval, evalMatch] at ok
   split at ok
   · simp at ok
@@ -1503,13 +1512,14 @@ theorem eff_match (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls
   | float => cases values <;> simp [matchVariants, evalArms] at armsOk
   | sint => cases values <;> simp [matchVariants, evalArms] at armsOk
   | view => cases values <;> simp [matchVariants, evalArms] at armsOk
+  | str => cases values <;> simp [matchVariants, evalArms] at armsOk
 
 /-- A conditional: the condition's code stops, or its value picks the arm
 Core runs, and that arm's code stops. -/
 theorem eff_if (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {c a b : SrcEff}
     {ty : SrcType} (ihc : EffStops sp mp n c) (iha : EffStops sp mp n a) (ihb : EffStops sp mp n b) :
     EffStops sp mp n (.eIf c ty a b) := by
-  intro bud places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
+  intro bud sx _ places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
   simp only [SrcEff.eval, evalIf] at ok
   split at ok
   · simp at ok
@@ -1566,7 +1576,7 @@ and the body's code stops. -/
 theorem eff_let (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {id : Nat}
     {ty rt : SrcType} {a b : SrcEff} (iha : EffStops sp mp n a) (ihb : EffStops sp mp n b) :
     EffStops sp mp n (.eLet id ty a rt b) := by
-  intro bud places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
+  intro bud sx _ places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
   simp only [SrcEff.eval, evalLetIn] at ok
   split at ok
   · simp at ok
@@ -1626,8 +1636,9 @@ end Cases
 section Statements
 
 variable {sp : SrcProgram} {mp : Program} {n : Nat}
+variable [StaticsOf sp sx]
 
-theorem local_assign_trap {P : Core.Program} {scope frame st env} (corr : Corr places scope frame st env) {id : Nat}
+theorem local_assign_trap {P : Core.Program} {scope frame st env} (corr : Corr sx places scope frame st env) {id : Nat}
     {b : Binding} (found : lookup scope id = some b) {e : Core.Expr} {j : Nat} {r : Lanius.Trap} {s : State}
     (h : evalExpr j P st e = .trapped r s) : evalExpr (j + 2) P st (.assign .set (.local id) e) = .trapped r s := by
   obtain ⟨v0, entry, _⟩ := corr.values b (lookup_mem found).1
@@ -1637,7 +1648,7 @@ theorem local_assign_trap {P : Core.Program} {scope frame st env} (corr : Corr p
   rw [evalExpr.eq_def]
   simp only [place, Semantics.evalExpr_of_le h (by intro h; cases h) (Nat.le_succ j)]
 
-theorem field_assign_trap {P : Core.Program} {scope frame st env} (corr : Corr places scope frame st env)
+theorem field_assign_trap {P : Core.Program} {scope frame st env} (corr : Corr sx places scope frame st env)
     {id : Nat} {b : Binding} (found : lookup scope id = some b) {sid : Nat} {vs : List Value}
     (entry : st.cellEntry? (frame b.slot) = some ⟨frame b.slot, some (.structure sid vs)⟩)
     {index : Nat} {old : Value} (got : vs[index]? = some old) {e : Core.Expr} {j : Nat} {r : Lanius.Trap}
@@ -1651,7 +1662,7 @@ theorem field_assign_trap {P : Core.Program} {scope frame st env} (corr : Corr p
 
 /-- Core's `id.index = e` on a struct local completes once `e` does, when the
 struct is still there. -/
-theorem field_assign_progress_eff {P : Core.Program} {scope frame st env} (corr : Corr places scope frame st env)
+theorem field_assign_progress_eff {P : Core.Program} {scope frame st env} (corr : Corr sx places scope frame st env)
     {id : Nat} {b : Binding} (found : lookup scope id = some b) {sid : Nat} {vs : List Value}
     (entry : st.cellEntry? (frame b.slot) = some ⟨frame b.slot, some (.structure sid vs)⟩)
     {index : Nat} {old : Value} (got : vs[index]? = some old) {e : Core.Expr} {k : Nat} {rv : Value}
@@ -1677,7 +1688,7 @@ theorem field_assign_progress_eff {P : Core.Program} {scope frame st env} (corr 
 /-- A call's arguments whose checks pass complete in Core: pure values and
 slices of array locals. -/
 theorem arrayArgs_progress {scope : List Binding} {frame : Nat → Nat} {st : State} {env : Env}
-    {prog : Core.Program} (corr : Corr places scope frame st env) (target : prog.target = .x86_64) {t : Nat} :
+    {prog : Core.Program} (corr : Corr sx places scope frame st env) (target : prog.target = .x86_64) {t : Nat} :
     ∀ {args : List SrcEff} {types : List SrcType} {offset : Nat} {a : ArrayArgs},
       arrayArgs scope args types t offset = some a → a.guard.eval env ≠ 0 →
       ∃ f vs, Semantics.evalExprs f prog st (SrcEff.toCoreList args) = .done vs st := by
@@ -1718,8 +1729,8 @@ theorem arrayCall_stops (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp
     (returns : funcsReturn sp.funcs = true) (prev : StmtStops sp mp n) {scope : List Binding}
     {frame : Nat → Nat} {base next : Nat} {st : State} {env : Env} {hp : Heap} {callee : Nat}
     {args : List SrcEff} {ev : Evaluated} (ok : arrayCall (sp.sigsAt bud) scope next callee args = some ev)
-    (corr : Corr places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp) (within : st.heap.nextAddress ≤ hp.limit)
+    (corr : Corr sx places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
+    (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp) (within : st.heap.nextAddress ≤ hp.limit)
     (fails : EFails sp hp.limit st (.call callee (SrcEff.toCoreList args))) :
     ∃ d, Stops mp d env hp ev.stmt (n + 1) := by
   simp only [arrayCall] at ok
@@ -1760,7 +1771,7 @@ theorem stops_letEval (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.d
     {ty : SrcType} {value : SrcEff} {body : SrcStmt} (ihe : EffStops sp mp (n + 1) value)
     (ih : SrcStops sp mp (n + 1) body) :
     SrcStops sp mp (n + 1) (.letEval id ty value body) := by
-  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud sx _ places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower, lowerLetEval] at ok
   split at ok
   · simp at ok
@@ -1813,7 +1824,7 @@ theorem stops_letEval (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.d
 
 theorem stops_setEval (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {id : Nat}
     {value : SrcEff} (ihe : EffStops sp mp n value) : SrcStops sp mp n (.setEval id value) := by
-  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud sx _ places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower, lowerSetEval] at ok
   split at ok
   · simp at ok
@@ -1840,7 +1851,7 @@ theorem stops_setEval (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.d
 theorem stops_setFieldEval (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     {id index : Nat} {value : SrcEff} (ihe : EffStops sp mp n value) :
     SrcStops sp mp n (.setFieldEval id index value) := by
-  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud sx _ places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower, lowerSetFieldEval] at ok
   split at ok
   · simp at ok
@@ -1863,6 +1874,7 @@ theorem stops_setFieldEval (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs)
   case h_12 => simp at ok
   case h_13 => simp at ok
   case h_14 => simp at ok
+  case h_15 => simp at ok
   rename_i sid types hty
   simp only [setFieldEvalAt] at ok
   split at ok
@@ -1898,7 +1910,7 @@ theorem stops_ifEval (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.de
     {condition : SrcEff} {thenBranch elseBranch : SrcStmt} (ihe : EffStops sp mp n condition)
     (ih1 : SrcStops sp mp n thenBranch) (ih2 : SrcStops sp mp n elseBranch) :
     SrcStops sp mp n (.ifEval condition thenBranch elseBranch) := by
-  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud sx _ places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower, lowerIfEval] at ok
   split at ok
   · simp at ok
@@ -1947,8 +1959,8 @@ theorem loop_stops (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decl
     (bodyOk : body.lower (sp.sigsAt bud) sp.decls ret scope next = some bstmt) (isBool : cv.ty = .bool)
     (fr : Layout scope frame base next) :
     ∀ j ≤ m, ∀ {hp : Heap} {st0 : State} {env0 : Env},
-      Corr places scope frame st0 env0 → st0.Fresh → base ≤ st0.nextCell → HeapCorr st0.heap st0.world hp →
-      FrameCorr bud places st0 hp → (∀ x ∈ places, x.cell < base) → st0.heap.nextAddress ≤ hp.limit → Fails sp hp.limit st0 (.whileLoop c.toCore body.toCore) →
+      Corr sx places scope frame st0 env0 → st0.Fresh → base ≤ st0.nextCell → HeapCorr st0.heap st0.world hp →
+      FrameCorr sx bud places st0 hp → (∀ x ∈ places, x.cell < base) → st0.heap.nextAddress ≤ hp.limit → Fails sp hp.limit st0 (.whileLoop c.toCore body.toCore) →
       ∃ d, Stops mp d env0 hp (.loop (.lit 1) (.seq cv.stmt (.ite (.var next) bstmt .brk))) j := by
   intro j
   induction j with
@@ -2002,7 +2014,7 @@ theorem loop_stops (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decl
 theorem stops_whileEval (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     {condition : SrcEff} {body : SrcStmt} (ihe : EffStops sp mp n condition) (ih : SrcStops sp mp n body) :
     SrcStops sp mp n (.whileEval condition body) := by
-  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud sx _ places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower, lowerWhileEval] at ok
   split at ok
   · simp at ok
@@ -2022,20 +2034,20 @@ theorem stops_whileEval (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp
 
 /-- `break;` and `continue;` complete at once, so they never fail. -/
 theorem stops_break : SrcStops sp mp n .break := by
-  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud sx _ places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   have := fails 1
   simp only [SrcStmt.toCore, execStmt, Failing] at this
   exact absurd within (Nat.not_le.mpr this)
 
 theorem stops_continue : SrcStops sp mp n .continue := by
-  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud sx _ places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   have := fails 1
   simp only [SrcStmt.toCore, execStmt, Failing] at this
   exact absurd within (Nat.not_le.mpr this)
 
 theorem stops_returnEval (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     {value : SrcEff} (ihe : EffStops sp mp n value) : SrcStops sp mp n (.returnEval value) := by
-  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud sx _ places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower, lowerReturnEval] at ok
   split at ok
   · simp at ok
@@ -2056,7 +2068,7 @@ theorem stops_returnEval (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) s
 theorem stops_discard (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     (returns : funcsReturn sp.funcs = true) (prev : StmtStops sp mp n) {value : SrcEff}
     (ihe : EffStops sp mp (n + 1) value) : SrcStops sp mp (n + 1) (.discard value) := by
-  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud sx _ places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower, lowerDiscard] at ok
   split at ok
   · simp at ok
@@ -2077,7 +2089,7 @@ theorem stops_discard (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.d
 
 theorem stops_assert (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     {condition : SrcEff} (ihe : EffStops sp mp n condition) : SrcStops sp mp n (.assert condition) := by
-  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud sx _ places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower, lowerAssert] at ok
   split at ok
   · simp at ok
@@ -2103,7 +2115,7 @@ theorem stops_assert (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.de
     exact ⟨_, Stops.after (d' := 0) exec1 (.divide (by simp [Expr.eval, bits, boolBits, Word.divides, DivOp.defined]))⟩
 
 theorem stops_returnUnit : SrcStops sp mp n .returnUnit := by
-  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud sx _ places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   have := fails 1
   simp only [SrcStmt.toCore, execStmt, Failing] at this
   exact absurd within (Nat.not_le.mpr this)
@@ -2308,8 +2320,8 @@ theorem stops_setIndexEval_array (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.
     {st : State} {env : Env} {b : Binding} (found : lookup scope slice = some b)
     (ok : storeArray b next (index.eval (sp.sigsAt bud) sp.decls scope next)
       (value.eval (sp.sigsAt bud) sp.decls scope (next + 1)) = some stmt)
-    (corr : Corr places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp) (within : st.heap.nextAddress ≤ hp.limit)
+    (corr : Corr sx places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
+    (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp) (within : st.heap.nextAddress ≤ hp.limit)
     (fails : Fails sp hp.limit st (SrcStmt.setIndexEval slice index value).toCore) :
     ∃ d, Stops mp d env hp stmt n := by
   obtain ⟨e, n', i, w, bty, indexOk, valueOk, kind, -, -, nsmall, -, rfl⟩ := storeArray_some ok
@@ -2362,7 +2374,7 @@ theorem stops_setIndexEval_array (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.
 theorem stops_setIndexEval (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     {slice : Nat} {index value : SrcEff} (ihi : EffStops sp mp n index) (ihv : EffStops sp mp n value) :
     SrcStops sp mp n (.setIndexEval slice index value) := by
-  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud sx _ places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower, lowerSetIndexEval] at ok
   split at ok
   · simp at ok
@@ -2538,6 +2550,7 @@ theorem effStops_all {sp : SrcProgram} {mp : Program} {n : Nat}
     (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     (returns : funcsReturn sp.funcs = true) (prev : StmtStops sp mp n) : ∀ e, EffStops sp mp (n + 1) e
   | .ePure _ => eff_pure
+  | .eStr _ _ => eff_str
   | .eCall _ args => eff_call lowered returns prev fun e _ => effStops_all lowered returns prev e
   | .eApply _ l r => eff_apply lowered (effStops_all lowered returns prev l) (effStops_all lowered returns prev r)
   | .eNeg operand => eff_neg lowered (effStops_all lowered returns prev operand)
@@ -2618,7 +2631,7 @@ ticks. -/
 theorem stmtStops_all {sp : SrcProgram} {mp : Program}
     (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     (returns : funcsReturn sp.funcs = true) : ∀ n, StmtStops sp mp n
-  | 0 => fun _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ => ⟨0, .zero⟩
+  | 0 => fun _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ => ⟨0, .zero⟩
   | n + 1 => stmtStops_succ lowered returns (stmtStops_all lowered returns n)
 
 end Lanius.Mini

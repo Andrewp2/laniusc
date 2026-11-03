@@ -83,6 +83,7 @@ def srcTyName : SrcType → String
   | .enum id _ => s!"#{id}"
   | .sint k => sintName k
   | .view n => s!"view{n}"
+  | .str => "str"
 
 mutual
 partial def effCalls : SrcEff → List Nat
@@ -102,6 +103,7 @@ partial def effCalls : SrcEff → List Nat
   | .eIf c _ a b => effCalls c ++ effCalls a ++ effCalls b
   | .eLet _ _ a _ b => effCalls a ++ effCalls b
   | .eLen _ => []
+  | .eStr _ _ => []
 
 partial def stmtCalls : SrcStmt → List Nat
   | .let _ _ _ b | .letStruct _ _ _ b | .letEnum _ _ _ _ b | .letMatch _ _ _ _ _ b => stmtCalls b
@@ -208,6 +210,7 @@ partial def typeText : SrcType → StateM Table String
   | .float .f64 => pure "(.float .f64)"
   | .sint k => pure s!"(.sint {uintText k})"
   | .view n => pure s!"(.view {n})"
+  | .str => pure ".str"
   | .slice e => do named s!".slice {← typeText e}"
   | .array e n => do named s!"(.array {← typeText e} {n})"
   | .struct id fs => do
@@ -251,6 +254,7 @@ partial def markEff : SrcEff → StateM Table SrcEff
   | .eIf c ty a b => return .eIf (← markEff c) (← mark ty) (← markEff a) (← markEff b)
   | .eLet id ty a rt b => return .eLet id (← mark ty) (← markEff a) (← mark rt) (← markEff b)
   | .eLen s => pure (.eLen s)
+  | .eStr o c => pure (.eStr o c)
 
 partial def markStmt : SrcStmt → StateM Table SrcStmt
   | .let id ty v b => return .let id (← mark ty) (← markExpr v) (← markStmt b)
@@ -439,5 +443,5 @@ def main (args : List String) : IO UInt32 := do
     h.putStrLn s!"/-- {names.getD i "?"} -/"
     h.putStrLn s!"def src{i} : SrcFunc := {(repr f).pretty 1000000000}"
     i := i + 1
-  h.putStrLn s!"\ndef prog : SrcProgram := \{ funcs := [{", ".intercalate ((List.range p.funcs.length).map (s!"src{·}"))}] }\n\nend\n\nend {ns}"
+  h.putStrLn s!"\ndef prog : SrcProgram := \{ funcs := [{", ".intercalate ((List.range p.funcs.length).map (s!"src{·}"))}], statics := {repr p.statics} }\n\nend\n\nend {ns}"
   return 0

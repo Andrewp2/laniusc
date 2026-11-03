@@ -4,7 +4,7 @@ public import Lanius.Mini.Signed
 -- import all uses: Lanius.Mini.Compiler
 import all Lanius.Mini.Compiler.P.BinOp_folds
 import all Lanius.Mini.Compiler.P.DivOp_size
-import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.SrcType_same
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_mask
@@ -132,6 +132,7 @@ theorem shiftBy_range {cop : Core.BinaryOp} (shift : cop = .shiftLeft ∨ cop = 
   | slice => exact hl.elim
   | array => exact hl.elim
   | view => exact hl.elim
+  | str => exact hl.elim
 
 theorem small_bits {n : Nat} (lt : n < 64) :
     low (BitVec.ofNat 64 n) = BitVec.ofNat 32 n ∧ widen (BitVec.ofNat 32 n) = BitVec.ofNat 64 n ∧
@@ -158,6 +159,7 @@ theorem shiftWidth_le {tl : SrcType} (int : tl.isInteger = true) : (shiftWidth t
   | slice => simp [SrcType.isInteger] at int
   | array => simp [SrcType.isInteger] at int
   | view => simp [SrcType.isInteger] at int
+  | str => simp [SrcType.isInteger] at int
 
 /-- An integer value: a shift by it is a shift by its number `m`; its slot is
 `m` when `m` is a shift amount. -/
@@ -223,6 +225,7 @@ theorem amount_of {tr : SrcType} (int : tr.isInteger = true) {vr : Value} {wr : 
   | slice => simp [SrcType.isInteger] at int
   | array => simp [SrcType.isInteger] at int
   | view => simp [SrcType.isInteger] at int
+  | str => simp [SrcType.isInteger] at int
 
 /-- An amount below the left operand's width, as that type holds it. -/
 theorem retype_holds {tl : SrcType} (int : tl.isInteger = true) {n : Nat} (lt : n < (shiftWidth tl).toNat) :
@@ -269,6 +272,7 @@ theorem retype_holds {tl : SrcType} (int : tl.isInteger = true) {n : Nat} (lt : 
   | slice => simp [SrcType.isInteger] at int
   | array => simp [SrcType.isInteger] at int
   | view => simp [SrcType.isInteger] at int
+  | str => simp [SrcType.isInteger] at int
 
 theorem integer_value {tl : SrcType} (int : tl.isInteger = true) {vl : Value} {wl : BitVec 64}
     (hl : tl.Holds vl wl) : (∃ t a, vl = .signed t a) ∨ (∃ t a, vl = .unsigned t a) := by
@@ -293,6 +297,7 @@ theorem integer_value {tl : SrcType} (int : tl.isInteger = true) {vl : Value} {w
   | slice => simp [SrcType.isInteger] at int
   | array => simp [SrcType.isInteger] at int
   | view => simp [SrcType.isInteger] at int
+  | str => simp [SrcType.isInteger] at int
 
 /-- A shift Core evaluates by an amount of another integer type evaluates the
 same with the amount's slot read as the left operand's type (`lowerShift`). -/

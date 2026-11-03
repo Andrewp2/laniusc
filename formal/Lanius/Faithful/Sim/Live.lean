@@ -77,13 +77,13 @@ def divisorOk : SrcEff → Bool
   | .ePure (.unsigned _ n) => n != 0
   | .ePure _ | .eCall _ _ | .eApply _ _ _ | .eNeg _ | .eNot _ | .eCast _ _ | .eIndex _ _ | .eStruct _ _
   | .eVariant _ _ _ | .eMatch _ _ _ _ _ | .eDivide _ _ _ | .eStride _
-  | .arraySlice _ _ | .eIf _ _ _ _ | .eLet _ _ _ _ _ | .eLen _ => false
+  | .arraySlice _ _ | .eIf _ _ _ _ | .eLet _ _ _ _ _ | .eLen _ | .eStr _ _ => false
 
 /-- A match with an arm for every variant of its enum type. -/
 def armsFull : SrcType → List (List Nat) → Bool
   | .enum _ variants, binders => variants.length == binders.length
   | .i32, _ | .bool, _ | .uint _, _ | .struct _ _, _ | .ptr, _ | .slice _, _ | .unit, _ | .isize, _
-  | .char, _ | .float _, _ | .sint _, _ | .array _ _, _ | .view _, _ => false
+  | .char, _ | .float _, _ | .sint _, _ | .array _ _, _ | .view _, _ | .str, _ => false
 
 section
 variable (bad : List Nat)
@@ -105,7 +105,7 @@ def liveEff : SrcEff → Bool
   | .arraySlice _ _ => false
   | .eIf c _ a b => liveEff c && liveEff a && liveEff b
   | .eLet _ _ value _ body => liveEff value && liveEff body
-  | .eLen _ => false
+  | .eLen _ | .eStr _ _ => false
 
 def liveEffs : List SrcEff → Bool
   | [] => true
@@ -205,7 +205,7 @@ theorem binary_live {op : SrcOp} {tl tr t : SrcType} {lv rv : Value}
       | float => exact hl.elim
       | sint => exact hl.elim
       | array => exact hl.elim
-      | view => exact hl.elim
+      | view | str => exact hl.elim
     · have num : numTy tr = true := by rcases cmp with e | e | e <;> simp_all
       have notEq : op ≠ .equal := fun e => eq (.inl e)
       have notNe : op ≠ .notEqual := fun e => eq (.inr e)
@@ -241,7 +241,7 @@ theorem binary_live {op : SrcOp} {tl tr t : SrcType} {lv rv : Value}
       | float => exact hl.elim
       | sint => exact hl.elim
       | array => exact hl.elim
-      | view => exact hl.elim
+      | view | str => exact hl.elim
 
 theorem PTys.get {boxes : Boxes} : ∀ {ts : List SrcType} {vs : List Value}, PTys boxes ts vs →
     ∀ {i : Nat} {t : SrcType}, ts[i]? = some t → ∃ v, vs[i]? = some v ∧ PTy boxes t v
@@ -749,7 +749,7 @@ theorem structTy_some {boxes : Boxes} {ty t : SrcType} {ts : List SrcType} (h : 
       simp only [Option.some.injEq] at h
       exact ⟨id, fs, rfl, h.symm, ok.1, typesSame_eq _ ok.2⟩
     · simp at h
-  | i32 | bool | uint _ | enum _ _ | ptr | slice _ | unit | isize | char | float _ | sint _ | array _ _ | view =>
+  | i32 | bool | uint _ | enum _ _ | ptr | slice _ | unit | isize | char | float _ | sint _ | array _ _ | view | str =>
     simp [structTy] at h
 
 theorem variantTy_some {ty t : SrcType} {k : Nat} {ts : List SrcType} (h : variantTy ty k ts = some t) :
@@ -765,7 +765,7 @@ theorem variantTy_some {ty t : SrcType} {k : Nat} {ts : List SrcType} (h : varia
         exact ⟨id, variants, fs, rfl, h.symm, hfs, typesSame_eq _ same⟩
       · simp at h
     · simp at h
-  | i32 | bool | uint _ | struct _ _ | ptr | slice _ | unit | isize | char | float _ | sint _ | array _ _ | view =>
+  | i32 | bool | uint _ | struct _ _ | ptr | slice _ | unit | isize | char | float _ | sint _ | array _ _ | view | str =>
     simp [variantTy] at h
 
 theorem PTy.enum_inv {boxes : Boxes} {id : Nat} {variants : List (List SrcType)} {v : Value}
@@ -941,7 +941,7 @@ theorem eff_live (hO : ∀ m, OracleOk prims T (pcall sp prims m)) (hP : PrimsTy
     simp only [peff]
     exact EvSome.bind (eff_live hO hP IH value h hW hc.1 hE htv hl.1) fun v hv ⟨M, hM⟩ =>
       eff_live hO hP IH body (h.cons (effCls_holds (hO M) h value hM)) hW hc.2 (hE.cons hv) hb hl.2
-  | .eLen _, A, W, E, tenv, t, _, _, _, _, ht, _ => by simp [effTy] at ht
+  | .eLen _, A, W, E, tenv, t, _, _, _, _, ht, _ | .eStr _ _, A, W, E, tenv, t, _, _, _, _, ht, _ => by simp [effTy] at ht
 
 theorem effs_live (hO : ∀ m, OracleOk prims T (pcall sp prims m)) (hP : PrimsTy sp prims)
     (IH : CallsGood sp prims T me B outside bad) :
@@ -1079,7 +1079,7 @@ theorem unit_pty {boxes : Boxes} {ret : SrcType} (h : ret.toCore = .unit) : PTy 
   cases ret with
   | unit => exact .scalar rfl
   | i32 | bool | uint _ | struct _ _ | enum _ _ | ptr | slice _ | array _ _ | isize | char | float _
-  | sint _ | view _ => simp [SrcType.toCore] at h
+  | sint _ | view _ | str => simp [SrcType.toCore] at h
 
 section
 variable {sp : SrcProgram} {prims : Prims} {T : TermInfo} {me : TermAnn} {B : Nat} {outside bad : List Nat}

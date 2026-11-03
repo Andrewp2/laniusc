@@ -9,7 +9,7 @@ import all Lanius.Mini.Compiler.P.FArith_opcode
 import all Lanius.Mini.Compiler.P.FloatTy_rex
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.SrcType_same
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_mask
@@ -87,7 +87,7 @@ the guard is 1 (`SrcExpr.guard_sound`), so the check passes. -/
 
 namespace Lanius.Mini
 
-variable {places : List Addressed}
+variable {sx : Statics} {places : List Addressed}
 
 open Lanius.Core (Value)
 open Lanius.Semantics (State evalExpr)
@@ -252,7 +252,7 @@ theorem shift_amount {op : SrcOp} (shift : op = .shiftLeft ∨ op = .shiftRight)
   rcases both with h | h | h <;> exact core h
 
 theorem SrcExpr.guard_sound (e : SrcExpr) {scope : List Binding} {frame : Nat → Nat} {st : State}
-    {env : Env} {prog : Core.Program} (corr : Corr places scope frame st env) (target : prog.target = .x86_64) :
+    {env : Env} {prog : Core.Program} (corr : Corr sx places scope frame st env) (target : prog.target = .x86_64) :
     ∀ {t : Typed} {fuel : Nat} {v : Value} {st' : State}, e.lower scope = some t →
       evalExpr fuel prog st e.toCore = .done v st' → (e.guard scope).eval env = 1 := by
   induction e with
@@ -597,6 +597,7 @@ theorem matchArm_lower_inv {sigs : List Sig} {decls : SrcDecls} {ret : SrcType} 
   case h_12 => simp at ok
   case h_13 => simp at ok
   case h_14 => simp at ok
+  case h_15 => simp at ok
   rename_i eid variants hty
   simp only [lowerArmFound] at ok
   split at ok

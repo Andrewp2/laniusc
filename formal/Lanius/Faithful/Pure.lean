@@ -290,7 +290,7 @@ def peff (env : Env) : SrcEff → Option Value
       (peff env condition).bind fun c => (asBool c).bind fun b =>
         if b then peff env thenValue else peff env elseValue
   | .eLet id _ value _ body => (peff env value).bind fun v => peff ((id, v) :: env) body
-  | .eLen _ => none
+  | .eLen _ | .eStr _ _ => none
 
 def peffs (env : Env) : List SrcEff → Option (List Value)
   | [] => some []

@@ -725,7 +725,7 @@ theorem effCls_holds (ho : OracleOk prims T call) {A : AEnv} {E : Env} (h : EnvO
   | .eApply _ _ _, _, _ | .eNeg _, _, _ | .eNot _, _, _ | .eCast _ _, _, _ | .eIndex _ _, _, _
   | .eStruct _ _, _, _ | .eVariant _ _ _, _, _ | .eMatch _ _ _ _ _, _, _ | .eDivide _ _ _, _, _
   | .eStride _, _, _ | .arraySlice _ _, _, _ | .eIf _ _ _ _, _, _ | .eLet _ _ _ _ _, _, _
-  | .eLen _, _, _ => by
+  | .eLen _, _, _ | .eStr _ _, _, _ => by
     simp only [effCls]; trivial
 
 theorem effsCls_holds (ho : OracleOk prims T call) {A : AEnv} {E : Env} (h : EnvOk B A E) :

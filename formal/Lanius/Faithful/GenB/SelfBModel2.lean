@@ -20,6 +20,52 @@ open Lanius.Faithful.Budget
 
 noncomputable section
 
+def Cost_neg_least_at : Nat → Lanius.Mini.UintTy → Lanius.Mini.SrcExpr → Lanius.Mini.SrcExpr → Nat
+  | 0, x13, x24, x36 => 18446744073709551616
+  | n + 1, x13, x24, x36 => (match x24 with | .int x96 => (Cost_least_cast n x13 x96 x36) | .boolean x139 => 0 | .unsigned x165 x168 => 0 | .local x191 => 0 | .field x215 x219 => 0 | .negate x243 => 0 | .not x264 => 0 | .apply x287 x291 x294 => 0 | .cast x316 x319 => 0 | .null => 0 | .char x369 => 0 | .float x404 x408 => 0)
+
+end
+
+noncomputable section
+
+def Cost_neg_least : Nat → Option Lanius.Mini.SrcType → Lanius.Mini.SrcExpr → Lanius.Mini.SrcExpr → Nat
+  | 0, x10, x47, x59 => 18446744073709551616
+  | n + 1, x10, x47, x59 => (match x10 with | some x142 => (match x142 with | .i32 => 0 | .bool => 0 | .uint x222 => 0 | .struct x250 x254 => 0 | .enum x285 x289 => 0 | .ptr => 0 | .slice x345 => 0 | .array x382 x386 => 0 | .unit => 0 | .isize => 0 | .char => 0 | .float x512 => 0 | .sint x539 => (Cost_neg_least_at n x539 x47 x59) | .view x587 => 0 | .str => 0) | none => 0)
+
+end
+
+noncomputable section
+
+mutual
+def Cost_repeat_src : Nat → Lanius.Mini.SrcType → Nat → Nat
+  | 0, x11, x23 => 18446744073709551616
+  | n + 1, x11, x23 => (if (decide (x23 = 0)) = true then 0 else ((Cost_repeat_src n x11 (x23 - 1)) + (Cost_cons_of_mini_selfhost_SrcType n x11 (Lanius.Mini.repeatSrc x11 ((x23 - 1))))))
+termination_by structural fuel => fuel
+end
+
+end
+
+noncomputable section
+
+def Cost_src_fields : Nat → Option Lanius.Mini.SrcType → Nat
+  | 0, x11 => 18446744073709551616
+  | n + 1, x11 => (match x11 with | some x144 => (match x144 with | .i32 => 0 | .bool => 0 | .uint x230 => 0 | .struct x261 x265 => 0 | .enum x314 x318 => 0 | .ptr => 0 | .slice x380 => 0 | .array x419 x422 => (Cost_repeat_src n x419 x422) | .unit => 0 | .isize => 0 | .char => 0 | .float x596 => 0 | .sint x626 => 0 | .view x656 => 0 | .str => 0) | none => 0)
+
+end
+
+noncomputable section
+
+mutual
+def Cost_known_expr : Nat → List Lanius.Mini.LocalTy → Lanius.Mini.SrcExpr → Nat
+  | 0, x11, x34 => 18446744073709551616
+  | n + 1, x11, x34 => (match x34 with | .int x116 => 0 | .boolean x144 => 0 | .unsigned x179 x182 => 0 | .local x217 => 0 | .field x260 x264 => (Cost_src_fields n (Lanius.Mini.tyLocal x11 x260)) | .negate x329 => (Cost_known_expr n x11 x329) | .not x377 => 0 | .apply x409 x413 x416 => ((Cost_known_expr n x11 x413) + (Cost_known_expr n x11 x416)) | .cast x512 x515 => 0 | .null => 0 | .char x585 => 0 | .float x638 x642 => 0)
+termination_by structural fuel => fuel
+end
+
+end
+
+noncomputable section
+
 def Cost_wide_isize_at : Nat → BitVec 64 → Lanius.Mini.SrcExpr → Nat
   | 0, x14, x22 => 18446744073709551616
   | n + 1, x14, x22 => (if (decide (x14.toNat ≤ (9223372036854775807#64).toNat)) = true then 1 else 0)
@@ -38,7 +84,7 @@ noncomputable section
 
 def Cost_wide_at : Nat → Option Lanius.Mini.SrcType → BitVec 64 → Lanius.Mini.SrcExpr → Nat
   | 0, x8, x45, x53 => 18446744073709551616
-  | n + 1, x8, x45, x53 => (match x8 with | some x136 => (match x136 with | .i32 => 0 | .bool => 0 | .uint x216 => 0 | .struct x264 x268 => 0 | .enum x299 x303 => 0 | .ptr => 0 | .slice x359 => 0 | .array x396 x400 => 0 | .unit => 0 | .isize => (Cost_wide_isize_at n x45 x53) | .char => 0 | .float x544 => 0 | .sint x571 => (Cost_wide_sint_at n x571 x45 x53) | .view x619 => 0) | none => 0)
+  | n + 1, x8, x45, x53 => (match x8 with | some x136 => (match x136 with | .i32 => 0 | .bool => 0 | .uint x216 => 0 | .struct x264 x268 => 0 | .enum x299 x303 => 0 | .ptr => 0 | .slice x359 => 0 | .array x396 x400 => 0 | .unit => 0 | .isize => (Cost_wide_isize_at n x45 x53) | .char => 0 | .float x544 => 0 | .sint x571 => (Cost_wide_sint_at n x571 x45 x53) | .view x619 => 0 | .str => 0) | none => 0)
 
 end
 
@@ -142,7 +188,7 @@ noncomputable section
 mutual
 def Cost_known_eff : Nat → List Lanius.Mini.SrcFunc → List Lanius.Mini.LocalTy → Lanius.Mini.SrcEff → Nat
   | 0, x10, x32, x55 => 18446744073709551616
-  | n + 1, x10, x32, x55 => (match x55 with | .ePure x138 => (Cost_known_expr n x32 x138) | .eCall x181 x184 => 0 | .eApply x230 x234 x237 => ((Cost_known_eff n x10 x32 x234) + (Cost_known_eff n x10 x32 x237)) | .eNeg x345 => (Cost_known_eff n x10 x32 x345) | .eNot x400 => 0 | .eCast x432 x435 => 0 | .eIndex x465 x468 => 0 | .eStruct x524 x527 => 0 | .eVariant x560 x563 x566 => 0 | .eMatch x597 x600 x605 x608 x612 => 0 | .eDivide x644 x648 x651 => ((Cost_known_eff n x10 x32 x648) + (Cost_known_eff n x10 x32 x651)) | .eStride x756 => 0 | .arraySlice x794 x797 => 1 | .eIf x838 x841 x844 x847 => 0 | .eLet x875 x879 x882 x885 x889 => 0 | .eLen x918 => 0)
+  | n + 1, x10, x32, x55 => (match x55 with | .ePure x138 => (Cost_known_expr n x32 x138) | .eCall x181 x184 => 0 | .eApply x230 x234 x237 => ((Cost_known_eff n x10 x32 x234) + (Cost_known_eff n x10 x32 x237)) | .eNeg x345 => (Cost_known_eff n x10 x32 x345) | .eNot x400 => 0 | .eCast x432 x435 => 0 | .eIndex x465 x468 => 0 | .eStruct x524 x527 => 0 | .eVariant x560 x563 x566 => 0 | .eMatch x597 x600 x605 x608 x612 => 0 | .eDivide x644 x648 x651 => ((Cost_known_eff n x10 x32 x648) + (Cost_known_eff n x10 x32 x651)) | .eStride x756 => 0 | .arraySlice x794 x797 => 1 | .eIf x838 x841 x844 x847 => 0 | .eLet x875 x879 x882 x885 x889 => 0 | .eLen x918 => 0 | .eStr x956 x964 => 0)
 termination_by structural fuel => fuel
 end
 
@@ -153,7 +199,7 @@ noncomputable section
 mutual
 def Cost_lit_eff : Nat → List Lanius.Mini.SrcFunc → List Lanius.Mini.LocalTy → Option Lanius.Mini.SrcType → Lanius.Mini.SrcEff → Nat
   | 0, x8, x30, x53, x90 => 18446744073709551616
-  | n + 1, x8, x30, x53, x90 => (match x90 with | .ePure x150 => (Cost_lit_expr n x30 x53 x150) | .eCall x204 x207 => ((Cost_callee_params n x8 x204) + ((Cost_lit_effs n x8 x30 (Lanius.Mini.calleeParams x8 x204) x207) + 1)) | .eApply x311 x315 x318 => ((Cost_known_eff n x8 x30 x315) + ((Cost_known_eff n x8 x30 x318) + ((Cost_lit_eff n x8 x30 (Lanius.Mini.operandWant x311 x53 ((Lanius.Mini.knownEff x8 x30 x315)) ((Lanius.Mini.knownEff x8 x30 x318))) x315) + (1 + ((Cost_known_eff n x8 x30 x315) + ((Cost_known_eff n x8 x30 x318) + ((Cost_lit_eff n x8 x30 (Lanius.Mini.amountWant x311 x53 ((Lanius.Mini.knownEff x8 x30 x315)) ((Lanius.Mini.knownEff x8 x30 x318))) x318) + 1))))))) | .eNeg x622 => ((Cost_lit_eff n x8 x30 x53 x622) + 1) | .eNot x694 => ((Cost_lit_eff n x8 x30 (some Lanius.Mini.SrcType.bool) x694) + 1) | .eCast x773 x776 => ((Cost_lit_eff n x8 x30 (none : Option Lanius.Mini.SrcType) x776) + 1) | .eIndex x854 x857 => ((Cost_lit_eff n x8 x30 (none : Option Lanius.Mini.SrcType) x857) + 1) | .eStruct x937 x940 => ((Cost_src_fields n (some x937)) + ((Cost_lit_effs n x8 x30 (Lanius.Mini.srcFields ((some x937))) x940) + 1)) | .eVariant x1040 x1043 x1046 => ((Cost_lit_effs n x8 x30 (Lanius.Mini.payloadAt ((Lanius.Mini.srcVariants ((some x1040)))) x1043) x1046) + 1) | .eMatch x1165 x1168 x1173 x1176 x1180 => ((Cost_lit_eff n x8 x30 (some x1168) x1165) + (1 + ((Cost_lit_arm_effs n x8 x30 (Lanius.Mini.srcVariants ((some x1168))) x1173 x1176 x1180) + 1))) | .eDivide x1354 x1358 x1361 => ((Cost_known_eff n x8 x30 x1358) + ((Cost_known_eff n x8 x30 x1361) + ((Cost_lit_eff n x8 x30 (Lanius.Mini.operandWant Lanius.Mini.SrcOp.plus x53 ((Lanius.Mini.knownEff x8 x30 x1358)) ((Lanius.Mini.knownEff x8 x30 x1361))) x1358) + (1 + ((Cost_known_eff n x8 x30 x1358) + ((Cost_known_eff n x8 x30 x1361) + ((Cost_lit_eff n x8 x30 (Lanius.Mini.operandWant Lanius.Mini.SrcOp.plus x53 ((Lanius.Mini.knownEff x8 x30 x1358)) ((Lanius.Mini.knownEff x8 x30 x1361))) x1361) + 1))))))) | .eStride x1674 => 0 | .arraySlice x1711 x1714 => 0 | .eIf x1750 x1753 x1756 x1759 => ((Cost_lit_eff n x8 x30 (some Lanius.Mini.SrcType.bool) x1750) + (1 + ((Cost_lit_eff n x8 x30 (some x1753) x1756) + (1 + ((Cost_lit_eff n x8 x30 (some x1753) x1759) + 1))))) | .eLet x1939 x1943 x1946 x1949 x1953 => ((Cost_lit_eff n x8 x30 (some x1943) x1946) + (1 + ((Cost_cons_of_mini_selfhost_LocalTy n (Lanius.Mini.LocalTy.mk x1939 x1943) x30) + ((Cost_lit_eff n x8 ((Lanius.Mini.LocalTy.mk x1939 x1943) :: x30) (some x1949) x1953) + 1)))) | .eLen x2123 => 0)
+  | n + 1, x8, x30, x53, x90 => (match x90 with | .ePure x150 => (Cost_lit_expr n x30 x53 x150) | .eCall x204 x207 => ((Cost_callee_params n x8 x204) + ((Cost_lit_effs n x8 x30 (Lanius.Mini.calleeParams x8 x204) x207) + 1)) | .eApply x311 x315 x318 => ((Cost_known_eff n x8 x30 x315) + ((Cost_known_eff n x8 x30 x318) + ((Cost_lit_eff n x8 x30 (Lanius.Mini.operandWant x311 x53 ((Lanius.Mini.knownEff x8 x30 x315)) ((Lanius.Mini.knownEff x8 x30 x318))) x315) + (1 + ((Cost_known_eff n x8 x30 x315) + ((Cost_known_eff n x8 x30 x318) + ((Cost_lit_eff n x8 x30 (Lanius.Mini.amountWant x311 x53 ((Lanius.Mini.knownEff x8 x30 x315)) ((Lanius.Mini.knownEff x8 x30 x318))) x318) + 1))))))) | .eNeg x622 => ((Cost_lit_eff n x8 x30 x53 x622) + 1) | .eNot x694 => ((Cost_lit_eff n x8 x30 (some Lanius.Mini.SrcType.bool) x694) + 1) | .eCast x773 x776 => ((Cost_lit_eff n x8 x30 (none : Option Lanius.Mini.SrcType) x776) + 1) | .eIndex x854 x857 => ((Cost_lit_eff n x8 x30 (none : Option Lanius.Mini.SrcType) x857) + 1) | .eStruct x937 x940 => ((Cost_src_fields n (some x937)) + ((Cost_lit_effs n x8 x30 (Lanius.Mini.srcFields ((some x937))) x940) + 1)) | .eVariant x1040 x1043 x1046 => ((Cost_lit_effs n x8 x30 (Lanius.Mini.payloadAt ((Lanius.Mini.srcVariants ((some x1040)))) x1043) x1046) + 1) | .eMatch x1165 x1168 x1173 x1176 x1180 => ((Cost_lit_eff n x8 x30 (some x1168) x1165) + (1 + ((Cost_lit_arm_effs n x8 x30 (Lanius.Mini.srcVariants ((some x1168))) x1173 x1176 x1180) + 1))) | .eDivide x1354 x1358 x1361 => ((Cost_known_eff n x8 x30 x1358) + ((Cost_known_eff n x8 x30 x1361) + ((Cost_lit_eff n x8 x30 (Lanius.Mini.operandWant Lanius.Mini.SrcOp.plus x53 ((Lanius.Mini.knownEff x8 x30 x1358)) ((Lanius.Mini.knownEff x8 x30 x1361))) x1358) + (1 + ((Cost_known_eff n x8 x30 x1358) + ((Cost_known_eff n x8 x30 x1361) + ((Cost_lit_eff n x8 x30 (Lanius.Mini.operandWant Lanius.Mini.SrcOp.plus x53 ((Lanius.Mini.knownEff x8 x30 x1358)) ((Lanius.Mini.knownEff x8 x30 x1361))) x1361) + 1))))))) | .eStride x1674 => 0 | .arraySlice x1711 x1714 => 0 | .eIf x1750 x1753 x1756 x1759 => ((Cost_lit_eff n x8 x30 (some Lanius.Mini.SrcType.bool) x1750) + (1 + ((Cost_lit_eff n x8 x30 (some x1753) x1756) + (1 + ((Cost_lit_eff n x8 x30 (some x1753) x1759) + 1))))) | .eLet x1939 x1943 x1946 x1949 x1953 => ((Cost_lit_eff n x8 x30 (some x1943) x1946) + (1 + ((Cost_cons_of_mini_selfhost_LocalTy n (Lanius.Mini.LocalTy.mk x1939 x1943) x30) + ((Cost_lit_eff n x8 ((Lanius.Mini.LocalTy.mk x1939 x1943) :: x30) (some x1949) x1953) + 1)))) | .eLen x2123 => 0 | .eStr x2151 x2159 => 0)
 termination_by structural fuel => fuel
 
 def Cost_lit_effs : Nat → List Lanius.Mini.SrcFunc → List Lanius.Mini.LocalTy → Option (List Lanius.Mini.SrcType) → List Lanius.Mini.SrcEff → Nat

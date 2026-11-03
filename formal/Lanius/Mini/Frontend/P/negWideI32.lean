@@ -54,6 +54,7 @@ def negWideAt (want : Option SrcType) (n : BitVec 64) (e : SrcExpr) : SrcExpr :=
     | .float ft => e
     | .sint sk => negWideSint sk n e
     | .view viewLength => e
+    | .str => e
 
 def leastCast (u : UintTy) (k : BitVec 32) (d : SrcExpr) : SrcExpr :=
   if !(sintFits u k) && sintFits u (0 - k) then
@@ -96,6 +97,7 @@ def negLeast (want : Option SrcType) (x : SrcExpr) (d : SrcExpr) : SrcExpr :=
     | .float ft => d
     | .sint sk => negLeastAt sk x d
     | .view viewLength => d
+    | .str => d
 
 /-- An expression's type when it does not rest on literals. -/
 def knownExpr (locals : List LocalTy) (e : SrcExpr) : Option SrcType :=
@@ -180,6 +182,7 @@ def knownEff (funcs : List SrcFunc) (locals : List LocalTy) (x : SrcEff) : Optio
   | .eIf c t a b => some t
   | .eLet id t v rt b => some rt
   | .eLen s => some (SrcType.uint UintTy.usize)
+  | .eStr offset chars => some SrcType.str
 
 mutual
 def litEff (funcs : List SrcFunc) (locals : List LocalTy) (want : Option SrcType) (x : SrcEff) : SrcEff :=
@@ -200,6 +203,7 @@ def litEff (funcs : List SrcFunc) (locals : List LocalTy) (want : Option SrcType
   | .eIf c t a b => SrcEff.eIf (litEff funcs locals (some SrcType.bool) c) t (litEff funcs locals (some t) a) (litEff funcs locals (some t) b)
   | .eLet id t v rt b => SrcEff.eLet id t (litEff funcs locals (some t) v) rt (litEff funcs (({ id := id, ty := t } : LocalTy) :: locals) (some rt) b)
   | .eLen s => SrcEff.eLen s
+  | .eStr offset chars => SrcEff.eStr offset chars
 def litEffs (funcs : List SrcFunc) (locals : List LocalTy) (wants : Option (List SrcType)) (xs : List SrcEff) : List SrcEff :=
   match xs with
   | [] => []
@@ -309,6 +313,7 @@ def wideLeftEff (x : SrcEff) : Bool :=
   | .eIf c t a b => wideLeftEff c || wideLeftEff a || wideLeftEff b
   | .eLet id t v rt b => wideLeftEff v || wideLeftEff b
   | .eLen sl => false
+  | .eStr offset chars => false
 def wideLeftEffs (xs : List SrcEff) : Bool :=
   match xs with
   | [] => false

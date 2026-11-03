@@ -26,7 +26,7 @@ abbrev Stmt_byte_after (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
 
 abbrev Stmt_lex_source (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 25 RepNat) x0 v0 →
-    (RepOption 159 (RepList 45 RepToken)) (Lanius.Mini.lexSource x0) w
+    (RepOption 159 (RepList 47 RepToken)) (Lanius.Mini.lexSource x0) w
 
 abbrev Stmt_lx_as_text (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
@@ -66,7 +66,7 @@ abbrev Stmt_lx_token_text (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
 
 abbrev Stmt_lx_tokens (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Nat} {x1 : List Nat} {x2 : Nat} {x3 : List Lanius.Mini.RawTok} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepList 25 RepNat) x0 v0 → (RepList 25 RepNat) x1 v1 → RepNat x2 v2 → (RepList 161 RepRawTok) x3 v3 →
-    (RepList 45 RepToken) (Lanius.Mini.lxTokens x0 x1 x2 x3) w
+    (RepList 47 RepToken) (Lanius.Mini.lxTokens x0 x1 x2 x3) w
 
 abbrev Stmt_nums_after (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Option Lanius.Mini.NumsRead} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepOption 99 RepNumsRead) x1 v1 →

@@ -517,20 +517,4 @@ theorem bproof_cons_of_mini_selfhost_List_mini_selfhost_Ty {spW sp : SrcProgram}
     budget Cost_cons_of_mini_selfhost_List_mini_selfhost_Ty
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
 
-theorem bproof_cons_tys_tail {spW sp : SrcProgram} {prims : Prims} {ix_cons_tys_tail ix_cons_of_mini_selfhost_List_mini_selfhost_Ty : Nat}
-    (fnW : spW.funcs[ix_cons_tys_tail]? = some (src_cons_tys_tail ix_cons_of_mini_selfhost_List_mini_selfhost_Ty)) (fn : sp.funcs[ix_cons_tys_tail]? = some (src_cons_tys_tail ix_cons_of_mini_selfhost_List_mini_selfhost_Ty))
-    (np : prims.isPrim ix_cons_tys_tail = false)
-    (back : Certified (∀ {n : Nat}, Stmt_cons_tys_tail sp prims ix_cons_tys_tail n))
-    (b_cons_of_mini_selfhost_List_mini_selfhost_Ty : Certified (∀ {n : Nat}, BStmt_cons_of_mini_selfhost_List_mini_selfhost_Ty spW sp prims ix_cons_of_mini_selfhost_List_mini_selfhost_Ty n)) {n : Nat} :
-    BStmt_cons_tys_tail spW sp prims ix_cons_tys_tail n := by
-  intro x0 x1 v0 v1 w k h r0 r1
-  rcases n with _ | n
-  · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_cons_tys_tail [v0, v1] = some (w, k) ∧ Cost_cons_tys_tail (n + 1) x0 x1 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_cons_tys_tail, List.length_cons, List.length_nil, if_true] at h ⊢
-    budget Cost_cons_tys_tail
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
-
 end Lanius.Faithful.SelfBudget

@@ -3,7 +3,7 @@ module
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.SrcExpr_guard
-import Lanius.Mini.Compiler.P.SrcType_size
+import Lanius.Mini.Compiler.P.SrcType_same
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.conjunction
 import Lanius.Mini.Compiler.P.guardAnd
@@ -100,6 +100,7 @@ def elementOf (ty : SrcType) : Option SrcType :=
   | .float ft => none
   | .sint sk => none
   | .view viewLength => none
+  | .str => none
 
 /-- The index in slot, then the element it picks loaded over it. -/
 def evalLoad (b : Binding) (slot : Nat) (i : Evaluated) : Option Evaluated :=
@@ -134,6 +135,7 @@ def evalStruct (ty : SrcType) (args : Option EvaluatedArgs) : Option Evaluated :
     | .float ft => none
     | .sint sk => none
     | .view viewLength => none
+    | .str => none
 
 /-- The payload, evaluated from slot + 1, then the tag in slot. -/
 def evalPayload (ty : SrcType) (types : List SrcType) (variant : Nat) (slot : Nat) (args : EvaluatedArgs) : Option Evaluated :=
@@ -170,6 +172,7 @@ def evalVariant (ty : SrcType) (variant : Nat) (slot : Nat) (args : Option Evalu
     | .float ft => none
     | .sint sk => none
     | .view viewLength => none
+    | .str => none
 
 def signedDiv (op : SrcDivOp) : DivOp :=
   match op with

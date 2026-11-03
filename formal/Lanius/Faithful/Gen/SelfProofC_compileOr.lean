@@ -3,7 +3,6 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcC_compileOr
-public import Lanius.Faithful.Gen.SelfStmt0
 public import Lanius.Faithful.Gen.SelfStmtC_Stmt_kills
 public import Lanius.Faithful.Gen.SelfStmtC_compileOr
 public import Lanius.Faithful.Gen.SelfStmtC_funcNeeds
@@ -42,11 +41,10 @@ theorem proof_compile_declared {prog : SrcProgram} {prims : Prims} {ix_compile_d
   simp only [src_compile_declared] at h
   faithful [Lanius.Mini.compileDeclared]
 
-theorem proof_compile_lowered {prog : SrcProgram} {prims : Prims} {ix_compile_lowered ix_compile_optimized ix_empty_of_u8 : Nat} (fn : prog.funcs[ix_compile_lowered]? = some (src_compile_lowered ix_compile_optimized ix_empty_of_u8)) (np : prims.isPrim ix_compile_lowered = false)
-    (ext_compile_optimized : Certified (∀ {n : Nat}, Stmt_compile_optimized prog prims ix_compile_optimized n))
-    (ext_empty_of_u8 : Certified (∀ {n : Nat}, Stmt_empty_of_u8 prog prims ix_empty_of_u8 n)) {n : Nat} :
+theorem proof_compile_lowered {prog : SrcProgram} {prims : Prims} {ix_compile_lowered ix_compile_optimized : Nat} (fn : prog.funcs[ix_compile_lowered]? = some (src_compile_lowered ix_compile_optimized)) (np : prims.isPrim ix_compile_lowered = false)
+    (ext_compile_optimized : Certified (∀ {n : Nat}, Stmt_compile_optimized prog prims ix_compile_optimized n)) {n : Nat} :
     Stmt_compile_lowered prog prims ix_compile_lowered n := by
-  intro x0 v0 w h r0
+  intro x0 x1 v0 v1 w h r0 r1
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h

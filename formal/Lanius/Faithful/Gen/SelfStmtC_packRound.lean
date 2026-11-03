@@ -21,7 +21,7 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_binary_words (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Binary} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 49 RepBinary) x0 v0 →
+  ∀ {x0 : Option Lanius.Mini.Binary} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 51 RepBinary) x0 v0 →
     (RepOption 2 (RepList 0 RepI32)) (Lanius.Mini.binaryWords x0) w
 
 abbrev Stmt_compile_words (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -33,11 +33,11 @@ abbrev Stmt_image_words (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
     (RepList 0 RepI32) (Lanius.Mini.imageWords x0 x1) w
 
 abbrev Stmt_pack_round (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List UInt8} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 66 RepU8) x0 v0 → RepNat x1 v1 →
+  ∀ {x0 : List UInt8} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 35 RepU8) x0 v0 → RepNat x1 v1 →
     RepRound (Lanius.Mini.packRound x0 x1) w
 
 abbrev Stmt_pack_rounds (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List UInt8} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 66 RepU8) x0 v0 → RepNat x1 v1 →
+  ∀ {x0 : List UInt8} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 35 RepU8) x0 v0 → RepNat x1 v1 →
     RepRound (Lanius.Mini.packRounds x0 x1) w
 
 abbrev Stmt_round_join (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

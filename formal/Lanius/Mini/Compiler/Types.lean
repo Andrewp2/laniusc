@@ -297,6 +297,8 @@ inductive SrcType where
   | sint : UintTy → SrcType
   /-- an [i32; length] local the program viewed (LetView): Core keeps its elements in a heap block too, so the verified compiler keeps them only there, and no use of the local by name is lowered. No program names this type (declare rejects it). -/
   | view : Nat → SrcType
+  /-- a str: two slots, the mini address of its UTF-8 bytes in the static region (SEMANTIC_DECISIONS "Addressed locals" point 6) and their count -/
+  | str : SrcType
   deriving Repr
 
 inductive SrcOp where
@@ -380,6 +382,8 @@ inductive SrcEff where
   | eLet : Nat → SrcType → SrcEff → SrcType → SrcEff → SrcEff
   /-- slice_len(slice) of a slice local, a usize: the slot after its pointer -/
   | eLen : Nat → SrcEff
+  /-- a string literal: its bytes are the program's statics from offset on (placed by the front end, checked by eval_str), a str -/
+  | eStr : Nat → (List Nat) → SrcEff
   deriving Repr
 
 inductive SrcStmt where
@@ -459,6 +463,8 @@ structure SrcFunc where
 
 structure SrcProgram where
   funcs : List SrcFunc
+  /-- the bytes of the static region: its string literals' (EStr) -/
+  statics : List UInt8
   deriving Repr
 
 structure Binding where
@@ -509,6 +515,8 @@ structure SrcEnumDecl where
 structure SrcDecls where
   structs : List SrcStructDecl
   enums : List SrcEnumDecl
+  /-- the program's statics (SrcProgram), which its string literals name -/
+  statics : List UInt8
   deriving Repr
 
 /-- A call passing arrays as slices (SEMANTIC_DECISIONS "Addressed locals", step 3.5 of array-to-slice arguments), lowered at statement level only, since it writes the arrays' own slots: each array local passed at a [T] parameter is stored into the caller's block of frame memory, whose address slot t gets from the frame pointer (Frame(t, 0)); the callee gets the array's pointer there and its length; after the return the elements are loaded back into the local's slots. Only arrays of i32 and u8, which the slice layout packs, are passed, each at most once per call. -/

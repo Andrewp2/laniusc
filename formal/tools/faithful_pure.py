@@ -188,9 +188,12 @@ class Program:
     of its parts."""
 
     def __init__(self, dump):
-        self.ty_text, self.src_text = {}, {}
+        self.ty_text, self.src_text, self.statics = {}, {}, None
         with open(dump) as f:
             for line in f:
+                m = re.match(r'def prog : SrcProgram := \{ funcs := \[.*\], statics := (\[[\d, ]*\]) \}$', line)
+                if m:
+                    self.statics = m.group(1)
                 m = re.match(r'def (ty|src)(\d+) : Src(?:Type|Func) := (.*)$', line)
                 if m:
                     (self.ty_text if m.group(1) == 'ty' else self.src_text)[int(m.group(2))] = m.group(3)
@@ -1019,7 +1022,7 @@ def main(argv):
            ']\n  enums := [\n' +
            ',\n'.join(f'    {{ id := {i}, variants := [{", ".join(lean_list(v) for v in decl.enums[i])}] }}'
                       for i in reversed(decl.order_e)) +
-           ']\n\n'
+           f']\n  statics := {prog.statics}\n\n'
            '/-- `boxPair` of each `boxed` prim. -/\n'
            'def boxPairs : List (Option (Nat × SrcType)) := [\n' +
            ',\n'.join(f'  some ({prog.type_id(prog.funcs[i]["ret"])}, {lean_ty(prog.funcs[i]["params"][0][1])})'
@@ -1050,7 +1053,7 @@ def main(argv):
     # kernel check over every body.
     needs = ('module\n\npublic import Lanius.Faithful.Gen.SelfProg\npublic import Lanius.Mini.Needs\n' +
              ''.join(f'import all {m}\n' for m in gen_closure(['Lanius.Faithful.Gen.SelfProg'])) +
-             ''.join(f'import all Lanius.Mini.Compiler.P.{m}\n' for m in ('withBudget', 'storeArray', 'strStores', 'SrcType_size')) +
+             ''.join(f'import all Lanius.Mini.Compiler.P.{m}\n' for m in ('withBudget', 'storeArray', 'strStores', 'SrcType_same')) +
              f'\n{HEADER}\n@[expose] public section\n\nnamespace {NS}\n\n{open_lines}'
              '/-- No function of the self program takes a block of frame memory. -/\n'
              'theorem frameBlocks_zero : (prog.funcs.all fun f => frameBlock f == 0) = true := by decide +kernel\n\n'
@@ -1124,10 +1127,11 @@ def main(argv):
                   f'  rw [show {tail[lo]} = dpart{k} ++ {tail[hi]} from rfl]\n'
                   f'  exact declareFuncs_append (declsStep_eq dchunk{k}) dt{k + 1}\n\n')
     a, b = at(0)
-    dl.append(f'theorem decls_start : declAt decls {a} {b} = ⟨[], []⟩ := by\n'
+    dl.append(f'theorem decls_start : declAt decls {a} {b} = ⟨[], [], prog.statics⟩ := by\n'
               '  unfold declAt\n'
               f'  rw [List.drop_eq_nil_of_le (by decide +kernel : decls.structs.length ≤ {a}),\n'
-              f'    List.drop_eq_nil_of_le (by decide +kernel : decls.enums.length ≤ {b})]\n\n'
+              f'    List.drop_eq_nil_of_le (by decide +kernel : decls.enums.length ≤ {b}),\n'
+              '    (by rfl : decls.statics = prog.statics)]\n\n'
               'theorem prog_decls : prog.decls = decls :=\n'
               '  decls_of_funcs (by rw [← decls_start]; exact dt0)\n\n'
               '-- The signatures fit a run of functions at a time.\n'

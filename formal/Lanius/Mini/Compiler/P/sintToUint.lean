@@ -2,7 +2,7 @@ module
 
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
-import Lanius.Mini.Compiler.P.SrcType_size
+import Lanius.Mini.Compiler.P.SrcType_same
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.UintTy_isWide
 import Lanius.Mini.Compiler.P.UintTy_mask
@@ -45,6 +45,7 @@ def castToI32 (e : Typed) : Option Typed :=
   | .float ft => none
   | .sint kind => some ({ expr := sintToI32 kind e.expr, ty := SrcType.i32 } : Typed)
   | .view viewLength => none
+  | .str => none
 
 def castToUint (kind : UintTy) (e : Typed) : Option Typed :=
   match e.ty with
@@ -62,6 +63,7 @@ def castToUint (kind : UintTy) (e : Typed) : Option Typed :=
   | .float ft => none
   | .sint source => some ({ expr := sintToUint source kind e.expr, ty := SrcType.uint kind } : Typed)
   | .view viewLength => none
+  | .str => none
 
 /-- To isize: an i32 sign-extends; an unsigned value's bits stay, which is Core's wrap at 2^64. -/
 def castToIsize (e : Typed) : Option Typed :=
@@ -80,6 +82,7 @@ def castToIsize (e : Typed) : Option Typed :=
   | .float ft => none
   | .sint source => some ({ expr := sintToWide source e.expr, ty := SrcType.isize } : Typed)
   | .view viewLength => none
+  | .str => none
 
 /-- To a signed type: a narrow one keeps the low bits, sign-extended; a 64-bit one sign-extends a narrower signed value and keeps an unsigned value's bits. -/
 def castToSint (kind : UintTy) (e : Typed) : Option Typed :=
@@ -131,6 +134,7 @@ def castToFloat (t : FloatTy) (e : Typed) : Option Typed :=
   | .float source => floatToFloat t source e.expr
   | .sint kind => intToFloat t (UintTy.signedWord kind) e.expr
   | .view viewLength => none
+  | .str => none
 
 def castTo (ty : SrcType) (e : Typed) : Option Typed :=
   match ty with
@@ -148,6 +152,7 @@ def castTo (ty : SrcType) (e : Typed) : Option Typed :=
   | .float ft => castToFloat ft e
   | .sint kind => castToSint kind e
   | .view viewLength => none
+  | .str => none
 
 def lowerCast (ty : SrcType) (operand : Option Typed) : Option Typed :=
   match operand with

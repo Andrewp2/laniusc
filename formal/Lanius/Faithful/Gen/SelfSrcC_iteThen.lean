@@ -17,7 +17,7 @@ noncomputable section
 def src_ite_then (ix_boxed_of_mini_selfhost_Stmt : Nat) : SrcFunc := { params := [{ id := 9, ty := ty90 }, { id := 26, ty := ty145 }, { id := 67, ty := ty145 }], ret := ty145, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 26)) ty145 ty145 [[208], []] [SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 67)) ty145 ty145 [[279], []] [SrcEff.eVariant ty145 0 [SrcEff.eVariant ty94 3 [SrcEff.ePure (SrcExpr.local 9), SrcEff.eCall ix_boxed_of_mini_selfhost_Stmt [SrcEff.ePure (SrcExpr.local 208)], SrcEff.eCall ix_boxed_of_mini_selfhost_Stmt [SrcEff.ePure (SrcExpr.local 279)]]], SrcEff.eVariant ty145 1 []], SrcEff.eVariant ty145 1 []]) }
 
 /-- mini::selfhost::store_one -/
-def src_store_one : SrcFunc := { params := [{ id := 10, ty := ty54 }, { id := 23, ty := ty90 }, { id := 38, ty := ty172 }], ret := ty145, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 38)) ty172 ty145 [[167], []] [SrcEff.eVariant ty145 0 [SrcEff.eVariant ty94 13 [SrcEff.ePure (SrcExpr.local 10), SrcEff.ePure (SrcExpr.local 23), SrcEff.ePure (SrcExpr.local 167)]], SrcEff.eVariant ty145 1 []]) }
+def src_store_one : SrcFunc := { params := [{ id := 10, ty := ty56 }, { id := 23, ty := ty90 }, { id := 38, ty := ty172 }], ret := ty145, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 38)) ty172 ty145 [[167], []] [SrcEff.eVariant ty145 0 [SrcEff.eVariant ty94 13 [SrcEff.ePure (SrcExpr.local 10), SrcEff.ePure (SrcExpr.local 23), SrcEff.ePure (SrcExpr.local 167)]], SrcEff.eVariant ty145 1 []]) }
 
 end
 

@@ -22,7 +22,7 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_compile_source (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcProgram} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcProgram x0 v0 →
-    (RepOption 49 RepBinary) (Lanius.Mini.compileSource x0) w
+    (RepOption 51 RepBinary) (Lanius.Mini.compileSource x0) w
 
 abbrev Stmt_pack_word (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : UInt8} {x1 : UInt8} {x2 : UInt8} {x3 : UInt8} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepU8 x0 v0 → RepU8 x1 v1 → RepU8 x2 v2 → RepU8 x3 v3 →

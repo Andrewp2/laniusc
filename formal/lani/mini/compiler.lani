@@ -1700,6 +1700,9 @@ pub enum SrcType {
     // there, and no use of the local by name is lowered. No program names
     // this type (declare rejects it).
     View(usize),
+    // a str: two slots, the mini address of its UTF-8 bytes in the static
+    // region (SEMANTIC_DECISIONS "Addressed locals" point 6) and their count
+    Str,
 }
 
 pub enum SrcOp {
@@ -1773,6 +1776,9 @@ pub enum SrcEff {
     ELet(usize, SrcType, Box<SrcEff>, SrcType, Box<SrcEff>),
     // slice_len(slice) of a slice local, a usize: the slot after its pointer
     ELen(usize),
+    // a string literal: its bytes are the program's statics from offset on
+    // (placed by the front end, checked by eval_str), a str
+    EStr(usize, List<usize>),
 }
 
 pub enum SrcStmt {
@@ -1866,6 +1872,8 @@ pub struct SrcFunc {
 
 pub struct SrcProgram {
     funcs: List<SrcFunc>,
+    // the bytes of the static region: its string literals' (EStr)
+    statics: List<u8>,
 }
 
 // Lowering to the language above. It also type-checks: an ill-typed program
@@ -1923,6 +1931,7 @@ impl SrcType {
             SrcType::Float(ft) -> false,
             Sint(sk) -> false,
             View(view_length) -> false,
+            Str -> false,
         };
     }
 
@@ -1942,6 +1951,7 @@ impl SrcType {
             SrcType::Float(ft) -> false,
             Sint(sk) -> false,
             View(view_length) -> false,
+            Str -> false,
         };
     }
 
@@ -1961,6 +1971,7 @@ impl SrcType {
             SrcType::Float(ft) -> true,
             Sint(kind) -> true,
             View(view_length) -> false,
+            Str -> false,
         };
     }
 
@@ -1980,6 +1991,7 @@ impl SrcType {
             SrcType::Float(ft) -> false,
             Sint(sk) -> false,
             View(view_length) -> false,
+            Str -> false,
         };
     }
 
@@ -1999,6 +2011,7 @@ impl SrcType {
             SrcType::Float(ft) -> false,
             Sint(sk) -> false,
             View(view_length) -> false,
+            Str -> false,
         };
     }
 
@@ -2018,6 +2031,27 @@ impl SrcType {
             SrcType::Float(ft) -> false,
             Sint(sk) -> false,
             View(view_length) -> false,
+            Str -> false,
+        };
+    }
+
+    pub fn is_str(self) -> bool {
+        return match (self) {
+            I32 -> false,
+            Bool -> false,
+            Uint(kind) -> false,
+            Struct(id, fields) -> false,
+            Enum(id, variants) -> false,
+            Ptr -> false,
+            Slice(element) -> false,
+            SrcType::Array(array_element, array_length) -> false,
+            Unit -> false,
+            Isize -> false,
+            SrcType::Char -> false,
+            SrcType::Float(ft) -> false,
+            Sint(sk) -> false,
+            View(view_length) -> false,
+            Str -> true,
         };
     }
 
@@ -2037,6 +2071,7 @@ impl SrcType {
             SrcType::Float(ft) -> false,
             Sint(kind) -> false,
             View(view_length) -> false,
+            Str -> false,
         };
     }
 
@@ -2056,6 +2091,7 @@ impl SrcType {
             SrcType::Float(ft) -> false,
             Sint(kind) -> false,
             View(view_length) -> false,
+            Str -> false,
         };
     }
 
@@ -2075,6 +2111,7 @@ impl SrcType {
             SrcType::Float(ft) -> ft.number() == t.number(),
             Sint(kind) -> false,
             View(view_length) -> false,
+            Str -> false,
         };
     }
 
@@ -2094,6 +2131,7 @@ impl SrcType {
             SrcType::Float(ft) -> Some(ft),
             Sint(kind) -> None,
             View(view_length) -> None,
+            Str -> None,
         };
     }
 
@@ -2113,6 +2151,7 @@ impl SrcType {
             SrcType::Float(ft) -> true,
             Sint(kind) -> false,
             View(view_length) -> false,
+            Str -> false,
         };
     }
 
@@ -2133,6 +2172,7 @@ impl SrcType {
             SrcType::Float(ft) -> false,
             Sint(kind) -> true,
             View(view_length) -> false,
+            Str -> false,
         };
     }
 
@@ -2152,6 +2192,7 @@ impl SrcType {
             SrcType::Float(ft) -> false,
             Sint(kind) -> true,
             View(view_length) -> false,
+            Str -> false,
         };
     }
 
@@ -2171,6 +2212,7 @@ impl SrcType {
             SrcType::Float(ft) -> false,
             Sint(other) -> other.code() == kind.code(),
             View(view_length) -> false,
+            Str -> false,
         };
     }
 
@@ -2191,6 +2233,7 @@ impl SrcType {
             SrcType::Float(ft) -> None,
             Sint(kind) -> Some(kind),
             View(view_length) -> None,
+            Str -> None,
         };
     }
 
@@ -2211,6 +2254,7 @@ impl SrcType {
             SrcType::Float(ft) -> None,
             Sint(sk) -> None,
             View(view_length) -> None,
+            Str -> None,
         };
     }
 
@@ -2231,6 +2275,7 @@ impl SrcType {
             SrcType::Float(ft) -> U64,
             Sint(kind) -> kind.signed_word(),
             View(view_length) -> U64,
+            Str -> U64,
         };
     }
 }
@@ -2257,6 +2302,7 @@ impl SrcType {
                 SrcType::Float(ft) -> false,
                 Sint(other_sk) -> false,
                 View(other_length) -> false,
+                Str -> false,
             },
             Enum(id, variants) -> match (other) {
                 I32 -> false,
@@ -2273,6 +2319,7 @@ impl SrcType {
                 SrcType::Float(ft) -> false,
                 Sint(other_sk) -> false,
                 View(other_length) -> false,
+                Str -> false,
             },
             Ptr -> other.is_ptr(),
             Slice(element) -> match (other) {
@@ -2290,6 +2337,7 @@ impl SrcType {
                 SrcType::Float(ft) -> false,
                 Sint(other_sk) -> false,
                 View(other_length) -> false,
+                Str -> false,
             },
             SrcType::Array(array_element, array_length) -> match (other) {
                 I32 -> false,
@@ -2306,6 +2354,7 @@ impl SrcType {
                 SrcType::Float(ft) -> false,
                 Sint(other_sk) -> false,
                 View(other_length) -> false,
+                Str -> false,
             },
             Unit -> other.is_unit(),
             Isize -> other.is_isize(),
@@ -2327,7 +2376,9 @@ impl SrcType {
                 SrcType::Float(ft) -> false,
                 Sint(other_sk) -> false,
                 View(other_length) -> false,
+                Str -> false,
             },
+            Str -> other.is_str(),
         };
     }
 }
@@ -2379,6 +2430,7 @@ impl SrcType {
             SrcType::Float(ft) -> 1,
             Sint(kind) -> 1,
             View(view_length) -> view_length,
+            Str -> 2,
         };
     }
 }
@@ -2738,6 +2790,7 @@ pub fn lower_field_of(b: Binding, field: usize) -> core::option::Option<Typed> {
         SrcType::Float(ft) -> None,
         Sint(sk) -> None,
         View(view_length) -> None,
+        Str -> None,
     };
 }
 
@@ -2860,6 +2913,7 @@ pub fn cast_to_i32(e: Typed) -> core::option::Option<Typed> {
         SrcType::Float(ft) -> None,
         Sint(kind) -> Some(Typed { expr: sint_to_i32(kind, e.expr), ty: I32 }),
         View(view_length) -> None,
+        Str -> None,
     };
 }
 
@@ -2879,6 +2933,7 @@ pub fn cast_to_uint(kind: UintTy, e: Typed) -> core::option::Option<Typed> {
         SrcType::Float(ft) -> None,
         Sint(source) -> Some(Typed { expr: sint_to_uint(source, kind, e.expr), ty: Uint(kind) }),
         View(view_length) -> None,
+        Str -> None,
     };
 }
 
@@ -2900,6 +2955,7 @@ pub fn cast_to_isize(e: Typed) -> core::option::Option<Typed> {
         SrcType::Float(ft) -> None,
         Sint(source) -> Some(Typed { expr: sint_to_wide(source, e.expr), ty: Isize }),
         View(view_length) -> None,
+        Str -> None,
     };
 }
 
@@ -2966,6 +3022,7 @@ pub fn cast_to_float(t: FloatTy, e: Typed) -> core::option::Option<Typed> {
         SrcType::Float(source) -> float_to_float(t, source, e.expr),
         Sint(kind) -> int_to_float(t, kind.signed_word(), e.expr),
         View(view_length) -> None,
+        Str -> None,
     };
 }
 
@@ -2985,6 +3042,7 @@ pub fn cast_to(ty: SrcType, e: Typed) -> core::option::Option<Typed> {
         SrcType::Float(ft) -> cast_to_float(ft, e),
         Sint(kind) -> cast_to_sint(kind, e),
         View(view_length) -> None,
+        Str -> None,
     };
 }
 
@@ -3099,6 +3157,7 @@ pub fn shift_width(ty: SrcType) -> u64 {
         SrcType::Float(ft) -> 64,
         Sint(kind) -> kind.bits(),
         View(view_length) -> 64,
+        Str -> 64,
     };
 }
 
@@ -3325,6 +3384,7 @@ pub fn copy_field_of(b: Binding, index: usize, ty: SrcType) -> core::option::Opt
         SrcType::Float(ft) -> None,
         Sint(sk) -> None,
         View(view_length) -> None,
+        Str -> None,
     };
 }
 
@@ -3408,6 +3468,7 @@ pub fn lower_literal(scope: List<Binding>, ty: SrcType, fields: List<SrcExpr>) -
         SrcType::Float(ft) -> None,
         Sint(sk) -> None,
         View(view_length) -> None,
+        Str -> None,
     };
 }
 
@@ -3450,6 +3511,7 @@ pub fn viewed_type(ty: SrcType) -> bool {
         SrcType::Float(ft) -> false,
         Sint(sk) -> false,
         View(view_length) -> true,
+        Str -> false,
     };
 }
 
@@ -3471,6 +3533,7 @@ pub fn lower_enum_value(scope: List<Binding>, ty: SrcType, variant: usize, paylo
         SrcType::Float(ft) -> None,
         Sint(sk) -> None,
         View(view_length) -> None,
+        Str -> None,
     };
 }
 
@@ -3622,6 +3685,7 @@ pub fn lower_match_arm(scope: List<Binding>, binding: core::option::Option<Bindi
             SrcType::Float(ft) -> None,
             Sint(sk) -> None,
             View(view_length) -> None,
+            Str -> None,
         },
     };
 }
@@ -3650,6 +3714,7 @@ pub fn lower_match_on(scope: List<Binding>, b: Binding, enum_id: usize, arms: Li
         SrcType::Float(ft) -> None,
         Sint(sk) -> None,
         View(view_length) -> None,
+        Str -> None,
     };
 }
 
@@ -3765,6 +3830,7 @@ pub fn eval_field_of(scope: List<Binding>, e: SrcExpr, slot: usize, b: Binding, 
         SrcType::Float(ft) -> None,
         Sint(sk) -> None,
         View(view_length) -> None,
+        Str -> None,
     };
 }
 
@@ -3807,7 +3873,9 @@ pub fn eval_call_sig(sig: Sig, callee: usize, slot: usize, args: EvaluatedArgs) 
 // Core's host services (roadmap F8) are its functions from id 2^32 on
 // (`hostService?`, Mini/SourceCore.lean), past every program's own: 2^32 is
 // write_byte, 2^32 + 1 write_stdout, 2^32 + 2 write_stderr, 2^32 + 3
-// read_stdin, 2^32 + 4 sleep_ms_i32. Their code is system calls.
+// read_stdin, 2^32 + 4 sleep_ms_i32, 2^32 + 5 monotonic_read, 2^32 + 6
+// system_read, 2^32 + 7 fill_secure_bytes, 2^32 + 8 write_text, 2^32 + 9
+// write_newline. Their code is system calls.
 //
 // write_byte(handle, value), handle and value in slot and slot + 1: to handle
 // 1 or 2 the value's low byte goes through the heap's byte 0 (no block's,
@@ -3886,6 +3954,24 @@ pub fn host_random_code(slot: usize) -> Stmt {
     let body: Stmt = Seq(boxed(pick), boxed(fill));
     let looped: Stmt = Seq(boxed(Stmt::Loop(Compare(U64, Ne, boxed(Var(count)), boxed(Lit(0))), boxed(body))), boxed(Assign(slot, Binary(S32, Add, boxed(Var(total)), boxed(Lit(0))))));
     return Seq(boxed(Assign(total, Var(count))), boxed(looped));
+}
+
+// write_text(handle, text), handle in slot and the str in slot + 1 (the
+// mini address of its bytes in the static region) and slot + 2 (their
+// count): to handle 1 or 2 they go out as write_stdout's do (the system call
+// reads the static region as it reads the heap), and the count is the result
+// (laniusc's); any other handle returns -1, as Core's does with no file open.
+pub fn host_text_code(slot: usize) -> Stmt {
+    let result: Stmt = Assign(slot, Var(plus(slot, 1)));
+    let to_one: Stmt = Seq(boxed(host_write_code(1, plus(slot, 1))), boxed(result));
+    let to_two: Stmt = Seq(boxed(host_write_code(2, plus(slot, 1))), boxed(result));
+    let other: Stmt = Stmt::Ite(Compare(U64, Eq, boxed(Var(slot)), boxed(Lit(2))), boxed(to_two), boxed(Assign(slot, Lit(4294967295))));
+    return Stmt::Ite(Compare(U64, Eq, boxed(Var(slot)), boxed(Lit(1))), boxed(to_one), boxed(other));
+}
+
+// write_newline(handle), handle in slot: write_byte of 10.
+pub fn host_newline_code(slot: usize) -> Stmt {
+    return Seq(boxed(Assign(plus(slot, 1), Lit(10))), boxed(host_byte_code(slot)));
 }
 
 pub fn eval_host(callee: usize, slot: usize, args: EvaluatedArgs) -> core::option::Option<Evaluated> {
@@ -4031,6 +4117,7 @@ pub fn element_of(ty: SrcType) -> core::option::Option<SrcType> {
         SrcType::Float(ft) -> None,
         Sint(sk) -> None,
         View(view_length) -> None,
+        Str -> None,
     };
 }
 
@@ -4070,6 +4157,7 @@ pub fn eval_struct(ty: SrcType, args: core::option::Option<EvaluatedArgs>) -> co
             SrcType::Float(ft) -> None,
             Sint(sk) -> None,
             View(view_length) -> None,
+            Str -> None,
         },
     };
 }
@@ -4111,6 +4199,7 @@ pub fn eval_variant(ty: SrcType, variant: usize, slot: usize, args: core::option
             SrcType::Float(ft) -> None,
             Sint(sk) -> None,
             View(view_length) -> None,
+            Str -> None,
         },
     };
 }
@@ -4280,6 +4369,7 @@ pub fn match_variants(ty: SrcType) -> List<List<SrcType>> {
         SrcType::Float(ft) -> empty(),
         Sint(sk) -> empty(),
         View(view_length) -> empty(),
+        Str -> empty(),
     };
 }
 
@@ -4368,6 +4458,7 @@ impl SrcEff {
             EIf(condition, ty, then_value, else_value) -> concat(unbox(condition).types(), concat(unbox(then_value).types(), unbox(else_value).types())),
             ELet(id, ty, value, rt, body) -> cons(ty, concat(unbox(value).types(), unbox(body).types())),
             ELen(slice) -> empty(),
+            EStr(offset, chars) -> empty(),
         };
     }
 }
@@ -4522,6 +4613,7 @@ pub fn lower_set_field_of(b: Binding, field: usize, scope: List<Binding>, value:
         SrcType::Float(ft) -> None,
         Sint(sk) -> None,
         View(view_length) -> None,
+        Str -> None,
     };
 }
 
@@ -4674,6 +4766,8 @@ pub struct SrcEnumDecl {
 pub struct SrcDecls {
     structs: List<SrcStructDecl>,
     enums: List<SrcEnumDecl>,
+    // the program's statics (SrcProgram), which its string literals name
+    statics: List<u8>,
 }
 
 // The fields declared for struct id.
@@ -4737,6 +4831,7 @@ pub fn word_width(ty: SrcType) -> core::option::Option<MemWidth> {
         SrcType::Float(ft) -> None,
         Sint(kind) -> usize_width(kind),
         View(view_length) -> None,
+        Str -> None,
     };
 }
 
@@ -4779,6 +4874,7 @@ pub fn word_type(decls: SrcDecls, ty: SrcType) -> bool {
         SrcType::Float(ft) -> false,
         Sint(kind) -> true,
         View(view_length) -> false,
+        Str -> false,
     };
 }
 
@@ -4816,6 +4912,7 @@ pub fn word_element(decls: SrcDecls, element: SrcType) -> bool {
         SrcType::Float(ft) -> false,
         Sint(sk) -> element.is_sint(Uint64),
         View(view_length) -> false,
+        Str -> false,
     };
 }
 
@@ -4859,6 +4956,7 @@ pub fn load_type(ty: SrcType, target: usize, base: Expr, offset: usize, body: St
         SrcType::Float(ft) -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
         Sint(kind) -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
         View(view_length) -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
+        Str -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
     };
 }
 
@@ -4923,6 +5021,7 @@ pub fn store_type(ty: SrcType, values: List<Expr>, first: usize, base: Expr, off
         SrcType::Float(ft) -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
         Sint(kind) -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
         View(view_length) -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
+        Str -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
     };
 }
 
@@ -4969,6 +5068,7 @@ pub fn within_layout(depth: usize, ty: SrcType) -> bool {
         SrcType::Float(ft) -> false,
         Sint(kind) -> true,
         View(view_length) -> false,
+        Str -> false,
     };
 }
 
@@ -5253,6 +5353,7 @@ pub fn eval_array_index(b: Binding, slot: usize, index: core::option::Option<Eva
         SrcType::Float(ft) -> None,
         Sint(sk) -> None,
         View(view_length) -> None,
+        Str -> None,
     };
 }
 
@@ -5285,6 +5386,7 @@ pub fn is_array_local(binding: core::option::Option<Binding>) -> bool {
             SrcType::Float(ft) -> false,
             Sint(sk) -> false,
             View(view_length) -> false,
+            Str -> false,
         },
     };
 }
@@ -5348,6 +5450,31 @@ pub fn eval_len(scope: List<Binding>, slice: usize, slot: usize) -> core::option
     };
 }
 
+pub fn static_byte_is(byte: core::option::Option<u8>, c: usize) -> bool {
+    return match (byte) {
+        None -> false,
+        Some(b) -> (((b as i32) as u32) as u64) == (c as u64),
+    };
+}
+
+// The statics hold the ASCII bytes chars from offset on.
+pub fn str_placed(statics: List<u8>, offset: usize, chars: List<usize>) -> bool {
+    return match (chars) {
+        Nil -> true,
+        Cons(c, rest) -> (c < 128) && static_byte_is(get(statics, offset), c) && str_placed(statics, plus(offset, 1), unbox(rest)),
+    };
+}
+
+// A string literal (EStr): the mini address of its bytes in the static
+// region, then their count. The program's statics must hold them there, and
+// the literal end below 2^31 (Static's offset is a 32-bit displacement) and within the statics.
+pub fn eval_str(decls: SrcDecls, offset: usize, chars: List<usize>, slot: usize) -> core::option::Option<Evaluated> {
+    if (str_placed(decls.statics, offset, chars) && (2147483648 > plus(offset, length(chars))) && (length(decls.statics) >= plus(offset, length(chars)))) {
+        return Some(Evaluated { stmt: Seq(boxed(Stmt::Static(slot, offset)), boxed(Assign(plus(slot, 1), Lit(length(chars) as u64)))), ty: Str });
+    }
+    return None;
+}
+
 // extract: mutual begin
 impl SrcEff {
     // The code computing this expression into slot, slot + 1, ..., and its type.
@@ -5369,6 +5496,7 @@ impl SrcEff {
             EIf(condition, ty, then_value, else_value) -> eval_if(slot, ty, unbox(condition).eval(sigs, decls, scope, slot), unbox(then_value).eval(sigs, decls, scope, slot), unbox(else_value).eval(sigs, decls, scope, slot)),
             ELet(id, ty, value, rt, body) -> eval_let_in(slot, ty, rt, unbox(value).eval(sigs, decls, scope, slot), eval_let_body(sigs, decls, arm_scope(single(id), single(ty), slot, scope), match_dst(slot, ty, rt), unbox(body))),
             ELen(slice) -> eval_len(scope, slice, slot),
+            EStr(offset, chars) -> eval_str(decls, offset, chars, slot),
         };
     }
 }
@@ -5515,6 +5643,7 @@ pub fn store_array(b: Binding, slot: usize, index: core::option::Option<Evaluate
         SrcType::Float(ft) -> None,
         Sint(sk) -> None,
         View(view_length) -> None,
+        Str -> None,
     };
 }
 
@@ -5550,6 +5679,7 @@ pub fn set_field_eval_of(b: Binding, field: usize, slot: usize, v: Evaluated) ->
         SrcType::Float(ft) -> None,
         Sint(sk) -> None,
         View(view_length) -> None,
+        Str -> None,
     };
 }
 
@@ -5787,6 +5917,7 @@ pub fn arg_bytes(scope: List<Binding>, arg: SrcEff) -> usize {
         EIf(condition, ity, then_value, else_value) -> 0,
         ELet(lid, lty, value, rt, body) -> 0,
         ELen(slice) -> 0,
+        EStr(offset, chars) -> 0,
     };
 }
 
@@ -5846,6 +5977,7 @@ pub fn array_arg(scope: List<Binding>, arg: SrcEff, ty: SrcType, t: usize, offse
         EIf(condition, ity, then_value, else_value) -> None,
         ELet(lid, lty, value, rt, body) -> None,
         ELen(slice) -> None,
+        EStr(offset, chars) -> None,
     };
 }
 
@@ -5912,6 +6044,7 @@ impl SrcEff {
             EIf(condition, ty, then_value, else_value) -> false,
             ELet(id, ty, value, rt, body) -> false,
             ELen(slice) -> false,
+            EStr(offset, chars) -> false,
         };
     }
 
@@ -5945,6 +6078,7 @@ impl SrcEff {
             EIf(condition, ty, then_value, else_value) -> false,
             ELet(id, ty, value, rt, body) -> false,
             ELen(slice) -> false,
+            EStr(offset, chars) -> false,
         };
     }
 
@@ -5967,6 +6101,7 @@ impl SrcEff {
             EIf(condition, ty, then_value, else_value) -> None,
             ELet(id, ty, value, rt, body) -> None,
             ELen(slice) -> None,
+            EStr(offset, chars) -> None,
         };
     }
 }
@@ -6165,6 +6300,7 @@ pub fn array_bytes_of(ty: SrcType) -> usize {
         SrcType::Float(ft) -> 0,
         Sint(sk) -> 0,
         View(view_length) -> 0,
+        Str -> 0,
     };
 }
 
@@ -6205,6 +6341,7 @@ impl SrcEff {
             EIf(condition, ty, then_value, else_value) -> concat(unbox(condition).slice_uses(), concat(unbox(then_value).slice_uses(), unbox(else_value).slice_uses())),
             ELet(id, ty, value, rt, body) -> concat(unbox(value).slice_uses(), unbox(body).slice_uses()),
             ELen(slice) -> empty(),
+            EStr(offset, chars) -> empty(),
         };
     }
 
@@ -6228,6 +6365,7 @@ impl SrcEff {
             EIf(condition, ty, then_value, else_value) -> max_of(unbox(condition).callee_need(needs), max_of(unbox(then_value).callee_need(needs), unbox(else_value).callee_need(needs))),
             ELet(id, ty, value, rt, body) -> max_of(unbox(value).callee_need(needs), unbox(body).callee_need(needs)),
             ELen(slice) -> 0,
+            EStr(offset, chars) -> 0,
         };
     }
 }
@@ -6590,7 +6728,7 @@ pub fn declare_struct(id: usize, fields: List<SrcType>, after: core::option::Opt
 // extract: inline
 fn declare_struct_in(id: usize, fields: List<SrcType>, decls: SrcDecls, known: core::option::Option<List<SrcType>>) -> core::option::Option<SrcDecls> {
     return match (known) {
-        None -> Some(SrcDecls { structs: cons(SrcStructDecl { id: id, fields: fields }, decls.structs), enums: decls.enums }),
+        None -> Some(SrcDecls { structs: cons(SrcStructDecl { id: id, fields: fields }, decls.structs), enums: decls.enums, statics: decls.statics }),
         Some(other) -> keep_if(types_same(other, fields), decls),
     };
 }
@@ -6606,7 +6744,7 @@ pub fn declare_enum(id: usize, variants: List<List<SrcType>>, after: core::optio
 // extract: inline
 fn declare_enum_in(id: usize, variants: List<List<SrcType>>, decls: SrcDecls, known: core::option::Option<List<List<SrcType>>>) -> core::option::Option<SrcDecls> {
     return match (known) {
-        None -> Some(SrcDecls { structs: decls.structs, enums: cons(SrcEnumDecl { id: id, variants: variants }, decls.enums) }),
+        None -> Some(SrcDecls { structs: decls.structs, enums: cons(SrcEnumDecl { id: id, variants: variants }, decls.enums), statics: decls.statics }),
         Some(other) -> keep_if(variants_same(other, variants), decls),
     };
 }
@@ -6647,6 +6785,7 @@ impl SrcType {
             SrcType::Float(ft) -> Some(decls),
             Sint(kind) -> Some(decls),
             View(view_length) -> None,
+            Str -> Some(decls),
         };
     }
 }
@@ -6801,7 +6940,7 @@ fn declare_funcs_after(after: core::option::Option<SrcDecls>, rest: List<SrcFunc
 
 // The program's struct and enum declarations.
 pub fn declare_program(prog: SrcProgram) -> core::option::Option<SrcDecls> {
-    return declare_funcs(prog.funcs, SrcDecls { structs: empty(), enums: empty() });
+    return declare_funcs(prog.funcs, SrcDecls { structs: empty(), enums: empty(), statics: prog.statics });
 }
 
 pub fn funcs_return(funcs: List<SrcFunc>) -> bool {
@@ -8320,10 +8459,10 @@ pub fn compile_optimized(prog: Program) -> core::option::Option<Binary> {
     return compile_program(prog);
 }
 
-pub fn compile_lowered(funcs: core::option::Option<List<Func>>) -> core::option::Option<Binary> {
+pub fn compile_lowered(funcs: core::option::Option<List<Func>>, statics: List<u8>) -> core::option::Option<Binary> {
     return match (funcs) {
         None -> None,
-        Some(fs) -> compile_optimized(Program { funcs: fs, statics: empty() }),
+        Some(fs) -> compile_optimized(Program { funcs: fs, statics: statics }),
     };
 }
 
@@ -8332,7 +8471,7 @@ pub fn compile_lowered(funcs: core::option::Option<List<Func>>) -> core::option:
 pub fn compile_declared(decls: core::option::Option<SrcDecls>, prog: SrcProgram) -> core::option::Option<Binary> {
     return match (decls) {
         None -> None,
-        Some(d) -> compile_lowered(lower_funcs(sigs(prog.funcs), sigs(prog.funcs), d, prog.funcs)),
+        Some(d) -> compile_lowered(lower_funcs(sigs(prog.funcs), sigs(prog.funcs), d, prog.funcs), d.statics),
     };
 }
 

@@ -9,7 +9,7 @@ import all Lanius.Mini.Compiler.P.FArith_opcode
 import all Lanius.Mini.Compiler.P.FloatTy_rex
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.SrcType_same
 import all Lanius.Mini.Compiler.P.Stmt_kills
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
@@ -150,7 +150,14 @@ theorem hostFuncs_find (i : Nat) :
               · by_cases h : i = hostBase + 7
                 · subst h
                   simp [hostFunc, hostBase]
-                · simp [hostFunc, a, b, c, d, e, f, g, h, Ne.symm a, Ne.symm b, Ne.symm c, Ne.symm d, Ne.symm e, Ne.symm f, Ne.symm g, Ne.symm h]
+                · by_cases j : i = hostBase + 8
+                  · subst j
+                    simp [hostFunc, hostBase]
+                  · by_cases k : i = hostBase + 9
+                    · subst k
+                      simp [hostFunc, hostBase]
+                    · simp [hostFunc, a, b, c, d, e, f, g, h, j, k, Ne.symm a, Ne.symm b, Ne.symm c, Ne.symm d,
+                        Ne.symm e, Ne.symm f, Ne.symm g, Ne.symm h, Ne.symm j, Ne.symm k]
 
 /-- A function of the program, or else a host function. -/
 theorem SrcProgram.function?_toCore (sp : SrcProgram) (i : Nat) :
@@ -1301,7 +1308,8 @@ theorem stores_outcome {service : Core.HostService}
 /-- The services of the host functions. -/
 theorem hostService?_some {id : Nat} {service : Core.HostService} (hs : hostService? id = some service) :
     service = .writeByte ∨ service = .writeStdout ∨ service = .writeStderr ∨ service = .readStdin ∨
-      service = .sleepMsI32 ∨ service = .monotonicRead ∨ service = .systemRead ∨ service = .fillSecureBytes := by
+      service = .sleepMsI32 ∨ service = .monotonicRead ∨ service = .systemRead ∨ service = .fillSecureBytes ∨
+      service = .writeText ∨ service = .writeNewline := by
   unfold hostService? at hs
   repeat' split at hs
   all_goals first | (cases hs; simp) | cases hs
@@ -1351,12 +1359,24 @@ theorem hostCall_heap {service : Core.HostService}
   · obtain ⟨_, _, same, _⟩ := call_sleepMsI32_inv h
     exact same
 
+/-- `write_text` and `write_newline`, when they return, leave Core's heap as it was. -/
+theorem textCall_heap {service : Core.HostService} (which : service = .writeText ∨ service = .writeNewline)
+    {heap : Memory.Heap} {world : World.State} {values : List Value} {v : Value} {heap' : Memory.Heap}
+    {world' : World.State} (h : World.call heap world service values = .returned v heap' world') : heap' = heap := by
+  rcases which with rfl | rfl <;>
+  · simp only [World.call] at h
+    repeat' split at h
+    all_goals first
+      | contradiction
+      | (simp only [World.EffectResult.returned.injEq] at h; exact h.2.1.symm)
+      | simp at h
+
 /-- The host functions keep Core's next free address. -/
 theorem hostCall_next {id : Nat} {service : Core.HostService} (hs : hostService? id = some service)
     {heap : Memory.Heap} {world : World.State} {values : List Value} {v : Value} {heap' : Memory.Heap}
     {world' : World.State} (h : World.call heap world service values = .returned v heap' world') :
     heap'.nextAddress = heap.nextAddress := by
-  rcases hostService?_some hs with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+  rcases hostService?_some hs with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
   · rw [hostCall_heap (.inl rfl) h]
   · rw [hostCall_heap (.inr (.inl rfl)) h]
   · rw [hostCall_heap (.inr (.inr (.inl rfl))) h]
@@ -1366,6 +1386,8 @@ theorem hostCall_next {id : Nat} {service : Core.HostService} (hs : hostService?
   · exact call_stores_next (.inl rfl) h
   · exact call_stores_next (.inr (.inl rfl)) h
   · exact call_stores_next (.inr (.inr rfl)) h
+  · rw [textCall_heap (.inl rfl) h]
+  · rw [textCall_heap (.inr rfl) h]
 
 /-- The clock reads and `fill_secure_bytes`, when they return: the heap as
 it was, or after one store. -/
@@ -1402,7 +1424,7 @@ theorem hostCall_stores {id : Nat} {service : Core.HostService} (hs : hostServic
     {heap : Memory.Heap} {world : World.State} {values : List Value} {v : Value} {heap' : Memory.Heap}
     {world' : World.State} (h : World.call heap world service values = .returned v heap' world') :
     Views.Stores heap heap' := by
-  rcases hostService?_some hs with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+  rcases hostService?_some hs with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
   · rw [hostCall_heap (.inl rfl) h]; exact Views.Stores.refl _
   · rw [hostCall_heap (.inr (.inl rfl)) h]; exact Views.Stores.refl _
   · rw [hostCall_heap (.inr (.inr (.inl rfl))) h]; exact Views.Stores.refl _
@@ -1412,6 +1434,8 @@ theorem hostCall_stores {id : Nat} {service : Core.HostService} (hs : hostServic
   · exact call_stores_stores (.inl rfl) h
   · exact call_stores_stores (.inr (.inl rfl)) h
   · exact call_stores_stores (.inr (.inr rfl)) h
+  · rw [textCall_heap (.inl rfl) h]; exact Views.Stores.refl _
+  · rw [textCall_heap (.inr rfl) h]; exact Views.Stores.refl _
 
 theorem host_grows {id : Nat} {service : Core.HostService} (hs : hostService? id = some service)
     {st : State} {values : List Value} {v : Value} {st' : State} (returns : HostReturns st service values v st') :
@@ -1508,7 +1532,7 @@ theorem hostCall_resultHeap {id : Nat} {service : Core.HostService} (hs : hostSe
     (heap : Memory.Heap) (world : World.State) (values : List Value)
     (stopped : ∀ v heap' world', World.call heap world service values ≠ .returned v heap' world') :
     resultHeap (World.call heap world service values) = heap := by
-  rcases hostService?_some hs with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+  rcases hostService?_some hs with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
   · simp only [World.call] at stopped ⊢
     repeat' split
     all_goals first | rfl | contradiction | simp_all
@@ -2199,6 +2223,10 @@ theorem eff_grows_step {sp : SrcProgram} {k : Nat} (ih : GrowsBelow sp (k + 1)) 
         | (simp only [Semantics.Outcome.done.injEq] at run; rw [← run.2]; exact Grows.refl _)
         | simp at run
     all_goals simp at run
+  | eStr offset chars =>
+    simp only [SrcEff.toCore, evalExpr, Semantics.Outcome.done.injEq] at run
+    rw [← run.2]
+    exact Grows.refl _
 
 /-- Every effectful expression Core completes grows the heap. -/
 theorem eff_grows {sp : SrcProgram} : ∀ k, GrowsBelow sp k → EffGrows sp k
