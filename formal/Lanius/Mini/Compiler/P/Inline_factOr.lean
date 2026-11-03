@@ -47,6 +47,7 @@ namespace Lanius.Mini
   | .divide w o t l r => false
   | .sys c t a => false
   | .frame t b => false
+  | .static t o => false
 
 @[expose] def Inline.seqAgrees (first : Stmt) (second : Stmt) (facts : List Fact) (other : Stmt) : Bool :=
   match other with
@@ -67,6 +68,7 @@ namespace Lanius.Mini
   | .divide w o t l r => false
   | .sys c t a => false
   | .frame t b => false
+  | .static t o => false
 
 /-- A condition the facts do not make a constant. -/
 @[expose] def Inline.unknown (known : Option (BitVec 64)) : Bool :=
@@ -98,6 +100,7 @@ namespace Lanius.Mini
   | .divide w o t l r => false
   | .sys c t a => false
   | .frame t b => false
+  | .static t o => false
 
 /-- A loop's body runs from states the facts may not describe: no facts. -/
 @[expose] def Inline.loopAgrees (condition : Expr) (body : Stmt) (other : Stmt) : Bool :=
@@ -119,6 +122,7 @@ namespace Lanius.Mini
   | .divide w o t l r => false
   | .sys c t a => false
   | .frame t b => false
+  | .static t o => false
 
 /-- The second statement is optimized with the facts after the first; a store to a slot the optimized rest kills is dropped. -/
 @[expose] def Inline.optimizeSequence (first : Stmt) (second : Stmt) (facts : List Fact) : Stmt :=

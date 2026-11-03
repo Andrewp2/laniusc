@@ -656,6 +656,11 @@ abbrev BStmt_frame_agrees (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : P
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepNat x1 v1 → RepStmt x2 v2 →
     qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.frameAgrees x0 x1 x2) w
 
+abbrev BStmt_static_agrees (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Nat} {x2 : Lanius.Mini.Stmt} {v0 v1 v2 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepNat x1 v1 → RepStmt x2 v2 →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.staticAgrees x0 x1 x2) w
+
 abbrev BStmt_Stmt_agrees (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Stmt} {x1 : List Lanius.Mini.Fact} {x2 : Lanius.Mini.Stmt} {v0 v1 v2 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepStmt x0 v0 → (RepList 180 RepFact) x1 v1 → RepStmt x2 v2 → k < b → Pre_Stmt_agrees n x0 x1 x2 b →
@@ -1177,9 +1182,9 @@ abbrev BStmt_encode_onto (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
     qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_encode_onto n x0 x1 x2 x3 = k ∧ (RepList 66 RepU8) (Lanius.Mini.encodeOnto x0 x1 x2 x3) w
 
 abbrev BStmt_link_onto (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : Nat} {x2 : List Lanius.Mini.Code} {v0 v1 v2 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepList 25 RepNat) x0 v0 → RepNat x1 v1 → (RepList 51 RepCode) x2 v2 → k < b → Pre_link_onto n x0 x1 x2 b →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_link_onto n x0 x1 x2 = k ∧ (RepList 66 RepU8) (Lanius.Mini.linkOnto x0 x1 x2) w
+  ∀ {x0 : List Nat} {x1 : Nat} {x2 : List Lanius.Mini.Code} {x3 : List UInt8} {v0 v1 v2 v3 w : Value} {k b : Nat},
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → (RepList 25 RepNat) x0 v0 → RepNat x1 v1 → (RepList 51 RepCode) x2 v2 → (RepList 66 RepU8) x3 v3 → k < b → Pre_link_onto n x0 x1 x2 x3 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_link_onto n x0 x1 x2 x3 = k ∧ (RepList 66 RepU8) (Lanius.Mini.linkOnto x0 x1 x2 x3) w
 
 abbrev BStmt_image_limit (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value} {k : Nat},
@@ -1191,10 +1196,15 @@ abbrev BStmt_linked_size (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
     qcall spW prims uc n ix [v0] = some (w, k) → (RepList 51 RepCode) x0 v0 → k < b → Pre_linked_size n x0 b →
     qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.linkedSize x0) w
 
+abbrev BStmt_length_of_u8 (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List UInt8} {v0 w : Value} {k b : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 66 RepU8) x0 v0 → k < b → Pre_length_of_u8 n x0 b →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepNat (x0.length) w
+
 abbrev BStmt_link (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Code} {v0 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 51 RepCode) x0 v0 → k < b → Pre_link n x0 b →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_link n x0 = k ∧ (RepOption 49 RepBinary) (Lanius.Mini.Inline.link x0) w
+  ∀ {x0 : List Lanius.Mini.Code} {x1 : List UInt8} {v0 v1 w : Value} {k b : Nat},
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 51 RepCode) x0 v0 → (RepList 66 RepU8) x1 v1 → k < b → Pre_link n x0 x1 b →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_link n x0 x1 = k ∧ (RepOption 49 RepBinary) (Lanius.Mini.Inline.link x0 x1) w
 
 abbrev BStmt_compile_program (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Program} {v0 w : Value} {k b : Nat},
@@ -4790,15 +4800,5 @@ abbrev BStmt_struct_decl_fields (spW sp : SrcProgram) (prims : Prims) (ix n : Na
   ∀ {x0 : List (List Nat)} {x1 : List Nat} {x2 : List (List Nat)} {x3 : Lanius.Mini.Fields} {v0 v1 v2 v3 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepList 25 RepNat) x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → RepFields x3 v3 →
     qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ 0 = k ∧ (RepOption 206 RepTypeDecl) (Lanius.Mini.structDeclFields x0 x1 x2 x3) w
-
-abbrev BStmt_cons_field (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.CTree} {x1 : Lanius.Mini.Fields} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepCTree x0 v0 → RepFields x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_field n x0 x1 = k ∧ RepFields (Lanius.Mini.consField x0 x1) w
-
-abbrev BStmt_fields_of (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.CTree} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 82 RepCTree) x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_fields_of n x0 = k ∧ RepFields (Lanius.Mini.fieldsOf x0) w
 
 end Lanius.Faithful.SelfBudget

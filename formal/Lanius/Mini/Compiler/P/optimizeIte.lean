@@ -50,6 +50,7 @@ def Stmt.deadBefore (self : Stmt) (rest : Stmt) : Bool :=
   | .divide w o t l r => false
   | .sys c t a => false
   | .frame t b => false
+  | .static t o => false
 
 /-- facts hold on entry: each expression is read with them substituted. -/
 def Stmt.optimize (self : Stmt) (facts : List Fact) : Stmt :=
@@ -76,6 +77,7 @@ def Stmt.optimize (self : Stmt) (facts : List Fact) : Stmt :=
   | .divide word operation target left right => Stmt.divide word operation target (Expr.optimize (Expr.subst left facts)) (Expr.optimize (Expr.subst right facts))
   | .sys kind target args => Stmt.sys kind target (optimizeAll (substAll args facts))
   | .frame target bytes => Stmt.frame target bytes
+  | .static target offset => Stmt.static target offset
 
 def optimizeFuncs (funcs : List Func) : List Func :=
   match funcs with
@@ -83,6 +85,6 @@ def optimizeFuncs (funcs : List Func) : List Func :=
   | func :: rest => ({ params := func.params, results := func.results, locals := func.locals, body := Stmt.optimize func.body [] } : Func) :: optimizeFuncs rest
 
 def optimizeProgram (prog : Program) : Program :=
-  ({ funcs := optimizeFuncs prog.funcs } : Program)
+  ({ funcs := optimizeFuncs prog.funcs, statics := prog.statics } : Program)
 
 end Lanius.Mini

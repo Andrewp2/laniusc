@@ -91,7 +91,8 @@ def encodings : List (String × List UInt8) :=
      ("bump 0", .bump 0), ("bump 3", .bump 3), ("bump 31", .bump 31),
      ("loadAt", .loadAt), ("storeAt", .storeAt 4),
      ("loadWordAt m32", .loadWordAt .m32), ("loadWordAt m64", .loadWordAt .m64),
-     ("storeWordAt m32", .storeWordAt .m32 4), ("storeWordAt m64", .storeWordAt .m64 4)]
+     ("storeWordAt m32", .storeWordAt .m32 4), ("storeWordAt m64", .storeWordAt .m64 4),
+     ("static", .static 40), ("static far", .static 2147483647)]
   let fts := [FloatTy.f32, FloatTy.f64]
   let fops : List (String × Instr) :=
     (fts.flatMap fun t => [FArith.fAdd, .fSub, .fMul, .fDiv].map fun o =>

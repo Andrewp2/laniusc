@@ -141,6 +141,15 @@ theorem proof_ret_agrees {prog : SrcProgram} {prims : Prims} {ix_ret_agrees ix_a
   simp only [src_ret_agrees] at h
   faithful [Lanius.Mini.retAgrees]
 
+theorem proof_static_agrees {prog : SrcProgram} {prims : Prims} {ix_static_agrees : Nat} (fn : prog.funcs[ix_static_agrees]? = some (src_static_agrees)) (np : prims.isPrim ix_static_agrees = false) {n : Nat} :
+    Stmt_static_agrees prog prims ix_static_agrees n := by
+  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_static_agrees] at h
+  faithful [Lanius.Mini.staticAgrees]
+
 theorem proof_store_byte_agrees {prog : SrcProgram} {prims : Prims} {ix_store_byte_agrees ix_Expr_agrees : Nat} (fn : prog.funcs[ix_store_byte_agrees]? = some (src_store_byte_agrees ix_Expr_agrees)) (np : prims.isPrim ix_store_byte_agrees = false)
     (ext_Expr_agrees : Certified (∀ {n : Nat}, Stmt_Expr_agrees prog prims ix_Expr_agrees n)) {n : Nat} :
     Stmt_store_byte_agrees prog prims ix_store_byte_agrees n := by

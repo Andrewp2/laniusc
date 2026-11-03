@@ -133,6 +133,8 @@ inductive Stmt where
   | sys : Syscall → Nat → (List Expr) → Stmt
   /-- target = the frame pointer less bytes, which becomes the frame pointer: this activation's frame memory (not produced yet) -/
   | frame : Nat → Nat → Stmt
+  /-- target = the static region's base plus offset: the address of byte offset of the read-only bytes the loader places with the code -/
+  | static : Nat → Nat → Stmt
   deriving DecidableEq, Repr
 
 structure Func where
@@ -146,6 +148,8 @@ structure Func where
 
 structure Program where
   funcs : List Func
+  /-- The read-only bytes the loader places with the code (`Static`). -/
+  statics : List UInt8
   deriving DecidableEq, Repr
 
 /-- The abstract target: an accumulator (rax), frame slots, and a program counter that is a byte offset into the function's code. Each instruction is one fixed byte sequence, Instr::size bytes long. -/
@@ -188,6 +192,8 @@ inductive Instr where
   | sys : Syscall → Nat → Instr
   /-- Frame memory: the frame pointer (rbx) drops by bytes, to no lower than the limit (r14), and rax gets its new value -/
   | frame : Nat → Instr
+  /-- lea rax, [r8 + offset]; sub rax, r12: r8 holds the static bytes' address, so rax gets their heap address, the static region's base plus offset -/
+  | static : Nat → Instr
   deriving DecidableEq, Repr
 
 /-- A function's parameter and result counts. -/
@@ -212,11 +218,12 @@ structure Place where
   entries : List Nat
   deriving DecidableEq, Repr
 
-/-- Machine code of a compiled program. -/
+/-- Machine code of a compiled program: the image is the code, then the static bytes. -/
 structure Binary where
   codes : List Code
   entries : List Nat
   image : List UInt8
+  statics : List UInt8
   deriving DecidableEq, Repr
 
 /-- Separate compilation (roadmap step 9). A module is functions plus the functions it imports from other modules. Inside a module a call names callee c: below the module's function count own, c is its own function c, and own + i is its import i. An import names its owner, the module that defines it, by its position in the link order, a function by its position in that module, and the arity the importing module compiles its calls against. -/

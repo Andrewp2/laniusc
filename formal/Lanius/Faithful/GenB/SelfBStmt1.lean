@@ -16,6 +16,16 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.SelfCert
 open Lanius.Faithful.Budget
 
+abbrev BStmt_cons_field (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.CTree} {x1 : Lanius.Mini.Fields} {v0 v1 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepCTree x0 v0 → RepFields x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_field n x0 x1 = k ∧ RepFields (Lanius.Mini.consField x0 x1) w
+
+abbrev BStmt_fields_of (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List Lanius.Mini.CTree} {v0 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 82 RepCTree) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_fields_of n x0 = k ∧ RepFields (Lanius.Mini.fieldsOf x0) w
+
 abbrev BStmt_struct_decl_of (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (List Nat)} {x1 : List Nat} {x2 : Option (List (List Nat))} {x3 : Option (List Lanius.Mini.CTree)} {v0 v1 v2 v3 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepList 25 RepNat) x1 v1 → (RepOption 138 (RepList 31 (RepList 25 RepNat))) x2 v2 → (RepOption 81 (RepList 82 RepCTree)) x3 v3 →
@@ -4620,10 +4630,5 @@ abbrev BStmt_wild_inner (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.CTree} {x3 : List Lanius.Mini.CTree} {x4 : Nat} {x5 : Lanius.Mini.CTree} {x6 : Lanius.Mini.Ty} {x7 : List Lanius.Mini.CTree} {x8 : Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 v6 v7 v8 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5, v6, v7, v8] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → RepCTree x2 v2 → (RepList 82 RepCTree) x3 v3 → RepNat x4 v4 → RepCTree x5 v5 → RepTy x6 v6 → (RepList 82 RepCTree) x7 v7 → RepCTree x8 v8 → k < b → Pre_wild_inner n x0 x1 x2 x3 x4 x5 x6 x7 x8 b →
     qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5, v6, v7, v8] = some (w, k) ∧ Cost_wild_inner n x0 x1 x2 x3 x4 x5 x6 x7 x8 = k ∧ (RepOption 318 RepArmUse) (Lanius.Mini.wildInner x0 x1 x2 x3 x4 x5 x6 x7 x8) w
-
-abbrev BStmt_nest_inner (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.CTree} {x3 : List Lanius.Mini.CTree} {x4 : Nat} {x5 : Lanius.Mini.CTree} {x6 : Lanius.Mini.Ty} {x7 : Option (List Lanius.Mini.CTree)} {x8 : Option Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 v6 v7 v8 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5, v6, v7, v8] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → RepCTree x2 v2 → (RepList 82 RepCTree) x3 v3 → RepNat x4 v4 → RepCTree x5 v5 → RepTy x6 v6 → (RepOption 81 (RepList 82 RepCTree)) x7 v7 → (RepOption 128 RepCTree) x8 v8 → k < b → Pre_nest_inner n x0 x1 x2 x3 x4 x5 x6 x7 x8 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5, v6, v7, v8] = some (w, k) ∧ Cost_nest_inner n x0 x1 x2 x3 x4 x5 x6 x7 x8 = k ∧ (RepOption 318 RepArmUse) (Lanius.Mini.nestInner x0 x1 x2 x3 x4 x5 x6 x7 x8) w
 
 end Lanius.Faithful.SelfBudget

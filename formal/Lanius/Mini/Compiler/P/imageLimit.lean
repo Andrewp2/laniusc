@@ -27,10 +27,11 @@ def compileProgram (prog : Program) : Option Binary :=
   match compileFuncs (arities prog.funcs) prog.funcs with
   | none => none
   | some codes =>
+    let statics : List UInt8 := prog.statics
     let entries : List Nat := layout 0 codes
-    let image : List UInt8 := linkOnto entries 0 codes
-    if linkedSize codes ≤ imageLimit then
-      some ({ codes := codes, entries := entries, image := image } : Binary)
+    let image : List UInt8 := linkOnto entries 0 codes statics
+    if linkedSize codes + statics.length ≤ imageLimit then
+      some ({ codes := codes, entries := entries, image := image, statics := statics } : Binary)
     else
       none
 

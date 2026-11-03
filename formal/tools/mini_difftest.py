@@ -214,7 +214,7 @@ def lean_file(programs):
     for index, funcs in enumerate(programs):
         fs = ', '.join(f'{{ params := {p}, results := {r}, locals := {l}, body := {lean_stmt(b)} }}'
                        for p, r, l, b in funcs)
-        out.append(f'def p{index} : Program := {{ funcs := [{fs}] }}')
+        out.append(f'def p{index} : Program := {{ funcs := [{fs}], statics := [] }}')
     out.append('')
     out.append('#eval IO.println (String.intercalate "\\n" [' + ', '.join(f'render p{i}' for i in range(len(programs))) + '])')
     return '\n'.join(out) + '\n'
@@ -345,7 +345,7 @@ def lani_file(programs):
         fs = 'no_funcs()'
         for p, r, l, b in reversed(funcs):
             fs = f'{M}cons(func({p}, {r}, {l}, {lani_stmt(b)}), {fs})'
-        out.append(f'fn p{index}() -> {M}Program {{ return {M}Program {{ funcs: {fs} }}; }}')
+        out.append(f'fn p{index}() -> {M}Program {{ return {M}Program {{ funcs: {fs}, statics: {M}empty() }}; }}')
     out.append('fn main() -> i32 {')
     for index in range(len(programs)):
         out.append(f'    emit(p{index}());')

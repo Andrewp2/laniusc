@@ -85,6 +85,9 @@ class Types:
                 # that walk an array's slots (its size is length * element
                 # size) run for minutes.
                 return ('enum', n, ctor, [self.gen(payload[0], rng, depth - 1), ('nat', rng.choice([0, 1, 2, 3, 5]))])
+            if n == 'SrcType' and ctor == 'View':
+                # A viewed array's length is its slot count too.
+                return ('enum', n, ctor, [('nat', rng.choice([0, 1, 2, 3, 5]))])
             return ('enum', n, ctor, [self.gen(p, rng, depth - 1) for p in payload])
         if n in self.ex.structs:
             fields = self.ex.structs[n]['fields']
@@ -411,8 +414,9 @@ def main():
             # A `count` is how many copies a function makes (an array's
             # elements), and a `size` how many slots each copy takes: both
             # kept short, as an array's length and element size are (a
-            # `size` of 2^19 renders a million statements in Lean).
-            values = [('nat', rng.choice([0, 1, 2, 3, 5, 12])) if name in ('count', 'size') and pt.value().strip_box().name == 'usize'
+            # `size` of 2^19 renders a million statements in Lean), and so
+            # is a `length`, a viewed array's (`lower_view` stores each element).
+            values = [('nat', rng.choice([0, 1, 2, 3, 5, 12])) if name in ('count', 'size', 'length') and pt.value().strip_box().name == 'usize'
                       else ty.gen(pt.value(), rng, 3) for name, pt in params]
             lean_args = [ty.lean(v) for v in values]
             lean_term = f'({" ".join([lean_head] + lean_args)})'

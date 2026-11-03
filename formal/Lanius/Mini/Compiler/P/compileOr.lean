@@ -29,7 +29,7 @@ def compileOptimized (prog : Program) : Option Binary :=
 def compileLowered (funcs : Option (List Func)) : Option Binary :=
   match funcs with
   | none => none
-  | some fs => compileOptimized ({ funcs := fs } : Program)
+  | some fs => compileOptimized ({ funcs := fs, statics := [] } : Program)
 
 /-- The functions are lowered against the declarations, which the slice lowering consults for its element types. -/
 def compileDeclared (decls : Option SrcDecls) (prog : SrcProgram) : Option Binary :=

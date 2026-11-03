@@ -140,7 +140,7 @@ theorem compileSource_contract_from {sp : SrcProgram} {binary : Binary}
     cases found'
     obtain ⟨rfl, rfl⟩ := evalExprs_values argsRun
     obtain ⟨_, _, depth, results, after, _, returns, holds, len, hc', -⟩ :=
-      body_sound (mp := { funcs := funcs }) (hp := heap) lowered (stmt_sound lowered k) found
+      body_sound (mp := { funcs := funcs, statics := [] }) (hp := heap) lowered (stmt_sound lowered k) found
         fresh hc (FrameCorr.start _ frameRoom) (Nat.le_refl _) (fun _ mem => by simp at mem) typed bitsLen bodyRun result fits
     refine ⟨depth, results, after, holds, len, hc', fun imageBase window => ?_⟩
     rcases compileOptimized_some compiledProgram with original | ⟨q, accepted, optimized⟩

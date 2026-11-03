@@ -77,5 +77,6 @@ def Instr.size (self : Instr) : Nat :=
   | .fp operation slot => 10 + FOp.size operation
   | .sys kind slot => 34
   | .frame bytes => 39
+  | .static offset => 10
 
 end Lanius.Mini

@@ -18,6 +18,64 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.SelfCert
 open Lanius.Faithful.Budget
 
+theorem bproof_eval_sized {spW sp : SrcProgram} {prims : Prims} {ix_eval_sized ix_SrcType_size ix_eval_values : Nat}
+    (fnW : spW.funcs[ix_eval_sized]? = some (src_eval_sized ix_SrcType_size ix_eval_values)) (fn : sp.funcs[ix_eval_sized]? = some (src_eval_sized ix_SrcType_size ix_eval_values))
+    (np : prims.isPrim ix_eval_sized = false)
+    (back : Certified (∀ {n : Nat}, Stmt_eval_sized sp prims ix_eval_sized n))
+    (b_SrcType_size : Certified (∀ {n : Nat}, BStmt_SrcType_size spW sp prims ix_SrcType_size n))
+    (b_eval_values : Certified (∀ {n : Nat}, BStmt_eval_values spW sp prims ix_eval_values n)) {n : Nat} :
+    BStmt_eval_sized spW sp prims ix_eval_sized n := by
+  intro x0 x1 x2 v0 v1 v2 w k b h r0 r1 r2 hb pre
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_eval_sized [v0, v1, v2] = some (w, k) ∧ Cost_eval_sized (n + 1) x0 x1 x2 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_eval_sized, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_eval_sized.eq_def] at pre
+    simp only at pre
+    budget Cost_eval_sized
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
+
+theorem bproof_eval_field_type {spW sp : SrcProgram} {prims : Prims} {ix_eval_field_type ix_lower_value ix_eval_sized : Nat}
+    (fnW : spW.funcs[ix_eval_field_type]? = some (src_eval_field_type ix_lower_value ix_eval_sized)) (fn : sp.funcs[ix_eval_field_type]? = some (src_eval_field_type ix_lower_value ix_eval_sized))
+    (np : prims.isPrim ix_eval_field_type = false)
+    (back : Certified (∀ {n : Nat}, Stmt_eval_field_type sp prims ix_eval_field_type n))
+    (b_lower_value : Certified (∀ {n : Nat}, BStmt_lower_value spW sp prims ix_lower_value n))
+    (b_eval_sized : Certified (∀ {n : Nat}, BStmt_eval_sized spW sp prims ix_eval_sized n)) {n : Nat} :
+    BStmt_eval_field_type spW sp prims ix_eval_field_type n := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w k b h r0 r1 r2 r3 hb pre
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_eval_field_type [v0, v1, v2, v3] = some (w, k) ∧ Cost_eval_field_type (n + 1) x0 x1 x2 x3 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_eval_field_type, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_eval_field_type.eq_def] at pre
+    simp only at pre
+    budget Cost_eval_field_type
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3⟩
+
+theorem bproof_eval_field_of {spW sp : SrcProgram} {prims : Prims} {ix_eval_field_of ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_get_of_mini_selfhost_SrcType ix_eval_field_type : Nat}
+    (fnW : spW.funcs[ix_eval_field_of]? = some (src_eval_field_of ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_get_of_mini_selfhost_SrcType ix_eval_field_type)) (fn : sp.funcs[ix_eval_field_of]? = some (src_eval_field_of ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_get_of_mini_selfhost_SrcType ix_eval_field_type))
+    (np : prims.isPrim ix_eval_field_of = false)
+    (back : Certified (∀ {n : Nat}, Stmt_eval_field_of sp prims ix_eval_field_of n))
+    (pp_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType = false)
+    (b_get_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, BStmt_get_of_mini_selfhost_SrcType spW sp prims ix_get_of_mini_selfhost_SrcType n))
+    (b_eval_field_type : Certified (∀ {n : Nat}, BStmt_eval_field_type spW sp prims ix_eval_field_type n)) {n : Nat} :
+    BStmt_eval_field_of spW sp prims ix_eval_field_of n := by
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w k b h r0 r1 r2 r3 r4 hb pre
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_eval_field_of [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_eval_field_of (n + 1) x0 x1 x2 x3 x4 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_eval_field_of, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_eval_field_of.eq_def] at pre
+    simp only at pre
+    budget Cost_eval_field_of
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4⟩
+
 theorem bproof_eval_field_copy {spW sp : SrcProgram} {prims : Prims} {ix_eval_field_copy ix_eval_field_of : Nat}
     (fnW : spW.funcs[ix_eval_field_copy]? = some (src_eval_field_copy ix_eval_field_of)) (fn : sp.funcs[ix_eval_field_copy]? = some (src_eval_field_copy ix_eval_field_of))
     (np : prims.isPrim ix_eval_field_copy = false)
@@ -358,30 +416,5 @@ theorem bproof_ite_then {spW sp : SrcProgram} {prims : Prims} {ix_ite_then ix_bo
     simp only [src_ite_then, List.length_cons, List.length_nil, if_true] at h ⊢
     budget Cost_ite_then
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
-
-theorem bstep_store_type {spW sp : SrcProgram} {prims : Prims} {ix_store_type ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_lower_then ix_store_one ix_width_of ix_address_below ix_get_of_mini_selfhost_Expr ix_store_types ix_store_cases : Nat}
-    (fnW : spW.funcs[ix_store_type]? = some (src_store_type ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_lower_then ix_store_one ix_width_of ix_address_below ix_get_of_mini_selfhost_Expr ix_store_types ix_store_cases)) (fn : sp.funcs[ix_store_type]? = some (src_store_type ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_lower_then ix_store_one ix_width_of ix_address_below ix_get_of_mini_selfhost_Expr ix_store_types ix_store_cases))
-    (np : prims.isPrim ix_store_type = false)
-    (back : Certified (∀ {n : Nat}, Stmt_store_type sp prims ix_store_type n))
-    (b_plus : Certified (∀ {n : Nat}, BStmt_plus spW sp prims ix_plus n))
-    (pp_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType = false)
-    (pp_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType = false)
-    (b_lower_then : Certified (∀ {n : Nat}, BStmt_lower_then spW sp prims ix_lower_then n))
-    (b_store_one : Certified (∀ {n : Nat}, BStmt_store_one spW sp prims ix_store_one n))
-    (b_width_of : Certified (∀ {n : Nat}, BStmt_width_of spW sp prims ix_width_of n))
-    (b_address_below : Certified (∀ {n : Nat}, BStmt_address_below spW sp prims ix_address_below n))
-    (b_get_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, BStmt_get_of_mini_selfhost_Expr spW sp prims ix_get_of_mini_selfhost_Expr n)) {n : Nat}
-    (bih_store_types : Certified (BStmt_store_types spW sp prims ix_store_types n))
-    (bih_store_cases : Certified (BStmt_store_cases spW sp prims ix_store_cases n)) :
-    BStmt_store_type spW sp prims ix_store_type (n + 1) := by
-  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w k b h r0 r1 r2 r3 r4 hb pre
-  have key : qcall sp prims uc (n + 1) ix_store_type [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_store_type (n + 1) x0 x1 x2 x3 x4 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_store_type, List.length_cons, List.length_nil, if_true] at h ⊢
-    rw [Pre_store_type.eq_def] at pre
-    simp only at pre
-    budget Cost_store_type
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4⟩
 
 end Lanius.Faithful.SelfBudget

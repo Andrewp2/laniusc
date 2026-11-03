@@ -240,6 +240,12 @@ structure Heap where
   fsp : Nat := 0
   /-- The bytes of frame memory above `limit`. -/
   frameSize : Nat := 0
+  /-- Where the static region starts: read-only bytes the loader places
+  with the code, above frame memory (SEMANTIC_DECISIONS "Addressed locals"
+  point 6). No statement writes them. -/
+  staticBase : Nat := 0
+  /-- The static region's bytes, from `staticBase`. -/
+  statics : List UInt8 := []
 
 /-- The end of the memory loads and stores reach: the bump heap below
 `limit`, then frame memory. -/
@@ -490,6 +496,15 @@ inductive Exec (prog : Program) : Nat → Env → Heap → Stmt → Outcome → 
       {result : BitVec 64} :
       call.run (Expr.evalAll env args) heap = some (result, after) →
       Exec prog depth env heap (.sys call target args) (.normal (env.set target result) after)
+  /-- The address of byte `offset` of the static region. -/
+  | static {depth : Nat} {env : Env} {heap : Heap} {target offset : Nat} :
+      Exec prog depth env heap (.static target offset)
+        (.normal (env.set target (BitVec.ofNat 64 (heap.staticBase + offset))) heap)
+  /-- A byte of the static region, which starts above frame memory. -/
+  | loadByteStatic {depth : Nat} {env : Env} {heap : Heap} {target : Nat} {address : Expr} {k : Nat} :
+      heap.top ≤ heap.staticBase → (address.eval env).toNat = heap.staticBase + k → k < heap.statics.length →
+      Exec prog depth env heap (.loadByte target address)
+        (.normal (env.set target (BitVec.ofNat 64 (heap.statics.getD k 0).toNat)) heap)
   /-- `bytes` of frame memory below the frame pointer, whose new value goes to
   `target`. -/
   | frame {depth : Nat} {env : Env} {heap : Heap} {target bytes : Nat} :

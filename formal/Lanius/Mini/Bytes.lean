@@ -171,6 +171,15 @@ def trapBytes : List UInt8 := [15, 11]
 /-- r15 holds the lowest address the stack may reach. -/
 def stackRegister : Register := 15
 
+/-- r8 holds the address of the static bytes, which the loader places with
+the code (SEMANTIC_DECISIONS "Addressed locals" point 6). -/
+def staticRegister : Register := 8
+
+/-- `lea rax, [r8 + offset]; sub rax, r12`: the heap address of static byte
+`offset`. -/
+def staticSpec (offset : Nat) : List UInt8 :=
+  addressBytes 0 staticRegister (BitVec.ofNat 32 offset) ++ aluBytes .w64 .subtract 0 heapBaseRegister
+
 /-- `cmp r15, rsp` -/
 def stackCompareBytes : List UInt8 := [73, 57, 231]
 
@@ -272,6 +281,7 @@ def Instr.bytes (i : Instr) (place : Place) (pc : Nat) : List UInt8 :=
   | .fp operation slot => accToRcxBytes ++ slotLoadBytes slot ++ operation.opcodeBytes
   | .sys kind slot => sysSpec kind slot
   | .frame bytes => frameSpec bytes
+  | .static offset => staticSpec offset
 
 /-! The extracted encoders are the x86 ones. (A float operation's SSE bytes
 are the extracted ones themselves: `Simulation.lean` proves what each
@@ -379,6 +389,7 @@ theorem Instr.encode_eq (i : Instr) (place : Place) (pc : Nat) : i.encode place 
         le32_i32Bytes _ _ (slotOffset_toNat (slot + 1)), le32_i32Bytes _ _ (slotOffset_toNat (slot + 2))]
       rfl
   | frame bytes => simp only [Instr.encode, Instr.bytes, frameMemoryBytes, le64_eq]; rfl
+  | static offset => rw [Instr.encode, Instr.bytes, staticSpec, le32_eq]; rfl
 
 /-- A transfer by `relative source target` from `base + source` lands on `base + target`. -/
 theorem relative_eq (base : BitVec 64) (source target : Nat) (sourceSmall : source < 2 ^ 31)
@@ -492,6 +503,7 @@ theorem Instr.bytes_length (place : Place) (pc : Nat) (i : Instr) : (i.bytes pla
         List.length_append, List.length_map, List.length_range, Instr.size]
       decide
   | frame bytes => rw [← Instr.encode_eq]; simp [Instr.encode, frameMemoryBytes, le64, Instr.size]
+  | static offset => rw [← Instr.encode_eq]; simp [Instr.encode, le32, Instr.size]
 
 theorem Instr.encode_length (place : Place) (pc : Nat) (i : Instr) : (i.encode place pc).length = i.size := by
   rw [Instr.encode_eq, Instr.bytes_length]

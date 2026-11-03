@@ -370,6 +370,49 @@ theorem loadAt_steps (s : State) (loaded : CodeAt s.memory s.rip loadAtSpec) :
   · intro register zero
     simp [s2, s1, State.loadByte, State.alu64, State.alu, zero]
 
+theorem address_noRead {s : State} {destination base : Register} {displacement : BitVec 32}
+    (loaded : CodeAt s.memory s.rip (addressBytes destination base displacement)) : NoRead s :=
+  NoRead.of loaded (address_decodes destination base displacement) rfl
+
+theorem signExtend_small32 {n : Nat} (h : n < 2 ^ 31) :
+    (BitVec.ofNat 32 n).signExtend 64 = BitVec.ofNat 64 n := by
+  apply BitVec.eq_of_toNat_eq
+  have hs : (BitVec.ofNat 32 n).msb = false := by
+    rw [BitVec.msb_eq_getMsbD_zero, BitVec.getMsbD_eq_getLsbD]
+    simp only [show 0 < 32 by decide, decide_true, Bool.true_and, show 32 - 1 = 31 by decide]
+    have hn : (BitVec.ofNat 32 n).toNat < 2 ^ 31 := by
+      simpa [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (show n < 2 ^ 32 by omega)] using h
+    exact Nat.testBit_lt_two_pow hn
+  simp [BitVec.toNat_signExtend, hs, Nat.mod_eq_of_lt (show n < 2 ^ 32 by omega),
+    Nat.mod_eq_of_lt (show n < 2 ^ 64 by omega)]
+
+/-- The static address: rax becomes r8 plus `offset` less r12, the heap
+offset of byte `offset` of the static region. -/
+theorem static_steps (s : State) (offset : Nat) (small : offset < 2 ^ 31)
+    (loaded : CodeAt s.memory s.rip (staticSpec offset)) :
+    ∃ s', Steps 2 s s' ∧ Det 2 s s' ∧ s'.io = s.io ∧ s'.memory = s.memory ∧ s'.rip = s.rip + BitVec.ofNat 64 10 ∧
+      s'.registers 0 = s.registers staticRegister + BitVec.ofNat 64 offset - s.registers heapBaseRegister ∧
+      ∀ register, register ≠ 0 → s'.registers register = s.registers register := by
+  have c0 := loaded
+  simp only [staticSpec] at c0
+  let s1 := s.address64 0 staticRegister none 0 (BitVec.ofNat 32 offset)
+    (addressBytes 0 staticRegister (BitVec.ofNat 32 offset)).length
+  have t1 : Lanius.X86.Machine.Step s s1 := address_step s s1 0 staticRegister _ c0.prefix rfl
+  have c1 := c0.next (s' := s1) rfl rfl
+  let s2 := s1.alu64 .subtract 0 heapBaseRegister false (aluBytes .w64 .subtract 0 heapBaseRegister).length
+  have t2 : Lanius.X86.Machine.Step s1 s2 := alu_step .w64 s1 s2 .subtract _ _ c1 false rfl
+  refine ⟨s2, .cons t1 (.cons t2 (.refl _)),
+    Det.cons t1 (address_noRead c0.prefix) (Det.cons t2 (alu_noRead c1) (Det.refl _)), rfl, rfl, ?_, ?_, ?_⟩
+  · simp only [s2, s1, State.alu64, State.alu, State.address64]
+    rw [show (aluBytes .w64 .subtract 0 heapBaseRegister).length = 3 from rfl,
+      show (addressBytes 0 staticRegister (BitVec.ofNat 32 offset)).length = 7 from rfl]
+    bv_omega
+  · simp only [s2, s1, State.alu64, State.alu, State.address64, Alu.result, BitVec.setWidth_eq, if_pos,
+      signExtend_small32 small]
+    simp [show heapBaseRegister ≠ (0 : Register) from by decide]
+  · intro register zero
+    simp [s2, s1, State.alu64, State.alu, State.address64, zero]
+
 /-- The byte store: the low byte of rax goes to the heap at the offset in `slot`. -/
 theorem storeAt_steps (s : State) (slot : Nat) (loaded : CodeAt s.memory s.rip (storeAtSpec slot)) :
     ∃ s', Steps 3 s s' ∧ Det 3 s s' ∧ s'.io = s.io ∧ s'.rip = s.rip + BitVec.ofNat 64 16 ∧

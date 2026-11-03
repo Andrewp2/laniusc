@@ -33,6 +33,57 @@ def Agree (base : Nat) (env : Env) (m : Machine) : Prop := ∀ index, index < ba
 def SourceCalls (prog : Program) (depth : Nat) : Calls :=
   fun callee args heap values after => ∃ inner, inner < depth ∧ prog.Returns inner callee args heap values after
 
+theorem Heap.writeLE_statics : ∀ (heap : Heap) (address value count : Nat),
+    (heap.writeLE address value count).staticBase = heap.staticBase ∧
+      (heap.writeLE address value count).statics = heap.statics
+  | _, _, _, 0 => ⟨rfl, rfl⟩
+  | heap, address, value, count + 1 => by
+    have := Heap.writeLE_statics (heap.write address (UInt8.ofNat value)) (address + 1) (value / 256) count
+    exact ⟨this.1, this.2⟩
+
+theorem Syscall.run_statics {call : Syscall} {args : List (BitVec 64)} {heap after : Heap} {result : BitVec 64}
+    (ran : call.run args heap = some (result, after)) :
+    after.staticBase = heap.staticBase ∧ after.statics = heap.statics := by
+  cases call <;>
+  match args, ran with
+  | [fd, address, count], ran =>
+    rw [Syscall.run] at ran
+    split at ran
+    · cases ran; exact ⟨rfl, rfl⟩
+    · cases ran
+  | [], ran => simp [Syscall.run] at ran
+  | [_], ran => simp [Syscall.run] at ran
+  | [_, _], ran => simp [Syscall.run] at ran
+  | _ :: _ :: _ :: _ :: _, ran => simp [Syscall.run] at ran
+
+/-- The heap an outcome ends with. -/
+def Outcome.finalHeap : Outcome → Heap
+  | .normal _ heap => heap
+  | .returned _ heap => heap
+  | .broke _ heap => heap
+  | .continued _ heap => heap
+
+/-- No statement moves or writes the static region. -/
+theorem Exec.statics {prog : Program} {d : Nat} {env : Env} {heap : Heap} {s : Stmt} {out : Outcome}
+    (exec : Exec prog d env heap s out) :
+    out.finalHeap.staticBase = heap.staticBase ∧ out.finalHeap.statics = heap.statics := by
+  induction exec with
+  | seq _ _ ih1 ih2 => exact ⟨ih2.1.trans ih1.1, ih2.2.trans ih1.2⟩
+  | loopNext _ _ _ ih1 ih2 => exact ⟨ih2.1.trans ih1.1, ih2.2.trans ih1.2⟩
+  | call _ _ _ _ _ ih => exact ih
+  | seqReturned _ ih => exact ih
+  | ifTrue _ _ ih => exact ih
+  | ifFalse _ _ ih => exact ih
+  | loopReturned _ _ ih => exact ih
+  | seqBroke _ ih => exact ih
+  | seqContinued _ ih => exact ih
+  | loopBroke _ _ ih => exact ih
+  | loopContinued _ _ _ ih1 ih2 => exact ⟨ih2.1.trans ih1.1, ih2.2.trans ih1.2⟩
+  | skip | assign | loopDone | ret | brk | cont | alloc | loadByte | storeByte | loadWord | divide | frame | static
+    | loadByteStatic => exact ⟨rfl, rfl⟩
+  | storeWord => exact Heap.writeLE_statics _ _ _ _
+  | sys ran => exact Syscall.run_statics ran
+
 theorem Instr.exec_singleton (i : Instr) (m : Machine) : Instr.exec [i] m = i.step m := rfl
 
 theorem Agree.of_slots (agree : Agree base env m) (same : ∀ slot, slot < base → m'.slots slot = m.slots slot) :
@@ -471,7 +522,9 @@ theorem compileStmt_correct {prog : Program} {base : Nat} {arities : List Arity}
         (Instr.exec (compileArgs base args 0) m).heap value after := by
       rw [values, Instr.exec_heap, onHeap]
       exact ⟨inner, lower, func, lookup, by rw [evalAll_length, length], calleeExec⟩
-    apply StmtResult.step (.call (by rw [Instr.exec_pc, pc]; exact placed.right.fetch) returns counted)
+    apply StmtResult.step (.call (by rw [Instr.exec_pc, pc]; exact placed.right.fetch) returns counted
+      (by rw [Instr.exec_heap, onHeap]; exact (Exec.statics calleeExec).1)
+      (by rw [Instr.exec_heap, onHeap]; exact (Exec.statics calleeExec).2))
     refine ⟨_, .refl _, by simp only [Instr.exec_pc, pc, codeSize_append, codeSize]; omega, ?_,
       by simp only [Instr.exec_heap, onHeap]⟩
     intro other below
@@ -595,6 +648,32 @@ theorem compileStmt_correct {prog : Program} {base : Nat} {arities : List Arity}
     · simp only [Instr.exec_pc, pc, codeSize_append, codeSize, Instr.size]; omega
     · exact fun slot below _ => (slots slot below).trans (agree slot below)
     · exact heapAt
+  | @static depth env heap target offset =>
+    intro pos brk cont m placed pc agree onHeap within
+    subst onHeap
+    simp only [compileStmt] at placed ⊢
+    obtain ⟨staticAt, storeAt⟩ := placed.pair
+    apply StmtResult.step (.straight (pc ▸ staticAt).fetch rfl)
+    refine stored_result ?_ ?_ ?_ _ rfl
+    · exact storeAt.at (by simp only [Instr.step, pc])
+    · simp only [Instr.step, codeSize, Instr.size]; omega
+    · exact fun slot below _ => agree slot below
+  | @loadByteStatic depth env heap target address k above here within' =>
+    intro pos brk cont m placed pc agree onHeap within
+    simp only [Stmt.within, Bool.and_eq_true, decide_eq_true_eq] at within
+    simp only [compileStmt] at placed ⊢
+    obtain ⟨acc, kept⟩ := compileExpr_correct base address 0 env m agree within.2
+    apply StmtResult.prefix (pc ▸ placed.left) (compileExpr_straight _ _ _)
+    obtain ⟨loadAt, storeAt⟩ := placed.right.pair
+    have heapAt := (Instr.exec_heap (compileExpr base address 0) m).trans onHeap
+    apply StmtResult.step (.loadAtStatic (k := k) (by rw [Instr.exec_pc, pc]; exact loadAt.fetch)
+      (by rw [heapAt]; exact above) (by rw [heapAt, acc]; exact here) (by rw [heapAt]; exact within'))
+    rw [heapAt]
+    refine stored_result ?_ ?_ ?_ _ ?_
+    · exact storeAt.at (by simp only [Instr.exec_pc, pc])
+    · simp only [Instr.exec_pc, pc, codeSize_append, codeSize, Instr.size]; omega
+    · exact fun slot below _ => (kept slot (by omega)).trans (agree slot below)
+    · first | rfl | exact heapAt
   | @frame depth env heap target bytes room =>
     intro pos brk cont m placed pc agree onHeap within
     simp only [compileStmt] at placed ⊢

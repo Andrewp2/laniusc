@@ -382,7 +382,7 @@ theorem Exec.limit {prog : Program} {d : Nat} {env : Env} {heap : Heap} {s : Stm
   | seqContinued _ ih => exact ih
   | loopBroke _ _ ih => exact ih
   | loopContinued _ _ _ ih1 ih2 => exact ih2.trans ih1
-  | skip | assign | loopDone | ret | brk | cont | alloc | loadByte | storeByte | loadWord | divide | frame => rfl
+  | skip | assign | loopDone | ret | brk | cont | alloc | loadByte | storeByte | loadWord | divide | frame | static | loadByteStatic => rfl
   | storeWord => exact (Heap.writeLE_limit _ _ _ _).1
   | sys ran =>
     exact (Syscall.run_frame ran).1
@@ -401,7 +401,7 @@ theorem Exec.top {prog : Program} {d : Nat} {env : Env} {heap : Heap} {s : Stmt}
   | seqContinued _ ih => exact ih
   | loopBroke _ _ ih => exact ih
   | loopContinued _ _ _ ih1 ih2 => exact ih2.trans ih1
-  | skip | assign | loopDone | ret | brk | cont | alloc | loadByte | storeByte | loadWord | divide | frame => rfl
+  | skip | assign | loopDone | ret | brk | cont | alloc | loadByte | storeByte | loadWord | divide | frame | static | loadByteStatic => rfl
   | storeWord => exact (Heap.writeLE_top _ _ _ _).1
   | sys ran =>
     exact Syscall.run_top ran

@@ -633,6 +633,8 @@ theorem Exec.mono {prog : Program} {d : Nat} {env : Env} {heap : Heap} {s : Stmt
   | ret => exact .ret
   | alloc room => exact .alloc room
   | frame room => exact .frame room
+  | static => exact .static
+  | loadByteStatic above here within => exact .loadByteStatic above here within
   | loadByte inside => exact .loadByte inside
   | storeByte inside => exact .storeByte inside
   | loadWord inside => exact .loadWord inside

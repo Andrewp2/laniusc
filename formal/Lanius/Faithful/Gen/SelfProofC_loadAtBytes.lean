@@ -158,9 +158,8 @@ theorem step_layout {prog : SrcProgram} {prims : Prims} {ix_layout ix_plus ix_em
   simp only [src_layout] at h
   faithful [Lanius.Mini.layout]
 
-theorem step_link_onto {prog : SrcProgram} {prims : Prims} {ix_link_onto ix_plus ix_empty_of_u8 ix_Code_size ix_unbox_of_mini_selfhost_List_mini_selfhost_Code ix_concat_of_u8 ix_prologue ix_encode_onto : Nat} (fn : prog.funcs[ix_link_onto]? = some (src_link_onto ix_plus ix_empty_of_u8 ix_link_onto ix_Code_size ix_unbox_of_mini_selfhost_List_mini_selfhost_Code ix_concat_of_u8 ix_prologue ix_encode_onto)) (np : prims.isPrim ix_link_onto = false)
+theorem step_link_onto {prog : SrcProgram} {prims : Prims} {ix_link_onto ix_plus ix_Code_size ix_unbox_of_mini_selfhost_List_mini_selfhost_Code ix_concat_of_u8 ix_prologue ix_encode_onto : Nat} (fn : prog.funcs[ix_link_onto]? = some (src_link_onto ix_plus ix_link_onto ix_Code_size ix_unbox_of_mini_selfhost_List_mini_selfhost_Code ix_concat_of_u8 ix_prologue ix_encode_onto)) (np : prims.isPrim ix_link_onto = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
-    (ext_empty_of_u8 : Certified (∀ {n : Nat}, Stmt_empty_of_u8 prog prims ix_empty_of_u8 n))
     (ext_Code_size : Certified (∀ {n : Nat}, Stmt_Code_size prog prims ix_Code_size n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_Code : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Code prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Code n))
     (ext_concat_of_u8 : Certified (∀ {n : Nat}, Stmt_concat_of_u8 prog prims ix_concat_of_u8 n))
@@ -168,7 +167,7 @@ theorem step_link_onto {prog : SrcProgram} {prims : Prims} {ix_link_onto ix_plus
     (ext_encode_onto : Certified (∀ {n : Nat}, Stmt_encode_onto prog prims ix_encode_onto n)) {n : Nat}
     (ih_link_onto : Certified (Stmt_link_onto prog prims ix_link_onto n)) :
     Stmt_link_onto prog prims ix_link_onto (n + 1) := by
-  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
   rw [pcall_succ np fn] at h
   simp only [src_link_onto] at h
   faithful [Lanius.Mini.linkOnto]

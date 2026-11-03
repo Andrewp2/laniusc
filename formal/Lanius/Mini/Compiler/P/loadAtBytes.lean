@@ -124,6 +124,7 @@ def Instr.encode (self : Instr) (place : Place) (pc : Nat) : List UInt8 :=
   | .fp operation slot => FOp.bytes operation slot
   | .sys kind slot => sysBytes kind slot
   | .frame bytes => frameMemoryBytes bytes
+  | .static offset => 73 :: 141 :: [128] ++ (le32 (BitVec.ofNat 32 offset) ++ 76 :: 41 :: [224])
 
 def encodeFrom (place : Place) (pc : Nat) (code : List Instr) : List UInt8 :=
   match code with
@@ -154,9 +155,9 @@ def encodeOnto (place : Place) (pc : Nat) (code : List Instr) (tail : List UInt8
   | i :: rest => Instr.encode i place pc ++ encodeOnto place (pc + Instr.size i) rest tail
 
 /-- link_from's bytes, each function's built in front of the rest instead of concatenated onto it: concat copies its first list, and the heap of the self-built verified compiler is never freed (roadmap F12). -/
-def linkOnto (entries : List Nat) (start : Nat) (codes : List Code) : List UInt8 :=
+def linkOnto (entries : List Nat) (start : Nat) (codes : List Code) (tail : List UInt8) : List UInt8 :=
   match codes with
-  | [] => []
-  | code :: rest => prologue code.slots ++ encodeOnto ({ body := start + 24, slots := code.slots, entries := entries } : Place) 0 code.instrs (linkOnto entries (start + Code.size code) rest)
+  | [] => tail
+  | code :: rest => prologue code.slots ++ encodeOnto ({ body := start + 24, slots := code.slots, entries := entries } : Place) 0 code.instrs (linkOnto entries (start + Code.size code) rest tail)
 
 end Lanius.Mini

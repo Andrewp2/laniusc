@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::compile_program -/
-def src_compile_program (ix_compile_funcs : Nat) (ix_arities : Nat) (ix_link : Nat) : SrcFunc := { params := [{ id := 16, ty := ty99 }], ret := ty69, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.eCall ix_compile_funcs [SrcEff.eCall ix_arities [SrcEff.ePure (SrcExpr.field 16 0)], SrcEff.ePure (SrcExpr.field 16 0)]) ty144 ty69 [[168], []] [SrcEff.eCall ix_link [SrcEff.ePure (SrcExpr.local 168)], SrcEff.eVariant ty69 1 []]) }
+def src_compile_program (ix_compile_funcs : Nat) (ix_arities : Nat) (ix_link : Nat) : SrcFunc := { params := [{ id := 16, ty := ty99 }], ret := ty69, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.eCall ix_compile_funcs [SrcEff.eCall ix_arities [SrcEff.ePure (SrcExpr.field 16 0)], SrcEff.ePure (SrcExpr.field 16 0)]) ty144 ty69 [[168], []] [SrcEff.eCall ix_link [SrcEff.ePure (SrcExpr.local 168), SrcEff.ePure (SrcExpr.field 16 1)], SrcEff.eVariant ty69 1 []]) }
 
 /-- mini::selfhost::image_limit -/
 def src_image_limit : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000040000000#64) }

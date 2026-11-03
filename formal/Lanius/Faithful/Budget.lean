@@ -235,16 +235,16 @@ theorem bcert_plus {n : Nat} : BStmt_plus progW prog prims 75 n := by
     exact ⟨rfl, rfl, RepNat.mk lt⟩
 
 open Lanius.Faithful.Self Lanius.Faithful.SelfRep Lanius.Faithful.SelfCert Lanius.Faithful.SelfPanics in
-theorem bcert_times {n : Nat} : BStmt_times progW prog prims 105 n := by
+theorem bcert_times {n : Nat} : BStmt_times progW prog prims 106 n := by
   intro x0 x1 v0 v1 w k b h r0 r1 _ pre
   cases r0 with | mk l0 =>
   cases r1 with | mk l1 =>
   cases n with
   | zero => cases h
   | succ n =>
-    have fnW : progW.funcs[105]? = some (wrapFunc .times (src_times 50)) := by
-      rw [progW, wrapAt_get, if_pos (show SelfPure.ixTimes = 105 from rfl),
-        wrapAt_ne (show SelfPure.ixPlus ≠ 105 by decide), fn_times]
+    have fnW : progW.funcs[106]? = some (wrapFunc .times (src_times 50)) := by
+      rw [progW, wrapAt_get, if_pos (show SelfPure.ixTimes = 106 from rfl),
+        wrapAt_ne (show SelfPure.ixPlus ≠ 106 by decide), fn_times]
       rfl
     have lt : x0 * x1 < 2 ^ 64 := pre
     rw [qcall_succ np_times fnW] at h

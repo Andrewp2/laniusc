@@ -182,6 +182,9 @@ def compiler_forms():
         form('sub rax, r11', [0x4C, 0x29, 0xD8]),
         form('mov r11, rax', [0x49, 0x89, 0xC3]),
         form('mov rbx, rax', [0x48, 0x89, 0xC3]),
+        # A static byte's heap offset: r8, the static bytes' address, plus the offset, less r12.
+        form('lea rax, [r8+disp32]', [0x49, 0x8D, 0x80], 'disp32', base=8, width=1),
+        form('sub rax, r12', [0x4C, 0x29, 0xE0]),
         form('call rel32', [0xE8], 'rel32', 'call'),
         form('push rbp', [0x55], kind='push'),
         form('pop rbp', [0x5D], kind='pop'),
