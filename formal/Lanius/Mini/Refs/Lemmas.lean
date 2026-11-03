@@ -194,7 +194,7 @@ termination_by structural ty => ty
 
 theorem fieldsSlot_fits : ∀ (fs : List SrcType) (total above s : Nat), s < sizes fs →
     above + fieldWords fs ≤ total →
-    (fieldsSlotAt total above fs s).1 + (fieldsSlotAt total above fs s).2.bytes ≤ 8 * total
+    (fieldsSlotAt total above fs s).1 + (fieldsSlotAt total above fs s).2.bytes ≤ 8 * (total - above)
   | [], _, _, s, lt, _ => by simp [sizes] at lt
   | t :: rest, total, above, s, lt, room => by
     simp only [fieldWords] at room
@@ -206,7 +206,8 @@ theorem fieldsSlot_fits : ∀ (fs : List SrcType) (total above s : Nat), s < siz
       dsimp only
       omega
     · rename_i h
-      exact fieldsSlot_fits rest total (above + t.words) (s - t.size) (by omega) (by omega)
+      have := fieldsSlot_fits rest total (above + t.words) (s - t.size) (by omega) (by omega)
+      omega
 termination_by structural fs => fs
 end
 
