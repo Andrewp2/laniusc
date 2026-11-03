@@ -1,0 +1,3 @@
+# RefStoreV2
+
+Replaces `RefStore`, adding `ty.tagsFit = true` (see RefStore/NOTES.md for the counterexample). Plan as for RefStore. The stores (`storesFrom_exec`, at `refSlotAt`) write each slot's low bytes into ranges that lie apart (`slots_apart`) and inside the parent's slots (`SlotsIn`). Slot `j + s` of the home's new view is then slot `s` of `v`, cut to its width. `HoldsAt.trunc` (homed and `tagsFit` types) gives `v` there. This covers junk enum payload slots past the active variant's fields, which are stored cut too. A `u8` stored as one byte into a 4-byte home word keeps the word's upper bytes, which are zero because the old value was below 256. The rest of the home is untouched, so `SrcType.sub_replace` rebuilds `root'`. The other homes lie apart.

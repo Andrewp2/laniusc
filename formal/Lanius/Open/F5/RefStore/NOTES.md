@@ -1,3 +1,7 @@
 # RefStore
 
 Mini side, plus Core's `replaceProjectedValue` and `assignCell` (old helper lemmas in target/claude-work/leafA/f5-old/Lemmas.lean: `assignCell_read`, `storesFrom_exec`, `storeSlots_holds`). Slots of one value occupy disjoint bytes, so a store changes only its slot's bytes. The other homes are kept by `apart` (different cells, blocks apart). Home `i` itself: the siblings' slots keep their bytes, the sub-place's new bytes hold `v`. `v` holds against the older homes, as home `i`'s value must. The template stores at `refSlotAt`, `slotAt` but one byte for a `u8` referent: inside a struct or a scalar home a `u8` is a native 4-byte word, whose 4-byte reading in `HoldsAt` gives zero upper bytes, so a one-byte store of a byte keeps the 4-byte reading exact.
+
+## False as stated: replaced by RefStoreV2 (leafA, 11-03)
+
+A tag is stored in 4 bytes (`slotAt` gives an enum's tag `widthOf` m32), but `HoldsAt` allows any tag below `variants.length`. Counterexample: a home whose type is an enum with `2 ^ 32 + 1` payload-less variants, holding variant `2 ^ 32`; `v` in slot `slot` is `BitVec.ofNat 64 (2 ^ 32)`. The store writes its low 4 bytes, all zero, so the home's view afterwards reads tag 0 and cannot hold `.enumeration id (2 ^ 32) []`, which `Homes st' hp'` requires. `RefStoreV2` adds `ty.tagsFit = true` (every enum in the referent has at most `2 ^ 32` variants), which the type checker can ensure. `RefsLemmas` has `RefStore` as a conjunct, so its V2 takes `RefStoreV2`.

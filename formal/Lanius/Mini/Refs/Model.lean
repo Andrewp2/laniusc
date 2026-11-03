@@ -334,6 +334,37 @@ def variantsUniform : List (List SrcType) → Bool
   | fields :: rest => fieldsUniform fields && variantsUniform rest
 end
 
+mutual
+/-- Whether every enum in the type has at most `2 ^ 32` variants, so that
+each tag fits the 4-byte native tag word (Core's `encodeNatLE 4`, and the
+4-byte stores and loads at `slotAt`). A value of an enum with more variants
+cannot be stored and read back by its tag word. -/
+def SrcType.tagsFit : SrcType → Bool
+  | .struct _ fields => fieldsTagsFit fields
+  | .enum _ variants => decide (variants.length ≤ 2 ^ 32) && variantsTagsFit variants
+  | .array element _ => element.tagsFit
+  | .i32 => true
+  | .bool => true
+  | .uint _ => true
+  | .ptr => true
+  | .slice _ => true
+  | .unit => true
+  | .isize => true
+  | .char => true
+  | .float _ => true
+  | .sint _ => true
+  | .view _ => true
+  | .str => true
+
+def fieldsTagsFit : List SrcType → Bool
+  | [] => true
+  | t :: rest => t.tagsFit && fieldsTagsFit rest
+
+def variantsTagsFit : List (List SrcType) → Bool
+  | [] => true
+  | fields :: rest => fieldsTagsFit fields && variantsTagsFit rest
+end
+
 /-! ## Sub-places -/
 
 /-- One projection into a value of `ty`: the byte offset of the field's or
