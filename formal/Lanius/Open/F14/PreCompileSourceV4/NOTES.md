@@ -21,3 +21,15 @@
   front-end or lowering check, e.g. `frameBlock` summed against a limit as it adds up (as `stmt_room`
   does), or a per-function bound on the source body's lets before `frame_block`; the same goes for
   any other whole-body sum in lowering (`SrcStmt_array_bytes`, `params_array_bytes`).
+- 11-03 (leafB), on leafA's need_round note: the M-form does not bound the rounds. `funcNeeds` runs
+  `needsAfter funcs [] funcs.length`: at most F + 1 rounds (F functions), each adding at most one
+  `frameBlock` (≤ 2^31 with leafA's check) along a call cycle, so a need after k rounds is at most
+  (k + 1) * 2^31. A round costs about F steps plus the bodies' walks, not 2^31, so `nb next ≤ M + Cost`
+  fails, and `k ≤ F ≤ hb p ≤ 2^62` alone allows 2^93. What does hold: reaching round k costs at least
+  k * F and k ≤ F + 1, so k^2 ≤ 2b ≤ 2^63, k < 2^32, and a need stays below 2^63 + 2^31. That is a
+  cost-relative argument across rounds (rounds done times F against the budget spent), which the
+  generated pre form (it sees only the budget left) cannot state; it would be a hand-proved group
+  for `needs_after`/`need_round` with that invariant, tight at 2^64. Cheaper: a front-end limit on
+  the number of functions (F ≤ 2^30 gives (F + 2) * 2^31 ≤ 2^62, an M-form override
+  `nb p1 + 2^31 * (p2 + 1) ≤ 2^31 * (p0.length + 2)` plus F's premise), or needs that saturate at a
+  limit in the compiler. Either is a new premise (V5) or a .lani change; for the coordinator.
