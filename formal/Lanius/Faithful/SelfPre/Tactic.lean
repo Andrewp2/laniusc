@@ -600,7 +600,10 @@ where
 share most of their context and ask the same premises (let_first: 3,364 premises
 asked again of 7,338). With each proof, the free variables it uses (in context
 order), their types and whether they are hypotheses. -/
-initialize arithCache : IO.Ref (Std.HashMap Nat (Std.HashMap Expr (Expr × Array (FVarId × Expr × Bool)))) ← IO.mkRef {}
+abbrev ArithCache := Std.HashMap Expr (Expr × Array (FVarId × Expr × Bool))
+/-- By run, a reference of the run's own: the runs of a module's theorems go on
+in parallel, and one shared map would make them wait on each other. -/
+initialize arithCache : IO.Ref (Std.HashMap Nat (IO.Ref ArithCache)) ← IO.mkRef {}
 initialize runCounter : IO.Ref Nat ← IO.mkRef 0
 
 register_option lanius.hb.run : Nat := {
@@ -663,7 +666,9 @@ def proveArith? (ty : Expr) : TacticM (Option Expr) := do
   let run := lanius.hb.run.get (← getOptions)
   let key ← instantiateMVars ty
   if run != 0 && !key.hasMVar then
-    if let some (p, fvs) := (← arithCache.get)[run]?.bind (·[key]?) then
+    if let some (p, fvs) ← (do match (← arithCache.get)[run]? with
+        | some r => return (← r.get)[key]?
+        | none => return none) then
       if let some p ← reuseProof? p fvs then
         dbg "hit"
         return some p
@@ -677,7 +682,7 @@ def proveArith? (ty : Expr) : TacticM (Option Expr) := do
       let fvs ← ds.mapM fun d => do
         let t ← instantiateMVars d.type
         return (d.fvarId, t, ← isProp t)
-      arithCache.modify fun m => m.insert run ((m.getD run {}).insert key (p, fvs))
+      if let some r := (← arithCache.get)[run]? then r.modify (·.insert key (p, fvs))
   return r
 
 /-- Add `p : t` to the context as `name`. -/
@@ -835,7 +840,8 @@ def postLemma? (c : Expr) : TacticM (Option Expr) := do
 /-- The facts' normal forms this run found: by the fact and the case splits'
 equations in the context (sibling goals ask the same facts again), the normal
 form, its equation, and the free variables that uses (as `arithCache`'s). -/
-initialize factCache : IO.Ref (Std.HashMap Nat (Std.HashMap Expr (Expr × Option Expr × Array (FVarId × Expr × Bool)))) ← IO.mkRef {}
+abbrev FactCache := Std.HashMap Expr (Expr × Option Expr × Array (FVarId × Expr × Bool))
+initialize factCache : IO.Ref (Std.HashMap Nat (IO.Ref FactCache)) ← IO.mkRef {}
 
 /-- A fact `t0`'s normal form (`simp only` by the heights' and the definitions'
 lemmas and the split equations) and its equation (`none`: unchanged up to
@@ -850,7 +856,9 @@ def normFact? (t0 : Expr) : TacticM (Option (Expr × Option Expr)) := withMainCo
     if let some d := lctx.findFromUserName? nm then eqTys := eqTys.push (← instantiateMVars d.type)
   let key := mkAppN (mkConst `Lanius.Faithful.SelfPre.Tactic.factKey) (#[t0] ++ eqTys)
   if run != 0 && !key.hasMVar then
-    if let some (t1, eq?, fvs) := (← factCache.get)[run]?.bind (·[key]?) then
+    if let some (t1, eq?, fvs) ← (do match (← factCache.get)[run]? with
+        | some r => return (← r.get)[key]?
+        | none => return none) then
       match eq? with
       | none => return some (t1, none)
       | some h =>
@@ -875,7 +883,7 @@ def normFact? (t0 : Expr) : TacticM (Option (Expr × Option Expr)) := withMainCo
         ds.mapM fun d => do
           let t ← instantiateMVars d.type
           return (d.fvarId, t, ← isProp t)
-    factCache.modify fun m => m.insert run ((m.getD run {}).insert key (t1, eq?, fvs))
+    if let some r := (← factCache.get)[run]? then r.modify (·.insert key (t1, eq?, fvs))
   return some (t1, eq?)
 
 /-- Upper bounds for every value the context's heights and cost-model calls
@@ -1080,9 +1088,21 @@ partial def closeArith (fuel : Option Expr) (base : Expr) (depth : Nat := 0) : T
   hbNorm
   dbg "norm"
   if (← getGoals).isEmpty then return
+  let before ← withMainContext do return (← getLCtx).getFVarIds
   let _ ← hbFacts fuel base
   dbg "facts"
-  hbNorm
+  -- the new facts only: the rest is as the `hbNorm` above left it (and the
+  -- facts `hbFacts` normalized itself are so too)
+  let fresh ← withMainContext do
+    let mut out := #[]
+    for d in ← getLCtx do
+      if d.isImplementationDetail || before.contains d.fvarId then continue
+      out := out.push d.userName
+    return out
+  unless fresh.isEmpty do
+    let args ← simpArgs (← inlineIds)
+    let hs := fresh.map mkIdent
+    evalTactic (← `(tactic| try simp only [$args,*] at $hs*))
   dbg "norm2"
   if (← getGoals).isEmpty then return
   let t ← withMainContext do instantiateMVars (← (← getMainGoal).getType)
@@ -1129,6 +1149,10 @@ saving them is single-threaded at the end of the module and took most of a
 GenP module's build time. -/
 def quietly (x : TacticM Unit) : TacticM Unit := do
   let run ← runCounter.modifyGet fun n => (n + 1, n + 1)
+  let ar ← IO.mkRef ({} : ArithCache)
+  let fr ← IO.mkRef ({} : FactCache)
+  arithCache.modify (·.insert run ar)
+  factCache.modify (·.insert run fr)
   try
     withTheReader Core.Context (fun c => { c with options := lanius.hb.run.set c.options run })
       (withEnableInfoTree false x)
