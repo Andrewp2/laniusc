@@ -398,6 +398,7 @@ theorem castToFloat_sound {ft : FloatTy} {inner t : Typed} {env : Env} {w result
     simp [hty, SrcType.sintKind] at base
   · simp at lowered
   · simp at lowered
+  · simp at lowered
 
 /-- Core's float operations have a result on the operands a float operation lowers for. -/
 theorem floatArith_defined {op : BinOp} {cop : Core.BinaryOp}

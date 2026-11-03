@@ -505,7 +505,7 @@ theorem narrow_cast_holds {k : UintTy} (narrow : k.isWide = false) {ty : SrcType
       rw [hb]
       exact emod_width narrow (by rw [low_widen])
   | bool | ptr => simp [SrcType.isScalar, SrcType.isBool, SrcType.isPtr] at scalar
-  | struct | enum | slice | array | unit | view | str => simp [SrcType.Holds] at holds
+  | struct | enum | slice | array | unit | view | str | ref => simp [SrcType.Holds] at holds
 
 theorem holds_compare (c : Bool) : SrcType.Holds .bool (.boolean c) (if c then 1 else 0) :=
   ⟨c, rfl, by cases c <;> rfl⟩

@@ -436,14 +436,30 @@ COMPILE_POST_HAND = {
     'bump_bytes': bytes_hand([64]),
     'frame_memory_bytes': bytes_hand([64]),
     'sys_bytes': bytes_hand([32], [('post_syscall_rsi_bytes', 'x0')]),
-    # Inline.link's `if` (post_auto split it again and again, never rewriting it)
+    # compileProgram's inlined link (post_auto's omega ran out of budget on its two splits)
+    'compile_program': '''  intro h
+  have ha := post_arities n x0.funcs M (by have := hb_le_Program_funcs x0; omega) (by omega)
+  have hf := post_compile_funcs n (Lanius.Mini.arities x0.funcs) x0.funcs (M + Cost_arities n x0.funcs) ha
+    (by have := hb_le_Program_funcs x0; omega) (by omega)
+  cases hc : Lanius.Mini.compileFuncs (Lanius.Mini.arities x0.funcs) x0.funcs with
+  | none => simp only [hb_none]; omega
+  | some codes =>
+    simp only [hc] at h hf
+    have hl := post_link n codes x0.statics (M + Cost_arities n x0.funcs + Cost_compile_funcs n (Lanius.Mini.arities x0.funcs) x0.funcs)
+      (by simp only [hb_some] at hf; omega) (by have := hb_le_Program_statics x0; omega) (by omega)
+    exact Nat.le_trans hl (by dsimp only; omega)
+''',
+    # Inline.link's `if` and match on roomAfter (post_auto split them again and again);
+    # its fitting branch is Inline.linkFitting's body
     'link': '''  intro h
-  split
-  · have hl := post_layout n 0 x0 M hM0 (by omega)
-    have ho := post_link_onto n (Lanius.Mini.layout 0 x0) 0 x0 x1 (M + Cost_layout n 0 x0) hl (by omega) (by omega) (by omega)
-    simp only [hb_some, hb_Binary_mk, Nat.max_le]
-    refine ⟨?_, ?_, ?_, ?_⟩ <;> omega
-  · simp only [hb_none]
+  by_cases hs : x1.length ≤ Lanius.Mini.imageLimit
+  · simp only [hs, decide_true, if_true] at h ⊢
+    cases hr : Lanius.Mini.roomAfter (Lanius.Mini.imageLimit - x1.length) x0 with
+    | none => simp only [hb_none]; omega
+    | some r =>
+      simp only [hr] at h
+      exact post_link_fitting n x0 x1 M hM0 hM1 h
+  · simp only [hs, decide_false, if_false, hb_none]
     omega
 ''',
 }

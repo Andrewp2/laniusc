@@ -1916,6 +1916,46 @@ changes these trusted definitions, proposed here for the audit:
 The top theorems' statements do not change. A program's entry function
 takes no references, so `places = []` at the start.
 
+**Stage 1's order (decided 11-03, leafC).** `compileSource_correct` and
+its siblings hold for every program `compile_source` accepts, so the
+compiler accepts no reference form until stage 2 proves its lowering. Stage
+1 therefore lands in steps that each keep every top theorem proved:
+- S1: `SrcType.ref T` (`Ref(Box<SrcType>)`, one slot) exists and nothing
+  accepts it: no type with a reference is declared (`declare`), a reference
+  type is the same as no type (`same`), and every predicate and lowering
+  case of the compiler gives it the rejecting answer. `HoldsAt` has no
+  `ref` constructor yet, so no value is held at it.
+- S2: the layout definitions `HoldsAt.ref` reaches (`Access`, `accessKind`,
+  `words`, `subStep`, `sub`, `Addressed`, `Addressed.sub`, `RefTo`,
+  `RefHeld`) move before `HoldsAt` (`Mini/Layout.lean`) and become trusted;
+  `HoldsAt.ref` and `Addressed.pointer` for native layout (today only
+  `i32` and `u8` arrays are lent, whose pointer does not change). The
+  generalized `HoldsAt.borrowed` waits for the step that moves `ArrayCall`
+  and `Borrowed` onto `Homes` (point 7): under `FrameCorr` the callee's
+  slice code is proved from a whole lent `i32` or `u8` array, which the
+  general case does not give.
+- S3: Source's places, borrow, dereference and assignment through a place,
+  their `toCore`, and Core's typing of `Place.deref`; their lowering is
+  `none`.
+- S4: stage 2's top statement as an open statement, `SourceRefsCorrect`:
+  `compileSource` itself is correct for programs with references (one
+  compiler, the one that self-hosts, and one top theorem; decided 11-03 by
+  the coordinator, so there is no separate reference-accepting entry and no
+  flag in the trusted `SrcDecls`). While every reference form is rejected
+  it is `compileSource_correct`.
+- S5: the front end reads `&T`, `&mut T`, borrows, `*r` and the auto-deref
+  of reference parameters, and the lifetime check rejects the forms point 9
+  lists; `&self` keeps its by-value reading (point 10 waits for stage 2,
+  or every `&self` method would stop compiling).
+- S6: the lowering itself (homes, `RPlace.code`, loads and stores, reference
+  arguments) in `compile_source`, tested against Core, and
+  `compileSource_correct`'s proof extended with the F5 leaves. If that
+  cannot be done in one step, `compileSource_correct` takes for a while an
+  untrusted, decidable hypothesis `noRefs`, computed on the program
+  (recorded in TRUSTED_BASE as temporary; the self program discharges it by
+  `decide`), and `SourceRefsCorrect`, without it, is what is left to prove.
+When it is proved, point 10 lands.
+
 **Out of scope for F5.** Functions that return references (100 in the
 stdlib), and references in lets, struct fields, elements or results, until
 the lifetime checks of point 9; references to references; raw places
@@ -2463,6 +2503,33 @@ overflow: the pure compile still reaches its result at some fuel. A
 visited set in `ty_insts` would make it linear, but the reading's
 `TyInsts` relation is stated over the full expansion, so that change needs
 its own proof.
+
+## The image limit checked as the sizes add up (decided 11-03, F14)
+
+`link` checked the image limit only after it had added up every function's
+size (`linked_size`) and laid the functions out (`layout`, `link_onto`).
+Monomorphization copies a body once per instance, and the front end allows
+up to its fuel, about `4 * (tokens + prods)`, instances. So a program under
+2^31 words can compile to more than 2^64 bytes of code (PreCompileSourceV2's
+NOTES.md, 11-03), and those sums would overflow a usize before the check
+rejects the program. The compiler now checks as it goes:
+
+- `room_after(room, codes)` walks the functions and takes each one's size
+  out of the room left. It returns None as soon as a function does not fit.
+  It only compares and subtracts, so it adds nothing up.
+- `link` first checks that the static bytes fit the image limit. It then
+  takes the room left after them through `room_after`, and only then lays
+  the functions out and builds the image (`link_fitting`). Every offset
+  `layout` and `link_onto` add up is at most the image limit, 2^30.
+
+This only rejects programs that the old final check already rejected.
+`room_after(room, codes)` is Some exactly when `linked_size(codes) <= room`,
+which is `roomAfter_eq` in `Lanius/Mini/Correct.lean`. `compileProgram_eq`
+shows that `compileProgram` is the same function as before: it accepts the
+same programs with the same binary. So the behaviour is unchanged for every
+accepted program, and a rejected one is still rejected as `None`. Whole-
+program sums need no size lemmas now. Per-function sums (a function's
+`code_size` and its pc offsets) are not covered by this check.
 
 ## Budget certificates (decided 11-01, F14)
 

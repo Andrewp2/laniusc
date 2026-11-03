@@ -46,6 +46,7 @@ def srcWeight (t : SrcType) : Option Nat :=
   | .sint sk => some 1
   | .view viewLength => some 1
   | .str => some 1
+  | .ref referent => some 1
 def srcWeights (ts : List SrcType) : Option Nat :=
   match ts with
   | [] => some 0

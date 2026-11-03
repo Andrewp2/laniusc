@@ -46,13 +46,12 @@ theorem step_ite_code {prog : SrcProgram} {prims : Prims} {ix_ite_code ix_plus i
   simp only [src_ite_code] at h
   faithful [Lanius.Mini.Inline.iteCode]
 
-theorem proof_link {prog : SrcProgram} {prims : Prims} {ix_link ix_plus ix_layout ix_link_onto ix_image_limit ix_linked_size ix_length_of_u8 : Nat} (fn : prog.funcs[ix_link]? = some (src_link ix_plus ix_layout ix_link_onto ix_image_limit ix_linked_size ix_length_of_u8)) (np : prims.isPrim ix_link = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
-    (ext_layout : Certified (∀ {n : Nat}, Stmt_layout prog prims ix_layout n))
-    (ext_link_onto : Certified (∀ {n : Nat}, Stmt_link_onto prog prims ix_link_onto n))
+theorem proof_link {prog : SrcProgram} {prims : Prims} {ix_link ix_minus ix_image_limit ix_length_of_u8 ix_room_after ix_link_fitting : Nat} (fn : prog.funcs[ix_link]? = some (src_link ix_minus ix_image_limit ix_length_of_u8 ix_room_after ix_link_fitting)) (np : prims.isPrim ix_link = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_image_limit : Certified (∀ {n : Nat}, Stmt_image_limit prog prims ix_image_limit n))
-    (ext_linked_size : Certified (∀ {n : Nat}, Stmt_linked_size prog prims ix_linked_size n))
-    (ext_length_of_u8 : Certified (∀ {n : Nat}, Stmt_length_of_u8 prog prims ix_length_of_u8 n)) {n : Nat} :
+    (ext_length_of_u8 : Certified (∀ {n : Nat}, Stmt_length_of_u8 prog prims ix_length_of_u8 n))
+    (ext_room_after : Certified (∀ {n : Nat}, Stmt_room_after prog prims ix_room_after n))
+    (ext_link_fitting : Certified (∀ {n : Nat}, Stmt_link_fitting prog prims ix_link_fitting n)) {n : Nat} :
     Stmt_link prog prims ix_link n := by
   intro x0 x1 v0 v1 w h r0 r1
   rcases n with _ | n
@@ -60,6 +59,17 @@ theorem proof_link {prog : SrcProgram} {prims : Prims} {ix_link ix_plus ix_layou
   rw [pcall_succ np fn] at h
   simp only [src_link] at h
   faithful [Lanius.Mini.Inline.link]
+
+theorem proof_link_fitting {prog : SrcProgram} {prims : Prims} {ix_link_fitting ix_layout ix_link_onto : Nat} (fn : prog.funcs[ix_link_fitting]? = some (src_link_fitting ix_layout ix_link_onto)) (np : prims.isPrim ix_link_fitting = false)
+    (ext_layout : Certified (∀ {n : Nat}, Stmt_layout prog prims ix_layout n))
+    (ext_link_onto : Certified (∀ {n : Nat}, Stmt_link_onto prog prims ix_link_onto n)) {n : Nat} :
+    Stmt_link_fitting prog prims ix_link_fitting n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_link_fitting] at h
+  faithful [Lanius.Mini.Inline.linkFitting]
 
 theorem step_lookup_at {prog : SrcProgram} {prims : Prims} {ix_lookup_at ix_lookup : Nat} (fn : prog.funcs[ix_lookup_at]? = some (src_lookup_at ix_lookup)) (np : prims.isPrim ix_lookup_at = false) {n : Nat}
     (ih_lookup : Certified (Stmt_lookup prog prims ix_lookup n)) :
@@ -91,6 +101,15 @@ theorem step_offset_after {prog : SrcProgram} {prims : Prims} {ix_offset_after i
   rw [pcall_succ np fn] at h
   simp only [src_offset_after] at h
   faithful [Lanius.Mini.Inline.offsetAfter]
+
+theorem step_room_next {prog : SrcProgram} {prims : Prims} {ix_room_next ix_minus ix_room_after : Nat} (fn : prog.funcs[ix_room_next]? = some (src_room_next ix_minus ix_room_after)) (np : prims.isPrim ix_room_next = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n)) {n : Nat}
+    (ih_room_after : Certified (Stmt_room_after prog prims ix_room_after n)) :
+    Stmt_room_next prog prims ix_room_next (n + 1) := by
+  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  rw [pcall_succ np fn] at h
+  simp only [src_room_next] at h
+  faithful [Lanius.Mini.Inline.roomNext]
 
 theorem step_seq_code {prog : SrcProgram} {prims : Prims} {ix_seq_code ix_plus ix_concat_of_mini_selfhost_Instr ix_compile_stmt ix_code_size : Nat} (fn : prog.funcs[ix_seq_code]? = some (src_seq_code ix_plus ix_concat_of_mini_selfhost_Instr ix_compile_stmt ix_code_size)) (np : prims.isPrim ix_seq_code = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))

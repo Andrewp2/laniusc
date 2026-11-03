@@ -509,23 +509,4 @@ theorem bstep_within_layouts {spW sp : SrcProgram} {prims : Prims} {ix_within_la
     budget
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
 
-theorem bstep_within_payloads {spW sp : SrcProgram} {prims : Prims} {ix_within_payloads ix_sizes ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_within_layouts : Nat}
-    (fnW : spW.funcs[ix_within_payloads]? = some (src_within_payloads ix_sizes ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_within_layouts ix_within_payloads)) (fn : sp.funcs[ix_within_payloads]? = some (src_within_payloads ix_sizes ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_within_layouts ix_within_payloads))
-    (np : prims.isPrim ix_within_payloads = false)
-    (back : Certified (∀ {n : Nat}, Stmt_within_payloads sp prims ix_within_payloads n))
-    (b_sizes : Certified (∀ {n : Nat}, BStmt_sizes spW sp prims ix_sizes n))
-    (pp_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType = false) {n : Nat}
-    (bih_within_layouts : Certified (BStmt_within_layouts spW sp prims ix_within_layouts n))
-    (bih_within_payloads : Certified (BStmt_within_payloads spW sp prims ix_within_payloads n)) :
-    BStmt_within_payloads spW sp prims ix_within_payloads (n + 1) := by
-  intro x0 x1 v0 v1 w k b h r0 r1 hb pre
-  have key : qcall sp prims uc (n + 1) ix_within_payloads [v0, v1] = some (w, k) ∧ 0 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_within_payloads, List.length_cons, List.length_nil, if_true] at h ⊢
-    rw [Pre_within_payloads.eq_def] at pre
-    simp only at pre
-    budget
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
-
 end Lanius.Faithful.SelfBudget

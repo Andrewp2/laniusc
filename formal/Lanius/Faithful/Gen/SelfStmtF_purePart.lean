@@ -37,11 +37,11 @@ abbrev Stmt_x_apply_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
     (RepOption 257 RepMEff) (Lanius.Mini.xApplyOf x0 x1 x2) w
 
 abbrev Stmt_x_call_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Inst} {x1 : List Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 179 RepInst) x0 v0 → (RepList 235 RepMEff) x1 v1 →
+  ∀ {x0 : Option Lanius.Mini.Inst} {x1 : List Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 180 RepInst) x0 v0 → (RepList 235 RepMEff) x1 v1 →
     (RepOption 257 RepMEff) (Lanius.Mini.xCallOf x0 x1) w
 
 abbrev Stmt_x_cast_into (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcType} {x1 : Option Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 158 RepSrcType) x0 v0 → (RepOption 257 RepMEff) x1 v1 →
+  ∀ {x0 : Option Lanius.Mini.SrcType} {x1 : Option Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 159 RepSrcType) x0 v0 → (RepOption 257 RepMEff) x1 v1 →
     (RepOption 257 RepMEff) (Lanius.Mini.xCastInto x0 x1) w
 
 abbrev Stmt_x_divide_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

@@ -335,6 +335,7 @@ def szSrcType : Lanius.Mini.SrcType → Nat
   | .sint a0 => 1
   | .view a0 => 1
   | .str => 1
+  | .ref a0 => (szSrcType a0) + 1
 def szSrcType0 : List Lanius.Mini.SrcType → Nat
   | [] => 0
   | a :: l => szSrcType a + szSrcType0 l + 1
@@ -368,6 +369,7 @@ theorem szSrcType1_eq : ∀ l : List (List Lanius.Mini.SrcType), szSrcType1 l = 
 @[simp, sz_simp] theorem sz_SrcType_sint (a0 : Lanius.Mini.UintTy) : sz (Lanius.Mini.SrcType.sint a0) = 1 := rfl
 @[simp, sz_simp] theorem sz_SrcType_view (a0 : Nat) : sz (Lanius.Mini.SrcType.view a0) = 1 := rfl
 @[simp, sz_simp] theorem sz_SrcType_str  : sz (Lanius.Mini.SrcType.str) = 1 := rfl
+@[simp, sz_simp] theorem sz_SrcType_ref (a0 : Lanius.Mini.SrcType) : sz (Lanius.Mini.SrcType.ref a0) = sz a0 + 1 := rfl
 
 instance : SZ Lanius.Mini.SrcOp := ⟨fun _ => 0⟩
 @[simp, sz_simp] theorem sz_SrcOp (x : Lanius.Mini.SrcOp) : sz x = 0 := rfl

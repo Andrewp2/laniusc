@@ -30,7 +30,7 @@ abbrev Stmt_SrcEff_passes_slices (prog : SrcProgram) (prims : Prims) (ix n : Nat
 
 abbrev Stmt_SrcEff_slice_call (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcEff} {x1 : List Lanius.Mini.Sig} {x2 : List Lanius.Mini.Binding} {x3 : Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepSrcEff x0 v0 → (RepList 96 RepSig) x1 v1 → (RepList 135 RepBinding) x2 v2 → RepNat x3 v3 →
-    (RepOption 156 RepEvaluated) (Lanius.Mini.SrcEff.sliceCall x0 x1 x2 x3) w
+    (RepOption 157 RepEvaluated) (Lanius.Mini.SrcEff.sliceCall x0 x1 x2 x3) w
 
 abbrev Stmt_SrcStmt_breaks_out (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcStmt} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcStmt x0 v0 →
@@ -46,11 +46,11 @@ abbrev Stmt_SrcStmt_lower (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
 
 abbrev Stmt_array_call (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Sig} {x1 : List Lanius.Mini.Binding} {x2 : Nat} {x3 : Nat} {x4 : List Lanius.Mini.SrcEff} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepList 96 RepSig) x0 v0 → (RepList 135 RepBinding) x1 v1 → RepNat x2 v2 → RepNat x3 v3 → (RepList 186 RepSrcEff) x4 v4 →
-    (RepOption 156 RepEvaluated) (Lanius.Mini.arrayCall x0 x1 x2 x3 x4) w
+    (RepOption 157 RepEvaluated) (Lanius.Mini.arrayCall x0 x1 x2 x3 x4) w
 
 abbrev Stmt_array_call_sig (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {x2 : Lanius.Mini.Sig} {x3 : List Lanius.Mini.Binding} {x4 : List Lanius.Mini.SrcEff} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → RepNat x1 v1 → RepSig x2 v2 → (RepList 135 RepBinding) x3 v3 → (RepList 186 RepSrcEff) x4 v4 →
-    (RepOption 156 RepEvaluated) (Lanius.Mini.arrayCallSig x0 x1 x2 x3 x4) w
+    (RepOption 157 RepEvaluated) (Lanius.Mini.arrayCallSig x0 x1 x2 x3 x4) w
 
 abbrev Stmt_effs_slice (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 186 RepSrcEff) x0 v0 →
@@ -74,6 +74,6 @@ abbrev Stmt_params_valid (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
 
 abbrev Stmt_stmt_eval (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcEff} {x1 : List Lanius.Mini.Sig} {x2 : Lanius.Mini.SrcDecls} {x3 : List Lanius.Mini.Binding} {x4 : Nat} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepSrcEff x0 v0 → (RepList 96 RepSig) x1 v1 → RepSrcDecls x2 v2 → (RepList 135 RepBinding) x3 v3 → RepNat x4 v4 →
-    (RepOption 156 RepEvaluated) (Lanius.Mini.stmtEval x0 x1 x2 x3 x4) w
+    (RepOption 157 RepEvaluated) (Lanius.Mini.stmtEval x0 x1 x2 x3 x4) w
 
 end Lanius.Faithful.SelfCert

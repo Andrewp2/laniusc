@@ -458,6 +458,10 @@ mutual
         (index : ExprHasType program context indexExpr indexType)
         (integerIndex : IntegerTy indexType) :
         PlaceHasType program context (.index basePlace indexExpr) elementType
+    /-- The place a reference names, of its referent type (F5,
+    SEMANTIC_DECISIONS "References: the memory model" point 1). -/
+    | deref (reference : ExprHasType program context referenceExpr (.reference type)) :
+        PlaceHasType program context (.deref referenceExpr) type
 
   inductive ExprsHaveTypes (program : Program) : Context → List Expr → List Ty → Prop where
     | nil : ExprsHaveTypes program context [] []

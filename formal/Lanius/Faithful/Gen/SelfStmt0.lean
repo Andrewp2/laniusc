@@ -104,7 +104,7 @@ abbrev Stmt_get_of_mini_selfhost_Rule (prog : SrcProgram) (prims : Prims) (ix n 
 
 abbrev Stmt_get_of_mini_selfhost_Sig (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Sig} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 96 RepSig) x0 v0 → RepNat x1 v1 →
-    (RepOption 151 RepSig) (x0[x1]?) w
+    (RepOption 152 RepSig) (x0[x1]?) w
 
 abbrev Stmt_length_of_mini_selfhost_List_mini_selfhost_SrcType (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (List Lanius.Mini.SrcType)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 77 (RepList 73 RepSrcType)) x0 v0 →
@@ -123,8 +123,8 @@ abbrev Stmt_single_of_mini_selfhost_Token (prog : SrcProgram) (prims : Prims) (i
     (RepList 47 RepToken) ([x0]) w
 
 abbrev Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Fact (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Fact} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 180 RepFact) x0 v0 →
-    (RepList 180 RepFact) x0 w
+  ∀ {x0 : List Lanius.Mini.Fact} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 181 RepFact) x0 v0 →
+    (RepList 181 RepFact) x0 w
 
 abbrev Stmt_unbox_of_mini_selfhost_List_mini_selfhost_ImportDecl (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.ImportDecl} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 115 RepImportDecl) x0 v0 →

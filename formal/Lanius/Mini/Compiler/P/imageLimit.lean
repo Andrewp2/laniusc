@@ -23,15 +23,29 @@ def linkedSize (codes : List Code) : Nat :=
   | [] => 0
   | code :: rest => Code.size code + linkedSize rest
 
+/-- The room left of room after functions laid out back to back, None as soon as one does not fit: the image limit checked as the sizes add up, so no sum of the functions' sizes passes the limit (F14). It is Some exactly when linked_size(codes) is at most room. -/
+def roomAfter (room : Nat) (codes : List Code) : Option Nat :=
+  match codes with
+  | [] => some room
+  | code :: rest =>
+    let size : Nat := Code.size code
+    if size ≤ room then
+      roomAfter (room - size) rest
+    else
+      none
+
 def compileProgram (prog : Program) : Option Binary :=
   match compileFuncs (arities prog.funcs) prog.funcs with
   | none => none
   | some codes =>
     let statics : List UInt8 := prog.statics
-    let entries : List Nat := layout 0 codes
-    let image : List UInt8 := linkOnto entries 0 codes statics
-    if linkedSize codes + statics.length ≤ imageLimit then
-      some ({ codes := codes, entries := entries, image := image, statics := statics } : Binary)
+    if statics.length ≤ imageLimit then
+      match roomAfter (imageLimit - statics.length) codes with
+      | none => none
+      | some room =>
+        let entries : List Nat := layout 0 codes
+        let image : List UInt8 := linkOnto entries 0 codes statics
+        some ({ codes := codes, entries := entries, image := image, statics := statics } : Binary)
     else
       none
 

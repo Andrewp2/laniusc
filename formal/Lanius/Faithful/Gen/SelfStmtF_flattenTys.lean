@@ -21,7 +21,7 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_cons_type (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcType} {x1 : Option (List Lanius.Mini.SrcType)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 158 RepSrcType) x0 v0 → (RepOption 188 (RepList 73 RepSrcType)) x1 v1 →
+  ∀ {x0 : Option Lanius.Mini.SrcType} {x1 : Option (List Lanius.Mini.SrcType)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 159 RepSrcType) x0 v0 → (RepOption 188 (RepList 73 RepSrcType)) x1 v1 →
     (RepOption 188 (RepList 73 RepSrcType)) (Lanius.Mini.consType x0 x1) w
 
 abbrev Stmt_cons_type_tail (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -45,12 +45,12 @@ abbrev Stmt_flatten_tys (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
     (RepList 141 RepTy) (Lanius.Mini.flattenTys x0) w
 
 abbrev Stmt_slice_type (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 158 RepSrcType) x0 v0 →
-    (RepOption 158 RepSrcType) (Lanius.Mini.sliceType x0) w
+  ∀ {x0 : Option Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 159 RepSrcType) x0 v0 →
+    (RepOption 159 RepSrcType) (Lanius.Mini.sliceType x0) w
 
 abbrev Stmt_weight_add_to (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Option Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepOption 207 RepNat) x1 v1 →
-    (RepOption 207 RepNat) (Lanius.Mini.weightAddTo x0 x1) w
+  ∀ {x0 : Nat} {x1 : Option Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepOption 150 RepNat) x1 v1 →
+    (RepOption 150 RepNat) (Lanius.Mini.weightAddTo x0 x1) w
 
 abbrev Stmt_weight_limit (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
@@ -58,6 +58,6 @@ abbrev Stmt_weight_limit (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
 
 abbrev Stmt_weight_sum (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → RepNat x1 v1 →
-    (RepOption 207 RepNat) (Lanius.Mini.weightSum x0 x1) w
+    (RepOption 150 RepNat) (Lanius.Mini.weightSum x0 x1) w
 
 end Lanius.Faithful.SelfCert

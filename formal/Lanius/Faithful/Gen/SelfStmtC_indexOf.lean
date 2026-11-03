@@ -26,10 +26,10 @@ abbrev Stmt_index_guard (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
 
 abbrev Stmt_index_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Typed} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepTyped x0 v0 →
-    (RepOption 153 RepExpr) (Lanius.Mini.indexOf x0) w
+    (RepOption 154 RepExpr) (Lanius.Mini.indexOf x0) w
 
 abbrev Stmt_lower_index (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Binding} {x1 : Lanius.Mini.SrcExpr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 135 RepBinding) x0 v0 → RepSrcExpr x1 v1 →
-    (RepOption 153 RepExpr) (Lanius.Mini.lowerIndex x0 x1) w
+    (RepOption 154 RepExpr) (Lanius.Mini.lowerIndex x0 x1) w
 
 end Lanius.Faithful.SelfCert

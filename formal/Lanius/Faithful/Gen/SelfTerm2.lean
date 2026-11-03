@@ -36,10 +36,10 @@ theorem ok_optimize_program : FnOk prog prims info (113, ⟨10, [], 0⟩) :=
 theorem ok_validate : FnOk prog prims info (114, ⟨12, [], 0⟩) :=
   fnOk_of fn_validate (by decide +kernel)
 
-theorem ok_compile_or : FnOk prog prims info (115, ⟨11, [], 0⟩) :=
+theorem ok_compile_or : FnOk prog prims info (115, ⟨12, [], 0⟩) :=
   fnOk_of fn_compile_or (by decide +kernel)
 
-theorem ok_compile_program : FnOk prog prims info (116, ⟨10, [], 0⟩) :=
+theorem ok_compile_program : FnOk prog prims info (116, ⟨11, [], 0⟩) :=
   fnOk_of fn_compile_program (by decide +kernel)
 
 theorem ok_cons_of_mini_selfhost_Func : FnOk prog prims info (117, ⟨0, [], 0⟩) :=

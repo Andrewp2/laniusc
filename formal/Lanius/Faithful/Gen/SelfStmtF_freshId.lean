@@ -21,16 +21,16 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_field_expr (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Option Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepOption 207 RepNat) x1 v1 →
+  ∀ {x0 : Nat} {x1 : Option Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepOption 150 RepNat) x1 v1 →
     (RepOption 234 RepSrcExpr) (Lanius.Mini.fieldExpr x0 x1) w
 
 abbrev Stmt_field_in (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.TypeDecl} {x1 : List Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 208 RepTypeDecl) x0 v0 → (RepList 25 RepNat) x1 v1 →
-    (RepOption 207 RepNat) (Lanius.Mini.fieldIn x0 x1) w
+    (RepOption 150 RepNat) (Lanius.Mini.fieldIn x0 x1) w
 
 abbrev Stmt_field_index (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : Lanius.Mini.Ty} {x2 : List Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepFrontEnv x0 v0 → RepTy x1 v1 → (RepList 25 RepNat) x2 v2 →
-    (RepOption 207 RepNat) (Lanius.Mini.fieldIndex x0 x1 x2) w
+    (RepOption 150 RepNat) (Lanius.Mini.fieldIndex x0 x1 x2) w
 
 abbrev Stmt_fresh_id (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Local} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 238 RepLocal) x0 v0 → RepNat x1 v1 →
