@@ -616,8 +616,16 @@ COMPILE_PRE_SIMP = ['Lanius.Mini.Stmt.weight', 'Lanius.Mini.Expr.weight', 'Laniu
                     'Lanius.Mini.Expr.temps', 'Lanius.Mini.Stmt.temps', 'Lanius.Mini.argsTemps',
                     'Lanius.Faithful.SelfPre.funcsTemps', 'Lanius.Faithful.SelfPre.optTemps',
                     'Lanius.Mini.SrcType.size', 'Lanius.Mini.sizes', 'Lanius.Mini.maxSize',
-                    'Lanius.Mini.paramsSize', 'Lanius.Faithful.SelfPre.paramsMax']
+                    'Lanius.Mini.paramsSize', 'Lanius.Faithful.SelfPre.paramsMax',
+                    'Lanius.Faithful.SelfPre.tsdOpt', 'Lanius.Faithful.SelfPre.sigParamsOpt',
+                    'Lanius.Faithful.SelfPre.sigsParams', 'Lanius.Faithful.SelfPre.tsdStructs',
+                    'Lanius.Faithful.SelfPre.tsdEnums']
 PRE_PREAMBLE = ''
+# The type-size functions' arguments: their sizes (`ts`) are what they add, and
+# a list's sum ('sz', `sizes`) or largest ('ms', `maxSize`) below `K`, which their
+# callers pass on (a list of types taken apart has its own, `TS_HYPS`).
+COMPILE_TS_SEED = {'Pre_SrcType_size': {0: {'ts'}}, 'Pre_sizes': {0: {'ts', 'sz'}},
+                   'Pre_max_size': {0: {'ts', 'ms'}}}
 # The Mini program's compile: the functions these reach bound the program's
 # numbers by `K` rather than `M` (they do not grow as it compiles: its slots,
 # indices and counts; the pc offsets and depths have their own invariants).
@@ -652,13 +660,14 @@ def args_after(text, i):
 
 def num_used(genb):
     """Per `Pre_k`, the parameter positions whose numbers it uses (a fixpoint)."""
-    params, bodies = {}, {}
+    params, bodies, ptys = {}, {}, {}
     for path in sorted(glob.glob(os.path.join(genb, 'SelfBModel*.lean'))):
         cur = None
         for line in open(path).read().split('\n'):
-            m = re.match(r'def (Pre_\w+) :', line)
+            m = re.match(r'def (Pre_\w+) : (.*)$', line)
             if m:
                 cur = m.group(1)
+                ptys[cur] = [' '.join(t.split()) for t in split_top(m.group(2), '→')[1:-2]]
                 continue
             if cur and line.startswith('  | n + 1, '):
                 head, body = line.split('=>', 1)
@@ -668,7 +677,14 @@ def num_used(genb):
     aliasing = os.environ.get('PRE_NUMS_ALIAS') == '1'
     chosen = set(COMPILE_NUM_ALIAS) | set(filter(None, os.environ.get('PRE_NUMS_ALIASES', '').split(',')))
     alias = {k: match_aliases(bodies[k], params[k]) if aliasing or k[4:] in chosen else {} for k in params}
+    # a type's size: the types a `match` takes out of a parameter (a lookup's result
+    # included, `CompileTypes`' `vals_` lemmas) count as that parameter's
+    alias_ts = {k: match_aliases(bodies[k], params[k]) for k in params}
     used = {k: {} for k in params}  # position -> kinds: 'nb' (its numbers), 'ts' (its types' sizes)
+    for k, pos in COMPILE_TS_SEED.items():
+        if k in used:
+            for i, kinds in pos.items():
+                used[k].setdefault(i, set()).update(kinds)
     calls = {k: set(re.findall(r'\b(Pre_\w+) n ', bodies[k])) & set(params) for k in params}
     NUMS['fixed'] = reach(calls, [f'Pre_{r}' for r in COMPILE_FIXED_ROOTS])
     changed = True
@@ -692,8 +708,17 @@ def num_used(genb):
                         for i, x in enumerate(ps):
                             if i in COMPILE_NUM_DROP.get(k[4:], ()):
                                 continue
-                            if (v == x or v in alias[k].get(x, ())) and kind not in used[k].get(i, ()):
-                                used[k].setdefault(i, set()).add(kind)
+                            al = alias_ts[k] if kind == 'ts' else {} if kind in ('sz', 'ms') else alias[k]
+                            kd = kind
+                            if kind in ('sz', 'ms') and v != x and v in alias_ts[k].get(x, ()):
+                                # a list of types' sum through its tail, a variant's through its variants
+                                t = ptys[k][i] if i < len(ptys[k]) else ''
+                                kd = {('sz', 'List Lanius.Mini.SrcType'): 'sz',
+                                      ('sz', 'List (List Lanius.Mini.SrcType)'): 'ms',
+                                      ('ms', 'List (List Lanius.Mini.SrcType)'): 'ms'}.get((kind, t))
+                                al = alias_ts[k] if kd else {}
+                            if (v == x or v in al.get(x, ())) and kd not in used[k].get(i, ()):
+                                used[k].setdefault(i, set()).add(kd)
                                 changed = True
     return used
 
@@ -798,23 +823,44 @@ def num_hyps(e, k, xs, tys):
     """The number hypotheses of `pre_k` (none outside `--compile`)."""
     if not NUMS['on']:
         return []
-    if k in COMPILE_NUM_SKIP or k in os.environ.get('PRE_NUMS_SKIP', '').split(','):
-        return []
+    # (the skipped functions' numbers only: their types' sizes are bounded as the others')
+    skip = k in COMPILE_NUM_SKIP or k in os.environ.get('PRE_NUMS_SKIP', '').split(',')
     out = []
     used = NUMS['used'].get(f'Pre_{k}', {})
     for i in sorted(used):
-        if i >= len(xs) or 'nb' not in used[i]:
+        if skip or i >= len(xs) or 'nb' not in used[i]:
             continue
         t = tys[i].strip()
         if t == 'Nat':
             out.append(f'{xs[i]} ≤ {num_bound(k)}')
         elif not nb_flat(t):
             out.append(f'nb {xs[i]} ≤ {num_bound(k)}')
-    # a type's slot count (`ts`, SelfPre/TS.lean) is at most the front end's weight limit
+    # a type's slot count (`ts`, SelfPre/TS.lean) is at most the front end's weight limit;
+    # declarations and signatures by their own measures (`TS_HYPS`)
     for i in sorted(used):
         if i < len(xs) and 'ts' in used[i] and not ts_flat(tys[i]):
-            out.append(f'ts {xs[i]} ≤ {WEIGHT}')
+            t = ' '.join(tys[i].split())
+            for h in TS_HYPS.get(t, ['ts {x} ≤ W']):
+                out.append(h.format(x=xs[i]).replace('≤ W', f'≤ {WEIGHT}').replace('≤ K', f'≤ {K}'))
+    for i in sorted(used):
+        t = ' '.join(tys[i].split()) if i < len(xs) else ''
+        if 'sz' in used[i] and t == 'List Lanius.Mini.SrcType':
+            out.append(f'Lanius.Mini.sizes {xs[i]} ≤ {K}')
+        if 'ms' in used[i] and t == 'List (List Lanius.Mini.SrcType)':
+            out.append(f'Lanius.Mini.maxSize {xs[i]} ≤ {K}')
     return out
+
+
+# The 'ts' kind's hypotheses of the types `ts` does not measure enough: the
+# declarations count their structs' and enums' sizes (`tsd`), a signature its
+# parameters' sizes' sum (below `K`, from `PreCompileSourceV4`'s `paramsMax`).
+TS_HYPS = {
+    'Lanius.Mini.SrcDecls': ['Lanius.Faithful.SelfPre.tsd {x} ≤ W'],
+    'Option Lanius.Mini.SrcDecls': ['Lanius.Faithful.SelfPre.tsdOpt {x} ≤ W'],
+    'Lanius.Mini.Sig': ['ts {x} ≤ W', 'Lanius.Mini.sizes {x}.params ≤ K'],
+    'Option Lanius.Mini.Sig': ['ts {x} ≤ W', 'Lanius.Faithful.SelfPre.sigParamsOpt {x} ≤ K'],
+    'List Lanius.Mini.Sig': ['ts {x} ≤ W', 'Lanius.Faithful.SelfPre.sigsParams {x} ≤ K'],
+}
 
 
 WEIGHT = '4194304'  # Lanius.Mini.weightLimit
@@ -854,6 +900,11 @@ def num_facts(e, k, xs, tys, names):
     j = nhb
     for h in num_hyps(e, k, xs.split(), tys):
         x = h.split()[1] if h.startswith('nb ') else None
+        if h.startswith('Lanius.Faithful.SelfPre.tsd '):
+            y = h.split()[1]
+            out += (f'  have hd_{y} : Lanius.Faithful.SelfPre.tsdStructs {y}.structs ≤ {WEIGHT} ∧ '
+                    f'Lanius.Faithful.SelfPre.tsdEnums {y}.enums ≤ {WEIGHT} := '
+                    f'⟨Nat.le_trans (tsd_structs {y}) {hyps[j]}, Nat.le_trans (tsd_enums {y}) {hyps[j]}⟩\n')
         if h.startswith('ts '):
             y = h.split()[1]
             t = tys[xs.split().index(y)].strip()
@@ -1267,6 +1318,9 @@ def main():
         global PRE_PREAMBLE
         # and the number measure's lemmas, for the facts of a split's parts
         nbs = re.findall(r'@\[simp, nb_simp\] theorem (\w+)', open(nb_path).read())
+        nbs += ['Lanius.Faithful.SelfPre.' + t for t in ('tySlots', 'tySlotsList', 'tySlotsVariants',
+                                                         'ts_list_SrcType', 'ts_list_list_SrcType')]
+        nbs += re.findall(r'@\[simp, ts_simp\] theorem (\w+)', open(ts_path).read())
         PRE_PREAMBLE = f'attribute [local hb_simp] {" ".join(COMPILE_PRE_SIMP + nbs)}\n\n'
     e = Emit(g)
     r = g.reach()
