@@ -10,7 +10,7 @@ import all Lanius.Mini.Compiler.P.FArith_opcode
 import all Lanius.Mini.Compiler.P.FloatTy_rex
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.SrcType_same
 import all Lanius.Mini.Compiler.P.Stmt_kills
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
@@ -114,6 +114,8 @@ validator (`compileOptimized_correct`). -/
 
 namespace Lanius.Mini
 
+variable {sx : Statics}
+
 open Lanius.X86.Machine
 open Lanius.Core (Value)
 
@@ -186,12 +188,13 @@ A client that built values in the heap (a `Vec`, say) composes through this. -/
 theorem compileSource_correct_from {sp : SrcProgram} {binary : Binary}
     (compiled : compileSource sp = some binary) {f : Nat} {func : SrcFunc}
     (found : sp.funcs[f]? = some func) {args : List Value} {bits : List (BitVec 64)}
-    (typed : FieldsHold [] (paramTypes func.params) args (Func.entry bits) 0)
+    (typed : FieldsHold sx [] (paramTypes func.params) args (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize func.params) {fuel : Nat} {v : Value}
     {st final : Semantics.State} {heap : Heap} (fresh : st.Fresh) (hc : HeapCorr st.heap st.world heap)
     (runs : Semantics.evalExpr fuel sp.toCore st (.call f (args.map Core.Expr.value)) = .done v final)
-    (fits : final.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp ∧ heap.fsp ≤ heap.top ∧ heap.top < 2 ^ 62) :
-    ∃ depth results after, func.ret.HoldsAt [] v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
+    (fits : final.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp ∧ heap.fsp ≤ heap.top ∧ heap.top < 2 ^ 62)
+    (statics : heap.StaticsAt sx) (ofSp : sx.bytes = sp.decls.statics) :
+    ∃ depth results after, func.ret.HoldsAt sx [] v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
       HeapCorr final.heap final.world after ∧
       ∀ (s : State) (imageBase : BitVec 64) (window : Nat),
         binary.stackNeed depth ≤ window → window ≤ 2 ^ 62 →
@@ -205,6 +208,7 @@ theorem compileSource_correct_from {sp : SrcProgram} {binary : Binary}
         HeapAt window s heap → StackAt binary.guard window s →
         ∃ n s', Steps n s s' ∧ Det n s s' ∧ Returned window s s' results after := by
   obtain ⟨_, _, funcs, lowered, compiledProgram⟩ := compileSource_some compiled
+  haveI : StaticsOf sp sx := ⟨ofSp⟩
   cases fuel with
   | zero => simp [Semantics.evalExpr] at runs
   | succ k =>
@@ -214,8 +218,8 @@ theorem compileSource_correct_from {sp : SrcProgram} {binary : Binary}
     cases found'
     obtain ⟨rfl, rfl⟩ := evalExprs_values argsRun
     obtain ⟨_, _, depth, results, after, _, returns, holds, len, hc', -⟩ :=
-      body_sound (mp := { funcs := funcs, statics := [] }) (hp := heap) lowered (stmt_sound lowered k) found
-        fresh hc (FrameCorr.start _ frameRoom) (Nat.le_refl _) (fun _ mem => by simp at mem) typed bitsLen bodyRun result fits
+      body_sound (mp := { funcs := funcs, statics := sp.decls.statics }) (hp := heap) lowered (stmt_sound lowered k) found
+        fresh hc (FrameCorr.start _ frameRoom statics) (Nat.le_refl _) (fun _ mem => by simp at mem) typed bitsLen bodyRun result fits
     exact ⟨depth, results, after, holds, len, hc',
       fun s imageBase window enough bounded loaded apart imageHeap entry params heapAt stack =>
         compileOptimized_correct compiledProgram returns s imageBase window enough bounded loaded apart
@@ -235,14 +239,15 @@ writes to the standard output and error (the machine's trace is `after`'s,
 theorem compileSource_correct {sp : SrcProgram} {binary : Binary}
     (compiled : compileSource sp = some binary) {f : Nat} {func : SrcFunc}
     (found : sp.funcs[f]? = some func) {args : List Value} {bits : List (BitVec 64)}
-    (typed : FieldsHold [] (paramTypes func.params) args (Func.entry bits) 0)
+    (typed : FieldsHold sx [] (paramTypes func.params) args (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize func.params) {fuel : Nat} {v : Value}
     {final : Semantics.State} {heap : Heap} (start : heap.cursor = 1)
     (zero : ∀ a, 1 ≤ a → heap.bytes a = 0) (small : heap.limit < 2 ^ 62) (silent : heap.io.trace = [])
     (runs : Semantics.evalExpr fuel sp.toCore (startState heap.io) (.call f (args.map Core.Expr.value)) =
       .done v final)
-    (fits : final.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp ∧ heap.fsp ≤ heap.top ∧ heap.top < 2 ^ 62) :
-    ∃ depth results after, func.ret.HoldsAt [] v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
+    (fits : final.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp ∧ heap.fsp ≤ heap.top ∧ heap.top < 2 ^ 62)
+    (statics : heap.StaticsAt sx) (ofSp : sx.bytes = sp.decls.statics) :
+    ∃ depth results after, func.ret.HoldsAt sx [] v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
       after.cursor = final.heap.nextAddress ∧ final.world.standardOutput = outputOf 1 after.io.trace ∧
       final.world.standardError = outputOf 2 after.io.trace ∧
       ∀ (s : State) (imageBase : BitVec 64) (window : Nat),
@@ -257,7 +262,7 @@ theorem compileSource_correct {sp : SrcProgram} {binary : Binary}
         HeapAt window s heap → StackAt binary.guard window s →
         ∃ n s', Steps n s s' ∧ Det n s s' ∧ Returned window s s' results after := by
   obtain ⟨depth, results, after, holds, len, hc, run⟩ := compileSource_correct_from compiled found typed bitsLen
-    (st := startState heap.io) (startState_fresh _) (HeapCorr.empty start zero small silent) runs fits frameRoom
+    (st := startState heap.io) (startState_fresh _) (HeapCorr.empty start zero small silent) runs fits frameRoom statics ofSp
   exact ⟨depth, results, after, holds, len, hc.cursor, hc.out, hc.err, run⟩
 
 end Lanius.Mini

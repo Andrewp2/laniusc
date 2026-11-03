@@ -253,4 +253,46 @@ theorem bproof_eval_len {spW sp : SrcProgram} {prims : Prims} {ix_eval_len ix_lo
     budget
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
 
+theorem bstep_str_placed {spW sp : SrcProgram} {prims : Prims} {ix_str_placed ix_plus ix_unbox_of_mini_selfhost_List_usize ix_static_byte_is ix_get_of_u8 : Nat}
+    (fnW : spW.funcs[ix_str_placed]? = some (src_str_placed ix_plus ix_unbox_of_mini_selfhost_List_usize ix_str_placed ix_static_byte_is ix_get_of_u8)) (fn : sp.funcs[ix_str_placed]? = some (src_str_placed ix_plus ix_unbox_of_mini_selfhost_List_usize ix_str_placed ix_static_byte_is ix_get_of_u8))
+    (np : prims.isPrim ix_str_placed = false)
+    (back : Certified (∀ {n : Nat}, Stmt_str_placed sp prims ix_str_placed n))
+    (b_plus : Certified (∀ {n : Nat}, BStmt_plus spW sp prims ix_plus n))
+    (pp_unbox_of_mini_selfhost_List_usize : prims.isPrim ix_unbox_of_mini_selfhost_List_usize = true) (bx_unbox_of_mini_selfhost_List_usize : prims.boxed.contains ix_unbox_of_mini_selfhost_List_usize = false)
+    (b_static_byte_is : Certified (∀ {n : Nat}, BStmt_static_byte_is spW sp prims ix_static_byte_is n))
+    (b_get_of_u8 : Certified (∀ {n : Nat}, BStmt_get_of_u8 spW sp prims ix_get_of_u8 n)) {n : Nat}
+    (bih_str_placed : Certified (BStmt_str_placed spW sp prims ix_str_placed n)) :
+    BStmt_str_placed spW sp prims ix_str_placed (n + 1) := by
+  intro x0 x1 x2 v0 v1 v2 w k b h r0 r1 r2 hb pre
+  have key : qcall sp prims uc (n + 1) ix_str_placed [v0, v1, v2] = some (w, k) ∧ 0 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_str_placed, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_str_placed.eq_def] at pre
+    simp only at pre
+    budget
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
+
+theorem bproof_eval_str {spW sp : SrcProgram} {prims : Prims} {ix_eval_str ix_length_of_usize ix_plus ix_boxed_of_mini_selfhost_Stmt ix_length_of_u8 ix_str_placed : Nat}
+    (fnW : spW.funcs[ix_eval_str]? = some (src_eval_str ix_length_of_usize ix_plus ix_boxed_of_mini_selfhost_Stmt ix_length_of_u8 ix_str_placed)) (fn : sp.funcs[ix_eval_str]? = some (src_eval_str ix_length_of_usize ix_plus ix_boxed_of_mini_selfhost_Stmt ix_length_of_u8 ix_str_placed))
+    (np : prims.isPrim ix_eval_str = false)
+    (back : Certified (∀ {n : Nat}, Stmt_eval_str sp prims ix_eval_str n))
+    (b_length_of_usize : Certified (∀ {n : Nat}, BStmt_length_of_usize spW sp prims ix_length_of_usize n))
+    (b_plus : Certified (∀ {n : Nat}, BStmt_plus spW sp prims ix_plus n))
+    (pp_boxed_of_mini_selfhost_Stmt : prims.isPrim ix_boxed_of_mini_selfhost_Stmt = true) (bx_boxed_of_mini_selfhost_Stmt : prims.boxed.contains ix_boxed_of_mini_selfhost_Stmt = true)
+    (b_length_of_u8 : Certified (∀ {n : Nat}, BStmt_length_of_u8 spW sp prims ix_length_of_u8 n))
+    (b_str_placed : Certified (∀ {n : Nat}, BStmt_str_placed spW sp prims ix_str_placed n)) {n : Nat} :
+    BStmt_eval_str spW sp prims ix_eval_str n := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w k b h r0 r1 r2 r3 hb pre
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_eval_str [v0, v1, v2, v3] = some (w, k) ∧ Cost_eval_str (n + 1) x0 x1 x2 x3 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_eval_str, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_eval_str.eq_def] at pre
+    simp only at pre
+    budget Cost_eval_str
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3⟩
+
 end Lanius.Faithful.SelfBudget

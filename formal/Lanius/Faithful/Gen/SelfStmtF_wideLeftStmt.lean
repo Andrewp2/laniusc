@@ -45,11 +45,11 @@ abbrev Stmt_cons_root (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     (RepOption 81 (RepList 82 RepCTree)) (Lanius.Mini.consRoot x0 x1) w
 
 abbrev Stmt_files_fuel (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.FileInput} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 43 RepFileInput) x0 v0 →
+  ∀ {x0 : List Lanius.Mini.FileInput} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 45 RepFileInput) x0 v0 →
     RepNat (Lanius.Mini.filesFuel x0) w
 
 abbrev Stmt_front_end_files (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Rule} {x1 : List Lanius.Mini.FileInput} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 35 RepRule) x0 v0 → (RepList 43 RepFileInput) x1 v1 →
+  ∀ {x0 : List Lanius.Mini.Rule} {x1 : List Lanius.Mini.FileInput} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 37 RepRule) x0 v0 → (RepList 45 RepFileInput) x1 v1 →
     (RepOption 3 RepSrcProgram) (Lanius.Mini.frontEndFiles x0 x1) w
 
 abbrev Stmt_lx_digit (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -73,7 +73,7 @@ abbrev Stmt_untyped_rejected (prog : SrcProgram) (prims : Prims) (ix n : Nat) : 
     (RepOption 3 RepSrcProgram) (Lanius.Mini.untypedRejected x0) w
 
 abbrev Stmt_validate_files (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Rule} {x1 : List Lanius.Mini.FileInput} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 35 RepRule) x0 v0 → (RepList 43 RepFileInput) x1 v1 →
+  ∀ {x0 : List Lanius.Mini.Rule} {x1 : List Lanius.Mini.FileInput} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 37 RepRule) x0 v0 → (RepList 45 RepFileInput) x1 v1 →
     (RepOption 81 (RepList 82 RepCTree)) (Lanius.Mini.validateFiles x0 x1) w
 
 abbrev Stmt_wide_left_funcs (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

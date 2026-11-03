@@ -15,7 +15,7 @@ namespace Lanius.Mini
 
 /-- The program's struct and enum declarations. -/
 def declareProgram (prog : SrcProgram) : Option SrcDecls :=
-  declareFuncs prog.funcs ({ structs := [], enums := [] } : SrcDecls)
+  declareFuncs prog.funcs ({ structs := [], enums := [], statics := prog.statics } : SrcDecls)
 
 def funcsReturn (funcs : List SrcFunc) : Bool :=
   match funcs with

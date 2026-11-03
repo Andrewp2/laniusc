@@ -324,6 +324,7 @@ def hbSrcType : Lanius.Mini.SrcType → Nat
   | .float a0 => 0
   | .sint a0 => 0
   | .view a0 => 0
+  | .str => 0
 def hbSrcType0 : List Lanius.Mini.SrcType → Nat
   | [] => 0
   | a :: l => max (hbSrcType a) (hbSrcType0 l) + 1
@@ -356,6 +357,7 @@ theorem hbSrcType1_eq : ∀ l : List (List Lanius.Mini.SrcType), hbSrcType1 l = 
 @[simp, hb_simp] theorem hb_SrcType_float (a0 : Lanius.Mini.FloatTy) : hb (Lanius.Mini.SrcType.float a0) = 0 := rfl
 @[simp, hb_simp] theorem hb_SrcType_sint (a0 : Lanius.Mini.UintTy) : hb (Lanius.Mini.SrcType.sint a0) = 0 := rfl
 @[simp, hb_simp] theorem hb_SrcType_view (a0 : Nat) : hb (Lanius.Mini.SrcType.view a0) = 0 := rfl
+@[simp, hb_simp] theorem hb_SrcType_str  : hb (Lanius.Mini.SrcType.str) = 0 := rfl
 
 instance : HB Lanius.Mini.SrcOp := ⟨fun _ => 0⟩
 @[simp, hb_simp] theorem hb_SrcOp (x : Lanius.Mini.SrcOp) : hb x = 0 := rfl
@@ -421,6 +423,7 @@ def hbSrcEff : Lanius.Mini.SrcEff → Nat
   | .eIf a0 a1 a2 a3 => max (hbSrcEff a0) (max (hb a1) (max (hbSrcEff a2) (hbSrcEff a3)))
   | .eLet a0 a1 a2 a3 a4 => max (hb a1) (max (hbSrcEff a2) (max (hb a3) (hbSrcEff a4)))
   | .eLen a0 => 0
+  | .eStr a0 a1 => hb a1
 def hbSrcEff0 : List Lanius.Mini.SrcEff → Nat
   | [] => 0
   | a :: l => max (hbSrcEff a) (hbSrcEff0 l) + 1
@@ -447,6 +450,7 @@ theorem hbSrcEff0_eq : ∀ l : List Lanius.Mini.SrcEff, hbSrcEff0 l = HB.hb l
 @[simp, hb_simp] theorem hb_SrcEff_eIf (a0 : Lanius.Mini.SrcEff) (a1 : Lanius.Mini.SrcType) (a2 : Lanius.Mini.SrcEff) (a3 : Lanius.Mini.SrcEff) : hb (Lanius.Mini.SrcEff.eIf a0 a1 a2 a3) = max (hb a0) (max (hb a1) (max (hb a2) (hb a3))) := rfl
 @[simp, hb_simp] theorem hb_SrcEff_eLet (a0 : Nat) (a1 : Lanius.Mini.SrcType) (a2 : Lanius.Mini.SrcEff) (a3 : Lanius.Mini.SrcType) (a4 : Lanius.Mini.SrcEff) : hb (Lanius.Mini.SrcEff.eLet a0 a1 a2 a3 a4) = max (hb a1) (max (hb a2) (max (hb a3) (hb a4))) := rfl
 @[simp, hb_simp] theorem hb_SrcEff_eLen (a0 : Nat) : hb (Lanius.Mini.SrcEff.eLen a0) = 0 := rfl
+@[simp, hb_simp] theorem hb_SrcEff_eStr (a0 : Nat) (a1 : List Nat) : hb (Lanius.Mini.SrcEff.eStr a0 a1) = hb a1 := rfl
 
 mutual
 def hbSrcStmt : Lanius.Mini.SrcStmt → Nat
@@ -543,10 +547,13 @@ theorem hb_le_SrcFunc_body (s : Lanius.Mini.SrcFunc) : hb s.body ≤ hb s := by
   show _ ≤ max (hb s.params) (max (hb s.ret) (hb s.body))
   omega
 
-instance : HB Lanius.Mini.SrcProgram := ⟨fun s => hb s.funcs⟩
-@[simp, hb_simp] theorem hb_SrcProgram_mk (a0 : List Lanius.Mini.SrcFunc) : hb (Lanius.Mini.SrcProgram.mk a0) = hb a0 := rfl
+instance : HB Lanius.Mini.SrcProgram := ⟨fun s => max (hb s.funcs) (hb s.statics)⟩
+@[simp, hb_simp] theorem hb_SrcProgram_mk (a0 : List Lanius.Mini.SrcFunc) (a1 : List UInt8) : hb (Lanius.Mini.SrcProgram.mk a0 a1) = max (hb a0) (hb a1) := rfl
 theorem hb_le_SrcProgram_funcs (s : Lanius.Mini.SrcProgram) : hb s.funcs ≤ hb s := by
-  show _ ≤ hb s.funcs
+  show _ ≤ max (hb s.funcs) (hb s.statics)
+  omega
+theorem hb_le_SrcProgram_statics (s : Lanius.Mini.SrcProgram) : hb s.statics ≤ hb s := by
+  show _ ≤ max (hb s.funcs) (hb s.statics)
   omega
 
 instance : HB Lanius.Mini.Binding := ⟨fun s => hb s.ty⟩
@@ -603,13 +610,16 @@ theorem hb_le_SrcEnumDecl_variants (s : Lanius.Mini.SrcEnumDecl) : hb s.variants
   show _ ≤ hb s.variants
   omega
 
-instance : HB Lanius.Mini.SrcDecls := ⟨fun s => max (hb s.structs) (hb s.enums)⟩
-@[simp, hb_simp] theorem hb_SrcDecls_mk (a0 : List Lanius.Mini.SrcStructDecl) (a1 : List Lanius.Mini.SrcEnumDecl) : hb (Lanius.Mini.SrcDecls.mk a0 a1) = max (hb a0) (hb a1) := rfl
+instance : HB Lanius.Mini.SrcDecls := ⟨fun s => max (hb s.structs) (max (hb s.enums) (hb s.statics))⟩
+@[simp, hb_simp] theorem hb_SrcDecls_mk (a0 : List Lanius.Mini.SrcStructDecl) (a1 : List Lanius.Mini.SrcEnumDecl) (a2 : List UInt8) : hb (Lanius.Mini.SrcDecls.mk a0 a1 a2) = max (hb a0) (max (hb a1) (hb a2)) := rfl
 theorem hb_le_SrcDecls_structs (s : Lanius.Mini.SrcDecls) : hb s.structs ≤ hb s := by
-  show _ ≤ max (hb s.structs) (hb s.enums)
+  show _ ≤ max (hb s.structs) (max (hb s.enums) (hb s.statics))
   omega
 theorem hb_le_SrcDecls_enums (s : Lanius.Mini.SrcDecls) : hb s.enums ≤ hb s := by
-  show _ ≤ max (hb s.structs) (hb s.enums)
+  show _ ≤ max (hb s.structs) (max (hb s.enums) (hb s.statics))
+  omega
+theorem hb_le_SrcDecls_statics (s : Lanius.Mini.SrcDecls) : hb s.statics ≤ hb s := by
+  show _ ≤ max (hb s.structs) (max (hb s.enums) (hb s.statics))
   omega
 
 instance : HB Lanius.Mini.ArrayArgs := ⟨fun s => max (hb s.stores) (max (hb s.args) (max (hb s.loads) (max (hb s.guard) (hb s.ids))))⟩

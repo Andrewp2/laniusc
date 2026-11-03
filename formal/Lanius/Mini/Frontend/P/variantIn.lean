@@ -60,6 +60,7 @@ def srcTy (t : SrcType) : Option Ty :=
   | .float ft => some (Ty.tyFloat ft)
   | .sint sk => some (Ty.tySint sk)
   | .view viewLength => none
+  | .str => none
 
 def scalarSrc (t : Ty) : Option SrcType :=
   match t with

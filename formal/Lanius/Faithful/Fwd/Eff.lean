@@ -428,7 +428,7 @@ theorem eff_live (live : FuncLive sp prims outside cost N) : ∀ (e : SrcEff) {t
     | float => simp at hm
     | sint => simp at hm
     | array => simp at hm
-    | view => simp at hm
+    | view | str => simp at hm
   | .eDivide op l r, tenv, env, st, t, p, h, ht, inv, rel, hq, budget, fr => by
     have ht' := ht
     simp only [effTy, Option.bind_eq_some_iff] at ht'
@@ -514,7 +514,7 @@ theorem eff_live (live : FuncLive sp prims outside cost N) : ∀ (e : SrcEff) {t
       aomega
     obtain ⟨r', ran⟩ := eff_rel calls ht inv rel (peff_of hq) ev (part g budget)
     exact ⟨_, _, ev, r', ran, g, f2⟩
-  | .eLen _, _, _, _, _, _, _, ht, _, _, _, _, _ => by simp [effTy] at ht
+  | .eLen _, _, _, _, _, _, _, ht, _, _, _, _, _ | .eStr _ _, _, _, _, _, _, _, ht, _, _, _, _, _ => by simp [effTy] at ht
 
 theorem effs_live (live : FuncLive sp prims outside cost N) : ∀ (es : List SrcEff) {tenv : TEnv} {env : Env} {st : State} {ts : List SrcType}
     {ps : List Value} {h : Nat},

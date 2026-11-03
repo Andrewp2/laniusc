@@ -21,7 +21,7 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_attach (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Rule} {x1 : Nat} {x2 : List Lanius.Mini.Sym} {x3 : Nat} {x4 : Lanius.Mini.Cursor} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepList 35 RepRule) x0 v0 → RepNat x1 v1 → (RepList 37 RepSym) x2 v2 → RepNat x3 v3 → RepCursor x4 v4 →
+  ∀ {x0 : List Lanius.Mini.Rule} {x1 : Nat} {x2 : List Lanius.Mini.Sym} {x3 : Nat} {x4 : Lanius.Mini.Cursor} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepList 37 RepRule) x0 v0 → RepNat x1 v1 → (RepList 39 RepSym) x2 v2 → RepNat x3 v3 → RepCursor x4 v4 →
     (RepOption 130 RepAttached) (Lanius.Mini.attach x0 x1 x2 x3 x4) w
 
 abbrev Stmt_only (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

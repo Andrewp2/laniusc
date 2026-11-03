@@ -18,6 +18,48 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.SelfCert
 open Lanius.Faithful.Budget
 
+theorem bproof_store_any {spW sp : SrcProgram} {prims : Prims} {ix_store_any ix_SrcType_is_i32 ix_SrcType_is_uint ix_word_element ix_store_element ix_store_byte_element ix_store_word_element : Nat}
+    (fnW : spW.funcs[ix_store_any]? = some (src_store_any ix_SrcType_is_i32 ix_SrcType_is_uint ix_word_element ix_store_element ix_store_byte_element ix_store_word_element)) (fn : sp.funcs[ix_store_any]? = some (src_store_any ix_SrcType_is_i32 ix_SrcType_is_uint ix_word_element ix_store_element ix_store_byte_element ix_store_word_element))
+    (np : prims.isPrim ix_store_any = false)
+    (back : Certified (∀ {n : Nat}, Stmt_store_any sp prims ix_store_any n))
+    (b_SrcType_is_i32 : Certified (∀ {n : Nat}, BStmt_SrcType_is_i32 spW sp prims ix_SrcType_is_i32 n))
+    (b_SrcType_is_uint : Certified (∀ {n : Nat}, BStmt_SrcType_is_uint spW sp prims ix_SrcType_is_uint n))
+    (b_word_element : Certified (∀ {n : Nat}, BStmt_word_element spW sp prims ix_word_element n))
+    (b_store_element : Certified (∀ {n : Nat}, BStmt_store_element spW sp prims ix_store_element n))
+    (b_store_byte_element : Certified (∀ {n : Nat}, BStmt_store_byte_element spW sp prims ix_store_byte_element n))
+    (b_store_word_element : Certified (∀ {n : Nat}, BStmt_store_word_element spW sp prims ix_store_word_element n)) {n : Nat} :
+    BStmt_store_any spW sp prims ix_store_any n := by
+  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w k b h r0 r1 r2 r3 r4 r5 hb pre
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_store_any [v0, v1, v2, v3, v4, v5] = some (w, k) ∧ Cost_store_any (n + 1) x0 x1 x2 x3 x4 x5 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_store_any, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_store_any.eq_def] at pre
+    simp only at pre
+    budget Cost_store_any
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4 r5⟩
+
+theorem bproof_lower_set_index_of {spW sp : SrcProgram} {prims : Prims} {ix_lower_set_index_of ix_element_of ix_store_any : Nat}
+    (fnW : spW.funcs[ix_lower_set_index_of]? = some (src_lower_set_index_of ix_element_of ix_store_any)) (fn : sp.funcs[ix_lower_set_index_of]? = some (src_lower_set_index_of ix_element_of ix_store_any))
+    (np : prims.isPrim ix_lower_set_index_of = false)
+    (back : Certified (∀ {n : Nat}, Stmt_lower_set_index_of sp prims ix_lower_set_index_of n))
+    (b_element_of : Certified (∀ {n : Nat}, BStmt_element_of spW sp prims ix_element_of n))
+    (b_store_any : Certified (∀ {n : Nat}, BStmt_store_any spW sp prims ix_store_any n)) {n : Nat} :
+    BStmt_lower_set_index_of spW sp prims ix_lower_set_index_of n := by
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w k b h r0 r1 r2 r3 r4 hb pre
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_lower_set_index_of [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_lower_set_index_of (n + 1) x0 x1 x2 x3 x4 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_lower_set_index_of, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_lower_set_index_of.eq_def] at pre
+    simp only at pre
+    budget Cost_lower_set_index_of
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4⟩
+
 theorem bproof_lower_set_index {spW sp : SrcProgram} {prims : Prims} {ix_lower_set_index ix_lower_set_index_of : Nat}
     (fnW : spW.funcs[ix_lower_set_index]? = some (src_lower_set_index ix_lower_set_index_of)) (fn : sp.funcs[ix_lower_set_index]? = some (src_lower_set_index ix_lower_set_index_of))
     (np : prims.isPrim ix_lower_set_index = false)
@@ -166,28 +208,6 @@ theorem bproof_host_read_code {spW sp : SrcProgram} {prims : Prims} {ix_host_rea
     rw [Pre_host_read_code.eq_def] at pre
     simp only at pre
     budget Cost_host_read_code
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0⟩
-
-theorem bproof_host_sleep_code {spW sp : SrcProgram} {prims : Prims} {ix_host_sleep_code ix_plus ix_boxed_of_mini_selfhost_Stmt ix_single_of_mini_selfhost_Expr ix_boxed_of_mini_selfhost_Expr ix_cons_of_mini_selfhost_Expr : Nat}
-    (fnW : spW.funcs[ix_host_sleep_code]? = some (src_host_sleep_code ix_plus ix_boxed_of_mini_selfhost_Stmt ix_single_of_mini_selfhost_Expr ix_boxed_of_mini_selfhost_Expr ix_cons_of_mini_selfhost_Expr)) (fn : sp.funcs[ix_host_sleep_code]? = some (src_host_sleep_code ix_plus ix_boxed_of_mini_selfhost_Stmt ix_single_of_mini_selfhost_Expr ix_boxed_of_mini_selfhost_Expr ix_cons_of_mini_selfhost_Expr))
-    (np : prims.isPrim ix_host_sleep_code = false)
-    (back : Certified (∀ {n : Nat}, Stmt_host_sleep_code sp prims ix_host_sleep_code n))
-    (b_plus : Certified (∀ {n : Nat}, BStmt_plus spW sp prims ix_plus n))
-    (pp_boxed_of_mini_selfhost_Stmt : prims.isPrim ix_boxed_of_mini_selfhost_Stmt = true) (bx_boxed_of_mini_selfhost_Stmt : prims.boxed.contains ix_boxed_of_mini_selfhost_Stmt = true)
-    (b_single_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, BStmt_single_of_mini_selfhost_Expr spW sp prims ix_single_of_mini_selfhost_Expr n))
-    (pp_boxed_of_mini_selfhost_Expr : prims.isPrim ix_boxed_of_mini_selfhost_Expr = true) (bx_boxed_of_mini_selfhost_Expr : prims.boxed.contains ix_boxed_of_mini_selfhost_Expr = true)
-    (b_cons_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, BStmt_cons_of_mini_selfhost_Expr spW sp prims ix_cons_of_mini_selfhost_Expr n)) {n : Nat} :
-    BStmt_host_sleep_code spW sp prims ix_host_sleep_code n := by
-  intro x0 v0 w k b h r0 hb pre
-  rcases n with _ | n
-  · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_host_sleep_code [v0] = some (w, k) ∧ Cost_host_sleep_code (n + 1) x0 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_host_sleep_code, List.length_cons, List.length_nil, if_true] at h ⊢
-    rw [Pre_host_sleep_code.eq_def] at pre
-    simp only at pre
-    budget Cost_host_sleep_code
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0⟩
 
 end Lanius.Faithful.SelfBudget

@@ -5,7 +5,7 @@ public import Lanius.Mini.Compiler.P.SrcExpr_guard
 import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.SrcType_same
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_mask
@@ -52,7 +52,7 @@ compiled code stops at the check. -/
 
 namespace Lanius.Mini
 
-variable {places : List Addressed}
+variable {sx : Statics} {places : List Addressed}
 
 open Lanius.Core (Value)
 open Lanius.Semantics (State evalExpr evalBinaryValue evalUnaryValue evalScalarCast)
@@ -510,7 +510,7 @@ end Steps
 /-- A lowered pure expression whose guard passes evaluates, with enough fuel,
 to a value, leaving the state as it was. -/
 theorem SrcExpr.progress (e : SrcExpr) {scope : List Binding} {frame : Nat → Nat} {st : State}
-    {env : Env} {prog : Core.Program} (corr : Corr places scope frame st env) (target : prog.target = .x86_64) :
+    {env : Env} {prog : Core.Program} (corr : Corr sx places scope frame st env) (target : prog.target = .x86_64) :
     ∀ {t : Typed}, e.lower scope = some t → (e.guard scope).eval env ≠ 0 →
       ∃ fuel v, evalExpr fuel prog st e.toCore = .done v st := by
   induction e with
@@ -689,14 +689,14 @@ theorem SrcExpr.progress (e : SrcExpr) {scope : List Binding} {frame : Nat → N
            exact ⟨_, v, binary_progress (by simp [SrcOp.toCore]) runl runr (by rw [target]; exact ok)⟩)
 
 theorem lowerAs_progress {scope : List Binding} {frame : Nat → Nat} {st : State} {env : Env}
-    {prog : Core.Program} (corr : Corr places scope frame st env) (target : prog.target = .x86_64) {e : SrcExpr}
+    {prog : Core.Program} (corr : Corr sx places scope frame st env) (target : prog.target = .x86_64) {e : SrcExpr}
     {ty : SrcType} {x : Expr} (ok : lowerAs scope e ty = some x) (g : (e.guard scope).eval env ≠ 0) :
     ∃ fuel v, evalExpr fuel prog st e.toCore = .done v st := by
   obtain ⟨t, lowered, -, -⟩ := lowerAs_some ok
   exact e.progress corr target lowered g
 
 theorem lowerValue_progress {scope : List Binding} {frame : Nat → Nat} {st : State} {env : Env}
-    {prog : Core.Program} (corr : Corr places scope frame st env) (target : prog.target = .x86_64) {e : SrcExpr}
+    {prog : Core.Program} (corr : Corr sx places scope frame st env) (target : prog.target = .x86_64) {e : SrcExpr}
     {ty : SrcType} {xs : List Expr} (ok : lowerValue scope e ty = some xs) (g : (e.guard scope).eval env ≠ 0) :
     ∃ fuel v, evalExpr fuel prog st e.toCore = .done v st := by
   simp only [lowerValue] at ok
@@ -756,7 +756,7 @@ theorem exprs_progress {P : Core.Program} {st : State} :
     exact ⟨max f1 f2 + 1, v :: vs, by simp only [Semantics.evalExprs, head', rest']⟩
 
 theorem lowerArgs_progress {scope : List Binding} {frame : Nat → Nat} {st : State} {env : Env}
-    {prog : Core.Program} (corr : Corr places scope frame st env) (target : prog.target = .x86_64) :
+    {prog : Core.Program} (corr : Corr sx places scope frame st env) (target : prog.target = .x86_64) :
     ∀ {args : List SrcExpr} {types : List SrcType} {es : List Expr}, lowerArgs scope args types = some es →
       (guardAll scope args).eval env ≠ 0 →
       ∃ f vs, Semantics.evalExprs f prog st (args.map SrcExpr.toCore) = .done vs st := by

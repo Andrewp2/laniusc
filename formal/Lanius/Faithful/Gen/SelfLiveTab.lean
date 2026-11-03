@@ -10,10 +10,10 @@ def liveBad : List Nat := [
 ]
 
 /-- The prelude's `plus` and `times`, which SelfPanics.lean wraps. -/
-def liveWrap : List Nat := [75, 106]
+def liveWrap : List Nat := [75, 105]
 
 def ixPlus : Nat := 75
 
-def ixTimes : Nat := 106
+def ixTimes : Nat := 105
 
 end Lanius.Faithful.SelfPure

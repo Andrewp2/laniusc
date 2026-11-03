@@ -26,15 +26,15 @@ def compileOptimized (prog : Program) : Option Binary :=
   else
     compileProgram prog
 
-def compileLowered (funcs : Option (List Func)) : Option Binary :=
+def compileLowered (funcs : Option (List Func)) (statics : List UInt8) : Option Binary :=
   match funcs with
   | none => none
-  | some fs => compileOptimized ({ funcs := fs, statics := [] } : Program)
+  | some fs => compileOptimized ({ funcs := fs, statics := statics } : Program)
 
 /-- The functions are lowered against the declarations, which the slice lowering consults for its element types. -/
 def compileDeclared (decls : Option SrcDecls) (prog : SrcProgram) : Option Binary :=
   match decls with
   | none => none
-  | some d => compileLowered (lowerFuncs (sigs prog.funcs) (sigs prog.funcs) d prog.funcs)
+  | some d => compileLowered (lowerFuncs (sigs prog.funcs) (sigs prog.funcs) d prog.funcs) d.statics
 
 end Lanius.Mini

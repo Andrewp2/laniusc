@@ -30,7 +30,7 @@ abbrev Stmt_lx_ranges_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
 
 abbrev Stmt_lx_tokens_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Nat} {x1 : List Nat} {x2 : Lanius.Mini.RawTok} {x3 : List Lanius.Mini.RawTok} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepList 25 RepNat) x0 v0 → (RepList 25 RepNat) x1 v1 → RepRawTok x2 v2 → (RepList 161 RepRawTok) x3 v3 →
-    (RepList 45 RepToken) (Lanius.Mini.Inline.lxTokensAt x0 x1 x2 x3) w
+    (RepList 47 RepToken) (Lanius.Mini.Inline.lxTokensAt x0 x1 x2 x3) w
 
 abbrev Stmt_p_add (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →

@@ -9,7 +9,7 @@ import all Lanius.Mini.Compiler.P.FArith_opcode
 import all Lanius.Mini.Compiler.P.FloatTy_rex
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.SrcType_same
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_mask
@@ -83,7 +83,7 @@ import all Lanius.Mini.Compiler.P.wordStride
 import all Lanius.Mini.Compiler.P.wordWidth
 import all Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Compiler.P.SrcExpr_guard
-public import Lanius.Mini.Compiler.P.SrcType_size
+public import Lanius.Mini.Compiler.P.SrcType_same
 public import Lanius.Mini.Compiler.P.UintTy_half
 public import Lanius.Mini.Compiler.P.UintTy_isWide
 public import Lanius.Mini.Compiler.P.armScope
@@ -125,7 +125,7 @@ and the array's first slot. -/
 
 namespace Lanius.Mini
 
-variable {bud : Budget} {places : List Addressed}
+variable {bud : Budget} {sx : Statics} {places : List Addressed}
 
 open Lanius.Core (Value)
 open Lanius.Semantics (State Cell Completion evalExpr evalExprs execStmt restoreLocals)
@@ -162,7 +162,7 @@ theorem i32_toNat_emod (x : BitVec 32) : Int.toNat (x.toInt % 2 ^ 32) = x.toNat 
 /-- Slots that hold `n` `i32`s hold in-range `i32`s whose encoding is the
 slots' low four bytes. -/
 theorem fields_i32 : ∀ (n : Nat) {vs : List Value} {env : Env} {slot : Nat},
-    FieldsHold places (List.replicate n .i32) vs env slot →
+    FieldsHold sx places (List.replicate n .i32) vs env slot →
       vs.length = n ∧ (∀ x ∈ vs, Views.IsI32 x) ∧ Semantics.encodeI32Array vs = .ok (slotBytes env slot n)
   | 0, _, _, _, .nil => ⟨rfl, by simp, rfl⟩
   | n + 1, _, env, slot, .cons (.i32 holds) rest => by
@@ -396,12 +396,12 @@ theorem viewPtr_done {P : Core.Program} {st : State} (fresh : st.Fresh) (id : Na
 /-- Like `Corr.push`, for the viewed array: Core's state after binding the
 array and viewing its new cell at `p`, the address in the binding's first
 slot. -/
-theorem Corr.pushView {scope frame st env base next} (corr : Corr places scope frame st env)
+theorem Corr.pushView {scope frame st env base next} (corr : Corr sx places scope frame st env)
     (fr : Layout scope frame base next) (fresh : st.Fresh) {env' : Env} (agree : ScopeAgree scope env env')
     {id length : Nat} {vs : List Value} (i32s : ∀ x ∈ vs, Views.IsI32 x) (pos : 0 < length)
     (len : vs.length = length) {p : Nat} (addr : (env' next).toNat = p)
     (under : ∀ x ∈ places, x.cell < st.nextCell) (heap : Lanius.Memory.Heap) :
-    Corr places (⟨id, next, .view length⟩ :: scope) (upd frame next st.nextCell)
+    Corr sx places (⟨id, next, .view length⟩ :: scope) (upd frame next st.nextCell)
       { (st.bindLocal id (.array vs)) with
         heap := heap
         i32ArrayViews := st.i32ArrayViews ++ [{ address := p, root := st.nextCell, projections := [], length := vs.length }] }
@@ -493,6 +493,7 @@ section Statements
 variable {sp : SrcProgram} {mp : Program} {fuel : Nat} {ret : SrcType} {scope : List Binding}
   {next : Nat} {stmt : Stmt} {frame : Nat → Nat} {base : Nat} {st : State} {env : Env}
   {c : Completion} {st' : State} {hp : Heap}
+variable [StaticsOf sp sx]
 
 /-- Entering a `LetView`'s body: Core bound the array (whose elements the
 slots from `next` hold) and its pointer, the block within the limit; the
@@ -500,22 +501,22 @@ mini code before the body runs to a state that corresponds for the body's
 scope, and leaving the body's scope again corresponds for the outer one. -/
 theorem view_entered {P : Core.Program} {id length pointer k : Nat} {xs : List Expr} {vs : List Value}
     {w : Value} {st3 : State}
-    (corr : Corr places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
+    (corr : Corr sx places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
+    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp)
     (under : ∀ x ∈ places, x.cell < base) (pos : 0 < length)
-    (fh : FieldsHold places (List.replicate length .i32) vs (env.setFrom next xs) next)
+    (fh : FieldsHold sx places (List.replicate length .i32) vs (env.setFrom next xs) next)
     (ptrRun : evalExpr k P (st.bindLocal id (.array vs)) (.i32ArrayDataPtr (.local id)) = .done w st3)
     (room : st3.heap.nextAddress ≤ hp.limit) :
     ∃ p frame' envB hp3, w = .pointer p ∧
-      Corr places (viewScope id length pointer next scope) frame' (st3.bindLocal pointer (.pointer p)) envB ∧
+      Corr sx places (viewScope id length pointer next scope) frame' (st3.bindLocal pointer (.pointer p)) envB ∧
       Layout (viewScope id length pointer next scope) frame' base (next + length + 1) ∧
       (st3.bindLocal pointer (.pointer p)).Fresh ∧ base ≤ (st3.bindLocal pointer (.pointer p)).nextCell ∧
       HeapCorr (st3.bindLocal pointer (.pointer p)).heap (st3.bindLocal pointer (.pointer p)).world hp3 ∧
-      FrameCorr bud places (st3.bindLocal pointer (.pointer p)) hp3 ∧ hp3.limit = hp.limit ∧
+      FrameCorr sx bud places (st3.bindLocal pointer (.pointer p)) hp3 ∧ hp3.limit = hp.limit ∧
       Keeps places base st (st3.bindLocal pointer (.pointer p)) ∧
       (∀ {s4 : State} {c : Completion} {out : Outcome},
-        Matches bud places ret (viewScope id length pointer next scope) frame' s4 c out →
-        Matches bud places ret scope frame (restoreLocals st (restoreLocals st3 s4)) c out) ∧
+        Matches sx bud places ret (viewScope id length pointer next scope) frame' s4 c out →
+        Matches sx bud places ret scope frame (restoreLocals st (restoreLocals st3 s4)) c out) ∧
       (∀ {rest : Stmt} {d : Nat} {out : Outcome}, Exec mp d envB hp3 rest out →
         Exec mp d env hp (assignFrom next xs (viewPrefix next length rest)) out) ∧
       (∀ {rest : Stmt} {d n : Nat}, Stops mp d envB hp3 rest n →
@@ -550,7 +551,7 @@ theorem view_entered {P : Core.Program} {id length pointer k : Nat} {xs : List E
     subst st3Eq
     exact ⟨(bindLocal_fresh fresh id (.array vs)).1, Views.ViewsHold.mapView fresh.2 fresh.1 hc.below i32s enc map id⟩
   have next3 : st3.nextCell = st.nextCell + 1 := by subst st3Eq; rfl
-  have corr1 : Corr places (⟨id, next, .view length⟩ :: scope) (upd frame next st.nextCell) st3 envB := by
+  have corr1 : Corr sx places (⟨id, next, .view length⟩ :: scope) (upd frame next st.nextCell) st3 envB := by
     subst st3Eq
     exact corr.pushView fr fresh agree i32s pos vlen (by rw [envB_next, pBits])
       (fun x m => Nat.lt_of_lt_of_le (under x m) le) heap'
@@ -562,8 +563,8 @@ theorem view_entered {P : Core.Program} {id length pointer k : Nat} {xs : List E
   have frB := fr1.push (corr1.below fresh3) (by rw [next3]; addr_omega) pointer (ty := .ptr) (by decide)
   have hcB : HeapCorr (st3.bindLocal pointer (.pointer p)).heap (st3.bindLocal pointer (.pointer p)).world
       hp3 := by subst st3Eq; exact hc3
-  have fcB : FrameCorr bud places (st3.bindLocal pointer (.pointer p)) hp3 := by
-    refine fc.congrViews (fun x m => ?_) (fun x m a covers => ?_) ?_ ?_ ?_ ?_
+  have fcB : FrameCorr sx bud places (st3.bindLocal pointer (.pointer p)) hp3 := by
+    refine fc.congrViews (fun x m => ?_) (fun x m a covers => ?_) ?_ ?_ ?_ ?_ ?_
     · have := under x m
       rw [bindLocal_entry (by rw [next3]; addr_omega)]
       subst st3Eq
@@ -582,6 +583,7 @@ theorem view_entered {P : Core.Program} {id length pointer k : Nat} {xs : List E
       · exact fc.unviewed v vm x xm
       · have := under x xm
         exact Nat.ne_of_gt (by simp only; addr_omega)
+    · constructor <;> simp only [hp3, Heap.writeBytes_eq_writeAll, Heap.writeAll]
   have keeps3 : Keeps places base st st3 := by
     subst st3Eq
     refine ⟨fun c below _ _ => bindLocal_entry (by addr_omega) id _, Nat.le_succ _, fun v mem => ?_,
@@ -642,12 +644,12 @@ theorem view_entered {P : Core.Program} {id length pointer k : Nat} {xs : List E
 theorem stmt_letView (ih : ∀ m ≤ fuel, StmtSound sp mp m) {id length pointer : Nat} {fields : List SrcExpr}
     {body : SrcStmt}
     (ok : (SrcStmt.letView id length fields pointer body).lower (sp.sigsAt bud) sp.decls ret scope next = some stmt)
-    (corr : Corr places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
+    (corr : Corr sx places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
+    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp)
     (under : ∀ x ∈ places, x.cell < base)
     (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.letView id length fields pointer body).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
-    Simulates bud places mp hp ret scope frame base st env stmt c st' := by
+    Simulates sx bud places mp hp ret scope frame base st env stmt c st' := by
   obtain ⟨xs, bstmt, nz, -, literalOk, bodyOk, rfl⟩ := letView_lower_inv ok
   have pos : 0 < length := Nat.pos_of_ne_zero nz
   simp only [lowerLiteral, lowerStructFields] at literalOk
@@ -672,12 +674,12 @@ theorem stmt_letView (ih : ∀ m ≤ fuel, StmtSound sp mp m) {id length pointer
           lowerArgs_sound corr (SrcProgram.target_toCore sp) literalOk fieldsRun
         subst st2
         rw [sizes_replicate] at len
-        have flat : FlatValue places (.array .i32 length) (.array vs) env xs :=
+        have flat : FlatValue sx places (.array .i32 length) (.array vs) env xs :=
           ⟨by simp only [SrcType.size, len], .array fieldsHold⟩
         have insens : Insens xs next := Insens.below fun x mem => by
           obtain ⟨ys, shape, inYs⟩ := shapes x mem
           exact shape.below fr.slots x inYs
-        have fh : FieldsHold places (List.replicate length .i32) vs (env.setFrom next xs) next := by
+        have fh : FieldsHold sx places (List.replicate length .i32) vs (env.setFrom next xs) next := by
           have stored := flat.store insens
           cases stored; assumption
         simp only [execStmt] at run

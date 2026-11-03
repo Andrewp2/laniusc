@@ -226,24 +226,23 @@ theorem bproof_compile_optimized {spW sp : SrcProgram} {prims : Prims} {ix_compi
     budget Cost_compile_optimized
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0⟩
 
-theorem bproof_compile_lowered {spW sp : SrcProgram} {prims : Prims} {ix_compile_lowered ix_compile_optimized ix_empty_of_u8 : Nat}
-    (fnW : spW.funcs[ix_compile_lowered]? = some (src_compile_lowered ix_compile_optimized ix_empty_of_u8)) (fn : sp.funcs[ix_compile_lowered]? = some (src_compile_lowered ix_compile_optimized ix_empty_of_u8))
+theorem bproof_compile_lowered {spW sp : SrcProgram} {prims : Prims} {ix_compile_lowered ix_compile_optimized : Nat}
+    (fnW : spW.funcs[ix_compile_lowered]? = some (src_compile_lowered ix_compile_optimized)) (fn : sp.funcs[ix_compile_lowered]? = some (src_compile_lowered ix_compile_optimized))
     (np : prims.isPrim ix_compile_lowered = false)
     (back : Certified (∀ {n : Nat}, Stmt_compile_lowered sp prims ix_compile_lowered n))
-    (b_compile_optimized : Certified (∀ {n : Nat}, BStmt_compile_optimized spW sp prims ix_compile_optimized n))
-    (b_empty_of_u8 : Certified (∀ {n : Nat}, BStmt_empty_of_u8 spW sp prims ix_empty_of_u8 n)) {n : Nat} :
+    (b_compile_optimized : Certified (∀ {n : Nat}, BStmt_compile_optimized spW sp prims ix_compile_optimized n)) {n : Nat} :
     BStmt_compile_lowered spW sp prims ix_compile_lowered n := by
-  intro x0 v0 w k b h r0 hb pre
+  intro x0 x1 v0 v1 w k b h r0 r1 hb pre
   rcases n with _ | n
   · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_compile_lowered [v0] = some (w, k) ∧ Cost_compile_lowered (n + 1) x0 = k := by
+  have key : qcall sp prims uc (n + 1) ix_compile_lowered [v0, v1] = some (w, k) ∧ Cost_compile_lowered (n + 1) x0 x1 = k := by
     rw [qcall_succ np fnW] at h
     rw [qcall_succ np fn]
     simp only [src_compile_lowered, List.length_cons, List.length_nil, if_true] at h ⊢
     rw [Pre_compile_lowered.eq_def] at pre
     simp only at pre
     budget Cost_compile_lowered
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0⟩
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
 
 theorem bproof_lower_func_cons {spW sp : SrcProgram} {prims : Prims} {ix_lower_func_cons ix_cons_of_mini_selfhost_Func : Nat}
     (fnW : spW.funcs[ix_lower_func_cons]? = some (src_lower_func_cons ix_cons_of_mini_selfhost_Func)) (fn : sp.funcs[ix_lower_func_cons]? = some (src_lower_func_cons ix_cons_of_mini_selfhost_Func))

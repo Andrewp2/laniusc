@@ -333,7 +333,7 @@ def callSimple (world : State) (service : HostService) (arguments : List Value) 
       else .returned (i32Result 0) (world.afterSleepMs milliseconds.toNat)
   | .writeText, [.signed .i32 handle, .string text] =>
       match writeBytes world handle (utf8Bytes text) with
-      | some written => .returned (i32Result 0) written
+      | some written => .returned (i32Result (utf8Bytes text).length) written
       | none => .unavailable service world
   | .writeI32, [.signed .i32 handle, .signed .i32 value] =>
       match writeBytes world handle (utf8Bytes (toString value)) with
@@ -384,7 +384,7 @@ def call (heap : Heap) (world : State) (service : HostService)
           .returned (i32Result value) heap read
       | .writeText, [.signed .i32 handle, .string text] =>
           match writeFileBytes next handle (utf8Bytes text) with
-          | some written => .returned (i32Result 0) heap written
+          | some written => .returned (i32Result (utf8Bytes text).length) heap written
           | none => .returned (i32Result (-1)) heap next
       | .writeI32, [.signed .i32 handle, .signed .i32 value] =>
           match writeFileBytes next handle (utf8Bytes (toString value)) with

@@ -13,7 +13,7 @@ import all Lanius.Mini.Compiler.P.FArith_opcode
 import all Lanius.Mini.Compiler.P.FloatTy_rex
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.SrcType_same
 import all Lanius.Mini.Compiler.P.Stmt_kills
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
@@ -201,6 +201,8 @@ inductive TypeDeclared (P : Core.Program) : SrcType → Prop where
   | sint (kind : UintTy) : TypeDeclared P (.sint kind)
   /-- A viewed array's Core type, `[i32; length]`, needs no declaration. -/
   | view (length : Nat) : TypeDeclared P (.view length)
+  /-- `str`'s Core type, a scalar, needs no declaration. -/
+  | str : TypeDeclared P .str
 
 /-- The types a statement's bindings name are declared. -/
 def SrcStmt.Declared (P : Core.Program) (s : SrcStmt) : Prop :=
@@ -371,6 +373,7 @@ theorem same_toCore : ∀ {a b : SrcType}, a.same b = true → a.toCore = b.toCo
     have := SrcType.eq_of_isSint (ty := b) (k := k) (by simpa [SrcType.same] using h)
     subst this; rfl
   | .view n, b, h => by cases b <;> simp [SrcType.same] at h
+  | .str, b, h => by cases b <;> simp [SrcType.same, SrcType.isStr] at h ⊢
 
 /-- An integer type of the front pass. -/
 inductive IsInt : SrcType → Prop where
@@ -419,6 +422,7 @@ theorem equalityTy {ty : SrcType} (scalar : ty.isScalar = true) : Typing.Equalit
   | float ft => cases ft <;> first | exact .f32 | exact .f64
   | sint => exact .signed _
   | view => simp [SrcType.isScalar] at scalar
+  | str => simp [SrcType.isScalar] at scalar
 
 theorem floatArithTy (ft : FloatTy) : Typing.ArithmeticTy (SrcType.float ft).toCore := by
   cases ft <;> first | exact .f32 | exact .f64
@@ -576,6 +580,7 @@ theorem shiftTy_of {ty : SrcType} (int : ty.isInteger = true) : Typing.ShiftTy t
   | slice => simp [SrcType.isInteger] at int
   | array => simp [SrcType.isInteger] at int
   | view => simp [SrcType.isInteger] at int
+  | str => simp [SrcType.isInteger] at int
 
 /-- A shift by an amount of any integer type keeps its left operand's type. -/
 theorem lowerShift_typed {op : BinOp} {cop : Core.BinaryOp} {l r t : Typed}
@@ -990,6 +995,7 @@ theorem SrcExpr.lower_typed {P : Core.Program} (target : P.target = Core.Target.
         rw [castToFloat_ty h]
         rfl
       | view => simp [castTo] at h
+      | str => simp [castTo] at h
 
 theorem lowerAs_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
     {scope : List Binding} {ctx : Typing.Context} (ok : ScopeOk P ctx scope) {e : SrcExpr}
@@ -1154,6 +1160,7 @@ theorem lowerLiteral_typed {P : Core.Program} (target : P.target = Core.Target.x
   | float => simp [lowerLiteral] at h
   | sint => simp [lowerLiteral] at h
   | view => simp [lowerLiteral] at h
+  | str => simp [lowerLiteral] at h
 
 theorem lowerEnumValue_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
     {scope : List Binding} {ctx : Typing.Context} (ok : ScopeOk P ctx scope) {ty : SrcType}
@@ -1188,6 +1195,7 @@ theorem lowerEnumValue_typed {P : Core.Program} (target : P.target = Core.Target
   | float => simp [lowerEnumValue] at h
   | sint => simp [lowerEnumValue] at h
   | view => simp [lowerEnumValue] at h
+  | str => simp [lowerEnumValue] at h
 
 /-! ## Match -/
 
@@ -1282,6 +1290,7 @@ theorem lowerMatch_typed {P : Core.Program} (target : P.target = Core.Target.x86
         exact .matchValue (.local inCtx)
           (lowerArms_typed target ok decl 0 variants arms (fun j fs hj => by simp [hj]) inner h)
       · simp at h
+    · simp at h
     · simp at h
     · simp at h
     · simp at h
@@ -1476,6 +1485,7 @@ theorem castTo_typed {P : Core.Program} {ctx : Typing.Context} {ce : Core.Expr} 
   | float ft => exact castToFloat_typed inner h
   | unit => simp [castTo] at h
   | view => simp [castTo] at h
+  | str => simp [castTo] at h
 
 /-- An element read of a word struct or enum slice has the element's type. -/
 theorem evalWordElement_ty {decls : SrcDecls} {b : Binding} {element : SrcType} {slot : Nat}
@@ -1872,6 +1882,7 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
       | float => simp at h
       | sint => simp at h
       | view => simp at h
+      | str => simp at h
   | .eVariant ty variant payload, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalVariant] at h
     split at h
@@ -1908,6 +1919,7 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
       | float => simp at h
       | sint => simp at h
       | view => simp at h
+      | str => simp at h
   | .eMatch scrutinee ety ty binders values, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalMatch] at h
     split at h
@@ -1945,6 +1957,7 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
           | float => cases values <;> simp [matchVariants, evalArms] at ha
           | sint => cases values <;> simp [matchVariants, evalArms] at ha
           | view => cases values <;> simp [matchVariants, evalArms] at ha
+          | str => cases values <;> simp [matchVariants, evalArms] at ha
         · simp at h
   | .eDivide op left right, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalDivision] at h
@@ -2096,6 +2109,13 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
               · simp at h
         rw [tyEq]
         exact .sliceStride (.local inCtx)
+  | .eStr offset chars, scope, ctx, slot, ev, ok, dd, h => by
+    simp only [SrcEff.eval, evalStr] at h
+    split at h
+    · simp only [Option.some.injEq] at h
+      subst h
+      exact .value (.string _) (literal := rfl)
+    · simp at h
   | .eLen slice, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalLen] at h
     split at h
@@ -3267,6 +3287,10 @@ theorem SrcType.declare_sound : ∀ (ty : SrcType) {d d' : SrcDecls}, ty.declare
     simp only [SrcType.declare, Option.some.injEq] at h
     subst h
     exact ⟨Extends.refl _, fun _ _ => .unit⟩
+  | .str, _, _, h => by
+    simp only [SrcType.declare, Option.some.injEq] at h
+    subst h
+    exact ⟨Extends.refl _, fun _ _ => .str⟩
   | .isize, _, _, h => by
     simp only [SrcType.declare, Option.some.injEq] at h
     subst h
@@ -3628,7 +3652,14 @@ theorem hostFuncs_find (i : Nat) :
               · by_cases h : i = hostBase + 7
                 · subst h
                   simp [hostFunc, hostBase]
-                · simp [hostFunc, a, b, c, d, e, f, g, h, Ne.symm a, Ne.symm b, Ne.symm c, Ne.symm d, Ne.symm e, Ne.symm f, Ne.symm g, Ne.symm h]
+                · by_cases j : i = hostBase + 8
+                  · subst j
+                    simp [hostFunc, hostBase]
+                  · by_cases k : i = hostBase + 9
+                    · subst k
+                      simp [hostFunc, hostBase]
+                    · simp [hostFunc, a, b, c, d, e, f, g, h, j, k, Ne.symm a, Ne.symm b, Ne.symm c, Ne.symm d,
+                        Ne.symm e, Ne.symm f, Ne.symm g, Ne.symm h, Ne.symm j, Ne.symm k]
 
 theorem withBudget_getElem : ∀ (ss : List Sig) (room block i : Nat),
     (withBudget ss room block)[i]? = ss[i]?.map fun s =>
@@ -3691,7 +3722,7 @@ theorem lowerFuncs_wellTyped {sp : SrcProgram} {funcs : List Func}
   rcases hf with hf | hf
   case inr =>
     simp only [hostFuncs, List.mem_cons, List.not_mem_nil, or_false] at hf
-    rcases hf with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> exact ⟨rfl, rfl⟩
+    rcases hf with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> exact ⟨rfl, rfl⟩
   obtain ⟨i, func, mem, rfl⟩ := mem_coreFuncs (n := 0) (funcs := sp.funcs) hf
   obtain ⟨c, s, hc⟩ := lowerFuncs_each lowered func mem
   obtain ⟨inside, out, hout⟩ := lowerFunc_body hc
@@ -3726,7 +3757,7 @@ def SrcProgram.toCoreWith (sp : SrcProgram) (structs : List Core.StructDecl)
 namespace TypeSound
 
 /-- `fn f() -> i32 {}`: no `return`. -/
-def noReturn : SrcProgram := { funcs := [{ params := [], ret := .i32, body := .nop }] }
+def noReturn : SrcProgram := { funcs := [{ params := [], ret := .i32, body := .nop }], statics := [] }
 
 /-- `let a = S0 { 5 }; let b = S0 { true }; return a.0`: struct id 0 with two
 field lists. -/
@@ -3734,7 +3765,7 @@ def idClash : SrcProgram :=
   let body := SrcStmt.letStruct 1 (SrcType.struct 0 [SrcType.i32]) [SrcExpr.int 5]
     (SrcStmt.letStruct 2 (SrcType.struct 0 [SrcType.bool]) [SrcExpr.boolean true]
       (SrcStmt.return (SrcExpr.field 1 0)))
-  { funcs := [{ params := [], ret := .i32, body := body }] }
+  { funcs := [{ params := [], ret := .i32, body := body }], statics := [] }
 
 theorem noReturn_lowers : ∃ funcs, lowerFuncs (sigs noReturn.funcs) (sigs noReturn.funcs) noReturn.decls noReturn.funcs = some funcs :=
   ⟨_, rfl⟩

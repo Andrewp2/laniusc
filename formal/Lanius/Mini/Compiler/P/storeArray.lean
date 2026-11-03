@@ -1,7 +1,7 @@
 module
 
 public import Lanius.Mini.Compiler.Types
-import Lanius.Mini.Compiler.P.SrcType_size
+import Lanius.Mini.Compiler.P.SrcType_same
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.evalSame
 import Lanius.Mini.Compiler.P.matchVariants
@@ -31,6 +31,7 @@ def storeArray (b : Binding) (slot : Nat) (index : Option Evaluated) (value : Op
   | .float ft => none
   | .sint sk => none
   | .view viewLength => none
+  | .str => none
 
 /-- x.field = value: the value in slot, then copied to the field's slot. -/
 def setFieldEvalAt (target : Nat) (found : Option SrcType) (slot : Nat) (v : Evaluated) : Option Stmt :=
@@ -58,6 +59,7 @@ def setFieldEvalOf (b : Binding) (field : Nat) (slot : Nat) (v : Evaluated) : Op
   | .float ft => none
   | .sint sk => none
   | .view viewLength => none
+  | .str => none
 
 def lowerSetFieldEval (slot : Nat) (binding : Option Binding) (field : Nat) (value : Option Evaluated) : Option Stmt :=
   match binding with

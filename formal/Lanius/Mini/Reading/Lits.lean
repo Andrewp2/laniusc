@@ -168,6 +168,8 @@ inductive LitEff (funcs : List SrcFunc) : List LocalTy → Option SrcType → Sr
       LitEff funcs locals (some t) a a' → LitEff funcs ({ id := id, ty := t } :: locals) (some rt) b b' →
       LitEff funcs locals want (.eLet id t a rt b) (.eLet id t a' rt b')
   | len {locals : List LocalTy} {want : Option SrcType} {sl : Nat} : LitEff funcs locals want (.eLen sl) (.eLen sl)
+  | str {locals : List LocalTy} {want : Option SrcType} {offset : Nat} {chars : List Nat} :
+      LitEff funcs locals want (.eStr offset chars) (.eStr offset chars)
 
 inductive LitEffs (funcs : List SrcFunc) : List LocalTy → Option (List SrcType) → List SrcEff → List SrcEff → Prop
   | nil {locals : List LocalTy} {wants : Option (List SrcType)} : LitEffs funcs locals wants [] []
@@ -209,6 +211,7 @@ theorem litEff_sound (funcs : List SrcFunc) :
   | locals, want, .eLet id t a rt b => by
     simp only [litEff]; exact .let (litEff_sound funcs _ _ a) (litEff_sound funcs _ _ b)
   | locals, want, .eLen sl => by simp only [litEff]; exact .len
+  | locals, want, .eStr offset chars => by simp only [litEff]; exact .str
 
 theorem litEffs_sound (funcs : List SrcFunc) :
     ∀ (locals : List LocalTy) (wants : Option (List SrcType)) (xs : List SrcEff),
@@ -411,7 +414,7 @@ theorem litFuncs_sound (all : List SrcFunc) :
 literals typed, and no wide literal left without a type. -/
 def ClosedProgram (decls : Decls) (fns types : List Inst) (funcs : List MFunc) (p : SrcProgram) : Prop :=
   ∃ fs, ListRel (FuncClosed decls fns types) funcs fs ∧ ListRel (LitFunc fs) fs p.funcs ∧
-    wideLeftFuncs p.funcs = false
+    wideLeftFuncs p.funcs = false ∧ p.statics = []
 
 theorem buildClosed_sound {fuel : Nat} {decls : Decls} {fns : List Inst} {types : Option (List Inst)}
     {funcs : List MFunc} {p : SrcProgram} (h : buildClosed fuel decls fns types funcs = some p) :
@@ -432,6 +435,6 @@ theorem buildClosed_sound {fuel : Nat} {decls : Decls} {fns : List Inst} {types 
         rw [hw] at h
         simp only [Bool.false_eq_true, if_false, Option.some.injEq] at h
         subst h
-        exact ⟨ts, rfl, fs, closeFuncs_sound (loweredAll_ok rfl) _ _ hc, litFuncs_sound fs fs, hw⟩
+        exact ⟨ts, rfl, fs, closeFuncs_sound (loweredAll_ok rfl) _ _ hc, litFuncs_sound fs fs, hw, rfl⟩
 
 end Lanius.Mini.Reading

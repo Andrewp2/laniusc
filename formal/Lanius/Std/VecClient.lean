@@ -14,6 +14,8 @@ representing that value and leaves a heap representing Core's. -/
 
 namespace Lanius.Std
 
+variable {sx : Statics}
+
 section core
 open Lanius Lanius.Core Lanius.Semantics Lanius.Memory
 
@@ -101,17 +103,18 @@ the verified compiler: the compiled call returns slots representing the same
 value and a heap representing the same Core heap. -/
 theorem compiled_of_pure {sp : SrcProgram} {binary : Binary} (compiled : compileSource sp = some binary)
     {f : Nat} {func : SrcFunc} (found : sp.funcs[f]? = some func) {args : List Value}
-    {bits : List (BitVec 64)} (typed : FieldsHold [] (paramTypes func.params) args (Func.entry bits) 0)
+    {bits : List (BitVec 64)} (typed : FieldsHold sx [] (paramTypes func.params) args (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize func.params) {st : Semantics.State} {heap : Heap}
-    (fresh : st.Fresh) (hc : HeapCorr st.heap st.world heap) (fits : st.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp ∧ heap.fsp ≤ heap.top ∧ heap.top < 2 ^ 62) {w : Value}
+    (fresh : st.Fresh) (hc : HeapCorr st.heap st.world heap) (fits : st.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp ∧ heap.fsp ≤ heap.top ∧ heap.top < 2 ^ 62)
+    (statics : heap.StaticsAt sx) (ofSp : sx.bytes = sp.decls.statics) {w : Value}
     (core : ∃ after, Semantics.RunsExpr sp.toCore st (.call f (args.map Core.Expr.value)) w after ∧
       Semantics.PureFrame st after) :
-    ∃ depth results after, func.ret.HoldsAt [] w (Func.entry results) 0 ∧ results.length = func.ret.size ∧
+    ∃ depth results after, func.ret.HoldsAt sx [] w (Func.entry results) 0 ∧ results.length = func.ret.size ∧
       HeapCorr st.heap st.world after ∧ MachineReturns binary depth f bits heap results after := by
   obtain ⟨final, ⟨threshold, stable, _⟩, frame⟩ := core
   have heapEq : final.heap = st.heap := frame.heap
   have result := compileSource_correct_from compiled found typed bitsLen fresh hc (stable threshold (Nat.le_refl _))
-    (by rw [heapEq]; exact fits) frameRoom
+    (by rw [heapEq]; exact fits) frameRoom statics ofSp
   rw [heapEq, frame.world] at result
   exact result
 
@@ -131,17 +134,18 @@ heap (the call only reads). -/
 theorem vec_client_correct {sp : SrcProgram} {binary : Binary} (compiled : compileSource sp = some binary)
     {ids : VecIds} (inst : VecInstance sp.toCore i32Ty ids) {f : Nat}
     (found : sp.funcs[f]? = some (lastOrZeroSrc ids)) {v : Value} {bits : List (BitVec 64)}
-    (typed : FieldsHold [] (paramTypes (lastOrZeroSrc ids).params) [v] (Func.entry bits) 0)
+    (typed : FieldsHold sx [] (paramTypes (lastOrZeroSrc ids).params) [v] (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize (lastOrZeroSrc ids).params)
     {st : Semantics.State} {heap : Heap} (fresh : st.Fresh) (hc : HeapCorr st.heap st.world heap)
     {xs : List Value} (rep : VecRep sp.toCore i32Ty 4 ids.vec st.heap v xs)
-    (fits : st.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp ∧ heap.fsp ≤ heap.top ∧ heap.top < 2 ^ 62) :
-    ∃ depth results after, SrcType.i32.HoldsAt [] (xs.getLast?.getD (.signed .i32 0)) (Func.entry results) 0 ∧
+    (fits : st.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp ∧ heap.fsp ≤ heap.top ∧ heap.top < 2 ^ 62)
+    (statics : heap.StaticsAt sx) (ofSp : sx.bytes = sp.decls.statics) :
+    ∃ depth results after, SrcType.i32.HoldsAt sx [] (xs.getLast?.getD (.signed .i32 0)) (Func.entry results) 0 ∧
       results.length = SrcType.i32.size ∧ HeapCorr st.heap st.world after ∧
       MachineReturns binary depth f bits heap results after := by
   have coreFound : sp.toCore.function? f = some ((lastOrZeroSrc ids).toCore f) := by
     rw [SrcProgram.function?_toCore, found]
-  exact compiled_of_pure compiled found typed bitsLen fresh hc fits frameRoom (lastOrZero_core inst coreFound fresh.1 rep)
+  exact compiled_of_pure compiled found typed bitsLen fresh hc fits frameRoom statics ofSp (lastOrZero_core inst coreFound fresh.1 rep)
 
 end compiled
 
@@ -205,6 +209,7 @@ def vecClientSrc : SrcProgram where
     { params := [⟨0, vecSrcTy⟩], ret := vecSrcTy,
       body := .returnEval (.eStruct vecSrcTy [.ePure (.field 0 0), .ePure (.int 0), .ePure (.field 0 2)]) },
     lastOrZeroSrc transcriptionIds]
+  statics := []
 
 theorem vecClientSrc_instance : VecInstance vecClientSrc.toCore i32Ty transcriptionIds :=
   ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
@@ -220,16 +225,17 @@ function 12. (`compileSource vecClientSrc` is `some _`: `#eval` shows it;
 the kernel does not reduce the compiler, so it stays a hypothesis.) -/
 theorem vecClientSrc_correct {binary : Binary} (compiled : compileSource vecClientSrc = some binary)
     {v : Value} {bits : List (BitVec 64)}
-    (typed : FieldsHold [] (paramTypes (lastOrZeroSrc transcriptionIds).params) [v] (Func.entry bits) 0)
+    (typed : FieldsHold sx [] (paramTypes (lastOrZeroSrc transcriptionIds).params) [v] (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize (lastOrZeroSrc transcriptionIds).params)
     {st : Semantics.State} {heap : Heap} (fresh : st.Fresh) (hc : HeapCorr st.heap st.world heap)
     {xs : List Value} (rep : VecRep vecClientSrc.toCore i32Ty 4 0 st.heap v xs)
-    (fits : st.heap.nextAddress ≤ heap.limit) :
-    ∃ depth results after, SrcType.i32.HoldsAt [] (xs.getLast?.getD (.signed .i32 0)) (Func.entry results) 0 ∧
+    (fits : st.heap.nextAddress ≤ heap.limit) (statics : heap.StaticsAt sx)
+    (ofSp : sx.bytes = vecClientSrc.decls.statics) :
+    ∃ depth results after, SrcType.i32.HoldsAt sx [] (xs.getLast?.getD (.signed .i32 0)) (Func.entry results) 0 ∧
       results.length = SrcType.i32.size ∧ HeapCorr st.heap st.world after ∧
       MachineReturns binary depth 12 bits heap results after :=
   vec_client_correct compiled vecClientSrc_instance (f := 12) rfl typed bitsLen fresh hc rep fits
-    (fun pos => absurd pos (by decide +kernel))
+    (fun pos => absurd pos (by decide +kernel)) statics ofSp
 
 end concrete
 

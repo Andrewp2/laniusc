@@ -9,7 +9,7 @@ import all Lanius.Mini.Compiler.P.FArith_opcode
 import all Lanius.Mini.Compiler.P.FloatTy_rex
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.SrcType_same
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_mask
@@ -77,7 +77,7 @@ import all Lanius.Mini.Compiler.P.wordStride
 import all Lanius.Mini.Compiler.P.wordWidth
 -- end import all uses
 -- import parts: Lanius.Mini.Compiler norm castTo arithSint orderSint signKey
-public import Lanius.Mini.Compiler.P.SrcType_size
+public import Lanius.Mini.Compiler.P.SrcType_same
 public import Lanius.Mini.Compiler.P.arithShiftRight
 public import Lanius.Mini.Compiler.P.arithUint
 public import Lanius.Mini.Compiler.P.sintToUint
@@ -505,7 +505,7 @@ theorem narrow_cast_holds {k : UintTy} (narrow : k.isWide = false) {ty : SrcType
       rw [hb]
       exact emod_width narrow (by rw [low_widen])
   | bool | ptr => simp [SrcType.isScalar, SrcType.isBool, SrcType.isPtr] at scalar
-  | struct | enum | slice | array | unit | view => simp [SrcType.Holds] at holds
+  | struct | enum | slice | array | unit | view | str => simp [SrcType.Holds] at holds
 
 theorem holds_compare (c : Bool) : SrcType.Holds .bool (.boolean c) (if c then 1 else 0) :=
   ⟨c, rfl, by cases c <;> rfl⟩

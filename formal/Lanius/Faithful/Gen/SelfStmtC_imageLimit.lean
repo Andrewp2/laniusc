@@ -22,14 +22,14 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_compile_program (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Program} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepProgram x0 v0 →
-    (RepOption 49 RepBinary) (Lanius.Mini.compileProgram x0) w
+    (RepOption 51 RepBinary) (Lanius.Mini.compileProgram x0) w
 
 abbrev Stmt_image_limit (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.imageLimit) w
 
 abbrev Stmt_linked_size (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Code} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 51 RepCode) x0 v0 →
+  ∀ {x0 : List Lanius.Mini.Code} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 53 RepCode) x0 v0 →
     RepNat (Lanius.Mini.linkedSize x0) w
 
 end Lanius.Faithful.SelfCert

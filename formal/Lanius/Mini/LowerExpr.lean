@@ -14,7 +14,7 @@ import all Lanius.Mini.Compiler.P.FArith_opcode
 import all Lanius.Mini.Compiler.P.FloatTy_rex
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.SrcType_same
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_mask
@@ -99,7 +99,7 @@ the state, to a value its lowered mini expression represents. -/
 
 namespace Lanius.Mini
 
-variable {places : List Addressed}
+variable {sx : Statics} {places : List Addressed}
 
 open Lanius.Core (Value)
 open Lanius.Semantics (State evalExpr)
@@ -109,12 +109,12 @@ theorem viewedType_true {ty : SrcType} (h : viewedType ty = true) : ∃ n, ty = 
 
 /-- Core's locals are the scope's bindings in the same order, each slot's cell
 given by `frame`, and every binding's cell holds a value its slot represents. -/
-structure Corr (places : List Addressed) (scope : List Binding) (frame : Nat → Nat) (st : State) (env : Env) : Prop where
+structure Corr (sx : Statics) (places : List Addressed) (scope : List Binding) (frame : Nat → Nat) (st : State) (env : Env) : Prop where
   locals : st.locals = scope.map fun b => (b.id, frame b.slot)
   /-- The scope's cells are not the places' (the caller's arrays). -/
   apart : ∀ x ∈ places, ∀ b ∈ scope, x.cell ≠ frame b.slot
   values : ∀ b ∈ scope, ∃ v, st.cellEntry? (frame b.slot) = some ⟨frame b.slot, some v⟩ ∧
-    b.ty.HoldsAt places v env b.slot
+    b.ty.HoldsAt sx places v env b.slot
   /-- No array view roots at the cells of the scope's bindings other than
   viewed arrays: Core's syncs never write them. -/
   unviewed : ∀ v ∈ st.i32ArrayViews, ∀ b ∈ scope, viewedType b.ty = false → v.root ≠ frame b.slot
@@ -145,14 +145,14 @@ theorem find_locals (scope : List Binding) (frame : Nat → Nat) (id : Nat) :
     · have : (head.id == id) = false := by simpa using h
       simp [h, ih, this]
 
-theorem Corr.cellId {scope frame st env} (corr : Corr places scope frame st env) (id : Nat) :
+theorem Corr.cellId {scope frame st env} (corr : Corr sx places scope frame st env) (id : Nat) :
     st.cellId? id = (lookup scope id).map fun b => frame b.slot := by
   simp only [State.cellId?, corr.locals, find_locals, Option.map_map]
   rfl
 
-theorem Corr.local {scope frame st env} (corr : Corr places scope frame st env) {id : Nat} {b : Binding}
+theorem Corr.local {scope frame st env} (corr : Corr sx places scope frame st env) {id : Nat} {b : Binding}
     (found : lookup scope id = some b) (fuel : Nat) (prog : Core.Program) :
-    ∃ v, evalExpr (fuel + 1) prog st (.local id) = .done v st ∧ b.ty.HoldsAt places v env b.slot := by
+    ∃ v, evalExpr (fuel + 1) prog st (.local id) = .done v st ∧ b.ty.HoldsAt sx places v env b.slot := by
   obtain ⟨v, entry, holds⟩ := corr.values b (lookup_mem found).1
   refine ⟨v, ?_, holds⟩
   simp only [evalExpr, corr.cellId, found, Option.map_some, entry]
@@ -370,6 +370,7 @@ theorem castToIsize_sound {inner t : Typed} {env : Env} {w result : Value}
     · rename_i _ hty
       simp [hty, SrcType.sintKind] at base
     · simp at lowered
+    · simp at lowered
 
 /-- A lowered cast of an operand of a type other than `SrcType.sint` holds Core's cast of its value. -/
 theorem cast_sound_base {ty : SrcType} {inner t : Typed} {env : Env} {w result : Value}
@@ -428,6 +429,7 @@ theorem cast_sound_base {ty : SrcType} {inner t : Typed} {env : Env} {w result :
     · rename_i _ hty
       simp [hty, SrcType.sintKind] at base
     · simp at lowered
+    · simp at lowered
   | bool => simp [castTo] at lowered
   | uint kind =>
     have positive := Nat.two_pow_pos kind.width
@@ -478,6 +480,7 @@ theorem cast_sound_base {ty : SrcType} {inner t : Typed} {env : Env} {w result :
     · rename_i _ hty
       simp [hty, SrcType.sintKind] at base
     · simp at lowered
+    · simp at lowered
   | struct => simp [castTo] at lowered
   | enum => simp [castTo] at lowered
   | ptr => simp [castTo] at lowered
@@ -526,6 +529,7 @@ theorem cast_sound_base {ty : SrcType} {inner t : Typed} {env : Env} {w result :
         exact narrow_cast_holds (by simpa using wide) scalar holds casted
       · simp at lowered
   | view => simp [castTo] at lowered
+  | str => simp [castTo] at lowered
 
 /-- A lowered cast holds Core's cast of the operand's value. -/
 theorem cast_sound {ty : SrcType} {inner t : Typed} {env : Env} {w result : Value}
@@ -554,7 +558,7 @@ theorem SrcType.same_cases {a b : SrcType} (h : a.same b = true) :
     (∃ id fields, a = .struct id fields) ∨ (∃ id variants, a = .enum id variants) ∨
       (∃ element, a = .slice element) ∨ (∃ element n, a = .array element n) ∨ b = a := by
   cases a <;> cases b <;>
-    simp [SrcType.same, SrcType.isI32, SrcType.isBool, SrcType.isUint, SrcType.isPtr, SrcType.isUnit,
+    simp [SrcType.same, SrcType.isI32, SrcType.isBool, SrcType.isUint, SrcType.isPtr, SrcType.isUnit, SrcType.isStr,
       SrcType.isIsize, SrcType.isSint, SrcType.isChar, SrcType.isFloat] at h ⊢ <;>
     first | exact UintTy.eq_of_code h | exact (UintTy.eq_of_code h).symm | exact FloatTy.eq_of_number h | exact (FloatTy.eq_of_number h).symm | exact h.symm | exact h
 
@@ -710,6 +714,7 @@ theorem equality_holds {op : CmpOp} {cop : Core.BinaryOp} (h : (op = .eq ∧ cop
         subst e
         simp only [Expr.eval, htl, SrcType.word]
         exact holds_compare _
+      · simp [SrcType.Holds] at holdsl
       · simp [SrcType.Holds] at holdsl
     · simp at lowered
 
@@ -938,7 +943,7 @@ theorem SrcOp.lower_holds {op : SrcOp} {tl tr t : Typed} (lowered : op.lower tl 
   case logicalOr => exact absurd rfl strict.2
 
 theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat → Nat} {st : State}
-    {env : Env} {prog : Core.Program} (corr : Corr places scope frame st env) (target : prog.target = .x86_64) :
+    {env : Env} {prog : Core.Program} (corr : Corr sx places scope frame st env) (target : prog.target = .x86_64) :
     ∀ {t : Typed} {fuel : Nat} {v : Value} {st' : State}, e.lower scope = some t →
       evalExpr fuel prog st e.toCore = .done v st' → st' = st ∧ t.ty.Holds v (t.expr.eval env) := by
   induction e with

@@ -78,6 +78,7 @@ def SrcType.isI32 (self : SrcType) : Bool :=
   | .float ft => false
   | .sint sk => false
   | .view viewLength => false
+  | .str => false
 
 def SrcType.isBool (self : SrcType) : Bool :=
   match self with
@@ -95,6 +96,7 @@ def SrcType.isBool (self : SrcType) : Bool :=
   | .float ft => false
   | .sint sk => false
   | .view viewLength => false
+  | .str => false
 
 def SrcType.isScalar (self : SrcType) : Bool :=
   match self with
@@ -112,6 +114,7 @@ def SrcType.isScalar (self : SrcType) : Bool :=
   | .float ft => true
   | .sint kind => true
   | .view viewLength => false
+  | .str => false
 
 def SrcType.isUint (self : SrcType) (kind : UintTy) : Bool :=
   match self with
@@ -129,6 +132,7 @@ def SrcType.isUint (self : SrcType) (kind : UintTy) : Bool :=
   | .float ft => false
   | .sint sk => false
   | .view viewLength => false
+  | .str => false
 
 def SrcType.isPtr (self : SrcType) : Bool :=
   match self with
@@ -146,6 +150,7 @@ def SrcType.isPtr (self : SrcType) : Bool :=
   | .float ft => false
   | .sint sk => false
   | .view viewLength => false
+  | .str => false
 
 def SrcType.isUnit (self : SrcType) : Bool :=
   match self with
@@ -163,6 +168,25 @@ def SrcType.isUnit (self : SrcType) : Bool :=
   | .float ft => false
   | .sint sk => false
   | .view viewLength => false
+  | .str => false
+
+def SrcType.isStr (self : SrcType) : Bool :=
+  match self with
+  | .i32 => false
+  | .bool => false
+  | .uint kind => false
+  | .struct id fields => false
+  | .enum id variants => false
+  | .ptr => false
+  | .slice element => false
+  | .array arrayElement arrayLength => false
+  | .unit => false
+  | .isize => false
+  | .char => false
+  | .float ft => false
+  | .sint sk => false
+  | .view viewLength => false
+  | .str => true
 
 def SrcType.isIsize (self : SrcType) : Bool :=
   match self with
@@ -180,6 +204,7 @@ def SrcType.isIsize (self : SrcType) : Bool :=
   | .float ft => false
   | .sint kind => false
   | .view viewLength => false
+  | .str => false
 
 def SrcType.isChar (self : SrcType) : Bool :=
   match self with
@@ -197,6 +222,7 @@ def SrcType.isChar (self : SrcType) : Bool :=
   | .float ft => false
   | .sint kind => false
   | .view viewLength => false
+  | .str => false
 
 def SrcType.isFloat (self : SrcType) (t : FloatTy) : Bool :=
   match self with
@@ -214,6 +240,7 @@ def SrcType.isFloat (self : SrcType) (t : FloatTy) : Bool :=
   | .float ft => decide (FloatTy.number ft = FloatTy.number t)
   | .sint kind => false
   | .view viewLength => false
+  | .str => false
 
 def SrcType.floatTy (self : SrcType) : Option FloatTy :=
   match self with
@@ -231,6 +258,7 @@ def SrcType.floatTy (self : SrcType) : Option FloatTy :=
   | .float ft => some ft
   | .sint kind => none
   | .view viewLength => none
+  | .str => none
 
 def SrcType.isFloatAny (self : SrcType) : Bool :=
   match self with
@@ -248,6 +276,7 @@ def SrcType.isFloatAny (self : SrcType) : Bool :=
   | .float ft => true
   | .sint kind => false
   | .view viewLength => false
+  | .str => false
 
 /-- An integer type: a shift takes an amount of any of them. -/
 def SrcType.isInteger (self : SrcType) : Bool :=
@@ -266,6 +295,7 @@ def SrcType.isInteger (self : SrcType) : Bool :=
   | .float ft => false
   | .sint kind => true
   | .view viewLength => false
+  | .str => false
 
 def SrcType.isSintAny (self : SrcType) : Bool :=
   match self with
@@ -283,6 +313,7 @@ def SrcType.isSintAny (self : SrcType) : Bool :=
   | .float ft => false
   | .sint kind => true
   | .view viewLength => false
+  | .str => false
 
 def SrcType.isSint (self : SrcType) (kind : UintTy) : Bool :=
   match self with
@@ -300,6 +331,7 @@ def SrcType.isSint (self : SrcType) (kind : UintTy) : Bool :=
   | .float ft => false
   | .sint other => decide (UintTy.code other = UintTy.code kind)
   | .view viewLength => false
+  | .str => false
 
 /-- The width of the signed type this is, if it is one of Sint. -/
 def SrcType.sintKind (self : SrcType) : Option UintTy :=
@@ -318,6 +350,7 @@ def SrcType.sintKind (self : SrcType) : Option UintTy :=
   | .float ft => none
   | .sint kind => some kind
   | .view viewLength => none
+  | .str => none
 
 /-- The unsigned type this is, if it is one. -/
 def SrcType.uintKind (self : SrcType) : Option UintTy :=
@@ -336,6 +369,7 @@ def SrcType.uintKind (self : SrcType) : Option UintTy :=
   | .float ft => none
   | .sint sk => none
   | .view viewLength => none
+  | .str => none
 
 /-- How a comparison of two values of this type reads their slots. -/
 def SrcType.word (self : SrcType) : Word :=
@@ -354,119 +388,6 @@ def SrcType.word (self : SrcType) : Word :=
   | .float ft => Word.u64
   | .sint kind => UintTy.signedWord kind
   | .view viewLength => Word.u64
-
-mutual
-def SrcType.same (self : SrcType) (other : SrcType) : Bool :=
-  match self with
-  | .i32 => SrcType.isI32 other
-  | .bool => SrcType.isBool other
-  | .uint kind => SrcType.isUint other kind
-  | .struct id fields =>
-    (match other with
-     | .i32 => false
-     | .bool => false
-     | .uint otherKind => false
-     | .struct otherId otherFields => decide (id = otherId) && typesSame fields otherFields
-     | .enum otherId otherVariants => false
-     | .ptr => false
-     | .slice otherElement => false
-     | .array arrayElement arrayLength => false
-     | .unit => false
-     | .isize => false
-     | .char => false
-     | .float ft => false
-     | .sint otherSk => false
-     | .view otherLength => false)
-  | .enum id variants =>
-    (match other with
-     | .i32 => false
-     | .bool => false
-     | .uint otherKind => false
-     | .struct otherId otherFields => false
-     | .enum otherId otherVariants => decide (id = otherId) && variantsSame variants otherVariants
-     | .ptr => false
-     | .slice otherElement => false
-     | .array arrayElement arrayLength => false
-     | .unit => false
-     | .isize => false
-     | .char => false
-     | .float ft => false
-     | .sint otherSk => false
-     | .view otherLength => false)
-  | .ptr => SrcType.isPtr other
-  | .slice element =>
-    (match other with
-     | .i32 => false
-     | .bool => false
-     | .uint otherKind => false
-     | .struct otherId otherFields => false
-     | .enum otherId otherVariants => false
-     | .ptr => false
-     | .slice otherElement => SrcType.same element otherElement
-     | .array arrayElement arrayLength => false
-     | .unit => false
-     | .isize => false
-     | .char => false
-     | .float ft => false
-     | .sint otherSk => false
-     | .view otherLength => false)
-  | .array arrayElement arrayLength =>
-    (match other with
-     | .i32 => false
-     | .bool => false
-     | .uint otherKind => false
-     | .struct otherId otherFields => false
-     | .enum otherId otherVariants => false
-     | .ptr => false
-     | .slice otherElement => false
-     | .array otherElement otherLength => decide (arrayLength = otherLength) && SrcType.same arrayElement otherElement
-     | .unit => false
-     | .isize => false
-     | .char => false
-     | .float ft => false
-     | .sint otherSk => false
-     | .view otherLength => false)
-  | .unit => SrcType.isUnit other
-  | .isize => SrcType.isIsize other
-  | .char => SrcType.isChar other
-  | .float ft => SrcType.isFloat other ft
-  | .sint kind => SrcType.isSint other kind
-  | .view viewLength =>
-    match other with
-    | .i32 => false
-    | .bool => false
-    | .uint otherKind => false
-    | .struct otherId otherFields => false
-    | .enum otherId otherVariants => false
-    | .ptr => false
-    | .slice otherElement => false
-    | .array otherElement otherLength => false
-    | .unit => false
-    | .isize => false
-    | .char => false
-    | .float ft => false
-    | .sint otherSk => false
-    | .view otherLength => false
-def typesSame (types : List SrcType) (others : List SrcType) : Bool :=
-  match types with
-  | [] =>
-    (match others with
-     | [] => true
-     | other :: more => false)
-  | ty :: rest =>
-    match others with
-    | [] => false
-    | other :: more => SrcType.same ty other && typesSame rest more
-def variantsSame (variants : List (List SrcType)) (others : List (List SrcType)) : Bool :=
-  match variants with
-  | [] =>
-    (match others with
-     | [] => true
-     | other :: more => false)
-  | types :: rest =>
-    match others with
-    | [] => false
-    | other :: more => typesSame types other && variantsSame rest more
-end
+  | .str => Word.u64
 
 end Lanius.Mini

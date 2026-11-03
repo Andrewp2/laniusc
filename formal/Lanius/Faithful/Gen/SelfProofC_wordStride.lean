@@ -14,7 +14,7 @@ public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtC_Inline_arithOf
 public import Lanius.Faithful.Gen.SelfStmtC_Inline_lowerSetScalar
 public import Lanius.Faithful.Gen.SelfStmtC_SrcExpr_guard
-public import Lanius.Faithful.Gen.SelfStmtC_SrcType_size
+public import Lanius.Faithful.Gen.SelfStmtC_SrcType_same
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
 public import Lanius.Faithful.Gen.SelfStmtC_armScope
 public import Lanius.Faithful.Gen.SelfStmtC_consArgs
@@ -48,7 +48,7 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem step_SrcEff_eval {prog : SrcProgram} {prims : Prims} {ix_SrcEff_eval ix_plus ix_get_of_mini_selfhost_Sig ix_eval_index ix_eval_pure ix_eval_call ix_eval_args ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_eval_apply ix_unbox_of_mini_selfhost_SrcEff ix_eval_negate ix_eval_not ix_eval_cast ix_eval_struct ix_eval_variant ix_eval_match ix_eval_arms ix_match_dst ix_match_variants ix_length_of_mini_selfhost_List_usize ix_length_of_mini_selfhost_SrcEff ix_eval_division ix_eval_stride ix_eval_if ix_eval_let_in ix_eval_let_body ix_arm_scope ix_single_of_usize ix_single_of_mini_selfhost_SrcType ix_eval_len : Nat} (fn : prog.funcs[ix_SrcEff_eval]? = some (src_SrcEff_eval ix_plus ix_SrcEff_eval ix_get_of_mini_selfhost_Sig ix_eval_index ix_eval_pure ix_eval_call ix_eval_args ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_eval_apply ix_unbox_of_mini_selfhost_SrcEff ix_eval_negate ix_eval_not ix_eval_cast ix_eval_struct ix_eval_variant ix_eval_match ix_eval_arms ix_match_dst ix_match_variants ix_length_of_mini_selfhost_List_usize ix_length_of_mini_selfhost_SrcEff ix_eval_division ix_eval_stride ix_eval_if ix_eval_let_in ix_eval_let_body ix_arm_scope ix_single_of_usize ix_single_of_mini_selfhost_SrcType ix_eval_len)) (np : prims.isPrim ix_SrcEff_eval = false)
+theorem step_SrcEff_eval {prog : SrcProgram} {prims : Prims} {ix_SrcEff_eval ix_plus ix_get_of_mini_selfhost_Sig ix_eval_index ix_eval_pure ix_eval_call ix_eval_args ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_eval_apply ix_unbox_of_mini_selfhost_SrcEff ix_eval_negate ix_eval_not ix_eval_cast ix_eval_struct ix_eval_variant ix_eval_match ix_eval_arms ix_match_dst ix_match_variants ix_length_of_mini_selfhost_List_usize ix_length_of_mini_selfhost_SrcEff ix_eval_division ix_eval_stride ix_eval_if ix_eval_let_in ix_eval_let_body ix_arm_scope ix_single_of_usize ix_single_of_mini_selfhost_SrcType ix_eval_len ix_eval_str : Nat} (fn : prog.funcs[ix_SrcEff_eval]? = some (src_SrcEff_eval ix_plus ix_SrcEff_eval ix_get_of_mini_selfhost_Sig ix_eval_index ix_eval_pure ix_eval_call ix_eval_args ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_eval_apply ix_unbox_of_mini_selfhost_SrcEff ix_eval_negate ix_eval_not ix_eval_cast ix_eval_struct ix_eval_variant ix_eval_match ix_eval_arms ix_match_dst ix_match_variants ix_length_of_mini_selfhost_List_usize ix_length_of_mini_selfhost_SrcEff ix_eval_division ix_eval_stride ix_eval_if ix_eval_let_in ix_eval_let_body ix_arm_scope ix_single_of_usize ix_single_of_mini_selfhost_SrcType ix_eval_len ix_eval_str)) (np : prims.isPrim ix_SrcEff_eval = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_get_of_mini_selfhost_Sig : Certified (∀ {n : Nat}, Stmt_get_of_mini_selfhost_Sig prog prims ix_get_of_mini_selfhost_Sig n))
     (ext_eval_index : Certified (∀ {n : Nat}, Stmt_eval_index prog prims ix_eval_index n))
@@ -74,7 +74,8 @@ theorem step_SrcEff_eval {prog : SrcProgram} {prims : Prims} {ix_SrcEff_eval ix_
     (ext_arm_scope : Certified (∀ {n : Nat}, Stmt_arm_scope prog prims ix_arm_scope n))
     (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n))
     (ext_single_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_SrcType prog prims ix_single_of_mini_selfhost_SrcType n))
-    (ext_eval_len : Certified (∀ {n : Nat}, Stmt_eval_len prog prims ix_eval_len n)) {n : Nat}
+    (ext_eval_len : Certified (∀ {n : Nat}, Stmt_eval_len prog prims ix_eval_len n))
+    (ext_eval_str : Certified (∀ {n : Nat}, Stmt_eval_str prog prims ix_eval_str n)) {n : Nat}
     (ih_SrcEff_eval : Certified (Stmt_SrcEff_eval prog prims ix_SrcEff_eval n))
     (ih_eval_args : Certified (Stmt_eval_args prog prims ix_eval_args n))
     (ih_eval_arms : Certified (Stmt_eval_arms prog prims ix_eval_arms n))
@@ -135,6 +136,20 @@ theorem proof_eval_len_of {prog : SrcProgram} {prims : Prims} {ix_eval_len_of ix
   simp only [src_eval_len_of] at h
   faithful [Lanius.Mini.evalLenOf]
 
+theorem proof_eval_str {prog : SrcProgram} {prims : Prims} {ix_eval_str ix_length_of_usize ix_plus ix_boxed_of_mini_selfhost_Stmt ix_length_of_u8 ix_str_placed : Nat} (fn : prog.funcs[ix_eval_str]? = some (src_eval_str ix_length_of_usize ix_plus ix_boxed_of_mini_selfhost_Stmt ix_length_of_u8 ix_str_placed)) (np : prims.isPrim ix_eval_str = false)
+    (ext_length_of_usize : Certified (∀ {n : Nat}, Stmt_length_of_usize prog prims ix_length_of_usize n))
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_boxed_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Stmt prog prims ix_boxed_of_mini_selfhost_Stmt n))
+    (ext_length_of_u8 : Certified (∀ {n : Nat}, Stmt_length_of_u8 prog prims ix_length_of_u8 n))
+    (ext_str_placed : Certified (∀ {n : Nat}, Stmt_str_placed prog prims ix_str_placed n)) {n : Nat} :
+    Stmt_eval_str prog prims ix_eval_str n := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_eval_str] at h
+  faithful [Lanius.Mini.evalStr]
+
 theorem proof_eval_stride {prog : SrcProgram} {prims : Prims} {ix_eval_stride ix_lookup ix_element_of ix_eval_stride_of : Nat} (fn : prog.funcs[ix_eval_stride]? = some (src_eval_stride ix_lookup ix_element_of ix_eval_stride_of)) (np : prims.isPrim ix_eval_stride = false)
     (ext_lookup : Certified (∀ {n : Nat}, Stmt_lookup prog prims ix_lookup n))
     (ext_element_of : Certified (∀ {n : Nat}, Stmt_element_of prog prims ix_element_of n))
@@ -171,6 +186,15 @@ theorem proof_eval_word_stride {prog : SrcProgram} {prims : Prims} {ix_eval_word
   simp only [src_eval_word_stride] at h
   faithful [Lanius.Mini.evalWordStride]
 
+theorem proof_static_byte_is {prog : SrcProgram} {prims : Prims} {ix_static_byte_is : Nat} (fn : prog.funcs[ix_static_byte_is]? = some (src_static_byte_is)) (np : prims.isPrim ix_static_byte_is = false) {n : Nat} :
+    Stmt_static_byte_is prog prims ix_static_byte_is n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_static_byte_is] at h
+  faithful [Lanius.Mini.staticByteIs]
+
 theorem proof_store_eval_then {prog : SrcProgram} {prims : Prims} {ix_store_eval_then ix_boxed_of_mini_selfhost_Stmt ix_SrcType_same ix_check_then ix_SrcType_is_i32 ix_SrcType_is_uint : Nat} (fn : prog.funcs[ix_store_eval_then]? = some (src_store_eval_then ix_boxed_of_mini_selfhost_Stmt ix_SrcType_same ix_check_then ix_SrcType_is_i32 ix_SrcType_is_uint)) (np : prims.isPrim ix_store_eval_then = false)
     (ext_boxed_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Stmt prog prims ix_boxed_of_mini_selfhost_Stmt n))
     (ext_SrcType_same : Certified (∀ {n : Nat}, Stmt_SrcType_same prog prims ix_SrcType_same n))
@@ -184,6 +208,18 @@ theorem proof_store_eval_then {prog : SrcProgram} {prims : Prims} {ix_store_eval
   rw [pcall_succ np fn] at h
   simp only [src_store_eval_then] at h
   faithful [Lanius.Mini.storeEvalThen]
+
+theorem step_str_placed {prog : SrcProgram} {prims : Prims} {ix_str_placed ix_plus ix_unbox_of_mini_selfhost_List_usize ix_static_byte_is ix_get_of_u8 : Nat} (fn : prog.funcs[ix_str_placed]? = some (src_str_placed ix_plus ix_unbox_of_mini_selfhost_List_usize ix_str_placed ix_static_byte_is ix_get_of_u8)) (np : prims.isPrim ix_str_placed = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_unbox_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_usize n))
+    (ext_static_byte_is : Certified (∀ {n : Nat}, Stmt_static_byte_is prog prims ix_static_byte_is n))
+    (ext_get_of_u8 : Certified (∀ {n : Nat}, Stmt_get_of_u8 prog prims ix_get_of_u8 n)) {n : Nat}
+    (ih_str_placed : Certified (Stmt_str_placed prog prims ix_str_placed n)) :
+    Stmt_str_placed prog prims ix_str_placed (n + 1) := by
+  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  rw [pcall_succ np fn] at h
+  simp only [src_str_placed] at h
+  faithful [Lanius.Mini.strPlaced]
 
 theorem proof_word_stride {prog : SrcProgram} {prims : Prims} {ix_word_stride ix_times ix_boxed_of_mini_selfhost_Expr : Nat} (fn : prog.funcs[ix_word_stride]? = some (src_word_stride ix_times ix_boxed_of_mini_selfhost_Expr)) (np : prims.isPrim ix_word_stride = false)
     (ext_times : Certified (∀ {n : Nat}, Stmt_times prog prims ix_times n))

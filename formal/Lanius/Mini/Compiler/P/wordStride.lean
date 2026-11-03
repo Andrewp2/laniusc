@@ -4,7 +4,7 @@ public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.SrcExpr_guard
-import Lanius.Mini.Compiler.P.SrcType_size
+import Lanius.Mini.Compiler.P.SrcType_same
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.armScope
 import Lanius.Mini.Compiler.P.compileModules
@@ -66,6 +66,24 @@ def evalLen (scope : List Binding) (slice : Nat) (slot : Nat) : Option Evaluated
   | none => none
   | some b => evalLenOf b slot
 
+def staticByteIs (byte : Option UInt8) (c : Nat) : Bool :=
+  match byte with
+  | none => false
+  | some b => decide (BitVec.setWidth 64 (BitVec.ofNat 32 b.toNat) = BitVec.ofNat 64 c)
+
+/-- The statics hold the ASCII bytes chars from offset on. -/
+def strPlaced (statics : List UInt8) (offset : Nat) (chars : List Nat) : Bool :=
+  match chars with
+  | [] => true
+  | c :: rest => decide (c < 128) && staticByteIs statics[offset]? c && strPlaced statics (offset + 1) rest
+
+/-- A string literal (EStr): the mini address of its bytes in the static region, then their count. The program's statics must hold them there, and the literal end below 2^31 (Static's offset is a 32-bit displacement) and within the statics. -/
+def evalStr (decls : SrcDecls) (offset : Nat) (chars : List Nat) (slot : Nat) : Option Evaluated :=
+  if strPlaced decls.statics offset chars && decide (offset + chars.length < 2147483648) && decide (offset + chars.length ≤ decls.statics.length) then
+    some ({ stmt := Stmt.seq (Stmt.static slot offset) (Stmt.assign (slot + 1) (Expr.lit (BitVec.ofNat 64 chars.length))), ty := SrcType.str } : Evaluated)
+  else
+    none
+
 mutual
 /-- The code computing this expression into slot, slot + 1, ..., and its type. -/
 def SrcEff.eval (self : SrcEff) (sigs : List Sig) (decls : SrcDecls) (scope : List Binding) (slot : Nat) : Option Evaluated :=
@@ -91,6 +109,7 @@ def SrcEff.eval (self : SrcEff) (sigs : List Sig) (decls : SrcDecls) (scope : Li
      | none => none
      | some s => SrcEff.eval body sigs decls s dst)
   | .eLen slice => evalLen scope slice slot
+  | .eStr offset chars => evalStr decls offset chars slot
 /-- The arguments, each in the slots after the one before. -/
 def evalArgs (sigs : List Sig) (decls : SrcDecls) (scope : List Binding) (args : List SrcEff) (slot : Nat) : Option EvaluatedArgs :=
   match args with

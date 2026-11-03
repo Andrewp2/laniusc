@@ -4,7 +4,7 @@ public import Lanius.Faithful.Sim.Check
 public import Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.Lists_empty
-import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.SrcType_same
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.arithShiftRight
@@ -171,7 +171,8 @@ def enumsSame : List SrcEnumDecl → List SrcEnumDecl → Bool
   | _ :: _, [] => false
   | a :: as, b :: bs => decide (a.id = b.id) && variantsSame a.variants b.variants && enumsSame as bs
 
-def declsSame (a b : SrcDecls) : Bool := structsSame a.structs b.structs && enumsSame a.enums b.enums
+def declsSame (a b : SrcDecls) : Bool :=
+  structsSame a.structs b.structs && enumsSame a.enums b.enums && decide (a.statics = b.statics)
 
 theorem structsSame_eq : ∀ {as bs : List SrcStructDecl}, structsSame as bs = true → as = bs
   | [], [], _ => rfl
@@ -192,9 +193,9 @@ theorem enumsSame_eq : ∀ {as bs : List SrcEnumDecl}, enumsSame as bs = true �
     rw [variantsSame_eq vs same, enumsSame_eq rest]
 
 theorem declsSame_eq {a b : SrcDecls} (h : declsSame a b = true) : a = b := by
-  obtain ⟨as, ae⟩ := a
-  obtain ⟨bs, be⟩ := b
-  simp only [declsSame, Bool.and_eq_true] at h
-  rw [structsSame_eq h.1, enumsSame_eq h.2]
+  obtain ⟨as, ae, ac⟩ := a
+  obtain ⟨bs, be, bc⟩ := b
+  simp only [declsSame, Bool.and_eq_true, decide_eq_true_eq] at h
+  rw [structsSame_eq h.1.1, enumsSame_eq h.1.2, h.2]
 
 end Lanius.Faithful

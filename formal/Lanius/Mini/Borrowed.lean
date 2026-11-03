@@ -3,7 +3,7 @@ module
 public import Lanius.Mini.LowerExpr
 public import Lanius.Mini.HeapCorr
 public import Lanius.Mini.Views
-import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.SrcType_same
 import all Lanius.Mini.Compiler.P.UintTy_half
 
 @[expose] public section
@@ -22,13 +22,13 @@ namespace Lanius.Mini
 open Lanius.Core (Value)
 open Lanius.Semantics (State)
 
-variable {bud : Budget} {places : List Addressed}
+variable {bud : Budget} {sx : Statics} {places : List Addressed}
 
 /-! ## Arrays as fields -/
 
 theorem fieldsHold_replicate_get {e : SrcType} : ∀ {n : Nat} {vs : List Value} {env : Env} {slot pos : Nat}
-    {v : Value}, FieldsHold places (List.replicate n e) vs env slot → vs[pos]? = some v →
-      e.HoldsAt places v env (slot + pos * e.size)
+    {v : Value}, FieldsHold sx places (List.replicate n e) vs env slot → vs[pos]? = some v →
+      e.HoldsAt sx places v env (slot + pos * e.size)
   | 0, _, _, _, _, _, h, found => by
     cases h
     simp at found
@@ -48,10 +48,10 @@ theorem fieldsHold_replicate_get {e : SrcType} : ∀ {n : Nat} {vs : List Value}
         exact this
 
 theorem fieldsHold_replicate_set {e : SrcType} {v : Value} {env env' : Env} :
-    ∀ {n : Nat} {vs : List Value} {slot pos : Nat}, FieldsHold places (List.replicate n e) vs env slot → pos < n →
-      e.HoldsAt places v env' (slot + pos * e.size) →
+    ∀ {n : Nat} {vs : List Value} {slot pos : Nat}, FieldsHold sx places (List.replicate n e) vs env slot → pos < n →
+      e.HoldsAt sx places v env' (slot + pos * e.size) →
       (∀ j, j < slot + pos * e.size ∨ slot + pos * e.size + e.size ≤ j → env' j = env j) →
-      FieldsHold places (List.replicate n e) (Semantics.setValue vs pos v) env' slot
+      FieldsHold sx places (List.replicate n e) (Semantics.setValue vs pos v) env' slot
   | 0, _, _, _, _, lt, _, _ => by omega
   | n + 1, _, slot, pos, h, lt, held, away => by
     rw [List.replicate_succ] at h ⊢
@@ -79,7 +79,7 @@ mutual
 slice names a place, and it still names it. -/
 theorem SrcType.HoldsAt.mono {places places' : List Addressed} (sub : ∀ x ∈ places, x ∈ places') :
     ∀ {ty : SrcType} {v : Value} {env : Env} {slot : Nat},
-      ty.HoldsAt places v env slot → ty.HoldsAt places' v env slot
+      ty.HoldsAt sx places v env slot → ty.HoldsAt sx places' v env slot
   | _, _, _, _, .i32 h => .i32 h
   | _, _, _, _, .bool h => .bool h
   | _, _, _, _, .uint h => .uint h
@@ -96,10 +96,11 @@ theorem SrcType.HoldsAt.mono {places places' : List Addressed} (sub : ∀ x ∈ 
   | _, _, _, _, .float h => .float h
   | _, _, _, _, .sint h => .sint h
   | _, _, _, _, .view len h => .view len h
+  | _, _, _, _, .str base len small bytes => .str base len small bytes
 
 theorem FieldsHold.mono {places places' : List Addressed} (sub : ∀ x ∈ places, x ∈ places') :
     ∀ {fs : List SrcType} {vs : List Value} {env : Env} {slot : Nat},
-      FieldsHold places fs vs env slot → FieldsHold places' fs vs env slot
+      FieldsHold sx places fs vs env slot → FieldsHold sx places' fs vs env slot
   | _, _, _, _, .nil => .nil
   | _, _, _, _, .cons head rest => .cons (SrcType.HoldsAt.mono sub head) (FieldsHold.mono sub rest)
 end
@@ -107,7 +108,7 @@ end
 /-- Scalars, one after another, do not depend on the places. -/
 theorem fieldsHold_replicate_scalar {e : SrcType} (scalar : e.isScalar = true) {places' : List Addressed} :
     ∀ {n : Nat} {vs : List Value} {env : Env} {slot : Nat},
-      FieldsHold places (List.replicate n e) vs env slot → FieldsHold places' (List.replicate n e) vs env slot
+      FieldsHold sx places (List.replicate n e) vs env slot → FieldsHold sx places' (List.replicate n e) vs env slot
   | 0, _, _, _, h => by
     cases h
     exact .nil
@@ -119,7 +120,7 @@ theorem fieldsHold_replicate_scalar {e : SrcType} (scalar : e.isScalar = true) {
 
 /-- A packed place's value is represented over any places. -/
 theorem Addressed.Packed.holdsAt {x : Addressed} (packed : x.Packed) {places' : List Addressed} {v : Value}
-    {env : Env} {slot : Nat} (h : x.ty.HoldsAt places v env slot) : x.ty.HoldsAt places' v env slot := by
+    {env : Env} {slot : Nat} (h : x.ty.HoldsAt sx places v env slot) : x.ty.HoldsAt sx places' v env slot := by
   obtain ⟨-, -, element, n, ty, el⟩ := packed
   rw [ty] at h ⊢
   have scalar : element.isScalar = true := by
@@ -129,11 +130,11 @@ theorem Addressed.Packed.holdsAt {x : Addressed} (packed : x.Packed) {places' : 
 
 /-- The correspondence for more places holds for fewer: a caller's places
 after its callee, which borrowed more, returns. -/
-theorem FrameCorr.restrict {places' : List Addressed} {st : State} {hp : Heap} (fc : FrameCorr bud places' st hp)
-    (sub : ∀ x ∈ places, x ∈ places') : FrameCorr bud places st hp := by
+theorem FrameCorr.restrict {places' : List Addressed} {st : State} {hp : Heap} (fc : FrameCorr sx bud places' st hp)
+    (sub : ∀ x ∈ places, x ∈ places') : FrameCorr sx bud places st hp := by
   refine ⟨fun x mem => ?_, fun x mem => fc.inside x (sub x mem), fun x mem => fc.small x (sub x mem),
     fun x mem y ymem ne => fc.apart x (sub x mem) y (sub y ymem) ne, fun x mem => fc.packed x (sub x mem),
-    fun v vmem x mem => fc.unviewed v vmem x (sub x mem), fc.room, fc.ceiling, fc.bounded⟩
+    fun v vmem x mem => fc.unviewed v vmem x (sub x mem), fc.room, fc.ceiling, fc.bounded, fc.statics⟩
   obtain ⟨v, read, h⟩ := fc.holds x (sub x mem)
   exact ⟨v, read, (fc.packed x (sub x mem)).holdsAt h⟩
 
@@ -141,10 +142,10 @@ theorem FrameCorr.restrict {places' : List Addressed} {st : State} {hp : Heap} (
 
 /-- A sliced array place: Core's array in its cell, as long as its type
 says, and its elements in the place's slots. -/
-theorem FrameCorr.array {st : State} {hp : Heap} (fc : FrameCorr bud places st hp) {x : Addressed} (mem : x ∈ places)
+theorem FrameCorr.array {st : State} {hp : Heap} (fc : FrameCorr sx bud places st hp) {x : Addressed} (mem : x ∈ places)
     (root : x.projections = []) {element : SrcType} {n : Nat} (ty : x.ty = .array element n) :
     ∃ vs, Semantics.readCellProjection st x.cell [] = .ok (.array vs) ∧ vs.length = n ∧
-      FieldsHold places (List.replicate n element) vs (x.view hp) 0 := by
+      FieldsHold sx places (List.replicate n element) vs (x.view hp) 0 := by
   obtain ⟨v, read, holds⟩ := fc.holds x mem
   rw [root] at read
   rw [ty] at holds
@@ -159,10 +160,10 @@ theorem sliceValues_whole {st : State} {cell : Nat} {vs : List Value}
 
 /-- Element `pos` of a borrowed slice, as Core reads it, is in the place's
 slots of that element. -/
-theorem FrameCorr.borrowed_get {st : State} {hp : Heap} (fc : FrameCorr bud places st hp) {x : Addressed}
+theorem FrameCorr.borrowed_get {st : State} {hp : Heap} (fc : FrameCorr sx bud places st hp) {x : Addressed}
     (mem : x ∈ places) (root : x.projections = []) {element : SrcType} {n : Nat} (ty : x.ty = .array element n)
     {elems : List Value} (values : Semantics.sliceValues st x.cell [] 0 n = .ok elems) {pos : Nat} {v : Value}
-    (found : elems[pos]? = some v) : pos < n ∧ element.HoldsAt places v (x.view hp) (pos * element.size) := by
+    (found : elems[pos]? = some v) : pos < n ∧ element.HoldsAt sx places v (x.view hp) (pos * element.size) := by
   obtain ⟨vs, read, len, elemsHold⟩ := fc.array mem root ty
   rw [← len, sliceValues_whole read] at values
   simp only [Except.ok.injEq] at values
@@ -173,7 +174,7 @@ theorem FrameCorr.borrowed_get {st : State} {hp : Heap} (fc : FrameCorr bud plac
 
 /-- A borrowed slice's reads never fail: every index below its length has
 an element. -/
-theorem FrameCorr.borrowed_values {st : State} {hp : Heap} (fc : FrameCorr bud places st hp) {x : Addressed}
+theorem FrameCorr.borrowed_values {st : State} {hp : Heap} (fc : FrameCorr sx bud places st hp) {x : Addressed}
     (mem : x ∈ places) (root : x.projections = []) {element : SrcType} {n : Nat} (ty : x.ty = .array element n) :
     ∃ vs, Semantics.sliceValues st x.cell [] 0 n = .ok vs ∧ vs.length = n := by
   obtain ⟨vs, read, len, -⟩ := fc.array mem root ty
@@ -181,7 +182,7 @@ theorem FrameCorr.borrowed_values {st : State} {hp : Heap} (fc : FrameCorr bud p
 
 /-- The block of a sliced place: from its address, 8 bytes a slot, below
 the top and `2 ^ 62`. -/
-theorem FrameCorr.block {st : State} {hp : Heap} (fc : FrameCorr bud places st hp) {x : Addressed}
+theorem FrameCorr.block {st : State} {hp : Heap} (fc : FrameCorr sx bud places st hp) {x : Addressed}
     (mem : x ∈ places) : hp.limit ≤ x.address ∧ x.address + 8 * x.ty.size ≤ hp.top ∧
       x.address + 8 * x.ty.size < 2 ^ 62 :=
   ⟨(fc.inside x mem).2.1, (fc.inside x mem).2.2, fc.small x mem⟩
@@ -220,20 +221,22 @@ theorem HeapCorr.high {h : Memory.Heap} {w : Lanius.World.State} {hp hp' : Heap}
 array with that element replaced, and the mini heap changed only in the
 place's block, the element's slots holding the new value and the others
 unchanged. The correspondence still holds. -/
-theorem FrameCorr.borrowed_set {st st' : State} {hp hp' : Heap} (fc : FrameCorr bud places st hp) {x : Addressed}
+theorem FrameCorr.borrowed_set {st st' : State} {hp hp' : Heap} (fc : FrameCorr sx bud places st hp) {x : Addressed}
     (mem : x ∈ places) (root : x.projections = []) {element : SrcType} {n : Nat} (ty : x.ty = .array element n)
     {vs : List Value} (read : Semantics.readCellProjection st x.cell [] = .ok (.array vs)) {pos : Nat} (lt : pos < n)
     {v : Value} (readNew : Semantics.readCellProjection st' x.cell [] = .ok (.array (Semantics.setValue vs pos v)))
     (others : ∀ y ∈ places, y.cell ≠ x.cell → st'.cellEntry? y.cell = st.cellEntry? y.cell)
-    (held : element.HoldsAt places v (x.view hp') (pos * element.size))
+    (held : element.HoldsAt sx places v (x.view hp') (pos * element.size))
     (away : ∀ s, s < pos * element.size ∨ pos * element.size + element.size ≤ s → x.view hp' s = x.view hp s)
     (bytes : ∀ a, ¬ x.Covers a → hp'.bytes a = hp.bytes a)
     (fsp : hp'.fsp = hp.fsp) (limit : hp'.limit = hp.limit) (top : hp'.top = hp.top)
-    (views : st'.i32ArrayViews = st.i32ArrayViews := by rfl) :
-    FrameCorr bud places st' hp' := by
+    (views : st'.i32ArrayViews = st.i32ArrayViews := by rfl)
+    (statics : hp'.staticBase = hp.staticBase ∧ hp'.statics = hp.statics := by
+      first | exact ⟨rfl, rfl⟩ | exact Heap.writeLE_statics _ _ _ _) :
+    FrameCorr sx bud places st' hp' := by
   refine ⟨fun y ymem => ?_, fun y ymem => ?_, fc.small, fc.apart, fc.packed, by rw [views]; exact fc.unviewed,
     by rw [fsp, limit]; exact fc.room,
-    by rw [fsp, top]; exact fc.ceiling, by rw [top]; exact fc.bounded⟩
+    by rw [fsp, top]; exact fc.ceiling, by rw [top]; exact fc.bounded, fc.statics.congr statics.1 statics.2 top⟩
   · by_cases same : y = x
     · subst same
       obtain ⟨vs', read', -, elems⟩ := fc.array mem root ty

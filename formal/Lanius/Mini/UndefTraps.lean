@@ -19,6 +19,8 @@ loads and stores of typed values fail only with raw memory errors and
 
 namespace Lanius.Mini
 
+variable {sx : Statics}
+
 open Lanius.Semantics (State)
 
 def UndefErr {α : Type} (e : Except Lanius.Trap α) : Prop :=
@@ -248,7 +250,7 @@ theorem SrcType.Holds.noSlice {ty : SrcType} {v : Core.Value} {bits : BitVec 64}
 mutual
 /-- A safe slice inside a value that holds is of a place's cell. -/
 theorem SrcType.HoldsAt.sliceIn {places : List Addressed} : ∀ {ty : SrcType} {v : Core.Value} {env : Env} {slot : Nat},
-    ty.HoldsAt places v env slot → ∀ {r : Nat}, SliceIn r v → ∃ x ∈ places, x.cell = r
+    ty.HoldsAt sx places v env slot → ∀ {r : Nat}, SliceIn r v → ∃ x ∈ places, x.cell = r
   | .i32, _, _, _, .i32 h, _, s => (h.noSlice s).elim
   | .bool, _, _, _, .bool h, _, s => (h.noSlice s).elim
   | .uint _, _, _, _, .uint h, _, s => (h.noSlice s).elim
@@ -270,10 +272,11 @@ theorem SrcType.HoldsAt.sliceIn {places : List Addressed} : ∀ {ty : SrcType} {
   | .float _, _, _, _, .float h, _, s => (h.noSlice s).elim
   | .sint _, _, _, _, .sint h, _, s => (h.noSlice s).elim
   | .view _, _, _, _, .view _ _, _, s => by cases s
+  | .str, _, _, _, .str _ _ _ _, _, s => by cases s
   termination_by structural _ _ _ _ h => h
 
 theorem FieldsHold.sliceIn {places : List Addressed} : ∀ {fs : List SrcType} {vs : List Core.Value} {env : Env} {slot : Nat},
-    FieldsHold places fs vs env slot → ∀ {v : Core.Value}, v ∈ vs → ∀ {r : Nat}, SliceIn r v →
+    FieldsHold sx places fs vs env slot → ∀ {v : Core.Value}, v ∈ vs → ∀ {r : Nat}, SliceIn r v →
       ∃ x ∈ places, x.cell = r
   | [], _, _, _, .nil, _, mem, _, _ => by simp at mem
   | _ :: _, _, _, _, .cons head rest, _, mem, _, s => by
@@ -285,7 +288,7 @@ end
 
 /-- A value that holds is unhit by views that root at no place. -/
 theorem SrcType.HoldsAt.unhit {places : List Addressed} {ty : SrcType} {v : Core.Value} {env : Env} {slot : Nat}
-    (holds : ty.HoldsAt places v env slot) {views : List Semantics.I32ArrayView}
+    (holds : ty.HoldsAt sx places v env slot) {views : List Semantics.I32ArrayView}
     (unviewed : ∀ w ∈ views, ∀ x ∈ places, w.root ≠ x.cell) : Unhit views v := fun w wm r s => by
   obtain ⟨x, mem, rfl⟩ := holds.sliceIn s
   exact unviewed w wm x mem

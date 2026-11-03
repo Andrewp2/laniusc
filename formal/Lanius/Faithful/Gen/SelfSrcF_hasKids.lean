@@ -32,10 +32,10 @@ def src_join_items (ix_join_second : Nat) : SrcFunc := { params := [{ id := 11, 
 def src_join_second (ix_concat_of_mini_selfhost_CTree : Nat) : SrcFunc := { params := [{ id := 12, ty := ty85 }, { id := 28, ty := ty86 }], ret := ty86, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 28)) ty86 ty86 [[173], []] [SrcEff.eVariant ty86 0 [SrcEff.eCall ix_concat_of_mini_selfhost_CTree [SrcEff.ePure (SrcExpr.local 12), SrcEff.ePure (SrcExpr.local 173)]], SrcEff.eVariant ty86 1 []]) }
 
 /-- mini::selfhost::kid_token -/
-def src_kid_token (ix_kid : Nat) (ix_leaf_token : Nat) : SrcFunc := { params := [{ id := 10, ty := ty84 }, { id := 20, ty := SrcType.uint (UintTy.usize) }], ret := ty42, body := SrcStmt.returnEval (SrcEff.eCall ix_leaf_token [SrcEff.eCall ix_kid [SrcEff.ePure (SrcExpr.local 10), SrcEff.ePure (SrcExpr.local 20)]]) }
+def src_kid_token (ix_kid : Nat) (ix_leaf_token : Nat) : SrcFunc := { params := [{ id := 10, ty := ty84 }, { id := 20, ty := SrcType.uint (UintTy.usize) }], ret := ty44, body := SrcStmt.returnEval (SrcEff.eCall ix_leaf_token [SrcEff.eCall ix_kid [SrcEff.ePure (SrcExpr.local 10), SrcEff.ePure (SrcExpr.local 20)]]) }
 
 /-- mini::selfhost::leaf_token -/
-def src_leaf_token (ix_no_token : Nat) : SrcFunc := { params := [{ id := 11, ty := ty84 }], ret := ty42, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 11)) ty84 ty42 [[68], [90, 93]] [SrcEff.ePure (SrcExpr.local 68), SrcEff.eCall ix_no_token []]) }
+def src_leaf_token (ix_no_token : Nat) : SrcFunc := { params := [{ id := 11, ty := ty84 }], ret := ty44, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 11)) ty84 ty44 [[68], [90, 93]] [SrcEff.ePure (SrcExpr.local 68), SrcEff.eCall ix_no_token []]) }
 
 /-- mini::selfhost::list_items -/
 def src_list_items (ix_minus : Nat) (ix_items_in : Nat) (ix_kids_of : Nat) : SrcFunc := { params := [{ id := 11, ty := SrcType.uint (UintTy.usize) }, { id := 24, ty := ty84 }], ret := ty86, body := SrcStmt.then (SrcStmt.if (SrcExpr.apply (SrcOp.equal) (SrcExpr.local 11) (SrcExpr.unsigned (UintTy.usize) 0x0000000000000000#64)) (SrcStmt.returnEval (SrcEff.eVariant ty86 1 [])) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eCall ix_items_in [SrcEff.eCall ix_minus [SrcEff.ePure (SrcExpr.local 11), SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000001#64)], SrcEff.eCall ix_kids_of [SrcEff.ePure (SrcExpr.local 24)]])) }

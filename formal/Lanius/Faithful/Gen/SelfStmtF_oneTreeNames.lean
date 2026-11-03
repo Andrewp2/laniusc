@@ -22,11 +22,11 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_int_primary (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CTree} {x1 : Lanius.Mini.CTree} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepCTree x0 v0 → RepCTree x1 v1 →
-    (RepOption 233 RepSrcExpr) (Lanius.Mini.intPrimary x0 x1) w
+    (RepOption 234 RepSrcExpr) (Lanius.Mini.intPrimary x0 x1) w
 
 abbrev Stmt_int_tree (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.CTree} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → RepCTree x1 v1 →
-    (RepOption 233 RepSrcExpr) (Lanius.Mini.intTree x0 x1) w
+    (RepOption 234 RepSrcExpr) (Lanius.Mini.intTree x0 x1) w
 
 abbrev Stmt_is_data_ptr_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.CTree} {x2 : List Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepCTree x1 v1 → (RepList 25 RepNat) x2 v2 →
@@ -38,10 +38,10 @@ abbrev Stmt_one_tree_names (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
 
 abbrev Stmt_string_args (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Option (List Lanius.Mini.CTree)} {x2 : Nat} {x3 : List Nat} {x4 : List Nat} {x5 : Nat} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → (RepOption 81 (RepList 82 RepCTree)) x1 v1 → RepNat x2 v2 → (RepList 25 RepNat) x3 v3 → (RepList 25 RepNat) x4 v4 → RepNat x5 v5 →
-    (RepOption 251 RepMStmt) (Lanius.Mini.stringArgs x0 x1 x2 x3 x4 x5) w
+    (RepOption 252 RepMStmt) (Lanius.Mini.stringArgs x0 x1 x2 x3 x4 x5) w
 
 abbrev Stmt_string_slice (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Bool} {x1 : Option Lanius.Mini.SrcExpr} {x2 : Nat} {x3 : List Nat} {x4 : Nat} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepBool x0 v0 → (RepOption 233 RepSrcExpr) x1 v1 → RepNat x2 v2 → (RepList 25 RepNat) x3 v3 → RepNat x4 v4 →
-    (RepOption 251 RepMStmt) (Lanius.Mini.stringSlice x0 x1 x2 x3 x4) w
+  ∀ {x0 : Bool} {x1 : Option Lanius.Mini.SrcExpr} {x2 : Nat} {x3 : List Nat} {x4 : Nat} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepBool x0 v0 → (RepOption 234 RepSrcExpr) x1 v1 → RepNat x2 v2 → (RepList 25 RepNat) x3 v3 → RepNat x4 v4 →
+    (RepOption 252 RepMStmt) (Lanius.Mini.stringSlice x0 x1 x2 x3 x4) w
 
 end Lanius.Faithful.SelfCert

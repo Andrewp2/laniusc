@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::view_head -/
-def src_view_head (ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr : Nat) : SrcFunc := { params := [{ id := 10, ty := ty349 }], ret := ty348, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 10)) ty349 ty348 [[149], []] [SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 149)) ty18 ty348 [[], [211, 218]] [SrcEff.eVariant ty348 1 [], SrcEff.eMatch (SrcEff.eCall ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr [SrcEff.ePure (SrcExpr.local 218)]) ty18 ty348 [[], [314, 317]] [SrcEff.eVariant ty348 0 [SrcEff.eVariant ty326 7 [SrcEff.ePure (SrcExpr.local 211)]], SrcEff.eVariant ty348 1 []]], SrcEff.eVariant ty348 1 []]) }
+def src_view_head (ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr : Nat) : SrcFunc := { params := [{ id := 10, ty := ty350 }], ret := ty349, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 10)) ty350 ty349 [[149], []] [SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 149)) ty18 ty349 [[], [211, 218]] [SrcEff.eVariant ty349 1 [], SrcEff.eMatch (SrcEff.eCall ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr [SrcEff.ePure (SrcExpr.local 218)]) ty18 ty349 [[], [314, 317]] [SrcEff.eVariant ty349 0 [SrcEff.eVariant ty327 7 [SrcEff.ePure (SrcExpr.local 211)]], SrcEff.eVariant ty349 1 []]], SrcEff.eVariant ty349 1 []]) }
 
 end
 

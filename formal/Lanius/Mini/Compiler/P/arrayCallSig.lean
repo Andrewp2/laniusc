@@ -4,7 +4,7 @@ public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.SrcExpr_guard
-import Lanius.Mini.Compiler.P.SrcType_size
+import Lanius.Mini.Compiler.P.SrcType_same
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.arithShiftRight
 import Lanius.Mini.Compiler.P.armBodyScope
@@ -64,6 +64,7 @@ def SrcEff.isSlice (self : SrcEff) : Bool :=
   | .eIf condition ty thenValue elseValue => false
   | .eLet id ty value rt body => false
   | .eLen slice => false
+  | .eStr offset chars => false
 
 /-- Some argument is an array passed as a slice. -/
 def effsSlice (es : List SrcEff) : Bool :=
@@ -90,6 +91,7 @@ def SrcEff.passesSlices (self : SrcEff) : Bool :=
   | .eIf condition ty thenValue elseValue => false
   | .eLet id ty value rt body => false
   | .eLen slice => false
+  | .eStr offset chars => false
 
 /-- Its code as such a call. -/
 def SrcEff.sliceCall (self : SrcEff) (sigs : List Sig) (scope : List Binding) (next : Nat) : Option Evaluated :=
@@ -110,6 +112,7 @@ def SrcEff.sliceCall (self : SrcEff) (sigs : List Sig) (scope : List Binding) (n
   | .eIf condition ty thenValue elseValue => none
   | .eLet id ty value rt body => none
   | .eLen slice => none
+  | .eStr offset chars => none
 
 /-- The code of a value a statement computes (LetEval, Discard): a call passing arrays as slices (array_call), or any other expression's code. -/
 def stmtEval (value : SrcEff) (sigs : List Sig) (decls : SrcDecls) (scope : List Binding) (next : Nat) : Option Evaluated :=

@@ -6,7 +6,7 @@ public import Lanius.Mini.Compiler.P.SrcExpr_guard
 import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.SrcType_same
 import all Lanius.Mini.Compiler.P.Stmt_kills
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
@@ -1029,6 +1029,7 @@ theorem eff_trap_step {k : Nat} (ih : GrowsBelow sp (k + 1)) (ihT : GrowsBelowT 
     simp only [SrcEff.toCore] at run
     rw [len_trap_state run]
     exact Grows.refl _
+  | eStr offset chars => simp [SrcEff.toCore, evalExpr] at run
 
 /-- Every effectful expression Core runs until it traps grows the heap. -/
 theorem eff_trap_grows : ∀ k, GrowsBelow sp k → GrowsBelowT sp k → EffGrowsT sp k

@@ -1820,7 +1820,7 @@ def lean_program(funcs):
     for params, ret, body in funcs:
         ps = ', '.join(f'{{ id := {j}, ty := {lean_ty(t)} }}' for j, t in enumerate(params))
         out.append(f'{{ params := [{ps}], ret := {lean_ty(ret)}, body := {lean_stmt(body)} }}')
-    return '{ funcs := [' + ', '.join(out) + '] }'
+    return '{ funcs := [' + ', '.join(out) + '], statics := [] }'
 
 
 LEAN_HEAD = '''import Lanius.Mini.Compiler

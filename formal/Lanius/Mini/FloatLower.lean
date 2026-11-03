@@ -8,7 +8,7 @@ import all Lanius.Mini.Compiler.P.FArith_opcode
 import all Lanius.Mini.Compiler.P.FloatTy_rex
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.SrcType_same
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_mask
@@ -396,6 +396,7 @@ theorem castToFloat_sound {ft : FloatTy} {inner t : Typed} {env : Env} {w result
       simp only [IEEE.F64.toF32, bits_f64, toNat_f64]
   · rename_i _ hty
     simp [hty, SrcType.sintKind] at base
+  · simp at lowered
   · simp at lowered
 
 /-- Core's float operations have a result on the operands a float operation lowers for. -/

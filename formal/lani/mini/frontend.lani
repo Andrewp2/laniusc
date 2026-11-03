@@ -188,6 +188,8 @@ pub enum SrcType {
     // an [i32; length] local the program viewed (the compiler's; the reading
     // never makes one)
     View(usize),
+    // a str: its bytes' mini address in the static region, and their count
+    Str,
 }
 
 pub enum SrcOp {
@@ -241,6 +243,7 @@ pub enum SrcEff {
     EIf(Box<SrcEff>, SrcType, Box<SrcEff>, Box<SrcEff>),
     ELet(usize, SrcType, Box<SrcEff>, SrcType, Box<SrcEff>),
     ELen(usize),
+    EStr(usize, List<usize>),
 }
 
 pub enum SrcStmt {
@@ -301,6 +304,7 @@ pub struct SrcFunc {
 
 pub struct SrcProgram {
     funcs: List<SrcFunc>,
+    statics: List<u8>,
 }
 // extract: external end
 
@@ -2395,6 +2399,7 @@ pub fn src_ty(t: SrcType) -> core::option::Option<Ty> {
         SrcType::Float(ft) -> Some(TyFloat(ft)),
         Sint(sk) -> Some(TySint(sk)),
         View(view_length) -> None,
+        Str -> None,
     };
 }
 
@@ -2821,6 +2826,7 @@ pub fn src_weight(t: SrcType) -> core::option::Option<usize> {
         SrcType::Float(ft) -> Some(1),
         Sint(sk) -> Some(1),
         View(view_length) -> Some(1),
+        Str -> Some(1),
     };
 }
 
@@ -3132,6 +3138,7 @@ pub fn unit_ty(t: SrcType) -> bool {
         SrcType::Float(ft) -> false,
         Sint(sk) -> false,
         View(view_length) -> false,
+        Str -> false,
     };
 }
 
@@ -3851,6 +3858,7 @@ pub fn float_want(want: core::option::Option<SrcType>, t: SrcType, x: SrcExpr) -
             SrcType::Float(ft) -> float_pick(ft, t, x),
             Sint(sk) -> float_pick(F32, t, x),
             View(view_length) -> float_pick(F32, t, x),
+            Str -> float_pick(F32, t, x),
         },
     };
 }
@@ -6280,6 +6288,7 @@ pub fn is_usize(t: SrcType) -> bool {
         SrcType::Float(ft) -> false,
         Sint(sk) -> false,
         View(view_length) -> false,
+        Str -> false,
     };
 }
 
@@ -11788,6 +11797,7 @@ pub fn src_enum_id(t: core::option::Option<SrcType>) -> core::option::Option<usi
             SrcType::Float(ft) -> None,
             Sint(sk) -> None,
             View(view_length) -> None,
+            Str -> None,
         },
     };
 }
@@ -12347,6 +12357,7 @@ pub fn isize_ty(t: SrcType) -> bool {
         SrcType::Float(ft) -> false,
         Sint(sk) -> false,
         View(view_length) -> false,
+        Str -> false,
     };
 }
 
@@ -12384,6 +12395,7 @@ pub fn int_literal_at(t: SrcType, k: i32, e: SrcExpr) -> SrcExpr {
         SrcType::Float(ft) -> e,
         Sint(sk) -> sint_at(sk, k, e),
         View(view_length) -> e,
+        Str -> e,
     };
 }
 
@@ -12436,6 +12448,7 @@ pub fn src_fields(t: core::option::Option<SrcType>) -> core::option::Option<List
             SrcType::Float(ft) -> None,
             Sint(sk) -> None,
             View(view_length) -> None,
+            Str -> None,
         },
     };
 }
@@ -12458,6 +12471,7 @@ pub fn src_variants(t: core::option::Option<SrcType>) -> core::option::Option<Li
             SrcType::Float(ft) -> None,
             Sint(sk) -> None,
             View(view_length) -> None,
+            Str -> None,
         },
     };
 }
@@ -12480,6 +12494,7 @@ pub fn src_element(t: core::option::Option<SrcType>) -> core::option::Option<Src
             SrcType::Float(ft) -> None,
             Sint(sk) -> None,
             View(view_length) -> None,
+            Str -> None,
         },
     };
 }
@@ -12636,6 +12651,7 @@ pub fn wide_at(want: core::option::Option<SrcType>, n: u64, e: SrcExpr) -> SrcEx
             SrcType::Float(ft) -> e,
             Sint(sk) -> wide_sint_at(sk, n, e),
             View(view_length) -> e,
+            Str -> e,
         },
     };
 }
@@ -12683,6 +12699,7 @@ pub fn neg_wide_at(want: core::option::Option<SrcType>, n: u64, e: SrcExpr) -> S
             SrcType::Float(ft) -> e,
             Sint(sk) -> neg_wide_sint(sk, n, e),
             View(view_length) -> e,
+            Str -> e,
         },
     };
 }
@@ -12731,6 +12748,7 @@ pub fn neg_least(want: core::option::Option<SrcType>, x: SrcExpr, d: SrcExpr) ->
             SrcType::Float(ft) -> d,
             Sint(sk) -> neg_least_at(sk, x, d),
             View(view_length) -> d,
+            Str -> d,
         },
     };
 }
@@ -12833,6 +12851,7 @@ pub fn known_eff(funcs: List<SrcFunc>, locals: List<LocalTy>, x: SrcEff) -> core
         EIf(c, t, a, b) -> Some(t),
         ELet(id, t, v, rt, b) -> Some(rt),
         ELen(s) -> Some(Uint(Usize)),
+        EStr(offset, chars) -> Some(Str),
     };
 }
 
@@ -12855,6 +12874,7 @@ pub fn lit_eff(funcs: List<SrcFunc>, locals: List<LocalTy>, want: core::option::
         EIf(c, t, a, b) -> EIf(boxed(lit_eff(funcs, locals, Some(Bool), unbox(c))), t, boxed(lit_eff(funcs, locals, Some(t), unbox(a))), boxed(lit_eff(funcs, locals, Some(t), unbox(b)))),
         ELet(id, t, v, rt, b) -> ELet(id, t, boxed(lit_eff(funcs, locals, Some(t), unbox(v))), rt, boxed(lit_eff(funcs, cons(LocalTy { id: id, ty: t }, locals), Some(rt), unbox(b)))),
         ELen(s) -> ELen(s),
+        EStr(offset, chars) -> EStr(offset, chars),
     };
 }
 
@@ -12987,6 +13007,7 @@ pub fn wide_left_eff(x: SrcEff) -> bool {
         EIf(c, t, a, b) -> wide_left_eff(unbox(c)) || wide_left_eff(unbox(a)) || wide_left_eff(unbox(b)),
         ELet(id, t, v, rt, b) -> wide_left_eff(unbox(v)) || wide_left_eff(unbox(b)),
         ELen(sl) -> false,
+        EStr(offset, chars) -> false,
     };
 }
 
@@ -13050,7 +13071,7 @@ pub fn untyped_rejected(fs: List<SrcFunc>) -> core::option::Option<SrcProgram> {
     if (wide_left_funcs(fs)) {
         return None;
     }
-    return Some(SrcProgram { funcs: fs });
+    return Some(SrcProgram { funcs: fs, statics: empty() });
 }
 
 // ---------------------------------------------------------------- the program

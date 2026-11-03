@@ -304,7 +304,10 @@ def load_modules(top=None):
     (cached by the tree's path and bytes)."""
     import pickle
     top = os.path.abspath(top or STDLIB)
-    k = run_cache.key('modules', top, run_cache.tree_digest(top), run_cache.file_digest(os.path.abspath(__file__)))
+    # The pickle names Module's module (__main__ when this file is run), so
+    # that name is part of the key.
+    k = run_cache.key('modules', top, run_cache.tree_digest(top), run_cache.file_digest(os.path.abspath(__file__)),
+                      Module.__module__)
     cached = run_cache.path_of('modules', k, '.pkl')
     if os.path.exists(cached):
         with open(cached, 'rb') as f:

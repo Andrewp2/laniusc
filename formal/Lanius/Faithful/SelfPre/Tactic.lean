@@ -83,6 +83,15 @@ def lookup? (nm : Name) : TacticM (Option Expr) := do
   if env.contains nm then return some (← constFresh nm)
   return none
 
+/-- A generated lemma `s`: in the current namespace (a generated module's own,
+e.g. the compile side's `SelfPre.Compile`, whose lemmas share names with
+build_files'), else under `Lanius.Faithful.SelfPre`. -/
+def genLookup? (s : Name) : TacticM (Option Expr) := do
+  let ns ← getCurrNamespace
+  if ns != `Lanius.Faithful.SelfPre then
+    if let some e ← lookup? (ns ++ s) then return some e
+  lookup? (`Lanius.Faithful.SelfPre ++ s)
+
 /-- A product of two numbers below `2 ^ 32` does not wrap. -/
 theorem mul_lt_two64 {x y : Nat} (hx : x < 4294967296) (hy : y < 4294967296) :
     x * y < 18446744073709551616 := by
@@ -98,11 +107,17 @@ def normNames : Array Name := #[`decide_eq_true_eq, `decide_eq_false_iff_not, `B
   `Bool.not_eq_true', `Bool.not_eq_false', `not_and, `not_or, `true_and, `and_true, `false_and, `and_false,
   `true_or, `or_true, `false_or, `or_false, `Bool.false_eq_true, `Bool.true_eq_false, `Bool.false_and,
   `Bool.true_and, `Bool.and_false, `Bool.and_true, `Bool.false_or, `Bool.true_or, `Bool.or_false, `Bool.or_true,
-  `Bool.not_true, `Bool.not_false, `if_true, `if_false, `ite_true, `ite_false, `dite_true, `dite_false, `not_true_eq_false, `not_false_eq_true, `eq_self_iff_true]
+  `Bool.not_true, `Bool.not_false, `if_true, `if_false, `ite_true, `ite_false, `dite_true, `dite_false, `not_true_eq_false, `not_false_eq_true, `eq_self_iff_true,
+  `decide_true, `decide_false]
+
+/-- A byte literal as the Lean functions write it (`72`), not as the cost models
+do (`UInt8.ofNat 72`): the compile side's byte lists. -/
+theorem uint8_ofNat_lit (n : Nat) : UInt8.ofNat (no_index (OfNat.ofNat n)) = (OfNat.ofNat n : UInt8) := rfl
 
 /-- The heights' normal form: `hb` of a constructor by its parts, `max` on the
 left of `≤` as a conjunction. -/
-def hbNormNames : Array Name := #[``max_le_iff', ``max_add_le_iff', ``Nat.add_assoc, ``BitVec.ofNat_eq_ofNat]
+def hbNormNames : Array Name := #[``max_le_iff', ``max_add_le_iff', ``Nat.add_assoc, ``BitVec.ofNat_eq_ofNat,
+  ``uint8_ofNat_lit]
 
 /-- The nullary `Lanius.Mini` definitions and the `Inline` functions in the context
 and the goal. -/
@@ -629,7 +644,7 @@ def postsOf (f : Name) : TacticM (Array Expr) := do
       return a.getAppFn.isConstOf f
     if ok then out := out.push d.toExpr
   for i in [0:8] do
-    match ← lookup? (`Lanius.Faithful.SelfPre.HBPost ++ f ++ Name.mkSimple s!"p{i}") with
+    match ← genLookup? (`HBPost ++ f ++ Name.mkSimple s!"p{i}") with
     | some c => out := out.push c
     | none => break
   return out
@@ -756,7 +771,7 @@ def postLemma? (c : Expr) : TacticM (Option Expr) := do
   let some key := costKey? c | return none
   match ← lookup? (Name.mkSimple s!"post_{key}") with
   | some l => return some l
-  | none => lookup? (`Lanius.Faithful.SelfPre ++ Name.mkSimple s!"post_{key}")
+  | none => genLookup? (Name.mkSimple s!"post_{key}")
 
 /-- Upper bounds for every value the context's heights and cost-model calls
 stand for, at the potential `base`: each value at most `base` plus the boxes
@@ -1024,6 +1039,12 @@ elab_rules : tactic
 syntax "hb_eqns" : tactic
 elab_rules : tactic
   | `(tactic| hb_eqns) => quietly (eqnFacts)
+/-- `omega` over the goal's and the hypotheses' atoms as variables: for the
+compile side's hand proofs, whose cost atoms (`Cost_concat_of_u8 n <literal>
+..`) `omega` itself compares by unfolding (a minute on `frameMemoryBytes`). -/
+syntax "omega_atoms" : tactic
+elab_rules : tactic
+  | `(tactic| omega_atoms) => quietly (omegaAtoms)
 syntax "hb_facts" term "," term : tactic
 elab_rules : tactic
   | `(tactic| hb_facts $n, $m) => quietly do
@@ -1050,7 +1071,7 @@ own, at the fuel below) or the constant. -/
 def preLemma? (key : String) : TacticM (Option Expr) := do
   match ← lookup? (Name.mkSimple s!"pre_{key}") with
   | some l => return some l
-  | none => lookup? (`Lanius.Faithful.SelfPre ++ Name.mkSimple s!"pre_{key}")
+  | none => genLookup? (Name.mkSimple s!"pre_{key}")
 
 def preKey? (e : Expr) : Option String :=
   match e.getAppFn with

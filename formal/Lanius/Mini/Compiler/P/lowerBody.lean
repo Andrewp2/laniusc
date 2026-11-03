@@ -3,7 +3,7 @@ module
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Lists_empty
-import Lanius.Mini.Compiler.P.SrcType_size
+import Lanius.Mini.Compiler.P.SrcType_same
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.arrayCallSig
 import Lanius.Mini.Compiler.P.compileModules
@@ -86,7 +86,7 @@ def declareStruct (id : Nat) (fields : List SrcType) (after : Option SrcDecls) :
   | some decls =>
     let known : Option (List SrcType) := structFields decls.structs id
     match known with
-    | none => some ({ structs := ({ id := id, fields := fields } : SrcStructDecl) :: decls.structs, enums := decls.enums } : SrcDecls)
+    | none => some ({ structs := ({ id := id, fields := fields } : SrcStructDecl) :: decls.structs, enums := decls.enums, statics := decls.statics } : SrcDecls)
     | some other => keepIf (typesSame other fields) decls
 
 /-- Enum id with these variants declared, unless id has other variants. -/
@@ -96,7 +96,7 @@ def declareEnum (id : Nat) (variants : List (List SrcType)) (after : Option SrcD
   | some decls =>
     let known : Option (List (List SrcType)) := enumVariants decls.enums id
     match known with
-    | none => some ({ structs := decls.structs, enums := ({ id := id, variants := variants } : SrcEnumDecl) :: decls.enums } : SrcDecls)
+    | none => some ({ structs := decls.structs, enums := ({ id := id, variants := variants } : SrcEnumDecl) :: decls.enums, statics := decls.statics } : SrcDecls)
     | some other => keepIf (variantsSame other variants) decls
 
 mutual
@@ -117,6 +117,7 @@ def SrcType.declare (self : SrcType) (decls : SrcDecls) : Option SrcDecls :=
   | .float ft => some decls
   | .sint kind => some decls
   | .view viewLength => none
+  | .str => some decls
 def declareTypes (types : List SrcType) (decls : SrcDecls) : Option SrcDecls :=
   match types with
   | [] => some decls

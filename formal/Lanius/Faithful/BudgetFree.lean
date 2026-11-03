@@ -45,7 +45,7 @@ def SrcEff.callsOk (S : Nat → Bool) : SrcEff → Bool
   | .eIf condition _ thenValue elseValue =>
       SrcEff.callsOk S condition && SrcEff.callsOk S thenValue && SrcEff.callsOk S elseValue
   | .eLet _ _ value _ body => SrcEff.callsOk S value && SrcEff.callsOk S body
-  | .eLen _ => true
+  | .eLen _ | .eStr _ _ => true
 
 /-- Every function the list calls is in `S`. -/
 def SrcEff.callsOkL (S : Nat → Bool) : List SrcEff → Bool
@@ -261,7 +261,7 @@ theorem qeff_z (hc : QCallsZ S call call') :
     simp only [SrcEff.callsOk, Bool.and_eq_true] at hs
     simp only [qeff]
     exact zle_qthen (qeff_z hc env value hs.1) fun v => qeff_z hc ((id, v) :: env) body hs.2
-  | _, .eLen _, _ => zle_none
+  | _, .eLen _, _ | _, .eStr _ _, _ => zle_none
 
 theorem qeffs_z (hc : QCallsZ S call call') :
     ∀ (env : Env) (es : List SrcEff), SrcEff.callsOkL S es = true → ZLe (qeffs call env es) (qeffs call' env es)

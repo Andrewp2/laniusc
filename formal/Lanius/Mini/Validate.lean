@@ -9,7 +9,7 @@ import all Lanius.Mini.Compiler.P.FArith_opcode
 import all Lanius.Mini.Compiler.P.FloatTy_rex
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.SrcType_same
 import all Lanius.Mini.Compiler.P.Stmt_kills
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
@@ -1417,6 +1417,22 @@ theorem compileOptimized_some {prog : Program} {binary : Binary} (compiled : com
       exact .inr ⟨_, accepted, optimizedCompiled⟩
     · exact .inl compiled
   · exact .inl compiled
+
+/-- The optimizing pipeline's binary carries the program's static bytes (the
+optimizer keeps them). -/
+theorem compileOptimized_statics {prog : Program} {binary : Binary} (compiled : compileOptimized prog = some binary) :
+    binary.statics = prog.statics := by
+  unfold compileOptimized at compiled
+  dsimp only at compiled
+  split at compiled
+  · unfold compileOr at compiled
+    split at compiled
+    · rename_i b optimizedCompiled
+      simp only [Option.some.injEq] at compiled
+      subst compiled
+      exact (compileProgram_spec optimizedCompiled).2.2.2.2
+    · exact (compileProgram_spec compiled).2.2.2.2
+  · exact (compileProgram_spec compiled).2.2.2.2
 
 /-- `compileProgram_correct` for the optimizing pipeline, with the same premises. -/
 theorem compileOptimized_correct {prog : Program} {binary : Binary} (compiled : compileOptimized prog = some binary)

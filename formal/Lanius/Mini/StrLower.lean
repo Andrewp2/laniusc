@@ -10,7 +10,7 @@ import all Lanius.Mini.Compiler.P.FArith_opcode
 import all Lanius.Mini.Compiler.P.FloatTy_rex
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.SrcType_same
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_mask
@@ -84,7 +84,7 @@ import all Lanius.Mini.Compiler.P.wordStride
 import all Lanius.Mini.Compiler.P.wordWidth
 import all Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Compiler.P.SrcExpr_guard
-public import Lanius.Mini.Compiler.P.SrcType_size
+public import Lanius.Mini.Compiler.P.SrcType_same
 public import Lanius.Mini.Compiler.P.UintTy_half
 public import Lanius.Mini.Compiler.P.UintTy_isWide
 public import Lanius.Mini.Compiler.P.armScope
@@ -125,7 +125,7 @@ words (`strWords`), the pointer in the let's slot. -/
 
 namespace Lanius.Mini
 
-variable {bud : Budget} {places : List Addressed}
+variable {bud : Budget} {sx : Statics} {places : List Addressed}
 
 open Lanius.Core (Value)
 open Lanius.Semantics (State Cell Completion evalExpr evalExprs execStmt restoreLocals)
@@ -163,6 +163,31 @@ theorem utf8Bytes_strValue : ∀ (chars : List Nat), strAscii chars = true →
     apply UInt8.toNat.inj
     simp only [UInt32.toNat_toUInt8, hv]
     rfl
+
+/-- A literal the statics hold, from `offset`: ASCII, and its bytes there. -/
+theorem strPlaced_bytes {statics : List UInt8} : ∀ {chars : List Nat} {offset : Nat},
+    strPlaced statics offset chars = true →
+      strAscii chars = true ∧ (statics.drop offset).take chars.length = asciiBytes chars
+  | [], _, _ => ⟨rfl, by simp [asciiBytes]⟩
+  | c :: rest, offset, h => by
+    simp only [strPlaced, Bool.and_eq_true, decide_eq_true_eq] at h
+    obtain ⟨⟨small, byte⟩, more⟩ := h
+    obtain ⟨ascii, tail⟩ := strPlaced_bytes more
+    cases found : statics[offset]? with
+    | none => simp [found, staticByteIs] at byte
+    | some b =>
+      simp only [found, staticByteIs, decide_eq_true_eq] at byte
+      have hc := congrArg BitVec.toNat byte
+      simp only [BitVec.toNat_setWidth, BitVec.toNat_ofNat] at hc
+      have b8 : b.toNat < 256 := b.toNat_lt
+      have hb : b = UInt8.ofNat c := by
+        apply UInt8.toNat_inj.mp
+        simp only [UInt8.toNat_ofNat']
+        omega
+      obtain ⟨lt, get⟩ := List.getElem?_eq_some_iff.mp found
+      refine ⟨by simp [strAscii, small, ascii], ?_⟩
+      rw [List.drop_eq_getElem_cons lt, get, List.length_cons, List.take_succ_cons, tail, hb]
+      rfl
 
 /-- The bytes the stores write: each word's low four bytes, in order. -/
 def wordBytes : List (BitVec 64) → List UInt8
@@ -311,16 +336,17 @@ section Statements
 variable {sp : SrcProgram} {mp : Program} {fuel : Nat} {ret : SrcType} {scope : List Binding}
   {next : Nat} {stmt : Stmt} {frame : Nat → Nat} {base : Nat} {st : State} {env : Env}
   {c : Completion} {st' : State} {hp : Heap}
+variable [StaticsOf sp sx]
 
 /-- Entering a `LetStr`'s body: Core mapped the string's storage at `p`; the
 mini code before the body (the block, the stores) runs to a heap that
 corresponds, the pointer in the let's slot. -/
 theorem str_entered {chars : List Nat} (ascii : strAscii chars = true) (nonempty : chars ≠ [])
-    (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp) {p : Nat} {heap' : Lanius.Memory.Heap}
+    (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp) {p : Nat} {heap' : Lanius.Memory.Heap}
     (map : st.heap.mapBorrowed (Semantics.stringStorage (strValue chars)) 4 = .allocated p heap')
     (room : heap'.nextAddress ≤ hp.limit) :
     ∃ hp3, (BitVec.ofNat 64 p).toNat = p ∧ HeapCorr heap' st.world hp3 ∧
-      FrameCorr bud places { st with heap := heap' } hp3 ∧ hp3.limit = hp.limit ∧
+      FrameCorr sx bud places { st with heap := heap' } hp3 ∧ hp3.limit = hp.limit ∧
       (∀ {rest : Stmt} {d : Nat} {out : Outcome}, Exec mp d (env.set next (BitVec.ofNat 64 p)) hp3 rest out →
         Exec mp d env hp (.seq (.alloc next 2 (.lit (BitVec.ofNat 64 (4 * (strWords chars).length))))
           (strStores next 0 (strWords chars) rest)) out) ∧
@@ -338,13 +364,14 @@ theorem str_entered {chars : List Nat} (ascii : strAscii chars = true) (nonempty
   let hp3 := ({ hp with cursor := p + 4 * (strWords chars).length } : Heap).writeBytes p (wordBytes (strWords chars))
   have hc3 : HeapCorr heap' st.world hp3 := hcRoom tail
   have pBits : (BitVec.ofNat 64 p).toNat = p := Nat.mod_eq_of_lt (by addr_omega)
-  have fc3 : FrameCorr bud places { st with heap := heap' } hp3 := by
-    refine fc.low (fun _ _ => rfl) (fun a above => ?_) ?_ ?_ ?_
+  have fc3 : FrameCorr sx bud places { st with heap := heap' } hp3 := by
+    refine fc.low (fun _ _ => rfl) (fun a above => ?_) ?_ ?_ ?_ (statics := ?_)
     · simp only [hp3, Heap.writeBytes_eq_writeAll, Heap.writeAll, wordBytes_length]
       rw [if_neg (by addr_omega)]
     · simp only [hp3, Heap.writeBytes_eq_writeAll, Heap.writeAll]
     · simp only [hp3, Heap.writeBytes_eq_writeAll, Heap.writeAll]
     · simp only [hp3, Heap.writeBytes_eq_writeAll, Heap.writeAll, Heap.top]
+    · constructor <;> simp only [hp3, Heap.writeBytes_eq_writeAll, Heap.writeAll]
   have lit : ((Expr.lit (BitVec.ofNat 64 (4 * (strWords chars).length))).eval env).toNat =
       4 * (strWords chars).length := by
     simp only [Expr.eval, BitVec.toNat_ofNat]
@@ -377,12 +404,12 @@ theorem str_entered {chars : List Nat} (ascii : strAscii chars = true) (nonempty
 
 theorem stmt_letStr (ih : StmtSound sp mp fuel) {pointer : Nat} {chars : List Nat} {body : SrcStmt}
     (ok : (SrcStmt.letStr pointer chars body).lower (sp.sigsAt bud) sp.decls ret scope next = some stmt)
-    (corr : Corr places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
+    (corr : Corr sx places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
+    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp)
     (under : ∀ x ∈ places, x.cell < base)
     (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.letStr pointer chars body).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
-    Simulates bud places mp hp ret scope frame base st env stmt c st' := by
+    Simulates sx bud places mp hp ret scope frame base st env stmt c st' := by
   obtain ⟨bstmt, nonempty, -, ascii, bodyOk, rfl⟩ := letStr_lower_inv ok
   simp only [SrcStmt.toCore, execStmt] at run
   split at run

@@ -6,7 +6,7 @@ public import Lanius.Mini.Compiler.P.DivOp_size
 public import Lanius.Mini.Compiler.P.Expr_agrees
 public import Lanius.Mini.Compiler.P.Lists_empty
 public import Lanius.Mini.Compiler.P.SrcExpr_guard
-public import Lanius.Mini.Compiler.P.SrcType_size
+public import Lanius.Mini.Compiler.P.SrcType_same
 public import Lanius.Mini.Compiler.P.Stmt_kills
 public import Lanius.Mini.Compiler.P.UintTy_half
 public import Lanius.Mini.Compiler.P.Word_narrows
@@ -93,12 +93,12 @@ namespace Lanius.Mini
 
 @[expose] def Inline.declareStructIn (id : Nat) (fields : List SrcType) (decls : SrcDecls) (known : Option (List SrcType)) : Option SrcDecls :=
   match known with
-  | none => some ({ structs := ({ id := id, fields := fields } : SrcStructDecl) :: decls.structs, enums := decls.enums } : SrcDecls)
+  | none => some ({ structs := ({ id := id, fields := fields } : SrcStructDecl) :: decls.structs, enums := decls.enums, statics := decls.statics } : SrcDecls)
   | some other => keepIf (typesSame other fields) decls
 
 @[expose] def Inline.declareEnumIn (id : Nat) (variants : List (List SrcType)) (decls : SrcDecls) (known : Option (List (List SrcType))) : Option SrcDecls :=
   match known with
-  | none => some ({ structs := decls.structs, enums := ({ id := id, variants := variants } : SrcEnumDecl) :: decls.enums } : SrcDecls)
+  | none => some ({ structs := decls.structs, enums := ({ id := id, variants := variants } : SrcEnumDecl) :: decls.enums, statics := decls.statics } : SrcDecls)
   | some other => keepIf (variantsSame other variants) decls
 
 @[expose] def Inline.declareTypesAfter (after : Option SrcDecls) (rest : List SrcType) : Option SrcDecls :=
