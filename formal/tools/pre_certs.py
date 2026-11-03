@@ -13,10 +13,10 @@ From the budget certificates' models and statements in `Faithful/GenB/`:
 * `pre_K`: `Pre_K n xs b` from `hb x + b ≤ K` for the arguments (and a
   walker's index plus its list's height, `OVERRIDES`), by `pre_auto`.
 
-Usage: pre_certs.py [--ns NAMESPACE] [--base MODULE] [--compile] GENB OUTDIR ROOT...
+Usage: pre_certs.py [--ns NAMESPACE] [--base MODULE] [--compile] [--prefix MODULE] GENB OUTDIR ROOT...
 
 The modules are named after OUTDIR (under formal/), e.g. `Lanius.Faithful.SelfPre.GenP`
-for build_files. `--ns` puts the lemmas in a namespace of their own below
+for build_files, or after `--prefix` (regen.py writes them to its workdir first). `--ns` puts the lemmas in a namespace of their own below
 `Lanius.Faithful.SelfPre` (the tactic looks there first), so the compile side's
 (GenPC, `--ns Lanius.Faithful.SelfPre.Compile`) can share names with build_files'.
 `--base` replaces the value lemmas' module `SelfPre.Values` in every module's
@@ -545,7 +545,7 @@ NUMS = {'on': False, 'used': {}, 'fields': {}, 'ftype': {}, 'types': set()}
 # Functions whose callers pass numbers they cannot bound: no number hypotheses
 # (their own preconditions are then open, PreCompileSourceV3/NOTES.md).
 COMPILE_NUM_SKIP = {
-    'compile_func', 'Code_size', 'SrcStmt_lower', 'arm_bind', 'arm_payload', 'array_arg_local',
+    'Code_size', 'SrcStmt_lower', 'arm_bind', 'arm_payload', 'array_arg_local',
     'array_arg_slice', 'array_call_sig', 'assign_from', 'bounds_guard', 'copy_field',
     'copy_field_of', 'copy_same', 'element_base', 'eval_array_element',
     'eval_array_index', 'eval_element', 'eval_len_of', 'eval_load', 'eval_load_byte',
@@ -581,6 +581,17 @@ COMPILE_OVERRIDES = {
                  f'64 * Lanius.Mini.Stmt.weight p6 + 14 ≤ {PC_LIMIT}'],
     'loop_code': [f'p1 + Lanius.Mini.codeSize p2 + 64 * Lanius.Mini.Stmt.weight p3 + 14 ≤ {PC_LIMIT}'],
     'code_size': ['Lanius.Mini.codeSize p0 ≤ K'],
+    # temporaries below `K` (`CompileValues`' `funcsTemps`): from the lowering's
+    # cost and the optimizer (the open leaves `LowerFuncsTemps`, `OptimizeKeepsNumbers`)
+    'Expr_temps': ['Lanius.Mini.Expr.temps p0 ≤ K'],
+    'args_temps': ['Lanius.Mini.argsTemps p0 p1 ≤ K'],
+    'Stmt_temps': ['Lanius.Mini.Stmt.temps p0 ≤ K'],
+    'compile_func': ['Lanius.Mini.Stmt.temps p1.body ≤ K'],
+    'compile_funcs': ['Lanius.Faithful.SelfPre.funcsTemps p1 ≤ K'],
+    'compile_program': ['Lanius.Faithful.SelfPre.funcsTemps p0.funcs ≤ K'],
+    'compile_optimized': ['Lanius.Faithful.SelfPre.funcsTemps p0.funcs ≤ K'],
+    'compile_lowered': ['Lanius.Faithful.SelfPre.optTemps p0 ≤ K'],
+    'compile_or': ['Lanius.Faithful.SelfPre.funcsTemps p1.funcs ≤ K'],
     'Instr_size': ['Lanius.Mini.Instr.size p0 ≤ K'],
 }
 # The parameters those invariants bound instead of `nb x ≤ M` (pc offsets and
@@ -593,7 +604,9 @@ COMPILE_NUM_DROP = {
 # The definitions the invariants' terms unfold by on constructors (the pre
 # modules' `hb_simp`, locally).
 COMPILE_PRE_SIMP = ['Lanius.Mini.Stmt.weight', 'Lanius.Mini.Expr.weight', 'Lanius.Mini.argsWeight',
-                    'Lanius.Mini.codeSize', 'Lanius.Mini.Instr.size', 'Lanius.Mini.roomFits_stmtRoom']
+                    'Lanius.Mini.codeSize', 'Lanius.Mini.Instr.size', 'Lanius.Mini.roomFits_stmtRoom',
+                    'Lanius.Mini.Expr.temps', 'Lanius.Mini.Stmt.temps', 'Lanius.Mini.argsTemps',
+                    'Lanius.Faithful.SelfPre.funcsTemps', 'Lanius.Faithful.SelfPre.optTemps']
 PRE_PREAMBLE = ''
 # The Mini program's compile: the functions these reach bound the program's
 # numbers by `K` rather than `M` (they do not grow as it compiles: its slots,
@@ -601,7 +614,7 @@ PRE_PREAMBLE = ''
 COMPILE_FIXED_ROOTS = ['compile_optimized']
 # The functions whose `match`es' pattern variables count as the parameter they
 # take apart (`match_aliases`): their callers can bound the whole value.
-COMPILE_NUM_ALIAS = set()
+COMPILE_NUM_ALIAS = {'compile_funcs', 'compile_lowered'}
 
 
 def args_after(text, i):
@@ -1212,13 +1225,16 @@ def main():
     ns = 'Lanius.Faithful.SelfPre'
     values = 'Lanius.Faithful.SelfPre.Values'
     compile_side = False
-    while args[:1] in (['--ns'], ['--base'], ['--compile']):
+    prefix = None
+    while args[:1] in (['--ns'], ['--base'], ['--compile'], ['--prefix']):
         if args[0] == '--compile':
             HAND_CASE.update(COMPILE_HAND_CASE)
             args, compile_side = args[1:], True
             continue
         if args[0] == '--ns':
             ns = args[1]
+        elif args[0] == '--prefix':
+            prefix = args[1]
         else:
             values = args[1]
         args = args[2:]
@@ -1226,7 +1242,8 @@ def main():
     roots = args[2:]
     formal = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     rel = os.path.relpath(os.path.abspath(outdir), formal)
-    prefix = rel.replace(os.sep, '.') if rel.startswith('Lanius' + os.sep) else 'Lanius.Faithful.SelfPre.GenP'
+    if prefix is None:
+        prefix = rel.replace(os.sep, '.') if rel.startswith('Lanius' + os.sep) else 'Lanius.Faithful.SelfPre.GenP'
     g = Gen(genb, roots)
     if compile_side:
         nb_path = os.path.join(formal, 'Lanius', 'Faithful', 'SelfPre', 'NB.lean')
