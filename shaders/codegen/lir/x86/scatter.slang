@@ -1518,6 +1518,20 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (x86_live_by_semantic[semantic_row] ==
             X86_SEMANTIC_COMPARE_ALIAS_BRANCH)
             comparison = x86_select_by_semantic[semantic_row].condition;
+        // A Boolean NOT that optimize_close left dead (read only by this
+        // branch): test its operand, or fuse its comparison, on the other
+        // sense. local_ordinal 1 makes a value branch jump when nonzero.
+        bool inverted = false;
+        if (conditional && comparison < semantic_count &&
+            x86_live_by_semantic[comparison] == 0u &&
+            opt_ir_op(opt_ir_core[comparison]) == SEMANTIC_LIR_OP_LOGICAL_NOT &&
+            opt_ir_core[comparison].type_id == 2u &&
+            opt_ir_operands[comparison].a < semantic_count)
+        {
+            comparison = opt_ir_operands[comparison].a;
+            condition = comparison;
+            inverted = true;
+        }
         bool fused_compare = comparison < semantic_count &&
             x86_live_by_semantic[comparison] == 0u &&
             opt_ir_op(opt_ir_core[comparison]) ==
@@ -1566,6 +1580,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 metadata |= X86_LIR_METADATA_IMMEDIATE;
             local_ordinal = swap
                 ? x86_swapped_compare_predicate(compare.c) : compare.c;
+            if (inverted) local_ordinal = x86_negated_compare_predicate(local_ordinal);
             if (compare_core.type_id == SEMANTIC_LIR_TY_POINTER &&
                 compare.b < semantic_count &&
                 opt_ir_core[compare.b].type_id !=
@@ -1574,9 +1589,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
             result = opt_ir_op(source) == SEMANTIC_LIR_OP_IF_BEGIN
                 ? args.b : args.c;
         }
-        else if (opt_ir_op(source) == SEMANTIC_LIR_OP_IF_BEGIN) { a = args.a; b = args.b; c = args.c; }
-        else if (opt_ir_op(source) == SEMANTIC_LIR_OP_BRANCH_IF) { a = args.a; b = args.c; c = 0u; }
+        else if (opt_ir_op(source) == SEMANTIC_LIR_OP_IF_BEGIN) { a = inverted ? condition : args.a; b = args.b; c = args.c; }
+        else if (opt_ir_op(source) == SEMANTIC_LIR_OP_BRANCH_IF) { a = inverted ? condition : args.a; b = args.c; c = 0u; }
         else { a = INVALID; b = args.a; c = 0u; }
+        if (!fused_compare) local_ordinal = inverted ? 1u : 0u;
     }
     else if (op == X86_LIR_OP_LABEL)
     {
@@ -1625,7 +1641,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         ? argument_rows + (call_result_words > 2u ? 1u : 0u) - 6u : 0u;
     uint aligned_stack_words = (stack_words + 1u) & ~1u;
     core.local_ordinal = op == X86_LIR_OP_COMPARE_BRANCH_FALSE ||
-        op == X86_LIR_OP_SELECT_STORE || op == X86_LIR_OP_FIELD_STORE
+        op == X86_LIR_OP_SELECT_STORE || op == X86_LIR_OP_FIELD_STORE ||
+        op == X86_LIR_OP_BRANCH
         ? local_ordinal
         : (op == X86_LIR_OP_INDEX_LOAD || op == X86_LIR_OP_INDEX_STORE || op == X86_LIR_OP_INDEX_ADDRESS)
         ? semantic_lir_layout_word_offset[semantic_row]
