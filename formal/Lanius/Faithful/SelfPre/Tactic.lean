@@ -465,14 +465,10 @@ def budgeted (k : Nat) (x : TacticM α) : TacticM α :=
 auxiliary theorem at every use (one per `omega` call), each checked by the kernel. -/
 theorem add_nest_left (a b c : Nat) : a + (b + c) = a + b + c := (Nat.add_assoc a b c).symm
 
-/-- Prove the main goal by `omega` over its and the hypotheses' atoms. -/
-def omegaAtoms : TacticM Unit := withMainContext do
-  let g ← getMainGoal
-  let goal ← instantiateMVars (← g.getType)
-  dbg "omegaAtoms"
-  let some atoms0 := propAtoms goal #[] |
-    if lanius.hb.debug.get (← getOptions) then IO.eprintln s!"omegaAtoms: not arithmetic"
-    evalTactic (← `(tactic| omega))
+/-- The arithmetic hypotheses of the current context and the atoms of `goal` and
+them, or `none` when `goal` is not arithmetic. -/
+def arithContext (goal : Expr) : MetaM (Option (Array Expr × Array (Expr × Expr))) := do
+  let some atoms0 := propAtoms goal #[] | return none
   let mut atoms := atoms0
   let mut hyps : Array (Expr × Expr) := #[]
   for d in ← getLCtx do
@@ -482,10 +478,36 @@ def omegaAtoms : TacticM Unit := withMainContext do
     if let some as := propAtoms t atoms then
       atoms := as
       hyps := hyps.push (d.toExpr, t)
-  let atomsArr := atoms
-  dbg s!"atoms {atoms.size}"
+  return some (atoms, hyps)
+
+/-- A certificate proof of `goal` (`LinCert.cert`) from the hypotheses `hyps`, over
+variables for the atoms and the hypotheses it uses, then applied to them: the
+kernel then unfolds `LTm.den` against variables, never against an atom (it would
+unfold a cost model's call first). -/
+def certClosed? (atomsArr : Array Expr) (goal : Expr) (hyps : Array (Expr × Expr)) : MetaM (Option Expr) := do
+  let some p := certProof? atomsArr goal hyps | return none
+  let used := hyps.filter fun (h, _) => h.isFVar && p.containsFVar h.fvarId!
+  let closed ← withLocalDeclsDND (atomsArr.mapIdx fun i _ => (Name.mkSimple s!"a{i}", mkConst ``Nat)) fun xs => do
+    let abst (e : Expr) : Expr := e.replace fun s =>
+      match atomsArr.idxOf? s with
+      | some i => some xs[i]!
+      | none => none
+    withLocalDeclsDND (used.mapIdx fun i (_, t) => (Name.mkSimple s!"h{i}", abst t)) fun hs => do
+      let p' := (abst p).replaceFVars (used.map (·.1)) hs
+      mkLambdaFVars (xs ++ hs) p'
+  return some (mkAppN (mkAppN closed atomsArr) (used.map (·.1)))
+
+/-- Prove the main goal by `omega` over its and the hypotheses' atoms. -/
+def omegaAtoms : TacticM Unit := withMainContext do
+  let g ← getMainGoal
+  let goal ← instantiateMVars (← g.getType)
+  dbg "omegaAtoms"
+  let some (atomsArr, hyps) ← arithContext goal |
+    if lanius.hb.debug.get (← getOptions) then IO.eprintln s!"omegaAtoms: not arithmetic"
+    evalTactic (← `(tactic| omega))
+  dbg s!"atoms {atomsArr.size}"
   if lanius.hb.cert.get (← getOptions) then
-    if let some p := certProof? atomsArr goal hyps then
+    if let some p ← certClosed? atomsArr goal hyps then
       dbg "cert"
       g.assign p
       replaceMainGoal []
@@ -545,6 +567,13 @@ register_option lanius.hb.run : Nat := {
 
 /-- Prove `ty` in the current context: heights normalized, then a certificate or `omega`. -/
 def proveArith0? (ty : Expr) : TacticM (Option Expr) := do
+  -- most premises are already linear over their atoms: a certificate, before `simp`
+  if lanius.hb.cert.get (← getOptions) then
+    let ty ← instantiateMVars ty
+    if let some (atoms, hyps) ← arithContext ty then
+      if let some p ← certClosed? atoms ty hyps then
+        dbg "cert0"
+        return some p
   let g ← mkFreshExprMVar ty
   let saved ← saveState
   try
