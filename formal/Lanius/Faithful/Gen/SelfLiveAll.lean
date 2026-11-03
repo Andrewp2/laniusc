@@ -2714,11 +2714,35 @@ theorem lchunk25 : LivesOk prims outside liveBad liveWrap 2500 part25 :=
   livesOk_cons (.inr lok2599) <|
   livesOk_nil
 
+theorem lchunk26 : LivesOk prims outside liveBad liveWrap 2600 part26 :=
+  livesOk_cons (.inr lok2600) <|
+  livesOk_cons (.inr lok2601) <|
+  livesOk_cons (.inr lok2602) <|
+  livesOk_cons (.inr lok2603) <|
+  livesOk_cons (.inr lok2604) <|
+  livesOk_cons (.inr lok2605) <|
+  livesOk_cons (.inr lok2606) <|
+  livesOk_cons (.inr lok2607) <|
+  livesOk_cons (.inr lok2608) <|
+  livesOk_cons (.inr lok2609) <|
+  livesOk_cons (.inr lok2610) <|
+  livesOk_cons (.inr lok2611) <|
+  livesOk_cons (.inr lok2612) <|
+  livesOk_cons (.inr lok2613) <|
+  livesOk_cons (.inr lok2614) <|
+  livesOk_cons (.inr lok2615) <|
+  livesOk_cons (.inr lok2616) <|
+  livesOk_cons (.inr lok2617) <|
+  livesOk_cons (.inr lok2618) <|
+  livesOk_cons (.inr lok2619) <|
+  livesOk_cons (.inr lok2620) <|
+  livesOk_nil
+
 /-- Every function of the self program but the prims, those `outside`, those in
 `liveBad` and those in `liveWrap` passes `LiveFn liveBad`. -/
 theorem livesOk : LivesOk prims outside liveBad liveWrap 0 prog.funcs := by
   rw [funcs_parts]
   exact
-    livesOk_append lchunk0 (livesOk_append lchunk1 (livesOk_append lchunk2 (livesOk_append lchunk3 (livesOk_append lchunk4 (livesOk_append lchunk5 (livesOk_append lchunk6 (livesOk_append lchunk7 (livesOk_append lchunk8 (livesOk_append lchunk9 (livesOk_append lchunk10 (livesOk_append lchunk11 (livesOk_append lchunk12 (livesOk_append lchunk13 (livesOk_append lchunk14 (livesOk_append lchunk15 (livesOk_append lchunk16 (livesOk_append lchunk17 (livesOk_append lchunk18 (livesOk_append lchunk19 (livesOk_append lchunk20 (livesOk_append lchunk21 (livesOk_append lchunk22 (livesOk_append lchunk23 (livesOk_append lchunk24 (lchunk25)))))))))))))))))))))))))
+    livesOk_append lchunk0 (livesOk_append lchunk1 (livesOk_append lchunk2 (livesOk_append lchunk3 (livesOk_append lchunk4 (livesOk_append lchunk5 (livesOk_append lchunk6 (livesOk_append lchunk7 (livesOk_append lchunk8 (livesOk_append lchunk9 (livesOk_append lchunk10 (livesOk_append lchunk11 (livesOk_append lchunk12 (livesOk_append lchunk13 (livesOk_append lchunk14 (livesOk_append lchunk15 (livesOk_append lchunk16 (livesOk_append lchunk17 (livesOk_append lchunk18 (livesOk_append lchunk19 (livesOk_append lchunk20 (livesOk_append lchunk21 (livesOk_append lchunk22 (livesOk_append lchunk23 (livesOk_append lchunk24 (livesOk_append lchunk25 (lchunk26))))))))))))))))))))))))))
 
 end Lanius.Faithful.SelfPure

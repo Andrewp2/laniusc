@@ -12,7 +12,6 @@ public import Lanius.Faithful.Gen.SelfStmtC_Inline_lowerSetScalar
 public import Lanius.Faithful.Gen.SelfStmtC_SrcExpr_guard
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
 public import Lanius.Faithful.Gen.SelfStmtC_armPayload
-public import Lanius.Faithful.Gen.SelfStmtC_assignFrom
 public import Lanius.Faithful.Gen.SelfStmtC_consArgs
 public import Lanius.Faithful.Gen.SelfStmtC_elementAddress
 public import Lanius.Faithful.Gen.SelfStmtC_elementBase
@@ -57,7 +56,6 @@ import Lanius.Faithful.Gen.SelfProofC_Inline_lowerSetScalar
 import Lanius.Faithful.Gen.SelfProofC_SrcExpr_guard
 import Lanius.Faithful.Gen.SelfProofC_UintTy_half
 import Lanius.Faithful.Gen.SelfProofC_armPayload
-import Lanius.Faithful.Gen.SelfProofC_assignFrom
 import Lanius.Faithful.Gen.SelfProofC_consArgs
 import Lanius.Faithful.Gen.SelfProofC_elementAddress
 import Lanius.Faithful.Gen.SelfProofC_elementBase
@@ -109,31 +107,6 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem cert_lower_arm {n : Nat} :
-    Stmt_lower_arm prog prims 1058 n :=
-  @proof_lower_arm prog prims 1058 185 306 310 331 fn_lower_arm np_lower_arm ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_check_then⟩ ⟨@cert_assign_from⟩ ⟨@cert_boxed_of_mini_selfhost_Expr⟩ n
-
-theorem cert_arm_guard {n : Nat} :
-    Stmt_arm_guard prog prims 1059 n :=
-  @proof_arm_guard prog prims 1059 188 fn_arm_guard np_arm_guard ⟨@cert_SrcExpr_guard⟩ n
-
-theorem certs_lower_arms : ∀ n, (Stmt_lower_arms prog prims 764 n) := by
-  intro n
-  induction n with
-  | zero =>
-    exact (by intro x0 x1 x2 x3 x4 x5 x6 v0 v1 v2 v3 v4 v5 v6 w h r0 r1 r2 r3 r4 r5 r6; simp [pcall] at h)
-  | succ n ih =>
-    have ih_lower_arms : Stmt_lower_arms prog prims 764 n := ih
-    exact @step_lower_arms prog prims 764 75 180 369 815 1057 1058 1059 fn_lower_arms np_lower_arms ⟨@cert_plus⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType⟩ ⟨@cert_arm_scope⟩ ⟨@cert_lower_arm_value⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm⟩ ⟨@cert_lower_arm⟩ ⟨@cert_arm_guard⟩ n ⟨ih_lower_arms⟩
-
-theorem cert_lower_arms {n : Nat} :
-    Stmt_lower_arms prog prims 764 n :=
-  (certs_lower_arms n)
-
-theorem cert_lower_match_arms {n : Nat} :
-    Stmt_lower_match_arms prog prims 512 n :=
-  @proof_lower_match_arms prog prims 512 120 182 379 763 764 fn_lower_match_arms np_lower_match_arms ⟨@cert_SrcType_size⟩ ⟨@cert_viewed_type⟩ ⟨@cert_length_of_mini_selfhost_List_mini_selfhost_SrcType⟩ ⟨@cert_length_of_mini_selfhost_SrcArm⟩ ⟨@cert_lower_arms⟩ n
-
 theorem cert_lower_match_on {n : Nat} :
     Stmt_lower_match_on prog prims 321 n :=
   @proof_lower_match_on prog prims 321 180 512 fn_lower_match_on np_lower_match_on ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType⟩ ⟨@cert_lower_match_arms⟩ n
@@ -151,12 +124,12 @@ theorem cert_lower_set {n : Nat} :
   @proof_lower_set prog prims 200 190 324 fn_lower_set np_lower_set ⟨@cert_lower_value⟩ ⟨@cert_lower_set_values⟩ n
 
 theorem cert_lower_set_value {n : Nat} :
-    Stmt_lower_set_value prog prims 1060 n :=
-  @proof_lower_set_value prog prims 1060 fn_lower_set_value np_lower_set_value n
+    Stmt_lower_set_value prog prims 1062 n :=
+  @proof_lower_set_value prog prims 1062 fn_lower_set_value np_lower_set_value n
 
 theorem cert_lower_set_scalar {n : Nat} :
     Stmt_lower_set_scalar prog prims 765 n :=
-  @proof_lower_set_scalar prog prims 765 204 311 1060 fn_lower_set_scalar np_lower_set_scalar ⟨@cert_lower_as⟩ ⟨@cert_SrcType_is_scalar⟩ ⟨@cert_lower_set_value⟩ n
+  @proof_lower_set_scalar prog prims 765 204 311 1062 fn_lower_set_scalar np_lower_set_scalar ⟨@cert_lower_as⟩ ⟨@cert_SrcType_is_scalar⟩ ⟨@cert_lower_set_value⟩ n
 
 theorem cert_lower_set_field_at {n : Nat} :
     Stmt_lower_set_field_at prog prims 513 n :=
@@ -349,68 +322,68 @@ theorem cert_element_base {n : Nat} :
   @proof_element_base prog prims 810 105 331 fn_element_base np_element_base ⟨@cert_times⟩ ⟨@cert_boxed_of_mini_selfhost_Expr⟩ n
 
 theorem cert_usize_width {n : Nat} :
-    Stmt_usize_width prog prims 1471 n :=
-  @proof_usize_width prog prims 1471 fn_usize_width np_usize_width n
+    Stmt_usize_width prog prims 1490 n :=
+  @proof_usize_width prog prims 1490 fn_usize_width np_usize_width n
 
 theorem cert_word_width {n : Nat} :
-    Stmt_word_width prog prims 1311 n :=
-  @proof_word_width prog prims 1311 1471 fn_word_width np_word_width ⟨@cert_usize_width⟩ n
+    Stmt_word_width prog prims 1318 n :=
+  @proof_word_width prog prims 1318 1490 fn_word_width np_word_width ⟨@cert_usize_width⟩ n
 
 theorem cert_width_of {n : Nat} :
-    Stmt_width_of prog prims 1080 n :=
-  @proof_width_of prog prims 1080 1311 fn_width_of np_width_of ⟨@cert_word_width⟩ n
+    Stmt_width_of prog prims 1082 n :=
+  @proof_width_of prog prims 1082 1318 fn_width_of np_width_of ⟨@cert_word_width⟩ n
 
 theorem cert_address_below {n : Nat} :
-    Stmt_address_below prog prims 1081 n :=
-  @proof_address_below prog prims 1081 331 fn_address_below np_address_below ⟨@cert_boxed_of_mini_selfhost_Expr⟩ n
+    Stmt_address_below prog prims 1083 n :=
+  @proof_address_below prog prims 1083 331 fn_address_below np_address_below ⟨@cert_boxed_of_mini_selfhost_Expr⟩ n
 
-theorem certs_load_type : ∀ n, (Stmt_load_type prog prims 1061 n) ∧ (Stmt_load_types prog prims 1302 n) ∧ (Stmt_load_cases prog prims 1303 n) := by
+theorem certs_load_type : ∀ n, (Stmt_load_type prog prims 1063 n) ∧ (Stmt_load_types prog prims 1309 n) ∧ (Stmt_load_cases prog prims 1310 n) := by
   intro n
   induction n with
   | zero =>
     exact ⟨(by intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4; simp [pcall] at h), (by intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4; simp [pcall] at h), (by intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4; simp [pcall] at h)⟩
   | succ n ih =>
     obtain ⟨ih_load_type, ih_load_types, ih_load_cases⟩ := ih
-    exact ⟨@step_load_type prog prims 1061 178 180 185 1080 1081 1302 1303 fn_load_type np_load_type ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_SrcType⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType⟩ ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_width_of⟩ ⟨@cert_address_below⟩ n ⟨ih_load_types⟩ ⟨ih_load_cases⟩, @step_load_types prog prims 1302 75 105 120 178 1061 fn_load_types np_load_types ⟨@cert_plus⟩ ⟨@cert_times⟩ ⟨@cert_SrcType_size⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_SrcType⟩ n ⟨ih_load_type⟩ ⟨ih_load_types⟩, @step_load_cases prog prims 1303 75 180 185 331 1302 fn_load_cases np_load_cases ⟨@cert_plus⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType⟩ ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_boxed_of_mini_selfhost_Expr⟩ n ⟨ih_load_types⟩ ⟨ih_load_cases⟩⟩
+    exact ⟨@step_load_type prog prims 1063 178 180 185 1082 1083 1309 1310 fn_load_type np_load_type ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_SrcType⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType⟩ ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_width_of⟩ ⟨@cert_address_below⟩ n ⟨ih_load_types⟩ ⟨ih_load_cases⟩, @step_load_types prog prims 1309 75 105 120 178 1063 fn_load_types np_load_types ⟨@cert_plus⟩ ⟨@cert_times⟩ ⟨@cert_SrcType_size⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_SrcType⟩ n ⟨ih_load_type⟩ ⟨ih_load_types⟩, @step_load_cases prog prims 1310 75 180 185 331 1309 fn_load_cases np_load_cases ⟨@cert_plus⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType⟩ ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_boxed_of_mini_selfhost_Expr⟩ n ⟨ih_load_types⟩ ⟨ih_load_cases⟩⟩
 
 theorem cert_load_type {n : Nat} :
-    Stmt_load_type prog prims 1061 n :=
+    Stmt_load_type prog prims 1063 n :=
   (certs_load_type n).1
 theorem cert_load_types {n : Nat} :
-    Stmt_load_types prog prims 1302 n :=
+    Stmt_load_types prog prims 1309 n :=
   (certs_load_type n).2.1
 theorem cert_load_cases {n : Nat} :
-    Stmt_load_cases prog prims 1303 n :=
+    Stmt_load_cases prog prims 1310 n :=
   (certs_load_type n).2.2
 
 theorem cert_eval_word_element {n : Nat} :
     Stmt_eval_word_element prog prims 773 n :=
-  @proof_eval_word_element prog prims 773 75 120 185 306 310 332 333 334 347 527 810 1061 fn_eval_word_element np_eval_word_element ⟨@cert_plus⟩ ⟨@cert_SrcType_size⟩ ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_check_then⟩ ⟨@cert_assign_from⟩ ⟨@cert_SrcType_is_i32⟩ ⟨@cert_SrcType_is_uint⟩ ⟨@cert_word_element⟩ ⟨@cert_slot_vars⟩ ⟨@cert_bounds_guard⟩ ⟨@cert_element_base⟩ ⟨@cert_load_type⟩ n
+  @proof_eval_word_element prog prims 773 75 120 185 306 310 332 333 334 347 527 810 1063 fn_eval_word_element np_eval_word_element ⟨@cert_plus⟩ ⟨@cert_SrcType_size⟩ ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_check_then⟩ ⟨@cert_assign_from⟩ ⟨@cert_SrcType_is_i32⟩ ⟨@cert_SrcType_is_uint⟩ ⟨@cert_word_element⟩ ⟨@cert_slot_vars⟩ ⟨@cert_bounds_guard⟩ ⟨@cert_element_base⟩ ⟨@cert_load_type⟩ n
 
 theorem cert_eval_element {n : Nat} :
     Stmt_eval_element prog prims 522 n :=
   @proof_eval_element prog prims 522 332 333 771 772 773 fn_eval_element np_eval_element ⟨@cert_SrcType_is_i32⟩ ⟨@cert_SrcType_is_uint⟩ ⟨@cert_eval_load⟩ ⟨@cert_eval_load_byte⟩ ⟨@cert_eval_word_element⟩ n
 
-theorem certs_pick_element : ∀ n, (Stmt_pick_element prog prims 1304 n) := by
+theorem certs_pick_element : ∀ n, (Stmt_pick_element prog prims 1311 n) := by
   intro n
   induction n with
   | zero =>
     exact (by intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4; simp [pcall] at h)
   | succ n ih =>
-    have ih_pick_element : Stmt_pick_element prog prims 1304 n := ih
-    exact @step_pick_element prog prims 1304 56 75 105 185 310 331 347 fn_pick_element np_pick_element ⟨@cert_minus⟩ ⟨@cert_plus⟩ ⟨@cert_times⟩ ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_assign_from⟩ ⟨@cert_boxed_of_mini_selfhost_Expr⟩ ⟨@cert_slot_vars⟩ n ⟨ih_pick_element⟩
+    have ih_pick_element : Stmt_pick_element prog prims 1311 n := ih
+    exact @step_pick_element prog prims 1311 56 75 105 185 310 331 347 fn_pick_element np_pick_element ⟨@cert_minus⟩ ⟨@cert_plus⟩ ⟨@cert_times⟩ ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_assign_from⟩ ⟨@cert_boxed_of_mini_selfhost_Expr⟩ ⟨@cert_slot_vars⟩ n ⟨ih_pick_element⟩
 
 theorem cert_pick_element {n : Nat} :
-    Stmt_pick_element prog prims 1304 n :=
+    Stmt_pick_element prog prims 1311 n :=
   (certs_pick_element n)
 
 theorem cert_eval_pick {n : Nat} :
-    Stmt_eval_pick prog prims 1062 n :=
-  @proof_eval_pick prog prims 1062 120 185 306 331 332 333 1304 fn_eval_pick np_eval_pick ⟨@cert_SrcType_size⟩ ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_check_then⟩ ⟨@cert_boxed_of_mini_selfhost_Expr⟩ ⟨@cert_SrcType_is_i32⟩ ⟨@cert_SrcType_is_uint⟩ ⟨@cert_pick_element⟩ n
+    Stmt_eval_pick prog prims 1064 n :=
+  @proof_eval_pick prog prims 1064 120 185 306 331 332 333 1311 fn_eval_pick np_eval_pick ⟨@cert_SrcType_size⟩ ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_check_then⟩ ⟨@cert_boxed_of_mini_selfhost_Expr⟩ ⟨@cert_SrcType_is_i32⟩ ⟨@cert_SrcType_is_uint⟩ ⟨@cert_pick_element⟩ n
 
 theorem cert_eval_array_element {n : Nat} :
     Stmt_eval_array_element prog prims 774 n :=
-  @proof_eval_array_element prog prims 774 1062 fn_eval_array_element np_eval_array_element ⟨@cert_eval_pick⟩ n
+  @proof_eval_array_element prog prims 774 1064 fn_eval_array_element np_eval_array_element ⟨@cert_eval_pick⟩ n
 
 theorem cert_eval_array_index {n : Nat} :
     Stmt_eval_array_index prog prims 523 n :=
@@ -433,16 +406,16 @@ theorem cert_eval_copy {n : Nat} :
   @proof_eval_copy prog prims 525 190 775 fn_eval_copy np_eval_copy ⟨@cert_lower_value⟩ ⟨@cert_eval_values⟩ n
 
 theorem cert_eval_sized {n : Nat} :
-    Stmt_eval_sized prog prims 1305 n :=
-  @proof_eval_sized prog prims 1305 120 775 fn_eval_sized np_eval_sized ⟨@cert_SrcType_size⟩ ⟨@cert_eval_values⟩ n
+    Stmt_eval_sized prog prims 1312 n :=
+  @proof_eval_sized prog prims 1312 120 775 fn_eval_sized np_eval_sized ⟨@cert_SrcType_size⟩ ⟨@cert_eval_values⟩ n
 
 theorem cert_eval_field_type {n : Nat} :
-    Stmt_eval_field_type prog prims 1063 n :=
-  @proof_eval_field_type prog prims 1063 190 1305 fn_eval_field_type np_eval_field_type ⟨@cert_lower_value⟩ ⟨@cert_eval_sized⟩ n
+    Stmt_eval_field_type prog prims 1065 n :=
+  @proof_eval_field_type prog prims 1065 190 1312 fn_eval_field_type np_eval_field_type ⟨@cert_lower_value⟩ ⟨@cert_eval_sized⟩ n
 
 theorem cert_eval_field_of {n : Nat} :
     Stmt_eval_field_of prog prims 776 n :=
-  @proof_eval_field_of prog prims 776 178 515 1063 fn_eval_field_of np_eval_field_of ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_SrcType⟩ ⟨@cert_get_of_mini_selfhost_SrcType⟩ ⟨@cert_eval_field_type⟩ n
+  @proof_eval_field_of prog prims 776 178 515 1065 fn_eval_field_of np_eval_field_of ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_SrcType⟩ ⟨@cert_get_of_mini_selfhost_SrcType⟩ ⟨@cert_eval_field_type⟩ n
 
 theorem cert_eval_field_copy {n : Nat} :
     Stmt_eval_field_copy prog prims 526 n :=
@@ -469,16 +442,16 @@ theorem cert_lower_load_word {n : Nat} :
   @proof_lower_load_word prog prims 528 185 fn_lower_load_word np_lower_load_word ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ n
 
 theorem cert_element_at {n : Nat} :
-    Stmt_element_at prog prims 1306 n :=
-  @proof_element_at prog prims 1306 331 332 333 fn_element_at np_element_at ⟨@cert_boxed_of_mini_selfhost_Expr⟩ ⟨@cert_SrcType_is_i32⟩ ⟨@cert_SrcType_is_uint⟩ n
+    Stmt_element_at prog prims 1313 n :=
+  @proof_element_at prog prims 1313 331 332 333 fn_element_at np_element_at ⟨@cert_boxed_of_mini_selfhost_Expr⟩ ⟨@cert_SrcType_is_i32⟩ ⟨@cert_SrcType_is_uint⟩ n
 
 theorem cert_element_address {n : Nat} :
-    Stmt_element_address prog prims 1064 n :=
-  @proof_element_address prog prims 1064 374 1306 fn_element_address np_element_address ⟨@cert_element_of⟩ ⟨@cert_element_at⟩ n
+    Stmt_element_address prog prims 1066 n :=
+  @proof_element_address prog prims 1066 374 1313 fn_element_address np_element_address ⟨@cert_element_of⟩ ⟨@cert_element_at⟩ n
 
 theorem cert_checked_element {n : Nat} :
     Stmt_checked_element prog prims 777 n :=
-  @proof_checked_element prog prims 777 214 232 1064 fn_checked_element np_checked_element ⟨@cert_boxed_of_mini_selfhost_SrcType⟩ ⟨@cert_SrcType_same⟩ ⟨@cert_element_address⟩ n
+  @proof_checked_element prog prims 777 214 232 1066 fn_checked_element np_checked_element ⟨@cert_boxed_of_mini_selfhost_SrcType⟩ ⟨@cert_SrcType_same⟩ ⟨@cert_element_address⟩ n
 
 theorem cert_lower_element {n : Nat} :
     Stmt_lower_element prog prims 529 n :=
@@ -486,7 +459,7 @@ theorem cert_lower_element {n : Nat} :
 
 theorem cert_checked_load {n : Nat} :
     Stmt_checked_load prog prims 778 n :=
-  @proof_checked_load prog prims 778 120 214 232 334 810 1061 fn_checked_load np_checked_load ⟨@cert_SrcType_size⟩ ⟨@cert_boxed_of_mini_selfhost_SrcType⟩ ⟨@cert_SrcType_same⟩ ⟨@cert_word_element⟩ ⟨@cert_element_base⟩ ⟨@cert_load_type⟩ n
+  @proof_checked_load prog prims 778 120 214 232 334 810 1063 fn_checked_load np_checked_load ⟨@cert_SrcType_size⟩ ⟨@cert_boxed_of_mini_selfhost_SrcType⟩ ⟨@cert_SrcType_same⟩ ⟨@cert_word_element⟩ ⟨@cert_element_base⟩ ⟨@cert_load_type⟩ n
 
 theorem cert_lower_load_type {n : Nat} :
     Stmt_lower_load_type prog prims 530 n :=
@@ -513,43 +486,43 @@ theorem cert_store_eval_then {n : Nat} :
   @proof_store_eval_then prog prims 808 185 232 306 332 333 fn_store_eval_then np_store_eval_then ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_SrcType_same⟩ ⟨@cert_check_then⟩ ⟨@cert_SrcType_is_i32⟩ ⟨@cert_SrcType_is_uint⟩ n
 
 theorem cert_store_one {n : Nat} :
-    Stmt_store_one prog prims 1079 n :=
-  @proof_store_one prog prims 1079 fn_store_one np_store_one n
+    Stmt_store_one prog prims 1081 n :=
+  @proof_store_one prog prims 1081 fn_store_one np_store_one n
 
-theorem certs_get_of_mini_selfhost_Expr : ∀ n, (Stmt_get_of_mini_selfhost_Expr prog prims 1082 n) := by
+theorem certs_get_of_mini_selfhost_Expr : ∀ n, (Stmt_get_of_mini_selfhost_Expr prog prims 1084 n) := by
   intro n
   induction n with
   | zero =>
     exact (by intro x0 x1 v0 v1 w h r0 r1; simp [pcall] at h)
   | succ n ih =>
-    have ih_get_of_mini_selfhost_Expr : Stmt_get_of_mini_selfhost_Expr prog prims 1082 n := ih
-    exact @step_get_of_mini_selfhost_Expr prog prims 1082 56 487 fn_get_of_mini_selfhost_Expr np_get_of_mini_selfhost_Expr ⟨@cert_minus⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_Expr⟩ n ⟨ih_get_of_mini_selfhost_Expr⟩
+    have ih_get_of_mini_selfhost_Expr : Stmt_get_of_mini_selfhost_Expr prog prims 1084 n := ih
+    exact @step_get_of_mini_selfhost_Expr prog prims 1084 56 487 fn_get_of_mini_selfhost_Expr np_get_of_mini_selfhost_Expr ⟨@cert_minus⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_Expr⟩ n ⟨ih_get_of_mini_selfhost_Expr⟩
 
 theorem cert_get_of_mini_selfhost_Expr {n : Nat} :
-    Stmt_get_of_mini_selfhost_Expr prog prims 1082 n :=
+    Stmt_get_of_mini_selfhost_Expr prog prims 1084 n :=
   (certs_get_of_mini_selfhost_Expr n)
 
 theorem cert_ite_then {n : Nat} :
-    Stmt_ite_then prog prims 1312 n :=
-  @proof_ite_then prog prims 1312 185 fn_ite_then np_ite_then ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ n
+    Stmt_ite_then prog prims 1319 n :=
+  @proof_ite_then prog prims 1319 185 fn_ite_then np_ite_then ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ n
 
-theorem certs_store_type : ∀ n, (Stmt_store_type prog prims 809 n) ∧ (Stmt_store_types prog prims 1083 n) ∧ (Stmt_store_cases prog prims 1084 n) := by
+theorem certs_store_type : ∀ n, (Stmt_store_type prog prims 809 n) ∧ (Stmt_store_types prog prims 1085 n) ∧ (Stmt_store_cases prog prims 1086 n) := by
   intro n
   induction n with
   | zero =>
     exact ⟨(by intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4; simp [pcall] at h), (by intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4; simp [pcall] at h), (by intro x0 x1 x2 x3 x4 x5 x6 v0 v1 v2 v3 v4 v5 v6 w h r0 r1 r2 r3 r4 r5 r6; simp [pcall] at h)⟩
   | succ n ih =>
     obtain ⟨ih_store_type, ih_store_types, ih_store_cases⟩ := ih
-    exact ⟨@step_store_type prog prims 809 75 178 180 197 1079 1080 1081 1082 1083 1084 fn_store_type np_store_type ⟨@cert_plus⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_SrcType⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType⟩ ⟨@cert_lower_then⟩ ⟨@cert_store_one⟩ ⟨@cert_width_of⟩ ⟨@cert_address_below⟩ ⟨@cert_get_of_mini_selfhost_Expr⟩ n ⟨ih_store_types⟩ ⟨ih_store_cases⟩, @step_store_types prog prims 1083 75 105 120 178 197 809 fn_store_types np_store_types ⟨@cert_plus⟩ ⟨@cert_times⟩ ⟨@cert_SrcType_size⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_SrcType⟩ ⟨@cert_lower_then⟩ n ⟨ih_store_type⟩ ⟨ih_store_types⟩, @step_store_cases prog prims 1084 75 180 331 1083 1312 fn_store_cases np_store_cases ⟨@cert_plus⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType⟩ ⟨@cert_boxed_of_mini_selfhost_Expr⟩ ⟨@cert_ite_then⟩ n ⟨ih_store_types⟩ ⟨ih_store_cases⟩⟩
+    exact ⟨@step_store_type prog prims 809 75 178 180 197 1081 1082 1083 1084 1085 1086 fn_store_type np_store_type ⟨@cert_plus⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_SrcType⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType⟩ ⟨@cert_lower_then⟩ ⟨@cert_store_one⟩ ⟨@cert_width_of⟩ ⟨@cert_address_below⟩ ⟨@cert_get_of_mini_selfhost_Expr⟩ n ⟨ih_store_types⟩ ⟨ih_store_cases⟩, @step_store_types prog prims 1085 75 105 120 178 197 809 fn_store_types np_store_types ⟨@cert_plus⟩ ⟨@cert_times⟩ ⟨@cert_SrcType_size⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_SrcType⟩ ⟨@cert_lower_then⟩ n ⟨ih_store_type⟩ ⟨ih_store_types⟩, @step_store_cases prog prims 1086 75 180 331 1085 1319 fn_store_cases np_store_cases ⟨@cert_plus⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType⟩ ⟨@cert_boxed_of_mini_selfhost_Expr⟩ ⟨@cert_ite_then⟩ n ⟨ih_store_types⟩ ⟨ih_store_cases⟩⟩
 
 theorem cert_store_type {n : Nat} :
     Stmt_store_type prog prims 809 n :=
   (certs_store_type n).1
 theorem cert_store_types {n : Nat} :
-    Stmt_store_types prog prims 1083 n :=
+    Stmt_store_types prog prims 1085 n :=
   (certs_store_type n).2.1
 theorem cert_store_cases {n : Nat} :
-    Stmt_store_cases prog prims 1084 n :=
+    Stmt_store_cases prog prims 1086 n :=
   (certs_store_type n).2.2
 
 theorem cert_store_eval_word {n : Nat} :
@@ -560,22 +533,22 @@ theorem cert_store_eval_element {n : Nat} :
     Stmt_store_eval_element prog prims 375 n :=
   @proof_store_eval_element prog prims 375 332 333 560 561 562 fn_store_eval_element np_store_eval_element ⟨@cert_SrcType_is_i32⟩ ⟨@cert_SrcType_is_uint⟩ ⟨@cert_store_eval⟩ ⟨@cert_store_eval_byte⟩ ⟨@cert_store_eval_word⟩ n
 
-theorem certs_put_element : ∀ n, (Stmt_put_element prog prims 1085 n) := by
+theorem certs_put_element : ∀ n, (Stmt_put_element prog prims 1087 n) := by
   intro n
   induction n with
   | zero =>
     exact (by intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4; simp [pcall] at h)
   | succ n ih =>
-    have ih_put_element : Stmt_put_element prog prims 1085 n := ih
-    exact @step_put_element prog prims 1085 56 75 105 185 310 331 347 fn_put_element np_put_element ⟨@cert_minus⟩ ⟨@cert_plus⟩ ⟨@cert_times⟩ ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_assign_from⟩ ⟨@cert_boxed_of_mini_selfhost_Expr⟩ ⟨@cert_slot_vars⟩ n ⟨ih_put_element⟩
+    have ih_put_element : Stmt_put_element prog prims 1087 n := ih
+    exact @step_put_element prog prims 1087 56 75 105 185 310 331 347 fn_put_element np_put_element ⟨@cert_minus⟩ ⟨@cert_plus⟩ ⟨@cert_times⟩ ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_assign_from⟩ ⟨@cert_boxed_of_mini_selfhost_Expr⟩ ⟨@cert_slot_vars⟩ n ⟨ih_put_element⟩
 
 theorem cert_put_element {n : Nat} :
-    Stmt_put_element prog prims 1085 n :=
+    Stmt_put_element prog prims 1087 n :=
   (certs_put_element n)
 
 theorem cert_store_pick {n : Nat} :
     Stmt_store_pick prog prims 811 n :=
-  @proof_store_pick prog prims 811 120 185 232 306 331 332 333 1085 fn_store_pick np_store_pick ⟨@cert_SrcType_size⟩ ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_SrcType_same⟩ ⟨@cert_check_then⟩ ⟨@cert_boxed_of_mini_selfhost_Expr⟩ ⟨@cert_SrcType_is_i32⟩ ⟨@cert_SrcType_is_uint⟩ ⟨@cert_put_element⟩ n
+  @proof_store_pick prog prims 811 120 185 232 306 331 332 333 1087 fn_store_pick np_store_pick ⟨@cert_SrcType_size⟩ ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_SrcType_same⟩ ⟨@cert_check_then⟩ ⟨@cert_boxed_of_mini_selfhost_Expr⟩ ⟨@cert_SrcType_is_i32⟩ ⟨@cert_SrcType_is_uint⟩ ⟨@cert_put_element⟩ n
 
 theorem cert_store_array_element {n : Nat} :
     Stmt_store_array_element prog prims 563 n :=
@@ -590,20 +563,20 @@ theorem cert_lower_set_index_eval {n : Nat} :
   @proof_lower_set_index_eval prog prims 225 374 375 376 fn_lower_set_index_eval np_lower_set_index_eval ⟨@cert_element_of⟩ ⟨@cert_store_eval_element⟩ ⟨@cert_store_array⟩ n
 
 theorem cert_store_element {n : Nat} :
-    Stmt_store_element prog prims 1065 n :=
-  @proof_store_element prog prims 1065 204 1064 fn_store_element np_store_element ⟨@cert_lower_as⟩ ⟨@cert_element_address⟩ n
+    Stmt_store_element prog prims 1067 n :=
+  @proof_store_element prog prims 1067 204 1066 fn_store_element np_store_element ⟨@cert_lower_as⟩ ⟨@cert_element_address⟩ n
 
 theorem cert_store_byte_element {n : Nat} :
-    Stmt_store_byte_element prog prims 1066 n :=
-  @proof_store_byte_element prog prims 1066 204 1064 fn_store_byte_element np_store_byte_element ⟨@cert_lower_as⟩ ⟨@cert_element_address⟩ n
+    Stmt_store_byte_element prog prims 1068 n :=
+  @proof_store_byte_element prog prims 1068 204 1066 fn_store_byte_element np_store_byte_element ⟨@cert_lower_as⟩ ⟨@cert_element_address⟩ n
 
 theorem cert_store_word_element {n : Nat} :
-    Stmt_store_word_element prog prims 1067 n :=
-  @proof_store_word_element prog prims 1067 120 190 809 810 fn_store_word_element np_store_word_element ⟨@cert_SrcType_size⟩ ⟨@cert_lower_value⟩ ⟨@cert_store_type⟩ ⟨@cert_element_base⟩ n
+    Stmt_store_word_element prog prims 1069 n :=
+  @proof_store_word_element prog prims 1069 120 190 809 810 fn_store_word_element np_store_word_element ⟨@cert_SrcType_size⟩ ⟨@cert_lower_value⟩ ⟨@cert_store_type⟩ ⟨@cert_element_base⟩ n
 
 theorem cert_store_any {n : Nat} :
     Stmt_store_any prog prims 779 n :=
-  @proof_store_any prog prims 779 332 333 334 1065 1066 1067 fn_store_any np_store_any ⟨@cert_SrcType_is_i32⟩ ⟨@cert_SrcType_is_uint⟩ ⟨@cert_word_element⟩ ⟨@cert_store_element⟩ ⟨@cert_store_byte_element⟩ ⟨@cert_store_word_element⟩ n
+  @proof_store_any prog prims 779 332 333 334 1067 1068 1069 fn_store_any np_store_any ⟨@cert_SrcType_is_i32⟩ ⟨@cert_SrcType_is_uint⟩ ⟨@cert_word_element⟩ ⟨@cert_store_element⟩ ⟨@cert_store_byte_element⟩ ⟨@cert_store_word_element⟩ n
 
 theorem cert_lower_set_index_of {n : Nat} :
     Stmt_lower_set_index_of prog prims 532 n :=
@@ -650,16 +623,16 @@ theorem cert_host_random_code {n : Nat} :
   @proof_host_random_code prog prims 787 75 185 186 331 536 fn_host_random_code np_host_random_code ⟨@cert_plus⟩ ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_single_of_mini_selfhost_Expr⟩ ⟨@cert_boxed_of_mini_selfhost_Expr⟩ ⟨@cert_cons_of_mini_selfhost_Expr⟩ n
 
 theorem cert_host_text_code {n : Nat} :
-    Stmt_host_text_code prog prims 1070 n :=
-  @proof_host_text_code prog prims 1070 75 185 331 783 fn_host_text_code np_host_text_code ⟨@cert_plus⟩ ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_boxed_of_mini_selfhost_Expr⟩ ⟨@cert_host_write_code⟩ n
+    Stmt_host_text_code prog prims 1072 n :=
+  @proof_host_text_code prog prims 1072 75 185 331 783 fn_host_text_code np_host_text_code ⟨@cert_plus⟩ ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_boxed_of_mini_selfhost_Expr⟩ ⟨@cert_host_write_code⟩ n
 
 theorem cert_host_newline_code {n : Nat} :
-    Stmt_host_newline_code prog prims 1071 n :=
-  @proof_host_newline_code prog prims 1071 75 185 782 fn_host_newline_code np_host_newline_code ⟨@cert_plus⟩ ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_host_byte_code⟩ n
+    Stmt_host_newline_code prog prims 1073 n :=
+  @proof_host_newline_code prog prims 1073 75 185 782 fn_host_newline_code np_host_newline_code ⟨@cert_plus⟩ ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_host_byte_code⟩ n
 
 theorem cert_eval_host_text {n : Nat} :
     Stmt_eval_host_text prog prims 788 n :=
-  @proof_eval_host_text prog prims 788 185 237 371 382 1070 1071 fn_eval_host_text np_eval_host_text ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_cons_of_mini_selfhost_SrcType⟩ ⟨@cert_single_of_mini_selfhost_SrcType⟩ ⟨@cert_types_same⟩ ⟨@cert_host_text_code⟩ ⟨@cert_host_newline_code⟩ n
+  @proof_eval_host_text prog prims 788 185 237 371 382 1072 1073 fn_eval_host_text np_eval_host_text ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_cons_of_mini_selfhost_SrcType⟩ ⟨@cert_single_of_mini_selfhost_SrcType⟩ ⟨@cert_types_same⟩ ⟨@cert_host_text_code⟩ ⟨@cert_host_newline_code⟩ n
 
 theorem cert_eval_host {n : Nat} :
     Stmt_eval_host prog prims 538 n :=
@@ -796,24 +769,24 @@ theorem cert_signed_div {n : Nat} :
   @proof_signed_div prog prims 801 fn_signed_div np_signed_div n
 
 theorem cert_UintTy_least_bits {n : Nat} :
-    Stmt_UintTy_least_bits prog prims 1310 n :=
-  @proof_UintTy_least_bits prog prims 1310 fn_UintTy_least_bits np_UintTy_least_bits n
+    Stmt_UintTy_least_bits prog prims 1317 n :=
+  @proof_UintTy_least_bits prog prims 1317 fn_UintTy_least_bits np_UintTy_least_bits n
 
 theorem cert_overflow_guard {n : Nat} :
-    Stmt_overflow_guard prog prims 1076 n :=
-  @proof_overflow_guard prog prims 1076 75 331 1310 fn_overflow_guard np_overflow_guard ⟨@cert_plus⟩ ⟨@cert_boxed_of_mini_selfhost_Expr⟩ ⟨@cert_UintTy_least_bits⟩ n
+    Stmt_overflow_guard prog prims 1078 n :=
+  @proof_overflow_guard prog prims 1078 75 331 1317 fn_overflow_guard np_overflow_guard ⟨@cert_plus⟩ ⟨@cert_boxed_of_mini_selfhost_Expr⟩ ⟨@cert_UintTy_least_bits⟩ n
 
 theorem cert_eval_divide_sint {n : Nat} :
     Stmt_eval_divide_sint prog prims 802 n :=
-  @proof_eval_divide_sint prog prims 802 75 185 306 388 801 1074 1076 fn_eval_divide_sint np_eval_divide_sint ⟨@cert_plus⟩ ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_check_then⟩ ⟨@cert_SrcType_is_sint⟩ ⟨@cert_signed_div⟩ ⟨@cert_UintTy_is_wide⟩ ⟨@cert_overflow_guard⟩ n
+  @proof_eval_divide_sint prog prims 802 75 185 306 388 801 1076 1078 fn_eval_divide_sint np_eval_divide_sint ⟨@cert_plus⟩ ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_check_then⟩ ⟨@cert_SrcType_is_sint⟩ ⟨@cert_signed_div⟩ ⟨@cert_UintTy_is_wide⟩ ⟨@cert_overflow_guard⟩ n
 
 theorem cert_unsigned_div {n : Nat} :
-    Stmt_unsigned_div prog prims 1077 n :=
-  @proof_unsigned_div prog prims 1077 fn_unsigned_div np_unsigned_div n
+    Stmt_unsigned_div prog prims 1079 n :=
+  @proof_unsigned_div prog prims 1079 fn_unsigned_div np_unsigned_div n
 
 theorem cert_eval_divide_uint {n : Nat} :
     Stmt_eval_divide_uint prog prims 804 n :=
-  @proof_eval_divide_uint prog prims 804 75 185 333 1077 fn_eval_divide_uint np_eval_divide_uint ⟨@cert_plus⟩ ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_SrcType_is_uint⟩ ⟨@cert_unsigned_div⟩ n
+  @proof_eval_divide_uint prog prims 804 75 185 333 1079 fn_eval_divide_uint np_eval_divide_uint ⟨@cert_plus⟩ ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_SrcType_is_uint⟩ ⟨@cert_unsigned_div⟩ n
 
 theorem cert_eval_divide {n : Nat} :
     Stmt_eval_divide prog prims 553 n :=
@@ -822,5 +795,25 @@ theorem cert_eval_divide {n : Nat} :
 theorem cert_eval_division {n : Nat} :
     Stmt_eval_division prog prims 364 n :=
   @proof_eval_division prog prims 364 553 fn_eval_division np_eval_division ⟨@cert_eval_divide⟩ n
+
+theorem cert_word_stride {n : Nat} :
+    Stmt_word_stride prog prims 1080 n :=
+  @proof_word_stride prog prims 1080 105 331 fn_word_stride np_word_stride ⟨@cert_times⟩ ⟨@cert_boxed_of_mini_selfhost_Expr⟩ n
+
+theorem cert_eval_word_stride {n : Nat} :
+    Stmt_eval_word_stride prog prims 805 n :=
+  @proof_eval_word_stride prog prims 805 120 334 1080 fn_eval_word_stride np_eval_word_stride ⟨@cert_SrcType_size⟩ ⟨@cert_word_element⟩ ⟨@cert_word_stride⟩ n
+
+theorem cert_eval_stride_of {n : Nat} :
+    Stmt_eval_stride_of prog prims 554 n :=
+  @proof_eval_stride_of prog prims 554 332 333 805 fn_eval_stride_of np_eval_stride_of ⟨@cert_SrcType_is_i32⟩ ⟨@cert_SrcType_is_uint⟩ ⟨@cert_eval_word_stride⟩ n
+
+theorem cert_eval_stride {n : Nat} :
+    Stmt_eval_stride prog prims 365 n :=
+  @proof_eval_stride prog prims 365 199 374 554 fn_eval_stride np_eval_stride ⟨@cert_lookup⟩ ⟨@cert_element_of⟩ ⟨@cert_eval_stride_of⟩ n
+
+theorem cert_eval_if_of {n : Nat} :
+    Stmt_eval_if_of prog prims 555 n :=
+  @proof_eval_if_of prog prims 555 185 232 fn_eval_if_of np_eval_if_of ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_SrcType_same⟩ n
 
 end Lanius.Faithful.SelfCert

@@ -363,13 +363,6 @@ theorem pre_weight_add_to : ∀ (n : Nat) (x0 : Nat) (x1 : Option Nat) (b : Nat)
   rw [Pre_weight_add_to.eq_def]; dsimp only
   pre_auto n, M
 
-theorem pre_weight_add : ∀ (n : Nat) (x0 : Option Nat) (x1 : Option Nat) (b : Nat), ∀ M : Nat, M + b ≤ 4611686018427387904 → Pre_weight_add n x0 x1 b := by
-  intro n x0 x1 b M h0
-  rcases n with _ | n
-  · exact trivial
-  rw [Pre_weight_add.eq_def]; dsimp only
-  pre_auto n, M
-
 theorem pre_weight_times : ∀ (n : Nat) (x0 : Nat) (x1 : Nat) (b : Nat), ∀ M : Nat, M + b ≤ 4611686018427387904 → Pre_weight_times n x0 x1 b := by
   intro n x0 x1 b M h0
   rcases n with _ | n
@@ -382,6 +375,13 @@ theorem pre_weight_array : ∀ (n : Nat) (x0 : Nat) (x1 : Option Nat) (b : Nat),
   rcases n with _ | n
   · exact trivial
   rw [Pre_weight_array.eq_def]; dsimp only
+  pre_auto n, M
+
+theorem pre_weight_add : ∀ (n : Nat) (x0 : Option Nat) (x1 : Option Nat) (b : Nat), ∀ M : Nat, M + b ≤ 4611686018427387904 → Pre_weight_add n x0 x1 b := by
+  intro n x0 x1 b M h0
+  rcases n with _ | n
+  · exact trivial
+  rw [Pre_weight_add.eq_def]; dsimp only
   pre_auto n, M
 
 /-- The preconditions' lemmas of `src_weight`'s group at fuel `n`. -/
@@ -648,6 +648,210 @@ theorem pre_group_lowered_all : ∀ n : Nat,
   | succ n ih => exact pre_step_lowered_all n ih
 theorem pre_lowered_all : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.Decls) (x2 : List Lanius.Mini.Inst) (x3 : List Lanius.Mini.Inst) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → M + b ≤ 4611686018427387904 → Pre_lowered_all n x0 x1 x2 x3 b :=
   fun n => (pre_group_lowered_all n)
+
+/-- The preconditions' lemmas of `lim_slots`'s group at fuel `n`. -/
+def PreIH_lim_slots (n : Nat) : Prop :=
+    (∀ (x0 : Lanius.Mini.SrcType) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_slots n x0 b) ∧
+    (∀ (x0 : List Lanius.Mini.SrcType) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_slots_list n x0 b) ∧
+    (∀ (x0 : List (List Lanius.Mini.SrcType)) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_slots_variants n x0 b)
+theorem pre_step_lim_slots (n : Nat) (ih :
+    PreIH_lim_slots n) :
+    ∀ (x0 : Lanius.Mini.SrcType) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_slots (n + 1) x0 b := by
+  obtain ⟨pre_lim_slots, pre_lim_slots_list, pre_lim_slots_variants⟩ := ih
+  intro x0 b M h0 h1
+  rw [Pre_lim_slots.eq_def]; dsimp only
+  pre_auto n, M
+theorem pre_step_lim_slots_list (n : Nat) (ih :
+    PreIH_lim_slots n) :
+    ∀ (x0 : List Lanius.Mini.SrcType) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_slots_list (n + 1) x0 b := by
+  obtain ⟨pre_lim_slots, pre_lim_slots_list, -⟩ := ih
+  intro x0 b M h0 h1
+  rw [Pre_lim_slots_list.eq_def]; dsimp only
+  pre_auto n, M
+theorem pre_step_lim_slots_variants (n : Nat) (ih :
+    PreIH_lim_slots n) :
+    ∀ (x0 : List (List Lanius.Mini.SrcType)) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_slots_variants (n + 1) x0 b := by
+  obtain ⟨-, pre_lim_slots_list, pre_lim_slots_variants⟩ := ih
+  intro x0 b M h0 h1
+  rw [Pre_lim_slots_variants.eq_def]; dsimp only
+  pre_auto n, M
+theorem pre_group_lim_slots : ∀ n : Nat,
+    (∀ (x0 : Lanius.Mini.SrcType) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_slots n x0 b) ∧
+    (∀ (x0 : List Lanius.Mini.SrcType) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_slots_list n x0 b) ∧
+    (∀ (x0 : List (List Lanius.Mini.SrcType)) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_slots_variants n x0 b) := by
+  intro n
+  induction n with
+  | zero => exact ⟨fun x0 b M _ _ => trivial, fun x0 b M _ _ => trivial, fun x0 b M _ _ => trivial⟩
+  | succ n ih => exact ⟨pre_step_lim_slots n ih, pre_step_lim_slots_list n ih, pre_step_lim_slots_variants n ih⟩
+theorem pre_lim_slots : ∀ (n : Nat) (x0 : Lanius.Mini.SrcType) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_slots n x0 b :=
+  fun n => (pre_group_lim_slots n).1
+theorem pre_lim_slots_list : ∀ (n : Nat) (x0 : List Lanius.Mini.SrcType) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_slots_list n x0 b :=
+  fun n => (pre_group_lim_slots n).2.1
+theorem pre_lim_slots_variants : ∀ (n : Nat) (x0 : List (List Lanius.Mini.SrcType)) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_slots_variants n x0 b :=
+  fun n => (pre_group_lim_slots n).2.2
+
+theorem pre_lim_ty : ∀ (n : Nat) (x0 : Lanius.Mini.SrcType) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_ty n x0 b := by
+  intro n x0 b M h0 h1
+  rcases n with _ | n
+  · exact trivial
+  rw [Pre_lim_ty.eq_def]; dsimp only
+  pre_auto n, M
+
+theorem pre_step_lim_params (n : Nat) (ih :
+    (∀ (x0 : List Lanius.Mini.SrcParam) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_params n x0 b)) :
+    ∀ (x0 : List Lanius.Mini.SrcParam) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_params (n + 1) x0 b := by
+  have pre_lim_params := ih
+  intro x0 b M h0 h1
+  rw [Pre_lim_params.eq_def]; dsimp only
+  pre_auto n, M
+theorem pre_group_lim_params : ∀ n : Nat,
+    (∀ (x0 : List Lanius.Mini.SrcParam) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_params n x0 b) := by
+  intro n
+  induction n with
+  | zero => exact fun x0 b M _ _ => trivial
+  | succ n ih => exact pre_step_lim_params n ih
+theorem pre_lim_params : ∀ (n : Nat) (x0 : List Lanius.Mini.SrcParam) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_params n x0 b :=
+  fun n => (pre_group_lim_params n)
+
+theorem pre_depth_sum : ∀ (n : Nat) (x0 : Nat) (x1 : Nat) (b : Nat), ∀ M : Nat, M + b ≤ 4611686018427387904 → Pre_depth_sum n x0 x1 b := by
+  intro n x0 x1 b M h0
+  rcases n with _ | n
+  · exact trivial
+  rw [Pre_depth_sum.eq_def]; dsimp only
+  pre_auto n, M
+
+theorem pre_lim_bind : ∀ (n : Nat) (x0 : Option Nat) (x1 : Bool) (x2 : Option Nat) (b : Nat), ∀ M : Nat, M + b ≤ 4611686018427387904 → Pre_lim_bind n x0 x1 x2 b := by
+  intro n x0 x1 x2 b M h0
+  rcases n with _ | n
+  · exact trivial
+  rw [Pre_lim_bind.eq_def]; dsimp only
+  pre_auto n, M
+
+theorem pre_step_lim_param_slots (n : Nat) (ih :
+    (∀ (x0 : List Lanius.Mini.SrcParam) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_param_slots n x0 b)) :
+    ∀ (x0 : List Lanius.Mini.SrcParam) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_param_slots (n + 1) x0 b := by
+  have pre_lim_param_slots := ih
+  intro x0 b M h0 h1
+  rw [Pre_lim_param_slots.eq_def]; dsimp only
+  pre_auto n, M
+theorem pre_group_lim_param_slots : ∀ n : Nat,
+    (∀ (x0 : List Lanius.Mini.SrcParam) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_param_slots n x0 b) := by
+  intro n
+  induction n with
+  | zero => exact fun x0 b M _ _ => trivial
+  | succ n ih => exact pre_step_lim_param_slots n ih
+theorem pre_lim_param_slots : ∀ (n : Nat) (x0 : List Lanius.Mini.SrcParam) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_param_slots n x0 b :=
+  fun n => (pre_group_lim_param_slots n)
+
+theorem pre_step_lim_expr (n : Nat) (ih :
+    (∀ (x0 : Lanius.Mini.SrcExpr) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_expr n x0 b)) :
+    ∀ (x0 : Lanius.Mini.SrcExpr) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_expr (n + 1) x0 b := by
+  have pre_lim_expr := ih
+  intro x0 b M h0 h1
+  rw [Pre_lim_expr.eq_def]; dsimp only
+  pre_auto n, M
+theorem pre_group_lim_expr : ∀ n : Nat,
+    (∀ (x0 : Lanius.Mini.SrcExpr) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_expr n x0 b) := by
+  intro n
+  induction n with
+  | zero => exact fun x0 b M _ _ => trivial
+  | succ n ih => exact pre_step_lim_expr n ih
+theorem pre_lim_expr : ∀ (n : Nat) (x0 : Lanius.Mini.SrcExpr) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_expr n x0 b :=
+  fun n => (pre_group_lim_expr n)
+
+theorem pre_step_lim_exprs (n : Nat) (ih :
+    (∀ (x0 : List Lanius.Mini.SrcExpr) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_exprs n x0 b)) :
+    ∀ (x0 : List Lanius.Mini.SrcExpr) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_exprs (n + 1) x0 b := by
+  have pre_lim_exprs := ih
+  intro x0 b M h0 h1
+  rw [Pre_lim_exprs.eq_def]; dsimp only
+  pre_auto n, M
+theorem pre_group_lim_exprs : ∀ n : Nat,
+    (∀ (x0 : List Lanius.Mini.SrcExpr) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_exprs n x0 b) := by
+  intro n
+  induction n with
+  | zero => exact fun x0 b M _ _ => trivial
+  | succ n ih => exact pre_step_lim_exprs n ih
+theorem pre_lim_exprs : ∀ (n : Nat) (x0 : List Lanius.Mini.SrcExpr) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_exprs n x0 b :=
+  fun n => (pre_group_lim_exprs n)
+
+theorem pre_step_lim_arms (n : Nat) (ih :
+    (∀ (x0 : List Lanius.Mini.SrcArm) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_arms n x0 b)) :
+    ∀ (x0 : List Lanius.Mini.SrcArm) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_arms (n + 1) x0 b := by
+  have pre_lim_arms := ih
+  intro x0 b M h0 h1
+  rw [Pre_lim_arms.eq_def]; dsimp only
+  pre_auto n, M
+theorem pre_group_lim_arms : ∀ n : Nat,
+    (∀ (x0 : List Lanius.Mini.SrcArm) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_arms n x0 b) := by
+  intro n
+  induction n with
+  | zero => exact fun x0 b M _ _ => trivial
+  | succ n ih => exact pre_step_lim_arms n ih
+theorem pre_lim_arms : ∀ (n : Nat) (x0 : List Lanius.Mini.SrcArm) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_arms n x0 b :=
+  fun n => (pre_group_lim_arms n)
+
+/-- The preconditions' lemmas of `lim_eff`'s group at fuel `n`. -/
+def PreIH_lim_eff (n : Nat) : Prop :=
+    (∀ (x0 : Lanius.Mini.SrcEff) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_eff n x0 b) ∧
+    (∀ (x0 : List Lanius.Mini.SrcEff) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_effs n x0 b)
+theorem pre_step_lim_eff (n : Nat) (ih :
+    PreIH_lim_eff n) :
+    ∀ (x0 : Lanius.Mini.SrcEff) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_eff (n + 1) x0 b := by
+  obtain ⟨pre_lim_eff, pre_lim_effs⟩ := ih
+  intro x0 b M h0 h1
+  rw [Pre_lim_eff.eq_def]; dsimp only
+  pre_auto n, M
+theorem pre_step_lim_effs (n : Nat) (ih :
+    PreIH_lim_eff n) :
+    ∀ (x0 : List Lanius.Mini.SrcEff) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_effs (n + 1) x0 b := by
+  obtain ⟨pre_lim_eff, pre_lim_effs⟩ := ih
+  intro x0 b M h0 h1
+  rw [Pre_lim_effs.eq_def]; dsimp only
+  pre_auto n, M
+theorem pre_group_lim_eff : ∀ n : Nat,
+    (∀ (x0 : Lanius.Mini.SrcEff) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_eff n x0 b) ∧
+    (∀ (x0 : List Lanius.Mini.SrcEff) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_effs n x0 b) := by
+  intro n
+  induction n with
+  | zero => exact ⟨fun x0 b M _ _ => trivial, fun x0 b M _ _ => trivial⟩
+  | succ n ih => exact ⟨pre_step_lim_eff n ih, pre_step_lim_effs n ih⟩
+theorem pre_lim_eff : ∀ (n : Nat) (x0 : Lanius.Mini.SrcEff) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_eff n x0 b :=
+  fun n => (pre_group_lim_eff n).1
+theorem pre_lim_effs : ∀ (n : Nat) (x0 : List Lanius.Mini.SrcEff) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_effs n x0 b :=
+  fun n => (pre_group_lim_eff n).2
+
+theorem pre_step_lim_stmt (n : Nat) (ih :
+    (∀ (x0 : Lanius.Mini.SrcStmt) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_stmt n x0 b)) :
+    ∀ (x0 : Lanius.Mini.SrcStmt) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_stmt (n + 1) x0 b := by
+  have pre_lim_stmt := ih
+  intro x0 b M h0 h1
+  rw [Pre_lim_stmt.eq_def]; dsimp only
+  pre_auto n, M
+theorem pre_group_lim_stmt : ∀ n : Nat,
+    (∀ (x0 : Lanius.Mini.SrcStmt) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_stmt n x0 b) := by
+  intro n
+  induction n with
+  | zero => exact fun x0 b M _ _ => trivial
+  | succ n ih => exact pre_step_lim_stmt n ih
+theorem pre_lim_stmt : ∀ (n : Nat) (x0 : Lanius.Mini.SrcStmt) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_stmt n x0 b :=
+  fun n => (pre_group_lim_stmt n)
+
+theorem pre_step_lim_funcs (n : Nat) (ih :
+    (∀ (x0 : List Lanius.Mini.SrcFunc) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_funcs n x0 b)) :
+    ∀ (x0 : List Lanius.Mini.SrcFunc) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_funcs (n + 1) x0 b := by
+  have pre_lim_funcs := ih
+  intro x0 b M h0 h1
+  rw [Pre_lim_funcs.eq_def]; dsimp only
+  pre_auto n, M
+theorem pre_group_lim_funcs : ∀ n : Nat,
+    (∀ (x0 : List Lanius.Mini.SrcFunc) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_funcs n x0 b) := by
+  intro n
+  induction n with
+  | zero => exact fun x0 b M _ _ => trivial
+  | succ n ih => exact pre_step_lim_funcs n ih
+theorem pre_lim_funcs : ∀ (n : Nat) (x0 : List Lanius.Mini.SrcFunc) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_funcs n x0 b :=
+  fun n => (pre_group_lim_funcs n)
 
 /-- The preconditions' lemmas of `place_eff`'s group at fuel `n`. -/
 def PreIH_place_eff (n : Nat) : Prop :=

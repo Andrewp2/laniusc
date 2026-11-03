@@ -51,7 +51,7 @@ theorem proof_enum_src {prog : SrcProgram} {prims : Prims} {ix_enum_src ix_boxed
   simp only [src_enum_src] at h
   faithful [Lanius.Mini.enumSrc]
 
-theorem step_src_weight {prog : SrcProgram} {prims : Prims} {ix_src_weight ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_SrcType ix_weight_add_to ix_src_weights ix_variant_weights ix_weight_array : Nat} (fn : prog.funcs[ix_src_weight]? = some (src_src_weight ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_SrcType ix_src_weight ix_weight_add_to ix_src_weights ix_variant_weights ix_weight_array)) (np : prims.isPrim ix_src_weight = false)
+theorem step_src_weight {prog : SrcProgram} {prims : Prims} {ix_src_weight ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_SrcType ix_weight_add_to ix_weight_array ix_src_weights ix_variant_weights : Nat} (fn : prog.funcs[ix_src_weight]? = some (src_src_weight ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_SrcType ix_weight_add_to ix_weight_array ix_src_weight ix_src_weights ix_variant_weights)) (np : prims.isPrim ix_src_weight = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType n))
     (ext_unbox_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_SrcType n))
@@ -66,7 +66,7 @@ theorem step_src_weight {prog : SrcProgram} {prims : Prims} {ix_src_weight ix_un
   simp only [src_src_weight] at h
   faithful [Lanius.Mini.srcWeight]
 
-theorem step_src_weights {prog : SrcProgram} {prims : Prims} {ix_src_weights ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_src_weight ix_weight_add : Nat} (fn : prog.funcs[ix_src_weights]? = some (src_src_weights ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_src_weight ix_src_weights ix_weight_add)) (np : prims.isPrim ix_src_weights = false)
+theorem step_src_weights {prog : SrcProgram} {prims : Prims} {ix_src_weights ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_src_weight ix_weight_add : Nat} (fn : prog.funcs[ix_src_weights]? = some (src_src_weights ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_src_weight ix_weight_add ix_src_weights)) (np : prims.isPrim ix_src_weights = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType n))
     (ext_weight_add : Certified (∀ {n : Nat}, Stmt_weight_add prog prims ix_weight_add n)) {n : Nat}
     (ih_src_weight : Certified (Stmt_src_weight prog prims ix_src_weight n))
@@ -87,7 +87,7 @@ theorem proof_struct_src {prog : SrcProgram} {prims : Prims} {ix_struct_src ix_b
   simp only [src_struct_src] at h
   faithful [Lanius.Mini.structSrc]
 
-theorem step_variant_weights {prog : SrcProgram} {prims : Prims} {ix_variant_weights ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_src_weights ix_weight_add : Nat} (fn : prog.funcs[ix_variant_weights]? = some (src_variant_weights ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_src_weights ix_variant_weights ix_weight_add)) (np : prims.isPrim ix_variant_weights = false)
+theorem step_variant_weights {prog : SrcProgram} {prims : Prims} {ix_variant_weights ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_weight_add ix_src_weights : Nat} (fn : prog.funcs[ix_variant_weights]? = some (src_variant_weights ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_weight_add ix_src_weights ix_variant_weights)) (np : prims.isPrim ix_variant_weights = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType n))
     (ext_weight_add : Certified (∀ {n : Nat}, Stmt_weight_add prog prims ix_weight_add n)) {n : Nat}
     (ih_src_weights : Certified (Stmt_src_weights prog prims ix_src_weights n))
