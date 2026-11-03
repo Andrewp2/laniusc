@@ -1570,6 +1570,17 @@ mod tests {
 
     #[test]
     fn phase_snapshots_are_named_and_reset_with_the_peak_window() {
+        // The ledger is process-wide; parallel GPU tests allocate meanwhile.
+        in_own_process(
+            "phase_snapshots_are_named_and_reset_with_the_peak_window",
+            check_phase_snapshots,
+        );
+    }
+
+    fn check_phase_snapshots() {
+        let _guard = ALLOCATION_LEDGER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let baseline = reset_tracked_buffer_allocation_peaks();
         assert!(tracked_buffer_phase_snapshots().is_empty());
         assert_eq!(record_tracked_buffer_phase_snapshot("parse"), baseline);
