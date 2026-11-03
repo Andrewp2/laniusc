@@ -259,6 +259,46 @@ and reload the element address. Interleaved minimums on a shared machine:
 | 1M keys, insertion order | 587 | 413 | 331 | 49 |
 | 1M keys, scattered | 714 | 537 | 413 | 510 |
 
+**Branch mispredictions, not instructions, were most of the cached cost.**
+`perf` is not available to us here (`perf_event_paranoid` is 4), so variants
+were timed instead. On the cached probe, the branching `find` took 815 ms with
+the probe's keys and 375 ms when every get used the same key, so all its
+branches were predicted. The same B-tree `find` compiled by g++ -O2 on the
+same tree, still with branches, took 453 and 100 ms: about 350 ms of
+mispredictions in both compilers. A branching node search therefore cannot
+reach `std::map` (350 ms). The same search written with a select (g++ emits
+CMOV) took 232 ms.
+
+Branch codegen3 therefore:
+
+- turns `if (c) { x = a; } else { x = b; }` and `if (c) { x = a; }` into a CMOV when the arms are a few arithmetic rows that cannot trap, call or write memory. The condition can be any 32-bit integer comparison or any Boolean value (a call result too), and a `!` is folded in;
+- computes the address of an index into a local view defined once by `slice_from_raw_parts` without the stride word (shift and subtract instead of a 64-bit `imul`);
+- keeps an element address read only by the next field load in RAX instead of a stack slot;
+- compares a bounds-checked index with the length in place, and gives `main` and other functions without parameters registers.
+
+`find` now searches each node of a tree with at most 2,048 nodes (about
+470 KB of keys and links, the size of the L2 cache) by halving a window whose
+length depends only on the node's count, moving its start with a select. No
+branch depends on the key. Larger trees keep the branching search
+(`find_branching`). There the lookups wait on memory, and a branching search
+lets the processor run ahead into the next loads. A select search at 1M keys
+was about 25% slower in scattered and key order. `descend` and `lower_slot`
+(insert, remove, bounds) keep their branches for the same reason.
+
+| Probe phase (ms) | codegen2 | codegen3 | `std::map` |
+| --- | ---: | ---: | ---: |
+| cached, 8M gets | 986 | 651 (78 ns per `get`) | 369 |
+| 1M keys, key order | 125 | 108 | 133 |
+| 1M keys, insertion order | 314 | 301 | 49 |
+| 1M keys, scattered | 386 | 376 | 510 |
+
+The bench's phases moved by -27% to +14% against codegen2 on a shared
+machine, within its run-to-run noise; inserts and 1M-key lookups were mostly
+faster. A select step still has about 20 instructions
+against g++'s 8. The `i32::lt` splice yields a 0/1 value (`setl; movzx`) that
+the select then tests again, because the comparison is in another compile
+unit and cannot be inlined before the link.
+
 On the tree-map benchmark at 1M keys, B+ tree i32 hits went from 555 ms
 (before codegen1) to 412 ms, and u64 hits from 681 to 376 ms. AVL i32 hits went
 from 302 to 239 ms, and AVL u64 hits from 318 to 207 ms.

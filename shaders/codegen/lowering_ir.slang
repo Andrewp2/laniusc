@@ -1241,6 +1241,11 @@ static const uint X86_LIR_METADATA_BOUNDED_SHIFT = 0x00040000u;
 // On an immediate 64-bit BIT_AND (never a shift, so the bit is free there):
 // the 32-bit mask in operand c is zero-extended, not sign-extended.
 static const uint X86_LIR_METADATA_ZERO_EXTENDED_MASK = 0x00040000u;
+// An index row's runtime view has the stride the known-stride bodies assume
+// (+4 for an i32 element, -8 per word otherwise): scatter proved it from the
+// view's single slice_from_raw_parts definition. Index rows only: the bit is
+// also SEMANTIC_LIR_FLAG_SHORT_CIRCUIT_TRAP << 8, which scatter clears there.
+static const uint X86_LIR_METADATA_NATIVE_STRIDE = 0x00020000u;
 
 // Semantic AGGREGATE_NEW metadata. The high bit distinguishes tagged enums;
 // the remaining bits contain the checked variant ordinal.

@@ -44,6 +44,9 @@ pub struct Builder<K, V> { map: BTreeMap<K, V>, total: i32, leaves: i32, leaf: i
 // the cursor is exhausted. Any map edit invalidates its cursors.
 pub struct Cursor<K, V> { keys: ptr, values: ptr, links: ptr, counts: ptr, nodes: i32, front: i32, front_at: i32, back: i32, back_at: i32 }
 const ALIGN: usize = 8;
+// Trees of at most this many nodes (about 470 KB of keys and links, an L2
+// cache) search nodes with selects; see find.
+const SELECT_SEARCH_NODES: i32 = 2048;
 
 pub fn new<K, V>() -> BTreeMap<K, V> {
     let empty: ptr = 0;
@@ -240,7 +243,41 @@ pub impl<K, V> BTreeMap<K, V> {
     // levels, so a lookup makes no calls besides K::lt. Views are built
     // inline and the counts read through the links view (they follow the
     // 24 * nodes link words): each view costs a call and two header copies.
+    //
+    // A tree of at most SELECT_SEARCH_NODES nodes (~230 bytes each) stays in
+    // the L2 cache, and there a node's search halves a window whose length
+    // depends only on the node's count, moving its start with a select
+    // (CMOV): no branch depends on the key, so none is mispredicted. A larger
+    // tree's lookups wait on memory instead; a branching search lets the
+    // processor run ahead into the next loads (find_branching).
     fn find(&self, key: K) -> i32 where K: core::cmp::Ord<K> {
+        if (self.nodes > SELECT_SEARCH_NODES) { return self.find_branching(key); }
+        let node: i32 = self.root;
+        if (node < 0) { return -1; }
+        let keys: [KeyCell<K>] = slice_from_raw_parts(self.keys, self.nodes * 16);
+        let links: [i32] = slice_from_raw_parts(self.links, self.nodes * 25);
+        let counted: i32 = self.nodes * 24; let level: i32 = self.height;
+        while (true) {
+            let low: i32 = 16 * node; let length: i32 = links[counted + node];
+            if (length == 0) { return -1; }
+            while (length > 1) {
+                let half: i32 = length >> 1;
+                if (!K::lt(key, keys[low + half].key)) { low += half; }
+                length -= half;
+            }
+            level -= 1;
+            // The window ends at the last key at most `key`, or the first.
+            if (level == 0) {
+                if (K::lt(keys[low].key, key)) { return -1; }
+                if (K::lt(key, keys[low].key)) { return -1; }
+                return low;
+            }
+            if (!K::lt(key, keys[low].key)) { low += 1; }
+            node = links[8 * node + 3 + low];
+        }
+        return -1;
+    }
+    fn find_branching(&self, key: K) -> i32 where K: core::cmp::Ord<K> {
         let node: i32 = self.root;
         if (node < 0) { return -1; }
         let keys: [KeyCell<K>] = slice_from_raw_parts(self.keys, self.nodes * 16);

@@ -247,6 +247,14 @@ void plan_index_address(X86PlanInput input, uint words, bool known_stride)
         {
             if (indirect) plan_bytes(3u, 0x008b48u); // mov rax, [rax]
             plan_move32(locations.b, X86_REG | 2u);
+            if (input.core.op != X86_LIR_OP_INDEX_STORE &&
+                (input.operands.metadata & (X86_LIR_METADATA_NATIVE_STRIDE |
+                    X86_LIR_METADATA_AGGREGATE)) == X86_LIR_METADATA_NATIVE_STRIDE &&
+                (input.operands.metadata & 0xffu) == 3u)
+            {
+                plan_bytes(4u, 0x90048d48u); // lea rax, [rax + rdx*4]
+                return;
+            }
             // shl rdx, 3|4; sub rax, rdx  |  imul rdx, rdx, -8*words; add rax, rdx
             if (words == 1u) plan_bytes_word(3u, 0xe2c148u, 0xd0294803u);
             else if (words == 2u) plan_bytes_word(3u, 0xe2c148u, 0xd0294804u);
@@ -678,7 +686,12 @@ void plan_ordinary(X86PlanInput input)
     else if (op == X86_LIR_OP_SELECT_STORE)
     {
         uint destination = input.decl_target;
-        bool register_destination = x86_location_is_register(destination);
+        // Writing the false value first must not clobber a compare operand
+        // or the true value; when it would, select in EDX as for a stack home.
+        bool register_destination = x86_location_is_register(destination) &&
+            (locations.result == destination ||
+             (locations.a != destination && locations.b != destination &&
+              locations.c != destination));
         uint selected = register_destination ? x86_location_payload(destination) : 2u;
         plan_move32(locations.result, register_destination ? destination : X86_REG | 2u);
         plan_compare(input, locations.a, (metadata & X86_LIR_METADATA_IMMEDIATE) != 0u
@@ -1448,7 +1461,10 @@ uint plan_specialized(X86PlanInput input)
     else if (op == X86_LIR_OP_SELECT_STORE)
     {
         uint destination = input.decl_target;
-        bool register_destination = x86_location_is_register(destination);
+        bool register_destination = x86_location_is_register(destination) &&
+            (locations.result == destination ||
+             (locations.a != destination && locations.b != destination &&
+              locations.c != destination));
         uint selected = register_destination ? x86_location_payload(destination) : 2u;
         plan_move32(locations.result, register_destination ? destination : X86_REG | 2u);
         plan_aggregate_word_compare(locations.a, locations.b);

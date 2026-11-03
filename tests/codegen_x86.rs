@@ -2515,6 +2515,122 @@ fn main() -> i32 {
     );
 }
 
+fn contains_pair(bytes: &[u8], pair: [u8; 2]) -> bool {
+    bytes.windows(2).any(|window| window == pair)
+}
+
+#[test]
+fn x86_if_converts_general_comparison_selects() {
+    let bytes = compile_source(
+        "x86 general comparison selects",
+        r#"
+fn clamp_up(v: i32) -> i32 { let r: i32 = v; if (r < 10) { r = 10; } return r; }
+fn minimum(a: i32, b: i32) -> i32 { let m: i32 = 0; if (a < b) { m = a; } else { m = b; } return m; }
+fn unsigned_pick(a: u32, b: u32) -> u32 { let m: u32 = b; if (a > b) { m = a; } return m; }
+fn loop_max(n: i32) -> i32 {
+    let best: i32 = 0; let i: i32 = 0;
+    while (i < n) { let v: i32 = (i * 37) % 101; if (v > best) { best = v; } i += 1; }
+    return best;
+}
+fn main() -> i32 {
+    let unsigned_part: i32 = (unsigned_pick(4000000000, 3) / 1000000000) as i32 + unsigned_pick(1, 2) as i32;
+    return clamp_up(3) + clamp_up(40) + minimum(4, 9) + minimum(9, 4) + unsigned_part + loop_max(200) - 100;
+}
+"#,
+    );
+
+    assert_x86_64_elf_header(&bytes);
+    assert!(contains_pair(&bytes, [0x0f, 0x4c]), "a signed < select should use cmovl");
+    assert!(contains_pair(&bytes, [0x0f, 0x4f]), "a signed > select should use cmovg");
+    assert!(contains_pair(&bytes, [0x0f, 0x47]), "an unsigned > select should use cmova");
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 general comparison selects",
+        "x86_general_comparison_selects",
+        &bytes,
+        64,
+    );
+}
+
+#[test]
+fn x86_if_converts_boolean_value_conditions() {
+    let bytes = compile_source(
+        "x86 boolean value selects",
+        r#"
+fn small(v: i32) -> bool { return v < 10; }
+fn by_call(v: i32) -> i32 { let r: i32 = 0; if (small(v)) { r = v + 1; } else { r = v - 1; } return r; }
+fn negated(v: i32) -> i32 { let r: i32 = v; if (!small(v)) { r = r + 5; } return r; }
+fn main() -> i32 {
+    return by_call(3) + by_call(30) + negated(3) + negated(30);
+}
+"#,
+    );
+
+    assert_x86_64_elf_header(&bytes);
+    assert!(contains_pair(&bytes, [0x0f, 0x45]), "a Boolean condition should select with cmovne");
+    assert!(contains_pair(&bytes, [0x0f, 0x44]), "a negated Boolean condition should select with cmove");
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 boolean value selects",
+        "x86_boolean_value_selects",
+        &bytes,
+        71,
+    );
+}
+
+#[test]
+fn x86_select_keeps_operands_its_false_arm_overwrites() {
+    let bytes = compile_source(
+        "x86 select operand hazard",
+        r#"
+fn hazard(x0: i32, y: i32) -> i32 { let x: i32 = x0; if (x < y) { x = y; } else { x = 0; } return x * 3 + y; }
+fn swap_hazard(a0: i32, b: i32) -> i32 { let a: i32 = a0; if (b < 4) { a = b; } else { a = a + b; } return a; }
+fn main() -> i32 {
+    return hazard(2, 5) + hazard(7, 5) + swap_hazard(9, 2) + swap_hazard(9, 6);
+}
+"#,
+    );
+
+    assert_x86_64_elf_header(&bytes);
+    assert!(contains_pair(&bytes, [0x0f, 0x4c]), "the hazard diamonds should still select");
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 select operand hazard",
+        "x86_select_operand_hazard",
+        &bytes,
+        42,
+    );
+}
+
+#[test]
+fn x86_does_not_if_convert_arms_that_call_or_index() {
+    let bytes = compile_source(
+        "x86 calling and indexing arms",
+        r#"
+fn bump(v: i32) -> i32 { return v + 100; }
+fn calls(v: i32) -> i32 { let r: i32 = v; if (v < 10) { r = bump(v); } return r; }
+fn indexes(values: [i32; 4], v: i32) -> i32 { let r: i32 = 0; if (v < 10) { r = values[v]; } else { r = 1; } return r; }
+fn main() -> i32 {
+    let values: [i32; 4] = [5, 6, 7, 8];
+    return calls(3) + calls(30) + indexes(values, 2) + indexes(values, 20);
+}
+"#,
+    );
+
+    assert_x86_64_elf_header(&bytes);
+    assert!(
+        !contains_pair(&bytes, [0x0f, 0x4c]),
+        "an arm that calls or may trap must remain control-dependent"
+    );
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 calling and indexing arms",
+        "x86_calling_and_indexing_arms",
+        &bytes,
+        141,
+    );
+}
+
 #[test]
 fn x86_executes_return_match_on_single_payload_enum() {
     assert_source_exit(

@@ -55,18 +55,6 @@ bool direct_integer_constant(uint row, uint total, out uint value)
     return analysis.known != 0u;
 }
 
-bool masked_single_bit(uint row, uint total)
-{
-    if (row >= total ||
-        opt_ir_op(opt_ir_core[row]) != SEMANTIC_LIR_OP_BIT_AND)
-        return false;
-    OptIrNodeOperands operands = opt_ir_operands[row];
-    uint mask;
-    bool constant_mask = direct_integer_constant(operands.a, total, mask) ||
-        direct_integer_constant(operands.b, total, mask);
-    return constant_mask && mask != 0u && (mask & (mask - 1u)) == 0u;
-}
-
 bool select_arm_value_op(OptIrNodeCore core)
 {
     uint op = opt_ir_op(core);
@@ -96,7 +84,9 @@ bool scalar_assignment(uint row, uint total, out uint declaration,
     if ((op != SEMANTIC_LIR_OP_VALUE_SET && op != SEMANTIC_LIR_OP_STORE) ||
         (core.flags & (SEMANTIC_LIR_FLAG_INDEXED |
                        SEMANTIC_LIR_FLAG_FIELD)) != 0u ||
-        !scalar_gpr_type(core.type_id))
+        // SELECT_STORE moves 32 bits: bool, i32, u32 and char.
+        !(core.type_id == 2u || core.type_id == 3u || core.type_id == 4u ||
+          core.type_id == 6u))
         return false;
     OptIrNodeOperands operands = opt_ir_operands[row];
     declaration = operands.a;
@@ -206,82 +196,121 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (function_id >= gParams.function_capacity) return;
 
     OptIrNodeOperands branch = opt_ir_operands[branch_row];
-    if (branch.c != 1u || branch.a >= total || branch.b >= total ||
+    // `if (c) { x = t; } else { x = f; }` and `if (c) { x = t; }` whose arms
+    // are short and cannot trap, call or write memory become a select
+    // (SELECT_STORE, a CMOV). The condition is an integer comparison, or any
+    // other Boolean value, tested against zero; a negation read only here is
+    // folded into the select (flag X86_SELECT_NEGATED on the condition).
+    bool else_arm = branch.c == 1u;
+    if (branch.c > 1u || branch.a >= total || branch.b >= total ||
         semantic_schedule_order[position - 1u] != branch.a ||
         !same_function(branch.a, total, function_id) ||
         !same_function(branch.b, total, function_id) ||
-        opt_ir_op(opt_ir_core[branch.a]) !=
-            SEMANTIC_LIR_OP_COMPARE ||
-        scalar_is_float(opt_ir_core[branch.a].type_id) ||
-        // optimize_close leaves a comparison read only by its branch dead
-        // (fused into COMPARE_BRANCH_FALSE); a live one must end here.
-        (x86_live_by_semantic[branch.a] != 0u &&
-         x86_last_use_by_semantic[branch.a] != position) ||
-        opt_ir_op(opt_ir_core[branch.b]) != SEMANTIC_LIR_OP_ELSE)
+        opt_ir_op(opt_ir_core[branch.b]) !=
+            (else_arm ? SEMANTIC_LIR_OP_ELSE : SEMANTIC_LIR_OP_CONTROL_END))
         return;
+    OptIrNodeCore condition_core = opt_ir_core[branch.a];
+    bool comparison_condition =
+        opt_ir_op(condition_core) == SEMANTIC_LIR_OP_COMPARE;
+    if (comparison_condition)
+    {
+        // SELECT_STORE compares 32 bits.
+        uint compared = condition_core.type_id;
+        if (!(compared == 2u || compared == 3u || compared == 4u ||
+              compared == 6u) ||
+            // optimize_close leaves a comparison read only by its branch dead
+            // (fused into COMPARE_BRANCH_FALSE); a live one must end here.
+            (x86_live_by_semantic[branch.a] != 0u &&
+             x86_last_use_by_semantic[branch.a] != position))
+            return;
+        OptIrNodeOperands comparison = opt_ir_operands[branch.a];
+        uint left_constant;
+        uint right_constant;
+        if (direct_integer_constant(comparison.a, total, left_constant) &&
+            direct_integer_constant(comparison.b, total, right_constant))
+            return;
+    }
+    else if (condition_core.type_id != 2u ||
+             x86_live_by_semantic[branch.a] == 0u)
+        return;
+    uint condition = branch.a;
+    bool negated = false;
+    if (!comparison_condition &&
+        opt_ir_op(condition_core) == SEMANTIC_LIR_OP_LOGICAL_NOT &&
+        x86_last_use_by_semantic[branch.a] == position)
+    {
+        uint operand = opt_ir_operands[branch.a].a;
+        if (same_function(operand, total, function_id) &&
+            opt_ir_op(opt_ir_core[operand]) != SEMANTIC_LIR_OP_COMPARE &&
+            opt_ir_core[operand].type_id == 2u &&
+            x86_live_by_semantic[operand] != 0u)
+        {
+            condition = operand;
+            negated = true;
+        }
+    }
 
-    OptIrNodeOperands comparison = opt_ir_operands[branch.a];
-    uint left_constant;
-    uint right_constant;
-    if (direct_integer_constant(comparison.a, total, left_constant) &&
-        direct_integer_constant(comparison.b, total, right_constant))
-        return;
-    bool left_zero = direct_integer_constant(
-        comparison.a, total, left_constant) && left_constant == 0u;
-    bool right_zero = direct_integer_constant(
-        comparison.b, total, right_constant) && right_constant == 0u;
-    // A masked single-bit equality is typically data-dependent and therefore
-    // difficult for a branch predictor. Other comparisons remain branches;
-    // eagerly executing both arms can lose badly when their outcome follows a
-    // predictable range or modulo pattern.
-    if (comparison.c > 1u ||
-        !((left_zero && masked_single_bit(comparison.b, total)) ||
-          (right_zero && masked_single_bit(comparison.a, total))))
-        return;
-
-    uint else_position = x86_position_by_semantic[branch.b];
-    uint end_row = opt_ir_operands[branch.b].a;
+    uint else_position = else_arm
+        ? x86_position_by_semantic[branch.b] : INVALID;
+    uint end_row = else_arm ? opt_ir_operands[branch.b].a : branch.b;
     if (!same_function(end_row, total, function_id) ||
         opt_ir_op(opt_ir_core[end_row]) !=
             SEMANTIC_LIR_OP_CONTROL_END)
         return;
     uint end_position = x86_position_by_semantic[end_row];
-    if (else_position <= position + 1u || else_position >= end_position ||
-        end_position >= total || end_position == 0u)
+    if (end_position >= total || end_position <= position + 1u ||
+        (else_arm &&
+         (else_position <= position + 1u || else_position >= end_position)))
         return;
 
-    uint true_store_position = else_position - 1u;
-    uint false_store_position = end_position - 1u;
+    uint true_store_position = (else_arm ? else_position : end_position) - 1u;
     uint true_store = semantic_schedule_order[true_store_position];
-    uint false_store = semantic_schedule_order[false_store_position];
-    if (!same_function(true_store, total, function_id) ||
-        !same_function(false_store, total, function_id))
+    if (!same_function(true_store, total, function_id))
         return;
     uint true_declaration;
     uint true_value;
-    uint false_declaration;
-    uint false_value;
     if (!scalar_assignment(true_store, total, true_declaration, true_value) ||
-        !scalar_assignment(false_store, total, false_declaration, false_value) ||
-        true_declaration != false_declaration ||
-        !pure_select_arm(position + 1u, true_store_position, total, function_id) ||
-        !pure_select_arm(
-            else_position + 1u, false_store_position, total, function_id))
+        !pure_select_arm(position + 1u, true_store_position, total, function_id))
         return;
+    uint false_store = INVALID;
+    uint false_value = INVALID;
+    if (else_arm)
+    {
+        uint false_store_position = end_position - 1u;
+        false_store = semantic_schedule_order[false_store_position];
+        uint false_declaration;
+        if (!same_function(false_store, total, function_id) ||
+            !scalar_assignment(false_store, total, false_declaration, false_value) ||
+            true_declaration != false_declaration ||
+            !pure_select_arm(
+                else_position + 1u, false_store_position, total, function_id))
+            return;
+    }
 
     X86SelectInfo info;
-    info.condition = branch.a;
+    info.condition = condition | (negated ? X86_SELECT_NEGATED : 0u);
     info.true_value = true_value;
     info.false_value = false_value;
     info.declaration = true_declaration;
     x86_select_by_semantic[end_row] = info;
-    x86_live_by_semantic[branch.a] = 0u;
+    if (comparison_condition || negated) x86_live_by_semantic[branch.a] = 0u;
     x86_live_by_semantic[branch_row] = 0u;
-    x86_live_by_semantic[branch.b] = 0u;
+    if (else_arm)
+    {
+        x86_live_by_semantic[branch.b] = 0u;
+        x86_live_by_semantic[false_store] = 0u;
+    }
     x86_live_by_semantic[true_store] = 0u;
-    x86_live_by_semantic[false_store] = 0u;
     x86_live_by_semantic[end_row] = X86_SEMANTIC_SELECT;
 
+    if (!comparison_condition)
+    {
+        retain_value(condition, end_position, total, function_id);
+        retain_value(true_value, end_position, total, function_id);
+        retain_value(false_value, end_position, total, function_id);
+        return;
+    }
+    OptIrNodeOperands comparison = opt_ir_operands[branch.a];
     uint immediate;
     bool left_immediate = direct_integer_constant(
         comparison.a, total, immediate) &&
