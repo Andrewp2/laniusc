@@ -114,6 +114,7 @@ theorem SrcType.homeOk_of_uniform : ∀ (t : SrcType), t.uniform = true → t.ho
   | .float _, _ => rfl
   | .sint _, _ => rfl
   | .str, _ => rfl
+  | .ref _, _ => rfl
 termination_by structural t => t
 
 theorem fieldsHomeOk_of_uniform : ∀ (fs : List SrcType), fieldsUniform fs = true → fieldsHomeOk fs = true
@@ -149,6 +150,7 @@ theorem SrcType.widths_length : ∀ (t : SrcType), t.uniform = true → t.widths
   | .float _, _ => rfl
   | .sint _, _ => rfl
   | .str, _ => rfl
+  | .ref _, _ => rfl
 termination_by structural t => t
 
 theorem fieldsWidths_length : ∀ (fs : List SrcType), fieldsUniform fs = true → (fieldsWidths fs).length = sizes fs
@@ -196,6 +198,7 @@ theorem SrcType.size_le_words : ∀ (t : SrcType), t.uniform = true → t.size �
   | .float _, _ => by simp [SrcType.size, SrcType.words]
   | .sint _, _ => by simp [SrcType.size, SrcType.words]
   | .str, _ => by simp [SrcType.size, SrcType.words]
+  | .ref _, _ => by simp [SrcType.size, SrcType.words]
 termination_by structural t => t
 
 theorem fieldsSize_le_words : ∀ (fs : List SrcType), fieldsUniform fs = true → sizes fs ≤ fieldWords fs
@@ -264,6 +267,9 @@ theorem SrcType.slotAt_uniform : ∀ (t : SrcType), t.uniform = true → ∀ i <
     obtain rfl : i = 0 := by simp only [SrcType.size] at lt; omega
     rfl
   | .sint _, _, i, lt => by
+    obtain rfl : i = 0 := by simp only [SrcType.size] at lt; omega
+    rfl
+  | .ref _, _, i, lt => by
     obtain rfl : i = 0 := by simp only [SrcType.size] at lt; omega
     rfl
   | .str, _, i, lt => by
@@ -456,6 +462,7 @@ theorem SrcType.slots_apart : ∀ (t : SrcType), t.homeOk = true → ∀ (s s' :
     simp only [SrcType.slotAt, Access.bytes, MemWidth.bytes]
     omega
   | .i32, _, s, s', hs, hs', ne => by simp only [SrcType.size] at hs hs'; omega
+  | .ref _, _, s, s', hs, hs', ne => by simp only [SrcType.size] at hs hs'; omega
   | .bool, _, s, s', hs, hs', ne => by simp only [SrcType.size] at hs hs'; omega
   | .uint _, _, s, s', hs, hs', ne => by simp only [SrcType.size] at hs hs'; omega
   | .ptr, _, s, s', hs, hs', ne => by simp only [SrcType.size] at hs hs'; omega
@@ -955,7 +962,7 @@ theorem SrcType.step_replace {ty : SrcType} {p : ValueProjection} {o : Nat} {chi
     | float => simp [SrcType.subStep] at h
     | sint => simp [SrcType.subStep] at h
     | view => simp [SrcType.subStep] at h
-    | str => simp [SrcType.subStep] at h
+    | str | ref => simp [SrcType.subStep] at h
   · cases ty with
     | array e n =>
       simp only [SrcType.subStep] at h
@@ -1013,7 +1020,7 @@ theorem SrcType.step_replace {ty : SrcType} {p : ValueProjection} {o : Nat} {chi
     | float => simp [SrcType.subStep] at h
     | sint => simp [SrcType.subStep] at h
     | view => simp [SrcType.subStep] at h
-    | str => simp [SrcType.subStep] at h
+    | str | ref => simp [SrcType.subStep] at h
 
 /-- Down a projection path, for a write: the old sub-value is held `j` slots
 into its parent's (`SlotsIn`), and a new one held in new slots, the
@@ -1104,7 +1111,7 @@ theorem SrcType.sub_homeOk : ∀ (path : List ValueProjection) {ty t : SrcType} 
     | float => simp [SrcType.subStep] at hstep
     | sint => simp [SrcType.subStep] at hstep
     | view => simp [SrcType.subStep] at hstep
-    | str => simp [SrcType.subStep] at hstep
+    | str | ref => simp [SrcType.subStep] at hstep
 
 theorem SrcType.refSlots_apart {ty : SrcType} (h : ty.homeOk = true) (s s' : Nat) (hs : s < ty.size)
     (hs' : s' < ty.size) (ne : s ≠ s') :
@@ -1160,7 +1167,7 @@ theorem SrcType.refSlot_in_span (ty : SrcType) (s : Nat) (lt : s < ty.size) :
     | char => simpa [SrcType.span] using fits
     | float => simpa [SrcType.span] using fits
     | view => simpa [SrcType.span] using fits
-    | str => simpa [SrcType.span] using fits
+    | str | ref => simpa [SrcType.span] using fits
 
 /-- A referent slot lies at the start of its parent slot and is no wider. -/
 theorem SlotsIn.ref {ty t : SrcType} {j off : Nat} (h : SlotsIn ty j off t) (s : Nat) (lt : s < t.size) :

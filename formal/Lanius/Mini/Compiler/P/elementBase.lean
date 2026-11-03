@@ -42,6 +42,7 @@ def loadType (ty : SrcType) (target : Nat) (base : Expr) (offset : Nat) (body : 
   | .sint kind => Stmt.seq (Stmt.loadWord (widthOf ty) target (addressBelow base offset)) body
   | .view viewLength => Stmt.seq (Stmt.loadWord (widthOf ty) target (addressBelow base offset)) body
   | .str => Stmt.seq (Stmt.loadWord (widthOf ty) target (addressBelow base offset)) body
+  | .ref referent => Stmt.seq (Stmt.loadWord (widthOf ty) target (addressBelow base offset)) body
 /-- Values of these types one after another, the first at target and base - offset. -/
 def loadTypes (types : List SrcType) (target : Nat) (base : Expr) (offset : Nat) (body : Stmt) : Stmt :=
   match types with

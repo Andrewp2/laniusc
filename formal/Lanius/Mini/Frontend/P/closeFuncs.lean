@@ -32,5 +32,6 @@ def isizeTy (t : SrcType) : Bool :=
   | .sint sk => false
   | .view viewLength => false
   | .str => false
+  | .ref referent => false
 
 end Lanius.Mini

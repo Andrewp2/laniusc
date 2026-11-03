@@ -279,6 +279,7 @@ def SrcType.Holds : SrcType → Value → BitVec 64 → Prop
   | .sint kind, value, bits => kind.SintHolds value bits
   | .view _, _, _ => False
   | .str, _, _ => False
+  | .ref _, _, _ => False
 
 /-- A place a reference or a borrowed slice names, held in frame memory:
 Core's cell `cell` at the projection path `projections` holds a value of
@@ -422,7 +423,7 @@ theorem SrcType.holdsAt_scalar {ty : SrcType} (scalar : ty.isScalar = true) {v :
   | float => exact ⟨fun | .float h => h, .float⟩
   | sint => exact ⟨fun | .sint h => h, .sint⟩
   | view => simp [SrcType.isScalar] at scalar
-  | str => simp [SrcType.isScalar] at scalar
+  | str | ref => simp [SrcType.isScalar] at scalar
 
 theorem FieldsHold.length : ∀ {fs vs env slot}, FieldsHold sx places fs vs env slot → vs.length = fs.length
   | [], _, _, _, .nil => rfl

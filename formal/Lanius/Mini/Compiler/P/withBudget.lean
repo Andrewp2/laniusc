@@ -39,6 +39,7 @@ def arrayBytesOf (ty : SrcType) : Nat :=
   | .sint sk => 0
   | .view viewLength => 0
   | .str => 0
+  | .ref referent => 0
 
 /-- The block bytes of a declaration of id at type ty: its array bytes when id is passed as a slice. -/
 def declBytes (uses : List Nat) (id : Nat) (ty : SrcType) : Nat :=

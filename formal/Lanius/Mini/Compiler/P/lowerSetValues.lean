@@ -56,6 +56,7 @@ def lowerSetFieldOf (b : Binding) (field : Nat) (scope : List Binding) (value : 
   | .sint sk => none
   | .view viewLength => none
   | .str => none
+  | .ref referent => none
 
 def lowerSetField (binding : Option Binding) (field : Nat) (scope : List Binding) (value : SrcExpr) : Option Stmt :=
   match binding with

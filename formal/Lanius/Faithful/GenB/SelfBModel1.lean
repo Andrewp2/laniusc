@@ -20,6 +20,22 @@ open Lanius.Faithful.Budget
 
 noncomputable section
 
+def Pre_eval_let_in : Nat → Nat → Lanius.Mini.SrcType → Lanius.Mini.SrcType → Option Lanius.Mini.Evaluated → Option Lanius.Mini.Evaluated → Nat → Prop
+  | 0, x12, x25, x38, x51, x91, b => True
+  | n + 1, x12, x25, x38, x51, x91, b => (match x51 with | some x229 => (match x91 with | some x293 => (Pre_eval_let_in_of n x12 x25 x38 x229 x293 b) | none => True) | none => True)
+
+end
+
+noncomputable section
+
+def Pre_eval_len_of : Nat → Lanius.Mini.Binding → Nat → Nat → Prop
+  | 0, x12, x24, b => True
+  | n + 1, x12, x24, b => (match (Lanius.Mini.elementOf x12.ty) with | some x147 => (Pre_plus n x12.slot 1 b) | none => True)
+
+end
+
+noncomputable section
+
 def Pre_eval_len : Nat → List Lanius.Mini.Binding → Nat → Nat → Nat → Prop
   | 0, x9, x31, x45, b => True
   | n + 1, x9, x31, x45, b => (match (Lanius.Mini.lookup x9 x31) with | some x172 => (Pre_eval_len_of n x172 x45 b) | none => True)
@@ -425,7 +441,7 @@ noncomputable section
 
 def Cost_set_field_eval_of : Nat → Lanius.Mini.Binding → Nat → Nat → Lanius.Mini.Evaluated → Nat
   | 0, x18, x30, x44, x57 => 18446744073709551616
-  | n + 1, x18, x30, x44, x57 => (match x18.ty with | .i32 => 0 | .bool => 0 | .uint x185 => 0 | .struct x215 x219 => (Cost_set_field_eval_at n (x18.slot + (Lanius.Mini.fieldOffset x219 x30)) (x219[x30]?) x44 x57) | .enum x348 x352 => 0 | .ptr => 0 | .slice x406 => 0 | .array x447 x462 => 0 | .unit => 0 | .isize => 0 | .char => 0 | .float x584 => 0 | .sint x610 => 0 | .view x636 => 0 | .str => 0)
+  | n + 1, x18, x30, x44, x57 => (match x18.ty with | .i32 => 0 | .bool => 0 | .uint x185 => 0 | .struct x215 x219 => (Cost_set_field_eval_at n (x18.slot + (Lanius.Mini.fieldOffset x219 x30)) (x219[x30]?) x44 x57) | .enum x348 x352 => 0 | .ptr => 0 | .slice x406 => 0 | .array x447 x462 => 0 | .unit => 0 | .isize => 0 | .char => 0 | .float x584 => 0 | .sint x610 => 0 | .view x636 => 0 | .str => 0 | .ref x691 => 0)
 
 end
 
@@ -433,7 +449,7 @@ noncomputable section
 
 def Pre_set_field_eval_of : Nat → Lanius.Mini.Binding → Nat → Nat → Lanius.Mini.Evaluated → Nat → Prop
   | 0, x18, x30, x44, x57, b => True
-  | n + 1, x18, x30, x44, x57, b => (match x18.ty with | .i32 => True | .bool => True | .uint x185 => True | .struct x215 x219 => ((Pre_field_offset n x219 x30 b) ∧ (Pre_plus n x18.slot (Lanius.Mini.fieldOffset x219 x30) b)) | .enum x348 x352 => True | .ptr => True | .slice x406 => True | .array x447 x462 => True | .unit => True | .isize => True | .char => True | .float x584 => True | .sint x610 => True | .view x636 => True | .str => True)
+  | n + 1, x18, x30, x44, x57, b => (match x18.ty with | .i32 => True | .bool => True | .uint x185 => True | .struct x215 x219 => ((Pre_field_offset n x219 x30 b) ∧ (Pre_plus n x18.slot (Lanius.Mini.fieldOffset x219 x30) b)) | .enum x348 x352 => True | .ptr => True | .slice x406 => True | .array x447 x462 => True | .unit => True | .isize => True | .char => True | .float x584 => True | .sint x610 => True | .view x636 => True | .str => True | .ref x691 => True)
 
 end
 
@@ -521,7 +537,7 @@ noncomputable section
 
 def Cost_lower_match_arm : Nat → List Lanius.Mini.Binding → Option Lanius.Mini.Binding → Nat → Nat → Bool → Nat → Lanius.Mini.SrcType → Nat → Option Lanius.Mini.Stmt → Option Lanius.Mini.Stmt → Nat
   | 0, x16, x38, x78, x94, x110, x123, x138, x151, x164, x198 => 18446744073709551616
-  | n + 1, x16, x38, x78, x94, x110, x123, x138, x151, x164, x198 => (match x38 with | some x328 => (match x328.ty with | .i32 => 0 | .bool => 0 | .uint x417 => 0 | .struct x451 x455 => 0 | .enum x488 x492 => (if (decide (x488 = x78)) = true then (Cost_lower_arm_found n x16 x328.slot (decide (x492.length < 4294967296)) x94 (x492[x94]?) x110 x123 x138 x151 x164 x198) else (Cost_lower_arm_found n x16 x328.slot false x94 (x492[x94]?) x110 x123 x138 x151 x164 x198)) | .ptr => 0 | .slice x716 => 0 | .array x761 x776 => 0 | .unit => 0 | .isize => 0 | .char => 0 | .float x914 => 0 | .sint x944 => 0 | .view x974 => 0 | .str => 0) | none => 0)
+  | n + 1, x16, x38, x78, x94, x110, x123, x138, x151, x164, x198 => (match x38 with | some x328 => (match x328.ty with | .i32 => 0 | .bool => 0 | .uint x417 => 0 | .struct x451 x455 => 0 | .enum x488 x492 => (if (decide (x488 = x78)) = true then (Cost_lower_arm_found n x16 x328.slot (decide (x492.length < 4294967296)) x94 (x492[x94]?) x110 x123 x138 x151 x164 x198) else (Cost_lower_arm_found n x16 x328.slot false x94 (x492[x94]?) x110 x123 x138 x151 x164 x198)) | .ptr => 0 | .slice x716 => 0 | .array x761 x776 => 0 | .unit => 0 | .isize => 0 | .char => 0 | .float x914 => 0 | .sint x944 => 0 | .view x974 => 0 | .str => 0 | .ref x1037 => 0) | none => 0)
 
 end
 
@@ -529,7 +545,7 @@ noncomputable section
 
 def Pre_lower_match_arm : Nat → List Lanius.Mini.Binding → Option Lanius.Mini.Binding → Nat → Nat → Bool → Nat → Lanius.Mini.SrcType → Nat → Option Lanius.Mini.Stmt → Option Lanius.Mini.Stmt → Nat → Prop
   | 0, x16, x38, x78, x94, x110, x123, x138, x151, x164, x198, b => True
-  | n + 1, x16, x38, x78, x94, x110, x123, x138, x151, x164, x198, b => (match x38 with | some x328 => (match x328.ty with | .i32 => True | .bool => True | .uint x417 => True | .struct x451 x455 => True | .enum x488 x492 => (if (decide (x488 = x78)) = true then ((Pre_length_of_mini_selfhost_List_mini_selfhost_SrcType n x492 b) ∧ (Pre_lower_arm_found n x16 x328.slot (decide (x492.length < 4294967296)) x94 (x492[x94]?) x110 x123 x138 x151 x164 x198 b)) else (Pre_lower_arm_found n x16 x328.slot false x94 (x492[x94]?) x110 x123 x138 x151 x164 x198 b)) | .ptr => True | .slice x716 => True | .array x761 x776 => True | .unit => True | .isize => True | .char => True | .float x914 => True | .sint x944 => True | .view x974 => True | .str => True) | none => True)
+  | n + 1, x16, x38, x78, x94, x110, x123, x138, x151, x164, x198, b => (match x38 with | some x328 => (match x328.ty with | .i32 => True | .bool => True | .uint x417 => True | .struct x451 x455 => True | .enum x488 x492 => (if (decide (x488 = x78)) = true then ((Pre_length_of_mini_selfhost_List_mini_selfhost_SrcType n x492 b) ∧ (Pre_lower_arm_found n x16 x328.slot (decide (x492.length < 4294967296)) x94 (x492[x94]?) x110 x123 x138 x151 x164 x198 b)) else (Pre_lower_arm_found n x16 x328.slot false x94 (x492[x94]?) x110 x123 x138 x151 x164 x198 b)) | .ptr => True | .slice x716 => True | .array x761 x776 => True | .unit => True | .isize => True | .char => True | .float x914 => True | .sint x944 => True | .view x974 => True | .str => True | .ref x1037 => True) | none => True)
 
 end
 
@@ -945,7 +961,7 @@ noncomputable section
 mutual
 def Cost_SrcType_declare : Nat → Lanius.Mini.SrcType → Lanius.Mini.SrcDecls → Nat
   | 0, x8, x14 => 18446744073709551616
-  | n + 1, x8, x14 => (match x8 with | .i32 => 0 | .bool => 0 | .uint x179 => 0 | .struct x220 x224 => ((Cost_declare_types n x224 x14) + (Cost_declare_struct n x220 x224 (Lanius.Mini.declareTypes x224 x14))) | .enum x324 x328 => ((Cost_declare_variants n x328 x14) + (Cost_declare_enum n x324 x328 (Lanius.Mini.declareVariants x328 x14))) | .ptr => 0 | .slice x468 => (Cost_SrcType_declare n x468 x14) | .array x538 x553 => (Cost_SrcType_declare n x538 x14) | .unit => 0 | .isize => 0 | .char => 0 | .float x743 => 0 | .sint x780 => 0 | .view x819 => 0 | .str => 0)
+  | n + 1, x8, x14 => (match x8 with | .i32 => 0 | .bool => 0 | .uint x179 => 0 | .struct x220 x224 => ((Cost_declare_types n x224 x14) + (Cost_declare_struct n x220 x224 (Lanius.Mini.declareTypes x224 x14))) | .enum x324 x328 => ((Cost_declare_variants n x328 x14) + (Cost_declare_enum n x324 x328 (Lanius.Mini.declareVariants x328 x14))) | .ptr => 0 | .slice x468 => (Cost_SrcType_declare n x468 x14) | .array x538 x553 => (Cost_SrcType_declare n x538 x14) | .unit => 0 | .isize => 0 | .char => 0 | .float x743 => 0 | .sint x780 => 0 | .view x819 => 0 | .str => 0 | .ref x889 => 0)
 termination_by structural fuel => fuel
 
 def Cost_declare_types : Nat → List Lanius.Mini.SrcType → Lanius.Mini.SrcDecls → Nat
@@ -3303,7 +3319,7 @@ noncomputable section
 mutual
 def Pre_src_weight : Nat → Lanius.Mini.SrcType → Nat → Prop
   | 0, x11, b => True
-  | n + 1, x11, b => (match x11 with | .i32 => True | .bool => True | .uint x141 => True | .struct x171 x175 => ((Pre_src_weights n x175 b) ∧ (Pre_weight_add_to n 1 (Lanius.Mini.srcWeights x175) b)) | .enum x245 x249 => ((Pre_variant_weights n x249 b) ∧ (Pre_weight_add_to n 1 (Lanius.Mini.variantWeights x249) b)) | .ptr => True | .slice x352 => ((Pre_src_weight n x352 b) ∧ (Pre_weight_add_to n 1 (Lanius.Mini.srcWeight x352) b)) | .array x433 x442 => ((Pre_src_weight n x433 b) ∧ (Pre_weight_array n x442 (Lanius.Mini.srcWeight x433) b)) | .unit => True | .isize => True | .char => True | .float x611 => True | .sint x640 => True | .view x669 => True | .str => True)
+  | n + 1, x11, b => (match x11 with | .i32 => True | .bool => True | .uint x141 => True | .struct x171 x175 => ((Pre_src_weights n x175 b) ∧ (Pre_weight_add_to n 1 (Lanius.Mini.srcWeights x175) b)) | .enum x245 x249 => ((Pre_variant_weights n x249 b) ∧ (Pre_weight_add_to n 1 (Lanius.Mini.variantWeights x249) b)) | .ptr => True | .slice x352 => ((Pre_src_weight n x352 b) ∧ (Pre_weight_add_to n 1 (Lanius.Mini.srcWeight x352) b)) | .array x433 x442 => ((Pre_src_weight n x433 b) ∧ (Pre_weight_array n x442 (Lanius.Mini.srcWeight x433) b)) | .unit => True | .isize => True | .char => True | .float x611 => True | .sint x640 => True | .view x669 => True | .str => True | .ref x730 => True)
 termination_by structural fuel => fuel
 
 def Pre_src_weights : Nat → List Lanius.Mini.SrcType → Nat → Prop
@@ -3941,7 +3957,7 @@ noncomputable section
 
 def Cost_int_literal_at : Nat → Lanius.Mini.SrcType → BitVec 32 → Lanius.Mini.SrcExpr → Nat
   | 0, x15, x27, x35 => 18446744073709551616
-  | n + 1, x15, x27, x35 => (match x15 with | .i32 => 0 | .bool => 0 | .uint x133 => 0 | .struct x186 x190 => 0 | .enum x217 x221 => 0 | .ptr => 0 | .slice x281 => 0 | .array x314 x318 => 0 | .unit => 0 | .isize => 1 | .char => 0 | .float x448 => 0 | .sint x471 => (Cost_sint_at n x471 x27 x35) | .view x510 => 0 | .str => 0)
+  | n + 1, x15, x27, x35 => (match x15 with | .i32 => 0 | .bool => 0 | .uint x133 => 0 | .struct x186 x190 => 0 | .enum x217 x221 => 0 | .ptr => 0 | .slice x281 => 0 | .array x314 x318 => 0 | .unit => 0 | .isize => 1 | .char => 0 | .float x448 => 0 | .sint x471 => (Cost_sint_at n x471 x27 x35) | .view x510 => 0 | .str => 0 | .ref x559 => 0)
 
 end
 
@@ -3966,22 +3982,6 @@ noncomputable section
 def Cost_neg_wide_sint : Nat → Lanius.Mini.UintTy → BitVec 64 → Lanius.Mini.SrcExpr → Nat
   | 0, x14, x25, x33 => 18446744073709551616
   | n + 1, x14, x25, x33 => (if ((Lanius.Mini.sintWide x14) && (decide (x25.toNat ≤ (9223372036854775808#64).toNat))) = true then 1 else 0)
-
-end
-
-noncomputable section
-
-def Cost_neg_wide_at : Nat → Option Lanius.Mini.SrcType → BitVec 64 → Lanius.Mini.SrcExpr → Nat
-  | 0, x12, x49, x57 => 18446744073709551616
-  | n + 1, x12, x49, x57 => (match x12 with | some x157 => (match x157 with | .i32 => 0 | .bool => 0 | .uint x254 => 0 | .struct x282 x286 => 0 | .enum x317 x321 => 0 | .ptr => 0 | .slice x377 => 0 | .array x414 x418 => 0 | .unit => 0 | .isize => (Cost_neg_wide_isize n x49 x57) | .char => 0 | .float x563 => 0 | .sint x590 => (Cost_neg_wide_sint n x590 x49 x57) | .view x639 => 0 | .str => 0) | none => 0)
-
-end
-
-noncomputable section
-
-def Cost_least_cast : Nat → Lanius.Mini.UintTy → BitVec 32 → Lanius.Mini.SrcExpr → Nat
-  | 0, x11, x22, x30 => 18446744073709551616
-  | n + 1, x11, x22, x30 => (let k2 := 1; let k3 := 0; (if (!(Lanius.Mini.sintFits x11 x22)) = true then (if (Lanius.Mini.sintFits x11 (((0#32) - x22))) = true then k2 else k3) else k3))
 
 end
 

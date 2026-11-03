@@ -299,6 +299,8 @@ inductive SrcType where
   | view : Nat → SrcType
   /-- a str: two slots, the mini address of its UTF-8 bytes in the static region (SEMANTIC_DECISIONS "Addressed locals" point 6) and their count -/
   | str : SrcType
+  /-- a reference to a referent of this type (F5): one slot, the lowest byte of the referent's block (SEMANTIC_DECISIONS "References: the memory model" point 5). Nothing accepts it yet: a type with a reference is not declared, not the same as any type, and not a parameter's. -/
+  | ref : SrcType → SrcType
   deriving Repr
 
 inductive SrcOp where

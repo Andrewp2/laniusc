@@ -1725,7 +1725,7 @@ theorem castTo_below {n : Nat} {ty : SrcType} {inner t : Typed} (h : castTo ty i
   | array => simp [castTo] at h
   | unit => simp [castTo] at h
   | view => simp [castTo] at h
-  | str => simp [castTo] at h
+  | str | ref => simp [castTo] at h
 
 theorem SrcExpr.lower_below {scope : List Binding} {next : Nat}
     (slots : ∀ b ∈ scope, b.slot + b.ty.size ≤ next) :
@@ -1779,6 +1779,7 @@ theorem SrcExpr.lower_below {scope : List Binding} {next : Nat}
     case h_13 => simp at lowered
     case h_14 => simp at lowered
     case h_15 => simp at lowered
+    case h_16 => simp at lowered
     rename_i sid fields hty
     simp only [lowerFieldAt] at lowered
     split at lowered
@@ -2458,7 +2459,7 @@ theorem stmt_letStruct (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {fi
         all_goals simp at valueRun
     all_goals simp at run
   | view => simp [lowerLiteral] at literalOk
-  | str => simp [lowerLiteral] at literalOk
+  | str | ref => simp [lowerLiteral] at literalOk
 
 theorem stmt_letCall (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     (ih : ∀ m ≤ fuel, StmtSound sp mp m) {id : Nat} {ty : SrcType} {callee : Nat}
@@ -2586,7 +2587,7 @@ theorem stmt_letEnum (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {vari
         all_goals simp at valueRun
     all_goals simp at run
   | view => simp [lowerEnumValue] at valueOk
-  | str => simp [lowerEnumValue] at valueOk
+  | str | ref => simp [lowerEnumValue] at valueOk
 
 theorem stmt_letMatch (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {scrutinee enumId : Nat}
     {arms : List SrcArm} {body : SrcStmt}
@@ -2627,6 +2628,7 @@ theorem stmt_letMatch (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {scr
   case h_13 => simp at matchOk
   case h_14 => simp at matchOk
   case h_15 => simp at matchOk
+  case h_16 => simp at matchOk
   rename_i eid variants hty
   simp only [lowerMatchArms] at matchOk
   split at matchOk
@@ -2998,6 +3000,7 @@ theorem stmt_setField {id index : Nat} {value : SrcExpr}
   case h_13 => simp at ok
   case h_14 => simp at ok
   case h_15 => simp at ok
+  case h_16 => simp at ok
   rename_i sid types hty
   simp only [lowerSetFieldAt] at ok
   split at ok
@@ -3801,7 +3804,7 @@ theorem index_toNat {t : Typed} {iv : Value} {x : BitVec 64} {pos : Nat}
     obtain ⟨rfl, -⟩ := holds
     simp only [Semantics.integerIndex, Except.ok.injEq] at ok
     exact ok
-  | bool | struct | enum | ptr | slice | array | unit | isize | char | float | sint | view | str => rw [hty] at kind; simp [SrcType.isI32, SrcType.isUint] at kind
+  | bool | struct | enum | ptr | slice | array | unit | isize | char | float | sint | view | str | ref => rw [hty] at kind; simp [SrcType.isI32, SrcType.isUint] at kind
 
 /-- Core's read of `slice[idx]` from a raw slice local. -/
 theorem eval_index_raw {P : Core.Program} {k : Nat} {st : State} {slice : Nat} {idx : Core.Expr}

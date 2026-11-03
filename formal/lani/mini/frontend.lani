@@ -190,6 +190,9 @@ pub enum SrcType {
     View(usize),
     // a str: its bytes' mini address in the static region, and their count
     Str,
+    // a reference to a referent of this type (the compiler's; the reading
+    // never makes one yet)
+    Ref(Box<SrcType>),
 }
 
 pub enum SrcOp {
@@ -2400,6 +2403,7 @@ pub fn src_ty(t: SrcType) -> core::option::Option<Ty> {
         Sint(sk) -> Some(TySint(sk)),
         View(view_length) -> None,
         Str -> None,
+        Ref(referent) -> None,
     };
 }
 
@@ -2827,6 +2831,7 @@ pub fn src_weight(t: SrcType) -> core::option::Option<usize> {
         Sint(sk) -> Some(1),
         View(view_length) -> Some(1),
         Str -> Some(1),
+        Ref(referent) -> Some(1),
     };
 }
 
@@ -3139,6 +3144,7 @@ pub fn unit_ty(t: SrcType) -> bool {
         Sint(sk) -> false,
         View(view_length) -> false,
         Str -> false,
+        Ref(referent) -> false,
     };
 }
 
@@ -3859,6 +3865,7 @@ pub fn float_want(want: core::option::Option<SrcType>, t: SrcType, x: SrcExpr) -
             Sint(sk) -> float_pick(F32, t, x),
             View(view_length) -> float_pick(F32, t, x),
             Str -> float_pick(F32, t, x),
+            Ref(referent) -> float_pick(F32, t, x),
         },
     };
 }
@@ -6289,6 +6296,7 @@ pub fn is_usize(t: SrcType) -> bool {
         Sint(sk) -> false,
         View(view_length) -> false,
         Str -> false,
+        Ref(referent) -> false,
     };
 }
 
@@ -11798,6 +11806,7 @@ pub fn src_enum_id(t: core::option::Option<SrcType>) -> core::option::Option<usi
             Sint(sk) -> None,
             View(view_length) -> None,
             Str -> None,
+            Ref(referent) -> None,
         },
     };
 }
@@ -12358,6 +12367,7 @@ pub fn isize_ty(t: SrcType) -> bool {
         Sint(sk) -> false,
         View(view_length) -> false,
         Str -> false,
+        Ref(referent) -> false,
     };
 }
 
@@ -12396,6 +12406,7 @@ pub fn int_literal_at(t: SrcType, k: i32, e: SrcExpr) -> SrcExpr {
         Sint(sk) -> sint_at(sk, k, e),
         View(view_length) -> e,
         Str -> e,
+        Ref(referent) -> e,
     };
 }
 
@@ -12449,6 +12460,7 @@ pub fn src_fields(t: core::option::Option<SrcType>) -> core::option::Option<List
             Sint(sk) -> None,
             View(view_length) -> None,
             Str -> None,
+            Ref(referent) -> None,
         },
     };
 }
@@ -12472,6 +12484,7 @@ pub fn src_variants(t: core::option::Option<SrcType>) -> core::option::Option<Li
             Sint(sk) -> None,
             View(view_length) -> None,
             Str -> None,
+            Ref(referent) -> None,
         },
     };
 }
@@ -12495,6 +12508,7 @@ pub fn src_element(t: core::option::Option<SrcType>) -> core::option::Option<Src
             Sint(sk) -> None,
             View(view_length) -> None,
             Str -> None,
+            Ref(referent) -> None,
         },
     };
 }
@@ -12652,6 +12666,7 @@ pub fn wide_at(want: core::option::Option<SrcType>, n: u64, e: SrcExpr) -> SrcEx
             Sint(sk) -> wide_sint_at(sk, n, e),
             View(view_length) -> e,
             Str -> e,
+            Ref(referent) -> e,
         },
     };
 }
@@ -12700,6 +12715,7 @@ pub fn neg_wide_at(want: core::option::Option<SrcType>, n: u64, e: SrcExpr) -> S
             Sint(sk) -> neg_wide_sint(sk, n, e),
             View(view_length) -> e,
             Str -> e,
+            Ref(referent) -> e,
         },
     };
 }
@@ -12749,6 +12765,7 @@ pub fn neg_least(want: core::option::Option<SrcType>, x: SrcExpr, d: SrcExpr) ->
             Sint(sk) -> neg_least_at(sk, x, d),
             View(view_length) -> d,
             Str -> d,
+            Ref(referent) -> d,
         },
     };
 }

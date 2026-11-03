@@ -325,6 +325,7 @@ def hbSrcType : Lanius.Mini.SrcType → Nat
   | .sint a0 => 0
   | .view a0 => 0
   | .str => 0
+  | .ref a0 => hbSrcType a0
 def hbSrcType0 : List Lanius.Mini.SrcType → Nat
   | [] => 0
   | a :: l => max (hbSrcType a) (hbSrcType0 l) + 1
@@ -358,6 +359,7 @@ theorem hbSrcType1_eq : ∀ l : List (List Lanius.Mini.SrcType), hbSrcType1 l = 
 @[simp, hb_simp] theorem hb_SrcType_sint (a0 : Lanius.Mini.UintTy) : hb (Lanius.Mini.SrcType.sint a0) = 0 := rfl
 @[simp, hb_simp] theorem hb_SrcType_view (a0 : Nat) : hb (Lanius.Mini.SrcType.view a0) = 0 := rfl
 @[simp, hb_simp] theorem hb_SrcType_str  : hb (Lanius.Mini.SrcType.str) = 0 := rfl
+@[simp, hb_simp] theorem hb_SrcType_ref (a0 : Lanius.Mini.SrcType) : hb (Lanius.Mini.SrcType.ref a0) = hb a0 := rfl
 
 instance : HB Lanius.Mini.SrcOp := ⟨fun _ => 0⟩
 @[simp, hb_simp] theorem hb_SrcOp (x : Lanius.Mini.SrcOp) : hb x = 0 := rfl

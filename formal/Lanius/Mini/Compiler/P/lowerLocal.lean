@@ -47,6 +47,7 @@ def lowerFieldOf (b : Binding) (field : Nat) : Option Typed :=
   | .sint sk => none
   | .view viewLength => none
   | .str => none
+  | .ref referent => none
 
 def lowerField (binding : Option Binding) (field : Nat) : Option Typed :=
   match binding with

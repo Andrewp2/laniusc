@@ -81,7 +81,7 @@ theorem sty_signed {t : SrcType} {ty : Core.SignedIntTy} {a : Int} (h : STy t (.
   | float => exact h.elim
   | sint => exact h.elim
   | array => exact h.elim
-  | view | str => exact h.elim
+  | view | str | ref => exact h.elim
 
 theorem sty_unsigned {t : SrcType} {ty : Core.UnsignedIntTy} {a : Nat} (h : STy t (.unsigned ty a)) :
     ∃ k, t = .uint k ∧ ty = k.toCore := by
@@ -102,7 +102,7 @@ theorem sty_unsigned {t : SrcType} {ty : Core.UnsignedIntTy} {a : Nat} (h : STy 
   | float => exact h.elim
   | sint => exact h.elim
   | array => exact h.elim
-  | view | str => exact h.elim
+  | view | str | ref => exact h.elim
 
 theorem sty_wrapU {t : SrcType} {ty : Core.UnsignedIntTy} {a : Nat} (h : STy t (.unsigned ty a)) (x : Nat) :
     STy t (.unsigned ty (wrapUnsigned .x86_64 ty x)) := by
@@ -131,7 +131,7 @@ theorem sty_cases {t : SrcType} {v : Value} (h : STy t v) :
   | float => exact h.elim
   | sint => exact h.elim
   | array => exact h.elim
-  | view | str => exact h.elim
+  | view | str | ref => exact h.elim
 
 /-! ## Binary operators -/
 

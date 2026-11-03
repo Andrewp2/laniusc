@@ -85,6 +85,7 @@ def SrcType.accessKind : SrcType → Access
   | .sint _ => .word .m64
   | .view _ => .word .m64
   | .str => .word .m64
+  | .ref _ => .word .m64
 
 /-- A packed type: an array of `i32` or `u8`, its elements 4 or 1 bytes
 apart, ascending (the slice layout, SEMANTIC_DECISIONS "Addressed locals"
@@ -105,6 +106,7 @@ def SrcType.packed : SrcType → Bool
   | .sint _ => false
   | .view _ => false
   | .str => false
+  | .ref _ => false
 
 /-! ## Native layout -/
 
@@ -131,6 +133,7 @@ def SrcType.words : SrcType → Nat
   | .sint _ => 1
   | .view _ => 1
   | .str => 2
+  | .ref _ => 1
 
 /-- The words of fields one after another. -/
 def fieldWords : List SrcType → Nat
@@ -181,6 +184,7 @@ def SrcType.widths : SrcType → List MemWidth
   | .sint kind => [widthOf (.sint kind)]
   | .view n => [widthOf (.view n)]
   | .str => [.m64, .m64]
+  | .ref _ => [.m64]
 
 def fieldsWidths : List SrcType → List MemWidth
   | [] => []
@@ -235,6 +239,7 @@ def SrcType.slotAt : SrcType → Nat → Nat × Access
   | .sint kind, _ => (0, .word (widthOf (.sint kind)))
   | .view n, _ => (0, .word (widthOf (.view n)))
   | .str, s => (8 * (1 - s), .word .m64)
+  | .ref _, _ => (0, .word .m64)
 
 /-- Slot `s` of fields whose first one starts `above` words below the top of
 a `total`-word value. -/
@@ -274,6 +279,7 @@ def SrcType.span (ty : SrcType) : Nat :=
   | .sint kind => (widthOf (.sint kind)).bytes
   | .view _ => 8 * ty.words
   | .str => 8 * ty.words
+  | .ref _ => 8 * ty.words
 
 /-- The slots of a value of `ty` whose block's lowest byte is `address`,
 read from memory in native layout. -/
@@ -300,6 +306,7 @@ def SrcType.homeOk : SrcType → Bool
   | .float _ => true
   | .sint _ => true
   | .str => true
+  | .ref _ => true
 
 def fieldsHomeOk : List SrcType → Bool
   | [] => true
@@ -324,6 +331,7 @@ def SrcType.uniform : SrcType → Bool
   | .float _ => true
   | .sint _ => true
   | .str => true
+  | .ref _ => true
 
 def fieldsUniform : List SrcType → Bool
   | [] => true
@@ -355,6 +363,7 @@ def SrcType.tagsFit : SrcType → Bool
   | .sint _ => true
   | .view _ => true
   | .str => true
+  | .ref _ => true
 
 def fieldsTagsFit : List SrcType → Bool
   | [] => true
@@ -403,6 +412,7 @@ def SrcType.subStep (ty : SrcType) (p : ValueProjection) : Option (Nat × SrcTyp
   | .sint _ => none
   | .view _ => none
   | .str => none
+  | .ref _ => none
 
 /-- The byte offset and type of the sub-place at `path` of a value of `ty`.
 None when a projection does not fit the type or an element is out of range. -/
@@ -564,6 +574,7 @@ def SrcType.indexInfo (ty : SrcType) : Option (Nat × SrcType) :=
   | .sint _ => none
   | .view _ => none
   | .str => none
+  | .ref _ => none
 
 /-- `t` = the address in `t` plus element `slot`'s offset in an array of
 `length` `element`s: `slot` widths up when packed, else `length - 1 - slot`

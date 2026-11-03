@@ -79,6 +79,7 @@ def SrcType.isI32 (self : SrcType) : Bool :=
   | .sint sk => false
   | .view viewLength => false
   | .str => false
+  | .ref referent => false
 
 def SrcType.isBool (self : SrcType) : Bool :=
   match self with
@@ -97,6 +98,7 @@ def SrcType.isBool (self : SrcType) : Bool :=
   | .sint sk => false
   | .view viewLength => false
   | .str => false
+  | .ref referent => false
 
 def SrcType.isScalar (self : SrcType) : Bool :=
   match self with
@@ -115,6 +117,7 @@ def SrcType.isScalar (self : SrcType) : Bool :=
   | .sint kind => true
   | .view viewLength => false
   | .str => false
+  | .ref referent => false
 
 def SrcType.isUint (self : SrcType) (kind : UintTy) : Bool :=
   match self with
@@ -133,6 +136,7 @@ def SrcType.isUint (self : SrcType) (kind : UintTy) : Bool :=
   | .sint sk => false
   | .view viewLength => false
   | .str => false
+  | .ref referent => false
 
 def SrcType.isPtr (self : SrcType) : Bool :=
   match self with
@@ -151,6 +155,7 @@ def SrcType.isPtr (self : SrcType) : Bool :=
   | .sint sk => false
   | .view viewLength => false
   | .str => false
+  | .ref referent => false
 
 def SrcType.isUnit (self : SrcType) : Bool :=
   match self with
@@ -169,6 +174,7 @@ def SrcType.isUnit (self : SrcType) : Bool :=
   | .sint sk => false
   | .view viewLength => false
   | .str => false
+  | .ref referent => false
 
 def SrcType.isStr (self : SrcType) : Bool :=
   match self with
@@ -187,6 +193,7 @@ def SrcType.isStr (self : SrcType) : Bool :=
   | .sint sk => false
   | .view viewLength => false
   | .str => true
+  | .ref referent => false
 
 def SrcType.isIsize (self : SrcType) : Bool :=
   match self with
@@ -205,6 +212,7 @@ def SrcType.isIsize (self : SrcType) : Bool :=
   | .sint kind => false
   | .view viewLength => false
   | .str => false
+  | .ref referent => false
 
 def SrcType.isChar (self : SrcType) : Bool :=
   match self with
@@ -223,6 +231,7 @@ def SrcType.isChar (self : SrcType) : Bool :=
   | .sint kind => false
   | .view viewLength => false
   | .str => false
+  | .ref referent => false
 
 def SrcType.isFloat (self : SrcType) (t : FloatTy) : Bool :=
   match self with
@@ -241,6 +250,7 @@ def SrcType.isFloat (self : SrcType) (t : FloatTy) : Bool :=
   | .sint kind => false
   | .view viewLength => false
   | .str => false
+  | .ref referent => false
 
 def SrcType.floatTy (self : SrcType) : Option FloatTy :=
   match self with
@@ -259,6 +269,7 @@ def SrcType.floatTy (self : SrcType) : Option FloatTy :=
   | .sint kind => none
   | .view viewLength => none
   | .str => none
+  | .ref referent => none
 
 def SrcType.isFloatAny (self : SrcType) : Bool :=
   match self with
@@ -277,6 +288,7 @@ def SrcType.isFloatAny (self : SrcType) : Bool :=
   | .sint kind => false
   | .view viewLength => false
   | .str => false
+  | .ref referent => false
 
 /-- An integer type: a shift takes an amount of any of them. -/
 def SrcType.isInteger (self : SrcType) : Bool :=
@@ -296,6 +308,7 @@ def SrcType.isInteger (self : SrcType) : Bool :=
   | .sint kind => true
   | .view viewLength => false
   | .str => false
+  | .ref referent => false
 
 def SrcType.isSintAny (self : SrcType) : Bool :=
   match self with
@@ -314,6 +327,7 @@ def SrcType.isSintAny (self : SrcType) : Bool :=
   | .sint kind => true
   | .view viewLength => false
   | .str => false
+  | .ref referent => false
 
 def SrcType.isSint (self : SrcType) (kind : UintTy) : Bool :=
   match self with
@@ -332,6 +346,7 @@ def SrcType.isSint (self : SrcType) (kind : UintTy) : Bool :=
   | .sint other => decide (UintTy.code other = UintTy.code kind)
   | .view viewLength => false
   | .str => false
+  | .ref referent => false
 
 /-- The width of the signed type this is, if it is one of Sint. -/
 def SrcType.sintKind (self : SrcType) : Option UintTy :=
@@ -351,6 +366,7 @@ def SrcType.sintKind (self : SrcType) : Option UintTy :=
   | .sint kind => some kind
   | .view viewLength => none
   | .str => none
+  | .ref referent => none
 
 /-- The unsigned type this is, if it is one. -/
 def SrcType.uintKind (self : SrcType) : Option UintTy :=
@@ -370,6 +386,7 @@ def SrcType.uintKind (self : SrcType) : Option UintTy :=
   | .sint sk => none
   | .view viewLength => none
   | .str => none
+  | .ref referent => none
 
 /-- How a comparison of two values of this type reads their slots. -/
 def SrcType.word (self : SrcType) : Word :=
@@ -389,5 +406,6 @@ def SrcType.word (self : SrcType) : Word :=
   | .sint kind => UintTy.signedWord kind
   | .view viewLength => Word.u64
   | .str => Word.u64
+  | .ref referent => Word.u64
 
 end Lanius.Mini

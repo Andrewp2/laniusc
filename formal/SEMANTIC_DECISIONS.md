@@ -1916,6 +1916,34 @@ changes these trusted definitions, proposed here for the audit:
 The top theorems' statements do not change. A program's entry function
 takes no references, so `places = []` at the start.
 
+**Stage 1's order (decided 11-03, leafC).** `compileSource_correct` and
+its siblings hold for every program `compile_source` accepts, so the
+compiler accepts no reference form until stage 2 proves its lowering. Stage
+1 therefore lands in steps that each keep every top theorem proved:
+- S1: `SrcType.ref T` (`Ref(Box<SrcType>)`, one slot) exists and nothing
+  accepts it: no type with a reference is declared (`declare`), a reference
+  type is the same as no type (`same`), and every predicate and lowering
+  case of the compiler gives it the rejecting answer. `HoldsAt` has no
+  `ref` constructor yet, so no value is held at it.
+- S2: the layout definitions `HoldsAt.ref` needs (`Access`, `accessKind`,
+  `words`, `slotAt`, `refSlotAt`, `sub`, `subStep`, `RefTo`, `RefHeld`)
+  move before `HoldsAt` and become trusted; `HoldsAt.ref`,
+  `HoldsAt.borrowed` generalized, `Addressed.pointer` for native layout.
+- S3: Source's places, borrow, dereference and assignment through a place,
+  their `toCore`, and Core's typing of `Place.deref`; their lowering is
+  `none`.
+- S4: stage 2's top statement as an open statement, about the lowering
+  entry that accepts references (`compile_source_refs`, the same lowering
+  without the rejection), so its reductions go into the graph.
+- S5: the front end reads `&T`, `&mut T`, borrows, `*r` and the auto-deref
+  of reference parameters, and the lifetime check rejects the forms point 9
+  lists; `&self` keeps its by-value reading (point 10 waits for stage 2,
+  or every `&self` method would stop compiling).
+- S6: the lowering itself (homes, `RPlace.code`, loads and stores, reference
+  arguments) behind `compile_source_refs`, tested against Core.
+When stage 2's statement is proved, `compile_source` drops the rejection and
+point 10 lands.
+
 **Out of scope for F5.** Functions that return references (100 in the
 stdlib), and references in lets, struct fields, elements or results, until
 the lifetime checks of point 9; references to references; raw places
