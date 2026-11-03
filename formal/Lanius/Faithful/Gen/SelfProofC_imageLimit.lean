@@ -3,7 +3,6 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcC_imageLimit
-public import Lanius.Faithful.Gen.SelfStmt1
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmtC_arities
 public import Lanius.Faithful.Gen.SelfStmtC_imageLimit
@@ -50,15 +49,14 @@ theorem proof_image_limit {prog : SrcProgram} {prims : Prims} {ix_image_limit : 
   simp only [src_image_limit] at h
   faithful [Lanius.Mini.imageLimit]
 
-theorem step_linked_size {prog : SrcProgram} {prims : Prims} {ix_linked_size ix_plus ix_Code_size ix_unbox_of_mini_selfhost_List_mini_selfhost_Code : Nat} (fn : prog.funcs[ix_linked_size]? = some (src_linked_size ix_plus ix_linked_size ix_Code_size ix_unbox_of_mini_selfhost_List_mini_selfhost_Code)) (np : prims.isPrim ix_linked_size = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+theorem step_room_after {prog : SrcProgram} {prims : Prims} {ix_room_after ix_room_next ix_Code_size ix_unbox_of_mini_selfhost_List_mini_selfhost_Code : Nat} (fn : prog.funcs[ix_room_after]? = some (src_room_after ix_room_next ix_Code_size ix_unbox_of_mini_selfhost_List_mini_selfhost_Code)) (np : prims.isPrim ix_room_after = false)
     (ext_Code_size : Certified (∀ {n : Nat}, Stmt_Code_size prog prims ix_Code_size n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_Code : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Code prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Code n)) {n : Nat}
-    (ih_linked_size : Certified (Stmt_linked_size prog prims ix_linked_size n)) :
-    Stmt_linked_size prog prims ix_linked_size (n + 1) := by
-  intro x0 v0 w h r0
+    (ih_room_next : Certified (Stmt_room_next prog prims ix_room_next n)) :
+    Stmt_room_after prog prims ix_room_after (n + 1) := by
+  intro x0 x1 v0 v1 w h r0 r1
   rw [pcall_succ np fn] at h
-  simp only [src_linked_size] at h
-  faithful [Lanius.Mini.linkedSize]
+  simp only [src_room_after] at h
+  faithful [Lanius.Mini.roomAfter]
 
 end Lanius.Faithful.SelfCert

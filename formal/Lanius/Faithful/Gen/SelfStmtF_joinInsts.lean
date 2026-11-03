@@ -62,6 +62,6 @@ abbrev Stmt_tys_insts (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev Stmt_wide_decimal (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 25 RepNat) x0 v0 → RepNat x1 v1 →
-    (RepOption 207 RepNat) (Lanius.Mini.wideDecimal x0 x1) w
+    (RepOption 150 RepNat) (Lanius.Mini.wideDecimal x0 x1) w
 
 end Lanius.Faithful.SelfCert

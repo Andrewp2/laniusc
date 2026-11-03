@@ -66,7 +66,7 @@ theorem ok_compile_funcs : FnOk prog prims info (169, ⟨7, [1], 0⟩) :=
 theorem ok_arities : FnOk prog prims info (170, ⟨1, [0], 0⟩) :=
   fnOk_of fn_arities (by decide +kernel)
 
-theorem ok_link : FnOk prog prims info (171, ⟨9, [], 0⟩) :=
+theorem ok_link : FnOk prog prims info (171, ⟨10, [], 0⟩) :=
   fnOk_of fn_link (by decide +kernel)
 
 theorem ok_SrcStmt_slice_uses : FnOk prog prims info (174, ⟨2, [0], 0⟩) :=

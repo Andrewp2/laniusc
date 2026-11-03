@@ -17,7 +17,12 @@ a part of its argument can return a value larger than its argument plus its cost
 sizes bound sums over a value (a list is at most its size long, and the sum over
 a list of its elements' sizes is at most its size).
 
-Usage: hb_gen.py [--sum] OUT.lean TYPES.lean...
+With `--slots` it generates `SelfPre/TS.lean`, the largest slot count `ts`: a
+`SrcType` counts `tySlots`, the largest `SrcType.size` of it and of every type
+inside it, anything else the max of its parts. It is a max, so a value
+shared or copied many times is no larger for it.
+
+Usage: hb_gen.py [--sum | --slots] OUT.lean TYPES.lean...
 """
 import re
 import sys
@@ -108,22 +113,30 @@ def head(t):
 
 
 class Gen:
-    def __init__(self, decls, sum_mode=False):
-        self.sum = sum_mode
-        self.m = 'sz' if sum_mode else 'hb'
+    def __init__(self, decls, mode='hb'):
+        self.mode = mode
+        self.sum = mode == 'sz'
+        self.m = mode
+        # ts counts one type's slots; a type without it counts nothing
+        self.focus = 'SrcType' if mode == 'ts' else None
         self.decls = decls
         self.byname = {n: (k, it) for k, n, it in decls}
         self.flat = {}
 
-    def is_flat(self, t, self_name=None):
+    def is_flat(self, t, self_name=None, self_flat=None):
+        """Whether t counts nothing. A reference to self_name, the type being
+        defined, counts as self_flat (default: only in `ts` mode, where whether the
+        type counts anything is decided by its other parts)."""
         h, inner = head(t)
         if h == 'List':
-            return False
+            return self.is_flat(inner, self_name, self_flat) if self.mode == 'ts' else False
         if h == 'Option':
-            return self.is_flat(inner, self_name)
+            return self.is_flat(inner, self_name, self_flat)
         if h in FLAT_ATOMS or h == 'BitVec':
             return True
         if h == self_name:
+            return self.mode == 'ts' if self_flat is None else self_flat
+        if h == self.focus:
             return False
         if h not in self.flat:
             raise KeyError(f'type {h} used before its definition')
@@ -133,7 +146,7 @@ class Gen:
         return re.search(r'\b' + name + r'\b', t) is not None
 
     def emit(self):
-        out = [SZ_HEADER if self.sum else HEADER]
+        out = [{'hb': HEADER, 'sz': SZ_HEADER, 'ts': TS_HEADER}[self.mode]]
         for kind, name, items in self.decls:
             if kind == 'structure':
                 out.append(self.structure(name, items))
@@ -148,7 +161,7 @@ class Gen:
 
     def node(self, parts):
         """A constructor of a type with lists: its parts' max, or one more than their sum."""
-        if not self.sum:
+        if self.mode in ('hb', 'ts'):
             return maxes(parts) if parts else '0'
         return sums(parts + ['1']) if parts else '1'
 
@@ -161,12 +174,12 @@ class Gen:
     # structures -----------------------------------------------------------
 
     def field_hb(self, name, f, t, x):
-        if name == 'Token' and f == 'start' and not self.sum:
+        if name == 'Token' and f == 'start' and self.mode == 'hb':
             return x
         return f'{self.m} {x}'
 
     def structure(self, name, fields):
-        start = name == 'Token' and not self.sum
+        start = name == 'Token' and self.mode == 'hb'
         live = [(f, t) for f, t in fields if not self.is_flat(t) or (start and f == 'start')]
         self.flat[name] = not [(f, t) for f, t in fields if not self.is_flat(t)] and not start
         if not live:
@@ -187,8 +200,12 @@ class Gen:
     # inductives -----------------------------------------------------------
 
     def inductive(self, name, ctors):
+        if self.mode == 'ts' and name == 'SrcType':
+            self.flat[name] = False
+            return ('instance : TS Lanius.Mini.SrcType := ⟨tySlots⟩\n'
+                    '@[simp, ts_simp] theorem ts_SrcType (t : Lanius.Mini.SrcType) : ts t = tySlots t := rfl\n')
         recursive = any(self.mentions(t, name) for _, ts in ctors for t in ts)
-        live = any(not self.is_flat(t, name) for _, ts in ctors for t in ts)
+        live = any(not self.is_flat(t, name) for _, ts in ctors for t in ts) or name == self.focus
         self.flat[name] = not live
         if not live:
             return self.flat_inst(name)
@@ -214,7 +231,7 @@ class Gen:
             xs = [f'a{i}' for i in range(len(ts))]
             parts = []
             for x, t in zip(xs, ts):
-                if self.is_flat(t, name):
+                if self.is_flat(t, name, False):
                     continue
                 g = fn_of(t)
                 parts.append(f'{g} {x}' if g else f'{m} {x}')
@@ -224,7 +241,8 @@ class Gen:
         for t, (g, h, inner) in shapes.items():
             sub = fn_of(inner) or m
             if h == 'List':
-                cell = f'{sub} a + {g} l + 1' if self.sum else f'max ({sub} a) ({g} l) + 1'
+                cell = {'sz': f'{sub} a + {g} l + 1', 'ts': f'max ({sub} a) ({g} l)'}.get(
+                    self.mode, f'max ({sub} a) ({g} l) + 1')
                 defs.append(f'def {g} : {qt(t)} → Nat\n  | [] => 0\n  | a :: l => {cell}')
             else:
                 defs.append(f'def {g} : {qt(t)} → Nat\n  | none => 0\n  | some a => {sub} a')
@@ -235,7 +253,8 @@ class Gen:
             inner_eq = [shapes[inner][0] + '_eq'] if inner in shapes else []
             if h == 'List':
                 rws = [f'{g}_eq l'] + [e + ' a' for e in inner_eq]
-                cell = '_ + _ + 1 = _ + _ + 1' if self.sum else 'max _ _ + 1 = max _ _ + 1'
+                cell = {'sz': '_ + _ + 1 = _ + _ + 1', 'ts': 'max _ _ = max _ _'}.get(
+                    self.mode, 'max _ _ + 1 = max _ _ + 1')
                 text += (f'theorem {g}_eq : ∀ l : {qt(t)}, {g} l = {M}.{m} l\n'
                          f'  | [] => rfl\n'
                          f'  | a :: l => by\n'
@@ -250,10 +269,10 @@ class Gen:
             eqs.append(f'{g}_eq')
         for c, ts, xs, body in arms:
             binders = ' '.join(f'({x} : {qt(t)})' for x, t in zip(xs, ts))
-            parts = [f'{m} {x}' for x, t in zip(xs, ts) if not self.is_flat(t, name)]
+            parts = [f'{m} {x}' for x, t in zip(xs, ts) if not self.is_flat(t, name, False)]
             rhs = self.node(parts)
             used = sorted({fn_of(t) + '_eq' for x, t in zip(xs, ts)
-                           if not self.is_flat(t, name) and fn_of(t) not in (None, f'{m}{name}')})
+                           if not self.is_flat(t, name, False) and fn_of(t) not in (None, f'{m}{name}')})
             proof = (f'by show {m}{name} _ = _; simp only [{m}{name}{"".join(", " + e for e in used)}] <;> rfl'
                      if used else 'rfl')
             text += (f'@[simp, {m}_simp] theorem {m}_{name}_{c} {binders} : '
@@ -440,19 +459,122 @@ theorem sum_le_sz {α : Type} [SZ α] (f : α → Nat) (hf : ∀ a, f a ≤ sz a
     omega
 '''
 
+TS_HEADER = '''import Lanius.Mini.Frontend.Types
+import Lanius.Mini.Compiler.P.SrcType_same
+import Lanius.Faithful.SelfPre.SZAttr
+
+/-! Generated by formal/tools/hb_gen.py --slots: the largest slot count `ts` of a type
+anywhere in a value of the front end's and the compiler's types (F14). Do not edit.
+
+A `SrcType` counts `tySlots`: the largest `SrcType.size` (the compiler's slot
+count) of the type and of every type inside it, so of a slice's element, an
+array's element and a struct's or an enum's fields too. A list, an `Option`, a
+structure or a constructor counts its largest part; types with no `SrcType` in
+them count nothing. -/
+
+set_option linter.unusedVariables false
+
+namespace Lanius.Faithful.SelfPre
+
+open Lanius.Mini
+
+mutual
+/-- The largest slot count of a type and of the types inside it. -/
+def tySlots : SrcType → Nat
+  | .i32 => SrcType.size .i32
+  | .bool => SrcType.size .bool
+  | .uint k => SrcType.size (.uint k)
+  | .struct id fields => max (SrcType.size (.struct id fields)) (tySlotsList fields)
+  | .enum id variants => max (SrcType.size (.enum id variants)) (tySlotsVariants variants)
+  | .ptr => SrcType.size .ptr
+  | .slice element => max (SrcType.size (.slice element)) (tySlots element)
+  | .array element length => max (SrcType.size (.array element length)) (tySlots element)
+  | .unit => SrcType.size .unit
+  | .isize => SrcType.size .isize
+  | .char => SrcType.size .char
+  | .float ft => SrcType.size (.float ft)
+  | .sint k => SrcType.size (.sint k)
+  | .view length => SrcType.size (.view length)
+  | .str => SrcType.size .str
+def tySlotsList : List SrcType → Nat
+  | [] => 0
+  | t :: rest => max (tySlots t) (tySlotsList rest)
+def tySlotsVariants : List (List SrcType) → Nat
+  | [] => 0
+  | v :: rest => max (tySlotsList v) (tySlotsVariants rest)
+end
+
+/-- A type's own slot count is at most its `tySlots`. -/
+theorem size_le_tySlots : ∀ t : SrcType, SrcType.size t ≤ tySlots t
+  | .i32 => Nat.le_refl _
+  | .bool => Nat.le_refl _
+  | .uint k => Nat.le_refl _
+  | .struct id fields => Nat.le_max_left _ _
+  | .enum id variants => Nat.le_max_left _ _
+  | .ptr => Nat.le_refl _
+  | .slice element => Nat.le_max_left _ _
+  | .array element length => Nat.le_max_left _ _
+  | .unit => Nat.le_refl _
+  | .isize => Nat.le_refl _
+  | .char => Nat.le_refl _
+  | .float ft => Nat.le_refl _
+  | .sint k => Nat.le_refl _
+  | .view length => Nat.le_refl _
+  | .str => Nat.le_refl _
+
+/-- The largest slot count of a type anywhere in a value. -/
+class TS (α : Type) where
+  ts : α → Nat
+
+export TS (ts)
+
+def tsList {α : Type} [TS α] : List α → Nat
+  | [] => 0
+  | a :: l => max (ts a) (tsList l)
+
+instance {α : Type} [TS α] : TS (List α) := ⟨tsList⟩
+
+def tsOption {α : Type} [TS α] : Option α → Nat
+  | none => 0
+  | some a => ts a
+
+instance {α : Type} [TS α] : TS (Option α) := ⟨tsOption⟩
+instance : TS Nat := ⟨fun _ => 0⟩
+instance : TS Bool := ⟨fun _ => 0⟩
+instance : TS UInt8 := ⟨fun _ => 0⟩
+instance {w : Nat} : TS (BitVec w) := ⟨fun _ => 0⟩
+
+@[simp, ts_simp] theorem ts_nat (x : Nat) : ts x = 0 := rfl
+@[simp, ts_simp] theorem ts_bool (x : Bool) : ts x = 0 := rfl
+@[simp, ts_simp] theorem ts_uint8 (x : UInt8) : ts x = 0 := rfl
+@[simp, ts_simp] theorem ts_bitvec {w : Nat} (x : BitVec w) : ts x = 0 := rfl
+@[simp, ts_simp] theorem ts_opt_nat (x : Option Nat) : ts x = 0 := by cases x <;> rfl
+@[simp, ts_simp] theorem ts_opt_bool (x : Option Bool) : ts x = 0 := by cases x <;> rfl
+@[simp, ts_simp] theorem ts_opt_uint8 (x : Option UInt8) : ts x = 0 := by cases x <;> rfl
+@[simp, ts_simp] theorem ts_opt_bitvec {w : Nat} (x : Option (BitVec w)) : ts x = 0 := by cases x <;> rfl
+@[simp, ts_simp] theorem ts_nil {α : Type} [TS α] : ts ([] : List α) = 0 := rfl
+@[simp, ts_simp] theorem ts_cons {α : Type} [TS α] (a : α) (l : List α) : ts (a :: l) = max (ts a) (ts l) := rfl
+@[simp, ts_simp] theorem ts_none {α : Type} [TS α] : ts (none : Option α) = 0 := rfl
+@[simp, ts_simp] theorem ts_some {α : Type} [TS α] (a : α) : ts (some a) = ts a := rfl
+
+theorem ts_le_of_mem {α : Type} [TS α] {a : α} : ∀ {l : List α}, a ∈ l → ts a ≤ ts l
+  | _ :: l, .head _ => by simp only [ts_cons]; omega
+  | b :: l, .tail _ h => by have := ts_le_of_mem h; simp only [ts_cons]; omega
+'''
+
 FOOTER = '''end Lanius.Faithful.SelfPre
 '''
 
 
 def main():
     args = sys.argv[1:]
-    sum_mode = args[:1] == ['--sum']
-    if sum_mode:
+    mode = {'--sum': 'sz', '--slots': 'ts'}.get(args[0], 'hb')
+    if mode != 'hb':
         args = args[1:]
     out, paths = args[0], args[1:]
     decls = parse(paths)
     TYPES.update(n for _, n, _ in decls)
-    g = Gen(decls, sum_mode)
+    g = Gen(decls, mode)
     open(out, 'w').write(g.emit())
 
 

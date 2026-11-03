@@ -41,7 +41,7 @@ abbrev Stmt_index_let_head (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
     RepLetHead (Lanius.Mini.indexLetHead x0 x1 x2) w
 
 abbrev Stmt_match_let_head (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.MEff} {x1 : Option Nat} {x2 : Lanius.Mini.Ty} {x3 : Option (List Lanius.Mini.SrcArm)} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepMEff x0 v0 → (RepOption 207 RepNat) x1 v1 → RepTy x2 v2 → (RepOption 313 (RepList 23 RepSrcArm)) x3 v3 →
+  ∀ {x0 : Lanius.Mini.MEff} {x1 : Option Nat} {x2 : Lanius.Mini.Ty} {x3 : Option (List Lanius.Mini.SrcArm)} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepMEff x0 v0 → (RepOption 150 RepNat) x1 v1 → RepTy x2 v2 → (RepOption 313 (RepList 23 RepSrcArm)) x3 v3 →
     RepLetHead (Lanius.Mini.matchLetHead x0 x1 x2 x3) w
 
 abbrev Stmt_single_ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

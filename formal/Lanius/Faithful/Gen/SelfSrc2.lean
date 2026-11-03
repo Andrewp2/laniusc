@@ -116,7 +116,7 @@ def src_single_of_bool (ix_boxed_of_mini_selfhost_List_bool : Nat) : SrcFunc := 
 def src_single_of_mini_selfhost_List_usize (ix_boxed_of_mini_selfhost_List_mini_selfhost_List_usize : Nat) : SrcFunc := { params := [{ id := 10, ty := ty20 }], ret := ty27, body := SrcStmt.returnEval (SrcEff.eVariant ty27 1 [SrcEff.ePure (SrcExpr.local 10), SrcEff.eCall ix_boxed_of_mini_selfhost_List_mini_selfhost_List_usize [SrcEff.eVariant ty27 0 []]]) }
 
 /-- mini::selfhost::single -/
-def src_single_of_mini_selfhost_MEff (ix_boxed_of_mini_selfhost_List_mini_selfhost_MEff : Nat) : SrcFunc := { params := [{ id := 10, ty := ty191 }], ret := ty286, body := SrcStmt.returnEval (SrcEff.eVariant ty286 1 [SrcEff.ePure (SrcExpr.local 10), SrcEff.eCall ix_boxed_of_mini_selfhost_List_mini_selfhost_MEff [SrcEff.eVariant ty286 0 []]]) }
+def src_single_of_mini_selfhost_MEff (ix_boxed_of_mini_selfhost_List_mini_selfhost_MEff : Nat) : SrcFunc := { params := [{ id := 10, ty := ty192 }], ret := ty286, body := SrcStmt.returnEval (SrcEff.eVariant ty286 1 [SrcEff.ePure (SrcExpr.local 10), SrcEff.eCall ix_boxed_of_mini_selfhost_List_mini_selfhost_MEff [SrcEff.eVariant ty286 0 []]]) }
 
 /-- mini::selfhost::single -/
 def src_single_of_u64 (ix_boxed_of_mini_selfhost_List_u64 : Nat) : SrcFunc := { params := [{ id := 10, ty := SrcType.uint (UintTy.uint64) }], ret := ty218, body := SrcStmt.returnEval (SrcEff.eVariant ty218 1 [SrcEff.ePure (SrcExpr.local 10), SrcEff.eCall ix_boxed_of_mini_selfhost_List_u64 [SrcEff.eVariant ty218 0 []]]) }
@@ -131,7 +131,7 @@ def src_unbox_of_mini_selfhost_List_mini_selfhost_CTree (ix_core_mem_typed_slice
 def src_unbox_of_mini_selfhost_List_mini_selfhost_EffArm (ix_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_EffArm : Nat) : SrcFunc := { params := [{ id := 9, ty := ty364 }], ret := ty365, body := SrcStmt.letCall 39 ty378 ix_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_EffArm [SrcExpr.field 9 0, SrcExpr.int 0x00000001#32] (SrcStmt.returnEval (SrcEff.eIndex 39 (SrcEff.ePure (SrcExpr.int 0x00000000#32)))) }
 
 /-- mini::selfhost::unbox -/
-def src_unbox_of_mini_selfhost_List_mini_selfhost_FnDecl (ix_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_FnDecl : Nat) : SrcFunc := { params := [{ id := 9, ty := ty111 }], ret := ty112, body := SrcStmt.letCall 39 ty199 ix_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_FnDecl [SrcExpr.field 9 0, SrcExpr.int 0x00000001#32] (SrcStmt.returnEval (SrcEff.eIndex 39 (SrcEff.ePure (SrcExpr.int 0x00000000#32)))) }
+def src_unbox_of_mini_selfhost_List_mini_selfhost_FnDecl (ix_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_FnDecl : Nat) : SrcFunc := { params := [{ id := 9, ty := ty111 }], ret := ty112, body := SrcStmt.letCall 39 ty200 ix_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_FnDecl [SrcExpr.field 9 0, SrcExpr.int 0x00000001#32] (SrcStmt.returnEval (SrcEff.eIndex 39 (SrcEff.ePure (SrcExpr.int 0x00000000#32)))) }
 
 /-- mini::selfhost::unbox -/
 def src_unbox_of_mini_selfhost_List_mini_selfhost_Inst (ix_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Inst : Nat) : SrcFunc := { params := [{ id := 9, ty := ty155 }], ret := ty156, body := SrcStmt.letCall 39 ty248 ix_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Inst [SrcExpr.field 9 0, SrcExpr.int 0x00000001#32] (SrcStmt.returnEval (SrcEff.eIndex 39 (SrcEff.ePure (SrcExpr.int 0x00000000#32)))) }
@@ -140,19 +140,19 @@ def src_unbox_of_mini_selfhost_List_mini_selfhost_Inst (ix_core_mem_typed_slice_
 def src_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty (ix_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty : Nat) : SrcFunc := { params := [{ id := 9, ty := ty296 }], ret := ty297, body := SrcStmt.letCall 39 ty306 ix_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty [SrcExpr.field 9 0, SrcExpr.int 0x00000001#32] (SrcStmt.returnEval (SrcEff.eIndex 39 (SrcEff.ePure (SrcExpr.int 0x00000000#32)))) }
 
 /-- mini::selfhost::unbox -/
-def src_unbox_of_mini_selfhost_List_mini_selfhost_SrcStructDecl (ix_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SrcStructDecl : Nat) : SrcFunc := { params := [{ id := 9, ty := ty73 }], ret := ty74, body := SrcStmt.letCall 39 ty239 ix_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SrcStructDecl [SrcExpr.field 9 0, SrcExpr.int 0x00000001#32] (SrcStmt.returnEval (SrcEff.eIndex 39 (SrcEff.ePure (SrcExpr.int 0x00000000#32)))) }
+def src_unbox_of_mini_selfhost_List_mini_selfhost_SrcStructDecl (ix_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SrcStructDecl : Nat) : SrcFunc := { params := [{ id := 9, ty := ty73 }], ret := ty74, body := SrcStmt.letCall 39 ty240 ix_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_SrcStructDecl [SrcExpr.field 9 0, SrcExpr.int 0x00000001#32] (SrcStmt.returnEval (SrcEff.eIndex 39 (SrcEff.ePure (SrcExpr.int 0x00000000#32)))) }
 
 /-- mini::selfhost::unbox -/
-def src_unbox_of_mini_selfhost_List_mini_selfhost_TypeDecl (ix_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_TypeDecl : Nat) : SrcFunc := { params := [{ id := 9, ty := ty108 }], ret := ty109, body := SrcStmt.letCall 39 ty200 ix_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_TypeDecl [SrcExpr.field 9 0, SrcExpr.int 0x00000001#32] (SrcStmt.returnEval (SrcEff.eIndex 39 (SrcEff.ePure (SrcExpr.int 0x00000000#32)))) }
+def src_unbox_of_mini_selfhost_List_mini_selfhost_TypeDecl (ix_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_TypeDecl : Nat) : SrcFunc := { params := [{ id := 9, ty := ty108 }], ret := ty109, body := SrcStmt.letCall 39 ty201 ix_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_TypeDecl [SrcExpr.field 9 0, SrcExpr.int 0x00000001#32] (SrcStmt.returnEval (SrcEff.eIndex 39 (SrcEff.ePure (SrcExpr.int 0x00000000#32)))) }
 
 /-- mini::selfhost::unbox -/
-def src_unbox_of_mini_selfhost_MStmt (ix_core_mem_typed_slice_from_storage_of_mini_selfhost_MStmt : Nat) : SrcFunc := { params := [{ id := 9, ty := ty188 }], ret := ty192, body := SrcStmt.letCall 39 ty274 ix_core_mem_typed_slice_from_storage_of_mini_selfhost_MStmt [SrcExpr.field 9 0, SrcExpr.int 0x00000001#32] (SrcStmt.returnEval (SrcEff.eIndex 39 (SrcEff.ePure (SrcExpr.int 0x00000000#32)))) }
+def src_unbox_of_mini_selfhost_MStmt (ix_core_mem_typed_slice_from_storage_of_mini_selfhost_MStmt : Nat) : SrcFunc := { params := [{ id := 9, ty := ty189 }], ret := ty193, body := SrcStmt.letCall 39 ty274 ix_core_mem_typed_slice_from_storage_of_mini_selfhost_MStmt [SrcExpr.field 9 0, SrcExpr.int 0x00000001#32] (SrcStmt.returnEval (SrcEff.eIndex 39 (SrcEff.ePure (SrcExpr.int 0x00000000#32)))) }
 
 /-- mini::selfhost::unbox -/
 def src_unbox_of_mini_selfhost_SrcEff (ix_core_mem_typed_slice_from_storage_of_mini_selfhost_SrcEff : Nat) : SrcFunc := { params := [{ id := 9, ty := ty25 }], ret := ty29, body := SrcStmt.letCall 39 ty214 ix_core_mem_typed_slice_from_storage_of_mini_selfhost_SrcEff [SrcExpr.field 9 0, SrcExpr.int 0x00000001#32] (SrcStmt.returnEval (SrcEff.eIndex 39 (SrcEff.ePure (SrcExpr.int 0x00000000#32)))) }
 
 /-- mini::selfhost::unbox -/
-def src_unbox_of_mini_selfhost_SrcType (ix_core_mem_typed_slice_from_storage_of_mini_selfhost_SrcType : Nat) : SrcFunc := { params := [{ id := 9, ty := ty7 }], ret := ty9, body := SrcStmt.letCall 39 ty167 ix_core_mem_typed_slice_from_storage_of_mini_selfhost_SrcType [SrcExpr.field 9 0, SrcExpr.int 0x00000001#32] (SrcStmt.returnEval (SrcEff.eIndex 39 (SrcEff.ePure (SrcExpr.int 0x00000000#32)))) }
+def src_unbox_of_mini_selfhost_SrcType (ix_core_mem_typed_slice_from_storage_of_mini_selfhost_SrcType : Nat) : SrcFunc := { params := [{ id := 9, ty := ty7 }], ret := ty9, body := SrcStmt.letCall 39 ty168 ix_core_mem_typed_slice_from_storage_of_mini_selfhost_SrcType [SrcExpr.field 9 0, SrcExpr.int 0x00000001#32] (SrcStmt.returnEval (SrcEff.eIndex 39 (SrcEff.ePure (SrcExpr.int 0x00000000#32)))) }
 
 end
 

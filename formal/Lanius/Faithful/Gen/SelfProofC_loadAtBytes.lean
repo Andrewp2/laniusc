@@ -110,11 +110,11 @@ theorem step_copy_bytes {prog : SrcProgram} {prims : Prims} {ix_copy_bytes ix_pl
   simp only [src_copy_bytes] at h
   faithful [Lanius.Mini.copyBytes]
 
-theorem step_encode_onto {prog : SrcProgram} {prims : Prims} {ix_encode_onto ix_plus ix_concat_of_u8 ix_unbox_of_mini_selfhost_List_mini_selfhost_Instr ix_Instr_size ix_Instr_encode : Nat} (fn : prog.funcs[ix_encode_onto]? = some (src_encode_onto ix_plus ix_concat_of_u8 ix_encode_onto ix_unbox_of_mini_selfhost_List_mini_selfhost_Instr ix_Instr_size ix_Instr_encode)) (np : prims.isPrim ix_encode_onto = false)
+theorem step_encode_onto {prog : SrcProgram} {prims : Prims} {ix_encode_onto ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_Instr ix_Instr_size ix_concat_of_u8 ix_Instr_encode : Nat} (fn : prog.funcs[ix_encode_onto]? = some (src_encode_onto ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_Instr ix_Instr_size ix_concat_of_u8 ix_encode_onto ix_Instr_encode)) (np : prims.isPrim ix_encode_onto = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
-    (ext_concat_of_u8 : Certified (∀ {n : Nat}, Stmt_concat_of_u8 prog prims ix_concat_of_u8 n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_Instr : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Instr prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Instr n))
     (ext_Instr_size : Certified (∀ {n : Nat}, Stmt_Instr_size prog prims ix_Instr_size n))
+    (ext_concat_of_u8 : Certified (∀ {n : Nat}, Stmt_concat_of_u8 prog prims ix_concat_of_u8 n))
     (ext_Instr_encode : Certified (∀ {n : Nat}, Stmt_Instr_encode prog prims ix_Instr_encode n)) {n : Nat}
     (ih_encode_onto : Certified (Stmt_encode_onto prog prims ix_encode_onto n)) :
     Stmt_encode_onto prog prims ix_encode_onto (n + 1) := by
@@ -145,7 +145,7 @@ theorem proof_frame_size {prog : SrcProgram} {prims : Prims} {ix_frame_size ix_p
   simp only [src_frame_size] at h
   faithful [Lanius.Mini.frameSize]
 
-theorem step_layout {prog : SrcProgram} {prims : Prims} {ix_layout ix_plus ix_empty_of_usize ix_cons_of_usize ix_Code_size ix_unbox_of_mini_selfhost_List_mini_selfhost_Code : Nat} (fn : prog.funcs[ix_layout]? = some (src_layout ix_plus ix_empty_of_usize ix_layout ix_cons_of_usize ix_Code_size ix_unbox_of_mini_selfhost_List_mini_selfhost_Code)) (np : prims.isPrim ix_layout = false)
+theorem step_layout {prog : SrcProgram} {prims : Prims} {ix_layout ix_plus ix_empty_of_usize ix_cons_of_usize ix_Code_size ix_unbox_of_mini_selfhost_List_mini_selfhost_Code : Nat} (fn : prog.funcs[ix_layout]? = some (src_layout ix_plus ix_empty_of_usize ix_cons_of_usize ix_Code_size ix_unbox_of_mini_selfhost_List_mini_selfhost_Code ix_layout)) (np : prims.isPrim ix_layout = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_empty_of_usize : Certified (∀ {n : Nat}, Stmt_empty_of_usize prog prims ix_empty_of_usize n))
     (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
@@ -158,7 +158,7 @@ theorem step_layout {prog : SrcProgram} {prims : Prims} {ix_layout ix_plus ix_em
   simp only [src_layout] at h
   faithful [Lanius.Mini.layout]
 
-theorem step_link_onto {prog : SrcProgram} {prims : Prims} {ix_link_onto ix_plus ix_Code_size ix_unbox_of_mini_selfhost_List_mini_selfhost_Code ix_concat_of_u8 ix_prologue ix_encode_onto : Nat} (fn : prog.funcs[ix_link_onto]? = some (src_link_onto ix_plus ix_link_onto ix_Code_size ix_unbox_of_mini_selfhost_List_mini_selfhost_Code ix_concat_of_u8 ix_prologue ix_encode_onto)) (np : prims.isPrim ix_link_onto = false)
+theorem step_link_onto {prog : SrcProgram} {prims : Prims} {ix_link_onto ix_plus ix_Code_size ix_unbox_of_mini_selfhost_List_mini_selfhost_Code ix_concat_of_u8 ix_prologue ix_encode_onto : Nat} (fn : prog.funcs[ix_link_onto]? = some (src_link_onto ix_plus ix_Code_size ix_unbox_of_mini_selfhost_List_mini_selfhost_Code ix_link_onto ix_concat_of_u8 ix_prologue ix_encode_onto)) (np : prims.isPrim ix_link_onto = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_Code_size : Certified (∀ {n : Nat}, Stmt_Code_size prog prims ix_Code_size n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_Code : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Code prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Code n))
