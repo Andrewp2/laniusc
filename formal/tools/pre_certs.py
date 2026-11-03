@@ -64,7 +64,7 @@ OVERRIDES = {
     'lit_prefixed': ['(∀ v, p0 = some v → v = 2 ∨ v = 8 ∨ v = 16)'],
     # floats (SelfPre/Values): a digit's value, the fraction's digit count k,
     # the exponent's value (flExpDigits stops past 99999), a power's exponent,
-    # a bit list's length, a high bit's position
+    # a bit list's value, a high bit's position
     'fl_nat_half': ['p0 ≤ 255'],
     'fl_of_nat': ['p0 ≤ 255'],
     'fl_push': ['p1 ≤ 57'],
@@ -80,9 +80,9 @@ OVERRIDES = {
     'fl_pow2': ['p0 ≤ 63'],
     # the formats flDecimal is called with: f32 and f64
     'fl_decimal': ['(p0 = 8 ∧ p1 = 23) ∨ (p0 = 11 ∧ p1 = 52)'],
-    'fl_decimal_at': ['(p0 = 8 ∧ p1 = 23) ∨ (p0 = 11 ∧ p1 = 52)'],
-    'fl_round': ['(p0 = 8 ∧ p1 = 23) ∨ (p0 = 11 ∧ p1 = 52)'],
-    'fl_to_nat': ['p0.length ≤ 64'],
+    'fl_decimal_at': ['(p0 = 8 ∧ p1 = 23) ∨ (p0 = 11 ∧ p1 = 52)', 'p5 < hb p2'],
+    'fl_round': ['(p0 = 8 ∧ p1 = 23) ∨ (p0 = 11 ∧ p1 = 52)', '0 < Lanius.Mini.flToNat p3'],
+    'fl_to_nat': ['Lanius.Mini.flToNat p0 < 18446744073709551616'],
     'fl_log2_up': ['(∀ i, p1 = some i → i + b ≤ K)'],
     'char_tail': ['p4 ≤ 191', '(p1 = 0 ∧ p2 < 16777216) ∨ (p1 = 1 ∧ p2 < 262144) ∨ (p1 = 2 ∧ p2 < 4096)'],
     'char_tail_at': ['p5 ≤ 191', '(p2 = 0 ∧ p3 < 16777216) ∨ (p2 = 1 ∧ p3 < 262144) ∨ (p2 = 2 ∧ p3 < 4096)'],
@@ -303,10 +303,14 @@ PRE_HAND = {
         (fun v hv => litBase_cases hv)
   · exact pre_wide_decimal n x2 0 b M h1 h2
 ''',
-    'fl_round': '''  rcases h3 with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;>
-    simp only [flPow2_eq, Nat.reducePow, Nat.reduceSub, Nat.reduceAdd] <;> pre_auto n, M
+    'fl_round': '''  have hq := flRound_q_lt x0 x1 x2 x3 h4
+    (by rcases h3 with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> simp only [flPow2_eq] <;> decide)
+  rcases h3 with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;>
+    simp only [flPow2_eq, Nat.reducePow, Nat.reduceSub, Nat.reduceAdd] at hq ⊢ <;> pre_auto n, M
 ''',
-    'fl_decimal_at': '''  rcases h2 with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;>
+    'fl_decimal_at': '''  have hpos := flTimes10_one_pos x4
+  have hone : Lanius.Mini.flToNat [true] = 1 := rfl
+  rcases h2 with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;>
     simp only [flPow2_eq, Nat.reducePow, Nat.reduceSub, Nat.reduceAdd] <;> pre_auto n, M
 ''',
     'fl_nat_half': '''  split
@@ -330,12 +334,9 @@ PRE_HAND = {
 ''',
     'fl_to_nat': '''  rcases x0 with _ | ⟨c, rest⟩
   · trivial
-  · simp only [List.length_cons] at h2
-    have hlt := flToNat_lt rest
-    have hp : 2 ^ rest.length ≤ 2 ^ 63 := Nat.pow_le_pow_right (by decide) (by omega)
-    have hc := flBit_le c
+  · rw [Lanius.Mini.flToNat] at h2
     refine ⟨pre_fl_to_nat rest b M (by simp only [hb_cons] at h0; omega) h1 (by omega), ?_, ?_⟩ <;>
-      simp only [Pre_times, Pre_plus, Nat.reducePow] at hp ⊢ <;> omega
+      simp only [Pre_times, Pre_plus, Nat.reducePow] <;> omega
 ''',
     'fl_log2_up': '''  rcases x1 with _ | i
   · trivial
