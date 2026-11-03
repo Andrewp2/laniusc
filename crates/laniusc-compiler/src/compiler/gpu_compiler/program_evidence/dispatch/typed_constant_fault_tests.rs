@@ -160,23 +160,27 @@ pub(super) fn inject_pending_substitution_fault(gpu: &GpuProgramEvidence, packet
         let edges = table_words(gpu, packet, EDGES, progress.reserved[EDGES], 2)?;
         let literal = fault.literal.expect("binding ABI fixture retains copied literal bits");
         let expected_node = [6, literal[0], literal[1], literal[2], 0, 0, 0, 0];
+        // The binding folds the restored chain: the u8 value, the u32 count
+        // conversion and the two u8 projections, one literal per level.
         let binding = bindings.chunks_exact(8).skip(binding_span.first as usize)
-            .take(binding_span.count as usize).find(|row| row[5] == 2 && row[2] == ATOM);
+            .take(binding_span.count as usize).find(|row| row[5] == 4 && row[2] == ATOM);
         let Some(binding) = binding else { return Ok(()); };
         let first = binding[4];
         ensure!(binding[3] == first && binding[6..8] == [0, 0], "unexpected folded Binding8 shape");
-        for row in first..first + 2 {
-            ensure!(nodes[row as usize * 8..row as usize * 8 + 8] == expected_node,
+        for row in first..first + 4 {
+            let node = &nodes[row as usize * 8..row as usize * 8 + 8];
+            ensure!(node == expected_node || (row == first + 1 && node[0] == 6 && node[1] != literal[0]
+                && node[2..] == expected_node[2..]),
                 "binding fixture did not emit the copied literal at every target");
         }
         let reachable = reachable_nodes([binding[2], binding[3]], &nodes, &edges);
-        let owned_reachable = reachable.iter().filter(|&&row| row >= first && row - first < 2).count() as u32;
-        ensure!(owned_reachable == 1 && !reachable.contains(&(first + 1)),
-            "binding fixture must own an unreachable inner folded target");
-        observation.allocated_nodes = 2;
+        let owned_reachable = reachable.iter().filter(|&&row| row >= first && row - first < 4).count() as u32;
+        ensure!(owned_reachable == 1 && reachable.contains(&first),
+            "binding fixture must own unreachable inner folded targets");
+        observation.allocated_nodes = 4;
         observation.reachable_nodes = owned_reachable;
         if fault.kind == FaultKind::CorruptBindingFoldedChild {
-            let child = first + 1;
+            let child = first + 2;
             let mut corrupted = expected_node.to_vec();
             corrupted[2] ^= 1; // Shape/scalar stay intact; replay must compare these bits.
             observation.writes.push(ArenaWrite {
@@ -276,16 +280,24 @@ pub(super) fn seed_binding_projection_recipe(gpu: &GpuProgramEvidence, packet: &
     let roots = table_words(gpu, packet, ROOTS, progress.admitted[ROOTS], 2)?;
     let nodes = table_words(gpu, packet, NODES, progress.admitted[NODES], 8)?;
     let expected_node = [6, literal[0], literal[1], literal[2], 0, 0, 0, 0];
+    // The checked array count is the length conversion of `N: u8` to u32
+    // (a count projection), so the folded preorder is the array, the u32
+    // count literal and the three u8 literals of the depth-2 environment.
     for request in requests.chunks_exact(8) {
         if request[0] < work.first || request[0] - work.first >= work.count ||
-            request[1] != 1 || request[4] != 4 || request[7] != 1 { continue; }
+            request[1] != 1 || request[4] != 5 || request[7] != 1 { continue; }
         let base = request[3];
         ensure!(roots[request[2] as usize * 2..request[2] as usize * 2 + 2] == [3, base],
             "binding ABI fixture root must own one array preorder");
         let mut array = nodes[base as usize * 8..base as usize * 8 + 8].to_vec();
         ensure!(array[0..4] == [2, 0, 0, 0] && array[4] == 1 &&
             array[6..8] == [ATOM, base + 1], "binding ABI fixture must have a folded array count");
-        for row in base + 1..base + 4 {
+        let count = &nodes[(base + 1) as usize * 8..(base + 1) as usize * 8 + 8];
+        let count_scalar = count[1];
+        ensure!(count_scalar != literal[0] &&
+            count == [6, count_scalar, literal[1], literal[2], 0, 0, 0, 0],
+            "binding ABI fixture count must be the copied literal converted to the length scalar");
+        for row in base + 2..base + 5 {
             ensure!(nodes[row as usize * 8..row as usize * 8 + 8] == expected_node,
                 "binding ABI fixture requires three byte-identical copied literal nodes");
         }
@@ -293,15 +305,17 @@ pub(super) fn seed_binding_projection_recipe(gpu: &GpuProgramEvidence, packet: &
         let writes = [
             ArenaWrite { first_word: row_word(packet, NODES, base, 8)?, words: array },
             ArenaWrite { first_word: row_word(packet, NODES, base + 1, 8)?,
-                words: vec![5, literal[0], 0, 0, PROJECTION, base + 2, 0, 0] },
+                words: vec![5, count_scalar, 0, 0, PROJECTION, base + 2, 0, 0] },
             ArenaWrite { first_word: row_word(packet, NODES, base + 2, 8)?,
-                words: vec![5, literal[0], 0, 0, ATOM, base + 3, 0, 0] },
+                words: vec![5, literal[0], 0, 0, PROJECTION, base + 3, 0, 0] },
+            ArenaWrite { first_word: row_word(packet, NODES, base + 3, 8)?,
+                words: vec![5, literal[0], 0, 0, ATOM, base + 4, 0, 0] },
         ];
         upload_fault(gpu, packet, &writes)?;
         fault.binding_recipe_seeded = true;
         return Ok(());
     }
-    anyhow::bail!("binding ABI fixture did not reach its exact four-row normalized array shape")
+    anyhow::bail!("binding ABI fixture did not reach its exact five-row normalized array shape")
 }
 
 fn facts(compiler: &GpuCompiler<'_>, key: [u32; 2], source: &str) -> OriginalUnitFacts {
@@ -562,7 +576,7 @@ fn gpu_binding_abi_replays_unreachable_folded_allocation_before_publication() {
     arm(&control, FaultKind::ObserveBindingFold, Some(literal));
     assert!(!gpu.check(&mut control).expect("valid admitted projection ABI fixture").is_empty());
     let valid = observation(&control);
-    assert_eq!((valid.allocated_nodes, valid.reachable_nodes), (2, 1));
+    assert_eq!((valid.allocated_nodes, valid.reachable_nodes), (4, 1));
     assert_eq!(control.completed_serial, 1);
 
     let mut packet = gpu.new_packet().unwrap(); append_originals(&mut packet);
@@ -570,7 +584,7 @@ fn gpu_binding_abi_replays_unreachable_folded_allocation_before_publication() {
     arm(&packet, FaultKind::CorruptBindingFoldedChild, Some(literal));
     let error = gpu.check(&mut packet).expect_err("stage 54 must replay the unreachable owned binding row");
     let corrupted = observation(&packet);
-    assert_eq!((corrupted.allocated_nodes, corrupted.reachable_nodes), (2, 1));
+    assert_eq!((corrupted.allocated_nodes, corrupted.reachable_nodes), (4, 1));
     assert_failed_prefixes(&gpu, &packet, &error, &corrupted);
     assert!(packet.packet_mut().is_err());
 }
