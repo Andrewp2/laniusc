@@ -28,3 +28,39 @@
   - Plan: hb_gen sum mode for `sz`; a FrontEndOutputSize statement (`sz p` bounded, weights <= 2 ^ 22 in
     every type of p); a pre_certs mode for the size lemmas; V2's reduction from them plus the M-form
     lemmas run at a K small enough for the sizes. Not started.
+- 11-03 (leafB), step 1 done: `tools/hb_gen.py --sum` generates `SelfPre/SZ.lean` (the total size `sz`,
+  simp set `sz_simp` in `SelfPre/SZAttr.lean`; builds in 10 s). Without `--sum` HB.lean regenerates
+  byte for byte the same. Command (from formal/): `python3 -I tools/hb_gen.py --sum
+  Lanius/Faithful/SelfPre/SZ.lean Lanius/Mini/Compiler/Types.lean Lanius/Mini/Frontend/Types.lean`.
+- 11-03 (leafB), step 2 stopped: `sz p <= A * (input words) + B` for the whole program is false, so
+  FrontEndOutputSize was not written in that form.
+  - Monomorphization copies a body once per instance, and `mono_loop` allows up to `files_fuel`
+    (about `4 * (tokens + prods)`) instances. A source of size O(d + m) with g_i<T> calling
+    g_{i+1}<A<T>> and g_{i+1}<B<T>> (A, B one-field structs, so weights stay about d) has 2^d instances
+    of g_d, each a copy of g_d's body of size m. With d = 30 and m near 2^30 that is about 2^60 nodes
+    from fewer than 2^31 words. The output is quadratic in the input, not linear.
+  - Lowered types are shared from the type table (`closeTy`), so one use of a type of weight 2^22 adds
+    up to 2^22 nodes to `sz p` at cost 1. `sz p <= Cost_front_end_words` is false for the same reason;
+    `sz p <= 2 ^ 23 * Cost_front_end_words` is plausible but gives `sz p <= 2 ^ 84` under the root budget.
+  - So V2 (at any budget, `hb p <= 2 ^ 48`) is probably false: such a p (height about 2^30) compiles to
+    more than 2^64 bytes, and `link` sums `linkedSize` and lays out offsets before the `image_limit`
+    check. PreCompileWords bounds the budget (front-end cost + b <= 2^61), and V2 drops that bound.
+  - A sum measure has no generic post lemma `sz (F x) <= sz x + Cost_F`: sharing breaks it (a function
+    that conses a parameter n times has size n * sz x at cost n). Heights (`hb`) and max-measures are
+    not affected by sharing.
+- 11-03 (leafB), what is true and is enough, by kind of number (proposal; not written as statements yet):
+  - Type numbers (`SrcType.size`, `fieldOffset`, `k * size` in pickElement, `max` of sizes): at most the
+    largest type weight in p. That is a max-measure `tw` (hb_gen max mode with SrcType counted as its
+    weight), which sharing does not affect. The front-end fact is `tw p <= weightLimit`.
+  - Per-function numbers (locals, temps, slots, frame sizes, a function's codeSize,
+    `14 * args.length + ...`): at most about `2 ^ 22 * sz f` for the function f being compiled. The
+    front-end fact is per function: `forall f in p.funcs, sz f <= A * W.length + B`. A body is read once
+    per instance from one declaration, with types of weight <= 2^22 put in, so A is about 2^26. Each
+    such bound is below 2^60.
+  - Whole-program numbers (`linkedSize`, layout entries, `link_onto` offsets): at most `#funcs * max`
+    with up to 2^33 functions, so neither the height nor a cost-free bound fits. There are two ways:
+    (a) a budget-relative bound, which needs size-post lemmas for `compile_funcs` (its codes are built
+    fresh) on top of PreCompileWords' budget; or (b) a small compiler change: check `image_limit` as
+    `layout` and `linked_size` add up (or reject a Code larger than `image_limit` in `compile_func`),
+    so every whole-program number stays below about 2^31 with no budget.
+  - The front end's output has `statics = []` (`build_collected`), so statics adds nothing.
