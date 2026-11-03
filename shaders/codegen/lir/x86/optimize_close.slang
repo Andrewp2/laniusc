@@ -206,7 +206,28 @@ void admit_dependencies(uint row, uint total)
         // fuses it into the branch (COMPARE_BRANCH_FALSE: cmp; jcc) instead of
         // materializing a Boolean with setcc and testing it. The branch then
         // reads the comparison's operands itself.
+        // Likewise a Boolean `!v` read only by this branch: the branch tests v
+        // (or fuses v's comparison with the predicate negated) and jumps on
+        // the other sense, so the NOT stays dead. Its last use still covers
+        // the branch in case another reader makes it live, and scatter then
+        // tests the NOT as before.
         uint condition = operands.a;
+        if (opt_ir_node_is_executable(condition, total) &&
+            function_for_node(condition) == function_id &&
+            opt_ir_op(opt_ir_core[condition]) == SEMANTIC_LIR_OP_LOGICAL_NOT &&
+            opt_ir_core[condition].type_id == 2u &&
+            opt_ir_operands[condition].a < total &&
+            (opt_ir_core[opt_ir_operands[condition].a].type_id == 2u ||
+             opt_ir_op(opt_ir_core[opt_ir_operands[condition].a]) ==
+                 SEMANTIC_LIR_OP_COMPARE))
+        {
+            uint ignored;
+            InterlockedMax(x86_last_use_by_semantic[condition], position, ignored);
+            condition = opt_ir_operands[condition].a;
+            // v may be a comparison another row reads (`a || b` stores it);
+            // scatter then tests v's value here.
+            InterlockedMax(x86_last_use_by_semantic[condition], position, ignored);
+        }
         if (fusible_comparison(condition, total, function_id))
         {
             OptIrNodeOperands comparison = opt_ir_operands[condition];

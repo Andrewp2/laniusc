@@ -900,8 +900,10 @@ void plan_ordinary(X86PlanInput input)
         if (operands.a == X86_PLAN_INVALID) plan_jump(1u, 0xe9u, X86_RESOLVE_ROW, operands.b);
         else
         {
+            // je when the value is false; jne for a folded `!` (scatter).
             plan_op(X86_OP_TEST_LOCATION32, locations.a, 0u, 0u);
-            plan_jump(2u, 0x840fu, X86_RESOLVE_ROW, operands.b);
+            plan_jump(2u, core.local_ordinal == 1u ? 0x850fu : 0x840fu,
+                X86_RESOLVE_ROW, operands.b);
         }
     }
 }

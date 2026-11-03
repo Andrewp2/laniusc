@@ -2576,8 +2576,9 @@ fn x86_if_converts_boolean_value_conditions() {
 fn small(v: i32) -> bool { return v < 10; }
 fn by_call(v: i32) -> i32 { let r: i32 = 0; if (small(v)) { r = v + 1; } else { r = v - 1; } return r; }
 fn negated(v: i32) -> i32 { let r: i32 = v; if (!small(v)) { r = r + 5; } return r; }
+fn not_less(a: i32, b: i32) -> i32 { let r: i32 = a; if (!(a < b)) { r = b; } return r; }
 fn main() -> i32 {
-    return by_call(3) + by_call(30) + negated(3) + negated(30);
+    return by_call(3) + by_call(30) + negated(3) + negated(30) + not_less(3, 9) + not_less(9, 3);
 }
 "#,
     );
@@ -2585,12 +2586,50 @@ fn main() -> i32 {
     assert_x86_64_elf_header(&bytes);
     assert!(contains_pair(&bytes, [0x0f, 0x45]), "a Boolean condition should select with cmovne");
     assert!(contains_pair(&bytes, [0x0f, 0x44]), "a negated Boolean condition should select with cmove");
+    assert!(contains_pair(&bytes, [0x0f, 0x4d]), "`!(a < b)` should select with cmovge");
     #[cfg(all(unix, target_arch = "x86_64"))]
     assert_x86_exit_code(
         "x86 boolean value selects",
         "x86_boolean_value_selects",
         &bytes,
-        71,
+        77,
+    );
+}
+
+#[test]
+fn x86_short_circuit_conditions_stay_branches() {
+    let bytes = compile_source(
+        "x86 short-circuit branches",
+        r#"
+fn flag(v: i32) -> bool { return (v & 4) != 0; }
+fn outside(a: i32, b: i32) -> i32 { if (a < 0 || b <= a) { return 1; } return 2; }
+fn inside(a: i32, b: i32) -> i32 { if (a >= 0 && a < b) { return 3; } return 4; }
+fn three(a: i32, b: i32) -> i32 { if (a < 0 || b < 0 || a > b) { return 5; } return 6; }
+fn count(a: i32) -> i32 { let n: i32 = 0; while (a < 3 || flag(a)) { a += 1; n += 1; } return n; }
+fn unflagged(v: i32) -> i32 { if (!flag(v)) { return 10; } return 20; }
+fn main() -> i32 {
+    let s: i32 = outside(0 - 1, 5) + outside(7, 5) + outside(2, 5);
+    s += inside(2, 5) + inside(0 - 1, 5) + inside(6, 5);
+    s += three(1, 2) + three(0 - 1, 2) + three(3, 2) + count(0) + count(4);
+    return s + unflagged(3) + unflagged(4);
+}
+"#,
+    );
+
+    assert_x86_64_elf_header(&bytes);
+    assert!(
+        // SELECT_STORE emits a 32-bit register CMOV (0f 4x, ModRM >= c0);
+        // the runtime's own are REX.W.
+        !bytes.windows(4).any(|w| w[0] & 0xf8 != 0x48 && w[1] == 0x0f &&
+            (0x40..=0x4f).contains(&w[2]) && w[3] >= 0xc0),
+        "an && / || that only steers a branch should not compute its value with a CMOV"
+    );
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 short-circuit branches",
+        "x86_short_circuit_branches",
+        &bytes,
+        68,
     );
 }
 

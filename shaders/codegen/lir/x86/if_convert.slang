@@ -107,6 +107,45 @@ bool scalar_return(uint row, uint total, out uint value)
         (type_id == 2u || type_id == 3u || type_id == 4u || type_id == 6u);
 }
 
+// Whether `value`, produced just before `position`, only steers control
+// flow: it is the condition of the branch at `position`, directly, through
+// a `!`, or through an enclosing `&&`/`||` that stores it in its temporary
+// and tests it next (`t = v; !v` or `t = v; t`).
+bool steers_branch(uint value, uint position, uint total, uint function_id)
+{
+    for (uint step = 0u; step < 8u; ++step)
+    {
+        if (position >= total) return false;
+        uint row = semantic_schedule_order[position];
+        if (!same_function(row, total, function_id)) return false;
+        uint op = opt_ir_op(opt_ir_core[row]);
+        OptIrNodeOperands operands = opt_ir_operands[row];
+        if ((op == SEMANTIC_LIR_OP_IF_BEGIN || op == SEMANTIC_LIR_OP_BRANCH_IF) &&
+            operands.a == value)
+            return true;
+        if (op == SEMANTIC_LIR_OP_LOGICAL_NOT && operands.a == value)
+        {
+            value = row;
+            position += 1u;
+            continue;
+        }
+        if (op != SEMANTIC_LIR_OP_VALUE_SET || operands.b != value ||
+            position + 1u >= total)
+            return false;
+        uint next = semantic_schedule_order[position + 1u];
+        if (!same_function(next, total, function_id)) return false;
+        uint next_op = opt_ir_op(opt_ir_core[next]);
+        if (!((next_op == SEMANTIC_LIR_OP_LOGICAL_NOT &&
+               opt_ir_operands[next].a == value) ||
+              (next_op == SEMANTIC_LIR_OP_VALUE_GET &&
+               opt_ir_operands[next].a == operands.a)))
+            return false;
+        value = next;
+        position += 2u;
+    }
+    return false;
+}
+
 bool memory_read(uint row, uint total)
 {
     if (row >= total) return false;
@@ -229,7 +268,27 @@ void main(uint3 dtid: SV_DispatchThreadID)
         opt_ir_op(opt_ir_core[branch.b]) !=
             (else_arm ? SEMANTIC_LIR_OP_ELSE : SEMANTIC_LIR_OP_CONTROL_END))
         return;
-    OptIrNodeCore condition_core = opt_ir_core[branch.a];
+    // A `!v` read only by this branch (optimize_close leaves it dead, for the
+    // branch to test v on the other sense) folds into the select: v is then
+    // a live Boolean value, or a comparison only the NOT read.
+    uint condition = branch.a;
+    bool negated = false;
+    if (opt_ir_op(opt_ir_core[branch.a]) == SEMANTIC_LIR_OP_LOGICAL_NOT &&
+        opt_ir_core[branch.a].type_id == 2u &&
+        x86_last_use_by_semantic[branch.a] == position)
+    {
+        uint operand = opt_ir_operands[branch.a].a;
+        if (same_function(operand, total, function_id) &&
+            (opt_ir_op(opt_ir_core[operand]) == SEMANTIC_LIR_OP_COMPARE
+                ? x86_live_by_semantic[operand] == 0u
+                : opt_ir_core[operand].type_id == 2u &&
+                  x86_live_by_semantic[operand] != 0u))
+        {
+            condition = operand;
+            negated = true;
+        }
+    }
+    OptIrNodeCore condition_core = opt_ir_core[condition];
     bool comparison_condition =
         opt_ir_op(condition_core) == SEMANTIC_LIR_OP_COMPARE;
     if (comparison_condition)
@@ -240,10 +299,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
               compared == 6u) ||
             // optimize_close leaves a comparison read only by its branch dead
             // (fused into COMPARE_BRANCH_FALSE); a live one must end here.
-            (x86_live_by_semantic[branch.a] != 0u &&
-             x86_last_use_by_semantic[branch.a] != position))
+            (x86_live_by_semantic[condition] != 0u &&
+             x86_last_use_by_semantic[condition] != position))
             return;
-        OptIrNodeOperands comparison = opt_ir_operands[branch.a];
+        OptIrNodeOperands comparison = opt_ir_operands[condition];
         uint left_constant;
         uint right_constant;
         if (direct_integer_constant(comparison.a, total, left_constant) &&
@@ -251,24 +310,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
             return;
     }
     else if (condition_core.type_id != 2u ||
-             x86_live_by_semantic[branch.a] == 0u)
+             x86_live_by_semantic[condition] == 0u)
         return;
-    uint condition = branch.a;
-    bool negated = false;
-    if (!comparison_condition &&
-        opt_ir_op(condition_core) == SEMANTIC_LIR_OP_LOGICAL_NOT &&
-        x86_last_use_by_semantic[branch.a] == position)
-    {
-        uint operand = opt_ir_operands[branch.a].a;
-        if (same_function(operand, total, function_id) &&
-            opt_ir_op(opt_ir_core[operand]) != SEMANTIC_LIR_OP_COMPARE &&
-            opt_ir_core[operand].type_id == 2u &&
-            x86_live_by_semantic[operand] != 0u)
-        {
-            condition = operand;
-            negated = true;
-        }
-    }
 
     uint else_position = else_arm
         ? x86_position_by_semantic[branch.b] : INVALID;
@@ -305,8 +348,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         // core runs past the load, as a cmov it waits for it. Return
         // selects take only comparisons of values already in registers.
         if (!comparison_condition ||
-            memory_read(opt_ir_operands[branch.a].a, total) ||
-            memory_read(opt_ir_operands[branch.a].b, total))
+            memory_read(opt_ir_operands[condition].a, total) ||
+            memory_read(opt_ir_operands[condition].b, total))
             return;
         uint false_position = end_position - 1u;
         if (!else_arm)
@@ -333,6 +376,22 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         if (!scalar_assignment(true_store, total, true_declaration, true_value))
             return;
+        // `a && b` and `a || b` lower to `t = a; if (t) / if (!a) { t = b; }`
+        // and one read of t after the CONTROL_END. When that read is t's
+        // last and only steers a branch, a select would compute t just to
+        // test it: keep the branch.
+        uint read_position = end_position + 1u;
+        if (read_position < total)
+        {
+            uint read = semantic_schedule_order[read_position];
+            if (same_function(read, total, function_id) &&
+                opt_ir_op(opt_ir_core[read]) == SEMANTIC_LIR_OP_VALUE_GET &&
+                opt_ir_operands[read].a == true_declaration &&
+                x86_decl_analysis_by_token[true_declaration].last_read ==
+                    read_position + 1u &&
+                steers_branch(read, read_position + 1u, total, function_id))
+                return;
+        }
         if (else_arm)
         {
             uint false_store_position = end_position - 1u;
@@ -368,16 +427,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
         retain_value(false_value, end_position, total, function_id);
         return;
     }
-    OptIrNodeOperands comparison = opt_ir_operands[branch.a];
+    OptIrNodeOperands comparison = opt_ir_operands[condition];
     uint immediate;
     bool left_immediate = direct_integer_constant(
         comparison.a, total, immediate) &&
         x86_integer_immediate_operation(SEMANTIC_LIR_OP_COMPARE,
-            opt_ir_core[branch.a].type_id, immediate);
+            opt_ir_core[condition].type_id, immediate);
     bool right_immediate = direct_integer_constant(
         comparison.b, total, immediate) &&
         x86_integer_immediate_operation(SEMANTIC_LIR_OP_COMPARE,
-            opt_ir_core[branch.a].type_id, immediate);
+            opt_ir_core[condition].type_id, immediate);
     if (left_immediate)
         retain_value(comparison.b, end_position, total, function_id);
     else
