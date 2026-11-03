@@ -2431,6 +2431,16 @@ Decided 11-02 (F14, the size measure for the roots' preconditions): the
   parallel but checks them in the kernel one at a time, and a module waits
   for all of each module it imports. The chain from Tactic to SelfP02 went
   from over 5 minutes (it hit the 290 s limit) to 101 s.
+- Open statements (11-03). F14's remaining work is a graph under
+  `Lanius/Open/F14` (OPEN_STATEMENTS.md): the root `SelfCompilerTotalReason`
+  is `selfCompiler_total_reason_of_bounds` without `CompileBounded`, for a
+  heap limit below `2 ^ 61` instead of `2 ^ 62`. The M-form lemmas need
+  `M + b <= 2 ^ 62` with `M` at least the input's height (about `2 ^ 31`
+  words), so the threshold `T` the wrapped compile's cost is compared with is
+  `2 ^ 61`, and the limit must be below `T`; `2 ^ 61` bytes is far past any
+  heap. The compile-side leaves (`PreCompileSource`, `PreBinaryWords`) hold
+  for the front end's output only: its weight check bounds the types by
+  `2 ^ 22`, which an arbitrary `SrcProgram` need not satisfy.
 
 ## One-word scalar views (decided 11-01, F11b)
 
