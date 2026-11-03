@@ -43,6 +43,7 @@ inductive LowerR (decls : Decls) (table : List Inst) : Ty → SrcType → Prop
   | ptr : LowerR decls table .tyPtr .ptr
   | isize : LowerR decls table .tyIsize .isize
   | char : LowerR decls table .tyChar .char
+  | str : LowerR decls table .tyStr .str
   | float {ft : FloatTy} : LowerR decls table (.tyFloat ft) (.float ft)
   | sint {k : UintTy} : LowerR decls table (.tySint k) (.sint k)
   | slice {e : Ty} {s : SrcType} : LowerR decls table e s → LowerR decls table (.tySlice e) (.slice s)
@@ -74,6 +75,7 @@ inductive TyInsts (decls : Decls) : Ty → List Inst → Prop
   | ptr : TyInsts decls .tyPtr []
   | isize : TyInsts decls .tyIsize []
   | char : TyInsts decls .tyChar []
+  | str : TyInsts decls .tyStr []
   | float {ft : FloatTy} : TyInsts decls (.tyFloat ft) []
   | sint {k : UintTy} : TyInsts decls (.tySint k) []
   | slice {e : Ty} {xs : List Inst} : TyInsts decls e xs → TyInsts decls (.tySlice e) xs
@@ -109,6 +111,7 @@ theorem sameTy_iff : ∀ (a b : Ty), sameTy a b = true ↔ a = b
   | .tyPtr, b => by cases b <;> simp [sameTy]
   | .tyIsize, b => by cases b <;> simp [sameTy]
   | .tyChar, b => by cases b <;> simp [sameTy]
+  | .tyStr, b => by cases b <;> simp [sameTy]
   | .tyFloat f, b => by cases b <;> simp [sameTy, sameFloat, floatCode_inj]
   | .tySlice x, b => by cases b <;> simp [sameTy, sameTy_iff x]
   | .tyArray x n, b => by cases b <;> simp [sameTy, sameTy_iff x, and_comm]
@@ -211,6 +214,7 @@ theorem lowerSound : ∀ fuel, LowerSound fuel
       | tyPtr => cases h; exact .ptr
       | tyIsize => cases h; exact .isize
       | tyChar => cases h; exact .char
+      | tyStr => cases h; exact .str
       | tyFloat ft => cases h; exact .float
       | tySint k => cases h; exact .sint
       | tySlice e =>
@@ -367,6 +371,7 @@ theorem instsSound : ∀ fuel, InstsSound fuel
       | tyPtr => cases h; exact .ptr
       | tyIsize => cases h; exact .isize
       | tyChar => cases h; exact .char
+      | tyStr => cases h; exact .str
       | tyFloat ft => cases h; exact .float
       | tySint k => cases h; exact .sint
       | tySlice e => exact .slice (ty_ih h)

@@ -347,7 +347,7 @@ def resolve(mods, module, t, subst):
     t = norm(t)
     if t in subst:
         return subst[t]
-    if t in SCALARS or t in ('unit', '!'):
+    if t in SCALARS or t in ('unit', '!', 'str'):
         return t
     m = re.match(r'^\[\s*([^;]+?)\s*\]$', t)
     if m:
@@ -551,6 +551,12 @@ def targets(mods, wanted):
             t.why = 'type ' + next(orig for (p, ty), (_, orig) in zip(params, fn['params']) if not argument(ty))
         elif content_words(params) < 1:
             t.why = 'more than six argument words'
+        elif sum(ty == 'str' for _, ty in params) > STR_ARGS:
+            t.why = f'more than {STR_ARGS} str arguments'
+        elif any(ty == 'str' for _, ty in params) and (t.trait or t.module.startswith(('std::fs', 'std::file'))):
+            # a file path stays untested until the file externs are compared
+            # on their effects (F8)
+            t.why = 'type str'
         else:
             t.params, t.ret = params, ret
     return out
@@ -558,7 +564,9 @@ def targets(mods, wanted):
 
 def arg_words(ty):
     """How many wrapper parameters an argument of the type takes (a slice or
-    view: its shape word, its contents' words aside)."""
+    view: its shape word, its contents' words aside; a str: its selector)."""
+    if ty == 'str':
+        return 1
     if ty.startswith('Option<'):
         return 2
     if sliced_type(ty):
@@ -594,7 +602,16 @@ def sliced_type(ty):
 
 
 def argument(ty):
-    return testable(ty) or sliced_type(ty)
+    return testable(ty) or sliced_type(ty) or ty == 'str'
+
+
+# A str argument is one of these literals, picked by an i32 selector word
+# (a{k}t): the front end reads a string literal only as a call's argument, so
+# a helper (oracle_str_call) calls the target with each literal in an arm of
+# its own. Printable ASCII without quote or backslash, as the front end reads.
+STR_TEXTS = ('', 'hello', '42', '-17', 'Hello, World! 0123456789 ~{}[]=+_:/.')
+# At most this many str arguments (the helper has one arm per combination).
+STR_ARGS = 2
 
 
 def content_words(params):
@@ -695,6 +712,9 @@ def gen_call(rng, p, handles, sleeps):
     words = content_words(t.params)
     out = []
     for name, ty in p['wparams']:
+        if re.match(r'^a\d+t$', name):
+            out.append(rng.randrange(len(STR_TEXTS)))
+            continue
         m = re.match(r'^a(\d+)(m|c(\d+))$', name)
         if m and sliced_type(t.params[int(m.group(1))][1]):
             if m.group(2) == 'm':
@@ -828,6 +848,44 @@ def all_leaves(ty):
     return [ty]
 
 
+def arg_type_text(ty):
+    """The type of a wrapper's argument as it passes it on."""
+    if sliced_type(ty):
+        elem = ty.split(':')[1]
+        return f'core::slice::View<{elem}>' if ty.startswith('view:') else f'[{elem}]'
+    if ty.startswith('Option<'):
+        return f'core::option::Option<{ty[7:-1]}>'
+    return type_text(ty) if ty.startswith('struct:') else ty
+
+
+def str_helper(t, ret, targs, args):
+    """oracle_str_call: the target called with STR_TEXTS[a{k}t] for each str
+    argument k (the last literal for a selector out of range), each other
+    argument passed on."""
+    import itertools
+    strs = [k for k, (_, ty) in enumerate(t.params) if ty == 'str']
+    sig = ', '.join(f'{a}: {"i32" if ty == "str" else arg_type_text(ty)}' for a, (_, ty) in zip(args, t.params))
+    rtext = '' if t.ret == 'unit' else f' -> {ret}'
+    def call(combo):
+        pick = dict(zip(strs, combo))
+        return (f'{t.module}::{t.fn["name"]}{targs}(' +
+                ', '.join(f'"{STR_TEXTS[pick[k]]}"' if k in pick else a for k, a in enumerate(args)) + ')')
+    def stop(combo):
+        return [f'{call(combo)};', 'return;'] if t.ret == 'unit' else [f'return {call(combo)};']
+    out = [f'fn oracle_str_call({sig}){rtext} {{']
+    combos = list(itertools.product(range(len(STR_TEXTS)), repeat=len(strs)))
+    for combo in combos[:-1]:
+        body, pad = stop(combo), '    '
+        lines = []
+        for depth, (k, i) in enumerate(zip(strs, combo)):
+            lines.append(pad * (depth + 1) + f'if (a{k}t == {i}) {{')
+        lines += [pad * (len(strs) + 1) + b for b in body]
+        lines += [pad * (depth + 1) + '}' for depth in reversed(range(len(strs)))]
+        out += lines
+    out += ['    ' + b for b in stop(combos[-1])] + ['}', '']
+    return out
+
+
 def wrapper_text(mods, t, part):
     """The first file of a target's program, and the wrapper's scalar parameter types."""
     fn = t.fn
@@ -867,6 +925,9 @@ def wrapper_text(mods, t, part):
             wparams += [(n, lty) for n, (_, lty) in zip(names, leaves(ty))]
             setup.append(f'    let s{k}: {ty} = [{", ".join(names)}];')
             args.append(f's{k}')
+        elif ty == 'str':
+            wparams.append((f'a{k}t', 'i32'))
+            args.append(f'a{k}t')
         else:
             wparams.append((f'a{k}', ty))
             args.append(f'a{k}')
@@ -898,6 +959,9 @@ def wrapper_text(mods, t, part):
     else:
         targs = f'<{t.targs or ", ".join("i32" for _ in fn["generics"])}>' if fn['generics'] else ''
         call = f'{t.module}::{fn["name"]}{targs}({", ".join(args)})'
+        if any(ty == 'str' for _, ty in t.params):
+            lines += str_helper(t, ret, targs, args)
+            call = f'oracle_str_call({", ".join(args)})'
     sig = ', '.join(f'{p}: {ty}' for p, ty in wparams)
     if re.match(r'^s\d+$', part):
         # The contents of slice argument k after the call.
@@ -1179,16 +1243,21 @@ class Native(oracle.Native):
         again, where writing all of a large heap faults in every page."""
         self.heap.madvise(mmap.MADV_DONTNEED)
 
-    def load(self, entries, image, arity):
+    def load(self, entries, image, arity, statics=b''):
         self.code[0:len(image)] = image
         at = len(image)
         stub = self.stub_head()
         for k in range(arity):
             stub += ARG_STORES[k] + bytes([(256 - (8 * k + 24)) & 0xff])
+        # r8 is the static bytes' address, as the ELF's startup sets it (after
+        # the arguments are stored: r8 is the fifth); they follow the stub.
+        tail = 10 + 5 + len(self.STUB_TAIL)
+        stub += bytes([0x49, 0xB8]) + (self.base + at + len(stub) + tail).to_bytes(8, 'little')
         rel = entries[0] - (at + len(stub) + 5)
         stub += b'\xe8' + (rel & 0xffffffff).to_bytes(4, 'little')
         stub += self.STUB_TAIL
         self.code[at:at + len(stub)] = stub
+        self.code[at + len(stub):at + len(stub) + len(statics)] = statics
         self.fn = ctypes.CFUNCTYPE(ctypes.c_uint64, *([ctypes.c_uint64] * arity))(self.base + at)
 
 
@@ -1704,9 +1773,10 @@ def main():
         p['status'] = status[k].split(' ')[0]
         if p['status'] != 'image':
             continue
-        entries_s, image_s = re.match(r'image \[(.*?)\] \[(.*?)\]$', status[k]).groups()
+        entries_s, image_s, statics_s = re.match(r'image \[(.*?)\] \[(.*?)\](?: statics \[(.*?)\])?$',
+                                                 status[k]).groups()
         native.load([int(x) for x in entries_s.split(',')], bytes(int(x) for x in image_s.split(',')),
-                    len(p['wparams']))
+                    len(p['wparams']), bytes(int(x) for x in statics_s.split(',')) if statics_s else b'')
         types = [ty for _, ty in p['wparams']]
         # A stdio handle is 1 or 2: the verified compiler's programs (and
         # Core's world) have no other file open, where laniusc's process has

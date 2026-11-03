@@ -30,6 +30,68 @@ def VariantsNodup (decls : Decls) : Prop :=
 /-- Close a goal whose hypotheses give one node two different productions. -/
 macro "eff_clash" : tactic => `(tactic| (exfalso; prods_clash [ChainForm, MethodForm, levelProds]))
 
+/-! ## String literals: no expression reads one -/
+
+theorem exprR_noString {env : FrontEnv} {scope : List Local} {c : CTree} {e : SrcExpr}
+    (p : nodeProd c = pString) (h : ExprR env scope c e) : False := by
+  cases h <;> expr_clash
+
+theorem peel_noExprString : ∀ {env : FrontEnv} {scope : List Local} {c pf : CTree} {e : SrcExpr},
+    Peel c pf → nodeProd (kid pf 0) = pString → nodeProd (kid pf 1) = pPostfixEnd → ExprR env scope c e → False
+  | _, _, _, _, _, .wrap _ p, pc, pe, h => by
+    cases h with
+    | wrap _ r => exact peel_noExprString p pc pe r
+    | _ => expr_clash
+  | _, _, _, _, _, .bare _ _ p, pc, pe, h => by
+    cases h with
+    | assign _ _ r => exact peel_noExprString p pc pe r
+    | level _ r _ => exact peel_noExprString p pc pe r
+    | cast _ r _ => exact peel_noExprString p pc pe r
+    | _ => expr_clash
+  | _, _, _, _, _, .here _, pc, pe, h => by
+    cases h with
+    | «postfix» _ _ r => exact exprR_noString pc r
+    | _ => expr_clash
+
+theorem effR_noString {env : FrontEnv} {scope : List Local} {E : Option Ty} {c : CTree} {x : MEff}
+    (p : nodeProd c = pString) (h : EffR env scope E c x) : False := by
+  cases h with
+  | pure r => exact exprR_noString p r
+  | _ => eff_clash
+
+theorem peel_noEffString : ∀ {env : FrontEnv} {scope : List Local} {E : Option Ty} {c pf : CTree} {x : MEff},
+    Peel c pf → nodeProd (kid pf 0) = pString → nodeProd (kid pf 1) = pPostfixEnd → EffR env scope E c x → False
+  | _, _, _, _, _, _, .wrap w p, pc, pe, h => by
+    cases h with
+    | pure r => exact peel_noExprString (.wrap w p) pc pe r
+    | wrap _ k => exact peel_noEffString p pc pe k
+    | _ => eff_clash
+  | _, _, _, _, _, _, .bare w kn p, pc, pe, h => by
+    cases h with
+    | pure r => exact peel_noExprString (.bare w kn p) pc pe r
+    | bare _ _ k => exact peel_noEffString p pc pe k
+    | level _ kn' _ _ => exact kn' kn
+    | cast _ kn' _ _ => exact kn' kn
+    | _ => eff_clash
+  | _, _, _, _, _, _, .here pp, pc, pe, h => by
+    cases h with
+    | pure r => exact peel_noExprString (.here pp) pc pe r
+    | primary _ _ k => exact effR_noString pc k
+    | _ => eff_clash
+
+theorem stringInit_unique {init : CTree} {a b : List Nat} (h₁ : StringInit init a) (h₂ : StringInit init b) :
+    a = b := by
+  cases h₁ with
+  | mk pl _ _ l => cases h₂ with
+    | mk pl' _ _ l' =>
+      cases peel_unique pl pl'
+      exact List.append_cancel_right (List.cons.inj (l.1.symm.trans l'.1)).2
+
+theorem effR_stringInit {env : FrontEnv} {scope : List Local} {E : Option Ty} {c : CTree} {cs : List Nat}
+    {x : MEff} (si : StringInit c cs) (h : EffR env scope E c x) : False := by
+  cases si with
+  | mk pl pc pe _ => exact peel_noEffString pl pc pe h
+
 theorem effArmsR_named {env : FrontEnv} : ∀ {scope : List Local} {expected : Option Ty} {owner : TypeDecl}
     {vs : List VariantTy} {os : List CTree} {eas : List EffArm}, EffArmsR env scope expected owner vs os eas →
     ListRel (ArmNames owner) os (vs.map (·.name))
@@ -82,6 +144,7 @@ theorem litBound_unique {scope : List Local} {id : Nat} {s : MEff} {ety rt : Ty}
       cases c'
       rfl
 
+set_option maxHeartbeats 1000000 in
 mutual
 theorem effR_unique : ∀ {scope : List Local} {expected : Option Ty} {c : CTree} {x : MEff},
     EffR env scope expected c x → IdsFresh scope → VariantsNodup env.decls →
@@ -421,6 +484,23 @@ theorem effList_unique : ∀ {scope : List Local} {E : Option (List Ty)} {cs : L
     | cons k' rest' => rw [ih1 k', ih2 rest']
 termination_by structural _ _ _ _ h _ _ _ _ => h
 
+theorem argList_unique : ∀ {scope : List Local} {E : Option (List Ty)} {cs : List CTree}
+    {xs : List MEff}, ArgList env scope E cs xs → IdsFresh scope → VariantsNodup env.decls →
+    ∀ {ys : List MEff}, ArgList env scope E cs ys → xs = ys
+  | _, _, _, _, .nil, _, _, _, h₂ => by cases h₂; rfl
+  | _, _, _, _, .cons k rest, nd, vn, _, h₂ => by
+    have ih1 := fun {y} k' => effR_unique k nd vn (y := y) k'
+    have ih2 := fun {y} k' => argList_unique rest nd vn (ys := y) k'
+    cases h₂ with
+    | cons k' rest' => rw [ih1 k', ih2 rest']
+    | str si rest' => exact (effR_stringInit si k).elim
+  | _, _, _, _, .str si rest, nd, vn, _, h₂ => by
+    have ih2 := fun {y} k' => argList_unique rest nd vn (ys := y) k'
+    cases h₂ with
+    | cons k' rest' => exact (effR_stringInit si k').elim
+    | str si' rest' => rw [stringInit_unique si si', ih2 rest']
+termination_by structural _ _ _ _ h _ _ _ _ => h
+
 theorem effPathCall_unique : ∀ {scope : List Local} {expected : Option Ty} {path args : CTree}
     {x : MEff}, EffPathCall env scope expected path args x → IdsFresh scope → VariantsNodup env.decls →
     ∀ {y : MEff}, EffPathCall env scope expected path args y → x = y
@@ -527,7 +607,7 @@ theorem effInfer_unique : ∀ {scope : List Local} {expected : Option Ty} {d : N
     EffInfer env scope expected d fd start pre items x → IdsFresh scope → VariantsNodup env.decls →
     ∀ {y : MEff}, EffInfer env scope expected d fd start pre items y → x = y
   | _, _, _, _, _, _, _, _, .plain e pe el av, nd, vn, _, h₂ => by
-    have ih1 := fun {y} k' => effList_unique el nd vn (ys := y) k'
+    have ih1 := fun {y} k' => argList_unique el nd vn (ys := y) k'
     cases h₂ with
     | plain _ pe' el' av' =>
       have es := paramExpects_unique pe pe'

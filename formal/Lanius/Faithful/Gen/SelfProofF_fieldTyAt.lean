@@ -18,13 +18,13 @@ public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfStmtF_isPathCall
 public import Lanius.Faithful.Gen.SelfStmtF_isTryEnum
-public import Lanius.Faithful.Gen.SelfStmtF_litEffMatch
 public import Lanius.Faithful.Gen.SelfStmtF_noBlock
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_noTrees
 public import Lanius.Faithful.Gen.SelfStmtF_purePart
 public import Lanius.Faithful.Gen.SelfStmtF_setIndexOrEval
 public import Lanius.Faithful.Gen.SelfStmtF_sliceHead
+public import Lanius.Faithful.Gen.SelfStmtF_stringOpen
 public import Lanius.Faithful.Gen.SelfStmtF_textSelf
 public import Lanius.Faithful.Gen.SelfStmtF_triedIf
 public import Lanius.Faithful.Gen.SelfStmtF_tryLet

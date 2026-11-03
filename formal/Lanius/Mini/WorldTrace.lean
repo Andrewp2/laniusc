@@ -24,6 +24,7 @@ import all Lanius.Mini.Compiler.P.equality
 import all Lanius.Mini.Compiler.P.floatApply
 import all Lanius.Mini.Compiler.P.guardAnd
 import all Lanius.Mini.Compiler.P.hostRandomCode
+import all Lanius.Mini.Compiler.P.evalHost
 import all Lanius.Mini.Compiler.P.leftTrue
 import all Lanius.Mini.Compiler.P.loadAtBytes
 import all Lanius.Mini.Compiler.P.lowerApply
@@ -177,7 +178,18 @@ theorem Syscall.run_write {heap : Heap} {fd address count : BitVec 64}
     Syscall.run .write [fd, address, count] heap =
       some (count, { heap with io := { heap.io with trace := heap.io.trace ++
         [.write fd.toNat (heap.slice address.toNat count.toNat)] } }) := by
-  rw [Syscall.run, if_pos ⟨which, small, inside⟩]
+  rw [Syscall.run, if_pos ⟨which, small, .inl inside⟩, Heap.span, if_pos inside]
+
+/-- `Syscall.write` of static bytes (the region at or above the heap's top)
+appends them to the trace. -/
+theorem Syscall.run_write_static {heap : Heap} {fd address count : BitVec 64}
+    (which : fd = 1 ∨ fd = 2) (small : count.toNat ≤ maxTransfer) (pos : 0 < count.toNat)
+    (above : heap.top ≤ heap.staticBase) (from_ : heap.staticBase ≤ address.toNat)
+    (within : address.toNat + count.toNat ≤ heap.staticBase + heap.statics.length) :
+    Syscall.run .write [fd, address, count] heap =
+      some (count, { heap with io := { heap.io with trace := heap.io.trace ++
+        [.write fd.toNat ((heap.statics.drop (address.toNat - heap.staticBase)).take count.toNat)] } }) := by
+  rw [Syscall.run, if_pos ⟨which, small, .inr ⟨above, from_, within⟩⟩, Heap.span, if_neg (by omega)]
 
 theorem wrapI32_eq (x : Int) : World.wrapI32 x = Semantics.wrapSigned .x86_64 .i32 x := rfl
 
@@ -379,6 +391,170 @@ theorem hostWrite_exec {mp : Program} {d : Nat} (fd : BitVec 64) (which : fd = 1
     simp [E0, set_get, Word.apply, BinOp.apply, Expr.eval]
   · intro k
     rw [outs k, e0p]
+
+/-- The static bytes from `a`, `first` then `second` more. -/
+theorem static_take_append (L : List UInt8) (a first second : Nat) :
+    (L.drop a).take first ++ (L.drop (a + first)).take second = (L.drop a).take (first + second) := by
+  rw [List.take_add, List.drop_drop]
+
+/-- The write loop on static bytes (a `str`'s): the region at or above the
+heap's top, the `n` bytes from the pointer inside it. -/
+theorem writeLoopStatic {mp : Program} {d : Nat} (fd : BitVec 64) (which : fd = 1 ∨ fd = 2) (slot : Nat) :
+    ∀ (n : Nat) (E : Env) (H : Heap), (E (slot + 1)).toNat = n →
+      (0 < n → H.top ≤ H.staticBase ∧ H.staticBase ≤ (E slot).toNat ∧
+        (E slot).toNat + n ≤ H.staticBase + H.statics.length) →
+      H.staticBase + H.statics.length < 2 ^ 64 →
+      ∃ E' events, Exec mp d E H (.loop (writeCond slot) (writeBody fd slot))
+          (.normal E' { H with io := { H.io with trace := H.io.trace ++ events } }) ∧
+        (∀ j, j < slot ∨ j = slot + 2 → E' j = E j) ∧
+        ∀ k, outputOf k events =
+          if fd.toNat = k then (H.statics.drop ((E slot).toNat - H.staticBase)).take n else [] := by
+  intro n
+  induction n using Nat.strongRecOn with
+  | ind n ih =>
+    intro E H count inside fits
+    rcases Nat.eq_zero_or_pos n with zero | pos
+    · subst zero
+      have done : (writeCond slot).eval E = 0 := by
+        have : E (slot + 1) = 0 := BitVec.eq_of_toNat_eq (by simpa using count)
+        simp [writeCond, Expr.eval, Word.holds, CmpOp.holdsU, this]
+      refine ⟨E, [], ?_, fun _ _ => rfl, fun k => by simp [outputOf]⟩
+      rw [List.append_nil]
+      exact .loopDone done
+    · have going : (writeCond slot).eval E ≠ 0 := by
+        have : E (slot + 1) ≠ 0 := fun h => by rw [h] at count; simp at count; omega
+        simpa [writeCond, Expr.eval, Word.holds, CmpOp.holdsU] using this
+      obtain ⟨above, from_, within⟩ := inside pos
+      obtain ⟨cbits, c, picked, cnat, cpos, cle, cmax⟩ : ∃ (cbits : BitVec 64) (c : Nat),
+          Exec mp d E H (.ite (.compare .u64 .lt (.var (slot + 1)) (.lit 2147479552))
+            (.assign (slot + 3) (.var (slot + 1))) (.assign (slot + 3) (.lit 2147479552)))
+            (.normal (E.set (slot + 3) cbits) H) ∧ cbits.toNat = c ∧ 0 < c ∧ c ≤ n ∧ c ≤ maxTransfer := by
+        by_cases lt : (E (slot + 1)).toNat < maxTransfer
+        · exact ⟨E (slot + 1), n, .ifTrue ((eval_pick E slot).mpr lt) .assign, count, pos, Nat.le_refl _,
+            by omega⟩
+        · refine ⟨2147479552, maxTransfer, .ifFalse ?_ .assign, by simp [maxTransfer], by simp [maxTransfer],
+            by omega, Nat.le_refl _⟩
+          exact Classical.byContradiction fun h => lt ((eval_pick E slot).mp h)
+      let E1 := E.set (slot + 3) cbits
+      have e1p : E1 slot = E slot := by simp [E1, set_get]
+      have e1c : E1 (slot + 3) = cbits := by simp [E1, set_get]
+      let H1 : Heap := { H with io := { H.io with trace := H.io.trace ++
+        [Event.write fd.toNat ((H.statics.drop ((E1 slot).toNat - H.staticBase)).take (E1 (slot + 3)).toNat)] } }
+      have ran : Syscall.run .write (Expr.evalAll E1 [.lit fd, .var slot, .var (slot + 3)]) H = some (E1 (slot + 3), H1) :=
+        Syscall.run_write_static which (by show (E1 (slot + 3)).toNat ≤ _; rw [e1c, cnat]; exact cmax)
+          (by show 0 < (E1 (slot + 3)).toNat; rw [e1c, cnat]; exact cpos) above
+          (by show H.staticBase ≤ (E1 slot).toNat; rw [e1p]; exact from_)
+          (by show (E1 slot).toNat + (E1 (slot + 3)).toNat ≤ _; rw [e1c, e1p, cnat]; omega)
+      let E2 := E1.set (slot + 4) (E1 (slot + 3))
+      let E3 := E2.set slot ((Expr.binary .u64 .add (.var slot) (.var (slot + 3))).eval E2)
+      let E4 := E3.set (slot + 1) ((Expr.binary .u64 .sub (.var (slot + 1)) (.var (slot + 3))).eval E3)
+      have body : Exec mp d E H (writeBody fd slot) (.normal E4 H1) :=
+        .seq picked (.seq (.sys ran) (.seq .assign .assign))
+      have e4p : (E4 slot).toNat = (E slot).toNat + c := by
+        have : E4 slot = E slot + cbits := by simp [E4, E3, E2, E1, set_get, Expr.eval, Word.apply, BinOp.apply]
+        rw [this, BitVec.toNat_add, cnat, Nat.mod_eq_of_lt (by omega)]
+      have e4n : (E4 (slot + 1)).toNat = n - c := by
+        have : E4 (slot + 1) = E (slot + 1) - cbits := by
+          simp [E4, E3, E2, E1, set_get, Expr.eval, Word.apply, BinOp.apply]
+        rw [this, BitVec.toNat_sub_of_le (by rw [BitVec.le_def, cnat, count]; exact cle), cnat, count]
+      obtain ⟨E', events, loop, keep, outs⟩ := ih (n - c) (by omega) E4 H1 e4n
+        (fun _ => ⟨above, by rw [e4p]; show H.staticBase ≤ _; omega, by rw [e4p]; show _ ≤ H.staticBase + H.statics.length; omega⟩)
+        fits
+      let first := (H.statics.drop ((E slot).toNat - H.staticBase)).take c
+      refine ⟨E', Event.write fd.toNat first :: events, ?_, ?_, ?_⟩
+      · have : ({ H1 with io := { H1.io with trace := H1.io.trace ++ events } } : Heap) =
+            { H with io := { H.io with trace := H.io.trace ++ Event.write fd.toNat first :: events } } := by
+          simp [H1, first, e1p, e1c, cnat]
+        rw [← this]
+        exact .loopNext going body loop
+      · intro j which'
+        rw [keep j which']
+        simp only [E4, E3, E2, E1, set_get]
+        rcases which' with lt | eq
+        · rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega)]
+        · subst eq
+          rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega)]
+      · intro k
+        have firstOut : outputOf k [Event.write fd.toNat first] = if fd.toNat = k then first else [] :=
+          outputOf_write _ _ _
+        rw [show (Event.write fd.toNat first :: events) = [Event.write fd.toNat first] ++ events from rfl,
+          outputOf_append, firstOut, outs k, e4p]
+        have whole := static_take_append H.statics ((E slot).toNat - H.staticBase) c (n - c)
+        rw [Nat.add_sub_cancel' cle, show (E slot).toNat - H.staticBase + c = (E slot).toNat + c - H.staticBase by omega]
+          at whole
+        by_cases same : fd.toNat = k
+        · simp only [same, if_true, H1]
+          exact whole
+        · simp [same]
+
+/-- `write_stdout`'s code on static bytes: the events write the `count`
+bytes from the pointer, and `slot` holds the count as `i32`. -/
+theorem hostWriteStatic_exec {mp : Program} {d : Nat} (fd : BitVec 64) (which : fd = 1 ∨ fd = 2) {E : Env} {H : Heap}
+    (slot : Nat) (inside : 0 < (E (slot + 1)).toNat → H.top ≤ H.staticBase ∧ H.staticBase ≤ (E slot).toNat ∧
+      (E slot).toNat + (E (slot + 1)).toNat ≤ H.staticBase + H.statics.length)
+    (fits : H.staticBase + H.statics.length < 2 ^ 64) :
+    ∃ E' events, Exec mp d E H (hostWriteCode fd slot) (.normal E' { H with io := { H.io with trace := H.io.trace ++ events } }) ∧
+      (∀ j < slot, E' j = E j) ∧ E' slot = widen (low (E (slot + 1))) ∧
+      ∀ k, outputOf k events = if fd.toNat = k then
+        (H.statics.drop ((E slot).toNat - H.staticBase)).take (E (slot + 1)).toNat else [] := by
+  let E0 := E.set (slot + 2) ((Expr.var (slot + 1)).eval E)
+  have e0p : E0 slot = E slot := by simp [E0, set_get]
+  have e0n : E0 (slot + 1) = E (slot + 1) := by simp [E0, set_get]
+  obtain ⟨E', events, loop, keep, outs⟩ := writeLoopStatic (mp := mp) (d := d) fd which slot (E (slot + 1)).toNat E0 H
+    (by rw [e0n]) (by rw [e0p]; exact inside) fits
+  refine ⟨E'.set slot ((Expr.binary .s32 .add (.var (slot + 2)) (.lit 0)).eval E'), events, ?_, ?_, ?_, ?_⟩
+  · rw [hostWriteCode_eq]
+    exact .seq (.assign (env := E)) (.seq loop .assign)
+  · intro j lt
+    simp only [set_get]
+    rw [if_neg (by omega), keep j (.inl lt)]
+    simp only [E0, set_get]
+    rw [if_neg (by omega)]
+  · simp only [set_get, if_true, Expr.eval]
+    rw [keep (slot + 2) (.inr rfl)]
+    simp [E0, set_get, Word.apply, BinOp.apply, Expr.eval]
+  · intro k
+    rw [outs k, e0p]
+
+/-- `write_text` to handle 1 or 2: the str's static bytes go out on it and
+`slot` holds their count as `i32`. -/
+theorem hostText_exec {mp : Program} {d : Nat} {E : Env} {H : Heap} (slot : Nat) (which : E slot = 1 ∨ E slot = 2)
+    (inside : 0 < (E (slot + 2)).toNat → H.top ≤ H.staticBase ∧ H.staticBase ≤ (E (slot + 1)).toNat ∧
+      (E (slot + 1)).toNat + (E (slot + 2)).toNat ≤ H.staticBase + H.statics.length)
+    (fits : H.staticBase + H.statics.length < 2 ^ 64) :
+    ∃ E' events, Exec mp d E H (hostTextCode slot) (.normal E' { H with io := { H.io with trace := H.io.trace ++ events } }) ∧
+      (∀ j < slot, E' j = E j) ∧ E' slot = widen (low (E (slot + 2))) ∧
+      ∀ k, outputOf k events = if (E slot).toNat = k then
+        (H.statics.drop ((E (slot + 1)).toNat - H.staticBase)).take (E (slot + 2)).toNat else [] := by
+  rcases which with one | two
+  · obtain ⟨E', events, exec, keep, wrote, outs⟩ :=
+      hostWriteStatic_exec (mp := mp) (d := d) 1 (.inl rfl) (slot + 1) inside fits
+    refine ⟨E'.set slot (E' (slot + 1)), events, ?_, ?_, ?_, ?_⟩
+    · refine .ifTrue (by simp [Expr.eval, Word.holds, CmpOp.holdsU, one]) (.seq exec ?_)
+      exact .assign
+    · intro j lt
+      rw [set_get, if_neg (by omega), keep j (by omega)]
+    · rw [set_get, if_pos rfl, wrote]
+    · intro k
+      rw [outs k, one]
+  · obtain ⟨E', events, exec, keep, wrote, outs⟩ :=
+      hostWriteStatic_exec (mp := mp) (d := d) 2 (.inr rfl) (slot + 1) inside fits
+    refine ⟨E'.set slot (E' (slot + 1)), events, ?_, ?_, ?_, ?_⟩
+    · refine .ifFalse (by simp [Expr.eval, Word.holds, CmpOp.holdsU, two])
+        (.ifTrue (by simp [Expr.eval, Word.holds, CmpOp.holdsU, two]) (.seq exec ?_))
+      exact .assign
+    · intro j lt
+      rw [set_get, if_neg (by omega), keep j (by omega)]
+    · rw [set_get, if_pos rfl, wrote]
+    · intro k
+      rw [outs k, two]
+
+/-- `write_text` to any other handle: -1 in `slot`, nothing else. -/
+theorem hostText_other {mp : Program} {d : Nat} {E : Env} {H : Heap} (slot : Nat) (other : E slot ≠ 1 ∧ E slot ≠ 2) :
+    Exec mp d E H (hostTextCode slot) (.normal (E.set slot 4294967295) H) := by
+  refine .ifFalse ?_ (.ifFalse ?_ .assign)
+  · simpa [Expr.eval, Word.holds, CmpOp.holdsU] using other.1
+  · simpa [Expr.eval, Word.holds, CmpOp.holdsU] using other.2
 
 /-! ## The code of `read_stdin` -/
 

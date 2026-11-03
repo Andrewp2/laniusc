@@ -18,8 +18,8 @@ public import Lanius.Faithful.Gen.SelfSrcC_armPayload
 public import Lanius.Faithful.Gen.SelfSrcC_arrayCallSig
 public import Lanius.Faithful.Gen.SelfSrcC_compileOr
 public import Lanius.Faithful.Gen.SelfSrcC_funcNeeds
-public import Lanius.Faithful.Gen.SelfSrcC_imageLimit
 public import Lanius.Faithful.Gen.SelfSrcC_larger
+public import Lanius.Faithful.Gen.SelfSrcC_linkedSize
 public import Lanius.Faithful.Gen.SelfSrcC_lowerBody
 public import Lanius.Faithful.Gen.SelfSrcC_lowerCallSig
 public import Lanius.Faithful.Gen.SelfSrcC_lowerSetCallArgs
@@ -60,8 +60,8 @@ import all Lanius.Faithful.Gen.SelfSrcC_armPayload
 import all Lanius.Faithful.Gen.SelfSrcC_arrayCallSig
 import all Lanius.Faithful.Gen.SelfSrcC_compileOr
 import all Lanius.Faithful.Gen.SelfSrcC_funcNeeds
-import all Lanius.Faithful.Gen.SelfSrcC_imageLimit
 import all Lanius.Faithful.Gen.SelfSrcC_larger
+import all Lanius.Faithful.Gen.SelfSrcC_linkedSize
 import all Lanius.Faithful.Gen.SelfSrcC_lowerBody
 import all Lanius.Faithful.Gen.SelfSrcC_lowerCallSig
 import all Lanius.Faithful.Gen.SelfSrcC_lowerSetCallArgs

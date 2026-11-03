@@ -55,6 +55,7 @@ import all Lanius.Faithful.Gen.SelfSrcC_enumVariants
 import all Lanius.Faithful.Gen.SelfSrcC_equality
 import all Lanius.Faithful.Gen.SelfSrcC_evalDivide
 import all Lanius.Faithful.Gen.SelfSrcC_evalDivideSint
+import all Lanius.Faithful.Gen.SelfSrcC_evalHost
 import all Lanius.Faithful.Gen.SelfSrcC_evalNot
 import all Lanius.Faithful.Gen.SelfSrcC_evalSame
 import all Lanius.Faithful.Gen.SelfSrcC_extentAfter
@@ -62,12 +63,12 @@ import all Lanius.Faithful.Gen.SelfSrcC_floatApply
 import all Lanius.Faithful.Gen.SelfSrcC_funcNeeds
 import all Lanius.Faithful.Gen.SelfSrcC_guardAnd
 import all Lanius.Faithful.Gen.SelfSrcC_hostRandomCode
-import all Lanius.Faithful.Gen.SelfSrcC_imageLimit
 import all Lanius.Faithful.Gen.SelfSrcC_indexOf
 import all Lanius.Faithful.Gen.SelfSrcC_iteThen
 import all Lanius.Faithful.Gen.SelfSrcC_killShared
 import all Lanius.Faithful.Gen.SelfSrcC_larger
 import all Lanius.Faithful.Gen.SelfSrcC_leftTrue
+import all Lanius.Faithful.Gen.SelfSrcC_linkedSize
 import all Lanius.Faithful.Gen.SelfSrcC_loadAtBytes
 import all Lanius.Faithful.Gen.SelfSrcC_longer
 import all Lanius.Faithful.Gen.SelfSrcC_lowerAddress
@@ -92,6 +93,7 @@ import all Lanius.Faithful.Gen.SelfSrcC_optimizeNeg
 import all Lanius.Faithful.Gen.SelfSrcC_packRound
 import all Lanius.Faithful.Gen.SelfSrcC_render
 import all Lanius.Faithful.Gen.SelfSrcC_repeatType
+import all Lanius.Faithful.Gen.SelfSrcC_roomFits
 import all Lanius.Faithful.Gen.SelfSrcC_shortCircuit
 import all Lanius.Faithful.Gen.SelfSrcC_sintToUint
 import all Lanius.Faithful.Gen.SelfSrcC_storeArray
@@ -190,6 +192,7 @@ import all Lanius.Faithful.Gen.SelfSrcF_forRange
 import all Lanius.Faithful.Gen.SelfSrcF_freshId
 import all Lanius.Faithful.Gen.SelfSrcF_frontEndRead
 import all Lanius.Faithful.Gen.SelfSrcF_frontEndWords
+import all Lanius.Faithful.Gen.SelfSrcF_funcsBytes
 import all Lanius.Faithful.Gen.SelfSrcF_funcsOnto
 import all Lanius.Faithful.Gen.SelfSrcF_genericClose
 import all Lanius.Faithful.Gen.SelfSrcF_genericOpen
@@ -262,6 +265,7 @@ import all Lanius.Faithful.Gen.SelfSrcF_shadowUse
 import all Lanius.Faithful.Gen.SelfSrcF_shrFirst
 import all Lanius.Faithful.Gen.SelfSrcF_sintAt
 import all Lanius.Faithful.Gen.SelfSrcF_sliceHead
+import all Lanius.Faithful.Gen.SelfSrcF_strBytes
 import all Lanius.Faithful.Gen.SelfSrcF_stringCall
 import all Lanius.Faithful.Gen.SelfSrcF_stringCons
 import all Lanius.Faithful.Gen.SelfSrcF_stringLast
@@ -309,7 +313,7 @@ open Lanius.Faithful.Self
 
 /-- No function of the self program takes a block of frame memory. -/
 theorem frameBlocks_zero : (prog.funcs.all fun f => frameBlock f == 0) = true :=
-  all_of_pieces _ 200 13 prog.funcs (by decide +kernel) fun k lt => by
+  all_of_pieces _ 200 14 prog.funcs (by decide +kernel) fun k lt => by
     match k, lt with
     | 0, _ => decide +kernel
     | 1, _ => decide +kernel
@@ -324,7 +328,8 @@ theorem frameBlocks_zero : (prog.funcs.all fun f => frameBlock f == 0) = true :=
     | 10, _ => decide +kernel
     | 11, _ => decide +kernel
     | 12, _ => decide +kernel
-    | k + 13, h => exact absurd h (by omega)
+    | 13, _ => decide +kernel
+    | k + 14, h => exact absurd h (by omega)
 
 /-- The self program needs no frame memory at any function. -/
 theorem prog_need (i : Nat) : prog.need i = 0 := SrcProgram.need_zero_of_all frameBlocks_zero i

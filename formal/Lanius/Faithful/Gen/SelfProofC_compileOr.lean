@@ -6,7 +6,7 @@ public import Lanius.Faithful.Gen.SelfSrcC_compileOr
 public import Lanius.Faithful.Gen.SelfStmtC_Stmt_kills
 public import Lanius.Faithful.Gen.SelfStmtC_compileOr
 public import Lanius.Faithful.Gen.SelfStmtC_funcNeeds
-public import Lanius.Faithful.Gen.SelfStmtC_imageLimit
+public import Lanius.Faithful.Gen.SelfStmtC_linkedSize
 public import Lanius.Faithful.Gen.SelfStmtC_lowerBody
 public import Lanius.Faithful.Gen.SelfStmtC_optimizeIte
 import all Lanius.Faithful.Gen.SelfSrcC_compileOr

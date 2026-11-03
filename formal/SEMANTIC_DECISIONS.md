@@ -1018,15 +1018,51 @@ verified compiler's locals are 64-bit slots with no address. The design:
      sp.decls.statics` and make the instance. The process theorems use
      `elfStatics binary stack` and prove both. (4) Core's `writeText`
      returns the bytes written, not 0, as laniusc's `write_text` does
-     (`write_line` adds the counts); trusted, in TRUSTED_BASE. (5) Staging:
-     `hostService?` names host ids `2^32 + 8` (`write_text`) and `2^32 + 9`
-     (`write_newline`), but `eval_host` lowers neither call yet; that is
-     stage S4, after S3 lets the mini `write` system call read the static
-     region. `static_byte_is` compares the byte with the char as `u64`s
+     (`write_line` adds the counts); trusted, in TRUSTED_BASE. (5) S3
+     (11-03): the mini `write` system call reads its bytes with
+     `Heap.span`: frame memory when the range lies below `top`, otherwise
+     the static region when it lies wholly inside it (and `top <=
+     staticBase`); any other range still stops the program. The x86 side
+     reads the same bytes from the ELF's static segment (`bytesAt_span`,
+     by `Rel.statics`). No write ever targets the static region: it is
+     read-only, as laniusc's rodata is. (6) S4 (11-03): `eval_host` lowers
+     host id `2^32 + 8` (`write_text(handle: i32, text: str)`) and `2^32 +
+     9` (`write_newline(handle: i32)`), in a second function
+     `eval_host_text` that `eval_host` falls back to (one `if` chain of ten
+     arms left the budget tactic's `simp` over its step limit; later host
+     groups get their own fallback the same way). `write_text` on handle
+     1 or 2 is the chunked `write` loop of `write_bytes` over the str's
+     static bytes and returns their count (`hostText_exec`); any other
+     handle returns -1 without a system call, which matches Core because
+     no file is open in a lowered program (`HeapCorr`). `write_newline`
+     stores 10 in a slot and runs `write_byte`'s code, returning 1 or
+     -1. `static_byte_is` compares the byte with the char as `u64`s
      (`((b as i32) as u32) as u64`): the extracted subset compares no
      `i32` and casts no `u8` to `u64`, and the `u8` comparison of a
      variable left the self program's certificate stuck. The self program
-     has no literals (its statics are empty: `selfHeap_statics`).
+     has no literals (its statics are empty: `selfHeap_statics`). (7) S2
+     (11-03): the front end reads `str`. `str` is a primitive type (`Ty.tyStr`,
+     `primNames`/`primTys`; a user type named `str` is no longer
+     well named), lowered to `SrcType.str`; no cast to `str` is read. A
+     string literal is read only as an argument of a non-generic call
+     (`MEff.xStr chars`, the Reading's `ArgList.str`, used by
+     `EffInfer.plain`), never as an expression on its own, so `let x: str =
+     "..";` is still read only in the raw-view shape (`LetStr`) and every
+     other reading stays deterministic; its bytes are plain ASCII, no
+     escapes (`StringInit`). Closing gives `eStr 0 chars`, and the last pass
+     places the literals (`placed_program`, a P function: each literal's
+     offset is the count of literal bytes before it in the program, functions
+     in order and each expression left to right, `eff_bytes`/`stmt_bytes`,
+     and the statics are all those bytes, `funcs_bytes`). The pass carries
+     the bytes before as a list, not a `Nat` sum, so F14's precondition
+     lemmas need no bound on an offset. The Reading's `ClosedProgram` is
+     `p = placedProgram gs`; this changes no meaning (`toCore` ignores
+     offsets and statics), and the compiler checks the placement anyway.
+     `write_text` and `write_newline` are the host ids `2^32 + 8` and
+     `2^32 + 9` (`hostId`). For leafA's memory model: a `str` value is two
+     slots (static address, byte count) and is read-only; nothing yet
+     makes a `str` from heap bytes, and a later `&str` or owned string would
+     be a separate type, not this one.
 7. **A static need per function (decided 11-01, step 3.5).** A function
    takes its whole block at entry (`frame_block`: 8 bytes per element of
    each array, parameter or let, it passes as a slice), by a prologue
@@ -2549,16 +2585,52 @@ limit:
 - Every function's lets need at most `depth_limit()` (2^40) slots along any
   scope. `lim_stmt` follows `SrcStmt::depth`: a binding adds its type's
   slots around its scope, and branches and match arms take the max.
-- `untyped_rejected` rejects a program past either (`lim_funcs`). It runs
-  last, on the closed, monomorphized functions, so it sees the copies.
+- Every function's parameters need at most `depth_limit()` slots together
+  (`params_size`; `lim_param_slots`). A struct's fields together are its
+  slot count, so the first limit already bounds them.
+- `untyped_rejected` rejects a program past any of these (`lim_funcs`). It runs
+  last, on the closed, monomorphized functions with their string
+  literals placed, so it sees the copies.
 
-A program past either limit is rejected as `None`. No real program comes
-near either: the largest checked-in arrays are 262144 elements, and 2^40
+A program past a limit is rejected as `None`. No real program comes
+near any of them: the largest checked-in arrays are 262144 elements, and 2^40
 slots along one scope is 2^18 nested lets of the largest type. The proof
 that the front end's output is within both is `frontEndWords_limits` in
 `Lanius/Faithful/SelfPre/Limits.lean` (FrontEndTypeSlots,
-FrontEndStmtDepthV2). `buildClosed_sound` (`Mini/Reading/Lits.lean`) covers
+FrontEndStmtDepthV2, FrontEndParamSlots). `buildClosed_sound` (`Mini/Reading/Lits.lean`) covers
 the new rejection: a program the front end returns is still the reading's.
+
+## A function's code checked against the image limit first (decided 11-03, F14)
+
+`room_after` bounds the sums over a whole image, but not the sums inside one
+function: `compile_stmt` adds up pc offsets and `code_size`, and `Instr.size`
+multiplies an argument count by 14. These sums need a bound on the size of
+one function's code. There were two ways to get it:
+
+- An argument about cost: the compile spends at least 1/8 cost per byte it
+  emits, so the budget bounds the code. This needs a new generated measure
+  that is relative to cost, and a hand argument per statement form. It may
+  not even hold: a call emits 14 bytes per argument for one step of cost.
+- A check in the compiler, in the same pattern as `room_after`. This was
+  chosen, because its proof is short and needs no new measure.
+
+`compile_func` now also asks `room_fits(stmt_room(image_limit(), func.body))`.
+`stmt_room`, `expr_room` and `args_room` take one out of the room for each
+node of the body, and a call takes one more for each result it copies back.
+They only compare and subtract, so they add nothing up. Once the check
+passes, a body weighs at most 2^30. Its code is at most 64 bytes per unit of
+weight (`codeSize_le`, a call's 14 bytes per argument and per result
+included), so at most 2^36 bytes, and every pc and `code_size` that
+`compile_stmt` adds up stays far below 2^64.
+
+This changes no result of the compiler. A body's code is at least as many
+bytes as its weight (`weight_le_codeSize` in `Lanius/Mini/Room.lean`). So a
+body that fails the check compiles, without the check, to more than the
+image limit, and `compileProgram` rejects that program anyway.
+`compileProgram_unchecked` proves that `compileProgram` is the compiler
+without the check (`compileProgramUnchecked`): it accepts the same programs
+with the same binary. `stmtRoom_eq` gives the check's closed form,
+`stmtRoom room s = if s.weight ≤ room then some (room - s.weight) else none`.
 
 ## Budget certificates (decided 11-01, F14)
 

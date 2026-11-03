@@ -11,8 +11,8 @@ public import Lanius.Faithful.Gen.SelfStmtC_SrcType_same
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
 public import Lanius.Faithful.Gen.SelfStmtC_codeSize
 public import Lanius.Faithful.Gen.SelfStmtC_compileArgs
-public import Lanius.Faithful.Gen.SelfStmtC_imageLimit
 public import Lanius.Faithful.Gen.SelfStmtC_larger
+public import Lanius.Faithful.Gen.SelfStmtC_linkedSize
 public import Lanius.Faithful.Gen.SelfStmtC_loadAtBytes
 import all Lanius.Faithful.Gen.SelfSrcC_larger
 import all Lanius.Mini.Compiler.P.larger
@@ -33,6 +33,22 @@ open Lanius.Core (Value)
 open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
+
+theorem step_args_then {prog : SrcProgram} {prims : Prims} {ix_args_then ix_args_room : Nat} (fn : prog.funcs[ix_args_then]? = some (src_args_then ix_args_room)) (np : prims.isPrim ix_args_then = false) {n : Nat}
+    (ih_args_room : Certified (Stmt_args_room prog prims ix_args_room n)) :
+    Stmt_args_then prog prims ix_args_then (n + 1) := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rw [pcall_succ np fn] at h
+  simp only [src_args_then] at h
+  faithful [Lanius.Mini.Inline.argsThen]
+
+theorem step_expr_then {prog : SrcProgram} {prims : Prims} {ix_expr_then ix_expr_room : Nat} (fn : prog.funcs[ix_expr_then]? = some (src_expr_then ix_expr_room)) (np : prims.isPrim ix_expr_then = false) {n : Nat}
+    (ih_expr_room : Certified (Stmt_expr_room prog prims ix_expr_room n)) :
+    Stmt_expr_then prog prims ix_expr_then (n + 1) := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rw [pcall_succ np fn] at h
+  simp only [src_expr_then] at h
+  faithful [Lanius.Mini.Inline.exprThen]
 
 theorem step_ite_code {prog : SrcProgram} {prims : Prims} {ix_ite_code ix_plus ix_concat_of_mini_selfhost_Instr ix_compile_stmt ix_code_size ix_single_of_mini_selfhost_Instr : Nat} (fn : prog.funcs[ix_ite_code]? = some (src_ite_code ix_plus ix_concat_of_mini_selfhost_Instr ix_compile_stmt ix_code_size ix_single_of_mini_selfhost_Instr)) (np : prims.isPrim ix_ite_code = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
@@ -121,5 +137,23 @@ theorem step_seq_code {prog : SrcProgram} {prims : Prims} {ix_seq_code ix_plus i
   rw [pcall_succ np fn] at h
   simp only [src_seq_code] at h
   faithful [Lanius.Mini.Inline.seqCode]
+
+theorem proof_spend_then {prog : SrcProgram} {prims : Prims} {ix_spend_then ix_spend : Nat} (fn : prog.funcs[ix_spend_then]? = some (src_spend_then ix_spend)) (np : prims.isPrim ix_spend_then = false)
+    (ext_spend : Certified (∀ {n : Nat}, Stmt_spend prog prims ix_spend n)) {n : Nat} :
+    Stmt_spend_then prog prims ix_spend_then n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_spend_then] at h
+  faithful [Lanius.Mini.Inline.spendThen]
+
+theorem step_stmt_then {prog : SrcProgram} {prims : Prims} {ix_stmt_then ix_stmt_room : Nat} (fn : prog.funcs[ix_stmt_then]? = some (src_stmt_then ix_stmt_room)) (np : prims.isPrim ix_stmt_then = false) {n : Nat}
+    (ih_stmt_room : Certified (Stmt_stmt_room prog prims ix_stmt_room n)) :
+    Stmt_stmt_then prog prims ix_stmt_then (n + 1) := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rw [pcall_succ np fn] at h
+  simp only [src_stmt_then] at h
+  faithful [Lanius.Mini.Inline.stmtThen]
 
 end Lanius.Faithful.SelfCert

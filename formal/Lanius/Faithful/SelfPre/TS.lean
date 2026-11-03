@@ -613,6 +613,7 @@ def tsMEff : Lanius.Mini.MEff → Nat
   | .xIf a0 a1 a2 a3 => max (tsMEff a0) (max (tsMEff a2) (tsMEff a3))
   | .xLet a0 a1 a2 a3 a4 => max (tsMEff a2) (tsMEff a4)
   | .xLen a0 => 0
+  | .xStr a0 => 0
 def tsMEff0 : List Lanius.Mini.MEff → Nat
   | [] => 0
   | a :: l => max (tsMEff a) (tsMEff0 l)
@@ -640,6 +641,7 @@ theorem tsMEff0_eq : ∀ l : List Lanius.Mini.MEff, tsMEff0 l = TS.ts l
 @[simp, ts_simp] theorem ts_MEff_xIf (a0 : Lanius.Mini.MEff) (a1 : Lanius.Mini.Ty) (a2 : Lanius.Mini.MEff) (a3 : Lanius.Mini.MEff) : ts (Lanius.Mini.MEff.xIf a0 a1 a2 a3) = max (ts a0) (max (ts a2) (ts a3)) := rfl
 @[simp, ts_simp] theorem ts_MEff_xLet (a0 : Nat) (a1 : Lanius.Mini.Ty) (a2 : Lanius.Mini.MEff) (a3 : Lanius.Mini.Ty) (a4 : Lanius.Mini.MEff) : ts (Lanius.Mini.MEff.xLet a0 a1 a2 a3 a4) = max (ts a2) (ts a4) := rfl
 @[simp, ts_simp] theorem ts_MEff_xLen (a0 : Nat) : ts (Lanius.Mini.MEff.xLen a0) = 0 := rfl
+@[simp, ts_simp] theorem ts_MEff_xStr (a0 : List Nat) : ts (Lanius.Mini.MEff.xStr a0) = 0 := rfl
 
 instance : TS Lanius.Mini.EffArm := ⟨fun s => ts s.value⟩
 @[simp, ts_simp] theorem ts_EffArm_mk (a0 : List Nat) (a1 : Lanius.Mini.MEff) (a2 : Option Lanius.Mini.Ty) : ts (Lanius.Mini.EffArm.mk a0 a1 a2) = ts a1 := rfl

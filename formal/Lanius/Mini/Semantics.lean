@@ -35,6 +35,7 @@ import all Lanius.Mini.Compiler.P.enumVariants
 import all Lanius.Mini.Compiler.P.equality
 import all Lanius.Mini.Compiler.P.evalDivide
 import all Lanius.Mini.Compiler.P.evalDivideSint
+import all Lanius.Mini.Compiler.P.evalHost
 import all Lanius.Mini.Compiler.P.evalNot
 import all Lanius.Mini.Compiler.P.evalSame
 import all Lanius.Mini.Compiler.P.floatApply
@@ -311,10 +312,18 @@ def Heap.writeAll (heap : Heap) (address : Nat) (bytes : List UInt8) : Heap :=
   { heap with bytes := fun other =>
       if address ≤ other ∧ other - address < bytes.length then bytes.getD (other - address) 0 else heap.bytes other }
 
+/-- The `count` bytes a `write` from `address` sends: the heap's, or, past
+the heap's top, the static region's (`Syscall.run`'s bounds put them in one
+or the other). -/
+def Heap.span (heap : Heap) (address count : Nat) : List UInt8 :=
+  if address + count ≤ heap.top then heap.slice address count
+  else (heap.statics.drop (address - heap.staticBase)).take count
+
 /-- A system call's meaning on the heap: what the kernel does
 (`Lanius.X86.Machine.Kernel`), with addresses heap offsets. `write(fd,
-address, count)` to fd 1 or 2 of at most `maxTransfer` bytes inside the heap
-appends them to the trace and returns the count. `read(0, address, count)`
+address, count)` to fd 1 or 2 of at most `maxTransfer` bytes inside the heap,
+or inside the static region when it is at or above the heap's top (a `str`'s
+bytes), appends them to the trace and returns the count. `read(0, address, count)`
 of at most `maxTransfer` bytes takes the next bytes of the input the kernel's
 `read` delivers (`Io.readBytes`: from 1 to `count` or all that are left, 0
 only when `count` is 0 or none are left), stores them from `address` on
@@ -328,9 +337,11 @@ the secure bytes left, stores the next `count` of them from `address` on
 def Syscall.run : Syscall → List (BitVec 64) → Heap → Option (BitVec 64 × Heap)
   | .write, [fd, address, count], heap =>
     if (fd = 1 ∨ fd = 2) ∧ count.toNat ≤ Lanius.X86.Machine.maxTransfer ∧
-        address.toNat + count.toNat ≤ heap.top then
+        (address.toNat + count.toNat ≤ heap.top ∨
+          (heap.top ≤ heap.staticBase ∧ heap.staticBase ≤ address.toNat ∧
+            address.toNat + count.toNat ≤ heap.staticBase + heap.statics.length)) then
       some (count, { heap with io := { heap.io with trace := heap.io.trace ++
-        [.write fd.toNat (heap.slice address.toNat count.toNat)] } })
+        [.write fd.toNat (heap.span address.toNat count.toNat)] } })
     else none
   | .read, [fd, address, count], heap =>
     if fd = 0 ∧ count.toNat ≤ Lanius.X86.Machine.maxTransfer ∧

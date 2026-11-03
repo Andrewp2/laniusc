@@ -46,6 +46,7 @@ theorem effClosed_unique : ∀ {x : MEff} {a b : SrcEff}, EffClosed decls fns ty
   | _, _, _, .let lt v lr b, .let lt' v' lr' b' => by
     rw [lowerR_unique lt lt', effClosed_unique v v', lowerR_unique lr lr', effClosed_unique b b']
   | _, _, _, .len, .len => rfl
+  | _, _, _, .str, .str => rfl
 termination_by structural _ _ _ h _ => h
 
 theorem effsClosed_unique : ∀ {xs : List MEff} {a b : List SrcEff}, EffsClosed decls fns types xs a →
@@ -264,13 +265,9 @@ end
 
 theorem closedProgram_unique {decls : Decls} {fns types : List Inst} {funcs : List MFunc} {p q : SrcProgram}
     (h₁ : ClosedProgram decls fns types funcs p) (h₂ : ClosedProgram decls fns types funcs q) : p = q := by
-  obtain ⟨fs, c₁, l₁, _, s₁⟩ := h₁
-  obtain ⟨fs', c₂, l₂, _, s₂⟩ := h₂
+  obtain ⟨fs, gs, c₁, l₁, _, rfl⟩ := h₁
+  obtain ⟨fs', gs', c₂, l₂, _, rfl⟩ := h₂
   cases listRel_unique (R := FuncClosed decls fns types) (fun _ _ _ x y => funcClosed_unique x y) c₁ c₂
-  have e := listRel_unique (R := LitFunc fs) (fun _ _ _ x y => litFunc_unique x y) l₁ l₂
-  cases p
-  cases q
-  simp only at e s₁ s₂
-  rw [e, s₁, s₂]
+  rw [listRel_unique (R := LitFunc fs) (fun _ _ _ x y => litFunc_unique x y) l₁ l₂]
 
 end Lanius.Mini.Reading

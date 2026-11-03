@@ -20,6 +20,437 @@ open Lanius.Faithful.Budget
 
 noncomputable section
 
+def Cost_nest_at : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.VariantTy → Lanius.Mini.CTree → List Lanius.Mini.CTree → Nat → List Lanius.Mini.CTree → Option Lanius.Mini.CTree → Nat
+  | 0, x8, x21, x36, x50, x60, x77, x87, x106 => 18446744073709551616
+  | n + 1, x8, x21, x36, x50, x60, x77, x87, x106 => (match (x60[x77]?) with | some x239 => (match (x36.payload[x77]?) with | some x316 => ((Cost_column_arms n x8 x21 x60 x77 x87) + (Cost_nest_inner n x8 x21 x50 x60 x77 x239 x316 (Lanius.Mini.columnArms x8 x21 x60 x77 x87) x106)) | none => 0) | none => 0)
+
+end
+
+noncomputable section
+
+def Pre_nest_at : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.VariantTy → Lanius.Mini.CTree → List Lanius.Mini.CTree → Nat → List Lanius.Mini.CTree → Option Lanius.Mini.CTree → Nat → Prop
+  | 0, x8, x21, x36, x50, x60, x77, x87, x106, b => True
+  | n + 1, x8, x21, x36, x50, x60, x77, x87, x106, b => (match (x60[x77]?) with | some x239 => (match (x36.payload[x77]?) with | some x316 => ((Pre_column_arms n x8 x21 x60 x77 x87 b) ∧ (∀ b1 : Nat, (Cost_column_arms n x8 x21 x60 x77 x87) < b → b1 = b - (Cost_column_arms n x8 x21 x60 x77 x87) → (Pre_nest_inner n x8 x21 x50 x60 x77 x239 x316 (Lanius.Mini.columnArms x8 x21 x60 x77 x87) x106 b1))) | none => True) | none => True)
+
+end
+
+noncomputable section
+
+def Cost_nest_pats : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.VariantTy → Lanius.Mini.CTree → List Lanius.Mini.CTree → List Lanius.Mini.CTree → Option Lanius.Mini.CTree → Nat
+  | 0, x10, x23, x38, x52, x62, x79, x98 => 18446744073709551616
+  | n + 1, x10, x23, x38, x52, x62, x79, x98 => (match (Lanius.Mini.firstNested x23 x62 0) with | some x245 => (Cost_nest_at n x10 x23 x38 x52 x62 x245 x79 x98) | none => 0)
+
+end
+
+noncomputable section
+
+def Pre_nest_pats : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.VariantTy → Lanius.Mini.CTree → List Lanius.Mini.CTree → List Lanius.Mini.CTree → Option Lanius.Mini.CTree → Nat → Prop
+  | 0, x10, x23, x38, x52, x62, x79, x98, b => True
+  | n + 1, x10, x23, x38, x52, x62, x79, x98, b => ((Pre_first_nested n x23 x62 0 b) ∧ (match (Lanius.Mini.firstNested x23 x62 0) with | some x245 => (Pre_nest_at n x10 x23 x38 x52 x62 x245 x79 x98 b) | none => True))
+
+end
+
+noncomputable section
+
+def Cost_nest_use : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.VariantTy → Lanius.Mini.CTree → List Lanius.Mini.CTree → Option Lanius.Mini.CTree → Nat
+  | 0, x9, x22, x37, x51, x61, x80 => 18446744073709551616
+  | n + 1, x9, x22, x37, x51, x61, x80 => ((Cost_row_pats n x9 x51) + (match (Lanius.Mini.rowPats x9 x51) with | some x220 => (Cost_nest_pats n x9 x22 x37 x51 x220 x61 x80) | none => 0))
+
+end
+
+noncomputable section
+
+def Pre_nest_use : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.VariantTy → Lanius.Mini.CTree → List Lanius.Mini.CTree → Option Lanius.Mini.CTree → Nat → Prop
+  | 0, x9, x22, x37, x51, x61, x80, b => True
+  | n + 1, x9, x22, x37, x51, x61, x80, b => (∀ b1 : Nat, (Cost_row_pats n x9 x51) < b → b1 = b - (Cost_row_pats n x9 x51) → (match (Lanius.Mini.rowPats x9 x51) with | some x220 => (Pre_nest_pats n x9 x22 x37 x51 x220 x61 x80 b1) | none => True))
+
+end
+
+noncomputable section
+
+def Cost_plain_use : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.CTree → List Lanius.Mini.CTree → Nat
+  | 0, x10, x23, x38, x48 => 18446744073709551616
+  | n + 1, x10, x23, x38, x48 => (match x48 with | [] => 0 | x193 :: x196 => (Cost_any_nested n x10 x23 x48))
+
+end
+
+noncomputable section
+
+def Cost_nested_or_plain : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.VariantTy → Lanius.Mini.CTree → List Lanius.Mini.CTree → List Lanius.Mini.CTree → Option Lanius.Mini.CTree → Bool → Nat
+  | 0, x16, x29, x44, x58, x68, x87, x106, x138 => 18446744073709551616
+  | n + 1, x16, x29, x44, x58, x68, x87, x106, x138 => (if x138 = true then (Cost_nest_use n x16 x29 x44 x58 x87 x106) else (Cost_plain_use n x16 x29 x58 x68))
+
+end
+
+noncomputable section
+
+def Pre_nested_or_plain : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.VariantTy → Lanius.Mini.CTree → List Lanius.Mini.CTree → List Lanius.Mini.CTree → Option Lanius.Mini.CTree → Bool → Nat → Prop
+  | 0, x16, x29, x44, x58, x68, x87, x106, x138, b => True
+  | n + 1, x16, x29, x44, x58, x68, x87, x106, x138, b => (if x138 = true then (Pre_nest_use n x16 x29 x44 x58 x87 x106 b) else True)
+
+end
+
+noncomputable section
+
+def Cost_rows_use : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.VariantTy → Lanius.Mini.CTree → List Lanius.Mini.CTree → List Lanius.Mini.CTree → Option Lanius.Mini.CTree → Option Bool → Nat
+  | 0, x9, x22, x37, x51, x61, x80, x99, x131 => 18446744073709551616
+  | n + 1, x9, x22, x37, x51, x61, x80, x99, x131 => (match x131 with | some x264 => (Cost_nested_or_plain n x9 x22 x37 x51 x61 x80 x99 x264) | none => 0)
+
+end
+
+noncomputable section
+
+def Pre_rows_use : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.VariantTy → Lanius.Mini.CTree → List Lanius.Mini.CTree → List Lanius.Mini.CTree → Option Lanius.Mini.CTree → Option Bool → Nat → Prop
+  | 0, x9, x22, x37, x51, x61, x80, x99, x131, b => True
+  | n + 1, x9, x22, x37, x51, x61, x80, x99, x131, b => (match x131 with | some x264 => (Pre_nested_or_plain n x9 x22 x37 x51 x61 x80 x99 x264 b) | none => True)
+
+end
+
+noncomputable section
+
+def Cost_variant_arm : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.VariantTy → Option (List Lanius.Mini.CTree) → Option Lanius.Mini.CTree → Nat
+  | 0, x12, x25, x40, x54, x95 => 18446744073709551616
+  | n + 1, x12, x25, x40, x54, x95 => (match x54 with | some x222 => (match x222 with | [] => (Cost_wild_use n x95 x40) | x294 :: x297 => ((Cost_arm_nested n x12 x25 x294) + (Cost_rows_use n x12 x25 x40 x294 x297 x222 x95 (Lanius.Mini.armNested x12 x25 x294)))) | none => 0)
+
+end
+
+noncomputable section
+
+def Pre_variant_arm : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.VariantTy → Option (List Lanius.Mini.CTree) → Option Lanius.Mini.CTree → Nat → Prop
+  | 0, x12, x25, x40, x54, x95, b => True
+  | n + 1, x12, x25, x40, x54, x95, b => (match x54 with | some x222 => (match x222 with | [] => (Pre_wild_use n x95 x40 b) | x294 :: x297 => (∀ b2 : Nat, (Cost_arm_nested n x12 x25 x294) < b → b2 = b - (Cost_arm_nested n x12 x25 x294) → (Pre_rows_use n x12 x25 x40 x294 x297 x222 x95 (Lanius.Mini.armNested x12 x25 x294) b2))) | none => True)
+
+end
+
+noncomputable section
+
+def Cost_row_cons : Nat → Option Bool → Lanius.Mini.CTree → Option (List Lanius.Mini.CTree) → Nat
+  | 0, x9, x44, x54 => 18446744073709551616
+  | n + 1, x9, x44, x54 => (match x9 with | some x196 => (match x54 with | some x260 => (Cost_arms_naming_at n x196 x44 x260) | none => 0) | none => 0)
+
+end
+
+noncomputable section
+
+mutual
+def Cost_rows_naming : Nat → Nat → Lanius.Mini.TypeDecl → List Nat → List Lanius.Mini.CTree → Nat
+  | 0, x12, x25, x42, x61 => 18446744073709551616
+  | n + 1, x12, x25, x42, x61 => (match x61 with | [] => 0 | x188 :: x191 => ((Cost_arm_naming n x12 x25 x42 x188) + ((Cost_rows_naming n x12 x25 x42 x191) + (Cost_row_cons n (Lanius.Mini.armNaming x12 x25 x42 x188) x188 (Lanius.Mini.rowsNaming x12 x25 x42 x191)))))
+termination_by structural fuel => fuel
+end
+
+end
+
+noncomputable section
+
+mutual
+def Cost_variant_arms : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.TypeDecl → List Lanius.Mini.VariantTy → List Lanius.Mini.CTree → Option Lanius.Mini.CTree → Nat
+  | 0, x13, x26, x41, x58, x85, x104 => 18446744073709551616
+  | n + 1, x13, x26, x41, x58, x85, x104 => (match x58 with | [] => 0 | x275 :: x278 => ((Cost_rows_naming n x13 x41 x275.name x85) + ((Cost_variant_arm n x13 x26 x275 (Lanius.Mini.rowsNaming x13 x41 x275.name x85) x104) + ((Cost_variant_arms n x13 x26 x41 x278 x85 x104) + (Cost_cons_use n (Lanius.Mini.variantArm x13 x26 x275 ((Lanius.Mini.rowsNaming x13 x41 x275.name x85)) x104) (Lanius.Mini.variantArms x13 x26 x41 x278 x85 x104))))))
+termination_by structural fuel => fuel
+end
+
+end
+
+noncomputable section
+
+mutual
+def Pre_variant_arms : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.TypeDecl → List Lanius.Mini.VariantTy → List Lanius.Mini.CTree → Option Lanius.Mini.CTree → Nat → Prop
+  | 0, x13, x26, x41, x58, x85, x104, b => True
+  | n + 1, x13, x26, x41, x58, x85, x104, b => (match x58 with | [] => True | x275 :: x278 => (∀ b1 : Nat, (Cost_rows_naming n x13 x41 x275.name x85) < b → b1 = b - (Cost_rows_naming n x13 x41 x275.name x85) → ((Pre_variant_arm n x13 x26 x275 (Lanius.Mini.rowsNaming x13 x41 x275.name x85) x104 b1) ∧ (∀ b2 : Nat, (Cost_variant_arm n x13 x26 x275 (Lanius.Mini.rowsNaming x13 x41 x275.name x85) x104) < b1 → b2 = b1 - (Cost_variant_arm n x13 x26 x275 (Lanius.Mini.rowsNaming x13 x41 x275.name x85) x104) → (Pre_variant_arms n x13 x26 x41 x278 x85 x104 b2)))))
+termination_by structural fuel => fuel
+end
+
+end
+
+noncomputable section
+
+def Cost_nested_with : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.TypeDecl → List Lanius.Mini.VariantTy → List Lanius.Mini.CTree → Option Lanius.Mini.CTree → Nat
+  | 0, x12, x25, x40, x57, x84, x103 => 18446744073709551616
+  | n + 1, x12, x25, x40, x57, x84, x103 => ((Cost_all_name_some n x12 x40 x57 x84) + (if (Lanius.Mini.allNameSome x12 x40 x57 x84) = true then (Cost_variant_arms n x12 x25 x40 x57 x84 x103) else 0))
+
+end
+
+noncomputable section
+
+def Pre_nested_with : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.TypeDecl → List Lanius.Mini.VariantTy → List Lanius.Mini.CTree → Option Lanius.Mini.CTree → Nat → Prop
+  | 0, x12, x25, x40, x57, x84, x103, b => True
+  | n + 1, x12, x25, x40, x57, x84, x103, b => (∀ b1 : Nat, (Cost_all_name_some n x12 x40 x57 x84) < b → b1 = b - (Cost_all_name_some n x12 x40 x57 x84) → (if (Lanius.Mini.allNameSome x12 x40 x57 x84) = true then (Pre_variant_arms n x12 x25 x40 x57 x84 x103 b1) else True))
+
+end
+
+noncomputable section
+
+def Cost_nested_checked : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.TypeDecl → List Lanius.Mini.VariantTy → List Lanius.Mini.CTree → Bool → Nat
+  | 0, x15, x28, x43, x60, x87, x106 => 18446744073709551616
+  | n + 1, x15, x28, x43, x60, x87, x106 => (if x106 = true then ((Cost_wild_split n x87) + (match (Lanius.Mini.wildSplit x87) with | some x228 => (Cost_nested_with n x15 x28 x43 x60 x228.init (some x228.wild)) | none => (Cost_nested_with n x15 x28 x43 x60 x87 (none : Option Lanius.Mini.CTree)))) else 0)
+
+end
+
+noncomputable section
+
+def Pre_nested_checked : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.TypeDecl → List Lanius.Mini.VariantTy → List Lanius.Mini.CTree → Bool → Nat → Prop
+  | 0, x15, x28, x43, x60, x87, x106, b => True
+  | n + 1, x15, x28, x43, x60, x87, x106, b => (if x106 = true then (∀ b1 : Nat, (Cost_wild_split n x87) < b → b1 = b - (Cost_wild_split n x87) → (match (Lanius.Mini.wildSplit x87) with | some x228 => (Pre_nested_with n x15 x28 x43 x60 x228.init (some x228.wild) b1) | none => (Pre_nested_with n x15 x28 x43 x60 x87 (none : Option Lanius.Mini.CTree) b1))) else True)
+
+end
+
+noncomputable section
+
+def Cost_nested_order : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.TypeDecl → List Lanius.Mini.VariantTy → List Lanius.Mini.CTree → Nat
+  | 0, x13, x26, x41, x58, x85 => 18446744073709551616
+  | n + 1, x13, x26, x41, x58, x85 => (match (Lanius.Mini.noBlock x13 x85) with | some x220 => (Cost_nested_checked n x13 x26 x41 x58 x85 x220) | none => 0)
+
+end
+
+noncomputable section
+
+def Pre_nested_order : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.TypeDecl → List Lanius.Mini.VariantTy → List Lanius.Mini.CTree → Nat → Prop
+  | 0, x13, x26, x41, x58, x85, b => True
+  | n + 1, x13, x26, x41, x58, x85, b => (match (Lanius.Mini.noBlock x13 x85) with | some x220 => (Pre_nested_checked n x13 x26 x41 x58 x85 x220 b) | none => True)
+
+end
+
+noncomputable section
+
+def Cost_order_by : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.TypeDecl → List Lanius.Mini.VariantTy → List Lanius.Mini.CTree → Bool → Nat
+  | 0, x9, x22, x37, x54, x81, x100 => 18446744073709551616
+  | n + 1, x9, x22, x37, x54, x81, x100 => (if x100 = true then (Cost_nested_order n x9 x22 x37 x54 x81) else (Cost_arms_in_order n x9 x37 x54 x81))
+
+end
+
+noncomputable section
+
+def Pre_order_by : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.TypeDecl → List Lanius.Mini.VariantTy → List Lanius.Mini.CTree → Bool → Nat → Prop
+  | 0, x9, x22, x37, x54, x81, x100, b => True
+  | n + 1, x9, x22, x37, x54, x81, x100, b => (if x100 = true then (Pre_nested_order n x9 x22 x37 x54 x81 b) else (Pre_arms_in_order n x9 x37 x54 x81 b))
+
+end
+
+noncomputable section
+
+def Cost_match_order : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.TypeDecl → List Lanius.Mini.VariantTy → List Lanius.Mini.CTree → Nat
+  | 0, x12, x25, x40, x57, x84 => 18446744073709551616
+  | n + 1, x12, x25, x40, x57, x84 => ((Cost_any_nested n x12 x25 x84) + (match (Lanius.Mini.anyNested x12 x25 x84) with | some x226 => (Cost_order_by n x12 x25 x40 x57 x84 x226) | none => 0))
+
+end
+
+noncomputable section
+
+def Pre_match_order : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.TypeDecl → List Lanius.Mini.VariantTy → List Lanius.Mini.CTree → Nat → Prop
+  | 0, x12, x25, x40, x57, x84, b => True
+  | n + 1, x12, x25, x40, x57, x84, b => (∀ b1 : Nat, (Cost_any_nested n x12 x25 x84) < b → b1 = b - (Cost_any_nested n x12 x25 x84) → (match (Lanius.Mini.anyNested x12 x25 x84) with | some x226 => (Pre_order_by n x12 x25 x40 x57 x84 x226 b1) | none => True))
+
+end
+
+noncomputable section
+
+def Cost_cons_of_mini_selfhost_EffArm : Nat → Lanius.Mini.EffArm → List Lanius.Mini.EffArm → Nat
+  | 0, x8, x17 => 18446744073709551616
+  | n + 1, x8, x17 => 1
+
+end
+
+noncomputable section
+
+def Cost_cons_eff_arm : Nat → Option Lanius.Mini.EffArm → Option (List Lanius.Mini.EffArm) → Nat
+  | 0, x13, x49 => 18446744073709551616
+  | n + 1, x13, x49 => (match x13 with | some x192 => (match x49 with | some x256 => (Cost_cons_of_mini_selfhost_EffArm n x192 x256) | none => 0) | none => 0)
+
+end
+
+noncomputable section
+
+def Cost_cons_binder : Nat → Nat → Option Lanius.Mini.Bound → Nat
+  | 0, x12, x23 => 18446744073709551616
+  | n + 1, x12, x23 => (match x23 with | some x152 => (Cost_cons_of_usize n x12 x152.ids) | none => 0)
+
+end
+
+noncomputable section
+
+mutual
+def Cost_binders_of : Nat → Lanius.Mini.FrontEnv → List Lanius.Mini.Local → List Lanius.Mini.CTree → List Lanius.Mini.Ty → Nat
+  | 0, x11, x26, x46, x65 => 18446744073709551616
+  | n + 1, x11, x26, x46, x65 => (match x65 with | [] => 0 | x298 :: x301 => (match x46 with | [] => 0 | x367 :: x370 => (Cost_binder_of n x11 x26 x367 x298 x370 x301)))
+termination_by structural fuel => fuel
+
+def Cost_binder_of : Nat → Lanius.Mini.FrontEnv → List Lanius.Mini.Local → Lanius.Mini.CTree → Lanius.Mini.Ty → List Lanius.Mini.CTree → List Lanius.Mini.Ty → Nat
+  | 0, x10, x25, x45, x55, x62, x81 => 18446744073709551616
+  | n + 1, x10, x25, x45, x55, x62, x81 => (let k2 := ((Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken ((Lanius.Mini.kid ((Lanius.Mini.kid x45 0)) 0)) 0).text) (((Lanius.Mini.kidToken ((Lanius.Mini.kid ((Lanius.Mini.kid x45 0)) 0)) 0).start) - x10.base) x55) x25) + ((Cost_binders_of n x10 ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken ((Lanius.Mini.kid ((Lanius.Mini.kid x45 0)) 0)) 0).text) (((Lanius.Mini.kidToken ((Lanius.Mini.kid ((Lanius.Mini.kid x45 0)) 0)) 0).start) - x10.base) x55) :: x25) x62 x81) + (Cost_cons_binder n (((Lanius.Mini.kidToken ((Lanius.Mini.kid ((Lanius.Mini.kid x45 0)) 0)) 0).start) - x10.base) (Lanius.Mini.bindersOf x10 (((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken ((Lanius.Mini.kid ((Lanius.Mini.kid x45 0)) 0)) 0).text) (((Lanius.Mini.kidToken ((Lanius.Mini.kid ((Lanius.Mini.kid x45 0)) 0)) 0).start) - x10.base) x55) :: x25)) x62 x81)))); let k3 := 0; (if (decide ((Lanius.Mini.nodeProd x45) = Lanius.Mini.Inline.pPatternIdent)) = true then (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x45 1))) = Lanius.Mini.Inline.pPatternPlain)) = true then (if (Lanius.Mini.isSomeName ((Lanius.Mini.pathName ((Lanius.Mini.kid x45 0))))) = true then (if (!(Lanius.Mini.member x10.globals (((Lanius.Mini.kidToken ((Lanius.Mini.kid ((Lanius.Mini.kid x45 0)) 0)) 0).text)))) = true then (if (!(Lanius.Mini.anyVariant x10.decls.types (((Lanius.Mini.kidToken ((Lanius.Mini.kid ((Lanius.Mini.kid x45 0)) 0)) 0).text)))) = true then (if (Lanius.Mini.freshId x25 ((((Lanius.Mini.kidToken ((Lanius.Mini.kid ((Lanius.Mini.kid x45 0)) 0)) 0).start) - x10.base))) = true then k2 else k3) else k3) else k3) else k3) else k3) else k3))
+termination_by structural fuel => fuel
+end
+
+end
+
+noncomputable section
+
+def Cost_arm_eff : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.Bound → Option Lanius.Mini.MEff → Nat
+  | 0, x8, x21, x36, x46 => 18446744073709551616
+  | n + 1, x8, x21, x36, x46 => (match x46 with | some x177 => (Cost_eff_ty n x8 x21 x36.scope x177) | none => 0)
+
+end
+
+noncomputable section
+
+def Pre_arm_eff : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.Bound → Option Lanius.Mini.MEff → Nat → Prop
+  | 0, x8, x21, x36, x46, b => True
+  | n + 1, x8, x21, x36, x46, b => (match x46 with | some x177 => (Pre_eff_ty n x8 x21 x36.scope x177 b) | none => True)
+
+end
+
+noncomputable section
+
+def Cost_diverge_checked : Nat → Bool → Lanius.Mini.Ty → Lanius.Mini.Inst → List Lanius.Mini.MEff → Lanius.Mini.MEff → Nat
+  | 0, x16, x26, x33, x45, x68 => 18446744073709551616
+  | n + 1, x16, x26, x33, x45, x68 => (if x16 = true then ((Cost_single_of_mini_selfhost_Ty n x26) + (Cost_concat_of_mini_selfhost_Ty n x33.args ([x26]))) else 0)
+
+end
+
+noncomputable section
+
+def Cost_diverge_call : Nat → Lanius.Mini.Decls → Lanius.Mini.Ty → Lanius.Mini.Inst → List Lanius.Mini.MEff → Lanius.Mini.MEff → Nat
+  | 0, x13, x27, x34, x46, x69 => 18446744073709551616
+  | n + 1, x13, x27, x34, x46, x69 => (match (x13.fns[x34.decl]?) with | some x167 => (if (Lanius.Mini.neverRet x167) = true then ((Cost_concat_of_mini_selfhost_List_usize n x167.implParams x167.params) + (Cost_diverge_checked n (decide (x34.args.length = ((x167.implParams ++ x167.params).length))) x27 x34 x46 x69)) else (Cost_diverge_checked n false x27 x34 x46 x69)) | none => 0)
+
+end
+
+noncomputable section
+
+def Pre_diverge_call : Nat → Lanius.Mini.Decls → Lanius.Mini.Ty → Lanius.Mini.Inst → List Lanius.Mini.MEff → Lanius.Mini.MEff → Nat → Prop
+  | 0, x13, x27, x34, x46, x69, b => True
+  | n + 1, x13, x27, x34, x46, x69, b => (match (x13.fns[x34.decl]?) with | some x167 => (if (Lanius.Mini.neverRet x167) = true then ((Pre_length_of_mini_selfhost_Ty n x34.args b) ∧ (∀ b2 : Nat, (Cost_concat_of_mini_selfhost_List_usize n x167.implParams x167.params) < b → b2 = b - (Cost_concat_of_mini_selfhost_List_usize n x167.implParams x167.params) → (Pre_length_of_mini_selfhost_List_usize n (x167.implParams ++ x167.params) b2))) else True) | none => True)
+
+end
+
+noncomputable section
+
+def Cost_diverge_eff : Nat → Lanius.Mini.Decls → Lanius.Mini.Ty → Lanius.Mini.MEff → Nat
+  | 0, x12, x26, x33 => 18446744073709551616
+  | n + 1, x12, x26, x33 => (match x33 with | .xPure x89 => 0 | .xCall x112 x118 => (Cost_diverge_call n x12 x26 x112 x118 x33) | .xApply x181 x185 x188 => 0 | .xNeg x210 => 0 | .xNot x232 => 0 | .xCast x255 x258 => 0 | .xIndex x282 x286 => 0 | .xStruct x311 x315 => 0 | .xVariant x342 x346 x349 => 0 | .xMatch x374 x378 x383 x387 x391 => 0 | .xDivide x417 x421 x424 => 0 | .xStride x449 => 0 | .xArraySlice x479 x482 => 0 | .xHost x506 x510 => 0 | .xIf x534 x537 x541 x544 => 0 | .xLet x566 x570 x574 x577 x581 => 0 | .xLen x603 => 0 | .xStr x626 => 0)
+
+end
+
+noncomputable section
+
+def Pre_diverge_eff : Nat → Lanius.Mini.Decls → Lanius.Mini.Ty → Lanius.Mini.MEff → Nat → Prop
+  | 0, x12, x26, x33, b => True
+  | n + 1, x12, x26, x33, b => (match x33 with | .xPure x89 => True | .xCall x112 x118 => (Pre_diverge_call n x12 x26 x112 x118 x33 b) | .xApply x181 x185 x188 => True | .xNeg x210 => True | .xNot x232 => True | .xCast x255 x258 => True | .xIndex x282 x286 => True | .xStruct x311 x315 => True | .xVariant x342 x346 x349 => True | .xMatch x374 x378 x383 x387 x391 => True | .xDivide x417 x421 x424 => True | .xStride x449 => True | .xArraySlice x479 x482 => True | .xHost x506 x510 => True | .xIf x534 x537 x541 x544 => True | .xLet x566 x570 x574 x577 x581 => True | .xLen x603 => True | .xStr x626 => True)
+
+end
+
+noncomputable section
+
+def Cost_diverge_arm : Nat → Lanius.Mini.Decls → Option Lanius.Mini.Ty → Option Lanius.Mini.MEff → Nat
+  | 0, x12, x26, x62 => 18446744073709551616
+  | n + 1, x12, x26, x62 => (match x62 with | some x183 => (match x26 with | some x254 => (Cost_diverge_eff n x12 x254 x183) | none => 0) | none => 0)
+
+end
+
+noncomputable section
+
+def Pre_diverge_arm : Nat → Lanius.Mini.Decls → Option Lanius.Mini.Ty → Option Lanius.Mini.MEff → Nat → Prop
+  | 0, x12, x26, x62, b => True
+  | n + 1, x12, x26, x62, b => (match x62 with | some x183 => (match x26 with | some x254 => (Pre_diverge_eff n x12 x254 x183 b) | none => True) | none => True)
+
+end
+
+noncomputable section
+
+def Cost_cons_of_mini_selfhost_VariantTy : Nat → Lanius.Mini.VariantTy → List Lanius.Mini.VariantTy → Nat
+  | 0, x8, x17 => 18446744073709551616
+  | n + 1, x8, x17 => 1
+
+end
+
+noncomputable section
+
+mutual
+def Cost_zip_variants : Nat → List (List Nat) → List (List Lanius.Mini.Ty) → Nat
+  | 0, x13, x39 => 18446744073709551616
+  | n + 1, x13, x39 => (match x13 with | [] => 0 | x150 :: x153 => (match x39 with | [] => 0 | x226 :: x229 => ((Cost_zip_variants n x153 x229) + (Cost_cons_of_mini_selfhost_VariantTy n (Lanius.Mini.VariantTy.mk x150 x226) (Lanius.Mini.zipVariants x153 x229)))))
+termination_by structural fuel => fuel
+end
+
+end
+
+noncomputable section
+
+def Cost_lit_result : Nat → Nat → Lanius.Mini.FrontEnv → List Lanius.Mini.Local → Option Lanius.Mini.Ty → List Lanius.Mini.MEff → Nat
+  | 0, x11, x24, x39, x59, x95 => 18446744073709551616
+  | n + 1, x11, x24, x39, x59, x95 => (match x59 with | some x188 => 0 | none => (match x95 with | [] => 0 | x278 :: x281 => (Cost_eff_ty n x11 x24 x39 x278)))
+
+end
+
+noncomputable section
+
+def Pre_lit_result : Nat → Nat → Lanius.Mini.FrontEnv → List Lanius.Mini.Local → Option Lanius.Mini.Ty → List Lanius.Mini.MEff → Nat → Prop
+  | 0, x11, x24, x39, x59, x95, b => True
+  | n + 1, x11, x24, x39, x59, x95, b => (match x59 with | some x188 => True | none => (match x95 with | [] => True | x278 :: x281 => (Pre_eff_ty n x11 x24 x39 x278 b)))
+
+end
+
+noncomputable section
+
+def Cost_eq_on : Nat → Lanius.Mini.SrcExpr → Option Lanius.Mini.SrcExpr → Nat
+  | 0, x6, x18 => 18446744073709551616
+  | n + 1, x6, x18 => (match x18 with | some x145 => (1 + 1) | none => 0)
+
+end
+
+noncomputable section
+
+def Cost_lit_test : Nat → Lanius.Mini.SrcExpr → Lanius.Mini.Ty → Lanius.Mini.CTree → Nat
+  | 0, x9, x21, x30 => 18446744073709551616
+  | n + 1, x9, x21, x30 => (if ((decide ((Lanius.Mini.nodeProd x30) = Lanius.Mini.Inline.pPatternInt)) && (!(Lanius.Mini.sameTy x21 Lanius.Mini.Ty.tyBool))) = true then ((Cost_int_literal n (((Lanius.Mini.kidToken x30 0)).text)) + (Cost_eq_on n x9 (Lanius.Mini.intLiteral ((((Lanius.Mini.kidToken x30 0)).text))))) else (if ((decide ((Lanius.Mini.nodeProd x30) = Lanius.Mini.Inline.pPatternTrue)) && (Lanius.Mini.sameTy x21 Lanius.Mini.Ty.tyBool)) = true then 0 else (if ((decide ((Lanius.Mini.nodeProd x30) = Lanius.Mini.Inline.pPatternFalse)) && (Lanius.Mini.sameTy x21 Lanius.Mini.Ty.tyBool)) = true then 1 else 0)))
+
+end
+
+noncomputable section
+
+def Pre_lit_test : Nat → Lanius.Mini.SrcExpr → Lanius.Mini.Ty → Lanius.Mini.CTree → Nat → Prop
+  | 0, x9, x21, x30, b => True
+  | n + 1, x9, x21, x30, b => (if ((decide ((Lanius.Mini.nodeProd x30) = Lanius.Mini.Inline.pPatternInt)) && (!(Lanius.Mini.sameTy x21 Lanius.Mini.Ty.tyBool))) = true then (Pre_int_literal n (((Lanius.Mini.kidToken x30 0)).text) b) else True)
+
+end
+
+noncomputable section
+
+def Cost_lit_if_of : Nat → Option Lanius.Mini.SrcExpr → Lanius.Mini.Ty → Lanius.Mini.MEff → Option Lanius.Mini.MEff → Nat
+  | 0, x10, x47, x55, x64 => 18446744073709551616
+  | n + 1, x10, x47, x55, x64 => (match x10 with | some x191 => (match x64 with | some x255 => (1 + (1 + 1)) | none => 0) | none => 0)
+
+end
+
+noncomputable section
+
+def Cost_lit_link : Nat → Lanius.Mini.SrcExpr → Lanius.Mini.Ty → Lanius.Mini.Ty → Bool → Lanius.Mini.CTree → Lanius.Mini.MEff → List Lanius.Mini.CTree → Option Lanius.Mini.MEff → Nat
+  | 0, x9, x21, x30, x38, x53, x63, x72, x91 => 18446744073709551616
+  | n + 1, x9, x21, x30, x38, x53, x63, x72, x91 => ((Cost_is_wild_arm n x53) + (if (Lanius.Mini.isWildArm x53) = true then 0 else (match x72 with | [] => (Cost_lit_test n x9 x21 (Lanius.Mini.kid x53 0)) | x340 :: x343 => ((Cost_lit_test n x9 x21 (Lanius.Mini.kid x53 0)) + (Cost_lit_if_of n (Lanius.Mini.litTest x9 x21 ((Lanius.Mini.kid x53 0))) x30 x63 x91)))))
+
+end
+
+noncomputable section
+
+def Pre_lit_link : Nat → Lanius.Mini.SrcExpr → Lanius.Mini.Ty → Lanius.Mini.Ty → Bool → Lanius.Mini.CTree → Lanius.Mini.MEff → List Lanius.Mini.CTree → Option Lanius.Mini.MEff → Nat → Prop
+  | 0, x9, x21, x30, x38, x53, x63, x72, x91, b => True
+  | n + 1, x9, x21, x30, x38, x53, x63, x72, x91, b => (∀ b1 : Nat, (Cost_is_wild_arm n x53) < b → b1 = b - (Cost_is_wild_arm n x53) → (if (Lanius.Mini.isWildArm x53) = true then True else (Pre_lit_test n x9 x21 (Lanius.Mini.kid x53 0) b1)))
+
+end
+
+noncomputable section
+
+mutual
+def Cost_lit_chain : Nat → Lanius.Mini.SrcExpr → Lanius.Mini.Ty → Lanius.Mini.Ty → Bool → Bool → List Lanius.Mini.CTree → List Lanius.Mini.MEff → Nat
+  | 0, x10, x22, x31, x39, x53, x67, x86 => 18446744073709551616
+  | n + 1, x10, x22, x31, x39, x53, x67, x86 => (match x67 with | [] => 0 | x198 :: x201 => (match x86 with | [] => 0 | x269 :: x272 => (if x39 = true then (if x53 = true then (if x39 = true then (if x53 = true then ((Cost_lit_chain n x10 x22 x31 true true x201 x272) + (Cost_lit_link n x10 x22 x31 true x198 x269 x201 (Lanius.Mini.litChain x10 x22 x31 true true x201 x272))) else ((Cost_lit_chain n x10 x22 x31 true (Lanius.Mini.isFalseArm x198) x201 x272) + (Cost_lit_link n x10 x22 x31 true x198 x269 x201 (Lanius.Mini.litChain x10 x22 x31 true ((Lanius.Mini.isFalseArm x198)) x201 x272)))) else (if x53 = true then ((Cost_lit_chain n x10 x22 x31 (Lanius.Mini.isTrueArm x198) true x201 x272) + (Cost_lit_link n x10 x22 x31 true x198 x269 x201 (Lanius.Mini.litChain x10 x22 x31 ((Lanius.Mini.isTrueArm x198)) true x201 x272))) else ((Cost_lit_chain n x10 x22 x31 (Lanius.Mini.isTrueArm x198) (Lanius.Mini.isFalseArm x198) x201 x272) + (Cost_lit_link n x10 x22 x31 true x198 x269 x201 (Lanius.Mini.litChain x10 x22 x31 ((Lanius.Mini.isTrueArm x198)) ((Lanius.Mini.isFalseArm x198)) x201 x272))))) else (if x39 = true then (if x53 = true then ((Cost_lit_chain n x10 x22 x31 true true x201 x272) + (Cost_lit_link n x10 x22 x31 (Lanius.Mini.isFalseArm x198) x198 x269 x201 (Lanius.Mini.litChain x10 x22 x31 true true x201 x272))) else ((Cost_lit_chain n x10 x22 x31 true (Lanius.Mini.isFalseArm x198) x201 x272) + (Cost_lit_link n x10 x22 x31 (Lanius.Mini.isFalseArm x198) x198 x269 x201 (Lanius.Mini.litChain x10 x22 x31 true ((Lanius.Mini.isFalseArm x198)) x201 x272)))) else (if x53 = true then ((Cost_lit_chain n x10 x22 x31 (Lanius.Mini.isTrueArm x198) true x201 x272) + (Cost_lit_link n x10 x22 x31 (Lanius.Mini.isFalseArm x198) x198 x269 x201 (Lanius.Mini.litChain x10 x22 x31 ((Lanius.Mini.isTrueArm x198)) true x201 x272))) else ((Cost_lit_chain n x10 x22 x31 (Lanius.Mini.isTrueArm x198) (Lanius.Mini.isFalseArm x198) x201 x272) + (Cost_lit_link n x10 x22 x31 (Lanius.Mini.isFalseArm x198) x198 x269 x201 (Lanius.Mini.litChain x10 x22 x31 ((Lanius.Mini.isTrueArm x198)) ((Lanius.Mini.isFalseArm x198)) x201 x272)))))) else (if (Lanius.Mini.isTrueArm x198) = true then (if x53 = true then (if x39 = true then (if x53 = true then ((Cost_lit_chain n x10 x22 x31 true true x201 x272) + (Cost_lit_link n x10 x22 x31 true x198 x269 x201 (Lanius.Mini.litChain x10 x22 x31 true true x201 x272))) else ((Cost_lit_chain n x10 x22 x31 true (Lanius.Mini.isFalseArm x198) x201 x272) + (Cost_lit_link n x10 x22 x31 true x198 x269 x201 (Lanius.Mini.litChain x10 x22 x31 true ((Lanius.Mini.isFalseArm x198)) x201 x272)))) else (if x53 = true then ((Cost_lit_chain n x10 x22 x31 (Lanius.Mini.isTrueArm x198) true x201 x272) + (Cost_lit_link n x10 x22 x31 true x198 x269 x201 (Lanius.Mini.litChain x10 x22 x31 ((Lanius.Mini.isTrueArm x198)) true x201 x272))) else ((Cost_lit_chain n x10 x22 x31 (Lanius.Mini.isTrueArm x198) (Lanius.Mini.isFalseArm x198) x201 x272) + (Cost_lit_link n x10 x22 x31 true x198 x269 x201 (Lanius.Mini.litChain x10 x22 x31 ((Lanius.Mini.isTrueArm x198)) ((Lanius.Mini.isFalseArm x198)) x201 x272))))) else (if x39 = true then (if x53 = true then ((Cost_lit_chain n x10 x22 x31 true true x201 x272) + (Cost_lit_link n x10 x22 x31 (Lanius.Mini.isFalseArm x198) x198 x269 x201 (Lanius.Mini.litChain x10 x22 x31 true true x201 x272))) else ((Cost_lit_chain n x10 x22 x31 true (Lanius.Mini.isFalseArm x198) x201 x272) + (Cost_lit_link n x10 x22 x31 (Lanius.Mini.isFalseArm x198) x198 x269 x201 (Lanius.Mini.litChain x10 x22 x31 true ((Lanius.Mini.isFalseArm x198)) x201 x272)))) else (if x53 = true then ((Cost_lit_chain n x10 x22 x31 (Lanius.Mini.isTrueArm x198) true x201 x272) + (Cost_lit_link n x10 x22 x31 (Lanius.Mini.isFalseArm x198) x198 x269 x201 (Lanius.Mini.litChain x10 x22 x31 ((Lanius.Mini.isTrueArm x198)) true x201 x272))) else ((Cost_lit_chain n x10 x22 x31 (Lanius.Mini.isTrueArm x198) (Lanius.Mini.isFalseArm x198) x201 x272) + (Cost_lit_link n x10 x22 x31 (Lanius.Mini.isFalseArm x198) x198 x269 x201 (Lanius.Mini.litChain x10 x22 x31 ((Lanius.Mini.isTrueArm x198)) ((Lanius.Mini.isFalseArm x198)) x201 x272)))))) else (if x39 = true then (if x53 = true then ((Cost_lit_chain n x10 x22 x31 true true x201 x272) + (Cost_lit_link n x10 x22 x31 false x198 x269 x201 (Lanius.Mini.litChain x10 x22 x31 true true x201 x272))) else ((Cost_lit_chain n x10 x22 x31 true (Lanius.Mini.isFalseArm x198) x201 x272) + (Cost_lit_link n x10 x22 x31 false x198 x269 x201 (Lanius.Mini.litChain x10 x22 x31 true ((Lanius.Mini.isFalseArm x198)) x201 x272)))) else (if x53 = true then ((Cost_lit_chain n x10 x22 x31 (Lanius.Mini.isTrueArm x198) true x201 x272) + (Cost_lit_link n x10 x22 x31 false x198 x269 x201 (Lanius.Mini.litChain x10 x22 x31 ((Lanius.Mini.isTrueArm x198)) true x201 x272))) else ((Cost_lit_chain n x10 x22 x31 (Lanius.Mini.isTrueArm x198) (Lanius.Mini.isFalseArm x198) x201 x272) + (Cost_lit_link n x10 x22 x31 false x198 x269 x201 (Lanius.Mini.litChain x10 x22 x31 ((Lanius.Mini.isTrueArm x198)) ((Lanius.Mini.isFalseArm x198)) x201 x272)))))))))
+termination_by structural fuel => fuel
+end
+
+end
+
+noncomputable section
+
 mutual
 def Pre_lit_chain : Nat → Lanius.Mini.SrcExpr → Lanius.Mini.Ty → Lanius.Mini.Ty → Bool → Bool → List Lanius.Mini.CTree → List Lanius.Mini.MEff → Nat → Prop
   | 0, x10, x22, x31, x39, x53, x67, x86, b => True
@@ -281,12 +712,17 @@ termination_by structural fuel => fuel
 
 def Cost_eff_infer : Nat → Nat → Lanius.Mini.FrontEnv → List Lanius.Mini.Local → Option Lanius.Mini.Ty → Nat → Lanius.Mini.FnDecl → List Lanius.Mini.Bind → List Lanius.Mini.MEff → List Lanius.Mini.CTree → Nat
   | 0, x10, x23, x38, x58, x94, x104, x116, x135, x152 => 18446744073709551616
-  | n + 1, x10, x23, x38, x58, x94, x104, x116, x135, x152 => (if (decide (x10 = 0)) = true then 0 else ((Cost_concat_of_mini_selfhost_List_usize n x104.implParams x104.params) + (if (Lanius.Mini.noNames ((x104.implParams ++ x104.params))) = true then ((Cost_param_expects n x10 x23.decls x104 (some ([] : List Lanius.Mini.Ty))) + ((Cost_eff_list n (x10 - 1) x23 x38 (Lanius.Mini.skipExpects ((Lanius.Mini.paramExpects x10 x23.decls x104 ((some ([] : List Lanius.Mini.Ty))))) x135) x152) + ((Cost_views_of n x38 (Lanius.Mini.skipExpects ((Lanius.Mini.paramExpects x10 x23.decls x104 ((some ([] : List Lanius.Mini.Ty))))) x135) (Lanius.Mini.effList ((x10 - 1)) x23 x38 ((Lanius.Mini.skipExpects ((Lanius.Mini.paramExpects x10 x23.decls x104 ((some ([] : List Lanius.Mini.Ty))))) x135)) x152)) + (Cost_eff_called n x10 x23 x38 x58 x94 x104 x116 x135 (Lanius.Mini.viewsOf x38 ((Lanius.Mini.skipExpects ((Lanius.Mini.paramExpects x10 x23.decls x104 ((some ([] : List Lanius.Mini.Ty))))) x135)) ((Lanius.Mini.effList ((x10 - 1)) x23 x38 ((Lanius.Mini.skipExpects ((Lanius.Mini.paramExpects x10 x23.decls x104 ((some ([] : List Lanius.Mini.Ty))))) x135)) x152))))))) else ((Cost_param_patterns n x10 x104) + (match (Lanius.Mini.paramPatterns x10 x104) with | some x764 => ((Cost_ret_binds n x10 x23.decls x104 (x104.implParams ++ x104.params) x116 x58) + ((Cost_eff_args_bound n (x10 - 1) x23 x38 x104 (x104.implParams ++ x104.params) x764 x135 x152 (Lanius.Mini.retBinds x10 x23.decls x104 ((x104.implParams ++ x104.params)) x116 x58)) + (Cost_eff_inferred n x10 x23 x38 x94 x104 (x104.implParams ++ x104.params) x764 (Lanius.Mini.effArgsBound ((x10 - 1)) x23 x38 x104 ((x104.implParams ++ x104.params)) x764 x135 x152 ((Lanius.Mini.retBinds x10 x23.decls x104 ((x104.implParams ++ x104.params)) x116 x58)))))) | none => 0)))))
+  | n + 1, x10, x23, x38, x58, x94, x104, x116, x135, x152 => (if (decide (x10 = 0)) = true then 0 else ((Cost_concat_of_mini_selfhost_List_usize n x104.implParams x104.params) + (if (Lanius.Mini.noNames ((x104.implParams ++ x104.params))) = true then ((Cost_param_expects n x10 x23.decls x104 (some ([] : List Lanius.Mini.Ty))) + ((Cost_arg_list n (x10 - 1) x23 x38 (Lanius.Mini.skipExpects ((Lanius.Mini.paramExpects x10 x23.decls x104 ((some ([] : List Lanius.Mini.Ty))))) x135) x152) + ((Cost_views_of n x38 (Lanius.Mini.skipExpects ((Lanius.Mini.paramExpects x10 x23.decls x104 ((some ([] : List Lanius.Mini.Ty))))) x135) (Lanius.Mini.argList ((x10 - 1)) x23 x38 ((Lanius.Mini.skipExpects ((Lanius.Mini.paramExpects x10 x23.decls x104 ((some ([] : List Lanius.Mini.Ty))))) x135)) x152)) + (Cost_eff_called n x10 x23 x38 x58 x94 x104 x116 x135 (Lanius.Mini.viewsOf x38 ((Lanius.Mini.skipExpects ((Lanius.Mini.paramExpects x10 x23.decls x104 ((some ([] : List Lanius.Mini.Ty))))) x135)) ((Lanius.Mini.argList ((x10 - 1)) x23 x38 ((Lanius.Mini.skipExpects ((Lanius.Mini.paramExpects x10 x23.decls x104 ((some ([] : List Lanius.Mini.Ty))))) x135)) x152))))))) else ((Cost_param_patterns n x10 x104) + (match (Lanius.Mini.paramPatterns x10 x104) with | some x764 => ((Cost_ret_binds n x10 x23.decls x104 (x104.implParams ++ x104.params) x116 x58) + ((Cost_eff_args_bound n (x10 - 1) x23 x38 x104 (x104.implParams ++ x104.params) x764 x135 x152 (Lanius.Mini.retBinds x10 x23.decls x104 ((x104.implParams ++ x104.params)) x116 x58)) + (Cost_eff_inferred n x10 x23 x38 x94 x104 (x104.implParams ++ x104.params) x764 (Lanius.Mini.effArgsBound ((x10 - 1)) x23 x38 x104 ((x104.implParams ++ x104.params)) x764 x135 x152 ((Lanius.Mini.retBinds x10 x23.decls x104 ((x104.implParams ++ x104.params)) x116 x58)))))) | none => 0)))))
 termination_by structural fuel => fuel
 
 def Cost_eff_arms : Nat → Nat → Lanius.Mini.FrontEnv → List Lanius.Mini.Local → Option Lanius.Mini.Ty → Lanius.Mini.TypeDecl → List Lanius.Mini.VariantTy → List Lanius.Mini.CTree → Nat
   | 0, x9, x22, x37, x57, x93, x110, x137 => 18446744073709551616
   | n + 1, x9, x22, x37, x57, x93, x110, x137 => (if (decide (x9 = 0)) = true then 0 else (match x110 with | [] => 0 | x397 :: x400 => (match x137 with | [] => 0 | x466 :: x469 => ((Cost_eff_arm n (x9 - 1) x22 x37 x57 x93 x397 x466) + ((Cost_eff_arms n (x9 - 1) x22 x37 x57 x93 x400 x469) + (Cost_cons_eff_arm n (Lanius.Mini.effArm ((x9 - 1)) x22 x37 x57 x93 x397 x466) (Lanius.Mini.effArms ((x9 - 1)) x22 x37 x57 x93 x400 x469)))))))
+termination_by structural fuel => fuel
+
+def Cost_arg_list : Nat → Nat → Lanius.Mini.FrontEnv → List Lanius.Mini.Local → Option (List Lanius.Mini.Ty) → List Lanius.Mini.CTree → Nat
+  | 0, x9, x22, x37, x57, x98 => 18446744073709551616
+  | n + 1, x9, x22, x37, x57, x98 => (if (decide (x9 = 0)) = true then 0 else (match x98 with | [] => 0 | x274 :: x277 => ((Cost_arg_eff n (x9 - 1) x22 x37 (Lanius.Mini.headTy x57) x274) + ((Cost_arg_list n (x9 - 1) x22 x37 (Lanius.Mini.tailTys x57) x277) + (Cost_cons_eff n (Lanius.Mini.argEff ((x9 - 1)) x22 x37 ((Lanius.Mini.headTy x57)) x274) (Lanius.Mini.argList ((x9 - 1)) x22 x37 ((Lanius.Mini.tailTys x57)) x277))))))
 termination_by structural fuel => fuel
 
 def Cost_eff_args_bound : Nat → Nat → Lanius.Mini.FrontEnv → List Lanius.Mini.Local → Lanius.Mini.FnDecl → List (List Nat) → List Lanius.Mini.CTree → List Lanius.Mini.MEff → List Lanius.Mini.CTree → Option (List Lanius.Mini.Bind) → Nat
@@ -297,6 +733,11 @@ termination_by structural fuel => fuel
 def Cost_eff_arm : Nat → Nat → Lanius.Mini.FrontEnv → List Lanius.Mini.Local → Option Lanius.Mini.Ty → Lanius.Mini.TypeDecl → Lanius.Mini.VariantTy → Lanius.Mini.CTree → Nat
   | 0, x8, x21, x36, x56, x92, x109, x123 => 18446744073709551616
   | n + 1, x8, x21, x36, x56, x92, x109, x123 => (if (decide (x8 = 0)) = true then 0 else (let k2 := (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid ((Lanius.Mini.kid x123 0)) 1))) = Lanius.Mini.Inline.pPatternPlain)) = true then (Cost_eff_arm_bound n (x8 - 1) x21 x56 (some (Lanius.Mini.Bound.mk ([] : List Nat) x36)) (Lanius.Mini.kid x123 2)) else ((Cost_list_items n x8 (Lanius.Mini.kid ((Lanius.Mini.kid ((Lanius.Mini.kid x123 0)) 1)) 1)) + (match (Lanius.Mini.listItems x8 ((Lanius.Mini.kid ((Lanius.Mini.kid ((Lanius.Mini.kid x123 0)) 1)) 1))) with | some x748 => ((Cost_binders_of n x21 x36 x748 x109.payload) + (Cost_eff_arm_bound n (x8 - 1) x21 x56 (Lanius.Mini.bindersOf x21 x36 x748 x109.payload) (Lanius.Mini.kid x123 2))) | none => 0))); let k3 := 0; (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x123 0))) = Lanius.Mini.Inline.pPatternIdent)) = true then ((Cost_path_spellings n x8 (Lanius.Mini.kid ((Lanius.Mini.kid ((Lanius.Mini.kid x123 0)) 0)) 0) (Lanius.Mini.kid ((Lanius.Mini.kid ((Lanius.Mini.kid x123 0)) 0)) 1)) + ((Cost_arm_named n (Lanius.Mini.pathSpellings x8 ((Lanius.Mini.kid ((Lanius.Mini.kid ((Lanius.Mini.kid x123 0)) 0)) 0)) ((Lanius.Mini.kid ((Lanius.Mini.kid ((Lanius.Mini.kid x123 0)) 0)) 1))) x92 x109.name) + (if (Lanius.Mini.armNamed ((Lanius.Mini.pathSpellings x8 ((Lanius.Mini.kid ((Lanius.Mini.kid ((Lanius.Mini.kid x123 0)) 0)) 0)) ((Lanius.Mini.kid ((Lanius.Mini.kid ((Lanius.Mini.kid x123 0)) 0)) 1)))) x92 x109.name) = true then k2 else k3))) else k3)))
+termination_by structural fuel => fuel
+
+def Cost_arg_eff : Nat → Nat → Lanius.Mini.FrontEnv → List Lanius.Mini.Local → Option Lanius.Mini.Ty → Lanius.Mini.CTree → Nat
+  | 0, x8, x21, x36, x56, x92 => 18446744073709551616
+  | n + 1, x8, x21, x36, x56, x92 => (if (decide (x8 = 0)) = true then 0 else ((Cost_string_init n x8 x92) + (match (Lanius.Mini.stringInit x8 x92) with | some x237 => 0 | none => (Cost_eff_of n (x8 - 1) x21 x36 x56 x92))))
 termination_by structural fuel => fuel
 
 def Cost_eff_arg_next : Nat → Nat → Lanius.Mini.FrontEnv → List Lanius.Mini.Local → Lanius.Mini.FnDecl → List (List Nat) → Lanius.Mini.CTree → List Lanius.Mini.CTree → List Lanius.Mini.CTree → List Lanius.Mini.Bind → Option Lanius.Mini.MEff → Nat
@@ -437,12 +878,17 @@ termination_by structural fuel => fuel
 
 def Pre_eff_infer : Nat → Nat → Lanius.Mini.FrontEnv → List Lanius.Mini.Local → Option Lanius.Mini.Ty → Nat → Lanius.Mini.FnDecl → List Lanius.Mini.Bind → List Lanius.Mini.MEff → List Lanius.Mini.CTree → Nat → Prop
   | 0, x10, x23, x38, x58, x94, x104, x116, x135, x152, b => True
-  | n + 1, x10, x23, x38, x58, x94, x104, x116, x135, x152, b => (if (decide (x10 = 0)) = true then True else (∀ b1 : Nat, (Cost_concat_of_mini_selfhost_List_usize n x104.implParams x104.params) < b → b1 = b - (Cost_concat_of_mini_selfhost_List_usize n x104.implParams x104.params) → (if (Lanius.Mini.noNames ((x104.implParams ++ x104.params))) = true then ((Pre_param_expects n x10 x23.decls x104 (some ([] : List Lanius.Mini.Ty)) b1) ∧ (∀ b2 : Nat, (Cost_param_expects n x10 x23.decls x104 (some ([] : List Lanius.Mini.Ty))) < b1 → b2 = b1 - (Cost_param_expects n x10 x23.decls x104 (some ([] : List Lanius.Mini.Ty))) → ((Pre_eff_list n (x10 - 1) x23 x38 (Lanius.Mini.skipExpects ((Lanius.Mini.paramExpects x10 x23.decls x104 ((some ([] : List Lanius.Mini.Ty))))) x135) x152 b2) ∧ (∀ b3 : Nat, (Cost_eff_list n (x10 - 1) x23 x38 (Lanius.Mini.skipExpects ((Lanius.Mini.paramExpects x10 x23.decls x104 ((some ([] : List Lanius.Mini.Ty))))) x135) x152) < b2 → b3 = b2 - (Cost_eff_list n (x10 - 1) x23 x38 (Lanius.Mini.skipExpects ((Lanius.Mini.paramExpects x10 x23.decls x104 ((some ([] : List Lanius.Mini.Ty))))) x135) x152) → (∀ b4 : Nat, (Cost_views_of n x38 (Lanius.Mini.skipExpects ((Lanius.Mini.paramExpects x10 x23.decls x104 ((some ([] : List Lanius.Mini.Ty))))) x135) (Lanius.Mini.effList ((x10 - 1)) x23 x38 ((Lanius.Mini.skipExpects ((Lanius.Mini.paramExpects x10 x23.decls x104 ((some ([] : List Lanius.Mini.Ty))))) x135)) x152)) < b3 → b4 = b3 - (Cost_views_of n x38 (Lanius.Mini.skipExpects ((Lanius.Mini.paramExpects x10 x23.decls x104 ((some ([] : List Lanius.Mini.Ty))))) x135) (Lanius.Mini.effList ((x10 - 1)) x23 x38 ((Lanius.Mini.skipExpects ((Lanius.Mini.paramExpects x10 x23.decls x104 ((some ([] : List Lanius.Mini.Ty))))) x135)) x152)) → (Pre_eff_called n x10 x23 x38 x58 x94 x104 x116 x135 (Lanius.Mini.viewsOf x38 ((Lanius.Mini.skipExpects ((Lanius.Mini.paramExpects x10 x23.decls x104 ((some ([] : List Lanius.Mini.Ty))))) x135)) ((Lanius.Mini.effList ((x10 - 1)) x23 x38 ((Lanius.Mini.skipExpects ((Lanius.Mini.paramExpects x10 x23.decls x104 ((some ([] : List Lanius.Mini.Ty))))) x135)) x152))) b4)))))) else (∀ b6 : Nat, (Cost_param_patterns n x10 x104) < b1 → b6 = b1 - (Cost_param_patterns n x10 x104) → (match (Lanius.Mini.paramPatterns x10 x104) with | some x764 => ((Pre_ret_binds n x10 x23.decls x104 (x104.implParams ++ x104.params) x116 x58 b6) ∧ (∀ b7 : Nat, (Cost_ret_binds n x10 x23.decls x104 (x104.implParams ++ x104.params) x116 x58) < b6 → b7 = b6 - (Cost_ret_binds n x10 x23.decls x104 (x104.implParams ++ x104.params) x116 x58) → ((Pre_eff_args_bound n (x10 - 1) x23 x38 x104 (x104.implParams ++ x104.params) x764 x135 x152 (Lanius.Mini.retBinds x10 x23.decls x104 ((x104.implParams ++ x104.params)) x116 x58) b7) ∧ (∀ b8 : Nat, (Cost_eff_args_bound n (x10 - 1) x23 x38 x104 (x104.implParams ++ x104.params) x764 x135 x152 (Lanius.Mini.retBinds x10 x23.decls x104 ((x104.implParams ++ x104.params)) x116 x58)) < b7 → b8 = b7 - (Cost_eff_args_bound n (x10 - 1) x23 x38 x104 (x104.implParams ++ x104.params) x764 x135 x152 (Lanius.Mini.retBinds x10 x23.decls x104 ((x104.implParams ++ x104.params)) x116 x58)) → (Pre_eff_inferred n x10 x23 x38 x94 x104 (x104.implParams ++ x104.params) x764 (Lanius.Mini.effArgsBound ((x10 - 1)) x23 x38 x104 ((x104.implParams ++ x104.params)) x764 x135 x152 ((Lanius.Mini.retBinds x10 x23.decls x104 ((x104.implParams ++ x104.params)) x116 x58))) b8))))) | none => True)))))
+  | n + 1, x10, x23, x38, x58, x94, x104, x116, x135, x152, b => (if (decide (x10 = 0)) = true then True else (∀ b1 : Nat, (Cost_concat_of_mini_selfhost_List_usize n x104.implParams x104.params) < b → b1 = b - (Cost_concat_of_mini_selfhost_List_usize n x104.implParams x104.params) → (if (Lanius.Mini.noNames ((x104.implParams ++ x104.params))) = true then ((Pre_param_expects n x10 x23.decls x104 (some ([] : List Lanius.Mini.Ty)) b1) ∧ (∀ b2 : Nat, (Cost_param_expects n x10 x23.decls x104 (some ([] : List Lanius.Mini.Ty))) < b1 → b2 = b1 - (Cost_param_expects n x10 x23.decls x104 (some ([] : List Lanius.Mini.Ty))) → ((Pre_arg_list n (x10 - 1) x23 x38 (Lanius.Mini.skipExpects ((Lanius.Mini.paramExpects x10 x23.decls x104 ((some ([] : List Lanius.Mini.Ty))))) x135) x152 b2) ∧ (∀ b3 : Nat, (Cost_arg_list n (x10 - 1) x23 x38 (Lanius.Mini.skipExpects ((Lanius.Mini.paramExpects x10 x23.decls x104 ((some ([] : List Lanius.Mini.Ty))))) x135) x152) < b2 → b3 = b2 - (Cost_arg_list n (x10 - 1) x23 x38 (Lanius.Mini.skipExpects ((Lanius.Mini.paramExpects x10 x23.decls x104 ((some ([] : List Lanius.Mini.Ty))))) x135) x152) → (∀ b4 : Nat, (Cost_views_of n x38 (Lanius.Mini.skipExpects ((Lanius.Mini.paramExpects x10 x23.decls x104 ((some ([] : List Lanius.Mini.Ty))))) x135) (Lanius.Mini.argList ((x10 - 1)) x23 x38 ((Lanius.Mini.skipExpects ((Lanius.Mini.paramExpects x10 x23.decls x104 ((some ([] : List Lanius.Mini.Ty))))) x135)) x152)) < b3 → b4 = b3 - (Cost_views_of n x38 (Lanius.Mini.skipExpects ((Lanius.Mini.paramExpects x10 x23.decls x104 ((some ([] : List Lanius.Mini.Ty))))) x135) (Lanius.Mini.argList ((x10 - 1)) x23 x38 ((Lanius.Mini.skipExpects ((Lanius.Mini.paramExpects x10 x23.decls x104 ((some ([] : List Lanius.Mini.Ty))))) x135)) x152)) → (Pre_eff_called n x10 x23 x38 x58 x94 x104 x116 x135 (Lanius.Mini.viewsOf x38 ((Lanius.Mini.skipExpects ((Lanius.Mini.paramExpects x10 x23.decls x104 ((some ([] : List Lanius.Mini.Ty))))) x135)) ((Lanius.Mini.argList ((x10 - 1)) x23 x38 ((Lanius.Mini.skipExpects ((Lanius.Mini.paramExpects x10 x23.decls x104 ((some ([] : List Lanius.Mini.Ty))))) x135)) x152))) b4)))))) else (∀ b6 : Nat, (Cost_param_patterns n x10 x104) < b1 → b6 = b1 - (Cost_param_patterns n x10 x104) → (match (Lanius.Mini.paramPatterns x10 x104) with | some x764 => ((Pre_ret_binds n x10 x23.decls x104 (x104.implParams ++ x104.params) x116 x58 b6) ∧ (∀ b7 : Nat, (Cost_ret_binds n x10 x23.decls x104 (x104.implParams ++ x104.params) x116 x58) < b6 → b7 = b6 - (Cost_ret_binds n x10 x23.decls x104 (x104.implParams ++ x104.params) x116 x58) → ((Pre_eff_args_bound n (x10 - 1) x23 x38 x104 (x104.implParams ++ x104.params) x764 x135 x152 (Lanius.Mini.retBinds x10 x23.decls x104 ((x104.implParams ++ x104.params)) x116 x58) b7) ∧ (∀ b8 : Nat, (Cost_eff_args_bound n (x10 - 1) x23 x38 x104 (x104.implParams ++ x104.params) x764 x135 x152 (Lanius.Mini.retBinds x10 x23.decls x104 ((x104.implParams ++ x104.params)) x116 x58)) < b7 → b8 = b7 - (Cost_eff_args_bound n (x10 - 1) x23 x38 x104 (x104.implParams ++ x104.params) x764 x135 x152 (Lanius.Mini.retBinds x10 x23.decls x104 ((x104.implParams ++ x104.params)) x116 x58)) → (Pre_eff_inferred n x10 x23 x38 x94 x104 (x104.implParams ++ x104.params) x764 (Lanius.Mini.effArgsBound ((x10 - 1)) x23 x38 x104 ((x104.implParams ++ x104.params)) x764 x135 x152 ((Lanius.Mini.retBinds x10 x23.decls x104 ((x104.implParams ++ x104.params)) x116 x58))) b8))))) | none => True)))))
 termination_by structural fuel => fuel
 
 def Pre_eff_arms : Nat → Nat → Lanius.Mini.FrontEnv → List Lanius.Mini.Local → Option Lanius.Mini.Ty → Lanius.Mini.TypeDecl → List Lanius.Mini.VariantTy → List Lanius.Mini.CTree → Nat → Prop
   | 0, x9, x22, x37, x57, x93, x110, x137, b => True
   | n + 1, x9, x22, x37, x57, x93, x110, x137, b => (if (decide (x9 = 0)) = true then True else (match x110 with | [] => True | x397 :: x400 => (match x137 with | [] => True | x466 :: x469 => ((Pre_eff_arm n (x9 - 1) x22 x37 x57 x93 x397 x466 b) ∧ (∀ b1 : Nat, (Cost_eff_arm n (x9 - 1) x22 x37 x57 x93 x397 x466) < b → b1 = b - (Cost_eff_arm n (x9 - 1) x22 x37 x57 x93 x397 x466) → (Pre_eff_arms n (x9 - 1) x22 x37 x57 x93 x400 x469 b1))))))
+termination_by structural fuel => fuel
+
+def Pre_arg_list : Nat → Nat → Lanius.Mini.FrontEnv → List Lanius.Mini.Local → Option (List Lanius.Mini.Ty) → List Lanius.Mini.CTree → Nat → Prop
+  | 0, x9, x22, x37, x57, x98, b => True
+  | n + 1, x9, x22, x37, x57, x98, b => (if (decide (x9 = 0)) = true then True else (match x98 with | [] => True | x274 :: x277 => ((Pre_arg_eff n (x9 - 1) x22 x37 (Lanius.Mini.headTy x57) x274 b) ∧ (∀ b1 : Nat, (Cost_arg_eff n (x9 - 1) x22 x37 (Lanius.Mini.headTy x57) x274) < b → b1 = b - (Cost_arg_eff n (x9 - 1) x22 x37 (Lanius.Mini.headTy x57) x274) → (Pre_arg_list n (x9 - 1) x22 x37 (Lanius.Mini.tailTys x57) x277 b1)))))
 termination_by structural fuel => fuel
 
 def Pre_eff_args_bound : Nat → Nat → Lanius.Mini.FrontEnv → List Lanius.Mini.Local → Lanius.Mini.FnDecl → List (List Nat) → List Lanius.Mini.CTree → List Lanius.Mini.MEff → List Lanius.Mini.CTree → Option (List Lanius.Mini.Bind) → Nat → Prop
@@ -453,6 +899,11 @@ termination_by structural fuel => fuel
 def Pre_eff_arm : Nat → Nat → Lanius.Mini.FrontEnv → List Lanius.Mini.Local → Option Lanius.Mini.Ty → Lanius.Mini.TypeDecl → Lanius.Mini.VariantTy → Lanius.Mini.CTree → Nat → Prop
   | 0, x8, x21, x36, x56, x92, x109, x123, b => True
   | n + 1, x8, x21, x36, x56, x92, x109, x123, b => (if (decide (x8 = 0)) = true then True else (let k6 := fun (b1 : Nat) => (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid ((Lanius.Mini.kid x123 0)) 1))) = Lanius.Mini.Inline.pPatternPlain)) = true then (Pre_eff_arm_bound n (x8 - 1) x21 x56 (some (Lanius.Mini.Bound.mk ([] : List Nat) x36)) (Lanius.Mini.kid x123 2) b1) else (∀ b3 : Nat, (Cost_list_items n x8 (Lanius.Mini.kid ((Lanius.Mini.kid ((Lanius.Mini.kid x123 0)) 1)) 1)) < b1 → b3 = b1 - (Cost_list_items n x8 (Lanius.Mini.kid ((Lanius.Mini.kid ((Lanius.Mini.kid x123 0)) 1)) 1)) → (match (Lanius.Mini.listItems x8 ((Lanius.Mini.kid ((Lanius.Mini.kid ((Lanius.Mini.kid x123 0)) 1)) 1))) with | some x748 => (∀ b4 : Nat, (Cost_binders_of n x21 x36 x748 x109.payload) < b3 → b4 = b3 - (Cost_binders_of n x21 x36 x748 x109.payload) → (Pre_eff_arm_bound n (x8 - 1) x21 x56 (Lanius.Mini.bindersOf x21 x36 x748 x109.payload) (Lanius.Mini.kid x123 2) b4)) | none => True))); let k7 := fun (b1 : Nat) => True; (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x123 0))) = Lanius.Mini.Inline.pPatternIdent)) = true then (∀ b8 : Nat, (Cost_path_spellings n x8 (Lanius.Mini.kid ((Lanius.Mini.kid ((Lanius.Mini.kid x123 0)) 0)) 0) (Lanius.Mini.kid ((Lanius.Mini.kid ((Lanius.Mini.kid x123 0)) 0)) 1)) < b → b8 = b - (Cost_path_spellings n x8 (Lanius.Mini.kid ((Lanius.Mini.kid ((Lanius.Mini.kid x123 0)) 0)) 0) (Lanius.Mini.kid ((Lanius.Mini.kid ((Lanius.Mini.kid x123 0)) 0)) 1)) → (∀ b9 : Nat, (Cost_arm_named n (Lanius.Mini.pathSpellings x8 ((Lanius.Mini.kid ((Lanius.Mini.kid ((Lanius.Mini.kid x123 0)) 0)) 0)) ((Lanius.Mini.kid ((Lanius.Mini.kid ((Lanius.Mini.kid x123 0)) 0)) 1))) x92 x109.name) < b8 → b9 = b8 - (Cost_arm_named n (Lanius.Mini.pathSpellings x8 ((Lanius.Mini.kid ((Lanius.Mini.kid ((Lanius.Mini.kid x123 0)) 0)) 0)) ((Lanius.Mini.kid ((Lanius.Mini.kid ((Lanius.Mini.kid x123 0)) 0)) 1))) x92 x109.name) → (if (Lanius.Mini.armNamed ((Lanius.Mini.pathSpellings x8 ((Lanius.Mini.kid ((Lanius.Mini.kid ((Lanius.Mini.kid x123 0)) 0)) 0)) ((Lanius.Mini.kid ((Lanius.Mini.kid ((Lanius.Mini.kid x123 0)) 0)) 1)))) x92 x109.name) = true then (k6 b9) else (k7 b9)))) else (k7 b))))
+termination_by structural fuel => fuel
+
+def Pre_arg_eff : Nat → Nat → Lanius.Mini.FrontEnv → List Lanius.Mini.Local → Option Lanius.Mini.Ty → Lanius.Mini.CTree → Nat → Prop
+  | 0, x8, x21, x36, x56, x92, b => True
+  | n + 1, x8, x21, x36, x56, x92, b => (if (decide (x8 = 0)) = true then True else (∀ b1 : Nat, (Cost_string_init n x8 x92) < b → b1 = b - (Cost_string_init n x8 x92) → (match (Lanius.Mini.stringInit x8 x92) with | some x237 => True | none => (Pre_eff_of n (x8 - 1) x21 x36 x56 x92 b1))))
 termination_by structural fuel => fuel
 
 def Pre_eff_arg_next : Nat → Nat → Lanius.Mini.FrontEnv → List Lanius.Mini.Local → Lanius.Mini.FnDecl → List (List Nat) → Lanius.Mini.CTree → List Lanius.Mini.CTree → List Lanius.Mini.CTree → List Lanius.Mini.Bind → Option Lanius.Mini.MEff → Nat → Prop
@@ -511,62 +962,6 @@ noncomputable section
 def Cost_is_str_let : Nat → Nat → Lanius.Mini.FrontEnv → List Lanius.Mini.Local → Lanius.Mini.CTree → Nat
   | 0, x11, x24, x39, x59 => 18446744073709551616
   | n + 1, x11, x24, x39, x59 => (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x59 2))) = Lanius.Mini.Inline.pLetType)) = true then (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x59 3))) = Lanius.Mini.Inline.pLetInit)) = true then (if (!(Lanius.Mini.member x24.globals (((Lanius.Mini.kidToken x59 1).text)))) = true then (if (Lanius.Mini.freshId x39 ((((Lanius.Mini.kidToken x59 1).start) - x24.base))) = true then (Cost_is_str_type n x11 (Lanius.Mini.kid ((Lanius.Mini.kid x59 2)) 1)) else 0) else 0) else 0) else 0)
-
-end
-
-noncomputable section
-
-def Cost_string_cons : Nat → Bool → Nat → Option (List Nat) → Nat
-  | 0, x12, x22, x32 => 18446744073709551616
-  | n + 1, x12, x22, x32 => (if x12 = true then (match x32 with | some x199 => (Cost_cons_of_usize n x22 x199) | none => 0) else 0)
-
-end
-
-noncomputable section
-
-mutual
-def Cost_string_body : Nat → List Nat → Nat
-  | 0, x12 => 18446744073709551616
-  | n + 1, x12 => (match x12 with | [] => 0 | x126 :: x129 => (Cost_string_byte n x126 x129))
-termination_by structural fuel => fuel
-
-def Cost_string_byte : Nat → Nat → List Nat → Nat
-  | 0, x12, x23 => 18446744073709551616
-  | n + 1, x12, x23 => (match x23 with | [] => 0 | x161 :: x165 => ((Cost_string_body n x23) + (Cost_string_cons n (Lanius.Mini.plainStringByte x12) x12 (Lanius.Mini.stringBody x23))))
-termination_by structural fuel => fuel
-end
-
-end
-
-noncomputable section
-
-def Cost_string_open : Nat → Bool → List Nat → Nat
-  | 0, x12, x22 => 18446744073709551616
-  | n + 1, x12, x22 => (if x12 = true then (Cost_string_body n x22) else 0)
-
-end
-
-noncomputable section
-
-def Cost_string_literal : Nat → List Nat → Nat
-  | 0, x15 => 18446744073709551616
-  | n + 1, x15 => (match x15 with | [] => 0 | x133 :: x136 => (Cost_string_open n (decide (x133 = 34)) x136))
-
-end
-
-noncomputable section
-
-def Cost_string_primary : Nat → Lanius.Mini.CTree → Lanius.Mini.CTree → Nat
-  | 0, x15, x31 => 18446744073709551616
-  | n + 1, x15, x31 => (let k2 := (Cost_string_literal n (((Lanius.Mini.kidToken x15 0)).text)); let k3 := 0; (if (decide ((Lanius.Mini.nodeProd x15) = Lanius.Mini.Inline.pString)) = true then (if (decide ((Lanius.Mini.nodeProd x31) = Lanius.Mini.Inline.pPostfixEnd)) = true then k2 else k3) else k3))
-
-end
-
-noncomputable section
-
-def Cost_string_init : Nat → Nat → Lanius.Mini.CTree → Nat
-  | 0, x12, x25 => 18446744073709551616
-  | n + 1, x12, x25 => (match (Lanius.Mini.peel x12 x25) with | some x150 => (Cost_string_primary n (Lanius.Mini.kid x150 0) (Lanius.Mini.kid x150 1)) | none => 0)
 
 end
 
@@ -1234,7 +1629,7 @@ noncomputable section
 
 def Cost_call_parts : Nat → Lanius.Mini.MEff → Nat
   | 0, x11 => 18446744073709551616
-  | n + 1, x11 => (match x11 with | .xPure x91 => 0 | .xCall x117 x123 => (Cost_pure_list n x123) | .xApply x280 x284 x287 => 0 | .xNeg x312 => 0 | .xNot x337 => 0 | .xCast x363 x366 => 0 | .xIndex x393 x397 => 0 | .xStruct x425 x428 => 0 | .xVariant x458 x461 x464 => 0 | .xMatch x492 x496 x501 x504 x508 => 0 | .xDivide x537 x541 x544 => 0 | .xStride x572 => 0 | .xArraySlice x605 x608 => 0 | .xHost x635 x639 => 0 | .xIf x666 x669 x672 x675 => 0 | .xLet x700 x704 x707 x710 x714 => 0 | .xLen x739 => 0)
+  | n + 1, x11 => (match x11 with | .xPure x91 => 0 | .xCall x117 x123 => (Cost_pure_list n x123) | .xApply x280 x284 x287 => 0 | .xNeg x312 => 0 | .xNot x337 => 0 | .xCast x363 x366 => 0 | .xIndex x393 x397 => 0 | .xStruct x425 x428 => 0 | .xVariant x458 x461 x464 => 0 | .xMatch x492 x496 x501 x504 x508 => 0 | .xDivide x537 x541 x544 => 0 | .xStride x572 => 0 | .xArraySlice x605 x608 => 0 | .xHost x635 x639 => 0 | .xIf x666 x669 x672 x675 => 0 | .xLet x700 x704 x707 x710 x714 => 0 | .xLen x739 => 0 | .xStr x765 => 0)
 
 end
 
@@ -1253,7 +1648,7 @@ noncomputable section
 
 def Cost_eval_let_head : Nat → Lanius.Mini.Ty → Lanius.Mini.MEff → Nat
   | 0, x14, x22 => 18446744073709551616
-  | n + 1, x14, x22 => (match x22 with | .xPure x81 => 0 | .xCall x111 x117 => (Cost_call_parts n x22) | .xApply x174 x178 x181 => 0 | .xNeg x211 => 0 | .xNot x241 => 0 | .xCast x272 x275 => 0 | .xIndex x307 x311 => 0 | .xStruct x377 x380 => (Cost_pure_list n x380) | .xVariant x458 x461 x468 => (Cost_pure_list n x468) | .xMatch x556 x560 x565 x569 x578 => (Cost_pure_arms n x569 x578) | .xDivide x686 x690 x693 => 0 | .xStride x726 => 0 | .xArraySlice x764 x767 => 0 | .xHost x799 x803 => 0 | .xIf x835 x838 x841 x844 => 0 | .xLet x874 x878 x881 x884 x888 => 0 | .xLen x918 => 0)
+  | n + 1, x14, x22 => (match x22 with | .xPure x81 => 0 | .xCall x111 x117 => (Cost_call_parts n x22) | .xApply x174 x178 x181 => 0 | .xNeg x211 => 0 | .xNot x241 => 0 | .xCast x272 x275 => 0 | .xIndex x307 x311 => 0 | .xStruct x377 x380 => (Cost_pure_list n x380) | .xVariant x458 x461 x468 => (Cost_pure_list n x468) | .xMatch x556 x560 x565 x569 x578 => (Cost_pure_arms n x569 x578) | .xDivide x686 x690 x693 => 0 | .xStride x726 => 0 | .xArraySlice x764 x767 => 0 | .xHost x799 x803 => 0 | .xIf x835 x838 x841 x844 => 0 | .xLet x874 x878 x881 x884 x888 => 0 | .xLen x918 => 0 | .xStr x949 => 0)
 
 end
 
@@ -2578,14 +2973,6 @@ noncomputable section
 def Cost_cons_of_mini_selfhost_Sym : Nat → Lanius.Mini.Sym → List Lanius.Mini.Sym → Nat
   | 0, x8, x17 => 18446744073709551616
   | n + 1, x8, x17 => 1
-
-end
-
-noncomputable section
-
-def Cost_grammar_part_0 : Nat → Nat
-  | 0 => 18446744073709551616
-  | n + 1 => ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 1) ([] : List Lanius.Mini.Sym)) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 1) ([] : List Lanius.Mini.Sym)) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 2) ((Lanius.Mini.Sym.nonterm 1) :: ([] : List Lanius.Mini.Sym))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 127) ([] : List Lanius.Mini.Sym)) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.term 66) ((Lanius.Mini.Sym.nonterm 127) :: ([] : List Lanius.Mini.Sym))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 3) ([] : List Lanius.Mini.Sym)) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 7) ([] : List Lanius.Mini.Sym)) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 23) ([] : List Lanius.Mini.Sym)) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 25) ([] : List Lanius.Mini.Sym)) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 8) ([] : List Lanius.Mini.Sym)) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 9) ([] : List Lanius.Mini.Sym)) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 13) ([] : List Lanius.Mini.Sym)) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 4) ([] : List Lanius.Mini.Sym)) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 151) ((Lanius.Mini.Sym.nonterm 4) :: ([] : List Lanius.Mini.Sym))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 19) ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 4) :: ([] : List Lanius.Mini.Sym)))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 18) ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 4) :: ([] : List Lanius.Mini.Sym))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.term 5) ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 4) :: ([] : List Lanius.Mini.Sym)))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 34) ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 4) :: ([] : List Lanius.Mini.Sym))))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.term 4) ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 4) :: ([] : List Lanius.Mini.Sym)))))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 108) ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 4) :: ([] : List Lanius.Mini.Sym))))))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.term 1) ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 4) :: ([] : List Lanius.Mini.Sym)))))))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.term 67) ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 4) :: ([] : List Lanius.Mini.Sym))))))))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.term 23) ([] : List Lanius.Mini.Sym)) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 41) ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.term 22) ((Lanius.Mini.Sym.nonterm 41) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym)))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 6) ([] : List Lanius.Mini.Sym)) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 151) ((Lanius.Mini.Sym.nonterm 6) :: ([] : List Lanius.Mini.Sym))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 19) ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 6) :: ([] : List Lanius.Mini.Sym)))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 18) ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 6) :: ([] : List Lanius.Mini.Sym))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.term 5) ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 6) :: ([] : List Lanius.Mini.Sym)))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 34) ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 6) :: ([] : List Lanius.Mini.Sym))))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.term 4) ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 6) :: ([] : List Lanius.Mini.Sym)))))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 108) ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 6) :: ([] : List Lanius.Mini.Sym))))))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.term 1) ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 6) :: ([] : List Lanius.Mini.Sym)))))))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.term 67) ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 6) :: ([] : List Lanius.Mini.Sym))))))))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.term 23) ([] : List Lanius.Mini.Sym)) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 41) ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.term 22) ((Lanius.Mini.Sym.nonterm 41) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym)))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.term 37) ([] : List Lanius.Mini.Sym)) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 19) ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 18) ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym)))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.term 5) ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 34) ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym)))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.term 4) ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym))))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 108) ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym)))))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.term 1) ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym))))))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.term 67) ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym)))))))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 17) ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym))))))))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.term 102) ((Lanius.Mini.Sym.nonterm 17) :: ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym)))))))))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.term 37) ([] : List Lanius.Mini.Sym)) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 38) ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 150) ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym)))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.term 8) ((Lanius.Mini.Sym.nonterm 150) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 19) ((Lanius.Mini.Sym.term 8) :: ((Lanius.Mini.Sym.nonterm 150) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym)))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 108) ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 8) :: ((Lanius.Mini.Sym.nonterm 150) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym))))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.term 1) ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 8) :: ((Lanius.Mini.Sym.nonterm 150) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym)))))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.term 103) ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 8) :: ((Lanius.Mini.Sym.nonterm 150) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym))))))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.term 23) ([] : List Lanius.Mini.Sym)) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 10) ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.term 22) ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym)))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 19) ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 38) ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym)))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 108) ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.term 98) ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym)))))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.term 23) ([] : List Lanius.Mini.Sym)) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 10) ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.term 22) ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym)))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 19) ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 38) ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym)))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.term 100) ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 38) ((Lanius.Mini.Sym.term 100) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym)))))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.nonterm 108) ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 100) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))) + ((Cost_cons_of_mini_selfhost_Sym n (Lanius.Mini.Sym.term 98) ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 100) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym)))))))))) + ((Cost_cons_of_mini_selfhost_Rule n (Lanius.Mini.Rule.mk 10 ([] : List Lanius.Mini.Sym)) ([] : List Lanius.Mini.Rule)) + ((Cost_cons_of_mini_selfhost_Rule n (Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 100) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))))) ((Lanius.Mini.Rule.mk 10 ([] : List Lanius.Mini.Sym)) :: ([] : List Lanius.Mini.Rule))) + ((Cost_cons_of_mini_selfhost_Rule n (Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))) ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 100) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))))) :: ((Lanius.Mini.Rule.mk 10 ([] : List Lanius.Mini.Sym)) :: ([] : List Lanius.Mini.Rule)))) + ((Cost_cons_of_mini_selfhost_Rule n (Lanius.Mini.Rule.mk 8 ((Lanius.Mini.Sym.term 103) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 8) :: ((Lanius.Mini.Sym.nonterm 150) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym)))))))))) ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))) :: ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 100) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))))) :: ((Lanius.Mini.Rule.mk 10 ([] : List Lanius.Mini.Sym)) :: ([] : List Lanius.Mini.Rule))))) + ((Cost_cons_of_mini_selfhost_Rule n (Lanius.Mini.Rule.mk 7 ((Lanius.Mini.Sym.term 102) :: ((Lanius.Mini.Sym.nonterm 17) :: ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym))))))))))))) ((Lanius.Mini.Rule.mk 8 ((Lanius.Mini.Sym.term 103) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 8) :: ((Lanius.Mini.Sym.nonterm 150) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym)))))))))) :: ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))) :: ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 100) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))))) :: ((Lanius.Mini.Rule.mk 10 ([] : List Lanius.Mini.Sym)) :: ([] : List Lanius.Mini.Rule)))))) + ((Cost_cons_of_mini_selfhost_Rule n (Lanius.Mini.Rule.mk 6 ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 41) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))) ((Lanius.Mini.Rule.mk 7 ((Lanius.Mini.Sym.term 102) :: ((Lanius.Mini.Sym.nonterm 17) :: ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym))))))))))))) :: ((Lanius.Mini.Rule.mk 8 ((Lanius.Mini.Sym.term 103) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 8) :: ((Lanius.Mini.Sym.nonterm 150) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym)))))))))) :: ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))) :: ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 100) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))))) :: ((Lanius.Mini.Rule.mk 10 ([] : List Lanius.Mini.Sym)) :: ([] : List Lanius.Mini.Rule))))))) + ((Cost_cons_of_mini_selfhost_Rule n (Lanius.Mini.Rule.mk 5 ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 6) :: ([] : List Lanius.Mini.Sym)))))))))))) ((Lanius.Mini.Rule.mk 6 ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 41) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))) :: ((Lanius.Mini.Rule.mk 7 ((Lanius.Mini.Sym.term 102) :: ((Lanius.Mini.Sym.nonterm 17) :: ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym))))))))))))) :: ((Lanius.Mini.Rule.mk 8 ((Lanius.Mini.Sym.term 103) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 8) :: ((Lanius.Mini.Sym.nonterm 150) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym)))))))))) :: ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))) :: ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 100) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))))) :: ((Lanius.Mini.Rule.mk 10 ([] : List Lanius.Mini.Sym)) :: ([] : List Lanius.Mini.Rule)))))))) + ((Cost_cons_of_mini_selfhost_Rule n (Lanius.Mini.Rule.mk 4 ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 41) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))) ((Lanius.Mini.Rule.mk 5 ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 6) :: ([] : List Lanius.Mini.Sym)))))))))))) :: ((Lanius.Mini.Rule.mk 6 ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 41) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))) :: ((Lanius.Mini.Rule.mk 7 ((Lanius.Mini.Sym.term 102) :: ((Lanius.Mini.Sym.nonterm 17) :: ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym))))))))))))) :: ((Lanius.Mini.Rule.mk 8 ((Lanius.Mini.Sym.term 103) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 8) :: ((Lanius.Mini.Sym.nonterm 150) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym)))))))))) :: ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))) :: ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 100) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))))) :: ((Lanius.Mini.Rule.mk 10 ([] : List Lanius.Mini.Sym)) :: ([] : List Lanius.Mini.Rule))))))))) + ((Cost_cons_of_mini_selfhost_Rule n (Lanius.Mini.Rule.mk 3 ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 4) :: ([] : List Lanius.Mini.Sym)))))))))))) ((Lanius.Mini.Rule.mk 4 ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 41) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))) :: ((Lanius.Mini.Rule.mk 5 ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 6) :: ([] : List Lanius.Mini.Sym)))))))))))) :: ((Lanius.Mini.Rule.mk 6 ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 41) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))) :: ((Lanius.Mini.Rule.mk 7 ((Lanius.Mini.Sym.term 102) :: ((Lanius.Mini.Sym.nonterm 17) :: ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym))))))))))))) :: ((Lanius.Mini.Rule.mk 8 ((Lanius.Mini.Sym.term 103) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 8) :: ((Lanius.Mini.Sym.nonterm 150) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym)))))))))) :: ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))) :: ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 100) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))))) :: ((Lanius.Mini.Rule.mk 10 ([] : List Lanius.Mini.Sym)) :: ([] : List Lanius.Mini.Rule)))))))))) + ((Cost_cons_of_mini_selfhost_Rule n (Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 13) :: ([] : List Lanius.Mini.Sym))) ((Lanius.Mini.Rule.mk 3 ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 4) :: ([] : List Lanius.Mini.Sym)))))))))))) :: ((Lanius.Mini.Rule.mk 4 ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 41) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))) :: ((Lanius.Mini.Rule.mk 5 ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 6) :: ([] : List Lanius.Mini.Sym)))))))))))) :: ((Lanius.Mini.Rule.mk 6 ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 41) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))) :: ((Lanius.Mini.Rule.mk 7 ((Lanius.Mini.Sym.term 102) :: ((Lanius.Mini.Sym.nonterm 17) :: ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym))))))))))))) :: ((Lanius.Mini.Rule.mk 8 ((Lanius.Mini.Sym.term 103) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 8) :: ((Lanius.Mini.Sym.nonterm 150) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym)))))))))) :: ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))) :: ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 100) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))))) :: ((Lanius.Mini.Rule.mk 10 ([] : List Lanius.Mini.Sym)) :: ([] : List Lanius.Mini.Rule))))))))))) + ((Cost_cons_of_mini_selfhost_Rule n (Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 9) :: ([] : List Lanius.Mini.Sym))) ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 13) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 3 ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 4) :: ([] : List Lanius.Mini.Sym)))))))))))) :: ((Lanius.Mini.Rule.mk 4 ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 41) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))) :: ((Lanius.Mini.Rule.mk 5 ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 6) :: ([] : List Lanius.Mini.Sym)))))))))))) :: ((Lanius.Mini.Rule.mk 6 ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 41) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))) :: ((Lanius.Mini.Rule.mk 7 ((Lanius.Mini.Sym.term 102) :: ((Lanius.Mini.Sym.nonterm 17) :: ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym))))))))))))) :: ((Lanius.Mini.Rule.mk 8 ((Lanius.Mini.Sym.term 103) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 8) :: ((Lanius.Mini.Sym.nonterm 150) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym)))))))))) :: ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))) :: ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 100) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))))) :: ((Lanius.Mini.Rule.mk 10 ([] : List Lanius.Mini.Sym)) :: ([] : List Lanius.Mini.Rule)))))))))))) + ((Cost_cons_of_mini_selfhost_Rule n (Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 8) :: ([] : List Lanius.Mini.Sym))) ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 9) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 13) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 3 ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 4) :: ([] : List Lanius.Mini.Sym)))))))))))) :: ((Lanius.Mini.Rule.mk 4 ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 41) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))) :: ((Lanius.Mini.Rule.mk 5 ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 6) :: ([] : List Lanius.Mini.Sym)))))))))))) :: ((Lanius.Mini.Rule.mk 6 ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 41) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))) :: ((Lanius.Mini.Rule.mk 7 ((Lanius.Mini.Sym.term 102) :: ((Lanius.Mini.Sym.nonterm 17) :: ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym))))))))))))) :: ((Lanius.Mini.Rule.mk 8 ((Lanius.Mini.Sym.term 103) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 8) :: ((Lanius.Mini.Sym.nonterm 150) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym)))))))))) :: ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))) :: ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 100) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))))) :: ((Lanius.Mini.Rule.mk 10 ([] : List Lanius.Mini.Sym)) :: ([] : List Lanius.Mini.Rule))))))))))))) + ((Cost_cons_of_mini_selfhost_Rule n (Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 25) :: ([] : List Lanius.Mini.Sym))) ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 8) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 9) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 13) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 3 ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 4) :: ([] : List Lanius.Mini.Sym)))))))))))) :: ((Lanius.Mini.Rule.mk 4 ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 41) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))) :: ((Lanius.Mini.Rule.mk 5 ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 6) :: ([] : List Lanius.Mini.Sym)))))))))))) :: ((Lanius.Mini.Rule.mk 6 ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 41) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))) :: ((Lanius.Mini.Rule.mk 7 ((Lanius.Mini.Sym.term 102) :: ((Lanius.Mini.Sym.nonterm 17) :: ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym))))))))))))) :: ((Lanius.Mini.Rule.mk 8 ((Lanius.Mini.Sym.term 103) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 8) :: ((Lanius.Mini.Sym.nonterm 150) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym)))))))))) :: ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))) :: ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 100) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))))) :: ((Lanius.Mini.Rule.mk 10 ([] : List Lanius.Mini.Sym)) :: ([] : List Lanius.Mini.Rule)))))))))))))) + ((Cost_cons_of_mini_selfhost_Rule n (Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 23) :: ([] : List Lanius.Mini.Sym))) ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 25) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 8) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 9) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 13) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 3 ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 4) :: ([] : List Lanius.Mini.Sym)))))))))))) :: ((Lanius.Mini.Rule.mk 4 ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 41) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))) :: ((Lanius.Mini.Rule.mk 5 ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 6) :: ([] : List Lanius.Mini.Sym)))))))))))) :: ((Lanius.Mini.Rule.mk 6 ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 41) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))) :: ((Lanius.Mini.Rule.mk 7 ((Lanius.Mini.Sym.term 102) :: ((Lanius.Mini.Sym.nonterm 17) :: ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym))))))))))))) :: ((Lanius.Mini.Rule.mk 8 ((Lanius.Mini.Sym.term 103) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 8) :: ((Lanius.Mini.Sym.nonterm 150) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym)))))))))) :: ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))) :: ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 100) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))))) :: ((Lanius.Mini.Rule.mk 10 ([] : List Lanius.Mini.Sym)) :: ([] : List Lanius.Mini.Rule))))))))))))))) + ((Cost_cons_of_mini_selfhost_Rule n (Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 7) :: ([] : List Lanius.Mini.Sym))) ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 23) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 25) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 8) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 9) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 13) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 3 ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 4) :: ([] : List Lanius.Mini.Sym)))))))))))) :: ((Lanius.Mini.Rule.mk 4 ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 41) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))) :: ((Lanius.Mini.Rule.mk 5 ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 6) :: ([] : List Lanius.Mini.Sym)))))))))))) :: ((Lanius.Mini.Rule.mk 6 ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 41) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))) :: ((Lanius.Mini.Rule.mk 7 ((Lanius.Mini.Sym.term 102) :: ((Lanius.Mini.Sym.nonterm 17) :: ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym))))))))))))) :: ((Lanius.Mini.Rule.mk 8 ((Lanius.Mini.Sym.term 103) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 8) :: ((Lanius.Mini.Sym.nonterm 150) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym)))))))))) :: ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))) :: ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 100) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))))) :: ((Lanius.Mini.Rule.mk 10 ([] : List Lanius.Mini.Sym)) :: ([] : List Lanius.Mini.Rule)))))))))))))))) + ((Cost_cons_of_mini_selfhost_Rule n (Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 3) :: ([] : List Lanius.Mini.Sym))) ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 7) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 23) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 25) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 8) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 9) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 13) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 3 ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 4) :: ([] : List Lanius.Mini.Sym)))))))))))) :: ((Lanius.Mini.Rule.mk 4 ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 41) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))) :: ((Lanius.Mini.Rule.mk 5 ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 6) :: ([] : List Lanius.Mini.Sym)))))))))))) :: ((Lanius.Mini.Rule.mk 6 ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 41) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))) :: ((Lanius.Mini.Rule.mk 7 ((Lanius.Mini.Sym.term 102) :: ((Lanius.Mini.Sym.nonterm 17) :: ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym))))))))))))) :: ((Lanius.Mini.Rule.mk 8 ((Lanius.Mini.Sym.term 103) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 8) :: ((Lanius.Mini.Sym.nonterm 150) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym)))))))))) :: ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))) :: ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 100) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))))) :: ((Lanius.Mini.Rule.mk 10 ([] : List Lanius.Mini.Sym)) :: ([] : List Lanius.Mini.Rule))))))))))))))))) + ((Cost_cons_of_mini_selfhost_Rule n (Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.term 66) :: ((Lanius.Mini.Sym.nonterm 127) :: ([] : List Lanius.Mini.Sym)))) ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 3) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 7) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 23) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 25) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 8) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 9) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 13) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 3 ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 4) :: ([] : List Lanius.Mini.Sym)))))))))))) :: ((Lanius.Mini.Rule.mk 4 ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 41) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))) :: ((Lanius.Mini.Rule.mk 5 ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 6) :: ([] : List Lanius.Mini.Sym)))))))))))) :: ((Lanius.Mini.Rule.mk 6 ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 41) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))) :: ((Lanius.Mini.Rule.mk 7 ((Lanius.Mini.Sym.term 102) :: ((Lanius.Mini.Sym.nonterm 17) :: ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym))))))))))))) :: ((Lanius.Mini.Rule.mk 8 ((Lanius.Mini.Sym.term 103) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 8) :: ((Lanius.Mini.Sym.nonterm 150) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym)))))))))) :: ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))) :: ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 100) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))))) :: ((Lanius.Mini.Rule.mk 10 ([] : List Lanius.Mini.Sym)) :: ([] : List Lanius.Mini.Rule)))))))))))))))))) + ((Cost_cons_of_mini_selfhost_Rule n (Lanius.Mini.Rule.mk 1 ([] : List Lanius.Mini.Sym)) ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.term 66) :: ((Lanius.Mini.Sym.nonterm 127) :: ([] : List Lanius.Mini.Sym)))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 3) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 7) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 23) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 25) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 8) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 9) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 13) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 3 ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 4) :: ([] : List Lanius.Mini.Sym)))))))))))) :: ((Lanius.Mini.Rule.mk 4 ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 41) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))) :: ((Lanius.Mini.Rule.mk 5 ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 6) :: ([] : List Lanius.Mini.Sym)))))))))))) :: ((Lanius.Mini.Rule.mk 6 ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 41) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))) :: ((Lanius.Mini.Rule.mk 7 ((Lanius.Mini.Sym.term 102) :: ((Lanius.Mini.Sym.nonterm 17) :: ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym))))))))))))) :: ((Lanius.Mini.Rule.mk 8 ((Lanius.Mini.Sym.term 103) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 8) :: ((Lanius.Mini.Sym.nonterm 150) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym)))))))))) :: ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))) :: ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 100) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))))) :: ((Lanius.Mini.Rule.mk 10 ([] : List Lanius.Mini.Sym)) :: ([] : List Lanius.Mini.Rule))))))))))))))))))) + ((Cost_cons_of_mini_selfhost_Rule n (Lanius.Mini.Rule.mk 1 ((Lanius.Mini.Sym.nonterm 2) :: ((Lanius.Mini.Sym.nonterm 1) :: ([] : List Lanius.Mini.Sym)))) ((Lanius.Mini.Rule.mk 1 ([] : List Lanius.Mini.Sym)) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.term 66) :: ((Lanius.Mini.Sym.nonterm 127) :: ([] : List Lanius.Mini.Sym)))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 3) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 7) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 23) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 25) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 8) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 9) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 13) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 3 ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 4) :: ([] : List Lanius.Mini.Sym)))))))))))) :: ((Lanius.Mini.Rule.mk 4 ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 41) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))) :: ((Lanius.Mini.Rule.mk 5 ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 6) :: ([] : List Lanius.Mini.Sym)))))))))))) :: ((Lanius.Mini.Rule.mk 6 ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 41) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))) :: ((Lanius.Mini.Rule.mk 7 ((Lanius.Mini.Sym.term 102) :: ((Lanius.Mini.Sym.nonterm 17) :: ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym))))))))))))) :: ((Lanius.Mini.Rule.mk 8 ((Lanius.Mini.Sym.term 103) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 8) :: ((Lanius.Mini.Sym.nonterm 150) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym)))))))))) :: ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))) :: ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 100) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))))) :: ((Lanius.Mini.Rule.mk 10 ([] : List Lanius.Mini.Sym)) :: ([] : List Lanius.Mini.Rule)))))))))))))))))))) + (Cost_cons_of_mini_selfhost_Rule n (Lanius.Mini.Rule.mk 0 ((Lanius.Mini.Sym.nonterm 1) :: ([] : List Lanius.Mini.Sym))) ((Lanius.Mini.Rule.mk 1 ((Lanius.Mini.Sym.nonterm 2) :: ((Lanius.Mini.Sym.nonterm 1) :: ([] : List Lanius.Mini.Sym)))) :: ((Lanius.Mini.Rule.mk 1 ([] : List Lanius.Mini.Sym)) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.term 66) :: ((Lanius.Mini.Sym.nonterm 127) :: ([] : List Lanius.Mini.Sym)))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 3) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 7) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 23) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 25) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 8) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 9) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 2 ((Lanius.Mini.Sym.nonterm 13) :: ([] : List Lanius.Mini.Sym))) :: ((Lanius.Mini.Rule.mk 3 ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 4) :: ([] : List Lanius.Mini.Sym)))))))))))) :: ((Lanius.Mini.Rule.mk 4 ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 41) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))) :: ((Lanius.Mini.Rule.mk 5 ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.nonterm 151) :: ((Lanius.Mini.Sym.nonterm 6) :: ([] : List Lanius.Mini.Sym)))))))))))) :: ((Lanius.Mini.Rule.mk 6 ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 41) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))) :: ((Lanius.Mini.Rule.mk 7 ((Lanius.Mini.Sym.term 102) :: ((Lanius.Mini.Sym.nonterm 17) :: ((Lanius.Mini.Sym.term 67) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.term 4) :: ((Lanius.Mini.Sym.nonterm 34) :: ((Lanius.Mini.Sym.term 5) :: ((Lanius.Mini.Sym.nonterm 18) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym))))))))))))) :: ((Lanius.Mini.Rule.mk 8 ((Lanius.Mini.Sym.term 103) :: ((Lanius.Mini.Sym.term 1) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 8) :: ((Lanius.Mini.Sym.nonterm 150) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 37) :: ([] : List Lanius.Mini.Sym)))))))))) :: ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))) :: ((Lanius.Mini.Rule.mk 9 ((Lanius.Mini.Sym.term 98) :: ((Lanius.Mini.Sym.nonterm 108) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.term 100) :: ((Lanius.Mini.Sym.nonterm 38) :: ((Lanius.Mini.Sym.nonterm 19) :: ((Lanius.Mini.Sym.term 22) :: ((Lanius.Mini.Sym.nonterm 10) :: ((Lanius.Mini.Sym.term 23) :: ([] : List Lanius.Mini.Sym))))))))))) :: ((Lanius.Mini.Rule.mk 10 ([] : List Lanius.Mini.Sym)) :: ([] : List Lanius.Mini.Rule)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 
 end
 

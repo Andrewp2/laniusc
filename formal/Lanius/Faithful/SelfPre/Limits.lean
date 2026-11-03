@@ -650,40 +650,58 @@ theorem limParams_ok : ∀ (ps : List SrcParam), limParams ps = true → ts ps �
     simp only [ts_cons, ts_SrcParam_mk]
     omega
 
+theorem limParamSlots_ok : ∀ (ps : List SrcParam) {d : Nat}, limParamSlots ps = some d →
+    paramsSize ps ≤ d ∧ d ≤ 2 ^ 40
+  | [], _, h => by
+    simp only [limParamSlots, Option.some.injEq] at h
+    subst h
+    simp [paramsSize]
+  | ⟨_, ty⟩ :: rest, d, h => by
+    have ih := @limParamSlots_ok rest
+    simp only [limParamSlots] at h
+    obtain ⟨-, y, hy, a, b, -⟩ := bind_ty h
+    obtain ⟨e1, e2⟩ := ih hy
+    simp only [paramsSize]
+    omega
+
 theorem limFuncs_ok : ∀ (fs : List SrcFunc), limFuncs fs = true →
-    ts fs ≤ weightLimit ∧ ∀ f ∈ fs, SrcStmt.depth f.body ≤ 2 ^ 40
+    ts fs ≤ weightLimit ∧ ∀ f ∈ fs, SrcStmt.depth f.body ≤ 2 ^ 40 ∧ paramsSize f.params ≤ 2 ^ 40
   | [], _ => by simp
   | ⟨ps, ret, body⟩ :: rest, h => by
     simp only [limFuncs, Bool.and_eq_true, Bool.not_eq_true'] at h
-    obtain ⟨⟨⟨hp, hr⟩, hb⟩, hrest⟩ := h
+    obtain ⟨⟨⟨⟨hp, hps⟩, hr⟩, hb⟩, hrest⟩ := h
     cases hs : limStmt body with
     | none => rw [hs] at hb; simp [isNoneWeight] at hb
     | some d =>
-      obtain ⟨d1, d2, d3⟩ := limStmt_ok body hs
-      obtain ⟨r1, r2⟩ := limFuncs_ok rest hrest
-      have := limParams_ok ps hp
-      have := limTy_ok hr
-      refine ⟨?_, fun f mem => ?_⟩
-      · simp only [ts_cons, ts_SrcFunc_mk]
-        omega
-      · rcases List.mem_cons.mp mem with rfl | mem
-        · exact Nat.le_trans d1 d2
-        · exact r2 f mem
+      cases hq : limParamSlots ps with
+      | none => rw [hq] at hps; simp [isNoneWeight] at hps
+      | some q =>
+        obtain ⟨d1, d2, d3⟩ := limStmt_ok body hs
+        obtain ⟨q1, q2⟩ := limParamSlots_ok ps hq
+        obtain ⟨r1, r2⟩ := limFuncs_ok rest hrest
+        have := limParams_ok ps hp
+        have := limTy_ok hr
+        refine ⟨?_, fun f mem => ?_⟩
+        · simp only [ts_cons, ts_SrcFunc_mk]
+          omega
+        · rcases List.mem_cons.mp mem with rfl | mem
+          · exact ⟨Nat.le_trans d1 d2, Nat.le_trans q1 q2⟩
+          · exact r2 f mem
 
 /-! ## The front end -/
 
 theorem untypedRejected_some {fs : List SrcFunc} {p : SrcProgram} (h : untypedRejected fs = some p) :
-    limFuncs fs = true ∧ p = { funcs := fs, statics := [] } := by
+    limFuncs p.funcs = true ∧ ts p = ts p.funcs := by
   unfold untypedRejected at h
   split at h
   · cases h
   · rename_i hc
     simp only [Bool.or_eq_true, Bool.not_eq_true', not_or, Bool.not_eq_false] at hc
     cases h
-    exact ⟨by simpa using hc.2, rfl⟩
+    exact ⟨by simpa [placedProgram] using hc.2, by simp [placedProgram]⟩
 
 theorem buildFiles_limits {fuel : Nat} {roots : List CTree} {p : SrcProgram} (h : buildFiles fuel roots = some p) :
-    ∃ fs, limFuncs fs = true ∧ p = { funcs := fs, statics := [] } := by
+    limFuncs p.funcs = true ∧ ts p = ts p.funcs := by
   unfold buildFiles at h
   split at h
   · cases h
@@ -702,13 +720,14 @@ theorem buildFiles_limits {fuel : Nat} {roots : List CTree} {p : SrcProgram} (h 
             · cases h
             · split at h
               · cases h
-              · exact ⟨_, untypedRejected_some h⟩
+              · exact untypedRejected_some h
         · cases h
 
-/-- What the front end returns is within the limits. -/
+/-- What the front end returns is within the limits: its types' slots, each
+function's lets' slots along a scope and each function's parameters' slots. -/
 theorem frontEndWords_limits {g : List Rule} {W : List (BitVec 32)} {p : SrcProgram}
     (h : frontEndWords g W = some p) :
-    ts p ≤ weightLimit ∧ ∀ f ∈ p.funcs, SrcStmt.depth f.body ≤ 2 ^ 40 := by
+    ts p ≤ weightLimit ∧ ∀ f ∈ p.funcs, SrcStmt.depth f.body ≤ 2 ^ 40 ∧ paramsSize f.params ≤ 2 ^ 40 := by
   unfold frontEndWords at h
   split at h
   · cases h
@@ -717,9 +736,9 @@ theorem frontEndWords_limits {g : List Rule} {W : List (BitVec 32)} {p : SrcProg
     · unfold frontEndFiles at h
       split at h
       · cases h
-      · obtain ⟨fs, ok, rfl⟩ := buildFiles_limits h
-        obtain ⟨a, b⟩ := limFuncs_ok fs ok
-        exact ⟨by simpa using a, b⟩
+      · obtain ⟨ok, e⟩ := buildFiles_limits h
+        obtain ⟨a, b⟩ := limFuncs_ok _ ok
+        exact ⟨by rw [e]; exact a, b⟩
     · cases h
 
 end Lanius.Faithful.SelfPre.Limits

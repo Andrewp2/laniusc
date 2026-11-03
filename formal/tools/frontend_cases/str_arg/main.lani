@@ -1,0 +1,9 @@
+// A string literal as a call's argument is a str value: its bytes are placed
+// in the program's statics, and a str parameter takes it.
+fn show(text: str) -> i32 {
+    return 7;
+}
+
+fn run(n: i32) -> i32 {
+    return show("hi there");
+}

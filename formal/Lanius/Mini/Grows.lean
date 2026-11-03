@@ -36,6 +36,7 @@ import all Lanius.Mini.Compiler.P.enumVariants
 import all Lanius.Mini.Compiler.P.equality
 import all Lanius.Mini.Compiler.P.evalDivide
 import all Lanius.Mini.Compiler.P.evalDivideSint
+import all Lanius.Mini.Compiler.P.evalHost
 import all Lanius.Mini.Compiler.P.evalNot
 import all Lanius.Mini.Compiler.P.evalSame
 import all Lanius.Mini.Compiler.P.extentAfter
@@ -1106,6 +1107,93 @@ theorem call_writeByte_inv {heap : Memory.Heap} {world : World.State} {values : 
       | _ => simp [World.call, World.callSimple] at h
     | _ => simp [World.call, World.callSimple] at h
 
+/-- What `write_text` did when it returned: wrote the text's UTF-8 bytes to
+standard output or error and returned their count, wrote them to a file, or
+returned -1. -/
+theorem call_writeText_inv {heap : Memory.Heap} {world : World.State} {values : List Value} {v : Value}
+    {heap' : Memory.Heap} {world' : World.State}
+    (h : World.call heap world .writeText values = .returned v heap' world') :
+    ∃ handle text, values = [.signed .i32 handle, .string text] ∧ heap' = heap ∧
+      ((World.writeBytes (World.record world .writeText) handle (World.utf8Bytes text) = some world' ∧
+          v = World.i32Result (World.utf8Bytes text).length) ∨
+        (World.writeBytes (World.record world .writeText) handle (World.utf8Bytes text) = none ∧
+          ((World.writeFileBytes (World.record world .writeText) handle (World.utf8Bytes text) =
+              some world' ∧ v = World.i32Result (World.utf8Bytes text).length) ∨
+            (World.writeFileBytes (World.record world .writeText) handle (World.utf8Bytes text) = none ∧
+              v = World.i32Result (-1) ∧ world' = World.record world .writeText)))) := by
+  match values, h with
+  | [], h => simp [World.call, World.callSimple] at h
+  | [a], h => cases a <;> simp [World.call, World.callSimple] at h
+  | a :: b :: c :: rest, h => cases a <;> simp [World.call, World.callSimple] at h
+  | [a, b], h =>
+    cases a with
+    | signed k handle =>
+      cases b with
+      | string text =>
+        cases k
+        all_goals simp only [World.call, World.callSimple] at h
+        all_goals first
+          | (refine ⟨handle, text, rfl, ?_⟩
+             cases wb : World.writeBytes (World.record world .writeText) handle (World.utf8Bytes text) with
+             | some w =>
+               simp only [wb, World.EffectResult.returned.injEq] at h
+               obtain ⟨rfl, rfl, rfl⟩ := h
+               exact ⟨rfl, .inl ⟨rfl, rfl⟩⟩
+             | none =>
+               simp only [wb] at h
+               cases wf : World.writeFileBytes (World.record world .writeText) handle (World.utf8Bytes text) with
+               | some w =>
+                 simp only [wf, World.EffectResult.returned.injEq] at h
+                 obtain ⟨rfl, rfl, rfl⟩ := h
+                 exact ⟨rfl, .inr ⟨rfl, .inl ⟨rfl, rfl⟩⟩⟩
+               | none =>
+                 simp only [wf, World.EffectResult.returned.injEq] at h
+                 obtain ⟨rfl, rfl, rfl⟩ := h
+                 exact ⟨rfl, .inr ⟨rfl, .inr ⟨rfl, rfl, rfl⟩⟩⟩)
+          | simp at h
+      | _ => simp [World.call, World.callSimple] at h
+    | _ => simp [World.call, World.callSimple] at h
+
+/-- What `write_newline` did when it returned: as `write_byte` of 10. -/
+theorem call_writeNewline_inv {heap : Memory.Heap} {world : World.State} {values : List Value} {v : Value}
+    {heap' : Memory.Heap} {world' : World.State}
+    (h : World.call heap world .writeNewline values = .returned v heap' world') :
+    ∃ handle, values = [.signed .i32 handle] ∧ heap' = heap ∧
+      ((World.writeBytes (World.record world .writeNewline) handle [10] = some world' ∧ v = World.i32Result 1) ∨
+        (World.writeBytes (World.record world .writeNewline) handle [10] = none ∧
+          ((World.writeFileBytes (World.record world .writeNewline) handle [10] = some world' ∧
+              v = World.i32Result 1) ∨
+            (World.writeFileBytes (World.record world .writeNewline) handle [10] = none ∧
+              v = World.i32Result (-1) ∧ world' = World.record world .writeNewline)))) := by
+  match values, h with
+  | [], h => simp [World.call, World.callSimple] at h
+  | a :: b :: rest, h => cases a <;> simp [World.call, World.callSimple] at h
+  | [a], h =>
+    cases a with
+    | signed k handle =>
+      cases k
+      all_goals simp only [World.call, World.callSimple] at h
+      all_goals first
+        | (refine ⟨handle, rfl, ?_⟩
+           cases wb : World.writeBytes (World.record world .writeNewline) handle [10] with
+           | some w =>
+             simp only [wb, World.EffectResult.returned.injEq] at h
+             obtain ⟨rfl, rfl, rfl⟩ := h
+             exact ⟨rfl, .inl ⟨rfl, rfl⟩⟩
+           | none =>
+             simp only [wb] at h
+             cases wf : World.writeFileBytes (World.record world .writeNewline) handle [10] with
+             | some w =>
+               simp only [wf, World.EffectResult.returned.injEq] at h
+               obtain ⟨rfl, rfl, rfl⟩ := h
+               exact ⟨rfl, .inr ⟨rfl, .inl ⟨rfl, rfl⟩⟩⟩
+             | none =>
+               simp only [wf, World.EffectResult.returned.injEq] at h
+               obtain ⟨rfl, rfl, rfl⟩ := h
+               exact ⟨rfl, .inr ⟨rfl, .inr ⟨rfl, rfl, rfl⟩⟩⟩)
+        | simp at h
+    | _ => simp [World.call, World.callSimple] at h
+
 /-- What `read_stdin` did when it returned: stored the next bytes of
 standard input, as many as asked for or all that are left. -/
 theorem call_readStdin_inv {heap : Memory.Heap} {world : World.State} {values : List Value} {v : Value}
@@ -1484,6 +1572,26 @@ theorem writeByte_returns (heap : Memory.Heap) (world : World.State) (a b : Int)
   | some w => exact ⟨_, _, by simp [World.call, World.callSimple, wb] <;> first | exact ⟨rfl, rfl⟩ | rfl⟩
   | none =>
     cases wf : World.writeFileBytes (World.record world .writeByte) a [UInt8.ofNat (b % 256).toNat] with
+    | some w => exact ⟨_, _, by simp [World.call, World.callSimple, wb, wf] <;> first | exact ⟨rfl, rfl⟩ | rfl⟩
+    | none => exact ⟨_, _, by simp [World.call, World.callSimple, wb, wf] <;> first | exact ⟨rfl, rfl⟩ | rfl⟩
+
+/-- `write_text` on an `i32` and a string returns. -/
+theorem writeText_returns (heap : Memory.Heap) (world : World.State) (a : Int) (text : String) :
+    ∃ v world', World.call heap world .writeText [.signed .i32 a, .string text] = .returned v heap world' := by
+  cases wb : World.writeBytes (World.record world .writeText) a (World.utf8Bytes text) with
+  | some w => exact ⟨_, _, by simp [World.call, World.callSimple, wb] <;> first | exact ⟨rfl, rfl⟩ | rfl⟩
+  | none =>
+    cases wf : World.writeFileBytes (World.record world .writeText) a (World.utf8Bytes text) with
+    | some w => exact ⟨_, _, by simp [World.call, World.callSimple, wb, wf] <;> first | exact ⟨rfl, rfl⟩ | rfl⟩
+    | none => exact ⟨_, _, by simp [World.call, World.callSimple, wb, wf] <;> first | exact ⟨rfl, rfl⟩ | rfl⟩
+
+/-- `write_newline` on an `i32` returns. -/
+theorem writeNewline_returns (heap : Memory.Heap) (world : World.State) (a : Int) :
+    ∃ v world', World.call heap world .writeNewline [.signed .i32 a] = .returned v heap world' := by
+  cases wb : World.writeBytes (World.record world .writeNewline) a [10] with
+  | some w => exact ⟨_, _, by simp [World.call, World.callSimple, wb] <;> first | exact ⟨rfl, rfl⟩ | rfl⟩
+  | none =>
+    cases wf : World.writeFileBytes (World.record world .writeNewline) a [10] with
     | some w => exact ⟨_, _, by simp [World.call, World.callSimple, wb, wf] <;> first | exact ⟨rfl, rfl⟩ | rfl⟩
     | none => exact ⟨_, _, by simp [World.call, World.callSimple, wb, wf] <;> first | exact ⟨rfl, rfl⟩ | rfl⟩
 

@@ -3,12 +3,12 @@ module
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.hasKids
+import Lanius.Mini.Frontend.P.i32ArrayLength
 import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.isPathCall
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.noTrees
 import Lanius.Mini.Frontend.P.pathRef
-import Lanius.Mini.Frontend.P.stringOpen
 import Lanius.Mini.Frontend.P.typeDeclAt
 import Lanius.Mini.Frontend.P.wideOf
 

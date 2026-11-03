@@ -112,6 +112,16 @@ def textFillSecureBytes : List Nat :=
   let t : List Nat := 102 :: 105 :: 108 :: 108 :: 95 :: 115 :: 101 :: 99 :: 117 :: 114 :: 101 :: 95 :: 98 :: 121 :: 116 :: 101 :: [115]
   t
 
+/-- write_text -/
+def textWriteText : List Nat :=
+  let t : List Nat := 119 :: 114 :: 105 :: 116 :: 101 :: 95 :: 116 :: 101 :: 120 :: [116]
+  t
+
+/-- write_newline -/
+def textWriteNewline : List Nat :=
+  let t : List Nat := 119 :: 114 :: 105 :: 116 :: 101 :: 95 :: 110 :: 101 :: 119 :: 108 :: 105 :: 110 :: [101]
+  t
+
 /-- The Core function id of the host service an `extern "lanius_std" fn` of this name stands for (hostFuncs in SrcProgram.toCore), 0 for none. -/
 def hostId (name : List Nat) : Nat :=
   if sameText name textWriteByte then
@@ -138,7 +148,13 @@ def hostId (name : List Nat) : Nat :=
                 if sameText name textFillSecureBytes then
                   4294967303
                 else
-                  0
+                  if sameText name textWriteText then
+                    4294967304
+                  else
+                    if sameText name textWriteNewline then
+                      4294967305
+                    else
+                      0
 
 /-- An `extern "lanius_std" fn` naming a host service, without a where clause. -/
 def hostExtern (b : CTree) : Bool :=

@@ -40,6 +40,7 @@ import all Lanius.Mini.Compiler.P.floatApply
 import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.guardAnd
 import all Lanius.Mini.Compiler.P.hostRandomCode
+import all Lanius.Mini.Compiler.P.evalHost
 import all Lanius.Mini.Compiler.P.indexOf
 import all Lanius.Mini.Compiler.P.iteThen
 import all Lanius.Mini.Compiler.P.leftTrue
@@ -1245,17 +1246,31 @@ theorem eff_call (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls 
     exfalso
     have len : vs.length = service.parameterTypes.length := by
       rw [holdsA.length]
-      rcases shape with ⟨rfl, tys⟩ | ⟨which, tys⟩ | ⟨rfl, tys⟩
+      rcases shape with ⟨rfl, tys⟩ | ⟨which, tys⟩ | ⟨rfl, tys⟩ | ⟨rfl, tys⟩ | ⟨rfl, tys⟩
       · rw [tys]; rfl
       · rw [tys]; rcases which with rfl | rfl | rfl | rfl | rfl | rfl <;> rfl
       · rw [tys]; rfl
+      · rw [tys]; rfl
+      · rw [tys]; rfl
     have outcome := fails (k + 1)
     rw [host_call_eval outside hs len argsRun fresh1.2] at outcome
-    rcases shape with ⟨rfl, tys⟩ | ⟨which, tys⟩ | ⟨rfl, tys⟩
+    rcases shape with ⟨rfl, tys⟩ | ⟨which, tys⟩ | ⟨rfl, tys⟩ | ⟨rfl, tys⟩ | ⟨rfl, tys⟩
     rotate_left 2
     · obtain ⟨valuesA, -⟩ := one_i32 holdsA tys
       subst valuesA
       obtain ⟨v, world', called⟩ := sleepMsI32_returns st1.heap st1.world (low (env1 slot)).toInt
+      rw [called] at outcome
+      replace outcome := host_failing hs fresh1.2 called outcome
+      exact Nat.lt_irrefl _ (Nat.lt_of_lt_of_le outcome bound)
+    · obtain ⟨text, _, valuesA, -⟩ := i32_str holdsA tys
+      subst valuesA
+      obtain ⟨v, world', called⟩ := writeText_returns st1.heap st1.world (low (env1 slot)).toInt text
+      rw [called] at outcome
+      replace outcome := host_failing hs fresh1.2 called outcome
+      exact Nat.lt_irrefl _ (Nat.lt_of_lt_of_le outcome bound)
+    · obtain ⟨valuesA, -⟩ := one_i32 holdsA tys
+      subst valuesA
+      obtain ⟨v, world', called⟩ := writeNewline_returns st1.heap st1.world (low (env1 slot)).toInt
       rw [called] at outcome
       replace outcome := host_failing hs fresh1.2 called outcome
       exact Nat.lt_irrefl _ (Nat.lt_of_lt_of_le outcome bound)

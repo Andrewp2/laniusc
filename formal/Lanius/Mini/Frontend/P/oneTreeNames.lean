@@ -3,13 +3,13 @@ module
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Frontend.P.basedDigits
 import Lanius.Mini.Frontend.P.hasKids
+import Lanius.Mini.Frontend.P.i32ArrayLength
 import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.isPathCall
 import Lanius.Mini.Frontend.P.isTypedSliceSegments
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.noTrees
 import Lanius.Mini.Frontend.P.sliceHead
-import Lanius.Mini.Frontend.P.stringOpen
 import Lanius.Mini.Frontend.P.wideOf
 
 public section

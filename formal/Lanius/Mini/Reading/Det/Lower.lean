@@ -49,6 +49,7 @@ theorem lowerR_unique {decls : Decls} {table : List Inst} :
   | _, _, _, .ptr, .ptr => rfl
   | _, _, _, .isize, .isize => rfl
   | _, _, _, .char, .char => rfl
+  | _, _, _, .str, .str => rfl
   | _, _, _, .float, .float => rfl
   | _, _, _, .sint, .sint => rfl
   | _, _, _, .slice e, .slice e' => by rw [lowerR_unique e e']
@@ -84,6 +85,7 @@ theorem tyInsts_unique {decls : Decls} : ∀ {t : Ty} {a b : List Inst}, TyInsts
   | _, _, _, .ptr, .ptr => rfl
   | _, _, _, .isize, .isize => rfl
   | _, _, _, .char, .char => rfl
+  | _, _, _, .str, .str => rfl
   | _, _, _, .float, .float => rfl
   | _, _, _, .sint, .sint => rfl
   | _, _, _, .slice e, .slice e' => tyInsts_unique e e'

@@ -32,6 +32,7 @@ def effNamedTys (x : MEff) : List Ty :=
   | .xIf c t a b => effNamedTys c ++ t :: (effNamedTys a ++ effNamedTys b)
   | .xLet id t v rt b => effNamedTys v ++ t :: rt :: effNamedTys b
   | .xLen sl => []
+  | .xStr cs => []
 def effsNamedTys (xs : List MEff) : List Ty :=
   match xs with
   | [] => []

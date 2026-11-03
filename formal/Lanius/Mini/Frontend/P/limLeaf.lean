@@ -87,9 +87,15 @@ def limParams (ps : List SrcParam) : Bool :=
   | [] => true
   | p :: rest => limTy p.ty && limParams rest
 
+/-- At least the parameters' slots together (params_size), when that is within depth_limit() and each parameter's type within weight_limit(). -/
+def limParamSlots (ps : List SrcParam) : Option Nat :=
+  match ps with
+  | [] => some 0
+  | p :: rest => limBind (limSlots p.ty) true (limParamSlots rest)
+
 def limFuncs (fs : List SrcFunc) : Bool :=
   match fs with
   | [] => true
-  | g :: rest => limParams g.params && limTy g.ret && !(isNoneWeight (limStmt g.body)) && limFuncs rest
+  | g :: rest => limParams g.params && !(isNoneWeight (limParamSlots g.params)) && limTy g.ret && !(isNoneWeight (limStmt g.body)) && limFuncs rest
 
 end Lanius.Mini

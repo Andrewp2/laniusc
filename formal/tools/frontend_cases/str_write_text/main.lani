@@ -1,0 +1,10 @@
+// The host services write_text and write_newline, as std::io declares them.
+pub extern "lanius_std" fn write_text(handle: i32, text: str) -> i32;
+
+pub extern "lanius_std" fn write_newline(handle: i32) -> i32;
+
+fn run(n: i32) -> i32 {
+    let written: i32 = write_text(1, "hello");
+    let newline: i32 = write_newline(1);
+    return written + newline;
+}

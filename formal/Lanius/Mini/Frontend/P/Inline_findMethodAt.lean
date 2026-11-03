@@ -13,8 +13,8 @@ public import Lanius.Mini.Frontend.P.forRange
 public import Lanius.Mini.Frontend.P.freshId
 public import Lanius.Mini.Frontend.P.funcsOnto
 public import Lanius.Mini.Frontend.P.hasKids
-public import Lanius.Mini.Frontend.P.i32ArrayLength
 public import Lanius.Mini.Frontend.P.isEmptyUsize
+public import Lanius.Mini.Frontend.P.litEffMatch
 public import Lanius.Mini.Frontend.P.litIf
 public import Lanius.Mini.Frontend.P.lxBlockEnd
 public import Lanius.Mini.Frontend.P.lxSpaceEnd

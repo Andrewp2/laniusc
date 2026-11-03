@@ -105,12 +105,17 @@ theorem zeroLocals_rename (table : List Nat) (missing first count : Nat) :
   | zero => rw [zeroLocals_zero]; rfl
   | succ count ih => rw [zeroLocals_succ]; simp [ih, Instr.rename]
 
+/-- Renaming changes no node count, so the code check gives the same room. -/
+theorem Stmt.room_rename (table : List Nat) (missing : Nat) (s : Stmt) :
+    ∀ room, stmtRoom room (s.rename table missing) = stmtRoom room s := by
+  induction s <;> intro room <;> simp_all [Stmt.rename, stmtRoom]
+
 theorem compileFunc_rename {table : List Nat} {missing : Nat} {program own : List Arity}
     (agree : ∀ callee, program[table.getD callee missing]? = own[callee]?) (func : Func) :
     compileFunc program
         { params := func.params, results := func.results, locals := func.locals, body := func.body.rename table missing } =
       (compileFunc own func).map (Code.rename table missing) := by
-  simp only [compileFunc, Stmt.within_rename agree, Stmt.temps_rename]
+  simp only [compileFunc, Stmt.within_rename agree, Stmt.temps_rename, Stmt.room_rename]
   split
   · simp only [Option.map_some, Code.rename, List.map_append, List.map_cons,
       zeroLocals_rename, compileStmt_rename, Instr.rename]

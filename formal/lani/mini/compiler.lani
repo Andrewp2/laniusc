@@ -684,10 +684,110 @@ pub struct Code {
     instrs: List<Instr>,
 }
 
+// Images are small enough for every rel32 displacement.
+pub fn image_limit() -> usize {
+    return 1073741824;
+}
+
+// The room left of room after k is taken out, None when k does not fit.
+pub fn spend(room: usize, k: usize) -> core::option::Option<usize> {
+    if (room >= k) {
+        return Some(minus(room, k));
+    }
+    return None;
+}
+
+// extract: inline
+fn spend_then(sroom: core::option::Option<usize>, sk: usize) -> core::option::Option<usize> {
+    return match (sroom) {
+        None -> None,
+        Some(sr) -> spend(sr, sk),
+    };
+}
+
+// A function's code is checked against the image limit before it is
+// generated (F14): each node of its body takes one out of the room, a call
+// one more for each result it copies back, so no pc or code size that
+// compile_stmt adds up can pass 2^64. A body's code is at least as many bytes
+// as it has nodes, and at most 64 times as many, so this rejects only bodies
+// whose code passes the image limit, which link rejects too.
+pub fn expr_room(room: usize, e: Expr) -> core::option::Option<usize> {
+    return match (e) {
+        Lit(value) -> spend(room, 1),
+        Var(index) -> spend(room, 1),
+        Expr::Neg(operand) -> expr_then(spend(room, 1), unbox(operand)),
+        Binary(word, operation, left, right) -> expr_then(expr_then(spend(room, 1), unbox(left)), unbox(right)),
+        Compare(word, operation, left, right) -> expr_then(expr_then(spend(room, 1), unbox(left)), unbox(right)),
+        Expr::Fp(operation, left, right) -> expr_then(expr_then(spend(room, 1), unbox(left)), unbox(right)),
+    };
+}
+
+// extract: inline
+fn expr_then(eroom: core::option::Option<usize>, ee: Expr) -> core::option::Option<usize> {
+    return match (eroom) {
+        None -> None,
+        Some(er) -> expr_room(er, ee),
+    };
+}
+
+// Each argument: its expression and the store of its value.
+pub fn args_room(room: usize, args: List<Expr>) -> core::option::Option<usize> {
+    return match (args) {
+        Nil -> Some(room),
+        Cons(arg, rest) -> args_then(expr_then(spend(room, 1), arg), unbox(rest)),
+    };
+}
+
+// extract: inline
+fn args_then(aroom: core::option::Option<usize>, aargs: List<Expr>) -> core::option::Option<usize> {
+    return match (aroom) {
+        None -> None,
+        Some(ar) -> args_room(ar, aargs),
+    };
+}
+
+pub fn stmt_room(room: usize, s: Stmt) -> core::option::Option<usize> {
+    return match (s) {
+        Skip -> Some(room),
+        Assign(index, value) -> expr_then(spend(room, 1), value),
+        Seq(first, second) -> stmt_then(stmt_room(room, unbox(first)), unbox(second)),
+        Ite(condition, then_branch, else_branch) -> stmt_then(stmt_then(expr_then(spend(room, 1), condition), unbox(then_branch)), unbox(else_branch)),
+        Loop(condition, body) -> stmt_then(expr_then(spend(room, 1), condition), unbox(body)),
+        Stmt::Call(target, count, callee, args) -> args_then(spend_then(spend(room, 1), count), args),
+        Stmt::Ret(values) -> args_then(spend(room, 1), values),
+        Brk -> spend(room, 1),
+        Cont -> spend(room, 1),
+        Alloc(target, shift, size) -> expr_then(spend(room, 1), size),
+        LoadByte(target, address) -> expr_then(spend(room, 1), address),
+        StoreByte(address, value) -> expr_then(expr_then(spend(room, 1), address), value),
+        LoadWord(width, target, address) -> expr_then(spend(room, 1), address),
+        StoreWord(width, address, value) -> expr_then(expr_then(spend(room, 1), address), value),
+        Divide(word, operation, target, left, right) -> expr_then(expr_then(spend(room, 1), left), right),
+        Stmt::Sys(kind, target, args) -> args_then(spend(room, 1), args),
+        Stmt::Frame(target, bytes) -> spend(room, 1),
+        Stmt::Static(target, offset) -> spend(room, 1),
+    };
+}
+
+// extract: inline
+fn stmt_then(troom: core::option::Option<usize>, ts: Stmt) -> core::option::Option<usize> {
+    return match (troom) {
+        None -> None,
+        Some(tr) -> stmt_room(tr, ts),
+    };
+}
+
+pub fn room_fits(room: core::option::Option<usize>) -> bool {
+    return match (room) {
+        None -> false,
+        Some(r) -> true,
+    };
+}
+
 // A function returns at least one value, and its results fit in its locals.
 pub fn compile_func(arities: List<Arity>, func: Func) -> core::option::Option<Code> {
     let slots: usize = plus(func.locals, func.body.temps());
-    if (func.locals >= func.params && func.results > 0 && func.locals >= func.results && func.body.within(func.locals, arities, func.results) && frame_limit() >= slots) {
+    if (func.locals >= func.params && func.results > 0 && func.locals >= func.results && func.body.within(func.locals, arities, func.results) && frame_limit() >= slots && room_fits(stmt_room(image_limit(), func.body))) {
         let init: List<Instr> = cons(Imm(0), zero_locals(func.params, minus(func.locals, func.params)));
         return Some(Code { slots: slots, instrs: concat(init, compile_stmt(func.locals, code_size(init), 0, 0, func.body)) });
     }
@@ -1185,11 +1285,6 @@ pub struct Binary {
     entries: List<usize>,
     image: List<u8>,
     statics: List<u8>,
-}
-
-// Images are small enough for every rel32 displacement.
-pub fn image_limit() -> usize {
-    return 1073741824;
 }
 
 // The size of functions laid out back to back: the image's length, found
@@ -4047,6 +4142,16 @@ pub fn host_newline_code(slot: usize) -> Stmt {
     return Seq(boxed(Assign(plus(slot, 1), Lit(10))), boxed(host_byte_code(slot)));
 }
 
+pub fn eval_host_text(callee: usize, slot: usize, args: EvaluatedArgs) -> core::option::Option<Evaluated> {
+    if ((callee == 4294967304) && types_same(args.types, cons(I32, single(Str)))) {
+        return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_text_code(slot))), ty: I32 });
+    }
+    if ((callee == 4294967305) && types_same(args.types, single(I32))) {
+        return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_newline_code(slot))), ty: I32 });
+    }
+    return None;
+}
+
 pub fn eval_host(callee: usize, slot: usize, args: EvaluatedArgs) -> core::option::Option<Evaluated> {
     if ((callee == 4294967296) && types_same(args.types, cons(I32, single(I32)))) {
         return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_byte_code(slot))), ty: I32 });
@@ -4072,7 +4177,7 @@ pub fn eval_host(callee: usize, slot: usize, args: EvaluatedArgs) -> core::optio
     if ((callee == 4294967303) && types_same(args.types, cons(Ptr, single(Uint(Usize))))) {
         return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_random_code(slot))), ty: I32 });
     }
-    return None;
+    return eval_host_text(callee, slot, args);
 }
 
 pub fn eval_call(sig: core::option::Option<Sig>, callee: usize, slot: usize, args: core::option::Option<EvaluatedArgs>) -> core::option::Option<Evaluated> {

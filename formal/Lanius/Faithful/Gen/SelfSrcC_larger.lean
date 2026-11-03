@@ -13,6 +13,12 @@ open Lanius.Mini
 
 noncomputable section
 
+/-- mini::selfhost::args_then -/
+def src_args_then (ix_args_room : Nat) : SrcFunc := { params := [{ id := 10, ty := ty163 }, { id := 46, ty := ty93 }], ret := ty163, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 10)) ty163 ty163 [[160], []] [SrcEff.eCall ix_args_room [SrcEff.ePure (SrcExpr.local 160), SrcEff.ePure (SrcExpr.local 46)], SrcEff.eVariant ty163 1 []]) }
+
+/-- mini::selfhost::expr_then -/
+def src_expr_then (ix_expr_room : Nat) : SrcFunc := { params := [{ id := 10, ty := ty163 }, { id := 46, ty := ty90 }], ret := ty163, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 10)) ty163 ty163 [[151], []] [SrcEff.eCall ix_expr_room [SrcEff.ePure (SrcExpr.local 151), SrcEff.ePure (SrcExpr.local 46)], SrcEff.eVariant ty163 1 []]) }
+
 /-- mini::selfhost::ite_code -/
 def src_ite_code (ix_plus : Nat) (ix_concat_of_mini_selfhost_Instr : Nat) (ix_compile_stmt : Nat) (ix_code_size : Nat) (ix_single_of_mini_selfhost_Instr : Nat) : SrcFunc := { params := [{ id := 9, ty := SrcType.uint (UintTy.usize) }, { id := 22, ty := SrcType.uint (UintTy.usize) }, { id := 34, ty := SrcType.uint (UintTy.usize) }, { id := 46, ty := SrcType.uint (UintTy.usize) }, { id := 59, ty := ty64 }, { id := 88, ty := ty94 }, { id := 107, ty := ty94 }], ret := ty64, body := SrcStmt.letEval 151 (SrcType.uint (UintTy.usize)) (SrcEff.eCall ix_plus [SrcEff.eCall ix_plus [SrcEff.ePure (SrcExpr.local 22), SrcEff.eCall ix_code_size [SrcEff.ePure (SrcExpr.local 59)]], SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000009#64)]) (SrcStmt.letCall 226 ty64 ix_compile_stmt [SrcExpr.local 9, SrcExpr.local 151, SrcExpr.local 34, SrcExpr.local 46, SrcExpr.local 88] (SrcStmt.letEval 315 (SrcType.uint (UintTy.usize)) (SrcEff.eCall ix_plus [SrcEff.eCall ix_plus [SrcEff.ePure (SrcExpr.local 151), SrcEff.eCall ix_code_size [SrcEff.ePure (SrcExpr.local 226)]], SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000005#64)]) (SrcStmt.letCall 392 ty64 ix_compile_stmt [SrcExpr.local 9, SrcExpr.local 315, SrcExpr.local 34, SrcExpr.local 46, SrcExpr.local 107] (SrcStmt.returnEval (SrcEff.eCall ix_concat_of_mini_selfhost_Instr [SrcEff.eCall ix_concat_of_mini_selfhost_Instr [SrcEff.eCall ix_concat_of_mini_selfhost_Instr [SrcEff.eCall ix_concat_of_mini_selfhost_Instr [SrcEff.ePure (SrcExpr.local 59), SrcEff.eCall ix_single_of_mini_selfhost_Instr [SrcEff.eVariant ty62 7 [SrcEff.ePure (SrcExpr.local 315)]]], SrcEff.ePure (SrcExpr.local 226)], SrcEff.eCall ix_single_of_mini_selfhost_Instr [SrcEff.eVariant ty62 6 [SrcEff.eCall ix_plus [SrcEff.ePure (SrcExpr.local 315), SrcEff.eCall ix_code_size [SrcEff.ePure (SrcExpr.local 392)]]]]], SrcEff.ePure (SrcExpr.local 392)]))))) }
 
@@ -36,6 +42,12 @@ def src_room_next (ix_minus : Nat) (ix_room_after : Nat) : SrcFunc := { params :
 
 /-- mini::selfhost::seq_code -/
 def src_seq_code (ix_plus : Nat) (ix_concat_of_mini_selfhost_Instr : Nat) (ix_compile_stmt : Nat) (ix_code_size : Nat) : SrcFunc := { params := [{ id := 9, ty := SrcType.uint (UintTy.usize) }, { id := 22, ty := SrcType.uint (UintTy.usize) }, { id := 34, ty := SrcType.uint (UintTy.usize) }, { id := 46, ty := SrcType.uint (UintTy.usize) }, { id := 59, ty := ty64 }, { id := 84, ty := ty94 }], ret := ty64, body := SrcStmt.returnEval (SrcEff.eCall ix_concat_of_mini_selfhost_Instr [SrcEff.ePure (SrcExpr.local 59), SrcEff.eCall ix_compile_stmt [SrcEff.ePure (SrcExpr.local 9), SrcEff.eCall ix_plus [SrcEff.ePure (SrcExpr.local 22), SrcEff.eCall ix_code_size [SrcEff.ePure (SrcExpr.local 59)]], SrcEff.ePure (SrcExpr.local 34), SrcEff.ePure (SrcExpr.local 46), SrcEff.ePure (SrcExpr.local 84)]]) }
+
+/-- mini::selfhost::spend_then -/
+def src_spend_then (ix_spend : Nat) : SrcFunc := { params := [{ id := 11, ty := ty163 }, { id := 47, ty := SrcType.uint (UintTy.usize) }], ret := ty163, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 11)) ty163 ty163 [[153], []] [SrcEff.eCall ix_spend [SrcEff.ePure (SrcExpr.local 153), SrcEff.ePure (SrcExpr.local 47)], SrcEff.eVariant ty163 1 []]) }
+
+/-- mini::selfhost::stmt_then -/
+def src_stmt_then (ix_stmt_room : Nat) : SrcFunc := { params := [{ id := 10, ty := ty163 }, { id := 46, ty := ty94 }], ret := ty163, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 10)) ty163 ty163 [[151], []] [SrcEff.eCall ix_stmt_room [SrcEff.ePure (SrcExpr.local 151), SrcEff.ePure (SrcExpr.local 46)], SrcEff.eVariant ty163 1 []]) }
 
 end
 

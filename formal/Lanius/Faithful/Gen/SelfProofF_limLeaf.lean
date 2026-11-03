@@ -39,10 +39,11 @@ theorem proof_lim_const {prog : SrcProgram} {prims : Prims} {ix_lim_const : Nat}
   simp only [src_lim_const] at h
   faithful [Lanius.Mini.limConst]
 
-theorem step_lim_funcs {prog : SrcProgram} {prims : Prims} {ix_lim_funcs ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc ix_is_none_weight ix_lim_params ix_lim_ty ix_lim_stmt : Nat} (fn : prog.funcs[ix_lim_funcs]? = some (src_lim_funcs ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc ix_lim_funcs ix_is_none_weight ix_lim_params ix_lim_ty ix_lim_stmt)) (np : prims.isPrim ix_lim_funcs = false)
+theorem step_lim_funcs {prog : SrcProgram} {prims : Prims} {ix_lim_funcs ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc ix_is_none_weight ix_lim_params ix_lim_param_slots ix_lim_ty ix_lim_stmt : Nat} (fn : prog.funcs[ix_lim_funcs]? = some (src_lim_funcs ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc ix_lim_funcs ix_is_none_weight ix_lim_params ix_lim_param_slots ix_lim_ty ix_lim_stmt)) (np : prims.isPrim ix_lim_funcs = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc n))
     (ext_is_none_weight : Certified (∀ {n : Nat}, Stmt_is_none_weight prog prims ix_is_none_weight n))
     (ext_lim_params : Certified (∀ {n : Nat}, Stmt_lim_params prog prims ix_lim_params n))
+    (ext_lim_param_slots : Certified (∀ {n : Nat}, Stmt_lim_param_slots prog prims ix_lim_param_slots n))
     (ext_lim_ty : Certified (∀ {n : Nat}, Stmt_lim_ty prog prims ix_lim_ty n))
     (ext_lim_stmt : Certified (∀ {n : Nat}, Stmt_lim_stmt prog prims ix_lim_stmt n)) {n : Nat}
     (ih_lim_funcs : Certified (Stmt_lim_funcs prog prims ix_lim_funcs n)) :
@@ -89,6 +90,17 @@ theorem proof_lim_one {prog : SrcProgram} {prims : Prims} {ix_lim_one : Nat} (fn
   simp only [src_lim_one] at h
   faithful [Lanius.Mini.limOne]
 
+theorem step_lim_param_slots {prog : SrcProgram} {prims : Prims} {ix_lim_param_slots ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam ix_lim_bind ix_lim_slots : Nat} (fn : prog.funcs[ix_lim_param_slots]? = some (src_lim_param_slots ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam ix_lim_param_slots ix_lim_bind ix_lim_slots)) (np : prims.isPrim ix_lim_param_slots = false)
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam n))
+    (ext_lim_bind : Certified (∀ {n : Nat}, Stmt_lim_bind prog prims ix_lim_bind n))
+    (ext_lim_slots : Certified (∀ {n : Nat}, Stmt_lim_slots prog prims ix_lim_slots n)) {n : Nat}
+    (ih_lim_param_slots : Certified (Stmt_lim_param_slots prog prims ix_lim_param_slots n)) :
+    Stmt_lim_param_slots prog prims ix_lim_param_slots (n + 1) := by
+  intro x0 v0 w h r0
+  rw [pcall_succ np fn] at h
+  simp only [src_lim_param_slots] at h
+  faithful [Lanius.Mini.limParamSlots]
+
 theorem step_lim_params {prog : SrcProgram} {prims : Prims} {ix_lim_params ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam ix_lim_ty : Nat} (fn : prog.funcs[ix_lim_params]? = some (src_lim_params ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam ix_lim_params ix_lim_ty)) (np : prims.isPrim ix_lim_params = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam n))
     (ext_lim_ty : Certified (∀ {n : Nat}, Stmt_lim_ty prog prims ix_lim_ty n)) {n : Nat}
@@ -99,10 +111,10 @@ theorem step_lim_params {prog : SrcProgram} {prims : Prims} {ix_lim_params ix_un
   simp only [src_lim_params] at h
   faithful [Lanius.Mini.limParams]
 
-theorem step_lim_stmt {prog : SrcProgram} {prims : Prims} {ix_lim_stmt ix_unbox_of_mini_selfhost_SrcStmt ix_lim_slots ix_lim_bind ix_lim_expr ix_lim_exprs ix_lim_arms ix_lim_leaf ix_lim_max ix_lim_guard ix_lim_one ix_lim_const ix_lim_eff ix_depth_sum : Nat} (fn : prog.funcs[ix_lim_stmt]? = some (src_lim_stmt ix_unbox_of_mini_selfhost_SrcStmt ix_lim_stmt ix_lim_slots ix_lim_bind ix_lim_expr ix_lim_exprs ix_lim_arms ix_lim_leaf ix_lim_max ix_lim_guard ix_lim_one ix_lim_const ix_lim_eff ix_depth_sum)) (np : prims.isPrim ix_lim_stmt = false)
+theorem step_lim_stmt {prog : SrcProgram} {prims : Prims} {ix_lim_stmt ix_unbox_of_mini_selfhost_SrcStmt ix_lim_bind ix_lim_slots ix_lim_expr ix_lim_exprs ix_lim_arms ix_lim_leaf ix_lim_max ix_lim_guard ix_lim_one ix_lim_const ix_lim_eff ix_depth_sum : Nat} (fn : prog.funcs[ix_lim_stmt]? = some (src_lim_stmt ix_unbox_of_mini_selfhost_SrcStmt ix_lim_stmt ix_lim_bind ix_lim_slots ix_lim_expr ix_lim_exprs ix_lim_arms ix_lim_leaf ix_lim_max ix_lim_guard ix_lim_one ix_lim_const ix_lim_eff ix_depth_sum)) (np : prims.isPrim ix_lim_stmt = false)
     (ext_unbox_of_mini_selfhost_SrcStmt : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_SrcStmt prog prims ix_unbox_of_mini_selfhost_SrcStmt n))
-    (ext_lim_slots : Certified (∀ {n : Nat}, Stmt_lim_slots prog prims ix_lim_slots n))
     (ext_lim_bind : Certified (∀ {n : Nat}, Stmt_lim_bind prog prims ix_lim_bind n))
+    (ext_lim_slots : Certified (∀ {n : Nat}, Stmt_lim_slots prog prims ix_lim_slots n))
     (ext_lim_expr : Certified (∀ {n : Nat}, Stmt_lim_expr prog prims ix_lim_expr n))
     (ext_lim_exprs : Certified (∀ {n : Nat}, Stmt_lim_exprs prog prims ix_lim_exprs n))
     (ext_lim_arms : Certified (∀ {n : Nat}, Stmt_lim_arms prog prims ix_lim_arms n))

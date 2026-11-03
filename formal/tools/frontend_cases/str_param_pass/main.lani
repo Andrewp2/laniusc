@@ -1,0 +1,15 @@
+// A str parameter passed on to another call, and two literals placed one
+// after the other.
+fn inner(code: i32, text: str) -> i32 {
+    return code;
+}
+
+fn outer(text: str) -> i32 {
+    return inner(2, text);
+}
+
+fn run(n: i32) -> i32 {
+    let a: i32 = outer("ab");
+    let b: i32 = outer("cde");
+    return a + b;
+}

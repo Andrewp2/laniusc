@@ -7,6 +7,7 @@ import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.ifSome
 import Lanius.Mini.Frontend.P.isEmptyUsize
+import Lanius.Mini.Frontend.P.isPathCall
 import Lanius.Mini.Frontend.P.noBlock
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.pickTy
@@ -80,10 +81,23 @@ def viewRead (fuel : Nat) (env : FrontEnv) (scope : List Local) (a : Local) (h :
       | [] => none
       | v :: more => viewPointer fuel env scope a.id n fields v more
 
-def stringClose (ok : Bool) : Option (List Nat) :=
-  if ok then
-    some []
-  else
-    none
+/-- core::mem::string_data_ptr -/
+def stringDataPtrPath : List (List Nat) :=
+  textCore :: textMem :: [textStringDataPtr]
+
+def isEmptyTexts (ts : List (List Nat)) : Bool :=
+  match ts with
+  | [] => true
+  | t :: rest => false
+
+def isLastTyped (ss : List (List Nat)) : Bool :=
+  match ss with
+  | [] => false
+  | c :: rest => sameText c textTypedSliceFromRawParts && isEmptyTexts rest
+
+def isMemTyped (ss : List (List Nat)) : Bool :=
+  match ss with
+  | [] => false
+  | b :: rest => sameText b textMem && isLastTyped rest
 
 end Lanius.Mini

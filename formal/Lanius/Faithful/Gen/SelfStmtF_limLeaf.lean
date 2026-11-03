@@ -44,6 +44,10 @@ abbrev Stmt_lim_one (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     (RepOption 150 RepNat) (Lanius.Mini.limOne) w
 
+abbrev Stmt_lim_param_slots (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List Lanius.Mini.SrcParam} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 7 RepSrcParam) x0 v0 →
+    (RepOption 150 RepNat) (Lanius.Mini.limParamSlots x0) w
+
 abbrev Stmt_lim_params (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcParam} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 7 RepSrcParam) x0 v0 →
     RepBool (Lanius.Mini.limParams x0) w

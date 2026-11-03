@@ -796,4 +796,30 @@ theorem HomedCorr.popPlain {sx : Statics} {places : List Addressed} {scope : Lis
       rw [sl, rt] at r
       exact r
 
+
+/-! ## A held reference is at a reference type (stage 1's `HoldsAt.ref`) -/
+
+/-- A reference value is held only at `.ref referent`, by `RefHeld`. -/
+theorem SrcType.HoldsAt.reference {sx : Statics} {places : List Addressed} {ty : SrcType} {T : Lanius.Core.Ty}
+    {cell : Lanius.CellId} {path : List ValueProjection} {env : Env} {slot : Nat}
+    (h : ty.HoldsAt sx places (.reference T cell path) env slot) :
+    ∃ referent, ty = .ref referent ∧ RefTo places referent cell path (env slot) ∧ T = referent.toCore := by
+  cases h with
+  | i32 h => simp [SrcType.Holds] at h
+  | bool h => simp [SrcType.Holds] at h
+  | uint h => simp [SrcType.Holds] at h
+  | ptr h => simp [SrcType.Holds] at h
+  | isize h => simp [SrcType.Holds] at h
+  | char h => simp [SrcType.Holds] at h
+  | float h =>
+    rename_i t
+    cases t <;> simp [SrcType.Holds, FloatTy.value] at h
+  | sint h =>
+    rename_i kind
+    cases kind <;> simp [SrcType.Holds, UintTy.SintHolds, NarrowHolds] at h
+  | ref h =>
+    obtain ⟨cell', path', hv, hto⟩ := h
+    cases hv
+    exact ⟨_, rfl, hto, rfl⟩
+
 end Lanius.Mini

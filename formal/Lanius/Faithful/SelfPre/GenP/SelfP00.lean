@@ -123,12 +123,6 @@ theorem upost_param_ty : ∀ (x0 : Lanius.Mini.FrontEnv) (x1 : List Nat), ∀ M 
   all_goals upost_auto M
 theorem HBPost.Lanius.Mini.paramTy.p0 : ∀ (x0 : Lanius.Mini.FrontEnv) (x1 : List Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb (Lanius.Mini.paramTy x0 x1) ≤ M := upost_param_ty
 
-theorem upost_untyped_rejected : ∀ (x0 : List Lanius.Mini.SrcFunc), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.untypedRejected x0) ≤ M := by
-  intro x0 M hM0
-  first | fun_induction Lanius.Mini.untypedRejected x0 | fun_cases Lanius.Mini.untypedRejected x0 | unfold Lanius.Mini.untypedRejected
-  all_goals upost_auto M
-theorem HBPost.Lanius.Mini.untypedRejected.p0 : ∀ (x0 : List Lanius.Mini.SrcFunc), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.untypedRejected x0) ≤ M := upost_untyped_rejected
-
 theorem upost_weighed : ∀ (x0 : Lanius.Mini.SrcType), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.weighed x0) ≤ M := by
   intro x0 M hM0
   first | fun_induction Lanius.Mini.weighed x0 | fun_cases Lanius.Mini.weighed x0 | unfold Lanius.Mini.weighed
@@ -555,17 +549,17 @@ theorem upost_lit_match_typed : ∀ (x0 : Lanius.Mini.FrontEnv) (x1 : List Laniu
   all_goals upost_auto M
 theorem HBPost.Lanius.Mini.litMatchTyped.p0 : ∀ (x0 : Lanius.Mini.FrontEnv) (x1 : List Lanius.Mini.Local) (x2 : Lanius.Mini.CTree) (x3 : Lanius.Mini.MEff) (x4 : Lanius.Mini.Ty), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb (Lanius.Mini.litMatchTyped x0 x1 x2 x3 x4) ≤ M := upost_lit_match_typed
 
-theorem upost_string_close : ∀ (x0 : Bool), ∀ M : Nat, hb (Lanius.Mini.stringClose x0) ≤ M := by
-  intro x0 M 
-  first | fun_induction Lanius.Mini.stringClose x0 | fun_cases Lanius.Mini.stringClose x0 | unfold Lanius.Mini.stringClose
-  all_goals upost_auto M
-theorem HBPost.Lanius.Mini.stringClose.p0 : ∀ (x0 : Bool), ∀ M : Nat, hb (Lanius.Mini.stringClose x0) ≤ M := upost_string_close
-
 theorem upost_checked_bound : ∀ (x0 : Bool) (x1 : Option Lanius.Mini.ArgsBound), ∀ M : Nat, hb x1 ≤ M → hb (Lanius.Mini.checkedBound x0 x1) ≤ M := by
   intro x0 x1 M hM0
   first | fun_induction Lanius.Mini.checkedBound x0 x1 | fun_cases Lanius.Mini.checkedBound x0 x1 | unfold Lanius.Mini.checkedBound
   all_goals upost_auto M
 theorem HBPost.Lanius.Mini.checkedBound.p0 : ∀ (x0 : Bool) (x1 : Option Lanius.Mini.ArgsBound), ∀ M : Nat, hb x1 ≤ M → hb (Lanius.Mini.checkedBound x0 x1) ≤ M := upost_checked_bound
+
+theorem upost_head_ty : ∀ (x0 : Option (List Lanius.Mini.Ty)), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.headTy x0) ≤ M := by
+  intro x0 M hM0
+  first | fun_induction Lanius.Mini.headTy x0 | fun_cases Lanius.Mini.headTy x0 | unfold Lanius.Mini.headTy
+  all_goals upost_auto M
+theorem HBPost.Lanius.Mini.headTy.p0 : ∀ (x0 : Option (List Lanius.Mini.Ty)), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.headTy x0) ≤ M := upost_head_ty
 
 theorem upost_tail_tys : ∀ (x0 : Option (List Lanius.Mini.Ty)), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.tailTys x0) ≤ M := by
   intro x0 M hM0
@@ -596,12 +590,6 @@ theorem upost_step_expected : ∀ (x0 : Option Lanius.Mini.Ty) (x1 : Lanius.Mini
   first | fun_induction Lanius.Mini.stepExpected x0 x1 | fun_cases Lanius.Mini.stepExpected x0 x1 | unfold Lanius.Mini.stepExpected
   all_goals upost_auto M
 theorem HBPost.Lanius.Mini.stepExpected.p0 : ∀ (x0 : Option Lanius.Mini.Ty) (x1 : Lanius.Mini.CTree), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb (Lanius.Mini.stepExpected x0 x1) ≤ M := upost_step_expected
-
-theorem upost_head_ty : ∀ (x0 : Option (List Lanius.Mini.Ty)), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.headTy x0) ≤ M := by
-  intro x0 M hM0
-  first | fun_induction Lanius.Mini.headTy x0 | fun_cases Lanius.Mini.headTy x0 | unfold Lanius.Mini.headTy
-  all_goals upost_auto M
-theorem HBPost.Lanius.Mini.headTy.p0 : ∀ (x0 : Option (List Lanius.Mini.Ty)), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.headTy x0) ≤ M := upost_head_ty
 
 theorem upost_same_decl_args : ∀ (x0 : Bool) (x1 : List Lanius.Mini.Ty), ∀ M : Nat, hb x1 ≤ M → hb (Lanius.Mini.sameDeclArgs x0 x1) ≤ M := by
   intro x0 x1 M hM0
@@ -710,6 +698,12 @@ theorem upost_inst_from : ∀ (x0 : Nat) (x1 : Option (List Lanius.Mini.Ty)), �
   first | fun_induction Lanius.Mini.instFrom x0 x1 | fun_cases Lanius.Mini.instFrom x0 x1 | unfold Lanius.Mini.instFrom
   all_goals upost_auto M
 theorem HBPost.Lanius.Mini.instFrom.p0 : ∀ (x0 : Nat) (x1 : Option (List Lanius.Mini.Ty)), ∀ M : Nat, hb x1 ≤ M → hb (Lanius.Mini.instFrom x0 x1) ≤ M := upost_inst_from
+
+theorem upost_string_close : ∀ (x0 : Bool), ∀ M : Nat, hb (Lanius.Mini.stringClose x0) ≤ M := by
+  intro x0 M 
+  first | fun_induction Lanius.Mini.stringClose x0 | fun_cases Lanius.Mini.stringClose x0 | unfold Lanius.Mini.stringClose
+  all_goals upost_auto M
+theorem HBPost.Lanius.Mini.stringClose.p0 : ∀ (x0 : Bool), ∀ M : Nat, hb (Lanius.Mini.stringClose x0) ≤ M := upost_string_close
 
 theorem upost_pattern_of : ∀ (x0 : Lanius.Mini.FnDecl) (x1 : Lanius.Mini.CTree), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb (Lanius.Mini.patternOf x0 x1) ≤ M := by
   intro x0 x1 M hM0 hM1

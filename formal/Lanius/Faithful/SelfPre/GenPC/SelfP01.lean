@@ -405,9 +405,12 @@ theorem post_group_subst_all : ∀ n : Nat,
 theorem post_subst_all : ∀ (n : Nat) (x0 : List Lanius.Mini.Expr) (x1 : List Lanius.Mini.Fact), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_subst_all n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.substAll x0 x1) ≤ M + Cost_subst_all n x0 x1 :=
   fun n => (post_group_subst_all n)
 
-theorem post_step_Stmt_optimize (n : Nat) (ih :
+/-- The posts of `Stmt_optimize`'s group at fuel `n`. -/
+def PostIH_Stmt_optimize (n : Nat) : Prop :=
     (∀ (x0 : Lanius.Mini.Stmt) (x1 : List Lanius.Mini.Fact), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_Stmt_optimize n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Stmt.optimize x0 x1) ≤ M + Cost_Stmt_optimize n x0 x1) ∧
-    (∀ (x0 : Lanius.Mini.Stmt) (x1 : Lanius.Mini.Stmt) (x2 : List Lanius.Mini.Fact), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → Cost_optimize_sequence n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.Inline.optimizeSequence x0 x1 x2) ≤ M + Cost_optimize_sequence n x0 x1 x2)) :
+    (∀ (x0 : Lanius.Mini.Stmt) (x1 : Lanius.Mini.Stmt) (x2 : List Lanius.Mini.Fact), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → Cost_optimize_sequence n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.Inline.optimizeSequence x0 x1 x2) ≤ M + Cost_optimize_sequence n x0 x1 x2)
+theorem post_step_Stmt_optimize (n : Nat) (ih :
+    PostIH_Stmt_optimize n) :
     ∀ (x0 : Lanius.Mini.Stmt) (x1 : List Lanius.Mini.Fact), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_Stmt_optimize (n + 1) x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Stmt.optimize x0 x1) ≤ M + Cost_Stmt_optimize (n + 1) x0 x1 := by
   obtain ⟨post_Stmt_optimize, post_optimize_sequence⟩ := ih
   intro x0 x1 M hM0 hM1
@@ -415,8 +418,7 @@ theorem post_step_Stmt_optimize (n : Nat) (ih :
   rw [Lanius.Mini.Stmt.optimize.eq_def x0 x1]
   post_auto n, M
 theorem post_step_optimize_sequence (n : Nat) (ih :
-    (∀ (x0 : Lanius.Mini.Stmt) (x1 : List Lanius.Mini.Fact), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_Stmt_optimize n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Stmt.optimize x0 x1) ≤ M + Cost_Stmt_optimize n x0 x1) ∧
-    (∀ (x0 : Lanius.Mini.Stmt) (x1 : Lanius.Mini.Stmt) (x2 : List Lanius.Mini.Fact), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → Cost_optimize_sequence n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.Inline.optimizeSequence x0 x1 x2) ≤ M + Cost_optimize_sequence n x0 x1 x2)) :
+    PostIH_Stmt_optimize n) :
     ∀ (x0 : Lanius.Mini.Stmt) (x1 : Lanius.Mini.Stmt) (x2 : List Lanius.Mini.Fact), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → Cost_optimize_sequence (n + 1) x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.Inline.optimizeSequence x0 x1 x2) ≤ M + Cost_optimize_sequence (n + 1) x0 x1 x2 := by
   obtain ⟨post_Stmt_optimize, -⟩ := ih
   intro x0 x1 x2 M hM0 hM1 hM2
@@ -556,11 +558,14 @@ theorem post_group_arg_slots : ∀ n : Nat,
 theorem post_arg_slots : ∀ (n : Nat) (x0 : Nat) (x1 : List Lanius.Mini.Expr) (x2 : Nat), ∀ M : Nat, hb x1 ≤ M → Cost_arg_slots n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.argSlots x0 x1 x2) ≤ M + Cost_arg_slots n x0 x1 x2 :=
   fun n => (post_group_arg_slots n)
 
-theorem post_step_compile_stmt (n : Nat) (ih :
+/-- The posts of `compile_stmt`'s group at fuel `n`. -/
+def PostIH_compile_stmt (n : Nat) : Prop :=
     (∀ (x0 : Nat) (x1 : Nat) (x2 : Nat) (x3 : Nat) (x4 : Lanius.Mini.Stmt), ∀ M : Nat, hb x4 ≤ M → Cost_compile_stmt n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.compileStmt x0 x1 x2 x3 x4) ≤ M + Cost_compile_stmt n x0 x1 x2 x3 x4) ∧
     (∀ (x0 : Nat) (x1 : Nat) (x2 : Nat) (x3 : Nat) (x4 : List Lanius.Mini.Instr) (x5 : Lanius.Mini.Stmt), ∀ M : Nat, hb x4 ≤ M → hb x5 ≤ M → Cost_seq_code n x0 x1 x2 x3 x4 x5 < 18446744073709551616 → hb (Lanius.Mini.Inline.seqCode x0 x1 x2 x3 x4 x5) ≤ M + Cost_seq_code n x0 x1 x2 x3 x4 x5) ∧
     (∀ (x0 : Nat) (x1 : Nat) (x2 : Nat) (x3 : Nat) (x4 : List Lanius.Mini.Instr) (x5 : Lanius.Mini.Stmt) (x6 : Lanius.Mini.Stmt), ∀ M : Nat, hb x4 ≤ M → hb x5 ≤ M → hb x6 ≤ M → Cost_ite_code n x0 x1 x2 x3 x4 x5 x6 < 18446744073709551616 → hb (Lanius.Mini.Inline.iteCode x0 x1 x2 x3 x4 x5 x6) ≤ M + Cost_ite_code n x0 x1 x2 x3 x4 x5 x6) ∧
-    (∀ (x0 : Nat) (x1 : Nat) (x2 : List Lanius.Mini.Instr) (x3 : Lanius.Mini.Stmt), ∀ M : Nat, hb x2 ≤ M → hb x3 ≤ M → Cost_loop_code n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.Inline.loopCode x0 x1 x2 x3) ≤ M + Cost_loop_code n x0 x1 x2 x3)) :
+    (∀ (x0 : Nat) (x1 : Nat) (x2 : List Lanius.Mini.Instr) (x3 : Lanius.Mini.Stmt), ∀ M : Nat, hb x2 ≤ M → hb x3 ≤ M → Cost_loop_code n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.Inline.loopCode x0 x1 x2 x3) ≤ M + Cost_loop_code n x0 x1 x2 x3)
+theorem post_step_compile_stmt (n : Nat) (ih :
+    PostIH_compile_stmt n) :
     ∀ (x0 : Nat) (x1 : Nat) (x2 : Nat) (x3 : Nat) (x4 : Lanius.Mini.Stmt), ∀ M : Nat, hb x4 ≤ M → Cost_compile_stmt (n + 1) x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.compileStmt x0 x1 x2 x3 x4) ≤ M + Cost_compile_stmt (n + 1) x0 x1 x2 x3 x4 := by
   obtain ⟨post_compile_stmt, post_seq_code, post_ite_code, post_loop_code⟩ := ih
   intro x0 x1 x2 x3 x4 M hM0
@@ -568,10 +573,7 @@ theorem post_step_compile_stmt (n : Nat) (ih :
   rw [Lanius.Mini.compileStmt.eq_def x0 x1 x2 x3 x4]
   post_auto n, M
 theorem post_step_seq_code (n : Nat) (ih :
-    (∀ (x0 : Nat) (x1 : Nat) (x2 : Nat) (x3 : Nat) (x4 : Lanius.Mini.Stmt), ∀ M : Nat, hb x4 ≤ M → Cost_compile_stmt n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.compileStmt x0 x1 x2 x3 x4) ≤ M + Cost_compile_stmt n x0 x1 x2 x3 x4) ∧
-    (∀ (x0 : Nat) (x1 : Nat) (x2 : Nat) (x3 : Nat) (x4 : List Lanius.Mini.Instr) (x5 : Lanius.Mini.Stmt), ∀ M : Nat, hb x4 ≤ M → hb x5 ≤ M → Cost_seq_code n x0 x1 x2 x3 x4 x5 < 18446744073709551616 → hb (Lanius.Mini.Inline.seqCode x0 x1 x2 x3 x4 x5) ≤ M + Cost_seq_code n x0 x1 x2 x3 x4 x5) ∧
-    (∀ (x0 : Nat) (x1 : Nat) (x2 : Nat) (x3 : Nat) (x4 : List Lanius.Mini.Instr) (x5 : Lanius.Mini.Stmt) (x6 : Lanius.Mini.Stmt), ∀ M : Nat, hb x4 ≤ M → hb x5 ≤ M → hb x6 ≤ M → Cost_ite_code n x0 x1 x2 x3 x4 x5 x6 < 18446744073709551616 → hb (Lanius.Mini.Inline.iteCode x0 x1 x2 x3 x4 x5 x6) ≤ M + Cost_ite_code n x0 x1 x2 x3 x4 x5 x6) ∧
-    (∀ (x0 : Nat) (x1 : Nat) (x2 : List Lanius.Mini.Instr) (x3 : Lanius.Mini.Stmt), ∀ M : Nat, hb x2 ≤ M → hb x3 ≤ M → Cost_loop_code n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.Inline.loopCode x0 x1 x2 x3) ≤ M + Cost_loop_code n x0 x1 x2 x3)) :
+    PostIH_compile_stmt n) :
     ∀ (x0 : Nat) (x1 : Nat) (x2 : Nat) (x3 : Nat) (x4 : List Lanius.Mini.Instr) (x5 : Lanius.Mini.Stmt), ∀ M : Nat, hb x4 ≤ M → hb x5 ≤ M → Cost_seq_code (n + 1) x0 x1 x2 x3 x4 x5 < 18446744073709551616 → hb (Lanius.Mini.Inline.seqCode x0 x1 x2 x3 x4 x5) ≤ M + Cost_seq_code (n + 1) x0 x1 x2 x3 x4 x5 := by
   obtain ⟨post_compile_stmt, -, -, -⟩ := ih
   intro x0 x1 x2 x3 x4 x5 M hM0 hM1
@@ -579,10 +581,7 @@ theorem post_step_seq_code (n : Nat) (ih :
   rw [Lanius.Mini.Inline.seqCode.eq_def x0 x1 x2 x3 x4 x5]
   post_auto n, M
 theorem post_step_ite_code (n : Nat) (ih :
-    (∀ (x0 : Nat) (x1 : Nat) (x2 : Nat) (x3 : Nat) (x4 : Lanius.Mini.Stmt), ∀ M : Nat, hb x4 ≤ M → Cost_compile_stmt n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.compileStmt x0 x1 x2 x3 x4) ≤ M + Cost_compile_stmt n x0 x1 x2 x3 x4) ∧
-    (∀ (x0 : Nat) (x1 : Nat) (x2 : Nat) (x3 : Nat) (x4 : List Lanius.Mini.Instr) (x5 : Lanius.Mini.Stmt), ∀ M : Nat, hb x4 ≤ M → hb x5 ≤ M → Cost_seq_code n x0 x1 x2 x3 x4 x5 < 18446744073709551616 → hb (Lanius.Mini.Inline.seqCode x0 x1 x2 x3 x4 x5) ≤ M + Cost_seq_code n x0 x1 x2 x3 x4 x5) ∧
-    (∀ (x0 : Nat) (x1 : Nat) (x2 : Nat) (x3 : Nat) (x4 : List Lanius.Mini.Instr) (x5 : Lanius.Mini.Stmt) (x6 : Lanius.Mini.Stmt), ∀ M : Nat, hb x4 ≤ M → hb x5 ≤ M → hb x6 ≤ M → Cost_ite_code n x0 x1 x2 x3 x4 x5 x6 < 18446744073709551616 → hb (Lanius.Mini.Inline.iteCode x0 x1 x2 x3 x4 x5 x6) ≤ M + Cost_ite_code n x0 x1 x2 x3 x4 x5 x6) ∧
-    (∀ (x0 : Nat) (x1 : Nat) (x2 : List Lanius.Mini.Instr) (x3 : Lanius.Mini.Stmt), ∀ M : Nat, hb x2 ≤ M → hb x3 ≤ M → Cost_loop_code n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.Inline.loopCode x0 x1 x2 x3) ≤ M + Cost_loop_code n x0 x1 x2 x3)) :
+    PostIH_compile_stmt n) :
     ∀ (x0 : Nat) (x1 : Nat) (x2 : Nat) (x3 : Nat) (x4 : List Lanius.Mini.Instr) (x5 : Lanius.Mini.Stmt) (x6 : Lanius.Mini.Stmt), ∀ M : Nat, hb x4 ≤ M → hb x5 ≤ M → hb x6 ≤ M → Cost_ite_code (n + 1) x0 x1 x2 x3 x4 x5 x6 < 18446744073709551616 → hb (Lanius.Mini.Inline.iteCode x0 x1 x2 x3 x4 x5 x6) ≤ M + Cost_ite_code (n + 1) x0 x1 x2 x3 x4 x5 x6 := by
   obtain ⟨post_compile_stmt, -, -, -⟩ := ih
   intro x0 x1 x2 x3 x4 x5 x6 M hM0 hM1 hM2
@@ -590,10 +589,7 @@ theorem post_step_ite_code (n : Nat) (ih :
   rw [Lanius.Mini.Inline.iteCode.eq_def x0 x1 x2 x3 x4 x5 x6]
   post_auto n, M
 theorem post_step_loop_code (n : Nat) (ih :
-    (∀ (x0 : Nat) (x1 : Nat) (x2 : Nat) (x3 : Nat) (x4 : Lanius.Mini.Stmt), ∀ M : Nat, hb x4 ≤ M → Cost_compile_stmt n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.compileStmt x0 x1 x2 x3 x4) ≤ M + Cost_compile_stmt n x0 x1 x2 x3 x4) ∧
-    (∀ (x0 : Nat) (x1 : Nat) (x2 : Nat) (x3 : Nat) (x4 : List Lanius.Mini.Instr) (x5 : Lanius.Mini.Stmt), ∀ M : Nat, hb x4 ≤ M → hb x5 ≤ M → Cost_seq_code n x0 x1 x2 x3 x4 x5 < 18446744073709551616 → hb (Lanius.Mini.Inline.seqCode x0 x1 x2 x3 x4 x5) ≤ M + Cost_seq_code n x0 x1 x2 x3 x4 x5) ∧
-    (∀ (x0 : Nat) (x1 : Nat) (x2 : Nat) (x3 : Nat) (x4 : List Lanius.Mini.Instr) (x5 : Lanius.Mini.Stmt) (x6 : Lanius.Mini.Stmt), ∀ M : Nat, hb x4 ≤ M → hb x5 ≤ M → hb x6 ≤ M → Cost_ite_code n x0 x1 x2 x3 x4 x5 x6 < 18446744073709551616 → hb (Lanius.Mini.Inline.iteCode x0 x1 x2 x3 x4 x5 x6) ≤ M + Cost_ite_code n x0 x1 x2 x3 x4 x5 x6) ∧
-    (∀ (x0 : Nat) (x1 : Nat) (x2 : List Lanius.Mini.Instr) (x3 : Lanius.Mini.Stmt), ∀ M : Nat, hb x2 ≤ M → hb x3 ≤ M → Cost_loop_code n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.Inline.loopCode x0 x1 x2 x3) ≤ M + Cost_loop_code n x0 x1 x2 x3)) :
+    PostIH_compile_stmt n) :
     ∀ (x0 : Nat) (x1 : Nat) (x2 : List Lanius.Mini.Instr) (x3 : Lanius.Mini.Stmt), ∀ M : Nat, hb x2 ≤ M → hb x3 ≤ M → Cost_loop_code (n + 1) x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.Inline.loopCode x0 x1 x2 x3) ≤ M + Cost_loop_code (n + 1) x0 x1 x2 x3 := by
   obtain ⟨post_compile_stmt, -, -, -⟩ := ih
   intro x0 x1 x2 x3 M hM0 hM1
@@ -1238,9 +1234,12 @@ theorem post_single_of_usize : ∀ (n : Nat) (x0 : Nat), ∀ M : Nat, Cost_singl
   · exact absurd h (Nat.lt_irrefl _)
   · simp only [Cost_single_of_usize, hb_cons, hb_nil, hb_simp]; omega
 
-theorem post_step_SrcEff_slice_uses (n : Nat) (ih :
+/-- The posts of `SrcEff_slice_uses`'s group at fuel `n`. -/
+def PostIH_SrcEff_slice_uses (n : Nat) : Prop :=
     (∀ (x0 : Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → Cost_SrcEff_slice_uses n x0 < 18446744073709551616 → hb (Lanius.Mini.SrcEff.sliceUses x0) ≤ M + Cost_SrcEff_slice_uses n x0) ∧
-    (∀ (x0 : List Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → Cost_effs_slice_uses n x0 < 18446744073709551616 → hb (Lanius.Mini.effsSliceUses x0) ≤ M + Cost_effs_slice_uses n x0)) :
+    (∀ (x0 : List Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → Cost_effs_slice_uses n x0 < 18446744073709551616 → hb (Lanius.Mini.effsSliceUses x0) ≤ M + Cost_effs_slice_uses n x0)
+theorem post_step_SrcEff_slice_uses (n : Nat) (ih :
+    PostIH_SrcEff_slice_uses n) :
     ∀ (x0 : Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → Cost_SrcEff_slice_uses (n + 1) x0 < 18446744073709551616 → hb (Lanius.Mini.SrcEff.sliceUses x0) ≤ M + Cost_SrcEff_slice_uses (n + 1) x0 := by
   obtain ⟨post_SrcEff_slice_uses, post_effs_slice_uses⟩ := ih
   intro x0 M hM0
@@ -1248,8 +1247,7 @@ theorem post_step_SrcEff_slice_uses (n : Nat) (ih :
   rw [Lanius.Mini.SrcEff.sliceUses.eq_def x0]
   post_auto n, M
 theorem post_step_effs_slice_uses (n : Nat) (ih :
-    (∀ (x0 : Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → Cost_SrcEff_slice_uses n x0 < 18446744073709551616 → hb (Lanius.Mini.SrcEff.sliceUses x0) ≤ M + Cost_SrcEff_slice_uses n x0) ∧
-    (∀ (x0 : List Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → Cost_effs_slice_uses n x0 < 18446744073709551616 → hb (Lanius.Mini.effsSliceUses x0) ≤ M + Cost_effs_slice_uses n x0)) :
+    PostIH_SrcEff_slice_uses n) :
     ∀ (x0 : List Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → Cost_effs_slice_uses (n + 1) x0 < 18446744073709551616 → hb (Lanius.Mini.effsSliceUses x0) ≤ M + Cost_effs_slice_uses (n + 1) x0 := by
   obtain ⟨post_SrcEff_slice_uses, post_effs_slice_uses⟩ := ih
   intro x0 M hM0
@@ -2056,9 +2054,12 @@ theorem post_lower_then : ∀ (n : Nat) (x0 : Option Lanius.Mini.Stmt) (x1 : Opt
   rw [Lanius.Mini.lowerThen.eq_def x0 x1]
   post_auto n, M
 
-theorem post_step_arm_scope (n : Nat) (ih :
+/-- The posts of `arm_scope`'s group at fuel `n`. -/
+def PostIH_arm_scope (n : Nat) : Prop :=
     (∀ (x0 : List Nat) (x1 : List Lanius.Mini.SrcType) (x2 : Nat) (x3 : List Lanius.Mini.Binding), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x3 ≤ M → Cost_arm_scope n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.armScope x0 x1 x2 x3) ≤ M + Cost_arm_scope n x0 x1 x2 x3) ∧
-    (∀ (x0 : Nat) (x1 : Lanius.Mini.SrcType) (x2 : List Nat) (x3 : List Lanius.Mini.SrcType) (x4 : Nat) (x5 : List Lanius.Mini.Binding), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x5 ≤ M → Cost_arm_bind n x0 x1 x2 x3 x4 x5 < 18446744073709551616 → hb (Lanius.Mini.Inline.armBind x0 x1 x2 x3 x4 x5) ≤ M + Cost_arm_bind n x0 x1 x2 x3 x4 x5)) :
+    (∀ (x0 : Nat) (x1 : Lanius.Mini.SrcType) (x2 : List Nat) (x3 : List Lanius.Mini.SrcType) (x4 : Nat) (x5 : List Lanius.Mini.Binding), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x5 ≤ M → Cost_arm_bind n x0 x1 x2 x3 x4 x5 < 18446744073709551616 → hb (Lanius.Mini.Inline.armBind x0 x1 x2 x3 x4 x5) ≤ M + Cost_arm_bind n x0 x1 x2 x3 x4 x5)
+theorem post_step_arm_scope (n : Nat) (ih :
+    PostIH_arm_scope n) :
     ∀ (x0 : List Nat) (x1 : List Lanius.Mini.SrcType) (x2 : Nat) (x3 : List Lanius.Mini.Binding), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x3 ≤ M → Cost_arm_scope (n + 1) x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.armScope x0 x1 x2 x3) ≤ M + Cost_arm_scope (n + 1) x0 x1 x2 x3 := by
   obtain ⟨-, post_arm_bind⟩ := ih
   intro x0 x1 x2 x3 M hM0 hM1 hM2
@@ -2066,8 +2067,7 @@ theorem post_step_arm_scope (n : Nat) (ih :
   rw [Lanius.Mini.armScope.eq_def x0 x1 x2 x3]
   post_auto n, M
 theorem post_step_arm_bind (n : Nat) (ih :
-    (∀ (x0 : List Nat) (x1 : List Lanius.Mini.SrcType) (x2 : Nat) (x3 : List Lanius.Mini.Binding), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x3 ≤ M → Cost_arm_scope n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.armScope x0 x1 x2 x3) ≤ M + Cost_arm_scope n x0 x1 x2 x3) ∧
-    (∀ (x0 : Nat) (x1 : Lanius.Mini.SrcType) (x2 : List Nat) (x3 : List Lanius.Mini.SrcType) (x4 : Nat) (x5 : List Lanius.Mini.Binding), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x5 ≤ M → Cost_arm_bind n x0 x1 x2 x3 x4 x5 < 18446744073709551616 → hb (Lanius.Mini.Inline.armBind x0 x1 x2 x3 x4 x5) ≤ M + Cost_arm_bind n x0 x1 x2 x3 x4 x5)) :
+    PostIH_arm_scope n) :
     ∀ (x0 : Nat) (x1 : Lanius.Mini.SrcType) (x2 : List Nat) (x3 : List Lanius.Mini.SrcType) (x4 : Nat) (x5 : List Lanius.Mini.Binding), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x5 ≤ M → Cost_arm_bind (n + 1) x0 x1 x2 x3 x4 x5 < 18446744073709551616 → hb (Lanius.Mini.Inline.armBind x0 x1 x2 x3 x4 x5) ≤ M + Cost_arm_bind (n + 1) x0 x1 x2 x3 x4 x5 := by
   obtain ⟨post_arm_scope, -⟩ := ih
   intro x0 x1 x2 x3 x4 x5 M hM0 hM1 hM2 hM3
@@ -2319,10 +2319,13 @@ theorem post_address_below : ∀ (n : Nat) (x0 : Lanius.Mini.Expr) (x1 : Nat), �
   rw [Lanius.Mini.addressBelow.eq_def x0 x1]
   post_auto n, M
 
-theorem post_step_load_type (n : Nat) (ih :
+/-- The posts of `load_type`'s group at fuel `n`. -/
+def PostIH_load_type (n : Nat) : Prop :=
     (∀ (x0 : Lanius.Mini.SrcType) (x1 : Nat) (x2 : Lanius.Mini.Expr) (x3 : Nat) (x4 : Lanius.Mini.Stmt), ∀ M : Nat, hb x0 ≤ M → hb x2 ≤ M → hb x4 ≤ M → Cost_load_type n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.loadType x0 x1 x2 x3 x4) ≤ M + Cost_load_type n x0 x1 x2 x3 x4) ∧
     (∀ (x0 : List Lanius.Mini.SrcType) (x1 : Nat) (x2 : Lanius.Mini.Expr) (x3 : Nat) (x4 : Lanius.Mini.Stmt), ∀ M : Nat, hb x0 ≤ M → hb x2 ≤ M → hb x4 ≤ M → Cost_load_types n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.loadTypes x0 x1 x2 x3 x4) ≤ M + Cost_load_types n x0 x1 x2 x3 x4) ∧
-    (∀ (x0 : Nat) (x1 : Lanius.Mini.Expr) (x2 : Nat) (x3 : Nat) (x4 : List (List Lanius.Mini.SrcType)), ∀ M : Nat, hb x1 ≤ M → hb x4 ≤ M → Cost_load_cases n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.loadCases x0 x1 x2 x3 x4) ≤ M + Cost_load_cases n x0 x1 x2 x3 x4)) :
+    (∀ (x0 : Nat) (x1 : Lanius.Mini.Expr) (x2 : Nat) (x3 : Nat) (x4 : List (List Lanius.Mini.SrcType)), ∀ M : Nat, hb x1 ≤ M → hb x4 ≤ M → Cost_load_cases n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.loadCases x0 x1 x2 x3 x4) ≤ M + Cost_load_cases n x0 x1 x2 x3 x4)
+theorem post_step_load_type (n : Nat) (ih :
+    PostIH_load_type n) :
     ∀ (x0 : Lanius.Mini.SrcType) (x1 : Nat) (x2 : Lanius.Mini.Expr) (x3 : Nat) (x4 : Lanius.Mini.Stmt), ∀ M : Nat, hb x0 ≤ M → hb x2 ≤ M → hb x4 ≤ M → Cost_load_type (n + 1) x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.loadType x0 x1 x2 x3 x4) ≤ M + Cost_load_type (n + 1) x0 x1 x2 x3 x4 := by
   obtain ⟨-, post_load_types, post_load_cases⟩ := ih
   intro x0 x1 x2 x3 x4 M hM0 hM1 hM2
@@ -2330,9 +2333,7 @@ theorem post_step_load_type (n : Nat) (ih :
   rw [Lanius.Mini.loadType.eq_def x0 x1 x2 x3 x4]
   post_auto n, M
 theorem post_step_load_types (n : Nat) (ih :
-    (∀ (x0 : Lanius.Mini.SrcType) (x1 : Nat) (x2 : Lanius.Mini.Expr) (x3 : Nat) (x4 : Lanius.Mini.Stmt), ∀ M : Nat, hb x0 ≤ M → hb x2 ≤ M → hb x4 ≤ M → Cost_load_type n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.loadType x0 x1 x2 x3 x4) ≤ M + Cost_load_type n x0 x1 x2 x3 x4) ∧
-    (∀ (x0 : List Lanius.Mini.SrcType) (x1 : Nat) (x2 : Lanius.Mini.Expr) (x3 : Nat) (x4 : Lanius.Mini.Stmt), ∀ M : Nat, hb x0 ≤ M → hb x2 ≤ M → hb x4 ≤ M → Cost_load_types n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.loadTypes x0 x1 x2 x3 x4) ≤ M + Cost_load_types n x0 x1 x2 x3 x4) ∧
-    (∀ (x0 : Nat) (x1 : Lanius.Mini.Expr) (x2 : Nat) (x3 : Nat) (x4 : List (List Lanius.Mini.SrcType)), ∀ M : Nat, hb x1 ≤ M → hb x4 ≤ M → Cost_load_cases n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.loadCases x0 x1 x2 x3 x4) ≤ M + Cost_load_cases n x0 x1 x2 x3 x4)) :
+    PostIH_load_type n) :
     ∀ (x0 : List Lanius.Mini.SrcType) (x1 : Nat) (x2 : Lanius.Mini.Expr) (x3 : Nat) (x4 : Lanius.Mini.Stmt), ∀ M : Nat, hb x0 ≤ M → hb x2 ≤ M → hb x4 ≤ M → Cost_load_types (n + 1) x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.loadTypes x0 x1 x2 x3 x4) ≤ M + Cost_load_types (n + 1) x0 x1 x2 x3 x4 := by
   obtain ⟨post_load_type, post_load_types, -⟩ := ih
   intro x0 x1 x2 x3 x4 M hM0 hM1 hM2
@@ -2340,9 +2341,7 @@ theorem post_step_load_types (n : Nat) (ih :
   rw [Lanius.Mini.loadTypes.eq_def x0 x1 x2 x3 x4]
   post_auto n, M
 theorem post_step_load_cases (n : Nat) (ih :
-    (∀ (x0 : Lanius.Mini.SrcType) (x1 : Nat) (x2 : Lanius.Mini.Expr) (x3 : Nat) (x4 : Lanius.Mini.Stmt), ∀ M : Nat, hb x0 ≤ M → hb x2 ≤ M → hb x4 ≤ M → Cost_load_type n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.loadType x0 x1 x2 x3 x4) ≤ M + Cost_load_type n x0 x1 x2 x3 x4) ∧
-    (∀ (x0 : List Lanius.Mini.SrcType) (x1 : Nat) (x2 : Lanius.Mini.Expr) (x3 : Nat) (x4 : Lanius.Mini.Stmt), ∀ M : Nat, hb x0 ≤ M → hb x2 ≤ M → hb x4 ≤ M → Cost_load_types n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.loadTypes x0 x1 x2 x3 x4) ≤ M + Cost_load_types n x0 x1 x2 x3 x4) ∧
-    (∀ (x0 : Nat) (x1 : Lanius.Mini.Expr) (x2 : Nat) (x3 : Nat) (x4 : List (List Lanius.Mini.SrcType)), ∀ M : Nat, hb x1 ≤ M → hb x4 ≤ M → Cost_load_cases n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.loadCases x0 x1 x2 x3 x4) ≤ M + Cost_load_cases n x0 x1 x2 x3 x4)) :
+    PostIH_load_type n) :
     ∀ (x0 : Nat) (x1 : Lanius.Mini.Expr) (x2 : Nat) (x3 : Nat) (x4 : List (List Lanius.Mini.SrcType)), ∀ M : Nat, hb x1 ≤ M → hb x4 ≤ M → Cost_load_cases (n + 1) x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.loadCases x0 x1 x2 x3 x4) ≤ M + Cost_load_cases (n + 1) x0 x1 x2 x3 x4 := by
   obtain ⟨-, post_load_types, post_load_cases⟩ := ih
   intro x0 x1 x2 x3 x4 M hM0 hM1
@@ -2613,10 +2612,13 @@ theorem post_ite_then : ∀ (n : Nat) (x0 : Lanius.Mini.Expr) (x1 : Option Laniu
   rw [Lanius.Mini.iteThen.eq_def x0 x1 x2]
   post_auto n, M
 
-theorem post_step_store_type (n : Nat) (ih :
+/-- The posts of `store_type`'s group at fuel `n`. -/
+def PostIH_store_type (n : Nat) : Prop :=
     (∀ (x0 : Lanius.Mini.SrcType) (x1 : List Lanius.Mini.Expr) (x2 : Nat) (x3 : Lanius.Mini.Expr) (x4 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x3 ≤ M → Cost_store_type n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.storeType x0 x1 x2 x3 x4) ≤ M + Cost_store_type n x0 x1 x2 x3 x4) ∧
     (∀ (x0 : List Lanius.Mini.SrcType) (x1 : List Lanius.Mini.Expr) (x2 : Nat) (x3 : Lanius.Mini.Expr) (x4 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x3 ≤ M → Cost_store_types n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.storeTypes x0 x1 x2 x3 x4) ≤ M + Cost_store_types n x0 x1 x2 x3 x4) ∧
-    (∀ (x0 : Lanius.Mini.Expr) (x1 : List Lanius.Mini.Expr) (x2 : Nat) (x3 : Lanius.Mini.Expr) (x4 : Nat) (x5 : Nat) (x6 : List (List Lanius.Mini.SrcType)), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x3 ≤ M → hb x6 ≤ M → Cost_store_cases n x0 x1 x2 x3 x4 x5 x6 < 18446744073709551616 → hb (Lanius.Mini.storeCases x0 x1 x2 x3 x4 x5 x6) ≤ M + Cost_store_cases n x0 x1 x2 x3 x4 x5 x6)) :
+    (∀ (x0 : Lanius.Mini.Expr) (x1 : List Lanius.Mini.Expr) (x2 : Nat) (x3 : Lanius.Mini.Expr) (x4 : Nat) (x5 : Nat) (x6 : List (List Lanius.Mini.SrcType)), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x3 ≤ M → hb x6 ≤ M → Cost_store_cases n x0 x1 x2 x3 x4 x5 x6 < 18446744073709551616 → hb (Lanius.Mini.storeCases x0 x1 x2 x3 x4 x5 x6) ≤ M + Cost_store_cases n x0 x1 x2 x3 x4 x5 x6)
+theorem post_step_store_type (n : Nat) (ih :
+    PostIH_store_type n) :
     ∀ (x0 : Lanius.Mini.SrcType) (x1 : List Lanius.Mini.Expr) (x2 : Nat) (x3 : Lanius.Mini.Expr) (x4 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x3 ≤ M → Cost_store_type (n + 1) x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.storeType x0 x1 x2 x3 x4) ≤ M + Cost_store_type (n + 1) x0 x1 x2 x3 x4 := by
   obtain ⟨-, post_store_types, post_store_cases⟩ := ih
   intro x0 x1 x2 x3 x4 M hM0 hM1 hM2
@@ -2624,9 +2626,7 @@ theorem post_step_store_type (n : Nat) (ih :
   rw [Lanius.Mini.storeType.eq_def x0 x1 x2 x3 x4]
   post_auto n, M
 theorem post_step_store_types (n : Nat) (ih :
-    (∀ (x0 : Lanius.Mini.SrcType) (x1 : List Lanius.Mini.Expr) (x2 : Nat) (x3 : Lanius.Mini.Expr) (x4 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x3 ≤ M → Cost_store_type n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.storeType x0 x1 x2 x3 x4) ≤ M + Cost_store_type n x0 x1 x2 x3 x4) ∧
-    (∀ (x0 : List Lanius.Mini.SrcType) (x1 : List Lanius.Mini.Expr) (x2 : Nat) (x3 : Lanius.Mini.Expr) (x4 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x3 ≤ M → Cost_store_types n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.storeTypes x0 x1 x2 x3 x4) ≤ M + Cost_store_types n x0 x1 x2 x3 x4) ∧
-    (∀ (x0 : Lanius.Mini.Expr) (x1 : List Lanius.Mini.Expr) (x2 : Nat) (x3 : Lanius.Mini.Expr) (x4 : Nat) (x5 : Nat) (x6 : List (List Lanius.Mini.SrcType)), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x3 ≤ M → hb x6 ≤ M → Cost_store_cases n x0 x1 x2 x3 x4 x5 x6 < 18446744073709551616 → hb (Lanius.Mini.storeCases x0 x1 x2 x3 x4 x5 x6) ≤ M + Cost_store_cases n x0 x1 x2 x3 x4 x5 x6)) :
+    PostIH_store_type n) :
     ∀ (x0 : List Lanius.Mini.SrcType) (x1 : List Lanius.Mini.Expr) (x2 : Nat) (x3 : Lanius.Mini.Expr) (x4 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x3 ≤ M → Cost_store_types (n + 1) x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.storeTypes x0 x1 x2 x3 x4) ≤ M + Cost_store_types (n + 1) x0 x1 x2 x3 x4 := by
   obtain ⟨post_store_type, post_store_types, -⟩ := ih
   intro x0 x1 x2 x3 x4 M hM0 hM1 hM2
@@ -2634,9 +2634,7 @@ theorem post_step_store_types (n : Nat) (ih :
   rw [Lanius.Mini.storeTypes.eq_def x0 x1 x2 x3 x4]
   post_auto n, M
 theorem post_step_store_cases (n : Nat) (ih :
-    (∀ (x0 : Lanius.Mini.SrcType) (x1 : List Lanius.Mini.Expr) (x2 : Nat) (x3 : Lanius.Mini.Expr) (x4 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x3 ≤ M → Cost_store_type n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.storeType x0 x1 x2 x3 x4) ≤ M + Cost_store_type n x0 x1 x2 x3 x4) ∧
-    (∀ (x0 : List Lanius.Mini.SrcType) (x1 : List Lanius.Mini.Expr) (x2 : Nat) (x3 : Lanius.Mini.Expr) (x4 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x3 ≤ M → Cost_store_types n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.storeTypes x0 x1 x2 x3 x4) ≤ M + Cost_store_types n x0 x1 x2 x3 x4) ∧
-    (∀ (x0 : Lanius.Mini.Expr) (x1 : List Lanius.Mini.Expr) (x2 : Nat) (x3 : Lanius.Mini.Expr) (x4 : Nat) (x5 : Nat) (x6 : List (List Lanius.Mini.SrcType)), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x3 ≤ M → hb x6 ≤ M → Cost_store_cases n x0 x1 x2 x3 x4 x5 x6 < 18446744073709551616 → hb (Lanius.Mini.storeCases x0 x1 x2 x3 x4 x5 x6) ≤ M + Cost_store_cases n x0 x1 x2 x3 x4 x5 x6)) :
+    PostIH_store_type n) :
     ∀ (x0 : Lanius.Mini.Expr) (x1 : List Lanius.Mini.Expr) (x2 : Nat) (x3 : Lanius.Mini.Expr) (x4 : Nat) (x5 : Nat) (x6 : List (List Lanius.Mini.SrcType)), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x3 ≤ M → hb x6 ≤ M → Cost_store_cases (n + 1) x0 x1 x2 x3 x4 x5 x6 < 18446744073709551616 → hb (Lanius.Mini.storeCases x0 x1 x2 x3 x4 x5 x6) ≤ M + Cost_store_cases (n + 1) x0 x1 x2 x3 x4 x5 x6 := by
   obtain ⟨-, post_store_types, post_store_cases⟩ := ih
   intro x0 x1 x2 x3 x4 x5 x6 M hM0 hM1 hM2 hM3
@@ -3113,12 +3111,15 @@ theorem post_eval_str : ∀ (n : Nat) (x0 : Lanius.Mini.SrcDecls) (x1 : Nat) (x2
   rw [Lanius.Mini.evalStr.eq_def x0 x1 x2 x3]
   post_auto n, M
 
-theorem post_step_SrcEff_eval (n : Nat) (ih :
+/-- The posts of `SrcEff_eval`'s group at fuel `n`. -/
+def PostIH_SrcEff_eval (n : Nat) : Prop :=
     (∀ (x0 : Lanius.Mini.SrcEff) (x1 : List Lanius.Mini.Sig) (x2 : Lanius.Mini.SrcDecls) (x3 : List Lanius.Mini.Binding) (x4 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → Cost_SrcEff_eval n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.SrcEff.eval x0 x1 x2 x3 x4) ≤ M + Cost_SrcEff_eval n x0 x1 x2 x3 x4) ∧
     (∀ (x0 : List Lanius.Mini.Sig) (x1 : Lanius.Mini.SrcDecls) (x2 : List Lanius.Mini.Binding) (x3 : List Lanius.Mini.SrcEff) (x4 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → Cost_eval_args n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.evalArgs x0 x1 x2 x3 x4) ≤ M + Cost_eval_args n x0 x1 x2 x3 x4) ∧
     (∀ (x0 : List Lanius.Mini.Sig) (x1 : Lanius.Mini.SrcDecls) (x2 : List Lanius.Mini.Binding) (x3 : Nat) (x4 : Nat) (x5 : Lanius.Mini.SrcType) (x6 : Nat) (x7 : List (List Lanius.Mini.SrcType)) (x8 : List (List Nat)) (x9 : List Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x5 ≤ M → hb x7 ≤ M → hb x8 ≤ M → hb x9 ≤ M → Cost_eval_arms n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 < 18446744073709551616 → hb (Lanius.Mini.evalArms x0 x1 x2 x3 x4 x5 x6 x7 x8 x9) ≤ M + Cost_eval_arms n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9) ∧
     (∀ (x0 : List Lanius.Mini.Sig) (x1 : Lanius.Mini.SrcDecls) (x2 : Option (List Lanius.Mini.Binding)) (x3 : Nat) (x4 : Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x4 ≤ M → Cost_eval_let_body n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.Inline.evalLetBody x0 x1 x2 x3 x4) ≤ M + Cost_eval_let_body n x0 x1 x2 x3 x4) ∧
-    (∀ (x0 : List Lanius.Mini.Sig) (x1 : Lanius.Mini.SrcDecls) (x2 : Option (List Lanius.Mini.Binding)) (x3 : Nat) (x4 : Nat) (x5 : Lanius.Mini.SrcType) (x6 : Nat) (x7 : Lanius.Mini.SrcEff) (x8 : List Lanius.Mini.SrcEff) (x9 : Option Lanius.Mini.Stmt), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x5 ≤ M → hb x7 ≤ M → hb x8 ≤ M → hb x9 ≤ M → Cost_eval_arm_in n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 < 18446744073709551616 → hb (Lanius.Mini.Inline.evalArmIn x0 x1 x2 x3 x4 x5 x6 x7 x8 x9) ≤ M + Cost_eval_arm_in n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9)) :
+    (∀ (x0 : List Lanius.Mini.Sig) (x1 : Lanius.Mini.SrcDecls) (x2 : Option (List Lanius.Mini.Binding)) (x3 : Nat) (x4 : Nat) (x5 : Lanius.Mini.SrcType) (x6 : Nat) (x7 : Lanius.Mini.SrcEff) (x8 : List Lanius.Mini.SrcEff) (x9 : Option Lanius.Mini.Stmt), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x5 ≤ M → hb x7 ≤ M → hb x8 ≤ M → hb x9 ≤ M → Cost_eval_arm_in n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 < 18446744073709551616 → hb (Lanius.Mini.Inline.evalArmIn x0 x1 x2 x3 x4 x5 x6 x7 x8 x9) ≤ M + Cost_eval_arm_in n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9)
+theorem post_step_SrcEff_eval (n : Nat) (ih :
+    PostIH_SrcEff_eval n) :
     ∀ (x0 : Lanius.Mini.SrcEff) (x1 : List Lanius.Mini.Sig) (x2 : Lanius.Mini.SrcDecls) (x3 : List Lanius.Mini.Binding) (x4 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → Cost_SrcEff_eval (n + 1) x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.SrcEff.eval x0 x1 x2 x3 x4) ≤ M + Cost_SrcEff_eval (n + 1) x0 x1 x2 x3 x4 := by
   obtain ⟨post_SrcEff_eval, post_eval_args, post_eval_arms, post_eval_let_body, -⟩ := ih
   intro x0 x1 x2 x3 x4 M hM0 hM1 hM2 hM3
@@ -3126,11 +3127,7 @@ theorem post_step_SrcEff_eval (n : Nat) (ih :
   rw [Lanius.Mini.SrcEff.eval.eq_def x0 x1 x2 x3 x4]
   post_auto n, M
 theorem post_step_eval_args (n : Nat) (ih :
-    (∀ (x0 : Lanius.Mini.SrcEff) (x1 : List Lanius.Mini.Sig) (x2 : Lanius.Mini.SrcDecls) (x3 : List Lanius.Mini.Binding) (x4 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → Cost_SrcEff_eval n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.SrcEff.eval x0 x1 x2 x3 x4) ≤ M + Cost_SrcEff_eval n x0 x1 x2 x3 x4) ∧
-    (∀ (x0 : List Lanius.Mini.Sig) (x1 : Lanius.Mini.SrcDecls) (x2 : List Lanius.Mini.Binding) (x3 : List Lanius.Mini.SrcEff) (x4 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → Cost_eval_args n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.evalArgs x0 x1 x2 x3 x4) ≤ M + Cost_eval_args n x0 x1 x2 x3 x4) ∧
-    (∀ (x0 : List Lanius.Mini.Sig) (x1 : Lanius.Mini.SrcDecls) (x2 : List Lanius.Mini.Binding) (x3 : Nat) (x4 : Nat) (x5 : Lanius.Mini.SrcType) (x6 : Nat) (x7 : List (List Lanius.Mini.SrcType)) (x8 : List (List Nat)) (x9 : List Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x5 ≤ M → hb x7 ≤ M → hb x8 ≤ M → hb x9 ≤ M → Cost_eval_arms n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 < 18446744073709551616 → hb (Lanius.Mini.evalArms x0 x1 x2 x3 x4 x5 x6 x7 x8 x9) ≤ M + Cost_eval_arms n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9) ∧
-    (∀ (x0 : List Lanius.Mini.Sig) (x1 : Lanius.Mini.SrcDecls) (x2 : Option (List Lanius.Mini.Binding)) (x3 : Nat) (x4 : Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x4 ≤ M → Cost_eval_let_body n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.Inline.evalLetBody x0 x1 x2 x3 x4) ≤ M + Cost_eval_let_body n x0 x1 x2 x3 x4) ∧
-    (∀ (x0 : List Lanius.Mini.Sig) (x1 : Lanius.Mini.SrcDecls) (x2 : Option (List Lanius.Mini.Binding)) (x3 : Nat) (x4 : Nat) (x5 : Lanius.Mini.SrcType) (x6 : Nat) (x7 : Lanius.Mini.SrcEff) (x8 : List Lanius.Mini.SrcEff) (x9 : Option Lanius.Mini.Stmt), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x5 ≤ M → hb x7 ≤ M → hb x8 ≤ M → hb x9 ≤ M → Cost_eval_arm_in n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 < 18446744073709551616 → hb (Lanius.Mini.Inline.evalArmIn x0 x1 x2 x3 x4 x5 x6 x7 x8 x9) ≤ M + Cost_eval_arm_in n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9)) :
+    PostIH_SrcEff_eval n) :
     ∀ (x0 : List Lanius.Mini.Sig) (x1 : Lanius.Mini.SrcDecls) (x2 : List Lanius.Mini.Binding) (x3 : List Lanius.Mini.SrcEff) (x4 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → Cost_eval_args (n + 1) x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.evalArgs x0 x1 x2 x3 x4) ≤ M + Cost_eval_args (n + 1) x0 x1 x2 x3 x4 := by
   obtain ⟨post_SrcEff_eval, post_eval_args, -, -, -⟩ := ih
   intro x0 x1 x2 x3 x4 M hM0 hM1 hM2 hM3
@@ -3138,11 +3135,7 @@ theorem post_step_eval_args (n : Nat) (ih :
   rw [Lanius.Mini.evalArgs.eq_def x0 x1 x2 x3 x4]
   post_auto n, M
 theorem post_step_eval_arms (n : Nat) (ih :
-    (∀ (x0 : Lanius.Mini.SrcEff) (x1 : List Lanius.Mini.Sig) (x2 : Lanius.Mini.SrcDecls) (x3 : List Lanius.Mini.Binding) (x4 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → Cost_SrcEff_eval n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.SrcEff.eval x0 x1 x2 x3 x4) ≤ M + Cost_SrcEff_eval n x0 x1 x2 x3 x4) ∧
-    (∀ (x0 : List Lanius.Mini.Sig) (x1 : Lanius.Mini.SrcDecls) (x2 : List Lanius.Mini.Binding) (x3 : List Lanius.Mini.SrcEff) (x4 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → Cost_eval_args n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.evalArgs x0 x1 x2 x3 x4) ≤ M + Cost_eval_args n x0 x1 x2 x3 x4) ∧
-    (∀ (x0 : List Lanius.Mini.Sig) (x1 : Lanius.Mini.SrcDecls) (x2 : List Lanius.Mini.Binding) (x3 : Nat) (x4 : Nat) (x5 : Lanius.Mini.SrcType) (x6 : Nat) (x7 : List (List Lanius.Mini.SrcType)) (x8 : List (List Nat)) (x9 : List Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x5 ≤ M → hb x7 ≤ M → hb x8 ≤ M → hb x9 ≤ M → Cost_eval_arms n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 < 18446744073709551616 → hb (Lanius.Mini.evalArms x0 x1 x2 x3 x4 x5 x6 x7 x8 x9) ≤ M + Cost_eval_arms n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9) ∧
-    (∀ (x0 : List Lanius.Mini.Sig) (x1 : Lanius.Mini.SrcDecls) (x2 : Option (List Lanius.Mini.Binding)) (x3 : Nat) (x4 : Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x4 ≤ M → Cost_eval_let_body n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.Inline.evalLetBody x0 x1 x2 x3 x4) ≤ M + Cost_eval_let_body n x0 x1 x2 x3 x4) ∧
-    (∀ (x0 : List Lanius.Mini.Sig) (x1 : Lanius.Mini.SrcDecls) (x2 : Option (List Lanius.Mini.Binding)) (x3 : Nat) (x4 : Nat) (x5 : Lanius.Mini.SrcType) (x6 : Nat) (x7 : Lanius.Mini.SrcEff) (x8 : List Lanius.Mini.SrcEff) (x9 : Option Lanius.Mini.Stmt), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x5 ≤ M → hb x7 ≤ M → hb x8 ≤ M → hb x9 ≤ M → Cost_eval_arm_in n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 < 18446744073709551616 → hb (Lanius.Mini.Inline.evalArmIn x0 x1 x2 x3 x4 x5 x6 x7 x8 x9) ≤ M + Cost_eval_arm_in n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9)) :
+    PostIH_SrcEff_eval n) :
     ∀ (x0 : List Lanius.Mini.Sig) (x1 : Lanius.Mini.SrcDecls) (x2 : List Lanius.Mini.Binding) (x3 : Nat) (x4 : Nat) (x5 : Lanius.Mini.SrcType) (x6 : Nat) (x7 : List (List Lanius.Mini.SrcType)) (x8 : List (List Nat)) (x9 : List Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x5 ≤ M → hb x7 ≤ M → hb x8 ≤ M → hb x9 ≤ M → Cost_eval_arms (n + 1) x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 < 18446744073709551616 → hb (Lanius.Mini.evalArms x0 x1 x2 x3 x4 x5 x6 x7 x8 x9) ≤ M + Cost_eval_arms (n + 1) x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 := by
   obtain ⟨-, -, post_eval_arms, -, post_eval_arm_in⟩ := ih
   intro x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 M hM0 hM1 hM2 hM3 hM4 hM5 hM6
@@ -3150,11 +3143,7 @@ theorem post_step_eval_arms (n : Nat) (ih :
   rw [Lanius.Mini.evalArms.eq_def x0 x1 x2 x3 x4 x5 x6 x7 x8 x9]
   post_auto n, M
 theorem post_step_eval_let_body (n : Nat) (ih :
-    (∀ (x0 : Lanius.Mini.SrcEff) (x1 : List Lanius.Mini.Sig) (x2 : Lanius.Mini.SrcDecls) (x3 : List Lanius.Mini.Binding) (x4 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → Cost_SrcEff_eval n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.SrcEff.eval x0 x1 x2 x3 x4) ≤ M + Cost_SrcEff_eval n x0 x1 x2 x3 x4) ∧
-    (∀ (x0 : List Lanius.Mini.Sig) (x1 : Lanius.Mini.SrcDecls) (x2 : List Lanius.Mini.Binding) (x3 : List Lanius.Mini.SrcEff) (x4 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → Cost_eval_args n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.evalArgs x0 x1 x2 x3 x4) ≤ M + Cost_eval_args n x0 x1 x2 x3 x4) ∧
-    (∀ (x0 : List Lanius.Mini.Sig) (x1 : Lanius.Mini.SrcDecls) (x2 : List Lanius.Mini.Binding) (x3 : Nat) (x4 : Nat) (x5 : Lanius.Mini.SrcType) (x6 : Nat) (x7 : List (List Lanius.Mini.SrcType)) (x8 : List (List Nat)) (x9 : List Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x5 ≤ M → hb x7 ≤ M → hb x8 ≤ M → hb x9 ≤ M → Cost_eval_arms n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 < 18446744073709551616 → hb (Lanius.Mini.evalArms x0 x1 x2 x3 x4 x5 x6 x7 x8 x9) ≤ M + Cost_eval_arms n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9) ∧
-    (∀ (x0 : List Lanius.Mini.Sig) (x1 : Lanius.Mini.SrcDecls) (x2 : Option (List Lanius.Mini.Binding)) (x3 : Nat) (x4 : Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x4 ≤ M → Cost_eval_let_body n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.Inline.evalLetBody x0 x1 x2 x3 x4) ≤ M + Cost_eval_let_body n x0 x1 x2 x3 x4) ∧
-    (∀ (x0 : List Lanius.Mini.Sig) (x1 : Lanius.Mini.SrcDecls) (x2 : Option (List Lanius.Mini.Binding)) (x3 : Nat) (x4 : Nat) (x5 : Lanius.Mini.SrcType) (x6 : Nat) (x7 : Lanius.Mini.SrcEff) (x8 : List Lanius.Mini.SrcEff) (x9 : Option Lanius.Mini.Stmt), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x5 ≤ M → hb x7 ≤ M → hb x8 ≤ M → hb x9 ≤ M → Cost_eval_arm_in n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 < 18446744073709551616 → hb (Lanius.Mini.Inline.evalArmIn x0 x1 x2 x3 x4 x5 x6 x7 x8 x9) ≤ M + Cost_eval_arm_in n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9)) :
+    PostIH_SrcEff_eval n) :
     ∀ (x0 : List Lanius.Mini.Sig) (x1 : Lanius.Mini.SrcDecls) (x2 : Option (List Lanius.Mini.Binding)) (x3 : Nat) (x4 : Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x4 ≤ M → Cost_eval_let_body (n + 1) x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.Inline.evalLetBody x0 x1 x2 x3 x4) ≤ M + Cost_eval_let_body (n + 1) x0 x1 x2 x3 x4 := by
   obtain ⟨post_SrcEff_eval, -, -, -, -⟩ := ih
   intro x0 x1 x2 x3 x4 M hM0 hM1 hM2 hM3
@@ -3162,11 +3151,7 @@ theorem post_step_eval_let_body (n : Nat) (ih :
   rw [Lanius.Mini.Inline.evalLetBody.eq_def x0 x1 x2 x3 x4]
   post_auto n, M
 theorem post_step_eval_arm_in (n : Nat) (ih :
-    (∀ (x0 : Lanius.Mini.SrcEff) (x1 : List Lanius.Mini.Sig) (x2 : Lanius.Mini.SrcDecls) (x3 : List Lanius.Mini.Binding) (x4 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → Cost_SrcEff_eval n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.SrcEff.eval x0 x1 x2 x3 x4) ≤ M + Cost_SrcEff_eval n x0 x1 x2 x3 x4) ∧
-    (∀ (x0 : List Lanius.Mini.Sig) (x1 : Lanius.Mini.SrcDecls) (x2 : List Lanius.Mini.Binding) (x3 : List Lanius.Mini.SrcEff) (x4 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → Cost_eval_args n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.evalArgs x0 x1 x2 x3 x4) ≤ M + Cost_eval_args n x0 x1 x2 x3 x4) ∧
-    (∀ (x0 : List Lanius.Mini.Sig) (x1 : Lanius.Mini.SrcDecls) (x2 : List Lanius.Mini.Binding) (x3 : Nat) (x4 : Nat) (x5 : Lanius.Mini.SrcType) (x6 : Nat) (x7 : List (List Lanius.Mini.SrcType)) (x8 : List (List Nat)) (x9 : List Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x5 ≤ M → hb x7 ≤ M → hb x8 ≤ M → hb x9 ≤ M → Cost_eval_arms n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 < 18446744073709551616 → hb (Lanius.Mini.evalArms x0 x1 x2 x3 x4 x5 x6 x7 x8 x9) ≤ M + Cost_eval_arms n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9) ∧
-    (∀ (x0 : List Lanius.Mini.Sig) (x1 : Lanius.Mini.SrcDecls) (x2 : Option (List Lanius.Mini.Binding)) (x3 : Nat) (x4 : Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x4 ≤ M → Cost_eval_let_body n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.Inline.evalLetBody x0 x1 x2 x3 x4) ≤ M + Cost_eval_let_body n x0 x1 x2 x3 x4) ∧
-    (∀ (x0 : List Lanius.Mini.Sig) (x1 : Lanius.Mini.SrcDecls) (x2 : Option (List Lanius.Mini.Binding)) (x3 : Nat) (x4 : Nat) (x5 : Lanius.Mini.SrcType) (x6 : Nat) (x7 : Lanius.Mini.SrcEff) (x8 : List Lanius.Mini.SrcEff) (x9 : Option Lanius.Mini.Stmt), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x5 ≤ M → hb x7 ≤ M → hb x8 ≤ M → hb x9 ≤ M → Cost_eval_arm_in n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 < 18446744073709551616 → hb (Lanius.Mini.Inline.evalArmIn x0 x1 x2 x3 x4 x5 x6 x7 x8 x9) ≤ M + Cost_eval_arm_in n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9)) :
+    PostIH_SrcEff_eval n) :
     ∀ (x0 : List Lanius.Mini.Sig) (x1 : Lanius.Mini.SrcDecls) (x2 : Option (List Lanius.Mini.Binding)) (x3 : Nat) (x4 : Nat) (x5 : Lanius.Mini.SrcType) (x6 : Nat) (x7 : Lanius.Mini.SrcEff) (x8 : List Lanius.Mini.SrcEff) (x9 : Option Lanius.Mini.Stmt), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x5 ≤ M → hb x7 ≤ M → hb x8 ≤ M → hb x9 ≤ M → Cost_eval_arm_in (n + 1) x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 < 18446744073709551616 → hb (Lanius.Mini.Inline.evalArmIn x0 x1 x2 x3 x4 x5 x6 x7 x8 x9) ≤ M + Cost_eval_arm_in (n + 1) x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 := by
   obtain ⟨post_SrcEff_eval, -, -, -, -⟩ := ih
   intro x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 M hM0 hM1 hM2 hM3 hM4 hM5 hM6
@@ -3758,12 +3743,15 @@ theorem post_declare_enum : ∀ (n : Nat) (x0 : Nat) (x1 : List (List Lanius.Min
   rw [Lanius.Mini.declareEnum.eq_def x0 x1 x2]
   post_auto n, M
 
-theorem post_step_SrcType_declare (n : Nat) (ih :
+/-- The posts of `SrcType_declare`'s group at fuel `n`. -/
+def PostIH_SrcType_declare (n : Nat) : Prop :=
     (∀ (x0 : Lanius.Mini.SrcType) (x1 : Lanius.Mini.SrcDecls), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_SrcType_declare n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.SrcType.declare x0 x1) ≤ M + Cost_SrcType_declare n x0 x1) ∧
     (∀ (x0 : List Lanius.Mini.SrcType) (x1 : Lanius.Mini.SrcDecls), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_types n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.declareTypes x0 x1) ≤ M + Cost_declare_types n x0 x1) ∧
     (∀ (x0 : List (List Lanius.Mini.SrcType)) (x1 : Lanius.Mini.SrcDecls), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_variants n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.declareVariants x0 x1) ≤ M + Cost_declare_variants n x0 x1) ∧
     (∀ (x0 : Option Lanius.Mini.SrcDecls) (x1 : List Lanius.Mini.SrcType), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_types_after n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Inline.declareTypesAfter x0 x1) ≤ M + Cost_declare_types_after n x0 x1) ∧
-    (∀ (x0 : Option Lanius.Mini.SrcDecls) (x1 : List (List Lanius.Mini.SrcType)), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_variants_after n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Inline.declareVariantsAfter x0 x1) ≤ M + Cost_declare_variants_after n x0 x1)) :
+    (∀ (x0 : Option Lanius.Mini.SrcDecls) (x1 : List (List Lanius.Mini.SrcType)), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_variants_after n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Inline.declareVariantsAfter x0 x1) ≤ M + Cost_declare_variants_after n x0 x1)
+theorem post_step_SrcType_declare (n : Nat) (ih :
+    PostIH_SrcType_declare n) :
     ∀ (x0 : Lanius.Mini.SrcType) (x1 : Lanius.Mini.SrcDecls), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_SrcType_declare (n + 1) x0 x1 < 18446744073709551616 → hb (Lanius.Mini.SrcType.declare x0 x1) ≤ M + Cost_SrcType_declare (n + 1) x0 x1 := by
   obtain ⟨post_SrcType_declare, post_declare_types, post_declare_variants, -, -⟩ := ih
   intro x0 x1 M hM0 hM1
@@ -3771,11 +3759,7 @@ theorem post_step_SrcType_declare (n : Nat) (ih :
   rw [Lanius.Mini.SrcType.declare.eq_def x0 x1]
   post_auto n, M
 theorem post_step_declare_types (n : Nat) (ih :
-    (∀ (x0 : Lanius.Mini.SrcType) (x1 : Lanius.Mini.SrcDecls), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_SrcType_declare n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.SrcType.declare x0 x1) ≤ M + Cost_SrcType_declare n x0 x1) ∧
-    (∀ (x0 : List Lanius.Mini.SrcType) (x1 : Lanius.Mini.SrcDecls), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_types n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.declareTypes x0 x1) ≤ M + Cost_declare_types n x0 x1) ∧
-    (∀ (x0 : List (List Lanius.Mini.SrcType)) (x1 : Lanius.Mini.SrcDecls), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_variants n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.declareVariants x0 x1) ≤ M + Cost_declare_variants n x0 x1) ∧
-    (∀ (x0 : Option Lanius.Mini.SrcDecls) (x1 : List Lanius.Mini.SrcType), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_types_after n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Inline.declareTypesAfter x0 x1) ≤ M + Cost_declare_types_after n x0 x1) ∧
-    (∀ (x0 : Option Lanius.Mini.SrcDecls) (x1 : List (List Lanius.Mini.SrcType)), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_variants_after n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Inline.declareVariantsAfter x0 x1) ≤ M + Cost_declare_variants_after n x0 x1)) :
+    PostIH_SrcType_declare n) :
     ∀ (x0 : List Lanius.Mini.SrcType) (x1 : Lanius.Mini.SrcDecls), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_types (n + 1) x0 x1 < 18446744073709551616 → hb (Lanius.Mini.declareTypes x0 x1) ≤ M + Cost_declare_types (n + 1) x0 x1 := by
   obtain ⟨post_SrcType_declare, -, -, post_declare_types_after, -⟩ := ih
   intro x0 x1 M hM0 hM1
@@ -3783,11 +3767,7 @@ theorem post_step_declare_types (n : Nat) (ih :
   rw [Lanius.Mini.declareTypes.eq_def x0 x1]
   post_auto n, M
 theorem post_step_declare_variants (n : Nat) (ih :
-    (∀ (x0 : Lanius.Mini.SrcType) (x1 : Lanius.Mini.SrcDecls), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_SrcType_declare n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.SrcType.declare x0 x1) ≤ M + Cost_SrcType_declare n x0 x1) ∧
-    (∀ (x0 : List Lanius.Mini.SrcType) (x1 : Lanius.Mini.SrcDecls), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_types n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.declareTypes x0 x1) ≤ M + Cost_declare_types n x0 x1) ∧
-    (∀ (x0 : List (List Lanius.Mini.SrcType)) (x1 : Lanius.Mini.SrcDecls), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_variants n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.declareVariants x0 x1) ≤ M + Cost_declare_variants n x0 x1) ∧
-    (∀ (x0 : Option Lanius.Mini.SrcDecls) (x1 : List Lanius.Mini.SrcType), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_types_after n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Inline.declareTypesAfter x0 x1) ≤ M + Cost_declare_types_after n x0 x1) ∧
-    (∀ (x0 : Option Lanius.Mini.SrcDecls) (x1 : List (List Lanius.Mini.SrcType)), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_variants_after n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Inline.declareVariantsAfter x0 x1) ≤ M + Cost_declare_variants_after n x0 x1)) :
+    PostIH_SrcType_declare n) :
     ∀ (x0 : List (List Lanius.Mini.SrcType)) (x1 : Lanius.Mini.SrcDecls), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_variants (n + 1) x0 x1 < 18446744073709551616 → hb (Lanius.Mini.declareVariants x0 x1) ≤ M + Cost_declare_variants (n + 1) x0 x1 := by
   obtain ⟨-, post_declare_types, -, -, post_declare_variants_after⟩ := ih
   intro x0 x1 M hM0 hM1
@@ -3795,11 +3775,7 @@ theorem post_step_declare_variants (n : Nat) (ih :
   rw [Lanius.Mini.declareVariants.eq_def x0 x1]
   post_auto n, M
 theorem post_step_declare_types_after (n : Nat) (ih :
-    (∀ (x0 : Lanius.Mini.SrcType) (x1 : Lanius.Mini.SrcDecls), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_SrcType_declare n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.SrcType.declare x0 x1) ≤ M + Cost_SrcType_declare n x0 x1) ∧
-    (∀ (x0 : List Lanius.Mini.SrcType) (x1 : Lanius.Mini.SrcDecls), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_types n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.declareTypes x0 x1) ≤ M + Cost_declare_types n x0 x1) ∧
-    (∀ (x0 : List (List Lanius.Mini.SrcType)) (x1 : Lanius.Mini.SrcDecls), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_variants n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.declareVariants x0 x1) ≤ M + Cost_declare_variants n x0 x1) ∧
-    (∀ (x0 : Option Lanius.Mini.SrcDecls) (x1 : List Lanius.Mini.SrcType), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_types_after n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Inline.declareTypesAfter x0 x1) ≤ M + Cost_declare_types_after n x0 x1) ∧
-    (∀ (x0 : Option Lanius.Mini.SrcDecls) (x1 : List (List Lanius.Mini.SrcType)), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_variants_after n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Inline.declareVariantsAfter x0 x1) ≤ M + Cost_declare_variants_after n x0 x1)) :
+    PostIH_SrcType_declare n) :
     ∀ (x0 : Option Lanius.Mini.SrcDecls) (x1 : List Lanius.Mini.SrcType), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_types_after (n + 1) x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Inline.declareTypesAfter x0 x1) ≤ M + Cost_declare_types_after (n + 1) x0 x1 := by
   obtain ⟨-, post_declare_types, -, -, -⟩ := ih
   intro x0 x1 M hM0 hM1
@@ -3807,11 +3783,7 @@ theorem post_step_declare_types_after (n : Nat) (ih :
   rw [Lanius.Mini.Inline.declareTypesAfter.eq_def x0 x1]
   post_auto n, M
 theorem post_step_declare_variants_after (n : Nat) (ih :
-    (∀ (x0 : Lanius.Mini.SrcType) (x1 : Lanius.Mini.SrcDecls), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_SrcType_declare n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.SrcType.declare x0 x1) ≤ M + Cost_SrcType_declare n x0 x1) ∧
-    (∀ (x0 : List Lanius.Mini.SrcType) (x1 : Lanius.Mini.SrcDecls), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_types n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.declareTypes x0 x1) ≤ M + Cost_declare_types n x0 x1) ∧
-    (∀ (x0 : List (List Lanius.Mini.SrcType)) (x1 : Lanius.Mini.SrcDecls), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_variants n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.declareVariants x0 x1) ≤ M + Cost_declare_variants n x0 x1) ∧
-    (∀ (x0 : Option Lanius.Mini.SrcDecls) (x1 : List Lanius.Mini.SrcType), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_types_after n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Inline.declareTypesAfter x0 x1) ≤ M + Cost_declare_types_after n x0 x1) ∧
-    (∀ (x0 : Option Lanius.Mini.SrcDecls) (x1 : List (List Lanius.Mini.SrcType)), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_variants_after n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Inline.declareVariantsAfter x0 x1) ≤ M + Cost_declare_variants_after n x0 x1)) :
+    PostIH_SrcType_declare n) :
     ∀ (x0 : Option Lanius.Mini.SrcDecls) (x1 : List (List Lanius.Mini.SrcType)), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_variants_after (n + 1) x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Inline.declareVariantsAfter x0 x1) ≤ M + Cost_declare_variants_after (n + 1) x0 x1 := by
   obtain ⟨-, -, post_declare_variants, -, -⟩ := ih
   intro x0 x1 M hM0 hM1
@@ -3839,9 +3811,12 @@ theorem post_declare_types_after : ∀ (n : Nat) (x0 : Option Lanius.Mini.SrcDec
 theorem post_declare_variants_after : ∀ (n : Nat) (x0 : Option Lanius.Mini.SrcDecls) (x1 : List (List Lanius.Mini.SrcType)), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_variants_after n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Inline.declareVariantsAfter x0 x1) ≤ M + Cost_declare_variants_after n x0 x1 :=
   fun n => (post_group_SrcType_declare n).2.2.2.2
 
-theorem post_step_declare_params (n : Nat) (ih :
+/-- The posts of `declare_params`'s group at fuel `n`. -/
+def PostIH_declare_params (n : Nat) : Prop :=
     (∀ (x0 : List Lanius.Mini.SrcParam) (x1 : Lanius.Mini.SrcDecls), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_params n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.declareParams x0 x1) ≤ M + Cost_declare_params n x0 x1) ∧
-    (∀ (x0 : Option Lanius.Mini.SrcDecls) (x1 : List Lanius.Mini.SrcParam), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_params_after n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Inline.declareParamsAfter x0 x1) ≤ M + Cost_declare_params_after n x0 x1)) :
+    (∀ (x0 : Option Lanius.Mini.SrcDecls) (x1 : List Lanius.Mini.SrcParam), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_params_after n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Inline.declareParamsAfter x0 x1) ≤ M + Cost_declare_params_after n x0 x1)
+theorem post_step_declare_params (n : Nat) (ih :
+    PostIH_declare_params n) :
     ∀ (x0 : List Lanius.Mini.SrcParam) (x1 : Lanius.Mini.SrcDecls), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_params (n + 1) x0 x1 < 18446744073709551616 → hb (Lanius.Mini.declareParams x0 x1) ≤ M + Cost_declare_params (n + 1) x0 x1 := by
   obtain ⟨-, post_declare_params_after⟩ := ih
   intro x0 x1 M hM0 hM1
@@ -3849,8 +3824,7 @@ theorem post_step_declare_params (n : Nat) (ih :
   rw [Lanius.Mini.declareParams.eq_def x0 x1]
   post_auto n, M
 theorem post_step_declare_params_after (n : Nat) (ih :
-    (∀ (x0 : List Lanius.Mini.SrcParam) (x1 : Lanius.Mini.SrcDecls), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_params n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.declareParams x0 x1) ≤ M + Cost_declare_params n x0 x1) ∧
-    (∀ (x0 : Option Lanius.Mini.SrcDecls) (x1 : List Lanius.Mini.SrcParam), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_params_after n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Inline.declareParamsAfter x0 x1) ≤ M + Cost_declare_params_after n x0 x1)) :
+    PostIH_declare_params n) :
     ∀ (x0 : Option Lanius.Mini.SrcDecls) (x1 : List Lanius.Mini.SrcParam), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_params_after (n + 1) x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Inline.declareParamsAfter x0 x1) ≤ M + Cost_declare_params_after (n + 1) x0 x1 := by
   obtain ⟨post_declare_params, -⟩ := ih
   intro x0 x1 M hM0 hM1
@@ -3879,9 +3853,12 @@ theorem post_concat_of_mini_selfhost_SrcType : ∀ (n : Nat) (x0 : List Lanius.M
     simp only [List.cons_append, hb_cons, hb_simp]
     omega
 
-theorem post_step_SrcEff_types (n : Nat) (ih :
+/-- The posts of `SrcEff_types`'s group at fuel `n`. -/
+def PostIH_SrcEff_types (n : Nat) : Prop :=
     (∀ (x0 : Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → Cost_SrcEff_types n x0 < 18446744073709551616 → hb (Lanius.Mini.SrcEff.types x0) ≤ M + Cost_SrcEff_types n x0) ∧
-    (∀ (x0 : List Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → Cost_effs_types n x0 < 18446744073709551616 → hb (Lanius.Mini.effsTypes x0) ≤ M + Cost_effs_types n x0)) :
+    (∀ (x0 : List Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → Cost_effs_types n x0 < 18446744073709551616 → hb (Lanius.Mini.effsTypes x0) ≤ M + Cost_effs_types n x0)
+theorem post_step_SrcEff_types (n : Nat) (ih :
+    PostIH_SrcEff_types n) :
     ∀ (x0 : Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → Cost_SrcEff_types (n + 1) x0 < 18446744073709551616 → hb (Lanius.Mini.SrcEff.types x0) ≤ M + Cost_SrcEff_types (n + 1) x0 := by
   obtain ⟨post_SrcEff_types, post_effs_types⟩ := ih
   intro x0 M hM0
@@ -3889,8 +3866,7 @@ theorem post_step_SrcEff_types (n : Nat) (ih :
   rw [Lanius.Mini.SrcEff.types.eq_def x0]
   post_auto n, M
 theorem post_step_effs_types (n : Nat) (ih :
-    (∀ (x0 : Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → Cost_SrcEff_types n x0 < 18446744073709551616 → hb (Lanius.Mini.SrcEff.types x0) ≤ M + Cost_SrcEff_types n x0) ∧
-    (∀ (x0 : List Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → Cost_effs_types n x0 < 18446744073709551616 → hb (Lanius.Mini.effsTypes x0) ≤ M + Cost_effs_types n x0)) :
+    PostIH_SrcEff_types n) :
     ∀ (x0 : List Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → Cost_effs_types (n + 1) x0 < 18446744073709551616 → hb (Lanius.Mini.effsTypes x0) ≤ M + Cost_effs_types (n + 1) x0 := by
   obtain ⟨post_SrcEff_types, post_effs_types⟩ := ih
   intro x0 M hM0
@@ -3909,9 +3885,12 @@ theorem post_SrcEff_types : ∀ (n : Nat) (x0 : Lanius.Mini.SrcEff), ∀ M : Nat
 theorem post_effs_types : ∀ (n : Nat) (x0 : List Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → Cost_effs_types n x0 < 18446744073709551616 → hb (Lanius.Mini.effsTypes x0) ≤ M + Cost_effs_types n x0 :=
   fun n => (post_group_SrcEff_types n).2
 
-theorem post_step_declare_in (n : Nat) (ih :
+/-- The posts of `declare_in`'s group at fuel `n`. -/
+def PostIH_declare_in (n : Nat) : Prop :=
     (∀ (x0 : Option Lanius.Mini.SrcDecls) (x1 : Lanius.Mini.SrcStmt), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_in n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Inline.declareIn x0 x1) ≤ M + Cost_declare_in n x0 x1) ∧
-    (∀ (x0 : Lanius.Mini.SrcStmt) (x1 : Lanius.Mini.SrcDecls), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_SrcStmt_declare n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.SrcStmt.declare x0 x1) ≤ M + Cost_SrcStmt_declare n x0 x1)) :
+    (∀ (x0 : Lanius.Mini.SrcStmt) (x1 : Lanius.Mini.SrcDecls), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_SrcStmt_declare n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.SrcStmt.declare x0 x1) ≤ M + Cost_SrcStmt_declare n x0 x1)
+theorem post_step_declare_in (n : Nat) (ih :
+    PostIH_declare_in n) :
     ∀ (x0 : Option Lanius.Mini.SrcDecls) (x1 : Lanius.Mini.SrcStmt), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_in (n + 1) x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Inline.declareIn x0 x1) ≤ M + Cost_declare_in (n + 1) x0 x1 := by
   obtain ⟨-, post_SrcStmt_declare⟩ := ih
   intro x0 x1 M hM0 hM1
@@ -3919,8 +3898,7 @@ theorem post_step_declare_in (n : Nat) (ih :
   rw [Lanius.Mini.Inline.declareIn.eq_def x0 x1]
   post_auto n, M
 theorem post_step_SrcStmt_declare (n : Nat) (ih :
-    (∀ (x0 : Option Lanius.Mini.SrcDecls) (x1 : Lanius.Mini.SrcStmt), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_in n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Inline.declareIn x0 x1) ≤ M + Cost_declare_in n x0 x1) ∧
-    (∀ (x0 : Lanius.Mini.SrcStmt) (x1 : Lanius.Mini.SrcDecls), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_SrcStmt_declare n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.SrcStmt.declare x0 x1) ≤ M + Cost_SrcStmt_declare n x0 x1)) :
+    PostIH_declare_in n) :
     ∀ (x0 : Lanius.Mini.SrcStmt) (x1 : Lanius.Mini.SrcDecls), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_SrcStmt_declare (n + 1) x0 x1 < 18446744073709551616 → hb (Lanius.Mini.SrcStmt.declare x0 x1) ≤ M + Cost_SrcStmt_declare (n + 1) x0 x1 := by
   obtain ⟨post_declare_in, post_SrcStmt_declare⟩ := ih
   intro x0 x1 M hM0 hM1
@@ -3975,9 +3953,12 @@ theorem post_declare_func : ∀ (n : Nat) (x0 : Lanius.Mini.SrcFunc) (x1 : Laniu
   rw [Lanius.Mini.declareFunc.eq_def x0 x1]
   post_auto n, M
 
-theorem post_step_declare_funcs (n : Nat) (ih :
+/-- The posts of `declare_funcs`'s group at fuel `n`. -/
+def PostIH_declare_funcs (n : Nat) : Prop :=
     (∀ (x0 : List Lanius.Mini.SrcFunc) (x1 : Lanius.Mini.SrcDecls), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_funcs n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.declareFuncs x0 x1) ≤ M + Cost_declare_funcs n x0 x1) ∧
-    (∀ (x0 : Option Lanius.Mini.SrcDecls) (x1 : List Lanius.Mini.SrcFunc), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_funcs_after n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Inline.declareFuncsAfter x0 x1) ≤ M + Cost_declare_funcs_after n x0 x1)) :
+    (∀ (x0 : Option Lanius.Mini.SrcDecls) (x1 : List Lanius.Mini.SrcFunc), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_funcs_after n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Inline.declareFuncsAfter x0 x1) ≤ M + Cost_declare_funcs_after n x0 x1)
+theorem post_step_declare_funcs (n : Nat) (ih :
+    PostIH_declare_funcs n) :
     ∀ (x0 : List Lanius.Mini.SrcFunc) (x1 : Lanius.Mini.SrcDecls), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_funcs (n + 1) x0 x1 < 18446744073709551616 → hb (Lanius.Mini.declareFuncs x0 x1) ≤ M + Cost_declare_funcs (n + 1) x0 x1 := by
   obtain ⟨-, post_declare_funcs_after⟩ := ih
   intro x0 x1 M hM0 hM1
@@ -3985,8 +3966,7 @@ theorem post_step_declare_funcs (n : Nat) (ih :
   rw [Lanius.Mini.declareFuncs.eq_def x0 x1]
   post_auto n, M
 theorem post_step_declare_funcs_after (n : Nat) (ih :
-    (∀ (x0 : List Lanius.Mini.SrcFunc) (x1 : Lanius.Mini.SrcDecls), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_funcs n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.declareFuncs x0 x1) ≤ M + Cost_declare_funcs n x0 x1) ∧
-    (∀ (x0 : Option Lanius.Mini.SrcDecls) (x1 : List Lanius.Mini.SrcFunc), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_funcs_after n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Inline.declareFuncsAfter x0 x1) ≤ M + Cost_declare_funcs_after n x0 x1)) :
+    PostIH_declare_funcs n) :
     ∀ (x0 : Option Lanius.Mini.SrcDecls) (x1 : List Lanius.Mini.SrcFunc), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_declare_funcs_after (n + 1) x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Inline.declareFuncsAfter x0 x1) ≤ M + Cost_declare_funcs_after (n + 1) x0 x1 := by
   obtain ⟨post_declare_funcs, -⟩ := ih
   intro x0 x1 M hM0 hM1

@@ -24,6 +24,7 @@ imports (GenPC: `Lanius.Faithful.SelfPre.CompileValues`, which imports it).
 `--compile` adds the compile side's hand proofs (COMPILE_POST_HAND,
 COMPILE_HAND_CASE), kept apart so that build_files' GenP never takes them.
 """
+import glob
 import os
 import re
 import sys
@@ -532,6 +533,330 @@ COMPILE_HAND_CASE = {
 ''',
 }
 
+# Numbers (compile side only, `--compile`): `hb` counts no number, so a
+# precondition that adds to a number parameter or field cannot follow from
+# `hb x ≤ M`. A parameter whose numbers the precondition uses (in a `plus` or
+# `times`, directly or through a callee's precondition) gets `x ≤ M` (a `Nat`)
+# or `nb x ≤ M` (`SelfPre/NB.lean`, the largest number in a value), and the
+# proof states the bounds of its structure's number fields for `omega`.
+NUMS = {'on': False, 'used': {}, 'fields': {}, 'ftype': {}, 'types': set()}
+
+
+# Functions whose callers pass numbers they cannot bound: no number hypotheses
+# (their own preconditions are then open, PreCompileSourceV3/NOTES.md).
+COMPILE_NUM_SKIP = {
+    'compile_func', 'Code_size', 'SrcStmt_lower', 'arm_bind', 'arm_payload', 'array_arg_local',
+    'array_arg_slice', 'array_call_sig', 'assign_from', 'bounds_guard', 'copy_field',
+    'copy_field_of', 'copy_same', 'element_base', 'eval_array_element',
+    'eval_array_index', 'eval_element', 'eval_len_of', 'eval_load', 'eval_load_byte',
+    'eval_pick', 'eval_stride_of', 'eval_word_element', 'eval_word_stride',
+    'frame_block', 'link', 'link_fitting', 'link_onto', 'lower_arm_found',
+    'lower_arm_stmt', 'lower_arms', 'lower_body', 'lower_field', 'lower_field_of',
+    'lower_func', 'lower_match_arms', 'lower_match_on', 'lower_set_field_of',
+    'lower_set_values', 'need_round', 'needs_after', 'offset_after', 'pack_round',
+    'pack_rounds', 'pick_element', 'put_element', 'round_cons', 'round_join',
+    'set_field_eval_of', 'slot_vars', 'store_any', 'store_array', 'store_array_element',
+    'store_eval', 'store_eval_byte', 'store_eval_element', 'store_eval_word',
+    'store_pick', 'store_word_element', 'within_layout', 'within_layouts',
+    'within_payloads', 'word_stride',
+}
+
+
+# The compile side's invariants (`--compile`), as OVERRIDES (M-form: over the
+# parameters p0.., `M` and the budget `b`): a counter plus the count left
+# (it grows only as that shrinks); a temporary's depth plus the weight left to
+# compile, and a pc offset plus
+# 64 bytes per unit of the weight left to compile below `2 ^ 40` (the code of
+# a statement is at most 64 bytes per unit of weight, `CompileValues`'
+# `val_compileStmt`, and `compileFunc` checks the weight against the image
+# limit first); a code list's size below `K`.
+PC_LIMIT = '1099511627776'
+COMPILE_OVERRIDES = {
+    'compile_expr': [f'p2 + Lanius.Mini.Expr.weight p1 ≤ {PC_LIMIT}'],
+    'compile_args': [f'p2 + Lanius.Mini.argsWeight p1 ≤ {PC_LIMIT}'],
+    'zero_locals': ['p0 + p1 ≤ K'],
+    'compile_stmt': [f'p1 + 64 * Lanius.Mini.Stmt.weight p4 ≤ {PC_LIMIT}'],
+    'seq_code': [f'p1 + Lanius.Mini.codeSize p4 + 64 * Lanius.Mini.Stmt.weight p5 ≤ {PC_LIMIT}'],
+    'ite_code': [f'p1 + Lanius.Mini.codeSize p4 + 64 * Lanius.Mini.Stmt.weight p5 + '
+                 f'64 * Lanius.Mini.Stmt.weight p6 + 14 ≤ {PC_LIMIT}'],
+    'loop_code': [f'p1 + Lanius.Mini.codeSize p2 + 64 * Lanius.Mini.Stmt.weight p3 + 14 ≤ {PC_LIMIT}'],
+    'code_size': ['Lanius.Mini.codeSize p0 ≤ K'],
+    'Instr_size': ['Lanius.Mini.Instr.size p0 ≤ K'],
+}
+# The parameters those invariants bound instead of `nb x ≤ M` (pc offsets and
+# code lists: their numbers are slots and jump targets, not the input's; and
+# the statements whose code's size, not their numbers, is added).
+COMPILE_NUM_DROP = {
+    'compile_expr': {2}, 'compile_args': {2}, 'compile_stmt': {1, 2, 3}, 'seq_code': {1, 2, 3, 4, 5},
+    'ite_code': {1, 2, 3, 4, 5, 6}, 'loop_code': {1, 2, 3}, 'code_size': {0}, 'Instr_size': {0},
+}
+# The definitions the invariants' terms unfold by on constructors (the pre
+# modules' `hb_simp`, locally).
+COMPILE_PRE_SIMP = ['Lanius.Mini.Stmt.weight', 'Lanius.Mini.Expr.weight', 'Lanius.Mini.argsWeight',
+                    'Lanius.Mini.codeSize', 'Lanius.Mini.Instr.size', 'Lanius.Mini.roomFits_stmtRoom']
+PRE_PREAMBLE = ''
+# The Mini program's compile: the functions these reach bound the program's
+# numbers by `K` rather than `M` (they do not grow as it compiles: its slots,
+# indices and counts; the pc offsets and depths have their own invariants).
+COMPILE_FIXED_ROOTS = ['compile_optimized']
+# The functions whose `match`es' pattern variables count as the parameter they
+# take apart (`match_aliases`): their callers can bound the whole value.
+COMPILE_NUM_ALIAS = set()
+
+
+def args_after(text, i):
+    """The space-separated arguments of the application whose head ends at i."""
+    out, cur, depth = [], '', 0
+    while i < len(text):
+        ch = text[i]
+        if depth == 0 and ch in ')∧→,':
+            break
+        if ch == '(':
+            depth += 1
+        elif ch == ')':
+            depth -= 1
+        if ch == ' ' and depth == 0:
+            if cur:
+                out.append(cur)
+            cur = ''
+        else:
+            cur += ch
+        i += 1
+    if cur:
+        out.append(cur)
+    return out
+
+
+def num_used(genb):
+    """Per `Pre_k`, the parameter positions whose numbers it uses (a fixpoint)."""
+    params, bodies = {}, {}
+    for path in sorted(glob.glob(os.path.join(genb, 'SelfBModel*.lean'))):
+        cur = None
+        for line in open(path).read().split('\n'):
+            m = re.match(r'def (Pre_\w+) :', line)
+            if m:
+                cur = m.group(1)
+                continue
+            if cur and line.startswith('  | n + 1, '):
+                head, body = line.split('=>', 1)
+                params[cur] = [x.strip() for x in head.split(',')[1:-1]]
+                bodies[cur] = body
+                cur = None
+    aliasing = os.environ.get('PRE_NUMS_ALIAS') == '1'
+    chosen = set(COMPILE_NUM_ALIAS) | set(filter(None, os.environ.get('PRE_NUMS_ALIASES', '').split(',')))
+    alias = {k: match_aliases(bodies[k], params[k]) if aliasing or k[4:] in chosen else {} for k in params}
+    used = {k: {} for k in params}  # position -> kinds: 'nb' (its numbers), 'ts' (its types' sizes)
+    calls = {k: set(re.findall(r'\b(Pre_\w+) n ', bodies[k])) & set(params) for k in params}
+    NUMS['fixed'] = reach(calls, [f'Pre_{r}' for r in COMPILE_FIXED_ROOTS])
+    changed = True
+    while changed:
+        changed = False
+        for k, body in bodies.items():
+            ps = params[k]
+            for m in re.finditer(r'\b(Pre_\w+) n ', body):
+                callee = m.group(1)
+                args = args_after(body, m.end())
+                if callee in ('Pre_plus', 'Pre_times'):
+                    pos = {j: {'nb'} for j in range(len(args))}
+                elif callee in used:
+                    pos = {j: set(v) for j, v in used[callee].items()}
+                else:
+                    continue
+                for j, kinds in pos.items():
+                    if j >= len(args) or j in COMPILE_NUM_DROP.get(callee[4:], ()):
+                        continue
+                    for v, kind in occurrences(args[j], kinds):
+                        for i, x in enumerate(ps):
+                            if i in COMPILE_NUM_DROP.get(k[4:], ()):
+                                continue
+                            if (v == x or v in alias[k].get(x, ())) and kind not in used[k].get(i, ()):
+                                used[k].setdefault(i, set()).add(kind)
+                                changed = True
+    return used
+
+
+def reach(calls, roots):
+    """The functions `roots` reach in the call graph `calls`, by their keys (no `Pre_`)."""
+    out, todo = set(), [r for r in roots if r in calls]
+    while todo:
+        k = todo.pop()
+        if k in out:
+            continue
+        out.add(k)
+        todo.extend(calls[k] - out)
+    return {k[4:] for k in out}
+
+
+def num_bound(k):
+    """The bound of `pre_k`'s numbers: `K` in the Mini program's compile, whose
+    numbers are the program's own (`COMPILE_FIXED_ROOTS`), else `M`."""
+    return K if k in NUMS.get('fixed', ()) else 'M'
+
+
+def occurrences(arg, kinds):
+    """The variables of an argument with the kind of use: under `SrcType.size` its
+    type's size ('ts'), under `.length` none (`hb` bounds it), else the kinds given."""
+    spans = []
+    for m in re.finditer(r'SrcType\.size ', arg):
+        i, depth = m.end(), 0
+        j = i
+        while j < len(arg):
+            if arg[j] == '(':
+                depth += 1
+            elif arg[j] == ')':
+                if depth == 0:
+                    break
+                depth -= 1
+            elif arg[j] == ' ' and depth == 0:
+                break
+            j += 1
+        spans.append((i, j))
+    out = []
+    for m in re.finditer(r'\bx\d+\b', arg):
+        if arg.startswith('.length', m.end()) or arg[:m.start()].endswith('List.length '):
+            continue
+        if any(i <= m.start() < j for i, j in spans):
+            out.append((m.group(0), 'ts'))
+        else:
+            out.extend((m.group(0), kd) for kd in kinds)
+    return out
+
+
+def match_aliases(body, ps):
+    """Per parameter, the pattern variables of the `match`es on it (at any depth of
+    the match's own patterns' variables, transitively)."""
+    out = {x: set() for x in ps}
+    owner = {x: x for x in ps}
+    stack = []  # (paren depth, the parameters the scrutinee mentions)
+    depth = 0
+    i = 0
+    while i < len(body):
+        ch = body[i]
+        if ch == '(':
+            depth += 1
+        elif ch == ')':
+            while stack and stack[-1][0] == depth:
+                stack.pop()
+            depth -= 1
+        m = re.match(r'match (.*?) with', body[i:]) if body.startswith('match ', i) else None
+        if m:
+            src = {owner[v] for v in re.findall(r'\bx\d+\b', m.group(1)) if v in owner}
+            stack.append((depth, src))
+            i += m.end()
+            continue
+        if ch == '|' and stack and stack[-1][0] == depth:
+            a = re.match(r'\|([^|]*?)=>', body[i:])
+            if a:
+                for v in re.findall(r'\bx\d+\b', a.group(1)):
+                    for x in stack[-1][1]:
+                        out[x].add(v)
+                        owner[v] = x
+                i += a.end()
+                continue
+        i += 1
+    return out
+
+
+def nb_fields(formal):
+    """Per structure (its full name), its fields: [(field, is_nat)]; their types in NUMS['ftype']."""
+    types = [os.path.join(formal, 'Lanius', 'Mini', d, 'Types.lean') for d in ('Compiler', 'Frontend')]
+    out = {}
+    for kind, name, items in hb_gen.parse(types):
+        if kind == 'structure':
+            q = 'Lanius.Mini.' + name
+            out[q] = [(f, t.strip() == 'Nat') for f, t in items]
+            for f, t in items:
+                NUMS['ftype'][(q, f)] = re.sub(r'\b([A-Z]\w*)\b', lambda mm: mm.group(1) if mm.group(1) in
+                                               ('List', 'Option', 'Nat', 'Bool', 'UInt8', 'BitVec') else 'Lanius.Mini.' + mm.group(1), t)
+    return out
+
+
+def num_hyps(e, k, xs, tys):
+    """The number hypotheses of `pre_k` (none outside `--compile`)."""
+    if not NUMS['on']:
+        return []
+    if k in COMPILE_NUM_SKIP or k in os.environ.get('PRE_NUMS_SKIP', '').split(','):
+        return []
+    out = []
+    used = NUMS['used'].get(f'Pre_{k}', {})
+    for i in sorted(used):
+        if i >= len(xs) or 'nb' not in used[i]:
+            continue
+        t = tys[i].strip()
+        if t == 'Nat':
+            out.append(f'{xs[i]} ≤ {num_bound(k)}')
+        elif not nb_flat(t):
+            out.append(f'nb {xs[i]} ≤ {num_bound(k)}')
+    # a type's slot count (`ts`, SelfPre/TS.lean) is at most the front end's weight limit
+    for i in sorted(used):
+        if i < len(xs) and 'ts' in used[i] and not ts_flat(tys[i]):
+            out.append(f'ts {xs[i]} ≤ {WEIGHT}')
+    return out
+
+
+WEIGHT = '4194304'  # Lanius.Mini.weightLimit
+
+
+def ts_flat(t):
+    t = t.strip()
+    while t.startswith('(') and t.endswith(')'):
+        t = t[1:-1].strip()
+    m = re.match(r'(List|Option) (.+)$', t)
+    if m:
+        return ts_flat(m.group(2))
+    return t not in NUMS['ts_types']
+
+
+def nb_flat(t):
+    t = t.strip()
+    while t.startswith('(') and t.endswith(')'):
+        t = t[1:-1].strip()
+    m = re.match(r'(List|Option) (.+)$', t)
+    if m:
+        return nb_flat(m.group(2))
+    if t == 'Nat':
+        return False
+    if t in ('Bool', 'UInt8') or t.startswith('BitVec'):
+        return True
+    return t not in NUMS['types']
+
+
+def num_facts(e, k, xs, tys, names):
+    """`have`s bounding the number fields of `pre_k`'s structure parameters."""
+    if not NUMS['on']:
+        return ''
+    hyps = names.split()
+    nhb = sum(1 for x, t in zip(xs.split(), tys) if not e.g.flat(t))
+    out = ''
+    j = nhb
+    for h in num_hyps(e, k, xs.split(), tys):
+        x = h.split()[1] if h.startswith('nb ') else None
+        if h.startswith('ts '):
+            y = h.split()[1]
+            t = tys[xs.split().index(y)].strip()
+            if t == 'Lanius.Mini.SrcType':
+                out += f'  have hs_{y} : Lanius.Mini.SrcType.size {y} ≤ {WEIGHT} := Nat.le_trans (size_le_tySlots {y}) {hyps[j]}\n'
+            for f, _ in NUMS['fields'].get(t, []):
+                ft = NUMS['ftype'][(t, f)]
+                if ts_flat(ft):
+                    continue
+                q = t.split('.')[-1]
+                out += f'  have hs_{y}_{f} : ts {y}.{f} ≤ {WEIGHT} := Nat.le_trans (ts_le_{q}_{f} {y}) {hyps[j]}\n'
+                if ft == 'Lanius.Mini.SrcType':
+                    out += (f'  have hz_{y}_{f} : Lanius.Mini.SrcType.size {y}.{f} ≤ {WEIGHT} := '
+                            f'Nat.le_trans (size_le_tySlots {y}.{f}) hs_{y}_{f}\n')
+        if x is not None:
+            t = tys[xs.split().index(x)].strip()
+            for f, is_nat in NUMS['fields'].get(t, []):
+                if not is_nat and nb_flat(NUMS['ftype'][(t, f)]):
+                    continue
+                lhs = f'{x}.{f}' if is_nat else f'nb {x}.{f}'
+                out += (f'  have hn_{x}_{f} : {lhs} ≤ {num_bound(k)} := '
+                        f'Nat.le_trans (nb_le_{t.split(".")[-1]}_{f} {x}) {hyps[j]}\n')
+        j += 1
+    return out
+
+
 # --- end of the compile side -----------------------------------------------
 
 
@@ -709,6 +1034,7 @@ class Emit:
         xs = [f'x{i}' for i in range(len(tys))]
         binders = ' '.join(f'({x} : {t})' for x, t in zip(xs, tys))
         hyps = [f'hb {x} ≤ M' for x, t in zip(xs, tys) if not self.g.flat(t)]
+        hyps += num_hyps(self, k, xs, tys)  # compile side only
         hyps.append(f'M + b ≤ {K}')
         for h in OVERRIDES.get(k, []):
             hyps.append(re.sub(r'\bp(\d+)\b', lambda mm: xs[int(mm.group(1))], h).replace('≤ K', f'≤ {K}'))
@@ -722,7 +1048,8 @@ class Emit:
             k = ks[0]
             binders, xs, names, st = self.pre_parts(k)
             return [f'theorem pre_{k} : ∀ (n : Nat) {binders} (b : Nat), {st} := by\n'
-                    f'  intro n {xs} b M {names}\n'
+                    f'  intro n {xs} b M {names}\n' +
+                    num_facts(self, k, xs, self.m.sig[f'Pre_{k}'], names) +
                     f'  rcases n with _ | n\n'
                     f'  · exact trivial\n'
                     f'  rw [Pre_{k}.eq_def]; dsimp only\n' +
@@ -744,7 +1071,8 @@ class Emit:
             binders, xs, nm, st = self.pre_parts(k, '(n + 1)')
             out.append(f'theorem pre_step_{k} (n : Nat) (ih :\n    {ih}) :\n    ∀ {binders} (b : Nat), {st} := by\n'
                        f'  {"obtain " + tuple_(self.used(k, ks, "Pre", "pre")) + " := ih" if len(ks) > 1 else "have " + names[0] + " := ih"}\n'
-                       f'  intro {xs} b M {nm}\n'
+                       f'  intro {xs} b M {nm}\n' +
+                       num_facts(self, k, xs, self.m.sig[f'Pre_{k}'], nm) +
                        f'  rw [Pre_{k}.eq_def]; dsimp only\n' +
                        PRE_HAND.get(k, '  pre_auto n, M\n'))
         steps = [f'pre_step_{k} n ih' for k in ks]
@@ -901,8 +1229,18 @@ def main():
     prefix = rel.replace(os.sep, '.') if rel.startswith('Lanius' + os.sep) else 'Lanius.Faithful.SelfPre.GenP'
     g = Gen(genb, roots)
     if compile_side:
+        nb_path = os.path.join(formal, 'Lanius', 'Faithful', 'SelfPre', 'NB.lean')
+        NUMS.update(on=True, used=num_used(genb), fields=nb_fields(formal))
+        NUMS['types'] = set(re.findall(r'instance : NB (Lanius\.Mini\.\w+) := ⟨(?!fun _ => 0)', open(nb_path).read()))
+        ts_path = os.path.join(formal, 'Lanius', 'Faithful', 'SelfPre', 'TS.lean')
+        NUMS['ts_types'] = set(re.findall(r'instance : TS (Lanius\.Mini\.\w+) := ⟨(?!fun _ => 0)', open(ts_path).read()))
         POST_HAND.update(auto_bytes(g))
         POST_HAND.update(COMPILE_POST_HAND)
+        OVERRIDES.update(COMPILE_OVERRIDES)
+        global PRE_PREAMBLE
+        # and the number measure's lemmas, for the facts of a split's parts
+        nbs = re.findall(r'@\[simp, nb_simp\] theorem (\w+)', open(nb_path).read())
+        PRE_PREAMBLE = f'attribute [local hb_simp] {" ".join(COMPILE_PRE_SIMP + nbs)}\n\n'
     e = Emit(g)
     r = g.reach()
     order = e.order()
@@ -967,7 +1305,8 @@ def main():
                 if c[0] == 'UPost' or (c[2] & (needs - defs))]
         imports = '\n'.join('import ' + m for m in base + deps)
         prof = 'set_option profiler true\nset_option profiler.threshold 1500\n' if os.environ.get('PRE_PROFILE') else ''
-        text = HEADER.format(imports=imports, what=f'{kind} lemmas, part {i}', ns=ns) + prof + '\n'.join(items) + \
+        text = HEADER.format(imports=imports, what=f'{kind} lemmas, part {i}', ns=ns) + prof + \
+            (PRE_PREAMBLE if kind == 'Pre' else '') + '\n'.join(items) + \
             f'\nend {ns}\n'
         open(os.path.join(outdir, name + '.lean'), 'w').write(text)
         mods.append(f'{prefix}.{name}')

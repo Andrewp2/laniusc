@@ -215,6 +215,25 @@ theorem bproof_lim_bind {spW sp : SrcProgram} {prims : Prims} {ix_lim_bind ix_de
     budget
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
 
+theorem bstep_lim_param_slots {spW sp : SrcProgram} {prims : Prims} {ix_lim_param_slots ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam ix_lim_bind ix_lim_slots : Nat}
+    (fnW : spW.funcs[ix_lim_param_slots]? = some (src_lim_param_slots ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam ix_lim_param_slots ix_lim_bind ix_lim_slots)) (fn : sp.funcs[ix_lim_param_slots]? = some (src_lim_param_slots ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam ix_lim_param_slots ix_lim_bind ix_lim_slots))
+    (np : prims.isPrim ix_lim_param_slots = false)
+    (back : Certified (∀ {n : Nat}, Stmt_lim_param_slots sp prims ix_lim_param_slots n))
+    (pp_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam = false)
+    (b_lim_bind : Certified (∀ {n : Nat}, BStmt_lim_bind spW sp prims ix_lim_bind n))
+    (b_lim_slots : Certified (∀ {n : Nat}, BStmt_lim_slots spW sp prims ix_lim_slots n)) {n : Nat}
+    (bih_lim_param_slots : Certified (BStmt_lim_param_slots spW sp prims ix_lim_param_slots n)) :
+    BStmt_lim_param_slots spW sp prims ix_lim_param_slots (n + 1) := by
+  intro x0 v0 w k b h r0 hb pre
+  have key : qcall sp prims uc (n + 1) ix_lim_param_slots [v0] = some (w, k) ∧ 0 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_lim_param_slots, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_lim_param_slots.eq_def] at pre
+    simp only at pre
+    budget
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0⟩
+
 theorem bstep_lim_expr {spW sp : SrcProgram} {prims : Prims} {ix_lim_expr ix_unbox_of_mini_selfhost_SrcExpr ix_lim_ty : Nat}
     (fnW : spW.funcs[ix_lim_expr]? = some (src_lim_expr ix_unbox_of_mini_selfhost_SrcExpr ix_lim_ty ix_lim_expr)) (fn : sp.funcs[ix_lim_expr]? = some (src_lim_expr ix_unbox_of_mini_selfhost_SrcExpr ix_lim_ty ix_lim_expr))
     (np : prims.isPrim ix_lim_expr = false)
