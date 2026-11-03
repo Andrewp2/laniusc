@@ -94,6 +94,26 @@ bool scalar_assignment(uint row, uint total, out uint declaration,
     return declaration < gParams.token_capacity && value < total;
 }
 
+// A RETURN of one 32-bit scalar value (bool, i32, u32 or char).
+bool scalar_return(uint row, uint total, out uint value)
+{
+    value = INVALID;
+    if (row >= total || opt_ir_op(opt_ir_core[row]) != SEMANTIC_LIR_OP_RETURN)
+        return false;
+    value = opt_ir_operands[row].a;
+    if (value >= total) return false;
+    uint type_id = opt_ir_core[value].type_id;
+    return !x86_semantic_type_is_aggregate(opt_ir_core[value]) &&
+        (type_id == 2u || type_id == 3u || type_id == 4u || type_id == 6u);
+}
+
+bool memory_read(uint row, uint total)
+{
+    if (row >= total) return false;
+    uint op = opt_ir_op(opt_ir_core[row]);
+    return op == SEMANTIC_LIR_OP_LOAD || op == SEMANTIC_LIR_OP_PLACE_LOAD;
+}
+
 bool pure_select_arm(uint first_position, uint store_position, uint total,
                      uint function_id)
 {
@@ -265,26 +285,66 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint true_store_position = (else_arm ? else_position : end_position) - 1u;
     uint true_store = semantic_schedule_order[true_store_position];
-    if (!same_function(true_store, total, function_id))
-        return;
-    uint true_declaration;
-    uint true_value;
-    if (!scalar_assignment(true_store, total, true_declaration, true_value) ||
+    if (!same_function(true_store, total, function_id) ||
         !pure_select_arm(position + 1u, true_store_position, total, function_id))
         return;
+    // The select's row: the arms' CONTROL_END for an assignment, the final
+    // RETURN for `if (c) { return t; } [else] { return f; }` (with no else,
+    // a few pure rows may compute f after the CONTROL_END).
+    uint select_row = end_row;
+    uint select_position = end_position;
+    uint true_declaration = INVALID;
+    uint true_value;
     uint false_store = INVALID;
     uint false_value = INVALID;
-    if (else_arm)
+    bool returns = scalar_return(true_store, total, true_value);
+    if (returns)
     {
-        uint false_store_position = end_position - 1u;
-        false_store = semantic_schedule_order[false_store_position];
-        uint false_declaration;
-        if (!same_function(false_store, total, function_id) ||
-            !scalar_assignment(false_store, total, false_declaration, false_value) ||
-            true_declaration != false_declaration ||
-            !pure_select_arm(
-                else_position + 1u, false_store_position, total, function_id))
+        // A return chosen by a call result or a loaded value is usually a
+        // predictable exit test (a lookup's found check); as a branch the
+        // core runs past the load, as a cmov it waits for it. Return
+        // selects take only comparisons of values already in registers.
+        if (!comparison_condition ||
+            memory_read(opt_ir_operands[branch.a].a, total) ||
+            memory_read(opt_ir_operands[branch.a].b, total))
             return;
+        uint false_position = end_position - 1u;
+        if (!else_arm)
+        {
+            false_position = end_position + 1u;
+            while (false_position < total && false_position - end_position <= 16u &&
+                   same_function(semantic_schedule_order[false_position], total, function_id) &&
+                   opt_ir_op(opt_ir_core[semantic_schedule_order[false_position]]) !=
+                       SEMANTIC_LIR_OP_RETURN)
+                false_position += 1u;
+        }
+        if (false_position >= total) return;
+        false_store = semantic_schedule_order[false_position];
+        if (!same_function(false_store, total, function_id) ||
+            !scalar_return(false_store, total, false_value) ||
+            opt_ir_core[false_value].type_id != opt_ir_core[true_value].type_id ||
+            !pure_select_arm(else_arm ? else_position + 1u : end_position + 1u,
+                false_position, total, function_id))
+            return;
+        select_row = false_store;
+        select_position = false_position;
+    }
+    else
+    {
+        if (!scalar_assignment(true_store, total, true_declaration, true_value))
+            return;
+        if (else_arm)
+        {
+            uint false_store_position = end_position - 1u;
+            false_store = semantic_schedule_order[false_store_position];
+            uint false_declaration;
+            if (!same_function(false_store, total, function_id) ||
+                !scalar_assignment(false_store, total, false_declaration, false_value) ||
+                true_declaration != false_declaration ||
+                !pure_select_arm(
+                    else_position + 1u, false_store_position, total, function_id))
+                return;
+        }
     }
 
     X86SelectInfo info;
@@ -292,16 +352,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
     info.true_value = true_value;
     info.false_value = false_value;
     info.declaration = true_declaration;
-    x86_select_by_semantic[end_row] = info;
+    x86_select_by_semantic[select_row] = info;
     if (comparison_condition || negated) x86_live_by_semantic[branch.a] = 0u;
     x86_live_by_semantic[branch_row] = 0u;
-    if (else_arm)
-    {
-        x86_live_by_semantic[branch.b] = 0u;
-        x86_live_by_semantic[false_store] = 0u;
-    }
+    if (else_arm) x86_live_by_semantic[branch.b] = 0u;
+    if (else_arm && !returns) x86_live_by_semantic[false_store] = 0u;
     x86_live_by_semantic[true_store] = 0u;
-    x86_live_by_semantic[end_row] = X86_SEMANTIC_SELECT;
+    x86_live_by_semantic[select_row] = X86_SEMANTIC_SELECT;
+    end_position = select_position;
 
     if (!comparison_condition)
     {

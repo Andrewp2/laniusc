@@ -1246,6 +1246,9 @@ static const uint X86_LIR_METADATA_ZERO_EXTENDED_MASK = 0x00040000u;
 // view's single slice_from_raw_parts definition. Index rows only: the bit is
 // also SEMANTIC_LIR_FLAG_SHORT_CIRCUIT_TRAP << 8, which scatter clears there.
 static const uint X86_LIR_METADATA_NATIVE_STRIDE = 0x00020000u;
+// SELECT_STORE only (its metadata holds no semantic flags): the select is a
+// RETURN's, so it chooses into EAX and returns; result_or_target is INVALID.
+static const uint X86_LIR_METADATA_SELECT_RETURN = 0x00010000u;
 
 // Semantic AGGREGATE_NEW metadata. The high bit distinguishes tagged enums;
 // the remaining bits contain the checked variant ordinal.

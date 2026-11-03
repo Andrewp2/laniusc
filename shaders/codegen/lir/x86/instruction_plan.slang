@@ -683,6 +683,43 @@ void plan_ordinary(X86PlanInput input)
         uint jcc = (plan_integer_setcc_opcode(core.local_ordinal, metadata & 0xffu) ^ 1u) - 0x10u;
         plan_jump(2u, 0x0fu | (jcc << 8u), X86_RESOLVE_ROW, core.result_or_target);
     }
+    else if (op == X86_LIR_OP_SELECT_STORE &&
+             (metadata & X86_LIR_METADATA_SELECT_RETURN) != 0u)
+    {
+        // Return the select: with the true value in a register and a compare
+        // that needs no scratch, EAX takes the false value and CMOVcc the
+        // true one; otherwise EDX holds the false value, EAX the true one
+        // and the negated CMOV picks EDX.
+        bool immediate = (metadata & X86_LIR_METADATA_IMMEDIATE) != 0u;
+        uint right = immediate ? operands.b : locations.b;
+        bool scratch_free = immediate || x86_location_is_register(locations.a) ||
+            x86_location_is_register(locations.b);
+        uint predicate = plan_integer_setcc_opcode(core.local_ordinal, metadata & 0xffu);
+        if (scratch_free && x86_location_is_register(locations.c) &&
+            locations.c != X86_REG && locations.a != X86_REG &&
+            (immediate || locations.b != X86_REG))
+        {
+            uint t = x86_location_payload(locations.c);
+            plan_move32(locations.result, X86_REG);
+            plan_compare(input, locations.a, right);
+            // cmovcc eax, t
+            plan_prefixed(t >= 8u, 0x41u, 3u,
+                0x0fu | ((predicate - 0x50u) << 8u) | ((0xc0u | (t & 7u)) << 16u));
+        }
+        else
+        {
+            plan_move32(locations.result, X86_REG | 2u);
+            plan_compare(input, locations.a, right);
+            plan_move32(locations.c, X86_REG);
+            // cmov(!cc) eax, edx
+            plan_bytes(3u, 0x0fu | (((predicate ^ 1u) - 0x50u) << 8u) | (0xc2u << 16u));
+        }
+        plan_restore_registers(input.saved_mask, input.saved_first_slot);
+        // pop rcx; ret  |  leave; ret  |  ret
+        if (input.stackless) plan_bytes(2u, 0xc359u);
+        else if (!input.frameless) plan_bytes(2u, 0xc3c9u);
+        else plan_bytes(1u, 0xc3u);
+    }
     else if (op == X86_LIR_OP_SELECT_STORE)
     {
         uint destination = input.decl_target;
