@@ -291,7 +291,7 @@ def main():
     if status is None or not status.startswith('image'):
         raise SystemExit(f'the verified compiler: {status}')
 
-    entries_s, image_s = re.match(r'image \[(.*?)\] \[(.*?)\]$', status).groups()
+    entries_s, image_s = re.match(r'image \[(.*?)\] \[(.*?)\](?: statics \[.*?\])?$', status).groups()
     entries = [int(x) for x in entries_s.split(',')]
     image = bytes(int(x) for x in image_s.split(','))
     print(f'the verified compiler: {len(image)} image bytes, {len(entries)} functions')

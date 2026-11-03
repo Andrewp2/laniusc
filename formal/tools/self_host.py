@@ -190,7 +190,8 @@ def parse_image(status):
     if not (status.startswith('image [') and status.endswith(']')):
         raise ValueError(f'bad image line: {status[:80]}')
     mid = status.index('] [', 7)
-    entries_s, image_s = status[7:mid], status[mid + 3:-1]
+    end = status.find('] statics [', mid)  # static bytes (none in the self program)
+    entries_s, image_s = status[7:mid], status[mid + 3:end if end >= 0 else -1]
     entries = list(map(int, entries_s.split(','))) if entries_s else []
     image = list(bytes(map(int, image_s.split(',')))) if image_s else []
     return entries, image
