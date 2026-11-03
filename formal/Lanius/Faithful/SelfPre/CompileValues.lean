@@ -1,5 +1,6 @@
 import Lanius.Faithful.SelfPre.Values
 import Lanius.Faithful.SelfPre.NB
+import Lanius.Faithful.SelfPre.TS
 
 /-! # Byte lists of the compile side (F14)
 

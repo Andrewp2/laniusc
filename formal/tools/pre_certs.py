@@ -600,7 +600,9 @@ def num_used(genb):
                 params[cur] = [x.strip() for x in head.split(',')[1:-1]]
                 bodies[cur] = body
                 cur = None
-    used = {k: set() for k in params}
+    aliasing = os.environ.get('PRE_NUMS_ALIAS') == '1'
+    alias = {k: match_aliases(bodies[k], params[k]) if aliasing else {} for k in params}
+    used = {k: {} for k in params}  # position -> kinds: 'nb' (its numbers), 'ts' (its types' sizes)
     changed = True
     while changed:
         changed = False
@@ -610,19 +612,84 @@ def num_used(genb):
                 callee = m.group(1)
                 args = args_after(body, m.end())
                 if callee in ('Pre_plus', 'Pre_times'):
-                    pos = range(len(args))
+                    pos = {j: {'nb'} for j in range(len(args))}
                 elif callee in used:
-                    pos = sorted(used[callee])
+                    pos = {j: set(v) for j, v in used[callee].items()}
                 else:
                     continue
-                for j in pos:
+                for j, kinds in pos.items():
                     if j >= len(args):
                         continue
-                    for i, x in enumerate(ps):
-                        if i not in used[k] and re.search(rf'\b{x}\b', args[j]):
-                            used[k].add(i)
-                            changed = True
+                    for v, kind in occurrences(args[j], kinds):
+                        for i, x in enumerate(ps):
+                            if (v == x or v in alias[k].get(x, ())) and kind not in used[k].get(i, ()):
+                                used[k].setdefault(i, set()).add(kind)
+                                changed = True
     return used
+
+
+def occurrences(arg, kinds):
+    """The variables of an argument with the kind of use: under `SrcType.size` its
+    type's size ('ts'), under `.length` none (`hb` bounds it), else the kinds given."""
+    spans = []
+    for m in re.finditer(r'SrcType\.size ', arg):
+        i, depth = m.end(), 0
+        j = i
+        while j < len(arg):
+            if arg[j] == '(':
+                depth += 1
+            elif arg[j] == ')':
+                if depth == 0:
+                    break
+                depth -= 1
+            elif arg[j] == ' ' and depth == 0:
+                break
+            j += 1
+        spans.append((i, j))
+    out = []
+    for m in re.finditer(r'\bx\d+\b', arg):
+        if arg.startswith('.length', m.end()) or arg[:m.start()].endswith('List.length '):
+            continue
+        if any(i <= m.start() < j for i, j in spans):
+            out.append((m.group(0), 'ts'))
+        else:
+            out.extend((m.group(0), kd) for kd in kinds)
+    return out
+
+
+def match_aliases(body, ps):
+    """Per parameter, the pattern variables of the `match`es on it (at any depth of
+    the match's own patterns' variables, transitively)."""
+    out = {x: set() for x in ps}
+    owner = {x: x for x in ps}
+    stack = []  # (paren depth, the parameters the scrutinee mentions)
+    depth = 0
+    i = 0
+    while i < len(body):
+        ch = body[i]
+        if ch == '(':
+            depth += 1
+        elif ch == ')':
+            while stack and stack[-1][0] == depth:
+                stack.pop()
+            depth -= 1
+        m = re.match(r'match (.*?) with', body[i:]) if body.startswith('match ', i) else None
+        if m:
+            src = {owner[v] for v in re.findall(r'\bx\d+\b', m.group(1)) if v in owner}
+            stack.append((depth, src))
+            i += m.end()
+            continue
+        if ch == '|' and stack and stack[-1][0] == depth:
+            a = re.match(r'\|([^|]*?)=>', body[i:])
+            if a:
+                for v in re.findall(r'\bx\d+\b', a.group(1)):
+                    for x in stack[-1][1]:
+                        out[x].add(v)
+                        owner[v] = x
+                i += a.end()
+                continue
+        i += 1
+    return out
 
 
 def nb_fields(formal):
@@ -643,18 +710,36 @@ def num_hyps(e, k, xs, tys):
     """The number hypotheses of `pre_k` (none outside `--compile`)."""
     if not NUMS['on']:
         return []
-    out = []
     if k in COMPILE_NUM_SKIP or k in os.environ.get('PRE_NUMS_SKIP', '').split(','):
         return []
-    for i in sorted(NUMS['used'].get(f'Pre_{k}', ())):
-        if i >= len(xs):
+    out = []
+    used = NUMS['used'].get(f'Pre_{k}', {})
+    for i in sorted(used):
+        if i >= len(xs) or 'nb' not in used[i]:
             continue
         t = tys[i].strip()
         if t == 'Nat':
             out.append(f'{xs[i]} ≤ M')
         elif not nb_flat(t):
             out.append(f'nb {xs[i]} ≤ M')
+    # a type's slot count (`ts`, SelfPre/TS.lean) is at most the front end's weight limit
+    for i in sorted(used):
+        if i < len(xs) and 'ts' in used[i] and not ts_flat(tys[i]):
+            out.append(f'ts {xs[i]} ≤ {WEIGHT}')
     return out
+
+
+WEIGHT = '4194304'  # Lanius.Mini.weightLimit
+
+
+def ts_flat(t):
+    t = t.strip()
+    while t.startswith('(') and t.endswith(')'):
+        t = t[1:-1].strip()
+    m = re.match(r'(List|Option) (.+)$', t)
+    if m:
+        return ts_flat(m.group(2))
+    return t not in NUMS['ts_types']
 
 
 def nb_flat(t):
@@ -681,6 +766,20 @@ def num_facts(e, k, xs, tys, names):
     j = nhb
     for h in num_hyps(e, k, xs.split(), tys):
         x = h.split()[1] if h.startswith('nb ') else None
+        if h.startswith('ts '):
+            y = h.split()[1]
+            t = tys[xs.split().index(y)].strip()
+            if t == 'Lanius.Mini.SrcType':
+                out += f'  have hs_{y} : Lanius.Mini.SrcType.size {y} ≤ {WEIGHT} := Nat.le_trans (size_le_tySlots {y}) {hyps[j]}\n'
+            for f, _ in NUMS['fields'].get(t, []):
+                ft = NUMS['ftype'][(t, f)]
+                if ts_flat(ft):
+                    continue
+                q = t.split('.')[-1]
+                out += f'  have hs_{y}_{f} : ts {y}.{f} ≤ {WEIGHT} := Nat.le_trans (ts_le_{q}_{f} {y}) {hyps[j]}\n'
+                if ft == 'Lanius.Mini.SrcType':
+                    out += (f'  have hz_{y}_{f} : Lanius.Mini.SrcType.size {y}.{f} ≤ {WEIGHT} := '
+                            f'Nat.le_trans (size_le_tySlots {y}.{f}) hs_{y}_{f}\n')
         if x is not None:
             t = tys[xs.split().index(x)].strip()
             for f, is_nat in NUMS['fields'].get(t, []):
@@ -1067,6 +1166,8 @@ def main():
         nb_path = os.path.join(formal, 'Lanius', 'Faithful', 'SelfPre', 'NB.lean')
         NUMS.update(on=True, used=num_used(genb), fields=nb_fields(formal))
         NUMS['types'] = set(re.findall(r'instance : NB (Lanius\.Mini\.\w+) := ⟨(?!fun _ => 0)', open(nb_path).read()))
+        ts_path = os.path.join(formal, 'Lanius', 'Faithful', 'SelfPre', 'TS.lean')
+        NUMS['ts_types'] = set(re.findall(r'instance : TS (Lanius\.Mini\.\w+) := ⟨(?!fun _ => 0)', open(ts_path).read()))
         POST_HAND.update(auto_bytes(g))
         POST_HAND.update(COMPILE_POST_HAND)
     e = Emit(g)
