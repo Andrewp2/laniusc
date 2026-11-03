@@ -1914,6 +1914,23 @@ its reference type. Besides these leaves it needs, at least:
 - `Keeps` that lets a callee change the caller's cells through references;
 - right-hand sides with effects (a call that writes the place's cell).
 
+**Stage 2's design points (decided 11-03, coordinator, on leafA's
+stage 2 plan).**
+- What a return may name: a function that has homes and returns a type
+  containing a slice is rejected unless the slice comes from a parameter.
+  It is conservative, it follows point 9's rule (rejected until a static
+  check shows it), and it can be relaxed later. The proof reads it as a
+  decidable fact on the lowered function: its return type has no slice, or
+  it has no homes. The same rule covers a `return` from inside a homed let,
+  and lets holding slices of inner homes.
+- Homed reads appear in statement positions only: the lowering never puts
+  a homed local's read or a dereference into a pure `Expr`.
+- The homes are recorded in the scope (`Binding.home`), and the reference
+  context is `RCtx.ofScope`, not a separate context; S3 and S6 are shaped
+  that way.
+- The proof's `under` bound becomes `< st.nextCell` (internal to the
+  proof; nothing in the compiler changes).
+
 **The trusted-base delta.** `Heap`, `Exec`, `Step` and the x86 side do not
 change: frame memory, `Frame`, and the 1-, 4- and 8-byte loads and stores
 are already there. The graph itself adds only untrusted definitions. Stage 1
