@@ -1018,11 +1018,25 @@ verified compiler's locals are 64-bit slots with no address. The design:
      sp.decls.statics` and make the instance. The process theorems use
      `elfStatics binary stack` and prove both. (4) Core's `writeText`
      returns the bytes written, not 0, as laniusc's `write_text` does
-     (`write_line` adds the counts); trusted, in TRUSTED_BASE. (5) Staging:
-     `hostService?` names host ids `2^32 + 8` (`write_text`) and `2^32 + 9`
-     (`write_newline`), but `eval_host` lowers neither call yet; that is
-     stage S4, after S3 lets the mini `write` system call read the static
-     region. `static_byte_is` compares the byte with the char as `u64`s
+     (`write_line` adds the counts); trusted, in TRUSTED_BASE. (5) S3
+     (11-03): the mini `write` system call reads its bytes with
+     `Heap.span`: frame memory when the range lies below `top`, otherwise
+     the static region when it lies wholly inside it (and `top <=
+     staticBase`); any other range still stops the program. The x86 side
+     reads the same bytes from the ELF's static segment (`bytesAt_span`,
+     by `Rel.statics`). No write ever targets the static region: it is
+     read-only, as laniusc's rodata is. (6) S4 (11-03): `eval_host` lowers
+     host id `2^32 + 8` (`write_text(handle: i32, text: str)`) and `2^32 +
+     9` (`write_newline(handle: i32)`), in a second function
+     `eval_host_text` that `eval_host` falls back to (one `if` chain of ten
+     arms left the budget tactic's `simp` over its step limit; later host
+     groups get their own fallback the same way). `write_text` on handle
+     1 or 2 is the chunked `write` loop of `write_bytes` over the str's
+     static bytes and returns their count (`hostText_exec`); any other
+     handle returns -1 without a system call, which matches Core because
+     no file is open in a lowered program (`HeapCorr`). `write_newline`
+     stores 10 in a slot and runs `write_byte`'s code, returning 1 or
+     -1. `static_byte_is` compares the byte with the char as `u64`s
      (`((b as i32) as u32) as u64`): the extracted subset compares no
      `i32` and casts no `u8` to `u64`, and the `u8` comparison of a
      variable left the self program's certificate stuck. The self program

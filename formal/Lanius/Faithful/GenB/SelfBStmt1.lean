@@ -16,6 +16,26 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.SelfCert
 open Lanius.Faithful.Budget
 
+abbrev BStmt_path_spellings (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.CTree} {x2 : Lanius.Mini.CTree} {v0 v1 v2 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepCTree x1 v1 → RepCTree x2 v2 →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_path_spellings n x0 x1 x2 = k ∧ (RepOption 138 (RepList 31 (RepList 25 RepNat))) (Lanius.Mini.pathSpellings x0 x1 x2) w
+
+abbrev BStmt_p_struct (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value} {k : Nat},
+    qcall spW prims uc n ix [] = some (w, k) →
+    qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.Inline.pStruct) w
+
+abbrev BStmt_p_enum (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value} {k : Nat},
+    qcall spW prims uc n ix [] = some (w, k) →
+    qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.Inline.pEnum) w
+
+abbrev BStmt_single_of_mini_selfhost_TypeDecl (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.TypeDecl} {v0 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → RepTypeDecl x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_single_of_mini_selfhost_TypeDecl n x0 = k ∧ (RepList 104 RepTypeDecl) ([x0]) w
+
 abbrev BStmt_type_decls (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.TypeDecl} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 208 RepTypeDecl) x0 v0 →
@@ -4650,15 +4670,5 @@ abbrev BStmt_covered_use (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
   ∀ {x0 : Nat} {x1 : Lanius.Mini.CTree} {x2 : List Lanius.Mini.CTree} {x3 : Nat} {x4 : Lanius.Mini.CTree} {x5 : List Lanius.Mini.CTree} {x6 : Lanius.Mini.CTree} {x7 : Bool} {v0 v1 v2 v3 v4 v5 v6 v7 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5, v6, v7] = some (w, k) → RepNat x0 v0 → RepCTree x1 v1 → (RepList 82 RepCTree) x2 v2 → RepNat x3 v3 → RepCTree x4 v4 → (RepList 82 RepCTree) x5 v5 → RepCTree x6 v6 → RepBool x7 v7 → k < b → Pre_covered_use n x0 x1 x2 x3 x4 x5 x6 x7 b →
     qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5, v6, v7] = some (w, k) ∧ Cost_covered_use n x0 x1 x2 x3 x4 x5 x6 x7 = k ∧ (RepOption 321 RepArmUse) (Lanius.Mini.coveredUse x0 x1 x2 x3 x4 x5 x6 x7) w
-
-abbrev BStmt_known_use (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.CTree} {x2 : List Lanius.Mini.CTree} {x3 : Nat} {x4 : Lanius.Mini.CTree} {x5 : List Lanius.Mini.CTree} {x6 : Lanius.Mini.CTree} {x7 : Option Bool} {v0 v1 v2 v3 v4 v5 v6 v7 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5, v6, v7] = some (w, k) → RepNat x0 v0 → RepCTree x1 v1 → (RepList 82 RepCTree) x2 v2 → RepNat x3 v3 → RepCTree x4 v4 → (RepList 82 RepCTree) x5 v5 → RepCTree x6 v6 → (RepOption 308 RepBool) x7 v7 → k < b → Pre_known_use n x0 x1 x2 x3 x4 x5 x6 x7 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5, v6, v7] = some (w, k) ∧ Cost_known_use n x0 x1 x2 x3 x4 x5 x6 x7 = k ∧ (RepOption 321 RepArmUse) (Lanius.Mini.knownUse x0 x1 x2 x3 x4 x5 x6 x7) w
-
-abbrev BStmt_named_known (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.TypeDecl} {x1 : List Nat} {x2 : Option (List (List Nat))} {v0 v1 v2 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepTypeDecl x0 v0 → (RepList 25 RepNat) x1 v1 → (RepOption 138 (RepList 31 (RepList 25 RepNat))) x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_named_known n x0 x1 x2 = k ∧ (RepOption 308 RepBool) (Lanius.Mini.namedKnown x0 x1 x2) w
 
 end Lanius.Faithful.SelfBudget

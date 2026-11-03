@@ -42,6 +42,7 @@ import all Lanius.Mini.Compiler.P.floatApply
 import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.guardAnd
 import all Lanius.Mini.Compiler.P.hostRandomCode
+import all Lanius.Mini.Compiler.P.evalHost
 import all Lanius.Mini.Compiler.P.indexOf
 import all Lanius.Mini.Compiler.P.iteThen
 import all Lanius.Mini.Compiler.P.killShared

@@ -20,6 +20,73 @@ open Lanius.Faithful.Budget
 
 noncomputable section
 
+mutual
+def Pre_lowered_all : Nat → Nat → Lanius.Mini.Decls → List Lanius.Mini.Inst → List Lanius.Mini.Inst → Nat → Prop
+  | 0, x12, x25, x39, x58, b => True
+  | n + 1, x12, x25, x39, x58, b => (match x58 with | [] => True | x182 :: x185 => ((Pre_lower_named n (x12 - 1) x25 x39 x182.decl x182.args b) ∧ (∀ b1 : Nat, (Cost_lower_named n (x12 - 1) x25 x39 x182.decl x182.args) < b → b1 = b - (Cost_lower_named n (x12 - 1) x25 x39 x182.decl x182.args) → (Pre_lowered_all n x12 x25 x39 x185 b1))))
+termination_by structural fuel => fuel
+end
+
+end
+
+noncomputable section
+
+def Cost_sint_at : Nat → Lanius.Mini.UintTy → BitVec 32 → Lanius.Mini.SrcExpr → Nat
+  | 0, x8, x19, x27 => 18446744073709551616
+  | n + 1, x8, x19, x27 => (if (Lanius.Mini.sintFits x8 x19) = true then 1 else 0)
+
+end
+
+noncomputable section
+
+def Cost_int_literal_at : Nat → Lanius.Mini.SrcType → BitVec 32 → Lanius.Mini.SrcExpr → Nat
+  | 0, x15, x27, x35 => 18446744073709551616
+  | n + 1, x15, x27, x35 => (match x15 with | .i32 => 0 | .bool => 0 | .uint x133 => 0 | .struct x186 x190 => 0 | .enum x217 x221 => 0 | .ptr => 0 | .slice x281 => 0 | .array x314 x318 => 0 | .unit => 0 | .isize => 1 | .char => 0 | .float x448 => 0 | .sint x471 => (Cost_sint_at n x471 x27 x35) | .view x510 => 0 | .str => 0)
+
+end
+
+noncomputable section
+
+def Cost_int_at : Nat → Option Lanius.Mini.SrcType → BitVec 32 → Lanius.Mini.SrcExpr → Nat
+  | 0, x7, x44, x52 => 18446744073709551616
+  | n + 1, x7, x44, x52 => (match x7 with | some x135 => (Cost_int_literal_at n x135 x44 x52) | none => 0)
+
+end
+
+noncomputable section
+
+def Cost_neg_wide_isize : Nat → BitVec 64 → Lanius.Mini.SrcExpr → Nat
+  | 0, x15, x23 => 18446744073709551616
+  | n + 1, x15, x23 => (if (decide (x15.toNat ≤ (9223372036854775808#64).toNat)) = true then 1 else 0)
+
+end
+
+noncomputable section
+
+def Cost_neg_wide_sint : Nat → Lanius.Mini.UintTy → BitVec 64 → Lanius.Mini.SrcExpr → Nat
+  | 0, x14, x25, x33 => 18446744073709551616
+  | n + 1, x14, x25, x33 => (if ((Lanius.Mini.sintWide x14) && (decide (x25.toNat ≤ (9223372036854775808#64).toNat))) = true then 1 else 0)
+
+end
+
+noncomputable section
+
+def Cost_neg_wide_at : Nat → Option Lanius.Mini.SrcType → BitVec 64 → Lanius.Mini.SrcExpr → Nat
+  | 0, x12, x49, x57 => 18446744073709551616
+  | n + 1, x12, x49, x57 => (match x12 with | some x157 => (match x157 with | .i32 => 0 | .bool => 0 | .uint x254 => 0 | .struct x282 x286 => 0 | .enum x317 x321 => 0 | .ptr => 0 | .slice x377 => 0 | .array x414 x418 => 0 | .unit => 0 | .isize => (Cost_neg_wide_isize n x49 x57) | .char => 0 | .float x563 => 0 | .sint x590 => (Cost_neg_wide_sint n x590 x49 x57) | .view x639 => 0 | .str => 0) | none => 0)
+
+end
+
+noncomputable section
+
+def Cost_least_cast : Nat → Lanius.Mini.UintTy → BitVec 32 → Lanius.Mini.SrcExpr → Nat
+  | 0, x11, x22, x30 => 18446744073709551616
+  | n + 1, x11, x22, x30 => (let k2 := 1; let k3 := 0; (if (!(Lanius.Mini.sintFits x11 x22)) = true then (if (Lanius.Mini.sintFits x11 (((0#32) - x22))) = true then k2 else k3) else k3))
+
+end
+
+noncomputable section
+
 def Cost_neg_least_at : Nat → Lanius.Mini.UintTy → Lanius.Mini.SrcExpr → Lanius.Mini.SrcExpr → Nat
   | 0, x13, x24, x36 => 18446744073709551616
   | n + 1, x13, x24, x36 => (match x24 with | .int x96 => (Cost_least_cast n x13 x96 x36) | .boolean x139 => 0 | .unsigned x165 x168 => 0 | .local x191 => 0 | .field x215 x219 => 0 | .negate x243 => 0 | .not x264 => 0 | .apply x287 x291 x294 => 0 | .cast x316 x319 => 0 | .null => 0 | .char x369 => 0 | .float x404 x408 => 0)

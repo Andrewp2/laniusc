@@ -55,6 +55,7 @@ import all Lanius.Faithful.Gen.SelfSrcC_enumVariants
 import all Lanius.Faithful.Gen.SelfSrcC_equality
 import all Lanius.Faithful.Gen.SelfSrcC_evalDivide
 import all Lanius.Faithful.Gen.SelfSrcC_evalDivideSint
+import all Lanius.Faithful.Gen.SelfSrcC_evalHost
 import all Lanius.Faithful.Gen.SelfSrcC_evalNot
 import all Lanius.Faithful.Gen.SelfSrcC_evalSame
 import all Lanius.Faithful.Gen.SelfSrcC_extentAfter

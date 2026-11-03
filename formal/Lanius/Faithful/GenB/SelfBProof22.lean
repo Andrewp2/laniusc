@@ -18,6 +18,51 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.SelfCert
 open Lanius.Faithful.Budget
 
+theorem bproof_eval_divide_sint {spW sp : SrcProgram} {prims : Prims} {ix_eval_divide_sint ix_plus ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_SrcType_is_sint ix_signed_div ix_UintTy_is_wide ix_overflow_guard : Nat}
+    (fnW : spW.funcs[ix_eval_divide_sint]? = some (src_eval_divide_sint ix_plus ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_SrcType_is_sint ix_signed_div ix_UintTy_is_wide ix_overflow_guard)) (fn : sp.funcs[ix_eval_divide_sint]? = some (src_eval_divide_sint ix_plus ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_SrcType_is_sint ix_signed_div ix_UintTy_is_wide ix_overflow_guard))
+    (np : prims.isPrim ix_eval_divide_sint = false)
+    (back : Certified (∀ {n : Nat}, Stmt_eval_divide_sint sp prims ix_eval_divide_sint n))
+    (b_plus : Certified (∀ {n : Nat}, BStmt_plus spW sp prims ix_plus n))
+    (pp_boxed_of_mini_selfhost_Stmt : prims.isPrim ix_boxed_of_mini_selfhost_Stmt = true) (bx_boxed_of_mini_selfhost_Stmt : prims.boxed.contains ix_boxed_of_mini_selfhost_Stmt = true)
+    (b_check_then : Certified (∀ {n : Nat}, BStmt_check_then spW sp prims ix_check_then n))
+    (b_SrcType_is_sint : Certified (∀ {n : Nat}, BStmt_SrcType_is_sint spW sp prims ix_SrcType_is_sint n))
+    (b_signed_div : Certified (∀ {n : Nat}, BStmt_signed_div spW sp prims ix_signed_div n))
+    (b_UintTy_is_wide : Certified (∀ {n : Nat}, BStmt_UintTy_is_wide spW sp prims ix_UintTy_is_wide n))
+    (b_overflow_guard : Certified (∀ {n : Nat}, BStmt_overflow_guard spW sp prims ix_overflow_guard n)) {n : Nat} :
+    BStmt_eval_divide_sint spW sp prims ix_eval_divide_sint n := by
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w k b h r0 r1 r2 r3 r4 hb pre
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_eval_divide_sint [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_eval_divide_sint (n + 1) x0 x1 x2 x3 x4 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_eval_divide_sint, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_eval_divide_sint.eq_def] at pre
+    simp only at pre
+    budget Cost_eval_divide_sint
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4⟩
+
+theorem bproof_eval_divide_uint {spW sp : SrcProgram} {prims : Prims} {ix_eval_divide_uint ix_plus ix_boxed_of_mini_selfhost_Stmt ix_SrcType_is_uint ix_unsigned_div : Nat}
+    (fnW : spW.funcs[ix_eval_divide_uint]? = some (src_eval_divide_uint ix_plus ix_boxed_of_mini_selfhost_Stmt ix_SrcType_is_uint ix_unsigned_div)) (fn : sp.funcs[ix_eval_divide_uint]? = some (src_eval_divide_uint ix_plus ix_boxed_of_mini_selfhost_Stmt ix_SrcType_is_uint ix_unsigned_div))
+    (np : prims.isPrim ix_eval_divide_uint = false)
+    (back : Certified (∀ {n : Nat}, Stmt_eval_divide_uint sp prims ix_eval_divide_uint n))
+    (b_plus : Certified (∀ {n : Nat}, BStmt_plus spW sp prims ix_plus n))
+    (pp_boxed_of_mini_selfhost_Stmt : prims.isPrim ix_boxed_of_mini_selfhost_Stmt = true) (bx_boxed_of_mini_selfhost_Stmt : prims.boxed.contains ix_boxed_of_mini_selfhost_Stmt = true)
+    (b_SrcType_is_uint : Certified (∀ {n : Nat}, BStmt_SrcType_is_uint spW sp prims ix_SrcType_is_uint n))
+    (b_unsigned_div : Certified (∀ {n : Nat}, BStmt_unsigned_div spW sp prims ix_unsigned_div n)) {n : Nat} :
+    BStmt_eval_divide_uint spW sp prims ix_eval_divide_uint n := by
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w k b h r0 r1 r2 r3 r4 hb pre
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_eval_divide_uint [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_eval_divide_uint (n + 1) x0 x1 x2 x3 x4 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_eval_divide_uint, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_eval_divide_uint.eq_def] at pre
+    simp only at pre
+    budget Cost_eval_divide_uint
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4⟩
+
 theorem bproof_eval_divide {spW sp : SrcProgram} {prims : Prims} {ix_eval_divide ix_plus ix_boxed_of_mini_selfhost_Stmt ix_SrcType_is_i32 ix_SrcType_is_isize ix_SrcType_sint_kind ix_signed_div ix_eval_divide_sint ix_SrcType_uint_kind ix_eval_divide_uint : Nat}
     (fnW : spW.funcs[ix_eval_divide]? = some (src_eval_divide ix_plus ix_boxed_of_mini_selfhost_Stmt ix_SrcType_is_i32 ix_SrcType_is_isize ix_SrcType_sint_kind ix_signed_div ix_eval_divide_sint ix_SrcType_uint_kind ix_eval_divide_uint)) (fn : sp.funcs[ix_eval_divide]? = some (src_eval_divide ix_plus ix_boxed_of_mini_selfhost_Stmt ix_SrcType_is_i32 ix_SrcType_is_isize ix_SrcType_sint_kind ix_signed_div ix_eval_divide_sint ix_SrcType_uint_kind ix_eval_divide_uint))
     (np : prims.isPrim ix_eval_divide = false)

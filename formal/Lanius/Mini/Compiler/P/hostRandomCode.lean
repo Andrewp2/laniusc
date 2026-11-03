@@ -36,42 +36,13 @@ def hostTextCode (slot : Nat) : Stmt :=
 def hostNewlineCode (slot : Nat) : Stmt :=
   Stmt.seq (Stmt.assign (slot + 1) (Expr.lit 10)) (hostByteCode slot)
 
-def evalHost (callee : Nat) (slot : Nat) (args : EvaluatedArgs) : Option Evaluated :=
-  if decide (callee = 4294967296) && typesSame args.types (SrcType.i32 :: [SrcType.i32]) then
-    some ({ stmt := Stmt.seq args.stmt (hostByteCode slot), ty := SrcType.i32 } : Evaluated)
+def evalHostText (callee : Nat) (slot : Nat) (args : EvaluatedArgs) : Option Evaluated :=
+  if decide (callee = 4294967304) && typesSame args.types (SrcType.i32 :: [SrcType.str]) then
+    some ({ stmt := Stmt.seq args.stmt (hostTextCode slot), ty := SrcType.i32 } : Evaluated)
   else
-    if decide (callee = 4294967297) && typesSame args.types (SrcType.ptr :: [SrcType.uint UintTy.usize]) then
-      some ({ stmt := Stmt.seq args.stmt (hostWriteCode 1 slot), ty := SrcType.i32 } : Evaluated)
+    if decide (callee = 4294967305) && typesSame args.types [SrcType.i32] then
+      some ({ stmt := Stmt.seq args.stmt (hostNewlineCode slot), ty := SrcType.i32 } : Evaluated)
     else
-      if decide (callee = 4294967298) && typesSame args.types (SrcType.ptr :: [SrcType.uint UintTy.usize]) then
-        some ({ stmt := Stmt.seq args.stmt (hostWriteCode 2 slot), ty := SrcType.i32 } : Evaluated)
-      else
-        if decide (callee = 4294967299) && typesSame args.types (SrcType.ptr :: [SrcType.uint UintTy.usize]) then
-          some ({ stmt := Stmt.seq args.stmt (hostReadCode slot), ty := SrcType.i32 } : Evaluated)
-        else
-          if decide (callee = 4294967300) && typesSame args.types [SrcType.i32] then
-            some ({ stmt := Stmt.seq args.stmt (hostSleepCode slot), ty := SrcType.i32 } : Evaluated)
-          else
-            if decide (callee = 4294967301) && typesSame args.types (SrcType.ptr :: [SrcType.uint UintTy.usize]) then
-              some ({ stmt := Stmt.seq args.stmt (hostClockCode 1 slot), ty := SrcType.i32 } : Evaluated)
-            else
-              if decide (callee = 4294967302) && typesSame args.types (SrcType.ptr :: [SrcType.uint UintTy.usize]) then
-                some ({ stmt := Stmt.seq args.stmt (hostClockCode 0 slot), ty := SrcType.i32 } : Evaluated)
-              else
-                if decide (callee = 4294967303) && typesSame args.types (SrcType.ptr :: [SrcType.uint UintTy.usize]) then
-                  some ({ stmt := Stmt.seq args.stmt (hostRandomCode slot), ty := SrcType.i32 } : Evaluated)
-                else
-                  none
-
-def evalCall (sig : Option Sig) (callee : Nat) (slot : Nat) (args : Option EvaluatedArgs) : Option Evaluated :=
-  match sig with
-  | none =>
-    (match args with
-     | none => none
-     | some a => evalHost callee slot a)
-  | some s =>
-    match args with
-    | none => none
-    | some a => evalCallSig s callee slot a
+      none
 
 end Lanius.Mini

@@ -3974,6 +3974,16 @@ pub fn host_newline_code(slot: usize) -> Stmt {
     return Seq(boxed(Assign(plus(slot, 1), Lit(10))), boxed(host_byte_code(slot)));
 }
 
+pub fn eval_host_text(callee: usize, slot: usize, args: EvaluatedArgs) -> core::option::Option<Evaluated> {
+    if ((callee == 4294967304) && types_same(args.types, cons(I32, single(Str)))) {
+        return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_text_code(slot))), ty: I32 });
+    }
+    if ((callee == 4294967305) && types_same(args.types, single(I32))) {
+        return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_newline_code(slot))), ty: I32 });
+    }
+    return None;
+}
+
 pub fn eval_host(callee: usize, slot: usize, args: EvaluatedArgs) -> core::option::Option<Evaluated> {
     if ((callee == 4294967296) && types_same(args.types, cons(I32, single(I32)))) {
         return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_byte_code(slot))), ty: I32 });
@@ -3999,7 +4009,7 @@ pub fn eval_host(callee: usize, slot: usize, args: EvaluatedArgs) -> core::optio
     if ((callee == 4294967303) && types_same(args.types, cons(Ptr, single(Uint(Usize))))) {
         return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_random_code(slot))), ty: I32 });
     }
-    return None;
+    return eval_host_text(callee, slot, args);
 }
 
 pub fn eval_call(sig: core::option::Option<Sig>, callee: usize, slot: usize, args: core::option::Option<EvaluatedArgs>) -> core::option::Option<Evaluated> {

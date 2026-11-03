@@ -93,46 +93,46 @@ theorem ok_host_clock_code : FnOk prog prims info (784, ⟨2, [], 0⟩) :=
 theorem ok_host_random_code : FnOk prog prims info (785, ⟨2, [], 0⟩) :=
   fnOk_of fn_host_random_code (by decide +kernel)
 
-theorem ok_short_circuit : FnOk prog prims info (786, ⟨0, [], 0⟩) :=
+theorem ok_eval_host_text : FnOk prog prims info (786, ⟨4, [], 0⟩) :=
+  fnOk_of fn_eval_host_text (by decide +kernel)
+
+theorem ok_short_circuit : FnOk prog prims info (787, ⟨0, [], 0⟩) :=
   fnOk_of fn_short_circuit (by decide +kernel)
 
-theorem ok_then_check : FnOk prog prims info (787, ⟨1, [], 0⟩) :=
+theorem ok_then_check : FnOk prog prims info (788, ⟨1, [], 0⟩) :=
   fnOk_of fn_then_check (by decide +kernel)
 
-theorem ok_operand_guard : FnOk prog prims info (788, ⟨2, [], 0⟩) :=
+theorem ok_operand_guard : FnOk prog prims info (789, ⟨2, [], 0⟩) :=
   fnOk_of fn_operand_guard (by decide +kernel)
 
-theorem ok_eval_right : FnOk prog prims info (789, ⟨2, [], 0⟩) :=
+theorem ok_eval_right : FnOk prog prims info (790, ⟨2, [], 0⟩) :=
   fnOk_of fn_eval_right (by decide +kernel)
 
-theorem ok_SrcType_is_float_any : FnOk prog prims info (790, ⟨0, [], 0⟩) :=
+theorem ok_SrcType_is_float_any : FnOk prog prims info (791, ⟨0, [], 0⟩) :=
   fnOk_of fn_SrcType_is_float_any (by decide +kernel)
 
-theorem ok_negate_float : FnOk prog prims info (791, ⟨1, [], 0⟩) :=
+theorem ok_negate_float : FnOk prog prims info (792, ⟨1, [], 0⟩) :=
   fnOk_of fn_negate_float (by decide +kernel)
 
-theorem ok_SrcType_float_ty : FnOk prog prims info (792, ⟨0, [], 0⟩) :=
+theorem ok_SrcType_float_ty : FnOk prog prims info (793, ⟨0, [], 0⟩) :=
   fnOk_of fn_SrcType_float_ty (by decide +kernel)
 
-theorem ok_SrcType_sint_kind : FnOk prog prims info (793, ⟨0, [], 0⟩) :=
+theorem ok_SrcType_sint_kind : FnOk prog prims info (794, ⟨0, [], 0⟩) :=
   fnOk_of fn_SrcType_sint_kind (by decide +kernel)
 
-theorem ok_negate_signed : FnOk prog prims info (794, ⟨2, [], 0⟩) :=
+theorem ok_negate_signed : FnOk prog prims info (795, ⟨2, [], 0⟩) :=
   fnOk_of fn_negate_signed (by decide +kernel)
 
-theorem ok_eval_payload : FnOk prog prims info (795, ⟨3, [], 0⟩) :=
+theorem ok_eval_payload : FnOk prog prims info (796, ⟨3, [], 0⟩) :=
   fnOk_of fn_eval_payload (by decide +kernel)
 
-theorem ok_eval_arm : FnOk prog prims info (796, ⟨0, [], 0⟩) :=
+theorem ok_eval_arm : FnOk prog prims info (797, ⟨0, [], 0⟩) :=
   fnOk_of fn_eval_arm (by decide +kernel)
 
-theorem ok_signed_div : FnOk prog prims info (798, ⟨0, [], 0⟩) :=
+theorem ok_signed_div : FnOk prog prims info (799, ⟨0, [], 0⟩) :=
   fnOk_of fn_signed_div (by decide +kernel)
 
-theorem ok_eval_divide_sint : FnOk prog prims info (799, ⟨3, [], 0⟩) :=
-  fnOk_of fn_eval_divide_sint (by decide +kernel)
-
 theorem chunk16 : AllFns prog prims info part16 :=
-  ⟨ok_lower_append, ok_lower_tag, ok_length_of_mini_selfhost_SrcArm, ok_lower_arms, ok_lower_set_scalar, ok_offset_after, ok_declared_same, ok_word_types, ok_declared_variants, ok_word_variants, ok_eval_load, ok_eval_load_byte, ok_eval_word_element, ok_eval_array_element, ok_eval_values, ok_eval_field_of, ok_checked_element, ok_checked_load, ok_store_any, ok_SrcEff_is_slice, ok_array_call_sig, ok_host_byte_code, ok_host_write_code, ok_host_read_code, ok_host_sleep_code, ok_host_clock_code, ok_host_random_code, ok_short_circuit, ok_then_check, ok_operand_guard, ok_eval_right, ok_SrcType_is_float_any, ok_negate_float, ok_SrcType_float_ty, ok_SrcType_sint_kind, ok_negate_signed, ok_eval_payload, ok_eval_arm, ok_signed_div, ok_eval_divide_sint, trivial⟩
+  ⟨ok_lower_append, ok_lower_tag, ok_length_of_mini_selfhost_SrcArm, ok_lower_arms, ok_lower_set_scalar, ok_offset_after, ok_declared_same, ok_word_types, ok_declared_variants, ok_word_variants, ok_eval_load, ok_eval_load_byte, ok_eval_word_element, ok_eval_array_element, ok_eval_values, ok_eval_field_of, ok_checked_element, ok_checked_load, ok_store_any, ok_SrcEff_is_slice, ok_array_call_sig, ok_host_byte_code, ok_host_write_code, ok_host_read_code, ok_host_sleep_code, ok_host_clock_code, ok_host_random_code, ok_eval_host_text, ok_short_circuit, ok_then_check, ok_operand_guard, ok_eval_right, ok_SrcType_is_float_any, ok_negate_float, ok_SrcType_float_ty, ok_SrcType_sint_kind, ok_negate_signed, ok_eval_payload, ok_eval_arm, ok_signed_div, trivial⟩
 
 end Lanius.Faithful.SelfTerm

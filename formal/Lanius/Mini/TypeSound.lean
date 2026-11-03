@@ -51,6 +51,7 @@ import all Lanius.Mini.Compiler.P.extentAfter
 import all Lanius.Mini.Compiler.P.floatApply
 import all Lanius.Mini.Compiler.P.guardAnd
 import all Lanius.Mini.Compiler.P.hostRandomCode
+import all Lanius.Mini.Compiler.P.evalHost
 import all Lanius.Mini.Compiler.P.imageLimit
 import all Lanius.Mini.Compiler.P.indexOf
 import all Lanius.Mini.Compiler.P.iteThen
@@ -1566,7 +1567,7 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
       · simp at h
       · rename_i ea hea
         have typedArgs := evalArgs_typed target sigsOk args ok (by simpa [SrcEff.types] using dd) hea
-        simp only [evalHost] at h
+        simp only [evalHost, evalHostText] at h
         split at h
         · rename_i checks
           simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
@@ -1631,6 +1632,22 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
           subst h
           rw [typesSame_toCore same] at typedArgs
           exact ExprHasType.call _ (sigsOk.2 _ .fillSecureBytes hsig (by simp [hostService?, hostBase])) typedArgs
+        split at h
+        · rename_i checks
+          simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+          obtain ⟨rfl, same⟩ := checks
+          simp only [Option.some.injEq] at h
+          subst h
+          rw [typesSame_toCore same] at typedArgs
+          exact ExprHasType.call _ (sigsOk.2 _ .writeText hsig (by simp [hostService?, hostBase])) typedArgs
+        split at h
+        · rename_i checks
+          simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+          obtain ⟨rfl, same⟩ := checks
+          simp only [Option.some.injEq] at h
+          subst h
+          rw [typesSame_toCore same] at typedArgs
+          exact ExprHasType.call _ (sigsOk.2 _ .writeNewline hsig (by simp [hostService?, hostBase])) typedArgs
         · simp at h
     · rename_i sig hsig
       split at h

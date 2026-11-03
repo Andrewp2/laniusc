@@ -42,7 +42,7 @@ theorem ok_cons_of_mini_selfhost_Expr : FnOk prog prims info (535, ⟨0, [], 0�
 theorem ok_eval_call_sig : FnOk prog prims info (536, ⟨3, [], 0⟩) :=
   fnOk_of fn_eval_call_sig (by decide +kernel)
 
-theorem ok_eval_host : FnOk prog prims info (537, ⟨3, [], 0⟩) :=
+theorem ok_eval_host : FnOk prog prims info (537, ⟨5, [], 0⟩) :=
   fnOk_of fn_eval_host (by decide +kernel)
 
 theorem ok_cons_args : FnOk prog prims info (538, ⟨1, [], 0⟩) :=
