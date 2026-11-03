@@ -273,6 +273,9 @@ theorem SrcType.HoldsAt.sliceIn {places : List Addressed} : ∀ {ty : SrcType} {
   | .sint _, _, _, _, .sint h, _, s => (h.noSlice s).elim
   | .view _, _, _, _, .view _ _, _, s => by cases s
   | .str, _, _, _, .str _ _ _ _, _, s => by cases s
+  | .ref _, _, _, _, .ref held, _, s => by
+    obtain ⟨_, _, rfl, _⟩ := held
+    cases s
   termination_by structural _ _ _ _ h => h
 
 theorem FieldsHold.sliceIn {places : List Addressed} : ∀ {fs : List SrcType} {vs : List Core.Value} {env : Env} {slot : Nat},

@@ -1973,17 +1973,24 @@ compiler accepts no reference form until stage 2 proves its lowering. Stage
 - S3: Source's places, borrow, dereference and assignment through a place,
   their `toCore`, and Core's typing of `Place.deref`; their lowering is
   `none`.
-- S4: stage 2's top statement as an open statement, about the lowering
-  entry that accepts references (`compile_source_refs`, the same lowering
-  without the rejection), so its reductions go into the graph.
+- S4: stage 2's top statement as an open statement, `SourceRefsCorrect`:
+  `compileSource` itself is correct for programs with references (one
+  compiler, the one that self-hosts, and one top theorem; decided 11-03 by
+  the coordinator, so there is no separate reference-accepting entry and no
+  flag in the trusted `SrcDecls`). While every reference form is rejected
+  it is `compileSource_correct`.
 - S5: the front end reads `&T`, `&mut T`, borrows, `*r` and the auto-deref
   of reference parameters, and the lifetime check rejects the forms point 9
   lists; `&self` keeps its by-value reading (point 10 waits for stage 2,
   or every `&self` method would stop compiling).
 - S6: the lowering itself (homes, `RPlace.code`, loads and stores, reference
-  arguments) behind `compile_source_refs`, tested against Core.
-When stage 2's statement is proved, `compile_source` drops the rejection and
-point 10 lands.
+  arguments) in `compile_source`, tested against Core, and
+  `compileSource_correct`'s proof extended with the F5 leaves. If that
+  cannot be done in one step, `compileSource_correct` takes for a while an
+  untrusted, decidable hypothesis `noRefs`, computed on the program
+  (recorded in TRUSTED_BASE as temporary; the self program discharges it by
+  `decide`), and `SourceRefsCorrect`, without it, is what is left to prove.
+When it is proved, point 10 lands.
 
 **Out of scope for F5.** Functions that return references (100 in the
 stdlib), and references in lets, struct fields, elements or results, until

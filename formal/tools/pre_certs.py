@@ -640,11 +640,18 @@ class Emit:
         zero = [f'fun {p[1]} M {p[2]} h => absurd h (Nat.lt_irrefl _)'.replace('  ', ' ')
                 for k, p in zip(ks, map(self.post_parts, ks))]
         names = [f'post_{k}' for k in ks]
+        # the induction hypothesis, stated once: each step lemma restating it took
+        # half of the module's text, elaborated, checked and stored again
+        ih = conj
+        if len(ks) > 1:
+            out.append(f'/-- The posts of `{first}`\'s group at fuel `n`. -/\n'
+                       f'def PostIH_{first} (n : Nat) : Prop :=\n    {conj}\n')
+            ih = f'PostIH_{first} n'
         # one step lemma per member (its own command: heartbeats, errors)
         for k in ks:
             binders, xs, nm, st = self.post_parts(k, '(n + 1)')
             h = self.head(k)
-            out.append(f'theorem post_step_{k} (n : Nat) (ih :\n    {conj}) :\n    {"∀ " + binders + ", " if binders else ""}{st} := by\n'
+            out.append(f'theorem post_step_{k} (n : Nat) (ih :\n    {ih}) :\n    {"∀ " + binders + ", " if binders else ""}{st} := by\n'
                        f'  {"obtain " + tuple_(self.used(k, ks, "Cost", "post")) + " := ih" if len(ks) > 1 else "have " + names[0] + " := ih"}\n'
                        '  ' + ' '.join(['intro', xs, 'M', nm]).replace('  ', ' ').strip() + '\n' +
                        (HAND_CASE[k].replace('\n    ', '\n').lstrip(' ').join(['  ', '']) if k in HAND_CASE else
@@ -727,9 +734,15 @@ class Emit:
                 for k, p in zip(ks, parts)]
         names = [f'pre_{k}' for k in ks]
         out = []
+        # the induction hypothesis, stated once (as the posts')
+        ih = conj
+        if len(ks) > 1:
+            out.append(f'/-- The preconditions\' lemmas of `{first}`\'s group at fuel `n`. -/\n'
+                       f'def PreIH_{first} (n : Nat) : Prop :=\n    {conj}\n')
+            ih = f'PreIH_{first} n'
         for k in ks:
             binders, xs, nm, st = self.pre_parts(k, '(n + 1)')
-            out.append(f'theorem pre_step_{k} (n : Nat) (ih :\n    {conj}) :\n    ∀ {binders} (b : Nat), {st} := by\n'
+            out.append(f'theorem pre_step_{k} (n : Nat) (ih :\n    {ih}) :\n    ∀ {binders} (b : Nat), {st} := by\n'
                        f'  {"obtain " + tuple_(self.used(k, ks, "Pre", "pre")) + " := ih" if len(ks) > 1 else "have " + names[0] + " := ih"}\n'
                        f'  intro {xs} b M {nm}\n'
                        f'  rw [Pre_{k}.eq_def]; dsimp only\n' +
