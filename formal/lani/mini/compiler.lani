@@ -273,6 +273,9 @@ pub enum Stmt {
     // target = the frame pointer less bytes, which becomes the frame
     // pointer: this activation's frame memory (not produced yet)
     Frame(usize, usize),
+    // target = the static region's base plus offset: the address of byte
+    // offset of the read-only bytes the loader places with the code
+    Static(usize, usize),
 }
 
 pub struct Func {
@@ -286,6 +289,8 @@ pub struct Func {
 
 pub struct Program {
     funcs: List<Func>,
+    // The read-only bytes the loader places with the code (`Static`).
+    statics: List<u8>,
 }
 
 // The abstract target: an accumulator (rax), frame slots, and a program
@@ -334,6 +339,10 @@ pub enum Instr {
     // Frame memory: the frame pointer (rbx) drops by bytes, to no lower than
     // the limit (r14), and rax gets its new value
     Frame(usize),
+    // lea rax, [r8 + offset]; sub rax, r12: r8 holds the static bytes'
+    // address, so rax gets their heap address, the static region's base
+    // plus offset
+    Static(usize),
 }
 
 impl BinOp {
@@ -462,6 +471,7 @@ impl Instr {
             Instr::Fp(operation, slot) -> plus(10, operation.size()),
             Instr::Sys(kind, slot) -> 34,
             Instr::Frame(bytes) -> 39,
+            Instr::Static(offset) -> 10,
         };
     }
 }
@@ -525,6 +535,7 @@ pub fn compile_stmt(base: usize, pos: usize, brk: usize, cont: usize, s: Stmt) -
         Divide(word, operation, target, left, right) -> concat(concat(concat(compile_expr(base, left, 0), single(Store(base))), compile_expr(base, right, 1)), cons(Div(word, operation, base), single(Store(target)))),
         Stmt::Sys(kind, target, args) -> concat(compile_args(base, args, 0), cons(Instr::Sys(kind, base), single(Store(target)))),
         Stmt::Frame(target, bytes) -> cons(Instr::Frame(bytes), single(Store(target))),
+        Stmt::Static(target, offset) -> cons(Instr::Static(offset), single(Store(target))),
     };
 }
 
@@ -626,6 +637,7 @@ impl Stmt {
             Divide(word, operation, target, left, right) -> locals > target && left.within(locals) && right.within(locals),
             Stmt::Sys(kind, target, args) -> locals > target && (length(args) == 3) && all_within(locals, args),
             Stmt::Frame(target, bytes) -> locals > target && 2147483648 > bytes,
+            Stmt::Static(target, offset) -> locals > target && 2147483648 > offset,
         };
     }
 
@@ -648,6 +660,7 @@ impl Stmt {
             Divide(word, operation, target, left, right) -> max_of(left.temps(), plus(right.temps(), 1)),
             Stmt::Sys(kind, target, args) -> args_temps(args, 0),
             Stmt::Frame(target, bytes) -> 0,
+            Stmt::Static(target, offset) -> 0,
         };
     }
 }
@@ -1108,6 +1121,7 @@ impl Instr {
             Instr::Fp(operation, slot) -> operation.bytes(slot),
             Instr::Sys(kind, slot) -> sys_bytes(kind, slot),
             Instr::Frame(bytes) -> frame_memory_bytes(bytes),
+            Instr::Static(offset) -> concat(cons(73, cons(141, single(128))), concat(le32(offset as i32), cons(76, cons(41, single(224))))),
         };
     }
 }
@@ -1157,18 +1171,20 @@ pub fn encode_onto(place: Place, pc: usize, code: List<Instr>, tail: List<u8>) -
 // link_from's bytes, each function's built in front of the rest instead of
 // concatenated onto it: concat copies its first list, and the heap of the
 // self-built verified compiler is never freed (roadmap F12).
-pub fn link_onto(entries: List<usize>, start: usize, codes: List<Code>) -> List<u8> {
+pub fn link_onto(entries: List<usize>, start: usize, codes: List<Code>, tail: List<u8>) -> List<u8> {
     return match (codes) {
-        Nil -> empty(),
-        Cons(code, rest) -> concat(prologue(code.slots), encode_onto(Place { body: plus(start, 24), slots: code.slots, entries: entries }, 0, code.instrs, link_onto(entries, plus(start, code.size()), unbox(rest)))),
+        Nil -> tail,
+        Cons(code, rest) -> concat(prologue(code.slots), encode_onto(Place { body: plus(start, 24), slots: code.slots, entries: entries }, 0, code.instrs, link_onto(entries, plus(start, code.size()), unbox(rest), tail))),
     };
 }
 
-// Machine code of a compiled program.
+// Machine code of a compiled program: the image is the code, then the
+// static bytes.
 pub struct Binary {
     codes: List<Code>,
     entries: List<usize>,
     image: List<u8>,
+    statics: List<u8>,
 }
 
 // Images are small enough for every rel32 displacement.
@@ -1188,16 +1204,16 @@ pub fn linked_size(codes: List<Code>) -> usize {
 pub fn compile_program(prog: Program) -> core::option::Option<Binary> {
     return match (compile_funcs(arities(prog.funcs), prog.funcs)) {
         None -> None,
-        Some(codes) -> link(codes),
+        Some(codes) -> link(codes, prog.statics),
     };
 }
 
 // extract: inline
-fn link(codes: List<Code>) -> core::option::Option<Binary> {
+fn link(codes: List<Code>, statics: List<u8>) -> core::option::Option<Binary> {
     let entries: List<usize> = layout(0, codes);
-    let image: List<u8> = link_onto(entries, 0, codes);
-    if (image_limit() >= linked_size(codes)) {
-        return Some(Binary { codes: codes, entries: entries, image: image });
+    let image: List<u8> = link_onto(entries, 0, codes, statics);
+    if (image_limit() >= plus(linked_size(codes), length(statics))) {
+        return Some(Binary { codes: codes, entries: entries, image: image, statics: statics });
     }
     return None;
 }
@@ -1290,6 +1306,7 @@ impl Stmt {
             Divide(word, operation, target, left, right) -> Stmt::Divide(word, operation, target, left, right),
             Stmt::Sys(kind, target, args) -> Stmt::Sys(kind, target, args),
             Stmt::Frame(target, bytes) -> Stmt::Frame(target, bytes),
+            Stmt::Static(target, offset) -> Stmt::Static(target, offset),
         };
     }
 }
@@ -1320,7 +1337,7 @@ pub fn func_count(ms: List<Module>) -> usize {
 
 pub fn link_program(ms: List<Module>) -> core::option::Option<Program> {
     if (modules_ok(module_exports(ms), ms)) {
-        return Some(Program { funcs: resolve_modules(module_firsts(0, ms), func_count(ms), 0, ms) });
+        return Some(Program { funcs: resolve_modules(module_firsts(0, ms), func_count(ms), 0, ms), statics: empty() });
     }
     return None;
 }
@@ -1382,6 +1399,7 @@ impl Instr {
             Instr::Fp(operation, slot) -> single(Piece::Bytes(self.encode(place, pc))),
             Instr::Sys(kind, slot) -> single(Piece::Bytes(self.encode(place, pc))),
             Instr::Frame(bytes) -> single(Piece::Bytes(self.encode(place, pc))),
+            Instr::Static(offset) -> single(Piece::Bytes(self.encode(place, pc))),
         };
     }
 }
@@ -6412,6 +6430,7 @@ impl Stmt {
             Stmt::Divide(word, operation, target, left, right) -> max_of(plus(target, 1), max_of(left.extent(), right.extent())),
             Stmt::Sys(kind, target, args) -> max_of(plus(target, 1), args_extent(args)),
             Stmt::Frame(target, bytes) -> plus(target, 1),
+            Stmt::Static(target, offset) -> plus(target, 1),
         };
     }
 }
@@ -7190,6 +7209,7 @@ pub fn assign_agrees(index: usize, value: Expr, other: Stmt) -> bool {
         Divide(w, o, t, l, r) -> false,
         Stmt::Sys(c, t, a) -> false,
         Stmt::Frame(t, b) -> false,
+        Stmt::Static(t, o) -> false,
     };
 }
 
@@ -7212,6 +7232,7 @@ pub fn call_agrees(target: usize, count: usize, callee: usize, args: List<Expr>,
         Divide(w, o, t, l, r) -> false,
         Stmt::Sys(c, t, a) -> false,
         Stmt::Frame(t, b) -> false,
+        Stmt::Static(t, o) -> false,
     };
 }
 
@@ -7234,6 +7255,7 @@ pub fn ret_agrees(values: List<Expr>, other: Stmt) -> bool {
         Divide(w, o, t, l, r) -> false,
         Stmt::Sys(c, t, a) -> false,
         Stmt::Frame(t, b) -> false,
+        Stmt::Static(t, o) -> false,
     };
 }
 
@@ -7256,6 +7278,7 @@ pub fn alloc_agrees(target: usize, shift: usize, size: Expr, other: Stmt) -> boo
         Divide(w, o, t, l, r) -> false,
         Stmt::Sys(c, t, a) -> false,
         Stmt::Frame(t, b) -> false,
+        Stmt::Static(t, o) -> false,
     };
 }
 
@@ -7278,6 +7301,30 @@ pub fn frame_agrees(target: usize, bytes: usize, other: Stmt) -> bool {
         Divide(w, o, t, l, r) -> false,
         Stmt::Sys(c, t, a) -> false,
         Stmt::Frame(t, b) -> (target == t) && (bytes == b),
+        Stmt::Static(t, o) -> false,
+    };
+}
+
+pub fn static_agrees(target: usize, offset: usize, other: Stmt) -> bool {
+    return match (other) {
+        Skip -> false,
+        Assign(i, v) -> false,
+        Seq(f, s) -> false,
+        Ite(c, t, e) -> false,
+        Loop(c, b) -> false,
+        Stmt::Call(t, n, f, a) -> false,
+        Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
+        Alloc(t, sh, sz) -> false,
+        LoadByte(t, a) -> false,
+        StoreByte(a, v) -> false,
+        LoadWord(w, t, a) -> false,
+        StoreWord(w, a, v) -> false,
+        Divide(w, o, t, l, r) -> false,
+        Stmt::Sys(c, t, a) -> false,
+        Stmt::Frame(t, b) -> false,
+        Stmt::Static(t, o) -> (target == t) && (offset == o),
     };
 }
 
@@ -7300,6 +7347,7 @@ pub fn load_byte_agrees(target: usize, address: Expr, other: Stmt) -> bool {
         Divide(w, o, t, l, r) -> false,
         Stmt::Sys(c, t, a) -> false,
         Stmt::Frame(t, b) -> false,
+        Stmt::Static(t, o) -> false,
     };
 }
 
@@ -7322,6 +7370,7 @@ pub fn store_byte_agrees(address: Expr, value: Expr, other: Stmt) -> bool {
         Divide(w, o, t, l, r) -> false,
         Stmt::Sys(c, t, a) -> false,
         Stmt::Frame(t, b) -> false,
+        Stmt::Static(t, o) -> false,
     };
 }
 
@@ -7344,6 +7393,7 @@ pub fn load_word_agrees(width: MemWidth, target: usize, address: Expr, other: St
         Divide(w, o, t, l, r) -> false,
         Stmt::Sys(c, t, a) -> false,
         Stmt::Frame(t, b) -> false,
+        Stmt::Static(t, o) -> false,
     };
 }
 
@@ -7366,6 +7416,7 @@ pub fn store_word_agrees(width: MemWidth, address: Expr, value: Expr, other: Stm
         Divide(w, o, t, l, r) -> false,
         Stmt::Sys(c, t, a) -> false,
         Stmt::Frame(t, b) -> false,
+        Stmt::Static(t, o) -> false,
     };
 }
 
@@ -7388,6 +7439,7 @@ pub fn divide_agrees(word: Word, operation: DivOp, target: usize, left: Expr, ri
         Divide(w, o, t, l, r) -> (word.number() == w.number()) && (operation.number() == o.number()) && (target == t) && left.agrees(l) && right.agrees(r),
         Stmt::Sys(c, t, a) -> false,
         Stmt::Frame(t, b) -> false,
+        Stmt::Static(t, o) -> false,
     };
 }
 
@@ -7410,6 +7462,7 @@ pub fn sys_agrees(kind: Syscall, target: usize, args: List<Expr>, other: Stmt) -
         Divide(w, o, t, l, r) -> false,
         Stmt::Sys(c, t, a) -> (kind.number() == c.number()) && (target == t) && args_agree(args, a),
         Stmt::Frame(t, b) -> false,
+        Stmt::Static(t, o) -> false,
     };
 }
 
@@ -7634,6 +7687,7 @@ impl Stmt {
             Divide(w, o, t, l, r) -> false,
             Stmt::Sys(c, t, a) -> false,
             Stmt::Frame(t, b) -> false,
+            Stmt::Static(t, o) -> false,
         };
     }
 
@@ -7656,6 +7710,7 @@ impl Stmt {
             Divide(w, o, t, l, r) -> false,
             Stmt::Sys(c, t, a) -> false,
             Stmt::Frame(t, b) -> false,
+            Stmt::Static(t, o) -> false,
         };
     }
 
@@ -7679,6 +7734,7 @@ impl Stmt {
             Divide(w, o, t, l, r) -> false,
             Stmt::Sys(c, t, a) -> false,
             Stmt::Frame(t, b) -> false,
+            Stmt::Static(t, o) -> false,
         };
     }
 
@@ -7701,6 +7757,7 @@ impl Stmt {
             Divide(w, o, t, l, r) -> false,
             Stmt::Sys(c, t, a) -> false,
             Stmt::Frame(t, b) -> false,
+            Stmt::Static(t, o) -> false,
         };
     }
 
@@ -7726,6 +7783,7 @@ impl Stmt {
             Divide(w, o, target, l, r) -> kill_shared(facts, target),
             Stmt::Sys(c, t, a) -> empty(),
             Stmt::Frame(t, b) -> kill_shared(facts, t),
+            Stmt::Static(t, o) -> kill_shared(facts, t),
         };
     }
 
@@ -7750,6 +7808,7 @@ impl Stmt {
             Divide(w, o, t, l, r) -> !l.mentions(index) && !r.mentions(index),
             Stmt::Sys(c, t, a) -> !mentions_any(a, index),
             Stmt::Frame(t, b) -> true,
+            Stmt::Static(t, o) -> true,
         };
     }
 
@@ -7776,6 +7835,7 @@ impl Stmt {
             Divide(w, o, t, l, r) -> false,
             Stmt::Sys(c, t, a) -> false,
             Stmt::Frame(t, b) -> false,
+            Stmt::Static(t, o) -> false,
         };
     }
 
@@ -7808,6 +7868,7 @@ impl Stmt {
             Divide(word, operation, target, left, right) -> divide_agrees(word, operation, target, left.subst(facts), right.subst(facts), other),
             Stmt::Sys(kind, target, args) -> sys_agrees(kind, target, subst_all(args, facts), other),
             Stmt::Frame(target, bytes) -> frame_agrees(target, bytes, other),
+            Stmt::Static(target, offset) -> static_agrees(target, offset, other),
         };
     }
 }
@@ -7833,6 +7894,7 @@ fn dead_agrees(first: Stmt, second: Stmt, facts: List<Fact>, other: Stmt) -> boo
         Divide(w, o, t, l, r) -> false,
         Stmt::Sys(c, t, a) -> false,
         Stmt::Frame(t, b) -> false,
+        Stmt::Static(t, o) -> false,
     };
 }
 
@@ -7856,6 +7918,7 @@ fn seq_agrees(first: Stmt, second: Stmt, facts: List<Fact>, other: Stmt) -> bool
         Divide(w, o, t, l, r) -> false,
         Stmt::Sys(c, t, a) -> false,
         Stmt::Frame(t, b) -> false,
+        Stmt::Static(t, o) -> false,
     };
 }
 
@@ -7896,6 +7959,7 @@ fn ite_agrees(test: Expr, then_branch: Stmt, else_branch: Stmt, facts: List<Fact
         Divide(w, o, t, l, r) -> false,
         Stmt::Sys(c, t, a) -> false,
         Stmt::Frame(t, b) -> false,
+        Stmt::Static(t, o) -> false,
     };
 }
 
@@ -7920,6 +7984,7 @@ fn loop_agrees(condition: Expr, body: Stmt, other: Stmt) -> bool {
         Divide(w, o, t, l, r) -> false,
         Stmt::Sys(c, t, a) -> false,
         Stmt::Frame(t, b) -> false,
+        Stmt::Static(t, o) -> false,
     };
 }
 
@@ -8125,6 +8190,7 @@ impl Stmt {
             Divide(w, o, t, l, r) -> false,
             Stmt::Sys(c, t, a) -> false,
             Stmt::Frame(t, b) -> false,
+            Stmt::Static(t, o) -> false,
         };
     }
 
@@ -8148,6 +8214,7 @@ impl Stmt {
             Divide(word, operation, target, left, right) -> Divide(word, operation, target, left.subst(facts).optimize(), right.subst(facts).optimize()),
             Stmt::Sys(kind, target, args) -> Stmt::Sys(kind, target, optimize_all(subst_all(args, facts))),
             Stmt::Frame(target, bytes) -> Stmt::Frame(target, bytes),
+            Stmt::Static(target, offset) -> Stmt::Static(target, offset),
         };
     }
 }
@@ -8171,7 +8238,7 @@ pub fn optimize_funcs(funcs: List<Func>) -> List<Func> {
 }
 
 pub fn optimize_program(prog: Program) -> Program {
-    return Program { funcs: optimize_funcs(prog.funcs) };
+    return Program { funcs: optimize_funcs(prog.funcs), statics: prog.statics };
 }
 
 // The pipeline: optimize, keep the result when the validator accepts it and
@@ -8195,7 +8262,7 @@ pub fn compile_optimized(prog: Program) -> core::option::Option<Binary> {
 pub fn compile_lowered(funcs: core::option::Option<List<Func>>) -> core::option::Option<Binary> {
     return match (funcs) {
         None -> None,
-        Some(fs) -> compile_optimized(Program { funcs: fs }),
+        Some(fs) -> compile_optimized(Program { funcs: fs, statics: empty() }),
     };
 }
 
@@ -8331,9 +8398,9 @@ pub fn elf_base() -> usize {
     return 4294967296;
 }
 
-// The bytes before the image: the headers (120) and the startup code (85).
+// The bytes before the image: the headers (120) and the startup code (95).
 pub fn elf_before_image() -> usize {
-    return 205;
+    return 215;
 }
 
 pub fn larger(a: usize, b: usize) -> usize {
@@ -8396,11 +8463,12 @@ pub fn elf_program_header(binary: Binary, stack: usize, heap: usize) -> List<u8>
     return concat(concat(concat(kinds, places), concat(le64n(file), le64n(memory))), le64n(4096));
 }
 
-// mov reg, imm64 for rsp, r15, r12, r14, r13, r10 and rbx; call the entry; exit.
+// mov reg, imm64 for rsp, r15, r12, r14, r13, r10, rbx and r8 (the static
+// bytes' address, after the code); call the entry; exit.
 pub fn elf_startup(binary: Binary, entry: usize, stack: usize, heap: usize) -> List<u8> {
     let bottom: usize = elf_stack_base(binary);
     let top: usize = plus(bottom, stack);
-    let sets: List<u8> = concat(concat(concat(cons(72, cons(188, le64n(top))), cons(73, cons(191, le64n(plus(bottom, stack_guard(binary)))))), concat(cons(73, cons(188, le64n(top))), cons(73, cons(190, le64n(heap))))), concat(concat(cons(73, cons(189, le64n(1))), cons(73, cons(186, le64n(plus(heap, stack))))), cons(72, cons(187, le64n(plus(heap, stack))))));
+    let sets: List<u8> = concat(concat(concat(cons(72, cons(188, le64n(top))), cons(73, cons(191, le64n(plus(bottom, stack_guard(binary)))))), concat(cons(73, cons(188, le64n(top))), cons(73, cons(190, le64n(heap))))), concat(concat(cons(73, cons(189, le64n(1))), cons(73, cons(186, le64n(plus(heap, stack))))), concat(cons(72, cons(187, le64n(plus(heap, stack)))), cons(73, cons(184, le64n(plus(plus(elf_base(), elf_before_image()), linked_size(binary.codes))))))));
     let call: List<u8> = cons(232, le32(plus(get_or(binary.entries, entry, 0), 10) as i32));
     let exit: List<u8> = cons(72, cons(137, cons(199, cons(184, cons(60, cons(0, cons(0, cons(0, cons(15, single(5))))))))));
     return concat(concat(sets, call), exit);

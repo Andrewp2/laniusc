@@ -77,6 +77,7 @@ theorem heapBase_not_scratch : ¬Scratch heapBaseRegister := by unfold Scratch; 
 theorem limit_not_scratch : ¬Scratch limitRegister := by unfold Scratch; decide
 theorem top_not_scratch : ¬Scratch topRegister := by unfold Scratch; decide
 theorem stack_not_scratch : ¬Scratch stackRegister := by unfold Scratch; decide
+theorem static_not_scratch : ¬Scratch staticRegister := by unfold Scratch; decide
 
 /-- The `limit` bytes from `base`. -/
 def InHeap (base : BitVec 64) (limit : Nat) (address : BitVec 64) : Prop :=
@@ -125,6 +126,13 @@ structure Frame.Fits (frame : Frame) : Prop where
   /-- The prologue's check passed. -/
   checked : frameBytes frame.slots + 8 + frame.guard ≤ frame.window
 
+/-- Byte `k` of the static region `bytes` at heap offset `base`: in memory
+at entry, apart from the stack window and the heap. -/
+structure Frame.StaticByte (frame : Frame) (base : Nat) (bytes : List UInt8) (k : Nat) : Prop where
+  entry : frame.entry (frame.heapBase + BitVec.ofNat 64 (base + k)) = bytes.getD k 0
+  apart : ¬Below frame.top frame.window (frame.heapBase + BitVec.ofNat 64 (base + k))
+  notHeap : ¬frame.InHeap (frame.heapBase + BitVec.ofNat 64 (base + k))
+
 /-- The x86 state holds the abstract machine in this activation. -/
 structure Rel (frame : Frame) (s : State) (m : Machine) : Prop where
   rip : s.rip = frame.base + BitVec.ofNat 64 m.pc
@@ -147,6 +155,9 @@ structure Rel (frame : Frame) (s : State) (m : Machine) : Prop where
   heap : ∀ a, a < m.heap.top → s.memory (frame.heapBase + BitVec.ofNat 64 a) = m.heap.bytes a
   /-- The trace so far: only system calls add to it. -/
   io : s.io = m.heap.io
+  /-- r8 holds the static region's address. -/
+  static : frame.preserved staticRegister = frame.heapBase + BitVec.ofNat 64 m.heap.staticBase
+  statics : ∀ k, k < m.heap.statics.length → frame.StaticByte m.heap.staticBase m.heap.statics k
 
 /-- The activation has left with `value` in rax. -/
 structure Frame.Left (frame : Frame) (s : State) (value : BitVec 64) : Prop where
@@ -223,6 +234,8 @@ theorem Rel.accumulate (rel : Rel frame s m) (memory : s'.memory = s.memory) (si
   fspLe := rel.fspLe
   heap := by rw [memory]; exact rel.heap
   io := io.trans rel.io
+  static := rel.static
+  statics := rel.statics
 
 /-- `Rel.accumulate` for code that also writes r11. -/
 theorem Rel.accumulate11 (rel : Rel frame s m) (memory : s'.memory = s.memory) (size : Nat)
@@ -249,6 +262,8 @@ theorem Rel.accumulate11 (rel : Rel frame s m) (memory : s'.memory = s.memory) (
   fspLe := rel.fspLe
   heap := by rw [memory]; exact rel.heap
   io := io.trans rel.io
+  static := rel.static
+  statics := rel.statics
 
 /-- Control transfers change only rip and flags. -/
 theorem Rel.jump (rel : Rel frame s m) (memory : s'.memory = s.memory) (registers : s'.registers = s.registers)
@@ -268,6 +283,8 @@ theorem Rel.jump (rel : Rel frame s m) (memory : s'.memory = s.memory) (register
   fspLe := rel.fspLe
   heap := by rw [memory]; exact rel.heap
   io := io.trans rel.io
+  static := rel.static
+  statics := rel.statics
 
 /-! The x86 steps of the slot encodings. -/
 
@@ -735,7 +752,8 @@ theorem store_simulates (rel : Rel frame s m) (fits : frame.Fits) (inFrame : slo
   have bounded := fits.bounded
   have big := frameBytes_slots frame.slots
   refine ⟨1, s', .cons step (.refl _), Det.step step (slotStore_noRead loaded), ?_⟩
-  refine ⟨?_, rel.rbp, rel.rsp, rel.acc, ?_, ?_, rel.preserved, ?_, rel.cursor, rel.limit, rel.top, rel.fsp, rel.fspLe, ?_, rel.io⟩
+  refine ⟨?_, rel.rbp, rel.rsp, rel.acc, ?_, ?_, rel.preserved, ?_, rel.cursor, rel.limit, rel.top, rel.fsp, rel.fspLe, ?_, rel.io,
+    rel.static, rel.statics⟩
   · simp only [s', State.store64, slotStoreBytes_length]
     exact rel.advance 7
   · intro other otherInFrame
@@ -1010,6 +1028,8 @@ theorem Rel.congr (rel : Rel frame s m) {m' : Machine} (pc : m'.pc = m.pc) (acc 
   fspLe := by rw [heap]; exact rel.fspLe
   heap := by rw [heap]; exact rel.heap
   io := by rw [heap]; exact rel.io
+  static := by rw [heap]; exact rel.static
+  statics := by rw [heap]; exact rel.statics
 
 /-- The machine after copy code of `size` bytes stored `values` at `target`, ... -/
 def Machine.copied (m : Machine) (size target : Nat) (values : List (BitVec 64)) : Machine :=
@@ -1049,7 +1069,7 @@ theorem copy_simulates (rel : Rel frame s m) (fits : frame.Fits) {target : Nat} 
   refine ⟨n, s', steps, det, ?_⟩
   simp only [Machine.copied]
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, rel.limit, rel.top,
-    (registers' _ (by decide)).trans rel.fsp, rel.fspLe, ?_, io'.trans rel.io⟩
+    (registers' _ (by decide)).trans rel.fsp, rel.fspLe, ?_, io'.trans rel.io, rel.static, rel.statics⟩
   · rw [rip']
     exact rel.advance _
   · rw [registers' _ (by decide)]; exact rel.rbp
@@ -1195,6 +1215,13 @@ structure HeapAt (window : Nat) (s : State) (heap : Heap) : Prop where
   bytes : ∀ a, a < heap.top → s.memory (s.registers heapBaseRegister + BitVec.ofNat 64 a) = heap.bytes a
   apart : ∀ address, s.InHeap address → ¬Below (s.registers rspRegister + 8) (window + 8) address
   io : s.io = heap.io
+  /-- r8 holds the address of the static region, whose bytes are in memory
+  apart from the stack window and the heap. -/
+  static : s.registers staticRegister = s.registers heapBaseRegister + BitVec.ofNat 64 heap.staticBase
+  statics : ∀ k, k < heap.statics.length →
+    s.memory (s.registers heapBaseRegister + BitVec.ofNat 64 (heap.staticBase + k)) = heap.statics.getD k 0 ∧
+    ¬Below (s.registers rspRegister) window (s.registers heapBaseRegister + BitVec.ofNat 64 (heap.staticBase + k)) ∧
+    ¬s.InHeap (s.registers heapBaseRegister + BitVec.ofNat 64 (heap.staticBase + k))
 
 /-- The `window` stack bytes below the return address run from `guard` bytes
 below the limit in r15, which is above 4 GiB. -/
@@ -1261,7 +1288,8 @@ theorem call_simulates {binary : Binary} {imageBase : BitVec 64} {place : Place}
         read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = (readSlots m.slots args)[k]) →
       HeapAt inner s m.heap → StackAt binary.guard inner s →
       (P ∧ ∃ n s', Steps n s s' ∧ Det n s s' ∧ Returned inner s s' values after) ∨ Q s)
-    (counted : values.length = count) :
+    (counted : values.length = count) (sameBase : after.staticBase = m.heap.staticBase)
+    (sameStatics : after.statics = m.heap.statics) :
     (P ∧ ∃ n s', Steps n s s' ∧ Det n s s' ∧
       Rel frame s' { m with pc := m.pc + (Instr.call callee args target count).size,
                             acc := values.getLastD m.acc, slots := writeSlots m.slots target values,
@@ -1445,7 +1473,21 @@ theorem call_simulates {binary : Binary} {imageBase : BitVec 64} {place : Place}
         rw [heap2] at inHeap
         rw [rsp2, shifted] at below
         exact fits.notHeap ((below.shift (by omega)).mono (by omega)) inHeap
-      io := io1.trans rel.io }
+      io := io1.trans rel.io
+      static := by
+        rw [registers2 _ (by decide) (by decide), base2, rel.preserved _ static_not_scratch]
+        exact rel.static
+      statics := fun k within => by
+        have byte := rel.statics k within
+        rw [base2]
+        refine ⟨?_, ?_, ?_⟩
+        · rw [outside2 _ byte.apart byte.notHeap]
+          exact byte.entry
+        · intro below
+          rw [rsp2] at below
+          exact byte.apart ((below.shift (by omega)).mono (by omega))
+        · rw [heap2]
+          exact byte.notHeap }
   have stack2 : StackAt binary.guard inner s2 := by
     have stack := fits.stack
     have high := fits.high
@@ -1553,7 +1595,8 @@ theorem call_simulates {binary : Binary} {imageBase : BitVec 64} {place : Place}
                                slots := fun k => if k = target then BitVec.ofNat 64 m.heap.fsp else m.slots k,
                                heap := { after with fsp := m.heap.fsp } }
   have rel3 : Rel frame s3b m3 := by
-    refine ⟨?_, ?_, ?_, rfl, ?_, ?_, ?_, ?_, ?_, ?_, returned.top.trans top2, rbx3, ?_, ?_, returned.io⟩
+    refine ⟨?_, ?_, ?_, rfl, ?_, ?_, ?_, ?_, ?_, ?_, returned.top.trans top2, rbx3, ?_, ?_, returned.io,
+      ?_, ?_⟩
     · show s3.rip + BitVec.ofNat 64 (fspLoadBytes target).length =
         frame.base + BitVec.ofNat 64 (m.pc + 14 * args.length + 19)
       rw [rip3, fspLoadBytes_length, BitVec.add_assoc, ← BitVec.ofNat_add,
@@ -1607,6 +1650,12 @@ theorem call_simulates {binary : Binary} {imageBase : BitVec 64} {place : Place}
       show s3.memory _ = after.bytes a
       rw [← base2]
       exact returned.heap a inside
+    · show frame.preserved staticRegister = frame.heapBase + BitVec.ofNat 64 after.staticBase
+      rw [sameBase]
+      exact rel.static
+    · show ∀ k, k < after.statics.length → frame.StaticByte after.staticBase after.statics k
+      rw [sameBase, sameStatics]
+      exact rel.statics
   -- the results, copied from below the stack to `target`
   have results3 : ∀ k (bound : k < values.length),
       read64 s3b.memory (frameSlotAddress (frame.top - 8) (first + k)) = values[k] := by
@@ -1698,7 +1747,9 @@ theorem bump_simulates (rel : Rel frame s m) (fits : frame.Fits) {shift : Nat} (
       fsp := (kept _ (by decide) (by decide) (by decide) (by decide)).trans rel.fsp
       fspLe := rel.fspLe
       heap := by rw [memory]; exact rel.heap
-      io := io.trans rel.io }
+      io := io.trans rel.io
+      static := rel.static
+      statics := rel.statics }
 
 /-- `frame`: the frame pointer drops by `bytes` and the accumulator gets its new value. -/
 theorem frame_simulates (rel : Rel frame s m) (fits : frame.Fits) {bytes : Nat} (bytesSmall : bytes < 2 ^ 31)
@@ -1739,7 +1790,9 @@ theorem frame_simulates (rel : Rel frame s m) (fits : frame.Fits) {bytes : Nat} 
         show m.heap.fsp - bytes ≤ m.heap.top
         omega
       heap := by rw [memory]; exact rel.heap
-      io := io.trans rel.io }
+      io := io.trans rel.io
+      static := rel.static
+      statics := rel.statics }
 
 /-- `loadAt`: the heap byte at the accumulator. -/
 theorem loadAt_simulates (rel : Rel frame s m) (loaded : CodeAt s.memory s.rip loadAtSpec)
@@ -1750,6 +1803,31 @@ theorem loadAt_simulates (rel : Rel frame s m) (loaded : CodeAt s.memory s.rip l
   obtain ⟨s', steps, det, io, memory, rip, acc, kept⟩ := loadAt_steps s loaded
   refine ⟨2, s', steps, det, Rel.accumulate rel memory 10 rip (fun register zero _ => kept register zero) ?_ io⟩
   rw [acc, rel.heapBase, rel.acc, ← rel.heap _ inside, BitVec.ofNat_toNat, BitVec.setWidth_eq]
+
+/-- `static offset`: the heap offset of byte `offset` of the static region. -/
+theorem static_simulates (rel : Rel frame s m) {offset : Nat} (small : offset < 2 ^ 31)
+    (loaded : CodeAt s.memory s.rip (staticSpec offset)) :
+    ∃ n s', Steps n s s' ∧ Det n s s' ∧ Rel frame s' ((Instr.static offset).step m) := by
+  obtain ⟨s', steps, det, io, memory, rip, acc, kept⟩ := static_steps s offset small loaded
+  refine ⟨2, s', steps, det, Rel.accumulate rel memory 10 rip (fun register zero _ => kept register zero) ?_ io⟩
+  rw [acc, rel.preserved _ static_not_scratch, rel.static, rel.heapBase]
+  show _ = BitVec.ofNat 64 (m.heap.staticBase + offset)
+  rw [BitVec.ofNat_add]
+  bv_omega
+
+/-- `loadAt` in the static region: its byte, which the loader placed. -/
+theorem loadAtStatic_simulates (rel : Rel frame s m) (loaded : CodeAt s.memory s.rip loadAtSpec) {k : Nat}
+    (here : m.acc.toNat = m.heap.staticBase + k) (within : k < m.heap.statics.length) :
+    ∃ n s', Steps n s s' ∧ Det n s s' ∧ Rel frame s' { m with
+      pc := m.pc + Instr.loadAt.size
+      acc := BitVec.ofNat 64 (m.heap.statics.getD k 0).toNat } := by
+  obtain ⟨s', steps, det, io, memory, rip, acc, kept⟩ := loadAt_steps s loaded
+  refine ⟨2, s', steps, det, Rel.accumulate rel memory 10 rip (fun register zero _ => kept register zero) ?_ io⟩
+  have byte := rel.statics k within
+  have accEq : m.acc = BitVec.ofNat 64 (m.heap.staticBase + k) := by
+    apply BitVec.eq_of_toNat_eq
+    rw [here, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by rw [← here]; exact m.acc.isLt)]
+  rw [acc, rel.heapBase, rel.acc, accEq, rel.unchanged _ byte.apart byte.notHeap, byte.entry]
 
 /-- `storeAt slot`: the low byte of the accumulator to the heap at the offset in `slot`. -/
 theorem storeAt_simulates (rel : Rel frame s m) (fits : frame.Fits) (inFrame : slot < frame.slots)
@@ -1814,7 +1892,9 @@ theorem storeAt_simulates (rel : Rel frame s m) (fits : frame.Fits) (inFrame : s
             apply same
             have := (m.slots slot).isLt
             bv_omega
-      io := io.trans rel.io }
+      io := io.trans rel.io
+      static := rel.static
+      statics := rel.statics }
 
 /-- `loadWordAt width`: the heap word at the accumulator. -/
 theorem loadWordAt_simulates (rel : Rel frame s m) {width : MemWidth} (loaded : CodeAt s.memory s.rip (loadWordSpec width))
@@ -1897,7 +1977,9 @@ theorem storeWordAt_simulates (rel : Rel frame s m) (fits : frame.Fits) {width :
           · exact rel.heap a below
           · have := MemWidth.bytes_le width
             bv_omega
-      io := by rw [Heap.writeLE_io]; exact io.trans rel.io }
+      io := by rw [Heap.writeLE_io]; exact io.trans rel.io
+      static := by rw [(Heap.writeLE_statics _ _ _ _).1]; exact rel.static
+      statics := by rw [(Heap.writeLE_statics _ _ _ _).1, (Heap.writeLE_statics _ _ _ _).2]; exact rel.statics }
 
 /-- The bytes `write` sends from the heap are the heap's. -/
 theorem bytesAt_heap (rel : Rel frame s m) :
@@ -2116,7 +2198,9 @@ theorem read_simulates (rel : Rel frame s m) (fits : frame.Fits) (inFrame : slot
           split
           · rfl
           · exact rel.heap a below
-        io := io7 }
+        io := io7
+        static := rel.static
+        statics := rel.statics }
   next => cases ran
 
 /-- `sys .clock slot`: as `sys .read slot`, but the kernel stores the clock's
@@ -2285,7 +2369,9 @@ theorem clock_simulates (rel : Rel frame s m) (fits : frame.Fits) (inFrame : slo
           split
           · rfl
           · exact rel.heap a below
-        io := io7 }
+        io := io7
+        static := rel.static
+        statics := rel.statics }
   next => cases ran
 
 /-- `sys .random slot`: as `sys .read slot`, but the first argument is made
@@ -2455,7 +2541,9 @@ theorem random_simulates (rel : Rel frame s m) (fits : frame.Fits) (inFrame : sl
           split
           · rfl
           · exact rel.heap a below
-        io := io7 }
+        io := io7
+        static := rel.static
+        statics := rel.statics }
   next => cases ran
 
 /-- `sys .poll slot`: as `sys .write slot`, but rsi keeps the second argument
@@ -2573,7 +2661,9 @@ theorem poll_simulates (rel : Rel frame s m) (fits : frame.Fits) (inFrame : slot
         limit := rel.limit
         top := rel.top
         heap := fun a below => by rw [memory7]; exact rel.heap a below
-        io := rel.io }
+        io := rel.io
+        static := rel.static
+        statics := rel.statics }
   next => cases ran
 
 /-- `sys kind slot`: the arguments to rdi, rsi (made an address) and rdx, the
@@ -2696,7 +2786,9 @@ theorem sys_simulates (rel : Rel frame s m) (fits : frame.Fits) (inFrame : slot 
         limit := rel.limit
         top := rel.top
         heap := rel.heap
-        io := by rw [io7, r7, r6, r2, rel.io, address, bytesAt_heap rel _ _ inside] }
+        io := by rw [io7, r7, r6, r2, rel.io, address, bytesAt_heap rel _ _ inside]
+        static := rel.static
+        statics := rel.statics }
   next => cases ran
 
 theorem CodeAt.middle {memory : Memory} {address : BitVec 64} {first middle rest : List UInt8}
@@ -2796,6 +2888,7 @@ theorem step_simulates (body : Body frame binary imageBase place instrs) (fits :
     | op word operation slot => exact .inl <| forward fetched rfl <| op_simulates word operation rel fitted loaded
     | cmp word operation slot => exact .inl <| forward fetched rfl <| cmp_simulates word operation rel fitted loaded
     | fp operation slot => exact .inl <| forward fetched rfl <| fp_simulates operation rel fitted loaded
+    | static offset => exact .inl <| forward fetched rfl <| static_simulates rel fitted loaded
     | jmp | jz | call | ret | bump | loadAt | storeAt | loadWordAt | storeWordAt | div | sys | frame =>
       simp [Instr.straight] at isStraight
   | @jmp target _ fetched =>
@@ -2812,7 +2905,7 @@ theorem step_simulates (body : Body frame binary imageBase place instrs) (fits :
     have fitted : target ≤ codeSize instrs := body.fits _ (fetch_mem fetched)
     have := jz_simulates rel (by simp only [Instr.size] at bound; omega) (by omega) loaded
     exact .inl (by rwa [if_neg nonzero] at this)
-  | @call callee args target count values after _ fetched returns counted =>
+  | @call callee args target count values after _ fetched returns counted sameBase sameStatics =>
     obtain ⟨loaded, apart, bound, codeHeap⟩ := body.fetch rel fetched
     obtain ⟨-, argsCount, argsFit, targetFit, positive⟩ := body.fits _ (fetch_mem fetched)
     obtain ⟨needC, needFits, room, contract⟩ := callContract _ _ _ _ _ returns
@@ -2822,7 +2915,8 @@ theorem step_simulates (body : Body frame binary imageBase place instrs) (fits :
       rel fits loaded apart codeHeap body.slots body.entries body.base (by omega)
       (by have := body.entrySmall callee; omega) argsFit argsCount targetFit positive body.image body.imageApart
       body.imageHeap body.guard (by omega) room
-      (fun s a b c d e f g h => (contract s a b c d e f g h).imp (fun r => ⟨trivial, r⟩) id) counted with
+      (fun s a b c d e f g h => (contract s a b c d e f g h).imp (fun r => ⟨trivial, r⟩) id) counted
+      sameBase sameStatics with
       ⟨-, finished⟩ | ⟨k, s2, -, det, short, faults⟩
     · exact .inl (forward fetched rfl finished)
     · exact .inr ⟨by omega, det.faults faults⟩
@@ -2832,6 +2926,9 @@ theorem step_simulates (body : Body frame binary imageBase place instrs) (fits :
   | loadAt fetched inside =>
     obtain ⟨loaded, -⟩ := body.fetch rel fetched
     exact .inl <| forward fetched rfl <| loadAt_simulates rel loaded inside
+  | loadAtStatic fetched _ here within =>
+    obtain ⟨loaded, -⟩ := body.fetch rel fetched
+    exact .inl <| forward fetched rfl <| loadAtStatic_simulates rel loaded here within
   | storeAt fetched inside =>
     obtain ⟨loaded, -⟩ := body.fetch rel fetched
     exact .inl <| forward fetched rfl <|

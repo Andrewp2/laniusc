@@ -735,7 +735,8 @@ theorem Stmt.factsAfter_hold {prog : Program} (s : Stmt) :
   | ret => intro _ _ _ _ _ _ _ _; exact Facts.Hold.nil _
   | alloc target => intro _ _ _ _ _ _ hold run; cases run; exact kill_hold hold target _
   | frame target => intro _ _ _ _ _ _ hold run; cases run; exact kill_hold hold target _
-  | loadByte target => intro _ _ _ _ _ _ hold run; cases run; exact kill_hold hold target _
+  | loadByte target => intro _ _ _ _ _ _ hold run; cases run <;> exact kill_hold hold target _
+  | static target => intro _ _ _ _ _ _ hold run; cases run; exact kill_hold hold target _
   | storeByte => intro _ _ _ _ _ _ hold run; cases run; exact hold
   | loadWord _ target => intro _ _ _ _ _ _ hold run; cases run; exact kill_hold hold target _
   | storeWord => intro _ _ _ _ _ _ hold run; cases run; exact hold
@@ -766,7 +767,7 @@ theorem Exec.stays {prog : Program} {depth : Nat} {env : Env} {heap : Heap} {s :
   | loopNext _ _ _ _ ih | loopContinued _ _ _ _ ih => exact ih stays
   | brk | cont => simp [Stmt.jumps] at stays
   | skip | assign | seqReturned | loopDone | loopReturned | loopBroke | call | ret | alloc | loadByte
-    | storeByte | loadWord | storeWord | divide | sys | frame => intro _ _; simp
+    | storeByte | loadWord | storeWord | divide | sys | frame | static | loadByteStatic => intro _ _; simp
 
 /-- Outcomes of runs from environments that differ only at `index`. -/
 def Outcome.Except (index : Nat) : Outcome → Outcome → Prop
@@ -913,6 +914,15 @@ theorem Exec.ignores {prog : Program} {depth : Nat} {env : Env} {heap : Heap} {s
     have same := Expr.eval_except h address p
     rw [same] at below ⊢
     exact ⟨_, .loadByte below, rfl, h.set target _⟩
+  | @static depth env heap target offset =>
+    intro _ env2 h
+    exact ⟨_, .static, rfl, h.set target _⟩
+  | @loadByteStatic depth env heap target address k above here within =>
+    intro p env2 h
+    simp only [Stmt.ignores, Bool.not_eq_eq_eq_not, Bool.not_true] at p
+    have same := Expr.eval_except h address p
+    rw [same] at here
+    exact ⟨_, .loadByteStatic above here within, rfl, h.set target _⟩
   | @storeByte depth env heap address value below =>
     intro p env2 h
     simp only [Stmt.ignores, Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at p
@@ -1019,6 +1029,7 @@ theorem Exec.killed {prog : Program} (s : Stmt) :
     exact .ret
   | alloc => intro _ _ _ _ _ k; simp [Stmt.kills] at k
   | frame => intro _ _ _ _ _ k; simp [Stmt.kills] at k
+  | static => intro _ _ _ _ _ k; simp [Stmt.kills] at k
   | loadByte => intro _ _ _ _ _ k; simp [Stmt.kills] at k
   | storeByte => intro _ _ _ _ _ k; simp [Stmt.kills] at k
   | loadWord => intro _ _ _ _ _ k; simp [Stmt.kills] at k
@@ -1062,6 +1073,10 @@ theorem allocAgrees_cases {target shift : Nat} {size : Expr} {other : Stmt}
 theorem frameAgrees_cases {target bytes : Nat} {other : Stmt}
     (h : frameAgrees target bytes other = true) : other = .frame target bytes := by
   cases other <;> simp_all [frameAgrees]
+
+theorem staticAgrees_cases {target offset : Nat} {other : Stmt}
+    (h : staticAgrees target offset other = true) : other = .static target offset := by
+  cases other <;> simp_all [staticAgrees]
 
 theorem loadByteAgrees_cases {target : Nat} {address : Expr} {other : Stmt}
     (h : loadByteAgrees target address other = true) :
@@ -1326,6 +1341,16 @@ theorem Exec.agrees {p q : Program} (ok : funcsAgree p.funcs q.funcs = true) {de
     have := (Expr.agrees_eval _ _ same env).trans (Expr.subst_eval hold address)
     rw [← this] at below ⊢
     exact .loadByte below
+  | @static depth env heap target offset =>
+    intro facts s' hold h
+    rw [staticAgrees_cases h]
+    exact .static
+  | @loadByteStatic depth env heap target address k above here within =>
+    intro facts s' hold h
+    obtain ⟨address', rfl, same⟩ := loadByteAgrees_cases h
+    have := (Expr.agrees_eval _ _ same env).trans (Expr.subst_eval hold address)
+    rw [← this] at here
+    exact .loadByteStatic above here within
   | @storeByte depth env heap address value below =>
     intro facts s' hold h
     obtain ⟨address', value', rfl, sameAddress, sameValue⟩ := storeByteAgrees_cases h

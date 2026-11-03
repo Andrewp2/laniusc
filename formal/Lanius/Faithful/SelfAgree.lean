@@ -89,7 +89,7 @@ theorem agrees_plus : Agrees prog (wrapAt prog SelfPure.ixPlus .plus) safeW := b
 theorem agrees_times :
     Agrees (wrapAt prog SelfPure.ixPlus .plus) progW safeW := by
   refine agrees_wrapAt fun f hf vs hs call call' fuel v _ hv => ?_
-  rw [wrapAt_ne plus_ne_times, show SelfPure.ixTimes = 105 from rfl, fn_times] at hf
+  rw [wrapAt_ne plus_ne_times, show SelfPure.ixTimes = 106 from rfl, fn_times] at hf
   cases hf
   obtain ⟨a, b, rfl, h⟩ := hs.2 rfl
   have hw : (mstmt call fuel (paramEnv (src_times 50).params [.unsigned .usize a, .unsigned .usize b])
@@ -161,7 +161,7 @@ theorem qagrees_plus : QAgrees prog (wrapAt prog SelfPure.ixPlus .plus) safeW :=
 
 theorem qagrees_times : QAgrees (wrapAt prog SelfPure.ixPlus .plus) progW safeW := by
   refine qagrees_wrapAt fun f hf vs hs call call' fuel p _ hv => ?_
-  rw [wrapAt_ne plus_ne_times, show SelfPure.ixTimes = 105 from rfl, fn_times] at hf
+  rw [wrapAt_ne plus_ne_times, show SelfPure.ixTimes = 106 from rfl, fn_times] at hf
   cases hf
   obtain ⟨a, b, rfl, h⟩ := hs.2 rfl
   rw [qtimes_wrapped, Nat.mod_eq_of_lt h] at hv

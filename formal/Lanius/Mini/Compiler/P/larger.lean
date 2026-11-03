@@ -68,11 +68,11 @@ def elfProgramHeader (binary : Binary) (stack : Nat) (heap : Nat) : List UInt8 :
   let places : List UInt8 := le64n elfBase ++ le64n elfBase
   kinds ++ places ++ (le64n file ++ le64n memory) ++ le64n 4096
 
-/-- mov reg, imm64 for rsp, r15, r12, r14, r13, r10 and rbx; call the entry; exit. -/
+/-- mov reg, imm64 for rsp, r15, r12, r14, r13, r10, rbx and r8 (the static bytes' address, after the code); call the entry; exit. -/
 def elfStartup (binary : Binary) (entry : Nat) (stack : Nat) (heap : Nat) : List UInt8 :=
   let bottom : Nat := elfStackBase binary
   let top : Nat := bottom + stack
-  let sets : List UInt8 := 72 :: 188 :: le64n top ++ 73 :: 191 :: le64n (bottom + stackGuard binary) ++ (73 :: 188 :: le64n top ++ 73 :: 190 :: le64n heap) ++ (73 :: 189 :: le64n 1 ++ 73 :: 186 :: le64n (heap + stack) ++ 72 :: 187 :: le64n (heap + stack))
+  let sets : List UInt8 := 72 :: 188 :: le64n top ++ 73 :: 191 :: le64n (bottom + stackGuard binary) ++ (73 :: 188 :: le64n top ++ 73 :: 190 :: le64n heap) ++ (73 :: 189 :: le64n 1 ++ 73 :: 186 :: le64n (heap + stack) ++ (72 :: 187 :: le64n (heap + stack) ++ 73 :: 184 :: le64n (elfBase + elfBeforeImage + linkedSize binary.codes)))
   let call : List UInt8 := 232 :: le32 (BitVec.ofNat 32 (binary.entries.getD entry 0 + 10))
   let exit : List UInt8 := 72 :: 137 :: 199 :: 184 :: 60 :: 0 :: 0 :: 0 :: 15 :: [5]
   sets ++ call ++ exit
@@ -102,11 +102,11 @@ def elfFile (binary : Binary) (entry : Nat) (stack : Nat) (heap : Nat) : Option 
   let bodyCode : List Instr := compileStmt base bodyStart (pos + codeSize conditionCode) pos body
   conditionCode ++ [Instr.jz (bodyStart + codeSize bodyCode + 5)] ++ bodyCode ++ [Instr.jmp pos]
 
-@[expose] def Inline.link (codes : List Code) : Option Binary :=
+@[expose] def Inline.link (codes : List Code) (statics : List UInt8) : Option Binary :=
   let entries : List Nat := layout 0 codes
-  let image : List UInt8 := linkOnto entries 0 codes
-  if linkedSize codes ≤ imageLimit then
-    some ({ codes := codes, entries := entries, image := image } : Binary)
+  let image : List UInt8 := linkOnto entries 0 codes statics
+  if linkedSize codes + statics.length ≤ imageLimit then
+    some ({ codes := codes, entries := entries, image := image, statics := statics } : Binary)
   else
     none
 

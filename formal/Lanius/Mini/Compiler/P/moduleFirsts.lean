@@ -47,6 +47,7 @@ def Stmt.rename (self : Stmt) (table : List Nat) (missing : Nat) : Stmt :=
   | .divide word operation target left right => Stmt.divide word operation target left right
   | .sys kind target args => Stmt.sys kind target args
   | .frame target bytes => Stmt.frame target bytes
+  | .static target offset => Stmt.static target offset
 
 def renameFuncs (table : List Nat) (missing : Nat) (funcs : List Func) : List Func :=
   match funcs with
@@ -66,7 +67,7 @@ def funcCount (ms : List Module) : Nat :=
 
 def linkProgram (ms : List Module) : Option Program :=
   if modulesOk (moduleExports ms) ms then
-    some ({ funcs := resolveModules (moduleFirsts 0 ms) (funcCount ms) 0 ms } : Program)
+    some ({ funcs := resolveModules (moduleFirsts 0 ms) (funcCount ms) 0 ms, statics := [] } : Program)
   else
     none
 

@@ -54,6 +54,7 @@ def Instr.rename (table : List Nat) (missing : Nat) : Instr → Instr
   | .fp operation slot => .fp operation slot
   | .sys kind slot => .sys kind slot
   | .frame bytes => .frame bytes
+  | .static offset => .static offset
 
 def Code.rename (table : List Nat) (missing : Nat) (code : Code) : Code :=
   { slots := code.slots, instrs := code.instrs.map (Instr.rename table missing) }
@@ -565,7 +566,7 @@ theorem link_eq (ms : List Module) :
     (compileModules ms).bind linkObjects = ((linkProgram ms).bind compileProgram).map Binary.executable := by
   by_cases ok : modulesOk (moduleExports ms) ms = true
   · have meaning : linkProgram ms =
-        some { funcs := resolveModules (moduleFirsts 0 ms) ((moduleExports ms).flatten.length) 0 ms } := by
+        some { funcs := resolveModules (moduleFirsts 0 ms) ((moduleExports ms).flatten.length) 0 ms, statics := [] } := by
       simp [linkProgram, ok, funcCount_eq]
     have imports : ∀ mod found func, (moduleExports ms)[mod]? = some found → func < found.length →
         ((moduleExports ms).flatten)[(moduleFirsts 0 ms).getD mod 0 + func]? = found[func]? := by

@@ -81,7 +81,7 @@ def readSlots (slots : Nat → BitVec 64) : List Nat → List (BitVec 64)
 
 /-- Instructions that fall through to the next one. -/
 def Instr.straight : Instr → Bool
-  | .imm _ | .load _ | .store _ | .neg | .op _ _ _ | .cmp _ _ _ | .fp _ _ => true
+  | .imm _ | .load _ | .store _ | .neg | .op _ _ _ | .cmp _ _ _ | .fp _ _ | .static _ => true
   | .jmp _ | .jz _ | .call _ _ _ _ | .ret _ | .bump _ | .loadAt | .storeAt _ | .loadWordAt _
   | .storeWordAt _ _ | .div _ _ _ | .sys _ _ | .frame _ => false
 
@@ -94,6 +94,7 @@ def Instr.update : Instr → Machine → Machine
   | .op word operation slot, m => { m with acc := word.apply operation (m.slots slot) m.acc }
   | .cmp word operation slot, m => { m with acc := if word.holds operation (m.slots slot) m.acc then 1 else 0 }
   | .fp operation slot, m => { m with acc := operation.apply (m.slots slot) m.acc }
+  | .static offset, m => { m with acc := BitVec.ofNat 64 (m.heap.staticBase + offset) }
   | .jmp _, m | .jz _, m | .call _ _ _ _, m | .ret _, m | .bump _, m | .loadAt, m | .storeAt _, m
   | .loadWordAt _, m | .storeWordAt _ _, m | .div _ _ _, m | .sys _ _, m | .frame _, m => m
 
@@ -121,6 +122,7 @@ inductive Step (calls : Calls) (code : List Instr) : Machine → Machine → Pro
       Step calls code m { m with pc := m.pc + (Instr.jz target).size }
   | call : fetch code m.pc = some (.call callee args target count) →
       calls callee (readSlots m.slots args) m.heap values after → values.length = count →
+      after.staticBase = m.heap.staticBase → after.statics = m.heap.statics →
       Step calls code m { m with pc := m.pc + (Instr.call callee args target count).size, acc := values.getLastD m.acc, slots := writeSlots m.slots target values, heap := { after with fsp := m.heap.fsp } }
   | bump : fetch code m.pc = some (.bump shift) →
       alignUp m.heap.cursor shift + m.acc.toNat ≤ m.heap.limit →
@@ -132,6 +134,12 @@ inductive Step (calls : Calls) (code : List Instr) : Machine → Machine → Pro
       Step calls code m { m with
         pc := m.pc + Instr.loadAt.size
         acc := BitVec.ofNat 64 (m.heap.bytes m.acc.toNat).toNat }
+  | loadAtStatic : fetch code m.pc = some .loadAt → m.heap.top ≤ m.heap.staticBase →
+      m.acc.toNat = m.heap.staticBase + k →
+      k < m.heap.statics.length →
+      Step calls code m { m with
+        pc := m.pc + Instr.loadAt.size
+        acc := BitVec.ofNat 64 (m.heap.statics.getD k 0).toNat }
   | storeAt : fetch code m.pc = some (.storeAt slot) → (m.slots slot).toNat < m.heap.top →
       Step calls code m { m with
         pc := m.pc + (Instr.storeAt slot).size
@@ -179,9 +187,10 @@ theorem Step.mono (sub : ∀ callee args heap value after, calls callee args hea
   | jmp fetched => exact .jmp fetched
   | jzTaken fetched zero => exact .jzTaken fetched zero
   | jzNot fetched nonzero => exact .jzNot fetched nonzero
-  | call fetched returns count => exact .call fetched (sub _ _ _ _ _ returns) count
+  | call fetched returns count base statics => exact .call fetched (sub _ _ _ _ _ returns) count base statics
   | bump fetched room => exact .bump fetched room
   | loadAt fetched below => exact .loadAt fetched below
+  | loadAtStatic fetched above here within => exact .loadAtStatic fetched above here within
   | storeAt fetched below => exact .storeAt fetched below
   | loadWordAt fetched below => exact .loadWordAt fetched below
   | storeWordAt fetched below => exact .storeWordAt fetched below

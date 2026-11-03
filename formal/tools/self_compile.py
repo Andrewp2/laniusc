@@ -173,7 +173,7 @@ def program_parts(k, funcs):
         fs = f'{M}cons(func({p}, {r}, {l}, {md.lani_stmt(b)}), {fs})'
     run = f'{M}compile_program(oracle_prog{k}())'
     return ([f'    return oracle_digest_of({run});', f'    return oracle_count_of({run});'],
-            [f'fn oracle_prog{k}() -> {M}Program {{ return {M}Program {{ funcs: {fs} }}; }}', ''])
+            [f'fn oracle_prog{k}() -> {M}Program {{ return {M}Program {{ funcs: {fs}, statics: {M}empty() }}; }}', ''])
 
 
 PROGRAM_HELPERS = DIGEST + [
@@ -201,7 +201,7 @@ def module_text(tests, parts, helpers, imports):
 def lean_program(funcs):
     fs = ', '.join(f'{{ params := {p}, results := {r}, locals := {l}, body := {md.lean_stmt(b)} }}'
                    for p, r, l, b in funcs)
-    return (f'match compileProgram {{ funcs := [{fs}] }} with | none => "none" '
+    return (f'match compileProgram {{ funcs := [{fs}], statics := [] }} with | none => "none" '
             f'| some b => toString (b.image.map (·.toNat))')
 
 

@@ -145,8 +145,8 @@ theorem compileSource_stops_from {sp : SrcProgram} {binary : Binary}
       read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = bits[k])
     (heapAt : HeapAt window s heap) (stack : StackAt binary.guard window s) : Faults s := by
   obtain ⟨returns, _, funcs, lowered, compiledProgram⟩ := compileSource_some compiled
-  have stops : ∀ n, ∃ depth, Program.Stops { funcs := funcs } depth f bits heap n := fun n => by
-    obtain ⟨d, g, gFound, arity, body⟩ := callee_stops (mp := { funcs := funcs }) lowered returns
+  have stops : ∀ n, ∃ depth, Program.Stops { funcs := funcs, statics := [] } depth f bits heap n := fun n => by
+    obtain ⟨d, g, gFound, arity, body⟩ := callee_stops (mp := { funcs := funcs, statics := [] }) lowered returns
       (stmtStops_all lowered returns n) (evalExprs_values_done args 0) found fresh hc (FrameCorr.start _ frameRoom) (Nat.le_refl _) within typed bitsLen fails
     exact ⟨d, g, gFound, arity, body⟩
   exact compileOptimized_stops compiledProgram stops s imageBase window bounded loaded apart imageHeap entry params

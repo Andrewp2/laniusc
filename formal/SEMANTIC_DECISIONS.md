@@ -872,18 +872,24 @@ verified compiler's locals are 64-bit slots with no address. The design:
    - *Where the bytes are.* The literals' bytes follow the code in the
      binary's image, so the one loadable segment the loader maps (Linux's
      `Loaded`) places them; no new segment and no copy at startup. The mini
-     heap gets a read-only static region, `staticBase` and `staticSize`:
-     loads may read `[staticBase, staticBase + staticSize)`, stores only
-     below `top`, so the static bytes never change. Its mini address is
+     heap gets a read-only static region, `staticBase` and its bytes
+     `statics`: loads may read `[staticBase, staticBase + length)`, stores
+     only below `top`, so the static bytes never change. Its mini address is
      the image's x86 address less the heap's base (wrapping, so above frame
      memory in the mini address space, `top ≤ staticBase`). A new mini
      statement `Static target offset` gives `staticBase + offset`; on x86 it
-     is `lea target, [rip + d]` then `sub target, r14`, `d` reaching the
-     static bytes after the code. The calling convention (`Contract`,
-     `HeapAt`, trusted) gains the static region: the heap's base plus
-     `staticBase` is the image's base plus the code's length, the bytes
-     there are the heap's, and the region is outside the heap and the
-     stack window. Rejected alternatives: a second loadable segment above
+     is `lea rax, [r8 + offset]` then `sub rax, r12`. r8 (unused before,
+     kept across calls) holds the static bytes' x86 address, which the
+     startup code sets (`mov r8, imm64`, the image's base plus the code's
+     length). This replaces the first plan's `lea rax, [rip + d]`: rip
+     relative code would tie each function's bytes to its place in the
+     image (the linker would patch every `d`, and `Contract` would need the
+     image's base), while r8 keeps the code position independent and the
+     calling convention's new facts about one register. The calling
+     convention (`HeapAt`, trusted) gains the static region: r8 is the
+     heap's base plus `staticBase`, the bytes there are the heap's
+     `statics`, and the region is outside the heap and the stack window.
+     Rejected alternatives: a second loadable segment above
      frame memory (changes the trusted loader), a startup copy loop
      (an x86 loop proof at startup), moving the stack so the static bytes
      sit at a constant below the heap (reworks the whole process layout).
@@ -905,6 +911,23 @@ verified compiler's locals are 64-bit slots with no address. The design:
      the linker and the process, the top theorems kept; (b) `str`, its
      literal let and `string_data_ptr` in the verified compiler, proved;
      (c) the front end's reading; (d) the oracles.
+   - *Stage (a), done (11-02, f6v).* `Program.statics` and
+     `Binary.statics` carry the bytes; `link` puts them after the code
+     (`linkOnto`'s tail), and the startup code is 95 bytes (the image
+     starts at `elfBase + 215`). `Exec.static` and `Exec.loadByteStatic`
+     (a byte load at `staticBase + k`, `k` below the length, the region at
+     or above `top`, so it never overlaps a heap load); the machine's
+     `Step.loadAtStatic`, and `Step.call` asks that the callee keep the
+     region (`Exec.statics`: no mini statement changes it). On x86
+     `Rel.static`/`Rel.statics` (r8, and each static byte as the entry
+     memory has it, outside the window and the heap, so no store reaches
+     it) carry the region through every step; `call_simulates` hands it to
+     the callee in `HeapAt`. The process's heap (`elfHeap`) has the
+     binary's `statics` at `elfStaticBase`, the static bytes' address
+     less the heap's base, wrapped (`compileSource_layout`: the verified
+     compiler's image is the code, then the statics). The front-pass
+     lowering still emits no statics, so the compiled programs are
+     unchanged but for the startup's `mov r8`.
 7. **A static need per function (decided 11-01, step 3.5).** A function
    takes its whole block at entry (`frame_block`: 8 bytes per element of
    each array, parameter or let, it passes as a slice), by a prologue

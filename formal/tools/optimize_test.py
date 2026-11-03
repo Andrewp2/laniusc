@@ -66,9 +66,10 @@ partial def Stmt.bump : Stmt → Stmt
   | .cont => .cont
   | .sys k t args => .sys k t (args.map Expr.bump)
   | .frame t b => .frame t b
+  | .static t o => .static t o
 
 def mutant (p : Program) : Program :=
-  { funcs := p.funcs.map fun f => { f with body := f.body.bump } }
+  { funcs := p.funcs.map fun f => { f with body := f.body.bump }, statics := p.statics }
 
 /-- changed accepted original-size optimized-size mutant-differs mutant-accepted -/
 def report (p : Program) : String :=
@@ -82,7 +83,7 @@ def reportSource (sp : SrcProgram) : String :=
   | some decls =>
     match lowerFuncs (sigs sp.funcs) (sigs sp.funcs) decls sp.funcs with
     | none => "none"
-    | some fs => report { funcs := fs }
+    | some fs => report { funcs := fs, statics := [] }
 
 def renderImage : Option Binary → String
   | none => "none"
@@ -96,7 +97,7 @@ open Lanius.Mini
 def mini_program(funcs):
     fs = ', '.join(f'{{ params := {p}, results := {r}, locals := {l}, body := {mini_difftest.lean_stmt(b)} }}'
                    for p, r, l, b in funcs)
-    return f'{{ funcs := [{fs}] }}'
+    return f'{{ funcs := [{fs}], statics := [] }}'
 
 
 def lean_file(minis, sources):

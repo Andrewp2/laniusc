@@ -138,7 +138,7 @@ def diagLine (name : String) (bases : List String) : IO Unit := do
         match lowerFuncs (sigs p.funcs) (sigs p.funcs) d p.funcs with
         | none => IO.println s!"{name} lowerFuncs fails"
         | some fs =>
-          match compileOptimized ({ funcs := fs } : Program) with
+          match compileOptimized ({ funcs := fs, statics := [] } : Program) with
           | none => IO.println s!"{name} compileOptimized fails ({fs.length} functions)"
           | some b => IO.println s!"{name} compiles: {b.image.length} bytes"
 
@@ -165,7 +165,7 @@ def timeLine (name : String) (bases : List String) : IO Unit := do
     | IO.println s!"{name} declare fails"
   let some fs ← stage "lower" (fun _ => lowerFuncs (sigs p.funcs) (sigs p.funcs) d p.funcs) (fun r => r.map List.length |>.getD 0)
     | IO.println s!"{name} lower fails"
-  let prog : Program := { funcs := fs }
+  let prog : Program := { funcs := fs, statics := [] }
   let opt ← stage "optimize" (fun _ => optimizeProgram prog) (·.funcs.length)
   let _ ← stage "validate-opt" (fun _ => validate prog opt) (fun b => if b then 1 else 0)
   let some codes ← stage "compileFuncs" (fun _ => compileFuncs (arities opt.funcs) opt.funcs) (fun r => r.map List.length |>.getD 0)

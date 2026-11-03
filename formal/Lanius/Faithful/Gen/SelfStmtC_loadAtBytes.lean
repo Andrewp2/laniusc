@@ -53,8 +53,8 @@ abbrev Stmt_layout (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     (RepList 25 RepNat) (Lanius.Mini.layout x0 x1) w
 
 abbrev Stmt_link_onto (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : Nat} {x2 : List Lanius.Mini.Code} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 25 RepNat) x0 v0 → RepNat x1 v1 → (RepList 51 RepCode) x2 v2 →
-    (RepList 66 RepU8) (Lanius.Mini.linkOnto x0 x1 x2) w
+  ∀ {x0 : List Nat} {x1 : Nat} {x2 : List Lanius.Mini.Code} {x3 : List UInt8} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepList 25 RepNat) x0 v0 → RepNat x1 v1 → (RepList 51 RepCode) x2 v2 → (RepList 66 RepU8) x3 v3 →
+    (RepList 66 RepU8) (Lanius.Mini.linkOnto x0 x1 x2 x3) w
 
 abbrev Stmt_load_at_bytes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →

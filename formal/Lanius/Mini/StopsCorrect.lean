@@ -379,7 +379,7 @@ theorem body_stops (body : Body frame binary imageBase place instrs) (fits : fra
       rel fits loaded apart codeHeap body.slots body.entries body.base (by omega)
       (by have := body.entrySmall callee; omega) argsFit argsCount targetFit positive body.image body.imageApart
       body.imageHeap body.guard (by omega) room (fun s a b c d e f g h => .inr (contract s a b c d e f g h))
-      (by simp) with ⟨⟨⟩, -⟩ | ⟨k, s2, positive', det, within⟩
+      (by simp) rfl rfl with ⟨⟨⟩, -⟩ | ⟨k, s2, positive', det, within⟩
     exact (det.within within).mono (by omega)
   | bump fetched inside over =>
     intro s rel

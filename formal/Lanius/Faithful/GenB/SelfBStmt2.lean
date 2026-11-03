@@ -16,6 +16,11 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.SelfCert
 open Lanius.Faithful.Budget
 
+abbrev BStmt_nest_inner (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.CTree} {x3 : List Lanius.Mini.CTree} {x4 : Nat} {x5 : Lanius.Mini.CTree} {x6 : Lanius.Mini.Ty} {x7 : Option (List Lanius.Mini.CTree)} {x8 : Option Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 v6 v7 v8 w : Value} {k b : Nat},
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5, v6, v7, v8] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → RepCTree x2 v2 → (RepList 82 RepCTree) x3 v3 → RepNat x4 v4 → RepCTree x5 v5 → RepTy x6 v6 → (RepOption 81 (RepList 82 RepCTree)) x7 v7 → (RepOption 128 RepCTree) x8 v8 → k < b → Pre_nest_inner n x0 x1 x2 x3 x4 x5 x6 x7 x8 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5, v6, v7, v8] = some (w, k) ∧ Cost_nest_inner n x0 x1 x2 x3 x4 x5 x6 x7 x8 = k ∧ (RepOption 318 RepArmUse) (Lanius.Mini.nestInner x0 x1 x2 x3 x4 x5 x6 x7 x8) w
+
 abbrev BStmt_column_fit (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : Option Lanius.Mini.CTree} {x2 : Option (List Lanius.Mini.CTree)} {v0 v1 v2 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepBool x0 v0 → (RepOption 128 RepCTree) x1 v1 → (RepOption 81 (RepList 82 RepCTree)) x2 v2 →

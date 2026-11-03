@@ -35,6 +35,7 @@ def callAgrees (target : Nat) (count : Nat) (callee : Nat) (args : List Expr) (o
   | .divide w o t l r => false
   | .sys c t a => false
   | .frame t b => false
+  | .static t o => false
 
 def retAgrees (values : List Expr) (other : Stmt) : Bool :=
   match other with
@@ -55,6 +56,7 @@ def retAgrees (values : List Expr) (other : Stmt) : Bool :=
   | .divide w o t l r => false
   | .sys c t a => false
   | .frame t b => false
+  | .static t o => false
 
 def allocAgrees (target : Nat) (shift : Nat) (size : Expr) (other : Stmt) : Bool :=
   match other with
@@ -75,6 +77,7 @@ def allocAgrees (target : Nat) (shift : Nat) (size : Expr) (other : Stmt) : Bool
   | .divide w o t l r => false
   | .sys c t a => false
   | .frame t b => false
+  | .static t o => false
 
 def frameAgrees (target : Nat) (bytes : Nat) (other : Stmt) : Bool :=
   match other with
@@ -95,6 +98,28 @@ def frameAgrees (target : Nat) (bytes : Nat) (other : Stmt) : Bool :=
   | .divide w o t l r => false
   | .sys c t a => false
   | .frame t b => decide (target = t) && decide (bytes = b)
+  | .static t o => false
+
+def staticAgrees (target : Nat) (offset : Nat) (other : Stmt) : Bool :=
+  match other with
+  | .skip => false
+  | .assign i v => false
+  | .seq f s => false
+  | .ite c t e => false
+  | .loop c b => false
+  | .call t n f a => false
+  | .ret v => false
+  | .brk => false
+  | .cont => false
+  | .alloc t sh sz => false
+  | .loadByte t a => false
+  | .storeByte a v => false
+  | .loadWord w t a => false
+  | .storeWord w a v => false
+  | .divide w o t l r => false
+  | .sys c t a => false
+  | .frame t b => false
+  | .static t o => decide (target = t) && decide (offset = o)
 
 def loadByteAgrees (target : Nat) (address : Expr) (other : Stmt) : Bool :=
   match other with
@@ -115,6 +140,7 @@ def loadByteAgrees (target : Nat) (address : Expr) (other : Stmt) : Bool :=
   | .divide w o t l r => false
   | .sys c t a => false
   | .frame t b => false
+  | .static t o => false
 
 def storeByteAgrees (address : Expr) (value : Expr) (other : Stmt) : Bool :=
   match other with
@@ -135,6 +161,7 @@ def storeByteAgrees (address : Expr) (value : Expr) (other : Stmt) : Bool :=
   | .divide w o t l r => false
   | .sys c t a => false
   | .frame t b => false
+  | .static t o => false
 
 def loadWordAgrees (width : MemWidth) (target : Nat) (address : Expr) (other : Stmt) : Bool :=
   match other with
@@ -155,6 +182,7 @@ def loadWordAgrees (width : MemWidth) (target : Nat) (address : Expr) (other : S
   | .divide w o t l r => false
   | .sys c t a => false
   | .frame t b => false
+  | .static t o => false
 
 def storeWordAgrees (width : MemWidth) (address : Expr) (value : Expr) (other : Stmt) : Bool :=
   match other with
@@ -175,6 +203,7 @@ def storeWordAgrees (width : MemWidth) (address : Expr) (value : Expr) (other : 
   | .divide w o t l r => false
   | .sys c t a => false
   | .frame t b => false
+  | .static t o => false
 
 def divideAgrees (word : Word) (operation : DivOp) (target : Nat) (left : Expr) (right : Expr) (other : Stmt) : Bool :=
   match other with
@@ -195,6 +224,7 @@ def divideAgrees (word : Word) (operation : DivOp) (target : Nat) (left : Expr) 
   | .divide w o t l r => decide (Word.number word = Word.number w) && decide (DivOp.number operation = DivOp.number o) && decide (target = t) && Expr.agrees left l && Expr.agrees right r
   | .sys c t a => false
   | .frame t b => false
+  | .static t o => false
 
 def sysAgrees (kind : Syscall) (target : Nat) (args : List Expr) (other : Stmt) : Bool :=
   match other with
@@ -215,6 +245,7 @@ def sysAgrees (kind : Syscall) (target : Nat) (args : List Expr) (other : Stmt) 
   | .divide w o t l r => false
   | .sys c t a => decide (Syscall.number kind = Syscall.number c) && decide (target = t) && argsAgree args a
   | .frame t b => false
+  | .static t o => false
 
 def factValue (facts : List Fact) (index : Nat) : Expr :=
   match facts with

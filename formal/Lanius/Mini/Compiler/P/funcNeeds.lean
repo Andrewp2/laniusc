@@ -63,5 +63,6 @@ def Stmt.extent (self : Stmt) : Nat :=
   | .divide word operation target left right => max (target + 1) (max (Expr.extent left) (Expr.extent right))
   | .sys kind target args => max (target + 1) (argsExtent args)
   | .frame target bytes => target + 1
+  | .static target offset => target + 1
 
 end Lanius.Mini

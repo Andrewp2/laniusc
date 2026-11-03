@@ -115,6 +115,9 @@ def src_get_of_mini_selfhost_Inst (ix_minus : Nat) (ix_get_of_mini_selfhost_Inst
 /-- mini::selfhost::length -/
 def src_length_of_mini_selfhost_List_usize (ix_plus : Nat) (ix_length_of_mini_selfhost_List_usize : Nat) (ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize : Nat) : SrcFunc := { params := [{ id := 10, ty := ty27 }], ret := SrcType.uint (UintTy.usize), body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 10)) ty27 (SrcType.uint (UintTy.usize)) [[], [95, 101]] [SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000000#64), SrcEff.eCall ix_plus [SrcEff.eCall ix_length_of_mini_selfhost_List_usize [SrcEff.eCall ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize [SrcEff.ePure (SrcExpr.local 101)]], SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000001#64)]]) }
 
+/-- mini::selfhost::length -/
+def src_length_of_u8 (ix_plus : Nat) (ix_unbox_of_mini_selfhost_List_u8 : Nat) (ix_length_of_u8 : Nat) : SrcFunc := { params := [{ id := 10, ty := ty67 }], ret := SrcType.uint (UintTy.usize), body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 10)) ty67 (SrcType.uint (UintTy.usize)) [[], [95, 101]] [SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000000#64), SrcEff.eCall ix_plus [SrcEff.eCall ix_length_of_u8 [SrcEff.eCall ix_unbox_of_mini_selfhost_List_u8 [SrcEff.ePure (SrcExpr.local 101)]], SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000001#64)]]) }
+
 /-- mini::selfhost::single -/
 def src_single_of_mini_selfhost_List_mini_selfhost_List_usize (ix_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_List_usize : Nat) : SrcFunc := { params := [{ id := 10, ty := ty27 }], ret := ty126, body := SrcStmt.returnEval (SrcEff.eVariant ty126 1 [SrcEff.ePure (SrcExpr.local 10), SrcEff.eCall ix_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_List_usize [SrcEff.eVariant ty126 0 []]]) }
 

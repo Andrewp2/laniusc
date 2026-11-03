@@ -2665,7 +2665,7 @@ theorem chunk24 : FuncsOk prog prims outside 2400 part24 :=
   funcsOk_cons (fok2499 boxElem_self callTy_self) <|
   funcsOk_nil
 
-def part25 : List SrcFunc := [src2500, src2501, src2502, src2503, src2504, src2505, src2506, src2507, src2508, src2509, src2510, src2511, src2512, src2513]
+def part25 : List SrcFunc := [src2500, src2501, src2502, src2503, src2504, src2505, src2506, src2507, src2508, src2509, src2510, src2511, src2512, src2513, src2514, src2515]
 
 theorem chunk25 : FuncsOk prog prims outside 2500 part25 :=
   funcsOk_cons (fok2500 boxElem_self callTy_self) <|
@@ -2682,6 +2682,8 @@ theorem chunk25 : FuncsOk prog prims outside 2500 part25 :=
   funcsOk_cons (fok2511 boxElem_self callTy_self) <|
   funcsOk_cons (fok2512 boxElem_self callTy_self) <|
   funcsOk_cons (fok2513 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2514 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2515 boxElem_self callTy_self) <|
   funcsOk_nil
 
 theorem funcs_parts : prog.funcs = part0 ++ (part1 ++ (part2 ++ (part3 ++ (part4 ++ (part5 ++ (part6 ++ (part7 ++ (part8 ++ (part9 ++ (part10 ++ (part11 ++ (part12 ++ (part13 ++ (part14 ++ (part15 ++ (part16 ++ (part17 ++ (part18 ++ (part19 ++ (part20 ++ (part21 ++ (part22 ++ (part23 ++ (part24 ++ (part25))))))))))))))))))))))))) := rfl

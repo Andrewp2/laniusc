@@ -101,15 +101,16 @@ theorem encodeOnto_eq (place : Place) (tail : List UInt8) : ∀ (pc : Nat) (code
     simp only [encodeOnto, encodeFrom, encodeOnto_eq place tail _ rest, List.append_assoc]
 
 /-- `link` builds `linkFrom`'s bytes without copying each function's image. -/
-theorem linkOnto_eq (entries : List Nat) : ∀ (start : Nat) (codes : List Code),
-    linkOnto entries start codes = linkFrom entries start codes
+theorem linkOnto_eq (entries : List Nat) (tail : List UInt8) : ∀ (start : Nat) (codes : List Code),
+    linkOnto entries start codes tail = linkFrom entries start codes ++ tail
   | _, [] => by simp [linkOnto, linkFrom]
   | start, code :: rest => by
-    simp only [linkOnto, linkFrom, Code.image, encodeOnto_eq, linkOnto_eq entries _ rest, List.append_assoc]
+    simp only [linkOnto, linkFrom, Code.image, encodeOnto_eq, linkOnto_eq entries tail _ rest, List.append_assoc]
 
 theorem compileProgram_spec {prog : Program} {binary : Binary} (compiled : compileProgram prog = some binary) :
     compileFuncs (arities prog.funcs) prog.funcs = some binary.codes ∧ binary.entries = layout 0 binary.codes ∧
-      binary.image = linkFrom binary.entries 0 binary.codes ∧ binary.image.length ≤ imageLimit := by
+      binary.image = linkFrom binary.entries 0 binary.codes ++ binary.statics ∧ binary.image.length ≤ imageLimit ∧
+      binary.statics = prog.statics := by
   simp only [compileProgram] at compiled
   split at compiled
   · contradiction
@@ -118,7 +119,8 @@ theorem compileProgram_spec {prog : Program} {binary : Binary} (compiled : compi
     · rename_i small
       simp only [Option.some.injEq] at compiled
       subst compiled
-      exact ⟨codesCompiled, rfl, linkOnto_eq _ _ _, by rw [linkOnto_eq, linkFrom_length]; exact small⟩
+      exact ⟨codesCompiled, rfl, linkOnto_eq _ _ _ _,
+        by rw [linkOnto_eq, List.length_append, linkFrom_length]; exact small, rfl⟩
     · contradiction
 
 theorem compileFuncs_frameNeed {arities : List Arity} :
@@ -187,14 +189,16 @@ theorem function_enter {prog : Program} {binary : Binary} (compiled : compilePro
   obtain ⟨pre, post, offset, split, at_, preLength⟩ := linkFrom_at binary.entries binary.codes 0 f code codeFound
   rw [← entries] at at_
   have entryOffset : binary.entries.getD f 0 = offset := by simp [List.getD, at_]
-  have imageLength : binary.image.length = pre.length + code.size + post.length := by
+  have imageLength : binary.image.length = pre.length + code.size + post.length + binary.statics.length := by
     rw [imageEq, split]; simp only [List.length_append, Code.image_length]
   have codeSizeEq : code.size = 24 + codeSize code.instrs := rfl
   have codeImage : CodeAt s.memory s.rip
       (framePrologueBytes code.slots ++ stackCheckBytes ++
         encodeFrom ⟨offset + 24, code.slots, binary.entries⟩ 0 code.instrs) := by
     have whole := loaded
-    rw [imageEq, split] at whole
+    rw [imageEq] at whole
+    have whole := whole.prefix
+    rw [split] at whole
     have := CodeAt.middle whole
     rw [Nat.zero_add] at preLength
     rw [preLength] at this
@@ -307,7 +311,8 @@ theorem function_enter {prog : Program} {binary : Binary} (compiled : compilePro
           simp only [List.getD, h, Option.getD_some]
           rw [entries] at h
           have := layout_bound binary.entries binary.codes 0 callee other h
-          rw [← imageEq] at this
+          have longer : (linkFrom binary.entries 0 binary.codes).length ≤ binary.image.length := by
+            rw [imageEq, List.length_append]; omega
           omega
       image := loaded
       imageApart := apart
@@ -367,7 +372,10 @@ theorem function_enter {prog : Program} {binary : Binary} (compiled : compilePro
         have inside' : a < frame.heapTop := by rw [show frame.heapTop = heap.top from heapAt.top.symm]; exact inside
         rw [memoryEntered, write64_frame _ _ _ _ (fun lane => heap_ne_below fits inside' (pushBelow lane))]
         exact heapAt.bytes a inside
-      io := heapAt.io }
+      io := heapAt.io
+      static := heapAt.static
+      statics := fun k within =>
+        ⟨(heapAt.statics k within).1, (heapAt.statics k within).2.1, (heapAt.statics k within).2.2⟩ }
   have startParams : ∀ index, index < func.params → start.slots index = args.getD index 0 := by
     intro index below
     have bound : index < slotLimit := by unfold slotLimit; omega
