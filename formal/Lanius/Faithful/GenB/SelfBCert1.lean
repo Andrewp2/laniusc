@@ -14,9 +14,8 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 open Lanius.Faithful.SelfCert
-open Lanius.Faithful.Budget
-
 open Lanius.Faithful.SelfPanics
+open Lanius.Faithful.Budget
 
 theorem bcert_p_type_param_bound_none {n : Nat} :
     BStmt_p_type_param_bound_none progW prog prims 1119 n := by

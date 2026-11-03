@@ -14,9 +14,8 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 open Lanius.Faithful.SelfCert
-open Lanius.Faithful.Budget
-
 open Lanius.Faithful.SelfPanics
+open Lanius.Faithful.Budget
 
 theorem bcert_same_opt_name {n : Nat} :
     BStmt_same_opt_name progW prog prims 2591 n := by

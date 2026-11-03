@@ -356,6 +356,16 @@ def bucket(key):
     return zlib.crc32(key.encode()) % BUCKETS
 
 
+def bucket_name(prog, key, parts, i):
+    """A function's bucket: a function whose proof unfolds an extraction part
+    goes with that part's other heads (`C_<part>`, `F_<part>`), so that a body
+    edit rebuilds one proof module; any other, a hash of its name."""
+    part = parts.where.get(prog.head(i, parts.inline)) if prog.role(i) == 'fn' else None
+    if part:
+        return part.split('.')[2][0] + '_' + part.rsplit('.', 1)[1]
+    return str(bucket(key[i]))
+
+
 def call_sites(body):
     """The callee indices of a source body: (start, end, index) of each."""
     out = []
@@ -566,12 +576,7 @@ def cert_files(prog, ns, out_ns, roots, parts):
     by_bucket = {}
 
     def bucket_of(i):
-        # A function whose proof unfolds an extraction part goes with that
-        # part's other heads: a body edit rebuilds one proof module.
-        part = parts.where.get(prog.head(i, inline)) if prog.role(i) == 'fn' else None
-        if part:
-            return part.split('.')[2][0] + '_' + part.rsplit('.', 1)[1]
-        return str(bucket(key[i]))
+        return bucket_name(prog, key, parts, i)
     for i in sorted(prog.fns):
         by_bucket.setdefault(bucket_of(i) if i in wanted else 'Rest', []).append(i)
     buckets = sorted(b for b in by_bucket if b != 'Rest')
