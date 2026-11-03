@@ -1,0 +1,2 @@
+{ params := [], ret := .isize, body := (.let 0 .isize (.negate (.cast .isize (.int 0))) (.return (.apply .plus (.local 0) (.negate (.cast .isize (.int 0)))))) }
+{ params := [], ret := (.sint .uint64), body := (.let 0 (.sint .uint64) (.negate (.cast (.sint .uint64) (.int 0))) (.return (.apply .plus (.local 0) (.cast (.sint .uint64) (.int 0))))) }

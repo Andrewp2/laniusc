@@ -1,0 +1,17 @@
+// `-0` as isize and as i64, in constants and in functions. A function's
+// `-0` reads as the negation of the typed literal 0; an i64 constant folds it
+// into its i32 literal (0), an isize constant keeps the negation. (The wide
+// readings, wide_isize and wide_sint, take `-0` to the u64 literal 0; `-0`
+// itself never reaches them, its literal being below 2^31.)
+const ZI: isize = -0;
+const ZL: i64 = -0;
+
+fn zi() -> isize {
+    let x: isize = -0;
+    return x + ZI;
+}
+
+fn zl() -> i64 {
+    let y: i64 = -0;
+    return y + ZL;
+}

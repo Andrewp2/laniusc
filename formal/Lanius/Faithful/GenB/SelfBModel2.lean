@@ -1509,7 +1509,7 @@ noncomputable section
 
 def Cost_wide_isize : Nat → Bool → Nat → Nat
   | 0, x11, x27 => 18446744073709551616
-  | n + 1, x11, x27 => (if ((!x11) && (decide (x27 ≤ 9223372036854775807))) = true then 1 else (if (x11 && (decide (x27 ≤ 9223372036854775808))) = true then 1 else 0))
+  | n + 1, x11, x27 => (if (((!x11) || (decide (x27 = 0))) && (decide (x27 ≤ 9223372036854775807))) = true then 1 else (if (x11 && (decide (x27 ≤ 9223372036854775808))) = true then 1 else 0))
 
 end
 
@@ -1517,7 +1517,7 @@ noncomputable section
 
 def Pre_wide_isize : Nat → Bool → Nat → Nat → Prop
   | 0, x11, x27, b => True
-  | n + 1, x11, x27, b => (if ((!x11) && (decide (x27 ≤ 9223372036854775807))) = true then True else (if (x11 && (decide (x27 ≤ 9223372036854775808))) = true then (Pre_plus n (18446744073709551615 - x27) 1 b) else True))
+  | n + 1, x11, x27, b => (if (((!x11) || (decide (x27 = 0))) && (decide (x27 ≤ 9223372036854775807))) = true then True else (if (x11 && (decide (x27 ≤ 9223372036854775808))) = true then (Pre_plus n (18446744073709551615 - x27) 1 b) else True))
 
 end
 
@@ -1525,7 +1525,7 @@ noncomputable section
 
 def Cost_wide_sint : Nat → Lanius.Mini.UintTy → Bool → Nat → Nat
   | 0, x10, x21, x37 => 18446744073709551616
-  | n + 1, x10, x21, x37 => (if (!(Lanius.Mini.sintWide x10)) = true then 0 else (if ((!x21) && (decide (x37 ≤ 9223372036854775807))) = true then 1 else (if (x21 && (decide (x37 ≤ 9223372036854775808))) = true then 1 else 0)))
+  | n + 1, x10, x21, x37 => (if (!(Lanius.Mini.sintWide x10)) = true then 0 else (if (((!x21) || (decide (x37 = 0))) && (decide (x37 ≤ 9223372036854775807))) = true then 1 else (if (x21 && (decide (x37 ≤ 9223372036854775808))) = true then 1 else 0)))
 
 end
 
@@ -1533,7 +1533,7 @@ noncomputable section
 
 def Pre_wide_sint : Nat → Lanius.Mini.UintTy → Bool → Nat → Nat → Prop
   | 0, x10, x21, x37, b => True
-  | n + 1, x10, x21, x37, b => (if (!(Lanius.Mini.sintWide x10)) = true then True else (if ((!x21) && (decide (x37 ≤ 9223372036854775807))) = true then True else (if (x21 && (decide (x37 ≤ 9223372036854775808))) = true then (Pre_plus n (18446744073709551615 - x37) 1 b) else True)))
+  | n + 1, x10, x21, x37, b => (if (!(Lanius.Mini.sintWide x10)) = true then True else (if (((!x21) || (decide (x37 = 0))) && (decide (x37 ≤ 9223372036854775807))) = true then True else (if (x21 && (decide (x37 ≤ 9223372036854775808))) = true then (Pre_plus n (18446744073709551615 - x37) 1 b) else True)))
 
 end
 

@@ -35,7 +35,7 @@ def wideUint (u : UintTy) (negative : Bool) (n : Nat) : Option SrcExpr :=
     none
 
 def wideIsize (negative : Bool) (n : Nat) : Option SrcExpr :=
-  if !negative && decide (n ≤ 9223372036854775807) then
+  if (!negative || decide (n = 0)) && decide (n ≤ 9223372036854775807) then
     some (SrcExpr.cast SrcType.isize (SrcExpr.unsigned UintTy.uint64 (BitVec.ofNat 64 n)))
   else
     if negative && decide (n ≤ 9223372036854775808) then
@@ -48,7 +48,7 @@ def wideSint (u : UintTy) (negative : Bool) (n : Nat) : Option SrcExpr :=
   if !(sintWide u) then
     none
   else
-    if !negative && decide (n ≤ 9223372036854775807) then
+    if (!negative || decide (n = 0)) && decide (n ≤ 9223372036854775807) then
       some (SrcExpr.cast (SrcType.sint u) (SrcExpr.unsigned UintTy.uint64 (BitVec.ofNat 64 n)))
     else
       if negative && decide (n ≤ 9223372036854775808) then

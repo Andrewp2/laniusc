@@ -4244,7 +4244,7 @@ pub fn wide_uint(u: UintTy, negative: bool, n: usize) -> core::option::Option<Sr
 }
 
 pub fn wide_isize(negative: bool, n: usize) -> core::option::Option<SrcExpr> {
-    if (!negative && n <= 9223372036854775807) {
+    if ((!negative || n == 0) && n <= 9223372036854775807) {
         return Some(Cast(Isize, boxed(Unsigned(Uint64, n as u64))));
     }
     if (negative && n <= 9223372036854775808) {
@@ -4259,7 +4259,7 @@ pub fn wide_sint(u: UintTy, negative: bool, n: usize) -> core::option::Option<Sr
     if (!sint_wide(u)) {
         return None;
     }
-    if (!negative && n <= 9223372036854775807) {
+    if ((!negative || n == 0) && n <= 9223372036854775807) {
         return Some(Cast(Sint(u), boxed(Unsigned(Uint64, n as u64))));
     }
     if (negative && n <= 9223372036854775808) {
