@@ -24,7 +24,9 @@ stage's time and changed files:
 | trusted | the definitions hash in `TRUSTED_BASE.md` (`--trusted` only) | `trusted_check.py`                 |
 
 A stage whose inputs and outputs are as a run of it left them is skipped
-(`--force` runs it anyway); `--only gen,genb` runs some stages. One run is
+(`--force` runs it anyway); `--only gen,genb` runs some stages. `--check` writes
+nothing and fails when a generated file differs from what regen.py would write:
+the gate's `regen-current` step (quick tier, about 20-60 s). One run is
 enough: there is no "run Gen until nothing changes". The building of the
 library is not part of it: regen needs only `srcDump` and `Gen.SelfProg`.
 
