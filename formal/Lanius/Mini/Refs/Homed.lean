@@ -45,4 +45,18 @@ structure HomedCorr (sx : Statics) (places : List Addressed) (scope : List Bindi
   homedTy : ∀ id b offset ty, lookup scope id = some b → c.homes.lookup id = some (offset, ty) → ty = b.ty
   unhomed : ∀ id b, lookup scope id = some b → c.homes.lookup id = none → Unhomed places frame b
 
+/-- `v.Names cell`: the value holds a reference or a slice into `cell`, in
+itself or in a field, payload or element. A value that names no dying home
+outlives it (the lifetime rule's dynamic side). -/
+inductive _root_.Lanius.Core.Value.Names (cell : Lanius.CellId) : Value → Prop
+  | reference {T : Lanius.Core.Ty} {path : List Lanius.Core.ValueProjection} :
+      Lanius.Core.Value.Names cell (.reference T cell path)
+  | slice {T : Lanius.Core.Ty} {path : List Lanius.Core.ValueProjection} {start length : Nat} :
+      Lanius.Core.Value.Names cell (.slice T cell path start length)
+  | structure {id : Lanius.TypeId} {vs : List Value} {v : Value} :
+      v ∈ vs → Lanius.Core.Value.Names cell v → Lanius.Core.Value.Names cell (.structure id vs)
+  | enumeration {id : Lanius.TypeId} {k : Lanius.VariantId} {vs : List Value} {v : Value} :
+      v ∈ vs → Lanius.Core.Value.Names cell v → Lanius.Core.Value.Names cell (.enumeration id k vs)
+  | array {vs : List Value} {v : Value} : v ∈ vs → Lanius.Core.Value.Names cell v → Lanius.Core.Value.Names cell (.array vs)
+
 end Lanius.Mini

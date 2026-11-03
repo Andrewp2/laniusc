@@ -1925,10 +1925,15 @@ compiler accepts no reference form until stage 2 proves its lowering. Stage
   type is the same as no type (`same`), and every predicate and lowering
   case of the compiler gives it the rejecting answer. `HoldsAt` has no
   `ref` constructor yet, so no value is held at it.
-- S2: the layout definitions `HoldsAt.ref` needs (`Access`, `accessKind`,
-  `words`, `slotAt`, `refSlotAt`, `sub`, `subStep`, `RefTo`, `RefHeld`)
-  move before `HoldsAt` and become trusted; `HoldsAt.ref`,
-  `HoldsAt.borrowed` generalized, `Addressed.pointer` for native layout.
+- S2: the layout definitions `HoldsAt.ref` reaches (`Access`, `accessKind`,
+  `words`, `subStep`, `sub`, `Addressed`, `Addressed.sub`, `RefTo`,
+  `RefHeld`) move before `HoldsAt` (`Mini/Layout.lean`) and become trusted;
+  `HoldsAt.ref` and `Addressed.pointer` for native layout (today only
+  `i32` and `u8` arrays are lent, whose pointer does not change). The
+  generalized `HoldsAt.borrowed` waits for the step that moves `ArrayCall`
+  and `Borrowed` onto `Homes` (point 7): under `FrameCorr` the callee's
+  slice code is proved from a whole lent `i32` or `u8` array, which the
+  general case does not give.
 - S3: Source's places, borrow, dereference and assignment through a place,
   their `toCore`, and Core's typing of `Place.deref`; their lowering is
   `none`.
@@ -2492,6 +2497,33 @@ visited set in `ty_insts` would make it linear, but the reading's
 `TyInsts` relation is stated over the full expansion, so that change needs
 its own proof.
 
+## The image limit checked as the sizes add up (decided 11-03, F14)
+
+`link` checked the image limit only after it had added up every function's
+size (`linked_size`) and laid the functions out (`layout`, `link_onto`).
+Monomorphization copies a body once per instance, and the front end allows
+up to its fuel, about `4 * (tokens + prods)`, instances. So a program under
+2^31 words can compile to more than 2^64 bytes of code (PreCompileSourceV2's
+NOTES.md, 11-03), and those sums would overflow a usize before the check
+rejects the program. The compiler now checks as it goes:
+
+- `room_after(room, codes)` walks the functions and takes each one's size
+  out of the room left. It returns None as soon as a function does not fit.
+  It only compares and subtracts, so it adds nothing up.
+- `link` first checks that the static bytes fit the image limit. It then
+  takes the room left after them through `room_after`, and only then lays
+  the functions out and builds the image (`link_fitting`). Every offset
+  `layout` and `link_onto` add up is at most the image limit, 2^30.
+
+This only rejects programs that the old final check already rejected.
+`room_after(room, codes)` is Some exactly when `linked_size(codes) <= room`,
+which is `roomAfter_eq` in `Lanius/Mini/Correct.lean`. `compileProgram_eq`
+shows that `compileProgram` is the same function as before: it accepts the
+same programs with the same binary. So the behaviour is unchanged for every
+accepted program, and a rejected one is still rejected as `None`. Whole-
+program sums need no size lemmas now. Per-function sums (a function's
+`code_size` and its pc offsets) are not covered by this check.
+
 ## Budget certificates (decided 11-01, F14)
 
 `CompileBounded T` asks that the guarded run of `progW` has a value
@@ -2688,6 +2720,19 @@ Decided 11-02 (F14, the size measure for the roots' preconditions): the
   parallel but checks them in the kernel one at a time, and a module waits
   for all of each module it imports. The chain from Tactic to SelfP02 went
   from over 5 minutes (it hit the 290 s limit) to 101 s.
+- Build time (11-03). An arithmetic goal is proved by a linear certificate
+  (`SelfPre/LinCert.lean`: `L + Σ Rᵢ ≤ R + Σ Lᵢ` coefficientwise, checked by
+  the kernel on numerals) over variables for its atoms, `omega` only where the
+  search finds none; a budget chain's subtractions `a - c` are replaced first
+  (`a - c + c ≤ a` where the left side has `c`). Sibling goals share a run's
+  proved premises and normalized facts (a proof is reused when a hypothesis it
+  used is replaced by one of the same type), each run with caches of its own.
+  A literal's height lemma unfolds its cost by `delta` (the equation lemmas of
+  `Cost_text_*` took 16-22 s each to make). GenP is one module of each kind
+  (uposts, posts, preconditions: SelfP00-02); with the preconditions in five
+  modules each waited for the one before. The chain from Tactic went from
+  about 4 minutes to about 2 at load 8 (let_first's step from about 70 s, out
+  of heartbeats, to 15 s).
 - Open statements (11-03). F14's remaining work is a graph under
   `Lanius/Open/F14` (OPEN_STATEMENTS.md): the root `SelfCompilerTotalReason`
   is `selfCompiler_total_reason_of_bounds` without `CompileBounded`, for a

@@ -1201,6 +1201,25 @@ pub fn linked_size(codes: List<Code>) -> usize {
     };
 }
 
+// The room left of room after functions laid out back to back, None as soon
+// as one does not fit: the image limit checked as the sizes add up, so no sum
+// of the functions' sizes passes the limit (F14). It is Some exactly when
+// linked_size(codes) is at most room.
+pub fn room_after(room: usize, codes: List<Code>) -> core::option::Option<usize> {
+    return match (codes) {
+        Nil -> Some(room),
+        Cons(code, rest) -> room_next(room, code.size(), unbox(rest)),
+    };
+}
+
+// extract: inline
+fn room_next(room: usize, size: usize, rest: List<Code>) -> core::option::Option<usize> {
+    if (room >= size) {
+        return room_after(minus(room, size), rest);
+    }
+    return None;
+}
+
 pub fn compile_program(prog: Program) -> core::option::Option<Binary> {
     return match (compile_funcs(arities(prog.funcs), prog.funcs)) {
         None -> None,
@@ -1208,14 +1227,24 @@ pub fn compile_program(prog: Program) -> core::option::Option<Binary> {
     };
 }
 
+// The image fits when the static bytes and then each function do, checked
+// before any offset is added up (room_after).
 // extract: inline
 fn link(codes: List<Code>, statics: List<u8>) -> core::option::Option<Binary> {
-    let entries: List<usize> = layout(0, codes);
-    let image: List<u8> = link_onto(entries, 0, codes, statics);
-    if (image_limit() >= plus(linked_size(codes), length(statics))) {
-        return Some(Binary { codes: codes, entries: entries, image: image, statics: statics });
+    if (image_limit() >= length(statics)) {
+        return match (room_after(minus(image_limit(), length(statics)), codes)) {
+            None -> None,
+            Some(room) -> link_fitting(codes, statics),
+        };
     }
     return None;
+}
+
+// extract: inline
+fn link_fitting(codes: List<Code>, statics: List<u8>) -> core::option::Option<Binary> {
+    let entries: List<usize> = layout(0, codes);
+    let image: List<u8> = link_onto(entries, 0, codes, statics);
+    return Some(Binary { codes: codes, entries: entries, image: image, statics: statics });
 }
 
 // Separate compilation (roadmap step 9). A module is functions plus the

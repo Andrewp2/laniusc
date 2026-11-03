@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::cons_type -/
-def src_cons_type (ix_cons_type_tail : Nat) : SrcFunc := { params := [{ id := 10, ty := ty177 }, { id := 47, ty := ty216 }], ret := ty216, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 10)) ty177 ty216 [[192], []] [SrcEff.eCall ix_cons_type_tail [SrcEff.ePure (SrcExpr.local 192), SrcEff.ePure (SrcExpr.local 47)], SrcEff.eVariant ty216 1 []]) }
+def src_cons_type (ix_cons_type_tail : Nat) : SrcFunc := { params := [{ id := 10, ty := ty178 }, { id := 47, ty := ty216 }], ret := ty216, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 10)) ty178 ty216 [[192], []] [SrcEff.eCall ix_cons_type_tail [SrcEff.ePure (SrcExpr.local 192), SrcEff.ePure (SrcExpr.local 47)], SrcEff.eVariant ty216 1 []]) }
 
 /-- mini::selfhost::cons_type_tail -/
 def src_cons_type_tail (ix_cons_of_mini_selfhost_SrcType : Nat) : SrcFunc := { params := [{ id := 15, ty := ty9 }, { id := 27, ty := ty216 }], ret := ty216, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 27)) ty216 ty216 [[172], []] [SrcEff.eVariant ty216 0 [SrcEff.eCall ix_cons_of_mini_selfhost_SrcType [SrcEff.ePure (SrcExpr.local 15), SrcEff.ePure (SrcExpr.local 172)]], SrcEff.eVariant ty216 1 []]) }
@@ -32,16 +32,16 @@ def src_flat_payloads (ix_flatten_tys : Nat) : SrcFunc := { params := [{ id := 1
 def src_flatten_tys (ix_empty_of_mini_selfhost_Ty : Nat) (ix_concat_of_mini_selfhost_Ty : Nat) (ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty : Nat) (ix_flatten_tys : Nat) : SrcFunc := { params := [{ id := 12, ty := ty297 }], ret := ty153, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 12)) ty297 ty153 [[], [107, 110]] [SrcEff.eCall ix_empty_of_mini_selfhost_Ty [], SrcEff.eCall ix_concat_of_mini_selfhost_Ty [SrcEff.ePure (SrcExpr.local 107), SrcEff.eCall ix_flatten_tys [SrcEff.eCall ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty [SrcEff.ePure (SrcExpr.local 110)]]]]) }
 
 /-- mini::selfhost::slice_type -/
-def src_slice_type (ix_boxed_of_mini_selfhost_SrcType : Nat) : SrcFunc := { params := [{ id := 11, ty := ty177 }], ret := ty177, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 11)) ty177 ty177 [[150], []] [SrcEff.eVariant ty177 0 [SrcEff.eVariant ty9 6 [SrcEff.eCall ix_boxed_of_mini_selfhost_SrcType [SrcEff.ePure (SrcExpr.local 150)]]], SrcEff.eVariant ty177 1 []]) }
+def src_slice_type (ix_boxed_of_mini_selfhost_SrcType : Nat) : SrcFunc := { params := [{ id := 11, ty := ty178 }], ret := ty178, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 11)) ty178 ty178 [[150], []] [SrcEff.eVariant ty178 0 [SrcEff.eVariant ty9 6 [SrcEff.eCall ix_boxed_of_mini_selfhost_SrcType [SrcEff.ePure (SrcExpr.local 150)]]], SrcEff.eVariant ty178 1 []]) }
 
 /-- mini::selfhost::weight_add_to -/
-def src_weight_add_to (ix_weight_sum : Nat) : SrcFunc := { params := [{ id := 14, ty := SrcType.uint (UintTy.usize) }, { id := 24, ty := ty241 }], ret := ty241, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 24)) ty241 ty241 [[147], []] [SrcEff.eCall ix_weight_sum [SrcEff.ePure (SrcExpr.local 14), SrcEff.ePure (SrcExpr.local 147)], SrcEff.eVariant ty241 1 []]) }
+def src_weight_add_to (ix_weight_sum : Nat) : SrcFunc := { params := [{ id := 14, ty := SrcType.uint (UintTy.usize) }, { id := 24, ty := ty163 }], ret := ty163, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 24)) ty163 ty163 [[147], []] [SrcEff.eCall ix_weight_sum [SrcEff.ePure (SrcExpr.local 14), SrcEff.ePure (SrcExpr.local 147)], SrcEff.eVariant ty163 1 []]) }
 
 /-- mini::selfhost::weight_limit -/
 def src_weight_limit : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000400000#64) }
 
 /-- mini::selfhost::weight_sum -/
-def src_weight_sum (ix_minus : Nat) (ix_plus : Nat) (ix_weight_limit : Nat) : SrcFunc := { params := [{ id := 11, ty := SrcType.uint (UintTy.usize) }, { id := 21, ty := SrcType.uint (UintTy.usize) }], ret := ty241, body := SrcStmt.then (SrcStmt.ifEval (SrcEff.eApply (SrcOp.logicalOr) (SrcEff.eApply (SrcOp.greater) (SrcEff.ePure (SrcExpr.local 11)) (SrcEff.eCall ix_weight_limit [])) (SrcEff.eApply (SrcOp.greater) (SrcEff.ePure (SrcExpr.local 21)) (SrcEff.eCall ix_minus [SrcEff.eCall ix_weight_limit [], SrcEff.ePure (SrcExpr.local 11)]))) (SrcStmt.returnEval (SrcEff.eVariant ty241 1 [])) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty241 0 [SrcEff.eCall ix_plus [SrcEff.ePure (SrcExpr.local 11), SrcEff.ePure (SrcExpr.local 21)]])) }
+def src_weight_sum (ix_minus : Nat) (ix_plus : Nat) (ix_weight_limit : Nat) : SrcFunc := { params := [{ id := 11, ty := SrcType.uint (UintTy.usize) }, { id := 21, ty := SrcType.uint (UintTy.usize) }], ret := ty163, body := SrcStmt.then (SrcStmt.ifEval (SrcEff.eApply (SrcOp.logicalOr) (SrcEff.eApply (SrcOp.greater) (SrcEff.ePure (SrcExpr.local 11)) (SrcEff.eCall ix_weight_limit [])) (SrcEff.eApply (SrcOp.greater) (SrcEff.ePure (SrcExpr.local 21)) (SrcEff.eCall ix_minus [SrcEff.eCall ix_weight_limit [], SrcEff.ePure (SrcExpr.local 11)]))) (SrcStmt.returnEval (SrcEff.eVariant ty163 1 [])) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty163 0 [SrcEff.eCall ix_plus [SrcEff.ePure (SrcExpr.local 11), SrcEff.ePure (SrcExpr.local 21)]])) }
 
 end
 

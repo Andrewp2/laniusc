@@ -20,6 +20,38 @@ open Lanius.Faithful.Budget
 
 noncomputable section
 
+def Cost_int_literal_at : Nat → Lanius.Mini.SrcType → BitVec 32 → Lanius.Mini.SrcExpr → Nat
+  | 0, x15, x27, x35 => 18446744073709551616
+  | n + 1, x15, x27, x35 => (match x15 with | .i32 => 0 | .bool => 0 | .uint x133 => 0 | .struct x186 x190 => 0 | .enum x217 x221 => 0 | .ptr => 0 | .slice x281 => 0 | .array x314 x318 => 0 | .unit => 0 | .isize => 1 | .char => 0 | .float x448 => 0 | .sint x471 => (Cost_sint_at n x471 x27 x35) | .view x510 => 0 | .str => 0 | .ref x559 => 0)
+
+end
+
+noncomputable section
+
+def Cost_int_at : Nat → Option Lanius.Mini.SrcType → BitVec 32 → Lanius.Mini.SrcExpr → Nat
+  | 0, x7, x44, x52 => 18446744073709551616
+  | n + 1, x7, x44, x52 => (match x7 with | some x135 => (Cost_int_literal_at n x135 x44 x52) | none => 0)
+
+end
+
+noncomputable section
+
+def Cost_neg_wide_isize : Nat → BitVec 64 → Lanius.Mini.SrcExpr → Nat
+  | 0, x15, x23 => 18446744073709551616
+  | n + 1, x15, x23 => (if (decide (x15.toNat ≤ (9223372036854775808#64).toNat)) = true then 1 else 0)
+
+end
+
+noncomputable section
+
+def Cost_neg_wide_sint : Nat → Lanius.Mini.UintTy → BitVec 64 → Lanius.Mini.SrcExpr → Nat
+  | 0, x14, x25, x33 => 18446744073709551616
+  | n + 1, x14, x25, x33 => (if ((Lanius.Mini.sintWide x14) && (decide (x25.toNat ≤ (9223372036854775808#64).toNat))) = true then 1 else 0)
+
+end
+
+noncomputable section
+
 def Cost_neg_wide_at : Nat → Option Lanius.Mini.SrcType → BitVec 64 → Lanius.Mini.SrcExpr → Nat
   | 0, x12, x49, x57 => 18446744073709551616
   | n + 1, x12, x49, x57 => (match x12 with | some x157 => (match x157 with | .i32 => 0 | .bool => 0 | .uint x254 => 0 | .struct x282 x286 => 0 | .enum x317 x321 => 0 | .ptr => 0 | .slice x377 => 0 | .array x414 x418 => 0 | .unit => 0 | .isize => (Cost_neg_wide_isize n x49 x57) | .char => 0 | .float x563 => 0 | .sint x590 => (Cost_neg_wide_sint n x590 x49 x57) | .view x639 => 0 | .str => 0 | .ref x696 => 0) | none => 0)

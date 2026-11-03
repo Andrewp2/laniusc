@@ -64,3 +64,8 @@
     `layout` and `linked_size` add up (or reject a Code larger than `image_limit` in `compile_func`),
     so every whole-program number stays below about 2^31 with no budget.
   - The front end's output has `statics = []` (`build_collected`), so statics adds nothing.
+- 11-03 (leafB): unused. PreCompileWords.red3 uses PreCompileSourceV3 instead (V2 is probably false at
+  any budget, see above). The compiler now checks the image limit as the sizes add up (`room_after`,
+  SEMANTIC_DECISIONS "The image limit checked as the sizes add up"), so whole-program sums need no size
+  lemmas. Per-function slot numbers come from `SrcStmt.depth` (FrontEndStmtDepth) and type sizes from
+  `ts` (FrontEndTypeSlots).
