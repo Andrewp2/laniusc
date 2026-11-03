@@ -1,5 +1,7 @@
 import Lanius.Faithful.SelfPre.Values
 import Lanius.Faithful.SelfPre.NB
+import Lanius.Faithful.SelfPre.TS
+import Lanius.Mini.Room
 
 /-! # Byte lists of the compile side (F14)
 
@@ -86,5 +88,37 @@ theorem val_FOp_size (x : FOp) : FOp.size x ≤ 22 := by
 theorem val_FOp_number (x : FOp) : FOp.number x ≤ 19 := by
   cases x <;> simp only [FOp.number] <;>
     first | omega | (rename_i a b; cases a <;> cases b <;> decide)
+
+/-! Code sizes: a statement's code is at most 64 bytes per unit of its weight
+(`Room.lean`), which `compileFunc`'s room check bounds by the image limit, so
+the pc offsets the compile adds up stay small (the compile side's
+`COMPILE_OVERRIDES` in `tools/pre_certs.py`). -/
+
+theorem val_compileStmt (base pos brk cont : Nat) (s : Stmt) :
+    codeSize (compileStmt base pos brk cont s) ≤ 64 * s.weight := codeSize_le base s pos brk cont
+theorem val_compileExpr (base : Nat) (e : Expr) (depth : Nat) :
+    codeSize (compileExpr base e depth) ≤ 40 * e.weight := codeSize_le_expr base e depth
+theorem val_compileArgs (base : Nat) (args : List Expr) (k : Nat) :
+    codeSize (compileArgs base args k) + 14 * args.length ≤ 64 * argsWeight args :=
+  codeSize_le_args base args k
+theorem val_zeroLocals (first count : Nat) : codeSize (zeroLocals first count) = 7 * count := by
+  induction count generalizing first with
+  | zero => simp [zeroLocals, codeSize]
+  | succ c ih => rw [zeroLocals]; simp [codeSize, Instr.size, ih]; omega
+
+/-! Temporaries: `compileFunc` adds a function's locals and its body's
+temporaries before its room check, so the Mini compile's pre lemmas carry the
+most temporaries of the functions they compile (`funcsTemps`, below `K`; where
+it comes from: `Lanius.Open.LowerFuncsTemps`, `Lanius.Open.OptimizeKeepsNumbers`). -/
+
+/-- The most temporaries any of the functions' bodies uses. -/
+def funcsTemps : List Func → Nat
+  | [] => 0
+  | f :: fs => max (Stmt.temps f.body) (funcsTemps fs)
+
+/-- `funcsTemps` of a lowering's result (`0` when it failed). -/
+def optTemps : Option (List Func) → Nat
+  | none => 0
+  | some fs => funcsTemps fs
 
 end Lanius.Faithful.SelfPre

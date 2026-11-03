@@ -2839,6 +2839,30 @@ theorem post_host_random_code : ∀ (n : Nat) (x0 : Nat), ∀ M : Nat, Cost_host
   rw [Lanius.Mini.hostRandomCode.eq_def x0]
   post_auto n, M
 
+theorem post_host_text_code : ∀ (n : Nat) (x0 : Nat), ∀ M : Nat, Cost_host_text_code n x0 < 18446744073709551616 → hb (Lanius.Mini.hostTextCode x0) ≤ M + Cost_host_text_code n x0 := by
+  intro n x0 M 
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_host_text_code.eq_def]; dsimp only
+  rw [Lanius.Mini.hostTextCode.eq_def x0]
+  post_auto n, M
+
+theorem post_host_newline_code : ∀ (n : Nat) (x0 : Nat), ∀ M : Nat, Cost_host_newline_code n x0 < 18446744073709551616 → hb (Lanius.Mini.hostNewlineCode x0) ≤ M + Cost_host_newline_code n x0 := by
+  intro n x0 M 
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_host_newline_code.eq_def]; dsimp only
+  rw [Lanius.Mini.hostNewlineCode.eq_def x0]
+  post_auto n, M
+
+theorem post_eval_host_text : ∀ (n : Nat) (x0 : Nat) (x1 : Nat) (x2 : Lanius.Mini.EvaluatedArgs), ∀ M : Nat, hb x2 ≤ M → Cost_eval_host_text n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.evalHostText x0 x1 x2) ≤ M + Cost_eval_host_text n x0 x1 x2 := by
+  intro n x0 x1 x2 M hM0
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_eval_host_text.eq_def]; dsimp only
+  rw [Lanius.Mini.evalHostText.eq_def x0 x1 x2]
+  post_auto n, M
+
 theorem post_eval_host : ∀ (n : Nat) (x0 : Nat) (x1 : Nat) (x2 : Lanius.Mini.EvaluatedArgs), ∀ M : Nat, hb x2 ≤ M → Cost_eval_host n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.evalHost x0 x1 x2) ≤ M + Cost_eval_host n x0 x1 x2 := by
   intro n x0 x1 x2 M hM0
   rcases n with _ | n

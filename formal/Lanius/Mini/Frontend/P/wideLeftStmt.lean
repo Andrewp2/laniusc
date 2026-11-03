@@ -10,6 +10,7 @@ import Lanius.Mini.Frontend.P.collect
 import Lanius.Mini.Frontend.P.funcsBytes
 import Lanius.Mini.Frontend.P.funcsOnto
 import Lanius.Mini.Frontend.P.isEmptyUsize
+import Lanius.Mini.Frontend.P.limLeaf
 import Lanius.Mini.Frontend.P.negWideI32
 import Lanius.Mini.Frontend.P.rootInsts
 
@@ -65,7 +66,7 @@ def wideLeftFuncs (fs : List SrcFunc) : Bool :=
   | g :: rest => wideLeftStmt g.body || wideLeftFuncs rest
 
 def untypedRejected (fs : List SrcFunc) : Option SrcProgram :=
-  if wideLeftFuncs fs then
+  if wideLeftFuncs fs || !(limFuncs (placeFuncs [] fs)) then
     none
   else
     some (placedProgram fs)

@@ -16,6 +16,81 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.SelfCert
 open Lanius.Faithful.Budget
 
+abbrev BStmt_arms_naming_at (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Bool} {x1 : Lanius.Mini.CTree} {x2 : List Lanius.Mini.CTree} {v0 v1 v2 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepBool x0 v0 → RepCTree x1 v1 → (RepList 82 RepCTree) x2 v2 →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_arms_naming_at n x0 x1 x2 = k ∧ (RepList 82 RepCTree) (Lanius.Mini.armsNamingAt x0 x1 x2) w
+
+abbrev BStmt_arms_naming (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.TypeDecl} {x2 : List Nat} {x3 : List Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepTypeDecl x1 v1 → (RepList 25 RepNat) x2 v2 → (RepList 82 RepCTree) x3 v3 →
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_arms_naming n x0 x1 x2 x3 = k ∧ (RepList 82 RepCTree) (Lanius.Mini.armsNaming x0 x1 x2 x3) w
+
+abbrev BStmt_uses_wild (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.TypeDecl} {x2 : List Lanius.Mini.VariantTy} {x3 : List Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepTypeDecl x1 v1 → (RepList 288 RepVariantTy) x2 v2 → (RepList 82 RepCTree) x3 v3 →
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_uses_wild n x0 x1 x2 x3 = k ∧ RepBool (Lanius.Mini.usesWild x0 x1 x2 x3) w
+
+abbrev BStmt_p_pattern_tuple (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value} {k : Nat},
+    qcall spW prims uc n ix [] = some (w, k) →
+    qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.Inline.pPatternTuple) w
+
+abbrev BStmt_wild_binder (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.CTree} {x1 : Nat} {v0 v1 w : Value} {k b : Nat},
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepCTree x0 v0 → RepNat x1 v1 → k < b → Pre_wild_binder n x0 x1 b →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_wild_binder n x0 x1 = k ∧ RepCTree (Lanius.Mini.wildBinder x0 x1) w
+
+abbrev BStmt_wild_binders (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.CTree} {x1 : Nat} {x2 : List Lanius.Mini.Ty} {v0 v1 v2 w : Value} {k b : Nat},
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepCTree x0 v0 → RepNat x1 v1 → (RepList 141 RepTy) x2 v2 → k < b → Pre_wild_binders n x0 x1 x2 b →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_wild_binders n x0 x1 x2 = k ∧ (RepList 82 RepCTree) (Lanius.Mini.wildBinders x0 x1 x2) w
+
+abbrev BStmt_wild_tail (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.CTree} {x1 : List Lanius.Mini.Ty} {v0 v1 w : Value} {k b : Nat},
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepCTree x0 v0 → (RepList 141 RepTy) x1 v1 → k < b → Pre_wild_tail n x0 x1 b →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_wild_tail n x0 x1 = k ∧ RepCTree (Lanius.Mini.wildTail x0 x1) w
+
+abbrev BStmt_wild_arm_for (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.CTree} {x1 : Lanius.Mini.VariantTy} {v0 v1 w : Value} {k b : Nat},
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepCTree x0 v0 → RepVariantTy x1 v1 → k < b → Pre_wild_arm_for n x0 x1 b →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_wild_arm_for n x0 x1 = k ∧ RepCTree (Lanius.Mini.wildArmFor x0 x1) w
+
+abbrev BStmt_arms_or_wild (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.TypeDecl} {x2 : List Lanius.Mini.VariantTy} {x3 : List Lanius.Mini.CTree} {x4 : Lanius.Mini.CTree} {v0 v1 v2 v3 v4 w : Value} {k b : Nat},
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → RepNat x0 v0 → RepTypeDecl x1 v1 → (RepList 288 RepVariantTy) x2 v2 → (RepList 82 RepCTree) x3 v3 → RepCTree x4 v4 → k < b → Pre_arms_or_wild n x0 x1 x2 x3 x4 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_arms_or_wild n x0 x1 x2 x3 x4 = k ∧ (RepOption 81 (RepList 82 RepCTree)) (Lanius.Mini.armsOrWild x0 x1 x2 x3 x4) w
+
+abbrev BStmt_wild_order (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.TypeDecl} {x2 : List Lanius.Mini.VariantTy} {x3 : Lanius.Mini.WildSplit} {v0 v1 v2 v3 w : Value} {k b : Nat},
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepTypeDecl x1 v1 → (RepList 288 RepVariantTy) x2 v2 → RepWildSplit x3 v3 → k < b → Pre_wild_order n x0 x1 x2 x3 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_wild_order n x0 x1 x2 x3 = k ∧ (RepOption 81 (RepList 82 RepCTree)) (Lanius.Mini.wildOrder x0 x1 x2 x3) w
+
+abbrev BStmt_length_of_mini_selfhost_CTree (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List Lanius.Mini.CTree} {v0 w : Value} {k b : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 82 RepCTree) x0 v0 → k < b → Pre_length_of_mini_selfhost_CTree n x0 b →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepNat (x0.length) w
+
+abbrev BStmt_length_of_mini_selfhost_VariantTy (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List Lanius.Mini.VariantTy} {v0 w : Value} {k b : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 288 RepVariantTy) x0 v0 → k < b → Pre_length_of_mini_selfhost_VariantTy n x0 b →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepNat (x0.length) w
+
+abbrev BStmt_arms_by_variant (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.TypeDecl} {x2 : List Lanius.Mini.VariantTy} {x3 : List Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepTypeDecl x1 v1 → (RepList 288 RepVariantTy) x2 v2 → (RepList 82 RepCTree) x3 v3 →
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_arms_by_variant n x0 x1 x2 x3 = k ∧ (RepOption 81 (RepList 82 RepCTree)) (Lanius.Mini.armsByVariant x0 x1 x2 x3) w
+
+abbrev BStmt_arms_exact (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.TypeDecl} {x2 : List Lanius.Mini.VariantTy} {x3 : List Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value} {k b : Nat},
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepTypeDecl x1 v1 → (RepList 288 RepVariantTy) x2 v2 → (RepList 82 RepCTree) x3 v3 → k < b → Pre_arms_exact n x0 x1 x2 x3 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_arms_exact n x0 x1 x2 x3 = k ∧ (RepOption 81 (RepList 82 RepCTree)) (Lanius.Mini.armsExact x0 x1 x2 x3) w
+
+abbrev BStmt_arms_in_order (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.TypeDecl} {x2 : List Lanius.Mini.VariantTy} {x3 : List Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value} {k b : Nat},
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepTypeDecl x1 v1 → (RepList 288 RepVariantTy) x2 v2 → (RepList 82 RepCTree) x3 v3 → k < b → Pre_arms_in_order n x0 x1 x2 x3 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_arms_in_order n x0 x1 x2 x3 = k ∧ (RepOption 81 (RepList 82 RepCTree)) (Lanius.Mini.armsInOrder x0 x1 x2 x3) w
+
 abbrev BStmt_used_arms (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : List Lanius.Mini.CTree} {v0 v1 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepBool x0 v0 → (RepList 82 RepCTree) x1 v1 →

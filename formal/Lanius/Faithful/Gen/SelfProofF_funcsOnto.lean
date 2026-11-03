@@ -154,9 +154,9 @@ theorem step_param_tys {prog : SrcProgram} {prims : Prims} {ix_param_tys ix_empt
   simp only [src_param_tys] at h
   faithful [Lanius.Mini.paramTys]
 
-theorem proof_payloads_weight {prog : SrcProgram} {prims : Prims} {ix_payloads_weight ix_flatten_tys ix_weight_add_to ix_tys_weight : Nat} (fn : prog.funcs[ix_payloads_weight]? = some (src_payloads_weight ix_flatten_tys ix_weight_add_to ix_tys_weight)) (np : prims.isPrim ix_payloads_weight = false)
-    (ext_flatten_tys : Certified (∀ {n : Nat}, Stmt_flatten_tys prog prims ix_flatten_tys n))
+theorem proof_payloads_weight {prog : SrcProgram} {prims : Prims} {ix_payloads_weight ix_weight_add_to ix_flatten_tys ix_tys_weight : Nat} (fn : prog.funcs[ix_payloads_weight]? = some (src_payloads_weight ix_weight_add_to ix_flatten_tys ix_tys_weight)) (np : prims.isPrim ix_payloads_weight = false)
     (ext_weight_add_to : Certified (∀ {n : Nat}, Stmt_weight_add_to prog prims ix_weight_add_to n))
+    (ext_flatten_tys : Certified (∀ {n : Nat}, Stmt_flatten_tys prog prims ix_flatten_tys n))
     (ext_tys_weight : Certified (∀ {n : Nat}, Stmt_tys_weight prog prims ix_tys_weight n)) {n : Nat} :
     Stmt_payloads_weight prog prims ix_payloads_weight n := by
   intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2

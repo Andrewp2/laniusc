@@ -104,4 +104,22 @@ theorem SrcProgram.need_zero_of_all {sp : SrcProgram} (blocks : (sp.funcs.all fu
     have := List.all_eq_true.mp blocks f mem
     simpa using this) i
 
+/-- A list's check from its checks in pieces of `c`, the `k`th piece
+`(l.drop (k * c)).take c`, so that a kernel check of a long list can run piece
+by piece. -/
+theorem all_of_pieces {α : Type} (p : α → Bool) (c : Nat) :
+    ∀ (n : Nat) (l : List α), l.length ≤ n * c → (∀ k < n, ((l.drop (k * c)).take c).all p = true) →
+      l.all p = true
+  | 0, l, len, _ => by
+    have : l = [] := List.eq_nil_of_length_eq_zero (by simpa using len)
+    subst this; rfl
+  | n + 1, l, len, pieces => by
+    rw [← List.take_append_drop c l, List.all_append, Bool.and_eq_true]
+    refine ⟨by simpa using pieces 0 (by omega), all_of_pieces p c n (l.drop c) ?_ fun k lt => ?_⟩
+    · simp only [List.length_drop]
+      rw [Nat.add_mul] at len
+      omega
+    · have := pieces (k + 1) (by omega)
+      rwa [List.drop_drop, show c + k * c = (k + 1) * c by rw [Nat.add_mul]; omega]
+
 end Lanius.Mini

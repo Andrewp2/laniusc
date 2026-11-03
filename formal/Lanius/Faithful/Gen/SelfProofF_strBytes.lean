@@ -56,14 +56,14 @@ theorem step_effs_bytes {prog : SrcProgram} {prims : Prims} {ix_effs_bytes ix_em
   simp only [src_effs_bytes] at h
   faithful [Lanius.Mini.effsBytes]
 
-theorem step_place_eff {prog : SrcProgram} {prims : Prims} {ix_place_eff ix_length_of_u8 ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_concat_of_u8 ix_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff ix_boxed_of_mini_selfhost_SrcEff ix_eff_bytes ix_place_effs : Nat} (fn : prog.funcs[ix_place_eff]? = some (src_place_eff ix_length_of_u8 ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_concat_of_u8 ix_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff ix_boxed_of_mini_selfhost_SrcEff ix_place_eff ix_eff_bytes ix_place_effs)) (np : prims.isPrim ix_place_eff = false)
+theorem step_place_eff {prog : SrcProgram} {prims : Prims} {ix_place_eff ix_length_of_u8 ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_concat_of_u8 ix_eff_bytes ix_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff ix_boxed_of_mini_selfhost_SrcEff ix_place_effs : Nat} (fn : prog.funcs[ix_place_eff]? = some (src_place_eff ix_length_of_u8 ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_concat_of_u8 ix_place_eff ix_eff_bytes ix_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff ix_boxed_of_mini_selfhost_SrcEff ix_place_effs)) (np : prims.isPrim ix_place_eff = false)
     (ext_length_of_u8 : Certified (∀ {n : Nat}, Stmt_length_of_u8 prog prims ix_length_of_u8 n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff n))
     (ext_unbox_of_mini_selfhost_SrcEff : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_SrcEff prog prims ix_unbox_of_mini_selfhost_SrcEff n))
     (ext_concat_of_u8 : Certified (∀ {n : Nat}, Stmt_concat_of_u8 prog prims ix_concat_of_u8 n))
+    (ext_eff_bytes : Certified (∀ {n : Nat}, Stmt_eff_bytes prog prims ix_eff_bytes n))
     (ext_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff n))
-    (ext_boxed_of_mini_selfhost_SrcEff : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_SrcEff prog prims ix_boxed_of_mini_selfhost_SrcEff n))
-    (ext_eff_bytes : Certified (∀ {n : Nat}, Stmt_eff_bytes prog prims ix_eff_bytes n)) {n : Nat}
+    (ext_boxed_of_mini_selfhost_SrcEff : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_SrcEff prog prims ix_boxed_of_mini_selfhost_SrcEff n)) {n : Nat}
     (ih_place_eff : Certified (Stmt_place_eff prog prims ix_place_eff n))
     (ih_place_effs : Certified (Stmt_place_effs prog prims ix_place_effs n)) :
     Stmt_place_eff prog prims ix_place_eff (n + 1) := by
@@ -72,11 +72,11 @@ theorem step_place_eff {prog : SrcProgram} {prims : Prims} {ix_place_eff ix_leng
   simp only [src_place_eff] at h
   faithful [Lanius.Mini.placeEff]
 
-theorem step_place_effs {prog : SrcProgram} {prims : Prims} {ix_place_effs ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_concat_of_u8 ix_empty_of_mini_selfhost_SrcEff ix_place_eff ix_eff_bytes ix_cons_of_mini_selfhost_SrcEff : Nat} (fn : prog.funcs[ix_place_effs]? = some (src_place_effs ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_concat_of_u8 ix_empty_of_mini_selfhost_SrcEff ix_place_eff ix_eff_bytes ix_cons_of_mini_selfhost_SrcEff ix_place_effs)) (np : prims.isPrim ix_place_effs = false)
+theorem step_place_effs {prog : SrcProgram} {prims : Prims} {ix_place_effs ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_concat_of_u8 ix_place_eff ix_eff_bytes ix_empty_of_mini_selfhost_SrcEff ix_cons_of_mini_selfhost_SrcEff : Nat} (fn : prog.funcs[ix_place_effs]? = some (src_place_effs ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_concat_of_u8 ix_place_eff ix_eff_bytes ix_empty_of_mini_selfhost_SrcEff ix_place_effs ix_cons_of_mini_selfhost_SrcEff)) (np : prims.isPrim ix_place_effs = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff n))
     (ext_concat_of_u8 : Certified (∀ {n : Nat}, Stmt_concat_of_u8 prog prims ix_concat_of_u8 n))
-    (ext_empty_of_mini_selfhost_SrcEff : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_SrcEff prog prims ix_empty_of_mini_selfhost_SrcEff n))
     (ext_eff_bytes : Certified (∀ {n : Nat}, Stmt_eff_bytes prog prims ix_eff_bytes n))
+    (ext_empty_of_mini_selfhost_SrcEff : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_SrcEff prog prims ix_empty_of_mini_selfhost_SrcEff n))
     (ext_cons_of_mini_selfhost_SrcEff : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_SrcEff prog prims ix_cons_of_mini_selfhost_SrcEff n)) {n : Nat}
     (ih_place_eff : Certified (Stmt_place_eff prog prims ix_place_eff n))
     (ih_place_effs : Certified (Stmt_place_effs prog prims ix_place_effs n)) :
@@ -86,11 +86,11 @@ theorem step_place_effs {prog : SrcProgram} {prims : Prims} {ix_place_effs ix_un
   simp only [src_place_effs] at h
   faithful [Lanius.Mini.placeEffs]
 
-theorem step_place_stmt {prog : SrcProgram} {prims : Prims} {ix_place_stmt ix_unbox_of_mini_selfhost_SrcStmt ix_concat_of_u8 ix_boxed_of_mini_selfhost_SrcStmt ix_stmt_bytes ix_place_eff ix_eff_bytes : Nat} (fn : prog.funcs[ix_place_stmt]? = some (src_place_stmt ix_unbox_of_mini_selfhost_SrcStmt ix_concat_of_u8 ix_boxed_of_mini_selfhost_SrcStmt ix_place_stmt ix_stmt_bytes ix_place_eff ix_eff_bytes)) (np : prims.isPrim ix_place_stmt = false)
+theorem step_place_stmt {prog : SrcProgram} {prims : Prims} {ix_place_stmt ix_unbox_of_mini_selfhost_SrcStmt ix_concat_of_u8 ix_stmt_bytes ix_boxed_of_mini_selfhost_SrcStmt ix_place_eff ix_eff_bytes : Nat} (fn : prog.funcs[ix_place_stmt]? = some (src_place_stmt ix_unbox_of_mini_selfhost_SrcStmt ix_concat_of_u8 ix_place_stmt ix_stmt_bytes ix_boxed_of_mini_selfhost_SrcStmt ix_place_eff ix_eff_bytes)) (np : prims.isPrim ix_place_stmt = false)
     (ext_unbox_of_mini_selfhost_SrcStmt : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_SrcStmt prog prims ix_unbox_of_mini_selfhost_SrcStmt n))
     (ext_concat_of_u8 : Certified (∀ {n : Nat}, Stmt_concat_of_u8 prog prims ix_concat_of_u8 n))
-    (ext_boxed_of_mini_selfhost_SrcStmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_SrcStmt prog prims ix_boxed_of_mini_selfhost_SrcStmt n))
     (ext_stmt_bytes : Certified (∀ {n : Nat}, Stmt_stmt_bytes prog prims ix_stmt_bytes n))
+    (ext_boxed_of_mini_selfhost_SrcStmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_SrcStmt prog prims ix_boxed_of_mini_selfhost_SrcStmt n))
     (ext_place_eff : Certified (∀ {n : Nat}, Stmt_place_eff prog prims ix_place_eff n))
     (ext_eff_bytes : Certified (∀ {n : Nat}, Stmt_eff_bytes prog prims ix_eff_bytes n)) {n : Nat}
     (ih_place_stmt : Certified (Stmt_place_stmt prog prims ix_place_stmt n)) :

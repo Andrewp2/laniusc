@@ -53,3 +53,37 @@
   (`x.size`), or a callee's result (`Code_size`, `seq_code`, `offset_after`). Next: invariant
   hypotheses for the counting recursions (`first + count ≤ M`, as the front end's OVERRIDES), and
   value lemmas for the computed numbers.
+- 11-03 (leafB): type sizes and the code-size invariants. Pre lemmas get `ts x ≤ 2^22` where a type's
+  size is used (`num_used` now records the kind of use: numbers or type sizes). The Mini program's
+  compile (what `compile_optimized` reaches, `COMPILE_FIXED_ROOTS`) bounds the program's numbers by
+  `K = 2^62` instead of `M`: they are its own slots, indices and counts and do not grow as it
+  compiles, and a caller's `M ≤ K` gives them. `COMPILE_OVERRIDES` add invariants: a temporary's
+  depth plus the expression's (arguments') weight below `2^40` (`compile_expr`, `compile_args`;
+  `hb` does not count tree nodes, so the height cannot be the measure), a pc offset plus 64 bytes
+  per unit of the weight left below `2^40` (`compile_stmt`, `seq_code`, `ite_code`, `loop_code`,
+  from `CompileValues`' `val_compileStmt`/`val_compileExpr`, the `codeSize_le` bounds), a code
+  list's or an instruction's size below `K` (`code_size`, `Instr_size`), and `first + count ≤ K`
+  (`zero_locals`). P02: 81 failing -> 73, none newly failing. Failed: tagging pattern variables of
+  every `match` as their parameter (`match_aliases`, behind `PRE_NUMS_ALIAS=1`): 101 failing, the
+  callers then need numbers of callee results (`factsAfter`, `optimizeProgram`) that no post bounds.
+  `compile_func` stays skipped: `locals + temps` needs a bound on `Stmt.temps` of the lowered,
+  optimized body, which nothing upstream states yet.
+- 11-03 (leafB): two open leaves for the Mini compile's cuts, `LowerFuncsTemps` (a lowered body's
+  temporaries are at most the lowering's cost) and `OptimizeKeepsNumbers` (the optimizer raises no
+  number and no temporaries count). With `funcsTemps ≤ K` carried from `compile_lowered` down to
+  `compile_func` (`COMPILE_OVERRIDES`; `CompileValues`' `funcsTemps`/`optTemps`) and `compile_funcs`'
+  and `compile_lowered`'s pattern variables taken as their parameter (`COMPILE_NUM_ALIAS`), P02 has 71
+  failing (73 before): `compile_func`, the temps functions, `compile_funcs`, `compile_program`,
+  `compile_or` pass; `compile_optimized` waits on OptimizeKeepsNumbers and `compile_declared` on
+  LowerFuncsTemps and on a bound of the lowered program's numbers (lowering side, next).
+- 11-03 (leafB): V3 is probably false as stated. `lower_func`'s precondition starts with
+  `params_size`'s, which adds the parameters' type sizes with no cost check between them. A program
+  with 2^43 parameters of a type of 2^22 slots has `ts p ≤ weightLimit`, depths 0 and `hb p` about
+  2^43, and a budget of about 2^44 reaches `lower_func` (declaring and sigs cost about a step per
+  parameter), with `M + b ≤ 2^62`; the sum is 2^65. The same holds for `frame_block` and the other
+  per-function sums over parameters and fields. A replacement needs a per-function bound on the
+  parameters' slots (as `SrcStmt.depth ≤ 2^55` for the lets), e.g. `paramsSize f.params ≤ 2^55`, from
+  the front end as FrontEndStmtDepth does for depths (a parameter takes at least one word).
+- 11-03 (leafB): unused. Replaced by PreCompileSourceV4, which adds `∀ f ∈ p.funcs, paramsSize f.params
+  ≤ 2^40` (the parameters' slots; the counterexample above). PreCompileWords.red3 stays as written; a
+  red5 from V4 waits on the front end's leaf for that bound (leafA's FrontEndParamSlots).
