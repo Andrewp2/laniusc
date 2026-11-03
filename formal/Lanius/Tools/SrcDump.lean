@@ -85,6 +85,7 @@ def srcTyName : SrcType → String
   | .sint k => sintName k
   | .view n => s!"view{n}"
   | .str => "str"
+  | .ref _ => "ref"
 
 mutual
 partial def effCalls : SrcEff → List Nat
@@ -212,6 +213,7 @@ partial def typeText : SrcType → StateM Table String
   | .sint k => pure s!"(.sint {uintText k})"
   | .view n => pure s!"(.view {n})"
   | .str => pure ".str"
+  | .ref r => do named s!".ref {← typeText r}"
   | .slice e => do named s!".slice {← typeText e}"
   | .array e n => do named s!"(.array {← typeText e} {n})"
   | .struct id fs => do

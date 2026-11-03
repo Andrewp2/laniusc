@@ -22,7 +22,7 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_eval_host_text (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {x2 : Lanius.Mini.EvaluatedArgs} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepNat x1 v1 → RepEvaluatedArgs x2 v2 →
-    (RepOption 156 RepEvaluated) (Lanius.Mini.evalHostText x0 x1 x2) w
+    (RepOption 157 RepEvaluated) (Lanius.Mini.evalHostText x0 x1 x2) w
 
 abbrev Stmt_host_newline_code (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →

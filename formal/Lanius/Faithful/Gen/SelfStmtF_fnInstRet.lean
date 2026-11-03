@@ -85,7 +85,7 @@ abbrev Stmt_is_method_form (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
     RepBool (Lanius.Mini.isMethodForm x0) w
 
 abbrev Stmt_is_owner_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : Option Nat} {x2 : List Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepFrontEnv x0 v0 → (RepOption 207 RepNat) x1 v1 → (RepList 25 RepNat) x2 v2 →
+  ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : Option Nat} {x2 : List Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepFrontEnv x0 v0 → (RepOption 150 RepNat) x1 v1 → (RepList 25 RepNat) x2 v2 →
     RepBool (Lanius.Mini.isOwnerAt x0 x1 x2) w
 
 abbrev Stmt_is_scalar_owner (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -93,7 +93,7 @@ abbrev Stmt_is_scalar_owner (prog : SrcProgram) (prims : Prims) (ix n : Nat) : P
     RepBool (Lanius.Mini.isScalarOwner x0 x1) w
 
 abbrev Stmt_is_some_index (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 207 RepNat) x0 v0 →
+  ∀ {x0 : Option Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 150 RepNat) x0 v0 →
     RepBool (Lanius.Mini.isSomeIndex x0) w
 
 abbrev Stmt_is_type_owner (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

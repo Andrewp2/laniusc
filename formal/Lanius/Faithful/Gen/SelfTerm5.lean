@@ -123,16 +123,16 @@ theorem ok_empty_of_mini_selfhost_Arity : FnOk prog prims info (285, ⟨0, [], 0
 theorem ok_cons_of_mini_selfhost_Arity : FnOk prog prims info (286, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_Arity (by decide +kernel)
 
-theorem ok_layout : FnOk prog prims info (287, ⟨6, [1], 0⟩) :=
-  fnOk_of fn_layout (by decide +kernel)
-
-theorem ok_link_onto : FnOk prog prims info (288, ⟨8, [2], 0⟩) :=
-  fnOk_of fn_link_onto (by decide +kernel)
-
-theorem ok_image_limit : FnOk prog prims info (289, ⟨0, [], 0⟩) :=
+theorem ok_image_limit : FnOk prog prims info (287, ⟨0, [], 0⟩) :=
   fnOk_of fn_image_limit (by decide +kernel)
 
+theorem ok_length_of_u8 : FnOk prog prims info (288, ⟨2, [0], 0⟩) :=
+  fnOk_of fn_length_of_u8 (by decide +kernel)
+
+theorem ok_room_after : FnOk prog prims info (289, ⟨6, [1], 0⟩) :=
+  fnOk_of fn_room_after (by decide +kernel)
+
 theorem chunk5 : AllFns prog prims info part5 :=
-  ⟨ok_SrcStmt_declare, ok_declare_struct, ok_declare_types, ok_declare_enum, ok_declare_variants, ok_byte_after, ok_file_lexed, ok_lex_source, ok_nums_after, ok_attach_sym, ok_used_up, ok_only, ok_items_in, ok_kids_of, ok_get_or_of_mini_selfhost_CTree, ok_no_token, ok_file_collected, ok_collect, ok_empty_of_mini_selfhost_List_usize, ok_module_at, ok_item_body, ok_well_named, ok_build_mono, ok_mono_loop, ok_empty_of_mini_selfhost_MFunc, ok_empty_of_mini_selfhost_Inst, ok_root_at, ok_seed_at, ok_collected_with, ok_Stmt_optimize, ok_empty_of_mini_selfhost_Fact, ok_Func_agrees, ok_empty_of_mini_selfhost_Code, ok_compile_func, ok_cons_of_mini_selfhost_Code, ok_empty_of_mini_selfhost_Arity, ok_cons_of_mini_selfhost_Arity, ok_layout, ok_link_onto, ok_image_limit, trivial⟩
+  ⟨ok_SrcStmt_declare, ok_declare_struct, ok_declare_types, ok_declare_enum, ok_declare_variants, ok_byte_after, ok_file_lexed, ok_lex_source, ok_nums_after, ok_attach_sym, ok_used_up, ok_only, ok_items_in, ok_kids_of, ok_get_or_of_mini_selfhost_CTree, ok_no_token, ok_file_collected, ok_collect, ok_empty_of_mini_selfhost_List_usize, ok_module_at, ok_item_body, ok_well_named, ok_build_mono, ok_mono_loop, ok_empty_of_mini_selfhost_MFunc, ok_empty_of_mini_selfhost_Inst, ok_root_at, ok_seed_at, ok_collected_with, ok_Stmt_optimize, ok_empty_of_mini_selfhost_Fact, ok_Func_agrees, ok_empty_of_mini_selfhost_Code, ok_compile_func, ok_cons_of_mini_selfhost_Code, ok_empty_of_mini_selfhost_Arity, ok_cons_of_mini_selfhost_Arity, ok_image_limit, ok_length_of_u8, ok_room_after, trivial⟩
 
 end Lanius.Faithful.SelfTerm

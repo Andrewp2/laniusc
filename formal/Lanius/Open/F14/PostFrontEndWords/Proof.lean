@@ -1,12 +1,6 @@
 import Lanius.Open.F14.PostFrontEndWords.Stmt
 import Lanius.Faithful.SelfPre.Files
-import Lanius.Faithful.SelfPre.GenP.SelfP00
 import Lanius.Faithful.SelfPre.GenP.SelfP01
-import Lanius.Faithful.SelfPre.GenP.SelfP02
-import Lanius.Faithful.SelfPre.GenP.SelfP03
-import Lanius.Faithful.SelfPre.GenP.SelfP04
-import Lanius.Faithful.SelfPre.GenP.SelfP05
-import Lanius.Faithful.SelfPre.GenP.SelfP06
 
 /-! # `PostFrontEndWords`: the front end's output is at most its input and cost high
 

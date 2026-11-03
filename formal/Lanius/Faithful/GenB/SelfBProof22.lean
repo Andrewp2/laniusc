@@ -18,6 +18,26 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.SelfCert
 open Lanius.Faithful.Budget
 
+theorem bproof_overflow_guard {spW sp : SrcProgram} {prims : Prims} {ix_overflow_guard ix_plus ix_boxed_of_mini_selfhost_Expr ix_UintTy_least_bits : Nat}
+    (fnW : spW.funcs[ix_overflow_guard]? = some (src_overflow_guard ix_plus ix_boxed_of_mini_selfhost_Expr ix_UintTy_least_bits)) (fn : sp.funcs[ix_overflow_guard]? = some (src_overflow_guard ix_plus ix_boxed_of_mini_selfhost_Expr ix_UintTy_least_bits))
+    (np : prims.isPrim ix_overflow_guard = false)
+    (back : Certified (∀ {n : Nat}, Stmt_overflow_guard sp prims ix_overflow_guard n))
+    (b_plus : Certified (∀ {n : Nat}, BStmt_plus spW sp prims ix_plus n))
+    (pp_boxed_of_mini_selfhost_Expr : prims.isPrim ix_boxed_of_mini_selfhost_Expr = true) (bx_boxed_of_mini_selfhost_Expr : prims.boxed.contains ix_boxed_of_mini_selfhost_Expr = true)
+    (b_UintTy_least_bits : Certified (∀ {n : Nat}, BStmt_UintTy_least_bits spW sp prims ix_UintTy_least_bits n)) {n : Nat} :
+    BStmt_overflow_guard spW sp prims ix_overflow_guard n := by
+  intro x0 x1 v0 v1 w k b h r0 r1 hb pre
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_overflow_guard [v0, v1] = some (w, k) ∧ Cost_overflow_guard (n + 1) x0 x1 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_overflow_guard, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_overflow_guard.eq_def] at pre
+    simp only at pre
+    budget Cost_overflow_guard
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
+
 theorem bproof_eval_divide_sint {spW sp : SrcProgram} {prims : Prims} {ix_eval_divide_sint ix_plus ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_SrcType_is_sint ix_signed_div ix_UintTy_is_wide ix_overflow_guard : Nat}
     (fnW : spW.funcs[ix_eval_divide_sint]? = some (src_eval_divide_sint ix_plus ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_SrcType_is_sint ix_signed_div ix_UintTy_is_wide ix_overflow_guard)) (fn : sp.funcs[ix_eval_divide_sint]? = some (src_eval_divide_sint ix_plus ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_SrcType_is_sint ix_signed_div ix_UintTy_is_wide ix_overflow_guard))
     (np : prims.isPrim ix_eval_divide_sint = false)

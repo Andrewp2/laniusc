@@ -577,7 +577,7 @@ theorem link_eq (ms : List Module) :
     rcases resolve_compile imports ms 0 ((modulesOk_eq _ _).1 ok) (by simp) with
       ⟨none1, none2⟩ | ⟨objs, codes, c1, c2, agrees⟩
     · rw [none1, meaning]
-      simp only [Option.bind_none, Option.bind_some, compileProgram]
+      simp only [Option.bind_none, Option.bind_some, compileProgram_eq]
       rw [program, none2]
       rfl
     · rw [c1, meaning]
@@ -586,7 +586,7 @@ theorem link_eq (ms : List Module) :
       obtain ⟨exportsSame, okSame, firstsSame⟩ := compileModules_shape (moduleExports ms) c1
       obtain ⟨image, at_, slots⟩ :=
         agrees.bytes (entries := layout 0 codes) (by rw [layout_length, codesLength]; exact Nat.le_refl _) 0 (fun j _ => by simp)
-      simp only [Option.bind_some, compileProgram, program, c2, linkObjects, firstsSame, at_, image, okSame, ok,
+      simp only [Option.bind_some, compileProgram_eq, program, c2, linkObjects, firstsSame, at_, image, okSame, ok,
         exportsSame, slots, Bool.true_and]
       split <;> simp_all [Binary.executable, linkOnto_eq, linkFrom_length]
   · have meaning : linkProgram ms = none := by simp [linkProgram, ok]

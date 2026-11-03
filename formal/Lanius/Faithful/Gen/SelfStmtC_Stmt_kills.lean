@@ -29,7 +29,7 @@ abbrev Stmt_Func_agrees (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
     RepBool (Lanius.Mini.Func.agrees x0 x1) w
 
 abbrev Stmt_Stmt_agrees (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Stmt} {x1 : List Lanius.Mini.Fact} {x2 : Lanius.Mini.Stmt} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepStmt x0 v0 → (RepList 180 RepFact) x1 v1 → RepStmt x2 v2 →
+  ∀ {x0 : Lanius.Mini.Stmt} {x1 : List Lanius.Mini.Fact} {x2 : Lanius.Mini.Stmt} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepStmt x0 v0 → (RepList 181 RepFact) x1 v1 → RepStmt x2 v2 →
     RepBool (Lanius.Mini.Stmt.agrees x0 x1 x2) w
 
 abbrev Stmt_Stmt_kills (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

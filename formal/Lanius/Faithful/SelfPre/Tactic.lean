@@ -83,6 +83,15 @@ def lookup? (nm : Name) : TacticM (Option Expr) := do
   if env.contains nm then return some (← constFresh nm)
   return none
 
+/-- A generated lemma `s`: in the current namespace (a generated module's own,
+e.g. the compile side's `SelfPre.Compile`, whose lemmas share names with
+build_files'), else under `Lanius.Faithful.SelfPre`. -/
+def genLookup? (s : Name) : TacticM (Option Expr) := do
+  let ns ← getCurrNamespace
+  if ns != `Lanius.Faithful.SelfPre then
+    if let some e ← lookup? (ns ++ s) then return some e
+  lookup? (`Lanius.Faithful.SelfPre ++ s)
+
 /-- A product of two numbers below `2 ^ 32` does not wrap. -/
 theorem mul_lt_two64 {x y : Nat} (hx : x < 4294967296) (hy : y < 4294967296) :
     x * y < 18446744073709551616 := by
@@ -98,11 +107,17 @@ def normNames : Array Name := #[`decide_eq_true_eq, `decide_eq_false_iff_not, `B
   `Bool.not_eq_true', `Bool.not_eq_false', `not_and, `not_or, `true_and, `and_true, `false_and, `and_false,
   `true_or, `or_true, `false_or, `or_false, `Bool.false_eq_true, `Bool.true_eq_false, `Bool.false_and,
   `Bool.true_and, `Bool.and_false, `Bool.and_true, `Bool.false_or, `Bool.true_or, `Bool.or_false, `Bool.or_true,
-  `Bool.not_true, `Bool.not_false, `if_true, `if_false, `ite_true, `ite_false, `dite_true, `dite_false, `not_true_eq_false, `not_false_eq_true, `eq_self_iff_true]
+  `Bool.not_true, `Bool.not_false, `if_true, `if_false, `ite_true, `ite_false, `dite_true, `dite_false, `not_true_eq_false, `not_false_eq_true, `eq_self_iff_true,
+  `decide_true, `decide_false]
+
+/-- A byte literal as the Lean functions write it (`72`), not as the cost models
+do (`UInt8.ofNat 72`): the compile side's byte lists. -/
+theorem uint8_ofNat_lit (n : Nat) : UInt8.ofNat (no_index (OfNat.ofNat n)) = (OfNat.ofNat n : UInt8) := rfl
 
 /-- The heights' normal form: `hb` of a constructor by its parts, `max` on the
 left of `≤` as a conjunction. -/
-def hbNormNames : Array Name := #[``max_le_iff', ``max_add_le_iff', ``Nat.add_assoc, ``BitVec.ofNat_eq_ofNat]
+def hbNormNames : Array Name := #[``max_le_iff', ``max_add_le_iff', ``Nat.add_assoc, ``BitVec.ofNat_eq_ofNat,
+  ``uint8_ofNat_lit]
 
 /-- The nullary `Lanius.Mini` definitions and the `Inline` functions in the context
 and the goal. -/
@@ -248,6 +263,7 @@ division, a `max` or a `min`. -/
 partial def linOf (atoms : Array Expr) (e : Expr) : Option Lin :=
   let n := atoms.size
   if let some k := natLit? e then some ((Lin.zero n).set! n k)
+  else if let some i := atoms.idxOf? e then some ((Lin.zero n).set! i 1)
   else if e.isAppOfArity ``HAdd.hAdd 6 then
     return Lin.add (← linOf atoms (e.getArg! 4)) (← linOf atoms (e.getArg! 5))
   else if e.isAppOfArity ``HMul.hMul 6 then
@@ -319,6 +335,167 @@ def selectHyps (atoms : Array Expr) (goal : Expr) (hyps : Array Expr) : Option (
       unless out.contains i do out := out.push i
   return some out
 
+/-- Prove arithmetic goals by linear certificates where the search finds them. -/
+register_option lanius.hb.cert : Bool := {
+  defValue := true
+  descr := "pre_auto and post_auto prove a goal the hypothesis search covers by SelfPre.LinCert.cert"
+}
+
+/-! ### Linear certificates
+
+When the search finds the hypotheses, the goal follows from them by
+`SelfPre.LinCert.cert`: a check of numerals the kernel evaluates, in place of an
+`omega` proof. The terms are reflected as `LTm`s over the atoms, so each
+hypothesis and the goal are used as they stand (`LTm.den` unfolds to them). -/
+
+def lcName (s : String) : Name := (`Lanius.Faithful.SelfPre.LinCert).str s
+def ltmC (s : String) : Expr := mkConst ((`Lanius.Faithful.SelfPre.LinCert.LTm).str s)
+
+/-- The `LTm` of a `Nat` term `linOf` reads. -/
+partial def ltmOf (atoms : Array Expr) (e : Expr) : Option Expr :=
+  if let some k := natLit? e then some (mkApp (ltmC "lit") (mkRawNatLit k))
+  else if let some i := atoms.idxOf? e then some (mkApp (ltmC "atom") (mkRawNatLit i))
+  else if e.isAppOfArity ``HAdd.hAdd 6 then
+    return mkApp2 (ltmC "add") (← ltmOf atoms (e.getArg! 4)) (← ltmOf atoms (e.getArg! 5))
+  else if e.isAppOfArity ``HMul.hMul 6 then
+    match natLit? (e.getArg! 4), natLit? (e.getArg! 5) with
+    | some k, _ => return mkApp2 (ltmC "mulL") (mkRawNatLit k) (← ltmOf atoms (e.getArg! 5))
+    | _, some k => return mkApp2 (ltmC "mulR") (← ltmOf atoms (e.getArg! 4)) (mkRawNatLit k)
+    | none, none => none
+  else if e.isAppOfArity ``Nat.succ 1 then
+    return mkApp2 (ltmC "add") (← ltmOf atoms e.appArg!) (mkApp (ltmC "lit") (mkRawNatLit 1))
+  else if arithHead e then none
+  else match atoms.idxOf? e with
+    | some i => some (mkApp (ltmC "atom") (mkRawNatLit i))
+    | none => none
+
+/-- A constraint `L ≤ R`: its linear forms, its `LTm`s, a proof (up to unfolding). -/
+structure Con where
+  l : Lin
+  r : Lin
+  lt : Expr
+  rt : Expr
+  pf : Expr
+  ty : Expr
+  deriving Inhabited
+
+/-- The constraints a hypothesis `pf : p` gives, as `constraintsOf` reads them. -/
+partial def consOf (atoms : Array Expr) (pf p : Expr) : Array Con :=
+  let n := atoms.size
+  let one := (Lin.zero n).set! n 1
+  let lit1 := mkApp (ltmC "lit") (mkRawNatLit 1)
+  if p.isAppOfArity ``And 2 then
+    let a := p.appFn!.appArg!
+    let b := p.appArg!
+    consOf atoms (mkApp3 (mkConst ``And.left) a b pf) a ++ consOf atoms (mkApp3 (mkConst ``And.right) a b pf) b
+  else if (p.isAppOfArity ``LE.le 4 || p.isAppOfArity ``LT.lt 4) && isNatTy (p.getArg! 0) then
+    match linOf atoms (p.getArg! 2), linOf atoms (p.getArg! 3), ltmOf atoms (p.getArg! 2), ltmOf atoms (p.getArg! 3) with
+    | some l, some r, some lt, some rt =>
+      if p.isAppOfArity ``LE.le 4 then #[⟨l, r, lt, rt, pf, p⟩]
+      else #[⟨l.add one, r, mkApp2 (ltmC "add") lt lit1, rt, pf, p⟩]
+    | _, _, _, _ => #[]
+  else if p.isAppOfArity ``Eq 3 && isNatTy (p.getArg! 0) then
+    let a := p.getArg! 1
+    let b := p.getArg! 2
+    match linOf atoms a, linOf atoms b, ltmOf atoms a, ltmOf atoms b with
+    | some l, some r, some lt, some rt =>
+      let le := mkConst ``Nat.le_of_eq
+      let leT (x y : Expr) := mkApp4 (mkConst ``LE.le [0]) (mkConst ``Nat) (mkConst ``instLENat) x y
+      #[⟨l, r, lt, rt, mkApp3 le a b pf, leT a b⟩,
+        ⟨r, l, rt, lt, mkApp3 le b a (mkApp4 (mkConst ``Eq.symm [1]) (mkConst ``Nat) a b pf), leT b a⟩]
+    | _, _, _, _ => #[]
+  else #[]
+
+/-- The truncated subtractions of a proposition's arithmetic (not inside atoms). -/
+partial def arithSubs (e : Expr) (acc : Array Expr) : Array Expr :=
+  if e.isAppOfArity ``And 2 || e.isAppOfArity ``Or 2 || e.isAppOfArity ``Iff 2 then
+    arithSubs e.appArg! (arithSubs e.appFn!.appArg! acc)
+  else if e.isAppOfArity ``Not 1 then arithSubs e.appArg! acc
+  else if e.isAppOfArity ``LE.le 4 || e.isAppOfArity ``LT.lt 4 then
+    arithSubs (e.getArg! 3) (arithSubs (e.getArg! 2) acc)
+  else if e.isAppOfArity ``Eq 3 then arithSubs (e.getArg! 2) (arithSubs (e.getArg! 1) acc)
+  else if e.isAppOfArity ``HSub.hSub 6 && (e.getArg! 0).isConstOf ``Nat then
+    let acc := if acc.contains e then acc else acc.push e
+    arithSubs (e.getArg! 5) (arithSubs (e.getArg! 4) acc)
+  else if arithHead e then
+    if e.isAppOfArity ``Nat.succ 1 then arithSubs e.appArg! acc
+    else arithSubs e.appArg! (arithSubs (e.getArg! (e.getAppNumArgs - 2)) acc)
+  else acc
+
+
+/-- A certificate proof of `goal` (`≤`, `<` and their conjunctions) from `hyps`, if
+the search finds one for each conjunct. -/
+partial def certProof? (atoms0 : Array Expr) (goal : Expr) (hyps : Array (Expr × Expr)) : Option Expr := do
+  -- truncated subtractions as atoms, each with its facts
+  let subs := (#[goal] ++ hyps.map (·.2)).foldl (fun acc t => arithSubs t acc) #[]
+  let atoms := subs.foldl (fun acc s => if acc.contains s then acc else acc.push s) atoms0
+  let leT (x y : Expr) := mkApp4 (mkConst ``LE.le [0]) (mkConst ``Nat) (mkConst ``instLENat) x y
+  let addN (x y : Expr) := mkApp6 (mkConst ``HAdd.hAdd [0, 0, 0]) (mkConst ``Nat) (mkConst ``Nat) (mkConst ``Nat)
+    (mkApp2 (mkConst ``instHAdd [0]) (mkConst ``Nat) (mkConst ``instAddNat)) x y
+  let mut facts : Array (Expr × Expr) := #[]
+  for sub in subs do
+    let a := sub.getArg! 4
+    let c := sub.getArg! 5
+    facts := facts.push (mkApp2 (mkConst (lcName "sub_le'")) a c, leT sub a)
+    facts := facts.push (mkApp2 (mkConst (lcName "le_sub_add'")) a c, leT a (addN sub c))
+    for (pf, t) in hyps do
+      if t.isAppOfArity ``LE.le 4 && t.getArg! 2 == c && t.getArg! 3 == a then
+        facts := facts.push (mkApp3 (mkConst (lcName "sub_add_le_of_le")) a c pf, leT (addN sub c) a)
+      else if t.isAppOfArity ``LT.lt 4 && t.getArg! 2 == c && t.getArg! 3 == a then
+        facts := facts.push (mkApp3 (mkConst (lcName "sub_add_le_of_lt")) a c pf, leT (addN sub c) a)
+  let cons := (hyps ++ facts).foldl (fun acc (pf, t) => acc ++ consOf atoms pf t) #[]
+  let cs := cons.mapIdx fun i c => (c.l, c.r, i)
+  let vs := atoms.foldr (fun a acc => mkApp3 (mkConst ``List.cons [0]) (mkConst ``Nat) a acc)
+    (mkApp (mkConst ``List.nil [0]) (mkConst ``Nat))
+  -- each subtraction atom's facts `s + c ≤ a` and `s ≤ a`, by constraint
+  let factOf (nm : String) (a c : Expr) : Option Nat :=
+    cons.findIdx? fun k => k.pf.isAppOf (lcName nm) && k.pf.getAppNumArgs ≥ 2 &&
+      k.pf.getArg! 0 == a && k.pf.getArg! 1 == c
+  let subInfo : Array (Nat × Option Nat × Option Nat) := subs.filterMap fun sub =>
+    (atoms.idxOf? sub).map fun j =>
+      let a := sub.getArg! 4
+      let c := sub.getArg! 5
+      (j, (factOf "sub_add_le_of_lt" a c).orElse fun _ => factOf "sub_add_le_of_le" a c, factOf "sub_le'" a c)
+  -- a left side's subtractions `a - c` replaced by `a`: with its `c` where the left
+  -- side has it (`a - c + c ≤ a`), else alone (`a - c ≤ a`)
+  let rec unchain (l : Lin) (acc : Array Nat) : Nat → Lin × Array Nat
+    | 0 => (l, acc)
+    | fuel + 1 =>
+      match subInfo.find? (fun (j, _, _) => l[j]! > 0) with
+      | none => (l, acc)
+      | some (_, add?, le?) =>
+        let step (i : Nat) : Option Lin :=
+          let l' := l.sub cons[i]!.l
+          if l'.nonneg then some (l'.add cons[i]!.r) else none
+        match add?.bind fun i => (step i).map (·, i) with
+        | some (l', i) => unchain l' (acc.push i) fuel
+        | none => match le?.bind fun i => (step i).map (·, i) with
+          | some (l', i) => unchain l' (acc.push i) fuel
+          | none => (l, acc)
+  let ltmTy := mkConst (lcName "LTm")
+  let pairTy := mkApp2 (mkConst ``Prod [0, 0]) ltmTy ltmTy
+  let rec go (p : Expr) : Option Expr := do
+    if p.isAppOfArity ``And 2 then
+      let a := p.appFn!.appArg!
+      let b := p.appArg!
+      return mkApp4 (mkConst ``And.intro) a b (← go a) (← go b)
+    unless (p.isAppOfArity ``LE.le 4 || p.isAppOfArity ``LT.lt 4) && isNatTy (p.getArg! 0) do none
+    let gc ← (consOf atoms (mkConst ``True.intro) p)[0]?
+    -- a budget chain takes two steps a level (`b₁ = b - c`, then `b - c + c ≤ b`):
+    -- taken first, without search, then the search for the rest
+    let (l1, u1) := unchain gc.l #[] 64
+    let first : Option (Array Nat) := ((certify cs l1 gc.r 16 u1).run' 200 : Id _)
+    let used ← first.orElse fun _ => ((certify cs gc.l gc.r 16 #[]).run' 200 : Id _)
+    let sel := used.map (cons[·]!)
+    -- the hypotheses' list and `AllLe vs` of it, from the last
+    let (hs, hh) := sel.foldr (fun c (hs, hh) =>
+      (mkApp3 (mkConst ``List.cons [0]) pairTy (mkApp4 (mkConst ``Prod.mk [0, 0]) ltmTy ltmTy c.lt c.rt) hs,
+       mkApp4 (mkConst ``And.intro) c.ty (mkApp2 (mkConst (lcName "AllLe")) vs hs) c.pf hh))
+      (mkApp (mkConst ``List.nil [0]) pairTy, mkConst ``True.intro)
+    let hc := mkApp2 (mkConst ``Eq.refl [1]) (mkConst ``Bool) (mkConst ``Bool.true)
+    return mkAppN (mkConst (lcName "cert")) #[vs, hs, gc.lt, gc.rt, hh, hc]
+  go goal
+
 /-- Run `x` within its own heartbeat budget (`k` thousands): `omega` over many
 hypotheses can take exponential time; past the budget `x` fails (an ordinary
 error, so callers try the next way). -/
@@ -331,14 +508,10 @@ def budgeted (k : Nat) (x : TacticM α) : TacticM α :=
 auxiliary theorem at every use (one per `omega` call), each checked by the kernel. -/
 theorem add_nest_left (a b c : Nat) : a + (b + c) = a + b + c := (Nat.add_assoc a b c).symm
 
-/-- Prove the main goal by `omega` over its and the hypotheses' atoms. -/
-def omegaAtoms : TacticM Unit := withMainContext do
-  let g ← getMainGoal
-  let goal ← instantiateMVars (← g.getType)
-  dbg "omegaAtoms"
-  let some atoms0 := propAtoms goal #[] |
-    if lanius.hb.debug.get (← getOptions) then IO.eprintln s!"omegaAtoms: not arithmetic"
-    evalTactic (← `(tactic| omega))
+/-- The arithmetic hypotheses of the current context and the atoms of `goal` and
+them, or `none` when `goal` is not arithmetic. -/
+def arithContext (goal : Expr) : MetaM (Option (Array Expr × Array (Expr × Expr))) := do
+  let some atoms0 := propAtoms goal #[] | return none
   let mut atoms := atoms0
   let mut hyps : Array (Expr × Expr) := #[]
   for d in ← getLCtx do
@@ -348,8 +521,42 @@ def omegaAtoms : TacticM Unit := withMainContext do
     if let some as := propAtoms t atoms then
       atoms := as
       hyps := hyps.push (d.toExpr, t)
-  let atomsArr := atoms
-  dbg s!"atoms {atoms.size}"
+  return some (atoms, hyps)
+
+/-- A certificate proof of `goal` (`LinCert.cert`) from the hypotheses `hyps`, over
+variables for the atoms and the hypotheses it uses, then applied to them: the
+kernel then unfolds `LTm.den` against variables, never against an atom (it would
+unfold a cost model's call first). -/
+def certClosed? (atomsArr : Array Expr) (goal : Expr) (hyps : Array (Expr × Expr)) : MetaM (Option Expr) := do
+  let some p := certProof? atomsArr goal hyps | return none
+  let used := hyps.filter fun (h, _) => h.isFVar && p.containsFVar h.fvarId!
+  let closed ← withLocalDeclsDND (atomsArr.mapIdx fun i _ => (Name.mkSimple s!"a{i}", mkConst ``Nat)) fun xs => do
+    let abst (e : Expr) : Expr := e.replace fun s =>
+      match atomsArr.idxOf? s with
+      | some i => some xs[i]!
+      | none => none
+    withLocalDeclsDND (used.mapIdx fun i (_, t) => (Name.mkSimple s!"h{i}", abst t)) fun hs => do
+      let p' := (abst p).replaceFVars (used.map (·.1)) hs
+      mkLambdaFVars (xs ++ hs) p'
+  return some (mkAppN (mkAppN closed atomsArr) (used.map (·.1)))
+
+/-- Prove the main goal by `omega` over its and the hypotheses' atoms. -/
+def omegaAtoms : TacticM Unit := withMainContext do
+  let g ← getMainGoal
+  let goal ← instantiateMVars (← g.getType)
+  dbg "omegaAtoms"
+  let some (atomsArr, hyps) ← arithContext goal |
+    if lanius.hb.debug.get (← getOptions) then IO.eprintln s!"omegaAtoms: not arithmetic"
+    evalTactic (← `(tactic| omega))
+  dbg s!"atoms {atomsArr.size}"
+  if lanius.hb.cert.get (← getOptions) then
+    if let some p ← certClosed? atomsArr goal hyps then
+      dbg "cert"
+      g.assign p
+      replaceMainGoal []
+      return
+  if lanius.hb.debug.get (← getOptions) then
+    IO.eprintln s!"OMEGA {← ppExpr goal}"
   match selectHyps atomsArr goal (hyps.map (·.2)) with
   | some sel =>
     let saved ← saveState
@@ -389,8 +596,30 @@ where
   g.assign p
   replaceMainGoal []
 
-/-- Prove `ty` in the current context: heights normalized, then `omega`. -/
-def proveArith? (ty : Expr) : TacticM (Option Expr) := do
+/-- The premises one tactic run has proved, by run (`lanius.hb.run`): sibling goals
+share most of their context and ask the same premises (let_first: 3,364 premises
+asked again of 7,338). With each proof, the free variables it uses (in context
+order), their types and whether they are hypotheses. -/
+abbrev ArithCache := Std.HashMap Expr (Expr × Array (FVarId × Expr × Bool))
+/-- By run, a reference of the run's own: the runs of a module's theorems go on
+in parallel, and one shared map would make them wait on each other. -/
+initialize arithCache : IO.Ref (Std.HashMap Nat (IO.Ref ArithCache)) ← IO.mkRef {}
+initialize runCounter : IO.Ref Nat ← IO.mkRef 0
+
+register_option lanius.hb.run : Nat := {
+  defValue := 0
+  descr := "the current pre_auto/post_auto run, for its cache of proved premises (internal)"
+}
+
+/-- Prove `ty` in the current context: heights normalized, then a certificate or `omega`. -/
+def proveArith0? (ty : Expr) : TacticM (Option Expr) := do
+  -- most premises are already linear over their atoms: a certificate, before `simp`
+  if lanius.hb.cert.get (← getOptions) then
+    let ty ← instantiateMVars ty
+    if let some (atoms, hyps) ← arithContext ty then
+      if let some p ← certClosed? atoms ty hyps then
+        dbg "cert0"
+        return some p
   let g ← mkFreshExprMVar ty
   let saved ← saveState
   try
@@ -408,6 +637,53 @@ def proveArith? (ty : Expr) : TacticM (Option Expr) := do
   catch _ =>
     saved.restore
     return none
+
+/-- A cached proof `p` in the current context: its free variables still there, or,
+for a hypothesis gone (a sibling goal's facts are its own), one of the same type
+(the same proposition, so `p` keeps its type). -/
+def reuseProof? (p : Expr) (fvs : Array (FVarId × Expr × Bool)) : MetaM (Option Expr) := do
+  let lctx ← getLCtx
+  let mut olds : Array Expr := #[]
+  let mut news : Array Expr := #[]
+  let mut byType : Option (Std.HashMap Expr FVarId) := none
+  for (f, t, isHyp) in fvs do
+    if lctx.contains f then continue
+    unless isHyp do return none
+    if byType.isNone then
+      let mut m : Std.HashMap Expr FVarId := {}
+      for d in lctx do
+        unless d.isImplementationDetail do
+          m := m.insert (← instantiateMVars d.type) d.fvarId
+      byType := some m
+    let t' := t.replaceFVars olds news
+    let some g := byType.bind (·[t']?) | return none
+    olds := olds.push (mkFVar f)
+    news := news.push (mkFVar g)
+  return some (if olds.isEmpty then p else p.replaceFVars olds news)
+
+/-- `proveArith0?`, or the proof this run found for the same premise. -/
+def proveArith? (ty : Expr) : TacticM (Option Expr) := do
+  let run := lanius.hb.run.get (← getOptions)
+  let key ← instantiateMVars ty
+  if run != 0 && !key.hasMVar then
+    if let some (p, fvs) ← (do match (← arithCache.get)[run]? with
+        | some r => return (← r.get)[key]?
+        | none => return none) then
+      if let some p ← reuseProof? p fvs then
+        dbg "hit"
+        return some p
+      dbg "stale"
+  dbg "miss"
+  let r ← proveArith0? ty
+  if let some p := r then
+    if run != 0 && !key.hasMVar && !p.hasMVar then
+      let lctx ← getLCtx
+      let ds := ((collectFVars {} p).fvarIds.filterMap lctx.find?).qsort (·.index < ·.index)
+      let fvs ← ds.mapM fun d => do
+        let t ← instantiateMVars d.type
+        return (d.fvarId, t, ← isProp t)
+      if let some r := (← arithCache.get)[run]? then r.modify (·.insert key (p, fvs))
+  return r
 
 /-- Add `p : t` to the context as `name`. -/
 def addFact (name : Name) (p : Expr) : TacticM Unit := withMainContext do
@@ -432,7 +708,7 @@ def postsOf (f : Name) : TacticM (Array Expr) := do
       return a.getAppFn.isConstOf f
     if ok then out := out.push d.toExpr
   for i in [0:8] do
-    match ← lookup? (`Lanius.Faithful.SelfPre.HBPost ++ f ++ Name.mkSimple s!"p{i}") with
+    match ← genLookup? (`HBPost ++ f ++ Name.mkSimple s!"p{i}") with
     | some c => out := out.push c
     | none => break
   return out
@@ -559,7 +835,56 @@ def postLemma? (c : Expr) : TacticM (Option Expr) := do
   let some key := costKey? c | return none
   match ← lookup? (Name.mkSimple s!"post_{key}") with
   | some l => return some l
-  | none => lookup? (`Lanius.Faithful.SelfPre ++ Name.mkSimple s!"post_{key}")
+  | none => genLookup? (Name.mkSimple s!"post_{key}")
+
+/-- The facts' normal forms this run found: by the fact and the case splits'
+equations in the context (sibling goals ask the same facts again), the normal
+form, its equation, and the free variables that uses (as `arithCache`'s). -/
+abbrev FactCache := Std.HashMap Expr (Expr × Option Expr × Array (FVarId × Expr × Bool))
+initialize factCache : IO.Ref (Std.HashMap Nat (IO.Ref FactCache)) ← IO.mkRef {}
+
+/-- A fact `t0`'s normal form (`simp only` by the heights' and the definitions'
+lemmas and the split equations) and its equation (`none`: unchanged up to
+`Eq.mp`'s need), or `none` when the result is `False` (the goal closes: left to
+the tactic). -/
+def normFact? (t0 : Expr) : TacticM (Option (Expr × Option Expr)) := withMainContext do
+  let run := lanius.hb.run.get (← getOptions)
+  let names ← splitNames
+  let lctx ← getLCtx
+  let mut eqTys : Array Expr := #[]
+  for nm in names do
+    if let some d := lctx.findFromUserName? nm then eqTys := eqTys.push (← instantiateMVars d.type)
+  let key := mkAppN (mkConst `Lanius.Faithful.SelfPre.Tactic.factKey) (#[t0] ++ eqTys)
+  if run != 0 && !key.hasMVar then
+    if let some (t1, eq?, fvs) ← (do match (← factCache.get)[run]? with
+        | some r => return (← r.get)[key]?
+        | none => return none) then
+      match eq? with
+      | none => return some (t1, none)
+      | some h =>
+        if let some h ← reuseProof? h fvs then
+          dbg "fhit"
+          return some (t1, some h)
+  dbg "fmiss"
+  let ids ← constIdsOf t0
+  let args ← simpArgs (ids ++ names)
+  let stx ← `(tactic| simp only [$args,*])
+  let { ctx, simprocs, .. } ← mkSimpContext stx (eraseLocal := false)
+  let (r, _) ← Meta.simp t0 ctx simprocs
+  let t1 ← instantiateMVars r.expr
+  if t1.isConstOf ``False then return none
+  let eq? ← r.proof?.mapM instantiateMVars
+  if eq?.any (·.hasMVar) then return none
+  if run != 0 && !key.hasMVar then
+    let fvs ← match eq? with
+      | none => pure #[]
+      | some h => do
+        let ds := ((collectFVars {} h).fvarIds.filterMap lctx.find?).qsort (·.index < ·.index)
+        ds.mapM fun d => do
+          let t ← instantiateMVars d.type
+          return (d.fvarId, t, ← isProp t)
+    if let some r := (← factCache.get)[run]? then r.modify (·.insert key (t1, eq?, fvs))
+  return some (t1, eq?)
 
 /-- Upper bounds for every value the context's heights and cost-model calls
 stand for, at the potential `base`: each value at most `base` plus the boxes
@@ -661,17 +986,28 @@ def hbFacts (fuel : Option Expr) (base : Expr) (extra : Array Expr := #[]) : Tac
     -- the split equations may rewrite the value's own arguments
     -- (`isTrueArm a = true`): the fact as stated stays too, for the goal's form
     let raw := Name.mkSimple s!"hbf{k}r"
-    addFact raw p
-    addFact nm p
-    let t0 ← instantiateMVars (← inferType p)
-    let ids ← withMainContext do constIdsOf t0
-    let args ← simpArgs (ids ++ (← splitNames))
-    evalTactic (← `(tactic| try simp only [$args,*] at $(mkIdent nm):ident))
-    let same ← withMainContext do
-      match (← getLCtx).findFromUserName? nm with
-      | some d => return (← instantiateMVars d.type) == t0
-      | none => return false
-    if same then evalTactic (← `(tactic| clear $(mkIdent raw):ident))
+    let t0 ← withMainContext do instantiateMVars (← inferType p)
+    match ← normFact? t0 with
+    | some (t1, eq?) =>
+      if t1 == t0 then
+        addFact nm p
+      else
+        addFact raw p
+        unless t1.isConstOf ``True do
+          addFact nm (match eq? with
+            | some h => mkApp4 (mkConst ``Eq.mp [0]) t0 t1 h p
+            | none => p)
+    | none =>
+      addFact raw p
+      addFact nm p
+      let ids ← withMainContext do constIdsOf t0
+      let args ← simpArgs (ids ++ (← splitNames))
+      evalTactic (← `(tactic| try simp only [$args,*] at $(mkIdent nm):ident))
+      let same ← withMainContext do
+        match (← getLCtx).findFromUserName? nm with
+        | some d => return (← instantiateMVars d.type) == t0
+        | none => return false
+      if same then evalTactic (← `(tactic| clear $(mkIdent raw):ident))
     k := k + 1
   return reg
 
@@ -752,9 +1088,21 @@ partial def closeArith (fuel : Option Expr) (base : Expr) (depth : Nat := 0) : T
   hbNorm
   dbg "norm"
   if (← getGoals).isEmpty then return
+  let before ← withMainContext do return (← getLCtx).getFVarIds
   let _ ← hbFacts fuel base
   dbg "facts"
-  hbNorm
+  -- the new facts only: the rest is as the `hbNorm` above left it (and the
+  -- facts `hbFacts` normalized itself are so too)
+  let fresh ← withMainContext do
+    let mut out := #[]
+    for d in ← getLCtx do
+      if d.isImplementationDetail || before.contains d.fvarId then continue
+      out := out.push d.userName
+    return out
+  unless fresh.isEmpty do
+    let args ← simpArgs (← inlineIds)
+    let hs := fresh.map mkIdent
+    evalTactic (← `(tactic| try simp only [$args,*] at $hs*))
   dbg "norm2"
   if (← getGoals).isEmpty then return
   let t ← withMainContext do instantiateMVars (← (← getMainGoal).getType)
@@ -799,7 +1147,18 @@ partial def closeArith (fuel : Option Expr) (base : Expr) (depth : Nat := 0) : T
 `evalTactic` inside would otherwise keep a tree with the goals before and after;
 saving them is single-threaded at the end of the module and took most of a
 GenP module's build time. -/
-def quietly (x : TacticM Unit) : TacticM Unit := withEnableInfoTree false x
+def quietly (x : TacticM Unit) : TacticM Unit := do
+  let run ← runCounter.modifyGet fun n => (n + 1, n + 1)
+  let ar ← IO.mkRef ({} : ArithCache)
+  let fr ← IO.mkRef ({} : FactCache)
+  arithCache.modify (·.insert run ar)
+  factCache.modify (·.insert run fr)
+  try
+    withTheReader Core.Context (fun c => { c with options := lanius.hb.run.set c.options run })
+      (withEnableInfoTree false x)
+  finally
+    arithCache.modify (·.erase run)
+    factCache.modify (·.erase run)
 
 /-- Close `hb (f xs) ≤ M` for a function the cost model does not see, one case of
 its functional induction. -/
@@ -821,6 +1180,12 @@ elab_rules : tactic
 syntax "hb_eqns" : tactic
 elab_rules : tactic
   | `(tactic| hb_eqns) => quietly (eqnFacts)
+/-- `omega` over the goal's and the hypotheses' atoms as variables: for the
+compile side's hand proofs, whose cost atoms (`Cost_concat_of_u8 n <literal>
+..`) `omega` itself compares by unfolding (a minute on `frameMemoryBytes`). -/
+syntax "omega_atoms" : tactic
+elab_rules : tactic
+  | `(tactic| omega_atoms) => quietly (omegaAtoms)
 syntax "hb_facts" term "," term : tactic
 elab_rules : tactic
   | `(tactic| hb_facts $n, $m) => quietly do
@@ -847,7 +1212,7 @@ own, at the fuel below) or the constant. -/
 def preLemma? (key : String) : TacticM (Option Expr) := do
   match ← lookup? (Name.mkSimple s!"pre_{key}") with
   | some l => return some l
-  | none => lookup? (`Lanius.Faithful.SelfPre ++ Name.mkSimple s!"pre_{key}")
+  | none => genLookup? (Name.mkSimple s!"pre_{key}")
 
 def preKey? (e : Expr) : Option String :=
   match e.getAppFn with
@@ -880,7 +1245,10 @@ def valueFacts : TacticM Unit := do
         unless (`Lanius.Mini).isPrefixOf fn do continue
         if seen.contains s then continue
         seen := seen.push s
-        let nm := `Lanius.Faithful.SelfPre ++ Name.mkSimple s!"val_{lastName fn}"
+        -- `val_<T>_<f>` for `T.f` (several types have a `number` or a `size`), else `val_<f>`
+        let nmT := `Lanius.Faithful.SelfPre ++ Name.mkSimple s!"val_{lastName fn.getPrefix}_{lastName fn}"
+        let nm := if env.contains nmT then nmT
+          else `Lanius.Faithful.SelfPre ++ Name.mkSimple s!"val_{lastName fn}"
         unless env.contains nm do continue
         let p := mkAppN (← constFresh nm) s.getAppArgs
         if (← isTypeCorrect p) && (← isProp (← inferType p)) then facts := facts.push p

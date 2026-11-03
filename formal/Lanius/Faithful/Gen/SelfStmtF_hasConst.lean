@@ -50,11 +50,11 @@ abbrev Stmt_has_const (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev Stmt_infer_args (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Nat} {x3 : Lanius.Mini.FnDecl} {x4 : List Lanius.Mini.Bind} {x5 : Option (List Lanius.Mini.Ty)} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepNat x2 v2 → RepFnDecl x3 v3 → (RepList 274 RepBind) x4 v4 → (RepOption 212 (RepList 141 RepTy)) x5 v5 →
-    (RepOption 179 RepInst) (Lanius.Mini.inferArgs x0 x1 x2 x3 x4 x5) w
+    (RepOption 180 RepInst) (Lanius.Mini.inferArgs x0 x1 x2 x3 x4 x5) w
 
 abbrev Stmt_infer_eff (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Nat} {x3 : Lanius.Mini.FnDecl} {x4 : List Lanius.Mini.Bind} {x5 : Option (List Lanius.Mini.Ty)} {x6 : Option Lanius.Mini.Ty} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepNat x2 v2 → RepFnDecl x3 v3 → (RepList 274 RepBind) x4 v4 → (RepOption 212 (RepList 141 RepTy)) x5 v5 → (RepOption 211 RepTy) x6 v6 →
-    (RepOption 179 RepInst) (Lanius.Mini.inferEff x0 x1 x2 x3 x4 x5 x6) w
+    (RepOption 180 RepInst) (Lanius.Mini.inferEff x0 x1 x2 x3 x4 x5 x6) w
 
 abbrev Stmt_known_args (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.TypeDecl} {x1 : Nat} {x2 : Option Lanius.Mini.Ty} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepTypeDecl x0 v0 → RepNat x1 v1 → (RepOption 211 RepTy) x2 v2 →

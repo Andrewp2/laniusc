@@ -114,6 +114,24 @@ theorem bstep_arities {spW sp : SrcProgram} {prims : Prims} {ix_arities ix_unbox
     budget Cost_arities
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0⟩
 
+theorem bstep_length_of_u8 {spW sp : SrcProgram} {prims : Prims} {ix_length_of_u8 ix_plus ix_unbox_of_mini_selfhost_List_u8 : Nat}
+    (fnW : spW.funcs[ix_length_of_u8]? = some (src_length_of_u8 ix_plus ix_unbox_of_mini_selfhost_List_u8 ix_length_of_u8)) (fn : sp.funcs[ix_length_of_u8]? = some (src_length_of_u8 ix_plus ix_unbox_of_mini_selfhost_List_u8 ix_length_of_u8))
+    (np : prims.isPrim ix_length_of_u8 = false)
+    (back : Certified (∀ {n : Nat}, Stmt_length_of_u8 sp prims ix_length_of_u8 n))
+    (b_plus : Certified (∀ {n : Nat}, BStmt_plus spW sp prims ix_plus n))
+    (pp_unbox_of_mini_selfhost_List_u8 : prims.isPrim ix_unbox_of_mini_selfhost_List_u8 = true) (bx_unbox_of_mini_selfhost_List_u8 : prims.boxed.contains ix_unbox_of_mini_selfhost_List_u8 = false) {n : Nat}
+    (bih_length_of_u8 : Certified (BStmt_length_of_u8 spW sp prims ix_length_of_u8 n)) :
+    BStmt_length_of_u8 spW sp prims ix_length_of_u8 (n + 1) := by
+  intro x0 v0 w k b h r0 hb pre
+  have key : qcall sp prims uc (n + 1) ix_length_of_u8 [v0] = some (w, k) ∧ 0 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_length_of_u8, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_length_of_u8.eq_def] at pre
+    simp only at pre
+    budget
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0⟩
+
 theorem bproof_Code_size {spW sp : SrcProgram} {prims : Prims} {ix_Code_size ix_plus ix_code_size : Nat}
     (fnW : spW.funcs[ix_Code_size]? = some (src_Code_size ix_plus ix_code_size)) (fn : sp.funcs[ix_Code_size]? = some (src_Code_size ix_plus ix_code_size))
     (np : prims.isPrim ix_Code_size = false)
@@ -133,8 +151,43 @@ theorem bproof_Code_size {spW sp : SrcProgram} {prims : Prims} {ix_Code_size ix_
     budget
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0⟩
 
+theorem bstep_room_after {spW sp : SrcProgram} {prims : Prims} {ix_room_after ix_room_next ix_Code_size ix_unbox_of_mini_selfhost_List_mini_selfhost_Code : Nat}
+    (fnW : spW.funcs[ix_room_after]? = some (src_room_after ix_room_next ix_Code_size ix_unbox_of_mini_selfhost_List_mini_selfhost_Code)) (fn : sp.funcs[ix_room_after]? = some (src_room_after ix_room_next ix_Code_size ix_unbox_of_mini_selfhost_List_mini_selfhost_Code))
+    (np : prims.isPrim ix_room_after = false)
+    (back : Certified (∀ {n : Nat}, Stmt_room_after sp prims ix_room_after n))
+    (b_Code_size : Certified (∀ {n : Nat}, BStmt_Code_size spW sp prims ix_Code_size n))
+    (pp_unbox_of_mini_selfhost_List_mini_selfhost_Code : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_Code = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_Code : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_Code = false) {n : Nat}
+    (bih_room_next : Certified (BStmt_room_next spW sp prims ix_room_next n)) :
+    BStmt_room_after spW sp prims ix_room_after (n + 1) := by
+  intro x0 x1 v0 v1 w k b h r0 r1 hb pre
+  have key : qcall sp prims uc (n + 1) ix_room_after [v0, v1] = some (w, k) ∧ 0 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_room_after, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_room_after.eq_def] at pre
+    simp only at pre
+    budget
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
+
+theorem bstep_room_next {spW sp : SrcProgram} {prims : Prims} {ix_room_next ix_minus ix_room_after : Nat}
+    (fnW : spW.funcs[ix_room_next]? = some (src_room_next ix_minus ix_room_after)) (fn : sp.funcs[ix_room_next]? = some (src_room_next ix_minus ix_room_after))
+    (np : prims.isPrim ix_room_next = false)
+    (back : Certified (∀ {n : Nat}, Stmt_room_next sp prims ix_room_next n))
+    (b_minus : Certified (∀ {n : Nat}, BStmt_minus spW sp prims ix_minus n)) {n : Nat}
+    (bih_room_after : Certified (BStmt_room_after spW sp prims ix_room_after n)) :
+    BStmt_room_next spW sp prims ix_room_next (n + 1) := by
+  intro x0 x1 x2 v0 v1 v2 w k b h r0 r1 r2 hb pre
+  have key : qcall sp prims uc (n + 1) ix_room_next [v0, v1, v2] = some (w, k) ∧ 0 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_room_next, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_room_next.eq_def] at pre
+    simp only at pre
+    budget
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
+
 theorem bstep_layout {spW sp : SrcProgram} {prims : Prims} {ix_layout ix_plus ix_empty_of_usize ix_cons_of_usize ix_Code_size ix_unbox_of_mini_selfhost_List_mini_selfhost_Code : Nat}
-    (fnW : spW.funcs[ix_layout]? = some (src_layout ix_plus ix_empty_of_usize ix_layout ix_cons_of_usize ix_Code_size ix_unbox_of_mini_selfhost_List_mini_selfhost_Code)) (fn : sp.funcs[ix_layout]? = some (src_layout ix_plus ix_empty_of_usize ix_layout ix_cons_of_usize ix_Code_size ix_unbox_of_mini_selfhost_List_mini_selfhost_Code))
+    (fnW : spW.funcs[ix_layout]? = some (src_layout ix_plus ix_empty_of_usize ix_cons_of_usize ix_Code_size ix_unbox_of_mini_selfhost_List_mini_selfhost_Code ix_layout)) (fn : sp.funcs[ix_layout]? = some (src_layout ix_plus ix_empty_of_usize ix_cons_of_usize ix_Code_size ix_unbox_of_mini_selfhost_List_mini_selfhost_Code ix_layout))
     (np : prims.isPrim ix_layout = false)
     (back : Certified (∀ {n : Nat}, Stmt_layout sp prims ix_layout n))
     (b_plus : Certified (∀ {n : Nat}, BStmt_plus spW sp prims ix_plus n))

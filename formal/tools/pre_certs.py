@@ -13,7 +13,16 @@ From the budget certificates' models and statements in `Faithful/GenB/`:
 * `pre_K`: `Pre_K n xs b` from `hb x + b ≤ K` for the arguments (and a
   walker's index plus its list's height, `OVERRIDES`), by `pre_auto`.
 
-Usage: pre_certs.py GENB OUTDIR ROOT...
+Usage: pre_certs.py [--ns NAMESPACE] [--base MODULE] [--compile] GENB OUTDIR ROOT...
+
+The modules are named after OUTDIR (under formal/), e.g. `Lanius.Faithful.SelfPre.GenP`
+for build_files. `--ns` puts the lemmas in a namespace of their own below
+`Lanius.Faithful.SelfPre` (the tactic looks there first), so the compile side's
+(GenPC, `--ns Lanius.Faithful.SelfPre.Compile`) can share names with build_files'.
+`--base` replaces the value lemmas' module `SelfPre.Values` in every module's
+imports (GenPC: `Lanius.Faithful.SelfPre.CompileValues`, which imports it).
+`--compile` adds the compile side's hand proofs (COMPILE_POST_HAND,
+COMPILE_HAND_CASE), kept apart so that build_files' GenP never takes them.
 """
 import os
 import re
@@ -397,6 +406,135 @@ HAND_CASE = {
 }
 
 
+# ---------------------------------------------------------------------------
+# The compile side (GenPC: roots compile_source, binary_words; leafB).
+# Hand proofs of height lemmas, in place of `post_auto n, M` (after the cost
+# model's and the Lean function's `eq_def`, the cost premise not introduced).
+
+def bytes_hand(le=(), callees=()):
+    """A byte list's height is its length (SelfPre/CompileValues): the list
+    primitives cost at least 1 whatever their arguments, an le32/le64 at least
+    its 4/8 bytes, and each callee's bytes (lemma, arguments) at most its cost.
+    `post_auto` takes about a minute on one of these (an `omega` call over every
+    cost atom per cons cell), and plain `omega` too (it unfolds the concatenations'
+    costs comparing its atoms): `omega_atoms` abstracts them first."""
+    lens = 'pc_hb_u8, List.length_append, List.length_cons, List.length_nil, pc_len_le64, pc_len_le32'
+    out = ('  intro h\n'
+           f'  simp only [pc_cons_u8, pc_single_u8, pc_le64, pc_le32, {lens}] at h ⊢\n'
+           '  have := pc_cons_u8_pos n\n'
+           '  have := pc_single_u8_pos n\n' +
+           ''.join(f'  have := pc_le{w}_ge n (by omega_atoms)\n' for w in le))
+    for lem, args in callees:
+        out += (f'  have := {lem} n {args} 0 (by omega_atoms)\n'
+                f'  simp only [{lens}] at this\n')
+    return out + '  omega_atoms\n'
+
+
+POST_HAND = {}  # build_files has none
+
+COMPILE_POST_HAND = {
+    'bump_bytes': bytes_hand([64]),
+    'frame_memory_bytes': bytes_hand([64]),
+    'sys_bytes': bytes_hand([32], [('post_syscall_rsi_bytes', 'x0')]),
+    # compileProgram's inlined link (post_auto's omega ran out of budget on its two splits)
+    'compile_program': '''  intro h
+  have ha := post_arities n x0.funcs M (by have := hb_le_Program_funcs x0; omega) (by omega)
+  have hf := post_compile_funcs n (Lanius.Mini.arities x0.funcs) x0.funcs (M + Cost_arities n x0.funcs) ha
+    (by have := hb_le_Program_funcs x0; omega) (by omega)
+  cases hc : Lanius.Mini.compileFuncs (Lanius.Mini.arities x0.funcs) x0.funcs with
+  | none => simp only [hb_none]; omega
+  | some codes =>
+    simp only [hc] at h hf
+    have hl := post_link n codes x0.statics (M + Cost_arities n x0.funcs + Cost_compile_funcs n (Lanius.Mini.arities x0.funcs) x0.funcs)
+      (by simp only [hb_some] at hf; omega) (by have := hb_le_Program_statics x0; omega) (by omega)
+    exact Nat.le_trans hl (by dsimp only; omega)
+''',
+    # Inline.link's `if` and match on roomAfter (post_auto split them again and again);
+    # its fitting branch is Inline.linkFitting's body
+    'link': '''  intro h
+  by_cases hs : x1.length ≤ Lanius.Mini.imageLimit
+  · simp only [hs, decide_true, if_true] at h ⊢
+    cases hr : Lanius.Mini.roomAfter (Lanius.Mini.imageLimit - x1.length) x0 with
+    | none => simp only [hb_none]; omega
+    | some r =>
+      simp only [hr] at h
+      exact post_link_fitting n x0 x1 M hM0 hM1 h
+  · simp only [hs, decide_false, if_false, hb_none]
+    omega
+''',
+}
+
+# Hand-written recursive cases (as HAND_CASE): SrcStmt.declare's ifEval and matchArm, whose
+# nested `match`es post_auto splits apart from the cost model's (the leaf had
+# the cost at `none` and the function at `some`); the other cases by post_auto.
+BYTE_PRIMS = {'Cost_single_of_u8', 'Cost_cons_of_u8', 'Cost_concat_of_u8', 'Cost_le32', 'Cost_le64'}
+
+
+def auto_bytes(g):
+    """bytes_hand for every function that builds a byte list from numbers with the
+    list primitives, le32 and le64 alone (prologue, slot_load, ..): post_auto took
+    up to 16 s on one of these (most of GenPC SelfP01's 72 s)."""
+    out = {}
+    for name, body in g.m.body.items():
+        if not name.startswith('Cost_') or name in g.m.recursive:
+            continue
+        k = name[5:]
+        st = g.m.stmt.get(k)
+        if not st or rep_ty(st[2]) != 'List (UInt8)' or not all(g.flat(t) for _, t in st[0]):
+            continue
+        calls = set(re.findall(r'\bCost_\w+', body))
+        if not calls or not calls <= BYTE_PRIMS or not calls - {'Cost_le32', 'Cost_le64'}:
+            continue
+        text = bytes_hand([w for w in (64, 32) if f'Cost_le{w}' in calls])
+        enums = [f'x{i}' for i, (_, t) in enumerate(st[0])
+                 if hb_gen.head(hb_gen.strip_parens(t.replace('Lanius.Mini.', '')))[0] not in
+                 ('Nat', 'BitVec', 'UInt8', 'Bool')]
+        if 'match' in body and enums:
+            # the encoders that pick bytes by an enum argument: one case each
+            text = ''.join(f'  cases {x}\n' for x in enums) + '  all_goals\n' + \
+                text.replace('\n  ', '\n    ').replace('  intro h', '    intro h', 1)
+        out[k] = text
+    return out
+
+
+COMPILE_HAND_CASE = {
+    'SrcStmt_declare': '''      rw [Cost_SrcStmt_declare.eq_def]; dsimp only
+      rw [Lanius.Mini.SrcStmt.declare.eq_def x0 x1]
+      cases x0
+      case ifEval c t e =>
+        dsimp only
+        intro h
+        simp only [hb_SrcStmt_ifEval, Nat.max_le] at hM0
+        obtain ⟨hc, ht, he⟩ := hM0
+        have h1 := post_SrcEff_types n c M hc (by omega)
+        have h2 := post_declare_types n (Lanius.Mini.SrcEff.types c) x1 (M + Cost_SrcEff_types n c) h1
+          (by omega) (by omega)
+        have h3 := post_declare_in (Lanius.Mini.declareTypes (Lanius.Mini.SrcEff.types c) x1) t
+          (M + Cost_SrcEff_types n c + Cost_declare_types n (Lanius.Mini.SrcEff.types c) x1) h2 (by omega) (by omega)
+        have h4 := post_declare_in
+          (Lanius.Mini.Inline.declareIn (Lanius.Mini.declareTypes (Lanius.Mini.SrcEff.types c) x1) t) e
+          (M + Cost_SrcEff_types n c + Cost_declare_types n (Lanius.Mini.SrcEff.types c) x1 +
+            Cost_declare_in n (Lanius.Mini.declareTypes (Lanius.Mini.SrcEff.types c) x1) t) h3 (by omega) (by omega)
+        exact Nat.le_trans h4 (by omega)
+      case matchArm s en v bs bd ty body rest =>
+        dsimp only
+        intro h
+        simp only [hb_SrcStmt_matchArm, Nat.max_le] at hM0
+        obtain ⟨hty, hbody, hrest⟩ := hM0
+        have h1 := post_SrcType_declare n ty x1 M hty hM1 (by omega)
+        have h2 := post_declare_in (Lanius.Mini.SrcType.declare ty x1) body (M + Cost_SrcType_declare n ty x1) h1
+          (by omega) (by omega)
+        have h3 := post_declare_in (Lanius.Mini.Inline.declareIn (Lanius.Mini.SrcType.declare ty x1) body) rest
+          (M + Cost_SrcType_declare n ty x1 + Cost_declare_in n (Lanius.Mini.SrcType.declare ty x1) body) h2
+          (by omega) (by omega)
+        exact Nat.le_trans h3 (by omega)
+      all_goals (try dsimp only) <;> post_auto n, M
+''',
+}
+
+# --- end of the compile side -----------------------------------------------
+
+
 class Emit:
     """The height and precondition lemmas, at a potential `M`:
     `post_F : ∀ n xs M, hb x ≤ M → .. → Cost_F n xs < 2 ^ 64 → hb (F xs) ≤ M + Cost_F n xs`,
@@ -471,13 +609,18 @@ class Emit:
             binders, xs, names, st = self.post_parts(k)
             h = self.head(k)
             prims = 'Cost_cons_of_usize, Cost_single_of_usize'
+            # `delta`, not the equation lemmas: making `Cost_{k}`'s took 16 s on a
+            # 20-word literal; the height of the literal by the kernel
+            dl = f'delta Cost_{k} {prims.replace(",", "")}'
             out.append(f'theorem post_{k} : ∀ (n : Nat), {st} := by\n'
                        f'  intro n M h\n'
                        f'  rcases n with _ | _ | n\n'
-                       f'  · simp [Cost_{k}] at h\n'
-                       f'  · simp [Cost_{k}, {prims}] at h\n'
-                       f'  · simp only [Cost_{k}, {prims}, {h}, hb_cons, hb_nil, hb_simp]\n'
-                       f'    omega\n')
+                       f'  · exact absurd h (Nat.lt_irrefl _)\n'
+                       f'  · {dl} at h; dsimp only at h; omega\n'
+                       f'  · {dl}; dsimp only\n'
+                       f'    first\n'
+                       f'    | exact Nat.le_trans (Nat.le_of_ble_eq_true (by decide)) (Nat.le_add_left _ M)\n'
+                       f'    | (simp only [{h}, hb_cons, hb_nil, hb_simp]; omega)\n')
             return out
         if not recursive:
             k = ks[0]
@@ -489,7 +632,7 @@ class Emit:
                        f'  · intro h; exact absurd h (Nat.lt_irrefl _)\n'
                        f'  rw [Cost_{k}.eq_def]; dsimp only\n' +
                        (f'  rw [{h}.eq_def{(" " + xs) if xs else ""}]\n' if h else '') +
-                       f'  post_auto n, M\n')
+                       POST_HAND.get(k, '  post_auto n, M\n'))
             return out
         first = ks[0]
         conj = ' ∧\n    '.join(f'(∀ {p[0]}, {p[3]})' if p[0] else f'({p[3]})'
@@ -629,7 +772,7 @@ set_option maxRecDepth 100000
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
 
-namespace Lanius.Faithful.SelfPre
+namespace {ns}
 
 open Lanius.Mini
 open Lanius.Faithful.Budget
@@ -724,10 +867,29 @@ def called_uncostly(e, reached):
 
 
 def main():
-    genb, outdir = sys.argv[1], sys.argv[2]
-    only = None
-    roots = sys.argv[3:]
+    args = sys.argv[1:]
+    ns = 'Lanius.Faithful.SelfPre'
+    values = 'Lanius.Faithful.SelfPre.Values'
+    compile_side = False
+    while args[:1] in (['--ns'], ['--base'], ['--compile']):
+        if args[0] == '--compile':
+            HAND_CASE.update(COMPILE_HAND_CASE)
+            args, compile_side = args[1:], True
+            continue
+        if args[0] == '--ns':
+            ns = args[1]
+        else:
+            values = args[1]
+        args = args[2:]
+    genb, outdir = args[0], args[1]
+    roots = args[2:]
+    formal = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    rel = os.path.relpath(os.path.abspath(outdir), formal)
+    prefix = rel.replace(os.sep, '.') if rel.startswith('Lanius' + os.sep) else 'Lanius.Faithful.SelfPre.GenP'
     g = Gen(genb, roots)
+    if compile_side:
+        POST_HAND.update(auto_bytes(g))
+        POST_HAND.update(COMPILE_POST_HAND)
     e = Emit(g)
     r = g.reach()
     order = e.order()
@@ -773,27 +935,29 @@ def main():
                 cur, defs, needs, n = [], set(), set(), 0
         if cur:
             chunks.append((kind, cur, defs, needs))
-    # Large modules: Lean proves a module's theorems in parallel, while each
-    # module waits for the whole of the ones it imports (and pays its own
-    # imports and its kernel checks, which run one at a time).
-    flush('UPost', uposts, int(os.environ.get('UPOST_PER', '200')))
-    flush('Post', posts, int(os.environ.get('POST_PER', '300')))
-    flush('Pre', pres, int(os.environ.get('PRE_PER', '60')))
+    # One module of each kind: Lean proves a module's theorems in parallel
+    # (a theorem needs only the statements of those it uses), while each module
+    # waits for the whole of the ones it imports and pays its own imports. With
+    # the precondition lemmas in 5 modules (60 groups each), each waited for the
+    # one before: build_files' chain took about 4 minutes, 3 modules about 2.
+    flush('UPost', uposts, int(os.environ.get('UPOST_PER', '1000')))
+    flush('Post', posts, int(os.environ.get('POST_PER', '2000')))
+    flush('Pre', pres, int(os.environ.get('PRE_PER', '1000')))
     # each module imports the uposts' modules before it (found by name, not
     # tracked) and those defining the lemmas its models call (not a chain:
     # independent modules build in parallel)
-    base = ['Lanius.Faithful.SelfPre.Values', 'Lanius.Faithful.GenB.SelfBModel4']
+    base = [values, 'Lanius.Faithful.GenB.SelfBModel4']
     mods = []
     for i, (kind, items, defs, needs) in enumerate(chunks):
         name = f'SelfP{i:02d}'
-        deps = [f'Lanius.Faithful.SelfPre.GenP.SelfP{j:02d}' for j, c in enumerate(chunks[:i])
+        deps = [f'{prefix}.SelfP{j:02d}' for j, c in enumerate(chunks[:i])
                 if c[0] == 'UPost' or (c[2] & (needs - defs))]
         imports = '\n'.join('import ' + m for m in base + deps)
         prof = 'set_option profiler true\nset_option profiler.threshold 1500\n' if os.environ.get('PRE_PROFILE') else ''
-        text = HEADER.format(imports=imports, what=f'{kind} lemmas, part {i}') + prof + '\n'.join(items) + \
-            '\nend Lanius.Faithful.SelfPre\n'
+        text = HEADER.format(imports=imports, what=f'{kind} lemmas, part {i}', ns=ns) + prof + '\n'.join(items) + \
+            f'\nend {ns}\n'
         open(os.path.join(outdir, name + '.lean'), 'w').write(text)
-        mods.append(f'Lanius.Faithful.SelfPre.GenP.{name}')
+        mods.append(f'{prefix}.{name}')
     print(len(uposts), 'uposts', len(posts), 'post groups', len(pres), 'pre groups', len(mods), 'modules')
 
 

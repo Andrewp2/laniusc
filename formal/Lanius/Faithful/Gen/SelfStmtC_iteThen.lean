@@ -25,7 +25,7 @@ abbrev Stmt_ite_then (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     (RepOption 134 RepStmt) (Lanius.Mini.iteThen x0 x1 x2) w
 
 abbrev Stmt_store_one (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.MemWidth} {x1 : Lanius.Mini.Expr} {x2 : Option Lanius.Mini.Expr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepMemWidth x0 v0 → RepExpr x1 v1 → (RepOption 153 RepExpr) x2 v2 →
+  ∀ {x0 : Lanius.Mini.MemWidth} {x1 : Lanius.Mini.Expr} {x2 : Option Lanius.Mini.Expr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepMemWidth x0 v0 → RepExpr x1 v1 → (RepOption 154 RepExpr) x2 v2 →
     (RepOption 134 RepStmt) (Lanius.Mini.storeOne x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

@@ -1,0 +1,3 @@
+# PlaceAddrTraps
+
+Induct on `RPlace.Traps`. The base's code runs normally (PlaceAddr's induction, for the resolved base), then: `indexTraps` — the index's code stops (`IndexRuns`' trap half, for the checked trap `r`), and `seq` has its `Stops` rule; `negative`/`beyond` — the index's code ends normally (`IndexRuns`), then the index check is false: a negative index's word is at least `2 ^ 31` (`IndexAt`), and the length is below `2 ^ 31`. `refTrap` is `Stops.divide`; `seq` and `ite` have their `Stops` rules. A base that traps (`field`, `index`) stops in the base's code, before any later index's code. PlaceAddr's induction is best proved as a shared lemma first.

@@ -1068,7 +1068,7 @@ theorem index_ok {t : Typed} {iv : Value} {x : BitVec 64}
     cases UintTy.eq_of_code kind
     obtain ⟨rfl, -⟩ := holds
     simp only [Semantics.integerIndex]
-  | bool | struct | enum | ptr | slice | array | unit | isize | char | float | sint | view | str => rw [hty] at kind; simp [SrcType.isI32, SrcType.isUint] at kind
+  | bool | struct | enum | ptr | slice | array | unit | isize | char | float | sint | view | str | ref => rw [hty] at kind; simp [SrcType.isI32, SrcType.isUint] at kind
 
 /-- Statements one after another, then `body`. -/
 def chain : List Stmt → Stmt → Stmt
@@ -1107,6 +1107,7 @@ theorem loadType_chain : ∀ (t : SrcType) (target : Nat) (base : Expr) (offset 
   | .unit, _, _, _ => ⟨[_], fun _ => rfl⟩
   | .view _, _, _, _ => ⟨[_], fun _ => rfl⟩
   | .str, _, _, _ => ⟨[_], fun _ => rfl⟩
+  | .ref _, _, _, _ => ⟨[_], fun _ => rfl⟩
   | .enum _ _, _, _, _ => ⟨[_, _], fun _ => rfl⟩
   | .struct _ fields, target, base, offset => by
     obtain ⟨ps, eq⟩ := loadTypes_chain fields target base offset
@@ -1505,6 +1506,7 @@ theorem stops_setField {id index : Nat} {value : SrcExpr} : SrcStops sp mp n (.s
   case h_13 => simp at ok
   case h_14 => simp at ok
   case h_15 => simp at ok
+  case h_16 => simp at ok
   rename_i sid types hty
   simp only [lowerSetFieldAt] at ok
   split at ok
@@ -1549,7 +1551,7 @@ theorem stops_letStruct {id : Nat} {ty : SrcType} {fields : List SrcExpr} {body 
   subst ok
   cases ty with
   | view => simp [lowerLiteral] at literalOk
-  | str => simp [lowerLiteral] at literalOk
+  | str | ref => simp [lowerLiteral] at literalOk
   | i32 => simp [lowerLiteral] at literalOk
   | bool => simp [lowerLiteral] at literalOk
   | uint => simp [lowerLiteral] at literalOk
@@ -1711,7 +1713,7 @@ theorem stops_letEnum {id : Nat} {ty : SrcType} {variant : Nat} {payload : List 
   subst ok
   cases ty with
   | view => simp [lowerEnumValue] at valueOk
-  | str => simp [lowerEnumValue] at valueOk
+  | str | ref => simp [lowerEnumValue] at valueOk
   | i32 => simp [lowerEnumValue] at valueOk
   | bool => simp [lowerEnumValue] at valueOk
   | uint => simp [lowerEnumValue] at valueOk
@@ -1797,6 +1799,7 @@ theorem stops_letMatch {id : Nat} {ty : SrcType} {scrutinee enumId : Nat} {arms 
   case h_13 => simp at matchOk
   case h_14 => simp at matchOk
   case h_15 => simp at matchOk
+  case h_16 => simp at matchOk
   rename_i eid variants hty
   simp only [lowerMatchArms] at matchOk
   split at matchOk

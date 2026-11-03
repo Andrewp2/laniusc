@@ -53,12 +53,12 @@ abbrev Stmt_ends_wild (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     RepBool (Lanius.Mini.endsWild x0) w
 
 abbrev Stmt_first_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Bool} {x1 : Nat} {x2 : Option Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepBool x0 v0 → RepNat x1 v1 → (RepOption 207 RepNat) x2 v2 →
-    (RepOption 207 RepNat) (Lanius.Mini.firstAt x0 x1 x2) w
+  ∀ {x0 : Bool} {x1 : Nat} {x2 : Option Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepBool x0 v0 → RepNat x1 v1 → (RepOption 150 RepNat) x2 v2 →
+    (RepOption 150 RepNat) (Lanius.Mini.firstAt x0 x1 x2) w
 
 abbrev Stmt_first_nested (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : List Lanius.Mini.CTree} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepFrontEnv x0 v0 → (RepList 82 RepCTree) x1 v1 → RepNat x2 v2 →
-    (RepOption 207 RepNat) (Lanius.Mini.firstNested x0 x1 x2) w
+    (RepOption 150 RepNat) (Lanius.Mini.firstNested x0 x1 x2) w
 
 abbrev Stmt_is_last (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.CTree} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 82 RepCTree) x0 v0 →

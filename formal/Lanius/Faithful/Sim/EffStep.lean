@@ -198,7 +198,7 @@ theorem eff_step (le : k + 1 ≤ N) (calls : FuncSim sp prims outside k) (eff : 
     | float => simp at hm
     | sint => simp at hm
     | array => simp at hm
-    | view | str => simp at hm
+    | view | str | ref => simp at hm
   | eDivide op l r =>
     simp only [SrcEff.toCore] at run
     have notAnd : op.toCore ≠ .logicalAnd := by cases op <;> simp [SrcDivOp.toCore]

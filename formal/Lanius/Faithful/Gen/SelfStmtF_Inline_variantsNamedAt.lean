@@ -22,11 +22,11 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_based_digit (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {x2 : List Nat} {x3 : Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepNat x1 v1 → (RepList 25 RepNat) x2 v2 → RepNat x3 v3 →
-    (RepOption 207 RepNat) (Lanius.Mini.Inline.basedDigit x0 x1 x2 x3) w
+    (RepOption 150 RepNat) (Lanius.Mini.Inline.basedDigit x0 x1 x2 x3) w
 
 abbrev Stmt_decimal_digit (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : List Nat} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → (RepList 25 RepNat) x1 v1 → RepNat x2 v2 →
-    (RepOption 207 RepNat) (Lanius.Mini.Inline.decimalDigit x0 x1 x2) w
+    (RepOption 150 RepNat) (Lanius.Mini.Inline.decimalDigit x0 x1 x2) w
 
 abbrev Stmt_imported_variants_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.TypeDecl} {x1 : Lanius.Mini.ImportDecl} {x2 : List Lanius.Mini.ImportDecl} {x3 : List (List Nat)} {x4 : List Nat} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepList 104 RepTypeDecl) x0 v0 → RepImportDecl x1 v1 → (RepList 115 RepImportDecl) x2 v2 → (RepList 31 (RepList 25 RepNat)) x3 v3 → (RepList 25 RepNat) x4 v4 →
@@ -42,6 +42,6 @@ abbrev Stmt_variants_named_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) :
 
 abbrev Stmt_wide_digit (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : List Nat} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → (RepList 25 RepNat) x1 v1 → RepNat x2 v2 →
-    (RepOption 207 RepNat) (Lanius.Mini.Inline.wideDigit x0 x1 x2) w
+    (RepOption 150 RepNat) (Lanius.Mini.Inline.wideDigit x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

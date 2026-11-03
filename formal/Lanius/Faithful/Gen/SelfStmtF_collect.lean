@@ -26,7 +26,7 @@ abbrev Stmt_alias_names_in (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
 
 abbrev Stmt_collect (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : List (List Nat)} {x2 : List Lanius.Mini.CTree} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → (RepList 31 (RepList 25 RepNat)) x1 v1 → (RepList 82 RepCTree) x2 v2 →
-    (RepOption 164 RepDecls) (Lanius.Mini.collect x0 x1 x2) w
+    (RepOption 165 RepDecls) (Lanius.Mini.collect x0 x1 x2) w
 
 abbrev Stmt_collect_files (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : List Lanius.Mini.CTree} {x2 : Lanius.Mini.Collected} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → (RepList 82 RepCTree) x1 v1 → RepCollected x2 v2 →
@@ -49,7 +49,7 @@ abbrev Stmt_enums_named_ok (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
     RepBool (Lanius.Mini.enumsNamedOk x0 x1 x2) w
 
 abbrev Stmt_file_collected (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List (List Nat)} {x1 : Option Lanius.Mini.Decls} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepOption 164 RepDecls) x1 v1 →
+  ∀ {x0 : List (List Nat)} {x1 : Option Lanius.Mini.Decls} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepOption 165 RepDecls) x1 v1 →
     (RepOption 101 RepFileDecls) (Lanius.Mini.fileCollected x0 x1) w
 
 abbrev Stmt_file_decls (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -65,7 +65,7 @@ abbrev Stmt_fn_names_in (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
     (RepList 31 (RepList 25 RepNat)) (Lanius.Mini.fnNamesIn x0 x1) w
 
 abbrev Stmt_is_none_type (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 158 RepSrcType) x0 v0 →
+  ∀ {x0 : Option Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 159 RepSrcType) x0 v0 →
     RepBool (Lanius.Mini.isNoneType x0) w
 
 abbrev Stmt_module_globals (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

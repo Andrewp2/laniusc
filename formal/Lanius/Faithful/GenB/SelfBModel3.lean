@@ -20,6 +20,14 @@ open Lanius.Faithful.Budget
 
 noncomputable section
 
+def Cost_cons_of_mini_selfhost_EffArm : Nat → Lanius.Mini.EffArm → List Lanius.Mini.EffArm → Nat
+  | 0, x8, x17 => 18446744073709551616
+  | n + 1, x8, x17 => 1
+
+end
+
+noncomputable section
+
 def Cost_cons_eff_arm : Nat → Option Lanius.Mini.EffArm → Option (List Lanius.Mini.EffArm) → Nat
   | 0, x13, x49 => 18446744073709551616
   | n + 1, x13, x49 => (match x13 with | some x192 => (match x49 with | some x256 => (Cost_cons_of_mini_selfhost_EffArm n x192 x256) | none => 0) | none => 0)

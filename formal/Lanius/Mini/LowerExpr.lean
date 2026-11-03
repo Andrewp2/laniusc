@@ -372,6 +372,7 @@ theorem castToIsize_sound {inner t : Typed} {env : Env} {w result : Value}
       simp [hty, SrcType.sintKind] at base
     · simp at lowered
     · simp at lowered
+    · simp at lowered
 
 /-- A lowered cast of an operand of a type other than `SrcType.sint` holds Core's cast of its value. -/
 theorem cast_sound_base {ty : SrcType} {inner t : Typed} {env : Env} {w result : Value}
@@ -431,6 +432,7 @@ theorem cast_sound_base {ty : SrcType} {inner t : Typed} {env : Env} {w result :
       simp [hty, SrcType.sintKind] at base
     · simp at lowered
     · simp at lowered
+    · simp at lowered
   | bool => simp [castTo] at lowered
   | uint kind =>
     have positive := Nat.two_pow_pos kind.width
@@ -482,6 +484,7 @@ theorem cast_sound_base {ty : SrcType} {inner t : Typed} {env : Env} {w result :
       simp [hty, SrcType.sintKind] at base
     · simp at lowered
     · simp at lowered
+    · simp at lowered
   | struct => simp [castTo] at lowered
   | enum => simp [castTo] at lowered
   | ptr => simp [castTo] at lowered
@@ -530,7 +533,7 @@ theorem cast_sound_base {ty : SrcType} {inner t : Typed} {env : Env} {w result :
         exact narrow_cast_holds (by simpa using wide) scalar holds casted
       · simp at lowered
   | view => simp [castTo] at lowered
-  | str => simp [castTo] at lowered
+  | str | ref => simp [castTo] at lowered
 
 /-- A lowered cast holds Core's cast of the operand's value. -/
 theorem cast_sound {ty : SrcType} {inner t : Typed} {env : Env} {w result : Value}
@@ -715,6 +718,7 @@ theorem equality_holds {op : CmpOp} {cop : Core.BinaryOp} (h : (op = .eq ∧ cop
         subst e
         simp only [Expr.eval, htl, SrcType.word]
         exact holds_compare _
+      · simp [SrcType.Holds] at holdsl
       · simp [SrcType.Holds] at holdsl
       · simp [SrcType.Holds] at holdsl
     · simp at lowered

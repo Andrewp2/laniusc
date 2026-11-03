@@ -34,7 +34,7 @@ abbrev Stmt_check_then (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
 
 abbrev Stmt_expect_type (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Typed} {x1 : Lanius.Mini.SrcType} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepTyped x0 v0 → RepSrcType x1 v1 →
-    (RepOption 153 RepExpr) (Lanius.Mini.expectType x0 x1) w
+    (RepOption 154 RepExpr) (Lanius.Mini.expectType x0 x1) w
 
 abbrev Stmt_guard_all (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Binding} {x1 : List Lanius.Mini.SrcExpr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 135 RepBinding) x0 v0 → (RepList 21 RepSrcExpr) x1 v1 →
@@ -45,12 +45,12 @@ abbrev Stmt_guarded (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     (RepOption 134 RepStmt) (Lanius.Mini.guarded x0 x1 x2) w
 
 abbrev Stmt_lower_append (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List Lanius.Mini.Expr)} {x1 : Option (List Lanius.Mini.Expr)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 150 (RepList 92 RepExpr)) x0 v0 → (RepOption 150 (RepList 92 RepExpr)) x1 v1 →
-    (RepOption 150 (RepList 92 RepExpr)) (Lanius.Mini.lowerAppend x0 x1) w
+  ∀ {x0 : Option (List Lanius.Mini.Expr)} {x1 : Option (List Lanius.Mini.Expr)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 151 (RepList 92 RepExpr)) x0 v0 → (RepOption 151 (RepList 92 RepExpr)) x1 v1 →
+    (RepOption 151 (RepList 92 RepExpr)) (Lanius.Mini.lowerAppend x0 x1) w
 
 abbrev Stmt_lower_as (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Binding} {x1 : Lanius.Mini.SrcExpr} {x2 : Lanius.Mini.SrcType} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 135 RepBinding) x0 v0 → RepSrcExpr x1 v1 → RepSrcType x2 v2 →
-    (RepOption 153 RepExpr) (Lanius.Mini.lowerAs x0 x1 x2) w
+    (RepOption 154 RepExpr) (Lanius.Mini.lowerAs x0 x1 x2) w
 
 abbrev Stmt_slot_vars (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → RepNat x1 v1 →

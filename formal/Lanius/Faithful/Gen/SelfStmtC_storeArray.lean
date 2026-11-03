@@ -25,7 +25,7 @@ abbrev Stmt_lower_return_unit (prog : SrcProgram) (prims : Prims) (ix n : Nat) :
     (RepOption 134 RepStmt) (Lanius.Mini.lowerReturnUnit x0) w
 
 abbrev Stmt_lower_set_field_eval (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Option Lanius.Mini.Binding} {x2 : Nat} {x3 : Option Lanius.Mini.Evaluated} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → (RepOption 152 RepBinding) x1 v1 → RepNat x2 v2 → (RepOption 156 RepEvaluated) x3 v3 →
+  ∀ {x0 : Nat} {x1 : Option Lanius.Mini.Binding} {x2 : Nat} {x3 : Option Lanius.Mini.Evaluated} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → (RepOption 153 RepBinding) x1 v1 → RepNat x2 v2 → (RepOption 157 RepEvaluated) x3 v3 →
     (RepOption 134 RepStmt) (Lanius.Mini.lowerSetFieldEval x0 x1 x2 x3) w
 
 abbrev Stmt_lower_unreachable (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -33,11 +33,11 @@ abbrev Stmt_lower_unreachable (prog : SrcProgram) (prims : Prims) (ix n : Nat) :
     (RepOption 134 RepStmt) (Lanius.Mini.lowerUnreachable x0 x1) w
 
 abbrev Stmt_lower_view (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Nat} {x2 : Option (List Lanius.Mini.Expr)} {x3 : Option Lanius.Mini.Stmt} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepNat x1 v1 → (RepOption 150 (RepList 92 RepExpr)) x2 v2 → (RepOption 134 RepStmt) x3 v3 →
+  ∀ {x0 : Nat} {x1 : Nat} {x2 : Option (List Lanius.Mini.Expr)} {x3 : Option Lanius.Mini.Stmt} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepNat x1 v1 → (RepOption 151 (RepList 92 RepExpr)) x2 v2 → (RepOption 134 RepStmt) x3 v3 →
     (RepOption 134 RepStmt) (Lanius.Mini.lowerView x0 x1 x2 x3) w
 
 abbrev Stmt_set_field_eval_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Option Lanius.Mini.SrcType} {x2 : Nat} {x3 : Lanius.Mini.Evaluated} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → (RepOption 158 RepSrcType) x1 v1 → RepNat x2 v2 → RepEvaluated x3 v3 →
+  ∀ {x0 : Nat} {x1 : Option Lanius.Mini.SrcType} {x2 : Nat} {x3 : Lanius.Mini.Evaluated} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → (RepOption 159 RepSrcType) x1 v1 → RepNat x2 v2 → RepEvaluated x3 v3 →
     (RepOption 134 RepStmt) (Lanius.Mini.setFieldEvalAt x0 x1 x2 x3) w
 
 abbrev Stmt_set_field_eval_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -45,7 +45,7 @@ abbrev Stmt_set_field_eval_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) :
     (RepOption 134 RepStmt) (Lanius.Mini.setFieldEvalOf x0 x1 x2 x3) w
 
 abbrev Stmt_store_array (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Binding} {x1 : Nat} {x2 : Option Lanius.Mini.Evaluated} {x3 : Option Lanius.Mini.Evaluated} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepBinding x0 v0 → RepNat x1 v1 → (RepOption 156 RepEvaluated) x2 v2 → (RepOption 156 RepEvaluated) x3 v3 →
+  ∀ {x0 : Lanius.Mini.Binding} {x1 : Nat} {x2 : Option Lanius.Mini.Evaluated} {x3 : Option Lanius.Mini.Evaluated} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepBinding x0 v0 → RepNat x1 v1 → (RepOption 157 RepEvaluated) x2 v2 → (RepOption 157 RepEvaluated) x3 v3 →
     (RepOption 134 RepStmt) (Lanius.Mini.storeArray x0 x1 x2 x3) w
 
 abbrev Stmt_str_ascii (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

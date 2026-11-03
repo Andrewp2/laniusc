@@ -1768,6 +1768,231 @@ reference. In that order of need:
    Core writes to other cells keep it (`FrameCorr.congr`); a store through a
    reference changes Core's cell at the path and the words together.
 
+## References: the memory model (decided 11-03, F5; revised after review)
+
+F5's open-statement graph (`formal/Lanius/Open/F5/`) builds on one model of
+addresses and places, `formal/Lanius/Mini/Refs/Model.lean`, and not on more
+readings of particular patterns. It replaces the copy-in, copy-out call
+sequence of point 3 of "The design of writes through references".
+
+1. **What Core gives.** A reference is `.reference T cell path`: a cell and
+   a path of `.field` and `.index` projections into its value. `borrow T p`
+   resolves the place `p` and returns its cell and path. `dereference`
+   reads the cell at the path. `Place.deref r` makes a reference's cell and
+   path a place again, so writes go through `assign` (`writeResolvedPlace`,
+   `replaceProjectedValue`). Cells live forever, so Core has no dangling
+   references. Core has no `&` versus `&mut` and no exclusivity: any
+   reference may write, and aliases see each other's writes. Rust's rule
+   that a `&mut` is unique is a static check in laniusc (LNC0006). The
+   verified compiler does not need it for soundness, because every access
+   through a reference goes to memory (point 4), so aliases agree.
+2. **Homes.** Every local the program borrows (`&x`, `&mut x`, `&x.f`,
+   `&x[i]`, an auto-borrowed receiver) has a home: a block of frame memory
+   in its activation's block (`Frame`, "Addressed locals" point 1). The
+   local lives only there for its whole scope: no slot copy, no copy back
+   after a call. A homed local is read where its read is in evaluation
+   order, a load from its home then: in `g(&mut x) + x.f` the load of `x.f`
+   follows the call, as Core reads the cell after `g` wrote it.
+   `Homes sx bud places st hp` says that each home's cell holds a value its
+   bytes represent, that the blocks are apart and between the frame
+   pointer and the top, and that no view roots at a home's cell.
+3. **The age order.** `places` lists the homes youngest first. A home's
+   value may hold slices and (from stage 1) references, but only to older
+   homes: `Homes.holds` reads home `i`'s value against `places.drop (i +
+   1)`. The stdlib needs this (`View`, `Iter`, `Chunks` hold slices,
+   `Output.writer: &W` a reference). A return drops the callee's homes, a
+   prefix, and the callers' values stay held (`HomesLeave`). A write may
+   store only a value naming older homes (`RefStore`'s hypothesis); the
+   lifetime rule (point 9) is the static check that gives it.
+4. **Native layout.** A home is in Core's native layout (`NativeLayout`),
+   extended to arrays, so any array inside a home can be lent in place as a
+   slice: `[i32; n]` and `[u8; n]` fields (`inline_string`, `set`, `ring`)
+   and arrays of structs.
+   - A value's words descend from its word 0 (`SrcType.words`): one word
+     per scalar, two for a `str` (pointer, count), three for a slice
+     (pointer, length, stride), a struct its fields' words (at least one),
+     an enum its tag word and its largest payload. A `str` local can be
+     borrowed whole: its home is its two words. Its bytes are read-only
+     static data and not a place (Core's projections do not go into a
+     string).
+   - An `[i32; n]` or `[u8; n]` is packed: elements 4 or 1 bytes apart,
+     ascending from the block's lowest byte, in `(width * n + 7) / 8`
+     words. Core lends a `[u8; n]` at stride 1. laniusc lends it at -8;
+     that is the open item "Lent u8 arrays", and homes follow Core.
+   - Any other `[E; n]` has element `i`'s words `i` elements below the top
+     (stride `-8 * words(E)`, the slice layout).
+   - `SrcType.slotAt` maps each slot to its bytes and access width, the
+     native widths Core's `writeNativeValue` and the callee's
+     slice-element code (`loadType`, `storeType`) use: a scalar at
+     `widthOf` (4 bytes for `i32`, `bool`, `u8`, `u16` and `u32`, 8 for the
+     rest), an enum's tag at 4 bytes. So every byte is accessed through the
+     same type's `slotAt`, whoever accesses it, and the bytes outside the
+     slots (the upper half of a `bool` field's word, a slice's stride word)
+     never matter; nothing relies on them being zero.
+   - One exception, for references: a reference to a `u8` reads and writes
+     one byte (`SrcType.refSlotAt`), since it may point into a packed
+     `[u8; n]` or at a `u8`'s native 4-byte word. The native word's 4-byte
+     reading (`HoldsAt` at `slotAt`) makes its upper bytes zero, so one
+     byte reads and writes it exactly; that is proved from `Homes`, not
+     assumed.
+   - An enum's payload slot `j` is word `1 + j`, which is exact only for
+     payloads of one word per slot (`SrcType.uniform`), and its width must
+     be one for all variants (`variantsAgree`: a `bool` and a `u64` at the
+     same payload slot differ). A home whose type has another enum, or a
+     view, is not homed (`SrcType.homeOk`). Slices carry no stride slot
+     yet; their third word is not written.
+5. **References and places.** A reference value is one slot holding the
+   lowest byte of the referent's block (`RefTo`). That is an internal
+   convention; slices keep the native pointer (`Addressed.pointer`). A
+   borrow computes the address (`RPlace.code`): the home's address from the
+   frame slot, a reference parameter's slot, constant field offsets, and
+   bounds-checked index offsets. An out-of-range index traps, as Core's
+   `arrayBounds` does. An index is an expression that does not change the
+   state (`items[self.length]`, a `&mut pos` cursor's `*pos`), but it may
+   trap. The verified compiler follows Core's order (decided 11-03 after
+   review): each index's code runs right after its base's code, and the
+   bounds check right after the index (`RPlace.code`, `RPlace.IndexRuns`).
+   In `a[i][e]` with `i` out of range, Core traps with `arrayBounds` and
+   never evaluates `e`, which could divide by zero or read a raw slice out
+   of bounds; evaluating every index first would trap differently (the
+   10-29 slice-store mistake again). `RPlace.Traps` is a place whose
+   resolution traps, at an index's own trap or an out-of-range index; no
+   statement assumes every index has a value. The compiled code must stop
+   only at checked traps (`undefinedTrap r = false`); raw memory errors and
+   `typeMismatch` in an index (`raw[k]`) are not caught, as elsewhere. Reads are `loadSlots` at the
+   address, writes `storeSlots`, which change only the referent's bytes.
+   The context's homes are found innermost first (`RefsAgree.homes` uses
+   `lookup`), since shadowing gives two homes one name.
+6. **Calls.** A reference is passed as a one-slot argument. A callee takes
+   its own block below the caller's (`Frame`, `HomesFrame`), so the
+   caller's homes stay above the callee's frame pointer and its stores. The
+   call's return restores the frame pointer and drops the callee's homes
+   (`HomesLeave`). Homes add to `frame_block` (and so to `funcNeeds`), so a
+   recursive cycle through a function with a borrowed local needs unbounded
+   frame memory and waits for F15, like other recursive frame needs.
+7. **`FrameCorr` goes.** `Homes` replaces `FrameCorr`: one places list
+   cannot be read both ways. A lent `[i32; n]` or `[u8; n]` is a home of
+   that type in the caller (`FrameCorrHomes` shows `FrameCorr`'s places are
+   homes), and lending it is no copy (`HomesLend`, `ArrayCall` on homes).
+   `ArrayCall` and `Borrowed` move onto `Homes`; then `FrameCorr`, its copy
+   into the frame block and the copy back are deleted. `FrameCorr`'s
+   `hp.StaticsAt sx` (the static region `str` values point into) moves to
+   `Homes.statics`, so `Corr` gets it from `Homes`.
+8. **Views and strings are not homes.** A `LetView` array lives in a bump
+   heap block that Core also keeps (`syncI32Views*`), and a `str` in the
+   static region; neither is a home. For `LetView` to become one, `Homes`
+   would need a home below `limit` whose bytes are Core's heap block at the
+   view's address (`Views.ViewHolds`, with `HeapCorr`), kept in both
+   directions after every write; F5 does not do that. F5's Core write
+   statements assume Core's views hold (`ViewsHold`) and that no view roots
+   at the written cell.
+9. **The lifetime rule.** No reference outlives what it names:
+   - A reference parameter is not reassigned in its function (a static
+     check).
+   - Results of reference type, and lets, fields and elements holding a
+     reference, are read only once a static check shows their referent is
+     older than the holder. For lets the check also covers each loop
+     iteration. Until then they are rejected.
+   - A borrowed slice stored into a home's field or element (a `View` or
+     `Iter` over a local array, kept in a struct local) needs the same
+     check: the slice's array is older than the home that holds it.
+     `RefStore` assumes the stored value names only older homes; this
+     check is what gives it for slices as well as references.
+10. **`&self`.** Once references are read, the by-value reading of a
+    `&self` method that does not write `self` is dropped, so every `&self`
+    is a reference (one reading, and calls that pass `self` on stay
+    references).
+
+**Stage 2's root.** `RefsLemmas` is only the conjunction of the
+construct-level lemmas. F5's top theorem, `compileSource` correct for
+programs with references, is stated in stage 2, once stage 1 gives Source
+its reference type. Besides these leaves it needs, at least:
+- a call that passes a reference: the callee's `RefsAgree` at entry, from
+  the caller's borrow;
+- `Corr` for homed locals (their slots are not their values; their homes
+  are);
+- `Keeps` that lets a callee change the caller's cells through references;
+- right-hand sides with effects (a call that writes the place's cell).
+
+**The trusted-base delta.** `Heap`, `Exec`, `Step` and the x86 side do not
+change: frame memory, `Frame`, and the 1-, 4- and 8-byte loads and stores
+are already there. The graph itself adds only untrusted definitions. Stage 1
+changes these trusted definitions, proposed here for the audit:
+- `SrcType.ref` (generated from `compiler.lani`), size 1.
+- `SrcType.HoldsAt.ref T`: a `.reference T.toCore cell path` is held by a
+  word `w` with `RefTo places T cell path w` (`RefHeld`). It names the
+  source type `T` because `toCore` is not one-to-one (`i32` and
+  `sint .uint32`; `[i32; n]`, `[sint .uint32; n]` and a view; structs drop
+  their field lists). This makes `RefTo`, `Addressed.sub`, `SrcType.sub`,
+  `subStep`, `slotAt`, `refSlotAt`, `widths`, `variantsAgree`, `words`,
+  `accessKind` and `packed` trusted (`widthOf` already is, through the
+  slice-element code). They are
+  harmless for the top theorems, which pass `places = []` (no references
+  at entry), but they are what a reference argument's correctness means.
+- `HoldsAt.borrowed` generalized to slices of homes' sub-places and of any
+  element type (it now requires a whole lent `i32` or `u8` array).
+- `Addressed.pointer` redefined for native layout. It is now
+  `address + 8 * (ty.size - 1)` in slots for unpacked types; the native
+  top word is `address + 8 * (ty.words - 1)`, and the two differ for
+  packed arrays inside a value, slice fields (3 words, 2 slots) and types
+  with no fields (1 word, 0 slots). Packed `i32` and `u8` arrays keep
+  `address`.
+- The reading's new rules: `&x` and `&mut x`, auto-borrowed receivers,
+  auto-deref of reference parameters in field and index reads, and
+  `writesLocal`'s role (point 10 drops it for `&self`).
+- `toCore` of Source's new forms: borrow, dereference, and assignment
+  (plain and compound) to a place built from locals, `deref` of reference
+  parameters, fields and indices.
+- Typing: `PlaceHasType` gets a `Place.deref` rule, and `checkPlaceAnyFuel`
+  its case with its soundness proof (`compileSource_wellTyped` needs both).
+- `ValueHasType.reference` types any reference whatever its cell holds. A
+  sound reading of a reference's type needs store typing (the cell at the
+  path has the referent type), which `Typing` does not have yet.
+- `funcNeeds`/`frame_block` count homes (point 6).
+The top theorems' statements do not change. A program's entry function
+takes no references, so `places = []` at the start.
+
+**Stage 1's order (decided 11-03, leafC).** `compileSource_correct` and
+its siblings hold for every program `compile_source` accepts, so the
+compiler accepts no reference form until stage 2 proves its lowering. Stage
+1 therefore lands in steps that each keep every top theorem proved:
+- S1: `SrcType.ref T` (`Ref(Box<SrcType>)`, one slot) exists and nothing
+  accepts it: no type with a reference is declared (`declare`), a reference
+  type is the same as no type (`same`), and every predicate and lowering
+  case of the compiler gives it the rejecting answer. `HoldsAt` has no
+  `ref` constructor yet, so no value is held at it.
+- S2: the layout definitions `HoldsAt.ref` reaches (`Access`, `accessKind`,
+  `words`, `subStep`, `sub`, `Addressed`, `Addressed.sub`, `RefTo`,
+  `RefHeld`) move before `HoldsAt` (`Mini/Layout.lean`) and become trusted;
+  `HoldsAt.ref` and `Addressed.pointer` for native layout (today only
+  `i32` and `u8` arrays are lent, whose pointer does not change). The
+  generalized `HoldsAt.borrowed` waits for the step that moves `ArrayCall`
+  and `Borrowed` onto `Homes` (point 7): under `FrameCorr` the callee's
+  slice code is proved from a whole lent `i32` or `u8` array, which the
+  general case does not give.
+- S3: Source's places, borrow, dereference and assignment through a place,
+  their `toCore`, and Core's typing of `Place.deref`; their lowering is
+  `none`.
+- S4: stage 2's top statement as an open statement, about the lowering
+  entry that accepts references (`compile_source_refs`, the same lowering
+  without the rejection), so its reductions go into the graph.
+- S5: the front end reads `&T`, `&mut T`, borrows, `*r` and the auto-deref
+  of reference parameters, and the lifetime check rejects the forms point 9
+  lists; `&self` keeps its by-value reading (point 10 waits for stage 2,
+  or every `&self` method would stop compiling).
+- S6: the lowering itself (homes, `RPlace.code`, loads and stores, reference
+  arguments) behind `compile_source_refs`, tested against Core.
+When stage 2's statement is proved, `compile_source` drops the rejection and
+point 10 lands.
+
+**Out of scope for F5.** Functions that return references (100 in the
+stdlib), and references in lets, struct fields, elements or results, until
+the lifetime checks of point 9; references to references; raw places
+(`raw = some _`); borrows of temporaries; enum payloads that are not one
+word per slot or whose variants disagree on a payload slot's width; views together with homes (point 8). Each is rejected by the
+reader (a clear error, as other unread forms) or listed as later work in
+ROADMAP's F5 row.
+
 ## Wildcard match arms (decided 10-31, F11)
 
 A last arm `_ -> value` (a plain one-segment pattern spelled `_`) is the arm
@@ -2308,6 +2533,33 @@ visited set in `ty_insts` would make it linear, but the reading's
 `TyInsts` relation is stated over the full expansion, so that change needs
 its own proof.
 
+## The image limit checked as the sizes add up (decided 11-03, F14)
+
+`link` checked the image limit only after it had added up every function's
+size (`linked_size`) and laid the functions out (`layout`, `link_onto`).
+Monomorphization copies a body once per instance, and the front end allows
+up to its fuel, about `4 * (tokens + prods)`, instances. So a program under
+2^31 words can compile to more than 2^64 bytes of code (PreCompileSourceV2's
+NOTES.md, 11-03), and those sums would overflow a usize before the check
+rejects the program. The compiler now checks as it goes:
+
+- `room_after(room, codes)` walks the functions and takes each one's size
+  out of the room left. It returns None as soon as a function does not fit.
+  It only compares and subtracts, so it adds nothing up.
+- `link` first checks that the static bytes fit the image limit. It then
+  takes the room left after them through `room_after`, and only then lays
+  the functions out and builds the image (`link_fitting`). Every offset
+  `layout` and `link_onto` add up is at most the image limit, 2^30.
+
+This only rejects programs that the old final check already rejected.
+`room_after(room, codes)` is Some exactly when `linked_size(codes) <= room`,
+which is `roomAfter_eq` in `Lanius/Mini/Correct.lean`. `compileProgram_eq`
+shows that `compileProgram` is the same function as before: it accepts the
+same programs with the same binary. So the behaviour is unchanged for every
+accepted program, and a rejected one is still rejected as `None`. Whole-
+program sums need no size lemmas now. Per-function sums (a function's
+`code_size` and its pc offsets) are not covered by this check.
+
 ## Budget certificates (decided 11-01, F14)
 
 `CompileBounded T` asks that the guarded run of `progW` has a value
@@ -2504,6 +2756,19 @@ Decided 11-02 (F14, the size measure for the roots' preconditions): the
   parallel but checks them in the kernel one at a time, and a module waits
   for all of each module it imports. The chain from Tactic to SelfP02 went
   from over 5 minutes (it hit the 290 s limit) to 101 s.
+- Build time (11-03). An arithmetic goal is proved by a linear certificate
+  (`SelfPre/LinCert.lean`: `L + Σ Rᵢ ≤ R + Σ Lᵢ` coefficientwise, checked by
+  the kernel on numerals) over variables for its atoms, `omega` only where the
+  search finds none; a budget chain's subtractions `a - c` are replaced first
+  (`a - c + c ≤ a` where the left side has `c`). Sibling goals share a run's
+  proved premises and normalized facts (a proof is reused when a hypothesis it
+  used is replaced by one of the same type), each run with caches of its own.
+  A literal's height lemma unfolds its cost by `delta` (the equation lemmas of
+  `Cost_text_*` took 16-22 s each to make). GenP is one module of each kind
+  (uposts, posts, preconditions: SelfP00-02); with the preconditions in five
+  modules each waited for the one before. The chain from Tactic went from
+  about 4 minutes to about 2 at load 8 (let_first's step from about 70 s, out
+  of heartbeats, to 15 s).
 - Open statements (11-03). F14's remaining work is a graph under
   `Lanius/Open/F14` (OPEN_STATEMENTS.md): the root `SelfCompilerTotalReason`
   is `selfCompiler_total_reason_of_bounds` without `CompileBounded`, for a

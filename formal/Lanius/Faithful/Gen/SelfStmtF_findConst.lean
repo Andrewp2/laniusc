@@ -50,7 +50,7 @@ abbrev Stmt_if_item (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev Stmt_inst_index (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Inst} {x1 : Lanius.Mini.Inst} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 139 RepInst) x0 v0 → RepInst x1 v1 → RepNat x2 v2 →
-    (RepOption 207 RepNat) (Lanius.Mini.instIndex x0 x1 x2) w
+    (RepOption 150 RepNat) (Lanius.Mini.instIndex x0 x1 x2) w
 
 abbrev Stmt_inst_member (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Inst} {x1 : Lanius.Mini.Inst} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 139 RepInst) x0 v0 → RepInst x1 v1 →

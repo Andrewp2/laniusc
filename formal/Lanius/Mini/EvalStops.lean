@@ -1527,7 +1527,7 @@ theorem eff_match (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls
   | float => cases values <;> simp [matchVariants, evalArms] at armsOk
   | sint => cases values <;> simp [matchVariants, evalArms] at armsOk
   | view => cases values <;> simp [matchVariants, evalArms] at armsOk
-  | str => cases values <;> simp [matchVariants, evalArms] at armsOk
+  | str | ref => cases values <;> simp [matchVariants, evalArms] at armsOk
 
 /-- A conditional: the condition's code stops, or its value picks the arm
 Core runs, and that arm's code stops. -/
@@ -1890,6 +1890,7 @@ theorem stops_setFieldEval (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs)
   case h_13 => simp at ok
   case h_14 => simp at ok
   case h_15 => simp at ok
+  case h_16 => simp at ok
   rename_i sid types hty
   simp only [setFieldEvalAt] at ok
   split at ok

@@ -32,6 +32,7 @@ def storeArray (b : Binding) (slot : Nat) (index : Option Evaluated) (value : Op
   | .sint sk => none
   | .view viewLength => none
   | .str => none
+  | .ref referent => none
 
 /-- x.field = value: the value in slot, then copied to the field's slot. -/
 def setFieldEvalAt (target : Nat) (found : Option SrcType) (slot : Nat) (v : Evaluated) : Option Stmt :=
@@ -60,6 +61,7 @@ def setFieldEvalOf (b : Binding) (field : Nat) (slot : Nat) (v : Evaluated) : Op
   | .sint sk => none
   | .view viewLength => none
   | .str => none
+  | .ref referent => none
 
 def lowerSetFieldEval (slot : Nat) (binding : Option Binding) (field : Nat) (value : Option Evaluated) : Option Stmt :=
   match binding with

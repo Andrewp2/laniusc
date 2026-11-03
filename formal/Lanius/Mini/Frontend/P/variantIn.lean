@@ -61,6 +61,7 @@ def srcTy (t : SrcType) : Option Ty :=
   | .sint sk => some (Ty.tySint sk)
   | .view viewLength => none
   | .str => some Ty.tyStr
+  | .ref referent => none
 
 def scalarSrc (t : Ty) : Option SrcType :=
   match t with
