@@ -53,3 +53,18 @@
   (`x.size`), or a callee's result (`Code_size`, `seq_code`, `offset_after`). Next: invariant
   hypotheses for the counting recursions (`first + count ≤ M`, as the front end's OVERRIDES), and
   value lemmas for the computed numbers.
+- 11-03 (leafB): type sizes and the code-size invariants. Pre lemmas get `ts x ≤ 2^22` where a type's
+  size is used (`num_used` now records the kind of use: numbers or type sizes). The Mini program's
+  compile (what `compile_optimized` reaches, `COMPILE_FIXED_ROOTS`) bounds the program's numbers by
+  `K = 2^62` instead of `M`: they are its own slots, indices and counts and do not grow as it
+  compiles, and a caller's `M ≤ K` gives them. `COMPILE_OVERRIDES` add invariants: a temporary's
+  depth plus the expression's (arguments') weight below `2^40` (`compile_expr`, `compile_args`;
+  `hb` does not count tree nodes, so the height cannot be the measure), a pc offset plus 64 bytes
+  per unit of the weight left below `2^40` (`compile_stmt`, `seq_code`, `ite_code`, `loop_code`,
+  from `CompileValues`' `val_compileStmt`/`val_compileExpr`, the `codeSize_le` bounds), a code
+  list's or an instruction's size below `K` (`code_size`, `Instr_size`), and `first + count ≤ K`
+  (`zero_locals`). P02: 81 failing -> 73, none newly failing. Failed: tagging pattern variables of
+  every `match` as their parameter (`match_aliases`, behind `PRE_NUMS_ALIAS=1`): 101 failing, the
+  callers then need numbers of callee results (`factsAfter`, `optimizeProgram`) that no post bounds.
+  `compile_func` stays skipped: `locals + temps` needs a bound on `Stmt.temps` of the lowered,
+  optimized body, which nothing upstream states yet.

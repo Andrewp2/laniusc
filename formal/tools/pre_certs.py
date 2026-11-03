@@ -545,21 +545,63 @@ NUMS = {'on': False, 'used': {}, 'fields': {}, 'ftype': {}, 'types': set()}
 # Functions whose callers pass numbers they cannot bound: no number hypotheses
 # (their own preconditions are then open, PreCompileSourceV3/NOTES.md).
 COMPILE_NUM_SKIP = {
-    'Code_size', 'SrcStmt_lower', 'arm_bind', 'arm_payload', 'array_arg_local',
-    'array_arg_slice', 'array_call_sig', 'assign_from', 'bounds_guard', 'compile_func',
-    'copy_field', 'copy_field_of', 'copy_same', 'element_base', 'eval_array_element',
+    'compile_func', 'Code_size', 'SrcStmt_lower', 'arm_bind', 'arm_payload', 'array_arg_local',
+    'array_arg_slice', 'array_call_sig', 'assign_from', 'bounds_guard', 'copy_field',
+    'copy_field_of', 'copy_same', 'element_base', 'eval_array_element',
     'eval_array_index', 'eval_element', 'eval_len_of', 'eval_load', 'eval_load_byte',
     'eval_pick', 'eval_stride_of', 'eval_word_element', 'eval_word_stride',
-    'frame_block', 'ite_code', 'link', 'link_fitting', 'link_onto', 'loop_code',
-    'lower_arm_found', 'lower_arm_stmt', 'lower_arms', 'lower_body', 'lower_field',
-    'lower_field_of', 'lower_func', 'lower_match_arms', 'lower_match_on',
-    'lower_set_field_of', 'lower_set_values', 'need_round', 'needs_after',
-    'offset_after', 'pack_round', 'pack_rounds', 'pick_element', 'put_element',
-    'round_cons', 'round_join', 'seq_code', 'set_field_eval_of', 'slot_vars',
-    'store_any', 'store_array', 'store_array_element', 'store_eval', 'store_eval_byte',
-    'store_eval_element', 'store_eval_word', 'store_pick', 'store_word_element',
-    'within_layout', 'within_layouts', 'within_payloads', 'word_stride',
+    'frame_block', 'link', 'link_fitting', 'link_onto', 'lower_arm_found',
+    'lower_arm_stmt', 'lower_arms', 'lower_body', 'lower_field', 'lower_field_of',
+    'lower_func', 'lower_match_arms', 'lower_match_on', 'lower_set_field_of',
+    'lower_set_values', 'need_round', 'needs_after', 'offset_after', 'pack_round',
+    'pack_rounds', 'pick_element', 'put_element', 'round_cons', 'round_join',
+    'set_field_eval_of', 'slot_vars', 'store_any', 'store_array', 'store_array_element',
+    'store_eval', 'store_eval_byte', 'store_eval_element', 'store_eval_word',
+    'store_pick', 'store_word_element', 'within_layout', 'within_layouts',
+    'within_payloads', 'word_stride',
 }
+
+
+# The compile side's invariants (`--compile`), as OVERRIDES (M-form: over the
+# parameters p0.., `M` and the budget `b`): a counter plus the count left
+# (it grows only as that shrinks); a temporary's depth plus the weight left to
+# compile, and a pc offset plus
+# 64 bytes per unit of the weight left to compile below `2 ^ 40` (the code of
+# a statement is at most 64 bytes per unit of weight, `CompileValues`'
+# `val_compileStmt`, and `compileFunc` checks the weight against the image
+# limit first); a code list's size below `K`.
+PC_LIMIT = '1099511627776'
+COMPILE_OVERRIDES = {
+    'compile_expr': [f'p2 + Lanius.Mini.Expr.weight p1 ≤ {PC_LIMIT}'],
+    'compile_args': [f'p2 + Lanius.Mini.argsWeight p1 ≤ {PC_LIMIT}'],
+    'zero_locals': ['p0 + p1 ≤ K'],
+    'compile_stmt': [f'p1 + 64 * Lanius.Mini.Stmt.weight p4 ≤ {PC_LIMIT}'],
+    'seq_code': [f'p1 + Lanius.Mini.codeSize p4 + 64 * Lanius.Mini.Stmt.weight p5 ≤ {PC_LIMIT}'],
+    'ite_code': [f'p1 + Lanius.Mini.codeSize p4 + 64 * Lanius.Mini.Stmt.weight p5 + '
+                 f'64 * Lanius.Mini.Stmt.weight p6 + 14 ≤ {PC_LIMIT}'],
+    'loop_code': [f'p1 + Lanius.Mini.codeSize p2 + 64 * Lanius.Mini.Stmt.weight p3 + 14 ≤ {PC_LIMIT}'],
+    'code_size': ['Lanius.Mini.codeSize p0 ≤ K'],
+    'Instr_size': ['Lanius.Mini.Instr.size p0 ≤ K'],
+}
+# The parameters those invariants bound instead of `nb x ≤ M` (pc offsets and
+# code lists: their numbers are slots and jump targets, not the input's; and
+# the statements whose code's size, not their numbers, is added).
+COMPILE_NUM_DROP = {
+    'compile_expr': {2}, 'compile_args': {2}, 'compile_stmt': {1, 2, 3}, 'seq_code': {1, 2, 3, 4, 5},
+    'ite_code': {1, 2, 3, 4, 5, 6}, 'loop_code': {1, 2, 3}, 'code_size': {0}, 'Instr_size': {0},
+}
+# The definitions the invariants' terms unfold by on constructors (the pre
+# modules' `hb_simp`, locally).
+COMPILE_PRE_SIMP = ['Lanius.Mini.Stmt.weight', 'Lanius.Mini.Expr.weight', 'Lanius.Mini.argsWeight',
+                    'Lanius.Mini.codeSize', 'Lanius.Mini.Instr.size', 'Lanius.Mini.roomFits_stmtRoom']
+PRE_PREAMBLE = ''
+# The Mini program's compile: the functions these reach bound the program's
+# numbers by `K` rather than `M` (they do not grow as it compiles: its slots,
+# indices and counts; the pc offsets and depths have their own invariants).
+COMPILE_FIXED_ROOTS = ['compile_optimized']
+# The functions whose `match`es' pattern variables count as the parameter they
+# take apart (`match_aliases`): their callers can bound the whole value.
+COMPILE_NUM_ALIAS = set()
 
 
 def args_after(text, i):
@@ -601,8 +643,11 @@ def num_used(genb):
                 bodies[cur] = body
                 cur = None
     aliasing = os.environ.get('PRE_NUMS_ALIAS') == '1'
-    alias = {k: match_aliases(bodies[k], params[k]) if aliasing else {} for k in params}
+    chosen = set(COMPILE_NUM_ALIAS) | set(filter(None, os.environ.get('PRE_NUMS_ALIASES', '').split(',')))
+    alias = {k: match_aliases(bodies[k], params[k]) if aliasing or k[4:] in chosen else {} for k in params}
     used = {k: {} for k in params}  # position -> kinds: 'nb' (its numbers), 'ts' (its types' sizes)
+    calls = {k: set(re.findall(r'\b(Pre_\w+) n ', bodies[k])) & set(params) for k in params}
+    NUMS['fixed'] = reach(calls, [f'Pre_{r}' for r in COMPILE_FIXED_ROOTS])
     changed = True
     while changed:
         changed = False
@@ -618,14 +663,34 @@ def num_used(genb):
                 else:
                     continue
                 for j, kinds in pos.items():
-                    if j >= len(args):
+                    if j >= len(args) or j in COMPILE_NUM_DROP.get(callee[4:], ()):
                         continue
                     for v, kind in occurrences(args[j], kinds):
                         for i, x in enumerate(ps):
+                            if i in COMPILE_NUM_DROP.get(k[4:], ()):
+                                continue
                             if (v == x or v in alias[k].get(x, ())) and kind not in used[k].get(i, ()):
                                 used[k].setdefault(i, set()).add(kind)
                                 changed = True
     return used
+
+
+def reach(calls, roots):
+    """The functions `roots` reach in the call graph `calls`, by their keys (no `Pre_`)."""
+    out, todo = set(), [r for r in roots if r in calls]
+    while todo:
+        k = todo.pop()
+        if k in out:
+            continue
+        out.add(k)
+        todo.extend(calls[k] - out)
+    return {k[4:] for k in out}
+
+
+def num_bound(k):
+    """The bound of `pre_k`'s numbers: `K` in the Mini program's compile, whose
+    numbers are the program's own (`COMPILE_FIXED_ROOTS`), else `M`."""
+    return K if k in NUMS.get('fixed', ()) else 'M'
 
 
 def occurrences(arg, kinds):
@@ -719,9 +784,9 @@ def num_hyps(e, k, xs, tys):
             continue
         t = tys[i].strip()
         if t == 'Nat':
-            out.append(f'{xs[i]} ≤ M')
+            out.append(f'{xs[i]} ≤ {num_bound(k)}')
         elif not nb_flat(t):
-            out.append(f'nb {xs[i]} ≤ M')
+            out.append(f'nb {xs[i]} ≤ {num_bound(k)}')
     # a type's slot count (`ts`, SelfPre/TS.lean) is at most the front end's weight limit
     for i in sorted(used):
         if i < len(xs) and 'ts' in used[i] and not ts_flat(tys[i]):
@@ -786,7 +851,8 @@ def num_facts(e, k, xs, tys, names):
                 if not is_nat and nb_flat(NUMS['ftype'][(t, f)]):
                     continue
                 lhs = f'{x}.{f}' if is_nat else f'nb {x}.{f}'
-                out += f'  have hn_{x}_{f} : {lhs} ≤ M := Nat.le_trans (nb_le_{t.split(".")[-1]}_{f} {x}) {hyps[j]}\n'
+                out += (f'  have hn_{x}_{f} : {lhs} ≤ {num_bound(k)} := '
+                        f'Nat.le_trans (nb_le_{t.split(".")[-1]}_{f} {x}) {hyps[j]}\n')
         j += 1
     return out
 
@@ -1170,6 +1236,11 @@ def main():
         NUMS['ts_types'] = set(re.findall(r'instance : TS (Lanius\.Mini\.\w+) := ⟨(?!fun _ => 0)', open(ts_path).read()))
         POST_HAND.update(auto_bytes(g))
         POST_HAND.update(COMPILE_POST_HAND)
+        OVERRIDES.update(COMPILE_OVERRIDES)
+        global PRE_PREAMBLE
+        # and the number measure's lemmas, for the facts of a split's parts
+        nbs = re.findall(r'@\[simp, nb_simp\] theorem (\w+)', open(nb_path).read())
+        PRE_PREAMBLE = f'attribute [local hb_simp] {" ".join(COMPILE_PRE_SIMP + nbs)}\n\n'
     e = Emit(g)
     r = g.reach()
     order = e.order()
@@ -1234,7 +1305,8 @@ def main():
                 if c[0] == 'UPost' or (c[2] & (needs - defs))]
         imports = '\n'.join('import ' + m for m in base + deps)
         prof = 'set_option profiler true\nset_option profiler.threshold 1500\n' if os.environ.get('PRE_PROFILE') else ''
-        text = HEADER.format(imports=imports, what=f'{kind} lemmas, part {i}', ns=ns) + prof + '\n'.join(items) + \
+        text = HEADER.format(imports=imports, what=f'{kind} lemmas, part {i}', ns=ns) + prof + \
+            (PRE_PREAMBLE if kind == 'Pre' else '') + '\n'.join(items) + \
             f'\nend {ns}\n'
         open(os.path.join(outdir, name + '.lean'), 'w').write(text)
         mods.append(f'{prefix}.{name}')
