@@ -68,3 +68,19 @@
   callers then need numbers of callee results (`factsAfter`, `optimizeProgram`) that no post bounds.
   `compile_func` stays skipped: `locals + temps` needs a bound on `Stmt.temps` of the lowered,
   optimized body, which nothing upstream states yet.
+- 11-03 (leafB): two open leaves for the Mini compile's cuts, `LowerFuncsTemps` (a lowered body's
+  temporaries are at most the lowering's cost) and `OptimizeKeepsNumbers` (the optimizer raises no
+  number and no temporaries count). With `funcsTemps ≤ K` carried from `compile_lowered` down to
+  `compile_func` (`COMPILE_OVERRIDES`; `CompileValues`' `funcsTemps`/`optTemps`) and `compile_funcs`'
+  and `compile_lowered`'s pattern variables taken as their parameter (`COMPILE_NUM_ALIAS`), P02 has 71
+  failing (73 before): `compile_func`, the temps functions, `compile_funcs`, `compile_program`,
+  `compile_or` pass; `compile_optimized` waits on OptimizeKeepsNumbers and `compile_declared` on
+  LowerFuncsTemps and on a bound of the lowered program's numbers (lowering side, next).
+- 11-03 (leafB): V3 is probably false as stated. `lower_func`'s precondition starts with
+  `params_size`'s, which adds the parameters' type sizes with no cost check between them. A program
+  with 2^43 parameters of a type of 2^22 slots has `ts p ≤ weightLimit`, depths 0 and `hb p` about
+  2^43, and a budget of about 2^44 reaches `lower_func` (declaring and sigs cost about a step per
+  parameter), with `M + b ≤ 2^62`; the sum is 2^65. The same holds for `frame_block` and the other
+  per-function sums over parameters and fields. A replacement needs a per-function bound on the
+  parameters' slots (as `SrcStmt.depth ≤ 2^55` for the lets), e.g. `paramsSize f.params ≤ 2^55`, from
+  the front end as FrontEndStmtDepth does for depths (a parameter takes at least one word).

@@ -106,4 +106,19 @@ theorem val_zeroLocals (first count : Nat) : codeSize (zeroLocals first count) =
   | zero => simp [zeroLocals, codeSize]
   | succ c ih => rw [zeroLocals]; simp [codeSize, Instr.size, ih]; omega
 
+/-! Temporaries: `compileFunc` adds a function's locals and its body's
+temporaries before its room check, so the Mini compile's pre lemmas carry the
+most temporaries of the functions they compile (`funcsTemps`, below `K`; where
+it comes from: `Lanius.Open.LowerFuncsTemps`, `Lanius.Open.OptimizeKeepsNumbers`). -/
+
+/-- The most temporaries any of the functions' bodies uses. -/
+def funcsTemps : List Func → Nat
+  | [] => 0
+  | f :: fs => max (Stmt.temps f.body) (funcsTemps fs)
+
+/-- `funcsTemps` of a lowering's result (`0` when it failed). -/
+def optTemps : Option (List Func) → Nat
+  | none => 0
+  | some fs => funcsTemps fs
+
 end Lanius.Faithful.SelfPre
