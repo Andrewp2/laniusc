@@ -10,3 +10,21 @@
   store_at_bytes, store_word_bytes: one omega over every cost atom per cons cell); every encoder built
   from the u8 list primitives, le32 and le64 alone now takes the length proof (`auto_bytes`). With f14c's
   certificate speedup SelfP01 is 35 s, spread over its 400 lemmas (none over 1.3 s); SelfP02 9 s.
+- 11-03 (leafB), analysis before a proof:
+  - Height does not bound the compile side's numbers. Sums over lists (`codeSize`, `linkedSize`, layout
+    offsets, `14 * args.length` summed over calls) are bounded by the total size of the code, which
+    heights bound only through products (`hb L * hb args`, past `2 ^ 64` already at heights `2 ^ 33`); and
+    compiled code's height is not bounded by the program's height (an expression tree of height h gives
+    up to 2 ^ h instructions). So `hb p <= 2 ^ 48` alone is not enough; the bound wanted is on the total
+    size (a sum measure `sz`, every node counted once) of p, through cost-free size lemmas
+    `sz (f x) <= A * sz x + B`.
+  - The growth factor comes from the front end's type weights (<= 2 ^ 22): `pickElement` expands one
+    `array[i]` into `count` copies of `slotVars (base + k * size) size` with `k < count < 2 ^ 31` and
+    `count * size` within the array type's weight. So the code is at most about `2 ^ 22 * c * sz p`; with
+    `sz p` below about `2 ^ 31` words' worth, every size stays below `2 ^ 60`.
+  - Without the weight bound the statement would be false within the budget: about `2 ^ 58` instructions
+    (a few hundred array accesses with `count * size` near `2 ^ 53`) make `codeSize` pass `2 ^ 64` while
+    the budget (`2 ^ 61`) still runs.
+  - Plan: hb_gen sum mode for `sz`; a FrontEndOutputSize statement (`sz p` bounded, weights <= 2 ^ 22 in
+    every type of p); a pre_certs mode for the size lemmas; V2's reduction from them plus the M-form
+    lemmas run at a K small enough for the sizes. Not started.
