@@ -248,6 +248,7 @@ division, a `max` or a `min`. -/
 partial def linOf (atoms : Array Expr) (e : Expr) : Option Lin :=
   let n := atoms.size
   if let some k := natLit? e then some ((Lin.zero n).set! n k)
+  else if let some i := atoms.idxOf? e then some ((Lin.zero n).set! i 1)
   else if e.isAppOfArity ``HAdd.hAdd 6 then
     return Lin.add (← linOf atoms (e.getArg! 4)) (← linOf atoms (e.getArg! 5))
   else if e.isAppOfArity ``HMul.hMul 6 then
@@ -319,6 +320,139 @@ def selectHyps (atoms : Array Expr) (goal : Expr) (hyps : Array Expr) : Option (
       unless out.contains i do out := out.push i
   return some out
 
+/-- Prove arithmetic goals by linear certificates where the search finds them. -/
+register_option lanius.hb.cert : Bool := {
+  defValue := true
+  descr := "pre_auto and post_auto prove a goal the hypothesis search covers by SelfPre.LinCert.cert"
+}
+
+/-! ### Linear certificates
+
+When the search finds the hypotheses, the goal follows from them by
+`SelfPre.LinCert.cert`: a check of numerals the kernel evaluates, in place of an
+`omega` proof. The terms are reflected as `LTm`s over the atoms, so each
+hypothesis and the goal are used as they stand (`LTm.den` unfolds to them). -/
+
+def lcName (s : String) : Name := (`Lanius.Faithful.SelfPre.LinCert).str s
+def ltmC (s : String) : Expr := mkConst ((`Lanius.Faithful.SelfPre.LinCert.LTm).str s)
+
+/-- The `LTm` of a `Nat` term `linOf` reads. -/
+partial def ltmOf (atoms : Array Expr) (e : Expr) : Option Expr :=
+  if let some k := natLit? e then some (mkApp (ltmC "lit") (mkRawNatLit k))
+  else if let some i := atoms.idxOf? e then some (mkApp (ltmC "atom") (mkRawNatLit i))
+  else if e.isAppOfArity ``HAdd.hAdd 6 then
+    return mkApp2 (ltmC "add") (← ltmOf atoms (e.getArg! 4)) (← ltmOf atoms (e.getArg! 5))
+  else if e.isAppOfArity ``HMul.hMul 6 then
+    match natLit? (e.getArg! 4), natLit? (e.getArg! 5) with
+    | some k, _ => return mkApp2 (ltmC "mulL") (mkRawNatLit k) (← ltmOf atoms (e.getArg! 5))
+    | _, some k => return mkApp2 (ltmC "mulR") (← ltmOf atoms (e.getArg! 4)) (mkRawNatLit k)
+    | none, none => none
+  else if e.isAppOfArity ``Nat.succ 1 then
+    return mkApp2 (ltmC "add") (← ltmOf atoms e.appArg!) (mkApp (ltmC "lit") (mkRawNatLit 1))
+  else if arithHead e then none
+  else match atoms.idxOf? e with
+    | some i => some (mkApp (ltmC "atom") (mkRawNatLit i))
+    | none => none
+
+/-- A constraint `L ≤ R`: its linear forms, its `LTm`s, a proof (up to unfolding). -/
+structure Con where
+  l : Lin
+  r : Lin
+  lt : Expr
+  rt : Expr
+  pf : Expr
+  ty : Expr
+  deriving Inhabited
+
+/-- The constraints a hypothesis `pf : p` gives, as `constraintsOf` reads them. -/
+partial def consOf (atoms : Array Expr) (pf p : Expr) : Array Con :=
+  let n := atoms.size
+  let one := (Lin.zero n).set! n 1
+  let lit1 := mkApp (ltmC "lit") (mkRawNatLit 1)
+  if p.isAppOfArity ``And 2 then
+    let a := p.appFn!.appArg!
+    let b := p.appArg!
+    consOf atoms (mkApp3 (mkConst ``And.left) a b pf) a ++ consOf atoms (mkApp3 (mkConst ``And.right) a b pf) b
+  else if (p.isAppOfArity ``LE.le 4 || p.isAppOfArity ``LT.lt 4) && isNatTy (p.getArg! 0) then
+    match linOf atoms (p.getArg! 2), linOf atoms (p.getArg! 3), ltmOf atoms (p.getArg! 2), ltmOf atoms (p.getArg! 3) with
+    | some l, some r, some lt, some rt =>
+      if p.isAppOfArity ``LE.le 4 then #[⟨l, r, lt, rt, pf, p⟩]
+      else #[⟨l.add one, r, mkApp2 (ltmC "add") lt lit1, rt, pf, p⟩]
+    | _, _, _, _ => #[]
+  else if p.isAppOfArity ``Eq 3 && isNatTy (p.getArg! 0) then
+    let a := p.getArg! 1
+    let b := p.getArg! 2
+    match linOf atoms a, linOf atoms b, ltmOf atoms a, ltmOf atoms b with
+    | some l, some r, some lt, some rt =>
+      let le := mkConst ``Nat.le_of_eq
+      let leT (x y : Expr) := mkApp4 (mkConst ``LE.le [0]) (mkConst ``Nat) (mkConst ``instLENat) x y
+      #[⟨l, r, lt, rt, mkApp3 le a b pf, leT a b⟩,
+        ⟨r, l, rt, lt, mkApp3 le b a (mkApp4 (mkConst ``Eq.symm [1]) (mkConst ``Nat) a b pf), leT b a⟩]
+    | _, _, _, _ => #[]
+  else #[]
+
+/-- The truncated subtractions of a proposition's arithmetic (not inside atoms). -/
+partial def arithSubs (e : Expr) (acc : Array Expr) : Array Expr :=
+  if e.isAppOfArity ``And 2 || e.isAppOfArity ``Or 2 || e.isAppOfArity ``Iff 2 then
+    arithSubs e.appArg! (arithSubs e.appFn!.appArg! acc)
+  else if e.isAppOfArity ``Not 1 then arithSubs e.appArg! acc
+  else if e.isAppOfArity ``LE.le 4 || e.isAppOfArity ``LT.lt 4 then
+    arithSubs (e.getArg! 3) (arithSubs (e.getArg! 2) acc)
+  else if e.isAppOfArity ``Eq 3 then arithSubs (e.getArg! 2) (arithSubs (e.getArg! 1) acc)
+  else if e.isAppOfArity ``HSub.hSub 6 && (e.getArg! 0).isConstOf ``Nat then
+    let acc := if acc.contains e then acc else acc.push e
+    arithSubs (e.getArg! 5) (arithSubs (e.getArg! 4) acc)
+  else if arithHead e then
+    if e.isAppOfArity ``Nat.succ 1 then arithSubs e.appArg! acc
+    else arithSubs e.appArg! (arithSubs (e.getArg! (e.getAppNumArgs - 2)) acc)
+  else acc
+
+
+/-- A certificate proof of `goal` (`≤`, `<` and their conjunctions) from `hyps`, if
+the search finds one for each conjunct. -/
+partial def certProof? (atoms0 : Array Expr) (goal : Expr) (hyps : Array (Expr × Expr)) : Option Expr := do
+  -- truncated subtractions as atoms, each with its facts
+  let subs := (#[goal] ++ hyps.map (·.2)).foldl (fun acc t => arithSubs t acc) #[]
+  let atoms := subs.foldl (fun acc s => if acc.contains s then acc else acc.push s) atoms0
+  let leT (x y : Expr) := mkApp4 (mkConst ``LE.le [0]) (mkConst ``Nat) (mkConst ``instLENat) x y
+  let addN (x y : Expr) := mkApp6 (mkConst ``HAdd.hAdd [0, 0, 0]) (mkConst ``Nat) (mkConst ``Nat) (mkConst ``Nat)
+    (mkApp2 (mkConst ``instHAdd [0]) (mkConst ``Nat) (mkConst ``instAddNat)) x y
+  let mut facts : Array (Expr × Expr) := #[]
+  for sub in subs do
+    let a := sub.getArg! 4
+    let c := sub.getArg! 5
+    facts := facts.push (mkApp2 (mkConst (lcName "sub_le'")) a c, leT sub a)
+    facts := facts.push (mkApp2 (mkConst (lcName "le_sub_add'")) a c, leT a (addN sub c))
+    for (pf, t) in hyps do
+      if t.isAppOfArity ``LE.le 4 && t.getArg! 2 == c && t.getArg! 3 == a then
+        facts := facts.push (mkApp3 (mkConst (lcName "sub_add_le_of_le")) a c pf, leT (addN sub c) a)
+      else if t.isAppOfArity ``LT.lt 4 && t.getArg! 2 == c && t.getArg! 3 == a then
+        facts := facts.push (mkApp3 (mkConst (lcName "sub_add_le_of_lt")) a c pf, leT (addN sub c) a)
+  let cons := (hyps ++ facts).foldl (fun acc (pf, t) => acc ++ consOf atoms pf t) #[]
+  let cs := cons.mapIdx fun i c => (c.l, c.r, i)
+  let vs := atoms.foldr (fun a acc => mkApp3 (mkConst ``List.cons [0]) (mkConst ``Nat) a acc)
+    (mkApp (mkConst ``List.nil [0]) (mkConst ``Nat))
+  let ltmTy := mkConst (lcName "LTm")
+  let pairTy := mkApp2 (mkConst ``Prod [0, 0]) ltmTy ltmTy
+  let rec go (p : Expr) : Option Expr := do
+    if p.isAppOfArity ``And 2 then
+      let a := p.appFn!.appArg!
+      let b := p.appArg!
+      return mkApp4 (mkConst ``And.intro) a b (← go a) (← go b)
+    unless (p.isAppOfArity ``LE.le 4 || p.isAppOfArity ``LT.lt 4) && isNatTy (p.getArg! 0) do none
+    let gc ← (consOf atoms (mkConst ``True.intro) p)[0]?
+    -- a budget chain takes two steps a level (`b₁ = b - c`, then `b - c + c ≤ b`)
+    let used ← ((certify cs gc.l gc.r 16 #[]).run' 200 : Id _)
+    let sel := used.map (cons[·]!)
+    -- the hypotheses' list and `AllLe vs` of it, from the last
+    let (hs, hh) := sel.foldr (fun c (hs, hh) =>
+      (mkApp3 (mkConst ``List.cons [0]) pairTy (mkApp4 (mkConst ``Prod.mk [0, 0]) ltmTy ltmTy c.lt c.rt) hs,
+       mkApp4 (mkConst ``And.intro) c.ty (mkApp2 (mkConst (lcName "AllLe")) vs hs) c.pf hh))
+      (mkApp (mkConst ``List.nil [0]) pairTy, mkConst ``True.intro)
+    let hc := mkApp2 (mkConst ``Eq.refl [1]) (mkConst ``Bool) (mkConst ``Bool.true)
+    return mkAppN (mkConst (lcName "cert")) #[vs, hs, gc.lt, gc.rt, hh, hc]
+  go goal
+
 /-- Run `x` within its own heartbeat budget (`k` thousands): `omega` over many
 hypotheses can take exponential time; past the budget `x` fails (an ordinary
 error, so callers try the next way). -/
@@ -350,6 +484,14 @@ def omegaAtoms : TacticM Unit := withMainContext do
       hyps := hyps.push (d.toExpr, t)
   let atomsArr := atoms
   dbg s!"atoms {atoms.size}"
+  if lanius.hb.cert.get (← getOptions) then
+    if let some p := certProof? atomsArr goal hyps then
+      dbg "cert"
+      g.assign p
+      replaceMainGoal []
+      return
+  if lanius.hb.debug.get (← getOptions) then
+    IO.eprintln s!"OMEGA {← ppExpr goal}"
   match selectHyps atomsArr goal (hyps.map (·.2)) with
   | some sel =>
     let saved ← saveState
@@ -389,8 +531,20 @@ where
   g.assign p
   replaceMainGoal []
 
-/-- Prove `ty` in the current context: heights normalized, then `omega`. -/
-def proveArith? (ty : Expr) : TacticM (Option Expr) := do
+/-- The premises one tactic run has proved, by run (`lanius.hb.run`): sibling goals
+share most of their context and ask the same premises (let_first: 2,794
+premises, 747 of them distinct). A proof is reused while every hypothesis it
+uses is in the context. -/
+initialize arithCache : IO.Ref (Std.HashMap Nat (Std.HashMap Expr Expr)) ← IO.mkRef {}
+initialize runCounter : IO.Ref Nat ← IO.mkRef 0
+
+register_option lanius.hb.run : Nat := {
+  defValue := 0
+  descr := "the current pre_auto/post_auto run, for its cache of proved premises (internal)"
+}
+
+/-- Prove `ty` in the current context: heights normalized, then a certificate or `omega`. -/
+def proveArith0? (ty : Expr) : TacticM (Option Expr) := do
   let g ← mkFreshExprMVar ty
   let saved ← saveState
   try
@@ -408,6 +562,20 @@ def proveArith? (ty : Expr) : TacticM (Option Expr) := do
   catch _ =>
     saved.restore
     return none
+
+/-- `proveArith0?`, or the proof this run found for the same premise. -/
+def proveArith? (ty : Expr) : TacticM (Option Expr) := do
+  let run := lanius.hb.run.get (← getOptions)
+  let key ← instantiateMVars ty
+  if run != 0 && !key.hasMVar then
+    if let some p := (← arithCache.get)[run]?.bind (·[key]?) then
+      let lctx ← getLCtx
+      unless p.hasAnyFVar (fun f => (lctx.find? f).isNone) do return some p
+  let r ← proveArith0? ty
+  if let some p := r then
+    if run != 0 && !key.hasMVar && !p.hasMVar then
+      arithCache.modify fun m => m.insert run ((m.getD run {}).insert key p)
+  return r
 
 /-- Add `p : t` to the context as `name`. -/
 def addFact (name : Name) (p : Expr) : TacticM Unit := withMainContext do
@@ -799,7 +967,13 @@ partial def closeArith (fuel : Option Expr) (base : Expr) (depth : Nat := 0) : T
 `evalTactic` inside would otherwise keep a tree with the goals before and after;
 saving them is single-threaded at the end of the module and took most of a
 GenP module's build time. -/
-def quietly (x : TacticM Unit) : TacticM Unit := withEnableInfoTree false x
+def quietly (x : TacticM Unit) : TacticM Unit := do
+  let run ← runCounter.modifyGet fun n => (n + 1, n + 1)
+  try
+    withTheReader Core.Context (fun c => { c with options := lanius.hb.run.set c.options run })
+      (withEnableInfoTree false x)
+  finally
+    arithCache.modify (·.erase run)
 
 /-- Close `hb (f xs) ≤ M` for a function the cost model does not see, one case of
 its functional induction. -/
