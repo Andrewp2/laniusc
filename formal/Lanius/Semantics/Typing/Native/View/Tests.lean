@@ -155,9 +155,10 @@ theorem stdout (first second : BitVec 32) : ∃ bytes after,
     RunsExpr.writeStdoutViews (function := writer) (bindings := [(0, .pointer 4), (1, .unsigned .usize 8)])
       rfl rfl rfl rfl (accessible first second) (Heap.Readable.of_loadBytes (by rfl))
 
--- Any file contents/handles are allowed. Readability, not assumed host success,
+-- Any file contents and any file descriptor (3 on) are allowed. Readability, not assumed host success,
 -- prevents storage traps; invalid handles produce the specified error value.
-theorem read (first second : BitVec 32) (world : World.State) (handle : Int) : ∃ value after,
+theorem read (first second : BitVec 32) (world : World.State) (handle : Int) (descriptor : 3 ≤ handle) :
+    ∃ value after,
     RunsExpr program { state first second with world }
       (.call 43 [.value (.signed .i32 handle), .value (.pointer 4), .value (.unsigned .usize 8)])
       value after ∧ after.I32ViewsAccessible program types ∧
@@ -168,6 +169,7 @@ theorem read (first second : BitVec 32) (world : World.State) (handle : Int) : �
     (bindings := [(0, .signed .i32 handle), (1, .pointer 4), (2, .unsigned .usize 8)])
     rfl rfl rfl rfl ((accessible first second).bytesWrite (world := world)
       (BytesWrite.refl (address := 4) (accessible first second).unique)) (Heap.Readable.of_loadBytes (by rfl))
+    descriptor (by decide)
 
 private def expected (first second : BitVec 32) : State := { state first second with
   heap := { (state first second).heap with blocks := [

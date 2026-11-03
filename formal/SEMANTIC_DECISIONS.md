@@ -1062,7 +1062,57 @@ verified compiler's locals are 64-bit slots with no address. The design:
      `2^32 + 9` (`hostId`). For leafA's memory model: a `str` value is two
      slots (static address, byte count) and is read-only; nothing yet
      makes a `str` from heap bytes, and a later `&str` or owned string would
-     be a separate type, not this one.
+     be a separate type, not this one. (8) Files (decided 11-03, f6v,
+     F8 piece 2; stage (a) done 11-03: Core's model, `World.lean`). laniusc's file externs are its
+     runtime's raw Linux system calls: `open_read`, `open_write` and
+     `open_append` (and the `*_path` forms taking a `str`) copy the path
+     to a NUL-terminated stack buffer (longer than 4095 bytes: -36, a NUL
+     byte in it: -22, a null pointer with a nonzero length: -14) and call
+     `open(2)` with `O_RDONLY`, `O_WRONLY|O_CREAT|O_TRUNC` or
+     `O_WRONLY|O_CREAT|O_APPEND` (mode 0666); `read`, `write`, `close`
+     and `close_file` are `read(2)`, `write(2)` and `close(2)`; each
+     returns the kernel's result (a descriptor, a count or `-errno`) as an
+     `i32`. Core's file services (trusted, `World.lean`) become the same
+     calls on a model file system, in place of their -1 results and the
+     handle counter: (a) one descriptor table, at first 0, 1 and 2 (the
+     standard streams); `open` takes the lowest number not in it, as
+     Linux does; `close` of an open file returns 0, of a number not in
+     the table -9 (`EBADF`); closing 0, 1 or 2 is not modeled
+     (`unavailable`), so a program that does is outside the theorems.
+     (b) A path the model reads is relative, its components separated by
+     single slashes, none empty, `.` or `..`; the files and directories
+     are the current directory's subtree, named by their path bytes.
+     Other paths (absolute, dotted, doubled or trailing slashes) are
+     unavailable; the empty path is -2 (`ENOENT`), as `open("")` is. (c)
+     `open`: a missing parent directory gives -2 and a parent that is a
+     file -20 (`ENOTDIR`); a missing file opened for reading -2; a
+     directory opened for writing -21 (`EISDIR`); opening a directory for
+     reading is unavailable; opening for writing creates or truncates;
+     opening for appending creates, and each write goes to the file's end
+     at the time of the write (`O_APPEND`). An open whose lowest free
+     number is 1024 or more (the default `RLIMIT_NOFILE`) is unavailable.
+     (d) `read(fd, p, n)` of 0 reads the standard input stream; of a
+     descriptor opened for reading, `min(n, remaining)` bytes from its
+     offset; of a number not open, or not opened for reading, -9; of 1 or
+     2 it is unavailable. `write(fd, p, n)` to 1 or 2 appends to the
+     output stream; to a write descriptor, at its offset (or the end) and
+     returns `n`; -9 as for `read`; to 0 unavailable. A count above
+     `0x7ffff000` (Linux's per-call cap) is unavailable. (e) Every file
+     can be read and written (no permissions are modeled) and no other
+     process changes the files during the run. (f) The mini language's
+     Linux model gets the same file system, so Core's and the mini
+     world's files correspond by equality, and the verified compiler
+     lowers the externs to the system calls behind the same path copy.
+     Stages: (a) Core's model and its proofs (`HeapCorr`'s premise that no
+     file is open becomes "only the standard streams"); (b) the mini
+     system calls, the x86 Linux model and their proofs; (c) the oracle:
+     each call of a file target runs in a fresh directory holding seed
+     files on both sides and the directory trees are compared, with `str`
+     paths from a fixed path set; (d) the lowering (a `.lani` change,
+     queued with the coordinator). `write_text` and the other output
+     services then write to any open descriptor as `write(2)` does.
+     `remove_file`, `create_dir`, `remove_dir`, `rename` and `read_i32`
+     follow.
 7. **A static need per function (decided 11-01, step 3.5).** A function
    takes its whole block at entry (`frame_block`: 8 bytes per element of
    each array, parameter or let, it passes as a slice), by a prologue

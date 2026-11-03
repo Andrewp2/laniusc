@@ -75,19 +75,21 @@ theorem refresh (length : bytes.length = 16) : ∃ cells,
 
 -- The real modeled reader composes flush, host mutation and refresh for every
 -- file environment/handle, without assuming host or synchronization success.
-theorem read (length : bytes.length = 16) (world : World.State) (handle : Int) : ∃ value after,
+theorem read (length : bytes.length = 16) (world : World.State) (handle : Int) (descriptor : 3 ≤ handle) :
+    ∃ value after,
     RunsExpr program { state bytes with world }
       (.call 43 [.value (.signed .i32 handle), .value (.pointer 4), .value (.unsigned .usize 16)]) value after ∧
     after.I32ViewsCoherent program types := by
   obtain ⟨value, after, run, _, coherent, _, _⟩ := RunsExpr.readViews (function := reader) (functionId := 43)
     (bindings := [(0, .signed .i32 handle), (1, .pointer 4), (2, .unsigned .usize 16)])
     rfl rfl rfl rfl ((accessible length).bytesWrite (world := world)
-      (BytesWrite.refl (address := 4) (accessible length).unique)) (readable length)
+      (BytesWrite.refl (address := 4) (accessible length).unique)) (readable length) descriptor (by decide)
   exact ⟨value, after, run, coherent (unique bytes)⟩
 
 -- This is the actual intrinsic/calling convention used by byte_io.read_file.
 -- A nested one-word sub-slice, including its nonzero offset, supplies the range.
-theorem readCellSlice (length : bytes.length = 16) (handle : Int) (bound : count ≤ 4) : ∃ value after,
+theorem readCellSlice (length : bytes.length = 16) (handle : Int) (bound : count ≤ 4) (descriptor : 3 ≤ handle) :
+    ∃ value after,
     RunsExpr program (state bytes) (.call 43 [.value (.signed .i32 handle),
       .i32SliceDataPtr (.value (.slice i32 0 [.field 0, .index 1] 1 1)), .value (.unsigned .usize count)]) value after ∧
     after.I32ViewsReady program types ∧ after.I32ViewsCoherent program types ∧
@@ -97,10 +99,12 @@ theorem readCellSlice (length : bytes.length = 16) (handle : Int) (bound : count
     (bindings := fun pointer => [(0, .signed .i32 handle), (1, .pointer pointer), (2, .unsigned .usize count)])
     rfl rfl rfl (fun _ => rfl) (.ofStable .value rfl)
     (.cell (.slice ((accessible length).views (view 1) (by simp [state])).1 (by decide))) (ready length) bound
+    descriptor (by unfold World.transferLimit; omega)
 
 -- The same slice-pointer/read expression also derives its destination when
 -- the second nested array has never had a native registration.
-theorem readFreshCellSlice (length : bytes.length = 16) (handle : Int) (bound : count ≤ 4) : ∃ value after,
+theorem readFreshCellSlice (length : bytes.length = 16) (handle : Int) (bound : count ≤ 4) (descriptor : 3 ≤ handle) :
+    ∃ value after,
     RunsExpr program (firstOnly bytes) (.call 43 [.value (.signed .i32 handle),
       .i32SliceDataPtr (.value (.slice i32 0 [.field 0, .index 1] 1 1)), .value (.unsigned .usize count)]) value after ∧
     after.I32ViewsReady program types ∧ after.I32ViewsCoherent program types ∧
@@ -111,10 +115,12 @@ theorem readFreshCellSlice (length : bytes.length = 16) (handle : Int) (bound : 
     rfl rfl rfl (fun _ => rfl) (.ofStable .value rfl)
     (.cell (.slice (show CellTargetValid program types (firstOnly bytes) 0 [.field 0, .index 1] (.array i32 2) from
       ((accessible length).views (view 1) (by simp [state])).1) (by decide))) (firstReady length) bound
+    descriptor (by unfold World.transferLimit; omega)
 
 -- Raw descriptors follow the extractor's allocated scratch-buffer route.
 -- The shared host proof covers every file world, not only successful reads.
-theorem readRawSlice (length : bytes.length = 16) (world : World.State) (handle : Int) (bound : count ≤ 16) : ∃ value after,
+theorem readRawSlice (length : bytes.length = 16) (world : World.State) (handle : Int) (bound : count ≤ 16)
+    (descriptor : 3 ≤ handle) : ∃ value after,
     RunsExpr program { state bytes with world } (.call 43 [.value (.signed .i32 handle),
       .i32SliceDataPtr (.value (.rawSlice i32 4 4)), .value (.unsigned .usize count)]) value after ∧
     after.I32ViewsReady program types ∧ after.I32ViewsCoherent program types ∧
@@ -125,6 +131,7 @@ theorem readRawSlice (length : bytes.length = 16) (world : World.State) (handle 
     rfl rfl rfl (fun _ => rfl) (.ofStable .value rfl) (.raw (readable length))
     ⟨((ready length).toI32ViewsAccessible.bytesWrite (world := world)
       (BytesWrite.refl (address := 4) (ready length).unique)), (ready length).below, (ready length).keys⟩ bound
+    descriptor (by unfold World.transferLimit; omega)
 
 -- First exposure of the second nested array: its sibling's registration and
 -- all aliased cell contents remain intact, with a distinct fresh byte range.
