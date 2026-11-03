@@ -1,0 +1,11 @@
+// A str local whose bytes are returned as a raw view right after its let is
+// read as one LetStr (its pointer numbered by the str local), then the view
+// and its return, as core::unicode_*_data's chunks are written.
+fn chunk(index: i32) -> [u8] {
+    let text: str = "Hi there, 0123!";
+    return core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(text), 15);
+}
+
+fn run(n: i32) -> i32 {
+    return n;
+}

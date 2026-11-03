@@ -485,6 +485,7 @@ def hbSrcStmt : Lanius.Mini.SrcStmt → Nat
   | .matchArm a0 a1 a2 a3 a4 a5 a6 a7 => max (hb a5) (max (hbSrcStmt a6) (hbSrcStmt a7))
   | .unreachable a0 a1 => hb a1
   | .letView a0 a1 a2 a3 a4 => max (hb a2) (hbSrcStmt a4)
+  | .letStr a0 a1 a2 => max (hb a1) (hbSrcStmt a2)
 end
 instance : HB Lanius.Mini.SrcStmt := ⟨hbSrcStmt⟩
 @[simp, hb_simp] theorem hb_SrcStmt_nop  : hb (Lanius.Mini.SrcStmt.nop) = 0 := rfl
@@ -522,6 +523,7 @@ instance : HB Lanius.Mini.SrcStmt := ⟨hbSrcStmt⟩
 @[simp, hb_simp] theorem hb_SrcStmt_matchArm (a0 : Nat) (a1 : Nat) (a2 : Nat) (a3 : Bool) (a4 : Nat) (a5 : Lanius.Mini.SrcType) (a6 : Lanius.Mini.SrcStmt) (a7 : Lanius.Mini.SrcStmt) : hb (Lanius.Mini.SrcStmt.matchArm a0 a1 a2 a3 a4 a5 a6 a7) = max (hb a5) (max (hb a6) (hb a7)) := rfl
 @[simp, hb_simp] theorem hb_SrcStmt_unreachable (a0 : Nat) (a1 : Lanius.Mini.SrcType) : hb (Lanius.Mini.SrcStmt.unreachable a0 a1) = hb a1 := rfl
 @[simp, hb_simp] theorem hb_SrcStmt_letView (a0 : Nat) (a1 : Nat) (a2 : List Lanius.Mini.SrcExpr) (a3 : Nat) (a4 : Lanius.Mini.SrcStmt) : hb (Lanius.Mini.SrcStmt.letView a0 a1 a2 a3 a4) = max (hb a2) (hb a4) := rfl
+@[simp, hb_simp] theorem hb_SrcStmt_letStr (a0 : Nat) (a1 : List Nat) (a2 : Lanius.Mini.SrcStmt) : hb (Lanius.Mini.SrcStmt.letStr a0 a1 a2) = max (hb a1) (hb a2) := rfl
 
 instance : HB Lanius.Mini.SrcParam := ⟨fun s => hb s.ty⟩
 @[simp, hb_simp] theorem hb_SrcParam_mk (a0 : Nat) (a1 : Lanius.Mini.SrcType) : hb (Lanius.Mini.SrcParam.mk a0 a1) = hb a1 := rfl
@@ -1100,6 +1102,7 @@ def hbMStmt : Lanius.Mini.MStmt → Nat
   | .mLetSlice a0 a1 a2 a3 a4 => max (hb a1) (max (hb a2) (max (hb a3) (hbMStmt a4)))
   | .mLetIndex a0 a1 a2 a3 a4 => max (hb a1) (max (hb a3) (hbMStmt a4))
   | .mLetView a0 a1 a2 a3 a4 => max (hb a2) (hbMStmt a4)
+  | .mLetStr a0 a1 a2 => max (hb a1) (hbMStmt a2)
   | .mSetIndex a0 a1 a2 => max (hb a1) (hb a2)
   | .mLetEval a0 a1 a2 a3 => max (hb a1) (max (hb a2) (hbMStmt a3))
   | .mSetEval a0 a1 => hb a1
@@ -1135,6 +1138,7 @@ instance : HB Lanius.Mini.MStmt := ⟨hbMStmt⟩
 @[simp, hb_simp] theorem hb_MStmt_mLetSlice (a0 : Nat) (a1 : Lanius.Mini.Ty) (a2 : Lanius.Mini.SrcExpr) (a3 : Lanius.Mini.SrcExpr) (a4 : Lanius.Mini.MStmt) : hb (Lanius.Mini.MStmt.mLetSlice a0 a1 a2 a3 a4) = max (hb a1) (max (hb a2) (max (hb a3) (hb a4))) := rfl
 @[simp, hb_simp] theorem hb_MStmt_mLetIndex (a0 : Nat) (a1 : Lanius.Mini.Ty) (a2 : Nat) (a3 : Lanius.Mini.SrcExpr) (a4 : Lanius.Mini.MStmt) : hb (Lanius.Mini.MStmt.mLetIndex a0 a1 a2 a3 a4) = max (hb a1) (max (hb a3) (hb a4)) := rfl
 @[simp, hb_simp] theorem hb_MStmt_mLetView (a0 : Nat) (a1 : Nat) (a2 : List Lanius.Mini.SrcExpr) (a3 : Nat) (a4 : Lanius.Mini.MStmt) : hb (Lanius.Mini.MStmt.mLetView a0 a1 a2 a3 a4) = max (hb a2) (hb a4) := rfl
+@[simp, hb_simp] theorem hb_MStmt_mLetStr (a0 : Nat) (a1 : List Nat) (a2 : Lanius.Mini.MStmt) : hb (Lanius.Mini.MStmt.mLetStr a0 a1 a2) = max (hb a1) (hb a2) := rfl
 @[simp, hb_simp] theorem hb_MStmt_mSetIndex (a0 : Nat) (a1 : Lanius.Mini.SrcExpr) (a2 : Lanius.Mini.SrcExpr) : hb (Lanius.Mini.MStmt.mSetIndex a0 a1 a2) = max (hb a1) (hb a2) := rfl
 @[simp, hb_simp] theorem hb_MStmt_mLetEval (a0 : Nat) (a1 : Lanius.Mini.Ty) (a2 : Lanius.Mini.MEff) (a3 : Lanius.Mini.MStmt) : hb (Lanius.Mini.MStmt.mLetEval a0 a1 a2 a3) = max (hb a1) (max (hb a2) (hb a3)) := rfl
 @[simp, hb_simp] theorem hb_MStmt_mSetEval (a0 : Nat) (a1 : Lanius.Mini.MEff) : hb (Lanius.Mini.MStmt.mSetEval a0 a1) = hb a1 := rfl

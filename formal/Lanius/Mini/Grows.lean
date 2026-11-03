@@ -72,6 +72,7 @@ import all Lanius.Mini.Compiler.P.storeArray
 import all Lanius.Mini.Compiler.P.storeEvalWord
 import all Lanius.Mini.Compiler.P.storeType
 import all Lanius.Mini.Compiler.P.storeWordElement
+import all Lanius.Mini.Compiler.P.strStores
 import all Lanius.Mini.Compiler.P.structFields
 import all Lanius.Mini.Compiler.P.substAll
 import all Lanius.Mini.Compiler.P.usizeWidth
@@ -2343,6 +2344,33 @@ theorem view_grows {P : Core.Program} {k : Nat} {st : State} {id : Nat} {v : Val
       exact mapView_grows run
     all_goals simp at run
 
+/-- `string_data_ptr` of a string literal: Core maps the string's storage
+into a fresh borrowed block. -/
+theorem strPtr_run {P : Core.Program} {k : Nat} {st : State} {text : String} {v : Value} {st' : State}
+    (run : evalExpr k P st (.stringDataPtr (.value (.string text))) = .done v st') :
+    ∃ p heap', st.heap.mapBorrowed (Semantics.stringStorage text) 4 = .allocated p heap' ∧ v = .pointer p ∧
+      st' = { st with heap := heap' } := by
+  cases k with
+  | zero => simp [evalExpr] at run
+  | succ k =>
+    cases k with
+    | zero => simp [evalExpr] at run
+    | succ k =>
+      simp only [evalExpr, Semantics.mapStringDataPtr] at run
+      split at run
+      · rename_i p heap' map
+        simp only [Semantics.Outcome.done.injEq] at run
+        obtain ⟨rfl, rfl⟩ := run
+        exact ⟨p, heap', map, rfl, rfl⟩
+      · simp at run
+      · simp at run
+
+/-- `string_data_ptr` of a string literal grows the state. -/
+theorem strPtr_grows {P : Core.Program} {k : Nat} {st : State} {text : String} {v : Value} {st' : State}
+    (run : evalExpr k P st (.stringDataPtr (.value (.string text))) = .done v st') : Grows st st' := by
+  obtain ⟨p, heap', map, -, rfl⟩ := strPtr_run run
+  exact Grows.heap (mapBorrowed_next map) rfl
+
 theorem grows_step {sp : SrcProgram} {fuel : Nat} (ih : GrowsBelow sp fuel) {st : State} {s : SrcStmt}
     {c : Completion} {st' : State} (run : execStmt fuel sp.toCore st s.toCore = .done c st') :
     Grows st st' := by
@@ -2413,6 +2441,12 @@ theorem grows_step {sp : SrcProgram} {fuel : Nat} (ih : GrowsBelow sp fuel) {st 
             exact (view_grows ptrRun).trans
               (let_grows (fun r' => ih g (Nat.lt_succ_of_lt (Nat.lt_succ_self g)) (s := body) r') r)
           all_goals simp at r
+      all_goals simp at run
+    | letStr pointer chars body =>
+      simp only [SrcStmt.toCore, execStmt] at run
+      split at run
+      · rename_i w after ptrRun
+        exact (strPtr_grows ptrRun).trans (let_grows (fun r => below (s := body) r) run)
       all_goals simp at run
     | matchArm scrutinee enumId variant binds binder ty body rest =>
       simp only [SrcStmt.toCore] at run

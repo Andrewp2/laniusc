@@ -213,6 +213,7 @@ theorem qstmt_cle (hc : ∀ c vs, CLe (call c vs) (call' c vs)) (fuel : Nat) (s 
   | «return» => intro env; exact cle_refl _
   | letAlloc => intro env; exact cle_none _
   | letView => intro env; exact cle_none _
+  | letStr => intro env; exact cle_none _
   | letLoad => intro env; exact cle_none _
   | setByte => intro env; exact cle_none _
   | free => intro env; exact cle_none _

@@ -25,7 +25,7 @@ abbrev Stmt_declared_same (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
     RepBool (Lanius.Mini.declaredSame x0 x1) w
 
 abbrev Stmt_declared_variants (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List (List Lanius.Mini.SrcType))} {x1 : List (List Lanius.Mini.SrcType)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 189 (RepList 77 (RepList 73 RepSrcType))) x0 v0 → (RepList 77 (RepList 73 RepSrcType)) x1 v1 →
+  ∀ {x0 : Option (List (List Lanius.Mini.SrcType))} {x1 : List (List Lanius.Mini.SrcType)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 191 (RepList 77 (RepList 73 RepSrcType))) x0 v0 → (RepList 77 (RepList 73 RepSrcType)) x1 v1 →
     RepBool (Lanius.Mini.declaredVariants x0 x1) w
 
 abbrev Stmt_word_type (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -42,6 +42,6 @@ abbrev Stmt_word_variants (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
 
 abbrev Stmt_word_width (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcType x0 v0 →
-    (RepOption 226 RepMemWidth) (Lanius.Mini.wordWidth x0) w
+    (RepOption 228 RepMemWidth) (Lanius.Mini.wordWidth x0) w
 
 end Lanius.Faithful.SelfCert

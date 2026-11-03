@@ -33,6 +33,15 @@ theorem proof_p_stmts_more {prog : SrcProgram} {prims : Prims} {ix_p_stmts_more 
   simp only [src_p_stmts_more] at h
   faithful [Lanius.Mini.Inline.pStmtsMore]
 
+theorem proof_p_string {prog : SrcProgram} {prims : Prims} {ix_p_string : Nat} (fn : prog.funcs[ix_p_string]? = some (src_p_string)) (np : prims.isPrim ix_p_string = false) {n : Nat} :
+    Stmt_p_string prog prims ix_p_string n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_p_string] at h
+  faithful [Lanius.Mini.Inline.pString]
+
 theorem proof_p_struct {prog : SrcProgram} {prims : Prims} {ix_p_struct : Nat} (fn : prog.funcs[ix_p_struct]? = some (src_p_struct)) (np : prims.isPrim ix_p_struct = false) {n : Nat} :
     Stmt_p_struct prog prims ix_p_struct n := by
   intro w h

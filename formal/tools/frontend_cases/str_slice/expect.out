@@ -1,0 +1,2 @@
+{ params := [{ id := 0, ty := .i32 }], ret := (.slice (.uint .uint8)), body := (.letStr 1 [72, 105, 32, 116, 104, 101, 114, 101, 44, 32, 48, 49, 50, 51, 33] (.letSlice 2 (.uint .uint8) (.local 1) (.int 15) (.return (.local 2)))) }
+{ params := [{ id := 0, ty := .i32 }], ret := .i32, body := (.return (.local 0)) }

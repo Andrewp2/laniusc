@@ -283,6 +283,9 @@ pub enum SrcStmt {
     // LetView(id, length, elements, pointer, body): let id: [i32; length] =
     // [elements]; let pointer: ptr = core::mem::i32_array_data_ptr(id); body
     LetView(usize, usize, List<SrcExpr>, usize, Box<SrcStmt>),
+    // LetStr(pointer, chars, body): let pointer: ptr =
+    // core::mem::string_data_ptr("chars"); body
+    LetStr(usize, List<usize>, Box<SrcStmt>),
 }
 
 pub struct SrcParam {
@@ -796,8 +799,27 @@ pub fn text_slice_stride() -> List<usize> {
     return t;
 }
 
+// str
+pub fn text_str() -> List<usize> {
+    let t: List<usize> = cons(115, cons(116, single(114)));
+    return t;
+}
+
+// string_data_ptr
+pub fn text_string_data_ptr() -> List<usize> {
+    let t: List<usize> = cons(115, cons(116, cons(114, cons(105, cons(110, cons(103, cons(95, cons(100, cons(97, cons(116, cons(97, cons(95, cons(112, cons(116, single(114)))))))))))))));
+    return t;
+}
+
 pub fn text_slice_from_raw_parts() -> List<usize> {
     let t: List<usize> = cons(115, cons(108, cons(105, cons(99, cons(101, cons(95, cons(102, cons(114, cons(111, cons(109, cons(95, cons(114, cons(97, cons(119, cons(95, cons(112, cons(97, cons(114, cons(116, single(115))))))))))))))))))));
+    return t;
+}
+
+// typed_slice_from_raw_parts: "typed_" then slice_from_raw_parts (one long
+// literal list is slow to unfold in the height lemmas)
+pub fn text_typed_slice_from_raw_parts() -> List<usize> {
+    let t: List<usize> = cons(116, cons(121, cons(112, cons(101, cons(100, cons(95, text_slice_from_raw_parts()))))));
     return t;
 }
 
@@ -5971,6 +5993,8 @@ pub enum MStmt {
     // let array: [i32; length] = [elements]; let pointer: ptr =
     // core::mem::i32_array_data_ptr(array); body
     MLetView(usize, usize, List<SrcExpr>, usize, Box<MStmt>),
+    // let pointer: ptr = core::mem::string_data_ptr("chars"); body
+    MLetStr(usize, List<usize>, Box<MStmt>),
     MSetIndex(usize, SrcExpr, SrcExpr),
     // the effectful forms
     MLetEval(usize, Ty, MEff, Box<MStmt>),
@@ -9355,6 +9379,290 @@ pub fn view_read(fuel: usize, env: FrontEnv, scope: List<Local>, a: Local, h: co
     };
 }
 
+// ---------------------------------------------------------------- string literals
+
+pub fn string_close(ok: bool) -> core::option::Option<List<usize>> {
+    if (ok) {
+        return Some(empty());
+    }
+    return None;
+}
+
+pub fn string_cons(ok: bool, b: usize, rest: core::option::Option<List<usize>>) -> core::option::Option<List<usize>> {
+    if (ok) {
+        return match (rest) {
+            None -> None,
+            Some(cs) -> Some(cons(b, cs)),
+        };
+    }
+    return None;
+}
+
+pub fn plain_string_byte(b: usize) -> bool {
+    return (b >= 32) && (127 > b) && !(b == 34) && !(b == 92);
+}
+
+// extract: inline
+fn string_byte(sb: usize, srest: List<usize>) -> core::option::Option<List<usize>> {
+    return match (srest) {
+        Nil -> string_close(sb == 34),
+        Cons(sc, smore) -> string_cons(plain_string_byte(sb), sb, string_body(srest)),
+    };
+}
+
+// A string literal's bytes after its opening quote: printable ASCII other
+// than the quote and the backslash, then the closing quote, last. No escape
+// is read, so laniusc's literal is exactly these bytes.
+pub fn string_body(bs: List<usize>) -> core::option::Option<List<usize>> {
+    return match (bs) {
+        Nil -> None,
+        Cons(b, rest) -> string_byte(b, unbox(rest)),
+    };
+}
+
+pub fn string_open(ok: bool, rest: List<usize>) -> core::option::Option<List<usize>> {
+    if (ok) {
+        return string_body(rest);
+    }
+    return None;
+}
+
+// A string literal's text, its quotes included.
+pub fn string_literal(text: List<usize>) -> core::option::Option<List<usize>> {
+    return match (text) {
+        Nil -> None,
+        Cons(q, rest) -> string_open(q == 34, unbox(rest)),
+    };
+}
+
+// The type is `str`, a bare one-segment path: laniusc's builtin type names
+// take precedence over declared ones.
+pub fn is_str_type(fuel: usize, t: CTree) -> bool {
+    let path: CTree = kid(t, 0);
+    return node_prod(t) == p_type_ident() && node_prod(kid(t, 1)) == p_type_args_none() && is_path(type_path_spellings(fuel, kid(path, 0), kid(path, 1)), single(text_str()));
+}
+
+pub fn string_primary(primary: CTree, tail: CTree) -> core::option::Option<List<usize>> {
+    if (node_prod(primary) == p_string() && node_prod(tail) == p_postfix_end()) {
+        return string_literal(kid_token(primary, 0).text);
+    }
+    return None;
+}
+
+// The initializer is a string literal: its bytes.
+pub fn string_init(fuel: usize, init: CTree) -> core::option::Option<List<usize>> {
+    return match (peel(fuel, init)) {
+        None -> None,
+        Some(pf) -> string_primary(kid(pf, 0), kid(pf, 1)),
+    };
+}
+
+// core::mem::string_data_ptr
+pub fn string_data_ptr_path() -> List<List<usize>> {
+    return cons(text_core(), cons(text_mem(), single(text_string_data_ptr())));
+}
+
+pub fn is_empty_texts(ts: List<List<usize>>) -> bool {
+    return match (ts) {
+        Nil -> true,
+        Cons(t, rest) -> false,
+    };
+}
+
+pub fn is_last_typed(ss: List<List<usize>>) -> bool {
+    return match (ss) {
+        Nil -> false,
+        Cons(c, rest) -> same_text(c, text_typed_slice_from_raw_parts()) && is_empty_texts(unbox(rest)),
+    };
+}
+
+pub fn is_mem_typed(ss: List<List<usize>>) -> bool {
+    return match (ss) {
+        Nil -> false,
+        Cons(b, rest) -> same_text(b, text_mem()) && is_last_typed(unbox(rest)),
+    };
+}
+
+// The segments spell core::mem::typed_slice_from_raw_parts (compared one by
+// one, with no list of them built).
+pub fn is_typed_slice_segments(ss: List<List<usize>>) -> bool {
+    return match (ss) {
+        Nil -> false,
+        Cons(a, rest) -> same_text(a, text_core()) && is_mem_typed(unbox(rest)),
+    };
+}
+
+pub fn is_u8_ty(t: core::option::Option<Ty>) -> bool {
+    return match (t) {
+        None -> false,
+        Some(x) -> same_ty(x, TyUint(Uint8)),
+    };
+}
+
+pub fn is_u8_slice(t: core::option::Option<Ty>) -> bool {
+    return match (t) {
+        None -> false,
+        Some(x) -> same_ty(x, TySlice(boxed(TyUint(Uint8)))),
+    };
+}
+
+pub fn is_empty_trees(ts: List<CTree>) -> bool {
+    return match (ts) {
+        Nil -> true,
+        Cons(t, rest) -> false,
+    };
+}
+
+// No type arguments, or the one `u8`.
+pub fn u8_args(fuel: usize, env: FrontEnv, gs: List<CTree>) -> bool {
+    return match (gs) {
+        Nil -> true,
+        Cons(g, rest) -> is_empty_trees(unbox(rest)) && is_u8_ty(arg_ty(fuel, env, g)),
+    };
+}
+
+// `core::mem::typed_slice_from_raw_parts` or `core::mem::typed_slice_from_raw_parts<u8>`.
+pub fn is_typed_slice_path(fuel: usize, env: FrontEnv, path: CTree) -> bool {
+    return match (path_ref(fuel, kid(path, 0), kid(path, 1))) {
+        None -> false,
+        Some(r) -> is_typed_slice_segments(r.segments) && u8_args(fuel, env, r.targs),
+    };
+}
+
+pub fn is_text(t: core::option::Option<List<usize>>, name: List<usize>) -> bool {
+    return match (t) {
+        None -> false,
+        Some(x) -> same_text(x, name),
+    };
+}
+
+// The expression is the bare name.
+pub fn tree_names(fuel: usize, c: CTree, name: List<usize>) -> bool {
+    return match (peel(fuel, c)) {
+        None -> false,
+        Some(pf) -> node_prod(kid(pf, 0)) == p_ident() && node_prod(kid(kid(pf, 0), 1)) == p_ident_plain() && node_prod(kid(pf, 1)) == p_postfix_end() && is_text(path_name(kid(kid(pf, 0), 0)), name),
+    };
+}
+
+pub fn one_tree_names(fuel: usize, items: core::option::Option<List<CTree>>, name: List<usize>) -> bool {
+    return match (items) {
+        None -> false,
+        Some(ts) -> match (ts) {
+            Nil -> false,
+            Cons(c, rest) -> is_empty_trees(unbox(rest)) && tree_names(fuel, c, name),
+        },
+    };
+}
+
+// `core::mem::string_data_ptr(name)`.
+pub fn is_data_ptr_of(fuel: usize, a: CTree, name: List<usize>) -> bool {
+    return match (peel(fuel, a)) {
+        None -> false,
+        Some(pf) -> is_path_call(pf) && is_path(path_spellings(fuel, kid(kid(kid(pf, 0), 0), 0), kid(kid(kid(pf, 0), 0), 1)), string_data_ptr_path()) && one_tree_names(fuel, list_items(fuel, kid(kid(pf, 1), 1)), name),
+    };
+}
+
+pub fn int_primary(primary: CTree, tail: CTree) -> core::option::Option<SrcExpr> {
+    if (node_prod(primary) == p_int() && node_prod(tail) == p_postfix_end()) {
+        return int_literal(kid_token(primary, 0).text);
+    }
+    return None;
+}
+
+// An integer literal.
+pub fn int_tree(fuel: usize, b: CTree) -> core::option::Option<SrcExpr> {
+    return match (peel(fuel, b)) {
+        None -> None,
+        Some(pf) -> int_primary(kid(pf, 0), kid(pf, 1)),
+    };
+}
+
+pub fn string_slice(ok: bool, length: core::option::Option<SrcExpr>, id: usize, chars: List<usize>, slice: usize) -> core::option::Option<MStmt> {
+    if (ok) {
+        return match (length) {
+            None -> None,
+            Some(n) -> Some(MLetStr(id, chars, boxed(MLetSlice(slice, TyUint(Uint8), Local(id), n, boxed(MReturn(Local(slice))))))),
+        };
+    }
+    return None;
+}
+
+// The call's arguments: `core::mem::string_data_ptr(name)` and an integer
+// literal.
+pub fn string_args(fuel: usize, items: core::option::Option<List<CTree>>, id: usize, name: List<usize>, chars: List<usize>, slice: usize) -> core::option::Option<MStmt> {
+    return match (items) {
+        None -> None,
+        Some(ts) -> match (ts) {
+            Nil -> None,
+            Cons(a, r1) -> match (unbox(r1)) {
+                Nil -> None,
+                Cons(b, r2) -> string_slice(is_empty_trees(unbox(r2)) && is_data_ptr_of(fuel, a, name), int_tree(fuel, b), id, chars, slice),
+            },
+        },
+    };
+}
+
+pub fn string_call(fuel: usize, env: FrontEnv, id: usize, name: List<usize>, chars: List<usize>, slice: usize, pf: CTree) -> core::option::Option<MStmt> {
+    if (is_path_call(pf) && is_typed_slice_path(fuel, env, kid(kid(pf, 0), 0))) {
+        return string_args(fuel, list_items(fuel, kid(kid(pf, 1), 1)), id, name, chars, slice);
+    }
+    return None;
+}
+
+pub fn string_peeled(fuel: usize, env: FrontEnv, id: usize, name: List<usize>, chars: List<usize>, slice: usize, p: core::option::Option<CTree>) -> core::option::Option<MStmt> {
+    return match (p) {
+        None -> None,
+        Some(pf) -> string_call(fuel, env, id, name, chars, slice, pf),
+    };
+}
+
+pub fn string_value(fuel: usize, env: FrontEnv, id: usize, name: List<usize>, chars: List<usize>, e: CTree) -> core::option::Option<MStmt> {
+    return match (tree_tokens(e)) {
+        Nil -> None,
+        Cons(first, rest) -> string_peeled(fuel, env, id, name, chars, minus(first.start, env.base), peel(fuel, e)),
+    };
+}
+
+// `return core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(name), n);`
+// (or `typed_slice_from_raw_parts<u8>`), n an integer literal, in a function
+// returning `[u8]`: the slice local is numbered like return_slice's, by the
+// value's first token.
+pub fn string_return(fuel: usize, env: FrontEnv, id: usize, name: List<usize>, chars: List<usize>, r: CTree) -> core::option::Option<MStmt> {
+    if (node_prod(r) == p_return_stmt() && node_prod(kid(r, 1)) == p_return_value() && is_u8_slice(env.ret)) {
+        return string_value(fuel, env, id, name, chars, kid(kid(r, 1), 0));
+    }
+    return None;
+}
+
+pub fn string_last(fuel: usize, env: FrontEnv, id: usize, name: List<usize>, chars: List<usize>, rest: List<CTree>) -> core::option::Option<MStmt> {
+    return match (rest) {
+        Nil -> None,
+        Cons(r, more) -> match (unbox(more)) {
+            Nil -> string_return(fuel, env, id, name, chars, r),
+            Cons(x, others) -> None,
+        },
+    };
+}
+
+// `let x: str = init;`, x a fresh name (one test, so let_first's body stays
+// small).
+pub fn is_str_let(fuel: usize, env: FrontEnv, scope: List<Local>, s: CTree) -> bool {
+    let tok: Token = kid_token(s, 1);
+    return node_prod(kid(s, 2)) == p_let_type() && node_prod(kid(s, 3)) == p_let_init() && !member(env.globals, tok.text) && fresh_id(scope, minus(tok.start, env.base)) && is_str_type(fuel, kid(kid(s, 2), 1));
+}
+
+// `let name: str = "chars";` then, the block's last statement, the return of
+// a raw view of its bytes (string_return): a LetStr whose pointer is the str
+// local's id, then the slice and its return. laniusc's str local is used only
+// by string_data_ptr there, so the pointer stands for it (SEMANTIC_DECISIONS
+// "Addressed locals" point 6).
+pub fn string_let(fuel: usize, env: FrontEnv, id: usize, name: List<usize>, init: CTree, rest: List<CTree>) -> core::option::Option<MStmt> {
+    return match (string_init(fuel, init)) {
+        None -> None,
+        Some(chars) -> string_last(fuel, env, id, name, chars, rest),
+    };
+}
+
 pub fn alloc_let(ok: bool, id: usize, size: SrcExpr, shift: usize, body: MStmt) -> core::option::Option<MStmt> {
     if (ok) {
         return Some(MLetAlloc(id, size, shift, boxed(body)));
@@ -9819,6 +10127,7 @@ pub fn writes_local(s: MStmt, id: usize) -> bool {
         MLetSlice(x, t, a, b, rest) -> writes_local(unbox(rest), id),
         MLetIndex(x, t, sl, e, rest) -> writes_local(unbox(rest), id),
         MLetView(x, n, es, p, rest) -> writes_local(unbox(rest), id),
+        MLetStr(x, cs, rest) -> writes_local(unbox(rest), id),
         MSetIndex(x, i, e) -> false,
         MLetEval(x, t, e, rest) -> writes_local(unbox(rest), id),
         MSetEval(x, e) -> x == id,
@@ -10342,6 +10651,9 @@ pub fn let_first(fuel: usize, env: FrontEnv, scope: List<Local>, s: CTree, rest:
         return None;
     }
     let tok: Token = kid_token(s, 1);
+    if (is_str_let(fuel, env, scope, s)) {
+        return string_let(minus(fuel, 1), env, minus(tok.start, env.base), tok.text, kid(kid(s, 3), 1), rest);
+    }
     if (node_prod(kid(s, 2)) == p_let_type() && node_prod(kid(s, 3)) == p_let_init() && !member(env.globals, tok.text) && fresh_id(scope, minus(tok.start, env.base)) && is_lit_init(fuel, env, scope, kid(kid(s, 3), 1))) {
         return match (ty_of(fuel, env, kid(kid(s, 2), 1))) {
             None -> None,
@@ -11064,6 +11376,7 @@ pub fn stmt_calls(m: MStmt) -> List<Inst> {
         MLetSlice(id, e, p, n, body) -> stmt_calls(unbox(body)),
         MLetIndex(id, ty, s, i, body) -> stmt_calls(unbox(body)),
         MLetView(id, n, es, p, body) -> stmt_calls(unbox(body)),
+        MLetStr(id, cs, body) -> stmt_calls(unbox(body)),
         MSetIndex(s, i, v) -> empty(),
         MLetEval(id, ty, x, body) -> concat(eff_calls(x), stmt_calls(unbox(body))),
         MSetEval(id, x) -> eff_calls(x),
@@ -11141,6 +11454,7 @@ pub fn stmt_tys(m: MStmt) -> List<Ty> {
         MLetSlice(id, e, p, n, body) -> cons(e, stmt_tys(unbox(body))),
         MLetIndex(id, ty, s, i, body) -> cons(ty, stmt_tys(unbox(body))),
         MLetView(id, n, es, p, body) -> cons(TyArray(boxed(TyI32), n), stmt_tys(unbox(body))),
+        MLetStr(id, cs, body) -> stmt_tys(unbox(body)),
         MSetIndex(s, i, v) -> empty(),
         MLetEval(id, ty, x, body) -> cons(ty, concat(eff_named_tys(x), stmt_tys(unbox(body)))),
         MSetEval(id, x) -> eff_named_tys(x),
@@ -11613,6 +11927,13 @@ pub fn let_view_closed(id: usize, length: usize, es: List<SrcExpr>, pointer: usi
     };
 }
 
+pub fn let_str_closed(id: usize, chars: List<usize>, body: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+    return match (body) {
+        None -> None,
+        Some(b) -> Some(LetStr(id, chars, boxed(b))),
+    };
+}
+
 pub fn let_slice_closed(id: usize, element: core::option::Option<SrcType>, p: SrcExpr, n: SrcExpr, body: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
     return match (element) {
         None -> None,
@@ -11912,6 +12233,7 @@ pub fn close_stmt(fuel: usize, t: Tables, m: MStmt) -> core::option::Option<SrcS
         MLetSlice(id, e, p, n, body) -> let_slice_closed(id, close_ty(fuel, t, e), p, n, close_stmt(fuel, t, unbox(body))),
         MLetIndex(id, ty, s, i, body) -> let_index_closed(id, close_ty(fuel, t, ty), s, i, close_stmt(fuel, t, unbox(body))),
         MLetView(id, n, es, p, body) -> let_view_closed(id, n, es, p, close_stmt(fuel, t, unbox(body))),
+        MLetStr(id, cs, body) -> let_str_closed(id, cs, close_stmt(fuel, t, unbox(body))),
         MSetIndex(s, i, v) -> Some(SetIndex(s, i, v)),
         MLetEval(id, ty, x, body) -> let_eval_closed(id, close_ty(fuel, t, ty), close_eff(fuel, t, x), close_stmt(fuel, t, unbox(body))),
         MSetEval(id, x) -> set_eval_closed(id, close_eff(fuel, t, x)),
@@ -12593,6 +12915,7 @@ pub fn lit_stmt(funcs: List<SrcFunc>, ret: SrcType, locals: List<LocalTy>, s: Sr
         MatchArm(sc, en, k, bs, x, ty, body, rest) -> MatchArm(sc, en, k, bs, x, ty, boxed(lit_stmt(funcs, ret, with_local(x, ty, locals), unbox(body))), boxed(lit_stmt(funcs, ret, locals, unbox(rest)))),
         Unreachable(id, ty) -> Unreachable(id, ty),
         LetView(id, n, es, p, body) -> LetView(id, n, lit_exprs(locals, Some(repeat_src(I32, n)), es), p, boxed(lit_stmt(funcs, ret, with_local(p, Ptr, with_local(id, SrcType::Array(boxed(I32), n), locals)), unbox(body)))),
+        LetStr(p, cs, body) -> LetStr(p, cs, boxed(lit_stmt(funcs, ret, with_local(p, Ptr, locals), unbox(body)))),
     };
 }
 
@@ -12712,6 +13035,7 @@ pub fn wide_left_stmt(s: SrcStmt) -> bool {
         MatchArm(sc, en, k, bs, x, ty, body, rest) -> wide_left_stmt(unbox(body)) || wide_left_stmt(unbox(rest)),
         Unreachable(id, ty) -> false,
         LetView(id, n, es, p, body) -> wide_left_exprs(es) || wide_left_stmt(unbox(body)),
+        LetStr(p, cs, body) -> wide_left_stmt(unbox(body)),
     };
 }
 
@@ -15194,6 +15518,11 @@ fn p_stmts_end() -> usize {
 // extract: inline
 fn p_stmts_more() -> usize {
     return 73;
+}
+
+// extract: inline
+fn p_string() -> usize {
+    return 177;
 }
 
 // extract: inline

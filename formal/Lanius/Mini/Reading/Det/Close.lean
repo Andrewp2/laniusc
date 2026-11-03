@@ -79,6 +79,7 @@ theorem stmtClosed_unique : ∀ {m : MStmt} {a b : SrcStmt}, StmtClosed decls fn
   | _, _, _, .letSlice lw b, .letSlice lw' b' => by rw [lowerR_unique lw lw', stmtClosed_unique b b']
   | _, _, _, .letIndex lw b, .letIndex lw' b' => by rw [lowerR_unique lw lw', stmtClosed_unique b b']
   | _, _, _, .letView b, .letView b' => by rw [stmtClosed_unique b b']
+  | _, _, _, .letStr b, .letStr b' => by rw [stmtClosed_unique b b']
   | _, _, _, .setIndex, .setIndex => rfl
   | _, _, _, .letEval lw x b, .letEval lw' x' b' => by
     rw [lowerR_unique lw lw', effClosed_unique x x', stmtClosed_unique b b']
@@ -245,6 +246,7 @@ theorem litStmt_eq {ret : SrcType} : ∀ {locals : List LocalTy} {s s' : SrcStmt
   | _, _, _, .matchArm b r => by rw [litStmt_eq b, litStmt_eq r]; simp only [litStmt]
   | _, _, _, .unreachable => by simp only [litStmt]
   | _, _, _, .letView h b => by rw [litExprs_eq h, litStmt_eq b]; simp only [litStmt]
+  | _, _, _, .letStr b => by rw [litStmt_eq b]; simp only [litStmt]
   | _, _, _, .assert h => by rw [litEff_eq h]; simp only [litStmt]
 
 theorem litFunc_unique {g a b : SrcFunc} (h₁ : LitFunc funcs g a) (h₂ : LitFunc funcs g b) : a = b := by

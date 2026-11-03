@@ -303,26 +303,4 @@ theorem bstep_offset_after {spW sp : SrcProgram} {prims : Prims} {ix_offset_afte
     budget
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
 
-theorem bproof_lower_field_of {spW sp : SrcProgram} {prims : Prims} {ix_lower_field_of ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_field_offset ix_get_of_mini_selfhost_SrcType ix_lower_field_at : Nat}
-    (fnW : spW.funcs[ix_lower_field_of]? = some (src_lower_field_of ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_field_offset ix_get_of_mini_selfhost_SrcType ix_lower_field_at)) (fn : sp.funcs[ix_lower_field_of]? = some (src_lower_field_of ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_field_offset ix_get_of_mini_selfhost_SrcType ix_lower_field_at))
-    (np : prims.isPrim ix_lower_field_of = false)
-    (back : Certified (∀ {n : Nat}, Stmt_lower_field_of sp prims ix_lower_field_of n))
-    (b_plus : Certified (∀ {n : Nat}, BStmt_plus spW sp prims ix_plus n))
-    (pp_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType = false)
-    (b_field_offset : Certified (∀ {n : Nat}, BStmt_field_offset spW sp prims ix_field_offset n))
-    (b_get_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, BStmt_get_of_mini_selfhost_SrcType spW sp prims ix_get_of_mini_selfhost_SrcType n))
-    (b_lower_field_at : Certified (∀ {n : Nat}, BStmt_lower_field_at spW sp prims ix_lower_field_at n)) {n : Nat} :
-    BStmt_lower_field_of spW sp prims ix_lower_field_of n := by
-  intro x0 x1 v0 v1 w k b h r0 r1 hb pre
-  rcases n with _ | n
-  · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_lower_field_of [v0, v1] = some (w, k) ∧ 0 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_lower_field_of, List.length_cons, List.length_nil, if_true] at h ⊢
-    rw [Pre_lower_field_of.eq_def] at pre
-    simp only at pre
-    budget
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
-
 end Lanius.Faithful.SelfBudget

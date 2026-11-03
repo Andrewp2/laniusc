@@ -24,6 +24,7 @@ import all Lanius.Mini.Frontend.P.textSelf
 import all Lanius.Mini.Frontend.P.textSliceLen
 import all Lanius.Mini.Frontend.P.isPathCall
 import all Lanius.Mini.Frontend.P.i32ArrayLength
+import all Lanius.Mini.Frontend.P.stringLast
 
 @[expose] public section
 /-! # The reading is deterministic, F1: statements
@@ -1016,6 +1017,103 @@ theorem returnR_noArmBlock {env : FrontEnv} {scope : List Local} {a list : CTree
   | slice _ _ hh => exact letInitR_noArmBlock (ty := .tyI32) ab (.head hh)
   | eval k => exact armBlockR_noEff ab k
 
+/-! ## String literals: no expression reads one -/
+
+theorem exprR_noString {env : FrontEnv} {scope : List Local} {c : CTree} {e : SrcExpr}
+    (p : nodeProd c = pString) (h : ExprR env scope c e) : False := by
+  cases h <;> expr_clash
+
+theorem peel_noExprString : ∀ {env : FrontEnv} {scope : List Local} {c pf : CTree} {e : SrcExpr},
+    Peel c pf → nodeProd (kid pf 0) = pString → nodeProd (kid pf 1) = pPostfixEnd → ExprR env scope c e → False
+  | _, _, _, _, _, .wrap _ p, pc, pe, h => by
+    cases h with
+    | wrap _ r => exact peel_noExprString p pc pe r
+    | _ => expr_clash
+  | _, _, _, _, _, .bare _ _ p, pc, pe, h => by
+    cases h with
+    | assign _ _ r => exact peel_noExprString p pc pe r
+    | level _ r _ => exact peel_noExprString p pc pe r
+    | cast _ r _ => exact peel_noExprString p pc pe r
+    | _ => expr_clash
+  | _, _, _, _, _, .here _, pc, pe, h => by
+    cases h with
+    | «postfix» _ _ r => exact exprR_noString pc r
+    | _ => expr_clash
+
+theorem effR_noString {env : FrontEnv} {scope : List Local} {E : Option Ty} {c : CTree} {x : MEff}
+    (p : nodeProd c = pString) (h : EffR env scope E c x) : False := by
+  cases h with
+  | pure r => exact exprR_noString p r
+  | _ => eff_clash
+
+theorem peel_noEffString : ∀ {env : FrontEnv} {scope : List Local} {E : Option Ty} {c pf : CTree} {x : MEff},
+    Peel c pf → nodeProd (kid pf 0) = pString → nodeProd (kid pf 1) = pPostfixEnd → EffR env scope E c x → False
+  | _, _, _, _, _, _, .wrap w p, pc, pe, h => by
+    cases h with
+    | pure r => exact peel_noExprString (.wrap w p) pc pe r
+    | wrap _ k => exact peel_noEffString p pc pe k
+    | _ => eff_clash
+  | _, _, _, _, _, _, .bare w kn p, pc, pe, h => by
+    cases h with
+    | pure r => exact peel_noExprString (.bare w kn p) pc pe r
+    | bare _ _ k => exact peel_noEffString p pc pe k
+    | level _ kn' _ _ => exact kn' kn
+    | cast _ kn' _ _ => exact kn' kn
+    | _ => eff_clash
+  | _, _, _, _, _, _, .here pp, pc, pe, h => by
+    cases h with
+    | pure r => exact peel_noExprString (.here pp) pc pe r
+    | primary _ _ k => exact effR_noString pc k
+    | _ => eff_clash
+
+/-- A let of a string literal has no other head. -/
+theorem letInitR_noString {env : FrontEnv} {scope : List Local} {ty : Ty} {init : CTree} {chars : List Nat}
+    {hd : LetHead} (si : StringInit init chars) (h : LetInitR env scope ty init hd) : False := by
+  cases si with
+  | mk pl pc pe _ => cases h with
+    | head l => cases l with
+      | callPath pe' p0 _ _ _ _ => cases peel_unique pe' pl; prod_clash
+    | «try» t => cases t with
+      | call p c =>
+        cases peel_unique p pl
+        cases c with
+        | mk f _ _ _ _ _ _ => obtain ⟨f0, _⟩ := f; prod_clash
+      | method p m =>
+        cases peel_unique p pl
+        cases m with
+        | mk f _ _ _ _ _ _ => obtain ⟨f0 | ⟨f0, _⟩, _⟩ := f <;> prod_clash
+      | «local» p l =>
+        cases peel_unique p pl
+        cases l with
+        | mk t _ _ _ _ => prod_clash
+    | eval k _ => exact peel_noEffString pl pc pe k
+
+theorem matchInit_noString {init m : CTree} {chars : List Nat} (si : StringInit init chars)
+    (mi : MatchInit init m) : False := by
+  cases si with
+  | mk pl pc _ _ => cases mi with
+    | mk pl' pc' _ => cases peel_unique pl pl'; prod_clash
+
+theorem stringInit_unique {init : CTree} {a b : List Nat} (h₁ : StringInit init a) (h₂ : StringInit init b) :
+    a = b := by
+  cases h₁ with
+  | mk pl _ _ l => cases h₂ with
+    | mk pl' _ _ l' =>
+      cases peel_unique pl pl'
+      exact List.append_cancel_right (List.cons.inj (l.1.symm.trans l'.1)).2
+
+theorem stringReturnR_unique {env : FrontEnv} {name : Name} {r : CTree} {s₁ s₂ : Nat} {n₁ n₂ : SrcExpr}
+    (h₁ : StringReturnR env name r s₁ n₁) (h₂ : StringReturnR env name r s₂ n₂) : s₁ = s₂ ∧ n₁ = n₂ := by
+  cases h₁ with
+  | mk _ _ _ lv pl _ _ it _ pb _ _ il => cases h₂ with
+    | mk _ _ _ lv' pl' _ _ it' _ pb' _ _ il' =>
+      rw [lv] at lv'
+      cases lv'
+      cases peel_unique pl pl'
+      cases items_unique it it'
+      cases peel_unique pb pb'
+      exact ⟨rfl, intLiteral_unique il il'⟩
+
 /-- A let whose value is `core::mem::i32_array_data_ptr(x)` is read only as
 the second statement of a `LetView`, never as a statement list's first. -/
 theorem stmtsR_noViewHead {env : FrontEnv} {scope : List Local} {v : CTree} {more : List CTree} {m : MStmt}
@@ -1032,6 +1130,7 @@ theorem stmtsR_noViewHead {env : FrontEnv} {scope : List Local} {v : CTree} {mor
     exact letInitR_noBlockMatch (ty := .tyPtr) vn mi it ma ab (.head vh)
   | letLit _ _ _ _ _ _ mi lw mr _ _ _ _ => exact letInitR_noLitMatch (ty := .tyPtr) nd vn mi lw mr (.head vh)
   | letView _ _ _ _ _ _ li _ _ _ _ _ _ _ _ => cases letInitR_unique nd vn li (.head vh)
+  | letStr _ _ _ _ _ _ si _ => exact letInitR_noString (ty := .tyPtr) si (.head vh)
   | last np _ => exact np vp
   | seq np _ _ => exact np vp
 
@@ -1070,6 +1169,7 @@ theorem stmtsR_unique : ∀ {scope : List Local} {items : List CTree} {a : MStmt
       cases tyR_unique ty ty'
       cases letInitR_unique nd vn li li'
       exact (stmtsR_noViewHead (idsFresh_cons nd fr) vn vp vt vh body).elim
+    | letStr _ _ _ _ _ _ si _ => exact (letInitR_noString si li).elim
     | last np _ => exact absurd ps np
     | seq np _ _ => exact absurd ps np
   | _, _, _, .letMatch ps lt _ _ fr ty bm mi mr mo body la mv, nd, vn, _, h₂ => by
@@ -1099,6 +1199,7 @@ theorem stmtsR_unique : ∀ {scope : List Local} {items : List CTree} {a : MStmt
     | letView _ _ _ _ _ _ li' _ _ _ _ _ _ _ _ =>
       obtain ⟨_, _, _, _, mi', it, ma, ab⟩ := bm
       exact (letInitR_noBlockMatch vn mi' it ma ab li').elim
+    | letStr _ _ _ _ _ _ si _ => exact (matchInit_noString si mi).elim
     | last np _ => exact absurd ps np
     | seq np _ _ => exact absurd ps np
   | _, _, _, .letLit ps lt _ _ fr ty mi lw mr it body la mv, nd, vn, _, h₂ => by
@@ -1120,6 +1221,7 @@ theorem stmtsR_unique : ∀ {scope : List Local} {items : List CTree} {a : MStmt
       rw [mv'] at mv
       exact (Option.some.inj mv).symm
     | letView _ _ _ _ _ _ li' _ _ _ _ _ _ _ _ => exact (letInitR_noLitMatch nd vn mi lw mr li').elim
+    | letStr _ _ _ _ _ _ si _ => exact (matchInit_noString si mi).elim
     | last np _ => exact absurd ps np
     | seq np _ _ => exact absurd ps np
   | _, _, _, .letUntyped ps lt _ _ fr un body ls, nd, vn, _, h₂ => by
@@ -1134,6 +1236,7 @@ theorem stmtsR_unique : ∀ {scope : List Local} {items : List CTree} {a : MStmt
     | letMatch _ lt' _ _ _ _ _ _ _ _ _ _ _ => prod_clash
     | letLit _ lt' _ _ _ _ _ _ _ _ _ _ _ => prod_clash
     | letView _ lt' _ _ _ _ _ _ _ _ _ _ _ _ _ => prod_clash
+    | letStr _ lt' _ _ _ _ _ _ => prod_clash
     | last np _ => exact absurd ps np
     | seq np _ _ => exact absurd ps np
   | _, _, _, .letView ps lt _ _ fr ty li vp vt _ _ vf _ vh body, nd, vn, _, h₂ => by
@@ -1153,6 +1256,19 @@ theorem stmtsR_unique : ∀ {scope : List Local} {items : List CTree} {a : MStmt
       cases letInitR_unique nd vn li li'
       cases ih body'
       rfl
+    | letStr _ _ _ _ _ _ si _ => exact (letInitR_noString si li).elim
+    | seq np _ _ => exact absurd ps np
+  | _, _, _, .letStr ps lt _ _ _ _ si sr, nd, vn, _, h₂ => by
+    cases h₂ with
+    | «let» _ _ _ _ _ _ li' _ _ => exact (letInitR_noString si li').elim
+    | letUntyped _ lt' _ _ _ _ _ _ => prod_clash
+    | letMatch _ _ _ _ _ _ _ mi _ _ _ _ _ => exact (matchInit_noString si mi).elim
+    | letLit _ _ _ _ _ _ mi _ _ _ _ _ _ => exact (matchInit_noString si mi).elim
+    | letView _ _ _ _ _ _ li' _ _ _ _ _ _ _ _ => exact (letInitR_noString si li').elim
+    | letStr _ _ _ _ _ _ si' sr' =>
+      cases stringInit_unique si si'
+      obtain ⟨rfl, rfl⟩ := stringReturnR_unique sr sr'
+      rfl
     | seq np _ _ => exact absurd ps np
   | _, _, _, .last np s, nd, vn, _, h₂ => by
     have ih := fun {y} k' => stmtR_unique s nd vn (b := y) k'
@@ -1171,6 +1287,7 @@ theorem stmtsR_unique : ∀ {scope : List Local} {items : List CTree} {a : MStmt
     | letMatch ps _ _ _ _ _ _ _ _ _ _ _ _ => exact absurd ps np
     | letLit ps _ _ _ _ _ _ _ _ _ _ _ _ => exact absurd ps np
     | letView ps _ _ _ _ _ _ _ _ _ _ _ _ _ _ => exact absurd ps np
+    | letStr ps _ _ _ _ _ _ _ => exact absurd ps np
     | seq _ s' rest' => rw [ih1 s', ih2 rest']
 termination_by structural _ _ _ h _ _ _ _ => h
 

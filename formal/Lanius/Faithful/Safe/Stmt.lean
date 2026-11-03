@@ -271,6 +271,7 @@ theorem stmt_safe (calls : ∀ m, FuncSim sp prims outside m) (funcs : ∀ i < N
     · simp at ok
   | letAlloc => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
   | letView => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
+  | letStr => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
   | letLoad => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
   | setByte => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
   | free => intro k tenv env st r st' le run ok; simp [stmtOk] at ok

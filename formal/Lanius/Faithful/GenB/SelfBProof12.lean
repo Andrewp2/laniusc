@@ -18,6 +18,28 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.SelfCert
 open Lanius.Faithful.Budget
 
+theorem bproof_lower_field_of {spW sp : SrcProgram} {prims : Prims} {ix_lower_field_of ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_field_offset ix_get_of_mini_selfhost_SrcType ix_lower_field_at : Nat}
+    (fnW : spW.funcs[ix_lower_field_of]? = some (src_lower_field_of ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_field_offset ix_get_of_mini_selfhost_SrcType ix_lower_field_at)) (fn : sp.funcs[ix_lower_field_of]? = some (src_lower_field_of ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_field_offset ix_get_of_mini_selfhost_SrcType ix_lower_field_at))
+    (np : prims.isPrim ix_lower_field_of = false)
+    (back : Certified (∀ {n : Nat}, Stmt_lower_field_of sp prims ix_lower_field_of n))
+    (b_plus : Certified (∀ {n : Nat}, BStmt_plus spW sp prims ix_plus n))
+    (pp_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType = false)
+    (b_field_offset : Certified (∀ {n : Nat}, BStmt_field_offset spW sp prims ix_field_offset n))
+    (b_get_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, BStmt_get_of_mini_selfhost_SrcType spW sp prims ix_get_of_mini_selfhost_SrcType n))
+    (b_lower_field_at : Certified (∀ {n : Nat}, BStmt_lower_field_at spW sp prims ix_lower_field_at n)) {n : Nat} :
+    BStmt_lower_field_of spW sp prims ix_lower_field_of n := by
+  intro x0 x1 v0 v1 w k b h r0 r1 hb pre
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_lower_field_of [v0, v1] = some (w, k) ∧ 0 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_lower_field_of, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_lower_field_of.eq_def] at pre
+    simp only at pre
+    budget
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
+
 theorem bproof_lower_field {spW sp : SrcProgram} {prims : Prims} {ix_lower_field ix_lower_field_of : Nat}
     (fnW : spW.funcs[ix_lower_field]? = some (src_lower_field ix_lower_field_of)) (fn : sp.funcs[ix_lower_field]? = some (src_lower_field ix_lower_field_of))
     (np : prims.isPrim ix_lower_field = false)
@@ -511,33 +533,5 @@ theorem bproof_order_uint {spW sp : SrcProgram} {prims : Prims} {ix_order_uint i
     simp only [src_order_uint, List.length_cons, List.length_nil, if_true] at h ⊢
     budget Cost_order_uint
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3⟩
-
-theorem bproof_order {spW sp : SrcProgram} {prims : Prims} {ix_order ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_SrcType_is_isize ix_SrcType_is_char ix_SrcType_is_float_any ix_SrcType_float_ty ix_SrcType_sint_kind ix_SrcType_uint_kind ix_SrcType_is_sint_any ix_float_order ix_sign_key ix_order_sint ix_order_uint : Nat}
-    (fnW : spW.funcs[ix_order]? = some (src_order ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_SrcType_is_isize ix_SrcType_is_char ix_SrcType_is_float_any ix_SrcType_float_ty ix_SrcType_sint_kind ix_SrcType_uint_kind ix_SrcType_is_sint_any ix_float_order ix_sign_key ix_order_sint ix_order_uint)) (fn : sp.funcs[ix_order]? = some (src_order ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_SrcType_is_isize ix_SrcType_is_char ix_SrcType_is_float_any ix_SrcType_float_ty ix_SrcType_sint_kind ix_SrcType_uint_kind ix_SrcType_is_sint_any ix_float_order ix_sign_key ix_order_sint ix_order_uint))
-    (np : prims.isPrim ix_order = false)
-    (back : Certified (∀ {n : Nat}, Stmt_order sp prims ix_order n))
-    (pp_boxed_of_mini_selfhost_Expr : prims.isPrim ix_boxed_of_mini_selfhost_Expr = true) (bx_boxed_of_mini_selfhost_Expr : prims.boxed.contains ix_boxed_of_mini_selfhost_Expr = true)
-    (b_SrcType_is_i32 : Certified (∀ {n : Nat}, BStmt_SrcType_is_i32 spW sp prims ix_SrcType_is_i32 n))
-    (b_SrcType_is_isize : Certified (∀ {n : Nat}, BStmt_SrcType_is_isize spW sp prims ix_SrcType_is_isize n))
-    (b_SrcType_is_char : Certified (∀ {n : Nat}, BStmt_SrcType_is_char spW sp prims ix_SrcType_is_char n))
-    (b_SrcType_is_float_any : Certified (∀ {n : Nat}, BStmt_SrcType_is_float_any spW sp prims ix_SrcType_is_float_any n))
-    (b_SrcType_float_ty : Certified (∀ {n : Nat}, BStmt_SrcType_float_ty spW sp prims ix_SrcType_float_ty n))
-    (b_SrcType_sint_kind : Certified (∀ {n : Nat}, BStmt_SrcType_sint_kind spW sp prims ix_SrcType_sint_kind n))
-    (b_SrcType_uint_kind : Certified (∀ {n : Nat}, BStmt_SrcType_uint_kind spW sp prims ix_SrcType_uint_kind n))
-    (b_SrcType_is_sint_any : Certified (∀ {n : Nat}, BStmt_SrcType_is_sint_any spW sp prims ix_SrcType_is_sint_any n))
-    (b_float_order : Certified (∀ {n : Nat}, BStmt_float_order spW sp prims ix_float_order n))
-    (b_sign_key : Certified (∀ {n : Nat}, BStmt_sign_key spW sp prims ix_sign_key n))
-    (b_order_sint : Certified (∀ {n : Nat}, BStmt_order_sint spW sp prims ix_order_sint n))
-    (b_order_uint : Certified (∀ {n : Nat}, BStmt_order_uint spW sp prims ix_order_uint n)) {n : Nat} :
-    BStmt_order spW sp prims ix_order n := by
-  intro x0 x1 x2 v0 v1 v2 w k h r0 r1 r2
-  rcases n with _ | n
-  · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_order [v0, v1, v2] = some (w, k) ∧ Cost_order (n + 1) x0 x1 x2 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_order, List.length_cons, List.length_nil, if_true] at h ⊢
-    budget Cost_order
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
 
 end Lanius.Faithful.SelfBudget

@@ -67,6 +67,7 @@ import all Lanius.Mini.Compiler.P.storeArray
 import all Lanius.Mini.Compiler.P.storeEvalWord
 import all Lanius.Mini.Compiler.P.storeType
 import all Lanius.Mini.Compiler.P.storeWordElement
+import all Lanius.Mini.Compiler.P.strStores
 import all Lanius.Mini.Compiler.P.structFields
 import all Lanius.Mini.Compiler.P.usizeWidth
 import all Lanius.Mini.Compiler.P.widthOf
@@ -542,6 +543,29 @@ theorem letView_lower_inv {sigs : List Sig} {decls : SrcDecls} {ret : SrcType} {
   rename_i vs hvs
   simp only [Option.some.injEq] at h
   exact ⟨vs, bstmt, nz.1, by have := nz.2; omega, hvs, hb, by rw [h]⟩
+
+/-- What lowering a `LetStr` checks, and what it emits: the block into
+`next`, the stores of the string's words, the body. -/
+theorem letStr_lower_inv {sigs : List Sig} {decls : SrcDecls} {ret : SrcType} {scope : List Binding}
+    {next pointer : Nat} {chars : List Nat} {body : SrcStmt} {out : Stmt}
+    (ok : (SrcStmt.letStr pointer chars body).lower sigs decls ret scope next = some out) :
+    ∃ bstmt, chars ≠ [] ∧ chars.length < 2 ^ 31 ∧ strAscii chars = true ∧
+      body.lower sigs decls ret (⟨pointer, next, .ptr⟩ :: scope) (next + 1) = some bstmt ∧
+      out = .seq (.alloc next 2 (.lit (BitVec.ofNat 64 (4 * (strWords chars).length))))
+        (strStores next 0 (strWords chars) bstmt) := by
+  simp only [SrcStmt.lower] at ok
+  simp only [lowerStr] at ok
+  split at ok
+  · simp at ok
+  rename_i nz
+  simp only [Bool.or_eq_true, decide_eq_true_eq, not_or, Bool.not_eq_true'] at nz
+  split at ok
+  · simp at ok
+  rename_i bstmt hb
+  simp only [Option.some.injEq] at ok
+  refine ⟨bstmt, fun e => by simp [e] at nz, by have := nz.1.2; omega, ?_, hb, ok.symm⟩
+  have := nz.2
+  simpa using this
 
 /-- What lowering a match arm statement checks, and what it emits. -/
 theorem matchArm_lower_inv {sigs : List Sig} {decls : SrcDecls} {ret : SrcType} {scope : List Binding}

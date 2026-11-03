@@ -172,6 +172,7 @@ abbrev pRetType : Nat := 34
 abbrev pRetVoid : Nat := 35
 abbrev pReturnStmt : Nat := 76
 abbrev pReturnValue : Nat := 90
+abbrev pString : Nat := 177
 abbrev pReturnVoid : Nat := 91
 abbrev pSelfParamPlain : Nat := 66
 abbrev pSelfParamTyped : Nat := 65

@@ -21,12 +21,12 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_decl_weight (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : List Lanius.Mini.Inst} {x3 : List (Option Nat)} {x4 : Bool} {x5 : Lanius.Mini.Inst} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepDecls x1 v1 → (RepList 139 RepInst) x2 v2 → (RepList 207 (RepOption 205 RepNat)) x3 v3 → RepBool x4 v4 → RepInst x5 v5 →
-    (RepOption 205 RepNat) (Lanius.Mini.declWeight x0 x1 x2 x3 x4 x5) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : List Lanius.Mini.Inst} {x3 : List (Option Nat)} {x4 : Bool} {x5 : Lanius.Mini.Inst} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepDecls x1 v1 → (RepList 139 RepInst) x2 v2 → (RepList 209 (RepOption 207 RepNat)) x3 v3 → RepBool x4 v4 → RepInst x5 v5 →
+    (RepOption 207 RepNat) (Lanius.Mini.declWeight x0 x1 x2 x3 x4 x5) w
 
 abbrev Stmt_fields_weight (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Inst} {x1 : List (Option Nat)} {x2 : Option (List Lanius.Mini.Ty)} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 139 RepInst) x0 v0 → (RepList 207 (RepOption 205 RepNat)) x1 v1 → (RepOption 210 (RepList 141 RepTy)) x2 v2 →
-    (RepOption 205 RepNat) (Lanius.Mini.fieldsWeight x0 x1 x2) w
+  ∀ {x0 : List Lanius.Mini.Inst} {x1 : List (Option Nat)} {x2 : Option (List Lanius.Mini.Ty)} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 139 RepInst) x0 v0 → (RepList 209 (RepOption 207 RepNat)) x1 v1 → (RepOption 212 (RepList 141 RepTy)) x2 v2 →
+    (RepOption 207 RepNat) (Lanius.Mini.fieldsWeight x0 x1 x2) w
 
 abbrev Stmt_funcs_onto (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.MFunc} {x1 : List Lanius.Mini.MFunc} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 167 RepMFunc) x0 v0 → (RepList 167 RepMFunc) x1 v1 →
@@ -37,32 +37,32 @@ abbrev Stmt_funcs_tys (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     (RepList 141 RepTy) (Lanius.Mini.funcsTys x0) w
 
 abbrev Stmt_inst_weight (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : List Lanius.Mini.Inst} {x3 : List (Option Nat)} {x4 : Lanius.Mini.Inst} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → RepDecls x1 v1 → (RepList 139 RepInst) x2 v2 → (RepList 207 (RepOption 205 RepNat)) x3 v3 → RepInst x4 v4 →
-    (RepOption 205 RepNat) (Lanius.Mini.instWeight x0 x1 x2 x3 x4) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : List Lanius.Mini.Inst} {x3 : List (Option Nat)} {x4 : Lanius.Mini.Inst} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → RepDecls x1 v1 → (RepList 139 RepInst) x2 v2 → (RepList 209 (RepOption 207 RepNat)) x3 v3 → RepInst x4 v4 →
+    (RepOption 207 RepNat) (Lanius.Mini.instWeight x0 x1 x2 x3 x4) w
 
 abbrev Stmt_is_none_weight (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 205 RepNat) x0 v0 →
+  ∀ {x0 : Option Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 207 RepNat) x0 v0 →
     RepBool (Lanius.Mini.isNoneWeight x0) w
 
 abbrev Stmt_lowered_all (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : List Lanius.Mini.Inst} {x3 : List Lanius.Mini.Inst} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepDecls x1 v1 → (RepList 139 RepInst) x2 v2 → (RepList 139 RepInst) x3 v3 →
-    (RepList 198 (RepOption 158 RepSrcType)) (Lanius.Mini.loweredAll x0 x1 x2 x3) w
+    (RepList 200 (RepOption 158 RepSrcType)) (Lanius.Mini.loweredAll x0 x1 x2 x3) w
 
 abbrev Stmt_mono_loop (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {x2 : Lanius.Mini.Decls} {x3 : List Lanius.Mini.Inst} {x4 : List Lanius.Mini.MFunc} {x5 : Nat} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepNat x1 v1 → RepDecls x2 v2 → (RepList 139 RepInst) x3 v3 → (RepList 167 RepMFunc) x4 v4 → RepNat x5 v5 →
     (RepOption 165 RepMono) (Lanius.Mini.monoLoop x0 x1 x2 x3 x4 x5) w
 
 abbrev Stmt_named_weight (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List (Option Nat)} {x1 : Option Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 207 (RepOption 205 RepNat)) x0 v0 → (RepOption 205 RepNat) x1 v1 →
-    (RepOption 205 RepNat) (Lanius.Mini.namedWeight x0 x1) w
+  ∀ {x0 : List (Option Nat)} {x1 : Option Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 209 (RepOption 207 RepNat)) x0 v0 → (RepOption 207 RepNat) x1 v1 →
+    (RepOption 207 RepNat) (Lanius.Mini.namedWeight x0 x1) w
 
 abbrev Stmt_param_tys (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.MParam} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 169 RepMParam) x0 v0 →
     (RepList 141 RepTy) (Lanius.Mini.paramTys x0) w
 
 abbrev Stmt_payloads_weight (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Inst} {x1 : List (Option Nat)} {x2 : Option (List (List Lanius.Mini.Ty))} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 139 RepInst) x0 v0 → (RepList 207 (RepOption 205 RepNat)) x1 v1 → (RepOption 240 (RepList 241 (RepList 141 RepTy))) x2 v2 →
-    (RepOption 205 RepNat) (Lanius.Mini.payloadsWeight x0 x1 x2) w
+  ∀ {x0 : List Lanius.Mini.Inst} {x1 : List (Option Nat)} {x2 : Option (List (List Lanius.Mini.Ty))} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 139 RepInst) x0 v0 → (RepList 209 (RepOption 207 RepNat)) x1 v1 → (RepOption 242 (RepList 243 (RepList 141 RepTy))) x2 v2 →
+    (RepOption 207 RepNat) (Lanius.Mini.payloadsWeight x0 x1 x2) w
 
 abbrev Stmt_ret_tys (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.RetTy} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepRetTy x0 v0 →
@@ -81,39 +81,39 @@ abbrev Stmt_ty_known (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     RepBool (Lanius.Mini.tyKnown x0 x1) w
 
 abbrev Stmt_ty_weight (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Inst} {x1 : List (Option Nat)} {x2 : Lanius.Mini.Ty} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 139 RepInst) x0 v0 → (RepList 207 (RepOption 205 RepNat)) x1 v1 → RepTy x2 v2 →
-    (RepOption 205 RepNat) (Lanius.Mini.tyWeight x0 x1 x2) w
+  ∀ {x0 : List Lanius.Mini.Inst} {x1 : List (Option Nat)} {x2 : Lanius.Mini.Ty} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 139 RepInst) x0 v0 → (RepList 209 (RepOption 207 RepNat)) x1 v1 → RepTy x2 v2 →
+    (RepOption 207 RepNat) (Lanius.Mini.tyWeight x0 x1 x2) w
 
 abbrev Stmt_type_table (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : List Lanius.Mini.Inst} {x3 : List Lanius.Mini.Ty} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepDecls x1 v1 → (RepList 139 RepInst) x2 v2 → (RepList 141 RepTy) x3 v3 →
-    (RepOption 196 (RepList 139 RepInst)) (Lanius.Mini.typeTable x0 x1 x2 x3) w
+    (RepOption 198 (RepList 139 RepInst)) (Lanius.Mini.typeTable x0 x1 x2 x3) w
 
 abbrev Stmt_type_table_more (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Option (List Lanius.Mini.Inst)} {x3 : List Lanius.Mini.Ty} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepDecls x1 v1 → (RepOption 196 (RepList 139 RepInst)) x2 v2 → (RepList 141 RepTy) x3 v3 →
-    (RepOption 196 (RepList 139 RepInst)) (Lanius.Mini.typeTableMore x0 x1 x2 x3) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Option (List Lanius.Mini.Inst)} {x3 : List Lanius.Mini.Ty} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepDecls x1 v1 → (RepOption 198 (RepList 139 RepInst)) x2 v2 → (RepList 141 RepTy) x3 v3 →
+    (RepOption 198 (RepList 139 RepInst)) (Lanius.Mini.typeTableMore x0 x1 x2 x3) w
 
 abbrev Stmt_tys_weight (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Inst} {x1 : List (Option Nat)} {x2 : List Lanius.Mini.Ty} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 139 RepInst) x0 v0 → (RepList 207 (RepOption 205 RepNat)) x1 v1 → (RepList 141 RepTy) x2 v2 →
-    (RepOption 205 RepNat) (Lanius.Mini.tysWeight x0 x1 x2) w
+  ∀ {x0 : List Lanius.Mini.Inst} {x1 : List (Option Nat)} {x2 : List Lanius.Mini.Ty} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 139 RepInst) x0 v0 → (RepList 209 (RepOption 207 RepNat)) x1 v1 → (RepList 141 RepTy) x2 v2 →
+    (RepOption 207 RepNat) (Lanius.Mini.tysWeight x0 x1 x2) w
 
 abbrev Stmt_unweighed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Inst} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 139 RepInst) x0 v0 →
-    (RepList 207 (RepOption 205 RepNat)) (Lanius.Mini.unweighed x0) w
+    (RepList 209 (RepOption 207 RepNat)) (Lanius.Mini.unweighed x0) w
 
 abbrev Stmt_weigh_again (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : List Lanius.Mini.Inst} {x3 : List (Option Nat)} {x4 : Lanius.Mini.Inst} {x5 : Option Nat} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepDecls x1 v1 → (RepList 139 RepInst) x2 v2 → (RepList 207 (RepOption 205 RepNat)) x3 v3 → RepInst x4 v4 → (RepOption 205 RepNat) x5 v5 →
-    (RepOption 205 RepNat) (Lanius.Mini.weighAgain x0 x1 x2 x3 x4 x5) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : List Lanius.Mini.Inst} {x3 : List (Option Nat)} {x4 : Lanius.Mini.Inst} {x5 : Option Nat} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepDecls x1 v1 → (RepList 139 RepInst) x2 v2 → (RepList 209 (RepOption 207 RepNat)) x3 v3 → RepInst x4 v4 → (RepOption 207 RepNat) x5 v5 →
+    (RepOption 207 RepNat) (Lanius.Mini.weighAgain x0 x1 x2 x3 x4 x5) w
 
 abbrev Stmt_weigh_round (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : List Lanius.Mini.Inst} {x3 : List (Option Nat)} {x4 : List Lanius.Mini.Inst} {x5 : List (Option Nat)} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepDecls x1 v1 → (RepList 139 RepInst) x2 v2 → (RepList 207 (RepOption 205 RepNat)) x3 v3 → (RepList 139 RepInst) x4 v4 → (RepList 207 (RepOption 205 RepNat)) x5 v5 →
-    (RepList 207 (RepOption 205 RepNat)) (Lanius.Mini.weighRound x0 x1 x2 x3 x4 x5) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : List Lanius.Mini.Inst} {x3 : List (Option Nat)} {x4 : List Lanius.Mini.Inst} {x5 : List (Option Nat)} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepDecls x1 v1 → (RepList 139 RepInst) x2 v2 → (RepList 209 (RepOption 207 RepNat)) x3 v3 → (RepList 139 RepInst) x4 v4 → (RepList 209 (RepOption 207 RepNat)) x5 v5 →
+    (RepList 209 (RepOption 207 RepNat)) (Lanius.Mini.weighRound x0 x1 x2 x3 x4 x5) w
 
 abbrev Stmt_weigh_rounds (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Nat} {x2 : Lanius.Mini.Decls} {x3 : List Lanius.Mini.Inst} {x4 : List (Option Nat)} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → RepNat x1 v1 → RepDecls x2 v2 → (RepList 139 RepInst) x3 v3 → (RepList 207 (RepOption 205 RepNat)) x4 v4 →
-    (RepList 207 (RepOption 205 RepNat)) (Lanius.Mini.weighRounds x0 x1 x2 x3 x4) w
+  ∀ {x0 : Nat} {x1 : Nat} {x2 : Lanius.Mini.Decls} {x3 : List Lanius.Mini.Inst} {x4 : List (Option Nat)} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → RepNat x1 v1 → RepDecls x2 v2 → (RepList 139 RepInst) x3 v3 → (RepList 209 (RepOption 207 RepNat)) x4 v4 →
+    (RepList 209 (RepOption 207 RepNat)) (Lanius.Mini.weighRounds x0 x1 x2 x3 x4) w
 
 abbrev Stmt_weighed_more (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List (Option Nat)} {x1 : List (Option Nat)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 207 (RepOption 205 RepNat)) x0 v0 → (RepList 207 (RepOption 205 RepNat)) x1 v1 →
+  ∀ {x0 : List (Option Nat)} {x1 : List (Option Nat)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 209 (RepOption 207 RepNat)) x0 v0 → (RepList 209 (RepOption 207 RepNat)) x1 v1 →
     RepBool (Lanius.Mini.weighedMore x0 x1) w
 
 end Lanius.Faithful.SelfCert

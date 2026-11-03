@@ -18,6 +18,7 @@ import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.arrayCallSig
 import all Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Compiler.P.storeArray
+public import Lanius.Mini.Compiler.P.strStores
 public import Lanius.Mini.Compiler.P.arrayCallSig
 public import Lanius.Mini.Compiler.P.bindingBytes
 public import Lanius.Mini.Compiler.P.funcNeeds
@@ -75,6 +76,7 @@ theorem stmt_ends (sp : SrcProgram) :
   | letEnum => exact letCase run inside
   | letMatch => exact letCase run inside
   | letAlloc => exact letCase run inside
+  | letStr => exact letCase run inside
   | letView _ _ _ _ body =>
     obtain ⟨j, v, s1, s2, rfl, -, brun, -⟩ := letLocal_inv run
     obtain ⟨j', v', s1', s2', rfl, -, brun', -⟩ := letLocal_inv brun

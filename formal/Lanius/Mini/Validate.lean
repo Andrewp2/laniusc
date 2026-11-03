@@ -64,6 +64,7 @@ import all Lanius.Mini.Compiler.P.withBudget
 import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.sintToUint
 import all Lanius.Mini.Compiler.P.storeArray
+import all Lanius.Mini.Compiler.P.strStores
 import all Lanius.Mini.Compiler.P.arrayCallSig
 import all Lanius.Mini.Compiler.P.needRound
 import all Lanius.Mini.Compiler.P.needsAfter

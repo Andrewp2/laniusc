@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::usize_width -/
-def src_usize_width : SrcFunc := { params := [{ id := 12, ty := ty4 }], ret := ty275, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 12)) ty4 ty275 [[], [], [], [], []] [SrcEff.eVariant ty275 0 [SrcEff.eVariant ty54 0 []], SrcEff.eVariant ty275 0 [SrcEff.eVariant ty54 0 []], SrcEff.eVariant ty275 0 [SrcEff.eVariant ty54 1 []], SrcEff.eVariant ty275 0 [SrcEff.eVariant ty54 1 []], SrcEff.eVariant ty275 0 [SrcEff.eVariant ty54 0 []]]) }
+def src_usize_width : SrcFunc := { params := [{ id := 12, ty := ty4 }], ret := ty278, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 12)) ty4 ty278 [[], [], [], [], []] [SrcEff.eVariant ty278 0 [SrcEff.eVariant ty54 0 []], SrcEff.eVariant ty278 0 [SrcEff.eVariant ty54 0 []], SrcEff.eVariant ty278 0 [SrcEff.eVariant ty54 1 []], SrcEff.eVariant ty278 0 [SrcEff.eVariant ty54 1 []], SrcEff.eVariant ty278 0 [SrcEff.eVariant ty54 0 []]]) }
 
 end
 

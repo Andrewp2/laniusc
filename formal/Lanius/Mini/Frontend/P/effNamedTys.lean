@@ -59,6 +59,7 @@ def stmtCalls (m : MStmt) : List Inst :=
   | .mLetSlice id e p n body => stmtCalls body
   | .mLetIndex id ty s i body => stmtCalls body
   | .mLetView id n es p body => stmtCalls body
+  | .mLetStr id cs body => stmtCalls body
   | .mSetIndex s i v => []
   | .mLetEval id ty x body => effCalls x ++ stmtCalls body
   | .mSetEval id x => effCalls x

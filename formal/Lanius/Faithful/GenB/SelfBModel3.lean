@@ -354,6 +354,334 @@ end
 
 noncomputable section
 
+def Cost_text_str : Nat → Nat
+  | 0 => 18446744073709551616
+  | n + 1 => ((Cost_single_of_usize n 114) + ((Cost_cons_of_usize n 116 ([114])) + (Cost_cons_of_usize n 115 (116 :: ([114])))))
+
+end
+
+noncomputable section
+
+def Cost_is_str_type : Nat → Nat → Lanius.Mini.CTree → Nat
+  | 0, x12, x25 => 18446744073709551616
+  | n + 1, x12, x25 => (if (decide ((Lanius.Mini.nodeProd x25) = Lanius.Mini.Inline.pTypeIdent)) = true then (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x25 1))) = Lanius.Mini.Inline.pTypeArgsNone)) = true then ((Cost_type_path_spellings n x12 (Lanius.Mini.kid ((Lanius.Mini.kid x25 0)) 0) (Lanius.Mini.kid ((Lanius.Mini.kid x25 0)) 1)) + ((Cost_text_str n ) + (Cost_single_of_mini_selfhost_List_usize n Lanius.Mini.textStr))) else 0) else 0)
+
+end
+
+noncomputable section
+
+def Cost_is_str_let : Nat → Nat → Lanius.Mini.FrontEnv → List Lanius.Mini.Local → Lanius.Mini.CTree → Nat
+  | 0, x11, x24, x39, x59 => 18446744073709551616
+  | n + 1, x11, x24, x39, x59 => (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x59 2))) = Lanius.Mini.Inline.pLetType)) = true then (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x59 3))) = Lanius.Mini.Inline.pLetInit)) = true then (if (!(Lanius.Mini.member x24.globals (((Lanius.Mini.kidToken x59 1).text)))) = true then (if (Lanius.Mini.freshId x39 ((((Lanius.Mini.kidToken x59 1).start) - x24.base))) = true then (Cost_is_str_type n x11 (Lanius.Mini.kid ((Lanius.Mini.kid x59 2)) 1)) else 0) else 0) else 0) else 0)
+
+end
+
+noncomputable section
+
+def Cost_string_cons : Nat → Bool → Nat → Option (List Nat) → Nat
+  | 0, x12, x22, x32 => 18446744073709551616
+  | n + 1, x12, x22, x32 => (if x12 = true then (match x32 with | some x199 => (Cost_cons_of_usize n x22 x199) | none => 0) else 0)
+
+end
+
+noncomputable section
+
+mutual
+def Cost_string_body : Nat → List Nat → Nat
+  | 0, x12 => 18446744073709551616
+  | n + 1, x12 => (match x12 with | [] => 0 | x126 :: x129 => (Cost_string_byte n x126 x129))
+termination_by structural fuel => fuel
+
+def Cost_string_byte : Nat → Nat → List Nat → Nat
+  | 0, x12, x23 => 18446744073709551616
+  | n + 1, x12, x23 => (match x23 with | [] => 0 | x161 :: x165 => ((Cost_string_body n x23) + (Cost_string_cons n (Lanius.Mini.plainStringByte x12) x12 (Lanius.Mini.stringBody x23))))
+termination_by structural fuel => fuel
+end
+
+end
+
+noncomputable section
+
+def Cost_string_open : Nat → Bool → List Nat → Nat
+  | 0, x12, x22 => 18446744073709551616
+  | n + 1, x12, x22 => (if x12 = true then (Cost_string_body n x22) else 0)
+
+end
+
+noncomputable section
+
+def Cost_string_literal : Nat → List Nat → Nat
+  | 0, x15 => 18446744073709551616
+  | n + 1, x15 => (match x15 with | [] => 0 | x133 :: x136 => (Cost_string_open n (decide (x133 = 34)) x136))
+
+end
+
+noncomputable section
+
+def Cost_string_primary : Nat → Lanius.Mini.CTree → Lanius.Mini.CTree → Nat
+  | 0, x15, x31 => 18446744073709551616
+  | n + 1, x15, x31 => (let k2 := (Cost_string_literal n (((Lanius.Mini.kidToken x15 0)).text)); let k3 := 0; (if (decide ((Lanius.Mini.nodeProd x15) = Lanius.Mini.Inline.pString)) = true then (if (decide ((Lanius.Mini.nodeProd x31) = Lanius.Mini.Inline.pPostfixEnd)) = true then k2 else k3) else k3))
+
+end
+
+noncomputable section
+
+def Cost_string_init : Nat → Nat → Lanius.Mini.CTree → Nat
+  | 0, x12, x25 => 18446744073709551616
+  | n + 1, x12, x25 => (match (Lanius.Mini.peel x12 x25) with | some x150 => (Cost_string_primary n (Lanius.Mini.kid x150 0) (Lanius.Mini.kid x150 1)) | none => 0)
+
+end
+
+noncomputable section
+
+def Cost_is_u8_slice : Nat → Option Lanius.Mini.Ty → Nat
+  | 0, x12 => 18446744073709551616
+  | n + 1, x12 => (match x12 with | some x110 => 1 | none => 0)
+
+end
+
+noncomputable section
+
+def Cost_text_typed_slice_from_raw_parts : Nat → Nat
+  | 0 => 18446744073709551616
+  | n + 1 => ((Cost_text_slice_from_raw_parts n ) + ((Cost_cons_of_usize n 95 Lanius.Mini.textSliceFromRawParts) + ((Cost_cons_of_usize n 100 (95 :: Lanius.Mini.textSliceFromRawParts)) + ((Cost_cons_of_usize n 101 (100 :: (95 :: Lanius.Mini.textSliceFromRawParts))) + ((Cost_cons_of_usize n 112 (101 :: (100 :: (95 :: Lanius.Mini.textSliceFromRawParts)))) + ((Cost_cons_of_usize n 121 (112 :: (101 :: (100 :: (95 :: Lanius.Mini.textSliceFromRawParts))))) + (Cost_cons_of_usize n 116 (121 :: (112 :: (101 :: (100 :: (95 :: Lanius.Mini.textSliceFromRawParts))))))))))))
+
+end
+
+noncomputable section
+
+def Cost_is_last_typed : Nat → List (List Nat) → Nat
+  | 0, x14 => 18446744073709551616
+  | n + 1, x14 => (match x14 with | [] => 0 | x106 :: x109 => (Cost_text_typed_slice_from_raw_parts n ))
+
+end
+
+noncomputable section
+
+def Cost_is_mem_typed : Nat → List (List Nat) → Nat
+  | 0, x13 => 18446744073709551616
+  | n + 1, x13 => (match x13 with | [] => 0 | x105 :: x108 => ((Cost_text_mem n ) + (if (Lanius.Mini.sameText x105 Lanius.Mini.textMem) = true then (Cost_is_last_typed n x108) else 0)))
+
+end
+
+noncomputable section
+
+def Cost_is_typed_slice_segments : Nat → List (List Nat) → Nat
+  | 0, x24 => 18446744073709551616
+  | n + 1, x24 => (match x24 with | [] => 0 | x116 :: x119 => ((Cost_text_core n ) + (if (Lanius.Mini.sameText x116 Lanius.Mini.textCore) = true then (Cost_is_mem_typed n x119) else 0)))
+
+end
+
+noncomputable section
+
+def Cost_u8_args : Nat → Nat → Lanius.Mini.FrontEnv → List Lanius.Mini.CTree → Nat
+  | 0, x8, x21, x36 => 18446744073709551616
+  | n + 1, x8, x21, x36 => (match x36 with | [] => 0 | x121 :: x124 => (if (Lanius.Mini.isEmptyTrees x124) = true then (Cost_arg_ty n x8 x21 x121) else 0))
+
+end
+
+noncomputable section
+
+def Pre_u8_args : Nat → Nat → Lanius.Mini.FrontEnv → List Lanius.Mini.CTree → Nat → Prop
+  | 0, x8, x21, x36, b => True
+  | n + 1, x8, x21, x36, b => (match x36 with | [] => True | x121 :: x124 => (if (Lanius.Mini.isEmptyTrees x124) = true then (Pre_arg_ty n x8 x21 x121 b) else True))
+
+end
+
+noncomputable section
+
+def Cost_is_typed_slice_path : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.CTree → Nat
+  | 0, x20, x33, x48 => 18446744073709551616
+  | n + 1, x20, x33, x48 => ((Cost_path_ref n x20 (Lanius.Mini.kid x48 0) (Lanius.Mini.kid x48 1)) + (match (Lanius.Mini.pathRef x20 ((Lanius.Mini.kid x48 0)) ((Lanius.Mini.kid x48 1))) with | some x171 => ((Cost_is_typed_slice_segments n x171.segments) + (if (Lanius.Mini.isTypedSliceSegments x171.segments) = true then (Cost_u8_args n x20 x33 x171.targs) else 0)) | none => 0))
+
+end
+
+noncomputable section
+
+def Pre_is_typed_slice_path : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.CTree → Nat → Prop
+  | 0, x20, x33, x48, b => True
+  | n + 1, x20, x33, x48, b => (∀ b1 : Nat, (Cost_path_ref n x20 (Lanius.Mini.kid x48 0) (Lanius.Mini.kid x48 1)) < b → b1 = b - (Cost_path_ref n x20 (Lanius.Mini.kid x48 0) (Lanius.Mini.kid x48 1)) → (match (Lanius.Mini.pathRef x20 ((Lanius.Mini.kid x48 0)) ((Lanius.Mini.kid x48 1))) with | some x171 => (∀ b2 : Nat, (Cost_is_typed_slice_segments n x171.segments) < b1 → b2 = b1 - (Cost_is_typed_slice_segments n x171.segments) → (if (Lanius.Mini.isTypedSliceSegments x171.segments) = true then (Pre_u8_args n x20 x33 x171.targs b2) else True)) | none => True))
+
+end
+
+noncomputable section
+
+def Cost_string_slice : Nat → Bool → Option Lanius.Mini.SrcExpr → Nat → List Nat → Nat → Nat
+  | 0, x13, x23, x62, x73, x93 => 18446744073709551616
+  | n + 1, x13, x23, x62, x73, x93 => (if x13 = true then (match x23 with | some x229 => (1 + 1) | none => 0) else 0)
+
+end
+
+noncomputable section
+
+def Cost_text_string_data_ptr : Nat → Nat
+  | 0 => 18446744073709551616
+  | n + 1 => ((Cost_single_of_usize n 114) + ((Cost_cons_of_usize n 116 ([114])) + ((Cost_cons_of_usize n 112 (116 :: ([114]))) + ((Cost_cons_of_usize n 95 (112 :: (116 :: ([114])))) + ((Cost_cons_of_usize n 97 (95 :: (112 :: (116 :: ([114]))))) + ((Cost_cons_of_usize n 116 (97 :: (95 :: (112 :: (116 :: ([114])))))) + ((Cost_cons_of_usize n 97 (116 :: (97 :: (95 :: (112 :: (116 :: ([114]))))))) + ((Cost_cons_of_usize n 100 (97 :: (116 :: (97 :: (95 :: (112 :: (116 :: ([114])))))))) + ((Cost_cons_of_usize n 95 (100 :: (97 :: (116 :: (97 :: (95 :: (112 :: (116 :: ([114]))))))))) + ((Cost_cons_of_usize n 103 (95 :: (100 :: (97 :: (116 :: (97 :: (95 :: (112 :: (116 :: ([114])))))))))) + ((Cost_cons_of_usize n 110 (103 :: (95 :: (100 :: (97 :: (116 :: (97 :: (95 :: (112 :: (116 :: ([114]))))))))))) + ((Cost_cons_of_usize n 105 (110 :: (103 :: (95 :: (100 :: (97 :: (116 :: (97 :: (95 :: (112 :: (116 :: ([114])))))))))))) + ((Cost_cons_of_usize n 114 (105 :: (110 :: (103 :: (95 :: (100 :: (97 :: (116 :: (97 :: (95 :: (112 :: (116 :: ([114]))))))))))))) + ((Cost_cons_of_usize n 116 (114 :: (105 :: (110 :: (103 :: (95 :: (100 :: (97 :: (116 :: (97 :: (95 :: (112 :: (116 :: ([114])))))))))))))) + (Cost_cons_of_usize n 115 (116 :: (114 :: (105 :: (110 :: (103 :: (95 :: (100 :: (97 :: (116 :: (97 :: (95 :: (112 :: (116 :: ([114])))))))))))))))))))))))))))))
+
+end
+
+noncomputable section
+
+def Cost_string_data_ptr_path : Nat → Nat
+  | 0 => 18446744073709551616
+  | n + 1 => ((Cost_text_core n ) + ((Cost_text_mem n ) + ((Cost_text_string_data_ptr n ) + ((Cost_single_of_mini_selfhost_List_usize n Lanius.Mini.textStringDataPtr) + ((Cost_cons_of_mini_selfhost_List_usize n Lanius.Mini.textMem ([Lanius.Mini.textStringDataPtr])) + (Cost_cons_of_mini_selfhost_List_usize n Lanius.Mini.textCore (Lanius.Mini.textMem :: ([Lanius.Mini.textStringDataPtr]))))))))
+
+end
+
+noncomputable section
+
+def Cost_is_data_ptr_of : Nat → Nat → Lanius.Mini.CTree → List Nat → Nat
+  | 0, x15, x28, x38 => 18446744073709551616
+  | n + 1, x15, x28, x38 => (match (Lanius.Mini.peel x15 x28) with | some x138 => (if (Lanius.Mini.isPathCall x138) = true then ((Cost_path_spellings n x15 (Lanius.Mini.kid ((Lanius.Mini.kid ((Lanius.Mini.kid x138 0)) 0)) 0) (Lanius.Mini.kid ((Lanius.Mini.kid ((Lanius.Mini.kid x138 0)) 0)) 1)) + ((Cost_string_data_ptr_path n ) + (if (Lanius.Mini.isPath ((Lanius.Mini.pathSpellings x15 ((Lanius.Mini.kid ((Lanius.Mini.kid ((Lanius.Mini.kid x138 0)) 0)) 0)) ((Lanius.Mini.kid ((Lanius.Mini.kid ((Lanius.Mini.kid x138 0)) 0)) 1)))) Lanius.Mini.stringDataPtrPath) = true then (Cost_list_items n x15 (Lanius.Mini.kid ((Lanius.Mini.kid x138 1)) 1)) else 0))) else 0) | none => 0)
+
+end
+
+noncomputable section
+
+def Cost_int_primary : Nat → Lanius.Mini.CTree → Lanius.Mini.CTree → Nat
+  | 0, x12, x28 => 18446744073709551616
+  | n + 1, x12, x28 => (let k2 := (Cost_int_literal n (((Lanius.Mini.kidToken x12 0)).text)); let k3 := 0; (if (decide ((Lanius.Mini.nodeProd x12) = Lanius.Mini.Inline.pInt)) = true then (if (decide ((Lanius.Mini.nodeProd x28) = Lanius.Mini.Inline.pPostfixEnd)) = true then k2 else k3) else k3))
+
+end
+
+noncomputable section
+
+def Pre_int_primary : Nat → Lanius.Mini.CTree → Lanius.Mini.CTree → Nat → Prop
+  | 0, x12, x28, b => True
+  | n + 1, x12, x28, b => (let k3 := fun (b1 : Nat) => (Pre_int_literal n (((Lanius.Mini.kidToken x12 0)).text) b1); let k4 := fun (b1 : Nat) => True; (if (decide ((Lanius.Mini.nodeProd x12) = Lanius.Mini.Inline.pInt)) = true then (if (decide ((Lanius.Mini.nodeProd x28) = Lanius.Mini.Inline.pPostfixEnd)) = true then (k3 b) else (k4 b)) else (k4 b)))
+
+end
+
+noncomputable section
+
+def Cost_int_tree : Nat → Nat → Lanius.Mini.CTree → Nat
+  | 0, x9, x22 => 18446744073709551616
+  | n + 1, x9, x22 => (match (Lanius.Mini.peel x9 x22) with | some x137 => (Cost_int_primary n (Lanius.Mini.kid x137 0) (Lanius.Mini.kid x137 1)) | none => 0)
+
+end
+
+noncomputable section
+
+def Pre_int_tree : Nat → Nat → Lanius.Mini.CTree → Nat → Prop
+  | 0, x9, x22, b => True
+  | n + 1, x9, x22, b => (match (Lanius.Mini.peel x9 x22) with | some x137 => (Pre_int_primary n (Lanius.Mini.kid x137 0) (Lanius.Mini.kid x137 1) b) | none => True)
+
+end
+
+noncomputable section
+
+def Cost_string_args : Nat → Nat → Option (List Lanius.Mini.CTree) → Nat → List Nat → List Nat → Nat → Nat
+  | 0, x12, x25, x67, x78, x97, x117 => 18446744073709551616
+  | n + 1, x12, x25, x67, x78, x97, x117 => (match x25 with | some x226 => (match x226 with | [] => 0 | x288 :: x291 => (match x291 with | [] => 0 | x368 :: x371 => (if (Lanius.Mini.isEmptyTrees x371) = true then ((Cost_is_data_ptr_of n x12 x288 x78) + ((Cost_int_tree n x12 x368) + (Cost_string_slice n (Lanius.Mini.isDataPtrOf x12 x288 x78) (Lanius.Mini.intTree x12 x368) x67 x97 x117))) else ((Cost_int_tree n x12 x368) + (Cost_string_slice n false (Lanius.Mini.intTree x12 x368) x67 x97 x117))))) | none => 0)
+
+end
+
+noncomputable section
+
+def Pre_string_args : Nat → Nat → Option (List Lanius.Mini.CTree) → Nat → List Nat → List Nat → Nat → Nat → Prop
+  | 0, x12, x25, x67, x78, x97, x117, b => True
+  | n + 1, x12, x25, x67, x78, x97, x117, b => (match x25 with | some x226 => (match x226 with | [] => True | x288 :: x291 => (match x291 with | [] => True | x368 :: x371 => (if (Lanius.Mini.isEmptyTrees x371) = true then (∀ b3 : Nat, (Cost_is_data_ptr_of n x12 x288 x78) < b → b3 = b - (Cost_is_data_ptr_of n x12 x288 x78) → (Pre_int_tree n x12 x368 b3)) else (Pre_int_tree n x12 x368 b)))) | none => True)
+
+end
+
+noncomputable section
+
+def Cost_string_call : Nat → Nat → Lanius.Mini.FrontEnv → Nat → List Nat → List Nat → Nat → Lanius.Mini.CTree → Nat
+  | 0, x12, x25, x40, x51, x70, x90, x104 => 18446744073709551616
+  | n + 1, x12, x25, x40, x51, x70, x90, x104 => (let k2 := ((Cost_list_items n x12 (Lanius.Mini.kid ((Lanius.Mini.kid x104 1)) 1)) + (Cost_string_args n x12 (Lanius.Mini.listItems x12 ((Lanius.Mini.kid ((Lanius.Mini.kid x104 1)) 1))) x40 x51 x70 x90)); let k3 := 0; (if (Lanius.Mini.isPathCall x104) = true then ((Cost_is_typed_slice_path n x12 x25 (Lanius.Mini.kid ((Lanius.Mini.kid x104 0)) 0)) + (if (Lanius.Mini.isTypedSlicePath x12 x25 ((Lanius.Mini.kid ((Lanius.Mini.kid x104 0)) 0))) = true then k2 else k3)) else k3))
+
+end
+
+noncomputable section
+
+def Pre_string_call : Nat → Nat → Lanius.Mini.FrontEnv → Nat → List Nat → List Nat → Nat → Lanius.Mini.CTree → Nat → Prop
+  | 0, x12, x25, x40, x51, x70, x90, x104, b => True
+  | n + 1, x12, x25, x40, x51, x70, x90, x104, b => (let k4 := fun (b1 : Nat) => (∀ b2 : Nat, (Cost_list_items n x12 (Lanius.Mini.kid ((Lanius.Mini.kid x104 1)) 1)) < b1 → b2 = b1 - (Cost_list_items n x12 (Lanius.Mini.kid ((Lanius.Mini.kid x104 1)) 1)) → (Pre_string_args n x12 (Lanius.Mini.listItems x12 ((Lanius.Mini.kid ((Lanius.Mini.kid x104 1)) 1))) x40 x51 x70 x90 b2)); let k5 := fun (b1 : Nat) => True; (if (Lanius.Mini.isPathCall x104) = true then ((Pre_is_typed_slice_path n x12 x25 (Lanius.Mini.kid ((Lanius.Mini.kid x104 0)) 0) b) ∧ (∀ b6 : Nat, (Cost_is_typed_slice_path n x12 x25 (Lanius.Mini.kid ((Lanius.Mini.kid x104 0)) 0)) < b → b6 = b - (Cost_is_typed_slice_path n x12 x25 (Lanius.Mini.kid ((Lanius.Mini.kid x104 0)) 0)) → (if (Lanius.Mini.isTypedSlicePath x12 x25 ((Lanius.Mini.kid ((Lanius.Mini.kid x104 0)) 0))) = true then (k4 b6) else (k5 b6)))) else (k5 b)))
+
+end
+
+noncomputable section
+
+def Cost_string_peeled : Nat → Nat → Lanius.Mini.FrontEnv → Nat → List Nat → List Nat → Nat → Option Lanius.Mini.CTree → Nat
+  | 0, x14, x27, x42, x53, x72, x92, x106 => 18446744073709551616
+  | n + 1, x14, x27, x42, x53, x72, x92, x106 => (match x106 with | some x229 => (Cost_string_call n x14 x27 x42 x53 x72 x92 x229) | none => 0)
+
+end
+
+noncomputable section
+
+def Pre_string_peeled : Nat → Nat → Lanius.Mini.FrontEnv → Nat → List Nat → List Nat → Nat → Option Lanius.Mini.CTree → Nat → Prop
+  | 0, x14, x27, x42, x53, x72, x92, x106, b => True
+  | n + 1, x14, x27, x42, x53, x72, x92, x106, b => (match x106 with | some x229 => (Pre_string_call n x14 x27 x42 x53 x72 x92 x229 b) | none => True)
+
+end
+
+noncomputable section
+
+def Cost_string_value : Nat → Nat → Lanius.Mini.FrontEnv → Nat → List Nat → List Nat → Lanius.Mini.CTree → Nat
+  | 0, x13, x26, x41, x52, x71, x91 => 18446744073709551616
+  | n + 1, x13, x26, x41, x52, x71, x91 => ((Cost_tree_tokens n x91) + (match (Lanius.Mini.treeTokens x91) with | [] => 0 | x204 :: x211 => (Cost_string_peeled n x13 x26 x41 x52 x71 (x204.start - x26.base) (Lanius.Mini.peel x13 x91))))
+
+end
+
+noncomputable section
+
+def Pre_string_value : Nat → Nat → Lanius.Mini.FrontEnv → Nat → List Nat → List Nat → Lanius.Mini.CTree → Nat → Prop
+  | 0, x13, x26, x41, x52, x71, x91, b => True
+  | n + 1, x13, x26, x41, x52, x71, x91, b => (∀ b1 : Nat, (Cost_tree_tokens n x91) < b → b1 = b - (Cost_tree_tokens n x91) → (match (Lanius.Mini.treeTokens x91) with | [] => True | x204 :: x211 => (Pre_string_peeled n x13 x26 x41 x52 x71 (x204.start - x26.base) (Lanius.Mini.peel x13 x91) b1)))
+
+end
+
+noncomputable section
+
+def Cost_string_return : Nat → Nat → Lanius.Mini.FrontEnv → Nat → List Nat → List Nat → Lanius.Mini.CTree → Nat
+  | 0, x14, x27, x42, x53, x72, x92 => 18446744073709551616
+  | n + 1, x14, x27, x42, x53, x72, x92 => (let k2 := (Cost_string_value n x14 x27 x42 x53 x72 (Lanius.Mini.kid ((Lanius.Mini.kid x92 1)) 0)); let k3 := 0; (if (decide ((Lanius.Mini.nodeProd x92) = Lanius.Mini.Inline.pReturnStmt)) = true then (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x92 1))) = Lanius.Mini.Inline.pReturnValue)) = true then ((Cost_is_u8_slice n x27.ret) + (if (Lanius.Mini.isU8Slice x27.ret) = true then k2 else k3)) else k3) else k3))
+
+end
+
+noncomputable section
+
+def Pre_string_return : Nat → Nat → Lanius.Mini.FrontEnv → Nat → List Nat → List Nat → Lanius.Mini.CTree → Nat → Prop
+  | 0, x14, x27, x42, x53, x72, x92, b => True
+  | n + 1, x14, x27, x42, x53, x72, x92, b => (let k3 := fun (b1 : Nat) => (Pre_string_value n x14 x27 x42 x53 x72 (Lanius.Mini.kid ((Lanius.Mini.kid x92 1)) 0) b1); let k4 := fun (b1 : Nat) => True; (if (decide ((Lanius.Mini.nodeProd x92) = Lanius.Mini.Inline.pReturnStmt)) = true then (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x92 1))) = Lanius.Mini.Inline.pReturnValue)) = true then (∀ b6 : Nat, (Cost_is_u8_slice n x27.ret) < b → b6 = b - (Cost_is_u8_slice n x27.ret) → (if (Lanius.Mini.isU8Slice x27.ret) = true then (k3 b6) else (k4 b6))) else (k4 b)) else (k4 b)))
+
+end
+
+noncomputable section
+
+def Cost_string_last : Nat → Nat → Lanius.Mini.FrontEnv → Nat → List Nat → List Nat → List Lanius.Mini.CTree → Nat
+  | 0, x12, x25, x40, x51, x70, x90 => 18446744073709551616
+  | n + 1, x12, x25, x40, x51, x70, x90 => (match x90 with | [] => 0 | x202 :: x205 => (match x205 with | [] => (Cost_string_return n x12 x25 x40 x51 x70 x202) | x318 :: x321 => 0))
+
+end
+
+noncomputable section
+
+def Pre_string_last : Nat → Nat → Lanius.Mini.FrontEnv → Nat → List Nat → List Nat → List Lanius.Mini.CTree → Nat → Prop
+  | 0, x12, x25, x40, x51, x70, x90, b => True
+  | n + 1, x12, x25, x40, x51, x70, x90, b => (match x90 with | [] => True | x202 :: x205 => (match x205 with | [] => (Pre_string_return n x12 x25 x40 x51 x70 x202 b) | x318 :: x321 => True))
+
+end
+
+noncomputable section
+
+def Cost_string_let : Nat → Nat → Lanius.Mini.FrontEnv → Nat → List Nat → Lanius.Mini.CTree → List Lanius.Mini.CTree → Nat
+  | 0, x11, x24, x39, x50, x69, x82 => 18446744073709551616
+  | n + 1, x11, x24, x39, x50, x69, x82 => ((Cost_string_init n x11 x69) + (match (Lanius.Mini.stringInit x11 x69) with | some x214 => (Cost_string_last n x11 x24 x39 x50 x214 x82) | none => 0))
+
+end
+
+noncomputable section
+
+def Pre_string_let : Nat → Nat → Lanius.Mini.FrontEnv → Nat → List Nat → Lanius.Mini.CTree → List Lanius.Mini.CTree → Nat → Prop
+  | 0, x11, x24, x39, x50, x69, x82, b => True
+  | n + 1, x11, x24, x39, x50, x69, x82, b => (∀ b1 : Nat, (Cost_string_init n x11 x69) < b → b1 = b - (Cost_string_init n x11 x69) → (match (Lanius.Mini.stringInit x11 x69) with | some x214 => (Pre_string_last n x11 x24 x39 x50 x214 x82 b1) | none => True))
+
+end
+
+noncomputable section
+
 def Cost_lit_wanted : Nat → Nat → Lanius.Mini.FrontEnv → List Lanius.Mini.Local → Lanius.Mini.CTree → Nat
   | 0, x11, x24, x39, x59 => 18446744073709551616
   | n + 1, x11, x24, x39, x59 => (Cost_list_items n x11 (Lanius.Mini.kid x59 5))
@@ -1534,7 +1862,7 @@ termination_by structural fuel => fuel
 
 def Cost_let_first : Nat → Nat → Lanius.Mini.FrontEnv → List Lanius.Mini.Local → Lanius.Mini.CTree → List Lanius.Mini.CTree → Nat
   | 0, x10, x23, x38, x58, x68 => 18446744073709551616
-  | n + 1, x10, x23, x38, x58, x68 => (if (decide (x10 = 0)) = true then 0 else (let k11 := ((Cost_ty_of n x10 x23 (Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1)) + (match (Lanius.Mini.tyOf x10 x23 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1))) with | some x531 => ((Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x531) x38) + ((Cost_stmts_of n (x10 - 1) x23 ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x531) :: x38) x68) + (Cost_lit_let_of n (x10 - 1) x23 x38 (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x531) (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1) (Lanius.Mini.stmtsOf ((x10 - 1)) x23 (((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x531) :: x38)) x68)))) | none => 0)); let k12 := (let k9 := ((Cost_ty_of n x10 x23 (Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1)) + (match (Lanius.Mini.tyOf x10 x23 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1))) with | some x1109 => ((Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1109) x38) + ((Cost_stmts_of n (x10 - 1) x23 ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1109) :: x38) x68) + (Cost_let_match_of n (x10 - 1) x23 x38 (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1109) (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1) (Lanius.Mini.stmtsOf ((x10 - 1)) x23 (((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1109) :: x38)) x68)))) | none => 0)); let k10 := (let k7 := ((Cost_ty_of n x10 x23 (Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1)) + (match (Lanius.Mini.tyOf x10 x23 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1))) with | some x1646 => ((Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1646) x38) + ((Cost_let_head_or_eval n (x10 - 1) x23 x38 x1646 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)) + ((Cost_view_read n (x10 - 1) x23 ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1646) :: x38) (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1646) (Lanius.Mini.letHeadOrEval ((x10 - 1)) x23 x38 x1646 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1))) x68) + (match (Lanius.Mini.viewRead ((x10 - 1)) x23 (((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1646) :: x38)) ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1646)) ((Lanius.Mini.letHeadOrEval ((x10 - 1)) x23 x38 x1646 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)))) x68) with | some x1931 => ((Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1646) x38) + ((Cost_cons_of_mini_selfhost_Local n x1931.pointer ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1646) :: x38)) + ((Cost_stmts_of n (x10 - 1) x23 (x1931.pointer :: ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1646) :: x38)) x1931.more) + (Cost_view_stmt n (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1931.length x1931.fields x1931.pointer.id (Lanius.Mini.stmtsOf ((x10 - 1)) x23 ((x1931.pointer :: ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1646) :: x38))) x1931.more))))) | none => ((Cost_let_head_or_eval n (x10 - 1) x23 x38 x1646 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)) + ((Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1646) x38) + ((Cost_stmts_of n (x10 - 1) x23 ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1646) :: x38) x68) + (Cost_let_of n (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1646 (Lanius.Mini.letHeadOrEval ((x10 - 1)) x23 x38 x1646 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1))) (Lanius.Mini.stmtsOf ((x10 - 1)) x23 (((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1646) :: x38)) x68))))))))) | none => 0)); let k8 := (let k5 := ((Cost_untyped_head n (x10 - 1) x23 x38 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)) + (match (Lanius.Mini.untypedHead ((x10 - 1)) x23 x38 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1))) with | some x2724 => ((Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x2724.ty) x38) + ((Cost_stmts_of n (x10 - 1) x23 ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x2724.ty) :: x38) x68) + (Cost_let_body n (((Lanius.Mini.kidToken x58 1).start) - x23.base) x2724.ty x2724.head (Lanius.Mini.stmtsOf ((x10 - 1)) x23 (((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x2724.ty) :: x38)) x68)))) | none => 0)); let k6 := 0; (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x58 2))) = Lanius.Mini.Inline.pLetTypeNone)) = true then (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x58 3))) = Lanius.Mini.Inline.pLetInit)) = true then (if (!(Lanius.Mini.member x23.globals (((Lanius.Mini.kidToken x58 1).text)))) = true then (if (Lanius.Mini.freshId x38 ((((Lanius.Mini.kidToken x58 1).start) - x23.base))) = true then k5 else k6) else k6) else k6) else k6)); (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x58 2))) = Lanius.Mini.Inline.pLetType)) = true then (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x58 3))) = Lanius.Mini.Inline.pLetInit)) = true then (if (!(Lanius.Mini.member x23.globals (((Lanius.Mini.kidToken x58 1).text)))) = true then (if (Lanius.Mini.freshId x38 ((((Lanius.Mini.kidToken x58 1).start) - x23.base))) = true then k7 else k8) else k8) else k8) else k8)); (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x58 2))) = Lanius.Mini.Inline.pLetType)) = true then (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x58 3))) = Lanius.Mini.Inline.pLetInit)) = true then (if (!(Lanius.Mini.member x23.globals (((Lanius.Mini.kidToken x58 1).text)))) = true then (if (Lanius.Mini.freshId x38 ((((Lanius.Mini.kidToken x58 1).start) - x23.base))) = true then ((Cost_is_block_match n x10 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)) + (if (Lanius.Mini.isBlockMatch x10 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1))) = true then k9 else k10)) else k10) else k10) else k10) else k10)); (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x58 2))) = Lanius.Mini.Inline.pLetType)) = true then (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x58 3))) = Lanius.Mini.Inline.pLetInit)) = true then (if (!(Lanius.Mini.member x23.globals (((Lanius.Mini.kidToken x58 1).text)))) = true then (if (Lanius.Mini.freshId x38 ((((Lanius.Mini.kidToken x58 1).start) - x23.base))) = true then ((Cost_is_lit_init n x10 x23 x38 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)) + (if (Lanius.Mini.isLitInit x10 x23 x38 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1))) = true then k11 else k12)) else k12) else k12) else k12) else k12)))
+  | n + 1, x10, x23, x38, x58, x68 => (if (decide (x10 = 0)) = true then 0 else ((Cost_is_str_let n x10 x23 x38 x58) + (if (Lanius.Mini.isStrLet x10 x23 x38 x58) = true then (Cost_string_let n (x10 - 1) x23 (((Lanius.Mini.kidToken x58 1).start) - x23.base) ((Lanius.Mini.kidToken x58 1).text) (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1) x68) else (let k11 := ((Cost_ty_of n x10 x23 (Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1)) + (match (Lanius.Mini.tyOf x10 x23 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1))) with | some x691 => ((Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x691) x38) + ((Cost_stmts_of n (x10 - 1) x23 ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x691) :: x38) x68) + (Cost_lit_let_of n (x10 - 1) x23 x38 (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x691) (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1) (Lanius.Mini.stmtsOf ((x10 - 1)) x23 (((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x691) :: x38)) x68)))) | none => 0)); let k12 := (let k9 := ((Cost_ty_of n x10 x23 (Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1)) + (match (Lanius.Mini.tyOf x10 x23 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1))) with | some x1269 => ((Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1269) x38) + ((Cost_stmts_of n (x10 - 1) x23 ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1269) :: x38) x68) + (Cost_let_match_of n (x10 - 1) x23 x38 (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1269) (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1) (Lanius.Mini.stmtsOf ((x10 - 1)) x23 (((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1269) :: x38)) x68)))) | none => 0)); let k10 := (let k7 := ((Cost_ty_of n x10 x23 (Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1)) + (match (Lanius.Mini.tyOf x10 x23 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1))) with | some x1806 => ((Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1806) x38) + ((Cost_let_head_or_eval n (x10 - 1) x23 x38 x1806 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)) + ((Cost_view_read n (x10 - 1) x23 ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1806) :: x38) (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1806) (Lanius.Mini.letHeadOrEval ((x10 - 1)) x23 x38 x1806 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1))) x68) + (match (Lanius.Mini.viewRead ((x10 - 1)) x23 (((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1806) :: x38)) ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1806)) ((Lanius.Mini.letHeadOrEval ((x10 - 1)) x23 x38 x1806 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)))) x68) with | some x2091 => ((Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1806) x38) + ((Cost_cons_of_mini_selfhost_Local n x2091.pointer ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1806) :: x38)) + ((Cost_stmts_of n (x10 - 1) x23 (x2091.pointer :: ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1806) :: x38)) x2091.more) + (Cost_view_stmt n (((Lanius.Mini.kidToken x58 1).start) - x23.base) x2091.length x2091.fields x2091.pointer.id (Lanius.Mini.stmtsOf ((x10 - 1)) x23 ((x2091.pointer :: ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1806) :: x38))) x2091.more))))) | none => ((Cost_let_head_or_eval n (x10 - 1) x23 x38 x1806 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)) + ((Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1806) x38) + ((Cost_stmts_of n (x10 - 1) x23 ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1806) :: x38) x68) + (Cost_let_of n (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1806 (Lanius.Mini.letHeadOrEval ((x10 - 1)) x23 x38 x1806 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1))) (Lanius.Mini.stmtsOf ((x10 - 1)) x23 (((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1806) :: x38)) x68))))))))) | none => 0)); let k8 := (let k5 := ((Cost_untyped_head n (x10 - 1) x23 x38 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)) + (match (Lanius.Mini.untypedHead ((x10 - 1)) x23 x38 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1))) with | some x2884 => ((Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x2884.ty) x38) + ((Cost_stmts_of n (x10 - 1) x23 ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x2884.ty) :: x38) x68) + (Cost_let_body n (((Lanius.Mini.kidToken x58 1).start) - x23.base) x2884.ty x2884.head (Lanius.Mini.stmtsOf ((x10 - 1)) x23 (((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x2884.ty) :: x38)) x68)))) | none => 0)); let k6 := 0; (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x58 2))) = Lanius.Mini.Inline.pLetTypeNone)) = true then (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x58 3))) = Lanius.Mini.Inline.pLetInit)) = true then (if (!(Lanius.Mini.member x23.globals (((Lanius.Mini.kidToken x58 1).text)))) = true then (if (Lanius.Mini.freshId x38 ((((Lanius.Mini.kidToken x58 1).start) - x23.base))) = true then k5 else k6) else k6) else k6) else k6)); (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x58 2))) = Lanius.Mini.Inline.pLetType)) = true then (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x58 3))) = Lanius.Mini.Inline.pLetInit)) = true then (if (!(Lanius.Mini.member x23.globals (((Lanius.Mini.kidToken x58 1).text)))) = true then (if (Lanius.Mini.freshId x38 ((((Lanius.Mini.kidToken x58 1).start) - x23.base))) = true then k7 else k8) else k8) else k8) else k8)); (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x58 2))) = Lanius.Mini.Inline.pLetType)) = true then (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x58 3))) = Lanius.Mini.Inline.pLetInit)) = true then (if (!(Lanius.Mini.member x23.globals (((Lanius.Mini.kidToken x58 1).text)))) = true then (if (Lanius.Mini.freshId x38 ((((Lanius.Mini.kidToken x58 1).start) - x23.base))) = true then ((Cost_is_block_match n x10 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)) + (if (Lanius.Mini.isBlockMatch x10 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1))) = true then k9 else k10)) else k10) else k10) else k10) else k10)); (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x58 2))) = Lanius.Mini.Inline.pLetType)) = true then (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x58 3))) = Lanius.Mini.Inline.pLetInit)) = true then (if (!(Lanius.Mini.member x23.globals (((Lanius.Mini.kidToken x58 1).text)))) = true then (if (Lanius.Mini.freshId x38 ((((Lanius.Mini.kidToken x58 1).start) - x23.base))) = true then ((Cost_is_lit_init n x10 x23 x38 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)) + (if (Lanius.Mini.isLitInit x10 x23 x38 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1))) = true then k11 else k12)) else k12) else k12) else k12) else k12)))))
 termination_by structural fuel => fuel
 
 def Cost_stmt_of : Nat → Nat → Lanius.Mini.FrontEnv → List Lanius.Mini.Local → Lanius.Mini.CTree → Nat
@@ -1650,7 +1978,7 @@ termination_by structural fuel => fuel
 
 def Pre_let_first : Nat → Nat → Lanius.Mini.FrontEnv → List Lanius.Mini.Local → Lanius.Mini.CTree → List Lanius.Mini.CTree → Nat → Prop
   | 0, x10, x23, x38, x58, x68, b => True
-  | n + 1, x10, x23, x38, x58, x68, b => (if (decide (x10 = 0)) = true then True else (let k43 := fun (b1 : Nat) => ((Pre_ty_of n x10 x23 (Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1) b1) ∧ (∀ b2 : Nat, (Cost_ty_of n x10 x23 (Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1)) < b1 → b2 = b1 - (Cost_ty_of n x10 x23 (Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1)) → (match (Lanius.Mini.tyOf x10 x23 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1))) with | some x531 => (∀ b3 : Nat, (Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x531) x38) < b2 → b3 = b2 - (Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x531) x38) → ((Pre_stmts_of n (x10 - 1) x23 ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x531) :: x38) x68 b3) ∧ (∀ b4 : Nat, (Cost_stmts_of n (x10 - 1) x23 ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x531) :: x38) x68) < b3 → b4 = b3 - (Cost_stmts_of n (x10 - 1) x23 ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x531) :: x38) x68) → (Pre_lit_let_of n (x10 - 1) x23 x38 (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x531) (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1) (Lanius.Mini.stmtsOf ((x10 - 1)) x23 (((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x531) :: x38)) x68) b4)))) | none => True))); let k44 := fun (b1 : Nat) => (let k33 := fun (b6 : Nat) => ((Pre_ty_of n x10 x23 (Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1) b6) ∧ (∀ b7 : Nat, (Cost_ty_of n x10 x23 (Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1)) < b6 → b7 = b6 - (Cost_ty_of n x10 x23 (Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1)) → (match (Lanius.Mini.tyOf x10 x23 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1))) with | some x1109 => (∀ b8 : Nat, (Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1109) x38) < b7 → b8 = b7 - (Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1109) x38) → ((Pre_stmts_of n (x10 - 1) x23 ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1109) :: x38) x68 b8) ∧ (∀ b9 : Nat, (Cost_stmts_of n (x10 - 1) x23 ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1109) :: x38) x68) < b8 → b9 = b8 - (Cost_stmts_of n (x10 - 1) x23 ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1109) :: x38) x68) → (Pre_let_match_of n (x10 - 1) x23 x38 (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1109) (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1) (Lanius.Mini.stmtsOf ((x10 - 1)) x23 (((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1109) :: x38)) x68) b9)))) | none => True))); let k34 := fun (b6 : Nat) => (let k31 := fun (b11 : Nat) => ((Pre_ty_of n x10 x23 (Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1) b11) ∧ (∀ b12 : Nat, (Cost_ty_of n x10 x23 (Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1)) < b11 → b12 = b11 - (Cost_ty_of n x10 x23 (Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1)) → (match (Lanius.Mini.tyOf x10 x23 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1))) with | some x1646 => (∀ b13 : Nat, (Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1646) x38) < b12 → b13 = b12 - (Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1646) x38) → ((Pre_let_head_or_eval n (x10 - 1) x23 x38 x1646 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1) b13) ∧ (∀ b14 : Nat, (Cost_let_head_or_eval n (x10 - 1) x23 x38 x1646 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)) < b13 → b14 = b13 - (Cost_let_head_or_eval n (x10 - 1) x23 x38 x1646 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)) → ((Pre_view_read n (x10 - 1) x23 ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1646) :: x38) (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1646) (Lanius.Mini.letHeadOrEval ((x10 - 1)) x23 x38 x1646 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1))) x68 b14) ∧ (∀ b15 : Nat, (Cost_view_read n (x10 - 1) x23 ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1646) :: x38) (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1646) (Lanius.Mini.letHeadOrEval ((x10 - 1)) x23 x38 x1646 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1))) x68) < b14 → b15 = b14 - (Cost_view_read n (x10 - 1) x23 ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1646) :: x38) (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1646) (Lanius.Mini.letHeadOrEval ((x10 - 1)) x23 x38 x1646 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1))) x68) → (match (Lanius.Mini.viewRead ((x10 - 1)) x23 (((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1646) :: x38)) ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1646)) ((Lanius.Mini.letHeadOrEval ((x10 - 1)) x23 x38 x1646 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)))) x68) with | some x1931 => (∀ b16 : Nat, (Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1646) x38) < b15 → b16 = b15 - (Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1646) x38) → (∀ b17 : Nat, (Cost_cons_of_mini_selfhost_Local n x1931.pointer ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1646) :: x38)) < b16 → b17 = b16 - (Cost_cons_of_mini_selfhost_Local n x1931.pointer ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1646) :: x38)) → (Pre_stmts_of n (x10 - 1) x23 (x1931.pointer :: ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1646) :: x38)) x1931.more b17))) | none => ((Pre_let_head_or_eval n (x10 - 1) x23 x38 x1646 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1) b15) ∧ (∀ b20 : Nat, (Cost_let_head_or_eval n (x10 - 1) x23 x38 x1646 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)) < b15 → b20 = b15 - (Cost_let_head_or_eval n (x10 - 1) x23 x38 x1646 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)) → (∀ b21 : Nat, (Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1646) x38) < b20 → b21 = b20 - (Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1646) x38) → (Pre_stmts_of n (x10 - 1) x23 ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1646) :: x38) x68 b21)))))))))) | none => True))); let k32 := fun (b11 : Nat) => (let k29 := fun (b24 : Nat) => ((Pre_untyped_head n (x10 - 1) x23 x38 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1) b24) ∧ (∀ b25 : Nat, (Cost_untyped_head n (x10 - 1) x23 x38 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)) < b24 → b25 = b24 - (Cost_untyped_head n (x10 - 1) x23 x38 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)) → (match (Lanius.Mini.untypedHead ((x10 - 1)) x23 x38 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1))) with | some x2724 => (∀ b26 : Nat, (Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x2724.ty) x38) < b25 → b26 = b25 - (Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x2724.ty) x38) → (Pre_stmts_of n (x10 - 1) x23 ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x2724.ty) :: x38) x68 b26)) | none => True))); let k30 := fun (b24 : Nat) => True; (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x58 2))) = Lanius.Mini.Inline.pLetTypeNone)) = true then (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x58 3))) = Lanius.Mini.Inline.pLetInit)) = true then (if (!(Lanius.Mini.member x23.globals (((Lanius.Mini.kidToken x58 1).text)))) = true then (if (Lanius.Mini.freshId x38 ((((Lanius.Mini.kidToken x58 1).start) - x23.base))) = true then (k29 b11) else (k30 b11)) else (k30 b11)) else (k30 b11)) else (k30 b11))); (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x58 2))) = Lanius.Mini.Inline.pLetType)) = true then (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x58 3))) = Lanius.Mini.Inline.pLetInit)) = true then (if (!(Lanius.Mini.member x23.globals (((Lanius.Mini.kidToken x58 1).text)))) = true then (if (Lanius.Mini.freshId x38 ((((Lanius.Mini.kidToken x58 1).start) - x23.base))) = true then (k31 b6) else (k32 b6)) else (k32 b6)) else (k32 b6)) else (k32 b6))); (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x58 2))) = Lanius.Mini.Inline.pLetType)) = true then (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x58 3))) = Lanius.Mini.Inline.pLetInit)) = true then (if (!(Lanius.Mini.member x23.globals (((Lanius.Mini.kidToken x58 1).text)))) = true then (if (Lanius.Mini.freshId x38 ((((Lanius.Mini.kidToken x58 1).start) - x23.base))) = true then ((Pre_is_block_match n x10 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1) b1) ∧ (∀ b42 : Nat, (Cost_is_block_match n x10 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)) < b1 → b42 = b1 - (Cost_is_block_match n x10 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)) → (if (Lanius.Mini.isBlockMatch x10 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1))) = true then (k33 b42) else (k34 b42)))) else (k34 b1)) else (k34 b1)) else (k34 b1)) else (k34 b1))); (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x58 2))) = Lanius.Mini.Inline.pLetType)) = true then (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x58 3))) = Lanius.Mini.Inline.pLetInit)) = true then (if (!(Lanius.Mini.member x23.globals (((Lanius.Mini.kidToken x58 1).text)))) = true then (if (Lanius.Mini.freshId x38 ((((Lanius.Mini.kidToken x58 1).start) - x23.base))) = true then (∀ b52 : Nat, (Cost_is_lit_init n x10 x23 x38 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)) < b → b52 = b - (Cost_is_lit_init n x10 x23 x38 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)) → (if (Lanius.Mini.isLitInit x10 x23 x38 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1))) = true then (k43 b52) else (k44 b52))) else (k44 b)) else (k44 b)) else (k44 b)) else (k44 b))))
+  | n + 1, x10, x23, x38, x58, x68, b => (if (decide (x10 = 0)) = true then True else (∀ b1 : Nat, (Cost_is_str_let n x10 x23 x38 x58) < b → b1 = b - (Cost_is_str_let n x10 x23 x38 x58) → (if (Lanius.Mini.isStrLet x10 x23 x38 x58) = true then (Pre_string_let n (x10 - 1) x23 (((Lanius.Mini.kidToken x58 1).start) - x23.base) ((Lanius.Mini.kidToken x58 1).text) (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1) x68 b1) else (let k45 := fun (b3 : Nat) => ((Pre_ty_of n x10 x23 (Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1) b3) ∧ (∀ b4 : Nat, (Cost_ty_of n x10 x23 (Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1)) < b3 → b4 = b3 - (Cost_ty_of n x10 x23 (Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1)) → (match (Lanius.Mini.tyOf x10 x23 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1))) with | some x691 => (∀ b5 : Nat, (Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x691) x38) < b4 → b5 = b4 - (Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x691) x38) → ((Pre_stmts_of n (x10 - 1) x23 ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x691) :: x38) x68 b5) ∧ (∀ b6 : Nat, (Cost_stmts_of n (x10 - 1) x23 ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x691) :: x38) x68) < b5 → b6 = b5 - (Cost_stmts_of n (x10 - 1) x23 ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x691) :: x38) x68) → (Pre_lit_let_of n (x10 - 1) x23 x38 (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x691) (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1) (Lanius.Mini.stmtsOf ((x10 - 1)) x23 (((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x691) :: x38)) x68) b6)))) | none => True))); let k46 := fun (b3 : Nat) => (let k35 := fun (b8 : Nat) => ((Pre_ty_of n x10 x23 (Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1) b8) ∧ (∀ b9 : Nat, (Cost_ty_of n x10 x23 (Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1)) < b8 → b9 = b8 - (Cost_ty_of n x10 x23 (Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1)) → (match (Lanius.Mini.tyOf x10 x23 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1))) with | some x1269 => (∀ b10 : Nat, (Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1269) x38) < b9 → b10 = b9 - (Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1269) x38) → ((Pre_stmts_of n (x10 - 1) x23 ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1269) :: x38) x68 b10) ∧ (∀ b11 : Nat, (Cost_stmts_of n (x10 - 1) x23 ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1269) :: x38) x68) < b10 → b11 = b10 - (Cost_stmts_of n (x10 - 1) x23 ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1269) :: x38) x68) → (Pre_let_match_of n (x10 - 1) x23 x38 (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1269) (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1) (Lanius.Mini.stmtsOf ((x10 - 1)) x23 (((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1269) :: x38)) x68) b11)))) | none => True))); let k36 := fun (b8 : Nat) => (let k33 := fun (b13 : Nat) => ((Pre_ty_of n x10 x23 (Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1) b13) ∧ (∀ b14 : Nat, (Cost_ty_of n x10 x23 (Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1)) < b13 → b14 = b13 - (Cost_ty_of n x10 x23 (Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1)) → (match (Lanius.Mini.tyOf x10 x23 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 2)) 1))) with | some x1806 => (∀ b15 : Nat, (Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1806) x38) < b14 → b15 = b14 - (Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1806) x38) → ((Pre_let_head_or_eval n (x10 - 1) x23 x38 x1806 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1) b15) ∧ (∀ b16 : Nat, (Cost_let_head_or_eval n (x10 - 1) x23 x38 x1806 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)) < b15 → b16 = b15 - (Cost_let_head_or_eval n (x10 - 1) x23 x38 x1806 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)) → ((Pre_view_read n (x10 - 1) x23 ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1806) :: x38) (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1806) (Lanius.Mini.letHeadOrEval ((x10 - 1)) x23 x38 x1806 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1))) x68 b16) ∧ (∀ b17 : Nat, (Cost_view_read n (x10 - 1) x23 ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1806) :: x38) (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1806) (Lanius.Mini.letHeadOrEval ((x10 - 1)) x23 x38 x1806 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1))) x68) < b16 → b17 = b16 - (Cost_view_read n (x10 - 1) x23 ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1806) :: x38) (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1806) (Lanius.Mini.letHeadOrEval ((x10 - 1)) x23 x38 x1806 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1))) x68) → (match (Lanius.Mini.viewRead ((x10 - 1)) x23 (((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1806) :: x38)) ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1806)) ((Lanius.Mini.letHeadOrEval ((x10 - 1)) x23 x38 x1806 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)))) x68) with | some x2091 => (∀ b18 : Nat, (Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1806) x38) < b17 → b18 = b17 - (Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1806) x38) → (∀ b19 : Nat, (Cost_cons_of_mini_selfhost_Local n x2091.pointer ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1806) :: x38)) < b18 → b19 = b18 - (Cost_cons_of_mini_selfhost_Local n x2091.pointer ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1806) :: x38)) → (Pre_stmts_of n (x10 - 1) x23 (x2091.pointer :: ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1806) :: x38)) x2091.more b19))) | none => ((Pre_let_head_or_eval n (x10 - 1) x23 x38 x1806 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1) b17) ∧ (∀ b22 : Nat, (Cost_let_head_or_eval n (x10 - 1) x23 x38 x1806 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)) < b17 → b22 = b17 - (Cost_let_head_or_eval n (x10 - 1) x23 x38 x1806 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)) → (∀ b23 : Nat, (Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1806) x38) < b22 → b23 = b22 - (Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1806) x38) → (Pre_stmts_of n (x10 - 1) x23 ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x1806) :: x38) x68 b23)))))))))) | none => True))); let k34 := fun (b13 : Nat) => (let k31 := fun (b26 : Nat) => ((Pre_untyped_head n (x10 - 1) x23 x38 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1) b26) ∧ (∀ b27 : Nat, (Cost_untyped_head n (x10 - 1) x23 x38 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)) < b26 → b27 = b26 - (Cost_untyped_head n (x10 - 1) x23 x38 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)) → (match (Lanius.Mini.untypedHead ((x10 - 1)) x23 x38 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1))) with | some x2884 => (∀ b28 : Nat, (Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x2884.ty) x38) < b27 → b28 = b27 - (Cost_cons_of_mini_selfhost_Local n (Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x2884.ty) x38) → (Pre_stmts_of n (x10 - 1) x23 ((Lanius.Mini.Local.mk ((Lanius.Mini.kidToken x58 1).text) (((Lanius.Mini.kidToken x58 1).start) - x23.base) x2884.ty) :: x38) x68 b28)) | none => True))); let k32 := fun (b26 : Nat) => True; (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x58 2))) = Lanius.Mini.Inline.pLetTypeNone)) = true then (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x58 3))) = Lanius.Mini.Inline.pLetInit)) = true then (if (!(Lanius.Mini.member x23.globals (((Lanius.Mini.kidToken x58 1).text)))) = true then (if (Lanius.Mini.freshId x38 ((((Lanius.Mini.kidToken x58 1).start) - x23.base))) = true then (k31 b13) else (k32 b13)) else (k32 b13)) else (k32 b13)) else (k32 b13))); (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x58 2))) = Lanius.Mini.Inline.pLetType)) = true then (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x58 3))) = Lanius.Mini.Inline.pLetInit)) = true then (if (!(Lanius.Mini.member x23.globals (((Lanius.Mini.kidToken x58 1).text)))) = true then (if (Lanius.Mini.freshId x38 ((((Lanius.Mini.kidToken x58 1).start) - x23.base))) = true then (k33 b8) else (k34 b8)) else (k34 b8)) else (k34 b8)) else (k34 b8))); (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x58 2))) = Lanius.Mini.Inline.pLetType)) = true then (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x58 3))) = Lanius.Mini.Inline.pLetInit)) = true then (if (!(Lanius.Mini.member x23.globals (((Lanius.Mini.kidToken x58 1).text)))) = true then (if (Lanius.Mini.freshId x38 ((((Lanius.Mini.kidToken x58 1).start) - x23.base))) = true then ((Pre_is_block_match n x10 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1) b3) ∧ (∀ b44 : Nat, (Cost_is_block_match n x10 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)) < b3 → b44 = b3 - (Cost_is_block_match n x10 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)) → (if (Lanius.Mini.isBlockMatch x10 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1))) = true then (k35 b44) else (k36 b44)))) else (k36 b3)) else (k36 b3)) else (k36 b3)) else (k36 b3))); (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x58 2))) = Lanius.Mini.Inline.pLetType)) = true then (if (decide ((Lanius.Mini.nodeProd ((Lanius.Mini.kid x58 3))) = Lanius.Mini.Inline.pLetInit)) = true then (if (!(Lanius.Mini.member x23.globals (((Lanius.Mini.kidToken x58 1).text)))) = true then (if (Lanius.Mini.freshId x38 ((((Lanius.Mini.kidToken x58 1).start) - x23.base))) = true then (∀ b54 : Nat, (Cost_is_lit_init n x10 x23 x38 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)) < b1 → b54 = b1 - (Cost_is_lit_init n x10 x23 x38 (Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1)) → (if (Lanius.Mini.isLitInit x10 x23 x38 ((Lanius.Mini.kid ((Lanius.Mini.kid x58 3)) 1))) = true then (k45 b54) else (k46 b54))) else (k46 b1)) else (k46 b1)) else (k46 b1)) else (k46 b1))))))
 termination_by structural fuel => fuel
 
 def Pre_stmt_of : Nat → Nat → Lanius.Mini.FrontEnv → List Lanius.Mini.Local → Lanius.Mini.CTree → Nat → Prop

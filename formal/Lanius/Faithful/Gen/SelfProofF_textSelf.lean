@@ -193,4 +193,37 @@ theorem proof_text_slice_stride {prog : SrcProgram} {prims : Prims} {ix_text_sli
   simp only [src_text_slice_stride] at h
   faithful [Lanius.Mini.textSliceStride]
 
+theorem proof_text_str {prog : SrcProgram} {prims : Prims} {ix_text_str ix_single_of_usize ix_cons_of_usize : Nat} (fn : prog.funcs[ix_text_str]? = some (src_text_str ix_single_of_usize ix_cons_of_usize)) (np : prims.isPrim ix_text_str = false)
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n))
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n)) {n : Nat} :
+    Stmt_text_str prog prims ix_text_str n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_text_str] at h
+  faithful [Lanius.Mini.textStr]
+
+theorem proof_text_string_data_ptr {prog : SrcProgram} {prims : Prims} {ix_text_string_data_ptr ix_single_of_usize ix_cons_of_usize : Nat} (fn : prog.funcs[ix_text_string_data_ptr]? = some (src_text_string_data_ptr ix_single_of_usize ix_cons_of_usize)) (np : prims.isPrim ix_text_string_data_ptr = false)
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n))
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n)) {n : Nat} :
+    Stmt_text_string_data_ptr prog prims ix_text_string_data_ptr n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_text_string_data_ptr] at h
+  faithful [Lanius.Mini.textStringDataPtr]
+
+theorem proof_text_typed_slice_from_raw_parts {prog : SrcProgram} {prims : Prims} {ix_text_typed_slice_from_raw_parts ix_cons_of_usize ix_text_slice_from_raw_parts : Nat} (fn : prog.funcs[ix_text_typed_slice_from_raw_parts]? = some (src_text_typed_slice_from_raw_parts ix_cons_of_usize ix_text_slice_from_raw_parts)) (np : prims.isPrim ix_text_typed_slice_from_raw_parts = false)
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
+    (ext_text_slice_from_raw_parts : Certified (∀ {n : Nat}, Stmt_text_slice_from_raw_parts prog prims ix_text_slice_from_raw_parts n)) {n : Nat} :
+    Stmt_text_typed_slice_from_raw_parts prog prims ix_text_typed_slice_from_raw_parts n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_text_typed_slice_from_raw_parts] at h
+  faithful [Lanius.Mini.textTypedSliceFromRawParts]
+
 end Lanius.Faithful.SelfCert

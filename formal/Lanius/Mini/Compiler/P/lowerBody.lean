@@ -231,6 +231,7 @@ def SrcStmt.declare (self : SrcStmt) (decls : SrcDecls) : Option SrcDecls :=
      | some decls => SrcStmt.declare rest decls)
   | .unreachable id ty => SrcType.declare ty decls
   | .letView id length fields pointer body => SrcStmt.declare body decls
+  | .letStr pointer chars body => SrcStmt.declare body decls
 
 /-- Every path ends in a return, the way Core's DefinitelyReturns counts: a while body never counts. -/
 def SrcStmt.returns (self : SrcStmt) : Bool :=
@@ -270,6 +271,7 @@ def SrcStmt.returns (self : SrcStmt) : Bool :=
   | .matchArm scrutinee enumId variant binds binder ty body rest => SrcStmt.returns body && SrcStmt.returns rest
   | .unreachable id ty => true
   | .letView id length fields pointer body => SrcStmt.returns body
+  | .letStr pointer chars body => SrcStmt.returns body
 
 def declareParams (params : List SrcParam) (decls : SrcDecls) : Option SrcDecls :=
   match params with

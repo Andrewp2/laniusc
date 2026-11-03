@@ -1,17 +1,10 @@
 module
 
 public import Lanius.Mini.Compiler.Types
-import Lanius.Mini.Compiler.P.SrcExpr_guard
 import Lanius.Mini.Compiler.P.SrcType_size
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.evalSame
-import Lanius.Mini.Compiler.P.guardAnd
-import Lanius.Mini.Compiler.P.indexOf
-import Lanius.Mini.Compiler.P.loadAtBytes
-import Lanius.Mini.Compiler.P.lowerCallSig
-import Lanius.Mini.Compiler.P.lowerLoadType
 import Lanius.Mini.Compiler.P.matchVariants
-import Lanius.Mini.Compiler.P.shortCircuit
 import Lanius.Mini.Compiler.P.storeEvalWord
 
 public section
@@ -104,72 +97,25 @@ def lowerView (slot : Nat) (length : Nat) (values : Option (List Expr)) (body : 
     | none => none
     | some b => lowerLet slot values (some (Stmt.seq (Stmt.alloc (slot + length) 2 (Expr.lit (BitVec.ofNat 64 (4 * length)))) (viewStores (slot + length) slot 0 length (Stmt.seq (Stmt.assign slot (Expr.var (slot + length))) b))))
 
-def lowerAssert (condition : Option Evaluated) (slot : Nat) : Option Stmt :=
-  match condition with
-  | none => none
-  | some c => evalSame c SrcType.bool (Stmt.seq c.stmt (Stmt.divide Word.u64 DivOp.uDiv slot (Expr.lit 1) (Expr.var slot)))
+/-- A string's scalar values packed into little-endian words, four to a word, the last word zero-padded (Core's stringStorage, for ASCII strings). -/
+def strWords (chars : List Nat) : List (BitVec 64) :=
+  match chars with
+  | [] => []
+  | a :: r1 =>
+    match r1 with
+    | [] => [BitVec.ofNat 64 a]
+    | b :: r2 =>
+      match r2 with
+      | [] => [BitVec.ofNat 64 (a + b * 256)]
+      | c :: r3 =>
+        match r3 with
+        | [] => [BitVec.ofNat 64 (a + b * 256 + c * 65536)]
+        | d :: r4 => BitVec.ofNat 64 (a + b * 256 + c * 65536 + d * 16777216) :: strWords r4
 
-def lowerSetIndexEval (decls : SrcDecls) (slot : Nat) (binding : Option Binding) (index : Option Evaluated) (value : Option Evaluated) : Option Stmt :=
-  match binding with
-  | none => none
-  | some b =>
-    match elementOf b.ty with
-    | none => storeArray b slot index value
-    | some element => storeEvalElement decls b element slot index value
-
-/-- slice[index] = value with pure operands: on an array local, the store of the evaluated operands (as SetIndexEval of EPure), on a raw slice, the guarded store. -/
-def lowerSetIndexAny (decls : SrcDecls) (scope : List Binding) (next : Nat) (slice : Nat) (index : SrcExpr) (value : SrcExpr) : Option Stmt :=
-  if isArrayLocal (lookup scope slice) then
-    lowerSetIndexEval decls next (lookup scope slice) (evalPure scope index next) (evalPure scope value (next + 1))
-  else
-    guarded next (guardAnd (guardAnd (SrcExpr.guard index scope) (indexGuard scope slice index)) (SrcExpr.guard value scope)) (lowerSetIndex decls (lookup scope slice) (lowerIndex scope index) scope value)
-
-/-- id is not one of ids. -/
-def idAbsent (ids : List Nat) (id : Nat) : Bool :=
-  match ids with
+/-- Every scalar value is ASCII, so each is one UTF-8 byte. -/
+def strAscii (chars : List Nat) : Bool :=
+  match chars with
   | [] => true
-  | other :: rest => decide (other ≠ id) && idAbsent rest id
-
-/-- The address offset bytes into the block whose address is in slot t. -/
-def blockAt (t : Nat) (offset : Nat) : Expr :=
-  Expr.binary Word.u64 BinOp.add (Expr.var t) (Expr.lit (BitVec.ofNat 64 offset))
-
-/-- The bytes an element of an array passed as a slice takes in the slice layout: 4 for an i32, 1 for a u8, and 0 for an element type not passed. -/
-def packedWidth (element : SrcType) : Nat :=
-  if SrcType.same element SrcType.i32 then
-    4
-  else
-    if SrcType.same element (SrcType.uint UintTy.uint8) then
-      1
-    else
-      0
-
-/-- The store of the element in slot into the block at offset pos. -/
-def blockStore (width : Nat) (t : Nat) (pos : Nat) (slot : Nat) : Stmt :=
-  if width = 4 then
-    Stmt.storeWord MemWidth.m32 (blockAt t pos) (Expr.var slot)
-  else
-    Stmt.storeByte (blockAt t pos) (Expr.var slot)
-
-/-- The load of the element at offset pos in the block into slot. -/
-def blockLoad (width : Nat) (t : Nat) (pos : Nat) (slot : Nat) : Stmt :=
-  if width = 4 then
-    Stmt.loadWord MemWidth.m32 slot (blockAt t pos)
-  else
-    Stmt.loadByte slot (blockAt t pos)
-
-/-- The stores of count elements from slot on, width bytes apart from pos. -/
-def elementStores (width : Nat) (t : Nat) (pos : Nat) (slot : Nat) (count : Nat) : Stmt :=
-  if count = 0 then
-    Stmt.skip
-  else
-    Stmt.seq (blockStore width t pos slot) (elementStores width t (pos + width) (slot + 1) (count - 1))
-
-/-- The loads of count elements into slot on, width bytes apart from pos. -/
-def elementLoads (width : Nat) (t : Nat) (pos : Nat) (slot : Nat) (count : Nat) : Stmt :=
-  if count = 0 then
-    Stmt.skip
-  else
-    Stmt.seq (blockLoad width t pos slot) (elementLoads width t (pos + width) (slot + 1) (count - 1))
+  | c :: rest => decide (c < 128) && strAscii rest
 
 end Lanius.Mini

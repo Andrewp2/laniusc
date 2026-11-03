@@ -1845,6 +1845,12 @@ pub enum SrcStmt {
     // pointer addresses; the verified compiler stores the elements there and
     // the body sees id as a View.
     LetView(usize, usize, List<SrcExpr>, usize, Box<SrcStmt>),
+    // LetStr(pointer, chars, body): let pointer: ptr =
+    // core::mem::string_data_ptr("chars"); then body, chars the string's
+    // Unicode scalar values. Core maps the string's UTF-8 bytes, zero-padded
+    // to whole words, into a fresh heap block, which pointer addresses; the
+    // verified compiler stores them there as words.
+    LetStr(usize, List<usize>, Box<SrcStmt>),
 }
 
 pub struct SrcParam {
@@ -5601,6 +5607,53 @@ pub fn lower_view(slot: usize, length: usize, values: core::option::Option<List<
     };
 }
 
+// A string's scalar values packed into little-endian words, four to a word,
+// the last word zero-padded (Core's stringStorage, for ASCII strings).
+pub fn str_words(chars: List<usize>) -> List<u64> {
+    return match (chars) {
+        Nil -> Nil,
+        Cons(a, r1) -> match (unbox(r1)) {
+            Nil -> single(a as u64),
+            Cons(b, r2) -> match (unbox(r2)) {
+                Nil -> single(plus(a, times(b, 256)) as u64),
+                Cons(c, r3) -> match (unbox(r3)) {
+                    Nil -> single(plus(plus(a, times(b, 256)), times(c, 65536)) as u64),
+                    Cons(d, r4) -> cons(plus(plus(plus(a, times(b, 256)), times(c, 65536)), times(d, 16777216)) as u64, str_words(unbox(r4))),
+                },
+            },
+        },
+    };
+}
+
+// Every scalar value is ASCII, so each is one UTF-8 byte.
+pub fn str_ascii(chars: List<usize>) -> bool {
+    return match (chars) {
+        Nil -> true,
+        Cons(c, rest) -> (c < 128) && str_ascii(unbox(rest)),
+    };
+}
+
+// Store the words to the address in pointer, from offset on, then run rest.
+pub fn str_stores(pointer: usize, offset: usize, words: List<u64>, rest: Stmt) -> Stmt {
+    return match (words) {
+        Nil -> rest,
+        Cons(w, more) -> Seq(boxed(StoreWord(M32, Binary(U64, Add, boxed(Var(pointer)), boxed(Lit(offset as u64))), Lit(w))), boxed(str_stores(pointer, plus(offset, 4), unbox(more), rest))),
+    };
+}
+
+// LetStr: a block of the padded string's size at alignment 4 into slot
+// (Core's mapBorrowed), its words stored into it, then the body. Only
+// nonempty ASCII strings of fewer than 2^31 bytes.
+pub fn lower_str(slot: usize, chars: List<usize>, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    if ((length(chars) == 0) || (length(chars) >= 2147483648) || !str_ascii(chars)) {
+        return None;
+    }
+    return match (body) {
+        None -> None,
+        Some(b) -> Some(Seq(boxed(Alloc(slot, 2, Lit(times(4, length(str_words(chars))) as u64))), boxed(str_stores(slot, 0, str_words(chars), b)))),
+    };
+}
+
 pub fn lower_assert(condition: core::option::Option<Evaluated>, slot: usize) -> core::option::Option<Stmt> {
     return match (condition) {
         None -> None,
@@ -5966,6 +6019,7 @@ impl SrcStmt {
             MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> lower_match_arm(scope, lookup(scope, scrutinee), enum_id, variant, binds, binder, ty, next, unbox(body).lower(sigs, decls, ret, arm_body_scope(binds, binder, ty, next, scope), plus(next, ty.size())), unbox(rest).lower(sigs, decls, ret, scope, next)),
             Unreachable(id, ty) -> lower_unreachable(ty.same(ret), next),
             LetView(id, length, fields, pointer, body) -> guarded(next, guard_all(scope, fields), lower_view(next, length, lower_literal(scope, SrcType::Array(boxed(I32), length), fields), unbox(body).lower(sigs, decls, ret, cons(Binding { id: pointer, slot: plus(next, length), ty: Ptr }, cons(Binding { id: id, slot: next, ty: View(length) }, scope)), plus(plus(next, length), 1)))),
+            LetStr(pointer, chars, body) -> lower_str(next, chars, unbox(body).lower(sigs, decls, ret, cons(Binding { id: pointer, slot: next, ty: Ptr }, scope), plus(next, 1))),
         };
     }
 
@@ -6008,6 +6062,7 @@ impl SrcStmt {
             MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> unbox(body).breaks_out() || unbox(rest).breaks_out(),
             Unreachable(id, ty) -> false,
             LetView(id, length, fields, pointer, body) -> unbox(body).breaks_out(),
+            LetStr(pointer, chars, body) -> unbox(body).breaks_out(),
         };
     }
 
@@ -6049,6 +6104,7 @@ impl SrcStmt {
             MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> max_of(plus(unbox(body).depth(), ty.size()), unbox(rest).depth()),
             Unreachable(id, ty) -> 1,
             LetView(id, length, fields, pointer, body) -> plus(unbox(body).depth(), plus(length, 1)),
+            LetStr(pointer, chars, body) -> plus(unbox(body).depth(), 1),
         };
     }
 }
@@ -6230,6 +6286,7 @@ impl SrcStmt {
             MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> concat(unbox(body).slice_uses(), unbox(rest).slice_uses()),
             Unreachable(id, ty) -> empty(),
             LetView(id, length, fields, pointer, body) -> unbox(body).slice_uses(),
+            LetStr(pointer, chars, body) -> unbox(body).slice_uses(),
         };
     }
 
@@ -6271,6 +6328,7 @@ impl SrcStmt {
             MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> plus(unbox(body).array_bytes(uses), unbox(rest).array_bytes(uses)),
             Unreachable(id, ty) -> 0,
             LetView(id, length, fields, pointer, body) -> unbox(body).array_bytes(uses),
+            LetStr(pointer, chars, body) -> unbox(body).array_bytes(uses),
         };
     }
 
@@ -6312,6 +6370,7 @@ impl SrcStmt {
             MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> max_of(unbox(body).callee_need(needs), unbox(rest).callee_need(needs)),
             Unreachable(id, ty) -> 0,
             LetView(id, length, fields, pointer, body) -> unbox(body).callee_need(needs),
+            LetStr(pointer, chars, body) -> unbox(body).callee_need(needs),
         };
     }
 }
@@ -6654,6 +6713,7 @@ impl SrcStmt {
             MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> declare_in(declare_in(ty.declare(decls), unbox(body)), unbox(rest)),
             Unreachable(id, ty) -> ty.declare(decls),
             LetView(id, length, fields, pointer, body) -> unbox(body).declare(decls),
+            LetStr(pointer, chars, body) -> unbox(body).declare(decls),
         };
     }
 
@@ -6696,6 +6756,7 @@ impl SrcStmt {
             MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> unbox(body).returns() && unbox(rest).returns(),
             Unreachable(id, ty) -> true,
             LetView(id, length, fields, pointer, body) -> unbox(body).returns(),
+            LetStr(pointer, chars, body) -> unbox(body).returns(),
         };
     }
 }

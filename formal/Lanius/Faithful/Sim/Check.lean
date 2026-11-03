@@ -254,6 +254,7 @@ def stmtOk (ret : SrcType) (tenv : TEnv) : SrcStmt → Bool
     | none => false
   | .letAlloc _ _ _ _ => false
   | .letView _ _ _ _ _ => false
+  | .letStr _ _ _ => false
   | .letLoad _ _ _ _ => false
   | .setByte _ _ _ => false
   | .free _ _ _ => false
@@ -312,6 +313,7 @@ def looseJump : SrcStmt → Bool
   | .return _ => false
   | .letAlloc _ _ _ body => looseJump body
   | .letView _ _ _ _ body => looseJump body
+  | .letStr _ _ body => looseJump body
   | .letLoad _ _ _ body => looseJump body
   | .setByte _ _ _ => false
   | .free _ _ _ => false

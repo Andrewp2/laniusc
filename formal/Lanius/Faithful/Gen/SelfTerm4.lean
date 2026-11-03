@@ -114,25 +114,25 @@ theorem ok_SrcType_same : FnOk prog prims info (232, ⟨2, [0], 0⟩) :=
 theorem ok_lower_view : FnOk prog prims info (233, ⟨4, [], 0⟩) :=
   fnOk_of fn_lower_view (by decide +kernel)
 
-theorem ok_empty_of_mini_selfhost_SrcType : FnOk prog prims info (235, ⟨0, [], 0⟩) :=
+theorem ok_lower_str : FnOk prog prims info (234, ⟨3, [], 0⟩) :=
+  fnOk_of fn_lower_str (by decide +kernel)
+
+theorem ok_empty_of_mini_selfhost_SrcType : FnOk prog prims info (236, ⟨0, [], 0⟩) :=
   fnOk_of fn_empty_of_mini_selfhost_SrcType (by decide +kernel)
 
-theorem ok_cons_of_mini_selfhost_SrcType : FnOk prog prims info (236, ⟨0, [], 0⟩) :=
+theorem ok_cons_of_mini_selfhost_SrcType : FnOk prog prims info (237, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_SrcType (by decide +kernel)
 
-theorem ok_need_round : FnOk prog prims info (237, ⟨7, [0], 0⟩) :=
+theorem ok_need_round : FnOk prog prims info (238, ⟨7, [0], 0⟩) :=
   fnOk_of fn_need_round (by decide +kernel)
 
-theorem ok_same_needs : FnOk prog prims info (238, ⟨0, [0], 0⟩) :=
+theorem ok_same_needs : FnOk prog prims info (239, ⟨0, [0], 0⟩) :=
   fnOk_of fn_same_needs (by decide +kernel)
 
-theorem ok_declare_params_after : FnOk prog prims info (239, ⟨6, [1], 1⟩) :=
+theorem ok_declare_params_after : FnOk prog prims info (240, ⟨6, [1], 1⟩) :=
   fnOk_of fn_declare_params_after (by decide +kernel)
 
-theorem ok_SrcStmt_declare : FnOk prog prims info (240, ⟨6, [0], 0⟩) :=
-  fnOk_of fn_SrcStmt_declare (by decide +kernel)
-
 theorem chunk4 : AllFns prog prims info part4 :=
-  ⟨ok_lookup, ok_lower_set, ok_lower_set_field, ok_lower_set_call, ok_lower_if, ok_lower_as, ok_lower_while, ok_lower_return, ok_lower_alloc, ok_guard_and, ok_lower_load, ok_lower_address, ok_lower_store, ok_lower_free, ok_lower_slice, ok_lower_let_index_any, ok_lower_set_index_any, ok_lower_let_eval, ok_stmt_eval, ok_lower_set_eval, ok_SrcEff_eval, ok_lower_if_eval, ok_lower_while_eval, ok_lower_return_eval, ok_lower_discard, ok_lower_set_index_eval, ok_lower_set_field_eval, ok_lower_return_unit, ok_lower_assert, ok_lower_match_arm, ok_arm_body_scope, ok_lower_unreachable, ok_SrcType_same, ok_lower_view, ok_empty_of_mini_selfhost_SrcType, ok_cons_of_mini_selfhost_SrcType, ok_need_round, ok_same_needs, ok_declare_params_after, ok_SrcStmt_declare, trivial⟩
+  ⟨ok_lookup, ok_lower_set, ok_lower_set_field, ok_lower_set_call, ok_lower_if, ok_lower_as, ok_lower_while, ok_lower_return, ok_lower_alloc, ok_guard_and, ok_lower_load, ok_lower_address, ok_lower_store, ok_lower_free, ok_lower_slice, ok_lower_let_index_any, ok_lower_set_index_any, ok_lower_let_eval, ok_stmt_eval, ok_lower_set_eval, ok_SrcEff_eval, ok_lower_if_eval, ok_lower_while_eval, ok_lower_return_eval, ok_lower_discard, ok_lower_set_index_eval, ok_lower_set_field_eval, ok_lower_return_unit, ok_lower_assert, ok_lower_match_arm, ok_arm_body_scope, ok_lower_unreachable, ok_SrcType_same, ok_lower_view, ok_lower_str, ok_empty_of_mini_selfhost_SrcType, ok_cons_of_mini_selfhost_SrcType, ok_need_round, ok_same_needs, ok_declare_params_after, trivial⟩
 
 end Lanius.Faithful.SelfTerm

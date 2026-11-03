@@ -24,6 +24,10 @@ abbrev Stmt_p_stmts_more (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.pStmtsMore) w
 
+abbrev Stmt_p_string (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    RepNat (Lanius.Mini.Inline.pString) w
+
 abbrev Stmt_p_struct (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.pStruct) w

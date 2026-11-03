@@ -107,6 +107,7 @@ partial def stmtCalls : SrcStmt → List Nat
   | .let _ _ _ b | .letStruct _ _ _ b | .letEnum _ _ _ _ b | .letMatch _ _ _ _ _ b => stmtCalls b
   | .letAlloc _ _ _ b | .letLoad _ _ _ b | .letSlice _ _ _ _ b | .letIndex _ _ _ _ b => stmtCalls b
   | .letView _ _ _ _ b => stmtCalls b
+  | .letStr _ _ b => stmtCalls b
   | .letCall _ _ c _ b => c :: stmtCalls b
   | .setCall _ c _ => [c]
   | .then a b => stmtCalls a ++ stmtCalls b

@@ -193,6 +193,9 @@ theorem stmt_grows : ∀ (s : SrcStmt) (d : SrcDecls), GrowsTo d (SrcStmt.declar
   | .letView _ _ _ _ body, d => by
     have ih := stmt_grows body d
     unfold SrcStmt.declare; exact ih
+  | .letStr _ _ body, d => by
+    have ih := stmt_grows body d
+    unfold SrcStmt.declare; exact ih
   | .letLoad _ _ _ body, d => by
     have ih := stmt_grows body d
     unfold SrcStmt.declare; exact ih

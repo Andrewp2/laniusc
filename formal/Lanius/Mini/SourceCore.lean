@@ -170,6 +170,10 @@ def SrcExpr.toCore : SrcExpr → Core.Expr
   | .char code => .value (.character (UInt32.ofNat code.toNat))
   | .float t bits => .value (t.value bits)
 
+/-- The string of these Unicode scalar values (a `LetStr`'s literal). -/
+def strValue (chars : List Nat) : String :=
+  String.ofList (chars.map Char.ofNat)
+
 /-- Match arms from variant `k`: arm `k` matches variant `k` of enum type
 `id`, binding its payload. -/
 def coreArms (id : Nat) : Nat → List SrcArm → List (Core.Pattern × Core.Expr)
@@ -273,6 +277,8 @@ def SrcStmt.toCore : SrcStmt → Core.Stmt
   | .letView id length fields pointer body =>
       .letLocal id (SrcType.array .i32 length).toCore ((SrcType.array .i32 length).literal (fields.map SrcExpr.toCore))
         (.letLocal pointer (.scalar .rawPtr) (.i32ArrayDataPtr (.local id)) body.toCore)
+  | .letStr pointer chars body =>
+      .letLocal pointer (.scalar .rawPtr) (.stringDataPtr (.value (.string (strValue chars)))) body.toCore
 
 def SrcFunc.toCore (id : Nat) (func : SrcFunc) : Core.Function where
   id := id

@@ -60,6 +60,7 @@ def stmtTys (m : MStmt) : List Ty :=
   | .mLetSlice id e p n body => e :: stmtTys body
   | .mLetIndex id ty s i body => ty :: stmtTys body
   | .mLetView id n es p body => Ty.tyArray Ty.tyI32 n :: stmtTys body
+  | .mLetStr id cs body => stmtTys body
   | .mSetIndex s i v => []
   | .mLetEval id ty x body => ty :: (effNamedTys x ++ stmtTys body)
   | .mSetEval id x => effNamedTys x

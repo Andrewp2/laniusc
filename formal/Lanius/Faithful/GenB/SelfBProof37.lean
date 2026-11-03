@@ -468,6 +468,22 @@ theorem bproof_let_view_closed {spW sp : SrcProgram} {prims : Prims} {ix_let_vie
     budget Cost_let_view_closed
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4⟩
 
+theorem bproof_let_str_closed {spW sp : SrcProgram} {prims : Prims} {ix_let_str_closed ix_boxed_of_mini_selfhost_SrcStmt : Nat}
+    (fnW : spW.funcs[ix_let_str_closed]? = some (src_let_str_closed ix_boxed_of_mini_selfhost_SrcStmt)) (fn : sp.funcs[ix_let_str_closed]? = some (src_let_str_closed ix_boxed_of_mini_selfhost_SrcStmt))
+    (np : prims.isPrim ix_let_str_closed = false)
+    (back : Certified (∀ {n : Nat}, Stmt_let_str_closed sp prims ix_let_str_closed n))
+    (pp_boxed_of_mini_selfhost_SrcStmt : prims.isPrim ix_boxed_of_mini_selfhost_SrcStmt = true) (bx_boxed_of_mini_selfhost_SrcStmt : prims.boxed.contains ix_boxed_of_mini_selfhost_SrcStmt = true) {n : Nat} :
+    BStmt_let_str_closed spW sp prims ix_let_str_closed n := by
+  intro x0 x1 x2 v0 v1 v2 w k h r0 r1 r2
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_let_str_closed [v0, v1, v2] = some (w, k) ∧ Cost_let_str_closed (n + 1) x0 x1 x2 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_let_str_closed, List.length_cons, List.length_nil, if_true] at h ⊢
+    budget Cost_let_str_closed
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
+
 theorem bproof_let_eval_closed {spW sp : SrcProgram} {prims : Prims} {ix_let_eval_closed ix_boxed_of_mini_selfhost_SrcStmt : Nat}
     (fnW : spW.funcs[ix_let_eval_closed]? = some (src_let_eval_closed ix_boxed_of_mini_selfhost_SrcStmt)) (fn : sp.funcs[ix_let_eval_closed]? = some (src_let_eval_closed ix_boxed_of_mini_selfhost_SrcStmt))
     (np : prims.isPrim ix_let_eval_closed = false)
@@ -514,22 +530,6 @@ theorem bproof_cons_of_mini_selfhost_SrcEff {spW sp : SrcProgram} {prims : Prims
     rw [qcall_succ np fn]
     simp only [src_cons_of_mini_selfhost_SrcEff, List.length_cons, List.length_nil, if_true] at h ⊢
     budget Cost_cons_of_mini_selfhost_SrcEff
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
-
-theorem bproof_cons_src_eff {spW sp : SrcProgram} {prims : Prims} {ix_cons_src_eff ix_cons_of_mini_selfhost_SrcEff : Nat}
-    (fnW : spW.funcs[ix_cons_src_eff]? = some (src_cons_src_eff ix_cons_of_mini_selfhost_SrcEff)) (fn : sp.funcs[ix_cons_src_eff]? = some (src_cons_src_eff ix_cons_of_mini_selfhost_SrcEff))
-    (np : prims.isPrim ix_cons_src_eff = false)
-    (back : Certified (∀ {n : Nat}, Stmt_cons_src_eff sp prims ix_cons_src_eff n))
-    (b_cons_of_mini_selfhost_SrcEff : Certified (∀ {n : Nat}, BStmt_cons_of_mini_selfhost_SrcEff spW sp prims ix_cons_of_mini_selfhost_SrcEff n)) {n : Nat} :
-    BStmt_cons_src_eff spW sp prims ix_cons_src_eff n := by
-  intro x0 x1 v0 v1 w k h r0 r1
-  rcases n with _ | n
-  · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_cons_src_eff [v0, v1] = some (w, k) ∧ Cost_cons_src_eff (n + 1) x0 x1 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_cons_src_eff, List.length_cons, List.length_nil, if_true] at h ⊢
-    budget Cost_cons_src_eff
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
 
 end Lanius.Faithful.SelfBudget

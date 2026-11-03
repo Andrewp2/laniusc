@@ -17,6 +17,14 @@ open Lanius.Faithful.Budget
 open Lanius.Faithful.SelfBudget
 open Lanius.Faithful.SelfPre.Tactic
 
+theorem post_float_literal : ∀ (n : Nat) (x0 : List Nat), ∀ M : Nat, hb x0 ≤ M → Cost_float_literal n x0 < 18446744073709551616 → hb (Lanius.Mini.floatLiteral x0) ≤ M + Cost_float_literal n x0 := by
+  intro n x0 M hM0
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_float_literal.eq_def]; dsimp only
+  rw [Lanius.Mini.floatLiteral.eq_def x0]
+  post_auto n, M
+
 theorem post_step_expr_of (n : Nat) (ih :
     (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Lanius.Mini.CTree), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → Cost_expr_of n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.exprOf x0 x1 x2 x3) ≤ M + Cost_expr_of n x0 x1 x2 x3) ∧
     (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Lanius.Mini.CTree), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → Cost_assign_value n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.assignValue x0 x1 x2 x3) ≤ M + Cost_assign_value n x0 x1 x2 x3) ∧
@@ -3262,6 +3270,188 @@ theorem post_group_contracts_of : ∀ n : Nat,
   | succ n ih => exact post_step_contracts_of n ih
 theorem post_contracts_of : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Lanius.Mini.CTree) (x4 : Option Lanius.Mini.MStmt), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → Cost_contracts_of n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.contractsOf x0 x1 x2 x3 x4) ≤ M + Cost_contracts_of n x0 x1 x2 x3 x4 :=
   fun n => (post_group_contracts_of n)
+
+theorem post_text_str : ∀ (n : Nat), ∀ M : Nat, Cost_text_str n < 18446744073709551616 → hb (Lanius.Mini.textStr) ≤ M + Cost_text_str n := by
+  intro n M h
+  rcases n with _ | _ | n
+  · simp [Cost_text_str] at h
+  · simp [Cost_text_str, Cost_cons_of_usize, Cost_single_of_usize] at h
+  · simp only [Cost_text_str, Cost_cons_of_usize, Cost_single_of_usize, Lanius.Mini.textStr, hb_cons, hb_nil, hb_simp]
+    omega
+
+theorem post_string_cons : ∀ (n : Nat) (x0 : Bool) (x1 : Nat) (x2 : Option (List Nat)), ∀ M : Nat, hb x2 ≤ M → Cost_string_cons n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.stringCons x0 x1 x2) ≤ M + Cost_string_cons n x0 x1 x2 := by
+  intro n x0 x1 x2 M hM0
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_string_cons.eq_def]; dsimp only
+  rw [Lanius.Mini.stringCons.eq_def x0 x1 x2]
+  post_auto n, M
+
+theorem post_step_string_body (n : Nat) (ih :
+    (∀ (x0 : List Nat), ∀ M : Nat, hb x0 ≤ M → Cost_string_body n x0 < 18446744073709551616 → hb (Lanius.Mini.stringBody x0) ≤ M + Cost_string_body n x0) ∧
+    (∀ (x0 : Nat) (x1 : List Nat), ∀ M : Nat, hb x1 ≤ M → Cost_string_byte n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Inline.stringByte x0 x1) ≤ M + Cost_string_byte n x0 x1)) :
+    ∀ (x0 : List Nat), ∀ M : Nat, hb x0 ≤ M → Cost_string_body (n + 1) x0 < 18446744073709551616 → hb (Lanius.Mini.stringBody x0) ≤ M + Cost_string_body (n + 1) x0 := by
+  obtain ⟨-, post_string_byte⟩ := ih
+  intro x0 M hM0
+  rw [Cost_string_body.eq_def]; dsimp only
+  rw [Lanius.Mini.stringBody.eq_def x0]
+  post_auto n, M
+theorem post_step_string_byte (n : Nat) (ih :
+    (∀ (x0 : List Nat), ∀ M : Nat, hb x0 ≤ M → Cost_string_body n x0 < 18446744073709551616 → hb (Lanius.Mini.stringBody x0) ≤ M + Cost_string_body n x0) ∧
+    (∀ (x0 : Nat) (x1 : List Nat), ∀ M : Nat, hb x1 ≤ M → Cost_string_byte n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Inline.stringByte x0 x1) ≤ M + Cost_string_byte n x0 x1)) :
+    ∀ (x0 : Nat) (x1 : List Nat), ∀ M : Nat, hb x1 ≤ M → Cost_string_byte (n + 1) x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Inline.stringByte x0 x1) ≤ M + Cost_string_byte (n + 1) x0 x1 := by
+  obtain ⟨post_string_body, -⟩ := ih
+  intro x0 x1 M hM0
+  rw [Cost_string_byte.eq_def]; dsimp only
+  rw [Lanius.Mini.Inline.stringByte.eq_def x0 x1]
+  post_auto n, M
+theorem post_group_string_body : ∀ n : Nat,
+    (∀ (x0 : List Nat), ∀ M : Nat, hb x0 ≤ M → Cost_string_body n x0 < 18446744073709551616 → hb (Lanius.Mini.stringBody x0) ≤ M + Cost_string_body n x0) ∧
+    (∀ (x0 : Nat) (x1 : List Nat), ∀ M : Nat, hb x1 ≤ M → Cost_string_byte n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Inline.stringByte x0 x1) ≤ M + Cost_string_byte n x0 x1) := by
+  intro n
+  induction n with
+  | zero => exact ⟨fun x0 M hM0 h => absurd h (Nat.lt_irrefl _), fun x0 x1 M hM0 h => absurd h (Nat.lt_irrefl _)⟩
+  | succ n ih => exact ⟨post_step_string_body n ih, post_step_string_byte n ih⟩
+theorem post_string_body : ∀ (n : Nat) (x0 : List Nat), ∀ M : Nat, hb x0 ≤ M → Cost_string_body n x0 < 18446744073709551616 → hb (Lanius.Mini.stringBody x0) ≤ M + Cost_string_body n x0 :=
+  fun n => (post_group_string_body n).1
+theorem post_string_byte : ∀ (n : Nat) (x0 : Nat) (x1 : List Nat), ∀ M : Nat, hb x1 ≤ M → Cost_string_byte n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.Inline.stringByte x0 x1) ≤ M + Cost_string_byte n x0 x1 :=
+  fun n => (post_group_string_body n).2
+
+theorem post_string_open : ∀ (n : Nat) (x0 : Bool) (x1 : List Nat), ∀ M : Nat, hb x1 ≤ M → Cost_string_open n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.stringOpen x0 x1) ≤ M + Cost_string_open n x0 x1 := by
+  intro n x0 x1 M hM0
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_string_open.eq_def]; dsimp only
+  rw [Lanius.Mini.stringOpen.eq_def x0 x1]
+  post_auto n, M
+
+theorem post_string_literal : ∀ (n : Nat) (x0 : List Nat), ∀ M : Nat, hb x0 ≤ M → Cost_string_literal n x0 < 18446744073709551616 → hb (Lanius.Mini.stringLiteral x0) ≤ M + Cost_string_literal n x0 := by
+  intro n x0 M hM0
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_string_literal.eq_def]; dsimp only
+  rw [Lanius.Mini.stringLiteral.eq_def x0]
+  post_auto n, M
+
+theorem post_string_primary : ∀ (n : Nat) (x0 : Lanius.Mini.CTree) (x1 : Lanius.Mini.CTree), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_string_primary n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.stringPrimary x0 x1) ≤ M + Cost_string_primary n x0 x1 := by
+  intro n x0 x1 M hM0 hM1
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_string_primary.eq_def]; dsimp only
+  rw [Lanius.Mini.stringPrimary.eq_def x0 x1]
+  post_auto n, M
+
+theorem post_string_init : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.CTree), ∀ M : Nat, hb x1 ≤ M → Cost_string_init n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.stringInit x0 x1) ≤ M + Cost_string_init n x0 x1 := by
+  intro n x0 x1 M hM0
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_string_init.eq_def]; dsimp only
+  rw [Lanius.Mini.stringInit.eq_def x0 x1]
+  post_auto n, M
+
+theorem post_text_typed_slice_from_raw_parts : ∀ (n : Nat) , ∀ M : Nat, Cost_text_typed_slice_from_raw_parts n < 18446744073709551616 → hb (Lanius.Mini.textTypedSliceFromRawParts) ≤ M + Cost_text_typed_slice_from_raw_parts n := by
+  intro n  M 
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_text_typed_slice_from_raw_parts.eq_def]; dsimp only
+  rw [Lanius.Mini.textTypedSliceFromRawParts.eq_def]
+  post_auto n, M
+
+theorem post_string_slice : ∀ (n : Nat) (x0 : Bool) (x1 : Option Lanius.Mini.SrcExpr) (x2 : Nat) (x3 : List Nat) (x4 : Nat), ∀ M : Nat, hb x1 ≤ M → hb x3 ≤ M → Cost_string_slice n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.stringSlice x0 x1 x2 x3 x4) ≤ M + Cost_string_slice n x0 x1 x2 x3 x4 := by
+  intro n x0 x1 x2 x3 x4 M hM0 hM1
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_string_slice.eq_def]; dsimp only
+  rw [Lanius.Mini.stringSlice.eq_def x0 x1 x2 x3 x4]
+  post_auto n, M
+
+theorem post_text_string_data_ptr : ∀ (n : Nat), ∀ M : Nat, Cost_text_string_data_ptr n < 18446744073709551616 → hb (Lanius.Mini.textStringDataPtr) ≤ M + Cost_text_string_data_ptr n := by
+  intro n M h
+  rcases n with _ | _ | n
+  · simp [Cost_text_string_data_ptr] at h
+  · simp [Cost_text_string_data_ptr, Cost_cons_of_usize, Cost_single_of_usize] at h
+  · simp only [Cost_text_string_data_ptr, Cost_cons_of_usize, Cost_single_of_usize, Lanius.Mini.textStringDataPtr, hb_cons, hb_nil, hb_simp]
+    omega
+
+theorem post_string_data_ptr_path : ∀ (n : Nat) , ∀ M : Nat, Cost_string_data_ptr_path n < 18446744073709551616 → hb (Lanius.Mini.stringDataPtrPath) ≤ M + Cost_string_data_ptr_path n := by
+  intro n  M 
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_string_data_ptr_path.eq_def]; dsimp only
+  rw [Lanius.Mini.stringDataPtrPath.eq_def]
+  post_auto n, M
+
+theorem post_int_primary : ∀ (n : Nat) (x0 : Lanius.Mini.CTree) (x1 : Lanius.Mini.CTree), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_int_primary n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.intPrimary x0 x1) ≤ M + Cost_int_primary n x0 x1 := by
+  intro n x0 x1 M hM0 hM1
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_int_primary.eq_def]; dsimp only
+  rw [Lanius.Mini.intPrimary.eq_def x0 x1]
+  post_auto n, M
+
+theorem post_int_tree : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.CTree), ∀ M : Nat, hb x1 ≤ M → Cost_int_tree n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.intTree x0 x1) ≤ M + Cost_int_tree n x0 x1 := by
+  intro n x0 x1 M hM0
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_int_tree.eq_def]; dsimp only
+  rw [Lanius.Mini.intTree.eq_def x0 x1]
+  post_auto n, M
+
+theorem post_string_args : ∀ (n : Nat) (x0 : Nat) (x1 : Option (List Lanius.Mini.CTree)) (x2 : Nat) (x3 : List Nat) (x4 : List Nat) (x5 : Nat), ∀ M : Nat, hb x1 ≤ M → hb x3 ≤ M → hb x4 ≤ M → Cost_string_args n x0 x1 x2 x3 x4 x5 < 18446744073709551616 → hb (Lanius.Mini.stringArgs x0 x1 x2 x3 x4 x5) ≤ M + Cost_string_args n x0 x1 x2 x3 x4 x5 := by
+  intro n x0 x1 x2 x3 x4 x5 M hM0 hM1 hM2
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_string_args.eq_def]; dsimp only
+  rw [Lanius.Mini.stringArgs.eq_def x0 x1 x2 x3 x4 x5]
+  post_auto n, M
+
+theorem post_string_call : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : Nat) (x3 : List Nat) (x4 : List Nat) (x5 : Nat) (x6 : Lanius.Mini.CTree), ∀ M : Nat, hb x1 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x6 ≤ M → Cost_string_call n x0 x1 x2 x3 x4 x5 x6 < 18446744073709551616 → hb (Lanius.Mini.stringCall x0 x1 x2 x3 x4 x5 x6) ≤ M + Cost_string_call n x0 x1 x2 x3 x4 x5 x6 := by
+  intro n x0 x1 x2 x3 x4 x5 x6 M hM0 hM1 hM2 hM3
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_string_call.eq_def]; dsimp only
+  rw [Lanius.Mini.stringCall.eq_def x0 x1 x2 x3 x4 x5 x6]
+  post_auto n, M
+
+theorem post_string_peeled : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : Nat) (x3 : List Nat) (x4 : List Nat) (x5 : Nat) (x6 : Option Lanius.Mini.CTree), ∀ M : Nat, hb x1 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x6 ≤ M → Cost_string_peeled n x0 x1 x2 x3 x4 x5 x6 < 18446744073709551616 → hb (Lanius.Mini.stringPeeled x0 x1 x2 x3 x4 x5 x6) ≤ M + Cost_string_peeled n x0 x1 x2 x3 x4 x5 x6 := by
+  intro n x0 x1 x2 x3 x4 x5 x6 M hM0 hM1 hM2 hM3
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_string_peeled.eq_def]; dsimp only
+  rw [Lanius.Mini.stringPeeled.eq_def x0 x1 x2 x3 x4 x5 x6]
+  post_auto n, M
+
+theorem post_string_value : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : Nat) (x3 : List Nat) (x4 : List Nat) (x5 : Lanius.Mini.CTree), ∀ M : Nat, hb x1 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → Cost_string_value n x0 x1 x2 x3 x4 x5 < 18446744073709551616 → hb (Lanius.Mini.stringValue x0 x1 x2 x3 x4 x5) ≤ M + Cost_string_value n x0 x1 x2 x3 x4 x5 := by
+  intro n x0 x1 x2 x3 x4 x5 M hM0 hM1 hM2 hM3
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_string_value.eq_def]; dsimp only
+  rw [Lanius.Mini.stringValue.eq_def x0 x1 x2 x3 x4 x5]
+  post_auto n, M
+
+theorem post_string_return : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : Nat) (x3 : List Nat) (x4 : List Nat) (x5 : Lanius.Mini.CTree), ∀ M : Nat, hb x1 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → Cost_string_return n x0 x1 x2 x3 x4 x5 < 18446744073709551616 → hb (Lanius.Mini.stringReturn x0 x1 x2 x3 x4 x5) ≤ M + Cost_string_return n x0 x1 x2 x3 x4 x5 := by
+  intro n x0 x1 x2 x3 x4 x5 M hM0 hM1 hM2 hM3
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_string_return.eq_def]; dsimp only
+  rw [Lanius.Mini.stringReturn.eq_def x0 x1 x2 x3 x4 x5]
+  post_auto n, M
+
+theorem post_string_last : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : Nat) (x3 : List Nat) (x4 : List Nat) (x5 : List Lanius.Mini.CTree), ∀ M : Nat, hb x1 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → Cost_string_last n x0 x1 x2 x3 x4 x5 < 18446744073709551616 → hb (Lanius.Mini.stringLast x0 x1 x2 x3 x4 x5) ≤ M + Cost_string_last n x0 x1 x2 x3 x4 x5 := by
+  intro n x0 x1 x2 x3 x4 x5 M hM0 hM1 hM2 hM3
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_string_last.eq_def]; dsimp only
+  rw [Lanius.Mini.stringLast.eq_def x0 x1 x2 x3 x4 x5]
+  post_auto n, M
+
+theorem post_string_let : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : Nat) (x3 : List Nat) (x4 : Lanius.Mini.CTree) (x5 : List Lanius.Mini.CTree), ∀ M : Nat, hb x1 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → Cost_string_let n x0 x1 x2 x3 x4 x5 < 18446744073709551616 → hb (Lanius.Mini.stringLet x0 x1 x2 x3 x4 x5) ≤ M + Cost_string_let n x0 x1 x2 x3 x4 x5 := by
+  intro n x0 x1 x2 x3 x4 x5 M hM0 hM1 hM2 hM3
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_string_let.eq_def]; dsimp only
+  rw [Lanius.Mini.stringLet.eq_def x0 x1 x2 x3 x4 x5]
+  post_auto n, M
 
 theorem post_lit_match_parts : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Lanius.Mini.CTree), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → Cost_lit_match_parts n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.litMatchParts x0 x1 x2 x3) ≤ M + Cost_lit_match_parts n x0 x1 x2 x3 := by
   intro n x0 x1 x2 x3 M hM0 hM1 hM2

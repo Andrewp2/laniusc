@@ -4,6 +4,7 @@ public import Lanius.Mini.LowerStmt
 public import Lanius.Mini.ArrayCall
 public import Lanius.Mini.WorldTrace
 public import Lanius.Mini.ViewLower
+public import Lanius.Mini.StrLower
 public import Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.FArith_opcode
@@ -70,6 +71,7 @@ import all Lanius.Mini.Compiler.P.repeatType
 import all Lanius.Mini.Compiler.P.shortCircuit
 import all Lanius.Mini.Compiler.P.sintToUint
 import all Lanius.Mini.Compiler.P.storeArray
+import all Lanius.Mini.Compiler.P.strStores
 import all Lanius.Mini.Compiler.P.storeEvalWord
 import all Lanius.Mini.Compiler.P.storeType
 import all Lanius.Mini.Compiler.P.storeWordElement
@@ -105,6 +107,7 @@ public import Lanius.Mini.Compiler.P.shortCircuit
 public import Lanius.Mini.Compiler.P.withBudget
 public import Lanius.Mini.Compiler.P.funcNeeds
 public import Lanius.Mini.Compiler.P.storeArray
+public import Lanius.Mini.Compiler.P.strStores
 public import Lanius.Mini.Compiler.P.arrayCallSig
 public import Lanius.Mini.Compiler.P.bindingBytes
 public import Lanius.Mini.Compiler.P.needRound
@@ -4391,6 +4394,7 @@ theorem sound_both {sp : SrcProgram} {mp : Program}
         | «let» => exact stmt_let here ok corr fr fresh le hc fc under run bound
         | letStruct => exact stmt_letStruct here ok corr fr fresh le hc fc under run bound
         | letView => exact stmt_letView below ok corr fr fresh le hc fc under run bound
+        | letStr => exact stmt_letStr here ok corr fr fresh le hc fc under run bound
         | letCall => exact stmt_letCall lowered below ok corr fr fresh le hc fc under run bound
         | letEnum => exact stmt_letEnum here ok corr fr fresh le hc fc under run bound
         | letMatch => exact stmt_letMatch here ok corr fr fresh le hc fc under run bound

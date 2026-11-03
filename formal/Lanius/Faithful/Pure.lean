@@ -201,6 +201,7 @@ def _root_.Lanius.Mini.SrcStmt.loopFree : SrcStmt → Bool
   | .return _ => true
   | .letAlloc _ _ _ _ => true
   | .letView _ _ _ _ _ => true
+  | .letStr _ _ _ => true
   | .letLoad _ _ _ _ => true
   | .setByte _ _ _ => true
   | .free _ _ _ => true
@@ -240,6 +241,7 @@ def _root_.Lanius.Mini.SrcStmt.writes : SrcStmt → List Nat
   | .return _ => []
   | .letAlloc _ _ _ _ => []
   | .letView _ _ _ _ _ => []
+  | .letStr _ _ _ => []
   | .letLoad _ _ _ _ => []
   | .setByte _ _ _ => []
   | .free _ _ _ => []
@@ -327,6 +329,7 @@ def pstmt (env : Env) : SrcStmt → Option Done
   | .return value => (pexpr env value).map fun v => .ret (some v)
   | .letAlloc _ _ _ _ => none
   | .letView _ _ _ _ _ => none
+  | .letStr _ _ _ => none
   | .letLoad _ _ _ _ => none
   | .setByte _ _ _ => none
   | .free _ _ _ => none
@@ -391,6 +394,7 @@ def mstmt (fuel : Nat) (env : Env) : SrcStmt → Option Out
   | .return value => (pexpr env value).map fun v => .ret (some v)
   | .letAlloc _ _ _ _ => none
   | .letView _ _ _ _ _ => none
+  | .letStr _ _ _ => none
   | .letLoad _ _ _ _ => none
   | .setByte _ _ _ => none
   | .free _ _ _ => none
@@ -526,7 +530,7 @@ theorem mstmt_loopFree (call : Calls) (fuel : Nat) :
   | returnUnit => intro env _; rfl
   | set _ _ | «while» _ _ | setEval _ _ | whileEval _ _ | «break» | «continue» =>
     intro env h; simp [SrcStmt.loopFree] at h
-  | letMatch _ _ _ _ _ _ | setField _ _ _ | setCall _ _ _ | letAlloc _ _ _ _ | letView _ _ _ _ _ | letLoad _ _ _ _ | setByte _ _ _
+  | letMatch _ _ _ _ _ _ | setField _ _ _ | setCall _ _ _ | letAlloc _ _ _ _ | letView _ _ _ _ _ | letStr _ _ _ | letLoad _ _ _ _ | setByte _ _ _
   | free _ _ _ | letSlice _ _ _ _ _ | letIndex _ _ _ _ _ | setIndex _ _ _ | setIndexEval _ _ _
   | setFieldEval _ _ _ | matchArm _ _ _ _ _ _ _ _ | unreachable _ _ => intro env _; rfl
 

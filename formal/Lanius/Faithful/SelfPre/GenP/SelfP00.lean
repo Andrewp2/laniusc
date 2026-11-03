@@ -549,6 +549,12 @@ theorem upost_lit_match_typed : ∀ (x0 : Lanius.Mini.FrontEnv) (x1 : List Laniu
   all_goals upost_auto M
 theorem HBPost.Lanius.Mini.litMatchTyped.p0 : ∀ (x0 : Lanius.Mini.FrontEnv) (x1 : List Lanius.Mini.Local) (x2 : Lanius.Mini.CTree) (x3 : Lanius.Mini.MEff) (x4 : Lanius.Mini.Ty), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb (Lanius.Mini.litMatchTyped x0 x1 x2 x3 x4) ≤ M := upost_lit_match_typed
 
+theorem upost_string_close : ∀ (x0 : Bool), ∀ M : Nat, hb (Lanius.Mini.stringClose x0) ≤ M := by
+  intro x0 M 
+  first | fun_induction Lanius.Mini.stringClose x0 | fun_cases Lanius.Mini.stringClose x0 | unfold Lanius.Mini.stringClose
+  all_goals upost_auto M
+theorem HBPost.Lanius.Mini.stringClose.p0 : ∀ (x0 : Bool), ∀ M : Nat, hb (Lanius.Mini.stringClose x0) ≤ M := upost_string_close
+
 theorem upost_checked_bound : ∀ (x0 : Bool) (x1 : Option Lanius.Mini.ArgsBound), ∀ M : Nat, hb x1 ≤ M → hb (Lanius.Mini.checkedBound x0 x1) ≤ M := by
   intro x0 x1 M hM0
   first | fun_induction Lanius.Mini.checkedBound x0 x1 | fun_cases Lanius.Mini.checkedBound x0 x1 | unfold Lanius.Mini.checkedBound

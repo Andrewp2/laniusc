@@ -13,6 +13,7 @@ public import Lanius.Mini.Frontend.P.forRange
 public import Lanius.Mini.Frontend.P.freshId
 public import Lanius.Mini.Frontend.P.funcsOnto
 public import Lanius.Mini.Frontend.P.hasKids
+public import Lanius.Mini.Frontend.P.i32ArrayLength
 public import Lanius.Mini.Frontend.P.isEmptyUsize
 public import Lanius.Mini.Frontend.P.litIf
 public import Lanius.Mini.Frontend.P.lxBlockEnd
@@ -24,6 +25,7 @@ public import Lanius.Mini.Frontend.P.paramGoals
 public import Lanius.Mini.Frontend.P.pickTy
 public import Lanius.Mini.Frontend.P.sintAt
 public import Lanius.Mini.Frontend.P.sliceHead
+public import Lanius.Mini.Frontend.P.stringCons
 public import Lanius.Mini.Frontend.P.textSelf
 public import Lanius.Mini.Frontend.P.typeDeclAt
 public import Lanius.Mini.Frontend.P.wideLeftStmt
@@ -51,6 +53,11 @@ namespace Lanius.Mini
     consBinder (tok.start - env.base) (bindersOf env (({ name := tok.text, id := tok.start - env.base, ty := t } : Local) :: scope) pats payload)
   else
     none
+
+@[expose] def Inline.stringByte (sb : Nat) (srest : List Nat) : Option (List Nat) :=
+  match srest with
+  | [] => stringClose (decide (sb = 34))
+  | sc :: smore => stringCons (plainStringByte sb) sb (stringBody srest)
 
 /-- `for x in a..n { body }`, a an integer literal and n a local (for_stmt -> For Ident In for_iterable block), read as `let c = a; let e = n; while (c < e) { let x = c; c = c + 1; body }`: n is read once, and a `continue` in body moves to the next value. The hidden c and e are numbered by the `for` token and x's token, and x by the `in` token, so that the locals are numbered in the order the desugared text declares them. `for x in a { body }`, a an array local, is for_array's loop, its index numbered by the `for` token and x by its own; a a slice local, for_slice's, numbered as a range loop's: the index by the `for` token, the length by x's token and x by the `in` token. -/
 @[expose] def Inline.forOf (ffuel : Nat) (fenv : FrontEnv) (fscope : List Local) (fs : CTree) : Option MStmt :=

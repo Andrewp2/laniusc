@@ -72,6 +72,7 @@ def SrcStmt.rawFree : SrcStmt → Bool
   | .return _ => true
   | .letAlloc _ _ _ _ => false
   | .letView _ _ _ _ _ => false
+  | .letStr _ _ _ => false
   | .letLoad _ _ _ _ => false
   | .setByte _ _ _ => false
   | .free _ _ _ => false
@@ -205,7 +206,7 @@ theorem SrcStmt.toCore_frag : ∀ (s : SrcStmt), s.rawFree = true → StmtFrag s
     simp only [SrcStmt.rawFree] at h
     simp [SrcStmt.toCore, StmtFrag, SrcExpr.toCore_frag, SrcStmt.toCore_frag body h]
   | .return v, _ => by simp [SrcStmt.toCore, StmtFrag, SrcExpr.toCore_frag]
-  | .letAlloc _ _ _ _, h | .letView _ _ _ _ _, h | .letLoad _ _ _ _, h | .setByte _ _ _, h | .free _ _ _, h
+  | .letAlloc _ _ _ _, h | .letView _ _ _ _ _, h | .letStr _ _ _, h | .letLoad _ _ _ _, h | .setByte _ _ _, h | .free _ _ _, h
   | .letSlice _ _ _ _ _, h | .letIndex _ _ _ _ _, h | .setIndex _ _ _, h | .setIndexEval _ _ _, h => by
     simp [SrcStmt.rawFree] at h
   | .letEval _ _ v body, h => by

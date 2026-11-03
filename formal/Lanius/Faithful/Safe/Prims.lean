@@ -22,6 +22,7 @@ import all Lanius.Mini.Compiler.P.wordElement
 import all Lanius.Mini.Compiler.P.wordWidth
 import all Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Compiler.P.storeArray
+public import Lanius.Mini.Compiler.P.strStores
 public import Lanius.Mini.Compiler.P.arrayCallSig
 public import Lanius.Mini.Compiler.P.bindingBytes
 public import Lanius.Mini.Compiler.P.funcNeeds

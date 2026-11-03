@@ -92,6 +92,7 @@ def SrcStmt.callsOk (S : Nat → Bool) : SrcStmt → Bool
   | .matchArm _ _ _ _ _ _ _ _ => true
   | .unreachable _ _ => true
   | .letView _ _ _ _ _ => true
+  | .letStr _ _ _ => true
 
 end Lanius.Mini
 
@@ -330,6 +331,7 @@ theorem qstmt_z (hc : QCallsZ S call call') (fuel : Nat) (s : SrcStmt) :
   | «return» => intro _ env; exact zle_qfree _
   | letAlloc => intro _ env; exact zle_none
   | letView => intro _ env; exact zle_none
+  | letStr => intro _ env; exact zle_none
   | letLoad => intro _ env; exact zle_none
   | setByte => intro _ env; exact zle_none
   | free => intro _ env; exact zle_none

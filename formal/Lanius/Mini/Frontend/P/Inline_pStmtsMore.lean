@@ -12,6 +12,9 @@ namespace Lanius.Mini
 @[expose] def Inline.pStmtsMore : Nat :=
   73
 
+@[expose] def Inline.pString : Nat :=
+  177
+
 @[expose] def Inline.pStruct : Nat :=
   258
 

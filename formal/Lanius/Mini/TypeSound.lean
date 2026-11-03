@@ -82,6 +82,7 @@ import all Lanius.Mini.Compiler.P.withBudget
 import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.sintToUint
 import all Lanius.Mini.Compiler.P.storeArray
+import all Lanius.Mini.Compiler.P.strStores
 import all Lanius.Mini.Compiler.P.arrayCallSig
 import all Lanius.Mini.Compiler.P.bindingBytes
 import all Lanius.Mini.Compiler.P.needRound
@@ -140,6 +141,7 @@ public import Lanius.Mini.Compiler.P.withBudget
 public import Lanius.Mini.Compiler.P.funcNeeds
 public import Lanius.Mini.Compiler.P.sintToUint
 public import Lanius.Mini.Compiler.P.storeArray
+public import Lanius.Mini.Compiler.P.strStores
 public import Lanius.Mini.Compiler.P.arrayCallSig
 public import Lanius.Mini.Compiler.P.bindingBytes
 public import Lanius.Mini.Compiler.P.needRound
@@ -240,6 +242,7 @@ def SrcStmt.Declared (P : Core.Program) (s : SrcStmt) : Prop :=
   | .matchArm _ _ _ _ _ ty body rest => TypeDeclared P ty ∧ SrcStmt.Declared P body ∧ SrcStmt.Declared P rest
   | .unreachable _ ty => TypeDeclared P ty
   | .letView _ _ _ _ body => SrcStmt.Declared P body
+  | .letStr _ _ body => SrcStmt.Declared P body
 
 /-- Every parameter type and binding type of every function is declared. -/
 def SrcProgram.Declared (P : Core.Program) (sp : SrcProgram) : Prop :=
@@ -290,6 +293,7 @@ theorem returns_sound : ∀ (s : SrcStmt), s.returns = true → Typing.Definitel
   | .continue, h => by simp [SrcStmt.returns] at h
   | .unreachable _ _, _ => .letUninitialized .returnValue
   | .letView _ _ _ _ body, h => .letLocal (.letLocal (returns_sound body h))
+  | .letStr _ _ body, h => .letLocal (returns_sound body h)
   | .matchArm _ _ _ _ _ ty body rest, h => by
     simp only [SrcStmt.returns, Bool.and_eq_true] at h
     simp only [SrcStmt.toCore]
@@ -2855,6 +2859,13 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
       (.letLocal (.i32ArrayDataPtr (.local (by simp [Typing.Context.bind]; rfl)))
         (SrcStmt.lower_typed target sigsOk body ((ok.cons (TypeDeclared.view length)).cons TypeDeclared.ptr) d
           (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb))
+  | .letStr pointer chars body, scope, ctx, next, inLoop, out, ok, d, bo, h => by
+    simp only [SrcStmt.Declared] at d
+    obtain ⟨bstmt, -, -, -, hb, -⟩ := letStr_lower_inv h
+    simp only [SrcStmt.toCore]
+    exact .letLocal (.stringDataPtr (.value (.string _) (literal := rfl)))
+      (SrcStmt.lower_typed target sigsOk body (ok.cons TypeDeclared.ptr) d
+        (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
   | .assert condition, scope, ctx, next, inLoop, out, ok, d, bo, h => by
     simp only [SrcStmt.lower, lowerAssert] at h
     split at h
@@ -3500,6 +3511,10 @@ theorem SrcStmt.declare_sound : ∀ (s : SrcStmt) {d d' : SrcDecls}, s.declare d
     obtain ⟨ext, head⟩ := SrcType.declare_sound ty h
     exact ⟨ext, fun extD agrees => head extD agrees⟩
   | .letView _ _ _ _ body, d, d', h => by
+    simp only [SrcStmt.declare] at h
+    obtain ⟨ext, rest⟩ := SrcStmt.declare_sound body h
+    exact ⟨ext, fun extD agrees => by simp only [SrcStmt.Declared]; exact rest extD agrees⟩
+  | .letStr _ _ body, d, d', h => by
     simp only [SrcStmt.declare] at h
     obtain ⟨ext, rest⟩ := SrcStmt.declare_sound body h
     exact ⟨ext, fun extD agrees => by simp only [SrcStmt.Declared]; exact rest extD agrees⟩

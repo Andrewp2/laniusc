@@ -1490,6 +1490,14 @@ theorem post_let_view_closed : ∀ (n : Nat) (x0 : Nat) (x1 : Nat) (x2 : List La
   rw [Lanius.Mini.letViewClosed.eq_def x0 x1 x2 x3 x4]
   post_auto n, M
 
+theorem post_let_str_closed : ∀ (n : Nat) (x0 : Nat) (x1 : List Nat) (x2 : Option Lanius.Mini.SrcStmt), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → Cost_let_str_closed n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.letStrClosed x0 x1 x2) ≤ M + Cost_let_str_closed n x0 x1 x2 := by
+  intro n x0 x1 x2 M hM0 hM1
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_let_str_closed.eq_def]; dsimp only
+  rw [Lanius.Mini.letStrClosed.eq_def x0 x1 x2]
+  post_auto n, M
+
 theorem post_let_eval_closed : ∀ (n : Nat) (x0 : Nat) (x1 : Option Lanius.Mini.SrcType) (x2 : Option Lanius.Mini.SrcEff) (x3 : Option Lanius.Mini.SrcStmt), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → Cost_let_eval_closed n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.letEvalClosed x0 x1 x2 x3) ≤ M + Cost_let_eval_closed n x0 x1 x2 x3 := by
   intro n x0 x1 x2 x3 M hM0 hM1 hM2
   rcases n with _ | n
@@ -3657,14 +3665,6 @@ theorem post_float_marker : ∀ (n : Nat) (x0 : Lanius.Mini.FlDec), ∀ M : Nat,
   · intro h; exact absurd h (Nat.lt_irrefl _)
   rw [Cost_float_marker.eq_def]; dsimp only
   rw [Lanius.Mini.floatMarker.eq_def x0]
-  post_auto n, M
-
-theorem post_float_literal : ∀ (n : Nat) (x0 : List Nat), ∀ M : Nat, hb x0 ≤ M → Cost_float_literal n x0 < 18446744073709551616 → hb (Lanius.Mini.floatLiteral x0) ≤ M + Cost_float_literal n x0 := by
-  intro n x0 M hM0
-  rcases n with _ | n
-  · intro h; exact absurd h (Nat.lt_irrefl _)
-  rw [Cost_float_literal.eq_def]; dsimp only
-  rw [Lanius.Mini.floatLiteral.eq_def x0]
   post_auto n, M
 
 end Lanius.Faithful.SelfPre

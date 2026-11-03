@@ -56,6 +56,13 @@ import all Lanius.Mini.Frontend.P.typeDeclAt
 import all Lanius.Mini.Frontend.P.whileEvalOf
 import all Lanius.Mini.Frontend.P.wideOf
 import all Lanius.Mini.Frontend.P.i32ArrayLength
+import all Lanius.Mini.Frontend.P.stringLast
+import all Lanius.Mini.Frontend.P.stringCons
+import all Lanius.Mini.Frontend.P.stringOpen
+import all Lanius.Mini.Frontend.P.oneTreeNames
+import all Lanius.Mini.Frontend.P.stringCall
+import all Lanius.Mini.Frontend.P.stringReturn
+import all Lanius.Mini.Frontend.P.isTypedSliceSegments
 import all Lanius.Mini.Frontend.P.ifSome
 import all Lanius.Mini.Frontend.P.callParts
 
@@ -1177,6 +1184,301 @@ theorem litMatchParts_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {
         | some rt => rw [hr] at hh; exact .mk (effOf_sound hx) (effTy_sound he) lt hr hh
       · cases hh
 
+/-! ## String literals (SEMANTIC_DECISIONS "Addressed locals" point 6) -/
+
+/-- A byte a string literal holds as itself: printable ASCII other than the
+quote and the backslash, so no escape is read. -/
+def PlainStringByte (b : Nat) : Prop := 32 ≤ b ∧ b < 127 ∧ b ≠ 34 ∧ b ≠ 92
+
+/-- A string literal's text, its quotes included, and its bytes: laniusc's
+literal is exactly these bytes. -/
+def StringLiteral (text chars : List Nat) : Prop :=
+  text = 34 :: (chars ++ [34]) ∧ ∀ b ∈ chars, PlainStringByte b
+
+/-- The initializer is a string literal. -/
+inductive StringInit (init : CTree) : List Nat → Prop
+  | mk {pf : CTree} {chars : List Nat} : Peel init pf → nodeProd (kid pf 0) = pString →
+      nodeProd (kid pf 1) = pPostfixEnd → StringLiteral (kidToken (kid pf 0) 0).text chars → StringInit init chars
+
+/-- The type `str`: a bare one-segment path (laniusc's builtin type names
+take precedence over declared ones). -/
+inductive StrType (t : CTree) : Prop
+  | mk : nodeProd t = pTypeIdent → nodeProd (kid t 1) = pTypeArgsNone →
+      TypePathSpellings (kid (kid t 0) 0) (kid (kid t 0) 1) [textStr] → StrType t
+
+/-- The expression is the bare name. -/
+inductive TreeNames (c : CTree) (name : Name) : Prop
+  | mk {pf : CTree} : Peel c pf → nodeProd (kid pf 0) = pIdent → nodeProd (kid (kid pf 0) 1) = pIdentPlain →
+      nodeProd (kid pf 1) = pPostfixEnd → PathName (kid (kid pf 0) 0) name → TreeNames c name
+
+/-- `core::mem::string_data_ptr(name)`. -/
+inductive DataPtrOf (a : CTree) (name : Name) : Prop
+  | mk {pf c : CTree} : Peel a pf → PathCallForm pf →
+      PathSpellings (kid (kid (kid pf 0) 0) 0) (kid (kid (kid pf 0) 0) 1) stringDataPtrPath →
+      Items (kid (kid pf 1) 1) [c] → TreeNames c name → DataPtrOf a name
+
+/-- `core::mem::typed_slice_from_raw_parts`, with no type argument or with `<u8>`. -/
+inductive TypedSlicePath (env : FrontEnv) (path : CTree) : Prop
+  | mk {pr : PathRef} : PathRefR (kid path 0) (kid path 1) pr →
+      pr.segments = [textCore, textMem, textTypedSliceFromRawParts] →
+      (pr.targs = [] ∨ ArgsTy env pr.targs [.tyUint .uint8]) → TypedSlicePath env path
+
+/-- `return core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(name), n);`
+(or `typed_slice_from_raw_parts<u8>`), n an integer literal, in a function
+returning `[u8]`: the slice local's id (the value's first token, as
+`ReturnR.slice` numbers it) and n. The stdlib function is `assert(length >=
+0); return slice_from_raw_parts(data, length);`, and a literal is never
+negative, so the call is the raw view itself. -/
+inductive StringReturnR (env : FrontEnv) (name : Name) (r : CTree) : Nat → SrcExpr → Prop
+  | mk {pf a b pb : CTree} {first : Token} {rest : List Token} {n : SrcExpr} :
+      nodeProd r = pReturnStmt → nodeProd (kid r 1) = pReturnValue → env.ret = some (.tySlice (.tyUint .uint8)) →
+      (kid (kid r 1) 0).leaves = first :: rest → Peel (kid (kid r 1) 0) pf → PathCallForm pf →
+      TypedSlicePath env (kid (kid pf 0) 0) → Items (kid (kid pf 1) 1) [a, b] → DataPtrOf a name →
+      Peel b pb → nodeProd (kid pb 0) = pInt → nodeProd (kid pb 1) = pPostfixEnd →
+      IntLiteral (kidToken (kid pb 0) 0).text n → StringReturnR env name r (first.start - env.base) n
+
+theorem plainStringByte_iff (b : Nat) : plainStringByte b = true ↔ PlainStringByte b := by
+  simp [plainStringByte, PlainStringByte, and_assoc]
+
+theorem stringBody_sound : ∀ {bs cs : List Nat}, stringBody bs = some cs →
+    bs = cs ++ [34] ∧ ∀ b ∈ cs, PlainStringByte b
+  | [], _, h => by simp [stringBody] at h
+  | [b], cs, h => by
+    rw [stringBody.eq_def] at h
+    simp only [stringClose] at h
+    by_cases e : b = 34
+    · subst e
+      simp only [decide_true, if_true, Option.some.injEq] at h
+      subst h
+      exact ⟨rfl, fun _ m => by cases m⟩
+    · simp [e] at h
+  | b :: c :: more, cs, h => by
+    rw [stringBody.eq_def] at h
+    simp only [stringCons] at h
+    cases hp : plainStringByte b with
+    | false => rw [hp] at h; simp at h
+    | true =>
+      rw [hp] at h
+      simp only [if_true] at h
+      cases hr : stringBody (c :: more) with
+      | none => rw [hr] at h; cases h
+      | some cs' =>
+        rw [hr, Option.some.injEq] at h
+        subst h
+        obtain ⟨e, all⟩ := stringBody_sound hr
+        refine ⟨by rw [e]; rfl, fun x m => ?_⟩
+        rcases List.mem_cons.1 m with rfl | m
+        · exact (plainStringByte_iff _).1 hp
+        · exact all x m
+
+theorem stringLiteral_sound {text cs : List Nat} (h : stringLiteral text = some cs) : StringLiteral text cs := by
+  unfold stringLiteral at h
+  cases text with
+  | nil => cases h
+  | cons q rest =>
+    simp only [stringOpen] at h
+    by_cases e : q = 34
+    · subst e
+      simp only [decide_true, if_true] at h
+      obtain ⟨e, all⟩ := stringBody_sound h
+      exact ⟨by rw [e], all⟩
+    · simp [e] at h
+
+theorem isStrType_sound {fuel : Nat} {t : CTree} (h : isStrType fuel t = true) : StrType t := by
+  unfold isStrType at h
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at h
+  obtain ⟨⟨a, b⟩, c⟩ := h
+  exact .mk a b (typePathSpellings_sound (isPath_eq c))
+
+theorem stringInit_sound {fuel : Nat} {init : CTree} {cs : List Nat} (h : stringInit fuel init = some cs) :
+    StringInit init cs := by
+  unfold stringInit at h
+  cases hp : peel fuel init with
+  | none => rw [hp] at h; cases h
+  | some pf =>
+    rw [hp] at h
+    simp only [stringPrimary] at h
+    split at h
+    · rename_i c
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at c
+      exact .mk (peel_sound hp) c.1 c.2 (stringLiteral_sound h)
+    · cases h
+
+theorem isText_sound {t : Option Name} {n : Name} (h : isText t n = true) : t = some n := by
+  cases t with
+  | none => simp [isText] at h
+  | some x => simp only [isText] at h; rw [(sameText_iff _ _).1 h]
+
+theorem treeNames_sound {fuel : Nat} {c : CTree} {n : Name} (h : treeNames fuel c n = true) : TreeNames c n := by
+  unfold treeNames at h
+  cases hp : peel fuel c with
+  | none => rw [hp] at h; cases h
+  | some pf =>
+    rw [hp] at h
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at h
+    obtain ⟨⟨⟨a, b⟩, d⟩, e⟩ := h
+    exact .mk (peel_sound hp) a b d (pathName_eq (isText_sound e))
+
+theorem isEmptyTrees_eq {ts : List CTree} (h : isEmptyTrees ts = true) : ts = [] := by
+  cases ts with
+  | nil => rfl
+  | cons _ _ => simp [isEmptyTrees] at h
+
+theorem oneTreeNames_sound {fuel : Nat} {items : Option (List CTree)} {n : Name}
+    (h : oneTreeNames fuel items n = true) : ∃ c, items = some [c] ∧ TreeNames c n := by
+  unfold oneTreeNames at h
+  cases items with
+  | none => cases h
+  | some ts =>
+    cases ts with
+    | nil => cases h
+    | cons c rest =>
+      simp only [Bool.and_eq_true] at h
+      rw [isEmptyTrees_eq h.1]
+      exact ⟨c, rfl, treeNames_sound h.2⟩
+
+theorem isDataPtrOf_sound {fuel : Nat} {a : CTree} {n : Name} (h : isDataPtrOf fuel a n = true) : DataPtrOf a n := by
+  unfold isDataPtrOf at h
+  cases hp : peel fuel a with
+  | none => rw [hp] at h; cases h
+  | some pf =>
+    rw [hp] at h
+    simp only [Bool.and_eq_true] at h
+    obtain ⟨⟨pc, ps⟩, one⟩ := h
+    obtain ⟨c, hi, tn⟩ := oneTreeNames_sound one
+    exact .mk (peel_sound hp) (isPathCall_sound pc) (pathSpellings_sound (isPath_eq ps)) (listItems_sound hi) tn
+
+theorem isTypedSliceSegments_eq {ss : List Name} (h : isTypedSliceSegments ss = true) :
+    ss = [textCore, textMem, textTypedSliceFromRawParts] := by
+  match ss, h with
+  | [], h => simp [isTypedSliceSegments] at h
+  | [_], h => simp [isTypedSliceSegments, isMemTyped] at h
+  | [_, _], h => simp [isTypedSliceSegments, isMemTyped, isLastTyped] at h
+  | a :: b :: c :: rest, h =>
+    simp only [isTypedSliceSegments, isMemTyped, isLastTyped, Bool.and_eq_true] at h
+    obtain ⟨ha, hb, hc, he⟩ := h
+    rw [(sameText_iff _ _).1 ha, (sameText_iff _ _).1 hb, (sameText_iff _ _).1 hc]
+    cases rest with
+    | nil => rfl
+    | cons _ _ => simp [isEmptyTexts] at he
+
+theorem isTypedSlicePath_sound {fuel : Nat} {env : FrontEnv} {path : CTree} (h : isTypedSlicePath fuel env path = true) :
+    TypedSlicePath env path := by
+  unfold isTypedSlicePath at h
+  cases hr : pathRef fuel (kid path 0) (kid path 1) with
+  | none => rw [hr] at h; cases h
+  | some r =>
+    rw [hr] at h
+    simp only [Bool.and_eq_true] at h
+    obtain ⟨ss, ua⟩ := h
+    refine .mk (pathRef_sound hr) (isTypedSliceSegments_eq ss) ?_
+    unfold u8Args at ua
+    cases ht : r.targs with
+    | nil => exact .inl rfl
+    | cons g rest =>
+      rw [ht] at ua
+      simp only [Bool.and_eq_true] at ua
+      obtain ⟨em, u⟩ := ua
+      rw [isEmptyTrees_eq em]
+      unfold isU8Ty at u
+      cases hg : argTy fuel env g with
+      | none => rw [hg] at u; cases u
+      | some t =>
+        rw [hg] at u
+        simp only at u
+        rw [(sameTy_iff _ _).1 u] at hg
+        obtain ⟨gp, tr⟩ := (tySound fuel).2.2.2.2.2.2 hg
+        exact .inr (.cons gp tr .nil)
+
+theorem intTree_sound {fuel : Nat} {b : CTree} {n : SrcExpr} (h : intTree fuel b = some n) :
+    ∃ pb, Peel b pb ∧ nodeProd (kid pb 0) = pInt ∧ nodeProd (kid pb 1) = pPostfixEnd ∧
+      IntLiteral (kidToken (kid pb 0) 0).text n := by
+  unfold intTree at h
+  cases hp : peel fuel b with
+  | none => rw [hp] at h; cases h
+  | some pb =>
+    rw [hp] at h
+    simp only [intPrimary] at h
+    split at h
+    · rename_i c
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at c
+      exact ⟨pb, peel_sound hp, c.1, c.2, intLiteral_sound h⟩
+    · cases h
+
+/-- What `stringLet` checks of a `str` let's initializer and the statements after it. -/
+theorem stringLet_sound {fuel : Nat} {env : FrontEnv} {id : Nat} {name : Name} {init : CTree} {rest : List CTree}
+    {m : MStmt} (h : stringLet fuel env id name init rest = some m) :
+    ∃ chars r slice n, StringInit init chars ∧ rest = [r] ∧ StringReturnR env name r slice n ∧
+      m = .mLetStr id chars (.mLetSlice slice (.tyUint .uint8) (.local id) n (.mReturn (.local slice))) := by
+  unfold stringLet at h
+  cases hi : stringInit fuel init with
+  | none => rw [hi] at h; cases h
+  | some chars =>
+    rw [hi] at h
+    simp only [stringLast] at h
+    cases rest with
+    | nil => cases h
+    | cons r more =>
+      cases more with
+      | cons _ _ => cases h
+      | nil =>
+        simp only [stringReturn] at h
+        split at h
+        rotate_left
+        · cases h
+        rename_i c
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at c
+        obtain ⟨⟨rp, rv⟩, us⟩ := c
+        have ret : env.ret = some (.tySlice (.tyUint .uint8)) := by
+          unfold isU8Slice at us
+          cases e : env.ret with
+          | none => rw [e] at us; cases us
+          | some t => rw [e] at us; simp only at us; rw [(sameTy_iff _ _).1 us]
+        simp only [stringValue] at h
+        cases ht : treeTokens (kid (kid r 1) 0) with
+        | nil => rw [ht] at h; cases h
+        | cons first toks =>
+          rw [ht] at h
+          simp only [stringPeeled] at h
+          cases hp : peel fuel (kid (kid r 1) 0) with
+          | none => rw [hp] at h; cases h
+          | some pf =>
+            rw [hp] at h
+            simp only [stringCall] at h
+            split at h
+            rotate_left
+            · cases h
+            rename_i c
+            simp only [Bool.and_eq_true] at c
+            obtain ⟨pc, tp⟩ := c
+            simp only [stringArgs] at h
+            cases hl : listItems fuel (kid (kid pf 1) 1) with
+            | none => rw [hl] at h; cases h
+            | some ts =>
+              rw [hl] at h
+              match ts, h with
+              | [], h => cases h
+              | [_], h => cases h
+              | a :: b :: more, h =>
+                simp only [stringSlice] at h
+                split at h
+                rotate_left
+                · cases h
+                rename_i c
+                simp only [Bool.and_eq_true] at c
+                obtain ⟨em, dp⟩ := c
+                have e := isEmptyTrees_eq em
+                subst e
+                cases hn : intTree fuel b with
+                | none => rw [hn] at h; cases h
+                | some n =>
+                  rw [hn, Option.some.injEq] at h
+                  subst h
+                  obtain ⟨pb, pe, pi, pend, il⟩ := intTree_sound hn
+                  exact ⟨chars, r, _, n, stringInit_sound hi, rfl,
+                    .mk rp rv ret (by rw [← treeTokens_eq]; exact ht) (peel_sound hp) (isPathCall_sound pc)
+                      (isTypedSlicePath_sound tp) (listItems_sound hl) (isDataPtrOf_sound dp) pe pi pend il, rfl⟩
+
 mutual
 /-- A block's statement list. -/
 inductive BlockR (env : FrontEnv) : List Local → CTree → MStmt → Prop
@@ -1242,6 +1544,18 @@ inductive StmtsR (env : FrontEnv) : List Local → List CTree → MStmt → Prop
         { name := (kidToken s 1).text, id := (kidToken s 1).start - env.base, ty := .tyArray .tyI32 n } :: scope) rest body →
       StmtsR env scope (s :: v :: rest)
         (.mLetView ((kidToken s 1).start - env.base) n fields ((kidToken v 1).start - env.base) body)
+  /-- `let x: str = "chars";` then, the block's last statement, `return
+  core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(x), n);`:
+  a `LetStr` whose pointer is numbered by x (the str local is used only by
+  `string_data_ptr`, so the pointer stands for it), the raw view of its bytes
+  and that view's return (SEMANTIC_DECISIONS "Addressed locals" point 6). -/
+  | letStr {scope : List Local} {s r : CTree} {chars : List Nat} {slice : Nat} {n : SrcExpr} :
+      nodeProd s = pLetStmt → nodeProd (kid s 2) = pLetType → nodeProd (kid s 3) = pLetInit →
+      (kidToken s 1).text ∉ env.globals → FreshId scope ((kidToken s 1).start - env.base) →
+      StrType (kid (kid s 2) 1) → StringInit (kid (kid s 3) 1) chars →
+      StringReturnR env (kidToken s 1).text r slice n →
+      StmtsR env scope [s, r] (.mLetStr ((kidToken s 1).start - env.base) chars
+        (.mLetSlice slice (.tyUint .uint8) (.local ((kidToken s 1).start - env.base)) n (.mReturn (.local slice))))
   | last {scope : List Local} {s : CTree} {m : MStmt} : nodeProd s ≠ pLetStmt → StmtR env scope s m →
       StmtsR env scope [s] m
   | seq {scope : List Local} {s next : CTree} {more : List CTree} {a b : MStmt} : nodeProd s ≠ pLetStmt →
@@ -1534,6 +1848,14 @@ theorem stmtSound : ∀ fuel, StmtSound fuel
     · intro env scope s rest m pl h
       rw [letFirst.eq_def] at h
       simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
+      split at h
+      · rename_i c
+        simp only [isStrLet, Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true'] at c
+        obtain ⟨⟨⟨⟨lt, li⟩, ng⟩, fr⟩, st⟩ := c
+        obtain ⟨chars, r, slice, n, si, rfl, sr, rfl⟩ := stringLet_sound h
+        refine .letStr pl lt li (fun mem => ?_) ((freshId_iff _ _).1 fr) (isStrType_sound st) si sr
+        rw [(member_iff _ _).2 mem] at ng
+        cases ng
       split at h
       · rename_i c
         simp only [Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true'] at c

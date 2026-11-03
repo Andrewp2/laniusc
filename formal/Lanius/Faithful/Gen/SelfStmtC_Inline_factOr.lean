@@ -21,7 +21,7 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_branch_agrees (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (BitVec 64)} {x1 : Lanius.Mini.Stmt} {x2 : Lanius.Mini.Stmt} {x3 : List Lanius.Mini.Fact} {x4 : Lanius.Mini.Stmt} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepOption 203 RepU64) x0 v0 → RepStmt x1 v1 → RepStmt x2 v2 → (RepList 180 RepFact) x3 v3 → RepStmt x4 v4 →
+  ∀ {x0 : Option (BitVec 64)} {x1 : Lanius.Mini.Stmt} {x2 : Lanius.Mini.Stmt} {x3 : List Lanius.Mini.Fact} {x4 : Lanius.Mini.Stmt} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepOption 205 RepU64) x0 v0 → RepStmt x1 v1 → RepStmt x2 v2 → (RepList 180 RepFact) x3 v3 → RepStmt x4 v4 →
     RepBool (Lanius.Mini.Inline.branchAgrees x0 x1 x2 x3 x4) w
 
 abbrev Stmt_dead_agrees (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -53,7 +53,7 @@ abbrev Stmt_seq_agrees (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
     RepBool (Lanius.Mini.Inline.seqAgrees x0 x1 x2 x3) w
 
 abbrev Stmt_unknown (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (BitVec 64)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 203 RepU64) x0 v0 →
+  ∀ {x0 : Option (BitVec 64)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 205 RepU64) x0 v0 →
     RepBool (Lanius.Mini.Inline.unknown x0) w
 
 end Lanius.Faithful.SelfCert

@@ -287,6 +287,8 @@ inductive StmtClosed (decls : Decls) (fns types : List Inst) : MStmt → SrcStmt
       StmtClosed decls fns types (.mLetIndex id ty sl i b) (.letIndex id s sl i c)
   | letView {id n p : Nat} {es : List SrcExpr} {b : MStmt} {c : SrcStmt} :
       StmtClosed decls fns types b c → StmtClosed decls fns types (.mLetView id n es p b) (.letView id n es p c)
+  | letStr {id : Nat} {cs : List Nat} {b : MStmt} {c : SrcStmt} :
+      StmtClosed decls fns types b c → StmtClosed decls fns types (.mLetStr id cs b) (.letStr id cs c)
   | setIndex {sl : Nat} {i v : SrcExpr} : StmtClosed decls fns types (.mSetIndex sl i v) (.setIndex sl i v)
   | letEval {id : Nat} {ty : Ty} {s : SrcType} {x : MEff} {a : SrcEff} {b : MStmt} {c : SrcStmt} :
       LowerR decls types ty s → EffClosed decls fns types x a → StmtClosed decls fns types b c →
@@ -400,6 +402,11 @@ theorem closeStmt_sound {fuel : Nat} {t : Tables} (ok : LoweredOk t) :
     cases hb : closeStmt fuel t b <;> simp [hb, letViewClosed] at h
     subst h
     exact .letView (closeStmt_sound ok _ _ hb)
+  | .mLetStr id cs b, s, h => by
+    simp only [closeStmt] at h
+    cases hb : closeStmt fuel t b <;> simp [hb, letStrClosed] at h
+    subst h
+    exact .letStr (closeStmt_sound ok _ _ hb)
   | .mSetIndex sl i v, s, h => by simp only [closeStmt, Option.some.injEq] at h; subst h; exact .setIndex
   | .mLetEval id ty x b, s, h => by
     simp only [closeStmt] at h

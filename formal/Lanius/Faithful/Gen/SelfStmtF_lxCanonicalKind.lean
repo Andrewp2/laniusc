@@ -33,16 +33,16 @@ abbrev Stmt_lx_as_text (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
     (RepList 25 RepNat) (Lanius.Mini.lxAsText) w
 
 abbrev Stmt_lx_canonical_kind (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.SymRule} {x1 : List Nat} {x2 : Lanius.Mini.RawTok} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 190 RepSymRule) x0 v0 → (RepList 25 RepNat) x1 v1 → RepRawTok x2 v2 →
+  ∀ {x0 : List Lanius.Mini.SymRule} {x1 : List Nat} {x2 : Lanius.Mini.RawTok} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 192 RepSymRule) x0 v0 → (RepList 25 RepNat) x1 v1 → RepRawTok x2 v2 →
     RepNat (Lanius.Mini.lxCanonicalKind x0 x1 x2) w
 
 abbrev Stmt_lx_filter (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.SymRule} {x1 : List Nat} {x2 : List Nat} {x3 : Nat} {x4 : List Lanius.Mini.RawTok} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepList 190 RepSymRule) x0 v0 → (RepList 25 RepNat) x1 v1 → (RepList 25 RepNat) x2 v2 → RepNat x3 v3 → (RepList 161 RepRawTok) x4 v4 →
+  ∀ {x0 : List Lanius.Mini.SymRule} {x1 : List Nat} {x2 : List Nat} {x3 : Nat} {x4 : List Lanius.Mini.RawTok} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepList 192 RepSymRule) x0 v0 → (RepList 25 RepNat) x1 v1 → (RepList 25 RepNat) x2 v2 → RepNat x3 v3 → (RepList 161 RepRawTok) x4 v4 →
     (RepList 161 RepRawTok) (Lanius.Mini.lxFilter x0 x1 x2 x3 x4) w
 
 abbrev Stmt_lx_keyword_rules (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    (RepList 190 RepSymRule) (Lanius.Mini.lxKeywordRules) w
+    (RepList 192 RepSymRule) (Lanius.Mini.lxKeywordRules) w
 
 abbrev Stmt_lx_range_pair (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.RawTok} {x1 : Lanius.Mini.RawTok} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepRawTok x0 v0 → RepRawTok x1 v1 →
@@ -54,7 +54,7 @@ abbrev Stmt_lx_ranges (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev Stmt_lx_symbol_rules (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    (RepList 190 RepSymRule) (Lanius.Mini.lxSymbolRules) w
+    (RepList 192 RepSymRule) (Lanius.Mini.lxSymbolRules) w
 
 abbrev Stmt_lx_token (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Nat} {x1 : Lanius.Mini.RawTok} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 25 RepNat) x0 v0 → RepRawTok x1 v1 →
