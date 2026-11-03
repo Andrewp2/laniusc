@@ -1,0 +1,3 @@
+# RefStore
+
+Mini side, plus Core's `replaceProjectedValue` and `assignCell` (old helper lemmas in target/claude-work/leafA/f5-old/Lemmas.lean: `assignCell_read`, `storesFrom_exec`, `storeSlots_holds`). Slots of one value occupy disjoint bytes, so a store changes only its slot's bytes. The other homes are kept by `apart` (different cells, blocks apart). Home `i` itself: the siblings' slots keep their bytes, the sub-place's new bytes hold `v`. `v` holds against the older homes, as home `i`'s value must. The template stores at `refSlotAt`, `slotAt` but one byte for a `u8` referent: inside a struct or a scalar home a `u8` is a native 4-byte word, whose 4-byte reading in `HoldsAt` gives zero upper bytes, so a one-byte store of a byte keeps the 4-byte reading exact.

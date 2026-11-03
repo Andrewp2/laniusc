@@ -1,0 +1,3 @@
+# RefLoad
+
+Mini side. Take home `i`'s holds (`Homes.holds`) down the path: the value at the path is held by the parent's view at the sub-place's slots (`SrcType.sub` offsets agree with `SrcType.slotAt`: a field's block is `fieldsSlotAt`'s, an element's `slotAt`'s). Then induct on the slots (`loadsFrom` from `s` with `count`, at `refSlotAt`: `slotAt` but one byte for a `u8` referent, whose native word's 4-byte reading gives zero upper bytes); every slot's bytes lie in the home's block, so `inside` bounds the loads and `small` makes `addOff` exact. A first version for the old layout (layout by type, 8-byte `bool`s and tags) was proved and set aside in target/claude-work/leafA/f5-old/ (Lemmas.lean); its path, narrow-read and load lemmas carry over.
