@@ -11,6 +11,7 @@ import all Lanius.Mini.Compiler.P.usizeWidth
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.render
+import all Lanius.Mini.Compiler.P.lowerTagged
 
 @[expose] public section
 
@@ -621,5 +622,172 @@ theorem HomedCorr.popHome {sx : Statics} {places : List Addressed} {scope : List
         subst hcl
         subst hcx
         exact noName b mb _ hent .reference
+
+/-! ## A plain `let` -/
+
+theorem HomedCorr.below {sx : Statics} {places : List Addressed} {scope : List Binding} {frame : Nat → Nat}
+    {c : RCtx} {st : State} {env : Env} (hc : HomedCorr sx places scope frame c st env) (fresh : st.Fresh)
+    (under : ∀ y ∈ places, y.cell < st.nextCell) : ∀ b ∈ scope, frame b.slot < st.nextCell := fun b mem => by
+  by_cases un : Unhomed places frame b
+  · obtain ⟨w, entry, -⟩ := hc.values b mem un
+    exact fresh.below entry
+  · have : ∃ y ∈ places, y.cell = frame b.slot :=
+      Classical.byContradiction fun hne => un fun y my eq => hne ⟨y, my, eq⟩
+    obtain ⟨y, my, hy⟩ := this
+    rw [← hy]
+    exact under y my
+
+theorem HomedCorr.pushPlain {sx : Statics} {places : List Addressed} {scope : List Binding} {frame : Nat → Nat}
+    {c c' : RCtx} {st : State} {env env' : Env} {base next id : Nat} {ty : SrcType} {v : Value}
+    (hc : HomedCorr sx places scope frame c st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
+    (agree : ScopeAgree scope env env') (holds : ty.HoldsAt sx places v env' next)
+    (under : ∀ y ∈ places, y.cell < st.nextCell) (nv : viewedType ty = false) (cframe : c'.frame = c.frame)
+    (hframe : env' c.frame = env c.frame) (hnone : c'.homes.lookup id = none)
+    (ctx : ∀ id', id' ≠ id →
+      c'.homes.lookup id' = c.homes.lookup id' ∧ c'.slotOf id' = c.slotOf id' ∧ c'.refTy id' = c.refTy id')
+    (hslots : ∀ id', id' ≠ id → c.homes.lookup id' = none → env' (c.slotOf id') = env (c.slotOf id'))
+    (href : ∀ T cell path, v = .reference T cell path → RefTo places (c'.refTy id) cell path (env' (c'.slotOf id))) :
+    HomedCorr sx places (⟨id, next, ty⟩ :: scope) (upd frame next st.nextCell) c' (st.bindLocal id v) env' := by
+  have below := hc.below fresh under
+  have same := upd_scope fr st.nextCell
+  have locs : ∀ p ∈ st.locals, p.2 < st.nextCell := by
+    rw [hc.locals]
+    intro p mem
+    obtain ⟨b, mb, rfl⟩ := List.mem_map.mp mem
+    exact below b mb
+  have unNew : ∀ b ∈ scope, Unhomed places (upd frame next st.nextCell) b → Unhomed places frame b :=
+    fun b mem un y my => by rw [← same b mem]; exact un y my
+  have unOld : ∀ b ∈ scope, Unhomed places frame b → Unhomed places (upd frame next st.nextCell) b :=
+    fun b mem un y my => by rw [same b mem]; exact un y my
+  have newUn : Unhomed places (upd frame next st.nextCell) ⟨id, next, ty⟩ := fun y my => by
+    simp only [upd, if_pos]
+    have := under y my
+    cell_omega
+  have cidNe : ∀ id', id' ≠ id → (st.bindLocal id v).cellId? id' = st.cellId? id' := by
+    intro id' ne
+    simp [State.cellId?, State.bindLocal, State.bindCell, Ne.symm ne]
+  refine
+    { locals := ?_
+      values := fun b mem un => ?_
+      unviewed := fun w wm b mem un bnv => ?_
+      viewed := fun b mem un n hty => ?_
+      refs := ⟨fun id' o t hl => ?_, fun id' T cell path hl hloc => ?_⟩
+      homedTy := fun id' b o t hs hl => ?_
+      unhomed := fun id' b hs hl => ?_ }
+  · simp only [State.bindLocal, State.bindCell, List.map_cons, hc.locals, upd, if_pos]
+    congr 1
+    apply List.map_congr_left
+    intro b mem
+    rw [← upd, same b mem]
+  · rcases List.mem_cons.mp mem with rfl | mb
+    · refine ⟨v, ?_, holds⟩
+      simp only [upd, if_pos]
+      exact bindLocal_self fresh id v
+    · obtain ⟨w, entry, hold⟩ := hc.values b mb (unNew b mb un)
+      refine ⟨w, ?_, hold.congr (agree b mb)⟩
+      rw [same b mb, bindLocal_entry (below b mb)]
+      exact entry
+  · rcases List.mem_cons.mp mem with rfl | mb
+    · simp only [upd, if_pos]
+      exact Nat.ne_of_lt (fresh.2.root_lt fresh.1 w wm)
+    · rw [same b mb]
+      exact hc.unviewed w wm b mb (unNew b mb un) bnv
+  · rcases List.mem_cons.mp mem with rfl | mb
+    · simp only at hty
+      simp [hty, viewedType] at nv
+    · obtain ⟨w, wm, root, address, length, pos⟩ := hc.viewed b mb (unNew b mb un) n hty
+      refine ⟨w, wm, by rw [same b mb]; exact root, ?_, length, pos⟩
+      have := agree b mb 0 (by rw [hty]; exact pos)
+      simp only [Nat.add_zero] at this
+      rw [this]
+      exact address
+  · by_cases eq : id' = id
+    · subst eq
+      rw [hnone] at hl
+      cases hl
+    · obtain ⟨l, -, -⟩ := ctx id' eq
+      rw [l] at hl
+      obtain ⟨y, my, cell, hcell, yc, yt, ya⟩ := hc.refs.homes id' o t hl
+      exact ⟨y, my, cell, by rw [cidNe id' eq]; exact hcell, yc, yt, by rw [cframe, hframe]; exact ya⟩
+  · by_cases eq : id' = id
+    · subst eq
+      rw [coreLocal_bindLocal fresh.1 locs, if_pos rfl, Option.some.injEq] at hloc
+      exact href T cell path hloc
+    · obtain ⟨l, sl, rt⟩ := ctx id' eq
+      rw [l] at hl
+      rw [coreLocal_bindLocal fresh.1 locs, if_neg (Ne.symm eq)] at hloc
+      rw [sl, rt, hslots id' eq hl]
+      exact hc.refs.refs id' T cell path hl hloc
+  · by_cases eq : id' = id
+    · subst eq
+      rw [hnone] at hl
+      cases hl
+    · rw [lookup_cons_ne _ eq] at hs
+      rw [(ctx id' eq).1] at hl
+      exact hc.homedTy id' b o t hs hl
+  · by_cases eq : id' = id
+    · subst eq
+      rw [lookup_cons_self, Option.some.injEq] at hs
+      rw [← hs]
+      exact newUn
+    · rw [lookup_cons_ne _ eq] at hs
+      rw [(ctx id' eq).1] at hl
+      exact unOld b (lookup_mem hs).1 (hc.unhomed id' b hs hl)
+
+theorem HomedCorr.popPlain {sx : Statics} {places : List Addressed} {scope : List Binding} {frame : Nat → Nat}
+    {c c' : RCtx} {st₀ st st' : State} {env₀ env : Env} {base next id cell : Nat} {ty : SrcType}
+    (hc₀ : HomedCorr sx places scope frame c st₀ env₀)
+    (hc : HomedCorr sx places (⟨id, next, ty⟩ :: scope) (upd frame next cell) c' st env)
+    (fr : Layout scope frame base next)
+    (ctx : ∀ id', id' ≠ id →
+      c'.homes.lookup id' = c.homes.lookup id' ∧ c'.slotOf id' = c.slotOf id' ∧ c'.refTy id' = c.refTy id')
+    (locals : st'.locals = st₀.locals) (cells : st'.cells = st.cells) (views : st'.i32ArrayViews = st.i32ArrayViews)
+    (hframe : env c.frame = env₀ c.frame)
+    (shadow : c.homes.lookup id = none → coreLocal st' id = coreLocal st₀ id ∧ env (c.slotOf id) = env₀ (c.slotOf id)) :
+    HomedCorr sx places scope frame c st' env := by
+  have same := upd_scope fr cell
+  have un' : ∀ b ∈ scope, Unhomed places frame b → Unhomed places (upd frame next cell) b :=
+    fun b mem un y my => by rw [same b mem]; exact un y my
+  have entryEq : ∀ cl, st'.cellEntry? cl = st.cellEntry? cl := fun cl => by simp [State.cellEntry?, cells]
+  have cidEq : ∀ id', st'.cellId? id' = st₀.cellId? id' := fun id' => by simp [State.cellId?, locals]
+  refine
+    { locals := locals.trans hc₀.locals
+      values := fun b mem un => ?_
+      unviewed := fun w wm b mem un nv => ?_
+      viewed := fun b mem un n hty => ?_
+      refs := ⟨fun id' o t hl => ?_, fun id' T cl path hl hloc => ?_⟩
+      homedTy := hc₀.homedTy
+      unhomed := hc₀.unhomed }
+  · obtain ⟨w, entry, holds⟩ := hc.values b (List.mem_cons_of_mem _ mem) (un' b mem un)
+    rw [same b mem] at entry
+    exact ⟨w, by rw [entryEq]; exact entry, holds⟩
+  · rw [views] at wm
+    have := hc.unviewed w wm b (List.mem_cons_of_mem _ mem) (un' b mem un) nv
+    rwa [same b mem] at this
+  · obtain ⟨w, wm, root, rest⟩ := hc.viewed b (List.mem_cons_of_mem _ mem) (un' b mem un) n hty
+    exact ⟨w, by rw [views]; exact wm, by rw [← same b mem]; exact root, rest⟩
+  · obtain ⟨y, my, c₁, hcell, yc, yt, ya⟩ := hc₀.refs.homes id' o t hl
+    exact ⟨y, my, c₁, by rw [cidEq]; exact hcell, yc, yt, by rw [hframe]; exact ya⟩
+  · by_cases eq : id' = id
+    · subst eq
+      obtain ⟨h1, h2⟩ := shadow hl
+      rw [h1] at hloc
+      rw [h2]
+      exact hc₀.refs.refs id' T cl path hl hloc
+    · obtain ⟨l, sl, rt⟩ := ctx id' eq
+      have c1 : st'.cellId? id' = st.cellId? id' := by
+        rw [cidEq, hc₀.cellId, hc.cellId, lookup_cons_ne _ eq]
+        cases found : lookup scope id' with
+        | none => rfl
+        | some b => simp [same b (lookup_mem found).1]
+      have hloc' : coreLocal st id' = some (.reference T cl path) := by
+        unfold coreLocal at hloc ⊢
+        rw [← c1]
+        cases h : st'.cellId? id' with
+        | none => rw [h] at hloc; exact hloc
+        | some x => rw [h] at hloc; simp only [entryEq] at hloc; exact hloc
+      have r := hc.refs.refs id' T cl path (by rw [l]; exact hl) hloc'
+      rw [sl, rt] at r
+      exact r
 
 end Lanius.Mini
