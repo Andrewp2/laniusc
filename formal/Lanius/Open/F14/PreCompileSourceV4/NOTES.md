@@ -33,3 +33,12 @@
   the number of functions (F ≤ 2^30 gives (F + 2) * 2^31 ≤ 2^62, an M-form override
   `nb p1 + 2^31 * (p2 + 1) ≤ 2^31 * (p0.length + 2)` plus F's premise), or needs that saturate at a
   limit in the compiler. Either is a new premise (V5) or a .lani change; for the coordinator.
+- 11-03 (leafB): parameters' slots carried as `paramsMax ≤ K` (CompileValues; `paramsMax_le` from V4's
+  premise) from `compile_source` down to `params_size`, which now passes (P02: 71 failing, none new).
+  Type sizes do not go the same way yet: `ts` bounds each type's size, but `sizes` of a declared
+  struct's fields (`SrcStructDecl`, whose `ts` is the max over its fields, not their sum) is bounded only
+  because the struct type it was declared from is in the program, which no measure of `SrcDecls`
+  states. Stating `SrcType.size p0 ≤ K`/`sizes p0 ≤ K` as invariants broke 19 callers that pass
+  types or field lists from the declarations (`lower_struct_fields`, `copy_slots`, `eval_struct_of`,
+  ...). Needs a `ts` of `SrcStructDecl` that includes `sizes fields` (an hb_gen.py TS change, with
+  `declareProgram` keeping it) or a front-end leaf on declared structs' sizes.
