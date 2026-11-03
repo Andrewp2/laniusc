@@ -1,0 +1,3 @@
+# CorePlace
+
+Core only. Induct on `Resolves` and `Traps`. Read ok at the full path means every prefix is a struct or an array (`projectedValue`), so `evalPlace` takes the `.structure` and `.array` arms, never the slice ones. `.field` evaluates its base for `.address`, `.index` for `.read`; both give the value. The index expression leaves the state unchanged when it has a value (`Resolves` gives it with `st` unchanged); when it traps, Core's `evalPlace` passes its reason and state on (`indexTraps`), and later indices are never evaluated. One agent may take CorePlace, CoreRead, CoreAssign, CoreAssignOp and CoreBorrow.

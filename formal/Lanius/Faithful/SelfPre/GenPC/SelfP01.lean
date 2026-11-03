@@ -717,7 +717,11 @@ theorem post_le32 : ∀ (n : Nat) (x0 : BitVec 32), ∀ M : Nat, Cost_le32 n x0 
   · intro h; exact absurd h (Nat.lt_irrefl _)
   rw [Cost_le32.eq_def]; dsimp only
   rw [Lanius.Mini.le32.eq_def x0]
-  post_auto n, M
+  intro h
+  simp only [pc_cons_u8, pc_single_u8, pc_le64, pc_le32, pc_hb_u8, List.length_append, List.length_cons, List.length_nil, pc_len_le64, pc_len_le32] at h ⊢
+  have := pc_cons_u8_pos n
+  have := pc_single_u8_pos n
+  omega_atoms
 
 theorem post_stack_check : ∀ (n : Nat) , ∀ M : Nat, Cost_stack_check n < 18446744073709551616 → hb (Lanius.Mini.stackCheck) ≤ M + Cost_stack_check n := by
   intro n  M 
@@ -725,7 +729,11 @@ theorem post_stack_check : ∀ (n : Nat) , ∀ M : Nat, Cost_stack_check n < 184
   · intro h; exact absurd h (Nat.lt_irrefl _)
   rw [Cost_stack_check.eq_def]; dsimp only
   rw [Lanius.Mini.stackCheck.eq_def]
-  post_auto n, M
+  intro h
+  simp only [pc_cons_u8, pc_single_u8, pc_le64, pc_le32, pc_hb_u8, List.length_append, List.length_cons, List.length_nil, pc_len_le64, pc_len_le32] at h ⊢
+  have := pc_cons_u8_pos n
+  have := pc_single_u8_pos n
+  omega_atoms
 
 theorem post_prologue : ∀ (n : Nat) (x0 : Nat), ∀ M : Nat, Cost_prologue n x0 < 18446744073709551616 → hb (Lanius.Mini.prologue x0) ≤ M + Cost_prologue n x0 := by
   intro n x0 M 
@@ -741,7 +749,11 @@ theorem post_le64 : ∀ (n : Nat) (x0 : BitVec 64), ∀ M : Nat, Cost_le64 n x0 
   · intro h; exact absurd h (Nat.lt_irrefl _)
   rw [Cost_le64.eq_def]; dsimp only
   rw [Lanius.Mini.le64.eq_def x0]
-  post_auto n, M
+  intro h
+  simp only [pc_cons_u8, pc_single_u8, pc_le64, pc_le32, pc_hb_u8, List.length_append, List.length_cons, List.length_nil, pc_len_le64, pc_len_le32] at h ⊢
+  have := pc_cons_u8_pos n
+  have := pc_single_u8_pos n
+  omega_atoms
 
 theorem post_slot_load : ∀ (n : Nat) (x0 : Nat), ∀ M : Nat, Cost_slot_load n x0 < 18446744073709551616 → hb (Lanius.Mini.slotLoad x0) ≤ M + Cost_slot_load n x0 := by
   intro n x0 M 
@@ -749,7 +761,12 @@ theorem post_slot_load : ∀ (n : Nat) (x0 : Nat), ∀ M : Nat, Cost_slot_load n
   · intro h; exact absurd h (Nat.lt_irrefl _)
   rw [Cost_slot_load.eq_def]; dsimp only
   rw [Lanius.Mini.slotLoad.eq_def x0]
-  post_auto n, M
+  intro h
+  simp only [pc_cons_u8, pc_single_u8, pc_le64, pc_le32, pc_hb_u8, List.length_append, List.length_cons, List.length_nil, pc_len_le64, pc_len_le32] at h ⊢
+  have := pc_cons_u8_pos n
+  have := pc_single_u8_pos n
+  have := pc_le32_ge n (by omega_atoms)
+  omega_atoms
 
 theorem post_slot_store : ∀ (n : Nat) (x0 : Nat), ∀ M : Nat, Cost_slot_store n x0 < 18446744073709551616 → hb (Lanius.Mini.slotStore x0) ≤ M + Cost_slot_store n x0 := by
   intro n x0 M 
@@ -757,7 +774,12 @@ theorem post_slot_store : ∀ (n : Nat) (x0 : Nat), ∀ M : Nat, Cost_slot_store
   · intro h; exact absurd h (Nat.lt_irrefl _)
   rw [Cost_slot_store.eq_def]; dsimp only
   rw [Lanius.Mini.slotStore.eq_def x0]
-  post_auto n, M
+  intro h
+  simp only [pc_cons_u8, pc_single_u8, pc_le64, pc_le32, pc_hb_u8, List.length_append, List.length_cons, List.length_nil, pc_len_le64, pc_len_le32] at h ⊢
+  have := pc_cons_u8_pos n
+  have := pc_single_u8_pos n
+  have := pc_le32_ge n (by omega_atoms)
+  omega_atoms
 
 theorem post_slot_operands : ∀ (n : Nat) (x0 : Nat), ∀ M : Nat, Cost_slot_operands n x0 < 18446744073709551616 → hb (Lanius.Mini.slotOperands x0) ≤ M + Cost_slot_operands n x0 := by
   intro n x0 M 
@@ -773,7 +795,13 @@ theorem post_Word_rex : ∀ (n : Nat) (x0 : Lanius.Mini.Word), ∀ M : Nat, Cost
   · intro h; exact absurd h (Nat.lt_irrefl _)
   rw [Cost_Word_rex.eq_def]; dsimp only
   rw [Lanius.Mini.Word.rex.eq_def x0]
-  post_auto n, M
+  cases x0
+  all_goals
+    intro h
+    simp only [pc_cons_u8, pc_single_u8, pc_le64, pc_le32, pc_hb_u8, List.length_append, List.length_cons, List.length_nil, pc_len_le64, pc_len_le32] at h ⊢
+    have := pc_cons_u8_pos n
+    have := pc_single_u8_pos n
+    omega_atoms
 
 theorem post_BinOp_opcode : ∀ (n : Nat) (x0 : Lanius.Mini.BinOp), ∀ M : Nat, Cost_BinOp_opcode n x0 < 18446744073709551616 → hb (Lanius.Mini.BinOp.opcode x0) ≤ M + Cost_BinOp_opcode n x0 := by
   intro n x0 M 
@@ -781,7 +809,13 @@ theorem post_BinOp_opcode : ∀ (n : Nat) (x0 : Lanius.Mini.BinOp), ∀ M : Nat,
   · intro h; exact absurd h (Nat.lt_irrefl _)
   rw [Cost_BinOp_opcode.eq_def]; dsimp only
   rw [Lanius.Mini.BinOp.opcode.eq_def x0]
-  post_auto n, M
+  cases x0
+  all_goals
+    intro h
+    simp only [pc_cons_u8, pc_single_u8, pc_le64, pc_le32, pc_hb_u8, List.length_append, List.length_cons, List.length_nil, pc_len_le64, pc_len_le32] at h ⊢
+    have := pc_cons_u8_pos n
+    have := pc_single_u8_pos n
+    omega_atoms
 
 theorem post_BinOp_bytes : ∀ (n : Nat) (x0 : Lanius.Mini.BinOp) (x1 : Lanius.Mini.Word) (x2 : Nat), ∀ M : Nat, Cost_BinOp_bytes n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.BinOp.bytes x0 x1 x2) ≤ M + Cost_BinOp_bytes n x0 x1 x2 := by
   intro n x0 x1 x2 M 
@@ -822,7 +856,12 @@ theorem post_fsp_save : ∀ (n : Nat) (x0 : Nat), ∀ M : Nat, Cost_fsp_save n x
   · intro h; exact absurd h (Nat.lt_irrefl _)
   rw [Cost_fsp_save.eq_def]; dsimp only
   rw [Lanius.Mini.fspSave.eq_def x0]
-  post_auto n, M
+  intro h
+  simp only [pc_cons_u8, pc_single_u8, pc_le64, pc_le32, pc_hb_u8, List.length_append, List.length_cons, List.length_nil, pc_len_le64, pc_len_le32] at h ⊢
+  have := pc_cons_u8_pos n
+  have := pc_single_u8_pos n
+  have := pc_le32_ge n (by omega_atoms)
+  omega_atoms
 
 theorem post_fsp_load : ∀ (n : Nat) (x0 : Nat), ∀ M : Nat, Cost_fsp_load n x0 < 18446744073709551616 → hb (Lanius.Mini.fspLoad x0) ≤ M + Cost_fsp_load n x0 := by
   intro n x0 M 
@@ -830,7 +869,12 @@ theorem post_fsp_load : ∀ (n : Nat) (x0 : Nat), ∀ M : Nat, Cost_fsp_load n x
   · intro h; exact absurd h (Nat.lt_irrefl _)
   rw [Cost_fsp_load.eq_def]; dsimp only
   rw [Lanius.Mini.fspLoad.eq_def x0]
-  post_auto n, M
+  intro h
+  simp only [pc_cons_u8, pc_single_u8, pc_le64, pc_le32, pc_hb_u8, List.length_append, List.length_cons, List.length_nil, pc_len_le64, pc_len_le32] at h ⊢
+  have := pc_cons_u8_pos n
+  have := pc_single_u8_pos n
+  have := pc_le32_ge n (by omega_atoms)
+  omega_atoms
 
 theorem post_step_slot_range (n : Nat) (ih :
     (∀ (x0 : Nat) (x1 : Nat), ∀ M : Nat, Cost_slot_range n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.slotRange x0 x1) ≤ M + Cost_slot_range n x0 x1)) :
@@ -855,7 +899,11 @@ theorem post_epilogue : ∀ (n : Nat) , ∀ M : Nat, Cost_epilogue n < 184467440
   · intro h; exact absurd h (Nat.lt_irrefl _)
   rw [Cost_epilogue.eq_def]; dsimp only
   rw [Lanius.Mini.epilogue.eq_def]
-  post_auto n, M
+  intro h
+  simp only [pc_cons_u8, pc_single_u8, pc_le64, pc_le32, pc_hb_u8, List.length_append, List.length_cons, List.length_nil, pc_len_le64, pc_len_le32] at h ⊢
+  have := pc_cons_u8_pos n
+  have := pc_single_u8_pos n
+  omega_atoms
 
 theorem post_bump_bytes : ∀ (n : Nat) (x0 : Nat), ∀ M : Nat, Cost_bump_bytes n x0 < 18446744073709551616 → hb (Lanius.Mini.bumpBytes x0) ≤ M + Cost_bump_bytes n x0 := by
   intro n x0 M 
@@ -876,7 +924,11 @@ theorem post_load_at_bytes : ∀ (n : Nat) , ∀ M : Nat, Cost_load_at_bytes n <
   · intro h; exact absurd h (Nat.lt_irrefl _)
   rw [Cost_load_at_bytes.eq_def]; dsimp only
   rw [Lanius.Mini.loadAtBytes.eq_def]
-  post_auto n, M
+  intro h
+  simp only [pc_cons_u8, pc_single_u8, pc_le64, pc_le32, pc_hb_u8, List.length_append, List.length_cons, List.length_nil, pc_len_le64, pc_len_le32] at h ⊢
+  have := pc_cons_u8_pos n
+  have := pc_single_u8_pos n
+  omega_atoms
 
 theorem post_store_at_bytes : ∀ (n : Nat) (x0 : Nat), ∀ M : Nat, Cost_store_at_bytes n x0 < 18446744073709551616 → hb (Lanius.Mini.storeAtBytes x0) ≤ M + Cost_store_at_bytes n x0 := by
   intro n x0 M 
@@ -884,7 +936,12 @@ theorem post_store_at_bytes : ∀ (n : Nat) (x0 : Nat), ∀ M : Nat, Cost_store_
   · intro h; exact absurd h (Nat.lt_irrefl _)
   rw [Cost_store_at_bytes.eq_def]; dsimp only
   rw [Lanius.Mini.storeAtBytes.eq_def x0]
-  post_auto n, M
+  intro h
+  simp only [pc_cons_u8, pc_single_u8, pc_le64, pc_le32, pc_hb_u8, List.length_append, List.length_cons, List.length_nil, pc_len_le64, pc_len_le32] at h ⊢
+  have := pc_cons_u8_pos n
+  have := pc_single_u8_pos n
+  have := pc_le32_ge n (by omega_atoms)
+  omega_atoms
 
 theorem post_MemWidth_rex : ∀ (n : Nat) (x0 : Lanius.Mini.MemWidth), ∀ M : Nat, Cost_MemWidth_rex n x0 < 18446744073709551616 → hb (Lanius.Mini.MemWidth.rex x0) ≤ M + Cost_MemWidth_rex n x0 := by
   intro n x0 M 
@@ -892,7 +949,13 @@ theorem post_MemWidth_rex : ∀ (n : Nat) (x0 : Lanius.Mini.MemWidth), ∀ M : N
   · intro h; exact absurd h (Nat.lt_irrefl _)
   rw [Cost_MemWidth_rex.eq_def]; dsimp only
   rw [Lanius.Mini.MemWidth.rex.eq_def x0]
-  post_auto n, M
+  cases x0
+  all_goals
+    intro h
+    simp only [pc_cons_u8, pc_single_u8, pc_le64, pc_le32, pc_hb_u8, List.length_append, List.length_cons, List.length_nil, pc_len_le64, pc_len_le32] at h ⊢
+    have := pc_cons_u8_pos n
+    have := pc_single_u8_pos n
+    omega_atoms
 
 theorem post_load_word_bytes : ∀ (n : Nat) (x0 : Lanius.Mini.MemWidth), ∀ M : Nat, Cost_load_word_bytes n x0 < 18446744073709551616 → hb (Lanius.Mini.loadWordBytes x0) ≤ M + Cost_load_word_bytes n x0 := by
   intro n x0 M 
@@ -924,7 +987,13 @@ theorem post_DivOp_opcode : ∀ (n : Nat) (x0 : Lanius.Mini.DivOp), ∀ M : Nat,
   · intro h; exact absurd h (Nat.lt_irrefl _)
   rw [Cost_DivOp_opcode.eq_def]; dsimp only
   rw [Lanius.Mini.DivOp.opcode.eq_def x0]
-  post_auto n, M
+  cases x0
+  all_goals
+    intro h
+    simp only [pc_cons_u8, pc_single_u8, pc_le64, pc_le32, pc_hb_u8, List.length_append, List.length_cons, List.length_nil, pc_len_le64, pc_len_le32] at h ⊢
+    have := pc_cons_u8_pos n
+    have := pc_single_u8_pos n
+    omega_atoms
 
 theorem post_DivOp_result : ∀ (n : Nat) (x0 : Lanius.Mini.DivOp), ∀ M : Nat, Cost_DivOp_result n x0 < 18446744073709551616 → hb (Lanius.Mini.DivOp.result x0) ≤ M + Cost_DivOp_result n x0 := by
   intro n x0 M 
@@ -932,7 +1001,13 @@ theorem post_DivOp_result : ∀ (n : Nat) (x0 : Lanius.Mini.DivOp), ∀ M : Nat,
   · intro h; exact absurd h (Nat.lt_irrefl _)
   rw [Cost_DivOp_result.eq_def]; dsimp only
   rw [Lanius.Mini.DivOp.result.eq_def x0]
-  post_auto n, M
+  cases x0
+  all_goals
+    intro h
+    simp only [pc_cons_u8, pc_single_u8, pc_le64, pc_le32, pc_hb_u8, List.length_append, List.length_cons, List.length_nil, pc_len_le64, pc_len_le32] at h ⊢
+    have := pc_cons_u8_pos n
+    have := pc_single_u8_pos n
+    omega_atoms
 
 theorem post_DivOp_bytes : ∀ (n : Nat) (x0 : Lanius.Mini.DivOp) (x1 : Lanius.Mini.Word) (x2 : Nat), ∀ M : Nat, Cost_DivOp_bytes n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.DivOp.bytes x0 x1 x2) ≤ M + Cost_DivOp_bytes n x0 x1 x2 := by
   intro n x0 x1 x2 M 
@@ -948,7 +1023,13 @@ theorem post_FloatTy_rex : ∀ (n : Nat) (x0 : Lanius.Mini.FloatTy), ∀ M : Nat
   · intro h; exact absurd h (Nat.lt_irrefl _)
   rw [Cost_FloatTy_rex.eq_def]; dsimp only
   rw [Lanius.Mini.FloatTy.rex.eq_def x0]
-  post_auto n, M
+  cases x0
+  all_goals
+    intro h
+    simp only [pc_cons_u8, pc_single_u8, pc_le64, pc_le32, pc_hb_u8, List.length_append, List.length_cons, List.length_nil, pc_len_le64, pc_len_le32] at h ⊢
+    have := pc_cons_u8_pos n
+    have := pc_single_u8_pos n
+    omega_atoms
 
 theorem post_float_operands : ∀ (n : Nat) (x0 : Lanius.Mini.FloatTy), ∀ M : Nat, Cost_float_operands n x0 < 18446744073709551616 → hb (Lanius.Mini.floatOperands x0) ≤ M + Cost_float_operands n x0 := by
   intro n x0 M 
@@ -988,7 +1069,13 @@ theorem post_syscall_rsi_bytes : ∀ (n : Nat) (x0 : Lanius.Mini.Syscall), ∀ M
   · intro h; exact absurd h (Nat.lt_irrefl _)
   rw [Cost_syscall_rsi_bytes.eq_def]; dsimp only
   rw [Lanius.Mini.syscallRsiBytes.eq_def x0]
-  post_auto n, M
+  cases x0
+  all_goals
+    intro h
+    simp only [pc_cons_u8, pc_single_u8, pc_le64, pc_le32, pc_hb_u8, List.length_append, List.length_cons, List.length_nil, pc_len_le64, pc_len_le32] at h ⊢
+    have := pc_cons_u8_pos n
+    have := pc_single_u8_pos n
+    omega_atoms
 
 theorem post_sys_bytes : ∀ (n : Nat) (x0 : Lanius.Mini.Syscall) (x1 : Nat), ∀ M : Nat, Cost_sys_bytes n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.sysBytes x0 x1) ≤ M + Cost_sys_bytes n x0 x1 := by
   intro n x0 x1 M 
@@ -1099,12 +1186,12 @@ theorem post_compile_optimized : ∀ (n : Nat) (x0 : Lanius.Mini.Program), ∀ M
   rw [Lanius.Mini.compileOptimized.eq_def x0]
   post_auto n, M
 
-theorem post_compile_lowered : ∀ (n : Nat) (x0 : Option (List Lanius.Mini.Func)), ∀ M : Nat, hb x0 ≤ M → Cost_compile_lowered n x0 < 18446744073709551616 → hb (Lanius.Mini.compileLowered x0) ≤ M + Cost_compile_lowered n x0 := by
-  intro n x0 M hM0
+theorem post_compile_lowered : ∀ (n : Nat) (x0 : Option (List Lanius.Mini.Func)) (x1 : List UInt8), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_compile_lowered n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.compileLowered x0 x1) ≤ M + Cost_compile_lowered n x0 x1 := by
+  intro n x0 x1 M hM0 hM1
   rcases n with _ | n
   · intro h; exact absurd h (Nat.lt_irrefl _)
   rw [Cost_compile_lowered.eq_def]; dsimp only
-  rw [Lanius.Mini.compileLowered.eq_def x0]
+  rw [Lanius.Mini.compileLowered.eq_def x0 x1]
   post_auto n, M
 
 theorem post_lower_func_cons : ∀ (n : Nat) (x0 : Option Lanius.Mini.Func) (x1 : Option (List Lanius.Mini.Func)), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_lower_func_cons n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.lowerFuncCons x0 x1) ≤ M + Cost_lower_func_cons n x0 x1 := by

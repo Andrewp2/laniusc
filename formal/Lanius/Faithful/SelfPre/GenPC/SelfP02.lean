@@ -97,6 +97,14 @@ theorem post_eval_let_in : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.SrcType) (
   rw [Lanius.Mini.evalLetIn.eq_def x0 x1 x2 x3 x4]
   post_auto n, M
 
+theorem post_eval_str : ∀ (n : Nat) (x0 : Lanius.Mini.SrcDecls) (x1 : Nat) (x2 : List Nat) (x3 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x2 ≤ M → Cost_eval_str n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.evalStr x0 x1 x2 x3) ≤ M + Cost_eval_str n x0 x1 x2 x3 := by
+  intro n x0 x1 x2 x3 M hM0 hM1
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_eval_str.eq_def]; dsimp only
+  rw [Lanius.Mini.evalStr.eq_def x0 x1 x2 x3]
+  post_auto n, M
+
 theorem post_step_SrcEff_eval (n : Nat) (ih :
     (∀ (x0 : Lanius.Mini.SrcEff) (x1 : List Lanius.Mini.Sig) (x2 : Lanius.Mini.SrcDecls) (x3 : List Lanius.Mini.Binding) (x4 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → Cost_SrcEff_eval n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.SrcEff.eval x0 x1 x2 x3 x4) ≤ M + Cost_SrcEff_eval n x0 x1 x2 x3 x4) ∧
     (∀ (x0 : List Lanius.Mini.Sig) (x1 : Lanius.Mini.SrcDecls) (x2 : List Lanius.Mini.Binding) (x3 : List Lanius.Mini.SrcEff) (x4 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → Cost_eval_args n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.evalArgs x0 x1 x2 x3 x4) ≤ M + Cost_eval_args n x0 x1 x2 x3 x4) ∧

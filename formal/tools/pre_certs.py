@@ -13,7 +13,7 @@ From the budget certificates' models and statements in `Faithful/GenB/`:
 * `pre_K`: `Pre_K n xs b` from `hb x + b ≤ K` for the arguments (and a
   walker's index plus its list's height, `OVERRIDES`), by `pre_auto`.
 
-Usage: pre_certs.py [--ns NAMESPACE] [--base MODULE] GENB OUTDIR ROOT...
+Usage: pre_certs.py [--ns NAMESPACE] [--base MODULE] [--compile] GENB OUTDIR ROOT...
 
 The modules are named after OUTDIR (under formal/), e.g. `Lanius.Faithful.SelfPre.GenP`
 for build_files. `--ns` puts the lemmas in a namespace of their own below
@@ -21,6 +21,8 @@ for build_files. `--ns` puts the lemmas in a namespace of their own below
 (GenPC, `--ns Lanius.Faithful.SelfPre.Compile`) can share names with build_files'.
 `--base` replaces the value lemmas' module `SelfPre.Values` in every module's
 imports (GenPC: `Lanius.Faithful.SelfPre.CompileValues`, which imports it).
+`--compile` adds the compile side's hand proofs (COMPILE_POST_HAND,
+COMPILE_HAND_CASE), kept apart so that build_files' GenP never takes them.
 """
 import os
 import re
@@ -428,7 +430,9 @@ def bytes_hand(le=(), callees=()):
     return out + '  omega_atoms\n'
 
 
-POST_HAND = {
+POST_HAND = {}  # build_files has none
+
+COMPILE_POST_HAND = {
     'bump_bytes': bytes_hand([64]),
     'frame_memory_bytes': bytes_hand([64]),
     'sys_bytes': bytes_hand([32], [('post_syscall_rsi_bytes', 'x0')]),
@@ -447,7 +451,37 @@ POST_HAND = {
 # Hand-written recursive cases (as HAND_CASE): SrcStmt.declare's ifEval and matchArm, whose
 # nested `match`es post_auto splits apart from the cost model's (the leaf had
 # the cost at `none` and the function at `some`); the other cases by post_auto.
-HAND_CASE.update({
+BYTE_PRIMS = {'Cost_single_of_u8', 'Cost_cons_of_u8', 'Cost_concat_of_u8', 'Cost_le32', 'Cost_le64'}
+
+
+def auto_bytes(g):
+    """bytes_hand for every function that builds a byte list from numbers with the
+    list primitives, le32 and le64 alone (prologue, slot_load, ..): post_auto took
+    up to 16 s on one of these (most of GenPC SelfP01's 72 s)."""
+    out = {}
+    for name, body in g.m.body.items():
+        if not name.startswith('Cost_') or name in g.m.recursive:
+            continue
+        k = name[5:]
+        st = g.m.stmt.get(k)
+        if not st or rep_ty(st[2]) != 'List (UInt8)' or not all(g.flat(t) for _, t in st[0]):
+            continue
+        calls = set(re.findall(r'\bCost_\w+', body))
+        if not calls or not calls <= BYTE_PRIMS or not calls - {'Cost_le32', 'Cost_le64'}:
+            continue
+        text = bytes_hand([w for w in (64, 32) if f'Cost_le{w}' in calls])
+        enums = [f'x{i}' for i, (_, t) in enumerate(st[0])
+                 if hb_gen.head(hb_gen.strip_parens(t.replace('Lanius.Mini.', '')))[0] not in
+                 ('Nat', 'BitVec', 'UInt8', 'Bool')]
+        if 'match' in body and enums:
+            # the encoders that pick bytes by an enum argument: one case each
+            text = ''.join(f'  cases {x}\n' for x in enums) + '  all_goals\n' + \
+                text.replace('\n  ', '\n    ').replace('  intro h', '    intro h', 1)
+        out[k] = text
+    return out
+
+
+COMPILE_HAND_CASE = {
     'SrcStmt_declare': '''      rw [Cost_SrcStmt_declare.eq_def]; dsimp only
       rw [Lanius.Mini.SrcStmt.declare.eq_def x0 x1]
       cases x0
@@ -480,7 +514,7 @@ HAND_CASE.update({
         exact Nat.le_trans h3 (by omega)
       all_goals (try dsimp only) <;> post_auto n, M
 ''',
-})
+}
 
 # --- end of the compile side -----------------------------------------------
 
@@ -820,7 +854,12 @@ def main():
     args = sys.argv[1:]
     ns = 'Lanius.Faithful.SelfPre'
     values = 'Lanius.Faithful.SelfPre.Values'
-    while args[:1] in (['--ns'], ['--base']):
+    compile_side = False
+    while args[:1] in (['--ns'], ['--base'], ['--compile']):
+        if args[0] == '--compile':
+            HAND_CASE.update(COMPILE_HAND_CASE)
+            args, compile_side = args[1:], True
+            continue
         if args[0] == '--ns':
             ns = args[1]
         else:
@@ -832,6 +871,9 @@ def main():
     rel = os.path.relpath(os.path.abspath(outdir), formal)
     prefix = rel.replace(os.sep, '.') if rel.startswith('Lanius' + os.sep) else 'Lanius.Faithful.SelfPre.GenP'
     g = Gen(genb, roots)
+    if compile_side:
+        POST_HAND.update(auto_bytes(g))
+        POST_HAND.update(COMPILE_POST_HAND)
     e = Emit(g)
     r = g.reach()
     order = e.order()
