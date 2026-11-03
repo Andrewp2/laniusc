@@ -143,6 +143,7 @@ def hbStmt : Lanius.Mini.Stmt → Nat
   | .divide a0 a1 a2 a3 a4 => max (hb a3) (hb a4)
   | .sys a0 a1 a2 => hb a2
   | .frame a0 a1 => 0
+  | .static a0 a1 => 0
 end
 instance : HB Lanius.Mini.Stmt := ⟨hbStmt⟩
 @[simp, hb_simp] theorem hb_Stmt_skip  : hb (Lanius.Mini.Stmt.skip) = 0 := rfl
@@ -162,6 +163,7 @@ instance : HB Lanius.Mini.Stmt := ⟨hbStmt⟩
 @[simp, hb_simp] theorem hb_Stmt_divide (a0 : Lanius.Mini.Word) (a1 : Lanius.Mini.DivOp) (a2 : Nat) (a3 : Lanius.Mini.Expr) (a4 : Lanius.Mini.Expr) : hb (Lanius.Mini.Stmt.divide a0 a1 a2 a3 a4) = max (hb a3) (hb a4) := rfl
 @[simp, hb_simp] theorem hb_Stmt_sys (a0 : Lanius.Mini.Syscall) (a1 : Nat) (a2 : List Lanius.Mini.Expr) : hb (Lanius.Mini.Stmt.sys a0 a1 a2) = hb a2 := rfl
 @[simp, hb_simp] theorem hb_Stmt_frame (a0 : Nat) (a1 : Nat) : hb (Lanius.Mini.Stmt.frame a0 a1) = 0 := rfl
+@[simp, hb_simp] theorem hb_Stmt_static (a0 : Nat) (a1 : Nat) : hb (Lanius.Mini.Stmt.static a0 a1) = 0 := rfl
 
 instance : HB Lanius.Mini.Func := ⟨fun s => hb s.body⟩
 @[simp, hb_simp] theorem hb_Func_mk (a0 : Nat) (a1 : Nat) (a2 : Nat) (a3 : Lanius.Mini.Stmt) : hb (Lanius.Mini.Func.mk a0 a1 a2 a3) = hb a3 := rfl
@@ -169,10 +171,13 @@ theorem hb_le_Func_body (s : Lanius.Mini.Func) : hb s.body ≤ hb s := by
   show _ ≤ hb s.body
   omega
 
-instance : HB Lanius.Mini.Program := ⟨fun s => hb s.funcs⟩
-@[simp, hb_simp] theorem hb_Program_mk (a0 : List Lanius.Mini.Func) : hb (Lanius.Mini.Program.mk a0) = hb a0 := rfl
+instance : HB Lanius.Mini.Program := ⟨fun s => max (hb s.funcs) (hb s.statics)⟩
+@[simp, hb_simp] theorem hb_Program_mk (a0 : List Lanius.Mini.Func) (a1 : List UInt8) : hb (Lanius.Mini.Program.mk a0 a1) = max (hb a0) (hb a1) := rfl
 theorem hb_le_Program_funcs (s : Lanius.Mini.Program) : hb s.funcs ≤ hb s := by
-  show _ ≤ hb s.funcs
+  show _ ≤ max (hb s.funcs) (hb s.statics)
+  omega
+theorem hb_le_Program_statics (s : Lanius.Mini.Program) : hb s.statics ≤ hb s := by
+  show _ ≤ max (hb s.funcs) (hb s.statics)
   omega
 
 def hbInstr : Lanius.Mini.Instr → Nat
@@ -195,6 +200,7 @@ def hbInstr : Lanius.Mini.Instr → Nat
   | .fp a0 a1 => 0
   | .sys a0 a1 => 0
   | .frame a0 => 0
+  | .static a0 => 0
 instance : HB Lanius.Mini.Instr := ⟨hbInstr⟩
 @[simp, hb_simp] theorem hb_Instr_imm (a0 : BitVec 64) : hb (Lanius.Mini.Instr.imm a0) = 0 := rfl
 @[simp, hb_simp] theorem hb_Instr_load (a0 : Nat) : hb (Lanius.Mini.Instr.load a0) = 0 := rfl
@@ -215,6 +221,7 @@ instance : HB Lanius.Mini.Instr := ⟨hbInstr⟩
 @[simp, hb_simp] theorem hb_Instr_fp (a0 : Lanius.Mini.FOp) (a1 : Nat) : hb (Lanius.Mini.Instr.fp a0 a1) = 0 := rfl
 @[simp, hb_simp] theorem hb_Instr_sys (a0 : Lanius.Mini.Syscall) (a1 : Nat) : hb (Lanius.Mini.Instr.sys a0 a1) = 0 := rfl
 @[simp, hb_simp] theorem hb_Instr_frame (a0 : Nat) : hb (Lanius.Mini.Instr.frame a0) = 0 := rfl
+@[simp, hb_simp] theorem hb_Instr_static (a0 : Nat) : hb (Lanius.Mini.Instr.static a0) = 0 := rfl
 
 instance : HB Lanius.Mini.Arity := ⟨fun _ => 0⟩
 @[simp, hb_simp] theorem hb_Arity (x : Lanius.Mini.Arity) : hb x = 0 := rfl
@@ -232,16 +239,19 @@ theorem hb_le_Place_entries (s : Lanius.Mini.Place) : hb s.entries ≤ hb s := b
   show _ ≤ hb s.entries
   omega
 
-instance : HB Lanius.Mini.Binary := ⟨fun s => max (hb s.codes) (max (hb s.entries) (hb s.image))⟩
-@[simp, hb_simp] theorem hb_Binary_mk (a0 : List Lanius.Mini.Code) (a1 : List Nat) (a2 : List UInt8) : hb (Lanius.Mini.Binary.mk a0 a1 a2) = max (hb a0) (max (hb a1) (hb a2)) := rfl
+instance : HB Lanius.Mini.Binary := ⟨fun s => max (hb s.codes) (max (hb s.entries) (max (hb s.image) (hb s.statics)))⟩
+@[simp, hb_simp] theorem hb_Binary_mk (a0 : List Lanius.Mini.Code) (a1 : List Nat) (a2 : List UInt8) (a3 : List UInt8) : hb (Lanius.Mini.Binary.mk a0 a1 a2 a3) = max (hb a0) (max (hb a1) (max (hb a2) (hb a3))) := rfl
 theorem hb_le_Binary_codes (s : Lanius.Mini.Binary) : hb s.codes ≤ hb s := by
-  show _ ≤ max (hb s.codes) (max (hb s.entries) (hb s.image))
+  show _ ≤ max (hb s.codes) (max (hb s.entries) (max (hb s.image) (hb s.statics)))
   omega
 theorem hb_le_Binary_entries (s : Lanius.Mini.Binary) : hb s.entries ≤ hb s := by
-  show _ ≤ max (hb s.codes) (max (hb s.entries) (hb s.image))
+  show _ ≤ max (hb s.codes) (max (hb s.entries) (max (hb s.image) (hb s.statics)))
   omega
 theorem hb_le_Binary_image (s : Lanius.Mini.Binary) : hb s.image ≤ hb s := by
-  show _ ≤ max (hb s.codes) (max (hb s.entries) (hb s.image))
+  show _ ≤ max (hb s.codes) (max (hb s.entries) (max (hb s.image) (hb s.statics)))
+  omega
+theorem hb_le_Binary_statics (s : Lanius.Mini.Binary) : hb s.statics ≤ hb s := by
+  show _ ≤ max (hb s.codes) (max (hb s.entries) (max (hb s.image) (hb s.statics)))
   omega
 
 instance : HB Lanius.Mini.Import := ⟨fun _ => 0⟩
@@ -313,6 +323,7 @@ def hbSrcType : Lanius.Mini.SrcType → Nat
   | .char => 0
   | .float a0 => 0
   | .sint a0 => 0
+  | .view a0 => 0
 def hbSrcType0 : List Lanius.Mini.SrcType → Nat
   | [] => 0
   | a :: l => max (hbSrcType a) (hbSrcType0 l) + 1
@@ -344,6 +355,7 @@ theorem hbSrcType1_eq : ∀ l : List (List Lanius.Mini.SrcType), hbSrcType1 l = 
 @[simp, hb_simp] theorem hb_SrcType_char  : hb (Lanius.Mini.SrcType.char) = 0 := rfl
 @[simp, hb_simp] theorem hb_SrcType_float (a0 : Lanius.Mini.FloatTy) : hb (Lanius.Mini.SrcType.float a0) = 0 := rfl
 @[simp, hb_simp] theorem hb_SrcType_sint (a0 : Lanius.Mini.UintTy) : hb (Lanius.Mini.SrcType.sint a0) = 0 := rfl
+@[simp, hb_simp] theorem hb_SrcType_view (a0 : Nat) : hb (Lanius.Mini.SrcType.view a0) = 0 := rfl
 
 instance : HB Lanius.Mini.SrcOp := ⟨fun _ => 0⟩
 @[simp, hb_simp] theorem hb_SrcOp (x : Lanius.Mini.SrcOp) : hb x = 0 := rfl
@@ -472,6 +484,7 @@ def hbSrcStmt : Lanius.Mini.SrcStmt → Nat
   | .continue => 0
   | .matchArm a0 a1 a2 a3 a4 a5 a6 a7 => max (hb a5) (max (hbSrcStmt a6) (hbSrcStmt a7))
   | .unreachable a0 a1 => hb a1
+  | .letView a0 a1 a2 a3 a4 => max (hb a2) (hbSrcStmt a4)
 end
 instance : HB Lanius.Mini.SrcStmt := ⟨hbSrcStmt⟩
 @[simp, hb_simp] theorem hb_SrcStmt_nop  : hb (Lanius.Mini.SrcStmt.nop) = 0 := rfl
@@ -508,6 +521,7 @@ instance : HB Lanius.Mini.SrcStmt := ⟨hbSrcStmt⟩
 @[simp, hb_simp] theorem hb_SrcStmt_continue  : hb (Lanius.Mini.SrcStmt.continue) = 0 := rfl
 @[simp, hb_simp] theorem hb_SrcStmt_matchArm (a0 : Nat) (a1 : Nat) (a2 : Nat) (a3 : Bool) (a4 : Nat) (a5 : Lanius.Mini.SrcType) (a6 : Lanius.Mini.SrcStmt) (a7 : Lanius.Mini.SrcStmt) : hb (Lanius.Mini.SrcStmt.matchArm a0 a1 a2 a3 a4 a5 a6 a7) = max (hb a5) (max (hb a6) (hb a7)) := rfl
 @[simp, hb_simp] theorem hb_SrcStmt_unreachable (a0 : Nat) (a1 : Lanius.Mini.SrcType) : hb (Lanius.Mini.SrcStmt.unreachable a0 a1) = hb a1 := rfl
+@[simp, hb_simp] theorem hb_SrcStmt_letView (a0 : Nat) (a1 : Nat) (a2 : List Lanius.Mini.SrcExpr) (a3 : Nat) (a4 : Lanius.Mini.SrcStmt) : hb (Lanius.Mini.SrcStmt.letView a0 a1 a2 a3 a4) = max (hb a2) (hb a4) := rfl
 
 instance : HB Lanius.Mini.SrcParam := ⟨fun s => hb s.ty⟩
 @[simp, hb_simp] theorem hb_SrcParam_mk (a0 : Nat) (a1 : Lanius.Mini.SrcType) : hb (Lanius.Mini.SrcParam.mk a0 a1) = hb a1 := rfl
@@ -1085,6 +1099,7 @@ def hbMStmt : Lanius.Mini.MStmt → Nat
   | .mFree a0 a1 a2 => max (hb a0) (hb a1)
   | .mLetSlice a0 a1 a2 a3 a4 => max (hb a1) (max (hb a2) (max (hb a3) (hbMStmt a4)))
   | .mLetIndex a0 a1 a2 a3 a4 => max (hb a1) (max (hb a3) (hbMStmt a4))
+  | .mLetView a0 a1 a2 a3 a4 => max (hb a2) (hbMStmt a4)
   | .mSetIndex a0 a1 a2 => max (hb a1) (hb a2)
   | .mLetEval a0 a1 a2 a3 => max (hb a1) (max (hb a2) (hbMStmt a3))
   | .mSetEval a0 a1 => hb a1
@@ -1119,6 +1134,7 @@ instance : HB Lanius.Mini.MStmt := ⟨hbMStmt⟩
 @[simp, hb_simp] theorem hb_MStmt_mFree (a0 : Lanius.Mini.SrcExpr) (a1 : Lanius.Mini.SrcExpr) (a2 : Nat) : hb (Lanius.Mini.MStmt.mFree a0 a1 a2) = max (hb a0) (hb a1) := rfl
 @[simp, hb_simp] theorem hb_MStmt_mLetSlice (a0 : Nat) (a1 : Lanius.Mini.Ty) (a2 : Lanius.Mini.SrcExpr) (a3 : Lanius.Mini.SrcExpr) (a4 : Lanius.Mini.MStmt) : hb (Lanius.Mini.MStmt.mLetSlice a0 a1 a2 a3 a4) = max (hb a1) (max (hb a2) (max (hb a3) (hb a4))) := rfl
 @[simp, hb_simp] theorem hb_MStmt_mLetIndex (a0 : Nat) (a1 : Lanius.Mini.Ty) (a2 : Nat) (a3 : Lanius.Mini.SrcExpr) (a4 : Lanius.Mini.MStmt) : hb (Lanius.Mini.MStmt.mLetIndex a0 a1 a2 a3 a4) = max (hb a1) (max (hb a3) (hb a4)) := rfl
+@[simp, hb_simp] theorem hb_MStmt_mLetView (a0 : Nat) (a1 : Nat) (a2 : List Lanius.Mini.SrcExpr) (a3 : Nat) (a4 : Lanius.Mini.MStmt) : hb (Lanius.Mini.MStmt.mLetView a0 a1 a2 a3 a4) = max (hb a2) (hb a4) := rfl
 @[simp, hb_simp] theorem hb_MStmt_mSetIndex (a0 : Nat) (a1 : Lanius.Mini.SrcExpr) (a2 : Lanius.Mini.SrcExpr) : hb (Lanius.Mini.MStmt.mSetIndex a0 a1 a2) = max (hb a1) (hb a2) := rfl
 @[simp, hb_simp] theorem hb_MStmt_mLetEval (a0 : Nat) (a1 : Lanius.Mini.Ty) (a2 : Lanius.Mini.MEff) (a3 : Lanius.Mini.MStmt) : hb (Lanius.Mini.MStmt.mLetEval a0 a1 a2 a3) = max (hb a1) (max (hb a2) (hb a3)) := rfl
 @[simp, hb_simp] theorem hb_MStmt_mSetEval (a0 : Nat) (a1 : Lanius.Mini.MEff) : hb (Lanius.Mini.MStmt.mSetEval a0 a1) = hb a1 := rfl
@@ -1170,6 +1186,7 @@ def hbLetHead : Lanius.Mini.LetHead → Nat
   | .matchOf a0 a1 a2 => max (hb a1) (hb a2)
   | .allocOf a0 a1 => hb a0
   | .sliceOf a0 a1 => max (hb a0) (hb a1)
+  | .viewOf a0 => hb a0
   | .indexOf a0 a1 => hb a1
   | .evalOf a0 => hb a0
   | .tryOf a0 => hb a0
@@ -1181,6 +1198,7 @@ instance : HB Lanius.Mini.LetHead := ⟨hbLetHead⟩
 @[simp, hb_simp] theorem hb_LetHead_matchOf (a0 : Nat) (a1 : Lanius.Mini.Ty) (a2 : List Lanius.Mini.SrcArm) : hb (Lanius.Mini.LetHead.matchOf a0 a1 a2) = max (hb a1) (hb a2) := rfl
 @[simp, hb_simp] theorem hb_LetHead_allocOf (a0 : Lanius.Mini.SrcExpr) (a1 : Nat) : hb (Lanius.Mini.LetHead.allocOf a0 a1) = hb a0 := rfl
 @[simp, hb_simp] theorem hb_LetHead_sliceOf (a0 : Lanius.Mini.SrcExpr) (a1 : Lanius.Mini.SrcExpr) : hb (Lanius.Mini.LetHead.sliceOf a0 a1) = max (hb a0) (hb a1) := rfl
+@[simp, hb_simp] theorem hb_LetHead_viewOf (a0 : Lanius.Mini.SrcExpr) : hb (Lanius.Mini.LetHead.viewOf a0) = hb a0 := rfl
 @[simp, hb_simp] theorem hb_LetHead_indexOf (a0 : Nat) (a1 : Lanius.Mini.SrcExpr) : hb (Lanius.Mini.LetHead.indexOf a0 a1) = hb a1 := rfl
 @[simp, hb_simp] theorem hb_LetHead_evalOf (a0 : Lanius.Mini.MEff) : hb (Lanius.Mini.LetHead.evalOf a0) = hb a0 := rfl
 @[simp, hb_simp] theorem hb_LetHead_tryOf (a0 : Lanius.Mini.Tried) : hb (Lanius.Mini.LetHead.tryOf a0) = hb a0 := rfl
@@ -1240,6 +1258,18 @@ theorem hb_le_Untyped_ty (s : Lanius.Mini.Untyped) : hb s.ty ≤ hb s := by
   omega
 theorem hb_le_Untyped_head (s : Lanius.Mini.Untyped) : hb s.head ≤ hb s := by
   show _ ≤ max (hb s.ty) (hb s.head)
+  omega
+
+instance : HB Lanius.Mini.ViewRead := ⟨fun s => max (hb s.fields) (max (hb s.pointer) (hb s.more))⟩
+@[simp, hb_simp] theorem hb_ViewRead_mk (a0 : Nat) (a1 : List Lanius.Mini.SrcExpr) (a2 : Lanius.Mini.Local) (a3 : List Lanius.Mini.CTree) : hb (Lanius.Mini.ViewRead.mk a0 a1 a2 a3) = max (hb a1) (max (hb a2) (hb a3)) := rfl
+theorem hb_le_ViewRead_fields (s : Lanius.Mini.ViewRead) : hb s.fields ≤ hb s := by
+  show _ ≤ max (hb s.fields) (max (hb s.pointer) (hb s.more))
+  omega
+theorem hb_le_ViewRead_pointer (s : Lanius.Mini.ViewRead) : hb s.pointer ≤ hb s := by
+  show _ ≤ max (hb s.fields) (max (hb s.pointer) (hb s.more))
+  omega
+theorem hb_le_ViewRead_more (s : Lanius.Mini.ViewRead) : hb s.more ≤ hb s := by
+  show _ ≤ max (hb s.fields) (max (hb s.pointer) (hb s.more))
   omega
 
 instance : HB Lanius.Mini.ArrayLocal := ⟨fun s => hb s.element⟩

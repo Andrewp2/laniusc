@@ -282,6 +282,13 @@ class Emit:
         m = re.match(r'\(?(Lanius\.Mini\.[\w.]+)', term)
         return m.group(1) if m else None
 
+    def used(self, k, ks, model, lemma):
+        """The group's induction hypotheses `k`'s step uses (the members its model
+        calls), the others dropped (`-`): fewer hypotheses for the tactic to scan."""
+        body = self.m.body.get(f'{model}_{k}', '') + HAND_CASE.get(k, '')
+        calls = set(re.findall(rf'\b{model}_(\w+)', body)) | set(re.findall(rf'\b{lemma}_(\w+)', body))
+        return [f'{lemma}_{m}' if m in calls else '-' for m in ks]
+
     def live(self, ps):
         return [x for x, t in ps if not self.g.flat(t)]
 
@@ -362,7 +369,7 @@ class Emit:
             binders, xs, nm, st = self.post_parts(k, '(n + 1)')
             h = self.head(k)
             out.append(f'theorem post_step_{k} (n : Nat) (ih :\n    {conj}) :\n    {"∀ " + binders + ", " if binders else ""}{st} := by\n'
-                       f'  {"obtain " + tuple_(names) + " := ih" if len(ks) > 1 else "have " + names[0] + " := ih"}\n'
+                       f'  {"obtain " + tuple_(self.used(k, ks, "Cost", "post")) + " := ih" if len(ks) > 1 else "have " + names[0] + " := ih"}\n'
                        '  ' + ' '.join(['intro', xs, 'M', nm]).replace('  ', ' ').strip() + '\n' +
                        (HAND_CASE[k].replace('\n    ', '\n').lstrip(' ').join(['  ', '']) if k in HAND_CASE else
                         f'  rw [Cost_{k}.eq_def]; dsimp only\n' +
@@ -447,7 +454,7 @@ class Emit:
         for k in ks:
             binders, xs, nm, st = self.pre_parts(k, '(n + 1)')
             out.append(f'theorem pre_step_{k} (n : Nat) (ih :\n    {conj}) :\n    ∀ {binders} (b : Nat), {st} := by\n'
-                       f'  {"obtain " + tuple_(names) + " := ih" if len(ks) > 1 else "have " + names[0] + " := ih"}\n'
+                       f'  {"obtain " + tuple_(self.used(k, ks, "Pre", "pre")) + " := ih" if len(ks) > 1 else "have " + names[0] + " := ih"}\n'
                        f'  intro {xs} b M {nm}\n'
                        f'  rw [Pre_{k}.eq_def]; dsimp only\n'
                        f'  pre_auto n, M\n')
@@ -462,6 +469,15 @@ class Emit:
             out.append(f'theorem pre_{k} : ∀ (n : Nat) {binders} (b : Nat), {st} :=\n'
                        f'  fun n => (pre_group_{first} n){proj(i, len(ks))}\n')
         return out
+
+
+def model_needs(g, names):
+    """The lemmas the models `names` call: `post:k` for `Cost_k`, `pre:k` for `Pre_k`."""
+    out = set()
+    for nm in names:
+        for kind, k in re.findall(r'\b(Cost|Pre)_(\w+)', g.m.body.get(nm, '')):
+            out.add(('post:' if kind == 'Cost' else 'pre:') + k)
+    return out
 
 
 def paren(t):
@@ -596,11 +612,11 @@ def main():
         if name.startswith('Cost_'):
             ks = [x[5:] for x in grp if x in r and x[5:] in g.m.stmt and not g.flat(rep_ty(g.m.stmt[x[5:]][2]))]
             if ks:
-                posts.append(e.post_group(ks, rec))
+                posts.append((e.post_group(ks, rec), {f'post:{k}' for k in ks}, model_needs(g, ['Cost_' + k for k in ks])))
                 reached.extend(ks)
         else:
             ks = [x[4:] for x in grp if x in r]
-            pres.append(e.pre_group(ks, rec))
+            pres.append((e.pre_group(ks, rec), {f'pre:{k}' for k in ks}, model_needs(g, ['Pre_' + k for k in ks])))
             # a precondition's facts need the heights its Lean function computes too
             reached.extend(k for k in ks if k in g.m.stmt and e.head(k))
     uks = lean_order(called_uncostly(e, reached), e.head)
@@ -608,33 +624,40 @@ def main():
     uposts = []
     for k in uks:
         h = e.head(k)
-        uposts.append([e.upost(k, count[h])])
+        uposts.append(([e.upost(k, count[h])], set(), set()))
         count[h] += 1
     os.makedirs(outdir, exist_ok=True)
     chunks = []
     def flush(kind, items, per):
-        cur, n = [], 0
-        for it in items:
+        cur, defs, needs, n = [], set(), set(), 0
+        for it, d, nd in items:
             cur.append(''.join(it))
+            defs |= d
+            needs |= nd
             n += 1
             if n >= per:
-                chunks.append((kind, cur))
-                cur, n = [], 0
+                chunks.append((kind, cur, defs, needs))
+                cur, defs, needs, n = [], set(), set(), 0
         if cur:
-            chunks.append((kind, cur))
+            chunks.append((kind, cur, defs, needs))
     flush('UPost', uposts, int(os.environ.get('UPOST_PER', '80')))
     flush('Post', posts, int(os.environ.get('POST_PER', '60')))
     flush('Pre', pres, int(os.environ.get('PRE_PER', '60')))
-    prev = 'Lanius.Faithful.SelfPre.HBLib\nimport Lanius.Faithful.GenB.SelfBModel4'
+    # each module imports the uposts' modules before it (found by name, not
+    # tracked) and those defining the lemmas its models call (not a chain:
+    # independent modules build in parallel)
+    base = ['Lanius.Faithful.SelfPre.HBLib', 'Lanius.Faithful.GenB.SelfBModel4']
     mods = []
-    for i, (kind, items) in enumerate(chunks):
+    for i, (kind, items, defs, needs) in enumerate(chunks):
         name = f'SelfP{i:02d}'
-        imports = 'import ' + prev
-        text = HEADER.format(imports=imports, what=f'{kind} lemmas, part {i}') + '\n'.join(items) + \
+        deps = [f'Lanius.Faithful.SelfPre.GenP.SelfP{j:02d}' for j, c in enumerate(chunks[:i])
+                if c[0] == 'UPost' or (c[2] & (needs - defs))]
+        imports = '\n'.join('import ' + m for m in base + deps)
+        prof = 'set_option profiler true\nset_option profiler.threshold 1500\n' if os.environ.get('PRE_PROFILE') else ''
+        text = HEADER.format(imports=imports, what=f'{kind} lemmas, part {i}') + prof + '\n'.join(items) + \
             '\nend Lanius.Faithful.SelfPre\n'
         open(os.path.join(outdir, name + '.lean'), 'w').write(text)
-        prev = f'Lanius.Faithful.SelfPre.GenP.{name}'
-        mods.append(prev)
+        mods.append(f'Lanius.Faithful.SelfPre.GenP.{name}')
     print(len(uposts), 'uposts', len(posts), 'post groups', len(pres), 'pre groups', len(mods), 'modules')
 
 
