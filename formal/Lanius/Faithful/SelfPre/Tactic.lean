@@ -447,6 +447,31 @@ partial def certProof? (atoms0 : Array Expr) (goal : Expr) (hyps : Array (Expr �
   let cs := cons.mapIdx fun i c => (c.l, c.r, i)
   let vs := atoms.foldr (fun a acc => mkApp3 (mkConst ``List.cons [0]) (mkConst ``Nat) a acc)
     (mkApp (mkConst ``List.nil [0]) (mkConst ``Nat))
+  -- each subtraction atom's facts `s + c ≤ a` and `s ≤ a`, by constraint
+  let factOf (nm : String) (a c : Expr) : Option Nat :=
+    cons.findIdx? fun k => k.pf.isAppOf (lcName nm) && k.pf.getAppNumArgs ≥ 2 &&
+      k.pf.getArg! 0 == a && k.pf.getArg! 1 == c
+  let subInfo : Array (Nat × Option Nat × Option Nat) := subs.filterMap fun sub =>
+    (atoms.idxOf? sub).map fun j =>
+      let a := sub.getArg! 4
+      let c := sub.getArg! 5
+      (j, (factOf "sub_add_le_of_lt" a c).orElse fun _ => factOf "sub_add_le_of_le" a c, factOf "sub_le'" a c)
+  -- a left side's subtractions `a - c` replaced by `a`: with its `c` where the left
+  -- side has it (`a - c + c ≤ a`), else alone (`a - c ≤ a`)
+  let rec unchain (l : Lin) (acc : Array Nat) : Nat → Lin × Array Nat
+    | 0 => (l, acc)
+    | fuel + 1 =>
+      match subInfo.find? (fun (j, _, _) => l[j]! > 0) with
+      | none => (l, acc)
+      | some (_, add?, le?) =>
+        let step (i : Nat) : Option Lin :=
+          let l' := l.sub cons[i]!.l
+          if l'.nonneg then some (l'.add cons[i]!.r) else none
+        match add?.bind fun i => (step i).map (·, i) with
+        | some (l', i) => unchain l' (acc.push i) fuel
+        | none => match le?.bind fun i => (step i).map (·, i) with
+          | some (l', i) => unchain l' (acc.push i) fuel
+          | none => (l, acc)
   let ltmTy := mkConst (lcName "LTm")
   let pairTy := mkApp2 (mkConst ``Prod [0, 0]) ltmTy ltmTy
   let rec go (p : Expr) : Option Expr := do
@@ -456,8 +481,11 @@ partial def certProof? (atoms0 : Array Expr) (goal : Expr) (hyps : Array (Expr �
       return mkApp4 (mkConst ``And.intro) a b (← go a) (← go b)
     unless (p.isAppOfArity ``LE.le 4 || p.isAppOfArity ``LT.lt 4) && isNatTy (p.getArg! 0) do none
     let gc ← (consOf atoms (mkConst ``True.intro) p)[0]?
-    -- a budget chain takes two steps a level (`b₁ = b - c`, then `b - c + c ≤ b`)
-    let used ← ((certify cs gc.l gc.r 16 #[]).run' 200 : Id _)
+    -- a budget chain takes two steps a level (`b₁ = b - c`, then `b - c + c ≤ b`):
+    -- taken first, without search, then the search for the rest
+    let (l1, u1) := unchain gc.l #[] 64
+    let first : Option (Array Nat) := ((certify cs l1 gc.r 16 u1).run' 200 : Id _)
+    let used ← first.orElse fun _ => ((certify cs gc.l gc.r 16 #[]).run' 200 : Id _)
     let sel := used.map (cons[·]!)
     -- the hypotheses' list and `AllLe vs` of it, from the last
     let (hs, hh) := sel.foldr (fun c (hs, hh) =>
@@ -569,10 +597,10 @@ where
   replaceMainGoal []
 
 /-- The premises one tactic run has proved, by run (`lanius.hb.run`): sibling goals
-share most of their context and ask the same premises (let_first: 2,794
-premises, 747 of them distinct). A proof is reused while every hypothesis it
-uses is in the context. -/
-initialize arithCache : IO.Ref (Std.HashMap Nat (Std.HashMap Expr Expr)) ← IO.mkRef {}
+share most of their context and ask the same premises (let_first: 3,364 premises
+asked again of 7,338). With each proof, the free variables it uses (in context
+order), their types and whether they are hypotheses. -/
+initialize arithCache : IO.Ref (Std.HashMap Nat (Std.HashMap Expr (Expr × Array (FVarId × Expr × Bool)))) ← IO.mkRef {}
 initialize runCounter : IO.Ref Nat ← IO.mkRef 0
 
 register_option lanius.hb.run : Nat := {
@@ -607,18 +635,49 @@ def proveArith0? (ty : Expr) : TacticM (Option Expr) := do
     saved.restore
     return none
 
+/-- A cached proof `p` in the current context: its free variables still there, or,
+for a hypothesis gone (a sibling goal's facts are its own), one of the same type
+(the same proposition, so `p` keeps its type). -/
+def reuseProof? (p : Expr) (fvs : Array (FVarId × Expr × Bool)) : MetaM (Option Expr) := do
+  let lctx ← getLCtx
+  let mut olds : Array Expr := #[]
+  let mut news : Array Expr := #[]
+  let mut byType : Option (Std.HashMap Expr FVarId) := none
+  for (f, t, isHyp) in fvs do
+    if lctx.contains f then continue
+    unless isHyp do return none
+    if byType.isNone then
+      let mut m : Std.HashMap Expr FVarId := {}
+      for d in lctx do
+        unless d.isImplementationDetail do
+          m := m.insert (← instantiateMVars d.type) d.fvarId
+      byType := some m
+    let t' := t.replaceFVars olds news
+    let some g := byType.bind (·[t']?) | return none
+    olds := olds.push (mkFVar f)
+    news := news.push (mkFVar g)
+  return some (if olds.isEmpty then p else p.replaceFVars olds news)
+
 /-- `proveArith0?`, or the proof this run found for the same premise. -/
 def proveArith? (ty : Expr) : TacticM (Option Expr) := do
   let run := lanius.hb.run.get (← getOptions)
   let key ← instantiateMVars ty
   if run != 0 && !key.hasMVar then
-    if let some p := (← arithCache.get)[run]?.bind (·[key]?) then
-      let lctx ← getLCtx
-      unless p.hasAnyFVar (fun f => (lctx.find? f).isNone) do return some p
+    if let some (p, fvs) := (← arithCache.get)[run]?.bind (·[key]?) then
+      if let some p ← reuseProof? p fvs then
+        dbg "hit"
+        return some p
+      dbg "stale"
+  dbg "miss"
   let r ← proveArith0? ty
   if let some p := r then
     if run != 0 && !key.hasMVar && !p.hasMVar then
-      arithCache.modify fun m => m.insert run ((m.getD run {}).insert key p)
+      let lctx ← getLCtx
+      let ds := ((collectFVars {} p).fvarIds.filterMap lctx.find?).qsort (·.index < ·.index)
+      let fvs ← ds.mapM fun d => do
+        let t ← instantiateMVars d.type
+        return (d.fvarId, t, ← isProp t)
+      arithCache.modify fun m => m.insert run ((m.getD run {}).insert key (p, fvs))
   return r
 
 /-- Add `p : t` to the context as `name`. -/
@@ -773,6 +832,52 @@ def postLemma? (c : Expr) : TacticM (Option Expr) := do
   | some l => return some l
   | none => genLookup? (Name.mkSimple s!"post_{key}")
 
+/-- The facts' normal forms this run found: by the fact and the case splits'
+equations in the context (sibling goals ask the same facts again), the normal
+form, its equation, and the free variables that uses (as `arithCache`'s). -/
+initialize factCache : IO.Ref (Std.HashMap Nat (Std.HashMap Expr (Expr × Option Expr × Array (FVarId × Expr × Bool)))) ← IO.mkRef {}
+
+/-- A fact `t0`'s normal form (`simp only` by the heights' and the definitions'
+lemmas and the split equations) and its equation (`none`: unchanged up to
+`Eq.mp`'s need), or `none` when the result is `False` (the goal closes: left to
+the tactic). -/
+def normFact? (t0 : Expr) : TacticM (Option (Expr × Option Expr)) := withMainContext do
+  let run := lanius.hb.run.get (← getOptions)
+  let names ← splitNames
+  let lctx ← getLCtx
+  let mut eqTys : Array Expr := #[]
+  for nm in names do
+    if let some d := lctx.findFromUserName? nm then eqTys := eqTys.push (← instantiateMVars d.type)
+  let key := mkAppN (mkConst `Lanius.Faithful.SelfPre.Tactic.factKey) (#[t0] ++ eqTys)
+  if run != 0 && !key.hasMVar then
+    if let some (t1, eq?, fvs) := (← factCache.get)[run]?.bind (·[key]?) then
+      match eq? with
+      | none => return some (t1, none)
+      | some h =>
+        if let some h ← reuseProof? h fvs then
+          dbg "fhit"
+          return some (t1, some h)
+  dbg "fmiss"
+  let ids ← constIdsOf t0
+  let args ← simpArgs (ids ++ names)
+  let stx ← `(tactic| simp only [$args,*])
+  let { ctx, simprocs, .. } ← mkSimpContext stx (eraseLocal := false)
+  let (r, _) ← Meta.simp t0 ctx simprocs
+  let t1 ← instantiateMVars r.expr
+  if t1.isConstOf ``False then return none
+  let eq? ← r.proof?.mapM instantiateMVars
+  if eq?.any (·.hasMVar) then return none
+  if run != 0 && !key.hasMVar then
+    let fvs ← match eq? with
+      | none => pure #[]
+      | some h => do
+        let ds := ((collectFVars {} h).fvarIds.filterMap lctx.find?).qsort (·.index < ·.index)
+        ds.mapM fun d => do
+          let t ← instantiateMVars d.type
+          return (d.fvarId, t, ← isProp t)
+    factCache.modify fun m => m.insert run ((m.getD run {}).insert key (t1, eq?, fvs))
+  return some (t1, eq?)
+
 /-- Upper bounds for every value the context's heights and cost-model calls
 stand for, at the potential `base`: each value at most `base` plus the boxes
 allocated for it and for the values inside it. Returns the registry. -/
@@ -873,17 +978,28 @@ def hbFacts (fuel : Option Expr) (base : Expr) (extra : Array Expr := #[]) : Tac
     -- the split equations may rewrite the value's own arguments
     -- (`isTrueArm a = true`): the fact as stated stays too, for the goal's form
     let raw := Name.mkSimple s!"hbf{k}r"
-    addFact raw p
-    addFact nm p
-    let t0 ← instantiateMVars (← inferType p)
-    let ids ← withMainContext do constIdsOf t0
-    let args ← simpArgs (ids ++ (← splitNames))
-    evalTactic (← `(tactic| try simp only [$args,*] at $(mkIdent nm):ident))
-    let same ← withMainContext do
-      match (← getLCtx).findFromUserName? nm with
-      | some d => return (← instantiateMVars d.type) == t0
-      | none => return false
-    if same then evalTactic (← `(tactic| clear $(mkIdent raw):ident))
+    let t0 ← withMainContext do instantiateMVars (← inferType p)
+    match ← normFact? t0 with
+    | some (t1, eq?) =>
+      if t1 == t0 then
+        addFact nm p
+      else
+        addFact raw p
+        unless t1.isConstOf ``True do
+          addFact nm (match eq? with
+            | some h => mkApp4 (mkConst ``Eq.mp [0]) t0 t1 h p
+            | none => p)
+    | none =>
+      addFact raw p
+      addFact nm p
+      let ids ← withMainContext do constIdsOf t0
+      let args ← simpArgs (ids ++ (← splitNames))
+      evalTactic (← `(tactic| try simp only [$args,*] at $(mkIdent nm):ident))
+      let same ← withMainContext do
+        match (← getLCtx).findFromUserName? nm with
+        | some d => return (← instantiateMVars d.type) == t0
+        | none => return false
+      if same then evalTactic (← `(tactic| clear $(mkIdent raw):ident))
     k := k + 1
   return reg
 
@@ -1018,6 +1134,7 @@ def quietly (x : TacticM Unit) : TacticM Unit := do
       (withEnableInfoTree false x)
   finally
     arithCache.modify (·.erase run)
+    factCache.modify (·.erase run)
 
 /-- Close `hb (f xs) ≤ M` for a function the cost model does not see, one case of
 its functional induction. -/
