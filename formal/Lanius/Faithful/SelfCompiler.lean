@@ -4,7 +4,7 @@ public import Lanius.Faithful.SafeDriver
 public import Lanius.Mini.SourceOutcome
 public import Lanius.Faithful.Gen.SelfNeeds
 public import Lanius.Mini.Compiler.P.SrcExpr_guard
-public import Lanius.Mini.Compiler.P.SrcType_size
+public import Lanius.Mini.Compiler.P.SrcType_same
 public import Lanius.Mini.Compiler.P.compileSource
 public import Lanius.Mini.Compiler.P.packRound
 public import Lanius.Mini.Compiler.P.storeArray
@@ -37,7 +37,7 @@ import all Lanius.Mini.Compiler.P.FArith_opcode
 import all Lanius.Mini.Compiler.P.FloatTy_rex
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.SrcType_same
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_mask
@@ -122,6 +122,8 @@ byte for byte. -/
 
 namespace Lanius.Faithful.SelfCompiler
 
+variable {sx : Statics}
+
 open Lanius.Mini
 open Lanius.X86.Machine
 open Lanius.Core (Value)
@@ -159,6 +161,15 @@ def selfHeap (W : List (BitVec 32)) (room limit : Nat) : Heap :=
   { bytes := fun a => if selfInput ≤ a ∧ a < selfOutput W then wordByte W (a - selfInput) else 0
     cursor := selfNext W room
     limit := limit }
+
+/-- The self heap has no static region, as the self program has no string
+literals. -/
+theorem selfHeap_statics (W : List (BitVec 32)) (room limit : Nat) :
+    (selfHeap W room limit).StaticsAt ⟨0, []⟩ :=
+  ⟨rfl, rfl, fun h => absurd rfl h, by show 0 + 0 < 2 ^ 64; decide⟩
+
+theorem self_statics : (⟨0, []⟩ : Statics).bytes = prog.decls.statics := by
+  rw [SelfPure.prog_decls]; rfl
 
 /-- `w`'s arguments as Core values. -/
 def selfArgs (W : List (BitVec 32)) (room : Nat) : List Value :=
@@ -320,7 +331,7 @@ theorem start_corr (nonempty : 0 < W.length) {limit : Nat} (small : limit < 2 ^ 
   streams := ⟨rfl, rfl, rfl⟩
 
 theorem args_hold (wordsLt : W.length < 2 ^ 31) (roomLt : room < 2 ^ 31) :
-    FieldsHold [] (paramTypes (src_app_main_w 1 2 5 6 7 8).params) (selfArgs W room) (Func.entry (selfBits W room)) 0 := by
+    FieldsHold sx [] (paramTypes (src_app_main_w 1 2 5 6 7 8).params) (selfArgs W room) (Func.entry (selfBits W room)) 0 := by
   have i32 : ∀ n : Nat, n < 2 ^ 31 → SrcType.i32.Holds (.signed .i32 n) (widen (BitVec.ofNat 32 n)) := by
     intro n lt
     have lw : low (widen (BitVec.ofNat 32 n)) = BitVec.ofNat 32 n := by
@@ -419,7 +430,7 @@ theorem selfCompiler_outcome {B : Binary} (compiled : compileSource prog = some 
   have nonempty := filesWords_pos files
   rcases compileSource_outcome_reason compiled fn_w (args_hold wordsLt roomLt) rfl start_fresh
       (start_corr nonempty small) enough (fun pos => absurd pos (by rw [SelfPure.prog_need]; exact Nat.lt_irrefl 0))
-      s imageBase window bounded loaded apart imageHeap entry params heapAt stack with
+      (selfHeap_statics _ _ _) self_statics s imageBase window bounded loaded apart imageHeap entry params heapAt stack with
     ⟨fails, faults⟩ | ⟨fuel, v, final, depth, runs, fits, short, faults⟩ |
       ⟨fuel, v, final, runs, fits, results, after, holds, len, corr, n, s', run, det, ret⟩ | undefined
   · exact .inl (.inl ⟨fails, faults⟩)

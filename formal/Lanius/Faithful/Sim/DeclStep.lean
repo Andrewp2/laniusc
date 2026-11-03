@@ -42,12 +42,14 @@ namespace Lanius.Faithful
 open Lanius.Mini
 
 /-- `e` is `d` with declarations put in front. -/
-def Grows (d e : SrcDecls) : Prop := ∃ s n, e.structs = s ++ d.structs ∧ e.enums = n ++ d.enums
+def Grows (d e : SrcDecls) : Prop :=
+  ∃ s n, e.structs = s ++ d.structs ∧ e.enums = n ++ d.enums ∧ e.statics = d.statics
 
-theorem Grows.rfl' {d : SrcDecls} : Grows d d := ⟨[], [], rfl, rfl⟩
+theorem Grows.rfl' {d : SrcDecls} : Grows d d := ⟨[], [], rfl, rfl, rfl⟩
 
 theorem Grows.trans {a b c : SrcDecls} : Grows a b → Grows b c → Grows a c
-  | ⟨s, n, hs, hn⟩, ⟨s', n', hs', hn'⟩ => ⟨s' ++ s, n' ++ n, by rw [hs', hs, List.append_assoc], by rw [hn', hn, List.append_assoc]⟩
+  | ⟨s, n, hs, hn, hc⟩, ⟨s', n', hs', hn', hc'⟩ =>
+    ⟨s' ++ s, n' ++ n, by rw [hs', hs, List.append_assoc], by rw [hn', hn, List.append_assoc], by rw [hc', hc]⟩
 
 /-- An `Option` step that grows: none, or a grown value. -/
 def GrowsTo (d : SrcDecls) (x : Option SrcDecls) : Prop := ∀ e, x = some e → Grows d e
@@ -74,7 +76,7 @@ theorem growsTo_struct {d : SrcDecls} {id : Nat} {fs : List SrcType} {x : Option
     | none =>
       rw [hk] at h
       cases h
-      exact ⟨[{ id := id, fields := fs }], [], rfl, rfl⟩
+      exact ⟨[{ id := id, fields := fs }], [], rfl, rfl, rfl⟩
     | some other =>
       rw [hk] at h
       unfold keepIf at h
@@ -96,7 +98,7 @@ theorem growsTo_enum {d : SrcDecls} {id : Nat} {vs : List (List SrcType)} {x : O
     | none =>
       rw [hk] at h
       cases h
-      exact ⟨[], [{ id := id, variants := vs }], rfl, rfl⟩
+      exact ⟨[], [{ id := id, variants := vs }], rfl, rfl, rfl⟩
     | some other =>
       rw [hk] at h
       unfold keepIf at h
@@ -136,6 +138,7 @@ theorem type_grows : ∀ (t : SrcType) (d : SrcDecls), GrowsTo d (SrcType.declar
   | .float _, _ => by unfold SrcType.declare; exact growsTo_some
   | .sint _, _ => by unfold SrcType.declare; exact growsTo_some
   | .view _, _ => by unfold SrcType.declare; exact fun _ h => nomatch h
+  | .str, _ => by unfold SrcType.declare; exact growsTo_some
   termination_by structural t => t
 theorem types_grows : ∀ (ts : List SrcType) (d : SrcDecls), GrowsTo d (declareTypes ts d)
   | [], _ => by unfold declareTypes; exact growsTo_some
@@ -263,7 +266,7 @@ theorem func_grows (f : SrcFunc) (d : SrcDecls) : GrowsTo d (declareFunc f d) :=
 /-! ## One function's step -/
 
 /-- `d` with its first `a` structs and `b` enums dropped. -/
-def declAt (d : SrcDecls) (a b : Nat) : SrcDecls := ⟨d.structs.drop a, d.enums.drop b⟩
+def declAt (d : SrcDecls) (a b : Nat) : SrcDecls := ⟨d.structs.drop a, d.enums.drop b, d.statics⟩
 
 theorem declAt_zero (d : SrcDecls) : declAt d 0 0 = d := by
   cases d; rfl
@@ -304,10 +307,10 @@ theorem stepFits_eq {r : Option SrcDecls} {d : SrcDecls} {a b a' b' : Nat} (hg :
   · next e =>
     simp only [Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq] at h
     obtain ⟨⟨⟨⟨⟨⟨⟨le, fit⟩, le'⟩, fit'⟩, len⟩, len'⟩, fs⟩, fe⟩ := h
-    obtain ⟨s, n, hs, hn⟩ := hg e rfl
-    obtain ⟨es, ee⟩ := e
-    simp only [declAt] at hs hn ⊢
-    rw [drop_of_front le fit hs len (structsSame_eq fs), drop_of_front le' fit' hn len' (enumsSame_eq fe)]
+    obtain ⟨s, n, hs, hn, hc⟩ := hg e rfl
+    obtain ⟨es, ee, ec⟩ := e
+    simp only [declAt] at hs hn hc ⊢
+    rw [drop_of_front le fit hs len (structsSame_eq fs), drop_of_front le' fit' hn len' (enumsSame_eq fe), hc]
 
 theorem funcs_grows : ∀ (fs : List SrcFunc) (d : SrcDecls), GrowsTo d (declareFuncs fs d)
   | [], _ => by unfold declareFuncs; exact growsTo_some
@@ -341,7 +344,7 @@ theorem declareFuncs_append : ∀ {xs ys : List SrcFunc} {d d' e : SrcDecls},
       rw [h1]
       exact declareFuncs_append hx hy
 
-theorem decls_of_funcs {sp : SrcProgram} {d : SrcDecls} (h : declareFuncs sp.funcs ⟨[], []⟩ = some d) :
+theorem decls_of_funcs {sp : SrcProgram} {d : SrcDecls} (h : declareFuncs sp.funcs ⟨[], [], sp.statics⟩ = some d) :
     sp.decls = d := by
   unfold SrcProgram.decls declareProgram
   rw [h]

@@ -25,5 +25,6 @@ def unitTy (t : SrcType) : Bool :=
   | .float ft => false
   | .sint sk => false
   | .view viewLength => false
+  | .str => false
 
 end Lanius.Mini

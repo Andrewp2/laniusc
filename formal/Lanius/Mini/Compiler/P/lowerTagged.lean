@@ -35,6 +35,7 @@ def viewedType (ty : SrcType) : Bool :=
   | .float ft => false
   | .sint sk => false
   | .view viewLength => true
+  | .str => false
 
 /-- An enum value: its tag, then the variant's payload. Slots past the payload are left as they are. -/
 def lowerEnumValue (scope : List Binding) (ty : SrcType) (variant : Nat) (payload : List SrcExpr) : Option (List Expr) :=
@@ -53,5 +54,6 @@ def lowerEnumValue (scope : List Binding) (ty : SrcType) (variant : Nat) (payloa
   | .float ft => none
   | .sint sk => none
   | .view viewLength => none
+  | .str => none
 
 end Lanius.Mini

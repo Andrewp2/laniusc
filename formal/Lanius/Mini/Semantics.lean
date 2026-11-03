@@ -10,7 +10,7 @@ import all Lanius.Mini.Compiler.P.FArith_opcode
 import all Lanius.Mini.Compiler.P.FloatTy_rex
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.SrcType_same
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_mask
@@ -519,5 +519,56 @@ def Program.Returns (prog : Program) (depth callee : Nat) (args : List (BitVec 6
     (value : List (BitVec 64)) (after : Heap) : Prop :=
   ∃ func, prog.funcs[callee]? = some func ∧ args.length = func.params ∧
     Exec prog depth (Func.entry args) heap func.body (.returned value after)
+
+theorem Heap.writeLE_statics : ∀ (heap : Heap) (address value count : Nat),
+    (heap.writeLE address value count).staticBase = heap.staticBase ∧
+      (heap.writeLE address value count).statics = heap.statics
+  | _, _, _, 0 => ⟨rfl, rfl⟩
+  | heap, address, value, count + 1 => by
+    have := Heap.writeLE_statics (heap.write address (UInt8.ofNat value)) (address + 1) (value / 256) count
+    exact ⟨this.1, this.2⟩
+
+theorem Syscall.run_statics {call : Syscall} {args : List (BitVec 64)} {heap after : Heap} {result : BitVec 64}
+    (ran : call.run args heap = some (result, after)) :
+    after.staticBase = heap.staticBase ∧ after.statics = heap.statics := by
+  cases call <;>
+  match args, ran with
+  | [fd, address, count], ran =>
+    rw [Syscall.run] at ran
+    split at ran
+    · cases ran; exact ⟨rfl, rfl⟩
+    · cases ran
+  | [], ran => simp [Syscall.run] at ran
+  | [_], ran => simp [Syscall.run] at ran
+  | [_, _], ran => simp [Syscall.run] at ran
+  | _ :: _ :: _ :: _ :: _, ran => simp [Syscall.run] at ran
+
+/-- The heap an outcome ends with. -/
+def Outcome.finalHeap : Outcome → Heap
+  | .normal _ heap => heap
+  | .returned _ heap => heap
+  | .broke _ heap => heap
+  | .continued _ heap => heap
+
+/-- No statement moves or writes the static region. -/
+theorem Exec.statics {prog : Program} {d : Nat} {env : Env} {heap : Heap} {s : Stmt} {out : Outcome}
+    (exec : Exec prog d env heap s out) :
+    out.finalHeap.staticBase = heap.staticBase ∧ out.finalHeap.statics = heap.statics := by
+  induction exec with
+  | seq _ _ ih1 ih2 => exact ⟨ih2.1.trans ih1.1, ih2.2.trans ih1.2⟩
+  | loopNext _ _ _ ih1 ih2 => exact ⟨ih2.1.trans ih1.1, ih2.2.trans ih1.2⟩
+  | call _ _ _ _ _ ih => exact ih
+  | seqReturned _ ih => exact ih
+  | ifTrue _ _ ih => exact ih
+  | ifFalse _ _ ih => exact ih
+  | loopReturned _ _ ih => exact ih
+  | seqBroke _ ih => exact ih
+  | seqContinued _ ih => exact ih
+  | loopBroke _ _ ih => exact ih
+  | loopContinued _ _ _ ih1 ih2 => exact ⟨ih2.1.trans ih1.1, ih2.2.trans ih1.2⟩
+  | skip | assign | loopDone | ret | brk | cont | alloc | loadByte | storeByte | loadWord | divide | frame | static
+    | loadByteStatic => exact ⟨rfl, rfl⟩
+  | storeWord => exact Heap.writeLE_statics _ _ _ _
+  | sys ran => exact Syscall.run_statics ran
 
 end Lanius.Mini

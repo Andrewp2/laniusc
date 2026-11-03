@@ -3,7 +3,7 @@ module
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Lists_empty
-import Lanius.Mini.Compiler.P.SrcType_size
+import Lanius.Mini.Compiler.P.SrcType_same
 import Lanius.Mini.Compiler.P.compileModules
 import Lanius.Mini.Compiler.P.loadAtBytes
 import Lanius.Mini.Compiler.P.strStores
@@ -38,6 +38,7 @@ def arrayBytesOf (ty : SrcType) : Nat :=
   | .float ft => 0
   | .sint sk => 0
   | .view viewLength => 0
+  | .str => 0
 
 /-- The block bytes of a declaration of id at type ty: its array bytes when id is passed as a slice. -/
 def declBytes (uses : List Nat) (id : Nat) (ty : SrcType) : Nat :=
@@ -71,6 +72,7 @@ def SrcEff.sliceUses (self : SrcEff) : List Nat :=
   | .eIf condition ty thenValue elseValue => SrcEff.sliceUses condition ++ (SrcEff.sliceUses thenValue ++ SrcEff.sliceUses elseValue)
   | .eLet id ty value rt body => SrcEff.sliceUses value ++ SrcEff.sliceUses body
   | .eLen slice => []
+  | .eStr offset chars => []
 /-- The largest need of a function the expression calls, by needs (each function's, by index; 0 for a host service). -/
 def SrcEff.calleeNeed (self : SrcEff) (needs : List Nat) : Nat :=
   match self with
@@ -90,6 +92,7 @@ def SrcEff.calleeNeed (self : SrcEff) (needs : List Nat) : Nat :=
   | .eIf condition ty thenValue elseValue => max (SrcEff.calleeNeed condition needs) (max (SrcEff.calleeNeed thenValue needs) (SrcEff.calleeNeed elseValue needs))
   | .eLet id ty value rt body => max (SrcEff.calleeNeed value needs) (SrcEff.calleeNeed body needs)
   | .eLen slice => 0
+  | .eStr offset chars => 0
 def effsSliceUses (es : List SrcEff) : List Nat :=
   match es with
   | [] => []

@@ -1,10 +1,10 @@
 module
 
 public import Lanius.Faithful.Sim.Codec
-public import Lanius.Mini.Compiler.P.SrcType_size
+public import Lanius.Mini.Compiler.P.SrcType_same
 import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.Lists_empty
-import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.SrcType_same
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.arities
@@ -83,7 +83,7 @@ theorem wordType_pos {ds : SrcDecls} : ∀ {t : SrcType}, wordType ds t = true �
   | .slice _, ok => by simp [wordType] at ok
   | .unit, ok => by simp [wordType] at ok
   | .array _ _, ok => by simp [wordType] at ok
-  | .view _, ok => by simp [wordType] at ok
+  | .view _, ok | .str, ok => by simp [wordType] at ok
 
 section
 variable {sp : SrcProgram} {boxes : Boxes}
@@ -256,7 +256,7 @@ theorem store_spec : ∀ n, StoreAt sp boxes n
       | float => exact s.elim
       | sint _ => exact s.elim
       | array _ _ => exact s.elim
-      | view _ => exact s.elim
+      | view _ | str => exact s.elim
       | isize => exact NativeStoreSpec.sty s notUnit
       | unit => exact absurd rfl notUnit
     | struct none rs =>

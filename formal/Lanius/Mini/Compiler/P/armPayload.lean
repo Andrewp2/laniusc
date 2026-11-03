@@ -3,7 +3,7 @@ module
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Lists_empty
-import Lanius.Mini.Compiler.P.SrcType_size
+import Lanius.Mini.Compiler.P.SrcType_same
 import Lanius.Mini.Compiler.P.armBodyScope
 import Lanius.Mini.Compiler.P.armScope
 import Lanius.Mini.Compiler.P.assignFrom
@@ -63,6 +63,7 @@ def lowerMatchArm (scope : List Binding) (binding : Option Binding) (enumId : Na
     | .float ft => none
     | .sint sk => none
     | .view viewLength => none
+    | .str => none
 
 /-- The match is exhaustive, its value takes slots, and its tags fit in 32 bits. -/
 def lowerMatchArms (scope : List Binding) (slot : Nat) (same : Bool) (variants : List (List SrcType)) (arms : List SrcArm) (ty : SrcType) (target : Nat) : Option Stmt :=
@@ -87,6 +88,7 @@ def lowerMatchOn (scope : List Binding) (b : Binding) (enumId : Nat) (arms : Lis
   | .float ft => none
   | .sint sk => none
   | .view viewLength => none
+  | .str => none
 
 def lowerMatch (scope : List Binding) (binding : Option Binding) (enumId : Nat) (arms : List SrcArm) (ty : SrcType) (target : Nat) : Option Stmt :=
   match binding with

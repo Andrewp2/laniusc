@@ -5,7 +5,7 @@ import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.FArith_opcode
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.SrcExpr_guard
-import Lanius.Mini.Compiler.P.SrcType_size
+import Lanius.Mini.Compiler.P.SrcType_same
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.arities
 import Lanius.Mini.Compiler.P.compileModules
@@ -45,6 +45,7 @@ def argBytes (scope : List Binding) (arg : SrcEff) : Nat :=
   | .eIf condition ity thenValue elseValue => 0
   | .eLet lid lty value rt body => 0
   | .eLen slice => 0
+  | .eStr offset chars => 0
 
 /-- A pure argument before the rest. -/
 def arrayArgPure (values : Option (List Expr)) (g : Expr) (rest : Option ArrayArgs) : Option ArrayArgs :=
@@ -93,6 +94,7 @@ def arrayArg (scope : List Binding) (arg : SrcEff) (ty : SrcType) (t : Nat) (off
   | .eIf condition ity thenValue elseValue => none
   | .eLet lid lty value rt body => none
   | .eLen slice => none
+  | .eStr offset chars => none
 
 /-- The arguments, one of each parameter type, the arrays from offset in the block on. -/
 def arrayArgs (scope : List Binding) (args : List SrcEff) (types : List SrcType) (t : Nat) (offset : Nat) : Option ArrayArgs :=

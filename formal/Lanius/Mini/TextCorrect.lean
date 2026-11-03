@@ -11,7 +11,7 @@ import all Lanius.Mini.Compiler.P.FArith_opcode
 import all Lanius.Mini.Compiler.P.FloatTy_rex
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.SrcType_same
 import all Lanius.Mini.Compiler.P.Stmt_kills
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
@@ -252,6 +252,8 @@ nothing. -/
 
 namespace Lanius.Mini
 
+variable {sx : Statics}
+
 open Lanius.X86.Machine
 open Lanius.Core (Value)
 
@@ -360,13 +362,14 @@ theorem compileText_correct {files : List SourceFile} {binary : Binary} (h : com
     ∃ sp, TextReading (files.map SourceFile.source) sp ∧
       (∀ sp', TextReading (files.map SourceFile.source) sp' → sp' = sp) ∧
       ∀ {f : Nat} {func : SrcFunc}, sp.funcs[f]? = some func →
-      ∀ {args : List Value} {bits : List (BitVec 64)}, FieldsHold [] (paramTypes func.params) args (Func.entry bits) 0 →
+      ∀ {args : List Value} {bits : List (BitVec 64)}, FieldsHold sx [] (paramTypes func.params) args (Func.entry bits) 0 →
       bits.length = paramsSize func.params →
       ∀ {fuel : Nat} {v : Value} {final : Semantics.State} {heap : Heap}, heap.cursor = 1 →
       (∀ a, 1 ≤ a → heap.bytes a = 0) → heap.limit < 2 ^ 62 → heap.io.trace = [] →
       Semantics.evalExpr fuel sp.toCore (startState heap.io) (.call f (args.map Core.Expr.value)) = .done v final →
       final.heap.nextAddress ≤ heap.limit → (0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp ∧ heap.fsp ≤ heap.top ∧ heap.top < 2 ^ 62) →
-      ∃ depth results after, func.ret.HoldsAt [] v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
+      heap.StaticsAt sx → sx.bytes = sp.decls.statics →
+      ∃ depth results after, func.ret.HoldsAt sx [] v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
         after.cursor = final.heap.nextAddress ∧ final.world.standardOutput = outputOf 1 after.io.trace ∧
         final.world.standardError = outputOf 2 after.io.trace ∧
         ∀ (s : State) (imageBase : BitVec 64) (window : Nat),
@@ -382,8 +385,8 @@ theorem compileText_correct {files : List SourceFile} {binary : Binary} (h : com
           ∃ n s', Steps n s s' ∧ Det n s s' ∧ Returned window s s' results after := by
   obtain ⟨sp, reading, unique, compiled⟩ := compileText_reading h
   refine ⟨sp, reading, unique, ?_⟩
-  intro f func found args bits typed bitsLen fuel v final heap start zero small silent runs fits frameRoom
-  exact compileSource_correct compiled found typed bitsLen start zero small silent runs fits frameRoom
+  intro f func found args bits typed bitsLen fuel v final heap start zero small silent runs fits frameRoom statics ofSp
+  exact compileSource_correct compiled found typed bitsLen start zero small silent runs fits frameRoom statics ofSp
 
 /-- Every behaviour of the verified compiler's code from source text: a run of
 the binary's code for `f` (premises as in `compileSource_behaviour`) that
@@ -394,10 +397,11 @@ theorem compileText_behaviour {files : List SourceFile} {binary : Binary} (h : c
     ∃ sp, TextReading (files.map SourceFile.source) sp ∧
       (∀ sp', TextReading (files.map SourceFile.source) sp' → sp' = sp) ∧
       ∀ {f : Nat} {func : SrcFunc}, sp.funcs[f]? = some func →
-      ∀ {args : List Value} {bits : List (BitVec 64)}, FieldsHold [] (paramTypes func.params) args (Func.entry bits) 0 →
+      ∀ {args : List Value} {bits : List (BitVec 64)}, FieldsHold sx [] (paramTypes func.params) args (Func.entry bits) 0 →
       bits.length = paramsSize func.params →
       ∀ {heap : Heap}, heap.cursor = 1 → (∀ a, 1 ≤ a → heap.bytes a = 0) → heap.limit < 2 ^ 62 →
       heap.io.trace = [] → 1 ≤ heap.limit → (0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp ∧ heap.fsp ≤ heap.top ∧ heap.top < 2 ^ 62) →
+      heap.StaticsAt sx → sx.bytes = sp.decls.statics →
       ∀ (s : State) (imageBase : BitVec 64) (window : Nat), window ≤ 2 ^ 62 →
         CodeAt s.memory imageBase binary.image →
         (∀ index, index < binary.image.length →
@@ -414,9 +418,9 @@ theorem compileText_behaviour {files : List SourceFile} {binary : Binary} (h : c
           undefinedTrap r = true ∧ st.heap.nextAddress ≤ heap.limit := by
   obtain ⟨sp, reading, unique, compiled⟩ := compileText_reading h
   refine ⟨sp, reading, unique, ?_⟩
-  intro f func found args bits typed bitsLen heap start zero small silent room frameRoom s imageBase window bounded loaded
-    apart imageHeap entry params heapAt stack m u run stuck clean
-  exact compileSource_behaviour compiled found typed bitsLen start zero small silent room frameRoom s imageBase window bounded loaded
+  intro f func found args bits typed bitsLen heap start zero small silent room frameRoom statics ofSp s imageBase window
+    bounded loaded apart imageHeap entry params heapAt stack m u run stuck clean
+  exact compileSource_behaviour compiled found typed bitsLen start zero small silent room frameRoom statics ofSp s imageBase window bounded loaded
     apart imageHeap entry params heapAt stack run stuck clean
 
 end Lanius.Mini

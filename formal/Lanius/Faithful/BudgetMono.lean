@@ -153,7 +153,7 @@ theorem qeff_cle (hc : ∀ c vs, CLe (call c vs) (call' c vs)) :
   | env, .eLet id _ value _ body => by
     simp only [qeff]
     exact cle_qthen (qeff_cle hc env value) fun v => qeff_cle hc ((id, v) :: env) body
-  | _, .eLen _ => cle_none _
+  | _, .eLen _ | _, .eStr _ _ => cle_none _
 
 theorem qeffs_cle (hc : ∀ c vs, CLe (call c vs) (call' c vs)) :
     ∀ (env : Env) (es : List SrcEff), CLe (qeffs call env es) (qeffs call' env es)

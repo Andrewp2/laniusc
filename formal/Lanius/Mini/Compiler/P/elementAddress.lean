@@ -2,6 +2,7 @@ module
 
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.SrcExpr_guard
+import Lanius.Mini.Compiler.P.SrcType_same
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.shortCircuit
 

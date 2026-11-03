@@ -66,7 +66,7 @@ def qeff (env : Env) : SrcEff → Option (Value × Nat)
       qthen (qeff env condition) fun c => (asBool c).bind fun b =>
         if b then qeff env thenValue else qeff env elseValue
   | .eLet id _ value _ body => qthen (qeff env value) fun v => qeff ((id, v) :: env) body
-  | .eLen _ => none
+  | .eLen _ | .eStr _ _ => none
 
 def qeffs (env : Env) : List SrcEff → Option (List Value × Nat)
   | [] => some ([], 0)
@@ -256,7 +256,7 @@ theorem peff_eq (hc : ∀ c vs, call c vs = (qc c vs).map Prod.fst) : ∀ (env :
   | env, .eLet id _ value _ body => by
     rw [peff, qeff]
     exact fst_qthen (peff_eq hc env value) fun v => peff_eq hc ((id, v) :: env) body
-  | env, .eLen _ => rfl
+  | env, .eLen _ | env, .eStr _ _ => rfl
 
 theorem peffs_eq (hc : ∀ c vs, call c vs = (qc c vs).map Prod.fst) : ∀ (env : Env) (es : List SrcEff), peffs call env es = (qeffs qc env es).map Prod.fst
   | env, [] => rfl

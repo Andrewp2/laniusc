@@ -67,7 +67,7 @@ def untypedRejected (fs : List SrcFunc) : Option SrcProgram :=
   if wideLeftFuncs fs then
     none
   else
-    some ({ funcs := fs } : SrcProgram)
+    some ({ funcs := fs, statics := [] } : SrcProgram)
 
 def buildClosed (fuel : Nat) (decls : Decls) (fns : List Inst) (types : Option (List Inst)) (funcs : List MFunc) : Option SrcProgram :=
   match types with

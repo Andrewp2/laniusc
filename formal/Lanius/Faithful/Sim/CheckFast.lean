@@ -42,7 +42,7 @@ def effTyC (tenv : TEnv) : SrcEff → Option SrcType
     (effTyC tenv scrutinee).bind fun st =>
       match ety with
       | .enum _ variants => if st.same ety && armsOkC tenv rty variants binders values then some rty else none
-      | .i32 | .bool | .uint _ | .struct _ _ | .ptr | .slice _ | .unit | .isize | .char | .float _ | .sint _ | .array _ _ | .view _ => none
+      | .i32 | .bool | .uint _ | .struct _ _ | .ptr | .slice _ | .unit | .isize | .char | .float _ | .sint _ | .array _ _ | .view _ | .str => none
   | .eDivide _ left right => (effTyC tenv left).bind fun l => (effTyC tenv right).bind (divTy l)
   | .eStride _ => none
   | .arraySlice _ _ => none
@@ -51,7 +51,7 @@ def effTyC (tenv : TEnv) : SrcEff → Option SrcType
       (effTyC tenv thenValue).bind fun a => (effTyC tenv elseValue).bind fun b => if a.same b then some a else none
     else none
   | .eLet id _ value _ body => (effTyC tenv value).bind fun t => effTyC ((id, t) :: tenv) body
-  | .eLen _ => none
+  | .eLen _ | .eStr _ _ => none
 
 def effTysC (tenv : TEnv) : List SrcEff → Option (List SrcType)
   | [] => some []
@@ -163,7 +163,7 @@ theorem effTyC_eq (tenv : TEnv) : ∀ e : SrcEff, effTyC (callTy sp outside) box
     | float => rfl
     | sint _ => rfl
     | array _ _ => rfl
-    | view _ => rfl
+    | view _ | str => rfl
   | .eDivide _ left right => by rw [effTyC, effTy, effTyC_eq tenv left, effTyC_eq tenv right]
   | .eStride _ => by rw [effTyC, effTy]
   | .arraySlice _ _ => by rw [effTyC, effTy]
@@ -173,7 +173,7 @@ theorem effTyC_eq (tenv : TEnv) : ∀ e : SrcEff, effTyC (callTy sp outside) box
     congr 1
     funext t
     exact effTyC_eq _ body
-  | .eLen _ => by rw [effTyC, effTy]
+  | .eLen _ | .eStr _ _ => by rw [effTyC, effTy]
 
 theorem effTysC_eq (tenv : TEnv) : ∀ es : List SrcEff,
     effTysC (callTy sp outside) boxes tenv es = effTys sp outside boxes tenv es

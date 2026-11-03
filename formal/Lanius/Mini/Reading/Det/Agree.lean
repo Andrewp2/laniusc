@@ -1,7 +1,7 @@
 module
 
 public import Lanius.Mini.Reading.Effs
-import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.SrcType_same
 import all Lanius.Mini.Frontend.P.callParts
 import all Lanius.Mini.Frontend.P.projection
 import all Lanius.Mini.Frontend.P.hasConst

@@ -42,6 +42,6 @@ abbrev Stmt_word_variants (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
 
 abbrev Stmt_word_width (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcType x0 v0 →
-    (RepOption 228 RepMemWidth) (Lanius.Mini.wordWidth x0) w
+    (RepOption 229 RepMemWidth) (Lanius.Mini.wordWidth x0) w
 
 end Lanius.Faithful.SelfCert

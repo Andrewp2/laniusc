@@ -20,7 +20,7 @@ def src_compile_program (ix_compile_funcs : Nat) (ix_arities : Nat) (ix_link : N
 def src_image_limit : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000040000000#64) }
 
 /-- mini::selfhost::linked_size -/
-def src_linked_size (ix_plus : Nat) (ix_linked_size : Nat) (ix_Code_size : Nat) (ix_unbox_of_mini_selfhost_List_mini_selfhost_Code : Nat) : SrcFunc := { params := [{ id := 12, ty := ty65 }], ret := SrcType.uint (UintTy.usize), body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 12)) ty65 (SrcType.uint (UintTy.usize)) [[], [100, 106]] [SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000000#64), SrcEff.eCall ix_plus [SrcEff.eCall ix_Code_size [SrcEff.ePure (SrcExpr.local 100)], SrcEff.eCall ix_linked_size [SrcEff.eCall ix_unbox_of_mini_selfhost_List_mini_selfhost_Code [SrcEff.ePure (SrcExpr.local 106)]]]]) }
+def src_linked_size (ix_plus : Nat) (ix_linked_size : Nat) (ix_Code_size : Nat) (ix_unbox_of_mini_selfhost_List_mini_selfhost_Code : Nat) : SrcFunc := { params := [{ id := 12, ty := ty67 }], ret := SrcType.uint (UintTy.usize), body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 12)) ty67 (SrcType.uint (UintTy.usize)) [[], [100, 106]] [SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000000#64), SrcEff.eCall ix_plus [SrcEff.eCall ix_Code_size [SrcEff.ePure (SrcExpr.local 100)], SrcEff.eCall ix_linked_size [SrcEff.eCall ix_unbox_of_mini_selfhost_List_mini_selfhost_Code [SrcEff.ePure (SrcExpr.local 106)]]]]) }
 
 end
 

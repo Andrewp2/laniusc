@@ -2,7 +2,7 @@ module
 
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
-import Lanius.Mini.Compiler.P.SrcType_size
+import Lanius.Mini.Compiler.P.SrcType_same
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.UintTy_isWide
 import Lanius.Mini.Compiler.P.UintTy_mask
@@ -46,6 +46,7 @@ def lowerFieldOf (b : Binding) (field : Nat) : Option Typed :=
   | .float ft => none
   | .sint sk => none
   | .view viewLength => none
+  | .str => none
 
 def lowerField (binding : Option Binding) (field : Nat) : Option Typed :=
   match binding with

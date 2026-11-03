@@ -9,6 +9,8 @@ memory, and so in a state that has `Returned` the same results. The contracts
 of `Simulation.lean` carry `Det` (`StepDet.lean`) alongside their runs. -/
 
 namespace Lanius.Mini
+
+variable {sx : Statics}
 open Lanius.X86.Machine
 open Lanius.Core (Value)
 
@@ -85,14 +87,15 @@ next address. -/
 theorem compileSource_deterministic {sp : SrcProgram} {binary : Binary}
     (compiled : compileSource sp = some binary) {f : Nat} {func : SrcFunc}
     (found : sp.funcs[f]? = some func) {args : List Value} {bits : List (BitVec 64)}
-    (typed : FieldsHold [] (paramTypes func.params) args (Func.entry bits) 0)
+    (typed : FieldsHold sx [] (paramTypes func.params) args (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize func.params) {fuel : Nat} {v : Value}
     {final : Semantics.State} {heap : Heap} (start : heap.cursor = 1)
     (zero : ∀ a, 1 ≤ a → heap.bytes a = 0) (small : heap.limit < 2 ^ 62) (silent : heap.io.trace = [])
     (runs : Semantics.evalExpr fuel sp.toCore (startState heap.io) (.call f (args.map Core.Expr.value)) =
       .done v final)
-    (fits : final.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp ∧ heap.fsp ≤ heap.top ∧ heap.top < 2 ^ 62) :
-    ∃ depth results after, func.ret.HoldsAt [] v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
+    (fits : final.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp ∧ heap.fsp ≤ heap.top ∧ heap.top < 2 ^ 62)
+    (statics : heap.StaticsAt sx) (ofSp : sx.bytes = sp.decls.statics) :
+    ∃ depth results after, func.ret.HoldsAt sx [] v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
       after.cursor = final.heap.nextAddress ∧
       ∀ (s : State) (imageBase : BitVec 64) (window : Nat),
         binary.stackNeed depth ≤ window → window ≤ 2 ^ 62 →
@@ -107,6 +110,7 @@ theorem compileSource_deterministic {sp : SrcProgram} {binary : Binary}
         ∃ n s', Steps n s s' ∧ Det n s s' ∧ Returned window s s' results after ∧
           ∀ t, Steps n s t → DataEq s' t ∧ Returned window s t results after := by
   obtain ⟨_, _, funcs, lowered, compiledProgram⟩ := compileSource_some compiled
+  haveI : StaticsOf sp sx := ⟨ofSp⟩
   cases fuel with
   | zero => simp [Semantics.evalExpr] at runs
   | succ k =>
@@ -116,9 +120,9 @@ theorem compileSource_deterministic {sp : SrcProgram} {binary : Binary}
     cases found'
     obtain ⟨rfl, rfl⟩ := evalExprs_values argsRun
     obtain ⟨_, _, depth, results, after, _, returns, holds, len, hc, -⟩ :=
-      body_sound (mp := { funcs := funcs, statics := [] }) (hp := heap) lowered (stmt_sound lowered k) found
+      body_sound (mp := { funcs := funcs, statics := sp.decls.statics }) (hp := heap) lowered (stmt_sound lowered k) found
         (startState_fresh _) (HeapCorr.empty start zero small silent)
-        (FrameCorr.start _ frameRoom) (Nat.le_refl _) (fun _ mem => by simp at mem) typed bitsLen bodyRun result fits
+        (FrameCorr.start _ frameRoom statics) (Nat.le_refl _) (fun _ mem => by simp at mem) typed bitsLen bodyRun result fits
     exact ⟨depth, results, after, holds, len, hc.cursor,
       fun s imageBase window enough bounded loaded apart imageHeap entry params heapAt stack =>
         compileOptimized_deterministic compiledProgram returns s imageBase window enough bounded loaded apart

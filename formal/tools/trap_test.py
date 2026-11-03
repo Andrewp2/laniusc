@@ -77,7 +77,7 @@ CASES = [
 def lean_file():
     out = [oracle_difftest.LEAN_HEAD]
     for k, (_, funcs, _) in enumerate(CASES):
-        out.append(f'def p{k} : SrcProgram := {{ funcs := [{", ".join(funcs)}] }}')
+        out.append(f'def p{k} : SrcProgram := {{ funcs := [{", ".join(funcs)}], statics := [] }}')
         out.append(f'#eval IO.println (render (compileSource p{k}))')
     return '\n'.join(out) + '\n'
 

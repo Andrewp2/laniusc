@@ -29,5 +29,6 @@ def wordElement (decls : SrcDecls) (element : SrcType) : Bool :=
   | .float ft => false
   | .sint sk => SrcType.isSint element UintTy.uint64
   | .view viewLength => false
+  | .str => false
 
 end Lanius.Mini

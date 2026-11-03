@@ -53,6 +53,7 @@ def shiftWidth (ty : SrcType) : BitVec 64 :=
   | .float ft => 64
   | .sint kind => UintTy.bits kind
   | .view viewLength => 64
+  | .str => 64
 
 /-- A literal amount below width. -/
 def literalBelow (amount : Expr) (width : BitVec 64) : Bool :=

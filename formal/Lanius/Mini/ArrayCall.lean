@@ -9,7 +9,7 @@ import all Lanius.Mini.Compiler.P.FloatTy_rex
 import all Lanius.Mini.Compiler.P.Instr_pieces
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.SrcType_same
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_mask
@@ -108,7 +108,7 @@ the loads bring the new values into the caller's slots. -/
 
 namespace Lanius.Mini
 
-variable {bud : Budget} {places : List Addressed}
+variable {bud : Budget} {sx : Statics} {places : List Addressed}
 
 open Lanius.Core (Value)
 open Lanius.Semantics (State Cell Completion evalExpr evalExprs execStmt restoreLocals)
@@ -336,6 +336,7 @@ def argPlaces (scope : List Binding) (frame : Nat → Nat) (A offset : Nat) : Sr
   | .eIf _ _ _ _ => []
   | .eLet _ _ _ _ _ => []
   | .eLen _ => []
+  | .eStr _ _ => []
 
 /-- The places a call's arguments lend, their blocks from `offset` in the
 block at `A` on. -/
@@ -403,7 +404,7 @@ theorem Addressed.view_packed {x : Addressed} (sliced : x.sliced = true) {elemen
 element's bytes. -/
 theorem replicate_small {element : SrcType} {w : Nat}
     (el : (element = .i32 ∧ w = 4) ∨ (element = .uint .uint8 ∧ w = 1)) {n : Nat} {vs : List Value} {E : Env}
-    {slot : Nat} (h : FieldsHold places (List.replicate n element) vs E slot) :
+    {slot : Nat} (h : FieldsHold sx places (List.replicate n element) vs E slot) :
     ∀ i < n, (E (slot + i)).toNat < 256 ^ w := by
   intro i lt
   have len := h.length
@@ -422,7 +423,7 @@ theorem replicate_small {element : SrcType} {w : Nat}
     simpa [UintTy.width] using bits
 
 /-- Core's slice of an array local: of the whole array in its cell. -/
-theorem arraySlice_run {scope frame st E} {prog : Core.Program} (corr : Corr places scope frame st E) {id : Nat}
+theorem arraySlice_run {scope frame st E} {prog : Core.Program} (corr : Corr sx places scope frame st E) {id : Nat}
     {b : Binding} (found : lookup scope id = some b) {element : SrcType} {n : Nat} (ty : b.ty = .array element n)
     {fuel : Nat} {core : Core.Ty} {v : Value} {st' : State}
     (run : evalExpr fuel prog st (.arrayToSlice core (.local id)) = .done v st') :
@@ -444,7 +445,7 @@ theorem arraySlice_run {scope frame st E} {prog : Core.Program} (corr : Corr pla
 /-- The arguments: Core's evaluation changes nothing, the checks pass, and
 the values are in the arguments' slots, an array passed as the slice of its
 lent place. -/
-theorem arrayArgs_sound {scope frame st E} {prog : Core.Program} (corr : Corr places scope frame st E)
+theorem arrayArgs_sound {scope frame st E} {prog : Core.Program} (corr : Corr sx places scope frame st E)
     (target : prog.target = .x86_64) {A t : Nat} :
     ∀ {args : List SrcEff} {types : List SrcType} {offset : Nat} {a : ArrayArgs} {fuel : Nat} {vs : List Value}
       {st' : State}, arrayArgs scope args types t offset = some a →
@@ -452,7 +453,7 @@ theorem arrayArgs_sound {scope frame st E} {prog : Core.Program} (corr : Corr pl
       st' = st ∧ a.args.length = sizes types ∧ a.guard.eval E = 1 ∧
       ((E t).toNat = A → A + offset + a.bytes < 2 ^ 64 → ∀ {places' : List Addressed},
         (∀ x ∈ places, x ∈ places') → (∀ x ∈ arrayPlaces scope frame A args offset, x ∈ places') →
-        FieldsHold places' types vs (Func.entry (Expr.evalAll E a.args)) 0) := by
+        FieldsHold sx places' types vs (Func.entry (Expr.evalAll E a.args)) 0) := by
   intro args
   induction args with
   | nil =>
@@ -536,14 +537,14 @@ theorem arrayArgs_sound {scope frame st E} {prog : Core.Program} (corr : Corr pl
 /-- The stores put each array lent into its block in the slice layout,
 where it represents the array's value; nothing outside the arguments'
 bytes changes. -/
-theorem arrayStores_exec {mp : Program} {d : Nat} {scope frame st E} (corr : Corr places scope frame st E)
+theorem arrayStores_exec {mp : Program} {d : Nat} {scope frame st E} (corr : Corr sx places scope frame st E)
     {A t : Nat} (at_ : (E t).toNat = A) :
     ∀ {args : List SrcEff} {types : List SrcType} {offset : Nat} {a : ArrayArgs} {hp : Heap},
       arrayArgs scope args types t offset = some a → A + offset + a.bytes ≤ hp.top → A + offset + a.bytes < 2 ^ 64 →
       ∃ hp', Exec mp d E hp a.stores (.normal E hp') ∧
         (∀ c, c < A + offset ∨ A + offset + a.bytes ≤ c → hp'.bytes c = hp.bytes c) ∧
         hp'.limit = hp.limit ∧ hp'.cursor = hp.cursor ∧ hp'.io = hp.io ∧ hp'.fsp = hp.fsp ∧ hp'.top = hp.top ∧
-        ∀ x ∈ arrayPlaces scope frame A args offset, ∀ places', x.Holds places' st hp' := by
+        ∀ x ∈ arrayPlaces scope frame A args offset, ∀ places', x.Holds sx places' st hp' := by
   intro args
   induction args with
   | nil =>
@@ -684,16 +685,17 @@ theorem pairwise_either {α : Type} {R : α → α → Prop} :
 /-- The callee's places: the arrays lent, in the caller's block, and the
 caller's places, above it; the callee's budget is the caller's room and no
 block. -/
-theorem FrameCorr.lend {st : State} {hp hpS : Heap} (fc : FrameCorr bud places st hp)
+theorem FrameCorr.lend {st : State} {hp hpS : Heap} (fc : FrameCorr sx bud places st hp)
     {scope : List Binding} {frame : Nat → Nat} {base next : Nat} (fr : Layout scope frame base next)
     (apart : ∀ x ∈ places, ∀ b ∈ scope, x.cell ≠ frame b.slot)
     (unviewed : ∀ v ∈ st.i32ArrayViews, ∀ b ∈ scope, viewedType b.ty = false → v.root ≠ frame b.slot)
     {args : List SrcEff} {types : List SrcType} {t : Nat} {a : ArrayArgs}
     (ok : arrayArgs scope args types t 0 = some a) (blockPos : 0 < bud.block) (bytesLe : a.bytes ≤ bud.block)
-    (lentHold : ∀ x ∈ arrayPlaces scope frame hp.fsp args 0, ∀ places', x.Holds places' st hpS)
+    (lentHold : ∀ x ∈ arrayPlaces scope frame hp.fsp args 0, ∀ places', x.Holds sx places' st hpS)
     (out : ∀ c, hp.fsp + a.bytes ≤ c → hpS.bytes c = hp.bytes c)
-    (fsp : hpS.fsp = hp.fsp) (limit : hpS.limit = hp.limit) (top : hpS.top = hp.top) :
-    FrameCorr ⟨bud.room, 0⟩ (arrayPlaces scope frame hp.fsp args 0 ++ places) st hpS := by
+    (fsp : hpS.fsp = hp.fsp) (limit : hpS.limit = hp.limit) (top : hpS.top = hp.top)
+    (statics : hpS.staticBase = hp.staticBase ∧ hpS.statics = hp.statics) :
+    FrameCorr sx ⟨bud.room, 0⟩ (arrayPlaces scope frame hp.fsp args 0 ++ places) st hpS := by
   obtain ⟨shapeAll, pairwise⟩ := arrayPlaces_shape fr (A := hp.fsp) ok
   have pos : 0 < bud.room + bud.block := by omega
   have room := fc.room pos
@@ -701,7 +703,7 @@ theorem FrameCorr.lend {st : State} {hp hpS : Heap} (fc : FrameCorr bud places s
   have bounded := fc.bounded pos
   refine ⟨fun x mem => ?_, fun x mem => ?_, fun x mem => ?_, fun x mem y ymem ne => ?_, fun x mem => ?_,
     fun v vmem x mem => ?_, fun _ => by simp only; rw [fsp, limit]; exact room, fun _ => by simp only; rw [fsp, top]; omega,
-    fun _ => by rw [top]; exact bounded⟩
+    fun _ => by rw [top]; exact bounded, fc.statics.congr statics.1 statics.2 top⟩
   · rcases List.mem_append.mp mem with lent | old
     · exact lentHold x lent _
     · obtain ⟨v, read, holds⟩ := fc.holds x old
@@ -767,8 +769,8 @@ put the arrays lent into it, and the callee's correspondence holds, the
 arrays lent its places. -/
 theorem arrayCall_setup {sp : SrcProgram} {mp : Program} {d : Nat} {scope : List Binding} {frame : Nat → Nat}
     {base next : Nat} {st : State} {env : Env} {hp : Heap}
-    (corr : Corr places scope frame st env) (fr : Layout scope frame base next)
-    (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp) (within : st.heap.nextAddress ≤ hp.limit)
+    (corr : Corr sx places scope frame st env) (fr : Layout scope frame base next)
+    (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp) (within : st.heap.nextAddress ≤ hp.limit)
     {args : List SrcEff} {types : List SrcType} {t : Nat} {a : ArrayArgs} (tAbove : next ≤ t)
     (ok : arrayArgs scope args types t 0 = some a) (blockPos : 0 < bud.block) (bytesLe : a.bytes ≤ bud.block)
     {k : Nat} {values : List Value} {afterArgs : State}
@@ -777,8 +779,8 @@ theorem arrayCall_setup {sp : SrcProgram} {mp : Program} {d : Nat} {scope : List
       ∃ EC, (EC t).toNat = hp.fsp ∧ (∀ j, j ≠ t → EC j = env j) ∧
         Exec mp d env hp (.frame t 0) (.normal EC hp) ∧
         ∃ hpS, Exec mp d EC hp a.stores (.normal EC hpS) ∧
-          HeapCorr st.heap st.world hpS ∧ FrameCorr ⟨bud.room, 0⟩ (arrayPlaces scope frame hp.fsp args 0 ++ places) st hpS ∧
-          FieldsHold (arrayPlaces scope frame hp.fsp args 0 ++ places) types values (Func.entry (Expr.evalAll EC a.args)) 0 ∧
+          HeapCorr st.heap st.world hpS ∧ FrameCorr sx ⟨bud.room, 0⟩ (arrayPlaces scope frame hp.fsp args 0 ++ places) st hpS ∧
+          FieldsHold sx (arrayPlaces scope frame hp.fsp args 0 ++ places) types values (Func.entry (Expr.evalAll EC a.args)) 0 ∧
           hpS.limit = hp.limit ∧ hpS.fsp = hp.fsp ∧ hpS.top = hp.top := by
   have pos : 0 < bud.room + bud.block := by omega
   have room := fc.room pos
@@ -797,26 +799,27 @@ theorem arrayCall_setup {sp : SrcProgram} {mp : Program} {d : Nat} {scope : List
     arrayStores_exec (mp := mp) (d := d) corrC at_ ok (hp := hp) (by omega) (by omega)
   refine ⟨rfl, g, len, _, at_, agree, .frame (by omega), hpS, stores,
     hc.high within (fun c lt => out c (.inl (by omega))) cursorS limitS ioS,
-    fc.lend fr corr.apart corr.unviewed ok blockPos bytesLe lent (fun c hi => out c (.inr (by omega))) fspS limitS topS,
+    fc.lend fr corr.apart corr.unviewed ok blockPos bytesLe lent (fun c hi => out c (.inr (by omega))) fspS limitS topS
+      stores.statics,
     holds at_ (by omega) (fun x mem => List.mem_append_right _ mem) (fun x mem => List.mem_append_left _ mem),
     limitS, fspS, topS⟩
 
 /-- A call passing arrays as slices that Core evaluates: the mini code runs
 to a state where the scope, the arrays lent among them with their new
 values, still corresponds, and the result is in the slots from `next`. -/
-theorem arrayCall_sound {sp : SrcProgram} {mp : Program}
+theorem arrayCall_sound {sp : SrcProgram} [StaticsOf sp sx] {mp : Program}
     (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {k : Nat}
     (ih : StmtSound sp mp k) {scope : List Binding} {frame : Nat → Nat} {base next : Nat} {st : State}
     {env : Env} {hp : Heap} {callee : Nat} {args : List SrcEff} {ev : Evaluated}
     (ok : arrayCall (sp.sigsAt bud) scope next callee args = some ev)
-    (corr : Corr places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
+    (corr : Corr sx places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
+    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp)
     {v : Value} {st' : State}
     (run : evalExpr (k + 1) sp.toCore st (.call callee (SrcEff.toCoreList args)) = .done v st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     st'.Fresh ∧ Keeps places base st st' ∧ st'.locals = st.locals ∧ 0 < ev.ty.size ∧
-      ∃ d env' hp', Exec mp d env hp ev.stmt (.normal env' hp') ∧ Corr places scope frame st' env' ∧
-        ev.ty.HoldsAt places v env' next ∧ HeapCorr st'.heap st'.world hp' ∧ FrameCorr bud places st' hp' := by
+      ∃ d env' hp', Exec mp d env hp ev.stmt (.normal env' hp') ∧ Corr sx places scope frame st' env' ∧
+        ev.ty.HoldsAt sx places v env' next ∧ HeapCorr st'.heap st'.world hp' ∧ FrameCorr sx bud places st' hp' := by
   simp only [arrayCall] at ok
   split at ok
   · simp at ok
@@ -942,7 +945,7 @@ theorem arrayCall_sound {sp : SrcProgram} {mp : Program}
     simp only [Nat.add_zero] at this
     rw [this]
     exact address
-  · have h1 := setMany_holds (places := places) ((SrcType.holdsAt_scalar scalar).mpr ((SrcType.holdsAt_scalar scalar).mp holdsRet))
+  · have h1 := setMany_holds (sx := sx) (places := places) ((SrcType.holdsAt_scalar scalar).mpr ((SrcType.holdsAt_scalar scalar).mp holdsRet))
       rsLen EC next
     refine h1.congr fun i lt => ?_
     rw [same4 _ fun x xmem b bmem cell => .inr (by have := fr.slots b bmem; omega)]

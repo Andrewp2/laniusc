@@ -62,6 +62,7 @@ def SrcType.toCore : SrcType → Core.Ty
   | .float t => .scalar t.toCore
   | .sint kind => .scalar (.signed kind.toSigned)
   | .view length => .array (.scalar (.signed .i32)) length
+  | .str => .scalar .string
 
 /-- The Core type id of a struct or enum type. -/
 def SrcType.typeId : SrcType → Nat
@@ -79,6 +80,7 @@ def SrcType.typeId : SrcType → Nat
   | .float _ => 0
   | .sint _ => 0
   | .view _ => 0
+  | .str => 0
 
 /-- Core's literal of this type from its fields' expressions: an array's
 elements, or a struct's fields (no other type has a literal of this form). -/
@@ -97,6 +99,7 @@ def SrcType.literal : SrcType → List Core.Expr → Core.Expr
   | .float _, xs => .structValue 0 xs
   | .sint _, xs => .structValue 0 xs
   | .view _, xs => .array (.scalar (.signed .i32)) xs
+  | .str, xs => .structValue 0 xs
 
 /-- The Core type a cast to this type names. Lowering only casts to `i32`
 and the unsigned types. -/
@@ -115,6 +118,7 @@ def SrcType.toScalar : SrcType → Core.ScalarTy
   | .float t => t.toCore
   | .sint kind => .signed kind.toSigned
   | .view _ => .bool
+  | .str => .string
 
 /-- Core's raw slice of this element type from a pointer and a length:
 `slice_from_raw_parts` for `i32`, the typed form for the rest. -/
@@ -133,6 +137,7 @@ def SrcType.sliceFrom : SrcType → Core.Expr → Core.Expr → Core.Expr
   | .float t, pointer, length => .typedSliceFromRawParts (.scalar t.toCore) pointer length
   | .sint kind, pointer, length => .typedSliceFromRawParts (.scalar (.signed kind.toSigned)) pointer length
   | .view n, pointer, length => .typedSliceFromRawParts (.array (.scalar (.signed .i32)) n) pointer length
+  | .str, pointer, length => .typedSliceFromRawParts (.scalar .string) pointer length
 
 def SrcDivOp.toCore : SrcDivOp → Core.BinaryOp
   | .quotient => .divide
@@ -202,6 +207,7 @@ def SrcEff.toCore : SrcEff → Core.Expr
       .matchValue condition.toCore [(.literal (.boolean true), thenValue.toCore), (.wildcard, elseValue.toCore)]
   | .eLet id _ value _ body => .matchValue value.toCore [(.bind id, body.toCore)]
   | .eLen slice => .intrinsic .sliceLength (.local slice)
+  | .eStr _ chars => .value (.string (strValue chars))
 
 def SrcEff.toCoreList : List SrcEff → List Core.Expr
   | [] => []
@@ -311,6 +317,8 @@ def hostService? (id : Nat) : Option Core.HostService :=
   else if id = hostBase + 5 then some .monotonicRead
   else if id = hostBase + 6 then some .systemRead
   else if id = hostBase + 7 then some .fillSecureBytes
+  else if id = hostBase + 8 then some .writeText
+  else if id = hostBase + 9 then some .writeNewline
   else none
 
 /-- Parameters numbered from `n`. -/
@@ -330,7 +338,8 @@ def hostFunc (id : Nat) (service : Core.HostService) : Core.Function where
 def hostFuncs : List Core.Function :=
   [hostFunc hostBase .writeByte, hostFunc (hostBase + 1) .writeStdout, hostFunc (hostBase + 2) .writeStderr,
     hostFunc (hostBase + 3) .readStdin, hostFunc (hostBase + 4) .sleepMsI32, hostFunc (hostBase + 5) .monotonicRead,
-    hostFunc (hostBase + 6) .systemRead, hostFunc (hostBase + 7) .fillSecureBytes]
+    hostFunc (hostBase + 6) .systemRead, hostFunc (hostBase + 7) .fillSecureBytes,
+    hostFunc (hostBase + 8) .writeText, hostFunc (hostBase + 9) .writeNewline]
 
 def SrcStructDecl.toCore (decl : SrcStructDecl) : Core.StructDecl where
   id := decl.id

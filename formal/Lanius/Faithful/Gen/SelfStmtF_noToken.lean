@@ -21,7 +21,7 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_generic_tail (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Token} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 45 RepToken) x0 v0 →
+  ∀ {x0 : List Lanius.Mini.Token} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 47 RepToken) x0 v0 →
     RepBool (Lanius.Mini.genericTail x0) w
 
 abbrev Stmt_kid (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -37,7 +37,7 @@ abbrev Stmt_no_token (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     RepToken (Lanius.Mini.noToken) w
 
 abbrev Stmt_starts_with_kind (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Token} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 45 RepToken) x0 v0 → RepNat x1 v1 →
+  ∀ {x0 : List Lanius.Mini.Token} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 47 RepToken) x0 v0 → RepNat x1 v1 →
     RepBool (Lanius.Mini.startsWithKind x0 x1) w
 
 abbrev Stmt_with_kid (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

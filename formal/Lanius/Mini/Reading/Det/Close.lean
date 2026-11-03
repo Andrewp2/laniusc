@@ -194,6 +194,7 @@ theorem litEff_eq : ∀ {locals : List LocalTy} {want : Option SrcType} {x x' : 
   | _, _, _, _, .if hc ha hb => by rw [litEff_eq hc, litEff_eq ha, litEff_eq hb]; simp only [litEff]
   | _, _, _, _, .let ha hb => by rw [litEff_eq ha, litEff_eq hb]; simp only [litEff]
   | _, _, _, _, .len => by simp only [litEff]
+  | _, _, _, _, .str => by simp only [litEff]
 termination_by structural _ _ _ _ h => h
 
 theorem litEffs_eq : ∀ {locals : List LocalTy} {wants : Option (List SrcType)} {xs xs' : List SrcEff},
@@ -263,13 +264,13 @@ end
 
 theorem closedProgram_unique {decls : Decls} {fns types : List Inst} {funcs : List MFunc} {p q : SrcProgram}
     (h₁ : ClosedProgram decls fns types funcs p) (h₂ : ClosedProgram decls fns types funcs q) : p = q := by
-  obtain ⟨fs, c₁, l₁, _⟩ := h₁
-  obtain ⟨fs', c₂, l₂, _⟩ := h₂
+  obtain ⟨fs, c₁, l₁, _, s₁⟩ := h₁
+  obtain ⟨fs', c₂, l₂, _, s₂⟩ := h₂
   cases listRel_unique (R := FuncClosed decls fns types) (fun _ _ _ x y => funcClosed_unique x y) c₁ c₂
   have e := listRel_unique (R := LitFunc fs) (fun _ _ _ x y => litFunc_unique x y) l₁ l₂
   cases p
   cases q
-  simp only at e
-  rw [e]
+  simp only at e s₁ s₂
+  rw [e, s₁, s₂]
 
 end Lanius.Mini.Reading

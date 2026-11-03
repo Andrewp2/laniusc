@@ -8,7 +8,7 @@ import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.FArith_opcode
 import all Lanius.Mini.Compiler.P.FloatTy_rex
 import all Lanius.Mini.Compiler.P.Lists_empty
-import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.SrcType_same
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_mask
@@ -43,7 +43,7 @@ and the mini side's element and field addresses.
 
 namespace Lanius.Mini
 
-variable {places : List Addressed}
+variable {sx : Statics} {places : List Addressed}
 
 open Lanius.Core (Value)
 
@@ -71,6 +71,7 @@ theorem SrcType.eq_of_same : ∀ (a : SrcType) {b : SrcType}, a.same b = true �
     | float => simp [SrcType.same] at same
     | sint => simp [SrcType.same] at same
     | view => simp [SrcType.same] at same
+    | str => simp [SrcType.same] at same
   | .enum id vs, b, same => by
     cases b with
     | enum id' ws =>
@@ -89,6 +90,7 @@ theorem SrcType.eq_of_same : ∀ (a : SrcType) {b : SrcType}, a.same b = true �
     | float => simp [SrcType.same] at same
     | sint => simp [SrcType.same] at same
     | view => simp [SrcType.same] at same
+    | str => simp [SrcType.same] at same
   | .slice e, b, same => by
     cases b with
     | slice e' =>
@@ -107,6 +109,7 @@ theorem SrcType.eq_of_same : ∀ (a : SrcType) {b : SrcType}, a.same b = true �
     | float => simp [SrcType.same] at same
     | sint => simp [SrcType.same] at same
     | view => simp [SrcType.same] at same
+    | str => simp [SrcType.same] at same
   | .array e n, b, same => by
     cases b with
     | array e' n' =>
@@ -125,7 +128,9 @@ theorem SrcType.eq_of_same : ∀ (a : SrcType) {b : SrcType}, a.same b = true �
     | float => simp [SrcType.same] at same
     | sint => simp [SrcType.same] at same
     | view => simp [SrcType.same] at same
+    | str => simp [SrcType.same] at same
   | .unit, b, same => by cases b <;> simp_all [SrcType.same, SrcType.isUnit]
+  | .str, b, same => by cases b <;> simp_all [SrcType.same, SrcType.isStr]
   | .isize, b, same => by cases b <;> simp_all [SrcType.same, SrcType.isIsize]
   | .char, b, same => by cases b <;> simp_all [SrcType.same, SrcType.isChar]
   | .float ft, b, same => (SrcType.eq_of_isFloat (by simpa [SrcType.same] using same)).symm
@@ -164,7 +169,7 @@ theorem wordWidth_cases {f : SrcType} {w : MemWidth} (h : wordWidth f = some w) 
   | ptr => simp only [wordWidth, Option.some.injEq] at h; exact .inr (.inr (.inr (.inl ⟨rfl, h.symm⟩)))
   | isize => simp only [wordWidth, Option.some.injEq] at h; exact .inr (.inr (.inr (.inr (.inl ⟨rfl, h.symm⟩))))
   | sint k => exact .inr (.inr (.inr (.inr (.inr ⟨k, rfl, h⟩))))
-  | struct | enum | slice | array | unit | char | float | view => simp [wordWidth] at h
+  | struct | enum | slice | array | unit | char | float | view | str => simp [wordWidth] at h
 
 theorem wordWidth_size {f : SrcType} {w : MemWidth} (h : wordWidth f = some w) : f.size = 1 := by
   rcases wordWidth_cases h with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨k, rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨k, rfl, -⟩ <;> rfl
@@ -398,7 +403,7 @@ theorem fieldAddress_eval {env : Env} {base : Expr} {offset : Nat}
   omega
 
 theorem holdsAt_struct_inv {id : Nat} {fields : List SrcType} {v : Value} {env : Env} {slot : Nat}
-    (h : SrcType.HoldsAt places (.struct id fields) v env slot) : ∃ vals, v = .structure id vals ∧ FieldsHold places fields vals env slot := by
+    (h : SrcType.HoldsAt sx places (.struct id fields) v env slot) : ∃ vals, v = .structure id vals ∧ FieldsHold sx places fields vals env slot := by
   cases h with
   | struct fh => exact ⟨_, rfl, fh⟩
 

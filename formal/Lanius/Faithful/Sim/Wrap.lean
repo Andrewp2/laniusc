@@ -27,7 +27,8 @@ def wrapAt (sp : SrcProgram) (i : Nat) (op : SrcOp) : SrcProgram :=
   { funcs :=
       match sp.funcs[i]? with
       | some f => sp.funcs.set i (wrapFunc op f)
-      | none => sp.funcs }
+      | none => sp.funcs
+    statics := sp.statics }
 
 section
 variable {sp : SrcProgram} {i : Nat} {op : SrcOp}

@@ -4,7 +4,7 @@ public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.SrcExpr_guard
-import Lanius.Mini.Compiler.P.SrcType_size
+import Lanius.Mini.Compiler.P.SrcType_same
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.assignFrom
 import Lanius.Mini.Compiler.P.compileModules
@@ -82,6 +82,7 @@ def evalFieldOf (scope : List Binding) (e : SrcExpr) (slot : Nat) (b : Binding) 
   | .float ft => none
   | .sint sk => none
   | .view viewLength => none
+  | .str => none
 
 /-- A struct local's field of any type (a scalar field lowers as an expression first), copied slot by slot. -/
 def evalFieldCopy (scope : List Binding) (e : SrcExpr) (slot : Nat) (binding : Option Binding) (index : Nat) : Option Evaluated :=
@@ -113,7 +114,7 @@ def evalCallSig (sig : Sig) (callee : Nat) (slot : Nat) (args : EvaluatedArgs) :
   else
     none
 
-/-- Core's host services (roadmap F8) are its functions from id 2^32 on (`hostService?`, Mini/SourceCore.lean), past every program's own: 2^32 is write_byte, 2^32 + 1 write_stdout, 2^32 + 2 write_stderr, 2^32 + 3 read_stdin, 2^32 + 4 sleep_ms_i32. Their code is system calls.  write_byte(handle, value), handle and value in slot and slot + 1: to handle 1 or 2 the value's low byte goes through the heap's byte 0 (no block's, kept as it was) and returns 1; any other handle returns -1, as Core's does with no file open. -/
+/-- Core's host services (roadmap F8) are its functions from id 2^32 on (`hostService?`, Mini/SourceCore.lean), past every program's own: 2^32 is write_byte, 2^32 + 1 write_stdout, 2^32 + 2 write_stderr, 2^32 + 3 read_stdin, 2^32 + 4 sleep_ms_i32, 2^32 + 5 monotonic_read, 2^32 + 6 system_read, 2^32 + 7 fill_secure_bytes, 2^32 + 8 write_text, 2^32 + 9 write_newline. Their code is system calls.  write_byte(handle, value), handle and value in slot and slot + 1: to handle 1 or 2 the value's low byte goes through the heap's byte 0 (no block's, kept as it was) and returns 1; any other handle returns -1, as Core's does with no file open. -/
 def hostByteCode (slot : Nat) : Stmt :=
   let handleOk : Expr := Expr.binary Word.u64 BinOp.or (Expr.compare Word.u64 CmpOp.eq (Expr.var slot) (Expr.lit 1)) (Expr.compare Word.u64 CmpOp.eq (Expr.var slot) (Expr.lit 2))
   let restore : Stmt := Stmt.seq (Stmt.storeByte (Expr.lit 0) (Expr.var (slot + 2))) (Stmt.assign slot (Expr.lit 1))

@@ -429,6 +429,7 @@ theorem eff_safe_step (calls : ∀ m, FuncSim sp prims outside m) (funcs : FuncS
     have brun' := Semantics.evalExpr_of_le brun (by simp) (show j' ≤ k by omega)
     exact eff brun' hb (ran1.inv.bindLocal id sv) (rel1.bind ran1.inv rq) bound
   | eLen => simp [effTy] at ht
+  | eStr => simp [effTy] at ht
   | eStruct ty fields =>
     simp only [SrcEff.toCore] at run
     simp only [effTy, Option.bind_eq_some_iff] at ht
@@ -479,7 +480,7 @@ theorem eff_safe_step (calls : ∀ m, FuncSim sp prims outside m) (funcs : FuncS
     | float => simp at hm
     | sint => simp at hm
     | array => simp at hm
-    | view => simp at hm
+    | view | str => simp at hm
 
 theorem effs_safe_step (calls : ∀ m, FuncSim sp prims outside m) (eff : EffSafe sp prims outside k)
     (effs : EffsSafe sp prims outside k) : EffsSafe sp prims outside (k + 1) := by

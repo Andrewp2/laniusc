@@ -990,6 +990,43 @@ verified compiler's locals are 64-bit slots with no address. The design:
      that trap natively stop laniusc's binary too), 0 disagreements. The 9 left call host externs (8) or take an array
      (1); `std::cli`, `std::resolver_config` and `test::check` pass `str`
      parameters, not testable yet.
+   - *str values (decided 11-03, f6v, piece 1 of the host externs that
+     take `str` arguments, stage S1 done).* `write_text(handle, text: str)`
+     and every caller of it pass `str` parameters, so a `str` is now a
+     value: `SrcType.str` takes two slots, the mini address of its bytes in
+     the static region and their count, and `SrcEff.eStr offset chars` is a
+     literal whose bytes the program's statics hold at `offset`
+     (`SrcProgram.statics`, carried to `SrcDecls.statics` and the binary).
+     The compiler checks the placement itself (`eval_str`: each char is
+     ASCII and the static byte at its offset is it, `str_placed`; the end
+     is below `2^31`, `Static`'s displacement, and within the statics), so
+     a front end that places the literals is not trusted. Its code is
+     `Static(slot, offset)` then the constant count. Decisions: (1) the
+     slots' truth is in `HoldsAt` after all, not a per-binding `Corr.str`:
+     `HoldsAt` and `FieldsHold` take the static region `sx : Statics`
+     (base and bytes), which no statement changes, and `HoldsAt.str` says
+     the address is `sx.base + k` with the region's bytes from `k` the
+     string's UTF-8 bytes, so a `str` goes through parameters, fields and
+     results as any two-slot value. (2) `Heap.StaticsAt hp sx` relates the
+     heap to `sx` and joins `FrameCorr`; it asks that the region end below
+     `2^64` (`fits`), which the ELF layout gives (`elfHeap_statics`). (3)
+     The region's bytes being the program's is a type class `StaticsOf sp
+     sx`, an instance binder of the simulation's statements
+     (`StmtSound`, `EvalSound`, `EffStops`, `SrcStops`), so the hundreds of
+     lemmas that pass the simulation along carry it without new arguments;
+     the top theorems take `heap.StaticsAt sx` and `sx.bytes =
+     sp.decls.statics` and make the instance. The process theorems use
+     `elfStatics binary stack` and prove both. (4) Core's `writeText`
+     returns the bytes written, not 0, as laniusc's `write_text` does
+     (`write_line` adds the counts); trusted, in TRUSTED_BASE. (5) Staging:
+     `hostService?` names host ids `2^32 + 8` (`write_text`) and `2^32 + 9`
+     (`write_newline`), but `eval_host` lowers neither call yet; that is
+     stage S4, after S3 lets the mini `write` system call read the static
+     region. `static_byte_is` compares the byte with the char as `u64`s
+     (`((b as i32) as u32) as u64`): the extracted subset compares no
+     `i32` and casts no `u8` to `u64`, and the `u8` comparison of a
+     variable left the self program's certificate stuck. The self program
+     has no literals (its statics are empty: `selfHeap_statics`).
 7. **A static need per function (decided 11-01, step 3.5).** A function
    takes its whole block at entry (`frame_block`: 8 bytes per element of
    each array, parameter or let, it passes as a slice), by a prologue

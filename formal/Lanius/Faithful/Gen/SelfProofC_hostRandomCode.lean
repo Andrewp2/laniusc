@@ -8,7 +8,7 @@ public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt7
-public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
+public import Lanius.Faithful.Gen.SelfStmtC_SrcType_same
 public import Lanius.Faithful.Gen.SelfStmtC_hostRandomCode
 public import Lanius.Faithful.Gen.SelfStmtC_lowerCallSig
 import all Lanius.Faithful.Gen.SelfSrcC_hostRandomCode
