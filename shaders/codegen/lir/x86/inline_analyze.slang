@@ -203,6 +203,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
         uint op = opt_ir_op(core);
         if (op == SEMANTIC_LIR_OP_NOP)
             continue;
+        // A select's RETURN (if_convert) returns one of two values; clones
+        // carry only plain returns.
+        if (op == SEMANTIC_LIR_OP_RETURN &&
+            x86_live_by_semantic[row] == X86_SEMANTIC_SELECT)
+        {
+            x86_inline_info_by_function[function_id] = info;
+            return;
+        }
         if (op == SEMANTIC_LIR_OP_RETURN)
         {
             return_count += 1u;

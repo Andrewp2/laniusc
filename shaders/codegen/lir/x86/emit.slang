@@ -177,7 +177,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     input.specialized = x86_is_specialized_instruction(core, operands);
     bool final_explicit_return = core.op == X86_LIR_OP_RETURN ||
-        core.op == X86_LIR_OP_RETURN_VOID || core.op == X86_LIR_OP_TRAP;
+        core.op == X86_LIR_OP_RETURN_VOID || core.op == X86_LIR_OP_TRAP ||
+        (core.op == X86_LIR_OP_SELECT_STORE &&
+         (operands.metadata & X86_LIR_METADATA_SELECT_RETURN) != 0u);
     input.footer = row + 1u == function.instruction_start + function.instruction_count &&
         !final_explicit_return;
     // Rows naming a missing string keep their counted bytes but write none.

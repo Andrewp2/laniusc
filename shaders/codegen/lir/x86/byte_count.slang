@@ -259,7 +259,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         report_unsupported(page_row, core.source_hir);
     }
     if (core.op == X86_LIR_OP_SELECT_STORE &&
-        (declaration_location(core.result_or_target) == X86_LOCATION_INVALID ||
+        (((operands.metadata & X86_LIR_METADATA_SELECT_RETURN) == 0u &&
+          declaration_location(core.result_or_target) == X86_LOCATION_INVALID) ||
          locations.result == X86_LOCATION_INVALID || operands.a >= total ||
          operands.c >= total ||
          ((operands.metadata & X86_LIR_METADATA_IMMEDIATE) == 0u &&
@@ -297,7 +298,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
             x86_header_load_bytes(saved_mask);
     }
     bool final_explicit_return = core.op == X86_LIR_OP_RETURN ||
-        core.op == X86_LIR_OP_RETURN_VOID || core.op == X86_LIR_OP_TRAP;
+        core.op == X86_LIR_OP_RETURN_VOID || core.op == X86_LIR_OP_TRAP ||
+        (core.op == X86_LIR_OP_SELECT_STORE &&
+         (operands.metadata & X86_LIR_METADATA_SELECT_RETURN) != 0u);
     if (row + 1u == function.instruction_start + function.instruction_count &&
         !final_explicit_return)
         bytes += implicit_footer_bytes(function, semantic_function, saved_mask);

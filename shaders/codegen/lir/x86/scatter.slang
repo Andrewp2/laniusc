@@ -1081,9 +1081,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         X86SelectInfo info = x86_select_by_semantic[semantic_row];
         bool negated = (info.condition & X86_SELECT_NEGATED) != 0u;
         uint condition = info.condition & ~X86_SELECT_NEGATED;
+        // On a RETURN the select returns its value (no declaration).
+        bool select_return = opt_ir_op(source) == SEMANTIC_LIR_OP_RETURN;
         if (condition >= semantic_count ||
             info.true_value >= semantic_count ||
-            info.declaration == INVALID)
+            (info.declaration == INVALID) != select_return)
         {
             flags |= TARGET_LIR_FLAG_UNSUPPORTED;
         }
@@ -1095,7 +1097,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
             a = condition;
             b = 0u;
             c = info.true_value;
-            metadata = 2u | X86_LIR_METADATA_IMMEDIATE;
+            metadata = 2u | X86_LIR_METADATA_IMMEDIATE |
+                (select_return ? X86_LIR_METADATA_SELECT_RETURN : 0u);
             local_ordinal = negated ? 0u : 1u;
         }
         else
@@ -1132,6 +1135,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 (aggregate_compare ? X86_LIR_METADATA_AGGREGATE : 0u);
             if (immediate_compare)
                 metadata |= X86_LIR_METADATA_IMMEDIATE;
+            if (select_return)
+                metadata |= X86_LIR_METADATA_SELECT_RETURN;
             uint predicate = swap
                 ? x86_swapped_compare_predicate(compare.c) : compare.c;
             local_ordinal = negated ? x86_negated_compare_predicate(predicate) : predicate;

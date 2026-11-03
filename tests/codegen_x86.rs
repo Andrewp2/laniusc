@@ -2648,6 +2648,60 @@ fn main() -> i32 {
 }
 
 #[test]
+fn x86_if_converts_return_selects() {
+    let bytes = compile_source(
+        "x86 return selects",
+        r#"
+fn pick(a: i32, b: i32) -> i32 { if (a < b) { return a; } return b; }
+fn pick_else(a: i32, b: i32) -> i32 { if (a > b) { return a + 1; } else { return b - 1; } }
+fn flag(v: i32) -> bool { return (v & 4) != 0; }
+fn by_bool(v: i32) -> i32 { if (!flag(v)) { return v * 2; } return v; }
+fn chars(c: char) -> char { if (c < 'a') { return 'a'; } return c; }
+fn main() -> i32 {
+    let s: i32 = pick(3, 9) + pick(9, 3) + pick_else(5, 2) + pick_else(2, 5);
+    s += by_bool(3) + by_bool(4) + (chars('A') as i32) - 97 + (chars('z') as i32) - 122;
+    return s;
+}
+"#,
+    );
+
+    assert_x86_64_elf_header(&bytes);
+    assert!(contains_pair(&bytes, [0x0f, 0x4c]), "`if (a < b) return a; return b` should select with cmovl");
+    assert!(contains_pair(&bytes, [0x0f, 0x42]), "a char return select should use cmovb");
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code("x86 return selects", "x86_return_selects", &bytes, 26);
+}
+
+#[test]
+fn x86_does_not_if_convert_returns_that_call_trap_or_load() {
+    let bytes = compile_source(
+        "x86 calling and trapping returns",
+        r#"
+fn bump(v: i32) -> i32 { return v + 100; }
+fn calls(v: i32) -> i32 { if (v < 10) { return bump(v); } return v; }
+fn divides(v: i32) -> i32 { if (v < 10) { return 100 / v; } return 1; }
+fn lookup(i: i32, k: i32) -> i32 { let xs: [i32; 4] = [5, 6, 7, 8]; if (xs[i] < k) { return 0 - 1; } return i; }
+fn main() -> i32 {
+    return calls(3) + calls(30) + divides(4) + divides(0 - 50) + divides(20) + lookup(1, 3) + lookup(2, 9);
+}
+"#,
+    );
+
+    assert_x86_64_elf_header(&bytes);
+    assert!(
+        !contains_pair(&bytes, [0x0f, 0x4c]),
+        "a return arm that calls or may trap, or a return test of a loaded value, must remain control-dependent"
+    );
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 calling and trapping returns",
+        "x86_calling_and_trapping_returns",
+        &bytes,
+        157,
+    );
+}
+
+#[test]
 fn x86_executes_return_match_on_single_payload_enum() {
     assert_source_exit(
         "return_match_single_payload_enum",
