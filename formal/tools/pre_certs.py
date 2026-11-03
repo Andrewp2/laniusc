@@ -62,6 +62,28 @@ OVERRIDES = {
     'based_digits': ['p0 = 2 ∨ p0 = 8 ∨ p0 = 16'],
     'based_digit': ['p0 = 2 ∨ p0 = 8 ∨ p0 = 16'],
     'lit_prefixed': ['(∀ v, p0 = some v → v = 2 ∨ v = 8 ∨ v = 16)'],
+    # floats (SelfPre/Values): a digit's value, the fraction's digit count k,
+    # the exponent's value (flExpDigits stops past 99999), a power's exponent,
+    # a bit list's length, a high bit's position
+    'fl_nat_half': ['p0 ≤ 255'],
+    'fl_of_nat': ['p0 ≤ 255'],
+    'fl_push': ['p1 ≤ 57'],
+    'fl_finish': ['p2 + b ≤ K', 'p4 ≤ 99999'],
+    'fl_exp_digits': ['p3 + b ≤ K'],
+    'fl_exp_digit_at': ['p4 + b ≤ K', 'p6 ≤ 99999'],
+    'fl_exp_first': ['p3 + b ≤ K'],
+    'fl_exp_first_at': ['p4 + b ≤ K'],
+    'fl_exp_sign': ['p3 + b ≤ K'],
+    'fl_exp_sign_at': ['p4 + b ≤ K'],
+    'fl_exp_part': ['p3 + b ≤ K'],
+    'fl_exp_at': ['p4 + b ≤ K'],
+    'fl_pow2': ['p0 ≤ 63'],
+    # the formats flDecimal is called with: f32 and f64
+    'fl_decimal': ['(p0 = 8 ∧ p1 = 23) ∨ (p0 = 11 ∧ p1 = 52)'],
+    'fl_decimal_at': ['(p0 = 8 ∧ p1 = 23) ∨ (p0 = 11 ∧ p1 = 52)'],
+    'fl_round': ['(p0 = 8 ∧ p1 = 23) ∨ (p0 = 11 ∧ p1 = 52)'],
+    'fl_to_nat': ['p0.length ≤ 64'],
+    'fl_log2_up': ['(∀ i, p1 = some i → i + b ≤ K)'],
     'char_tail': ['p4 ≤ 191', '(p1 = 0 ∧ p2 < 16777216) ∨ (p1 = 1 ∧ p2 < 262144) ∨ (p1 = 2 ∧ p2 < 4096)'],
     'char_tail_at': ['p5 ≤ 191', '(p2 = 0 ∧ p3 < 16777216) ∨ (p2 = 1 ∧ p3 < 262144) ∨ (p2 = 2 ∧ p3 < 4096)'],
 }
@@ -280,6 +302,54 @@ PRE_HAND = {
     · exact pre_lit_prefixed n _ rest x2 b M (by simp only [hb_cons] at h0; omega) h1 h2
         (fun v hv => litBase_cases hv)
   · exact pre_wide_decimal n x2 0 b M h1 h2
+''',
+    'fl_round': '''  rcases h3 with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;>
+    simp only [flPow2_eq, Nat.reducePow, Nat.reduceSub, Nat.reduceAdd] <;> pre_auto n, M
+''',
+    'fl_decimal_at': '''  rcases h2 with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;>
+    simp only [flPow2_eq, Nat.reducePow, Nat.reduceSub, Nat.reduceAdd] <;> pre_auto n, M
+''',
+    'fl_nat_half': '''  split
+  · trivial
+  · refine ⟨pre_fl_nat_half (x0 - 2) b M h0 (by omega), ?_⟩
+    have := flNatHalf_le (x0 - 2)
+    simp only [Pre_plus, Nat.reducePow]
+    omega
+''',
+    'fl_of_nat': '''  split
+  · trivial
+  · exact ⟨pre_fl_nat_half n x0 b M h0 h1,
+      pre_fl_of_nat (Lanius.Mini.flNatHalf x0) (x1 - 1) b M h0 (Nat.le_trans (flNatHalf_le x0) h1)⟩
+''',
+    'fl_pow2': '''  split
+  · trivial
+  · refine ⟨pre_fl_pow2 (x0 - 1) b M h0 (by omega), ?_⟩
+    have h2 : 2 ^ (x0 - 1) ≤ 2 ^ 62 := Nat.pow_le_pow_right (by decide) (by omega)
+    simp only [Pre_times, flPow2_eq, Nat.reducePow] at h2 ⊢
+    omega
+''',
+    'fl_to_nat': '''  rcases x0 with _ | ⟨c, rest⟩
+  · trivial
+  · simp only [List.length_cons] at h2
+    have hlt := flToNat_lt rest
+    have hp : 2 ^ rest.length ≤ 2 ^ 63 := Nat.pow_le_pow_right (by decide) (by omega)
+    have hc := flBit_le c
+    refine ⟨pre_fl_to_nat rest b M (by simp only [hb_cons] at h0; omega) h1 (by omega), ?_, ?_⟩ <;>
+      simp only [Pre_times, Pre_plus, Nat.reducePow] at hp ⊢ <;> omega
+''',
+    'fl_log2_up': '''  rcases x1 with _ | i
+  · trivial
+  · have := h1 i rfl
+    simp only [Pre_plus, Nat.reducePow]
+    omega
+''',
+    'fl_log2': '''  rcases x0 with _ | ⟨c, rest⟩
+  · trivial
+  · have hr : hb rest ≤ M := by simp only [hb_cons] at h0; omega
+    refine ⟨pre_fl_log2 rest b M hr h1, pre_fl_log2_up n c _ b M h1 (fun i hi => ?_)⟩
+    have := flLog2_lt rest i hi
+    have := length_le_hb rest
+    omega
 ''',
 }
 

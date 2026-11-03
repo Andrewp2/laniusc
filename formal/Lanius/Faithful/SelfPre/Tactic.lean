@@ -878,7 +878,8 @@ partial def preGoal (nStx mStx : Term) : TacticM Unit := withMainContext do
     onGoals gs do
       let h := mkIdent (← freshSplitName)
       evalTactic (← `(tactic| intro $h:ident))
-      evalTactic (← `(tactic| try simp only [decide_eq_true_eq, decide_eq_false_iff_not, Bool.and_eq_true,
+      -- `hb_simp` also states numeric tests as bounds (`flDigit_eq_true`, SelfPre/Values)
+      evalTactic (← `(tactic| try simp only [hb_simp, decide_eq_true_eq, decide_eq_false_iff_not, Bool.and_eq_true,
         Bool.or_eq_true, Bool.not_eq_true', not_and, not_or, Bool.not_eq_eq_eq_not, Bool.not_true] at $h:ident))
       preGoal nStx mStx
     return
