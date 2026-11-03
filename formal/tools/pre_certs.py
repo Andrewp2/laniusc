@@ -560,6 +560,8 @@ def called_uncostly(e, reached):
     words = lambda name: set(re.findall(r'[A-Za-z_][\w.]*', defs.get('Lanius.Mini.' + name, '')))
     todo = [e.head(k)[len('Lanius.Mini.'):] for k in reached if e.head(k)]
     seen, out = set(todo), []
+    for s1 in sorted(seen):
+        out.extend(by_short.get(s1, []))
     while todo:
         ws = words(todo.pop())
         for s2, ks in by_short.items():
@@ -599,6 +601,8 @@ def main():
         else:
             ks = [x[4:] for x in grp if x in r]
             pres.append(e.pre_group(ks, rec))
+            # a precondition's facts need the heights its Lean function computes too
+            reached.extend(k for k in ks if k in g.m.stmt and e.head(k))
     uks = lean_order(called_uncostly(e, reached), e.head)
     count = defaultdict(int)
     uposts = []

@@ -14,6 +14,48 @@ open Lanius.Faithful.Budget
 open Lanius.Faithful.SelfBudget
 open Lanius.Faithful.SelfPre.Tactic
 
+theorem upost_rest_src : ∀ (x0 : Option (List Lanius.Mini.SrcType)), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.restSrc x0) ≤ M := by
+  intro x0 M hM0
+  first | fun_induction Lanius.Mini.restSrc x0 | fun_cases Lanius.Mini.restSrc x0 | unfold Lanius.Mini.restSrc
+  all_goals upost_auto M
+theorem HBPost.Lanius.Mini.restSrc.p0 : ∀ (x0 : Option (List Lanius.Mini.SrcType)), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.restSrc x0) ≤ M := upost_rest_src
+
+theorem upost_either_ty : ∀ (x0 : Option Lanius.Mini.SrcType) (x1 : Option Lanius.Mini.SrcType), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb (Lanius.Mini.eitherTy x0 x1) ≤ M := by
+  intro x0 x1 M hM0 hM1
+  first | fun_induction Lanius.Mini.eitherTy x0 x1 | fun_cases Lanius.Mini.eitherTy x0 x1 | unfold Lanius.Mini.eitherTy
+  all_goals upost_auto M
+theorem HBPost.Lanius.Mini.eitherTy.p0 : ∀ (x0 : Option Lanius.Mini.SrcType) (x1 : Option Lanius.Mini.SrcType), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb (Lanius.Mini.eitherTy x0 x1) ≤ M := upost_either_ty
+
+theorem upost_operand_want : ∀ (x0 : Lanius.Mini.SrcOp) (x1 : Option Lanius.Mini.SrcType) (x2 : Option Lanius.Mini.SrcType) (x3 : Option Lanius.Mini.SrcType), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb (Lanius.Mini.operandWant x0 x1 x2 x3) ≤ M := by
+  intro x0 x1 x2 x3 M hM0 hM1 hM2
+  first | fun_induction Lanius.Mini.operandWant x0 x1 x2 x3 | fun_cases Lanius.Mini.operandWant x0 x1 x2 x3 | unfold Lanius.Mini.operandWant
+  all_goals upost_auto M
+theorem HBPost.Lanius.Mini.operandWant.p0 : ∀ (x0 : Lanius.Mini.SrcOp) (x1 : Option Lanius.Mini.SrcType) (x2 : Option Lanius.Mini.SrcType) (x3 : Option Lanius.Mini.SrcType), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb (Lanius.Mini.operandWant x0 x1 x2 x3) ≤ M := upost_operand_want
+
+theorem upost_amount_want : ∀ (x0 : Lanius.Mini.SrcOp) (x1 : Option Lanius.Mini.SrcType) (x2 : Option Lanius.Mini.SrcType) (x3 : Option Lanius.Mini.SrcType), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb (Lanius.Mini.amountWant x0 x1 x2 x3) ≤ M := by
+  intro x0 x1 x2 x3 M hM0 hM1 hM2
+  first | fun_induction Lanius.Mini.amountWant x0 x1 x2 x3 | fun_cases Lanius.Mini.amountWant x0 x1 x2 x3 | unfold Lanius.Mini.amountWant
+  all_goals upost_auto M
+theorem HBPost.Lanius.Mini.amountWant.p0 : ∀ (x0 : Lanius.Mini.SrcOp) (x1 : Option Lanius.Mini.SrcType) (x2 : Option Lanius.Mini.SrcType) (x3 : Option Lanius.Mini.SrcType), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb (Lanius.Mini.amountWant x0 x1 x2 x3) ≤ M := upost_amount_want
+
+theorem upost_callee_ret : ∀ (x0 : List Lanius.Mini.SrcFunc) (x1 : Nat), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.calleeRet x0 x1) ≤ M := by
+  intro x0 x1 M hM0
+  first | fun_induction Lanius.Mini.calleeRet x0 x1 | fun_cases Lanius.Mini.calleeRet x0 x1 | unfold Lanius.Mini.calleeRet
+  all_goals upost_auto M
+theorem HBPost.Lanius.Mini.calleeRet.p0 : ∀ (x0 : List Lanius.Mini.SrcFunc) (x1 : Nat), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.calleeRet x0 x1) ≤ M := upost_callee_ret
+
+theorem upost_known_apply : ∀ (x0 : Lanius.Mini.SrcOp) (x1 : Option Lanius.Mini.SrcType) (x2 : Option Lanius.Mini.SrcType), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb (Lanius.Mini.knownApply x0 x1 x2) ≤ M := by
+  intro x0 x1 x2 M hM0 hM1
+  first | fun_induction Lanius.Mini.knownApply x0 x1 x2 | fun_cases Lanius.Mini.knownApply x0 x1 x2 | unfold Lanius.Mini.knownApply
+  all_goals upost_auto M
+theorem HBPost.Lanius.Mini.knownApply.p0 : ∀ (x0 : Lanius.Mini.SrcOp) (x1 : Option Lanius.Mini.SrcType) (x2 : Option Lanius.Mini.SrcType), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb (Lanius.Mini.knownApply x0 x1 x2) ≤ M := upost_known_apply
+
+theorem upost_float_want : ∀ (x0 : Option Lanius.Mini.SrcType) (x1 : Lanius.Mini.SrcType) (x2 : Lanius.Mini.SrcExpr), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb (Lanius.Mini.floatWant x0 x1 x2) ≤ M := by
+  intro x0 x1 x2 M hM0 hM1 hM2
+  first | fun_induction Lanius.Mini.floatWant x0 x1 x2 | fun_cases Lanius.Mini.floatWant x0 x1 x2 | unfold Lanius.Mini.floatWant
+  all_goals upost_auto M
+theorem HBPost.Lanius.Mini.floatWant.p0 : ∀ (x0 : Option Lanius.Mini.SrcType) (x1 : Lanius.Mini.SrcType) (x2 : Lanius.Mini.SrcExpr), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb (Lanius.Mini.floatWant x0 x1 x2) ≤ M := upost_float_want
+
 theorem upost_wide_uint_at : ∀ (x0 : Lanius.Mini.UintTy) (x1 : BitVec 64) (x2 : Lanius.Mini.SrcExpr), ∀ M : Nat, hb x2 ≤ M → hb (Lanius.Mini.wideUintAt x0 x1 x2) ≤ M := by
   intro x0 x1 x2 M hM0
   first | fun_induction Lanius.Mini.wideUintAt x0 x1 x2 | fun_cases Lanius.Mini.wideUintAt x0 x1 x2 | unfold Lanius.Mini.wideUintAt
@@ -103,12 +145,6 @@ theorem upost_e_array_slice_closed : ∀ (x0 : Option Lanius.Mini.SrcType) (x1 :
   first | fun_induction Lanius.Mini.eArraySliceClosed x0 x1 | fun_cases Lanius.Mini.eArraySliceClosed x0 x1 | unfold Lanius.Mini.eArraySliceClosed
   all_goals upost_auto M
 theorem HBPost.Lanius.Mini.eArraySliceClosed.p0 : ∀ (x0 : Option Lanius.Mini.SrcType) (x1 : Nat), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.eArraySliceClosed x0 x1) ≤ M := upost_e_array_slice_closed
-
-theorem upost_weighed : ∀ (x0 : Lanius.Mini.SrcType), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.weighed x0) ≤ M := by
-  intro x0 M hM0
-  first | fun_induction Lanius.Mini.weighed x0 | fun_cases Lanius.Mini.weighed x0 | unfold Lanius.Mini.weighed
-  all_goals upost_auto M
-theorem HBPost.Lanius.Mini.weighed.p0 : ∀ (x0 : Lanius.Mini.SrcType), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.weighed x0) ≤ M := upost_weighed
 
 theorem upost_find_alias : ∀ (x0 : List Lanius.Mini.AliasDecl) (x1 : List (List Nat)) (x2 : List Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb (Lanius.Mini.findAlias x0 x1 x2) ≤ M := by
   intro x0 x1 x2 M hM0 hM1 hM2
