@@ -121,6 +121,13 @@ def normNames : Array Name := #[`decide_eq_true_eq, ``decide_eq_false_eq_not, `B
   `Bool.not_true, `Bool.not_false, `if_true, `if_false, `ite_true, `ite_false, `dite_true, `dite_false, `not_true_eq_false, `not_false_eq_true, ``eq_self_eq_true,
   `decide_true, `decide_false]
 
+theorem Bool.not_eq_eq_eq_not_eq {a b : Bool} : ((!a) = b) = (a = !b) := propext Bool.not_eq_eq_eq_not
+
+/-- A precondition's test as a hypothesis: `hb_simp` also states numeric tests as
+bounds (`flDigit_eq_true`, SelfPre/Values). Eq forms only (see `normNames`). -/
+def ifNames : Array Name := #[`decide_eq_true_eq, ``decide_eq_false_eq_not, `Bool.and_eq_true,
+  `Bool.or_eq_true, `Bool.not_eq_true', ``not_and_eq, ``not_or_eq, ``Bool.not_eq_eq_eq_not_eq, `Bool.not_true]
+
 /-- A byte literal as the Lean functions write it (`72`), not as the cost models
 do (`UInt8.ofNat 72`): the compile side's byte lists. -/
 theorem uint8_ofNat_lit (n : Nat) : UInt8.ofNat (no_index (OfNat.ofNat n)) = (OfNat.ofNat n : UInt8) := rfl
@@ -199,6 +206,11 @@ def simpArgs (extra : Array Name) : TacticM (Array (TSyntax `Lean.Parser.Tactic.
     args := args.push (← `(Lean.Parser.Tactic.simpLemma| $(mkIdent n):ident))
   return args
 
+register_option lanius.hb.run : Nat := {
+  defValue := 0
+  descr := "the current pre_auto/post_auto run, for its cache of proved premises (internal)"
+}
+
 /-- The simp sets this process built, by their constants (`` `_hb `` first for the
 `hb_simp` set): `mkSimpContext` elaborates every lemma, which was most of the
 time of each of the normalizations (GenP: about 210 s of 370). -/
@@ -206,8 +218,8 @@ initialize simpBase : IO.Ref (Std.HashMap (Array Name) (Simp.Context × Simp.Sim
 
 /-- The context of `simp only [hb_simp (when `hb`), consts.., locals..]`: the constants'
 part made once per process, the local equations `locals` added to it. -/
-def simpCtx (hb : Bool) (consts : Array Name) (locals : Array FVarId := #[]) (fresh := false) :
-    TacticM (Simp.Context × Simp.SimprocsArray) := do
+def simpCtx (hb : Bool) (consts : Array Name) (locals : Array FVarId := #[]) (fresh := false)
+    (terms : Array Expr := #[]) : TacticM (Simp.Context × Simp.SimprocsArray) := do
   let key := (if hb then #[`_hb] else #[]) ++ consts
   let base ← simpBase.get
   let cached := if fresh then none else base[key]?
@@ -228,27 +240,95 @@ def simpCtx (hb : Bool) (consts : Array Name) (locals : Array FVarId := #[]) (fr
       let { ctx, simprocs, .. } ← withLCtx {} {} (mkSimpContext stx (eraseLocal := false))
       simpBase.modify (·.insert key (ctx, simprocs))
       pure (ctx, simprocs)
-  if locals.isEmpty then return (ctx, sp)
+  if locals.isEmpty && terms.isEmpty then return (ctx, sp)
   let thms := ctx.simpTheorems
   let mut st := thms[0]!
   for f in locals do
     for t in ← mkSimpTheoremFromExpr (.fvar f) #[] (mkFVar f) (config := ctx.indexConfig) do
       st := st.addSimpTheorem t
+  let mut i := 0
+  for e in terms do
+    for t in ← mkSimpTheoremFromExpr (.other (Name.mkSimple s!"term{i}")) #[] e (config := ctx.indexConfig) do
+      st := st.addSimpTheorem t
+    i := i + 1
   return (ctx.setSimpTheorems (thms.set! 0 st), sp)
+
+/-- `simpGoal` with one cache for the hypotheses and the target (`simpGoal` starts
+each afresh): a cost body is in the goal and in `Cost < 2 ^ 64` alike. No local
+simp lemmas (`simpGoal` erases each hypothesis's own from its context). -/
+def simpGoalShared (mvarId : MVarId) (ctx : Simp.Context) (simprocs : Simp.SimprocsArray)
+    (simplifyTarget : Bool) (fvarIdsToSimp : Array FVarId) (cache : Simp.Cache := {}) :
+    MetaM (Option MVarId × Simp.Cache) :=
+  mvarId.withContext do
+    mvarId.checkNotAssigned `simp
+    let mut st : Simp.State := { cache }
+    let mut mvarIdNew := mvarId
+    let mut toAssert := #[]
+    let mut replaced := #[]
+    for fvarId in fvarIdsToSimp do
+      let localDecl ← fvarId.getDecl
+      let type ← instantiateMVars localDecl.type
+      let (r, st') ← simpCore type ctx simprocs none st
+      st := st'
+      match r.proof? with
+      | some _ => match (← applySimpResult mvarIdNew (mkFVar fvarId) type r) with
+        | none => return (none, st.cache)
+        | some (value, type) => toAssert := toAssert.push { userName := localDecl.userName, type := type, value := value }
+      | none =>
+        if r.expr.isFalse then
+          mvarIdNew.assign (← mkFalseElim (← mvarIdNew.getType) (mkFVar fvarId))
+          return (none, st.cache)
+        mvarIdNew ← mvarIdNew.replaceLocalDeclDefEq fvarId r.expr
+        replaced := replaced.push fvarId
+    if simplifyTarget then
+      let target ← instantiateMVars (← mvarIdNew.getType)
+      let (r, st') ← simpCore target ctx simprocs none st
+      st := st'
+      if r.expr.isTrue then
+        match r.proof? with
+        | some proof => mvarIdNew.assign (← mkOfEqTrue proof)
+        | none => mvarIdNew.assign (mkConst ``True.intro)
+        return (none, st.cache)
+      mvarIdNew ← applySimpResultToTarget mvarIdNew target r
+    let (_, mvarIdNew') ← mvarIdNew.assertHypotheses toAssert
+    mvarIdNew := mvarIdNew'
+    let toClear := fvarIdsToSimp.filter fun fvarId => !replaced.contains fvarId
+    mvarIdNew ← mvarIdNew.tryClearMany toClear
+    return (some mvarIdNew, st.cache)
+
+/-- By run (`lanius.hb.run`) and simp set (`simpCtx`'s key), `simp`'s cache: the
+goals of a run share most of their hypotheses, normalized already. `simp only`
+by these sets rewrites unconditionally (no hypothesis is in a result's proof),
+so a result holds wherever its term is. -/
+initialize simpCaches : IO.Ref (Std.HashMap Nat (IO.Ref (Std.HashMap (Array Name) Simp.Cache))) ←
+  IO.mkRef {}
 
 /-- `try simp only [..] at hs ⊢` (`hs` all the hypotheses when `none`) by `simpCtx`. -/
 def simpAt (hb : Bool) (consts : Array Name) (locals : Array FVarId := #[])
-    (hs : Option (Array FVarId) := none) (target := true) : TacticM Unit := withMainContext do
+    (hs : Option (Array FVarId) := none) (target := true) (terms : Array Expr := #[]) :
+    TacticM Unit := withMainContext do
   let g ← getMainGoal
   let fvs ← match hs with
     | some hs => pure hs
     | none => g.getNondepPropHyps
   let run (fresh : Bool) : TacticM Unit := do
-    let (ctx, sp) ← simpCtx hb consts locals fresh
-    let (r, _) ← simpGoal g ctx sp (simplifyTarget := target) (fvarIdsToSimp := fvs)
-    match r with
-    | none => replaceMainGoal []
-    | some (_, g') => replaceMainGoal [g']
+    let (ctx, sp) ← simpCtx hb consts locals fresh terms
+    if locals.isEmpty && terms.isEmpty then
+      let key := (if hb then #[`_hb] else #[]) ++ consts
+      let ref? := (← simpCaches.get)[lanius.hb.run.get (← getOptions)]?
+      let cache ← match ref? with
+        | some r => pure (((← r.get)[key]?).getD {})
+        | none => pure {}
+      let (g'?, cache) ← simpGoalShared g ctx sp target fvs cache
+      if let some r := ref? then r.modify (·.insert key cache)
+      match g'? with
+      | none => replaceMainGoal []
+      | some g' => replaceMainGoal [g']
+    else
+      let (r, _) ← simpGoal g ctx sp (simplifyTarget := target) (fvarIdsToSimp := fvs)
+      match r with
+      | none => replaceMainGoal []
+      | some (_, g') => replaceMainGoal [g']
   try run false
   catch e =>
     let msg ← e.toMessageData.toString
@@ -674,11 +754,6 @@ in parallel, and one shared map would make them wait on each other. -/
 initialize arithCache : IO.Ref (Std.HashMap Nat (IO.Ref ArithCache)) ← IO.mkRef {}
 initialize runCounter : IO.Ref Nat ← IO.mkRef 0
 
-register_option lanius.hb.run : Nat := {
-  defValue := 0
-  descr := "the current pre_auto/post_auto run, for its cache of proved premises (internal)"
-}
-
 register_option lanius.hb.prof : Bool := {
   defValue := false
   descr := "pre_auto and post_auto print their time by phase at the end of each run"
@@ -691,30 +766,34 @@ initialize profRefs : IO.Ref (Std.HashMap Nat (IO.Ref (Std.HashMap String Nat)))
 def timed {α : Type} (k : String) (x : TacticM α) : TacticM α := do
   unless lanius.hb.prof.get (← getOptions) do return ← x
   let t0 ← IO.monoNanosNow
+  let h0 ← IO.getNumHeartbeats
   try x finally
     let t1 ← IO.monoNanosNow
+    let h1 ← IO.getNumHeartbeats
     if let some r := (← profRefs.get)[lanius.hb.run.get (← getOptions)]? then
-      r.modify fun m => m.insert k (m.getD k 0 + (t1 - t0))
+      -- the heartbeats too (`k@`): the times vary with the machine's load
+      r.modify fun m => (m.insert k (m.getD k 0 + (t1 - t0))).insert (k ++ "@") (m.getD (k ++ "@") 0 + (h1 - h0))
 
 /-- Prove `ty` in the current context: heights normalized, then a certificate or `omega`. -/
 def proveArith0? (ty : Expr) : TacticM (Option Expr) := do
   -- most premises are already linear over their atoms: a certificate, before `simp`
   if lanius.hb.cert.get (← getOptions) then
     let ty ← instantiateMVars ty
-    if let some (atoms, hyps) ← arithContext ty then
-      if let some p ← certClosed? atoms ty hyps then
-        dbg "cert0"
-        return some p
+    let c? ← timed "ar.cert" do
+      let some (atoms, hyps) ← arithContext ty | return none
+      certClosed? atoms ty hyps
+    if let some p := c? then
+      dbg "cert0"
+      return some p
   let g ← mkFreshExprMVar ty
   let saved ← saveState
   try
-    let args ← simpArgs #[``Nat.reducePow]
     let gs ← Tactic.run g.mvarId! (withoutRecover do
-      evalTactic (← `(tactic| try simp only [$args,*]))
+      timed "ar.simp" (simpAt true (hbNormNames ++ normNames ++ #[``Nat.reducePow]) (hs := some #[]))
       dbg "simped"
       for g in ← getGoals do
         setGoals [g]
-        omegaAtoms)
+        timed "ar.omega" omegaAtoms)
     let p ← instantiateMVars g
     if gs.isEmpty && !p.hasSorry && !p.hasSyntheticSorry then return some p
     saved.restore
@@ -746,20 +825,41 @@ def reuseProof? (p : Expr) (fvs : Array (FVarId × Expr × Bool)) : MetaM (Optio
     news := news.push (mkFVar g)
   return some (if olds.isEmpty then p else p.replaceFVars olds news)
 
+/-- The `hb`-bounded values in `e`: the arguments of `hb`. -/
+def hbTerms (e : Expr) : Array Expr :=
+  (subterms (fun e => (hbArg? e).isSome) e).filterMap hbArg?
+
 /-- `proveArith0?`, or the proof this run found for the same premise. -/
 def proveArith? (ty : Expr) : TacticM (Option Expr) := do
   let run := lanius.hb.run.get (← getOptions)
   let key ← instantiateMVars ty
+  -- a premise bounding closed values (`hb [115, ..] ≤ M`) that failed: it fails
+  -- again (no case split bounds `M` from below), and a failure costs `omega` twice
+  let closed := !key.hasMVar && !(hbTerms key).isEmpty && (hbTerms key).all (!·.hasFVar)
+  let failKey := mkApp (mkConst `Lanius.Faithful.SelfPre.Tactic.failKey) key
   if run != 0 && !key.hasMVar then
-    if let some (p, fvs) ← (do match (← arithCache.get)[run]? with
-        | some r => return (← r.get)[key]?
-        | none => return none) then
+    let cache ← (do match (← arithCache.get)[run]? with
+        | some r => return some (← r.get)
+        | none => return none)
+    if closed && (cache.bind (·[failKey]?)).isSome then
+      dbg "known failure"
+      return none
+    if let some (p, fvs) := cache.bind (·[key]?) then
       if let some p ← reuseProof? p fvs then
         dbg "hit"
         return some p
       dbg "stale"
   dbg "miss"
+  let t0 ← IO.monoNanosNow
   let r ← timed "arith" (proveArith0? ty)
+  if r.isNone then
+    if closed && run != 0 then
+      if let some c := (← arithCache.get)[run]? then c.modify (·.insert failKey (mkConst ``False, #[]))
+    if let some pr := (← profRefs.get)[run]? then
+      let t1 ← IO.monoNanosNow
+      pr.modify fun m => (m.insert "arith.fail" (m.getD "arith.fail" 0 + (t1 - t0))).insert "n.fail" (m.getD "n.fail" 0 + 1000000)
+      let s := toString (← ppExpr key)
+      IO.eprintln s!"FAIL {(t1 - t0) / 1000000} {(s.replace "\n" " ").take 300}"
   if let some p := r then
     if run != 0 && !key.hasMVar && !p.hasMVar then
       let lctx ← getLCtx
@@ -816,15 +916,19 @@ abbrev Registry := Array (Expr × Expr)
 
 def occursIn (t e : Expr) : Bool := (e.find? (· == t)).isSome
 
-/-- The values `scan` is computed from: `scan` and, through the equations the
-case splits left (`d = C .. y ..`), the `d` a variable of it was taken from. -/
-def upstream (scan : Array Expr) : MetaM (Array Expr) := do
-  let mut terms := scan
+/-- The equations of the context (`l = r`). -/
+def contextEqs : MetaM (Array (Expr × Expr)) := do
   let mut eqs : Array (Expr × Expr) := #[]
   for d in ← getLCtx do
     if d.isImplementationDetail then continue
     let t ← instantiateMVars d.type
     if let some (_, l, r) := t.eq? then eqs := eqs.push (l, r)
+  return eqs
+
+/-- The values `scan` is computed from: `scan` and, through the equations `eqs`
+the case splits left (`d = C .. y ..`), the `d` a variable of it was taken from. -/
+def upstreamWith (eqs : Array (Expr × Expr)) (scan : Array Expr) : Array Expr := Id.run do
+  let mut terms := scan
   let mut changed := true
   while changed do
     changed := false
@@ -835,6 +939,10 @@ def upstream (scan : Array Expr) : MetaM (Array Expr) := do
         terms := terms.push l
         changed := true
   return terms
+
+/-- `upstreamWith` the context's equations. -/
+def upstream (scan : Array Expr) : MetaM (Array Expr) := do
+  return upstreamWith (← contextEqs) scan
 
 /-- `M` plus the boxes of the values bounded so far that `scan` is computed from
 (`dense`: of every value bounded so far). Each is a distinct summand of the cost
@@ -898,10 +1006,6 @@ where
         saved.restore
         return none
   return some (← instantiateMVars (mkAppN lem ms), ← instantiateMVars concl)
-
-/-- The `hb`-bounded values in `e`: the arguments of `hb`. -/
-def hbTerms (e : Expr) : Array Expr :=
-  (subterms (fun e => (hbArg? e).isSome) e).filterMap hbArg?
 
 /-- The local hypotheses' and the goal's types. -/
 def contextTypes : TacticM (Array Expr) := do
@@ -1050,12 +1154,24 @@ def hbFacts (fuel : Option Expr) (base : Expr) (extra : Array Expr := #[]) : Tac
     pending.map (fun (v, c, l) => (v, some c, l)) ++ free.map (fun (v, l) => (v, none, l))
   items := items.qsort (fun a b => a.1.approxDepth.toNat < b.1.approxDepth.toNat)
   let mut done : Std.HashSet Expr := {}
-  -- a value's bound may need another's through an equation: retry until none is new
+  -- the items an item's arguments are taken from (through the split equations):
+  -- those first, or its premises fail for want of their bounds
+  let eqs ← withMainContext contextEqs
+  let deps : Array (Array Expr) := items.map fun (v, _, _) =>
+    let up := upstreamWith eqs (if v.isApp then v.getAppArgs else #[])
+    items.filterMap fun (v', _, _) => if v' != v && up.contains v' then some v' else none
+  -- a value's bound may need another's through an equation: retry until none is
+  -- new (then once with the items waiting on others too)
+  let mut force := false
   let mut progress := true
   while progress do
    progress := false
-   for (v, c?, lem) in items do
+   let mut waited := false
+   for ((v, c?, lem), ds) in items.zip deps do
     if done.contains v then continue
+    if !force && ds.any (fun d => !done.contains d) then
+      waited := true
+      continue
     dbg s!"item {v.getAppFn.constName?} {v.approxDepth} {c?.isSome}"
     let r ← timed "hf.inst" <| withMainContext do
       let unify : Expr → TacticM Bool := fun concl => do
@@ -1100,6 +1216,10 @@ def hbFacts (fuel : Option Expr) (base : Expr) (extra : Array Expr := #[]) : Tac
         | none => return false
       if same then evalTactic (← `(tactic| clear $(mkIdent raw):ident))
     k := k + 1
+   if progress then force := false
+   else if waited && !force then
+     force := true
+     progress := true
   return reg
 
 /-- Equations a split left, `d = C ..`: `hb (C ..) ≤ hb d`. -/
@@ -1202,26 +1322,27 @@ partial def closeArith (fuel : Option Expr) (base : Expr) (depth : Nat := 0) : T
     | some i =>
       let cs ← withMainContext (Term.exprToSyntax (i.getArg! 1))
       let h := mkIdent (← freshSplitName)
-      evalTactic (← `(tactic| by_cases $h:ident : $cs))
+      timed "ca.bycases" (evalTactic (← `(tactic| by_cases $h:ident : $cs)))
       let gs ← getGoals
       let mut left := []
       for (g, pos) in gs.zip [true, false] do
         setGoals [g]
-        if pos then evalTactic (← `(tactic| try simp only [if_pos $h:ident] at *))
-        else evalTactic (← `(tactic| try simp only [if_neg $h:ident] at *))
-        normSimp0
+        timed "ca.ifsimp" do
+          if pos then evalTactic (← `(tactic| try simp only [if_pos $h:ident] at *))
+          else evalTactic (← `(tactic| try simp only [if_neg $h:ident] at *))
+        timed "ca.norm0" normSimp0
         unless (← getGoals).isEmpty do closeArith fuel base (depth + 1)
         left := left ++ (← getGoals)
       setGoals left
     | none =>
       let before ← withMainContext do return (← getLCtx).getFVarIds
-      evalTactic (← `(tactic| split))
+      timed "ca.split" (evalTactic (← `(tactic| split)))
       onGoals (← getGoals) do
         let names ← nameSplitEqns before
-        unless names.isEmpty do
-          let args ← names.mapM fun n => `(Lean.Parser.Tactic.simpLemma| $(mkIdent n):ident)
-          evalTactic (← `(tactic| try simp only [$args,*] at *))
-        normSimp0
+        let hs ← withMainContext do
+          let lctx ← getLCtx
+          return names.filterMap fun n => (lctx.findFromUserName? n).map (·.fvarId)
+        timed "ca.eqsimp" (simpAt false normNames (locals := hs))
         unless (← getGoals).isEmpty do closeArith fuel base (depth + 1)
     return
   if lanius.hb.debug.get (← getOptions) then
@@ -1239,23 +1360,27 @@ def quietly (x : TacticM Unit) : TacticM Unit := do
   let fr ← IO.mkRef ({} : FactCache)
   arithCache.modify (·.insert run ar)
   factCache.modify (·.insert run fr)
+  simpCaches.modify (·.insert run (← IO.mkRef {}))
   let prof := lanius.hb.prof.get (← getOptions)
   let pr ← IO.mkRef ({} : Std.HashMap String Nat)
   if prof then profRefs.modify (·.insert run pr)
   let t0 ← IO.monoNanosNow
+  let h0 ← IO.getNumHeartbeats
   try
     withTheReader Core.Context (fun c => { c with options := lanius.hb.run.set c.options run })
       (withEnableInfoTree false x)
   finally
     arithCache.modify (·.erase run)
     factCache.modify (·.erase run)
+    simpCaches.modify (·.erase run)
     if prof then
       let t1 ← IO.monoNanosNow
-      pr.modify fun m => m.insert "total" (t1 - t0)
-      IO.eprintln s!"PROFT {t0 / 1000000} {t1 / 1000000}"
+      let h1 ← IO.getNumHeartbeats
+      pr.modify fun m => (m.insert "total" (t1 - t0)).insert "total@" (h1 - h0)
       profRefs.modify (·.erase run)
-      for (k, v) in (← pr.get).toList do
-        IO.eprintln s!"PROF {k} {v / 1000}"
+      let decl := (← Term.getDeclName?).getD .anonymous
+      let parts := (← pr.get).toList.map fun (k, v) => s!" {k}={v / 1000}"
+      IO.eprintln s!"PROFR {decl} {t0 / 1000000} {t1 / 1000000}{String.join parts}"
 
 /-- Close `hb (f xs) ≤ M` for a function the cost model does not see, one case of
 its functional induction. -/
@@ -1408,9 +1533,9 @@ partial def preGoal (nStx mStx : Term) : TacticM Unit := withMainContext do
     onGoals gs do
       let h := mkIdent (← freshSplitName)
       evalTactic (← `(tactic| intro $h:ident))
-      -- `hb_simp` also states numeric tests as bounds (`flDigit_eq_true`, SelfPre/Values)
-      timed "pg.ifsimp" <| evalTactic (← `(tactic| try simp only [hb_simp, decide_eq_true_eq, decide_eq_false_iff_not, Bool.and_eq_true,
-        Bool.or_eq_true, Bool.not_eq_true', not_and, not_or, Bool.not_eq_eq_eq_not, Bool.not_true] at $h:ident))
+      timed "pg.ifsimp" do
+        let hv ← withMainContext do return (← getLCtx).findFromUserName? h.getId |>.map (·.fvarId)
+        simpAt true ifNames (hs := some hv.toArray) (target := false)
       preGoal nStx mStx
     return
   if (← matchMatcherApp? t).isSome then
@@ -1515,33 +1640,32 @@ partial def postGoal (fuel base : Expr) : TacticM Unit := withMainContext do
   | some (true, c) =>
     let cs ← Term.exprToSyntax c
     let h := mkIdent (← freshSplitName)
-    evalTactic (← `(tactic| by_cases $h:ident : $cs))
+    timed "po.bycases" (evalTactic (← `(tactic| by_cases $h:ident : $cs)))
     let gs ← getGoals
     let mut left := []
-    for (g, pos) in gs.zip [true, false] do
+    for g in gs do
       setGoals [g]
-      if pos then
-        evalTactic (← `(tactic| simp only [if_pos $h:ident]))
-      else
-        evalTactic (← `(tactic| simp only [if_neg $h:ident]))
-      normSimp
-      evalTactic (← `(tactic| try simp only [$h:ident]))
-      normSimp
+      -- `simp only [if_pos h]`, `simp only [h]` and the normal form, by one
+      -- `simp` (`h` rewrites the condition to `True` or `False`)
+      timed "po.ifsimp" do
+        let hv ← withMainContext do return (← getLCtx).findFromUserName? h.getId |>.map (·.fvarId)
+        simpAt false normNames (locals := hv.toArray) (hs := some #[])
       if ← stillSplits c then throwError "post_auto: the split on{indentExpr c}\ndid not reduce"
       postGoal fuel base
       left := left ++ (← getGoals)
     setGoals left
   | some (false, d) =>
-    if d.isFVar then
-      let ds ← Term.exprToSyntax d
-      evalTactic (← `(tactic| cases $ds:term))
-    else
-      let ds ← Term.exprToSyntax d
-      evalTactic (← `(tactic| generalize hdiscr : $ds = discr))
-      evalTactic (← `(tactic| cases discr))
+    timed "po.cases" do
+      if d.isFVar then
+        let ds ← Term.exprToSyntax d
+        evalTactic (← `(tactic| cases $ds:term))
+      else
+        let ds ← Term.exprToSyntax d
+        evalTactic (← `(tactic| generalize hdiscr : $ds = discr))
+        evalTactic (← `(tactic| cases discr))
     onGoals (← getGoals) do
-      evalTactic (← `(tactic| try simp only []))
-      normSimp
+      -- `simp only []` (the matches on the case's constructor) and the normal form
+      timed "po.norm" normSimp
       postGoal fuel base
 
 syntax "post_auto" term "," term : tactic
