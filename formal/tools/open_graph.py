@@ -23,7 +23,14 @@ import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 OPEN = os.environ.get('LANIUS_OPEN_DIR') or os.path.join(ROOT, 'formal', 'Lanius', 'Open')
-CLAIMS = os.path.join(ROOT, 'target', 'claude-work', 'open', 'claims')
+def _main_checkout():
+    """The main checkout (where the shared .git lives), so every worktree sees the same claims."""
+    common = subprocess.run(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'], cwd=ROOT,
+                            capture_output=True, text=True).stdout.strip()
+    return os.path.dirname(common) if common else ROOT
+
+
+CLAIMS = os.path.join(_main_checkout(), 'target', 'claude-work', 'open', 'claims')
 CLAIM_HOURS = 6
 PREFIX = 'Lanius.Open.'
 
