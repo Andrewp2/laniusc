@@ -81,6 +81,11 @@ OVERRIDES = {
     # the formats flDecimal is called with: f32 and f64
     'fl_decimal': ['(p0 = 8 ∧ p1 = 23) ∨ (p0 = 11 ∧ p1 = 52)'],
     'fl_decimal_at': ['(p0 = 8 ∧ p1 = 23) ∨ (p0 = 11 ∧ p1 = 52)', 'p5 < hb p2'],
+    # an alignment's shift: shift_of_u64(31, k, 0, 1) doubles p at most 31 times
+    'shift_of_u64': ['p2 + p0 ≤ 63', 'p3 * 2 ^ p0 ≤ 2 ^ 63'],
+    # a struct field's index (below the environment's height, vals_fieldIndex)
+    'projection': ['p2 + b ≤ K'],
+    'field_value': ['p3 + b ≤ K'],
     'fl_round': ['(p0 = 8 ∧ p1 = 23) ∨ (p0 = 11 ∧ p1 = 52)', '0 < Lanius.Mini.flToNat p3'],
     'fl_to_nat': ['Lanius.Mini.flToNat p0 < 18446744073709551616'],
     'fl_log2_up': ['(∀ i, p1 = some i → i + b ≤ K)'],
@@ -337,6 +342,22 @@ PRE_HAND = {
   · rw [Lanius.Mini.flToNat] at h2
     refine ⟨pre_fl_to_nat rest b M (by simp only [hb_cons] at h0; omega) h1 (by omega), ?_, ?_⟩ <;>
       simp only [Pre_times, Pre_plus, Nat.reducePow] <;> omega
+''',
+    'shift_of_u64': '''  split
+  · trivial
+  split
+  · trivial
+  rename_i hz _
+  have hx : 1 ≤ x0 := by simp only [decide_eq_true_eq] at hz; omega
+  have hm : x3 * 2 * 2 ^ (x0 - 1) = x3 * 2 ^ x0 := by
+    rw [Nat.mul_assoc, ← Nat.pow_succ']
+    congr 2
+    omega
+  have hp : x3 * 2 ≤ x3 * 2 ^ x0 := by
+    have := Nat.pow_le_pow_right (show 0 < 2 by omega) hx
+    exact Nat.mul_le_mul_left _ (by simpa using this)
+  refine ⟨?_, ?_, pre_shift_of_u64 (x0 - 1) x1 (x2 + 1) (x3 * 2) b M h0 (by omega) (by omega)⟩ <;>
+    simp only [Pre_plus, Pre_times, Nat.reducePow] <;> omega
 ''',
     'fl_log2_up': '''  rcases x1 with _ | i
   · trivial

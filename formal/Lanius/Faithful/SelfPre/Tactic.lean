@@ -394,7 +394,7 @@ def proveArith? (ty : Expr) : TacticM (Option Expr) := do
   let g ← mkFreshExprMVar ty
   let saved ← saveState
   try
-    let args ← simpArgs #[]
+    let args ← simpArgs #[``Nat.reducePow]
     let gs ← Tactic.run g.mvarId! (withoutRecover do
       evalTactic (← `(tactic| try simp only [$args,*]))
       dbg "simped"
@@ -658,10 +658,20 @@ def hbFacts (fuel : Option Expr) (base : Expr) (extra : Array Expr := #[]) : Tac
     progress := true
     reg := reg.push (v, c?.getD (mkNatLit 0))
     let nm := Name.mkSimple s!"hbf{k}"
+    -- the split equations may rewrite the value's own arguments
+    -- (`isTrueArm a = true`): the fact as stated stays too, for the goal's form
+    let raw := Name.mkSimple s!"hbf{k}r"
+    addFact raw p
     addFact nm p
-    let ids ← withMainContext do constIdsOf (← instantiateMVars (← inferType p))
+    let t0 ← instantiateMVars (← inferType p)
+    let ids ← withMainContext do constIdsOf t0
     let args ← simpArgs (ids ++ (← splitNames))
     evalTactic (← `(tactic| try simp only [$args,*] at $(mkIdent nm):ident))
+    let same ← withMainContext do
+      match (← getLCtx).findFromUserName? nm with
+      | some d => return (← instantiateMVars d.type) == t0
+      | none => return false
+    if same then evalTactic (← `(tactic| clear $(mkIdent raw):ident))
     k := k + 1
   return reg
 
@@ -850,48 +860,50 @@ def preKey? (e : Expr) : Option String :=
 /-- Facts on the numbers the Lean functions compute, which heights do not bound
 (SelfPre/Values): `val_F xs : F xs ≤ ..` for each `F xs` in the goal or the
 hypotheses, and `vals_F xs v h : ..` for each hypothesis `h : F xs = some v`. -/
-def valueFacts : TacticM Unit := withMainContext do
-  let env ← getEnv
-  let g ← getMainGoal
-  let mut ts := #[← instantiateMVars (← g.getType)]
-  let mut hyps : Array (Expr × Expr) := #[]
-  for d in ← getLCtx do
-    if d.isImplementationDetail then continue
-    let t ← instantiateMVars d.type
-    ts := ts.push t
-    hyps := hyps.push (d.toExpr, t)
-  let mut facts : Array Expr := #[]
-  let mut seen : Array Expr := #[]
-  for t in ts do
-    for s in subterms (fun e => e.isApp && e.getAppFn.isConst) t do
-      let .const fn _ := s.getAppFn | continue
-      unless (`Lanius.Mini).isPrefixOf fn do continue
-      if seen.contains s then continue
-      seen := seen.push s
-      let nm := `Lanius.Faithful.SelfPre ++ Name.mkSimple s!"val_{lastName fn}"
+def valueFacts : TacticM Unit := do
+  if (← getGoals).isEmpty then return
+  withMainContext do
+    let env ← getEnv
+    let g ← getMainGoal
+    let mut ts := #[← instantiateMVars (← g.getType)]
+    let mut hyps : Array (Expr × Expr) := #[]
+    for d in ← getLCtx do
+      if d.isImplementationDetail then continue
+      let t ← instantiateMVars d.type
+      ts := ts.push t
+      hyps := hyps.push (d.toExpr, t)
+    let mut facts : Array Expr := #[]
+    let mut seen : Array Expr := #[]
+    for t in ts do
+      for s in subterms (fun e => e.isApp && e.getAppFn.isConst) t do
+        let .const fn _ := s.getAppFn | continue
+        unless (`Lanius.Mini).isPrefixOf fn do continue
+        if seen.contains s then continue
+        seen := seen.push s
+        let nm := `Lanius.Faithful.SelfPre ++ Name.mkSimple s!"val_{lastName fn}"
+        unless env.contains nm do continue
+        let p := mkAppN (← constFresh nm) s.getAppArgs
+        if (← isTypeCorrect p) && (← isProp (← inferType p)) then facts := facts.push p
+    for (h, t) in hyps do
+      let some (_, l, r) := t.eq? | continue
+      let .const fn _ := l.getAppFn | continue
+      unless (`Lanius.Mini).isPrefixOf fn && r.isAppOfArity ``Option.some 2 do continue
+      let nm := `Lanius.Faithful.SelfPre ++ Name.mkSimple s!"vals_{lastName fn}"
       unless env.contains nm do continue
-      let p := mkAppN (← constFresh nm) s.getAppArgs
+      let p := mkAppN (← constFresh nm) (l.getAppArgs ++ #[r.appArg!, h])
       if (← isTypeCorrect p) && (← isProp (← inferType p)) then facts := facts.push p
-  for (h, t) in hyps do
-    let some (_, l, r) := t.eq? | continue
-    let .const fn _ := l.getAppFn | continue
-    unless (`Lanius.Mini).isPrefixOf fn && r.isAppOfArity ``Option.some 2 do continue
-    let nm := `Lanius.Faithful.SelfPre ++ Name.mkSimple s!"vals_{lastName fn}"
-    unless env.contains nm do continue
-    let p := mkAppN (← constFresh nm) (l.getAppArgs ++ #[r.appArg!, h])
-    if (← isTypeCorrect p) && (← isProp (← inferType p)) then facts := facts.push p
-  if facts.isEmpty then return
-  let mut have_ := hyps.map (·.2)
-  let mut g := g
-  let mut i := 0
-  for p in facts do
-    let ty ← instantiateMVars (← inferType p)
-    if have_.contains ty then continue
-    have_ := have_.push ty
-    let (_, g') ← (← g.assert (Name.mkSimple s!"hval{i}") ty p).intro1P
-    g := g'
-    i := i + 1
-  replaceMainGoal [g]
+    if facts.isEmpty then return
+    let mut have_ := hyps.map (·.2)
+    let mut g := g
+    let mut i := 0
+    for p in facts do
+      let ty ← instantiateMVars (← inferType p)
+      if have_.contains ty then continue
+      have_ := have_.push ty
+      let (_, g') ← (← g.assert (Name.mkSimple s!"hval{i}") ty p).intro1P
+      g := g'
+      i := i + 1
+    replaceMainGoal [g]
 
 /-- Take a precondition apart and close its pieces. -/
 partial def preGoal (nStx mStx : Term) : TacticM Unit := withMainContext do
@@ -938,6 +950,7 @@ partial def preGoal (nStx mStx : Term) : TacticM Unit := withMainContext do
     let times := mkIdent `Lanius.Faithful.Budget.Pre_times
     evalTactic (← `(tactic| simp only [$plus:ident, $times:ident, Nat.reducePow]))
     valueFacts
+    if (← getGoals).isEmpty then return
     let saved ← saveState
     let t ← withMainContext do instantiateMVars (← (← getMainGoal).getType)
     try
@@ -954,10 +967,12 @@ partial def preGoal (nStx mStx : Term) : TacticM Unit := withMainContext do
     eqnFacts
     hbNorm
     valueFacts
+    if (← getGoals).isEmpty then return
     -- the call's arguments: their projections' facts
     let args ← withMainContext do
       return (← whnfR (← instantiateMVars (← (← getMainGoal).getType))).getAppArgs
     let reg ← hbFacts (some fuel) base args
+    if (← getGoals).isEmpty then return
     let r ← withMainContext do
       -- looked up after the facts: `simp at *` may have replaced a local lemma
       let some lem ← preLemma? key | throwError "pre_auto: no lemma pre_{key}"

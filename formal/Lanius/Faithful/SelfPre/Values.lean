@@ -178,4 +178,58 @@ theorem flTimes10_one_pos (k : Nat) : 0 < Lanius.Mini.flToNat (Lanius.Mini.flTim
   simp only [Lanius.Mini.Reading.bval_cons, Lanius.Mini.Reading.bval_nil, if_true]
   exact Nat.mul_pos (by omega) (Nat.pow_pos (by omega))
 
+theorem val_kid (c : Lanius.Mini.CTree) (i : Nat) : hb (Lanius.Mini.kid c i) ≤ hb c := by
+  unfold Lanius.Mini.kid
+  rw [List.getD_eq_getElem?_getD]
+  cases c with
+  | leaf t => simp [Lanius.Mini.kidsOf, Lanius.Mini.noToken]
+  | node p kids =>
+    simp only [Lanius.Mini.kidsOf, hb_CTree_node]
+    cases h : kids[i]? with
+    | none => simp [Lanius.Mini.noToken]
+    | some k =>
+      simp only [Option.getD_some]
+      exact Nat.le_of_lt (hb_le_of_mem (List.mem_of_getElem? h))
+
+theorem val_kidToken (c : Lanius.Mini.CTree) (i : Nat) : hb (Lanius.Mini.kidToken c i) ≤ hb c := by
+  have := val_kid c i
+  unfold Lanius.Mini.kidToken Lanius.Mini.leafToken
+  split
+  · rename_i t h
+    rw [h] at this
+    simpa using this
+  · simp [Lanius.Mini.noToken]
+
+theorem val_start (t : Lanius.Mini.Token) : t.start ≤ hb t := hb_le_Token_start t
+
+theorem position_lt : ∀ (l : List (List Nat)) (name : List Nat) (k j : Nat),
+    Lanius.Mini.position l name k = some j → j < k + l.length
+  | [], name, k, j, h => by simp [Lanius.Mini.position] at h
+  | n :: rest, name, k, j, h => by
+    unfold Lanius.Mini.position at h
+    split at h
+    · injection h with h
+      subst h
+      simp
+    · have := position_lt rest name (k + 1) j h
+      simp only [List.length_cons]
+      omega
+
+/-- A field index is below the environment's height. -/
+theorem vals_fieldIndex (env : Lanius.Mini.FrontEnv) (t : Lanius.Mini.Ty) (name : List Nat) (j : Nat)
+    (h : Lanius.Mini.fieldIndex env t name = some j) : j < hb env := by
+  cases t <;> simp [Lanius.Mini.fieldIndex] at h
+  rename_i d args
+  unfold Lanius.Mini.fieldIn at h
+  split at h
+  · contradiction
+  · rename_i e he
+    have h1 := position_lt _ _ _ _ h
+    have h2 := length_le_hb e.fields
+    have h3 := hb_le_TypeDecl_fields e
+    have h4 := hb_le_of_mem (List.mem_of_getElem? he)
+    have h5 := hb_le_Decls_types env.decls
+    have h6 := hb_le_FrontEnv_decls env
+    omega
+
 end Lanius.Faithful.SelfPre
