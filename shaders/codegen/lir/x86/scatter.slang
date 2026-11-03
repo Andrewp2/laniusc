@@ -40,6 +40,7 @@ StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<uint> x86_live_by_semantic;
 StructuredBuffer<X86ValueAnalysis> x86_value_by_semantic;
 StructuredBuffer<X86SelectInfo> x86_select_by_semantic;
+StructuredBuffer<X86DeclarationAnalysis> x86_decl_analysis_by_token;
 StructuredBuffer<X86InlineInfo> x86_inline_info_by_function;
 StructuredBuffer<uint> target_lir_offset;
 StructuredBuffer<uint> target_lir_total;
@@ -52,6 +53,30 @@ RWStructuredBuffer<uint> target_lir_flags;
 static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint TARGET_PAGE_ROWS = 65536u;
+
+// The stride of a local view read by `view` (a VALUE_GET) whose single
+// definition is `let v = slice_from_raw_parts(...)`, or INVALID.
+uint raw_parts_view_stride(uint view, uint semantic_count)
+{
+    if (view >= semantic_count) return INVALID;
+    OptIrNodeCore core = opt_ir_core[view];
+    if (opt_ir_op(core) != SEMANTIC_LIR_OP_VALUE_GET ||
+        (core.flags & SEMANTIC_LIR_FLAG_ARRAY_PAIR) == 0u)
+        return INVALID;
+    uint declaration = opt_ir_operands[view].a;
+    if (declaration >= gParams.token_capacity) return INVALID;
+    uint definition = x86_decl_analysis_by_token[declaration].definition;
+    if (definition >= semantic_count ||
+        opt_ir_op(opt_ir_core[definition]) != SEMANTIC_LIR_OP_VALUE_SET ||
+        opt_ir_operands[definition].a != declaration)
+        return INVALID;
+    uint value = opt_ir_operands[definition].b;
+    if (value >= semantic_count ||
+        opt_ir_op(opt_ir_core[value]) != SEMANTIC_LIR_OP_CALL_INTRINSIC ||
+        !intrinsic_slice_from_raw_parts(opt_ir_operands[value].a))
+        return INVALID;
+    return semantic_lir_layout_word_offset[value];
+}
 
 uint inline_body_semantic_row(X86InlineInfo info, uint ordinal, uint total)
 {
@@ -1054,16 +1079,29 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (select_store)
     {
         X86SelectInfo info = x86_select_by_semantic[semantic_row];
-        if (info.condition >= semantic_count ||
+        bool negated = (info.condition & X86_SELECT_NEGATED) != 0u;
+        uint condition = info.condition & ~X86_SELECT_NEGATED;
+        if (condition >= semantic_count ||
             info.true_value >= semantic_count ||
             info.declaration == INVALID)
         {
             flags |= TARGET_LIR_FLAG_UNSUPPORTED;
         }
+        else if (opt_ir_op(opt_ir_core[condition]) != SEMANTIC_LIR_OP_COMPARE)
+        {
+            // A Boolean value: select when it is nonzero (zero if negated).
+            op = X86_LIR_OP_SELECT_STORE;
+            result = info.declaration;
+            a = condition;
+            b = 0u;
+            c = info.true_value;
+            metadata = 2u | X86_LIR_METADATA_IMMEDIATE;
+            local_ordinal = negated ? 0u : 1u;
+        }
         else
         {
-            OptIrNodeCore compare_core = opt_ir_core[info.condition];
-            OptIrNodeOperands compare = opt_ir_operands[info.condition];
+            OptIrNodeCore compare_core = opt_ir_core[condition];
+            OptIrNodeOperands compare = opt_ir_operands[condition];
             bool aggregate_compare = x86_semantic_type_is_aggregate(compare_core);
             if (aggregate_compare &&
                 (compare_core.value_word_count > 1u ||
@@ -1094,8 +1132,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 (aggregate_compare ? X86_LIR_METADATA_AGGREGATE : 0u);
             if (immediate_compare)
                 metadata |= X86_LIR_METADATA_IMMEDIATE;
-            local_ordinal = swap
+            uint predicate = swap
                 ? x86_swapped_compare_predicate(compare.c) : compare.c;
+            local_ordinal = negated ? x86_negated_compare_predicate(predicate) : predicate;
         }
     }
     else if (propagated_constant)
@@ -1193,6 +1232,19 @@ void main(uint3 dtid: SV_DispatchThreadID)
             (packed_i32_array_source(args.a, semantic_count) ||
              semantic_lir_layout_word_offset[semantic_row] == SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME))
             metadata |= X86_LIR_METADATA_PACKED_I32_ARRAY;
+        // A local view whose only definition is slice_from_raw_parts has that
+        // call's constant stride. When it is the stride the known-stride
+        // bodies assume (+4 for i32, -8 per word for an aggregate element),
+        // the body skips loading and multiplying by the stride word.
+        metadata &= ~X86_LIR_METADATA_NATIVE_STRIDE;
+        bool aggregate_element = (metadata & X86_LIR_METADATA_AGGREGATE) != 0u;
+        uint expected = aggregate_element ? 0u - c * 8u
+            : source.type_id == 3u ? 4u : INVALID;
+        if (semantic_lir_layout_word_offset[semantic_row] == SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME &&
+            (metadata & X86_LIR_METADATA_INDIRECT_ARRAY_PAIR) == 0u &&
+            expected != INVALID && (c != 0u || !aggregate_element) &&
+            raw_parts_view_stride(args.a, semantic_count) == expected)
+            metadata |= X86_LIR_METADATA_NATIVE_STRIDE;
     }
     else if (op == X86_LIR_OP_FIELD_LOAD)
     {

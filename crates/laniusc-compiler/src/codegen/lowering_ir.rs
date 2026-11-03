@@ -9280,6 +9280,10 @@ fn lowering_compiler_graph_builder(
             PassAccess::read("x86_value_by_semantic", x86_value_by_semantic.unwrap()),
             PassAccess::read("x86_select_by_semantic", x86_select_by_semantic.unwrap()),
             PassAccess::read(
+                "x86_decl_analysis_by_token",
+                x86_decl_analysis_by_token.unwrap(),
+            ),
+            PassAccess::read(
                 "x86_inline_info_by_function",
                 x86_inline_info_by_function.unwrap(),
             ),

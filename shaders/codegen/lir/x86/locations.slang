@@ -259,7 +259,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     else if (core.op == X86_LIR_OP_SELECT_STORE)
     {
         X86SelectInfo info = x86_select_by_semantic[semantic_row];
-        locations.result = value_location(info.false_value);
+        // Without an else arm the false value is the declaration itself.
+        locations.result = info.false_value == INVALID &&
+                info.declaration < gParams.token_capacity
+            ? x86_decl_location_by_token[info.declaration]
+            : value_location(info.false_value);
         locations.a = value_location(operands.a);
         if ((operands.metadata & X86_LIR_METADATA_IMMEDIATE) == 0u)
             locations.b = value_location(operands.b);

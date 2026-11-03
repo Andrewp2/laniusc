@@ -112,6 +112,10 @@ bool x86_scalar_immediate_type(uint type_id)
 // A function's parameter rows lie inside the parameter table. A function
 // without parameters has param_start LIR_INVALID (function_scatter), and its
 // empty range is valid.
+// X86SelectInfo.condition flag: the select picks its true value when the
+// condition is false (if_convert folded a `!` into it).
+static const uint X86_SELECT_NEGATED = 0x80000000u;
+
 bool x86_parameter_range_outside(SemanticLirFunction function, uint param_total)
 {
     return function.param_count != 0u &&
@@ -232,6 +236,13 @@ uint x86_swapped_compare_predicate(uint predicate)
     if (predicate == 4u) return 5u;
     if (predicate == 5u) return 4u;
     return predicate;
+}
+
+// !(a p b) is a q b: = and != swap, < and >= swap, > and <= swap.
+uint x86_negated_compare_predicate(uint predicate)
+{
+    if (predicate <= 1u) return predicate ^ 1u;
+    return 7u - predicate;
 }
 
 bool x86_fold_integer_binary(uint semantic_op, uint type_id, uint predicate,
@@ -623,6 +634,9 @@ bool x86_known_view_stride(uint type_id)
 // word alone (no stride word); see instruction_plan's index bodies.
 bool x86_index_known_stride(uint op, uint metadata)
 {
+    if ((op == X86_LIR_OP_INDEX_LOAD || op == X86_LIR_OP_INDEX_ADDRESS) &&
+        (metadata & X86_LIR_METADATA_NATIVE_STRIDE) != 0u)
+        return true;
     uint integer_type = metadata & 0xffu;
     bool string = integer_type == SEMANTIC_LIR_TY_STRING;
     bool aggregate = (metadata & X86_LIR_METADATA_AGGREGATE) != 0u;

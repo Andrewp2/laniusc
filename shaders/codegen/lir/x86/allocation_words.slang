@@ -121,6 +121,25 @@ uint parallel_register_location(uint row, uint position, uint total, out bool gp
     argument = false;
     OptIrNodeCore core = opt_ir_core[row];
     uint op = opt_ir_op(core);
+    // An element address read only by the next row's field load stays in
+    // RAX: INDEX_ADDRESS (or an aggregate element's INDEX_LOAD) computes it
+    // there and FIELD_LOAD starts from RAX.
+    bool element_address = op == SEMANTIC_LIR_OP_INDEX_ADDRESS ||
+        (op == SEMANTIC_LIR_OP_LOAD &&
+         (core.flags & SEMANTIC_LIR_FLAG_INDEXED) != 0u &&
+         x86_semantic_type_is_aggregate(core));
+    if (element_address &&
+        x86_last_use_by_semantic[row] == position + 1u && position + 1u < total)
+    {
+        uint consumer = semantic_schedule_order[position + 1u];
+        if (consumer < total &&
+            opt_ir_op(opt_ir_core[consumer]) == SEMANTIC_LIR_OP_LOAD &&
+            (opt_ir_core[consumer].flags & SEMANTIC_LIR_FLAG_FIELD) != 0u &&
+            (opt_ir_core[consumer].flags & SEMANTIC_LIR_FLAG_INDEXED) == 0u &&
+            opt_ir_operands[consumer].a == row &&
+            opt_ir_operands[consumer].b != row && opt_ir_operands[consumer].c != row)
+            return X86_LOCATION_REGISTER;
+    }
     if (!produces_scalar_value(op)) return INVALID;
     if (op == SEMANTIC_LIR_OP_PLACE_LOAD) return INVALID;
     // A direct descriptor needs adjacent stack slots even when its final
