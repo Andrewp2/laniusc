@@ -1679,11 +1679,12 @@ def main():
         p['bases'] = bases
         manifest.append(f'compile p{k} ' + ' '.join(bases))
     open(os.path.join(workdir, 'manifest.txt'), 'w').write('\n'.join(manifest) + '\n')
-    run = run_cache.run_all(os.path.join(workdir, 'manifest.txt'))
-    if run.returncode != 0:
+    # With no program read, runAll is not run (it would print nothing).
+    run = run_cache.run_all(os.path.join(workdir, 'manifest.txt')) if manifest else None
+    if run is not None and run.returncode != 0:
         raise SystemExit('runAll failed:\n' + run.stdout[-4000:] + run.stderr[-4000:])
     status = {}
-    for line in run.stdout.strip().split('\n'):
+    for line in (run.stdout.strip().split('\n') if run is not None else []):
         name, rest = line.split(' ', 1)
         status[int(name[1:])] = rest
     expected = sum(1 for p in programs if p.get('status') != 'noparse')
