@@ -1,7 +1,11 @@
-import Lanius.Faithful.Cost
-import Lanius.Faithful.Rep
-import Lanius.Faithful.Sim.Term
-import Lanius.Faithful.BudgetAttr
+module
+
+public import Lanius.Faithful.Cost
+public import Lanius.Faithful.Rep
+public import Lanius.Faithful.Sim.Term
+public import Lanius.Faithful.BudgetAttr
+
+@[expose] public section
 
 /-! # Budget certificates: the rewrites (F14)
 

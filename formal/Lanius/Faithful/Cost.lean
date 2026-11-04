@@ -1,4 +1,8 @@
-import Lanius.Faithful.Pure
+module
+
+public import Lanius.Faithful.Pure
+
+@[expose] public section
 
 /-! # The pure semantics with a heap cost (review #5 step 3, piece (b))
 

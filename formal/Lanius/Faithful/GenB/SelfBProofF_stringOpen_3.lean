@@ -1,36 +1,86 @@
-import Lanius.Faithful.BudgetTactic
-import Lanius.Faithful.Gen.SelfRep
-import Lanius.Faithful.Gen.SelfSrcF_stringOpen
-import Lanius.Faithful.Gen.SelfStmtF_stringOpen
-import Lanius.Faithful.GenB.SelfBStmtF_Inline_pLeTail
-import Lanius.Faithful.GenB.SelfBStmtF_Inline_pPathMore
-import Lanius.Faithful.GenB.SelfBStmtF_argView
-import Lanius.Faithful.GenB.SelfBStmtF_collect
-import Lanius.Faithful.GenB.SelfBStmtF_consBinder
-import Lanius.Faithful.GenB.SelfBStmtF_consTreeTail
-import Lanius.Faithful.GenB.SelfBStmtF_fnInstRet
-import Lanius.Faithful.GenB.SelfBStmtF_hasConst
-import Lanius.Faithful.GenB.SelfBStmtF_hasKids
-import Lanius.Faithful.GenB.SelfBStmtF_isEmptyUsize
-import Lanius.Faithful.GenB.SelfBStmtF_itemOf
-import Lanius.Faithful.GenB.SelfBStmtF_matchTysOrNone
-import Lanius.Faithful.GenB.SelfBStmtF_noBlock
-import Lanius.Faithful.GenB.SelfBStmtF_noToken
-import Lanius.Faithful.GenB.SelfBStmtF_noTrees
-import Lanius.Faithful.GenB.SelfBStmtF_paramGoals
-import Lanius.Faithful.GenB.SelfBStmtF_projection
-import Lanius.Faithful.GenB.SelfBStmtF_purePart
-import Lanius.Faithful.GenB.SelfBStmtF_retBinds
-import Lanius.Faithful.GenB.SelfBStmtF_rootInsts
-import Lanius.Faithful.GenB.SelfBStmtF_stringOpen
-import Lanius.Faithful.GenB.SelfBStmtF_typeDeclAt
-import Lanius.Faithful.GenB.SelfBStmtN0
-import Lanius.Faithful.GenB.SelfBStmtN1
-import Lanius.Faithful.GenB.SelfBStmtN2
-import Lanius.Faithful.GenB.SelfBStmtN3
-import Lanius.Faithful.GenB.SelfBStmtN4
-import Lanius.Faithful.GenB.SelfBStmtN5
-import Lanius.Faithful.GenB.SelfBStmtN7
+module
+
+public import Lanius.Faithful.BudgetTactic
+public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Faithful.Gen.SelfSrcF_stringOpen
+public import Lanius.Faithful.Gen.SelfStmtF_stringOpen
+public import Lanius.Faithful.GenB.SelfBStmtF_Inline_pLeTail
+public import Lanius.Faithful.GenB.SelfBStmtF_Inline_pPathMore
+public import Lanius.Faithful.GenB.SelfBStmtF_argView
+public import Lanius.Faithful.GenB.SelfBStmtF_collect
+public import Lanius.Faithful.GenB.SelfBStmtF_consBinder
+public import Lanius.Faithful.GenB.SelfBStmtF_consTreeTail
+public import Lanius.Faithful.GenB.SelfBStmtF_fnInstRet
+public import Lanius.Faithful.GenB.SelfBStmtF_hasConst
+public import Lanius.Faithful.GenB.SelfBStmtF_hasKids
+public import Lanius.Faithful.GenB.SelfBStmtF_isEmptyUsize
+public import Lanius.Faithful.GenB.SelfBStmtF_itemOf
+public import Lanius.Faithful.GenB.SelfBStmtF_matchTysOrNone
+public import Lanius.Faithful.GenB.SelfBStmtF_noBlock
+public import Lanius.Faithful.GenB.SelfBStmtF_noToken
+public import Lanius.Faithful.GenB.SelfBStmtF_noTrees
+public import Lanius.Faithful.GenB.SelfBStmtF_paramGoals
+public import Lanius.Faithful.GenB.SelfBStmtF_projection
+public import Lanius.Faithful.GenB.SelfBStmtF_purePart
+public import Lanius.Faithful.GenB.SelfBStmtF_retBinds
+public import Lanius.Faithful.GenB.SelfBStmtF_rootInsts
+public import Lanius.Faithful.GenB.SelfBStmtF_stringOpen
+public import Lanius.Faithful.GenB.SelfBStmtF_typeDeclAt
+public import Lanius.Faithful.GenB.SelfBStmtN0
+public import Lanius.Faithful.GenB.SelfBStmtN1
+public import Lanius.Faithful.GenB.SelfBStmtN2
+public import Lanius.Faithful.GenB.SelfBStmtN3
+public import Lanius.Faithful.GenB.SelfBStmtN4
+public import Lanius.Faithful.GenB.SelfBStmtN5
+public import Lanius.Faithful.GenB.SelfBStmtN7
+import all Lanius.Faithful.Gen.SelfSrcF_stringOpen
+import all Lanius.Faithful.Gen.SelfStmtF_stringOpen
+import all Lanius.Mini.Frontend.P.Inline_pArrayAfterCommaTrailing
+import all Lanius.Mini.Frontend.P.Inline_pArrayMore
+import all Lanius.Mini.Frontend.P.Inline_pBitAnd
+import all Lanius.Mini.Frontend.P.Inline_pExpr
+import all Lanius.Mini.Frontend.P.Inline_pIdentPlain
+import all Lanius.Mini.Frontend.P.Inline_pLeTail
+import all Lanius.Mini.Frontend.P.Inline_pModTail
+import all Lanius.Mini.Frontend.P.Inline_pPathMore
+import all Lanius.Mini.Frontend.P.Inline_pStructFieldsMore
+import all Lanius.Mini.Frontend.P.argView
+import all Lanius.Mini.Frontend.P.bindsOfTys
+import all Lanius.Mini.Frontend.P.collect
+import all Lanius.Mini.Frontend.P.consBinder
+import all Lanius.Mini.Frontend.P.consTreeTail
+import all Lanius.Mini.Frontend.P.consTys
+import all Lanius.Mini.Frontend.P.divergeArm
+import all Lanius.Mini.Frontend.P.floatTyped
+import all Lanius.Mini.Frontend.P.fnInstRet
+import all Lanius.Mini.Frontend.P.hasConst
+import all Lanius.Mini.Frontend.P.hasKids
+import all Lanius.Mini.Frontend.P.isEmptyUsize
+import all Lanius.Mini.Frontend.P.isPathCall
+import all Lanius.Mini.Frontend.P.itemOf
+import all Lanius.Mini.Frontend.P.joinInsts
+import all Lanius.Mini.Frontend.P.litWants
+import all Lanius.Mini.Frontend.P.noBlock
+import all Lanius.Mini.Frontend.P.noToken
+import all Lanius.Mini.Frontend.P.noTrees
+import all Lanius.Mini.Frontend.P.paramGoals
+import all Lanius.Mini.Frontend.P.pathRef
+import all Lanius.Mini.Frontend.P.pickTy
+import all Lanius.Mini.Frontend.P.projection
+import all Lanius.Mini.Frontend.P.purePart
+import all Lanius.Mini.Frontend.P.repeatEff
+import all Lanius.Mini.Frontend.P.retBinds
+import all Lanius.Mini.Frontend.P.rootInsts
+import all Lanius.Mini.Frontend.P.sliceHead
+import all Lanius.Mini.Frontend.P.stringOpen
+import all Lanius.Mini.Frontend.P.textSelf
+import all Lanius.Mini.Frontend.P.textSliceLen
+import all Lanius.Mini.Frontend.P.typeDeclAt
+import all Lanius.Mini.Frontend.P.typePathSpellings
+import all Lanius.Mini.Frontend.P.variantIn
+import all Lanius.Mini.Frontend.P.wideOf
+
+@[expose] public section
 
 /-! Generated by formal/tools/budget_certs.py: the budget certificates, for any
 programs that hold the functions (group F_stringOpen, part 3). Do not edit. -/

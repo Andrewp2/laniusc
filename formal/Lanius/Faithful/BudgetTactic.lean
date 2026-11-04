@@ -1,5 +1,10 @@
-import Lanius.Faithful.BudgetCore
-import Lanius.Faithful.Auto
+module
+
+public import Lanius.Faithful.BudgetCore
+public import Lanius.Faithful.Auto
+public meta import Lean
+
+@[expose] public section
 
 /-! # `budget`: a budget certificate's proof
 
@@ -84,6 +89,8 @@ theorem ite_head_congr.{u} {α : Sort u} {c c' : Prop} [inst : Decidable c] [ins
     (h : c = c') : @ite α c inst a b = @ite α c' inst' a b := by
   subst h
   congr
+
+public meta section
 
 open Lean Meta Simp in
 /-- Simplify only the head of a run: the `j`-th argument of a node with a
@@ -170,6 +177,8 @@ def headSimp (stx : Syntax) (h? : Option Syntax) : TacticM Unit := do
       else
         replaceMainGoal [← applySimpResultToTarget g type res]
 
+end
+
 /-- Run the cost semantics of a body as far as its calls, `qthen` folded. -/
 syntax "qsimp" (" at " ident)? : tactic
 
@@ -221,6 +230,8 @@ attribute [budget_cond] and_true true_and and_false false_and or_true true_or or
   Bool.false_or Bool.not_true Bool.not_false decide_eq_true_eq decide_eq_false_iff_not decide_true decide_false
   Bool.and_eq_true Bool.or_eq_true Bool.not_eq_true' ite_true ite_false Bool.false_eq_true Nat.add_zero Nat.zero_add
   Bool.true_eq_false eq_self_iff_true ite_self beq_iff_eq beq_eq_false_iff_ne bne_iff_ne
+
+public meta section
 
 open Lean Elab Tactic Meta
 
@@ -858,6 +869,8 @@ partial def budgetLoop (cost? : Option Ident) (ctr : IO.Ref Nat) (fuel : Nat) : 
       setGoals [g]
       instantiateCase (budgetLoop cost? ctr (fuel - 1))
     setGoals []
+
+end
 
 syntax "budget" (ppSpace colGt ident)? : tactic
 

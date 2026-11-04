@@ -1,55 +1,59 @@
-import Lanius.Faithful.BudgetCore
-import Lanius.Faithful.GenB.SelfBModelC_SrcType_same
-import Lanius.Faithful.GenB.SelfBModelC_applyGuard
-import Lanius.Faithful.GenB.SelfBModelC_consArgs
-import Lanius.Faithful.GenB.SelfBModelC_elementBase
-import Lanius.Faithful.GenB.SelfBModelC_evalSame
-import Lanius.Faithful.GenB.SelfBModelC_guardAnd
-import Lanius.Faithful.GenB.SelfBModelC_iteThen
-import Lanius.Faithful.GenB.SelfBModelC_lowerAddress
-import Lanius.Faithful.GenB.SelfBModelC_lowerLocal
-import Lanius.Faithful.GenB.SelfBModelC_matchDst
-import Lanius.Faithful.GenB.SelfBModelC_sintToUint
-import Lanius.Faithful.GenB.SelfBModelC_wordElement
-import Lanius.Faithful.GenB.SelfBModelN0
-import Lanius.Faithful.GenB.SelfBModelN2
-import Lanius.Faithful.GenB.SelfBModelN3
-import Lanius.Faithful.GenB.SelfBModelN4
-import Lanius.Faithful.GenB.SelfBModelN5
-import Lanius.Faithful.GenB.SelfBModelN6
-import Lanius.Faithful.GenB.SelfBModelN7
-import Lanius.Mini.Compiler.P.Inline_lowerSetScalar
-import Lanius.Mini.Compiler.P.SrcExpr_guard
-import Lanius.Mini.Compiler.P.SrcType_same
-import Lanius.Mini.Compiler.P.UintTy_half
-import Lanius.Mini.Compiler.P.UintTy_isWide
-import Lanius.Mini.Compiler.P.arithUint
-import Lanius.Mini.Compiler.P.armScope
-import Lanius.Mini.Compiler.P.assignFrom
-import Lanius.Mini.Compiler.P.compileArgs
-import Lanius.Mini.Compiler.P.conjunction
-import Lanius.Mini.Compiler.P.elementAddress
-import Lanius.Mini.Compiler.P.elementBase
-import Lanius.Mini.Compiler.P.evalDivide
-import Lanius.Mini.Compiler.P.evalSame
-import Lanius.Mini.Compiler.P.guardAnd
-import Lanius.Mini.Compiler.P.indexOf
-import Lanius.Mini.Compiler.P.lowerApply
-import Lanius.Mini.Compiler.P.lowerCallSig
-import Lanius.Mini.Compiler.P.lowerLoadType
-import Lanius.Mini.Compiler.P.lowerLocal
-import Lanius.Mini.Compiler.P.lowerTagged
-import Lanius.Mini.Compiler.P.matchDst
-import Lanius.Mini.Compiler.P.matchVariants
-import Lanius.Mini.Compiler.P.repeatType
-import Lanius.Mini.Compiler.P.shortCircuit
-import Lanius.Mini.Compiler.P.storeType
-import Lanius.Mini.Compiler.P.strStores
-import Lanius.Mini.Compiler.P.withBudget
-import Lanius.Mini.Compiler.P.wordElement
-import Lanius.Mini.Compiler.P.wordStride
-import Lanius.Mini.Compiler.Types
-import Lanius.Mini.Frontend.Types
+module
+
+public import Lanius.Faithful.BudgetCore
+public import Lanius.Faithful.GenB.SelfBModelC_SrcType_same
+public import Lanius.Faithful.GenB.SelfBModelC_applyGuard
+public import Lanius.Faithful.GenB.SelfBModelC_consArgs
+public import Lanius.Faithful.GenB.SelfBModelC_elementBase
+public import Lanius.Faithful.GenB.SelfBModelC_evalSame
+public import Lanius.Faithful.GenB.SelfBModelC_guardAnd
+public import Lanius.Faithful.GenB.SelfBModelC_iteThen
+public import Lanius.Faithful.GenB.SelfBModelC_lowerAddress
+public import Lanius.Faithful.GenB.SelfBModelC_lowerLocal
+public import Lanius.Faithful.GenB.SelfBModelC_matchDst
+public import Lanius.Faithful.GenB.SelfBModelC_sintToUint
+public import Lanius.Faithful.GenB.SelfBModelC_wordElement
+public import Lanius.Faithful.GenB.SelfBModelN0
+public import Lanius.Faithful.GenB.SelfBModelN2
+public import Lanius.Faithful.GenB.SelfBModelN3
+public import Lanius.Faithful.GenB.SelfBModelN4
+public import Lanius.Faithful.GenB.SelfBModelN5
+public import Lanius.Faithful.GenB.SelfBModelN6
+public import Lanius.Faithful.GenB.SelfBModelN7
+public import Lanius.Mini.Compiler.P.Inline_lowerSetScalar
+public import Lanius.Mini.Compiler.P.SrcExpr_guard
+public import Lanius.Mini.Compiler.P.SrcType_same
+public import Lanius.Mini.Compiler.P.UintTy_half
+public import Lanius.Mini.Compiler.P.UintTy_isWide
+public import Lanius.Mini.Compiler.P.arithUint
+public import Lanius.Mini.Compiler.P.armScope
+public import Lanius.Mini.Compiler.P.assignFrom
+public import Lanius.Mini.Compiler.P.compileArgs
+public import Lanius.Mini.Compiler.P.conjunction
+public import Lanius.Mini.Compiler.P.elementAddress
+public import Lanius.Mini.Compiler.P.elementBase
+public import Lanius.Mini.Compiler.P.evalDivide
+public import Lanius.Mini.Compiler.P.evalSame
+public import Lanius.Mini.Compiler.P.guardAnd
+public import Lanius.Mini.Compiler.P.indexOf
+public import Lanius.Mini.Compiler.P.lowerApply
+public import Lanius.Mini.Compiler.P.lowerCallSig
+public import Lanius.Mini.Compiler.P.lowerLoadType
+public import Lanius.Mini.Compiler.P.lowerLocal
+public import Lanius.Mini.Compiler.P.lowerTagged
+public import Lanius.Mini.Compiler.P.matchDst
+public import Lanius.Mini.Compiler.P.matchVariants
+public import Lanius.Mini.Compiler.P.repeatType
+public import Lanius.Mini.Compiler.P.shortCircuit
+public import Lanius.Mini.Compiler.P.storeType
+public import Lanius.Mini.Compiler.P.strStores
+public import Lanius.Mini.Compiler.P.withBudget
+public import Lanius.Mini.Compiler.P.wordElement
+public import Lanius.Mini.Compiler.P.wordStride
+public import Lanius.Mini.Compiler.Types
+public import Lanius.Mini.Frontend.Types
+
+@[expose] public section
 
 /-! Generated by formal/tools/budget_certs.py: the cost models and preconditions of the self program's functions, group C_Inline_arithOf. Do not edit. -/
 

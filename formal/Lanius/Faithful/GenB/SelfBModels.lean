@@ -1,173 +1,177 @@
-import Lanius.Faithful.GenB.SelfBModelC_DivOp_size
-import Lanius.Faithful.GenB.SelfBModelC_Expr_agrees
-import Lanius.Faithful.GenB.SelfBModelC_FArith_opcode
-import Lanius.Faithful.GenB.SelfBModelC_FloatTy_rex
-import Lanius.Faithful.GenB.SelfBModelC_Inline_arithOf
-import Lanius.Faithful.GenB.SelfBModelC_Inline_blockLeft
-import Lanius.Faithful.GenB.SelfBModelC_Inline_factOr
-import Lanius.Faithful.GenB.SelfBModelC_Lists_empty
-import Lanius.Faithful.GenB.SelfBModelC_SrcType_same
-import Lanius.Faithful.GenB.SelfBModelC_Stmt_kills
-import Lanius.Faithful.GenB.SelfBModelC_Word_narrows
-import Lanius.Faithful.GenB.SelfBModelC_applyGuard
-import Lanius.Faithful.GenB.SelfBModelC_arities
-import Lanius.Faithful.GenB.SelfBModelC_armBodyScope
-import Lanius.Faithful.GenB.SelfBModelC_armPayload
-import Lanius.Faithful.GenB.SelfBModelC_arrayCallSig
-import Lanius.Faithful.GenB.SelfBModelC_assignAgrees
-import Lanius.Faithful.GenB.SelfBModelC_bindingBytes
-import Lanius.Faithful.GenB.SelfBModelC_callAgrees
-import Lanius.Faithful.GenB.SelfBModelC_codeSize
-import Lanius.Faithful.GenB.SelfBModelC_compileArgs
-import Lanius.Faithful.GenB.SelfBModelC_compileOr
-import Lanius.Faithful.GenB.SelfBModelC_compileSource
-import Lanius.Faithful.GenB.SelfBModelC_consArgs
-import Lanius.Faithful.GenB.SelfBModelC_declareProgram
-import Lanius.Faithful.GenB.SelfBModelC_elementBase
-import Lanius.Faithful.GenB.SelfBModelC_evalSame
-import Lanius.Faithful.GenB.SelfBModelC_funcNeeds
-import Lanius.Faithful.GenB.SelfBModelC_guardAnd
-import Lanius.Faithful.GenB.SelfBModelC_iteThen
-import Lanius.Faithful.GenB.SelfBModelC_larger
-import Lanius.Faithful.GenB.SelfBModelC_linkedSize
-import Lanius.Faithful.GenB.SelfBModelC_loadAtBytes
-import Lanius.Faithful.GenB.SelfBModelC_lowerAddress
-import Lanius.Faithful.GenB.SelfBModelC_lowerLocal
-import Lanius.Faithful.GenB.SelfBModelC_lowerReturn
-import Lanius.Faithful.GenB.SelfBModelC_lowerSetValues
-import Lanius.Faithful.GenB.SelfBModelC_lowerSlice
-import Lanius.Faithful.GenB.SelfBModelC_lowerTagged
-import Lanius.Faithful.GenB.SelfBModelC_matchDst
-import Lanius.Faithful.GenB.SelfBModelC_needCapped
-import Lanius.Faithful.GenB.SelfBModelC_needsAfter
-import Lanius.Faithful.GenB.SelfBModelC_optimizeLeft
-import Lanius.Faithful.GenB.SelfBModelC_optimizeNeg
-import Lanius.Faithful.GenB.SelfBModelC_packRound
-import Lanius.Faithful.GenB.SelfBModelC_roomFits
-import Lanius.Faithful.GenB.SelfBModelC_sintToUint
-import Lanius.Faithful.GenB.SelfBModelC_storeArray
-import Lanius.Faithful.GenB.SelfBModelC_storeEvalWord
-import Lanius.Faithful.GenB.SelfBModelC_strStores
-import Lanius.Faithful.GenB.SelfBModelC_wordElement
-import Lanius.Faithful.GenB.SelfBModelC_wordWidth
-import Lanius.Faithful.GenB.SelfBModelF_Inline_attachNode
-import Lanius.Faithful.GenB.SelfBModelF_Inline_charEnd
-import Lanius.Faithful.GenB.SelfBModelF_Inline_charOpen
-import Lanius.Faithful.GenB.SelfBModelF_Inline_findMethodAt
-import Lanius.Faithful.GenB.SelfBModelF_Inline_lxAfterFractionAt
-import Lanius.Faithful.GenB.SelfBModelF_Inline_lxFilterAt
-import Lanius.Faithful.GenB.SelfBModelF_Inline_positionAt
-import Lanius.Faithful.GenB.SelfBModelF_Inline_variantsNamedAt
-import Lanius.Faithful.GenB.SelfBModelF_allWeighed
-import Lanius.Faithful.GenB.SelfBModelF_allocClosed
-import Lanius.Faithful.GenB.SelfBModelF_anyNested
-import Lanius.Faithful.GenB.SelfBModelF_argView
-import Lanius.Faithful.GenB.SelfBModelF_armsNaming
-import Lanius.Faithful.GenB.SelfBModelF_armsOf
-import Lanius.Faithful.GenB.SelfBModelF_assertClosed
-import Lanius.Faithful.GenB.SelfBModelF_bindsOfTys
-import Lanius.Faithful.GenB.SelfBModelF_callParts
-import Lanius.Faithful.GenB.SelfBModelF_closeFuncs
-import Lanius.Faithful.GenB.SelfBModelF_consBinder
-import Lanius.Faithful.GenB.SelfBModelF_consBound
-import Lanius.Faithful.GenB.SelfBModelF_consTreeTail
-import Lanius.Faithful.GenB.SelfBModelF_consTys
-import Lanius.Faithful.GenB.SelfBModelF_depthLimit
-import Lanius.Faithful.GenB.SelfBModelF_distinct
-import Lanius.Faithful.GenB.SelfBModelF_divergeArm
-import Lanius.Faithful.GenB.SelfBModelF_eDivideClosed
-import Lanius.Faithful.GenB.SelfBModelF_eIndexClosed
-import Lanius.Faithful.GenB.SelfBModelF_eStructClosed
-import Lanius.Faithful.GenB.SelfBModelF_findConst
-import Lanius.Faithful.GenB.SelfBModelF_firstSrc
-import Lanius.Faithful.GenB.SelfBModelF_flNatHalf
-import Lanius.Faithful.GenB.SelfBModelF_flattenTys
-import Lanius.Faithful.GenB.SelfBModelF_floatTyped
-import Lanius.Faithful.GenB.SelfBModelF_fnInstRet
-import Lanius.Faithful.GenB.SelfBModelF_forRange
-import Lanius.Faithful.GenB.SelfBModelF_freshId
-import Lanius.Faithful.GenB.SelfBModelF_frontEndRead
-import Lanius.Faithful.GenB.SelfBModelF_frontEndWords
-import Lanius.Faithful.GenB.SelfBModelF_funcsBytes
-import Lanius.Faithful.GenB.SelfBModelF_genericClose
-import Lanius.Faithful.GenB.SelfBModelF_genericOpen
-import Lanius.Faithful.GenB.SelfBModelF_grammarPart13
-import Lanius.Faithful.GenB.SelfBModelF_grammarPart8
-import Lanius.Faithful.GenB.SelfBModelF_hasConst
-import Lanius.Faithful.GenB.SelfBModelF_hasKids
-import Lanius.Faithful.GenB.SelfBModelF_i32ArrayLength
-import Lanius.Faithful.GenB.SelfBModelF_ifEff
-import Lanius.Faithful.GenB.SelfBModelF_isEmptyUsize
-import Lanius.Faithful.GenB.SelfBModelF_isPathCall
-import Lanius.Faithful.GenB.SelfBModelF_isTryEnum
-import Lanius.Faithful.GenB.SelfBModelF_isTypedSliceSegments
-import Lanius.Faithful.GenB.SelfBModelF_isUnderscore
-import Lanius.Faithful.GenB.SelfBModelF_joinInsts
-import Lanius.Faithful.GenB.SelfBModelF_letClosed
-import Lanius.Faithful.GenB.SelfBModelF_letStructClosed
-import Lanius.Faithful.GenB.SelfBModelF_limExprs
-import Lanius.Faithful.GenB.SelfBModelF_limLeaf
-import Lanius.Faithful.GenB.SelfBModelF_litBound
-import Lanius.Faithful.GenB.SelfBModelF_litEffMatch
-import Lanius.Faithful.GenB.SelfBModelF_litWants
-import Lanius.Faithful.GenB.SelfBModelF_litWildValue
-import Lanius.Faithful.GenB.SelfBModelF_lowerTy
-import Lanius.Faithful.GenB.SelfBModelF_lxDotAt
-import Lanius.Faithful.GenB.SelfBModelF_lxFixed
-import Lanius.Faithful.GenB.SelfBModelF_lxLeadingDot
-import Lanius.Faithful.GenB.SelfBModelF_lxSpaceEnd
-import Lanius.Faithful.GenB.SelfBModelF_lxSymbolStart
-import Lanius.Faithful.GenB.SelfBModelF_matchLetHead
-import Lanius.Faithful.GenB.SelfBModelF_matchTysOrNone
-import Lanius.Faithful.GenB.SelfBModelF_namesSome
-import Lanius.Faithful.GenB.SelfBModelF_negWideI32
-import Lanius.Faithful.GenB.SelfBModelF_nestedUsed
-import Lanius.Faithful.GenB.SelfBModelF_noBlock
-import Lanius.Faithful.GenB.SelfBModelF_noToken
-import Lanius.Faithful.GenB.SelfBModelF_noTrees
-import Lanius.Faithful.GenB.SelfBModelF_nullConst
-import Lanius.Faithful.GenB.SelfBModelF_oneTreeNames
-import Lanius.Faithful.GenB.SelfBModelF_paramGoals
-import Lanius.Faithful.GenB.SelfBModelF_pathRef
-import Lanius.Faithful.GenB.SelfBModelF_pickTy
-import Lanius.Faithful.GenB.SelfBModelF_plainNaming
-import Lanius.Faithful.GenB.SelfBModelF_projectionRet
-import Lanius.Faithful.GenB.SelfBModelF_purePart
-import Lanius.Faithful.GenB.SelfBModelF_readCountedBytes
-import Lanius.Faithful.GenB.SelfBModelF_repeatEff
-import Lanius.Faithful.GenB.SelfBModelF_retBinds
-import Lanius.Faithful.GenB.SelfBModelF_scalarOf
-import Lanius.Faithful.GenB.SelfBModelF_setEvalClosed
-import Lanius.Faithful.GenB.SelfBModelF_shadowUse
-import Lanius.Faithful.GenB.SelfBModelF_shrFirst
-import Lanius.Faithful.GenB.SelfBModelF_sintAt
-import Lanius.Faithful.GenB.SelfBModelF_sliceHead
-import Lanius.Faithful.GenB.SelfBModelF_strBytes
-import Lanius.Faithful.GenB.SelfBModelF_stringCall
-import Lanius.Faithful.GenB.SelfBModelF_stringCons
-import Lanius.Faithful.GenB.SelfBModelF_stringReturn
-import Lanius.Faithful.GenB.SelfBModelF_textSelf
-import Lanius.Faithful.GenB.SelfBModelF_textSliceLen
-import Lanius.Faithful.GenB.SelfBModelF_treeTokens
-import Lanius.Faithful.GenB.SelfBModelF_typeDeclAt
-import Lanius.Faithful.GenB.SelfBModelF_typePathSpellings
-import Lanius.Faithful.GenB.SelfBModelF_typedLiteral
-import Lanius.Faithful.GenB.SelfBModelF_variantArm
-import Lanius.Faithful.GenB.SelfBModelF_variantIn
-import Lanius.Faithful.GenB.SelfBModelF_variantLetHead
-import Lanius.Faithful.GenB.SelfBModelF_variantOfDecl
-import Lanius.Faithful.GenB.SelfBModelF_weightAdd
-import Lanius.Faithful.GenB.SelfBModelF_wideLeftStmt
-import Lanius.Faithful.GenB.SelfBModelF_wideMarker
-import Lanius.Faithful.GenB.SelfBModelF_wideOf
-import Lanius.Faithful.GenB.SelfBModelN0
-import Lanius.Faithful.GenB.SelfBModelN1
-import Lanius.Faithful.GenB.SelfBModelN2
-import Lanius.Faithful.GenB.SelfBModelN3
-import Lanius.Faithful.GenB.SelfBModelN4
-import Lanius.Faithful.GenB.SelfBModelN5
-import Lanius.Faithful.GenB.SelfBModelN6
-import Lanius.Faithful.GenB.SelfBModelN7
+module
+
+public import Lanius.Faithful.GenB.SelfBModelC_DivOp_size
+public import Lanius.Faithful.GenB.SelfBModelC_Expr_agrees
+public import Lanius.Faithful.GenB.SelfBModelC_FArith_opcode
+public import Lanius.Faithful.GenB.SelfBModelC_FloatTy_rex
+public import Lanius.Faithful.GenB.SelfBModelC_Inline_arithOf
+public import Lanius.Faithful.GenB.SelfBModelC_Inline_blockLeft
+public import Lanius.Faithful.GenB.SelfBModelC_Inline_factOr
+public import Lanius.Faithful.GenB.SelfBModelC_Lists_empty
+public import Lanius.Faithful.GenB.SelfBModelC_SrcType_same
+public import Lanius.Faithful.GenB.SelfBModelC_Stmt_kills
+public import Lanius.Faithful.GenB.SelfBModelC_Word_narrows
+public import Lanius.Faithful.GenB.SelfBModelC_applyGuard
+public import Lanius.Faithful.GenB.SelfBModelC_arities
+public import Lanius.Faithful.GenB.SelfBModelC_armBodyScope
+public import Lanius.Faithful.GenB.SelfBModelC_armPayload
+public import Lanius.Faithful.GenB.SelfBModelC_arrayCallSig
+public import Lanius.Faithful.GenB.SelfBModelC_assignAgrees
+public import Lanius.Faithful.GenB.SelfBModelC_bindingBytes
+public import Lanius.Faithful.GenB.SelfBModelC_callAgrees
+public import Lanius.Faithful.GenB.SelfBModelC_codeSize
+public import Lanius.Faithful.GenB.SelfBModelC_compileArgs
+public import Lanius.Faithful.GenB.SelfBModelC_compileOr
+public import Lanius.Faithful.GenB.SelfBModelC_compileSource
+public import Lanius.Faithful.GenB.SelfBModelC_consArgs
+public import Lanius.Faithful.GenB.SelfBModelC_declareProgram
+public import Lanius.Faithful.GenB.SelfBModelC_elementBase
+public import Lanius.Faithful.GenB.SelfBModelC_evalSame
+public import Lanius.Faithful.GenB.SelfBModelC_funcNeeds
+public import Lanius.Faithful.GenB.SelfBModelC_guardAnd
+public import Lanius.Faithful.GenB.SelfBModelC_iteThen
+public import Lanius.Faithful.GenB.SelfBModelC_larger
+public import Lanius.Faithful.GenB.SelfBModelC_linkedSize
+public import Lanius.Faithful.GenB.SelfBModelC_loadAtBytes
+public import Lanius.Faithful.GenB.SelfBModelC_lowerAddress
+public import Lanius.Faithful.GenB.SelfBModelC_lowerLocal
+public import Lanius.Faithful.GenB.SelfBModelC_lowerReturn
+public import Lanius.Faithful.GenB.SelfBModelC_lowerSetValues
+public import Lanius.Faithful.GenB.SelfBModelC_lowerSlice
+public import Lanius.Faithful.GenB.SelfBModelC_lowerTagged
+public import Lanius.Faithful.GenB.SelfBModelC_matchDst
+public import Lanius.Faithful.GenB.SelfBModelC_needCapped
+public import Lanius.Faithful.GenB.SelfBModelC_needsAfter
+public import Lanius.Faithful.GenB.SelfBModelC_optimizeLeft
+public import Lanius.Faithful.GenB.SelfBModelC_optimizeNeg
+public import Lanius.Faithful.GenB.SelfBModelC_packRound
+public import Lanius.Faithful.GenB.SelfBModelC_roomFits
+public import Lanius.Faithful.GenB.SelfBModelC_sintToUint
+public import Lanius.Faithful.GenB.SelfBModelC_storeArray
+public import Lanius.Faithful.GenB.SelfBModelC_storeEvalWord
+public import Lanius.Faithful.GenB.SelfBModelC_strStores
+public import Lanius.Faithful.GenB.SelfBModelC_wordElement
+public import Lanius.Faithful.GenB.SelfBModelC_wordWidth
+public import Lanius.Faithful.GenB.SelfBModelF_Inline_attachNode
+public import Lanius.Faithful.GenB.SelfBModelF_Inline_charEnd
+public import Lanius.Faithful.GenB.SelfBModelF_Inline_charOpen
+public import Lanius.Faithful.GenB.SelfBModelF_Inline_findMethodAt
+public import Lanius.Faithful.GenB.SelfBModelF_Inline_lxAfterFractionAt
+public import Lanius.Faithful.GenB.SelfBModelF_Inline_lxFilterAt
+public import Lanius.Faithful.GenB.SelfBModelF_Inline_positionAt
+public import Lanius.Faithful.GenB.SelfBModelF_Inline_variantsNamedAt
+public import Lanius.Faithful.GenB.SelfBModelF_allWeighed
+public import Lanius.Faithful.GenB.SelfBModelF_allocClosed
+public import Lanius.Faithful.GenB.SelfBModelF_anyNested
+public import Lanius.Faithful.GenB.SelfBModelF_argView
+public import Lanius.Faithful.GenB.SelfBModelF_armsNaming
+public import Lanius.Faithful.GenB.SelfBModelF_armsOf
+public import Lanius.Faithful.GenB.SelfBModelF_assertClosed
+public import Lanius.Faithful.GenB.SelfBModelF_bindsOfTys
+public import Lanius.Faithful.GenB.SelfBModelF_callParts
+public import Lanius.Faithful.GenB.SelfBModelF_closeFuncs
+public import Lanius.Faithful.GenB.SelfBModelF_consBinder
+public import Lanius.Faithful.GenB.SelfBModelF_consBound
+public import Lanius.Faithful.GenB.SelfBModelF_consTreeTail
+public import Lanius.Faithful.GenB.SelfBModelF_consTys
+public import Lanius.Faithful.GenB.SelfBModelF_depthLimit
+public import Lanius.Faithful.GenB.SelfBModelF_distinct
+public import Lanius.Faithful.GenB.SelfBModelF_divergeArm
+public import Lanius.Faithful.GenB.SelfBModelF_eDivideClosed
+public import Lanius.Faithful.GenB.SelfBModelF_eIndexClosed
+public import Lanius.Faithful.GenB.SelfBModelF_eStructClosed
+public import Lanius.Faithful.GenB.SelfBModelF_findConst
+public import Lanius.Faithful.GenB.SelfBModelF_firstSrc
+public import Lanius.Faithful.GenB.SelfBModelF_flNatHalf
+public import Lanius.Faithful.GenB.SelfBModelF_flattenTys
+public import Lanius.Faithful.GenB.SelfBModelF_floatTyped
+public import Lanius.Faithful.GenB.SelfBModelF_fnInstRet
+public import Lanius.Faithful.GenB.SelfBModelF_forRange
+public import Lanius.Faithful.GenB.SelfBModelF_freshId
+public import Lanius.Faithful.GenB.SelfBModelF_frontEndRead
+public import Lanius.Faithful.GenB.SelfBModelF_frontEndWords
+public import Lanius.Faithful.GenB.SelfBModelF_funcsBytes
+public import Lanius.Faithful.GenB.SelfBModelF_genericClose
+public import Lanius.Faithful.GenB.SelfBModelF_genericOpen
+public import Lanius.Faithful.GenB.SelfBModelF_grammarPart13
+public import Lanius.Faithful.GenB.SelfBModelF_grammarPart8
+public import Lanius.Faithful.GenB.SelfBModelF_hasConst
+public import Lanius.Faithful.GenB.SelfBModelF_hasKids
+public import Lanius.Faithful.GenB.SelfBModelF_i32ArrayLength
+public import Lanius.Faithful.GenB.SelfBModelF_ifEff
+public import Lanius.Faithful.GenB.SelfBModelF_isEmptyUsize
+public import Lanius.Faithful.GenB.SelfBModelF_isPathCall
+public import Lanius.Faithful.GenB.SelfBModelF_isTryEnum
+public import Lanius.Faithful.GenB.SelfBModelF_isTypedSliceSegments
+public import Lanius.Faithful.GenB.SelfBModelF_isUnderscore
+public import Lanius.Faithful.GenB.SelfBModelF_joinInsts
+public import Lanius.Faithful.GenB.SelfBModelF_letClosed
+public import Lanius.Faithful.GenB.SelfBModelF_letStructClosed
+public import Lanius.Faithful.GenB.SelfBModelF_limExprs
+public import Lanius.Faithful.GenB.SelfBModelF_limLeaf
+public import Lanius.Faithful.GenB.SelfBModelF_litBound
+public import Lanius.Faithful.GenB.SelfBModelF_litEffMatch
+public import Lanius.Faithful.GenB.SelfBModelF_litWants
+public import Lanius.Faithful.GenB.SelfBModelF_litWildValue
+public import Lanius.Faithful.GenB.SelfBModelF_lowerTy
+public import Lanius.Faithful.GenB.SelfBModelF_lxDotAt
+public import Lanius.Faithful.GenB.SelfBModelF_lxFixed
+public import Lanius.Faithful.GenB.SelfBModelF_lxLeadingDot
+public import Lanius.Faithful.GenB.SelfBModelF_lxSpaceEnd
+public import Lanius.Faithful.GenB.SelfBModelF_lxSymbolStart
+public import Lanius.Faithful.GenB.SelfBModelF_matchLetHead
+public import Lanius.Faithful.GenB.SelfBModelF_matchTysOrNone
+public import Lanius.Faithful.GenB.SelfBModelF_namesSome
+public import Lanius.Faithful.GenB.SelfBModelF_negWideI32
+public import Lanius.Faithful.GenB.SelfBModelF_nestedUsed
+public import Lanius.Faithful.GenB.SelfBModelF_noBlock
+public import Lanius.Faithful.GenB.SelfBModelF_noToken
+public import Lanius.Faithful.GenB.SelfBModelF_noTrees
+public import Lanius.Faithful.GenB.SelfBModelF_nullConst
+public import Lanius.Faithful.GenB.SelfBModelF_oneTreeNames
+public import Lanius.Faithful.GenB.SelfBModelF_paramGoals
+public import Lanius.Faithful.GenB.SelfBModelF_pathRef
+public import Lanius.Faithful.GenB.SelfBModelF_pickTy
+public import Lanius.Faithful.GenB.SelfBModelF_plainNaming
+public import Lanius.Faithful.GenB.SelfBModelF_projectionRet
+public import Lanius.Faithful.GenB.SelfBModelF_purePart
+public import Lanius.Faithful.GenB.SelfBModelF_readCountedBytes
+public import Lanius.Faithful.GenB.SelfBModelF_repeatEff
+public import Lanius.Faithful.GenB.SelfBModelF_retBinds
+public import Lanius.Faithful.GenB.SelfBModelF_scalarOf
+public import Lanius.Faithful.GenB.SelfBModelF_setEvalClosed
+public import Lanius.Faithful.GenB.SelfBModelF_shadowUse
+public import Lanius.Faithful.GenB.SelfBModelF_shrFirst
+public import Lanius.Faithful.GenB.SelfBModelF_sintAt
+public import Lanius.Faithful.GenB.SelfBModelF_sliceHead
+public import Lanius.Faithful.GenB.SelfBModelF_strBytes
+public import Lanius.Faithful.GenB.SelfBModelF_stringCall
+public import Lanius.Faithful.GenB.SelfBModelF_stringCons
+public import Lanius.Faithful.GenB.SelfBModelF_stringReturn
+public import Lanius.Faithful.GenB.SelfBModelF_textSelf
+public import Lanius.Faithful.GenB.SelfBModelF_textSliceLen
+public import Lanius.Faithful.GenB.SelfBModelF_treeTokens
+public import Lanius.Faithful.GenB.SelfBModelF_typeDeclAt
+public import Lanius.Faithful.GenB.SelfBModelF_typePathSpellings
+public import Lanius.Faithful.GenB.SelfBModelF_typedLiteral
+public import Lanius.Faithful.GenB.SelfBModelF_variantArm
+public import Lanius.Faithful.GenB.SelfBModelF_variantIn
+public import Lanius.Faithful.GenB.SelfBModelF_variantLetHead
+public import Lanius.Faithful.GenB.SelfBModelF_variantOfDecl
+public import Lanius.Faithful.GenB.SelfBModelF_weightAdd
+public import Lanius.Faithful.GenB.SelfBModelF_wideLeftStmt
+public import Lanius.Faithful.GenB.SelfBModelF_wideMarker
+public import Lanius.Faithful.GenB.SelfBModelF_wideOf
+public import Lanius.Faithful.GenB.SelfBModelN0
+public import Lanius.Faithful.GenB.SelfBModelN1
+public import Lanius.Faithful.GenB.SelfBModelN2
+public import Lanius.Faithful.GenB.SelfBModelN3
+public import Lanius.Faithful.GenB.SelfBModelN4
+public import Lanius.Faithful.GenB.SelfBModelN5
+public import Lanius.Faithful.GenB.SelfBModelN6
+public import Lanius.Faithful.GenB.SelfBModelN7
+
+@[expose] public section
 
 /-! Generated by formal/tools/budget_certs.py: every cost model and precondition, and (for
 pre_certs.py) the models' and the statements' names in the call graph's order, callees first.
