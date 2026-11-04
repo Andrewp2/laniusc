@@ -15,11 +15,6 @@ import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.arithShiftRight
 import all Lanius.Mini.Compiler.P.arithUint
 import all Lanius.Mini.Compiler.P.arrayCallSig
-import all Lanius.Mini.Compiler.P.assignFrom
-import all Lanius.Mini.Compiler.P.bindingBytes
-import all Lanius.Mini.Compiler.P.codeSize
-import all Lanius.Mini.Compiler.P.compileArgs
-import all Lanius.Mini.Compiler.P.compileModules
 import all Lanius.Mini.Compiler.P.conjunction
 import all Lanius.Mini.Compiler.P.equality
 import all Lanius.Mini.Compiler.P.floatApply
@@ -27,11 +22,6 @@ import all Lanius.Mini.Compiler.P.lowerApply
 import all Lanius.Mini.Compiler.P.lowerLocal
 import all Lanius.Mini.Compiler.P.lowerShift
 import all Lanius.Mini.Compiler.P.lowerTagged
-import all Lanius.Mini.Compiler.P.matchDst
-import all Lanius.Mini.Compiler.P.matchVariants
-import all Lanius.Mini.Compiler.P.needCapped
-import all Lanius.Mini.Compiler.P.needLimit
-import all Lanius.Mini.Compiler.P.needsAfter
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.sintToUint
 import all Lanius.Mini.Compiler.P.wordStride
