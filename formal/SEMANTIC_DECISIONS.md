@@ -2059,6 +2059,72 @@ compiler accepts no reference form until stage 2 proves its lowering. Stage
   `decide`), and `SourceRefsCorrect`, without it, is what is left to prove.
 When it is proved, point 10 lands.
 
+**S5 in Lanius's syntax (decided 11-03, leafC, approved by the
+coordinator).** Lanius has no `&x`, `&mut x` or `*r`: the grammar has
+`&T` and `&mut T` only as types (`type_ref`, `type_ref_mut`) and `&self`,
+`&mut self` as receivers, and its unary operators are `+`, `-` and `!`.
+laniusc (probed 11-03) does not borrow an argument (`bump(x)` at a
+`&mut P` parameter is LNC0006) and does not dereference a scalar
+reference (`n += 1` with `n: &mut i32` is LNC0006). A reference is made
+only by an auto-borrowed receiver (`x.bump()` with `&mut self`) or by a
+function that returns one (`fn borrow(&self) -> &P { return self; }`,
+`pass(x.borrow())`); a reference parameter is used through its fields and
+elements (`p.a`, `p.a = v`, `p.b[2] += v`) and passed on (`get(p)`), and
+writes through it alias the caller's value (the probe returned 76, Core's
+answer). So S5 is:
+1. `&T` and `&mut T` are read as `SrcType.ref T` for parameters only; in a
+   let, a result, a field, an element or a type argument they are not
+   read, nor is `&&T`.
+2. A reference parameter's field and element reads, and `p.f = v`,
+   `p.f op= v`, `p.f[i] = v`, are read as `eField` and `eAt` over `eDeref`
+   (statement positions; `setPlace` and `setPlaceOp`).
+3. A reference parameter passed at a parameter of the same reference type
+   is read as the reference value.
+4. The lifetime check rejects a reassigned reference parameter, any other
+   use of the whole reference (a let, a return, an operand, an element,
+   a by-value argument), and a method call on a reference (that is point
+   10).
+5. S5 makes no borrow, so stage 1 has no homes; the home rules (stage 2's
+   design points: statement positions, slice returns, older than the
+   holder) start with S5b.
+
+**S5b: point 10, receivers are references (decided 11-03, leafC, design
+for the coordinator).** Every `&self` and `&mut self` is a reference to
+the impl's type: the by-value reading of `&self` and its `writesLocal`
+restriction are dropped from the trusted reading (one reading of every
+method).
+- A method call `r.m(args)` with `m` taking `&self` passes `r`'s place:
+  `eBorrow (ref T) place` where `place` is a local `x` (`ePure (local x)`),
+  a field or element of one (`eField`, `eAt`, any depth), or the same
+  through a reference (`eDeref p`: a reborrow, Core's same reference). A
+  receiver that is not a place (a call's result, a literal) is a borrow of
+  a temporary and is not read.
+- A local named by a borrow's place anywhere in its scope gets a home
+  (S6's `Binding.home`); its reads and writes are then home loads and
+  stores (statement positions only, stage 2's design point).
+- Inside the method `self` is a reference parameter: S5's rules read
+  `self.f`, `self.f = v` and passing `self` on; `self.m()` passes `self`
+  on.
+- A method that returns `self` or a place of it returns a reference and
+  stays unread (point 9: no result of reference type until the check
+  that its referent is older than the holder). The stdlib's 338
+  `x.borrow()` calls (`fn borrow(&self) -> &T { return self; }`) are the
+  common case; reading such a call as the borrow of `x` itself is a later
+  step, after the result rule.
+- The lifetime check gains the home rules: a function with homes whose
+  result type holds a slice is not read (unless the slice comes from a
+  parameter, a later relaxation); a slice of a homed array stored into a
+  home's field or element needs the array's home to be older than the
+  holder's (declared before it, so earlier in `places`'s age order); a
+  reference is never stored (point 9).
+- Order: S5b makes every `&self` call a borrow, which the compiler rejects
+  until S6 lowers borrows and homes, so programs with `&self` calls stop
+  compiling in between (the self program has none; frontend cases such as
+  `try_method` and `reject_self_write` change their expected results).
+  S5b's reading therefore lands together with the S6 step that lowers
+  receivers (S6b), or with those expected results changed if the
+  coordinator prefers the reading first.
+
 **Out of scope for F5.** Functions that return references (100 in the
 stdlib), and references in lets, struct fields, elements or results, until
 the lifetime checks of point 9; references to references; raw places
