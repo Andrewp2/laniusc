@@ -551,6 +551,26 @@ theorem tsm_evalArgs_cons (sigs : List Sig) (decls : SrcDecls) (scope : List Bin
     have := ir (slot + SrcType.size first.ty) (by omega)
     ts_auto
 
+/-- The places' forms (F5) have no meaning yet. -/
+theorem tsm_eval_eBorrow (ty : SrcType) (place : SrcEff) (sigs : List Sig) (decls : SrcDecls) (scope : List Binding) (slot : Nat) (M : Nat) :
+    ts (SrcEff.eval (SrcEff.eBorrow ty place) sigs decls scope slot) ≤ M := by
+  simp only [SrcEff.eval, ts_none]; omega
+
+/-- The places' forms (F5) have no meaning yet. -/
+theorem tsm_eval_eDeref (ty : SrcType) (ref : SrcEff) (sigs : List Sig) (decls : SrcDecls) (scope : List Binding) (slot : Nat) (M : Nat) :
+    ts (SrcEff.eval (SrcEff.eDeref ty ref) sigs decls scope slot) ≤ M := by
+  simp only [SrcEff.eval, ts_none]; omega
+
+/-- The places' forms (F5) have no meaning yet. -/
+theorem tsm_eval_eField (base : SrcEff) (field : Nat) (sigs : List Sig) (decls : SrcDecls) (scope : List Binding) (slot : Nat) (M : Nat) :
+    ts (SrcEff.eval (SrcEff.eField base field) sigs decls scope slot) ≤ M := by
+  simp only [SrcEff.eval, ts_none]; omega
+
+/-- The places' forms (F5) have no meaning yet. -/
+theorem tsm_eval_eAt (base index : SrcEff) (sigs : List Sig) (decls : SrcDecls) (scope : List Binding) (slot : Nat) (M : Nat) :
+    ts (SrcEff.eval (SrcEff.eAt base index) sigs decls scope slot) ≤ M := by
+  simp only [SrcEff.eval, ts_none]; omega
+
 mutual
 theorem tsm_SrcEff_eval : ∀ (self : SrcEff) (sigs : List Sig) (decls : SrcDecls) (scope : List Binding) (slot : Nat) (M : Nat),
     ts self ≤ M → ts sigs ≤ M → ts decls ≤ M → ts scope ≤ M → 16 ≤ M → ts (SrcEff.eval self sigs decls scope slot) ≤ M
@@ -588,6 +608,14 @@ theorem tsm_SrcEff_eval : ∀ (self : SrcEff) (sigs : List Sig) (decls : SrcDecl
     tsm_eval_eLen slice sigs decls scope slot M hs hd hc h16 he
   | .eStr offset chars, sigs, decls, scope, slot, M, he, hs, hd, hc, h16 =>
     tsm_eval_eStr offset chars sigs decls scope slot M hs hd hc h16 he
+  | .eBorrow ty place, sigs, decls, scope, slot, M, _, _, _, _, _ =>
+    tsm_eval_eBorrow ty place sigs decls scope slot M
+  | .eDeref ty ref, sigs, decls, scope, slot, M, _, _, _, _, _ =>
+    tsm_eval_eDeref ty ref sigs decls scope slot M
+  | .eField base field, sigs, decls, scope, slot, M, _, _, _, _, _ =>
+    tsm_eval_eField base field sigs decls scope slot M
+  | .eAt base index, sigs, decls, scope, slot, M, _, _, _, _, _ =>
+    tsm_eval_eAt base index sigs decls scope slot M
 termination_by structural self => self
 theorem tsm_evalArgs : ∀ (sigs : List Sig) (decls : SrcDecls) (scope : List Binding) (args : List SrcEff) (slot : Nat) (M : Nat),
     ts args ≤ M → ts sigs ≤ M → ts decls ≤ M → ts scope ≤ M → 16 ≤ M → ts (evalArgs sigs decls scope args slot) ≤ M

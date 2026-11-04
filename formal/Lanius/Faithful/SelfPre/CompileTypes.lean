@@ -317,6 +317,19 @@ theorem tySlots_effTypes : ∀ e : SrcEff, tySlotsList (SrcEff.types e) ≤ ts e
     simp only [SrcEff.types, ts_SrcEff_eLet, tySlotsList, tySlotsList_append, ts_SrcType]; omega
   | .eLen slice => by simp only [SrcEff.types, tySlotsList]; omega
   | .eStr offset chars => by simp only [SrcEff.types, tySlotsList]; omega
+  | .eBorrow ty place => by
+    have := tySlots_effTypes place
+    simp only [SrcEff.types, ts_SrcEff_eBorrow]; omega
+  | .eDeref ty ref => by
+    have := tySlots_effTypes ref
+    simp only [SrcEff.types, ts_SrcEff_eDeref]; omega
+  | .eField base field => by
+    have := tySlots_effTypes base
+    simp only [SrcEff.types, ts_SrcEff_eField]; omega
+  | .eAt base index => by
+    have := tySlots_effTypes base
+    have := tySlots_effTypes index
+    simp only [SrcEff.types, ts_SrcEff_eAt, tySlotsList_append]; omega
 termination_by structural e => e
 theorem tySlots_effsTypes : ∀ es : List SrcEff, tySlotsList (effsTypes es) ≤ ts es
   | [] => by simp only [effsTypes, tySlotsList]; omega
@@ -433,6 +446,14 @@ theorem tsd_stmt (s : SrcStmt) : ∀ d, tsdOpt (SrcStmt.declare s d) ≤ max (ts
     intro d; have := ih d; simp only [SrcStmt.declare, ts_SrcStmt_letView]; omega
   | letStr pointer chars body ih =>
     intro d; have := ih d; simp only [SrcStmt.declare, ts_SrcStmt_letStr]; omega
+  | setPlace place value =>
+    intro d; have := tySlots_effTypes place; have := tySlots_effTypes value
+    have := tsd_declareTypes (SrcEff.types place ++ SrcEff.types value) d
+    simp only [SrcStmt.declare, ts_SrcStmt_setPlace, tySlotsList_append] at *; omega
+  | setPlaceOp op place value =>
+    intro d; have := tySlots_effTypes place; have := tySlots_effTypes value
+    have := tsd_declareTypes (SrcEff.types place ++ SrcEff.types value) d
+    simp only [SrcStmt.declare, ts_SrcStmt_setPlaceOp, tySlotsList_append] at *; omega
 
 theorem tsd_declareParams : ∀ (ps : List SrcParam) (d : SrcDecls),
     tsdOpt (declareParams ps d) ≤ max (ts ps) (tsd d)
