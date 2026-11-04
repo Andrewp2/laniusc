@@ -14,7 +14,7 @@ copy is `target/claude-work/bin/lv`.
 | command | does | was |
 |---|---|---|
 | `lv check FILE.lean..` | `lake env lean FILE` in the small lane, 280 s; prints each error whole (warnings counted; `--all` prints them) | lcheck, leanp |
-| `lv build [TARGET..]` | `lake build` (default `LaniusMini Lanius LaniusOpen`) under a Lean slot, 290 s; skips the slot when the targets are current; errors whole plus the failed modules | leanslot + lake, lb |
+| `lv build [TARGET..]` | `lake build` (default `LaniusMini Lanius LaniusOpen`) under a Lean slot; skips the slot when the targets are current; errors whole plus the failed modules; at the deadline it prints the modules still compiling (and those waiting for a lean process slot) and stops: it never reruns itself | leanslot + lake, lb |
 | `lv gate [ARGS]` | gate.py (default `--tier quick --jobs 2`) under one slot for the whole run, 295 s; a failed step's error lines from its output.txt | leanslot + gate.py |
 | `lv regen [ARGS]` | regen.py the same way (`--resolve`, `--only trusted --trusted`, `--check`) | leanslot + regen.py |
 | `lv open ARGS` | open_graph.py (`status`, `check`, `claim NAME --agent WHO`, `release NAME`) | |
@@ -43,10 +43,16 @@ with `}`, a .c with `#endif`. A damaged file goes to
 every worktree build file that is the same file is deleted with its module's
 trace, so the next `lv build` rebuilds the module; the command then fails.
 
+One deadline: every lv command ends within 295 s of its start, lock and slot
+waits included (exit 75 if the waits leave under 20 s, 124 if the deadline
+stopped the work), and nothing is ever rerun automatically. Don't loop lv
+commands either: the 5-minute rule is for the whole task, so a build that
+needs longer is a problem to report, not to retry.
+
 Failures are loud: the exit code is nonzero (124 when the time limit
 stopped it), the error messages are printed whole, and the full log's path
 is printed (`target/claude-work/lv/` in the worktree). A build stopped at the
-limit keeps what finished: run `lv build` again.
+deadline keeps what finished.
 
 `lv install` (from a checkout that has this lv) copies it to
 `target/claude-work/lv/`, links `target/claude-work/bin/lv` to it, turns the

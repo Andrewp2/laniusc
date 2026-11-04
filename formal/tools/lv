@@ -42,7 +42,8 @@ HERE = os.path.dirname(os.path.realpath(__file__))
 LVD = os.path.join(HERE, 'lv.d')
 LAKE = os.path.expanduser('~/.elan/bin/lake')
 LEAN_SLOTS = ('lean.lock', 'lean.lock.2', 'lean.lock.3')   # leanslot's three machine-wide slots
-TOTAL = 295            # seconds from lv's start, slot waits included: every command ends within 5 minutes
+# seconds from lv's start, slot waits included: every command ends within 5 minutes (LV_DEADLINE may only shorten it)
+TOTAL = min(295, int(os.environ.get('LV_DEADLINE', '295')))
 STARTED = time.time()
 CHECK_LIMIT = 280      # lcheck's own limit for one file
 PRUNE_EVERY = 6 * 3600
@@ -337,15 +338,52 @@ def log_path(kind):
 def remaining():
     left = TOTAL - (time.time() - STARTED)
     if left < 20:
-        die(f'gave up with {max(left, 0):.0f} s of the {TOTAL} s left, waiting for locks: the machine is busy, run it again', 75)
+        die(f'stopped: only {max(left, 0):.0f} s of the {TOTAL} s deadline left (lock waits count; the machine is busy). '
+            'Nothing is rerun.', 75)
     return left
 
 
-def run_scoped(argv, cwd, env, limit, log, live=None):
+REAL_LEAN = os.path.expanduser('~/.elan/toolchains/leanprover--lean4---v4.33.1/bin/lean')
+
+
+def in_flight(pid, formal):
+    """The Lean jobs in PID's scope right now: [(module, seconds running)] for
+    lean processes compiling, and the modules still waiting for a lean slot."""
+    try:
+        cg = open(f'/proc/{pid}/cgroup').read().strip().split('::', 1)[1]
+        procs = open(f'/sys/fs/cgroup{cg}/cgroup.procs').read().split()
+        uptime = float(open('/proc/uptime').read().split()[0])
+        tick = os.sysconf('SC_CLK_TCK')
+    except (OSError, IndexError, ValueError):
+        return [], []
+    running, waiting = [], []
+    for q in procs:
+        try:
+            argv = open(f'/proc/{q}/cmdline', 'rb').read().split(b'\0')
+            exe = os.readlink(f'/proc/{q}/exe')
+            start = int(open(f'/proc/{q}/stat').read().rsplit(')', 1)[1].split()[19]) / tick
+        except (OSError, IndexError, ValueError):
+            continue
+        argv = [a.decode(errors='replace') for a in argv if a]
+        src = [a for a in argv if a.endswith('.lean')]
+        if not src or not argv:
+            continue
+        mod = os.path.relpath(src[0], formal)[:-5].replace('/', '.')
+        if exe == os.path.realpath(REAL_LEAN):
+            running.append((mod, uptime - start))
+        elif len(argv) > 1 and argv[1].endswith('/bin/lean'):    # the leanroot wrapper, waiting
+            waiting.append(mod)
+    running.sort(key=lambda x: -x[1])
+    # a wrapper that has exec'd into lean is the lean process itself, so no double counting
+    return running, sorted(set(waiting) - {m for m, _ in running})
+
+
+def run_scoped(argv, cwd, env, limit, log, live=None, snapshot=None):
     """Run argv in its own work.slice scope; stop the scope at the limit or on
     a signal. Every line goes to log; lines that `live` accepts are echoed.
     Returns (exit code, seconds); 124 when the limit stopped it."""
-    limit = min(limit, remaining())    # before the child starts: dying here must not orphan it
+    limit = min(limit, remaining() - 10)   # before the child starts: dying here must not orphan it;
+    # 10 s stay for the report after it, so the whole command ends inside the deadline
     unit = f'lv-{os.getpid()}-{int(time.time() * 1000) % 100000}'
     # RuntimeMaxSec: systemd stops the scope itself if lv dies without stopping it
     cmd = ['systemd-run', '--user', '--scope', '-q', '--slice=work.slice', f'--unit={unit}',
@@ -368,6 +406,8 @@ def run_scoped(argv, cwd, env, limit, log, live=None):
 
     def expire():
         stopped.append(1)
+        if snapshot is not None:
+            snapshot.extend(in_flight(child.pid, cwd))
         stop()
     timer = threading.Timer(limit, expire)
     timer.start()
@@ -537,8 +577,9 @@ def cmd_build(args):
         return 0
     held = lean_slot()
     log = log_path('build')
+    flight = []
     code, secs, lim = run_scoped([LAKE, 'build', *targets], formal, lean_env({'LEAN_LOCK_HELD': '1'}), TOTAL, log,
-                            live=lambda line: line.startswith('✖'))
+                                 live=lambda line: line.startswith('✖'), snapshot=flight)
     for f in held:
         f.close()
     if cache_check(since=STARTED - 5, quiet=True):
@@ -551,8 +592,14 @@ def cmd_build(args):
     errors, warnings, failed = report(log, show_warnings=show)
     if code == 124:
         built = len(re.findall(r'^[✔⚠] ', open(log, errors='replace').read(), re.M))
-        say(f'build: STOPPED at the {lim:.0f} s limit ({built} jobs finished, {errors} errors so far). '
-            f'Lake keeps what finished: run lv build again to go on. Log {log}')
+        running, waiting = flight if flight else ([], [])
+        print(f'still building when stopped ({len(running)}):' if running else 'nothing was compiling when stopped')
+        for mod, t in running:
+            print(f'  {mod}  ({t:.0f} s so far)')
+        if waiting:
+            print(f'waiting for a lean process slot ({len(waiting)}): ' + ', '.join(waiting))
+        say(f'build: STOPPED at the {lim:.0f} s deadline ({built} jobs finished, {errors} errors so far); '
+            f'not rerun. Lake keeps what finished. Log {log}')
         return 124
     if not errors:
         print(open(log, errors='replace').read().rstrip()[-4000:])
