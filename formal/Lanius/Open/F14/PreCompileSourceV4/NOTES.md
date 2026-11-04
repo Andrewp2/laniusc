@@ -131,3 +131,15 @@ largest need, `val_frameBlock` from `frameBlock_le`, and `val_needRound(At)`/`va
 every round is capped at `needLimit`), with `nb prev ≤ 2^40` as `need_round_at`'s, `need_round`'s and
 `needs_after`'s invariant. leafA-frame's caps also fixed `frame_block` and the array-bytes sums.
 P02: 62 -> 58, none new. `LowerFuncsTemps` is no longer used by the pre lemmas.
+
+**11-03, group C, first part (leafB).** Counters along a list get "counter + the list's height ≤ K"
+(`COMPILE_OVERRIDES`: `slot_range` `first + count`, `dying_extent`, `arg_slots`; the height, not
+`.length`, since `hb` facts are in scope where a callee's premise needs them), and `Instr_encode`'s
+`match` variables count as its instruction (`COMPILE_NUM_ALIAS`). P02: 58 -> 55, none new. The
+encoders' slots (`slot_offset`'s `(slot + 1) * 8 < 2^32`, `frame_size`, `arg_base`, `copy_bytes`,
+`sys_bytes`, `Instr_encode`'s `argBase slots`, `encode_onto`, `link_onto`) need a frame-slot bound that
+`nb` cannot give (it also counts jump targets): the new open leaf CompileFuncSlots (`codeSlotTop
+instrs ≤ slots ≤ frameLimit` for `compileFunc`'s code, measure in SelfPre/CompileSlots.lean), to be carried
+by `COMPILE_OVERRIDES` from `compile_func` to the encoders. Not yet looked at: `round_cons`/`round_join`
+(`count` sums), `Stmt_within`, `Code_size`, `layout`, `Expr_extent`/`Stmt_extent`. `host_text_code`
+(`slot + 1 ≤ M`) belongs with A.

@@ -575,6 +575,10 @@ COMPILE_OVERRIDES = {
     'compile_expr': [f'p2 + Lanius.Mini.Expr.weight p1 ≤ {PC_LIMIT}'],
     'compile_args': [f'p2 + Lanius.Mini.argsWeight p1 ≤ {PC_LIMIT}'],
     'zero_locals': ['p0 + p1 ≤ K'],
+    # counters along a list: the counter plus the list's height (at least its length) below `K`
+    'slot_range': ['p0 + p1 ≤ K'],
+    'dying_extent': ['p2 + hb p0 ≤ K'],
+    'arg_slots': ['p2 + hb p1 ≤ K'],
     'compile_stmt': [f'p1 + 64 * Lanius.Mini.Stmt.weight p4 ≤ {PC_LIMIT}'],
     'seq_code': [f'p1 + Lanius.Mini.codeSize p4 + 64 * Lanius.Mini.Stmt.weight p5 ≤ {PC_LIMIT}'],
     'ite_code': [f'p1 + Lanius.Mini.codeSize p4 + 64 * Lanius.Mini.Stmt.weight p5 + '
@@ -638,7 +642,7 @@ COMPILE_TS_SEED = {'Pre_SrcType_size': {0: {'ts'}}, 'Pre_sizes': {0: {'ts', 'sz'
 COMPILE_FIXED_ROOTS = ['compile_optimized']
 # The functions whose `match`es' pattern variables count as the parameter they
 # take apart (`match_aliases`): their callers can bound the whole value.
-COMPILE_NUM_ALIAS = {'compile_funcs', 'compile_lowered', 'lower_funcs'}
+COMPILE_NUM_ALIAS = {'compile_funcs', 'compile_lowered', 'lower_funcs', 'Instr_encode'}
 # Modules the compile side's pre lemmas import for proved leaves' value lemmas
 # (`val_optimizeProgram`, from OptimizeKeepsNumbers).
 COMPILE_PRE_IMPORTS = ['Lanius.Faithful.SelfPre.CompileOpt']
