@@ -42,3 +42,59 @@
   types or field lists from the declarations (`lower_struct_fields`, `copy_slots`, `eval_struct_of`,
   ...). Needs a `ts` of `SrcStructDecl` that includes `sizes fields` (an hb_gen.py TS change, with
   `declareProgram` keeping it) or a front-end leaf on declared structs' sizes.
+- 11-03 (leafB, second context): type sizes carried through the lowering. `SelfPre/CompileTypes.lean`:
+  `tsd` over `SrcDecls` (a struct counts its fields' `sizes` and slots, an enum `1 + maxSize` and its
+  variants' slots; `ts` unchanged), `val_declareProgram : tsdOpt (declareProgram p) ≤ ts p` (by hand,
+  through `SrcType.declare`/`declareTypes`/`declareVariants`/`SrcStmt.declare`/`declareFuncs`), and the
+  lookups' lemmas (`vals_lookup`, `vals_structFields`, `vals_enumVariants`, `vals_elementOf`, index
+  lemmas for signatures, field lists and variants, `val_sigs`, `val_withBudget`, `val_paramScope`,
+  `val_repeatType`, `val_matchVariants`). pre_certs.py: the 'ts' kind follows `match` pattern variables
+  (a lookup's result included) to the parameter they come from; SrcDecls parameters get `tsd x ≤ 2^22`,
+  signatures `ts` plus their parameters' sum below K (`sigsParams`, from `paramsMax`); lists of types
+  their `sizes`/`maxSize` below K ('sz'/'ms' kinds, seeded at `sizes`/`max_size`); skipped functions
+  (COMPILE_NUM_SKIP) get these too. Tactic `valueFacts`: `ts_le_<S>_<f>` projection facts, `ts` of a
+  constructor equation (`x.ty = .struct id fs`), index lemmas, all `ts` facts simp-normalized
+  (`tySlots`). P02: 71 -> 68 failing, none new; no failure left on `SrcType_size`/`sizes`/`max_size`
+  premises of those 19 callers.
+
+**11-03, evaluator result types (leafB).** `CompileEvalTypes.lean`: `val_SrcEff_eval`/`val_evalArgs`
+(`ts` of an evaluation ≤ the expression's, signatures', declarations', scope's, or 16) and the `val_`
+lemmas of the 92 functions the evaluator reaches (`ts_auto`: split, `val_` facts, `omega_atoms`). The
+mutual theorem is `tsm_SrcEff_eval` at a linear bound `M`, its cases stated apart (`tsm_eval_*`), so the
+structural-recursion check sees only small terms (whole file about 8 s). `vals_SrcEff_eval` for
+`eval .. = some v`; `valueFacts` now tries `vals_<T>_<f>` before `vals_<f>`. Tsd-bounded declarations
+also get `ts x ≤ 2^22` (`ts_le_tsd`). `val_SrcType_size`. P02: 67 -> 66 (`binding_bytes`), none new.
+`step_eval_args` passes its type premise; it now fails on the slot counter `x4 + size ≤ M + Cost`
+(a slots invariant, like `param_scope`'s), not types.
+
+**11-03, the 66 left, by the invariant each needs (leafB, after S3).** From one debug check of every
+failing lemma (the failed omega goals and premises):
+- A. The lowering's slot numbers (36): `SrcEff_eval`, `eval_args`, `eval_arms`, `param_scope`,
+  `load_types`/`load_cases`, `store_type(s)`/`store_cases`, `store_eval(_byte/_word)`,
+  `element_stores/loads`, `view_stores`, `str_placed`/`str_stores`, `lower_set_index_any`,
+  `assign_from`, `slot_vars`, `eval_word_element`, `eval_len_of`, `bounds_guard`, `arm_payload`,
+  `arm_bind`, `lower_arms`, `lower_body`, `SrcStmt_depth`, `SrcStmt_lower`, `array_args`,
+  `array_call_sig`, `array_arg_local`, the four `*field_of`. Counters `slot + 1`, `slot + size`,
+  `next`, `b.slot + offset` below 2^64. Most are in `COMPILE_NUM_SKIP` (no number hypotheses).
+- B. Type sizes passed as plain numbers (7): `word_stride`, `element_base`, `pick_element`,
+  `put_element` (`8 * words`, `k * size`, `< 2^32`), `params_array_bytes`, `SrcStmt_array_bytes`,
+  `str_words` (`chars` bytes `* 256`).
+- C. The Mini compile's frames and code (17): `frame_size`, `slot_offset`, `arg_base`, `copy_bytes`,
+  `slot_range`, `sys_bytes`, `Instr_encode`, `encode_onto`, `Code_size`, `link_onto`,
+  `host_text_code`, `dying_extent`, `arg_slots`, `Expr_extent`, `Stmt_extent`, `Stmt_within`,
+  `layout`. `slot_offset`'s `(slot + 1) * 8 < 2^32` needs `compile_func`'s frame check (leafA-frame).
+- D. Needs and rounds (4, leafA-frame): `round_cons`, `round_join`, `need_round`, `frame_block`.
+- E. Whole-program numbers (2): `compile_optimized` (OptimizeKeepsNumbers, now proved), `compile_declared`.
+
+**V4 is probably false at A (the evaluator's temporaries).** `evalArgs` evaluates each argument at
+`slot +` the earlier arguments' sizes, and `eVariant`/`eStruct` likewise, so a nested call adds up to its
+callee's parameters' slots per level. Nothing limits that: the front end's `depth_limit` counts the
+lets' slots (`SrcStmt.depth`), `limEff` checks only types, and `compile_func`'s frame check comes after
+lowering. A counterexample within V4's premises: `f(s, f(s, f(s, ..)))` nested 2^43 deep, `s` a
+parameter whose struct type has 2^21 one-slot fields (`ts` ≤ 2^22, `paramsSize f` ≈ 2^21, no lets).
+The innermost argument is at slot about 2^64, while the cost (about 2^45) and `hb` (about 2^43) stay
+inside `M + b ≤ 2^62`. So `eval_args`' `slot + size < 2^64` fails. A fix needs a program-level limit
+first: the front end counting the evaluator's temporaries along with the lets (in `limEff`/`depth_limit`),
+or the lowering rejecting when `slot` passes a limit (capped, as `needs`). That is a .lani change.
+After it, a V5 premise (or an extended FrontEndStmtDepthV2) bounds every slot the lowering computes, and
+A's invariant is `slot + need ≤ 2^41`.
