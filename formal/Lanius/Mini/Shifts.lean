@@ -34,11 +34,11 @@ theorem shl_toInt (w : Nat) (a : BitVec w) (k : Nat) :
 
 /-- The amount of a signed shift that returns: below the width, so the count
 x86 keeps. -/
-theorem signed_amount {w : Nat} (b : BitVec w) (bits : Nat) (le : bits ≤ w)
+theorem signed_amount {w : Nat} (b : BitVec w) (bits : Nat) (_le : bits ≤ w)
     (inRange : ¬(b.toInt < 0 || b.toInt >= Int.ofNat bits) = true) :
     Int.toNat b.toInt = b.toNat ∧ b.toNat < bits := by
   simp only [Bool.or_eq_true, decide_eq_true_eq, not_or, Int.not_lt, ge_iff_le, Int.not_le,
-    Int.ofNat_eq_coe] at inRange
+    Int.ofNat_eq_natCast] at inRange
   have same := toNat_of_toInt b inRange.1
   have := inRange.2
   constructor <;> omega

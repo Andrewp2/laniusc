@@ -630,7 +630,7 @@ theorem equality_holds {op : CmpOp} {cop : Core.BinaryOp} (h : (op = .eq ∧ cop
         obtain ⟨rfl, _⟩ := holdsr
         simp only [eval_uint_eq, eval_uint_ne, Except.ok.injEq] at evaluated
         subst evaluated
-        simp only [Expr.eval, htl, SrcType.word, Word.holds]
+        simp only [Expr.eval, SrcType.word, Word.holds]
         exact holds_compare _
       · simp [SrcType.Holds] at holdsl
       · simp [SrcType.Holds] at holdsl
@@ -638,7 +638,7 @@ theorem equality_holds {op : CmpOp} {cop : Core.BinaryOp} (h : (op = .eq ∧ cop
         subst holdsr
         simp only [eval_ptr_eq, eval_ptr_ne, Except.ok.injEq] at evaluated
         subst evaluated
-        simp only [Expr.eval, htl, SrcType.word, Word.holds]
+        simp only [Expr.eval, SrcType.word, Word.holds]
         exact holds_compare _
       · simp [SrcType.Holds] at holdsl
       · simp [SrcType.Holds] at holdsl
@@ -647,20 +647,20 @@ theorem equality_holds {op : CmpOp} {cop : Core.BinaryOp} (h : (op = .eq ∧ cop
         subst holdsr
         simp only [eval_isize_eq, eval_isize_ne, Except.ok.injEq] at evaluated
         subst evaluated
-        simp only [Expr.eval, htl, SrcType.word, Word.holds]
+        simp only [Expr.eval, SrcType.word, Word.holds]
         exact holds_compare _
       · obtain ⟨rfl, sl⟩ := holdsl
         obtain ⟨rfl, sr⟩ := holdsr
         simp only [eval_char_eq sl sr, eval_char_ne sl sr, Except.ok.injEq] at evaluated
         subst evaluated
-        simp only [Expr.eval, htl, SrcType.word, Word.holds]
+        simp only [Expr.eval, SrcType.word, Word.holds]
         exact holds_compare _
       · simp [htl, SrcType.isFloatAny] at notFloat
       · first
           | have e := sint_equal (op := .eq) (.inl ⟨rfl, rfl⟩) holdsl holdsr evaluated
           | have e := sint_equal (op := .ne) (.inr ⟨rfl, rfl⟩) holdsl holdsr evaluated
         subst e
-        simp only [Expr.eval, htl, SrcType.word]
+        simp only [Expr.eval, SrcType.word]
         exact holds_compare _
       · simp [SrcType.Holds] at holdsl
       · simp [SrcType.Holds] at holdsl
@@ -765,7 +765,7 @@ theorem SrcOp.lower_holds {op : SrcOp} {tl tr t : Typed} (lowered : op.lower tl 
     simp only [arith] at lowered
     split at lowered
     · exact floatArith_holds lowered
-        (fun a h => by simp only [floatOp, Option.some.injEq, reduceCtorEq] at h <;> subst h <;> rfl)
+        (fun a h => by simp only [floatOp, reduceCtorEq] at h <;> subst h <;> rfl)
         holdsl holdsr evaluated
     split at lowered
     · rename_i types
@@ -790,7 +790,7 @@ theorem SrcOp.lower_holds {op : SrcOp} {tl tr t : Typed} (lowered : op.lower tl 
       obtain rfl := eval_shl_isize _ _ evaluated
       rfl
     split at lowered
-    · exact arithSint_holds (by simp [SrcOp.toCore]) lowered holdsl holdsr evaluated
+    · exact arithSint_holds (by simp) lowered holdsl holdsr evaluated
     · obtain ⟨k, hk, htr, rfl⟩ := arithUint_some lowered
       rw [SrcType.eq_of_uintKind hk] at holdsl
       rw [htr] at holdsr
@@ -818,7 +818,7 @@ theorem SrcOp.lower_holds {op : SrcOp} {tl tr t : Typed} (lowered : op.lower tl 
       simp only [arith] at lowered
       split at lowered
       · exact floatArith_holds lowered
-          (fun a h => by simp only [floatOp, Option.some.injEq, reduceCtorEq] at h <;> subst h <;> rfl)
+          (fun a h => by simp only [floatOp, reduceCtorEq] at h <;> subst h <;> rfl)
           holdsl holdsr evaluated
       split at lowered
       · rename_i types
@@ -843,7 +843,7 @@ theorem SrcOp.lower_holds {op : SrcOp} {tl tr t : Typed} (lowered : op.lower tl 
         obtain rfl := eval_sar_isize _ _ evaluated
         rfl
       split at lowered
-      · exact arithSint_holds (by simp [SrcOp.toCore]) lowered holdsl holdsr evaluated
+      · exact arithSint_holds (by simp) lowered holdsl holdsr evaluated
       · obtain ⟨k, hk, -, -⟩ := arithUint_some lowered
         rw [SrcType.eq_of_uintKind hk] at signed
         simp [SrcType.isI32, SrcType.isIsize, SrcType.isSintAny] at signed
@@ -863,7 +863,7 @@ theorem SrcOp.lower_holds {op : SrcOp} {tl tr t : Typed} (lowered : op.lower tl 
       simp only [arith] at lowered
       split at lowered
       · exact floatArith_holds lowered
-          (fun a h => by simp only [floatOp, Option.some.injEq, reduceCtorEq] at h <;> subst h <;> rfl)
+          (fun a h => by simp only [floatOp, reduceCtorEq] at h <;> subst h <;> rfl)
           holdsl holdsr evaluated
       split at lowered
       · rename_i types

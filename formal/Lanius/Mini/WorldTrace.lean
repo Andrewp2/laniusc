@@ -220,7 +220,7 @@ theorem hostByte_exec {mp : Program} {d : Nat} {E : Env} {H : Heap} (slot : Nat)
     simp only [H3, H2, H1, Heap.write, Expr.eval, saved]
     by_cases at0 : a = 0
     · subst at0
-      simp only [BitVec.toNat_zero, if_true, lowByte]
+      simp only [lowByte]
       apply UInt8.toNat.inj
       simp
     · simp [at0]

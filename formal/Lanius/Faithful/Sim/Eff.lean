@@ -175,7 +175,7 @@ theorem variantTy_some {ty t : SrcType} {k : Nat} {ts : List SrcType} (h : varia
   | view | str | ref => simp [variantTy] at h
 
 /-- A state between two that grow is below the later one's cursor. -/
-theorem Grows.bound {a b c : State} (first : Grows a b) (second : Grows b c)
+theorem Grows.bound {a b c : State} (_first : Grows a b) (second : Grows b c)
     (bound : c.heap.nextAddress ≤ 2 ^ 64) : b.heap.nextAddress ≤ 2 ^ 64 :=
   Nat.le_trans second.next bound
 

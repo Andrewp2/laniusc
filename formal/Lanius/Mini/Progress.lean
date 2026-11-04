@@ -107,10 +107,10 @@ theorem shift_i32_ok (a b : BitVec 32) (small : b.toNat < 32) {cop : Core.Binary
     ∃ v, evalBinaryValue .x86_64 cop (.signed .i32 a.toInt) (.signed .i32 b.toInt) = .ok v := by
   have nonneg := toInt_of_small b (by omega)
   rcases shift with rfl | rfl <;>
-  · simp only [evalBinaryValue, beq_self_eq_true, ↓reduceIte, evalSignedBinary, evalSignedBinary_shiftRight]
+  · simp only [evalBinaryValue, beq_self_eq_true, ↓reduceIte, evalSignedBinary]
     split
     · rename_i bad
-      simp [Core.SignedIntTy.bits, Core.Target.x86_64, Core.PointerWidth.bits] at bad
+      simp [Core.SignedIntTy.bits] at bad
       omega
     · exact ⟨_, rfl⟩
 
@@ -119,7 +119,7 @@ theorem shift_isize_ok (x y : BitVec 64) (small : y.toNat < 64) {cop : Core.Bina
     ∃ v, evalBinaryValue .x86_64 cop (.signed .isize x.toInt) (.signed .isize y.toInt) = .ok v := by
   have nonneg := toInt_of_small y (by omega)
   rcases shift with rfl | rfl <;>
-  · simp only [evalBinaryValue, beq_self_eq_true, ↓reduceIte, evalSignedBinary, evalSignedBinary_shiftRight]
+  · simp only [evalBinaryValue, beq_self_eq_true, ↓reduceIte, evalSignedBinary]
     split
     · rename_i bad
       simp [Core.SignedIntTy.bits, Core.Target.x86_64, Core.PointerWidth.bits] at bad
@@ -136,7 +136,7 @@ theorem shift_uint_ok (k : UintTy) (x y : BitVec 64) (small : y.toNat < k.width)
   · simp only [evalBinaryValue, beq_self_eq_true, ↓reduceIte, evalUnsignedBinary, UintTy.bits_toCore]
     split
     · rename_i bad
-      simp only [ge_iff_le, decide_eq_true_eq] at bad
+      simp only [ge_iff_le] at bad
       omega
     · exact ⟨_, rfl⟩
 

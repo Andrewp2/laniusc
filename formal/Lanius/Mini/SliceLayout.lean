@@ -124,7 +124,7 @@ theorem SrcType.eq_of_same : ∀ (a : SrcType) {b : SrcType}, a.same b = true �
     | str | ref => simp [SrcType.same] at same
   | .unit, b, same => by cases b <;> simp_all [SrcType.same, SrcType.isUnit]
   | .str, b, same => by cases b <;> simp_all [SrcType.same, SrcType.isStr]
-  | .ref _, b, same => by cases b <;> simp_all [SrcType.same, SrcType.isStr]
+  | .ref _, b, same => by cases b <;> simp_all [SrcType.same]
   | .isize, b, same => by cases b <;> simp_all [SrcType.same, SrcType.isIsize]
   | .char, b, same => by cases b <;> simp_all [SrcType.same, SrcType.isChar]
   | .float ft, b, same => (SrcType.eq_of_isFloat (by simpa [SrcType.same] using same)).symm
@@ -203,7 +203,7 @@ theorem narrow_load_holds {k : UintTy} {t : Core.SignedIntTy} (ht : k.toSigned =
   rw [sintHolds_narrow narrow]
   refine ⟨?_, hb, ?_⟩
   · simp only [Semantics.signed32, hv]
-  · simp only [Semantics.signed32, ← hv]; exact range
+  · simp only [← hv]; exact range
 
 /-! ## Core's words, one field at a time -/
 

@@ -260,7 +260,7 @@ theorem compileStmt_fits (base : Nat) (arities : List Arity) {results : Nat} (re
     · simp only [Instr.Fits]; omega
   | divide word operation target left right =>
     simp only [Stmt.within, Bool.and_eq_true, decide_eq_true_eq] at within
-    simp only [compileStmt, List.mem_append, List.mem_cons, List.mem_singleton, List.not_mem_nil, or_false,
+    simp only [compileStmt, List.mem_append, List.mem_cons, List.not_mem_nil, or_false,
       Stmt.temps]
     rintro i (((inLeft | rfl) | inRight) | rfl | rfl)
     · exact (compileExpr_fits base left 0 within.1.2 _ _ i inLeft).mono (by omega) (Nat.le_refl _)

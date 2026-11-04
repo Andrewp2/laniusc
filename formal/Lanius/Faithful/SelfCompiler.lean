@@ -185,7 +185,7 @@ theorem start_reads (len : W.length < 2 ^ 31) : Reads (selfStart W room) selfInp
     simp only [wordByte, show (selfInput + i * 4 + j - selfInput) / 4 = i by self_omega,
       show (selfInput + i * 4 + j - selfInput) % 4 = j by self_omega, List.getD_eq_getElem?_getD,
       List.getElem?_eq_getElem lt, Option.getD_some]
-  simp only [Semantics.readRawSliceIndex, show ¬i ≥ W.length by self_omega, if_false, Semantics.rawSliceElementAddress?,
+  simp only [Semantics.readRawSliceIndex, show ¬i ≥ W.length by self_omega, Semantics.rawSliceElementAddress?,
     Semantics.readRawElement, i32T, Semantics.isByte, Bool.false_eq_true, ↓reduceIte,
     NativeLayout.maxDepth, Semantics.readNativeValue, Semantics.loadNatLE, Memory.Heap.loadBytes,
     Memory.loadBytesFrom, b 0 (by self_omega), b 1 (by self_omega), b 2 (by self_omega), b 3 (by self_omega), bind, Except.bind, pure,

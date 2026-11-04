@@ -518,7 +518,7 @@ theorem ranges_eq : ∀ tokens : List RawToken, lxRanges (tokens.map raw) = (ret
     · by_cases eq : next.kind = .assign
       · simp only [dd, eq, show TokenKind.dotDot.gpuCode = 182 from rfl, show TokenKind.assign.gpuCode = 8 from rfl,
           decide_true, Bool.true_and]
-        by_cases st : next.start = current.finish <;> simp [st, dd, eq, TokenKind.gpuCode]
+        by_cases st : next.start = current.finish <;> simp [st, dd, TokenKind.gpuCode]
       · have eq' : next.kind.gpuCode ≠ 8 := fun h => eq ((code_eq_iff _ .assign).mp h)
         simp [eq, eq']
     · have dd' : current.kind.gpuCode ≠ 182 := fun h => dd ((code_eq_iff _ .dotDot).mp h)

@@ -50,7 +50,7 @@ theorem Heap.readLE_congr {hp hp' : Heap} : ∀ {address count : Nat},
 /-- Reading back what `writeLE` wrote gives the value's low `count` bytes. -/
 theorem Heap.readLE_writeLE : ∀ (hp : Heap) (address value count : Nat),
     (hp.writeLE address value count).readLE address count = value % 256 ^ count
-  | _, _, value, 0 => by simp [Heap.readLE, Heap.writeLE, Nat.mod_one]
+  | _, _, value, 0 => by simp [Heap.readLE, Nat.mod_one]
   | hp, address, value, count + 1 => by
     simp only [Heap.writeLE, Heap.readLE]
     rw [Heap.writeLE_bytes_outside _ _ _ _ _ (.inl (Nat.lt_succ_self _)), Heap.write_bytes, if_pos rfl,

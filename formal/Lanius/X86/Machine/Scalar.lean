@@ -502,7 +502,7 @@ def DivisionSuccess (width : Nat) (signed : Bool) (before : State) (divisor : Re
 /- DIV/IDIV leave status flags undefined. `execute` picks the incoming flags
    as a deterministic representative; `Step.divided` quantifies the allowed
    post-state flags explicitly. -/
-def State.divide (before : State) (width : Nat) (divisor : Register)
+def State.divide (before : State) (width : Nat) (_divisor : Register)
     (quotient remainder flags : BitVec 64) (size : Nat) : State :=
   { before with
     registers := fun register => if register = 0 then (quotient.setWidth width).setWidth 64

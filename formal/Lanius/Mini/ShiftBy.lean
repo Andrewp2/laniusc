@@ -78,7 +78,7 @@ theorem shiftBy_range {cop : Core.BinaryOp} (shift : cop = .shiftLeft ∨ cop = 
   | i32 =>
     obtain ⟨e, -⟩ := hl
     have := signed e
-    simp [shiftWidth, Core.SignedIntTy.bits, Core.Target.x86_64, Core.PointerWidth.bits] at this ⊢
+    simp [shiftWidth, Core.SignedIntTy.bits] at this ⊢
     omega
   | isize =>
     have := signed hl
@@ -93,21 +93,21 @@ theorem shiftBy_range {cop : Core.BinaryOp} (shift : cop = .shiftLeft ∨ cop = 
     | uint8 =>
       obtain ⟨e, -⟩ := hl
       have := signed e
-      simp [shiftWidth, UintTy.bits, Core.SignedIntTy.bits, Core.Target.x86_64, Core.PointerWidth.bits] at this ⊢
+      simp [shiftWidth, UintTy.bits, Core.SignedIntTy.bits] at this ⊢
       omega
     | uint16 =>
       obtain ⟨e, -⟩ := hl
       have := signed e
-      simp [shiftWidth, UintTy.bits, Core.SignedIntTy.bits, Core.Target.x86_64, Core.PointerWidth.bits] at this ⊢
+      simp [shiftWidth, UintTy.bits, Core.SignedIntTy.bits] at this ⊢
       omega
     | uint32 =>
       obtain ⟨e, -⟩ := hl
       have := signed e
-      simp [shiftWidth, UintTy.bits, Core.SignedIntTy.bits, Core.Target.x86_64, Core.PointerWidth.bits] at this ⊢
+      simp [shiftWidth, UintTy.bits, Core.SignedIntTy.bits] at this ⊢
       omega
     | uint64 =>
       have := signed hl
-      simp [shiftWidth, UintTy.bits, Core.SignedIntTy.bits, Core.Target.x86_64, Core.PointerWidth.bits] at this ⊢
+      simp [shiftWidth, UintTy.bits, Core.SignedIntTy.bits] at this ⊢
       omega
     | usize =>
       have := signed hl

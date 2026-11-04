@@ -1780,7 +1780,7 @@ theorem structValue_state {P : Core.Program} {k : Nat} {st : State} {ty : SrcTyp
     {v : Value} {st' : State} (run : evalExpr k P st (ty.literal (es.map SrcExpr.toCore)) = .done v st') :
     st' = st := by
   cases k with
-  | zero => cases ty <;> simp [SrcType.literal, evalExpr] at run
+  | zero => cases ty <;> simp [evalExpr] at run
   | succ k =>
     cases ty <;> simp only [SrcType.literal, evalExpr] at run <;> split at run <;>
       first
@@ -1874,7 +1874,7 @@ theorem sliceFrom_grows {P : Core.Program} {k : Nat} {st : State} {element : Src
     (run : evalExpr k P st (element.sliceFrom pointer.toCore length.toCore) = .done v st') :
     Grows st st' := by
   cases k with
-  | zero => cases element <;> simp [SrcType.sliceFrom, evalExpr] at run
+  | zero => cases element <;> simp [evalExpr] at run
   | succ k =>
     cases element <;> simp only [SrcType.sliceFrom, evalExpr] at run
     all_goals

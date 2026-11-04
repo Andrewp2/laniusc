@@ -485,7 +485,7 @@ theorem view_entered {P : Core.Program} {id length pointer k : Nat} {xs : List E
     simp only [envB, env2, Env.set, if_pos]
   have envB_ptr : envB (next + length) = BitVec.ofNat 64 p := by
     have : next + length ≠ next := by addr_omega
-    simp [envB, env2, Env.set, this]
+    simp [envB, env2, Env.set]
   have agree : ScopeAgree scope env envB := fr.agree fun j below => by
     simp only [envB, env2, env1, Env.set]
     rw [if_neg (by addr_omega), if_neg (by addr_omega)]
@@ -531,7 +531,7 @@ theorem view_entered {P : Core.Program} {id length pointer k : Nat} {xs : List E
     subst st3Eq
     refine ⟨fun c below _ _ => bindLocal_entry (by addr_omega) id _, Nat.le_succ _, fun v mem => ?_,
       fun v mem => List.mem_append_left _ mem, fun v _ h => bindLocal_held h id _⟩
-    simp only [State.bindLocal, State.bindCell, List.mem_append, List.mem_singleton] at mem
+    simp only [List.mem_append, List.mem_singleton] at mem
     rcases mem with mem | rfl
     · exact .inl mem
     · exact .inr le
@@ -603,7 +603,7 @@ theorem stmt_letView (ih : ∀ m ≤ fuel, StmtSound sp mp m) {id length pointer
   split at run
   · rename_i v st1 valueRun
     cases fuel with
-    | zero => simp [SrcType.literal, evalExpr] at valueRun
+    | zero => simp [evalExpr] at valueRun
     | succ k =>
       simp only [SrcType.literal, evalExpr] at valueRun
       split at valueRun

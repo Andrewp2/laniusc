@@ -2131,7 +2131,7 @@ theorem setIndex_address_undef {iv : Value} {st1 : State} {pos : Nat} {r : Laniu
   rw [evalExpr] at hout
   rw [Semantics.evalPlace] at hout
   rw [base] at hout
-  simp only [idxRun, posOk, lt, if_true, decide_true, located] at hout
+  simp only [idxRun, posOk, lt, if_true, located] at hout
   exact hout.symm
 
 theorem setIndex_value_trap {iv : Value} {st1 : State} {pos at_ : Nat} {r : Lanius.Trap} {s : State}
@@ -2145,7 +2145,7 @@ theorem setIndex_value_trap {iv : Value} {st1 : State} {pos at_ : Nat} {r : Lani
   rw [evalExpr] at hout
   rw [Semantics.evalPlace] at hout
   rw [base] at hout
-  simp only [idxRun, posOk, lt, if_true, decide_true, located, h] at hout
+  simp only [idxRun, posOk, lt, if_true, located, h] at hout
   exact hout.symm
 
 theorem setIndex_value_done {iv : Value} {st1 : State} {pos at_ : Nat} {right : Value} {st2 : State}
@@ -2163,7 +2163,7 @@ theorem setIndex_value_done {iv : Value} {st1 : State} {pos at_ : Nat} {right : 
   rw [evalExpr] at hout
   rw [Semantics.evalPlace] at hout
   rw [base] at hout
-  simp only [idxRun, posOk, lt, if_true, decide_true, located, eRun, Semantics.evalAssignValue,
+  simp only [idxRun, posOk, lt, if_true, located, eRun, Semantics.evalAssignValue,
     Semantics.assignOpBinary?, Semantics.writeResolvedPlaceNative] at hout
   generalize stored : Semantics.writeRawNative P st2 _ element at_ right = w at hout
   cases w with
@@ -2287,8 +2287,8 @@ theorem setIndex_value_done_safe {cell : Nat} {iv : Value} {st1 : State} {pos : 
       simp only [idxRun, posOk, lt, ↓reduceIte, values, got, eRun, Semantics.evalAssignValue,
         Semantics.assignOpBinary?, Semantics.writeResolvedPlaceNative, Semantics.writeResolvedPlace,
         List.nil_append, Nat.zero_add, entry, Semantics.replaceProjectedValue, got2, State.assignCell,
-        Option.isSome_some, if_true, Semantics.ResolvedPlace.viewFreeRootWrite, List.isEmpty_cons,
-        Bool.false_and, Bool.and_false, Bool.false_eq_true, if_false,
+        Option.isSome_some, Semantics.ResolvedPlace.viewFreeRootWrite, List.isEmpty_cons,
+        Bool.false_and, Bool.and_false, Bool.false_eq_true, 
         Views.syncTo_ok (hold.replace (value := .array (Semantics.setValue vs pos right)) apart)]
 
 end SetIndex

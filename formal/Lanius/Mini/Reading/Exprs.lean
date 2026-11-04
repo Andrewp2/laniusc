@@ -725,7 +725,7 @@ theorem flIntPart_some {d : FlDec} : ∀ (text ds : List Nat) (m : List Bool) (n
       have db : ¬(48 ≤ b ∧ b ≤ 57) := by simpa [flDigit] using dig
       by_cases pt : b = 46
       · simp only [pt, if_true] at h
-        simp only [floatInt, db, if_false, pt, if_true]
+        simp only [floatInt, pt, if_true]
         exact flFracPart_some rest ds m n 0 hv hn h
       · simp only [pt, if_false] at h
         obtain ⟨ex, he, nz, hm, hx⟩ := flExpPart_some h
@@ -773,7 +773,7 @@ def SintFits (u : UintTy) (k : BitVec 32) : Prop :=
 
 theorem sintFits_iff (u : UintTy) (k : BitVec 32) : sintFits u k = true ↔ SintFits u k := by
   have := k.isLt
-  cases u <;> simp only [sintFits, SintFits, uintBits, Bool.or_eq_true, decide_eq_true_eq, BitVec.le_def,
+  cases u <;> simp only [sintFits, SintFits, uintBits, Bool.or_eq_true, decide_eq_true_eq, 
     BitVec.toInt_eq_toNat_cond, true_iff] <;>
     first | exact .inl (by decide) | skip
   all_goals split <;> omega

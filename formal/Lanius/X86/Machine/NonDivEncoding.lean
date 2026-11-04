@@ -78,7 +78,7 @@ theorem multiply_decodes (width : X86.Register.Width) (destination source : Regi
       simp [extendRegister, Nat.mod_eq_of_lt source_low]
     have alunone : Alu.ofOpcode? 15 = none := by decide
     simp [decodeOpcode, escapedForm, alunone, modrmByte, modrm.1, modrm.2.1,
-      modrm.2.2, destination_ext, source_ext, nonDivInstruction]
+      modrm.2.2, destination_ext, source_ext]
   have rawRex (present : rex ≠ 0) :
       decodeOpcode (X86.Register.fields width destination source) true [15, 175,
         UInt8.ofNat (Encoding.modRM destination source)] =
@@ -94,7 +94,7 @@ theorem multiply_decodes (width : X86.Register.Width) (destination source : Regi
     have alunone : Alu.ofOpcode? 15 = none := by decide
     cases width <;>
       simp [decodeOpcode, escapedForm, alunone, modrmByte, modrm.1, modrm.2.1,
-        modrm.2.2, destination_ext, source_ext, nonDivInstruction,
+        modrm.2.2, nonDivInstruction,
         X86.Register.fields, extended]
   by_cases absent : rex = 0
   · have omitted := (X86.Register.omitted_iff width destination source false).mp absent
@@ -137,7 +137,7 @@ theorem negate_decodes (width : X86.Register.Width) (destination : Register) :
       simp [extendRegister, Nat.mod_eq_of_lt destination_low]
     have alunone : Alu.ofOpcode? 247 = none := by decide
     simp [decodeOpcode, alunone, modrmByte, modrm.1, modrm.2.1, modrm.2.2, destination_ext,
-      negateInstruction, three_mod] <;> omega
+      three_mod] <;> omega
   have rawRex (present : rex ≠ 0) :
       decodeOpcode (X86.Register.fields width 3 destination) true
         [247, UInt8.ofNat (Encoding.modRM 3 destination)] =
@@ -149,7 +149,7 @@ theorem negate_decodes (width : X86.Register.Width) (destination : Register) :
     have alunone : Alu.ofOpcode? 247 = none := by decide
     cases width <;>
       simp [decodeOpcode, alunone, modrmByte, modrm.1, modrm.2.1, modrm.2.2,
-        destination_ext, negateInstruction, X86.Register.fields, extended, three_mod] <;> omega
+        negateInstruction, X86.Register.fields, extended, three_mod] <;> omega
   by_cases absent : rex = 0
   · have omitted := (X86.Register.omitted_iff width 3 destination false).mp absent
     have absent' := absent
@@ -191,7 +191,7 @@ private theorem shift_register_decodes (width : X86.Register.Width) (operation :
       simp [extendRegister, Nat.mod_eq_of_lt destination_low]
     have alunone : Alu.ofOpcode? 211 = none := by decide
     simp [decodeOpcode, alunone, modrmByte, modrm.1, modrm.2.1, modrm.2.2,
-      operation_decode', destination_ext, shiftInstruction]
+      operation_decode', destination_ext]
   have rawRex (present : rex ≠ 0) :
       decodeOpcode (X86.Register.fields width reg destination) true
         [211, UInt8.ofNat (Encoding.modRM reg destination)] =
@@ -203,7 +203,7 @@ private theorem shift_register_decodes (width : X86.Register.Width) (operation :
     have alunone : Alu.ofOpcode? 211 = none := by decide
     cases width <;>
       simp [decodeOpcode, alunone, modrmByte, modrm.1, modrm.2.1, modrm.2.2,
-        operation_decode', destination_ext, shiftInstruction, X86.Register.fields,
+        operation_decode', shiftInstruction, X86.Register.fields,
         extended]
   by_cases absent : rex = 0
   · have omitted := (X86.Register.omitted_iff width reg destination false).mp absent

@@ -453,7 +453,7 @@ theorem signKey_eval (e : Expr) (env : Env) : (signKey e).eval env = flip (e.eva
   simp only [signKey, Expr.eval, Word.apply, BinOp.apply, flip]
 
 theorem SrcType.eq_of_isSint {ty : SrcType} {k : UintTy} (h : ty.isSint k = true) : ty = .sint k := by
-  cases ty <;> simp only [SrcType.isSint, decide_eq_true_eq, reduceCtorEq, beq_iff_eq] at h ⊢
+  cases ty <;> simp only [SrcType.isSint, decide_eq_true_eq, reduceCtorEq] at h ⊢
   rename_i k'
   cases k <;> cases k' <;> simp_all [UintTy.code]
 

@@ -88,8 +88,8 @@ theorem division_decodes (width : X86.Register.Width) (signed : Bool) (divisor :
           (X86.Encoding.modRM_fields 6 divisor).2.1
       simp only [decodeOpcode]
       simp only [modrmByte]
-      simp [alunone, byte_mod, reg_mod, reg_field, modrm.1, modrm.2.1, modrm.2.2,
-        divisor_ext, divisionInstruction] <;> omega
+      simp [alunone, reg_field, modrm.1, modrm.2.2,
+        divisor_ext] <;> omega
     · dsimp [reg] at modrmByte ⊢
       dsimp [reg] at modrm
       have byte_mod : X86.Encoding.modRM 7 divisor % 256 = X86.Encoding.modRM 7 divisor :=
@@ -101,8 +101,8 @@ theorem division_decodes (width : X86.Register.Width) (signed : Bool) (divisor :
           (X86.Encoding.modRM_fields 7 divisor).2.1
       simp only [decodeOpcode]
       simp only [modrmByte]
-      simp [alunone, byte_mod, reg_mod, reg_field, modrm.1, modrm.2.1, modrm.2.2,
-        divisor_ext, divisionInstruction] <;> omega
+      simp [alunone, reg_field, modrm.1, modrm.2.2,
+        divisor_ext] <;> omega
   have rawRex (present : rex ≠ 0) :
       decodeOpcode (X86.Register.fields width reg divisor) true
           [247, UInt8.ofNat (X86.Encoding.modRM reg divisor)] =
@@ -119,8 +119,8 @@ theorem division_decodes (width : X86.Register.Width) (signed : Bool) (divisor :
       have reg_mod : reg.val % 8 = reg.val := by dsimp [reg]; decide
       have six_mod : (6 : Register).val % 8 = 6 := by decide
       have seven_mod : (7 : Register).val % 8 = 7 := by decide
-      simp [decodeOpcode, alunone, modrmByte, byte_mod, reg_mod, six_mod, seven_mod,
-        modrm.1, modrm.2.1, modrm.2.2, divisor_ext,
+      simp [decodeOpcode, alunone, byte_mod, six_mod, seven_mod,
+        modrm.1, modrm.2.1, modrm.2.2, 
         divisionInstruction, X86.Register.fields, extended]
   by_cases absent : rex = 0
   · have omitted := (X86.Register.omitted_iff width reg divisor false).mp absent

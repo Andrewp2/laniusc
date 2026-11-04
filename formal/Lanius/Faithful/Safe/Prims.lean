@@ -401,7 +401,7 @@ theorem raw_read_of {P : Core.Program} {s : State} {T : Core.Ty} {a w : Nat} {v 
     (pos : 0 < w) (h : Semantics.readNativeValue NativeLayout.maxDepth P s.heap T (a + 8 * w - 8) = .ok v) :
     Semantics.readRawSliceIndex P s T (a + 8 * w - 8) 1 0 = .ok v := by
   have nb : Semantics.isByte T = false := by rcases kind with ⟨_, rfl⟩ | ⟨_, rfl⟩ | w <;> first | rfl | exact w.notByte
-  simp only [Semantics.readRawSliceIndex, show ¬ (0 ≥ 1) by decide, if_false,
+  simp only [Semantics.readRawSliceIndex, show ¬ (0 ≥ 1) by decide, 
     elementAddress_zero kind words pos, Semantics.readRawElement, nb, Bool.false_eq_true, ↓reduceIte]
   exact h
 
@@ -482,7 +482,7 @@ theorem boxed_safe {t : SrcType} {id sizeOf slice panic : Nat} {values ps : List
   have heap0 : (({ st with locals := [] } : State).bindLocal 9 x).heap = st.heap := rfl
   generalize ({ st with locals := [] } : State).bindLocal 9 x = s0 at inv0 x0 heap0 ⊢
   simp only [boxedFunc, SrcStmt.toCore, SrcEff.toCore, SrcEff.toCoreList, SrcExpr.toCore, SrcType.toCore, SrcOp.toCore,
-    SrcType.typeId, List.map_cons, List.map_nil, bv_zero, bv_one, Nat.reducePow]
+    List.map_cons, List.map_nil, bv_zero, bv_one, Nat.reducePow]
   -- the storage's size
   refine safeS_let (sizeOf_call_safe sizeOfFound el hw pos inv0) fun {k v s1} call1 => ?_
   obtain ⟨w', hw', -, -, rfl, same1, locals1⟩ := sizeOf_call sizeOfFound el inv0 call1
@@ -545,7 +545,7 @@ theorem boxed_safe {t : SrcType} {id sizeOf slice panic : Nat} {values ps : List
     rw [next1] at this
     exact Nat.le_trans (Nat.add_le_add_left (Nat.le_max_left _ _) a) this
   simp only [SrcStmt.toCore, SrcEff.toCore, SrcEff.toCoreList, SrcExpr.toCore, SrcType.toCore, SrcOp.toCore,
-    SrcType.typeId, List.map_cons, List.map_nil, bv_zero, bv_one]
+    List.map_cons, List.map_nil, bv_zero, bv_one]
   -- the null check
   have cond := known_binary (P := sp.toCore) (op := .equal) (by decide) (by decide) (known_local ptr)
     (known_value (.pointer 0)) (by rw [toCore_target', pointer_equal])

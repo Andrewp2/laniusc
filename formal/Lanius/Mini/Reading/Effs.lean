@@ -1170,7 +1170,7 @@ theorem effSound : ∀ fuel, EffSound fuel
       split at h
       · rename_i _ npc _ _ c
         simp only [Bool.and_eq_true, decide_eq_true_eq, and_assoc] at c
-        simp only [isPathCall, Bool.and_eq_true, decide_eq_true_eq, and_assoc, c, true_and] at npc
+        simp only [isPathCall, Bool.and_eq_true, decide_eq_true_eq, c, true_and] at npc
         obtain ⟨a, ha, ch⟩ := ihChain h
         exact .callChain pp c.1 c.2.1 c.2.2 npc (ihPathCall ha) ch
       rename_i ne npc nm ni nc

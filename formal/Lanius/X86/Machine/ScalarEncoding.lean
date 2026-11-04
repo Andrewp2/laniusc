@@ -138,7 +138,7 @@ theorem immediate_decodes (width : X86.Register.Width) (destination : Register) 
         extendRegister ⟨destination.val % 8, Nat.mod_lt _ (by decide)⟩ false = destination := by
       apply Fin.ext
       simp [extendRegister, Nat.mod_eq_of_lt (by omega : destination.val < 8)]
-    simpa [decodeOpcode, opcodeByte', not195, not232, not233, notPush, notPop, immediateRange, displacement_decodes, destination_ext, extended]
+    simp [decodeOpcode, opcodeByte', not195, not232, not233, notPush, notPop, immediateRange, displacement_decodes, destination_ext]
       
   have decodeRex (present : rex ≠ 0) :
       decodeOpcode (X86.Register.fields width 0 destination) true
@@ -281,14 +281,14 @@ theorem setCondition_decodes (code : Fin 16) (destination : Register) :
       have small' := small rfl
       have small_mod : destination.val % 8 < 4 := by omega
       simp [decodeOpcode, escapedForm, byteRegister?, alunone, code_range,
-        opcode_mod, modrmByte, modrm.1, modrm.2.1, modrm.2.2,
+        opcode_mod, modrmByte, modrm.1, modrm.2.2,
         destination_ext, small_mod]
     | true =>
       have byteReg : byteRegister? fields true
           (UInt8.ofNat (Encoding.modRM 0 destination)) = some destination := by
         simp [byteRegister?, modrmByte, modrm.2.2, destination_ext]
       simp [decodeOpcode, escapedForm, alunone, code_range, opcode_mod,
-        modrmByte, modrm.1, modrm.2.1, modrm.2.2, destination_ext, byteReg]
+        modrmByte, modrm.1, byteReg]
   by_cases absent : rex = 0
   · have omitted := (X86.Register.omitted_iff .w32 0 destination force).mp absent
     have destination_ext : extendRegister ⟨destination.val % 8, Nat.mod_lt _ (by decide)⟩ false = destination := by

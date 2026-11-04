@@ -695,7 +695,7 @@ theorem cmp_simulates (word : Word) (operation : CmpOp) (rel : Rel frame s m) (i
     have right : loadedLeft.registers rcxRegister = m.acc := by
       simp [loadedLeft, moved, State.load64, State.move64, rcxRegister, rel.acc]
     rw [left, right] at holds
-    simp only [s', set, State.zeroExtendByte, State.setCondition, if_pos, Instr.step, Instr.update]
+    simp only [s', set, State.zeroExtendByte, State.setCondition, if_pos, Instr.update]
     rw [show condition compared.flags (operation.code word) = _ from holds]
     exact setCondition_value _ _
 
@@ -897,13 +897,13 @@ theorem copy_steps (top : BitVec 64) (first : Nat) :
     have step2 := slotStore_step s1 s2 (first + k)
       (by simpa only [s1, State.load64, State.immediate32] using bytes.prefix.suffix) rfl
     have rbp1 : s1.registers rbpRegister = top - 8 := by
-      simp only [s1, State.load64, State.immediate32, rbpRegister]; exact rbp
+      simp only [s1, State.load64, rbpRegister]; exact rbp
     have memory2 : s2.memory = write64 s.memory (frameSlotAddress (top - 8) (first + k))
         (read64 s.memory (frameSlotAddress (top - 8) slot)) := by
       have rbp' : s.registers 5 = top - 8 := rbp
-      simp [s2, s1, State.store64, State.load64, State.immediate32, rbpRegister, rbp', frameSlotAddress]
+      simp [s2, s1, State.store64, State.load64, rbpRegister, rbp', frameSlotAddress]
     have rip2 : s2.rip = s.rip + BitVec.ofNat 64 14 := by
-      simp only [s2, s1, State.store64, State.load64, State.immediate32, slotLoadBytes_length,
+      simp only [s2, s1, State.store64, State.load64, slotLoadBytes_length,
         slotStoreBytes_length]
       bv_omega
     have rbp2 : s2.registers rbpRegister = top - 8 := rbp1
@@ -945,7 +945,7 @@ theorem copy_steps (top : BitVec 64) (first : Nat) :
       simp only [List.map_cons, List.getLastD_cons]
       have rax2 : s2.registers 0 = read64 s.memory (frameSlotAddress (top - 8) slot) := by
         have rbp' : s.registers 5 = top - 8 := rbp
-        simp [s2, s1, State.store64, State.load64, State.immediate32, rbpRegister, rbp', frameSlotAddress]
+        simp [s2, s1, State.store64, State.load64, rbpRegister, rbp', frameSlotAddress]
       have same : rest.map (fun slot => read64 s2.memory (frameSlotAddress (top - 8) slot)) =
           rest.map (fun slot => read64 s.memory (frameSlotAddress (top - 8) slot)) :=
         List.map_congr_left fun src mem => by
@@ -959,7 +959,7 @@ theorem copy_steps (top : BitVec 64) (first : Nat) :
       omega
     · intro register zero
       rw [registers' register zero]
-      simp only [s2, s1, State.store64, State.load64, State.immediate32, if_neg zero]
+      simp only [s2, s1, State.store64, State.load64, if_neg zero]
     · intro address apart
       rw [memory' address (by
         intro j inRest lane
@@ -2563,9 +2563,9 @@ theorem random_simulates (rel : Rel frame s m) (fits : frame.Fits) (inFrame : sl
 
 /-- `sys .poll slot`: as `sys .write slot`, but rsi keeps the second argument
 (`mov rsi, rsi`) and the kernel changes nothing but rax, rcx and r11. -/
-theorem poll_simulates (rel : Rel frame s m) (fits : frame.Fits) (inFrame : slot + 3 ≤ frame.slots)
+theorem poll_simulates (rel : Rel frame s m) (_fits : frame.Fits) (inFrame : slot + 3 ≤ frame.slots)
     (loaded : CodeAt s.memory s.rip (sysSpec .poll slot))
-    (codeHeap : ∀ index, index < 34 → ¬frame.InHeap (s.rip + BitVec.ofNat 64 index))
+    (_codeHeap : ∀ index, index < 34 → ¬frame.InHeap (s.rip + BitVec.ofNat 64 index))
     {result : BitVec 64} {after : Heap}
     (ran : Syscall.poll.run [m.slots slot, m.slots (slot + 1), m.slots (slot + 2)] m.heap = some (result, after)) :
     ∃ n s', Steps n s s' ∧ Det n s s' ∧ Rel frame s' { m with

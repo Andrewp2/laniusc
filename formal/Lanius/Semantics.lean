@@ -420,7 +420,7 @@ theorem evalSignedBinary_shiftRight_i32_x86_word
       k = 6 ∨ k = 7 := by omega
   rcases cases with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
     simp only [evalSignedBinary, SignedIntTy.bits]
-  all_goals simp [Nat.mul_comm, Nat.mul_left_comm, Nat.mul_assoc]
+  all_goals simp [Nat.mul_comm]
   all_goals
     change wrapSigned Target.x86_64 .i32
       (if value >= 0 then value / _ else -((-value + _ - 1) / _)) = _
@@ -430,14 +430,7 @@ theorem evalSignedBinary_shiftRight_i32_x86_word
       show (2 ^ 16 : Nat) = 65536 by decide,
       show (2 ^ 20 : Nat) = 1048576 by decide,
       show (2 ^ 24 : Nat) = 16777216 by decide,
-      show (2 ^ 28 : Nat) = 268435456 by decide,
-      show Int.ofNat 16 = (16 : Int) by decide,
-      show Int.ofNat 256 = (256 : Int) by decide,
-      show Int.ofNat 4096 = (4096 : Int) by decide,
-      show Int.ofNat 65536 = (65536 : Int) by decide,
-      show Int.ofNat 1048576 = (1048576 : Int) by decide,
-      show Int.ofNat 16777216 = (16777216 : Int) by decide,
-      show Int.ofNat 268435456 = (268435456 : Int) by decide]
+      show (2 ^ 28 : Nat) = 268435456 by decide]
     try rw [Int.shiftRight_eq_div_pow]
     try split <;> congr 2 <;> omega
 

@@ -247,7 +247,7 @@ where its fields do. -/
 theorem literal_trap_inv {ty : SrcType} {es : List Core.Expr} (h : evalExpr k P st (ty.literal es) = .trapped r st') :
     ∃ j, k = j + 1 ∧ evalExprs j P st es = .trapped r st' := by
   cases k with
-  | zero => cases ty <;> simp [SrcType.literal, evalExpr] at h
+  | zero => cases ty <;> simp [evalExpr] at h
   | succ j =>
     cases ty <;> simp only [SrcType.literal, evalExpr] at h <;> split at h <;>
       first
@@ -595,7 +595,7 @@ theorem call_trap_inv {sp : SrcProgram} {k : Nat} {st st' : State} {r : Lanius.T
       cases found : sp.funcs[callee]? with
       | none => exact absurd (List.getElem?_eq_none_iff.mp found) (by omega)
       | some f =>
-        simp only [found, Option.map_some, SrcFunc.toCore] at h
+        simp only [found, SrcFunc.toCore] at h
         by_cases len : values.length = f.params.length
         · rw [bindParameters_eq _ _ len] at h
           simp only at h

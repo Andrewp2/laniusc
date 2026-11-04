@@ -26,7 +26,7 @@ def statementStep (s : State) (e : Event) : Bool × State :=
 /-- Columns are read only while a row is current. -/
 theorem column_needs_row (s : State) (h : (statementStep s .column).1 = true) : s = .row := by
   cases s <;> simp_all [statementStep, transition, inReady, inRow, inDone, inFailed, inFinalized,
-    go, stay, refuse]
+    stay, refuse]
 
 /-- A finalized statement stays finalized, whatever comes after. -/
 theorem finalized_absorbs (es : List Event) : Machine.run statementStep .finalized es = .finalized :=

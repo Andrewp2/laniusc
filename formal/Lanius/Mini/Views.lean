@@ -748,7 +748,7 @@ the next address still does: the views hold. -/
 theorem ViewsHold.heapOf {st st' : State} (hold : ViewsHold st) (cells : st'.cells = st.cells)
     (views : st'.i32ArrayViews = st.i32ArrayViews)
     (keep : ∀ b, Owns st.heap b → Before st.heap b → Owns st'.heap b ∧ Before st'.heap b) : ViewsHold st' :=
-  hold.frame views (fun _ _ c mem _ => cells ▸ mem) (fun _ _ c mem _ => cells ▸ mem) fun _ _ b o bf _ => keep b o bf
+  hold.frame views (fun _ _ _c mem _ => cells ▸ mem) (fun _ _ _c mem _ => cells ▸ mem) fun _ _ b o bf _ => keep b o bf
 
 /-- A heap change that keeps each owned block's range owned, below the next
 address (its bytes may change). -/

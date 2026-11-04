@@ -103,7 +103,7 @@ theorem testBit_or_left {x y i : Nat} (h : x.testBit i = true) : (x ||| y).testB
 theorem testBit_or_right {x y i : Nat} (h : y.testBit i = true) : (x ||| y).testBit i = true := by
   simp [Nat.testBit_or, h]
 
-theorem testBit_pair {a b : Nat} (hb : b < 80) (x : Nat) :
+theorem testBit_pair {a b : Nat} (_hb : b < 80) (x : Nat) :
     (x >>> (80 * a)).testBit b = x.testBit (80 * a + b) := by
   rw [Nat.testBit_shiftRight]
 
@@ -126,7 +126,7 @@ theorem heads_testBit {x a b : Nat} (hb : b < 80) (h : x.testBit (80 * a + b) = 
     · exact testBit_or_left (heads_testBit hb h n lt)
     · subst eq
       apply testBit_or_right
-      simp [row_ne_zero hb h, Nat.testBit_two_pow]
+      simp [row_ne_zero hb h]
 
 theorem outer_testBit {A F a b : Nat} (ha : A.testBit a = true) (hf : F.testBit b = true) :
     ∀ n, a < n → (outer A F n).testBit (80 * a + b) = true
@@ -183,7 +183,7 @@ theorem mem_sub {S T : Kinds2} {w : List Nat} (h : sub S T = true) (hw : S.Mem w
   | a :: b :: more => exact ⟨hw.1, hw.2.1, testBit_of_and_eq h2 hw.2.2⟩
 
 theorem mem_single {k : Nat} (hk : k < 80) : (single k).Mem [k] :=
-  ⟨hk, by simp [single, Nat.testBit_two_pow]⟩
+  ⟨hk, by simp [single]⟩
 
 theorem mem_eps : eps.Mem [] := rfl
 
@@ -311,7 +311,7 @@ theorem column_testBit {k a : Nat} : ∀ n, a < n → (column k n).testBit (80 *
     rcases Nat.lt_succ_iff_lt_or_eq.mp lt with lt | eq
     · exact testBit_or_left (column_testBit n lt)
     · subst eq
-      exact testBit_or_right (by simp [Nat.testBit_two_pow])
+      exact testBit_or_right (by simp)
 
 theorem widen_self {x i : Nat} (h : x.testBit i = true) : (widen x).testBit i = true :=
   testBit_or_left (testBit_or_left h)

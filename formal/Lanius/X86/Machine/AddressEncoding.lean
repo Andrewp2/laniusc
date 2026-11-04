@@ -145,7 +145,7 @@ private theorem indexed_decode_raw (destination base index : Register) (scale : 
       apply index_not_rsp
       omega
   simp [decodeOpcode, addressForm, indexedFields, Alu.ofOpcode?, mf.1, mf.2.1, mf.2.2, sf.1, sf.2.1, sf.2.2,
-    rule, displacement_decodes] <;> omega
+    displacement_decodes] <;> omega
 
 theorem indexed_decodes (destination base index : Register) (scale : Fin 4) (displacement : BitVec 32)
     (index_not_rsp : index.val ≠ 4) : decode (indexedAddressBytes destination base index scale displacement) =

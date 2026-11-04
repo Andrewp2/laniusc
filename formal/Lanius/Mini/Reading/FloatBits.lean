@@ -266,7 +266,7 @@ theorem roundRatio_nat (F : Format) (b1 : 1 ≤ F.bias) (N D : Nat) :
   simp only [hu, hk, hk']
 
 /-- `flRound` is `roundRatio` of a positive `num / den` (sign `+`, scale 1). -/
-theorem flRound_eq (F : Format) (he : 2 ≤ F.e) {num den : List Bool} (hn : 0 < bval num) (hd : 0 < bval den) :
+theorem flRound_eq (F : Format) (he : 2 ≤ F.e) {num den : List Bool} (_hn : 0 < bval num) (hd : 0 < bval den) :
     flRound F.e F.f num den = F.roundRatio false (bval num) (bval den) 0 := by
   have b1 := bias_pos F he
   rw [roundRatio_nat F b1]

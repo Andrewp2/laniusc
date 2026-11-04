@@ -34,11 +34,11 @@ open Lanius.Core (Value)
 
 theorem UInt32.ofNat_mod' (n : Nat) : UInt32.ofNat (n % 2 ^ 32) = UInt32.ofNat n := by
   apply UInt32.toNat_inj.mp
-  simp [UInt32.toNat_ofNat]
+  simp
 
 theorem UInt64.ofNat_mod' (n : Nat) : UInt64.ofNat (n % 2 ^ 64) = UInt64.ofNat n := by
   apply UInt64.toNat_inj.mp
-  simp [UInt64.toNat_ofNat]
+  simp
 
 theorem FloatTy.eq_of_number {a b : FloatTy} (same : a.number = b.number) : a = b := by
   cases a <;> cases b <;> simp [FloatTy.number] at same ⊢
@@ -76,10 +76,10 @@ theorem holds_f64 {v : Value} {n : Nat} (h : v = .f64Bits (UInt64.ofNat n)) :
   exact FloatTy.holds_word .f64 n
 
 theorem toNat_f32 {x : BitVec 64} (h : x.toNat < 2 ^ 32) : (UInt32.ofNat x.toNat).toNat = x.toNat := by
-  simp [UInt32.toNat_ofNat, Nat.mod_eq_of_lt h]
+  simp [Nat.mod_eq_of_lt h]
 
 theorem toNat_f64 (x : BitVec 64) : (UInt64.ofNat x.toNat).toNat = x.toNat := by
-  simp [UInt64.toNat_ofNat, Nat.mod_eq_of_lt x.isLt]
+  simp
 
 theorem bits_f32 {x : BitVec 64} (h : x.toNat < 2 ^ 32) : FloatTy.f32.bits x = x.toNat :=
   Nat.mod_eq_of_lt h
@@ -324,8 +324,7 @@ theorem castToFloat_sound {ft : FloatTy} {inner t : Typed} {env : Env} {w result
     obtain ⟨rfl, bound⟩ := holds
     cases source <;> cases ft <;> simp only [floatToFloat, Option.some.injEq, reduceCtorEq] at lowered <;>
       subst lowered <;>
-      simp only [SrcType.toScalar, FloatTy.toCore, FloatTy.value, Semantics.evalScalarCast, Except.ok.injEq,
-        reduceCtorEq] at casted
+      simp only [SrcType.toScalar, FloatTy.toCore, FloatTy.value, Semantics.evalScalarCast, Except.ok.injEq] at casted
     · subst casted
       simp only [Expr.eval, FOp.apply]
       refine holds_f64 ?_

@@ -2295,10 +2295,11 @@ variable {sp : SrcProgram} {mp : Program} {fuel : Nat} {ret : SrcType} {scope : 
   {c : Completion} {st' : State} {hp : Heap}
 variable [StaticsOf sp sx]
 
+omit [StaticsOf sp sx] in
 theorem stmt_nop (ok : SrcStmt.nop.lower (sp.sigsAt bud) sp.decls ret scope next = some stmt)
     (corr : Corr sx places scope frame st env) (fresh : st.Fresh)
     (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp)
-    (under : ∀ x ∈ places, x.cell < base) (run : execStmt (fuel + 1) sp.toCore st SrcStmt.nop.toCore = .done c st')
+    (_under : ∀ x ∈ places, x.cell < base) (run : execStmt (fuel + 1) sp.toCore st SrcStmt.nop.toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     Simulates sx bud places mp hp ret scope frame base st env stmt c st' := by
   simp only [SrcStmt.lower, Option.some.injEq] at ok
@@ -2381,7 +2382,7 @@ theorem stmt_letStruct (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {fi
     split at run
     · rename_i v st1 valueRun
       cases fuel with
-      | zero => simp [SrcType.literal, evalExpr] at valueRun
+      | zero => simp [evalExpr] at valueRun
       | succ k =>
         simp only [SrcType.literal, evalExpr] at valueRun
         split at valueRun
@@ -2414,7 +2415,7 @@ theorem stmt_letStruct (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {fi
     split at run
     · rename_i v st1 valueRun
       cases fuel with
-      | zero => simp [SrcType.literal, evalExpr] at valueRun
+      | zero => simp [evalExpr] at valueRun
       | succ k =>
         simp only [SrcType.literal, evalExpr] at valueRun
         split at valueRun
@@ -2739,14 +2740,14 @@ theorem armTest_done {P : Core.Program} {st : State} {sc e kv variant : Nat} {vs
     simp only [beq_self_eq_true, ↓reduceIte]
     cases m : Semantics.matchPatterns pats vs with
     | none =>
-      simp only [Semantics.evalMatchArms, Semantics.matchPattern, evalExpr, Semantics.restoreOutcomeLocals]
+      simp only [evalExpr, Semantics.restoreOutcomeLocals]
       exact ⟨_, rfl⟩
     | some bs =>
       obtain rfl := noBinds bs m
       simp only [evalExpr, Semantics.restoreOutcomeLocals]
       exact ⟨_, rfl⟩
   · have ne : (variant == kv) = false := by simpa using hk
-    simp only [ne, Bool.false_eq_true, ↓reduceIte, Semantics.evalMatchArms, Semantics.matchPattern, evalExpr,
+    simp only [ne, Bool.false_eq_true, ↓reduceIte, evalExpr,
       Semantics.restoreOutcomeLocals]
     exact ⟨_, rfl⟩
 
@@ -2907,6 +2908,7 @@ theorem stmt_matchArm (below : ∀ m ≤ fuel, StmtSound sp mp m) {scrutinee enu
       matched⟩
   all_goals simp at run
 
+omit [StaticsOf sp sx] in
 theorem stmt_set {id : Nat} {value : SrcExpr}
     (ok : (SrcStmt.set id value).lower (sp.sigsAt bud) sp.decls ret scope next = some stmt)
     (corr : Corr sx places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
@@ -2949,6 +2951,7 @@ theorem stmt_set {id : Nat} {value : SrcExpr}
       exact setFrom_outside xs b.slot env j (by rw [flat.length]; exact away)
   all_goals simp at run
 
+omit [StaticsOf sp sx] in
 theorem stmt_setField {id index : Nat} {value : SrcExpr}
     (ok : (SrcStmt.setField id index value).lower (sp.sigsAt bud) sp.decls ret scope next = some stmt)
     (corr : Corr sx places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
@@ -3232,11 +3235,12 @@ theorem stmt_while (ih : StmtSound sp mp fuel) {condition : SrcExpr} {body : Src
     cases y <;> simp_all
   all_goals simp at run
 
+omit [StaticsOf sp sx] in
 theorem stmt_return {value : SrcExpr}
     (ok : (SrcStmt.return value).lower (sp.sigsAt bud) sp.decls ret scope next = some stmt)
     (corr : Corr sx places scope frame st env) (fresh : st.Fresh)
     (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp)
-    (under : ∀ x ∈ places, x.cell < base) (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.return value).toCore = .done c st')
+    (_under : ∀ x ∈ places, x.cell < base) (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.return value).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     Simulates sx bud places mp hp ret scope frame base st env stmt c st' := by
   simp only [SrcStmt.lower] at ok
@@ -3422,10 +3426,11 @@ theorem stmt_letLoad (ih : StmtSound sp mp fuel) {id : Nat} {pointer offset : Sr
       all_goals simp at valueRun
   all_goals simp at run
 
+omit [StaticsOf sp sx] in
 theorem stmt_setByte {pointer offset value : SrcExpr}
     (ok : (SrcStmt.setByte pointer offset value).lower (sp.sigsAt bud) sp.decls ret scope next = some stmt)
     (corr : Corr sx places scope frame st env) (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp)
-    (under : ∀ x ∈ places, x.cell < base)
+    (_under : ∀ x ∈ places, x.cell < base)
     (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.setByte pointer offset value).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     Simulates sx bud places mp hp ret scope frame base st env stmt c st' := by
@@ -3499,10 +3504,11 @@ theorem stmt_setByte {pointer offset value : SrcExpr}
       all_goals simp at valueRun
   all_goals simp at run
 
+omit [StaticsOf sp sx] in
 theorem stmt_free {pointer size : SrcExpr} {shift : Nat}
     (ok : (SrcStmt.free pointer size shift).lower (sp.sigsAt bud) sp.decls ret scope next = some stmt)
     (corr : Corr sx places scope frame st env) (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp)
-    (under : ∀ x ∈ places, x.cell < base)
+    (_under : ∀ x ∈ places, x.cell < base)
     (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.free pointer size shift).toCore = .done c st') :
     Simulates sx bud places mp hp ret scope frame base st env stmt c st' := by
   simp only [SrcStmt.lower] at ok
@@ -3913,7 +3919,7 @@ theorem stmt_letIndex_i32 (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} 
         · simp at read
         simp only [Semantics.rawSliceElementAddress?, SrcType.toCore] at read
         obtain ⟨elt, eltOk, read⟩ := except_bind_ok read
-        simp only [pure, Except.pure, Except.ok.injEq] at eltOk
+        simp only [Except.ok.injEq] at eltOk
         subst eltOk
         simp only [Semantics.readRawElement, Semantics.isByte, Bool.false_eq_true, ↓reduceIte, NativeLayout.maxDepth,
       Semantics.readNativeValue] at read
@@ -4068,6 +4074,7 @@ theorem i32_store_bytes {x : BitVec 64} (bits : x = widen (low x)) :
   have := (low x).isLt
   split <;> omega
 
+omit [StaticsOf sp sx] in
 theorem stmt_setIndex_i32 {slice : Nat} {index value : SrcExpr} {b : Binding} {element : SrcType}
     (found : lookup scope slice = some b) (hElt : elementOf b.ty = some element) (elementI32 : element.isI32 = true)
     (ok : (match elementAddress b (lowerIndex scope index) with
@@ -4077,7 +4084,7 @@ theorem stmt_setIndex_i32 {slice : Nat} {index value : SrcExpr} {b : Binding} {e
         | none => none
         | some v => some (Stmt.storeWord MemWidth.m32 a v)) = some stmt)
     (corr : Corr sx places scope frame st env) (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp)
-    (under : ∀ x ∈ places, x.cell < base)
+    (_under : ∀ x ∈ places, x.cell < base)
     (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.setIndex slice index value).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     Simulates sx bud places mp hp ret scope frame base st env
@@ -4317,7 +4324,7 @@ theorem stmt_letIndex_u8 (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {
         · simp at read
         simp only [Semantics.rawSliceElementAddress?, SrcType.toCore, UintTy.toCore] at read
         obtain ⟨elt, eltOk, read⟩ := except_bind_ok read
-        simp only [pure, Except.pure, Except.ok.injEq] at eltOk
+        simp only [Except.ok.injEq] at eltOk
         subst eltOk
         simp only [Semantics.readRawElement, Semantics.isByte, ↓reduceIte] at read
         obtain ⟨bits, loaded, wrapped⟩ := except_bind_ok read
@@ -4378,13 +4385,14 @@ theorem stmt_letIndex_u8 (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {
         exact ⟨fresh', keeps, d, out, .seq (.loadByte room) exec, matched⟩
   all_goals simp at run
 
+omit [StaticsOf sp sx] in
 /-- `slice[index] = value` on a byte view: the value's low byte stored. -/
 theorem stmt_setIndex_u8 {slice : Nat} {index value : SrcExpr} {b : Binding} {element : SrcType}
     (found : lookup scope slice = some b) (hElt : elementOf b.ty = some element)
     (isU8 : element.isUint .uint8 = true)
     (ok : storeByteElement b element (lowerIndex scope index) scope value = some stmt)
     (corr : Corr sx places scope frame st env) (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp)
-    (under : ∀ x ∈ places, x.cell < base)
+    (_under : ∀ x ∈ places, x.cell < base)
     (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.setIndex slice index value).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     Simulates sx bud places mp hp ret scope frame base st env
@@ -4533,8 +4541,8 @@ theorem stmt_setIndex_u8 {slice : Nat} {index value : SrcExpr} {b : Binding} {el
       have n64 := (xv.eval env).isLt
       simp only [SrcType.Holds]
       refine ⟨?_, ?_⟩
-      · simp [UInt8.toNat_ofNat, Nat.mod_eq_of_lt bitsV, BitVec.toNat_ofNat]
-      · simp [UInt8.toNat_ofNat, Nat.mod_eq_of_lt bitsV, BitVec.toNat_ofNat, UintTy.width]
+      · simp [Nat.mod_eq_of_lt bitsV]
+      · simp [Nat.mod_eq_of_lt bitsV, UintTy.width]
         omega
   all_goals simp at run
 
@@ -5149,12 +5157,13 @@ theorem stmt_letIndex_word (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType}
         rcases packed with rfl | rfl <;> simp [wordElement, SrcType.isUint, UintTy.code] at hel
   all_goals simp at run
 
+omit [StaticsOf sp sx] in
 theorem stmt_setIndex_word {slice : Nat} {index value : SrcExpr} {b : Binding} {element : SrcType}
     (found : lookup scope slice = some b) (hElt : elementOf b.ty = some element)
     (hel : wordElement sp.decls element = true)
     (ok : storeWordElement b element (lowerIndex scope index) scope value = some stmt)
     (corr : Corr sx places scope frame st env) (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp)
-    (under : ∀ x ∈ places, x.cell < base)
+    (_under : ∀ x ∈ places, x.cell < base)
     (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.setIndex slice index value).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     Simulates sx bud places mp hp ret scope frame base st env
@@ -5236,7 +5245,7 @@ theorem stmt_letIndex (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {sli
     Simulates sx bud places mp hp ret scope frame base st env stmt c st' := by
   simp only [SrcStmt.lower, lowerLetIndexAny] at ok
   split at ok
-  case isTrue => exact arrayCase (by simp only [SrcStmt.lower, SrcEff.eval]; exact ok)
+  case isTrue => exact arrayCase (by simp only [SrcStmt.lower]; exact ok)
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
   simp only [lowerLetIndex] at ok
@@ -5248,6 +5257,7 @@ theorem stmt_letIndex (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {sli
       exact stmt_letIndex_u8 ih isU8 ok corr fr fresh le hc fc under run bound
     · exact stmt_letIndex_word ih ok corr fr fresh le hc fc under run bound
 
+omit [StaticsOf sp sx] in
 theorem stmt_setIndex {slice : Nat} {index value : SrcExpr}
     (arrayCase : (SrcStmt.setIndexEval slice (.ePure index) (.ePure value)).lower (sp.sigsAt bud) sp.decls ret
       scope next = some stmt → Simulates sx bud places mp hp ret scope frame base st env stmt c st')

@@ -138,7 +138,7 @@ theorem utf8Decode_encode {c : Nat} (h : c < 1114112) : utf8Decode (utf8Encode c
   · rw [utf8Encode, if_neg h1, if_pos h2]; simp only [utf8Decode, List.length, List.getD_cons_zero, List.getD_cons_succ, Nat.zero_add, Nat.reduceAdd, Nat.reduceEqDiff, if_true, if_false]; omega
   by_cases h3 : c < 65536
   · rw [utf8Encode, if_neg h1, if_neg h2, if_pos h3]; simp only [utf8Decode, List.length, List.getD_cons_zero, List.getD_cons_succ, Nat.zero_add, Nat.reduceAdd, Nat.reduceEqDiff, if_true, if_false]; omega
-  · rw [utf8Encode, if_neg h1, if_neg h2, if_neg h3]; simp only [utf8Decode, List.length, List.getD_cons_zero, List.getD_cons_succ, Nat.zero_add, Nat.reduceAdd, Nat.reduceEqDiff, if_true, if_false]; omega
+  · rw [utf8Encode, if_neg h1, if_neg h2, if_neg h3]; simp only [utf8Decode, List.length, List.getD_cons_zero, List.getD_cons_succ, Nat.zero_add, Nat.reduceAdd, Nat.reduceEqDiff, if_false]; omega
 
 theorem utf8Encode_not_escape {c e : Nat} (h : utf8Encode c ++ [39] = [92, e, 39]) : False := by
   by_cases h1 : c < 128
@@ -352,7 +352,7 @@ theorem clash_not_true {c : CTree} (a0 : nodeProd c = pNot) (b0 : nodeProd c = p
   simp only [pNot, pTrue] at *; omega
 theorem clash_not_false {c : CTree} (a0 : nodeProd c = pNot) (b0 : nodeProd c = pFalse) : False := by
   simp only [pFalse, pNot] at *; omega
-theorem clash_postfix_member {c : CTree} (a0 : nodeProd c = pPostfix) (a1 : nodeProd (kid c 1) = pPostfixEnd) (b0 : nodeProd c = pPostfix) (b1 : nodeProd (kid c 1) = pPostfixMember) : False := by
+theorem clash_postfix_member {c : CTree} (_a0 : nodeProd c = pPostfix) (a1 : nodeProd (kid c 1) = pPostfixEnd) (_b0 : nodeProd c = pPostfix) (b1 : nodeProd (kid c 1) = pPostfixMember) : False := by
   simp only [pPostfix, pPostfixEnd, pPostfixMember] at *; omega
 theorem clash_postfix_group {c : CTree} (a0 : nodeProd c = pPostfix) (b0 : nodeProd c = pGroup) : False := by
   simp only [pGroup, pPostfix] at *; omega

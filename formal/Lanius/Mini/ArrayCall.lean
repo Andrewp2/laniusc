@@ -59,7 +59,7 @@ theorem blockAt_eval {env : Env} {t pos A : Nat} (at_ : (env t).toNat = A) (smal
   exact Nat.mod_eq_of_lt small
 
 theorem lowByte_toNat (v : BitVec 64) : (lowByte v).toNat = v.toNat % 256 := by
-  simp [lowByte, BitVec.toNat_setWidth, UInt8.toNat_ofNat]
+  simp [lowByte, BitVec.toNat_setWidth]
 
 /-! ## Storing and loading an array's elements -/
 
@@ -733,7 +733,7 @@ theorem arrayCall_setup {sp : SrcProgram} {mp : Program} {d : Nat} {scope : List
     simp [Env.set, ne]
   have corrC := corr.env_congr (fr.agree fun j lt => agree j (by omega))
   have at_ : ((env.set t (BitVec.ofNat 64 hp.fsp)) t).toNat = hp.fsp := by
-    simp only [Env.set, if_pos rfl, BitVec.toNat_ofNat]
+    simp only [Env.set]
     exact Nat.mod_eq_of_lt (by omega)
   obtain ⟨-, -, -, holds⟩ := arrayArgs_sound (A := hp.fsp) corrC target ok argsRun
   obtain ⟨hpS, stores, out, limitS, cursorS, ioS, fspS, topS, lent⟩ :=
@@ -809,7 +809,7 @@ theorem arrayCall_sound {sp : SrcProgram} [StaticsOf sp sx] {mp : Program}
     .frame (by show hp'.limit + 0 ≤ hp.fsp; omega)
   have at3 : (((EC.setMany next rs).set (next + f.ret.size) (BitVec.ofNat 64 hp.fsp)) (next + f.ret.size)).toNat =
       hp.fsp := by
-    simp only [Env.set, if_pos rfl, BitVec.toNat_ofNat]
+    simp only [Env.set]
     exact Nat.mod_eq_of_lt (by omega)
   have top2 : ({ hp' with fsp := hp.fsp } : Heap).top = hp.top := top'
   obtain ⟨E4, loadsExec, loaded, same4⟩ :=

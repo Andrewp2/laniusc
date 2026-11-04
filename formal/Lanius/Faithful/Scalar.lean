@@ -228,7 +228,7 @@ than `u64` is the number it stands for, as the extraction writes it. -/
   by_cases h : s < 32
   · have : ¬ (s ≥ 32) := by omega
     have : x.toNat / 2 ^ s < 2 ^ 32 := Nat.lt_of_le_of_lt (Nat.div_le_self _ _) x.isLt
-    simp [evalBinaryValue, evalUnsignedBinary, Lanius.Semantics.wrapUnsigned, Lanius.Semantics.unsignedModulus, h,
+    simp [evalBinaryValue, evalUnsignedBinary, Lanius.Semantics.wrapUnsigned, Lanius.Semantics.unsignedModulus, 
       Core.UnsignedIntTy.bits, BitVec.toNat_ushiftRight, Nat.shiftRight_eq_div_pow, Nat.mod_eq_of_lt this, *]
   · have : s ≥ 32 := by omega
     simp [evalBinaryValue, evalUnsignedBinary, h, Core.UnsignedIntTy.bits, this]
@@ -290,8 +290,7 @@ open Lanius.Semantics (wrapSigned wrapUnsigned wrapUnsignedInt unsignedModulus)
 /-- `i32 -> u8` and the unsigned types to `u8`: the low byte. -/
 @[pure_rule] theorem cast_i32_u8 (x : BitVec 32) :
     evalScalarCast target (.unsigned .u8) (.signed .i32 x.toInt) = .ok (.unsigned .u8 (UInt8.ofNat x.toNat).toNat) := by
-  simp only [evalScalarCast, wrapUnsignedInt, unsignedModulus, Except.ok.injEq, Value.unsigned.injEq, true_and,
-    UInt8.toNat_ofNat]
+  simp only [evalScalarCast, wrapUnsignedInt, unsignedModulus, Except.ok.injEq, Value.unsigned.injEq, true_and]
   show Int.toNat (x.toInt % ((2 ^ 8 : Nat) : Int)) = x.toNat % 2 ^ 8
   rw [BitVec.toInt_eq_toNat_cond]
   have := x.isLt
@@ -299,7 +298,7 @@ open Lanius.Semantics (wrapSigned wrapUnsigned wrapUnsignedInt unsignedModulus)
 
 @[pure_rule] theorem cast_unsigned_u8 (k : Core.UnsignedIntTy) (a : Nat) :
     evalScalarCast target (.unsigned .u8) (.unsigned k a) = .ok (.unsigned .u8 (UInt8.ofNat a).toNat) := by
-  simp [evalScalarCast, wrapUnsigned, unsignedModulus, Core.UnsignedIntTy.bits, UInt8.toNat_ofNat]
+  simp [evalScalarCast, wrapUnsigned, unsignedModulus, Core.UnsignedIntTy.bits]
 
 /-- `u32 -> u64`: zero-extended. -/
 @[pure_rule] theorem cast_u32_u64 (x : BitVec 32) :

@@ -154,7 +154,7 @@ theorem escapedForm_reads (rex : X86.Register.Rex) (present : Bool) : Reads (esc
       subst hk
       refine ⟨by omega, by simp, fun t => ?_⟩
       rw [← h0]
-      simp [escapedForm, cc, c182, reg]
+      simp [escapedForm, c182, reg]
     · have inner : memoryForm rex 4022 modrm rem = some (x, k) := by
         simpa [escapedForm, cc, c182, reg] using h
       obtain ⟨low, high, take⟩ := memoryForm_reads rex 4022 modrm rem x k inner
@@ -163,19 +163,19 @@ theorem escapedForm_reads (rex : X86.Register.Rex) (present : Bool) : Reads (esc
       rw [← h0]
       have := take t
       simp only [show k - 1 = (k - 3) + 2 by omega, List.take_succ_cons, List.cons_append]
-      simp [escapedForm, cc, c182, reg, this, inner]
+      simp [escapedForm, c182, reg, this, inner]
   by_cases c175 : op.toNat = 175
   · have reg : modrm.toNat / 64 = 3 := by
       by_cases reg : modrm.toNat / 64 = 3
       · exact reg
-      · simp [escapedForm, cc, c175, reg] at h
+      · simp [escapedForm, c175, reg] at h
     have hk : k = 3 := by
-      simp [escapedForm, cc, c175, reg] at h
+      simp [escapedForm, c175, reg] at h
       omega
     subst hk
     refine ⟨by omega, by simp, fun t => ?_⟩
     rw [← h0]
-    simp [escapedForm, cc, c175, reg]
+    simp [escapedForm, c175, reg]
   · simp only [escapedForm, cc, c182, c175, dite_false, if_false] at h
     split at h
     · rename_i c d size branch
@@ -341,8 +341,8 @@ theorem decodeOpcode_reads (rex : X86.Register.Rex) (present : Bool) : Reads (de
         simp [decodeOpcode, c195, c232, c233, push, pop, imm, hw, hd, take]
   by_cases c136 : opcode.toNat = 136
   · rcases rest with _ | ⟨modrm, remaining⟩
-    · simp [decodeOpcode, c195, c232, c233, push, pop, imm, c136] at h
-    simp [decodeOpcode, c195, c232, c233, push, pop, imm, c136] at h
+    · simp [decodeOpcode, c136] at h
+    simp [decodeOpcode, c136] at h
     obtain ⟨⟨n3, nlow⟩, inner⟩ := h
     obtain ⟨low, high, take⟩ := memoryForm_reads rex 136 modrm remaining x k inner
     simp only [show ¬(136 = 4022) by decide, if_false] at low high take
@@ -352,7 +352,7 @@ theorem decodeOpcode_reads (rex : X86.Register.Rex) (present : Bool) : Reads (de
     have := take t
     simp only [Nat.add_sub_cancel] at this
     simp only [List.take_succ_cons, List.cons_append]
-    simp [decodeOpcode, c195, c232, c233, push, pop, imm, c136, this, inner, n3, nlow]
+    simp [decodeOpcode, c136, this, inner, n3]
 
   by_cases c137 : opcode.toNat = 137 ∨ opcode.toNat = 139
   · rcases rest with _ | ⟨modrm, remaining⟩
@@ -398,46 +398,46 @@ theorem decodeOpcode_reads (rex : X86.Register.Rex) (present : Bool) : Reads (de
   | none =>
   by_cases c133 : opcode.toNat = 133
   · rcases rest with _ | ⟨modrm, remaining⟩
-    · simp [decodeOpcode, c195, c232, c233, push, pop, imm, c136, c137, c41, alu, Alu.ofOpcode?, c133] at h
-    have hk : k = 2 := by simp [decodeOpcode, c195, c232, c233, push, pop, imm, c136, c137, c41, alu, Alu.ofOpcode?, c133] at h; omega
+    · simp [decodeOpcode, Alu.ofOpcode?, c133] at h
+    have hk : k = 2 := by simp [decodeOpcode, Alu.ofOpcode?, c133] at h; omega
     subst hk
     refine ⟨by simp, fun t => ?_⟩
     rw [← h0]
-    simp [decodeOpcode, c195, c232, c233, push, pop, imm, c136, c137, c41, alu, Alu.ofOpcode?, c133]
+    simp [decodeOpcode, Alu.ofOpcode?, c133]
   by_cases c99 : opcode.toNat = 99
   · rcases rest with _ | ⟨modrm, remaining⟩
-    · simp [decodeOpcode, c195, c232, c233, push, pop, imm, c136, c137, c41, alu, Alu.ofOpcode?, c133, c99] at h
-    have hk : k = 2 := by simp [decodeOpcode, c195, c232, c233, push, pop, imm, c136, c137, c41, alu, Alu.ofOpcode?, c133, c99] at h; omega
+    · simp [decodeOpcode, Alu.ofOpcode?, c99] at h
+    have hk : k = 2 := by simp [decodeOpcode, Alu.ofOpcode?, c99] at h; omega
     subst hk
     refine ⟨by simp, fun t => ?_⟩
     rw [← h0]
-    simp [decodeOpcode, c195, c232, c233, push, pop, imm, c136, c137, c41, alu, Alu.ofOpcode?, c133, c99]
+    simp [decodeOpcode, Alu.ofOpcode?, c99]
   by_cases c247 : opcode.toNat = 247
   · rcases rest with _ | ⟨modrm, remaining⟩
-    · simp [decodeOpcode, c195, c232, c233, push, pop, imm, c136, c137, c41, alu, Alu.ofOpcode?, c133, c99, c247] at h
+    · simp [decodeOpcode, Alu.ofOpcode?, c247] at h
     have hk : k = 2 := by
-      simp [decodeOpcode, c195, c232, c233, push, pop, imm, c136, c137, c41, alu, Alu.ofOpcode?, c133, c99, c247] at h
+      simp [decodeOpcode, Alu.ofOpcode?, c247] at h
       repeat' split at h
       all_goals simp at h
       all_goals omega
     subst hk
     refine ⟨by simp, fun t => ?_⟩
     rw [← h0]
-    simp [decodeOpcode, c195, c232, c233, push, pop, imm, c136, c137, c41, alu, Alu.ofOpcode?, c133, c99, c247]
+    simp [decodeOpcode, Alu.ofOpcode?, c247]
   by_cases c211 : opcode.toNat = 211
   · rcases rest with _ | ⟨modrm, remaining⟩
-    · simp [decodeOpcode, c195, c232, c233, push, pop, imm, c136, c137, c41, alu, Alu.ofOpcode?, c133, c99, c247, c211] at h
+    · simp [decodeOpcode, Alu.ofOpcode?, c211] at h
     have hk : k = 2 := by
-      simp [decodeOpcode, c195, c232, c233, push, pop, imm, c136, c137, c41, alu, Alu.ofOpcode?, c133, c99, c247, c211] at h
+      simp [decodeOpcode, Alu.ofOpcode?, c211] at h
       obtain ⟨-, h⟩ := h
       exact bind_size h
     subst hk
     refine ⟨by simp, fun t => ?_⟩
     rw [← h0]
-    simp [decodeOpcode, c195, c232, c233, push, pop, imm, c136, c137, c41, alu, Alu.ofOpcode?, c133, c99, c247, c211]
+    simp [decodeOpcode, Alu.ofOpcode?, c211]
   by_cases c141 : opcode.toNat = 141
   · rcases rest with _ | ⟨modrm, remaining⟩
-    · simp [decodeOpcode, c195, c232, c233, push, pop, imm, c136, c137, c41, alu, Alu.ofOpcode?, c133, c99, c247, c211, c141] at h
+    · simp [decodeOpcode, Alu.ofOpcode?, c141] at h
     have inner : addressForm rex modrm remaining = some (x, k) := by
       simpa [decodeOpcode, c195, c232, c233, push, pop, imm, c136, c137, c41, alu, Alu.ofOpcode?, c133, c99, c247, c211, c141] using h
     obtain ⟨low, high, take⟩ := addressForm_reads rex modrm remaining x k inner
@@ -447,13 +447,13 @@ theorem decodeOpcode_reads (rex : X86.Register.Rex) (present : Bool) : Reads (de
     have := take t
     simp only [Nat.add_sub_cancel] at this
     simp only [List.take_succ_cons, List.cons_append]
-    simp [decodeOpcode, c195, c232, c233, push, pop, imm, c136, c137, c41, alu, Alu.ofOpcode?, c133, c99, c247, c211, c141, this, inner]
+    simp [decodeOpcode, Alu.ofOpcode?, c141, this, inner]
   by_cases c153 : opcode.toNat = 153
-  · have hk : k = 1 := by simp [decodeOpcode, c195, c232, c233, push, pop, imm, c136, c137, c41, alu, Alu.ofOpcode?, c133, c99, c247, c211, c141, c153] at h; omega
+  · have hk : k = 1 := by simp [decodeOpcode, Alu.ofOpcode?, c153] at h; omega
     subst hk
     refine ⟨by simp, fun t => ?_⟩
     rw [← h0]
-    simp [decodeOpcode, c195, c232, c233, push, pop, imm, c136, c137, c41, alu, Alu.ofOpcode?, c133, c99, c247, c211, c141, c153]
+    simp [decodeOpcode, Alu.ofOpcode?, c153]
   by_cases c15 : opcode.toNat = 15
   · have inner : escapedForm rex present rest = some (x, k) := by
       simpa [decodeOpcode, c195, c232, c233, push, pop, imm, c136, c137, c41, alu, Alu.ofOpcode?, c133, c99, c247, c211, c141, c153, c15] using h
@@ -464,7 +464,7 @@ theorem decodeOpcode_reads (rex : X86.Register.Rex) (present : Bool) : Reads (de
     have := take t
     simp only [Nat.add_sub_cancel] at this
     simp only [List.take_succ_cons, List.cons_append]
-    simp [decodeOpcode, c195, c232, c233, push, pop, imm, c136, c137, c41, alu, Alu.ofOpcode?, c133, c99, c247, c211, c141, c153, c15, this, inner]
+    simp [decodeOpcode, Alu.ofOpcode?, c15, this, inner]
   by_cases sse : (!present && (opcode.toNat = 102 || opcode.toNat = 242 || opcode.toNat = 243)) = true
   · have inner : sseDecode opcode.toNat rest = some (x, k) := by
       simpa [decodeOpcode, c195, c232, c233, push, pop, imm, c136, c137, c41, alu, c133, c99, c247, c211, c141, c153, c15, sse] using h

@@ -538,7 +538,7 @@ theorem EFails.callBody {L : Nat} {st : State} {callee : Nat} {args : List Core.
   intro j
   have call := fails (max k j + 1)
   have argsRun' := values_after argsRun (Nat.le_max_left k j)
-  simp only [evalExpr, argsRun', SrcProgram.function?_toCore, found, Option.map_some, SrcFunc.toCore,
+  simp only [evalExpr, argsRun', SrcProgram.function?_toCore, found, SrcFunc.toCore,
     bindParameters_eq _ _ len] at call
   cases hb : execStmt j sp.toCore (calleeState f values afterArgs) f.body.toCore with
   | done c completed =>
@@ -570,6 +570,7 @@ theorem Prologue.stops {mp : Program} {env envX : Env} {hp hpX : Heap} {b pre : 
   · exact s
   · exact .seqSecond (h d) s
 
+omit [StaticsOf sp sx] in
 /-- A callee's frame: its parameters in correspondence with the mini entry,
 after the prologue takes its block of frame memory. -/
 theorem callee_frame (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {callee : Nat}
@@ -734,6 +735,7 @@ theorem assign_local_progress {P : Core.Program} {scope frame st env} (corr : Co
   simp only [place, valueRun', Semantics.evalAssignValue, Semantics.assignOpBinary?,
     Semantics.writeResolvedPlaceNative, Semantics.writeResolvedPlace, assignCell_some entry2, synced, ite_self]
 
+omit [StaticsOf sp sx] in
 /-- A failing `id = e` whose `e` completes within the limit is impossible. -/
 theorem Fails.assign_done {scope frame st env} (corr : Corr sx places scope frame st env) {id : Nat} {b : Binding}
     (found : lookup scope id = some b) {e : Core.Expr}
@@ -744,6 +746,7 @@ theorem Fails.assign_done {scope frame st env} (corr : Corr sx places scope fram
   obtain ⟨k', st3, run, heap⟩ := assign_local_progress corr found valueRun hold apart present
   exact fails.not_done (k := k' + 1) (c := .next) (st' := st3) (by simp only [execStmt, run]) (by rw [heap]; exact within)
 
+omit [StaticsOf sp sx] in
 /-- The value of a failing `id = e` that never completes fails. -/
 theorem EFails.assignValue {scope frame st env} (corr : Corr sx places scope frame st env) {id : Nat} {b : Binding}
     (found : lookup scope id = some b) {e : Core.Expr} (fails : EFails sp L st (.assign .set (.local id) e))
@@ -1113,7 +1116,7 @@ theorem setIndex_outcome {P : Core.Program} {k : Nat} {st : State} {slice : Nat}
   rw [evalExpr] at hout
   rw [Semantics.evalPlace] at hout
   rw [base] at hout
-  simp only [idxRun, posOk, lt, if_true, decide_true] at hout
+  simp only [idxRun, posOk, lt, if_true] at hout
   cases located : Semantics.rawSliceElementAddress? P element address pos with
   | error r =>
     simp only [located] at hout
@@ -1175,8 +1178,8 @@ theorem setIndex_outcome_safe {P : Core.Program} {k : Nat} {st : State} {slice :
       simp only [idxRun, posOk, lt, ↓reduceIte, values, got, eRun, Semantics.evalAssignValue,
         Semantics.assignOpBinary?, Semantics.writeResolvedPlaceNative, Semantics.writeResolvedPlace,
         List.nil_append, Nat.zero_add, entry, Semantics.replaceProjectedValue, State.assignCell,
-        Option.isSome_some, if_true, Semantics.ResolvedPlace.viewFreeRootWrite, List.isEmpty_cons,
-        Bool.false_and, Bool.and_false, Bool.false_eq_true, if_false,
+        Option.isSome_some, Semantics.ResolvedPlace.viewFreeRootWrite, List.isEmpty_cons,
+        Bool.false_and, Bool.and_false, Bool.false_eq_true, 
         Views.syncTo_ok (hold.replace (value := .array (Semantics.setValue vs pos right)) apart)]
 
 end Indexing
@@ -1239,7 +1242,7 @@ theorem stops_then (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decl
   · obtain ⟨d, stops⟩ := ih1 firstOk corr fr fresh le hc fc under within (fails.seqFirst done)
     exact ⟨d, .seqFirst stops⟩
 
-theorem stops_if (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
+theorem stops_if (_lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     {condition : SrcExpr} {thenBranch elseBranch : SrcStmt} (ih1 : SrcStops sp mp n thenBranch)
     (ih2 : SrcStops sp mp n elseBranch) : SrcStops sp mp n (.if condition thenBranch elseBranch) := by
   intro bud sx _ places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
@@ -2314,7 +2317,7 @@ theorem stops_letIndex_i32 {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcE
     · simp at read
     simp only [Semantics.rawSliceElementAddress?, SrcType.toCore] at read
     obtain ⟨elt, eltOk, read⟩ := except_bind_ok read
-    simp only [pure, Except.pure, Except.ok.injEq] at eltOk
+    simp only [Except.ok.injEq] at eltOk
     subst eltOk
     simp only [Semantics.readRawElement, Semantics.isByte, Bool.false_eq_true, ↓reduceIte, NativeLayout.maxDepth,
       Semantics.readNativeValue] at read
@@ -2468,7 +2471,7 @@ theorem stops_letIndex_u8 {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcEx
     · simp at read
     simp only [Semantics.rawSliceElementAddress?, SrcType.toCore, UintTy.toCore] at read
     obtain ⟨elt, eltOk, read⟩ := except_bind_ok read
-    simp only [pure, Except.pure, Except.ok.injEq] at eltOk
+    simp only [Except.ok.injEq] at eltOk
     subst eltOk
     simp only [Semantics.readRawElement, Semantics.isByte, ↓reduceIte] at read
     obtain ⟨bits, loaded, wrapped⟩ := except_bind_ok read
@@ -2626,7 +2629,7 @@ theorem stops_letIndex {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcExpr}
   simp only [SrcStmt.lower, lowerLetIndexAny] at ok
   split at ok
   case isTrue =>
-    exact arrayCase (by simp only [SrcStmt.lower, SrcEff.eval]; exact ok) corr fr fresh le hc fc under within fails
+    exact arrayCase (by simp only [SrcStmt.lower]; exact ok) corr fr fresh le hc fc under within fails
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
   simp only [lowerLetIndex] at ok
@@ -2639,6 +2642,7 @@ theorem stops_letIndex {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcExpr}
     · exact stops_letIndex_word ih ok corr fr fresh le hc fc under within fails
 
 
+omit [StaticsOf sp sx] in
 /-- A failing `slice[index] = value` whose operands are checked is impossible. -/
 theorem setIndex_fails {scope : List Binding} {frame : Nat → Nat} {st : State} {env : Env} {hp : Heap}
     (corr : Corr sx places scope frame st env) (fresh : st.Fresh) (fc : FrameCorr sx bud places st hp)

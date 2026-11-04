@@ -73,7 +73,7 @@ theorem boxed_sim {c : Nat} {t : SrcType} {id sizeOf slice panic : Nat} {values 
   have heap0 : (({ st with locals := [] } : State).bindLocal 9 x).heap = st.heap := rfl
   generalize hs0 : ({ st with locals := [] } : State).bindLocal 9 x = s0 at run inv0 x0 step0 heap0
   simp only [boxedFunc, SrcStmt.toCore, SrcEff.toCore, SrcEff.toCoreList, SrcExpr.toCore, SrcType.toCore, SrcOp.toCore,
-    SrcType.typeId, List.map_cons, List.map_nil, bv_zero, bv_one, Nat.reducePow] at run
+    List.map_cons, List.map_nil, bv_zero, bv_one, Nat.reducePow] at run
   -- the storage's size
   obtain ⟨_, v1, s1, s2, -, call1, b1, rfl⟩ := letLocal_inv run
   obtain ⟨w, hw, pos, most, rfl, same1, locals1⟩ := sizeOf_call sizeOfFound el inv0 call1

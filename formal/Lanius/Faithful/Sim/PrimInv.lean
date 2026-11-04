@@ -261,7 +261,7 @@ theorem HeapRanges.allocated {heap : Memory.Heap} {n m : Nat} {budget : Option N
   split at ok
   · simp at ok
   rename_i notBad
-  simp only [notBad, if_false]
+  simp only [notBad]
   cases found : heap.containingBlock? p with
   | none => simp [found] at ok
   | some block =>
@@ -288,7 +288,7 @@ theorem HeapRanges.layout {before after : Memory.Heap}
   split at ok
   · simp at ok
   rename_i notBad
-  simp only [notBad, if_false]
+  simp only [notBad]
   cases found : before.containingBlock? p with
   | none => simp [found] at ok
   | some block =>

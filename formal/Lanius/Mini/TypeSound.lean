@@ -379,7 +379,7 @@ theorem same_toCore : ∀ {a b : SrcType}, a.same b = true → a.toCore = b.toCo
     subst this; rfl
   | .view n, b, h => by cases b <;> simp [SrcType.same] at h
   | .str, b, h => by cases b <;> simp [SrcType.same, SrcType.isStr] at h ⊢
-  | .ref _, b, h => by cases b <;> simp [SrcType.same, SrcType.isStr] at h ⊢
+  | .ref _, b, h => by cases b <;> simp [SrcType.same] at h ⊢
 
 /-- An integer type of the front pass. -/
 inductive IsInt : SrcType → Prop where
@@ -1518,7 +1518,7 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
     simp only [SrcEff.eval, evalPure] at h
     split at h
     · rename_i t lowered
-      simp only [evalScalar, Option.some.injEq] at h
+      simp only [Option.some.injEq] at h
       subst h
       exact (SrcExpr.lower_typed target e ok lowered).1
     · cases e with
@@ -3762,7 +3762,7 @@ theorem lowerFuncs_wellTyped {sp : SrcProgram} {funcs : List Func}
   have r := returns func mem
   simp only [Bool.or_eq_true] at r
   rcases r with unit | r
-  · exact ⟨trivial, stmt, Or.inl (by simp [SrcFunc.toCore, eq_unit unit, SrcType.toCore])⟩
+  · exact ⟨trivial, stmt, Or.inl (by simp [eq_unit unit, SrcType.toCore])⟩
   · exact ⟨trivial, stmt, Or.inr (returns_sound _ r)⟩
 
 open TypeSound in
@@ -3819,7 +3819,7 @@ theorem idClash_not_wellTyped (structs : List Core.StructDecl) (enums : List Cor
   intro ⟨_, funcs⟩
   have h := funcs _ (List.mem_cons_self ..)
   simp only [Typing.FunctionWellTyped, idClash, SrcFunc.toCore, SrcStmt.toCore, SrcType.toCore,
-    SrcType.typeId, List.map_cons, List.map_nil] at h
+    List.map_cons, List.map_nil] at h
   obtain ⟨_, typed, _⟩ := h
   cases typed with
   | letLocal first rest =>

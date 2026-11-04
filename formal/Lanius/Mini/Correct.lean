@@ -532,7 +532,7 @@ theorem compiled_contract {prog : Program} {binary : Binary} (compiled : compile
   have innerNeed := frameNeed_le innerCodeFound
   have innerFrame := frameBytes_slots innerCode.slots
   refine ⟨binary.stackNeed previous, ?_, ?_, fun w => ?_⟩
-  · simp only [Binary.stackNeed, Nat.succ_mul, Nat.add_mul] at *
+  · simp only [Binary.stackNeed, Nat.succ_mul] at *
     omega
   · simp only [Binary.guard]
     omega
