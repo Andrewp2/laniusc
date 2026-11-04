@@ -20,7 +20,15 @@ lean_lib LaniusMini where
 /-- Open statements, their reductions and proofs (OPEN_STATEMENTS.md): the
 gate builds the whole library. -/
 lean_lib LaniusOpen where
-  globs := #[.andSubmodules `Lanius.Open]
+  -- each area but Cert, which is LaniusCert's (add a new area here)
+  globs := #[.one `Lanius.Open, .submodules `Lanius.Open.F5, .submodules `Lanius.Open.F14]
+
+/-- The certificate checker (formal/cert/, check_mini.lani) through the
+verified compiler, and its soundness through the open statements under
+Lanius.Open.Cert. Nothing in Lanius, LaniusMini or LaniusOpen imports it, so
+an edit here or to check_mini.lani rebuilds only this library. -/
+lean_lib LaniusCert where
+  globs := #[.submodules `Lanius.Cert, .submodules `Lanius.Open.Cert]
 
 /-- The precondition tactic (`pre_auto`, `post_auto`), compiled to native code
 so the generated SelfPre/GenP proofs do not run it in the interpreter. It
