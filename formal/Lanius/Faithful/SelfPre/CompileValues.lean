@@ -3,6 +3,7 @@ import Lanius.Faithful.SelfPre.NB
 import Lanius.Faithful.SelfPre.TS
 import Lanius.Faithful.SelfPre.CompileTypes
 import Lanius.Faithful.SelfPre.CompileEvalTypes
+import Lanius.Faithful.SelfPre.CompileNeeds
 import Lanius.Mini.Room
 
 /-! # Byte lists of the compile side (F14)
@@ -153,5 +154,10 @@ below 128 (its `COMPILE_OVERRIDES` invariant, `nb chars ≤ 255`). -/
   · rw [hs] at h
     have : nb l < 128 := by rw [← h]
     simp only [Bool.true_eq_false, false_iff]; omega
+
+
+/-- A body's temporaries are at most its weight, which `compileFunc`'s room check
+bounds (`roomFits_stmtRoom`): `compile_func`'s `locals + temps`. -/
+theorem val_Stmt_temps (s : Stmt) : Stmt.temps s ≤ Stmt.weight s := Stmt.temps_le_weight s
 
 end Lanius.Faithful.SelfPre

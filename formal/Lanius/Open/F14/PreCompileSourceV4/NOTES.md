@@ -121,3 +121,13 @@ variable passes it on, a `SrcType.size t` argument gives `ts t`. `str_words` get
 `word_stride`, `element_base`, `str_words` pass. Left in B: `pick_element`/`put_element` (also add the
 base slot `base + k * size`: A) and `params_array_bytes`/`SrcStmt_array_bytes` (the frame block's sums:
 D). P02: 66 -> 62, none new.
+
+**11-03, after leafA-frame (leafB).** The temps lines of `COMPILE_OVERRIDES` for `compile_func`,
+`compile_funcs`, `compile_program`, `compile_optimized`, `compile_lowered` and `compile_or` are gone:
+`compile_func` gets `Stmt.temps body ≤ weight` (`val_Stmt_temps`, stated up front by the new
+`COMPILE_FACTS`, since only `Stmt_temps`' premise mentions it) and its room check bounds the weight.
+D: `CompileNeeds.lean` (`val_SrcStmt_calleeNeed`/`val_SrcEff_calleeNeed`: a callee's need is at most the
+largest need, `val_frameBlock` from `frameBlock_le`, and `val_needRound(At)`/`val_needsAfter`/`val_funcNeeds`:
+every round is capped at `needLimit`), with `nb prev ≤ 2^40` as `need_round_at`'s, `need_round`'s and
+`needs_after`'s invariant. leafA-frame's caps also fixed `frame_block` and the array-bytes sums.
+P02: 62 -> 58, none new. `LowerFuncsTemps` is no longer used by the pre lemmas.

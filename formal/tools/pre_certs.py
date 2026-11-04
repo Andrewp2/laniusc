@@ -553,7 +553,7 @@ COMPILE_NUM_SKIP = {
     'frame_block', 'link', 'link_fitting', 'link_onto', 'lower_arm_found',
     'lower_arm_stmt', 'lower_arms', 'lower_body', 'lower_field', 'lower_field_of',
     'lower_func', 'lower_match_arms', 'lower_match_on', 'lower_set_field_of',
-    'lower_set_values', 'need_round', 'needs_after', 'pack_round',
+    'lower_set_values', 'need_round', 'need_round_at', 'needs_after', 'pack_round',
     'pack_rounds', 'pick_element', 'put_element', 'round_cons', 'round_join',
     'set_field_eval_of', 'slot_vars', 'store_any', 'store_array', 'store_array_element',
     'store_eval', 'store_eval_byte', 'store_eval_element', 'store_eval_word',
@@ -581,17 +581,11 @@ COMPILE_OVERRIDES = {
                  f'64 * Lanius.Mini.Stmt.weight p6 + 14 ≤ {PC_LIMIT}'],
     'loop_code': [f'p1 + Lanius.Mini.codeSize p2 + 64 * Lanius.Mini.Stmt.weight p3 + 14 ≤ {PC_LIMIT}'],
     'code_size': ['Lanius.Mini.codeSize p0 ≤ K'],
-    # temporaries below `K` (`CompileValues`' `funcsTemps`): from the lowering's
-    # cost and the optimizer (the open leaves `LowerFuncsTemps`, `OptimizeKeepsNumbers`)
+    # temporaries below `K`: a body's from `compile_func`'s room check (its weight,
+    # `val_Stmt_temps`, `Stmt.temps_le_of_roomFits`)
     'Expr_temps': ['Lanius.Mini.Expr.temps p0 ≤ K'],
     'args_temps': ['Lanius.Mini.argsTemps p0 p1 ≤ K'],
     'Stmt_temps': ['Lanius.Mini.Stmt.temps p0 ≤ K'],
-    'compile_func': ['Lanius.Mini.Stmt.temps p1.body ≤ K'],
-    'compile_funcs': ['Lanius.Faithful.SelfPre.funcsTemps p1 ≤ K'],
-    'compile_program': ['Lanius.Faithful.SelfPre.funcsTemps p0.funcs ≤ K'],
-    'compile_optimized': ['Lanius.Faithful.SelfPre.funcsTemps p0.funcs ≤ K'],
-    'compile_lowered': ['Lanius.Faithful.SelfPre.optTemps p0 ≤ K'],
-    'compile_or': ['Lanius.Faithful.SelfPre.funcsTemps p1.funcs ≤ K'],
     # type sizes and parameters' slots: a sum whose total is below `K` has every
     # partial sum below it (the total from `ts`'s `size_le_tySlots`, or from
     # `PreCompileSourceV4`'s parameters' premise, `paramsMax`)
@@ -603,6 +597,10 @@ COMPILE_OVERRIDES = {
     'Instr_size': ['Lanius.Mini.Instr.size p0 ≤ K'],
     # a string's bytes (`lower_str` lowers only ASCII strings, `strAscii_eq_true`)
     'str_words': ['nb p0 ≤ 255'],
+    # the needs: each round caps them at `needLimit` (`CompileNeeds`)
+    'need_round_at': ['nb p1 ≤ 1099511627776'],
+    'need_round': ['nb p1 ≤ 1099511627776'],
+    'needs_after': ['nb p1 ≤ 1099511627776'],
 }
 # The parameters those invariants bound instead of `nb x ≤ M` (pc offsets and
 # code lists: their numbers are slots and jump targets, not the input's; and
@@ -644,6 +642,12 @@ COMPILE_NUM_ALIAS = {'compile_funcs', 'compile_lowered', 'lower_funcs'}
 # Modules the compile side's pre lemmas import for proved leaves' value lemmas
 # (`val_optimizeProgram`, from OptimizeKeepsNumbers).
 COMPILE_PRE_IMPORTS = ['Lanius.Faithful.SelfPre.CompileOpt']
+# Value lemmas a pre lemma states up front (`p<i>` its parameters): facts about a
+# term that only a callee's premise mentions, where `valueFacts` does not look.
+COMPILE_FACTS = {
+    # the body's temporaries: at most its weight, which the room check bounds
+    'compile_func': ['Lanius.Faithful.SelfPre.val_Stmt_temps p1.body'],
+}
 
 
 def args_after(text, i):
@@ -955,6 +959,9 @@ def num_facts(e, k, xs, tys, names):
                 out += (f'  have hn_{x}_{f} : {lhs} ≤ {num_bound(k)} := '
                         f'Nat.le_trans (nb_le_{t.split(".")[-1]}_{f} {x}) {hyps[j]}\n')
         j += 1
+    xl = xs.split()
+    for f in COMPILE_FACTS.get(k, []):
+        out += '  have := ' + re.sub(r'\bp(\d+)\b', lambda m: xl[int(m.group(1))], f) + '\n'
     return out
 
 
