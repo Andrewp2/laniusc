@@ -1,5 +1,9 @@
-import Lanius.Typing
-import Lanius.Semantics
+module
+
+public import Lanius.Typing
+public import Lanius.Semantics
+
+@[expose] public section
 
 /-! # Value shapes: Core's operations on typed values never mismatch
 

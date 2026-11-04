@@ -1,6 +1,21 @@
-import Lanius.Mini.Compiler
-import Lanius.Faithful.SelfPre.TS
-import Lanius.Faithful.SelfPre.HB
+module
+
+public import Lanius.Mini.Compiler
+public import Lanius.Faithful.SelfPre.TS
+public import Lanius.Faithful.SelfPre.HB
+import all Lanius.Mini.Compiler.P.SrcExpr_guard
+import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.armBodyScope
+import all Lanius.Mini.Compiler.P.armScope
+import all Lanius.Mini.Compiler.P.arrayCallSig
+import all Lanius.Mini.Compiler.P.matchDst
+import all Lanius.Mini.Compiler.P.matchVariants
+import all Lanius.Mini.Compiler.P.storeArray
+import all Lanius.Mini.Compiler.P.strStores
+import all Lanius.Mini.Unique
+import all Lanius.Mini.Compiler.P.UintTy_half
+
+@[expose] public section
 
 /-! # How far the evaluator's slots grow between its checks (F14)
 

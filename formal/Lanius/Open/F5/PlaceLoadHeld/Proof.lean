@@ -1,6 +1,10 @@
-import Lanius.Open.F5.PlaceLoadHeld.Stmt
-import Lanius.Open.F5.PlaceLoad.Proof
-import Lanius.Mini.Borrowed
+module
+
+public import Lanius.Open.F5.PlaceLoadHeld.Stmt
+public import Lanius.Open.F5.PlaceLoad.Proof
+public import Lanius.Mini.Borrowed
+
+@[expose] public section
 
 open Lanius.Mini
 

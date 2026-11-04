@@ -1,6 +1,10 @@
-import Lanius.Faithful.Sim.Wrap
-import Lanius.Faithful.Sim.Mono
-import Lanius.Faithful.Sim.QMono
+module
+
+public import Lanius.Faithful.Sim.Wrap
+public import Lanius.Faithful.Sim.Mono
+public import Lanius.Faithful.Sim.QMono
+
+@[expose] public section
 
 /-! # A wrapped program's guarded runs are the program's runs
 

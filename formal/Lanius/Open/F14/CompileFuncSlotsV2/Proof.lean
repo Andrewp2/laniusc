@@ -1,5 +1,9 @@
-import Lanius.Open.F14.CompileFuncSlotsV2.Stmt
-import Lanius.Faithful.SelfPre.CompileSlotsProof
+module
+
+public import Lanius.Open.F14.CompileFuncSlotsV2.Stmt
+public import Lanius.Faithful.SelfPre.CompileSlotsProof
+
+@[expose] public section
 
 open Lanius.Mini
 open Lanius.Faithful.SelfPre

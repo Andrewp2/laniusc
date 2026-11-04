@@ -1,6 +1,23 @@
-import Lanius.Faithful.SelfPre.TS
-import Lanius.Mini.Frontend
-import Lanius.Mini.Compiler
+module
+
+public import Lanius.Faithful.SelfPre.TS
+public import Lanius.Mini.Frontend
+public import Lanius.Mini.Compiler
+import all Lanius.Mini.Frontend.P.depthLimit
+import all Lanius.Mini.Frontend.P.flattenTys
+import all Lanius.Mini.Frontend.P.limExprs
+import all Lanius.Mini.Frontend.P.weightAdd
+import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Frontend.P.funcsOnto
+import all Lanius.Mini.Frontend.P.limLeaf
+import all Lanius.Mini.Unique
+import all Lanius.Mini.Compiler.P.arrayCallSig
+import all Lanius.Mini.Frontend.P.frontEndWords
+import all Lanius.Mini.Frontend.P.wideLeftStmt
+import all Lanius.Mini.Frontend.P.frontEndRead
+import all Lanius.Mini.Frontend.P.funcsBytes
+
+@[expose] public section
 
 /-! # The front end's implementation limits (F14)
 

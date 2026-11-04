@@ -1,8 +1,12 @@
-import Lanius.Open.F14.PreFrontEndWords.Stmt
-import Lanius.Open.F14.PreBuildFiles.Stmt
-import Lanius.Open.F14.ReadFilesHeight.Stmt
-import Lanius.Open.F14.ValidateFilesHeight.Stmt
-import Lanius.Faithful.SelfPre.Validate
+module
+
+public import Lanius.Open.F14.PreFrontEndWords.Stmt
+public import Lanius.Open.F14.PreBuildFiles.Stmt
+public import Lanius.Open.F14.ReadFilesHeight.Stmt
+public import Lanius.Open.F14.ValidateFilesHeight.Stmt
+public import Lanius.Faithful.SelfPre.Validate
+
+@[expose] public section
 
 open Lanius.Mini
 open Lanius.Faithful.Budget

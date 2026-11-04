@@ -1,6 +1,10 @@
-import Lanius.Open.F5.HomeLendArgs.Stmt
-import Lanius.Open.F5.HomesLend.Proof
-import Lanius.Mini.Refs.Lemmas
+module
+
+public import Lanius.Open.F5.HomeLendArgs.Stmt
+public import Lanius.Open.F5.HomesLend.Proof
+public import Lanius.Mini.Refs.Lemmas
+
+@[expose] public section
 
 open Lanius.Mini
 

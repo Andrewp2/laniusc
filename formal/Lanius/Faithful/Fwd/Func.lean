@@ -1,6 +1,10 @@
-import Lanius.Faithful.Fwd.Stmt
-import Lanius.Faithful.Fwd.Prim
-import Lanius.Faithful.Simulation
+module
+
+public import Lanius.Faithful.Fwd.Stmt
+public import Lanius.Faithful.Fwd.Prim
+public import Lanius.Faithful.Simulation
+
+@[expose] public section
 
 /-! # Forward: calls complete in Core
 

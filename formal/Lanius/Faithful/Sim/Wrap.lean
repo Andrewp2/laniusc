@@ -1,5 +1,9 @@
-import Lanius.Faithful.Sim.Live
-import Lanius.Faithful.Sim.CheckFast
+module
+
+public import Lanius.Faithful.Sim.Live
+public import Lanius.Faithful.Sim.CheckFast
+
+@[expose] public section
 
 /-! # A program with some functions' bodies replaced by wrapping arithmetic
 

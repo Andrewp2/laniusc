@@ -1,5 +1,11 @@
-import Lean
-import Lanius.Faithful.SelfPre.HBAttr
+module
+
+public import Lean
+public meta import Lean
+public import Lanius.Faithful.SelfPre.HBAttr
+public meta import Lanius.Faithful.SelfPre.HBAttr
+
+@[expose] public section
 
 /-! # `pre_auto` and `post_auto`: preconditions and heights by the potential (F14)
 
@@ -30,6 +36,7 @@ namespace Lanius.Faithful.SelfPre.Tactic
 
 open Lean Meta Elab Tactic
 
+public meta section
 /-- Every subterm of `e` that `p` keeps (not inside binders' types). -/
 partial def subterms (p : Expr → Bool) (e : Expr) : Array Expr :=
   go e #[]
@@ -92,6 +99,7 @@ def genLookup? (s : Name) : TacticM (Option Expr) := do
     if let some e ← lookup? (ns ++ s) then return some e
   lookup? (`Lanius.Faithful.SelfPre ++ s)
 
+end
 /-- A product of two numbers below `2 ^ 32` does not wrap. -/
 theorem mul_lt_two64 {x y : Nat} (hx : x < 4294967296) (hy : y < 4294967296) :
     x * y < 18446744073709551616 := by
@@ -113,6 +121,7 @@ theorem not_and_eq {a b : Prop} : (¬(a ∧ b)) = (a → ¬b) := propext not_and
 theorem not_or_eq {p q : Prop} : (¬(p ∨ q)) = (¬p ∧ ¬q) := propext not_or
 theorem eq_self_eq_true {α : Sort u} (a : α) : (a = a) = True := propext (eq_self_iff_true a)
 
+public meta section
 /-- The conditions' normal form: `Bool` tests as propositions. -/
 def normNames : Array Name := #[`decide_eq_true_eq, ``decide_eq_false_eq_not, `Bool.and_eq_true, `Bool.or_eq_true,
   `Bool.not_eq_true', `Bool.not_eq_false', ``not_and_eq, ``not_or_eq, `true_and, `and_true, `false_and, `and_false,
@@ -121,17 +130,21 @@ def normNames : Array Name := #[`decide_eq_true_eq, ``decide_eq_false_eq_not, `B
   `Bool.not_true, `Bool.not_false, `if_true, `if_false, `ite_true, `ite_false, `dite_true, `dite_false, `not_true_eq_false, `not_false_eq_true, ``eq_self_eq_true,
   `decide_true, `decide_false]
 
+end
 theorem Bool.not_eq_eq_eq_not_eq {a b : Bool} : ((!a) = b) = (a = !b) := propext Bool.not_eq_eq_eq_not
 
+public meta section
 /-- A precondition's test as a hypothesis: `hb_simp` also states numeric tests as
 bounds (`flDigit_eq_true`, SelfPre/Values). Eq forms only (see `normNames`). -/
 def ifNames : Array Name := #[`decide_eq_true_eq, ``decide_eq_false_eq_not, `Bool.and_eq_true,
   `Bool.or_eq_true, `Bool.not_eq_true', ``not_and_eq, ``not_or_eq, ``Bool.not_eq_eq_eq_not_eq, `Bool.not_true]
 
+end
 /-- A byte literal as the Lean functions write it (`72`), not as the cost models
 do (`UInt8.ofNat 72`): the compile side's byte lists. -/
 theorem uint8_ofNat_lit (n : Nat) : UInt8.ofNat (no_index (OfNat.ofNat n)) = (OfNat.ofNat n : UInt8) := rfl
 
+public meta section
 /-- The heights' normal form: `hb` of a constructor by its parts, `max` on the
 left of `≤` as a conjunction. -/
 def hbNormNames : Array Name := #[``max_le_eq', ``max_add_le_eq', ``Nat.add_assoc, ``BitVec.ofNat_eq_ofNat,
@@ -657,10 +670,12 @@ def budgeted (k : Nat) (x : TacticM α) : TacticM α :=
     (withCurrHeartbeats <| withTheReader Core.Context (fun c => { c with maxHeartbeats := k * 1000 }) x)
     (fun e => throwError "budget exceeded: {e.toMessageData}")
 
+end
 /-- `Nat.add_assoc` reversed, stated once: `simp only [← Nat.add_assoc]` adds an
 auxiliary theorem at every use (one per `omega` call), each checked by the kernel. -/
 theorem add_nest_left (a b c : Nat) : a + (b + c) = a + b + c := (Nat.add_assoc a b c).symm
 
+public meta section
 /-- The arithmetic hypotheses of the current context and the atoms of `goal` and
 them, or `none` when `goal` is not arithmetic. -/
 def arithContext (goal : Expr) : MetaM (Option (Array Expr × Array (Expr × Expr))) := do
@@ -1513,11 +1528,13 @@ elab_rules : tactic
       return (← Term.elabTerm n (some (mkConst ``Nat)), ← Term.elabTerm m (some (mkConst ``Nat)))
     closeArith (some fuel) base
 
+end
 theorem ite_intro {c : Prop} [Decidable c] {p q : Prop} (hp : c → p) (hq : ¬c → q) : if c then p else q := by
   by_cases h : c
   · rw [if_pos h]; exact hp h
   · rw [if_neg h]; exact hq h
 
+public meta section
 /-- A precondition's lemma: a local hypothesis `pre_<key>` (the recursive group's
 own, at the fuel below) or the constant. -/
 def preLemma? (key : String) : TacticM (Option Expr) := do
@@ -1829,4 +1846,5 @@ elab_rules : tactic
     dbg "normSimp"
     postGoal fuel base
 
+end
 end Lanius.Faithful.SelfPre.Tactic

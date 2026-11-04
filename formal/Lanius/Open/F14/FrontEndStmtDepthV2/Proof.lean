@@ -1,5 +1,9 @@
-import Lanius.Open.F14.FrontEndStmtDepthV2.Stmt
-import Lanius.Faithful.SelfPre.Limits
+module
+
+public import Lanius.Open.F14.FrontEndStmtDepthV2.Stmt
+public import Lanius.Faithful.SelfPre.Limits
+
+@[expose] public section
 
 /-! # `FrontEndStmtDepthV2`: the front end's depth check (`SelfPre/Limits.lean`) -/
 

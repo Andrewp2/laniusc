@@ -1,3 +1,9 @@
+module
+
+
+
+@[expose] public section
+
 /-! # Linear certificates (F14)
 
 `pre_auto`'s arithmetic goals are almost all `L ≤ R` over a few atoms (heights,

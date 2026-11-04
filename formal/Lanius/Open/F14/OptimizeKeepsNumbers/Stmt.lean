@@ -1,4 +1,8 @@
-import Lanius.Faithful.SelfPre.CompileValues
+module
+
+public import Lanius.Faithful.SelfPre.CompileValues
+
+@[expose] public section
 
 open Lanius.Mini
 open Lanius.Faithful.SelfPre

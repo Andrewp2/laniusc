@@ -1,5 +1,9 @@
-import Lanius.Faithful.Fwd.Step
-import Lanius.Faithful.Sim.PrimInv
+module
+
+public import Lanius.Faithful.Fwd.Step
+public import Lanius.Faithful.Sim.PrimInv
+
+@[expose] public section
 
 /-! # Forward: the Core steps the prims take
 

@@ -1,7 +1,11 @@
-import Lanius.Open.F5.HomedLetStore.Stmt
-import Lanius.Open.F5.HomesPush.Proof
-import Lanius.Open.F5.HomedCorrPushV2.Proof
-import Lanius.Mini.Refs.HomedLemmas
+module
+
+public import Lanius.Open.F5.HomedLetStore.Stmt
+public import Lanius.Open.F5.HomesPush.Proof
+public import Lanius.Open.F5.HomedCorrPushV2.Proof
+public import Lanius.Mini.Refs.HomedLemmas
+
+@[expose] public section
 
 open Lanius.Mini
 open Lanius.Core (Value ValueProjection)

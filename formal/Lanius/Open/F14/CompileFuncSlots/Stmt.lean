@@ -1,4 +1,8 @@
-import Lanius.Faithful.SelfPre.CompileSlots
+module
+
+public import Lanius.Faithful.SelfPre.CompileSlots
+
+@[expose] public section
 
 open Lanius.Mini
 open Lanius.Faithful.SelfPre

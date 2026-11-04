@@ -1,9 +1,36 @@
-import Lanius.Faithful.SelfPre.TS
-import Lanius.Mini.Compiler.P.declareProgram
-import Lanius.Mini.Compiler.P.funcNeeds
-import Lanius.Mini.Compiler.P.structFields
-import Lanius.Mini.Compiler.P.enumVariants
-import Lanius.Mini.Compiler.P.withBudget
+module
+
+public import Lanius.Faithful.SelfPre.TS
+public import Lanius.Mini.Compiler.P.declareProgram
+public import Lanius.Mini.Compiler.P.funcNeeds
+public import Lanius.Mini.Compiler.P.structFields
+public import Lanius.Mini.Compiler.P.enumVariants
+public import Lanius.Mini.Compiler.P.withBudget
+public import Lanius.Mini.Compiler.P.arrayCallSig
+public import Lanius.Mini.Compiler.P.lowerBody
+public import Lanius.Mini.Compiler.P.matchVariants
+public import Lanius.Mini.Compiler.P.needCapped
+public import Lanius.Faithful.SelfPre.Tactic
+public import Lanius.Mini.Compiler.P.repeatType
+public import Lanius.Mini.Compiler.P.UintTy_half
+public import Lanius.Mini.Compiler.P.declareFuncs
+public import Lanius.Mini.Compiler.P.shortCircuit
+import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.withBudget
+import all Lanius.Mini.Compiler.P.arrayCallSig
+import all Lanius.Mini.Compiler.P.enumVariants
+import all Lanius.Mini.Compiler.P.funcNeeds
+import all Lanius.Mini.Compiler.P.lowerBody
+import all Lanius.Mini.Compiler.P.matchVariants
+import all Lanius.Mini.Compiler.P.needCapped
+import all Lanius.Mini.Compiler.P.structFields
+import all Lanius.Mini.Compiler.P.repeatType
+import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.declareFuncs
+import all Lanius.Mini.Compiler.P.shortCircuit
+import all Lanius.Mini.Compiler.P.declareProgram
+
+@[expose] public section
 
 /-! # Type sizes of the compile side's declarations (F14)
 

@@ -1,4 +1,8 @@
-import Lean
+module
+
+public import Lean
+
+@[expose] public section
 
 /-! The simp sets of the total size `sz` (`SelfPre/SZ.lean`) and the largest slot
 count `ts` (`SelfPre/TS.lean`), declared apart from their lemmas as a simp

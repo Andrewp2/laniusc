@@ -1,4 +1,8 @@
-import Lanius.Faithful.SelfBounded
+module
+
+public import Lanius.Faithful.SelfBounded
+
+@[expose] public section
 
 open Lanius.Mini
 open Lanius.Core (Value)

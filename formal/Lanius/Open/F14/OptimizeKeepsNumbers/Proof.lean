@@ -1,5 +1,18 @@
-import Lanius.Open.F14.OptimizeKeepsNumbers.Stmt
-import Lanius.Mini.Validate
+module
+
+public import Lanius.Open.F14.OptimizeKeepsNumbers.Stmt
+public import Lanius.Mini.Validate
+import all Lanius.Mini.Compiler.P.callAgrees
+import all Lanius.Mini.Compiler.P.compileArgs
+import all Lanius.Mini.Compiler.P.killShared
+import all Lanius.Mini.Compiler.P.longer
+import all Lanius.Mini.Compiler.P.optimizeIte
+import all Lanius.Mini.Compiler.P.optimizeLeft
+import all Lanius.Mini.Compiler.P.optimizeNeg
+import all Lanius.Mini.Compiler.P.render
+import all Lanius.Mini.Compiler.P.substAll
+
+@[expose] public section
 
 open Lanius.Mini
 open Lanius.Faithful.SelfPre

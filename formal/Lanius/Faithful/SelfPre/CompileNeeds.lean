@@ -1,5 +1,15 @@
-import Lanius.Faithful.SelfPre.NB
-import Lanius.Mini.FrameRoom
+module
+
+public import Lanius.Faithful.SelfPre.NB
+public import Lanius.Mini.FrameRoom
+import all Lanius.Mini.Compiler.P.withBudget
+import all Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.P.funcNeeds
+import all Lanius.Mini.Compiler.P.needCapped
+import all Lanius.Mini.Compiler.P.needsAfter
+import all Lanius.Mini.Compiler.P.needLimit
+
+@[expose] public section
 
 /-! # The functions' needs, for the compile side's pre lemmas (F14)
 

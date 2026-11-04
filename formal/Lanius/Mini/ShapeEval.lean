@@ -1,5 +1,9 @@
-import Lanius.Mini.ShapeState
-import Lanius.Mini.ShapeHost
+module
+
+public import Lanius.Mini.ShapeState
+public import Lanius.Mini.ShapeHost
+
+@[expose] public section
 
 /-! # The fragment without raw memory, and what each evaluator promises
 (review finding 2, step 4a)

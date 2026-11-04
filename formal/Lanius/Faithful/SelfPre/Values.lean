@@ -1,7 +1,23 @@
-import Lanius.Faithful.SelfPre.HBLib
-import Lanius.Faithful.GenB.SelfBModel4
-import Lanius.Mini.Reading.FloatBits
-import Lanius.Faithful.SelfPre.LinCert
+module
+
+public import Lanius.Faithful.SelfPre.HBLib
+public import Lanius.Faithful.GenB.SelfBModel4
+public import Lanius.Mini.Reading.FloatBits
+public import Lanius.Faithful.SelfPre.LinCert
+import all Lanius.Mini.Compiler.P.render
+import all Lanius.Mini.Frontend.P.basedDigits
+import all Lanius.Mini.Frontend.P.digitBelow
+import all Lanius.Mini.Frontend.P.distinct
+import all Lanius.Mini.Frontend.P.flDecimal
+import all Lanius.Mini.Frontend.P.flLog2Or0
+import all Lanius.Mini.Frontend.P.flNatHalf
+import all Lanius.Mini.Frontend.P.flRoundUp
+import all Lanius.Mini.Frontend.P.freshId
+import all Lanius.Mini.Frontend.P.hasKids
+import all Lanius.Mini.Frontend.P.matchStmtIf
+import all Lanius.Mini.Frontend.P.noToken
+
+@[expose] public section
 
 /-! # Values of the self compiler's numeric functions (F14)
 

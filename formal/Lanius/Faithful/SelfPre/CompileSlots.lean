@@ -1,4 +1,18 @@
-import Lanius.Mini.Compiler
+module
+
+public import Lanius.Mini.Compiler
+import all Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.Word_compute
+import all Lanius.Mini.Compiler.P.Word_narrows
+import all Lanius.Mini.Compiler.P.arities
+import all Lanius.Mini.Compiler.P.codeSize
+import all Lanius.Mini.Compiler.P.compileArgs
+import all Lanius.Mini.Compiler.P.linkedSize
+import all Lanius.Mini.Compiler.P.loadAtBytes
+import all Lanius.Mini.Compiler.P.roomFits
+
+@[expose] public section
 
 /-! # The frame slots compiled code names (F14)
 
@@ -110,7 +124,7 @@ theorem vals_roomAfter : ∀ (room : Nat) (codes : List Code) (r : Nat), roomAft
       simp only [codesSize]; omega
     · simp at h
 
-theorem frameLimit_eq : frameLimit = 1048576 := rfl
+theorem frameLimit_eq : frameLimit = 1048576 := by rfl
 
 /-- `slot .. slot + count - 1`: `count` slots, below `slot + count`. -/
 theorem val_slotRange : ∀ (slot count : Nat),

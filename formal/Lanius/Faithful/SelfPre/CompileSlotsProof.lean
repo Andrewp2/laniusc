@@ -1,6 +1,16 @@
-import Lanius.Faithful.SelfPre.CompileSlots
-import Lanius.Faithful.SelfPre.NB
-import Lanius.Mini.Room
+module
+
+public import Lanius.Faithful.SelfPre.CompileSlots
+public import Lanius.Faithful.SelfPre.NB
+public import Lanius.Mini.Room
+import all Lanius.Mini.Compiler.P.codeSize
+import all Lanius.Mini.Compiler.P.compileArgs
+import all Lanius.Mini.Compiler.P.DivOp_size
+import all Lanius.Mini.Compiler.P.arities
+import all Lanius.Mini.Compiler.P.roomFits
+import all Lanius.Mini.Unique
+
+@[expose] public section
 
 /-! # A function's compiled code: its slots, size and numbers (F14)
 

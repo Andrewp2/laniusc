@@ -1,4 +1,8 @@
-import Lanius.Faithful.Sim.Expr
+module
+
+public import Lanius.Faithful.Sim.Expr
+
+@[expose] public section
 
 /-! # Forward: pure expressions complete in Core
 

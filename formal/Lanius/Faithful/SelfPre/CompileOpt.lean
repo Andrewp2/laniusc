@@ -1,5 +1,11 @@
-import Lanius.Open.F14.OptimizeKeepsNumbers.Proof
-import Lanius.Open.F14.CompileFuncSlotsV2.Stmt
+module
+
+public import Lanius.Open.F14.OptimizeKeepsNumbers.Proof
+public import Lanius.Open.F14.CompileFuncSlotsV2.Stmt
+import all Lanius.Mini.Compiler.P.arities
+import all Lanius.Mini.Compiler.P.compileArgs
+
+@[expose] public section
 
 /-! # The optimizer's numbers, for the compile side's pre lemmas (F14)
 

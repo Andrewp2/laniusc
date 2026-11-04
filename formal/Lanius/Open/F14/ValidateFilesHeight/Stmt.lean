@@ -1,6 +1,10 @@
-import Lanius.Faithful.SelfPre.HB
-import Lanius.Mini.Frontend.P.grammarPart13
-import Lanius.Mini.Frontend.P.wideLeftStmt
+module
+
+public import Lanius.Faithful.SelfPre.HB
+public import Lanius.Mini.Frontend.P.grammarPart13
+public import Lanius.Mini.Frontend.P.wideLeftStmt
+
+@[expose] public section
 
 open Lanius.Mini
 open Lanius.Faithful.SelfPre

@@ -1,5 +1,16 @@
-import Lanius.Faithful.SafeDriver
-import Lanius.Faithful.Fwd.Func
+module
+
+public import Lanius.Faithful.SafeDriver
+public import Lanius.Faithful.Fwd.Func
+import all Lanius.Faithful.Gen.SelfSrc2
+import all Lanius.Faithful.Gen.SelfSrc5
+import all Lanius.Faithful.Gen.SelfSrcRest
+import all Lanius.Faithful.Gen.SelfSrc7
+import all Lanius.Faithful.Gen.SelfSrcF_grammarPart13
+import all Lanius.Faithful.Gen.SelfSrcC_packRound
+import all Lanius.Faithful.Gen.SelfSrcF_frontEndWords
+
+@[expose] public section
 
 /-! # The self-host driver completes in Core (review #5 step 3, piece (c))
 

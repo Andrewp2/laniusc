@@ -1,6 +1,27 @@
-import Lanius.Mini.TextCorrect
-import Lanius.Mini.DetSteps
-import Lanius.X86.Machine.RuntimeEncoding
+module
+
+public import Lanius.Mini.TextCorrect
+public import Lanius.Mini.DetSteps
+public import Lanius.X86.Machine.RuntimeEncoding
+import all Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.P.SrcExpr_guard
+import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.Word_narrows
+import all Lanius.Mini.Compiler.P.arities
+import all Lanius.Mini.Compiler.P.arrayCallSig
+import all Lanius.Mini.Compiler.P.compileArgs
+import all Lanius.Mini.Compiler.P.compileSource
+import all Lanius.Mini.Compiler.P.larger
+import all Lanius.Mini.Compiler.P.linkedSize
+import all Lanius.Mini.Compiler.P.loadAtBytes
+import all Lanius.Mini.Compiler.P.lowerBody
+import all Lanius.Mini.Compiler.P.packRound
+import all Lanius.Faithful.Pure
+import all Lanius.Mini.Compiler.Types
+import all Lanius.Mini.HeapCorr
+import all Lanius.Mini.Semantics
+
+@[expose] public section
 
 /-! # The process (roadmap step V6)
 
@@ -128,11 +149,11 @@ theorem fieldAt_le64n (pre post : List UInt8) (v : Nat) :
   unfold fieldAt
   rw [List.drop_left, show 8 = (le64n v).length from rfl, List.take_left, le64n_val]
 
-@[simp] theorem le16_length (v : Nat) : (le16 v).length = 2 := rfl
-@[simp] theorem le32_length (v : BitVec 32) : (le32 v).length = 4 := rfl
-@[simp] theorem le64n_length (v : Nat) : (le64n v).length = 8 := rfl
+@[simp] theorem le16_length (v : Nat) : (le16 v).length = 2 := by rfl
+@[simp] theorem le32_length (v : BitVec 32) : (le32 v).length = 4 := by rfl
+@[simp] theorem le64n_length (v : Nat) : (le64n v).length = 8 := by rfl
 @[simp] theorem elfStartup_length (binary : Binary) (entry stack heap : Nat) :
-    (elfStartup binary entry stack heap).length = 95 := rfl
+    (elfStartup binary entry stack heap).length = 95 := by rfl
 
 theorem fieldAt_cons (a : UInt8) (l : List UInt8) (n k : Nat) : fieldAt (a :: l) (n + 1) k = fieldAt l n k := by
   simp [fieldAt]

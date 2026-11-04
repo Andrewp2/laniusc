@@ -1,6 +1,16 @@
-import Lanius.Open.F14.PreBinaryWordsV3.Stmt
-import Lanius.Mini.Validate
-import Lanius.Mini.Source
+module
+
+public import Lanius.Open.F14.PreBinaryWordsV3.Stmt
+public import Lanius.Mini.Validate
+public import Lanius.Mini.Source
+import all Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.P.compileArgs
+import all Lanius.Mini.Compiler.P.compileSource
+import all Lanius.Mini.Compiler.P.linkedSize
+import all Lanius.Mini.Compiler.P.loadAtBytes
+import all Lanius.Mini.Compiler.P.packRound
+
+@[expose] public section
 
 open Lanius.Mini
 open Lanius.Faithful.Budget

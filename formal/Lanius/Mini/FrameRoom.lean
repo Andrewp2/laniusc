@@ -1,4 +1,36 @@
-import Lanius.Mini.Room
+module
+
+public import Lanius.Mini.Room
+public import Lanius.Mini.Compiler.P.withBudget
+public import Lanius.Mini.Compiler.P.arrayCallSig
+public import Lanius.Mini.Compiler.P.bindingBytes
+public import Lanius.Mini.Compiler.P.compileOr
+public import Lanius.Mini.Compiler.P.compileSource
+public import Lanius.Mini.Compiler.P.declareProgram
+public import Lanius.Mini.Compiler.P.funcNeeds
+public import Lanius.Mini.Compiler.P.lowerBody
+public import Lanius.Mini.Compiler.P.needCapped
+public import Lanius.Mini.Compiler.P.needLimit
+public import Lanius.Mini.Compiler.P.needsAfter
+import all Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.arities
+import all Lanius.Mini.Compiler.P.arrayCallSig
+import all Lanius.Mini.Compiler.P.bindingBytes
+import all Lanius.Mini.Compiler.P.callAgrees
+import all Lanius.Mini.Compiler.P.compileArgs
+import all Lanius.Mini.Compiler.P.compileOr
+import all Lanius.Mini.Compiler.P.compileSource
+import all Lanius.Mini.Compiler.P.declareProgram
+import all Lanius.Mini.Compiler.P.funcNeeds
+import all Lanius.Mini.Compiler.P.lowerApply
+import all Lanius.Mini.Compiler.P.lowerBody
+import all Lanius.Mini.Compiler.P.needCapped
+import all Lanius.Mini.Compiler.P.needLimit
+import all Lanius.Mini.Compiler.P.needsAfter
+import all Lanius.Mini.Compiler.P.withBudget
+
+@[expose] public section
 
 /-! The frame block's room check (F14): `frame_block` takes each parameter's and each let's block
 bytes (`declBytes`) out of `blockLimit` as they add up (`paramsRoom`, `blockRoom`), so no sum the

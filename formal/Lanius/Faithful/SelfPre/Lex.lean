@@ -1,4 +1,20 @@
-import Lanius.Faithful.GenB.SelfBModel4
+module
+
+public import Lanius.Faithful.GenB.SelfBModel4
+public import Lanius.Mini.Frontend.P.lxSpaceEnd
+import all Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.P.callAgrees
+import all Lanius.Mini.Compiler.P.compileArgs
+import all Lanius.Mini.Frontend.P.lxBlockEnd
+import all Lanius.Mini.Frontend.P.lxDotAt
+import all Lanius.Mini.Frontend.P.lxExponent
+import all Lanius.Mini.Frontend.P.lxLeadingDot
+import all Lanius.Mini.Frontend.P.lxSymbolStart
+import all Lanius.Mini.Frontend.P.lxSpaceEnd
+import all Lanius.Mini.Frontend.P.lxFixed
+import all Lanius.Mini.Frontend.P.lxCanonicalKind
+
+@[expose] public section
 
 /-! # The lexer's preconditions (F14)
 

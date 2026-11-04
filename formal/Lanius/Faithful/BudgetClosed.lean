@@ -1,4 +1,8 @@
-import Lanius.Faithful.Budget
+module
+
+public import Lanius.Faithful.Budget
+
+@[expose] public section
 
 /-! # Budget certificates of functions without arguments (F14)
 

@@ -1,6 +1,18 @@
-import Lanius.Open.F5.HomedParamStore.Stmt
-import Lanius.Open.F5.HomedLetStore.Proof
-import Lanius.Mini.Refs.HomedLemmas
+module
+
+public import Lanius.Open.F5.HomedParamStore.Stmt
+public import Lanius.Open.F5.HomedLetStore.Proof
+public import Lanius.Mini.Refs.HomedLemmas
+import all Lanius.Mini.Compiler.P.Inline_factOr
+import all Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.P.Word_narrows
+import all Lanius.Mini.Compiler.P.arrayCallSig
+import all Lanius.Mini.Compiler.P.callAgrees
+import all Lanius.Mini.Compiler.P.lowerTagged
+import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Unique
+
+@[expose] public section
 
 open Lanius.Mini
 open Lanius.Core (Value ValueProjection)

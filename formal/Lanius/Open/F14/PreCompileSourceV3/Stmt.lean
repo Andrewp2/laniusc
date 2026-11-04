@@ -1,7 +1,11 @@
-import Lanius.Faithful.GenB.SelfBModel5
-import Lanius.Faithful.SelfPre.HB
-import Lanius.Faithful.SelfPre.TS
-import Lanius.Mini.Frontend
+module
+
+public import Lanius.Faithful.GenB.SelfBModel5
+public import Lanius.Faithful.SelfPre.HB
+public import Lanius.Faithful.SelfPre.TS
+public import Lanius.Mini.Frontend
+
+@[expose] public section
 
 open Lanius.Mini
 open Lanius.Faithful.Budget

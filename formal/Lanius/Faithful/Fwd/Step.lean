@@ -1,4 +1,8 @@
-import Lanius.Faithful.Fwd.Expr
+module
+
+public import Lanius.Faithful.Fwd.Expr
+
+@[expose] public section
 
 /-! # Forward: the Core steps effects and statements take
 

@@ -1,4 +1,8 @@
-import Lanius.Mini.Shape
+module
+
+public import Lanius.Mini.Shape
+
+@[expose] public section
 
 /-! # Typed Core states (review finding 2, step 2)
 

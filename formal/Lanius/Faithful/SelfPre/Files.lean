@@ -1,4 +1,14 @@
-import Lanius.Faithful.SelfPre.Read
+module
+
+public import Lanius.Faithful.SelfPre.Read
+import all Lanius.Machines.SqliteStatement.P.start
+import all Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Frontend.P.lxCanonicalKind
+import all Lanius.Mini.Frontend.P.lxDotAt
+import all Lanius.Mini.Frontend.P.lxSymbolStart
+import all Lanius.Mini.Frontend.P.readCountedBytes
+
+@[expose] public section
 
 /-! # The files read: their sizes (F14)
 

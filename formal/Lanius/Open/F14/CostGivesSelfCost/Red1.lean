@@ -1,6 +1,10 @@
-import Lanius.Open.F14.CostGivesSelfCost.Stmt
-import Lanius.Open.F14.PreFrontEndWords.Stmt
-import Lanius.Open.F14.PreCompileWords.Stmt
+module
+
+public import Lanius.Open.F14.CostGivesSelfCost.Stmt
+public import Lanius.Open.F14.PreFrontEndWords.Stmt
+public import Lanius.Open.F14.PreCompileWords.Stmt
+
+@[expose] public section
 
 open Lanius.Mini
 open Lanius.Core (Value)

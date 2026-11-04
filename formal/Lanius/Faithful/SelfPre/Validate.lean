@@ -1,4 +1,13 @@
-import Lanius.Faithful.SelfPre.Files
+module
+
+public import Lanius.Faithful.SelfPre.Files
+import all Lanius.Machines.SqliteStatement.P.start
+import all Lanius.Mini.Compiler.P.render
+import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.wideLeftStmt
+import all Lanius.Mini.Frontend.P.noToken
+
+@[expose] public section
 
 /-! # Validating the files' parse trees: preconditions (F14)
 

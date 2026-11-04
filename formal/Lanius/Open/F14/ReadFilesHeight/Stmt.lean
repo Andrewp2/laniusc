@@ -1,5 +1,9 @@
-import Lanius.Faithful.SelfPre.HB
-import Lanius.Mini.Frontend.P.readCountedBytes
+module
+
+public import Lanius.Faithful.SelfPre.HB
+public import Lanius.Mini.Frontend.P.readCountedBytes
+
+@[expose] public section
 
 open Lanius.Mini
 open Lanius.Faithful.SelfPre

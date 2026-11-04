@@ -1,5 +1,9 @@
-import Lanius.Faithful.SelfShort
-import Lanius.Faithful.SelfAgree
+module
+
+public import Lanius.Faithful.SelfShort
+public import Lanius.Faithful.SelfAgree
+
+@[expose] public section
 
 /-! # Why Core's run of `w` fails, without the panic reason (F14)
 

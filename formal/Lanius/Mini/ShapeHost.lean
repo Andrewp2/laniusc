@@ -1,5 +1,9 @@
-import Lanius.Mini.Shape
-import Lanius.World
+module
+
+public import Lanius.Mini.Shape
+public import Lanius.World
+
+@[expose] public section
 
 /-! # Host calls on typed arguments (review finding 2, step 3)
 

@@ -1,4 +1,8 @@
-import Lanius.Faithful.BudgetClosed
+module
+
+public import Lanius.Faithful.BudgetClosed
+
+@[expose] public section
 
 /-! # Budget certificates of functions that reach neither `boxed`, `plus` nor `times` (F14)
 

@@ -1,4 +1,14 @@
-import Lanius.Open.F14.ValidateFilesHeight.Stmt
+module
+
+public import Lanius.Open.F14.ValidateFilesHeight.Stmt
+public import Lanius.Mini.Frontend.P.isEmptyUsize
+import all Lanius.Mini.Compiler.P.render
+import all Lanius.Mini.Frontend.P.isEmptyUsize
+import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.wideLeftStmt
+import all Lanius.Mini.Frontend.P.noToken
+
+@[expose] public section
 
 /-! # `ValidateFilesHeight`: the trees validated are lower than `2 ^ 61`
 

@@ -1,7 +1,11 @@
-import Lanius.Faithful.SelfHost
-import Lanius.Faithful.SelfLive
-import Lanius.Faithful.SelfPanics
-import Lanius.Faithful.SelfAgree
+module
+
+public import Lanius.Faithful.SelfHost
+public import Lanius.Faithful.SelfLive
+public import Lanius.Faithful.SelfPanics
+public import Lanius.Faithful.SelfAgree
+
+@[expose] public section
 
 /-! # Why Core's run of `w` fails (review #5, piece (c))
 

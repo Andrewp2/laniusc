@@ -1,5 +1,12 @@
-import Lanius.Faithful.SelfPanics
-import Lanius.Faithful.Sim.Agree
+module
+
+public import Lanius.Faithful.SelfPanics
+public import Lanius.Faithful.Sim.Agree
+public import Lanius.Faithful.Scalar
+import all Lanius.Faithful.Gen.SelfSrc1
+import all Lanius.Faithful.Gen.SelfSrc4
+
+@[expose] public section
 
 /-! # `progW`'s runs without wrapping are the self program's runs
 

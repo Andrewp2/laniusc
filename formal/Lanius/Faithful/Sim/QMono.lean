@@ -1,5 +1,9 @@
-import Lanius.Faithful.Cost
-import Lanius.Faithful.Sim.Mono
+module
+
+public import Lanius.Faithful.Cost
+public import Lanius.Faithful.Sim.Mono
+
+@[expose] public section
 
 /-! # The cost semantics is monotone in its calls
 

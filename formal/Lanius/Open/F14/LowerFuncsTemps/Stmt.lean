@@ -1,5 +1,9 @@
-import Lanius.Faithful.GenB.SelfBModel5
-import Lanius.Faithful.SelfPre.CompileValues
+module
+
+public import Lanius.Faithful.GenB.SelfBModel5
+public import Lanius.Faithful.SelfPre.CompileValues
+
+@[expose] public section
 
 open Lanius.Mini
 open Lanius.Faithful.Budget

@@ -1,7 +1,11 @@
-import Lanius.Open.F14.PreCompileWords.Stmt
-import Lanius.Open.F14.FrontEndOutputSmall.Stmt
-import Lanius.Open.F14.PreCompileSourceV2.Stmt
-import Lanius.Open.F14.PreBinaryWordsV2.Stmt
+module
+
+public import Lanius.Open.F14.PreCompileWords.Stmt
+public import Lanius.Open.F14.FrontEndOutputSmall.Stmt
+public import Lanius.Open.F14.PreCompileSourceV2.Stmt
+public import Lanius.Open.F14.PreBinaryWordsV2.Stmt
+
+@[expose] public section
 
 open Lanius.Mini
 open Lanius.Faithful.Budget

@@ -1,4 +1,12 @@
-import Lanius.Faithful.SelfPre.Lex
+module
+
+public import Lanius.Faithful.SelfPre.Lex
+import all Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.P.callAgrees
+import all Lanius.Mini.Frontend.P.lxCanonicalKind
+import all Lanius.Mini.Frontend.P.readCountedBytes
+
+@[expose] public section
 
 /-! # Reading the input's files: preconditions (F14)
 

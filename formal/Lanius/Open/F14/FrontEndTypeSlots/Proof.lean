@@ -1,5 +1,9 @@
-import Lanius.Open.F14.FrontEndTypeSlots.Stmt
-import Lanius.Faithful.SelfPre.Limits
+module
+
+public import Lanius.Open.F14.FrontEndTypeSlots.Stmt
+public import Lanius.Faithful.SelfPre.Limits
+
+@[expose] public section
 
 /-! # `FrontEndTypeSlots`: the front end's slot check (`SelfPre/Limits.lean`) -/
 

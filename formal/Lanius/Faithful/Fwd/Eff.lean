@@ -1,6 +1,10 @@
-import Lanius.Faithful.Fwd.Step
-import Lanius.Faithful.Sim.Stmt
-import Lanius.Faithful.Cost
+module
+
+public import Lanius.Faithful.Fwd.Step
+public import Lanius.Faithful.Sim.Stmt
+public import Lanius.Faithful.Cost
+
+@[expose] public section
 
 /-! # Forward: effectful expressions complete in Core
 

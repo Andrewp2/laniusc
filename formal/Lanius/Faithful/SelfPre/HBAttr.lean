@@ -1,4 +1,8 @@
-import Lean
+module
+
+public import Lean
+
+@[expose] public section
 
 /-! The simp set of the list height `hb` (`SelfPre/HB.lean`), declared apart from
 its lemmas as a simp attribute must be. -/

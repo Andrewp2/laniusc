@@ -1,5 +1,11 @@
-import Lanius.Faithful.SelfAgree
-import Lanius.Faithful.BudgetCore
+module
+
+public import Lanius.Faithful.SelfAgree
+public import Lanius.Faithful.BudgetCore
+import all Lanius.Faithful.Gen.SelfSrc1
+import all Lanius.Faithful.Gen.SelfSrc4
+
+@[expose] public section
 
 /-! # Budget certificates: the self program's (F14)
 

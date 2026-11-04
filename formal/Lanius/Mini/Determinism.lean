@@ -1,4 +1,8 @@
-import Lanius.Mini.SourceCorrect
+module
+
+public import Lanius.Mini.SourceCorrect
+
+@[expose] public section
 
 /-! The x86 `Step` relation leaves some flags free, so `compileProgram_correct`
 and `compileSource_correct` only say that some run returns. Here every run

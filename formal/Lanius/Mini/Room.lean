@@ -1,4 +1,23 @@
-import Lanius.Mini.Correct
+module
+
+public import Lanius.Mini.Correct
+import all Lanius.Mini.Compiler.P.BinOp_folds
+import all Lanius.Mini.Compiler.P.DivOp_size
+import all Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.P.arithShiftRight
+import all Lanius.Mini.Compiler.P.arities
+import all Lanius.Mini.Compiler.P.arrayCallSig
+import all Lanius.Mini.Compiler.P.callAgrees
+import all Lanius.Mini.Compiler.P.codeSize
+import all Lanius.Mini.Compiler.P.compileArgs
+import all Lanius.Mini.Compiler.P.linkedSize
+import all Lanius.Mini.Compiler.P.loadAtBytes
+import all Lanius.Mini.Compiler.P.roomFits
+import all Lanius.Compiler.Lexer
+import all Lanius.Mini.Compiler.Types
+import all Lanius.Mini.Unique
+
+@[expose] public section
 
 /-! The per-function code check (F14): `compileFunc` asks `roomFits (stmtRoom imageLimit body)`
 for room before it generates code.
@@ -492,7 +511,7 @@ theorem compileFunc_unchecked (arities : List Arity) (func : Func) :
       · contradiction
 
 theorem linkedSize_cons (code : Code) (rest : List Code) :
-    linkedSize (code :: rest) = code.size + linkedSize rest := rfl
+    linkedSize (code :: rest) = code.size + linkedSize rest := by rfl
 
 theorem compileFuncs_unchecked (arities : List Arity) :
     ∀ funcs : List Func, compileFuncs arities funcs = compileFuncsUnchecked arities funcs ∨

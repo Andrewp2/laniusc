@@ -1,4 +1,8 @@
-import Lanius.Mini.ShapeEval
+module
+
+public import Lanius.Mini.ShapeEval
+
+@[expose] public section
 
 /-! # No `typeMismatch` without raw memory (review finding 2, step 4b)
 

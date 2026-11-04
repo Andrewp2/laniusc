@@ -1,5 +1,9 @@
-import Lanius.Open.F14.SelfCompilerTotalReason.Stmt
-import Lanius.Open.F14.CostGivesSelfCost.Stmt
+module
+
+public import Lanius.Open.F14.SelfCompilerTotalReason.Stmt
+public import Lanius.Open.F14.CostGivesSelfCost.Stmt
+
+@[expose] public section
 
 open Lanius.Mini
 open Lanius.Core (Value)

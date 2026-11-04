@@ -1,5 +1,11 @@
-import Lanius.Open.F14.ReadFilesHeight.Stmt
-import Lanius.Faithful.SelfPre.Files
+module
+
+public import Lanius.Open.F14.ReadFilesHeight.Stmt
+public import Lanius.Faithful.SelfPre.Files
+import all Lanius.Mini.Compiler.P.render
+import all Lanius.Mini.Frontend.P.readCountedBytes
+
+@[expose] public section
 
 /-! # `ReadFilesHeight`: the files read are lower than `2 ^ 40`
 

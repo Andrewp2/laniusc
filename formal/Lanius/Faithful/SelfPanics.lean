@@ -1,7 +1,17 @@
-import Lanius.Faithful.SelfLive
-import Lanius.Faithful.Sim.Wrap
-import Lanius.Faithful.Gen.SelfLiveAll
-import Lanius.Faithful.Gen.SelfTerm
+module
+
+public import Lanius.Faithful.SelfLive
+public import Lanius.Faithful.Sim.Wrap
+public import Lanius.Faithful.Gen.SelfLiveAll
+public import Lanius.Faithful.Gen.SelfTerm
+import all Lanius.Faithful.Gen.SelfSrc1
+import all Lanius.Faithful.Gen.SelfPureTab
+import all Lanius.Faithful.Gen.SelfSrc4
+import all Lanius.Faithful.Gen.SelfSrcF_grammarPart13
+import all Lanius.Faithful.Gen.SelfSrcC_packRound
+import all Lanius.Faithful.Gen.SelfSrcF_frontEndWords
+
+@[expose] public section
 
 /-! # The self program's pure compile fails only in `plus` and `times`
 

@@ -1,6 +1,11 @@
-import Lanius.Mini.ShapeStep
-import Lanius.Mini.SourceStops
-import Lanius.Mini.TypeSound
+module
+
+public import Lanius.Mini.ShapeStep
+public import Lanius.Mini.SourceStops
+public import Lanius.Mini.TypeSound
+import all Lanius.Mini.Compiler.P.arrayCallSig
+
+@[expose] public section
 
 /-! # Source programs without raw memory never reach `typeMismatch`
 (review finding 2, step 5)

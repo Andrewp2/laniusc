@@ -1,4 +1,8 @@
-import Lanius.Faithful.Fwd.Eff
+module
+
+public import Lanius.Faithful.Fwd.Eff
+
+@[expose] public section
 
 /-! # Forward: statements complete in Core
 

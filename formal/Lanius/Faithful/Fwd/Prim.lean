@@ -1,5 +1,9 @@
-import Lanius.Faithful.Fwd.PrimStep
-import Lanius.Faithful.Safe.Prims
+module
+
+public import Lanius.Faithful.Fwd.PrimStep
+public import Lanius.Faithful.Safe.Prims
+
+@[expose] public section
 
 /-! # Forward: the prims complete in Core
 
