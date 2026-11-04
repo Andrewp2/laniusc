@@ -2,7 +2,6 @@ module
 
 public import Lanius.Compiler.LexerCanonical
 public import Lanius.Mini.Frontend
-public import Lanius.Mini.Compiler
 import all Lanius.Mini.Frontend.P.grammarPart13
 import all Lanius.Mini.Frontend.P.shrFirst
 import all Lanius.Mini.Frontend.P.wideLeftStmt

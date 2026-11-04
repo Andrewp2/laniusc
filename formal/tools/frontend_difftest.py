@@ -1193,6 +1193,7 @@ def parse_uncached(heavy, laniusc, lani_path, workdir):
 # ---------------------------------------------------------------- Lean
 
 LEAN_HEAD = '''import Lanius.Mini.FrontLex
+import Lanius.Mini.Compiler
 open Lanius.Mini
 set_option linter.unusedVariables false
 
