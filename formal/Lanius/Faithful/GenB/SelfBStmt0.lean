@@ -1396,6 +1396,11 @@ abbrev BStmt_SrcStmt_breaks_out (spW sp : SrcProgram) (prims : Prims) (ix n : Na
     qcall spW prims uc n ix [v0] = some (w, k) → RepSrcStmt x0 v0 →
     qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.SrcStmt.breaksOut x0) w
 
+abbrev BStmt_need_limit (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value} {k : Nat},
+    qcall spW prims uc n ix [] = some (w, k) →
+    qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.needLimit) w
+
 abbrev BStmt_Expr_extent (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Expr} {v0 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepExpr x0 v0 → k < b → Pre_Expr_extent n x0 b →
@@ -3306,6 +3311,11 @@ abbrev BStmt_sigs_with (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
     qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 5 RepSrcFunc) x0 v0 → (RepList 25 RepNat) x1 v1 →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_sigs_with n x0 x1 = k ∧ (RepList 96 RepSig) (Lanius.Mini.sigsWith x0 x1) w
 
+abbrev BStmt_need_capped (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Nat} {v0 v1 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepNat x0 v0 → RepNat x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.needCapped x0 x1) w
+
 abbrev BStmt_SrcEff_callee_need (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcEff} {x1 : List Nat} {v0 v1 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepSrcEff x0 v0 → (RepList 25 RepNat) x1 v1 →
@@ -3320,6 +3330,11 @@ abbrev BStmt_SrcStmt_callee_need (spW sp : SrcProgram) (prims : Prims) (ix n : N
   ∀ {x0 : Lanius.Mini.SrcStmt} {x1 : List Nat} {v0 v1 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepSrcStmt x0 v0 → (RepList 25 RepNat) x1 v1 →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.SrcStmt.calleeNeed x0 x1) w
+
+abbrev BStmt_need_round_at (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List Lanius.Mini.SrcFunc} {x1 : List Nat} {x2 : List Nat} {v0 v1 v2 w : Value} {k b : Nat},
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepList 5 RepSrcFunc) x0 v0 → (RepList 25 RepNat) x1 v1 → (RepList 25 RepNat) x2 v2 → k < b → Pre_need_round_at n x0 x1 x2 b →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_need_round_at n x0 x1 x2 = k ∧ (RepList 25 RepNat) (Lanius.Mini.needRoundAt x0 x1 x2) w
 
 abbrev BStmt_need_round (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcFunc} {x1 : List Nat} {v0 v1 w : Value} {k b : Nat},
@@ -4775,15 +4790,5 @@ abbrev BStmt_concat_of_mini_selfhost_ImportDecl (spW sp : SrcProgram) (prims : P
   ∀ {x0 : List Lanius.Mini.ImportDecl} {x1 : List Lanius.Mini.ImportDecl} {v0 v1 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 115 RepImportDecl) x0 v0 → (RepList 115 RepImportDecl) x1 v1 →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_concat_of_mini_selfhost_ImportDecl n x0 x1 = k ∧ (RepList 115 RepImportDecl) (x0 ++ x1) w
-
-abbrev BStmt_concat_of_mini_selfhost_AliasDecl (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.AliasDecl} {x1 : List Lanius.Mini.AliasDecl} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 118 RepAliasDecl) x0 v0 → (RepList 118 RepAliasDecl) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_concat_of_mini_selfhost_AliasDecl n x0 x1 = k ∧ (RepList 118 RepAliasDecl) (x0 ++ x1) w
-
-abbrev BStmt_concat_of_mini_selfhost_ImplDecl (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.ImplDecl} {x1 : List Lanius.Mini.ImplDecl} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 121 RepImplDecl) x0 v0 → (RepList 121 RepImplDecl) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_concat_of_mini_selfhost_ImplDecl n x0 x1 = k ∧ (RepList 121 RepImplDecl) (x0 ++ x1) w
 
 end Lanius.Faithful.SelfBudget

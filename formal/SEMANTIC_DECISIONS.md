@@ -2647,12 +2647,23 @@ function's code out of the image limit, and fail at once when it runs out.
 `frame_block` is then the sum when it fits and 2^31 when not, so it is at
 most 2^31 and so are the needs' addends.
 
+The needs (`need_round`) add a block to a callee's need each round, for up
+to one round per function, so they too had no bound below 2^64 (leafB,
+V4/NOTES). They are saturated: `need_capped` caps each round's need at
+`need_limit()` (2^40, more frame memory than any binary has: `elf_fits`
+keeps the stack, and so frame memory, below 2^40), and a function whose need
+in the round before was at the limit stays there, so a need below the limit
+at the end was below it in every round. `lower_func` rejects a function
+whose need reaches the limit. A block is at most 2^31 and a callee's need at
+most the limit, so no sum passes 2^64.
+
 `lower_func` already rejected a block of 2^31 or more, and `lower_funcs`
-fails when one function does, so the check changes no result:
-`compileSource_unchecked` (`Lanius/Mini/FrameRoom.lean`) shows
-`compileSource` is the compiler with the unchecked sums
-(`compileSourceUnchecked`). The needs differ only for a program with a
-function over the limit, which both reject.
+fails when one function does. So `compileSource_unchecked`
+(`Lanius/Mini/FrameRoom.lean`) shows that `compileSource` is the compiler
+with the unchecked sums and needs (`compileSourceUnchecked`) for a program
+whose needs are below the limit (`NeedsBelow`), and rejects the others: a
+program with a function that needs 2^40 bytes of frame memory or more, which
+no binary could run. No real program comes near it.
 
 ## Budget certificates (decided 11-01, F14)
 

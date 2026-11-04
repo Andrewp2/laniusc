@@ -4,7 +4,7 @@ public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcC_needsAfter
 public import Lanius.Faithful.Gen.SelfStmt7
-public import Lanius.Faithful.Gen.SelfStmtC_needRound
+public import Lanius.Faithful.Gen.SelfStmtC_needCapped
 public import Lanius.Faithful.Gen.SelfStmtC_needsAfter
 import all Lanius.Faithful.Gen.SelfSrcC_needsAfter
 import all Lanius.Mini.Compiler.P.needsAfter

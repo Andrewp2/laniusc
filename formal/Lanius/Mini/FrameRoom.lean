@@ -7,9 +7,14 @@ lowering makes passes `2 ^ 64`, and a block over the limit is `2 ^ 31`.
 `paramsRoom` and `blockRoom` take out the sums `paramsBytes` and `SrcStmt.blockBytes` (the
 unchecked sums the compiler added before the check), so `frameBlock` is `frameBytes`, the unchecked
 block, when it fits and `2 ^ 31` when not (`frameBlock_eq`). `lowerFunc` rejects a block of `2 ^ 31`
-or more either way, and `lowerFuncs` fails when one function does, so the check changes no result
-of the compiler: `compileSource` is `compileSourceUnchecked`, the compiler with the unchecked sums
-(`compileSource_unchecked`). -/
+or more either way, and `lowerFuncs` fails when one function does.
+
+The needs (`needRound`) are saturated at `needLimit` (2^40, more frame memory than any binary has),
+and a round at the limit stays there (`needsAfter_sticky`), so needs below the limit at the end were
+below it in every round and are the unchecked ones (`needsAfter_unchecked`). `lowerFunc` rejects a
+function whose need reaches the limit. So `compileSource` is `compileSourceUnchecked`, the compiler
+with the unchecked sums and needs, for a program whose needs are below the limit (`NeedsBelow`), and
+rejects the others (`compileSource_unchecked`). -/
 
 set_option linter.unusedVariables false
 
@@ -169,7 +174,7 @@ theorem frameBlock_le (func : SrcFunc) : frameBlock func ≤ 2147483648 := by
   rw [frameBlock_eq]
   by_cases h : frameBytes func ≤ blockLimit <;> simp only [h, if_true, if_false] <;> simp only [blockLimit] at * <;> omega
 
-/-! The compiler with the unchecked sums. -/
+/-! The compiler with the unchecked sums and needs. -/
 
 def needRoundUnchecked : List SrcFunc → List Nat → List Nat
   | [], _ => []
@@ -208,86 +213,214 @@ def compileSourceUnchecked (prog : SrcProgram) : Option Binary :=
   else
     none
 
-/-! Every block fits: the two compilers agree. -/
+/-- Every function's need, as the compiler computes it, is below the limit. -/
+def NeedsBelow (funcs : List SrcFunc) : Prop := ∀ i < funcs.length, (funcNeeds funcs).getD i 0 < needLimit
 
-theorem needRound_unchecked {funcs : List SrcFunc} (fits : ∀ f ∈ funcs, frameBytes f ≤ blockLimit) (prev : List Nat) :
-    needRound funcs prev = needRoundUnchecked funcs prev := by
+instance (funcs : List SrcFunc) : Decidable (NeedsBelow funcs) := by unfold NeedsBelow; infer_instance
+
+/-! The saturated needs: a round at the limit stays there, and a round below it is the unchecked one. -/
+
+theorem restNeeds_getD (mine : List Nat) (i : Nat) : (restNeeds mine).getD i 0 = mine.getD (i + 1) 0 := by
+  cases mine <;> simp [restNeeds]
+
+theorem needRoundAt_sticky (prev : List Nat) :
+    ∀ (funcs : List SrcFunc) (mine : List Nat) (i : Nat), i < funcs.length → needLimit ≤ mine.getD i 0 →
+      (needRoundAt funcs prev mine).getD i 0 = needLimit
+  | [], _, _, lt, _ => by simp at lt
+  | f :: rest, mine, 0, _, le => by simp only [needRoundAt, List.getD_cons_zero, needCapped, if_pos le]
+  | f :: rest, mine, i + 1, lt, le => by
+    simp only [needRoundAt, List.getD_cons_succ]
+    exact needRoundAt_sticky prev rest (restNeeds mine) i (by simp at lt; omega) (by rw [restNeeds_getD]; exact le)
+
+theorem needsAfter_sticky (funcs : List SrcFunc) :
+    ∀ (rounds : Nat) (prev : List Nat) (i : Nat), i < funcs.length → needLimit ≤ prev.getD i 0 →
+      (needsAfter funcs prev rounds).getD i 0 = needLimit
+  | 0, prev, i, lt, le => by
+    rw [needsAfter]; simp only [if_true]; exact needRoundAt_sticky prev funcs prev i lt le
+  | rounds + 1, prev, i, lt, le => by
+    have hn := needRoundAt_sticky prev funcs prev i lt le
+    rw [needsAfter]
+    simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel]
+    split
+    · exact hn
+    · exact needsAfter_sticky funcs rounds (needRound funcs prev) i lt (by simp only [needRound, hn]; omega)
+
+theorem needRoundAt_unchecked {funcs : List SrcFunc} (fits : ∀ f ∈ funcs, frameBytes f ≤ blockLimit)
+    (prev : List Nat) : ∀ (mine : List Nat), (∀ i < funcs.length, (needRoundAt funcs prev mine).getD i 0 < needLimit) →
+      needRoundAt funcs prev mine = needRoundUnchecked funcs prev := by
   induction funcs with
-  | nil => rfl
+  | nil => intro _ _; rfl
   | cons f rest ih =>
+    intro mine below
     have hf : frameBlock f = frameBytes f := by
       rw [frameBlock_eq]; simp only [fits f (List.mem_cons_self ..), if_true]
-    simp only [needRound, needRoundUnchecked, hf, ih (fun g mem => fits g (List.mem_cons_of_mem f mem))]
+    have head := below 0 (by simp)
+    simp only [needRoundAt, List.getD_cons_zero] at head
+    have tail := ih (fun g mem => fits g (List.mem_cons_of_mem f mem)) (restNeeds mine) fun i lt => by
+      have := below (i + 1) (by simp; omega)
+      simpa [needRoundAt] using this
+    simp only [needRoundAt, needRoundUnchecked, tail, hf]
+    simp only [needCapped] at head ⊢
+    by_cases h1 : needLimit ≤ mine.getD 0 0
+    · simp only [h1, if_true] at head; omega
+    · by_cases h2 : needLimit ≤ frameBlock f + SrcStmt.calleeNeed f.body prev
+      · simp only [h1, h2, if_true, if_false] at head; omega
+      · rw [hf] at h2; simp only [h1, h2, if_false]
 
-theorem needsAfter_unchecked {funcs : List SrcFunc} (fits : ∀ f ∈ funcs, frameBytes f ≤ blockLimit) :
-    ∀ (rounds : Nat) (prev : List Nat), needsAfter funcs prev rounds = needsAfterUnchecked funcs prev rounds
-  | 0, prev => by
-    rw [needsAfter]; simp only [if_true, needsAfterUnchecked, needRound_unchecked fits]
-  | rounds + 1, prev => by
-    rw [needsAfter]
-    simp only [Nat.add_one_ne_zero, if_false, needsAfterUnchecked, needRound_unchecked fits,
-      needsAfter_unchecked fits rounds, Nat.add_sub_cancel]
+theorem needsAfter_unchecked {funcs : List SrcFunc} (fits : ∀ f ∈ funcs, frameBlock f = frameBytes f)
+    (fits' : ∀ f ∈ funcs, frameBytes f ≤ blockLimit) :
+    ∀ (rounds : Nat) (prev : List Nat), (∀ i < funcs.length, (needsAfter funcs prev rounds).getD i 0 < needLimit) →
+      needsAfter funcs prev rounds = needsAfterUnchecked funcs prev rounds
+  | 0, prev, below => by
+    rw [needsAfter] at below ⊢
+    simp only [if_true] at below ⊢
+    exact needRoundAt_unchecked fits' prev prev below
+  | rounds + 1, prev, below => by
+    have next_below : ∀ i < funcs.length, (needRound funcs prev).getD i 0 < needLimit := by
+      intro i lt
+      apply Classical.byContradiction
+      intro h
+      have le : needLimit ≤ (needRound funcs prev).getD i 0 := by omega
+      have := below i lt
+      rw [needsAfter] at this
+      simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at this
+      split at this
+      · omega
+      · rw [needsAfter_sticky funcs rounds _ i lt le] at this; omega
+    have hn : needRound funcs prev = needRoundUnchecked funcs prev := needRoundAt_unchecked fits' prev prev next_below
+    rw [needsAfter] at below ⊢
+    simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at below ⊢
+    simp only [needsAfterUnchecked, ← hn]
+    split
+    · rfl
+    · rename_i same
+      simp only [same] at below
+      exact needsAfter_unchecked fits fits' rounds (needRound funcs prev) below
 
-theorem sigs_unchecked {funcs : List SrcFunc} (fits : ∀ f ∈ funcs, frameBytes f ≤ blockLimit) :
-    sigs funcs = sigsUnchecked funcs := by
-  simp only [sigs, sigsUnchecked, funcNeeds, needsAfter_unchecked fits]
+theorem sigs_unchecked {funcs : List SrcFunc} (fits : ∀ f ∈ funcs, frameBytes f ≤ blockLimit)
+    (below : NeedsBelow funcs) : sigs funcs = sigsUnchecked funcs := by
+  have fits' : ∀ f ∈ funcs, frameBlock f = frameBytes f := fun f mem => by
+    rw [frameBlock_eq]; simp only [fits f mem, if_true]
+  simp only [sigs, sigsUnchecked]
+  rw [← needsAfter_unchecked fits' fits _ _ below]
+  rfl
+
+theorem sigsWith_need : ∀ (funcs : List SrcFunc) (needs : List Nat) (sig : Sig), sig ∈ sigsWith funcs needs →
+    ∃ i < funcs.length, sig.need = needs.getD i 0
+  | [], _, _, mem => by simp [sigsWith] at mem
+  | f :: rest, needs, sig, mem => by
+    simp only [sigsWith, List.mem_cons] at mem
+    rcases mem with rfl | mem
+    · exact ⟨0, by simp, by simp⟩
+    · obtain ⟨i, lt, eq⟩ := sigsWith_need rest (restNeeds needs) sig mem
+      exact ⟨i + 1, by simp; omega, by rw [eq, restNeeds_getD]⟩
+
+/-! Every block fits and every need is below the limit: the two compilers agree. -/
 
 theorem lowerFuncs_unchecked (S : List Sig) (decls : SrcDecls) :
     ∀ (own : List Sig) (funcs : List SrcFunc), (∀ f ∈ funcs, frameBytes f ≤ blockLimit) →
+      (∀ sig ∈ own, sig.need < needLimit) →
       lowerFuncs S own decls funcs = lowerFuncsUnchecked S own decls funcs
-  | own, [], _ => by cases own <;> rfl
-  | [], _ :: _, _ => rfl
-  | sig :: others, func :: rest, fits => by
+  | own, [], _, _ => by cases own <;> rfl
+  | [], _ :: _, _, _ => rfl
+  | sig :: others, func :: rest, fits, small => by
     have hf : frameBlock func = frameBytes func := by
       rw [frameBlock_eq]; simp only [fits func (List.mem_cons_self ..), if_true]
-    simp only [lowerFuncs, lowerFuncsUnchecked, lowerFunc, lowerFuncUnchecked, hf,
-      lowerFuncs_unchecked S decls others rest (fun g mem => fits g (List.mem_cons_of_mem func mem))]
+    have hs : sig.need < needLimit := small sig (List.mem_cons_self ..)
+    simp only [lowerFuncs, lowerFuncsUnchecked, lowerFunc, lowerFuncUnchecked, hf, hs, decide_true, Bool.and_true,
+      lowerFuncs_unchecked S decls others rest (fun g mem => fits g (List.mem_cons_of_mem func mem))
+        (fun g mem => small g (List.mem_cons_of_mem sig mem))]
 
-/-! A block does not fit: both compilers reject the program. -/
+/-! A block does not fit, or a need reaches the limit: the compiler rejects the program. -/
 
 theorem lowerFuncs_none {lower : List Sig → Sig → SrcDecls → SrcFunc → Option Func}
     {lowers : List Sig → List Sig → SrcDecls → List SrcFunc → Option (List Func)}
-    (nil : ∀ S decls, lowers S [] decls [] = some [])
     (empty : ∀ S decls func rest, lowers S [] decls (func :: rest) = none)
     (cons : ∀ S sig others decls func rest,
       lowers S (sig :: others) decls (func :: rest) = lowerFuncCons (lower S sig decls func) (lowers S others decls rest))
-    {big : SrcFunc} (bad : ∀ S sig decls, lower S sig decls big = none) (S : List Sig) (decls : SrcDecls) :
-    ∀ (own : List Sig) (funcs : List SrcFunc), big ∈ funcs → lowers S own decls funcs = none
-  | _, [], mem => by cases mem
-  | [], func :: rest, _ => empty S decls func rest
-  | sig :: others, func :: rest, mem => by
-    rw [cons]
-    rcases List.mem_cons.mp mem with h | h
-    · subst h; simp only [bad, lowerFuncCons]
-    · rw [lowerFuncs_none nil empty cons bad S decls others rest h]
-      cases lower S sig decls func <;> rfl
+    (S : List Sig) (decls : SrcDecls) :
+    ∀ (own : List Sig) (funcs : List SrcFunc) (i : Nat), i < funcs.length →
+      (∀ sig f, own[i]? = some sig → funcs[i]? = some f → lower S sig decls f = none) → lowers S own decls funcs = none
+  | _, [], _, lt, _ => by simp at lt
+  | [], func :: rest, _, _, _ => empty S decls func rest
+  | sig :: others, func :: rest, 0, _, bad => by
+    rw [cons, bad sig func rfl rfl]; rfl
+  | sig :: others, func :: rest, i + 1, lt, bad => by
+    rw [cons, lowerFuncs_none empty cons S decls others rest i (by simp at lt; omega)
+      (fun sig' f h1 h2 => bad sig' f (by simpa using h1) (by simpa using h2))]
+    cases lower S sig decls func <;> rfl
 
 theorem lowerFunc_big {func : SrcFunc} (big : ¬ frameBytes func ≤ blockLimit) (S : List Sig) (sig : Sig)
     (decls : SrcDecls) : lowerFunc S sig decls func = none := by
   have hf : frameBlock func = 2147483648 := by rw [frameBlock_eq]; simp only [big, if_false]
-  simp only [lowerFunc, hf, Nat.lt_irrefl, decide_false, Bool.and_false, Bool.false_eq_true, if_false]
+  simp only [lowerFunc, hf, Nat.lt_irrefl, decide_false, Bool.and_false, Bool.false_and, Bool.false_eq_true,
+    if_false]
+
+theorem lowerFunc_needy {sig : Sig} (needy : needLimit ≤ sig.need) (S : List Sig) (func : SrcFunc)
+    (decls : SrcDecls) : lowerFunc S sig decls func = none := by
+  have h : ¬ sig.need < needLimit := by omega
+  simp only [lowerFunc, h, decide_false, Bool.and_false, Bool.false_eq_true, if_false]
 
 theorem lowerFuncUnchecked_big {func : SrcFunc} (big : ¬ frameBytes func ≤ blockLimit) (S : List Sig) (sig : Sig)
     (decls : SrcDecls) : lowerFuncUnchecked S sig decls func = none := by
   have h : ¬ frameBytes func < 2147483648 := by simp only [blockLimit] at big; omega
   simp only [lowerFuncUnchecked, h, decide_false, Bool.and_false, Bool.false_eq_true, if_false]
 
-/-- The frame block's room check changes no result of the compiler. -/
-theorem compileSource_unchecked (prog : SrcProgram) : compileSource prog = compileSourceUnchecked prog := by
+theorem sigsWith_getElem : ∀ (funcs : List SrcFunc) (needs : List Nat) (i : Nat) (sig : Sig),
+    (sigsWith funcs needs)[i]? = some sig → sig.need = needs.getD i 0
+  | [], _, _, _, h => by simp [sigsWith] at h
+  | f :: rest, needs, 0, sig, h => by simp only [sigsWith, List.getElem?_cons_zero, Option.some.injEq] at h; subst h; rfl
+  | f :: rest, needs, i + 1, sig, h => by
+    simp only [sigsWith, List.getElem?_cons_succ] at h
+    rw [sigsWith_getElem rest (restNeeds needs) i sig h, restNeeds_getD]
+
+/-- The frame block's room check and the needs' limit change no result of the compiler for a
+program whose functions' needs are below the limit (more frame memory than any binary has), and
+reject the others. -/
+theorem compileSource_unchecked (prog : SrcProgram) :
+    compileSource prog = if NeedsBelow prog.funcs then compileSourceUnchecked prog else none := by
   simp only [compileSource, compileSourceUnchecked, compileDeclared]
-  split
-  · cases declareProgram prog with
-    | none => rfl
+  by_cases ret : funcsReturn prog.funcs = true
+  · simp only [ret, if_true]
+    cases hd : declareProgram prog with
+    | none => simp only [hd]; split <;> rfl
     | some d =>
-      simp only
+      simp only [hd]
       by_cases fits : ∀ f ∈ prog.funcs, frameBytes f ≤ blockLimit
-      · rw [sigs_unchecked fits, lowerFuncs_unchecked _ d _ _ fits]
+      · by_cases below : NeedsBelow prog.funcs
+        · simp only [below, if_true]
+          rw [lowerFuncs_unchecked _ d _ _ fits, sigs_unchecked fits below]
+          intro sig mem
+          obtain ⟨i, lt, eq⟩ := sigsWith_need prog.funcs _ sig mem
+          rw [eq]; exact below i lt
+        · simp only [below, if_false]
+          obtain ⟨i, lt, needy⟩ : ∃ i < prog.funcs.length, needLimit ≤ (funcNeeds prog.funcs).getD i 0 := by
+            apply Classical.byContradiction
+            intro h
+            exact below fun i lt => by
+              apply Classical.byContradiction
+              intro h'
+              exact h ⟨i, lt, by omega⟩
+          rw [lowerFuncs_none (lower := lowerFunc) (lowers := lowerFuncs) (fun _ _ _ _ => rfl)
+            (fun _ _ _ _ _ _ => rfl) _ d _ _ i lt fun sig f hs _ => lowerFunc_needy
+              (by rw [sigsWith_getElem _ _ i sig hs]; exact needy) _ f d]
+          rfl
       · rcases Classical.not_forall.mp fits with ⟨big, hbig⟩
         rcases Classical.not_imp.mp hbig with ⟨mem, over⟩
-        rw [lowerFuncs_none (lower := lowerFunc) (lowers := lowerFuncs) (fun _ _ => rfl) (fun _ _ _ _ => rfl)
-            (fun _ _ _ _ _ _ => rfl) (lowerFunc_big over) _ d _ _ mem,
-          lowerFuncs_none (lower := lowerFuncUnchecked) (lowers := lowerFuncsUnchecked) (fun _ _ => rfl)
-            (fun _ _ _ _ => rfl) (fun _ _ _ _ _ _ => rfl) (lowerFuncUnchecked_big over) _ d _ _ mem]
-  · rfl
+        obtain ⟨i, hi⟩ := List.mem_iff_getElem?.mp mem
+        have lt : i < prog.funcs.length := by
+          rcases List.getElem?_eq_some_iff.mp hi with ⟨lt, -⟩; exact lt
+        have bad : ∀ {lower : List Sig → Sig → SrcDecls → SrcFunc → Option Func},
+            (∀ S sig, lower S sig d big = none) →
+            ∀ (S own : List Sig), ∀ sig f, own[i]? = some sig → prog.funcs[i]? = some f → lower S sig d f = none :=
+          fun h S own sig f _ hf => by rw [hi, Option.some.injEq] at hf; subst hf; exact h S sig
+        rw [lowerFuncs_none (lower := lowerFunc) (lowers := lowerFuncs) (fun _ _ _ _ => rfl)
+            (fun _ _ _ _ _ _ => rfl) _ d _ _ i lt (bad (fun S sig => lowerFunc_big over S sig d) _ _),
+          lowerFuncs_none (lower := lowerFuncUnchecked) (lowers := lowerFuncsUnchecked)
+            (fun _ _ _ _ => rfl) (fun _ _ _ _ _ _ => rfl) _ d _ _ i lt
+            (bad (fun S sig => lowerFuncUnchecked_big over S sig d) _ _)]
+        split <;> rfl
+  · simp only [ret, Bool.false_eq_true, if_false]
+    split <;> rfl
 
 end Lanius.Mini

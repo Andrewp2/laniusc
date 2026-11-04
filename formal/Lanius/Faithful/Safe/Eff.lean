@@ -22,7 +22,7 @@ public import Lanius.Mini.Compiler.P.strStores
 public import Lanius.Mini.Compiler.P.arrayCallSig
 public import Lanius.Mini.Compiler.P.bindingBytes
 public import Lanius.Mini.Compiler.P.funcNeeds
-public import Lanius.Mini.Compiler.P.needRound
+public import Lanius.Mini.Compiler.P.needCapped
 public import Lanius.Mini.Compiler.P.needsAfter
 public import Lanius.Mini.Compiler.P.withBudget
 

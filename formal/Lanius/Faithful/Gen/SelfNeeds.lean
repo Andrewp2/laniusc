@@ -86,7 +86,8 @@ import all Lanius.Faithful.Gen.SelfSrcC_lowerSlice
 import all Lanius.Faithful.Gen.SelfSrcC_lowerTagged
 import all Lanius.Faithful.Gen.SelfSrcC_matchDst
 import all Lanius.Faithful.Gen.SelfSrcC_matchVariants
-import all Lanius.Faithful.Gen.SelfSrcC_needRound
+import all Lanius.Faithful.Gen.SelfSrcC_needCapped
+import all Lanius.Faithful.Gen.SelfSrcC_needLimit
 import all Lanius.Faithful.Gen.SelfSrcC_needsAfter
 import all Lanius.Faithful.Gen.SelfSrcC_optimizeIte
 import all Lanius.Faithful.Gen.SelfSrcC_optimizeLeft

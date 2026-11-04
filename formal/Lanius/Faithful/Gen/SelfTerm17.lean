@@ -12,127 +12,127 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.Termination
 open Lanius.Faithful.SelfCert
 
-theorem ok_negate_float : FnOk prog prims info (798, ⟨1, [], 0⟩) :=
+theorem ok_eval_right : FnOk prog prims info (798, ⟨2, [], 0⟩) :=
+  fnOk_of fn_eval_right (by decide +kernel)
+
+theorem ok_SrcType_is_float_any : FnOk prog prims info (799, ⟨0, [], 0⟩) :=
+  fnOk_of fn_SrcType_is_float_any (by decide +kernel)
+
+theorem ok_negate_float : FnOk prog prims info (800, ⟨1, [], 0⟩) :=
   fnOk_of fn_negate_float (by decide +kernel)
 
-theorem ok_SrcType_float_ty : FnOk prog prims info (799, ⟨0, [], 0⟩) :=
+theorem ok_SrcType_float_ty : FnOk prog prims info (801, ⟨0, [], 0⟩) :=
   fnOk_of fn_SrcType_float_ty (by decide +kernel)
 
-theorem ok_SrcType_sint_kind : FnOk prog prims info (800, ⟨0, [], 0⟩) :=
+theorem ok_SrcType_sint_kind : FnOk prog prims info (802, ⟨0, [], 0⟩) :=
   fnOk_of fn_SrcType_sint_kind (by decide +kernel)
 
-theorem ok_negate_signed : FnOk prog prims info (801, ⟨2, [], 0⟩) :=
+theorem ok_negate_signed : FnOk prog prims info (803, ⟨2, [], 0⟩) :=
   fnOk_of fn_negate_signed (by decide +kernel)
 
-theorem ok_eval_payload : FnOk prog prims info (802, ⟨3, [], 0⟩) :=
+theorem ok_eval_payload : FnOk prog prims info (804, ⟨3, [], 0⟩) :=
   fnOk_of fn_eval_payload (by decide +kernel)
 
-theorem ok_eval_arm : FnOk prog prims info (803, ⟨0, [], 0⟩) :=
+theorem ok_eval_arm : FnOk prog prims info (805, ⟨0, [], 0⟩) :=
   fnOk_of fn_eval_arm (by decide +kernel)
 
-theorem ok_signed_div : FnOk prog prims info (805, ⟨0, [], 0⟩) :=
+theorem ok_signed_div : FnOk prog prims info (807, ⟨0, [], 0⟩) :=
   fnOk_of fn_signed_div (by decide +kernel)
 
-theorem ok_eval_divide_sint : FnOk prog prims info (806, ⟨3, [], 0⟩) :=
+theorem ok_eval_divide_sint : FnOk prog prims info (808, ⟨3, [], 0⟩) :=
   fnOk_of fn_eval_divide_sint (by decide +kernel)
 
-theorem ok_SrcType_uint_kind : FnOk prog prims info (807, ⟨0, [], 0⟩) :=
+theorem ok_SrcType_uint_kind : FnOk prog prims info (809, ⟨0, [], 0⟩) :=
   fnOk_of fn_SrcType_uint_kind (by decide +kernel)
 
-theorem ok_eval_divide_uint : FnOk prog prims info (808, ⟨2, [], 0⟩) :=
+theorem ok_eval_divide_uint : FnOk prog prims info (810, ⟨2, [], 0⟩) :=
   fnOk_of fn_eval_divide_uint (by decide +kernel)
 
-theorem ok_eval_word_stride : FnOk prog prims info (809, ⟨6, [], 0⟩) :=
+theorem ok_eval_word_stride : FnOk prog prims info (811, ⟨6, [], 0⟩) :=
   fnOk_of fn_eval_word_stride (by decide +kernel)
 
-theorem ok_static_byte_is : FnOk prog prims info (810, ⟨0, [], 0⟩) :=
+theorem ok_static_byte_is : FnOk prog prims info (812, ⟨0, [], 0⟩) :=
   fnOk_of fn_static_byte_is (by decide +kernel)
 
-theorem ok_get_of_u8 : FnOk prog prims info (811, ⟨1, [0], 0⟩) :=
+theorem ok_get_of_u8 : FnOk prog prims info (813, ⟨1, [0], 0⟩) :=
   fnOk_of fn_get_of_u8 (by decide +kernel)
 
-theorem ok_store_eval_then : FnOk prog prims info (812, ⟨3, [], 0⟩) :=
+theorem ok_store_eval_then : FnOk prog prims info (814, ⟨3, [], 0⟩) :=
   fnOk_of fn_store_eval_then (by decide +kernel)
 
-theorem ok_store_type : FnOk prog prims info (813, ⟨3, [0], 0⟩) :=
+theorem ok_store_type : FnOk prog prims info (815, ⟨3, [0], 0⟩) :=
   fnOk_of fn_store_type (by decide +kernel)
 
-theorem ok_element_base : FnOk prog prims info (814, ⟨2, [], 0⟩) :=
+theorem ok_element_base : FnOk prog prims info (816, ⟨2, [], 0⟩) :=
   fnOk_of fn_element_base (by decide +kernel)
 
-theorem ok_store_pick : FnOk prog prims info (815, ⟨4, [], 0⟩) :=
+theorem ok_store_pick : FnOk prog prims info (817, ⟨4, [], 0⟩) :=
   fnOk_of fn_store_pick (by decide +kernel)
 
-theorem ok_set_scalar_eval : FnOk prog prims info (816, ⟨4, [], 0⟩) :=
+theorem ok_set_scalar_eval : FnOk prog prims info (818, ⟨4, [], 0⟩) :=
   fnOk_of fn_set_scalar_eval (by decide +kernel)
 
-theorem ok_unit_payload : FnOk prog prims info (817, ⟨1, [], 0⟩) :=
+theorem ok_unit_payload : FnOk prog prims info (819, ⟨1, [], 0⟩) :=
   fnOk_of fn_unit_payload (by decide +kernel)
 
-theorem ok_field_payload : FnOk prog prims info (818, ⟨0, [], 0⟩) :=
+theorem ok_field_payload : FnOk prog prims info (820, ⟨0, [], 0⟩) :=
   fnOk_of fn_field_payload (by decide +kernel)
 
-theorem ok_lower_arm_value : FnOk prog prims info (819, ⟨12, [], 0⟩) :=
+theorem ok_lower_arm_value : FnOk prog prims info (821, ⟨12, [], 0⟩) :=
   fnOk_of fn_lower_arm_value (by decide +kernel)
 
-theorem ok_effs_callee_need : FnOk prog prims info (822, ⟨2, [0], 0⟩) :=
-  fnOk_of fn_effs_callee_need (by decide +kernel)
+theorem ok_SrcEff_callee_need : FnOk prog prims info (824, ⟨2, [0], 0⟩) :=
+  fnOk_of fn_SrcEff_callee_need (by decide +kernel)
 
-theorem ok_get_of_usize : FnOk prog prims info (827, ⟨1, [0], 0⟩) :=
+theorem ok_get_of_usize : FnOk prog prims info (829, ⟨1, [0], 0⟩) :=
   fnOk_of fn_get_of_usize (by decide +kernel)
 
-theorem ok_lx_one_first : FnOk prog prims info (828, ⟨15, [], 0⟩) :=
+theorem ok_lx_one_first : FnOk prog prims info (830, ⟨15, [], 0⟩) :=
   fnOk_of fn_lx_one_first (by decide +kernel)
 
-theorem ok_cons_of_mini_selfhost_RawTok : FnOk prog prims info (829, ⟨0, [], 0⟩) :=
+theorem ok_cons_of_mini_selfhost_RawTok : FnOk prog prims info (831, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_RawTok (by decide +kernel)
 
-theorem ok_cons_of_mini_selfhost_Token : FnOk prog prims info (831, ⟨0, [], 0⟩) :=
+theorem ok_cons_of_mini_selfhost_Token : FnOk prog prims info (833, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_Token (by decide +kernel)
 
-theorem ok_lx_token : FnOk prog prims info (832, ⟨3, [], 0⟩) :=
+theorem ok_lx_token : FnOk prog prims info (834, ⟨3, [], 0⟩) :=
   fnOk_of fn_lx_token (by decide +kernel)
 
-theorem ok_single_of_mini_selfhost_RawTok : FnOk prog prims info (834, ⟨0, [], 0⟩) :=
+theorem ok_single_of_mini_selfhost_RawTok : FnOk prog prims info (836, ⟨0, [], 0⟩) :=
   fnOk_of fn_single_of_mini_selfhost_RawTok (by decide +kernel)
 
-theorem ok_lx_range_pair : FnOk prog prims info (835, ⟨0, [], 0⟩) :=
+theorem ok_lx_range_pair : FnOk prog prims info (837, ⟨0, [], 0⟩) :=
   fnOk_of fn_lx_range_pair (by decide +kernel)
 
-theorem ok_lx_trivia : FnOk prog prims info (836, ⟨0, [], 0⟩) :=
+theorem ok_lx_trivia : FnOk prog prims info (838, ⟨0, [], 0⟩) :=
   fnOk_of fn_lx_trivia (by decide +kernel)
 
-theorem ok_lx_canonical_kind : FnOk prog prims info (837, ⟨2, [], 0⟩) :=
+theorem ok_lx_canonical_kind : FnOk prog prims info (839, ⟨2, [], 0⟩) :=
   fnOk_of fn_lx_canonical_kind (by decide +kernel)
 
-theorem ok_with_kid : FnOk prog prims info (838, ⟨1, [], 0⟩) :=
+theorem ok_with_kid : FnOk prog prims info (840, ⟨1, [], 0⟩) :=
   fnOk_of fn_with_kid (by decide +kernel)
 
-theorem ok_t_shr : FnOk prog prims info (839, ⟨0, [], 0⟩) :=
+theorem ok_t_shr : FnOk prog prims info (841, ⟨0, [], 0⟩) :=
   fnOk_of fn_t_shr (by decide +kernel)
 
-theorem ok_t_gt : FnOk prog prims info (840, ⟨0, [], 0⟩) :=
+theorem ok_t_gt : FnOk prog prims info (842, ⟨0, [], 0⟩) :=
   fnOk_of fn_t_gt (by decide +kernel)
 
-theorem ok_shr_first : FnOk prog prims info (841, ⟨1, [], 0⟩) :=
+theorem ok_shr_first : FnOk prog prims info (843, ⟨1, [], 0⟩) :=
   fnOk_of fn_shr_first (by decide +kernel)
 
-theorem ok_shr_second : FnOk prog prims info (842, ⟨2, [], 0⟩) :=
+theorem ok_shr_second : FnOk prog prims info (844, ⟨2, [], 0⟩) :=
   fnOk_of fn_shr_second (by decide +kernel)
 
-theorem ok_attach_prod : FnOk prog prims info (843, ⟨6, [1], 3⟩) :=
+theorem ok_attach_prod : FnOk prog prims info (845, ⟨6, [1], 3⟩) :=
   fnOk_of fn_attach_prod (by decide +kernel)
 
-theorem ok_p_items_more : FnOk prog prims info (844, ⟨0, [], 0⟩) :=
+theorem ok_p_items_more : FnOk prog prims info (846, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_items_more (by decide +kernel)
 
-theorem ok_p_items_end : FnOk prog prims info (845, ⟨0, [], 0⟩) :=
-  fnOk_of fn_p_items_end (by decide +kernel)
-
-theorem ok_p_stmts_more : FnOk prog prims info (846, ⟨0, [], 0⟩) :=
-  fnOk_of fn_p_stmts_more (by decide +kernel)
-
 theorem chunk17 : AllFns prog prims info part17 :=
-  ⟨ok_negate_float, ok_SrcType_float_ty, ok_SrcType_sint_kind, ok_negate_signed, ok_eval_payload, ok_eval_arm, ok_signed_div, ok_eval_divide_sint, ok_SrcType_uint_kind, ok_eval_divide_uint, ok_eval_word_stride, ok_static_byte_is, ok_get_of_u8, ok_store_eval_then, ok_store_type, ok_element_base, ok_store_pick, ok_set_scalar_eval, ok_unit_payload, ok_field_payload, ok_lower_arm_value, ok_effs_callee_need, ok_get_of_usize, ok_lx_one_first, ok_cons_of_mini_selfhost_RawTok, ok_cons_of_mini_selfhost_Token, ok_lx_token, ok_single_of_mini_selfhost_RawTok, ok_lx_range_pair, ok_lx_trivia, ok_lx_canonical_kind, ok_with_kid, ok_t_shr, ok_t_gt, ok_shr_first, ok_shr_second, ok_attach_prod, ok_p_items_more, ok_p_items_end, ok_p_stmts_more, trivial⟩
+  ⟨ok_eval_right, ok_SrcType_is_float_any, ok_negate_float, ok_SrcType_float_ty, ok_SrcType_sint_kind, ok_negate_signed, ok_eval_payload, ok_eval_arm, ok_signed_div, ok_eval_divide_sint, ok_SrcType_uint_kind, ok_eval_divide_uint, ok_eval_word_stride, ok_static_byte_is, ok_get_of_u8, ok_store_eval_then, ok_store_type, ok_element_base, ok_store_pick, ok_set_scalar_eval, ok_unit_payload, ok_field_payload, ok_lower_arm_value, ok_SrcEff_callee_need, ok_get_of_usize, ok_lx_one_first, ok_cons_of_mini_selfhost_RawTok, ok_cons_of_mini_selfhost_Token, ok_lx_token, ok_single_of_mini_selfhost_RawTok, ok_lx_range_pair, ok_lx_trivia, ok_lx_canonical_kind, ok_with_kid, ok_t_shr, ok_t_gt, ok_shr_first, ok_shr_second, ok_attach_prod, ok_p_items_more, trivial⟩
 
 end Lanius.Faithful.SelfTerm

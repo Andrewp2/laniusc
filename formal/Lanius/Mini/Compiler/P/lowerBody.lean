@@ -13,6 +13,7 @@ import Lanius.Mini.Compiler.P.funcNeeds
 import Lanius.Mini.Compiler.P.loadAtBytes
 import Lanius.Mini.Compiler.P.lowerApply
 import Lanius.Mini.Compiler.P.matchVariants
+import Lanius.Mini.Compiler.P.needLimit
 import Lanius.Mini.Compiler.P.structFields
 import Lanius.Mini.Compiler.P.withBudget
 
@@ -50,7 +51,7 @@ def withFrame (slot : Nat) (block : Nat) (body : Option Stmt) : Option Stmt :=
 def lowerFunc (sigs : List Sig) (own : Sig) (decls : SrcDecls) (func : SrcFunc) : Option Func :=
   let count : Nat := paramsSize func.params
   let block : Nat := frameBlock func
-  if decide (0 < SrcType.size func.ret) && paramsValid func.params && !(SrcStmt.breaksOut func.body) && decide (block ≤ own.need) && decide (block < 2147483648) then
+  if decide (0 < SrcType.size func.ret) && paramsValid func.params && !(SrcStmt.breaksOut func.body) && decide (block ≤ own.need) && decide (block < 2147483648) && decide (own.need < needLimit) then
     lowerBody count (SrcType.size func.ret) (SrcStmt.depth func.body) (unitTail func.ret (withFrame count block (SrcStmt.lower func.body (withBudget sigs (own.need - block) block) decls func.ret (paramScope func.params 0 []) count)))
   else
     none

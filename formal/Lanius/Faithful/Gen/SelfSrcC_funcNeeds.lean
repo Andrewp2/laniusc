@@ -25,9 +25,6 @@ def src_args_extent (ix_max_of : Nat) (ix_Expr_extent : Nat) (ix_args_extent : N
 /-- mini::selfhost::func_needs -/
 def src_func_needs (ix_needs_after : Nat) (ix_empty_of_usize : Nat) (ix_length_of_mini_selfhost_SrcFunc : Nat) : SrcFunc := { params := [{ id := 11, ty := ty33 }], ret := ty20, body := SrcStmt.returnEval (SrcEff.eCall ix_needs_after [SrcEff.ePure (SrcExpr.local 11), SrcEff.eCall ix_empty_of_usize [], SrcEff.eCall ix_length_of_mini_selfhost_SrcFunc [SrcEff.ePure (SrcExpr.local 11)]]) }
 
-/-- mini::selfhost::rest_needs -/
-def src_rest_needs (ix_unbox_of_mini_selfhost_List_usize : Nat) (ix_empty_of_usize : Nat) : SrcFunc := { params := [{ id := 11, ty := ty20 }], ret := ty20, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 11)) ty20 ty20 [[], [112, 115]] [SrcEff.eCall ix_empty_of_usize [], SrcEff.eCall ix_unbox_of_mini_selfhost_List_usize [SrcEff.ePure (SrcExpr.local 115)]]) }
-
 /-- mini::selfhost::sigs -/
 def src_sigs (ix_sigs_with : Nat) (ix_func_needs : Nat) : SrcFunc := { params := [{ id := 5, ty := ty33 }], ret := ty102, body := SrcStmt.returnEval (SrcEff.eCall ix_sigs_with [SrcEff.ePure (SrcExpr.local 5), SrcEff.eCall ix_func_needs [SrcEff.ePure (SrcExpr.local 5)]]) }
 

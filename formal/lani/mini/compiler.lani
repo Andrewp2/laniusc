@@ -6754,13 +6754,46 @@ fn block_left(left: core::option::Option<usize>) -> usize {
     };
 }
 
+// The most frame memory a function may need: more than any binary has
+// (elf_fits: below 2^40 bytes). lower_func rejects a function whose need
+// reaches it.
+pub fn need_limit() -> usize {
+    return 1099511627776;
+}
+
+// A need saturated at need_limit: once a round reaches the limit it stays
+// there (so the needs it stops at reach it whenever a round did), and no sum
+// passes 2^64 (F14): a block is at most 2^31 and a callee's need at most the
+// limit.
+pub fn need_capped(old: usize, next: usize) -> usize {
+    if (old >= need_limit()) {
+        return need_limit();
+    }
+    if (next >= need_limit()) {
+        return need_limit();
+    }
+    return next;
+}
+
+pub fn rest_needs(needs: List<usize>) -> List<usize> {
+    return match (needs) {
+        Nil -> empty(),
+        Cons(n, rest) -> unbox(rest),
+    };
+}
+
 // One round of needs: each function's block and the largest need, by
-// prev, of a function it calls.
-pub fn need_round(funcs: List<SrcFunc>, prev: List<usize>) -> List<usize> {
+// prev, of a function it calls, saturated (need_capped); mine runs
+// alongside funcs: each function's need in prev.
+pub fn need_round_at(funcs: List<SrcFunc>, prev: List<usize>, mine: List<usize>) -> List<usize> {
     return match (funcs) {
         Nil -> empty(),
-        Cons(f, rest) -> cons(plus(frame_block(f), f.body.callee_need(prev)), need_round(unbox(rest), prev)),
+        Cons(f, rest) -> cons(need_capped(get_or(mine, 0, 0), plus(frame_block(f), f.body.callee_need(prev))), need_round_at(unbox(rest), prev, rest_needs(mine))),
     };
+}
+
+pub fn need_round(funcs: List<SrcFunc>, prev: List<usize>) -> List<usize> {
+    return need_round_at(funcs, prev, prev);
 }
 
 pub fn same_needs(a: List<usize>, b: List<usize>) -> bool {
@@ -6795,13 +6828,6 @@ pub fn needs_after(funcs: List<SrcFunc>, prev: List<usize>, rounds: usize) -> Li
 // its callees' (TRUSTED_BASE "Frame room").
 pub fn func_needs(funcs: List<SrcFunc>) -> List<usize> {
     return needs_after(funcs, empty(), length(funcs));
-}
-
-pub fn rest_needs(needs: List<usize>) -> List<usize> {
-    return match (needs) {
-        Nil -> empty(),
-        Cons(n, rest) -> unbox(rest),
-    };
 }
 
 // The signatures with these needs (0 past their end).
@@ -6901,7 +6927,7 @@ pub fn with_frame(slot: usize, block: usize, body: core::option::Option<Stmt>) -
 pub fn lower_func(sigs: List<Sig>, own: Sig, decls: SrcDecls, func: SrcFunc) -> core::option::Option<Func> {
     let count: usize = params_size(func.params);
     let block: usize = frame_block(func);
-    if ((func.ret.size() > 0) && params_valid(func.params) && !func.body.breaks_out() && (own.need >= block) && (2147483648 > block)) {
+    if ((func.ret.size() > 0) && params_valid(func.params) && !func.body.breaks_out() && (own.need >= block) && (2147483648 > block) && (need_limit() > own.need)) {
         return lower_body(count, func.ret.size(), func.body.depth(), unit_tail(func.ret, with_frame(count, block, func.body.lower(with_budget(sigs, minus(own.need, block), block), decls, func.ret, param_scope(func.params, 0, empty()), count))));
     }
     return None;
