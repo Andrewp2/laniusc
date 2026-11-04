@@ -4817,6 +4817,18 @@ fn lower_set_scalar(slot: usize, ty: SrcType, scope: List<Binding>, value: SrcEx
     return None;
 }
 
+// let id: [i32; length] = [fields]; let pointer = data_ptr(id); body: the
+// length checked (as lower_view does) before the body is lowered under the
+// view's binding, whose size is the length (F14: the scope's sizes stay
+// below 2^31).
+// extract: inline
+fn lower_let_view(sigs: List<Sig>, decls: SrcDecls, ret: SrcType, scope: List<Binding>, next: usize, id: usize, length: usize, fields: List<SrcExpr>, pointer: usize, body: SrcStmt) -> core::option::Option<Stmt> {
+    if ((length == 0) || (length >= 2147483648)) {
+        return None;
+    }
+    return guarded(next, guard_all(scope, fields), lower_view(next, length, lower_literal(scope, SrcType::Array(boxed(I32), length), fields), body.lower(sigs, decls, ret, cons(Binding { id: pointer, slot: plus(next, length), ty: Ptr, home: None }, cons(Binding { id: id, slot: next, ty: View(length), home: None }, scope)), plus(plus(next, length), 1))));
+}
+
 // The body of a let in an expression, under its binding.
 // extract: inline
 fn eval_let_body(sigs: List<Sig>, decls: SrcDecls, bound: core::option::Option<List<Binding>>, dst: usize, body: SrcEff) -> core::option::Option<Evaluated> {
@@ -5709,7 +5721,11 @@ pub fn str_placed(statics: List<u8>, offset: usize, chars: List<usize>) -> bool 
 // A string literal (EStr): the mini address of its bytes in the static
 // region, then their count. The program's statics must hold them there, and
 // the literal end below 2^31 (Static's offset is a 32-bit displacement) and within the statics.
+// The offset is checked first, so no offset the checks add to passes 2^64 (F14).
 pub fn eval_str(decls: SrcDecls, offset: usize, chars: List<usize>, slot: usize) -> core::option::Option<Evaluated> {
+    if (offset >= 2147483648) {
+        return None;
+    }
     if (str_placed(decls.statics, offset, chars) && (2147483648 > plus(offset, length(chars))) && (length(decls.statics) >= plus(offset, length(chars)))) {
         return Some(Evaluated { stmt: Seq(boxed(Stmt::Static(slot, offset)), boxed(Assign(plus(slot, 1), Lit(length(chars) as u64)))), ty: Str });
     }
@@ -6446,7 +6462,7 @@ impl SrcStmt {
             Continue -> Some(Cont),
             MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> lower_match_arm(scope, lookup(scope, scrutinee), enum_id, variant, binds, binder, ty, next, unbox(body).lower(sigs, decls, ret, arm_body_scope(binds, binder, ty, next, scope), plus(next, ty.size())), unbox(rest).lower(sigs, decls, ret, scope, next)),
             Unreachable(id, ty) -> lower_unreachable(ty.same(ret), next),
-            LetView(id, length, fields, pointer, body) -> guarded(next, guard_all(scope, fields), lower_view(next, length, lower_literal(scope, SrcType::Array(boxed(I32), length), fields), unbox(body).lower(sigs, decls, ret, cons(Binding { id: pointer, slot: plus(next, length), ty: Ptr, home: None }, cons(Binding { id: id, slot: next, ty: View(length), home: None }, scope)), plus(plus(next, length), 1)))),
+            LetView(id, length, fields, pointer, body) -> lower_let_view(sigs, decls, ret, scope, next, id, length, fields, pointer, unbox(body)),
             LetStr(pointer, chars, body) -> lower_str(next, chars, unbox(body).lower(sigs, decls, ret, cons(Binding { id: pointer, slot: next, ty: Ptr, home: None }, scope), plus(next, 1))),
             SetPlace(aplace, avalue) -> None,
             SetPlaceOp(aop, aplace, avalue) -> None,

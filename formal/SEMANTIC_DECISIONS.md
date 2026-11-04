@@ -2923,6 +2923,19 @@ those after it, so both are at most the call's `a.bytes`, which is at most
 that is below 2^31, so at most `block_limit()`. So no call the compiler
 accepted before is rejected now.
 
+## A view's length and a string's offset checked first (decided 11-04, F14, coordinator)
+
+`SrcStmt::lower` of `LetView` lowered the body under the view's binding (a
+`View(length)` of `length` slots) before `lower_view` rejected a length of 0
+or of 2^31 or more, so the body's scope could hold a binding of any size;
+`eval_str` added the string's length to its offset (in `str_placed` and the
+end checks) before any check bounded the offset. Now `lower_let_view` (an
+inline helper) checks the length first and only then lowers the body, and
+`eval_str` rejects an offset of 2^31 or more first. Each check was already
+there (an accepted string literal ends below 2^31), so only their order
+changed: `lower_letView_eq` and `evalStr_eq` (`Mini/ChecksFirst.lean`) show
+that the compiler gives the same results as before.
+
 ## Budget certificates (decided 11-01, F14)
 
 `CompileBounded T` asks that the guarded run of `progW` has a value

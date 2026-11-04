@@ -169,7 +169,11 @@ def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (decls : SrcDecls) (ret : S
   | .continue => some Stmt.cont
   | .matchArm scrutinee enumId variant binds binder ty body rest => lowerMatchArm scope (lookup scope scrutinee) enumId variant binds binder ty next (SrcStmt.lower body sigs decls ret (armBodyScope binds binder ty next scope) (next + SrcType.size ty)) (SrcStmt.lower rest sigs decls ret scope next)
   | .unreachable id ty => lowerUnreachable (SrcType.same ty ret) next
-  | .letView id length fields pointer body => guarded next (guardAll scope fields) (lowerView next length (lowerLiteral scope (SrcType.array SrcType.i32 length) fields) (SrcStmt.lower body sigs decls ret (({ id := pointer, slot := next + length, ty := SrcType.ptr, home := none } : Binding) :: ({ id := id, slot := next, ty := SrcType.view length, home := none } : Binding) :: scope) (next + length + 1)))
+  | .letView id length fields pointer body =>
+    (if decide (length = 0) || decide (2147483648 ≤ length) then
+       none
+     else
+       guarded next (guardAll scope fields) (lowerView next length (lowerLiteral scope (SrcType.array SrcType.i32 length) fields) (SrcStmt.lower body sigs decls ret (({ id := pointer, slot := next + length, ty := SrcType.ptr, home := none } : Binding) :: ({ id := id, slot := next, ty := SrcType.view length, home := none } : Binding) :: scope) (next + length + 1))))
   | .letStr pointer chars body => lowerStr next chars (SrcStmt.lower body sigs decls ret (({ id := pointer, slot := next, ty := SrcType.ptr, home := none } : Binding) :: scope) (next + 1))
   | .setPlace aplace avalue => none
   | .setPlaceOp aop aplace avalue => none

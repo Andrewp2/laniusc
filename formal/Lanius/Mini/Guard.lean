@@ -485,6 +485,8 @@ theorem letView_lower_inv {sigs : List Sig} {decls : SrcDecls} {ret : SrcType} {
         (.seq (.alloc (next + length) 2 (.lit (BitVec.ofNat 64 (4 * length))))
           (viewStores (next + length) next 0 length (.seq (.assign next (.var (next + length))) bstmt)))) := by
   simp only [SrcStmt.lower] at ok
+  split at ok
+  · simp at ok
   obtain ⟨inner, h, rfl⟩ := guarded_some ok
   simp only [lowerView] at h
   split at h

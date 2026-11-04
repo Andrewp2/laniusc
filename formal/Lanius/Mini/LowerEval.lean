@@ -646,6 +646,8 @@ theorem eval_strLit {offset : Nat} {chars : List Nat} {fuel : Nat}
     Evaluates sx bud places mp hp slot st env ev v st' := by
   simp only [evalStr] at ok
   split at ok
+  · simp at ok
+  split at ok
   case isFalse => simp at ok
   rename_i checks
   simp only [Bool.and_eq_true, decide_eq_true_eq] at checks

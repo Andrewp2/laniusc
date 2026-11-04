@@ -78,12 +78,15 @@ def strPlaced (statics : List UInt8) (offset : Nat) (chars : List Nat) : Bool :=
   | [] => true
   | c :: rest => decide (c < 128) && staticByteIs statics[offset]? c && strPlaced statics (offset + 1) rest
 
-/-- A string literal (EStr): the mini address of its bytes in the static region, then their count. The program's statics must hold them there, and the literal end below 2^31 (Static's offset is a 32-bit displacement) and within the statics. -/
+/-- A string literal (EStr): the mini address of its bytes in the static region, then their count. The program's statics must hold them there, and the literal end below 2^31 (Static's offset is a 32-bit displacement) and within the statics. The offset is checked first, so no offset the checks add to passes 2^64 (F14). -/
 def evalStr (decls : SrcDecls) (offset : Nat) (chars : List Nat) (slot : Nat) : Option Evaluated :=
-  if strPlaced decls.statics offset chars && decide (offset + chars.length < 2147483648) && decide (offset + chars.length ≤ decls.statics.length) then
-    some ({ stmt := Stmt.seq (Stmt.static slot offset) (Stmt.assign (slot + 1) (Expr.lit (BitVec.ofNat 64 chars.length))), ty := SrcType.str } : Evaluated)
-  else
+  if 2147483648 ≤ offset then
     none
+  else
+    if strPlaced decls.statics offset chars && decide (offset + chars.length < 2147483648) && decide (offset + chars.length ≤ decls.statics.length) then
+      some ({ stmt := Stmt.seq (Stmt.static slot offset) (Stmt.assign (slot + 1) (Expr.lit (BitVec.ofNat 64 chars.length))), ty := SrcType.str } : Evaluated)
+    else
+      none
 
 mutual
 /-- The code computing this expression into slot, slot + 1, ..., and its type. -/

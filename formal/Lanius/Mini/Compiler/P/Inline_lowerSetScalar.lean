@@ -6,7 +6,9 @@ public import Lanius.Mini.Compiler.P.Lists_empty
 public import Lanius.Mini.Compiler.P.SrcExpr_guard
 public import Lanius.Mini.Compiler.P.SrcType_same
 public import Lanius.Mini.Compiler.P.UintTy_half
+public import Lanius.Mini.Compiler.P.arrayCallSig
 public import Lanius.Mini.Compiler.P.compileModules
+public import Lanius.Mini.Compiler.P.conjunction
 public import Lanius.Mini.Compiler.P.elementAddress
 public import Lanius.Mini.Compiler.P.elementBase
 public import Lanius.Mini.Compiler.P.enumVariants
@@ -14,7 +16,10 @@ public import Lanius.Mini.Compiler.P.evalSame
 public import Lanius.Mini.Compiler.P.evalSlotLimit
 public import Lanius.Mini.Compiler.P.funcNeeds
 public import Lanius.Mini.Compiler.P.loadAtBytes
+public import Lanius.Mini.Compiler.P.lowerApply
 public import Lanius.Mini.Compiler.P.lowerSetValues
+public import Lanius.Mini.Compiler.P.repeatType
+public import Lanius.Mini.Compiler.P.storeArray
 public import Lanius.Mini.Compiler.P.structFields
 public import Lanius.Mini.Compiler.P.withBudget
 public import Lanius.Mini.Compiler.P.wordElement
@@ -32,6 +37,13 @@ namespace Lanius.Mini
     lowerSetValue slot (lowerAs scope value ty)
   else
     none
+
+/-- let id: [i32; length] = [fields]; let pointer = data_ptr(id); body: the length checked (as lower_view does) before the body is lowered under the view's binding, whose size is the length (F14: the scope's sizes stay below 2^31). -/
+@[expose] def Inline.lowerLetView (sigs : List Sig) (decls : SrcDecls) (ret : SrcType) (scope : List Binding) (next : Nat) (id : Nat) (length : Nat) (fields : List SrcExpr) (pointer : Nat) (body : SrcStmt) : Option Stmt :=
+  if decide (length = 0) || decide (2147483648 ≤ length) then
+    none
+  else
+    guarded next (guardAll scope fields) (lowerView next length (lowerLiteral scope (SrcType.array SrcType.i32 length) fields) (SrcStmt.lower body sigs decls ret (({ id := pointer, slot := next + length, ty := SrcType.ptr, home := none } : Binding) :: ({ id := id, slot := next, ty := SrcType.view length, home := none } : Binding) :: scope) (next + length + 1)))
 
 /-- The body of a let in an expression, under its binding. -/
 @[expose] def Inline.evalLetBody (sigs : List Sig) (decls : SrcDecls) (bound : Option (List Binding)) (dst : Nat) (body : SrcEff) : Option Evaluated :=

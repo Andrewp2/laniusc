@@ -2137,6 +2137,8 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
   | .eStr offset chars, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalStr] at h
     split at h
+    · simp at h
+    split at h
     · simp only [Option.some.injEq] at h
       subst h
       exact .value (.string _) (literal := rfl)
