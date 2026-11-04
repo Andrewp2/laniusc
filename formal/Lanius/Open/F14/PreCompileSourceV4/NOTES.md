@@ -167,3 +167,18 @@ Mini-compile side's assumption of it is discharged: V4 still waits on the loweri
   size per nesting level), which return `None` at or past it. Between two checks a slot grows by at most one
   type size (≤ 2^22) plus one per nesting level, so A's sums stay below 2^64 with no new premise
   (SEMANTIC_DECISIONS "The evaluator's slots checked against a limit").
+
+- 11-04 (leafB): V4 is probably false, and PreCompileSourceV5 replaces it. (1) "one per nesting level" is
+  not bounded by anything in V4: an operator's right operand starts one slot past its left with no cost of
+  its own, and an `eBorrow` (or `arraySlice`, ...) left operand costs nothing, so a right-nested
+  `eApply op (eBorrow ..) (eApply op (eBorrow ..) ..)` of depth d reaches `slot + d` at the budget it
+  started with; `Pre_plus slot 1` fails for d ≥ 2^64 whatever `b` is. V5 adds
+  `∀ f ∈ p.funcs, SrcStmt.slotNest f.body ≤ 2^55` (SelfPre/EvalSlots). (2) `compile_source`'s pre needs
+  `nb p ≤ M` (the program's ids, field indices and array lengths reach `M`-bounded parameters) and V4
+  has only `hb p ≤ M`, which counts no numbers; V5 adds it.
+- 11-04 (leafB): GenPC's SelfP01 (posts) did not build after 0a9a4a1be (the slot checks):
+  `post_step_eval_arms`'s Lean side has `if evalSlotLimit ≤ dst` inline where the cost model calls
+  `eval_arm_in`, and `simp` unfolding `evalSlotLimit` in the condition but not in its `Decidable` instance
+  (`Nat.decLe evalSlotLimit x`) left a term `simp` cannot rewrite (`if_pos` failed at instance
+  transparency) and the split never reduced. Tactic's `closeArith` now unfolds the condition's nullary
+  constants with `delta` everywhere before it splits.
