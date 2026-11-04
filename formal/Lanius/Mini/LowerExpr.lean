@@ -18,6 +18,7 @@ import all Lanius.Mini.Compiler.P.conjunction
 import all Lanius.Mini.Compiler.P.equality
 import all Lanius.Mini.Compiler.P.exprRoots
 import all Lanius.Mini.Compiler.P.floatApply
+import all Lanius.Mini.Compiler.P.evalLent
 import all Lanius.Mini.Compiler.P.indexPlace
 import all Lanius.Mini.Compiler.P.lowerApply
 import all Lanius.Mini.Compiler.P.lowerLocal
@@ -512,10 +513,11 @@ theorem cast_sound {ty : SrcType} {inner t : Typed} {env : Env} {w result : Valu
     rw [same] at casted
     exact cast_sound_base k.base_sintKind (by cases k <;> simp [UintTy.base, UintTy.isWide]) holds' lowered casted
 
-/-- Types `same` agrees on are equal, apart from aggregates (which no word holds). -/
+/-- Types `same` agrees on are equal, apart from aggregates and references (which no word holds). -/
 theorem SrcType.same_cases {a b : SrcType} (h : a.same b = true) :
     (∃ id fields, a = .struct id fields) ∨ (∃ id variants, a = .enum id variants) ∨
-      (∃ element, a = .slice element) ∨ (∃ element n, a = .array element n) ∨ b = a := by
+      (∃ element, a = .slice element) ∨ (∃ element n, a = .array element n) ∨ (∃ referent, a = .ref referent) ∨
+      b = a := by
   cases a <;> cases b <;>
     simp [SrcType.same, SrcType.isI32, SrcType.isBool, SrcType.isUint, SrcType.isPtr, SrcType.isUnit, SrcType.isStr,
       SrcType.isIsize, SrcType.isSint, SrcType.isChar, SrcType.isFloat] at h ⊢ <;>
@@ -621,7 +623,7 @@ theorem equality_holds {op : CmpOp} {cop : Core.BinaryOp} (h : (op = .eq ∧ cop
     · rename_i types
       simp only [Option.some.injEq] at lowered
       subst lowered
-      rcases SrcType.same_cases types with ⟨_, _, e⟩ | ⟨_, _, e⟩ | ⟨_, e⟩ | ⟨_, _, e⟩ | e
+      rcases SrcType.same_cases types with ⟨_, _, e⟩ | ⟨_, _, e⟩ | ⟨_, e⟩ | ⟨_, _, e⟩ | ⟨_, e⟩ | e
       any_goals (rw [e] at holdsl; simp [SrcType.Holds] at holdsl)
       rw [e] at holdsr
       cases htl : tl.ty <;> rw [htl] at holdsl holdsr

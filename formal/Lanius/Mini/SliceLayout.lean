@@ -124,7 +124,26 @@ theorem SrcType.eq_of_same : âˆ€ (a : SrcType) {b : SrcType}, a.same b = true â†
     | str | ref => simp [SrcType.same] at same
   | .unit, b, same => by cases b <;> simp_all [SrcType.same, SrcType.isUnit]
   | .str, b, same => by cases b <;> simp_all [SrcType.same, SrcType.isStr]
-  | .ref _, b, same => by cases b <;> simp_all [SrcType.same, SrcType.isStr]
+  | .ref e, b, same => by
+    cases b with
+    | ref e' =>
+      simp only [SrcType.same] at same
+      rw [SrcType.eq_of_same e same]
+    | i32 => simp [SrcType.same] at same
+    | bool => simp [SrcType.same] at same
+    | uint => simp [SrcType.same] at same
+    | struct => simp [SrcType.same] at same
+    | enum => simp [SrcType.same] at same
+    | ptr => simp [SrcType.same] at same
+    | slice => simp [SrcType.same] at same
+    | array => simp [SrcType.same] at same
+    | unit => simp [SrcType.same] at same
+    | isize => simp [SrcType.same] at same
+    | char => simp [SrcType.same] at same
+    | float => simp [SrcType.same] at same
+    | sint => simp [SrcType.same] at same
+    | view => simp [SrcType.same] at same
+    | str => simp [SrcType.same] at same
   | .isize, b, same => by cases b <;> simp_all [SrcType.same, SrcType.isIsize]
   | .char, b, same => by cases b <;> simp_all [SrcType.same, SrcType.isChar]
   | .float ft, b, same => (SrcType.eq_of_isFloat (by simpa [SrcType.same] using same)).symm

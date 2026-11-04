@@ -379,7 +379,9 @@ theorem same_toCore : ∀ {a b : SrcType}, a.same b = true → a.toCore = b.toCo
     subst this; rfl
   | .view n, b, h => by cases b <;> simp [SrcType.same] at h
   | .str, b, h => by cases b <;> simp [SrcType.same, SrcType.isStr] at h ⊢
-  | .ref _, b, h => by cases b <;> simp [SrcType.same, SrcType.isStr] at h ⊢
+  | .ref referent, b, h => by
+    cases b <;> simp only [SrcType.same, Bool.false_eq_true] at h
+    simp only [SrcType.toCore, same_toCore h]
 
 /-- An integer type of the front pass. -/
 inductive IsInt : SrcType → Prop where
