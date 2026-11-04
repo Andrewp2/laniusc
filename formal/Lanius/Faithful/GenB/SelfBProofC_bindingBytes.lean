@@ -48,24 +48,43 @@ theorem bproof_array_arg_pure {spW sp : SrcProgram} {prims : Prims} {ix_array_ar
     budget Cost_array_arg_pure
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
 
-theorem bproof_array_arg_local {spW sp : SrcProgram} {prims : Prims} {ix_array_arg_local ix_plus ix_times ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_boxed_of_mini_selfhost_SrcType ix_SrcType_same ix_cons_of_usize ix_id_absent ix_cons_of_mini_selfhost_Expr ix_packed_width ix_array_arg_checked ix_element_stores ix_block_at ix_element_loads : Nat}
-    (fnW : spW.funcs[ix_array_arg_local]? = some (src_array_arg_local ix_plus ix_times ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_boxed_of_mini_selfhost_SrcType ix_SrcType_same ix_cons_of_usize ix_id_absent ix_cons_of_mini_selfhost_Expr ix_packed_width ix_array_arg_checked ix_element_stores ix_block_at ix_element_loads)) (fn : sp.funcs[ix_array_arg_local]? = some (src_array_arg_local ix_plus ix_times ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_boxed_of_mini_selfhost_SrcType ix_SrcType_same ix_cons_of_usize ix_id_absent ix_cons_of_mini_selfhost_Expr ix_packed_width ix_array_arg_checked ix_element_stores ix_block_at ix_element_loads))
-    (np : prims.isPrim ix_array_arg_local = false)
-    (back : Certified (∀ {n : Nat}, Stmt_array_arg_local sp prims ix_array_arg_local n))
+theorem bproof_array_arg_before {spW sp : SrcProgram} {prims : Prims} {ix_array_arg_before ix_plus ix_times ix_block_limit ix_boxed_of_mini_selfhost_Stmt ix_boxed_of_mini_selfhost_SrcType ix_SrcType_same ix_cons_of_usize ix_id_absent ix_cons_of_mini_selfhost_Expr ix_array_arg_checked ix_element_stores ix_block_at ix_element_loads : Nat}
+    (fnW : spW.funcs[ix_array_arg_before]? = some (src_array_arg_before ix_plus ix_times ix_block_limit ix_boxed_of_mini_selfhost_Stmt ix_boxed_of_mini_selfhost_SrcType ix_SrcType_same ix_cons_of_usize ix_id_absent ix_cons_of_mini_selfhost_Expr ix_array_arg_checked ix_element_stores ix_block_at ix_element_loads)) (fn : sp.funcs[ix_array_arg_before]? = some (src_array_arg_before ix_plus ix_times ix_block_limit ix_boxed_of_mini_selfhost_Stmt ix_boxed_of_mini_selfhost_SrcType ix_SrcType_same ix_cons_of_usize ix_id_absent ix_cons_of_mini_selfhost_Expr ix_array_arg_checked ix_element_stores ix_block_at ix_element_loads))
+    (np : prims.isPrim ix_array_arg_before = false)
+    (back : Certified (∀ {n : Nat}, Stmt_array_arg_before sp prims ix_array_arg_before n))
     (b_plus : Certified (∀ {n : Nat}, BStmt_plus spW sp prims ix_plus n))
     (b_times : Certified (∀ {n : Nat}, BStmt_times spW sp prims ix_times n))
-    (b_SrcType_size : Certified (∀ {n : Nat}, BStmt_SrcType_size spW sp prims ix_SrcType_size n))
+    (b_block_limit : Certified (∀ {n : Nat}, BStmt_block_limit spW sp prims ix_block_limit n))
     (pp_boxed_of_mini_selfhost_Stmt : prims.isPrim ix_boxed_of_mini_selfhost_Stmt = true) (bx_boxed_of_mini_selfhost_Stmt : prims.boxed.contains ix_boxed_of_mini_selfhost_Stmt = true)
     (pp_boxed_of_mini_selfhost_SrcType : prims.isPrim ix_boxed_of_mini_selfhost_SrcType = true) (bx_boxed_of_mini_selfhost_SrcType : prims.boxed.contains ix_boxed_of_mini_selfhost_SrcType = true)
     (b_SrcType_same : Certified (∀ {n : Nat}, BStmt_SrcType_same spW sp prims ix_SrcType_same n))
     (b_cons_of_usize : Certified (∀ {n : Nat}, BStmt_cons_of_usize spW sp prims ix_cons_of_usize n))
     (b_id_absent : Certified (∀ {n : Nat}, BStmt_id_absent spW sp prims ix_id_absent n))
     (b_cons_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, BStmt_cons_of_mini_selfhost_Expr spW sp prims ix_cons_of_mini_selfhost_Expr n))
-    (b_packed_width : Certified (∀ {n : Nat}, BStmt_packed_width spW sp prims ix_packed_width n))
     (b_array_arg_checked : Certified (∀ {n : Nat}, BStmt_array_arg_checked spW sp prims ix_array_arg_checked n))
     (b_element_stores : Certified (∀ {n : Nat}, BStmt_element_stores spW sp prims ix_element_stores n))
     (b_block_at : Certified (∀ {n : Nat}, BStmt_block_at spW sp prims ix_block_at n))
     (b_element_loads : Certified (∀ {n : Nat}, BStmt_element_loads spW sp prims ix_element_loads n)) {n : Nat} :
+    BStmt_array_arg_before spW sp prims ix_array_arg_before n := by
+  intro x0 x1 x2 x3 x4 x5 x6 x7 x8 v0 v1 v2 v3 v4 v5 v6 v7 v8 w k b h r0 r1 r2 r3 r4 r5 r6 r7 r8 hb pre
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_array_arg_before [v0, v1, v2, v3, v4, v5, v6, v7, v8] = some (w, k) ∧ Cost_array_arg_before (n + 1) x0 x1 x2 x3 x4 x5 x6 x7 x8 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_array_arg_before, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_array_arg_before.eq_def] at pre
+    simp only at pre
+    budget Cost_array_arg_before
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4 r5 r6 r7 r8⟩
+
+theorem bproof_array_arg_local {spW sp : SrcProgram} {prims : Prims} {ix_array_arg_local ix_SrcType_size ix_packed_width ix_array_arg_before : Nat}
+    (fnW : spW.funcs[ix_array_arg_local]? = some (src_array_arg_local ix_SrcType_size ix_packed_width ix_array_arg_before)) (fn : sp.funcs[ix_array_arg_local]? = some (src_array_arg_local ix_SrcType_size ix_packed_width ix_array_arg_before))
+    (np : prims.isPrim ix_array_arg_local = false)
+    (back : Certified (∀ {n : Nat}, Stmt_array_arg_local sp prims ix_array_arg_local n))
+    (b_SrcType_size : Certified (∀ {n : Nat}, BStmt_SrcType_size spW sp prims ix_SrcType_size n))
+    (b_packed_width : Certified (∀ {n : Nat}, BStmt_packed_width spW sp prims ix_packed_width n))
+    (b_array_arg_before : Certified (∀ {n : Nat}, BStmt_array_arg_before spW sp prims ix_array_arg_before n)) {n : Nat} :
     BStmt_array_arg_local spW sp prims ix_array_arg_local n := by
   intro x0 x1 x2 x3 x4 x5 x6 v0 v1 v2 v3 v4 v5 v6 w k b h r0 r1 r2 r3 r4 r5 r6 hb pre
   rcases n with _ | n
@@ -157,12 +176,13 @@ theorem bproof_arg_bytes {spW sp : SrcProgram} {prims : Prims} {ix_arg_bytes ix_
     budget
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
 
-theorem bstep_array_args {spW sp : SrcProgram} {prims : Prims} {ix_array_args ix_plus ix_empty_of_usize ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_empty_of_mini_selfhost_Expr ix_array_arg ix_arg_bytes : Nat}
-    (fnW : spW.funcs[ix_array_args]? = some (src_array_args ix_plus ix_empty_of_usize ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_empty_of_mini_selfhost_Expr ix_array_args ix_array_arg ix_arg_bytes)) (fn : sp.funcs[ix_array_args]? = some (src_array_args ix_plus ix_empty_of_usize ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_empty_of_mini_selfhost_Expr ix_array_args ix_array_arg ix_arg_bytes))
+theorem bstep_array_args {spW sp : SrcProgram} {prims : Prims} {ix_array_args ix_plus ix_empty_of_usize ix_block_limit ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_empty_of_mini_selfhost_Expr ix_array_arg ix_arg_bytes : Nat}
+    (fnW : spW.funcs[ix_array_args]? = some (src_array_args ix_plus ix_empty_of_usize ix_block_limit ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_empty_of_mini_selfhost_Expr ix_array_args ix_array_arg ix_arg_bytes)) (fn : sp.funcs[ix_array_args]? = some (src_array_args ix_plus ix_empty_of_usize ix_block_limit ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_empty_of_mini_selfhost_Expr ix_array_args ix_array_arg ix_arg_bytes))
     (np : prims.isPrim ix_array_args = false)
     (back : Certified (∀ {n : Nat}, Stmt_array_args sp prims ix_array_args n))
     (b_plus : Certified (∀ {n : Nat}, BStmt_plus spW sp prims ix_plus n))
     (b_empty_of_usize : Certified (∀ {n : Nat}, BStmt_empty_of_usize spW sp prims ix_empty_of_usize n))
+    (b_block_limit : Certified (∀ {n : Nat}, BStmt_block_limit spW sp prims ix_block_limit n))
     (pp_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType = false)
     (pp_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff = false)
     (b_empty_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, BStmt_empty_of_mini_selfhost_Expr spW sp prims ix_empty_of_mini_selfhost_Expr n))
