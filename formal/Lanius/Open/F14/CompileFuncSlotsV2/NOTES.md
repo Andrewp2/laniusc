@@ -12,3 +12,8 @@
   `compile_program` through `link`, `room_after`, `link_fitting` and `link_onto` to `encode_onto` and
   `Instr_encode`. The pre lemmas from `compile_source` down to `compile_program` assume it
   (`Tactic.openProp`), so PreCompileSourceV4's assembly is a reduction from this leaf.
+- 11-03 (leafB): proved (Proof.lean, helpers in SelfPre/CompileSlotsProof.lean): slots by
+  `reach_compileStmt` (`Stmt.within` keeps locals below `locals`; temporaries at `locals + depth`,
+  `depth < Stmt.temps`; argument k at `locals + k` with `args.length ≤ argsTemps args 0`), size by
+  `codeSize_le` and the room check (`10 + 7 * locals + 64 * 2^30 ≤ 2^40`), numbers by
+  `nb_compileStmt` (jump targets are positions up to the code's end; `brk`/`cont` are earlier ones).

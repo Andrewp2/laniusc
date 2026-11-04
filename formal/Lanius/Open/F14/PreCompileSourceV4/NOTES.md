@@ -158,3 +158,6 @@ open statement premise from the context), so V4's assembly becomes a reduction f
 `round_join`: a round's count is at most its bytes (`val_packRound`, `val_packRounds`).
 `Expr_extent`/`Stmt_extent`/`Stmt_within`: their `match` variables count as the statement
 (`COMPILE_NUM_ALIAS`), so their numbers come from the caller's `nb`. `link_onto`'s entries: `val_layout`.
+
+**11-03 (leafB).** CompileFuncSlotsV2 is proved (its Proof.lean; SelfPre/CompileSlotsProof.lean), so the
+Mini-compile side's assumption of it is discharged: V4 still waits on the lowering slots (group A).
