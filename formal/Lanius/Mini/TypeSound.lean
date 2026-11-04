@@ -3,6 +3,7 @@ module
 public import Lanius.Mini.WordScalar
 public import Lanius.Mini.Source
 public import Lanius.Mini.Guard
+public import Lanius.Mini.LowerCases
 public import Lanius.Mini.FloatLower
 public import Lanius.Typing
 public import Lanius.Mini.Compiler.P.SrcExpr_guard
@@ -100,6 +101,37 @@ import all Lanius.Mini.Compiler.P.widthOf
 import all Lanius.Mini.Compiler.P.wordElement
 import all Lanius.Mini.Compiler.P.wordStride
 import all Lanius.Mini.Compiler.P.wordWidth
+import all Lanius.Mini.Compiler.P.Inline_arithOf
+import all Lanius.Mini.Compiler.P.Inline_blockLeft
+import all Lanius.Mini.Compiler.P.Inline_factOr
+import all Lanius.Mini.Compiler.P.Inline_lowerSetScalar
+import all Lanius.Mini.Compiler.P.Inline_paramsThen
+import all Lanius.Mini.Compiler.P.Inline_placeLoad
+import all Lanius.Mini.Compiler.P.Instr_pieces
+import all Lanius.Mini.Compiler.P.MemAccess_bytes
+import all Lanius.Mini.Compiler.P.arraySlotAt
+import all Lanius.Mini.Compiler.P.arrayWords
+import all Lanius.Mini.Compiler.P.compileModules
+import all Lanius.Mini.Compiler.P.entryThen
+import all Lanius.Mini.Compiler.P.evalSlotLimit
+import all Lanius.Mini.Compiler.P.exprRoots
+import all Lanius.Mini.Compiler.P.fitsThen
+import all Lanius.Mini.Compiler.P.homeInit
+import all Lanius.Mini.Compiler.P.importOk
+import all Lanius.Mini.Compiler.P.importsOk
+import all Lanius.Mini.Compiler.P.indexPlace
+import all Lanius.Mini.Compiler.P.larger
+import all Lanius.Mini.Compiler.P.layMergeWidths
+import all Lanius.Mini.Compiler.P.layWidthsAgree
+import all Lanius.Mini.Compiler.P.letCallPick
+import all Lanius.Mini.Compiler.P.letPick
+import all Lanius.Mini.Compiler.P.moduleExports
+import all Lanius.Mini.Compiler.P.moduleFirsts
+import all Lanius.Mini.Compiler.P.modulesOk
+import all Lanius.Mini.Compiler.P.packRound
+import all Lanius.Mini.Compiler.P.paramsHomesFit
+import all Lanius.Mini.Compiler.P.refSlotAt
+import all Lanius.Mini.Compiler.P.setPick
 import all Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Compiler.P.UintTy_half
 public import Lanius.Mini.Compiler.P.UintTy_mask
@@ -665,8 +697,8 @@ def ScopeOk (P : Core.Program) (ctx : Typing.Context) (scope : List Binding) : P
   ∀ id b, lookup scope id = some b → ctx id = some b.ty.toCore ∧ TypeDeclared P b.ty
 
 theorem ScopeOk.cons {P : Core.Program} {ctx : Typing.Context} {scope : List Binding}
-    (ok : ScopeOk P ctx scope) {id slot : Nat} {ty : SrcType} (declared : TypeDeclared P ty) :
-    ScopeOk P (ctx.bind id ty.toCore) ({ id := id, slot := slot, ty := ty, home := none } :: scope) := by
+    (ok : ScopeOk P ctx scope) {id slot : Nat} {ty : SrcType} {home : Option Nat} (declared : TypeDeclared P ty) :
+    ScopeOk P (ctx.bind id ty.toCore) ({ id := id, slot := slot, ty := ty, home := home } :: scope) := by
   intro x b found
   simp only [lookup] at found
   split at found
@@ -813,7 +845,7 @@ theorem SrcExpr.lower_typed {P : Core.Program} (target : P.target = Core.Target.
       · rename_i scalar
         simp only [Option.some.injEq] at h
         subst h
-        exact ⟨.local (ok id b found).1, scalar⟩
+        exact ⟨.local (ok id b (lookupSlot_some found).1).1, scalar⟩
       · simp at h
   | .field id index, scope, ctx, t, ok, h => by
     simp only [SrcExpr.lower, lowerField] at h
@@ -834,7 +866,7 @@ theorem SrcExpr.lower_typed {P : Core.Program} (target : P.target = Core.Target.
           · rename_i scalar
             simp only [Option.some.injEq] at h
             subst h
-            exact ⟨(field_typed ok found hty hf).1, scalar⟩
+            exact ⟨(field_typed ok (lookupSlot_some found).1 hty hf).1, scalar⟩
           · simp at h
       all_goals simp at h
   | .negate operand, scope, ctx, t, ok, h => by
@@ -1038,7 +1070,7 @@ theorem lowerValue_typed {P : Core.Program} (target : P.target = Core.Target.x86
         split at h
         · rename_i same
           rw [← same_toCore same]
-          exact .local (ok id b found).1
+          exact .local (ok id b (lookupSlot_some found).1).1
         · simp at h
     | field id index =>
       simp only [lowerCopy, copyField] at h
@@ -1059,7 +1091,7 @@ theorem lowerValue_typed {P : Core.Program} (target : P.target = Core.Target.x86
             · rename_i cond
               simp only [Bool.and_eq_true] at cond
               rw [← same_toCore cond.1]
-              exact (field_typed ok found hty hf).1
+              exact (field_typed ok (lookupSlot_some found).1 hty hf).1
             · simp at h
         all_goals simp at h
     | int => simp [lowerCopy] at h
@@ -1494,6 +1526,399 @@ theorem castTo_typed {P : Core.Program} {ctx : Typing.Context} {ce : Core.Expr} 
   | view => simp [castTo] at h
   | str | ref => simp [castTo] at h
 
+/-- `evalApply` of typed operands is typed. -/
+theorem evalApply_typed {P : Core.Program} {ctx : Typing.Context} {op : SrcOp} {slot : Nat}
+    {ol orr : Option Evaluated} {cl cr : Core.Expr} {ev : Evaluated}
+    (tl : ∀ l, ol = some l → ExprHasType P ctx cl l.ty.toCore)
+    (tr : ∀ r, orr = some r → ExprHasType P ctx cr r.ty.toCore)
+    (h : evalApply op slot ol orr = some ev) :
+    ExprHasType P ctx (.binary op.toCore cl cr) ev.ty.toCore := by
+  cases ol with
+  | none => simp [evalApply] at h
+  | some l =>
+    cases orr with
+    | none => simp [evalApply] at h
+    | some r =>
+      have typedL := tl l rfl
+      have typedR := tr r rfl
+      simp only [evalApply] at h
+      simp only [evalOperands] at h
+      split at h
+      · rename_i checks
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+        split at h
+        · simp at h
+        · rename_i t lowered
+          simp only [Option.some.injEq] at h
+          subst h
+          exact .binary typedL typedR (SrcOp.lower_typed checks.1.1 lowered).1
+      · split at h
+        · rename_i checks
+          simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+          simp only [Option.some.injEq] at h
+          subst h
+          have opEq : op = .logicalAnd := by cases op <;> simp_all [shortCircuit]
+          subst opEq
+          rw [eq_bool checks.1.1] at typedL
+          rw [eq_bool checks.1.2] at typedR
+          exact .binary typedL typedR .logicalAnd
+        · split at h
+          · rename_i checks
+            simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+            simp only [Option.some.injEq] at h
+            subst h
+            have opEq : op = .logicalOr := by cases op <;> simp_all [shortCircuit]
+            subst opEq
+            rw [eq_bool checks.1.1] at typedL
+            rw [eq_bool checks.1.2] at typedR
+            exact .binary typedL typedR .logicalOr
+          · simp at h
+theorem evalNegate_typed {P : Core.Program} {ctx : Typing.Context} {slot : Nat}
+    {oo : Option Evaluated} {co : Core.Expr} {ev : Evaluated}
+    (to : ∀ o, oo = some o → ExprHasType P ctx co o.ty.toCore)
+    (h : evalNegate slot oo = some ev) :
+    ExprHasType P ctx (.unary .negate co) ev.ty.toCore := by
+  cases oo with
+  | none => simp [evalNegate] at h
+  | some o =>
+    have inner := to o rfl
+    simp only [evalNegate] at h
+    simp only [evalThen] at h
+    split at h
+    · simp at h
+    · rename_i t ht
+      simp only [Option.some.injEq] at h
+      subst h
+      simp only [lowerNegateTyped] at ht
+      split at ht
+      · simp only [negateFloat] at ht
+        split at ht
+        · simp at ht
+        rename_i ft hft
+        simp only [Option.some.injEq] at ht
+        subst ht
+        rw [SrcType.eq_of_floatTy hft] at inner ⊢
+        exact .unary inner (.negate (floatNegatableTy ft))
+      split at ht
+      · rename_i isI32
+        simp only [Option.some.injEq] at ht
+        subst ht
+        rw [eq_i32 isI32] at inner
+        exact .unary inner (.negate (.signed _))
+      split at ht
+      · rename_i isIsize
+        simp only [Option.some.injEq] at ht
+        subst ht
+        rw [eq_isize isIsize] at inner
+        exact .unary inner (.negate (.signed _))
+      split at ht
+      · simp at ht
+      · rename_i k hk
+        simp only [Option.some.injEq] at ht
+        subst ht
+        rw [SrcType.eq_of_sintKind hk] at inner
+        exact .unary inner (.negate (.signed _))
+theorem evalNot_typed {P : Core.Program} {ctx : Typing.Context} {slot : Nat}
+    {oo : Option Evaluated} {co : Core.Expr} {ev : Evaluated}
+    (to : ∀ o, oo = some o → ExprHasType P ctx co o.ty.toCore)
+    (h : evalNot slot oo = some ev) :
+    ExprHasType P ctx (.unary .logicalNot co) ev.ty.toCore := by
+  cases oo with
+  | none => simp [evalNot] at h
+  | some o =>
+    have inner := to o rfl
+    simp only [evalNot] at h
+    simp only [evalThen] at h
+    split at h
+    · simp at h
+    · rename_i t ht
+      simp only [Option.some.injEq] at h
+      subst h
+      simp only [lowerNotTyped] at ht
+      split at ht
+      · rename_i isBool
+        simp only [Option.some.injEq] at ht
+        subst ht
+        rw [eq_bool isBool] at inner
+        exact .unary inner .logicalNot
+      · simp at ht
+theorem evalCast_typed {P : Core.Program} {ctx : Typing.Context} {ty : SrcType} {slot : Nat}
+    {oo : Option Evaluated} {co : Core.Expr} {ev : Evaluated}
+    (to : ∀ o, oo = some o → ExprHasType P ctx co o.ty.toCore)
+    (h : evalCast ty slot oo = some ev) :
+    ExprHasType P ctx (.cast ty.toScalar co) ev.ty.toCore := by
+  cases oo with
+  | none => simp [evalCast] at h
+  | some o =>
+    have inner := to o rfl
+    simp only [evalCast] at h
+    simp only [evalThen] at h
+    split at h
+    · simp at h
+    · rename_i t ht
+      simp only [Option.some.injEq] at h
+      subst h
+      simp only [scalarCast] at ht
+      split at ht
+      · exact castTo_typed (o := { expr := Expr.var slot, ty := o.ty }) inner ht
+      · simp at ht
+
+/-- A pure expression's eval code (`evalPure`) is typed. -/
+theorem evalPure_typed {P : Core.Program} (target : P.target = Core.Target.x86_64) {scope : List Binding}
+    {ctx : Typing.Context} (ok : ScopeOk P ctx scope) (e : SrcExpr) {slot : Nat} {ev : Evaluated}
+    (h : evalPure scope e slot = some ev) : ExprHasType P ctx e.toCore ev.ty.toCore := by
+  simp only [evalPure] at h
+  split at h
+  · rename_i t lowered
+    simp only [evalScalar, Option.some.injEq] at h
+    subst h
+    exact (SrcExpr.lower_typed target e ok lowered).1
+  · cases e with
+    | «local» id =>
+      simp only [evalCopy] at h
+      split at h
+      · simp at h
+      · rename_i b found
+        simp only [evalValues] at h
+        split at h
+        · simp at h
+        · rename_i xs hxs
+          simp only [Option.some.injEq] at h
+          subst h
+          exact lowerValue_typed target ok hxs
+    | field id index =>
+      simp only [evalFieldCopy] at h
+      split at h
+      · simp at h
+      · rename_i b found
+        simp only [evalFieldOf] at h
+        split at h
+        case h_4 =>
+          simp only [evalFieldType] at h
+          split at h
+          · simp at h
+          · split at h
+            case isFalse => simp at h
+            simp only [evalValues] at h
+            split at h
+            · simp at h
+            · rename_i xs hxs
+              simp only [Option.some.injEq] at h
+              subst h
+              exact lowerValue_typed target ok hxs
+        all_goals simp at h
+    | int => simp at h
+    | boolean => simp at h
+    | unsigned => simp at h
+    | negate => simp at h
+    | not => simp at h
+    | apply => simp at h
+    | cast => simp at h
+    | null => simp at h
+    | char c => simp at h
+    | float => simp at h
+
+theorem homePlace_some {frame t : Nat} {binding : Option Binding} {c : PlaceCode}
+    (h : homePlace frame t binding = some c) :
+    ∃ b offset, binding = some b ∧ b.home = some offset ∧ c.ty = b.ty := by
+  cases binding with
+  | none => simp [homePlace] at h
+  | some b =>
+    cases hb : b.home with
+    | none => simp [homePlace, hb] at h
+    | some offset =>
+      simp only [homePlace, hb, Option.some.injEq] at h
+      exact ⟨b, offset, rfl, hb, by rw [← h]⟩
+
+theorem subField_some {ty : SrcType} {f : Nat} {s : SubPlace} (h : subField ty f = some s) :
+    ∃ id fields, ty = .struct id fields ∧ fields[f]? = some s.ty := by
+  cases ty <;> simp only [subField, reduceCtorEq] at h
+  rename_i id fields
+  simp only [fieldStep] at h
+  split at h
+  · simp at h
+  · rename_i t ht
+    simp only [Option.some.injEq] at h
+    exact ⟨id, fields, rfl, by rw [← h]; exact ht⟩
+
+theorem fieldPlace_some {t : Nat} {base : Option PlaceCode} {f : Nat} {c : PlaceCode}
+    (h : fieldPlace t base f = some c) :
+    ∃ c' s, base = some c' ∧ subField c'.ty f = some s ∧ c.ty = s.ty := by
+  cases base with
+  | none => simp [fieldPlace] at h
+  | some c' =>
+    simp only [fieldPlace] at h
+    split at h
+    · simp at h
+    · rename_i s hs
+      simp only [Option.some.injEq] at h
+      exact ⟨c', s, rfl, hs, by rw [← h]⟩
+
+theorem indexPlace_some {t : Nat} {base : Option PlaceCode} {index : Option Expr} {c : PlaceCode}
+    (h : indexPlace t base index = some c) :
+    ∃ c' i el n, base = some c' ∧ index = some i ∧ c'.ty = .array el n ∧ c.ty = el := by
+  cases base with
+  | none => simp [indexPlace] at h
+  | some c' =>
+    cases index with
+    | none => simp [indexPlace] at h
+    | some i =>
+      simp only [indexPlace] at h
+      split at h
+      all_goals first
+        | (simp at h; done)
+        | skip
+      rename_i el n hty
+      split at h
+      · simp only [Option.some.injEq] at h
+        exact ⟨c', i, el, n, rfl, rfl, hty, by rw [← h]⟩
+      · simp at h
+
+theorem placeIndex_some {scope : List Binding} {index : SrcEff} {i : Expr}
+    (h : placeIndex scope index = some i) : ∃ e, index = .ePure e ∧ lowerIndex scope e = some i := by
+  cases index <;> simp only [placeIndex, reduceCtorEq] at h
+  rename_i e
+  split at h
+  · exact ⟨e, rfl, h⟩
+  · simp at h
+
+theorem derefOf_some {t : Nat} {scope : List Binding} {dty : SrcType} {r : SrcEff} {c : PlaceCode}
+    (h : derefOf t scope dty r = some c) :
+    ∃ id b referent, r = .ePure (.local id) ∧ lookupSlot scope id = some b ∧ b.ty = .ref referent ∧
+      c.ty = referent := by
+  cases r <;> simp only [derefOf, reduceCtorEq] at h
+  rename_i e
+  cases e <;> simp only [reduceCtorEq] at h
+  rename_i id
+  simp only [derefPlace] at h
+  split at h
+  · simp at h
+  · rename_i b found
+    split at h
+    all_goals first
+      | (simp at h; done)
+      | skip
+    rename_i referent hty
+    split at h
+    · simp only [Option.some.injEq] at h
+      exact ⟨id, b, referent, rfl, found, hty, by rw [← h]⟩
+    · simp at h
+
+/-- A place's code: its Core expression and its Core place have the place's type, which is declared.
+No declared type is a reference (`SrcType.declare` rejects them in S6b), so `*r` does not occur. -/
+theorem placeCode_typed {P : Core.Program} (target : P.target = Core.Target.x86_64) {scope : List Binding}
+    {ctx : Typing.Context} (ok : ScopeOk P ctx scope) {frame : Nat} :
+    ∀ (p : SrcEff) {t : Nat} {c : PlaceCode}, placeCode frame scope t p = some c →
+      ExprHasType P ctx p.toCore c.ty.toCore ∧ PlaceHasType P ctx (exprPlace p.toCore) c.ty.toCore ∧
+        TypeDeclared P c.ty
+  | .ePure e, t, c, h => by
+    simp only [placeCode] at h
+    cases e <;> simp only [exprHomePlace, reduceCtorEq] at h
+    case «local» id =>
+      obtain ⟨b, _, found, -, hty⟩ := homePlace_some h
+      obtain ⟨inCtx, declared⟩ := ok id b found
+      rw [hty]
+      exact ⟨.local inCtx, .local inCtx, declared⟩
+    case field id index =>
+      obtain ⟨c', s, hb, hs, hty⟩ := fieldPlace_some h
+      obtain ⟨b, _, found, -, hty'⟩ := homePlace_some hb
+      obtain ⟨sid, fields, hstruct, hf⟩ := subField_some hs
+      obtain ⟨inCtx, declared⟩ := ok id b found
+      rw [← hty', hstruct] at inCtx declared
+      obtain ⟨decl, inner⟩ := declared_struct declared
+      rw [hty]
+      have ff : (⟨sid, fields.map SrcType.toCore⟩ : Core.StructDecl).fields[index]? = some s.ty.toCore := by
+        simp [hf]
+      exact ⟨.field (.local inCtx) _ decl ff, .field (.local inCtx) _ decl ff, inner _ (List.mem_of_getElem? hf)⟩
+  | .eIndex slice index, t, c, h => by
+    simp only [placeCode] at h
+    obtain ⟨c', i, el, n, hb, hi, hty, rfl⟩ := indexPlace_some h
+    obtain ⟨b, _, found, -, hty'⟩ := homePlace_some hb
+    obtain ⟨e, rfl, hl⟩ := placeIndex_some hi
+    obtain ⟨T, typedIndex, integer⟩ := lowerIndex_typed target ok hl
+    obtain ⟨inCtx, declared⟩ := ok slice b found
+    rw [← hty', hty] at inCtx declared
+    cases declared with
+    | array inner => exact ⟨.indexArray (.local inCtx) typedIndex integer, .indexArray (.local inCtx) typedIndex integer, inner⟩
+  | .eDeref dty dref, t, c, h => by
+    simp only [placeCode] at h
+    obtain ⟨id, b, referent, rfl, found, hty, -⟩ := derefOf_some h
+    have declared := (ok id b (lookupSlot_some found).1).2
+    rw [hty] at declared
+    cases declared
+  | .eField fbase fidx, t, c, h => by
+    simp only [placeCode] at h
+    obtain ⟨c', s, hb, hs, hty⟩ := fieldPlace_some h
+    obtain ⟨typedE, typedP, declared⟩ := placeCode_typed target ok fbase hb
+    obtain ⟨sid, fields, hstruct, hf⟩ := subField_some hs
+    rw [hstruct] at typedE typedP declared
+    obtain ⟨decl, inner⟩ := declared_struct declared
+    rw [hty]
+    have ff : (⟨sid, fields.map SrcType.toCore⟩ : Core.StructDecl).fields[fidx]? = some s.ty.toCore := by
+      simp [hf]
+    exact ⟨.field typedE _ decl ff, .field typedP _ decl ff, inner _ (List.mem_of_getElem? hf)⟩
+  | .eAt abase aindex, t, c, h => by
+    simp only [placeCode] at h
+    obtain ⟨c', i, el, n, hb, hi, hty, rfl⟩ := indexPlace_some h
+    obtain ⟨typedE, typedP, declared⟩ := placeCode_typed target ok abase hb
+    obtain ⟨e, rfl, hl⟩ := placeIndex_some hi
+    obtain ⟨T, typedIndex, integer⟩ := lowerIndex_typed target ok hl
+    rw [hty] at typedE typedP declared
+    cases declared with
+    | array inner => exact ⟨.indexArray typedE typedIndex integer, .indexArray typedP typedIndex integer, inner⟩
+  | .eCall .., _, _, h | .eApply .., _, _, h | .eNeg .., _, _, h | .eNot .., _, _, h | .eCast .., _, _, h
+  | .eStruct .., _, _, h | .eVariant .., _, _, h | .eMatch .., _, _, h | .eDivide .., _, _, h
+  | .eStride .., _, _, h | .arraySlice .., _, _, h | .eIf .., _, _, h | .eLet .., _, _, h | .eLen .., _, _, h
+  | .eStr .., _, _, h | .eBorrow .., _, _, h => by simp [placeCode] at h
+
+/-- A place read (`evalPlaceAt`) has the place's type. -/
+theorem evalPlaceAt_typed {P : Core.Program} (target : P.target = Core.Target.x86_64) {scope : List Binding}
+    {ctx : Typing.Context} (ok : ScopeOk P ctx scope) {frame : Nat} {p : SrcEff} {slot : Nat} {ev : Evaluated}
+    (h : evalPlaceAt frame scope p slot = some ev) :
+    ExprHasType P ctx p.toCore ev.ty.toCore ∧ TypeDeclared P ev.ty := by
+  simp only [evalPlaceAt, evalPlace] at h
+  split at h
+  · simp at h
+  · split at h
+    · simp at h
+    · rename_i c hc
+      simp only [Option.some.injEq] at h
+      subst h
+      obtain ⟨typed, -, declared⟩ := placeCode_typed target ok p hc
+      exact ⟨typed, declared⟩
+
+/-- A pure expression reading homed locals, in an eval position (`evalHomed`), is typed. -/
+theorem evalHomed_typed {P : Core.Program} (target : P.target = Core.Target.x86_64) {scope : List Binding}
+    {ctx : Typing.Context} (ok : ScopeOk P ctx scope) {frame : Nat} :
+    ∀ (e : SrcExpr) {slot : Nat} {ev : Evaluated}, evalHomed frame scope e slot = some ev →
+      ExprHasType P ctx e.toCore ev.ty.toCore
+  | .local id, slot, ev, h => by
+    simp only [evalHomed] at h
+    split at h
+    · exact (evalPlaceAt_typed (p := .ePure (.local id)) target ok h).1
+    · exact evalPure_typed target ok _ h
+  | .field id index, slot, ev, h => by
+    simp only [evalHomed] at h
+    split at h
+    · exact (evalPlaceAt_typed (p := .ePure (.field id index)) target ok h).1
+    · exact evalPure_typed target ok _ h
+  | .negate o, slot, ev, h => by
+    simp only [evalHomed] at h
+    exact evalNegate_typed (fun x hx => evalHomed_typed target ok o hx) h
+  | .not o, slot, ev, h => by
+    simp only [evalHomed] at h
+    exact evalNot_typed (fun x hx => evalHomed_typed target ok o hx) h
+  | .apply op l r, slot, ev, h => by
+    simp only [evalHomed] at h
+    exact evalApply_typed (fun x hx => evalHomed_typed target ok l hx) (fun x hx => evalHomed_typed target ok r hx) h
+  | .cast ty o, slot, ev, h => by
+    simp only [evalHomed] at h
+    exact evalCast_typed (fun x hx => evalHomed_typed target ok o hx) h
+  | .int _, _, _, h | .boolean _, _, _, h | .unsigned _ _, _, _, h | .null, _, _, h | .char _, _, _, h
+  | .float _ _, _, _, h => by
+    simp only [evalHomed] at h
+    exact evalPure_typed target ok _ h
+
 /-- An element read of a word struct or enum slice has the element's type. -/
 theorem evalWordElement_ty {decls : SrcDecls} {b : Binding} {element : SrcType} {slot : Nat}
     {i ev : Evaluated} (h : evalWordElement decls b element slot i = some ev) :
@@ -1515,56 +1940,10 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
       ScopeOk P ctx scope → (∀ t ∈ e.types, TypeDeclared P t) → e.eval sigs decls scope slot = some ev →
         ExprHasType P ctx e.toCore ev.ty.toCore
   | .ePure e, scope, ctx, slot, ev, ok, dd, h => by
-    simp only [SrcEff.eval, evalPure] at h
+    simp only [SrcEff.eval, evalPureAny] at h
     split at h
-    · rename_i t lowered
-      simp only [evalScalar, Option.some.injEq] at h
-      subst h
-      exact (SrcExpr.lower_typed target e ok lowered).1
-    · cases e with
-      | «local» id =>
-        simp only [evalCopy] at h
-        split at h
-        · simp at h
-        · rename_i b found
-          simp only [evalValues] at h
-          split at h
-          · simp at h
-          · rename_i xs hxs
-            simp only [Option.some.injEq] at h
-            subst h
-            exact lowerValue_typed target ok hxs
-      | field id index =>
-        simp only [evalFieldCopy] at h
-        split at h
-        · simp at h
-        · rename_i b found
-          simp only [evalFieldOf] at h
-          split at h
-          case h_4 =>
-            simp only [evalFieldType] at h
-            split at h
-            · simp at h
-            · split at h
-              case isFalse => simp at h
-              simp only [evalValues] at h
-              split at h
-              · simp at h
-              · rename_i xs hxs
-                simp only [Option.some.injEq] at h
-                subst h
-                exact lowerValue_typed target ok hxs
-          all_goals simp at h
-      | int => simp at h
-      | boolean => simp at h
-      | unsigned => simp at h
-      | negate => simp at h
-      | not => simp at h
-      | apply => simp at h
-      | cast => simp at h
-      | null => simp at h
-      | char c => simp at h
-      | float => simp at h
+    · exact evalHomed_typed target ok e h
+    · exact evalPure_typed target ok e h
   | .eCall callee args, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalCall] at h
     split at h
@@ -1673,125 +2052,24 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
           exact call
         · simp at h
   | .eApply op left right, scope, ctx, slot, ev, ok, dd, h => by
-    simp only [SrcEff.eval, evalApply] at h
-    split at h
-    · simp at h
-    · rename_i l hl
-      split at h
-      · simp at h
-      · rename_i r hr
-        have typedL := SrcEff.eval_typed target sigsOk left ok (fun t mem => dd t (by simp [SrcEff.types, mem])) hl
-        have typedR := SrcEff.eval_typed target sigsOk right ok (fun t mem => dd t (by simp [SrcEff.types, mem])) hr
-        simp only [evalOperands] at h
-        split at h
-        · rename_i checks
-          simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
-          split at h
-          · simp at h
-          · rename_i t lowered
-            simp only [Option.some.injEq] at h
-            subst h
-            exact .binary typedL typedR (SrcOp.lower_typed checks.1.1 lowered).1
-        · split at h
-          · rename_i checks
-            simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
-            simp only [Option.some.injEq] at h
-            subst h
-            have opEq : op = .logicalAnd := by cases op <;> simp_all [shortCircuit]
-            subst opEq
-            rw [eq_bool checks.1.1] at typedL
-            rw [eq_bool checks.1.2] at typedR
-            exact .binary typedL typedR .logicalAnd
-          · split at h
-            · rename_i checks
-              simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
-              simp only [Option.some.injEq] at h
-              subst h
-              have opEq : op = .logicalOr := by cases op <;> simp_all [shortCircuit]
-              subst opEq
-              rw [eq_bool checks.1.1] at typedL
-              rw [eq_bool checks.1.2] at typedR
-              exact .binary typedL typedR .logicalOr
-            · simp at h
+    simp only [SrcEff.eval] at h
+    exact evalApply_typed
+      (fun l hl => SrcEff.eval_typed target sigsOk left ok (fun t mem => dd t (by simp [SrcEff.types, mem])) hl)
+      (fun r hr => SrcEff.eval_typed target sigsOk right ok (fun t mem => dd t (by simp [SrcEff.types, mem])) hr) h
   | .eNeg operand, scope, ctx, slot, ev, ok, dd, h => by
-    simp only [SrcEff.eval, evalNegate] at h
-    split at h
-    · simp at h
-    · rename_i o ho
-      have inner := SrcEff.eval_typed target sigsOk operand ok (by simpa [SrcEff.types] using dd) ho
-      simp only [evalThen] at h
-      split at h
-      · simp at h
-      · rename_i t ht
-        simp only [Option.some.injEq] at h
-        subst h
-        simp only [lowerNegateTyped] at ht
-        split at ht
-        · simp only [negateFloat] at ht
-          split at ht
-          · simp at ht
-          rename_i ft hft
-          simp only [Option.some.injEq] at ht
-          subst ht
-          rw [SrcType.eq_of_floatTy hft] at inner ⊢
-          exact .unary inner (.negate (floatNegatableTy ft))
-        split at ht
-        · rename_i isI32
-          simp only [Option.some.injEq] at ht
-          subst ht
-          rw [eq_i32 isI32] at inner
-          exact .unary inner (.negate (.signed _))
-        split at ht
-        · rename_i isIsize
-          simp only [Option.some.injEq] at ht
-          subst ht
-          rw [eq_isize isIsize] at inner
-          exact .unary inner (.negate (.signed _))
-        split at ht
-        · simp at ht
-        · rename_i k hk
-          simp only [Option.some.injEq] at ht
-          subst ht
-          rw [SrcType.eq_of_sintKind hk] at inner
-          exact .unary inner (.negate (.signed _))
+    simp only [SrcEff.eval] at h
+    exact evalNegate_typed (fun o ho => SrcEff.eval_typed target sigsOk operand ok (by simpa [SrcEff.types] using dd) ho) h
   | .eNot operand, scope, ctx, slot, ev, ok, dd, h => by
-    simp only [SrcEff.eval, evalNot] at h
-    split at h
-    · simp at h
-    · rename_i o ho
-      have inner := SrcEff.eval_typed target sigsOk operand ok (by simpa [SrcEff.types] using dd) ho
-      simp only [evalThen] at h
-      split at h
-      · simp at h
-      · rename_i t ht
-        simp only [Option.some.injEq] at h
-        subst h
-        simp only [lowerNotTyped] at ht
-        split at ht
-        · rename_i isBool
-          simp only [Option.some.injEq] at ht
-          subst ht
-          rw [eq_bool isBool] at inner
-          exact .unary inner .logicalNot
-        · simp at ht
+    simp only [SrcEff.eval] at h
+    exact evalNot_typed (fun o ho => SrcEff.eval_typed target sigsOk operand ok (by simpa [SrcEff.types] using dd) ho) h
   | .eCast ty operand, scope, ctx, slot, ev, ok, dd, h => by
-    simp only [SrcEff.eval, evalCast] at h
-    split at h
-    · simp at h
-    · rename_i o ho
-      have inner := SrcEff.eval_typed target sigsOk operand ok (by simpa [SrcEff.types] using dd) ho
-      simp only [evalThen] at h
-      split at h
-      · simp at h
-      · rename_i t ht
-        simp only [Option.some.injEq] at h
-        subst h
-        simp only [scalarCast] at ht
-        split at ht
-        · exact castTo_typed (o := { expr := Expr.var slot, ty := o.ty }) inner ht
-        · simp at ht
+    simp only [SrcEff.eval] at h
+    exact evalCast_typed (fun o ho => SrcEff.eval_typed target sigsOk operand ok (by simpa [SrcEff.types] using dd) ho) h
   | .eIndex slice index, scope, ctx, slot, ev, ok, dd, h => by
-    simp only [SrcEff.eval, evalIndex] at h
+    simp only [SrcEff.eval, evalIndexAny] at h
+    split at h
+    · exact (evalPlaceAt_typed (p := .eAt (.ePure (.local slice)) index) target ok h).1
+    simp only [evalIndex] at h
     split at h
     · simp at h
     · rename_i b found
@@ -2120,7 +2398,7 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
       split at h
       · simp at h
       · rename_i element he
-        have inCtx := (ok slice b found).1
+        have inCtx := (ok slice b (lookupSlot_some found).1).1
         have bty : b.ty = .slice element := by cases hb : b.ty <;> simp_all [elementOf]
         rw [bty] at inCtx
         have tyEq : ev.ty = .isize := by
@@ -2150,12 +2428,40 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
       split at h
       · simp at h
       · rename_i element he
-        have inCtx := (ok slice b found).1
+        have inCtx := (ok slice b (lookupSlot_some found).1).1
         have bty : b.ty = .slice element := by cases hb : b.ty <;> simp_all [elementOf]
         rw [bty] at inCtx
         simp only [Option.some.injEq] at h
         subst h
         exact .sliceLength (.local inCtx)
+  | .eBorrow bty bplace, scope, ctx, slot, ev, ok, dd, h => by
+    simp only [SrcEff.eval, evalBorrow] at h
+    split at h
+    · simp at h
+    · rename_i c hc
+      cases bty
+      all_goals first
+        | (simp at h; done)
+        | skip
+      rename_i referent
+      split at h
+      · rename_i cond
+        simp only [Bool.and_eq_true] at cond
+        simp only [Option.some.injEq] at h
+        subst h
+        obtain ⟨-, typedP, -⟩ := placeCode_typed target ok bplace hc
+        rw [SrcType.same_eq cond.1.1] at typedP
+        exact .borrow typedP
+      · simp at h
+  | .eDeref dty dref, scope, ctx, slot, ev, ok, dd, h => by
+    simp only [SrcEff.eval] at h
+    exact (evalPlaceAt_typed target ok h).1
+  | .eField fbase fidx, scope, ctx, slot, ev, ok, dd, h => by
+    simp only [SrcEff.eval] at h
+    exact (evalPlaceAt_typed target ok h).1
+  | .eAt abase aindex, scope, ctx, slot, ev, ok, dd, h => by
+    simp only [SrcEff.eval] at h
+    exact (evalPlaceAt_typed target ok h).1
 
 theorem evalArgs_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
     {sigs : List Sig} {decls : SrcDecls} (sigsOk : SigsOk P sigs) :
