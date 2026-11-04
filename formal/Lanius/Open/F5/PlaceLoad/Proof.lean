@@ -1,7 +1,11 @@
-import Lanius.Open.F5.PlaceLoad.Stmt
-import Lanius.Open.F5.PlaceAddr.Proof
-import Lanius.Open.F5.RefLoad.Proof
-import Lanius.Mini.Refs.HomedLemmas
+module
+
+public import Lanius.Open.F5.PlaceLoad.Stmt
+public import Lanius.Open.F5.PlaceAddr.Proof
+public import Lanius.Open.F5.RefLoad.Proof
+public import Lanius.Mini.Refs.HomedLemmas
+
+@[expose] public section
 
 open Lanius.Mini
 

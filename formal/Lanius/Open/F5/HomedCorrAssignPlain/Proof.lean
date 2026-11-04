@@ -1,5 +1,14 @@
-import Lanius.Open.F5.HomedCorrAssignPlain.Stmt
-import Lanius.Mini.Refs.HomedLemmas
+module
+
+public import Lanius.Open.F5.HomedCorrAssignPlain.Stmt
+public import Lanius.Mini.Refs.HomedLemmas
+import all Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.callAgrees
+import all Lanius.Mini.Compiler.P.lowerTagged
+
+@[expose] public section
 
 open Lanius.Mini
 open Lanius.Core (Value)

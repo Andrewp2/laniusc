@@ -1,6 +1,10 @@
-import Lanius.Open.F5.AssignAfterRhs.Stmt
-import Lanius.Open.F5.RefStoreV2.Proof
-import Lanius.Mini.Refs.HomedLemmas
+module
+
+public import Lanius.Open.F5.AssignAfterRhs.Stmt
+public import Lanius.Open.F5.RefStoreV2.Proof
+public import Lanius.Mini.Refs.HomedLemmas
+
+@[expose] public section
 
 open Lanius.Mini
 

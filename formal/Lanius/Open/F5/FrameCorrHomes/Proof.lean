@@ -1,5 +1,12 @@
-import Lanius.Open.F5.FrameCorrHomes.Stmt
-import Lanius.Mini.Borrowed
+module
+
+public import Lanius.Open.F5.FrameCorrHomes.Stmt
+public import Lanius.Mini.Borrowed
+import all Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.loadAtBytes
+
+@[expose] public section
 
 open Lanius.Mini
 open Lanius.Core (Value ValueProjection)

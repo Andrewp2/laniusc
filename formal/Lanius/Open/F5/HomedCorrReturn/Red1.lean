@@ -1,7 +1,11 @@
-import Lanius.Open.F5.HomedCorrReturn.Stmt
-import Lanius.Open.F5.HomedCorrKeeps.Stmt
-import Lanius.Open.F5.HomesLeave.Stmt
-import Lanius.Open.F5.HoldsAtDropHomes.Stmt
+module
+
+public import Lanius.Open.F5.HomedCorrReturn.Stmt
+public import Lanius.Open.F5.HomedCorrKeeps.Stmt
+public import Lanius.Open.F5.HomesLeave.Stmt
+public import Lanius.Open.F5.HoldsAtDropHomes.Stmt
+
+@[expose] public section
 
 open Lanius.Mini
 

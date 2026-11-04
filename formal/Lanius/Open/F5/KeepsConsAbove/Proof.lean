@@ -1,4 +1,8 @@
-import Lanius.Open.F5.KeepsConsAbove.Stmt
+module
+
+public import Lanius.Open.F5.KeepsConsAbove.Stmt
+
+@[expose] public section
 
 open Lanius.Mini
 

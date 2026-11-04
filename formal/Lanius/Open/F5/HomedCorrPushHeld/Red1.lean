@@ -1,6 +1,10 @@
-import Lanius.Open.F5.HomedCorrPushHeld.Stmt
-import Lanius.Open.F5.HomedCorrPushPlain.Stmt
-import Lanius.Mini.Refs.HomedLemmas
+module
+
+public import Lanius.Open.F5.HomedCorrPushHeld.Stmt
+public import Lanius.Open.F5.HomedCorrPushPlain.Stmt
+public import Lanius.Mini.Refs.HomedLemmas
+
+@[expose] public section
 
 open Lanius.Mini
 

@@ -1,5 +1,16 @@
-import Lanius.Open.F5.RefStoreV2.Stmt
-import Lanius.Mini.Refs.Store
+module
+
+public import Lanius.Open.F5.RefStoreV2.Stmt
+public import Lanius.Mini.Refs.Store
+import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.Word_narrows
+import all Lanius.Mini.Compiler.P.arrayCallSig
+import all Lanius.Mini.Compiler.P.callAgrees
+import all Lanius.Mini.Compiler.P.loadAtBytes
+import all Lanius.Mini.Compiler.P.render
+
+@[expose] public section
 
 open Lanius.Mini
 open Lanius.Core (Value ValueProjection)

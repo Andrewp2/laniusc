@@ -1,5 +1,15 @@
-import Lanius.Open.F5.RefLoad.Stmt
-import Lanius.Mini.Refs.Lemmas
+module
+
+public import Lanius.Open.F5.RefLoad.Stmt
+public import Lanius.Mini.Refs.Lemmas
+import all Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.arrayCallSig
+import all Lanius.Mini.Compiler.P.callAgrees
+import all Lanius.Mini.Compiler.P.render
+
+@[expose] public section
 
 open Lanius.Mini
 open Lanius.Core (Value ValueProjection)

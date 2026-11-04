@@ -1,4 +1,8 @@
-import Lanius.Open.F5.HoldsAtNamesPlaces.Stmt
+module
+
+public import Lanius.Open.F5.HoldsAtNamesPlaces.Stmt
+
+@[expose] public section
 
 open Lanius.Mini
 open Lanius.Core (Value)

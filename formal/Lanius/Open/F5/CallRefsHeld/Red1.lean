@@ -1,6 +1,10 @@
-import Lanius.Open.F5.CallRefsHeld.Stmt
-import Lanius.Open.F5.CallRefsAgree.Stmt
-import Lanius.Mini.Refs.HomedLemmas
+module
+
+public import Lanius.Open.F5.CallRefsHeld.Stmt
+public import Lanius.Open.F5.CallRefsAgree.Stmt
+public import Lanius.Mini.Refs.HomedLemmas
+
+@[expose] public section
 
 open Lanius.Mini
 

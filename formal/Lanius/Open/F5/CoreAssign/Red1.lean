@@ -1,6 +1,10 @@
-import Lanius.Open.F5.CoreAssign.Stmt
-import Lanius.Open.F5.CorePlace.Stmt
-import Lanius.Mini.Refs.CoreLemmas
+module
+
+public import Lanius.Open.F5.CoreAssign.Stmt
+public import Lanius.Open.F5.CorePlace.Stmt
+public import Lanius.Mini.Refs.CoreLemmas
+
+@[expose] public section
 
 open Lanius.Mini
 open Lanius.Core (Value ValueProjection)

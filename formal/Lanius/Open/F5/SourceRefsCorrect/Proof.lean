@@ -1,4 +1,8 @@
-import Lanius.Open.F5.SourceRefsCorrect.Stmt
+module
+
+public import Lanius.Open.F5.SourceRefsCorrect.Stmt
+
+@[expose] public section
 
 open Lanius.Mini
 

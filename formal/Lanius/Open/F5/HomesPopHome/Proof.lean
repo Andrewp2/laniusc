@@ -1,5 +1,9 @@
-import Lanius.Open.F5.HomesPopHome.Stmt
-import Lanius.Mini.Refs.HomedLemmas
+module
+
+public import Lanius.Open.F5.HomesPopHome.Stmt
+public import Lanius.Mini.Refs.HomedLemmas
+
+@[expose] public section
 
 open Lanius.Mini
 

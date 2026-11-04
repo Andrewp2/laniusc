@@ -1,4 +1,8 @@
-import Lanius.Open.F5.HomesLend.Stmt
+module
+
+public import Lanius.Open.F5.HomesLend.Stmt
+
+@[expose] public section
 
 open Lanius.Mini
 open Lanius.Core (Value ValueProjection)

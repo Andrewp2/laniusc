@@ -1,5 +1,9 @@
-import Lanius.Open.F5.PlaceAddr.Stmt
-import Lanius.Mini.Refs.Place
+module
+
+public import Lanius.Open.F5.PlaceAddr.Stmt
+public import Lanius.Mini.Refs.Place
+
+@[expose] public section
 
 open Lanius.Mini
 

@@ -1,5 +1,9 @@
-import Lanius.Open.F5.HomesFrame.Stmt
-import Lanius.Mini.Refs.CoreLemmas
+module
+
+public import Lanius.Open.F5.HomesFrame.Stmt
+public import Lanius.Mini.Refs.CoreLemmas
+
+@[expose] public section
 
 open Lanius.Mini
 open Lanius.Core (Value ValueProjection)

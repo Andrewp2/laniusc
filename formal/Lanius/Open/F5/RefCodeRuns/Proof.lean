@@ -1,5 +1,9 @@
-import Lanius.Open.F5.RefCodeRuns.Stmt
-import Lanius.Open.F5.RefCodeWithin.Proof
+module
+
+public import Lanius.Open.F5.RefCodeRuns.Stmt
+public import Lanius.Open.F5.RefCodeWithin.Proof
+
+@[expose] public section
 
 open Lanius.Mini
 

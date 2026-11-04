@@ -1,5 +1,9 @@
-import Lanius.Open.F5.RefCodeWithin.Stmt
-import Lanius.Mini.Refs.MachineLemmas
+module
+
+public import Lanius.Open.F5.RefCodeWithin.Stmt
+public import Lanius.Mini.Refs.MachineLemmas
+
+@[expose] public section
 
 open Lanius.Mini
 

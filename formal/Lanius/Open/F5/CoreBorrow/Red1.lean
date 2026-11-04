@@ -1,5 +1,9 @@
-import Lanius.Open.F5.CoreBorrow.Stmt
-import Lanius.Open.F5.CorePlace.Stmt
+module
+
+public import Lanius.Open.F5.CoreBorrow.Stmt
+public import Lanius.Open.F5.CorePlace.Stmt
+
+@[expose] public section
 
 open Lanius.Mini
 open Lanius.Core (Value ValueProjection)

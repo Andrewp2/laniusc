@@ -1,5 +1,9 @@
-import Lanius.Open.F5.BorrowHoldsAt.Stmt
-import Lanius.Open.F5.BorrowRefHeld.Stmt
+module
+
+public import Lanius.Open.F5.BorrowHoldsAt.Stmt
+public import Lanius.Open.F5.BorrowRefHeld.Stmt
+
+@[expose] public section
 
 open Lanius.Mini
 

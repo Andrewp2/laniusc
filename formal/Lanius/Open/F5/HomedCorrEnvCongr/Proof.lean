@@ -1,4 +1,10 @@
-import Lanius.Open.F5.HomedCorrEnvCongr.Stmt
+module
+
+public import Lanius.Open.F5.HomedCorrEnvCongr.Stmt
+import all Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.P.SrcType_same
+
+@[expose] public section
 
 open Lanius.Mini
 

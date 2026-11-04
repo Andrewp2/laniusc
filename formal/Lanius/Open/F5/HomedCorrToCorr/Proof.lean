@@ -1,4 +1,8 @@
-import Lanius.Open.F5.HomedCorrToCorr.Stmt
+module
+
+public import Lanius.Open.F5.HomedCorrToCorr.Stmt
+
+@[expose] public section
 
 open Lanius.Mini
 
