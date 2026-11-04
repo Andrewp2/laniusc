@@ -1,4 +1,4 @@
-import Lanius.Faithful.Budget
+import Lanius.Faithful.BudgetCore
 import Lanius.Faithful.Auto
 
 /-! # `budget`: a budget certificate's proof

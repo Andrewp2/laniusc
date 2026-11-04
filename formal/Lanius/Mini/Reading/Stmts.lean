@@ -1,12 +1,8 @@
 module
 
 public import Lanius.Mini.Reading.Effs
-import all Lanius.Mini.Compiler.P.Stmt_kills
 import all Lanius.Mini.Compiler.P.arithShiftRight
-import all Lanius.Mini.Compiler.P.arities
-import all Lanius.Mini.Compiler.P.callAgrees
 import all Lanius.Mini.Compiler.P.indexOf
-import all Lanius.Mini.Compiler.P.lowerBody
 import all Lanius.Mini.Frontend.P.basedDigits
 import all Lanius.Mini.Frontend.P.bindsOfTys
 import all Lanius.Mini.Frontend.P.blockArmsOf

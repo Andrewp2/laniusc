@@ -133,13 +133,22 @@ class Models:
         self.group = {}     # name -> tuple of names in its mutual block
         self.recursive = set()
         for f in sorted(os.listdir(genb)):
-            if not re.match(r'SelfBModel\d+\.lean$', f):
+            if not re.match(r'SelfBModel\w+\.lean$', f):
                 continue
             self.read(os.path.join(genb, f))
         self.stmt = {}      # key -> (params [(x, ty)], costly, rep, term)
         for f in sorted(os.listdir(genb)):
-            if re.match(r'SelfBStmt\d+\.lean$', f):
+            if re.match(r'SelfBStmt\w+\.lean$', f):
                 self.read_stmt(os.path.join(genb, f))
+        # In the call graph's order (budget_certs.py lists it in SelfBModels).
+        listed = os.path.join(genb, 'SelfBModels.lean')
+        if os.path.exists(listed):
+            text = open(listed).read()
+            for tag, table in (('models', 'sig'), ('statements', 'stmt')):
+                order = [x for line in re.findall(rf'^-- {tag}:(.*)$', text, re.M) for x in line.split()]
+                old = getattr(self, table)
+                assert set(order) == set(old), (tag, set(order) ^ set(old))
+                setattr(self, table, {x: old[x] for x in order})
 
     def read(self, path):
         lines = open(path).read().split('\n')

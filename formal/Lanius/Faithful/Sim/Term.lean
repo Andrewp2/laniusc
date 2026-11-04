@@ -1,4 +1,8 @@
-import Lanius.Faithful.Pure
+module
+
+public import Lanius.Faithful.Pure
+
+@[expose] public section
 
 /-! # Pure runs that settle: a termination check
 

@@ -4,17 +4,8 @@ public import Lanius.Faithful.Sim.EffStep
 public import Lanius.Faithful.Safe.Expr
 public import Lanius.Faithful.Safe.Grows
 public import Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.UintTy_half
-import all Lanius.Mini.Compiler.P.UintTy_isWide
-import all Lanius.Mini.Compiler.P.arithShiftRight
-import all Lanius.Mini.Compiler.P.equality
-import all Lanius.Mini.Compiler.P.floatApply
-import all Lanius.Mini.Compiler.P.indexOf
-import all Lanius.Mini.Compiler.P.loadAtBytes
-import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.arrayCallSig
 import all Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Compiler.P.storeArray

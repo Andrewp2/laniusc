@@ -279,7 +279,7 @@ def main():
     status = run.stdout.strip().split(' ', 1)[1] if run.returncode == 0 and ' ' in run.stdout.strip() else None
     lean_path = os.path.join(workdir, 'self_compile.lean')
     expected = '\n'.join(f'#eval IO.println ("t{k} " ++ ({lean_text(t)}))' for k, t in enumerate(tests))
-    open(lean_path, 'w').write('import Lanius.Mini.FrontLex\nopen Lanius.Mini\n\n' + expected + '\n')
+    open(lean_path, 'w').write('import Lanius.Mini.FrontLex\nimport Lanius.Mini.Compiler\nopen Lanius.Mini\n\n' + expected + '\n')
     lean = run_cache.run_lean(lean_path, memory='8G')
     lean_s = time.time() - began - parse_s - run_all_s
     if lean.returncode != 0:
