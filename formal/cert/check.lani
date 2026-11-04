@@ -1,0 +1,226 @@
+// Flat proof certificate checker (target/claude-work/cert/FORMAT.md).
+// Reads a certificate on stdin; exit 0 and "ok ..." when every node, rule and
+// step checks, exit 1 and "reject CODE AT" otherwise, 2 on input failure.
+// Output: ok AXIOMS THEOREMS STEPS DIGEST MICROS, where DIGEST hashes every
+// rule's kind and statement trees (compare it with the reviewed statements)
+// and MICROS is the time of the checks after reading the input.
+// The checker never builds a term: each step's result is given, and a step
+// is checked by matching its rule's statement against the nodes it names.
+module app::main;
+import alloc::io;
+import alloc::vec;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::result;
+import core::text;
+import core::time;
+import std::clock;
+import std::stream;
+
+const VAR: i32 = 2147483647;
+const STACK: i32 = 16384;
+
+struct Layout { sorts: i32, cons: i32, nodes: i32, rules: i32, steps: i32, pool: i32,
+    ns: i32, nc: i32, nn: i32, nr: i32, nst: i32, np: i32 }
+
+fn sort_of(w: [i32], l: Layout, n: i32) -> i32 {
+    let h: i32 = w[l.nodes + 3 * n];
+    if (h == VAR) { return w[l.nodes + 3 * n + 2]; }
+    return w[l.cons + 3 * h];
+}
+
+// Does template t, under the substitution at pool[so..so+nv), give node x?
+fn matches(w: [i32], l: Layout, t: i32, so: i32, nv: i32, x: i32, stack: [i32]) -> bool {
+    stack[0] = t; stack[1] = x;
+    let sp: i32 = 2;
+    while (sp > 0) {
+        sp -= 2;
+        let tt: i32 = stack[sp]; let xx: i32 = stack[sp + 1];
+        let h: i32 = w[l.nodes + 3 * tt];
+        if (h == VAR) {
+            let k: i32 = w[l.nodes + 3 * tt + 1];
+            if (k >= nv) { return false; }
+            if (w[l.pool + so + k] != xx) { return false; }
+            if (sort_of(w, l, xx) != w[l.nodes + 3 * tt + 2]) { return false; }
+        } else {
+            if (w[l.nodes + 3 * xx] != h) { return false; }
+            let ar: i32 = w[l.cons + 3 * h + 1];
+            if (sp + 2 * ar > STACK) { return false; }
+            let ta: i32 = l.pool + w[l.nodes + 3 * tt + 1];
+            let xa: i32 = l.pool + w[l.nodes + 3 * xx + 1];
+            let i: i32 = 0;
+            while (i < ar) { stack[sp] = w[ta + i]; stack[sp + 1] = w[xa + i]; sp += 2; i += 1; }
+        }
+    }
+    return true;
+}
+
+fn mix(h: u64, v: i32) -> u64 { return ((h ^ (v as u64)) * 16777619) & 4294967295; }
+
+// The statement tree of t in prefix order, into the hash.
+fn hash_tree(w: [i32], l: Layout, t: i32, seed: u64, stack: [i32]) -> u64 {
+    let h: u64 = seed;
+    stack[0] = t;
+    let sp: i32 = 1;
+    while (sp > 0) {
+        sp -= 1;
+        let n: i32 = stack[sp];
+        let head: i32 = w[l.nodes + 3 * n];
+        h = mix(h, head);
+        if (head == VAR) {
+            h = mix(mix(h, w[l.nodes + 3 * n + 1]), w[l.nodes + 3 * n + 2]);
+        } else {
+            let ar: i32 = w[l.cons + 3 * head + 1];
+            if (sp + ar > STACK) { return 0; }
+            let a: i32 = l.pool + w[l.nodes + 3 * n + 1];
+            let i: i32 = ar - 1;
+            while (i >= 0) { stack[sp] = w[a + i]; sp += 1; i -= 1; }
+        }
+    }
+    return h;
+}
+
+// 0 when every check passes, else a reject code; where[0] gets the index.
+fn check(w: [i32], count: i32, stack: [i32], out: [u64]) -> i32 {
+    if (count < 8) { return 10; }
+    let i: i32 = 0;
+    while (i < count) { if (w[i] < 0) { out[0] = i as u64; return 11; } i += 1; }
+    if (w[0] != 1414677324 || w[1] != 1) { return 12; }
+    let ns: i32 = w[2]; let nc: i32 = w[3]; let nn: i32 = w[4]; let nr: i32 = w[5]; let nst: i32 = w[6]; let np: i32 = w[7];
+    if (ns > count || nc > count || nn > count || nr > count || nst > count || np > count) { return 13; }
+    let o_sorts: i32 = 8; let o_cons: i32 = o_sorts + ns; let o_nodes: i32 = o_cons + 3 * nc;
+    let o_rules: i32 = o_nodes + 3 * nn; let o_steps: i32 = o_rules + 6 * nr; let o_pool: i32 = o_steps + 4 * nst;
+    if (o_pool + np != count) { return 14; }
+    let l: Layout = Layout { sorts: o_sorts, cons: o_cons, nodes: o_nodes, rules: o_rules, steps: o_steps, pool: o_pool,
+        ns: ns, nc: nc, nn: nn, nr: nr, nst: nst, np: np };
+    // constructors
+    i = 0;
+    while (i < nc) {
+        let res: i32 = w[o_cons + 3 * i]; let ar: i32 = w[o_cons + 3 * i + 1]; let ao: i32 = w[o_cons + 3 * i + 2];
+        if (res >= ns || ar > np || ao > np - ar) { out[0] = i as u64; return 20; }
+        let j: i32 = 0;
+        while (j < ar) { if (w[o_pool + ao + j] >= ns) { out[0] = i as u64; return 21; } j += 1; }
+        i += 1;
+    }
+    // nodes: each argument an earlier node of the constructor's argument sort
+    i = 0;
+    while (i < nn) {
+        let h: i32 = w[o_nodes + 3 * i]; let a: i32 = w[o_nodes + 3 * i + 1];
+        if (h == VAR) {
+            if (w[o_nodes + 3 * i + 2] >= ns) { out[0] = i as u64; return 30; }
+        } else {
+            if (h >= nc) { out[0] = i as u64; return 31; }
+            let ar: i32 = w[o_cons + 3 * h + 1]; let ao: i32 = w[o_cons + 3 * h + 2];
+            if (a > np - ar) { out[0] = i as u64; return 32; }
+            let j: i32 = 0;
+            while (j < ar) {
+                let x: i32 = w[o_pool + a + j];
+                if (x >= i) { out[0] = i as u64; return 33; }
+                if (sort_of(w, l, x) != w[o_pool + ao + j]) { out[0] = i as u64; return 34; }
+                j += 1;
+            }
+        }
+        i += 1;
+    }
+    // rules and their steps
+    let digest: u64 = 2166136261;
+    let axioms: u64 = 0; let theorems: u64 = 0;
+    let prev_end: i32 = 0;
+    let r: i32 = 0;
+    while (r < nr) {
+        let base: i32 = o_rules + 6 * r;
+        let kind: i32 = w[base]; let nh: i32 = w[base + 2]; let ho: i32 = w[base + 3];
+        let concl: i32 = w[base + 4]; let end: i32 = w[base + 5];
+        if (concl >= nn || nh > np || ho > np - nh) { out[0] = r as u64; return 40; }
+        if (w[o_sorts + sort_of(w, l, concl)] != 1) { out[0] = r as u64; return 41; }
+        digest = mix(mix(mix(digest, kind), w[base + 1]), nh);
+        let j: i32 = 0;
+        while (j < nh) {
+            let hyp: i32 = w[o_pool + ho + j];
+            if (hyp >= nn) { out[0] = r as u64; return 42; }
+            if (w[o_sorts + sort_of(w, l, hyp)] != 1) { out[0] = r as u64; return 43; }
+            digest = hash_tree(w, l, hyp, digest, stack);
+            j += 1;
+        }
+        digest = hash_tree(w, l, concl, digest, stack);
+        if (kind == 0) {
+            axioms += 1;
+        } else {
+            if (kind != 1 || end <= prev_end || end > nst) { out[0] = r as u64; return 44; }
+            theorems += 1;
+            let s: i32 = prev_end;
+            while (s < end) {
+                let sb: i32 = o_steps + 4 * s;
+                let rule: i32 = w[sb]; let so: i32 = w[sb + 1]; let po: i32 = w[sb + 2]; let res: i32 = w[sb + 3];
+                out[0] = s as u64;
+                if (res >= nn) { return 50; }
+                if (rule == VAR) {
+                    if (so >= nh || w[o_pool + ho + so] != res) { return 51; }
+                } else {
+                    if (rule >= r) { return 52; }
+                    let rb: i32 = o_rules + 6 * rule;
+                    let nv: i32 = w[rb + 1]; let rnh: i32 = w[rb + 2]; let rho: i32 = w[rb + 3];
+                    if (so > np - nv || po > np - rnh) { return 53; }
+                    let k: i32 = 0;
+                    while (k < nv) { if (w[o_pool + so + k] >= nn) { return 54; } k += 1; }
+                    if (!matches(w, l, w[rb + 4], so, nv, res, stack)) { return 55; }
+                    k = 0;
+                    while (k < rnh) {
+                        let p: i32 = w[o_pool + po + k];
+                        if (p < prev_end || p >= s) { return 56; }
+                        if (!matches(w, l, w[o_pool + rho + k], so, nv, w[o_steps + 4 * p + 3], stack)) { return 57; }
+                        k += 1;
+                    }
+                }
+                s += 1;
+            }
+            if (w[o_steps + 4 * (end - 1) + 3] != concl) { out[0] = r as u64; return 58; }
+            prev_end = end;
+        }
+        r += 1;
+    }
+    out[0] = axioms; out[1] = theorems; out[2] = nst as u64; out[3] = digest;
+    return 0;
+}
+
+fn word(format: &core::fmt::Formatter, value: u64) {
+    format.write_text(core::text::from_utf8_unchecked(core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(" "), 1), 0, 1));
+    format.write_unsigned(value, core::fmt::decimal());
+}
+
+fn main() -> i32 {
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let limits: alloc::io::ReadLimits = alloc::io::ReadLimits { max_bytes: 1073741824, max_calls: 100000000 as u64 };
+    let got: core::result::Result<alloc::vec::Vec<u8>, alloc::io::ReadFailure> = alloc::io::read_to_end(source.borrow(), limits);
+    if (core::result::is_err(got)) { return 2; }
+    let input: alloc::vec::Vec<u8> = core::result::unwrap(got);
+    let bytes: [u8] = input.as_slice();
+    let count: i32 = input.len() / 4;
+    let words: [i32] = core::mem::typed_slice_from_raw_parts(core::mem::i32_slice_data_ptr(bytes), count);
+    let space: [i32;16384] = [0;16384];
+    let stack: [i32] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(space), STACK);
+    let results: [u64;4] = [0;4];
+    let t0: core::time::Instant = core::result::unwrap(std::clock::monotonic_now());
+    let code: i32 = check(words, count, stack, results);
+    let t1: core::time::Instant = core::result::unwrap(std::clock::monotonic_now());
+    let micros: u64 = core::result::unwrap(core::result::unwrap(t1.duration_since(t0)).as_micros());
+    let storage: [i32;32] = [0;32];
+    let text: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage), 128);
+    let format: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(text, 0, 128));
+    if (code == 0) {
+        format.write_text(core::text::from_utf8_unchecked(core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr("ok"), 2), 0, 2));
+        word(format.borrow(), results[0]); word(format.borrow(), results[1]); word(format.borrow(), results[2]);
+        word(format.borrow(), results[3]); word(format.borrow(), micros);
+    } else {
+        format.write_text(core::text::from_utf8_unchecked(core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr("reject"), 6), 0, 6));
+        word(format.borrow(), code as u64); word(format.borrow(), results[0]);
+    }
+    format.write_text(core::text::from_utf8_unchecked(core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr("\n"), 1), 0, 1));
+    let size: i32 = core::result::unwrap(format.finish());
+    let out: std::stream::Descriptor = std::stream::stdout();
+    core::io::write_all(out.borrow(), text, 0, size);
+    input.destroy();
+    if (code == 0) { return 0; }
+    return 1;
+}
