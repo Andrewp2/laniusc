@@ -2,6 +2,7 @@ module
 
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Frontend.P.nullConst
+import Lanius.Mini.Frontend.P.projection
 import Lanius.Mini.Frontend.P.scalarOf
 import Lanius.Mini.Frontend.P.shrFirst
 import Lanius.Mini.Frontend.P.sintAt

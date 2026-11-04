@@ -26,7 +26,7 @@ noncomputable section
 
 def Cost_arm_body_scope : Nat → Bool → Nat → Lanius.Mini.SrcType → Nat → List Lanius.Mini.Binding → Nat
   | 0, x15, x28, x43, x56, x69 => 18446744073709551616
-  | n + 1, x15, x28, x43, x56, x69 => (if (!x15) = true then 0 else (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x28 x56 x43) x69))
+  | n + 1, x15, x28, x43, x56, x69 => (if (!x15) = true then 0 else (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x28 x56 x43 (none : Option Nat)) x69))
 
 end
 

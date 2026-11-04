@@ -2079,7 +2079,10 @@ answer). So S5 is:
    `p.f op= v`, `p.f[i] = v`, are read as `eField` and `eAt` over `eDeref`
    (statement positions; `setPlace` and `setPlaceOp`).
 3. A reference parameter passed at a parameter of the same reference type
-   is read as the reference value.
+   is read as the reference value. (11-03, leafC: moved to S5b. A call's
+   arguments are read against the callee's parameter type expressions
+   (`MatchTy`), which have no reference pattern yet; the lifetime check
+   already allows the use, so only the reading is left.)
 4. The lifetime check rejects a reassigned reference parameter, any other
    use of the whole reference (a let, a return, an operand, an element,
    a by-value argument), and a method call on a reference (that is point
@@ -2134,8 +2137,23 @@ split between the lowering (leafC) and the proof (leafA).
   with it. The copy-in and copy-out stay: the caller's copy buffers are
   homes from the callee's view. `FrameCorr` keeps its definition, which
   open statements name, but the simulation no longer uses it.
+  Done (11-03, leafA): `LentHomes` (`Mini/LentHomes.lean`) is `Homes` with
+  `Lent` (`packed`, `above`), and has `FrameCorr`'s lemmas under the same
+  names. Its bounds are a place's native words (`Addressed.Within`), not
+  its slots, as `Homes` has them: a packed array's words are at most its
+  slots (`Packed.words_le`), and all its slots' bytes lie in its words
+  (`Packed.slotBytes_within`). `Homes` and the layout definitions it reads
+  moved from `Refs/Model.lean` to `Mini/Homes.lean` with their names.
 - S6a-2: `Binding.home: Option<usize>` in the scope (`None` everywhere),
   and `RCtx.ofScope` reads the homes from the scope. No behaviour changes.
+  Done (11-04, leafA): the field is in `compiler.lani`, `None` at all 16
+  constructions; the trusted hash is unchanged (`Binding` is not trusted and
+  no function moved). `RCtx.ofScope` keeps `homes := []` until S6b makes a
+  home `Some`: reading the scope's homes now would need an "every home is
+  `None`" invariant through the simulation that S6b then removes. Five open
+  statements that built `⟨id, next, ty⟩` bindings stopped elaborating and
+  were replaced by V2s over any home (`OPEN_STATEMENTS.md`, "Deleting a
+  statement").
 - S6b (the lowering of borrows and homed lets): **a lent array local is a
   homed let.** An array local passed as a slice (`ArraySlice` at a slice
   parameter) is a borrowed local, so it gets a home like any other borrowed
@@ -2838,6 +2856,66 @@ The checks are pure, so their order changes no result:
 `compileFunc_checksLast` proves that `compileFunc` is the compiler with the
 room check last (`compileFuncChecksLast`, the order before this change).
 
+
+## The evaluator's slots checked against a limit (decided 11-03, F14, coordinator)
+
+The evaluator (`SrcEff.eval` and its group) computes each value into a slot and
+the slots after it. Most of its steps add one per nesting level (`EApply`'s and
+`EDivide`'s right operand, a variant's payload, a match's binders), and nesting
+is bounded by the program's size. Three steps add a type's size, up to 2^22,
+per level: `eval_args` puts each argument after the slots of the ones before
+it, so `f(s, f(s, ..))` adds `f`'s parameters' slots per call (leafB2,
+PreCompileSourceV4/NOTES.md); a let in an expression evaluates its body past
+the value's slots (`match_dst`); and a match evaluates its arms there too.
+Nothing bounded those sums below 2^64: the front end's `depth_limit` counts the
+statements' lets, not the evaluator's slots.
+
+Now `eval_args`, `eval_let_body` and `eval_arm_in` reject (`None`) a start slot
+of `eval_slot_limit()` = 2^40 or more. Between two checks a slot grows by at
+most one type size plus one per nesting level, so every slot the evaluator
+computes stays far below 2^64.
+
+This is argued, not proved (the coordinator's decision: no top theorem states
+that the compiler's acceptance is unchanged, the correctness theorems cover
+whatever it accepts, and a new early `None` adds only vacuous cases; the
+difftests and the self-host fixpoint check it in practice). The argument: the
+evaluator writes each value it computes into the slots from its start slot, so
+a start slot `s` past the first is reached only past slots that code of the
+same body writes, and the function's `locals` (`lower_body`'s `extent`) is
+then more than `s - 1`. `compile_func` rejects a function whose `locals` plus
+temporaries pass `frame_limit()` (2^20 slots). So every program the compiler
+accepted before keeps every evaluator slot below 2^20, far below 2^40, and
+none of them is rejected now. A program that does reach 2^40 needs 2^43 bytes
+of frame, more than any binary has.
+
+
+## A call's array offsets checked as they add up (decided 11-04, F14, coordinator)
+
+A call that passes array locals as slices places them one after another in
+the caller's frame block: `array_args` gives each argument the offset of the
+bytes before it (`offset + arg_bytes`), and `array_arg_local` adds
+`8 * count` to the bytes of the arguments after it. The check that the bytes
+fit, `a.bytes <= sig.block` in `array_call_code`, comes only after the whole
+list. Nothing bounded those sums below 2^64 before it: an argument's bytes
+are up to 8 * 2^22, a call's arguments are as many as its callee's
+parameters, and `paramsSize f.params ≤ 2^40` counts a slice parameter's
+slots, not its array's bytes (and a parameter may have size 0). The offset is
+also added before `array_arg` checks the argument's type.
+
+Now `array_args` rejects (`None`) an offset over `block_limit()`
+(2^31 - 1), and `array_arg_before` (split out of `array_arg_local`) rejects
+the rest's bytes over `block_limit()` before it adds this argument's. Between
+two checks a sum grows by one argument's bytes, so no offset or byte count
+passes 2^64.
+
+This is argued, not proved, as for the evaluator's slots above. The argument:
+for a call `array_call_code` accepts, every offset `array_args` reaches is a
+sum of the bytes of the arguments before it, and every `r.bytes` the sum of
+those after it, so both are at most the call's `a.bytes`, which is at most
+`sig.block`. `sig.block` is the enclosing function's `frame_block`
+(`with_budget` in `lower_func`), and `lower_func` lowers the body only when
+that is below 2^31, so at most `block_limit()`. So no call the compiler
+accepted before is rejected now.
 
 ## Budget certificates (decided 11-01, F14)
 

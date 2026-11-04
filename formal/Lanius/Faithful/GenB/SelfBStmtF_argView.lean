@@ -25,21 +25,21 @@ open Lanius.Faithful.Budget
 abbrev BStmt_arg_view (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Local} {x1 : Option Lanius.Mini.Ty} {x2 : Lanius.Mini.MEff} {v0 v1 v2 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepList 239 RepLocal) x0 v0 → (RepOption 212 RepTy) x1 v1 → RepMEff x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ (RepOption 258 RepMEff) (Lanius.Mini.argView x0 x1 x2) w
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ (RepOption 259 RepMEff) (Lanius.Mini.argView x0 x1 x2) w
 
 abbrev BStmt_arg_views (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Local} {x1 : Option (List Lanius.Mini.Ty)} {x2 : List Lanius.Mini.MEff} {v0 v1 v2 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepList 239 RepLocal) x0 v0 → (RepOption 213 (RepList 143 RepTy)) x1 v1 → (RepList 236 RepMEff) x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_arg_views n x0 x1 x2 = k ∧ (RepOption 286 (RepList 236 RepMEff)) (Lanius.Mini.argViews x0 x1 x2) w
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_arg_views n x0 x1 x2 = k ∧ (RepOption 287 (RepList 236 RepMEff)) (Lanius.Mini.argViews x0 x1 x2) w
 
 abbrev BStmt_views_of (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Local} {x1 : Option (List Lanius.Mini.Ty)} {x2 : Option (List Lanius.Mini.MEff)} {v0 v1 v2 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepList 239 RepLocal) x0 v0 → (RepOption 213 (RepList 143 RepTy)) x1 v1 → (RepOption 286 (RepList 236 RepMEff)) x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_views_of n x0 x1 x2 = k ∧ (RepOption 286 (RepList 236 RepMEff)) (Lanius.Mini.viewsOf x0 x1 x2) w
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepList 239 RepLocal) x0 v0 → (RepOption 213 (RepList 143 RepTy)) x1 v1 → (RepOption 287 (RepList 236 RepMEff)) x2 v2 →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_views_of n x0 x1 x2 = k ∧ (RepOption 287 (RepList 236 RepMEff)) (Lanius.Mini.viewsOf x0 x1 x2) w
 
 abbrev BStmt_view_of (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Local} {x1 : Option Lanius.Mini.Ty} {x2 : Option Lanius.Mini.MEff} {v0 v1 v2 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepList 239 RepLocal) x0 v0 → (RepOption 212 RepTy) x1 v1 → (RepOption 258 RepMEff) x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ (RepOption 258 RepMEff) (Lanius.Mini.viewOf x0 x1 x2) w
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepList 239 RepLocal) x0 v0 → (RepOption 212 RepTy) x1 v1 → (RepOption 259 RepMEff) x2 v2 →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ (RepOption 259 RepMEff) (Lanius.Mini.viewOf x0 x1 x2) w
 
 end Lanius.Faithful.SelfBudget

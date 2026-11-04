@@ -40,10 +40,6 @@ abbrev Stmt_array_bytes_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
   ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcType x0 v0 →
     RepNat (Lanius.Mini.arrayBytesOf x0) w
 
-abbrev Stmt_block_limit (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    RepNat (Lanius.Mini.blockLimit) w
-
 abbrev Stmt_block_room (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : List Nat} {x2 : Lanius.Mini.SrcStmt} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → (RepList 25 RepNat) x1 v1 → RepSrcStmt x2 v2 →
     (RepOption 135 RepNat) (Lanius.Mini.blockRoom x0 x1 x2) w

@@ -11,6 +11,7 @@ public import Lanius.Faithful.GenB.SelfBStmtC_UintTy_half
 public import Lanius.Faithful.GenB.SelfBStmtC_elementAddress
 public import Lanius.Faithful.GenB.SelfBStmtC_elementBase
 public import Lanius.Faithful.GenB.SelfBStmtC_evalSame
+public import Lanius.Faithful.GenB.SelfBStmtC_evalSlotLimit
 public import Lanius.Faithful.GenB.SelfBStmtC_lowerSetValues
 public import Lanius.Faithful.GenB.SelfBStmtC_withBudget
 public import Lanius.Faithful.GenB.SelfBStmtC_wordElement
@@ -25,6 +26,7 @@ import all Lanius.Mini.Compiler.P.compileArgs
 import all Lanius.Mini.Compiler.P.elementAddress
 import all Lanius.Mini.Compiler.P.elementBase
 import all Lanius.Mini.Compiler.P.evalSame
+import all Lanius.Mini.Compiler.P.evalSlotLimit
 import all Lanius.Mini.Compiler.P.matchDst
 import all Lanius.Mini.Compiler.P.matchVariants
 import all Lanius.Mini.Compiler.P.withBudget
@@ -180,10 +182,11 @@ theorem bproof_store_element {spW sp : SrcProgram} {prims : Prims} {ix_store_ele
     budget Cost_store_element
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4⟩
 
-theorem bstep_eval_let_body {spW sp : SrcProgram} {prims : Prims} {ix_eval_let_body ix_SrcEff_eval : Nat}
-    (fnW : spW.funcs[ix_eval_let_body]? = some (src_eval_let_body ix_SrcEff_eval)) (fn : sp.funcs[ix_eval_let_body]? = some (src_eval_let_body ix_SrcEff_eval))
+theorem bstep_eval_let_body {spW sp : SrcProgram} {prims : Prims} {ix_eval_let_body ix_SrcEff_eval ix_eval_slot_limit : Nat}
+    (fnW : spW.funcs[ix_eval_let_body]? = some (src_eval_let_body ix_SrcEff_eval ix_eval_slot_limit)) (fn : sp.funcs[ix_eval_let_body]? = some (src_eval_let_body ix_SrcEff_eval ix_eval_slot_limit))
     (np : prims.isPrim ix_eval_let_body = false)
-    (back : Certified (∀ {n : Nat}, Stmt_eval_let_body sp prims ix_eval_let_body n)) {n : Nat}
+    (back : Certified (∀ {n : Nat}, Stmt_eval_let_body sp prims ix_eval_let_body n))
+    (b_eval_slot_limit : Certified (∀ {n : Nat}, BStmt_eval_slot_limit spW sp prims ix_eval_slot_limit n)) {n : Nat}
     (bih_SrcEff_eval : Certified (BStmt_SrcEff_eval spW sp prims ix_SrcEff_eval n)) :
     BStmt_eval_let_body spW sp prims ix_eval_let_body (n + 1) := by
   intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w k b h r0 r1 r2 r3 r4 hb pre

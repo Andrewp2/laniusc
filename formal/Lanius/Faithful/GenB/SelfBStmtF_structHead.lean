@@ -23,7 +23,7 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_struct_head (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : Lanius.Mini.MEff} {x2 : Option (List Lanius.Mini.SrcExpr)} {v0 v1 v2 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepBool x0 v0 → RepMEff x1 v1 → (RepOption 293 (RepList 21 RepSrcExpr)) x2 v2 →
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepBool x0 v0 → RepMEff x1 v1 → (RepOption 294 (RepList 21 RepSrcExpr)) x2 v2 →
     qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ RepLetHead (Lanius.Mini.structHead x0 x1 x2) w
 
 end Lanius.Faithful.SelfBudget

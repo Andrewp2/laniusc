@@ -9,8 +9,8 @@ public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmtF_allWeighed
 public import Lanius.Faithful.Gen.SelfStmtF_allocClosed
+public import Lanius.Faithful.Gen.SelfStmtF_eDerefClosed
 public import Lanius.Faithful.Gen.SelfStmtF_eDivideClosed
-public import Lanius.Faithful.Gen.SelfStmtF_eIndexClosed
 public import Lanius.Faithful.Gen.SelfStmtF_eStructClosed
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
 import all Lanius.Faithful.Gen.SelfSrcF_eStructClosed
@@ -33,7 +33,7 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem step_close_eff {prog : SrcProgram} {prims : Prims} {ix_close_eff ix_close_ty ix_inst_index ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff ix_unbox_of_mini_selfhost_MEff ix_e_call_closed ix_close_effs ix_e_apply_closed ix_e_neg_closed ix_e_not_closed ix_e_cast_closed ix_e_index_closed ix_e_struct_closed ix_e_variant_closed ix_e_match_closed ix_e_divide_closed ix_e_array_slice_closed ix_e_if_closed ix_e_let_closed : Nat} (fn : prog.funcs[ix_close_eff]? = some (src_close_eff ix_close_ty ix_inst_index ix_close_eff ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff ix_unbox_of_mini_selfhost_MEff ix_e_call_closed ix_close_effs ix_e_apply_closed ix_e_neg_closed ix_e_not_closed ix_e_cast_closed ix_e_index_closed ix_e_struct_closed ix_e_variant_closed ix_e_match_closed ix_e_divide_closed ix_e_array_slice_closed ix_e_if_closed ix_e_let_closed)) (np : prims.isPrim ix_close_eff = false)
+theorem step_close_eff {prog : SrcProgram} {prims : Prims} {ix_close_eff ix_close_ty ix_inst_index ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff ix_unbox_of_mini_selfhost_MEff ix_e_call_closed ix_close_effs ix_e_apply_closed ix_e_neg_closed ix_e_not_closed ix_e_cast_closed ix_e_index_closed ix_e_struct_closed ix_e_variant_closed ix_e_match_closed ix_e_divide_closed ix_e_array_slice_closed ix_e_if_closed ix_e_let_closed ix_e_deref_closed ix_e_place_field_closed ix_e_place_at_closed : Nat} (fn : prog.funcs[ix_close_eff]? = some (src_close_eff ix_close_ty ix_inst_index ix_close_eff ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff ix_unbox_of_mini_selfhost_MEff ix_e_call_closed ix_close_effs ix_e_apply_closed ix_e_neg_closed ix_e_not_closed ix_e_cast_closed ix_e_index_closed ix_e_struct_closed ix_e_variant_closed ix_e_match_closed ix_e_divide_closed ix_e_array_slice_closed ix_e_if_closed ix_e_let_closed ix_e_deref_closed ix_e_place_field_closed ix_e_place_at_closed)) (np : prims.isPrim ix_close_eff = false)
     (ext_close_ty : Certified (∀ {n : Nat}, Stmt_close_ty prog prims ix_close_ty n))
     (ext_inst_index : Certified (∀ {n : Nat}, Stmt_inst_index prog prims ix_inst_index n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_MEff : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_MEff prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff n))
@@ -50,7 +50,10 @@ theorem step_close_eff {prog : SrcProgram} {prims : Prims} {ix_close_eff ix_clos
     (ext_e_divide_closed : Certified (∀ {n : Nat}, Stmt_e_divide_closed prog prims ix_e_divide_closed n))
     (ext_e_array_slice_closed : Certified (∀ {n : Nat}, Stmt_e_array_slice_closed prog prims ix_e_array_slice_closed n))
     (ext_e_if_closed : Certified (∀ {n : Nat}, Stmt_e_if_closed prog prims ix_e_if_closed n))
-    (ext_e_let_closed : Certified (∀ {n : Nat}, Stmt_e_let_closed prog prims ix_e_let_closed n)) {n : Nat}
+    (ext_e_let_closed : Certified (∀ {n : Nat}, Stmt_e_let_closed prog prims ix_e_let_closed n))
+    (ext_e_deref_closed : Certified (∀ {n : Nat}, Stmt_e_deref_closed prog prims ix_e_deref_closed n))
+    (ext_e_place_field_closed : Certified (∀ {n : Nat}, Stmt_e_place_field_closed prog prims ix_e_place_field_closed n))
+    (ext_e_place_at_closed : Certified (∀ {n : Nat}, Stmt_e_place_at_closed prog prims ix_e_place_at_closed n)) {n : Nat}
     (ih_close_eff : Certified (Stmt_close_eff prog prims ix_close_eff n))
     (ih_close_effs : Certified (Stmt_close_effs prog prims ix_close_effs n)) :
     Stmt_close_eff prog prims ix_close_eff (n + 1) := by

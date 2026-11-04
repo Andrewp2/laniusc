@@ -24,12 +24,12 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_field_eval_stmt (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {x2 : Option Lanius.Mini.MEff} {v0 v1 v2 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepNat x1 v1 → (RepOption 258 RepMEff) x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ (RepOption 253 RepMStmt) (Lanius.Mini.fieldEvalStmt x0 x1 x2) w
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepNat x1 v1 → (RepOption 259 RepMEff) x2 v2 →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ (RepOption 254 RepMStmt) (Lanius.Mini.fieldEvalStmt x0 x1 x2) w
 
 abbrev BStmt_set_index_or_eval (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.Local} {x4 : Lanius.Mini.CTree} {x5 : Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 239 RepLocal) x2 v2 → RepLocal x3 v3 → RepCTree x4 v4 → RepCTree x5 v5 → k < b → Pre_set_index_or_eval n x0 x1 x2 x3 x4 x5 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) ∧ Cost_set_index_or_eval n x0 x1 x2 x3 x4 x5 = k ∧ (RepOption 253 RepMStmt) (Lanius.Mini.setIndexOrEval x0 x1 x2 x3 x4 x5) w
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) ∧ Cost_set_index_or_eval n x0 x1 x2 x3 x4 x5 = k ∧ (RepOption 254 RepMStmt) (Lanius.Mini.setIndexOrEval x0 x1 x2 x3 x4 x5) w
 
 end Lanius.Faithful.SelfBudget

@@ -7,6 +7,7 @@ import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.flattenTys
 import Lanius.Mini.Frontend.P.funcsOnto
 import Lanius.Mini.Frontend.P.lowerTy
+import Lanius.Mini.Frontend.P.projection
 import Lanius.Mini.Frontend.P.weightAdd
 
 public section
@@ -54,6 +55,7 @@ def closeTy (fuel : Nat) (t : Tables) (ty : Ty) : Option SrcType :=
     | .tyIsize => some SrcType.isize
     | .tyChar => some SrcType.char
     | .tyStr => some SrcType.str
+    | .tyRef refd => refType (closeTy (fuel - 1) t refd)
     | .tyFloat ft => some (SrcType.float ft)
     | .tySlice e => sliceType (closeTy (fuel - 1) t e)
     | .tyArray e n => arrayType (closeTy (fuel - 1) t e) n

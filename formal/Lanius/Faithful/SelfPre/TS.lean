@@ -417,7 +417,7 @@ theorem ts_le_SrcProgram_funcs (s : Lanius.Mini.SrcProgram) : ts s.funcs ≤ ts 
   omega
 
 instance : TS Lanius.Mini.Binding := ⟨fun s => ts s.ty⟩
-@[simp, ts_simp] theorem ts_Binding_mk (a0 : Nat) (a1 : Nat) (a2 : Lanius.Mini.SrcType) : ts (Lanius.Mini.Binding.mk a0 a1 a2) = ts a2 := rfl
+@[simp, ts_simp] theorem ts_Binding_mk (a0 : Nat) (a1 : Nat) (a2 : Lanius.Mini.SrcType) (a3 : Option Nat) : ts (Lanius.Mini.Binding.mk a0 a1 a2 a3) = ts a2 := rfl
 theorem ts_le_Binding_ty (s : Lanius.Mini.Binding) : ts s.ty ≤ ts s := by
   show _ ≤ ts s.ty
   omega
@@ -630,6 +630,9 @@ def tsMEff : Lanius.Mini.MEff → Nat
   | .xLet a0 a1 a2 a3 a4 => max (tsMEff a2) (tsMEff a4)
   | .xLen a0 => 0
   | .xStr a0 => 0
+  | .xDeref a0 a1 => tsMEff a1
+  | .xPlaceField a0 a1 => tsMEff a0
+  | .xPlaceAt a0 a1 => max (tsMEff a0) (tsMEff a1)
 def tsMEff0 : List Lanius.Mini.MEff → Nat
   | [] => 0
   | a :: l => max (tsMEff a) (tsMEff0 l)
@@ -658,6 +661,9 @@ theorem tsMEff0_eq : ∀ l : List Lanius.Mini.MEff, tsMEff0 l = TS.ts l
 @[simp, ts_simp] theorem ts_MEff_xLet (a0 : Nat) (a1 : Lanius.Mini.Ty) (a2 : Lanius.Mini.MEff) (a3 : Lanius.Mini.Ty) (a4 : Lanius.Mini.MEff) : ts (Lanius.Mini.MEff.xLet a0 a1 a2 a3 a4) = max (ts a2) (ts a4) := rfl
 @[simp, ts_simp] theorem ts_MEff_xLen (a0 : Nat) : ts (Lanius.Mini.MEff.xLen a0) = 0 := rfl
 @[simp, ts_simp] theorem ts_MEff_xStr (a0 : List Nat) : ts (Lanius.Mini.MEff.xStr a0) = 0 := rfl
+@[simp, ts_simp] theorem ts_MEff_xDeref (a0 : Lanius.Mini.Ty) (a1 : Lanius.Mini.MEff) : ts (Lanius.Mini.MEff.xDeref a0 a1) = ts a1 := rfl
+@[simp, ts_simp] theorem ts_MEff_xPlaceField (a0 : Lanius.Mini.MEff) (a1 : Nat) : ts (Lanius.Mini.MEff.xPlaceField a0 a1) = ts a0 := rfl
+@[simp, ts_simp] theorem ts_MEff_xPlaceAt (a0 : Lanius.Mini.MEff) (a1 : Lanius.Mini.MEff) : ts (Lanius.Mini.MEff.xPlaceAt a0 a1) = max (ts a0) (ts a1) := rfl
 
 instance : TS Lanius.Mini.EffArm := ⟨fun s => ts s.value⟩
 @[simp, ts_simp] theorem ts_EffArm_mk (a0 : List Nat) (a1 : Lanius.Mini.MEff) (a2 : Option Lanius.Mini.Ty) : ts (Lanius.Mini.EffArm.mk a0 a1 a2) = ts a1 := rfl
@@ -701,6 +707,8 @@ def tsMStmt : Lanius.Mini.MStmt → Nat
   | .mContinue => 0
   | .mMatchArm a0 a1 a2 a3 a4 a5 a6 a7 => max (tsMStmt a6) (tsMStmt a7)
   | .mUnreachable a0 a1 => 0
+  | .mSetPlace a0 a1 => max (ts a0) (ts a1)
+  | .mSetPlaceOp a0 a1 a2 => max (ts a1) (ts a2)
 end
 instance : TS Lanius.Mini.MStmt := ⟨tsMStmt⟩
 @[simp, ts_simp] theorem ts_MStmt_mNop  : ts (Lanius.Mini.MStmt.mNop) = 0 := rfl
@@ -737,6 +745,8 @@ instance : TS Lanius.Mini.MStmt := ⟨tsMStmt⟩
 @[simp, ts_simp] theorem ts_MStmt_mContinue  : ts (Lanius.Mini.MStmt.mContinue) = 0 := rfl
 @[simp, ts_simp] theorem ts_MStmt_mMatchArm (a0 : Nat) (a1 : Lanius.Mini.Ty) (a2 : Nat) (a3 : Bool) (a4 : Nat) (a5 : Lanius.Mini.Ty) (a6 : Lanius.Mini.MStmt) (a7 : Lanius.Mini.MStmt) : ts (Lanius.Mini.MStmt.mMatchArm a0 a1 a2 a3 a4 a5 a6 a7) = max (ts a6) (ts a7) := rfl
 @[simp, ts_simp] theorem ts_MStmt_mUnreachable (a0 : Nat) (a1 : Lanius.Mini.Ty) : ts (Lanius.Mini.MStmt.mUnreachable a0 a1) = 0 := rfl
+@[simp, ts_simp] theorem ts_MStmt_mSetPlace (a0 : Lanius.Mini.MEff) (a1 : Lanius.Mini.MEff) : ts (Lanius.Mini.MStmt.mSetPlace a0 a1) = max (ts a0) (ts a1) := rfl
+@[simp, ts_simp] theorem ts_MStmt_mSetPlaceOp (a0 : Lanius.Mini.SrcAssignOp) (a1 : Lanius.Mini.MEff) (a2 : Lanius.Mini.MEff) : ts (Lanius.Mini.MStmt.mSetPlaceOp a0 a1 a2) = max (ts a1) (ts a2) := rfl
 
 instance : TS Lanius.Mini.Called := ⟨fun s => ts s.args⟩
 @[simp, ts_simp] theorem ts_Called_mk (a0 : Lanius.Mini.Inst) (a1 : List Lanius.Mini.SrcExpr) : ts (Lanius.Mini.Called.mk a0 a1) = ts a1 := rfl

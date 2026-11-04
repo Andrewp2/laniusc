@@ -24,22 +24,22 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_fl_ratio_ok (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {x2 : List Bool} {x3 : List Bool} {v0 v1 v2 v3 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepNat x1 v1 → (RepList 262 RepBool) x2 v2 → (RepList 262 RepBool) x3 v3 →
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepNat x1 v1 → (RepList 263 RepBool) x2 v2 → (RepList 263 RepBool) x3 v3 →
     qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_fl_ratio_ok n x0 x1 x2 x3 = k ∧ RepBool (Lanius.Mini.flRatioOk x0 x1 x2 x3) w
 
 abbrev BStmt_fl_round_up (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : List Bool} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepBool x0 v0 → (RepList 262 RepBool) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_fl_round_up n x0 x1 = k ∧ (RepList 262 RepBool) (Lanius.Mini.flRoundUp x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepBool x0 v0 → (RepList 263 RepBool) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_fl_round_up n x0 x1 = k ∧ (RepList 263 RepBool) (Lanius.Mini.flRoundUp x0 x1) w
 
 abbrev BStmt_fl_round (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {x2 : List Bool} {x3 : List Bool} {v0 v1 v2 v3 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepNat x1 v1 → (RepList 262 RepBool) x2 v2 → (RepList 262 RepBool) x3 v3 → k < b → Pre_fl_round n x0 x1 x2 x3 b →
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepNat x1 v1 → (RepList 263 RepBool) x2 v2 → (RepList 263 RepBool) x3 v3 → k < b → Pre_fl_round n x0 x1 x2 x3 b →
     qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_fl_round n x0 x1 x2 x3 = k ∧ RepNat (Lanius.Mini.flRound x0 x1 x2 x3) w
 
 abbrev BStmt_fl_decimal_at (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {x2 : List Bool} {x3 : Bool} {x4 : Nat} {x5 : Nat} {v0 v1 v2 v3 v4 v5 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) → RepNat x0 v0 → RepNat x1 v1 → (RepList 262 RepBool) x2 v2 → RepBool x3 v3 → RepNat x4 v4 → RepNat x5 v5 → k < b → Pre_fl_decimal_at n x0 x1 x2 x3 x4 x5 b →
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) → RepNat x0 v0 → RepNat x1 v1 → (RepList 263 RepBool) x2 v2 → RepBool x3 v3 → RepNat x4 v4 → RepNat x5 v5 → k < b → Pre_fl_decimal_at n x0 x1 x2 x3 x4 x5 b →
     qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) ∧ Cost_fl_decimal_at n x0 x1 x2 x3 x4 x5 = k ∧ RepNat (Lanius.Mini.flDecimalAt x0 x1 x2 x3 x4 x5) w
 
 end Lanius.Faithful.SelfBudget

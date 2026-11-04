@@ -4,18 +4,11 @@ public import Lanius.Faithful.BudgetTactic
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_projection
 public import Lanius.Faithful.Gen.SelfStmtF_projection
-public import Lanius.Faithful.GenB.SelfBStmtF_callParts
-public import Lanius.Faithful.GenB.SelfBStmtF_freshId
-public import Lanius.Faithful.GenB.SelfBStmtF_paramGoals
 public import Lanius.Faithful.GenB.SelfBStmtF_projection
-public import Lanius.Faithful.GenB.SelfBStmtN0
 public import Lanius.Faithful.GenB.SelfBStmtN1
-public import Lanius.Faithful.GenB.SelfBStmtN2
 public import Lanius.Faithful.GenB.SelfBStmtN4
 import all Lanius.Faithful.Gen.SelfSrcF_projection
 import all Lanius.Faithful.Gen.SelfStmtF_projection
-import all Lanius.Mini.Frontend.P.callParts
-import all Lanius.Mini.Frontend.P.freshId
 
 @[expose] public section
 
@@ -35,25 +28,6 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 open Lanius.Faithful.SelfCert
 open Lanius.Faithful.Budget
-
-theorem bproof_method_of_ty {spW sp : SrcProgram} {prims : Prims} {ix_method_of_ty ix_field_fns_Decls_of_mini_selfhost_Decls ix_find_method : Nat}
-    (fnW : spW.funcs[ix_method_of_ty]? = some (src_method_of_ty ix_field_fns_Decls_of_mini_selfhost_Decls ix_find_method)) (fn : sp.funcs[ix_method_of_ty]? = some (src_method_of_ty ix_field_fns_Decls_of_mini_selfhost_Decls ix_find_method))
-    (np : prims.isPrim ix_method_of_ty = false)
-    (back : Certified (∀ {n : Nat}, Stmt_method_of_ty sp prims ix_method_of_ty n))
-    (b_field_fns_Decls_of_mini_selfhost_Decls : Certified (∀ {n : Nat}, BStmt_field_fns_Decls_of_mini_selfhost_Decls spW sp prims ix_field_fns_Decls_of_mini_selfhost_Decls n))
-    (b_find_method : Certified (∀ {n : Nat}, BStmt_find_method spW sp prims ix_find_method n)) {n : Nat} :
-    BStmt_method_of_ty spW sp prims ix_method_of_ty n := by
-  intro x0 x1 x2 x3 v0 v1 v2 v3 w k b h r0 r1 r2 r3 hb pre
-  rcases n with _ | n
-  · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_method_of_ty [v0, v1, v2, v3] = some (w, k) ∧ Cost_method_of_ty (n + 1) x0 x1 x2 x3 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_method_of_ty, List.length_cons, List.length_nil, if_true] at h ⊢
-    rw [Pre_method_of_ty.eq_def] at pre
-    simp only at pre
-    budget Cost_method_of_ty
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3⟩
 
 theorem bproof_projection {spW sp : SrcProgram} {prims : Prims} {ix_projection ix_plus ix_single_of_mini_selfhost_Ty ix_length_of_mini_selfhost_FnDecl : Nat}
     (fnW : spW.funcs[ix_projection]? = some (src_projection ix_plus ix_single_of_mini_selfhost_Ty ix_length_of_mini_selfhost_FnDecl)) (fn : sp.funcs[ix_projection]? = some (src_projection ix_plus ix_single_of_mini_selfhost_Ty ix_length_of_mini_selfhost_FnDecl))
@@ -75,44 +49,20 @@ theorem bproof_projection {spW sp : SrcProgram} {prims : Prims} {ix_projection i
     budget Cost_projection
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
 
-theorem bproof_field_value {spW sp : SrcProgram} {prims : Prims} {ix_field_value ix_boxed_of_mini_selfhost_List_mini_selfhost_MEff ix_single_of_mini_selfhost_MEff ix_eff_local ix_projection : Nat}
-    (fnW : spW.funcs[ix_field_value]? = some (src_field_value ix_boxed_of_mini_selfhost_List_mini_selfhost_MEff ix_single_of_mini_selfhost_MEff ix_eff_local ix_projection)) (fn : sp.funcs[ix_field_value]? = some (src_field_value ix_boxed_of_mini_selfhost_List_mini_selfhost_MEff ix_single_of_mini_selfhost_MEff ix_eff_local ix_projection))
-    (np : prims.isPrim ix_field_value = false)
-    (back : Certified (∀ {n : Nat}, Stmt_field_value sp prims ix_field_value n))
-    (pp_boxed_of_mini_selfhost_List_mini_selfhost_MEff : prims.isPrim ix_boxed_of_mini_selfhost_List_mini_selfhost_MEff = true) (bx_boxed_of_mini_selfhost_List_mini_selfhost_MEff : prims.boxed.contains ix_boxed_of_mini_selfhost_List_mini_selfhost_MEff = true)
-    (b_single_of_mini_selfhost_MEff : Certified (∀ {n : Nat}, BStmt_single_of_mini_selfhost_MEff spW sp prims ix_single_of_mini_selfhost_MEff n))
-    (b_eff_local : Certified (∀ {n : Nat}, BStmt_eff_local spW sp prims ix_eff_local n))
-    (b_projection : Certified (∀ {n : Nat}, BStmt_projection spW sp prims ix_projection n)) {n : Nat} :
-    BStmt_field_value spW sp prims ix_field_value n := by
-  intro x0 x1 x2 x3 v0 v1 v2 v3 w k b h r0 r1 r2 r3 hb pre
+theorem bproof_x_at_of {spW sp : SrcProgram} {prims : Prims} {ix_x_at_of ix_boxed_of_mini_selfhost_MEff : Nat}
+    (fnW : spW.funcs[ix_x_at_of]? = some (src_x_at_of ix_boxed_of_mini_selfhost_MEff)) (fn : sp.funcs[ix_x_at_of]? = some (src_x_at_of ix_boxed_of_mini_selfhost_MEff))
+    (np : prims.isPrim ix_x_at_of = false)
+    (back : Certified (∀ {n : Nat}, Stmt_x_at_of sp prims ix_x_at_of n))
+    (pp_boxed_of_mini_selfhost_MEff : prims.isPrim ix_boxed_of_mini_selfhost_MEff = true) (bx_boxed_of_mini_selfhost_MEff : prims.boxed.contains ix_boxed_of_mini_selfhost_MEff = true) {n : Nat} :
+    BStmt_x_at_of spW sp prims ix_x_at_of n := by
+  intro x0 x1 v0 v1 w k h r0 r1
   rcases n with _ | n
   · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_field_value [v0, v1, v2, v3] = some (w, k) ∧ Cost_field_value (n + 1) x0 x1 x2 x3 = k := by
+  have key : qcall sp prims uc (n + 1) ix_x_at_of [v0, v1] = some (w, k) ∧ Cost_x_at_of (n + 1) x0 x1 = k := by
     rw [qcall_succ np fnW] at h
     rw [qcall_succ np fn]
-    simp only [src_field_value, List.length_cons, List.length_nil, if_true] at h ⊢
-    rw [Pre_field_value.eq_def] at pre
-    simp only at pre
-    budget Cost_field_value
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3⟩
-
-theorem bproof_field_of_ty {spW sp : SrcProgram} {prims : Prims} {ix_field_of_ty ix_field_index ix_field_value : Nat}
-    (fnW : spW.funcs[ix_field_of_ty]? = some (src_field_of_ty ix_field_index ix_field_value)) (fn : sp.funcs[ix_field_of_ty]? = some (src_field_of_ty ix_field_index ix_field_value))
-    (np : prims.isPrim ix_field_of_ty = false)
-    (back : Certified (∀ {n : Nat}, Stmt_field_of_ty sp prims ix_field_of_ty n))
-    (b_field_index : Certified (∀ {n : Nat}, BStmt_field_index spW sp prims ix_field_index n))
-    (b_field_value : Certified (∀ {n : Nat}, BStmt_field_value spW sp prims ix_field_value n)) {n : Nat} :
-    BStmt_field_of_ty spW sp prims ix_field_of_ty n := by
-  intro x0 x1 x2 x3 v0 v1 v2 v3 w k b h r0 r1 r2 r3 hb pre
-  rcases n with _ | n
-  · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_field_of_ty [v0, v1, v2, v3] = some (w, k) ∧ Cost_field_of_ty (n + 1) x0 x1 x2 x3 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_field_of_ty, List.length_cons, List.length_nil, if_true] at h ⊢
-    rw [Pre_field_of_ty.eq_def] at pre
-    simp only at pre
-    budget Cost_field_of_ty
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3⟩
+    simp only [src_x_at_of, List.length_cons, List.length_nil, if_true] at h ⊢
+    budget Cost_x_at_of
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
 
 end Lanius.Faithful.SelfBudget

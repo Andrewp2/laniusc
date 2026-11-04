@@ -24,7 +24,7 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_cons_bound (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.MEff} {x1 : Option Lanius.Mini.ArgsBound} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepMEff x0 v0 → (RepOption 315 RepArgsBound) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_bound n x0 x1 = k ∧ (RepOption 315 RepArgsBound) (Lanius.Mini.consBound x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepMEff x0 v0 → (RepOption 316 RepArgsBound) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_bound n x0 x1 = k ∧ (RepOption 316 RepArgsBound) (Lanius.Mini.consBound x0 x1) w
 
 end Lanius.Faithful.SelfBudget

@@ -134,12 +134,12 @@ abbrev BStmt_empty_of_mini_selfhost_BoundGoal (spW sp : SrcProgram) (prims : Pri
 abbrev BStmt_empty_of_bool (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value} {k : Nat},
     qcall spW prims uc n ix [] = some (w, k) →
-    qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ (RepList 262 RepBool) (([] : List Bool)) w
+    qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ (RepList 263 RepBool) (([] : List Bool)) w
 
 abbrev BStmt_empty_of_mini_selfhost_VariantAt (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value} {k : Nat},
     qcall spW prims uc n ix [] = some (w, k) →
-    qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ (RepList 300 RepVariantAt) (([] : List Lanius.Mini.VariantAt)) w
+    qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ (RepList 301 RepVariantAt) (([] : List Lanius.Mini.VariantAt)) w
 
 abbrev BStmt_field_homes_Decls_of_mini_selfhost_Decls (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Decls} {v0 w : Value} {k : Nat},

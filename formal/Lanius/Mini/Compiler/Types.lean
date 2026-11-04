@@ -492,10 +492,12 @@ structure SrcProgram where
   statics : List UInt8
   deriving Repr
 
+/-- home: the byte offset of the binding's home in its function's frame block, for a local that lives in frame memory (F5 S6b, a borrowed local); None for a local in slots, which every binding is until S6b. -/
 structure Binding where
   id : Nat
   slot : Nat
   ty : SrcType
+  home : Option Nat
   deriving Repr
 
 /-- A lowered expression and its source type. -/

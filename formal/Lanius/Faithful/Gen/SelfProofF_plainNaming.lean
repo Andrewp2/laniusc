@@ -264,9 +264,9 @@ theorem proof_nest_use {prog : SrcProgram} {prims : Prims} {ix_nest_use ix_row_p
   simp only [src_nest_use] at h
   faithful [Lanius.Mini.nestUse]
 
-theorem proof_plain_naming {prog : SrcProgram} {prims : Prims} {ix_plain_naming ix_arm_nested ix_and_known ix_not_known ix_arm_naming : Nat} (fn : prog.funcs[ix_plain_naming]? = some (src_plain_naming ix_arm_nested ix_and_known ix_not_known ix_arm_naming)) (np : prims.isPrim ix_plain_naming = false)
-    (ext_arm_nested : Certified (∀ {n : Nat}, Stmt_arm_nested prog prims ix_arm_nested n))
+theorem proof_plain_naming {prog : SrcProgram} {prims : Prims} {ix_plain_naming ix_and_known ix_arm_nested ix_not_known ix_arm_naming : Nat} (fn : prog.funcs[ix_plain_naming]? = some (src_plain_naming ix_and_known ix_arm_nested ix_not_known ix_arm_naming)) (np : prims.isPrim ix_plain_naming = false)
     (ext_and_known : Certified (∀ {n : Nat}, Stmt_and_known prog prims ix_and_known n))
+    (ext_arm_nested : Certified (∀ {n : Nat}, Stmt_arm_nested prog prims ix_arm_nested n))
     (ext_not_known : Certified (∀ {n : Nat}, Stmt_not_known prog prims ix_not_known n))
     (ext_arm_naming : Certified (∀ {n : Nat}, Stmt_arm_naming prog prims ix_arm_naming n)) {n : Nat} :
     Stmt_plain_naming prog prims ix_plain_naming n := by

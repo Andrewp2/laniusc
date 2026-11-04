@@ -49,7 +49,7 @@ noncomputable section
 mutual
 def Cost_ty_insts : Nat → Nat → Lanius.Mini.Decls → Lanius.Mini.Ty → Nat
   | 0, x9, x22, x36 => 18446744073709551616
-  | n + 1, x9, x22, x36 => (if (decide (x9 = 0)) = true then 0 else (match x36 with | .tyI32 => 0 | .tyBool => 0 | .tyUint x232 => 0 | .tyPtr => 0 | .tyIsize => 0 | .tyChar => 0 | .tyFloat x400 => 0 | .tySlice x438 => (Cost_ty_insts n (x9 - 1) x22 x438) | .tyNamed x571 x574 => ((Cost_named_insts n (x9 - 1) x22 x571 x574) + (Cost_cons_inst n (Lanius.Mini.Inst.mk x571 x574) (Lanius.Mini.namedInsts ((x9 - 1)) x22 x571 x574))) | .tySint x698 => 0 | .tyArray x503 x506 => (Cost_ty_insts n (x9 - 1) x22 x503) | .tyStr => 0))
+  | n + 1, x9, x22, x36 => (if (decide (x9 = 0)) = true then 0 else (match x36 with | .tyI32 => 0 | .tyBool => 0 | .tyUint x232 => 0 | .tyPtr => 0 | .tyIsize => 0 | .tyChar => 0 | .tyFloat x469 => 0 | .tySlice x507 => (Cost_ty_insts n (x9 - 1) x22 x507) | .tyNamed x640 x643 => ((Cost_named_insts n (x9 - 1) x22 x640 x643) + (Cost_cons_inst n (Lanius.Mini.Inst.mk x640 x643) (Lanius.Mini.namedInsts ((x9 - 1)) x22 x640 x643))) | .tySint x767 => 0 | .tyArray x572 x575 => (Cost_ty_insts n (x9 - 1) x22 x572) | .tyStr => 0 | .tyRef x398 => (Cost_ty_insts n (x9 - 1) x22 x398)))
 termination_by structural fuel => fuel
 
 def Cost_named_insts : Nat → Nat → Lanius.Mini.Decls → Nat → List Lanius.Mini.Ty → Nat
@@ -74,7 +74,7 @@ noncomputable section
 mutual
 def Pre_ty_insts : Nat → Nat → Lanius.Mini.Decls → Lanius.Mini.Ty → Nat → Prop
   | 0, x9, x22, x36, b => True
-  | n + 1, x9, x22, x36, b => (if (decide (x9 = 0)) = true then True else (match x36 with | .tyI32 => True | .tyBool => True | .tyUint x232 => True | .tyPtr => True | .tyIsize => True | .tyChar => True | .tyFloat x400 => True | .tySlice x438 => (Pre_ty_insts n (x9 - 1) x22 x438 b) | .tyNamed x571 x574 => (Pre_named_insts n (x9 - 1) x22 x571 x574 b) | .tySint x698 => True | .tyArray x503 x506 => (Pre_ty_insts n (x9 - 1) x22 x503 b) | .tyStr => True))
+  | n + 1, x9, x22, x36, b => (if (decide (x9 = 0)) = true then True else (match x36 with | .tyI32 => True | .tyBool => True | .tyUint x232 => True | .tyPtr => True | .tyIsize => True | .tyChar => True | .tyFloat x469 => True | .tySlice x507 => (Pre_ty_insts n (x9 - 1) x22 x507 b) | .tyNamed x640 x643 => (Pre_named_insts n (x9 - 1) x22 x640 x643 b) | .tySint x767 => True | .tyArray x572 x575 => (Pre_ty_insts n (x9 - 1) x22 x572 b) | .tyStr => True | .tyRef x398 => (Pre_ty_insts n (x9 - 1) x22 x398 b)))
 termination_by structural fuel => fuel
 
 def Pre_named_insts : Nat → Nat → Lanius.Mini.Decls → Nat → List Lanius.Mini.Ty → Nat → Prop

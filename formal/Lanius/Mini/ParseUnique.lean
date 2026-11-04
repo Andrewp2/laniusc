@@ -21,6 +21,13 @@ import all Lanius.Mini.Frontend.P.noToken
 import all Lanius.Mini.Frontend.P.shrFirst
 import all Lanius.Mini.Frontend.P.wideLeftStmt
 import all Lanius.Mini.Frontend.Types
+import all Lanius.Mini.Frontend.P.setPlaceOf
+import all Lanius.Mini.Frontend.P.setFieldOrEval
+import all Lanius.Mini.Frontend.P.namesFieldBase
+import all Lanius.Mini.Frontend.P.isFnPath
+import all Lanius.Mini.Frontend.P.fieldValue
+import all Lanius.Mini.Frontend.P.eDerefClosed
+import all Lanius.Mini.Frontend.P.checkedFunc
 public import Lanius.Mini.Frontend.P.grammarPart13
 public import Lanius.Mini.Frontend.P.isEmptyUsize
 public import Lanius.Mini.Frontend.P.shrFirst

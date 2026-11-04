@@ -585,7 +585,7 @@ theorem sz_le_SrcProgram_statics (s : Lanius.Mini.SrcProgram) : sz s.statics ≤
   omega
 
 instance : SZ Lanius.Mini.Binding := ⟨fun s => sz s.ty⟩
-@[simp, sz_simp] theorem sz_Binding_mk (a0 : Nat) (a1 : Nat) (a2 : Lanius.Mini.SrcType) : sz (Lanius.Mini.Binding.mk a0 a1 a2) = sz a2 := rfl
+@[simp, sz_simp] theorem sz_Binding_mk (a0 : Nat) (a1 : Nat) (a2 : Lanius.Mini.SrcType) (a3 : Option Nat) : sz (Lanius.Mini.Binding.mk a0 a1 a2 a3) = sz a2 := rfl
 theorem sz_le_Binding_ty (s : Lanius.Mini.Binding) : sz s.ty ≤ sz s := by
   show _ ≤ sz s.ty
   omega
@@ -769,6 +769,7 @@ def szTy : Lanius.Mini.Ty → Nat
   | .tySint a0 => 1
   | .tyArray a0 a1 => (szTy a0) + 1
   | .tyStr => 1
+  | .tyRef a0 => (szTy a0) + 1
 def szTy0 : List Lanius.Mini.Ty → Nat
   | [] => 0
   | a :: l => szTy a + szTy0 l + 1
@@ -791,6 +792,7 @@ theorem szTy0_eq : ∀ l : List Lanius.Mini.Ty, szTy0 l = SZ.sz l
 @[simp, sz_simp] theorem sz_Ty_tySint (a0 : Lanius.Mini.UintTy) : sz (Lanius.Mini.Ty.tySint a0) = 1 := rfl
 @[simp, sz_simp] theorem sz_Ty_tyArray (a0 : Lanius.Mini.Ty) (a1 : Nat) : sz (Lanius.Mini.Ty.tyArray a0 a1) = sz a0 + 1 := rfl
 @[simp, sz_simp] theorem sz_Ty_tyStr  : sz (Lanius.Mini.Ty.tyStr) = 1 := rfl
+@[simp, sz_simp] theorem sz_Ty_tyRef (a0 : Lanius.Mini.Ty) : sz (Lanius.Mini.Ty.tyRef a0) = sz a0 + 1 := rfl
 
 instance : SZ Lanius.Mini.Inst := ⟨fun s => sz s.args⟩
 @[simp, sz_simp] theorem sz_Inst_mk (a0 : Nat) (a1 : List Lanius.Mini.Ty) : sz (Lanius.Mini.Inst.mk a0 a1) = sz a1 := rfl
@@ -1080,6 +1082,9 @@ def szMEff : Lanius.Mini.MEff → Nat
   | .xLet a0 a1 a2 a3 a4 => sz a1 + (szMEff a2) + sz a3 + (szMEff a4) + 1
   | .xLen a0 => 1
   | .xStr a0 => sz a0 + 1
+  | .xDeref a0 a1 => sz a0 + (szMEff a1) + 1
+  | .xPlaceField a0 a1 => (szMEff a0) + 1
+  | .xPlaceAt a0 a1 => (szMEff a0) + (szMEff a1) + 1
 def szMEff0 : List Lanius.Mini.MEff → Nat
   | [] => 0
   | a :: l => szMEff a + szMEff0 l + 1
@@ -1108,6 +1113,9 @@ theorem szMEff0_eq : ∀ l : List Lanius.Mini.MEff, szMEff0 l = SZ.sz l
 @[simp, sz_simp] theorem sz_MEff_xLet (a0 : Nat) (a1 : Lanius.Mini.Ty) (a2 : Lanius.Mini.MEff) (a3 : Lanius.Mini.Ty) (a4 : Lanius.Mini.MEff) : sz (Lanius.Mini.MEff.xLet a0 a1 a2 a3 a4) = sz a1 + sz a2 + sz a3 + sz a4 + 1 := rfl
 @[simp, sz_simp] theorem sz_MEff_xLen (a0 : Nat) : sz (Lanius.Mini.MEff.xLen a0) = 1 := rfl
 @[simp, sz_simp] theorem sz_MEff_xStr (a0 : List Nat) : sz (Lanius.Mini.MEff.xStr a0) = sz a0 + 1 := rfl
+@[simp, sz_simp] theorem sz_MEff_xDeref (a0 : Lanius.Mini.Ty) (a1 : Lanius.Mini.MEff) : sz (Lanius.Mini.MEff.xDeref a0 a1) = sz a0 + sz a1 + 1 := rfl
+@[simp, sz_simp] theorem sz_MEff_xPlaceField (a0 : Lanius.Mini.MEff) (a1 : Nat) : sz (Lanius.Mini.MEff.xPlaceField a0 a1) = sz a0 + 1 := rfl
+@[simp, sz_simp] theorem sz_MEff_xPlaceAt (a0 : Lanius.Mini.MEff) (a1 : Lanius.Mini.MEff) : sz (Lanius.Mini.MEff.xPlaceAt a0 a1) = sz a0 + sz a1 + 1 := rfl
 
 instance : SZ Lanius.Mini.EffArm := ⟨fun s => sz s.binders + sz s.value + sz s.ty⟩
 @[simp, sz_simp] theorem sz_EffArm_mk (a0 : List Nat) (a1 : Lanius.Mini.MEff) (a2 : Option Lanius.Mini.Ty) : sz (Lanius.Mini.EffArm.mk a0 a1 a2) = sz a0 + sz a1 + sz a2 := rfl
@@ -1157,6 +1165,8 @@ def szMStmt : Lanius.Mini.MStmt → Nat
   | .mContinue => 1
   | .mMatchArm a0 a1 a2 a3 a4 a5 a6 a7 => sz a1 + sz a5 + (szMStmt a6) + (szMStmt a7) + 1
   | .mUnreachable a0 a1 => sz a1 + 1
+  | .mSetPlace a0 a1 => sz a0 + sz a1 + 1
+  | .mSetPlaceOp a0 a1 a2 => sz a1 + sz a2 + 1
 end
 instance : SZ Lanius.Mini.MStmt := ⟨szMStmt⟩
 @[simp, sz_simp] theorem sz_MStmt_mNop  : sz (Lanius.Mini.MStmt.mNop) = 1 := rfl
@@ -1193,6 +1203,8 @@ instance : SZ Lanius.Mini.MStmt := ⟨szMStmt⟩
 @[simp, sz_simp] theorem sz_MStmt_mContinue  : sz (Lanius.Mini.MStmt.mContinue) = 1 := rfl
 @[simp, sz_simp] theorem sz_MStmt_mMatchArm (a0 : Nat) (a1 : Lanius.Mini.Ty) (a2 : Nat) (a3 : Bool) (a4 : Nat) (a5 : Lanius.Mini.Ty) (a6 : Lanius.Mini.MStmt) (a7 : Lanius.Mini.MStmt) : sz (Lanius.Mini.MStmt.mMatchArm a0 a1 a2 a3 a4 a5 a6 a7) = sz a1 + sz a5 + sz a6 + sz a7 + 1 := rfl
 @[simp, sz_simp] theorem sz_MStmt_mUnreachable (a0 : Nat) (a1 : Lanius.Mini.Ty) : sz (Lanius.Mini.MStmt.mUnreachable a0 a1) = sz a1 + 1 := rfl
+@[simp, sz_simp] theorem sz_MStmt_mSetPlace (a0 : Lanius.Mini.MEff) (a1 : Lanius.Mini.MEff) : sz (Lanius.Mini.MStmt.mSetPlace a0 a1) = sz a0 + sz a1 + 1 := rfl
+@[simp, sz_simp] theorem sz_MStmt_mSetPlaceOp (a0 : Lanius.Mini.SrcAssignOp) (a1 : Lanius.Mini.MEff) (a2 : Lanius.Mini.MEff) : sz (Lanius.Mini.MStmt.mSetPlaceOp a0 a1 a2) = sz a1 + sz a2 + 1 := rfl
 
 instance : SZ Lanius.Mini.Called := ⟨fun s => sz s.inst + sz s.args⟩
 @[simp, sz_simp] theorem sz_Called_mk (a0 : Lanius.Mini.Inst) (a1 : List Lanius.Mini.SrcExpr) : sz (Lanius.Mini.Called.mk a0 a1) = sz a0 + sz a1 := rfl

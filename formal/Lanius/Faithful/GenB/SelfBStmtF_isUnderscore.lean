@@ -35,17 +35,17 @@ abbrev BStmt_is_wild_arm (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
 abbrev BStmt_wild_alone (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CTree} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepCTree x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_wild_alone n x0 = k ∧ (RepOption 318 RepWildSplit) (Lanius.Mini.wildAlone x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_wild_alone n x0 = k ∧ (RepOption 319 RepWildSplit) (Lanius.Mini.wildAlone x0) w
 
 abbrev BStmt_cons_wild (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CTree} {x1 : Option Lanius.Mini.WildSplit} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepCTree x0 v0 → (RepOption 318 RepWildSplit) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_wild n x0 x1 = k ∧ (RepOption 318 RepWildSplit) (Lanius.Mini.consWild x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepCTree x0 v0 → (RepOption 319 RepWildSplit) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_wild n x0 x1 = k ∧ (RepOption 319 RepWildSplit) (Lanius.Mini.consWild x0 x1) w
 
 abbrev BStmt_wild_split (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.CTree} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → (RepList 83 RepCTree) x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_wild_split n x0 = k ∧ (RepOption 318 RepWildSplit) (Lanius.Mini.wildSplit x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_wild_split n x0 = k ∧ (RepOption 319 RepWildSplit) (Lanius.Mini.wildSplit x0) w
 
 abbrev BStmt_wild_binder (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CTree} {x1 : Nat} {v0 v1 w : Value} {k b : Nat},

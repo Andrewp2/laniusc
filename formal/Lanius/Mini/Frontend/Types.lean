@@ -76,6 +76,8 @@ inductive Ty where
   | tyArray : Ty → Nat → Ty
   /-- str: a string's static address and byte count -/
   | tyStr : Ty
+  /-- F5 (S5): a reference to a referent of this type: only a parameter's type (`&T` or `&mut T`, param_ty_of) -/
+  | tyRef : Ty → Ty
   deriving Repr
 
 /-- A declaration at type arguments: a type instance (the declaration is a type's index) or a function instance (a function's index). -/
@@ -276,6 +278,12 @@ inductive MEff where
   | xLen : Nat → MEff
   /-- a string literal's bytes: only as a call's argument (arg_eff) -/
   | xStr : (List Nat) → MEff
+  /-- F5 (S5): the referent of the reference r, of this type (the referent's) -/
+  | xDeref : Ty → MEff → MEff
+  /-- field j of a place (an XDeref, XPlaceField or XPlaceAt) -/
+  | xPlaceField : MEff → Nat → MEff
+  /-- element i of a place of an array type -/
+  | xPlaceAt : MEff → MEff → MEff
   deriving Repr
 
 /-- An arm of a match expression: its binders, its value and the value's type. -/
@@ -328,6 +336,9 @@ inductive MStmt where
   | mMatchArm : Nat → Ty → Nat → Bool → Nat → Ty → MStmt → MStmt → MStmt
   /-- SrcStmt's Unreachable -/
   | mUnreachable : Nat → Ty → MStmt
+  /-- F5 (S5): place = value and place op= value, the place an XDeref, XPlaceField or XPlaceAt (SrcStmt's SetPlace and SetPlaceOp) -/
+  | mSetPlace : MEff → MEff → MStmt
+  | mSetPlaceOp : SrcAssignOp → MEff → MEff → MStmt
   deriving Repr
 
 /-- A call: the function instance and the arguments. -/

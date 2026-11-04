@@ -1,8 +1,8 @@
 module
 
 public import Lanius.Mini.Frontend.Types
-import Lanius.Mini.Frontend.P.fnInstRet
 import Lanius.Mini.Frontend.P.isEmptyUsize
+import Lanius.Mini.Frontend.P.isFnPath
 import Lanius.Mini.Frontend.P.noToken
 
 public section

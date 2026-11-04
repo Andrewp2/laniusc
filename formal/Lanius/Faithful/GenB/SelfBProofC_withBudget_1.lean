@@ -6,11 +6,13 @@ public import Lanius.Faithful.Gen.SelfSrcC_withBudget
 public import Lanius.Faithful.Gen.SelfStmtC_withBudget
 public import Lanius.Faithful.GenB.SelfBStmtC_Inline_blockLeft
 public import Lanius.Faithful.GenB.SelfBStmtC_Inline_lowerSetScalar
+public import Lanius.Faithful.GenB.SelfBStmtC_bindingBytes
 public import Lanius.Faithful.GenB.SelfBStmtC_compileArgs
 public import Lanius.Faithful.GenB.SelfBStmtC_withBudget
 public import Lanius.Faithful.GenB.SelfBStmtN4
 import all Lanius.Faithful.Gen.SelfSrcC_withBudget
 import all Lanius.Faithful.Gen.SelfStmtC_withBudget
+import all Lanius.Mini.Compiler.P.bindingBytes
 import all Lanius.Mini.Compiler.P.compileArgs
 import all Lanius.Mini.Compiler.P.withBudget
 

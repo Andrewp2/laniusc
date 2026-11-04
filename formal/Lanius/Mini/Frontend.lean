@@ -51,6 +51,7 @@ public import Lanius.Mini.Frontend.P.paramGoals
 public import Lanius.Mini.Frontend.P.purePart
 public import Lanius.Mini.Frontend.P.projectionRet
 public import Lanius.Mini.Frontend.P.fnInstRet
+public import Lanius.Mini.Frontend.P.isFnPath
 public import Lanius.Mini.Frontend.P.isPathCall
 public import Lanius.Mini.Frontend.P.isTryEnum
 public import Lanius.Mini.Frontend.P.viewHead
@@ -70,6 +71,7 @@ public import Lanius.Mini.Frontend.P.hasConst
 public import Lanius.Mini.Frontend.P.callParts
 public import Lanius.Mini.Frontend.P.argView
 public import Lanius.Mini.Frontend.P.projection
+public import Lanius.Mini.Frontend.P.fieldValue
 public import Lanius.Mini.Frontend.P.consBound
 public import Lanius.Mini.Frontend.P.retBinds
 public import Lanius.Mini.Frontend.P.matchTysOrNone
@@ -99,7 +101,8 @@ public import Lanius.Mini.Frontend.P.stringReturn
 public import Lanius.Mini.Frontend.P.stringLast
 public import Lanius.Mini.Frontend.P.whileEvalOf
 public import Lanius.Mini.Frontend.P.setIndexOrEval
-public import Lanius.Mini.Frontend.P.fieldTyAt
+public import Lanius.Mini.Frontend.P.setFieldOrEval
+public import Lanius.Mini.Frontend.P.setPlaceOf
 public import Lanius.Mini.Frontend.P.compoundEval
 public import Lanius.Mini.Frontend.P.compoundOf
 public import Lanius.Mini.Frontend.P.forRange
@@ -109,6 +112,8 @@ public import Lanius.Mini.Frontend.P.blockArmsOf
 public import Lanius.Mini.Frontend.P.litIf
 public import Lanius.Mini.Frontend.P.selfRefOf
 public import Lanius.Mini.Frontend.P.ifNotWrites
+public import Lanius.Mini.Frontend.P.checkedFunc
+public import Lanius.Mini.Frontend.P.namesFieldBase
 public import Lanius.Mini.Frontend.P.externBody
 public import Lanius.Mini.Frontend.P.readDeclInst
 public import Lanius.Mini.Frontend.P.readInst
@@ -119,7 +124,7 @@ public import Lanius.Mini.Frontend.P.letClosed
 public import Lanius.Mini.Frontend.P.letStructClosed
 public import Lanius.Mini.Frontend.P.allocClosed
 public import Lanius.Mini.Frontend.P.eDivideClosed
-public import Lanius.Mini.Frontend.P.eIndexClosed
+public import Lanius.Mini.Frontend.P.eDerefClosed
 public import Lanius.Mini.Frontend.P.eStructClosed
 public import Lanius.Mini.Frontend.P.setEvalClosed
 public import Lanius.Mini.Frontend.P.assertClosed
@@ -196,6 +201,6 @@ operations become `Lists.name` with a spec theorem). `usize` is `Nat`, `i32` is
 prelude's `plus`/`minus`/`times` panic instead of wrapping, so they are
 `+`/`-`/`*` on `Nat` for every run that returns.
 
-The definitions are in 185 parts, `.P0` on, in source order, whose bodies
+The definitions are in 190 parts, `.P0` on, in source order, whose bodies
 are hidden from other modules: a proof that unfolds one imports its part with
 `import all`, so that it is rebuilt only when that part changes. -/

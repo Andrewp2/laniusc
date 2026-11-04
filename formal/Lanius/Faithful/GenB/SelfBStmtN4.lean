@@ -153,7 +153,7 @@ abbrev BStmt_length_of_mini_selfhost_CTree (spW sp : SrcProgram) (prims : Prims)
 
 abbrev BStmt_length_of_mini_selfhost_VariantTy (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.VariantTy} {v0 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 289 RepVariantTy) x0 v0 → k < b → Pre_length_of_mini_selfhost_VariantTy n x0 b →
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 290 RepVariantTy) x0 v0 → k < b → Pre_length_of_mini_selfhost_VariantTy n x0 b →
     qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepNat (x0.length) w
 
 abbrev BStmt_length_of_mini_selfhost_MEff (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

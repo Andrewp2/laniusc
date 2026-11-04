@@ -6,15 +6,15 @@ public import Lanius.Faithful.Gen.SelfSrcF_readDeclInst
 public import Lanius.Faithful.Gen.SelfStmtF_readDeclInst
 public import Lanius.Faithful.GenB.SelfBStmtF_Inline_pExpr
 public import Lanius.Faithful.GenB.SelfBStmtF_externBody
-public import Lanius.Faithful.GenB.SelfBStmtF_ifNotWrites
 public import Lanius.Faithful.GenB.SelfBStmtF_isEmptyUsize
+public import Lanius.Faithful.GenB.SelfBStmtF_namesFieldBase
 public import Lanius.Faithful.GenB.SelfBStmtF_projectionRet
 public import Lanius.Faithful.GenB.SelfBStmtF_readDeclInst
 import all Lanius.Faithful.Gen.SelfSrcF_readDeclInst
 import all Lanius.Faithful.Gen.SelfStmtF_readDeclInst
 import all Lanius.Mini.Frontend.P.Inline_pExpr
-import all Lanius.Mini.Frontend.P.ifNotWrites
 import all Lanius.Mini.Frontend.P.isEmptyUsize
+import all Lanius.Mini.Frontend.P.namesFieldBase
 import all Lanius.Mini.Frontend.P.projectionRet
 
 @[expose] public section

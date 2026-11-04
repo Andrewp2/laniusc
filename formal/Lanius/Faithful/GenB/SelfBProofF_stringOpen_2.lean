@@ -12,6 +12,7 @@ public import Lanius.Faithful.GenB.SelfBStmtF_fnInstRet
 public import Lanius.Faithful.GenB.SelfBStmtF_hasConst
 public import Lanius.Faithful.GenB.SelfBStmtF_hasKids
 public import Lanius.Faithful.GenB.SelfBStmtF_isEmptyUsize
+public import Lanius.Faithful.GenB.SelfBStmtF_isFnPath
 public import Lanius.Faithful.GenB.SelfBStmtF_litEffMatch
 public import Lanius.Faithful.GenB.SelfBStmtF_litWants
 public import Lanius.Faithful.GenB.SelfBStmtF_noBlock
@@ -47,11 +48,13 @@ import all Lanius.Mini.Frontend.P.consBinder
 import all Lanius.Mini.Frontend.P.consTreeTail
 import all Lanius.Mini.Frontend.P.consTys
 import all Lanius.Mini.Frontend.P.divergeArm
+import all Lanius.Mini.Frontend.P.fieldValue
 import all Lanius.Mini.Frontend.P.floatTyped
 import all Lanius.Mini.Frontend.P.fnInstRet
 import all Lanius.Mini.Frontend.P.hasConst
 import all Lanius.Mini.Frontend.P.hasKids
 import all Lanius.Mini.Frontend.P.isEmptyUsize
+import all Lanius.Mini.Frontend.P.isFnPath
 import all Lanius.Mini.Frontend.P.isPathCall
 import all Lanius.Mini.Frontend.P.itemOf
 import all Lanius.Mini.Frontend.P.joinInsts

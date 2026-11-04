@@ -35,7 +35,7 @@ abbrev BStmt_fl_nat_half (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
 abbrev BStmt_fl_of_nat (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {v0 v1 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepNat x0 v0 → RepNat x1 v1 → k < b → Pre_fl_of_nat n x0 x1 b →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_fl_of_nat n x0 x1 = k ∧ (RepList 262 RepBool) (Lanius.Mini.flOfNat x0 x1) w
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_fl_of_nat n x0 x1 = k ∧ (RepList 263 RepBool) (Lanius.Mini.flOfNat x0 x1) w
 
 abbrev BStmt_fl_low_bit (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {v0 w : Value} {k : Nat},
@@ -49,7 +49,7 @@ abbrev BStmt_fl_log2_up (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
 
 abbrev BStmt_fl_log2 (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Bool} {v0 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 262 RepBool) x0 v0 → k < b → Pre_fl_log2 n x0 b →
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 263 RepBool) x0 v0 → k < b → Pre_fl_log2 n x0 b →
     qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 135 RepNat) (Lanius.Mini.flLog2 x0) w
 
 abbrev BStmt_fl_pow2 (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -64,7 +64,7 @@ abbrev BStmt_fl_bit (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev BStmt_fl_to_nat (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Bool} {v0 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 262 RepBool) x0 v0 → k < b → Pre_fl_to_nat n x0 b →
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 263 RepBool) x0 v0 → k < b → Pre_fl_to_nat n x0 b →
     qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.flToNat x0) w
 
 end Lanius.Faithful.SelfBudget

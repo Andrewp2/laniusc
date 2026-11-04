@@ -66,13 +66,24 @@ def arrayArgChecked (ok : Bool) (a : ArrayArgs) : Option ArrayArgs :=
   else
     none
 
+/-- The largest block lower_func takes: below 2^31 bytes. -/
+def blockLimit : Nat :=
+  2147483647
+
+/-- The array local b (width bytes per element, count elements) before the arguments r. The rest's bytes are checked against block_limit before this one's are added (as the offsets are, array_args), so no sum passes 2^64 (F14); a call's bytes over the limit are rejected anyway (array_call_code: at most the callee's block, at most block_limit). -/
+def arrayArgBefore (b : Binding) (element : SrcType) (ty : SrcType) (id : Nat) (t : Nat) (offset : Nat) (width : Nat) (count : Nat) (r : ArrayArgs) : Option ArrayArgs :=
+  if blockLimit < r.bytes then
+    none
+  else
+    arrayArgChecked (decide (0 < width) && SrcType.same b.ty (SrcType.array element count) && SrcType.same ty (SrcType.slice element) && decide (count < 2147483648) && idAbsent r.ids id) ({ stores := Stmt.seq (elementStores width t offset b.slot count) r.stores, args := blockAt t offset :: Expr.lit (BitVec.ofNat 64 count) :: r.args, loads := Stmt.seq (elementLoads width t offset b.slot count) r.loads, guard := r.guard, bytes := 8 * count + r.bytes, ids := id :: r.ids } : ArrayArgs)
+
 /-- The array local b passed at a parameter of type ty, at offset in the block, before the rest. -/
 def arrayArgLocal (b : Binding) (element : SrcType) (ty : SrcType) (id : Nat) (t : Nat) (offset : Nat) (rest : Option ArrayArgs) : Option ArrayArgs :=
   let width : Nat := packedWidth element
   let count : Nat := SrcType.size b.ty
   match rest with
   | none => none
-  | some r => arrayArgChecked (decide (0 < width) && SrcType.same b.ty (SrcType.array element count) && SrcType.same ty (SrcType.slice element) && decide (count < 2147483648) && idAbsent r.ids id) ({ stores := Stmt.seq (elementStores width t offset b.slot count) r.stores, args := blockAt t offset :: Expr.lit (BitVec.ofNat 64 count) :: r.args, loads := Stmt.seq (elementLoads width t offset b.slot count) r.loads, guard := r.guard, bytes := 8 * count + r.bytes, ids := id :: r.ids } : ArrayArgs)
+  | some r => arrayArgBefore b element ty id t offset width count r
 
 def arrayArgSlice (binding : Option Binding) (element : SrcType) (ty : SrcType) (id : Nat) (t : Nat) (offset : Nat) (rest : Option ArrayArgs) : Option ArrayArgs :=
   match binding with
@@ -104,17 +115,20 @@ def arrayArg (scope : List Binding) (arg : SrcEff) (ty : SrcType) (t : Nat) (off
   | .eField fbase fidx => none
   | .eAt abase aindex => none
 
-/-- The arguments, one of each parameter type, the arrays from offset in the block on. -/
+/-- The arguments, one of each parameter type, the arrays from offset in the block on. An offset past block_limit is rejected as the arrays' bytes add up, so no offset passes 2^64 (F14): a call that is accepted has its arrays' bytes within the callee's block (array_call_code), so each of its offsets is too. -/
 def arrayArgs (scope : List Binding) (args : List SrcEff) (types : List SrcType) (t : Nat) (offset : Nat) : Option ArrayArgs :=
-  match args with
-  | [] =>
-    (match types with
-     | [] => some ({ stores := Stmt.skip, args := [], loads := Stmt.skip, guard := Expr.lit 1, bytes := 0, ids := [] } : ArrayArgs)
-     | ty :: more => none)
-  | arg :: rest =>
-    match types with
-    | [] => none
-    | ty :: more => arrayArg scope arg ty t offset (arrayArgs scope rest more t (offset + argBytes scope arg))
+  if blockLimit < offset then
+    none
+  else
+    match args with
+    | [] =>
+      (match types with
+       | [] => some ({ stores := Stmt.skip, args := [], loads := Stmt.skip, guard := Expr.lit 1, bytes := 0, ids := [] } : ArrayArgs)
+       | ty :: more => none)
+    | arg :: rest =>
+      match types with
+      | [] => none
+      | ty :: more => arrayArg scope arg ty t offset (arrayArgs scope rest more t (offset + argBytes scope arg))
 
 /-- The call's code: the check of the other arguments, the block's address into t, the stores, the call (its result from slot next), the block's address again and the loads. The caller's block is positive, so its room lies above the limit and Frame(t, 0) runs. The result is a scalar, so no slice of the block outlives the call (SEMANTIC_DECISIONS "Addressed locals", point 4). -/
 def arrayCallCode (next : Nat) (callee : Nat) (sig : Sig) (a : ArrayArgs) : Option Evaluated :=

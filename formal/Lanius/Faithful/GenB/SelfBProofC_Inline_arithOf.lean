@@ -13,6 +13,7 @@ public import Lanius.Faithful.GenB.SelfBStmtC_arithShiftRight
 public import Lanius.Faithful.GenB.SelfBStmtC_arithUint
 public import Lanius.Faithful.GenB.SelfBStmtC_armScope
 public import Lanius.Faithful.GenB.SelfBStmtC_evalSame
+public import Lanius.Faithful.GenB.SelfBStmtC_evalSlotLimit
 public import Lanius.Faithful.GenB.SelfBStmtC_floatApply
 public import Lanius.Faithful.GenB.SelfBStmtC_lowerCallSig
 public import Lanius.Faithful.GenB.SelfBStmtC_lowerTagged
@@ -27,6 +28,7 @@ import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.arithUint
 import all Lanius.Mini.Compiler.P.armScope
 import all Lanius.Mini.Compiler.P.evalSame
+import all Lanius.Mini.Compiler.P.evalSlotLimit
 import all Lanius.Mini.Compiler.P.lowerTagged
 import all Lanius.Mini.Compiler.P.matchDst
 import all Lanius.Mini.Compiler.P.matchVariants
@@ -238,11 +240,12 @@ theorem bproof_eval_sized {spW sp : SrcProgram} {prims : Prims} {ix_eval_sized i
     budget Cost_eval_sized
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
 
-theorem bstep_eval_arm_in {spW sp : SrcProgram} {prims : Prims} {ix_eval_arm_in ix_SrcEff_eval ix_eval_same ix_eval_arm : Nat}
-    (fnW : spW.funcs[ix_eval_arm_in]? = some (src_eval_arm_in ix_SrcEff_eval ix_eval_same ix_eval_arm)) (fn : sp.funcs[ix_eval_arm_in]? = some (src_eval_arm_in ix_SrcEff_eval ix_eval_same ix_eval_arm))
+theorem bstep_eval_arm_in {spW sp : SrcProgram} {prims : Prims} {ix_eval_arm_in ix_SrcEff_eval ix_eval_same ix_eval_slot_limit ix_eval_arm : Nat}
+    (fnW : spW.funcs[ix_eval_arm_in]? = some (src_eval_arm_in ix_SrcEff_eval ix_eval_same ix_eval_slot_limit ix_eval_arm)) (fn : sp.funcs[ix_eval_arm_in]? = some (src_eval_arm_in ix_SrcEff_eval ix_eval_same ix_eval_slot_limit ix_eval_arm))
     (np : prims.isPrim ix_eval_arm_in = false)
     (back : Certified (∀ {n : Nat}, Stmt_eval_arm_in sp prims ix_eval_arm_in n))
     (b_eval_same : Certified (∀ {n : Nat}, BStmt_eval_same spW sp prims ix_eval_same n))
+    (b_eval_slot_limit : Certified (∀ {n : Nat}, BStmt_eval_slot_limit spW sp prims ix_eval_slot_limit n))
     (b_eval_arm : Certified (∀ {n : Nat}, BStmt_eval_arm spW sp prims ix_eval_arm n)) {n : Nat}
     (bih_SrcEff_eval : Certified (BStmt_SrcEff_eval spW sp prims ix_SrcEff_eval n)) :
     BStmt_eval_arm_in spW sp prims ix_eval_arm_in (n + 1) := by

@@ -43,11 +43,13 @@ import all Lanius.Mini.Frontend.P.consBinder
 import all Lanius.Mini.Frontend.P.consTreeTail
 import all Lanius.Mini.Frontend.P.consTys
 import all Lanius.Mini.Frontend.P.divergeArm
+import all Lanius.Mini.Frontend.P.fieldValue
 import all Lanius.Mini.Frontend.P.floatTyped
 import all Lanius.Mini.Frontend.P.fnInstRet
 import all Lanius.Mini.Frontend.P.hasConst
 import all Lanius.Mini.Frontend.P.hasKids
 import all Lanius.Mini.Frontend.P.isEmptyUsize
+import all Lanius.Mini.Frontend.P.isFnPath
 import all Lanius.Mini.Frontend.P.isPathCall
 import all Lanius.Mini.Frontend.P.itemOf
 import all Lanius.Mini.Frontend.P.joinInsts
@@ -91,14 +93,14 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.SelfCert
 open Lanius.Faithful.Budget
 
-theorem bproof_stride_of_postfix {spW sp : SrcProgram} {prims : Prims} {ix_stride_of_postfix ix_node_prod ix_kid ix_local_of ix_p_postfix_end ix_stride_of_local : Nat}
-    (fnW : spW.funcs[ix_stride_of_postfix]? = some (src_stride_of_postfix ix_node_prod ix_kid ix_local_of ix_p_postfix_end ix_stride_of_local)) (fn : sp.funcs[ix_stride_of_postfix]? = some (src_stride_of_postfix ix_node_prod ix_kid ix_local_of ix_p_postfix_end ix_stride_of_local))
+theorem bproof_stride_of_postfix {spW sp : SrcProgram} {prims : Prims} {ix_stride_of_postfix ix_node_prod ix_kid ix_p_postfix_end ix_local_of ix_stride_of_local : Nat}
+    (fnW : spW.funcs[ix_stride_of_postfix]? = some (src_stride_of_postfix ix_node_prod ix_kid ix_p_postfix_end ix_local_of ix_stride_of_local)) (fn : sp.funcs[ix_stride_of_postfix]? = some (src_stride_of_postfix ix_node_prod ix_kid ix_p_postfix_end ix_local_of ix_stride_of_local))
     (np : prims.isPrim ix_stride_of_postfix = false)
     (back : Certified (∀ {n : Nat}, Stmt_stride_of_postfix sp prims ix_stride_of_postfix n))
     (b_node_prod : Certified (∀ {n : Nat}, BStmt_node_prod spW sp prims ix_node_prod n))
     (b_kid : Certified (∀ {n : Nat}, BStmt_kid spW sp prims ix_kid n))
-    (b_local_of : Certified (∀ {n : Nat}, BStmt_local_of spW sp prims ix_local_of n))
     (b_p_postfix_end : Certified (∀ {n : Nat}, BStmt_p_postfix_end spW sp prims ix_p_postfix_end n))
+    (b_local_of : Certified (∀ {n : Nat}, BStmt_local_of spW sp prims ix_local_of n))
     (b_stride_of_local : Certified (∀ {n : Nat}, BStmt_stride_of_local spW sp prims ix_stride_of_local n)) {n : Nat} :
     BStmt_stride_of_postfix spW sp prims ix_stride_of_postfix n := by
   intro x0 x1 x2 v0 v1 v2 w k h r0 r1 r2
@@ -129,14 +131,14 @@ theorem bproof_stride_arg {spW sp : SrcProgram} {prims : Prims} {ix_stride_arg i
     budget Cost_stride_arg
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3⟩
 
-theorem bproof_len_of_postfix {spW sp : SrcProgram} {prims : Prims} {ix_len_of_postfix ix_node_prod ix_kid ix_local_of ix_p_postfix_end ix_len_of_local : Nat}
-    (fnW : spW.funcs[ix_len_of_postfix]? = some (src_len_of_postfix ix_node_prod ix_kid ix_local_of ix_p_postfix_end ix_len_of_local)) (fn : sp.funcs[ix_len_of_postfix]? = some (src_len_of_postfix ix_node_prod ix_kid ix_local_of ix_p_postfix_end ix_len_of_local))
+theorem bproof_len_of_postfix {spW sp : SrcProgram} {prims : Prims} {ix_len_of_postfix ix_node_prod ix_kid ix_p_postfix_end ix_local_of ix_len_of_local : Nat}
+    (fnW : spW.funcs[ix_len_of_postfix]? = some (src_len_of_postfix ix_node_prod ix_kid ix_p_postfix_end ix_local_of ix_len_of_local)) (fn : sp.funcs[ix_len_of_postfix]? = some (src_len_of_postfix ix_node_prod ix_kid ix_p_postfix_end ix_local_of ix_len_of_local))
     (np : prims.isPrim ix_len_of_postfix = false)
     (back : Certified (∀ {n : Nat}, Stmt_len_of_postfix sp prims ix_len_of_postfix n))
     (b_node_prod : Certified (∀ {n : Nat}, BStmt_node_prod spW sp prims ix_node_prod n))
     (b_kid : Certified (∀ {n : Nat}, BStmt_kid spW sp prims ix_kid n))
-    (b_local_of : Certified (∀ {n : Nat}, BStmt_local_of spW sp prims ix_local_of n))
     (b_p_postfix_end : Certified (∀ {n : Nat}, BStmt_p_postfix_end spW sp prims ix_p_postfix_end n))
+    (b_local_of : Certified (∀ {n : Nat}, BStmt_local_of spW sp prims ix_local_of n))
     (b_len_of_local : Certified (∀ {n : Nat}, BStmt_len_of_local spW sp prims ix_len_of_local n)) {n : Nat} :
     BStmt_len_of_postfix spW sp prims ix_len_of_postfix n := by
   intro x0 x1 x2 v0 v1 v2 w k h r0 r1 r2
@@ -257,14 +259,16 @@ theorem bstep_eff_of {spW sp : SrcProgram} {prims : Prims} {ix_eff_of ix_minus i
     budget Cost_eff_of
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4⟩
 
-theorem bstep_eff_node {spW sp : SrcProgram} {prims : Prims} {ix_eff_node ix_minus ix_node_prod ix_kid ix_has_kids ix_eff_of ix_p_expr ix_p_base ix_p_assign ix_is_level ix_p_cast ix_p_neg ix_p_not ix_p_postfix ix_p_group ix_p_ident ix_eff_fold ix_eff_casts ix_x_neg_of ix_x_not_of ix_eff_postfix ix_eff_ident ix_p_match_expr ix_eff_match ix_p_array_lit ix_eff_array : Nat}
-    (fnW : spW.funcs[ix_eff_node]? = some (src_eff_node ix_minus ix_node_prod ix_kid ix_has_kids ix_eff_of ix_p_expr ix_p_base ix_p_assign ix_is_level ix_p_cast ix_p_neg ix_p_not ix_p_postfix ix_p_group ix_p_ident ix_eff_fold ix_eff_casts ix_x_neg_of ix_x_not_of ix_eff_postfix ix_eff_ident ix_p_match_expr ix_eff_match ix_p_array_lit ix_eff_array)) (fn : sp.funcs[ix_eff_node]? = some (src_eff_node ix_minus ix_node_prod ix_kid ix_has_kids ix_eff_of ix_p_expr ix_p_base ix_p_assign ix_is_level ix_p_cast ix_p_neg ix_p_not ix_p_postfix ix_p_group ix_p_ident ix_eff_fold ix_eff_casts ix_x_neg_of ix_x_not_of ix_eff_postfix ix_eff_ident ix_p_match_expr ix_eff_match ix_p_array_lit ix_eff_array))
+theorem bstep_eff_node {spW sp : SrcProgram} {prims : Prims} {ix_eff_node ix_minus ix_node_prod ix_kid ix_has_kids ix_eff_of ix_p_postfix ix_p_ident ix_p_expr ix_p_base ix_p_assign ix_is_level ix_p_cast ix_p_neg ix_p_not ix_p_group ix_eff_fold ix_eff_casts ix_x_neg_of ix_x_not_of ix_eff_postfix ix_eff_ident ix_p_match_expr ix_eff_match ix_p_array_lit ix_eff_array : Nat}
+    (fnW : spW.funcs[ix_eff_node]? = some (src_eff_node ix_minus ix_node_prod ix_kid ix_has_kids ix_eff_of ix_p_postfix ix_p_ident ix_p_expr ix_p_base ix_p_assign ix_is_level ix_p_cast ix_p_neg ix_p_not ix_p_group ix_eff_fold ix_eff_casts ix_x_neg_of ix_x_not_of ix_eff_postfix ix_eff_ident ix_p_match_expr ix_eff_match ix_p_array_lit ix_eff_array)) (fn : sp.funcs[ix_eff_node]? = some (src_eff_node ix_minus ix_node_prod ix_kid ix_has_kids ix_eff_of ix_p_postfix ix_p_ident ix_p_expr ix_p_base ix_p_assign ix_is_level ix_p_cast ix_p_neg ix_p_not ix_p_group ix_eff_fold ix_eff_casts ix_x_neg_of ix_x_not_of ix_eff_postfix ix_eff_ident ix_p_match_expr ix_eff_match ix_p_array_lit ix_eff_array))
     (np : prims.isPrim ix_eff_node = false)
     (back : Certified (∀ {n : Nat}, Stmt_eff_node sp prims ix_eff_node n))
     (b_minus : Certified (∀ {n : Nat}, BStmt_minus spW sp prims ix_minus n))
     (b_node_prod : Certified (∀ {n : Nat}, BStmt_node_prod spW sp prims ix_node_prod n))
     (b_kid : Certified (∀ {n : Nat}, BStmt_kid spW sp prims ix_kid n))
     (b_has_kids : Certified (∀ {n : Nat}, BStmt_has_kids spW sp prims ix_has_kids n))
+    (b_p_postfix : Certified (∀ {n : Nat}, BStmt_p_postfix spW sp prims ix_p_postfix n))
+    (b_p_ident : Certified (∀ {n : Nat}, BStmt_p_ident spW sp prims ix_p_ident n))
     (b_p_expr : Certified (∀ {n : Nat}, BStmt_p_expr spW sp prims ix_p_expr n))
     (b_p_base : Certified (∀ {n : Nat}, BStmt_p_base spW sp prims ix_p_base n))
     (b_p_assign : Certified (∀ {n : Nat}, BStmt_p_assign spW sp prims ix_p_assign n))
@@ -272,9 +276,7 @@ theorem bstep_eff_node {spW sp : SrcProgram} {prims : Prims} {ix_eff_node ix_min
     (b_p_cast : Certified (∀ {n : Nat}, BStmt_p_cast spW sp prims ix_p_cast n))
     (b_p_neg : Certified (∀ {n : Nat}, BStmt_p_neg spW sp prims ix_p_neg n))
     (b_p_not : Certified (∀ {n : Nat}, BStmt_p_not spW sp prims ix_p_not n))
-    (b_p_postfix : Certified (∀ {n : Nat}, BStmt_p_postfix spW sp prims ix_p_postfix n))
     (b_p_group : Certified (∀ {n : Nat}, BStmt_p_group spW sp prims ix_p_group n))
-    (b_p_ident : Certified (∀ {n : Nat}, BStmt_p_ident spW sp prims ix_p_ident n))
     (b_eff_casts : Certified (∀ {n : Nat}, BStmt_eff_casts spW sp prims ix_eff_casts n))
     (b_x_neg_of : Certified (∀ {n : Nat}, BStmt_x_neg_of spW sp prims ix_x_neg_of n))
     (b_x_not_of : Certified (∀ {n : Nat}, BStmt_x_not_of spW sp prims ix_x_not_of n))

@@ -2039,10 +2039,14 @@ pub struct SrcProgram {
 // effects, so && and || need no short circuit: a && b is a & b on 0 and 1, and
 // a || b is (a | b) != 0.
 
+// home: the byte offset of the binding's home in its function's frame block,
+// for a local that lives in frame memory (F5 S6b, a borrowed local); None for
+// a local in slots, which every binding is until S6b.
 pub struct Binding {
     id: usize,
     slot: usize,
     ty: SrcType,
+    home: core::option::Option<usize>,
 }
 
 // The innermost binding of id.
@@ -3746,7 +3750,7 @@ pub fn arm_scope(binders: List<usize>, types: List<SrcType>, slot: usize, scope:
 // extract: inline
 fn arm_bind(binder: usize, ty: SrcType, rest: List<usize>, more: List<SrcType>, slot: usize, scope: List<Binding>) -> core::option::Option<List<Binding>> {
     if ((ty.size() > 0) && !viewed_type(ty)) {
-        return arm_scope(rest, more, plus(slot, ty.size()), cons(Binding { id: binder, slot: slot, ty: ty }, scope));
+        return arm_scope(rest, more, plus(slot, ty.size()), cons(Binding { id: binder, slot: slot, ty: ty, home: None }, scope));
     }
     return None;
 }
@@ -3805,7 +3809,7 @@ pub fn arm_body_scope(binds: bool, binder: usize, ty: SrcType, next: usize, scop
     if (!binds) {
         return scope;
     }
-    return cons(Binding { id: binder, slot: next, ty: ty }, scope);
+    return cons(Binding { id: binder, slot: next, ty: ty, home: None }, scope);
 }
 
 pub fn unit_payload(unit: bool) -> core::option::Option<List<Expr>> {
@@ -4541,9 +4545,23 @@ pub fn eval_arm(slot: usize, k: usize, code: core::option::Option<Stmt>, rest: L
     };
 }
 
+// The slots the evaluator's arguments may start at: below 2^40 (a function
+// using that many needs 2^43 bytes of frame, more than any binary has). Each
+// argument after the first starts past the slots of the ones before it, so a
+// nested call adds its callee's parameters' slots per level, and a let or a
+// match in an expression evaluates its body or arms past the value's slots.
+// eval_args, eval_let_body and eval_arm_in check the limit; the evaluator's
+// other slot steps add one per nesting level.
+pub fn eval_slot_limit() -> usize {
+    return 1099511627776;
+}
+
 // Arm k's value evaluated from dst, under its payload's binders.
 // extract: inline
 fn eval_arm_in(sigs: List<Sig>, decls: SrcDecls, bound: core::option::Option<List<Binding>>, slot: usize, dst: usize, ty: SrcType, k: usize, value: SrcEff, rest: List<SrcEff>, later: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    if (dst >= eval_slot_limit()) {
+        return None;
+    }
     return match (bound) {
         None -> None,
         Some(s) -> match (value.eval(sigs, decls, s, dst)) {
@@ -4802,6 +4820,9 @@ fn lower_set_scalar(slot: usize, ty: SrcType, scope: List<Binding>, value: SrcEx
 // The body of a let in an expression, under its binding.
 // extract: inline
 fn eval_let_body(sigs: List<Sig>, decls: SrcDecls, bound: core::option::Option<List<Binding>>, dst: usize, body: SrcEff) -> core::option::Option<Evaluated> {
+    if (dst >= eval_slot_limit()) {
+        return None;
+    }
     return match (bound) {
         None -> None,
         Some(s) -> body.eval(sigs, decls, s, dst),
@@ -5727,6 +5748,9 @@ impl SrcEff {
 
 // The arguments, each in the slots after the one before.
 pub fn eval_args(sigs: List<Sig>, decls: SrcDecls, scope: List<Binding>, args: List<SrcEff>, slot: usize) -> core::option::Option<EvaluatedArgs> {
+    if (slot >= eval_slot_limit()) {
+        return None;
+    }
     return match (args) {
         Nil -> Some(EvaluatedArgs { stmt: Skip, types: empty() }),
         Cons(arg, rest) -> match (arg.eval(sigs, decls, scope, slot)) {
@@ -6169,6 +6193,23 @@ pub fn array_arg_checked(ok: bool, a: ArrayArgs) -> core::option::Option<ArrayAr
     return None;
 }
 
+// The largest block lower_func takes: below 2^31 bytes.
+pub fn block_limit() -> usize {
+    return 2147483647;
+}
+
+// The array local b (width bytes per element, count elements) before the
+// arguments r. The rest's bytes are checked against block_limit before
+// this one's are added (as the offsets are, array_args), so no sum passes
+// 2^64 (F14); a call's bytes over the limit are rejected anyway
+// (array_call_code: at most the callee's block, at most block_limit).
+pub fn array_arg_before(b: Binding, element: SrcType, ty: SrcType, id: usize, t: usize, offset: usize, width: usize, count: usize, r: ArrayArgs) -> core::option::Option<ArrayArgs> {
+    if (r.bytes > block_limit()) {
+        return None;
+    }
+    return array_arg_checked((width > 0) && b.ty.same(SrcType::Array(boxed(element), count)) && ty.same(Slice(boxed(element))) && (2147483648 > count) && id_absent(r.ids, id), ArrayArgs { stores: Seq(boxed(element_stores(width, t, offset, b.slot, count)), boxed(r.stores)), args: cons(block_at(t, offset), cons(Lit(count as u64), r.args)), loads: Seq(boxed(element_loads(width, t, offset, b.slot, count)), boxed(r.loads)), guard: r.guard, bytes: plus(times(8, count), r.bytes), ids: cons(id, r.ids) });
+}
+
 // The array local b passed at a parameter of type ty, at offset in the
 // block, before the rest.
 pub fn array_arg_local(b: Binding, element: SrcType, ty: SrcType, id: usize, t: usize, offset: usize, rest: core::option::Option<ArrayArgs>) -> core::option::Option<ArrayArgs> {
@@ -6176,7 +6217,7 @@ pub fn array_arg_local(b: Binding, element: SrcType, ty: SrcType, id: usize, t: 
     let count: usize = b.ty.size();
     return match (rest) {
         None -> None,
-        Some(r) -> array_arg_checked((width > 0) && b.ty.same(SrcType::Array(boxed(element), count)) && ty.same(Slice(boxed(element))) && (2147483648 > count) && id_absent(r.ids, id), ArrayArgs { stores: Seq(boxed(element_stores(width, t, offset, b.slot, count)), boxed(r.stores)), args: cons(block_at(t, offset), cons(Lit(count as u64), r.args)), loads: Seq(boxed(element_loads(width, t, offset, b.slot, count)), boxed(r.loads)), guard: r.guard, bytes: plus(times(8, count), r.bytes), ids: cons(id, r.ids) }),
+        Some(r) -> array_arg_before(b, element, ty, id, t, offset, width, count, r),
     };
 }
 
@@ -6216,8 +6257,14 @@ pub fn array_arg(scope: List<Binding>, arg: SrcEff, ty: SrcType, t: usize, offse
 }
 
 // The arguments, one of each parameter type, the arrays from offset in the
-// block on.
+// block on. An offset past block_limit is rejected as the arrays' bytes add
+// up, so no offset passes 2^64 (F14): a call that is accepted has its
+// arrays' bytes within the callee's block (array_call_code), so each of its
+// offsets is too.
 pub fn array_args(scope: List<Binding>, args: List<SrcEff>, types: List<SrcType>, t: usize, offset: usize) -> core::option::Option<ArrayArgs> {
+    if (offset > block_limit()) {
+        return None;
+    }
     return match (args) {
         Nil -> match (types) {
             Nil -> Some(ArrayArgs { stores: Skip, args: empty(), loads: Skip, guard: Lit(1), bytes: 0, ids: empty() }),
@@ -6366,11 +6413,11 @@ impl SrcStmt {
     pub fn lower(self, sigs: List<Sig>, decls: SrcDecls, ret: SrcType, scope: List<Binding>, next: usize) -> core::option::Option<Stmt> {
         return match (self) {
             Nop -> Some(Skip),
-            Let(id, ty, value, body) -> guarded(next, value.guard(scope), lower_let(next, lower_value(scope, value, ty), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size())))),
-            LetStruct(id, ty, fields, body) -> guarded(next, guard_all(scope, fields), lower_let(next, lower_literal(scope, ty, fields), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size())))),
-            LetCall(id, ty, callee, args, body) -> guarded(next, guard_all(scope, args), lower_let_call(next, ty.size(), callee, lower_call(sigs, scope, callee, args, ty), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size())))),
-            LetEnum(id, ty, variant, payload, body) -> guarded(next, guard_all(scope, payload), lower_let(next, lower_enum_value(scope, ty, variant, payload), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size())))),
-            LetMatch(id, ty, scrutinee, enum_id, arms, body) -> lower_then(lower_match(scope, lookup(scope, scrutinee), enum_id, arms, ty, next), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
+            Let(id, ty, value, body) -> guarded(next, value.guard(scope), lower_let(next, lower_value(scope, value, ty), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty, home: None }, scope), plus(next, ty.size())))),
+            LetStruct(id, ty, fields, body) -> guarded(next, guard_all(scope, fields), lower_let(next, lower_literal(scope, ty, fields), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty, home: None }, scope), plus(next, ty.size())))),
+            LetCall(id, ty, callee, args, body) -> guarded(next, guard_all(scope, args), lower_let_call(next, ty.size(), callee, lower_call(sigs, scope, callee, args, ty), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty, home: None }, scope), plus(next, ty.size())))),
+            LetEnum(id, ty, variant, payload, body) -> guarded(next, guard_all(scope, payload), lower_let(next, lower_enum_value(scope, ty, variant, payload), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty, home: None }, scope), plus(next, ty.size())))),
+            LetMatch(id, ty, scrutinee, enum_id, arms, body) -> lower_then(lower_match(scope, lookup(scope, scrutinee), enum_id, arms, ty, next), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty, home: None }, scope), plus(next, ty.size()))),
             Set(id, value) -> guarded(next, value.guard(scope), lower_set(lookup(scope, id), scope, value)),
             SetField(id, index, value) -> guarded(next, value.guard(scope), lower_set_field(lookup(scope, id), index, scope, value)),
             SetCall(id, callee, args) -> guarded(next, guard_all(scope, args), lower_set_call(sigs, scope, lookup(scope, id), callee, args)),
@@ -6378,14 +6425,14 @@ impl SrcStmt {
             If(condition, then_branch, else_branch) -> guarded(next, condition.guard(scope), lower_if(lower_as(scope, condition, Bool), unbox(then_branch).lower(sigs, decls, ret, scope, next), unbox(else_branch).lower(sigs, decls, ret, scope, next))),
             While(condition, body) -> lower_while(next, condition.guard(scope), lower_as(scope, condition, Bool), unbox(body).lower(sigs, decls, ret, scope, next)),
             Return(value) -> guarded(next, value.guard(scope), lower_return(lower_value(scope, value, ret))),
-            LetAlloc(id, size, shift, body) -> guarded(next, size.guard(scope), lower_alloc(next, shift, lower_as(scope, size, Uint(Usize)), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Ptr }, scope), plus(next, 1)))),
-            LetLoad(id, pointer, offset, body) -> guarded(next, guard_and(pointer.guard(scope), offset.guard(scope)), lower_load(next, lower_address(lower_as(scope, pointer, Ptr), lower_as(scope, offset, Uint(Usize))), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Uint(Uint8) }, scope), plus(next, 1)))),
+            LetAlloc(id, size, shift, body) -> guarded(next, size.guard(scope), lower_alloc(next, shift, lower_as(scope, size, Uint(Usize)), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Ptr, home: None }, scope), plus(next, 1)))),
+            LetLoad(id, pointer, offset, body) -> guarded(next, guard_and(pointer.guard(scope), offset.guard(scope)), lower_load(next, lower_address(lower_as(scope, pointer, Ptr), lower_as(scope, offset, Uint(Usize))), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Uint(Uint8), home: None }, scope), plus(next, 1)))),
             SetByte(pointer, offset, value) -> guarded(next, guard_and(pointer.guard(scope), guard_and(offset.guard(scope), value.guard(scope))), lower_store(lower_address(lower_as(scope, pointer, Ptr), lower_as(scope, offset, Uint(Usize))), lower_as(scope, value, Uint(Uint8)))),
             Free(pointer, size, shift) -> guarded(next, guard_and(pointer.guard(scope), size.guard(scope)), lower_free(shift, lower_as(scope, pointer, Ptr), lower_as(scope, size, Uint(Usize)))),
-            LetSlice(id, element, pointer, length, body) -> guarded(next, guard_and(pointer.guard(scope), length.guard(scope)), lower_let(next, lower_slice(decls, element, lower_as(scope, pointer, Ptr), lower_as(scope, length, I32)), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Slice(boxed(element)) }, scope), plus(next, 2)))),
-            LetIndex(id, ty, slice, index, body) -> lower_let_index_any(decls, scope, next, ty, slice, index, unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
+            LetSlice(id, element, pointer, length, body) -> guarded(next, guard_and(pointer.guard(scope), length.guard(scope)), lower_let(next, lower_slice(decls, element, lower_as(scope, pointer, Ptr), lower_as(scope, length, I32)), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Slice(boxed(element)), home: None }, scope), plus(next, 2)))),
+            LetIndex(id, ty, slice, index, body) -> lower_let_index_any(decls, scope, next, ty, slice, index, unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty, home: None }, scope), plus(next, ty.size()))),
             SetIndex(slice, index, value) -> lower_set_index_any(decls, scope, next, slice, index, value),
-            LetEval(id, ty, value, body) -> lower_let_eval(ty, stmt_eval(value, sigs, decls, scope, next), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
+            LetEval(id, ty, value, body) -> lower_let_eval(ty, stmt_eval(value, sigs, decls, scope, next), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty, home: None }, scope), plus(next, ty.size()))),
             SetEval(id, value) -> lower_set_eval(next, lookup(scope, id), value.eval(sigs, decls, scope, next)),
             IfEval(condition, then_branch, else_branch) -> lower_if_eval(next, condition.eval(sigs, decls, scope, next), unbox(then_branch).lower(sigs, decls, ret, scope, next), unbox(else_branch).lower(sigs, decls, ret, scope, next)),
             WhileEval(condition, body) -> lower_while_eval(next, condition.eval(sigs, decls, scope, next), unbox(body).lower(sigs, decls, ret, scope, next)),
@@ -6399,8 +6446,8 @@ impl SrcStmt {
             Continue -> Some(Cont),
             MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> lower_match_arm(scope, lookup(scope, scrutinee), enum_id, variant, binds, binder, ty, next, unbox(body).lower(sigs, decls, ret, arm_body_scope(binds, binder, ty, next, scope), plus(next, ty.size())), unbox(rest).lower(sigs, decls, ret, scope, next)),
             Unreachable(id, ty) -> lower_unreachable(ty.same(ret), next),
-            LetView(id, length, fields, pointer, body) -> guarded(next, guard_all(scope, fields), lower_view(next, length, lower_literal(scope, SrcType::Array(boxed(I32), length), fields), unbox(body).lower(sigs, decls, ret, cons(Binding { id: pointer, slot: plus(next, length), ty: Ptr }, cons(Binding { id: id, slot: next, ty: View(length) }, scope)), plus(plus(next, length), 1)))),
-            LetStr(pointer, chars, body) -> lower_str(next, chars, unbox(body).lower(sigs, decls, ret, cons(Binding { id: pointer, slot: next, ty: Ptr }, scope), plus(next, 1))),
+            LetView(id, length, fields, pointer, body) -> guarded(next, guard_all(scope, fields), lower_view(next, length, lower_literal(scope, SrcType::Array(boxed(I32), length), fields), unbox(body).lower(sigs, decls, ret, cons(Binding { id: pointer, slot: plus(next, length), ty: Ptr, home: None }, cons(Binding { id: id, slot: next, ty: View(length), home: None }, scope)), plus(plus(next, length), 1)))),
+            LetStr(pointer, chars, body) -> lower_str(next, chars, unbox(body).lower(sigs, decls, ret, cons(Binding { id: pointer, slot: next, ty: Ptr, home: None }, scope), plus(next, 1))),
             SetPlace(aplace, avalue) -> None,
             SetPlaceOp(aop, aplace, avalue) -> None,
         };
@@ -6502,7 +6549,7 @@ impl SrcStmt {
 pub fn param_scope(params: List<SrcParam>, slot: usize, scope: List<Binding>) -> List<Binding> {
     return match (params) {
         Nil -> scope,
-        Cons(param, rest) -> param_scope(unbox(rest), plus(slot, param.ty.size()), cons(Binding { id: param.id, slot: slot, ty: param.ty }, scope)),
+        Cons(param, rest) -> param_scope(unbox(rest), plus(slot, param.ty.size()), cons(Binding { id: param.id, slot: slot, ty: param.ty, home: None }, scope)),
     };
 }
 
@@ -6798,11 +6845,6 @@ fn block_then(broom: core::option::Option<usize>, buses: List<usize>, bs: SrcStm
         None -> None,
         Some(br) -> block_room(br, buses, bs),
     };
-}
-
-// The largest block lower_func takes: below 2^31 bytes.
-pub fn block_limit() -> usize {
-    return 2147483647;
 }
 
 // A function's own block of frame memory, taken at its entry: 8 bytes per

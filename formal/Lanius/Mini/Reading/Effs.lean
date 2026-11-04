@@ -50,6 +50,13 @@ import all Lanius.Mini.Frontend.P.tryLet
 import all Lanius.Mini.Frontend.P.typeDeclAt
 import all Lanius.Mini.Frontend.P.typePathSpellings
 import all Lanius.Mini.Frontend.P.wideOf
+import all Lanius.Mini.Frontend.P.fieldValue
+import all Lanius.Mini.Frontend.P.setPlaceOf
+import all Lanius.Mini.Frontend.P.setFieldOrEval
+import all Lanius.Mini.Frontend.P.namesFieldBase
+import all Lanius.Mini.Frontend.P.isFnPath
+import all Lanius.Mini.Frontend.P.eDerefClosed
+import all Lanius.Mini.Frontend.P.checkedFunc
 
 @[expose] public section
 /-! # The reading, V8d: effectful expressions
@@ -372,7 +379,9 @@ inductive EffFold (env : FrontEnv) : List Local → MEff → CTree → MEff → 
 
 /-- The rest of a postfix after the value `a`: `.m(args)` (a method of `a`'s
 type, `a` the receiver), `.f` (a field of a local, else the call of the
-field's projection), or `[index]` of a slice local, then what follows. -/
+field's projection; of a place or a reference, the field's place,
+`fieldValue`), or `[index]` of a slice local or (F5, S5) of a place, then
+what follows. -/
 inductive EffChain (env : FrontEnv) : List Local → Option Ty → MEff → CTree → MEff → Prop
   | done {scope : List Local} {expected : Option Ty} {a : MEff} {tail : CTree} : nodeProd tail = pPostfixEnd →
       EffChain env scope expected a tail a
@@ -387,8 +396,13 @@ inductive EffChain (env : FrontEnv) : List Local → Option Ty → MEff → CTre
       EffChain env scope expected y (kid (kid tail 3) 3) x → EffChain env scope expected a tail x
   | field {scope : List Local} {expected : Option Ty} {a : MEff} {tail : CTree} {t : Ty} {j : Nat} {x : MEff} :
       nodeProd tail = pPostfixMember → nodeProd (kid tail 2) = pMemberTypeArgsNone →
-      nodeProd (kid tail 3) ≠ pPostfixCall → EffTy env.decls scope a t → FieldIndex env.decls t (kidToken tail 1).text j →
+      nodeProd (kid tail 3) ≠ pPostfixCall → EffTy env.decls scope a t →
+      FieldIndex env.decls (referentOr t) (kidToken tail 1).text j →
       EffChain env scope expected (fieldValue env.decls a t j) (kid tail 3) x → EffChain env scope expected a tail x
+  | «at» {scope : List Local} {expected : Option Ty} {a : MEff} {tail : CTree} {i x : MEff} :
+      nodeProd tail = pPostfixIndex → effPlace a = true →
+      EffR env scope none (kid tail 1) i → EffChain env scope expected (.xPlaceAt a i) (kid tail 3) x →
+      EffChain env scope expected a tail x
   | index {scope : List Local} {expected : Option Ty} {a : MEff} {tail : CTree} {id : Nat} {l : Local} {i x : MEff} :
       nodeProd tail = pPostfixIndex → effLocal a = some id → LocalWithId scope id l →
       EffR env scope none (kid tail 1) i → EffChain env scope expected (.xIndex l.id i) (kid tail 3) x →
@@ -735,6 +749,7 @@ theorem fieldIndex_sound {env : FrontEnv} {t : Ty} {name : Name} {j : Nat} (h : 
   | tySint _ => cases h
   | tyArray _ _ => cases h
   | tySlice _ => cases h
+  | tyRef _ => cases h
 
 theorem effSliceLocal_sound {scope : List Local} {x : MEff} {l : Local} (h : effSliceLocal scope x = some l) :
     ∃ id, effLocal x = some id ∧ LocalWithId scope id l := by
@@ -936,6 +951,7 @@ theorem expectedArray_some {expected : Option Ty} {a : ArrayParts} (h : expected
     | tySlice _ => cases h
     | tyNamed _ _ => cases h
     | tySint _ => cases h
+    | tyRef _ => cases h
 
 theorem checkedEff_some {ok : Bool} {x : Option MEff} {y : MEff} (h : checkedEff ok x = some y) :
     ok = true ∧ x = some y := by
@@ -1233,7 +1249,7 @@ theorem effSound : ∀ fuel, EffSound fuel
           | some t =>
             rw [ht] at hy
             simp only at hy
-            cases hj : fieldIndex env t (kidToken tail 1).text with
+            cases hj : fieldIndex env (referentOr t) (kidToken tail 1).text with
             | none => rw [hj] at hy; cases hy
             | some j =>
               rw [hj] at hy
@@ -1241,6 +1257,17 @@ theorem effSound : ∀ fuel, EffSound fuel
               subst hy
               exact .field c.1 nn nc (effTy_sound ht) (fieldIndex_sound hj) ch
         · cases h
+      split at h
+      · rename_i c
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at c
+        obtain ⟨y, hy, ch⟩ := ihChain h
+        cases hi : effOf f env scope none (kid tail 1) with
+        | none => rw [hi] at hy; simp [xAtOf] at hy
+        | some i =>
+          rw [hi] at hy
+          simp only [xAtOf, Option.some.injEq] at hy
+          subst hy
+          exact .at c.1 c.2 (ihOf hi) ch
       split at h
       · rename_i _ pi
         obtain ⟨y, hy, ch⟩ := ihChain h

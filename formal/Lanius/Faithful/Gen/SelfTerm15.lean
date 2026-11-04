@@ -11,7 +11,6 @@ import all Lanius.Faithful.Gen.SelfSrcC_binaryConstant
 import all Lanius.Faithful.Gen.SelfSrcC_callAgrees
 import all Lanius.Faithful.Gen.SelfSrcC_codeSize
 import all Lanius.Faithful.Gen.SelfSrcC_compileArgs
-import all Lanius.Faithful.Gen.SelfSrcC_guardAnd
 import all Lanius.Faithful.Gen.SelfSrcC_larger
 import all Lanius.Faithful.Gen.SelfSrcC_loadAtBytes
 import all Lanius.Faithful.Gen.SelfSrcC_longer
@@ -30,127 +29,127 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.Termination
 open Lanius.Faithful.SelfCert
 
-theorem ok_Expr_constant : FnOk prog prims info (711, ⟨4, [0], 0⟩) :=
+theorem ok_branch_agrees : FnOk prog prims info (711, ⟨9, [1, 2], 1⟩) :=
+  fnOk_of fn_branch_agrees (by decide +kernel)
+
+theorem ok_Expr_constant : FnOk prog prims info (712, ⟨4, [0], 0⟩) :=
   fnOk_of fn_Expr_constant (by decide +kernel)
 
-theorem ok_unknown : FnOk prog prims info (712, ⟨0, [], 0⟩) :=
+theorem ok_unknown : FnOk prog prims info (713, ⟨0, [], 0⟩) :=
   fnOk_of fn_unknown (by decide +kernel)
 
-theorem ok_Expr_is_zero : FnOk prog prims info (713, ⟨5, [], 0⟩) :=
+theorem ok_Expr_is_zero : FnOk prog prims info (714, ⟨5, [], 0⟩) :=
   fnOk_of fn_Expr_is_zero (by decide +kernel)
 
-theorem ok_loop_agrees : FnOk prog prims info (714, ⟨9, [1], 1⟩) :=
+theorem ok_loop_agrees : FnOk prog prims info (715, ⟨9, [1], 1⟩) :=
   fnOk_of fn_loop_agrees (by decide +kernel)
 
-theorem ok_call_agrees : FnOk prog prims info (715, ⟨8, [], 0⟩) :=
+theorem ok_call_agrees : FnOk prog prims info (716, ⟨8, [], 0⟩) :=
   fnOk_of fn_call_agrees (by decide +kernel)
 
-theorem ok_ret_agrees : FnOk prog prims info (716, ⟨8, [], 0⟩) :=
+theorem ok_ret_agrees : FnOk prog prims info (717, ⟨8, [], 0⟩) :=
   fnOk_of fn_ret_agrees (by decide +kernel)
 
-theorem ok_Stmt_is_brk : FnOk prog prims info (717, ⟨0, [], 0⟩) :=
+theorem ok_Stmt_is_brk : FnOk prog prims info (718, ⟨0, [], 0⟩) :=
   fnOk_of fn_Stmt_is_brk (by decide +kernel)
 
-theorem ok_Stmt_is_cont : FnOk prog prims info (718, ⟨0, [], 0⟩) :=
+theorem ok_Stmt_is_cont : FnOk prog prims info (719, ⟨0, [], 0⟩) :=
   fnOk_of fn_Stmt_is_cont (by decide +kernel)
 
-theorem ok_alloc_agrees : FnOk prog prims info (719, ⟨7, [], 0⟩) :=
+theorem ok_alloc_agrees : FnOk prog prims info (720, ⟨7, [], 0⟩) :=
   fnOk_of fn_alloc_agrees (by decide +kernel)
 
-theorem ok_load_byte_agrees : FnOk prog prims info (720, ⟨7, [], 0⟩) :=
+theorem ok_load_byte_agrees : FnOk prog prims info (721, ⟨7, [], 0⟩) :=
   fnOk_of fn_load_byte_agrees (by decide +kernel)
 
-theorem ok_store_byte_agrees : FnOk prog prims info (721, ⟨7, [], 0⟩) :=
+theorem ok_store_byte_agrees : FnOk prog prims info (722, ⟨7, [], 0⟩) :=
   fnOk_of fn_store_byte_agrees (by decide +kernel)
 
-theorem ok_load_word_agrees : FnOk prog prims info (722, ⟨7, [], 0⟩) :=
+theorem ok_load_word_agrees : FnOk prog prims info (723, ⟨7, [], 0⟩) :=
   fnOk_of fn_load_word_agrees (by decide +kernel)
 
-theorem ok_store_word_agrees : FnOk prog prims info (723, ⟨7, [], 0⟩) :=
+theorem ok_store_word_agrees : FnOk prog prims info (724, ⟨7, [], 0⟩) :=
   fnOk_of fn_store_word_agrees (by decide +kernel)
 
-theorem ok_divide_agrees : FnOk prog prims info (724, ⟨7, [], 0⟩) :=
+theorem ok_divide_agrees : FnOk prog prims info (725, ⟨7, [], 0⟩) :=
   fnOk_of fn_divide_agrees (by decide +kernel)
 
-theorem ok_sys_agrees : FnOk prog prims info (725, ⟨8, [], 0⟩) :=
+theorem ok_sys_agrees : FnOk prog prims info (726, ⟨8, [], 0⟩) :=
   fnOk_of fn_sys_agrees (by decide +kernel)
 
-theorem ok_frame_agrees : FnOk prog prims info (726, ⟨0, [], 0⟩) :=
+theorem ok_frame_agrees : FnOk prog prims info (727, ⟨0, [], 0⟩) :=
   fnOk_of fn_frame_agrees (by decide +kernel)
 
-theorem ok_static_agrees : FnOk prog prims info (727, ⟨0, [], 0⟩) :=
+theorem ok_static_agrees : FnOk prog prims info (728, ⟨0, [], 0⟩) :=
   fnOk_of fn_static_agrees (by decide +kernel)
 
-theorem ok_expr_then : FnOk prog prims info (728, ⟨2, [1], 1⟩) :=
+theorem ok_expr_then : FnOk prog prims info (729, ⟨2, [1], 1⟩) :=
   fnOk_of fn_expr_then (by decide +kernel)
 
-theorem ok_stmt_then : FnOk prog prims info (729, ⟨4, [1], 1⟩) :=
+theorem ok_stmt_then : FnOk prog prims info (730, ⟨4, [1], 1⟩) :=
   fnOk_of fn_stmt_then (by decide +kernel)
 
-theorem ok_args_then : FnOk prog prims info (730, ⟨3, [1], 1⟩) :=
+theorem ok_args_then : FnOk prog prims info (731, ⟨3, [1], 1⟩) :=
   fnOk_of fn_args_then (by decide +kernel)
 
-theorem ok_spend_then : FnOk prog prims info (731, ⟨2, [], 0⟩) :=
+theorem ok_spend_then : FnOk prog prims info (732, ⟨2, [], 0⟩) :=
   fnOk_of fn_spend_then (by decide +kernel)
 
-theorem ok_Expr_temps : FnOk prog prims info (732, ⟨2, [0], 0⟩) :=
+theorem ok_Expr_temps : FnOk prog prims info (733, ⟨2, [0], 0⟩) :=
   fnOk_of fn_Expr_temps (by decide +kernel)
 
-theorem ok_args_temps : FnOk prog prims info (733, ⟨3, [0], 0⟩) :=
+theorem ok_args_temps : FnOk prog prims info (734, ⟨3, [0], 0⟩) :=
   fnOk_of fn_args_temps (by decide +kernel)
 
-theorem ok_Expr_within : FnOk prog prims info (734, ⟨0, [0], 0⟩) :=
+theorem ok_Expr_within : FnOk prog prims info (735, ⟨0, [0], 0⟩) :=
   fnOk_of fn_Expr_within (by decide +kernel)
 
-theorem ok_arity_is : FnOk prog prims info (735, ⟨2, [], 0⟩) :=
+theorem ok_arity_is : FnOk prog prims info (736, ⟨2, [], 0⟩) :=
   fnOk_of fn_arity_is (by decide +kernel)
 
-theorem ok_length_of_mini_selfhost_Expr : FnOk prog prims info (736, ⟨2, [0], 0⟩) :=
+theorem ok_length_of_mini_selfhost_Expr : FnOk prog prims info (737, ⟨2, [0], 0⟩) :=
   fnOk_of fn_length_of_mini_selfhost_Expr (by decide +kernel)
 
-theorem ok_all_within : FnOk prog prims info (737, ⟨1, [1], 0⟩) :=
+theorem ok_all_within : FnOk prog prims info (738, ⟨1, [1], 0⟩) :=
   fnOk_of fn_all_within (by decide +kernel)
 
-theorem ok_empty_of_mini_selfhost_Instr : FnOk prog prims info (739, ⟨0, [], 0⟩) :=
+theorem ok_empty_of_mini_selfhost_Instr : FnOk prog prims info (740, ⟨0, [], 0⟩) :=
   fnOk_of fn_empty_of_mini_selfhost_Instr (by decide +kernel)
 
-theorem ok_compile_expr : FnOk prog prims info (741, ⟨2, [1], 0⟩) :=
+theorem ok_compile_expr : FnOk prog prims info (742, ⟨2, [1], 0⟩) :=
   fnOk_of fn_compile_expr (by decide +kernel)
 
-theorem ok_single_of_mini_selfhost_Instr : FnOk prog prims info (742, ⟨0, [], 0⟩) :=
+theorem ok_single_of_mini_selfhost_Instr : FnOk prog prims info (743, ⟨0, [], 0⟩) :=
   fnOk_of fn_single_of_mini_selfhost_Instr (by decide +kernel)
 
-theorem ok_seq_code : FnOk prog prims info (743, ⟨5, [5], 1⟩) :=
+theorem ok_seq_code : FnOk prog prims info (744, ⟨5, [5], 1⟩) :=
   fnOk_of fn_seq_code (by decide +kernel)
 
-theorem ok_ite_code : FnOk prog prims info (744, ⟨5, [5, 6], 1⟩) :=
+theorem ok_ite_code : FnOk prog prims info (745, ⟨5, [5, 6], 1⟩) :=
   fnOk_of fn_ite_code (by decide +kernel)
 
-theorem ok_loop_code : FnOk prog prims info (745, ⟨5, [3], 1⟩) :=
+theorem ok_loop_code : FnOk prog prims info (746, ⟨5, [3], 1⟩) :=
   fnOk_of fn_loop_code (by decide +kernel)
 
-theorem ok_compile_args : FnOk prog prims info (746, ⟨3, [1], 0⟩) :=
+theorem ok_compile_args : FnOk prog prims info (747, ⟨3, [1], 0⟩) :=
   fnOk_of fn_compile_args (by decide +kernel)
 
-theorem ok_arg_slots : FnOk prog prims info (747, ⟨2, [1], 0⟩) :=
+theorem ok_arg_slots : FnOk prog prims info (748, ⟨2, [1], 0⟩) :=
   fnOk_of fn_arg_slots (by decide +kernel)
 
-theorem ok_Instr_size : FnOk prog prims info (748, ⟨3, [], 0⟩) :=
+theorem ok_Instr_size : FnOk prog prims info (749, ⟨3, [], 0⟩) :=
   fnOk_of fn_Instr_size (by decide +kernel)
 
-theorem ok_concat_of_u8 : FnOk prog prims info (753, ⟨0, [0], 0⟩) :=
+theorem ok_concat_of_u8 : FnOk prog prims info (754, ⟨0, [0], 0⟩) :=
   fnOk_of fn_concat_of_u8 (by decide +kernel)
 
-theorem ok_prologue : FnOk prog prims info (754, ⟨3, [], 0⟩) :=
+theorem ok_prologue : FnOk prog prims info (755, ⟨3, [], 0⟩) :=
   fnOk_of fn_prologue (by decide +kernel)
 
-theorem ok_encode_onto : FnOk prog prims info (755, ⟨7, [2], 0⟩) :=
+theorem ok_encode_onto : FnOk prog prims info (756, ⟨7, [2], 0⟩) :=
   fnOk_of fn_encode_onto (by decide +kernel)
 
-theorem ok_amount_guard : FnOk prog prims info (757, ⟨1, [], 0⟩) :=
-  fnOk_of fn_amount_guard (by decide +kernel)
-
 theorem chunk15 : AllFns prog prims info part15 :=
-  ⟨ok_Expr_constant, ok_unknown, ok_Expr_is_zero, ok_loop_agrees, ok_call_agrees, ok_ret_agrees, ok_Stmt_is_brk, ok_Stmt_is_cont, ok_alloc_agrees, ok_load_byte_agrees, ok_store_byte_agrees, ok_load_word_agrees, ok_store_word_agrees, ok_divide_agrees, ok_sys_agrees, ok_frame_agrees, ok_static_agrees, ok_expr_then, ok_stmt_then, ok_args_then, ok_spend_then, ok_Expr_temps, ok_args_temps, ok_Expr_within, ok_arity_is, ok_length_of_mini_selfhost_Expr, ok_all_within, ok_empty_of_mini_selfhost_Instr, ok_compile_expr, ok_single_of_mini_selfhost_Instr, ok_seq_code, ok_ite_code, ok_loop_code, ok_compile_args, ok_arg_slots, ok_Instr_size, ok_concat_of_u8, ok_prologue, ok_encode_onto, ok_amount_guard, trivial⟩
+  ⟨ok_branch_agrees, ok_Expr_constant, ok_unknown, ok_Expr_is_zero, ok_loop_agrees, ok_call_agrees, ok_ret_agrees, ok_Stmt_is_brk, ok_Stmt_is_cont, ok_alloc_agrees, ok_load_byte_agrees, ok_store_byte_agrees, ok_load_word_agrees, ok_store_word_agrees, ok_divide_agrees, ok_sys_agrees, ok_frame_agrees, ok_static_agrees, ok_expr_then, ok_stmt_then, ok_args_then, ok_spend_then, ok_Expr_temps, ok_args_temps, ok_Expr_within, ok_arity_is, ok_length_of_mini_selfhost_Expr, ok_all_within, ok_empty_of_mini_selfhost_Instr, ok_compile_expr, ok_single_of_mini_selfhost_Instr, ok_seq_code, ok_ite_code, ok_loop_code, ok_compile_args, ok_arg_slots, ok_Instr_size, ok_concat_of_u8, ok_prologue, ok_encode_onto, trivial⟩
 
 end Lanius.Faithful.SelfTerm

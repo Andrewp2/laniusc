@@ -3,16 +3,10 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_projection
-public import Lanius.Faithful.Gen.SelfStmt0
 public import Lanius.Faithful.Gen.SelfStmt1
-public import Lanius.Faithful.Gen.SelfStmt2
 public import Lanius.Faithful.Gen.SelfStmt4
-public import Lanius.Faithful.Gen.SelfStmtF_Inline_pPathMore
-public import Lanius.Faithful.Gen.SelfStmtF_callParts
-public import Lanius.Faithful.Gen.SelfStmtF_floatTyped
-public import Lanius.Faithful.Gen.SelfStmtF_freshId
-public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
-public import Lanius.Faithful.Gen.SelfStmtF_paramGoals
+public import Lanius.Faithful.Gen.SelfStmt5
+public import Lanius.Faithful.Gen.SelfStmtF_noBlock
 public import Lanius.Faithful.Gen.SelfStmtF_projection
 import all Lanius.Faithful.Gen.SelfSrcF_projection
 import all Lanius.Mini.Frontend.P.projection
@@ -34,51 +28,34 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_eff_slice_local {prog : SrcProgram} {prims : Prims} {ix_eff_slice_local ix_find_local_id ix_eff_local : Nat} (fn : prog.funcs[ix_eff_slice_local]? = some (src_eff_slice_local ix_find_local_id ix_eff_local)) (np : prims.isPrim ix_eff_slice_local = false)
-    (ext_find_local_id : Certified (∀ {n : Nat}, Stmt_find_local_id prog prims ix_find_local_id n))
-    (ext_eff_local : Certified (∀ {n : Nat}, Stmt_eff_local prog prims ix_eff_local n)) {n : Nat} :
-    Stmt_eff_slice_local prog prims ix_eff_slice_local n := by
-  intro x0 x1 v0 v1 w h r0 r1
+theorem proof_eff_place {prog : SrcProgram} {prims : Prims} {ix_eff_place : Nat} (fn : prog.funcs[ix_eff_place]? = some (src_eff_place)) (np : prims.isPrim ix_eff_place = false) {n : Nat} :
+    Stmt_eff_place prog prims ix_eff_place n := by
+  intro x0 v0 w h r0
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
-  simp only [src_eff_slice_local] at h
-  faithful [Lanius.Mini.effSliceLocal]
+  simp only [src_eff_place] at h
+  faithful [Lanius.Mini.effPlace]
 
-theorem proof_field_of_ty {prog : SrcProgram} {prims : Prims} {ix_field_of_ty ix_field_index ix_field_value : Nat} (fn : prog.funcs[ix_field_of_ty]? = some (src_field_of_ty ix_field_index ix_field_value)) (np : prims.isPrim ix_field_of_ty = false)
-    (ext_field_index : Certified (∀ {n : Nat}, Stmt_field_index prog prims ix_field_index n))
-    (ext_field_value : Certified (∀ {n : Nat}, Stmt_field_value prog prims ix_field_value n)) {n : Nat} :
-    Stmt_field_of_ty prog prims ix_field_of_ty n := by
-  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
-  rcases n with _ | n
-  · simp [pcall] at h
+theorem step_has_at {prog : SrcProgram} {prims : Prims} {ix_has_at ix_unbox_of_mini_selfhost_MEff : Nat} (fn : prog.funcs[ix_has_at]? = some (src_has_at ix_unbox_of_mini_selfhost_MEff ix_has_at)) (np : prims.isPrim ix_has_at = false)
+    (ext_unbox_of_mini_selfhost_MEff : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_MEff prog prims ix_unbox_of_mini_selfhost_MEff n)) {n : Nat}
+    (ih_has_at : Certified (Stmt_has_at prog prims ix_has_at n)) :
+    Stmt_has_at prog prims ix_has_at (n + 1) := by
+  intro x0 v0 w h r0
   rw [pcall_succ np fn] at h
-  simp only [src_field_of_ty] at h
-  faithful [Lanius.Mini.fieldOfTy]
+  simp only [src_has_at] at h
+  faithful [Lanius.Mini.hasAt]
 
-theorem proof_field_value {prog : SrcProgram} {prims : Prims} {ix_field_value ix_boxed_of_mini_selfhost_List_mini_selfhost_MEff ix_single_of_mini_selfhost_MEff ix_eff_local ix_projection : Nat} (fn : prog.funcs[ix_field_value]? = some (src_field_value ix_boxed_of_mini_selfhost_List_mini_selfhost_MEff ix_single_of_mini_selfhost_MEff ix_eff_local ix_projection)) (np : prims.isPrim ix_field_value = false)
-    (ext_boxed_of_mini_selfhost_List_mini_selfhost_MEff : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_mini_selfhost_MEff prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_MEff n))
-    (ext_single_of_mini_selfhost_MEff : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_MEff prog prims ix_single_of_mini_selfhost_MEff n))
-    (ext_eff_local : Certified (∀ {n : Nat}, Stmt_eff_local prog prims ix_eff_local n))
-    (ext_projection : Certified (∀ {n : Nat}, Stmt_projection prog prims ix_projection n)) {n : Nat} :
-    Stmt_field_value prog prims ix_field_value n := by
-  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+theorem proof_is_ref_ty {prog : SrcProgram} {prims : Prims} {ix_is_ref_ty ix_has_ty ix_referent : Nat} (fn : prog.funcs[ix_is_ref_ty]? = some (src_is_ref_ty ix_has_ty ix_referent)) (np : prims.isPrim ix_is_ref_ty = false)
+    (ext_has_ty : Certified (∀ {n : Nat}, Stmt_has_ty prog prims ix_has_ty n))
+    (ext_referent : Certified (∀ {n : Nat}, Stmt_referent prog prims ix_referent n)) {n : Nat} :
+    Stmt_is_ref_ty prog prims ix_is_ref_ty n := by
+  intro x0 v0 w h r0
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
-  simp only [src_field_value] at h
-  faithful [Lanius.Mini.fieldValue]
-
-theorem proof_method_of_ty {prog : SrcProgram} {prims : Prims} {ix_method_of_ty ix_field_fns_Decls_of_mini_selfhost_Decls ix_find_method : Nat} (fn : prog.funcs[ix_method_of_ty]? = some (src_method_of_ty ix_field_fns_Decls_of_mini_selfhost_Decls ix_find_method)) (np : prims.isPrim ix_method_of_ty = false)
-    (ext_field_fns_Decls_of_mini_selfhost_Decls : Certified (∀ {n : Nat}, Stmt_field_fns_Decls_of_mini_selfhost_Decls prog prims ix_field_fns_Decls_of_mini_selfhost_Decls n))
-    (ext_find_method : Certified (∀ {n : Nat}, Stmt_find_method prog prims ix_find_method n)) {n : Nat} :
-    Stmt_method_of_ty prog prims ix_method_of_ty n := by
-  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_method_of_ty] at h
-  faithful [Lanius.Mini.methodOfTy]
+  simp only [src_is_ref_ty] at h
+  faithful [Lanius.Mini.isRefTy]
 
 theorem proof_projection {prog : SrcProgram} {prims : Prims} {ix_projection ix_plus ix_single_of_mini_selfhost_Ty ix_length_of_mini_selfhost_FnDecl : Nat} (fn : prog.funcs[ix_projection]? = some (src_projection ix_plus ix_single_of_mini_selfhost_Ty ix_length_of_mini_selfhost_FnDecl)) (np : prims.isPrim ix_projection = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
@@ -92,15 +69,34 @@ theorem proof_projection {prog : SrcProgram} {prims : Prims} {ix_projection ix_p
   simp only [src_projection] at h
   faithful [Lanius.Mini.projection]
 
-theorem proof_step_expected {prog : SrcProgram} {prims : Prims} {ix_step_expected ix_node_prod ix_p_postfix_end : Nat} (fn : prog.funcs[ix_step_expected]? = some (src_step_expected ix_node_prod ix_p_postfix_end)) (np : prims.isPrim ix_step_expected = false)
-    (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
-    (ext_p_postfix_end : Certified (∀ {n : Nat}, Stmt_p_postfix_end prog prims ix_p_postfix_end n)) {n : Nat} :
-    Stmt_step_expected prog prims ix_step_expected n := by
+theorem proof_referent {prog : SrcProgram} {prims : Prims} {ix_referent ix_unbox_of_mini_selfhost_Ty : Nat} (fn : prog.funcs[ix_referent]? = some (src_referent ix_unbox_of_mini_selfhost_Ty)) (np : prims.isPrim ix_referent = false)
+    (ext_unbox_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_Ty prog prims ix_unbox_of_mini_selfhost_Ty n)) {n : Nat} :
+    Stmt_referent prog prims ix_referent n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_referent] at h
+  faithful [Lanius.Mini.referent]
+
+theorem proof_referent_or {prog : SrcProgram} {prims : Prims} {ix_referent_or ix_referent : Nat} (fn : prog.funcs[ix_referent_or]? = some (src_referent_or ix_referent)) (np : prims.isPrim ix_referent_or = false)
+    (ext_referent : Certified (∀ {n : Nat}, Stmt_referent prog prims ix_referent n)) {n : Nat} :
+    Stmt_referent_or prog prims ix_referent_or n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_referent_or] at h
+  faithful [Lanius.Mini.referentOr]
+
+theorem proof_x_at_of {prog : SrcProgram} {prims : Prims} {ix_x_at_of ix_boxed_of_mini_selfhost_MEff : Nat} (fn : prog.funcs[ix_x_at_of]? = some (src_x_at_of ix_boxed_of_mini_selfhost_MEff)) (np : prims.isPrim ix_x_at_of = false)
+    (ext_boxed_of_mini_selfhost_MEff : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_MEff prog prims ix_boxed_of_mini_selfhost_MEff n)) {n : Nat} :
+    Stmt_x_at_of prog prims ix_x_at_of n := by
   intro x0 x1 v0 v1 w h r0 r1
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
-  simp only [src_step_expected] at h
-  faithful [Lanius.Mini.stepExpected]
+  simp only [src_x_at_of] at h
+  faithful [Lanius.Mini.xAtOf]
 
 end Lanius.Faithful.SelfCert

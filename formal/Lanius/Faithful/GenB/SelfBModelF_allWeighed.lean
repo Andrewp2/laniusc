@@ -50,7 +50,7 @@ noncomputable section
 mutual
 def Cost_close_ty : Nat → Nat → Lanius.Mini.Tables → Lanius.Mini.Ty → Nat
   | 0, x9, x22, x33 => 18446744073709551616
-  | n + 1, x9, x22, x33 => (if (decide (x9 = 0)) = true then 0 else (match x33 with | .tyI32 => 0 | .tyBool => 0 | .tyUint x221 => 0 | .tyPtr => 0 | .tyIsize => 0 | .tyChar => 0 | .tyFloat x385 => 0 | .tySlice x434 => ((Cost_close_ty n (x9 - 1) x22 x434) + (Cost_slice_type n (Lanius.Mini.closeTy ((x9 - 1)) x22 x434))) | .tyNamed x586 x589 => (Cost_close_named n x9 x22 x586 x589 (Lanius.Mini.instIndex x22.types ((Lanius.Mini.Inst.mk x586 x589)) 0)) | .tySint x712 => 0 | .tyArray x507 x510 => ((Cost_close_ty n (x9 - 1) x22 x507) + (Cost_array_type n (Lanius.Mini.closeTy ((x9 - 1)) x22 x507) x510)) | .tyStr => 0))
+  | n + 1, x9, x22, x33 => (if (decide (x9 = 0)) = true then 0 else (match x33 with | .tyI32 => 0 | .tyBool => 0 | .tyUint x221 => 0 | .tyPtr => 0 | .tyIsize => 0 | .tyChar => 0 | .tyFloat x460 => 0 | .tySlice x509 => ((Cost_close_ty n (x9 - 1) x22 x509) + (Cost_slice_type n (Lanius.Mini.closeTy ((x9 - 1)) x22 x509))) | .tyNamed x661 x664 => (Cost_close_named n x9 x22 x661 x664 (Lanius.Mini.instIndex x22.types ((Lanius.Mini.Inst.mk x661 x664)) 0)) | .tySint x787 => 0 | .tyArray x582 x585 => ((Cost_close_ty n (x9 - 1) x22 x582) + (Cost_array_type n (Lanius.Mini.closeTy ((x9 - 1)) x22 x582) x585)) | .tyStr => 0 | .tyRef x383 => ((Cost_close_ty n (x9 - 1) x22 x383) + (Cost_ref_type n (Lanius.Mini.closeTy ((x9 - 1)) x22 x383)))))
 termination_by structural fuel => fuel
 end
 
@@ -60,7 +60,7 @@ noncomputable section
 mutual
 def Pre_close_ty : Nat → Nat → Lanius.Mini.Tables → Lanius.Mini.Ty → Nat → Prop
   | 0, x9, x22, x33, b => True
-  | n + 1, x9, x22, x33, b => (if (decide (x9 = 0)) = true then True else (match x33 with | .tyI32 => True | .tyBool => True | .tyUint x221 => True | .tyPtr => True | .tyIsize => True | .tyChar => True | .tyFloat x385 => True | .tySlice x434 => (Pre_close_ty n (x9 - 1) x22 x434 b) | .tyNamed x586 x589 => ((Pre_inst_index n x22.types (Lanius.Mini.Inst.mk x586 x589) 0 b) ∧ (Pre_close_named n x9 x22 x586 x589 (Lanius.Mini.instIndex x22.types ((Lanius.Mini.Inst.mk x586 x589)) 0) b)) | .tySint x712 => True | .tyArray x507 x510 => ((Pre_close_ty n (x9 - 1) x22 x507 b) ∧ (∀ b4 : Nat, (Cost_close_ty n (x9 - 1) x22 x507) < b → b4 = b - (Cost_close_ty n (x9 - 1) x22 x507) → (Pre_array_type n (Lanius.Mini.closeTy ((x9 - 1)) x22 x507) x510 b4))) | .tyStr => True))
+  | n + 1, x9, x22, x33, b => (if (decide (x9 = 0)) = true then True else (match x33 with | .tyI32 => True | .tyBool => True | .tyUint x221 => True | .tyPtr => True | .tyIsize => True | .tyChar => True | .tyFloat x460 => True | .tySlice x509 => (Pre_close_ty n (x9 - 1) x22 x509 b) | .tyNamed x661 x664 => ((Pre_inst_index n x22.types (Lanius.Mini.Inst.mk x661 x664) 0 b) ∧ (Pre_close_named n x9 x22 x661 x664 (Lanius.Mini.instIndex x22.types ((Lanius.Mini.Inst.mk x661 x664)) 0) b)) | .tySint x787 => True | .tyArray x582 x585 => ((Pre_close_ty n (x9 - 1) x22 x582 b) ∧ (∀ b4 : Nat, (Cost_close_ty n (x9 - 1) x22 x582) < b → b4 = b - (Cost_close_ty n (x9 - 1) x22 x582) → (Pre_array_type n (Lanius.Mini.closeTy ((x9 - 1)) x22 x582) x585 b4))) | .tyStr => True | .tyRef x383 => (Pre_close_ty n (x9 - 1) x22 x383 b)))
 termination_by structural fuel => fuel
 end
 

@@ -50,7 +50,7 @@ abbrev BStmt_builtin_path (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : P
 abbrev BStmt_named_split (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (List Nat)} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → (RepList 31 (RepList 25 RepNat)) x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_named_split n x0 = k ∧ (RepOption 255 RepSplit) (Lanius.Mini.namedSplit x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_named_split n x0 = k ∧ (RepOption 256 RepSplit) (Lanius.Mini.namedSplit x0) w
 
 abbrev BStmt_same_names (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (List Nat)} {x1 : List Lanius.Mini.CTree} {v0 v1 w : Value} {k : Nat},
@@ -69,12 +69,12 @@ abbrev BStmt_is_some_name (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : P
 
 abbrev BStmt_slice_head (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option (List Lanius.Mini.SrcExpr)} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 293 (RepList 21 RepSrcExpr)) x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 292 RepLetHead) (Lanius.Mini.sliceHead x0) w
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 294 (RepList 21 RepSrcExpr)) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 293 RepLetHead) (Lanius.Mini.sliceHead x0) w
 
 abbrev BStmt_call_path_head (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.CTree} {x4 : Lanius.Mini.CTree} {v0 v1 v2 v3 v4 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 239 RepLocal) x2 v2 → RepCTree x3 v3 → RepCTree x4 v4 → k < b → Pre_call_path_head n x0 x1 x2 x3 x4 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_call_path_head n x0 x1 x2 x3 x4 = k ∧ (RepOption 292 RepLetHead) (Lanius.Mini.callPathHead x0 x1 x2 x3 x4) w
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_call_path_head n x0 x1 x2 x3 x4 = k ∧ (RepOption 293 RepLetHead) (Lanius.Mini.callPathHead x0 x1 x2 x3 x4) w
 
 end Lanius.Faithful.SelfBudget

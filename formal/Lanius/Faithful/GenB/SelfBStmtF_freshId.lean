@@ -49,7 +49,7 @@ abbrev BStmt_member_of (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
 
 abbrev BStmt_local_expr (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.Local} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 259 RepLocal) x0 v0 →
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 260 RepLocal) x0 v0 →
     qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 235 RepSrcExpr) (Lanius.Mini.localExpr x0) w
 
 end Lanius.Faithful.SelfBudget

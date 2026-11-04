@@ -83,6 +83,9 @@ def effActs (n : Nat) (x : MEff) : Bool :=
   | .xLet id t v rt b => effActs n v || effActs n b
   | .xLen sl => false
   | .xStr cs => false
+  | .xDeref dty a => effActs n a
+  | .xPlaceField b j => effActs n b
+  | .xPlaceAt b i => effActs n b || effActs n i
 def effsAct (n : Nat) (xs : List MEff) : Bool :=
   match xs with
   | [] => false

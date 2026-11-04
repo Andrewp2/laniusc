@@ -1,15 +1,7 @@
 module
 
 public import Lanius.Mini.Frontend.Types
-import Lanius.Mini.Compiler.P.Lists_empty
-import Lanius.Mini.Frontend.P.collect
 import Lanius.Mini.Frontend.P.compoundOf
-import Lanius.Mini.Frontend.P.hasKids
-import Lanius.Mini.Frontend.P.litIf
-import Lanius.Mini.Frontend.P.noToken
-import Lanius.Mini.Frontend.P.paramGoals
-import Lanius.Mini.Frontend.P.projection
-import Lanius.Mini.Frontend.P.projectionRet
 import Lanius.Mini.Frontend.P.selfRefOf
 import Lanius.Mini.Frontend.P.shrFirst
 
@@ -41,41 +33,9 @@ def refChecked (f : Option MFunc) (sid : Option Nat) : Option MFunc :=
     | none => some m
     | some i => ifNotWrites (writesLocal m.body i) m
 
-/-- A function instance's body, read with its type parameters (the impl's, then its own) standing for the instance's arguments. -/
-def readFn (fuel : Nat) (decls : Decls) (fd : FnDecl) (args : List Ty) : Option MFunc :=
-  let names : List (List Nat) := fd.implParams ++ fd.params
-  let f : CTree := fd.tree
-  let tenv : FrontEnv := ({ decls := decls, home := fd.home, names := names, subst := args, globals := moduleGlobals decls fd.home, ret := none, base := (kidToken f 1).start } : FrontEnv)
-  let rt : Option RetTy := resultOf fuel tenv (kid f 6)
-  let env : FrontEnv := ({ decls := decls, home := fd.home, names := names, subst := args, globals := moduleGlobals decls fd.home, ret := retExpected rt, base := (kidToken f 1).start } : FrontEnv)
-  if decide (names.length = args.length) && fnBoundsOk fuel decls fd tenv then
-    match listItems fuel (kid f 4) with
-    | none => none
-    | some items => refChecked (funcParams fuel env (paramsOf fuel env fd [] items) rt (kid f 8) (kid (kid f 9) 1)) (selfRefId env items)
-  else
-    none
-
-/-- A projection: `fn(v: t) -> f { return v.f; }`, its parameter's id 0. -/
-def projectionFunc (ret : Option Ty) (inst : Inst) (decls : Decls) : Option MFunc :=
-  match ret with
-  | none => none
-  | some r =>
-    match inst.args with
-    | [] => none
-    | t :: rest => some ({ params := [({ id := 0, ty := t } : MParam)], ret := RetTy.retOf r, body := MStmt.mReturn (SrcExpr.field 0 (inst.decl - decls.fns.length)) } : MFunc)
-
-def paramEffs (ps : List MParam) : List MEff :=
-  match ps with
-  | [] => []
-  | p :: rest => MEff.xPure (SrcExpr.local p.id) :: paramEffs rest
-
-/-- The instance of a `-> !` function g at a value type t: the parameters of g, the result t, and the body `g(params); return self(params);`. The call of g does not return (Core traps in it, as `assert(false)` does in core::panic::panic), so the recursive return is never reached; it only gives the body a value of type t on every path. -/
-def divergeFunc (g : Option MFunc) (inst : Inst) : Option MFunc :=
-  match g with
-  | none => none
-  | some m =>
-    match lastTy inst.args with
-    | none => none
-    | some t => some ({ params := m.params, ret := RetTy.retOf t, body := MStmt.mThen (MStmt.mDiscard (MEff.xCall ({ decl := inst.decl, args := initTys inst.args } : Inst) (paramEffs m.params))) (MStmt.mReturnEval (MEff.xCall inst (paramEffs m.params))) } : MFunc)
+def knownTrue (x : Option Bool) : Bool :=
+  match x with
+  | none => false
+  | some b => b
 
 end Lanius.Mini

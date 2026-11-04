@@ -143,3 +143,42 @@ instrs ≤ slots ≤ frameLimit` for `compileFunc`'s code, measure in SelfPre/Co
 by `COMPILE_OVERRIDES` from `compile_func` to the encoders. Not yet looked at: `round_cons`/`round_join`
 (`count` sums), `Stmt_within`, `Code_size`, `layout`, `Expr_extent`/`Stmt_extent`. `host_text_code`
 (`slot + 1 ≤ M`) belongs with A.
+
+**11-03, group C, second part (leafB).** CompileFuncSlots' two unchecked claims hold (the leaf's NOTES),
+but the encoders need more than it states, so it is replaced by CompileFuncSlotsV2: slots by
+`slotReach` (a call's arguments and a return's sources also counted by number: `copy_bytes`), the
+code's size `≤ 2^40` (`Code_size`, `layout`, `link_onto`), and the instructions' numbers
+`≤ max (nb func) 2^40` (`encode_onto`'s `nb` premise). `vals_compileFuncs` (SelfPre/CompileOpt) turns it
+into `codesSlack codes = 0` and `codesNb codes ≤ max (nb fs) 2^40`, and the overrides carry those from
+`compile_program` through `link`, `room_after`/`room_next`, `link_fitting` and `link_onto` to
+`encode_onto` and `Instr_encode` (`codesSlack_cons_eq_zero` reads the measure one code at a time: the
+unfolded `max`/`-` form gave "(kernel) deep recursion" next to the other hypotheses). The pre lemmas
+from `compile_source` down to `compile_program` assume CompileFuncSlotsV2 (Tactic's `openProp` takes an
+open statement premise from the context), so V4's assembly becomes a reduction from it. `round_cons`/
+`round_join`: a round's count is at most its bytes (`val_packRound`, `val_packRounds`).
+`Expr_extent`/`Stmt_extent`/`Stmt_within`: their `match` variables count as the statement
+(`COMPILE_NUM_ALIAS`), so their numbers come from the caller's `nb`. `link_onto`'s entries: `val_layout`.
+
+**11-03 (leafB).** CompileFuncSlotsV2 is proved (its Proof.lean; SelfPre/CompileSlotsProof.lean), so the
+Mini-compile side's assumption of it is discharged: V4 still waits on the lowering slots (group A).
+
+- 11-03 (leafA, coordinator's decision, on leafB2's finding A): the evaluator's start slots are checked against
+  `eval_slot_limit()` = 2^40 in `eval_args`, `eval_let_body` and `eval_arm_in` (the three steps that add a type
+  size per nesting level), which return `None` at or past it. Between two checks a slot grows by at most one
+  type size (≤ 2^22) plus one per nesting level, so A's sums stay below 2^64 with no new premise
+  (SEMANTIC_DECISIONS "The evaluator's slots checked against a limit").
+
+- 11-04 (leafB): V4 is probably false, and PreCompileSourceV5 replaces it. (1) "one per nesting level" is
+  not bounded by anything in V4: an operator's right operand starts one slot past its left with no cost of
+  its own, and an `eBorrow` (or `arraySlice`, ...) left operand costs nothing, so a right-nested
+  `eApply op (eBorrow ..) (eApply op (eBorrow ..) ..)` of depth d reaches `slot + d` at the budget it
+  started with; `Pre_plus slot 1` fails for d ≥ 2^64 whatever `b` is. V5 adds
+  `∀ f ∈ p.funcs, SrcStmt.slotNest f.body ≤ 2^55` (SelfPre/EvalSlots). (2) `compile_source`'s pre needs
+  `nb p ≤ M` (the program's ids, field indices and array lengths reach `M`-bounded parameters) and V4
+  has only `hb p ≤ M`, which counts no numbers; V5 adds it.
+- 11-04 (leafB): GenPC's SelfP01 (posts) did not build after 0a9a4a1be (the slot checks):
+  `post_step_eval_arms`'s Lean side has `if evalSlotLimit ≤ dst` inline where the cost model calls
+  `eval_arm_in`, and `simp` unfolding `evalSlotLimit` in the condition but not in its `Decidable` instance
+  (`Nat.decLe evalSlotLimit x`) left a term `simp` cannot rewrite (`if_pos` failed at instance
+  transparency) and the split never reduced. Tactic's `closeArith` now unfolds the condition's nullary
+  constants with `delta` everywhere before it splits.

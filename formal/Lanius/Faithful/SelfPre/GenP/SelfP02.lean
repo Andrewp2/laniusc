@@ -1205,6 +1205,13 @@ theorem pre_build_mono : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.Decls) (x2 :
   rw [Pre_build_mono.eq_def]; dsimp only
   pre_auto n, M
 
+theorem pre_param_ty_of : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → M + b ≤ 4611686018427387904 → Pre_param_ty_of n x0 x1 x2 b := by
+  intro n x0 x1 x2 b M h0 h1 h2
+  rcases n with _ | n
+  · exact trivial
+  rw [Pre_param_ty_of.eq_def]; dsimp only
+  pre_auto n, M
+
 /-- The preconditions' lemmas of `params_of`'s group at fuel `n`. -/
 def PreIH_params_of (n : Nat) : Prop :=
     (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : Lanius.Mini.FnDecl) (x3 : List Lanius.Mini.Local) (x4 : List Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → M + b ≤ 4611686018427387904 → Pre_params_of n x0 x1 x2 x3 x4 b) ∧
@@ -2298,6 +2305,20 @@ theorem pre_inst_ret : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.Decls) (x2 : L
   rcases n with _ | n
   · exact trivial
   rw [Pre_inst_ret.eq_def]; dsimp only
+  pre_auto n, M
+
+theorem pre_field_ty_at : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.Decls) (x2 : Lanius.Mini.Ty) (x3 : Nat) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → M + b ≤ 4611686018427387904 → Pre_field_ty_at n x0 x1 x2 x3 b := by
+  intro n x0 x1 x2 x3 b M h0 h1 h2
+  rcases n with _ | n
+  · exact trivial
+  rw [Pre_field_ty_at.eq_def]; dsimp only
+  pre_auto n, M
+
+theorem pre_field_ty_of : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.Decls) (x2 : Option Lanius.Mini.Ty) (x3 : Nat) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → M + b ≤ 4611686018427387904 → Pre_field_ty_of n x0 x1 x2 x3 b := by
+  intro n x0 x1 x2 x3 b M h0 h1 h2
+  rcases n with _ | n
+  · exact trivial
+  rw [Pre_field_ty_of.eq_def]; dsimp only
   pre_auto n, M
 
 theorem pre_step_eff_ty (n : Nat) (ih :
@@ -3971,6 +3992,13 @@ theorem pre_while_or_eval : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv)
   rw [Pre_while_or_eval.eq_def]; dsimp only
   pre_auto n, M
 
+theorem pre_set_place_of : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Lanius.Mini.CTree) (x4 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → M + b ≤ 4611686018427387904 → Pre_set_place_of n x0 x1 x2 x3 x4 b := by
+  intro n x0 x1 x2 x3 x4 b M h0 h1 h2 h3 h4
+  rcases n with _ | n
+  · exact trivial
+  rw [Pre_set_place_of.eq_def]; dsimp only
+  pre_auto n, M
+
 theorem pre_set_try_or_eval : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Lanius.Mini.Local) (x4 : Nat) (x5 : Option Lanius.Mini.Tried) (x6 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x5 ≤ M → hb x6 ≤ M → M + b ≤ 4611686018427387904 → Pre_set_try_or_eval n x0 x1 x2 x3 x4 x5 x6 b := by
   intro n x0 x1 x2 x3 x4 x5 x6 b M h0 h1 h2 h3 h4 h5
   rcases n with _ | n
@@ -3983,13 +4011,6 @@ theorem pre_set_or_eval : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (
   rcases n with _ | n
   · exact trivial
   rw [Pre_set_or_eval.eq_def]; dsimp only
-  pre_auto n, M
-
-theorem pre_field_ty_at : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.Decls) (x2 : Lanius.Mini.Ty) (x3 : Nat) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → M + b ≤ 4611686018427387904 → Pre_field_ty_at n x0 x1 x2 x3 b := by
-  intro n x0 x1 x2 x3 b M h0 h1 h2
-  rcases n with _ | n
-  · exact trivial
-  rw [Pre_field_ty_at.eq_def]; dsimp only
   pre_auto n, M
 
 theorem pre_set_field_or_eval : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Lanius.Mini.Local) (x4 : List Nat) (x5 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → M + b ≤ 4611686018427387904 → Pre_set_field_or_eval n x0 x1 x2 x3 x4 x5 b := by
@@ -4011,6 +4032,13 @@ theorem pre_assign_target : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv)
   rcases n with _ | n
   · exact trivial
   rw [Pre_assign_target.eq_def]; dsimp only
+  pre_auto n, M
+
+theorem pre_set_place_op_of : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.SrcAssignOp) (x4 : Lanius.Mini.CTree) (x5 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x4 ≤ M → hb x5 ≤ M → M + b ≤ 4611686018427387904 → Pre_set_place_op_of n x0 x1 x2 x3 x4 x5 b := by
+  intro n x0 x1 x2 x3 x4 x5 b M h0 h1 h2 h3 h4
+  rcases n with _ | n
+  · exact trivial
+  rw [Pre_set_place_op_of.eq_def]; dsimp only
   pre_auto n, M
 
 theorem pre_compound_field_eval : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Lanius.Mini.Local) (x4 : Option Nat) (x5 : Nat) (x6 : Lanius.Mini.CTree) (b : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x6 ≤ M → M + b ≤ 4611686018427387904 → Pre_compound_field_eval n x0 x1 x2 x3 x4 x5 x6 b := by

@@ -344,7 +344,7 @@ theorem Corr.pushView {scope frame st env base next} (corr : Corr sx places scop
     {id length : Nat} {vs : List Value} (i32s : ∀ x ∈ vs, Views.IsI32 x) (pos : 0 < length)
     (len : vs.length = length) {p : Nat} (addr : (env' next).toNat = p)
     (under : ∀ x ∈ places, x.cell < st.nextCell) (heap : Lanius.Memory.Heap) :
-    Corr sx places (⟨id, next, .view length⟩ :: scope) (upd frame next st.nextCell)
+    Corr sx places (⟨id, next, .view length, none⟩ :: scope) (upd frame next st.nextCell)
       { (st.bindLocal id (.array vs)) with
         heap := heap
         i32ArrayViews := st.i32ArrayViews ++ [{ address := p, root := st.nextCell, projections := [], length := vs.length }] }
@@ -445,7 +445,7 @@ scope, and leaving the body's scope again corresponds for the outer one. -/
 theorem view_entered {P : Core.Program} {id length pointer k : Nat} {xs : List Expr} {vs : List Value}
     {w : Value} {st3 : State}
     (corr : Corr sx places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp)
+    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : LentHomes sx bud places st hp)
     (under : ∀ x ∈ places, x.cell < base) (pos : 0 < length)
     (fh : FieldsHold sx places (List.replicate length .i32) vs (env.setFrom next xs) next)
     (ptrRun : evalExpr k P (st.bindLocal id (.array vs)) (.i32ArrayDataPtr (.local id)) = .done w st3)
@@ -455,7 +455,7 @@ theorem view_entered {P : Core.Program} {id length pointer k : Nat} {xs : List E
       Layout (viewScope id length pointer next scope) frame' base (next + length + 1) ∧
       (st3.bindLocal pointer (.pointer p)).Fresh ∧ base ≤ (st3.bindLocal pointer (.pointer p)).nextCell ∧
       HeapCorr (st3.bindLocal pointer (.pointer p)).heap (st3.bindLocal pointer (.pointer p)).world hp3 ∧
-      FrameCorr sx bud places (st3.bindLocal pointer (.pointer p)) hp3 ∧ hp3.limit = hp.limit ∧
+      LentHomes sx bud places (st3.bindLocal pointer (.pointer p)) hp3 ∧ hp3.limit = hp.limit ∧
       Keeps places base st (st3.bindLocal pointer (.pointer p)) ∧
       (∀ {s4 : State} {c : Completion} {out : Outcome},
         Matches sx bud places ret (viewScope id length pointer next scope) frame' s4 c out →
@@ -494,11 +494,11 @@ theorem view_entered {P : Core.Program} {id length pointer k : Nat} {xs : List E
     subst st3Eq
     exact ⟨(bindLocal_fresh fresh id (.array vs)).1, Views.ViewsHold.mapView fresh.2 fresh.1 hc.below i32s enc map id⟩
   have next3 : st3.nextCell = st.nextCell + 1 := by subst st3Eq; rfl
-  have corr1 : Corr sx places (⟨id, next, .view length⟩ :: scope) (upd frame next st.nextCell) st3 envB := by
+  have corr1 : Corr sx places (⟨id, next, .view length, none⟩ :: scope) (upd frame next st.nextCell) st3 envB := by
     subst st3Eq
     exact corr.pushView fr fresh agree i32s pos vlen (by rw [envB_next, pBits])
       (fun x m => Nat.lt_of_lt_of_le (under x m) le) heap'
-  have fr1 : Layout (⟨id, next, .view length⟩ :: scope) (upd frame next st.nextCell) base (next + length) :=
+  have fr1 : Layout (⟨id, next, .view length, none⟩ :: scope) (upd frame next st.nextCell) base (next + length) :=
     fr.push (corr.below fresh) le id (ty := .view length) pos
   have corrB := corr1.push fr1 fresh3 (fun _ _ _ _ => rfl) (id := pointer) (v := .pointer p)
     (SrcType.HoldsAt.ptr (by simp only [SrcType.Holds, envB_ptr, pBits]))
@@ -506,14 +506,14 @@ theorem view_entered {P : Core.Program} {id length pointer k : Nat} {xs : List E
   have frB := fr1.push (corr1.below fresh3) (by rw [next3]; addr_omega) pointer (ty := .ptr) (by decide)
   have hcB : HeapCorr (st3.bindLocal pointer (.pointer p)).heap (st3.bindLocal pointer (.pointer p)).world
       hp3 := by subst st3Eq; exact hc3
-  have fcB : FrameCorr sx bud places (st3.bindLocal pointer (.pointer p)) hp3 := by
+  have fcB : LentHomes sx bud places (st3.bindLocal pointer (.pointer p)) hp3 := by
     refine fc.congrViews (fun x m => ?_) (fun x m a covers => ?_) ?_ ?_ ?_ ?_ ?_
     · have := under x m
       rw [bindLocal_entry (by rw [next3]; addr_omega)]
       subst st3Eq
       exact bindLocal_entry (by addr_omega) id _
     · have := fc.inside x m
-      unfold Addressed.Covers at covers
+      unfold Addressed.Within at covers
       simp only [hp3, Heap.writeBytes_eq_writeAll, Heap.writeAll, slotBytes_length]
       rw [if_neg (by addr_omega)]
     · simp only [hp3, Heap.writeBytes_eq_writeAll, Heap.writeAll]
@@ -588,7 +588,7 @@ theorem stmt_letView (ih : ∀ m ≤ fuel, StmtSound sp mp m) {id length pointer
     {body : SrcStmt}
     (ok : (SrcStmt.letView id length fields pointer body).lower (sp.sigsAt bud) sp.decls ret scope next = some stmt)
     (corr : Corr sx places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp)
+    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : LentHomes sx bud places st hp)
     (under : ∀ x ∈ places, x.cell < base)
     (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.letView id length fields pointer body).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :

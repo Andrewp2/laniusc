@@ -2,7 +2,7 @@ module
 
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
-public import Lanius.Faithful.GenB.SelfBModelF_Inline_findMethodAt
+public import Lanius.Faithful.GenB.SelfBModelF_projection
 public import Lanius.Mini.Frontend.P.projection
 
 @[expose] public section
@@ -22,34 +22,39 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 open Lanius.Faithful.Budget
 
-abbrev BStmt_step_expected (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Ty} {x1 : Lanius.Mini.CTree} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 212 RepTy) x0 v0 → RepCTree x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 212 RepTy) (Lanius.Mini.stepExpected x0 x1) w
+abbrev BStmt_referent (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.Ty} {v0 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → RepTy x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 212 RepTy) (Lanius.Mini.referent x0) w
 
-abbrev BStmt_method_of_ty (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Option Lanius.Mini.Ty} {x3 : List Nat} {v0 v1 v2 v3 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepOption 212 RepTy) x2 v2 → (RepList 25 RepNat) x3 v3 → k < b → Pre_method_of_ty n x0 x1 x2 x3 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_method_of_ty n x0 x1 x2 x3 = k ∧ (RepOption 298 RepFound) (Lanius.Mini.methodOfTy x0 x1 x2 x3) w
+abbrev BStmt_is_ref_ty (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.Ty} {v0 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → RepTy x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.isRefTy x0) w
+
+abbrev BStmt_referent_or (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.Ty} {v0 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → RepTy x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepTy (Lanius.Mini.referentOr x0) w
+
+abbrev BStmt_eff_place (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.MEff} {v0 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → RepMEff x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.effPlace x0) w
 
 abbrev BStmt_projection (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Decls} {x1 : Lanius.Mini.Ty} {x2 : Nat} {v0 v1 v2 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepDecls x0 v0 → RepTy x1 v1 → RepNat x2 v2 → k < b → Pre_projection n x0 x1 x2 b →
     qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_projection n x0 x1 x2 = k ∧ RepInst (Lanius.Mini.projection x0 x1 x2) w
 
-abbrev BStmt_field_value (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Decls} {x1 : Lanius.Mini.MEff} {x2 : Lanius.Mini.Ty} {x3 : Nat} {v0 v1 v2 v3 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepDecls x0 v0 → RepMEff x1 v1 → RepTy x2 v2 → RepNat x3 v3 → k < b → Pre_field_value n x0 x1 x2 x3 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_field_value n x0 x1 x2 x3 = k ∧ RepMEff (Lanius.Mini.fieldValue x0 x1 x2 x3) w
+abbrev BStmt_x_at_of (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.MEff} {x1 : Option Lanius.Mini.MEff} {v0 v1 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepMEff x0 v0 → (RepOption 259 RepMEff) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_x_at_of n x0 x1 = k ∧ (RepOption 259 RepMEff) (Lanius.Mini.xAtOf x0 x1) w
 
-abbrev BStmt_field_of_ty (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : Lanius.Mini.MEff} {x2 : Option Lanius.Mini.Ty} {x3 : List Nat} {v0 v1 v2 v3 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepFrontEnv x0 v0 → RepMEff x1 v1 → (RepOption 212 RepTy) x2 v2 → (RepList 25 RepNat) x3 v3 → k < b → Pre_field_of_ty n x0 x1 x2 x3 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_field_of_ty n x0 x1 x2 x3 = k ∧ (RepOption 258 RepMEff) (Lanius.Mini.fieldOfTy x0 x1 x2 x3) w
-
-abbrev BStmt_eff_slice_local (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Local} {x1 : Lanius.Mini.MEff} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 239 RepLocal) x0 v0 → RepMEff x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 259 RepLocal) (Lanius.Mini.effSliceLocal x0 x1) w
+abbrev BStmt_has_at (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.MEff} {v0 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → RepMEff x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.hasAt x0) w
 
 end Lanius.Faithful.SelfBudget

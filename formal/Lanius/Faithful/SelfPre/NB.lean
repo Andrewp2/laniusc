@@ -581,16 +581,19 @@ theorem nb_le_SrcProgram_funcs (s : Lanius.Mini.SrcProgram) : nb s.funcs ≤ nb 
   show _ ≤ nb s.funcs
   omega
 
-instance : NB Lanius.Mini.Binding := ⟨fun s => max (nb s.id) (max (nb s.slot) (nb s.ty))⟩
-@[simp, nb_simp] theorem nb_Binding_mk (a0 : Nat) (a1 : Nat) (a2 : Lanius.Mini.SrcType) : nb (Lanius.Mini.Binding.mk a0 a1 a2) = max (nb a0) (max (nb a1) (nb a2)) := rfl
+instance : NB Lanius.Mini.Binding := ⟨fun s => max (nb s.id) (max (nb s.slot) (max (nb s.ty) (nb s.home)))⟩
+@[simp, nb_simp] theorem nb_Binding_mk (a0 : Nat) (a1 : Nat) (a2 : Lanius.Mini.SrcType) (a3 : Option Nat) : nb (Lanius.Mini.Binding.mk a0 a1 a2 a3) = max (nb a0) (max (nb a1) (max (nb a2) (nb a3))) := rfl
 theorem nb_le_Binding_id (s : Lanius.Mini.Binding) : nb s.id ≤ nb s := by
-  show _ ≤ max (nb s.id) (max (nb s.slot) (nb s.ty))
+  show _ ≤ max (nb s.id) (max (nb s.slot) (max (nb s.ty) (nb s.home)))
   omega
 theorem nb_le_Binding_slot (s : Lanius.Mini.Binding) : nb s.slot ≤ nb s := by
-  show _ ≤ max (nb s.id) (max (nb s.slot) (nb s.ty))
+  show _ ≤ max (nb s.id) (max (nb s.slot) (max (nb s.ty) (nb s.home)))
   omega
 theorem nb_le_Binding_ty (s : Lanius.Mini.Binding) : nb s.ty ≤ nb s := by
-  show _ ≤ max (nb s.id) (max (nb s.slot) (nb s.ty))
+  show _ ≤ max (nb s.id) (max (nb s.slot) (max (nb s.ty) (nb s.home)))
+  omega
+theorem nb_le_Binding_home (s : Lanius.Mini.Binding) : nb s.home ≤ nb s := by
+  show _ ≤ max (nb s.id) (max (nb s.slot) (max (nb s.ty) (nb s.home)))
   omega
 
 instance : NB Lanius.Mini.Typed := ⟨fun s => max (nb s.expr) (nb s.ty)⟩
@@ -802,6 +805,7 @@ def nbTy : Lanius.Mini.Ty → Nat
   | .tySint a0 => 0
   | .tyArray a0 a1 => max (nbTy a0) (nb a1)
   | .tyStr => 0
+  | .tyRef a0 => nbTy a0
 def nbTy0 : List Lanius.Mini.Ty → Nat
   | [] => 0
   | a :: l => max (nbTy a) (nbTy0 l)
@@ -824,6 +828,7 @@ theorem nbTy0_eq : ∀ l : List Lanius.Mini.Ty, nbTy0 l = NB.nb l
 @[simp, nb_simp] theorem nb_Ty_tySint (a0 : Lanius.Mini.UintTy) : nb (Lanius.Mini.Ty.tySint a0) = 0 := rfl
 @[simp, nb_simp] theorem nb_Ty_tyArray (a0 : Lanius.Mini.Ty) (a1 : Nat) : nb (Lanius.Mini.Ty.tyArray a0 a1) = max (nb a0) (nb a1) := rfl
 @[simp, nb_simp] theorem nb_Ty_tyStr  : nb (Lanius.Mini.Ty.tyStr) = 0 := rfl
+@[simp, nb_simp] theorem nb_Ty_tyRef (a0 : Lanius.Mini.Ty) : nb (Lanius.Mini.Ty.tyRef a0) = nb a0 := rfl
 
 instance : NB Lanius.Mini.Inst := ⟨fun s => max (nb s.decl) (nb s.args)⟩
 @[simp, nb_simp] theorem nb_Inst_mk (a0 : Nat) (a1 : List Lanius.Mini.Ty) : nb (Lanius.Mini.Inst.mk a0 a1) = max (nb a0) (nb a1) := rfl
@@ -1128,6 +1133,9 @@ def nbMEff : Lanius.Mini.MEff → Nat
   | .xLet a0 a1 a2 a3 a4 => max (nb a0) (max (nb a1) (max (nbMEff a2) (max (nb a3) (nbMEff a4))))
   | .xLen a0 => nb a0
   | .xStr a0 => nb a0
+  | .xDeref a0 a1 => max (nb a0) (nbMEff a1)
+  | .xPlaceField a0 a1 => max (nbMEff a0) (nb a1)
+  | .xPlaceAt a0 a1 => max (nbMEff a0) (nbMEff a1)
 def nbMEff0 : List Lanius.Mini.MEff → Nat
   | [] => 0
   | a :: l => max (nbMEff a) (nbMEff0 l)
@@ -1156,6 +1164,9 @@ theorem nbMEff0_eq : ∀ l : List Lanius.Mini.MEff, nbMEff0 l = NB.nb l
 @[simp, nb_simp] theorem nb_MEff_xLet (a0 : Nat) (a1 : Lanius.Mini.Ty) (a2 : Lanius.Mini.MEff) (a3 : Lanius.Mini.Ty) (a4 : Lanius.Mini.MEff) : nb (Lanius.Mini.MEff.xLet a0 a1 a2 a3 a4) = max (nb a0) (max (nb a1) (max (nb a2) (max (nb a3) (nb a4)))) := rfl
 @[simp, nb_simp] theorem nb_MEff_xLen (a0 : Nat) : nb (Lanius.Mini.MEff.xLen a0) = nb a0 := rfl
 @[simp, nb_simp] theorem nb_MEff_xStr (a0 : List Nat) : nb (Lanius.Mini.MEff.xStr a0) = nb a0 := rfl
+@[simp, nb_simp] theorem nb_MEff_xDeref (a0 : Lanius.Mini.Ty) (a1 : Lanius.Mini.MEff) : nb (Lanius.Mini.MEff.xDeref a0 a1) = max (nb a0) (nb a1) := rfl
+@[simp, nb_simp] theorem nb_MEff_xPlaceField (a0 : Lanius.Mini.MEff) (a1 : Nat) : nb (Lanius.Mini.MEff.xPlaceField a0 a1) = max (nb a0) (nb a1) := rfl
+@[simp, nb_simp] theorem nb_MEff_xPlaceAt (a0 : Lanius.Mini.MEff) (a1 : Lanius.Mini.MEff) : nb (Lanius.Mini.MEff.xPlaceAt a0 a1) = max (nb a0) (nb a1) := rfl
 
 instance : NB Lanius.Mini.EffArm := ⟨fun s => max (nb s.binders) (max (nb s.value) (nb s.ty))⟩
 @[simp, nb_simp] theorem nb_EffArm_mk (a0 : List Nat) (a1 : Lanius.Mini.MEff) (a2 : Option Lanius.Mini.Ty) : nb (Lanius.Mini.EffArm.mk a0 a1 a2) = max (nb a0) (max (nb a1) (nb a2)) := rfl
@@ -1205,6 +1216,8 @@ def nbMStmt : Lanius.Mini.MStmt → Nat
   | .mContinue => 0
   | .mMatchArm a0 a1 a2 a3 a4 a5 a6 a7 => max (nb a0) (max (nb a1) (max (nb a2) (max (nb a4) (max (nb a5) (max (nbMStmt a6) (nbMStmt a7))))))
   | .mUnreachable a0 a1 => max (nb a0) (nb a1)
+  | .mSetPlace a0 a1 => max (nb a0) (nb a1)
+  | .mSetPlaceOp a0 a1 a2 => max (nb a1) (nb a2)
 end
 instance : NB Lanius.Mini.MStmt := ⟨nbMStmt⟩
 @[simp, nb_simp] theorem nb_MStmt_mNop  : nb (Lanius.Mini.MStmt.mNop) = 0 := rfl
@@ -1241,6 +1254,8 @@ instance : NB Lanius.Mini.MStmt := ⟨nbMStmt⟩
 @[simp, nb_simp] theorem nb_MStmt_mContinue  : nb (Lanius.Mini.MStmt.mContinue) = 0 := rfl
 @[simp, nb_simp] theorem nb_MStmt_mMatchArm (a0 : Nat) (a1 : Lanius.Mini.Ty) (a2 : Nat) (a3 : Bool) (a4 : Nat) (a5 : Lanius.Mini.Ty) (a6 : Lanius.Mini.MStmt) (a7 : Lanius.Mini.MStmt) : nb (Lanius.Mini.MStmt.mMatchArm a0 a1 a2 a3 a4 a5 a6 a7) = max (nb a0) (max (nb a1) (max (nb a2) (max (nb a4) (max (nb a5) (max (nb a6) (nb a7)))))) := rfl
 @[simp, nb_simp] theorem nb_MStmt_mUnreachable (a0 : Nat) (a1 : Lanius.Mini.Ty) : nb (Lanius.Mini.MStmt.mUnreachable a0 a1) = max (nb a0) (nb a1) := rfl
+@[simp, nb_simp] theorem nb_MStmt_mSetPlace (a0 : Lanius.Mini.MEff) (a1 : Lanius.Mini.MEff) : nb (Lanius.Mini.MStmt.mSetPlace a0 a1) = max (nb a0) (nb a1) := rfl
+@[simp, nb_simp] theorem nb_MStmt_mSetPlaceOp (a0 : Lanius.Mini.SrcAssignOp) (a1 : Lanius.Mini.MEff) (a2 : Lanius.Mini.MEff) : nb (Lanius.Mini.MStmt.mSetPlaceOp a0 a1 a2) = max (nb a1) (nb a2) := rfl
 
 instance : NB Lanius.Mini.Called := ⟨fun s => max (nb s.inst) (nb s.args)⟩
 @[simp, nb_simp] theorem nb_Called_mk (a0 : Lanius.Mini.Inst) (a1 : List Lanius.Mini.SrcExpr) : nb (Lanius.Mini.Called.mk a0 a1) = max (nb a0) (nb a1) := rfl

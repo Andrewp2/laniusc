@@ -2,7 +2,6 @@ module
 
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
-public import Lanius.Faithful.GenB.SelfBModelF_Inline_findMethodAt
 public import Lanius.Mini.Frontend.P.ifNotWrites
 
 @[expose] public section
@@ -22,15 +21,10 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 open Lanius.Faithful.Budget
 
-abbrev BStmt_param_effs (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.MParam} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 171 RepMParam) x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_param_effs n x0 = k ∧ (RepList 236 RepMEff) (Lanius.Mini.paramEffs x0) w
-
-abbrev BStmt_diverge_func (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.MFunc} {x1 : Lanius.Mini.Inst} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 204 RepMFunc) x0 v0 → RepInst x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_diverge_func n x0 x1 = k ∧ (RepOption 204 RepMFunc) (Lanius.Mini.divergeFunc x0 x1) w
+abbrev BStmt_known_true (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Option Bool} {v0 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 253 RepBool) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.knownTrue x0) w
 
 abbrev BStmt_if_not_writes (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : Lanius.Mini.MFunc} {v0 v1 w : Value} {k : Nat},
@@ -46,15 +40,5 @@ abbrev BStmt_self_ref_id (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
   ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : List Lanius.Mini.CTree} {v0 v1 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepFrontEnv x0 v0 → (RepList 83 RepCTree) x1 v1 →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 135 RepNat) (Lanius.Mini.selfRefId x0 x1) w
-
-abbrev BStmt_read_fn (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Lanius.Mini.FnDecl} {x3 : List Lanius.Mini.Ty} {v0 v1 v2 v3 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepDecls x1 v1 → RepFnDecl x2 v2 → (RepList 143 RepTy) x3 v3 → k < b → Pre_read_fn n x0 x1 x2 x3 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_read_fn n x0 x1 x2 x3 = k ∧ (RepOption 204 RepMFunc) (Lanius.Mini.readFn x0 x1 x2 x3) w
-
-abbrev BStmt_projection_func (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Ty} {x1 : Lanius.Mini.Inst} {x2 : Lanius.Mini.Decls} {v0 v1 v2 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepOption 212 RepTy) x0 v0 → RepInst x1 v1 → RepDecls x2 v2 → k < b → Pre_projection_func n x0 x1 x2 b →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_projection_func n x0 x1 x2 = k ∧ (RepOption 204 RepMFunc) (Lanius.Mini.projectionFunc x0 x1 x2) w
 
 end Lanius.Faithful.SelfBudget

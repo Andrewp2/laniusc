@@ -34,7 +34,7 @@ abbrev BStmt_arms_naming (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
 
 abbrev BStmt_arms_by_variant (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.TypeDecl} {x2 : List Lanius.Mini.VariantTy} {x3 : List Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepTypeDecl x1 v1 → (RepList 289 RepVariantTy) x2 v2 → (RepList 83 RepCTree) x3 v3 →
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepTypeDecl x1 v1 → (RepList 290 RepVariantTy) x2 v2 → (RepList 83 RepCTree) x3 v3 →
     qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_arms_by_variant n x0 x1 x2 x3 = k ∧ (RepOption 82 (RepList 83 RepCTree)) (Lanius.Mini.armsByVariant x0 x1 x2 x3) w
 
 end Lanius.Faithful.SelfBudget

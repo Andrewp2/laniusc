@@ -21,8 +21,8 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_cons_wild (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.CTree} {x1 : Option Lanius.Mini.WildSplit} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepCTree x0 v0 → (RepOption 318 RepWildSplit) x1 v1 →
-    (RepOption 318 RepWildSplit) (Lanius.Mini.consWild x0 x1) w
+  ∀ {x0 : Lanius.Mini.CTree} {x1 : Option Lanius.Mini.WildSplit} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepCTree x0 v0 → (RepOption 319 RepWildSplit) x1 v1 →
+    (RepOption 319 RepWildSplit) (Lanius.Mini.consWild x0 x1) w
 
 abbrev Stmt_is_underscore (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option (List Nat)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 198 (RepList 25 RepNat)) x0 v0 →
@@ -34,7 +34,7 @@ abbrev Stmt_is_wild_arm (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
 
 abbrev Stmt_wild_alone (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CTree} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepCTree x0 v0 →
-    (RepOption 318 RepWildSplit) (Lanius.Mini.wildAlone x0) w
+    (RepOption 319 RepWildSplit) (Lanius.Mini.wildAlone x0) w
 
 abbrev Stmt_wild_arm_for (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CTree} {x1 : Lanius.Mini.VariantTy} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepCTree x0 v0 → RepVariantTy x1 v1 →
@@ -50,7 +50,7 @@ abbrev Stmt_wild_binders (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
 
 abbrev Stmt_wild_split (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.CTree} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 83 RepCTree) x0 v0 →
-    (RepOption 318 RepWildSplit) (Lanius.Mini.wildSplit x0) w
+    (RepOption 319 RepWildSplit) (Lanius.Mini.wildSplit x0) w
 
 abbrev Stmt_wild_tail (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CTree} {x1 : List Lanius.Mini.Ty} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepCTree x0 v0 → (RepList 143 RepTy) x1 v1 →

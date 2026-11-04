@@ -4,8 +4,8 @@ public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Frontend.P.allWeighed
 import Lanius.Mini.Frontend.P.allocClosed
 import Lanius.Mini.Frontend.P.distinct
+import Lanius.Mini.Frontend.P.eDerefClosed
 import Lanius.Mini.Frontend.P.eDivideClosed
-import Lanius.Mini.Frontend.P.eIndexClosed
 import Lanius.Mini.Frontend.P.findConst
 
 public section
@@ -103,6 +103,9 @@ def closeEff (fuel : Nat) (t : Tables) (x : MEff) : Option SrcEff :=
   | .xLet id ty v rt b => eLetClosed id (closeTy fuel t ty) (closeEff fuel t v) (closeTy fuel t rt) (closeEff fuel t b)
   | .xLen sl => some (SrcEff.eLen sl)
   | .xStr cs => some (SrcEff.eStr 0 cs)
+  | .xDeref dty a => eDerefClosed (closeTy fuel t dty) (closeEff fuel t a)
+  | .xPlaceField b j => ePlaceFieldClosed (closeEff fuel t b) j
+  | .xPlaceAt b i => ePlaceAtClosed (closeEff fuel t b) (closeEff fuel t i)
 def closeEffs (fuel : Nat) (t : Tables) (xs : List MEff) : Option (List SrcEff) :=
   match xs with
   | [] => some []

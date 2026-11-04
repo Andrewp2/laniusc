@@ -11,12 +11,14 @@ import Lanius.Mini.Frontend.P.consBound
 import Lanius.Mini.Frontend.P.consTreeTail
 import Lanius.Mini.Frontend.P.consTys
 import Lanius.Mini.Frontend.P.divergeArm
+import Lanius.Mini.Frontend.P.fieldValue
 import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.floatTyped
 import Lanius.Mini.Frontend.P.fnInstRet
 import Lanius.Mini.Frontend.P.hasConst
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.isEmptyUsize
+import Lanius.Mini.Frontend.P.isFnPath
 import Lanius.Mini.Frontend.P.isPathCall
 import Lanius.Mini.Frontend.P.itemOf
 import Lanius.Mini.Frontend.P.joinInsts
@@ -212,10 +214,13 @@ def effStep (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Optio
         else
           none
     else
-      if nodeProd tail = (162) then
-        effChain f env scope expected (xIndexOf (effSliceLocal scope x) (effOf f env scope none (kid tail 1))) (kid tail 3)
+      if decide (nodeProd tail = (162)) && effPlace x then
+        effChain f env scope expected (xAtOf x (effOf f env scope none (kid tail 1))) (kid tail 3)
       else
-        none
+        if nodeProd tail = (162) then
+          effChain f env scope expected (xIndexOf (effSliceLocal scope x) (effOf f env scope none (kid tail 1))) (kid tail 3)
+        else
+          none
 /-- A name that is not a local or a constant: a unit variant; or a struct literal `S { f: e, ... }`, fields in declared order. -/
 def effIdent (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Option Ty) (c : CTree) : Option MEff :=
   if fuel = 0 then

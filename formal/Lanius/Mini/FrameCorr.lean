@@ -241,7 +241,9 @@ structure Budget where
 /-- The addressed places of the activations: each one's value is represented
 by its words, which lie in frame memory, above the activation's block (and
 the limit) and below the heap's top. The activation's callees have their
-room below the frame pointer. -/
+room below the frame pointer. Not used by the simulation since F5 stage 2
+S6a-1, which keeps `LentHomes` (`LentHomes.lean`): the open statement
+`FrameCorrHomes` names it. -/
 structure FrameCorr (sx : Statics) (bud : Budget) (places : List Addressed) (st : State) (hp : Heap) : Prop where
   holds : ∀ x ∈ places, x.Holds sx places st hp
   inside : ∀ x ∈ places, hp.fsp + bud.block ≤ x.address ∧ hp.limit ≤ x.address ∧ x.address + 8 * x.ty.size ≤ hp.top
@@ -266,102 +268,6 @@ structure FrameCorr (sx : Statics) (bud : Budget) (places : List Addressed) (st 
   bounded : 0 < bud.room + bud.block → hp.top < 2 ^ 62
   /-- The heap's static region is the one the `str` values name. -/
   statics : hp.StaticsAt sx
-
-theorem FrameCorr.nil (st : State) {hp : Heap} (room : 0 < bud.room + bud.block → hp.limit + bud.room ≤ hp.fsp)
-    (ceiling : 0 < bud.room + bud.block → hp.fsp + bud.block ≤ hp.top)
-    (bounded : 0 < bud.room + bud.block → hp.top < 2 ^ 62) (statics : hp.StaticsAt sx) :
-    FrameCorr sx bud [] st hp :=
-  ⟨fun _ mem => by simp at mem, fun _ mem => by simp at mem, fun _ mem => by simp at mem,
-    fun _ mem => by simp at mem, fun _ mem => by simp at mem, fun _ _ _ mem => by simp at mem, room, ceiling,
-    bounded, statics⟩
-
-/-- No places, and `need` bytes of frame memory room when `need` is positive:
-where a program's run starts. -/
-theorem FrameCorr.start (st : State) {hp : Heap} {need : Nat}
-    (frameRoom : 0 < need → hp.limit + need ≤ hp.fsp ∧ hp.fsp ≤ hp.top ∧ hp.top < 2 ^ 62)
-    (statics : hp.StaticsAt sx) :
-    FrameCorr sx ⟨need, 0⟩ [] st hp :=
-  FrameCorr.nil st (fun pos => (frameRoom (by simpa using pos)).1)
-    (fun pos => by simpa using (frameRoom (by simpa using pos)).2.1)
-    (fun pos => (frameRoom (by simpa using pos)).2.2) statics
-
-/-- No places, and no frame memory needed. -/
-theorem FrameCorr.empty (st : State) (hp : Heap) (statics : hp.StaticsAt sx) : FrameCorr sx ⟨0, 0⟩ [] st hp :=
-  FrameCorr.nil st (fun pos => absurd pos (by decide)) (fun pos => absurd pos (by decide))
-    (fun pos => absurd pos (by decide)) statics
-
-/-- Changes to bytes no place covers, to the cursor or the trace, and to Core cells no place names keep the correspondence. -/
-theorem FrameCorr.congrViews {st st' : State} {hp hp' : Heap}
-    (fc : FrameCorr sx bud places st hp)
-    (cells : ∀ x ∈ places, st'.cellEntry? x.cell = st.cellEntry? x.cell)
-    (bytes : ∀ x ∈ places, ∀ a, x.Covers a → hp'.bytes a = hp.bytes a)
-    (fsp : hp'.fsp = hp.fsp) (limit : hp'.limit = hp.limit) (top : hp'.top = hp.top)
-    (unviewed : ∀ v ∈ st'.i32ArrayViews, ∀ x ∈ places, v.root ≠ x.cell)
-    (statics : hp'.staticBase = hp.staticBase ∧ hp'.statics = hp.statics := by exact ⟨rfl, rfl⟩) :
-    FrameCorr sx bud places st' hp' := by
-  refine ⟨fun x mem => ?_, fun x mem => ?_, fc.small, fc.apart, fc.packed, unviewed, by rw [fsp, limit]; exact fc.room,
-    by rw [fsp, top]; exact fc.ceiling, by rw [top]; exact fc.bounded, fc.statics.congr statics.1 statics.2 top⟩
-  · obtain ⟨v, read, holds⟩ := fc.holds x mem
-    refine ⟨v, ?_, holds.congr (Addressed.view_congr (bytes x mem))⟩
-    simp only [Semantics.readCellProjection, cells x mem] at read ⊢
-    exact read
-  · have := fc.inside x mem
-    exact ⟨fsp ▸ this.1, limit ▸ this.2.1, top ▸ this.2.2⟩
-
-/-- As `congrViews`, with the views as they were. -/
-theorem FrameCorr.congr {st st' : State} {hp hp' : Heap}
-    (fc : FrameCorr sx bud places st hp)
-    (cells : ∀ x ∈ places, st'.cellEntry? x.cell = st.cellEntry? x.cell)
-    (bytes : ∀ x ∈ places, ∀ a, x.Covers a → hp'.bytes a = hp.bytes a)
-    (fsp : hp'.fsp = hp.fsp) (limit : hp'.limit = hp.limit) (top : hp'.top = hp.top)
-    (views : st'.i32ArrayViews = st.i32ArrayViews := by rfl)
-    (statics : hp'.staticBase = hp.staticBase ∧ hp'.statics = hp.statics := by exact ⟨rfl, rfl⟩) :
-    FrameCorr sx bud places st' hp' :=
-  fc.congrViews cells bytes fsp limit top (by rw [views]; exact fc.unviewed) statics
-
-/-- A heap that differs only below the limit, with the same limit, top and
-frame pointer, and Core cells no place names, keep the correspondence: the
-bump heap is not frame memory. -/
-theorem FrameCorr.low {st st' : State} {hp hp' : Heap} (fc : FrameCorr sx bud places st hp)
-    (cells : ∀ x ∈ places, st'.cellEntry? x.cell = st.cellEntry? x.cell)
-    (bytes : ∀ a, hp.limit ≤ a → hp'.bytes a = hp.bytes a)
-    (fsp : hp'.fsp = hp.fsp) (limit : hp'.limit = hp.limit) (top : hp'.top = hp.top)
-    (views : st'.i32ArrayViews = st.i32ArrayViews := by rfl)
-    (statics : hp'.staticBase = hp.staticBase ∧ hp'.statics = hp.statics := by exact ⟨rfl, rfl⟩) :
-    FrameCorr sx bud places st' hp' :=
-  fc.congr cells (fun x mem a covers => bytes a (by
-      have := fc.inside x mem; unfold Addressed.Covers at covers; omega))
-    fsp limit top views statics
-
-/-- A store below the frame pointer misses every place. -/
-theorem FrameCorr.writeLE_below {st : State} {hp : Heap}
-    (fc : FrameCorr sx bud places st hp) {address value count : Nat} (below : address + count ≤ hp.fsp) :
-    FrameCorr sx bud places st (hp.writeLE address value count) :=
-  fc.congr (fun _ _ => rfl)
-    (fun x mem a covers => Heap.writeLE_bytes_outside _ _ _ _ _ (.inr (by
-      have := fc.inside x mem; unfold Addressed.Covers at covers; omega)))
-    (Heap.writeLE_top _ _ _ _).2 (Heap.writeLE_limit _ _ _ _).1 (Heap.writeLE_top _ _ _ _).1 rfl
-    (Heap.writeLE_statics _ _ _ _)
-
-/-- A store below the limit, into the bump heap, misses every place. -/
-theorem FrameCorr.writeLE_low {st : State} {hp : Heap}
-    (fc : FrameCorr sx bud places st hp) {address value count : Nat} (below : address + count ≤ hp.limit) :
-    FrameCorr sx bud places st (hp.writeLE address value count) :=
-  fc.congr (fun _ _ => rfl)
-    (fun x mem a covers => Heap.writeLE_bytes_outside _ _ _ _ _ (.inr (by
-      have := fc.inside x mem; unfold Addressed.Covers at covers; omega)))
-    (Heap.writeLE_top _ _ _ _).2 (Heap.writeLE_limit _ _ _ _).1 (Heap.writeLE_top _ _ _ _).1 rfl
-    (Heap.writeLE_statics _ _ _ _)
-
-/-- A byte store below the limit misses every place. -/
-theorem FrameCorr.write_low {st : State} {hp : Heap}
-    (fc : FrameCorr sx bud places st hp) {address : Nat} {byte : UInt8} (below : address < hp.limit) :
-    FrameCorr sx bud places st (hp.write address byte) :=
-  fc.congr (fun _ _ => rfl)
-    (fun x mem a covers => by
-      have := fc.inside x mem; unfold Addressed.Covers at covers
-      rw [Heap.write_bytes, if_neg (by omega)])
-    rfl rfl rfl
 
 /-- `hp'` differs from `hp` only below the limit, in the bump heap: what a
 store into Core's heap does. -/
@@ -389,84 +295,5 @@ theorem Heap.LowOnly.writeLE {hp : Heap} {address value count : Nat} (below : ad
 theorem Heap.LowOnly.write {hp : Heap} {address : Nat} {byte : UInt8} (below : address < hp.limit) :
     hp.LowOnly (hp.write address byte) :=
   ⟨fun _ le => by rw [Heap.write_bytes, if_neg (by omega)], rfl, rfl, rfl, rfl, rfl⟩
-
-/-- The places hold over a change below the limit. -/
-theorem FrameCorr.lowOnly {st : State} {hp hp' : Heap} (fc : FrameCorr sx bud places st hp) (low : hp.LowOnly hp') :
-    FrameCorr sx bud places st hp' :=
-  fc.low (fun _ _ => rfl) low.bytes low.fsp low.limit low.top rfl ⟨low.staticBase, low.statics⟩
-
-/-- Core's heap is not frame memory. -/
-theorem FrameCorr.withHeap {st : State} {hp : Heap} (fc : FrameCorr sx bud places st hp) (heap : Memory.Heap) :
-    FrameCorr sx bud places { st with heap } hp :=
-  fc.congr (fun _ _ => rfl) (fun _ _ _ _ => rfl) rfl rfl rfl
-
-/-- `frame` lowers the frame pointer and keeps every place: the bytes come
-out of the room, and the new block is at most what was handed out over the
-old one. -/
-theorem FrameCorr.frame {st : State} {hp : Heap}
-    (fc : FrameCorr sx bud places st hp) {bud' : Budget} (bytes : Nat) (room : bytes + bud'.room ≤ bud.room)
-    (block : bud'.block ≤ bytes + bud.block) :
-    FrameCorr sx bud' places st { hp with fsp := hp.fsp - bytes } := by
-  have room' := fc.room
-  have ceiling' := fc.ceiling
-  have bounded' := fc.bounded
-  refine ⟨fun x mem => ?_, fun x mem => ?_, fc.small, fc.apart, fc.packed, fc.unviewed, fun pos => ?_, fun pos => ?_,
-    fun pos => bounded' (by omega), fc.statics.congr rfl rfl rfl⟩
-  · obtain ⟨v, read, holds⟩ := fc.holds x mem
-    exact ⟨v, read, holds.congr (Addressed.view_congr fun _ _ => rfl)⟩
-  · have inside := fc.inside x mem
-    exact ⟨by show hp.fsp - bytes + _ ≤ _; omega, inside.2⟩
-  · have := room' (by omega)
-    show hp.limit + bud'.room ≤ hp.fsp - bytes
-    omega
-  · have := room' (by omega)
-    have := ceiling' (by omega)
-    show hp.fsp - bytes + bud'.block ≤ hp.top
-    omega
-
-/-- A call's return gives the caller's frame pointer back, and with it the
-caller's budget: its block below every place and its room above the limit. -/
-theorem FrameCorr.restore {bud' : Budget} {st : State} {hp : Heap}
-    (fc : FrameCorr sx bud' places st hp) {fsp : Nat} (above : ∀ x ∈ places, fsp + bud.block ≤ x.address)
-    (room : 0 < bud.room + bud.block → hp.limit + bud.room ≤ fsp)
-    (ceiling : 0 < bud.room + bud.block → fsp + bud.block ≤ hp.top)
-    (bounded : 0 < bud.room + bud.block → hp.top < 2 ^ 62) :
-    FrameCorr sx bud places st { hp with fsp := fsp } :=
-  ⟨fun x mem => by
-      obtain ⟨v, read, holds⟩ := fc.holds x mem
-      exact ⟨v, read, holds.congr (Addressed.view_congr fun _ _ => rfl)⟩,
-    fun x mem => ⟨above x mem, (fc.inside x mem).2⟩, fc.small, fc.apart, fc.packed, fc.unviewed, room, ceiling,
-    bounded, fc.statics.congr rfl rfl rfl⟩
-
-/-- After a call: the callee's places with the caller's frame pointer and
-budget, given the caller's correspondence before the call. -/
-theorem FrameCorr.back {bud' : Budget} {st st0 : State} {hp hp0 : Heap} (fc : FrameCorr sx bud' places st hp)
-    (caller : FrameCorr sx bud places st0 hp0) (limit : hp.limit = hp0.limit) (top : hp.top = hp0.top) :
-    FrameCorr sx bud places st { hp with fsp := hp0.fsp } :=
-  fc.restore (fun x mem => (caller.inside x mem).1) (fun pos => by rw [limit]; exact caller.room pos)
-    (fun pos => by rw [top]; exact caller.ceiling pos) (fun pos => by rw [top]; exact caller.bounded pos)
-
-/-- A callee with no block of its own and room no more than its caller's. -/
-theorem FrameCorr.callee {st : State} {hp : Heap} (fc : FrameCorr sx bud places st hp) {bud' : Budget}
-    (room : bud'.room ≤ bud.room) (block : bud'.block ≤ bud.block) : FrameCorr sx bud' places st hp := by
-  have room' := fc.room
-  have ceiling' := fc.ceiling
-  have bounded' := fc.bounded
-  refine ⟨fc.holds, fun x mem => ?_, fc.small, fc.apart, fc.packed, fc.unviewed, fun pos => ?_, fun pos => ?_,
-    fun pos => bounded' (by omega), fc.statics⟩
-  · have inside := fc.inside x mem
-    exact ⟨by omega, inside.2⟩
-  · have := room' (by omega)
-    omega
-  · have := ceiling' (by omega)
-    omega
-
-/-- A place's words are below the top, and so below `2 ^ 62` with the heap. -/
-theorem FrameCorr.covers_top {st : State} {hp : Heap}
-    (fc : FrameCorr sx bud places st hp) {x : Addressed} (mem : x ∈ places) {a : Nat} (covers : x.Covers a) :
-    hp.fsp ≤ a ∧ a < hp.top := by
-  have := fc.inside x mem
-  unfold Addressed.Covers at covers
-  omega
 
 end Lanius.Mini

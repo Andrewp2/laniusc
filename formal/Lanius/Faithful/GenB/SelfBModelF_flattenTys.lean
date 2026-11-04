@@ -67,6 +67,14 @@ end
 
 noncomputable section
 
+def Cost_ref_type : Nat → Option Lanius.Mini.SrcType → Nat
+  | 0, x9 => 18446744073709551616
+  | n + 1, x9 => (match x9 with | some x150 => 1 | none => 0)
+
+end
+
+noncomputable section
+
 def Cost_cons_types_tail : Nat → List Lanius.Mini.SrcType → Option (List (List Lanius.Mini.SrcType)) → Nat
   | 0, x16, x34 => 18446744073709551616
   | n + 1, x16, x34 => (match x34 with | some x191 => (Cost_cons_of_mini_selfhost_List_mini_selfhost_SrcType n x16 x191) | none => 0)

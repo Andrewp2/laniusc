@@ -14,6 +14,7 @@ public import Lanius.Faithful.Gen.SelfSrcC_SrcType_same
 public import Lanius.Faithful.Gen.SelfSrcC_Stmt_kills
 public import Lanius.Faithful.Gen.SelfSrcC_arities
 public import Lanius.Faithful.Gen.SelfSrcC_arrayCallSig
+public import Lanius.Faithful.Gen.SelfSrcC_bindingBytes
 public import Lanius.Faithful.Gen.SelfSrcC_compileOr
 public import Lanius.Faithful.Gen.SelfSrcC_funcNeeds
 public import Lanius.Faithful.Gen.SelfSrcC_larger
@@ -55,6 +56,7 @@ import all Lanius.Faithful.Gen.SelfSrcC_SrcType_same
 import all Lanius.Faithful.Gen.SelfSrcC_Stmt_kills
 import all Lanius.Faithful.Gen.SelfSrcC_arities
 import all Lanius.Faithful.Gen.SelfSrcC_arrayCallSig
+import all Lanius.Faithful.Gen.SelfSrcC_bindingBytes
 import all Lanius.Faithful.Gen.SelfSrcC_compileOr
 import all Lanius.Faithful.Gen.SelfSrcC_funcNeeds
 import all Lanius.Faithful.Gen.SelfSrcC_larger
@@ -122,7 +124,7 @@ def dpart1 : List SrcFunc := [(src_file_decls 153 154 155 156 157 158), (src_bui
 def dents1 : List SigEntry := [some ([(.uint .usize), ty85], ty130), some ([(.uint .usize), ty129, ty143], ty38), some ([(.uint .usize), ty86, ty131], ty143), some ([ty84], ty86), some ([ty27], ty127), some ([(.uint .usize), (.uint .usize)], (.uint .usize)), some ([ty47], (.uint .usize)), none, none, none, some ([], ty36), none, none, some ([ty100], ty100), some ([ty100, ty100], .bool), some ([ty70, ty100], ty70), some ([ty100], ty70), some ([ty96, ty98], ty98), some ([ty12], (.uint .usize)), some ([ty32], (.uint .usize)), some ([ty9], (.uint .usize)), some ([ty12], .bool), some ([ty31], .bool), some ([], (.uint .usize)), some ([(.uint .usize), (.uint .usize), (.uint .usize), ty147], ty136), some ([ty31], (.uint .usize)), some ([ty9, ty147], ty147), some ([(.uint .usize), (.uint .usize), ty147], ty147), some ([ty31, ty103, ty80, ty9, ty150, (.uint .usize)], ty147), some ([ty103, (.uint .usize), (.uint .usize)], ty103), some ([ty12, (.uint .usize), ty150], ty150), some ([], ty150), none, some ([], ty103), some ([ty101, ty103], ty103), some ([ty12], ty72), some ([ty20, (.uint .usize), (.uint .usize)], (.uint .usize)), some ([ty20], ty20), some ([ty34, ty20, (.uint .usize)], ty20), some ([], ty20), some ([ty34], (.uint .usize)), some ([ty12, ty80], ty81), some ([ty81, ty31], ty81), some ([ty9, ty80], ty81), some ([ty1, (.uint .usize)], ty105), some ([ty20, ty20, ty105], ty83), some ([ty1, (.uint .usize)], ty105), some ([ty50], ty49), some ([ty85, ty86], ty86), some ([ty44, (.uint .usize), ty41, (.uint .usize), ty139], ty141), some ([ty39], ty41), some ([ty140], ty138), none, some ([ty85], (.uint .usize)), some ([], (.uint .usize)), some ([(.uint .usize), ty85], ty87), some ([ty85, (.uint .usize)], ty85), some ([(.uint .usize), ty151, ty86], ty130), some ([(.uint .usize), ty86], ty151), some ([(.uint .usize), ty131, ty158, ty158], ty38), some ([ty113, (.uint .usize)], ty158), some ([ty128], ty113), some ([ty110, (.uint .usize)], ty158), some ([ty128], ty110), some ([(.uint .usize), ty131, ty130, ty86], ty143), none, some ([ty127], ty126), some ([ty46], ty47), some ([ty98], ty98), some ([ty98, ty98], .bool), some ([ty163, ty98], ty145), some ([ty98], ty163), some ([ty68, ty36], ty70), some ([ty98], ty97), some ([ty11], ty12), some ([ty31], ty20), some ([(.uint .usize), ty12, ty20], ty146), some ([], (.uint .usize)), some ([ty146], (.uint .usize)), some ([(.uint .usize), ty20, ty31], ty146), some ([ty72], (.uint .usize)), some ([ty5], ty72), some ([ty76], (.uint .usize)), some ([ty6], ty76), some ([ty7], ty9), some ([ty9], .bool), some ([(.uint .usize), (.uint .usize)], (.uint .usize)), some ([ty95], (.uint .usize)), some ([ty95], ty92), some ([ty91], ty94), some ([(.uint .usize), ty91, ty147], ty147), some ([ty15, ty150], ty91), some ([(.uint .usize), ty171, ty147], ty147), some ([ty150, ty15, ty9], ty171), some ([ty148, ty150], ty150), some ([ty150, ty18], ty91), some ([ty150, ty9, ty18], ty171), some ([(.uint .usize), (.uint .usize), (.uint .usize), ty171, ty147], ty147), some ([ty103, ty150, (.uint .usize), ty18, ty9], ty171), some ([ty150, ty9, (.uint .usize), ty18], ty171)]
 
 /-- `declareFuncs` of functions 100 to 199. -/
-theorem dchunk1 : declsStep dpart1 decls 70 121 62 108 = true := by decide +kernel
+theorem dchunk1 : declsStep dpart1 decls 70 122 62 109 = true := by decide +kernel
 
 theorem dfit1 : entriesFit dpart1 dents1 = true := by decide +kernel
 

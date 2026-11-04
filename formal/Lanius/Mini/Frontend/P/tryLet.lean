@@ -64,6 +64,9 @@ def inferred (x : MEff) : Bool :=
   | .xLet id t v rt b => false
   | .xLen sl => true
   | .xStr cs => true
+  | .xDeref dty a => false
+  | .xPlaceField b j => true
+  | .xPlaceAt b i => true
 
 def untypedIf (ok : Bool) (t : Ty) (h : LetHead) : Option Untyped :=
   if ok then
@@ -118,6 +121,7 @@ def isPtrTy (t : Ty) : Bool :=
   | .tyIsize => false
   | .tyChar => false
   | .tyStr => false
+  | .tyRef refd => false
   | .tyFloat ft => false
   | .tySlice e => false
   | .tyArray e n => false

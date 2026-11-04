@@ -1220,6 +1220,14 @@ theorem post_array_type : ∀ (n : Nat) (x0 : Option Lanius.Mini.SrcType) (x1 : 
   rw [Lanius.Mini.arrayType.eq_def x0 x1]
   post_auto n, M
 
+theorem post_ref_type : ∀ (n : Nat) (x0 : Option Lanius.Mini.SrcType), ∀ M : Nat, hb x0 ≤ M → Cost_ref_type n x0 < 18446744073709551616 → hb (Lanius.Mini.refType x0) ≤ M + Cost_ref_type n x0 := by
+  intro n x0 M hM0
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_ref_type.eq_def]; dsimp only
+  rw [Lanius.Mini.refType.eq_def x0]
+  post_auto n, M
+
 theorem post_cons_of_mini_selfhost_List_mini_selfhost_SrcType : ∀ (n : Nat) (x0 : List Lanius.Mini.SrcType) (x1 : List (List Lanius.Mini.SrcType)), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_cons_of_mini_selfhost_List_mini_selfhost_SrcType n x0 x1 < 18446744073709551616 → hb (x0 :: x1) ≤ M + Cost_cons_of_mini_selfhost_List_mini_selfhost_SrcType n x0 x1 := by
   intro n x0 x1 M hM0 hM1 h
   rcases n with _ | n
@@ -1635,6 +1643,30 @@ theorem post_e_let_closed : ∀ (n : Nat) (x0 : Nat) (x1 : Option Lanius.Mini.Sr
   · intro h; exact absurd h (Nat.lt_irrefl _)
   rw [Cost_e_let_closed.eq_def]; dsimp only
   rw [Lanius.Mini.eLetClosed.eq_def x0 x1 x2 x3 x4]
+  post_auto n, M
+
+theorem post_e_deref_closed : ∀ (n : Nat) (x0 : Option Lanius.Mini.SrcType) (x1 : Option Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_e_deref_closed n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.eDerefClosed x0 x1) ≤ M + Cost_e_deref_closed n x0 x1 := by
+  intro n x0 x1 M hM0 hM1
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_e_deref_closed.eq_def]; dsimp only
+  rw [Lanius.Mini.eDerefClosed.eq_def x0 x1]
+  post_auto n, M
+
+theorem post_e_place_field_closed : ∀ (n : Nat) (x0 : Option Lanius.Mini.SrcEff) (x1 : Nat), ∀ M : Nat, hb x0 ≤ M → Cost_e_place_field_closed n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.ePlaceFieldClosed x0 x1) ≤ M + Cost_e_place_field_closed n x0 x1 := by
+  intro n x0 x1 M hM0
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_e_place_field_closed.eq_def]; dsimp only
+  rw [Lanius.Mini.ePlaceFieldClosed.eq_def x0 x1]
+  post_auto n, M
+
+theorem post_e_place_at_closed : ∀ (n : Nat) (x0 : Option Lanius.Mini.SrcEff) (x1 : Option Lanius.Mini.SrcEff), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_e_place_at_closed n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.ePlaceAtClosed x0 x1) ≤ M + Cost_e_place_at_closed n x0 x1 := by
+  intro n x0 x1 M hM0 hM1
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_e_place_at_closed.eq_def]; dsimp only
+  rw [Lanius.Mini.ePlaceAtClosed.eq_def x0 x1]
   post_auto n, M
 
 /-- The posts of `close_eff`'s group at fuel `n`. -/
@@ -2853,6 +2885,22 @@ theorem post_extern_body : ∀ (n : Nat) (x0 : Option Lanius.Mini.MParams) (x1 :
   rw [Lanius.Mini.externBody.eq_def x0 x1 x2]
   post_auto n, M
 
+theorem post_ref_ty : ∀ (n : Nat) (x0 : Option Lanius.Mini.Ty), ∀ M : Nat, hb x0 ≤ M → Cost_ref_ty n x0 < 18446744073709551616 → hb (Lanius.Mini.refTy x0) ≤ M + Cost_ref_ty n x0 := by
+  intro n x0 M hM0
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_ref_ty.eq_def]; dsimp only
+  rw [Lanius.Mini.refTy.eq_def x0]
+  post_auto n, M
+
+theorem post_param_ty_of : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : Lanius.Mini.CTree), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → Cost_param_ty_of n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.paramTyOf x0 x1 x2) ≤ M + Cost_param_ty_of n x0 x1 x2 := by
+  intro n x0 x1 x2 M hM0 hM1
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_param_ty_of.eq_def]; dsimp only
+  rw [Lanius.Mini.paramTyOf.eq_def x0 x1 x2]
+  post_auto n, M
+
 theorem post_cons_of_mini_selfhost_MParam : ∀ (n : Nat) (x0 : Lanius.Mini.MParam) (x1 : List Lanius.Mini.MParam), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_cons_of_mini_selfhost_MParam n x0 x1 < 18446744073709551616 → hb (x0 :: x1) ≤ M + Cost_cons_of_mini_selfhost_MParam n x0 x1 := by
   intro n x0 x1 M hM0 hM1 h
   rcases n with _ | n
@@ -3283,6 +3331,22 @@ theorem post_trait_of_ty : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) 
   · intro h; exact absurd h (Nat.lt_irrefl _)
   rw [Cost_trait_of_ty.eq_def]; dsimp only
   rw [Lanius.Mini.traitOfTy.eq_def x0 x1 x2]
+  post_auto n, M
+
+theorem post_ref_kids : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.CTree) (x2 : List Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → Cost_ref_kids n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.refKids x0 x1 x2) ≤ M + Cost_ref_kids n x0 x1 x2 := by
+  intro n x0 x1 x2 M hM0 hM1
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_ref_kids.eq_def]; dsimp only
+  rw [Lanius.Mini.refKids.eq_def x0 x1 x2]
+  post_auto n, M
+
+theorem post_refs_checked : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.CTree) (x2 : List Lanius.Mini.CTree) (x3 : Option Lanius.Mini.MFunc), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → Cost_refs_checked n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.refsChecked x0 x1 x2 x3) ≤ M + Cost_refs_checked n x0 x1 x2 x3 := by
+  intro n x0 x1 x2 x3 M hM0 hM1 hM2
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_refs_checked.eq_def]; dsimp only
+  rw [Lanius.Mini.refsChecked.eq_def x0 x1 x2 x3]
   post_auto n, M
 
 theorem post_contract_then : ∀ (n : Nat) (x0 : Option Lanius.Mini.MEff) (x1 : Option Lanius.Mini.MStmt), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_contract_then n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.contractThen x0 x1) ≤ M + Cost_contract_then n x0 x1 := by
@@ -4295,6 +4359,22 @@ theorem post_inst_ret : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.Decls) (x2 : 
   rw [Lanius.Mini.instRet.eq_def x0 x1 x2]
   post_auto n, M
 
+theorem post_field_ty_at : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.Decls) (x2 : Lanius.Mini.Ty) (x3 : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → Cost_field_ty_at n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.fieldTyAt x0 x1 x2 x3) ≤ M + Cost_field_ty_at n x0 x1 x2 x3 := by
+  intro n x0 x1 x2 x3 M hM0 hM1
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_field_ty_at.eq_def]; dsimp only
+  rw [Lanius.Mini.fieldTyAt.eq_def x0 x1 x2 x3]
+  post_auto n, M
+
+theorem post_field_ty_of : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.Decls) (x2 : Option Lanius.Mini.Ty) (x3 : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → Cost_field_ty_of n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.fieldTyOf x0 x1 x2 x3) ≤ M + Cost_field_ty_of n x0 x1 x2 x3 := by
+  intro n x0 x1 x2 x3 M hM0 hM1
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_field_ty_of.eq_def]; dsimp only
+  rw [Lanius.Mini.fieldTyOf.eq_def x0 x1 x2 x3]
+  post_auto n, M
+
 theorem post_step_eff_ty (n : Nat) (ih :
     (∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Lanius.Mini.MEff), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → Cost_eff_ty n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.effTy x0 x1 x2 x3) ≤ M + Cost_eff_ty n x0 x1 x2 x3)) :
     ∀ (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Lanius.Mini.MEff), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → Cost_eff_ty (n + 1) x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.effTy x0 x1 x2 x3) ≤ M + Cost_eff_ty (n + 1) x0 x1 x2 x3 := by
@@ -4954,6 +5034,14 @@ theorem post_field_of_ty : ∀ (n : Nat) (x0 : Lanius.Mini.FrontEnv) (x1 : Laniu
   · intro h; exact absurd h (Nat.lt_irrefl _)
   rw [Cost_field_of_ty.eq_def]; dsimp only
   rw [Lanius.Mini.fieldOfTy.eq_def x0 x1 x2 x3]
+  post_auto n, M
+
+theorem post_x_at_of : ∀ (n : Nat) (x0 : Lanius.Mini.MEff) (x1 : Option Lanius.Mini.MEff), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_x_at_of n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.xAtOf x0 x1) ≤ M + Cost_x_at_of n x0 x1 := by
+  intro n x0 x1 M hM0 hM1
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_x_at_of.eq_def]; dsimp only
+  rw [Lanius.Mini.xAtOf.eq_def x0 x1]
   post_auto n, M
 
 theorem post_field_expects : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.Decls) (x2 : Nat) (x3 : Option (List Lanius.Mini.Ty)), ∀ M : Nat, hb x1 ≤ M → hb x3 ≤ M → Cost_field_expects n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.fieldExpects x0 x1 x2 x3) ≤ M + Cost_field_expects n x0 x1 x2 x3 := by
@@ -6986,6 +7074,14 @@ theorem post_for_slice : ∀ (n : Nat) (x0 : Bool) (x1 : Nat) (x2 : Nat) (x3 : N
   rw [Lanius.Mini.forSlice.eq_def x0 x1 x2 x3 x4 x5 x6]
   post_auto n, M
 
+theorem post_set_place_of : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Lanius.Mini.CTree) (x4 : Lanius.Mini.CTree), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → Cost_set_place_of n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.setPlaceOf x0 x1 x2 x3 x4) ≤ M + Cost_set_place_of n x0 x1 x2 x3 x4 := by
+  intro n x0 x1 x2 x3 x4 M hM0 hM1 hM2 hM3
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_set_place_of.eq_def]; dsimp only
+  rw [Lanius.Mini.setPlaceOf.eq_def x0 x1 x2 x3 x4]
+  post_auto n, M
+
 theorem post_set_eval_of : ∀ (n : Nat) (x0 : Nat) (x1 : Option Lanius.Mini.MEff), ∀ M : Nat, hb x1 ≤ M → Cost_set_eval_of n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.setEvalOf x0 x1) ≤ M + Cost_set_eval_of n x0 x1 := by
   intro n x0 x1 M hM0
   rcases n with _ | n
@@ -7018,14 +7114,6 @@ theorem post_set_or_eval : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) 
   rw [Lanius.Mini.setOrEval.eq_def x0 x1 x2 x3 x4 x5]
   post_auto n, M
 
-theorem post_field_ty_at : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.Decls) (x2 : Lanius.Mini.Ty) (x3 : Nat), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → Cost_field_ty_at n x0 x1 x2 x3 < 18446744073709551616 → hb (Lanius.Mini.fieldTyAt x0 x1 x2 x3) ≤ M + Cost_field_ty_at n x0 x1 x2 x3 := by
-  intro n x0 x1 x2 x3 M hM0 hM1
-  rcases n with _ | n
-  · intro h; exact absurd h (Nat.lt_irrefl _)
-  rw [Cost_field_ty_at.eq_def]; dsimp only
-  rw [Lanius.Mini.fieldTyAt.eq_def x0 x1 x2 x3]
-  post_auto n, M
-
 theorem post_set_field_or_eval : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Lanius.Mini.Local) (x4 : List Nat) (x5 : Lanius.Mini.CTree), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x3 ≤ M → hb x4 ≤ M → hb x5 ≤ M → Cost_set_field_or_eval n x0 x1 x2 x3 x4 x5 < 18446744073709551616 → hb (Lanius.Mini.setFieldOrEval x0 x1 x2 x3 x4 x5) ≤ M + Cost_set_field_or_eval n x0 x1 x2 x3 x4 x5 := by
   intro n x0 x1 x2 x3 x4 x5 M hM0 hM1 hM2 hM3 hM4
   rcases n with _ | n
@@ -7048,6 +7136,14 @@ theorem post_assign_target : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv
   · intro h; exact absurd h (Nat.lt_irrefl _)
   rw [Cost_assign_target.eq_def]; dsimp only
   rw [Lanius.Mini.assignTarget.eq_def x0 x1 x2 x3 x4 x5]
+  post_auto n, M
+
+theorem post_set_place_op_of : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.FrontEnv) (x2 : List Lanius.Mini.Local) (x3 : Option Lanius.Mini.SrcAssignOp) (x4 : Lanius.Mini.CTree) (x5 : Lanius.Mini.CTree), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → hb x4 ≤ M → hb x5 ≤ M → Cost_set_place_op_of n x0 x1 x2 x3 x4 x5 < 18446744073709551616 → hb (Lanius.Mini.setPlaceOpOf x0 x1 x2 x3 x4 x5) ≤ M + Cost_set_place_op_of n x0 x1 x2 x3 x4 x5 := by
+  intro n x0 x1 x2 x3 x4 x5 M hM0 hM1 hM2 hM3
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_set_place_op_of.eq_def]; dsimp only
+  rw [Lanius.Mini.setPlaceOpOf.eq_def x0 x1 x2 x3 x4 x5]
   post_auto n, M
 
 theorem post_compound_eff : ∀ (n : Nat) (x0 : Nat) (x1 : Lanius.Mini.MEff) (x2 : Option Lanius.Mini.MEff), ∀ M : Nat, hb x1 ≤ M → hb x2 ≤ M → Cost_compound_eff n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.compoundEff x0 x1 x2) ≤ M + Cost_compound_eff n x0 x1 x2 := by

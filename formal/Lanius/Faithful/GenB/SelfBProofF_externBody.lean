@@ -7,9 +7,9 @@ public import Lanius.Faithful.Gen.SelfStmtF_externBody
 public import Lanius.Faithful.GenB.SelfBStmtF_collect
 public import Lanius.Faithful.GenB.SelfBStmtF_externBody
 public import Lanius.Faithful.GenB.SelfBStmtF_hasKids
-public import Lanius.Faithful.GenB.SelfBStmtF_ifNotWrites
 public import Lanius.Faithful.GenB.SelfBStmtF_litIf
 public import Lanius.Faithful.GenB.SelfBStmtF_methodDecl
+public import Lanius.Faithful.GenB.SelfBStmtF_namesFieldBase
 public import Lanius.Faithful.GenB.SelfBStmtF_noToken
 public import Lanius.Faithful.GenB.SelfBStmtN0
 public import Lanius.Faithful.GenB.SelfBStmtN3

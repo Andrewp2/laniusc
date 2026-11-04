@@ -52,6 +52,11 @@ abbrev BStmt_weight_add_to (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : 
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepNat x0 v0 → (RepOption 135 RepNat) x1 v1 → k < b → Pre_weight_add_to n x0 x1 b →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 135 RepNat) (Lanius.Mini.weightAddTo x0 x1) w
 
+abbrev BStmt_ref_type (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Option Lanius.Mini.SrcType} {v0 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 160 RepSrcType) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_ref_type n x0 = k ∧ (RepOption 160 RepSrcType) (Lanius.Mini.refType x0) w
+
 abbrev BStmt_cons_types_tail (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcType} {x1 : Option (List (List Lanius.Mini.SrcType))} {v0 v1 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 74 RepSrcType) x0 v0 → (RepOption 192 (RepList 78 (RepList 74 RepSrcType))) x1 v1 →

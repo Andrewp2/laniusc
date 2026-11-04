@@ -4,9 +4,9 @@ public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Frontend.P.collect
 import Lanius.Mini.Frontend.P.hasKids
-import Lanius.Mini.Frontend.P.ifNotWrites
 import Lanius.Mini.Frontend.P.litIf
 import Lanius.Mini.Frontend.P.methodDecl
+import Lanius.Mini.Frontend.P.namesFieldBase
 import Lanius.Mini.Frontend.P.noToken
 
 public section

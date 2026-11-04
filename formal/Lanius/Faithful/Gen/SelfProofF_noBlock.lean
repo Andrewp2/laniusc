@@ -141,7 +141,7 @@ theorem proof_nested_order {prog : SrcProgram} {prims : Prims} {ix_nested_order 
   simp only [src_nested_order] at h
   faithful [Lanius.Mini.nestedOrder]
 
-theorem step_no_block {prog : SrcProgram} {prims : Prims} {ix_no_block ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_kid ix_and_known ix_not_known ix_block_value : Nat} (fn : prog.funcs[ix_no_block]? = some (src_no_block ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_kid ix_no_block ix_and_known ix_not_known ix_block_value)) (np : prims.isPrim ix_no_block = false)
+theorem step_no_block {prog : SrcProgram} {prims : Prims} {ix_no_block ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_kid ix_and_known ix_not_known ix_block_value : Nat} (fn : prog.funcs[ix_no_block]? = some (src_no_block ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_kid ix_and_known ix_no_block ix_not_known ix_block_value)) (np : prims.isPrim ix_no_block = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_CTree prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
     (ext_and_known : Certified (∀ {n : Nat}, Stmt_and_known prog prims ix_and_known n))

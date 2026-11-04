@@ -34,22 +34,22 @@ abbrev BStmt_wild_used (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
 
 abbrev BStmt_join_use (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.ArmUse} {x1 : Option Lanius.Mini.ArmsUse} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepArmUse x0 v0 → (RepOption 320 RepArmsUse) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_join_use n x0 x1 = k ∧ (RepOption 320 RepArmsUse) (Lanius.Mini.joinUse x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepArmUse x0 v0 → (RepOption 321 RepArmsUse) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_join_use n x0 x1 = k ∧ (RepOption 321 RepArmsUse) (Lanius.Mini.joinUse x0 x1) w
 
 abbrev BStmt_cons_use (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.ArmUse} {x1 : Option Lanius.Mini.ArmsUse} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 322 RepArmUse) x0 v0 → (RepOption 320 RepArmsUse) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_use n x0 x1 = k ∧ (RepOption 320 RepArmsUse) (Lanius.Mini.consUse x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 323 RepArmUse) x0 v0 → (RepOption 321 RepArmsUse) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_use n x0 x1 = k ∧ (RepOption 321 RepArmsUse) (Lanius.Mini.consUse x0 x1) w
 
 abbrev BStmt_variant_arm (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.VariantTy} {x3 : Option (List Lanius.Mini.CTree)} {x4 : Option Lanius.Mini.CTree} {v0 v1 v2 v3 v4 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → RepVariantTy x2 v2 → (RepOption 82 (RepList 83 RepCTree)) x3 v3 → (RepOption 129 RepCTree) x4 v4 → k < b → Pre_variant_arm n x0 x1 x2 x3 x4 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_variant_arm n x0 x1 x2 x3 x4 = k ∧ (RepOption 322 RepArmUse) (Lanius.Mini.variantArm x0 x1 x2 x3 x4) w
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_variant_arm n x0 x1 x2 x3 x4 = k ∧ (RepOption 323 RepArmUse) (Lanius.Mini.variantArm x0 x1 x2 x3 x4) w
 
 abbrev BStmt_variant_arms (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.TypeDecl} {x3 : List Lanius.Mini.VariantTy} {x4 : List Lanius.Mini.CTree} {x5 : Option Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → RepTypeDecl x2 v2 → (RepList 289 RepVariantTy) x3 v3 → (RepList 83 RepCTree) x4 v4 → (RepOption 129 RepCTree) x5 v5 → k < b → Pre_variant_arms n x0 x1 x2 x3 x4 x5 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) ∧ Cost_variant_arms n x0 x1 x2 x3 x4 x5 = k ∧ (RepOption 320 RepArmsUse) (Lanius.Mini.variantArms x0 x1 x2 x3 x4 x5) w
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → RepTypeDecl x2 v2 → (RepList 290 RepVariantTy) x3 v3 → (RepList 83 RepCTree) x4 v4 → (RepOption 129 RepCTree) x5 v5 → k < b → Pre_variant_arms n x0 x1 x2 x3 x4 x5 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) ∧ Cost_variant_arms n x0 x1 x2 x3 x4 x5 = k ∧ (RepOption 321 RepArmsUse) (Lanius.Mini.variantArms x0 x1 x2 x3 x4 x5) w
 
 end Lanius.Faithful.SelfBudget

@@ -120,15 +120,16 @@ theorem bstep_lower_tys {spW sp : SrcProgram} {prims : Prims} {ix_lower_tys ix_m
     budget Cost_lower_tys
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3⟩
 
-theorem bstep_lower_ty {spW sp : SrcProgram} {prims : Prims} {ix_lower_ty ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_lower_named ix_unbox_of_mini_selfhost_Ty ix_slice_type ix_array_type : Nat}
-    (fnW : spW.funcs[ix_lower_ty]? = some (src_lower_ty ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_lower_named ix_unbox_of_mini_selfhost_Ty ix_slice_type ix_array_type ix_lower_ty)) (fn : sp.funcs[ix_lower_ty]? = some (src_lower_ty ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_lower_named ix_unbox_of_mini_selfhost_Ty ix_slice_type ix_array_type ix_lower_ty))
+theorem bstep_lower_ty {spW sp : SrcProgram} {prims : Prims} {ix_lower_ty ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_lower_named ix_unbox_of_mini_selfhost_Ty ix_slice_type ix_array_type ix_ref_type : Nat}
+    (fnW : spW.funcs[ix_lower_ty]? = some (src_lower_ty ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_lower_named ix_unbox_of_mini_selfhost_Ty ix_slice_type ix_array_type ix_ref_type ix_lower_ty)) (fn : sp.funcs[ix_lower_ty]? = some (src_lower_ty ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_lower_named ix_unbox_of_mini_selfhost_Ty ix_slice_type ix_array_type ix_ref_type ix_lower_ty))
     (np : prims.isPrim ix_lower_ty = false)
     (back : Certified (∀ {n : Nat}, Stmt_lower_ty sp prims ix_lower_ty n))
     (b_minus : Certified (∀ {n : Nat}, BStmt_minus spW sp prims ix_minus n))
     (pp_unbox_of_mini_selfhost_List_mini_selfhost_Ty : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_Ty : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty = false)
     (pp_unbox_of_mini_selfhost_Ty : prims.isPrim ix_unbox_of_mini_selfhost_Ty = true) (bx_unbox_of_mini_selfhost_Ty : prims.boxed.contains ix_unbox_of_mini_selfhost_Ty = false)
     (b_slice_type : Certified (∀ {n : Nat}, BStmt_slice_type spW sp prims ix_slice_type n))
-    (b_array_type : Certified (∀ {n : Nat}, BStmt_array_type spW sp prims ix_array_type n)) {n : Nat}
+    (b_array_type : Certified (∀ {n : Nat}, BStmt_array_type spW sp prims ix_array_type n))
+    (b_ref_type : Certified (∀ {n : Nat}, BStmt_ref_type spW sp prims ix_ref_type n)) {n : Nat}
     (bih_lower_named : Certified (BStmt_lower_named spW sp prims ix_lower_named n))
     (bih_lower_ty : Certified (BStmt_lower_ty spW sp prims ix_lower_ty n)) :
     BStmt_lower_ty spW sp prims ix_lower_ty (n + 1) := by

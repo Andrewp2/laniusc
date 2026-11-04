@@ -61,14 +61,14 @@ noncomputable section
 
 def Cost_wide_of : Nat → Lanius.Mini.Ty → Bool → Nat → Nat
   | 0, x8, x16, x32 => 18446744073709551616
-  | n + 1, x8, x16, x32 => (match x8 with | .tyI32 => 0 | .tyBool => 0 | .tyUint x180 => 0 | .tyPtr => 0 | .tyIsize => (Cost_wide_isize n x16 x32) | .tyChar => 0 | .tyFloat x343 => 0 | .tySlice x372 => 0 | .tyNamed x431 x434 => 0 | .tySint x464 => (Cost_wide_sint n x464 x16 x32) | .tyArray x400 x403 => 0 | .tyStr => 0)
+  | n + 1, x8, x16, x32 => (match x8 with | .tyI32 => 0 | .tyBool => 0 | .tyUint x180 => 0 | .tyPtr => 0 | .tyIsize => (Cost_wide_isize n x16 x32) | .tyChar => 0 | .tyFloat x372 => 0 | .tySlice x401 => 0 | .tyNamed x460 x463 => 0 | .tySint x493 => (Cost_wide_sint n x493 x16 x32) | .tyArray x429 x432 => 0 | .tyStr => 0 | .tyRef x341 => 0)
 
 end
 noncomputable section
 
 def Pre_wide_of : Nat → Lanius.Mini.Ty → Bool → Nat → Nat → Prop
   | 0, x8, x16, x32, b => True
-  | n + 1, x8, x16, x32, b => (match x8 with | .tyI32 => True | .tyBool => True | .tyUint x180 => True | .tyPtr => True | .tyIsize => (Pre_wide_isize n x16 x32 b) | .tyChar => True | .tyFloat x343 => True | .tySlice x372 => True | .tyNamed x431 x434 => True | .tySint x464 => (Pre_wide_sint n x464 x16 x32 b) | .tyArray x400 x403 => True | .tyStr => True)
+  | n + 1, x8, x16, x32, b => (match x8 with | .tyI32 => True | .tyBool => True | .tyUint x180 => True | .tyPtr => True | .tyIsize => (Pre_wide_isize n x16 x32 b) | .tyChar => True | .tyFloat x372 => True | .tySlice x401 => True | .tyNamed x460 x463 => True | .tySint x493 => (Pre_wide_sint n x493 x16 x32 b) | .tyArray x429 x432 => True | .tyStr => True | .tyRef x341 => True)
 
 end
 
@@ -230,14 +230,14 @@ noncomputable section
 
 def Cost_struct_field_tys : Nat → Nat → Lanius.Mini.Decls → Lanius.Mini.Ty → Nat
   | 0, x17, x30, x44 => 18446744073709551616
-  | n + 1, x17, x30, x44 => (match x44 with | .tyI32 => 0 | .tyBool => 0 | .tyUint x172 => 0 | .tyPtr => 0 | .tyIsize => 0 | .tyChar => 0 | .tyFloat x295 => 0 | .tySlice x324 => 0 | .tyNamed x383 x386 => (Cost_field_tys n x17 x30 x383 x386) | .tySint x450 => 0 | .tyArray x352 x355 => 0 | .tyStr => 0)
+  | n + 1, x17, x30, x44 => (match x44 with | .tyI32 => 0 | .tyBool => 0 | .tyUint x172 => 0 | .tyPtr => 0 | .tyIsize => 0 | .tyChar => 0 | .tyFloat x324 => 0 | .tySlice x353 => 0 | .tyNamed x412 x415 => (Cost_field_tys n x17 x30 x412 x415) | .tySint x479 => 0 | .tyArray x381 x384 => 0 | .tyStr => 0 | .tyRef x293 => 0)
 
 end
 noncomputable section
 
 def Pre_struct_field_tys : Nat → Nat → Lanius.Mini.Decls → Lanius.Mini.Ty → Nat → Prop
   | 0, x17, x30, x44, b => True
-  | n + 1, x17, x30, x44, b => (match x44 with | .tyI32 => True | .tyBool => True | .tyUint x172 => True | .tyPtr => True | .tyIsize => True | .tyChar => True | .tyFloat x295 => True | .tySlice x324 => True | .tyNamed x383 x386 => (Pre_field_tys n x17 x30 x383 x386 b) | .tySint x450 => True | .tyArray x352 x355 => True | .tyStr => True)
+  | n + 1, x17, x30, x44, b => (match x44 with | .tyI32 => True | .tyBool => True | .tyUint x172 => True | .tyPtr => True | .tyIsize => True | .tyChar => True | .tyFloat x324 => True | .tySlice x353 => True | .tyNamed x412 x415 => (Pre_field_tys n x17 x30 x412 x415 b) | .tySint x479 => True | .tyArray x381 x384 => True | .tyStr => True | .tyRef x293 => True)
 
 end
 

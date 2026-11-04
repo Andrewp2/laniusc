@@ -268,12 +268,12 @@ theorem bproof_known_use {spW sp : SrcProgram} {prims : Prims} {ix_known_use ix_
     budget Cost_known_use
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4 r5 r6 r7⟩
 
-theorem bproof_plain_naming {spW sp : SrcProgram} {prims : Prims} {ix_plain_naming ix_arm_nested ix_and_known ix_not_known ix_arm_naming : Nat}
-    (fnW : spW.funcs[ix_plain_naming]? = some (src_plain_naming ix_arm_nested ix_and_known ix_not_known ix_arm_naming)) (fn : sp.funcs[ix_plain_naming]? = some (src_plain_naming ix_arm_nested ix_and_known ix_not_known ix_arm_naming))
+theorem bproof_plain_naming {spW sp : SrcProgram} {prims : Prims} {ix_plain_naming ix_and_known ix_arm_nested ix_not_known ix_arm_naming : Nat}
+    (fnW : spW.funcs[ix_plain_naming]? = some (src_plain_naming ix_and_known ix_arm_nested ix_not_known ix_arm_naming)) (fn : sp.funcs[ix_plain_naming]? = some (src_plain_naming ix_and_known ix_arm_nested ix_not_known ix_arm_naming))
     (np : prims.isPrim ix_plain_naming = false)
     (back : Certified (∀ {n : Nat}, Stmt_plain_naming sp prims ix_plain_naming n))
-    (b_arm_nested : Certified (∀ {n : Nat}, BStmt_arm_nested spW sp prims ix_arm_nested n))
     (b_and_known : Certified (∀ {n : Nat}, BStmt_and_known spW sp prims ix_and_known n))
+    (b_arm_nested : Certified (∀ {n : Nat}, BStmt_arm_nested spW sp prims ix_arm_nested n))
     (b_not_known : Certified (∀ {n : Nat}, BStmt_not_known spW sp prims ix_not_known n))
     (b_arm_naming : Certified (∀ {n : Nat}, BStmt_arm_naming spW sp prims ix_arm_naming n)) {n : Nat} :
     BStmt_plain_naming spW sp prims ix_plain_naming n := by
