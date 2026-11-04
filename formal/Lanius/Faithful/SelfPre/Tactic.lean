@@ -831,25 +831,37 @@ def slotFacts (es : Array Expr) (hyps : Array (Expr × Expr)) : MetaM (Array Exp
 /-- The slot facts (`slotFacts`) of the goal's terms and the context's type splits, as
 hypotheses in their normal form. -/
 def addSlotFacts : TacticM Unit := do
-  if (← getGoals).isEmpty then return
-  let g ← getMainGoal
-  let facts ← g.withContext do
-    let mut eqs : Array (Expr × Expr) := #[]
-    for d in ← getLCtx do
-      if d.isImplementationDetail then continue
-      let t ← instantiateMVars d.type
-      if let some (sty, _, _) := t.eq? then
-        if sty.isConstOf `Lanius.Mini.SrcType then eqs := eqs.push (d.toExpr, t)
-    slotFacts #[← instantiateMVars (← g.getType)] eqs
-  if facts.isEmpty then return
-  let mut goal := g
-  let mut hs : Array FVarId := #[]
-  for p in facts do
-    let (h, m') ← (← goal.withContext do goal.assert `hslot (← inferType p) p).intro1P
-    goal := m'
-    hs := hs.push h
-  replaceMainGoal [goal]
-  simpAt true (hbNormNames ++ normNames ++ #[``Nat.reducePow]) (hs := some hs) (target := false)
+  -- two rounds: a fact's normal form can have terms of its own (`sizes [t]` is `t.size`)
+  for round in [0, 1] do
+    if (← getGoals).isEmpty then return
+    let g ← getMainGoal
+    let facts ← g.withContext do
+      let mut eqs : Array (Expr × Expr) := #[]
+      let mut mine : Array Expr := #[]
+      for d in ← getLCtx do
+        if d.isImplementationDetail then continue
+        let t ← instantiateMVars d.type
+        if d.userName == `hslot then mine := mine.push t
+        if let some (sty, _, _) := t.eq? then
+          if sty.isConstOf `Lanius.Mini.SrcType then eqs := eqs.push (d.toExpr, t)
+      let gt ← instantiateMVars (← g.getType)
+      let es := if round == 0 then #[gt] else mine
+      let fs ← slotFacts es eqs
+      -- (the second round's new facts only)
+      let mut out := #[]
+      for p in fs do
+        let t ← inferType p
+        unless mine.contains t do out := out.push p
+      return out
+    if facts.isEmpty then return
+    let mut goal := g
+    let mut hs : Array FVarId := #[]
+    for p in facts do
+      let (h, m') ← (← goal.withContext do goal.assert `hslot (← inferType p) p).intro1P
+      goal := m'
+      hs := hs.push h
+    replaceMainGoal [goal]
+    simpAt true (hbNormNames ++ normNames ++ #[``Nat.reducePow]) (hs := some hs) (target := false)
 
 /-- Prove `ty` in the current context: heights normalized, then a certificate or `omega`. -/
 def proveArith0? (ty : Expr) : TacticM (Option Expr) := do

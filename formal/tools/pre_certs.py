@@ -519,6 +519,13 @@ ELEMENT_STEPS = '''  have e1 : (x3 + 1) * x2 = x3 * x2 + x2 := Nat.succ_mul x3 x
 COMPILE_PRE_HAND = {'pick_element': ELEMENT_STEPS, 'put_element': ELEMENT_STEPS}
 
 
+# Parameters with no height hypothesis (`--compile`): a let's body's result (an inline
+# `eval_let_body`, whose height bound would need its conditional call's cost) is only
+# taken apart, its height bounds nothing.
+PRE_HB_DROP = {}
+COMPILE_PRE_HB_DROP = {'eval_let_in': {4}, 'eval_let_in_of': {4}}
+
+
 COMPILE_HAND_CASE = {
     'SrcStmt_declare': '''      rw [Cost_SrcStmt_declare.eq_def]; dsimp only
       rw [Lanius.Mini.SrcStmt.declare.eq_def x0 x1]
@@ -1257,7 +1264,8 @@ def num_facts(e, k, xs, tys, names):
     if not NUMS['on']:
         return ''
     hyps = names.split()
-    nhb = sum(1 for x, t in zip(xs.split(), tys) if not e.g.flat(t))
+    nhb = sum(1 for i, (x, t) in enumerate(zip(xs.split(), tys))
+              if not e.g.flat(t) and i not in PRE_HB_DROP.get(k, ()))
     out = ''
     j = nhb
     for h in num_hyps(e, k, xs.split(), tys):
@@ -1473,7 +1481,8 @@ class Emit:
         tys = self.m.sig[f'Pre_{k}']
         xs = [f'x{i}' for i in range(len(tys))]
         binders = ' '.join(f'({x} : {t})' for x, t in zip(xs, tys))
-        hyps = [f'hb {x} ≤ M' for x, t in zip(xs, tys) if not self.g.flat(t)]
+        hyps = [f'hb {x} ≤ M' for i, (x, t) in enumerate(zip(xs, tys))
+                if not self.g.flat(t) and i not in PRE_HB_DROP.get(k, ())]
         hyps += num_hyps(self, k, xs, tys)  # compile side only
         hyps.append(f'M + b ≤ {K}')
         for h in OVERRIDES.get(k, []):
@@ -1658,6 +1667,7 @@ def main():
         if args[0] == '--compile':
             HAND_CASE.update(COMPILE_HAND_CASE)
             PRE_HAND.update(COMPILE_PRE_HAND)
+            PRE_HB_DROP.update(COMPILE_PRE_HB_DROP)
             args, compile_side = args[1:], True
             continue
         if args[0] == '--ns':
