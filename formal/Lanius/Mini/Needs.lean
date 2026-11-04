@@ -50,6 +50,11 @@ mutual
       simp only [SrcEff.calleeNeed, SrcEff.calleeNeed_zeros z value, SrcEff.calleeNeed_zeros z body, Nat.max_self]
     | .eLen _ => simp only [SrcEff.calleeNeed]
     | .eStr _ _ => simp only [SrcEff.calleeNeed]
+    | .eBorrow _ x => simp only [SrcEff.calleeNeed, SrcEff.calleeNeed_zeros z x]
+    | .eDeref _ x => simp only [SrcEff.calleeNeed, SrcEff.calleeNeed_zeros z x]
+    | .eField x _ => simp only [SrcEff.calleeNeed, SrcEff.calleeNeed_zeros z x]
+    | .eAt x i =>
+      simp only [SrcEff.calleeNeed, SrcEff.calleeNeed_zeros z x, SrcEff.calleeNeed_zeros z i, Nat.max_self]
   termination_by structural e
 
   theorem effsCalleeNeed_zeros {needs : List Nat} (z : Zeros needs) (es : List SrcEff) : effsCalleeNeed es needs = 0 := by

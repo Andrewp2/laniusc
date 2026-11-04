@@ -21,11 +21,11 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_lit_eff_match (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Option Lanius.Mini.Ty} {x4 : Nat} {x5 : Lanius.Mini.MEff} {x6 : Lanius.Mini.Ty} {x7 : List Lanius.Mini.CTree} {x8 : Option (List Lanius.Mini.MEff)} {v0 v1 v2 v3 v4 v5 v6 v7 v8 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6, v7, v8] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 238 RepLocal) x2 v2 → (RepOption 211 RepTy) x3 v3 → RepNat x4 v4 → RepMEff x5 v5 → RepTy x6 v6 → (RepList 82 RepCTree) x7 v7 → (RepOption 285 (RepList 235 RepMEff)) x8 v8 →
-    (RepOption 257 RepMEff) (Lanius.Mini.litEffMatch x0 x1 x2 x3 x4 x5 x6 x7 x8) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Option Lanius.Mini.Ty} {x4 : Nat} {x5 : Lanius.Mini.MEff} {x6 : Lanius.Mini.Ty} {x7 : List Lanius.Mini.CTree} {x8 : Option (List Lanius.Mini.MEff)} {v0 v1 v2 v3 v4 v5 v6 v7 v8 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6, v7, v8] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 239 RepLocal) x2 v2 → (RepOption 212 RepTy) x3 v3 → RepNat x4 v4 → RepMEff x5 v5 → RepTy x6 v6 → (RepList 83 RepCTree) x7 v7 → (RepOption 286 (RepList 236 RepMEff)) x8 v8 →
+    (RepOption 258 RepMEff) (Lanius.Mini.litEffMatch x0 x1 x2 x3 x4 x5 x6 x7 x8) w
 
 abbrev Stmt_string_close (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepBool x0 v0 →
-    (RepOption 197 (RepList 25 RepNat)) (Lanius.Mini.stringClose x0) w
+    (RepOption 198 (RepList 25 RepNat)) (Lanius.Mini.stringClose x0) w
 
 end Lanius.Faithful.SelfCert

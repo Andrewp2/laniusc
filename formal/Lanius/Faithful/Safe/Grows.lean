@@ -797,6 +797,158 @@ theorem assign_trap_grows {place : Core.Place} {e : Core.Expr}
     exact placeT placeRun
   all_goals simp at run
 
+/-! ## Places through references (F5) -/
+
+/-- Every expression a place evaluates grows the state, done or trapped, at
+fuel up to `k`. -/
+inductive PlaceGrowsT (P : Core.Program) (k : Nat) : Core.Place → Prop
+  | local (id : Nat) : PlaceGrowsT P k (.local id)
+  | field {base : Core.Place} (f : Nat) : PlaceGrowsT P k base → PlaceGrowsT P k (.field base f)
+  | index {base : Core.Place} {e : Core.Expr} : PlaceGrowsT P k base →
+      (∀ {m : Nat} {st : State} {v : Value} {st' : State}, m ≤ k → evalExpr m P st e = .done v st' → Grows st st') →
+      (∀ {m : Nat} {st : State} {r : Lanius.Trap} {st' : State}, m ≤ k → evalExpr m P st e = .trapped r st' →
+        Grows st st') →
+      PlaceGrowsT P k (.index base e)
+  | deref {e : Core.Expr} :
+      (∀ {m : Nat} {st : State} {v : Value} {st' : State}, m ≤ k → evalExpr m P st e = .done v st' → Grows st st') →
+      (∀ {m : Nat} {st : State} {r : Lanius.Trap} {st' : State}, m ≤ k → evalExpr m P st e = .trapped r st' →
+        Grows st st') →
+      PlaceGrowsT P k (.deref e)
+
+theorem PlaceGrowsT.done {P : Core.Program} {k : Nat} : ∀ {place : Core.Place}, PlaceGrowsT P k place →
+    Lanius.Mini.PlaceGrows P k place
+  | _, .local id => .local id
+  | _, .field f h => .field f h.done
+  | _, .index h d _ => .index h.done d
+  | _, .deref d _ => .deref d
+
+/-- A place whose expressions grow the state, done or trapped, grows it when
+its resolution traps. -/
+theorem evalPlace_trap_grows {P : Core.Program} {k : Nat} : ∀ {place : Core.Place}, PlaceGrowsT P k place →
+    ∀ {m : Nat}, m ≤ k + 1 → ∀ {st : State} {acc : Semantics.PlaceAccess} {r : Lanius.Trap} {st' : State},
+      Semantics.evalPlace m P st acc place = .trapped r st' → Grows st st'
+  | _, .local id, m, _, st, acc, r, st', run => by
+    rw [evalPlace_local_trap run]
+    exact Grows.refl _
+  | _, .field f hb, m, le, st, acc, r, st', run => by
+    cases m with
+    | zero => simp [Semantics.evalPlace] at run
+    | succ m =>
+      simp only [Semantics.evalPlace] at run
+      split at run
+      all_goals first
+        | (simp at run; done)
+        | (rename_i baseRun
+           have g := Lanius.Mini.evalPlace_grows hb.done (by omega) baseRun
+           repeat' split at run
+           all_goals first
+             | (simp only [Semantics.Outcome.trapped.injEq] at run; rw [← run.2]; exact g)
+             | simp at run)
+        | (rename_i baseRun
+           simp only [Semantics.Outcome.trapped.injEq] at run
+           rw [← run.2]
+           exact evalPlace_trap_grows hb (by omega) baseRun)
+  | _, @PlaceGrowsT.index _ _ base e hb hd ht, m, le, st, acc, r, st', run => by
+    cases m with
+    | zero => simp [Semantics.evalPlace] at run
+    | succ m =>
+      cases hr : Semantics.evalPlace m P st .read base with
+      | done rb afterBase =>
+        have g1 := Lanius.Mini.evalPlace_grows hb.done (by omega) hr
+        cases hi : evalExpr m P afterBase e with
+        | done iv afterIndex =>
+          have g2 := hd (by omega) hi
+          simp only [Semantics.evalPlace, hr, hi] at run
+          repeat' split at run
+          all_goals first
+            | (simp only [Semantics.Outcome.trapped.injEq] at run; rw [← run.2]; first | exact g1 | exact g1.trans g2)
+            | simp at run
+        | trapped r2 afterIndex =>
+          have g2 := ht (by omega) hi
+          simp only [Semantics.evalPlace, hr, hi] at run
+          repeat' split at run
+          all_goals first
+            | (simp only [Semantics.Outcome.trapped.injEq] at run; rw [← run.2]; first | exact g1 | exact g1.trans g2)
+            | simp at run
+        | exited _ _ =>
+          simp only [Semantics.evalPlace, hr, hi] at run
+          repeat' split at run
+          all_goals first
+            | (simp only [Semantics.Outcome.trapped.injEq] at run; rw [← run.2]; exact g1)
+            | simp at run
+        | outOfFuel =>
+          simp only [Semantics.evalPlace, hr, hi] at run
+          repeat' split at run
+          all_goals first
+            | (simp only [Semantics.Outcome.trapped.injEq] at run; rw [← run.2]; exact g1)
+            | simp at run
+      | trapped r1 next =>
+        simp only [Semantics.evalPlace, hr, Semantics.Outcome.trapped.injEq] at run
+        rw [← run.2]
+        exact evalPlace_trap_grows hb (by omega) hr
+      | exited _ _ => simp [Semantics.evalPlace, hr] at run
+      | outOfFuel => simp [Semantics.evalPlace, hr] at run
+  | _, .deref hd ht, m, le, st, acc, r, st', run => by
+    cases m with
+    | zero => simp [Semantics.evalPlace] at run
+    | succ m =>
+      simp only [Semantics.evalPlace] at run
+      split at run
+      all_goals first
+        | (simp at run; done)
+        | (rename_i refRun
+           have g := hd (by omega) refRun
+           repeat' split at run
+           all_goals first
+             | (simp only [Semantics.Outcome.trapped.injEq] at run; rw [← run.2]; exact g)
+             | simp at run)
+        | (rename_i refRun
+           simp only [Semantics.Outcome.trapped.injEq] at run
+           rw [← run.2]
+           exact ht (by omega) refRun)
+
+/-- An assignment, plain or compound, that traps, where resolving the place
+and evaluating the value grow, done or trapped. -/
+theorem assign_op_trap_grows {op : Core.AssignOp} {place : Core.Place} {e : Core.Expr}
+    (placeOk : ∀ {acc r1 st1}, Semantics.evalPlace k P st acc place = .done r1 st1 → Grows st st1)
+    (placeT : ∀ {acc r1 st1}, Semantics.evalPlace k P st acc place = .trapped r1 st1 → Grows st st1)
+    (value : ∀ {st1 rv st2}, evalExpr k P st1 e = .done rv st2 → Grows st1 st2)
+    (valueT : ∀ {st1 r1 st2}, evalExpr k P st1 e = .trapped r1 st2 → Grows st1 st2)
+    (run : evalExpr (k + 1) P st (.assign op place e) = .trapped r st') : Grows st st' := by
+  simp only [evalExpr] at run
+  split at run
+  · rename_i resolved afterPlace placeRun
+    have g1 := placeOk placeRun
+    split at run
+    · rename_i rv afterValue valueRun
+      have g2 := g1.trans (value valueRun)
+      split at run
+      · simp only [Semantics.Outcome.trapped.injEq] at run
+        obtain ⟨-, rfl⟩ := run
+        exact g2
+      rename_i result _
+      split at run
+      · rename_i assigned written
+        split at run
+        · simp at run
+        · simp only [Semantics.Outcome.trapped.injEq] at run
+          obtain ⟨-, rfl⟩ := run
+          obtain ⟨n4, v4⟩ := writeNative_grows written
+          exact g2.trans (Grows.heap (Nat.le_of_eq n4.symm) v4)
+      · simp only [Semantics.Outcome.trapped.injEq] at run
+        obtain ⟨-, rfl⟩ := run
+        exact g2
+    · rename_i valueRun
+      simp only [Semantics.Outcome.trapped.injEq] at run
+      obtain ⟨-, rfl⟩ := run
+      exact g1.trans (valueT valueRun)
+    all_goals simp at run
+  · rename_i placeRun
+    simp only [Semantics.Outcome.trapped.injEq] at run
+    obtain ⟨-, rfl⟩ := run
+    exact placeT placeRun
+  all_goals simp at run
+
 theorem letLocal_trap_grows {f : Nat} {id : Nat} {ty : Core.Ty} {init : Core.Expr} {body : Core.Stmt}
     (initD : ∀ {v s1}, evalExpr f P st init = .done v s1 → Grows st s1)
     (initT : ∀ {r1 s1}, evalExpr f P st init = .trapped r1 s1 → Grows st s1)
@@ -922,6 +1074,59 @@ theorem letArm_trap_grows {value : Value} {id : Nat} {b : SrcEff} {k : Nat} (ihT
     exact Grows.refl _
   · exact Grows.restore st (Grows.unbind (ihT i (Nat.le_succ i) armRun))
 
+/-- The place an effectful expression names grows the state, done or
+trapped, as its parts do. -/
+theorem exprPlace_growsT {k : Nat} (ih : EffGrows sp k) (ihT : EffGrowsT sp k) :
+    ∀ place : SrcEff, PlaceGrowsT sp.toCore k (exprPlace place.toCore)
+  | .ePure (.local id) => .local id
+  | .ePure (.field id f) => .field f (.local id)
+  | .ePure (.int x0) => .deref (fun _ run => by rw [(SrcExpr.int x0).eval_state run]; exact Grows.refl _)
+      (fun _ run => by rw [(SrcExpr.int x0).trap_state run]; exact Grows.refl _)
+  | .ePure (.boolean x0) => .deref (fun _ run => by rw [(SrcExpr.boolean x0).eval_state run]; exact Grows.refl _)
+      (fun _ run => by rw [(SrcExpr.boolean x0).trap_state run]; exact Grows.refl _)
+  | .ePure (.unsigned x0 x1) => .deref (fun _ run => by rw [(SrcExpr.unsigned x0 x1).eval_state run]; exact Grows.refl _)
+      (fun _ run => by rw [(SrcExpr.unsigned x0 x1).trap_state run]; exact Grows.refl _)
+  | .ePure (.negate x0) => .deref (fun _ run => by rw [(SrcExpr.negate x0).eval_state run]; exact Grows.refl _)
+      (fun _ run => by rw [(SrcExpr.negate x0).trap_state run]; exact Grows.refl _)
+  | .ePure (.not x0) => .deref (fun _ run => by rw [(SrcExpr.not x0).eval_state run]; exact Grows.refl _)
+      (fun _ run => by rw [(SrcExpr.not x0).trap_state run]; exact Grows.refl _)
+  | .ePure (.apply x0 x1 x2) => .deref (fun _ run => by rw [(SrcExpr.apply x0 x1 x2).eval_state run]; exact Grows.refl _)
+      (fun _ run => by rw [(SrcExpr.apply x0 x1 x2).trap_state run]; exact Grows.refl _)
+  | .ePure (.cast x0 x1) => .deref (fun _ run => by rw [(SrcExpr.cast x0 x1).eval_state run]; exact Grows.refl _)
+      (fun _ run => by rw [(SrcExpr.cast x0 x1).trap_state run]; exact Grows.refl _)
+  | .ePure .null => .deref (fun _ run => by rw [SrcExpr.null.eval_state run]; exact Grows.refl _)
+      (fun _ run => by rw [SrcExpr.null.trap_state run]; exact Grows.refl _)
+  | .ePure (.char x0) => .deref (fun _ run => by rw [(SrcExpr.char x0).eval_state run]; exact Grows.refl _)
+      (fun _ run => by rw [(SrcExpr.char x0).trap_state run]; exact Grows.refl _)
+  | .ePure (.float x0 x1) => .deref (fun _ run => by rw [(SrcExpr.float x0 x1).eval_state run]; exact Grows.refl _)
+      (fun _ run => by rw [(SrcExpr.float x0 x1).trap_state run]; exact Grows.refl _)
+  | .eIndex _ index => .index (.local _) (fun le run => ih _ le (e := index) run) (fun le run => ihT _ le (e := index) run)
+  | .eField base f => .field f (exprPlace_growsT ih ihT base)
+  | .eAt base index => .index (exprPlace_growsT ih ihT base) (fun le run => ih _ le (e := index) run)
+      (fun le run => ihT _ le (e := index) run)
+  | .eDeref _ reference => .deref (fun le run => ih _ le (e := reference) run) (fun le run => ihT _ le (e := reference) run)
+  | .eStruct ty fields => by
+    have h : exprPlace (SrcEff.eStruct ty fields).toCore = .deref (SrcEff.eStruct ty fields).toCore := by
+      cases ty <;> rfl
+    rw [h]
+    exact .deref (fun le run => ih _ le (e := SrcEff.eStruct ty fields) run)
+      (fun le run => ihT _ le (e := SrcEff.eStruct ty fields) run)
+  | .eCall x0 x1 => .deref (fun le run => ih _ le (e := (SrcEff.eCall x0 x1)) run) (fun le run => ihT _ le (e := (SrcEff.eCall x0 x1)) run)
+  | .eApply x0 x1 x2 => .deref (fun le run => ih _ le (e := (SrcEff.eApply x0 x1 x2)) run) (fun le run => ihT _ le (e := (SrcEff.eApply x0 x1 x2)) run)
+  | .eNeg x0 => .deref (fun le run => ih _ le (e := (SrcEff.eNeg x0)) run) (fun le run => ihT _ le (e := (SrcEff.eNeg x0)) run)
+  | .eNot x0 => .deref (fun le run => ih _ le (e := (SrcEff.eNot x0)) run) (fun le run => ihT _ le (e := (SrcEff.eNot x0)) run)
+  | .eCast x0 x1 => .deref (fun le run => ih _ le (e := (SrcEff.eCast x0 x1)) run) (fun le run => ihT _ le (e := (SrcEff.eCast x0 x1)) run)
+  | .eVariant x0 x1 x2 => .deref (fun le run => ih _ le (e := (SrcEff.eVariant x0 x1 x2)) run) (fun le run => ihT _ le (e := (SrcEff.eVariant x0 x1 x2)) run)
+  | .eMatch x0 x1 x2 x3 x4 => .deref (fun le run => ih _ le (e := (SrcEff.eMatch x0 x1 x2 x3 x4)) run) (fun le run => ihT _ le (e := (SrcEff.eMatch x0 x1 x2 x3 x4)) run)
+  | .eDivide x0 x1 x2 => .deref (fun le run => ih _ le (e := (SrcEff.eDivide x0 x1 x2)) run) (fun le run => ihT _ le (e := (SrcEff.eDivide x0 x1 x2)) run)
+  | .eStride x0 => .deref (fun le run => ih _ le (e := (SrcEff.eStride x0)) run) (fun le run => ihT _ le (e := (SrcEff.eStride x0)) run)
+  | .arraySlice x0 x1 => .deref (fun le run => ih _ le (e := (SrcEff.arraySlice x0 x1)) run) (fun le run => ihT _ le (e := (SrcEff.arraySlice x0 x1)) run)
+  | .eIf x0 x1 x2 x3 => .deref (fun le run => ih _ le (e := (SrcEff.eIf x0 x1 x2 x3)) run) (fun le run => ihT _ le (e := (SrcEff.eIf x0 x1 x2 x3)) run)
+  | .eLet x0 x1 x2 x3 x4 => .deref (fun le run => ih _ le (e := (SrcEff.eLet x0 x1 x2 x3 x4)) run) (fun le run => ihT _ le (e := (SrcEff.eLet x0 x1 x2 x3 x4)) run)
+  | .eLen x0 => .deref (fun le run => ih _ le (e := (SrcEff.eLen x0)) run) (fun le run => ihT _ le (e := (SrcEff.eLen x0)) run)
+  | .eStr x0 x1 => .deref (fun le run => ih _ le (e := (SrcEff.eStr x0 x1)) run) (fun le run => ihT _ le (e := (SrcEff.eStr x0 x1)) run)
+  | .eBorrow x0 x1 => .deref (fun le run => ih _ le (e := (SrcEff.eBorrow x0 x1)) run) (fun le run => ihT _ le (e := (SrcEff.eBorrow x0 x1)) run)
+
 theorem eff_trap_step {k : Nat} (ih : GrowsBelow sp (k + 1)) (ihT : GrowsBelowT sp (k + 1))
     (ihe : EffGrows sp k) (iheT : EffGrowsT sp k) {e : SrcEff}
     (run : evalExpr (k + 1) sp.toCore st e.toCore = .trapped r st') : Grows st st' := by
@@ -1031,6 +1236,63 @@ theorem eff_trap_step {k : Nat} (ih : GrowsBelow sp (k + 1)) (ihT : GrowsBelowT 
     rw [len_trap_state run]
     exact Grows.refl _
   | eStr offset chars => simp [SrcEff.toCore, evalExpr] at run
+  | eBorrow ty place =>
+    simp only [SrcEff.toCore, evalExpr] at run
+    split at run
+    all_goals first
+      | (simp at run; done)
+      | (rename_i placeRun
+         have g := Lanius.Mini.evalPlace_grows (exprPlace_growsT ihe iheT place).done (Nat.le_succ k) placeRun
+         simp only [Semantics.Outcome.trapped.injEq] at run
+         rw [← run.2]
+         exact g)
+      | (rename_i placeRun
+         simp only [Semantics.Outcome.trapped.injEq] at run
+         rw [← run.2]
+         exact evalPlace_trap_grows (exprPlace_growsT ihe iheT place) (Nat.le_succ k) placeRun)
+  | eDeref _ operand | eField operand _ =>
+    simp only [SrcEff.toCore, evalExpr] at run
+    split at run
+    all_goals first
+      | (simp at run; done)
+      | (rename_i operandRun
+         have g := sub operandRun
+         repeat' split at run
+         all_goals first
+           | (simp only [Semantics.Outcome.trapped.injEq] at run; rw [← run.2]; exact g)
+           | simp at run)
+      | (rename_i operandRun
+         simp only [Semantics.Outcome.trapped.injEq] at run
+         rw [← run.2]
+         exact subT operandRun)
+  | eAt base index =>
+    simp only [SrcEff.toCore, evalExpr] at run
+    split at run
+    all_goals first
+      | (simp at run; done)
+      | (rename_i baseRun
+         have g := sub baseRun
+         split at run
+         all_goals first
+           | (simp at run; done)
+           | (rename_i indexRun
+              have g2 := sub indexRun
+              repeat' split at run
+              all_goals first
+                | (simp only [Semantics.Outcome.trapped.injEq] at run; rw [← run.2]; exact g.trans g2)
+                | simp at run)
+           | (rename_i indexRun
+              simp only [Semantics.Outcome.trapped.injEq] at run
+              rw [← run.2]
+              exact g.trans (subT indexRun)))
+      | (rename_i baseRun
+         simp only [Semantics.Outcome.trapped.injEq] at run
+         rw [← run.2]
+         exact sub baseRun)
+      | (rename_i baseRun
+         simp only [Semantics.Outcome.trapped.injEq] at run
+         rw [← run.2]
+         exact subT baseRun)
 
 /-- Every effectful expression Core runs until it traps grows the heap. -/
 theorem eff_trap_grows : ∀ k, GrowsBelow sp k → GrowsBelowT sp k → EffGrowsT sp k
@@ -1168,6 +1430,26 @@ theorem grows_trap_step {fuel : Nat} (ih : GrowsBelow sp fuel) (ihT : GrowsBelow
             (fun r => evalPlace_index_grows (fun r => effD k (by omega) r) r)
             (fun r => evalPlace_index_trap (fun r => effD k (by omega) r) (fun r => effT k (by omega) r) r)
             (fun r => effD (k + 1) (Nat.le_succ _) r) (fun r => effT (k + 1) (Nat.le_succ _) r) erun
+    | setPlace place value =>
+      obtain ⟨j, hj, erun⟩ := expression_trap_inv run
+      obtain rfl : f = j := Nat.succ.inj hj
+      cases f with
+      | zero => simp [evalExpr] at erun
+      | succ k =>
+        exact assign_op_trap_grows
+          (fun r => Lanius.Mini.evalPlace_grows (exprPlace_growsT effD effT place).done (by omega) r)
+          (fun r => evalPlace_trap_grows (exprPlace_growsT effD effT place) (by omega) r)
+          (fun r => effD k (Nat.le_succ k) r) (fun r => effT k (Nat.le_succ k) r) erun
+    | setPlaceOp op place value =>
+      obtain ⟨j, hj, erun⟩ := expression_trap_inv run
+      obtain rfl : f = j := Nat.succ.inj hj
+      cases f with
+      | zero => simp [evalExpr] at erun
+      | succ k =>
+        exact assign_op_trap_grows
+          (fun r => Lanius.Mini.evalPlace_grows (exprPlace_growsT effD effT place).done (by omega) r)
+          (fun r => evalPlace_trap_grows (exprPlace_growsT effD effT place) (by omega) r)
+          (fun r => effD k (Nat.le_succ k) r) (fun r => effT k (Nat.le_succ k) r) erun
     | setFieldEval id index value =>
       obtain ⟨j, hj, erun⟩ := expression_trap_inv run
       obtain rfl : f = j := Nat.succ.inj hj

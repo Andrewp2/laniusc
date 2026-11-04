@@ -30,27 +30,27 @@ abbrev Stmt_FCmp_predicate (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
 
 abbrev Stmt_FOp_bytes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FOp} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepFOp x0 v0 → RepNat x1 v1 →
-    (RepList 35 RepU8) (Lanius.Mini.FOp.bytes x0 x1) w
+    (RepList 36 RepU8) (Lanius.Mini.FOp.bytes x0 x1) w
 
 abbrev Stmt_FOp_opcode_bytes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FOp} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepFOp x0 v0 →
-    (RepList 35 RepU8) (Lanius.Mini.FOp.opcodeBytes x0) w
+    (RepList 36 RepU8) (Lanius.Mini.FOp.opcodeBytes x0) w
 
 abbrev Stmt_bump_bytes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
-    (RepList 35 RepU8) (Lanius.Mini.bumpBytes x0) w
+    (RepList 36 RepU8) (Lanius.Mini.bumpBytes x0) w
 
 abbrev Stmt_float_operands (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FloatTy} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepFloatTy x0 v0 →
-    (RepList 35 RepU8) (Lanius.Mini.floatOperands x0) w
+    (RepList 36 RepU8) (Lanius.Mini.floatOperands x0) w
 
 abbrev Stmt_float_result (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FloatTy} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepFloatTy x0 v0 →
-    (RepList 35 RepU8) (Lanius.Mini.floatResult x0) w
+    (RepList 36 RepU8) (Lanius.Mini.floatResult x0) w
 
 abbrev Stmt_frame_memory_bytes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
-    (RepList 35 RepU8) (Lanius.Mini.frameMemoryBytes x0) w
+    (RepList 36 RepU8) (Lanius.Mini.frameMemoryBytes x0) w
 
 abbrev Stmt_pow2 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →

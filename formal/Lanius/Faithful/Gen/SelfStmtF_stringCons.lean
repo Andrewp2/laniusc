@@ -26,10 +26,10 @@ abbrev Stmt_plain_string_byte (prog : SrcProgram) (prims : Prims) (ix n : Nat) :
 
 abbrev Stmt_string_body (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 25 RepNat) x0 v0 →
-    (RepOption 197 (RepList 25 RepNat)) (Lanius.Mini.stringBody x0) w
+    (RepOption 198 (RepList 25 RepNat)) (Lanius.Mini.stringBody x0) w
 
 abbrev Stmt_string_cons (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Bool} {x1 : Nat} {x2 : Option (List Nat)} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepBool x0 v0 → RepNat x1 v1 → (RepOption 197 (RepList 25 RepNat)) x2 v2 →
-    (RepOption 197 (RepList 25 RepNat)) (Lanius.Mini.stringCons x0 x1 x2) w
+  ∀ {x0 : Bool} {x1 : Nat} {x2 : Option (List Nat)} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepBool x0 v0 → RepNat x1 v1 → (RepOption 198 (RepList 25 RepNat)) x2 v2 →
+    (RepOption 198 (RepList 25 RepNat)) (Lanius.Mini.stringCons x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

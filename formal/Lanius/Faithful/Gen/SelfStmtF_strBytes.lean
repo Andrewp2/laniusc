@@ -22,30 +22,30 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_eff_bytes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcEff x0 v0 →
-    (RepList 35 RepU8) (Lanius.Mini.effBytes x0) w
+    (RepList 36 RepU8) (Lanius.Mini.effBytes x0) w
 
 abbrev Stmt_effs_bytes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.SrcEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 186 RepSrcEff) x0 v0 →
-    (RepList 35 RepU8) (Lanius.Mini.effsBytes x0) w
+  ∀ {x0 : List Lanius.Mini.SrcEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 187 RepSrcEff) x0 v0 →
+    (RepList 36 RepU8) (Lanius.Mini.effsBytes x0) w
 
 abbrev Stmt_place_eff (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List UInt8} {x1 : Lanius.Mini.SrcEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 35 RepU8) x0 v0 → RepSrcEff x1 v1 →
+  ∀ {x0 : List UInt8} {x1 : Lanius.Mini.SrcEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 36 RepU8) x0 v0 → RepSrcEff x1 v1 →
     RepSrcEff (Lanius.Mini.placeEff x0 x1) w
 
 abbrev Stmt_place_effs (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List UInt8} {x1 : List Lanius.Mini.SrcEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 35 RepU8) x0 v0 → (RepList 186 RepSrcEff) x1 v1 →
-    (RepList 186 RepSrcEff) (Lanius.Mini.placeEffs x0 x1) w
+  ∀ {x0 : List UInt8} {x1 : List Lanius.Mini.SrcEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 36 RepU8) x0 v0 → (RepList 187 RepSrcEff) x1 v1 →
+    (RepList 187 RepSrcEff) (Lanius.Mini.placeEffs x0 x1) w
 
 abbrev Stmt_place_stmt (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List UInt8} {x1 : Lanius.Mini.SrcStmt} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 35 RepU8) x0 v0 → RepSrcStmt x1 v1 →
+  ∀ {x0 : List UInt8} {x1 : Lanius.Mini.SrcStmt} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 36 RepU8) x0 v0 → RepSrcStmt x1 v1 →
     RepSrcStmt (Lanius.Mini.placeStmt x0 x1) w
 
 abbrev Stmt_stmt_bytes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcStmt} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcStmt x0 v0 →
-    (RepList 35 RepU8) (Lanius.Mini.stmtBytes x0) w
+    (RepList 36 RepU8) (Lanius.Mini.stmtBytes x0) w
 
 abbrev Stmt_str_bytes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 25 RepNat) x0 v0 →
-    (RepList 35 RepU8) (Lanius.Mini.strBytes x0) w
+    (RepList 36 RepU8) (Lanius.Mini.strBytes x0) w
 
 end Lanius.Faithful.SelfCert

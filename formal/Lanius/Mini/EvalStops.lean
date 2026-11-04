@@ -2584,6 +2584,10 @@ theorem effStops_all {sp : SrcProgram} {mp : Program} {n : Nat}
       (effStops_all lowered returns prev b)
   | .eLet _ _ a _ b => eff_let lowered (effStops_all lowered returns prev a) (effStops_all lowered returns prev b)
   | .eLen _ => eff_len
+  | .eBorrow _ _ => fun ok => by simp [SrcEff.eval] at ok
+  | .eDeref _ _ => fun ok => by simp [SrcEff.eval] at ok
+  | .eField _ _ => fun ok => by simp [SrcEff.eval] at ok
+  | .eAt _ _ => fun ok => by simp [SrcEff.eval] at ok
 termination_by e => sizeOf e
 
 /-- Every lowered statement whose Core run fails stops within `n + 1` ticks
@@ -2641,6 +2645,8 @@ theorem stmtStops_succ {sp : SrcProgram} {mp : Program} {n : Nat}
       stops_matchArm (stmtStops_succ lowered returns prev body) (stmtStops_succ lowered returns prev rest)
   | .assert condition => stops_assert lowered (effStops_all lowered returns prev condition)
   | .unreachable _ _ => stops_unreachable
+  | .setPlace _ _ => fun ok => by simp [SrcStmt.lower] at ok
+  | .setPlaceOp _ _ _ => fun ok => by simp [SrcStmt.lower] at ok
 
 /-- Every lowered statement whose Core run fails stops for every number of
 ticks. -/

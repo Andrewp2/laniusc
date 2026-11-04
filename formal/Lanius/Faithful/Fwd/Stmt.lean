@@ -636,6 +636,8 @@ theorem stmt_live (live : FuncLive sp prims outside cost N) (ret : SrcType) (s :
     exact ⟨_, _, ev, dr, ran, g, f1⟩
   | setIndexEval => intro tenv env st d h ok; simp [stmtOk] at ok
   | setFieldEval => intro tenv env st d h ok; simp [stmtOk] at ok
+  | setPlace => intro tenv env st d h ok; simp [stmtOk] at ok
+  | setPlaceOp => intro tenv env st d h ok; simp [stmtOk] at ok
   | «break» =>
     intro tenv env st d h ok inv locs rel hq budget fr
     simp only [qstmt, Option.some.injEq, Prod.mk.injEq] at hq

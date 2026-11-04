@@ -185,6 +185,10 @@ def knownEff (funcs : List SrcFunc) (locals : List LocalTy) (x : SrcEff) : Optio
   | .eLet id t v rt b => some rt
   | .eLen s => some (SrcType.uint UintTy.usize)
   | .eStr offset chars => some SrcType.str
+  | .eBorrow bty bplace => none
+  | .eDeref dty dref => none
+  | .eField fbase fidx => none
+  | .eAt abase aindex => none
 
 mutual
 def litEff (funcs : List SrcFunc) (locals : List LocalTy) (want : Option SrcType) (x : SrcEff) : SrcEff :=
@@ -206,6 +210,10 @@ def litEff (funcs : List SrcFunc) (locals : List LocalTy) (want : Option SrcType
   | .eLet id t v rt b => SrcEff.eLet id t (litEff funcs locals (some t) v) rt (litEff funcs (({ id := id, ty := t } : LocalTy) :: locals) (some rt) b)
   | .eLen s => SrcEff.eLen s
   | .eStr offset chars => SrcEff.eStr offset chars
+  | .eBorrow bty bplace => SrcEff.eBorrow bty bplace
+  | .eDeref dty dref => SrcEff.eDeref dty dref
+  | .eField fbase fidx => SrcEff.eField fbase fidx
+  | .eAt abase aindex => SrcEff.eAt abase aindex
 def litEffs (funcs : List SrcFunc) (locals : List LocalTy) (wants : Option (List SrcType)) (xs : List SrcEff) : List SrcEff :=
   match xs with
   | [] => []
@@ -258,6 +266,8 @@ def litStmt (funcs : List SrcFunc) (ret : SrcType) (locals : List LocalTy) (s : 
   | .unreachable id ty => SrcStmt.unreachable id ty
   | .letView id n es p body => SrcStmt.letView id n (litExprs locals (some (repeatSrc SrcType.i32 n)) es) p (litStmt funcs ret (withLocal p SrcType.ptr (withLocal id (SrcType.array SrcType.i32 n) locals)) body)
   | .letStr p cs body => SrcStmt.letStr p cs (litStmt funcs ret (withLocal p SrcType.ptr locals) body)
+  | .setPlace aplace avalue => SrcStmt.setPlace aplace avalue
+  | .setPlaceOp aop aplace avalue => SrcStmt.setPlaceOp aop aplace avalue
 
 def paramLocals (ps : List SrcParam) : List LocalTy :=
   match ps with
@@ -316,6 +326,10 @@ def wideLeftEff (x : SrcEff) : Bool :=
   | .eLet id t v rt b => wideLeftEff v || wideLeftEff b
   | .eLen sl => false
   | .eStr offset chars => false
+  | .eBorrow bty bplace => false
+  | .eDeref dty dref => false
+  | .eField fbase fidx => false
+  | .eAt abase aindex => false
 def wideLeftEffs (xs : List SrcEff) : Bool :=
   match xs with
   | [] => false

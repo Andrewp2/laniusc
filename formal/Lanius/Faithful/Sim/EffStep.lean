@@ -270,6 +270,10 @@ theorem eff_step (le : k + 1 ≤ N) (calls : FuncSim sp prims outside k) (eff : 
       ran1.trans ⟨ran2.inv.restore s1, ((Step.bindLocal s1 id sv).trans ran2.step).restore s1, rfl⟩⟩
   | eLen => simp [effTy] at ht
   | eStr => simp [effTy] at ht
+  | eBorrow => simp [effTy] at ht
+  | eDeref => simp [effTy] at ht
+  | eField => simp [effTy] at ht
+  | eAt => simp [effTy] at ht
 
 /-- Every effectful expression Core completes with fuel `k ≤ N` has its pure value. -/
 theorem eff_sim : ∀ k, k ≤ N → (∀ j < k, FuncSim sp prims outside j) →

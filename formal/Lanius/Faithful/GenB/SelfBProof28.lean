@@ -420,24 +420,4 @@ theorem bproof_lx_digit_run_at {spW sp : SrcProgram} {prims : Prims} {ix_lx_digi
     budget
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3⟩
 
-theorem bproof_lx_digit_run {spW sp : SrcProgram} {prims : Prims} {ix_lx_digit_run ix_unbox_of_mini_selfhost_List_usize ix_lx_drop ix_lx_digit_run_at : Nat}
-    (fnW : spW.funcs[ix_lx_digit_run]? = some (src_lx_digit_run ix_unbox_of_mini_selfhost_List_usize ix_lx_drop ix_lx_digit_run_at)) (fn : sp.funcs[ix_lx_digit_run]? = some (src_lx_digit_run ix_unbox_of_mini_selfhost_List_usize ix_lx_drop ix_lx_digit_run_at))
-    (np : prims.isPrim ix_lx_digit_run = false)
-    (back : Certified (∀ {n : Nat}, Stmt_lx_digit_run sp prims ix_lx_digit_run n))
-    (pp_unbox_of_mini_selfhost_List_usize : prims.isPrim ix_unbox_of_mini_selfhost_List_usize = true) (bx_unbox_of_mini_selfhost_List_usize : prims.boxed.contains ix_unbox_of_mini_selfhost_List_usize = false)
-    (b_lx_drop : Certified (∀ {n : Nat}, BStmt_lx_drop spW sp prims ix_lx_drop n))
-    (b_lx_digit_run_at : Certified (∀ {n : Nat}, BStmt_lx_digit_run_at spW sp prims ix_lx_digit_run_at n)) {n : Nat} :
-    BStmt_lx_digit_run spW sp prims ix_lx_digit_run n := by
-  intro x0 x1 x2 v0 v1 v2 w k b h r0 r1 r2 hb pre
-  rcases n with _ | n
-  · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_lx_digit_run [v0, v1, v2] = some (w, k) ∧ 0 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_lx_digit_run, List.length_cons, List.length_nil, if_true] at h ⊢
-    rw [Pre_lx_digit_run.eq_def] at pre
-    simp only at pre
-    budget
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
-
 end Lanius.Faithful.SelfBudget

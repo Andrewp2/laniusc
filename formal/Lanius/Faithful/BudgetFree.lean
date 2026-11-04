@@ -46,6 +46,7 @@ def SrcEff.callsOk (S : Nat → Bool) : SrcEff → Bool
       SrcEff.callsOk S condition && SrcEff.callsOk S thenValue && SrcEff.callsOk S elseValue
   | .eLet _ _ value _ body => SrcEff.callsOk S value && SrcEff.callsOk S body
   | .eLen _ | .eStr _ _ => true
+  | .eBorrow _ _ | .eDeref _ _ | .eField _ _ | .eAt _ _ => true
 
 /-- Every function the list calls is in `S`. -/
 def SrcEff.callsOkL (S : Nat → Bool) : List SrcEff → Bool
@@ -85,6 +86,8 @@ def SrcStmt.callsOk (S : Nat → Bool) : SrcStmt → Bool
   | .discard value => value.callsOk S
   | .setIndexEval _ _ _ => true
   | .setFieldEval _ _ _ => true
+  | .setPlace _ _ => true
+  | .setPlaceOp _ _ _ => true
   | .returnUnit => true
   | .assert condition => condition.callsOk S
   | .break => true
@@ -261,7 +264,7 @@ theorem qeff_z (hc : QCallsZ S call call') :
     simp only [SrcEff.callsOk, Bool.and_eq_true] at hs
     simp only [qeff]
     exact zle_qthen (qeff_z hc env value hs.1) fun v => qeff_z hc ((id, v) :: env) body hs.2
-  | _, .eLen _, _ | _, .eStr _ _, _ => zle_none
+  | _, .eLen _, _ | _, .eStr _ _, _ | _, .eBorrow _ _, _ | _, .eDeref _ _, _ | _, .eField _ _, _ | _, .eAt _ _, _ => zle_none
 
 theorem qeffs_z (hc : QCallsZ S call call') :
     ∀ (env : Env) (es : List SrcEff), SrcEff.callsOkL S es = true → ZLe (qeffs call env es) (qeffs call' env es)
@@ -372,6 +375,8 @@ theorem qstmt_z (hc : QCallsZ S call call') (fuel : Nat) (s : SrcStmt) :
     exact zle_qthen (qeff_z hc env value hs) fun _ => zle_some _
   | setIndexEval => intro _ env; exact zle_none
   | setFieldEval => intro _ env; exact zle_none
+  | setPlace => intro _ env; exact zle_none
+  | setPlaceOp => intro _ env; exact zle_none
   | returnUnit => intro _ env; exact zle_some _
   | «assert» condition =>
     intro hs env

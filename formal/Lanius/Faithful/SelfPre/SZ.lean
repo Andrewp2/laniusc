@@ -417,6 +417,10 @@ instance : SZ Lanius.Mini.SrcDivOp := ⟨fun _ => 0⟩
 @[simp, sz_simp] theorem sz_SrcDivOp (x : Lanius.Mini.SrcDivOp) : sz x = 0 := rfl
 @[simp, sz_simp] theorem sz_opt_SrcDivOp (x : Option Lanius.Mini.SrcDivOp) : sz x = 0 := by cases x <;> rfl
 
+instance : SZ Lanius.Mini.SrcAssignOp := ⟨fun _ => 0⟩
+@[simp, sz_simp] theorem sz_SrcAssignOp (x : Lanius.Mini.SrcAssignOp) : sz x = 0 := rfl
+@[simp, sz_simp] theorem sz_opt_SrcAssignOp (x : Option Lanius.Mini.SrcAssignOp) : sz x = 0 := by cases x <;> rfl
+
 mutual
 def szSrcEff : Lanius.Mini.SrcEff → Nat
   | .ePure a0 => sz a0 + 1
@@ -436,6 +440,10 @@ def szSrcEff : Lanius.Mini.SrcEff → Nat
   | .eLet a0 a1 a2 a3 a4 => sz a1 + (szSrcEff a2) + sz a3 + (szSrcEff a4) + 1
   | .eLen a0 => 1
   | .eStr a0 a1 => sz a1 + 1
+  | .eBorrow a0 a1 => sz a0 + (szSrcEff a1) + 1
+  | .eDeref a0 a1 => sz a0 + (szSrcEff a1) + 1
+  | .eField a0 a1 => (szSrcEff a0) + 1
+  | .eAt a0 a1 => (szSrcEff a0) + (szSrcEff a1) + 1
 def szSrcEff0 : List Lanius.Mini.SrcEff → Nat
   | [] => 0
   | a :: l => szSrcEff a + szSrcEff0 l + 1
@@ -463,6 +471,10 @@ theorem szSrcEff0_eq : ∀ l : List Lanius.Mini.SrcEff, szSrcEff0 l = SZ.sz l
 @[simp, sz_simp] theorem sz_SrcEff_eLet (a0 : Nat) (a1 : Lanius.Mini.SrcType) (a2 : Lanius.Mini.SrcEff) (a3 : Lanius.Mini.SrcType) (a4 : Lanius.Mini.SrcEff) : sz (Lanius.Mini.SrcEff.eLet a0 a1 a2 a3 a4) = sz a1 + sz a2 + sz a3 + sz a4 + 1 := rfl
 @[simp, sz_simp] theorem sz_SrcEff_eLen (a0 : Nat) : sz (Lanius.Mini.SrcEff.eLen a0) = 1 := rfl
 @[simp, sz_simp] theorem sz_SrcEff_eStr (a0 : Nat) (a1 : List Nat) : sz (Lanius.Mini.SrcEff.eStr a0 a1) = sz a1 + 1 := rfl
+@[simp, sz_simp] theorem sz_SrcEff_eBorrow (a0 : Lanius.Mini.SrcType) (a1 : Lanius.Mini.SrcEff) : sz (Lanius.Mini.SrcEff.eBorrow a0 a1) = sz a0 + sz a1 + 1 := rfl
+@[simp, sz_simp] theorem sz_SrcEff_eDeref (a0 : Lanius.Mini.SrcType) (a1 : Lanius.Mini.SrcEff) : sz (Lanius.Mini.SrcEff.eDeref a0 a1) = sz a0 + sz a1 + 1 := rfl
+@[simp, sz_simp] theorem sz_SrcEff_eField (a0 : Lanius.Mini.SrcEff) (a1 : Nat) : sz (Lanius.Mini.SrcEff.eField a0 a1) = sz a0 + 1 := rfl
+@[simp, sz_simp] theorem sz_SrcEff_eAt (a0 : Lanius.Mini.SrcEff) (a1 : Lanius.Mini.SrcEff) : sz (Lanius.Mini.SrcEff.eAt a0 a1) = sz a0 + sz a1 + 1 := rfl
 
 mutual
 def szSrcStmt : Lanius.Mini.SrcStmt → Nat
@@ -502,6 +514,8 @@ def szSrcStmt : Lanius.Mini.SrcStmt → Nat
   | .unreachable a0 a1 => sz a1 + 1
   | .letView a0 a1 a2 a3 a4 => sz a2 + (szSrcStmt a4) + 1
   | .letStr a0 a1 a2 => sz a1 + (szSrcStmt a2) + 1
+  | .setPlace a0 a1 => sz a0 + sz a1 + 1
+  | .setPlaceOp a0 a1 a2 => sz a1 + sz a2 + 1
 end
 instance : SZ Lanius.Mini.SrcStmt := ⟨szSrcStmt⟩
 @[simp, sz_simp] theorem sz_SrcStmt_nop  : sz (Lanius.Mini.SrcStmt.nop) = 1 := rfl
@@ -540,6 +554,8 @@ instance : SZ Lanius.Mini.SrcStmt := ⟨szSrcStmt⟩
 @[simp, sz_simp] theorem sz_SrcStmt_unreachable (a0 : Nat) (a1 : Lanius.Mini.SrcType) : sz (Lanius.Mini.SrcStmt.unreachable a0 a1) = sz a1 + 1 := rfl
 @[simp, sz_simp] theorem sz_SrcStmt_letView (a0 : Nat) (a1 : Nat) (a2 : List Lanius.Mini.SrcExpr) (a3 : Nat) (a4 : Lanius.Mini.SrcStmt) : sz (Lanius.Mini.SrcStmt.letView a0 a1 a2 a3 a4) = sz a2 + sz a4 + 1 := rfl
 @[simp, sz_simp] theorem sz_SrcStmt_letStr (a0 : Nat) (a1 : List Nat) (a2 : Lanius.Mini.SrcStmt) : sz (Lanius.Mini.SrcStmt.letStr a0 a1 a2) = sz a1 + sz a2 + 1 := rfl
+@[simp, sz_simp] theorem sz_SrcStmt_setPlace (a0 : Lanius.Mini.SrcEff) (a1 : Lanius.Mini.SrcEff) : sz (Lanius.Mini.SrcStmt.setPlace a0 a1) = sz a0 + sz a1 + 1 := rfl
+@[simp, sz_simp] theorem sz_SrcStmt_setPlaceOp (a0 : Lanius.Mini.SrcAssignOp) (a1 : Lanius.Mini.SrcEff) (a2 : Lanius.Mini.SrcEff) : sz (Lanius.Mini.SrcStmt.setPlaceOp a0 a1 a2) = sz a1 + sz a2 + 1 := rfl
 
 instance : SZ Lanius.Mini.SrcParam := ⟨fun s => sz s.ty⟩
 @[simp, sz_simp] theorem sz_SrcParam_mk (a0 : Nat) (a1 : Lanius.Mini.SrcType) : sz (Lanius.Mini.SrcParam.mk a0 a1) = sz a1 := rfl

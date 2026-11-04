@@ -21,67 +21,67 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_alias_name_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.AliasDecl} {x1 : List Lanius.Mini.AliasDecl} {x2 : List (List Nat)} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepAliasDecl x0 v0 → (RepList 118 RepAliasDecl) x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 →
+  ∀ {x0 : Lanius.Mini.AliasDecl} {x1 : List Lanius.Mini.AliasDecl} {x2 : List (List Nat)} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepAliasDecl x0 v0 → (RepList 119 RepAliasDecl) x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 →
     (RepList 31 (RepList 25 RepNat)) (Lanius.Mini.Inline.aliasNameAt x0 x1 x2) w
 
 abbrev Stmt_collect_file_next (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.Collected} {x2 : Option Lanius.Mini.FileDecls} {x3 : List Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepCollected x1 v1 → (RepOption 101 RepFileDecls) x2 v2 → (RepList 82 RepCTree) x3 v3 →
-    (RepOption 132 RepCollected) (Lanius.Mini.Inline.collectFileNext x0 x1 x2 x3) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.Collected} {x2 : Option Lanius.Mini.FileDecls} {x3 : List Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepCollected x1 v1 → (RepOption 102 RepFileDecls) x2 v2 → (RepList 83 RepCTree) x3 v3 →
+    (RepOption 133 RepCollected) (Lanius.Mini.Inline.collectFileNext x0 x1 x2 x3) w
 
 abbrev Stmt_const_name_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.ConstDecl} {x1 : List Lanius.Mini.ConstDecl} {x2 : List (List Nat)} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepConstDecl x0 v0 → (RepList 112 RepConstDecl) x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 →
+  ∀ {x0 : Lanius.Mini.ConstDecl} {x1 : List Lanius.Mini.ConstDecl} {x2 : List (List Nat)} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepConstDecl x0 v0 → (RepList 113 RepConstDecl) x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 →
     (RepList 31 (RepList 25 RepNat)) (Lanius.Mini.Inline.constNameAt x0 x1 x2) w
 
 abbrev Stmt_find_alias_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.AliasDecl} {x1 : List Lanius.Mini.AliasDecl} {x2 : List (List Nat)} {x3 : List Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepAliasDecl x0 v0 → (RepList 118 RepAliasDecl) x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → (RepList 25 RepNat) x3 v3 →
-    (RepOption 256 RepAliasDecl) (Lanius.Mini.Inline.findAliasAt x0 x1 x2 x3) w
+  ∀ {x0 : Lanius.Mini.AliasDecl} {x1 : List Lanius.Mini.AliasDecl} {x2 : List (List Nat)} {x3 : List Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepAliasDecl x0 v0 → (RepList 119 RepAliasDecl) x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → (RepList 25 RepNat) x3 v3 →
+    (RepOption 257 RepAliasDecl) (Lanius.Mini.Inline.findAliasAt x0 x1 x2 x3) w
 
 abbrev Stmt_find_const_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.ConstDecl} {x1 : List Lanius.Mini.ConstDecl} {x2 : List (List Nat)} {x3 : List Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepConstDecl x0 v0 → (RepList 112 RepConstDecl) x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → (RepList 25 RepNat) x3 v3 →
-    (RepOption 280 RepConstDecl) (Lanius.Mini.Inline.findConstAt x0 x1 x2 x3) w
+  ∀ {x0 : Lanius.Mini.ConstDecl} {x1 : List Lanius.Mini.ConstDecl} {x2 : List (List Nat)} {x3 : List Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepConstDecl x0 v0 → (RepList 113 RepConstDecl) x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → (RepList 25 RepNat) x3 v3 →
+    (RepOption 281 RepConstDecl) (Lanius.Mini.Inline.findConstAt x0 x1 x2 x3) w
 
 abbrev Stmt_find_fn_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.FnDecl} {x1 : List Lanius.Mini.FnDecl} {x2 : List (List Nat)} {x3 : List Nat} {x4 : Nat} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepFnDecl x0 v0 → (RepList 109 RepFnDecl) x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → (RepList 25 RepNat) x3 v3 → RepNat x4 v4 →
-    (RepOption 150 RepNat) (Lanius.Mini.Inline.findFnAt x0 x1 x2 x3 x4) w
+  ∀ {x0 : Lanius.Mini.FnDecl} {x1 : List Lanius.Mini.FnDecl} {x2 : List (List Nat)} {x3 : List Nat} {x4 : Nat} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepFnDecl x0 v0 → (RepList 110 RepFnDecl) x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → (RepList 25 RepNat) x3 v3 → RepNat x4 v4 →
+    (RepOption 151 RepNat) (Lanius.Mini.Inline.findFnAt x0 x1 x2 x3 x4) w
 
 abbrev Stmt_find_type_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.TypeDecl} {x1 : List Lanius.Mini.TypeDecl} {x2 : List (List Nat)} {x3 : List Nat} {x4 : Nat} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepTypeDecl x0 v0 → (RepList 104 RepTypeDecl) x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → (RepList 25 RepNat) x3 v3 → RepNat x4 v4 →
-    (RepOption 150 RepNat) (Lanius.Mini.Inline.findTypeAt x0 x1 x2 x3 x4) w
+  ∀ {x0 : Lanius.Mini.TypeDecl} {x1 : List Lanius.Mini.TypeDecl} {x2 : List (List Nat)} {x3 : List Nat} {x4 : Nat} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepTypeDecl x0 v0 → (RepList 105 RepTypeDecl) x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → (RepList 25 RepNat) x3 v3 → RepNat x4 v4 →
+    (RepOption 151 RepNat) (Lanius.Mini.Inline.findTypeAt x0 x1 x2 x3 x4) w
 
 abbrev Stmt_fn_name_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.FnDecl} {x1 : List Lanius.Mini.FnDecl} {x2 : List (List Nat)} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepFnDecl x0 v0 → (RepList 109 RepFnDecl) x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 →
+  ∀ {x0 : Lanius.Mini.FnDecl} {x1 : List Lanius.Mini.FnDecl} {x2 : List (List Nat)} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepFnDecl x0 v0 → (RepList 110 RepFnDecl) x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 →
     (RepList 31 (RepList 25 RepNat)) (Lanius.Mini.Inline.fnNameAt x0 x1 x2) w
 
 abbrev Stmt_inst_index_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Inst} {x1 : List Lanius.Mini.Inst} {x2 : Lanius.Mini.Inst} {x3 : Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepInst x0 v0 → (RepList 139 RepInst) x1 v1 → RepInst x2 v2 → RepNat x3 v3 →
-    (RepOption 150 RepNat) (Lanius.Mini.Inline.instIndexAt x0 x1 x2 x3) w
+  ∀ {x0 : Lanius.Mini.Inst} {x1 : List Lanius.Mini.Inst} {x2 : Lanius.Mini.Inst} {x3 : Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepInst x0 v0 → (RepList 140 RepInst) x1 v1 → RepInst x2 v2 → RepNat x3 v3 →
+    (RepOption 151 RepNat) (Lanius.Mini.Inline.instIndexAt x0 x1 x2 x3) w
 
 abbrev Stmt_module_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.CTree} {x2 : List Lanius.Mini.CTree} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepCTree x1 v1 → (RepList 82 RepCTree) x2 v2 →
-    (RepOption 138 (RepList 31 (RepList 25 RepNat))) (Lanius.Mini.Inline.moduleAt x0 x1 x2) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.CTree} {x2 : List Lanius.Mini.CTree} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepCTree x1 v1 → (RepList 83 RepCTree) x2 v2 →
+    (RepOption 139 (RepList 31 (RepList 25 RepNat))) (Lanius.Mini.Inline.moduleAt x0 x1 x2) w
 
 abbrev Stmt_param_spelling_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.CTree} {x1 : List Lanius.Mini.CTree} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepCTree x0 v0 → (RepList 82 RepCTree) x1 v1 →
-    (RepOption 138 (RepList 31 (RepList 25 RepNat))) (Lanius.Mini.Inline.paramSpellingAt x0 x1) w
+  ∀ {x0 : Lanius.Mini.CTree} {x1 : List Lanius.Mini.CTree} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepCTree x0 v0 → (RepList 83 RepCTree) x1 v1 →
+    (RepOption 139 (RepList 31 (RepList 25 RepNat))) (Lanius.Mini.Inline.paramSpellingAt x0 x1) w
 
 abbrev Stmt_position_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Nat} {x1 : List (List Nat)} {x2 : List Nat} {x3 : Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepList 25 RepNat) x0 v0 → (RepList 31 (RepList 25 RepNat)) x1 v1 → (RepList 25 RepNat) x2 v2 → RepNat x3 v3 →
-    (RepOption 150 RepNat) (Lanius.Mini.Inline.positionAt x0 x1 x2 x3) w
+    (RepOption 151 RepNat) (Lanius.Mini.Inline.positionAt x0 x1 x2 x3) w
 
 abbrev Stmt_root_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.FnDecl} {x1 : List Lanius.Mini.FnDecl} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepFnDecl x0 v0 → (RepList 109 RepFnDecl) x1 v1 → RepNat x2 v2 →
-    (RepList 139 RepInst) (Lanius.Mini.Inline.rootAt x0 x1 x2) w
+  ∀ {x0 : Lanius.Mini.FnDecl} {x1 : List Lanius.Mini.FnDecl} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepFnDecl x0 v0 → (RepList 110 RepFnDecl) x1 v1 → RepNat x2 v2 →
+    (RepList 140 RepInst) (Lanius.Mini.Inline.rootAt x0 x1 x2) w
 
 abbrev Stmt_seed_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.TypeDecl} {x1 : List Lanius.Mini.TypeDecl} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepTypeDecl x0 v0 → (RepList 104 RepTypeDecl) x1 v1 → RepNat x2 v2 →
-    (RepList 139 RepInst) (Lanius.Mini.Inline.seedAt x0 x1 x2) w
+  ∀ {x0 : Lanius.Mini.TypeDecl} {x1 : List Lanius.Mini.TypeDecl} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepTypeDecl x0 v0 → (RepList 105 RepTypeDecl) x1 v1 → RepNat x2 v2 →
+    (RepList 140 RepInst) (Lanius.Mini.Inline.seedAt x0 x1 x2) w
 
 abbrev Stmt_type_name_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.TypeDecl} {x1 : List Lanius.Mini.TypeDecl} {x2 : List (List Nat)} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepTypeDecl x0 v0 → (RepList 104 RepTypeDecl) x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 →
+  ∀ {x0 : Lanius.Mini.TypeDecl} {x1 : List Lanius.Mini.TypeDecl} {x2 : List (List Nat)} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepTypeDecl x0 v0 → (RepList 105 RepTypeDecl) x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 →
     (RepList 31 (RepList 25 RepNat)) (Lanius.Mini.Inline.typeNameAt x0 x1 x2) w
 
 abbrev Stmt_type_only_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.TypeDecl} {x1 : List Lanius.Mini.TypeDecl} {x2 : List (List Nat)} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepTypeDecl x0 v0 → (RepList 104 RepTypeDecl) x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 →
+  ∀ {x0 : Lanius.Mini.TypeDecl} {x1 : List Lanius.Mini.TypeDecl} {x2 : List (List Nat)} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepTypeDecl x0 v0 → (RepList 105 RepTypeDecl) x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 →
     (RepList 31 (RepList 25 RepNat)) (Lanius.Mini.Inline.typeOnlyAt x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

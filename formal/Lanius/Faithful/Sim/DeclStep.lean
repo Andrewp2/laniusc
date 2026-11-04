@@ -232,6 +232,8 @@ theorem stmt_grows : ∀ (s : SrcStmt) (d : SrcDecls), GrowsTo d (SrcStmt.declar
   | .discard v, d => by unfold SrcStmt.declare; exact types_grows _ d
   | .setIndexEval _ i v, d => by unfold SrcStmt.declare; exact types_grows _ d
   | .setFieldEval _ _ v, d => by unfold SrcStmt.declare; exact types_grows _ d
+  | .setPlace p v, d => by unfold SrcStmt.declare; exact types_grows _ d
+  | .setPlaceOp _ p v, d => by unfold SrcStmt.declare; exact types_grows _ d
   | .returnUnit, _ => by unfold SrcStmt.declare; exact growsTo_some
   | .assert c, d => by unfold SrcStmt.declare; exact types_grows _ d
   | .break, _ => by unfold SrcStmt.declare; exact growsTo_some

@@ -192,7 +192,7 @@ def effTy (tenv : TEnv) : SrcEff → Option SrcType
       (effTy tenv thenValue).bind fun a => (effTy tenv elseValue).bind fun b => if a.same b then some a else none
     else none
   | .eLet id _ value _ body => (effTy tenv value).bind fun t => effTy ((id, t) :: tenv) body
-  | .eLen _ | .eStr _ _ => none
+  | .eLen _ | .eStr _ _ | .eBorrow _ _ | .eDeref _ _ | .eField _ _ | .eAt _ _ => none
 
 def effTys (tenv : TEnv) : List SrcEff → Option (List SrcType)
   | [] => some []
@@ -276,6 +276,8 @@ def stmtOk (ret : SrcType) (tenv : TEnv) : SrcStmt → Bool
   | .discard value => (effTy sp outside boxes tenv value).isSome
   | .setIndexEval _ _ _ => false
   | .setFieldEval _ _ _ => false
+  | .setPlace _ _ => false
+  | .setPlaceOp _ _ _ => false
   | .returnUnit => true
   | .assert condition => isBoolTy (effTy sp outside boxes tenv condition)
   | .break => true
@@ -328,6 +330,8 @@ def looseJump : SrcStmt → Bool
   | .discard _ => false
   | .setIndexEval _ _ _ => false
   | .setFieldEval _ _ _ => false
+  | .setPlace _ _ => false
+  | .setPlaceOp _ _ _ => false
   | .returnUnit => false
   | .assert _ => false
   | .break => true

@@ -74,6 +74,10 @@ def SrcEff.sliceUses (self : SrcEff) : List Nat :=
   | .eLet id ty value rt body => SrcEff.sliceUses value ++ SrcEff.sliceUses body
   | .eLen slice => []
   | .eStr offset chars => []
+  | .eBorrow bty bplace => SrcEff.sliceUses bplace
+  | .eDeref dty dref => SrcEff.sliceUses dref
+  | .eField fbase fidx => SrcEff.sliceUses fbase
+  | .eAt abase aindex => SrcEff.sliceUses abase ++ SrcEff.sliceUses aindex
 /-- The largest need of a function the expression calls, by needs (each function's, by index; 0 for a host service). -/
 def SrcEff.calleeNeed (self : SrcEff) (needs : List Nat) : Nat :=
   match self with
@@ -94,6 +98,10 @@ def SrcEff.calleeNeed (self : SrcEff) (needs : List Nat) : Nat :=
   | .eLet id ty value rt body => max (SrcEff.calleeNeed value needs) (SrcEff.calleeNeed body needs)
   | .eLen slice => 0
   | .eStr offset chars => 0
+  | .eBorrow bty bplace => SrcEff.calleeNeed bplace needs
+  | .eDeref dty dref => SrcEff.calleeNeed dref needs
+  | .eField fbase fidx => SrcEff.calleeNeed fbase needs
+  | .eAt abase aindex => max (SrcEff.calleeNeed abase needs) (SrcEff.calleeNeed aindex needs)
 def effsSliceUses (es : List SrcEff) : List Nat :=
   match es with
   | [] => []
@@ -143,6 +151,8 @@ def SrcStmt.sliceUses (self : SrcStmt) : List Nat :=
   | .unreachable id ty => []
   | .letView id length fields pointer body => SrcStmt.sliceUses body
   | .letStr pointer chars body => SrcStmt.sliceUses body
+  | .setPlace aplace avalue => SrcEff.sliceUses aplace ++ SrcEff.sliceUses avalue
+  | .setPlaceOp aop aplace avalue => SrcEff.sliceUses aplace ++ SrcEff.sliceUses avalue
 
 /-- The block bytes of the statement's declarations (decl_bytes). -/
 def SrcStmt.arrayBytes (self : SrcStmt) (uses : List Nat) : Nat :=
@@ -183,6 +193,8 @@ def SrcStmt.arrayBytes (self : SrcStmt) (uses : List Nat) : Nat :=
   | .unreachable id ty => 0
   | .letView id length fields pointer body => SrcStmt.arrayBytes body uses
   | .letStr pointer chars body => SrcStmt.arrayBytes body uses
+  | .setPlace aplace avalue => 0
+  | .setPlaceOp aop aplace avalue => 0
 
 /-- The largest need of a function the statement calls (SrcEff.callee_need). -/
 def SrcStmt.calleeNeed (self : SrcStmt) (needs : List Nat) : Nat :=
@@ -223,6 +235,8 @@ def SrcStmt.calleeNeed (self : SrcStmt) (needs : List Nat) : Nat :=
   | .unreachable id ty => 0
   | .letView id length fields pointer body => SrcStmt.calleeNeed body needs
   | .letStr pointer chars body => SrcStmt.calleeNeed body needs
+  | .setPlace aplace avalue => max (SrcEff.calleeNeed aplace needs) (SrcEff.calleeNeed avalue needs)
+  | .setPlaceOp aop aplace avalue => max (SrcEff.calleeNeed aplace needs) (SrcEff.calleeNeed avalue needs)
 
 /-- A function's own block of frame memory, taken at its entry: 8 bytes per element of each array it declares (a parameter or a let) whose id it passes as a slice somewhere. A call passing arrays places them in it (array_call), at most its bytes. -/
 def frameBlock (func : SrcFunc) : Nat :=

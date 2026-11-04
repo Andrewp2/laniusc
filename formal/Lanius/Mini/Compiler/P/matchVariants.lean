@@ -109,6 +109,10 @@ def SrcEff.types (self : SrcEff) : List SrcType :=
   | .eLet id ty value rt body => ty :: (SrcEff.types value ++ SrcEff.types body)
   | .eLen slice => []
   | .eStr offset chars => []
+  | .eBorrow bty bplace => SrcEff.types bplace
+  | .eDeref dty dref => SrcEff.types dref
+  | .eField fbase fidx => SrcEff.types fbase
+  | .eAt abase aindex => SrcEff.types abase ++ SrcEff.types aindex
 def effsTypes (es : List SrcEff) : List SrcType :=
   match es with
   | [] => []

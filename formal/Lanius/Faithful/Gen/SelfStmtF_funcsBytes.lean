@@ -22,10 +22,10 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_funcs_bytes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcFunc} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 5 RepSrcFunc) x0 v0 →
-    (RepList 35 RepU8) (Lanius.Mini.funcsBytes x0) w
+    (RepList 36 RepU8) (Lanius.Mini.funcsBytes x0) w
 
 abbrev Stmt_place_funcs (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List UInt8} {x1 : List Lanius.Mini.SrcFunc} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 35 RepU8) x0 v0 → (RepList 5 RepSrcFunc) x1 v1 →
+  ∀ {x0 : List UInt8} {x1 : List Lanius.Mini.SrcFunc} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 36 RepU8) x0 v0 → (RepList 5 RepSrcFunc) x1 v1 →
     (RepList 5 RepSrcFunc) (Lanius.Mini.placeFuncs x0 x1) w
 
 abbrev Stmt_placed_program (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

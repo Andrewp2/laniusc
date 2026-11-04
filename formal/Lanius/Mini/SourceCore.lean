@@ -190,6 +190,56 @@ def coreArms (id : Nat) : Nat → List SrcArm → List (Core.Pattern × Core.Exp
   | _, [] => []
   | k, arm :: rest => (.enumVariant id k (arm.binders.map .bind), arm.value.toCore) :: coreArms id (k + 1) rest
 
+/-- The place an expression names where Source borrows or assigns it (F5,
+SEMANTIC_DECISIONS "References: the memory model"), read off its Core
+meaning: a local is that local, a field or element of an expression is that
+field or element of its place, and `*r` is the place the reference `r`
+names. Any other expression names the place its value names (`deref`),
+which Core's typing (`PlaceHasType.deref`) accepts only when the expression
+is a reference: a reborrow, that reference's place. Any other such place is
+ill-typed, and the compiler accepts no reference form yet (F5 stage 1). -/
+def exprPlace : Core.Expr → Core.Place
+  | .local id => .local id
+  | .field base field => .field (exprPlace base) field
+  | .index base index => .index (exprPlace base) index
+  | .dereference reference => .deref reference
+  | e@(.value _) => .deref e
+  | e@(.cast _ _) => .deref e
+  | e@(.unary _ _) => .deref e
+  | e@(.binary _ _ _) => .deref e
+  | e@(.array _ _) => .deref e
+  | e@(.arrayToSlice _ _) => .deref e
+  | e@(.structValue _ _) => .deref e
+  | e@(.enumValue _ _ _) => .deref e
+  | e@(.matchValue _ _) => .deref e
+  | e@(.assign _ _ _) => .deref e
+  | e@(.borrow _ _) => .deref e
+  | e@(.constant _) => .deref e
+  | e@(.call _ _) => .deref e
+  | e@(.intrinsic _ _) => .deref e
+  | e@(.i32ArrayDataPtr _) => .deref e
+  | e@(.i32SliceFromRawParts _ _) => .deref e
+  | e@(.typedSliceFromRawParts _ _ _) => .deref e
+  | e@(.i32SliceDataPtr _) => .deref e
+  | e@(.stringDataPtr _) => .deref e
+  | e@(.alloc _ _) => .deref e
+  | e@(.realloc _ _ _ _) => .deref e
+  | e@(.dealloc _ _ _) => .deref e
+  | e@(.loadByte _ _) => .deref e
+  | e@(.storeByte _ _ _) => .deref e
+
+/-- A compound assignment's operator is Core's assignment operator of the
+same name. -/
+def SrcAssignOp.toCore : SrcAssignOp → Core.AssignOp
+  | .aAdd => .add
+  | .aSub => .subtract
+  | .aMul => .multiply
+  | .aAnd => .bitAnd
+  | .aOr => .bitOr
+  | .aXor => .bitXor
+  | .aShl => .shiftLeft
+  | .aShr => .shiftRight
+
 mutual
 /-- An effectful expression means the same Core expression as its pure
 counterpart, with calls, reads and literals where they occur. -/
@@ -213,6 +263,10 @@ def SrcEff.toCore : SrcEff → Core.Expr
   | .eLet id _ value _ body => .matchValue value.toCore [(.bind id, body.toCore)]
   | .eLen slice => .intrinsic .sliceLength (.local slice)
   | .eStr _ chars => .value (.string (strValue chars))
+  | .eBorrow ty place => .borrow ty.toCore (exprPlace place.toCore)
+  | .eDeref _ reference => .dereference reference.toCore
+  | .eField base field => .field base.toCore field
+  | .eAt base index => .index base.toCore index.toCore
 
 def SrcEff.toCoreList : List SrcEff → List Core.Expr
   | [] => []
@@ -290,6 +344,8 @@ def SrcStmt.toCore : SrcStmt → Core.Stmt
         (.letLocal pointer (.scalar .rawPtr) (.i32ArrayDataPtr (.local id)) body.toCore)
   | .letStr pointer chars body =>
       .letLocal pointer (.scalar .rawPtr) (.stringDataPtr (.value (.string (strValue chars)))) body.toCore
+  | .setPlace place value => .expression (.assign .set (exprPlace place.toCore) value.toCore)
+  | .setPlaceOp op place value => .expression (.assign op.toCore (exprPlace place.toCore) value.toCore)
 
 def SrcFunc.toCore (id : Nat) (func : SrcFunc) : Core.Function where
   id := id

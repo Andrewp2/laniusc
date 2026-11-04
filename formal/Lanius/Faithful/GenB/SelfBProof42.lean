@@ -18,6 +18,24 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.SelfCert
 open Lanius.Faithful.Budget
 
+theorem bstep_stmt_bytes {spW sp : SrcProgram} {prims : Prims} {ix_stmt_bytes ix_unbox_of_mini_selfhost_SrcStmt ix_empty_of_u8 ix_concat_of_u8 ix_eff_bytes : Nat}
+    (fnW : spW.funcs[ix_stmt_bytes]? = some (src_stmt_bytes ix_unbox_of_mini_selfhost_SrcStmt ix_empty_of_u8 ix_concat_of_u8 ix_stmt_bytes ix_eff_bytes)) (fn : sp.funcs[ix_stmt_bytes]? = some (src_stmt_bytes ix_unbox_of_mini_selfhost_SrcStmt ix_empty_of_u8 ix_concat_of_u8 ix_stmt_bytes ix_eff_bytes))
+    (np : prims.isPrim ix_stmt_bytes = false)
+    (back : Certified (∀ {n : Nat}, Stmt_stmt_bytes sp prims ix_stmt_bytes n))
+    (pp_unbox_of_mini_selfhost_SrcStmt : prims.isPrim ix_unbox_of_mini_selfhost_SrcStmt = true) (bx_unbox_of_mini_selfhost_SrcStmt : prims.boxed.contains ix_unbox_of_mini_selfhost_SrcStmt = false)
+    (b_empty_of_u8 : Certified (∀ {n : Nat}, BStmt_empty_of_u8 spW sp prims ix_empty_of_u8 n))
+    (b_concat_of_u8 : Certified (∀ {n : Nat}, BStmt_concat_of_u8 spW sp prims ix_concat_of_u8 n))
+    (b_eff_bytes : Certified (∀ {n : Nat}, BStmt_eff_bytes spW sp prims ix_eff_bytes n)) {n : Nat}
+    (bih_stmt_bytes : Certified (BStmt_stmt_bytes spW sp prims ix_stmt_bytes n)) :
+    BStmt_stmt_bytes spW sp prims ix_stmt_bytes (n + 1) := by
+  intro x0 v0 w k h r0
+  have key : qcall sp prims uc (n + 1) ix_stmt_bytes [v0] = some (w, k) ∧ Cost_stmt_bytes (n + 1) x0 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_stmt_bytes, List.length_cons, List.length_nil, if_true] at h ⊢
+    budget Cost_stmt_bytes
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0⟩
+
 theorem bstep_place_eff {spW sp : SrcProgram} {prims : Prims} {ix_place_eff ix_length_of_u8 ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_concat_of_u8 ix_eff_bytes ix_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff ix_boxed_of_mini_selfhost_SrcEff ix_place_effs : Nat}
     (fnW : spW.funcs[ix_place_eff]? = some (src_place_eff ix_length_of_u8 ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_concat_of_u8 ix_place_eff ix_eff_bytes ix_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff ix_boxed_of_mini_selfhost_SrcEff ix_place_effs)) (fn : sp.funcs[ix_place_eff]? = some (src_place_eff ix_length_of_u8 ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_concat_of_u8 ix_place_eff ix_eff_bytes ix_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff ix_boxed_of_mini_selfhost_SrcEff ix_place_effs))
     (np : prims.isPrim ix_place_eff = false)

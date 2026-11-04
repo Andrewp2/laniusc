@@ -66,7 +66,7 @@ def qeff (env : Env) : SrcEff → Option (Value × Nat)
       qthen (qeff env condition) fun c => (asBool c).bind fun b =>
         if b then qeff env thenValue else qeff env elseValue
   | .eLet id _ value _ body => qthen (qeff env value) fun v => qeff ((id, v) :: env) body
-  | .eLen _ | .eStr _ _ => none
+  | .eLen _ | .eStr _ _ | .eBorrow _ _ | .eDeref _ _ | .eField _ _ | .eAt _ _ => none
 
 def qeffs (env : Env) : List SrcEff → Option (List Value × Nat)
   | [] => some ([], 0)
@@ -146,6 +146,8 @@ def qstmt (fuel : Nat) (env : Env) : SrcStmt → Option (Out × Nat)
   | .discard value => qthen (qeff call env value) fun _ => some (.next env, 0)
   | .setIndexEval _ _ _ => none
   | .setFieldEval _ _ _ => none
+  | .setPlace _ _ => none
+  | .setPlaceOp _ _ _ => none
   | .returnUnit => some (.ret none, 0)
   | .break => some (.brk env, 0)
   | .continue => some (.cont env, 0)
@@ -256,7 +258,7 @@ theorem peff_eq (hc : ∀ c vs, call c vs = (qc c vs).map Prod.fst) : ∀ (env :
   | env, .eLet id _ value _ body => by
     rw [peff, qeff]
     exact fst_qthen (peff_eq hc env value) fun v => peff_eq hc ((id, v) :: env) body
-  | env, .eLen _ | env, .eStr _ _ => rfl
+  | env, .eLen _ | env, .eStr _ _ | env, .eBorrow _ _ | env, .eDeref _ _ | env, .eField _ _ | env, .eAt _ _ => rfl
 
 theorem peffs_eq (hc : ∀ c vs, call c vs = (qc c vs).map Prod.fst) : ∀ (env : Env) (es : List SrcEff), peffs call env es = (qeffs qc env es).map Prod.fst
   | env, [] => rfl
@@ -396,7 +398,7 @@ theorem mstmt_eq (hc : ∀ c vs, call c vs = (qc c vs).map Prod.fst) (fuel : Nat
   | «break» | «continue» => intro env; rfl
   | letMatch _ _ _ _ _ _ | setField _ _ _ | setCall _ _ _ | letAlloc _ _ _ _ | letView _ _ _ _ _ | letStr _ _ _
   | letLoad _ _ _ _ | setByte _ _ _ | free _ _ _ | letSlice _ _ _ _ _ | letIndex _ _ _ _ _
-  | setIndex _ _ _ | setIndexEval _ _ _ | setFieldEval _ _ _
+  | setIndex _ _ _ | setIndexEval _ _ _ | setFieldEval _ _ _ | setPlace _ _ | setPlaceOp _ _ _
   | matchArm _ _ _ _ _ _ _ _ | unreachable _ _ => intro env; rfl
 
 end

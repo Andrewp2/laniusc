@@ -196,6 +196,10 @@ theorem litEff_eq : ∀ {locals : List LocalTy} {want : Option SrcType} {x x' : 
   | _, _, _, _, .let ha hb => by rw [litEff_eq ha, litEff_eq hb]; simp only [litEff]
   | _, _, _, _, .len => by simp only [litEff]
   | _, _, _, _, .str => by simp only [litEff]
+  | _, _, _, _, .borrow => by simp only [litEff]
+  | _, _, _, _, .deref => by simp only [litEff]
+  | _, _, _, _, .field => by simp only [litEff]
+  | _, _, _, _, .at => by simp only [litEff]
 termination_by structural _ _ _ _ h => h
 
 theorem litEffs_eq : ∀ {locals : List LocalTy} {wants : Option (List SrcType)} {xs xs' : List SrcEff},
@@ -243,6 +247,8 @@ theorem litStmt_eq {ret : SrcType} : ∀ {locals : List LocalTy} {s s' : SrcStmt
   | _, _, _, .setIndexEval hi hv => by rw [litEff_eq hi, litEff_eq hv]; simp only [litStmt]
   | _, _, _, .setFieldEval h => by rw [litEff_eq h]; simp only [litStmt]
   | _, _, _, .returnUnit => by simp only [litStmt]
+  | _, _, _, .setPlace => by simp only [litStmt]
+  | _, _, _, .setPlaceOp => by simp only [litStmt]
   | _, _, _, .break => by simp only [litStmt]
   | _, _, _, .continue => by simp only [litStmt]
   | _, _, _, .matchArm b r => by rw [litStmt_eq b, litStmt_eq r]; simp only [litStmt]

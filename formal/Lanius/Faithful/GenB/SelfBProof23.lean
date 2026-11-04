@@ -211,20 +211,4 @@ theorem bstep_element_stores {spW sp : SrcProgram} {prims : Prims} {ix_element_s
     budget Cost_element_stores
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4⟩
 
-theorem bproof_block_load {spW sp : SrcProgram} {prims : Prims} {ix_block_load ix_block_at : Nat}
-    (fnW : spW.funcs[ix_block_load]? = some (src_block_load ix_block_at)) (fn : sp.funcs[ix_block_load]? = some (src_block_load ix_block_at))
-    (np : prims.isPrim ix_block_load = false)
-    (back : Certified (∀ {n : Nat}, Stmt_block_load sp prims ix_block_load n))
-    (b_block_at : Certified (∀ {n : Nat}, BStmt_block_at spW sp prims ix_block_at n)) {n : Nat} :
-    BStmt_block_load spW sp prims ix_block_load n := by
-  intro x0 x1 x2 x3 v0 v1 v2 v3 w k h r0 r1 r2 r3
-  rcases n with _ | n
-  · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_block_load [v0, v1, v2, v3] = some (w, k) ∧ Cost_block_load (n + 1) x0 x1 x2 x3 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_block_load, List.length_cons, List.length_nil, if_true] at h ⊢
-    budget Cost_block_load
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3⟩
-
 end Lanius.Faithful.SelfBudget

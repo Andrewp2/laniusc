@@ -21,11 +21,11 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_binds_zip (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List (List Nat)} {x1 : List Lanius.Mini.Ty} {x2 : List Lanius.Mini.Bind} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepList 141 RepTy) x1 v1 → (RepList 274 RepBind) x2 v2 →
-    (RepOption 273 (RepList 274 RepBind)) (Lanius.Mini.bindsZip x0 x1 x2) w
+  ∀ {x0 : List (List Nat)} {x1 : List Lanius.Mini.Ty} {x2 : List Lanius.Mini.Bind} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepList 142 RepTy) x1 v1 → (RepList 275 RepBind) x2 v2 →
+    (RepOption 274 (RepList 275 RepBind)) (Lanius.Mini.bindsZip x0 x1 x2) w
 
 abbrev Stmt_diverge_arm (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Decls} {x1 : Option Lanius.Mini.Ty} {x2 : Option Lanius.Mini.MEff} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepDecls x0 v0 → (RepOption 211 RepTy) x1 v1 → (RepOption 257 RepMEff) x2 v2 →
-    (RepOption 257 RepMEff) (Lanius.Mini.divergeArm x0 x1 x2) w
+  ∀ {x0 : Lanius.Mini.Decls} {x1 : Option Lanius.Mini.Ty} {x2 : Option Lanius.Mini.MEff} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepDecls x0 v0 → (RepOption 212 RepTy) x1 v1 → (RepOption 258 RepMEff) x2 v2 →
+    (RepOption 258 RepMEff) (Lanius.Mini.divergeArm x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

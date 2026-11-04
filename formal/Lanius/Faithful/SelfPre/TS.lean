@@ -252,6 +252,10 @@ instance : TS Lanius.Mini.SrcDivOp := ⟨fun _ => 0⟩
 @[simp, ts_simp] theorem ts_SrcDivOp (x : Lanius.Mini.SrcDivOp) : ts x = 0 := rfl
 @[simp, ts_simp] theorem ts_opt_SrcDivOp (x : Option Lanius.Mini.SrcDivOp) : ts x = 0 := by cases x <;> rfl
 
+instance : TS Lanius.Mini.SrcAssignOp := ⟨fun _ => 0⟩
+@[simp, ts_simp] theorem ts_SrcAssignOp (x : Lanius.Mini.SrcAssignOp) : ts x = 0 := rfl
+@[simp, ts_simp] theorem ts_opt_SrcAssignOp (x : Option Lanius.Mini.SrcAssignOp) : ts x = 0 := by cases x <;> rfl
+
 mutual
 def tsSrcEff : Lanius.Mini.SrcEff → Nat
   | .ePure a0 => ts a0
@@ -271,6 +275,10 @@ def tsSrcEff : Lanius.Mini.SrcEff → Nat
   | .eLet a0 a1 a2 a3 a4 => max (ts a1) (max (tsSrcEff a2) (max (ts a3) (tsSrcEff a4)))
   | .eLen a0 => 0
   | .eStr a0 a1 => 0
+  | .eBorrow a0 a1 => max (ts a0) (tsSrcEff a1)
+  | .eDeref a0 a1 => max (ts a0) (tsSrcEff a1)
+  | .eField a0 a1 => tsSrcEff a0
+  | .eAt a0 a1 => max (tsSrcEff a0) (tsSrcEff a1)
 def tsSrcEff0 : List Lanius.Mini.SrcEff → Nat
   | [] => 0
   | a :: l => max (tsSrcEff a) (tsSrcEff0 l)
@@ -298,6 +306,10 @@ theorem tsSrcEff0_eq : ∀ l : List Lanius.Mini.SrcEff, tsSrcEff0 l = TS.ts l
 @[simp, ts_simp] theorem ts_SrcEff_eLet (a0 : Nat) (a1 : Lanius.Mini.SrcType) (a2 : Lanius.Mini.SrcEff) (a3 : Lanius.Mini.SrcType) (a4 : Lanius.Mini.SrcEff) : ts (Lanius.Mini.SrcEff.eLet a0 a1 a2 a3 a4) = max (ts a1) (max (ts a2) (max (ts a3) (ts a4))) := rfl
 @[simp, ts_simp] theorem ts_SrcEff_eLen (a0 : Nat) : ts (Lanius.Mini.SrcEff.eLen a0) = 0 := rfl
 @[simp, ts_simp] theorem ts_SrcEff_eStr (a0 : Nat) (a1 : List Nat) : ts (Lanius.Mini.SrcEff.eStr a0 a1) = 0 := rfl
+@[simp, ts_simp] theorem ts_SrcEff_eBorrow (a0 : Lanius.Mini.SrcType) (a1 : Lanius.Mini.SrcEff) : ts (Lanius.Mini.SrcEff.eBorrow a0 a1) = max (ts a0) (ts a1) := rfl
+@[simp, ts_simp] theorem ts_SrcEff_eDeref (a0 : Lanius.Mini.SrcType) (a1 : Lanius.Mini.SrcEff) : ts (Lanius.Mini.SrcEff.eDeref a0 a1) = max (ts a0) (ts a1) := rfl
+@[simp, ts_simp] theorem ts_SrcEff_eField (a0 : Lanius.Mini.SrcEff) (a1 : Nat) : ts (Lanius.Mini.SrcEff.eField a0 a1) = ts a0 := rfl
+@[simp, ts_simp] theorem ts_SrcEff_eAt (a0 : Lanius.Mini.SrcEff) (a1 : Lanius.Mini.SrcEff) : ts (Lanius.Mini.SrcEff.eAt a0 a1) = max (ts a0) (ts a1) := rfl
 
 mutual
 def tsSrcStmt : Lanius.Mini.SrcStmt → Nat
@@ -337,6 +349,8 @@ def tsSrcStmt : Lanius.Mini.SrcStmt → Nat
   | .unreachable a0 a1 => ts a1
   | .letView a0 a1 a2 a3 a4 => max (ts a2) (tsSrcStmt a4)
   | .letStr a0 a1 a2 => tsSrcStmt a2
+  | .setPlace a0 a1 => max (ts a0) (ts a1)
+  | .setPlaceOp a0 a1 a2 => max (ts a1) (ts a2)
 end
 instance : TS Lanius.Mini.SrcStmt := ⟨tsSrcStmt⟩
 @[simp, ts_simp] theorem ts_SrcStmt_nop  : ts (Lanius.Mini.SrcStmt.nop) = 0 := rfl
@@ -375,6 +389,8 @@ instance : TS Lanius.Mini.SrcStmt := ⟨tsSrcStmt⟩
 @[simp, ts_simp] theorem ts_SrcStmt_unreachable (a0 : Nat) (a1 : Lanius.Mini.SrcType) : ts (Lanius.Mini.SrcStmt.unreachable a0 a1) = ts a1 := rfl
 @[simp, ts_simp] theorem ts_SrcStmt_letView (a0 : Nat) (a1 : Nat) (a2 : List Lanius.Mini.SrcExpr) (a3 : Nat) (a4 : Lanius.Mini.SrcStmt) : ts (Lanius.Mini.SrcStmt.letView a0 a1 a2 a3 a4) = max (ts a2) (ts a4) := rfl
 @[simp, ts_simp] theorem ts_SrcStmt_letStr (a0 : Nat) (a1 : List Nat) (a2 : Lanius.Mini.SrcStmt) : ts (Lanius.Mini.SrcStmt.letStr a0 a1 a2) = ts a2 := rfl
+@[simp, ts_simp] theorem ts_SrcStmt_setPlace (a0 : Lanius.Mini.SrcEff) (a1 : Lanius.Mini.SrcEff) : ts (Lanius.Mini.SrcStmt.setPlace a0 a1) = max (ts a0) (ts a1) := rfl
+@[simp, ts_simp] theorem ts_SrcStmt_setPlaceOp (a0 : Lanius.Mini.SrcAssignOp) (a1 : Lanius.Mini.SrcEff) (a2 : Lanius.Mini.SrcEff) : ts (Lanius.Mini.SrcStmt.setPlaceOp a0 a1 a2) = max (ts a1) (ts a2) := rfl
 
 instance : TS Lanius.Mini.SrcParam := ⟨fun s => ts s.ty⟩
 @[simp, ts_simp] theorem ts_SrcParam_mk (a0 : Nat) (a1 : Lanius.Mini.SrcType) : ts (Lanius.Mini.SrcParam.mk a0 a1) = ts a1 := rfl

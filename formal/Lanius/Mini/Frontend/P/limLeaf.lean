@@ -81,6 +81,8 @@ def limStmt (s : SrcStmt) : Option Nat :=
   | .unreachable id ty => limConst (limSlots ty) 1
   | .letView id n es p body => limBind (depthSum n 1) (limExprs es) (limStmt body)
   | .letStr p cs body => limBind limOne true (limStmt body)
+  | .setPlace aplace avalue => limLeaf (limEff aplace && limEff avalue)
+  | .setPlaceOp aop aplace avalue => limLeaf (limEff aplace && limEff avalue)
 
 def limParams (ps : List SrcParam) : Bool :=
   match ps with

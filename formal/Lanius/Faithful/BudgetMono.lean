@@ -153,7 +153,7 @@ theorem qeff_cle (hc : ∀ c vs, CLe (call c vs) (call' c vs)) :
   | env, .eLet id _ value _ body => by
     simp only [qeff]
     exact cle_qthen (qeff_cle hc env value) fun v => qeff_cle hc ((id, v) :: env) body
-  | _, .eLen _ | _, .eStr _ _ => cle_none _
+  | _, .eLen _ | _, .eStr _ _ | _, .eBorrow _ _ | _, .eDeref _ _ | _, .eField _ _ | _, .eAt _ _ => cle_none _
 
 theorem qeffs_cle (hc : ∀ c vs, CLe (call c vs) (call' c vs)) :
     ∀ (env : Env) (es : List SrcEff), CLe (qeffs call env es) (qeffs call' env es)
@@ -247,6 +247,8 @@ theorem qstmt_cle (hc : ∀ c vs, CLe (call c vs) (call' c vs)) (fuel : Nat) (s 
     exact cle_qthen (qeff_cle hc env value) fun _ => cle_refl _
   | setIndexEval => intro env; exact cle_none _
   | setFieldEval => intro env; exact cle_none _
+  | setPlace => intro env; exact cle_none _
+  | setPlaceOp => intro env; exact cle_none _
   | returnUnit => intro env; exact cle_refl _
   | «assert» condition =>
     intro env

@@ -77,7 +77,8 @@ def divisorOk : SrcEff → Bool
   | .ePure (.unsigned _ n) => n != 0
   | .ePure _ | .eCall _ _ | .eApply _ _ _ | .eNeg _ | .eNot _ | .eCast _ _ | .eIndex _ _ | .eStruct _ _
   | .eVariant _ _ _ | .eMatch _ _ _ _ _ | .eDivide _ _ _ | .eStride _
-  | .arraySlice _ _ | .eIf _ _ _ _ | .eLet _ _ _ _ _ | .eLen _ | .eStr _ _ => false
+  | .arraySlice _ _ | .eIf _ _ _ _ | .eLet _ _ _ _ _ | .eLen _ | .eStr _ _
+  | .eBorrow _ _ | .eDeref _ _ | .eField _ _ | .eAt _ _ => false
 
 /-- A match with an arm for every variant of its enum type. -/
 def armsFull : SrcType → List (List Nat) → Bool
@@ -106,6 +107,7 @@ def liveEff : SrcEff → Bool
   | .eIf c _ a b => liveEff c && liveEff a && liveEff b
   | .eLet _ _ value _ body => liveEff value && liveEff body
   | .eLen _ | .eStr _ _ => false
+  | .eBorrow _ _ | .eDeref _ _ | .eField _ _ | .eAt _ _ => false
 
 def liveEffs : List SrcEff → Bool
   | [] => true
@@ -131,7 +133,7 @@ def liveStmt (ret : SrcType) : SrcStmt → Bool
   | .setEval _ value => liveEff bad value
   | .letMatch _ _ _ _ _ _ | .setField _ _ _ | .setCall _ _ _ | .while _ _ | .letAlloc _ _ _ _ | .letView _ _ _ _ _ | .letStr _ _ _
   | .letLoad _ _ _ _ | .setByte _ _ _ | .free _ _ _ | .letSlice _ _ _ _ _ | .letIndex _ _ _ _ _
-  | .setIndex _ _ _ | .whileEval _ _ | .setIndexEval _ _ _ | .setFieldEval _ _ _
+  | .setIndex _ _ _ | .whileEval _ _ | .setIndexEval _ _ _ | .setFieldEval _ _ _ | .setPlace _ _ | .setPlaceOp _ _ _
   | .assert _ | .break | .continue | .matchArm _ _ _ _ _ _ _ _ | .unreachable _ _ => false
 
 /-- A function whose body cannot fail but at a call, and that returns a value
@@ -942,6 +944,10 @@ theorem eff_live (hO : ∀ m, OracleOk prims T (pcall sp prims m)) (hP : PrimsTy
     exact EvSome.bind (eff_live hO hP IH value h hW hc.1 hE htv hl.1) fun v hv ⟨M, hM⟩ =>
       eff_live hO hP IH body (h.cons (effCls_holds (hO M) h value hM)) hW hc.2 (hE.cons hv) hb hl.2
   | .eLen _, A, W, E, tenv, t, _, _, _, _, ht, _ | .eStr _ _, A, W, E, tenv, t, _, _, _, _, ht, _ => by simp [effTy] at ht
+  | .eBorrow _ _, A, W, E, tenv, t, _, _, _, _, ht, _ => by simp [effTy] at ht
+  | .eDeref _ _, A, W, E, tenv, t, _, _, _, _, ht, _ => by simp [effTy] at ht
+  | .eField _ _, A, W, E, tenv, t, _, _, _, _, ht, _ => by simp [effTy] at ht
+  | .eAt _ _, A, W, E, tenv, t, _, _, _, _, ht, _ => by simp [effTy] at ht
 
 theorem effs_live (hO : ∀ m, OracleOk prims T (pcall sp prims m)) (hP : PrimsTy sp prims)
     (IH : CallsGood sp prims T me B outside bad) :
@@ -1289,7 +1295,7 @@ theorem stmt_live {ret : SrcType} :
     intro A W E tenv _ _ _ _ _ hl; simp [liveStmt] at hl
   | letMatch _ _ _ _ _ _ | setField _ _ _ | setCall _ _ _ | letAlloc _ _ _ _ | letView _ _ _ _ _ | letStr _ _ _
   | letLoad _ _ _ _ | setByte _ _ _ | free _ _ _ | letSlice _ _ _ _ _ | letIndex _ _ _ _ _
-  | setIndex _ _ _ | setIndexEval _ _ _ | setFieldEval _ _ _
+  | setIndex _ _ _ | setIndexEval _ _ _ | setFieldEval _ _ _ | setPlace _ _ | setPlaceOp _ _ _
   | matchArm _ _ _ _ _ _ _ _ | unreachable _ _ =>
     intro A W E tenv _ _ _ _ hs _; simp [stmtOk] at hs
 

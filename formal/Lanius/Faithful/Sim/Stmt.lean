@@ -510,6 +510,8 @@ theorem stmt_sim (calls : ∀ i < N, FuncSim sp prims outside i) (ret : SrcType)
     exact ⟨.next env, by simp [mstmt, hp], rel.step ran.step ran.locals, ran.toS⟩
   | setIndexEval => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
   | setFieldEval => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
+  | setPlace => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
+  | setPlaceOp => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
   | «break» =>
     intro k tenv env st c st' le run ok inv locs rel bound
     simp only [SrcStmt.toCore] at run

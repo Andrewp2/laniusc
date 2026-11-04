@@ -29,7 +29,7 @@ abbrev Stmt_Stmt_extent (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
     RepNat (Lanius.Mini.Stmt.extent x0) w
 
 abbrev Stmt_args_extent (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Expr} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 92 RepExpr) x0 v0 →
+  ∀ {x0 : List Lanius.Mini.Expr} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 93 RepExpr) x0 v0 →
     RepNat (Lanius.Mini.argsExtent x0) w
 
 abbrev Stmt_func_needs (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -42,10 +42,10 @@ abbrev Stmt_rest_needs (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
 
 abbrev Stmt_sigs (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcFunc} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 5 RepSrcFunc) x0 v0 →
-    (RepList 96 RepSig) (Lanius.Mini.sigs x0) w
+    (RepList 97 RepSig) (Lanius.Mini.sigs x0) w
 
 abbrev Stmt_sigs_with (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcFunc} {x1 : List Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 5 RepSrcFunc) x0 v0 → (RepList 25 RepNat) x1 v1 →
-    (RepList 96 RepSig) (Lanius.Mini.sigsWith x0 x1) w
+    (RepList 97 RepSig) (Lanius.Mini.sigsWith x0 x1) w
 
 end Lanius.Faithful.SelfCert

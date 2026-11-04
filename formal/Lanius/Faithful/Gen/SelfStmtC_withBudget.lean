@@ -49,11 +49,11 @@ abbrev Stmt_decl_bytes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
     RepNat (Lanius.Mini.declBytes x0 x1 x2) w
 
 abbrev Stmt_effs_callee_need (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.SrcEff} {x1 : List Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 186 RepSrcEff) x0 v0 → (RepList 25 RepNat) x1 v1 →
+  ∀ {x0 : List Lanius.Mini.SrcEff} {x1 : List Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 187 RepSrcEff) x0 v0 → (RepList 25 RepNat) x1 v1 →
     RepNat (Lanius.Mini.effsCalleeNeed x0 x1) w
 
 abbrev Stmt_effs_slice_uses (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.SrcEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 186 RepSrcEff) x0 v0 →
+  ∀ {x0 : List Lanius.Mini.SrcEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 187 RepSrcEff) x0 v0 →
     (RepList 25 RepNat) (Lanius.Mini.effsSliceUses x0) w
 
 abbrev Stmt_frame_block (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -65,7 +65,7 @@ abbrev Stmt_params_array_bytes (prog : SrcProgram) (prims : Prims) (ix n : Nat) 
     RepNat (Lanius.Mini.paramsArrayBytes x0 x1) w
 
 abbrev Stmt_with_budget (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Sig} {x1 : Nat} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 96 RepSig) x0 v0 → RepNat x1 v1 → RepNat x2 v2 →
-    (RepList 96 RepSig) (Lanius.Mini.withBudget x0 x1 x2) w
+  ∀ {x0 : List Lanius.Mini.Sig} {x1 : Nat} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 97 RepSig) x0 v0 → RepNat x1 v1 → RepNat x2 v2 →
+    (RepList 97 RepSig) (Lanius.Mini.withBudget x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

@@ -339,6 +339,10 @@ def argPlaces (scope : List Binding) (frame : Nat → Nat) (A offset : Nat) : Sr
   | .eLet _ _ _ _ _ => []
   | .eLen _ => []
   | .eStr _ _ => []
+  | .eBorrow _ _ => []
+  | .eDeref _ _ => []
+  | .eField _ _ => []
+  | .eAt _ _ => []
 
 /-- The places a call's arguments lend, their blocks from `offset` in the
 block at `A` on. -/
