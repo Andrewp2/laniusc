@@ -14,6 +14,7 @@ public import Lanius.Faithful.Gen.SelfSrcC_SrcType_same
 public import Lanius.Faithful.Gen.SelfSrcC_Stmt_kills
 public import Lanius.Faithful.Gen.SelfSrcC_arities
 public import Lanius.Faithful.Gen.SelfSrcC_arrayCallSig
+public import Lanius.Faithful.Gen.SelfSrcC_bindingBytes
 public import Lanius.Faithful.Gen.SelfSrcC_compileOr
 public import Lanius.Faithful.Gen.SelfSrcC_funcNeeds
 public import Lanius.Faithful.Gen.SelfSrcC_larger
@@ -55,6 +56,7 @@ import all Lanius.Faithful.Gen.SelfSrcC_SrcType_same
 import all Lanius.Faithful.Gen.SelfSrcC_Stmt_kills
 import all Lanius.Faithful.Gen.SelfSrcC_arities
 import all Lanius.Faithful.Gen.SelfSrcC_arrayCallSig
+import all Lanius.Faithful.Gen.SelfSrcC_bindingBytes
 import all Lanius.Faithful.Gen.SelfSrcC_compileOr
 import all Lanius.Faithful.Gen.SelfSrcC_funcNeeds
 import all Lanius.Faithful.Gen.SelfSrcC_larger

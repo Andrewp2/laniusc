@@ -837,6 +837,59 @@ theorem pre_group_lim_stmt : ∀ n : Nat,
 theorem pre_lim_stmt : ∀ (n : Nat) (x0 : Lanius.Mini.SrcStmt) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_stmt n x0 b :=
   fun n => (pre_group_lim_stmt n)
 
+theorem pre_lim_nest_step : ∀ (n : Nat) (x0 : Nat) (b : Nat), ∀ M : Nat, M + b ≤ 4611686018427387904 → Pre_lim_nest_step n x0 b := by
+  intro n x0 b M h0
+  rcases n with _ | n
+  · exact trivial
+  rw [Pre_lim_nest_step.eq_def]; dsimp only
+  pre_auto n, M
+
+/-- The preconditions' lemmas of `lim_nest_eff`'s group at fuel `n`. -/
+def PreIH_lim_nest_eff (n : Nat) : Prop :=
+    (∀ (x0 : Lanius.Mini.SrcEff) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_nest_eff n x0 b) ∧
+    (∀ (x0 : List Lanius.Mini.SrcEff) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_nest_effs n x0 b)
+theorem pre_step_lim_nest_eff (n : Nat) (ih :
+    PreIH_lim_nest_eff n) :
+    ∀ (x0 : Lanius.Mini.SrcEff) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_nest_eff (n + 1) x0 b := by
+  obtain ⟨pre_lim_nest_eff, pre_lim_nest_effs⟩ := ih
+  intro x0 b M h0 h1
+  rw [Pre_lim_nest_eff.eq_def]; dsimp only
+  pre_auto n, M
+theorem pre_step_lim_nest_effs (n : Nat) (ih :
+    PreIH_lim_nest_eff n) :
+    ∀ (x0 : List Lanius.Mini.SrcEff) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_nest_effs (n + 1) x0 b := by
+  obtain ⟨pre_lim_nest_eff, pre_lim_nest_effs⟩ := ih
+  intro x0 b M h0 h1
+  rw [Pre_lim_nest_effs.eq_def]; dsimp only
+  pre_auto n, M
+theorem pre_group_lim_nest_eff : ∀ n : Nat,
+    (∀ (x0 : Lanius.Mini.SrcEff) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_nest_eff n x0 b) ∧
+    (∀ (x0 : List Lanius.Mini.SrcEff) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_nest_effs n x0 b) := by
+  intro n
+  induction n with
+  | zero => exact ⟨fun x0 b M _ _ => trivial, fun x0 b M _ _ => trivial⟩
+  | succ n ih => exact ⟨pre_step_lim_nest_eff n ih, pre_step_lim_nest_effs n ih⟩
+theorem pre_lim_nest_eff : ∀ (n : Nat) (x0 : Lanius.Mini.SrcEff) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_nest_eff n x0 b :=
+  fun n => (pre_group_lim_nest_eff n).1
+theorem pre_lim_nest_effs : ∀ (n : Nat) (x0 : List Lanius.Mini.SrcEff) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_nest_effs n x0 b :=
+  fun n => (pre_group_lim_nest_eff n).2
+
+theorem pre_step_lim_nest (n : Nat) (ih :
+    (∀ (x0 : Lanius.Mini.SrcStmt) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_nest n x0 b)) :
+    ∀ (x0 : Lanius.Mini.SrcStmt) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_nest (n + 1) x0 b := by
+  have pre_lim_nest := ih
+  intro x0 b M h0 h1
+  rw [Pre_lim_nest.eq_def]; dsimp only
+  pre_auto n, M
+theorem pre_group_lim_nest : ∀ n : Nat,
+    (∀ (x0 : Lanius.Mini.SrcStmt) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_nest n x0 b) := by
+  intro n
+  induction n with
+  | zero => exact fun x0 b M _ _ => trivial
+  | succ n ih => exact pre_step_lim_nest n ih
+theorem pre_lim_nest : ∀ (n : Nat) (x0 : Lanius.Mini.SrcStmt) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_nest n x0 b :=
+  fun n => (pre_group_lim_nest n)
+
 theorem pre_step_lim_funcs (n : Nat) (ih :
     (∀ (x0 : List Lanius.Mini.SrcFunc) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_funcs n x0 b)) :
     ∀ (x0 : List Lanius.Mini.SrcFunc) (b : Nat), ∀ M : Nat, hb x0 ≤ M → M + b ≤ 4611686018427387904 → Pre_lim_funcs (n + 1) x0 b := by

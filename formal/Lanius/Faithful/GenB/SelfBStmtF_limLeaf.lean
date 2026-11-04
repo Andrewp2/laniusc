@@ -58,9 +58,64 @@ abbrev BStmt_lim_stmt (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
     qcall spW prims uc n ix [v0] = some (w, k) → RepSrcStmt x0 v0 → k < b → Pre_lim_stmt n x0 b →
     qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 135 RepNat) (Lanius.Mini.limStmt x0) w
 
-abbrev BStmt_lim_funcs (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.SrcFunc} {v0 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 5 RepSrcFunc) x0 v0 → k < b → Pre_lim_funcs n x0 b →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.limFuncs x0) w
+abbrev BStmt_lim_nest_step (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {v0 w : Value} {k b : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → RepNat x0 v0 → k < b → Pre_lim_nest_step n x0 b →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.limNestStep x0) w
+
+abbrev BStmt_lim_nest_eff (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.SrcEff} {v0 w : Value} {k b : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → RepSrcEff x0 v0 → k < b → Pre_lim_nest_eff n x0 b →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.limNestEff x0) w
+
+abbrev BStmt_lim_nest_effs (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List Lanius.Mini.SrcEff} {v0 w : Value} {k b : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 187 RepSrcEff) x0 v0 → k < b → Pre_lim_nest_effs n x0 b →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.limNestEffs x0) w
+
+abbrev BStmt_lim_nest (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.SrcStmt} {v0 w : Value} {k b : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → RepSrcStmt x0 v0 → k < b → Pre_lim_nest n x0 b →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.limNest x0) w
+
+abbrev BStmt_lim_num (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {v0 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → RepNat x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.limNum x0) w
+
+abbrev BStmt_lim_nums_ty (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → RepSrcType x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.limNumsTy x0) w
+
+abbrev BStmt_lim_nums_tys (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List Lanius.Mini.SrcType} {v0 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 74 RepSrcType) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.limNumsTys x0) w
+
+abbrev BStmt_lim_nums_variants (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List (List Lanius.Mini.SrcType)} {v0 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 78 (RepList 74 RepSrcType)) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.limNumsVariants x0) w
+
+abbrev BStmt_lim_nums_expr (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.SrcExpr} {v0 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → RepSrcExpr x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.limNumsExpr x0) w
+
+abbrev BStmt_lim_nums_exprs (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List Lanius.Mini.SrcExpr} {v0 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 21 RepSrcExpr) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.limNumsExprs x0) w
+
+abbrev BStmt_lim_nums_ids (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List Nat} {v0 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 25 RepNat) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.limNumsIds x0) w
+
+abbrev BStmt_lim_nums_idss (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List (List Nat)} {v0 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 31 (RepList 25 RepNat)) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.limNumsIdss x0) w
 
 end Lanius.Faithful.SelfBudget

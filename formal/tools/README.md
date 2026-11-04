@@ -3,14 +3,71 @@
 The generators, checkers and difftests of the verified compiler. Each script's
 docstring says what it does; tests run only through `gate.py`.
 
+## The front door: `lv`
+
+`formal/tools/lv` runs everything that needs the machine's shared locks and
+limits; it replaces leanslot, lcheck, heavy, lcc, memwait, merge1 and
+cacheprune, and is the way to run gate.py, regen.py and open_graph.py. Run it
+from your worktree (it works on that worktree's `formal/`); the installed
+copy is `target/claude-work/bin/lv`.
+
+| command | does | was |
+|---|---|---|
+| `lv check FILE.lean..` | `lake env lean FILE` in the small lane, 280 s; prints each error whole (warnings counted; `--all` prints them) | lcheck, leanp |
+| `lv build [TARGET..]` | `lake build` (default `LaniusMini Lanius LaniusOpen`) under a Lean slot; skips the slot when the targets are current; errors whole plus the failed modules; at the deadline it prints the modules still compiling (and those waiting for a lean process slot) and stops: it never reruns itself | leanslot + lake, lb |
+| `lv gate [ARGS]` | gate.py (default `--tier quick --jobs 2`) under one slot for the whole run, 295 s; a failed step's error lines from its output.txt | leanslot + gate.py |
+| `lv regen [ARGS]` | regen.py the same way (`--resolve`, `--only trusted --trusted`, `--check`) | leanslot + regen.py |
+| `lv open ARGS` | open_graph.py (`status`, `check`, `claim NAME --agent WHO`, `release NAME`) | |
+| `lv merge COMMIT` | coordinator only, main checkout on lang: fast-forward only (refuses a COMMIT that lacks local lang: merge lang into the branch and gate there first), quick gate, push with a 60 s limit (a failed push leaves local lang ahead, exit 0), prune and check the cache | merge1 |
+| `lv lake ARGS` / `lv slot CMD..` | any other lake command, or any command, holding a Lean slot | leanslot |
+| `lv heavy ..` / `lv lcc ..` | the GPU lane and the resident compiler (lv.d/heavy, lv.d/lcc, unchanged) | heavy, lcc |
+| `lv memwait`, `lv prune`, `lv status` | the memory rule, Lake cache pruning, who holds which lock | memwait, cacheprune, agentstatus |
+| `lv cache` | checks every Lake output (the shared cache and this worktree's build) for truncation and quarantines damaged ones | regen/badolean.py |
+
+Rules it keeps: one lock per worktree and one of three machine-wide Lean
+slots for builds and tools; every scope in `work.slice` (soft memory budget,
+nothing killed for memory); memwait before each lean (through
+`target/claude-work/leanroot/bin/lean`, which also caps lean processes at
+six), heavy job and single-file check; a core limit of exactly 1 byte (0
+brings apport back); `LEAN_NUM_THREADS` unset for lake. Stale Lake cache
+artifacts are pruned at most every six hours by build/gate/regen, and after
+each merge.
+
+Damaged outputs: when the disk fills, Lean leaves truncated or empty oleans
+(and .ir, .ilean, .c) that Lake caches and every later import segfaults on.
+After each build, gate and regen, lv checks the outputs written since it
+started (each full prune checks them all): an olean's root object (its header
+points at it) must end exactly at the end of the file, an .ilean must end
+with `}`, a .c with `#endif`. A damaged file goes to
+`target/claude-work/lv/badcache/`, with the cache mappings that name it, and
+every worktree build file that is the same file is deleted with its module's
+trace, so the next `lv build` rebuilds the module; the command then fails.
+
+One deadline: every lv command ends within 295 s of its start, lock and slot
+waits included (exit 75 if the waits leave under 20 s, 124 if the deadline
+stopped the work), and nothing is ever rerun automatically. Don't loop lv
+commands either: the 5-minute rule is for the whole task, so a build that
+needs longer is a problem to report, not to retry.
+
+Failures are loud: the exit code is nonzero (124 when the time limit
+stopped it), the error messages are printed whole, and the full log's path
+is printed (`target/claude-work/lv/` in the worktree). A build stopped at the
+deadline keeps what finished.
+
+`lv install` (from a checkout that has this lv) copies it to
+`target/claude-work/lv/`, links `target/claude-work/bin/lv` to it, turns the
+old wrappers in `target/claude-work/bin` into one-line aliases (the originals
+are kept in `bin/pre-lv/`; `lv uninstall` puts them back) and links
+`leanroot/bin/lean` to `lv.d/lean`. The installed copy runs any worktree's
+`formal/tools`, so worktrees made before lv still work.
+
 ## Regenerating the generated files: `regen.py`
 
 After any change to `formal/lani/mini/*.lani` (or to a generator), one command
 rewrites every generated Lean file, in dependency order, and reports each
 stage's time and changed files:
 
-    HEAVY_PRIORITY=1 timeout 298 target/claude-work/bin/leanslot timeout 295 \
-      python3 -I formal/tools/regen.py
+    lv regen
 
 | stage   | writes                                                    | tool                                  |
 |---------|-----------------------------------------------------------|---------------------------------------|
@@ -47,28 +104,29 @@ gets them:
 
 Without them, git merges these files as plain text, as before.
 
-The merge procedure (from the worktree root; `LS` is
-`target/claude-work/bin/leanslot`):
+The merge procedure (from the worktree root):
 
-1. `git merge --no-commit origin/lang`. Generated files keep ours and are
+1. `git merge --no-commit lang` (local lang; the coordinator's `lv merge` then
+   fast-forwards lang to your branch, so it must contain local lang). Generated files keep ours and are
    listed in `lanius-regen-stale` in the worktree's git directory. A file whose only conflicts were
    top-of-file imports is merged cleanly.
 2. Resolve what is left by hand: sources (`.lani`), proofs, and
    `TRUSTED_BASE.md`'s last-change paragraph (the hash comes in step 5).
    `git add` them.
-3. `HEAVY_PRIORITY=1 timeout 298 $LS timeout 295 python3 -I formal/tools/regen.py --resolve`:
+3. `lv regen --resolve`:
    settles the generated files git still lists as unmerged (a side that
    deleted one), regenerates everything from the merged sources, drops the
    imports of extracted parts that no longer exist from the files the merge
    unioned, and stages (`git add`) the generated files.
-4. Build: `cd formal && $LS timeout 290 ~/.elan/bin/lake build LaniusMini Lanius LaniusOpen`,
-   repeated until it exits 0 (124 is a pass cut short at the limit; check the
-   exit code itself, not a summary script's). Most of this is the rebuild the
-   change causes, not regen: see "Where a regeneration's time goes" below.
-5. `HEAVY_PRIORITY=1 timeout 298 $LS timeout 295 python3 -I formal/tools/regen.py --only trusted --trusted`:
+4. Build: `lv build`, once. If it stops at its deadline (exit 124, with the
+   modules still compiling listed), don't rerun it in a loop: the 5-minute
+   rule covers the whole task; report what it printed. Most of the time is
+   the rebuild the change causes, not regen: see "Where a regeneration's time
+   goes" below.
+5. `lv regen --only trusted --trusted`:
    writes the new definitions hash into `TRUSTED_BASE.md`; say in its
    last-change sentence what the merge combined.
-6. The quick gate: `HEAVY_PRIORITY=1 timeout 298 $LS timeout 295 python3 -I formal/tools/gate.py --tier quick --jobs 2`.
+6. The quick gate: `lv gate`.
 7. `git commit`.
 
 ## Where a regeneration's time goes (11-03, measured)

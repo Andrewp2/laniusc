@@ -13,9 +13,9 @@ public import Lanius.Faithful.Gen.SelfStmtC_Inline_blockLeft
 public import Lanius.Faithful.Gen.SelfStmtC_SrcType_same
 public import Lanius.Faithful.Gen.SelfStmtC_Word_narrows
 public import Lanius.Faithful.Gen.SelfStmtC_binaryConstant
+public import Lanius.Faithful.Gen.SelfStmtC_bindingBytes
 public import Lanius.Faithful.Gen.SelfStmtC_declareFuncs
 public import Lanius.Faithful.Gen.SelfStmtC_lowerBody
-public import Lanius.Faithful.Gen.SelfStmtC_withBudget
 import all Lanius.Faithful.Gen.SelfSrcC_Inline_blockLeft
 import all Lanius.Mini.Compiler.P.Inline_blockLeft
 

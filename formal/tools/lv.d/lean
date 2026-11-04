@@ -1,0 +1,22 @@
+#!/bin/bash
+# Part of lv (formal/tools/lv): target/claude-work/leanroot/bin/lean links here.
+# lake runs this instead of lean (leanslot and run_cache set LEAN_SYSROOT to
+# target/claude-work/leanroot). lake starts one lean per core (16) and has no
+# jobs flag (LEAN_NUM_THREADS deadlocks it). Each lean process first takes one
+# of LEAN_PROCS (6) machine-wide slots, since lean runs several threads each and
+# 16 at once put the load at 40, then waits in memwait, the one memory rule.
+real=/home/andrew-peterson/.elan/toolchains/leanprover--lean4---v4.33.1/bin/lean
+dir=/home/andrew-peterson/code/laniusc/target/claude-work/leanproc
+n=${LEAN_PROCS:-6}
+case "$1" in --githash|--version|--print-prefix|--print-libdir) exec "$real" "$@" ;; esac
+while :; do
+  for ((k = 0; k < n; k++)); do
+    exec 8>"$dir/slot.$k"
+    if flock -n 8; then
+      "$(dirname "$(readlink -f "$0")")/memwait"
+      exec "$real" "$@"
+    fi
+  done
+  exec 8>&-
+  sleep 0.3
+done

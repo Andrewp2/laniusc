@@ -26,6 +26,7 @@ import Lanius.Mini.Compiler.P.UintTy_isWide
 import Lanius.Mini.Compiler.P.arithUint
 import Lanius.Mini.Compiler.P.armScope
 import Lanius.Mini.Compiler.P.assignFrom
+import Lanius.Mini.Compiler.P.bindingBytes
 import Lanius.Mini.Compiler.P.compileArgs
 import Lanius.Mini.Compiler.P.conjunction
 import Lanius.Mini.Compiler.P.elementAddress

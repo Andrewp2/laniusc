@@ -2268,6 +2268,8 @@ theorem arrayArgs_typed {P : Core.Program} (target : P.target = Core.Target.x86_
   | _ :: _, [], _, _, _, h => by simp [arrayArgs] at h
   | arg :: rest, ty :: more, t, offset, a, h => by
     simp only [arrayArgs] at h
+    split at h
+    · simp at h
     cases arg
     case ePure e =>
       simp only [arrayArg, arrayArgPure] at h
@@ -2287,6 +2289,9 @@ theorem arrayArgs_typed {P : Core.Program} (target : P.target = Core.Target.x86_
       split at h
       · simp at h
       rename_i r hr
+      simp only [arrayArgBefore] at h
+      split at h
+      · simp at h
       simp only [arrayArgChecked] at h
       split at h
       · rename_i checks

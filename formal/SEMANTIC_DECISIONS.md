@@ -2780,6 +2780,12 @@ limit:
 - Every function's parameters need at most `depth_limit()` slots together
   (`params_size`; `lim_param_slots`). A struct's fields together are its
   slot count, so the first limit already bounds them.
+- Every function's expressions nest at most `depth_limit()` unchecked slot steps (`lim_nest`, as
+  `SrcStmt.slotNest` in SelfPre/EvalSlots counts them, its step saturating past the limit so it never
+  wraps), and every number in a function (ids, type ids, field and variant indices, lengths, string
+  offsets and bytes, as SelfPre/NB's `nb` counts them) is at most `depth_limit()` (`lim_nums`; added
+  11-04, leafA, for PreCompileSourceV5's premises: ids and offsets come from counters that grow with
+  monomorphization's copies).
 - `untyped_rejected` rejects a program past any of these (`lim_funcs`). It runs
   last, on the closed, monomorphized functions with their string
   literals placed, so it sees the copies.
@@ -2907,6 +2913,34 @@ accepted before keeps every evaluator slot below 2^20, far below 2^40, and
 none of them is rejected now. A program that does reach 2^40 needs 2^43 bytes
 of frame, more than any binary has.
 
+
+## A call's array offsets checked as they add up (decided 11-04, F14, coordinator)
+
+A call that passes array locals as slices places them one after another in
+the caller's frame block: `array_args` gives each argument the offset of the
+bytes before it (`offset + arg_bytes`), and `array_arg_local` adds
+`8 * count` to the bytes of the arguments after it. The check that the bytes
+fit, `a.bytes <= sig.block` in `array_call_code`, comes only after the whole
+list. Nothing bounded those sums below 2^64 before it: an argument's bytes
+are up to 8 * 2^22, a call's arguments are as many as its callee's
+parameters, and `paramsSize f.params ≤ 2^40` counts a slice parameter's
+slots, not its array's bytes (and a parameter may have size 0). The offset is
+also added before `array_arg` checks the argument's type.
+
+Now `array_args` rejects (`None`) an offset over `block_limit()`
+(2^31 - 1), and `array_arg_before` (split out of `array_arg_local`) rejects
+the rest's bytes over `block_limit()` before it adds this argument's. Between
+two checks a sum grows by one argument's bytes, so no offset or byte count
+passes 2^64.
+
+This is argued, not proved, as for the evaluator's slots above. The argument:
+for a call `array_call_code` accepts, every offset `array_args` reaches is a
+sum of the bytes of the arguments before it, and every `r.bytes` the sum of
+those after it, so both are at most the call's `a.bytes`, which is at most
+`sig.block`. `sig.block` is the enclosing function's `frame_block`
+(`with_budget` in `lower_func`), and `lower_func` lowers the body only when
+that is below 2^31, so at most `block_limit()`. So no call the compiler
+accepted before is rejected now.
 
 ## Budget certificates (decided 11-01, F14)
 

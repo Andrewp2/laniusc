@@ -10,7 +10,7 @@ import Lanius.Mini.Frontend.P.collect
 import Lanius.Mini.Frontend.P.funcsBytes
 import Lanius.Mini.Frontend.P.funcsOnto
 import Lanius.Mini.Frontend.P.isEmptyUsize
-import Lanius.Mini.Frontend.P.limLeaf
+import Lanius.Mini.Frontend.P.limNumsEff
 import Lanius.Mini.Frontend.P.negWideI32
 import Lanius.Mini.Frontend.P.rootInsts
 
