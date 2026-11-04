@@ -1,7 +1,7 @@
 module
 
 public import Lanius.Mini.Reading.Det.Nested
-import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.SrcType_uintKind
 import all Lanius.Mini.Frontend.P.bindsOfTys
 import all Lanius.Mini.Frontend.P.distinct
 import all Lanius.Mini.Frontend.P.shrFirst

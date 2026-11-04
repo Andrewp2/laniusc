@@ -4,7 +4,7 @@ import Lanius.Faithful.GenB.SelfBModelC_SrcType_same
 import Lanius.Faithful.GenB.SelfBModelN0
 import Lanius.Faithful.GenB.SelfBModelN2
 import Lanius.Faithful.GenB.SelfBModelN7
-import Lanius.Mini.Compiler.P.SrcType_same
+import Lanius.Mini.Compiler.P.SrcType_uintKind
 import Lanius.Mini.Compiler.P.armPayload
 import Lanius.Mini.Compiler.P.armScope
 import Lanius.Mini.Compiler.P.lowerTagged

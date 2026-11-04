@@ -2,7 +2,7 @@ module
 
 public import Lanius.Mini.Reading.Det.Effs
 public import Lanius.Mini.Reading.Stmts
-import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.SrcType_uintKind
 import all Lanius.Mini.Frontend.P.bindsOfTys
 import all Lanius.Mini.Frontend.P.blockArmsOf
 import all Lanius.Mini.Frontend.P.callParts

@@ -5,11 +5,11 @@ public import Lanius.Mini.DetSteps
 public import Lanius.Mini.Compiler.P.FArith_opcode
 import all Lanius.Mini.Compiler.P.FArith_opcode
 import all Lanius.Mini.Compiler.P.Lists_empty
-import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.SrcType_uintKind
 import all Lanius.Mini.Compiler.P.arities
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Compiler.P.SrcType_same
+public import Lanius.Mini.Compiler.P.SrcType_uintKind
 
 @[expose] public section
 /-! The x86 runs of the heap instructions. The heap is the bytes from r12;

@@ -4,7 +4,7 @@ public import Lanius.Mini.Refs.Homed
 public import Lanius.Mini.Refs.Place
 public import Lanius.Mini.Refs.Store
 public import Lanius.Mini.LowerStmt
-import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.SrcType_uintKind
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.lowerTagged

@@ -1,8 +1,8 @@
 module
 
 public import Lanius.Faithful.Sim.Check
-public import Lanius.Mini.Compiler.P.SrcType_same
-import all Lanius.Mini.Compiler.P.SrcType_same
+public import Lanius.Mini.Compiler.P.SrcType_uintKind
+import all Lanius.Mini.Compiler.P.SrcType_uintKind
 import all Lanius.Mini.Compiler.Types
 
 @[expose] public section

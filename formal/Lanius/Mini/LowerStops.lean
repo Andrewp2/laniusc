@@ -10,7 +10,7 @@ import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.FArith_opcode
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.SrcType_uintKind
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.arities
 import all Lanius.Mini.Compiler.P.armBodyScope
@@ -21,7 +21,7 @@ import all Lanius.Mini.Compiler.P.compileModules
 import all Lanius.Mini.Compiler.P.conjunction
 import all Lanius.Mini.Compiler.P.declareProgram
 import all Lanius.Mini.Compiler.P.elementAddress
-import all Lanius.Mini.Compiler.P.elementBase
+import all Lanius.Mini.Compiler.P.subField
 import all Lanius.Mini.Compiler.P.guardAnd
 import all Lanius.Mini.Compiler.P.indexOf
 import all Lanius.Mini.Compiler.P.loadAtBytes
@@ -52,7 +52,7 @@ import all Lanius.Mini.Compiler.P.wordElement
 import all Lanius.Mini.Compiler.P.wordStride
 import all Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Compiler.P.SrcExpr_guard
-public import Lanius.Mini.Compiler.P.SrcType_same
+public import Lanius.Mini.Compiler.P.SrcType_uintKind
 public import Lanius.Mini.Compiler.P.UintTy_half
 public import Lanius.Mini.Compiler.P.armBodyScope
 public import Lanius.Mini.Compiler.P.armPayload
@@ -60,7 +60,7 @@ public import Lanius.Mini.Compiler.P.armScope
 public import Lanius.Mini.Compiler.P.assignFrom
 public import Lanius.Mini.Compiler.P.declareProgram
 public import Lanius.Mini.Compiler.P.elementAddress
-public import Lanius.Mini.Compiler.P.elementBase
+public import Lanius.Mini.Compiler.P.subField
 public import Lanius.Mini.Compiler.P.guardAnd
 public import Lanius.Mini.Compiler.P.indexOf
 public import Lanius.Mini.Compiler.P.lowerAddress

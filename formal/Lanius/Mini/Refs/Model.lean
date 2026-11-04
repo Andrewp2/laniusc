@@ -6,7 +6,7 @@ public import Lanius.Mini.Compiler.P.widthOf
 public import Lanius.Mini.Compiler.P.UintTy_half
 public import Lanius.Mini.Stops
 public import Lanius.Mini.Fails
-import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.SrcType_uintKind
 
 @[expose] public section
 

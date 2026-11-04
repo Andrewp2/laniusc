@@ -15,7 +15,7 @@ import Lanius.Faithful.GenB.SelfBModelC_strStores
 import Lanius.Faithful.GenB.SelfBModelN4
 import Lanius.Faithful.GenB.SelfBModelN5
 import Lanius.Mini.Compiler.P.SrcExpr_guard
-import Lanius.Mini.Compiler.P.SrcType_same
+import Lanius.Mini.Compiler.P.SrcType_uintKind
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.armBodyScope
 import Lanius.Mini.Compiler.P.armPayload

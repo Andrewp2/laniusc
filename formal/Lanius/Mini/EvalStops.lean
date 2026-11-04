@@ -5,7 +5,7 @@ public import Lanius.Mini.Compiler.P.SrcExpr_guard
 import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.SrcType_uintKind
 import all Lanius.Mini.Compiler.P.Stmt_kills
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
@@ -43,7 +43,7 @@ import all Lanius.Mini.Compiler.P.strStores
 import all Lanius.Mini.Compiler.P.storeEvalWord
 import all Lanius.Mini.Compiler.P.wordStride
 import all Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Compiler.P.SrcType_same
+public import Lanius.Mini.Compiler.P.SrcType_uintKind
 public import Lanius.Mini.Compiler.P.UintTy_half
 public import Lanius.Mini.Compiler.P.UintTy_isWide
 public import Lanius.Mini.Compiler.P.consArgs

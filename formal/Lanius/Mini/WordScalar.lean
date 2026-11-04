@@ -3,9 +3,9 @@ module
 public import Lanius.Mini.SourceCore
 public import Lanius.NativeLayout
 public import Lanius.Mini.Compiler.P.wordElement
-public import Lanius.Mini.Compiler.P.SrcType_same
+public import Lanius.Mini.Compiler.P.SrcType_uintKind
 import all Lanius.Mini.Compiler.P.Lists_empty
-import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.SrcType_uintKind
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.loadAtBytes
 import all Lanius.Mini.Compiler.P.render

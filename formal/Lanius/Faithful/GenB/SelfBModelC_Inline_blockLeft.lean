@@ -10,7 +10,7 @@ import Lanius.Faithful.GenB.SelfBModelN5
 import Lanius.Faithful.GenB.SelfBModelN6
 import Lanius.Faithful.GenB.SelfBModelN7
 import Lanius.Mini.Compiler.P.Inline_blockLeft
-import Lanius.Mini.Compiler.P.SrcType_same
+import Lanius.Mini.Compiler.P.SrcType_uintKind
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.arrayCallSig
 import Lanius.Mini.Compiler.P.enumVariants

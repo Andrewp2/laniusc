@@ -4,7 +4,7 @@ public import Lanius.Mini.Reading.Types
 public import Lanius.Mini.Reading.FloatBits
 import all Lanius.Mini.Compiler.P.BinOp_folds
 import all Lanius.Mini.Compiler.P.Lists_empty
-import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.SrcType_uintKind
 import all Lanius.Mini.Compiler.P.Stmt_kills
 import all Lanius.Mini.Frontend.P.basedDigits
 import all Lanius.Mini.Frontend.P.basedLimit

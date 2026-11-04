@@ -4,9 +4,9 @@ import Lanius.Faithful.GenB.SelfBModelC_SrcType_same
 import Lanius.Faithful.GenB.SelfBModelC_elementBase
 import Lanius.Faithful.GenB.SelfBModelC_wordElement
 import Lanius.Mini.Compiler.P.SrcExpr_guard
-import Lanius.Mini.Compiler.P.SrcType_same
+import Lanius.Mini.Compiler.P.SrcType_uintKind
 import Lanius.Mini.Compiler.P.UintTy_half
-import Lanius.Mini.Compiler.P.elementBase
+import Lanius.Mini.Compiler.P.subField
 import Lanius.Mini.Compiler.P.storeEvalWord
 import Lanius.Mini.Compiler.P.storeType
 import Lanius.Mini.Compiler.P.wordElement

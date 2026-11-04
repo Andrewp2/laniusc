@@ -2,7 +2,7 @@ module
 
 public import Lanius.Mini.Borrowed
 public import Lanius.Mini.Homes
-import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.SrcType_uintKind
 import all Lanius.Mini.Compiler.P.Lists_empty
 
 @[expose] public section
