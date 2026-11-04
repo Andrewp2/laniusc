@@ -20,12 +20,12 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_kill_shared (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Fact} {x1 : Nat} {v0 v1 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 181 RepFact) x0 v0 → RepNat x1 v1 → k < b → Pre_kill_shared n x0 x1 b →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_kill_shared n x0 x1 = k ∧ (RepList 181 RepFact) (Lanius.Mini.killShared x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 182 RepFact) x0 v0 → RepNat x1 v1 → k < b → Pre_kill_shared n x0 x1 b →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_kill_shared n x0 x1 = k ∧ (RepList 182 RepFact) (Lanius.Mini.killShared x0 x1) w
 
 abbrev BStmt_first_facts (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Fact} {x1 : Nat} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 181 RepFact) x0 v0 → RepNat x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_first_facts n x0 x1 = k ∧ (RepList 181 RepFact) (Lanius.Mini.firstFacts x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 182 RepFact) x0 v0 → RepNat x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_first_facts n x0 x1 = k ∧ (RepList 182 RepFact) (Lanius.Mini.firstFacts x0 x1) w
 
 end Lanius.Faithful.SelfBudget

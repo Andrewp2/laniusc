@@ -35,18 +35,18 @@ abbrev BStmt_Word_keeps (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
 
 abbrev BStmt_negate_constant (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option (BitVec 64)} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 205 RepU64) x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 205 RepU64) (Lanius.Mini.negateConstant x0) w
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 206 RepU64) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 206 RepU64) (Lanius.Mini.negateConstant x0) w
 
 abbrev BStmt_fold_constant (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Word} {x1 : Lanius.Mini.BinOp} {x2 : BitVec 64} {x3 : BitVec 64} {v0 v1 v2 v3 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepWord x0 v0 → RepBinOp x1 v1 → RepU64 x2 v2 → RepU64 x3 v3 →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ 0 = k ∧ (RepOption 205 RepU64) (Lanius.Mini.foldConstant x0 x1 x2 x3) w
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ 0 = k ∧ (RepOption 206 RepU64) (Lanius.Mini.foldConstant x0 x1 x2 x3) w
 
 abbrev BStmt_absorbed (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.BinOp} {x1 : BitVec 64} {v0 v1 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepBinOp x0 v0 → RepU64 x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 205 RepU64) (Lanius.Mini.absorbed x0 x1) w
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 206 RepU64) (Lanius.Mini.absorbed x0 x1) w
 
 abbrev BStmt_Word_number (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Word} {v0 w : Value} {k : Nat},

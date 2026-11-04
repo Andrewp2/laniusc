@@ -29,8 +29,8 @@ abbrev BStmt_bool_bits (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
 
 abbrev BStmt_lookup (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Binding} {x1 : Nat} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 135 RepBinding) x0 v0 → RepNat x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 153 RepBinding) (Lanius.Mini.lookup x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 137 RepBinding) x0 v0 → RepNat x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 154 RepBinding) (Lanius.Mini.lookup x0 x1) w
 
 abbrev BStmt_SrcType_is_scalar (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value} {k : Nat},
@@ -55,12 +55,12 @@ abbrev BStmt_SrcType_is_float_any (spW sp : SrcProgram) (prims : Prims) (ix n : 
 abbrev BStmt_SrcType_float_ty (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepSrcType x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 216 RepFloatTy) (Lanius.Mini.SrcType.floatTy x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 217 RepFloatTy) (Lanius.Mini.SrcType.floatTy x0) w
 
 abbrev BStmt_SrcType_sint_kind (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepSrcType x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 207 RepUintTy) (Lanius.Mini.SrcType.sintKind x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 208 RepUintTy) (Lanius.Mini.SrcType.sintKind x0) w
 
 abbrev BStmt_UintTy_spare (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.UintTy} {v0 w : Value} {k : Nat},
@@ -85,7 +85,7 @@ abbrev BStmt_SrcType_is_ptr (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) :
 abbrev BStmt_SrcType_uint_kind (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepSrcType x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 207 RepUintTy) (Lanius.Mini.SrcType.uintKind x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 208 RepUintTy) (Lanius.Mini.SrcType.uintKind x0) w
 
 abbrev BStmt_SrcType_is_float (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {x1 : Lanius.Mini.FloatTy} {v0 v1 w : Value} {k : Nat},

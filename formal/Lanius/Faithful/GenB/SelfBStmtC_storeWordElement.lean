@@ -20,17 +20,17 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_store_word_element (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Binding} {x1 : Lanius.Mini.SrcType} {x2 : Option Lanius.Mini.Expr} {x3 : List Lanius.Mini.Binding} {x4 : Lanius.Mini.SrcExpr} {v0 v1 v2 v3 v4 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → RepBinding x0 v0 → RepSrcType x1 v1 → (RepOption 154 RepExpr) x2 v2 → (RepList 135 RepBinding) x3 v3 → RepSrcExpr x4 v4 → k < b → Pre_store_word_element n x0 x1 x2 x3 x4 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_store_word_element n x0 x1 x2 x3 x4 = k ∧ (RepOption 134 RepStmt) (Lanius.Mini.storeWordElement x0 x1 x2 x3 x4) w
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → RepBinding x0 v0 → RepSrcType x1 v1 → (RepOption 155 RepExpr) x2 v2 → (RepList 137 RepBinding) x3 v3 → RepSrcExpr x4 v4 → k < b → Pre_store_word_element n x0 x1 x2 x3 x4 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_store_word_element n x0 x1 x2 x3 x4 = k ∧ (RepOption 136 RepStmt) (Lanius.Mini.storeWordElement x0 x1 x2 x3 x4) w
 
 abbrev BStmt_store_any (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcDecls} {x1 : Lanius.Mini.Binding} {x2 : Lanius.Mini.SrcType} {x3 : Option Lanius.Mini.Expr} {x4 : List Lanius.Mini.Binding} {x5 : Lanius.Mini.SrcExpr} {v0 v1 v2 v3 v4 v5 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) → RepSrcDecls x0 v0 → RepBinding x1 v1 → RepSrcType x2 v2 → (RepOption 154 RepExpr) x3 v3 → (RepList 135 RepBinding) x4 v4 → RepSrcExpr x5 v5 → k < b → Pre_store_any n x0 x1 x2 x3 x4 x5 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) ∧ Cost_store_any n x0 x1 x2 x3 x4 x5 = k ∧ (RepOption 134 RepStmt) (Lanius.Mini.storeAny x0 x1 x2 x3 x4 x5) w
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) → RepSrcDecls x0 v0 → RepBinding x1 v1 → RepSrcType x2 v2 → (RepOption 155 RepExpr) x3 v3 → (RepList 137 RepBinding) x4 v4 → RepSrcExpr x5 v5 → k < b → Pre_store_any n x0 x1 x2 x3 x4 x5 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) ∧ Cost_store_any n x0 x1 x2 x3 x4 x5 = k ∧ (RepOption 136 RepStmt) (Lanius.Mini.storeAny x0 x1 x2 x3 x4 x5) w
 
 abbrev BStmt_lower_set_index_of (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcDecls} {x1 : Lanius.Mini.Binding} {x2 : Option Lanius.Mini.Expr} {x3 : List Lanius.Mini.Binding} {x4 : Lanius.Mini.SrcExpr} {v0 v1 v2 v3 v4 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → RepSrcDecls x0 v0 → RepBinding x1 v1 → (RepOption 154 RepExpr) x2 v2 → (RepList 135 RepBinding) x3 v3 → RepSrcExpr x4 v4 → k < b → Pre_lower_set_index_of n x0 x1 x2 x3 x4 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_lower_set_index_of n x0 x1 x2 x3 x4 = k ∧ (RepOption 134 RepStmt) (Lanius.Mini.lowerSetIndexOf x0 x1 x2 x3 x4) w
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → RepSrcDecls x0 v0 → RepBinding x1 v1 → (RepOption 155 RepExpr) x2 v2 → (RepList 137 RepBinding) x3 v3 → RepSrcExpr x4 v4 → k < b → Pre_lower_set_index_of n x0 x1 x2 x3 x4 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_lower_set_index_of n x0 x1 x2 x3 x4 = k ∧ (RepOption 136 RepStmt) (Lanius.Mini.lowerSetIndexOf x0 x1 x2 x3 x4) w
 
 end Lanius.Faithful.SelfBudget

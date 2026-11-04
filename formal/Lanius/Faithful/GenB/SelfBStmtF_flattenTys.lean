@@ -20,18 +20,18 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_slice_type (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.SrcType} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 159 RepSrcType) x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_slice_type n x0 = k ∧ (RepOption 159 RepSrcType) (Lanius.Mini.sliceType x0) w
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 160 RepSrcType) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_slice_type n x0 = k ∧ (RepOption 160 RepSrcType) (Lanius.Mini.sliceType x0) w
 
 abbrev BStmt_cons_type_tail (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {x1 : Option (List Lanius.Mini.SrcType)} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepSrcType x0 v0 → (RepOption 188 (RepList 73 RepSrcType)) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_type_tail n x0 x1 = k ∧ (RepOption 188 (RepList 73 RepSrcType)) (Lanius.Mini.consTypeTail x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepSrcType x0 v0 → (RepOption 189 (RepList 74 RepSrcType)) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_type_tail n x0 x1 = k ∧ (RepOption 189 (RepList 74 RepSrcType)) (Lanius.Mini.consTypeTail x0 x1) w
 
 abbrev BStmt_cons_type (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.SrcType} {x1 : Option (List Lanius.Mini.SrcType)} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 159 RepSrcType) x0 v0 → (RepOption 188 (RepList 73 RepSrcType)) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_type n x0 x1 = k ∧ (RepOption 188 (RepList 73 RepSrcType)) (Lanius.Mini.consType x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 160 RepSrcType) x0 v0 → (RepOption 189 (RepList 74 RepSrcType)) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_type n x0 x1 = k ∧ (RepOption 189 (RepList 74 RepSrcType)) (Lanius.Mini.consType x0 x1) w
 
 abbrev BStmt_weight_limit (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value} {k : Nat},
@@ -41,31 +41,31 @@ abbrev BStmt_weight_limit (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : P
 abbrev BStmt_weight_sum (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {v0 v1 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepNat x0 v0 → RepNat x1 v1 → k < b → Pre_weight_sum n x0 x1 b →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 150 RepNat) (Lanius.Mini.weightSum x0 x1) w
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 135 RepNat) (Lanius.Mini.weightSum x0 x1) w
 
 abbrev BStmt_weight_add_to (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Option Nat} {v0 v1 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepNat x0 v0 → (RepOption 150 RepNat) x1 v1 → k < b → Pre_weight_add_to n x0 x1 b →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 150 RepNat) (Lanius.Mini.weightAddTo x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepNat x0 v0 → (RepOption 135 RepNat) x1 v1 → k < b → Pre_weight_add_to n x0 x1 b →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 135 RepNat) (Lanius.Mini.weightAddTo x0 x1) w
 
 abbrev BStmt_cons_types_tail (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcType} {x1 : Option (List (List Lanius.Mini.SrcType))} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 73 RepSrcType) x0 v0 → (RepOption 191 (RepList 77 (RepList 73 RepSrcType))) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_types_tail n x0 x1 = k ∧ (RepOption 191 (RepList 77 (RepList 73 RepSrcType))) (Lanius.Mini.consTypesTail x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 74 RepSrcType) x0 v0 → (RepOption 192 (RepList 78 (RepList 74 RepSrcType))) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_types_tail n x0 x1 = k ∧ (RepOption 192 (RepList 78 (RepList 74 RepSrcType))) (Lanius.Mini.consTypesTail x0 x1) w
 
 abbrev BStmt_cons_types (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option (List Lanius.Mini.SrcType)} {x1 : Option (List (List Lanius.Mini.SrcType))} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 188 (RepList 73 RepSrcType)) x0 v0 → (RepOption 191 (RepList 77 (RepList 73 RepSrcType))) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_types n x0 x1 = k ∧ (RepOption 191 (RepList 77 (RepList 73 RepSrcType))) (Lanius.Mini.consTypes x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 189 (RepList 74 RepSrcType)) x0 v0 → (RepOption 192 (RepList 78 (RepList 74 RepSrcType))) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_types n x0 x1 = k ∧ (RepOption 192 (RepList 78 (RepList 74 RepSrcType))) (Lanius.Mini.consTypes x0 x1) w
 
 abbrev BStmt_flatten_tys (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (List Lanius.Mini.Ty)} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 244 (RepList 141 RepTy)) x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_flatten_tys n x0 = k ∧ (RepList 141 RepTy) (Lanius.Mini.flattenTys x0) w
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 245 (RepList 143 RepTy)) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_flatten_tys n x0 = k ∧ (RepList 143 RepTy) (Lanius.Mini.flattenTys x0) w
 
 abbrev BStmt_flat_payloads (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option (List (List Lanius.Mini.Ty))} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 243 (RepList 244 (RepList 141 RepTy))) x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_flat_payloads n x0 = k ∧ (RepOption 212 (RepList 141 RepTy)) (Lanius.Mini.flatPayloads x0) w
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 244 (RepList 245 (RepList 143 RepTy))) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_flat_payloads n x0 = k ∧ (RepOption 213 (RepList 143 RepTy)) (Lanius.Mini.flatPayloads x0) w
 
 end Lanius.Faithful.SelfBudget

@@ -3,6 +3,7 @@ import Lanius.Faithful.GenB.SelfBModelC_Expr_agrees
 import Lanius.Faithful.GenB.SelfBModelC_FArith_opcode
 import Lanius.Faithful.GenB.SelfBModelC_FloatTy_rex
 import Lanius.Faithful.GenB.SelfBModelC_Inline_arithOf
+import Lanius.Faithful.GenB.SelfBModelC_Inline_blockLeft
 import Lanius.Faithful.GenB.SelfBModelC_Inline_factOr
 import Lanius.Faithful.GenB.SelfBModelC_Lists_empty
 import Lanius.Faithful.GenB.SelfBModelC_SrcType_same
@@ -11,7 +12,10 @@ import Lanius.Faithful.GenB.SelfBModelC_Word_narrows
 import Lanius.Faithful.GenB.SelfBModelC_applyGuard
 import Lanius.Faithful.GenB.SelfBModelC_arities
 import Lanius.Faithful.GenB.SelfBModelC_armBodyScope
+import Lanius.Faithful.GenB.SelfBModelC_armPayload
+import Lanius.Faithful.GenB.SelfBModelC_arrayCallSig
 import Lanius.Faithful.GenB.SelfBModelC_assignAgrees
+import Lanius.Faithful.GenB.SelfBModelC_bindingBytes
 import Lanius.Faithful.GenB.SelfBModelC_callAgrees
 import Lanius.Faithful.GenB.SelfBModelC_codeSize
 import Lanius.Faithful.GenB.SelfBModelC_compileArgs
@@ -21,6 +25,7 @@ import Lanius.Faithful.GenB.SelfBModelC_consArgs
 import Lanius.Faithful.GenB.SelfBModelC_declareProgram
 import Lanius.Faithful.GenB.SelfBModelC_elementBase
 import Lanius.Faithful.GenB.SelfBModelC_evalSame
+import Lanius.Faithful.GenB.SelfBModelC_funcNeeds
 import Lanius.Faithful.GenB.SelfBModelC_guardAnd
 import Lanius.Faithful.GenB.SelfBModelC_iteThen
 import Lanius.Faithful.GenB.SelfBModelC_larger
@@ -29,15 +34,20 @@ import Lanius.Faithful.GenB.SelfBModelC_loadAtBytes
 import Lanius.Faithful.GenB.SelfBModelC_lowerAddress
 import Lanius.Faithful.GenB.SelfBModelC_lowerLocal
 import Lanius.Faithful.GenB.SelfBModelC_lowerReturn
+import Lanius.Faithful.GenB.SelfBModelC_lowerSetValues
+import Lanius.Faithful.GenB.SelfBModelC_lowerSlice
+import Lanius.Faithful.GenB.SelfBModelC_lowerTagged
 import Lanius.Faithful.GenB.SelfBModelC_matchDst
-import Lanius.Faithful.GenB.SelfBModelC_needRound
+import Lanius.Faithful.GenB.SelfBModelC_needCapped
 import Lanius.Faithful.GenB.SelfBModelC_needsAfter
 import Lanius.Faithful.GenB.SelfBModelC_optimizeLeft
 import Lanius.Faithful.GenB.SelfBModelC_optimizeNeg
 import Lanius.Faithful.GenB.SelfBModelC_packRound
 import Lanius.Faithful.GenB.SelfBModelC_roomFits
 import Lanius.Faithful.GenB.SelfBModelC_sintToUint
-import Lanius.Faithful.GenB.SelfBModelC_withBudget
+import Lanius.Faithful.GenB.SelfBModelC_storeArray
+import Lanius.Faithful.GenB.SelfBModelC_storeEvalWord
+import Lanius.Faithful.GenB.SelfBModelC_strStores
 import Lanius.Faithful.GenB.SelfBModelC_wordElement
 import Lanius.Faithful.GenB.SelfBModelC_wordWidth
 import Lanius.Faithful.GenB.SelfBModelF_Inline_attachNode
@@ -209,9 +219,9 @@ Do not edit. -/
 -- models: Cost_compile_optimized Pre_compile_optimized Cost_compile_lowered Pre_compile_lowered
 -- models: Cost_lower_func_cons Pre_SrcType_size Pre_sizes Pre_max_size Pre_params_size
 -- models: Cost_concat_of_usize Cost_single_of_usize Cost_SrcEff_slice_uses Cost_effs_slice_uses
--- models: Cost_SrcStmt_slice_uses Pre_array_bytes_of Pre_decl_bytes Pre_params_array_bytes
--- models: Pre_SrcStmt_array_bytes Cost_frame_block Pre_frame_block Pre_params_valid Pre_Expr_extent
--- models: Pre_args_extent Pre_Stmt_extent Pre_lower_body Pre_SrcStmt_depth
+-- models: Cost_SrcStmt_slice_uses Pre_array_bytes_of Pre_decl_bytes Pre_params_room Pre_params_then
+-- models: Pre_block_room Pre_block_then Cost_frame_block Pre_frame_block Pre_params_valid
+-- models: Pre_Expr_extent Pre_args_extent Pre_Stmt_extent Pre_lower_body Pre_SrcStmt_depth
 -- models: Cost_single_of_mini_selfhost_Expr Cost_unit_tail Cost_with_frame Cost_check_then
 -- models: Cost_guarded Cost_guard_and Cost_amount_guard Cost_shift_guard Cost_guard_or
 -- models: Cost_left_false Cost_apply_guard Pre_field_offset Pre_offset_after Pre_lower_field_of
@@ -310,24 +320,25 @@ Do not edit. -/
 -- models: Pre_str_stores Cost_lower_str Pre_lower_str Cost_SrcStmt_lower Pre_SrcStmt_lower
 -- models: Cost_cons_of_mini_selfhost_Sig Cost_with_budget Cost_param_scope Pre_param_scope
 -- models: Cost_lower_func Pre_lower_func Cost_lower_funcs Pre_lower_funcs Cost_param_types
--- models: Cost_sigs_with Cost_need_round Pre_need_round Cost_needs_after Pre_needs_after
--- models: Pre_length_of_mini_selfhost_SrcFunc Cost_func_needs Pre_func_needs Cost_sigs Pre_sigs
--- models: Cost_compile_declared Pre_compile_declared Cost_cons_of_mini_selfhost_SrcStructDecl
--- models: Cost_declare_struct_in Cost_declare_struct Cost_cons_of_mini_selfhost_SrcEnumDecl
--- models: Cost_declare_enum_in Cost_declare_enum Cost_SrcType_declare Cost_declare_types
--- models: Cost_declare_variants Cost_declare_types_after Cost_declare_variants_after
--- models: Cost_declare_params Cost_declare_params_after Cost_concat_of_mini_selfhost_SrcType
--- models: Cost_SrcEff_types Cost_effs_types Cost_declare_in Cost_SrcStmt_declare Cost_declare_func
--- models: Cost_declare_funcs Cost_declare_funcs_after Cost_declare_program Cost_compile_source
--- models: Pre_compile_source Cost_compile_words Pre_compile_words Cost_nums_after Cost_byte_after
--- models: Cost_read_bytes Cost_read_counted_bytes Cost_read_nums Cost_read_counted_nums
--- models: Pre_lx_ident_run Pre_lx_ident_run_at Pre_lx_ident_end Pre_lx_prefixed_base
--- models: Pre_lx_base_digit Pre_lx_digit_tail Pre_lx_digit_tail_at Pre_lx_digit_sep
--- models: Pre_lx_digit_run_at Pre_lx_digit_run Pre_lx_exponent_sign Pre_lx_exponent_digits
--- models: Pre_lx_exponent Pre_lx_after_fraction_at Pre_lx_after_fraction Pre_lx_fraction_digits
--- models: Pre_lx_fraction_at Pre_lx_fraction Pre_lx_decimal_next Pre_lx_finish_decimal Pre_lx_number
--- models: Pre_lx_space_run Pre_lx_space_run_at Pre_lx_space_end Pre_lx_quoted Pre_lx_quoted_at
--- models: Cost_lx_take Pre_lx_longer Pre_lx_best_at Pre_lx_best Pre_lx_line_run Pre_lx_line_run_at
+-- models: Cost_sigs_with Cost_need_round_at Pre_need_round_at Cost_need_round Pre_need_round
+-- models: Cost_needs_after Pre_needs_after Pre_length_of_mini_selfhost_SrcFunc Cost_func_needs
+-- models: Pre_func_needs Cost_sigs Pre_sigs Cost_compile_declared Pre_compile_declared
+-- models: Cost_cons_of_mini_selfhost_SrcStructDecl Cost_declare_struct_in Cost_declare_struct
+-- models: Cost_cons_of_mini_selfhost_SrcEnumDecl Cost_declare_enum_in Cost_declare_enum
+-- models: Cost_SrcType_declare Cost_declare_types Cost_declare_variants Cost_declare_types_after
+-- models: Cost_declare_variants_after Cost_declare_params Cost_declare_params_after
+-- models: Cost_concat_of_mini_selfhost_SrcType Cost_SrcEff_types Cost_effs_types Cost_declare_in
+-- models: Cost_SrcStmt_declare Cost_declare_func Cost_declare_funcs Cost_declare_funcs_after
+-- models: Cost_declare_program Cost_compile_source Pre_compile_source Cost_compile_words
+-- models: Pre_compile_words Cost_nums_after Cost_byte_after Cost_read_bytes Cost_read_counted_bytes
+-- models: Cost_read_nums Cost_read_counted_nums Pre_lx_ident_run Pre_lx_ident_run_at
+-- models: Pre_lx_ident_end Pre_lx_prefixed_base Pre_lx_base_digit Pre_lx_digit_tail
+-- models: Pre_lx_digit_tail_at Pre_lx_digit_sep Pre_lx_digit_run_at Pre_lx_digit_run
+-- models: Pre_lx_exponent_sign Pre_lx_exponent_digits Pre_lx_exponent Pre_lx_after_fraction_at
+-- models: Pre_lx_after_fraction Pre_lx_fraction_digits Pre_lx_fraction_at Pre_lx_fraction
+-- models: Pre_lx_decimal_next Pre_lx_finish_decimal Pre_lx_number Pre_lx_space_run
+-- models: Pre_lx_space_run_at Pre_lx_space_end Pre_lx_quoted Pre_lx_quoted_at Cost_lx_take
+-- models: Pre_lx_longer Pre_lx_best_at Pre_lx_best Pre_lx_line_run Pre_lx_line_run_at
 -- models: Pre_lx_line_end Pre_lx_block Pre_lx_block_at Pre_lx_block_next Pre_lx_block_end
 -- models: Pre_lx_fixed_at Cost_lx_fixed Pre_lx_fixed Pre_lx_leading_dot Cost_lx_dot_at Pre_lx_dot_at
 -- models: Cost_lx_symbol_at Pre_lx_symbol_at Cost_lx_symbol Pre_lx_symbol Cost_lx_one_first
@@ -639,10 +650,10 @@ Do not edit. -/
 -- statements: MemWidth_bytes load_word_agrees store_word_agrees DivOp_number divide_agrees
 -- statements: Syscall_number sys_agrees frame_agrees static_agrees Stmt_agrees seq_agrees
 -- statements: dead_agrees ite_agrees branch_agrees loop_agrees Func_agrees funcs_agree validate
--- statements: empty_of_mini_selfhost_Code image_limit max_of Expr_temps args_temps Stmt_temps
+-- statements: empty_of_mini_selfhost_Code image_limit room_fits spend expr_then expr_room args_then
+-- statements: args_room spend_then stmt_room stmt_then max_of Expr_temps args_temps Stmt_temps
 -- statements: Expr_within get_of_mini_selfhost_Arity arity_is length_of_mini_selfhost_Expr
--- statements: all_within Stmt_within frame_limit room_fits spend expr_then expr_room args_then
--- statements: args_room spend_then stmt_room stmt_then cons_of_mini_selfhost_Instr
+-- statements: all_within Stmt_within frame_limit cons_of_mini_selfhost_Instr
 -- statements: empty_of_mini_selfhost_Instr zero_locals concat_of_mini_selfhost_Instr
 -- statements: single_of_mini_selfhost_Instr compile_expr BinOp_size Word_prefix MemWidth_prefix
 -- statements: DivOp_size FloatTy_rex_size FOp_size Instr_size code_size compile_args empty_of_usize
@@ -661,32 +672,32 @@ Do not edit. -/
 -- statements: compile_program compile_or compile_optimized compile_lowered lower_func_cons
 -- statements: SrcType_size sizes max_size params_size concat_of_usize single_of_usize
 -- statements: SrcEff_slice_uses effs_slice_uses SrcStmt_slice_uses id_absent array_bytes_of
--- statements: decl_bytes params_array_bytes SrcStmt_array_bytes frame_block viewed_type params_valid
--- statements: SrcStmt_breaks_out Expr_extent args_extent Stmt_extent lower_body SrcStmt_depth
--- statements: single_of_mini_selfhost_Expr unit_tail with_frame is_one trap check_then guarded
--- statements: guard_and literal_below amount_guard UintTy_bits shift_width shift_guard guard_or
--- statements: left_false left_true apply_guard lookup lookup_at UintTy_mask lower_unsigned
--- statements: SrcType_is_scalar lower_scalar_local lower_local field_offset offset_after
--- statements: get_of_mini_selfhost_SrcType lower_scalar_slot lower_field_at lower_field_of
--- statements: lower_field SrcType_is_i32 SrcType_is_isize SrcType_is_float_any FloatTy_sign_word
--- statements: FloatTy_sign_bit negate_float SrcType_float_ty SrcType_sint_kind UintTy_is_wide
--- statements: UintTy_spare norm negate_signed lower_negate_typed lower_negate SrcType_is_bool
--- statements: lower_not_typed lower_not UintTy_code SrcType_is_uint SrcType_is_ptr SrcType_uint_kind
--- statements: SrcType_is_float float_apply float_op float_arith_of float_arith SrcType_is_sint_any
--- statements: SrcType_is_sint arith_signed_of arith_sint wrap arith_of arith_uint arith
--- statements: offset_or_arith SrcType_is_integer lower_shift arith_shift_right SrcType_is_char
--- statements: float_compare float_order_of float_order sign_key order_signed_of order_sint order_of
--- statements: order_uint order SrcType_is_str SrcType_same types_same variants_same
--- statements: UintTy_signed_word SrcType_word equality conjunction disjunction SrcOp_lower
--- statements: lower_apply sint_to_i32 cast_to_i32 from_i32 sint_to_uint cast_to_uint sint_to_wide
--- statements: cast_to_isize int_to_float if_narrow float_to_float cast_to_float cast_to_sint cast_to
--- statements: lower_cast FloatTy_mask lower_float SrcExpr_lower SrcExpr_guard assign_from lower_let
--- statements: expect_type lower_as lower_single slot_vars copy_same copy_binding copy_slots
--- statements: copy_field_at copy_field_of copy_field lower_copy lower_value
--- statements: cons_of_mini_selfhost_Binding guard_all concat_of_mini_selfhost_Expr lower_append
--- statements: lower_args lower_struct_fields empty_of_mini_selfhost_SrcType
--- statements: cons_of_mini_selfhost_SrcType repeat_type lower_literal lower_let_call
--- statements: get_of_mini_selfhost_Sig lower_call_sig lower_call
+-- statements: decl_bytes params_room params_then block_limit block_left block_room block_then
+-- statements: frame_block viewed_type params_valid SrcStmt_breaks_out need_limit Expr_extent
+-- statements: args_extent Stmt_extent lower_body SrcStmt_depth single_of_mini_selfhost_Expr
+-- statements: unit_tail with_frame is_one trap check_then guarded guard_and literal_below
+-- statements: amount_guard UintTy_bits shift_width shift_guard guard_or left_false left_true
+-- statements: apply_guard lookup lookup_at UintTy_mask lower_unsigned SrcType_is_scalar
+-- statements: lower_scalar_local lower_local field_offset offset_after get_of_mini_selfhost_SrcType
+-- statements: lower_scalar_slot lower_field_at lower_field_of lower_field SrcType_is_i32
+-- statements: SrcType_is_isize SrcType_is_float_any FloatTy_sign_word FloatTy_sign_bit negate_float
+-- statements: SrcType_float_ty SrcType_sint_kind UintTy_is_wide UintTy_spare norm negate_signed
+-- statements: lower_negate_typed lower_negate SrcType_is_bool lower_not_typed lower_not UintTy_code
+-- statements: SrcType_is_uint SrcType_is_ptr SrcType_uint_kind SrcType_is_float float_apply float_op
+-- statements: float_arith_of float_arith SrcType_is_sint_any SrcType_is_sint arith_signed_of
+-- statements: arith_sint wrap arith_of arith_uint arith offset_or_arith SrcType_is_integer
+-- statements: lower_shift arith_shift_right SrcType_is_char float_compare float_order_of float_order
+-- statements: sign_key order_signed_of order_sint order_of order_uint order SrcType_is_str
+-- statements: SrcType_same types_same variants_same UintTy_signed_word SrcType_word equality
+-- statements: conjunction disjunction SrcOp_lower lower_apply sint_to_i32 cast_to_i32 from_i32
+-- statements: sint_to_uint cast_to_uint sint_to_wide cast_to_isize int_to_float if_narrow
+-- statements: float_to_float cast_to_float cast_to_sint cast_to lower_cast FloatTy_mask lower_float
+-- statements: SrcExpr_lower SrcExpr_guard assign_from lower_let expect_type lower_as lower_single
+-- statements: slot_vars copy_same copy_binding copy_slots copy_field_at copy_field_of copy_field
+-- statements: lower_copy lower_value cons_of_mini_selfhost_Binding guard_all
+-- statements: concat_of_mini_selfhost_Expr lower_append lower_args lower_struct_fields
+-- statements: empty_of_mini_selfhost_SrcType cons_of_mini_selfhost_SrcType repeat_type lower_literal
+-- statements: lower_let_call get_of_mini_selfhost_Sig lower_call_sig lower_call
 -- statements: length_of_mini_selfhost_List_mini_selfhost_SrcType
 -- statements: get_of_mini_selfhost_List_mini_selfhost_SrcType lower_tag lower_variant lower_tagged
 -- statements: lower_enum_value lower_then length_of_mini_selfhost_SrcArm arm_scope arm_bind
@@ -731,18 +742,18 @@ Do not edit. -/
 -- statements: lower_view str_ascii length_of_u64 single_of_u64 cons_of_u64 str_words str_stores
 -- statements: lower_str SrcStmt_lower empty_of_mini_selfhost_Sig cons_of_mini_selfhost_Sig
 -- statements: with_budget param_scope empty_of_mini_selfhost_Binding lower_func lower_funcs
--- statements: param_types rest_needs sigs_with SrcEff_callee_need effs_callee_need
--- statements: SrcStmt_callee_need need_round same_needs needs_after length_of_mini_selfhost_SrcFunc
--- statements: func_needs sigs compile_declared keep_if cons_of_mini_selfhost_SrcStructDecl
--- statements: declare_struct_in declare_struct cons_of_mini_selfhost_SrcEnumDecl declare_enum_in
--- statements: declare_enum SrcType_declare declare_types declare_variants declare_types_after
--- statements: declare_variants_after declare_params declare_params_after
--- statements: concat_of_mini_selfhost_SrcType SrcEff_types effs_types declare_in SrcStmt_declare
--- statements: declare_func declare_funcs declare_funcs_after empty_of_mini_selfhost_SrcStructDecl
--- statements: empty_of_mini_selfhost_SrcEnumDecl declare_program compile_source compile_words
--- statements: empty_of_mini_selfhost_FileInput word_num nums_after byte_after read_bytes
--- statements: read_counted_bytes read_nums read_counted_nums file_lexed
--- statements: empty_of_mini_selfhost_RawTok get_of_usize lx_drop lx_ident_start lx_digit
+-- statements: param_types rest_needs sigs_with need_capped SrcEff_callee_need effs_callee_need
+-- statements: SrcStmt_callee_need need_round_at need_round same_needs needs_after
+-- statements: length_of_mini_selfhost_SrcFunc func_needs sigs compile_declared keep_if
+-- statements: cons_of_mini_selfhost_SrcStructDecl declare_struct_in declare_struct
+-- statements: cons_of_mini_selfhost_SrcEnumDecl declare_enum_in declare_enum SrcType_declare
+-- statements: declare_types declare_variants declare_types_after declare_variants_after
+-- statements: declare_params declare_params_after concat_of_mini_selfhost_SrcType SrcEff_types
+-- statements: effs_types declare_in SrcStmt_declare declare_func declare_funcs declare_funcs_after
+-- statements: empty_of_mini_selfhost_SrcStructDecl empty_of_mini_selfhost_SrcEnumDecl
+-- statements: declare_program compile_source compile_words empty_of_mini_selfhost_FileInput word_num
+-- statements: nums_after byte_after read_bytes read_counted_bytes read_nums read_counted_nums
+-- statements: file_lexed empty_of_mini_selfhost_RawTok get_of_usize lx_drop lx_ident_start lx_digit
 -- statements: lx_ident_continue lx_ident_run lx_ident_run_at lx_ident_end lx_from_number lx_is_byte
 -- statements: lx_base_of lx_prefixed_base lx_base_digit lx_digit_tail lx_digit_tail_at lx_digit_sep
 -- statements: lx_digit_run_at lx_digit_run lx_exponent_sign lx_exponent_digits lx_exponent

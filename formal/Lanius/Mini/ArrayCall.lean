@@ -18,6 +18,16 @@ import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.strStores
 import all Lanius.Mini.Compiler.P.arrayCallSig
 import all Lanius.Mini.Compiler.P.bindingBytes
+import all Lanius.Mini.Compiler.P.needCapped
+import all Lanius.Mini.Compiler.P.needsAfter
+import all Lanius.Mini.Compiler.P.storeEvalWord
+import all Lanius.Mini.Compiler.P.storeType
+import all Lanius.Mini.Compiler.P.storeWordElement
+import all Lanius.Mini.Compiler.P.structFields
+import all Lanius.Mini.Compiler.P.substAll
+import all Lanius.Mini.Compiler.P.usizeWidth
+import all Lanius.Mini.Compiler.P.widthOf
+import all Lanius.Mini.Compiler.P.wordElement
 import all Lanius.Mini.Compiler.P.wordStride
 import all Lanius.Mini.Compiler.Types
 
@@ -264,6 +274,10 @@ def argPlaces (scope : List Binding) (frame : Nat → Nat) (A offset : Nat) : Sr
   | .eLet _ _ _ _ _ => []
   | .eLen _ => []
   | .eStr _ _ => []
+  | .eBorrow _ _ => []
+  | .eDeref _ _ => []
+  | .eField _ _ => []
+  | .eAt _ _ => []
 
 /-- The places a call's arguments lend, their blocks from `offset` in the
 block at `A` on. -/

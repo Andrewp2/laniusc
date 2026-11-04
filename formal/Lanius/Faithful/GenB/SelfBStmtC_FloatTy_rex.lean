@@ -21,7 +21,7 @@ open Lanius.Faithful.Budget
 abbrev BStmt_FloatTy_rex (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FloatTy} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepFloatTy x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_FloatTy_rex n x0 = k ∧ (RepList 35 RepU8) (Lanius.Mini.FloatTy.rex x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_FloatTy_rex n x0 = k ∧ (RepList 36 RepU8) (Lanius.Mini.FloatTy.rex x0) w
 
 abbrev BStmt_FloatTy_scalar_prefix (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FloatTy} {v0 w : Value} {k : Nat},

@@ -41,6 +41,6 @@ abbrev BStmt_MemWidth_prefix (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) 
 abbrev BStmt_MemWidth_rex (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.MemWidth} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepMemWidth x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_MemWidth_rex n x0 = k ∧ (RepList 35 RepU8) (Lanius.Mini.MemWidth.rex x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_MemWidth_rex n x0 = k ∧ (RepList 36 RepU8) (Lanius.Mini.MemWidth.rex x0) w
 
 end Lanius.Faithful.SelfBudget

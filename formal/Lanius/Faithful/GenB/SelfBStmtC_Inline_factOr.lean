@@ -20,42 +20,42 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_fact_or (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Fact} {x1 : Nat} {x2 : List Lanius.Mini.Fact} {v0 v1 v2 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepFact x0 v0 → RepNat x1 v1 → (RepList 181 RepFact) x2 v2 →
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepFact x0 v0 → RepNat x1 v1 → (RepList 182 RepFact) x2 v2 →
     qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ RepExpr (Lanius.Mini.Inline.factOr x0 x1 x2) w
 
 abbrev BStmt_kept (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Fact} {x1 : Nat} {x2 : List Lanius.Mini.Fact} {v0 v1 v2 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepFact x0 v0 → RepNat x1 v1 → (RepList 181 RepFact) x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_kept n x0 x1 x2 = k ∧ (RepList 181 RepFact) (Lanius.Mini.Inline.kept x0 x1 x2) w
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepFact x0 v0 → RepNat x1 v1 → (RepList 182 RepFact) x2 v2 →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_kept n x0 x1 x2 = k ∧ (RepList 182 RepFact) (Lanius.Mini.Inline.kept x0 x1 x2) w
 
 abbrev BStmt_optimize_sequence (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Stmt} {x1 : Lanius.Mini.Stmt} {x2 : List Lanius.Mini.Fact} {v0 v1 v2 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepStmt x0 v0 → RepStmt x1 v1 → (RepList 181 RepFact) x2 v2 → k < b → Pre_optimize_sequence n x0 x1 x2 b →
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepStmt x0 v0 → RepStmt x1 v1 → (RepList 182 RepFact) x2 v2 → k < b → Pre_optimize_sequence n x0 x1 x2 b →
     qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_optimize_sequence n x0 x1 x2 = k ∧ RepStmt (Lanius.Mini.Inline.optimizeSequence x0 x1 x2) w
 
 abbrev BStmt_unknown (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option (BitVec 64)} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 205 RepU64) x0 v0 →
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 206 RepU64) x0 v0 →
     qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.Inline.unknown x0) w
 
 abbrev BStmt_seq_agrees (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Stmt} {x1 : Lanius.Mini.Stmt} {x2 : List Lanius.Mini.Fact} {x3 : Lanius.Mini.Stmt} {v0 v1 v2 v3 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepStmt x0 v0 → RepStmt x1 v1 → (RepList 181 RepFact) x2 v2 → RepStmt x3 v3 → k < b → Pre_seq_agrees n x0 x1 x2 x3 b →
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepStmt x0 v0 → RepStmt x1 v1 → (RepList 182 RepFact) x2 v2 → RepStmt x3 v3 → k < b → Pre_seq_agrees n x0 x1 x2 x3 b →
     qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_seq_agrees n x0 x1 x2 x3 = k ∧ RepBool (Lanius.Mini.Inline.seqAgrees x0 x1 x2 x3) w
 
 abbrev BStmt_dead_agrees (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Stmt} {x1 : Lanius.Mini.Stmt} {x2 : List Lanius.Mini.Fact} {x3 : Lanius.Mini.Stmt} {v0 v1 v2 v3 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepStmt x0 v0 → RepStmt x1 v1 → (RepList 181 RepFact) x2 v2 → RepStmt x3 v3 → k < b → Pre_dead_agrees n x0 x1 x2 x3 b →
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepStmt x0 v0 → RepStmt x1 v1 → (RepList 182 RepFact) x2 v2 → RepStmt x3 v3 → k < b → Pre_dead_agrees n x0 x1 x2 x3 b →
     qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_dead_agrees n x0 x1 x2 x3 = k ∧ RepBool (Lanius.Mini.Inline.deadAgrees x0 x1 x2 x3) w
 
 abbrev BStmt_ite_agrees (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Expr} {x1 : Lanius.Mini.Stmt} {x2 : Lanius.Mini.Stmt} {x3 : List Lanius.Mini.Fact} {x4 : Lanius.Mini.Stmt} {v0 v1 v2 v3 v4 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → RepExpr x0 v0 → RepStmt x1 v1 → RepStmt x2 v2 → (RepList 181 RepFact) x3 v3 → RepStmt x4 v4 → k < b → Pre_ite_agrees n x0 x1 x2 x3 x4 b →
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → RepExpr x0 v0 → RepStmt x1 v1 → RepStmt x2 v2 → (RepList 182 RepFact) x3 v3 → RepStmt x4 v4 → k < b → Pre_ite_agrees n x0 x1 x2 x3 x4 b →
     qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_ite_agrees n x0 x1 x2 x3 x4 = k ∧ RepBool (Lanius.Mini.Inline.iteAgrees x0 x1 x2 x3 x4) w
 
 abbrev BStmt_branch_agrees (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option (BitVec 64)} {x1 : Lanius.Mini.Stmt} {x2 : Lanius.Mini.Stmt} {x3 : List Lanius.Mini.Fact} {x4 : Lanius.Mini.Stmt} {v0 v1 v2 v3 v4 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → (RepOption 205 RepU64) x0 v0 → RepStmt x1 v1 → RepStmt x2 v2 → (RepList 181 RepFact) x3 v3 → RepStmt x4 v4 → k < b → Pre_branch_agrees n x0 x1 x2 x3 x4 b →
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → (RepOption 206 RepU64) x0 v0 → RepStmt x1 v1 → RepStmt x2 v2 → (RepList 182 RepFact) x3 v3 → RepStmt x4 v4 → k < b → Pre_branch_agrees n x0 x1 x2 x3 x4 b →
     qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_branch_agrees n x0 x1 x2 x3 x4 = k ∧ RepBool (Lanius.Mini.Inline.branchAgrees x0 x1 x2 x3 x4) w
 
 abbrev BStmt_loop_agrees (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

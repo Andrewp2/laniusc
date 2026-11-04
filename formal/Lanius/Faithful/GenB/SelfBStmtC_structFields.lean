@@ -19,7 +19,7 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_struct_fields (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcStructDecl} {x1 : Nat} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 71 RepSrcStructDecl) x0 v0 → RepNat x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 188 (RepList 73 RepSrcType)) (Lanius.Mini.structFields x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 72 RepSrcStructDecl) x0 v0 → RepNat x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 189 (RepList 74 RepSrcType)) (Lanius.Mini.structFields x0 x1) w
 
 end Lanius.Faithful.SelfBudget

@@ -20,7 +20,7 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_is_underscore (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option (List Nat)} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 197 (RepList 25 RepNat)) x0 v0 →
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 198 (RepList 25 RepNat)) x0 v0 →
     qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_is_underscore n x0 = k ∧ RepBool (Lanius.Mini.isUnderscore x0) w
 
 abbrev BStmt_is_wild_arm (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -31,17 +31,17 @@ abbrev BStmt_is_wild_arm (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
 abbrev BStmt_wild_alone (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CTree} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepCTree x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_wild_alone n x0 = k ∧ (RepOption 317 RepWildSplit) (Lanius.Mini.wildAlone x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_wild_alone n x0 = k ∧ (RepOption 318 RepWildSplit) (Lanius.Mini.wildAlone x0) w
 
 abbrev BStmt_cons_wild (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CTree} {x1 : Option Lanius.Mini.WildSplit} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepCTree x0 v0 → (RepOption 317 RepWildSplit) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_wild n x0 x1 = k ∧ (RepOption 317 RepWildSplit) (Lanius.Mini.consWild x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepCTree x0 v0 → (RepOption 318 RepWildSplit) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_wild n x0 x1 = k ∧ (RepOption 318 RepWildSplit) (Lanius.Mini.consWild x0 x1) w
 
 abbrev BStmt_wild_split (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.CTree} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 82 RepCTree) x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_wild_split n x0 = k ∧ (RepOption 317 RepWildSplit) (Lanius.Mini.wildSplit x0) w
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 83 RepCTree) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_wild_split n x0 = k ∧ (RepOption 318 RepWildSplit) (Lanius.Mini.wildSplit x0) w
 
 abbrev BStmt_wild_binder (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CTree} {x1 : Nat} {v0 v1 w : Value} {k b : Nat},
@@ -50,12 +50,12 @@ abbrev BStmt_wild_binder (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
 
 abbrev BStmt_wild_binders (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CTree} {x1 : Nat} {x2 : List Lanius.Mini.Ty} {v0 v1 v2 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepCTree x0 v0 → RepNat x1 v1 → (RepList 141 RepTy) x2 v2 → k < b → Pre_wild_binders n x0 x1 x2 b →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_wild_binders n x0 x1 x2 = k ∧ (RepList 82 RepCTree) (Lanius.Mini.wildBinders x0 x1 x2) w
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepCTree x0 v0 → RepNat x1 v1 → (RepList 143 RepTy) x2 v2 → k < b → Pre_wild_binders n x0 x1 x2 b →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_wild_binders n x0 x1 x2 = k ∧ (RepList 83 RepCTree) (Lanius.Mini.wildBinders x0 x1 x2) w
 
 abbrev BStmt_wild_tail (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CTree} {x1 : List Lanius.Mini.Ty} {v0 v1 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepCTree x0 v0 → (RepList 141 RepTy) x1 v1 → k < b → Pre_wild_tail n x0 x1 b →
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepCTree x0 v0 → (RepList 143 RepTy) x1 v1 → k < b → Pre_wild_tail n x0 x1 b →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_wild_tail n x0 x1 = k ∧ RepCTree (Lanius.Mini.wildTail x0 x1) w
 
 abbrev BStmt_wild_arm_for (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

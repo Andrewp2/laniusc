@@ -20,7 +20,7 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_close_funcs (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Tables} {x2 : List Lanius.Mini.MFunc} {v0 v1 v2 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepTables x1 v1 → (RepList 168 RepMFunc) x2 v2 → k < b → Pre_close_funcs n x0 x1 x2 b →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_close_funcs n x0 x1 x2 = k ∧ (RepOption 202 (RepList 5 RepSrcFunc)) (Lanius.Mini.closeFuncs x0 x1 x2) w
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepTables x1 v1 → (RepList 169 RepMFunc) x2 v2 → k < b → Pre_close_funcs n x0 x1 x2 b →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_close_funcs n x0 x1 x2 = k ∧ (RepOption 203 (RepList 5 RepSrcFunc)) (Lanius.Mini.closeFuncs x0 x1 x2) w
 
 end Lanius.Faithful.SelfBudget

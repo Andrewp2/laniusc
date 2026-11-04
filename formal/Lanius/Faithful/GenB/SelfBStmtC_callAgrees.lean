@@ -20,12 +20,12 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_fact_value (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Fact} {x1 : Nat} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 181 RepFact) x0 v0 → RepNat x1 v1 →
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 182 RepFact) x0 v0 → RepNat x1 v1 →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ RepExpr (Lanius.Mini.factValue x0 x1) w
 
 abbrev BStmt_Expr_subst (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Expr} {x1 : List Lanius.Mini.Fact} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepExpr x0 v0 → (RepList 181 RepFact) x1 v1 →
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepExpr x0 v0 → (RepList 182 RepFact) x1 v1 →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_Expr_subst n x0 x1 = k ∧ RepExpr (Lanius.Mini.Expr.subst x0 x1) w
 
 abbrev BStmt_Expr_mentions (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -40,12 +40,12 @@ abbrev BStmt_Expr_is_atom (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : P
 
 abbrev BStmt_call_agrees (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {x2 : Nat} {x3 : List Lanius.Mini.Expr} {x4 : Lanius.Mini.Stmt} {v0 v1 v2 v3 v4 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → RepNat x0 v0 → RepNat x1 v1 → RepNat x2 v2 → (RepList 92 RepExpr) x3 v3 → RepStmt x4 v4 → k < b → Pre_call_agrees n x0 x1 x2 x3 x4 b →
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → RepNat x0 v0 → RepNat x1 v1 → RepNat x2 v2 → (RepList 93 RepExpr) x3 v3 → RepStmt x4 v4 → k < b → Pre_call_agrees n x0 x1 x2 x3 x4 b →
     qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.callAgrees x0 x1 x2 x3 x4) w
 
 abbrev BStmt_ret_agrees (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Expr} {x1 : Lanius.Mini.Stmt} {v0 v1 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 92 RepExpr) x0 v0 → RepStmt x1 v1 → k < b → Pre_ret_agrees n x0 x1 b →
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 93 RepExpr) x0 v0 → RepStmt x1 v1 → k < b → Pre_ret_agrees n x0 x1 b →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.retAgrees x0 x1) w
 
 abbrev BStmt_alloc_agrees (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -80,7 +80,7 @@ abbrev BStmt_divide_agrees (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : 
 
 abbrev BStmt_sys_agrees (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Syscall} {x1 : Nat} {x2 : List Lanius.Mini.Expr} {x3 : Lanius.Mini.Stmt} {v0 v1 v2 v3 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepSyscall x0 v0 → RepNat x1 v1 → (RepList 92 RepExpr) x2 v2 → RepStmt x3 v3 → k < b → Pre_sys_agrees n x0 x1 x2 x3 b →
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepSyscall x0 v0 → RepNat x1 v1 → (RepList 93 RepExpr) x2 v2 → RepStmt x3 v3 → k < b → Pre_sys_agrees n x0 x1 x2 x3 b →
     qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.sysAgrees x0 x1 x2 x3) w
 
 abbrev BStmt_frame_agrees (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

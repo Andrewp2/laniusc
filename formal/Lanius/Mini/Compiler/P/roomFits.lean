@@ -16,12 +16,15 @@ def roomFits (room : Option Nat) : Bool :=
   | none => false
   | some r => true
 
-/-- A function returns at least one value, and its results fit in its locals. -/
+/-- A function returns at least one value, and its results fit in its locals. The room check comes first: a body that fits has at most as many temporaries as its weight, so its slot count is counted only when it is small. -/
 def compileFunc (arities : List Arity) (func : Func) : Option Code :=
-  let slots : Nat := func.locals + Stmt.temps func.body
-  if decide (func.params ≤ func.locals) && decide (0 < func.results) && decide (func.results ≤ func.locals) && Stmt.within func.body func.locals arities func.results && decide (slots ≤ frameLimit) && roomFits (stmtRoom imageLimit func.body) then
-    let init : List Instr := Instr.imm 0 :: zeroLocals func.params (func.locals - func.params)
-    some ({ slots := slots, instrs := init ++ compileStmt func.locals (codeSize init) 0 0 func.body } : Code)
+  if roomFits (stmtRoom imageLimit func.body) then
+    let slots : Nat := func.locals + Stmt.temps func.body
+    if decide (func.params ≤ func.locals) && decide (0 < func.results) && decide (func.results ≤ func.locals) && Stmt.within func.body func.locals arities func.results && decide (slots ≤ frameLimit) then
+      let init : List Instr := Instr.imm 0 :: zeroLocals func.params (func.locals - func.params)
+      some ({ slots := slots, instrs := init ++ compileStmt func.locals (codeSize init) 0 0 func.body } : Code)
+    else
+      none
   else
     none
 

@@ -92,6 +92,10 @@ theorem qeff_mono (le : QCallsLe call call') :
     simp only [qeff] at h ⊢
     exact qthen_mono (fun _ hx => qeff_mono le hx) (fun _ _ hx => qeff_mono le hx) h
   | _, .eLen _, _, h | _, .eStr _ _, _, h => by simp [qeff] at h
+  | _, .eBorrow _ _, _, h => by simp [qeff] at h
+  | _, .eDeref _ _, _, h => by simp [qeff] at h
+  | _, .eField _ _, _, h => by simp [qeff] at h
+  | _, .eAt _ _, _, h => by simp [qeff] at h
 
 theorem qeffs_mono (le : QCallsLe call call') :
     ∀ {env : Env} {es : List SrcEff} {vs : List Value × Nat}, qeffs call env es = some vs →
@@ -229,6 +233,8 @@ theorem qstmt_mono (le : QCallsLe call call') {fuel fuel' : Nat} (fle : fuel ≤
     exact qthen_mono (fun _ hx => qeff_mono le hx) (fun _ _ hx => hx) h
   | setIndexEval => intro env d h; simp [qstmt] at h
   | setFieldEval => intro env d h; simp [qstmt] at h
+  | setPlace => intro env d h; simp [qstmt] at h
+  | setPlaceOp => intro env d h; simp [qstmt] at h
   | returnUnit => exact fun h => h
   | «assert» condition =>
     intro env d h

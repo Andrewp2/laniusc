@@ -20,12 +20,12 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_e_index_closed (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Option Lanius.Mini.SrcEff} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepNat x0 v0 → (RepOption 233 RepSrcEff) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_e_index_closed n x0 x1 = k ∧ (RepOption 233 RepSrcEff) (Lanius.Mini.eIndexClosed x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepNat x0 v0 → (RepOption 234 RepSrcEff) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_e_index_closed n x0 x1 = k ∧ (RepOption 234 RepSrcEff) (Lanius.Mini.eIndexClosed x0 x1) w
 
 abbrev BStmt_e_array_slice_closed (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.SrcType} {x1 : Nat} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 159 RepSrcType) x0 v0 → RepNat x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 233 RepSrcEff) (Lanius.Mini.eArraySliceClosed x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 160 RepSrcType) x0 v0 → RepNat x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 234 RepSrcEff) (Lanius.Mini.eArraySliceClosed x0 x1) w
 
 end Lanius.Faithful.SelfBudget

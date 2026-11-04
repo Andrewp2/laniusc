@@ -785,11 +785,16 @@ pub fn room_fits(room: core::option::Option<usize>) -> bool {
 }
 
 // A function returns at least one value, and its results fit in its locals.
+// The room check comes first: a body that fits has at most as many temporaries
+// as its weight, so its slot count is counted only when it is small.
 pub fn compile_func(arities: List<Arity>, func: Func) -> core::option::Option<Code> {
-    let slots: usize = plus(func.locals, func.body.temps());
-    if (func.locals >= func.params && func.results > 0 && func.locals >= func.results && func.body.within(func.locals, arities, func.results) && frame_limit() >= slots && room_fits(stmt_room(image_limit(), func.body))) {
-        let init: List<Instr> = cons(Imm(0), zero_locals(func.params, minus(func.locals, func.params)));
-        return Some(Code { slots: slots, instrs: concat(init, compile_stmt(func.locals, code_size(init), 0, 0, func.body)) });
+    if (room_fits(stmt_room(image_limit(), func.body))) {
+        let slots: usize = plus(func.locals, func.body.temps());
+        if (func.locals >= func.params && func.results > 0 && func.locals >= func.results && func.body.within(func.locals, arities, func.results) && frame_limit() >= slots) {
+            let init: List<Instr> = cons(Imm(0), zero_locals(func.params, minus(func.locals, func.params)));
+            return Some(Code { slots: slots, instrs: concat(init, compile_stmt(func.locals, code_size(init), 0, 0, func.body)) });
+        }
+        return None;
     }
     return None;
 }
@@ -1870,6 +1875,11 @@ pub struct SrcArm {
 // Division's quotient or remainder, truncating as Core does.
 pub enum SrcDivOp { Quotient, Remainder, }
 
+// The operator of a compound assignment through a place: Core's assignment
+// operators add, subtract, multiply, bitAnd, bitOr, bitXor, shiftLeft and
+// shiftRight (F5).
+pub enum SrcAssignOp { AAdd, ASub, AMul, AAnd, AOr, AXor, AShl, AShr, }
+
 // An expression that may call functions, evaluated in Core's order. The
 // ones without calls are SrcExpr, whose proofs go by induction; this type
 // nests through List, so its proofs go by Core's fuel instead.
@@ -1908,6 +1918,16 @@ pub enum SrcEff {
     // a string literal: its bytes are the program's statics from offset on
     // (placed by the front end, checked by eval_str), a str
     EStr(usize, List<usize>),
+    // &place, of the place's type: Core's borrow of the place
+    // (SrcEff.toPlace: a local, a field or element of a place, else the
+    // place a reference names). F5: nothing accepts it yet.
+    EBorrow(SrcType, Box<SrcEff>),
+    // *reference, of the referent's type: Core's dereference
+    EDeref(SrcType, Box<SrcEff>),
+    // base.field of any struct value (Core's field of a value)
+    EField(Box<SrcEff>, usize),
+    // base[index] of any array value (Core's index of a value)
+    EAt(Box<SrcEff>, Box<SrcEff>),
 }
 
 pub enum SrcStmt {
@@ -1986,6 +2006,11 @@ pub enum SrcStmt {
     // to whole words, into a fresh heap block, which pointer addresses; the
     // verified compiler stores them there as words.
     LetStr(usize, List<usize>, Box<SrcStmt>),
+    // place = value, place op= value: Core's assignment to the place
+    // (SrcEff.toPlace), the compound one reading the old value before value
+    // (F5: nothing accepts them yet)
+    SetPlace(SrcEff, SrcEff),
+    SetPlaceOp(SrcAssignOp, SrcEff, SrcEff),
 }
 
 pub struct SrcParam {
@@ -4641,6 +4666,10 @@ impl SrcEff {
             ELet(id, ty, value, rt, body) -> cons(ty, concat(unbox(value).types(), unbox(body).types())),
             ELen(slice) -> empty(),
             EStr(offset, chars) -> empty(),
+            EBorrow(bty, bplace) -> unbox(bplace).types(),
+            EDeref(dty, dref) -> unbox(dref).types(),
+            EField(fbase, fidx) -> unbox(fbase).types(),
+            EAt(abase, aindex) -> concat(unbox(abase).types(), unbox(aindex).types()),
         };
     }
 }
@@ -5688,6 +5717,10 @@ impl SrcEff {
             ELet(id, ty, value, rt, body) -> eval_let_in(slot, ty, rt, unbox(value).eval(sigs, decls, scope, slot), eval_let_body(sigs, decls, arm_scope(single(id), single(ty), slot, scope), match_dst(slot, ty, rt), unbox(body))),
             ELen(slice) -> eval_len(scope, slice, slot),
             EStr(offset, chars) -> eval_str(decls, offset, chars, slot),
+            EBorrow(bty, bplace) -> None,
+            EDeref(dty, dref) -> None,
+            EField(fbase, fidx) -> None,
+            EAt(abase, aindex) -> None,
         };
     }
 }
@@ -6111,6 +6144,10 @@ pub fn arg_bytes(scope: List<Binding>, arg: SrcEff) -> usize {
         ELet(lid, lty, value, rt, body) -> 0,
         ELen(slice) -> 0,
         EStr(offset, chars) -> 0,
+        EBorrow(bty, bplace) -> 0,
+        EDeref(dty, dref) -> 0,
+        EField(fbase, fidx) -> 0,
+        EAt(abase, aindex) -> 0,
     };
 }
 
@@ -6171,6 +6208,10 @@ pub fn array_arg(scope: List<Binding>, arg: SrcEff, ty: SrcType, t: usize, offse
         ELet(lid, lty, value, rt, body) -> None,
         ELen(slice) -> None,
         EStr(offset, chars) -> None,
+        EBorrow(bty, bplace) -> None,
+        EDeref(dty, dref) -> None,
+        EField(fbase, fidx) -> None,
+        EAt(abase, aindex) -> None,
     };
 }
 
@@ -6238,6 +6279,10 @@ impl SrcEff {
             ELet(id, ty, value, rt, body) -> false,
             ELen(slice) -> false,
             EStr(offset, chars) -> false,
+            EBorrow(bty, bplace) -> false,
+            EDeref(dty, dref) -> false,
+            EField(fbase, fidx) -> false,
+            EAt(abase, aindex) -> false,
         };
     }
 
@@ -6272,6 +6317,10 @@ impl SrcEff {
             ELet(id, ty, value, rt, body) -> false,
             ELen(slice) -> false,
             EStr(offset, chars) -> false,
+            EBorrow(bty, bplace) -> false,
+            EDeref(dty, dref) -> false,
+            EField(fbase, fidx) -> false,
+            EAt(abase, aindex) -> false,
         };
     }
 
@@ -6295,6 +6344,10 @@ impl SrcEff {
             ELet(id, ty, value, rt, body) -> None,
             ELen(slice) -> None,
             EStr(offset, chars) -> None,
+            EBorrow(bty, bplace) -> None,
+            EDeref(dty, dref) -> None,
+            EField(fbase, fidx) -> None,
+            EAt(abase, aindex) -> None,
         };
     }
 }
@@ -6348,6 +6401,8 @@ impl SrcStmt {
             Unreachable(id, ty) -> lower_unreachable(ty.same(ret), next),
             LetView(id, length, fields, pointer, body) -> guarded(next, guard_all(scope, fields), lower_view(next, length, lower_literal(scope, SrcType::Array(boxed(I32), length), fields), unbox(body).lower(sigs, decls, ret, cons(Binding { id: pointer, slot: plus(next, length), ty: Ptr }, cons(Binding { id: id, slot: next, ty: View(length) }, scope)), plus(plus(next, length), 1)))),
             LetStr(pointer, chars, body) -> lower_str(next, chars, unbox(body).lower(sigs, decls, ret, cons(Binding { id: pointer, slot: next, ty: Ptr }, scope), plus(next, 1))),
+            SetPlace(aplace, avalue) -> None,
+            SetPlaceOp(aop, aplace, avalue) -> None,
         };
     }
 
@@ -6391,6 +6446,8 @@ impl SrcStmt {
             Unreachable(id, ty) -> false,
             LetView(id, length, fields, pointer, body) -> unbox(body).breaks_out(),
             LetStr(pointer, chars, body) -> unbox(body).breaks_out(),
+            SetPlace(aplace, avalue) -> false,
+            SetPlaceOp(aop, aplace, avalue) -> false,
         };
     }
 
@@ -6433,6 +6490,8 @@ impl SrcStmt {
             Unreachable(id, ty) -> 1,
             LetView(id, length, fields, pointer, body) -> plus(unbox(body).depth(), plus(length, 1)),
             LetStr(pointer, chars, body) -> plus(unbox(body).depth(), 1),
+            SetPlace(aplace, avalue) -> 0,
+            SetPlaceOp(aop, aplace, avalue) -> 0,
         };
     }
 }
@@ -6507,10 +6566,20 @@ pub fn decl_bytes(uses: List<usize>, id: usize, ty: SrcType) -> usize {
     return array_bytes_of(ty);
 }
 
-pub fn params_array_bytes(params: List<SrcParam>, uses: List<usize>) -> usize {
+// The room left of room after each parameter's block bytes are taken out,
+// None as soon as one does not fit (as room_after does for code).
+pub fn params_room(room: usize, params: List<SrcParam>, uses: List<usize>) -> core::option::Option<usize> {
     return match (params) {
-        Nil -> 0,
-        Cons(p, rest) -> plus(decl_bytes(uses, p.id, p.ty), params_array_bytes(unbox(rest), uses)),
+        Nil -> Some(room),
+        Cons(p, rest) -> params_then(spend(room, decl_bytes(uses, p.id, p.ty)), unbox(rest), uses),
+    };
+}
+
+// extract: inline
+fn params_then(proom: core::option::Option<usize>, pparams: List<SrcParam>, puses: List<usize>) -> core::option::Option<usize> {
+    return match (proom) {
+        None -> None,
+        Some(pr) -> params_room(pr, pparams, puses),
     };
 }
 
@@ -6536,6 +6605,10 @@ impl SrcEff {
             ELet(id, ty, value, rt, body) -> concat(unbox(value).slice_uses(), unbox(body).slice_uses()),
             ELen(slice) -> empty(),
             EStr(offset, chars) -> empty(),
+            EBorrow(bty, bplace) -> unbox(bplace).slice_uses(),
+            EDeref(dty, dref) -> unbox(dref).slice_uses(),
+            EField(fbase, fidx) -> unbox(fbase).slice_uses(),
+            EAt(abase, aindex) -> concat(unbox(abase).slice_uses(), unbox(aindex).slice_uses()),
         };
     }
 
@@ -6560,6 +6633,10 @@ impl SrcEff {
             ELet(id, ty, value, rt, body) -> max_of(unbox(value).callee_need(needs), unbox(body).callee_need(needs)),
             ELen(slice) -> 0,
             EStr(offset, chars) -> 0,
+            EBorrow(bty, bplace) -> unbox(bplace).callee_need(needs),
+            EDeref(dty, dref) -> unbox(dref).callee_need(needs),
+            EField(fbase, fidx) -> unbox(fbase).callee_need(needs),
+            EAt(abase, aindex) -> max_of(unbox(abase).callee_need(needs), unbox(aindex).callee_need(needs)),
         };
     }
 }
@@ -6619,48 +6696,8 @@ impl SrcStmt {
             Unreachable(id, ty) -> empty(),
             LetView(id, length, fields, pointer, body) -> unbox(body).slice_uses(),
             LetStr(pointer, chars, body) -> unbox(body).slice_uses(),
-        };
-    }
-
-    // The block bytes of the statement's declarations (decl_bytes).
-    pub fn array_bytes(self, uses: List<usize>) -> usize {
-        return match (self) {
-            Nop -> 0,
-            Let(id, ty, value, body) -> plus(decl_bytes(uses, id, ty), unbox(body).array_bytes(uses)),
-            LetStruct(id, ty, fields, body) -> plus(decl_bytes(uses, id, ty), unbox(body).array_bytes(uses)),
-            LetCall(id, ty, callee, args, body) -> plus(decl_bytes(uses, id, ty), unbox(body).array_bytes(uses)),
-            LetEnum(id, ty, variant, payload, body) -> plus(decl_bytes(uses, id, ty), unbox(body).array_bytes(uses)),
-            LetMatch(id, ty, scrutinee, enum_id, arms, body) -> plus(decl_bytes(uses, id, ty), unbox(body).array_bytes(uses)),
-            Set(id, value) -> 0,
-            SetField(id, index, value) -> 0,
-            SetCall(id, callee, args) -> 0,
-            Then(first, second) -> plus(unbox(first).array_bytes(uses), unbox(second).array_bytes(uses)),
-            If(condition, then_branch, else_branch) -> plus(unbox(then_branch).array_bytes(uses), unbox(else_branch).array_bytes(uses)),
-            While(condition, body) -> unbox(body).array_bytes(uses),
-            Return(value) -> 0,
-            LetAlloc(id, size, shift, body) -> unbox(body).array_bytes(uses),
-            LetLoad(id, pointer, offset, body) -> unbox(body).array_bytes(uses),
-            SetByte(pointer, offset, value) -> 0,
-            Free(pointer, size, shift) -> 0,
-            LetSlice(id, element, pointer, length, body) -> unbox(body).array_bytes(uses),
-            LetIndex(id, ty, slice, index, body) -> plus(decl_bytes(uses, id, ty), unbox(body).array_bytes(uses)),
-            SetIndex(slice, index, value) -> 0,
-            LetEval(id, ty, value, body) -> plus(decl_bytes(uses, id, ty), unbox(body).array_bytes(uses)),
-            SetEval(id, value) -> 0,
-            IfEval(condition, then_branch, else_branch) -> plus(unbox(then_branch).array_bytes(uses), unbox(else_branch).array_bytes(uses)),
-            WhileEval(condition, body) -> unbox(body).array_bytes(uses),
-            ReturnEval(value) -> 0,
-            Discard(value) -> 0,
-            SetIndexEval(slice, index, value) -> 0,
-            SetFieldEval(id, field, value) -> 0,
-            ReturnUnit -> 0,
-            Assert(condition) -> 0,
-            Break -> 0,
-            Continue -> 0,
-            MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> plus(unbox(body).array_bytes(uses), unbox(rest).array_bytes(uses)),
-            Unreachable(id, ty) -> 0,
-            LetView(id, length, fields, pointer, body) -> unbox(body).array_bytes(uses),
-            LetStr(pointer, chars, body) -> unbox(body).array_bytes(uses),
+            SetPlace(aplace, avalue) -> concat(aplace.slice_uses(), avalue.slice_uses()),
+            SetPlaceOp(aop, aplace, avalue) -> concat(aplace.slice_uses(), avalue.slice_uses()),
         };
     }
 
@@ -6703,26 +6740,133 @@ impl SrcStmt {
             Unreachable(id, ty) -> 0,
             LetView(id, length, fields, pointer, body) -> unbox(body).callee_need(needs),
             LetStr(pointer, chars, body) -> unbox(body).callee_need(needs),
+            SetPlace(aplace, avalue) -> max_of(aplace.callee_need(needs), avalue.callee_need(needs)),
+            SetPlaceOp(aop, aplace, avalue) -> max_of(aplace.callee_need(needs), avalue.callee_need(needs)),
         };
     }
+}
+
+// The room left of room after each declaration's block bytes
+// (decl_bytes) are taken out, None as soon as one does not fit: every let
+// of the body, both branches of an if and every arm.
+pub fn block_room(room: usize, uses: List<usize>, s: SrcStmt) -> core::option::Option<usize> {
+    return match (s) {
+        Nop -> Some(room),
+        Let(id, ty, value, body) -> block_then(spend(room, decl_bytes(uses, id, ty)), uses, unbox(body)),
+        LetStruct(id, ty, fields, body) -> block_then(spend(room, decl_bytes(uses, id, ty)), uses, unbox(body)),
+        LetCall(id, ty, callee, args, body) -> block_then(spend(room, decl_bytes(uses, id, ty)), uses, unbox(body)),
+        LetEnum(id, ty, variant, payload, body) -> block_then(spend(room, decl_bytes(uses, id, ty)), uses, unbox(body)),
+        LetMatch(id, ty, scrutinee, enum_id, arms, body) -> block_then(spend(room, decl_bytes(uses, id, ty)), uses, unbox(body)),
+        Set(id, value) -> Some(room),
+        SetField(id, index, value) -> Some(room),
+        SetCall(id, callee, args) -> Some(room),
+        Then(first, second) -> block_then(block_room(room, uses, unbox(first)), uses, unbox(second)),
+        If(condition, then_branch, else_branch) -> block_then(block_room(room, uses, unbox(then_branch)), uses, unbox(else_branch)),
+        While(condition, body) -> block_room(room, uses, unbox(body)),
+        Return(value) -> Some(room),
+        LetAlloc(id, size, shift, body) -> block_room(room, uses, unbox(body)),
+        LetLoad(id, pointer, offset, body) -> block_room(room, uses, unbox(body)),
+        SetByte(pointer, offset, value) -> Some(room),
+        Free(pointer, size, shift) -> Some(room),
+        LetSlice(id, element, pointer, length, body) -> block_room(room, uses, unbox(body)),
+        LetIndex(id, ty, slice, index, body) -> block_then(spend(room, decl_bytes(uses, id, ty)), uses, unbox(body)),
+        SetIndex(slice, index, value) -> Some(room),
+        LetEval(id, ty, value, body) -> block_then(spend(room, decl_bytes(uses, id, ty)), uses, unbox(body)),
+        SetEval(id, value) -> Some(room),
+        IfEval(condition, then_branch, else_branch) -> block_then(block_room(room, uses, unbox(then_branch)), uses, unbox(else_branch)),
+        WhileEval(condition, body) -> block_room(room, uses, unbox(body)),
+        ReturnEval(value) -> Some(room),
+        Discard(value) -> Some(room),
+        SetIndexEval(slice, index, value) -> Some(room),
+        SetFieldEval(id, field, value) -> Some(room),
+        ReturnUnit -> Some(room),
+        Assert(condition) -> Some(room),
+        Break -> Some(room),
+        Continue -> Some(room),
+        MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> block_then(block_room(room, uses, unbox(body)), uses, unbox(rest)),
+        Unreachable(id, ty) -> Some(room),
+        LetView(id, length, fields, pointer, body) -> block_room(room, uses, unbox(body)),
+        LetStr(pointer, chars, body) -> block_room(room, uses, unbox(body)),
+        SetPlace(aplace, avalue) -> Some(room),
+        SetPlaceOp(aop, aplace, avalue) -> Some(room),
+    };
+}
+
+// extract: inline
+fn block_then(broom: core::option::Option<usize>, buses: List<usize>, bs: SrcStmt) -> core::option::Option<usize> {
+    return match (broom) {
+        None -> None,
+        Some(br) -> block_room(br, buses, bs),
+    };
+}
+
+// The largest block lower_func takes: below 2^31 bytes.
+pub fn block_limit() -> usize {
+    return 2147483647;
 }
 
 // A function's own block of frame memory, taken at its entry: 8 bytes per
 // element of each array it declares (a parameter or a let) whose id it
 // passes as a slice somewhere. A call passing arrays places them in it
-// (array_call), at most its bytes.
+// (array_call), at most its bytes. The bytes are taken out of block_limit
+// as they add up, so no sum passes 2^64 (F14); a block over the limit is
+// 2^31, which lower_func rejects, as it rejects the sum itself.
 pub fn frame_block(func: SrcFunc) -> usize {
     let uses: List<usize> = func.body.slice_uses();
-    return plus(params_array_bytes(func.params, uses), func.body.array_bytes(uses));
+    return match (params_room(block_limit(), func.params, uses)) {
+        None -> 2147483648,
+        Some(room) -> block_left(block_room(room, uses, func.body)),
+    };
+}
+
+// extract: inline
+fn block_left(left: core::option::Option<usize>) -> usize {
+    return match (left) {
+        None -> 2147483648,
+        Some(l) -> minus(block_limit(), l),
+    };
+}
+
+// The most frame memory a function may need: more than any binary has
+// (elf_fits: below 2^40 bytes). lower_func rejects a function whose need
+// reaches it.
+pub fn need_limit() -> usize {
+    return 1099511627776;
+}
+
+// A need saturated at need_limit: once a round reaches the limit it stays
+// there (so the needs it stops at reach it whenever a round did), and no sum
+// passes 2^64 (F14): a block is at most 2^31 and a callee's need at most the
+// limit.
+pub fn need_capped(old: usize, next: usize) -> usize {
+    if (old >= need_limit()) {
+        return need_limit();
+    }
+    if (next >= need_limit()) {
+        return need_limit();
+    }
+    return next;
+}
+
+pub fn rest_needs(needs: List<usize>) -> List<usize> {
+    return match (needs) {
+        Nil -> empty(),
+        Cons(n, rest) -> unbox(rest),
+    };
 }
 
 // One round of needs: each function's block and the largest need, by
-// prev, of a function it calls.
-pub fn need_round(funcs: List<SrcFunc>, prev: List<usize>) -> List<usize> {
+// prev, of a function it calls, saturated (need_capped); mine runs
+// alongside funcs: each function's need in prev.
+pub fn need_round_at(funcs: List<SrcFunc>, prev: List<usize>, mine: List<usize>) -> List<usize> {
     return match (funcs) {
         Nil -> empty(),
-        Cons(f, rest) -> cons(plus(frame_block(f), f.body.callee_need(prev)), need_round(unbox(rest), prev)),
+        Cons(f, rest) -> cons(need_capped(get_or(mine, 0, 0), plus(frame_block(f), f.body.callee_need(prev))), need_round_at(unbox(rest), prev, rest_needs(mine))),
     };
+}
+
+pub fn need_round(funcs: List<SrcFunc>, prev: List<usize>) -> List<usize> {
+    return need_round_at(funcs, prev, prev);
 }
 
 pub fn same_needs(a: List<usize>, b: List<usize>) -> bool {
@@ -6757,13 +6901,6 @@ pub fn needs_after(funcs: List<SrcFunc>, prev: List<usize>, rounds: usize) -> Li
 // its callees' (TRUSTED_BASE "Frame room").
 pub fn func_needs(funcs: List<SrcFunc>) -> List<usize> {
     return needs_after(funcs, empty(), length(funcs));
-}
-
-pub fn rest_needs(needs: List<usize>) -> List<usize> {
-    return match (needs) {
-        Nil -> empty(),
-        Cons(n, rest) -> unbox(rest),
-    };
 }
 
 // The signatures with these needs (0 past their end).
@@ -6863,7 +7000,7 @@ pub fn with_frame(slot: usize, block: usize, body: core::option::Option<Stmt>) -
 pub fn lower_func(sigs: List<Sig>, own: Sig, decls: SrcDecls, func: SrcFunc) -> core::option::Option<Func> {
     let count: usize = params_size(func.params);
     let block: usize = frame_block(func);
-    if ((func.ret.size() > 0) && params_valid(func.params) && !func.body.breaks_out() && (own.need >= block) && (2147483648 > block)) {
+    if ((func.ret.size() > 0) && params_valid(func.params) && !func.body.breaks_out() && (own.need >= block) && (2147483648 > block) && (need_limit() > own.need)) {
         return lower_body(count, func.ret.size(), func.body.depth(), unit_tail(func.ret, with_frame(count, block, func.body.lower(with_budget(sigs, minus(own.need, block), block), decls, func.ret, param_scope(func.params, 0, empty()), count))));
     }
     return None;
@@ -7048,6 +7185,8 @@ impl SrcStmt {
             Unreachable(id, ty) -> ty.declare(decls),
             LetView(id, length, fields, pointer, body) -> unbox(body).declare(decls),
             LetStr(pointer, chars, body) -> unbox(body).declare(decls),
+            SetPlace(aplace, avalue) -> declare_types(concat(aplace.types(), avalue.types()), decls),
+            SetPlaceOp(aop, aplace, avalue) -> declare_types(concat(aplace.types(), avalue.types()), decls),
         };
     }
 
@@ -7091,6 +7230,8 @@ impl SrcStmt {
             Unreachable(id, ty) -> true,
             LetView(id, length, fields, pointer, body) -> unbox(body).returns(),
             LetStr(pointer, chars, body) -> unbox(body).returns(),
+            SetPlace(aplace, avalue) -> false,
+            SetPlaceOp(aop, aplace, avalue) -> false,
         };
     }
 }

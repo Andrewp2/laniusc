@@ -21,16 +21,16 @@ open Lanius.Faithful.Budget
 abbrev BStmt_float_op (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.BinOp} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepBinOp x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 253 RepFArith) (Lanius.Mini.floatOp x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 254 RepFArith) (Lanius.Mini.floatOp x0) w
 
 abbrev BStmt_arith_sint (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.BinOp} {x1 : Lanius.Mini.Typed} {x2 : Lanius.Mini.Typed} {x3 : Option Lanius.Mini.UintTy} {v0 v1 v2 v3 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepBinOp x0 v0 → RepTyped x1 v1 → RepTyped x2 v2 → (RepOption 207 RepUintTy) x3 v3 →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_arith_sint n x0 x1 x2 x3 = k ∧ (RepOption 155 RepTyped) (Lanius.Mini.arithSint x0 x1 x2 x3) w
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepBinOp x0 v0 → RepTyped x1 v1 → RepTyped x2 v2 → (RepOption 208 RepUintTy) x3 v3 →
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_arith_sint n x0 x1 x2 x3 = k ∧ (RepOption 156 RepTyped) (Lanius.Mini.arithSint x0 x1 x2 x3) w
 
 abbrev BStmt_arith_uint (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.BinOp} {x1 : Lanius.Mini.Typed} {x2 : Lanius.Mini.Typed} {x3 : Option Lanius.Mini.UintTy} {v0 v1 v2 v3 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepBinOp x0 v0 → RepTyped x1 v1 → RepTyped x2 v2 → (RepOption 207 RepUintTy) x3 v3 →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_arith_uint n x0 x1 x2 x3 = k ∧ (RepOption 155 RepTyped) (Lanius.Mini.arithUint x0 x1 x2 x3) w
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepBinOp x0 v0 → RepTyped x1 v1 → RepTyped x2 v2 → (RepOption 208 RepUintTy) x3 v3 →
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_arith_uint n x0 x1 x2 x3 = k ∧ (RepOption 156 RepTyped) (Lanius.Mini.arithUint x0 x1 x2 x3) w
 
 end Lanius.Faithful.SelfBudget

@@ -40,7 +40,7 @@ abbrev BStmt_set_field_eff (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : 
 
 abbrev BStmt_set_index_pure (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.MEff} {x2 : Lanius.Mini.MEff} {x3 : Option Lanius.Mini.SrcExpr} {v0 v1 v2 v3 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepMEff x1 v1 → RepMEff x2 v2 → (RepOption 234 RepSrcExpr) x3 v3 →
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepMEff x1 v1 → RepMEff x2 v2 → (RepOption 235 RepSrcExpr) x3 v3 →
     qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ 0 = k ∧ RepMStmt (Lanius.Mini.setIndexPure x0 x1 x2 x3) w
 
 abbrev BStmt_set_index_eff (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

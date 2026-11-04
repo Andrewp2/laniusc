@@ -43,6 +43,10 @@ import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.storeArray
 import all Lanius.Mini.Compiler.P.strStores
 import all Lanius.Mini.Compiler.P.arrayCallSig
+import all Lanius.Mini.Compiler.P.needCapped
+import all Lanius.Mini.Compiler.P.needsAfter
+import all Lanius.Mini.Compiler.P.storeEvalWord
+import all Lanius.Mini.Compiler.P.storeType
 import all Lanius.Mini.Compiler.P.storeWordElement
 import all Lanius.Mini.Compiler.P.wordElement
 import all Lanius.Mini.Compiler.P.wordStride
@@ -78,7 +82,7 @@ public import Lanius.Mini.Compiler.P.storeArray
 public import Lanius.Mini.Compiler.P.strStores
 public import Lanius.Mini.Compiler.P.arrayCallSig
 public import Lanius.Mini.Compiler.P.bindingBytes
-public import Lanius.Mini.Compiler.P.needRound
+public import Lanius.Mini.Compiler.P.needCapped
 public import Lanius.Mini.Compiler.P.needsAfter
 public import Lanius.Mini.Compiler.P.storeWordElement
 public import Lanius.Mini.Compiler.P.wordStride
@@ -492,6 +496,8 @@ theorem breaksOut_noEscape : ∀ (s : SrcStmt), s.breaksOut = false → NoEscape
   | .discard _, _ => NoEscape.expression
   | .setIndexEval _ _ _, _ => NoEscape.expression
   | .setFieldEval _ _ _, _ => NoEscape.expression
+  | .setPlace _ _, _ => NoEscape.expression
+  | .setPlaceOp _ _ _, _ => NoEscape.expression
   | .returnUnit, _ => NoEscape.returnValue
   | .assert _, _ => NoEscape.expression
   | .break, h => by simp [SrcStmt.breaksOut] at h

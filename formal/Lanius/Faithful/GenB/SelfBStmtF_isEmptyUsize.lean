@@ -25,7 +25,7 @@ abbrev BStmt_is_empty_usize (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) :
 
 abbrev BStmt_no_tokens (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Token} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 47 RepToken) x0 v0 →
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 48 RepToken) x0 v0 →
     qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.noTokens x0) w
 
 abbrev BStmt_used_up (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -36,12 +36,12 @@ abbrev BStmt_used_up (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
 abbrev BStmt_whole (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Attached} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepAttached x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 128 RepCTree) (Lanius.Mini.whole x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 129 RepCTree) (Lanius.Mini.whole x0) w
 
 abbrev BStmt_validate_tree (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Rule} {x1 : List Lanius.Mini.Token} {x2 : List Nat} {x3 : List Nat} {v0 v1 v2 v3 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → (RepList 37 RepRule) x0 v0 → (RepList 47 RepToken) x1 v1 → (RepList 25 RepNat) x2 v2 → (RepList 25 RepNat) x3 v3 → k < b → Pre_validate_tree n x0 x1 x2 x3 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_validate_tree n x0 x1 x2 x3 = k ∧ (RepOption 128 RepCTree) (Lanius.Mini.validateTree x0 x1 x2 x3) w
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → (RepList 38 RepRule) x0 v0 → (RepList 48 RepToken) x1 v1 → (RepList 25 RepNat) x2 v2 → (RepList 25 RepNat) x3 v3 → k < b → Pre_validate_tree n x0 x1 x2 x3 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_validate_tree n x0 x1 x2 x3 = k ∧ (RepOption 129 RepCTree) (Lanius.Mini.validateTree x0 x1 x2 x3) w
 
 abbrev BStmt_node_prod (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CTree} {v0 w : Value} {k : Nat},

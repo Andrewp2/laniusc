@@ -21,6 +21,6 @@ open Lanius.Faithful.Budget
 abbrev BStmt_eval_divide_sint (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcDivOp} {x1 : Nat} {x2 : Lanius.Mini.Evaluated} {x3 : Lanius.Mini.Evaluated} {x4 : Lanius.Mini.UintTy} {v0 v1 v2 v3 v4 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → RepSrcDivOp x0 v0 → RepNat x1 v1 → RepEvaluated x2 v2 → RepEvaluated x3 v3 → RepUintTy x4 v4 → k < b → Pre_eval_divide_sint n x0 x1 x2 x3 x4 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_eval_divide_sint n x0 x1 x2 x3 x4 = k ∧ (RepOption 157 RepEvaluated) (Lanius.Mini.evalDivideSint x0 x1 x2 x3 x4) w
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_eval_divide_sint n x0 x1 x2 x3 x4 = k ∧ (RepOption 158 RepEvaluated) (Lanius.Mini.evalDivideSint x0 x1 x2 x3 x4) w
 
 end Lanius.Faithful.SelfBudget

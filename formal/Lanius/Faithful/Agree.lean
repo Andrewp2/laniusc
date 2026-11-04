@@ -335,7 +335,7 @@ theorem mstmt_agree (call : Calls) (fuel : Nat) :
     subst he
     exact Agree.refl _ _
   | letMatch | setField | setCall | letAlloc | letView | letStr | letLoad | setByte | free | letSlice | letIndex
-  | setIndex | setIndexEval | setFieldEval | matchArm | unreachable =>
+  | setIndex | setIndexEval | setFieldEval | setPlace | setPlaceOp | matchArm | unreachable =>
     intro env o h; simp [mstmt] at h
 
 /-- A `let`'s ending keeps the locals its body did not assign, below the
@@ -533,7 +533,7 @@ theorem mstmt_unwritten (call : Calls) (fuel : Nat) :
     subst he
     rfl
   | letMatch | setField | setCall | letAlloc | letView | letStr | letLoad | setByte | free | letSlice | letIndex
-  | setIndex | setIndexEval | setFieldEval | matchArm | unreachable =>
+  | setIndex | setIndexEval | setFieldEval | setPlace | setPlaceOp | matchArm | unreachable =>
     intro env o h; simp [mstmt] at h
 
 end Lanius.Faithful

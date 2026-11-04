@@ -20,22 +20,22 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_field_tys (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Nat} {x3 : List Lanius.Mini.Ty} {v0 v1 v2 v3 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepDecls x1 v1 → RepNat x2 v2 → (RepList 141 RepTy) x3 v3 → k < b → Pre_field_tys n x0 x1 x2 x3 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_field_tys n x0 x1 x2 x3 = k ∧ (RepOption 212 (RepList 141 RepTy)) (Lanius.Mini.fieldTys x0 x1 x2 x3) w
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepDecls x1 v1 → RepNat x2 v2 → (RepList 143 RepTy) x3 v3 → k < b → Pre_field_tys n x0 x1 x2 x3 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_field_tys n x0 x1 x2 x3 = k ∧ (RepOption 213 (RepList 143 RepTy)) (Lanius.Mini.fieldTys x0 x1 x2 x3) w
 
 abbrev BStmt_cons_tys (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option (List Lanius.Mini.Ty)} {x1 : Option (List (List Lanius.Mini.Ty))} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 212 (RepList 141 RepTy)) x0 v0 → (RepOption 243 (RepList 244 (RepList 141 RepTy))) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_tys n x0 x1 = k ∧ (RepOption 243 (RepList 244 (RepList 141 RepTy))) (Lanius.Mini.consTys x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 213 (RepList 143 RepTy)) x0 v0 → (RepOption 244 (RepList 245 (RepList 143 RepTy))) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_tys n x0 x1 = k ∧ (RepOption 244 (RepList 245 (RepList 143 RepTy))) (Lanius.Mini.consTys x0 x1) w
 
 abbrev BStmt_payload_list (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List (List Lanius.Mini.CTree)} {v0 v1 v2 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 106 (RepList 82 RepCTree)) x2 v2 → k < b → Pre_payload_list n x0 x1 x2 b →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_payload_list n x0 x1 x2 = k ∧ (RepOption 243 (RepList 244 (RepList 141 RepTy))) (Lanius.Mini.payloadList x0 x1 x2) w
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 107 (RepList 83 RepCTree)) x2 v2 → k < b → Pre_payload_list n x0 x1 x2 b →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_payload_list n x0 x1 x2 = k ∧ (RepOption 244 (RepList 245 (RepList 143 RepTy))) (Lanius.Mini.payloadList x0 x1 x2) w
 
 abbrev BStmt_payload_tys (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Nat} {x3 : List Lanius.Mini.Ty} {v0 v1 v2 v3 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepDecls x1 v1 → RepNat x2 v2 → (RepList 141 RepTy) x3 v3 → k < b → Pre_payload_tys n x0 x1 x2 x3 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_payload_tys n x0 x1 x2 x3 = k ∧ (RepOption 243 (RepList 244 (RepList 141 RepTy))) (Lanius.Mini.payloadTys x0 x1 x2 x3) w
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepDecls x1 v1 → RepNat x2 v2 → (RepList 143 RepTy) x3 v3 → k < b → Pre_payload_tys n x0 x1 x2 x3 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_payload_tys n x0 x1 x2 x3 = k ∧ (RepOption 244 (RepList 245 (RepList 143 RepTy))) (Lanius.Mini.payloadTys x0 x1 x2 x3) w
 
 end Lanius.Faithful.SelfBudget

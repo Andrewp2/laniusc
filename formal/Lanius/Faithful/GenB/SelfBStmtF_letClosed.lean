@@ -20,7 +20,7 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_let_closed (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Option Lanius.Mini.SrcType} {x2 : Lanius.Mini.SrcExpr} {x3 : Option Lanius.Mini.SrcStmt} {v0 v1 v2 v3 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → (RepOption 159 RepSrcType) x1 v1 → RepSrcExpr x2 v2 → (RepOption 223 RepSrcStmt) x3 v3 →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_let_closed n x0 x1 x2 x3 = k ∧ (RepOption 223 RepSrcStmt) (Lanius.Mini.letClosed x0 x1 x2 x3) w
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → (RepOption 160 RepSrcType) x1 v1 → RepSrcExpr x2 v2 → (RepOption 224 RepSrcStmt) x3 v3 →
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_let_closed n x0 x1 x2 x3 = k ∧ (RepOption 224 RepSrcStmt) (Lanius.Mini.letClosed x0 x1 x2 x3) w
 
 end Lanius.Faithful.SelfBudget

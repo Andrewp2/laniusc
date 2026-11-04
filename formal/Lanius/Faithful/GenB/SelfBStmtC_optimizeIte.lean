@@ -40,13 +40,13 @@ abbrev BStmt_optimize_loop (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : 
 
 abbrev BStmt_Stmt_optimize (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Stmt} {x1 : List Lanius.Mini.Fact} {v0 v1 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepStmt x0 v0 → (RepList 181 RepFact) x1 v1 → k < b → Pre_Stmt_optimize n x0 x1 b →
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepStmt x0 v0 → (RepList 182 RepFact) x1 v1 → k < b → Pre_Stmt_optimize n x0 x1 b →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_Stmt_optimize n x0 x1 = k ∧ RepStmt (Lanius.Mini.Stmt.optimize x0 x1) w
 
 abbrev BStmt_optimize_funcs (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Func} {v0 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 86 RepFunc) x0 v0 → k < b → Pre_optimize_funcs n x0 b →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_optimize_funcs n x0 = k ∧ (RepList 86 RepFunc) (Lanius.Mini.optimizeFuncs x0) w
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 87 RepFunc) x0 v0 → k < b → Pre_optimize_funcs n x0 b →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_optimize_funcs n x0 = k ∧ (RepList 87 RepFunc) (Lanius.Mini.optimizeFuncs x0) w
 
 abbrev BStmt_optimize_program (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Program} {v0 w : Value} {k b : Nat},

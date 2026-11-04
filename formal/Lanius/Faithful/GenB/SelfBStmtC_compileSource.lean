@@ -41,6 +41,6 @@ abbrev BStmt_pack_word (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
 abbrev BStmt_compile_source (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcProgram} {v0 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepSrcProgram x0 v0 → k < b → Pre_compile_source n x0 b →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_compile_source n x0 = k ∧ (RepOption 51 RepBinary) (Lanius.Mini.compileSource x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_compile_source n x0 = k ∧ (RepOption 52 RepBinary) (Lanius.Mini.compileSource x0) w
 
 end Lanius.Faithful.SelfBudget

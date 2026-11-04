@@ -21,16 +21,16 @@ open Lanius.Faithful.Budget
 abbrev BStmt_eff_calls (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.MEff} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepMEff x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_eff_calls n x0 = k ∧ (RepList 139 RepInst) (Lanius.Mini.effCalls x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_eff_calls n x0 = k ∧ (RepList 141 RepInst) (Lanius.Mini.effCalls x0) w
 
 abbrev BStmt_effs_calls (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.MEff} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 235 RepMEff) x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_effs_calls n x0 = k ∧ (RepList 139 RepInst) (Lanius.Mini.effsCalls x0) w
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 236 RepMEff) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_effs_calls n x0 = k ∧ (RepList 141 RepInst) (Lanius.Mini.effsCalls x0) w
 
 abbrev BStmt_read_inst (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Lanius.Mini.Inst} {v0 v1 v2 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepDecls x1 v1 → RepInst x2 v2 → k < b → Pre_read_inst n x0 x1 x2 b →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_read_inst n x0 x1 x2 = k ∧ (RepOption 203 RepMFunc) (Lanius.Mini.readInst x0 x1 x2) w
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_read_inst n x0 x1 x2 = k ∧ (RepOption 204 RepMFunc) (Lanius.Mini.readInst x0 x1 x2) w
 
 end Lanius.Faithful.SelfBudget

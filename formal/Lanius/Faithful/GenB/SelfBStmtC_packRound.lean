@@ -25,7 +25,7 @@ abbrev BStmt_image_words (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
 
 abbrev BStmt_pack_round (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List UInt8} {x1 : Nat} {v0 v1 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 35 RepU8) x0 v0 → RepNat x1 v1 → k < b → Pre_pack_round n x0 x1 b →
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 36 RepU8) x0 v0 → RepNat x1 v1 → k < b → Pre_pack_round n x0 x1 b →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_pack_round n x0 x1 = k ∧ RepRound (Lanius.Mini.packRound x0 x1) w
 
 abbrev BStmt_round_join (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -35,12 +35,12 @@ abbrev BStmt_round_join (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
 
 abbrev BStmt_pack_rounds (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List UInt8} {x1 : Nat} {v0 v1 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 35 RepU8) x0 v0 → RepNat x1 v1 → k < b → Pre_pack_rounds n x0 x1 b →
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 36 RepU8) x0 v0 → RepNat x1 v1 → k < b → Pre_pack_rounds n x0 x1 b →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_pack_rounds n x0 x1 = k ∧ RepRound (Lanius.Mini.packRounds x0 x1) w
 
 abbrev BStmt_binary_words (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.Binary} {v0 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 51 RepBinary) x0 v0 → k < b → Pre_binary_words n x0 b →
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 52 RepBinary) x0 v0 → k < b → Pre_binary_words n x0 b →
     qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_binary_words n x0 = k ∧ (RepOption 2 (RepList 0 RepI32)) (Lanius.Mini.binaryWords x0) w
 
 abbrev BStmt_compile_words (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

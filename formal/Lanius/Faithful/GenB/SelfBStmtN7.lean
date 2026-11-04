@@ -24,33 +24,33 @@ abbrev BStmt_minus (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev BStmt_cons_of_mini_selfhost_Func (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Func} {x1 : List Lanius.Mini.Func} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepFunc x0 v0 → (RepList 86 RepFunc) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_of_mini_selfhost_Func n x0 x1 = k ∧ (RepList 86 RepFunc) (x0 :: x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepFunc x0 v0 → (RepList 87 RepFunc) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_of_mini_selfhost_Func n x0 x1 = k ∧ (RepList 87 RepFunc) (x0 :: x1) w
 
 abbrev BStmt_cons_of_mini_selfhost_Expr (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Expr} {x1 : List Lanius.Mini.Expr} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepExpr x0 v0 → (RepList 92 RepExpr) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_of_mini_selfhost_Expr n x0 x1 = k ∧ (RepList 92 RepExpr) (x0 :: x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepExpr x0 v0 → (RepList 93 RepExpr) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_of_mini_selfhost_Expr n x0 x1 = k ∧ (RepList 93 RepExpr) (x0 :: x1) w
 
 abbrev BStmt_empty_of_mini_selfhost_Instr (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value} {k : Nat},
     qcall spW prims uc n ix [] = some (w, k) →
-    qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ (RepList 55 RepInstr) (([] : List Lanius.Mini.Instr)) w
+    qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ (RepList 56 RepInstr) (([] : List Lanius.Mini.Instr)) w
 
 abbrev BStmt_empty_of_mini_selfhost_Arity (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value} {k : Nat},
     qcall spW prims uc n ix [] = some (w, k) →
-    qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ (RepList 146 RepArity) (([] : List Lanius.Mini.Arity)) w
+    qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ (RepList 148 RepArity) (([] : List Lanius.Mini.Arity)) w
 
 abbrev BStmt_concat_of_u8 (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List UInt8} {x1 : List UInt8} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 35 RepU8) x0 v0 → (RepList 35 RepU8) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_concat_of_u8 n x0 x1 = k ∧ (RepList 35 RepU8) (x0 ++ x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 36 RepU8) x0 v0 → (RepList 36 RepU8) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_concat_of_u8 n x0 x1 = k ∧ (RepList 36 RepU8) (x0 ++ x1) w
 
 abbrev BStmt_single_of_u8 (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : UInt8} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepU8 x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_single_of_u8 n x0 = k ∧ (RepList 35 RepU8) ([x0]) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_single_of_u8 n x0 = k ∧ (RepList 36 RepU8) ([x0]) w
 
 abbrev BStmt_length_of_mini_selfhost_SrcArm (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcArm} {v0 w : Value} {k b : Nat},
@@ -59,18 +59,18 @@ abbrev BStmt_length_of_mini_selfhost_SrcArm (spW sp : SrcProgram) (prims : Prims
 
 abbrev BStmt_get_of_mini_selfhost_Expr (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Expr} {x1 : Nat} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 92 RepExpr) x0 v0 → RepNat x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 154 RepExpr) (x0[x1]?) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 93 RepExpr) x0 v0 → RepNat x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 155 RepExpr) (x0[x1]?) w
 
 abbrev BStmt_cons_of_mini_selfhost_Token (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Token} {x1 : List Lanius.Mini.Token} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepToken x0 v0 → (RepList 47 RepToken) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_of_mini_selfhost_Token n x0 x1 = k ∧ (RepList 47 RepToken) (x0 :: x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepToken x0 v0 → (RepList 48 RepToken) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_of_mini_selfhost_Token n x0 x1 = k ∧ (RepList 48 RepToken) (x0 :: x1) w
 
 abbrev BStmt_cons_of_mini_selfhost_List_mini_selfhost_CTree (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.CTree} {x1 : List (List Lanius.Mini.CTree)} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 82 RepCTree) x0 v0 → (RepList 106 (RepList 82 RepCTree)) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_of_mini_selfhost_List_mini_selfhost_CTree n x0 x1 = k ∧ (RepList 106 (RepList 82 RepCTree)) (x0 :: x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 83 RepCTree) x0 v0 → (RepList 107 (RepList 83 RepCTree)) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_of_mini_selfhost_List_mini_selfhost_CTree n x0 x1 = k ∧ (RepList 107 (RepList 83 RepCTree)) (x0 :: x1) w
 
 abbrev BStmt_concat_of_mini_selfhost_List_usize (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (List Nat)} {x1 : List (List Nat)} {v0 v1 w : Value} {k : Nat},
@@ -80,7 +80,7 @@ abbrev BStmt_concat_of_mini_selfhost_List_usize (spW sp : SrcProgram) (prims : P
 abbrev BStmt_field_aliases_Decls_of_mini_selfhost_Decls (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Decls} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepDecls x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepList 118 RepAliasDecl) (x0.aliases) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepList 119 RepAliasDecl) (x0.aliases) w
 
 abbrev BStmt_empty_of_mini_selfhost_SrcFunc (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value} {k : Nat},
@@ -94,13 +94,13 @@ abbrev BStmt_cons_of_mini_selfhost_SrcFunc (spW sp : SrcProgram) (prims : Prims)
 
 abbrev BStmt_get_of_mini_selfhost_Ty (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Ty} {x1 : Nat} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 141 RepTy) x0 v0 → RepNat x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 211 RepTy) (x0[x1]?) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 143 RepTy) x0 v0 → RepNat x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 212 RepTy) (x0[x1]?) w
 
 abbrev BStmt_cons_of_mini_selfhost_List_mini_selfhost_SrcType (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcType} {x1 : List (List Lanius.Mini.SrcType)} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 73 RepSrcType) x0 v0 → (RepList 77 (RepList 73 RepSrcType)) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_of_mini_selfhost_List_mini_selfhost_SrcType n x0 x1 = k ∧ (RepList 77 (RepList 73 RepSrcType)) (x0 :: x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 74 RepSrcType) x0 v0 → (RepList 78 (RepList 74 RepSrcType)) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_of_mini_selfhost_List_mini_selfhost_SrcType n x0 x1 = k ∧ (RepList 78 (RepList 74 RepSrcType)) (x0 :: x1) w
 
 abbrev BStmt_empty_of_mini_selfhost_SrcExpr (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value} {k : Nat},
@@ -115,36 +115,36 @@ abbrev BStmt_cons_of_mini_selfhost_SrcExpr (spW sp : SrcProgram) (prims : Prims)
 abbrev BStmt_get_of_mini_selfhost_SrcFunc (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcFunc} {x1 : Nat} {v0 v1 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 5 RepSrcFunc) x0 v0 → RepNat x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 221 RepSrcFunc) (x0[x1]?) w
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 222 RepSrcFunc) (x0[x1]?) w
 
 abbrev BStmt_cons_of_mini_selfhost_Bind (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Bind} {x1 : List Lanius.Mini.Bind} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepBind x0 v0 → (RepList 274 RepBind) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_of_mini_selfhost_Bind n x0 x1 = k ∧ (RepList 274 RepBind) (x0 :: x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepBind x0 v0 → (RepList 275 RepBind) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_of_mini_selfhost_Bind n x0 x1 = k ∧ (RepList 275 RepBind) (x0 :: x1) w
 
 abbrev BStmt_field_args_TraitRef_of_mini_selfhost_TraitRef (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.TraitRef} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepTraitRef x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepList 141 RepTy) (x0.args) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepList 143 RepTy) (x0.args) w
 
 abbrev BStmt_cons_of_bool (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : List Bool} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepBool x0 v0 → (RepList 261 RepBool) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_of_bool n x0 x1 = k ∧ (RepList 261 RepBool) (x0 :: x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepBool x0 v0 → (RepList 262 RepBool) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_of_bool n x0 x1 = k ∧ (RepList 262 RepBool) (x0 :: x1) w
 
 abbrev BStmt_get_of_mini_selfhost_List_mini_selfhost_Ty (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (List Lanius.Mini.Ty)} {x1 : Nat} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 244 (RepList 141 RepTy)) x0 v0 → RepNat x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 212 (RepList 141 RepTy)) (x0[x1]?) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 245 (RepList 143 RepTy)) x0 v0 → RepNat x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 213 (RepList 143 RepTy)) (x0[x1]?) w
 
 abbrev BStmt_get_of_mini_selfhost_List_mini_selfhost_CTree (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (List Lanius.Mini.CTree)} {x1 : Nat} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 106 (RepList 82 RepCTree)) x0 v0 → RepNat x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 81 (RepList 82 RepCTree)) (x0[x1]?) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 107 (RepList 83 RepCTree)) x0 v0 → RepNat x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 82 (RepList 83 RepCTree)) (x0[x1]?) w
 
 abbrev BStmt_field_impls_Decls_of_mini_selfhost_Decls (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Decls} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepDecls x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepList 121 RepImplDecl) (x0.impls) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepList 122 RepImplDecl) (x0.impls) w
 
 end Lanius.Faithful.SelfBudget

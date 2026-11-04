@@ -36,6 +36,6 @@ abbrev BStmt_host_newline_code (spW sp : SrcProgram) (prims : Prims) (ix n : Nat
 abbrev BStmt_eval_host_text (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {x2 : Lanius.Mini.EvaluatedArgs} {v0 v1 v2 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepNat x1 v1 → RepEvaluatedArgs x2 v2 → k < b → Pre_eval_host_text n x0 x1 x2 b →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_eval_host_text n x0 x1 x2 = k ∧ (RepOption 157 RepEvaluated) (Lanius.Mini.evalHostText x0 x1 x2) w
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_eval_host_text n x0 x1 x2 = k ∧ (RepOption 158 RepEvaluated) (Lanius.Mini.evalHostText x0 x1 x2) w
 
 end Lanius.Faithful.SelfBudget

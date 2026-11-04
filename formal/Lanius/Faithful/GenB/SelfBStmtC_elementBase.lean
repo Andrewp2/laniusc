@@ -35,12 +35,12 @@ abbrev BStmt_load_type (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
 
 abbrev BStmt_load_types (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcType} {x1 : Nat} {x2 : Lanius.Mini.Expr} {x3 : Nat} {x4 : Lanius.Mini.Stmt} {v0 v1 v2 v3 v4 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → (RepList 73 RepSrcType) x0 v0 → RepNat x1 v1 → RepExpr x2 v2 → RepNat x3 v3 → RepStmt x4 v4 → k < b → Pre_load_types n x0 x1 x2 x3 x4 b →
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → (RepList 74 RepSrcType) x0 v0 → RepNat x1 v1 → RepExpr x2 v2 → RepNat x3 v3 → RepStmt x4 v4 → k < b → Pre_load_types n x0 x1 x2 x3 x4 b →
     qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_load_types n x0 x1 x2 x3 x4 = k ∧ RepStmt (Lanius.Mini.loadTypes x0 x1 x2 x3 x4) w
 
 abbrev BStmt_load_cases (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Expr} {x2 : Nat} {x3 : Nat} {x4 : List (List Lanius.Mini.SrcType)} {v0 v1 v2 v3 v4 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → RepNat x0 v0 → RepExpr x1 v1 → RepNat x2 v2 → RepNat x3 v3 → (RepList 77 (RepList 73 RepSrcType)) x4 v4 → k < b → Pre_load_cases n x0 x1 x2 x3 x4 b →
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → RepNat x0 v0 → RepExpr x1 v1 → RepNat x2 v2 → RepNat x3 v3 → (RepList 78 (RepList 74 RepSrcType)) x4 v4 → k < b → Pre_load_cases n x0 x1 x2 x3 x4 b →
     qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_load_cases n x0 x1 x2 x3 x4 = k ∧ RepStmt (Lanius.Mini.loadCases x0 x1 x2 x3 x4) w
 
 end Lanius.Faithful.SelfBudget

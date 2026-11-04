@@ -25,27 +25,27 @@ abbrev BStmt_within_layout (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : 
 
 abbrev BStmt_within_layouts (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : List Lanius.Mini.SrcType} {v0 v1 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepNat x0 v0 → (RepList 73 RepSrcType) x1 v1 → k < b → Pre_within_layouts n x0 x1 b →
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepNat x0 v0 → (RepList 74 RepSrcType) x1 v1 → k < b → Pre_within_layouts n x0 x1 b →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.withinLayouts x0 x1) w
 
 abbrev BStmt_within_payloads (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : List (List Lanius.Mini.SrcType)} {v0 v1 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepNat x0 v0 → (RepList 77 (RepList 73 RepSrcType)) x1 v1 → k < b → Pre_within_payloads n x0 x1 b →
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepNat x0 v0 → (RepList 78 (RepList 74 RepSrcType)) x1 v1 → k < b → Pre_within_payloads n x0 x1 b →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.withinPayloads x0 x1) w
 
 abbrev BStmt_store_type (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {x1 : List Lanius.Mini.Expr} {x2 : Nat} {x3 : Lanius.Mini.Expr} {x4 : Nat} {v0 v1 v2 v3 v4 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → RepSrcType x0 v0 → (RepList 92 RepExpr) x1 v1 → RepNat x2 v2 → RepExpr x3 v3 → RepNat x4 v4 → k < b → Pre_store_type n x0 x1 x2 x3 x4 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_store_type n x0 x1 x2 x3 x4 = k ∧ (RepOption 134 RepStmt) (Lanius.Mini.storeType x0 x1 x2 x3 x4) w
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → RepSrcType x0 v0 → (RepList 93 RepExpr) x1 v1 → RepNat x2 v2 → RepExpr x3 v3 → RepNat x4 v4 → k < b → Pre_store_type n x0 x1 x2 x3 x4 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_store_type n x0 x1 x2 x3 x4 = k ∧ (RepOption 136 RepStmt) (Lanius.Mini.storeType x0 x1 x2 x3 x4) w
 
 abbrev BStmt_store_types (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcType} {x1 : List Lanius.Mini.Expr} {x2 : Nat} {x3 : Lanius.Mini.Expr} {x4 : Nat} {v0 v1 v2 v3 v4 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → (RepList 73 RepSrcType) x0 v0 → (RepList 92 RepExpr) x1 v1 → RepNat x2 v2 → RepExpr x3 v3 → RepNat x4 v4 → k < b → Pre_store_types n x0 x1 x2 x3 x4 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_store_types n x0 x1 x2 x3 x4 = k ∧ (RepOption 134 RepStmt) (Lanius.Mini.storeTypes x0 x1 x2 x3 x4) w
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → (RepList 74 RepSrcType) x0 v0 → (RepList 93 RepExpr) x1 v1 → RepNat x2 v2 → RepExpr x3 v3 → RepNat x4 v4 → k < b → Pre_store_types n x0 x1 x2 x3 x4 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_store_types n x0 x1 x2 x3 x4 = k ∧ (RepOption 136 RepStmt) (Lanius.Mini.storeTypes x0 x1 x2 x3 x4) w
 
 abbrev BStmt_store_cases (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Expr} {x1 : List Lanius.Mini.Expr} {x2 : Nat} {x3 : Lanius.Mini.Expr} {x4 : Nat} {x5 : Nat} {x6 : List (List Lanius.Mini.SrcType)} {v0 v1 v2 v3 v4 v5 v6 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5, v6] = some (w, k) → RepExpr x0 v0 → (RepList 92 RepExpr) x1 v1 → RepNat x2 v2 → RepExpr x3 v3 → RepNat x4 v4 → RepNat x5 v5 → (RepList 77 (RepList 73 RepSrcType)) x6 v6 → k < b → Pre_store_cases n x0 x1 x2 x3 x4 x5 x6 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5, v6] = some (w, k) ∧ Cost_store_cases n x0 x1 x2 x3 x4 x5 x6 = k ∧ (RepOption 134 RepStmt) (Lanius.Mini.storeCases x0 x1 x2 x3 x4 x5 x6) w
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5, v6] = some (w, k) → RepExpr x0 v0 → (RepList 93 RepExpr) x1 v1 → RepNat x2 v2 → RepExpr x3 v3 → RepNat x4 v4 → RepNat x5 v5 → (RepList 78 (RepList 74 RepSrcType)) x6 v6 → k < b → Pre_store_cases n x0 x1 x2 x3 x4 x5 x6 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5, v6] = some (w, k) ∧ Cost_store_cases n x0 x1 x2 x3 x4 x5 x6 = k ∧ (RepOption 136 RepStmt) (Lanius.Mini.storeCases x0 x1 x2 x3 x4 x5 x6) w
 
 end Lanius.Faithful.SelfBudget

@@ -20,27 +20,27 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_lower_named (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : List Lanius.Mini.Inst} {x3 : Nat} {x4 : List Lanius.Mini.Ty} {v0 v1 v2 v3 v4 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → RepNat x0 v0 → RepDecls x1 v1 → (RepList 139 RepInst) x2 v2 → RepNat x3 v3 → (RepList 141 RepTy) x4 v4 → k < b → Pre_lower_named n x0 x1 x2 x3 x4 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_lower_named n x0 x1 x2 x3 x4 = k ∧ (RepOption 159 RepSrcType) (Lanius.Mini.lowerNamed x0 x1 x2 x3 x4) w
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → RepNat x0 v0 → RepDecls x1 v1 → (RepList 141 RepInst) x2 v2 → RepNat x3 v3 → (RepList 143 RepTy) x4 v4 → k < b → Pre_lower_named n x0 x1 x2 x3 x4 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_lower_named n x0 x1 x2 x3 x4 = k ∧ (RepOption 160 RepSrcType) (Lanius.Mini.lowerNamed x0 x1 x2 x3 x4) w
 
 abbrev BStmt_lower_decl (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : List Lanius.Mini.Inst} {x3 : Bool} {x4 : Option Nat} {x5 : Nat} {x6 : List Lanius.Mini.Ty} {v0 v1 v2 v3 v4 v5 v6 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5, v6] = some (w, k) → RepNat x0 v0 → RepDecls x1 v1 → (RepList 139 RepInst) x2 v2 → RepBool x3 v3 → (RepOption 150 RepNat) x4 v4 → RepNat x5 v5 → (RepList 141 RepTy) x6 v6 → k < b → Pre_lower_decl n x0 x1 x2 x3 x4 x5 x6 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5, v6] = some (w, k) ∧ Cost_lower_decl n x0 x1 x2 x3 x4 x5 x6 = k ∧ (RepOption 159 RepSrcType) (Lanius.Mini.lowerDecl x0 x1 x2 x3 x4 x5 x6) w
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5, v6] = some (w, k) → RepNat x0 v0 → RepDecls x1 v1 → (RepList 141 RepInst) x2 v2 → RepBool x3 v3 → (RepOption 135 RepNat) x4 v4 → RepNat x5 v5 → (RepList 143 RepTy) x6 v6 → k < b → Pre_lower_decl n x0 x1 x2 x3 x4 x5 x6 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5, v6] = some (w, k) ∧ Cost_lower_decl n x0 x1 x2 x3 x4 x5 x6 = k ∧ (RepOption 160 RepSrcType) (Lanius.Mini.lowerDecl x0 x1 x2 x3 x4 x5 x6) w
 
 abbrev BStmt_lower_variants (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : List Lanius.Mini.Inst} {x3 : Option (List (List Lanius.Mini.Ty))} {v0 v1 v2 v3 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepDecls x1 v1 → (RepList 139 RepInst) x2 v2 → (RepOption 243 (RepList 244 (RepList 141 RepTy))) x3 v3 → k < b → Pre_lower_variants n x0 x1 x2 x3 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_lower_variants n x0 x1 x2 x3 = k ∧ (RepOption 191 (RepList 77 (RepList 73 RepSrcType))) (Lanius.Mini.lowerVariants x0 x1 x2 x3) w
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepDecls x1 v1 → (RepList 141 RepInst) x2 v2 → (RepOption 244 (RepList 245 (RepList 143 RepTy))) x3 v3 → k < b → Pre_lower_variants n x0 x1 x2 x3 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_lower_variants n x0 x1 x2 x3 = k ∧ (RepOption 192 (RepList 78 (RepList 74 RepSrcType))) (Lanius.Mini.lowerVariants x0 x1 x2 x3) w
 
 abbrev BStmt_lower_tys (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : List Lanius.Mini.Inst} {x3 : Option (List Lanius.Mini.Ty)} {v0 v1 v2 v3 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepDecls x1 v1 → (RepList 139 RepInst) x2 v2 → (RepOption 212 (RepList 141 RepTy)) x3 v3 → k < b → Pre_lower_tys n x0 x1 x2 x3 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_lower_tys n x0 x1 x2 x3 = k ∧ (RepOption 188 (RepList 73 RepSrcType)) (Lanius.Mini.lowerTys x0 x1 x2 x3) w
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepDecls x1 v1 → (RepList 141 RepInst) x2 v2 → (RepOption 213 (RepList 143 RepTy)) x3 v3 → k < b → Pre_lower_tys n x0 x1 x2 x3 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_lower_tys n x0 x1 x2 x3 = k ∧ (RepOption 189 (RepList 74 RepSrcType)) (Lanius.Mini.lowerTys x0 x1 x2 x3) w
 
 abbrev BStmt_lower_ty (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : List Lanius.Mini.Inst} {x3 : Lanius.Mini.Ty} {v0 v1 v2 v3 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepDecls x1 v1 → (RepList 139 RepInst) x2 v2 → RepTy x3 v3 → k < b → Pre_lower_ty n x0 x1 x2 x3 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_lower_ty n x0 x1 x2 x3 = k ∧ (RepOption 159 RepSrcType) (Lanius.Mini.lowerTy x0 x1 x2 x3) w
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepDecls x1 v1 → (RepList 141 RepInst) x2 v2 → RepTy x3 v3 → k < b → Pre_lower_ty n x0 x1 x2 x3 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_lower_ty n x0 x1 x2 x3 = k ∧ (RepOption 160 RepSrcType) (Lanius.Mini.lowerTy x0 x1 x2 x3) w
 
 end Lanius.Faithful.SelfBudget

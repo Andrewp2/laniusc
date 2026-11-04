@@ -21,6 +21,6 @@ open Lanius.Faithful.Budget
 abbrev BStmt_lower_shift (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.BinOp} {x1 : Lanius.Mini.Typed} {x2 : Lanius.Mini.Typed} {v0 v1 v2 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepBinOp x0 v0 → RepTyped x1 v1 → RepTyped x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_lower_shift n x0 x1 x2 = k ∧ (RepOption 155 RepTyped) (Lanius.Mini.lowerShift x0 x1 x2) w
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_lower_shift n x0 x1 x2 = k ∧ (RepOption 156 RepTyped) (Lanius.Mini.lowerShift x0 x1 x2) w
 
 end Lanius.Faithful.SelfBudget

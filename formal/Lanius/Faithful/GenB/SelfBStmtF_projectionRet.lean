@@ -30,17 +30,17 @@ abbrev BStmt_diverges (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
 
 abbrev BStmt_init_tys (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Ty} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 141 RepTy) x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_init_tys n x0 = k ∧ (RepList 141 RepTy) (Lanius.Mini.initTys x0) w
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 143 RepTy) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_init_tys n x0 = k ∧ (RepList 143 RepTy) (Lanius.Mini.initTys x0) w
 
 abbrev BStmt_last_ty (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Ty} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 141 RepTy) x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 211 RepTy) (Lanius.Mini.lastTy x0) w
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 143 RepTy) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 212 RepTy) (Lanius.Mini.lastTy x0) w
 
 abbrev BStmt_projection_ret (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Lanius.Mini.Inst} {v0 v1 v2 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepDecls x1 v1 → RepInst x2 v2 → k < b → Pre_projection_ret n x0 x1 x2 b →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_projection_ret n x0 x1 x2 = k ∧ (RepOption 211 RepTy) (Lanius.Mini.projectionRet x0 x1 x2) w
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_projection_ret n x0 x1 x2 = k ∧ (RepOption 212 RepTy) (Lanius.Mini.projectionRet x0 x1 x2) w
 
 end Lanius.Faithful.SelfBudget

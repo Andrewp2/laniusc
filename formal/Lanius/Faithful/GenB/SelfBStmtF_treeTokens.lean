@@ -21,31 +21,31 @@ open Lanius.Faithful.Budget
 abbrev BStmt_wide_i32 (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : Nat} {v0 v1 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepBool x0 v0 → RepNat x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 234 RepSrcExpr) (Lanius.Mini.wideI32 x0 x1) w
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 235 RepSrcExpr) (Lanius.Mini.wideI32 x0 x1) w
 
 abbrev BStmt_wide_uint (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.UintTy} {x1 : Bool} {x2 : Nat} {v0 v1 v2 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepUintTy x0 v0 → RepBool x1 v1 → RepNat x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ (RepOption 234 RepSrcExpr) (Lanius.Mini.wideUint x0 x1 x2) w
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ (RepOption 235 RepSrcExpr) (Lanius.Mini.wideUint x0 x1 x2) w
 
 abbrev BStmt_wide_isize (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : Nat} {v0 v1 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepBool x0 v0 → RepNat x1 v1 → k < b → Pre_wide_isize n x0 x1 b →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_wide_isize n x0 x1 = k ∧ (RepOption 234 RepSrcExpr) (Lanius.Mini.wideIsize x0 x1) w
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_wide_isize n x0 x1 = k ∧ (RepOption 235 RepSrcExpr) (Lanius.Mini.wideIsize x0 x1) w
 
 abbrev BStmt_wide_sint (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.UintTy} {x1 : Bool} {x2 : Nat} {v0 v1 v2 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepUintTy x0 v0 → RepBool x1 v1 → RepNat x2 v2 → k < b → Pre_wide_sint n x0 x1 x2 b →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_wide_sint n x0 x1 x2 = k ∧ (RepOption 234 RepSrcExpr) (Lanius.Mini.wideSint x0 x1 x2) w
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_wide_sint n x0 x1 x2 = k ∧ (RepOption 235 RepSrcExpr) (Lanius.Mini.wideSint x0 x1 x2) w
 
 abbrev BStmt_tree_tokens (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CTree} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepCTree x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_tree_tokens n x0 = k ∧ (RepList 47 RepToken) (Lanius.Mini.treeTokens x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_tree_tokens n x0 = k ∧ (RepList 48 RepToken) (Lanius.Mini.treeTokens x0) w
 
 abbrev BStmt_trees_tokens (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.CTree} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 82 RepCTree) x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_trees_tokens n x0 = k ∧ (RepList 47 RepToken) (Lanius.Mini.treesTokens x0) w
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 83 RepCTree) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_trees_tokens n x0 = k ∧ (RepList 48 RepToken) (Lanius.Mini.treesTokens x0) w
 
 end Lanius.Faithful.SelfBudget

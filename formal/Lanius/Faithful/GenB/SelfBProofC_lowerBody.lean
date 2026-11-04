@@ -2,7 +2,7 @@ import Lanius.Faithful.BudgetTactic
 import Lanius.Faithful.Gen.SelfRep
 import Lanius.Faithful.Gen.SelfSrcC_lowerBody
 import Lanius.Faithful.Gen.SelfStmtC_lowerBody
-import Lanius.Faithful.GenB.SelfBStmtC_Inline_lowerSetScalar
+import Lanius.Faithful.GenB.SelfBStmtC_Inline_blockLeft
 import Lanius.Faithful.GenB.SelfBStmtC_SrcType_same
 import Lanius.Faithful.GenB.SelfBStmtC_UintTy_half
 import Lanius.Faithful.GenB.SelfBStmtC_arrayCallSig
@@ -10,6 +10,7 @@ import Lanius.Faithful.GenB.SelfBStmtC_enumVariants
 import Lanius.Faithful.GenB.SelfBStmtC_funcNeeds
 import Lanius.Faithful.GenB.SelfBStmtC_lowerBody
 import Lanius.Faithful.GenB.SelfBStmtC_matchVariants
+import Lanius.Faithful.GenB.SelfBStmtC_needLimit
 import Lanius.Faithful.GenB.SelfBStmtC_structFields
 import Lanius.Faithful.GenB.SelfBStmtC_withBudget
 import Lanius.Faithful.GenB.SelfBStmtN1
@@ -106,8 +107,8 @@ theorem bproof_with_frame {spW sp : SrcProgram} {prims : Prims} {ix_with_frame i
     budget Cost_with_frame
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
 
-theorem bproof_lower_func {spW sp : SrcProgram} {prims : Prims} {ix_lower_func ix_minus ix_params_size ix_frame_block ix_SrcType_size ix_params_valid ix_SrcStmt_breaks_out ix_lower_body ix_SrcStmt_depth ix_unit_tail ix_with_frame ix_SrcStmt_lower ix_with_budget ix_param_scope ix_empty_of_mini_selfhost_Binding : Nat}
-    (fnW : spW.funcs[ix_lower_func]? = some (src_lower_func ix_minus ix_params_size ix_frame_block ix_SrcType_size ix_params_valid ix_SrcStmt_breaks_out ix_lower_body ix_SrcStmt_depth ix_unit_tail ix_with_frame ix_SrcStmt_lower ix_with_budget ix_param_scope ix_empty_of_mini_selfhost_Binding)) (fn : sp.funcs[ix_lower_func]? = some (src_lower_func ix_minus ix_params_size ix_frame_block ix_SrcType_size ix_params_valid ix_SrcStmt_breaks_out ix_lower_body ix_SrcStmt_depth ix_unit_tail ix_with_frame ix_SrcStmt_lower ix_with_budget ix_param_scope ix_empty_of_mini_selfhost_Binding))
+theorem bproof_lower_func {spW sp : SrcProgram} {prims : Prims} {ix_lower_func ix_minus ix_params_size ix_frame_block ix_SrcType_size ix_params_valid ix_SrcStmt_breaks_out ix_need_limit ix_lower_body ix_SrcStmt_depth ix_unit_tail ix_with_frame ix_SrcStmt_lower ix_with_budget ix_param_scope ix_empty_of_mini_selfhost_Binding : Nat}
+    (fnW : spW.funcs[ix_lower_func]? = some (src_lower_func ix_minus ix_params_size ix_frame_block ix_SrcType_size ix_params_valid ix_SrcStmt_breaks_out ix_need_limit ix_lower_body ix_SrcStmt_depth ix_unit_tail ix_with_frame ix_SrcStmt_lower ix_with_budget ix_param_scope ix_empty_of_mini_selfhost_Binding)) (fn : sp.funcs[ix_lower_func]? = some (src_lower_func ix_minus ix_params_size ix_frame_block ix_SrcType_size ix_params_valid ix_SrcStmt_breaks_out ix_need_limit ix_lower_body ix_SrcStmt_depth ix_unit_tail ix_with_frame ix_SrcStmt_lower ix_with_budget ix_param_scope ix_empty_of_mini_selfhost_Binding))
     (np : prims.isPrim ix_lower_func = false)
     (back : Certified (∀ {n : Nat}, Stmt_lower_func sp prims ix_lower_func n))
     (b_minus : Certified (∀ {n : Nat}, BStmt_minus spW sp prims ix_minus n))
@@ -116,6 +117,7 @@ theorem bproof_lower_func {spW sp : SrcProgram} {prims : Prims} {ix_lower_func i
     (b_SrcType_size : Certified (∀ {n : Nat}, BStmt_SrcType_size spW sp prims ix_SrcType_size n))
     (b_params_valid : Certified (∀ {n : Nat}, BStmt_params_valid spW sp prims ix_params_valid n))
     (b_SrcStmt_breaks_out : Certified (∀ {n : Nat}, BStmt_SrcStmt_breaks_out spW sp prims ix_SrcStmt_breaks_out n))
+    (b_need_limit : Certified (∀ {n : Nat}, BStmt_need_limit spW sp prims ix_need_limit n))
     (b_lower_body : Certified (∀ {n : Nat}, BStmt_lower_body spW sp prims ix_lower_body n))
     (b_SrcStmt_depth : Certified (∀ {n : Nat}, BStmt_SrcStmt_depth spW sp prims ix_SrcStmt_depth n))
     (b_unit_tail : Certified (∀ {n : Nat}, BStmt_unit_tail spW sp prims ix_unit_tail n))

@@ -20,13 +20,13 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_kill_prefix_at (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Fact} {x1 : Nat} {x2 : List Lanius.Mini.Fact} {v0 v1 v2 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepFact x0 v0 → RepNat x1 v1 → (RepList 181 RepFact) x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_kill_prefix_at n x0 x1 x2 = k ∧ (RepList 181 RepFact) (Lanius.Mini.killPrefixAt x0 x1 x2) w
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepFact x0 v0 → RepNat x1 v1 → (RepList 182 RepFact) x2 v2 →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_kill_prefix_at n x0 x1 x2 = k ∧ (RepList 182 RepFact) (Lanius.Mini.killPrefixAt x0 x1 x2) w
 
 abbrev BStmt_kill_prefix (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Fact} {x1 : Nat} {x2 : Nat} {v0 v1 v2 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepList 181 RepFact) x0 v0 → RepNat x1 v1 → RepNat x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_kill_prefix n x0 x1 x2 = k ∧ (RepList 181 RepFact) (Lanius.Mini.killPrefix x0 x1 x2) w
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepList 182 RepFact) x0 v0 → RepNat x1 v1 → RepNat x2 v2 →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_kill_prefix n x0 x1 x2 = k ∧ (RepList 182 RepFact) (Lanius.Mini.killPrefix x0 x1 x2) w
 
 abbrev BStmt_extent_after (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : Nat} {x2 : Nat} {v0 v1 v2 w : Value} {k : Nat},
@@ -35,7 +35,7 @@ abbrev BStmt_extent_after (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : P
 
 abbrev BStmt_dying_extent (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Fact} {x1 : Nat} {x2 : Nat} {x3 : Nat} {v0 v1 v2 v3 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → (RepList 181 RepFact) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepNat x3 v3 → k < b → Pre_dying_extent n x0 x1 x2 x3 b →
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → (RepList 182 RepFact) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepNat x3 v3 → k < b → Pre_dying_extent n x0 x1 x2 x3 b →
     qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.dyingExtent x0 x1 x2 x3) w
 
 end Lanius.Faithful.SelfBudget

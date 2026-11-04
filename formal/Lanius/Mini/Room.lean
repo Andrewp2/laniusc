@@ -162,6 +162,89 @@ theorem roomFits_stmtRoom (room : Nat) (s : Stmt) : roomFits (stmtRoom room s) =
   rw [stmtRoom_eq]
   by_cases h : s.weight ≤ room <;> simp [h, takeOut, roomFits]
 
+/-! A body's temporaries are at most its weight, so a body that passes the
+room check has at most `imageLimit` of them: `compileFunc` checks the room before
+it counts the temporaries (decided 11-03, F14). -/
+
+theorem Expr.temps_lt_weight : ∀ e : Expr, e.temps < e.weight
+  | .lit _ => by simp [Expr.temps, Expr.weight]
+  | .var _ => by simp [Expr.temps, Expr.weight]
+  | .neg a => by have := a.temps_lt_weight; simp only [Expr.temps, Expr.weight]; omega
+  | .binary _ _ a b => by
+    have := a.temps_lt_weight; have := b.temps_lt_weight
+    simp only [Expr.temps, Expr.weight]; omega
+  | .compare _ _ a b => by
+    have := a.temps_lt_weight; have := b.temps_lt_weight
+    simp only [Expr.temps, Expr.weight]; omega
+  | .fp _ a b => by
+    have := a.temps_lt_weight; have := b.temps_lt_weight
+    simp only [Expr.temps, Expr.weight]; omega
+
+theorem argsTemps_le_weight : ∀ (args : List Expr) (k : Nat), argsTemps args k ≤ k + argsWeight args
+  | [], k => by simp [argsTemps]
+  | a :: rest, k => by
+    have := a.temps_lt_weight; have := argsTemps_le_weight rest (k + 1)
+    simp only [argsTemps, argsWeight]; omega
+
+theorem Stmt.temps_le_weight : ∀ s : Stmt, s.temps ≤ s.weight
+  | .skip => by simp [Stmt.temps, Stmt.weight]
+  | .assign _ v => by have := v.temps_lt_weight; simp only [Stmt.temps, Stmt.weight]; omega
+  | .seq a b => by
+    have := a.temps_le_weight; have := b.temps_le_weight
+    simp only [Stmt.temps, Stmt.weight]; omega
+  | .ite c t e => by
+    have := c.temps_lt_weight; have := t.temps_le_weight; have := e.temps_le_weight
+    simp only [Stmt.temps, Stmt.weight]; omega
+  | .loop c b => by
+    have := c.temps_lt_weight; have := b.temps_le_weight
+    simp only [Stmt.temps, Stmt.weight]; omega
+  | .call _ _ _ args => by
+    have := argsTemps_le_weight args 0; simp only [Stmt.temps, Stmt.weight]; omega
+  | .ret vs => by have := argsTemps_le_weight vs 0; simp only [Stmt.temps, Stmt.weight]; omega
+  | .brk => by simp [Stmt.temps, Stmt.weight]
+  | .cont => by simp [Stmt.temps, Stmt.weight]
+  | .alloc _ _ e => by have := e.temps_lt_weight; simp only [Stmt.temps, Stmt.weight]; omega
+  | .loadByte _ e => by have := e.temps_lt_weight; simp only [Stmt.temps, Stmt.weight]; omega
+  | .storeByte a v => by
+    have := a.temps_lt_weight; have := v.temps_lt_weight
+    simp only [Stmt.temps, Stmt.weight]; omega
+  | .loadWord _ _ e => by have := e.temps_lt_weight; simp only [Stmt.temps, Stmt.weight]; omega
+  | .storeWord _ a v => by
+    have := a.temps_lt_weight; have := v.temps_lt_weight
+    simp only [Stmt.temps, Stmt.weight]; omega
+  | .divide _ _ _ a b => by
+    have := a.temps_lt_weight; have := b.temps_lt_weight
+    simp only [Stmt.temps, Stmt.weight]; omega
+  | .sys _ _ args => by have := argsTemps_le_weight args 0; simp only [Stmt.temps, Stmt.weight]; omega
+  | .frame _ _ => by simp [Stmt.temps, Stmt.weight]
+  | .static _ _ => by simp [Stmt.temps, Stmt.weight]
+
+/-- A body that passes `compileFunc`'s room check has at most `room` temporaries. -/
+theorem Stmt.temps_le_of_roomFits {room : Nat} {s : Stmt} (fits : roomFits (stmtRoom room s) = true) :
+    s.temps ≤ room := by
+  rw [roomFits_stmtRoom] at fits
+  have := s.temps_le_weight
+  simp only [decide_eq_true_eq] at fits
+  omega
+
+/-- `compileFunc` with its checks in their order before 11-03: the slot count
+first, the room check last. -/
+def compileFuncChecksLast (arities : List Arity) (func : Func) : Option Code :=
+  let slots : Nat := func.locals + Stmt.temps func.body
+  if decide (func.params ≤ func.locals) && decide (0 < func.results) && decide (func.results ≤ func.locals) &&
+      Stmt.within func.body func.locals arities func.results && decide (slots ≤ frameLimit) &&
+      roomFits (stmtRoom imageLimit func.body) then
+    let init : List Instr := Instr.imm 0 :: zeroLocals func.params (func.locals - func.params)
+    some ({ slots := slots, instrs := init ++ compileStmt func.locals (codeSize init) 0 0 func.body } : Code)
+  else
+    none
+
+/-- Checking the room first changes no result: the checks are pure. -/
+theorem compileFunc_checksLast (arities : List Arity) (func : Func) :
+    compileFunc arities func = compileFuncChecksLast arities func := by
+  simp only [compileFunc, compileFuncChecksLast]
+  cases roomFits (stmtRoom imageLimit func.body) <;> simp
+
 /-! A body's code is at least as many bytes as its weight. -/
 
 theorem weight_le_codeSize_expr (base : Nat) (e : Expr) :
@@ -392,10 +475,11 @@ theorem compileFunc_unchecked (arities : List Arity) (func : Func) :
         ∀ code, compileFuncUnchecked arities func = some code → imageLimit < code.size) := by
   by_cases h : func.body.weight ≤ imageLimit
   · left
-    simp only [compileFunc, compileFuncUnchecked, roomFits_stmtRoom, h, decide_true, Bool.and_true]
+    simp only [compileFunc_checksLast, compileFuncChecksLast, compileFuncUnchecked, roomFits_stmtRoom, h,
+      decide_true, Bool.and_true]
   · right
     refine ⟨?_, ?_⟩
-    · simp only [compileFunc, roomFits_stmtRoom, h, decide_false, Bool.and_false, Bool.false_eq_true, if_false]
+    · simp only [compileFunc, roomFits_stmtRoom, h, decide_false, Bool.false_eq_true, if_false]
     · intro code hc
       simp only [compileFuncUnchecked] at hc
       split at hc

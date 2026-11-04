@@ -21,11 +21,11 @@ open Lanius.Faithful.Budget
 abbrev BStmt_typed_literal (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Ty} {x1 : Lanius.Mini.SrcExpr} {v0 v1 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepTy x0 v0 → RepSrcExpr x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_typed_literal n x0 x1 = k ∧ (RepOption 234 RepSrcExpr) (Lanius.Mini.typedLiteral x0 x1) w
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_typed_literal n x0 x1 = k ∧ (RepOption 235 RepSrcExpr) (Lanius.Mini.typedLiteral x0 x1) w
 
 abbrev BStmt_literal_as (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.Ty} {x1 : Option Lanius.Mini.SrcExpr} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 211 RepTy) x0 v0 → (RepOption 234 RepSrcExpr) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_literal_as n x0 x1 = k ∧ (RepOption 234 RepSrcExpr) (Lanius.Mini.literalAs x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 212 RepTy) x0 v0 → (RepOption 235 RepSrcExpr) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_literal_as n x0 x1 = k ∧ (RepOption 235 RepSrcExpr) (Lanius.Mini.literalAs x0 x1) w
 
 end Lanius.Faithful.SelfBudget

@@ -26,12 +26,12 @@ abbrev BStmt_pow2 (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 abbrev BStmt_bump_bytes (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepNat x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_bump_bytes n x0 = k ∧ (RepList 35 RepU8) (Lanius.Mini.bumpBytes x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_bump_bytes n x0 = k ∧ (RepList 36 RepU8) (Lanius.Mini.bumpBytes x0) w
 
 abbrev BStmt_float_operands (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FloatTy} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepFloatTy x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_float_operands n x0 = k ∧ (RepList 35 RepU8) (Lanius.Mini.floatOperands x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_float_operands n x0 = k ∧ (RepList 36 RepU8) (Lanius.Mini.floatOperands x0) w
 
 abbrev BStmt_FArith_opcode (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FArith} {v0 w : Value} {k : Nat},
@@ -41,7 +41,7 @@ abbrev BStmt_FArith_opcode (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : 
 abbrev BStmt_float_result (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FloatTy} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepFloatTy x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_float_result n x0 = k ∧ (RepList 35 RepU8) (Lanius.Mini.floatResult x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_float_result n x0 = k ∧ (RepList 36 RepU8) (Lanius.Mini.floatResult x0) w
 
 abbrev BStmt_FCmp_predicate (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FCmp} {v0 w : Value} {k : Nat},
@@ -51,16 +51,16 @@ abbrev BStmt_FCmp_predicate (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) :
 abbrev BStmt_FOp_opcode_bytes (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FOp} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepFOp x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_FOp_opcode_bytes n x0 = k ∧ (RepList 35 RepU8) (Lanius.Mini.FOp.opcodeBytes x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_FOp_opcode_bytes n x0 = k ∧ (RepList 36 RepU8) (Lanius.Mini.FOp.opcodeBytes x0) w
 
 abbrev BStmt_FOp_bytes (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FOp} {x1 : Nat} {v0 v1 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepFOp x0 v0 → RepNat x1 v1 → k < b → Pre_FOp_bytes n x0 x1 b →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_FOp_bytes n x0 x1 = k ∧ (RepList 35 RepU8) (Lanius.Mini.FOp.bytes x0 x1) w
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_FOp_bytes n x0 x1 = k ∧ (RepList 36 RepU8) (Lanius.Mini.FOp.bytes x0 x1) w
 
 abbrev BStmt_frame_memory_bytes (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepNat x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_frame_memory_bytes n x0 = k ∧ (RepList 35 RepU8) (Lanius.Mini.frameMemoryBytes x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_frame_memory_bytes n x0 = k ∧ (RepList 36 RepU8) (Lanius.Mini.frameMemoryBytes x0) w
 
 end Lanius.Faithful.SelfBudget

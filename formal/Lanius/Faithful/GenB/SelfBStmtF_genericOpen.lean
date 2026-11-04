@@ -20,22 +20,22 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_generic_open (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Token} {v0 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 47 RepToken) x0 v0 → k < b → Pre_generic_open n x0 b →
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 48 RepToken) x0 v0 → k < b → Pre_generic_open n x0 b →
     qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.genericOpen x0) w
 
 abbrev BStmt_opens_block (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Token} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 47 RepToken) x0 v0 →
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 48 RepToken) x0 v0 →
     qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.opensBlock x0) w
 
 abbrev BStmt_generic_path_at (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Token} {v0 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 47 RepToken) x0 v0 → k < b → Pre_generic_path_at n x0 b →
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 48 RepToken) x0 v0 → k < b → Pre_generic_path_at n x0 b →
     qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.genericPathAt x0) w
 
 abbrev BStmt_picks (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : List Lanius.Mini.Token} {v0 v1 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepNat x0 v0 → (RepList 47 RepToken) x1 v1 → k < b → Pre_picks n x0 x1 b →
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepNat x0 v0 → (RepList 48 RepToken) x1 v1 → k < b → Pre_picks n x0 x1 b →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.picks x0 x1) w
 
 end Lanius.Faithful.SelfBudget

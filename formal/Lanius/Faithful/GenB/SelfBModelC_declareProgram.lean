@@ -1,5 +1,5 @@
 import Lanius.Faithful.BudgetCore
-import Lanius.Faithful.GenB.SelfBModelC_Inline_arithOf
+import Lanius.Faithful.GenB.SelfBModelC_Inline_blockLeft
 import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Frontend.Types
 

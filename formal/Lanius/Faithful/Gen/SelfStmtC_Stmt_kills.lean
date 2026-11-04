@@ -22,14 +22,14 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_Expr_literal (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Expr} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepExpr x0 v0 →
-    (RepOption 205 RepU64) (Lanius.Mini.Expr.literal x0) w
+    (RepOption 206 RepU64) (Lanius.Mini.Expr.literal x0) w
 
 abbrev Stmt_Func_agrees (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Func} {x1 : Lanius.Mini.Func} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepFunc x0 v0 → RepFunc x1 v1 →
     RepBool (Lanius.Mini.Func.agrees x0 x1) w
 
 abbrev Stmt_Stmt_agrees (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Stmt} {x1 : List Lanius.Mini.Fact} {x2 : Lanius.Mini.Stmt} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepStmt x0 v0 → (RepList 181 RepFact) x1 v1 → RepStmt x2 v2 →
+  ∀ {x0 : Lanius.Mini.Stmt} {x1 : List Lanius.Mini.Fact} {x2 : Lanius.Mini.Stmt} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepStmt x0 v0 → (RepList 182 RepFact) x1 v1 → RepStmt x2 v2 →
     RepBool (Lanius.Mini.Stmt.agrees x0 x1 x2) w
 
 abbrev Stmt_Stmt_kills (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -37,7 +37,7 @@ abbrev Stmt_Stmt_kills (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
     RepBool (Lanius.Mini.Stmt.kills x0 x1) w
 
 abbrev Stmt_funcs_agree (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Func} {x1 : List Lanius.Mini.Func} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 86 RepFunc) x0 v0 → (RepList 86 RepFunc) x1 v1 →
+  ∀ {x0 : List Lanius.Mini.Func} {x1 : List Lanius.Mini.Func} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 87 RepFunc) x0 v0 → (RepList 87 RepFunc) x1 v1 →
     RepBool (Lanius.Mini.funcsAgree x0 x1) w
 
 abbrev Stmt_validate (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

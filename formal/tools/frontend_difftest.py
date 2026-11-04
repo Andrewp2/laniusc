@@ -1209,6 +1209,10 @@ def serOp : SrcOp → String
   | .greater => "greater" | .greaterEq => "greaterEq" | .equal => "equal"
   | .notEqual => "notEqual" | .logicalAnd => "logicalAnd" | .logicalOr => "logicalOr"
 
+def serAssignOp : SrcAssignOp → String
+  | .aAdd => ".aAdd" | .aSub => ".aSub" | .aMul => ".aMul" | .aAnd => ".aAnd"
+  | .aOr => ".aOr" | .aXor => ".aXor" | .aShl => ".aShl" | .aShr => ".aShr"
+
 def bracket (xs : List String) : String := "[" ++ ", ".intercalate xs ++ "]"
 
 partial def serType : SrcType → String
@@ -1267,6 +1271,10 @@ partial def serEff : SrcEff → String
   | .eLet i t a rt b => s!"(.eLet {i} {serType t} {serEff a} {serType rt} {serEff b})"
   | .eLen s => s!"(.eLen {s})"
   | .eStr o cs => s!"(.eStr {o} {cs})"
+  | .eBorrow t p => s!"(.eBorrow {serType t} {serEff p})"
+  | .eDeref t r => s!"(.eDeref {serType t} {serEff r})"
+  | .eField b j => s!"(.eField {serEff b} {j})"
+  | .eAt b i => s!"(.eAt {serEff b} {serEff i})"
 
 def serArm (a : SrcArm) : String :=
   "{ binders := " ++ bracket (a.binders.map toString) ++ ", value := " ++ serExpr a.value ++ " }"
@@ -1302,6 +1310,8 @@ partial def serStmt : SrcStmt → String
   | .discard x => s!"(.discard {serEff x})"
   | .setIndexEval sl i v => s!"(.setIndexEval {sl} {serEff i} {serEff v})"
   | .setFieldEval n f x => s!"(.setFieldEval {n} {f} {serEff x})"
+  | .setPlace p v => s!"(.setPlace {serEff p} {serEff v})"
+  | .setPlaceOp o p v => s!"(.setPlaceOp {serAssignOp o} {serEff p} {serEff v})"
   | .returnUnit => ".returnUnit"
   | .break => ".break"
   | .continue => ".continue"
@@ -1396,6 +1406,8 @@ partial def effBinders : SrcEff → List Nat
   | .eIf c _ a b => effBinders c ++ effBinders a ++ effBinders b
   | .eLet i _ a _ b => i :: (effBinders a ++ effBinders b)
   | .eLen _ | .eStr _ _ => []
+  | .eBorrow _ a | .eDeref _ a | .eField a _ => effBinders a
+  | .eAt a b => effBinders a ++ effBinders b
   | .eCall _ xs | .eStruct _ xs | .eVariant _ _ xs => xs.flatMap effBinders
   | .eApply _ a b | .eDivide _ a b => effBinders a ++ effBinders b
   | .eNeg a | .eNot a | .eCast _ a | .eIndex _ a => effBinders a
@@ -1415,6 +1427,7 @@ partial def bindersOf : SrcStmt → List Nat
   | .whileEval x b => effBinders x ++ bindersOf b
   | .setIndexEval _ i v => effBinders i ++ effBinders v
   | .setFieldEval _ _ x | .assert x => effBinders x
+  | .setPlace p v | .setPlaceOp _ p v => effBinders p ++ effBinders v
   | .matchArm _ _ _ b x _ body r => (if b then [x] else []) ++ bindersOf body ++ bindersOf r
   | _ => []
 
@@ -1445,6 +1458,10 @@ partial def renEff (f : Nat → Nat) : SrcEff → SrcEff
   | .eLet i t a rt b => .eLet (f i) t (renEff f a) rt (renEff f b)
   | .eLen s => .eLen (f s)
   | .eStr o cs => .eStr o cs
+  | .eBorrow t p => .eBorrow t (renEff f p)
+  | .eDeref t r => .eDeref t (renEff f r)
+  | .eField b j => .eField (renEff f b) j
+  | .eAt b i => .eAt (renEff f b) (renEff f i)
 
 partial def renStmt (f : Nat → Nat) : SrcStmt → SrcStmt
   | .nop => .nop
@@ -1478,6 +1495,8 @@ partial def renStmt (f : Nat → Nat) : SrcStmt → SrcStmt
   | .discard x => .discard (renEff f x)
   | .setIndexEval sl i v => .setIndexEval (f sl) (renEff f i) (renEff f v)
   | .setFieldEval n k x => .setFieldEval (f n) k (renEff f x)
+  | .setPlace p v => .setPlace (renEff f p) (renEff f v)
+  | .setPlaceOp o p v => .setPlaceOp o (renEff f p) (renEff f v)
   | .returnUnit => .returnUnit
   | .break => .break
   | .continue => .continue

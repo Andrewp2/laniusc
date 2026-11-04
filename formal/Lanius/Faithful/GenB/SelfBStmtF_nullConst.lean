@@ -31,16 +31,16 @@ abbrev BStmt_sint_wide (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
 abbrev BStmt_null_const (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : BitVec 32} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepI32 x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 234 RepSrcExpr) (Lanius.Mini.nullConst x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 235 RepSrcExpr) (Lanius.Mini.nullConst x0) w
 
 abbrev BStmt_sint_const (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.UintTy} {x1 : BitVec 32} {v0 v1 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepUintTy x0 v0 → RepI32 x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_sint_const n x0 x1 = k ∧ (RepOption 234 RepSrcExpr) (Lanius.Mini.sintConst x0 x1) w
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_sint_const n x0 x1 = k ∧ (RepOption 235 RepSrcExpr) (Lanius.Mini.sintConst x0 x1) w
 
 abbrev BStmt_neg_sint_const (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.UintTy} {x1 : Lanius.Mini.SrcExpr} {v0 v1 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepUintTy x0 v0 → RepSrcExpr x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_neg_sint_const n x0 x1 = k ∧ (RepOption 234 RepSrcExpr) (Lanius.Mini.negSintConst x0 x1) w
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_neg_sint_const n x0 x1 = k ∧ (RepOption 235 RepSrcExpr) (Lanius.Mini.negSintConst x0 x1) w
 
 end Lanius.Faithful.SelfBudget

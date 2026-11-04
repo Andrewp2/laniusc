@@ -21,7 +21,7 @@ open Lanius.Faithful.Budget
 abbrev BStmt_cast_to_i32 (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Typed} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepTyped x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_cast_to_i32 n x0 = k ∧ (RepOption 155 RepTyped) (Lanius.Mini.castToI32 x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_cast_to_i32 n x0 = k ∧ (RepOption 156 RepTyped) (Lanius.Mini.castToI32 x0) w
 
 abbrev BStmt_sint_to_uint (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.UintTy} {x1 : Lanius.Mini.UintTy} {x2 : Lanius.Mini.Expr} {v0 v1 v2 w : Value} {k : Nat},
@@ -31,7 +31,7 @@ abbrev BStmt_sint_to_uint (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : P
 abbrev BStmt_cast_to_uint (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.UintTy} {x1 : Lanius.Mini.Typed} {v0 v1 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepUintTy x0 v0 → RepTyped x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cast_to_uint n x0 x1 = k ∧ (RepOption 155 RepTyped) (Lanius.Mini.castToUint x0 x1) w
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cast_to_uint n x0 x1 = k ∧ (RepOption 156 RepTyped) (Lanius.Mini.castToUint x0 x1) w
 
 abbrev BStmt_sint_to_wide (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.UintTy} {x1 : Lanius.Mini.Expr} {v0 v1 w : Value} {k : Nat},
@@ -41,46 +41,46 @@ abbrev BStmt_sint_to_wide (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : P
 abbrev BStmt_cast_to_isize (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Typed} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepTyped x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_cast_to_isize n x0 = k ∧ (RepOption 155 RepTyped) (Lanius.Mini.castToIsize x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_cast_to_isize n x0 = k ∧ (RepOption 156 RepTyped) (Lanius.Mini.castToIsize x0) w
 
 abbrev BStmt_int_to_float (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FloatTy} {x1 : Lanius.Mini.Word} {x2 : Lanius.Mini.Expr} {v0 v1 v2 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepFloatTy x0 v0 → RepWord x1 v1 → RepExpr x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_int_to_float n x0 x1 x2 = k ∧ (RepOption 155 RepTyped) (Lanius.Mini.intToFloat x0 x1 x2) w
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_int_to_float n x0 x1 x2 = k ∧ (RepOption 156 RepTyped) (Lanius.Mini.intToFloat x0 x1 x2) w
 
 abbrev BStmt_if_narrow (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.UintTy} {x1 : Option Lanius.Mini.Typed} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepUintTy x0 v0 → (RepOption 155 RepTyped) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 155 RepTyped) (Lanius.Mini.ifNarrow x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepUintTy x0 v0 → (RepOption 156 RepTyped) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 156 RepTyped) (Lanius.Mini.ifNarrow x0 x1) w
 
 abbrev BStmt_float_to_float (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FloatTy} {x1 : Lanius.Mini.FloatTy} {x2 : Lanius.Mini.Expr} {v0 v1 v2 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepFloatTy x0 v0 → RepFloatTy x1 v1 → RepExpr x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_float_to_float n x0 x1 x2 = k ∧ (RepOption 155 RepTyped) (Lanius.Mini.floatToFloat x0 x1 x2) w
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_float_to_float n x0 x1 x2 = k ∧ (RepOption 156 RepTyped) (Lanius.Mini.floatToFloat x0 x1 x2) w
 
 abbrev BStmt_cast_to_float (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FloatTy} {x1 : Lanius.Mini.Typed} {v0 v1 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepFloatTy x0 v0 → RepTyped x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cast_to_float n x0 x1 = k ∧ (RepOption 155 RepTyped) (Lanius.Mini.castToFloat x0 x1) w
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cast_to_float n x0 x1 = k ∧ (RepOption 156 RepTyped) (Lanius.Mini.castToFloat x0 x1) w
 
 abbrev BStmt_cast_to_sint (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.UintTy} {x1 : Lanius.Mini.Typed} {v0 v1 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepUintTy x0 v0 → RepTyped x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cast_to_sint n x0 x1 = k ∧ (RepOption 155 RepTyped) (Lanius.Mini.castToSint x0 x1) w
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cast_to_sint n x0 x1 = k ∧ (RepOption 156 RepTyped) (Lanius.Mini.castToSint x0 x1) w
 
 abbrev BStmt_cast_to (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {x1 : Lanius.Mini.Typed} {v0 v1 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepSrcType x0 v0 → RepTyped x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cast_to n x0 x1 = k ∧ (RepOption 155 RepTyped) (Lanius.Mini.castTo x0 x1) w
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cast_to n x0 x1 = k ∧ (RepOption 156 RepTyped) (Lanius.Mini.castTo x0 x1) w
 
 abbrev BStmt_lower_cast (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {x1 : Option Lanius.Mini.Typed} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepSrcType x0 v0 → (RepOption 155 RepTyped) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_lower_cast n x0 x1 = k ∧ (RepOption 155 RepTyped) (Lanius.Mini.lowerCast x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepSrcType x0 v0 → (RepOption 156 RepTyped) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_lower_cast n x0 x1 = k ∧ (RepOption 156 RepTyped) (Lanius.Mini.lowerCast x0 x1) w
 
 abbrev BStmt_lower_float (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FloatTy} {x1 : BitVec 64} {v0 v1 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepFloatTy x0 v0 → RepU64 x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 155 RepTyped) (Lanius.Mini.lowerFloat x0 x1) w
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 156 RepTyped) (Lanius.Mini.lowerFloat x0 x1) w
 
 end Lanius.Faithful.SelfBudget

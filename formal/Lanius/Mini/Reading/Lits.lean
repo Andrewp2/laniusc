@@ -171,6 +171,16 @@ inductive LitEff (funcs : List SrcFunc) : List LocalTy → Option SrcType → Sr
   | len {locals : List LocalTy} {want : Option SrcType} {sl : Nat} : LitEff funcs locals want (.eLen sl) (.eLen sl)
   | str {locals : List LocalTy} {want : Option SrcType} {offset : Nat} {chars : List Nat} :
       LitEff funcs locals want (.eStr offset chars) (.eStr offset chars)
+  /-- The literal pass leaves a reference form as it is (F5 stage 1: the
+  reading makes none). -/
+  | borrow {locals : List LocalTy} {want : Option SrcType} {t : SrcType} {x : SrcEff} :
+      LitEff funcs locals want (.eBorrow t x) (.eBorrow t x)
+  | deref {locals : List LocalTy} {want : Option SrcType} {t : SrcType} {x : SrcEff} :
+      LitEff funcs locals want (.eDeref t x) (.eDeref t x)
+  | field {locals : List LocalTy} {want : Option SrcType} {x : SrcEff} {j : Nat} :
+      LitEff funcs locals want (.eField x j) (.eField x j)
+  | at {locals : List LocalTy} {want : Option SrcType} {x i : SrcEff} :
+      LitEff funcs locals want (.eAt x i) (.eAt x i)
 
 inductive LitEffs (funcs : List SrcFunc) : List LocalTy → Option (List SrcType) → List SrcEff → List SrcEff → Prop
   | nil {locals : List LocalTy} {wants : Option (List SrcType)} : LitEffs funcs locals wants [] []
@@ -213,6 +223,10 @@ theorem litEff_sound (funcs : List SrcFunc) :
     simp only [litEff]; exact .let (litEff_sound funcs _ _ a) (litEff_sound funcs _ _ b)
   | locals, want, .eLen sl => by simp only [litEff]; exact .len
   | locals, want, .eStr offset chars => by simp only [litEff]; exact .str
+  | locals, want, .eBorrow t x => by simp only [litEff]; exact .borrow
+  | locals, want, .eDeref t x => by simp only [litEff]; exact .deref
+  | locals, want, .eField x j => by simp only [litEff]; exact .field
+  | locals, want, .eAt x i => by simp only [litEff]; exact .at
 
 theorem litEffs_sound (funcs : List SrcFunc) :
     ∀ (locals : List LocalTy) (wants : Option (List SrcType)) (xs : List SrcEff),
@@ -315,6 +329,12 @@ inductive LitStmt (funcs : List SrcFunc) (ret : SrcType) : List LocalTy → SrcS
   | setFieldEval {locals : List LocalTy} {id j : Nat} {x x' : SrcEff} :
       LitEff funcs locals (tyAt (srcFields (tyLocal locals id)) j) x x' →
       LitStmt funcs ret locals (.setFieldEval id j x) (.setFieldEval id j x')
+  /-- The literal pass leaves a place assignment as it is (F5 stage 1: the
+  reading makes none). -/
+  | setPlace {locals : List LocalTy} {x v : SrcEff} :
+      LitStmt funcs ret locals (.setPlace x v) (.setPlace x v)
+  | setPlaceOp {locals : List LocalTy} {op : SrcAssignOp} {x v : SrcEff} :
+      LitStmt funcs ret locals (.setPlaceOp op x v) (.setPlaceOp op x v)
   | returnUnit {locals : List LocalTy} : LitStmt funcs ret locals .returnUnit .returnUnit
   | «break» {locals : List LocalTy} : LitStmt funcs ret locals .break .break
   | «continue» {locals : List LocalTy} : LitStmt funcs ret locals .continue .continue
@@ -386,6 +406,8 @@ theorem litStmt_sound (funcs : List SrcFunc) (ret : SrcType) :
   | locals, .setIndexEval sl i v => by
     simp only [litStmt]; exact .setIndexEval (litEff_sound _ _ _ _) (litEff_sound _ _ _ _)
   | locals, .setFieldEval id j x => by simp only [litStmt]; exact .setFieldEval (litEff_sound _ _ _ _)
+  | locals, .setPlace x v => by simp only [litStmt]; exact .setPlace
+  | locals, .setPlaceOp op x v => by simp only [litStmt]; exact .setPlaceOp
   | locals, .returnUnit => by simp only [litStmt]; exact .returnUnit
   | locals, .break => by simp only [litStmt]; exact .break
   | locals, .continue => by simp only [litStmt]; exact .continue

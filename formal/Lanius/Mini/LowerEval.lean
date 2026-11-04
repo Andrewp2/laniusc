@@ -39,6 +39,8 @@ import all Lanius.Mini.Compiler.P.lowerLocal
 import all Lanius.Mini.Compiler.P.lowerTagged
 import all Lanius.Mini.Compiler.P.matchDst
 import all Lanius.Mini.Compiler.P.matchVariants
+import all Lanius.Mini.Compiler.P.needCapped
+import all Lanius.Mini.Compiler.P.needsAfter
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.shortCircuit
 import all Lanius.Mini.Compiler.P.storeArray
@@ -73,7 +75,7 @@ public import Lanius.Mini.Compiler.P.storeArray
 public import Lanius.Mini.Compiler.P.strStores
 public import Lanius.Mini.Compiler.P.arrayCallSig
 public import Lanius.Mini.Compiler.P.bindingBytes
-public import Lanius.Mini.Compiler.P.needRound
+public import Lanius.Mini.Compiler.P.needCapped
 public import Lanius.Mini.Compiler.P.needsAfter
 public import Lanius.Mini.Compiler.P.storeEvalWord
 public import Lanius.Mini.Compiler.P.wordElement
@@ -4750,12 +4752,18 @@ theorem sound_both {sp : SrcProgram} {mp : Program}
         | setFieldEval => exact stmt_setFieldEval belowE ok corr fr fresh le hc fc under run bound
         | matchArm => exact stmt_matchArm below ok corr fr fresh le hc fc under run bound
         | unreachable => exact stmt_unreachable fresh run
+        | setPlace => simp [SrcStmt.lower] at ok
+        | setPlaceOp => simp [SrcStmt.lower] at ok
       · intro bud sx _ places hp e scope slot ev frame base st env v st' ok corr fr fresh hc fc run bound
         cases e with
         | ePure e => exact eval_pure ok corr fr fresh hc fc run
         | eStr offset chars =>
           simp only [SrcEff.eval] at ok
           exact eval_strLit ok fresh hc fc run
+        | eBorrow => simp [SrcEff.eval] at ok
+        | eDeref => simp [SrcEff.eval] at ok
+        | eField => simp [SrcEff.eval] at ok
+        | eAt => simp [SrcEff.eval] at ok
         | eCall callee args =>
           simp only [SrcEff.eval] at ok
           exact eval_call lowered here (fun m lt => belowE m (Nat.le_of_lt lt)) ok corr fr fresh hc fc run bound

@@ -20,17 +20,17 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_split_more (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Nat} {x1 : Option Lanius.Mini.Split} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 25 RepNat) x0 v0 → (RepOption 254 RepSplit) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_split_more n x0 x1 = k ∧ (RepOption 254 RepSplit) (Lanius.Mini.splitMore x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 25 RepNat) x0 v0 → (RepOption 255 RepSplit) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_split_more n x0 x1 = k ∧ (RepOption 255 RepSplit) (Lanius.Mini.splitMore x0 x1) w
 
 abbrev BStmt_split_last (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (List Nat)} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → (RepList 31 (RepList 25 RepNat)) x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_split_last n x0 = k ∧ (RepOption 254 RepSplit) (Lanius.Mini.splitLast x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_split_last n x0 = k ∧ (RepOption 255 RepSplit) (Lanius.Mini.splitLast x0) w
 
 abbrev BStmt_type_path_spellings (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.CTree} {x2 : Lanius.Mini.CTree} {v0 v1 v2 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepCTree x1 v1 → RepCTree x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_type_path_spellings n x0 x1 x2 = k ∧ (RepOption 138 (RepList 31 (RepList 25 RepNat))) (Lanius.Mini.typePathSpellings x0 x1 x2) w
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_type_path_spellings n x0 x1 x2 = k ∧ (RepOption 140 (RepList 31 (RepList 25 RepNat))) (Lanius.Mini.typePathSpellings x0 x1 x2) w
 
 end Lanius.Faithful.SelfBudget

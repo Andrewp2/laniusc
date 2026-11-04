@@ -2,7 +2,8 @@ module
 
 public import Lanius.Mini.LowerStmt
 import all Lanius.Mini.Compiler.P.withBudget
-import all Lanius.Mini.Compiler.P.needRound
+import all Lanius.Mini.Compiler.P.needCapped
+import all Lanius.Mini.Compiler.P.needLimit
 import all Lanius.Mini.Compiler.P.needsAfter
 import all Lanius.Mini.Compiler.P.funcNeeds
 
@@ -50,6 +51,11 @@ mutual
       simp only [SrcEff.calleeNeed, SrcEff.calleeNeed_zeros z value, SrcEff.calleeNeed_zeros z body, Nat.max_self]
     | .eLen _ => simp only [SrcEff.calleeNeed]
     | .eStr _ _ => simp only [SrcEff.calleeNeed]
+    | .eBorrow _ x => simp only [SrcEff.calleeNeed, SrcEff.calleeNeed_zeros z x]
+    | .eDeref _ x => simp only [SrcEff.calleeNeed, SrcEff.calleeNeed_zeros z x]
+    | .eField x _ => simp only [SrcEff.calleeNeed, SrcEff.calleeNeed_zeros z x]
+    | .eAt x i =>
+      simp only [SrcEff.calleeNeed, SrcEff.calleeNeed_zeros z x, SrcEff.calleeNeed_zeros z i, Nat.max_self]
   termination_by structural e
 
   theorem effsCalleeNeed_zeros {needs : List Nat} (z : Zeros needs) (es : List SrcEff) : effsCalleeNeed es needs = 0 := by
@@ -64,19 +70,28 @@ theorem SrcStmt.calleeNeed_zeros {needs : List Nat} (z : Zeros needs) (s : SrcSt
   induction s <;>
     simp_all only [SrcStmt.calleeNeed, SrcEff.calleeNeed_zeros z, z _, Nat.max_self]
 
-theorem needRound_zeros {funcs : List SrcFunc} (blocks : ∀ f ∈ funcs, frameBlock f = 0) {prev : List Nat}
-    (z : Zeros prev) : Zeros (needRound funcs prev) := by
-  induction funcs with
-  | nil => exact zeros_nil
-  | cons f rest ih =>
+theorem needRoundAt_zeros {prev : List Nat} (z : Zeros prev) :
+    ∀ {funcs : List SrcFunc}, (∀ f ∈ funcs, frameBlock f = 0) → ∀ {mine : List Nat}, Zeros mine →
+      Zeros (needRoundAt funcs prev mine)
+  | [], _, _, _ => zeros_nil
+  | f :: rest, blocks, mine, zm => by
     intro i
     cases i with
     | zero =>
-      simp only [needRound, List.getD_cons_zero, blocks f List.mem_cons_self, SrcStmt.calleeNeed_zeros z,
-        Nat.add_zero]
+      simp only [needRoundAt, List.getD_cons_zero, blocks f List.mem_cons_self, SrcStmt.calleeNeed_zeros z,
+        Nat.add_zero, zm 0, needCapped, needLimit]
+      decide
     | succ i =>
-      simp only [needRound, List.getD_cons_succ]
-      exact ih (fun g mem => blocks g (List.mem_cons_of_mem _ mem)) i
+      simp only [needRoundAt, List.getD_cons_succ]
+      exact needRoundAt_zeros z (fun g mem => blocks g (List.mem_cons_of_mem _ mem))
+        (fun j => by
+          cases mine with
+          | nil => rfl
+          | cons m ms => simpa [restNeeds] using zm (j + 1)) i
+
+theorem needRound_zeros {funcs : List SrcFunc} (blocks : ∀ f ∈ funcs, frameBlock f = 0) {prev : List Nat}
+    (z : Zeros prev) : Zeros (needRound funcs prev) :=
+  needRoundAt_zeros z blocks z
 
 theorem needsAfter_zeros {funcs : List SrcFunc} (blocks : ∀ f ∈ funcs, frameBlock f = 0) :
     ∀ (rounds : Nat) {prev : List Nat}, Zeros prev → Zeros (needsAfter funcs prev rounds) := by

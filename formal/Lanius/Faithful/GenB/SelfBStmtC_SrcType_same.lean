@@ -25,17 +25,17 @@ abbrev BStmt_SrcType_size (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : P
 
 abbrev BStmt_sizes (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcType} {v0 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 73 RepSrcType) x0 v0 → k < b → Pre_sizes n x0 b →
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 74 RepSrcType) x0 v0 → k < b → Pre_sizes n x0 b →
     qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.sizes x0) w
 
 abbrev BStmt_max_size (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (List Lanius.Mini.SrcType)} {v0 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 77 (RepList 73 RepSrcType)) x0 v0 → k < b → Pre_max_size n x0 b →
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 78 (RepList 74 RepSrcType)) x0 v0 → k < b → Pre_max_size n x0 b →
     qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.maxSize x0) w
 
 abbrev BStmt_field_offset (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcType} {x1 : Nat} {v0 v1 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 73 RepSrcType) x0 v0 → RepNat x1 v1 → k < b → Pre_field_offset n x0 x1 b →
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 74 RepSrcType) x0 v0 → RepNat x1 v1 → k < b → Pre_field_offset n x0 x1 b →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.fieldOffset x0 x1) w
 
 abbrev BStmt_norm (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -55,12 +55,12 @@ abbrev BStmt_SrcType_same (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : P
 
 abbrev BStmt_types_same (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcType} {x1 : List Lanius.Mini.SrcType} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 73 RepSrcType) x0 v0 → (RepList 73 RepSrcType) x1 v1 →
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 74 RepSrcType) x0 v0 → (RepList 74 RepSrcType) x1 v1 →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.typesSame x0 x1) w
 
 abbrev BStmt_variants_same (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (List Lanius.Mini.SrcType)} {x1 : List (List Lanius.Mini.SrcType)} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 77 (RepList 73 RepSrcType)) x0 v0 → (RepList 77 (RepList 73 RepSrcType)) x1 v1 →
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 78 (RepList 74 RepSrcType)) x0 v0 → (RepList 78 (RepList 74 RepSrcType)) x1 v1 →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.variantsSame x0 x1) w
 
 end Lanius.Faithful.SelfBudget

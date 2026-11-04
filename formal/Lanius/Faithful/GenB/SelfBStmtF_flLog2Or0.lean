@@ -20,7 +20,7 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_fl_log2_or0 (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Bool} {v0 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 261 RepBool) x0 v0 → k < b → Pre_fl_log2_or0 n x0 b →
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 262 RepBool) x0 v0 → k < b → Pre_fl_log2_or0 n x0 b →
     qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.flLog2Or0 x0) w
 
 abbrev BStmt_fl_sat (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -30,17 +30,17 @@ abbrev BStmt_fl_sat (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev BStmt_fl_div_step (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FlDiv} {x1 : Bool} {x2 : List Bool} {v0 v1 v2 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepFlDiv x0 v0 → RepBool x1 v1 → (RepList 261 RepBool) x2 v2 →
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepFlDiv x0 v0 → RepBool x1 v1 → (RepList 262 RepBool) x2 v2 →
     qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_fl_div_step n x0 x1 x2 = k ∧ RepFlDiv (Lanius.Mini.flDivStep x0 x1 x2) w
 
 abbrev BStmt_fl_divmod (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Bool} {x1 : List Bool} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 261 RepBool) x0 v0 → (RepList 261 RepBool) x1 v1 →
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 262 RepBool) x0 v0 → (RepList 262 RepBool) x1 v1 →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_fl_divmod n x0 x1 = k ∧ RepFlDiv (Lanius.Mini.flDivmod x0 x1) w
 
 abbrev BStmt_fl_odd (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Bool} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 261 RepBool) x0 v0 →
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 262 RepBool) x0 v0 →
     qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.flOdd x0) w
 
 end Lanius.Faithful.SelfBudget

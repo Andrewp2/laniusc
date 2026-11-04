@@ -20,32 +20,32 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_close_named (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Tables} {x2 : Nat} {x3 : List Lanius.Mini.Ty} {x4 : Option Nat} {v0 v1 v2 v3 v4 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → RepNat x0 v0 → RepTables x1 v1 → RepNat x2 v2 → (RepList 141 RepTy) x3 v3 → (RepOption 150 RepNat) x4 v4 → k < b → Pre_close_named n x0 x1 x2 x3 x4 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_close_named n x0 x1 x2 x3 x4 = k ∧ (RepOption 159 RepSrcType) (Lanius.Mini.closeNamed x0 x1 x2 x3 x4) w
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → RepNat x0 v0 → RepTables x1 v1 → RepNat x2 v2 → (RepList 143 RepTy) x3 v3 → (RepOption 135 RepNat) x4 v4 → k < b → Pre_close_named n x0 x1 x2 x3 x4 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_close_named n x0 x1 x2 x3 x4 = k ∧ (RepOption 160 RepSrcType) (Lanius.Mini.closeNamed x0 x1 x2 x3 x4) w
 
 abbrev BStmt_close_ty (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Tables} {x2 : Lanius.Mini.Ty} {v0 v1 v2 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepTables x1 v1 → RepTy x2 v2 → k < b → Pre_close_ty n x0 x1 x2 b →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_close_ty n x0 x1 x2 = k ∧ (RepOption 159 RepSrcType) (Lanius.Mini.closeTy x0 x1 x2) w
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_close_ty n x0 x1 x2 = k ∧ (RepOption 160 RepSrcType) (Lanius.Mini.closeTy x0 x1 x2) w
 
 abbrev BStmt_src_enum_id (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.SrcType} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 159 RepSrcType) x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 150 RepNat) (Lanius.Mini.srcEnumId x0) w
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 160 RepSrcType) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 135 RepNat) (Lanius.Mini.srcEnumId x0) w
 
 abbrev BStmt_table_weighed (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Inst} {x1 : Bool} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 139 RepInst) x0 v0 → RepBool x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 198 (RepList 139 RepInst)) (Lanius.Mini.tableWeighed x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 141 RepInst) x0 v0 → RepBool x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 199 (RepList 141 RepInst)) (Lanius.Mini.tableWeighed x0 x1) w
 
 abbrev BStmt_all_weighed (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (Option Nat)} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 209 (RepOption 150 RepNat)) x0 v0 →
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 210 (RepOption 135 RepNat)) x0 v0 →
     qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.allWeighed x0) w
 
 abbrev BStmt_types_weighed (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Option (List Lanius.Mini.Inst)} {v0 v1 v2 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepDecls x1 v1 → (RepOption 198 (RepList 139 RepInst)) x2 v2 → k < b → Pre_types_weighed n x0 x1 x2 b →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_types_weighed n x0 x1 x2 = k ∧ (RepOption 198 (RepList 139 RepInst)) (Lanius.Mini.typesWeighed x0 x1 x2) w
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepDecls x1 v1 → (RepOption 199 (RepList 141 RepInst)) x2 v2 → k < b → Pre_types_weighed n x0 x1 x2 b →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_types_weighed n x0 x1 x2 = k ∧ (RepOption 199 (RepList 141 RepInst)) (Lanius.Mini.typesWeighed x0 x1 x2) w
 
 end Lanius.Faithful.SelfBudget

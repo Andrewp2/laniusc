@@ -20,13 +20,13 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_place_funcs (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List UInt8} {x1 : List Lanius.Mini.SrcFunc} {v0 v1 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 35 RepU8) x0 v0 → (RepList 5 RepSrcFunc) x1 v1 → k < b → Pre_place_funcs n x0 x1 b →
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 36 RepU8) x0 v0 → (RepList 5 RepSrcFunc) x1 v1 → k < b → Pre_place_funcs n x0 x1 b →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_place_funcs n x0 x1 = k ∧ (RepList 5 RepSrcFunc) (Lanius.Mini.placeFuncs x0 x1) w
 
 abbrev BStmt_funcs_bytes (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcFunc} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → (RepList 5 RepSrcFunc) x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_funcs_bytes n x0 = k ∧ (RepList 35 RepU8) (Lanius.Mini.funcsBytes x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_funcs_bytes n x0 = k ∧ (RepList 36 RepU8) (Lanius.Mini.funcsBytes x0) w
 
 abbrev BStmt_placed_program (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcFunc} {v0 w : Value} {k b : Nat},

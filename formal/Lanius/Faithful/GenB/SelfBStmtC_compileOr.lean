@@ -20,22 +20,22 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_compile_or (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.Binary} {x1 : Lanius.Mini.Program} {v0 v1 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 51 RepBinary) x0 v0 → RepProgram x1 v1 → k < b → Pre_compile_or n x0 x1 b →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_compile_or n x0 x1 = k ∧ (RepOption 51 RepBinary) (Lanius.Mini.compileOr x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 52 RepBinary) x0 v0 → RepProgram x1 v1 → k < b → Pre_compile_or n x0 x1 b →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_compile_or n x0 x1 = k ∧ (RepOption 52 RepBinary) (Lanius.Mini.compileOr x0 x1) w
 
 abbrev BStmt_compile_optimized (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Program} {v0 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepProgram x0 v0 → k < b → Pre_compile_optimized n x0 b →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_compile_optimized n x0 = k ∧ (RepOption 51 RepBinary) (Lanius.Mini.compileOptimized x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_compile_optimized n x0 = k ∧ (RepOption 52 RepBinary) (Lanius.Mini.compileOptimized x0) w
 
 abbrev BStmt_compile_lowered (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option (List Lanius.Mini.Func)} {x1 : List UInt8} {v0 v1 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 85 (RepList 86 RepFunc)) x0 v0 → (RepList 35 RepU8) x1 v1 → k < b → Pre_compile_lowered n x0 x1 b →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_compile_lowered n x0 x1 = k ∧ (RepOption 51 RepBinary) (Lanius.Mini.compileLowered x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 86 (RepList 87 RepFunc)) x0 v0 → (RepList 36 RepU8) x1 v1 → k < b → Pre_compile_lowered n x0 x1 b →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_compile_lowered n x0 x1 = k ∧ (RepOption 52 RepBinary) (Lanius.Mini.compileLowered x0 x1) w
 
 abbrev BStmt_compile_declared (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.SrcDecls} {x1 : Lanius.Mini.SrcProgram} {v0 v1 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 69 RepSrcDecls) x0 v0 → RepSrcProgram x1 v1 → k < b → Pre_compile_declared n x0 x1 b →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_compile_declared n x0 x1 = k ∧ (RepOption 51 RepBinary) (Lanius.Mini.compileDeclared x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 70 RepSrcDecls) x0 v0 → RepSrcProgram x1 v1 → k < b → Pre_compile_declared n x0 x1 b →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_compile_declared n x0 x1 = k ∧ (RepOption 52 RepBinary) (Lanius.Mini.compileDeclared x0 x1) w
 
 end Lanius.Faithful.SelfBudget

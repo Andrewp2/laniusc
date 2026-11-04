@@ -70,7 +70,7 @@ abbrev BStmt_ite_or_skip (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
 
 abbrev BStmt_optimize_all (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Expr} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 92 RepExpr) x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_optimize_all n x0 = k ∧ (RepList 92 RepExpr) (Lanius.Mini.optimizeAll x0) w
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 93 RepExpr) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_optimize_all n x0 = k ∧ (RepList 93 RepExpr) (Lanius.Mini.optimizeAll x0) w
 
 end Lanius.Faithful.SelfBudget

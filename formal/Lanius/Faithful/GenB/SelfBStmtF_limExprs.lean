@@ -20,8 +20,8 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_lim_bind (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Nat} {x1 : Bool} {x2 : Option Nat} {v0 v1 v2 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepOption 150 RepNat) x0 v0 → RepBool x1 v1 → (RepOption 150 RepNat) x2 v2 → k < b → Pre_lim_bind n x0 x1 x2 b →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ (RepOption 150 RepNat) (Lanius.Mini.limBind x0 x1 x2) w
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepOption 135 RepNat) x0 v0 → RepBool x1 v1 → (RepOption 135 RepNat) x2 v2 → k < b → Pre_lim_bind n x0 x1 x2 b →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ (RepOption 135 RepNat) (Lanius.Mini.limBind x0 x1 x2) w
 
 abbrev BStmt_lim_exprs (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcExpr} {v0 w : Value} {k b : Nat},
@@ -40,7 +40,7 @@ abbrev BStmt_lim_eff (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
 
 abbrev BStmt_lim_effs (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcEff} {v0 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 186 RepSrcEff) x0 v0 → k < b → Pre_lim_effs n x0 b →
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 187 RepSrcEff) x0 v0 → k < b → Pre_lim_effs n x0 b →
     qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.limEffs x0) w
 
 end Lanius.Faithful.SelfBudget

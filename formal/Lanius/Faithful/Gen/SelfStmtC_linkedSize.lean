@@ -22,10 +22,10 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_compile_program (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Program} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepProgram x0 v0 →
-    (RepOption 51 RepBinary) (Lanius.Mini.compileProgram x0) w
+    (RepOption 52 RepBinary) (Lanius.Mini.compileProgram x0) w
 
 abbrev Stmt_room_after (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : List Lanius.Mini.Code} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepList 53 RepCode) x1 v1 →
-    (RepOption 150 RepNat) (Lanius.Mini.roomAfter x0 x1) w
+  ∀ {x0 : Nat} {x1 : List Lanius.Mini.Code} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepList 54 RepCode) x1 v1 →
+    (RepOption 135 RepNat) (Lanius.Mini.roomAfter x0 x1) w
 
 end Lanius.Faithful.SelfCert

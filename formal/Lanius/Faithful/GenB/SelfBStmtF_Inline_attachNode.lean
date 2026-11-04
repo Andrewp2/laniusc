@@ -20,12 +20,12 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_attach_prod (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Rule} {x1 : Nat} {x2 : Nat} {x3 : Nat} {x4 : List Nat} {x5 : Nat} {x6 : List Nat} {x7 : List Lanius.Mini.Sym} {x8 : Nat} {x9 : Lanius.Mini.Cursor} {v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5, v6, v7, v8, v9] = some (w, k) → (RepList 37 RepRule) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepNat x3 v3 → (RepList 25 RepNat) x4 v4 → RepNat x5 v5 → (RepList 25 RepNat) x6 v6 → (RepList 39 RepSym) x7 v7 → RepNat x8 v8 → RepCursor x9 v9 → k < b → Pre_attach_prod n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5, v6, v7, v8, v9] = some (w, k) ∧ Cost_attach_prod n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 = k ∧ (RepOption 130 RepAttached) (Lanius.Mini.Inline.attachProd x0 x1 x2 x3 x4 x5 x6 x7 x8 x9) w
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5, v6, v7, v8, v9] = some (w, k) → (RepList 38 RepRule) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepNat x3 v3 → (RepList 25 RepNat) x4 v4 → RepNat x5 v5 → (RepList 25 RepNat) x6 v6 → (RepList 40 RepSym) x7 v7 → RepNat x8 v8 → RepCursor x9 v9 → k < b → Pre_attach_prod n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5, v6, v7, v8, v9] = some (w, k) ∧ Cost_attach_prod n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 = k ∧ (RepOption 131 RepAttached) (Lanius.Mini.Inline.attachProd x0 x1 x2 x3 x4 x5 x6 x7 x8 x9) w
 
 abbrev BStmt_attach_node (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Rule} {x1 : Nat} {x2 : Nat} {x3 : Nat} {x4 : Lanius.Mini.Rule} {x5 : List Nat} {x6 : List Nat} {x7 : List Lanius.Mini.Sym} {x8 : Nat} {x9 : Lanius.Mini.Cursor} {v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5, v6, v7, v8, v9] = some (w, k) → (RepList 37 RepRule) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepNat x3 v3 → RepRule x4 v4 → (RepList 25 RepNat) x5 v5 → (RepList 25 RepNat) x6 v6 → (RepList 39 RepSym) x7 v7 → RepNat x8 v8 → RepCursor x9 v9 → k < b → Pre_attach_node n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5, v6, v7, v8, v9] = some (w, k) ∧ Cost_attach_node n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 = k ∧ (RepOption 130 RepAttached) (Lanius.Mini.Inline.attachNode x0 x1 x2 x3 x4 x5 x6 x7 x8 x9) w
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5, v6, v7, v8, v9] = some (w, k) → (RepList 38 RepRule) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepNat x3 v3 → RepRule x4 v4 → (RepList 25 RepNat) x5 v5 → (RepList 25 RepNat) x6 v6 → (RepList 40 RepSym) x7 v7 → RepNat x8 v8 → RepCursor x9 v9 → k < b → Pre_attach_node n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5, v6, v7, v8, v9] = some (w, k) ∧ Cost_attach_node n x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 = k ∧ (RepOption 131 RepAttached) (Lanius.Mini.Inline.attachNode x0 x1 x2 x3 x4 x5 x6 x7 x8 x9) w
 
 end Lanius.Faithful.SelfBudget

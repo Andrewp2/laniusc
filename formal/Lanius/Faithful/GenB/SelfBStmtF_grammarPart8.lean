@@ -21,26 +21,26 @@ open Lanius.Faithful.Budget
 abbrev BStmt_grammar_part_8 (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value} {k : Nat},
     qcall spW prims uc n ix [] = some (w, k) →
-    qcall sp prims uc n ix [] = some (w, k) ∧ Cost_grammar_part_8 n  = k ∧ (RepList 37 RepRule) (Lanius.Mini.grammarPart8) w
+    qcall sp prims uc n ix [] = some (w, k) ∧ Cost_grammar_part_8 n  = k ∧ (RepList 38 RepRule) (Lanius.Mini.grammarPart8) w
 
 abbrev BStmt_grammar_part_9 (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value} {k : Nat},
     qcall spW prims uc n ix [] = some (w, k) →
-    qcall sp prims uc n ix [] = some (w, k) ∧ Cost_grammar_part_9 n  = k ∧ (RepList 37 RepRule) (Lanius.Mini.grammarPart9) w
+    qcall sp prims uc n ix [] = some (w, k) ∧ Cost_grammar_part_9 n  = k ∧ (RepList 38 RepRule) (Lanius.Mini.grammarPart9) w
 
 abbrev BStmt_grammar_part_10 (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value} {k : Nat},
     qcall spW prims uc n ix [] = some (w, k) →
-    qcall sp prims uc n ix [] = some (w, k) ∧ Cost_grammar_part_10 n  = k ∧ (RepList 37 RepRule) (Lanius.Mini.grammarPart10) w
+    qcall sp prims uc n ix [] = some (w, k) ∧ Cost_grammar_part_10 n  = k ∧ (RepList 38 RepRule) (Lanius.Mini.grammarPart10) w
 
 abbrev BStmt_grammar_part_11 (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value} {k : Nat},
     qcall spW prims uc n ix [] = some (w, k) →
-    qcall sp prims uc n ix [] = some (w, k) ∧ Cost_grammar_part_11 n  = k ∧ (RepList 37 RepRule) (Lanius.Mini.grammarPart11) w
+    qcall sp prims uc n ix [] = some (w, k) ∧ Cost_grammar_part_11 n  = k ∧ (RepList 38 RepRule) (Lanius.Mini.grammarPart11) w
 
 abbrev BStmt_grammar_part_12 (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value} {k : Nat},
     qcall spW prims uc n ix [] = some (w, k) →
-    qcall sp prims uc n ix [] = some (w, k) ∧ Cost_grammar_part_12 n  = k ∧ (RepList 37 RepRule) (Lanius.Mini.grammarPart12) w
+    qcall sp prims uc n ix [] = some (w, k) ∧ Cost_grammar_part_12 n  = k ∧ (RepList 38 RepRule) (Lanius.Mini.grammarPart12) w
 
 end Lanius.Faithful.SelfBudget

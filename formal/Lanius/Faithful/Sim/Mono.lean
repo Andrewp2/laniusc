@@ -94,6 +94,10 @@ theorem peff_mono (le : CallsLe call call') :
     simp only [peff] at h ⊢
     exact bind_mono (fun _ hx => peff_mono le hx) (fun _ _ hx => peff_mono le hx) h
   | _, .eLen _, _, h | _, .eStr _ _, _, h => by simp [peff] at h
+  | _, .eBorrow _ _, _, h => by simp [peff] at h
+  | _, .eDeref _ _, _, h => by simp [peff] at h
+  | _, .eField _ _, _, h => by simp [peff] at h
+  | _, .eAt _ _, _, h => by simp [peff] at h
 
 theorem peffs_mono (le : CallsLe call call') :
     ∀ {env : Env} {es : List SrcEff} {vs : List Value}, peffs call env es = some vs → peffs call' env es = some vs
@@ -192,6 +196,8 @@ theorem pstmt_mono (le : CallsLe call call') (s : SrcStmt) :
     exact ⟨v, peff_mono le hv, rfl⟩
   | setIndexEval => intro env d h; simp [pstmt] at h
   | setFieldEval => intro env d h; simp [pstmt] at h
+  | setPlace => intro env d h; simp [pstmt] at h
+  | setPlaceOp => intro env d h; simp [pstmt] at h
   | returnUnit => exact fun h => h
   | «assert» condition =>
     intro env d h
@@ -318,6 +324,8 @@ theorem mstmt_mono (le : CallsLe call call') {fuel fuel' : Nat} (fle : fuel ≤ 
     exact ⟨v, peff_mono le hv, rfl⟩
   | setIndexEval => intro env o h; simp [mstmt] at h
   | setFieldEval => intro env o h; simp [mstmt] at h
+  | setPlace => intro env o h; simp [mstmt] at h
+  | setPlaceOp => intro env o h; simp [mstmt] at h
   | returnUnit => exact fun h => h
   | «assert» condition =>
     intro env o h

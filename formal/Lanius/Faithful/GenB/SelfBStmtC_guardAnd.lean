@@ -45,7 +45,7 @@ abbrev BStmt_shift_width (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
 
 abbrev BStmt_shift_guard (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.Typed} {x1 : Option Lanius.Mini.Typed} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 155 RepTyped) x0 v0 → (RepOption 155 RepTyped) x1 v1 →
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 156 RepTyped) x0 v0 → (RepOption 156 RepTyped) x1 v1 →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_shift_guard n x0 x1 = k ∧ RepExpr (Lanius.Mini.shiftGuard x0 x1) w
 
 abbrev BStmt_guard_or (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -55,7 +55,7 @@ abbrev BStmt_guard_or (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
 
 abbrev BStmt_left_false (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.Typed} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 155 RepTyped) x0 v0 →
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 156 RepTyped) x0 v0 →
     qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_left_false n x0 = k ∧ RepExpr (Lanius.Mini.leftFalse x0) w
 
 end Lanius.Faithful.SelfBudget

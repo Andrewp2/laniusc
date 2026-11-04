@@ -110,6 +110,10 @@ def SrcEff.eval (self : SrcEff) (sigs : List Sig) (decls : SrcDecls) (scope : Li
      | some s => SrcEff.eval body sigs decls s dst)
   | .eLen slice => evalLen scope slice slot
   | .eStr offset chars => evalStr decls offset chars slot
+  | .eBorrow bty bplace => none
+  | .eDeref dty dref => none
+  | .eField fbase fidx => none
+  | .eAt abase aindex => none
 /-- The arguments, each in the slots after the one before. -/
 def evalArgs (sigs : List Sig) (decls : SrcDecls) (scope : List Binding) (args : List SrcEff) (slot : Nat) : Option EvaluatedArgs :=
   match args with

@@ -20,7 +20,7 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_wide_marker (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Nat} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 150 RepNat) x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_wide_marker n x0 = k ∧ (RepOption 234 RepSrcExpr) (Lanius.Mini.wideMarker x0) w
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 135 RepNat) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_wide_marker n x0 = k ∧ (RepOption 235 RepSrcExpr) (Lanius.Mini.wideMarker x0) w
 
 end Lanius.Faithful.SelfBudget

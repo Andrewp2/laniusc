@@ -21,112 +21,112 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_slice_ty (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.Ty} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 211 RepTy) x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_slice_ty n x0 = k ∧ (RepOption 211 RepTy) (Lanius.Mini.sliceTy x0) w
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 212 RepTy) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_slice_ty n x0 = k ∧ (RepOption 212 RepTy) (Lanius.Mini.sliceTy x0) w
 
 abbrev BStmt_array_ty (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.Ty} {x1 : Option Nat} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 211 RepTy) x0 v0 → (RepOption 150 RepNat) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_array_ty n x0 x1 = k ∧ (RepOption 211 RepTy) (Lanius.Mini.arrayTy x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 212 RepTy) x0 v0 → (RepOption 135 RepNat) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_array_ty n x0 x1 = k ∧ (RepOption 212 RepTy) (Lanius.Mini.arrayTy x0 x1) w
 
 abbrev BStmt_decimal (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Nat} {x1 : Nat} {v0 v1 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 25 RepNat) x0 v0 → RepNat x1 v1 → k < b → Pre_decimal n x0 x1 b →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 150 RepNat) (Lanius.Mini.decimal x0 x1) w
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 135 RepNat) (Lanius.Mini.decimal x0 x1) w
 
 abbrev BStmt_array_len (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CTree} {v0 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepCTree x0 v0 → k < b → Pre_array_len n x0 b →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 150 RepNat) (Lanius.Mini.arrayLen x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 135 RepNat) (Lanius.Mini.arrayLen x0) w
 
 abbrev BStmt_type_decl_at (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : List (List Nat)} {v0 v1 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepFrontEnv x0 v0 → (RepList 31 (RepList 25 RepNat)) x1 v1 → k < b → Pre_type_decl_at n x0 x1 b →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_type_decl_at n x0 x1 = k ∧ (RepOption 150 RepNat) (Lanius.Mini.typeDeclAt x0 x1) w
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_type_decl_at n x0 x1 = k ∧ (RepOption 135 RepNat) (Lanius.Mini.typeDeclAt x0 x1) w
 
 abbrev BStmt_named_checked (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : Nat} {x2 : List Lanius.Mini.Ty} {v0 v1 v2 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepBool x0 v0 → RepNat x1 v1 → (RepList 141 RepTy) x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_named_checked n x0 x1 x2 = k ∧ (RepOption 211 RepTy) (Lanius.Mini.namedChecked x0 x1 x2) w
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepBool x0 v0 → RepNat x1 v1 → (RepList 143 RepTy) x2 v2 →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_named_checked n x0 x1 x2 = k ∧ (RepOption 212 RepTy) (Lanius.Mini.namedChecked x0 x1 x2) w
 
 abbrev BStmt_arity_ok (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : Nat} {x2 : List Lanius.Mini.Ty} {v0 v1 v2 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepFrontEnv x0 v0 → RepNat x1 v1 → (RepList 141 RepTy) x2 v2 → k < b → Pre_arity_ok n x0 x1 x2 b →
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepFrontEnv x0 v0 → RepNat x1 v1 → (RepList 143 RepTy) x2 v2 → k < b → Pre_arity_ok n x0 x1 x2 b →
     qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.arityOk x0 x1 x2) w
 
 abbrev BStmt_named_args (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : Nat} {x2 : Option (List Lanius.Mini.Ty)} {v0 v1 v2 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepFrontEnv x0 v0 → RepNat x1 v1 → (RepOption 212 (RepList 141 RepTy)) x2 v2 → k < b → Pre_named_args n x0 x1 x2 b →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_named_args n x0 x1 x2 = k ∧ (RepOption 211 RepTy) (Lanius.Mini.namedArgs x0 x1 x2) w
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepFrontEnv x0 v0 → RepNat x1 v1 → (RepOption 213 (RepList 143 RepTy)) x2 v2 → k < b → Pre_named_args n x0 x1 x2 b →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_named_args n x0 x1 x2 = k ∧ (RepOption 212 RepTy) (Lanius.Mini.namedArgs x0 x1 x2) w
 
 abbrev BStmt_named_of (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : Option Nat} {x2 : Option (List Lanius.Mini.Ty)} {v0 v1 v2 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepFrontEnv x0 v0 → (RepOption 150 RepNat) x1 v1 → (RepOption 212 (RepList 141 RepTy)) x2 v2 → k < b → Pre_named_of n x0 x1 x2 b →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_named_of n x0 x1 x2 = k ∧ (RepOption 211 RepTy) (Lanius.Mini.namedOf x0 x1 x2) w
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepFrontEnv x0 v0 → (RepOption 135 RepNat) x1 v1 → (RepOption 213 (RepList 143 RepTy)) x2 v2 → k < b → Pre_named_of n x0 x1 x2 b →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_named_of n x0 x1 x2 = k ∧ (RepOption 212 RepTy) (Lanius.Mini.namedOf x0 x1 x2) w
 
 abbrev BStmt_prim_or_named (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : List (List Nat)} {x2 : List Nat} {v0 v1 v2 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepFrontEnv x0 v0 → (RepList 31 (RepList 25 RepNat)) x1 v1 → (RepList 25 RepNat) x2 v2 → k < b → Pre_prim_or_named n x0 x1 x2 b →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_prim_or_named n x0 x1 x2 = k ∧ (RepOption 211 RepTy) (Lanius.Mini.primOrNamed x0 x1 x2) w
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_prim_or_named n x0 x1 x2 = k ∧ (RepOption 212 RepTy) (Lanius.Mini.primOrNamed x0 x1 x2) w
 
 abbrev BStmt_bare_ty (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : List (List Nat)} {v0 v1 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepFrontEnv x0 v0 → (RepList 31 (RepList 25 RepNat)) x1 v1 → k < b → Pre_bare_ty n x0 x1 b →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_bare_ty n x0 x1 = k ∧ (RepOption 211 RepTy) (Lanius.Mini.bareTy x0 x1) w
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_bare_ty n x0 x1 = k ∧ (RepOption 212 RepTy) (Lanius.Mini.bareTy x0 x1) w
 
 abbrev BStmt_cons_ty_tail (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Ty} {x1 : Option (List Lanius.Mini.Ty)} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepTy x0 v0 → (RepOption 212 (RepList 141 RepTy)) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_ty_tail n x0 x1 = k ∧ (RepOption 212 (RepList 141 RepTy)) (Lanius.Mini.consTyTail x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepTy x0 v0 → (RepOption 213 (RepList 143 RepTy)) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_ty_tail n x0 x1 = k ∧ (RepOption 213 (RepList 143 RepTy)) (Lanius.Mini.consTyTail x0 x1) w
 
 abbrev BStmt_cons_ty (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.Ty} {x1 : Option (List Lanius.Mini.Ty)} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 211 RepTy) x0 v0 → (RepOption 212 (RepList 141 RepTy)) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_ty n x0 x1 = k ∧ (RepOption 212 (RepList 141 RepTy)) (Lanius.Mini.consTy x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 212 RepTy) x0 v0 → (RepOption 213 (RepList 143 RepTy)) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_ty n x0 x1 = k ∧ (RepOption 213 (RepList 143 RepTy)) (Lanius.Mini.consTy x0 x1) w
 
 abbrev BStmt_ty_of (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.CTree} {v0 v1 v2 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → RepCTree x2 v2 → k < b → Pre_ty_of n x0 x1 x2 b →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_ty_of n x0 x1 x2 = k ∧ (RepOption 211 RepTy) (Lanius.Mini.tyOf x0 x1 x2) w
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_ty_of n x0 x1 x2 = k ∧ (RepOption 212 RepTy) (Lanius.Mini.tyOf x0 x1 x2) w
 
 abbrev BStmt_bare_or_alias (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Option (List (List Nat))} {v0 v1 v2 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepOption 138 (RepList 31 (RepList 25 RepNat))) x2 v2 → k < b → Pre_bare_or_alias n x0 x1 x2 b →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_bare_or_alias n x0 x1 x2 = k ∧ (RepOption 211 RepTy) (Lanius.Mini.bareOrAlias x0 x1 x2) w
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepOption 140 (RepList 31 (RepList 25 RepNat))) x2 v2 → k < b → Pre_bare_or_alias n x0 x1 x2 b →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_bare_or_alias n x0 x1 x2 = k ∧ (RepOption 212 RepTy) (Lanius.Mini.bareOrAlias x0 x1 x2) w
 
 abbrev BStmt_applied_of (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Option (List (List Nat))} {x3 : Option (List Lanius.Mini.CTree)} {v0 v1 v2 v3 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepOption 138 (RepList 31 (RepList 25 RepNat))) x2 v2 → (RepOption 81 (RepList 82 RepCTree)) x3 v3 → k < b → Pre_applied_of n x0 x1 x2 x3 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_applied_of n x0 x1 x2 x3 = k ∧ (RepOption 211 RepTy) (Lanius.Mini.appliedOf x0 x1 x2 x3) w
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepOption 140 (RepList 31 (RepList 25 RepNat))) x2 v2 → (RepOption 82 (RepList 83 RepCTree)) x3 v3 → k < b → Pre_applied_of n x0 x1 x2 x3 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_applied_of n x0 x1 x2 x3 = k ∧ (RepOption 212 RepTy) (Lanius.Mini.appliedOf x0 x1 x2 x3) w
 
 abbrev BStmt_alias_ty (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List (List Nat)} {x3 : Option (List Lanius.Mini.Ty)} {v0 v1 v2 v3 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → (RepOption 212 (RepList 141 RepTy)) x3 v3 → k < b → Pre_alias_ty n x0 x1 x2 x3 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_alias_ty n x0 x1 x2 x3 = k ∧ (RepOption 211 RepTy) (Lanius.Mini.aliasTy x0 x1 x2 x3) w
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → (RepOption 213 (RepList 143 RepTy)) x3 v3 → k < b → Pre_alias_ty n x0 x1 x2 x3 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_alias_ty n x0 x1 x2 x3 = k ∧ (RepOption 212 RepTy) (Lanius.Mini.aliasTy x0 x1 x2 x3) w
 
 abbrev BStmt_args_tys (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.CTree} {v0 v1 v2 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 82 RepCTree) x2 v2 → k < b → Pre_args_tys n x0 x1 x2 b →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_args_tys n x0 x1 x2 = k ∧ (RepOption 212 (RepList 141 RepTy)) (Lanius.Mini.argsTys x0 x1 x2) w
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 83 RepCTree) x2 v2 → k < b → Pre_args_tys n x0 x1 x2 b →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_args_tys n x0 x1 x2 = k ∧ (RepOption 213 (RepList 143 RepTy)) (Lanius.Mini.argsTys x0 x1 x2) w
 
 abbrev BStmt_alias_at (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Lanius.Mini.AliasDecl} {x3 : List Lanius.Mini.Ty} {v0 v1 v2 v3 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepDecls x1 v1 → RepAliasDecl x2 v2 → (RepList 141 RepTy) x3 v3 → k < b → Pre_alias_at n x0 x1 x2 x3 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_alias_at n x0 x1 x2 x3 = k ∧ (RepOption 211 RepTy) (Lanius.Mini.aliasAt x0 x1 x2 x3) w
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepDecls x1 v1 → RepAliasDecl x2 v2 → (RepList 143 RepTy) x3 v3 → k < b → Pre_alias_at n x0 x1 x2 x3 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_alias_at n x0 x1 x2 x3 = k ∧ (RepOption 212 RepTy) (Lanius.Mini.aliasAt x0 x1 x2 x3) w
 
 abbrev BStmt_arg_ty (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.CTree} {v0 v1 v2 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → RepCTree x2 v2 → k < b → Pre_arg_ty n x0 x1 x2 b →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_arg_ty n x0 x1 x2 = k ∧ (RepOption 211 RepTy) (Lanius.Mini.argTy x0 x1 x2) w
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_arg_ty n x0 x1 x2 = k ∧ (RepOption 212 RepTy) (Lanius.Mini.argTy x0 x1 x2) w
 
 abbrev BStmt_ty_list (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.CTree} {v0 v1 v2 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 82 RepCTree) x2 v2 → k < b → Pre_ty_list n x0 x1 x2 b →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_ty_list n x0 x1 x2 = k ∧ (RepOption 212 (RepList 141 RepTy)) (Lanius.Mini.tyList x0 x1 x2) w
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 83 RepCTree) x2 v2 → k < b → Pre_ty_list n x0 x1 x2 b →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_ty_list n x0 x1 x2 = k ∧ (RepOption 213 (RepList 143 RepTy)) (Lanius.Mini.tyList x0 x1 x2) w
 
 abbrev BStmt_cons_tys_tail (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Ty} {x1 : Option (List (List Lanius.Mini.Ty))} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 141 RepTy) x0 v0 → (RepOption 243 (RepList 244 (RepList 141 RepTy))) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_tys_tail n x0 x1 = k ∧ (RepOption 243 (RepList 244 (RepList 141 RepTy))) (Lanius.Mini.consTysTail x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 143 RepTy) x0 v0 → (RepOption 244 (RepList 245 (RepList 143 RepTy))) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_tys_tail n x0 x1 = k ∧ (RepOption 244 (RepList 245 (RepList 143 RepTy))) (Lanius.Mini.consTysTail x0 x1) w
 
 end Lanius.Faithful.SelfBudget

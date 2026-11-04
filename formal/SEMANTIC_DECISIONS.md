@@ -2059,6 +2059,72 @@ compiler accepts no reference form until stage 2 proves its lowering. Stage
   `decide`), and `SourceRefsCorrect`, without it, is what is left to prove.
 When it is proved, point 10 lands.
 
+**S5 in Lanius's syntax (decided 11-03, leafC, approved by the
+coordinator).** Lanius has no `&x`, `&mut x` or `*r`: the grammar has
+`&T` and `&mut T` only as types (`type_ref`, `type_ref_mut`) and `&self`,
+`&mut self` as receivers, and its unary operators are `+`, `-` and `!`.
+laniusc (probed 11-03) does not borrow an argument (`bump(x)` at a
+`&mut P` parameter is LNC0006) and does not dereference a scalar
+reference (`n += 1` with `n: &mut i32` is LNC0006). A reference is made
+only by an auto-borrowed receiver (`x.bump()` with `&mut self`) or by a
+function that returns one (`fn borrow(&self) -> &P { return self; }`,
+`pass(x.borrow())`); a reference parameter is used through its fields and
+elements (`p.a`, `p.a = v`, `p.b[2] += v`) and passed on (`get(p)`), and
+writes through it alias the caller's value (the probe returned 76, Core's
+answer). So S5 is:
+1. `&T` and `&mut T` are read as `SrcType.ref T` for parameters only; in a
+   let, a result, a field, an element or a type argument they are not
+   read, nor is `&&T`.
+2. A reference parameter's field and element reads, and `p.f = v`,
+   `p.f op= v`, `p.f[i] = v`, are read as `eField` and `eAt` over `eDeref`
+   (statement positions; `setPlace` and `setPlaceOp`).
+3. A reference parameter passed at a parameter of the same reference type
+   is read as the reference value.
+4. The lifetime check rejects a reassigned reference parameter, any other
+   use of the whole reference (a let, a return, an operand, an element,
+   a by-value argument), and a method call on a reference (that is point
+   10).
+5. S5 makes no borrow, so stage 1 has no homes; the home rules (stage 2's
+   design points: statement positions, slice returns, older than the
+   holder) start with S5b.
+
+**S5b: point 10, receivers are references (decided 11-03, leafC, design
+for the coordinator).** Every `&self` and `&mut self` is a reference to
+the impl's type: the by-value reading of `&self` and its `writesLocal`
+restriction are dropped from the trusted reading (one reading of every
+method).
+- A method call `r.m(args)` with `m` taking `&self` passes `r`'s place:
+  `eBorrow (ref T) place` where `place` is a local `x` (`ePure (local x)`),
+  a field or element of one (`eField`, `eAt`, any depth), or the same
+  through a reference (`eDeref p`: a reborrow, Core's same reference). A
+  receiver that is not a place (a call's result, a literal) is a borrow of
+  a temporary and is not read.
+- A local named by a borrow's place anywhere in its scope gets a home
+  (S6's `Binding.home`); its reads and writes are then home loads and
+  stores (statement positions only, stage 2's design point).
+- Inside the method `self` is a reference parameter: S5's rules read
+  `self.f`, `self.f = v` and passing `self` on; `self.m()` passes `self`
+  on.
+- A method that returns `self` or a place of it returns a reference and
+  stays unread (point 9: no result of reference type until the check
+  that its referent is older than the holder). The stdlib's 338
+  `x.borrow()` calls (`fn borrow(&self) -> &T { return self; }`) are the
+  common case; reading such a call as the borrow of `x` itself is a later
+  step, after the result rule.
+- The lifetime check gains the home rules: a function with homes whose
+  result type holds a slice is not read (unless the slice comes from a
+  parameter, a later relaxation); a slice of a homed array stored into a
+  home's field or element needs the array's home to be older than the
+  holder's (declared before it, so earlier in `places`'s age order); a
+  reference is never stored (point 9).
+- Order: S5b makes every `&self` call a borrow, which the compiler rejects
+  until S6 lowers borrows and homes, so programs with `&self` calls stop
+  compiling in between (the self program has none; frontend cases such as
+  `try_method` and `reject_self_write` change their expected results).
+  S5b's reading therefore lands together with the S6 step that lowers
+  receivers (S6b), or with those expected results changed if the
+  coordinator prefers the reading first.
+
 **Out of scope for F5.** Functions that return references (100 in the
 stdlib), and references in lets, struct fields, elements or results, until
 the lifetime checks of point 9; references to references; raw places
@@ -2698,6 +2764,58 @@ image limit, and `compileProgram` rejects that program anyway.
 without the check (`compileProgramUnchecked`): it accepts the same programs
 with the same binary. `stmtRoom_eq` gives the check's closed form,
 `stmtRoom room s = if s.weight ≤ room then some (room - s.weight) else none`.
+
+
+## A function's frame block checked as it adds up (decided 11-03, F14)
+
+`frame_block` added each parameter's and each let's block bytes
+(`decl_bytes`, at most `8 * 2^22` each) over the whole source body: every
+let, both branches of an `if` and every arm. It runs in lowering, before
+`compile_func`'s weight check (`room_fits`) and with only `slice_uses`
+charged before it, so the number of lets was bounded only by the budget and
+the sum could pass 2^64 (leafB, PreCompileSourceV4/NOTES.md). Now
+`params_room` and `block_room` take each declaration's bytes out of
+`block_limit()` (2^31 - 1) as they add up, the way `room_after` takes each
+function's code out of the image limit, and fail at once when it runs out.
+`frame_block` is then the sum when it fits and 2^31 when not, so it is at
+most 2^31 and so are the needs' addends.
+
+The needs (`need_round`) add a block to a callee's need each round, for up
+to one round per function, so they too had no bound below 2^64 (leafB,
+V4/NOTES). They are saturated: `need_capped` caps each round's need at
+`need_limit()` (2^40, more frame memory than any binary has: `elf_fits`
+keeps the stack, and so frame memory, below 2^40), and a function whose need
+in the round before was at the limit stays there, so a need below the limit
+at the end was below it in every round. `lower_func` rejects a function
+whose need reaches the limit. A block is at most 2^31 and a callee's need at
+most the limit, so no sum passes 2^64.
+
+`lower_func` already rejected a block of 2^31 or more, and `lower_funcs`
+fails when one function does. So `compileSource_unchecked`
+(`Lanius/Mini/FrameRoom.lean`) shows that `compileSource` is the compiler
+with the unchecked sums and needs (`compileSourceUnchecked`) for a program
+whose needs are below the limit (`NeedsBelow`), and rejects the others: a
+program with a function that needs 2^40 bytes of frame memory or more, which
+no binary could run. No real program comes near it.
+
+## A function's room checked before its temporaries are counted (decided 11-03, F14)
+
+`compile_func` added a function's locals and its body's temporaries
+(`Stmt.temps`) before any check, and the room check (`room_fits`, above)
+came last. The compile's pre lemmas then needed the temporaries below 2^62
+from the source: `LowerFuncsTemps` (lowering's result has at most its cost
+in temporaries) carried that bound, and it would have needed a new generated
+measure through the whole lowering. Now `compile_func` asks `room_fits`
+first and counts the slots only inside it. A body's temporaries are at most
+its weight (`Stmt.temps_le_weight` in `Lanius/Mini/Room.lean`), so a body
+that passes the check has at most `image_limit` of them
+(`Stmt.temps_le_of_roomFits`), and the sum stays far below 2^64 with no
+bound from the lowering. `LowerFuncsTemps` is no longer needed.
+
+The checks are pure, so their order changes no result:
+`compileFunc_checksLast` proves that `compileFunc` is the compiler with the
+room check last (`compileFuncChecksLast`, the order before this change).
+
 
 ## Budget certificates (decided 11-01, F14)
 

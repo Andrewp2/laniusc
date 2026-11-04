@@ -21,19 +21,19 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_all_binders (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : List Lanius.Mini.CTree} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepFrontEnv x0 v0 → (RepList 82 RepCTree) x1 v1 →
+  ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : List Lanius.Mini.CTree} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepFrontEnv x0 v0 → (RepList 83 RepCTree) x1 v1 →
     RepBool (Lanius.Mini.allBinders x0 x1) w
 
 abbrev Stmt_and_known (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Bool} {x1 : Option Bool} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 308 RepBool) x0 v0 → (RepOption 308 RepBool) x1 v1 →
-    (RepOption 308 RepBool) (Lanius.Mini.andKnown x0 x1) w
+  ∀ {x0 : Option Bool} {x1 : Option Bool} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 309 RepBool) x0 v0 → (RepOption 309 RepBool) x1 v1 →
+    (RepOption 309 RepBool) (Lanius.Mini.andKnown x0 x1) w
 
 abbrev Stmt_arm_nested (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.CTree} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → RepCTree x2 v2 →
-    (RepOption 308 RepBool) (Lanius.Mini.armNested x0 x1 x2) w
+    (RepOption 309 RepBool) (Lanius.Mini.armNested x0 x1 x2) w
 
 abbrev Stmt_binder_name_ok (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : Option (List Nat)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepFrontEnv x0 v0 → (RepOption 197 (RepList 25 RepNat)) x1 v1 →
+  ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : Option (List Nat)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepFrontEnv x0 v0 → (RepOption 198 (RepList 25 RepNat)) x1 v1 →
     RepBool (Lanius.Mini.binderNameOk x0 x1) w
 
 abbrev Stmt_is_binder_pat (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -41,15 +41,15 @@ abbrev Stmt_is_binder_pat (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
     RepBool (Lanius.Mini.isBinderPat x0 x1) w
 
 abbrev Stmt_not_known (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Bool} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 308 RepBool) x0 v0 →
-    (RepOption 308 RepBool) (Lanius.Mini.notKnown x0) w
+  ∀ {x0 : Option Bool} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 309 RepBool) x0 v0 →
+    (RepOption 309 RepBool) (Lanius.Mini.notKnown x0) w
 
 abbrev Stmt_or_known (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Bool} {x1 : Option Bool} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 308 RepBool) x0 v0 → (RepOption 308 RepBool) x1 v1 →
-    (RepOption 308 RepBool) (Lanius.Mini.orKnown x0 x1) w
+  ∀ {x0 : Option Bool} {x1 : Option Bool} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 309 RepBool) x0 v0 → (RepOption 309 RepBool) x1 v1 →
+    (RepOption 309 RepBool) (Lanius.Mini.orKnown x0 x1) w
 
 abbrev Stmt_pats_nested (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : Option (List Lanius.Mini.CTree)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepFrontEnv x0 v0 → (RepOption 81 (RepList 82 RepCTree)) x1 v1 →
-    (RepOption 308 RepBool) (Lanius.Mini.patsNested x0 x1) w
+  ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : Option (List Lanius.Mini.CTree)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepFrontEnv x0 v0 → (RepOption 82 (RepList 83 RepCTree)) x1 v1 →
+    (RepOption 309 RepBool) (Lanius.Mini.patsNested x0 x1) w
 
 end Lanius.Faithful.SelfCert

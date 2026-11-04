@@ -20,7 +20,7 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_arm_scope (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Nat} {x1 : List Lanius.Mini.SrcType} {x2 : Nat} {x3 : List Lanius.Mini.Binding} {v0 v1 v2 v3 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → (RepList 25 RepNat) x0 v0 → (RepList 73 RepSrcType) x1 v1 → RepNat x2 v2 → (RepList 135 RepBinding) x3 v3 → k < b → Pre_arm_scope n x0 x1 x2 x3 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_arm_scope n x0 x1 x2 x3 = k ∧ (RepOption 187 (RepList 135 RepBinding)) (Lanius.Mini.armScope x0 x1 x2 x3) w
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → (RepList 25 RepNat) x0 v0 → (RepList 74 RepSrcType) x1 v1 → RepNat x2 v2 → (RepList 137 RepBinding) x3 v3 → k < b → Pre_arm_scope n x0 x1 x2 x3 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_arm_scope n x0 x1 x2 x3 = k ∧ (RepOption 188 (RepList 137 RepBinding)) (Lanius.Mini.armScope x0 x1 x2 x3) w
 
 end Lanius.Faithful.SelfBudget

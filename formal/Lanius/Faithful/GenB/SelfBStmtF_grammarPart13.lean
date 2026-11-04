@@ -22,42 +22,42 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_generic_close_at (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : List Lanius.Mini.Token} {x2 : Nat} {x3 : Nat} {v0 v1 v2 v3 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → (RepList 47 RepToken) x1 v1 → RepNat x2 v2 → RepNat x3 v3 → k < b → Pre_generic_close_at n x0 x1 x2 x3 b →
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → (RepList 48 RepToken) x1 v1 → RepNat x2 v2 → RepNat x3 v3 → k < b → Pre_generic_close_at n x0 x1 x2 x3 b →
     qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.Inline.genericCloseAt x0 x1 x2 x3) w
 
 abbrev BStmt_attach_term (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Rule} {x1 : Nat} {x2 : Nat} {x3 : List Lanius.Mini.Sym} {x4 : Nat} {x5 : Lanius.Mini.Cursor} {v0 v1 v2 v3 v4 v5 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) → (RepList 37 RepRule) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → (RepList 39 RepSym) x3 v3 → RepNat x4 v4 → RepCursor x5 v5 → k < b → Pre_attach_term n x0 x1 x2 x3 x4 x5 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) ∧ Cost_attach_term n x0 x1 x2 x3 x4 x5 = k ∧ (RepOption 130 RepAttached) (Lanius.Mini.Inline.attachTerm x0 x1 x2 x3 x4 x5) w
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) → (RepList 38 RepRule) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → (RepList 40 RepSym) x3 v3 → RepNat x4 v4 → RepCursor x5 v5 → k < b → Pre_attach_term n x0 x1 x2 x3 x4 x5 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) ∧ Cost_attach_term n x0 x1 x2 x3 x4 x5 = k ∧ (RepOption 131 RepAttached) (Lanius.Mini.Inline.attachTerm x0 x1 x2 x3 x4 x5) w
 
 abbrev BStmt_attach_after (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Rule} {x1 : Nat} {x2 : Nat} {x3 : Option Lanius.Mini.Attached} {x4 : List Lanius.Mini.Sym} {x5 : Nat} {v0 v1 v2 v3 v4 v5 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) → (RepList 37 RepRule) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → (RepOption 130 RepAttached) x3 v3 → (RepList 39 RepSym) x4 v4 → RepNat x5 v5 → k < b → Pre_attach_after n x0 x1 x2 x3 x4 x5 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) ∧ Cost_attach_after n x0 x1 x2 x3 x4 x5 = k ∧ (RepOption 130 RepAttached) (Lanius.Mini.Inline.attachAfter x0 x1 x2 x3 x4 x5) w
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) → (RepList 38 RepRule) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → (RepOption 131 RepAttached) x3 v3 → (RepList 40 RepSym) x4 v4 → RepNat x5 v5 → k < b → Pre_attach_after n x0 x1 x2 x3 x4 x5 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) ∧ Cost_attach_after n x0 x1 x2 x3 x4 x5 = k ∧ (RepOption 131 RepAttached) (Lanius.Mini.Inline.attachAfter x0 x1 x2 x3 x4 x5) w
 
 abbrev BStmt_grammar_part_13 (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value} {k : Nat},
     qcall spW prims uc n ix [] = some (w, k) →
-    qcall sp prims uc n ix [] = some (w, k) ∧ Cost_grammar_part_13 n  = k ∧ (RepList 37 RepRule) (Lanius.Mini.grammarPart13) w
+    qcall sp prims uc n ix [] = some (w, k) ∧ Cost_grammar_part_13 n  = k ∧ (RepList 38 RepRule) (Lanius.Mini.grammarPart13) w
 
 abbrev BStmt_grammar_part_14 (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value} {k : Nat},
     qcall spW prims uc n ix [] = some (w, k) →
-    qcall sp prims uc n ix [] = some (w, k) ∧ Cost_grammar_part_14 n  = k ∧ (RepList 37 RepRule) (Lanius.Mini.grammarPart14) w
+    qcall sp prims uc n ix [] = some (w, k) ∧ Cost_grammar_part_14 n  = k ∧ (RepList 38 RepRule) (Lanius.Mini.grammarPart14) w
 
 abbrev BStmt_grammar_part_15 (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value} {k : Nat},
     qcall spW prims uc n ix [] = some (w, k) →
-    qcall sp prims uc n ix [] = some (w, k) ∧ Cost_grammar_part_15 n  = k ∧ (RepList 37 RepRule) (Lanius.Mini.grammarPart15) w
+    qcall sp prims uc n ix [] = some (w, k) ∧ Cost_grammar_part_15 n  = k ∧ (RepList 38 RepRule) (Lanius.Mini.grammarPart15) w
 
 abbrev BStmt_grammar_part_16 (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value} {k : Nat},
     qcall spW prims uc n ix [] = some (w, k) →
-    qcall sp prims uc n ix [] = some (w, k) ∧ Cost_grammar_part_16 n  = k ∧ (RepList 37 RepRule) (Lanius.Mini.grammarPart16) w
+    qcall sp prims uc n ix [] = some (w, k) ∧ Cost_grammar_part_16 n  = k ∧ (RepList 38 RepRule) (Lanius.Mini.grammarPart16) w
 
 abbrev BStmt_grammar (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value} {k : Nat},
     qcall spW prims uc n ix [] = some (w, k) →
-    qcall sp prims uc n ix [] = some (w, k) ∧ Cost_grammar n  = k ∧ (RepList 37 RepRule) (Lanius.Mini.grammar) w
+    qcall sp prims uc n ix [] = some (w, k) ∧ Cost_grammar n  = k ∧ (RepList 38 RepRule) (Lanius.Mini.grammar) w
 
 end Lanius.Faithful.SelfBudget

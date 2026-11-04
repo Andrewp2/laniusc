@@ -35,7 +35,7 @@ abbrev BStmt_lx_decimal_next (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) 
 
 abbrev BStmt_lx_keyword_at (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Nat} {x1 : Lanius.Mini.SymRule} {x2 : List Lanius.Mini.SymRule} {v0 v1 v2 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepList 25 RepNat) x0 v0 → RepSymRule x1 v1 → (RepList 192 RepSymRule) x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ (RepOption 150 RepNat) (Lanius.Mini.Inline.lxKeywordAt x0 x1 x2) w
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepList 25 RepNat) x0 v0 → RepSymRule x1 v1 → (RepList 193 RepSymRule) x2 v2 →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ (RepOption 135 RepNat) (Lanius.Mini.Inline.lxKeywordAt x0 x1 x2) w
 
 end Lanius.Faithful.SelfBudget

@@ -21,21 +21,21 @@ open Lanius.Faithful.Budget
 abbrev BStmt_lower_scalar_local (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Binding} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepBinding x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 155 RepTyped) (Lanius.Mini.lowerScalarLocal x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 156 RepTyped) (Lanius.Mini.lowerScalarLocal x0) w
 
 abbrev BStmt_conjunction (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Typed} {x1 : Lanius.Mini.Typed} {v0 v1 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepTyped x0 v0 → RepTyped x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_conjunction n x0 x1 = k ∧ (RepOption 155 RepTyped) (Lanius.Mini.conjunction x0 x1) w
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_conjunction n x0 x1 = k ∧ (RepOption 156 RepTyped) (Lanius.Mini.conjunction x0 x1) w
 
 abbrev BStmt_disjunction (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Typed} {x1 : Lanius.Mini.Typed} {v0 v1 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepTyped x0 v0 → RepTyped x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_disjunction n x0 x1 = k ∧ (RepOption 155 RepTyped) (Lanius.Mini.disjunction x0 x1) w
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_disjunction n x0 x1 = k ∧ (RepOption 156 RepTyped) (Lanius.Mini.disjunction x0 x1) w
 
 abbrev BStmt_SrcOp_lower (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcOp} {x1 : Lanius.Mini.Typed} {x2 : Lanius.Mini.Typed} {v0 v1 v2 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepSrcOp x0 v0 → RepTyped x1 v1 → RepTyped x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_SrcOp_lower n x0 x1 x2 = k ∧ (RepOption 155 RepTyped) (Lanius.Mini.SrcOp.lower x0 x1 x2) w
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_SrcOp_lower n x0 x1 x2 = k ∧ (RepOption 156 RepTyped) (Lanius.Mini.SrcOp.lower x0 x1 x2) w
 
 end Lanius.Faithful.SelfBudget

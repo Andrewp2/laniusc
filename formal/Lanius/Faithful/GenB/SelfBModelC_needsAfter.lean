@@ -1,6 +1,6 @@
 import Lanius.Faithful.BudgetCore
-import Lanius.Faithful.GenB.SelfBModelC_needRound
-import Lanius.Mini.Compiler.P.needRound
+import Lanius.Faithful.GenB.SelfBModelC_needCapped
+import Lanius.Mini.Compiler.P.needCapped
 import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Frontend.Types
 

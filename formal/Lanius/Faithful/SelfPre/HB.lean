@@ -407,6 +407,10 @@ instance : HB Lanius.Mini.SrcDivOp := ⟨fun _ => 0⟩
 @[simp, hb_simp] theorem hb_SrcDivOp (x : Lanius.Mini.SrcDivOp) : hb x = 0 := rfl
 @[simp, hb_simp] theorem hb_opt_SrcDivOp (x : Option Lanius.Mini.SrcDivOp) : hb x = 0 := by cases x <;> rfl
 
+instance : HB Lanius.Mini.SrcAssignOp := ⟨fun _ => 0⟩
+@[simp, hb_simp] theorem hb_SrcAssignOp (x : Lanius.Mini.SrcAssignOp) : hb x = 0 := rfl
+@[simp, hb_simp] theorem hb_opt_SrcAssignOp (x : Option Lanius.Mini.SrcAssignOp) : hb x = 0 := by cases x <;> rfl
+
 mutual
 def hbSrcEff : Lanius.Mini.SrcEff → Nat
   | .ePure a0 => hb a0
@@ -426,6 +430,10 @@ def hbSrcEff : Lanius.Mini.SrcEff → Nat
   | .eLet a0 a1 a2 a3 a4 => max (hb a1) (max (hbSrcEff a2) (max (hb a3) (hbSrcEff a4)))
   | .eLen a0 => 0
   | .eStr a0 a1 => hb a1
+  | .eBorrow a0 a1 => max (hb a0) (hbSrcEff a1)
+  | .eDeref a0 a1 => max (hb a0) (hbSrcEff a1)
+  | .eField a0 a1 => hbSrcEff a0
+  | .eAt a0 a1 => max (hbSrcEff a0) (hbSrcEff a1)
 def hbSrcEff0 : List Lanius.Mini.SrcEff → Nat
   | [] => 0
   | a :: l => max (hbSrcEff a) (hbSrcEff0 l) + 1
@@ -453,6 +461,10 @@ theorem hbSrcEff0_eq : ∀ l : List Lanius.Mini.SrcEff, hbSrcEff0 l = HB.hb l
 @[simp, hb_simp] theorem hb_SrcEff_eLet (a0 : Nat) (a1 : Lanius.Mini.SrcType) (a2 : Lanius.Mini.SrcEff) (a3 : Lanius.Mini.SrcType) (a4 : Lanius.Mini.SrcEff) : hb (Lanius.Mini.SrcEff.eLet a0 a1 a2 a3 a4) = max (hb a1) (max (hb a2) (max (hb a3) (hb a4))) := rfl
 @[simp, hb_simp] theorem hb_SrcEff_eLen (a0 : Nat) : hb (Lanius.Mini.SrcEff.eLen a0) = 0 := rfl
 @[simp, hb_simp] theorem hb_SrcEff_eStr (a0 : Nat) (a1 : List Nat) : hb (Lanius.Mini.SrcEff.eStr a0 a1) = hb a1 := rfl
+@[simp, hb_simp] theorem hb_SrcEff_eBorrow (a0 : Lanius.Mini.SrcType) (a1 : Lanius.Mini.SrcEff) : hb (Lanius.Mini.SrcEff.eBorrow a0 a1) = max (hb a0) (hb a1) := rfl
+@[simp, hb_simp] theorem hb_SrcEff_eDeref (a0 : Lanius.Mini.SrcType) (a1 : Lanius.Mini.SrcEff) : hb (Lanius.Mini.SrcEff.eDeref a0 a1) = max (hb a0) (hb a1) := rfl
+@[simp, hb_simp] theorem hb_SrcEff_eField (a0 : Lanius.Mini.SrcEff) (a1 : Nat) : hb (Lanius.Mini.SrcEff.eField a0 a1) = hb a0 := rfl
+@[simp, hb_simp] theorem hb_SrcEff_eAt (a0 : Lanius.Mini.SrcEff) (a1 : Lanius.Mini.SrcEff) : hb (Lanius.Mini.SrcEff.eAt a0 a1) = max (hb a0) (hb a1) := rfl
 
 mutual
 def hbSrcStmt : Lanius.Mini.SrcStmt → Nat
@@ -492,6 +504,8 @@ def hbSrcStmt : Lanius.Mini.SrcStmt → Nat
   | .unreachable a0 a1 => hb a1
   | .letView a0 a1 a2 a3 a4 => max (hb a2) (hbSrcStmt a4)
   | .letStr a0 a1 a2 => max (hb a1) (hbSrcStmt a2)
+  | .setPlace a0 a1 => max (hb a0) (hb a1)
+  | .setPlaceOp a0 a1 a2 => max (hb a1) (hb a2)
 end
 instance : HB Lanius.Mini.SrcStmt := ⟨hbSrcStmt⟩
 @[simp, hb_simp] theorem hb_SrcStmt_nop  : hb (Lanius.Mini.SrcStmt.nop) = 0 := rfl
@@ -530,6 +544,8 @@ instance : HB Lanius.Mini.SrcStmt := ⟨hbSrcStmt⟩
 @[simp, hb_simp] theorem hb_SrcStmt_unreachable (a0 : Nat) (a1 : Lanius.Mini.SrcType) : hb (Lanius.Mini.SrcStmt.unreachable a0 a1) = hb a1 := rfl
 @[simp, hb_simp] theorem hb_SrcStmt_letView (a0 : Nat) (a1 : Nat) (a2 : List Lanius.Mini.SrcExpr) (a3 : Nat) (a4 : Lanius.Mini.SrcStmt) : hb (Lanius.Mini.SrcStmt.letView a0 a1 a2 a3 a4) = max (hb a2) (hb a4) := rfl
 @[simp, hb_simp] theorem hb_SrcStmt_letStr (a0 : Nat) (a1 : List Nat) (a2 : Lanius.Mini.SrcStmt) : hb (Lanius.Mini.SrcStmt.letStr a0 a1 a2) = max (hb a1) (hb a2) := rfl
+@[simp, hb_simp] theorem hb_SrcStmt_setPlace (a0 : Lanius.Mini.SrcEff) (a1 : Lanius.Mini.SrcEff) : hb (Lanius.Mini.SrcStmt.setPlace a0 a1) = max (hb a0) (hb a1) := rfl
+@[simp, hb_simp] theorem hb_SrcStmt_setPlaceOp (a0 : Lanius.Mini.SrcAssignOp) (a1 : Lanius.Mini.SrcEff) (a2 : Lanius.Mini.SrcEff) : hb (Lanius.Mini.SrcStmt.setPlaceOp a0 a1 a2) = max (hb a1) (hb a2) := rfl
 
 instance : HB Lanius.Mini.SrcParam := ⟨fun s => hb s.ty⟩
 @[simp, hb_simp] theorem hb_SrcParam_mk (a0 : Nat) (a1 : Lanius.Mini.SrcType) : hb (Lanius.Mini.SrcParam.mk a0 a1) = hb a1 := rfl

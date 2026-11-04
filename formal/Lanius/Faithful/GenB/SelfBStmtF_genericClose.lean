@@ -20,7 +20,7 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_generic_close (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Token} {x1 : Nat} {x2 : Nat} {v0 v1 v2 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepList 47 RepToken) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → k < b → Pre_generic_close n x0 x1 x2 b →
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepList 48 RepToken) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → k < b → Pre_generic_close n x0 x1 x2 b →
     qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.genericClose x0 x1 x2) w
 
 end Lanius.Faithful.SelfBudget

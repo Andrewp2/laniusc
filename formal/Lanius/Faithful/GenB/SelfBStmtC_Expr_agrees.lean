@@ -25,7 +25,7 @@ abbrev BStmt_Expr_agrees (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
 
 abbrev BStmt_args_agree (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Expr} {x1 : List Lanius.Mini.Expr} {v0 v1 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 92 RepExpr) x0 v0 → (RepList 92 RepExpr) x1 v1 → k < b → Pre_args_agree n x0 x1 b →
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 93 RepExpr) x0 v0 → (RepList 93 RepExpr) x1 v1 → k < b → Pre_args_agree n x0 x1 b →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.argsAgree x0 x1) w
 
 end Lanius.Faithful.SelfBudget

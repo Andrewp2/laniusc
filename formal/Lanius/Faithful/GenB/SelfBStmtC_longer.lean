@@ -20,23 +20,23 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_longer (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Fact} {x1 : Nat} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 181 RepFact) x0 v0 → RepNat x1 v1 →
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 182 RepFact) x0 v0 → RepNat x1 v1 →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.longer x0 x1) w
 
 abbrev BStmt_trim_facts (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Fact} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 181 RepFact) x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_trim_facts n x0 = k ∧ (RepList 181 RepFact) (Lanius.Mini.trimFacts x0) w
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 182 RepFact) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_trim_facts n x0 = k ∧ (RepList 182 RepFact) (Lanius.Mini.trimFacts x0) w
 
 abbrev BStmt_assigned (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Fact} {x1 : Nat} {x2 : Lanius.Mini.Expr} {v0 v1 v2 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepList 181 RepFact) x0 v0 → RepNat x1 v1 → RepExpr x2 v2 → k < b → Pre_assigned n x0 x1 x2 b →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_assigned n x0 x1 x2 = k ∧ (RepList 181 RepFact) (Lanius.Mini.assigned x0 x1 x2) w
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepList 182 RepFact) x0 v0 → RepNat x1 v1 → RepExpr x2 v2 → k < b → Pre_assigned n x0 x1 x2 b →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_assigned n x0 x1 x2 = k ∧ (RepList 182 RepFact) (Lanius.Mini.assigned x0 x1 x2) w
 
 abbrev BStmt_Stmt_facts_after (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Stmt} {x1 : List Lanius.Mini.Fact} {v0 v1 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepStmt x0 v0 → (RepList 181 RepFact) x1 v1 → k < b → Pre_Stmt_facts_after n x0 x1 b →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_Stmt_facts_after n x0 x1 = k ∧ (RepList 181 RepFact) (Lanius.Mini.Stmt.factsAfter x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepStmt x0 v0 → (RepList 182 RepFact) x1 v1 → k < b → Pre_Stmt_facts_after n x0 x1 b →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_Stmt_facts_after n x0 x1 = k ∧ (RepList 182 RepFact) (Lanius.Mini.Stmt.factsAfter x0 x1) w
 
 abbrev BStmt_Stmt_ignores (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Stmt} {x1 : Nat} {v0 v1 w : Value} {k : Nat},

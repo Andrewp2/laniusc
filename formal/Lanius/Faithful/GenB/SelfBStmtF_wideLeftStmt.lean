@@ -40,13 +40,13 @@ abbrev BStmt_lx_space (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
 
 abbrev BStmt_cons_root (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.CTree} {x1 : Option (List Lanius.Mini.CTree)} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 128 RepCTree) x0 v0 → (RepOption 81 (RepList 82 RepCTree)) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_root n x0 x1 = k ∧ (RepOption 81 (RepList 82 RepCTree)) (Lanius.Mini.consRoot x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 129 RepCTree) x0 v0 → (RepOption 82 (RepList 83 RepCTree)) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_root n x0 x1 = k ∧ (RepOption 82 (RepList 83 RepCTree)) (Lanius.Mini.consRoot x0 x1) w
 
 abbrev BStmt_validate_files (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Rule} {x1 : List Lanius.Mini.FileInput} {v0 v1 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 37 RepRule) x0 v0 → (RepList 45 RepFileInput) x1 v1 → k < b → Pre_validate_files n x0 x1 b →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_validate_files n x0 x1 = k ∧ (RepOption 81 (RepList 82 RepCTree)) (Lanius.Mini.validateFiles x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 38 RepRule) x0 v0 → (RepList 46 RepFileInput) x1 v1 → k < b → Pre_validate_files n x0 x1 b →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_validate_files n x0 x1 = k ∧ (RepOption 82 (RepList 83 RepCTree)) (Lanius.Mini.validateFiles x0 x1) w
 
 abbrev BStmt_wide_left_stmt (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcStmt} {v0 w : Value} {k : Nat},
@@ -65,37 +65,37 @@ abbrev BStmt_untyped_rejected (spW sp : SrcProgram) (prims : Prims) (ix n : Nat)
 
 abbrev BStmt_build_closed (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : List Lanius.Mini.Inst} {x3 : Option (List Lanius.Mini.Inst)} {x4 : List Lanius.Mini.MFunc} {v0 v1 v2 v3 v4 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → RepNat x0 v0 → RepDecls x1 v1 → (RepList 139 RepInst) x2 v2 → (RepOption 198 (RepList 139 RepInst)) x3 v3 → (RepList 168 RepMFunc) x4 v4 → k < b → Pre_build_closed n x0 x1 x2 x3 x4 b →
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → RepNat x0 v0 → RepDecls x1 v1 → (RepList 141 RepInst) x2 v2 → (RepOption 199 (RepList 141 RepInst)) x3 v3 → (RepList 169 RepMFunc) x4 v4 → k < b → Pre_build_closed n x0 x1 x2 x3 x4 b →
     qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_build_closed n x0 x1 x2 x3 x4 = k ∧ (RepOption 3 RepSrcProgram) (Lanius.Mini.buildClosed x0 x1 x2 x3 x4) w
 
 abbrev BStmt_build_mono (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : List Lanius.Mini.Inst} {x3 : Option Lanius.Mini.Mono} {v0 v1 v2 v3 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepDecls x1 v1 → (RepList 139 RepInst) x2 v2 → (RepOption 166 RepMono) x3 v3 → k < b → Pre_build_mono n x0 x1 x2 x3 b →
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepDecls x1 v1 → (RepList 141 RepInst) x2 v2 → (RepOption 167 RepMono) x3 v3 → k < b → Pre_build_mono n x0 x1 x2 x3 b →
     qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_build_mono n x0 x1 x2 x3 = k ∧ (RepOption 3 RepSrcProgram) (Lanius.Mini.buildMono x0 x1 x2 x3) w
 
 abbrev BStmt_build_checked (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Collected} {x2 : List Lanius.Mini.Inst} {x3 : List Lanius.Mini.Inst} {v0 v1 v2 v3 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepCollected x1 v1 → (RepList 139 RepInst) x2 v2 → (RepList 139 RepInst) x3 v3 → k < b → Pre_build_checked n x0 x1 x2 x3 b →
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepCollected x1 v1 → (RepList 141 RepInst) x2 v2 → (RepList 141 RepInst) x3 v3 → k < b → Pre_build_checked n x0 x1 x2 x3 b →
     qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_build_checked n x0 x1 x2 x3 = k ∧ (RepOption 3 RepSrcProgram) (Lanius.Mini.buildChecked x0 x1 x2 x3) w
 
 abbrev BStmt_build_collected (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FileDecls} {x2 : Option Lanius.Mini.Collected} {v0 v1 v2 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepFileDecls x1 v1 → (RepOption 132 RepCollected) x2 v2 → k < b → Pre_build_collected n x0 x1 x2 b →
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepFileDecls x1 v1 → (RepOption 133 RepCollected) x2 v2 → k < b → Pre_build_collected n x0 x1 x2 b →
     qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_build_collected n x0 x1 x2 = k ∧ (RepOption 3 RepSrcProgram) (Lanius.Mini.buildCollected x0 x1 x2) w
 
 abbrev BStmt_build_files (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : List Lanius.Mini.CTree} {v0 v1 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepNat x0 v0 → (RepList 82 RepCTree) x1 v1 → k < b → Pre_build_files n x0 x1 b →
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepNat x0 v0 → (RepList 83 RepCTree) x1 v1 → k < b → Pre_build_files n x0 x1 b →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_build_files n x0 x1 = k ∧ (RepOption 3 RepSrcProgram) (Lanius.Mini.buildFiles x0 x1) w
 
 abbrev BStmt_files_fuel (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.FileInput} {v0 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 45 RepFileInput) x0 v0 → k < b → Pre_files_fuel n x0 b →
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 46 RepFileInput) x0 v0 → k < b → Pre_files_fuel n x0 b →
     qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.filesFuel x0) w
 
 abbrev BStmt_front_end_files (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Rule} {x1 : List Lanius.Mini.FileInput} {v0 v1 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 37 RepRule) x0 v0 → (RepList 45 RepFileInput) x1 v1 → k < b → Pre_front_end_files n x0 x1 b →
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 38 RepRule) x0 v0 → (RepList 46 RepFileInput) x1 v1 → k < b → Pre_front_end_files n x0 x1 b →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_front_end_files n x0 x1 = k ∧ (RepOption 3 RepSrcProgram) (Lanius.Mini.frontEndFiles x0 x1) w
 
 end Lanius.Faithful.SelfBudget

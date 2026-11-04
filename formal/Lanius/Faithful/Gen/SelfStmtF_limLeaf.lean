@@ -21,32 +21,32 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_lim_const (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 150 RepNat) x0 v0 → RepNat x1 v1 →
-    (RepOption 150 RepNat) (Lanius.Mini.limConst x0 x1) w
+  ∀ {x0 : Option Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 135 RepNat) x0 v0 → RepNat x1 v1 →
+    (RepOption 135 RepNat) (Lanius.Mini.limConst x0 x1) w
 
 abbrev Stmt_lim_funcs (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcFunc} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 5 RepSrcFunc) x0 v0 →
     RepBool (Lanius.Mini.limFuncs x0) w
 
 abbrev Stmt_lim_guard (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Bool} {x1 : Option Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → (RepOption 150 RepNat) x1 v1 →
-    (RepOption 150 RepNat) (Lanius.Mini.limGuard x0 x1) w
+  ∀ {x0 : Bool} {x1 : Option Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → (RepOption 135 RepNat) x1 v1 →
+    (RepOption 135 RepNat) (Lanius.Mini.limGuard x0 x1) w
 
 abbrev Stmt_lim_leaf (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepBool x0 v0 →
-    (RepOption 150 RepNat) (Lanius.Mini.limLeaf x0) w
+    (RepOption 135 RepNat) (Lanius.Mini.limLeaf x0) w
 
 abbrev Stmt_lim_max (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Nat} {x1 : Option Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 150 RepNat) x0 v0 → (RepOption 150 RepNat) x1 v1 →
-    (RepOption 150 RepNat) (Lanius.Mini.limMax x0 x1) w
+  ∀ {x0 : Option Nat} {x1 : Option Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 135 RepNat) x0 v0 → (RepOption 135 RepNat) x1 v1 →
+    (RepOption 135 RepNat) (Lanius.Mini.limMax x0 x1) w
 
 abbrev Stmt_lim_one (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    (RepOption 150 RepNat) (Lanius.Mini.limOne) w
+    (RepOption 135 RepNat) (Lanius.Mini.limOne) w
 
 abbrev Stmt_lim_param_slots (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcParam} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 7 RepSrcParam) x0 v0 →
-    (RepOption 150 RepNat) (Lanius.Mini.limParamSlots x0) w
+    (RepOption 135 RepNat) (Lanius.Mini.limParamSlots x0) w
 
 abbrev Stmt_lim_params (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcParam} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 7 RepSrcParam) x0 v0 →
@@ -54,6 +54,6 @@ abbrev Stmt_lim_params (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
 
 abbrev Stmt_lim_stmt (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcStmt} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcStmt x0 v0 →
-    (RepOption 150 RepNat) (Lanius.Mini.limStmt x0) w
+    (RepOption 135 RepNat) (Lanius.Mini.limStmt x0) w
 
 end Lanius.Faithful.SelfCert

@@ -2,7 +2,7 @@ import Lanius.Faithful.BudgetTactic
 import Lanius.Faithful.Gen.SelfRep
 import Lanius.Faithful.Gen.SelfSrcC_needsAfter
 import Lanius.Faithful.Gen.SelfStmtC_needsAfter
-import Lanius.Faithful.GenB.SelfBStmtC_needRound
+import Lanius.Faithful.GenB.SelfBStmtC_needCapped
 import Lanius.Faithful.GenB.SelfBStmtC_needsAfter
 import Lanius.Faithful.GenB.SelfBStmtN7
 

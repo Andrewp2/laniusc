@@ -22,7 +22,7 @@ open Lanius.Faithful.Budget
 abbrev BStmt_Expr_literal (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Expr} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepExpr x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 205 RepU64) (Lanius.Mini.Expr.literal x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 206 RepU64) (Lanius.Mini.Expr.literal x0) w
 
 abbrev BStmt_Stmt_kills (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Stmt} {x1 : Nat} {v0 v1 w : Value} {k : Nat},
@@ -31,7 +31,7 @@ abbrev BStmt_Stmt_kills (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
 
 abbrev BStmt_Stmt_agrees (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Stmt} {x1 : List Lanius.Mini.Fact} {x2 : Lanius.Mini.Stmt} {v0 v1 v2 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepStmt x0 v0 → (RepList 181 RepFact) x1 v1 → RepStmt x2 v2 → k < b → Pre_Stmt_agrees n x0 x1 x2 b →
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepStmt x0 v0 → (RepList 182 RepFact) x1 v1 → RepStmt x2 v2 → k < b → Pre_Stmt_agrees n x0 x1 x2 b →
     qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_Stmt_agrees n x0 x1 x2 = k ∧ RepBool (Lanius.Mini.Stmt.agrees x0 x1 x2) w
 
 abbrev BStmt_Func_agrees (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -41,7 +41,7 @@ abbrev BStmt_Func_agrees (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
 
 abbrev BStmt_funcs_agree (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Func} {x1 : List Lanius.Mini.Func} {v0 v1 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 86 RepFunc) x0 v0 → (RepList 86 RepFunc) x1 v1 → k < b → Pre_funcs_agree n x0 x1 b →
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 87 RepFunc) x0 v0 → (RepList 87 RepFunc) x1 v1 → k < b → Pre_funcs_agree n x0 x1 b →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_funcs_agree n x0 x1 = k ∧ RepBool (Lanius.Mini.funcsAgree x0 x1) w
 
 abbrev BStmt_validate (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

@@ -20,7 +20,7 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_is_u8_slice (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.Ty} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 211 RepTy) x0 v0 →
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 212 RepTy) x0 v0 →
     qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_is_u8_slice n x0 = k ∧ RepBool (Lanius.Mini.isU8Slice x0) w
 
 abbrev BStmt_is_typed_slice_segments (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -30,17 +30,17 @@ abbrev BStmt_is_typed_slice_segments (spW sp : SrcProgram) (prims : Prims) (ix n
 
 abbrev BStmt_is_empty_trees (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.CTree} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 82 RepCTree) x0 v0 →
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 83 RepCTree) x0 v0 →
     qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.isEmptyTrees x0) w
 
 abbrev BStmt_is_u8_ty (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.Ty} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 211 RepTy) x0 v0 →
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 212 RepTy) x0 v0 →
     qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.isU8Ty x0) w
 
 abbrev BStmt_u8_args (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.CTree} {v0 v1 v2 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 82 RepCTree) x2 v2 → k < b → Pre_u8_args n x0 x1 x2 b →
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 83 RepCTree) x2 v2 → k < b → Pre_u8_args n x0 x1 x2 b →
     qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_u8_args n x0 x1 x2 = k ∧ RepBool (Lanius.Mini.u8Args x0 x1 x2) w
 
 abbrev BStmt_is_typed_slice_path (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -50,7 +50,7 @@ abbrev BStmt_is_typed_slice_path (spW sp : SrcProgram) (prims : Prims) (ix n : N
 
 abbrev BStmt_is_text (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option (List Nat)} {x1 : List Nat} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 197 (RepList 25 RepNat)) x0 v0 → (RepList 25 RepNat) x1 v1 →
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 198 (RepList 25 RepNat)) x0 v0 → (RepList 25 RepNat) x1 v1 →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.isText x0 x1) w
 
 abbrev BStmt_tree_names (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

@@ -515,6 +515,10 @@ theorem eff_live (live : FuncLive sp prims outside cost N) : ∀ (e : SrcEff) {t
     obtain ⟨r', ran⟩ := eff_rel calls ht inv rel (peff_of hq) ev (part g budget)
     exact ⟨_, _, ev, r', ran, g, f2⟩
   | .eLen _, _, _, _, _, _, _, ht, _, _, _, _, _ | .eStr _ _, _, _, _, _, _, _, ht, _, _, _, _, _ => by simp [effTy] at ht
+  | .eBorrow _ _, _, _, _, _, _, _, ht, _, _, _, _, _ => by simp [effTy] at ht
+  | .eDeref _ _, _, _, _, _, _, _, ht, _, _, _, _, _ => by simp [effTy] at ht
+  | .eField _ _, _, _, _, _, _, _, ht, _, _, _, _, _ => by simp [effTy] at ht
+  | .eAt _ _, _, _, _, _, _, _, ht, _, _, _, _, _ => by simp [effTy] at ht
 
 theorem effs_live (live : FuncLive sp prims outside cost N) : ∀ (es : List SrcEff) {tenv : TEnv} {env : Env} {st : State} {ts : List SrcType}
     {ps : List Value} {h : Nat},

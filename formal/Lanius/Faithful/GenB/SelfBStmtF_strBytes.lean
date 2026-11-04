@@ -21,36 +21,36 @@ open Lanius.Faithful.Budget
 abbrev BStmt_str_bytes (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Nat} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → (RepList 25 RepNat) x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_str_bytes n x0 = k ∧ (RepList 35 RepU8) (Lanius.Mini.strBytes x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_str_bytes n x0 = k ∧ (RepList 36 RepU8) (Lanius.Mini.strBytes x0) w
 
 abbrev BStmt_eff_bytes (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcEff} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepSrcEff x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_eff_bytes n x0 = k ∧ (RepList 35 RepU8) (Lanius.Mini.effBytes x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_eff_bytes n x0 = k ∧ (RepList 36 RepU8) (Lanius.Mini.effBytes x0) w
 
 abbrev BStmt_effs_bytes (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcEff} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 186 RepSrcEff) x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_effs_bytes n x0 = k ∧ (RepList 35 RepU8) (Lanius.Mini.effsBytes x0) w
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 187 RepSrcEff) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_effs_bytes n x0 = k ∧ (RepList 36 RepU8) (Lanius.Mini.effsBytes x0) w
 
 abbrev BStmt_stmt_bytes (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcStmt} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepSrcStmt x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_stmt_bytes n x0 = k ∧ (RepList 35 RepU8) (Lanius.Mini.stmtBytes x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_stmt_bytes n x0 = k ∧ (RepList 36 RepU8) (Lanius.Mini.stmtBytes x0) w
 
 abbrev BStmt_place_eff (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List UInt8} {x1 : Lanius.Mini.SrcEff} {v0 v1 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 35 RepU8) x0 v0 → RepSrcEff x1 v1 → k < b → Pre_place_eff n x0 x1 b →
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 36 RepU8) x0 v0 → RepSrcEff x1 v1 → k < b → Pre_place_eff n x0 x1 b →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_place_eff n x0 x1 = k ∧ RepSrcEff (Lanius.Mini.placeEff x0 x1) w
 
 abbrev BStmt_place_effs (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List UInt8} {x1 : List Lanius.Mini.SrcEff} {v0 v1 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 35 RepU8) x0 v0 → (RepList 186 RepSrcEff) x1 v1 → k < b → Pre_place_effs n x0 x1 b →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_place_effs n x0 x1 = k ∧ (RepList 186 RepSrcEff) (Lanius.Mini.placeEffs x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 36 RepU8) x0 v0 → (RepList 187 RepSrcEff) x1 v1 → k < b → Pre_place_effs n x0 x1 b →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_place_effs n x0 x1 = k ∧ (RepList 187 RepSrcEff) (Lanius.Mini.placeEffs x0 x1) w
 
 abbrev BStmt_place_stmt (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List UInt8} {x1 : Lanius.Mini.SrcStmt} {v0 v1 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 35 RepU8) x0 v0 → RepSrcStmt x1 v1 → k < b → Pre_place_stmt n x0 x1 b →
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 36 RepU8) x0 v0 → RepSrcStmt x1 v1 → k < b → Pre_place_stmt n x0 x1 b →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_place_stmt n x0 x1 = k ∧ RepSrcStmt (Lanius.Mini.placeStmt x0 x1) w
 
 end Lanius.Faithful.SelfBudget

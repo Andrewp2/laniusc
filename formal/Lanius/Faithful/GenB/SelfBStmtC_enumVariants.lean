@@ -19,7 +19,7 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_enum_variants (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcEnumDecl} {x1 : Nat} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 75 RepSrcEnumDecl) x0 v0 → RepNat x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 191 (RepList 77 (RepList 73 RepSrcType))) (Lanius.Mini.enumVariants x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 76 RepSrcEnumDecl) x0 v0 → RepNat x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 192 (RepList 78 (RepList 74 RepSrcType))) (Lanius.Mini.enumVariants x0 x1) w
 
 end Lanius.Faithful.SelfBudget

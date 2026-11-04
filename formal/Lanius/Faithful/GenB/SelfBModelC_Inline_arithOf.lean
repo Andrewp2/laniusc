@@ -1,7 +1,6 @@
 import Lanius.Faithful.BudgetCore
 import Lanius.Faithful.GenB.SelfBModelC_SrcType_same
 import Lanius.Faithful.GenB.SelfBModelC_applyGuard
-import Lanius.Faithful.GenB.SelfBModelC_armBodyScope
 import Lanius.Faithful.GenB.SelfBModelC_consArgs
 import Lanius.Faithful.GenB.SelfBModelC_elementBase
 import Lanius.Faithful.GenB.SelfBModelC_evalSame
@@ -9,11 +8,8 @@ import Lanius.Faithful.GenB.SelfBModelC_guardAnd
 import Lanius.Faithful.GenB.SelfBModelC_iteThen
 import Lanius.Faithful.GenB.SelfBModelC_lowerAddress
 import Lanius.Faithful.GenB.SelfBModelC_lowerLocal
-import Lanius.Faithful.GenB.SelfBModelC_lowerReturn
 import Lanius.Faithful.GenB.SelfBModelC_matchDst
-import Lanius.Faithful.GenB.SelfBModelC_needsAfter
 import Lanius.Faithful.GenB.SelfBModelC_sintToUint
-import Lanius.Faithful.GenB.SelfBModelC_withBudget
 import Lanius.Faithful.GenB.SelfBModelC_wordElement
 import Lanius.Faithful.GenB.SelfBModelN0
 import Lanius.Faithful.GenB.SelfBModelN2
@@ -28,41 +24,27 @@ import Lanius.Mini.Compiler.P.SrcType_same
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.UintTy_isWide
 import Lanius.Mini.Compiler.P.arithUint
-import Lanius.Mini.Compiler.P.armBodyScope
-import Lanius.Mini.Compiler.P.armPayload
 import Lanius.Mini.Compiler.P.armScope
-import Lanius.Mini.Compiler.P.arrayCallSig
 import Lanius.Mini.Compiler.P.assignFrom
-import Lanius.Mini.Compiler.P.bindingBytes
+import Lanius.Mini.Compiler.P.compileArgs
 import Lanius.Mini.Compiler.P.conjunction
 import Lanius.Mini.Compiler.P.elementAddress
 import Lanius.Mini.Compiler.P.elementBase
-import Lanius.Mini.Compiler.P.enumVariants
 import Lanius.Mini.Compiler.P.evalDivide
 import Lanius.Mini.Compiler.P.evalSame
-import Lanius.Mini.Compiler.P.funcNeeds
 import Lanius.Mini.Compiler.P.guardAnd
 import Lanius.Mini.Compiler.P.indexOf
-import Lanius.Mini.Compiler.P.lowerAddress
 import Lanius.Mini.Compiler.P.lowerApply
-import Lanius.Mini.Compiler.P.lowerBody
 import Lanius.Mini.Compiler.P.lowerCallSig
 import Lanius.Mini.Compiler.P.lowerLoadType
 import Lanius.Mini.Compiler.P.lowerLocal
-import Lanius.Mini.Compiler.P.lowerReturn
-import Lanius.Mini.Compiler.P.lowerSetCallArgs
-import Lanius.Mini.Compiler.P.lowerSetValues
-import Lanius.Mini.Compiler.P.lowerSlice
 import Lanius.Mini.Compiler.P.lowerTagged
 import Lanius.Mini.Compiler.P.matchDst
 import Lanius.Mini.Compiler.P.matchVariants
 import Lanius.Mini.Compiler.P.repeatType
 import Lanius.Mini.Compiler.P.shortCircuit
-import Lanius.Mini.Compiler.P.storeArray
-import Lanius.Mini.Compiler.P.storeEvalWord
 import Lanius.Mini.Compiler.P.storeType
 import Lanius.Mini.Compiler.P.strStores
-import Lanius.Mini.Compiler.P.structFields
 import Lanius.Mini.Compiler.P.withBudget
 import Lanius.Mini.Compiler.P.wordElement
 import Lanius.Mini.Compiler.P.wordStride
@@ -86,99 +68,91 @@ open Lanius.Faithful.Budget
 
 noncomputable section
 
-def Cost_lower_func_cons : Nat → Option Lanius.Mini.Func → Option (List Lanius.Mini.Func) → Nat
-  | 0, x16, x51 => 18446744073709551616
-  | n + 1, x16, x51 => (match x16 with | some x191 => (match x51 with | some x255 => (Cost_cons_of_mini_selfhost_Func n x191 x255) | none => 0) | none => 0)
+mutual
+def Cost_SrcEff_slice_uses : Nat → Lanius.Mini.SrcEff → Nat
+  | 0, x11 => 18446744073709551616
+  | n + 1, x11 => (match x11 with | .ePure x82 => 0 | .eCall x115 x123 => (Cost_effs_slice_uses n x123) | .eApply x181 x185 x191 => ((Cost_SrcEff_slice_uses n x185) + ((Cost_SrcEff_slice_uses n x191) + (Cost_concat_of_usize n (Lanius.Mini.SrcEff.sliceUses x185) (Lanius.Mini.SrcEff.sliceUses x191)))) | .eNeg x279 => (Cost_SrcEff_slice_uses n x279) | .eNot x337 => (Cost_SrcEff_slice_uses n x337) | .eCast x396 x400 => (Cost_SrcEff_slice_uses n x400) | .eIndex x460 x467 => (Cost_SrcEff_slice_uses n x467) | .eStruct x524 x528 => (Cost_effs_slice_uses n x528) | .eVariant x592 x596 x605 => (Cost_effs_slice_uses n x605) | .eMatch x669 x680 x685 x689 x698 => ((Cost_SrcEff_slice_uses n x669) + ((Cost_effs_slice_uses n x698) + (Cost_concat_of_usize n (Lanius.Mini.SrcEff.sliceUses x669) (Lanius.Mini.effsSliceUses x698)))) | .eDivide x800 x804 x810 => ((Cost_SrcEff_slice_uses n x804) + ((Cost_SrcEff_slice_uses n x810) + (Cost_concat_of_usize n (Lanius.Mini.SrcEff.sliceUses x804) (Lanius.Mini.SrcEff.sliceUses x810)))) | .eStride x901 => 0 | .arraySlice x943 x952 => (Cost_single_of_usize n x952) | .eIf x993 x1004 x1008 x1020 => ((Cost_SrcEff_slice_uses n x993) + ((Cost_SrcEff_slice_uses n x1008) + ((Cost_SrcEff_slice_uses n x1020) + ((Cost_concat_of_usize n (Lanius.Mini.SrcEff.sliceUses x1008) (Lanius.Mini.SrcEff.sliceUses x1020)) + (Cost_concat_of_usize n (Lanius.Mini.SrcEff.sliceUses x993) ((Lanius.Mini.SrcEff.sliceUses x1008) ++ (Lanius.Mini.SrcEff.sliceUses x1020))))))) | .eLet x1163 x1167 x1171 x1178 x1182 => ((Cost_SrcEff_slice_uses n x1171) + ((Cost_SrcEff_slice_uses n x1182) + (Cost_concat_of_usize n (Lanius.Mini.SrcEff.sliceUses x1171) (Lanius.Mini.SrcEff.sliceUses x1182)))) | .eLen x1269 => 0 | .eStr x1305 x1313 => 0 | .eBorrow x1352 x1357 => (Cost_SrcEff_slice_uses n x1357) | .eDeref x1415 x1420 => (Cost_SrcEff_slice_uses n x1420) | .eField x1474 x1481 => (Cost_SrcEff_slice_uses n x1474) | .eAt x1533 x1540 => ((Cost_SrcEff_slice_uses n x1533) + ((Cost_SrcEff_slice_uses n x1540) + (Cost_concat_of_usize n (Lanius.Mini.SrcEff.sliceUses x1533) (Lanius.Mini.SrcEff.sliceUses x1540)))))
+termination_by structural fuel => fuel
+
+def Cost_effs_slice_uses : Nat → List Lanius.Mini.SrcEff → Nat
+  | 0, x16 => 18446744073709551616
+  | n + 1, x16 => (match x16 with | [] => 0 | x112 :: x115 => ((Cost_SrcEff_slice_uses n x112) + ((Cost_effs_slice_uses n x115) + (Cost_concat_of_usize n (Lanius.Mini.SrcEff.sliceUses x112) (Lanius.Mini.effsSliceUses x115)))))
+termination_by structural fuel => fuel
+end
 
 end
 
 noncomputable section
 
 mutual
-def Pre_params_size : Nat → List Lanius.Mini.SrcParam → Nat → Prop
+def Cost_SrcStmt_slice_uses : Nat → Lanius.Mini.SrcStmt → Nat
+  | 0, x11 => 18446744073709551616
+  | n + 1, x11 => (match x11 with | .nop => 0 | .let x108 x112 x116 x123 => (Cost_SrcStmt_slice_uses n x123) | .letStruct x180 x184 x188 x196 => (Cost_SrcStmt_slice_uses n x196) | .letCall x251 x255 x259 x267 x273 => (Cost_SrcStmt_slice_uses n x273) | .letEnum x328 x332 x336 x345 x354 => (Cost_SrcStmt_slice_uses n x354) | .letMatch x410 x414 x418 x429 x438 x444 => (Cost_SrcStmt_slice_uses n x444) | .set x495 x499 => 0 | .setField x539 x543 x550 => 0 | .setCall x589 x593 x601 => 0 | .then x636 x643 => ((Cost_SrcStmt_slice_uses n x636) + ((Cost_SrcStmt_slice_uses n x643) + (Cost_concat_of_usize n (Lanius.Mini.SrcStmt.sliceUses x636) (Lanius.Mini.SrcStmt.sliceUses x643)))) | .if x732 x743 x756 => ((Cost_SrcStmt_slice_uses n x743) + ((Cost_SrcStmt_slice_uses n x756) + (Cost_concat_of_usize n (Lanius.Mini.SrcStmt.sliceUses x743) (Lanius.Mini.SrcStmt.sliceUses x756)))) | .while x864 x875 => (Cost_SrcStmt_slice_uses n x875) | .return x929 => 0 | .letAlloc x969 x973 x979 x986 => (Cost_SrcStmt_slice_uses n x986) | .letLoad x1041 x1045 x1054 x1062 => (Cost_SrcStmt_slice_uses n x1062) | .setByte x1117 x1126 x1134 => 0 | .free x1170 x1179 x1185 => 0 | .letSlice x1225 x1229 x1238 x1247 x1255 => (Cost_SrcStmt_slice_uses n x1255) | .letIndex x1311 x1315 x1319 x1326 x1333 => (Cost_SrcStmt_slice_uses n x1333) | .setIndex x1389 x1396 x1403 => 0 | .letEval x1442 x1446 x1450 x1457 => ((Cost_SrcEff_slice_uses n x1450) + ((Cost_SrcStmt_slice_uses n x1457) + (Cost_concat_of_usize n (Lanius.Mini.SrcEff.sliceUses x1450) (Lanius.Mini.SrcStmt.sliceUses x1457)))) | .setEval x1540 x1544 => (Cost_SrcEff_slice_uses n x1544) | .ifEval x1593 x1604 x1617 => ((Cost_SrcEff_slice_uses n x1593) + ((Cost_SrcStmt_slice_uses n x1604) + ((Cost_SrcStmt_slice_uses n x1617) + ((Cost_concat_of_usize n (Lanius.Mini.SrcStmt.sliceUses x1604) (Lanius.Mini.SrcStmt.sliceUses x1617)) + (Cost_concat_of_usize n (Lanius.Mini.SrcEff.sliceUses x1593) ((Lanius.Mini.SrcStmt.sliceUses x1604) ++ (Lanius.Mini.SrcStmt.sliceUses x1617))))))) | .whileEval x1761 x1772 => ((Cost_SrcEff_slice_uses n x1761) + ((Cost_SrcStmt_slice_uses n x1772) + (Cost_concat_of_usize n (Lanius.Mini.SrcEff.sliceUses x1761) (Lanius.Mini.SrcStmt.sliceUses x1772)))) | .returnEval x1862 => (Cost_SrcEff_slice_uses n x1862) | .discard x1912 => (Cost_SrcEff_slice_uses n x1912) | .setIndexEval x1967 x1974 x1981 => ((Cost_SrcEff_slice_uses n x1974) + ((Cost_SrcEff_slice_uses n x1981) + (Cost_concat_of_usize n (Lanius.Mini.SrcEff.sliceUses x1974) (Lanius.Mini.SrcEff.sliceUses x1981)))) | .setFieldEval x2064 x2068 x2075 => (Cost_SrcEff_slice_uses n x2075) | .returnUnit => 0 | .assert x2159 => (Cost_SrcEff_slice_uses n x2159) | .break => 0 | .continue => 0 | .matchArm x2281 x2292 x2301 x2310 x2317 x2325 x2329 x2335 => ((Cost_SrcStmt_slice_uses n x2329) + ((Cost_SrcStmt_slice_uses n x2335) + (Cost_concat_of_usize n (Lanius.Mini.SrcStmt.sliceUses x2329) (Lanius.Mini.SrcStmt.sliceUses x2335)))) | .unreachable x2428 x2432 => 0 | .letView x2468 x2472 x2480 x2488 x2497 => (Cost_SrcStmt_slice_uses n x2497) | .letStr x2551 x2560 x2567 => (Cost_SrcStmt_slice_uses n x2567) | .setPlace x2623 x2631 => ((Cost_SrcEff_slice_uses n x2623) + ((Cost_SrcEff_slice_uses n x2631) + (Cost_concat_of_usize n (Lanius.Mini.SrcEff.sliceUses x2623) (Lanius.Mini.SrcEff.sliceUses x2631)))) | .setPlaceOp x2715 x2720 x2728 => ((Cost_SrcEff_slice_uses n x2720) + ((Cost_SrcEff_slice_uses n x2728) + (Cost_concat_of_usize n (Lanius.Mini.SrcEff.sliceUses x2720) (Lanius.Mini.SrcEff.sliceUses x2728)))))
+termination_by structural fuel => fuel
+end
+
+end
+
+noncomputable section
+
+def Pre_array_bytes_of : Nat → Lanius.Mini.SrcType → Nat → Prop
+  | 0, x15, b => True
+  | n + 1, x15, b => (match x15 with | .i32 => True | .bool => True | .uint x113 => True | .struct x140 x144 => True | .enum x171 x175 => True | .ptr => True | .slice x223 => True | .array x261 x276 => ((Pre_SrcType_size n x261 b) ∧ ((Pre_times n x276 (Lanius.Mini.SrcType.size x261) b) ∧ (Pre_times n 8 (x276 * (Lanius.Mini.SrcType.size x261)) b))) | .unit => True | .isize => True | .char => True | .float x443 => True | .sint x466 => True | .view x489 => True | .str => True | .ref x538 => True)
+
+end
+
+noncomputable section
+
+def Pre_decl_bytes : Nat → List Nat → Nat → Lanius.Mini.SrcType → Nat → Prop
+  | 0, x11, x30, x41, b => True
+  | n + 1, x11, x30, x41, b => (if (Lanius.Mini.idAbsent x11 x30) = true then True else (Pre_array_bytes_of n x41 b))
+
+end
+
+noncomputable section
+
+mutual
+def Pre_params_room : Nat → Nat → List Lanius.Mini.SrcParam → List Nat → Nat → Prop
+  | 0, x12, x25, x49, b => True
+  | n + 1, x12, x25, x49, b => (match x25 with | [] => True | x169 :: x172 => ((Pre_decl_bytes n x49 x169.id x169.ty b) ∧ (Pre_params_then n (Lanius.Mini.spend x12 ((Lanius.Mini.declBytes x49 x169.id x169.ty))) x172 x49 b)))
+termination_by structural fuel => fuel
+
+def Pre_params_then : Nat → Option Nat → List Lanius.Mini.SrcParam → List Nat → Nat → Prop
+  | 0, x12, x48, x73, b => True
+  | n + 1, x12, x48, x73, b => (match x12 with | some x188 => (Pre_params_room n x188 x48 x73 b) | none => True)
+termination_by structural fuel => fuel
+end
+
+end
+
+noncomputable section
+
+mutual
+def Pre_block_room : Nat → Nat → List Nat → Lanius.Mini.SrcStmt → Nat → Prop
+  | 0, x11, x24, x43, b => True
+  | n + 1, x11, x24, x43, b => (match x43 with | .nop => True | .let x150 x154 x158 x165 => ((Pre_decl_bytes n x24 x150 x154 b) ∧ (Pre_block_then n (Lanius.Mini.spend x11 ((Lanius.Mini.declBytes x24 x150 x154))) x24 x165 b)) | .letStruct x262 x266 x270 x278 => ((Pre_decl_bytes n x24 x262 x266 b) ∧ (Pre_block_then n (Lanius.Mini.spend x11 ((Lanius.Mini.declBytes x24 x262 x266))) x24 x278 b)) | .letCall x373 x377 x381 x389 x395 => ((Pre_decl_bytes n x24 x373 x377 b) ∧ (Pre_block_then n (Lanius.Mini.spend x11 ((Lanius.Mini.declBytes x24 x373 x377))) x24 x395 b)) | .letEnum x490 x494 x498 x507 x516 => ((Pre_decl_bytes n x24 x490 x494 b) ∧ (Pre_block_then n (Lanius.Mini.spend x11 ((Lanius.Mini.declBytes x24 x490 x494))) x24 x516 b)) | .letMatch x612 x616 x620 x631 x640 x646 => ((Pre_decl_bytes n x24 x612 x616 b) ∧ (Pre_block_then n (Lanius.Mini.spend x11 ((Lanius.Mini.declBytes x24 x612 x616))) x24 x646 b)) | .set x737 x741 => True | .setField x780 x784 x791 => True | .setCall x829 x833 x841 => True | .then x875 x882 => ((Pre_block_room n x11 x24 x875 b) ∧ (Pre_block_then n (Lanius.Mini.blockRoom x11 x24 x875) x24 x882 b)) | .if x975 x986 x999 => ((Pre_block_room n x11 x24 x986 b) ∧ (Pre_block_then n (Lanius.Mini.blockRoom x11 x24 x986) x24 x999 b)) | .while x1111 x1122 => (Pre_block_room n x11 x24 x1122 b) | .return x1183 => True | .letAlloc x1222 x1226 x1232 x1239 => (Pre_block_room n x11 x24 x1239 b) | .letLoad x1301 x1305 x1314 x1322 => (Pre_block_room n x11 x24 x1322 b) | .setByte x1384 x1393 x1401 => True | .free x1436 x1445 x1451 => True | .letSlice x1490 x1494 x1503 x1512 x1520 => (Pre_block_room n x11 x24 x1520 b) | .letIndex x1583 x1587 x1591 x1598 x1605 => ((Pre_decl_bytes n x24 x1583 x1587 b) ∧ (Pre_block_then n (Lanius.Mini.spend x11 ((Lanius.Mini.declBytes x24 x1583 x1587))) x24 x1605 b)) | .setIndex x1701 x1708 x1715 => True | .letEval x1753 x1757 x1761 x1768 => ((Pre_decl_bytes n x24 x1753 x1757 b) ∧ (Pre_block_then n (Lanius.Mini.spend x11 ((Lanius.Mini.declBytes x24 x1753 x1757))) x24 x1768 b)) | .setEval x1863 x1867 => True | .ifEval x1904 x1915 x1928 => ((Pre_block_room n x11 x24 x1915 b) ∧ (Pre_block_then n (Lanius.Mini.blockRoom x11 x24 x1915) x24 x1928 b)) | .whileEval x2044 x2055 => (Pre_block_room n x11 x24 x2055 b) | .returnEval x2120 => True | .discard x2158 => True | .setIndexEval x2201 x2208 x2215 => True | .setFieldEval x2258 x2262 x2269 => True | .returnUnit => True | .assert x2340 => True | .break => True | .continue => True | .matchArm x2444 x2455 x2464 x2473 x2480 x2488 x2492 x2498 => ((Pre_block_room n x11 x24 x2492 b) ∧ (Pre_block_then n (Lanius.Mini.blockRoom x11 x24 x2492) x24 x2498 b)) | .unreachable x2595 x2599 => True | .letView x2634 x2638 x2646 x2654 x2663 => (Pre_block_room n x11 x24 x2663 b) | .letStr x2724 x2733 x2740 => (Pre_block_room n x11 x24 x2740 b) | .setPlace x2803 x2811 => True | .setPlaceOp x2853 x2858 x2866 => True)
+termination_by structural fuel => fuel
+
+def Pre_block_then : Nat → Option Nat → List Nat → Lanius.Mini.SrcStmt → Nat → Prop
+  | 0, x11, x47, x67, b => True
+  | n + 1, x11, x47, x67, b => (match x11 with | some x175 => (Pre_block_room n x175 x47 x67 b) | none => True)
+termination_by structural fuel => fuel
+end
+
+end
+
+noncomputable section
+
+def Cost_frame_block : Nat → Lanius.Mini.SrcFunc → Nat
+  | 0, x12 => 18446744073709551616
+  | n + 1, x12 => (Cost_SrcStmt_slice_uses n x12.body)
+
+end
+noncomputable section
+
+def Pre_frame_block : Nat → Lanius.Mini.SrcFunc → Nat → Prop
   | 0, x12, b => True
-  | n + 1, x12, b => (match x12 with | [] => True | x106 :: x113 => ((Pre_SrcType_size n x106.ty b) ∧ ((Pre_params_size n x113 b) ∧ (Pre_plus n (Lanius.Mini.SrcType.size x106.ty) (Lanius.Mini.paramsSize x113) b))))
-termination_by structural fuel => fuel
-end
-
-end
-
-noncomputable section
-
-mutual
-def Pre_params_valid : Nat → List Lanius.Mini.SrcParam → Nat → Prop
-  | 0, x13, b => True
-  | n + 1, x13, b => (match x13 with | [] => True | x109 :: x116 => ((Pre_SrcType_size n x109.ty b) ∧ (if (decide (0 < (Lanius.Mini.SrcType.size x109.ty))) = true then (if (!(Lanius.Mini.viewedType x109.ty)) = true then (Pre_params_valid n x116 b) else True) else True)))
-termination_by structural fuel => fuel
-end
-
-end
-
-noncomputable section
-
-mutual
-def Pre_Expr_extent : Nat → Lanius.Mini.Expr → Nat → Prop
-  | 0, x7, b => True
-  | n + 1, x7, b => (match x7 with | .lit x70 => True | .var x99 => (Pre_plus n x99 1 b) | .neg x147 => (Pre_Expr_extent n x147 b) | .binary x203 x209 x220 x226 => ((Pre_Expr_extent n x220 b) ∧ (Pre_Expr_extent n x226 b)) | .compare x309 x315 x326 x332 => ((Pre_Expr_extent n x326 b) ∧ (Pre_Expr_extent n x332 b)) | .fp x416 x427 x433 => ((Pre_Expr_extent n x427 b) ∧ (Pre_Expr_extent n x433 b)))
-termination_by structural fuel => fuel
-end
-
-end
-
-noncomputable section
-
-mutual
-def Pre_args_extent : Nat → List Lanius.Mini.Expr → Nat → Prop
-  | 0, x12, b => True
-  | n + 1, x12, b => (match x12 with | [] => True | x98 :: x103 => ((Pre_Expr_extent n x98 b) ∧ (Pre_args_extent n x103 b)))
-termination_by structural fuel => fuel
-end
-
-end
-
-noncomputable section
-
-mutual
-def Pre_Stmt_extent : Nat → Lanius.Mini.Stmt → Nat → Prop
-  | 0, x7, b => True
-  | n + 1, x7, b => (match x7 with | .skip => True | .assign x96 x103 => ((Pre_plus n x96 1 b) ∧ (Pre_Expr_extent n x103 b)) | .seq x169 x176 => ((Pre_Stmt_extent n x169 b) ∧ (Pre_Stmt_extent n x176 b)) | .ite x258 x269 x282 => ((Pre_Expr_extent n x258 b) ∧ ((Pre_Stmt_extent n x269 b) ∧ (Pre_Stmt_extent n x282 b))) | .loop x409 x420 => ((Pre_Expr_extent n x409 b) ∧ (Pre_Stmt_extent n x420 b)) | .call x502 x510 x517 x525 => ((Pre_plus n x502 x510 b) ∧ (Pre_args_extent n x525 b)) | .ret x604 => (Pre_args_extent n x604 b) | .brk => True | .cont => True | .alloc x699 x707 x714 => ((Pre_plus n x699 1 b) ∧ (Pre_Expr_extent n x714 b)) | .loadByte x784 x792 => ((Pre_plus n x784 1 b) ∧ (Pre_Expr_extent n x792 b)) | .storeByte x869 x878 => ((Pre_Expr_extent n x869 b) ∧ (Pre_Expr_extent n x878 b)) | .loadWord x951 x958 x966 => ((Pre_plus n x958 1 b) ∧ (Pre_Expr_extent n x966 b)) | .storeWord x1043 x1050 x1059 => ((Pre_Expr_extent n x1050 b) ∧ (Pre_Expr_extent n x1059 b)) | .divide x1136 x1142 x1153 x1161 x1167 => ((Pre_plus n x1153 1 b) ∧ ((Pre_Expr_extent n x1161 b) ∧ (Pre_Expr_extent n x1167 b))) | .sys x1263 x1269 x1277 => ((Pre_plus n x1269 1 b) ∧ (Pre_args_extent n x1277 b)) | .frame x1354 x1362 => (Pre_plus n x1354 1 b) | .static x1414 x1422 => (Pre_plus n x1414 1 b))
-termination_by structural fuel => fuel
-end
-
-end
-
-noncomputable section
-
-def Pre_lower_body : Nat → Nat → Nat → Nat → Option Lanius.Mini.Stmt → Nat → Prop
-  | 0, x11, x25, x41, x55, b => True
-  | n + 1, x11, x25, x41, x55, b => (match x55 with | some x182 => ((Pre_plus n x11 x41 b) ∧ (Pre_Stmt_extent n x182 b)) | none => True)
-
-end
-
-noncomputable section
-
-mutual
-def Pre_SrcStmt_depth : Nat → Lanius.Mini.SrcStmt → Nat → Prop
-  | 0, x6, b => True
-  | n + 1, x6, b => (match x6 with | .nop => True | .let x91 x95 x99 x106 => ((Pre_SrcStmt_depth n x106 b) ∧ ((Pre_SrcType_size n x95 b) ∧ (Pre_plus n (Lanius.Mini.SrcStmt.depth x106) (Lanius.Mini.SrcType.size x95) b))) | .letStruct x175 x179 x183 x191 => ((Pre_SrcStmt_depth n x191 b) ∧ ((Pre_SrcType_size n x179 b) ∧ (Pre_plus n (Lanius.Mini.SrcStmt.depth x191) (Lanius.Mini.SrcType.size x179) b))) | .letCall x258 x262 x266 x274 x280 => ((Pre_SrcStmt_depth n x280 b) ∧ ((Pre_SrcType_size n x262 b) ∧ (Pre_plus n (Lanius.Mini.SrcStmt.depth x280) (Lanius.Mini.SrcType.size x262) b))) | .letEnum x347 x351 x355 x364 x373 => ((Pre_SrcStmt_depth n x373 b) ∧ ((Pre_SrcType_size n x351 b) ∧ (Pre_plus n (Lanius.Mini.SrcStmt.depth x373) (Lanius.Mini.SrcType.size x351) b))) | .letMatch x441 x445 x449 x460 x469 x475 => ((Pre_SrcStmt_depth n x475 b) ∧ ((Pre_SrcType_size n x445 b) ∧ (Pre_plus n (Lanius.Mini.SrcStmt.depth x475) (Lanius.Mini.SrcType.size x445) b))) | .set x538 x542 => True | .setField x576 x580 x587 => True | .setCall x620 x624 x632 => True | .then x661 x668 => ((Pre_SrcStmt_depth n x661 b) ∧ (Pre_SrcStmt_depth n x668 b)) | .if x747 x758 x771 => ((Pre_SrcStmt_depth n x758 b) ∧ (Pre_SrcStmt_depth n x771 b)) | .while x869 x880 => (Pre_SrcStmt_depth n x880 b) | .return x929 => True | .letAlloc x963 x967 x973 x980 => ((Pre_SrcStmt_depth n x980 b) ∧ (Pre_plus n (Lanius.Mini.SrcStmt.depth x980) 1 b)) | .letLoad x1039 x1043 x1052 x1060 => ((Pre_SrcStmt_depth n x1060 b) ∧ (Pre_plus n (Lanius.Mini.SrcStmt.depth x1060) 1 b)) | .setByte x1119 x1128 x1136 => True | .free x1166 x1175 x1181 => True | .letSlice x1215 x1219 x1228 x1237 x1245 => ((Pre_SrcStmt_depth n x1245 b) ∧ (Pre_plus n (Lanius.Mini.SrcStmt.depth x1245) 2 b)) | .letIndex x1305 x1309 x1313 x1320 x1327 => ((Pre_SrcStmt_depth n x1327 b) ∧ ((Pre_SrcType_size n x1309 b) ∧ (Pre_plus n (Lanius.Mini.SrcStmt.depth x1327) (Lanius.Mini.SrcType.size x1309) b))) | .setIndex x1395 x1402 x1409 => True | .letEval x1442 x1446 x1450 x1457 => ((Pre_SrcStmt_depth n x1457 b) ∧ ((Pre_SrcType_size n x1446 b) ∧ (Pre_plus n (Lanius.Mini.SrcStmt.depth x1457) (Lanius.Mini.SrcType.size x1446) b))) | .setEval x1524 x1528 => True | .ifEval x1560 x1571 x1584 => ((Pre_SrcStmt_depth n x1571 b) ∧ (Pre_SrcStmt_depth n x1584 b)) | .whileEval x1686 x1697 => (Pre_SrcStmt_depth n x1697 b) | .returnEval x1750 => True | .discard x1783 => True | .setIndexEval x1821 x1828 x1835 => True | .setFieldEval x1873 x1877 x1884 => True | .returnUnit => True | .assert x1945 => True | .break => True | .continue => True | .matchArm x2034 x2045 x2054 x2063 x2070 x2078 x2082 x2088 => ((Pre_SrcStmt_depth n x2082 b) ∧ ((Pre_SrcType_size n x2078 b) ∧ ((Pre_plus n (Lanius.Mini.SrcStmt.depth x2082) (Lanius.Mini.SrcType.size x2078) b) ∧ (Pre_SrcStmt_depth n x2088 b)))) | .unreachable x2188 x2192 => True | .letView x2222 x2226 x2234 x2242 x2251 => ((Pre_SrcStmt_depth n x2251 b) ∧ ((Pre_plus n x2226 1 b) ∧ (Pre_plus n (Lanius.Mini.SrcStmt.depth x2251) (x2226 + 1) b))) | .letStr x2323 x2332 x2339 => ((Pre_SrcStmt_depth n x2339 b) ∧ (Pre_plus n (Lanius.Mini.SrcStmt.depth x2339) 1 b)))
-termination_by structural fuel => fuel
-end
-
-end
-
-noncomputable section
-
-def Cost_unit_tail : Nat → Lanius.Mini.SrcType → Option Lanius.Mini.Stmt → Nat
-  | 0, x10, x24 => 18446744073709551616
-  | n + 1, x10, x24 => (if (Lanius.Mini.SrcType.isUnit x10) = true then (match x24 with | some x188 => (1 + ((Cost_single_of_mini_selfhost_Expr n (Lanius.Mini.Expr.lit (0#64))) + 1)) | none => 0) else 0)
-
-end
-
-noncomputable section
-
-def Cost_with_frame : Nat → Nat → Nat → Option Lanius.Mini.Stmt → Nat
-  | 0, x11, x24, x38 => 18446744073709551616
-  | n + 1, x11, x24, x38 => (if (decide (x24 = 0)) = true then 0 else (match x38 with | some x214 => (1 + 1) | none => 0))
+  | n + 1, x12, b => (∀ b1 : Nat, (Cost_SrcStmt_slice_uses n x12.body) < b → b1 = b - (Cost_SrcStmt_slice_uses n x12.body) → ((Pre_params_room n Lanius.Mini.blockLimit x12.params (Lanius.Mini.SrcStmt.sliceUses x12.body) b1) ∧ (match (Lanius.Mini.paramsRoom Lanius.Mini.blockLimit x12.params ((Lanius.Mini.SrcStmt.sliceUses x12.body))) with | some x198 => (Pre_block_room n x198 (Lanius.Mini.SrcStmt.sliceUses x12.body) x12.body b1) | none => True)))
 
 end
 
@@ -794,36 +768,6 @@ end
 
 noncomputable section
 
-def Cost_lower_tagged : Nat → List Lanius.Mini.Binding → List (List Lanius.Mini.SrcType) → Nat → List Lanius.Mini.SrcExpr → Nat
-  | 0, x13, x35, x66, x82 => 18446744073709551616
-  | n + 1, x13, x35, x66, x82 => (if (decide (x35.length < 4294967296)) = true then (Cost_lower_variant n x13 x66 (x35[x66]?) x82) else 0)
-
-end
-noncomputable section
-
-def Pre_lower_tagged : Nat → List Lanius.Mini.Binding → List (List Lanius.Mini.SrcType) → Nat → List Lanius.Mini.SrcExpr → Nat → Prop
-  | 0, x13, x35, x66, x82, b => True
-  | n + 1, x13, x35, x66, x82, b => ((Pre_length_of_mini_selfhost_List_mini_selfhost_SrcType n x35 b) ∧ (if (decide (x35.length < 4294967296)) = true then (Pre_lower_variant n x13 x66 (x35[x66]?) x82 b) else True))
-
-end
-
-noncomputable section
-
-def Cost_lower_enum_value : Nat → List Lanius.Mini.Binding → Lanius.Mini.SrcType → Nat → List Lanius.Mini.SrcExpr → Nat
-  | 0, x17, x39, x52, x68 => 18446744073709551616
-  | n + 1, x17, x39, x52, x68 => (match x39 with | .i32 => 0 | .bool => 0 | .uint x210 => 0 | .struct x240 x244 => 0 | .enum x273 x277 => (Cost_lower_tagged n x17 x277 x52 x68) | .ptr => 0 | .slice x381 => 0 | .array x422 x437 => 0 | .unit => 0 | .isize => 0 | .char => 0 | .float x559 => 0 | .sint x585 => 0 | .view x611 => 0 | .str => 0 | .ref x666 => 0)
-
-end
-noncomputable section
-
-def Pre_lower_enum_value : Nat → List Lanius.Mini.Binding → Lanius.Mini.SrcType → Nat → List Lanius.Mini.SrcExpr → Nat → Prop
-  | 0, x17, x39, x52, x68, b => True
-  | n + 1, x17, x39, x52, x68, b => (match x39 with | .i32 => True | .bool => True | .uint x210 => True | .struct x240 x244 => True | .enum x273 x277 => (Pre_lower_tagged n x17 x277 x52 x68 b) | .ptr => True | .slice x381 => True | .array x422 x437 => True | .unit => True | .isize => True | .char => True | .float x559 => True | .sint x585 => True | .view x611 => True | .str => True | .ref x666 => True)
-
-end
-
-noncomputable section
-
 def Cost_lower_then : Nat → Option Lanius.Mini.Stmt → Option Lanius.Mini.Stmt → Nat
   | 0, x11, x46 => 18446744073709551616
   | n + 1, x11, x46 => (match x11 with | some x176 => (match x46 with | some x242 => (1 + 1) | none => 0) | none => 0)
@@ -929,81 +873,6 @@ end
 
 noncomputable section
 
-def Cost_lower_match_arms : Nat → List Lanius.Mini.Binding → Nat → Bool → List (List Lanius.Mini.SrcType) → List Lanius.Mini.SrcArm → Lanius.Mini.SrcType → Nat → Nat
-  | 0, x17, x39, x52, x64, x95, x115, x128 => 18446744073709551616
-  | n + 1, x17, x39, x52, x64, x95, x115, x128 => (let k2 := (Cost_lower_arms n x17 x39 x128 x115 0 x64 x95); let k3 := 0; (if x52 = true then (if (decide (0 < (Lanius.Mini.SrcType.size x115))) = true then (if (decide (x95.length = x64.length)) = true then (if (decide (x64.length < 4294967296)) = true then (if (!(Lanius.Mini.viewedType x115)) = true then k2 else k3) else k3) else k3) else k3) else k3))
-
-end
-noncomputable section
-
-def Pre_lower_match_arms : Nat → List Lanius.Mini.Binding → Nat → Bool → List (List Lanius.Mini.SrcType) → List Lanius.Mini.SrcArm → Lanius.Mini.SrcType → Nat → Nat → Prop
-  | 0, x17, x39, x52, x64, x95, x115, x128, b => True
-  | n + 1, x17, x39, x52, x64, x95, x115, x128, b => (let k3 := fun (b1 : Nat) => (Pre_lower_arms n x17 x39 x128 x115 0 x64 x95 b1); let k4 := fun (b1 : Nat) => True; (if x52 = true then ((Pre_SrcType_size n x115 b) ∧ (if (decide (0 < (Lanius.Mini.SrcType.size x115))) = true then ((Pre_length_of_mini_selfhost_SrcArm n x95 b) ∧ ((Pre_length_of_mini_selfhost_List_mini_selfhost_SrcType n x64 b) ∧ (if (decide (x95.length = x64.length)) = true then ((Pre_length_of_mini_selfhost_List_mini_selfhost_SrcType n x64 b) ∧ (if (decide (x64.length < 4294967296)) = true then (if (!(Lanius.Mini.viewedType x115)) = true then (k3 b) else (k4 b)) else (k4 b))) else (k4 b)))) else (k4 b))) else (k4 b)))
-
-end
-
-noncomputable section
-
-def Cost_lower_match_on : Nat → List Lanius.Mini.Binding → Lanius.Mini.Binding → Nat → List Lanius.Mini.SrcArm → Lanius.Mini.SrcType → Nat → Nat
-  | 0, x15, x37, x49, x65, x85, x98 => 18446744073709551616
-  | n + 1, x15, x37, x49, x65, x85, x98 => (match x37.ty with | .i32 => 0 | .bool => 0 | .uint x227 => 0 | .struct x257 x261 => 0 | .enum x290 x294 => (Cost_lower_match_arms n x15 x37.slot (decide (x290 = x49)) x294 x65 x85 x98) | .ptr => 0 | .slice x425 => 0 | .array x466 x481 => 0 | .unit => 0 | .isize => 0 | .char => 0 | .float x603 => 0 | .sint x629 => 0 | .view x655 => 0 | .str => 0 | .ref x710 => 0)
-
-end
-noncomputable section
-
-def Pre_lower_match_on : Nat → List Lanius.Mini.Binding → Lanius.Mini.Binding → Nat → List Lanius.Mini.SrcArm → Lanius.Mini.SrcType → Nat → Nat → Prop
-  | 0, x15, x37, x49, x65, x85, x98, b => True
-  | n + 1, x15, x37, x49, x65, x85, x98, b => (match x37.ty with | .i32 => True | .bool => True | .uint x227 => True | .struct x257 x261 => True | .enum x290 x294 => (Pre_lower_match_arms n x15 x37.slot (decide (x290 = x49)) x294 x65 x85 x98 b) | .ptr => True | .slice x425 => True | .array x466 x481 => True | .unit => True | .isize => True | .char => True | .float x603 => True | .sint x629 => True | .view x655 => True | .str => True | .ref x710 => True)
-
-end
-
-noncomputable section
-
-def Cost_lower_match : Nat → List Lanius.Mini.Binding → Option Lanius.Mini.Binding → Nat → List Lanius.Mini.SrcArm → Lanius.Mini.SrcType → Nat → Nat
-  | 0, x12, x34, x74, x90, x110, x123 => 18446744073709551616
-  | n + 1, x12, x34, x74, x90, x110, x123 => (match x34 with | some x234 => (Cost_lower_match_on n x12 x234 x74 x90 x110 x123) | none => 0)
-
-end
-noncomputable section
-
-def Pre_lower_match : Nat → List Lanius.Mini.Binding → Option Lanius.Mini.Binding → Nat → List Lanius.Mini.SrcArm → Lanius.Mini.SrcType → Nat → Nat → Prop
-  | 0, x12, x34, x74, x90, x110, x123, b => True
-  | n + 1, x12, x34, x74, x90, x110, x123, b => (match x34 with | some x234 => (Pre_lower_match_on n x12 x234 x74 x90 x110 x123 b) | none => True)
-
-end
-
-noncomputable section
-
-def Cost_lower_set_values : Nat → Nat → Option (List Lanius.Mini.Expr) → Nat
-  | 0, x17, x30 => 18446744073709551616
-  | n + 1, x17, x30 => (match x30 with | some x167 => (Cost_assign_from n x17 x167 Lanius.Mini.Stmt.skip) | none => 0)
-
-end
-noncomputable section
-
-def Pre_lower_set_values : Nat → Nat → Option (List Lanius.Mini.Expr) → Nat → Prop
-  | 0, x17, x30, b => True
-  | n + 1, x17, x30, b => (match x30 with | some x167 => (Pre_assign_from n x17 x167 Lanius.Mini.Stmt.skip b) | none => True)
-
-end
-
-noncomputable section
-
-def Cost_lower_set : Nat → Option Lanius.Mini.Binding → List Lanius.Mini.Binding → Lanius.Mini.SrcExpr → Nat
-  | 0, x10, x50, x72 => 18446744073709551616
-  | n + 1, x10, x50, x72 => (match x10 with | some x184 => ((Cost_lower_value n x50 x72 x184.ty) + (Cost_lower_set_values n x184.slot (Lanius.Mini.lowerValue x50 x72 x184.ty))) | none => 0)
-
-end
-noncomputable section
-
-def Pre_lower_set : Nat → Option Lanius.Mini.Binding → List Lanius.Mini.Binding → Lanius.Mini.SrcExpr → Nat → Prop
-  | 0, x10, x50, x72, b => True
-  | n + 1, x10, x50, x72, b => (match x10 with | some x184 => ((Pre_lower_value n x50 x72 x184.ty b) ∧ (∀ b1 : Nat, (Cost_lower_value n x50 x72 x184.ty) < b → b1 = b - (Cost_lower_value n x50 x72 x184.ty) → (Pre_lower_set_values n x184.slot (Lanius.Mini.lowerValue x50 x72 x184.ty) b1))) | none => True)
-
-end
-
-noncomputable section
-
 def Cost_lower_set_scalar : Nat → Nat → Lanius.Mini.SrcType → List Lanius.Mini.Binding → Lanius.Mini.SrcExpr → Nat
   | 0, x17, x30, x43, x65 => 18446744073709551616
   | n + 1, x17, x30, x43, x65 => (if (Lanius.Mini.SrcType.isScalar x30) = true then (Cost_lower_as n x43 x65 x30) else 0)
@@ -1014,51 +883,6 @@ noncomputable section
 def Pre_lower_set_scalar : Nat → Nat → Lanius.Mini.SrcType → List Lanius.Mini.Binding → Lanius.Mini.SrcExpr → Nat → Prop
   | 0, x17, x30, x43, x65, b => True
   | n + 1, x17, x30, x43, x65, b => (if (Lanius.Mini.SrcType.isScalar x30) = true then (Pre_lower_as n x43 x65 x30 b) else True)
-
-end
-
-noncomputable section
-
-def Cost_lower_set_field_at : Nat → Nat → Option Lanius.Mini.SrcType → List Lanius.Mini.Binding → Lanius.Mini.SrcExpr → Nat
-  | 0, x19, x32, x70, x92 => 18446744073709551616
-  | n + 1, x19, x32, x70, x92 => (match x32 with | some x202 => (Cost_lower_set_scalar n x19 x202 x70 x92) | none => 0)
-
-end
-noncomputable section
-
-def Pre_lower_set_field_at : Nat → Nat → Option Lanius.Mini.SrcType → List Lanius.Mini.Binding → Lanius.Mini.SrcExpr → Nat → Prop
-  | 0, x19, x32, x70, x92, b => True
-  | n + 1, x19, x32, x70, x92, b => (match x32 with | some x202 => (Pre_lower_set_scalar n x19 x202 x70 x92 b) | none => True)
-
-end
-
-noncomputable section
-
-def Cost_lower_set_field_of : Nat → Lanius.Mini.Binding → Nat → List Lanius.Mini.Binding → Lanius.Mini.SrcExpr → Nat
-  | 0, x19, x31, x45, x67 => 18446744073709551616
-  | n + 1, x19, x31, x45, x67 => (match x19.ty with | .i32 => 0 | .bool => 0 | .uint x197 => 0 | .struct x227 x231 => (Cost_lower_set_field_at n (x19.slot + (Lanius.Mini.fieldOffset x231 x31)) (x231[x31]?) x45 x67) | .enum x366 x370 => 0 | .ptr => 0 | .slice x424 => 0 | .array x465 x480 => 0 | .unit => 0 | .isize => 0 | .char => 0 | .float x602 => 0 | .sint x628 => 0 | .view x654 => 0 | .str => 0 | .ref x709 => 0)
-
-end
-noncomputable section
-
-def Pre_lower_set_field_of : Nat → Lanius.Mini.Binding → Nat → List Lanius.Mini.Binding → Lanius.Mini.SrcExpr → Nat → Prop
-  | 0, x19, x31, x45, x67, b => True
-  | n + 1, x19, x31, x45, x67, b => (match x19.ty with | .i32 => True | .bool => True | .uint x197 => True | .struct x227 x231 => ((Pre_field_offset n x231 x31 b) ∧ ((Pre_plus n x19.slot (Lanius.Mini.fieldOffset x231 x31) b) ∧ (Pre_lower_set_field_at n (x19.slot + (Lanius.Mini.fieldOffset x231 x31)) (x231[x31]?) x45 x67 b))) | .enum x366 x370 => True | .ptr => True | .slice x424 => True | .array x465 x480 => True | .unit => True | .isize => True | .char => True | .float x602 => True | .sint x628 => True | .view x654 => True | .str => True | .ref x709 => True)
-
-end
-
-noncomputable section
-
-def Cost_lower_set_field : Nat → Option Lanius.Mini.Binding → Nat → List Lanius.Mini.Binding → Lanius.Mini.SrcExpr → Nat
-  | 0, x16, x56, x70, x92 => 18446744073709551616
-  | n + 1, x16, x56, x70, x92 => (match x16 with | some x204 => (Cost_lower_set_field_of n x204 x56 x70 x92) | none => 0)
-
-end
-noncomputable section
-
-def Pre_lower_set_field : Nat → Option Lanius.Mini.Binding → Nat → List Lanius.Mini.Binding → Lanius.Mini.SrcExpr → Nat → Prop
-  | 0, x16, x56, x70, x92, b => True
-  | n + 1, x16, x56, x70, x92, b => (match x16 with | some x204 => (Pre_lower_set_field_of n x204 x56 x70 x92 b) | none => True)
 
 end
 
@@ -1119,21 +943,6 @@ def Pre_within_payloads : Nat → Nat → List (List Lanius.Mini.SrcType) → Na
   | n + 1, x16, x30, b => (match x30 with | [] => True | x135 :: x142 => ((Pre_sizes n x135 b) ∧ (if (decide ((Lanius.Mini.sizes x135) < 4096)) = true then ((Pre_within_layouts n x16 x135 b) ∧ (if (Lanius.Mini.withinLayouts x16 x135) = true then (Pre_within_payloads n x16 x142 b) else True)) else True)))
 termination_by structural fuel => fuel
 end
-
-end
-
-noncomputable section
-
-def Cost_lower_slice : Nat → Lanius.Mini.SrcDecls → Lanius.Mini.SrcType → Option Lanius.Mini.Expr → Option Lanius.Mini.Expr → Nat
-  | 0, x12, x29, x47, x84 => 18446744073709551616
-  | n + 1, x12, x29, x47, x84 => (let k2 := (match x47 with | some x351 => (match x84 with | some x425 => ((Cost_single_of_mini_selfhost_Expr n x425) + 1) | none => 0) | none => 0); let k3 := 0; (if (Lanius.Mini.SrcType.isI32 x29) = true then (if (Lanius.Mini.withinLayout 0 x29) = true then k2 else k3) else (if (Lanius.Mini.SrcType.isUint x29 Lanius.Mini.UintTy.uint8) = true then (if (Lanius.Mini.withinLayout 0 x29) = true then k2 else k3) else (if (Lanius.Mini.wordElement x12 x29) = true then (if (Lanius.Mini.withinLayout 0 x29) = true then k2 else k3) else k3))))
-
-end
-noncomputable section
-
-def Pre_lower_slice : Nat → Lanius.Mini.SrcDecls → Lanius.Mini.SrcType → Option Lanius.Mini.Expr → Option Lanius.Mini.Expr → Nat → Prop
-  | 0, x12, x29, x47, x84, b => True
-  | n + 1, x12, x29, x47, x84, b => (if (Lanius.Mini.SrcType.isI32 x29) = true then (Pre_within_layout n 0 x29 b) else (if (Lanius.Mini.SrcType.isUint x29 Lanius.Mini.UintTy.uint8) = true then (Pre_within_layout n 0 x29 b) else ((Pre_word_element n x12 x29 b) ∧ (if (Lanius.Mini.wordElement x12 x29) = true then (Pre_within_layout n 0 x29 b) else True))))
 
 end
 
@@ -1546,36 +1355,6 @@ end
 
 noncomputable section
 
-def Cost_store_eval : Nat → Lanius.Mini.Binding → Nat → Lanius.Mini.Evaluated → Lanius.Mini.Evaluated → Nat
-  | 0, x11, x23, x36, x50 => 18446744073709551616
-  | n + 1, x11, x23, x36, x50 => (let k2 := (1 + ((Cost_bounds_guard n x11 (Lanius.Mini.Expr.var x23)) + (1 + (1 + (1 + (1 + (1 + (1 + ((Cost_check_then n x23 (Lanius.Mini.boundsGuard x11 ((Lanius.Mini.Expr.var x23))) (Lanius.Mini.Stmt.seq x50.stmt (Lanius.Mini.Stmt.storeWord Lanius.Mini.MemWidth.m32 (Lanius.Mini.Expr.binary Lanius.Mini.Word.u64 Lanius.Mini.BinOp.add (Lanius.Mini.Expr.var x11.slot) (Lanius.Mini.Expr.binary Lanius.Mini.Word.u64 Lanius.Mini.BinOp.mul (Lanius.Mini.Expr.var x23) (Lanius.Mini.Expr.lit (4#64)))) (Lanius.Mini.Expr.var (x23 + 1))))) + 1))))))))); let k3 := 0; (if (Lanius.Mini.SrcType.isI32 x36.ty) = true then (if (Lanius.Mini.SrcType.isI32 x50.ty) = true then k2 else k3) else (if (Lanius.Mini.SrcType.isUint x36.ty Lanius.Mini.UintTy.usize) = true then (if (Lanius.Mini.SrcType.isI32 x50.ty) = true then k2 else k3) else k3)))
-
-end
-noncomputable section
-
-def Pre_store_eval : Nat → Lanius.Mini.Binding → Nat → Lanius.Mini.Evaluated → Lanius.Mini.Evaluated → Nat → Prop
-  | 0, x11, x23, x36, x50, b => True
-  | n + 1, x11, x23, x36, x50, b => (let k12 := fun (b1 : Nat) => (∀ b2 : Nat, 1 < b1 → b2 = b1 - 1 → ((Pre_bounds_guard n x11 (Lanius.Mini.Expr.var x23) b2) ∧ (∀ b3 : Nat, (Cost_bounds_guard n x11 (Lanius.Mini.Expr.var x23)) < b2 → b3 = b2 - (Cost_bounds_guard n x11 (Lanius.Mini.Expr.var x23)) → (∀ b4 : Nat, 1 < b3 → b4 = b3 - 1 → (∀ b5 : Nat, 1 < b4 → b5 = b4 - 1 → (∀ b6 : Nat, 1 < b5 → b6 = b5 - 1 → (∀ b7 : Nat, 1 < b6 → b7 = b6 - 1 → (∀ b8 : Nat, 1 < b7 → b8 = b7 - 1 → (Pre_plus n x23 1 b8))))))))); let k13 := fun (b1 : Nat) => True; (if (Lanius.Mini.SrcType.isI32 x36.ty) = true then (if (Lanius.Mini.SrcType.isI32 x50.ty) = true then (k12 b) else (k13 b)) else (if (Lanius.Mini.SrcType.isUint x36.ty Lanius.Mini.UintTy.usize) = true then (if (Lanius.Mini.SrcType.isI32 x50.ty) = true then (k12 b) else (k13 b)) else (k13 b))))
-
-end
-
-noncomputable section
-
-def Cost_store_eval_byte : Nat → Lanius.Mini.Binding → Nat → Lanius.Mini.Evaluated → Lanius.Mini.Evaluated → Nat
-  | 0, x16, x28, x41, x55 => 18446744073709551616
-  | n + 1, x16, x28, x41, x55 => (let k2 := (1 + ((Cost_bounds_guard n x16 (Lanius.Mini.Expr.var x28)) + (1 + (1 + (1 + (1 + ((Cost_check_then n x28 (Lanius.Mini.boundsGuard x16 ((Lanius.Mini.Expr.var x28))) (Lanius.Mini.Stmt.seq x55.stmt (Lanius.Mini.Stmt.storeByte (Lanius.Mini.Expr.binary Lanius.Mini.Word.u64 Lanius.Mini.BinOp.add (Lanius.Mini.Expr.var x16.slot) (Lanius.Mini.Expr.var x28)) (Lanius.Mini.Expr.var (x28 + 1))))) + 1))))))); let k3 := 0; (if (Lanius.Mini.SrcType.isI32 x41.ty) = true then (if (Lanius.Mini.SrcType.isUint x55.ty Lanius.Mini.UintTy.uint8) = true then k2 else k3) else (if (Lanius.Mini.SrcType.isUint x41.ty Lanius.Mini.UintTy.usize) = true then (if (Lanius.Mini.SrcType.isUint x55.ty Lanius.Mini.UintTy.uint8) = true then k2 else k3) else k3)))
-
-end
-noncomputable section
-
-def Pre_store_eval_byte : Nat → Lanius.Mini.Binding → Nat → Lanius.Mini.Evaluated → Lanius.Mini.Evaluated → Nat → Prop
-  | 0, x16, x28, x41, x55, b => True
-  | n + 1, x16, x28, x41, x55, b => (let k10 := fun (b1 : Nat) => (∀ b2 : Nat, 1 < b1 → b2 = b1 - 1 → ((Pre_bounds_guard n x16 (Lanius.Mini.Expr.var x28) b2) ∧ (∀ b3 : Nat, (Cost_bounds_guard n x16 (Lanius.Mini.Expr.var x28)) < b2 → b3 = b2 - (Cost_bounds_guard n x16 (Lanius.Mini.Expr.var x28)) → (∀ b4 : Nat, 1 < b3 → b4 = b3 - 1 → (∀ b5 : Nat, 1 < b4 → b5 = b4 - 1 → (∀ b6 : Nat, 1 < b5 → b6 = b5 - 1 → (Pre_plus n x28 1 b6))))))); let k11 := fun (b1 : Nat) => True; (if (Lanius.Mini.SrcType.isI32 x41.ty) = true then (if (Lanius.Mini.SrcType.isUint x55.ty Lanius.Mini.UintTy.uint8) = true then (k10 b) else (k11 b)) else (if (Lanius.Mini.SrcType.isUint x41.ty Lanius.Mini.UintTy.usize) = true then (if (Lanius.Mini.SrcType.isUint x55.ty Lanius.Mini.UintTy.uint8) = true then (k10 b) else (k11 b)) else (k11 b))))
-
-end
-
-noncomputable section
-
 def Cost_store_eval_then : Nat → Lanius.Mini.Evaluated → Lanius.Mini.Evaluated → Lanius.Mini.SrcType → Nat → Lanius.Mini.Expr → Option Lanius.Mini.Stmt → Nat
   | 0, x16, x30, x44, x62, x75, x84 => 18446744073709551616
   | n + 1, x16, x30, x44, x62, x75, x84 => (let k2 := (match x84 with | some x297 => (1 + (1 + (1 + ((Cost_check_then n x62 x75 (Lanius.Mini.Stmt.seq x30.stmt x297)) + 1)))) | none => 0); let k3 := 0; (if (Lanius.Mini.SrcType.isI32 x16.ty) = true then (if (Lanius.Mini.SrcType.same x30.ty x44) = true then k2 else k3) else (if (Lanius.Mini.SrcType.isUint x16.ty Lanius.Mini.UintTy.usize) = true then (if (Lanius.Mini.SrcType.same x30.ty x44) = true then k2 else k3) else k3)))
@@ -1620,117 +1399,6 @@ def Pre_store_cases : Nat → Lanius.Mini.Expr → List Lanius.Mini.Expr → Nat
   | n + 1, x12, x23, x43, x57, x69, x84, x94, b => (match x94 with | [] => True | x221 :: x228 => (match x228 with | [] => (Pre_store_types n x221 x23 x43 x57 x69 b) | x344 :: x350 => (∀ b2 : Nat, 1 < b → b2 = b - 1 → (∀ b3 : Nat, 1 < b2 → b3 = b2 - 1 → ((Pre_store_types n x221 x23 x43 x57 x69 b3) ∧ (∀ b4 : Nat, (Cost_store_types n x221 x23 x43 x57 x69) < b3 → b4 = b3 - (Cost_store_types n x221 x23 x43 x57 x69) → ((Pre_plus n x84 1 b4) ∧ (Pre_store_cases n x12 x23 x43 x57 x69 (x84 + 1) x228 b4))))))))
 termination_by structural fuel => fuel
 end
-
-end
-
-noncomputable section
-
-def Cost_store_eval_word : Nat → Lanius.Mini.SrcDecls → Lanius.Mini.Binding → Lanius.Mini.SrcType → Nat → Lanius.Mini.Evaluated → Lanius.Mini.Evaluated → Nat
-  | 0, x16, x33, x45, x63, x76, x90 => 18446744073709551616
-  | n + 1, x16, x33, x45, x63, x76, x90 => (if (Lanius.Mini.wordElement x16 x45) = true then ((Cost_bounds_guard n x33 (Lanius.Mini.Expr.var x63)) + ((Cost_slot_vars n (x63 + 1) (Lanius.Mini.SrcType.size x45)) + ((Cost_element_base n x33.slot (Lanius.Mini.SrcType.size x45) (Lanius.Mini.Expr.var x63)) + ((Cost_store_type n x45 (Lanius.Mini.slotVars ((x63 + 1)) ((Lanius.Mini.SrcType.size x45))) 0 (Lanius.Mini.elementBase x33.slot ((Lanius.Mini.SrcType.size x45)) ((Lanius.Mini.Expr.var x63))) 0) + (Cost_store_eval_then n x76 x90 x45 x63 (Lanius.Mini.boundsGuard x33 ((Lanius.Mini.Expr.var x63))) (Lanius.Mini.storeType x45 ((Lanius.Mini.slotVars ((x63 + 1)) ((Lanius.Mini.SrcType.size x45)))) 0 ((Lanius.Mini.elementBase x33.slot ((Lanius.Mini.SrcType.size x45)) ((Lanius.Mini.Expr.var x63)))) 0)))))) else 0)
-
-end
-noncomputable section
-
-def Pre_store_eval_word : Nat → Lanius.Mini.SrcDecls → Lanius.Mini.Binding → Lanius.Mini.SrcType → Nat → Lanius.Mini.Evaluated → Lanius.Mini.Evaluated → Nat → Prop
-  | 0, x16, x33, x45, x63, x76, x90, b => True
-  | n + 1, x16, x33, x45, x63, x76, x90, b => ((Pre_word_element n x16 x45 b) ∧ (if (Lanius.Mini.wordElement x16 x45) = true then ((Pre_bounds_guard n x33 (Lanius.Mini.Expr.var x63) b) ∧ (∀ b1 : Nat, (Cost_bounds_guard n x33 (Lanius.Mini.Expr.var x63)) < b → b1 = b - (Cost_bounds_guard n x33 (Lanius.Mini.Expr.var x63)) → ((Pre_plus n x63 1 b1) ∧ ((Pre_SrcType_size n x45 b1) ∧ ((Pre_slot_vars n (x63 + 1) (Lanius.Mini.SrcType.size x45) b1) ∧ (∀ b2 : Nat, (Cost_slot_vars n (x63 + 1) (Lanius.Mini.SrcType.size x45)) < b1 → b2 = b1 - (Cost_slot_vars n (x63 + 1) (Lanius.Mini.SrcType.size x45)) → ((Pre_SrcType_size n x45 b2) ∧ ((Pre_element_base n x33.slot (Lanius.Mini.SrcType.size x45) (Lanius.Mini.Expr.var x63) b2) ∧ (∀ b3 : Nat, (Cost_element_base n x33.slot (Lanius.Mini.SrcType.size x45) (Lanius.Mini.Expr.var x63)) < b2 → b3 = b2 - (Cost_element_base n x33.slot (Lanius.Mini.SrcType.size x45) (Lanius.Mini.Expr.var x63)) → (Pre_store_type n x45 (Lanius.Mini.slotVars ((x63 + 1)) ((Lanius.Mini.SrcType.size x45))) 0 (Lanius.Mini.elementBase x33.slot ((Lanius.Mini.SrcType.size x45)) ((Lanius.Mini.Expr.var x63))) 0 b3)))))))))) else True))
-
-end
-
-noncomputable section
-
-def Cost_store_eval_element : Nat → Lanius.Mini.SrcDecls → Lanius.Mini.Binding → Lanius.Mini.SrcType → Nat → Option Lanius.Mini.Evaluated → Option Lanius.Mini.Evaluated → Nat
-  | 0, x19, x36, x48, x66, x79, x119 => 18446744073709551616
-  | n + 1, x19, x36, x48, x66, x79, x119 => (if (Lanius.Mini.SrcType.isI32 x48) = true then (match x79 with | some x293 => (match x119 with | some x366 => (Cost_store_eval n x36 x66 x293 x366) | none => 0) | none => 0) else (if (Lanius.Mini.SrcType.isUint x48 Lanius.Mini.UintTy.uint8) = true then (match x79 with | some x539 => (match x119 with | some x612 => (Cost_store_eval_byte n x36 x66 x539 x612) | none => 0) | none => 0) else (match x79 with | some x744 => (match x119 with | some x809 => (Cost_store_eval_word n x19 x36 x48 x66 x744 x809) | none => 0) | none => 0)))
-
-end
-noncomputable section
-
-def Pre_store_eval_element : Nat → Lanius.Mini.SrcDecls → Lanius.Mini.Binding → Lanius.Mini.SrcType → Nat → Option Lanius.Mini.Evaluated → Option Lanius.Mini.Evaluated → Nat → Prop
-  | 0, x19, x36, x48, x66, x79, x119, b => True
-  | n + 1, x19, x36, x48, x66, x79, x119, b => (if (Lanius.Mini.SrcType.isI32 x48) = true then (match x79 with | some x293 => (match x119 with | some x366 => (Pre_store_eval n x36 x66 x293 x366 b) | none => True) | none => True) else (if (Lanius.Mini.SrcType.isUint x48 Lanius.Mini.UintTy.uint8) = true then (match x79 with | some x539 => (match x119 with | some x612 => (Pre_store_eval_byte n x36 x66 x539 x612 b) | none => True) | none => True) else (match x79 with | some x744 => (match x119 with | some x809 => (Pre_store_eval_word n x19 x36 x48 x66 x744 x809 b) | none => True) | none => True)))
-
-end
-
-noncomputable section
-
-mutual
-def Cost_put_element : Nat → Nat → Nat → Nat → Nat → Nat → Nat
-  | 0, x12, x25, x38, x51, x61 => 18446744073709551616
-  | n + 1, x12, x25, x38, x51, x61 => ((Cost_slot_vars n (x12 + 1) x38) + ((Cost_assign_from n (x25 + (x51 * x38)) (Lanius.Mini.slotVars ((x12 + 1)) x38) Lanius.Mini.Stmt.skip) + (if (decide (x61 < 2)) = true then 0 else (1 + (1 + (1 + ((Cost_put_element n x12 x25 x38 (x51 + 1) (x61 - 1)) + 1)))))))
-termination_by structural fuel => fuel
-end
-
-end
-noncomputable section
-
-mutual
-def Pre_put_element : Nat → Nat → Nat → Nat → Nat → Nat → Nat → Prop
-  | 0, x12, x25, x38, x51, x61, b => True
-  | n + 1, x12, x25, x38, x51, x61, b => ((Pre_times n x51 x38 b) ∧ ((Pre_plus n x25 (x51 * x38) b) ∧ ((Pre_plus n x12 1 b) ∧ ((Pre_slot_vars n (x12 + 1) x38 b) ∧ (∀ b1 : Nat, (Cost_slot_vars n (x12 + 1) x38) < b → b1 = b - (Cost_slot_vars n (x12 + 1) x38) → ((Pre_assign_from n (x25 + (x51 * x38)) (Lanius.Mini.slotVars ((x12 + 1)) x38) Lanius.Mini.Stmt.skip b1) ∧ (∀ b2 : Nat, (Cost_assign_from n (x25 + (x51 * x38)) (Lanius.Mini.slotVars ((x12 + 1)) x38) Lanius.Mini.Stmt.skip) < b1 → b2 = b1 - (Cost_assign_from n (x25 + (x51 * x38)) (Lanius.Mini.slotVars ((x12 + 1)) x38) Lanius.Mini.Stmt.skip) → (if (decide (x61 < 2)) = true then True else (∀ b3 : Nat, 1 < b2 → b3 = b2 - 1 → (∀ b4 : Nat, 1 < b3 → b4 = b3 - 1 → (∀ b5 : Nat, 1 < b4 → b5 = b4 - 1 → ((Pre_plus n x51 1 b5) ∧ (Pre_put_element n x12 x25 x38 (x51 + 1) (x61 - 1) b5)))))))))))))
-termination_by structural fuel => fuel
-end
-
-end
-
-noncomputable section
-
-def Cost_store_pick : Nat → Nat → Lanius.Mini.SrcType → Nat → Nat → Lanius.Mini.Evaluated → Lanius.Mini.Evaluated → Nat
-  | 0, x11, x24, x42, x56, x69, x83 => 18446744073709551616
-  | n + 1, x11, x24, x42, x56, x69, x83 => (let k2 := (1 + (1 + (1 + (1 + ((Cost_put_element n x56 x11 (Lanius.Mini.SrcType.size x24) 0 x42) + (1 + ((Cost_check_then n x56 (Lanius.Mini.Expr.compare Lanius.Mini.Word.u64 Lanius.Mini.CmpOp.lt (Lanius.Mini.Expr.var x56) (Lanius.Mini.Expr.lit (BitVec.ofNat 64 x42))) (Lanius.Mini.Stmt.seq x83.stmt (Lanius.Mini.putElement x56 x11 ((Lanius.Mini.SrcType.size x24)) 0 x42))) + 1))))))); let k3 := 0; (if (Lanius.Mini.SrcType.isI32 x69.ty) = true then (if (((Lanius.Mini.SrcType.same x83.ty x24) && (decide (0 < x42))) && (decide (x42 < 2147483648))) = true then (if (decide (0 < (Lanius.Mini.SrcType.size x24))) = true then k2 else k3) else k3) else (if (Lanius.Mini.SrcType.isUint x69.ty Lanius.Mini.UintTy.usize) = true then (if (((Lanius.Mini.SrcType.same x83.ty x24) && (decide (0 < x42))) && (decide (x42 < 2147483648))) = true then (if (decide (0 < (Lanius.Mini.SrcType.size x24))) = true then k2 else k3) else k3) else (if ((false && (decide (0 < x42))) && (decide (x42 < 2147483648))) = true then (if (decide (0 < (Lanius.Mini.SrcType.size x24))) = true then k2 else k3) else k3))))
-
-end
-noncomputable section
-
-def Pre_store_pick : Nat → Nat → Lanius.Mini.SrcType → Nat → Nat → Lanius.Mini.Evaluated → Lanius.Mini.Evaluated → Nat → Prop
-  | 0, x11, x24, x42, x56, x69, x83, b => True
-  | n + 1, x11, x24, x42, x56, x69, x83, b => (let k10 := fun (b1 : Nat) => (∀ b2 : Nat, 1 < b1 → b2 = b1 - 1 → (∀ b3 : Nat, 1 < b2 → b3 = b2 - 1 → (∀ b4 : Nat, 1 < b3 → b4 = b3 - 1 → (∀ b5 : Nat, 1 < b4 → b5 = b4 - 1 → ((Pre_SrcType_size n x24 b5) ∧ (Pre_put_element n x56 x11 (Lanius.Mini.SrcType.size x24) 0 x42 b5)))))); let k11 := fun (b1 : Nat) => True; (if (Lanius.Mini.SrcType.isI32 x69.ty) = true then (if (((Lanius.Mini.SrcType.same x83.ty x24) && (decide (0 < x42))) && (decide (x42 < 2147483648))) = true then ((Pre_SrcType_size n x24 b) ∧ (if (decide (0 < (Lanius.Mini.SrcType.size x24))) = true then (k10 b) else (k11 b))) else (k11 b)) else (if (Lanius.Mini.SrcType.isUint x69.ty Lanius.Mini.UintTy.usize) = true then (if (((Lanius.Mini.SrcType.same x83.ty x24) && (decide (0 < x42))) && (decide (x42 < 2147483648))) = true then ((Pre_SrcType_size n x24 b) ∧ (if (decide (0 < (Lanius.Mini.SrcType.size x24))) = true then (k10 b) else (k11 b))) else (k11 b)) else (if ((false && (decide (0 < x42))) && (decide (x42 < 2147483648))) = true then ((Pre_SrcType_size n x24 b) ∧ (if (decide (0 < (Lanius.Mini.SrcType.size x24))) = true then (k10 b) else (k11 b))) else (k11 b)))))
-
-end
-
-noncomputable section
-
-def Cost_store_array_element : Nat → Nat → Lanius.Mini.SrcType → Nat → Nat → Option Lanius.Mini.Evaluated → Option Lanius.Mini.Evaluated → Nat
-  | 0, x20, x33, x51, x65, x78, x118 => 18446744073709551616
-  | n + 1, x20, x33, x51, x65, x78, x118 => (match x78 with | some x252 => (match x118 with | some x317 => (Cost_store_pick n x20 x33 x51 x65 x252 x317) | none => 0) | none => 0)
-
-end
-noncomputable section
-
-def Pre_store_array_element : Nat → Nat → Lanius.Mini.SrcType → Nat → Nat → Option Lanius.Mini.Evaluated → Option Lanius.Mini.Evaluated → Nat → Prop
-  | 0, x20, x33, x51, x65, x78, x118, b => True
-  | n + 1, x20, x33, x51, x65, x78, x118, b => (match x78 with | some x252 => (match x118 with | some x317 => (Pre_store_pick n x20 x33 x51 x65 x252 x317 b) | none => True) | none => True)
-
-end
-
-noncomputable section
-
-def Cost_store_array : Nat → Lanius.Mini.Binding → Nat → Option Lanius.Mini.Evaluated → Option Lanius.Mini.Evaluated → Nat
-  | 0, x12, x24, x37, x77 => 18446744073709551616
-  | n + 1, x12, x24, x37, x77 => (match x12.ty with | .i32 => 0 | .bool => 0 | .uint x231 => 0 | .struct x261 x265 => 0 | .enum x295 x299 => 0 | .ptr => 0 | .slice x353 => 0 | .array x394 x409 => (Cost_store_array_element n x12.slot x394 x409 x24 x37 x77) | .unit => 0 | .isize => 0 | .char => 0 | .float x610 => 0 | .sint x636 => 0 | .view x662 => 0 | .str => 0 | .ref x717 => 0)
-
-end
-noncomputable section
-
-def Pre_store_array : Nat → Lanius.Mini.Binding → Nat → Option Lanius.Mini.Evaluated → Option Lanius.Mini.Evaluated → Nat → Prop
-  | 0, x12, x24, x37, x77, b => True
-  | n + 1, x12, x24, x37, x77, b => (match x12.ty with | .i32 => True | .bool => True | .uint x231 => True | .struct x261 x265 => True | .enum x295 x299 => True | .ptr => True | .slice x353 => True | .array x394 x409 => (Pre_store_array_element n x12.slot x394 x409 x24 x37 x77 b) | .unit => True | .isize => True | .char => True | .float x610 => True | .sint x636 => True | .view x662 => True | .str => True | .ref x717 => True)
-
-end
-
-noncomputable section
-
-def Cost_lower_set_index_eval : Nat → Lanius.Mini.SrcDecls → Nat → Option Lanius.Mini.Binding → Option Lanius.Mini.Evaluated → Option Lanius.Mini.Evaluated → Nat
-  | 0, x21, x38, x51, x91, x131 => 18446744073709551616
-  | n + 1, x21, x38, x51, x91, x131 => (match x51 with | some x267 => (match (Lanius.Mini.elementOf x267.ty) with | some x373 => (Cost_store_eval_element n x21 x267 x373 x38 x91 x131) | none => (Cost_store_array n x267 x38 x91 x131)) | none => 0)
-
-end
-noncomputable section
-
-def Pre_lower_set_index_eval : Nat → Lanius.Mini.SrcDecls → Nat → Option Lanius.Mini.Binding → Option Lanius.Mini.Evaluated → Option Lanius.Mini.Evaluated → Nat → Prop
-  | 0, x21, x38, x51, x91, x131, b => True
-  | n + 1, x21, x38, x51, x91, x131, b => (match x51 with | some x267 => (match (Lanius.Mini.elementOf x267.ty) with | some x373 => (Pre_store_eval_element n x21 x267 x373 x38 x91 x131 b) | none => (Pre_store_array n x267 x38 x91 x131 b)) | none => True)
 
 end
 
@@ -1821,21 +1489,6 @@ noncomputable section
 def Pre_lower_set_index : Nat → Lanius.Mini.SrcDecls → Option Lanius.Mini.Binding → Option Lanius.Mini.Expr → List Lanius.Mini.Binding → Lanius.Mini.SrcExpr → Nat → Prop
   | 0, x16, x33, x73, x108, x130, b => True
   | n + 1, x16, x33, x73, x108, x130, b => (match x33 with | some x242 => (Pre_lower_set_index_of n x16 x242 x73 x108 x130 b) | none => True)
-
-end
-
-noncomputable section
-
-def Cost_lower_set_index_any : Nat → Lanius.Mini.SrcDecls → List Lanius.Mini.Binding → Nat → Nat → Lanius.Mini.SrcExpr → Lanius.Mini.SrcExpr → Nat
-  | 0, x20, x37, x59, x72, x86, x102 => 18446744073709551616
-  | n + 1, x20, x37, x59, x72, x86, x102 => (if (Lanius.Mini.isArrayLocal ((Lanius.Mini.lookup x37 x72))) = true then ((Cost_eval_pure n x37 x86 x59) + ((Cost_eval_pure n x37 x102 (x59 + 1)) + (Cost_lower_set_index_eval n x20 x59 (Lanius.Mini.lookup x37 x72) (Lanius.Mini.evalPure x37 x86 x59) (Lanius.Mini.evalPure x37 x102 ((x59 + 1)))))) else ((Cost_SrcExpr_guard n x86 x37) + ((Cost_index_guard n x37 x72 x86) + ((Cost_guard_and n (Lanius.Mini.SrcExpr.guard x86 x37) (Lanius.Mini.indexGuard x37 x72 x86)) + ((Cost_SrcExpr_guard n x102 x37) + ((Cost_guard_and n (Lanius.Mini.guardAnd ((Lanius.Mini.SrcExpr.guard x86 x37)) ((Lanius.Mini.indexGuard x37 x72 x86))) (Lanius.Mini.SrcExpr.guard x102 x37)) + ((Cost_lower_index n x37 x86) + ((Cost_lower_set_index n x20 (Lanius.Mini.lookup x37 x72) (Lanius.Mini.lowerIndex x37 x86) x37 x102) + (Cost_guarded n x59 (Lanius.Mini.guardAnd ((Lanius.Mini.guardAnd ((Lanius.Mini.SrcExpr.guard x86 x37)) ((Lanius.Mini.indexGuard x37 x72 x86)))) ((Lanius.Mini.SrcExpr.guard x102 x37))) (Lanius.Mini.lowerSetIndex x20 ((Lanius.Mini.lookup x37 x72)) ((Lanius.Mini.lowerIndex x37 x86)) x37 x102))))))))))
-
-end
-noncomputable section
-
-def Pre_lower_set_index_any : Nat → Lanius.Mini.SrcDecls → List Lanius.Mini.Binding → Nat → Nat → Lanius.Mini.SrcExpr → Lanius.Mini.SrcExpr → Nat → Prop
-  | 0, x20, x37, x59, x72, x86, x102, b => True
-  | n + 1, x20, x37, x59, x72, x86, x102, b => (if (Lanius.Mini.isArrayLocal ((Lanius.Mini.lookup x37 x72))) = true then ((Pre_eval_pure n x37 x86 x59 b) ∧ (∀ b1 : Nat, (Cost_eval_pure n x37 x86 x59) < b → b1 = b - (Cost_eval_pure n x37 x86 x59) → ((Pre_plus n x59 1 b1) ∧ ((Pre_eval_pure n x37 x102 (x59 + 1) b1) ∧ (∀ b2 : Nat, (Cost_eval_pure n x37 x102 (x59 + 1)) < b1 → b2 = b1 - (Cost_eval_pure n x37 x102 (x59 + 1)) → (Pre_lower_set_index_eval n x20 x59 (Lanius.Mini.lookup x37 x72) (Lanius.Mini.evalPure x37 x86 x59) (Lanius.Mini.evalPure x37 x102 ((x59 + 1))) b2)))))) else ((Pre_SrcExpr_guard n x86 x37 b) ∧ (∀ b4 : Nat, (Cost_SrcExpr_guard n x86 x37) < b → b4 = b - (Cost_SrcExpr_guard n x86 x37) → ((Pre_index_guard n x37 x72 x86 b4) ∧ (∀ b5 : Nat, (Cost_index_guard n x37 x72 x86) < b4 → b5 = b4 - (Cost_index_guard n x37 x72 x86) → (∀ b6 : Nat, (Cost_guard_and n (Lanius.Mini.SrcExpr.guard x86 x37) (Lanius.Mini.indexGuard x37 x72 x86)) < b5 → b6 = b5 - (Cost_guard_and n (Lanius.Mini.SrcExpr.guard x86 x37) (Lanius.Mini.indexGuard x37 x72 x86)) → ((Pre_SrcExpr_guard n x102 x37 b6) ∧ (∀ b7 : Nat, (Cost_SrcExpr_guard n x102 x37) < b6 → b7 = b6 - (Cost_SrcExpr_guard n x102 x37) → (∀ b8 : Nat, (Cost_guard_and n (Lanius.Mini.guardAnd ((Lanius.Mini.SrcExpr.guard x86 x37)) ((Lanius.Mini.indexGuard x37 x72 x86))) (Lanius.Mini.SrcExpr.guard x102 x37)) < b7 → b8 = b7 - (Cost_guard_and n (Lanius.Mini.guardAnd ((Lanius.Mini.SrcExpr.guard x86 x37)) ((Lanius.Mini.indexGuard x37 x72 x86))) (Lanius.Mini.SrcExpr.guard x102 x37)) → ((Pre_lower_index n x37 x86 b8) ∧ (∀ b9 : Nat, (Cost_lower_index n x37 x86) < b8 → b9 = b8 - (Cost_lower_index n x37 x86) → (Pre_lower_set_index n x20 (Lanius.Mini.lookup x37 x72) (Lanius.Mini.lowerIndex x37 x86) x37 x102 b9))))))))))))
 
 end
 
@@ -2439,7 +2092,7 @@ noncomputable section
 mutual
 def Cost_SrcEff_eval : Nat → Lanius.Mini.SrcEff → List Lanius.Mini.Sig → Lanius.Mini.SrcDecls → List Lanius.Mini.Binding → Nat → Nat
   | 0, x5, x11, x28, x45, x67 => 18446744073709551616
-  | n + 1, x5, x11, x28, x45, x67 => (match x5 with | .ePure x165 => (Cost_eval_pure n x45 x165 x67) | .eCall x216 x224 => ((Cost_eval_args n x11 x28 x45 x224 x67) + (Cost_eval_call n (x11[x216]?) x216 x67 (Lanius.Mini.evalArgs x11 x28 x45 x224 x67))) | .eApply x346 x350 x356 => ((Cost_SrcEff_eval n x350 x11 x28 x45 x67) + ((Cost_SrcEff_eval n x356 x11 x28 x45 (x67 + 1)) + (Cost_eval_apply n x346 x67 (Lanius.Mini.SrcEff.eval x350 x11 x28 x45 x67) (Lanius.Mini.SrcEff.eval x356 x11 x28 x45 ((x67 + 1)))))) | .eNeg x503 => ((Cost_SrcEff_eval n x503 x11 x28 x45 x67) + (Cost_eval_negate n x67 (Lanius.Mini.SrcEff.eval x503 x11 x28 x45 x67))) | .eNot x598 => ((Cost_SrcEff_eval n x598 x11 x28 x45 x67) + (Cost_eval_not n x67 (Lanius.Mini.SrcEff.eval x598 x11 x28 x45 x67))) | .eCast x691 x695 => ((Cost_SrcEff_eval n x695 x11 x28 x45 x67) + (Cost_eval_cast n x691 x67 (Lanius.Mini.SrcEff.eval x695 x11 x28 x45 x67))) | .eIndex x794 x801 => ((Cost_SrcEff_eval n x801 x11 x28 x45 x67) + (Cost_eval_index n x28 x45 x794 x67 (Lanius.Mini.SrcEff.eval x801 x11 x28 x45 x67))) | .eStruct x915 x919 => ((Cost_eval_args n x11 x28 x45 x919 x67) + (Cost_eval_struct n x915 (Lanius.Mini.evalArgs x11 x28 x45 x919 x67))) | .eVariant x1020 x1024 x1033 => ((Cost_eval_args n x11 x28 x45 x1033 (x67 + 1)) + (Cost_eval_variant n x1020 x1024 x67 (Lanius.Mini.evalArgs x11 x28 x45 x1033 ((x67 + 1))))) | .eMatch x1159 x1170 x1175 x1179 x1188 => ((Cost_SrcEff_eval n x1159 x11 x28 x45 x67) + ((Cost_eval_arms n x11 x28 x45 x67 (Lanius.Mini.matchDst x67 x1170 x1175) x1175 0 (Lanius.Mini.matchVariants x1170) x1179 x1188) + (Cost_eval_match n x67 x1170 x1175 (Lanius.Mini.SrcEff.eval x1159 x11 x28 x45 x67) (Lanius.Mini.evalArms x11 x28 x45 x67 ((Lanius.Mini.matchDst x67 x1170 x1175)) x1175 0 ((Lanius.Mini.matchVariants x1170)) x1179 x1188) x1179.length x1188.length))) | .eDivide x1450 x1454 x1460 => ((Cost_SrcEff_eval n x1454 x11 x28 x45 x67) + ((Cost_SrcEff_eval n x1460 x11 x28 x45 (x67 + 1)) + (Cost_eval_division n x1450 x67 (Lanius.Mini.SrcEff.eval x1454 x11 x28 x45 x67) (Lanius.Mini.SrcEff.eval x1460 x11 x28 x45 ((x67 + 1)))))) | .eStride x1613 => (Cost_eval_stride n x28 x45 x1613 x67) | .arraySlice x1686 x1695 => 0 | .eIf x1727 x1738 x1742 x1754 => ((Cost_SrcEff_eval n x1727 x11 x28 x45 x67) + ((Cost_SrcEff_eval n x1742 x11 x28 x45 x67) + ((Cost_SrcEff_eval n x1754 x11 x28 x45 x67) + (Cost_eval_if n x67 x1738 (Lanius.Mini.SrcEff.eval x1727 x11 x28 x45 x67) (Lanius.Mini.SrcEff.eval x1742 x11 x28 x45 x67) (Lanius.Mini.SrcEff.eval x1754 x11 x28 x45 x67))))) | .eLet x1954 x1958 x1962 x1969 x1973 => ((Cost_SrcEff_eval n x1962 x11 x28 x45 x67) + ((Cost_single_of_usize n x1954) + ((Cost_single_of_mini_selfhost_SrcType n x1958) + ((Cost_arm_scope n ([x1954]) ([x1958]) x67 x45) + ((Cost_eval_let_body n x11 x28 (Lanius.Mini.armScope ([x1954]) ([x1958]) x67 x45) (Lanius.Mini.matchDst x67 x1958 x1969) x1973) + (Cost_eval_let_in n x67 x1958 x1969 (Lanius.Mini.SrcEff.eval x1962 x11 x28 x45 x67) (Lanius.Mini.Inline.evalLetBody x11 x28 ((Lanius.Mini.armScope ([x1954]) ([x1958]) x67 x45)) ((Lanius.Mini.matchDst x67 x1958 x1969)) x1973))))))) | .eLen x2185 => 0 | .eStr x2242 x2250 => (Cost_eval_str n x28 x2242 x2250 x67))
+  | n + 1, x5, x11, x28, x45, x67 => (match x5 with | .ePure x165 => (Cost_eval_pure n x45 x165 x67) | .eCall x216 x224 => ((Cost_eval_args n x11 x28 x45 x224 x67) + (Cost_eval_call n (x11[x216]?) x216 x67 (Lanius.Mini.evalArgs x11 x28 x45 x224 x67))) | .eApply x346 x350 x356 => ((Cost_SrcEff_eval n x350 x11 x28 x45 x67) + ((Cost_SrcEff_eval n x356 x11 x28 x45 (x67 + 1)) + (Cost_eval_apply n x346 x67 (Lanius.Mini.SrcEff.eval x350 x11 x28 x45 x67) (Lanius.Mini.SrcEff.eval x356 x11 x28 x45 ((x67 + 1)))))) | .eNeg x503 => ((Cost_SrcEff_eval n x503 x11 x28 x45 x67) + (Cost_eval_negate n x67 (Lanius.Mini.SrcEff.eval x503 x11 x28 x45 x67))) | .eNot x598 => ((Cost_SrcEff_eval n x598 x11 x28 x45 x67) + (Cost_eval_not n x67 (Lanius.Mini.SrcEff.eval x598 x11 x28 x45 x67))) | .eCast x691 x695 => ((Cost_SrcEff_eval n x695 x11 x28 x45 x67) + (Cost_eval_cast n x691 x67 (Lanius.Mini.SrcEff.eval x695 x11 x28 x45 x67))) | .eIndex x794 x801 => ((Cost_SrcEff_eval n x801 x11 x28 x45 x67) + (Cost_eval_index n x28 x45 x794 x67 (Lanius.Mini.SrcEff.eval x801 x11 x28 x45 x67))) | .eStruct x915 x919 => ((Cost_eval_args n x11 x28 x45 x919 x67) + (Cost_eval_struct n x915 (Lanius.Mini.evalArgs x11 x28 x45 x919 x67))) | .eVariant x1020 x1024 x1033 => ((Cost_eval_args n x11 x28 x45 x1033 (x67 + 1)) + (Cost_eval_variant n x1020 x1024 x67 (Lanius.Mini.evalArgs x11 x28 x45 x1033 ((x67 + 1))))) | .eMatch x1159 x1170 x1175 x1179 x1188 => ((Cost_SrcEff_eval n x1159 x11 x28 x45 x67) + ((Cost_eval_arms n x11 x28 x45 x67 (Lanius.Mini.matchDst x67 x1170 x1175) x1175 0 (Lanius.Mini.matchVariants x1170) x1179 x1188) + (Cost_eval_match n x67 x1170 x1175 (Lanius.Mini.SrcEff.eval x1159 x11 x28 x45 x67) (Lanius.Mini.evalArms x11 x28 x45 x67 ((Lanius.Mini.matchDst x67 x1170 x1175)) x1175 0 ((Lanius.Mini.matchVariants x1170)) x1179 x1188) x1179.length x1188.length))) | .eDivide x1450 x1454 x1460 => ((Cost_SrcEff_eval n x1454 x11 x28 x45 x67) + ((Cost_SrcEff_eval n x1460 x11 x28 x45 (x67 + 1)) + (Cost_eval_division n x1450 x67 (Lanius.Mini.SrcEff.eval x1454 x11 x28 x45 x67) (Lanius.Mini.SrcEff.eval x1460 x11 x28 x45 ((x67 + 1)))))) | .eStride x1613 => (Cost_eval_stride n x28 x45 x1613 x67) | .arraySlice x1686 x1695 => 0 | .eIf x1727 x1738 x1742 x1754 => ((Cost_SrcEff_eval n x1727 x11 x28 x45 x67) + ((Cost_SrcEff_eval n x1742 x11 x28 x45 x67) + ((Cost_SrcEff_eval n x1754 x11 x28 x45 x67) + (Cost_eval_if n x67 x1738 (Lanius.Mini.SrcEff.eval x1727 x11 x28 x45 x67) (Lanius.Mini.SrcEff.eval x1742 x11 x28 x45 x67) (Lanius.Mini.SrcEff.eval x1754 x11 x28 x45 x67))))) | .eLet x1954 x1958 x1962 x1969 x1973 => ((Cost_SrcEff_eval n x1962 x11 x28 x45 x67) + ((Cost_single_of_usize n x1954) + ((Cost_single_of_mini_selfhost_SrcType n x1958) + ((Cost_arm_scope n ([x1954]) ([x1958]) x67 x45) + ((Cost_eval_let_body n x11 x28 (Lanius.Mini.armScope ([x1954]) ([x1958]) x67 x45) (Lanius.Mini.matchDst x67 x1958 x1969) x1973) + (Cost_eval_let_in n x67 x1958 x1969 (Lanius.Mini.SrcEff.eval x1962 x11 x28 x45 x67) (Lanius.Mini.Inline.evalLetBody x11 x28 ((Lanius.Mini.armScope ([x1954]) ([x1958]) x67 x45)) ((Lanius.Mini.matchDst x67 x1958 x1969)) x1973))))))) | .eLen x2185 => 0 | .eStr x2242 x2250 => (Cost_eval_str n x28 x2242 x2250 x67) | .eBorrow x2318 x2323 => 0 | .eDeref x2359 x2364 => 0 | .eField x2398 x2405 => 0 | .eAt x2436 x2443 => 0)
 termination_by structural fuel => fuel
 
 def Cost_eval_args : Nat → List Lanius.Mini.Sig → Lanius.Mini.SrcDecls → List Lanius.Mini.Binding → List Lanius.Mini.SrcEff → Nat → Nat
@@ -2469,7 +2122,7 @@ noncomputable section
 mutual
 def Pre_SrcEff_eval : Nat → Lanius.Mini.SrcEff → List Lanius.Mini.Sig → Lanius.Mini.SrcDecls → List Lanius.Mini.Binding → Nat → Nat → Prop
   | 0, x5, x11, x28, x45, x67, b => True
-  | n + 1, x5, x11, x28, x45, x67, b => (match x5 with | .ePure x165 => (Pre_eval_pure n x45 x165 x67 b) | .eCall x216 x224 => ((Pre_eval_args n x11 x28 x45 x224 x67 b) ∧ (∀ b2 : Nat, (Cost_eval_args n x11 x28 x45 x224 x67) < b → b2 = b - (Cost_eval_args n x11 x28 x45 x224 x67) → (Pre_eval_call n (x11[x216]?) x216 x67 (Lanius.Mini.evalArgs x11 x28 x45 x224 x67) b2))) | .eApply x346 x350 x356 => ((Pre_SrcEff_eval n x350 x11 x28 x45 x67 b) ∧ (∀ b4 : Nat, (Cost_SrcEff_eval n x350 x11 x28 x45 x67) < b → b4 = b - (Cost_SrcEff_eval n x350 x11 x28 x45 x67) → ((Pre_plus n x67 1 b4) ∧ ((Pre_SrcEff_eval n x356 x11 x28 x45 (x67 + 1) b4) ∧ (∀ b5 : Nat, (Cost_SrcEff_eval n x356 x11 x28 x45 (x67 + 1)) < b4 → b5 = b4 - (Cost_SrcEff_eval n x356 x11 x28 x45 (x67 + 1)) → (Pre_eval_apply n x346 x67 (Lanius.Mini.SrcEff.eval x350 x11 x28 x45 x67) (Lanius.Mini.SrcEff.eval x356 x11 x28 x45 ((x67 + 1))) b5)))))) | .eNeg x503 => (Pre_SrcEff_eval n x503 x11 x28 x45 x67 b) | .eNot x598 => (Pre_SrcEff_eval n x598 x11 x28 x45 x67 b) | .eCast x691 x695 => (Pre_SrcEff_eval n x695 x11 x28 x45 x67 b) | .eIndex x794 x801 => ((Pre_SrcEff_eval n x801 x11 x28 x45 x67 b) ∧ (∀ b13 : Nat, (Cost_SrcEff_eval n x801 x11 x28 x45 x67) < b → b13 = b - (Cost_SrcEff_eval n x801 x11 x28 x45 x67) → (Pre_eval_index n x28 x45 x794 x67 (Lanius.Mini.SrcEff.eval x801 x11 x28 x45 x67) b13))) | .eStruct x915 x919 => ((Pre_eval_args n x11 x28 x45 x919 x67 b) ∧ (∀ b15 : Nat, (Cost_eval_args n x11 x28 x45 x919 x67) < b → b15 = b - (Cost_eval_args n x11 x28 x45 x919 x67) → (Pre_eval_struct n x915 (Lanius.Mini.evalArgs x11 x28 x45 x919 x67) b15))) | .eVariant x1020 x1024 x1033 => ((Pre_plus n x67 1 b) ∧ ((Pre_eval_args n x11 x28 x45 x1033 (x67 + 1) b) ∧ (∀ b17 : Nat, (Cost_eval_args n x11 x28 x45 x1033 (x67 + 1)) < b → b17 = b - (Cost_eval_args n x11 x28 x45 x1033 (x67 + 1)) → (Pre_eval_variant n x1020 x1024 x67 (Lanius.Mini.evalArgs x11 x28 x45 x1033 ((x67 + 1))) b17)))) | .eMatch x1159 x1170 x1175 x1179 x1188 => ((Pre_SrcEff_eval n x1159 x11 x28 x45 x67 b) ∧ (∀ b19 : Nat, (Cost_SrcEff_eval n x1159 x11 x28 x45 x67) < b → b19 = b - (Cost_SrcEff_eval n x1159 x11 x28 x45 x67) → ((Pre_match_dst n x67 x1170 x1175 b19) ∧ ((Pre_eval_arms n x11 x28 x45 x67 (Lanius.Mini.matchDst x67 x1170 x1175) x1175 0 (Lanius.Mini.matchVariants x1170) x1179 x1188 b19) ∧ (∀ b20 : Nat, (Cost_eval_arms n x11 x28 x45 x67 (Lanius.Mini.matchDst x67 x1170 x1175) x1175 0 (Lanius.Mini.matchVariants x1170) x1179 x1188) < b19 → b20 = b19 - (Cost_eval_arms n x11 x28 x45 x67 (Lanius.Mini.matchDst x67 x1170 x1175) x1175 0 (Lanius.Mini.matchVariants x1170) x1179 x1188) → ((Pre_length_of_mini_selfhost_List_usize n x1179 b20) ∧ ((Pre_length_of_mini_selfhost_SrcEff n x1188 b20) ∧ (Pre_eval_match n x67 x1170 x1175 (Lanius.Mini.SrcEff.eval x1159 x11 x28 x45 x67) (Lanius.Mini.evalArms x11 x28 x45 x67 ((Lanius.Mini.matchDst x67 x1170 x1175)) x1175 0 ((Lanius.Mini.matchVariants x1170)) x1179 x1188) x1179.length x1188.length b20)))))))) | .eDivide x1450 x1454 x1460 => ((Pre_SrcEff_eval n x1454 x11 x28 x45 x67 b) ∧ (∀ b22 : Nat, (Cost_SrcEff_eval n x1454 x11 x28 x45 x67) < b → b22 = b - (Cost_SrcEff_eval n x1454 x11 x28 x45 x67) → ((Pre_plus n x67 1 b22) ∧ ((Pre_SrcEff_eval n x1460 x11 x28 x45 (x67 + 1) b22) ∧ (∀ b23 : Nat, (Cost_SrcEff_eval n x1460 x11 x28 x45 (x67 + 1)) < b22 → b23 = b22 - (Cost_SrcEff_eval n x1460 x11 x28 x45 (x67 + 1)) → (Pre_eval_division n x1450 x67 (Lanius.Mini.SrcEff.eval x1454 x11 x28 x45 x67) (Lanius.Mini.SrcEff.eval x1460 x11 x28 x45 ((x67 + 1))) b23)))))) | .eStride x1613 => (Pre_eval_stride n x28 x45 x1613 x67 b) | .arraySlice x1686 x1695 => True | .eIf x1727 x1738 x1742 x1754 => ((Pre_SrcEff_eval n x1727 x11 x28 x45 x67 b) ∧ (∀ b26 : Nat, (Cost_SrcEff_eval n x1727 x11 x28 x45 x67) < b → b26 = b - (Cost_SrcEff_eval n x1727 x11 x28 x45 x67) → ((Pre_SrcEff_eval n x1742 x11 x28 x45 x67 b26) ∧ (∀ b27 : Nat, (Cost_SrcEff_eval n x1742 x11 x28 x45 x67) < b26 → b27 = b26 - (Cost_SrcEff_eval n x1742 x11 x28 x45 x67) → (Pre_SrcEff_eval n x1754 x11 x28 x45 x67 b27))))) | .eLet x1954 x1958 x1962 x1969 x1973 => ((Pre_SrcEff_eval n x1962 x11 x28 x45 x67 b) ∧ (∀ b30 : Nat, (Cost_SrcEff_eval n x1962 x11 x28 x45 x67) < b → b30 = b - (Cost_SrcEff_eval n x1962 x11 x28 x45 x67) → (∀ b31 : Nat, (Cost_single_of_usize n x1954) < b30 → b31 = b30 - (Cost_single_of_usize n x1954) → (∀ b32 : Nat, (Cost_single_of_mini_selfhost_SrcType n x1958) < b31 → b32 = b31 - (Cost_single_of_mini_selfhost_SrcType n x1958) → ((Pre_arm_scope n ([x1954]) ([x1958]) x67 x45 b32) ∧ (∀ b33 : Nat, (Cost_arm_scope n ([x1954]) ([x1958]) x67 x45) < b32 → b33 = b32 - (Cost_arm_scope n ([x1954]) ([x1958]) x67 x45) → ((Pre_match_dst n x67 x1958 x1969 b33) ∧ ((Pre_eval_let_body n x11 x28 (Lanius.Mini.armScope ([x1954]) ([x1958]) x67 x45) (Lanius.Mini.matchDst x67 x1958 x1969) x1973 b33) ∧ (∀ b34 : Nat, (Cost_eval_let_body n x11 x28 (Lanius.Mini.armScope ([x1954]) ([x1958]) x67 x45) (Lanius.Mini.matchDst x67 x1958 x1969) x1973) < b33 → b34 = b33 - (Cost_eval_let_body n x11 x28 (Lanius.Mini.armScope ([x1954]) ([x1958]) x67 x45) (Lanius.Mini.matchDst x67 x1958 x1969) x1973) → (Pre_eval_let_in n x67 x1958 x1969 (Lanius.Mini.SrcEff.eval x1962 x11 x28 x45 x67) (Lanius.Mini.Inline.evalLetBody x11 x28 ((Lanius.Mini.armScope ([x1954]) ([x1958]) x67 x45)) ((Lanius.Mini.matchDst x67 x1958 x1969)) x1973) b34)))))))))) | .eLen x2185 => (Pre_eval_len n x45 x2185 x67 b) | .eStr x2242 x2250 => (Pre_eval_str n x28 x2242 x2250 x67 b))
+  | n + 1, x5, x11, x28, x45, x67, b => (match x5 with | .ePure x165 => (Pre_eval_pure n x45 x165 x67 b) | .eCall x216 x224 => ((Pre_eval_args n x11 x28 x45 x224 x67 b) ∧ (∀ b2 : Nat, (Cost_eval_args n x11 x28 x45 x224 x67) < b → b2 = b - (Cost_eval_args n x11 x28 x45 x224 x67) → (Pre_eval_call n (x11[x216]?) x216 x67 (Lanius.Mini.evalArgs x11 x28 x45 x224 x67) b2))) | .eApply x346 x350 x356 => ((Pre_SrcEff_eval n x350 x11 x28 x45 x67 b) ∧ (∀ b4 : Nat, (Cost_SrcEff_eval n x350 x11 x28 x45 x67) < b → b4 = b - (Cost_SrcEff_eval n x350 x11 x28 x45 x67) → ((Pre_plus n x67 1 b4) ∧ ((Pre_SrcEff_eval n x356 x11 x28 x45 (x67 + 1) b4) ∧ (∀ b5 : Nat, (Cost_SrcEff_eval n x356 x11 x28 x45 (x67 + 1)) < b4 → b5 = b4 - (Cost_SrcEff_eval n x356 x11 x28 x45 (x67 + 1)) → (Pre_eval_apply n x346 x67 (Lanius.Mini.SrcEff.eval x350 x11 x28 x45 x67) (Lanius.Mini.SrcEff.eval x356 x11 x28 x45 ((x67 + 1))) b5)))))) | .eNeg x503 => (Pre_SrcEff_eval n x503 x11 x28 x45 x67 b) | .eNot x598 => (Pre_SrcEff_eval n x598 x11 x28 x45 x67 b) | .eCast x691 x695 => (Pre_SrcEff_eval n x695 x11 x28 x45 x67 b) | .eIndex x794 x801 => ((Pre_SrcEff_eval n x801 x11 x28 x45 x67 b) ∧ (∀ b13 : Nat, (Cost_SrcEff_eval n x801 x11 x28 x45 x67) < b → b13 = b - (Cost_SrcEff_eval n x801 x11 x28 x45 x67) → (Pre_eval_index n x28 x45 x794 x67 (Lanius.Mini.SrcEff.eval x801 x11 x28 x45 x67) b13))) | .eStruct x915 x919 => ((Pre_eval_args n x11 x28 x45 x919 x67 b) ∧ (∀ b15 : Nat, (Cost_eval_args n x11 x28 x45 x919 x67) < b → b15 = b - (Cost_eval_args n x11 x28 x45 x919 x67) → (Pre_eval_struct n x915 (Lanius.Mini.evalArgs x11 x28 x45 x919 x67) b15))) | .eVariant x1020 x1024 x1033 => ((Pre_plus n x67 1 b) ∧ ((Pre_eval_args n x11 x28 x45 x1033 (x67 + 1) b) ∧ (∀ b17 : Nat, (Cost_eval_args n x11 x28 x45 x1033 (x67 + 1)) < b → b17 = b - (Cost_eval_args n x11 x28 x45 x1033 (x67 + 1)) → (Pre_eval_variant n x1020 x1024 x67 (Lanius.Mini.evalArgs x11 x28 x45 x1033 ((x67 + 1))) b17)))) | .eMatch x1159 x1170 x1175 x1179 x1188 => ((Pre_SrcEff_eval n x1159 x11 x28 x45 x67 b) ∧ (∀ b19 : Nat, (Cost_SrcEff_eval n x1159 x11 x28 x45 x67) < b → b19 = b - (Cost_SrcEff_eval n x1159 x11 x28 x45 x67) → ((Pre_match_dst n x67 x1170 x1175 b19) ∧ ((Pre_eval_arms n x11 x28 x45 x67 (Lanius.Mini.matchDst x67 x1170 x1175) x1175 0 (Lanius.Mini.matchVariants x1170) x1179 x1188 b19) ∧ (∀ b20 : Nat, (Cost_eval_arms n x11 x28 x45 x67 (Lanius.Mini.matchDst x67 x1170 x1175) x1175 0 (Lanius.Mini.matchVariants x1170) x1179 x1188) < b19 → b20 = b19 - (Cost_eval_arms n x11 x28 x45 x67 (Lanius.Mini.matchDst x67 x1170 x1175) x1175 0 (Lanius.Mini.matchVariants x1170) x1179 x1188) → ((Pre_length_of_mini_selfhost_List_usize n x1179 b20) ∧ ((Pre_length_of_mini_selfhost_SrcEff n x1188 b20) ∧ (Pre_eval_match n x67 x1170 x1175 (Lanius.Mini.SrcEff.eval x1159 x11 x28 x45 x67) (Lanius.Mini.evalArms x11 x28 x45 x67 ((Lanius.Mini.matchDst x67 x1170 x1175)) x1175 0 ((Lanius.Mini.matchVariants x1170)) x1179 x1188) x1179.length x1188.length b20)))))))) | .eDivide x1450 x1454 x1460 => ((Pre_SrcEff_eval n x1454 x11 x28 x45 x67 b) ∧ (∀ b22 : Nat, (Cost_SrcEff_eval n x1454 x11 x28 x45 x67) < b → b22 = b - (Cost_SrcEff_eval n x1454 x11 x28 x45 x67) → ((Pre_plus n x67 1 b22) ∧ ((Pre_SrcEff_eval n x1460 x11 x28 x45 (x67 + 1) b22) ∧ (∀ b23 : Nat, (Cost_SrcEff_eval n x1460 x11 x28 x45 (x67 + 1)) < b22 → b23 = b22 - (Cost_SrcEff_eval n x1460 x11 x28 x45 (x67 + 1)) → (Pre_eval_division n x1450 x67 (Lanius.Mini.SrcEff.eval x1454 x11 x28 x45 x67) (Lanius.Mini.SrcEff.eval x1460 x11 x28 x45 ((x67 + 1))) b23)))))) | .eStride x1613 => (Pre_eval_stride n x28 x45 x1613 x67 b) | .arraySlice x1686 x1695 => True | .eIf x1727 x1738 x1742 x1754 => ((Pre_SrcEff_eval n x1727 x11 x28 x45 x67 b) ∧ (∀ b26 : Nat, (Cost_SrcEff_eval n x1727 x11 x28 x45 x67) < b → b26 = b - (Cost_SrcEff_eval n x1727 x11 x28 x45 x67) → ((Pre_SrcEff_eval n x1742 x11 x28 x45 x67 b26) ∧ (∀ b27 : Nat, (Cost_SrcEff_eval n x1742 x11 x28 x45 x67) < b26 → b27 = b26 - (Cost_SrcEff_eval n x1742 x11 x28 x45 x67) → (Pre_SrcEff_eval n x1754 x11 x28 x45 x67 b27))))) | .eLet x1954 x1958 x1962 x1969 x1973 => ((Pre_SrcEff_eval n x1962 x11 x28 x45 x67 b) ∧ (∀ b30 : Nat, (Cost_SrcEff_eval n x1962 x11 x28 x45 x67) < b → b30 = b - (Cost_SrcEff_eval n x1962 x11 x28 x45 x67) → (∀ b31 : Nat, (Cost_single_of_usize n x1954) < b30 → b31 = b30 - (Cost_single_of_usize n x1954) → (∀ b32 : Nat, (Cost_single_of_mini_selfhost_SrcType n x1958) < b31 → b32 = b31 - (Cost_single_of_mini_selfhost_SrcType n x1958) → ((Pre_arm_scope n ([x1954]) ([x1958]) x67 x45 b32) ∧ (∀ b33 : Nat, (Cost_arm_scope n ([x1954]) ([x1958]) x67 x45) < b32 → b33 = b32 - (Cost_arm_scope n ([x1954]) ([x1958]) x67 x45) → ((Pre_match_dst n x67 x1958 x1969 b33) ∧ ((Pre_eval_let_body n x11 x28 (Lanius.Mini.armScope ([x1954]) ([x1958]) x67 x45) (Lanius.Mini.matchDst x67 x1958 x1969) x1973 b33) ∧ (∀ b34 : Nat, (Cost_eval_let_body n x11 x28 (Lanius.Mini.armScope ([x1954]) ([x1958]) x67 x45) (Lanius.Mini.matchDst x67 x1958 x1969) x1973) < b33 → b34 = b33 - (Cost_eval_let_body n x11 x28 (Lanius.Mini.armScope ([x1954]) ([x1958]) x67 x45) (Lanius.Mini.matchDst x67 x1958 x1969) x1973) → (Pre_eval_let_in n x67 x1958 x1969 (Lanius.Mini.SrcEff.eval x1962 x11 x28 x45 x67) (Lanius.Mini.Inline.evalLetBody x11 x28 ((Lanius.Mini.armScope ([x1954]) ([x1958]) x67 x45)) ((Lanius.Mini.matchDst x67 x1958 x1969)) x1973) b34)))))))))) | .eLen x2185 => (Pre_eval_len n x45 x2185 x67 b) | .eStr x2242 x2250 => (Pre_eval_str n x28 x2242 x2250 x67 b) | .eBorrow x2318 x2323 => True | .eDeref x2359 x2364 => True | .eField x2398 x2405 => True | .eAt x2436 x2443 => True)
 termination_by structural fuel => fuel
 
 def Pre_eval_args : Nat → List Lanius.Mini.Sig → Lanius.Mini.SrcDecls → List Lanius.Mini.Binding → List Lanius.Mini.SrcEff → Nat → Nat → Prop
@@ -2492,237 +2145,6 @@ def Pre_eval_arm_in : Nat → List Lanius.Mini.Sig → Lanius.Mini.SrcDecls → 
   | n + 1, x12, x29, x46, x90, x103, x115, x128, x138, x153, x173, b => (match x46 with | some x302 => (Pre_SrcEff_eval n x138 x12 x29 x302 x103 b) | none => True)
 termination_by structural fuel => fuel
 end
-
-end
-
-noncomputable section
-
-def Cost_array_arg_pure : Nat → Option (List Lanius.Mini.Expr) → Lanius.Mini.Expr → Option Lanius.Mini.ArrayArgs → Nat
-  | 0, x15, x57, x66 => 18446744073709551616
-  | n + 1, x15, x57, x66 => (match x15 with | some x205 => (match x66 with | some x270 => ((Cost_concat_of_mini_selfhost_Expr n x205 x270.args) + (Cost_guard_and n x57 x270.guard)) | none => 0) | none => 0)
-
-end
-
-noncomputable section
-
-def Cost_block_at : Nat → Nat → Nat → Nat
-  | 0, x9, x19 => 18446744073709551616
-  | n + 1, x9, x19 => (1 + 1)
-
-end
-
-noncomputable section
-
-def Cost_block_store : Nat → Nat → Nat → Nat → Nat → Nat
-  | 0, x12, x26, x36, x48 => 18446744073709551616
-  | n + 1, x12, x26, x36, x48 => (Cost_block_at n x26 x36)
-
-end
-
-noncomputable section
-
-mutual
-def Cost_element_stores : Nat → Nat → Nat → Nat → Nat → Nat → Nat
-  | 0, x15, x29, x39, x51, x64 => 18446744073709551616
-  | n + 1, x15, x29, x39, x51, x64 => (if (decide (x64 = 0)) = true then 0 else ((Cost_block_store n x15 x29 x39 x51) + (1 + ((Cost_element_stores n x15 x29 (x39 + x15) (x51 + 1) (x64 - 1)) + 1))))
-termination_by structural fuel => fuel
-end
-
-end
-noncomputable section
-
-mutual
-def Pre_element_stores : Nat → Nat → Nat → Nat → Nat → Nat → Nat → Prop
-  | 0, x15, x29, x39, x51, x64, b => True
-  | n + 1, x15, x29, x39, x51, x64, b => (if (decide (x64 = 0)) = true then True else (∀ b1 : Nat, (Cost_block_store n x15 x29 x39 x51) < b → b1 = b - (Cost_block_store n x15 x29 x39 x51) → (∀ b2 : Nat, 1 < b1 → b2 = b1 - 1 → ((Pre_plus n x39 x15 b2) ∧ ((Pre_plus n x51 1 b2) ∧ (Pre_element_stores n x15 x29 (x39 + x15) (x51 + 1) (x64 - 1) b2))))))
-termination_by structural fuel => fuel
-end
-
-end
-
-noncomputable section
-
-def Cost_block_load : Nat → Nat → Nat → Nat → Nat → Nat
-  | 0, x11, x25, x35, x47 => 18446744073709551616
-  | n + 1, x11, x25, x35, x47 => (Cost_block_at n x25 x35)
-
-end
-
-noncomputable section
-
-mutual
-def Cost_element_loads : Nat → Nat → Nat → Nat → Nat → Nat → Nat
-  | 0, x14, x28, x38, x50, x63 => 18446744073709551616
-  | n + 1, x14, x28, x38, x50, x63 => (if (decide (x63 = 0)) = true then 0 else ((Cost_block_load n x14 x28 x38 x50) + (1 + ((Cost_element_loads n x14 x28 (x38 + x14) (x50 + 1) (x63 - 1)) + 1))))
-termination_by structural fuel => fuel
-end
-
-end
-noncomputable section
-
-mutual
-def Pre_element_loads : Nat → Nat → Nat → Nat → Nat → Nat → Nat → Prop
-  | 0, x14, x28, x38, x50, x63, b => True
-  | n + 1, x14, x28, x38, x50, x63, b => (if (decide (x63 = 0)) = true then True else (∀ b1 : Nat, (Cost_block_load n x14 x28 x38 x50) < b → b1 = b - (Cost_block_load n x14 x28 x38 x50) → (∀ b2 : Nat, 1 < b1 → b2 = b1 - 1 → ((Pre_plus n x38 x14 b2) ∧ ((Pre_plus n x50 1 b2) ∧ (Pre_element_loads n x14 x28 (x38 + x14) (x50 + 1) (x63 - 1) b2))))))
-termination_by structural fuel => fuel
-end
-
-end
-
-noncomputable section
-
-def Cost_array_arg_local : Nat → Lanius.Mini.Binding → Lanius.Mini.SrcType → Lanius.Mini.SrcType → Nat → Nat → Nat → Option Lanius.Mini.ArrayArgs → Nat
-  | 0, x16, x28, x46, x59, x70, x80, x95 => 18446744073709551616
-  | n + 1, x16, x28, x46, x59, x70, x80, x95 => (match x95 with | some x314 => (if (decide (0 < (Lanius.Mini.packedWidth x28))) = true then (1 + (if (Lanius.Mini.SrcType.same x16.ty ((Lanius.Mini.SrcType.array x28 (Lanius.Mini.SrcType.size x16.ty)))) = true then (1 + ((Cost_element_stores n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty)) + (1 + (1 + ((Cost_block_at n x70 x80) + ((Cost_cons_of_mini_selfhost_Expr n (Lanius.Mini.Expr.lit (BitVec.ofNat 64 (Lanius.Mini.SrcType.size x16.ty))) x314.args) + ((Cost_cons_of_mini_selfhost_Expr n (Lanius.Mini.blockAt x70 x80) ((Lanius.Mini.Expr.lit (BitVec.ofNat 64 (Lanius.Mini.SrcType.size x16.ty))) :: x314.args)) + ((Cost_element_loads n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty)) + (1 + (1 + (Cost_cons_of_usize n x59 x314.ids))))))))))) else ((Cost_element_stores n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty)) + (1 + (1 + ((Cost_block_at n x70 x80) + ((Cost_cons_of_mini_selfhost_Expr n (Lanius.Mini.Expr.lit (BitVec.ofNat 64 (Lanius.Mini.SrcType.size x16.ty))) x314.args) + ((Cost_cons_of_mini_selfhost_Expr n (Lanius.Mini.blockAt x70 x80) ((Lanius.Mini.Expr.lit (BitVec.ofNat 64 (Lanius.Mini.SrcType.size x16.ty))) :: x314.args)) + ((Cost_element_loads n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty)) + (1 + (1 + (Cost_cons_of_usize n x59 x314.ids)))))))))))) else ((Cost_element_stores n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty)) + (1 + (1 + ((Cost_block_at n x70 x80) + ((Cost_cons_of_mini_selfhost_Expr n (Lanius.Mini.Expr.lit (BitVec.ofNat 64 (Lanius.Mini.SrcType.size x16.ty))) x314.args) + ((Cost_cons_of_mini_selfhost_Expr n (Lanius.Mini.blockAt x70 x80) ((Lanius.Mini.Expr.lit (BitVec.ofNat 64 (Lanius.Mini.SrcType.size x16.ty))) :: x314.args)) + ((Cost_element_loads n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty)) + (1 + (1 + (Cost_cons_of_usize n x59 x314.ids))))))))))) | none => 0)
-
-end
-noncomputable section
-
-def Pre_array_arg_local : Nat → Lanius.Mini.Binding → Lanius.Mini.SrcType → Lanius.Mini.SrcType → Nat → Nat → Nat → Option Lanius.Mini.ArrayArgs → Nat → Prop
-  | 0, x16, x28, x46, x59, x70, x80, x95, b => True
-  | n + 1, x16, x28, x46, x59, x70, x80, x95, b => ((Pre_SrcType_size n x16.ty b) ∧ (match x95 with | some x314 => (if (decide (0 < (Lanius.Mini.packedWidth x28))) = true then (∀ b42 : Nat, 1 < b → b42 = b - 1 → (if (Lanius.Mini.SrcType.same x16.ty ((Lanius.Mini.SrcType.array x28 (Lanius.Mini.SrcType.size x16.ty)))) = true then (∀ b63 : Nat, 1 < b42 → b63 = b42 - 1 → (if ((Lanius.Mini.SrcType.same x46 ((Lanius.Mini.SrcType.slice x28))) && (decide ((Lanius.Mini.SrcType.size x16.ty) < 2147483648))) = true then ((Pre_element_stores n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty) b63) ∧ (∀ b74 : Nat, (Cost_element_stores n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty)) < b63 → b74 = b63 - (Cost_element_stores n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty)) → (∀ b75 : Nat, 1 < b74 → b75 = b74 - 1 → (∀ b76 : Nat, 1 < b75 → b76 = b75 - 1 → (∀ b77 : Nat, (Cost_block_at n x70 x80) < b76 → b77 = b76 - (Cost_block_at n x70 x80) → (∀ b78 : Nat, (Cost_cons_of_mini_selfhost_Expr n (Lanius.Mini.Expr.lit (BitVec.ofNat 64 (Lanius.Mini.SrcType.size x16.ty))) x314.args) < b77 → b78 = b77 - (Cost_cons_of_mini_selfhost_Expr n (Lanius.Mini.Expr.lit (BitVec.ofNat 64 (Lanius.Mini.SrcType.size x16.ty))) x314.args) → (∀ b79 : Nat, (Cost_cons_of_mini_selfhost_Expr n (Lanius.Mini.blockAt x70 x80) ((Lanius.Mini.Expr.lit (BitVec.ofNat 64 (Lanius.Mini.SrcType.size x16.ty))) :: x314.args)) < b78 → b79 = b78 - (Cost_cons_of_mini_selfhost_Expr n (Lanius.Mini.blockAt x70 x80) ((Lanius.Mini.Expr.lit (BitVec.ofNat 64 (Lanius.Mini.SrcType.size x16.ty))) :: x314.args)) → ((Pre_element_loads n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty) b79) ∧ (∀ b80 : Nat, (Cost_element_loads n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty)) < b79 → b80 = b79 - (Cost_element_loads n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty)) → (∀ b81 : Nat, 1 < b80 → b81 = b80 - 1 → (∀ b82 : Nat, 1 < b81 → b82 = b81 - 1 → ((Pre_times n 8 (Lanius.Mini.SrcType.size x16.ty) b82) ∧ (Pre_plus n (8 * (Lanius.Mini.SrcType.size x16.ty)) x314.bytes b82))))))))))))) else ((Pre_element_stores n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty) b63) ∧ (∀ b64 : Nat, (Cost_element_stores n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty)) < b63 → b64 = b63 - (Cost_element_stores n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty)) → (∀ b65 : Nat, 1 < b64 → b65 = b64 - 1 → (∀ b66 : Nat, 1 < b65 → b66 = b65 - 1 → (∀ b67 : Nat, (Cost_block_at n x70 x80) < b66 → b67 = b66 - (Cost_block_at n x70 x80) → (∀ b68 : Nat, (Cost_cons_of_mini_selfhost_Expr n (Lanius.Mini.Expr.lit (BitVec.ofNat 64 (Lanius.Mini.SrcType.size x16.ty))) x314.args) < b67 → b68 = b67 - (Cost_cons_of_mini_selfhost_Expr n (Lanius.Mini.Expr.lit (BitVec.ofNat 64 (Lanius.Mini.SrcType.size x16.ty))) x314.args) → (∀ b69 : Nat, (Cost_cons_of_mini_selfhost_Expr n (Lanius.Mini.blockAt x70 x80) ((Lanius.Mini.Expr.lit (BitVec.ofNat 64 (Lanius.Mini.SrcType.size x16.ty))) :: x314.args)) < b68 → b69 = b68 - (Cost_cons_of_mini_selfhost_Expr n (Lanius.Mini.blockAt x70 x80) ((Lanius.Mini.Expr.lit (BitVec.ofNat 64 (Lanius.Mini.SrcType.size x16.ty))) :: x314.args)) → ((Pre_element_loads n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty) b69) ∧ (∀ b70 : Nat, (Cost_element_loads n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty)) < b69 → b70 = b69 - (Cost_element_loads n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty)) → (∀ b71 : Nat, 1 < b70 → b71 = b70 - 1 → (∀ b72 : Nat, 1 < b71 → b72 = b71 - 1 → ((Pre_times n 8 (Lanius.Mini.SrcType.size x16.ty) b72) ∧ (Pre_plus n (8 * (Lanius.Mini.SrcType.size x16.ty)) x314.bytes b72))))))))))))))) else (if (false && (decide ((Lanius.Mini.SrcType.size x16.ty) < 2147483648))) = true then ((Pre_element_stores n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty) b42) ∧ (∀ b53 : Nat, (Cost_element_stores n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty)) < b42 → b53 = b42 - (Cost_element_stores n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty)) → (∀ b54 : Nat, 1 < b53 → b54 = b53 - 1 → (∀ b55 : Nat, 1 < b54 → b55 = b54 - 1 → (∀ b56 : Nat, (Cost_block_at n x70 x80) < b55 → b56 = b55 - (Cost_block_at n x70 x80) → (∀ b57 : Nat, (Cost_cons_of_mini_selfhost_Expr n (Lanius.Mini.Expr.lit (BitVec.ofNat 64 (Lanius.Mini.SrcType.size x16.ty))) x314.args) < b56 → b57 = b56 - (Cost_cons_of_mini_selfhost_Expr n (Lanius.Mini.Expr.lit (BitVec.ofNat 64 (Lanius.Mini.SrcType.size x16.ty))) x314.args) → (∀ b58 : Nat, (Cost_cons_of_mini_selfhost_Expr n (Lanius.Mini.blockAt x70 x80) ((Lanius.Mini.Expr.lit (BitVec.ofNat 64 (Lanius.Mini.SrcType.size x16.ty))) :: x314.args)) < b57 → b58 = b57 - (Cost_cons_of_mini_selfhost_Expr n (Lanius.Mini.blockAt x70 x80) ((Lanius.Mini.Expr.lit (BitVec.ofNat 64 (Lanius.Mini.SrcType.size x16.ty))) :: x314.args)) → ((Pre_element_loads n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty) b58) ∧ (∀ b59 : Nat, (Cost_element_loads n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty)) < b58 → b59 = b58 - (Cost_element_loads n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty)) → (∀ b60 : Nat, 1 < b59 → b60 = b59 - 1 → (∀ b61 : Nat, 1 < b60 → b61 = b60 - 1 → ((Pre_times n 8 (Lanius.Mini.SrcType.size x16.ty) b61) ∧ (Pre_plus n (8 * (Lanius.Mini.SrcType.size x16.ty)) x314.bytes b61))))))))))))) else ((Pre_element_stores n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty) b42) ∧ (∀ b43 : Nat, (Cost_element_stores n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty)) < b42 → b43 = b42 - (Cost_element_stores n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty)) → (∀ b44 : Nat, 1 < b43 → b44 = b43 - 1 → (∀ b45 : Nat, 1 < b44 → b45 = b44 - 1 → (∀ b46 : Nat, (Cost_block_at n x70 x80) < b45 → b46 = b45 - (Cost_block_at n x70 x80) → (∀ b47 : Nat, (Cost_cons_of_mini_selfhost_Expr n (Lanius.Mini.Expr.lit (BitVec.ofNat 64 (Lanius.Mini.SrcType.size x16.ty))) x314.args) < b46 → b47 = b46 - (Cost_cons_of_mini_selfhost_Expr n (Lanius.Mini.Expr.lit (BitVec.ofNat 64 (Lanius.Mini.SrcType.size x16.ty))) x314.args) → (∀ b48 : Nat, (Cost_cons_of_mini_selfhost_Expr n (Lanius.Mini.blockAt x70 x80) ((Lanius.Mini.Expr.lit (BitVec.ofNat 64 (Lanius.Mini.SrcType.size x16.ty))) :: x314.args)) < b47 → b48 = b47 - (Cost_cons_of_mini_selfhost_Expr n (Lanius.Mini.blockAt x70 x80) ((Lanius.Mini.Expr.lit (BitVec.ofNat 64 (Lanius.Mini.SrcType.size x16.ty))) :: x314.args)) → ((Pre_element_loads n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty) b48) ∧ (∀ b49 : Nat, (Cost_element_loads n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty)) < b48 → b49 = b48 - (Cost_element_loads n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty)) → (∀ b50 : Nat, 1 < b49 → b50 = b49 - 1 → (∀ b51 : Nat, 1 < b50 → b51 = b50 - 1 → ((Pre_times n 8 (Lanius.Mini.SrcType.size x16.ty) b51) ∧ (Pre_plus n (8 * (Lanius.Mini.SrcType.size x16.ty)) x314.bytes b51)))))))))))))))) else (if (false && (decide ((Lanius.Mini.SrcType.size x16.ty) < 2147483648))) = true then ((Pre_element_stores n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty) b) ∧ (∀ b11 : Nat, (Cost_element_stores n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty)) < b → b11 = b - (Cost_element_stores n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty)) → (∀ b12 : Nat, 1 < b11 → b12 = b11 - 1 → (∀ b13 : Nat, 1 < b12 → b13 = b12 - 1 → (∀ b14 : Nat, (Cost_block_at n x70 x80) < b13 → b14 = b13 - (Cost_block_at n x70 x80) → (∀ b15 : Nat, (Cost_cons_of_mini_selfhost_Expr n (Lanius.Mini.Expr.lit (BitVec.ofNat 64 (Lanius.Mini.SrcType.size x16.ty))) x314.args) < b14 → b15 = b14 - (Cost_cons_of_mini_selfhost_Expr n (Lanius.Mini.Expr.lit (BitVec.ofNat 64 (Lanius.Mini.SrcType.size x16.ty))) x314.args) → (∀ b16 : Nat, (Cost_cons_of_mini_selfhost_Expr n (Lanius.Mini.blockAt x70 x80) ((Lanius.Mini.Expr.lit (BitVec.ofNat 64 (Lanius.Mini.SrcType.size x16.ty))) :: x314.args)) < b15 → b16 = b15 - (Cost_cons_of_mini_selfhost_Expr n (Lanius.Mini.blockAt x70 x80) ((Lanius.Mini.Expr.lit (BitVec.ofNat 64 (Lanius.Mini.SrcType.size x16.ty))) :: x314.args)) → ((Pre_element_loads n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty) b16) ∧ (∀ b17 : Nat, (Cost_element_loads n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty)) < b16 → b17 = b16 - (Cost_element_loads n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty)) → (∀ b18 : Nat, 1 < b17 → b18 = b17 - 1 → (∀ b19 : Nat, 1 < b18 → b19 = b18 - 1 → ((Pre_times n 8 (Lanius.Mini.SrcType.size x16.ty) b19) ∧ (Pre_plus n (8 * (Lanius.Mini.SrcType.size x16.ty)) x314.bytes b19))))))))))))) else ((Pre_element_stores n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty) b) ∧ (∀ b1 : Nat, (Cost_element_stores n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty)) < b → b1 = b - (Cost_element_stores n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty)) → (∀ b2 : Nat, 1 < b1 → b2 = b1 - 1 → (∀ b3 : Nat, 1 < b2 → b3 = b2 - 1 → (∀ b4 : Nat, (Cost_block_at n x70 x80) < b3 → b4 = b3 - (Cost_block_at n x70 x80) → (∀ b5 : Nat, (Cost_cons_of_mini_selfhost_Expr n (Lanius.Mini.Expr.lit (BitVec.ofNat 64 (Lanius.Mini.SrcType.size x16.ty))) x314.args) < b4 → b5 = b4 - (Cost_cons_of_mini_selfhost_Expr n (Lanius.Mini.Expr.lit (BitVec.ofNat 64 (Lanius.Mini.SrcType.size x16.ty))) x314.args) → (∀ b6 : Nat, (Cost_cons_of_mini_selfhost_Expr n (Lanius.Mini.blockAt x70 x80) ((Lanius.Mini.Expr.lit (BitVec.ofNat 64 (Lanius.Mini.SrcType.size x16.ty))) :: x314.args)) < b5 → b6 = b5 - (Cost_cons_of_mini_selfhost_Expr n (Lanius.Mini.blockAt x70 x80) ((Lanius.Mini.Expr.lit (BitVec.ofNat 64 (Lanius.Mini.SrcType.size x16.ty))) :: x314.args)) → ((Pre_element_loads n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty) b6) ∧ (∀ b7 : Nat, (Cost_element_loads n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty)) < b6 → b7 = b6 - (Cost_element_loads n (Lanius.Mini.packedWidth x28) x70 x80 x16.slot (Lanius.Mini.SrcType.size x16.ty)) → (∀ b8 : Nat, 1 < b7 → b8 = b7 - 1 → (∀ b9 : Nat, 1 < b8 → b9 = b8 - 1 → ((Pre_times n 8 (Lanius.Mini.SrcType.size x16.ty) b9) ∧ (Pre_plus n (8 * (Lanius.Mini.SrcType.size x16.ty)) x314.bytes b9))))))))))))))) | none => True))
-
-end
-
-noncomputable section
-
-def Cost_array_arg_slice : Nat → Option Lanius.Mini.Binding → Lanius.Mini.SrcType → Lanius.Mini.SrcType → Nat → Nat → Nat → Option Lanius.Mini.ArrayArgs → Nat
-  | 0, x16, x56, x74, x87, x98, x108, x123 => 18446744073709551616
-  | n + 1, x16, x56, x74, x87, x98, x108, x123 => (match x16 with | some x263 => (Cost_array_arg_local n x263 x56 x74 x87 x98 x108 x123) | none => 0)
-
-end
-noncomputable section
-
-def Pre_array_arg_slice : Nat → Option Lanius.Mini.Binding → Lanius.Mini.SrcType → Lanius.Mini.SrcType → Nat → Nat → Nat → Option Lanius.Mini.ArrayArgs → Nat → Prop
-  | 0, x16, x56, x74, x87, x98, x108, x123, b => True
-  | n + 1, x16, x56, x74, x87, x98, x108, x123, b => (match x16 with | some x263 => (Pre_array_arg_local n x263 x56 x74 x87 x98 x108 x123 b) | none => True)
-
-end
-
-noncomputable section
-
-def Cost_array_arg : Nat → List Lanius.Mini.Binding → Lanius.Mini.SrcEff → Lanius.Mini.SrcType → Nat → Nat → Option Lanius.Mini.ArrayArgs → Nat
-  | 0, x10, x32, x45, x58, x68, x83 => 18446744073709551616
-  | n + 1, x10, x32, x45, x58, x68, x83 => (match x32 with | .ePure x198 => ((Cost_lower_value n x10 x198 x45) + ((Cost_SrcExpr_guard n x198 x10) + (Cost_array_arg_pure n (Lanius.Mini.lowerValue x10 x198 x45) (Lanius.Mini.SrcExpr.guard x198 x10) x83))) | .eCall x283 x291 => 0 | .eApply x321 x325 x331 => 0 | .eNeg x360 => 0 | .eNot x391 => 0 | .eCast x423 x428 => 0 | .eIndex x461 x468 => 0 | .eStruct x500 x505 => 0 | .eVariant x539 x544 x553 => 0 | .eMatch x586 x597 x602 x607 x616 => 0 | .eDivide x649 x653 x659 => 0 | .eStride x691 => 0 | .arraySlice x726 x735 => (Cost_array_arg_slice n (Lanius.Mini.lookup x10 x735) x726 x45 x735 x58 x68 x83) | .eIf x833 x844 x849 x861 => 0 | .eLet x895 x900 x905 x912 x916 => 0 | .eLen x944 => 0 | .eStr x973 x981 => 0)
-
-end
-noncomputable section
-
-def Pre_array_arg : Nat → List Lanius.Mini.Binding → Lanius.Mini.SrcEff → Lanius.Mini.SrcType → Nat → Nat → Option Lanius.Mini.ArrayArgs → Nat → Prop
-  | 0, x10, x32, x45, x58, x68, x83, b => True
-  | n + 1, x10, x32, x45, x58, x68, x83, b => (match x32 with | .ePure x198 => ((Pre_lower_value n x10 x198 x45 b) ∧ (∀ b1 : Nat, (Cost_lower_value n x10 x198 x45) < b → b1 = b - (Cost_lower_value n x10 x198 x45) → (Pre_SrcExpr_guard n x198 x10 b1))) | .eCall x283 x291 => True | .eApply x321 x325 x331 => True | .eNeg x360 => True | .eNot x391 => True | .eCast x423 x428 => True | .eIndex x461 x468 => True | .eStruct x500 x505 => True | .eVariant x539 x544 x553 => True | .eMatch x586 x597 x602 x607 x616 => True | .eDivide x649 x653 x659 => True | .eStride x691 => True | .arraySlice x726 x735 => (Pre_array_arg_slice n (Lanius.Mini.lookup x10 x735) x726 x45 x735 x58 x68 x83 b) | .eIf x833 x844 x849 x861 => True | .eLet x895 x900 x905 x912 x916 => True | .eLen x944 => True | .eStr x973 x981 => True)
-
-end
-
-noncomputable section
-
-def Pre_binding_bytes : Nat → Option Lanius.Mini.Binding → Nat → Prop
-  | 0, x14, b => True
-  | n + 1, x14, b => (match x14 with | some x126 => ((Pre_SrcType_size n x126.ty b) ∧ (Pre_times n 8 (Lanius.Mini.SrcType.size x126.ty) b)) | none => True)
-
-end
-
-noncomputable section
-
-def Pre_arg_bytes : Nat → List Lanius.Mini.Binding → Lanius.Mini.SrcEff → Nat → Prop
-  | 0, x10, x32, b => True
-  | n + 1, x10, x32, b => (match x32 with | .ePure x95 => True | .eCall x118 x126 => True | .eApply x153 x157 x163 => True | .eNeg x189 => True | .eNot x217 => True | .eCast x246 x250 => True | .eIndex x280 x287 => True | .eStruct x316 x320 => True | .eVariant x351 x355 x364 => True | .eMatch x394 x405 x410 x414 x423 => True | .eDivide x453 x457 x463 => True | .eStride x492 => True | .arraySlice x524 x533 => (Pre_binding_bytes n (Lanius.Mini.lookup x10 x533) b) | .eIf x592 x603 x608 x620 => True | .eLet x651 x656 x661 x668 x672 => True | .eLen x697 => True | .eStr x723 x731 => True)
-
-end
-
-noncomputable section
-
-mutual
-def Cost_array_args : Nat → List Lanius.Mini.Binding → List Lanius.Mini.SrcEff → List Lanius.Mini.SrcType → Nat → Nat → Nat
-  | 0, x11, x33, x53, x75, x85 => 18446744073709551616
-  | n + 1, x11, x33, x53, x75, x85 => (match x33 with | [] => 0 | x374 :: x379 => (match x53 with | [] => 0 | x446 :: x450 => ((Cost_array_args n x11 x379 x450 x75 (x85 + (Lanius.Mini.argBytes x11 x374))) + (Cost_array_arg n x11 x374 x446 x75 x85 (Lanius.Mini.arrayArgs x11 x379 x450 x75 ((x85 + (Lanius.Mini.argBytes x11 x374))))))))
-termination_by structural fuel => fuel
-end
-
-end
-noncomputable section
-
-mutual
-def Pre_array_args : Nat → List Lanius.Mini.Binding → List Lanius.Mini.SrcEff → List Lanius.Mini.SrcType → Nat → Nat → Nat → Prop
-  | 0, x11, x33, x53, x75, x85, b => True
-  | n + 1, x11, x33, x53, x75, x85, b => (match x33 with | [] => True | x374 :: x379 => (match x53 with | [] => True | x446 :: x450 => ((Pre_arg_bytes n x11 x374 b) ∧ ((Pre_plus n x85 (Lanius.Mini.argBytes x11 x374) b) ∧ ((Pre_array_args n x11 x379 x450 x75 (x85 + (Lanius.Mini.argBytes x11 x374)) b) ∧ (∀ b1 : Nat, (Cost_array_args n x11 x379 x450 x75 (x85 + (Lanius.Mini.argBytes x11 x374))) < b → b1 = b - (Cost_array_args n x11 x379 x450 x75 (x85 + (Lanius.Mini.argBytes x11 x374))) → (Pre_array_arg n x11 x374 x446 x75 x85 (Lanius.Mini.arrayArgs x11 x379 x450 x75 ((x85 + (Lanius.Mini.argBytes x11 x374)))) b1)))))))
-termination_by structural fuel => fuel
-end
-
-end
-
-noncomputable section
-
-def Cost_array_call_code : Nat → Nat → Nat → Lanius.Mini.Sig → Lanius.Mini.ArrayArgs → Nat
-  | 0, x16, x29, x44, x54 => 18446744073709551616
-  | n + 1, x16, x29, x44, x54 => (let k2 := (1 + (1 + (1 + (1 + (1 + (1 + (1 + (1 + (Cost_check_then n x16 x54.guard (Lanius.Mini.Stmt.seq (Lanius.Mini.Stmt.frame (x16 + (Lanius.Mini.SrcType.size x44.ret)) 0) (Lanius.Mini.Stmt.seq x54.stores (Lanius.Mini.Stmt.seq (Lanius.Mini.Stmt.call x16 (Lanius.Mini.SrcType.size x44.ret) x29 x54.args) (Lanius.Mini.Stmt.seq (Lanius.Mini.Stmt.frame (x16 + (Lanius.Mini.SrcType.size x44.ret)) 0) x54.loads))))))))))))); let k3 := 0; (if (decide (0 < (Lanius.Mini.SrcType.size x44.ret))) = true then (if ((((Lanius.Mini.SrcType.isScalar x44.ret) && (decide (x44.need ≤ x44.room))) && (decide (0 < x44.block))) && (decide (x54.bytes ≤ x44.block))) = true then k2 else k3) else (if (((false && (decide (x44.need ≤ x44.room))) && (decide (0 < x44.block))) && (decide (x54.bytes ≤ x44.block))) = true then k2 else k3)))
-
-end
-noncomputable section
-
-def Pre_array_call_code : Nat → Nat → Nat → Lanius.Mini.Sig → Lanius.Mini.ArrayArgs → Nat → Prop
-  | 0, x16, x29, x44, x54, b => True
-  | n + 1, x16, x29, x44, x54, b => ((Pre_SrcType_size n x44.ret b) ∧ (Pre_plus n x16 (Lanius.Mini.SrcType.size x44.ret) b))
-
-end
-
-noncomputable section
-
-def Cost_array_call_sig : Nat → Nat → Nat → Lanius.Mini.Sig → List Lanius.Mini.Binding → List Lanius.Mini.SrcEff → Nat
-  | 0, x15, x28, x43, x53, x75 => 18446744073709551616
-  | n + 1, x15, x28, x43, x53, x75 => ((Cost_array_args n x53 x75 x43.params (x15 + (Lanius.Mini.SrcType.size x43.ret)) 0) + (match (Lanius.Mini.arrayArgs x53 x75 x43.params ((x15 + (Lanius.Mini.SrcType.size x43.ret))) 0) with | some x255 => (Cost_array_call_code n x15 x28 x43 x255) | none => 0))
-
-end
-noncomputable section
-
-def Pre_array_call_sig : Nat → Nat → Nat → Lanius.Mini.Sig → List Lanius.Mini.Binding → List Lanius.Mini.SrcEff → Nat → Prop
-  | 0, x15, x28, x43, x53, x75, b => True
-  | n + 1, x15, x28, x43, x53, x75, b => ((Pre_SrcType_size n x43.ret b) ∧ ((Pre_plus n x15 (Lanius.Mini.SrcType.size x43.ret) b) ∧ ((Pre_array_args n x53 x75 x43.params (x15 + (Lanius.Mini.SrcType.size x43.ret)) 0 b) ∧ (∀ b1 : Nat, (Cost_array_args n x53 x75 x43.params (x15 + (Lanius.Mini.SrcType.size x43.ret)) 0) < b → b1 = b - (Cost_array_args n x53 x75 x43.params (x15 + (Lanius.Mini.SrcType.size x43.ret)) 0) → (match (Lanius.Mini.arrayArgs x53 x75 x43.params ((x15 + (Lanius.Mini.SrcType.size x43.ret))) 0) with | some x255 => (Pre_array_call_code n x15 x28 x43 x255 b1) | none => True)))))
-
-end
-
-noncomputable section
-
-def Cost_array_call : Nat → List Lanius.Mini.Sig → List Lanius.Mini.Binding → Nat → Nat → List Lanius.Mini.SrcEff → Nat
-  | 0, x11, x28, x50, x63, x78 => 18446744073709551616
-  | n + 1, x11, x28, x50, x63, x78 => (match (x11[x63]?) with | some x209 => (Cost_array_call_sig n x50 x63 x209 x28 x78) | none => 0)
-
-end
-noncomputable section
-
-def Pre_array_call : Nat → List Lanius.Mini.Sig → List Lanius.Mini.Binding → Nat → Nat → List Lanius.Mini.SrcEff → Nat → Prop
-  | 0, x11, x28, x50, x63, x78, b => True
-  | n + 1, x11, x28, x50, x63, x78, b => (match (x11[x63]?) with | some x209 => (Pre_array_call_sig n x50 x63 x209 x28 x78 b) | none => True)
-
-end
-
-noncomputable section
-
-def Cost_SrcEff_slice_call : Nat → Lanius.Mini.SrcEff → List Lanius.Mini.Sig → List Lanius.Mini.Binding → Nat → Nat
-  | 0, x11, x17, x34, x56 => 18446744073709551616
-  | n + 1, x11, x17, x34, x56 => (match x11 with | .ePure x154 => 0 | .eCall x184 x192 => (Cost_array_call n x17 x34 x56 x184 x192) | .eApply x272 x276 x282 => 0 | .eNeg x315 => 0 | .eNot x350 => 0 | .eCast x386 x390 => 0 | .eIndex x427 x434 => 0 | .eStruct x470 x474 => 0 | .eVariant x512 x516 x525 => 0 | .eMatch x562 x573 x578 x582 x591 => 0 | .eDivide x628 x632 x638 => 0 | .eStride x674 => 0 | .arraySlice x713 x722 => 0 | .eIf x754 x765 x769 x781 => 0 | .eLet x819 x823 x827 x834 x838 => 0 | .eLen x870 => 0 | .eStr x903 x911 => 0)
-
-end
-noncomputable section
-
-def Pre_SrcEff_slice_call : Nat → Lanius.Mini.SrcEff → List Lanius.Mini.Sig → List Lanius.Mini.Binding → Nat → Nat → Prop
-  | 0, x11, x17, x34, x56, b => True
-  | n + 1, x11, x17, x34, x56, b => (match x11 with | .ePure x154 => True | .eCall x184 x192 => (Pre_array_call n x17 x34 x56 x184 x192 b) | .eApply x272 x276 x282 => True | .eNeg x315 => True | .eNot x350 => True | .eCast x386 x390 => True | .eIndex x427 x434 => True | .eStruct x470 x474 => True | .eVariant x512 x516 x525 => True | .eMatch x562 x573 x578 x582 x591 => True | .eDivide x628 x632 x638 => True | .eStride x674 => True | .arraySlice x713 x722 => True | .eIf x754 x765 x769 x781 => True | .eLet x819 x823 x827 x834 x838 => True | .eLen x870 => True | .eStr x903 x911 => True)
-
-end
-
-noncomputable section
-
-def Cost_stmt_eval : Nat → Lanius.Mini.SrcEff → List Lanius.Mini.Sig → Lanius.Mini.SrcDecls → List Lanius.Mini.Binding → Nat → Nat
-  | 0, x10, x25, x42, x59, x81 => 18446744073709551616
-  | n + 1, x10, x25, x42, x59, x81 => (if (Lanius.Mini.SrcEff.passesSlices x10) = true then (Cost_SrcEff_slice_call n x10 x25 x59 x81) else (Cost_SrcEff_eval n x10 x25 x42 x59 x81))
-
-end
-noncomputable section
-
-def Pre_stmt_eval : Nat → Lanius.Mini.SrcEff → List Lanius.Mini.Sig → Lanius.Mini.SrcDecls → List Lanius.Mini.Binding → Nat → Nat → Prop
-  | 0, x10, x25, x42, x59, x81, b => True
-  | n + 1, x10, x25, x42, x59, x81, b => (if (Lanius.Mini.SrcEff.passesSlices x10) = true then (Pre_SrcEff_slice_call n x10 x25 x59 x81 b) else (Pre_SrcEff_eval n x10 x25 x42 x59 x81 b))
 
 end
 
@@ -2782,415 +2204,10 @@ end
 
 noncomputable section
 
-def Cost_set_field_eval_at : Nat → Nat → Option Lanius.Mini.SrcType → Nat → Lanius.Mini.Evaluated → Nat
-  | 0, x18, x33, x71, x84 => 18446744073709551616
-  | n + 1, x18, x33, x71, x84 => (match x33 with | some x192 => (Cost_set_scalar_eval n x18 x192 x71 x84) | none => 0)
-
-end
-
-noncomputable section
-
-def Cost_set_field_eval_of : Nat → Lanius.Mini.Binding → Nat → Nat → Lanius.Mini.Evaluated → Nat
-  | 0, x18, x30, x44, x57 => 18446744073709551616
-  | n + 1, x18, x30, x44, x57 => (match x18.ty with | .i32 => 0 | .bool => 0 | .uint x185 => 0 | .struct x215 x219 => (Cost_set_field_eval_at n (x18.slot + (Lanius.Mini.fieldOffset x219 x30)) (x219[x30]?) x44 x57) | .enum x348 x352 => 0 | .ptr => 0 | .slice x406 => 0 | .array x447 x462 => 0 | .unit => 0 | .isize => 0 | .char => 0 | .float x584 => 0 | .sint x610 => 0 | .view x636 => 0 | .str => 0 | .ref x691 => 0)
-
-end
-noncomputable section
-
-def Pre_set_field_eval_of : Nat → Lanius.Mini.Binding → Nat → Nat → Lanius.Mini.Evaluated → Nat → Prop
-  | 0, x18, x30, x44, x57, b => True
-  | n + 1, x18, x30, x44, x57, b => (match x18.ty with | .i32 => True | .bool => True | .uint x185 => True | .struct x215 x219 => ((Pre_field_offset n x219 x30 b) ∧ (Pre_plus n x18.slot (Lanius.Mini.fieldOffset x219 x30) b)) | .enum x348 x352 => True | .ptr => True | .slice x406 => True | .array x447 x462 => True | .unit => True | .isize => True | .char => True | .float x584 => True | .sint x610 => True | .view x636 => True | .str => True | .ref x691 => True)
-
-end
-
-noncomputable section
-
-def Cost_lower_set_field_eval : Nat → Nat → Option Lanius.Mini.Binding → Nat → Option Lanius.Mini.Evaluated → Nat
-  | 0, x21, x34, x74, x88 => 18446744073709551616
-  | n + 1, x21, x34, x74, x88 => (match x34 with | some x224 => (match x88 with | some x289 => (Cost_set_field_eval_of n x224 x74 x21 x289) | none => 0) | none => 0)
-
-end
-noncomputable section
-
-def Pre_lower_set_field_eval : Nat → Nat → Option Lanius.Mini.Binding → Nat → Option Lanius.Mini.Evaluated → Nat → Prop
-  | 0, x21, x34, x74, x88, b => True
-  | n + 1, x21, x34, x74, x88, b => (match x34 with | some x224 => (match x88 with | some x289 => (Pre_set_field_eval_of n x224 x74 x21 x289 b) | none => True) | none => True)
-
-end
-
-noncomputable section
-
-def Cost_lower_return_unit : Nat → Lanius.Mini.SrcType → Nat
-  | 0, x18 => 18446744073709551616
-  | n + 1, x18 => (if (Lanius.Mini.SrcType.isUnit x18) = true then (Cost_single_of_mini_selfhost_Expr n (Lanius.Mini.Expr.lit (0#64))) else 0)
-
-end
-
-noncomputable section
-
-def Cost_lower_assert : Nat → Option Lanius.Mini.Evaluated → Nat → Nat
-  | 0, x13, x57 => 18446744073709551616
-  | n + 1, x13, x57 => (match x13 with | some x168 => (1 + 1) | none => 0)
-
-end
-
-noncomputable section
-
-def Cost_lower_arm_stmt : Nat → Nat → Bool → Nat → Option (List Lanius.Mini.Expr) → Nat → Option Lanius.Mini.Stmt → Option Lanius.Mini.Stmt → Nat
-  | 0, x15, x28, x38, x54, x96, x109, x143 => 18446744073709551616
-  | n + 1, x15, x28, x38, x54, x96, x109, x143 => (if (!x28) = true then 0 else (match x54 with | some x314 => (match x109 with | some x379 => (match x143 with | some x451 => (1 + (1 + ((Cost_assign_from n x96 x314 x379) + (1 + 1)))) | none => 0) | none => 0) | none => 0))
-
-end
-noncomputable section
-
-def Pre_lower_arm_stmt : Nat → Nat → Bool → Nat → Option (List Lanius.Mini.Expr) → Nat → Option Lanius.Mini.Stmt → Option Lanius.Mini.Stmt → Nat → Prop
-  | 0, x15, x28, x38, x54, x96, x109, x143, b => True
-  | n + 1, x15, x28, x38, x54, x96, x109, x143, b => (if (!x28) = true then True else (match x54 with | some x314 => (match x109 with | some x379 => (match x143 with | some x451 => (∀ b1 : Nat, 1 < b → b1 = b - 1 → (∀ b2 : Nat, 1 < b1 → b2 = b1 - 1 → (Pre_assign_from n x96 x314 x379 b2))) | none => True) | none => True) | none => True))
-
-end
-
-noncomputable section
-
-def Cost_arm_payload : Nat → List Lanius.Mini.Binding → Nat → List Lanius.Mini.SrcType → Bool → Nat → Lanius.Mini.SrcType → Nat
-  | 0, x12, x34, x47, x70, x83, x98 => 18446744073709551616
-  | n + 1, x12, x34, x47, x70, x83, x98 => (match x47 with | [] => 0 | x227 :: x230 => ((Cost_cons_of_usize n x83 ([] : List Nat)) + ((Cost_arm_scope n (x83 :: ([] : List Nat)) x47 (x34 + 1) x12) + (Cost_lower_arm_value n (Lanius.Mini.armScope ((x83 :: ([] : List Nat))) x47 ((x34 + 1)) x12) (Lanius.Mini.SrcExpr.local x83) x98))))
-
-end
-noncomputable section
-
-def Pre_arm_payload : Nat → List Lanius.Mini.Binding → Nat → List Lanius.Mini.SrcType → Bool → Nat → Lanius.Mini.SrcType → Nat → Prop
-  | 0, x12, x34, x47, x70, x83, x98, b => True
-  | n + 1, x12, x34, x47, x70, x83, x98, b => (match x47 with | [] => True | x227 :: x230 => (if x70 = true then ((Pre_SrcType_size n x98 b) ∧ (∀ b4 : Nat, (Cost_cons_of_usize n x83 ([] : List Nat)) < b → b4 = b - (Cost_cons_of_usize n x83 ([] : List Nat)) → ((Pre_plus n x34 1 b4) ∧ ((Pre_arm_scope n (x83 :: ([] : List Nat)) x47 (x34 + 1) x12 b4) ∧ (∀ b5 : Nat, (Cost_arm_scope n (x83 :: ([] : List Nat)) x47 (x34 + 1) x12) < b4 → b5 = b4 - (Cost_arm_scope n (x83 :: ([] : List Nat)) x47 (x34 + 1) x12) → (Pre_lower_arm_value n (Lanius.Mini.armScope ((x83 :: ([] : List Nat))) x47 ((x34 + 1)) x12) (Lanius.Mini.SrcExpr.local x83) x98 b5)))))) else (∀ b1 : Nat, (Cost_cons_of_usize n x83 ([] : List Nat)) < b → b1 = b - (Cost_cons_of_usize n x83 ([] : List Nat)) → ((Pre_plus n x34 1 b1) ∧ ((Pre_arm_scope n (x83 :: ([] : List Nat)) x47 (x34 + 1) x12 b1) ∧ (∀ b2 : Nat, (Cost_arm_scope n (x83 :: ([] : List Nat)) x47 (x34 + 1) x12) < b1 → b2 = b1 - (Cost_arm_scope n (x83 :: ([] : List Nat)) x47 (x34 + 1) x12) → (Pre_lower_arm_value n (Lanius.Mini.armScope ((x83 :: ([] : List Nat))) x47 ((x34 + 1)) x12) (Lanius.Mini.SrcExpr.local x83) x98 b2)))))))
-
-end
-
-noncomputable section
-
-def Cost_lower_arm_found : Nat → List Lanius.Mini.Binding → Nat → Bool → Nat → Option (List Lanius.Mini.SrcType) → Bool → Nat → Lanius.Mini.SrcType → Nat → Option Lanius.Mini.Stmt → Option Lanius.Mini.Stmt → Nat
-  | 0, x16, x38, x51, x61, x77, x121, x134, x149, x162, x175, x209 => 18446744073709551616
-  | n + 1, x16, x38, x51, x61, x77, x121, x134, x149, x162, x175, x209 => (match x77 with | some x337 => ((Cost_arm_payload n x16 x38 x337 x121 x134 x149) + (Cost_lower_arm_stmt n x38 x51 x61 (Lanius.Mini.armPayload x16 x38 x337 x121 x134 x149) x162 x175 x209)) | none => 0)
-
-end
-noncomputable section
-
-def Pre_lower_arm_found : Nat → List Lanius.Mini.Binding → Nat → Bool → Nat → Option (List Lanius.Mini.SrcType) → Bool → Nat → Lanius.Mini.SrcType → Nat → Option Lanius.Mini.Stmt → Option Lanius.Mini.Stmt → Nat → Prop
-  | 0, x16, x38, x51, x61, x77, x121, x134, x149, x162, x175, x209, b => True
-  | n + 1, x16, x38, x51, x61, x77, x121, x134, x149, x162, x175, x209, b => (match x77 with | some x337 => ((Pre_arm_payload n x16 x38 x337 x121 x134 x149 b) ∧ (∀ b1 : Nat, (Cost_arm_payload n x16 x38 x337 x121 x134 x149) < b → b1 = b - (Cost_arm_payload n x16 x38 x337 x121 x134 x149) → (Pre_lower_arm_stmt n x38 x51 x61 (Lanius.Mini.armPayload x16 x38 x337 x121 x134 x149) x162 x175 x209 b1))) | none => True)
-
-end
-
-noncomputable section
-
-def Cost_lower_match_arm : Nat → List Lanius.Mini.Binding → Option Lanius.Mini.Binding → Nat → Nat → Bool → Nat → Lanius.Mini.SrcType → Nat → Option Lanius.Mini.Stmt → Option Lanius.Mini.Stmt → Nat
-  | 0, x16, x38, x78, x94, x110, x123, x138, x151, x164, x198 => 18446744073709551616
-  | n + 1, x16, x38, x78, x94, x110, x123, x138, x151, x164, x198 => (match x38 with | some x328 => (match x328.ty with | .i32 => 0 | .bool => 0 | .uint x417 => 0 | .struct x451 x455 => 0 | .enum x488 x492 => (if (decide (x488 = x78)) = true then (Cost_lower_arm_found n x16 x328.slot (decide (x492.length < 4294967296)) x94 (x492[x94]?) x110 x123 x138 x151 x164 x198) else (Cost_lower_arm_found n x16 x328.slot false x94 (x492[x94]?) x110 x123 x138 x151 x164 x198)) | .ptr => 0 | .slice x716 => 0 | .array x761 x776 => 0 | .unit => 0 | .isize => 0 | .char => 0 | .float x914 => 0 | .sint x944 => 0 | .view x974 => 0 | .str => 0 | .ref x1037 => 0) | none => 0)
-
-end
-noncomputable section
-
-def Pre_lower_match_arm : Nat → List Lanius.Mini.Binding → Option Lanius.Mini.Binding → Nat → Nat → Bool → Nat → Lanius.Mini.SrcType → Nat → Option Lanius.Mini.Stmt → Option Lanius.Mini.Stmt → Nat → Prop
-  | 0, x16, x38, x78, x94, x110, x123, x138, x151, x164, x198, b => True
-  | n + 1, x16, x38, x78, x94, x110, x123, x138, x151, x164, x198, b => (match x38 with | some x328 => (match x328.ty with | .i32 => True | .bool => True | .uint x417 => True | .struct x451 x455 => True | .enum x488 x492 => (if (decide (x488 = x78)) = true then ((Pre_length_of_mini_selfhost_List_mini_selfhost_SrcType n x492 b) ∧ (Pre_lower_arm_found n x16 x328.slot (decide (x492.length < 4294967296)) x94 (x492[x94]?) x110 x123 x138 x151 x164 x198 b)) else (Pre_lower_arm_found n x16 x328.slot false x94 (x492[x94]?) x110 x123 x138 x151 x164 x198 b)) | .ptr => True | .slice x716 => True | .array x761 x776 => True | .unit => True | .isize => True | .char => True | .float x914 => True | .sint x944 => True | .view x974 => True | .str => True | .ref x1037 => True) | none => True)
-
-end
-
-noncomputable section
-
 mutual
-def Cost_view_stores : Nat → Nat → Nat → Nat → Nat → Lanius.Mini.Stmt → Nat
-  | 0, x12, x28, x41, x56, x71 => 18446744073709551616
-  | n + 1, x12, x28, x41, x56, x71 => (if (decide (x56 = 0)) = true then 0 else (1 + (1 + (1 + ((Cost_view_stores n x12 (x28 + 1) (x41 + 4) (x56 - 1) x71) + 1)))))
-termination_by structural fuel => fuel
-end
-
-end
-noncomputable section
-
-mutual
-def Pre_view_stores : Nat → Nat → Nat → Nat → Nat → Lanius.Mini.Stmt → Nat → Prop
-  | 0, x12, x28, x41, x56, x71, b => True
-  | n + 1, x12, x28, x41, x56, x71, b => (if (decide (x56 = 0)) = true then True else (∀ b1 : Nat, 1 < b → b1 = b - 1 → (∀ b2 : Nat, 1 < b1 → b2 = b1 - 1 → (∀ b3 : Nat, 1 < b2 → b3 = b2 - 1 → ((Pre_plus n x28 1 b3) ∧ ((Pre_plus n x41 4 b3) ∧ (Pre_view_stores n x12 (x28 + 1) (x41 + 4) (x56 - 1) x71 b3)))))))
-termination_by structural fuel => fuel
-end
-
-end
-
-noncomputable section
-
-def Cost_lower_view : Nat → Nat → Nat → Option (List Lanius.Mini.Expr) → Option Lanius.Mini.Stmt → Nat
-  | 0, x11, x24, x39, x81 => 18446744073709551616
-  | n + 1, x11, x24, x39, x81 => (if ((decide (x24 = 0)) || (decide (2147483648 ≤ x24))) = true then 0 else (match x81 with | some x286 => (1 + (1 + (1 + ((Cost_view_stores n (x11 + x24) x11 0 x24 (Lanius.Mini.Stmt.seq (Lanius.Mini.Stmt.assign x11 (Lanius.Mini.Expr.var (x11 + x24))) x286)) + (1 + (Cost_lower_let n x11 x39 (some (Lanius.Mini.Stmt.seq (Lanius.Mini.Stmt.alloc (x11 + x24) 2 (Lanius.Mini.Expr.lit (BitVec.ofNat 64 (4 * x24)))) (Lanius.Mini.viewStores ((x11 + x24)) x11 0 x24 ((Lanius.Mini.Stmt.seq (Lanius.Mini.Stmt.assign x11 (Lanius.Mini.Expr.var (x11 + x24))) x286))))))))))) | none => 0))
-
-end
-noncomputable section
-
-def Pre_lower_view : Nat → Nat → Nat → Option (List Lanius.Mini.Expr) → Option Lanius.Mini.Stmt → Nat → Prop
-  | 0, x11, x24, x39, x81, b => True
-  | n + 1, x11, x24, x39, x81, b => (if ((decide (x24 = 0)) || (decide (2147483648 ≤ x24))) = true then True else (match x81 with | some x286 => ((Pre_plus n x11 x24 b) ∧ ((Pre_times n 4 x24 b) ∧ (∀ b1 : Nat, 1 < b → b1 = b - 1 → ((Pre_plus n x11 x24 b1) ∧ ((Pre_plus n x11 x24 b1) ∧ (∀ b2 : Nat, 1 < b1 → b2 = b1 - 1 → (∀ b3 : Nat, 1 < b2 → b3 = b2 - 1 → ((Pre_view_stores n (x11 + x24) x11 0 x24 (Lanius.Mini.Stmt.seq (Lanius.Mini.Stmt.assign x11 (Lanius.Mini.Expr.var (x11 + x24))) x286) b3) ∧ (∀ b4 : Nat, (Cost_view_stores n (x11 + x24) x11 0 x24 (Lanius.Mini.Stmt.seq (Lanius.Mini.Stmt.assign x11 (Lanius.Mini.Expr.var (x11 + x24))) x286)) < b3 → b4 = b3 - (Cost_view_stores n (x11 + x24) x11 0 x24 (Lanius.Mini.Stmt.seq (Lanius.Mini.Stmt.assign x11 (Lanius.Mini.Expr.var (x11 + x24))) x286)) → (∀ b5 : Nat, 1 < b4 → b5 = b4 - 1 → (Pre_lower_let n x11 x39 (some (Lanius.Mini.Stmt.seq (Lanius.Mini.Stmt.alloc (x11 + x24) 2 (Lanius.Mini.Expr.lit (BitVec.ofNat 64 (4 * x24)))) (Lanius.Mini.viewStores ((x11 + x24)) x11 0 x24 ((Lanius.Mini.Stmt.seq (Lanius.Mini.Stmt.assign x11 (Lanius.Mini.Expr.var (x11 + x24))) x286))))) b5))))))))))) | none => True))
-
-end
-
-noncomputable section
-
-mutual
-def Cost_str_words : Nat → List Nat → Nat
-  | 0, x10 => 18446744073709551616
-  | n + 1, x10 => (match x10 with | [] => 0 | x105 :: x108 => (match x108 with | [] => (Cost_single_of_u64 n (BitVec.ofNat 64 x105)) | x189 :: x192 => (match x192 with | [] => (Cost_single_of_u64 n (BitVec.ofNat 64 (x105 + (x189 * 256)))) | x302 :: x305 => (match x305 with | [] => (Cost_single_of_u64 n (BitVec.ofNat 64 ((x105 + (x189 * 256)) + (x302 * 65536)))) | x446 :: x449 => ((Cost_str_words n x449) + (Cost_cons_of_u64 n (BitVec.ofNat 64 (((x105 + (x189 * 256)) + (x302 * 65536)) + (x446 * 16777216))) (Lanius.Mini.strWords x449)))))))
-termination_by structural fuel => fuel
-end
-
-end
-noncomputable section
-
-mutual
-def Pre_str_words : Nat → List Nat → Nat → Prop
-  | 0, x10, b => True
-  | n + 1, x10, b => (match x10 with | [] => True | x105 :: x108 => (match x108 with | [] => True | x189 :: x192 => (match x192 with | [] => ((Pre_times n x189 256 b) ∧ (Pre_plus n x105 (x189 * 256) b)) | x302 :: x305 => (match x305 with | [] => ((Pre_times n x189 256 b) ∧ ((Pre_plus n x105 (x189 * 256) b) ∧ ((Pre_times n x302 65536 b) ∧ (Pre_plus n (x105 + (x189 * 256)) (x302 * 65536) b)))) | x446 :: x449 => ((Pre_times n x189 256 b) ∧ ((Pre_plus n x105 (x189 * 256) b) ∧ ((Pre_times n x302 65536 b) ∧ ((Pre_plus n (x105 + (x189 * 256)) (x302 * 65536) b) ∧ ((Pre_times n x446 16777216 b) ∧ ((Pre_plus n ((x105 + (x189 * 256)) + (x302 * 65536)) (x446 * 16777216) b) ∧ (Pre_str_words n x449 b)))))))))))
-termination_by structural fuel => fuel
-end
-
-end
-
-noncomputable section
-
-mutual
-def Cost_str_stores : Nat → Nat → Nat → List (BitVec 64) → Lanius.Mini.Stmt → Nat
-  | 0, x11, x27, x42, x60 => 18446744073709551616
-  | n + 1, x11, x27, x42, x60 => (match x42 with | [] => 0 | x143 :: x146 => (1 + (1 + (1 + ((Cost_str_stores n x11 (x27 + 4) x146 x60) + 1)))))
-termination_by structural fuel => fuel
-end
-
-end
-noncomputable section
-
-mutual
-def Pre_str_stores : Nat → Nat → Nat → List (BitVec 64) → Lanius.Mini.Stmt → Nat → Prop
-  | 0, x11, x27, x42, x60, b => True
-  | n + 1, x11, x27, x42, x60, b => (match x42 with | [] => True | x143 :: x146 => (∀ b1 : Nat, 1 < b → b1 = b - 1 → (∀ b2 : Nat, 1 < b1 → b2 = b1 - 1 → (∀ b3 : Nat, 1 < b2 → b3 = b2 - 1 → ((Pre_plus n x27 4 b3) ∧ (Pre_str_stores n x11 (x27 + 4) x146 x60 b3))))))
-termination_by structural fuel => fuel
-end
-
-end
-
-noncomputable section
-
-def Cost_lower_str : Nat → Nat → List Nat → Option Lanius.Mini.Stmt → Nat
-  | 0, x10, x23, x43 => 18446744073709551616
-  | n + 1, x10, x23, x43 => (let k2 := 0; let k3 := (match x43 with | some x283 => ((Cost_str_words n x23) + (1 + ((Cost_str_words n x23) + ((Cost_str_stores n x10 0 (Lanius.Mini.strWords x23) x283) + 1)))) | none => 0); (if (decide (x23.length = 0)) = true then k2 else (if (decide (2147483648 ≤ x23.length)) = true then k2 else (if (!(Lanius.Mini.strAscii x23)) = true then k2 else k3))))
-
-end
-noncomputable section
-
-def Pre_lower_str : Nat → Nat → List Nat → Option Lanius.Mini.Stmt → Nat → Prop
-  | 0, x10, x23, x43, b => True
-  | n + 1, x10, x23, x43, b => (let k7 := fun (b1 : Nat) => True; let k8 := fun (b1 : Nat) => (match x43 with | some x283 => ((Pre_str_words n x23 b1) ∧ (∀ b2 : Nat, (Cost_str_words n x23) < b1 → b2 = b1 - (Cost_str_words n x23) → ((Pre_length_of_u64 n (Lanius.Mini.strWords x23) b2) ∧ ((Pre_times n 4 ((Lanius.Mini.strWords x23).length) b2) ∧ (∀ b3 : Nat, 1 < b2 → b3 = b2 - 1 → ((Pre_str_words n x23 b3) ∧ (∀ b4 : Nat, (Cost_str_words n x23) < b3 → b4 = b3 - (Cost_str_words n x23) → (Pre_str_stores n x10 0 (Lanius.Mini.strWords x23) x283 b4)))))))) | none => True); ((Pre_length_of_usize n x23 b) ∧ (if (decide (x23.length = 0)) = true then (k7 b) else ((Pre_length_of_usize n x23 b) ∧ (if (decide (2147483648 ≤ x23.length)) = true then (k7 b) else (if (!(Lanius.Mini.strAscii x23)) = true then (k7 b) else (k8 b)))))))
-
-end
-
-noncomputable section
-
-mutual
-def Cost_SrcStmt_lower : Nat → Lanius.Mini.SrcStmt → List Lanius.Mini.Sig → Lanius.Mini.SrcDecls → Lanius.Mini.SrcType → List Lanius.Mini.Binding → Nat → Nat
-  | 0, x6, x12, x29, x46, x60, x82 => 18446744073709551616
-  | n + 1, x6, x12, x29, x46, x60, x82 => (match x6 with | .nop => 0 | .let x204 x208 x212 x219 => ((Cost_SrcExpr_guard n x212 x60) + ((Cost_lower_value n x60 x212 x208) + ((Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x204 x82 x208) x60) + ((Cost_SrcStmt_lower n x219 x12 x29 x46 ((Lanius.Mini.Binding.mk x204 x82 x208) :: x60) (x82 + (Lanius.Mini.SrcType.size x208))) + ((Cost_lower_let n x82 (Lanius.Mini.lowerValue x60 x212 x208) (Lanius.Mini.SrcStmt.lower x219 x12 x29 x46 (((Lanius.Mini.Binding.mk x204 x82 x208) :: x60)) ((x82 + (Lanius.Mini.SrcType.size x208))))) + (Cost_guarded n x82 (Lanius.Mini.SrcExpr.guard x212 x60) (Lanius.Mini.lowerLet x82 ((Lanius.Mini.lowerValue x60 x212 x208)) ((Lanius.Mini.SrcStmt.lower x219 x12 x29 x46 (((Lanius.Mini.Binding.mk x204 x82 x208) :: x60)) ((x82 + (Lanius.Mini.SrcType.size x208)))))))))))) | .letStruct x446 x450 x454 x462 => ((Cost_guard_all n x60 x454) + ((Cost_lower_literal n x60 x450 x454) + ((Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x446 x82 x450) x60) + ((Cost_SrcStmt_lower n x462 x12 x29 x46 ((Lanius.Mini.Binding.mk x446 x82 x450) :: x60) (x82 + (Lanius.Mini.SrcType.size x450))) + ((Cost_lower_let n x82 (Lanius.Mini.lowerLiteral x60 x450 x454) (Lanius.Mini.SrcStmt.lower x462 x12 x29 x46 (((Lanius.Mini.Binding.mk x446 x82 x450) :: x60)) ((x82 + (Lanius.Mini.SrcType.size x450))))) + (Cost_guarded n x82 (Lanius.Mini.guardAll x60 x454) (Lanius.Mini.lowerLet x82 ((Lanius.Mini.lowerLiteral x60 x450 x454)) ((Lanius.Mini.SrcStmt.lower x462 x12 x29 x46 (((Lanius.Mini.Binding.mk x446 x82 x450) :: x60)) ((x82 + (Lanius.Mini.SrcType.size x450)))))))))))) | .letCall x696 x700 x704 x712 x718 => ((Cost_guard_all n x60 x712) + ((Cost_lower_call n x12 x60 x704 x712 x700) + ((Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x696 x82 x700) x60) + ((Cost_SrcStmt_lower n x718 x12 x29 x46 ((Lanius.Mini.Binding.mk x696 x82 x700) :: x60) (x82 + (Lanius.Mini.SrcType.size x700))) + ((Cost_lower_let_call n x82 (Lanius.Mini.SrcType.size x700) x704 (Lanius.Mini.lowerCall x12 x60 x704 x712 x700) (Lanius.Mini.SrcStmt.lower x718 x12 x29 x46 (((Lanius.Mini.Binding.mk x696 x82 x700) :: x60)) ((x82 + (Lanius.Mini.SrcType.size x700))))) + (Cost_guarded n x82 (Lanius.Mini.guardAll x60 x712) (Lanius.Mini.lowerLetCall x82 ((Lanius.Mini.SrcType.size x700)) x704 ((Lanius.Mini.lowerCall x12 x60 x704 x712 x700)) ((Lanius.Mini.SrcStmt.lower x718 x12 x29 x46 (((Lanius.Mini.Binding.mk x696 x82 x700) :: x60)) ((x82 + (Lanius.Mini.SrcType.size x700)))))))))))) | .letEnum x983 x987 x991 x1000 x1009 => ((Cost_guard_all n x60 x1000) + ((Cost_lower_enum_value n x60 x987 x991 x1000) + ((Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x983 x82 x987) x60) + ((Cost_SrcStmt_lower n x1009 x12 x29 x46 ((Lanius.Mini.Binding.mk x983 x82 x987) :: x60) (x82 + (Lanius.Mini.SrcType.size x987))) + ((Cost_lower_let n x82 (Lanius.Mini.lowerEnumValue x60 x987 x991 x1000) (Lanius.Mini.SrcStmt.lower x1009 x12 x29 x46 (((Lanius.Mini.Binding.mk x983 x82 x987) :: x60)) ((x82 + (Lanius.Mini.SrcType.size x987))))) + (Cost_guarded n x82 (Lanius.Mini.guardAll x60 x1000) (Lanius.Mini.lowerLet x82 ((Lanius.Mini.lowerEnumValue x60 x987 x991 x1000)) ((Lanius.Mini.SrcStmt.lower x1009 x12 x29 x46 (((Lanius.Mini.Binding.mk x983 x82 x987) :: x60)) ((x82 + (Lanius.Mini.SrcType.size x987)))))))))))) | .letMatch x1258 x1262 x1266 x1277 x1286 x1292 => ((Cost_lower_match n x60 (Lanius.Mini.lookup x60 x1266) x1277 x1286 x1262 x82) + ((Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x1258 x82 x1262) x60) + ((Cost_SrcStmt_lower n x1292 x12 x29 x46 ((Lanius.Mini.Binding.mk x1258 x82 x1262) :: x60) (x82 + (Lanius.Mini.SrcType.size x1262))) + (Cost_lower_then n (Lanius.Mini.lowerMatch x60 ((Lanius.Mini.lookup x60 x1266)) x1277 x1286 x1262 x82) (Lanius.Mini.SrcStmt.lower x1292 x12 x29 x46 (((Lanius.Mini.Binding.mk x1258 x82 x1262) :: x60)) ((x82 + (Lanius.Mini.SrcType.size x1262)))))))) | .set x1513 x1517 => ((Cost_SrcExpr_guard n x1517 x60) + ((Cost_lower_set n (Lanius.Mini.lookup x60 x1513) x60 x1517) + (Cost_guarded n x82 (Lanius.Mini.SrcExpr.guard x1517 x60) (Lanius.Mini.lowerSet ((Lanius.Mini.lookup x60 x1513)) x60 x1517)))) | .setField x1627 x1631 x1638 => ((Cost_SrcExpr_guard n x1638 x60) + ((Cost_lower_set_field n (Lanius.Mini.lookup x60 x1627) x1631 x60 x1638) + (Cost_guarded n x82 (Lanius.Mini.SrcExpr.guard x1638 x60) (Lanius.Mini.lowerSetField ((Lanius.Mini.lookup x60 x1627)) x1631 x60 x1638)))) | .setCall x1760 x1764 x1772 => ((Cost_guard_all n x60 x1772) + ((Cost_lower_set_call n x12 x60 (Lanius.Mini.lookup x60 x1760) x1764 x1772) + (Cost_guarded n x82 (Lanius.Mini.guardAll x60 x1772) (Lanius.Mini.lowerSetCall x12 x60 ((Lanius.Mini.lookup x60 x1760)) x1764 x1772)))) | .then x1899 x1906 => ((Cost_SrcStmt_lower n x1899 x12 x29 x46 x60 x82) + ((Cost_SrcStmt_lower n x1906 x12 x29 x46 x60 x82) + (Cost_lower_then n (Lanius.Mini.SrcStmt.lower x1899 x12 x29 x46 x60 x82) (Lanius.Mini.SrcStmt.lower x1906 x12 x29 x46 x60 x82)))) | .if x2047 x2058 x2071 => ((Cost_SrcExpr_guard n x2047 x60) + ((Cost_lower_as n x60 x2047 Lanius.Mini.SrcType.bool) + ((Cost_SrcStmt_lower n x2058 x12 x29 x46 x60 x82) + ((Cost_SrcStmt_lower n x2071 x12 x29 x46 x60 x82) + ((Cost_lower_if n (Lanius.Mini.lowerAs x60 x2047 Lanius.Mini.SrcType.bool) (Lanius.Mini.SrcStmt.lower x2058 x12 x29 x46 x60 x82) (Lanius.Mini.SrcStmt.lower x2071 x12 x29 x46 x60 x82)) + (Cost_guarded n x82 (Lanius.Mini.SrcExpr.guard x2047 x60) (Lanius.Mini.lowerIf ((Lanius.Mini.lowerAs x60 x2047 Lanius.Mini.SrcType.bool)) ((Lanius.Mini.SrcStmt.lower x2058 x12 x29 x46 x60 x82)) ((Lanius.Mini.SrcStmt.lower x2071 x12 x29 x46 x60 x82))))))))) | .while x2302 x2313 => ((Cost_SrcExpr_guard n x2302 x60) + ((Cost_lower_as n x60 x2302 Lanius.Mini.SrcType.bool) + ((Cost_SrcStmt_lower n x2313 x12 x29 x46 x60 x82) + (Cost_lower_while n x82 (Lanius.Mini.SrcExpr.guard x2302 x60) (Lanius.Mini.lowerAs x60 x2302 Lanius.Mini.SrcType.bool) (Lanius.Mini.SrcStmt.lower x2313 x12 x29 x46 x60 x82))))) | .return x2468 => ((Cost_SrcExpr_guard n x2468 x60) + ((Cost_lower_value n x60 x2468 x46) + (Cost_guarded n x82 (Lanius.Mini.SrcExpr.guard x2468 x60) (Lanius.Mini.lowerReturn ((Lanius.Mini.lowerValue x60 x2468 x46)))))) | .letAlloc x2580 x2584 x2590 x2597 => ((Cost_SrcExpr_guard n x2584 x60) + ((Cost_lower_as n x60 x2584 (Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.usize)) + ((Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x2580 x82 Lanius.Mini.SrcType.ptr) x60) + ((Cost_SrcStmt_lower n x2597 x12 x29 x46 ((Lanius.Mini.Binding.mk x2580 x82 Lanius.Mini.SrcType.ptr) :: x60) (x82 + 1)) + ((Cost_lower_alloc n x82 x2590 (Lanius.Mini.lowerAs x60 x2584 ((Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.usize))) (Lanius.Mini.SrcStmt.lower x2597 x12 x29 x46 (((Lanius.Mini.Binding.mk x2580 x82 Lanius.Mini.SrcType.ptr) :: x60)) ((x82 + 1)))) + (Cost_guarded n x82 (Lanius.Mini.SrcExpr.guard x2584 x60) (Lanius.Mini.lowerAlloc x82 x2590 ((Lanius.Mini.lowerAs x60 x2584 ((Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.usize)))) ((Lanius.Mini.SrcStmt.lower x2597 x12 x29 x46 (((Lanius.Mini.Binding.mk x2580 x82 Lanius.Mini.SrcType.ptr) :: x60)) ((x82 + 1))))))))))) | .letLoad x2828 x2832 x2841 x2849 => ((Cost_SrcExpr_guard n x2832 x60) + ((Cost_SrcExpr_guard n x2841 x60) + ((Cost_guard_and n (Lanius.Mini.SrcExpr.guard x2832 x60) (Lanius.Mini.SrcExpr.guard x2841 x60)) + ((Cost_lower_as n x60 x2832 Lanius.Mini.SrcType.ptr) + ((Cost_lower_as n x60 x2841 (Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.usize)) + ((Cost_lower_address n (Lanius.Mini.lowerAs x60 x2832 Lanius.Mini.SrcType.ptr) (Lanius.Mini.lowerAs x60 x2841 ((Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.usize)))) + ((Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x2828 x82 (Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.uint8)) x60) + ((Cost_SrcStmt_lower n x2849 x12 x29 x46 ((Lanius.Mini.Binding.mk x2828 x82 (Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.uint8)) :: x60) (x82 + 1)) + ((Cost_lower_load n x82 (Lanius.Mini.lowerAddress ((Lanius.Mini.lowerAs x60 x2832 Lanius.Mini.SrcType.ptr)) ((Lanius.Mini.lowerAs x60 x2841 ((Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.usize))))) (Lanius.Mini.SrcStmt.lower x2849 x12 x29 x46 (((Lanius.Mini.Binding.mk x2828 x82 (Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.uint8)) :: x60)) ((x82 + 1)))) + (Cost_guarded n x82 (Lanius.Mini.guardAnd ((Lanius.Mini.SrcExpr.guard x2832 x60)) ((Lanius.Mini.SrcExpr.guard x2841 x60))) (Lanius.Mini.lowerLoad x82 ((Lanius.Mini.lowerAddress ((Lanius.Mini.lowerAs x60 x2832 Lanius.Mini.SrcType.ptr)) ((Lanius.Mini.lowerAs x60 x2841 ((Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.usize)))))) ((Lanius.Mini.SrcStmt.lower x2849 x12 x29 x46 (((Lanius.Mini.Binding.mk x2828 x82 (Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.uint8)) :: x60)) ((x82 + 1))))))))))))))) | .setByte x3163 x3172 x3180 => ((Cost_SrcExpr_guard n x3163 x60) + ((Cost_SrcExpr_guard n x3172 x60) + ((Cost_SrcExpr_guard n x3180 x60) + ((Cost_guard_and n (Lanius.Mini.SrcExpr.guard x3172 x60) (Lanius.Mini.SrcExpr.guard x3180 x60)) + ((Cost_guard_and n (Lanius.Mini.SrcExpr.guard x3163 x60) (Lanius.Mini.guardAnd ((Lanius.Mini.SrcExpr.guard x3172 x60)) ((Lanius.Mini.SrcExpr.guard x3180 x60)))) + ((Cost_lower_as n x60 x3163 Lanius.Mini.SrcType.ptr) + ((Cost_lower_as n x60 x3172 (Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.usize)) + ((Cost_lower_address n (Lanius.Mini.lowerAs x60 x3163 Lanius.Mini.SrcType.ptr) (Lanius.Mini.lowerAs x60 x3172 ((Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.usize)))) + ((Cost_lower_as n x60 x3180 (Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.uint8)) + (Cost_guarded n x82 (Lanius.Mini.guardAnd ((Lanius.Mini.SrcExpr.guard x3163 x60)) ((Lanius.Mini.guardAnd ((Lanius.Mini.SrcExpr.guard x3172 x60)) ((Lanius.Mini.SrcExpr.guard x3180 x60))))) (Lanius.Mini.lowerStore ((Lanius.Mini.lowerAddress ((Lanius.Mini.lowerAs x60 x3163 Lanius.Mini.SrcType.ptr)) ((Lanius.Mini.lowerAs x60 x3172 ((Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.usize)))))) ((Lanius.Mini.lowerAs x60 x3180 ((Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.uint8))))))))))))))) | .free x3441 x3450 x3456 => ((Cost_SrcExpr_guard n x3441 x60) + ((Cost_SrcExpr_guard n x3450 x60) + ((Cost_guard_and n (Lanius.Mini.SrcExpr.guard x3441 x60) (Lanius.Mini.SrcExpr.guard x3450 x60)) + ((Cost_lower_as n x60 x3441 Lanius.Mini.SrcType.ptr) + ((Cost_lower_as n x60 x3450 (Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.usize)) + (Cost_guarded n x82 (Lanius.Mini.guardAnd ((Lanius.Mini.SrcExpr.guard x3441 x60)) ((Lanius.Mini.SrcExpr.guard x3450 x60))) (Lanius.Mini.lowerFree x3456 ((Lanius.Mini.lowerAs x60 x3441 Lanius.Mini.SrcType.ptr)) ((Lanius.Mini.lowerAs x60 x3450 ((Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.usize))))))))))) | .letSlice x3640 x3644 x3653 x3662 x3670 => ((Cost_SrcExpr_guard n x3653 x60) + ((Cost_SrcExpr_guard n x3662 x60) + ((Cost_guard_and n (Lanius.Mini.SrcExpr.guard x3653 x60) (Lanius.Mini.SrcExpr.guard x3662 x60)) + ((Cost_lower_as n x60 x3653 Lanius.Mini.SrcType.ptr) + ((Cost_lower_as n x60 x3662 Lanius.Mini.SrcType.i32) + ((Cost_lower_slice n x29 x3644 (Lanius.Mini.lowerAs x60 x3653 Lanius.Mini.SrcType.ptr) (Lanius.Mini.lowerAs x60 x3662 Lanius.Mini.SrcType.i32)) + (1 + ((Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x3640 x82 (Lanius.Mini.SrcType.slice x3644)) x60) + ((Cost_SrcStmt_lower n x3670 x12 x29 x46 ((Lanius.Mini.Binding.mk x3640 x82 (Lanius.Mini.SrcType.slice x3644)) :: x60) (x82 + 2)) + ((Cost_lower_let n x82 (Lanius.Mini.lowerSlice x29 x3644 ((Lanius.Mini.lowerAs x60 x3653 Lanius.Mini.SrcType.ptr)) ((Lanius.Mini.lowerAs x60 x3662 Lanius.Mini.SrcType.i32))) (Lanius.Mini.SrcStmt.lower x3670 x12 x29 x46 (((Lanius.Mini.Binding.mk x3640 x82 (Lanius.Mini.SrcType.slice x3644)) :: x60)) ((x82 + 2)))) + (Cost_guarded n x82 (Lanius.Mini.guardAnd ((Lanius.Mini.SrcExpr.guard x3653 x60)) ((Lanius.Mini.SrcExpr.guard x3662 x60))) (Lanius.Mini.lowerLet x82 ((Lanius.Mini.lowerSlice x29 x3644 ((Lanius.Mini.lowerAs x60 x3653 Lanius.Mini.SrcType.ptr)) ((Lanius.Mini.lowerAs x60 x3662 Lanius.Mini.SrcType.i32)))) ((Lanius.Mini.SrcStmt.lower x3670 x12 x29 x46 (((Lanius.Mini.Binding.mk x3640 x82 (Lanius.Mini.SrcType.slice x3644)) :: x60)) ((x82 + 2)))))))))))))))) | .letIndex x4000 x4004 x4008 x4015 x4022 => ((Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x4000 x82 x4004) x60) + ((Cost_SrcStmt_lower n x4022 x12 x29 x46 ((Lanius.Mini.Binding.mk x4000 x82 x4004) :: x60) (x82 + (Lanius.Mini.SrcType.size x4004))) + (Cost_lower_let_index_any n x29 x60 x82 x4004 x4008 x4015 (Lanius.Mini.SrcStmt.lower x4022 x12 x29 x46 (((Lanius.Mini.Binding.mk x4000 x82 x4004) :: x60)) ((x82 + (Lanius.Mini.SrcType.size x4004))))))) | .setIndex x4224 x4231 x4238 => (Cost_lower_set_index_any n x29 x60 x82 x4224 x4231 x4238) | .letEval x4330 x4334 x4338 x4345 => ((Cost_stmt_eval n x4338 x12 x29 x60 x82) + ((Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x4330 x82 x4334) x60) + ((Cost_SrcStmt_lower n x4345 x12 x29 x46 ((Lanius.Mini.Binding.mk x4330 x82 x4334) :: x60) (x82 + (Lanius.Mini.SrcType.size x4334))) + (Cost_lower_let_eval n x4334 (Lanius.Mini.stmtEval x4338 x12 x29 x60 x82) (Lanius.Mini.SrcStmt.lower x4345 x12 x29 x46 (((Lanius.Mini.Binding.mk x4330 x82 x4334) :: x60)) ((x82 + (Lanius.Mini.SrcType.size x4334)))))))) | .setEval x4551 x4555 => ((Cost_SrcEff_eval n x4555 x12 x29 x60 x82) + (Cost_lower_set_eval n x82 (Lanius.Mini.lookup x60 x4551) (Lanius.Mini.SrcEff.eval x4555 x12 x29 x60 x82))) | .ifEval x4663 x4674 x4687 => ((Cost_SrcEff_eval n x4663 x12 x29 x60 x82) + ((Cost_SrcStmt_lower n x4674 x12 x29 x46 x60 x82) + ((Cost_SrcStmt_lower n x4687 x12 x29 x46 x60 x82) + (Cost_lower_if_eval n x82 (Lanius.Mini.SrcEff.eval x4663 x12 x29 x60 x82) (Lanius.Mini.SrcStmt.lower x4674 x12 x29 x46 x60 x82) (Lanius.Mini.SrcStmt.lower x4687 x12 x29 x46 x60 x82))))) | .whileEval x4902 x4913 => ((Cost_SrcEff_eval n x4902 x12 x29 x60 x82) + ((Cost_SrcStmt_lower n x4913 x12 x29 x46 x60 x82) + (Cost_lower_while_eval n x82 (Lanius.Mini.SrcEff.eval x4902 x12 x29 x60 x82) (Lanius.Mini.SrcStmt.lower x4913 x12 x29 x46 x60 x82)))) | .returnEval x5061 => ((Cost_SrcEff_eval n x5061 x12 x29 x60 x82) + (Cost_lower_return_eval n x82 x46 (Lanius.Mini.SrcEff.eval x5061 x12 x29 x60 x82))) | .discard x5159 => (Cost_stmt_eval n x5159 x12 x29 x60 x82) | .setIndexEval x5253 x5260 x5267 => ((Cost_SrcEff_eval n x5260 x12 x29 x60 x82) + ((Cost_SrcEff_eval n x5267 x12 x29 x60 (x82 + 1)) + (Cost_lower_set_index_eval n x29 x82 (Lanius.Mini.lookup x60 x5253) (Lanius.Mini.SrcEff.eval x5260 x12 x29 x60 x82) (Lanius.Mini.SrcEff.eval x5267 x12 x29 x60 ((x82 + 1)))))) | .setFieldEval x5444 x5448 x5455 => ((Cost_SrcEff_eval n x5455 x12 x29 x60 x82) + (Cost_lower_set_field_eval n x82 (Lanius.Mini.lookup x60 x5444) x5448 (Lanius.Mini.SrcEff.eval x5455 x12 x29 x60 x82))) | .returnUnit => (Cost_lower_return_unit n x46) | .assert x5626 => ((Cost_SrcEff_eval n x5626 x12 x29 x60 x82) + (Cost_lower_assert n (Lanius.Mini.SrcEff.eval x5626 x12 x29 x60 x82) x82)) | .break => 0 | .continue => 0 | .matchArm x5791 x5802 x5811 x5820 x5827 x5835 x5839 x5845 => ((Cost_arm_body_scope n x5820 x5827 x5835 x82 x60) + ((Cost_SrcStmt_lower n x5839 x12 x29 x46 (Lanius.Mini.armBodyScope x5820 x5827 x5835 x82 x60) (x82 + (Lanius.Mini.SrcType.size x5835))) + ((Cost_SrcStmt_lower n x5845 x12 x29 x46 x60 x82) + (Cost_lower_match_arm n x60 (Lanius.Mini.lookup x60 x5791) x5802 x5811 x5820 x5827 x5835 x82 (Lanius.Mini.SrcStmt.lower x5839 x12 x29 x46 ((Lanius.Mini.armBodyScope x5820 x5827 x5835 x82 x60)) ((x82 + (Lanius.Mini.SrcType.size x5835)))) (Lanius.Mini.SrcStmt.lower x5845 x12 x29 x46 x60 x82))))) | .unreachable x6129 x6133 => 0 | .letView x6199 x6203 x6211 x6219 x6228 => ((Cost_guard_all n x60 x6211) + (1 + ((Cost_lower_literal n x60 (Lanius.Mini.SrcType.array Lanius.Mini.SrcType.i32 x6203) x6211) + ((Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x6199 x82 (Lanius.Mini.SrcType.view x6203)) x60) + ((Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x6219 (x82 + x6203) Lanius.Mini.SrcType.ptr) ((Lanius.Mini.Binding.mk x6199 x82 (Lanius.Mini.SrcType.view x6203)) :: x60)) + ((Cost_SrcStmt_lower n x6228 x12 x29 x46 ((Lanius.Mini.Binding.mk x6219 (x82 + x6203) Lanius.Mini.SrcType.ptr) :: ((Lanius.Mini.Binding.mk x6199 x82 (Lanius.Mini.SrcType.view x6203)) :: x60)) ((x82 + x6203) + 1)) + ((Cost_lower_view n x82 x6203 (Lanius.Mini.lowerLiteral x60 ((Lanius.Mini.SrcType.array Lanius.Mini.SrcType.i32 x6203)) x6211) (Lanius.Mini.SrcStmt.lower x6228 x12 x29 x46 (((Lanius.Mini.Binding.mk x6219 (x82 + x6203) Lanius.Mini.SrcType.ptr) :: ((Lanius.Mini.Binding.mk x6199 x82 (Lanius.Mini.SrcType.view x6203)) :: x60))) (((x82 + x6203) + 1)))) + (Cost_guarded n x82 (Lanius.Mini.guardAll x60 x6211) (Lanius.Mini.lowerView x82 x6203 ((Lanius.Mini.lowerLiteral x60 ((Lanius.Mini.SrcType.array Lanius.Mini.SrcType.i32 x6203)) x6211)) ((Lanius.Mini.SrcStmt.lower x6228 x12 x29 x46 (((Lanius.Mini.Binding.mk x6219 (x82 + x6203) Lanius.Mini.SrcType.ptr) :: ((Lanius.Mini.Binding.mk x6199 x82 (Lanius.Mini.SrcType.view x6203)) :: x60))) (((x82 + x6203) + 1))))))))))))) | .letStr x6584 x6593 x6600 => ((Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x6584 x82 Lanius.Mini.SrcType.ptr) x60) + ((Cost_SrcStmt_lower n x6600 x12 x29 x46 ((Lanius.Mini.Binding.mk x6584 x82 Lanius.Mini.SrcType.ptr) :: x60) (x82 + 1)) + (Cost_lower_str n x82 x6593 (Lanius.Mini.SrcStmt.lower x6600 x12 x29 x46 (((Lanius.Mini.Binding.mk x6584 x82 Lanius.Mini.SrcType.ptr) :: x60)) ((x82 + 1)))))))
-termination_by structural fuel => fuel
-end
-
-end
-noncomputable section
-
-mutual
-def Pre_SrcStmt_lower : Nat → Lanius.Mini.SrcStmt → List Lanius.Mini.Sig → Lanius.Mini.SrcDecls → Lanius.Mini.SrcType → List Lanius.Mini.Binding → Nat → Nat → Prop
-  | 0, x6, x12, x29, x46, x60, x82, b => True
-  | n + 1, x6, x12, x29, x46, x60, x82, b => (match x6 with | .nop => True | .let x204 x208 x212 x219 => ((Pre_SrcExpr_guard n x212 x60 b) ∧ (∀ b1 : Nat, (Cost_SrcExpr_guard n x212 x60) < b → b1 = b - (Cost_SrcExpr_guard n x212 x60) → ((Pre_lower_value n x60 x212 x208 b1) ∧ (∀ b2 : Nat, (Cost_lower_value n x60 x212 x208) < b1 → b2 = b1 - (Cost_lower_value n x60 x212 x208) → (∀ b3 : Nat, (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x204 x82 x208) x60) < b2 → b3 = b2 - (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x204 x82 x208) x60) → ((Pre_SrcType_size n x208 b3) ∧ ((Pre_plus n x82 (Lanius.Mini.SrcType.size x208) b3) ∧ ((Pre_SrcStmt_lower n x219 x12 x29 x46 ((Lanius.Mini.Binding.mk x204 x82 x208) :: x60) (x82 + (Lanius.Mini.SrcType.size x208)) b3) ∧ (∀ b4 : Nat, (Cost_SrcStmt_lower n x219 x12 x29 x46 ((Lanius.Mini.Binding.mk x204 x82 x208) :: x60) (x82 + (Lanius.Mini.SrcType.size x208))) < b3 → b4 = b3 - (Cost_SrcStmt_lower n x219 x12 x29 x46 ((Lanius.Mini.Binding.mk x204 x82 x208) :: x60) (x82 + (Lanius.Mini.SrcType.size x208))) → (Pre_lower_let n x82 (Lanius.Mini.lowerValue x60 x212 x208) (Lanius.Mini.SrcStmt.lower x219 x12 x29 x46 (((Lanius.Mini.Binding.mk x204 x82 x208) :: x60)) ((x82 + (Lanius.Mini.SrcType.size x208)))) b4)))))))))) | .letStruct x446 x450 x454 x462 => ((Pre_guard_all n x60 x454 b) ∧ (∀ b7 : Nat, (Cost_guard_all n x60 x454) < b → b7 = b - (Cost_guard_all n x60 x454) → ((Pre_lower_literal n x60 x450 x454 b7) ∧ (∀ b8 : Nat, (Cost_lower_literal n x60 x450 x454) < b7 → b8 = b7 - (Cost_lower_literal n x60 x450 x454) → (∀ b9 : Nat, (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x446 x82 x450) x60) < b8 → b9 = b8 - (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x446 x82 x450) x60) → ((Pre_SrcType_size n x450 b9) ∧ ((Pre_plus n x82 (Lanius.Mini.SrcType.size x450) b9) ∧ ((Pre_SrcStmt_lower n x462 x12 x29 x46 ((Lanius.Mini.Binding.mk x446 x82 x450) :: x60) (x82 + (Lanius.Mini.SrcType.size x450)) b9) ∧ (∀ b10 : Nat, (Cost_SrcStmt_lower n x462 x12 x29 x46 ((Lanius.Mini.Binding.mk x446 x82 x450) :: x60) (x82 + (Lanius.Mini.SrcType.size x450))) < b9 → b10 = b9 - (Cost_SrcStmt_lower n x462 x12 x29 x46 ((Lanius.Mini.Binding.mk x446 x82 x450) :: x60) (x82 + (Lanius.Mini.SrcType.size x450))) → (Pre_lower_let n x82 (Lanius.Mini.lowerLiteral x60 x450 x454) (Lanius.Mini.SrcStmt.lower x462 x12 x29 x46 (((Lanius.Mini.Binding.mk x446 x82 x450) :: x60)) ((x82 + (Lanius.Mini.SrcType.size x450)))) b10)))))))))) | .letCall x696 x700 x704 x712 x718 => ((Pre_guard_all n x60 x712 b) ∧ (∀ b13 : Nat, (Cost_guard_all n x60 x712) < b → b13 = b - (Cost_guard_all n x60 x712) → ((Pre_SrcType_size n x700 b13) ∧ ((Pre_lower_call n x12 x60 x704 x712 x700 b13) ∧ (∀ b14 : Nat, (Cost_lower_call n x12 x60 x704 x712 x700) < b13 → b14 = b13 - (Cost_lower_call n x12 x60 x704 x712 x700) → (∀ b15 : Nat, (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x696 x82 x700) x60) < b14 → b15 = b14 - (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x696 x82 x700) x60) → ((Pre_SrcType_size n x700 b15) ∧ ((Pre_plus n x82 (Lanius.Mini.SrcType.size x700) b15) ∧ (Pre_SrcStmt_lower n x718 x12 x29 x46 ((Lanius.Mini.Binding.mk x696 x82 x700) :: x60) (x82 + (Lanius.Mini.SrcType.size x700)) b15))))))))) | .letEnum x983 x987 x991 x1000 x1009 => ((Pre_guard_all n x60 x1000 b) ∧ (∀ b19 : Nat, (Cost_guard_all n x60 x1000) < b → b19 = b - (Cost_guard_all n x60 x1000) → ((Pre_lower_enum_value n x60 x987 x991 x1000 b19) ∧ (∀ b20 : Nat, (Cost_lower_enum_value n x60 x987 x991 x1000) < b19 → b20 = b19 - (Cost_lower_enum_value n x60 x987 x991 x1000) → (∀ b21 : Nat, (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x983 x82 x987) x60) < b20 → b21 = b20 - (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x983 x82 x987) x60) → ((Pre_SrcType_size n x987 b21) ∧ ((Pre_plus n x82 (Lanius.Mini.SrcType.size x987) b21) ∧ ((Pre_SrcStmt_lower n x1009 x12 x29 x46 ((Lanius.Mini.Binding.mk x983 x82 x987) :: x60) (x82 + (Lanius.Mini.SrcType.size x987)) b21) ∧ (∀ b22 : Nat, (Cost_SrcStmt_lower n x1009 x12 x29 x46 ((Lanius.Mini.Binding.mk x983 x82 x987) :: x60) (x82 + (Lanius.Mini.SrcType.size x987))) < b21 → b22 = b21 - (Cost_SrcStmt_lower n x1009 x12 x29 x46 ((Lanius.Mini.Binding.mk x983 x82 x987) :: x60) (x82 + (Lanius.Mini.SrcType.size x987))) → (Pre_lower_let n x82 (Lanius.Mini.lowerEnumValue x60 x987 x991 x1000) (Lanius.Mini.SrcStmt.lower x1009 x12 x29 x46 (((Lanius.Mini.Binding.mk x983 x82 x987) :: x60)) ((x82 + (Lanius.Mini.SrcType.size x987)))) b22)))))))))) | .letMatch x1258 x1262 x1266 x1277 x1286 x1292 => ((Pre_lower_match n x60 (Lanius.Mini.lookup x60 x1266) x1277 x1286 x1262 x82 b) ∧ (∀ b25 : Nat, (Cost_lower_match n x60 (Lanius.Mini.lookup x60 x1266) x1277 x1286 x1262 x82) < b → b25 = b - (Cost_lower_match n x60 (Lanius.Mini.lookup x60 x1266) x1277 x1286 x1262 x82) → (∀ b26 : Nat, (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x1258 x82 x1262) x60) < b25 → b26 = b25 - (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x1258 x82 x1262) x60) → ((Pre_SrcType_size n x1262 b26) ∧ ((Pre_plus n x82 (Lanius.Mini.SrcType.size x1262) b26) ∧ (Pre_SrcStmt_lower n x1292 x12 x29 x46 ((Lanius.Mini.Binding.mk x1258 x82 x1262) :: x60) (x82 + (Lanius.Mini.SrcType.size x1262)) b26)))))) | .set x1513 x1517 => ((Pre_SrcExpr_guard n x1517 x60 b) ∧ (∀ b29 : Nat, (Cost_SrcExpr_guard n x1517 x60) < b → b29 = b - (Cost_SrcExpr_guard n x1517 x60) → (Pre_lower_set n (Lanius.Mini.lookup x60 x1513) x60 x1517 b29))) | .setField x1627 x1631 x1638 => ((Pre_SrcExpr_guard n x1638 x60 b) ∧ (∀ b32 : Nat, (Cost_SrcExpr_guard n x1638 x60) < b → b32 = b - (Cost_SrcExpr_guard n x1638 x60) → (Pre_lower_set_field n (Lanius.Mini.lookup x60 x1627) x1631 x60 x1638 b32))) | .setCall x1760 x1764 x1772 => ((Pre_guard_all n x60 x1772 b) ∧ (∀ b35 : Nat, (Cost_guard_all n x60 x1772) < b → b35 = b - (Cost_guard_all n x60 x1772) → (Pre_lower_set_call n x12 x60 (Lanius.Mini.lookup x60 x1760) x1764 x1772 b35))) | .then x1899 x1906 => ((Pre_SrcStmt_lower n x1899 x12 x29 x46 x60 x82 b) ∧ (∀ b38 : Nat, (Cost_SrcStmt_lower n x1899 x12 x29 x46 x60 x82) < b → b38 = b - (Cost_SrcStmt_lower n x1899 x12 x29 x46 x60 x82) → (Pre_SrcStmt_lower n x1906 x12 x29 x46 x60 x82 b38))) | .if x2047 x2058 x2071 => ((Pre_SrcExpr_guard n x2047 x60 b) ∧ (∀ b41 : Nat, (Cost_SrcExpr_guard n x2047 x60) < b → b41 = b - (Cost_SrcExpr_guard n x2047 x60) → ((Pre_lower_as n x60 x2047 Lanius.Mini.SrcType.bool b41) ∧ (∀ b42 : Nat, (Cost_lower_as n x60 x2047 Lanius.Mini.SrcType.bool) < b41 → b42 = b41 - (Cost_lower_as n x60 x2047 Lanius.Mini.SrcType.bool) → ((Pre_SrcStmt_lower n x2058 x12 x29 x46 x60 x82 b42) ∧ (∀ b43 : Nat, (Cost_SrcStmt_lower n x2058 x12 x29 x46 x60 x82) < b42 → b43 = b42 - (Cost_SrcStmt_lower n x2058 x12 x29 x46 x60 x82) → (Pre_SrcStmt_lower n x2071 x12 x29 x46 x60 x82 b43))))))) | .while x2302 x2313 => ((Pre_SrcExpr_guard n x2302 x60 b) ∧ (∀ b47 : Nat, (Cost_SrcExpr_guard n x2302 x60) < b → b47 = b - (Cost_SrcExpr_guard n x2302 x60) → ((Pre_lower_as n x60 x2302 Lanius.Mini.SrcType.bool b47) ∧ (∀ b48 : Nat, (Cost_lower_as n x60 x2302 Lanius.Mini.SrcType.bool) < b47 → b48 = b47 - (Cost_lower_as n x60 x2302 Lanius.Mini.SrcType.bool) → (Pre_SrcStmt_lower n x2313 x12 x29 x46 x60 x82 b48))))) | .return x2468 => ((Pre_SrcExpr_guard n x2468 x60 b) ∧ (∀ b51 : Nat, (Cost_SrcExpr_guard n x2468 x60) < b → b51 = b - (Cost_SrcExpr_guard n x2468 x60) → (Pre_lower_value n x60 x2468 x46 b51))) | .letAlloc x2580 x2584 x2590 x2597 => ((Pre_SrcExpr_guard n x2584 x60 b) ∧ (∀ b54 : Nat, (Cost_SrcExpr_guard n x2584 x60) < b → b54 = b - (Cost_SrcExpr_guard n x2584 x60) → ((Pre_lower_as n x60 x2584 (Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.usize) b54) ∧ (∀ b55 : Nat, (Cost_lower_as n x60 x2584 (Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.usize)) < b54 → b55 = b54 - (Cost_lower_as n x60 x2584 (Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.usize)) → (∀ b56 : Nat, (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x2580 x82 Lanius.Mini.SrcType.ptr) x60) < b55 → b56 = b55 - (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x2580 x82 Lanius.Mini.SrcType.ptr) x60) → ((Pre_plus n x82 1 b56) ∧ (Pre_SrcStmt_lower n x2597 x12 x29 x46 ((Lanius.Mini.Binding.mk x2580 x82 Lanius.Mini.SrcType.ptr) :: x60) (x82 + 1) b56))))))) | .letLoad x2828 x2832 x2841 x2849 => ((Pre_SrcExpr_guard n x2832 x60 b) ∧ (∀ b60 : Nat, (Cost_SrcExpr_guard n x2832 x60) < b → b60 = b - (Cost_SrcExpr_guard n x2832 x60) → ((Pre_SrcExpr_guard n x2841 x60 b60) ∧ (∀ b61 : Nat, (Cost_SrcExpr_guard n x2841 x60) < b60 → b61 = b60 - (Cost_SrcExpr_guard n x2841 x60) → (∀ b62 : Nat, (Cost_guard_and n (Lanius.Mini.SrcExpr.guard x2832 x60) (Lanius.Mini.SrcExpr.guard x2841 x60)) < b61 → b62 = b61 - (Cost_guard_and n (Lanius.Mini.SrcExpr.guard x2832 x60) (Lanius.Mini.SrcExpr.guard x2841 x60)) → ((Pre_lower_as n x60 x2832 Lanius.Mini.SrcType.ptr b62) ∧ (∀ b63 : Nat, (Cost_lower_as n x60 x2832 Lanius.Mini.SrcType.ptr) < b62 → b63 = b62 - (Cost_lower_as n x60 x2832 Lanius.Mini.SrcType.ptr) → ((Pre_lower_as n x60 x2841 (Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.usize) b63) ∧ (∀ b64 : Nat, (Cost_lower_as n x60 x2841 (Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.usize)) < b63 → b64 = b63 - (Cost_lower_as n x60 x2841 (Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.usize)) → (∀ b65 : Nat, (Cost_lower_address n (Lanius.Mini.lowerAs x60 x2832 Lanius.Mini.SrcType.ptr) (Lanius.Mini.lowerAs x60 x2841 ((Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.usize)))) < b64 → b65 = b64 - (Cost_lower_address n (Lanius.Mini.lowerAs x60 x2832 Lanius.Mini.SrcType.ptr) (Lanius.Mini.lowerAs x60 x2841 ((Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.usize)))) → (∀ b66 : Nat, (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x2828 x82 (Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.uint8)) x60) < b65 → b66 = b65 - (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x2828 x82 (Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.uint8)) x60) → ((Pre_plus n x82 1 b66) ∧ (Pre_SrcStmt_lower n x2849 x12 x29 x46 ((Lanius.Mini.Binding.mk x2828 x82 (Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.uint8)) :: x60) (x82 + 1) b66))))))))))))) | .setByte x3163 x3172 x3180 => ((Pre_SrcExpr_guard n x3163 x60 b) ∧ (∀ b70 : Nat, (Cost_SrcExpr_guard n x3163 x60) < b → b70 = b - (Cost_SrcExpr_guard n x3163 x60) → ((Pre_SrcExpr_guard n x3172 x60 b70) ∧ (∀ b71 : Nat, (Cost_SrcExpr_guard n x3172 x60) < b70 → b71 = b70 - (Cost_SrcExpr_guard n x3172 x60) → ((Pre_SrcExpr_guard n x3180 x60 b71) ∧ (∀ b72 : Nat, (Cost_SrcExpr_guard n x3180 x60) < b71 → b72 = b71 - (Cost_SrcExpr_guard n x3180 x60) → (∀ b73 : Nat, (Cost_guard_and n (Lanius.Mini.SrcExpr.guard x3172 x60) (Lanius.Mini.SrcExpr.guard x3180 x60)) < b72 → b73 = b72 - (Cost_guard_and n (Lanius.Mini.SrcExpr.guard x3172 x60) (Lanius.Mini.SrcExpr.guard x3180 x60)) → (∀ b74 : Nat, (Cost_guard_and n (Lanius.Mini.SrcExpr.guard x3163 x60) (Lanius.Mini.guardAnd ((Lanius.Mini.SrcExpr.guard x3172 x60)) ((Lanius.Mini.SrcExpr.guard x3180 x60)))) < b73 → b74 = b73 - (Cost_guard_and n (Lanius.Mini.SrcExpr.guard x3163 x60) (Lanius.Mini.guardAnd ((Lanius.Mini.SrcExpr.guard x3172 x60)) ((Lanius.Mini.SrcExpr.guard x3180 x60)))) → ((Pre_lower_as n x60 x3163 Lanius.Mini.SrcType.ptr b74) ∧ (∀ b75 : Nat, (Cost_lower_as n x60 x3163 Lanius.Mini.SrcType.ptr) < b74 → b75 = b74 - (Cost_lower_as n x60 x3163 Lanius.Mini.SrcType.ptr) → ((Pre_lower_as n x60 x3172 (Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.usize) b75) ∧ (∀ b76 : Nat, (Cost_lower_as n x60 x3172 (Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.usize)) < b75 → b76 = b75 - (Cost_lower_as n x60 x3172 (Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.usize)) → (∀ b77 : Nat, (Cost_lower_address n (Lanius.Mini.lowerAs x60 x3163 Lanius.Mini.SrcType.ptr) (Lanius.Mini.lowerAs x60 x3172 ((Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.usize)))) < b76 → b77 = b76 - (Cost_lower_address n (Lanius.Mini.lowerAs x60 x3163 Lanius.Mini.SrcType.ptr) (Lanius.Mini.lowerAs x60 x3172 ((Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.usize)))) → (Pre_lower_as n x60 x3180 (Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.uint8) b77)))))))))))))) | .free x3441 x3450 x3456 => ((Pre_SrcExpr_guard n x3441 x60 b) ∧ (∀ b80 : Nat, (Cost_SrcExpr_guard n x3441 x60) < b → b80 = b - (Cost_SrcExpr_guard n x3441 x60) → ((Pre_SrcExpr_guard n x3450 x60 b80) ∧ (∀ b81 : Nat, (Cost_SrcExpr_guard n x3450 x60) < b80 → b81 = b80 - (Cost_SrcExpr_guard n x3450 x60) → (∀ b82 : Nat, (Cost_guard_and n (Lanius.Mini.SrcExpr.guard x3441 x60) (Lanius.Mini.SrcExpr.guard x3450 x60)) < b81 → b82 = b81 - (Cost_guard_and n (Lanius.Mini.SrcExpr.guard x3441 x60) (Lanius.Mini.SrcExpr.guard x3450 x60)) → ((Pre_lower_as n x60 x3441 Lanius.Mini.SrcType.ptr b82) ∧ (∀ b83 : Nat, (Cost_lower_as n x60 x3441 Lanius.Mini.SrcType.ptr) < b82 → b83 = b82 - (Cost_lower_as n x60 x3441 Lanius.Mini.SrcType.ptr) → (Pre_lower_as n x60 x3450 (Lanius.Mini.SrcType.uint Lanius.Mini.UintTy.usize) b83)))))))) | .letSlice x3640 x3644 x3653 x3662 x3670 => ((Pre_SrcExpr_guard n x3653 x60 b) ∧ (∀ b86 : Nat, (Cost_SrcExpr_guard n x3653 x60) < b → b86 = b - (Cost_SrcExpr_guard n x3653 x60) → ((Pre_SrcExpr_guard n x3662 x60 b86) ∧ (∀ b87 : Nat, (Cost_SrcExpr_guard n x3662 x60) < b86 → b87 = b86 - (Cost_SrcExpr_guard n x3662 x60) → (∀ b88 : Nat, (Cost_guard_and n (Lanius.Mini.SrcExpr.guard x3653 x60) (Lanius.Mini.SrcExpr.guard x3662 x60)) < b87 → b88 = b87 - (Cost_guard_and n (Lanius.Mini.SrcExpr.guard x3653 x60) (Lanius.Mini.SrcExpr.guard x3662 x60)) → ((Pre_lower_as n x60 x3653 Lanius.Mini.SrcType.ptr b88) ∧ (∀ b89 : Nat, (Cost_lower_as n x60 x3653 Lanius.Mini.SrcType.ptr) < b88 → b89 = b88 - (Cost_lower_as n x60 x3653 Lanius.Mini.SrcType.ptr) → ((Pre_lower_as n x60 x3662 Lanius.Mini.SrcType.i32 b89) ∧ (∀ b90 : Nat, (Cost_lower_as n x60 x3662 Lanius.Mini.SrcType.i32) < b89 → b90 = b89 - (Cost_lower_as n x60 x3662 Lanius.Mini.SrcType.i32) → ((Pre_lower_slice n x29 x3644 (Lanius.Mini.lowerAs x60 x3653 Lanius.Mini.SrcType.ptr) (Lanius.Mini.lowerAs x60 x3662 Lanius.Mini.SrcType.i32) b90) ∧ (∀ b91 : Nat, (Cost_lower_slice n x29 x3644 (Lanius.Mini.lowerAs x60 x3653 Lanius.Mini.SrcType.ptr) (Lanius.Mini.lowerAs x60 x3662 Lanius.Mini.SrcType.i32)) < b90 → b91 = b90 - (Cost_lower_slice n x29 x3644 (Lanius.Mini.lowerAs x60 x3653 Lanius.Mini.SrcType.ptr) (Lanius.Mini.lowerAs x60 x3662 Lanius.Mini.SrcType.i32)) → (∀ b92 : Nat, 1 < b91 → b92 = b91 - 1 → (∀ b93 : Nat, (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x3640 x82 (Lanius.Mini.SrcType.slice x3644)) x60) < b92 → b93 = b92 - (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x3640 x82 (Lanius.Mini.SrcType.slice x3644)) x60) → ((Pre_plus n x82 2 b93) ∧ ((Pre_SrcStmt_lower n x3670 x12 x29 x46 ((Lanius.Mini.Binding.mk x3640 x82 (Lanius.Mini.SrcType.slice x3644)) :: x60) (x82 + 2) b93) ∧ (∀ b94 : Nat, (Cost_SrcStmt_lower n x3670 x12 x29 x46 ((Lanius.Mini.Binding.mk x3640 x82 (Lanius.Mini.SrcType.slice x3644)) :: x60) (x82 + 2)) < b93 → b94 = b93 - (Cost_SrcStmt_lower n x3670 x12 x29 x46 ((Lanius.Mini.Binding.mk x3640 x82 (Lanius.Mini.SrcType.slice x3644)) :: x60) (x82 + 2)) → (Pre_lower_let n x82 (Lanius.Mini.lowerSlice x29 x3644 ((Lanius.Mini.lowerAs x60 x3653 Lanius.Mini.SrcType.ptr)) ((Lanius.Mini.lowerAs x60 x3662 Lanius.Mini.SrcType.i32))) (Lanius.Mini.SrcStmt.lower x3670 x12 x29 x46 (((Lanius.Mini.Binding.mk x3640 x82 (Lanius.Mini.SrcType.slice x3644)) :: x60)) ((x82 + 2))) b94))))))))))))))))) | .letIndex x4000 x4004 x4008 x4015 x4022 => (∀ b97 : Nat, (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x4000 x82 x4004) x60) < b → b97 = b - (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x4000 x82 x4004) x60) → ((Pre_SrcType_size n x4004 b97) ∧ ((Pre_plus n x82 (Lanius.Mini.SrcType.size x4004) b97) ∧ ((Pre_SrcStmt_lower n x4022 x12 x29 x46 ((Lanius.Mini.Binding.mk x4000 x82 x4004) :: x60) (x82 + (Lanius.Mini.SrcType.size x4004)) b97) ∧ (∀ b98 : Nat, (Cost_SrcStmt_lower n x4022 x12 x29 x46 ((Lanius.Mini.Binding.mk x4000 x82 x4004) :: x60) (x82 + (Lanius.Mini.SrcType.size x4004))) < b97 → b98 = b97 - (Cost_SrcStmt_lower n x4022 x12 x29 x46 ((Lanius.Mini.Binding.mk x4000 x82 x4004) :: x60) (x82 + (Lanius.Mini.SrcType.size x4004))) → (Pre_lower_let_index_any n x29 x60 x82 x4004 x4008 x4015 (Lanius.Mini.SrcStmt.lower x4022 x12 x29 x46 (((Lanius.Mini.Binding.mk x4000 x82 x4004) :: x60)) ((x82 + (Lanius.Mini.SrcType.size x4004)))) b98)))))) | .setIndex x4224 x4231 x4238 => (Pre_lower_set_index_any n x29 x60 x82 x4224 x4231 x4238 b) | .letEval x4330 x4334 x4338 x4345 => ((Pre_stmt_eval n x4338 x12 x29 x60 x82 b) ∧ (∀ b101 : Nat, (Cost_stmt_eval n x4338 x12 x29 x60 x82) < b → b101 = b - (Cost_stmt_eval n x4338 x12 x29 x60 x82) → (∀ b102 : Nat, (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x4330 x82 x4334) x60) < b101 → b102 = b101 - (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x4330 x82 x4334) x60) → ((Pre_SrcType_size n x4334 b102) ∧ ((Pre_plus n x82 (Lanius.Mini.SrcType.size x4334) b102) ∧ (Pre_SrcStmt_lower n x4345 x12 x29 x46 ((Lanius.Mini.Binding.mk x4330 x82 x4334) :: x60) (x82 + (Lanius.Mini.SrcType.size x4334)) b102)))))) | .setEval x4551 x4555 => ((Pre_SrcEff_eval n x4555 x12 x29 x60 x82 b) ∧ (∀ b105 : Nat, (Cost_SrcEff_eval n x4555 x12 x29 x60 x82) < b → b105 = b - (Cost_SrcEff_eval n x4555 x12 x29 x60 x82) → (Pre_lower_set_eval n x82 (Lanius.Mini.lookup x60 x4551) (Lanius.Mini.SrcEff.eval x4555 x12 x29 x60 x82) b105))) | .ifEval x4663 x4674 x4687 => ((Pre_SrcEff_eval n x4663 x12 x29 x60 x82 b) ∧ (∀ b107 : Nat, (Cost_SrcEff_eval n x4663 x12 x29 x60 x82) < b → b107 = b - (Cost_SrcEff_eval n x4663 x12 x29 x60 x82) → ((Pre_SrcStmt_lower n x4674 x12 x29 x46 x60 x82 b107) ∧ (∀ b108 : Nat, (Cost_SrcStmt_lower n x4674 x12 x29 x46 x60 x82) < b107 → b108 = b107 - (Cost_SrcStmt_lower n x4674 x12 x29 x46 x60 x82) → (Pre_SrcStmt_lower n x4687 x12 x29 x46 x60 x82 b108))))) | .whileEval x4902 x4913 => ((Pre_SrcEff_eval n x4902 x12 x29 x60 x82 b) ∧ (∀ b111 : Nat, (Cost_SrcEff_eval n x4902 x12 x29 x60 x82) < b → b111 = b - (Cost_SrcEff_eval n x4902 x12 x29 x60 x82) → (Pre_SrcStmt_lower n x4913 x12 x29 x46 x60 x82 b111))) | .returnEval x5061 => ((Pre_SrcEff_eval n x5061 x12 x29 x60 x82 b) ∧ (∀ b114 : Nat, (Cost_SrcEff_eval n x5061 x12 x29 x60 x82) < b → b114 = b - (Cost_SrcEff_eval n x5061 x12 x29 x60 x82) → (Pre_lower_return_eval n x82 x46 (Lanius.Mini.SrcEff.eval x5061 x12 x29 x60 x82) b114))) | .discard x5159 => (Pre_stmt_eval n x5159 x12 x29 x60 x82 b) | .setIndexEval x5253 x5260 x5267 => ((Pre_SrcEff_eval n x5260 x12 x29 x60 x82 b) ∧ (∀ b117 : Nat, (Cost_SrcEff_eval n x5260 x12 x29 x60 x82) < b → b117 = b - (Cost_SrcEff_eval n x5260 x12 x29 x60 x82) → ((Pre_plus n x82 1 b117) ∧ ((Pre_SrcEff_eval n x5267 x12 x29 x60 (x82 + 1) b117) ∧ (∀ b118 : Nat, (Cost_SrcEff_eval n x5267 x12 x29 x60 (x82 + 1)) < b117 → b118 = b117 - (Cost_SrcEff_eval n x5267 x12 x29 x60 (x82 + 1)) → (Pre_lower_set_index_eval n x29 x82 (Lanius.Mini.lookup x60 x5253) (Lanius.Mini.SrcEff.eval x5260 x12 x29 x60 x82) (Lanius.Mini.SrcEff.eval x5267 x12 x29 x60 ((x82 + 1))) b118)))))) | .setFieldEval x5444 x5448 x5455 => ((Pre_SrcEff_eval n x5455 x12 x29 x60 x82 b) ∧ (∀ b120 : Nat, (Cost_SrcEff_eval n x5455 x12 x29 x60 x82) < b → b120 = b - (Cost_SrcEff_eval n x5455 x12 x29 x60 x82) → (Pre_lower_set_field_eval n x82 (Lanius.Mini.lookup x60 x5444) x5448 (Lanius.Mini.SrcEff.eval x5455 x12 x29 x60 x82) b120))) | .returnUnit => True | .assert x5626 => (Pre_SrcEff_eval n x5626 x12 x29 x60 x82 b) | .break => True | .continue => True | .matchArm x5791 x5802 x5811 x5820 x5827 x5835 x5839 x5845 => (∀ b125 : Nat, (Cost_arm_body_scope n x5820 x5827 x5835 x82 x60) < b → b125 = b - (Cost_arm_body_scope n x5820 x5827 x5835 x82 x60) → ((Pre_SrcType_size n x5835 b125) ∧ ((Pre_plus n x82 (Lanius.Mini.SrcType.size x5835) b125) ∧ ((Pre_SrcStmt_lower n x5839 x12 x29 x46 (Lanius.Mini.armBodyScope x5820 x5827 x5835 x82 x60) (x82 + (Lanius.Mini.SrcType.size x5835)) b125) ∧ (∀ b126 : Nat, (Cost_SrcStmt_lower n x5839 x12 x29 x46 (Lanius.Mini.armBodyScope x5820 x5827 x5835 x82 x60) (x82 + (Lanius.Mini.SrcType.size x5835))) < b125 → b126 = b125 - (Cost_SrcStmt_lower n x5839 x12 x29 x46 (Lanius.Mini.armBodyScope x5820 x5827 x5835 x82 x60) (x82 + (Lanius.Mini.SrcType.size x5835))) → ((Pre_SrcStmt_lower n x5845 x12 x29 x46 x60 x82 b126) ∧ (∀ b127 : Nat, (Cost_SrcStmt_lower n x5845 x12 x29 x46 x60 x82) < b126 → b127 = b126 - (Cost_SrcStmt_lower n x5845 x12 x29 x46 x60 x82) → (Pre_lower_match_arm n x60 (Lanius.Mini.lookup x60 x5791) x5802 x5811 x5820 x5827 x5835 x82 (Lanius.Mini.SrcStmt.lower x5839 x12 x29 x46 ((Lanius.Mini.armBodyScope x5820 x5827 x5835 x82 x60)) ((x82 + (Lanius.Mini.SrcType.size x5835)))) (Lanius.Mini.SrcStmt.lower x5845 x12 x29 x46 x60 x82) b127)))))))) | .unreachable x6129 x6133 => True | .letView x6199 x6203 x6211 x6219 x6228 => ((Pre_guard_all n x60 x6211 b) ∧ (∀ b129 : Nat, (Cost_guard_all n x60 x6211) < b → b129 = b - (Cost_guard_all n x60 x6211) → (∀ b130 : Nat, 1 < b129 → b130 = b129 - 1 → ((Pre_lower_literal n x60 (Lanius.Mini.SrcType.array Lanius.Mini.SrcType.i32 x6203) x6211 b130) ∧ (∀ b131 : Nat, (Cost_lower_literal n x60 (Lanius.Mini.SrcType.array Lanius.Mini.SrcType.i32 x6203) x6211) < b130 → b131 = b130 - (Cost_lower_literal n x60 (Lanius.Mini.SrcType.array Lanius.Mini.SrcType.i32 x6203) x6211) → ((Pre_plus n x82 x6203 b131) ∧ (∀ b132 : Nat, (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x6199 x82 (Lanius.Mini.SrcType.view x6203)) x60) < b131 → b132 = b131 - (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x6199 x82 (Lanius.Mini.SrcType.view x6203)) x60) → (∀ b133 : Nat, (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x6219 (x82 + x6203) Lanius.Mini.SrcType.ptr) ((Lanius.Mini.Binding.mk x6199 x82 (Lanius.Mini.SrcType.view x6203)) :: x60)) < b132 → b133 = b132 - (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x6219 (x82 + x6203) Lanius.Mini.SrcType.ptr) ((Lanius.Mini.Binding.mk x6199 x82 (Lanius.Mini.SrcType.view x6203)) :: x60)) → ((Pre_plus n x82 x6203 b133) ∧ ((Pre_plus n (x82 + x6203) 1 b133) ∧ ((Pre_SrcStmt_lower n x6228 x12 x29 x46 ((Lanius.Mini.Binding.mk x6219 (x82 + x6203) Lanius.Mini.SrcType.ptr) :: ((Lanius.Mini.Binding.mk x6199 x82 (Lanius.Mini.SrcType.view x6203)) :: x60)) ((x82 + x6203) + 1) b133) ∧ (∀ b134 : Nat, (Cost_SrcStmt_lower n x6228 x12 x29 x46 ((Lanius.Mini.Binding.mk x6219 (x82 + x6203) Lanius.Mini.SrcType.ptr) :: ((Lanius.Mini.Binding.mk x6199 x82 (Lanius.Mini.SrcType.view x6203)) :: x60)) ((x82 + x6203) + 1)) < b133 → b134 = b133 - (Cost_SrcStmt_lower n x6228 x12 x29 x46 ((Lanius.Mini.Binding.mk x6219 (x82 + x6203) Lanius.Mini.SrcType.ptr) :: ((Lanius.Mini.Binding.mk x6199 x82 (Lanius.Mini.SrcType.view x6203)) :: x60)) ((x82 + x6203) + 1)) → (Pre_lower_view n x82 x6203 (Lanius.Mini.lowerLiteral x60 ((Lanius.Mini.SrcType.array Lanius.Mini.SrcType.i32 x6203)) x6211) (Lanius.Mini.SrcStmt.lower x6228 x12 x29 x46 (((Lanius.Mini.Binding.mk x6219 (x82 + x6203) Lanius.Mini.SrcType.ptr) :: ((Lanius.Mini.Binding.mk x6199 x82 (Lanius.Mini.SrcType.view x6203)) :: x60))) (((x82 + x6203) + 1))) b134))))))))))))) | .letStr x6584 x6593 x6600 => (∀ b137 : Nat, (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x6584 x82 Lanius.Mini.SrcType.ptr) x60) < b → b137 = b - (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x6584 x82 Lanius.Mini.SrcType.ptr) x60) → ((Pre_plus n x82 1 b137) ∧ ((Pre_SrcStmt_lower n x6600 x12 x29 x46 ((Lanius.Mini.Binding.mk x6584 x82 Lanius.Mini.SrcType.ptr) :: x60) (x82 + 1) b137) ∧ (∀ b138 : Nat, (Cost_SrcStmt_lower n x6600 x12 x29 x46 ((Lanius.Mini.Binding.mk x6584 x82 Lanius.Mini.SrcType.ptr) :: x60) (x82 + 1)) < b137 → b138 = b137 - (Cost_SrcStmt_lower n x6600 x12 x29 x46 ((Lanius.Mini.Binding.mk x6584 x82 Lanius.Mini.SrcType.ptr) :: x60) (x82 + 1)) → (Pre_lower_str n x82 x6593 (Lanius.Mini.SrcStmt.lower x6600 x12 x29 x46 (((Lanius.Mini.Binding.mk x6584 x82 Lanius.Mini.SrcType.ptr) :: x60)) ((x82 + 1))) b138))))))
-termination_by structural fuel => fuel
-end
-
-end
-
-noncomputable section
-
-mutual
-def Cost_param_scope : Nat → List Lanius.Mini.SrcParam → Nat → List Lanius.Mini.Binding → Nat
-  | 0, x12, x36, x49 => 18446744073709551616
-  | n + 1, x12, x36, x49 => (match x12 with | [] => 0 | x153 :: x160 => ((Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x153.id x36 x153.ty) x49) + (Cost_param_scope n x160 (x36 + (Lanius.Mini.SrcType.size x153.ty)) ((Lanius.Mini.Binding.mk x153.id x36 x153.ty) :: x49))))
-termination_by structural fuel => fuel
-end
-
-end
-noncomputable section
-
-mutual
-def Pre_param_scope : Nat → List Lanius.Mini.SrcParam → Nat → List Lanius.Mini.Binding → Nat → Prop
-  | 0, x12, x36, x49, b => True
-  | n + 1, x12, x36, x49, b => (match x12 with | [] => True | x153 :: x160 => ((Pre_SrcType_size n x153.ty b) ∧ ((Pre_plus n x36 (Lanius.Mini.SrcType.size x153.ty) b) ∧ (∀ b1 : Nat, (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x153.id x36 x153.ty) x49) < b → b1 = b - (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x153.id x36 x153.ty) x49) → (Pre_param_scope n x160 (x36 + (Lanius.Mini.SrcType.size x153.ty)) ((Lanius.Mini.Binding.mk x153.id x36 x153.ty) :: x49) b1)))))
-termination_by structural fuel => fuel
-end
-
-end
-
-noncomputable section
-
-def Cost_lower_func : Nat → List Lanius.Mini.Sig → Lanius.Mini.Sig → Lanius.Mini.SrcDecls → Lanius.Mini.SrcFunc → Nat
-  | 0, x11, x28, x38, x55 => 18446744073709551616
-  | n + 1, x11, x28, x38, x55 => ((Cost_frame_block n x55) + (let k2 := ((Cost_with_budget n x11 (x28.need - (Lanius.Mini.frameBlock x55)) (Lanius.Mini.frameBlock x55)) + ((Cost_param_scope n x55.params 0 ([] : List Lanius.Mini.Binding)) + ((Cost_SrcStmt_lower n x55.body (Lanius.Mini.withBudget x11 ((x28.need - (Lanius.Mini.frameBlock x55))) ((Lanius.Mini.frameBlock x55))) x38 x55.ret (Lanius.Mini.paramScope x55.params 0 (([] : List Lanius.Mini.Binding))) (Lanius.Mini.paramsSize x55.params)) + ((Cost_with_frame n (Lanius.Mini.paramsSize x55.params) (Lanius.Mini.frameBlock x55) (Lanius.Mini.SrcStmt.lower x55.body ((Lanius.Mini.withBudget x11 ((x28.need - (Lanius.Mini.frameBlock x55))) ((Lanius.Mini.frameBlock x55)))) x38 x55.ret ((Lanius.Mini.paramScope x55.params 0 (([] : List Lanius.Mini.Binding)))) ((Lanius.Mini.paramsSize x55.params)))) + (Cost_unit_tail n x55.ret (Lanius.Mini.withFrame ((Lanius.Mini.paramsSize x55.params)) ((Lanius.Mini.frameBlock x55)) ((Lanius.Mini.SrcStmt.lower x55.body ((Lanius.Mini.withBudget x11 ((x28.need - (Lanius.Mini.frameBlock x55))) ((Lanius.Mini.frameBlock x55)))) x38 x55.ret ((Lanius.Mini.paramScope x55.params 0 (([] : List Lanius.Mini.Binding)))) ((Lanius.Mini.paramsSize x55.params)))))))))); let k3 := 0; (if (decide (0 < (Lanius.Mini.SrcType.size x55.ret))) = true then (if (Lanius.Mini.paramsValid x55.params) = true then (if (((!(Lanius.Mini.SrcStmt.breaksOut x55.body)) && (decide ((Lanius.Mini.frameBlock x55) ≤ x28.need))) && (decide ((Lanius.Mini.frameBlock x55) < 2147483648))) = true then k2 else k3) else (if ((false && (decide ((Lanius.Mini.frameBlock x55) ≤ x28.need))) && (decide ((Lanius.Mini.frameBlock x55) < 2147483648))) = true then k2 else k3)) else (if ((false && (decide ((Lanius.Mini.frameBlock x55) ≤ x28.need))) && (decide ((Lanius.Mini.frameBlock x55) < 2147483648))) = true then k2 else k3))))
-
-end
-noncomputable section
-
-def Pre_lower_func : Nat → List Lanius.Mini.Sig → Lanius.Mini.Sig → Lanius.Mini.SrcDecls → Lanius.Mini.SrcFunc → Nat → Prop
-  | 0, x11, x28, x38, x55, b => True
-  | n + 1, x11, x28, x38, x55, b => ((Pre_params_size n x55.params b) ∧ ((Pre_frame_block n x55 b) ∧ (∀ b1 : Nat, (Cost_frame_block n x55) < b → b1 = b - (Cost_frame_block n x55) → (let k8 := fun (b2 : Nat) => ((Pre_SrcType_size n x55.ret b2) ∧ ((Pre_SrcStmt_depth n x55.body b2) ∧ (∀ b3 : Nat, (Cost_with_budget n x11 (x28.need - (Lanius.Mini.frameBlock x55)) (Lanius.Mini.frameBlock x55)) < b2 → b3 = b2 - (Cost_with_budget n x11 (x28.need - (Lanius.Mini.frameBlock x55)) (Lanius.Mini.frameBlock x55)) → ((Pre_param_scope n x55.params 0 ([] : List Lanius.Mini.Binding) b3) ∧ (∀ b4 : Nat, (Cost_param_scope n x55.params 0 ([] : List Lanius.Mini.Binding)) < b3 → b4 = b3 - (Cost_param_scope n x55.params 0 ([] : List Lanius.Mini.Binding)) → ((Pre_SrcStmt_lower n x55.body (Lanius.Mini.withBudget x11 ((x28.need - (Lanius.Mini.frameBlock x55))) ((Lanius.Mini.frameBlock x55))) x38 x55.ret (Lanius.Mini.paramScope x55.params 0 (([] : List Lanius.Mini.Binding))) (Lanius.Mini.paramsSize x55.params) b4) ∧ (∀ b5 : Nat, (Cost_SrcStmt_lower n x55.body (Lanius.Mini.withBudget x11 ((x28.need - (Lanius.Mini.frameBlock x55))) ((Lanius.Mini.frameBlock x55))) x38 x55.ret (Lanius.Mini.paramScope x55.params 0 (([] : List Lanius.Mini.Binding))) (Lanius.Mini.paramsSize x55.params)) < b4 → b5 = b4 - (Cost_SrcStmt_lower n x55.body (Lanius.Mini.withBudget x11 ((x28.need - (Lanius.Mini.frameBlock x55))) ((Lanius.Mini.frameBlock x55))) x38 x55.ret (Lanius.Mini.paramScope x55.params 0 (([] : List Lanius.Mini.Binding))) (Lanius.Mini.paramsSize x55.params)) → (∀ b6 : Nat, (Cost_with_frame n (Lanius.Mini.paramsSize x55.params) (Lanius.Mini.frameBlock x55) (Lanius.Mini.SrcStmt.lower x55.body ((Lanius.Mini.withBudget x11 ((x28.need - (Lanius.Mini.frameBlock x55))) ((Lanius.Mini.frameBlock x55)))) x38 x55.ret ((Lanius.Mini.paramScope x55.params 0 (([] : List Lanius.Mini.Binding)))) ((Lanius.Mini.paramsSize x55.params)))) < b5 → b6 = b5 - (Cost_with_frame n (Lanius.Mini.paramsSize x55.params) (Lanius.Mini.frameBlock x55) (Lanius.Mini.SrcStmt.lower x55.body ((Lanius.Mini.withBudget x11 ((x28.need - (Lanius.Mini.frameBlock x55))) ((Lanius.Mini.frameBlock x55)))) x38 x55.ret ((Lanius.Mini.paramScope x55.params 0 (([] : List Lanius.Mini.Binding)))) ((Lanius.Mini.paramsSize x55.params)))) → (∀ b7 : Nat, (Cost_unit_tail n x55.ret (Lanius.Mini.withFrame ((Lanius.Mini.paramsSize x55.params)) ((Lanius.Mini.frameBlock x55)) ((Lanius.Mini.SrcStmt.lower x55.body ((Lanius.Mini.withBudget x11 ((x28.need - (Lanius.Mini.frameBlock x55))) ((Lanius.Mini.frameBlock x55)))) x38 x55.ret ((Lanius.Mini.paramScope x55.params 0 (([] : List Lanius.Mini.Binding)))) ((Lanius.Mini.paramsSize x55.params)))))) < b6 → b7 = b6 - (Cost_unit_tail n x55.ret (Lanius.Mini.withFrame ((Lanius.Mini.paramsSize x55.params)) ((Lanius.Mini.frameBlock x55)) ((Lanius.Mini.SrcStmt.lower x55.body ((Lanius.Mini.withBudget x11 ((x28.need - (Lanius.Mini.frameBlock x55))) ((Lanius.Mini.frameBlock x55)))) x38 x55.ret ((Lanius.Mini.paramScope x55.params 0 (([] : List Lanius.Mini.Binding)))) ((Lanius.Mini.paramsSize x55.params)))))) → (Pre_lower_body n (Lanius.Mini.paramsSize x55.params) (Lanius.Mini.SrcType.size x55.ret) (Lanius.Mini.SrcStmt.depth x55.body) (Lanius.Mini.unitTail x55.ret ((Lanius.Mini.withFrame ((Lanius.Mini.paramsSize x55.params)) ((Lanius.Mini.frameBlock x55)) ((Lanius.Mini.SrcStmt.lower x55.body ((Lanius.Mini.withBudget x11 ((x28.need - (Lanius.Mini.frameBlock x55))) ((Lanius.Mini.frameBlock x55)))) x38 x55.ret ((Lanius.Mini.paramScope x55.params 0 (([] : List Lanius.Mini.Binding)))) ((Lanius.Mini.paramsSize x55.params))))))) b7)))))))))); let k9 := fun (b2 : Nat) => True; ((Pre_SrcType_size n x55.ret b1) ∧ (if (decide (0 < (Lanius.Mini.SrcType.size x55.ret))) = true then ((Pre_params_valid n x55.params b1) ∧ (if (Lanius.Mini.paramsValid x55.params) = true then (if (((!(Lanius.Mini.SrcStmt.breaksOut x55.body)) && (decide ((Lanius.Mini.frameBlock x55) ≤ x28.need))) && (decide ((Lanius.Mini.frameBlock x55) < 2147483648))) = true then (k8 b1) else (k9 b1)) else (if ((false && (decide ((Lanius.Mini.frameBlock x55) ≤ x28.need))) && (decide ((Lanius.Mini.frameBlock x55) < 2147483648))) = true then (k8 b1) else (k9 b1)))) else (if ((false && (decide ((Lanius.Mini.frameBlock x55) ≤ x28.need))) && (decide ((Lanius.Mini.frameBlock x55) < 2147483648))) = true then (k8 b1) else (k9 b1))))))))
-
-end
-
-noncomputable section
-
-mutual
-def Cost_lower_funcs : Nat → List Lanius.Mini.Sig → List Lanius.Mini.Sig → Lanius.Mini.SrcDecls → List Lanius.Mini.SrcFunc → Nat
-  | 0, x12, x29, x45, x62 => 18446744073709551616
-  | n + 1, x12, x29, x45, x62 => (match x62 with | [] => 0 | x192 :: x198 => (match x29 with | [] => 0 | x263 :: x268 => ((Cost_lower_func n x12 x263 x45 x192) + ((Cost_lower_funcs n x12 x268 x45 x198) + (Cost_lower_func_cons n (Lanius.Mini.lowerFunc x12 x263 x45 x192) (Lanius.Mini.lowerFuncs x12 x268 x45 x198))))))
-termination_by structural fuel => fuel
-end
-
-end
-noncomputable section
-
-mutual
-def Pre_lower_funcs : Nat → List Lanius.Mini.Sig → List Lanius.Mini.Sig → Lanius.Mini.SrcDecls → List Lanius.Mini.SrcFunc → Nat → Prop
-  | 0, x12, x29, x45, x62, b => True
-  | n + 1, x12, x29, x45, x62, b => (match x62 with | [] => True | x192 :: x198 => (match x29 with | [] => True | x263 :: x268 => ((Pre_lower_func n x12 x263 x45 x192 b) ∧ (∀ b1 : Nat, (Cost_lower_func n x12 x263 x45 x192) < b → b1 = b - (Cost_lower_func n x12 x263 x45 x192) → (Pre_lower_funcs n x12 x268 x45 x198 b1)))))
-termination_by structural fuel => fuel
-end
-
-end
-
-noncomputable section
-
-mutual
-def Cost_param_types : Nat → List Lanius.Mini.SrcParam → Nat
-  | 0, x12 => 18446744073709551616
-  | n + 1, x12 => (match x12 with | [] => 0 | x120 :: x127 => ((Cost_param_types n x127) + (Cost_cons_of_mini_selfhost_SrcType n x120.ty (Lanius.Mini.paramTypes x127))))
-termination_by structural fuel => fuel
-end
-
-end
-
-noncomputable section
-
-mutual
-def Cost_sigs_with : Nat → List Lanius.Mini.SrcFunc → List Nat → Nat
-  | 0, x10, x32 => 18446744073709551616
-  | n + 1, x10, x32 => (match x10 with | [] => 0 | x131 :: x137 => ((Cost_param_types n x131.params) + ((Cost_sigs_with n x137 (Lanius.Mini.restNeeds x32)) + (Cost_cons_of_mini_selfhost_Sig n (Lanius.Mini.Sig.mk (Lanius.Mini.paramTypes x131.params) x131.ret (x32.getD 0 0) 0 0) (Lanius.Mini.sigsWith x137 ((Lanius.Mini.restNeeds x32)))))))
-termination_by structural fuel => fuel
-end
-
-end
-
-noncomputable section
-
-def Cost_func_needs : Nat → List Lanius.Mini.SrcFunc → Nat
-  | 0, x11 => 18446744073709551616
-  | n + 1, x11 => (Cost_needs_after n x11 ([] : List Nat) x11.length)
-
-end
-noncomputable section
-
-def Pre_func_needs : Nat → List Lanius.Mini.SrcFunc → Nat → Prop
-  | 0, x11, b => True
-  | n + 1, x11, b => ((Pre_length_of_mini_selfhost_SrcFunc n x11 b) ∧ (Pre_needs_after n x11 ([] : List Nat) x11.length b))
-
-end
-
-noncomputable section
-
-def Cost_sigs : Nat → List Lanius.Mini.SrcFunc → Nat
-  | 0, x5 => 18446744073709551616
-  | n + 1, x5 => ((Cost_func_needs n x5) + (Cost_sigs_with n x5 (Lanius.Mini.funcNeeds x5)))
-
-end
-noncomputable section
-
-def Pre_sigs : Nat → List Lanius.Mini.SrcFunc → Nat → Prop
-  | 0, x5, b => True
-  | n + 1, x5, b => (Pre_func_needs n x5 b)
-
-end
-
-noncomputable section
-
-def Cost_declare_struct_in : Nat → Nat → List Lanius.Mini.SrcType → Lanius.Mini.SrcDecls → Option (List Lanius.Mini.SrcType) → Nat
-  | 0, x18, x29, x52, x69 => 18446744073709551616
-  | n + 1, x18, x29, x52, x69 => (match x69 with | some x340 => 0 | none => (Cost_cons_of_mini_selfhost_SrcStructDecl n (Lanius.Mini.SrcStructDecl.mk x18 x29) x52.structs))
-
-end
-
-noncomputable section
-
-def Cost_declare_struct : Nat → Nat → List Lanius.Mini.SrcType → Option Lanius.Mini.SrcDecls → Nat
-  | 0, x15, x26, x49 => 18446744073709551616
-  | n + 1, x15, x26, x49 => (match x49 with | some x186 => (Cost_declare_struct_in n x15 x26 x186 (Lanius.Mini.structFields x186.structs x15)) | none => 0)
-
-end
-
-noncomputable section
-
-def Cost_declare_enum_in : Nat → Nat → List (List Lanius.Mini.SrcType) → Lanius.Mini.SrcDecls → Option (List (List Lanius.Mini.SrcType)) → Nat
-  | 0, x16, x27, x58, x75 => 18446744073709551616
-  | n + 1, x16, x27, x58, x75 => (match x75 with | some x354 => 0 | none => (Cost_cons_of_mini_selfhost_SrcEnumDecl n (Lanius.Mini.SrcEnumDecl.mk x16 x27) x58.enums))
-
-end
-
-noncomputable section
-
-def Cost_declare_enum : Nat → Nat → List (List Lanius.Mini.SrcType) → Option Lanius.Mini.SrcDecls → Nat
-  | 0, x13, x24, x55 => 18446744073709551616
-  | n + 1, x13, x24, x55 => (match x55 with | some x192 => (Cost_declare_enum_in n x13 x24 x192 (Lanius.Mini.enumVariants x192.enums x13)) | none => 0)
-
-end
-
-noncomputable section
-
-mutual
-def Cost_SrcType_declare : Nat → Lanius.Mini.SrcType → Lanius.Mini.SrcDecls → Nat
-  | 0, x8, x14 => 18446744073709551616
-  | n + 1, x8, x14 => (match x8 with | .i32 => 0 | .bool => 0 | .uint x179 => 0 | .struct x220 x224 => ((Cost_declare_types n x224 x14) + (Cost_declare_struct n x220 x224 (Lanius.Mini.declareTypes x224 x14))) | .enum x324 x328 => ((Cost_declare_variants n x328 x14) + (Cost_declare_enum n x324 x328 (Lanius.Mini.declareVariants x328 x14))) | .ptr => 0 | .slice x468 => (Cost_SrcType_declare n x468 x14) | .array x538 x553 => (Cost_SrcType_declare n x538 x14) | .unit => 0 | .isize => 0 | .char => 0 | .float x743 => 0 | .sint x780 => 0 | .view x819 => 0 | .str => 0 | .ref x889 => 0)
-termination_by structural fuel => fuel
-
-def Cost_declare_types : Nat → List Lanius.Mini.SrcType → Lanius.Mini.SrcDecls → Nat
-  | 0, x14, x36 => 18446744073709551616
-  | n + 1, x14, x36 => (match x14 with | [] => 0 | x157 :: x161 => ((Cost_SrcType_declare n x157 x36) + (Cost_declare_types_after n (Lanius.Mini.SrcType.declare x157 x36) x161)))
-termination_by structural fuel => fuel
-
-def Cost_declare_variants : Nat → List (List Lanius.Mini.SrcType) → Lanius.Mini.SrcDecls → Nat
-  | 0, x17, x48 => 18446744073709551616
-  | n + 1, x17, x48 => (match x17 with | [] => 0 | x172 :: x179 => ((Cost_declare_types n x172 x48) + (Cost_declare_variants_after n (Lanius.Mini.declareTypes x172 x48) x179)))
-termination_by structural fuel => fuel
-
-def Cost_declare_types_after : Nat → Option Lanius.Mini.SrcDecls → List Lanius.Mini.SrcType → Nat
-  | 0, x20, x59 => 18446744073709551616
-  | n + 1, x20, x59 => (match x20 with | some x178 => (Cost_declare_types n x59 x178) | none => 0)
-termination_by structural fuel => fuel
-
-def Cost_declare_variants_after : Nat → Option Lanius.Mini.SrcDecls → List (List Lanius.Mini.SrcType) → Nat
-  | 0, x23, x62 => 18446744073709551616
-  | n + 1, x23, x62 => (match x23 with | some x187 => (Cost_declare_variants n x62 x187) | none => 0)
-termination_by structural fuel => fuel
-end
-
-end
-
-noncomputable section
-
-mutual
-def Cost_declare_params : Nat → List Lanius.Mini.SrcParam → Lanius.Mini.SrcDecls → Nat
-  | 0, x15, x39 => 18446744073709551616
-  | n + 1, x15, x39 => (match x15 with | [] => 0 | x161 :: x168 => ((Cost_SrcType_declare n x161.ty x39) + (Cost_declare_params_after n (Lanius.Mini.SrcType.declare x161.ty x39) x168)))
-termination_by structural fuel => fuel
-
-def Cost_declare_params_after : Nat → Option Lanius.Mini.SrcDecls → List Lanius.Mini.SrcParam → Nat
-  | 0, x21, x60 => 18446744073709551616
-  | n + 1, x21, x60 => (match x21 with | some x180 => (Cost_declare_params n x60 x180) | none => 0)
+def Cost_with_budget : Nat → List Lanius.Mini.Sig → Nat → Nat → Nat
+  | 0, x12, x29, x42 => 18446744073709551616
+  | n + 1, x12, x29, x42 => (match x12 with | [] => 0 | x134 :: x139 => ((Cost_with_budget n x139 x29 x42) + (Cost_cons_of_mini_selfhost_Sig n (Lanius.Mini.Sig.mk x134.params x134.ret x134.need x29 x42) (Lanius.Mini.withBudget x139 x29 x42))))
 termination_by structural fuel => fuel
 end
 
@@ -3201,52 +2218,12 @@ noncomputable section
 mutual
 def Cost_SrcEff_types : Nat → Lanius.Mini.SrcEff → Nat
   | 0, x6 => 18446744073709551616
-  | n + 1, x6 => (match x6 with | .ePure x79 => 0 | .eCall x112 x120 => (Cost_effs_types n x120) | .eApply x173 x177 x183 => ((Cost_SrcEff_types n x177) + ((Cost_SrcEff_types n x183) + (Cost_concat_of_mini_selfhost_SrcType n (Lanius.Mini.SrcEff.types x177) (Lanius.Mini.SrcEff.types x183)))) | .eNeg x261 => (Cost_SrcEff_types n x261) | .eNot x314 => (Cost_SrcEff_types n x314) | .eCast x368 x372 => (Cost_SrcEff_types n x372) | .eIndex x427 x434 => (Cost_SrcEff_types n x434) | .eStruct x486 x490 => ((Cost_effs_types n x490) + (Cost_cons_of_mini_selfhost_SrcType n x486 (Lanius.Mini.effsTypes x490))) | .eVariant x559 x563 x572 => ((Cost_effs_types n x572) + (Cost_cons_of_mini_selfhost_SrcType n x559 (Lanius.Mini.effsTypes x572))) | .eMatch x641 x652 x657 x661 x670 => ((Cost_SrcEff_types n x641) + ((Cost_effs_types n x670) + ((Cost_concat_of_mini_selfhost_SrcType n (Lanius.Mini.SrcEff.types x641) (Lanius.Mini.effsTypes x670)) + (Cost_cons_of_mini_selfhost_SrcType n x652 ((Lanius.Mini.SrcEff.types x641) ++ (Lanius.Mini.effsTypes x670)))))) | .eDivide x773 x777 x783 => ((Cost_SrcEff_types n x777) + ((Cost_SrcEff_types n x783) + (Cost_concat_of_mini_selfhost_SrcType n (Lanius.Mini.SrcEff.types x777) (Lanius.Mini.SrcEff.types x783)))) | .eStride x864 => 0 | .arraySlice x906 x915 => (Cost_single_of_mini_selfhost_SrcType n x906) | .eIf x958 x969 x973 x985 => ((Cost_SrcEff_types n x958) + ((Cost_SrcEff_types n x973) + ((Cost_SrcEff_types n x985) + ((Cost_concat_of_mini_selfhost_SrcType n (Lanius.Mini.SrcEff.types x973) (Lanius.Mini.SrcEff.types x985)) + (Cost_concat_of_mini_selfhost_SrcType n (Lanius.Mini.SrcEff.types x958) ((Lanius.Mini.SrcEff.types x973) ++ (Lanius.Mini.SrcEff.types x985))))))) | .eLet x1113 x1117 x1121 x1128 x1132 => ((Cost_SrcEff_types n x1121) + ((Cost_SrcEff_types n x1132) + ((Cost_concat_of_mini_selfhost_SrcType n (Lanius.Mini.SrcEff.types x1121) (Lanius.Mini.SrcEff.types x1132)) + (Cost_cons_of_mini_selfhost_SrcType n x1117 ((Lanius.Mini.SrcEff.types x1121) ++ (Lanius.Mini.SrcEff.types x1132)))))) | .eLen x1219 => 0 | .eStr x1255 x1263 => 0)
+  | n + 1, x6 => (match x6 with | .ePure x79 => 0 | .eCall x112 x120 => (Cost_effs_types n x120) | .eApply x173 x177 x183 => ((Cost_SrcEff_types n x177) + ((Cost_SrcEff_types n x183) + (Cost_concat_of_mini_selfhost_SrcType n (Lanius.Mini.SrcEff.types x177) (Lanius.Mini.SrcEff.types x183)))) | .eNeg x261 => (Cost_SrcEff_types n x261) | .eNot x314 => (Cost_SrcEff_types n x314) | .eCast x368 x372 => (Cost_SrcEff_types n x372) | .eIndex x427 x434 => (Cost_SrcEff_types n x434) | .eStruct x486 x490 => ((Cost_effs_types n x490) + (Cost_cons_of_mini_selfhost_SrcType n x486 (Lanius.Mini.effsTypes x490))) | .eVariant x559 x563 x572 => ((Cost_effs_types n x572) + (Cost_cons_of_mini_selfhost_SrcType n x559 (Lanius.Mini.effsTypes x572))) | .eMatch x641 x652 x657 x661 x670 => ((Cost_SrcEff_types n x641) + ((Cost_effs_types n x670) + ((Cost_concat_of_mini_selfhost_SrcType n (Lanius.Mini.SrcEff.types x641) (Lanius.Mini.effsTypes x670)) + (Cost_cons_of_mini_selfhost_SrcType n x652 ((Lanius.Mini.SrcEff.types x641) ++ (Lanius.Mini.effsTypes x670)))))) | .eDivide x773 x777 x783 => ((Cost_SrcEff_types n x777) + ((Cost_SrcEff_types n x783) + (Cost_concat_of_mini_selfhost_SrcType n (Lanius.Mini.SrcEff.types x777) (Lanius.Mini.SrcEff.types x783)))) | .eStride x864 => 0 | .arraySlice x906 x915 => (Cost_single_of_mini_selfhost_SrcType n x906) | .eIf x958 x969 x973 x985 => ((Cost_SrcEff_types n x958) + ((Cost_SrcEff_types n x973) + ((Cost_SrcEff_types n x985) + ((Cost_concat_of_mini_selfhost_SrcType n (Lanius.Mini.SrcEff.types x973) (Lanius.Mini.SrcEff.types x985)) + (Cost_concat_of_mini_selfhost_SrcType n (Lanius.Mini.SrcEff.types x958) ((Lanius.Mini.SrcEff.types x973) ++ (Lanius.Mini.SrcEff.types x985))))))) | .eLet x1113 x1117 x1121 x1128 x1132 => ((Cost_SrcEff_types n x1121) + ((Cost_SrcEff_types n x1132) + ((Cost_concat_of_mini_selfhost_SrcType n (Lanius.Mini.SrcEff.types x1121) (Lanius.Mini.SrcEff.types x1132)) + (Cost_cons_of_mini_selfhost_SrcType n x1117 ((Lanius.Mini.SrcEff.types x1121) ++ (Lanius.Mini.SrcEff.types x1132)))))) | .eLen x1219 => 0 | .eStr x1255 x1263 => 0 | .eBorrow x1302 x1307 => (Cost_SrcEff_types n x1307) | .eDeref x1360 x1365 => (Cost_SrcEff_types n x1365) | .eField x1414 x1421 => (Cost_SrcEff_types n x1414) | .eAt x1468 x1475 => ((Cost_SrcEff_types n x1468) + ((Cost_SrcEff_types n x1475) + (Cost_concat_of_mini_selfhost_SrcType n (Lanius.Mini.SrcEff.types x1468) (Lanius.Mini.SrcEff.types x1475)))))
 termination_by structural fuel => fuel
 
 def Cost_effs_types : Nat → List Lanius.Mini.SrcEff → Nat
   | 0, x11 => 18446744073709551616
   | n + 1, x11 => (match x11 with | [] => 0 | x109 :: x112 => ((Cost_SrcEff_types n x109) + ((Cost_effs_types n x112) + (Cost_concat_of_mini_selfhost_SrcType n (Lanius.Mini.SrcEff.types x109) (Lanius.Mini.effsTypes x112)))))
-termination_by structural fuel => fuel
-end
-
-end
-
-noncomputable section
-
-mutual
-def Cost_declare_in : Nat → Option Lanius.Mini.SrcDecls → Lanius.Mini.SrcStmt → Nat
-  | 0, x11, x50 => 18446744073709551616
-  | n + 1, x11, x50 => (match x11 with | some x163 => (Cost_SrcStmt_declare n x50 x163) | none => 0)
-termination_by structural fuel => fuel
-
-def Cost_SrcStmt_declare : Nat → Lanius.Mini.SrcStmt → Lanius.Mini.SrcDecls → Nat
-  | 0, x8, x14 => 18446744073709551616
-  | n + 1, x8, x14 => (match x8 with | .nop => 0 | .let x145 x149 x153 x160 => ((Cost_SrcType_declare n x149 x14) + (Cost_declare_in n (Lanius.Mini.SrcType.declare x149 x14) x160)) | .letStruct x235 x239 x243 x251 => ((Cost_SrcType_declare n x239 x14) + (Cost_declare_in n (Lanius.Mini.SrcType.declare x239 x14) x251)) | .letCall x324 x328 x332 x340 x346 => ((Cost_SrcType_declare n x328 x14) + (Cost_declare_in n (Lanius.Mini.SrcType.declare x328 x14) x346)) | .letEnum x419 x423 x427 x436 x445 => ((Cost_SrcType_declare n x423 x14) + (Cost_declare_in n (Lanius.Mini.SrcType.declare x423 x14) x445)) | .letMatch x519 x523 x527 x538 x547 x553 => ((Cost_SrcType_declare n x523 x14) + (Cost_declare_in n (Lanius.Mini.SrcType.declare x523 x14) x553)) | .set x622 x626 => 0 | .setField x670 x674 x681 => 0 | .setCall x724 x728 x736 => 0 | .then x775 x782 => ((Cost_SrcStmt_declare n x775 x14) + (Cost_declare_in n (Lanius.Mini.SrcStmt.declare x775 x14) x782)) | .if x864 x875 x888 => ((Cost_SrcStmt_declare n x875 x14) + (Cost_declare_in n (Lanius.Mini.SrcStmt.declare x875 x14) x888)) | .while x989 x1000 => (Cost_SrcStmt_declare n x1000 x14) | .return x1056 => 0 | .letAlloc x1100 x1104 x1110 x1117 => (Cost_SrcStmt_declare n x1117 x14) | .letLoad x1174 x1178 x1187 x1195 => (Cost_SrcStmt_declare n x1195 x14) | .setByte x1252 x1261 x1269 => 0 | .free x1309 x1318 x1324 => 0 | .letSlice x1368 x1372 x1381 x1390 x1398 => ((Cost_SrcType_declare n x1372 x14) + (Cost_declare_in n (Lanius.Mini.SrcType.declare x1372 x14) x1398)) | .letIndex x1477 x1481 x1485 x1492 x1499 => ((Cost_SrcType_declare n x1481 x14) + (Cost_declare_in n (Lanius.Mini.SrcType.declare x1481 x14) x1499)) | .setIndex x1573 x1580 x1587 => 0 | .letEval x1630 x1634 x1638 x1645 => ((Cost_SrcEff_types n x1638) + ((Cost_cons_of_mini_selfhost_SrcType n x1634 (Lanius.Mini.SrcEff.types x1638)) + ((Cost_declare_types n (x1634 :: (Lanius.Mini.SrcEff.types x1638)) x14) + (Cost_declare_in n (Lanius.Mini.declareTypes ((x1634 :: (Lanius.Mini.SrcEff.types x1638))) x14) x1645)))) | .setEval x1746 x1750 => ((Cost_SrcEff_types n x1750) + (Cost_declare_types n (Lanius.Mini.SrcEff.types x1750) x14)) | .ifEval x1816 x1827 x1840 => ((Cost_SrcEff_types n x1816) + ((Cost_declare_types n (Lanius.Mini.SrcEff.types x1816) x14) + ((Cost_declare_in n (Lanius.Mini.declareTypes ((Lanius.Mini.SrcEff.types x1816)) x14) x1827) + (Cost_declare_in n (Lanius.Mini.Inline.declareIn ((Lanius.Mini.declareTypes ((Lanius.Mini.SrcEff.types x1816)) x14)) x1827) x1840)))) | .whileEval x1983 x1994 => ((Cost_SrcEff_types n x1983) + ((Cost_declare_types n (Lanius.Mini.SrcEff.types x1983) x14) + (Cost_declare_in n (Lanius.Mini.declareTypes ((Lanius.Mini.SrcEff.types x1983)) x14) x1994))) | .returnEval x2092 => ((Cost_SrcEff_types n x2092) + (Cost_declare_types n (Lanius.Mini.SrcEff.types x2092) x14)) | .discard x2159 => ((Cost_SrcEff_types n x2159) + (Cost_declare_types n (Lanius.Mini.SrcEff.types x2159) x14)) | .setIndexEval x2231 x2238 x2245 => ((Cost_SrcEff_types n x2238) + ((Cost_SrcEff_types n x2245) + ((Cost_concat_of_mini_selfhost_SrcType n (Lanius.Mini.SrcEff.types x2238) (Lanius.Mini.SrcEff.types x2245)) + (Cost_declare_types n ((Lanius.Mini.SrcEff.types x2238) ++ (Lanius.Mini.SrcEff.types x2245)) x14)))) | .setFieldEval x2340 x2344 x2351 => ((Cost_SrcEff_types n x2351) + (Cost_declare_types n (Lanius.Mini.SrcEff.types x2351) x14)) | .returnUnit => 0 | .assert x2456 => ((Cost_SrcEff_types n x2456) + (Cost_declare_types n (Lanius.Mini.SrcEff.types x2456) x14)) | .break => 0 | .continue => 0 | .matchArm x2603 x2614 x2623 x2632 x2639 x2647 x2651 x2657 => ((Cost_SrcType_declare n x2647 x14) + ((Cost_declare_in n (Lanius.Mini.SrcType.declare x2647 x14) x2651) + (Cost_declare_in n (Lanius.Mini.Inline.declareIn ((Lanius.Mini.SrcType.declare x2647 x14)) x2651) x2657))) | .unreachable x2759 x2763 => (Cost_SrcType_declare n x2763 x14) | .letView x2809 x2813 x2821 x2829 x2838 => (Cost_SrcStmt_declare n x2838 x14) | .letStr x2894 x2903 x2910 => (Cost_SrcStmt_declare n x2910 x14))
-termination_by structural fuel => fuel
-end
-
-end
-
-noncomputable section
-
-def Cost_declare_func : Nat → Lanius.Mini.SrcFunc → Lanius.Mini.SrcDecls → Nat
-  | 0, x13, x28 => 18446744073709551616
-  | n + 1, x13, x28 => ((Cost_declare_params n x13.params x28) + (match (Lanius.Mini.declareParams x13.params x28) with | some x172 => ((Cost_SrcType_declare n x13.ret x172) + (Cost_declare_in n (Lanius.Mini.SrcType.declare x13.ret x172) x13.body)) | none => 0))
-
-end
-
-noncomputable section
-
-mutual
-def Cost_declare_funcs : Nat → List Lanius.Mini.SrcFunc → Lanius.Mini.SrcDecls → Nat
-  | 0, x14, x36 => 18446744073709551616
-  | n + 1, x14, x36 => (match x14 with | [] => 0 | x157 :: x163 => ((Cost_declare_func n x157 x36) + (Cost_declare_funcs_after n (Lanius.Mini.declareFunc x157 x36) x163)))
-termination_by structural fuel => fuel
-
-def Cost_declare_funcs_after : Nat → Option Lanius.Mini.SrcDecls → List Lanius.Mini.SrcFunc → Nat
-  | 0, x20, x59 => 18446744073709551616
-  | n + 1, x20, x59 => (match x20 with | some x178 => (Cost_declare_funcs n x59 x178) | none => 0)
 termination_by structural fuel => fuel
 end
 

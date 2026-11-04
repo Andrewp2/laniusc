@@ -21,12 +21,12 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_room_after (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : List Lanius.Mini.Code} {v0 v1 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepNat x0 v0 → (RepList 53 RepCode) x1 v1 → k < b → Pre_room_after n x0 x1 b →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 150 RepNat) (Lanius.Mini.roomAfter x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepNat x0 v0 → (RepList 54 RepCode) x1 v1 → k < b → Pre_room_after n x0 x1 b →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 135 RepNat) (Lanius.Mini.roomAfter x0 x1) w
 
 abbrev BStmt_compile_program (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Program} {v0 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepProgram x0 v0 → k < b → Pre_compile_program n x0 b →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_compile_program n x0 = k ∧ (RepOption 51 RepBinary) (Lanius.Mini.compileProgram x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_compile_program n x0 = k ∧ (RepOption 52 RepBinary) (Lanius.Mini.compileProgram x0) w
 
 end Lanius.Faithful.SelfBudget

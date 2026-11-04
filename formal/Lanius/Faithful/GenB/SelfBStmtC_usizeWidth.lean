@@ -20,6 +20,6 @@ open Lanius.Faithful.Budget
 abbrev BStmt_usize_width (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.UintTy} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepUintTy x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 229 RepMemWidth) (Lanius.Mini.usizeWidth x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 230 RepMemWidth) (Lanius.Mini.usizeWidth x0) w
 
 end Lanius.Faithful.SelfBudget

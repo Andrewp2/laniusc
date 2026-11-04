@@ -21,12 +21,12 @@ open Lanius.Faithful.Budget
 abbrev BStmt_offset_or_arith (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.BinOp} {x1 : Lanius.Mini.Typed} {x2 : Lanius.Mini.Typed} {v0 v1 v2 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepBinOp x0 v0 → RepTyped x1 v1 → RepTyped x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_offset_or_arith n x0 x1 x2 = k ∧ (RepOption 155 RepTyped) (Lanius.Mini.offsetOrArith x0 x1 x2) w
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_offset_or_arith n x0 x1 x2 = k ∧ (RepOption 156 RepTyped) (Lanius.Mini.offsetOrArith x0 x1 x2) w
 
 abbrev BStmt_arith_shift_right (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Typed} {x1 : Lanius.Mini.Typed} {v0 v1 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepTyped x0 v0 → RepTyped x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_arith_shift_right n x0 x1 = k ∧ (RepOption 155 RepTyped) (Lanius.Mini.arithShiftRight x0 x1) w
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_arith_shift_right n x0 x1 = k ∧ (RepOption 156 RepTyped) (Lanius.Mini.arithShiftRight x0 x1) w
 
 abbrev BStmt_sign_key (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Expr} {v0 w : Value} {k : Nat},
@@ -35,17 +35,17 @@ abbrev BStmt_sign_key (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
 
 abbrev BStmt_order_sint (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CmpOp} {x1 : Lanius.Mini.Typed} {x2 : Lanius.Mini.Typed} {x3 : Option Lanius.Mini.UintTy} {v0 v1 v2 v3 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepCmpOp x0 v0 → RepTyped x1 v1 → RepTyped x2 v2 → (RepOption 207 RepUintTy) x3 v3 →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_order_sint n x0 x1 x2 x3 = k ∧ (RepOption 155 RepTyped) (Lanius.Mini.orderSint x0 x1 x2 x3) w
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepCmpOp x0 v0 → RepTyped x1 v1 → RepTyped x2 v2 → (RepOption 208 RepUintTy) x3 v3 →
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_order_sint n x0 x1 x2 x3 = k ∧ (RepOption 156 RepTyped) (Lanius.Mini.orderSint x0 x1 x2 x3) w
 
 abbrev BStmt_order_uint (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CmpOp} {x1 : Lanius.Mini.Typed} {x2 : Lanius.Mini.Typed} {x3 : Option Lanius.Mini.UintTy} {v0 v1 v2 v3 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepCmpOp x0 v0 → RepTyped x1 v1 → RepTyped x2 v2 → (RepOption 207 RepUintTy) x3 v3 →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_order_uint n x0 x1 x2 x3 = k ∧ (RepOption 155 RepTyped) (Lanius.Mini.orderUint x0 x1 x2 x3) w
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepCmpOp x0 v0 → RepTyped x1 v1 → RepTyped x2 v2 → (RepOption 208 RepUintTy) x3 v3 →
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_order_uint n x0 x1 x2 x3 = k ∧ (RepOption 156 RepTyped) (Lanius.Mini.orderUint x0 x1 x2 x3) w
 
 abbrev BStmt_order (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CmpOp} {x1 : Lanius.Mini.Typed} {x2 : Lanius.Mini.Typed} {v0 v1 v2 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepCmpOp x0 v0 → RepTyped x1 v1 → RepTyped x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_order n x0 x1 x2 = k ∧ (RepOption 155 RepTyped) (Lanius.Mini.order x0 x1 x2) w
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_order n x0 x1 x2 = k ∧ (RepOption 156 RepTyped) (Lanius.Mini.order x0 x1 x2) w
 
 end Lanius.Faithful.SelfBudget

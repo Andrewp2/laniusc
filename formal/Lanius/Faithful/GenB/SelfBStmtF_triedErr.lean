@@ -19,12 +19,12 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_tried_err (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Option Lanius.Mini.MEff} {x2 : Lanius.Mini.Ty} {x3 : Option Lanius.Mini.Ty} {x4 : Nat} {x5 : Lanius.Mini.Ty} {x6 : Option (List Lanius.Mini.Ty)} {v0 v1 v2 v3 v4 v5 v6 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5, v6] = some (w, k) → RepNat x0 v0 → (RepOption 257 RepMEff) x1 v1 → RepTy x2 v2 → (RepOption 211 RepTy) x3 v3 → RepNat x4 v4 → RepTy x5 v5 → (RepOption 212 (RepList 141 RepTy)) x6 v6 →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5, v6] = some (w, k) ∧ 0 = k ∧ (RepOption 293 RepTried) (Lanius.Mini.triedErr x0 x1 x2 x3 x4 x5 x6) w
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5, v6] = some (w, k) → RepNat x0 v0 → (RepOption 258 RepMEff) x1 v1 → RepTy x2 v2 → (RepOption 212 RepTy) x3 v3 → RepNat x4 v4 → RepTy x5 v5 → (RepOption 213 (RepList 143 RepTy)) x6 v6 →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5, v6] = some (w, k) ∧ 0 = k ∧ (RepOption 294 RepTried) (Lanius.Mini.triedErr x0 x1 x2 x3 x4 x5 x6) w
 
 abbrev BStmt_tried_shape (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Option Lanius.Mini.MEff} {x2 : Lanius.Mini.Ty} {x3 : Nat} {x4 : Lanius.Mini.Ty} {x5 : Option (List (List Lanius.Mini.Ty))} {x6 : Option (List (List Lanius.Mini.Ty))} {v0 v1 v2 v3 v4 v5 v6 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5, v6] = some (w, k) → RepNat x0 v0 → (RepOption 257 RepMEff) x1 v1 → RepTy x2 v2 → RepNat x3 v3 → RepTy x4 v4 → (RepOption 243 (RepList 244 (RepList 141 RepTy))) x5 v5 → (RepOption 243 (RepList 244 (RepList 141 RepTy))) x6 v6 →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5, v6] = some (w, k) ∧ 0 = k ∧ (RepOption 293 RepTried) (Lanius.Mini.triedShape x0 x1 x2 x3 x4 x5 x6) w
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5, v6] = some (w, k) → RepNat x0 v0 → (RepOption 258 RepMEff) x1 v1 → RepTy x2 v2 → RepNat x3 v3 → RepTy x4 v4 → (RepOption 244 (RepList 245 (RepList 143 RepTy))) x5 v5 → (RepOption 244 (RepList 245 (RepList 143 RepTy))) x6 v6 →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5, v6] = some (w, k) ∧ 0 = k ∧ (RepOption 294 RepTried) (Lanius.Mini.triedShape x0 x1 x2 x3 x4 x5 x6) w
 
 end Lanius.Faithful.SelfBudget

@@ -25,8 +25,8 @@ abbrev BStmt_no_decls (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
 
 abbrev BStmt_join_decls (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Decls} {x1 : Option Lanius.Mini.Decls} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepDecls x0 v0 → (RepOption 165 RepDecls) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_join_decls n x0 x1 = k ∧ (RepOption 165 RepDecls) (Lanius.Mini.joinDecls x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepDecls x0 v0 → (RepOption 166 RepDecls) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_join_decls n x0 x1 = k ∧ (RepOption 166 RepDecls) (Lanius.Mini.joinDecls x0 x1) w
 
 abbrev BStmt_item_body (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CTree} {v0 w : Value} {k : Nat},
@@ -35,28 +35,28 @@ abbrev BStmt_item_body (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
 
 abbrev BStmt_param_spellings (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.CTree} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 82 RepCTree) x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_param_spellings n x0 = k ∧ (RepOption 138 (RepList 31 (RepList 25 RepNat))) (Lanius.Mini.paramSpellings x0) w
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 83 RepCTree) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_param_spellings n x0 = k ∧ (RepOption 140 (RepList 31 (RepList 25 RepNat))) (Lanius.Mini.paramSpellings x0) w
 
 abbrev BStmt_if_unbounded (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : Option (List (List Nat))} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepBool x0 v0 → (RepOption 138 (RepList 31 (RepList 25 RepNat))) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 138 (RepList 31 (RepList 25 RepNat))) (Lanius.Mini.ifUnbounded x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepBool x0 v0 → (RepOption 140 (RepList 31 (RepList 25 RepNat))) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 140 (RepList 31 (RepList 25 RepNat))) (Lanius.Mini.ifUnbounded x0 x1) w
 
 abbrev BStmt_unbounded (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.CTree} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 82 RepCTree) x0 v0 →
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 83 RepCTree) x0 v0 →
     qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.unbounded x0) w
 
 abbrev BStmt_free_params (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.CTree} {v0 v1 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepNat x0 v0 → RepCTree x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_free_params n x0 x1 = k ∧ (RepOption 138 (RepList 31 (RepList 25 RepNat))) (Lanius.Mini.freeParams x0 x1) w
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_free_params n x0 x1 = k ∧ (RepOption 140 (RepList 31 (RepList 25 RepNat))) (Lanius.Mini.freeParams x0 x1) w
 
 abbrev BStmt_struct_decl_fields (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (List Nat)} {x1 : List Nat} {x2 : List (List Nat)} {x3 : Lanius.Mini.Fields} {v0 v1 v2 v3 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepList 25 RepNat) x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → RepFields x3 v3 →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ 0 = k ∧ (RepOption 208 RepTypeDecl) (Lanius.Mini.structDeclFields x0 x1 x2 x3) w
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ 0 = k ∧ (RepOption 209 RepTypeDecl) (Lanius.Mini.structDeclFields x0 x1 x2 x3) w
 
 abbrev BStmt_cons_field (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CTree} {x1 : Lanius.Mini.Fields} {v0 v1 w : Value} {k : Nat},
@@ -65,72 +65,72 @@ abbrev BStmt_cons_field (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
 
 abbrev BStmt_fields_of (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.CTree} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 82 RepCTree) x0 v0 →
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 83 RepCTree) x0 v0 →
     qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_fields_of n x0 = k ∧ RepFields (Lanius.Mini.fieldsOf x0) w
 
 abbrev BStmt_struct_decl_of (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (List Nat)} {x1 : List Nat} {x2 : Option (List (List Nat))} {x3 : Option (List Lanius.Mini.CTree)} {v0 v1 v2 v3 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepList 25 RepNat) x1 v1 → (RepOption 138 (RepList 31 (RepList 25 RepNat))) x2 v2 → (RepOption 81 (RepList 82 RepCTree)) x3 v3 →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_struct_decl_of n x0 x1 x2 x3 = k ∧ (RepOption 208 RepTypeDecl) (Lanius.Mini.structDeclOf x0 x1 x2 x3) w
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepList 25 RepNat) x1 v1 → (RepOption 140 (RepList 31 (RepList 25 RepNat))) x2 v2 → (RepOption 82 (RepList 83 RepCTree)) x3 v3 →
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_struct_decl_of n x0 x1 x2 x3 = k ∧ (RepOption 209 RepTypeDecl) (Lanius.Mini.structDeclOf x0 x1 x2 x3) w
 
 abbrev BStmt_enum_decl_of (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (List Nat)} {x1 : List Nat} {x2 : Option (List (List Nat))} {x3 : Option Lanius.Mini.Variants} {v0 v1 v2 v3 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepList 25 RepNat) x1 v1 → (RepOption 138 (RepList 31 (RepList 25 RepNat))) x2 v2 → (RepOption 219 RepVariants) x3 v3 →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ 0 = k ∧ (RepOption 208 RepTypeDecl) (Lanius.Mini.enumDeclOf x0 x1 x2 x3) w
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepList 25 RepNat) x1 v1 → (RepOption 140 (RepList 31 (RepList 25 RepNat))) x2 v2 → (RepOption 220 RepVariants) x3 v3 →
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ 0 = k ∧ (RepOption 209 RepTypeDecl) (Lanius.Mini.enumDeclOf x0 x1 x2 x3) w
 
 abbrev BStmt_cons_variant_tail (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Nat} {x1 : List Lanius.Mini.CTree} {x2 : Option Lanius.Mini.Variants} {v0 v1 v2 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepList 25 RepNat) x0 v0 → (RepList 82 RepCTree) x1 v1 → (RepOption 219 RepVariants) x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_cons_variant_tail n x0 x1 x2 = k ∧ (RepOption 219 RepVariants) (Lanius.Mini.consVariantTail x0 x1 x2) w
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepList 25 RepNat) x0 v0 → (RepList 83 RepCTree) x1 v1 → (RepOption 220 RepVariants) x2 v2 →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_cons_variant_tail n x0 x1 x2 = k ∧ (RepOption 220 RepVariants) (Lanius.Mini.consVariantTail x0 x1 x2) w
 
 abbrev BStmt_cons_variant (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Nat} {x1 : Option (List Lanius.Mini.CTree)} {x2 : Option Lanius.Mini.Variants} {v0 v1 v2 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepList 25 RepNat) x0 v0 → (RepOption 81 (RepList 82 RepCTree)) x1 v1 → (RepOption 219 RepVariants) x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_cons_variant n x0 x1 x2 = k ∧ (RepOption 219 RepVariants) (Lanius.Mini.consVariant x0 x1 x2) w
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepList 25 RepNat) x0 v0 → (RepOption 82 (RepList 83 RepCTree)) x1 v1 → (RepOption 220 RepVariants) x2 v2 →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_cons_variant n x0 x1 x2 = k ∧ (RepOption 220 RepVariants) (Lanius.Mini.consVariant x0 x1 x2) w
 
 abbrev BStmt_variant_payload (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.CTree} {v0 v1 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepNat x0 v0 → RepCTree x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_variant_payload n x0 x1 = k ∧ (RepOption 81 (RepList 82 RepCTree)) (Lanius.Mini.variantPayload x0 x1) w
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_variant_payload n x0 x1 = k ∧ (RepOption 82 (RepList 83 RepCTree)) (Lanius.Mini.variantPayload x0 x1) w
 
 abbrev BStmt_variants_of (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : List Lanius.Mini.CTree} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepNat x0 v0 → (RepList 82 RepCTree) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_variants_of n x0 x1 = k ∧ (RepOption 219 RepVariants) (Lanius.Mini.variantsOf x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepNat x0 v0 → (RepList 83 RepCTree) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_variants_of n x0 x1 = k ∧ (RepOption 220 RepVariants) (Lanius.Mini.variantsOf x0 x1) w
 
 abbrev BStmt_type_decl (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : List (List Nat)} {x2 : Lanius.Mini.CTree} {v0 v1 v2 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → (RepList 31 (RepList 25 RepNat)) x1 v1 → RepCTree x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_type_decl n x0 x1 x2 = k ∧ (RepOption 208 RepTypeDecl) (Lanius.Mini.typeDecl x0 x1 x2) w
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_type_decl n x0 x1 x2 = k ∧ (RepOption 209 RepTypeDecl) (Lanius.Mini.typeDecl x0 x1 x2) w
 
 abbrev BStmt_cons_fn_decl (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.FnDecl} {x1 : Option (List Lanius.Mini.FnDecl)} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 204 RepFnDecl) x0 v0 → (RepOption 196 (RepList 109 RepFnDecl)) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_fn_decl n x0 x1 = k ∧ (RepOption 196 (RepList 109 RepFnDecl)) (Lanius.Mini.consFnDecl x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 205 RepFnDecl) x0 v0 → (RepOption 197 (RepList 110 RepFnDecl)) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_fn_decl n x0 x1 = k ∧ (RepOption 197 (RepList 110 RepFnDecl)) (Lanius.Mini.consFnDecl x0 x1) w
 
 abbrev BStmt_fn_decl_of (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (List Nat)} {x1 : Lanius.Mini.CTree} {x2 : Bool} {x3 : List (List Nat)} {x4 : Lanius.Mini.CTree} {x5 : Lanius.Mini.CTree} {x6 : Option (List (List Nat))} {v0 v1 v2 v3 v4 v5 v6 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5, v6] = some (w, k) → (RepList 31 (RepList 25 RepNat)) x0 v0 → RepCTree x1 v1 → RepBool x2 v2 → (RepList 31 (RepList 25 RepNat)) x3 v3 → RepCTree x4 v4 → RepCTree x5 v5 → (RepOption 138 (RepList 31 (RepList 25 RepNat))) x6 v6 →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5, v6] = some (w, k) ∧ 0 = k ∧ (RepOption 204 RepFnDecl) (Lanius.Mini.fnDeclOf x0 x1 x2 x3 x4 x5 x6) w
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5, v6] = some (w, k) → (RepList 31 (RepList 25 RepNat)) x0 v0 → RepCTree x1 v1 → RepBool x2 v2 → (RepList 31 (RepList 25 RepNat)) x3 v3 → RepCTree x4 v4 → RepCTree x5 v5 → (RepOption 140 (RepList 31 (RepList 25 RepNat))) x6 v6 →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5, v6] = some (w, k) ∧ 0 = k ∧ (RepOption 205 RepFnDecl) (Lanius.Mini.fnDeclOf x0 x1 x2 x3 x4 x5 x6) w
 
 abbrev BStmt_type_params (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.CTree} {v0 v1 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepNat x0 v0 → RepCTree x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_type_params n x0 x1 = k ∧ (RepOption 138 (RepList 31 (RepList 25 RepNat))) (Lanius.Mini.typeParams x0 x1) w
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_type_params n x0 x1 = k ∧ (RepOption 140 (RepList 31 (RepList 25 RepNat))) (Lanius.Mini.typeParams x0 x1) w
 
 abbrev BStmt_import_decls (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (List Nat)} {x1 : Option (List (List Nat))} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepOption 138 (RepList 31 (RepList 25 RepNat))) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_import_decls n x0 x1 = k ∧ (RepOption 165 RepDecls) (Lanius.Mini.importDecls x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepOption 140 (RepList 31 (RepList 25 RepNat))) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_import_decls n x0 x1 = k ∧ (RepOption 166 RepDecls) (Lanius.Mini.importDecls x0 x1) w
 
 abbrev BStmt_module_decls (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option (List (List Nat))} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 138 (RepList 31 (RepList 25 RepNat))) x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_module_decls n x0 = k ∧ (RepOption 165 RepDecls) (Lanius.Mini.moduleDecls x0) w
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 140 (RepList 31 (RepList 25 RepNat))) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_module_decls n x0 = k ∧ (RepOption 166 RepDecls) (Lanius.Mini.moduleDecls x0) w
 
 abbrev BStmt_module_path (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : List Lanius.Mini.CTree} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepNat x0 v0 → (RepList 82 RepCTree) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_module_path n x0 x1 = k ∧ (RepOption 138 (RepList 31 (RepList 25 RepNat))) (Lanius.Mini.modulePath x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepNat x0 v0 → (RepList 83 RepCTree) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_module_path n x0 x1 = k ∧ (RepOption 140 (RepList 31 (RepList 25 RepNat))) (Lanius.Mini.modulePath x0 x1) w
 
 end Lanius.Faithful.SelfBudget

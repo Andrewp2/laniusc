@@ -20,7 +20,7 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_lx_fixed (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SymRule} {x1 : List Nat} {x2 : Nat} {v0 v1 v2 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepList 192 RepSymRule) x0 v0 → (RepList 25 RepNat) x1 v1 → RepNat x2 v2 → k < b → Pre_lx_fixed n x0 x1 x2 b →
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepList 193 RepSymRule) x0 v0 → (RepList 25 RepNat) x1 v1 → RepNat x2 v2 → k < b → Pre_lx_fixed n x0 x1 x2 b →
     qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_lx_fixed n x0 x1 x2 = k ∧ RepOneTok (Lanius.Mini.lxFixed x0 x1 x2) w
 
 end Lanius.Faithful.SelfBudget

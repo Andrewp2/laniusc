@@ -20,47 +20,47 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_cons_func_tail (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcFunc} {x1 : Option (List Lanius.Mini.SrcFunc)} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepSrcFunc x0 v0 → (RepOption 202 (RepList 5 RepSrcFunc)) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_func_tail n x0 x1 = k ∧ (RepOption 202 (RepList 5 RepSrcFunc)) (Lanius.Mini.consFuncTail x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepSrcFunc x0 v0 → (RepOption 203 (RepList 5 RepSrcFunc)) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_func_tail n x0 x1 = k ∧ (RepOption 203 (RepList 5 RepSrcFunc)) (Lanius.Mini.consFuncTail x0 x1) w
 
 abbrev BStmt_cons_func (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.SrcFunc} {x1 : Option (List Lanius.Mini.SrcFunc)} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 221 RepSrcFunc) x0 v0 → (RepOption 202 (RepList 5 RepSrcFunc)) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_func n x0 x1 = k ∧ (RepOption 202 (RepList 5 RepSrcFunc)) (Lanius.Mini.consFunc x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 222 RepSrcFunc) x0 v0 → (RepOption 203 (RepList 5 RepSrcFunc)) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_func n x0 x1 = k ∧ (RepOption 203 (RepList 5 RepSrcFunc)) (Lanius.Mini.consFunc x0 x1) w
 
 abbrev BStmt_src_func (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option (List Lanius.Mini.SrcParam)} {x1 : Option Lanius.Mini.SrcType} {x2 : Option Lanius.Mini.SrcStmt} {v0 v1 v2 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepOption 222 (RepList 7 RepSrcParam)) x0 v0 → (RepOption 159 RepSrcType) x1 v1 → (RepOption 223 RepSrcStmt) x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ (RepOption 221 RepSrcFunc) (Lanius.Mini.srcFunc x0 x1 x2) w
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepOption 223 (RepList 7 RepSrcParam)) x0 v0 → (RepOption 160 RepSrcType) x1 v1 → (RepOption 224 RepSrcStmt) x2 v2 →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ (RepOption 222 RepSrcFunc) (Lanius.Mini.srcFunc x0 x1 x2) w
 
 abbrev BStmt_cons_src_param (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Option Lanius.Mini.SrcType} {x2 : Option (List Lanius.Mini.SrcParam)} {v0 v1 v2 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → (RepOption 159 RepSrcType) x1 v1 → (RepOption 222 (RepList 7 RepSrcParam)) x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_cons_src_param n x0 x1 x2 = k ∧ (RepOption 222 (RepList 7 RepSrcParam)) (Lanius.Mini.consSrcParam x0 x1 x2) w
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → (RepOption 160 RepSrcType) x1 v1 → (RepOption 223 (RepList 7 RepSrcParam)) x2 v2 →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_cons_src_param n x0 x1 x2 = k ∧ (RepOption 223 (RepList 7 RepSrcParam)) (Lanius.Mini.consSrcParam x0 x1 x2) w
 
 abbrev BStmt_close_params (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Tables} {x2 : List Lanius.Mini.MParam} {v0 v1 v2 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepTables x1 v1 → (RepList 170 RepMParam) x2 v2 → k < b → Pre_close_params n x0 x1 x2 b →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_close_params n x0 x1 x2 = k ∧ (RepOption 222 (RepList 7 RepSrcParam)) (Lanius.Mini.closeParams x0 x1 x2) w
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepTables x1 v1 → (RepList 171 RepMParam) x2 v2 → k < b → Pre_close_params n x0 x1 x2 b →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_close_params n x0 x1 x2 = k ∧ (RepOption 223 (RepList 7 RepSrcParam)) (Lanius.Mini.closeParams x0 x1 x2) w
 
 abbrev BStmt_close_ret (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Tables} {x2 : Lanius.Mini.RetTy} {v0 v1 v2 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepTables x1 v1 → RepRetTy x2 v2 → k < b → Pre_close_ret n x0 x1 x2 b →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_close_ret n x0 x1 x2 = k ∧ (RepOption 159 RepSrcType) (Lanius.Mini.closeRet x0 x1 x2) w
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_close_ret n x0 x1 x2 = k ∧ (RepOption 160 RepSrcType) (Lanius.Mini.closeRet x0 x1 x2) w
 
 abbrev BStmt_set_field_eval_closed (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {x2 : Option Lanius.Mini.SrcEff} {v0 v1 v2 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepNat x1 v1 → (RepOption 233 RepSrcEff) x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ (RepOption 223 RepSrcStmt) (Lanius.Mini.setFieldEvalClosed x0 x1 x2) w
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepNat x1 v1 → (RepOption 234 RepSrcEff) x2 v2 →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ (RepOption 224 RepSrcStmt) (Lanius.Mini.setFieldEvalClosed x0 x1 x2) w
 
 abbrev BStmt_assert_closed (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.SrcEff} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 233 RepSrcEff) x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 223 RepSrcStmt) (Lanius.Mini.assertClosed x0) w
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 234 RepSrcEff) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 224 RepSrcStmt) (Lanius.Mini.assertClosed x0) w
 
 abbrev BStmt_close_stmt (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Tables} {x2 : Lanius.Mini.MStmt} {v0 v1 v2 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepTables x1 v1 → RepMStmt x2 v2 → k < b → Pre_close_stmt n x0 x1 x2 b →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_close_stmt n x0 x1 x2 = k ∧ (RepOption 223 RepSrcStmt) (Lanius.Mini.closeStmt x0 x1 x2) w
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_close_stmt n x0 x1 x2 = k ∧ (RepOption 224 RepSrcStmt) (Lanius.Mini.closeStmt x0 x1 x2) w
 
 end Lanius.Faithful.SelfBudget

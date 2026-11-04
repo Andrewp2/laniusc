@@ -13,6 +13,7 @@ import Lanius.Mini.Compiler.P.funcNeeds
 import Lanius.Mini.Compiler.P.loadAtBytes
 import Lanius.Mini.Compiler.P.lowerApply
 import Lanius.Mini.Compiler.P.matchVariants
+import Lanius.Mini.Compiler.P.needLimit
 import Lanius.Mini.Compiler.P.structFields
 import Lanius.Mini.Compiler.P.withBudget
 
@@ -50,7 +51,7 @@ def withFrame (slot : Nat) (block : Nat) (body : Option Stmt) : Option Stmt :=
 def lowerFunc (sigs : List Sig) (own : Sig) (decls : SrcDecls) (func : SrcFunc) : Option Func :=
   let count : Nat := paramsSize func.params
   let block : Nat := frameBlock func
-  if decide (0 < SrcType.size func.ret) && paramsValid func.params && !(SrcStmt.breaksOut func.body) && decide (block ≤ own.need) && decide (block < 2147483648) then
+  if decide (0 < SrcType.size func.ret) && paramsValid func.params && !(SrcStmt.breaksOut func.body) && decide (block ≤ own.need) && decide (block < 2147483648) && decide (own.need < needLimit) then
     lowerBody count (SrcType.size func.ret) (SrcStmt.depth func.body) (unitTail func.ret (withFrame count block (SrcStmt.lower func.body (withBudget sigs (own.need - block) block) decls func.ret (paramScope func.params 0 []) count)))
   else
     none
@@ -234,6 +235,8 @@ def SrcStmt.declare (self : SrcStmt) (decls : SrcDecls) : Option SrcDecls :=
   | .unreachable id ty => SrcType.declare ty decls
   | .letView id length fields pointer body => SrcStmt.declare body decls
   | .letStr pointer chars body => SrcStmt.declare body decls
+  | .setPlace aplace avalue => declareTypes (SrcEff.types aplace ++ SrcEff.types avalue) decls
+  | .setPlaceOp aop aplace avalue => declareTypes (SrcEff.types aplace ++ SrcEff.types avalue) decls
 
 /-- Every path ends in a return, the way Core's DefinitelyReturns counts: a while body never counts. -/
 def SrcStmt.returns (self : SrcStmt) : Bool :=
@@ -274,6 +277,8 @@ def SrcStmt.returns (self : SrcStmt) : Bool :=
   | .unreachable id ty => true
   | .letView id length fields pointer body => SrcStmt.returns body
   | .letStr pointer chars body => SrcStmt.returns body
+  | .setPlace aplace avalue => false
+  | .setPlaceOp aop aplace avalue => false
 
 def declareParams (params : List SrcParam) (decls : SrcDecls) : Option SrcDecls :=
   match params with

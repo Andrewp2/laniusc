@@ -1,27 +1,21 @@
 module
 
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Compiler.P.BinOp_folds
 public import Lanius.Mini.Compiler.P.DivOp_size
-public import Lanius.Mini.Compiler.P.Expr_agrees
 public import Lanius.Mini.Compiler.P.Lists_empty
 public import Lanius.Mini.Compiler.P.SrcExpr_guard
 public import Lanius.Mini.Compiler.P.SrcType_same
-public import Lanius.Mini.Compiler.P.Stmt_kills
 public import Lanius.Mini.Compiler.P.UintTy_half
-public import Lanius.Mini.Compiler.P.Word_narrows
-public import Lanius.Mini.Compiler.P.binaryConstant
 public import Lanius.Mini.Compiler.P.compileModules
-public import Lanius.Mini.Compiler.P.declareFuncs
 public import Lanius.Mini.Compiler.P.elementAddress
 public import Lanius.Mini.Compiler.P.elementBase
 public import Lanius.Mini.Compiler.P.enumVariants
 public import Lanius.Mini.Compiler.P.evalSame
 public import Lanius.Mini.Compiler.P.funcNeeds
 public import Lanius.Mini.Compiler.P.loadAtBytes
-public import Lanius.Mini.Compiler.P.lowerBody
 public import Lanius.Mini.Compiler.P.lowerSetValues
 public import Lanius.Mini.Compiler.P.structFields
+public import Lanius.Mini.Compiler.P.withBudget
 public import Lanius.Mini.Compiler.P.wordElement
 public import Lanius.Mini.Compiler.P.wordStride
 
@@ -91,78 +85,14 @@ namespace Lanius.Mini
   else
     none
 
-@[expose] def Inline.declareStructIn (id : Nat) (fields : List SrcType) (decls : SrcDecls) (known : Option (List SrcType)) : Option SrcDecls :=
-  match known with
-  | none => some ({ structs := ({ id := id, fields := fields } : SrcStructDecl) :: decls.structs, enums := decls.enums, statics := decls.statics } : SrcDecls)
-  | some other => keepIf (typesSame other fields) decls
-
-@[expose] def Inline.declareEnumIn (id : Nat) (variants : List (List SrcType)) (decls : SrcDecls) (known : Option (List (List SrcType))) : Option SrcDecls :=
-  match known with
-  | none => some ({ structs := decls.structs, enums := ({ id := id, variants := variants } : SrcEnumDecl) :: decls.enums, statics := decls.statics } : SrcDecls)
-  | some other => keepIf (variantsSame other variants) decls
-
-@[expose] def Inline.declareTypesAfter (after : Option SrcDecls) (rest : List SrcType) : Option SrcDecls :=
-  match after with
+@[expose] def Inline.paramsThen (proom : Option Nat) (pparams : List SrcParam) (puses : List Nat) : Option Nat :=
+  match proom with
   | none => none
-  | some decls => declareTypes rest decls
+  | some pr => paramsRoom pr pparams puses
 
-@[expose] def Inline.declareVariantsAfter (after : Option SrcDecls) (rest : List (List SrcType)) : Option SrcDecls :=
-  match after with
+@[expose] def Inline.blockThen (broom : Option Nat) (buses : List Nat) (bs : SrcStmt) : Option Nat :=
+  match broom with
   | none => none
-  | some decls => declareVariants rest decls
-
-@[expose] def Inline.declareIn (after : Option SrcDecls) (body : SrcStmt) : Option SrcDecls :=
-  match after with
-  | none => none
-  | some decls => SrcStmt.declare body decls
-
-@[expose] def Inline.declareParamsAfter (after : Option SrcDecls) (rest : List SrcParam) : Option SrcDecls :=
-  match after with
-  | none => none
-  | some decls => declareParams rest decls
-
-@[expose] def Inline.declareFuncsAfter (after : Option SrcDecls) (rest : List SrcFunc) : Option SrcDecls :=
-  match after with
-  | none => none
-  | some decls => declareFuncs rest decls
-
-@[expose] def Inline.negAgrees (operand : Expr) (other : Expr) : Bool :=
-  match other with
-  | .lit v => false
-  | .var i => false
-  | .neg o => Expr.agrees operand o
-  | .binary w op l r => false
-  | .compare w op l r => false
-  | .fp op l r => false
-
-@[expose] def Inline.binaryAgrees (word : Word) (operation : BinOp) (left : Expr) (right : Expr) (other : Expr) : Bool :=
-  match other with
-  | .lit v => false
-  | .var i => false
-  | .neg o => false
-  | .binary w op l r => decide (Word.number word = Word.number w) && decide (BinOp.number operation = BinOp.number op) && Expr.agrees left l && Expr.agrees right r
-  | .compare w op l r => false
-  | .fp op l r => false
-
-@[expose] def Inline.unitAgrees (word : Word) (operation : BinOp) (left : Expr) (right : Expr) (other : Expr) : Bool :=
-  Expr.unitOf right word operation && Word.keeps word other && Expr.agrees left other || BinOp.commutes operation && Expr.unitOf left word operation && Word.keeps word other && Expr.agrees right other
-
-@[expose] def Inline.compareAgrees (word : Word) (operation : CmpOp) (left : Expr) (right : Expr) (other : Expr) : Bool :=
-  match other with
-  | .lit v => false
-  | .var i => false
-  | .neg o => false
-  | .binary w op l r => false
-  | .compare w op l r => decide (Word.number word = Word.number w) && decide (CmpOp.number operation = CmpOp.number op) && Expr.agrees left l && Expr.agrees right r
-  | .fp op l r => false
-
-@[expose] def Inline.fpAgrees (operation : FOp) (left : Expr) (right : Expr) (other : Expr) : Bool :=
-  match other with
-  | .lit v => false
-  | .var i => false
-  | .neg o => false
-  | .binary w op l r => false
-  | .compare w op l r => false
-  | .fp op l r => decide (FOp.number operation = FOp.number op) && Expr.agrees left l && Expr.agrees right r
+  | some br => blockRoom br buses bs
 
 end Lanius.Mini

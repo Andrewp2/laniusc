@@ -24,27 +24,27 @@ abbrev BStmt_Expr_is_var (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
 
 abbrev BStmt_binary_constant (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Word} {x1 : Lanius.Mini.BinOp} {x2 : Option (BitVec 64)} {x3 : Option (BitVec 64)} {v0 v1 v2 v3 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepWord x0 v0 → RepBinOp x1 v1 → (RepOption 205 RepU64) x2 v2 → (RepOption 205 RepU64) x3 v3 →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ 0 = k ∧ (RepOption 205 RepU64) (Lanius.Mini.binaryConstant x0 x1 x2 x3) w
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepWord x0 v0 → RepBinOp x1 v1 → (RepOption 206 RepU64) x2 v2 → (RepOption 206 RepU64) x3 v3 →
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ 0 = k ∧ (RepOption 206 RepU64) (Lanius.Mini.binaryConstant x0 x1 x2 x3) w
 
 abbrev BStmt_compare_constant (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Word} {x1 : Lanius.Mini.CmpOp} {x2 : Option (BitVec 64)} {x3 : Option (BitVec 64)} {v0 v1 v2 v3 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepWord x0 v0 → RepCmpOp x1 v1 → (RepOption 205 RepU64) x2 v2 → (RepOption 205 RepU64) x3 v3 →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ 0 = k ∧ (RepOption 205 RepU64) (Lanius.Mini.compareConstant x0 x1 x2 x3) w
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepWord x0 v0 → RepCmpOp x1 v1 → (RepOption 206 RepU64) x2 v2 → (RepOption 206 RepU64) x3 v3 →
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ 0 = k ∧ (RepOption 206 RepU64) (Lanius.Mini.compareConstant x0 x1 x2 x3) w
 
 abbrev BStmt_Expr_constant (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Expr} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepExpr x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 205 RepU64) (Lanius.Mini.Expr.constant x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 206 RepU64) (Lanius.Mini.Expr.constant x0) w
 
 abbrev BStmt_constant_is (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option (BitVec 64)} {x1 : BitVec 64} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 205 RepU64) x0 v0 → RepU64 x1 v1 →
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 206 RepU64) x0 v0 → RepU64 x1 v1 →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.constantIs x0 x1) w
 
 abbrev BStmt_Expr_is_constant (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Expr} {x1 : Option (BitVec 64)} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepExpr x0 v0 → (RepOption 205 RepU64) x1 v1 →
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepExpr x0 v0 → (RepOption 206 RepU64) x1 v1 →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.Expr.isConstant x0 x1) w
 
 abbrev BStmt_Expr_unit_of (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

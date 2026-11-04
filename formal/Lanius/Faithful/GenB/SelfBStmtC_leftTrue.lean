@@ -19,7 +19,7 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_left_true (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.Typed} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 155 RepTyped) x0 v0 →
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 156 RepTyped) x0 v0 →
     qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepExpr (Lanius.Mini.leftTrue x0) w
 
 end Lanius.Faithful.SelfBudget

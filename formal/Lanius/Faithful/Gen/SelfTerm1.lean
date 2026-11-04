@@ -7,7 +7,7 @@ import all Lanius.Faithful.Gen.SelfSrc2
 import all Lanius.Faithful.Gen.SelfSrc3
 import all Lanius.Faithful.Gen.SelfSrc4
 import all Lanius.Faithful.Gen.SelfSrc7
-import all Lanius.Faithful.Gen.SelfSrcC_Inline_lowerSetScalar
+import all Lanius.Faithful.Gen.SelfSrcC_Inline_blockLeft
 import all Lanius.Faithful.Gen.SelfSrcC_UintTy_half
 import all Lanius.Faithful.Gen.SelfSrcC_compileOr
 import all Lanius.Faithful.Gen.SelfSrcC_compileSource
@@ -65,7 +65,7 @@ theorem ok_compile_lowered : FnOk prog prims info (60, ⟨14, [], 0⟩) :=
 theorem ok_lower_funcs : FnOk prog prims info (61, ⟨20, [1], 0⟩) :=
   fnOk_of fn_lower_funcs (by decide +kernel)
 
-theorem ok_sigs : FnOk prog prims info (62, ⟨10, [], 0⟩) :=
+theorem ok_sigs : FnOk prog prims info (62, ⟨11, [], 0⟩) :=
   fnOk_of fn_sigs (by decide +kernel)
 
 theorem ok_declare_funcs : FnOk prog prims info (63, ⟨8, [0], 0⟩) :=
@@ -122,7 +122,7 @@ theorem ok_lower_func : FnOk prog prims info (86, ⟨19, [], 0⟩) :=
 theorem ok_sigs_with : FnOk prog prims info (88, ⟨2, [0], 0⟩) :=
   fnOk_of fn_sigs_with (by decide +kernel)
 
-theorem ok_func_needs : FnOk prog prims info (89, ⟨9, [], 0⟩) :=
+theorem ok_func_needs : FnOk prog prims info (89, ⟨10, [], 0⟩) :=
   fnOk_of fn_func_needs (by decide +kernel)
 
 theorem ok_declare_funcs_after : FnOk prog prims info (90, ⟨8, [1], 1⟩) :=

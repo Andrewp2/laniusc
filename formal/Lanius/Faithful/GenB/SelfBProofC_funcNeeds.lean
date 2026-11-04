@@ -4,6 +4,7 @@ import Lanius.Faithful.Gen.SelfSrcC_funcNeeds
 import Lanius.Faithful.Gen.SelfStmtC_funcNeeds
 import Lanius.Faithful.GenB.SelfBStmtC_arrayCallSig
 import Lanius.Faithful.GenB.SelfBStmtC_funcNeeds
+import Lanius.Faithful.GenB.SelfBStmtC_needCapped
 import Lanius.Faithful.GenB.SelfBStmtC_needsAfter
 import Lanius.Faithful.GenB.SelfBStmtN0
 import Lanius.Faithful.GenB.SelfBStmtN1

@@ -31,12 +31,12 @@ abbrev BStmt_shr_second (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
 
 abbrev BStmt_attach (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Rule} {x1 : Nat} {x2 : List Lanius.Mini.Sym} {x3 : Nat} {x4 : Lanius.Mini.Cursor} {v0 v1 v2 v3 v4 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → (RepList 37 RepRule) x0 v0 → RepNat x1 v1 → (RepList 39 RepSym) x2 v2 → RepNat x3 v3 → RepCursor x4 v4 → k < b → Pre_attach n x0 x1 x2 x3 x4 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_attach n x0 x1 x2 x3 x4 = k ∧ (RepOption 130 RepAttached) (Lanius.Mini.attach x0 x1 x2 x3 x4) w
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → (RepList 38 RepRule) x0 v0 → RepNat x1 v1 → (RepList 40 RepSym) x2 v2 → RepNat x3 v3 → RepCursor x4 v4 → k < b → Pre_attach n x0 x1 x2 x3 x4 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_attach n x0 x1 x2 x3 x4 = k ∧ (RepOption 131 RepAttached) (Lanius.Mini.attach x0 x1 x2 x3 x4) w
 
 abbrev BStmt_only (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CTree} {x1 : List Lanius.Mini.CTree} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepCTree x0 v0 → (RepList 82 RepCTree) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 128 RepCTree) (Lanius.Mini.only x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepCTree x0 v0 → (RepList 83 RepCTree) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 129 RepCTree) (Lanius.Mini.only x0 x1) w
 
 end Lanius.Faithful.SelfBudget

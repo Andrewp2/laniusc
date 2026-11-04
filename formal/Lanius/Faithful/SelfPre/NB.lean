@@ -414,6 +414,10 @@ instance : NB Lanius.Mini.SrcDivOp := ⟨fun _ => 0⟩
 @[simp, nb_simp] theorem nb_SrcDivOp (x : Lanius.Mini.SrcDivOp) : nb x = 0 := rfl
 @[simp, nb_simp] theorem nb_opt_SrcDivOp (x : Option Lanius.Mini.SrcDivOp) : nb x = 0 := by cases x <;> rfl
 
+instance : NB Lanius.Mini.SrcAssignOp := ⟨fun _ => 0⟩
+@[simp, nb_simp] theorem nb_SrcAssignOp (x : Lanius.Mini.SrcAssignOp) : nb x = 0 := rfl
+@[simp, nb_simp] theorem nb_opt_SrcAssignOp (x : Option Lanius.Mini.SrcAssignOp) : nb x = 0 := by cases x <;> rfl
+
 mutual
 def nbSrcEff : Lanius.Mini.SrcEff → Nat
   | .ePure a0 => nb a0
@@ -433,6 +437,10 @@ def nbSrcEff : Lanius.Mini.SrcEff → Nat
   | .eLet a0 a1 a2 a3 a4 => max (nb a0) (max (nb a1) (max (nbSrcEff a2) (max (nb a3) (nbSrcEff a4))))
   | .eLen a0 => nb a0
   | .eStr a0 a1 => max (nb a0) (nb a1)
+  | .eBorrow a0 a1 => max (nb a0) (nbSrcEff a1)
+  | .eDeref a0 a1 => max (nb a0) (nbSrcEff a1)
+  | .eField a0 a1 => max (nbSrcEff a0) (nb a1)
+  | .eAt a0 a1 => max (nbSrcEff a0) (nbSrcEff a1)
 def nbSrcEff0 : List Lanius.Mini.SrcEff → Nat
   | [] => 0
   | a :: l => max (nbSrcEff a) (nbSrcEff0 l)
@@ -460,6 +468,10 @@ theorem nbSrcEff0_eq : ∀ l : List Lanius.Mini.SrcEff, nbSrcEff0 l = NB.nb l
 @[simp, nb_simp] theorem nb_SrcEff_eLet (a0 : Nat) (a1 : Lanius.Mini.SrcType) (a2 : Lanius.Mini.SrcEff) (a3 : Lanius.Mini.SrcType) (a4 : Lanius.Mini.SrcEff) : nb (Lanius.Mini.SrcEff.eLet a0 a1 a2 a3 a4) = max (nb a0) (max (nb a1) (max (nb a2) (max (nb a3) (nb a4)))) := rfl
 @[simp, nb_simp] theorem nb_SrcEff_eLen (a0 : Nat) : nb (Lanius.Mini.SrcEff.eLen a0) = nb a0 := rfl
 @[simp, nb_simp] theorem nb_SrcEff_eStr (a0 : Nat) (a1 : List Nat) : nb (Lanius.Mini.SrcEff.eStr a0 a1) = max (nb a0) (nb a1) := rfl
+@[simp, nb_simp] theorem nb_SrcEff_eBorrow (a0 : Lanius.Mini.SrcType) (a1 : Lanius.Mini.SrcEff) : nb (Lanius.Mini.SrcEff.eBorrow a0 a1) = max (nb a0) (nb a1) := rfl
+@[simp, nb_simp] theorem nb_SrcEff_eDeref (a0 : Lanius.Mini.SrcType) (a1 : Lanius.Mini.SrcEff) : nb (Lanius.Mini.SrcEff.eDeref a0 a1) = max (nb a0) (nb a1) := rfl
+@[simp, nb_simp] theorem nb_SrcEff_eField (a0 : Lanius.Mini.SrcEff) (a1 : Nat) : nb (Lanius.Mini.SrcEff.eField a0 a1) = max (nb a0) (nb a1) := rfl
+@[simp, nb_simp] theorem nb_SrcEff_eAt (a0 : Lanius.Mini.SrcEff) (a1 : Lanius.Mini.SrcEff) : nb (Lanius.Mini.SrcEff.eAt a0 a1) = max (nb a0) (nb a1) := rfl
 
 mutual
 def nbSrcStmt : Lanius.Mini.SrcStmt → Nat
@@ -499,6 +511,8 @@ def nbSrcStmt : Lanius.Mini.SrcStmt → Nat
   | .unreachable a0 a1 => max (nb a0) (nb a1)
   | .letView a0 a1 a2 a3 a4 => max (nb a0) (max (nb a1) (max (nb a2) (max (nb a3) (nbSrcStmt a4))))
   | .letStr a0 a1 a2 => max (nb a0) (max (nb a1) (nbSrcStmt a2))
+  | .setPlace a0 a1 => max (nb a0) (nb a1)
+  | .setPlaceOp a0 a1 a2 => max (nb a1) (nb a2)
 end
 instance : NB Lanius.Mini.SrcStmt := ⟨nbSrcStmt⟩
 @[simp, nb_simp] theorem nb_SrcStmt_nop  : nb (Lanius.Mini.SrcStmt.nop) = 0 := rfl
@@ -537,6 +551,8 @@ instance : NB Lanius.Mini.SrcStmt := ⟨nbSrcStmt⟩
 @[simp, nb_simp] theorem nb_SrcStmt_unreachable (a0 : Nat) (a1 : Lanius.Mini.SrcType) : nb (Lanius.Mini.SrcStmt.unreachable a0 a1) = max (nb a0) (nb a1) := rfl
 @[simp, nb_simp] theorem nb_SrcStmt_letView (a0 : Nat) (a1 : Nat) (a2 : List Lanius.Mini.SrcExpr) (a3 : Nat) (a4 : Lanius.Mini.SrcStmt) : nb (Lanius.Mini.SrcStmt.letView a0 a1 a2 a3 a4) = max (nb a0) (max (nb a1) (max (nb a2) (max (nb a3) (nb a4)))) := rfl
 @[simp, nb_simp] theorem nb_SrcStmt_letStr (a0 : Nat) (a1 : List Nat) (a2 : Lanius.Mini.SrcStmt) : nb (Lanius.Mini.SrcStmt.letStr a0 a1 a2) = max (nb a0) (max (nb a1) (nb a2)) := rfl
+@[simp, nb_simp] theorem nb_SrcStmt_setPlace (a0 : Lanius.Mini.SrcEff) (a1 : Lanius.Mini.SrcEff) : nb (Lanius.Mini.SrcStmt.setPlace a0 a1) = max (nb a0) (nb a1) := rfl
+@[simp, nb_simp] theorem nb_SrcStmt_setPlaceOp (a0 : Lanius.Mini.SrcAssignOp) (a1 : Lanius.Mini.SrcEff) (a2 : Lanius.Mini.SrcEff) : nb (Lanius.Mini.SrcStmt.setPlaceOp a0 a1 a2) = max (nb a1) (nb a2) := rfl
 
 instance : NB Lanius.Mini.SrcParam := ⟨fun s => max (nb s.id) (nb s.ty)⟩
 @[simp, nb_simp] theorem nb_SrcParam_mk (a0 : Nat) (a1 : Lanius.Mini.SrcType) : nb (Lanius.Mini.SrcParam.mk a0 a1) = max (nb a0) (nb a1) := rfl

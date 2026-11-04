@@ -2,7 +2,7 @@ import Lanius.Faithful.BudgetTactic
 import Lanius.Faithful.Gen.SelfRep
 import Lanius.Faithful.Gen.SelfSrcC_declareFuncs
 import Lanius.Faithful.Gen.SelfStmtC_declareFuncs
-import Lanius.Faithful.GenB.SelfBStmtC_Inline_lowerSetScalar
+import Lanius.Faithful.GenB.SelfBStmtC_Inline_blockLeft
 import Lanius.Faithful.GenB.SelfBStmtC_declareFuncs
 import Lanius.Faithful.GenB.SelfBStmtC_lowerBody
 

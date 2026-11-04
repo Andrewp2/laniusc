@@ -14,10 +14,10 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::compile_program -/
-def src_compile_program (ix_compile_funcs : Nat) (ix_arities : Nat) (ix_link : Nat) : SrcFunc := { params := [{ id := 16, ty := ty99 }], ret := ty69, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.eCall ix_compile_funcs [SrcEff.eCall ix_arities [SrcEff.ePure (SrcExpr.field 16 0)], SrcEff.ePure (SrcExpr.field 16 0)]) ty144 ty69 [[168], []] [SrcEff.eCall ix_link [SrcEff.ePure (SrcExpr.local 168), SrcEff.ePure (SrcExpr.field 16 1)], SrcEff.eVariant ty69 1 []]) }
+def src_compile_program (ix_compile_funcs : Nat) (ix_arities : Nat) (ix_link : Nat) : SrcFunc := { params := [{ id := 16, ty := ty100 }], ret := ty70, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.eCall ix_compile_funcs [SrcEff.eCall ix_arities [SrcEff.ePure (SrcExpr.field 16 0)], SrcEff.ePure (SrcExpr.field 16 0)]) ty145 ty70 [[168], []] [SrcEff.eCall ix_link [SrcEff.ePure (SrcExpr.local 168), SrcEff.ePure (SrcExpr.field 16 1)], SrcEff.eVariant ty70 1 []]) }
 
 /-- mini::selfhost::room_after -/
-def src_room_after (ix_room_next : Nat) (ix_Code_size : Nat) (ix_unbox_of_mini_selfhost_List_mini_selfhost_Code : Nat) : SrcFunc := { params := [{ id := 11, ty := SrcType.uint (UintTy.usize) }, { id := 24, ty := ty67 }], ret := ty163, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 24)) ty67 ty163 [[], [143, 149]] [SrcEff.eVariant ty163 0 [SrcEff.ePure (SrcExpr.local 11)], SrcEff.eCall ix_room_next [SrcEff.ePure (SrcExpr.local 11), SrcEff.eCall ix_Code_size [SrcEff.ePure (SrcExpr.local 143)], SrcEff.eCall ix_unbox_of_mini_selfhost_List_mini_selfhost_Code [SrcEff.ePure (SrcExpr.local 149)]]]) }
+def src_room_after (ix_room_next : Nat) (ix_Code_size : Nat) (ix_unbox_of_mini_selfhost_List_mini_selfhost_Code : Nat) : SrcFunc := { params := [{ id := 11, ty := SrcType.uint (UintTy.usize) }, { id := 24, ty := ty68 }], ret := ty146, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 24)) ty68 ty146 [[], [143, 149]] [SrcEff.eVariant ty146 0 [SrcEff.ePure (SrcExpr.local 11)], SrcEff.eCall ix_room_next [SrcEff.ePure (SrcExpr.local 11), SrcEff.eCall ix_Code_size [SrcEff.ePure (SrcExpr.local 143)], SrcEff.eCall ix_unbox_of_mini_selfhost_List_mini_selfhost_Code [SrcEff.ePure (SrcExpr.local 149)]]]) }
 
 end
 

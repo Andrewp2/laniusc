@@ -20,23 +20,23 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_lower_then (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.Stmt} {x1 : Option Lanius.Mini.Stmt} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 134 RepStmt) x0 v0 → (RepOption 134 RepStmt) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_lower_then n x0 x1 = k ∧ (RepOption 134 RepStmt) (Lanius.Mini.lowerThen x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 136 RepStmt) x0 v0 → (RepOption 136 RepStmt) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_lower_then n x0 x1 = k ∧ (RepOption 136 RepStmt) (Lanius.Mini.lowerThen x0 x1) w
 
 abbrev BStmt_lower_set_call_args (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {x2 : Nat} {x3 : Option (List Lanius.Mini.Expr)} {v0 v1 v2 v3 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepNat x1 v1 → RepNat x2 v2 → (RepOption 151 (RepList 92 RepExpr)) x3 v3 →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ 0 = k ∧ (RepOption 134 RepStmt) (Lanius.Mini.lowerSetCallArgs x0 x1 x2 x3) w
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepNat x1 v1 → RepNat x2 v2 → (RepOption 152 (RepList 93 RepExpr)) x3 v3 →
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ 0 = k ∧ (RepOption 136 RepStmt) (Lanius.Mini.lowerSetCallArgs x0 x1 x2 x3) w
 
 abbrev BStmt_lower_set_call (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Sig} {x1 : List Lanius.Mini.Binding} {x2 : Option Lanius.Mini.Binding} {x3 : Nat} {x4 : List Lanius.Mini.SrcExpr} {v0 v1 v2 v3 v4 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → (RepList 96 RepSig) x0 v0 → (RepList 135 RepBinding) x1 v1 → (RepOption 153 RepBinding) x2 v2 → RepNat x3 v3 → (RepList 21 RepSrcExpr) x4 v4 → k < b → Pre_lower_set_call n x0 x1 x2 x3 x4 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_lower_set_call n x0 x1 x2 x3 x4 = k ∧ (RepOption 134 RepStmt) (Lanius.Mini.lowerSetCall x0 x1 x2 x3 x4) w
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → (RepList 97 RepSig) x0 v0 → (RepList 137 RepBinding) x1 v1 → (RepOption 154 RepBinding) x2 v2 → RepNat x3 v3 → (RepList 21 RepSrcExpr) x4 v4 → k < b → Pre_lower_set_call n x0 x1 x2 x3 x4 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_lower_set_call n x0 x1 x2 x3 x4 = k ∧ (RepOption 136 RepStmt) (Lanius.Mini.lowerSetCall x0 x1 x2 x3 x4) w
 
 abbrev BStmt_lower_if (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.Expr} {x1 : Option Lanius.Mini.Stmt} {x2 : Option Lanius.Mini.Stmt} {v0 v1 v2 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepOption 154 RepExpr) x0 v0 → (RepOption 134 RepStmt) x1 v1 → (RepOption 134 RepStmt) x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_lower_if n x0 x1 x2 = k ∧ (RepOption 134 RepStmt) (Lanius.Mini.lowerIf x0 x1 x2) w
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepOption 155 RepExpr) x0 v0 → (RepOption 136 RepStmt) x1 v1 → (RepOption 136 RepStmt) x2 v2 →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_lower_if n x0 x1 x2 = k ∧ (RepOption 136 RepStmt) (Lanius.Mini.lowerIf x0 x1 x2) w
 
 abbrev BStmt_while_loop (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Expr} {x2 : Lanius.Mini.Expr} {x3 : Lanius.Mini.Stmt} {v0 v1 v2 v3 w : Value} {k : Nat},
@@ -45,7 +45,7 @@ abbrev BStmt_while_loop (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
 
 abbrev BStmt_lower_while (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Expr} {x2 : Option Lanius.Mini.Expr} {x3 : Option Lanius.Mini.Stmt} {v0 v1 v2 v3 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepExpr x1 v1 → (RepOption 154 RepExpr) x2 v2 → (RepOption 134 RepStmt) x3 v3 →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_lower_while n x0 x1 x2 x3 = k ∧ (RepOption 134 RepStmt) (Lanius.Mini.lowerWhile x0 x1 x2 x3) w
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepExpr x1 v1 → (RepOption 155 RepExpr) x2 v2 → (RepOption 136 RepStmt) x3 v3 →
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_lower_while n x0 x1 x2 x3 = k ∧ (RepOption 136 RepStmt) (Lanius.Mini.lowerWhile x0 x1 x2 x3) w
 
 end Lanius.Faithful.SelfBudget

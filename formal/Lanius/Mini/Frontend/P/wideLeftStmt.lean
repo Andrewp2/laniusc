@@ -59,6 +59,8 @@ def wideLeftStmt (s : SrcStmt) : Bool :=
   | .unreachable id ty => false
   | .letView id n es p body => wideLeftExprs es || wideLeftStmt body
   | .letStr p cs body => wideLeftStmt body
+  | .setPlace aplace avalue => false
+  | .setPlaceOp aop aplace avalue => false
 
 def wideLeftFuncs (fs : List SrcFunc) : Bool :=
   match fs with

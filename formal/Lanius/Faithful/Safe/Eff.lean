@@ -13,7 +13,7 @@ public import Lanius.Mini.Compiler.P.strStores
 public import Lanius.Mini.Compiler.P.arrayCallSig
 public import Lanius.Mini.Compiler.P.bindingBytes
 public import Lanius.Mini.Compiler.P.funcNeeds
-public import Lanius.Mini.Compiler.P.needRound
+public import Lanius.Mini.Compiler.P.needCapped
 public import Lanius.Mini.Compiler.P.needsAfter
 public import Lanius.Mini.Compiler.P.withBudget
 
@@ -86,6 +86,8 @@ theorem stmt_ends (sp : SrcProgram) :
   | discard => exact exprCase run
   | setIndexEval => exact exprCase run
   | setFieldEval => exact exprCase run
+  | setPlace => exact exprCase run
+  | setPlaceOp => exact exprCase run
   | «assert» => exact exprCase run
   | «then» first second =>
     simp only [SrcStmt.breaksOut, Bool.or_eq_false_iff] at inside
@@ -421,6 +423,10 @@ theorem eff_safe_step (calls : ∀ m, FuncSim sp prims outside m) (funcs : FuncS
     exact eff brun' hb (ran1.inv.bindLocal id sv) (rel1.bind ran1.inv rq) bound
   | eLen => simp [effTy] at ht
   | eStr => simp [effTy] at ht
+  | eBorrow => simp [effTy] at ht
+  | eDeref => simp [effTy] at ht
+  | eField => simp [effTy] at ht
+  | eAt => simp [effTy] at ht
   | eStruct ty fields =>
     simp only [SrcEff.toCore] at run
     simp only [effTy, Option.bind_eq_some_iff] at ht

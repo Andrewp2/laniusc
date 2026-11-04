@@ -8,7 +8,7 @@ public import Lanius.Mini.Compiler.P.strStores
 public import Lanius.Mini.Compiler.P.arrayCallSig
 public import Lanius.Mini.Compiler.P.bindingBytes
 public import Lanius.Mini.Compiler.P.funcNeeds
-public import Lanius.Mini.Compiler.P.needRound
+public import Lanius.Mini.Compiler.P.needCapped
 public import Lanius.Mini.Compiler.P.needsAfter
 public import Lanius.Mini.Compiler.P.withBudget
 import all Lanius.Mini.Compiler.P.arrayCallSig
@@ -39,7 +39,7 @@ theorem looseJump_eq (s : SrcStmt) : looseJump s = s.breaksOut := by
   | «then» _ _ ih1 ih2 | «if» _ _ _ ih1 ih2 | ifEval _ _ _ ih1 ih2 | matchArm _ _ _ _ _ _ _ _ ih1 ih2 =>
     simp only [looseJump, SrcStmt.breaksOut, ih1, ih2]
   | nop | set | setField | setCall | «while» | «return» | setByte | free | setIndex | setEval | whileEval
-  | returnEval | discard | setIndexEval | setFieldEval | returnUnit | «assert» | «break» | «continue»
+  | returnEval | discard | setIndexEval | setFieldEval | setPlace | setPlaceOp | returnUnit | «assert» | «break» | «continue»
   | unreachable => rfl
 
 /-- A pure body has no loose `break` or `continue`. -/

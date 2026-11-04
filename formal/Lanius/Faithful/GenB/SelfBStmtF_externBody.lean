@@ -20,12 +20,12 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_extern_body (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.MParams} {x1 : Option Lanius.Mini.RetTy} {x2 : Nat} {v0 v1 v2 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepOption 236 RepMParams) x0 v0 → (RepOption 228 RepRetTy) x1 v1 → RepNat x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_extern_body n x0 x1 x2 = k ∧ (RepOption 203 RepMFunc) (Lanius.Mini.externBody x0 x1 x2) w
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepOption 237 RepMParams) x0 v0 → (RepOption 229 RepRetTy) x1 v1 → RepNat x2 v2 →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_extern_body n x0 x1 x2 = k ∧ (RepOption 204 RepMFunc) (Lanius.Mini.externBody x0 x1 x2) w
 
 abbrev BStmt_extern_func (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Lanius.Mini.FnDecl} {x3 : List Lanius.Mini.Ty} {v0 v1 v2 v3 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepDecls x1 v1 → RepFnDecl x2 v2 → (RepList 141 RepTy) x3 v3 → k < b → Pre_extern_func n x0 x1 x2 x3 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_extern_func n x0 x1 x2 x3 = k ∧ (RepOption 203 RepMFunc) (Lanius.Mini.externFunc x0 x1 x2 x3) w
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepDecls x1 v1 → RepFnDecl x2 v2 → (RepList 143 RepTy) x3 v3 → k < b → Pre_extern_func n x0 x1 x2 x3 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_extern_func n x0 x1 x2 x3 = k ∧ (RepOption 204 RepMFunc) (Lanius.Mini.externFunc x0 x1 x2 x3) w
 
 end Lanius.Faithful.SelfBudget

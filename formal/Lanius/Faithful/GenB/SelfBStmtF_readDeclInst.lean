@@ -21,6 +21,6 @@ open Lanius.Faithful.Budget
 abbrev BStmt_read_decl_inst (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Lanius.Mini.FnDecl} {x3 : Lanius.Mini.Inst} {v0 v1 v2 v3 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepDecls x1 v1 → RepFnDecl x2 v2 → RepInst x3 v3 → k < b → Pre_read_decl_inst n x0 x1 x2 x3 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_read_decl_inst n x0 x1 x2 x3 = k ∧ (RepOption 203 RepMFunc) (Lanius.Mini.readDeclInst x0 x1 x2 x3) w
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_read_decl_inst n x0 x1 x2 x3 = k ∧ (RepOption 204 RepMFunc) (Lanius.Mini.readDeclInst x0 x1 x2 x3) w
 
 end Lanius.Faithful.SelfBudget

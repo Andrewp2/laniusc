@@ -2,7 +2,7 @@ import Lanius.Faithful.BudgetCore
 import Lanius.Faithful.GenB.SelfBModelC_Word_narrows
 import Lanius.Mini.Compiler.P.BinOp_folds
 import Lanius.Mini.Compiler.P.Expr_agrees
-import Lanius.Mini.Compiler.P.Inline_lowerSetScalar
+import Lanius.Mini.Compiler.P.Inline_blockLeft
 import Lanius.Mini.Compiler.P.Word_narrows
 import Lanius.Mini.Compiler.P.binaryConstant
 import Lanius.Mini.Compiler.Types

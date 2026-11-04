@@ -20,22 +20,22 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_e_neg_closed (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.SrcEff} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 233 RepSrcEff) x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_e_neg_closed n x0 = k ∧ (RepOption 233 RepSrcEff) (Lanius.Mini.eNegClosed x0) w
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 234 RepSrcEff) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_e_neg_closed n x0 = k ∧ (RepOption 234 RepSrcEff) (Lanius.Mini.eNegClosed x0) w
 
 abbrev BStmt_e_not_closed (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.SrcEff} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 233 RepSrcEff) x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_e_not_closed n x0 = k ∧ (RepOption 233 RepSrcEff) (Lanius.Mini.eNotClosed x0) w
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 234 RepSrcEff) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_e_not_closed n x0 = k ∧ (RepOption 234 RepSrcEff) (Lanius.Mini.eNotClosed x0) w
 
 abbrev BStmt_e_cast_closed (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {x1 : Option Lanius.Mini.SrcEff} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepSrcType x0 v0 → (RepOption 233 RepSrcEff) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_e_cast_closed n x0 x1 = k ∧ (RepOption 233 RepSrcEff) (Lanius.Mini.eCastClosed x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepSrcType x0 v0 → (RepOption 234 RepSrcEff) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_e_cast_closed n x0 x1 = k ∧ (RepOption 234 RepSrcEff) (Lanius.Mini.eCastClosed x0 x1) w
 
 abbrev BStmt_e_divide_closed (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcDivOp} {x1 : Option Lanius.Mini.SrcEff} {x2 : Option Lanius.Mini.SrcEff} {v0 v1 v2 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepSrcDivOp x0 v0 → (RepOption 233 RepSrcEff) x1 v1 → (RepOption 233 RepSrcEff) x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_e_divide_closed n x0 x1 x2 = k ∧ (RepOption 233 RepSrcEff) (Lanius.Mini.eDivideClosed x0 x1 x2) w
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepSrcDivOp x0 v0 → (RepOption 234 RepSrcEff) x1 v1 → (RepOption 234 RepSrcEff) x2 v2 →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_e_divide_closed n x0 x1 x2 = k ∧ (RepOption 234 RepSrcEff) (Lanius.Mini.eDivideClosed x0 x1 x2) w
 
 end Lanius.Faithful.SelfBudget

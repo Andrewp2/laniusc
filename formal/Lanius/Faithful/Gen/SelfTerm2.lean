@@ -9,21 +9,21 @@ import all Lanius.Faithful.Gen.SelfSrc3
 import all Lanius.Faithful.Gen.SelfSrc4
 import all Lanius.Faithful.Gen.SelfSrc5
 import all Lanius.Faithful.Gen.SelfSrc7
-import all Lanius.Faithful.Gen.SelfSrcC_Inline_lowerSetScalar
+import all Lanius.Faithful.Gen.SelfSrcC_Inline_blockLeft
 import all Lanius.Faithful.Gen.SelfSrcC_SrcType_same
 import all Lanius.Faithful.Gen.SelfSrcC_Stmt_kills
 import all Lanius.Faithful.Gen.SelfSrcC_arrayCallSig
 import all Lanius.Faithful.Gen.SelfSrcC_compileOr
-import all Lanius.Faithful.Gen.SelfSrcC_funcNeeds
 import all Lanius.Faithful.Gen.SelfSrcC_linkedSize
 import all Lanius.Faithful.Gen.SelfSrcC_lowerBody
+import all Lanius.Faithful.Gen.SelfSrcC_needCapped
+import all Lanius.Faithful.Gen.SelfSrcC_needLimit
 import all Lanius.Faithful.Gen.SelfSrcC_needsAfter
 import all Lanius.Faithful.Gen.SelfSrcC_optimizeIte
 import all Lanius.Faithful.Gen.SelfSrcC_withBudget
 import all Lanius.Faithful.Gen.SelfSrcF_collect
 import all Lanius.Faithful.Gen.SelfSrcF_lxCanonicalKind
 import all Lanius.Faithful.Gen.SelfSrcF_readCountedBytes
-import all Lanius.Faithful.Gen.SelfSrcF_shrFirst
 import all Lanius.Faithful.Gen.SelfSrcF_wideLeftStmt
 import all Lanius.Faithful.Gen.SelfTypes
 
@@ -88,79 +88,79 @@ theorem ok_params_valid : FnOk prog prims info (121, ⟨3, [0], 0⟩) :=
 theorem ok_SrcStmt_breaks_out : FnOk prog prims info (122, ⟨0, [0], 0⟩) :=
   fnOk_of fn_SrcStmt_breaks_out (by decide +kernel)
 
-theorem ok_lower_body : FnOk prog prims info (123, ⟨5, [], 0⟩) :=
+theorem ok_need_limit : FnOk prog prims info (123, ⟨0, [], 0⟩) :=
+  fnOk_of fn_need_limit (by decide +kernel)
+
+theorem ok_lower_body : FnOk prog prims info (124, ⟨5, [], 0⟩) :=
   fnOk_of fn_lower_body (by decide +kernel)
 
-theorem ok_SrcStmt_depth : FnOk prog prims info (124, ⟨3, [0], 0⟩) :=
+theorem ok_SrcStmt_depth : FnOk prog prims info (125, ⟨3, [0], 0⟩) :=
   fnOk_of fn_SrcStmt_depth (by decide +kernel)
 
-theorem ok_unit_tail : FnOk prog prims info (125, ⟨1, [], 0⟩) :=
+theorem ok_unit_tail : FnOk prog prims info (126, ⟨1, [], 0⟩) :=
   fnOk_of fn_unit_tail (by decide +kernel)
 
-theorem ok_with_frame : FnOk prog prims info (126, ⟨0, [], 0⟩) :=
+theorem ok_with_frame : FnOk prog prims info (127, ⟨0, [], 0⟩) :=
   fnOk_of fn_with_frame (by decide +kernel)
 
-theorem ok_SrcStmt_lower : FnOk prog prims info (127, ⟨18, [0], 0⟩) :=
+theorem ok_SrcStmt_lower : FnOk prog prims info (128, ⟨18, [0], 0⟩) :=
   fnOk_of fn_SrcStmt_lower (by decide +kernel)
 
-theorem ok_with_budget : FnOk prog prims info (128, ⟨1, [0], 0⟩) :=
+theorem ok_with_budget : FnOk prog prims info (129, ⟨1, [0], 0⟩) :=
   fnOk_of fn_with_budget (by decide +kernel)
 
-theorem ok_param_scope : FnOk prog prims info (129, ⟨3, [0], 0⟩) :=
+theorem ok_param_scope : FnOk prog prims info (130, ⟨3, [0], 0⟩) :=
   fnOk_of fn_param_scope (by decide +kernel)
 
-theorem ok_empty_of_mini_selfhost_Binding : FnOk prog prims info (130, ⟨0, [], 0⟩) :=
+theorem ok_empty_of_mini_selfhost_Binding : FnOk prog prims info (131, ⟨0, [], 0⟩) :=
   fnOk_of fn_empty_of_mini_selfhost_Binding (by decide +kernel)
 
-theorem ok_empty_of_mini_selfhost_Sig : FnOk prog prims info (132, ⟨0, [], 0⟩) :=
+theorem ok_empty_of_mini_selfhost_Sig : FnOk prog prims info (133, ⟨0, [], 0⟩) :=
   fnOk_of fn_empty_of_mini_selfhost_Sig (by decide +kernel)
 
-theorem ok_cons_of_mini_selfhost_Sig : FnOk prog prims info (133, ⟨0, [], 0⟩) :=
+theorem ok_cons_of_mini_selfhost_Sig : FnOk prog prims info (134, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_Sig (by decide +kernel)
 
-theorem ok_param_types : FnOk prog prims info (134, ⟨1, [0], 0⟩) :=
+theorem ok_param_types : FnOk prog prims info (135, ⟨1, [0], 0⟩) :=
   fnOk_of fn_param_types (by decide +kernel)
 
-theorem ok_get_or_of_usize : FnOk prog prims info (135, ⟨1, [0], 0⟩) :=
+theorem ok_get_or_of_usize : FnOk prog prims info (136, ⟨1, [0], 0⟩) :=
   fnOk_of fn_get_or_of_usize (by decide +kernel)
 
-theorem ok_rest_needs : FnOk prog prims info (136, ⟨1, [], 0⟩) :=
+theorem ok_rest_needs : FnOk prog prims info (137, ⟨1, [], 0⟩) :=
   fnOk_of fn_rest_needs (by decide +kernel)
 
-theorem ok_needs_after : FnOk prog prims info (137, ⟨8, [2], 0⟩) :=
+theorem ok_needs_after : FnOk prog prims info (138, ⟨9, [2], 0⟩) :=
   fnOk_of fn_needs_after (by decide +kernel)
 
-theorem ok_empty_of_usize : FnOk prog prims info (138, ⟨0, [], 0⟩) :=
+theorem ok_empty_of_usize : FnOk prog prims info (139, ⟨0, [], 0⟩) :=
   fnOk_of fn_empty_of_usize (by decide +kernel)
 
-theorem ok_length_of_mini_selfhost_SrcFunc : FnOk prog prims info (139, ⟨2, [0], 0⟩) :=
+theorem ok_length_of_mini_selfhost_SrcFunc : FnOk prog prims info (140, ⟨2, [0], 0⟩) :=
   fnOk_of fn_length_of_mini_selfhost_SrcFunc (by decide +kernel)
 
-theorem ok_declare_params : FnOk prog prims info (140, ⟨6, [0], 0⟩) :=
+theorem ok_declare_params : FnOk prog prims info (141, ⟨6, [0], 0⟩) :=
   fnOk_of fn_declare_params (by decide +kernel)
 
-theorem ok_declare_in : FnOk prog prims info (141, ⟨6, [1], 1⟩) :=
+theorem ok_declare_in : FnOk prog prims info (142, ⟨6, [1], 1⟩) :=
   fnOk_of fn_declare_in (by decide +kernel)
 
-theorem ok_SrcType_declare : FnOk prog prims info (142, ⟨5, [0], 0⟩) :=
+theorem ok_SrcType_declare : FnOk prog prims info (143, ⟨5, [0], 0⟩) :=
   fnOk_of fn_SrcType_declare (by decide +kernel)
 
-theorem ok_read_bytes : FnOk prog prims info (143, ⟨3, [0], 0⟩) :=
+theorem ok_read_bytes : FnOk prog prims info (144, ⟨3, [0], 0⟩) :=
   fnOk_of fn_read_bytes (by decide +kernel)
 
-theorem ok_read_file_end : FnOk prog prims info (144, ⟨19, [], 0⟩) :=
+theorem ok_read_file_end : FnOk prog prims info (145, ⟨19, [], 0⟩) :=
   fnOk_of fn_read_file_end (by decide +kernel)
 
-theorem ok_read_nums : FnOk prog prims info (145, ⟨2, [0], 0⟩) :=
+theorem ok_read_nums : FnOk prog prims info (146, ⟨2, [0], 0⟩) :=
   fnOk_of fn_read_nums (by decide +kernel)
 
-theorem ok_cons_of_mini_selfhost_CTree : FnOk prog prims info (147, ⟨0, [], 0⟩) :=
+theorem ok_cons_of_mini_selfhost_CTree : FnOk prog prims info (148, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_CTree (by decide +kernel)
 
-theorem ok_attach : FnOk prog prims info (148, ⟨6, [1], 0⟩) :=
-  fnOk_of fn_attach (by decide +kernel)
-
 theorem chunk2 : AllFns prog prims info part2 :=
-  ⟨ok_build_collected, ok_collect_files, ok_single_of_mini_selfhost_List_mini_selfhost_List_usize, ok_times, ok_length_of_mini_selfhost_Token, ok_empty_of_u8, ok_optimize_program, ok_validate, ok_compile_or, ok_compile_program, ok_cons_of_mini_selfhost_Func, ok_params_size, ok_frame_block, ok_SrcType_size, ok_params_valid, ok_SrcStmt_breaks_out, ok_lower_body, ok_SrcStmt_depth, ok_unit_tail, ok_with_frame, ok_SrcStmt_lower, ok_with_budget, ok_param_scope, ok_empty_of_mini_selfhost_Binding, ok_empty_of_mini_selfhost_Sig, ok_cons_of_mini_selfhost_Sig, ok_param_types, ok_get_or_of_usize, ok_rest_needs, ok_needs_after, ok_empty_of_usize, ok_length_of_mini_selfhost_SrcFunc, ok_declare_params, ok_declare_in, ok_SrcType_declare, ok_read_bytes, ok_read_file_end, ok_read_nums, ok_cons_of_mini_selfhost_CTree, ok_attach, trivial⟩
+  ⟨ok_build_collected, ok_collect_files, ok_single_of_mini_selfhost_List_mini_selfhost_List_usize, ok_times, ok_length_of_mini_selfhost_Token, ok_empty_of_u8, ok_optimize_program, ok_validate, ok_compile_or, ok_compile_program, ok_cons_of_mini_selfhost_Func, ok_params_size, ok_frame_block, ok_SrcType_size, ok_params_valid, ok_SrcStmt_breaks_out, ok_need_limit, ok_lower_body, ok_SrcStmt_depth, ok_unit_tail, ok_with_frame, ok_SrcStmt_lower, ok_with_budget, ok_param_scope, ok_empty_of_mini_selfhost_Binding, ok_empty_of_mini_selfhost_Sig, ok_cons_of_mini_selfhost_Sig, ok_param_types, ok_get_or_of_usize, ok_rest_needs, ok_needs_after, ok_empty_of_usize, ok_length_of_mini_selfhost_SrcFunc, ok_declare_params, ok_declare_in, ok_SrcType_declare, ok_read_bytes, ok_read_file_end, ok_read_nums, ok_cons_of_mini_selfhost_CTree, trivial⟩
 
 end Lanius.Faithful.SelfTerm

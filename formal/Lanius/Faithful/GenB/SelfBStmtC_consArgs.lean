@@ -20,7 +20,7 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_cons_args (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Evaluated} {x1 : Option Lanius.Mini.EvaluatedArgs} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepEvaluated x0 v0 → (RepOption 184 RepEvaluatedArgs) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_args n x0 x1 = k ∧ (RepOption 184 RepEvaluatedArgs) (Lanius.Mini.consArgs x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepEvaluated x0 v0 → (RepOption 185 RepEvaluatedArgs) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_args n x0 x1 = k ∧ (RepOption 185 RepEvaluatedArgs) (Lanius.Mini.consArgs x0 x1) w
 
 end Lanius.Faithful.SelfBudget

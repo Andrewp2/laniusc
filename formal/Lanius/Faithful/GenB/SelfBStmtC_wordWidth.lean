@@ -20,12 +20,12 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_declared_same (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option (List Lanius.Mini.SrcType)} {x1 : List Lanius.Mini.SrcType} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 188 (RepList 73 RepSrcType)) x0 v0 → (RepList 73 RepSrcType) x1 v1 →
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 189 (RepList 74 RepSrcType)) x0 v0 → (RepList 74 RepSrcType) x1 v1 →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.declaredSame x0 x1) w
 
 abbrev BStmt_declared_variants (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option (List (List Lanius.Mini.SrcType))} {x1 : List (List Lanius.Mini.SrcType)} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 191 (RepList 77 (RepList 73 RepSrcType))) x0 v0 → (RepList 77 (RepList 73 RepSrcType)) x1 v1 →
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 192 (RepList 78 (RepList 74 RepSrcType))) x0 v0 → (RepList 78 (RepList 74 RepSrcType)) x1 v1 →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.declaredVariants x0 x1) w
 
 abbrev BStmt_word_type (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -35,17 +35,17 @@ abbrev BStmt_word_type (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
 
 abbrev BStmt_word_types (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcDecls} {x1 : List Lanius.Mini.SrcType} {v0 v1 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepSrcDecls x0 v0 → (RepList 73 RepSrcType) x1 v1 → k < b → Pre_word_types n x0 x1 b →
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepSrcDecls x0 v0 → (RepList 74 RepSrcType) x1 v1 → k < b → Pre_word_types n x0 x1 b →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.wordTypes x0 x1) w
 
 abbrev BStmt_word_variants (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcDecls} {x1 : List (List Lanius.Mini.SrcType)} {v0 v1 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepSrcDecls x0 v0 → (RepList 77 (RepList 73 RepSrcType)) x1 v1 → k < b → Pre_word_variants n x0 x1 b →
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepSrcDecls x0 v0 → (RepList 78 (RepList 74 RepSrcType)) x1 v1 → k < b → Pre_word_variants n x0 x1 b →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.wordVariants x0 x1) w
 
 abbrev BStmt_word_width (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepSrcType x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 229 RepMemWidth) (Lanius.Mini.wordWidth x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 230 RepMemWidth) (Lanius.Mini.wordWidth x0) w
 
 end Lanius.Faithful.SelfBudget

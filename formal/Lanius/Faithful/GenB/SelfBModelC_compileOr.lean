@@ -1,7 +1,8 @@
 import Lanius.Faithful.BudgetCore
-import Lanius.Faithful.GenB.SelfBModelC_Inline_arithOf
+import Lanius.Faithful.GenB.SelfBModelC_Inline_blockLeft
 import Lanius.Faithful.GenB.SelfBModelC_Inline_factOr
 import Lanius.Faithful.GenB.SelfBModelC_Stmt_kills
+import Lanius.Faithful.GenB.SelfBModelC_funcNeeds
 import Lanius.Faithful.GenB.SelfBModelC_linkedSize
 import Lanius.Mini.Compiler.P.Stmt_kills
 import Lanius.Mini.Compiler.P.funcNeeds

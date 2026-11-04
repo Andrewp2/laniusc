@@ -10,7 +10,10 @@ public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmt7
+public import Lanius.Faithful.Gen.SelfStmtC_Inline_blockLeft
+public import Lanius.Faithful.Gen.SelfStmtC_Inline_lowerSetScalar
 public import Lanius.Faithful.Gen.SelfStmtC_SrcType_same
+public import Lanius.Faithful.Gen.SelfStmtC_compileArgs
 public import Lanius.Faithful.Gen.SelfStmtC_strStores
 public import Lanius.Faithful.Gen.SelfStmtC_withBudget
 import all Lanius.Faithful.Gen.SelfSrcC_withBudget
@@ -60,17 +63,6 @@ theorem step_SrcEff_slice_uses {prog : SrcProgram} {prims : Prims} {ix_SrcEff_sl
   simp only [src_SrcEff_slice_uses] at h
   faithful [Lanius.Mini.SrcEff.sliceUses]
 
-theorem step_SrcStmt_array_bytes {prog : SrcProgram} {prims : Prims} {ix_SrcStmt_array_bytes ix_plus ix_unbox_of_mini_selfhost_SrcStmt ix_decl_bytes : Nat} (fn : prog.funcs[ix_SrcStmt_array_bytes]? = some (src_SrcStmt_array_bytes ix_plus ix_unbox_of_mini_selfhost_SrcStmt ix_SrcStmt_array_bytes ix_decl_bytes)) (np : prims.isPrim ix_SrcStmt_array_bytes = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
-    (ext_unbox_of_mini_selfhost_SrcStmt : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_SrcStmt prog prims ix_unbox_of_mini_selfhost_SrcStmt n))
-    (ext_decl_bytes : Certified (∀ {n : Nat}, Stmt_decl_bytes prog prims ix_decl_bytes n)) {n : Nat}
-    (ih_SrcStmt_array_bytes : Certified (Stmt_SrcStmt_array_bytes prog prims ix_SrcStmt_array_bytes n)) :
-    Stmt_SrcStmt_array_bytes prog prims ix_SrcStmt_array_bytes (n + 1) := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rw [pcall_succ np fn] at h
-  simp only [src_SrcStmt_array_bytes] at h
-  faithful [Lanius.Mini.SrcStmt.arrayBytes]
-
 theorem step_SrcStmt_callee_need {prog : SrcProgram} {prims : Prims} {ix_SrcStmt_callee_need ix_unbox_of_mini_selfhost_SrcStmt ix_get_or_of_usize ix_max_of ix_SrcEff_callee_need : Nat} (fn : prog.funcs[ix_SrcStmt_callee_need]? = some (src_SrcStmt_callee_need ix_unbox_of_mini_selfhost_SrcStmt ix_get_or_of_usize ix_max_of ix_SrcStmt_callee_need ix_SrcEff_callee_need)) (np : prims.isPrim ix_SrcStmt_callee_need = false)
     (ext_unbox_of_mini_selfhost_SrcStmt : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_SrcStmt prog prims ix_unbox_of_mini_selfhost_SrcStmt n))
     (ext_get_or_of_usize : Certified (∀ {n : Nat}, Stmt_get_or_of_usize prog prims ix_get_or_of_usize n))
@@ -107,6 +99,27 @@ theorem proof_array_bytes_of {prog : SrcProgram} {prims : Prims} {ix_array_bytes
   simp only [src_array_bytes_of] at h
   faithful [Lanius.Mini.arrayBytesOf]
 
+theorem proof_block_limit {prog : SrcProgram} {prims : Prims} {ix_block_limit : Nat} (fn : prog.funcs[ix_block_limit]? = some (src_block_limit)) (np : prims.isPrim ix_block_limit = false) {n : Nat} :
+    Stmt_block_limit prog prims ix_block_limit n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_block_limit] at h
+  faithful [Lanius.Mini.blockLimit]
+
+theorem step_block_room {prog : SrcProgram} {prims : Prims} {ix_block_room ix_unbox_of_mini_selfhost_SrcStmt ix_spend ix_decl_bytes ix_block_then : Nat} (fn : prog.funcs[ix_block_room]? = some (src_block_room ix_unbox_of_mini_selfhost_SrcStmt ix_block_room ix_spend ix_decl_bytes ix_block_then)) (np : prims.isPrim ix_block_room = false)
+    (ext_unbox_of_mini_selfhost_SrcStmt : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_SrcStmt prog prims ix_unbox_of_mini_selfhost_SrcStmt n))
+    (ext_spend : Certified (∀ {n : Nat}, Stmt_spend prog prims ix_spend n))
+    (ext_decl_bytes : Certified (∀ {n : Nat}, Stmt_decl_bytes prog prims ix_decl_bytes n)) {n : Nat}
+    (ih_block_room : Certified (Stmt_block_room prog prims ix_block_room n))
+    (ih_block_then : Certified (Stmt_block_then prog prims ix_block_then n)) :
+    Stmt_block_room prog prims ix_block_room (n + 1) := by
+  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  rw [pcall_succ np fn] at h
+  simp only [src_block_room] at h
+  faithful [Lanius.Mini.blockRoom]
+
 theorem proof_decl_bytes {prog : SrcProgram} {prims : Prims} {ix_decl_bytes ix_id_absent ix_array_bytes_of : Nat} (fn : prog.funcs[ix_decl_bytes]? = some (src_decl_bytes ix_id_absent ix_array_bytes_of)) (np : prims.isPrim ix_decl_bytes = false)
     (ext_id_absent : Certified (∀ {n : Nat}, Stmt_id_absent prog prims ix_id_absent n))
     (ext_array_bytes_of : Certified (∀ {n : Nat}, Stmt_array_bytes_of prog prims ix_array_bytes_of n)) {n : Nat} :
@@ -141,11 +154,12 @@ theorem step_effs_slice_uses {prog : SrcProgram} {prims : Prims} {ix_effs_slice_
   simp only [src_effs_slice_uses] at h
   faithful [Lanius.Mini.effsSliceUses]
 
-theorem proof_frame_block {prog : SrcProgram} {prims : Prims} {ix_frame_block ix_plus ix_SrcStmt_slice_uses ix_params_array_bytes ix_SrcStmt_array_bytes : Nat} (fn : prog.funcs[ix_frame_block]? = some (src_frame_block ix_plus ix_SrcStmt_slice_uses ix_params_array_bytes ix_SrcStmt_array_bytes)) (np : prims.isPrim ix_frame_block = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+theorem proof_frame_block {prog : SrcProgram} {prims : Prims} {ix_frame_block ix_SrcStmt_slice_uses ix_params_room ix_block_limit ix_block_left ix_block_room : Nat} (fn : prog.funcs[ix_frame_block]? = some (src_frame_block ix_SrcStmt_slice_uses ix_params_room ix_block_limit ix_block_left ix_block_room)) (np : prims.isPrim ix_frame_block = false)
     (ext_SrcStmt_slice_uses : Certified (∀ {n : Nat}, Stmt_SrcStmt_slice_uses prog prims ix_SrcStmt_slice_uses n))
-    (ext_params_array_bytes : Certified (∀ {n : Nat}, Stmt_params_array_bytes prog prims ix_params_array_bytes n))
-    (ext_SrcStmt_array_bytes : Certified (∀ {n : Nat}, Stmt_SrcStmt_array_bytes prog prims ix_SrcStmt_array_bytes n)) {n : Nat} :
+    (ext_params_room : Certified (∀ {n : Nat}, Stmt_params_room prog prims ix_params_room n))
+    (ext_block_limit : Certified (∀ {n : Nat}, Stmt_block_limit prog prims ix_block_limit n))
+    (ext_block_left : Certified (∀ {n : Nat}, Stmt_block_left prog prims ix_block_left n))
+    (ext_block_room : Certified (∀ {n : Nat}, Stmt_block_room prog prims ix_block_room n)) {n : Nat} :
     Stmt_frame_block prog prims ix_frame_block n := by
   intro x0 v0 w h r0
   rcases n with _ | n
@@ -154,16 +168,16 @@ theorem proof_frame_block {prog : SrcProgram} {prims : Prims} {ix_frame_block ix
   simp only [src_frame_block] at h
   faithful [Lanius.Mini.frameBlock]
 
-theorem step_params_array_bytes {prog : SrcProgram} {prims : Prims} {ix_params_array_bytes ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam ix_decl_bytes : Nat} (fn : prog.funcs[ix_params_array_bytes]? = some (src_params_array_bytes ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam ix_params_array_bytes ix_decl_bytes)) (np : prims.isPrim ix_params_array_bytes = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+theorem step_params_room {prog : SrcProgram} {prims : Prims} {ix_params_room ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam ix_params_then ix_spend ix_decl_bytes : Nat} (fn : prog.funcs[ix_params_room]? = some (src_params_room ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam ix_params_then ix_spend ix_decl_bytes)) (np : prims.isPrim ix_params_room = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam n))
+    (ext_spend : Certified (∀ {n : Nat}, Stmt_spend prog prims ix_spend n))
     (ext_decl_bytes : Certified (∀ {n : Nat}, Stmt_decl_bytes prog prims ix_decl_bytes n)) {n : Nat}
-    (ih_params_array_bytes : Certified (Stmt_params_array_bytes prog prims ix_params_array_bytes n)) :
-    Stmt_params_array_bytes prog prims ix_params_array_bytes (n + 1) := by
-  intro x0 x1 v0 v1 w h r0 r1
+    (ih_params_then : Certified (Stmt_params_then prog prims ix_params_then n)) :
+    Stmt_params_room prog prims ix_params_room (n + 1) := by
+  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
   rw [pcall_succ np fn] at h
-  simp only [src_params_array_bytes] at h
-  faithful [Lanius.Mini.paramsArrayBytes]
+  simp only [src_params_room] at h
+  faithful [Lanius.Mini.paramsRoom]
 
 theorem step_with_budget {prog : SrcProgram} {prims : Prims} {ix_with_budget ix_unbox_of_mini_selfhost_List_mini_selfhost_Sig ix_empty_of_mini_selfhost_Sig ix_cons_of_mini_selfhost_Sig : Nat} (fn : prog.funcs[ix_with_budget]? = some (src_with_budget ix_unbox_of_mini_selfhost_List_mini_selfhost_Sig ix_with_budget ix_empty_of_mini_selfhost_Sig ix_cons_of_mini_selfhost_Sig)) (np : prims.isPrim ix_with_budget = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_Sig : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Sig prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Sig n))

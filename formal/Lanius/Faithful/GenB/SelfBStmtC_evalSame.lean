@@ -21,11 +21,11 @@ open Lanius.Faithful.Budget
 abbrev BStmt_eval_same (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Evaluated} {x1 : Lanius.Mini.SrcType} {x2 : Lanius.Mini.Stmt} {v0 v1 v2 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepEvaluated x0 v0 → RepSrcType x1 v1 → RepStmt x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ (RepOption 134 RepStmt) (Lanius.Mini.evalSame x0 x1 x2) w
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ (RepOption 136 RepStmt) (Lanius.Mini.evalSame x0 x1 x2) w
 
 abbrev BStmt_eval_arm (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {x2 : Option Lanius.Mini.Stmt} {x3 : List Lanius.Mini.SrcEff} {x4 : Option Lanius.Mini.Stmt} {v0 v1 v2 v3 v4 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → RepNat x0 v0 → RepNat x1 v1 → (RepOption 134 RepStmt) x2 v2 → (RepList 186 RepSrcEff) x3 v3 → (RepOption 134 RepStmt) x4 v4 →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_eval_arm n x0 x1 x2 x3 x4 = k ∧ (RepOption 134 RepStmt) (Lanius.Mini.evalArm x0 x1 x2 x3 x4) w
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → RepNat x0 v0 → RepNat x1 v1 → (RepOption 136 RepStmt) x2 v2 → (RepList 187 RepSrcEff) x3 v3 → (RepOption 136 RepStmt) x4 v4 →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_eval_arm n x0 x1 x2 x3 x4 = k ∧ (RepOption 136 RepStmt) (Lanius.Mini.evalArm x0 x1 x2 x3 x4) w
 
 end Lanius.Faithful.SelfBudget

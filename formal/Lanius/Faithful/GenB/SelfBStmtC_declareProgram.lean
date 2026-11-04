@@ -41,6 +41,6 @@ abbrev BStmt_signed_key (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
 abbrev BStmt_declare_program (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcProgram} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepSrcProgram x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_declare_program n x0 = k ∧ (RepOption 69 RepSrcDecls) (Lanius.Mini.declareProgram x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_declare_program n x0 = k ∧ (RepOption 70 RepSrcDecls) (Lanius.Mini.declareProgram x0) w
 
 end Lanius.Faithful.SelfBudget

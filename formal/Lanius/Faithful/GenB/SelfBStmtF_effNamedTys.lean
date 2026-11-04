@@ -21,16 +21,16 @@ open Lanius.Faithful.Budget
 abbrev BStmt_eff_named_tys (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.MEff} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepMEff x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_eff_named_tys n x0 = k ∧ (RepList 141 RepTy) (Lanius.Mini.effNamedTys x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_eff_named_tys n x0 = k ∧ (RepList 143 RepTy) (Lanius.Mini.effNamedTys x0) w
 
 abbrev BStmt_effs_named_tys (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.MEff} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 235 RepMEff) x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_effs_named_tys n x0 = k ∧ (RepList 141 RepTy) (Lanius.Mini.effsNamedTys x0) w
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepList 236 RepMEff) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_effs_named_tys n x0 = k ∧ (RepList 143 RepTy) (Lanius.Mini.effsNamedTys x0) w
 
 abbrev BStmt_stmt_calls (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.MStmt} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepMStmt x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_stmt_calls n x0 = k ∧ (RepList 139 RepInst) (Lanius.Mini.stmtCalls x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_stmt_calls n x0 = k ∧ (RepList 141 RepInst) (Lanius.Mini.stmtCalls x0) w
 
 end Lanius.Faithful.SelfBudget
