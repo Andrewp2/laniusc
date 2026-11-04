@@ -5,7 +5,7 @@ import Lanius.Faithful.GenB.SelfBModelC_storeEvalWord
 import Lanius.Faithful.GenB.SelfBModelN2
 import Lanius.Faithful.GenB.SelfBModelN4
 import Lanius.Faithful.GenB.SelfBModelN6
-import Lanius.Mini.Compiler.P.SrcType_same
+import Lanius.Mini.Compiler.P.SrcType_uintKind
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.storeArray
 import Lanius.Mini.Compiler.Types

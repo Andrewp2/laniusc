@@ -1,7 +1,7 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
-public import Lanius.Mini.Compiler.P.elementBase
+public import Lanius.Mini.Compiler.P.subField
 
 @[expose] public section
 

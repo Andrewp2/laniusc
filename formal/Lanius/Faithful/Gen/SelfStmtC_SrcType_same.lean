@@ -1,7 +1,7 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
-public import Lanius.Mini.Compiler.P.SrcType_same
+public import Lanius.Mini.Compiler.P.SrcType_uintKind
 
 @[expose] public section
 

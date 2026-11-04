@@ -7,7 +7,7 @@ import Lanius.Faithful.GenB.SelfBModelN2
 import Lanius.Faithful.GenB.SelfBModelN6
 import Lanius.Faithful.GenB.SelfBModelN7
 import Lanius.Mini.Compiler.P.SrcExpr_guard
-import Lanius.Mini.Compiler.P.SrcType_same
+import Lanius.Mini.Compiler.P.SrcType_uintKind
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.bindingBytes
 import Lanius.Mini.Compiler.P.repeatType

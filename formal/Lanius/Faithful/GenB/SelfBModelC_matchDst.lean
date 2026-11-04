@@ -1,6 +1,6 @@
 import Lanius.Faithful.BudgetCore
 import Lanius.Faithful.GenB.SelfBModelC_SrcType_same
-import Lanius.Mini.Compiler.P.SrcType_same
+import Lanius.Mini.Compiler.P.SrcType_uintKind
 import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Frontend.Types
 

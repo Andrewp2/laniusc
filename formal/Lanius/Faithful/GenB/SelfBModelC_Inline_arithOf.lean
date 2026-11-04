@@ -20,7 +20,7 @@ import Lanius.Faithful.GenB.SelfBModelN6
 import Lanius.Faithful.GenB.SelfBModelN7
 import Lanius.Mini.Compiler.P.Inline_lowerSetScalar
 import Lanius.Mini.Compiler.P.SrcExpr_guard
-import Lanius.Mini.Compiler.P.SrcType_same
+import Lanius.Mini.Compiler.P.SrcType_uintKind
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.UintTy_isWide
 import Lanius.Mini.Compiler.P.arithUint
@@ -30,7 +30,7 @@ import Lanius.Mini.Compiler.P.bindingBytes
 import Lanius.Mini.Compiler.P.compileArgs
 import Lanius.Mini.Compiler.P.conjunction
 import Lanius.Mini.Compiler.P.elementAddress
-import Lanius.Mini.Compiler.P.elementBase
+import Lanius.Mini.Compiler.P.subField
 import Lanius.Mini.Compiler.P.evalDivide
 import Lanius.Mini.Compiler.P.evalSame
 import Lanius.Mini.Compiler.P.evalSlotLimit
