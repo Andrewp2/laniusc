@@ -2134,6 +2134,13 @@ split between the lowering (leafC) and the proof (leafA).
   with it. The copy-in and copy-out stay: the caller's copy buffers are
   homes from the callee's view. `FrameCorr` keeps its definition, which
   open statements name, but the simulation no longer uses it.
+  Done (11-03, leafA): `LentHomes` (`Mini/LentHomes.lean`) is `Homes` with
+  `Lent` (`packed`, `above`), and has `FrameCorr`'s lemmas under the same
+  names. Its bounds are a place's native words (`Addressed.Within`), not
+  its slots, as `Homes` has them: a packed array's words are at most its
+  slots (`Packed.words_le`), and all its slots' bytes lie in its words
+  (`Packed.slotBytes_within`). `Homes` and the layout definitions it reads
+  moved from `Refs/Model.lean` to `Mini/Homes.lean` with their names.
 - S6a-2: `Binding.home: Option<usize>` in the scope (`None` everywhere),
   and `RCtx.ofScope` reads the homes from the scope. No behaviour changes.
 - S6b (the lowering of borrows and homed lets): **a lent array local is a

@@ -155,7 +155,7 @@ theorem compileSource_stops_from {sp : SrcProgram} {binary : Binary}
   haveI : StaticsOf sp sx := ⟨ofSp⟩
   have stops : ∀ n, ∃ depth, Program.Stops { funcs := funcs, statics := sp.decls.statics } depth f bits heap n := fun n => by
     obtain ⟨d, g, gFound, arity, body⟩ := callee_stops (mp := { funcs := funcs, statics := sp.decls.statics }) lowered returns
-      (stmtStops_all lowered returns n) (evalExprs_values_done args 0) found fresh hc (FrameCorr.start _ frameRoom statics) (Nat.le_refl _) within typed bitsLen fails
+      (stmtStops_all lowered returns n) (evalExprs_values_done args 0) found fresh hc (LentHomes.start _ frameRoom statics) (Nat.le_refl _) within typed bitsLen fails
     exact ⟨d, g, gFound, arity, body⟩
   exact compileOptimized_stops compiledProgram stops s imageBase window bounded loaded apart imageHeap entry params
     heapAt stack

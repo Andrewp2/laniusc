@@ -111,7 +111,7 @@ theorem compileSource_contract {sp : SrcProgram} {binary : Binary}
     obtain ⟨_, _, depth, results, after, _, returns, holds, len, hc, -⟩ :=
       body_sound (mp := { funcs := funcs, statics := sp.decls.statics }) (hp := heap) lowered (stmt_sound lowered k) found
         (startState_fresh _) (HeapCorr.empty start zero small silent)
-        (FrameCorr.start _ frameRoom statics) (Nat.le_refl _) (fun _ mem => by simp at mem) typed bitsLen bodyRun result fits
+        (LentHomes.start _ frameRoom statics) (Nat.le_refl _) (fun _ mem => by simp at mem) typed bitsLen bodyRun result fits
     refine ⟨depth, results, after, holds, len, hc.out, hc.err, fun imageBase window => ?_⟩
     rcases compileOptimized_some compiledProgram with original | ⟨q, accepted, optimized⟩
     · exact compiled_contract original imageBase depth f bits heap results after returns window

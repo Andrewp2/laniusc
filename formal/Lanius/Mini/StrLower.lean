@@ -343,11 +343,11 @@ variable [StaticsOf sp sx]
 mini code before the body (the block, the stores) runs to a heap that
 corresponds, the pointer in the let's slot. -/
 theorem str_entered {chars : List Nat} (ascii : strAscii chars = true) (nonempty : chars ≠ [])
-    (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp) {p : Nat} {heap' : Lanius.Memory.Heap}
+    (hc : HeapCorr st.heap st.world hp) (fc : LentHomes sx bud places st hp) {p : Nat} {heap' : Lanius.Memory.Heap}
     (map : st.heap.mapBorrowed (Semantics.stringStorage (strValue chars)) 4 = .allocated p heap')
     (room : heap'.nextAddress ≤ hp.limit) :
     ∃ hp3, (BitVec.ofNat 64 p).toNat = p ∧ HeapCorr heap' st.world hp3 ∧
-      FrameCorr sx bud places { st with heap := heap' } hp3 ∧ hp3.limit = hp.limit ∧
+      LentHomes sx bud places { st with heap := heap' } hp3 ∧ hp3.limit = hp.limit ∧
       (∀ {rest : Stmt} {d : Nat} {out : Outcome}, Exec mp d (env.set next (BitVec.ofNat 64 p)) hp3 rest out →
         Exec mp d env hp (.seq (.alloc next 2 (.lit (BitVec.ofNat 64 (4 * (strWords chars).length))))
           (strStores next 0 (strWords chars) rest)) out) ∧
@@ -365,7 +365,7 @@ theorem str_entered {chars : List Nat} (ascii : strAscii chars = true) (nonempty
   let hp3 := ({ hp with cursor := p + 4 * (strWords chars).length } : Heap).writeBytes p (wordBytes (strWords chars))
   have hc3 : HeapCorr heap' st.world hp3 := hcRoom tail
   have pBits : (BitVec.ofNat 64 p).toNat = p := Nat.mod_eq_of_lt (by addr_omega)
-  have fc3 : FrameCorr sx bud places { st with heap := heap' } hp3 := by
+  have fc3 : LentHomes sx bud places { st with heap := heap' } hp3 := by
     refine fc.low (fun _ _ => rfl) (fun a above => ?_) ?_ ?_ ?_ (statics := ?_)
     · simp only [hp3, Heap.writeBytes_eq_writeAll, Heap.writeAll, wordBytes_length]
       rw [if_neg (by addr_omega)]
@@ -406,7 +406,7 @@ theorem str_entered {chars : List Nat} (ascii : strAscii chars = true) (nonempty
 theorem stmt_letStr (ih : StmtSound sp mp fuel) {pointer : Nat} {chars : List Nat} {body : SrcStmt}
     (ok : (SrcStmt.letStr pointer chars body).lower (sp.sigsAt bud) sp.decls ret scope next = some stmt)
     (corr : Corr sx places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp)
+    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : LentHomes sx bud places st hp)
     (under : ∀ x ∈ places, x.cell < base)
     (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.letStr pointer chars body).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
