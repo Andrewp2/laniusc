@@ -87,6 +87,10 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
+theorem cert_p_enum_variants_some {n : Nat} :
+    Stmt_p_enum_variants_some prog prims 876 n :=
+  @proof_p_enum_variants_some prog prims 876 fn_p_enum_variants_some np_p_enum_variants_some n
+
 theorem cert_p_enum_variants_more {n : Nat} :
     Stmt_p_enum_variants_more prog prims 877 n :=
   @proof_p_enum_variants_more prog prims 877 fn_p_enum_variants_more np_p_enum_variants_more n

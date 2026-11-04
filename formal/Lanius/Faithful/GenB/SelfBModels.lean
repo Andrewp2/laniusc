@@ -306,10 +306,10 @@ Do not edit. -/
 -- models: Cost_eval_let_body Cost_eval_arm_in Pre_SrcEff_eval Pre_eval_args Pre_eval_arms
 -- models: Pre_eval_let_body Pre_eval_arm_in Cost_array_arg_pure Cost_block_at Cost_block_store
 -- models: Cost_element_stores Pre_element_stores Cost_block_load Cost_element_loads
--- models: Pre_element_loads Cost_array_arg_local Pre_array_arg_local Cost_array_arg_slice
--- models: Pre_array_arg_slice Cost_array_arg Pre_array_arg Pre_binding_bytes Pre_arg_bytes
--- models: Cost_array_args Pre_array_args Cost_array_call_code Pre_array_call_code
--- models: Cost_array_call_sig Pre_array_call_sig Cost_array_call Pre_array_call
+-- models: Pre_element_loads Cost_array_arg_before Pre_array_arg_before Cost_array_arg_local
+-- models: Pre_array_arg_local Cost_array_arg_slice Pre_array_arg_slice Cost_array_arg Pre_array_arg
+-- models: Pre_binding_bytes Pre_arg_bytes Cost_array_args Pre_array_args Cost_array_call_code
+-- models: Pre_array_call_code Cost_array_call_sig Pre_array_call_sig Cost_array_call Pre_array_call
 -- models: Cost_SrcEff_slice_call Pre_SrcEff_slice_call Cost_stmt_eval Pre_stmt_eval
 -- models: Cost_lower_set_eval Pre_lower_set_eval Cost_lower_if_eval Cost_lower_while_eval
 -- models: Cost_lower_return_eval Pre_lower_return_eval Cost_set_scalar_eval Cost_set_field_eval_at
@@ -738,17 +738,17 @@ Do not edit. -/
 -- statements: static_byte_is get_of_u8 str_placed eval_str SrcEff_eval eval_args eval_arms
 -- statements: eval_let_body eval_arm_in SrcEff_is_slice effs_slice SrcEff_passes_slices
 -- statements: array_arg_pure packed_width array_arg_checked block_at block_store element_stores
--- statements: block_load element_loads array_arg_local array_arg_slice array_arg binding_bytes
--- statements: arg_bytes array_args array_call_code array_call_sig array_call SrcEff_slice_call
--- statements: stmt_eval lower_set_eval lower_if_eval lower_while_eval lower_return_eval
--- statements: lower_discard set_scalar_eval set_field_eval_at set_field_eval_of lower_set_field_eval
--- statements: lower_return_unit lower_assert lower_arm_stmt unit_payload field_payload arm_payload
--- statements: lower_arm_found lower_match_arm arm_body_scope lower_unreachable view_stores
--- statements: lower_view str_ascii length_of_u64 single_of_u64 cons_of_u64 str_words str_stores
--- statements: lower_str SrcStmt_lower empty_of_mini_selfhost_Sig cons_of_mini_selfhost_Sig
--- statements: with_budget param_scope empty_of_mini_selfhost_Binding lower_func lower_funcs
--- statements: param_types rest_needs sigs_with need_capped SrcEff_callee_need effs_callee_need
--- statements: SrcStmt_callee_need need_round_at need_round same_needs needs_after
+-- statements: block_load element_loads array_arg_before array_arg_local array_arg_slice array_arg
+-- statements: binding_bytes arg_bytes array_args array_call_code array_call_sig array_call
+-- statements: SrcEff_slice_call stmt_eval lower_set_eval lower_if_eval lower_while_eval
+-- statements: lower_return_eval lower_discard set_scalar_eval set_field_eval_at set_field_eval_of
+-- statements: lower_set_field_eval lower_return_unit lower_assert lower_arm_stmt unit_payload
+-- statements: field_payload arm_payload lower_arm_found lower_match_arm arm_body_scope
+-- statements: lower_unreachable view_stores lower_view str_ascii length_of_u64 single_of_u64
+-- statements: cons_of_u64 str_words str_stores lower_str SrcStmt_lower empty_of_mini_selfhost_Sig
+-- statements: cons_of_mini_selfhost_Sig with_budget param_scope empty_of_mini_selfhost_Binding
+-- statements: lower_func lower_funcs param_types rest_needs sigs_with need_capped SrcEff_callee_need
+-- statements: effs_callee_need SrcStmt_callee_need need_round_at need_round same_needs needs_after
 -- statements: length_of_mini_selfhost_SrcFunc func_needs sigs compile_declared keep_if
 -- statements: cons_of_mini_selfhost_SrcStructDecl declare_struct_in declare_struct
 -- statements: cons_of_mini_selfhost_SrcEnumDecl declare_enum_in declare_enum SrcType_declare

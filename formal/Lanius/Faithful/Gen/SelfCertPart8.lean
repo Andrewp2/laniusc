@@ -108,20 +108,20 @@ theorem cert_empty_of_mini_selfhost_List_mini_selfhost_Ty {n : Nat} :
   @proof_empty_of_mini_selfhost_List_mini_selfhost_Ty prog prims 1638 fn_empty_of_mini_selfhost_List_mini_selfhost_Ty np_empty_of_mini_selfhost_List_mini_selfhost_Ty n
 
 theorem cert_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty {n : Nat} :
-    Stmt_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty prog prims 1830 n :=
-  @proof_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty prog prims 1830 np_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty n
+    Stmt_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty prog prims 1831 n :=
+  @proof_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty prog prims 1831 np_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty n
 
 theorem cert_cons_of_mini_selfhost_List_mini_selfhost_Ty {n : Nat} :
-    Stmt_cons_of_mini_selfhost_List_mini_selfhost_Ty prog prims 1766 n :=
-  @proof_cons_of_mini_selfhost_List_mini_selfhost_Ty prog prims 1766 1830 fn_cons_of_mini_selfhost_List_mini_selfhost_Ty np_cons_of_mini_selfhost_List_mini_selfhost_Ty ⟨@cert_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty⟩ n
+    Stmt_cons_of_mini_selfhost_List_mini_selfhost_Ty prog prims 1765 n :=
+  @proof_cons_of_mini_selfhost_List_mini_selfhost_Ty prog prims 1765 1831 fn_cons_of_mini_selfhost_List_mini_selfhost_Ty np_cons_of_mini_selfhost_List_mini_selfhost_Ty ⟨@cert_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty⟩ n
 
 theorem cert_cons_tys_tail {n : Nat} :
-    Stmt_cons_tys_tail prog prims 1723 n :=
-  @proof_cons_tys_tail prog prims 1723 1766 fn_cons_tys_tail np_cons_tys_tail ⟨@cert_cons_of_mini_selfhost_List_mini_selfhost_Ty⟩ n
+    Stmt_cons_tys_tail prog prims 1720 n :=
+  @proof_cons_tys_tail prog prims 1720 1765 fn_cons_tys_tail np_cons_tys_tail ⟨@cert_cons_of_mini_selfhost_List_mini_selfhost_Ty⟩ n
 
 theorem cert_cons_tys {n : Nat} :
     Stmt_cons_tys prog prims 1639 n :=
-  @proof_cons_tys prog prims 1639 1723 fn_cons_tys np_cons_tys ⟨@cert_cons_tys_tail⟩ n
+  @proof_cons_tys prog prims 1639 1720 fn_cons_tys np_cons_tys ⟨@cert_cons_tys_tail⟩ n
 
 theorem cert_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_CTree {n : Nat} :
     Stmt_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_CTree prog prims 1640 n :=
@@ -872,12 +872,12 @@ theorem cert_null_at {n : Nat} :
   @proof_null_at prog prims 1645 fn_null_at np_null_at n
 
 theorem cert_sint_fits {n : Nat} :
-    Stmt_sint_fits prog prims 1724 n :=
-  @proof_sint_fits prog prims 1724 fn_sint_fits np_sint_fits n
+    Stmt_sint_fits prog prims 1721 n :=
+  @proof_sint_fits prog prims 1721 fn_sint_fits np_sint_fits n
 
 theorem cert_sint_at {n : Nat} :
     Stmt_sint_at prog prims 1646 n :=
-  @proof_sint_at prog prims 1646 1414 1724 fn_sint_at np_sint_at ⟨@cert_boxed_of_mini_selfhost_SrcExpr⟩ ⟨@cert_sint_fits⟩ n
+  @proof_sint_at prog prims 1646 1414 1721 fn_sint_at np_sint_at ⟨@cert_boxed_of_mini_selfhost_SrcExpr⟩ ⟨@cert_sint_fits⟩ n
 
 theorem cert_int_literal_at {n : Nat} :
     Stmt_int_literal_at prog prims 1543 n :=
@@ -917,7 +917,7 @@ theorem cert_neg_wide_at {n : Nat} :
 
 theorem cert_least_cast {n : Nat} :
     Stmt_least_cast prog prims 1648 n :=
-  @proof_least_cast prog prims 1648 1414 1724 fn_least_cast np_least_cast ⟨@cert_boxed_of_mini_selfhost_SrcExpr⟩ ⟨@cert_sint_fits⟩ n
+  @proof_least_cast prog prims 1648 1414 1721 fn_least_cast np_least_cast ⟨@cert_boxed_of_mini_selfhost_SrcExpr⟩ ⟨@cert_sint_fits⟩ n
 
 theorem cert_neg_least_at {n : Nat} :
     Stmt_neg_least_at prog prims 1548 n :=
@@ -1020,9 +1020,5 @@ theorem cert_wide_uint_at {n : Nat} :
 theorem cert_wide_isize_at {n : Nat} :
     Stmt_wide_isize_at prog prims 1556 n :=
   @proof_wide_isize_at prog prims 1556 1414 fn_wide_isize_at np_wide_isize_at ⟨@cert_boxed_of_mini_selfhost_SrcExpr⟩ n
-
-theorem cert_wide_sint_at {n : Nat} :
-    Stmt_wide_sint_at prog prims 1557 n :=
-  @proof_wide_sint_at prog prims 1557 1414 1647 fn_wide_sint_at np_wide_sint_at ⟨@cert_boxed_of_mini_selfhost_SrcExpr⟩ ⟨@cert_sint_wide⟩ n
 
 end Lanius.Faithful.SelfCert

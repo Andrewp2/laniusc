@@ -6193,6 +6193,23 @@ pub fn array_arg_checked(ok: bool, a: ArrayArgs) -> core::option::Option<ArrayAr
     return None;
 }
 
+// The largest block lower_func takes: below 2^31 bytes.
+pub fn block_limit() -> usize {
+    return 2147483647;
+}
+
+// The array local b (width bytes per element, count elements) before the
+// arguments r. The rest's bytes are checked against block_limit before
+// this one's are added (as the offsets are, array_args), so no sum passes
+// 2^64 (F14); a call's bytes over the limit are rejected anyway
+// (array_call_code: at most the callee's block, at most block_limit).
+pub fn array_arg_before(b: Binding, element: SrcType, ty: SrcType, id: usize, t: usize, offset: usize, width: usize, count: usize, r: ArrayArgs) -> core::option::Option<ArrayArgs> {
+    if (r.bytes > block_limit()) {
+        return None;
+    }
+    return array_arg_checked((width > 0) && b.ty.same(SrcType::Array(boxed(element), count)) && ty.same(Slice(boxed(element))) && (2147483648 > count) && id_absent(r.ids, id), ArrayArgs { stores: Seq(boxed(element_stores(width, t, offset, b.slot, count)), boxed(r.stores)), args: cons(block_at(t, offset), cons(Lit(count as u64), r.args)), loads: Seq(boxed(element_loads(width, t, offset, b.slot, count)), boxed(r.loads)), guard: r.guard, bytes: plus(times(8, count), r.bytes), ids: cons(id, r.ids) });
+}
+
 // The array local b passed at a parameter of type ty, at offset in the
 // block, before the rest.
 pub fn array_arg_local(b: Binding, element: SrcType, ty: SrcType, id: usize, t: usize, offset: usize, rest: core::option::Option<ArrayArgs>) -> core::option::Option<ArrayArgs> {
@@ -6200,7 +6217,7 @@ pub fn array_arg_local(b: Binding, element: SrcType, ty: SrcType, id: usize, t: 
     let count: usize = b.ty.size();
     return match (rest) {
         None -> None,
-        Some(r) -> array_arg_checked((width > 0) && b.ty.same(SrcType::Array(boxed(element), count)) && ty.same(Slice(boxed(element))) && (2147483648 > count) && id_absent(r.ids, id), ArrayArgs { stores: Seq(boxed(element_stores(width, t, offset, b.slot, count)), boxed(r.stores)), args: cons(block_at(t, offset), cons(Lit(count as u64), r.args)), loads: Seq(boxed(element_loads(width, t, offset, b.slot, count)), boxed(r.loads)), guard: r.guard, bytes: plus(times(8, count), r.bytes), ids: cons(id, r.ids) }),
+        Some(r) -> array_arg_before(b, element, ty, id, t, offset, width, count, r),
     };
 }
 
@@ -6240,8 +6257,14 @@ pub fn array_arg(scope: List<Binding>, arg: SrcEff, ty: SrcType, t: usize, offse
 }
 
 // The arguments, one of each parameter type, the arrays from offset in the
-// block on.
+// block on. An offset past block_limit is rejected as the arrays' bytes add
+// up, so no offset passes 2^64 (F14): a call that is accepted has its
+// arrays' bytes within the callee's block (array_call_code), so each of its
+// offsets is too.
 pub fn array_args(scope: List<Binding>, args: List<SrcEff>, types: List<SrcType>, t: usize, offset: usize) -> core::option::Option<ArrayArgs> {
+    if (offset > block_limit()) {
+        return None;
+    }
     return match (args) {
         Nil -> match (types) {
             Nil -> Some(ArrayArgs { stores: Skip, args: empty(), loads: Skip, guard: Lit(1), bytes: 0, ids: empty() }),
@@ -6822,11 +6845,6 @@ fn block_then(broom: core::option::Option<usize>, buses: List<usize>, bs: SrcStm
         None -> None,
         Some(br) -> block_room(br, buses, bs),
     };
-}
-
-// The largest block lower_func takes: below 2^31 bytes.
-pub fn block_limit() -> usize {
-    return 2147483647;
 }
 
 // A function's own block of frame memory, taken at its entry: 8 bytes per

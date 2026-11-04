@@ -48,11 +48,6 @@ abbrev BStmt_params_room (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → (RepList 7 RepSrcParam) x1 v1 → (RepList 25 RepNat) x2 v2 → k < b → Pre_params_room n x0 x1 x2 b →
     qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ (RepOption 135 RepNat) (Lanius.Mini.paramsRoom x0 x1 x2) w
 
-abbrev BStmt_block_limit (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {w : Value} {k : Nat},
-    qcall spW prims uc n ix [] = some (w, k) →
-    qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.blockLimit) w
-
 abbrev BStmt_block_room (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : List Nat} {x2 : Lanius.Mini.SrcStmt} {v0 v1 v2 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → (RepList 25 RepNat) x1 v1 → RepSrcStmt x2 v2 → k < b → Pre_block_room n x0 x1 x2 b →

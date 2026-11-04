@@ -187,6 +187,16 @@ theorem elementLoads_exec {mp : Program} {d width t A : Nat} (wide : width = 4 �
 
 /-! ## The arguments -/
 
+/-- What `arrayArgs` gives for no arguments: nothing to store or load. -/
+theorem arrayArgs_nil {scope : List Binding} {t offset : Nat} {a : ArrayArgs}
+    (ok : arrayArgs scope [] [] t offset = some a) :
+    a = { stores := Stmt.skip, args := [], loads := Stmt.skip, guard := Expr.lit 1, bytes := 0, ids := [] } := by
+  simp only [arrayArgs] at ok
+  split at ok
+  · simp at ok
+  · simp only [Option.some.injEq] at ok
+    exact ok.symm
+
 /-- What `arrayArgs` gives for one more argument: a pure value before the
 rest, or an array local passed as a slice, its block before the rest's. -/
 theorem arrayArgs_cons {scope : List Binding} {arg : SrcEff} {rest : List SrcEff} {ty : SrcType}
@@ -205,6 +215,8 @@ theorem arrayArgs_cons {scope : List Binding} {arg : SrcEff} {rest : List SrcEff
             loads := .seq (elementLoads (packedWidth element) t offset b.slot b.ty.size) r.loads,
             guard := r.guard, bytes := 8 * b.ty.size + r.bytes, ids := id :: r.ids }) := by
   simp only [arrayArgs] at ok
+  split at ok
+  · simp at ok
   cases arg
   case ePure e =>
     left
@@ -227,6 +239,9 @@ theorem arrayArgs_cons {scope : List Binding} {arg : SrcEff} {rest : List SrcEff
     split at ok
     · simp at ok
     rename_i r hr
+    simp only [arrayArgBefore] at ok
+    split at ok
+    · simp at ok
     simp only [arrayArgChecked] at ok
     split at ok
     · rename_i checks
@@ -402,7 +417,7 @@ theorem arrayArgs_sound {scope frame st E} {prog : Core.Program} (corr : Corr sx
     cases types with
     | cons => simp [arrayArgs] at ok
     | nil =>
-      simp only [arrayArgs, Option.some.injEq] at ok
+      have ok := arrayArgs_nil ok
       subst ok
       cases fuel with
       | zero => simp [evalExprs] at run
@@ -493,7 +508,7 @@ theorem arrayStores_exec {mp : Program} {d : Nat} {scope frame st E} (corr : Cor
     cases types with
     | cons => simp [arrayArgs] at ok
     | nil =>
-      simp only [arrayArgs, Option.some.injEq] at ok
+      have ok := arrayArgs_nil ok
       subst ok
       exact ⟨hp, .skip, fun _ _ => rfl, rfl, rfl, rfl, rfl, rfl, fun x mem => by simp [arrayPlaces] at mem⟩
   | cons arg rest ih =>
@@ -570,7 +585,7 @@ theorem arrayLoads_exec {mp : Program} {d : Nat} {scope : List Binding} {frame :
     cases types with
     | cons => simp [arrayArgs] at ok
     | nil =>
-      simp only [arrayArgs, Option.some.injEq] at ok
+      have ok := arrayArgs_nil ok
       subst ok
       exact ⟨E, .skip, fun x mem => by simp [arrayPlaces] at mem, fun _ _ => rfl⟩
   | cons arg rest ih =>

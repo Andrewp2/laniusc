@@ -13,6 +13,7 @@ public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtC_Inline_blockLeft
 public import Lanius.Faithful.Gen.SelfStmtC_Inline_lowerSetScalar
 public import Lanius.Faithful.Gen.SelfStmtC_SrcType_same
+public import Lanius.Faithful.Gen.SelfStmtC_bindingBytes
 public import Lanius.Faithful.Gen.SelfStmtC_compileArgs
 public import Lanius.Faithful.Gen.SelfStmtC_strStores
 public import Lanius.Faithful.Gen.SelfStmtC_withBudget
@@ -98,15 +99,6 @@ theorem proof_array_bytes_of {prog : SrcProgram} {prims : Prims} {ix_array_bytes
   rw [pcall_succ np fn] at h
   simp only [src_array_bytes_of] at h
   faithful [Lanius.Mini.arrayBytesOf]
-
-theorem proof_block_limit {prog : SrcProgram} {prims : Prims} {ix_block_limit : Nat} (fn : prog.funcs[ix_block_limit]? = some (src_block_limit)) (np : prims.isPrim ix_block_limit = false) {n : Nat} :
-    Stmt_block_limit prog prims ix_block_limit n := by
-  intro w h
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_block_limit] at h
-  faithful [Lanius.Mini.blockLimit]
 
 theorem step_block_room {prog : SrcProgram} {prims : Prims} {ix_block_room ix_unbox_of_mini_selfhost_SrcStmt ix_spend ix_decl_bytes ix_block_then : Nat} (fn : prog.funcs[ix_block_room]? = some (src_block_room ix_unbox_of_mini_selfhost_SrcStmt ix_block_room ix_spend ix_decl_bytes ix_block_then)) (np : prims.isPrim ix_block_room = false)
     (ext_unbox_of_mini_selfhost_SrcStmt : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_SrcStmt prog prims ix_unbox_of_mini_selfhost_SrcStmt n))

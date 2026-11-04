@@ -18,6 +18,11 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 open Lanius.Faithful.Budget
 
+abbrev BStmt_block_limit (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value} {k : Nat},
+    qcall spW prims uc n ix [] = some (w, k) →
+    qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.blockLimit) w
+
 abbrev BStmt_array_arg_pure (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option (List Lanius.Mini.Expr)} {x1 : Lanius.Mini.Expr} {x2 : Option Lanius.Mini.ArrayArgs} {v0 v1 v2 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepOption 152 (RepList 93 RepExpr)) x0 v0 → RepExpr x1 v1 → (RepOption 215 RepArrayArgs) x2 v2 →
@@ -27,6 +32,11 @@ abbrev BStmt_array_arg_checked (spW sp : SrcProgram) (prims : Prims) (ix n : Nat
   ∀ {x0 : Bool} {x1 : Lanius.Mini.ArrayArgs} {v0 v1 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepBool x0 v0 → RepArrayArgs x1 v1 →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 215 RepArrayArgs) (Lanius.Mini.arrayArgChecked x0 x1) w
+
+abbrev BStmt_array_arg_before (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.Binding} {x1 : Lanius.Mini.SrcType} {x2 : Lanius.Mini.SrcType} {x3 : Nat} {x4 : Nat} {x5 : Nat} {x6 : Nat} {x7 : Nat} {x8 : Lanius.Mini.ArrayArgs} {v0 v1 v2 v3 v4 v5 v6 v7 v8 w : Value} {k b : Nat},
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5, v6, v7, v8] = some (w, k) → RepBinding x0 v0 → RepSrcType x1 v1 → RepSrcType x2 v2 → RepNat x3 v3 → RepNat x4 v4 → RepNat x5 v5 → RepNat x6 v6 → RepNat x7 v7 → RepArrayArgs x8 v8 → k < b → Pre_array_arg_before n x0 x1 x2 x3 x4 x5 x6 x7 x8 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5, v6, v7, v8] = some (w, k) ∧ Cost_array_arg_before n x0 x1 x2 x3 x4 x5 x6 x7 x8 = k ∧ (RepOption 215 RepArrayArgs) (Lanius.Mini.arrayArgBefore x0 x1 x2 x3 x4 x5 x6 x7 x8) w
 
 abbrev BStmt_array_arg_local (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Binding} {x1 : Lanius.Mini.SrcType} {x2 : Lanius.Mini.SrcType} {x3 : Nat} {x4 : Nat} {x5 : Nat} {x6 : Option Lanius.Mini.ArrayArgs} {v0 v1 v2 v3 v4 v5 v6 w : Value} {k b : Nat},
