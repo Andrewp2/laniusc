@@ -38,7 +38,7 @@ A statement-level call passing array locals at `[T]` parameters
 array into its block of frame memory in the slice layout, passes the
 block's address and the length, and loads the elements back after the
 return. In the callee the arrays are places (`arrayPlaces`), held by
-`FrameCorr`; Core's call writes the arrays' cells through the slices, and
+`LentHomes`; Core's call writes the arrays' cells through the slices, and
 the loads bring the new values into the caller's slots. -/
 
 @[expose] public section
@@ -626,7 +626,7 @@ theorem pairwise_either {α : Type} {R : α → α → Prop} :
 /-- The callee's places: the arrays lent, in the caller's block, and the
 caller's places, above it; the callee's budget is the caller's room and no
 block. -/
-theorem FrameCorr.lend {st : State} {hp hpS : Heap} (fc : FrameCorr sx bud places st hp)
+theorem LentHomes.lend {st : State} {hp hpS : Heap} (fc : LentHomes sx bud places st hp)
     {scope : List Binding} {frame : Nat → Nat} {base next : Nat} (fr : Layout scope frame base next)
     (apart : ∀ x ∈ places, ∀ b ∈ scope, x.cell ≠ frame b.slot)
     (unviewed : ∀ v ∈ st.i32ArrayViews, ∀ b ∈ scope, viewedType b.ty = false → v.root ≠ frame b.slot)
@@ -636,47 +636,53 @@ theorem FrameCorr.lend {st : State} {hp hpS : Heap} (fc : FrameCorr sx bud place
     (out : ∀ c, hp.fsp + a.bytes ≤ c → hpS.bytes c = hp.bytes c)
     (fsp : hpS.fsp = hp.fsp) (limit : hpS.limit = hp.limit) (top : hpS.top = hp.top)
     (statics : hpS.staticBase = hp.staticBase ∧ hpS.statics = hp.statics) :
-    FrameCorr sx ⟨bud.room, 0⟩ (arrayPlaces scope frame hp.fsp args 0 ++ places) st hpS := by
+    LentHomes sx ⟨bud.room, 0⟩ (arrayPlaces scope frame hp.fsp args 0 ++ places) st hpS := by
   obtain ⟨shapeAll, pairwise⟩ := arrayPlaces_shape fr (A := hp.fsp) ok
   have pos : 0 < bud.room + bud.block := by omega
   have room := fc.room pos
   have ceiling := fc.ceiling pos
   have bounded := fc.bounded pos
-  refine ⟨fun x mem => ?_, fun x mem => ?_, fun x mem => ?_, fun x mem y ymem ne => ?_, fun x mem => ?_,
-    fun v vmem x mem => ?_, fun _ => by simp only; rw [fsp, limit]; exact room, fun _ => by simp only; rw [fsp, top]; omega,
-    fun _ => by rw [top]; exact bounded, fc.statics.congr statics.1 statics.2 top⟩
+  have wordsLe : ∀ x ∈ arrayPlaces scope frame hp.fsp args 0, x.ty.words ≤ x.ty.size :=
+    fun x mem => (shapeAll x mem).1.words_le
+  have pairwiseW : (arrayPlaces scope frame hp.fsp args 0).Pairwise
+      (fun x y => x.cell ≠ y.cell ∧ x.address + 8 * x.ty.words ≤ y.address) :=
+    pairwise.imp_of_mem fun xm _ h => ⟨h.1, by have := wordsLe _ xm; omega⟩
+  refine LentHomes.ofParts (fun x mem => ?_) (fun x mem => ?_) (fun x mem => ?_) (fun x mem => ?_)
+    (indexed_append (indexed_of_pairwise pairwiseW fun x y h => ?_) fc.homes.apart fun x xl y yo => ?_)
+    (fun v vmem x mem => ?_) (fun _ => by simp only; rw [fsp, limit]; exact room)
+    (fun _ => by simp only; rw [fsp, top]; omega) (fun _ => by rw [top]; exact bounded)
+    (fc.statics.congr statics.1 statics.2 top)
   · rcases List.mem_append.mp mem with lent | old
     · exact lentHold x lent _
     · obtain ⟨v, read, holds⟩ := fc.holds x old
-      refine ⟨v, read, (fc.packed x old).holdsAt (holds.congr (Addressed.view_congr fun c covers => out c ?_))⟩
+      refine ⟨v, read, (fc.packed x old).holdsAt
+        (holds.congr ((fc.packed x old).view_congr fun c within => out c ?_))⟩
       have := (fc.inside x old).1
-      unfold Addressed.Covers at covers
+      unfold Addressed.Within at within
       omega
+  · rcases List.mem_append.mp mem with lent | old
+    · exact (shapeAll x lent).1
+    · exact fc.packed x old
   · simp only
     rw [fsp, limit, top]
     rcases List.mem_append.mp mem with lent | old
     · obtain ⟨-, -, -, lo, hi⟩ := shapeAll x lent
+      have := wordsLe x lent
       omega
     · have := fc.inside x old
       omega
   · rcases List.mem_append.mp mem with lent | old
     · obtain ⟨-, -, -, lo, hi⟩ := shapeAll x lent
+      have := wordsLe x lent
       omega
     · exact fc.small x old
-  · rcases List.mem_append.mp mem with xl | xo <;> rcases List.mem_append.mp ymem with yl | yo
-    · rcases pairwise_either pairwise x xl y yl ne with ⟨c, h⟩ | ⟨c, h⟩
-      · exact ⟨c, .inl h⟩
-      · exact ⟨fun e => c e.symm, .inr h⟩
-    · obtain ⟨-, -, ⟨b, bmem, cell, -, -⟩, -, hi⟩ := shapeAll x xl
-      have := (fc.inside y yo).1
-      exact ⟨fun e => apart y yo b bmem (by rw [← cell, e]), .inl (by omega)⟩
-    · obtain ⟨-, -, ⟨b, bmem, cell, -, -⟩, -, hi⟩ := shapeAll y yl
-      have := (fc.inside x xo).1
-      exact ⟨fun e => apart x xo b bmem (by rw [← cell, ← e]), .inr (by omega)⟩
-    · exact fc.apart x xo y yo ne
-  · rcases List.mem_append.mp mem with lent | old
-    · exact (shapeAll x lent).1
-    · exact fc.packed x old
+  · obtain ⟨c, h⟩ := h
+    exact ⟨⟨c, .inl h⟩, ⟨fun e => c e.symm, .inr h⟩⟩
+  · obtain ⟨-, -, ⟨b, bmem, cell, -, -⟩, -, hi⟩ := shapeAll x xl
+    have := wordsLe x xl
+    have := (fc.inside y yo).1
+    exact ⟨⟨fun e => apart y yo b bmem (by rw [← cell, e]), .inl (by omega)⟩,
+      ⟨fun e => apart y yo b bmem (by rw [← cell, ← e]), .inr (by omega)⟩⟩
   · rcases List.mem_append.mp mem with lent | old
     · obtain ⟨packed, -, ⟨b, bmem, cell, xty, -⟩, -⟩ := shapeAll x lent
       obtain ⟨-, -, e, n, hx, -⟩ := packed
@@ -711,7 +717,7 @@ arrays lent its places. -/
 theorem arrayCall_setup {sp : SrcProgram} {mp : Program} {d : Nat} {scope : List Binding} {frame : Nat → Nat}
     {base next : Nat} {st : State} {env : Env} {hp : Heap}
     (corr : Corr sx places scope frame st env) (fr : Layout scope frame base next)
-    (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp) (within : st.heap.nextAddress ≤ hp.limit)
+    (hc : HeapCorr st.heap st.world hp) (fc : LentHomes sx bud places st hp) (within : st.heap.nextAddress ≤ hp.limit)
     {args : List SrcEff} {types : List SrcType} {t : Nat} {a : ArrayArgs} (tAbove : next ≤ t)
     (ok : arrayArgs scope args types t 0 = some a) (blockPos : 0 < bud.block) (bytesLe : a.bytes ≤ bud.block)
     {k : Nat} {values : List Value} {afterArgs : State}
@@ -720,7 +726,7 @@ theorem arrayCall_setup {sp : SrcProgram} {mp : Program} {d : Nat} {scope : List
       ∃ EC, (EC t).toNat = hp.fsp ∧ (∀ j, j ≠ t → EC j = env j) ∧
         Exec mp d env hp (.frame t 0) (.normal EC hp) ∧
         ∃ hpS, Exec mp d EC hp a.stores (.normal EC hpS) ∧
-          HeapCorr st.heap st.world hpS ∧ FrameCorr sx ⟨bud.room, 0⟩ (arrayPlaces scope frame hp.fsp args 0 ++ places) st hpS ∧
+          HeapCorr st.heap st.world hpS ∧ LentHomes sx ⟨bud.room, 0⟩ (arrayPlaces scope frame hp.fsp args 0 ++ places) st hpS ∧
           FieldsHold sx (arrayPlaces scope frame hp.fsp args 0 ++ places) types values (Func.entry (Expr.evalAll EC a.args)) 0 ∧
           hpS.limit = hp.limit ∧ hpS.fsp = hp.fsp ∧ hpS.top = hp.top := by
   have pos : 0 < bud.room + bud.block := by omega
@@ -754,13 +760,13 @@ theorem arrayCall_sound {sp : SrcProgram} [StaticsOf sp sx] {mp : Program}
     {env : Env} {hp : Heap} {callee : Nat} {args : List SrcEff} {ev : Evaluated}
     (ok : arrayCall (sp.sigsAt bud) scope next callee args = some ev)
     (corr : Corr sx places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp)
+    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : LentHomes sx bud places st hp)
     {v : Value} {st' : State}
     (run : evalExpr (k + 1) sp.toCore st (.call callee (SrcEff.toCoreList args)) = .done v st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     st'.Fresh ∧ Keeps places base st st' ∧ st'.locals = st.locals ∧ 0 < ev.ty.size ∧
       ∃ d env' hp', Exec mp d env hp ev.stmt (.normal env' hp') ∧ Corr sx places scope frame st' env' ∧
-        ev.ty.HoldsAt sx places v env' next ∧ HeapCorr st'.heap st'.world hp' ∧ FrameCorr sx bud places st' hp' := by
+        ev.ty.HoldsAt sx places v env' next ∧ HeapCorr st'.heap st'.world hp' ∧ LentHomes sx bud places st' hp' := by
   simp only [arrayCall] at ok
   split at ok
   · simp at ok
@@ -831,7 +837,7 @@ theorem arrayCall_sound {sp : SrcProgram} [StaticsOf sp sx] {mp : Program}
       (.seq callExec (.seq frame2 loadsExec)))), ⟨corr.locals, corr.apart, fun b bmem => ?_,
       fun v vmem b bmem nv => keeps.unrooted (corr.below fresh b bmem) (fun w wm => corr.unviewed w wm b bmem nv) v vmem,
       fun b bmem n hty => ?_⟩, ?_,
-    hcDone.withFsp _, ((fcDone.restrict fun x mem => List.mem_append_right _ mem).back fc limit' top').restoreLocals _⟩
+    hcDone.withFsp _, (fcDone.drop.back fc limit' top').restoreLocals _⟩
   · refine Keeps.trans ⟨fun c below apart unrooted => keeps.cells c (by omega) (fun x mem => ?_) unrooted, keeps.next,
       fun v m => (keeps.views v m).imp_right (fun h => by omega), fun v m => keeps.persist v m,
       fun v m h => keeps.arrays v m h⟩ (restore_keeps _ _ _)
