@@ -109,9 +109,11 @@ def defTexts (text : String) : List (String × String) := Id.run do
   if let some d := cur then out := out.push d
   return out.toList
 
-/-- The parts defining the definitions `text` names, and those they use, by
-name in each definition's text: a word `N` or `Lanius.Mini.N` names `N`, and
-a dotted word `x.f` also each definition whose last component is `f`. -/
+/-- The parts defining the definitions `text` names: a word `N` or
+`Lanius.Mini.N` names `N`, and a dotted word `x.f` also each definition whose
+last component is `f`. Not the definitions those use: a proof that unfolds a
+callee's body too (`rfl`, `decide`) names its part in an `import all` line
+of its own, outside the block. -/
 def usedParts (text : String) (defs : Std.HashMap String (String × String))
     (byLast : Std.HashMap String (List String)) : List String := Id.run do
   let named (w : String) : List String :=
@@ -137,9 +139,8 @@ def usedParts (text : String) (defs : Std.HashMap String (String × String))
       todo := rest
       if seen.contains n then continue
       seen := seen.insert n
-      if let some (part, body) := defs.get? n then
+      if let some (part, _) := defs.get? n then
         out := out.insert part
-        todo := (words body).flatMap named ++ todo
   return out.toList.toArray.qsort (fun a b => decide (a < b)) |>.toList
 
 /-- The text with its `-- import all: module` block listing `parts` (`import

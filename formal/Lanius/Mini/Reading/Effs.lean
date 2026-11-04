@@ -3,9 +3,7 @@ module
 public import Lanius.Mini.Reading.Nested
 import all Lanius.Mini.Compiler.P.SrcType_same
 import all Lanius.Mini.Compiler.P.Stmt_kills
-import all Lanius.Mini.Compiler.P.Word_compute
 import all Lanius.Mini.Compiler.P.arithShiftRight
-import all Lanius.Mini.Compiler.P.callAgrees
 import all Lanius.Mini.Frontend.P.argView
 import all Lanius.Mini.Frontend.P.bindsOfTys
 import all Lanius.Mini.Frontend.P.callParts

@@ -2,9 +2,7 @@ module
 
 public import Lanius.Mini.Fails
 public import Lanius.Mini.Compiler.P.loadAtBytes
-import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.Lists_empty
-import all Lanius.Mini.Compiler.P.codeSize
 import all Lanius.Mini.Compiler.P.loadAtBytes
 import all Lanius.Mini.Compiler.Types
 

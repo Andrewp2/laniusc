@@ -3,15 +3,10 @@ module
 public import Lanius.Mini.Flags
 public import Lanius.Mini.DetSteps
 public import Lanius.Mini.Compiler.P.FArith_opcode
-import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.FArith_opcode
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcType_same
-import all Lanius.Mini.Compiler.P.UintTy_half
-import all Lanius.Mini.Compiler.P.UintTy_isWide
-import all Lanius.Mini.Compiler.P.UintTy_mask
 import all Lanius.Mini.Compiler.P.arities
-import all Lanius.Mini.Compiler.P.loadAtBytes
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Compiler.P.SrcType_same

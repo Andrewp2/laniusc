@@ -3,12 +3,8 @@ module
 public import Lanius.Faithful.Sim.State
 public import Lanius.Faithful.Sim.Scalar
 public import Lanius.Mini.Compiler.P.UintTy_half
-import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.UintTy_half
-import all Lanius.Mini.Compiler.P.UintTy_isWide
-import all Lanius.Mini.Compiler.P.loadAtBytes
-import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.Types
 
 @[expose] public section
