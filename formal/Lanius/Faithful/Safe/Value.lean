@@ -4,14 +4,7 @@ public import Lanius.Faithful.Sim.Scalar
 public import Lanius.Faithful.Sim.Check
 public import Lanius.Mini.Fails
 public import Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.UintTy_half
-import all Lanius.Mini.Compiler.P.UintTy_isWide
-import all Lanius.Mini.Compiler.P.arithShiftRight
-import all Lanius.Mini.Compiler.P.equality
-import all Lanius.Mini.Compiler.P.floatApply
-import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.Types
 
 @[expose] public section

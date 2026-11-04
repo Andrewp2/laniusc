@@ -23,11 +23,13 @@ or indices; by default every function):
               induction on the fuel, callees first;
   SelfBudget  all of them.
 
-Each kind is split into numbered parts of about CHUNK characters
-(SelfBModel0, SelfBModel1, ...). The model, statement and certificate parts
-each import the part before them. Every proof part imports only the last
-statement part, so the proof parts build side by side. Files in OUTDIR that
-the run does not write are removed.
+The models, statements and proofs are in modules by group (each function's
+extraction-certificate bucket, `Gen.files`), each importing only what it uses,
+so that a change to one function rebuilds its group's modules and those of the
+functions that reach it (11-03: 24 modules where all 89 rebuilt). SelfBModels
+imports every model (SelfBModel4 and SelfBModel5 are it under their old names)
+and lists the models' order for pre_certs.py. Files in OUTDIR that the run
+does not write are removed.
 
 A budget certificate says that a run of `progW` (`plus` and `times`
 wrapping) on values representing Lean arguments `x`, at a cost `k` in
@@ -801,63 +803,158 @@ class Gen:
             lines.append(f'theorem bcert_{key[i]} {{n : Nat}} :\n    {ref(i, "n")} :=\n  (bcerts_{first} n){pick}')
         return '\n'.join(lines) + '\n'
 
+    def group(self, i):
+        """The module group of a function: its extraction certificates' bucket
+        (faithful_certs.bucket_name), a hash bucket `N<k>`."""
+        b = fc.bucket_name(self.prog, self.key, self.parts, i)
+        return 'N' + b if b[0].isdigit() else b
+
+    def mini_modules(self, text):
+        """The extraction parts that define the Lean names `Lanius.Mini.X` in text."""
+        out = set()
+        for tok in set(re.findall(r'Lanius\.Mini\.[A-Za-z0-9_.]*[A-Za-z0-9_]', text)):
+            while tok.count('.') > 1:
+                if tok in self.parts.where:
+                    out.add(self.parts.where[tok])
+                    break
+                tok = tok.rsplit('.', 1)[0]
+        return out
+
     def files(self):
+        """The modules, by group (`group`), so that a change to one function
+        rebuilds the modules of its group and of the functions that reach it,
+        not all of them. They are not modules of the module system (the cost
+        semantics is not), so each imports only what it uses:
+
+          SelfBModel<g>  the models of the group's recursive groups; groups whose
+                         models call each other's are one module (named after
+                         the first); imports the models it calls, the extraction
+                         parts its text names and BudgetCore;
+          SelfBStmt<g>   the statements; imports their models, the parts of the
+                         Lean functions they state and Gen/SelfRep;
+          SelfBProof<g>  the proofs (several parts when long); imports the
+                         statements of the functions and their callees, and
+                         Gen's SelfSrc and SelfStmt modules of the functions;
+          SelfBCert<k>   the certificates at `progW` and `prog`, a chain as before;
+          SelfBModels    every model (SelfBModel4 and SelfBModel5 import it: the
+                         names GenP and the open statements import)."""
         head = ('set_option maxHeartbeats 10000000\nset_option maxRecDepth 100000\n'
                 'set_option linter.unusedVariables false\n\n')
-        opens = (f'namespace {NS}\n\nopen Lanius.Mini\nopen Lanius.Core (Value)\nopen Lanius.Faithful\n'
-                 'open Lanius.Faithful.Self\nopen Lanius.Faithful.SelfRep\nopen Lanius.Faithful.SelfCert\n'
-                 'open Lanius.Faithful.Budget\n\n')
+
+        def opens(*extra):
+            return (f'namespace {NS}\n\nopen Lanius.Mini\nopen Lanius.Core (Value)\nopen Lanius.Faithful\n' +
+                    ''.join(f'open {x}\n' for x in extra) + 'open Lanius.Faithful.Budget\n\n')
+        full = ('Lanius.Faithful.Self', 'Lanius.Faithful.SelfRep', 'Lanius.Faithful.SelfCert')
         fns = [i for comp in self.order for i in comp if self.is_fn(i)]
-        models = []
-        for comp in self.order:
-            if self.is_fn(comp[0]):
-                models += self.model_defs(comp)
         texts = {}
 
         def mod(name):
             return f'Lanius.Faithful.GenB.{name}'
 
-        def chain(base, parts, first_imports, doc, extra_open='', extra_head=''):
-            """`parts` in modules of about CHUNK characters, each importing the one before."""
-            chunks, cur = [], []
-            for t in parts:
-                if cur and sum(map(len, cur)) + len(t) > CHUNK:
-                    chunks.append(cur)
-                    cur = []
-                cur.append(t)
-            chunks.append(cur)
-            names = [f'{base}{k}' for k in range(len(chunks))]
-            for k, chunk in enumerate(chunks):
-                imports = first_imports if k == 0 else [mod(names[k - 1])]
-                texts[names[k]] = (''.join(f'import {m}\n' for m in imports) +
-                                   f'\n/-! Generated by formal/tools/budget_certs.py: {doc} (part {k}). Do not edit. -/\n\n' +
-                                   head + extra_head + opens + extra_open + '\n'.join(chunk) + f'\nend {NS}\n')
-            return names
+        def imports(ms):
+            return ''.join(f'import {m}\n' for m in sorted(set(ms)))
 
-        model_names = chain('SelfBModel', [f'noncomputable section\n\n{m}\nend\n' for m in models],
-                            ['Lanius.Faithful.Gen.SelfCert', 'Lanius.Faithful.Budget'],
-                            'the cost models and preconditions of the self program\'s functions',
-                            # Elaborated in order: the asynchronous elaboration of these
-                            # definitions took one part 70 s instead of 10 s (11-02).
-                            extra_head='set_option Elab.async false\n\n')
-        stmt_names = chain('SelfBStmt', [self.bstmt(i) for i in fns], [mod(model_names[-1])],
-                           'the budget certificates\' statements')
-        # The proofs need only the statements, so their modules build side by side.
-        proofs = [(self.proof(i), self.proof_work(i)) for i in fns if not self.closed(i) and not self.free(i)]
-        proof_names, cur, work, k = [], [], 0.0, 0
-        for t, wt in proofs + [(None, 0.0)]:
-            if t is None or (cur and work + wt > PROOF_WORK):
-                name = f'SelfBProof{k}'
-                texts[name] = (f'import {mod(stmt_names[-1])}\nimport Lanius.Faithful.BudgetTactic\n\n'
-                               f'/-! Generated by formal/tools/budget_certs.py: the budget certificates, for any\n'
-                               f'programs that hold the functions (part {k}). Do not edit. -/\n\n' +
-                               head.replace('maxHeartbeats 10000000', f'maxHeartbeats {PROOF_HEARTBEATS}') + opens +
-                               '\n'.join(cur) + f'\nend {NS}\n')
+        # Models: each recursive group's text, its group, the groups it calls.
+        by_key = {k: i for i, k in self.key.items()}
+        mcomp, mtext = {}, {}
+        for n, comp in enumerate(self.order):
+            if self.is_fn(comp[0]):
+                defs = self.model_defs(comp)
+                if defs:
+                    mtext[n] = ''.join(f'noncomputable section\n\n{m}\nend\n' for m in defs)
+                    for i in comp:
+                        mcomp[i] = n
+        cgroup = {n: min(self.group(i) for i in self.order[n] if self.is_fn(i)) for n in mtext}
+        calls = {}
+        for n, text in mtext.items():
+            called = {mcomp[by_key[k]] for k in re.findall(r'\b(?:Cost|Pre)_([A-Za-z0-9_]+)', text)
+                      if k in by_key and by_key[k] in mcomp}
+            calls[n] = called - {n}
+        groups = sorted(set(cgroup.values()))
+        gcalls = {g: set() for g in groups}
+        for n, cs in calls.items():
+            gcalls[cgroup[n]] |= {cgroup[c] for c in cs} - {cgroup[n]}
+        merged = {}
+        for scc in fc.sccs(groups, lambda g: sorted(gcalls[g])):
+            for g in scc:
+                merged[g] = scc[0]
+        model_mod = {n: f'SelfBModel{merged[cgroup[n]]}' for n in mtext}
+        for name in sorted(set(model_mod.values())):
+            mine = [n for n in sorted(mtext) if model_mod[n] == name]
+            body = '\n'.join(mtext[n] for n in mine)
+            ims = ['Lanius.Faithful.BudgetCore', 'Lanius.Mini.Compiler.Types', 'Lanius.Mini.Frontend.Types']
+            ims += [mod(model_mod[c]) for n in mine for c in calls[n] if model_mod[c] != name]
+            ims += sorted(self.mini_modules(body))
+            texts[name] = (imports(ims) +
+                           f'\n/-! Generated by formal/tools/budget_certs.py: the cost models and preconditions of the '
+                           f'self program\'s functions, group {name[len("SelfBModel"):]}. Do not edit. -/\n\n' +
+                           # Elaborated in order: the asynchronous elaboration of these
+                           # definitions took one part 70 s instead of 10 s (11-02).
+                           head + 'set_option Elab.async false\n\n' + opens() + body + f'\nend {NS}\n')
+        model_names = sorted(set(model_mod.values()))
+        # The models' and statements' names in the call graph's order (callees
+        # first), the order pre_certs.py lists its lemmas in.
+        names = [m for n in sorted(mtext) for m in re.findall(r'^def ((?:Cost|Pre)_\w+) :', mtext[n], re.M)]
+        stated = [self.key[i] for i in fns]
+
+        def listing(tag, xs):
+            lines, cur = [], f'-- {tag}:'
+            for x in xs:
+                if len(cur) + len(x) > 100:
+                    lines.append(cur)
+                    cur = f'-- {tag}:'
+                cur += ' ' + x
+            return '\n'.join(lines + [cur]) + '\n'
+        texts['SelfBModels'] = (imports(mod(n) for n in model_names) +
+                                '\n/-! Generated by formal/tools/budget_certs.py: every cost model and precondition, '
+                                'and (for\npre_certs.py) the models\' and the statements\' names in the call graph\'s '
+                                'order, callees first.\nDo not edit. -/\n\n' + listing('models', names) +
+                                listing('statements', stated))
+        for alias in ('SelfBModel4', 'SelfBModel5'):
+            texts[alias] = (f'import {mod("SelfBModels")}\n\n/-! Generated by formal/tools/budget_certs.py: every '
+                            f'cost model and precondition, under the name the layout before 11-03 gave its\n'
+                            f'last parts (GenP and the open statements import it). Do not edit. -/\n')
+
+        # Statements, by group.
+        sgroup = {i: self.group(i) for i in fns}
+        for g in sorted(set(sgroup.values())):
+            mine = [i for i in fns if sgroup[i] == g]
+            ims = ['Lanius.Faithful.BudgetCore', 'Lanius.Faithful.Gen.SelfRep']
+            ims += [mod(model_mod[mcomp[i]]) for i in mine if i in mcomp]
+            for i in mine:
+                ims += sorted(self.parts.defining(self.prog.head(i, self.inline)))
+            texts[f'SelfBStmt{g}'] = (imports(ims) +
+                                      f'\n/-! Generated by formal/tools/budget_certs.py: the budget certificates\' '
+                                      f'statements, group {g}. Do not edit. -/\n\n' + head +
+                                      opens(*full[:2]) + '\n'.join(self.bstmt(i) for i in mine) + f'\nend {NS}\n')
+
+        # Proofs, by group, in parts of about PROOF_WORK.
+        gen_bucket = lambda i: fc.bucket_name(self.prog, self.key, self.parts, i)  # noqa: E731
+        proof_names = []
+        for g in sorted(set(sgroup.values())):
+            mine = [i for i in fns if sgroup[i] == g and not self.closed(i) and not self.free(i)]
+            chunks, cur, work = [], [], 0.0
+            for i in mine:
+                if cur and work + self.proof_work(i) > PROOF_WORK:
+                    chunks.append(cur)
+                    cur, work = [], 0.0
+                cur.append(i)
+                work += self.proof_work(i)
+            if cur:
+                chunks.append(cur)
+            for k, chunk in enumerate(chunks):
+                name = f'SelfBProof{g}' + (f'_{k}' if k else '')
+                ims = ['Lanius.Faithful.BudgetTactic', 'Lanius.Faithful.Gen.SelfRep']
+                for i in chunk:
+                    ims += [f'Lanius.Faithful.Gen.SelfSrc{gen_bucket(i)}', f'Lanius.Faithful.Gen.SelfStmt{gen_bucket(i)}']
+                    ims += [mod(f'SelfBStmt{sgroup[c]}') for c in [i] + fc.callees(self.prog, i) if c in sgroup]
+                texts[name] = (imports(ims) +
+                               f'\n/-! Generated by formal/tools/budget_certs.py: the budget certificates, for any\n'
+                               f'programs that hold the functions (group {g}' + (f', part {k}' if k else '') +
+                               '). Do not edit. -/\n\n' +
+                               head.replace('maxHeartbeats 10000000', f'maxHeartbeats {PROOF_HEARTBEATS}') +
+                               opens(*full) + '\n'.join(self.proof(i) for i in chunk) + f'\nend {NS}\n')
                 proof_names.append(name)
-                cur, work, k = [], 0.0, k + 1
-            if t is not None:
-                cur.append(t)
-                work += wt
         texts['SelfBFree'] = (
             'import Lanius.Faithful.BudgetFree\n\n'
             '/-! Generated by formal/tools/budget_certs.py: the functions that reach neither `boxed`,\n'
@@ -873,10 +970,26 @@ class Gen:
             '    qcall Self.prog SelfPure.prims uc n ix vs = some (w, k) ∧ 0 = k :=\n'
             '  bfree_of freeMask_check bit h\n\n'
             f'end {NS}\n')
+
+        # The certificates: a chain, callees first.
         links = [t for t in (self.link(comp) for comp in self.order) if t]
-        cert_names = chain('SelfBCert', links, [mod(n) for n in proof_names] + ['Lanius.Faithful.BudgetClosed', mod('SelfBFree')],
-                           'the budget certificates at `progW` and `prog`', 'open Lanius.Faithful.SelfPanics\n\n')
-        texts['SelfBudget'] = (f'import {mod(cert_names[-1])}\n\n'
+        chunks, cur = [], []
+        for t in links:
+            if cur and sum(map(len, cur)) + len(t) > CHUNK:
+                chunks.append(cur)
+                cur = []
+            cur.append(t)
+        chunks.append(cur)
+        first = ([mod(n) for n in proof_names] + [mod(f'SelfBStmt{g}') for g in sorted(set(sgroup.values()))] +
+                 [mod('SelfBModels'), mod('SelfBFree'), 'Lanius.Faithful.Budget', 'Lanius.Faithful.BudgetClosed',
+                  'Lanius.Faithful.Gen.SelfCert', 'Lanius.Faithful.Gen.SelfLook'])
+        for k, chunk in enumerate(chunks):
+            ims = first if k == 0 else [mod(f'SelfBCert{k - 1}')]
+            texts[f'SelfBCert{k}'] = (imports(ims) +
+                                      f'\n/-! Generated by formal/tools/budget_certs.py: the budget certificates at '
+                                      f'`progW` and `prog` (part {k}). Do not edit. -/\n\n' + head +
+                                      opens(*full, 'Lanius.Faithful.SelfPanics') + '\n'.join(chunk) + f'\nend {NS}\n')
+        texts['SelfBudget'] = (f'import {mod(f"SelfBCert{len(chunks) - 1}")}\n\n'
                                '/-! Generated by formal/tools/budget_certs.py: every budget certificate. Do not edit. -/\n')
         return texts
 

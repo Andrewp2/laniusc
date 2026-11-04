@@ -3,7 +3,6 @@ module
 public import Lanius.Mini.DetSteps
 public import Lanius.Mini.Bytes
 public import Lanius.Mini.Compiler.P.FArith_opcode
-import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.FArith_opcode
 import all Lanius.Mini.Compiler.P.FloatTy_rex
 import all Lanius.Mini.Compiler.P.Lists_empty

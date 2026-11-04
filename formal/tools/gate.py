@@ -91,6 +91,8 @@ STEPS = [
     # (it reads srcDump's output, the self sources' trees and Gen/ itself)
     # It also reruns term_gen.lean on the program and compares Gen/SelfTerm*.lean.
     ('self-current', ['faithful_current.py', '{w}'], ['src_dump', 'gen', 'genb', 'term', 'lani', 'laniusc', 'stdlib'], True),
+    # Every file formal/tools/regen.py generates is what it writes from the current sources (it writes nothing here).
+    ('regen-current', ['regen.py', '--check', '--work', '{w}'], ['extract', 'src_dump', 'extended_all', 'stdlib'], True),
     # F13: the top theorems' axioms are the standard three, and each statement is the one TRUSTED_BASE.md lists.
     ('trusted', ['trusted_check.py', '{w}'], ['trusted'], True),
     # The open statements (OPEN_STATEMENTS.md): unchanged statements, well-formed reductions and proofs.

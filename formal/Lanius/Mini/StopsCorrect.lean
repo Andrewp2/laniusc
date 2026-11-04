@@ -3,12 +3,9 @@ module
 public import Lanius.Mini.Correct
 public import Lanius.Mini.Stops
 public import Lanius.Mini.Compiler.P.FArith_opcode
-import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.FArith_opcode
-import all Lanius.Mini.Compiler.P.FloatTy_rex
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.arities
-import all Lanius.Mini.Compiler.P.codeSize
 import all Lanius.Mini.Compiler.P.compileArgs
 import all Lanius.Mini.Compiler.P.roomFits
 import all Lanius.Mini.Compiler.P.linkedSize

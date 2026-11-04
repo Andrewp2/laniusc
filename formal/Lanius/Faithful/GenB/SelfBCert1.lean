@@ -14,9 +14,8 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 open Lanius.Faithful.SelfCert
-open Lanius.Faithful.Budget
-
 open Lanius.Faithful.SelfPanics
+open Lanius.Faithful.Budget
 
 theorem bcert_p_where_none {n : Nat} :
     BStmt_p_where_none progW prog prims 636 n := by

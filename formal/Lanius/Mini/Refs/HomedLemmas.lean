@@ -5,12 +5,8 @@ public import Lanius.Mini.Refs.Place
 public import Lanius.Mini.Refs.Store
 public import Lanius.Mini.LowerStmt
 import all Lanius.Mini.Compiler.P.SrcType_same
-import all Lanius.Mini.Compiler.P.widthOf
-import all Lanius.Mini.Compiler.P.wordWidth
-import all Lanius.Mini.Compiler.P.usizeWidth
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.Lists_empty
-import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.lowerTagged
 
 @[expose] public section

@@ -2128,6 +2128,28 @@ method).
   receivers (S6b), or with those expected results changed if the
   coordinator prefers the reading first.
 
+**S6's steps (decided 11-03, coordinator, on leafA's S6a plan).** S6 is
+split between the lowering (leafC) and the proof (leafA).
+- S6a-1 (proof only): the simulation carries `Homes` in place of
+  `FrameCorr` (point 7), with a side fact `Lent places` (every place is a
+  lent packed array above the activation's block), true of every place
+  until S6b adds a function's own homes. `ArrayCall` and `Borrowed` move
+  with it. The copy-in and copy-out stay: the caller's copy buffers are
+  homes from the callee's view. `FrameCorr` keeps its definition, which
+  open statements name, but the simulation no longer uses it.
+- S6a-2: `Binding.home: Option<usize>` in the scope (`None` everywhere),
+  and `RCtx.ofScope` reads the homes from the scope. No behaviour changes.
+- S6b (the lowering of borrows and homed lets): **a lent array local is a
+  homed let.** An array local passed as a slice (`ArraySlice` at a slice
+  parameter) is a borrowed local, so it gets a home like any other borrowed
+  local (`decl_bytes` already reserves its bytes in the frame block): its
+  let stores it there, and its reads, indexing and writes are home loads and
+  stores in statement positions. `array_arg_local` then passes the home's
+  address (the frame slot plus the home's offset) and the length, with no
+  `element_stores` before the call and no `element_loads` after it. This
+  removes the copy that S6a was first meant to remove, with the one
+  homed-let machinery that borrows need anyway.
+
 **Out of scope for F5.** Functions that return references (100 in the
 stdlib), and references in lets, struct fields, elements or results, until
 the lifetime checks of point 9; references to references; raw places
