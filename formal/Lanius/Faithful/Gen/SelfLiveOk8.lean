@@ -76,16 +76,16 @@ theorem lok711 : LiveOk prims outside liveBad 711 (src_Expr_constant 492 711 102
 theorem lok713 : LiveOk prims outside liveBad 713 (src_Expr_is_zero 711 1024) := by decide +kernel
 
 /-- mini::selfhost::expr_then -/
-theorem lok734 : LiveOk prims outside liveBad 734 (src_expr_then 1031) := by decide +kernel
+theorem lok728 : LiveOk prims outside liveBad 728 (src_expr_then 1030) := by decide +kernel
 
 /-- mini::selfhost::stmt_then -/
-theorem lok735 : LiveOk prims outside liveBad 735 (src_stmt_then 475) := by decide +kernel
+theorem lok729 : LiveOk prims outside liveBad 729 (src_stmt_then 472) := by decide +kernel
 
 /-- mini::selfhost::args_then -/
-theorem lok736 : LiveOk prims outside liveBad 736 (src_args_then 1032) := by decide +kernel
+theorem lok730 : LiveOk prims outside liveBad 730 (src_args_then 1031) := by decide +kernel
 
 /-- mini::selfhost::spend_then -/
-theorem lok737 : LiveOk prims outside liveBad 737 (src_spend_then 300) := by decide +kernel
+theorem lok731 : LiveOk prims outside liveBad 731 (src_spend_then 300) := by decide +kernel
 
 /-- mini::selfhost::seq_code -/
 theorem lok743 : LiveOk prims outside liveBad 743 (src_seq_code 75 478 479 480) := by decide +kernel

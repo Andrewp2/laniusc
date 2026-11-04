@@ -63,35 +63,35 @@ theorem ok_frame_agrees : FnOk prog prims info (726, ⟨0, [], 0⟩) :=
 theorem ok_static_agrees : FnOk prog prims info (727, ⟨0, [], 0⟩) :=
   fnOk_of fn_static_agrees (by decide +kernel)
 
-theorem ok_Expr_temps : FnOk prog prims info (728, ⟨2, [0], 0⟩) :=
-  fnOk_of fn_Expr_temps (by decide +kernel)
-
-theorem ok_args_temps : FnOk prog prims info (729, ⟨3, [0], 0⟩) :=
-  fnOk_of fn_args_temps (by decide +kernel)
-
-theorem ok_Expr_within : FnOk prog prims info (730, ⟨0, [0], 0⟩) :=
-  fnOk_of fn_Expr_within (by decide +kernel)
-
-theorem ok_arity_is : FnOk prog prims info (731, ⟨2, [], 0⟩) :=
-  fnOk_of fn_arity_is (by decide +kernel)
-
-theorem ok_length_of_mini_selfhost_Expr : FnOk prog prims info (732, ⟨2, [0], 0⟩) :=
-  fnOk_of fn_length_of_mini_selfhost_Expr (by decide +kernel)
-
-theorem ok_all_within : FnOk prog prims info (733, ⟨1, [1], 0⟩) :=
-  fnOk_of fn_all_within (by decide +kernel)
-
-theorem ok_expr_then : FnOk prog prims info (734, ⟨2, [1], 1⟩) :=
+theorem ok_expr_then : FnOk prog prims info (728, ⟨2, [1], 1⟩) :=
   fnOk_of fn_expr_then (by decide +kernel)
 
-theorem ok_stmt_then : FnOk prog prims info (735, ⟨4, [1], 1⟩) :=
+theorem ok_stmt_then : FnOk prog prims info (729, ⟨4, [1], 1⟩) :=
   fnOk_of fn_stmt_then (by decide +kernel)
 
-theorem ok_args_then : FnOk prog prims info (736, ⟨3, [1], 1⟩) :=
+theorem ok_args_then : FnOk prog prims info (730, ⟨3, [1], 1⟩) :=
   fnOk_of fn_args_then (by decide +kernel)
 
-theorem ok_spend_then : FnOk prog prims info (737, ⟨2, [], 0⟩) :=
+theorem ok_spend_then : FnOk prog prims info (731, ⟨2, [], 0⟩) :=
   fnOk_of fn_spend_then (by decide +kernel)
+
+theorem ok_Expr_temps : FnOk prog prims info (732, ⟨2, [0], 0⟩) :=
+  fnOk_of fn_Expr_temps (by decide +kernel)
+
+theorem ok_args_temps : FnOk prog prims info (733, ⟨3, [0], 0⟩) :=
+  fnOk_of fn_args_temps (by decide +kernel)
+
+theorem ok_Expr_within : FnOk prog prims info (734, ⟨0, [0], 0⟩) :=
+  fnOk_of fn_Expr_within (by decide +kernel)
+
+theorem ok_arity_is : FnOk prog prims info (735, ⟨2, [], 0⟩) :=
+  fnOk_of fn_arity_is (by decide +kernel)
+
+theorem ok_length_of_mini_selfhost_Expr : FnOk prog prims info (736, ⟨2, [0], 0⟩) :=
+  fnOk_of fn_length_of_mini_selfhost_Expr (by decide +kernel)
+
+theorem ok_all_within : FnOk prog prims info (737, ⟨1, [1], 0⟩) :=
+  fnOk_of fn_all_within (by decide +kernel)
 
 theorem ok_empty_of_mini_selfhost_Instr : FnOk prog prims info (739, ⟨0, [], 0⟩) :=
   fnOk_of fn_empty_of_mini_selfhost_Instr (by decide +kernel)
@@ -133,6 +133,6 @@ theorem ok_amount_guard : FnOk prog prims info (757, ⟨1, [], 0⟩) :=
   fnOk_of fn_amount_guard (by decide +kernel)
 
 theorem chunk15 : AllFns prog prims info part15 :=
-  ⟨ok_Expr_constant, ok_unknown, ok_Expr_is_zero, ok_loop_agrees, ok_call_agrees, ok_ret_agrees, ok_Stmt_is_brk, ok_Stmt_is_cont, ok_alloc_agrees, ok_load_byte_agrees, ok_store_byte_agrees, ok_load_word_agrees, ok_store_word_agrees, ok_divide_agrees, ok_sys_agrees, ok_frame_agrees, ok_static_agrees, ok_Expr_temps, ok_args_temps, ok_Expr_within, ok_arity_is, ok_length_of_mini_selfhost_Expr, ok_all_within, ok_expr_then, ok_stmt_then, ok_args_then, ok_spend_then, ok_empty_of_mini_selfhost_Instr, ok_compile_expr, ok_single_of_mini_selfhost_Instr, ok_seq_code, ok_ite_code, ok_loop_code, ok_compile_args, ok_arg_slots, ok_Instr_size, ok_concat_of_u8, ok_prologue, ok_encode_onto, ok_amount_guard, trivial⟩
+  ⟨ok_Expr_constant, ok_unknown, ok_Expr_is_zero, ok_loop_agrees, ok_call_agrees, ok_ret_agrees, ok_Stmt_is_brk, ok_Stmt_is_cont, ok_alloc_agrees, ok_load_byte_agrees, ok_store_byte_agrees, ok_load_word_agrees, ok_store_word_agrees, ok_divide_agrees, ok_sys_agrees, ok_frame_agrees, ok_static_agrees, ok_expr_then, ok_stmt_then, ok_args_then, ok_spend_then, ok_Expr_temps, ok_args_temps, ok_Expr_within, ok_arity_is, ok_length_of_mini_selfhost_Expr, ok_all_within, ok_empty_of_mini_selfhost_Instr, ok_compile_expr, ok_single_of_mini_selfhost_Instr, ok_seq_code, ok_ite_code, ok_loop_code, ok_compile_args, ok_arg_slots, ok_Instr_size, ok_concat_of_u8, ok_prologue, ok_encode_onto, ok_amount_guard, trivial⟩
 
 end Lanius.Faithful.SelfTerm

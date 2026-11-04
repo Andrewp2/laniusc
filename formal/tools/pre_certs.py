@@ -592,6 +592,14 @@ COMPILE_OVERRIDES = {
     'compile_optimized': ['Lanius.Faithful.SelfPre.funcsTemps p0.funcs ≤ K'],
     'compile_lowered': ['Lanius.Faithful.SelfPre.optTemps p0 ≤ K'],
     'compile_or': ['Lanius.Faithful.SelfPre.funcsTemps p1.funcs ≤ K'],
+    # type sizes and parameters' slots: a sum whose total is below `K` has every
+    # partial sum below it (the total from `ts`'s `size_le_tySlots`, or from
+    # `PreCompileSourceV4`'s parameters' premise, `paramsMax`)
+    'params_size': ['Lanius.Mini.paramsSize p0 ≤ K'],
+    'lower_func': ['Lanius.Mini.paramsSize p3.params ≤ K'],
+    'lower_funcs': ['Lanius.Faithful.SelfPre.paramsMax p3 ≤ K'],
+    'compile_declared': ['Lanius.Faithful.SelfPre.paramsMax p1.funcs ≤ K'],
+    'compile_source': ['Lanius.Faithful.SelfPre.paramsMax p0.funcs ≤ K'],
     'Instr_size': ['Lanius.Mini.Instr.size p0 ≤ K'],
 }
 # The parameters those invariants bound instead of `nb x ≤ M` (pc offsets and
@@ -606,7 +614,9 @@ COMPILE_NUM_DROP = {
 COMPILE_PRE_SIMP = ['Lanius.Mini.Stmt.weight', 'Lanius.Mini.Expr.weight', 'Lanius.Mini.argsWeight',
                     'Lanius.Mini.codeSize', 'Lanius.Mini.Instr.size', 'Lanius.Mini.roomFits_stmtRoom',
                     'Lanius.Mini.Expr.temps', 'Lanius.Mini.Stmt.temps', 'Lanius.Mini.argsTemps',
-                    'Lanius.Faithful.SelfPre.funcsTemps', 'Lanius.Faithful.SelfPre.optTemps']
+                    'Lanius.Faithful.SelfPre.funcsTemps', 'Lanius.Faithful.SelfPre.optTemps',
+                    'Lanius.Mini.SrcType.size', 'Lanius.Mini.sizes', 'Lanius.Mini.maxSize',
+                    'Lanius.Mini.paramsSize', 'Lanius.Faithful.SelfPre.paramsMax']
 PRE_PREAMBLE = ''
 # The Mini program's compile: the functions these reach bound the program's
 # numbers by `K` rather than `M` (they do not grow as it compiles: its slots,
@@ -614,7 +624,7 @@ PRE_PREAMBLE = ''
 COMPILE_FIXED_ROOTS = ['compile_optimized']
 # The functions whose `match`es' pattern variables count as the parameter they
 # take apart (`match_aliases`): their callers can bound the whole value.
-COMPILE_NUM_ALIAS = {'compile_funcs', 'compile_lowered'}
+COMPILE_NUM_ALIAS = {'compile_funcs', 'compile_lowered', 'lower_funcs'}
 
 
 def args_after(text, i):

@@ -12,14 +12,14 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.Termination
 open Lanius.Faithful.SelfCert
 
-theorem ok_frame_limit : FnOk prog prims info (473, ⟨0, [], 0⟩) :=
+theorem ok_Stmt_temps : FnOk prog prims info (473, ⟨4, [0], 0⟩) :=
+  fnOk_of fn_Stmt_temps (by decide +kernel)
+
+theorem ok_Stmt_within : FnOk prog prims info (474, ⟨3, [0], 0⟩) :=
+  fnOk_of fn_Stmt_within (by decide +kernel)
+
+theorem ok_frame_limit : FnOk prog prims info (475, ⟨0, [], 0⟩) :=
   fnOk_of fn_frame_limit (by decide +kernel)
-
-theorem ok_room_fits : FnOk prog prims info (474, ⟨0, [], 0⟩) :=
-  fnOk_of fn_room_fits (by decide +kernel)
-
-theorem ok_stmt_room : FnOk prog prims info (475, ⟨4, [1], 0⟩) :=
-  fnOk_of fn_stmt_room (by decide +kernel)
 
 theorem ok_cons_of_mini_selfhost_Instr : FnOk prog prims info (476, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_Instr (by decide +kernel)
@@ -133,6 +133,6 @@ theorem ok_within_layouts : FnOk prog prims info (526, ⟨3, [1], 0⟩) :=
   fnOk_of fn_within_layouts (by decide +kernel)
 
 theorem chunk10 : AllFns prog prims info part10 :=
-  ⟨ok_frame_limit, ok_room_fits, ok_stmt_room, ok_cons_of_mini_selfhost_Instr, ok_zero_locals, ok_concat_of_mini_selfhost_Instr, ok_compile_stmt, ok_code_size, ok_room_next, ok_Code_size, ok_layout, ok_link_onto, ok_effs_slice_uses, ok_id_absent, ok_array_bytes_of, ok_trap, ok_shift_guard, ok_guard_or, ok_left_false, ok_left_true, ok_bool_bits, ok_lower_unsigned, ok_lower_local, ok_lower_field, ok_lower_negate, ok_lower_not, ok_lower_apply, ok_lower_cast, ok_lower_float, ok_copy_binding, ok_copy_field, ok_lower_args, ok_lower_variant, ok_lower_match_arms, ok_lower_set_field_at, ok_field_offset, ok_get_of_mini_selfhost_SrcType, ok_UintTy_code, ok_word_type, ok_within_layouts, trivial⟩
+  ⟨ok_Stmt_temps, ok_Stmt_within, ok_frame_limit, ok_cons_of_mini_selfhost_Instr, ok_zero_locals, ok_concat_of_mini_selfhost_Instr, ok_compile_stmt, ok_code_size, ok_room_next, ok_Code_size, ok_layout, ok_link_onto, ok_effs_slice_uses, ok_id_absent, ok_array_bytes_of, ok_trap, ok_shift_guard, ok_guard_or, ok_left_false, ok_left_true, ok_bool_bits, ok_lower_unsigned, ok_lower_local, ok_lower_field, ok_lower_negate, ok_lower_not, ok_lower_apply, ok_lower_cast, ok_lower_float, ok_copy_binding, ok_copy_field, ok_lower_args, ok_lower_variant, ok_lower_match_arms, ok_lower_set_field_at, ok_field_offset, ok_get_of_mini_selfhost_SrcType, ok_UintTy_code, ok_word_type, ok_within_layouts, trivial⟩
 
 end Lanius.Faithful.SelfTerm

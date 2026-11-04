@@ -22,6 +22,6 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_lit_value_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : List Nat} {x2 : List Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → (RepList 25 RepNat) x1 v1 → (RepList 25 RepNat) x2 v2 →
-    (RepOption 134 RepNat) (Lanius.Mini.Inline.litValueAt x0 x1 x2) w
+    (RepOption 135 RepNat) (Lanius.Mini.Inline.litValueAt x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

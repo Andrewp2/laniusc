@@ -65,6 +65,10 @@ def SrcEff.isSlice (self : SrcEff) : Bool :=
   | .eLet id ty value rt body => false
   | .eLen slice => false
   | .eStr offset chars => false
+  | .eBorrow bty bplace => false
+  | .eDeref dty dref => false
+  | .eField fbase fidx => false
+  | .eAt abase aindex => false
 
 /-- Some argument is an array passed as a slice. -/
 def effsSlice (es : List SrcEff) : Bool :=
@@ -92,6 +96,10 @@ def SrcEff.passesSlices (self : SrcEff) : Bool :=
   | .eLet id ty value rt body => false
   | .eLen slice => false
   | .eStr offset chars => false
+  | .eBorrow bty bplace => false
+  | .eDeref dty dref => false
+  | .eField fbase fidx => false
+  | .eAt abase aindex => false
 
 /-- Its code as such a call. -/
 def SrcEff.sliceCall (self : SrcEff) (sigs : List Sig) (scope : List Binding) (next : Nat) : Option Evaluated :=
@@ -113,6 +121,10 @@ def SrcEff.sliceCall (self : SrcEff) (sigs : List Sig) (scope : List Binding) (n
   | .eLet id ty value rt body => none
   | .eLen slice => none
   | .eStr offset chars => none
+  | .eBorrow bty bplace => none
+  | .eDeref dty dref => none
+  | .eField fbase fidx => none
+  | .eAt abase aindex => none
 
 /-- The code of a value a statement computes (LetEval, Discard): a call passing arrays as slices (array_call), or any other expression's code. -/
 def stmtEval (value : SrcEff) (sigs : List Sig) (decls : SrcDecls) (scope : List Binding) (next : Nat) : Option Evaluated :=
@@ -159,6 +171,8 @@ def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (decls : SrcDecls) (ret : S
   | .unreachable id ty => lowerUnreachable (SrcType.same ty ret) next
   | .letView id length fields pointer body => guarded next (guardAll scope fields) (lowerView next length (lowerLiteral scope (SrcType.array SrcType.i32 length) fields) (SrcStmt.lower body sigs decls ret (({ id := pointer, slot := next + length, ty := SrcType.ptr } : Binding) :: ({ id := id, slot := next, ty := SrcType.view length } : Binding) :: scope) (next + length + 1)))
   | .letStr pointer chars body => lowerStr next chars (SrcStmt.lower body sigs decls ret (({ id := pointer, slot := next, ty := SrcType.ptr } : Binding) :: scope) (next + 1))
+  | .setPlace aplace avalue => none
+  | .setPlaceOp aop aplace avalue => none
 
 /-- A break or continue outside every loop of the statement: Core's typing rejects one outside every loop of the function. -/
 def SrcStmt.breaksOut (self : SrcStmt) : Bool :=
@@ -199,6 +213,8 @@ def SrcStmt.breaksOut (self : SrcStmt) : Bool :=
   | .unreachable id ty => false
   | .letView id length fields pointer body => SrcStmt.breaksOut body
   | .letStr pointer chars body => SrcStmt.breaksOut body
+  | .setPlace aplace avalue => false
+  | .setPlaceOp aop aplace avalue => false
 
 /-- Slots the statement's lets need beyond the ones in scope. -/
 def SrcStmt.depth (self : SrcStmt) : Nat :=
@@ -239,6 +255,8 @@ def SrcStmt.depth (self : SrcStmt) : Nat :=
   | .unreachable id ty => 1
   | .letView id length fields pointer body => SrcStmt.depth body + (length + 1)
   | .letStr pointer chars body => SrcStmt.depth body + 1
+  | .setPlace aplace avalue => 0
+  | .setPlaceOp aop aplace avalue => 0
 
 /-- Parameters take slots from 0 in order, a struct one per field; a later parameter with the same id shadows an earlier one, as Core's bindLocals does. -/
 def paramScope (params : List SrcParam) (slot : Nat) (scope : List Binding) : List Binding :=

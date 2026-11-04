@@ -127,13 +127,13 @@ theorem ok_subst_all : FnOk prog prims info (469, ⟨2, [0], 0⟩) :=
 theorem ok_Stmt_agrees : FnOk prog prims info (470, ⟨9, [0], 0⟩) :=
   fnOk_of fn_Stmt_agrees (by decide +kernel)
 
-theorem ok_Stmt_temps : FnOk prog prims info (471, ⟨4, [0], 0⟩) :=
-  fnOk_of fn_Stmt_temps (by decide +kernel)
+theorem ok_room_fits : FnOk prog prims info (471, ⟨0, [], 0⟩) :=
+  fnOk_of fn_room_fits (by decide +kernel)
 
-theorem ok_Stmt_within : FnOk prog prims info (472, ⟨3, [0], 0⟩) :=
-  fnOk_of fn_Stmt_within (by decide +kernel)
+theorem ok_stmt_room : FnOk prog prims info (472, ⟨4, [1], 0⟩) :=
+  fnOk_of fn_stmt_room (by decide +kernel)
 
 theorem chunk9 : AllFns prog prims info part9 :=
-  ⟨ok_distinct_modules, ok_modules_distinct_names, ok_no_primitive, ok_no_primitive_alias, ok_field_aliases_Decls_of_mini_selfhost_Decls, ok_build_closed, ok_types_weighed, ok_type_table_more, ok_type_table, ok_seed_tys, ok_funcs_tys, ok_get_of_mini_selfhost_Inst, ok_mono_next, ok_read_inst, ok_funcs_onto, ok_no_names, ok_cons_of_mini_selfhost_Inst, ok_empty_of_mini_selfhost_Ty, ok_concat_of_mini_selfhost_TypeDecl, ok_concat_of_mini_selfhost_FnDecl, ok_concat_of_mini_selfhost_ConstDecl, ok_field_consts_Decls_of_mini_selfhost_Decls, ok_concat_of_mini_selfhost_ImportDecl, ok_field_imports_Decls_of_mini_selfhost_Decls, ok_concat_of_mini_selfhost_AliasDecl, ok_concat_of_mini_selfhost_ImplDecl, ok_field_impls_Decls_of_mini_selfhost_Decls, ok_concat_of_mini_selfhost_List_mini_selfhost_List_usize, ok_field_homes_Decls_of_mini_selfhost_Decls, ok_optimize_assign, ok_Expr_optimize, ok_Expr_subst, ok_optimize_sequence, ok_optimize_ite, ok_optimize_loop, ok_optimize_all, ok_subst_all, ok_Stmt_agrees, ok_Stmt_temps, ok_Stmt_within, trivial⟩
+  ⟨ok_distinct_modules, ok_modules_distinct_names, ok_no_primitive, ok_no_primitive_alias, ok_field_aliases_Decls_of_mini_selfhost_Decls, ok_build_closed, ok_types_weighed, ok_type_table_more, ok_type_table, ok_seed_tys, ok_funcs_tys, ok_get_of_mini_selfhost_Inst, ok_mono_next, ok_read_inst, ok_funcs_onto, ok_no_names, ok_cons_of_mini_selfhost_Inst, ok_empty_of_mini_selfhost_Ty, ok_concat_of_mini_selfhost_TypeDecl, ok_concat_of_mini_selfhost_FnDecl, ok_concat_of_mini_selfhost_ConstDecl, ok_field_consts_Decls_of_mini_selfhost_Decls, ok_concat_of_mini_selfhost_ImportDecl, ok_field_imports_Decls_of_mini_selfhost_Decls, ok_concat_of_mini_selfhost_AliasDecl, ok_concat_of_mini_selfhost_ImplDecl, ok_field_impls_Decls_of_mini_selfhost_Decls, ok_concat_of_mini_selfhost_List_mini_selfhost_List_usize, ok_field_homes_Decls_of_mini_selfhost_Decls, ok_optimize_assign, ok_Expr_optimize, ok_Expr_subst, ok_optimize_sequence, ok_optimize_ite, ok_optimize_loop, ok_optimize_all, ok_subst_all, ok_Stmt_agrees, ok_room_fits, ok_stmt_room, trivial⟩
 
 end Lanius.Faithful.SelfTerm

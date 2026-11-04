@@ -48,6 +48,10 @@ mutual
     | .eLet _ _ a _ b => a.rawFree && b.rawFree
     | .eLen _ => false
     | .eStr _ _ => true
+    | .eBorrow _ _ => false
+    | .eDeref _ _ => false
+    | .eField _ _ => false
+    | .eAt _ _ => false
   termination_by structural e
 
   def SrcEff.rawFreeList (es : List SrcEff) : Bool :=
@@ -94,6 +98,8 @@ def SrcStmt.rawFree : SrcStmt → Bool
   | .continue => true
   | .matchArm _ _ _ _ _ _ body rest => body.rawFree && rest.rawFree
   | .unreachable _ _ => true
+  | .setPlace _ _ => false
+  | .setPlaceOp _ _ _ => false
 
 /-- No function of the program uses raw memory. -/
 def SrcProgram.RawFree (sp : SrcProgram) : Prop := ∀ func ∈ sp.funcs, func.body.rawFree = true
@@ -143,6 +149,10 @@ mutual
       simp only [SrcEff.toCore, ExprFrag, ArmsFrag, SrcEff.toCore_frag a h.1, SrcEff.toCore_frag b h.2, Bool.and_self]
     | .eLen _ => simp [SrcEff.rawFree] at h
     | .eStr _ _ => simp [SrcEff.toCore, ExprFrag]
+    | .eBorrow _ _ => simp [SrcEff.rawFree] at h
+    | .eDeref _ _ => simp [SrcEff.rawFree] at h
+    | .eField _ _ => simp [SrcEff.rawFree] at h
+    | .eAt _ _ => simp [SrcEff.rawFree] at h
     | .eStruct ty fields =>
       simp only [SrcEff.rawFree] at h
       simp only [SrcEff.toCore]; exact literal_frag ty (SrcEff.toCoreList_frag fields h)
@@ -233,6 +243,8 @@ theorem SrcStmt.toCore_frag : ∀ (s : SrcStmt), s.rawFree = true → StmtFrag s
   | .setFieldEval _ _ v, h => by
     simp only [SrcStmt.rawFree] at h
     simp [SrcStmt.toCore, StmtFrag, ExprFrag, PlaceFrag, SrcEff.toCore_frag v h]
+  | .setPlace _ _, h => by simp [SrcStmt.rawFree] at h
+  | .setPlaceOp _ _ _, h => by simp [SrcStmt.rawFree] at h
   | .returnUnit, _ => rfl
   | .assert c, h => by
     simp only [SrcStmt.rawFree] at h

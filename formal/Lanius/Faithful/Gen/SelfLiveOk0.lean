@@ -92,7 +92,7 @@ theorem lok404 : LiveOk prims outside liveBad 404 (src_SrcEff_types 239 240 356 
 theorem lok420 : LiveOk prims outside liveBad 420 (src_attach_term 167 601) := by decide +kernel
 
 /-- mini::selfhost::room_fits -/
-theorem lok474 : LiveOk prims outside liveBad 474 (src_room_fits) := by decide +kernel
+theorem lok471 : LiveOk prims outside liveBad 471 (src_room_fits) := by decide +kernel
 
 /-- mini::selfhost::eval_match_of -/
 theorem lok555 : LiveOk prims outside liveBad 555 (src_eval_match_of 120 188 235 316 353 366 367 385) := by decide +kernel

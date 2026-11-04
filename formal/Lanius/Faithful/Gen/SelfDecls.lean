@@ -171,14 +171,14 @@ theorem dt1 : declareFuncs tail_file_decls (declAt decls 70 121) = some decls :=
   rw [show tail_file_decls = dpart1 ++ tail_lower_then from rfl]
   exact declareFuncs_append (declsStep_eq dchunk1) dt2
 
-theorem dt0 : declareFuncs tail_app_main_w (declAt decls 137 186) = some decls := by
+theorem dt0 : declareFuncs tail_app_main_w (declAt decls 137 187) = some decls := by
   rw [show tail_app_main_w = dpart0 ++ tail_file_decls from rfl]
   exact declareFuncs_append (declsStep_eq dchunk0) dt1
 
-theorem decls_start : declAt decls 137 186 = ⟨[], [], prog.statics⟩ := by
+theorem decls_start : declAt decls 137 187 = ⟨[], [], prog.statics⟩ := by
   unfold declAt
   rw [List.drop_eq_nil_of_le (by decide +kernel : decls.structs.length ≤ 137),
-    List.drop_eq_nil_of_le (by decide +kernel : decls.enums.length ≤ 186),
+    List.drop_eq_nil_of_le (by decide +kernel : decls.enums.length ≤ 187),
     (by rfl : decls.statics = prog.statics)]
 
 theorem prog_decls : prog.decls = decls :=

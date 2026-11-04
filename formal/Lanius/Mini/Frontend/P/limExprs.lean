@@ -40,6 +40,10 @@ def limEff (x : SrcEff) : Bool :=
   | .eLet id t v rt b => limTy t && limEff v && limTy rt && limEff b
   | .eLen sl => true
   | .eStr offset chars => true
+  | .eBorrow bty bplace => limTy bty && limEff bplace
+  | .eDeref dty dref => limTy dty && limEff dref
+  | .eField fbase fidx => limEff fbase
+  | .eAt abase aindex => limEff abase && limEff aindex
 def limEffs (xs : List SrcEff) : Bool :=
   match xs with
   | [] => true

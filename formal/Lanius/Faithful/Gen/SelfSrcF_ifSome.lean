@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::if_some -/
-def src_if_some : SrcFunc := { params := [{ id := 8, ty := SrcType.bool }, { id := 18, ty := SrcType.uint (UintTy.usize) }], ret := ty145, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 8) (SrcStmt.returnEval (SrcEff.eVariant ty145 0 [SrcEff.ePure (SrcExpr.local 18)])) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty145 1 [])) }
+def src_if_some : SrcFunc := { params := [{ id := 8, ty := SrcType.bool }, { id := 18, ty := SrcType.uint (UintTy.usize) }], ret := ty146, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 8) (SrcStmt.returnEval (SrcEff.eVariant ty146 0 [SrcEff.ePure (SrcExpr.local 18)])) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty146 1 [])) }
 
 end
 

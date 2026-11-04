@@ -21,7 +21,7 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_lower_slice (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.SrcDecls} {x1 : Lanius.Mini.SrcType} {x2 : Option Lanius.Mini.Expr} {x3 : Option Lanius.Mini.Expr} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepSrcDecls x0 v0 → RepSrcType x1 v1 → (RepOption 154 RepExpr) x2 v2 → (RepOption 154 RepExpr) x3 v3 →
-    (RepOption 151 (RepList 92 RepExpr)) (Lanius.Mini.lowerSlice x0 x1 x2 x3) w
+  ∀ {x0 : Lanius.Mini.SrcDecls} {x1 : Lanius.Mini.SrcType} {x2 : Option Lanius.Mini.Expr} {x3 : Option Lanius.Mini.Expr} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepSrcDecls x0 v0 → RepSrcType x1 v1 → (RepOption 155 RepExpr) x2 v2 → (RepOption 155 RepExpr) x3 v3 →
+    (RepOption 152 (RepList 93 RepExpr)) (Lanius.Mini.lowerSlice x0 x1 x2 x3) w
 
 end Lanius.Faithful.SelfCert

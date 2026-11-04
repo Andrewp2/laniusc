@@ -109,7 +109,7 @@ theorem RunsExpr.writeStdoutFramed
 def FileReadResult (before : Heap) (world : World.State) (handle : Int) (pointer count : Nat)
     (value : Value) (heap : Heap) (after : World.State) : Prop :=
   match World.readFileBytes (World.record world .read) handle count with
-  | none => value = World.i32Result (-1) ∧ heap = before ∧ after = World.record world .read
+  | none => value = World.i32Result (-9) ∧ heap = before ∧ after = World.record world .read
   | some (bytes, next) => value = World.i32Result bytes.length ∧ after = next ∧
       bytes.length ≤ count ∧ BytesWrite before heap pointer bytes
 
@@ -175,7 +175,7 @@ theorem PointerReadEffect.atPointer
   exact result
 
 /-- Requests below the signed ABI limit cannot wrap a successful byte count
-    into an error or exceed the request. Invalid handles still return -1. -/
+    into an error or exceed the request. Invalid handles return -9 (`EBADF`). -/
 theorem FileReadResult.success
     (effect : FileReadResult heap world handle pointer count value after next)
     (read : World.readFileBytes (World.record world .read) handle count = some (bytes, updated))
@@ -192,11 +192,11 @@ theorem FileReadResult.returnBound
     (effect : FileReadResult heap world handle pointer count value after next)
     (fits : count < 2 ^ 31) :
     ∃ number : Int, value = .signed .i32 number ∧
-      (number = -1 ∨ 0 ≤ number ∧ number ≤ count) := by
+      (number = -9 ∨ 0 ≤ number ∧ number ≤ count) := by
   cases read : World.readFileBytes (World.record world .read) handle count with
   | none =>
     simp only [FileReadResult, read] at effect
-    exact ⟨-1, effect.1.trans (by unfold World.i32Result; congr 1), Or.inl rfl⟩
+    exact ⟨-9, effect.1.trans (by unfold World.i32Result; congr 1), Or.inl rfl⟩
   | some result =>
     rcases result with ⟨bytes, updated⟩
     obtain ⟨value, _, range, _⟩ := effect.success read fits
@@ -219,15 +219,26 @@ private theorem readFileBytes_bound
     boundary derives the call, exact file result and byte frame before any
     registered-view synchronization or source-call composition. -/
 theorem FileReadResult.perform {heap : Heap} {world : World.State} {handle : Int} {pointer count : Nat}
-    (unique : HeapBlockBasesUnique heap) (readable : heap.Readable pointer count) :
+    (unique : HeapBlockBasesUnique heap) (readable : heap.Readable pointer count)
+    (descriptor : 3 ≤ handle) (fits : count ≤ World.transferLimit) :
     ∃ value after next bytes,
       World.call heap world .read [.signed .i32 handle, .pointer pointer, .unsigned .usize count] =
         .returned value after next ∧ FileReadResult heap world handle pointer count value after next ∧
       BytesWrite heap after pointer bytes := by
+  -- a file descriptor (not a standard stream) and a count Linux transfers at once
+  have h0 : (handle == 0) = false := by simp only [beq_eq_false_iff_ne]; omega
+  have h1 : (handle == 1) = false := by simp only [beq_eq_false_iff_ne]; omega
+  have h2 : (handle == 2) = false := by simp only [beq_eq_false_iff_ne]; omega
+  have hl : decide (count > World.transferLimit) = false := by simp only [decide_eq_false_iff_not]; omega
+  -- the whole buffer is writable, as the call checks first
+  have whole : heap.Readable pointer (List.replicate count (0 : UInt8)).length := by
+    simpa only [List.length_replicate] using readable
+  obtain ⟨_, zeroed, _⟩ := Heap.storeBytes_of_readable (List.replicate count (0 : UInt8)) unique whole
   cases read : World.readFileBytes (World.record world .read) handle count with
   | none =>
-    exact ⟨World.i32Result (-1), heap, World.record world .read, [],
-      by simp only [World.call, World.callSimple, read],
+    exact ⟨World.i32Result (-9), heap, World.record world .read, [],
+      by simp only [World.call, World.callSimple, read, h0, h1, h2, hl, zeroed, Bool.or_self,
+        Bool.false_eq_true, if_false],
       by simp only [FileReadResult, read, true_and], BytesWrite.refl unique⟩
   | some result =>
     rcases result with ⟨bytes, next⟩
@@ -236,11 +247,12 @@ theorem FileReadResult.perform {heap : Heap} {world : World.State} {handle : Int
       simpa only [Nat.add_zero] using readable.subrange (start := 0) (length := bytes.length) (by omega)
     obtain ⟨after, stored, effect⟩ := Heap.storeBytes_of_readable bytes unique range
     exact ⟨World.i32Result bytes.length, after, next, bytes,
-      by simp only [World.call, World.callSimple, read, stored],
+      by simp only [World.call, World.callSimple, read, stored, h0, h1, h2, hl, zeroed, Bool.or_self,
+        Bool.false_eq_true, if_false],
       by simp only [FileReadResult, read, true_and]; exact ⟨bound, effect⟩, effect⟩
 
 /-- Raw-buffer host reads retain the entire cell/local/view state. Readability
-    and heap uniqueness derive completion; invalid handles still return -1.
+    and heap uniqueness derive completion; invalid handles return -9 (`EBADF`).
     This route does not manufacture an empty typing context for raw storage. -/
 theorem RunsExpr.readRaw
     (found : program.function? functionId = some function)
@@ -248,12 +260,13 @@ theorem RunsExpr.readRaw
     (parameters : bindParameters function.parameters
       [.signed .i32 handle, .pointer pointer, .unsigned .usize count] = some bindings)
     (noViews : before.i32ArrayViews = []) (unique : HeapBlockBasesUnique before.heap)
-    (readable : before.heap.Readable pointer count) :
+    (readable : before.heap.Readable pointer count)
+    (descriptor : 3 ≤ handle) (fits : count ≤ World.transferLimit) :
     ∃ value heap world, RunsExpr program before
       (.call functionId [.value (.signed .i32 handle), .value (.pointer pointer), .value (.unsigned .usize count)])
       value { before with heap, world } ∧
       FileReadResult before.heap before.world handle pointer count value heap world := by
-  obtain ⟨value, heap, world, _, called, result, _⟩ := FileReadResult.perform unique readable
+  obtain ⟨value, heap, world, _, called, result, _⟩ := FileReadResult.perform unique readable descriptor fits
   exact ⟨value, heap, world, RunsExpr.hostCall found body external parameters noViews called, result⟩
 
 /-- Reading a file into accessible storage preserves live typed views. Invalid
@@ -264,7 +277,8 @@ theorem RunsExpr.readViews
     (body : function.body = none) (external : function.external = some (.host .read))
     (parameters : bindParameters function.parameters
       [.signed .i32 handle, .pointer pointer, .unsigned .usize count] = some bindings)
-    (access : before.I32ViewsAccessible program types) (readable : before.heap.Readable pointer count) :
+    (access : before.I32ViewsAccessible program types) (readable : before.heap.Readable pointer count)
+    (descriptor : 3 ≤ handle) (fits : count ≤ World.transferLimit) :
     ∃ value after, RunsExpr program before
       (.call functionId [.value (.signed .i32 handle), .value (.pointer pointer), .value (.unsigned .usize count)])
       value after ∧ after.I32ViewsAccessible program types ∧
@@ -273,7 +287,7 @@ theorem RunsExpr.readViews
       ReadEffect before handle pointer count value after := by
   obtain ⟨heap, flushed, readyAccess, retained, bounded⟩ := access.flush
   obtain ⟨value, written, world, bytes, called, result, effect⟩ :=
-    FileReadResult.perform readyAccess.unique (retained pointer count readable)
+    FileReadResult.perform readyAccess.unique (retained pointer count readable) descriptor fits
   obtain ⟨cells, run, finalAccess, coherent⟩ := RunsExpr.hostCallViews found body external parameters flushed called
     (readyAccess.bytesWrite effect)
   exact ⟨value, _, run, finalAccess, coherent,
@@ -286,14 +300,15 @@ theorem RunsExpr.readPointer {bindings : Address → List (VarId × Value)}
     (parameters : ∀ pointer, bindParameters function.parameters
       [.signed .i32 handle, .pointer pointer, .unsigned .usize count] = some (bindings pointer))
     (pointer : RunsExpr program before expression (.pointer address) mapped)
-    (ready : mapped.I32ViewsReady program types) (readable : mapped.heap.Readable address count) :
+    (ready : mapped.I32ViewsReady program types) (readable : mapped.heap.Readable address count)
+    (descriptor : 3 ≤ handle) (fits : count ≤ World.transferLimit) :
     ∃ value after, RunsExpr program before
       (.call functionId [.value (.signed .i32 handle), expression,
         .value (.unsigned .usize count)]) value after ∧
       after.I32ViewsReady program types ∧ after.I32ViewsCoherent program types ∧
       PointerReadEffect program before expression handle count value after := by
   obtain ⟨value, after, called, _, coherent, finalReady, effect⟩ := RunsExpr.readViews found body external
-    (parameters _) ready.toI32ViewsAccessible readable
+    (parameters _) ready.toI32ViewsAccessible readable descriptor fits
   exact ⟨value, after, RunsExpr.callArguments
     (.cons (.ofStable .value rfl) (.cons pointer (.cons (.ofStable .value rfl) .nil))) called,
     finalReady ready, coherent ready.keys, address, mapped, pointer, effect⟩
@@ -306,7 +321,7 @@ theorem RunsExpr.readArray {bindings : Address → List (VarId × Value)}
       [.signed .i32 handle, .pointer pointer, .unsigned .usize count] = some (bindings pointer))
     (target : CellTargetValid program types before cell [] (.array (.scalar (.signed .i32)) length))
     (binding : before.cellId? localId = some cell) (ready : before.I32ViewsReady program types)
-    (bound : count ≤ length * 4) :
+    (bound : count ≤ length * 4) (descriptor : 3 ≤ handle) (fits : count ≤ World.transferLimit) :
     ∃ value after, RunsExpr program before
       (.call functionId [.value (.signed .i32 handle), .i32ArrayDataPtr (.local localId),
         .value (.unsigned .usize count)]) value after ∧
@@ -315,6 +330,7 @@ theorem RunsExpr.readArray {bindings : Address → List (VarId × Value)}
   obtain ⟨mapped, pointer, mappedReady, readable, _⟩ := target.i32ArrayDataPtr binding ready
   exact RunsExpr.readPointer found body external parameters pointer mappedReady
     (by simpa only [Nat.add_zero] using readable.subrange (start := 0) (length := count) (by simpa using bound))
+    descriptor fits
 
 /-- The extractor's slice-pointer calling convention. Operand effects occur
     before storage validation, and bounded requests derive destination readability. -/
@@ -325,7 +341,7 @@ theorem RunsExpr.readSlice {bindings : Address → List (VarId × Value)}
       [.signed .i32 handle, .pointer pointer, .unsigned .usize count] = some (bindings pointer))
     (operand : RunsExpr program before expression slice middle)
     (valid : I32SliceValid program types middle slice length) (ready : middle.I32ViewsReady program types)
-    (bound : count ≤ length * 4) :
+    (bound : count ≤ length * 4) (descriptor : 3 ≤ handle) (fits : count ≤ World.transferLimit) :
     ∃ value after, RunsExpr program before
       (.call functionId [.value (.signed .i32 handle), .i32SliceDataPtr expression,
         .value (.unsigned .usize count)]) value after ∧
@@ -334,6 +350,7 @@ theorem RunsExpr.readSlice {bindings : Address → List (VarId × Value)}
   obtain ⟨address, mapped, pointer, mappedReady, readable, _⟩ := valid.dataPointer operand ready
   exact RunsExpr.readPointer found body external parameters pointer mappedReady
     (by simpa only [Nat.add_zero] using readable.subrange (start := 0) (length := count) (by simpa using bound))
+    descriptor fits
 
 #print axioms RunsExpr.hostCallViews
 #print axioms FileReadResult.perform

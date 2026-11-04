@@ -21,19 +21,19 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_compile_declared (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcDecls} {x1 : Lanius.Mini.SrcProgram} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 69 RepSrcDecls) x0 v0 → RepSrcProgram x1 v1 →
-    (RepOption 51 RepBinary) (Lanius.Mini.compileDeclared x0 x1) w
+  ∀ {x0 : Option Lanius.Mini.SrcDecls} {x1 : Lanius.Mini.SrcProgram} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 70 RepSrcDecls) x0 v0 → RepSrcProgram x1 v1 →
+    (RepOption 52 RepBinary) (Lanius.Mini.compileDeclared x0 x1) w
 
 abbrev Stmt_compile_lowered (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List Lanius.Mini.Func)} {x1 : List UInt8} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 85 (RepList 86 RepFunc)) x0 v0 → (RepList 35 RepU8) x1 v1 →
-    (RepOption 51 RepBinary) (Lanius.Mini.compileLowered x0 x1) w
+  ∀ {x0 : Option (List Lanius.Mini.Func)} {x1 : List UInt8} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 86 (RepList 87 RepFunc)) x0 v0 → (RepList 36 RepU8) x1 v1 →
+    (RepOption 52 RepBinary) (Lanius.Mini.compileLowered x0 x1) w
 
 abbrev Stmt_compile_optimized (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Program} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepProgram x0 v0 →
-    (RepOption 51 RepBinary) (Lanius.Mini.compileOptimized x0) w
+    (RepOption 52 RepBinary) (Lanius.Mini.compileOptimized x0) w
 
 abbrev Stmt_compile_or (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Binary} {x1 : Lanius.Mini.Program} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 51 RepBinary) x0 v0 → RepProgram x1 v1 →
-    (RepOption 51 RepBinary) (Lanius.Mini.compileOr x0 x1) w
+  ∀ {x0 : Option Lanius.Mini.Binary} {x1 : Lanius.Mini.Program} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 52 RepBinary) x0 v0 → RepProgram x1 v1 →
+    (RepOption 52 RepBinary) (Lanius.Mini.compileOr x0 x1) w
 
 end Lanius.Faithful.SelfCert

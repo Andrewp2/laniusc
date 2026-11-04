@@ -229,6 +229,8 @@ pub struct SrcArm {
 
 pub enum SrcDivOp { Quotient, Remainder, }
 
+pub enum SrcAssignOp { AAdd, ASub, AMul, AAnd, AOr, AXor, AShl, AShr, }
+
 pub enum SrcEff {
     EPure(SrcExpr),
     ECall(usize, Box<List<SrcEff>>),
@@ -247,6 +249,10 @@ pub enum SrcEff {
     ELet(usize, SrcType, Box<SrcEff>, SrcType, Box<SrcEff>),
     ELen(usize),
     EStr(usize, List<usize>),
+    EBorrow(SrcType, Box<SrcEff>),
+    EDeref(SrcType, Box<SrcEff>),
+    EField(Box<SrcEff>, usize),
+    EAt(Box<SrcEff>, Box<SrcEff>),
 }
 
 pub enum SrcStmt {
@@ -292,6 +298,10 @@ pub enum SrcStmt {
     // LetStr(pointer, chars, body): let pointer: ptr =
     // core::mem::string_data_ptr("chars"); body
     LetStr(usize, List<usize>, Box<SrcStmt>),
+    // place = value and place op= value (the compiler's; the reading never
+    // makes them yet)
+    SetPlace(SrcEff, SrcEff),
+    SetPlaceOp(SrcAssignOp, SrcEff, SrcEff),
 }
 
 pub struct SrcParam {
@@ -12973,6 +12983,10 @@ pub fn known_eff(funcs: List<SrcFunc>, locals: List<LocalTy>, x: SrcEff) -> core
         ELet(id, t, v, rt, b) -> Some(rt),
         ELen(s) -> Some(Uint(Usize)),
         EStr(offset, chars) -> Some(Str),
+        EBorrow(bty, bplace) -> None,
+        EDeref(dty, dref) -> None,
+        EField(fbase, fidx) -> None,
+        EAt(abase, aindex) -> None,
     };
 }
 
@@ -12996,6 +13010,10 @@ pub fn lit_eff(funcs: List<SrcFunc>, locals: List<LocalTy>, want: core::option::
         ELet(id, t, v, rt, b) -> ELet(id, t, boxed(lit_eff(funcs, locals, Some(t), unbox(v))), rt, boxed(lit_eff(funcs, cons(LocalTy { id: id, ty: t }, locals), Some(rt), unbox(b)))),
         ELen(s) -> ELen(s),
         EStr(offset, chars) -> EStr(offset, chars),
+        EBorrow(bty, bplace) -> EBorrow(bty, bplace),
+        EDeref(dty, dref) -> EDeref(dty, dref),
+        EField(fbase, fidx) -> EField(fbase, fidx),
+        EAt(abase, aindex) -> EAt(abase, aindex),
     };
 }
 
@@ -13057,6 +13075,8 @@ pub fn lit_stmt(funcs: List<SrcFunc>, ret: SrcType, locals: List<LocalTy>, s: Sr
         Unreachable(id, ty) -> Unreachable(id, ty),
         LetView(id, n, es, p, body) -> LetView(id, n, lit_exprs(locals, Some(repeat_src(I32, n)), es), p, boxed(lit_stmt(funcs, ret, with_local(p, Ptr, with_local(id, SrcType::Array(boxed(I32), n), locals)), unbox(body)))),
         LetStr(p, cs, body) -> LetStr(p, cs, boxed(lit_stmt(funcs, ret, with_local(p, Ptr, locals), unbox(body)))),
+        SetPlace(aplace, avalue) -> SetPlace(aplace, avalue),
+        SetPlaceOp(aop, aplace, avalue) -> SetPlaceOp(aop, aplace, avalue),
     };
 }
 
@@ -13129,6 +13149,10 @@ pub fn wide_left_eff(x: SrcEff) -> bool {
         ELet(id, t, v, rt, b) -> wide_left_eff(unbox(v)) || wide_left_eff(unbox(b)),
         ELen(sl) -> false,
         EStr(offset, chars) -> false,
+        EBorrow(bty, bplace) -> false,
+        EDeref(dty, dref) -> false,
+        EField(fbase, fidx) -> false,
+        EAt(abase, aindex) -> false,
     };
 }
 
@@ -13171,6 +13195,10 @@ pub fn eff_bytes(x: SrcEff) -> List<u8> {
         ELet(id, t, v, rt, b) -> concat(eff_bytes(unbox(v)), eff_bytes(unbox(b))),
         ELen(sl) -> empty(),
         EStr(offset, chars) -> str_bytes(chars),
+        EBorrow(bty, bplace) -> eff_bytes(unbox(bplace)),
+        EDeref(dty, dref) -> eff_bytes(unbox(dref)),
+        EField(fbase, fidx) -> eff_bytes(unbox(fbase)),
+        EAt(abase, aindex) -> concat(eff_bytes(unbox(abase)), eff_bytes(unbox(aindex))),
     };
 }
 
@@ -13204,6 +13232,10 @@ pub fn place_eff(before: List<u8>, x: SrcEff) -> SrcEff {
         ELet(id, t, v, rt, b) -> ELet(id, t, boxed(place_eff(before, unbox(v))), rt, boxed(place_eff(concat(before, eff_bytes(unbox(v))), unbox(b)))),
         ELen(sl) -> ELen(sl),
         EStr(offset, chars) -> EStr(length(before), chars),
+        EBorrow(bty, bplace) -> EBorrow(bty, boxed(place_eff(before, unbox(bplace)))),
+        EDeref(dty, dref) -> EDeref(dty, boxed(place_eff(before, unbox(dref)))),
+        EField(fbase, fidx) -> EField(boxed(place_eff(before, unbox(fbase))), fidx),
+        EAt(abase, aindex) -> EAt(boxed(place_eff(before, unbox(abase))), boxed(place_eff(concat(before, eff_bytes(unbox(abase))), unbox(aindex)))),
     };
 }
 
@@ -13254,6 +13286,8 @@ pub fn stmt_bytes(s: SrcStmt) -> List<u8> {
         Unreachable(id, ty) -> empty(),
         LetView(id, n, es, pt, body) -> stmt_bytes(unbox(body)),
         LetStr(pt, cs, body) -> stmt_bytes(unbox(body)),
+        SetPlace(aplace, avalue) -> concat(eff_bytes(aplace), eff_bytes(avalue)),
+        SetPlaceOp(aop, aplace, avalue) -> concat(eff_bytes(aplace), eff_bytes(avalue)),
     };
 }
 
@@ -13297,6 +13331,8 @@ pub fn place_stmt(before: List<u8>, s: SrcStmt) -> SrcStmt {
         Unreachable(id, ty) -> Unreachable(id, ty),
         LetView(id, n, es, pt, body) -> LetView(id, n, es, pt, boxed(place_stmt(before, unbox(body)))),
         LetStr(pt, cs, body) -> LetStr(pt, cs, boxed(place_stmt(before, unbox(body)))),
+        SetPlace(aplace, avalue) -> SetPlace(place_eff(before, aplace), place_eff(concat(before, eff_bytes(aplace)), avalue)),
+        SetPlaceOp(aop, aplace, avalue) -> SetPlaceOp(aop, place_eff(before, aplace), place_eff(concat(before, eff_bytes(aplace)), avalue)),
     };
 }
 
@@ -13435,6 +13471,10 @@ pub fn lim_eff(x: SrcEff) -> bool {
         ELet(id, t, v, rt, b) -> lim_ty(t) && lim_eff(unbox(v)) && lim_ty(rt) && lim_eff(unbox(b)),
         ELen(sl) -> true,
         EStr(offset, chars) -> true,
+        EBorrow(bty, bplace) -> lim_ty(bty) && lim_eff(unbox(bplace)),
+        EDeref(dty, dref) -> lim_ty(dty) && lim_eff(unbox(dref)),
+        EField(fbase, fidx) -> lim_eff(unbox(fbase)),
+        EAt(abase, aindex) -> lim_eff(unbox(abase)) && lim_eff(unbox(aindex)),
     };
 }
 
@@ -13537,6 +13577,8 @@ pub fn lim_stmt(s: SrcStmt) -> core::option::Option<usize> {
         Unreachable(id, ty) -> lim_const(lim_slots(ty), 1),
         LetView(id, n, es, p, body) -> lim_bind(depth_sum(n, 1), lim_exprs(es), lim_stmt(unbox(body))),
         LetStr(p, cs, body) -> lim_bind(lim_one(), true, lim_stmt(unbox(body))),
+        SetPlace(aplace, avalue) -> lim_leaf(lim_eff(aplace) && lim_eff(avalue)),
+        SetPlaceOp(aop, aplace, avalue) -> lim_leaf(lim_eff(aplace) && lim_eff(avalue)),
     };
 }
 
@@ -13601,6 +13643,8 @@ pub fn wide_left_stmt(s: SrcStmt) -> bool {
         Unreachable(id, ty) -> false,
         LetView(id, n, es, p, body) -> wide_left_exprs(es) || wide_left_stmt(unbox(body)),
         LetStr(p, cs, body) -> wide_left_stmt(unbox(body)),
+        SetPlace(aplace, avalue) -> false,
+        SetPlaceOp(aop, aplace, avalue) -> false,
     };
 }
 

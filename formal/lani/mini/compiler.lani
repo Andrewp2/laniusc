@@ -1875,6 +1875,11 @@ pub struct SrcArm {
 // Division's quotient or remainder, truncating as Core does.
 pub enum SrcDivOp { Quotient, Remainder, }
 
+// The operator of a compound assignment through a place: Core's assignment
+// operators add, subtract, multiply, bitAnd, bitOr, bitXor, shiftLeft and
+// shiftRight (F5).
+pub enum SrcAssignOp { AAdd, ASub, AMul, AAnd, AOr, AXor, AShl, AShr, }
+
 // An expression that may call functions, evaluated in Core's order. The
 // ones without calls are SrcExpr, whose proofs go by induction; this type
 // nests through List, so its proofs go by Core's fuel instead.
@@ -1913,6 +1918,16 @@ pub enum SrcEff {
     // a string literal: its bytes are the program's statics from offset on
     // (placed by the front end, checked by eval_str), a str
     EStr(usize, List<usize>),
+    // &place, of the place's type: Core's borrow of the place
+    // (SrcEff.toPlace: a local, a field or element of a place, else the
+    // place a reference names). F5: nothing accepts it yet.
+    EBorrow(SrcType, Box<SrcEff>),
+    // *reference, of the referent's type: Core's dereference
+    EDeref(SrcType, Box<SrcEff>),
+    // base.field of any struct value (Core's field of a value)
+    EField(Box<SrcEff>, usize),
+    // base[index] of any array value (Core's index of a value)
+    EAt(Box<SrcEff>, Box<SrcEff>),
 }
 
 pub enum SrcStmt {
@@ -1991,6 +2006,11 @@ pub enum SrcStmt {
     // to whole words, into a fresh heap block, which pointer addresses; the
     // verified compiler stores them there as words.
     LetStr(usize, List<usize>, Box<SrcStmt>),
+    // place = value, place op= value: Core's assignment to the place
+    // (SrcEff.toPlace), the compound one reading the old value before value
+    // (F5: nothing accepts them yet)
+    SetPlace(SrcEff, SrcEff),
+    SetPlaceOp(SrcAssignOp, SrcEff, SrcEff),
 }
 
 pub struct SrcParam {
@@ -4646,6 +4666,10 @@ impl SrcEff {
             ELet(id, ty, value, rt, body) -> cons(ty, concat(unbox(value).types(), unbox(body).types())),
             ELen(slice) -> empty(),
             EStr(offset, chars) -> empty(),
+            EBorrow(bty, bplace) -> unbox(bplace).types(),
+            EDeref(dty, dref) -> unbox(dref).types(),
+            EField(fbase, fidx) -> unbox(fbase).types(),
+            EAt(abase, aindex) -> concat(unbox(abase).types(), unbox(aindex).types()),
         };
     }
 }
@@ -5693,6 +5717,10 @@ impl SrcEff {
             ELet(id, ty, value, rt, body) -> eval_let_in(slot, ty, rt, unbox(value).eval(sigs, decls, scope, slot), eval_let_body(sigs, decls, arm_scope(single(id), single(ty), slot, scope), match_dst(slot, ty, rt), unbox(body))),
             ELen(slice) -> eval_len(scope, slice, slot),
             EStr(offset, chars) -> eval_str(decls, offset, chars, slot),
+            EBorrow(bty, bplace) -> None,
+            EDeref(dty, dref) -> None,
+            EField(fbase, fidx) -> None,
+            EAt(abase, aindex) -> None,
         };
     }
 }
@@ -6116,6 +6144,10 @@ pub fn arg_bytes(scope: List<Binding>, arg: SrcEff) -> usize {
         ELet(lid, lty, value, rt, body) -> 0,
         ELen(slice) -> 0,
         EStr(offset, chars) -> 0,
+        EBorrow(bty, bplace) -> 0,
+        EDeref(dty, dref) -> 0,
+        EField(fbase, fidx) -> 0,
+        EAt(abase, aindex) -> 0,
     };
 }
 
@@ -6176,6 +6208,10 @@ pub fn array_arg(scope: List<Binding>, arg: SrcEff, ty: SrcType, t: usize, offse
         ELet(lid, lty, value, rt, body) -> None,
         ELen(slice) -> None,
         EStr(offset, chars) -> None,
+        EBorrow(bty, bplace) -> None,
+        EDeref(dty, dref) -> None,
+        EField(fbase, fidx) -> None,
+        EAt(abase, aindex) -> None,
     };
 }
 
@@ -6243,6 +6279,10 @@ impl SrcEff {
             ELet(id, ty, value, rt, body) -> false,
             ELen(slice) -> false,
             EStr(offset, chars) -> false,
+            EBorrow(bty, bplace) -> false,
+            EDeref(dty, dref) -> false,
+            EField(fbase, fidx) -> false,
+            EAt(abase, aindex) -> false,
         };
     }
 
@@ -6277,6 +6317,10 @@ impl SrcEff {
             ELet(id, ty, value, rt, body) -> false,
             ELen(slice) -> false,
             EStr(offset, chars) -> false,
+            EBorrow(bty, bplace) -> false,
+            EDeref(dty, dref) -> false,
+            EField(fbase, fidx) -> false,
+            EAt(abase, aindex) -> false,
         };
     }
 
@@ -6300,6 +6344,10 @@ impl SrcEff {
             ELet(id, ty, value, rt, body) -> None,
             ELen(slice) -> None,
             EStr(offset, chars) -> None,
+            EBorrow(bty, bplace) -> None,
+            EDeref(dty, dref) -> None,
+            EField(fbase, fidx) -> None,
+            EAt(abase, aindex) -> None,
         };
     }
 }
@@ -6353,6 +6401,8 @@ impl SrcStmt {
             Unreachable(id, ty) -> lower_unreachable(ty.same(ret), next),
             LetView(id, length, fields, pointer, body) -> guarded(next, guard_all(scope, fields), lower_view(next, length, lower_literal(scope, SrcType::Array(boxed(I32), length), fields), unbox(body).lower(sigs, decls, ret, cons(Binding { id: pointer, slot: plus(next, length), ty: Ptr }, cons(Binding { id: id, slot: next, ty: View(length) }, scope)), plus(plus(next, length), 1)))),
             LetStr(pointer, chars, body) -> lower_str(next, chars, unbox(body).lower(sigs, decls, ret, cons(Binding { id: pointer, slot: next, ty: Ptr }, scope), plus(next, 1))),
+            SetPlace(aplace, avalue) -> None,
+            SetPlaceOp(aop, aplace, avalue) -> None,
         };
     }
 
@@ -6396,6 +6446,8 @@ impl SrcStmt {
             Unreachable(id, ty) -> false,
             LetView(id, length, fields, pointer, body) -> unbox(body).breaks_out(),
             LetStr(pointer, chars, body) -> unbox(body).breaks_out(),
+            SetPlace(aplace, avalue) -> false,
+            SetPlaceOp(aop, aplace, avalue) -> false,
         };
     }
 
@@ -6438,6 +6490,8 @@ impl SrcStmt {
             Unreachable(id, ty) -> 1,
             LetView(id, length, fields, pointer, body) -> plus(unbox(body).depth(), plus(length, 1)),
             LetStr(pointer, chars, body) -> plus(unbox(body).depth(), 1),
+            SetPlace(aplace, avalue) -> 0,
+            SetPlaceOp(aop, aplace, avalue) -> 0,
         };
     }
 }
@@ -6551,6 +6605,10 @@ impl SrcEff {
             ELet(id, ty, value, rt, body) -> concat(unbox(value).slice_uses(), unbox(body).slice_uses()),
             ELen(slice) -> empty(),
             EStr(offset, chars) -> empty(),
+            EBorrow(bty, bplace) -> unbox(bplace).slice_uses(),
+            EDeref(dty, dref) -> unbox(dref).slice_uses(),
+            EField(fbase, fidx) -> unbox(fbase).slice_uses(),
+            EAt(abase, aindex) -> concat(unbox(abase).slice_uses(), unbox(aindex).slice_uses()),
         };
     }
 
@@ -6575,6 +6633,10 @@ impl SrcEff {
             ELet(id, ty, value, rt, body) -> max_of(unbox(value).callee_need(needs), unbox(body).callee_need(needs)),
             ELen(slice) -> 0,
             EStr(offset, chars) -> 0,
+            EBorrow(bty, bplace) -> unbox(bplace).callee_need(needs),
+            EDeref(dty, dref) -> unbox(dref).callee_need(needs),
+            EField(fbase, fidx) -> unbox(fbase).callee_need(needs),
+            EAt(abase, aindex) -> max_of(unbox(abase).callee_need(needs), unbox(aindex).callee_need(needs)),
         };
     }
 }
@@ -6634,6 +6696,8 @@ impl SrcStmt {
             Unreachable(id, ty) -> empty(),
             LetView(id, length, fields, pointer, body) -> unbox(body).slice_uses(),
             LetStr(pointer, chars, body) -> unbox(body).slice_uses(),
+            SetPlace(aplace, avalue) -> concat(aplace.slice_uses(), avalue.slice_uses()),
+            SetPlaceOp(aop, aplace, avalue) -> concat(aplace.slice_uses(), avalue.slice_uses()),
         };
     }
 
@@ -6676,6 +6740,8 @@ impl SrcStmt {
             Unreachable(id, ty) -> 0,
             LetView(id, length, fields, pointer, body) -> unbox(body).callee_need(needs),
             LetStr(pointer, chars, body) -> unbox(body).callee_need(needs),
+            SetPlace(aplace, avalue) -> max_of(aplace.callee_need(needs), avalue.callee_need(needs)),
+            SetPlaceOp(aop, aplace, avalue) -> max_of(aplace.callee_need(needs), avalue.callee_need(needs)),
         };
     }
 }
@@ -6721,6 +6787,8 @@ pub fn block_room(room: usize, uses: List<usize>, s: SrcStmt) -> core::option::O
         Unreachable(id, ty) -> Some(room),
         LetView(id, length, fields, pointer, body) -> block_room(room, uses, unbox(body)),
         LetStr(pointer, chars, body) -> block_room(room, uses, unbox(body)),
+        SetPlace(aplace, avalue) -> Some(room),
+        SetPlaceOp(aop, aplace, avalue) -> Some(room),
     };
 }
 
@@ -7117,6 +7185,8 @@ impl SrcStmt {
             Unreachable(id, ty) -> ty.declare(decls),
             LetView(id, length, fields, pointer, body) -> unbox(body).declare(decls),
             LetStr(pointer, chars, body) -> unbox(body).declare(decls),
+            SetPlace(aplace, avalue) -> declare_types(concat(aplace.types(), avalue.types()), decls),
+            SetPlaceOp(aop, aplace, avalue) -> declare_types(concat(aplace.types(), avalue.types()), decls),
         };
     }
 
@@ -7160,6 +7230,8 @@ impl SrcStmt {
             Unreachable(id, ty) -> true,
             LetView(id, length, fields, pointer, body) -> unbox(body).returns(),
             LetStr(pointer, chars, body) -> unbox(body).returns(),
+            SetPlace(aplace, avalue) -> false,
+            SetPlaceOp(aop, aplace, avalue) -> false,
         };
     }
 }

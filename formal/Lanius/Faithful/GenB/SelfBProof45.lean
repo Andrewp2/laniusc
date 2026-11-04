@@ -18,6 +18,28 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.SelfCert
 open Lanius.Faithful.Budget
 
+theorem bstep_known_eff {spW sp : SrcProgram} {prims : Prims} {ix_known_eff ix_boxed_of_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_SrcEff ix_ty_local ix_src_element ix_known_expr ix_either_ty ix_known_apply ix_callee_ret : Nat}
+    (fnW : spW.funcs[ix_known_eff]? = some (src_known_eff ix_boxed_of_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_SrcEff ix_ty_local ix_src_element ix_known_expr ix_known_eff ix_either_ty ix_known_apply ix_callee_ret)) (fn : sp.funcs[ix_known_eff]? = some (src_known_eff ix_boxed_of_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_SrcEff ix_ty_local ix_src_element ix_known_expr ix_known_eff ix_either_ty ix_known_apply ix_callee_ret))
+    (np : prims.isPrim ix_known_eff = false)
+    (back : Certified (∀ {n : Nat}, Stmt_known_eff sp prims ix_known_eff n))
+    (pp_boxed_of_mini_selfhost_SrcType : prims.isPrim ix_boxed_of_mini_selfhost_SrcType = true) (bx_boxed_of_mini_selfhost_SrcType : prims.boxed.contains ix_boxed_of_mini_selfhost_SrcType = true)
+    (pp_unbox_of_mini_selfhost_SrcEff : prims.isPrim ix_unbox_of_mini_selfhost_SrcEff = true) (bx_unbox_of_mini_selfhost_SrcEff : prims.boxed.contains ix_unbox_of_mini_selfhost_SrcEff = false)
+    (b_ty_local : Certified (∀ {n : Nat}, BStmt_ty_local spW sp prims ix_ty_local n))
+    (b_src_element : Certified (∀ {n : Nat}, BStmt_src_element spW sp prims ix_src_element n))
+    (b_known_expr : Certified (∀ {n : Nat}, BStmt_known_expr spW sp prims ix_known_expr n))
+    (b_either_ty : Certified (∀ {n : Nat}, BStmt_either_ty spW sp prims ix_either_ty n))
+    (b_known_apply : Certified (∀ {n : Nat}, BStmt_known_apply spW sp prims ix_known_apply n))
+    (b_callee_ret : Certified (∀ {n : Nat}, BStmt_callee_ret spW sp prims ix_callee_ret n)) {n : Nat}
+    (bih_known_eff : Certified (BStmt_known_eff spW sp prims ix_known_eff n)) :
+    BStmt_known_eff spW sp prims ix_known_eff (n + 1) := by
+  intro x0 x1 x2 v0 v1 v2 w k h r0 r1 r2
+  have key : qcall sp prims uc (n + 1) ix_known_eff [v0, v1, v2] = some (w, k) ∧ Cost_known_eff (n + 1) x0 x1 x2 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_known_eff, List.length_cons, List.length_nil, if_true] at h ⊢
+    budget Cost_known_eff
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
+
 theorem bstep_lit_eff {spW sp : SrcProgram} {prims : Prims} {ix_lit_eff ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_lit_expr ix_src_fields ix_callee_params ix_payload_at ix_src_variants ix_cons_of_mini_selfhost_LocalTy ix_operand_want ix_amount_want ix_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff ix_lit_effs ix_boxed_of_mini_selfhost_SrcEff ix_known_eff ix_lit_arm_effs : Nat}
     (fnW : spW.funcs[ix_lit_eff]? = some (src_lit_eff ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_lit_expr ix_src_fields ix_callee_params ix_payload_at ix_src_variants ix_lit_eff ix_cons_of_mini_selfhost_LocalTy ix_operand_want ix_amount_want ix_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff ix_lit_effs ix_boxed_of_mini_selfhost_SrcEff ix_known_eff ix_lit_arm_effs)) (fn : sp.funcs[ix_lit_eff]? = some (src_lit_eff ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_lit_expr ix_src_fields ix_callee_params ix_payload_at ix_src_variants ix_lit_eff ix_cons_of_mini_selfhost_LocalTy ix_operand_want ix_amount_want ix_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff ix_lit_effs ix_boxed_of_mini_selfhost_SrcEff ix_known_eff ix_lit_arm_effs))
     (np : prims.isPrim ix_lit_eff = false)

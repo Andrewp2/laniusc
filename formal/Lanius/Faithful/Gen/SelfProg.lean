@@ -3499,14 +3499,14 @@ def tail_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_I
   src_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Instr :: tail_BinOp_size
 def tail_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Instr : List SrcFunc :=
   src_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Instr :: tail_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Instr
-def tail_args_room : List SrcFunc :=
-  src_args_room 300 493 734 736 :: tail_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Instr
-def tail_expr_room : List SrcFunc :=
-  src_expr_room 300 492 734 :: tail_args_room
 def tail_get_of_mini_selfhost_Arity : List SrcFunc :=
-  src_get_of_mini_selfhost_Arity 56 1030 1270 :: tail_expr_room
+  src_get_of_mini_selfhost_Arity 56 1032 1270 :: tail_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Instr
+def tail_args_room : List SrcFunc :=
+  src_args_room 300 493 728 730 :: tail_get_of_mini_selfhost_Arity
+def tail_expr_room : List SrcFunc :=
+  src_expr_room 300 492 728 :: tail_args_room
 def tail_Syscall_number : List SrcFunc :=
-  src_Syscall_number :: tail_get_of_mini_selfhost_Arity
+  src_Syscall_number :: tail_expr_room
 def tail_DivOp_number : List SrcFunc :=
   src_DivOp_number :: tail_Syscall_number
 def tail_Word_number : List SrcFunc :=
@@ -4089,28 +4089,28 @@ def tail_empty_of_mini_selfhost_Instr : List SrcFunc :=
   src_empty_of_mini_selfhost_Instr :: tail_unbox_of_mini_selfhost_List_mini_selfhost_Instr
 def tail_boxed_of_mini_selfhost_List_mini_selfhost_Instr : List SrcFunc :=
   src_boxed_of_mini_selfhost_List_mini_selfhost_Instr 50 1033 1034 :: tail_empty_of_mini_selfhost_Instr
-def tail_spend_then : List SrcFunc :=
-  src_spend_then 300 :: tail_boxed_of_mini_selfhost_List_mini_selfhost_Instr
-def tail_args_then : List SrcFunc :=
-  src_args_then 1032 :: tail_spend_then
-def tail_stmt_then : List SrcFunc :=
-  src_stmt_then 475 :: tail_args_then
-def tail_expr_then : List SrcFunc :=
-  src_expr_then 1031 :: tail_stmt_then
 def tail_all_within : List SrcFunc :=
-  src_all_within 493 730 733 :: tail_expr_then
+  src_all_within 493 734 737 :: tail_boxed_of_mini_selfhost_List_mini_selfhost_Instr
 def tail_length_of_mini_selfhost_Expr : List SrcFunc :=
-  src_length_of_mini_selfhost_Expr 75 493 732 :: tail_all_within
+  src_length_of_mini_selfhost_Expr 75 493 736 :: tail_all_within
 def tail_arity_is : List SrcFunc :=
-  src_arity_is 1030 :: tail_length_of_mini_selfhost_Expr
+  src_arity_is 1032 :: tail_length_of_mini_selfhost_Expr
 def tail_Expr_within : List SrcFunc :=
-  src_Expr_within 492 730 :: tail_arity_is
+  src_Expr_within 492 734 :: tail_arity_is
 def tail_args_temps : List SrcFunc :=
-  src_args_temps 75 186 493 728 729 :: tail_Expr_within
+  src_args_temps 75 186 493 732 733 :: tail_Expr_within
 def tail_Expr_temps : List SrcFunc :=
-  src_Expr_temps 75 186 492 728 :: tail_args_temps
+  src_Expr_temps 75 186 492 732 :: tail_args_temps
+def tail_spend_then : List SrcFunc :=
+  src_spend_then 300 :: tail_Expr_temps
+def tail_args_then : List SrcFunc :=
+  src_args_then 1031 :: tail_spend_then
+def tail_stmt_then : List SrcFunc :=
+  src_stmt_then 472 :: tail_args_then
+def tail_expr_then : List SrcFunc :=
+  src_expr_then 1030 :: tail_stmt_then
 def tail_static_agrees : List SrcFunc :=
-  src_static_agrees :: tail_Expr_temps
+  src_static_agrees :: tail_expr_then
 def tail_frame_agrees : List SrcFunc :=
   src_frame_agrees :: tail_static_agrees
 def tail_sys_agrees : List SrcFunc :=
@@ -4613,18 +4613,18 @@ def tail_zero_locals : List SrcFunc :=
   src_zero_locals 56 75 476 477 739 :: tail_concat_of_mini_selfhost_Instr
 def tail_cons_of_mini_selfhost_Instr : List SrcFunc :=
   src_cons_of_mini_selfhost_Instr 738 :: tail_zero_locals
+def tail_frame_limit : List SrcFunc :=
+  src_frame_limit :: tail_cons_of_mini_selfhost_Instr
+def tail_Stmt_within : List SrcFunc :=
+  src_Stmt_within 75 307 474 734 735 736 737 :: tail_frame_limit
+def tail_Stmt_temps : List SrcFunc :=
+  src_Stmt_temps 75 186 307 473 732 733 :: tail_Stmt_within
 def tail_stmt_room : List SrcFunc :=
-  src_stmt_room 300 307 475 734 735 736 737 :: tail_cons_of_mini_selfhost_Instr
+  src_stmt_room 300 307 472 728 729 730 731 :: tail_Stmt_temps
 def tail_room_fits : List SrcFunc :=
   src_room_fits :: tail_stmt_room
-def tail_frame_limit : List SrcFunc :=
-  src_frame_limit :: tail_room_fits
-def tail_Stmt_within : List SrcFunc :=
-  src_Stmt_within 75 307 472 730 731 732 733 :: tail_frame_limit
-def tail_Stmt_temps : List SrcFunc :=
-  src_Stmt_temps 75 186 307 471 728 729 :: tail_Stmt_within
 def tail_Stmt_agrees : List SrcFunc :=
-  src_Stmt_agrees 307 464 469 470 698 705 706 707 708 709 710 711 712 713 714 715 716 717 718 719 720 721 722 723 724 725 726 727 :: tail_Stmt_temps
+  src_Stmt_agrees 307 464 469 470 698 705 706 707 708 709 710 711 712 713 714 715 716 717 718 719 720 721 722 723 724 725 726 727 :: tail_room_fits
 def tail_subst_all : List SrcFunc :=
   src_subst_all 464 469 493 541 542 :: tail_Stmt_agrees
 def tail_optimize_all : List SrcFunc :=
@@ -6043,11 +6043,11 @@ abbrev src467 : SrcFunc := src_optimize_loop 188 701 704
 abbrev src468 : SrcFunc := src_optimize_all 463 468 493 541 542
 abbrev src469 : SrcFunc := src_subst_all 464 469 493 541 542
 abbrev src470 : SrcFunc := src_Stmt_agrees 307 464 469 470 698 705 706 707 708 709 710 711 712 713 714 715 716 717 718 719 720 721 722 723 724 725 726 727
-abbrev src471 : SrcFunc := src_Stmt_temps 75 186 307 471 728 729
-abbrev src472 : SrcFunc := src_Stmt_within 75 307 472 730 731 732 733
-abbrev src473 : SrcFunc := src_frame_limit
-abbrev src474 : SrcFunc := src_room_fits
-abbrev src475 : SrcFunc := src_stmt_room 300 307 475 734 735 736 737
+abbrev src471 : SrcFunc := src_room_fits
+abbrev src472 : SrcFunc := src_stmt_room 300 307 472 728 729 730 731
+abbrev src473 : SrcFunc := src_Stmt_temps 75 186 307 473 732 733
+abbrev src474 : SrcFunc := src_Stmt_within 75 307 474 734 735 736 737
+abbrev src475 : SrcFunc := src_frame_limit
 abbrev src476 : SrcFunc := src_cons_of_mini_selfhost_Instr 738
 abbrev src477 : SrcFunc := src_zero_locals 56 75 476 477 739
 abbrev src478 : SrcFunc := src_concat_of_mini_selfhost_Instr 478 738 740
@@ -6300,16 +6300,16 @@ abbrev src724 : SrcFunc := src_divide_agrees 1020 1027 1028
 abbrev src725 : SrcFunc := src_sys_agrees 1025 1029
 abbrev src726 : SrcFunc := src_frame_agrees
 abbrev src727 : SrcFunc := src_static_agrees
-abbrev src728 : SrcFunc := src_Expr_temps 75 186 492 728
-abbrev src729 : SrcFunc := src_args_temps 75 186 493 728 729
-abbrev src730 : SrcFunc := src_Expr_within 492 730
-abbrev src731 : SrcFunc := src_arity_is 1030
-abbrev src732 : SrcFunc := src_length_of_mini_selfhost_Expr 75 493 732
-abbrev src733 : SrcFunc := src_all_within 493 730 733
-abbrev src734 : SrcFunc := src_expr_then 1031
-abbrev src735 : SrcFunc := src_stmt_then 475
-abbrev src736 : SrcFunc := src_args_then 1032
-abbrev src737 : SrcFunc := src_spend_then 300
+abbrev src728 : SrcFunc := src_expr_then 1030
+abbrev src729 : SrcFunc := src_stmt_then 472
+abbrev src730 : SrcFunc := src_args_then 1031
+abbrev src731 : SrcFunc := src_spend_then 300
+abbrev src732 : SrcFunc := src_Expr_temps 75 186 492 732
+abbrev src733 : SrcFunc := src_args_temps 75 186 493 732 733
+abbrev src734 : SrcFunc := src_Expr_within 492 734
+abbrev src735 : SrcFunc := src_arity_is 1032
+abbrev src736 : SrcFunc := src_length_of_mini_selfhost_Expr 75 493 736
+abbrev src737 : SrcFunc := src_all_within 493 734 737
 abbrev src738 : SrcFunc := src_boxed_of_mini_selfhost_List_mini_selfhost_Instr 50 1033 1034
 abbrev src739 : SrcFunc := src_empty_of_mini_selfhost_Instr
 abbrev src740 : SrcFunc := src_unbox_of_mini_selfhost_List_mini_selfhost_Instr 1034
@@ -6602,9 +6602,9 @@ abbrev src1026 : SrcFunc := src_MemWidth_bytes
 abbrev src1027 : SrcFunc := src_Word_number
 abbrev src1028 : SrcFunc := src_DivOp_number
 abbrev src1029 : SrcFunc := src_Syscall_number
-abbrev src1030 : SrcFunc := src_get_of_mini_selfhost_Arity 56 1030 1270
-abbrev src1031 : SrcFunc := src_expr_room 300 492 734
-abbrev src1032 : SrcFunc := src_args_room 300 493 734 736
+abbrev src1030 : SrcFunc := src_expr_room 300 492 728
+abbrev src1031 : SrcFunc := src_args_room 300 493 728 730
+abbrev src1032 : SrcFunc := src_get_of_mini_selfhost_Arity 56 1032 1270
 abbrev src1033 : SrcFunc := src_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Instr
 abbrev src1034 : SrcFunc := src_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Instr
 abbrev src1035 : SrcFunc := src_BinOp_size

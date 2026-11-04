@@ -474,7 +474,7 @@ theorem neverNext_sound (call : Calls) (fuel : Nat) :
   | «continue» => intro E e _ he; simp [mstmt] at he
   | letMatch _ _ _ _ _ _ | setField _ _ _ | setCall _ _ _ | letAlloc _ _ _ _ | letView _ _ _ _ _ | letStr _ _ _
   | letLoad _ _ _ _ | setByte _ _ _ | free _ _ _ | letSlice _ _ _ _ _ | letIndex _ _ _ _ _
-  | setIndex _ _ _ | setIndexEval _ _ _ | setFieldEval _ _ _
+  | setIndex _ _ _ | setIndexEval _ _ _ | setFieldEval _ _ _ | setPlace _ _ | setPlaceOp _ _ _
   | matchArm _ _ _ _ _ _ _ _ | unreachable _ _ => intro E e _ he; simp [mstmt] at he
 
 theorem AEnv.get?_forget (ws : List Nat) (x : Nat) : ∀ (A : AEnv),
@@ -549,7 +549,7 @@ theorem after_ok' {B : Nat} {A : AEnv} {E : Env} (h : EnvOk B A E) (call : Calls
   | letSlice _ _ _ _ _ | letIndex _ _ _ _ _ | setIndex _ _ _ | letEval _ _ _ _ | setEval _ _
   | ifEval _ _ _ | whileEval _ _ | returnEval _ | discard _ | setIndexEval _ _ _
   | setFieldEval _ _ _ | returnUnit | assert _ | «break» | «continue» | matchArm _ _ _ _ _ _ _ _
-  | unreachable _ _ => exact h
+  | unreachable _ _ | setPlace _ _ | setPlaceOp _ _ _ => exact h
 
 /-- What the check knows after a statement that went on: what `after`
 knows, but of the locals it may have assigned. -/
@@ -725,7 +725,7 @@ theorem effCls_holds (ho : OracleOk prims T call) {A : AEnv} {E : Env} (h : EnvO
   | .eApply _ _ _, _, _ | .eNeg _, _, _ | .eNot _, _, _ | .eCast _ _, _, _ | .eIndex _ _, _, _
   | .eStruct _ _, _, _ | .eVariant _ _ _, _, _ | .eMatch _ _ _ _ _, _, _ | .eDivide _ _ _, _, _
   | .eStride _, _, _ | .arraySlice _ _, _, _ | .eIf _ _ _ _, _, _ | .eLet _ _ _ _ _, _, _
-  | .eLen _, _, _ | .eStr _ _, _, _ => by
+  | .eLen _, _, _ | .eStr _ _, _, _ | .eBorrow _ _, _, _ | .eDeref _ _, _, _ | .eField _ _, _, _ | .eAt _ _, _, _ => by
     simp only [effCls]; trivial
 
 theorem effsCls_holds (ho : OracleOk prims T call) {A : AEnv} {E : Env} (h : EnvOk B A E) :

@@ -38,6 +38,10 @@ def effBytes (x : SrcEff) : List UInt8 :=
   | .eLet id t v rt b => effBytes v ++ effBytes b
   | .eLen sl => []
   | .eStr offset chars => strBytes chars
+  | .eBorrow bty bplace => effBytes bplace
+  | .eDeref dty dref => effBytes dref
+  | .eField fbase fidx => effBytes fbase
+  | .eAt abase aindex => effBytes abase ++ effBytes aindex
 def effsBytes (xs : List SrcEff) : List UInt8 :=
   match xs with
   | [] => []
@@ -65,6 +69,10 @@ def placeEff (before : List UInt8) (x : SrcEff) : SrcEff :=
   | .eLet id t v rt b => SrcEff.eLet id t (placeEff before v) rt (placeEff (before ++ effBytes v) b)
   | .eLen sl => SrcEff.eLen sl
   | .eStr offset chars => SrcEff.eStr before.length chars
+  | .eBorrow bty bplace => SrcEff.eBorrow bty (placeEff before bplace)
+  | .eDeref dty dref => SrcEff.eDeref dty (placeEff before dref)
+  | .eField fbase fidx => SrcEff.eField (placeEff before fbase) fidx
+  | .eAt abase aindex => SrcEff.eAt (placeEff before abase) (placeEff (before ++ effBytes abase) aindex)
 def placeEffs (before : List UInt8) (xs : List SrcEff) : List SrcEff :=
   match xs with
   | [] => []
@@ -110,6 +118,8 @@ def stmtBytes (s : SrcStmt) : List UInt8 :=
   | .unreachable id ty => []
   | .letView id n es pt body => stmtBytes body
   | .letStr pt cs body => stmtBytes body
+  | .setPlace aplace avalue => effBytes aplace ++ effBytes avalue
+  | .setPlaceOp aop aplace avalue => effBytes aplace ++ effBytes avalue
 
 /-- The statement with its string literals placed after the bytes before, in order stmt_bytes lists their bytes. -/
 def placeStmt (before : List UInt8) (s : SrcStmt) : SrcStmt :=
@@ -150,5 +160,7 @@ def placeStmt (before : List UInt8) (s : SrcStmt) : SrcStmt :=
   | .unreachable id ty => SrcStmt.unreachable id ty
   | .letView id n es pt body => SrcStmt.letView id n es pt (placeStmt before body)
   | .letStr pt cs body => SrcStmt.letStr pt cs (placeStmt before body)
+  | .setPlace aplace avalue => SrcStmt.setPlace (placeEff before aplace) (placeEff (before ++ effBytes aplace) avalue)
+  | .setPlaceOp aop aplace avalue => SrcStmt.setPlaceOp aop (placeEff before aplace) (placeEff (before ++ effBytes aplace) avalue)
 
 end Lanius.Mini

@@ -18,6 +18,25 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.SelfCert
 open Lanius.Faithful.Budget
 
+theorem bstep_args_extent {spW sp : SrcProgram} {prims : Prims} {ix_args_extent ix_max_of ix_Expr_extent ix_unbox_of_mini_selfhost_List_mini_selfhost_Expr : Nat}
+    (fnW : spW.funcs[ix_args_extent]? = some (src_args_extent ix_max_of ix_Expr_extent ix_args_extent ix_unbox_of_mini_selfhost_List_mini_selfhost_Expr)) (fn : sp.funcs[ix_args_extent]? = some (src_args_extent ix_max_of ix_Expr_extent ix_args_extent ix_unbox_of_mini_selfhost_List_mini_selfhost_Expr))
+    (np : prims.isPrim ix_args_extent = false)
+    (back : Certified (∀ {n : Nat}, Stmt_args_extent sp prims ix_args_extent n))
+    (b_max_of : Certified (∀ {n : Nat}, BStmt_max_of spW sp prims ix_max_of n))
+    (b_Expr_extent : Certified (∀ {n : Nat}, BStmt_Expr_extent spW sp prims ix_Expr_extent n))
+    (pp_unbox_of_mini_selfhost_List_mini_selfhost_Expr : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_Expr = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_Expr : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_Expr = false) {n : Nat}
+    (bih_args_extent : Certified (BStmt_args_extent spW sp prims ix_args_extent n)) :
+    BStmt_args_extent spW sp prims ix_args_extent (n + 1) := by
+  intro x0 v0 w k b h r0 hb pre
+  have key : qcall sp prims uc (n + 1) ix_args_extent [v0] = some (w, k) ∧ 0 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_args_extent, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_args_extent.eq_def] at pre
+    simp only at pre
+    budget
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0⟩
+
 theorem bstep_Stmt_extent {spW sp : SrcProgram} {prims : Prims} {ix_Stmt_extent ix_plus ix_max_of ix_Expr_extent ix_unbox_of_mini_selfhost_Stmt ix_args_extent : Nat}
     (fnW : spW.funcs[ix_Stmt_extent]? = some (src_Stmt_extent ix_plus ix_max_of ix_Stmt_extent ix_Expr_extent ix_unbox_of_mini_selfhost_Stmt ix_args_extent)) (fn : sp.funcs[ix_Stmt_extent]? = some (src_Stmt_extent ix_plus ix_max_of ix_Stmt_extent ix_Expr_extent ix_unbox_of_mini_selfhost_Stmt ix_args_extent))
     (np : prims.isPrim ix_Stmt_extent = false)
@@ -283,24 +302,5 @@ theorem bstep_field_offset {spW sp : SrcProgram} {prims : Prims} {ix_field_offse
     simp only at pre
     budget
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
-
-theorem bstep_offset_after {spW sp : SrcProgram} {prims : Prims} {ix_offset_after ix_minus ix_plus ix_SrcType_size ix_field_offset : Nat}
-    (fnW : spW.funcs[ix_offset_after]? = some (src_offset_after ix_minus ix_plus ix_SrcType_size ix_field_offset)) (fn : sp.funcs[ix_offset_after]? = some (src_offset_after ix_minus ix_plus ix_SrcType_size ix_field_offset))
-    (np : prims.isPrim ix_offset_after = false)
-    (back : Certified (∀ {n : Nat}, Stmt_offset_after sp prims ix_offset_after n))
-    (b_minus : Certified (∀ {n : Nat}, BStmt_minus spW sp prims ix_minus n))
-    (b_plus : Certified (∀ {n : Nat}, BStmt_plus spW sp prims ix_plus n))
-    (b_SrcType_size : Certified (∀ {n : Nat}, BStmt_SrcType_size spW sp prims ix_SrcType_size n)) {n : Nat}
-    (bih_field_offset : Certified (BStmt_field_offset spW sp prims ix_field_offset n)) :
-    BStmt_offset_after spW sp prims ix_offset_after (n + 1) := by
-  intro x0 x1 x2 v0 v1 v2 w k b h r0 r1 r2 hb pre
-  have key : qcall sp prims uc (n + 1) ix_offset_after [v0, v1, v2] = some (w, k) ∧ 0 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_offset_after, List.length_cons, List.length_nil, if_true] at h ⊢
-    rw [Pre_offset_after.eq_def] at pre
-    simp only at pre
-    budget
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
 
 end Lanius.Faithful.SelfBudget

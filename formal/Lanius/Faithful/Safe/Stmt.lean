@@ -369,6 +369,8 @@ theorem stmt_safe (calls : ∀ m, FuncSim sp prims outside m) (funcs : ∀ i < N
     exact effS (by omega) vrun ht inv rel bound
   | setIndexEval => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
   | setFieldEval => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
+  | setPlace => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
+  | setPlaceOp => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
   | «break» => intro k tenv env st r st' le run; exact (break_trap run).elim
   | «continue» => intro k tenv env st r st' le run; exact (continue_trap run).elim
   | matchArm => intro k tenv env st r st' le run ok; simp [stmtOk] at ok

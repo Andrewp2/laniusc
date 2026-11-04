@@ -30,15 +30,15 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_compile_func {prog : SrcProgram} {prims : Prims} {ix_compile_func ix_minus ix_plus ix_image_limit ix_Stmt_temps ix_Stmt_within ix_frame_limit ix_room_fits ix_stmt_room ix_cons_of_mini_selfhost_Instr ix_zero_locals ix_concat_of_mini_selfhost_Instr ix_compile_stmt ix_code_size : Nat} (fn : prog.funcs[ix_compile_func]? = some (src_compile_func ix_minus ix_plus ix_image_limit ix_Stmt_temps ix_Stmt_within ix_frame_limit ix_room_fits ix_stmt_room ix_cons_of_mini_selfhost_Instr ix_zero_locals ix_concat_of_mini_selfhost_Instr ix_compile_stmt ix_code_size)) (np : prims.isPrim ix_compile_func = false)
+theorem proof_compile_func {prog : SrcProgram} {prims : Prims} {ix_compile_func ix_minus ix_plus ix_image_limit ix_room_fits ix_stmt_room ix_Stmt_temps ix_Stmt_within ix_frame_limit ix_cons_of_mini_selfhost_Instr ix_zero_locals ix_concat_of_mini_selfhost_Instr ix_compile_stmt ix_code_size : Nat} (fn : prog.funcs[ix_compile_func]? = some (src_compile_func ix_minus ix_plus ix_image_limit ix_room_fits ix_stmt_room ix_Stmt_temps ix_Stmt_within ix_frame_limit ix_cons_of_mini_selfhost_Instr ix_zero_locals ix_concat_of_mini_selfhost_Instr ix_compile_stmt ix_code_size)) (np : prims.isPrim ix_compile_func = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_image_limit : Certified (∀ {n : Nat}, Stmt_image_limit prog prims ix_image_limit n))
+    (ext_room_fits : Certified (∀ {n : Nat}, Stmt_room_fits prog prims ix_room_fits n))
+    (ext_stmt_room : Certified (∀ {n : Nat}, Stmt_stmt_room prog prims ix_stmt_room n))
     (ext_Stmt_temps : Certified (∀ {n : Nat}, Stmt_Stmt_temps prog prims ix_Stmt_temps n))
     (ext_Stmt_within : Certified (∀ {n : Nat}, Stmt_Stmt_within prog prims ix_Stmt_within n))
     (ext_frame_limit : Certified (∀ {n : Nat}, Stmt_frame_limit prog prims ix_frame_limit n))
-    (ext_room_fits : Certified (∀ {n : Nat}, Stmt_room_fits prog prims ix_room_fits n))
-    (ext_stmt_room : Certified (∀ {n : Nat}, Stmt_stmt_room prog prims ix_stmt_room n))
     (ext_cons_of_mini_selfhost_Instr : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_Instr prog prims ix_cons_of_mini_selfhost_Instr n))
     (ext_zero_locals : Certified (∀ {n : Nat}, Stmt_zero_locals prog prims ix_zero_locals n))
     (ext_concat_of_mini_selfhost_Instr : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_Instr prog prims ix_concat_of_mini_selfhost_Instr n))

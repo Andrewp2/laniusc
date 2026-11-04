@@ -235,6 +235,8 @@ def SrcStmt.declare (self : SrcStmt) (decls : SrcDecls) : Option SrcDecls :=
   | .unreachable id ty => SrcType.declare ty decls
   | .letView id length fields pointer body => SrcStmt.declare body decls
   | .letStr pointer chars body => SrcStmt.declare body decls
+  | .setPlace aplace avalue => declareTypes (SrcEff.types aplace ++ SrcEff.types avalue) decls
+  | .setPlaceOp aop aplace avalue => declareTypes (SrcEff.types aplace ++ SrcEff.types avalue) decls
 
 /-- Every path ends in a return, the way Core's DefinitelyReturns counts: a while body never counts. -/
 def SrcStmt.returns (self : SrcStmt) : Bool :=
@@ -275,6 +277,8 @@ def SrcStmt.returns (self : SrcStmt) : Bool :=
   | .unreachable id ty => true
   | .letView id length fields pointer body => SrcStmt.returns body
   | .letStr pointer chars body => SrcStmt.returns body
+  | .setPlace aplace avalue => false
+  | .setPlaceOp aop aplace avalue => false
 
 def declareParams (params : List SrcParam) (decls : SrcDecls) : Option SrcDecls :=
   match params with

@@ -266,7 +266,7 @@ theorem lok974 : LiveOk prims outside liveBad 974 (src_single_of_mini_selfhost_T
 theorem lok984 : LiveOk prims outside liveBad 984 (src_eff_named_tys 448 668 671 974 984 1219 1220 1221) := by decide +kernel
 
 /-- mini::selfhost::get<mini::selfhost::Arity> -/
-theorem lok1030 : LiveOk prims outside liveBad 1030 (src_get_of_mini_selfhost_Arity 56 1030 1270) := by decide +kernel
+theorem lok1032 : LiveOk prims outside liveBad 1032 (src_get_of_mini_selfhost_Arity 56 1032 1270) := by decide +kernel
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::SrcArm>> -/
 theorem lok1065 : LiveOk prims outside liveBad 1065 (src_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm 1315) := by decide +kernel

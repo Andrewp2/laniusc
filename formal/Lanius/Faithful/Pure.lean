@@ -216,6 +216,8 @@ def _root_.Lanius.Mini.SrcStmt.loopFree : SrcStmt → Bool
   | .discard _ => true
   | .setIndexEval _ _ _ => true
   | .setFieldEval _ _ _ => true
+  | .setPlace _ _ => true
+  | .setPlaceOp _ _ _ => true
   | .returnUnit => true
   | .assert _ => true
   | .break => false
@@ -256,6 +258,8 @@ def _root_.Lanius.Mini.SrcStmt.writes : SrcStmt → List Nat
   | .discard _ => []
   | .setIndexEval _ _ _ => []
   | .setFieldEval _ _ _ => []
+  | .setPlace _ _ => []
+  | .setPlaceOp _ _ _ => []
   | .returnUnit => []
   | .assert _ => []
   | .break => []
@@ -290,7 +294,7 @@ def peff (env : Env) : SrcEff → Option Value
       (peff env condition).bind fun c => (asBool c).bind fun b =>
         if b then peff env thenValue else peff env elseValue
   | .eLet id _ value _ body => (peff env value).bind fun v => peff ((id, v) :: env) body
-  | .eLen _ | .eStr _ _ => none
+  | .eLen _ | .eStr _ _ | .eBorrow _ _ | .eDeref _ _ | .eField _ _ | .eAt _ _ => none
 
 def peffs (env : Env) : List SrcEff → Option (List Value)
   | [] => some []
@@ -346,6 +350,8 @@ def pstmt (env : Env) : SrcStmt → Option Done
   | .discard value => (peff call env value).map fun _ => .next
   | .setIndexEval _ _ _ => none
   | .setFieldEval _ _ _ => none
+  | .setPlace _ _ => none
+  | .setPlaceOp _ _ _ => none
   | .returnUnit => some (.ret none)
   | .break => none
   | .continue => none
@@ -413,6 +419,8 @@ def mstmt (fuel : Nat) (env : Env) : SrcStmt → Option Out
   | .discard value => (peff call env value).map fun _ => .next env
   | .setIndexEval _ _ _ => none
   | .setFieldEval _ _ _ => none
+  | .setPlace _ _ => none
+  | .setPlaceOp _ _ _ => none
   | .returnUnit => some (.ret none)
   | .break => some (.brk env)
   | .continue => some (.cont env)
@@ -532,7 +540,7 @@ theorem mstmt_loopFree (call : Calls) (fuel : Nat) :
     intro env h; simp [SrcStmt.loopFree] at h
   | letMatch _ _ _ _ _ _ | setField _ _ _ | setCall _ _ _ | letAlloc _ _ _ _ | letView _ _ _ _ _ | letStr _ _ _ | letLoad _ _ _ _ | setByte _ _ _
   | free _ _ _ | letSlice _ _ _ _ _ | letIndex _ _ _ _ _ | setIndex _ _ _ | setIndexEval _ _ _
-  | setFieldEval _ _ _ | matchArm _ _ _ _ _ _ _ _ | unreachable _ _ => intro env _; rfl
+  | setFieldEval _ _ _ | setPlace _ _ | setPlaceOp _ _ _ | matchArm _ _ _ _ _ _ _ _ | unreachable _ _ => intro env _; rfl
 
 theorem outValue_ofDone (ret : SrcType) (env : Env) (d : Done) :
     outValue ret (Out.ofDone env d) = doneValue ret d := by

@@ -75,16 +75,16 @@ theorem fn_subst_all : prog.funcs[469]? = some (src_subst_all 464 469 493 541 54
 theorem np_subst_all : prims.isPrim 469 = false := by decide +kernel
 theorem fn_Stmt_agrees : prog.funcs[470]? = some (src_Stmt_agrees 307 464 469 470 698 705 706 707 708 709 710 711 712 713 714 715 716 717 718 719 720 721 722 723 724 725 726 727) := get_of_drop at_Stmt_agrees
 theorem np_Stmt_agrees : prims.isPrim 470 = false := by decide +kernel
-theorem fn_Stmt_temps : prog.funcs[471]? = some (src_Stmt_temps 75 186 307 471 728 729) := get_of_drop at_Stmt_temps
-theorem np_Stmt_temps : prims.isPrim 471 = false := by decide +kernel
-theorem fn_Stmt_within : prog.funcs[472]? = some (src_Stmt_within 75 307 472 730 731 732 733) := get_of_drop at_Stmt_within
-theorem np_Stmt_within : prims.isPrim 472 = false := by decide +kernel
-theorem fn_frame_limit : prog.funcs[473]? = some (src_frame_limit) := get_of_drop at_frame_limit
-theorem np_frame_limit : prims.isPrim 473 = false := by decide +kernel
-theorem fn_room_fits : prog.funcs[474]? = some (src_room_fits) := get_of_drop at_room_fits
-theorem np_room_fits : prims.isPrim 474 = false := by decide +kernel
-theorem fn_stmt_room : prog.funcs[475]? = some (src_stmt_room 300 307 475 734 735 736 737) := get_of_drop at_stmt_room
-theorem np_stmt_room : prims.isPrim 475 = false := by decide +kernel
+theorem fn_room_fits : prog.funcs[471]? = some (src_room_fits) := get_of_drop at_room_fits
+theorem np_room_fits : prims.isPrim 471 = false := by decide +kernel
+theorem fn_stmt_room : prog.funcs[472]? = some (src_stmt_room 300 307 472 728 729 730 731) := get_of_drop at_stmt_room
+theorem np_stmt_room : prims.isPrim 472 = false := by decide +kernel
+theorem fn_Stmt_temps : prog.funcs[473]? = some (src_Stmt_temps 75 186 307 473 732 733) := get_of_drop at_Stmt_temps
+theorem np_Stmt_temps : prims.isPrim 473 = false := by decide +kernel
+theorem fn_Stmt_within : prog.funcs[474]? = some (src_Stmt_within 75 307 474 734 735 736 737) := get_of_drop at_Stmt_within
+theorem np_Stmt_within : prims.isPrim 474 = false := by decide +kernel
+theorem fn_frame_limit : prog.funcs[475]? = some (src_frame_limit) := get_of_drop at_frame_limit
+theorem np_frame_limit : prims.isPrim 475 = false := by decide +kernel
 theorem fn_cons_of_mini_selfhost_Instr : prog.funcs[476]? = some (src_cons_of_mini_selfhost_Instr 738) := get_of_drop at_cons_of_mini_selfhost_Instr
 theorem np_cons_of_mini_selfhost_Instr : prims.isPrim 476 = false := by decide +kernel
 theorem fn_zero_locals : prog.funcs[477]? = some (src_zero_locals 56 75 476 477 739) := get_of_drop at_zero_locals
@@ -540,26 +540,26 @@ theorem fn_frame_agrees : prog.funcs[726]? = some (src_frame_agrees) := get_of_d
 theorem np_frame_agrees : prims.isPrim 726 = false := by decide +kernel
 theorem fn_static_agrees : prog.funcs[727]? = some (src_static_agrees) := get_of_drop at_static_agrees
 theorem np_static_agrees : prims.isPrim 727 = false := by decide +kernel
-theorem fn_Expr_temps : prog.funcs[728]? = some (src_Expr_temps 75 186 492 728) := get_of_drop at_Expr_temps
-theorem np_Expr_temps : prims.isPrim 728 = false := by decide +kernel
-theorem fn_args_temps : prog.funcs[729]? = some (src_args_temps 75 186 493 728 729) := get_of_drop at_args_temps
-theorem np_args_temps : prims.isPrim 729 = false := by decide +kernel
-theorem fn_Expr_within : prog.funcs[730]? = some (src_Expr_within 492 730) := get_of_drop at_Expr_within
-theorem np_Expr_within : prims.isPrim 730 = false := by decide +kernel
-theorem fn_arity_is : prog.funcs[731]? = some (src_arity_is 1030) := get_of_drop at_arity_is
-theorem np_arity_is : prims.isPrim 731 = false := by decide +kernel
-theorem fn_length_of_mini_selfhost_Expr : prog.funcs[732]? = some (src_length_of_mini_selfhost_Expr 75 493 732) := get_of_drop at_length_of_mini_selfhost_Expr
-theorem np_length_of_mini_selfhost_Expr : prims.isPrim 732 = false := by decide +kernel
-theorem fn_all_within : prog.funcs[733]? = some (src_all_within 493 730 733) := get_of_drop at_all_within
-theorem np_all_within : prims.isPrim 733 = false := by decide +kernel
-theorem fn_expr_then : prog.funcs[734]? = some (src_expr_then 1031) := get_of_drop at_expr_then
-theorem np_expr_then : prims.isPrim 734 = false := by decide +kernel
-theorem fn_stmt_then : prog.funcs[735]? = some (src_stmt_then 475) := get_of_drop at_stmt_then
-theorem np_stmt_then : prims.isPrim 735 = false := by decide +kernel
-theorem fn_args_then : prog.funcs[736]? = some (src_args_then 1032) := get_of_drop at_args_then
-theorem np_args_then : prims.isPrim 736 = false := by decide +kernel
-theorem fn_spend_then : prog.funcs[737]? = some (src_spend_then 300) := get_of_drop at_spend_then
-theorem np_spend_then : prims.isPrim 737 = false := by decide +kernel
+theorem fn_expr_then : prog.funcs[728]? = some (src_expr_then 1030) := get_of_drop at_expr_then
+theorem np_expr_then : prims.isPrim 728 = false := by decide +kernel
+theorem fn_stmt_then : prog.funcs[729]? = some (src_stmt_then 472) := get_of_drop at_stmt_then
+theorem np_stmt_then : prims.isPrim 729 = false := by decide +kernel
+theorem fn_args_then : prog.funcs[730]? = some (src_args_then 1031) := get_of_drop at_args_then
+theorem np_args_then : prims.isPrim 730 = false := by decide +kernel
+theorem fn_spend_then : prog.funcs[731]? = some (src_spend_then 300) := get_of_drop at_spend_then
+theorem np_spend_then : prims.isPrim 731 = false := by decide +kernel
+theorem fn_Expr_temps : prog.funcs[732]? = some (src_Expr_temps 75 186 492 732) := get_of_drop at_Expr_temps
+theorem np_Expr_temps : prims.isPrim 732 = false := by decide +kernel
+theorem fn_args_temps : prog.funcs[733]? = some (src_args_temps 75 186 493 732 733) := get_of_drop at_args_temps
+theorem np_args_temps : prims.isPrim 733 = false := by decide +kernel
+theorem fn_Expr_within : prog.funcs[734]? = some (src_Expr_within 492 734) := get_of_drop at_Expr_within
+theorem np_Expr_within : prims.isPrim 734 = false := by decide +kernel
+theorem fn_arity_is : prog.funcs[735]? = some (src_arity_is 1032) := get_of_drop at_arity_is
+theorem np_arity_is : prims.isPrim 735 = false := by decide +kernel
+theorem fn_length_of_mini_selfhost_Expr : prog.funcs[736]? = some (src_length_of_mini_selfhost_Expr 75 493 736) := get_of_drop at_length_of_mini_selfhost_Expr
+theorem np_length_of_mini_selfhost_Expr : prims.isPrim 736 = false := by decide +kernel
+theorem fn_all_within : prog.funcs[737]? = some (src_all_within 493 734 737) := get_of_drop at_all_within
+theorem np_all_within : prims.isPrim 737 = false := by decide +kernel
 theorem np_boxed_of_mini_selfhost_List_mini_selfhost_Instr : prims.isPrim 738 = true := by decide +kernel
 theorem fn_empty_of_mini_selfhost_Instr : prog.funcs[739]? = some (src_empty_of_mini_selfhost_Instr) := get_of_drop at_empty_of_mini_selfhost_Instr
 theorem np_empty_of_mini_selfhost_Instr : prims.isPrim 739 = false := by decide +kernel

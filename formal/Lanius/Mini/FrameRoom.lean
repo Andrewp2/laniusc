@@ -64,6 +64,8 @@ def SrcStmt.blockBytes (self : SrcStmt) (uses : List Nat) : Nat :=
   | .unreachable id ty => 0
   | .letView id length fields pointer body => SrcStmt.blockBytes body uses
   | .letStr pointer chars body => SrcStmt.blockBytes body uses
+  | .setPlace aplace avalue => 0
+  | .setPlaceOp aop aplace avalue => 0
 
 /-- The block without the check: every parameter's and let's block bytes. -/
 def frameBytes (func : SrcFunc) : Nat :=
@@ -161,6 +163,8 @@ theorem blockRoom_eq (uses : List Nat) (s : SrcStmt) :
   | unreachable id ty => intro room; simp [blockRoom, SrcStmt.blockBytes, takeOut]
   | letView id length fields pointer body ih => intro room; simp only [blockRoom, SrcStmt.blockBytes, ih]
   | letStr pointer chars body ih => intro room; simp only [blockRoom, SrcStmt.blockBytes, ih]
+  | setPlace aplace avalue => intro room; simp [blockRoom, SrcStmt.blockBytes, takeOut]
+  | setPlaceOp aop aplace avalue => intro room; simp [blockRoom, SrcStmt.blockBytes, takeOut]
 
 /-- The checked block is the unchecked one when it fits the limit, and `2 ^ 31` when not. -/
 theorem frameBlock_eq (func : SrcFunc) :

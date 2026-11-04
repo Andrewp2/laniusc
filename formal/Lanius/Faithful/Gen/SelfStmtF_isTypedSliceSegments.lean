@@ -21,11 +21,11 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_is_empty_trees (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.CTree} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 82 RepCTree) x0 v0 →
+  ∀ {x0 : List Lanius.Mini.CTree} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 83 RepCTree) x0 v0 →
     RepBool (Lanius.Mini.isEmptyTrees x0) w
 
 abbrev Stmt_is_text (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List Nat)} {x1 : List Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 197 (RepList 25 RepNat)) x0 v0 → (RepList 25 RepNat) x1 v1 →
+  ∀ {x0 : Option (List Nat)} {x1 : List Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 198 (RepList 25 RepNat)) x0 v0 → (RepList 25 RepNat) x1 v1 →
     RepBool (Lanius.Mini.isText x0 x1) w
 
 abbrev Stmt_is_typed_slice_path (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -37,11 +37,11 @@ abbrev Stmt_is_typed_slice_segments (prog : SrcProgram) (prims : Prims) (ix n : 
     RepBool (Lanius.Mini.isTypedSliceSegments x0) w
 
 abbrev Stmt_is_u8_slice (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Ty} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 211 RepTy) x0 v0 →
+  ∀ {x0 : Option Lanius.Mini.Ty} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 212 RepTy) x0 v0 →
     RepBool (Lanius.Mini.isU8Slice x0) w
 
 abbrev Stmt_is_u8_ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Ty} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 211 RepTy) x0 v0 →
+  ∀ {x0 : Option Lanius.Mini.Ty} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 212 RepTy) x0 v0 →
     RepBool (Lanius.Mini.isU8Ty x0) w
 
 abbrev Stmt_tree_names (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -49,7 +49,7 @@ abbrev Stmt_tree_names (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
     RepBool (Lanius.Mini.treeNames x0 x1 x2) w
 
 abbrev Stmt_u8_args (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.CTree} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 82 RepCTree) x2 v2 →
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.CTree} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 83 RepCTree) x2 v2 →
     RepBool (Lanius.Mini.u8Args x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

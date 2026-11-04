@@ -25,15 +25,15 @@ abbrev Stmt_lim_arms (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     RepBool (Lanius.Mini.limArms x0) w
 
 abbrev Stmt_lim_bind (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Nat} {x1 : Bool} {x2 : Option Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 134 RepNat) x0 v0 → RepBool x1 v1 → (RepOption 134 RepNat) x2 v2 →
-    (RepOption 134 RepNat) (Lanius.Mini.limBind x0 x1 x2) w
+  ∀ {x0 : Option Nat} {x1 : Bool} {x2 : Option Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 135 RepNat) x0 v0 → RepBool x1 v1 → (RepOption 135 RepNat) x2 v2 →
+    (RepOption 135 RepNat) (Lanius.Mini.limBind x0 x1 x2) w
 
 abbrev Stmt_lim_eff (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcEff x0 v0 →
     RepBool (Lanius.Mini.limEff x0) w
 
 abbrev Stmt_lim_effs (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.SrcEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 186 RepSrcEff) x0 v0 →
+  ∀ {x0 : List Lanius.Mini.SrcEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 187 RepSrcEff) x0 v0 →
     RepBool (Lanius.Mini.limEffs x0) w
 
 abbrev Stmt_lim_exprs (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

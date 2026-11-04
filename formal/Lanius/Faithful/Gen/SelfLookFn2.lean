@@ -283,12 +283,12 @@ theorem fn_DivOp_number : prog.funcs[1028]? = some (src_DivOp_number) := get_of_
 theorem np_DivOp_number : prims.isPrim 1028 = false := by decide +kernel
 theorem fn_Syscall_number : prog.funcs[1029]? = some (src_Syscall_number) := get_of_drop at_Syscall_number
 theorem np_Syscall_number : prims.isPrim 1029 = false := by decide +kernel
-theorem fn_get_of_mini_selfhost_Arity : prog.funcs[1030]? = some (src_get_of_mini_selfhost_Arity 56 1030 1270) := get_of_drop at_get_of_mini_selfhost_Arity
-theorem np_get_of_mini_selfhost_Arity : prims.isPrim 1030 = false := by decide +kernel
-theorem fn_expr_room : prog.funcs[1031]? = some (src_expr_room 300 492 734) := get_of_drop at_expr_room
-theorem np_expr_room : prims.isPrim 1031 = false := by decide +kernel
-theorem fn_args_room : prog.funcs[1032]? = some (src_args_room 300 493 734 736) := get_of_drop at_args_room
-theorem np_args_room : prims.isPrim 1032 = false := by decide +kernel
+theorem fn_expr_room : prog.funcs[1030]? = some (src_expr_room 300 492 728) := get_of_drop at_expr_room
+theorem np_expr_room : prims.isPrim 1030 = false := by decide +kernel
+theorem fn_args_room : prog.funcs[1031]? = some (src_args_room 300 493 728 730) := get_of_drop at_args_room
+theorem np_args_room : prims.isPrim 1031 = false := by decide +kernel
+theorem fn_get_of_mini_selfhost_Arity : prog.funcs[1032]? = some (src_get_of_mini_selfhost_Arity 56 1032 1270) := get_of_drop at_get_of_mini_selfhost_Arity
+theorem np_get_of_mini_selfhost_Arity : prims.isPrim 1032 = false := by decide +kernel
 theorem fn_BinOp_size : prog.funcs[1035]? = some (src_BinOp_size) := get_of_drop at_BinOp_size
 theorem np_BinOp_size : prims.isPrim 1035 = false := by decide +kernel
 theorem fn_Word_prefix : prog.funcs[1036]? = some (src_Word_prefix) := get_of_drop at_Word_prefix

@@ -240,6 +240,8 @@ def SrcStmt.Declared (P : Core.Program) (s : SrcStmt) : Prop :=
   | .discard value => ∀ t ∈ value.types, TypeDeclared P t
   | .setIndexEval _ index value => ∀ t ∈ index.types ++ value.types, TypeDeclared P t
   | .setFieldEval _ _ value => ∀ t ∈ value.types, TypeDeclared P t
+  | .setPlace place value => ∀ t ∈ place.types ++ value.types, TypeDeclared P t
+  | .setPlaceOp _ place value => ∀ t ∈ place.types ++ value.types, TypeDeclared P t
   | .returnUnit => True
   | .assert condition => ∀ t ∈ condition.types, TypeDeclared P t
   | .break => True
@@ -3523,6 +3525,12 @@ theorem SrcStmt.declare_sound : ∀ (s : SrcStmt) {d d' : SrcDecls}, s.declare d
     simp only [SrcStmt.declare] at h
     exact declareTypes_sound _ h
   | .setFieldEval _ _ value, d, d', h => by
+    simp only [SrcStmt.declare] at h
+    exact declareTypes_sound _ h
+  | .setPlace place value, d, d', h => by
+    simp only [SrcStmt.declare] at h
+    exact declareTypes_sound _ h
+  | .setPlaceOp _ place value, d, d', h => by
     simp only [SrcStmt.declare] at h
     exact declareTypes_sound _ h
   | .returnUnit, _, _, h => by

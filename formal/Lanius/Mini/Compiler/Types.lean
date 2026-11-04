@@ -355,6 +355,18 @@ inductive SrcDivOp where
   | remainder : SrcDivOp
   deriving DecidableEq, Repr
 
+/-- The operator of a compound assignment through a place: Core's assignment operators add, subtract, multiply, bitAnd, bitOr, bitXor, shiftLeft and shiftRight (F5). -/
+inductive SrcAssignOp where
+  | aAdd : SrcAssignOp
+  | aSub : SrcAssignOp
+  | aMul : SrcAssignOp
+  | aAnd : SrcAssignOp
+  | aOr : SrcAssignOp
+  | aXor : SrcAssignOp
+  | aShl : SrcAssignOp
+  | aShr : SrcAssignOp
+  deriving DecidableEq, Repr
+
 /-- An expression that may call functions, evaluated in Core's order. The ones without calls are SrcExpr, whose proofs go by induction; this type nests through List, so its proofs go by Core's fuel instead. -/
 inductive SrcEff where
   | ePure : SrcExpr → SrcEff
@@ -386,6 +398,14 @@ inductive SrcEff where
   | eLen : Nat → SrcEff
   /-- a string literal: its bytes are the program's statics from offset on (placed by the front end, checked by eval_str), a str -/
   | eStr : Nat → (List Nat) → SrcEff
+  /-- &place, of the place's type: Core's borrow of the place (SrcEff.toPlace: a local, a field or element of a place, else the place a reference names). F5: nothing accepts it yet. -/
+  | eBorrow : SrcType → SrcEff → SrcEff
+  /-- *reference, of the referent's type: Core's dereference -/
+  | eDeref : SrcType → SrcEff → SrcEff
+  /-- base.field of any struct value (Core's field of a value) -/
+  | eField : SrcEff → Nat → SrcEff
+  /-- base[index] of any array value (Core's index of a value) -/
+  | eAt : SrcEff → SrcEff → SrcEff
   deriving Repr
 
 inductive SrcStmt where
@@ -450,6 +470,9 @@ inductive SrcStmt where
   | letView : Nat → Nat → (List SrcExpr) → Nat → SrcStmt → SrcStmt
   /-- LetStr(pointer, chars, body): let pointer: ptr = core::mem::string_data_ptr("chars"); then body, chars the string's Unicode scalar values. Core maps the string's UTF-8 bytes, zero-padded to whole words, into a fresh heap block, which pointer addresses; the verified compiler stores them there as words. -/
   | letStr : Nat → (List Nat) → SrcStmt → SrcStmt
+  /-- place = value, place op= value: Core's assignment to the place (SrcEff.toPlace), the compound one reading the old value before value (F5: nothing accepts them yet) -/
+  | setPlace : SrcEff → SrcEff → SrcStmt
+  | setPlaceOp : SrcAssignOp → SrcEff → SrcEff → SrcStmt
   deriving Repr
 
 structure SrcParam where

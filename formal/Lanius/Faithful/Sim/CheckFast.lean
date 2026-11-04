@@ -51,7 +51,7 @@ def effTyC (tenv : TEnv) : SrcEff → Option SrcType
       (effTyC tenv thenValue).bind fun a => (effTyC tenv elseValue).bind fun b => if a.same b then some a else none
     else none
   | .eLet id _ value _ body => (effTyC tenv value).bind fun t => effTyC ((id, t) :: tenv) body
-  | .eLen _ | .eStr _ _ => none
+  | .eLen _ | .eStr _ _ | .eBorrow _ _ | .eDeref _ _ | .eField _ _ | .eAt _ _ => none
 
 def effTysC (tenv : TEnv) : List SrcEff → Option (List SrcType)
   | [] => some []
@@ -124,6 +124,8 @@ def stmtOkC (ret : SrcType) (tenv : TEnv) : SrcStmt → Bool
   | .discard value => (effTyC calls boxes tenv value).isSome
   | .setIndexEval _ _ _ => false
   | .setFieldEval _ _ _ => false
+  | .setPlace _ _ => false
+  | .setPlaceOp _ _ _ => false
   | .returnUnit => true
   | .assert condition => isBoolTy (effTyC calls boxes tenv condition)
   | .break => true
@@ -173,7 +175,7 @@ theorem effTyC_eq (tenv : TEnv) : ∀ e : SrcEff, effTyC (callTy sp outside) box
     congr 1
     funext t
     exact effTyC_eq _ body
-  | .eLen _ | .eStr _ _ => by rw [effTyC, effTy]
+  | .eLen _ | .eStr _ _ | .eBorrow _ _ | .eDeref _ _ | .eField _ _ | .eAt _ _ => by rw [effTyC, effTy]
 
 theorem effTysC_eq (tenv : TEnv) : ∀ es : List SrcEff,
     effTysC (callTy sp outside) boxes tenv es = effTys sp outside boxes tenv es
@@ -226,6 +228,8 @@ theorem stmtOkC_eq (ret : SrcType) (s : SrcStmt) : ∀ tenv : TEnv,
   | discard value => intro tenv; rw [stmtOkC, stmtOk, effTyC_eq] <;> rfl
   | setIndexEval => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
   | setFieldEval => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
+  | setPlace => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
+  | setPlaceOp => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
   | returnUnit => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
   | «assert» condition => intro tenv; rw [stmtOkC, stmtOk, effTyC_eq] <;> rfl
   | «break» => intro tenv; rw [stmtOkC, stmtOk]

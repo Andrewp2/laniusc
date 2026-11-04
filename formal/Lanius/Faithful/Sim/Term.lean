@@ -228,6 +228,8 @@ def neverNext : SrcStmt → Bool
   | .continue => true
   | .matchArm _ _ _ _ _ _ _ _ => true
   | .unreachable _ _ => true
+  | .setPlace _ _ => false
+  | .setPlaceOp _ _ _ => false
 
 /-- What is known after a statement that went on to the next one: after
 `if x < k { a } else { b }` with an `a` that does not go on, `x ≥ k`. -/
@@ -242,7 +244,7 @@ def AEnv.after (A : AEnv) : SrcStmt → AEnv
   | .letSlice _ _ _ _ _ | .letIndex _ _ _ _ _ | .setIndex _ _ _ | .letEval _ _ _ _ | .setEval _ _
   | .ifEval _ _ _ | .whileEval _ _ | .returnEval _ | .discard _ | .setIndexEval _ _ _
   | .setFieldEval _ _ _ | .returnUnit | .assert _ | .break | .continue | .matchArm _ _ _ _ _ _ _ _
-  | .unreachable _ _ => A
+  | .unreachable _ _ | .setPlace _ _ | .setPlaceOp _ _ _ => A
 
 /-- Nothing known of the locals in `ws`, which a statement may have assigned. -/
 def AEnv.forget (A : AEnv) (ws : List Nat) : AEnv :=
@@ -318,7 +320,7 @@ def effCls (A : AEnv) : SrcEff → SizeCls
   | .arraySlice _ _ => .unk
   | .eIf _ _ _ _ => .unk
   | .eLet _ _ _ _ _ => .unk
-  | .eLen _ | .eStr _ _ => .unk
+  | .eLen _ | .eStr _ _ | .eBorrow _ _ | .eDeref _ _ | .eField _ _ | .eAt _ _ => .unk
 
 def effsCls (A : AEnv) : List SrcEff → List SizeCls
   | [] => []
@@ -345,6 +347,7 @@ def chkEff (A : AEnv) (W : Wit) : SrcEff → Bool
       chkEff A W condition && chkEff A W thenValue && chkEff A W elseValue
   | .eLet id _ value _ body => chkEff A W value && chkEff ((id, effCls prims T A value) :: A) W body
   | .eLen _ | .eStr _ _ => true
+  | .eBorrow _ _ | .eDeref _ _ | .eField _ _ | .eAt _ _ => false
 
 def chkEffs (A : AEnv) (W : Wit) : List SrcEff → Bool
   | [] => true
@@ -406,6 +409,8 @@ def chkStmt (A : AEnv) (W : Wit) : SrcStmt → Bool
   | .continue => true
   | .matchArm _ _ _ _ _ _ _ _ => true
   | .unreachable _ _ => true
+  | .setPlace _ _ => false
+  | .setPlaceOp _ _ _ => false
 
 /-- The classes of a call's parameters: its designated ones no larger. -/
 def initCls (pos : List Nat) (n : Nat) : List SizeCls :=

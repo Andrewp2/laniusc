@@ -2062,6 +2062,122 @@ theorem evalPlace_index_grows {P : Core.Program} {k : Nat} {st : State} {slice :
         | simp at run
   all_goals simp at run
 
+/-! ## Places (F5) -/
+
+/-- Every expression a place evaluates grows the state, at fuel up to `k`. -/
+inductive PlaceGrows (P : Core.Program) (k : Nat) : Core.Place → Prop
+  | local (id : Nat) : PlaceGrows P k (.local id)
+  | field {base : Core.Place} (f : Nat) : PlaceGrows P k base → PlaceGrows P k (.field base f)
+  | index {base : Core.Place} {e : Core.Expr} : PlaceGrows P k base →
+      (∀ {m : Nat} {st : State} {v : Value} {st' : State}, m ≤ k → evalExpr m P st e = .done v st' → Grows st st') →
+      PlaceGrows P k (.index base e)
+  | deref {r : Core.Expr} :
+      (∀ {m : Nat} {st : State} {v : Value} {st' : State}, m ≤ k → evalExpr m P st r = .done v st' → Grows st st') →
+      PlaceGrows P k (.deref r)
+
+/-- A place whose expressions grow the state grows it. -/
+theorem evalPlace_grows {P : Core.Program} {k : Nat} : ∀ {place : Core.Place}, PlaceGrows P k place →
+    ∀ {m : Nat}, m ≤ k + 1 → ∀ {st : State} {acc : Semantics.PlaceAccess} {r : Semantics.ResolvedPlace} {st' : State},
+      Semantics.evalPlace m P st acc place = .done r st' → Grows st st'
+  | _, .local id, m, _, st, acc, r, st', run => by
+    cases m with
+    | zero => simp [Semantics.evalPlace] at run
+    | succ m =>
+      simp only [Semantics.evalPlace] at run
+      repeat' split at run
+      all_goals first
+        | (simp only [Semantics.Outcome.done.injEq] at run; rw [← run.2]; exact Grows.refl _)
+        | simp at run
+  | _, .field f hb, m, le, st, acc, r, st', run => by
+    cases m with
+    | zero => simp [Semantics.evalPlace] at run
+    | succ m =>
+      cases hr : Semantics.evalPlace m P st .address _ with
+      | done rb next =>
+        have g := evalPlace_grows hb (by omega) hr
+        simp only [Semantics.evalPlace, hr] at run
+        repeat' split at run
+        all_goals first
+          | (simp only [Semantics.Outcome.done.injEq] at run; rw [← run.2]; exact g)
+          | simp at run
+      | trapped _ _ => simp [Semantics.evalPlace, hr] at run
+      | exited _ _ => simp [Semantics.evalPlace, hr] at run
+      | outOfFuel => simp [Semantics.evalPlace, hr] at run
+  | _, .index hb he, m, le, st, acc, r, st', run => by
+    cases m with
+    | zero => simp [Semantics.evalPlace] at run
+    | succ m =>
+      cases hr : Semantics.evalPlace m P st .read _ with
+      | done rb afterBase =>
+        have g1 := evalPlace_grows hb (by omega) hr
+        cases hi : evalExpr m P afterBase _ with
+        | done iv afterIndex =>
+          have g2 := he (by omega) hi
+          simp only [Semantics.evalPlace, hr, hi] at run
+          repeat' split at run
+          all_goals first
+            | (simp only [Semantics.Outcome.done.injEq] at run; rw [← run.2]; exact g1.trans g2)
+            | simp at run
+        | trapped _ _ =>
+          simp only [Semantics.evalPlace, hr, hi] at run
+          repeat' split at run
+          all_goals simp at run
+        | exited _ _ =>
+          simp only [Semantics.evalPlace, hr, hi] at run
+          repeat' split at run
+          all_goals simp at run
+        | outOfFuel =>
+          simp only [Semantics.evalPlace, hr, hi] at run
+          repeat' split at run
+          all_goals simp at run
+      | trapped _ _ => simp [Semantics.evalPlace, hr] at run
+      | exited _ _ => simp [Semantics.evalPlace, hr] at run
+      | outOfFuel => simp [Semantics.evalPlace, hr] at run
+  | _, .deref hr', m, le, st, acc, r, st', run => by
+    cases m with
+    | zero => simp [Semantics.evalPlace] at run
+    | succ m =>
+      simp only [Semantics.evalPlace] at run
+      split at run
+      all_goals first
+        | (simp at run; done)
+        | (rename_i refRun
+           have g := hr' (by omega) refRun
+           repeat' split at run
+           all_goals first
+             | (simp only [Semantics.Outcome.done.injEq] at run; rw [← run.2]; exact g)
+             | simp at run)
+
+/-- An assignment, plain or compound, whose place and value may grow the heap. -/
+theorem assign_op_grows_eff {P : Core.Program} {k : Nat} {st : State} {op : Core.AssignOp} {place : Core.Place}
+    {e : Core.Expr} {u : Value} {st' : State}
+    (placeOk : ∀ {acc r st1}, Semantics.evalPlace k P st acc place = .done r st1 → Grows st st1)
+    (value : ∀ {st1 rv st2}, evalExpr k P st1 e = .done rv st2 → Grows st1 st2)
+    (run : evalExpr (k + 1) P st (.assign op place e) = .done u st') : Grows st st' := by
+  simp only [evalExpr] at run
+  split at run
+  · rename_i resolved afterPlace placeRun
+    have g1 := placeOk placeRun
+    split at run
+    · rename_i rv afterValue valueRun
+      have g2 := value valueRun
+      split at run
+      · simp at run
+      rename_i result _
+      split at run
+      · rename_i assigned written
+        split at run
+        · rename_i coherent synced
+          simp only [Semantics.Outcome.done.injEq] at run
+          obtain ⟨-, rfl⟩ := run
+          obtain ⟨n3, v3⟩ := synchronized_grows synced
+          obtain ⟨n4, v4⟩ := writeNative_grows written
+          exact g1.trans (g2.trans (Grows.heap (st := afterValue) (st' := coherent) (Nat.le_of_eq (n3.trans n4).symm) (v3.trans v4)))
+        · simp at run
+      · simp at run
+    all_goals simp at run
+  all_goals simp at run
+
 /-! ## Effectful expressions -/
 
 /-- Every effectful expression Core completes with at most `k` fuel grows. -/
@@ -2071,6 +2187,46 @@ def EffGrows (sp : SrcProgram) (k : Nat) : Prop :=
 
 theorem EffGrows.lower {sp : SrcProgram} {k j : Nat} (ih : EffGrows sp k) (le : j ≤ k) : EffGrows sp j :=
   fun m lt => ih m (Nat.le_trans lt le)
+
+/-- The place an effectful expression names grows the state as its parts do. -/
+theorem exprPlace_grows {sp : SrcProgram} {k : Nat} (ih : EffGrows sp k) :
+    ∀ place : SrcEff, PlaceGrows sp.toCore k (exprPlace place.toCore)
+  | .ePure (.local id) => .local id
+  | .ePure (.field id f) => .field f (.local id)
+  | .ePure (.int x0) => .deref fun _ run => by rw [(SrcExpr.int x0).eval_state run]; exact Grows.refl _
+  | .ePure (.boolean x0) => .deref fun _ run => by rw [(SrcExpr.boolean x0).eval_state run]; exact Grows.refl _
+  | .ePure (.unsigned x0 x1) => .deref fun _ run => by rw [(SrcExpr.unsigned x0 x1).eval_state run]; exact Grows.refl _
+  | .ePure (.negate x0) => .deref fun _ run => by rw [(SrcExpr.negate x0).eval_state run]; exact Grows.refl _
+  | .ePure (.not x0) => .deref fun _ run => by rw [(SrcExpr.not x0).eval_state run]; exact Grows.refl _
+  | .ePure (.apply x0 x1 x2) => .deref fun _ run => by rw [(SrcExpr.apply x0 x1 x2).eval_state run]; exact Grows.refl _
+  | .ePure (.cast x0 x1) => .deref fun _ run => by rw [(SrcExpr.cast x0 x1).eval_state run]; exact Grows.refl _
+  | .ePure .null => .deref fun _ run => by rw [(SrcExpr.null).eval_state run]; exact Grows.refl _
+  | .ePure (.char x0) => .deref fun _ run => by rw [(SrcExpr.char x0).eval_state run]; exact Grows.refl _
+  | .ePure (.float x0 x1) => .deref fun _ run => by rw [(SrcExpr.float x0 x1).eval_state run]; exact Grows.refl _
+  | .eIndex _ index => .index (.local _) fun le run => ih _ le (e := index) run
+  | .eField base f => .field f (exprPlace_grows ih base)
+  | .eAt base index => .index (exprPlace_grows ih base) fun le run => ih _ le (e := index) run
+  | .eDeref _ reference => .deref fun le run => ih _ le (e := reference) run
+  | .eCall x0 x1 => .deref fun le run => ih _ le (e := (SrcEff.eCall x0 x1)) run
+  | .eApply x0 x1 x2 => .deref fun le run => ih _ le (e := (SrcEff.eApply x0 x1 x2)) run
+  | .eNeg x0 => .deref fun le run => ih _ le (e := (SrcEff.eNeg x0)) run
+  | .eNot x0 => .deref fun le run => ih _ le (e := (SrcEff.eNot x0)) run
+  | .eCast x0 x1 => .deref fun le run => ih _ le (e := (SrcEff.eCast x0 x1)) run
+  | .eStruct ty fields => by
+    have h : exprPlace (SrcEff.eStruct ty fields).toCore = .deref (SrcEff.eStruct ty fields).toCore := by
+      cases ty <;> rfl
+    rw [h]
+    exact .deref fun le run => ih _ le (e := SrcEff.eStruct ty fields) run
+  | .eVariant x0 x1 x2 => .deref fun le run => ih _ le (e := (SrcEff.eVariant x0 x1 x2)) run
+  | .eMatch x0 x1 x2 x3 x4 => .deref fun le run => ih _ le (e := (SrcEff.eMatch x0 x1 x2 x3 x4)) run
+  | .eDivide x0 x1 x2 => .deref fun le run => ih _ le (e := (SrcEff.eDivide x0 x1 x2)) run
+  | .eStride x0 => .deref fun le run => ih _ le (e := (SrcEff.eStride x0)) run
+  | .arraySlice x0 x1 => .deref fun le run => ih _ le (e := (SrcEff.arraySlice x0 x1)) run
+  | .eIf x0 x1 x2 x3 => .deref fun le run => ih _ le (e := (SrcEff.eIf x0 x1 x2 x3)) run
+  | .eLet x0 x1 x2 x3 x4 => .deref fun le run => ih _ le (e := (SrcEff.eLet x0 x1 x2 x3 x4)) run
+  | .eLen x0 => .deref fun le run => ih _ le (e := (SrcEff.eLen x0)) run
+  | .eStr x0 x1 => .deref fun le run => ih _ le (e := (SrcEff.eStr x0 x1)) run
+  | .eBorrow x0 x1 => .deref fun le run => ih _ le (e := (SrcEff.eBorrow x0 x1)) run
 
 theorem effs_grows {sp : SrcProgram} : ∀ (es : List SrcEff) {k : Nat}, EffGrows sp k →
     ∀ {st : State} {vs : List Value} {st' : State},
@@ -2254,7 +2410,7 @@ theorem eff_grows_step {sp : SrcProgram} {k : Nat} (ih : GrowsBelow sp (k + 1)) 
           · simp at run
         all_goals simp at run
       all_goals simp at run
-  | eNeg operand | eNot operand | eCast ty operand =>
+  | eNeg operand | eNot operand | eCast ty operand | eDeref ty operand =>
     simp only [SrcEff.toCore, evalExpr] at run
     split at run
     · rename_i w next operandRun
@@ -2337,6 +2493,42 @@ theorem eff_grows_step {sp : SrcProgram} {k : Nat} (ih : GrowsBelow sp (k + 1)) 
     simp only [SrcEff.toCore, evalExpr, Semantics.Outcome.done.injEq] at run
     rw [← run.2]
     exact Grows.refl _
+  | eBorrow ty place =>
+    simp only [SrcEff.toCore, evalExpr] at run
+    split at run
+    all_goals first
+      | (simp at run; done)
+      | (rename_i placeRun
+         have g := evalPlace_grows (exprPlace_grows ihe place) (Nat.le_succ k) placeRun
+         simp only [Semantics.Outcome.done.injEq] at run
+         rw [← run.2]
+         exact g)
+  | eField base field =>
+    simp only [SrcEff.toCore, evalExpr] at run
+    split at run
+    all_goals first
+      | (simp at run; done)
+      | (rename_i baseRun
+         have g := sub baseRun
+         repeat' split at run
+         all_goals first
+           | (simp only [Semantics.Outcome.done.injEq] at run; rw [← run.2]; exact g)
+           | simp at run)
+  | eAt base index =>
+    simp only [SrcEff.toCore, evalExpr] at run
+    split at run
+    all_goals first
+      | (simp at run; done)
+      | (rename_i baseRun
+         have g := sub baseRun
+         split at run
+         · rename_i iv afterIndex indexRun
+           have g2 := sub indexRun
+           repeat' split at run
+           all_goals first
+             | (simp only [Semantics.Outcome.done.injEq] at run; rw [← run.2]; exact g.trans g2)
+             | simp at run
+         all_goals simp at run)
 
 /-- Every effectful expression Core completes grows the heap. -/
 theorem eff_grows {sp : SrcProgram} : ∀ k, GrowsBelow sp k → EffGrows sp k
@@ -2868,6 +3060,32 @@ theorem grows_step {sp : SrcProgram} {fuel : Nat} (ih : GrowsBelow sp fuel) {st 
         | zero => simp [evalExpr] at assignRun
         | succ k =>
           exact assign_grows_eff (fun r => by have := (evalPlace_field r).1; subst this; exact Grows.refl _)
+            (fun r => eff_grows (k + 1) ihf k (Nat.le_succ _) r) assignRun
+      all_goals simp at run
+    | setPlace place value =>
+      simp only [SrcStmt.toCore, execStmt] at run
+      split at run
+      · rename_i u next assignRun
+        simp only [Semantics.Outcome.done.injEq] at run
+        obtain ⟨-, rfl⟩ := run
+        cases f with
+        | zero => simp [evalExpr] at assignRun
+        | succ k =>
+          exact assign_op_grows_eff
+            (fun r => evalPlace_grows (exprPlace_grows (eff_grows (k + 1) ihf) place) (by omega) r)
+            (fun r => eff_grows (k + 1) ihf k (Nat.le_succ _) r) assignRun
+      all_goals simp at run
+    | setPlaceOp op place value =>
+      simp only [SrcStmt.toCore, execStmt] at run
+      split at run
+      · rename_i u next assignRun
+        simp only [Semantics.Outcome.done.injEq] at run
+        obtain ⟨-, rfl⟩ := run
+        cases f with
+        | zero => simp [evalExpr] at assignRun
+        | succ k =>
+          exact assign_op_grows_eff
+            (fun r => evalPlace_grows (exprPlace_grows (eff_grows (k + 1) ihf) place) (by omega) r)
             (fun r => eff_grows (k + 1) ihf k (Nat.le_succ _) r) assignRun
       all_goals simp at run
     | returnUnit =>

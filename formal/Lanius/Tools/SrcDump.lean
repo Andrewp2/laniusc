@@ -106,6 +106,10 @@ partial def effCalls : SrcEff → List Nat
   | .eLet _ _ a _ b => effCalls a ++ effCalls b
   | .eLen _ => []
   | .eStr _ _ => []
+  | .eBorrow _ p => effCalls p
+  | .eDeref _ r => effCalls r
+  | .eField b _ => effCalls b
+  | .eAt b i => effCalls b ++ effCalls i
 
 partial def stmtCalls : SrcStmt → List Nat
   | .let _ _ _ b | .letStruct _ _ _ b | .letEnum _ _ _ _ b | .letMatch _ _ _ _ _ b => stmtCalls b
@@ -124,6 +128,7 @@ partial def stmtCalls : SrcStmt → List Nat
   | .ifEval c a b => effCalls c ++ stmtCalls a ++ stmtCalls b
   | .whileEval c b => effCalls c ++ stmtCalls b
   | .setIndexEval _ i v => effCalls i ++ effCalls v
+  | .setPlace p v | .setPlaceOp _ p v => effCalls p ++ effCalls v
   | .nop | .set _ _ | .setField _ _ _ | .return _ | .setByte _ _ _ | .free _ _ _ | .setIndex _ _ _
   | .returnUnit | .break | .continue => []
 end
@@ -258,6 +263,10 @@ partial def markEff : SrcEff → StateM Table SrcEff
   | .eLet id ty a rt b => return .eLet id (← mark ty) (← markEff a) (← mark rt) (← markEff b)
   | .eLen s => pure (.eLen s)
   | .eStr o c => pure (.eStr o c)
+  | .eBorrow ty p => return .eBorrow (← mark ty) (← markEff p)
+  | .eDeref ty r => return .eDeref (← mark ty) (← markEff r)
+  | .eField b j => return .eField (← markEff b) j
+  | .eAt b i => return .eAt (← markEff b) (← markEff i)
 
 partial def markStmt : SrcStmt → StateM Table SrcStmt
   | .let id ty v b => return .let id (← mark ty) (← markExpr v) (← markStmt b)
@@ -289,6 +298,8 @@ partial def markStmt : SrcStmt → StateM Table SrcStmt
   | .setIndexEval s i v => return .setIndexEval s (← markEff i) (← markEff v)
   | .setFieldEval id j v => return .setFieldEval id j (← markEff v)
   | .assert c => return .assert (← markEff c)
+  | .setPlace p v => return .setPlace (← markEff p) (← markEff v)
+  | .setPlaceOp op p v => return .setPlaceOp op (← markEff p) (← markEff v)
   | s => pure s
 
 def markFunc (f : SrcFunc) : StateM Table SrcFunc := do

@@ -18,6 +18,25 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.SelfCert
 open Lanius.Faithful.Budget
 
+theorem bstep_offset_after {spW sp : SrcProgram} {prims : Prims} {ix_offset_after ix_minus ix_plus ix_SrcType_size ix_field_offset : Nat}
+    (fnW : spW.funcs[ix_offset_after]? = some (src_offset_after ix_minus ix_plus ix_SrcType_size ix_field_offset)) (fn : sp.funcs[ix_offset_after]? = some (src_offset_after ix_minus ix_plus ix_SrcType_size ix_field_offset))
+    (np : prims.isPrim ix_offset_after = false)
+    (back : Certified (∀ {n : Nat}, Stmt_offset_after sp prims ix_offset_after n))
+    (b_minus : Certified (∀ {n : Nat}, BStmt_minus spW sp prims ix_minus n))
+    (b_plus : Certified (∀ {n : Nat}, BStmt_plus spW sp prims ix_plus n))
+    (b_SrcType_size : Certified (∀ {n : Nat}, BStmt_SrcType_size spW sp prims ix_SrcType_size n)) {n : Nat}
+    (bih_field_offset : Certified (BStmt_field_offset spW sp prims ix_field_offset n)) :
+    BStmt_offset_after spW sp prims ix_offset_after (n + 1) := by
+  intro x0 x1 x2 v0 v1 v2 w k b h r0 r1 r2 hb pre
+  have key : qcall sp prims uc (n + 1) ix_offset_after [v0, v1, v2] = some (w, k) ∧ 0 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_offset_after, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_offset_after.eq_def] at pre
+    simp only at pre
+    budget
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
+
 theorem bproof_lower_field_of {spW sp : SrcProgram} {prims : Prims} {ix_lower_field_of ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_field_offset ix_get_of_mini_selfhost_SrcType ix_lower_field_at : Nat}
     (fnW : spW.funcs[ix_lower_field_of]? = some (src_lower_field_of ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_field_offset ix_get_of_mini_selfhost_SrcType ix_lower_field_at)) (fn : sp.funcs[ix_lower_field_of]? = some (src_lower_field_of ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_field_offset ix_get_of_mini_selfhost_SrcType ix_lower_field_at))
     (np : prims.isPrim ix_lower_field_of = false)

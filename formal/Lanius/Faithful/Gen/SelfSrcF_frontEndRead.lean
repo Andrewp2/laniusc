@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::front_end_read -/
-def src_front_end_read (ix_front_end_files : Nat) : SrcFunc := { params := [{ id := 15, ty := ty43 }, { id := 30, ty := ty50 }], ret := ty37, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.field 30 1)) ty1 ty37 [[], [176, 179]] [SrcEff.eCall ix_front_end_files [SrcEff.ePure (SrcExpr.local 15), SrcEff.ePure (SrcExpr.field 30 0)], SrcEff.eVariant ty37 1 []]) }
+def src_front_end_read (ix_front_end_files : Nat) : SrcFunc := { params := [{ id := 15, ty := ty44 }, { id := 30, ty := ty51 }], ret := ty38, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.field 30 1)) ty1 ty38 [[], [176, 179]] [SrcEff.eCall ix_front_end_files [SrcEff.ePure (SrcExpr.local 15), SrcEff.ePure (SrcExpr.field 30 0)], SrcEff.eVariant ty38 1 []]) }
 
 end
 

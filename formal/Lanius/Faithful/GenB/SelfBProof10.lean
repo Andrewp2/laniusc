@@ -206,23 +206,4 @@ theorem bstep_Expr_extent {spW sp : SrcProgram} {prims : Prims} {ix_Expr_extent 
     budget
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0⟩
 
-theorem bstep_args_extent {spW sp : SrcProgram} {prims : Prims} {ix_args_extent ix_max_of ix_Expr_extent ix_unbox_of_mini_selfhost_List_mini_selfhost_Expr : Nat}
-    (fnW : spW.funcs[ix_args_extent]? = some (src_args_extent ix_max_of ix_Expr_extent ix_args_extent ix_unbox_of_mini_selfhost_List_mini_selfhost_Expr)) (fn : sp.funcs[ix_args_extent]? = some (src_args_extent ix_max_of ix_Expr_extent ix_args_extent ix_unbox_of_mini_selfhost_List_mini_selfhost_Expr))
-    (np : prims.isPrim ix_args_extent = false)
-    (back : Certified (∀ {n : Nat}, Stmt_args_extent sp prims ix_args_extent n))
-    (b_max_of : Certified (∀ {n : Nat}, BStmt_max_of spW sp prims ix_max_of n))
-    (b_Expr_extent : Certified (∀ {n : Nat}, BStmt_Expr_extent spW sp prims ix_Expr_extent n))
-    (pp_unbox_of_mini_selfhost_List_mini_selfhost_Expr : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_Expr = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_Expr : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_Expr = false) {n : Nat}
-    (bih_args_extent : Certified (BStmt_args_extent spW sp prims ix_args_extent n)) :
-    BStmt_args_extent spW sp prims ix_args_extent (n + 1) := by
-  intro x0 v0 w k b h r0 hb pre
-  have key : qcall sp prims uc (n + 1) ix_args_extent [v0] = some (w, k) ∧ 0 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_args_extent, List.length_cons, List.length_nil, if_true] at h ⊢
-    rw [Pre_args_extent.eq_def] at pre
-    simp only at pre
-    budget
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0⟩
-
 end Lanius.Faithful.SelfBudget

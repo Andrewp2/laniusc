@@ -21,11 +21,11 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_e_array_slice_closed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcType} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 159 RepSrcType) x0 v0 → RepNat x1 v1 →
-    (RepOption 233 RepSrcEff) (Lanius.Mini.eArraySliceClosed x0 x1) w
+  ∀ {x0 : Option Lanius.Mini.SrcType} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 160 RepSrcType) x0 v0 → RepNat x1 v1 →
+    (RepOption 234 RepSrcEff) (Lanius.Mini.eArraySliceClosed x0 x1) w
 
 abbrev Stmt_e_index_closed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Option Lanius.Mini.SrcEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepOption 233 RepSrcEff) x1 v1 →
-    (RepOption 233 RepSrcEff) (Lanius.Mini.eIndexClosed x0 x1) w
+  ∀ {x0 : Nat} {x1 : Option Lanius.Mini.SrcEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepOption 234 RepSrcEff) x1 v1 →
+    (RepOption 234 RepSrcEff) (Lanius.Mini.eIndexClosed x0 x1) w
 
 end Lanius.Faithful.SelfCert

@@ -121,4 +121,18 @@ def optTemps : Option (List Func) → Nat
   | none => 0
   | some fs => funcsTemps fs
 
+/-- The most slots any of the functions' parameters take (`PreCompileSourceV4`'s
+premise bounds each by `2 ^ 40`). -/
+def paramsMax : List SrcFunc → Nat
+  | [] => 0
+  | f :: fs => max (paramsSize f.params) (paramsMax fs)
+
+theorem paramsMax_le (fs : List SrcFunc) (k : Nat) (h : ∀ f ∈ fs, paramsSize f.params ≤ k) :
+    paramsMax fs ≤ k := by
+  induction fs with
+  | nil => simp [paramsMax]
+  | cons f fs ih =>
+    simp only [paramsMax, Nat.max_le]
+    exact ⟨h f (List.mem_cons_self ..), ih (fun g hg => h g (List.mem_cons_of_mem _ hg))⟩
+
 end Lanius.Faithful.SelfPre

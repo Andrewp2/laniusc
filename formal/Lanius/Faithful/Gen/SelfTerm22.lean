@@ -12,14 +12,14 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.Termination
 open Lanius.Faithful.SelfCert
 
-theorem ok_get_of_mini_selfhost_Arity : FnOk prog prims info (1030, ⟨1, [0], 0⟩) :=
-  fnOk_of fn_get_of_mini_selfhost_Arity (by decide +kernel)
-
-theorem ok_expr_room : FnOk prog prims info (1031, ⟨2, [1], 0⟩) :=
+theorem ok_expr_room : FnOk prog prims info (1030, ⟨2, [1], 0⟩) :=
   fnOk_of fn_expr_room (by decide +kernel)
 
-theorem ok_args_room : FnOk prog prims info (1032, ⟨3, [1], 0⟩) :=
+theorem ok_args_room : FnOk prog prims info (1031, ⟨3, [1], 0⟩) :=
   fnOk_of fn_args_room (by decide +kernel)
+
+theorem ok_get_of_mini_selfhost_Arity : FnOk prog prims info (1032, ⟨1, [0], 0⟩) :=
+  fnOk_of fn_get_of_mini_selfhost_Arity (by decide +kernel)
 
 theorem ok_BinOp_size : FnOk prog prims info (1035, ⟨0, [], 0⟩) :=
   fnOk_of fn_BinOp_size (by decide +kernel)
@@ -133,6 +133,6 @@ theorem ok_store_element : FnOk prog prims info (1073, ⟨11, [], 0⟩) :=
   fnOk_of fn_store_element (by decide +kernel)
 
 theorem chunk22 : AllFns prog prims info part22 :=
-  ⟨ok_get_of_mini_selfhost_Arity, ok_expr_room, ok_args_room, ok_BinOp_size, ok_Word_prefix, ok_MemWidth_prefix, ok_DivOp_size, ok_FOp_size, ok_cons_of_u8, ok_single_of_u8, ok_le32, ok_frame_size, ok_stack_check, ok_Instr_encode, ok_literal_below, ok_UintTy_bits, ok_lower_field_at, ok_offset_or_arith, ok_arith, ok_lower_shift, ok_arith_shift_right, ok_order, ok_equality, ok_conjunction, ok_disjunction, ok_cast_to_i32, ok_cast_to_uint, ok_cast_to_isize, ok_cast_to_float, ok_cast_to_sint, ok_copy_field_at, ok_concat_of_mini_selfhost_Expr, ok_lower_arm, ok_arm_guard, ok_lower_set_value, ok_load_type, ok_eval_pick, ok_eval_field_type, ok_element_address, ok_store_element, trivial⟩
+  ⟨ok_expr_room, ok_args_room, ok_get_of_mini_selfhost_Arity, ok_BinOp_size, ok_Word_prefix, ok_MemWidth_prefix, ok_DivOp_size, ok_FOp_size, ok_cons_of_u8, ok_single_of_u8, ok_le32, ok_frame_size, ok_stack_check, ok_Instr_encode, ok_literal_below, ok_UintTy_bits, ok_lower_field_at, ok_offset_or_arith, ok_arith, ok_lower_shift, ok_arith_shift_right, ok_order, ok_equality, ok_conjunction, ok_disjunction, ok_cast_to_i32, ok_cast_to_uint, ok_cast_to_isize, ok_cast_to_float, ok_cast_to_sint, ok_copy_field_at, ok_concat_of_mini_selfhost_Expr, ok_lower_arm, ok_arm_guard, ok_lower_set_value, ok_load_type, ok_eval_pick, ok_eval_field_type, ok_element_address, ok_store_element, trivial⟩
 
 end Lanius.Faithful.SelfTerm

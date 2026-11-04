@@ -306,6 +306,32 @@ theorem limEff_ok : ∀ (x : SrcEff), limEff x = true → ts x ≤ weightLimit
     omega
   | .eLen _, _ => by simp
   | .eStr _ _, _ => by simp
+  | .eBorrow t a, h => by
+    have ih := limEff_ok a
+    simp only [limEff, Bool.and_eq_true] at h
+    have := limTy_ok h.1
+    have := ih h.2
+    simp only [ts_SrcEff_eBorrow]
+    omega
+  | .eDeref t a, h => by
+    have ih := limEff_ok a
+    simp only [limEff, Bool.and_eq_true] at h
+    have := limTy_ok h.1
+    have := ih h.2
+    simp only [ts_SrcEff_eDeref]
+    omega
+  | .eField a _, h => by
+    have ih := limEff_ok a
+    have := ih (by simpa [limEff] using h)
+    simpa using this
+  | .eAt a b, h => by
+    have iha := limEff_ok a
+    have ihb := limEff_ok b
+    simp only [limEff, Bool.and_eq_true] at h
+    have := iha h.1
+    have := ihb h.2
+    simp only [ts_SrcEff_eAt]
+    omega
 termination_by structural x => x
 
 theorem limEffs_ok : ∀ (xs : List SrcEff), limEffs xs = true → ts xs ≤ weightLimit
@@ -582,6 +608,22 @@ theorem limStmt_ok : ∀ (s : SrcStmt) {d : Nat}, limStmt s = some d →
     obtain ⟨ok, rfl⟩ := limLeaf_some h
     have := limEff_ok x ok
     simp only [SrcStmt.depth, ts_SrcStmt_setFieldEval]
+    omega
+  | .setPlace i v, d, h => by
+    simp only [limStmt] at h
+    obtain ⟨ok, rfl⟩ := limLeaf_some h
+    simp only [Bool.and_eq_true] at ok
+    have := limEff_ok i ok.1
+    have := limEff_ok v ok.2
+    simp only [SrcStmt.depth, ts_SrcStmt_setPlace]
+    omega
+  | .setPlaceOp _ i v, d, h => by
+    simp only [limStmt] at h
+    obtain ⟨ok, rfl⟩ := limLeaf_some h
+    simp only [Bool.and_eq_true] at ok
+    have := limEff_ok i ok.1
+    have := limEff_ok v ok.2
+    simp only [SrcStmt.depth, ts_SrcStmt_setPlaceOp]
     omega
   | .then a b, d, h => by
     have iha := @limStmt_ok a
