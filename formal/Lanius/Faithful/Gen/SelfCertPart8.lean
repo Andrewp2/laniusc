@@ -93,6 +93,19 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
+theorem certs_payload_list : ∀ n, (Stmt_payload_list prog prims 1542 n) := by
+  intro n
+  induction n with
+  | zero =>
+    exact (by intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2; simp [pcall] at h)
+  | succ n ih =>
+    have ih_payload_list : Stmt_payload_list prog prims 1542 n := ih
+    exact @step_payload_list prog prims 1542 1483 1655 1656 1657 fn_payload_list np_payload_list ⟨@cert_ty_list⟩ ⟨@cert_empty_of_mini_selfhost_List_mini_selfhost_Ty⟩ ⟨@cert_cons_tys⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_CTree⟩ n ⟨ih_payload_list⟩
+
+theorem cert_payload_list {n : Nat} :
+    Stmt_payload_list prog prims 1542 n :=
+  (certs_payload_list n)
+
 theorem cert_payload_tys {n : Nat} :
     Stmt_payload_tys prog prims 1393 n :=
   @proof_payload_tys prog prims 1393 1185 1484 1542 fn_payload_tys np_payload_tys ⟨@cert_get_of_mini_selfhost_TypeDecl⟩ ⟨@cert_decl_env⟩ ⟨@cert_payload_list⟩ n
@@ -988,12 +1001,12 @@ theorem cert_null_at {n : Nat} :
   @proof_null_at prog prims 1662 fn_null_at np_null_at n
 
 theorem cert_sint_fits {n : Nat} :
-    Stmt_sint_fits prog prims 1741 n :=
-  @proof_sint_fits prog prims 1741 fn_sint_fits np_sint_fits n
+    Stmt_sint_fits prog prims 1738 n :=
+  @proof_sint_fits prog prims 1738 fn_sint_fits np_sint_fits n
 
 theorem cert_sint_at {n : Nat} :
     Stmt_sint_at prog prims 1663 n :=
-  @proof_sint_at prog prims 1663 1428 1741 fn_sint_at np_sint_at ⟨@cert_boxed_of_mini_selfhost_SrcExpr⟩ ⟨@cert_sint_fits⟩ n
+  @proof_sint_at prog prims 1663 1428 1738 fn_sint_at np_sint_at ⟨@cert_boxed_of_mini_selfhost_SrcExpr⟩ ⟨@cert_sint_fits⟩ n
 
 theorem cert_int_literal_at {n : Nat} :
     Stmt_int_literal_at prog prims 1560 n :=
@@ -1033,7 +1046,7 @@ theorem cert_neg_wide_at {n : Nat} :
 
 theorem cert_least_cast {n : Nat} :
     Stmt_least_cast prog prims 1665 n :=
-  @proof_least_cast prog prims 1665 1428 1741 fn_least_cast np_least_cast ⟨@cert_boxed_of_mini_selfhost_SrcExpr⟩ ⟨@cert_sint_fits⟩ n
+  @proof_least_cast prog prims 1665 1428 1738 fn_least_cast np_least_cast ⟨@cert_boxed_of_mini_selfhost_SrcExpr⟩ ⟨@cert_sint_fits⟩ n
 
 theorem cert_neg_least_at {n : Nat} :
     Stmt_neg_least_at prog prims 1565 n :=

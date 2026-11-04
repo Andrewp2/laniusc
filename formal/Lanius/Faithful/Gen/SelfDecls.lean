@@ -67,44 +67,44 @@ set_option maxRecDepth 100000
 theorem dt27 : declareFuncs tail_end (declAt decls 0 0) = some decls := by
   rw [declAt_zero]; rfl
 
-theorem dt26 : declareFuncs tail_view_array (declAt decls 0 0) = some decls := by
-  rw [show tail_view_array = dpart26 ++ tail_end from rfl]
+theorem dt26 : declareFuncs tail_fl_exp_digits (declAt decls 0 0) = some decls := by
+  rw [show tail_fl_exp_digits = dpart26 ++ tail_end from rfl]
   exact declareFuncs_append (declsStep_eq dchunk26) dt27
 
-theorem dt25 : declareFuncs tail_lit_wild_value (declAt decls 2 2) = some decls := by
-  rw [show tail_lit_wild_value = dpart25 ++ tail_view_array from rfl]
+theorem dt25 : declareFuncs tail_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_VariantTy (declAt decls 2 2) = some decls := by
+  rw [show tail_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_VariantTy = dpart25 ++ tail_fl_exp_digits from rfl]
   exact declareFuncs_append (declsStep_eq dchunk25) dt26
 
-theorem dt24 : declareFuncs tail_binds_zip (declAt decls 3 4) = some decls := by
-  rw [show tail_binds_zip = dpart24 ++ tail_lit_wild_value from rfl]
+theorem dt24 : declareFuncs tail_ret_binds (declAt decls 3 4) = some decls := by
+  rw [show tail_ret_binds = dpart24 ++ tail_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_VariantTy from rfl]
   exact declareFuncs_append (declsStep_eq dchunk24) dt25
 
-theorem dt23 : declareFuncs tail_call_parts (declAt decls 4 7) = some decls := by
-  rw [show tail_call_parts = dpart23 ++ tail_binds_zip from rfl]
+theorem dt23 : declareFuncs tail_call_let_head (declAt decls 4 8) = some decls := by
+  rw [show tail_call_let_head = dpart23 ++ tail_ret_binds from rfl]
   exact declareFuncs_append (declsStep_eq dchunk23) dt24
 
-theorem dt22 : declareFuncs tail_ref_target (declAt decls 5 8) = some decls := by
-  rw [show tail_ref_target = dpart22 ++ tail_call_parts from rfl]
+theorem dt22 : declareFuncs tail_match_arm_of (declAt decls 5 8) = some decls := by
+  rw [show tail_match_arm_of = dpart22 ++ tail_call_let_head from rfl]
   exact declareFuncs_append (declsStep_eq dchunk22) dt23
 
-theorem dt21 : declareFuncs tail_literal_as (declAt decls 8 12) = some decls := by
-  rw [show tail_literal_as = dpart21 ++ tail_ref_target from rfl]
+theorem dt21 : declareFuncs tail_tree_tokens (declAt decls 8 12) = some decls := by
+  rw [show tail_tree_tokens = dpart21 ++ tail_match_arm_of from rfl]
   exact declareFuncs_append (declsStep_eq dchunk21) dt22
 
-theorem dt20 : declareFuncs tail_x_divide_of (declAt decls 11 15) = some decls := by
-  rw [show tail_x_divide_of = dpart20 ++ tail_literal_as from rfl]
+theorem dt20 : declareFuncs tail_p_div_tail (declAt decls 11 15) = some decls := by
+  rw [show tail_p_div_tail = dpart20 ++ tail_tree_tokens from rfl]
   exact declareFuncs_append (declsStep_eq dchunk20) dt21
 
-theorem dt19 : declareFuncs tail_eff_variant (declAt decls 16 24) = some decls := by
-  rw [show tail_eff_variant = dpart19 ++ tail_x_divide_of from rfl]
+theorem dt19 : declareFuncs tail_find_const (declAt decls 16 24) = some decls := by
+  rw [show tail_find_const = dpart19 ++ tail_p_div_tail from rfl]
   exact declareFuncs_append (declsStep_eq dchunk19) dt20
 
-theorem dt18 : declareFuncs tail_is_text (declAt decls 26 39) = some decls := by
-  rw [show tail_is_text = dpart18 ++ tail_eff_variant from rfl]
+theorem dt18 : declareFuncs tail_path_name (declAt decls 26 39) = some decls := by
+  rw [show tail_path_name = dpart18 ++ tail_find_const from rfl]
   exact declareFuncs_append (declsStep_eq dchunk18) dt19
 
 theorem dt17 : declareFuncs tail_and_known (declAt decls 26 40) = some decls := by
-  rw [show tail_and_known = dpart17 ++ tail_is_text from rfl]
+  rw [show tail_and_known = dpart17 ++ tail_path_name from rfl]
   exact declareFuncs_append (declsStep_eq dchunk17) dt18
 
 theorem dt16 : declareFuncs tail_p_type_array (declAt decls 27 45) = some decls := by

@@ -107,10 +107,6 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem cert_lower_set_scalar {n : Nat} :
-    Stmt_lower_set_scalar prog prims 772 n :=
-  @proof_lower_set_scalar prog prims 772 207 317 1069 fn_lower_set_scalar np_lower_set_scalar ⟨@cert_lower_as⟩ ⟨@cert_SrcType_is_scalar⟩ ⟨@cert_lower_set_value⟩ n
-
 theorem cert_lower_set_field_at {n : Nat} :
     Stmt_lower_set_field_at prog prims 519 n :=
   @proof_lower_set_field_at prog prims 519 772 fn_lower_set_field_at np_lower_set_field_at ⟨@cert_lower_set_scalar⟩ n

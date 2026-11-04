@@ -8,6 +8,7 @@ public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtC_DivOp_size
 public import Lanius.Faithful.Gen.SelfStmtC_Inline_arithOf
+public import Lanius.Faithful.Gen.SelfStmtC_Inline_lowerSetScalar
 public import Lanius.Faithful.Gen.SelfStmtC_SrcExpr_guard
 public import Lanius.Faithful.Gen.SelfStmtC_SrcType_same
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
@@ -43,6 +44,7 @@ import Lanius.Faithful.Gen.SelfProof6
 import Lanius.Faithful.Gen.SelfProof7
 import Lanius.Faithful.Gen.SelfProofC_DivOp_size
 import Lanius.Faithful.Gen.SelfProofC_Inline_arithOf
+import Lanius.Faithful.Gen.SelfProofC_Inline_lowerSetScalar
 import Lanius.Faithful.Gen.SelfProofC_SrcExpr_guard
 import Lanius.Faithful.Gen.SelfProofC_SrcType_same
 import Lanius.Faithful.Gen.SelfProofC_UintTy_half
@@ -881,5 +883,9 @@ theorem cert_lower_set {n : Nat} :
 theorem cert_lower_set_value {n : Nat} :
     Stmt_lower_set_value prog prims 1069 n :=
   @proof_lower_set_value prog prims 1069 fn_lower_set_value np_lower_set_value n
+
+theorem cert_lower_set_scalar {n : Nat} :
+    Stmt_lower_set_scalar prog prims 772 n :=
+  @proof_lower_set_scalar prog prims 772 207 317 1069 fn_lower_set_scalar np_lower_set_scalar ⟨@cert_lower_as⟩ ⟨@cert_SrcType_is_scalar⟩ ⟨@cert_lower_set_value⟩ n
 
 end Lanius.Faithful.SelfCert

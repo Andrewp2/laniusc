@@ -882,8 +882,4 @@ theorem cert_text_monotonic_read {n : Nat} :
     Stmt_text_monotonic_read prog prims 1135 n :=
   @proof_text_monotonic_read prog prims 1135 376 418 fn_text_monotonic_read np_text_monotonic_read ⟨@cert_single_of_usize⟩ ⟨@cert_cons_of_usize⟩ n
 
-theorem cert_text_system_read {n : Nat} :
-    Stmt_text_system_read prog prims 1136 n :=
-  @proof_text_system_read prog prims 1136 376 418 fn_text_system_read np_text_system_read ⟨@cert_single_of_usize⟩ ⟨@cert_cons_of_usize⟩ n
-
 end Lanius.Faithful.SelfCert
