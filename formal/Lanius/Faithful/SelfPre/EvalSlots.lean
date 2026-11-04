@@ -146,7 +146,7 @@ theorem slots_armScope : ∀ (binders : List Nat) (types : List SrcType) (slot :
   | [], _ :: _, _, _ => by simp only [armScope, optScopeTop]; omega
   | _ :: _, [], _, _ => by simp only [armScope, optScopeTop]; omega
   | binder :: rest, ty :: more, slot, scope => by
-    have := slots_armScope rest more (slot + SrcType.size ty) ({ id := binder, slot := slot, ty := ty } :: scope)
+    have := slots_armScope rest more (slot + SrcType.size ty) ({ id := binder, slot := slot, ty := ty, home := none } :: scope)
     rw [armScope]
     split
     · simp only [scopeTop, sizes] at *; omega
@@ -164,7 +164,7 @@ theorem slots_paramScope : ∀ (params : List SrcParam) (slot : Nat) (scope : Li
     scopeTop (paramScope params slot scope) ≤ max (scopeTop scope) (slot + paramsSize params)
   | [], _, _ => by simp only [paramScope]; omega
   | param :: rest, slot, scope => by
-    have := slots_paramScope rest (slot + SrcType.size param.ty) ({ id := param.id, slot := slot, ty := param.ty } :: scope)
+    have := slots_paramScope rest (slot + SrcType.size param.ty) ({ id := param.id, slot := slot, ty := param.ty, home := none } :: scope)
     simp only [paramScope, scopeTop, paramsSize] at *; omega
 
 theorem slots_armBodyScope (binds : Bool) (binder : Nat) (ty : SrcType) (next : Nat) (scope : List Binding) :
