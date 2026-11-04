@@ -276,9 +276,9 @@ def check(words):
     prev_end = 0
     for r in range(nr):
         kind, nv, nh, ho, concl, end = w[o_rules + 6 * r: o_rules + 6 * r + 6]
-        assert concl < nn and w[o_sorts + nsort(concl)] & 1
+        assert concl < nn and ho + nh <= npool and w[o_sorts + nsort(concl)] == 1
         for j in range(nh):
-            assert pool(ho + j) < nn and w[o_sorts + nsort(pool(ho + j))] & 1
+            assert pool(ho + j) < nn and w[o_sorts + nsort(pool(ho + j))] == 1
         if kind == 0:
             continue
         assert kind == 1 and prev_end < end <= nst

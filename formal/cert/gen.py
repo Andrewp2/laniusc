@@ -422,7 +422,7 @@ def term(ar, t, atoms):
 
 
 def statement_key(o):
-    return hashlib.sha256(json.dumps(o, sort_keys=True).encode()).hexdigest()
+    return hashlib.sha256(json.dumps([o['hyps'], o['goal']]).encode()).hexdigest()
 
 
 def main(argv):
