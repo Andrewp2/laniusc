@@ -98,3 +98,13 @@ first: the front end counting the evaluator's temporaries along with the lets (i
 or the lowering rejecting when `slot` passes a limit (capped, as `needs`). That is a .lani change.
 After it, a V5 premise (or an extended FrontEndStmtDepthV2) bounds every slot the lowering computes, and
 A's invariant is `slot + need ≤ 2^41`.
+
+**11-03, groups B and E (leafB).** E: `CompileOpt.lean` (`val_optimizeProgram`, from the proved
+OptimizeKeepsNumbers), imported by GenPC's pre modules (`COMPILE_PRE_IMPORTS`); `compile_optimized`
+passes. `compile_declared` waits on the lowered program's numbers (A). B: a 'w' kind in pre_certs.py, a
+`Nat` parameter that is a type size (`x ≤ 2^22`), seeded at `word_stride` and `element_base`; a caller's bare
+variable passes it on, a `SrcType.size t` argument gives `ts t`. `str_words` gets `nb chars ≤ 255`
+(`COMPILE_OVERRIDES`), from `lower_str`'s ASCII test (`strAscii_eq_true`/`_eq_false`, `hb_simp`).
+`word_stride`, `element_base`, `str_words` pass. Left in B: `pick_element`/`put_element` (also add the
+base slot `base + k * size`: A) and `params_array_bytes`/`SrcStmt_array_bytes` (the frame block's sums:
+D). P02: 66 -> 62, none new.

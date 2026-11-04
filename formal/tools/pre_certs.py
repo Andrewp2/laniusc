@@ -601,6 +601,8 @@ COMPILE_OVERRIDES = {
     'compile_declared': ['Lanius.Faithful.SelfPre.paramsMax p1.funcs ≤ K'],
     'compile_source': ['Lanius.Faithful.SelfPre.paramsMax p0.funcs ≤ K'],
     'Instr_size': ['Lanius.Mini.Instr.size p0 ≤ K'],
+    # a string's bytes (`lower_str` lowers only ASCII strings, `strAscii_eq_true`)
+    'str_words': ['nb p0 ≤ 255'],
 }
 # The parameters those invariants bound instead of `nb x ≤ M` (pc offsets and
 # code lists: their numbers are slots and jump targets, not the input's; and
@@ -628,7 +630,10 @@ PRE_PREAMBLE = ''
 # callers pass on (a list of types taken apart has its own, `TS_HYPS`).
 COMPILE_TS_SEED = {'Pre_SrcType_size': {0: {'ts'}}, 'Pre_sizes': {0: {'ts', 'sz'}},
                    'Pre_max_size': {0: {'ts', 'ms'}}, 'Pre_field_offset': {0: {'sz'}},
-                   'Pre_offset_after': {1: {'sz'}}}
+                   'Pre_offset_after': {1: {'sz'}},
+                   # a type's size passed as a number ('w', `x ≤ 2^22`): a bare variable passes
+                   # it on, a `SrcType.size t` gives `ts t`
+                   'Pre_word_stride': {1: {'w'}}, 'Pre_element_base': {1: {'w'}}}
 # The Mini program's compile: the functions these reach bound the program's
 # numbers by `K` rather than `M` (they do not grow as it compiles: its slots,
 # indices and counts; the pc offsets and depths have their own invariants).
@@ -636,6 +641,9 @@ COMPILE_FIXED_ROOTS = ['compile_optimized']
 # The functions whose `match`es' pattern variables count as the parameter they
 # take apart (`match_aliases`): their callers can bound the whole value.
 COMPILE_NUM_ALIAS = {'compile_funcs', 'compile_lowered', 'lower_funcs'}
+# Modules the compile side's pre lemmas import for proved leaves' value lemmas
+# (`val_optimizeProgram`, from OptimizeKeepsNumbers).
+COMPILE_PRE_IMPORTS = ['Lanius.Faithful.SelfPre.CompileOpt']
 
 
 def args_after(text, i):
@@ -709,11 +717,22 @@ def num_used(genb):
                         kinds = kinds - {'nb'}  # (the numbers only: their types' sizes still count)
                     if j >= len(args) or not kinds:
                         continue
-                    for v, kind in occurrences(args[j], kinds):
+                    occ = occurrences(args[j], kinds - {'w'}) if kinds - {'w'} else []
+                    if 'w' in kinds:
+                        a = args[j].strip()
+                        while a.startswith('(') and a.endswith(')'):
+                            a = a[1:-1].strip()
+                        if re.fullmatch(r'x\d+', a):
+                            occ.append((a, 'w'))
+                        elif re.match(r'(Lanius\.Mini\.)?SrcType\.size ', a) and not split_top(a, ' ')[2:]:
+                            occ.extend(occurrences(a, set()))
+                    for v, kind in occ:
                         for i, x in enumerate(ps):
                             if kind == 'nb' and i in COMPILE_NUM_DROP.get(k[4:], ()):
                                 continue
-                            al = alias_ts[k] if kind == 'ts' else {} if kind in ('sz', 'ms') else alias[k]
+                            if kind == 'w' and (i >= len(ptys[k]) or ptys[k][i] != 'Nat'):
+                                continue
+                            al = alias_ts[k] if kind == 'ts' else {} if kind in ('sz', 'ms', 'w') else alias[k]
                             kd = kind
                             if kind in ('sz', 'ms') and v != x and v in alias_ts[k].get(x, ()):
                                 # a list of types' sum through its tail, a variant's through its variants
@@ -853,6 +872,8 @@ def num_hyps(e, k, xs, tys):
             out.append(f'Lanius.Mini.sizes {xs[i]} ≤ {K}')
         if 'ms' in used[i] and t == 'List (List Lanius.Mini.SrcType)':
             out.append(f'Lanius.Mini.maxSize {xs[i]} ≤ {K}')
+        if 'w' in used[i] and t == 'Nat':
+            out.append(f'{xs[i]} ≤ {WEIGHT}')
     return out
 
 
@@ -1390,7 +1411,8 @@ def main():
         name = f'SelfP{i:02d}'
         deps = [f'{prefix}.SelfP{j:02d}' for j, c in enumerate(chunks[:i])
                 if c[0] == 'UPost' or (c[2] & (needs - defs))]
-        imports = '\n'.join('import ' + m for m in base + deps)
+        extra = COMPILE_PRE_IMPORTS if NUMS['on'] and kind == 'Pre' else []
+        imports = '\n'.join('import ' + m for m in base + extra + deps)
         prof = 'set_option profiler true\nset_option profiler.threshold 1500\n' if os.environ.get('PRE_PROFILE') else ''
         text = HEADER.format(imports=imports, what=f'{kind} lemmas, part {i}', ns=ns) + prof + \
             (PRE_PREAMBLE if kind == 'Pre' else '') + '\n'.join(items) + \
