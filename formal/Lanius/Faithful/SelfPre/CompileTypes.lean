@@ -574,6 +574,14 @@ theorem val_paramScope : ∀ (ps : List SrcParam) (slot : Nat) (scope : List Bin
     have hp : ts p = tySlots p.ty := rfl
     simp only [paramScope, ts_cons, ts_Binding_mk, ts_SrcType, hp] at ih ⊢; omega
 
+/-- An arm's body scope binds its payload's type. -/
+theorem val_armBodyScope (binds : Bool) (binder : Nat) (ty : SrcType) (next : Nat) (scope : List Binding) :
+    ts (armBodyScope binds binder ty next scope) ≤ max (ts ty) (ts scope) := by
+  simp only [armBodyScope]
+  split
+  · omega
+  · simp only [ts_cons, ts_Binding_mk]; omega
+
 /-- A field's offset is at most its struct's size. -/
 theorem val_fieldOffset : ∀ (l : List SrcType) (i : Nat), fieldOffset l i ≤ sizes l
   | [], i => by simp only [fieldOffset, sizes]; omega

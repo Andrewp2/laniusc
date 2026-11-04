@@ -693,8 +693,24 @@ def certClosed? (atomsArr : Array Expr) (goal : Expr) (hyps : Array (Expr × Exp
       mkLambdaFVars (xs ++ hs) p'
   return some (mkAppN (mkAppN closed atomsArr) (used.map (·.1)))
 
+/-- Take apart the context's conjunctions that are not arithmetic as a whole (a split's
+`(b = true ∧ 0 < x) ∧ x < k`), so that their arithmetic parts are hypotheses. -/
+partial def splitMixed : TacticM Unit := do
+  let g ← getMainGoal
+  let some h ← g.withContext (do
+      for d in ← getLCtx do
+        if d.isImplementationDetail then continue
+        let t ← instantiateMVars d.type
+        if t.isAppOfArity ``And 2 && (propAtoms t #[]).isNone then return some d.fvarId
+      return none) | return
+  let gs ← g.cases h
+  replaceMainGoal (gs.toList.map (·.mvarId))
+  splitMixed
+
 /-- Prove the main goal by `omega` over its and the hypotheses' atoms. -/
-def omegaAtoms : TacticM Unit := withMainContext do
+def omegaAtoms : TacticM Unit := do
+  splitMixed
+  withMainContext do
   let g ← getMainGoal
   let goal ← instantiateMVars (← g.getType)
   dbg "omegaAtoms"
@@ -790,7 +806,7 @@ def slotFacts (es : Array Expr) (hyps : Array (Expr × Expr)) : MetaM (Array Exp
     for s in subterms (fun e => e.isApp && e.getAppFn.isConst && !e.hasLooseBVars) t do
       let .const fn _ := s.getAppFn | continue
       if seen.contains s then continue
-      if (`Lanius.Mini).isPrefixOf fn then
+      if (`Lanius.Mini).isPrefixOf fn || (`Lanius.Faithful.SelfPre).isPrefixOf fn then
         let nm := `Lanius.Faithful.SelfPre ++ Name.mkSimple s!"slots_{lastName fn}"
         if env.contains nm then
           seen := seen.push s
