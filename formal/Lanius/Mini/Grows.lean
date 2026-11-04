@@ -9,27 +9,6 @@ import all Lanius.Mini.Compiler.P.SrcType_same
 import all Lanius.Mini.Compiler.P.Stmt_kills
 import all Lanius.Mini.Compiler.P.arrayCallSig
 import all Lanius.Mini.Compiler.P.conjunction
-import all Lanius.Mini.Compiler.P.consArgs
-import all Lanius.Mini.Compiler.P.elementAddress
-import all Lanius.Mini.Compiler.P.elementBase
-import all Lanius.Mini.Compiler.P.enumVariants
-import all Lanius.Mini.Compiler.P.equality
-import all Lanius.Mini.Compiler.P.evalDivide
-import all Lanius.Mini.Compiler.P.evalDivideSint
-import all Lanius.Mini.Compiler.P.evalHost
-import all Lanius.Mini.Compiler.P.evalNot
-import all Lanius.Mini.Compiler.P.evalSame
-import all Lanius.Mini.Compiler.P.evalSlotLimit
-import all Lanius.Mini.Compiler.P.extentAfter
-import all Lanius.Mini.Compiler.P.floatApply
-import all Lanius.Mini.Compiler.P.funcNeeds
-import all Lanius.Mini.Compiler.P.guardAnd
-import all Lanius.Mini.Compiler.P.hostRandomCode
-import all Lanius.Mini.Compiler.P.indexOf
-import all Lanius.Mini.Compiler.P.iteThen
-import all Lanius.Mini.Compiler.P.killShared
-import all Lanius.Mini.Compiler.P.leftTrue
-import all Lanius.Mini.Compiler.P.loadAtBytes
 import all Lanius.Mini.Compiler.P.longer
 import all Lanius.Mini.Compiler.P.lowerApply
 -- end import all uses

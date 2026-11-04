@@ -727,9 +727,9 @@ Do not edit. -/
 -- statements: lower_set_index lower_set_index_any eval_call_sig single_of_mini_selfhost_SrcType
 -- statements: host_byte_code host_write_code host_read_code host_sleep_code host_clock_code
 -- statements: host_random_code host_text_code host_newline_code eval_host_text eval_host eval_call
--- statements: cons_args short_circuit then_check operand_guard eval_right eval_operands eval_apply
--- statements: eval_then eval_negate eval_not scalar_cast eval_cast eval_struct_of eval_struct
--- statements: eval_payload eval_tagged eval_variant match_dst
+-- statements: eval_slot_limit cons_args short_circuit then_check operand_guard eval_right
+-- statements: eval_operands eval_apply eval_then eval_negate eval_not scalar_cast eval_cast
+-- statements: eval_struct_of eval_struct eval_payload eval_tagged eval_variant match_dst
 -- statements: empty_of_mini_selfhost_List_mini_selfhost_SrcType match_variants eval_match_of
 -- statements: eval_match eval_arm length_of_mini_selfhost_List_usize length_of_mini_selfhost_SrcEff
 -- statements: signed_div UintTy_least_bits overflow_guard eval_divide_sint unsigned_div

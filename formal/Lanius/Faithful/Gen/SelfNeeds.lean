@@ -163,6 +163,7 @@ import all Lanius.Faithful.Gen.SelfSrcF_basedLimit
 import all Lanius.Faithful.Gen.SelfSrcF_bindsOfTys
 import all Lanius.Faithful.Gen.SelfSrcF_blockArmsOf
 import all Lanius.Faithful.Gen.SelfSrcF_callParts
+import all Lanius.Faithful.Gen.SelfSrcF_checkedFunc
 import all Lanius.Faithful.Gen.SelfSrcF_closeFuncs
 import all Lanius.Faithful.Gen.SelfSrcF_collect
 import all Lanius.Faithful.Gen.SelfSrcF_compoundEval
@@ -175,12 +176,12 @@ import all Lanius.Faithful.Gen.SelfSrcF_depthLimit
 import all Lanius.Faithful.Gen.SelfSrcF_digitBelow
 import all Lanius.Faithful.Gen.SelfSrcF_distinct
 import all Lanius.Faithful.Gen.SelfSrcF_divergeArm
+import all Lanius.Faithful.Gen.SelfSrcF_eDerefClosed
 import all Lanius.Faithful.Gen.SelfSrcF_eDivideClosed
-import all Lanius.Faithful.Gen.SelfSrcF_eIndexClosed
 import all Lanius.Faithful.Gen.SelfSrcF_eStructClosed
 import all Lanius.Faithful.Gen.SelfSrcF_effNamedTys
 import all Lanius.Faithful.Gen.SelfSrcF_externBody
-import all Lanius.Faithful.Gen.SelfSrcF_fieldTyAt
+import all Lanius.Faithful.Gen.SelfSrcF_fieldValue
 import all Lanius.Faithful.Gen.SelfSrcF_findConst
 import all Lanius.Faithful.Gen.SelfSrcF_firstSrc
 import all Lanius.Faithful.Gen.SelfSrcF_flDecimal
@@ -208,6 +209,7 @@ import all Lanius.Faithful.Gen.SelfSrcF_ifEff
 import all Lanius.Faithful.Gen.SelfSrcF_ifNotWrites
 import all Lanius.Faithful.Gen.SelfSrcF_ifSome
 import all Lanius.Faithful.Gen.SelfSrcF_isEmptyUsize
+import all Lanius.Faithful.Gen.SelfSrcF_isFnPath
 import all Lanius.Faithful.Gen.SelfSrcF_isMatchStmt
 import all Lanius.Faithful.Gen.SelfSrcF_isPathCall
 import all Lanius.Faithful.Gen.SelfSrcF_isTryEnum
@@ -238,6 +240,7 @@ import all Lanius.Faithful.Gen.SelfSrcF_matchStmtIf
 import all Lanius.Faithful.Gen.SelfSrcF_matchTysOrNone
 import all Lanius.Faithful.Gen.SelfSrcF_methodDecl
 import all Lanius.Faithful.Gen.SelfSrcF_moduleOr
+import all Lanius.Faithful.Gen.SelfSrcF_namesFieldBase
 import all Lanius.Faithful.Gen.SelfSrcF_namesSome
 import all Lanius.Faithful.Gen.SelfSrcF_negWideI32
 import all Lanius.Faithful.Gen.SelfSrcF_nestedUsed
@@ -263,7 +266,9 @@ import all Lanius.Faithful.Gen.SelfSrcF_rootInsts
 import all Lanius.Faithful.Gen.SelfSrcF_scalarOf
 import all Lanius.Faithful.Gen.SelfSrcF_selfRefOf
 import all Lanius.Faithful.Gen.SelfSrcF_setEvalClosed
+import all Lanius.Faithful.Gen.SelfSrcF_setFieldOrEval
 import all Lanius.Faithful.Gen.SelfSrcF_setIndexOrEval
+import all Lanius.Faithful.Gen.SelfSrcF_setPlaceOf
 import all Lanius.Faithful.Gen.SelfSrcF_shadowUse
 import all Lanius.Faithful.Gen.SelfSrcF_shrFirst
 import all Lanius.Faithful.Gen.SelfSrcF_sintAt
