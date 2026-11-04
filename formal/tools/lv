@@ -126,17 +126,24 @@ def memwait():
 
 
 def lock(path):
+    """flock PATH, waiting at most until the command's deadline (exit 75 then)."""
     f = open(path, 'a')
-    try:
-        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        say(f'waiting for {os.path.basename(path)} (held by another run of this worktree)')
-        fcntl.flock(f, fcntl.LOCK_EX)
-    return f
+    told = False
+    while True:
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return f
+        except BlockingIOError:
+            if not told:
+                say(f'waiting for {os.path.basename(path)} (held by another run of this worktree)')
+                told = True
+            remaining()
+            time.sleep(1)
 
 
 def lean_slot():
-    """This worktree's lock, then one of the machine-wide Lean slots (as leanslot)."""
+    """This worktree's lock, then one of the machine-wide Lean slots (as
+    leanslot), waiting at most until the command's deadline (exit 75 then)."""
     if os.environ.get('LEAN_LOCK_HELD') == '1':
         return []
     held = [lock(os.path.join(P.gitdir, 'lean-wt.lock'))]
@@ -154,6 +161,7 @@ def lean_slot():
         if not told:
             say('waiting for a Lean slot (all three busy: `lv status` shows who has them)')
             told = True
+        remaining()
         time.sleep(3)
 
 
@@ -329,7 +337,7 @@ def log_path(kind):
 def remaining():
     left = TOTAL - (time.time() - STARTED)
     if left < 20:
-        die(f'only {left:.0f} s of the {TOTAL} s left after waiting for locks: the machine is busy, run it again', 75)
+        die(f'gave up with {max(left, 0):.0f} s of the {TOTAL} s left, waiting for locks: the machine is busy, run it again', 75)
     return left
 
 
@@ -465,6 +473,8 @@ def cmd_slot(args):
     for f in held:
         os.set_inheritable(f.fileno(), True)
     i = 2 if args[0] == 'timeout' else 0
+    if i and args[1].isdigit():    # the slot wait counts against the command's own limit
+        args = ['timeout', str(max(1, min(int(args[1]), int(remaining())))), *args[2:]]
     if os.path.basename(args[i]) in ('lake', 'lean'):
         args = args[:i] + ['systemd-run', '--user', '--scope', '-q', '--slice=work.slice'] + args[i:]
     env = lean_env({'LEAN_LOCK_HELD': '1'})
