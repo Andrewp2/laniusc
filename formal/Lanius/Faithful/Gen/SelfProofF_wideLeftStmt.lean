@@ -16,7 +16,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_collect
 public import Lanius.Faithful.Gen.SelfStmtF_funcsBytes
 public import Lanius.Faithful.Gen.SelfStmtF_funcsOnto
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
-public import Lanius.Faithful.Gen.SelfStmtF_limLeaf
+public import Lanius.Faithful.Gen.SelfStmtF_limNumsEff
 public import Lanius.Faithful.Gen.SelfStmtF_negWideI32
 public import Lanius.Faithful.Gen.SelfStmtF_rootInsts
 public import Lanius.Faithful.Gen.SelfStmtF_wideLeftStmt

@@ -7,33 +7,42 @@ open Lanius.Mini
 open Lanius.Core (Value ValueProjection)
 open Lanius.Semantics (State)
 
-/-- The stores (`storesFrom_exec` of `homeInit`, whose `refSlotAt` is the
-home's `slotAt`) write each slot's native word, cut to its width, into the
-home's block; so the home's view holds `v` (`HoldsAt.trunc`). The other
-homes' blocks lie apart and keep their bytes; then `HomesPush` and
-`HomedCorrPushV2`. -/
-theorem Lanius.Open.HomedLetStore.proof : Lanius.Open.HomedLetStore := by
-  intro sx bud places scope frame c st hp env base next id offset t ty v prog depth homes hc fr fresh under
-    hv hok fits hfsp blockPos fitsBlock apartx tAbove tFrame tSlots
+/-- The heap side: the stores give the new home at `cell`, whose value `st'` reads. -/
+theorem Lanius.Open.HomedLetStore.firstStore {sx : Statics} {bud : Budget} {places : List Addressed}
+    {st st' : State} {hp : Heap} {env : Env} {r slot offset t cell : Nat} {ty : SrcType} {v : Value}
+    {prog : Program} {depth : Nat}
+    (homes : Homes sx bud places st hp) (hv : ty.HoldsAt sx places v env slot) (hok : ty.homeOk = true)
+    (fits : ty.tagsFit = true) (hfsp : (env r).toNat = hp.fsp) (blockPos : 0 < bud.block)
+    (fitsBlock : offset + 8 * ty.words ≤ bud.block)
+    (apartx : ∀ y ∈ places, hp.fsp + offset + 8 * ty.words ≤ y.address ∨ y.address + 8 * y.ty.words ≤ hp.fsp + offset)
+    (tAway : ∀ i < ty.size, slot + i ≠ t)
+    (cells : ∀ y ∈ places, Semantics.readCellProjection st' y.cell [] = Semantics.readCellProjection st y.cell [])
+    (views : st'.i32ArrayViews = st.i32ArrayViews) (read : Semantics.readCellProjection st' cell [] = .ok v)
+    (cellNe : ∀ y ∈ places, cell ≠ y.cell) (unviewedx : ∀ w ∈ st.i32ArrayViews, w.root ≠ cell) :
+    ∃ hp', Exec prog depth env hp (.seq (.assign t (addOff r offset)) (ty.homeInit.storeSlots t slot))
+        (.normal (env.set t (BitVec.ofNat 64 (hp.fsp + offset))) hp') ∧
+      Homes sx bud (⟨cell, [], ty, hp.fsp + offset, true⟩ :: places) st' hp' ∧
+      { hp' with bytes := hp.bytes } = hp ∧
+      ∀ b, (b < hp.fsp + offset ∨ hp.fsp + offset + 8 * ty.words ≤ b) → hp'.bytes b = hp.bytes b := by
   have pos : 0 < bud.room + bud.block := by omega
   have room := homes.room pos
   have ceiling := homes.ceiling pos
   have bounded := homes.bounded pos
   have wfit : ∀ s < ty.size, (ty.slotAt s).1 + (ty.slotAt s).2.bytes ≤ 8 * ty.words :=
     fun s lt => SrcType.slot_fits ty s lt
-  have eframe : env c.frame = BitVec.ofNat 64 hp.fsp :=
+  have eframe : env r = BitVec.ofNat 64 hp.fsp :=
     BitVec.eq_of_toNat_eq (by rw [hfsp, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)])
-  have run1 : Exec prog depth env hp (.assign t (addOff c.frame offset))
+  have run1 : Exec prog depth env hp (.assign t (addOff r offset))
       (.normal (env.set t (BitVec.ofNat 64 (hp.fsp + offset))) hp) := by
     have := Exec.assign (prog := prog) (depth := depth) (env := env) (heap := hp) (index := t)
-      (value := addOff c.frame offset)
+      (value := addOff r offset)
     rwa [addOff_eval_ofNat offset eframe] at this
   have at_ : ((env.set t (BitVec.ofNat 64 (hp.fsp + offset))) t).toNat = hp.fsp + offset := by
     simp only [Env.set, if_pos rfl, BitVec.toNat_ofNat]
     exact Nat.mod_eq_of_lt (by omega)
   have hsize := ty.homeInit_size
   obtain ⟨hp', run2, others, outside, stored⟩ := ty.homeInit.storesFrom_exec (prog := prog) (depth := depth)
-    (slot := next) ty.homeInit.size 0 _ hp at_
+    (slot := slot) ty.homeInit.size 0 _ hp at_
     (fun s _ hi => by
       rw [SrcType.homeInit_refSlotAt]
       have := wfit s (by omega)
@@ -49,13 +58,13 @@ theorem Lanius.Open.HomedLetStore.proof : Lanius.Open.HomedLetStore := by
       omega
   -- the home's view holds `v`
   have cut : ∀ s < ty.size, ty.homeView (hp.fsp + offset) hp' (0 + s) =
-      BitVec.ofNat 64 ((env (next + s)).toNat % 256 ^ (ty.slotAt s).2.bytes) := by
+      BitVec.ofNat 64 ((env (slot + s)).toNat % 256 ^ (ty.slotAt s).2.bytes) := by
     intro s lt
     have st_ := stored s (Nat.zero_le _) (by omega)
     rw [SrcType.homeInit_refSlotAt] at st_
-    have keep : (env.set t (BitVec.ofNat 64 (hp.fsp + offset))) (next + s) = env (next + s) := by
+    have keep : (env.set t (BitVec.ofNat 64 (hp.fsp + offset))) (slot + s) = env (slot + s) := by
       simp only [Env.set]
-      exact if_neg (by omega)
+      exact if_neg (tAway s lt)
     rw [keep] at st_
     simp only [SrcType.homeView, Nat.zero_add, st_]
   have hold : ty.HoldsAt sx places v (ty.homeView (hp.fsp + offset) hp') 0 :=
@@ -80,15 +89,28 @@ theorem Lanius.Open.HomedLetStore.proof : Lanius.Open.HomedLetStore := by
       ceiling := by rw [eFsp, eTop]; exact homes.ceiling
       bounded := by rw [eTop]; exact homes.bounded
       statics := homes.statics.congr eBase eStatics eTop }
+  have pushed := Lanius.Open.HomesPush.proof sx bud places st st' hp'
+    ⟨cell, [], ty, hp.fsp + offset, true⟩ v homes' cells views read hold rfl rfl hok
+    (by simp only; omega) (by simp only; omega) (by simp only; omega) (by simp only; omega)
+    (fun y my => ⟨cellNe y my, apartx y my⟩) unviewedx
+  exact ⟨hp', .seq run1 run2, pushed, others, block⟩
+
+/-- The stores (`storesFrom_exec` of `homeInit`, whose `refSlotAt` is the
+home's `slotAt`) write each slot's native word, cut to its width, into the
+home's block; so the home's view holds `v` (`HoldsAt.trunc`). The other
+homes' blocks lie apart and keep their bytes; then `HomesPush` and
+`HomedCorrPushV2`. -/
+theorem Lanius.Open.HomedLetStore.proof : Lanius.Open.HomedLetStore := by
+  intro sx bud places scope frame c st hp env base next id offset t ty v prog depth homes hc fr fresh under
+    hv hok fits hfsp blockPos fitsBlock apartx tAbove tFrame tSlots
   have cells : ∀ y ∈ places, Semantics.readCellProjection (st.bindLocal id v) y.cell [] =
       Semantics.readCellProjection st y.cell [] := fun y my => by
     simp only [Semantics.readCellProjection, bindLocal_entry (under y my) id v]
   have read : Semantics.readCellProjection (st.bindLocal id v) st.nextCell [] = .ok v := by
     simp [Semantics.readCellProjection, bindLocal_self fresh id v, Semantics.projectedValue]
-  have pushed := Lanius.Open.HomesPush.proof sx bud places st (st.bindLocal id v) hp'
-    ⟨st.nextCell, [], ty, hp.fsp + offset, true⟩ v homes' cells rfl read hold rfl rfl hok
-    (by simp only; omega) (by simp only; omega) (by simp only; omega) (by simp only; omega)
-    (fun y my => ⟨fun e => by have := under y my; simp only at e; omega, apartx y my⟩)
+  obtain ⟨hp', run, pushed, others, block⟩ := Lanius.Open.HomedLetStore.firstStore (prog := prog) (depth := depth)
+    (t := t) homes hv hok fits hfsp blockPos fitsBlock apartx (fun i lt => by omega) cells rfl read
+    (fun y my => Nat.ne_of_gt (under y my))
     (fun w wm e => by
       obtain ⟨vs, b, h⟩ := fresh.2.1 w wm
       exact Nat.ne_of_lt (fresh.below (Views.ViewHolds.cellEntry h)) e)
@@ -99,4 +121,4 @@ theorem Lanius.Open.HomedLetStore.proof : Lanius.Open.HomedLetStore := by
     (by simp only [Env.set]; exact if_neg tFrame)
     (fun id' none_ => by simp only [Env.set]; exact if_neg (tSlots id' none_)) rfl rfl
     (by simp only; rw [hfsp])
-  exact ⟨hp', .seq run1 run2, pushed, corr, others, block⟩
+  exact ⟨hp', run, pushed, corr, others, block⟩

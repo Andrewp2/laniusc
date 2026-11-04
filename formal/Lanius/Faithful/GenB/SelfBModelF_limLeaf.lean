@@ -3,7 +3,6 @@ import Lanius.Faithful.GenB.SelfBModelF_depthLimit
 import Lanius.Faithful.GenB.SelfBModelF_limExprs
 import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Frontend.P.depthLimit
-import Lanius.Mini.Frontend.P.funcsOnto
 import Lanius.Mini.Frontend.P.limExprs
 import Lanius.Mini.Frontend.P.limLeaf
 import Lanius.Mini.Frontend.Types
@@ -58,10 +57,34 @@ end
 
 noncomputable section
 
+def Pre_lim_nest_step : Nat → Nat → Nat → Prop
+  | 0, x14, b => True
+  | n + 1, x14, b => (if (decide (Lanius.Mini.depthLimit < x14)) = true then True else (Pre_plus n x14 1 b))
+
+end
+
+noncomputable section
+
 mutual
-def Pre_lim_funcs : Nat → List Lanius.Mini.SrcFunc → Nat → Prop
-  | 0, x10, b => True
-  | n + 1, x10, b => (match x10 with | [] => True | x97 :: x100 => ((Pre_lim_params n x97.params b) ∧ (if (Lanius.Mini.limParams x97.params) = true then ((Pre_lim_param_slots n x97.params b) ∧ (if (!(Lanius.Mini.isNoneWeight ((Lanius.Mini.limParamSlots x97.params)))) = true then ((Pre_lim_ty n x97.ret b) ∧ (if (Lanius.Mini.limTy x97.ret) = true then ((Pre_lim_stmt n x97.body b) ∧ (if (!(Lanius.Mini.isNoneWeight ((Lanius.Mini.limStmt x97.body)))) = true then (Pre_lim_funcs n x100 b) else True)) else True)) else True)) else True)))
+def Pre_lim_nest_eff : Nat → Lanius.Mini.SrcEff → Nat → Prop
+  | 0, x13, b => True
+  | n + 1, x13, b => (match x13 with | .ePure x72 => True | .eCall x95 x98 => (Pre_lim_nest_effs n x98 b) | .eApply x150 x154 x157 => ((Pre_lim_nest_eff n x154 b) ∧ ((Pre_lim_nest_eff n x157 b) ∧ (Pre_lim_nest_step n (Lanius.Mini.limNestEff x157) b))) | .eNeg x247 => (Pre_lim_nest_eff n x247 b) | .eNot x290 => (Pre_lim_nest_eff n x290 b) | .eCast x334 x337 => (Pre_lim_nest_eff n x337 b) | .eIndex x382 x386 => (Pre_lim_nest_eff n x386 b) | .eStruct x432 x435 => (Pre_lim_nest_effs n x435 b) | .eVariant x485 x488 x491 => (Pre_lim_nest_effs n x491 b) | .eMatch x539 x543 x548 x551 x555 => ((Pre_lim_nest_eff n x539 b) ∧ (Pre_lim_nest_effs n x555 b)) | .eDivide x637 x641 x644 => ((Pre_lim_nest_eff n x641 b) ∧ ((Pre_lim_nest_eff n x644 b) ∧ (Pre_lim_nest_step n (Lanius.Mini.limNestEff x644) b))) | .eStride x737 => True | .arraySlice x766 x769 => True | .eIf x790 x793 x796 x799 => ((Pre_lim_nest_eff n x790 b) ∧ ((Pre_lim_nest_eff n x796 b) ∧ (Pre_lim_nest_eff n x799 b))) | .eLet x906 x910 x913 x916 x920 => ((Pre_lim_nest_eff n x913 b) ∧ (Pre_lim_nest_eff n x920 b)) | .eLen x995 => True | .eStr x1018 x1026 => True | .eBorrow x1055 x1060 => True | .eDeref x1089 x1094 => True | .eField x1121 x1128 => True | .eAt x1152 x1159 => True)
+termination_by structural fuel => fuel
+
+def Pre_lim_nest_effs : Nat → List Lanius.Mini.SrcEff → Nat → Prop
+  | 0, x14, b => True
+  | n + 1, x14, b => (match x14 with | [] => True | x98 :: x101 => ((Pre_lim_nest_eff n x98 b) ∧ (Pre_lim_nest_effs n x101 b)))
+termination_by structural fuel => fuel
+end
+
+end
+
+noncomputable section
+
+mutual
+def Pre_lim_nest : Nat → Lanius.Mini.SrcStmt → Nat → Prop
+  | 0, x9, b => True
+  | n + 1, x9, b => (match x9 with | .nop => True | .let x85 x89 x93 x96 => (Pre_lim_nest n x96 b) | .letStruct x146 x150 x154 x158 => (Pre_lim_nest n x158 b) | .letCall x206 x210 x214 x217 x223 => (Pre_lim_nest n x223 b) | .letEnum x271 x275 x279 x282 x286 => (Pre_lim_nest n x286 b) | .letMatch x335 x339 x343 x347 x352 x358 => (Pre_lim_nest n x358 b) | .set x402 x406 => True | .setField x432 x436 x439 => True | .setCall x464 x468 x471 => True | .then x496 x499 => ((Pre_lim_nest n x496 b) ∧ (Pre_lim_nest n x499 b)) | .if x564 x567 x570 => ((Pre_lim_nest n x567 b) ∧ (Pre_lim_nest n x570 b)) | .while x638 x641 => (Pre_lim_nest n x641 b) | .return x688 => True | .letAlloc x714 x718 x724 x731 => (Pre_lim_nest n x731 b) | .letLoad x779 x783 x786 x789 => (Pre_lim_nest n x789 b) | .setByte x837 x840 x843 => True | .free x865 x868 x874 => True | .letSlice x904 x908 x912 x915 x918 => (Pre_lim_nest n x918 b) | .letIndex x967 x971 x975 x979 x982 => (Pre_lim_nest n x982 b) | .setIndex x1031 x1035 x1038 => True | .letEval x1063 x1067 x1071 x1074 => ((Pre_lim_nest_eff n x1071 b) ∧ (Pre_lim_nest n x1074 b)) | .setEval x1147 x1151 => (Pre_lim_nest_eff n x1151 b) | .ifEval x1189 x1192 x1195 => ((Pre_lim_nest_eff n x1189 b) ∧ ((Pre_lim_nest n x1192 b) ∧ (Pre_lim_nest n x1195 b))) | .whileEval x1292 x1295 => ((Pre_lim_nest_eff n x1292 b) ∧ (Pre_lim_nest n x1295 b)) | .returnEval x1371 => (Pre_lim_nest_eff n x1371 b) | .discard x1410 => (Pre_lim_nest_eff n x1410 b) | .setIndexEval x1454 x1458 x1461 => ((Pre_lim_nest_eff n x1458 b) ∧ (Pre_lim_nest_eff n x1461 b)) | .setFieldEval x1530 x1534 x1537 => (Pre_lim_nest_eff n x1537 b) | .returnUnit => True | .assert x1600 => (Pre_lim_nest_eff n x1600 b) | .break => True | .continue => True | .matchArm x1683 x1687 x1691 x1694 x1698 x1701 x1705 x1711 => ((Pre_lim_nest n x1705 b) ∧ (Pre_lim_nest n x1711 b)) | .unreachable x1794 x1798 => True | .letView x1824 x1828 x1831 x1835 x1838 => (Pre_lim_nest n x1838 b) | .letStr x1885 x1888 x1892 => (Pre_lim_nest n x1892 b) | .setPlace x1941 x1949 => True | .setPlaceOp x1982 x1987 x1995 => True)
 termination_by structural fuel => fuel
 end
 

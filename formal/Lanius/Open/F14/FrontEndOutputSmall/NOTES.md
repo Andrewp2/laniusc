@@ -10,3 +10,5 @@
   (proved) and the budget, as red1 does. It may be false as stated. A match over v variants
   whose wildcard arm comes last is a list of v arms (`matchArm` chains after lowering). Nesting k such
   matches gives a height of about k * v from O(k + v) words, which is up to 2^60 under 2^31 words.
+- 11-04 (leafA): off the chain. Only red2 uses it; red3 to red6 take the height from PostFrontEndWords.
+  Not attempted, since it is probably false (the nested-wildcard argument above).
