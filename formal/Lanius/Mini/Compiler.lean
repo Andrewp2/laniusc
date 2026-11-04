@@ -82,6 +82,7 @@ public import Lanius.Mini.Compiler.P.lowerLoadType
 public import Lanius.Mini.Compiler.P.wordStride
 public import Lanius.Mini.Compiler.P.fitsThen
 public import Lanius.Mini.Compiler.P.indexPlace
+public import Lanius.Mini.Compiler.P.evalLent
 public import Lanius.Mini.Compiler.P.storeEvalWord
 public import Lanius.Mini.Compiler.P.storeArray
 public import Lanius.Mini.Compiler.P.strStores
@@ -136,6 +137,6 @@ operations become `Lists.name` with a spec theorem). `usize` is `Nat`, `i32` is
 prelude's `plus`/`minus`/`times` panic instead of wrapping, so they are
 `+`/`-`/`*` on `Nat` for every run that returns.
 
-The definitions are in 125 parts, `.P0` on, in source order, whose bodies
+The definitions are in 126 parts, `.P0` on, in source order, whose bodies
 are hidden from other modules: a proof that unfolds one imports its part with
 `import all`, so that it is rebuilt only when that part changes. -/

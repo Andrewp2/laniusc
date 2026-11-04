@@ -7,8 +7,8 @@ import all Lanius.Mini.Compiler.P.SrcType_uintKind
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_mask
 import all Lanius.Mini.Compiler.P.arithShiftRight
+import all Lanius.Mini.Compiler.P.evalLent
 import all Lanius.Mini.Compiler.P.guardAnd
-import all Lanius.Mini.Compiler.P.indexPlace
 import all Lanius.Mini.Compiler.P.lowerLocal
 -- end import all uses
 -- import parts: Lanius.Mini.Compiler UintTy.isWide UintTy.mask fromI32

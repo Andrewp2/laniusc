@@ -11,11 +11,11 @@ public import Lanius.Mini.Compiler.P.arithShiftRight
 public import Lanius.Mini.Compiler.P.arithUint
 public import Lanius.Mini.Compiler.P.armScope
 public import Lanius.Mini.Compiler.P.compileModules
+public import Lanius.Mini.Compiler.P.evalLent
 public import Lanius.Mini.Compiler.P.evalSame
 public import Lanius.Mini.Compiler.P.evalSlotLimit
 public import Lanius.Mini.Compiler.P.floatApply
 public import Lanius.Mini.Compiler.P.funcNeeds
-public import Lanius.Mini.Compiler.P.indexPlace
 public import Lanius.Mini.Compiler.P.loadAtBytes
 public import Lanius.Mini.Compiler.P.lowerCallSig
 public import Lanius.Mini.Compiler.P.lowerTagged

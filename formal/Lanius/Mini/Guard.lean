@@ -16,11 +16,11 @@ import all Lanius.Mini.Compiler.P.armScope
 import all Lanius.Mini.Compiler.P.assignFrom
 import all Lanius.Mini.Compiler.P.compileModules
 import all Lanius.Mini.Compiler.P.conjunction
+import all Lanius.Mini.Compiler.P.evalLent
 import all Lanius.Mini.Compiler.P.exprRoots
 import all Lanius.Mini.Compiler.P.floatApply
 import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.guardAnd
-import all Lanius.Mini.Compiler.P.indexPlace
 import all Lanius.Mini.Compiler.P.leftTrue
 import all Lanius.Mini.Compiler.P.loadAtBytes
 import all Lanius.Mini.Compiler.P.lowerApply

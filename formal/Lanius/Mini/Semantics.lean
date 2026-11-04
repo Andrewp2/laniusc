@@ -10,8 +10,8 @@ import all Lanius.Mini.Compiler.P.MemAccess_bytes
 import all Lanius.Mini.Compiler.P.SrcType_uintKind
 import all Lanius.Mini.Compiler.P.Word_narrows
 import all Lanius.Mini.Compiler.P.arities
+import all Lanius.Mini.Compiler.P.evalLent
 import all Lanius.Mini.Compiler.P.guardAnd
-import all Lanius.Mini.Compiler.P.indexPlace
 import all Lanius.Mini.Compiler.P.loadAtBytes
 -- end import all uses
 -- import parts: Lanius.Mini.Compiler BinOp.bytes DivOp.bytes MemWidth.bytes

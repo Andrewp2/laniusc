@@ -20,10 +20,10 @@ import all Lanius.Mini.Compiler.P.compileOr
 import all Lanius.Mini.Compiler.P.compileSource
 import all Lanius.Mini.Compiler.P.declareProgram
 import all Lanius.Mini.Compiler.P.enumVariants
+import all Lanius.Mini.Compiler.P.evalLent
 import all Lanius.Mini.Compiler.P.floatApply
 import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.guardAnd
-import all Lanius.Mini.Compiler.P.indexPlace
 import all Lanius.Mini.Compiler.P.loadAtBytes
 import all Lanius.Mini.Compiler.P.lowerBody
 import all Lanius.Mini.Compiler.P.lowerLoadType
@@ -45,9 +45,9 @@ public import Lanius.Mini.Compiler.P.compileOr
 public import Lanius.Mini.Compiler.P.compileSource
 public import Lanius.Mini.Compiler.P.declareProgram
 public import Lanius.Mini.Compiler.P.enumVariants
+public import Lanius.Mini.Compiler.P.evalLent
 public import Lanius.Mini.Compiler.P.floatApply
 public import Lanius.Mini.Compiler.P.funcNeeds
-public import Lanius.Mini.Compiler.P.indexPlace
 public import Lanius.Mini.Compiler.P.loadAtBytes
 public import Lanius.Mini.Compiler.P.lowerBody
 public import Lanius.Mini.Compiler.P.lowerLoadType

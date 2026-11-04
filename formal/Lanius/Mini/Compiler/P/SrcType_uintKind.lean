@@ -159,7 +159,24 @@ def SrcType.same (self : SrcType) (other : SrcType) : Bool :=
      | .str => false
      | .ref otherReferent => false)
   | .str => SrcType.isStr other
-  | .ref referent => false
+  | .ref referent =>
+    match other with
+    | .i32 => false
+    | .bool => false
+    | .uint otherKind => false
+    | .struct otherId otherFields => false
+    | .enum otherId otherVariants => false
+    | .ptr => false
+    | .slice otherElement => false
+    | .array arrayElement arrayLength => false
+    | .unit => false
+    | .isize => false
+    | .char => false
+    | .float ft => false
+    | .sint otherSk => false
+    | .view otherLength => false
+    | .str => false
+    | .ref otherReferent => SrcType.same referent otherReferent
 def typesSame (types : List SrcType) (others : List SrcType) : Bool :=
   match types with
   | [] =>

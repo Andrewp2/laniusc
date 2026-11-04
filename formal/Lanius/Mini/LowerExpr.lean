@@ -16,9 +16,9 @@ import all Lanius.Mini.Compiler.P.arithShiftRight
 import all Lanius.Mini.Compiler.P.arithUint
 import all Lanius.Mini.Compiler.P.conjunction
 import all Lanius.Mini.Compiler.P.equality
+import all Lanius.Mini.Compiler.P.evalLent
 import all Lanius.Mini.Compiler.P.exprRoots
 import all Lanius.Mini.Compiler.P.floatApply
-import all Lanius.Mini.Compiler.P.indexPlace
 import all Lanius.Mini.Compiler.P.lowerApply
 import all Lanius.Mini.Compiler.P.lowerLocal
 import all Lanius.Mini.Compiler.P.lowerShift

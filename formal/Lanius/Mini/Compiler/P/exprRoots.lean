@@ -12,6 +12,7 @@ import Lanius.Mini.Compiler.P.armPayload
 import Lanius.Mini.Compiler.P.arrayCallSig
 import Lanius.Mini.Compiler.P.compileModules
 import Lanius.Mini.Compiler.P.conjunction
+import Lanius.Mini.Compiler.P.evalLent
 import Lanius.Mini.Compiler.P.fitsThen
 import Lanius.Mini.Compiler.P.guardAnd
 import Lanius.Mini.Compiler.P.indexPlace
@@ -106,12 +107,9 @@ def letIndexPick (homed : Bool) (decls : SrcDecls) (scope : List Binding) (next 
   else
     lowerLetIndexAny decls scope next ty slice index body
 
-/-- The code of a value a statement computes (LetEval, Discard): a call passing arrays as slices (array_call), or any other expression's code. -/
+/-- The code of a value a statement computes (LetEval, Discard): its code. A call passing arrays as slices lends them (eval_lent, F5 S6c), so it is an ordinary call. -/
 def stmtEval (value : SrcEff) (sigs : List Sig) (decls : SrcDecls) (scope : List Binding) (next : Nat) : Option Evaluated :=
-  if SrcEff.passesSlices value then
-    SrcEff.sliceCall value sigs scope next
-  else
-    SrcEff.eval value sigs decls scope next
+  SrcEff.eval value sigs decls scope next
 
 mutual
 /-- The ids of the arrays the expression passes as slices. -/

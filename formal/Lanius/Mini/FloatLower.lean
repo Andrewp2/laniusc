@@ -10,9 +10,9 @@ import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_mask
 import all Lanius.Mini.Compiler.P.Word_narrows
 import all Lanius.Mini.Compiler.P.arithUint
+import all Lanius.Mini.Compiler.P.evalLent
 import all Lanius.Mini.Compiler.P.floatApply
 import all Lanius.Mini.Compiler.P.guardAnd
-import all Lanius.Mini.Compiler.P.indexPlace
 import all Lanius.Mini.Compiler.P.lowerLocal
 import all Lanius.Mini.Compiler.P.sintToUint
 -- end import all uses

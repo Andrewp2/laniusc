@@ -2578,7 +2578,24 @@ impl SrcType {
                 Ref(other_referent) -> false,
             },
             Str -> other.is_str(),
-            Ref(referent) -> false,
+            Ref(referent) -> match (other) {
+                I32 -> false,
+                Bool -> false,
+                Uint(other_kind) -> false,
+                Struct(other_id, other_fields) -> false,
+                Enum(other_id, other_variants) -> false,
+                Ptr -> false,
+                Slice(other_element) -> false,
+                SrcType::Array(array_element, array_length) -> false,
+                Unit -> false,
+                Isize -> false,
+                SrcType::Char -> false,
+                SrcType::Float(ft) -> false,
+                Sint(other_sk) -> false,
+                View(other_length) -> false,
+                Str -> false,
+                Ref(other_referent) -> unbox(referent).same(unbox(other_referent)),
+            },
         };
     }
 }
@@ -6695,6 +6712,31 @@ pub fn eval_index_any(frame: usize, decls: SrcDecls, scope: List<Binding>, slice
     return eval_index(decls, scope, slice, slot, value);
 }
 
+pub fn lent_checked(frame: usize, home: usize, ty: SrcType, element: SrcType, slot: usize) -> core::option::Option<Evaluated> {
+    let count: usize = ty.size();
+    if ((element.same(I32) || element.same(Uint(Uint8))) && ty.same(SrcType::Array(boxed(element), count)) && (2147483648 > count)) {
+        return Some(Evaluated { stmt: Seq(boxed(Assign(slot, lay_add_off(frame, home))), boxed(Assign(plus(slot, 1), Lit(count as u64)))), ty: Slice(boxed(element)) });
+    }
+    return None;
+}
+
+pub fn lent_home(frame: usize, b: Binding, element: SrcType, slot: usize) -> core::option::Option<Evaluated> {
+    return match (b.home) {
+        None -> None,
+        Some(home) -> lent_checked(frame, home, b.ty, element, slot),
+    };
+}
+
+// An array local passed as a slice (F5 S6c): a homed i32 or u8 array is
+// lent with no copy, its home's address frame + offset into slot and its
+// length into slot + 1 (HomeLendArgs). An array with no home is not passed.
+pub fn eval_lent(frame: usize, binding: core::option::Option<Binding>, element: SrcType, slot: usize) -> core::option::Option<Evaluated> {
+    return match (binding) {
+        None -> None,
+        Some(b) -> lent_home(frame, b, element, slot),
+    };
+}
+
 // extract: mutual begin
 impl SrcEff {
     // The code computing this expression into slot, slot + 1, ..., and its type.
@@ -6712,7 +6754,7 @@ impl SrcEff {
             EMatch(scrutinee, ety, ty, binders, values) -> eval_match(slot, ety, ty, unbox(scrutinee).eval(sigs, decls, scope, slot), eval_arms(sigs, decls, scope, slot, match_dst(slot, ety, ty), ty, 0, match_variants(ety), binders, unbox(values)), length(binders), length(unbox(values))),
             EDivide(op, left, right) -> eval_division(op, slot, unbox(left).eval(sigs, decls, scope, slot), unbox(right).eval(sigs, decls, scope, plus(slot, 1))),
             EStride(slice) -> eval_stride(decls, scope, slice, slot),
-            ArraySlice(element, array) -> None,
+            ArraySlice(element, array) -> eval_lent(own_frame(sigs), lookup(scope, array), element, slot),
             EIf(condition, ty, then_value, else_value) -> eval_if(slot, ty, unbox(condition).eval(sigs, decls, scope, slot), unbox(then_value).eval(sigs, decls, scope, slot), unbox(else_value).eval(sigs, decls, scope, slot)),
             ELet(id, ty, value, rt, body) -> eval_let_in(slot, ty, rt, unbox(value).eval(sigs, decls, scope, slot), eval_let_body(sigs, decls, arm_scope(single(id), single(ty), slot, scope), match_dst(slot, ty, rt), unbox(body))),
             ELen(slice) -> eval_len(scope, slice, slot),
@@ -7627,12 +7669,10 @@ pub fn let_index_pick(homed: bool, decls: SrcDecls, scope: List<Binding>, next: 
     return lower_let_index_any(decls, scope, next, ty, slice, index, body);
 }
 
-// The code of a value a statement computes (LetEval, Discard): a call
-// passing arrays as slices (array_call), or any other expression's code.
+// The code of a value a statement computes (LetEval, Discard): its code.
+// A call passing arrays as slices lends them (eval_lent, F5 S6c), so it is
+// an ordinary call.
 pub fn stmt_eval(value: SrcEff, sigs: List<Sig>, decls: SrcDecls, scope: List<Binding>, next: usize) -> core::option::Option<Evaluated> {
-    if (value.passes_slices()) {
-        return value.slice_call(sigs, scope, next);
-    }
     return value.eval(sigs, decls, scope, next);
 }
 
