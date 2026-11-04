@@ -430,12 +430,12 @@ theorem Homes.popHome {sx : Statics} {bud : Budget} {x : Addressed} {places : Li
 
 /-! ## A homed `let` -/
 
-theorem lookup_cons_self (id next : Nat) (ty : SrcType) (scope : List Binding) :
-    lookup (⟨id, next, ty⟩ :: scope) id = some ⟨id, next, ty⟩ := by
+theorem lookup_cons_self {home : Option Nat} (id next : Nat) (ty : SrcType) (scope : List Binding) :
+    lookup (⟨id, next, ty, home⟩ :: scope) id = some ⟨id, next, ty, home⟩ := by
   simp [lookup]
 
-theorem lookup_cons_ne {id id' next : Nat} {ty : SrcType} (scope : List Binding) (ne : id' ≠ id) :
-    lookup (⟨id, next, ty⟩ :: scope) id' = lookup scope id' := by
+theorem lookup_cons_ne {home : Option Nat} {id id' next : Nat} {ty : SrcType} (scope : List Binding) (ne : id' ≠ id) :
+    lookup (⟨id, next, ty, home⟩ :: scope) id' = lookup scope id' := by
   simp [lookup, Ne.symm ne]
 
 theorem homes_lookup_ne {id id' : Lanius.VarId} {e : Nat × SrcType} (homes : List (Lanius.VarId × Nat × SrcType))
@@ -447,14 +447,14 @@ theorem homes_lookup_self {id : Lanius.VarId} {e : Nat × SrcType} (homes : List
     ((id, e) :: homes).lookup id = some e := by
   simp [List.lookup]
 
-theorem HomedCorr.pushHome {sx : Statics} {places : List Addressed} {scope : List Binding} {frame : Nat → Nat}
+theorem HomedCorr.pushHome {home : Option Nat} {sx : Statics} {places : List Addressed} {scope : List Binding} {frame : Nat → Nat}
     {c : RCtx} {st : State} {env env' : Env} {base next id offset : Nat} {ty : SrcType} {v : Value}
     {x : Addressed} (hc : HomedCorr sx places scope frame c st env) (fr : Layout scope frame base next)
     (fresh : st.Fresh) (agree : ScopeAgree scope env env') (under : ∀ y ∈ places, y.cell < st.nextCell)
     (hframe : env' c.frame = env c.frame)
     (hslots : ∀ id', c.homes.lookup id' = none → env' (c.slotOf id') = env (c.slotOf id'))
     (hxcell : x.cell = st.nextCell) (hxty : x.ty = ty) (hxaddr : x.address = (env c.frame).toNat + offset) :
-    HomedCorr sx (x :: places) (⟨id, next, ty⟩ :: scope) (upd frame next st.nextCell)
+    HomedCorr sx (x :: places) (⟨id, next, ty, home⟩ :: scope) (upd frame next st.nextCell)
       { c with homes := (id, offset, ty) :: c.homes } (st.bindLocal id v) env' := by
   have below : ∀ b ∈ scope, frame b.slot < st.nextCell := fun b mem => by
     by_cases un : Unhomed places frame b
@@ -481,7 +481,7 @@ theorem HomedCorr.pushHome {sx : Statics} {places : List Addressed} {scope : Lis
       rw [hxcell]
       cell_omega
     · exact un y my
-  have newHomed : ¬ Unhomed (x :: places) (upd frame next st.nextCell) ⟨id, next, ty⟩ :=
+  have newHomed : ¬ Unhomed (x :: places) (upd frame next st.nextCell) ⟨id, next, ty, home⟩ :=
     fun un => un x List.mem_cons_self (by simp [upd, hxcell])
   have cidNe : ∀ id', id' ≠ id → (st.bindLocal id v).cellId? id' = st.cellId? id' := by
     intro id' ne
@@ -552,10 +552,10 @@ theorem HomedCorr.pushHome {sx : Statics} {places : List Addressed} {scope : Lis
       rw [homes_lookup_ne _ eq] at hl
       exact unOld b (lookup_mem hs).1 (hc.unhomed id' b hs hl)
 
-theorem HomedCorr.popHome {sx : Statics} {places : List Addressed} {scope : List Binding} {frame : Nat → Nat}
+theorem HomedCorr.popHome {home : Option Nat} {sx : Statics} {places : List Addressed} {scope : List Binding} {frame : Nat → Nat}
     {c : RCtx} {st₀ st st' : State} {env₀ env : Env} {base next id offset : Nat} {ty : SrcType} {x : Addressed}
     (hc₀ : HomedCorr sx places scope frame c st₀ env₀)
-    (hc : HomedCorr sx (x :: places) (⟨id, next, ty⟩ :: scope) (upd frame next x.cell)
+    (hc : HomedCorr sx (x :: places) (⟨id, next, ty, home⟩ :: scope) (upd frame next x.cell)
       { c with homes := (id, offset, ty) :: c.homes } st env)
     (fr : Layout scope frame base next) (apartCell : ∀ b ∈ scope, frame b.slot ≠ x.cell)
     (locals : st'.locals = st₀.locals) (cells : st'.cells = st.cells) (views : st'.i32ArrayViews = st.i32ArrayViews)
@@ -639,7 +639,7 @@ theorem HomedCorr.below {sx : Statics} {places : List Addressed} {scope : List B
     rw [← hy]
     exact under y my
 
-theorem HomedCorr.pushPlain {sx : Statics} {places : List Addressed} {scope : List Binding} {frame : Nat → Nat}
+theorem HomedCorr.pushPlain {home : Option Nat} {sx : Statics} {places : List Addressed} {scope : List Binding} {frame : Nat → Nat}
     {c c' : RCtx} {st : State} {env env' : Env} {base next id : Nat} {ty : SrcType} {v : Value}
     (hc : HomedCorr sx places scope frame c st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
     (agree : ScopeAgree scope env env') (holds : ty.HoldsAt sx places v env' next)
@@ -649,7 +649,7 @@ theorem HomedCorr.pushPlain {sx : Statics} {places : List Addressed} {scope : Li
       c'.homes.lookup id' = c.homes.lookup id' ∧ c'.slotOf id' = c.slotOf id' ∧ c'.refTy id' = c.refTy id')
     (hslots : ∀ id', id' ≠ id → c.homes.lookup id' = none → env' (c.slotOf id') = env (c.slotOf id'))
     (href : ∀ T cell path, v = .reference T cell path → RefTo places (c'.refTy id) cell path (env' (c'.slotOf id))) :
-    HomedCorr sx places (⟨id, next, ty⟩ :: scope) (upd frame next st.nextCell) c' (st.bindLocal id v) env' := by
+    HomedCorr sx places (⟨id, next, ty, home⟩ :: scope) (upd frame next st.nextCell) c' (st.bindLocal id v) env' := by
   have below := hc.below fresh under
   have same := upd_scope fr st.nextCell
   have locs : ∀ p ∈ st.locals, p.2 < st.nextCell := by
@@ -661,7 +661,7 @@ theorem HomedCorr.pushPlain {sx : Statics} {places : List Addressed} {scope : Li
     fun b mem un y my => by rw [← same b mem]; exact un y my
   have unOld : ∀ b ∈ scope, Unhomed places frame b → Unhomed places (upd frame next st.nextCell) b :=
     fun b mem un y my => by rw [same b mem]; exact un y my
-  have newUn : Unhomed places (upd frame next st.nextCell) ⟨id, next, ty⟩ := fun y my => by
+  have newUn : Unhomed places (upd frame next st.nextCell) ⟨id, next, ty, home⟩ := fun y my => by
     simp only [upd, if_pos]
     have := under y my
     cell_omega
@@ -736,10 +736,10 @@ theorem HomedCorr.pushPlain {sx : Statics} {places : List Addressed} {scope : Li
       rw [(ctx id' eq).1] at hl
       exact unOld b (lookup_mem hs).1 (hc.unhomed id' b hs hl)
 
-theorem HomedCorr.popPlain {sx : Statics} {places : List Addressed} {scope : List Binding} {frame : Nat → Nat}
+theorem HomedCorr.popPlain {home : Option Nat} {sx : Statics} {places : List Addressed} {scope : List Binding} {frame : Nat → Nat}
     {c c' : RCtx} {st₀ st st' : State} {env₀ env : Env} {base next id cell : Nat} {ty : SrcType}
     (hc₀ : HomedCorr sx places scope frame c st₀ env₀)
-    (hc : HomedCorr sx places (⟨id, next, ty⟩ :: scope) (upd frame next cell) c' st env)
+    (hc : HomedCorr sx places (⟨id, next, ty, home⟩ :: scope) (upd frame next cell) c' st env)
     (fr : Layout scope frame base next)
     (ctx : ∀ id', id' ≠ id →
       c'.homes.lookup id' = c.homes.lookup id' ∧ c'.slotOf id' = c.slotOf id' ∧ c'.refTy id' = c.refTy id')

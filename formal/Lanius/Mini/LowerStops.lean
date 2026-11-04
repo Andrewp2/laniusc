@@ -1189,7 +1189,7 @@ variable [StaticsOf sp sx]
 /-- The body of a `let`, from the state after its initializer. -/
 theorem let_stops {body : SrcStmt} (ih : SrcStops sp mp n body) {ret : SrcType} {scope : List Binding}
     {next : Nat} {bstmt : Stmt} {id : Nat} {ty : SrcType} {hp : Heap}
-    (bodyOk : body.lower (sp.sigsAt bud) sp.decls ret (⟨id, next, ty⟩ :: scope) (next + ty.size) = some bstmt)
+    (bodyOk : body.lower (sp.sigsAt bud) sp.decls ret (⟨id, next, ty, none⟩ :: scope) (next + ty.size) = some bstmt)
     {frame base st env} (corr : Corr sx places scope frame st env) (fr : Layout scope frame base next)
     (fresh : st.Fresh) (le : base ≤ st.nextCell) (sized : 0 < ty.size) {v : Value} {env' : Env}
     (agree : ScopeAgree scope env env') (holds : ty.HoldsAt sx places v env' next)
@@ -2024,7 +2024,7 @@ theorem stops_letLoad {id : Nat} {pointer offset : SrcExpr} {body : SrcStmt} (ih
   cases oOk : lowerAs scope offset (.uint .usize) with
   | none => simp [pOk, oOk, lowerAddress, lowerLoad] at ok
   | some xo =>
-  cases bodyOk : body.lower (sp.sigsAt bud) sp.decls ret (⟨id, next, .uint .uint8⟩ :: scope) (next + 1) with
+  cases bodyOk : body.lower (sp.sigsAt bud) sp.decls ret (⟨id, next, .uint .uint8, none⟩ :: scope) (next + 1) with
   | none => simp [pOk, oOk, bodyOk, lowerAddress, lowerLoad] at ok
   | some bstmt =>
   simp only [pOk, oOk, bodyOk, lowerAddress, lowerLoad, Option.some.injEq] at ok
@@ -2246,7 +2246,7 @@ theorem stops_letIndex_i32 {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcE
     (tyI32 : ty.isI32 = true) (ih : SrcStops sp mp n body) {hp : Heap} {ret : SrcType} {scope : List Binding} {next : Nat} {stmt : Stmt}
     {frame : Nat → Nat} {base : Nat} {st : State} {env : Env}
     (ok : lowerLoadWord next (lowerElement (lookup scope slice) ty (lowerIndex scope index))
-      (body.lower (sp.sigsAt bud) sp.decls ret (⟨id, next, ty⟩ :: scope) (next + ty.size)) = some stmt)
+      (body.lower (sp.sigsAt bud) sp.decls ret (⟨id, next, ty, none⟩ :: scope) (next + ty.size)) = some stmt)
     (corr : Corr sx places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
     (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : LentHomes sx bud places st hp)
     (under : ∀ x ∈ places, x.cell < base) (within : st.heap.nextAddress ≤ hp.limit)
@@ -2404,7 +2404,7 @@ theorem stops_letIndex_u8 {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcEx
     {scope : List Binding} {next : Nat} {stmt : Stmt}
     {frame : Nat → Nat} {base : Nat} {st : State} {env : Env}
     (ok : lowerLoad next (lowerElement (lookup scope slice) ty (lowerIndex scope index))
-      (body.lower (sp.sigsAt bud) sp.decls ret (⟨id, next, ty⟩ :: scope) (next + ty.size)) = some stmt)
+      (body.lower (sp.sigsAt bud) sp.decls ret (⟨id, next, ty, none⟩ :: scope) (next + ty.size)) = some stmt)
     (corr : Corr sx places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
     (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : LentHomes sx bud places st hp)
     (under : ∀ x ∈ places, x.cell < base) (within : st.heap.nextAddress ≤ hp.limit)
@@ -2546,7 +2546,7 @@ theorem stops_letIndex_word {id : Nat} {ty : SrcType} {slice : Nat} {index : Src
     (ih : SrcStops sp mp n body) {hp : Heap} {ret : SrcType} {scope : List Binding} {next : Nat} {stmt : Stmt}
     {frame : Nat → Nat} {base : Nat} {st : State} {env : Env}
     (ok : lowerLoadType sp.decls next (lookup scope slice) ty (lowerIndex scope index)
-      (body.lower (sp.sigsAt bud) sp.decls ret (⟨id, next, ty⟩ :: scope) (next + ty.size)) = some stmt)
+      (body.lower (sp.sigsAt bud) sp.decls ret (⟨id, next, ty, none⟩ :: scope) (next + ty.size)) = some stmt)
     (corr : Corr sx places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
     (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : LentHomes sx bud places st hp)
     (under : ∀ x ∈ places, x.cell < base) (within : st.heap.nextAddress ≤ hp.limit)

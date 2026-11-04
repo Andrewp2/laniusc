@@ -4,6 +4,7 @@ public import Lanius.Faithful.Gen.SelfTermInfo
 public import Lanius.Faithful.Gen.SelfLookFn3
 public import Lanius.Faithful.Gen.SelfLookFn4
 import all Lanius.Faithful.Gen.SelfSrc0
+import all Lanius.Faithful.Gen.SelfSrcC_bindingBytes
 import all Lanius.Faithful.Gen.SelfSrcC_strStores
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_findMethodAt
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pArrayMore
@@ -46,26 +47,26 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.Termination
 open Lanius.Faithful.SelfCert
 
-theorem ok_p_postfix : FnOk prog prims info (1747, ⟨0, [], 0⟩) :=
-  fnOk_of fn_p_postfix (by decide +kernel)
-
-theorem ok_names_field_base : FnOk prog prims info (1748, ⟨6, [], 0⟩) :=
-  fnOk_of fn_names_field_base (by decide +kernel)
-
-theorem ok_expr_of : FnOk prog prims info (1749, ⟨14, [0], 0⟩) :=
+theorem ok_expr_of : FnOk prog prims info (1747, ⟨14, [0], 0⟩) :=
   fnOk_of fn_expr_of (by decide +kernel)
 
-theorem ok_eff_node : FnOk prog prims info (1750, ⟨29, [0], 0⟩) :=
+theorem ok_eff_node : FnOk prog prims info (1748, ⟨29, [0], 0⟩) :=
   fnOk_of fn_eff_node (by decide +kernel)
 
-theorem ok_stmt_first : FnOk prog prims info (1751, ⟨36, [0], 0⟩) :=
+theorem ok_stmt_first : FnOk prog prims info (1749, ⟨36, [0], 0⟩) :=
   fnOk_of fn_stmt_first (by decide +kernel)
 
-theorem ok_block_store : FnOk prog prims info (1752, ⟨1, [], 0⟩) :=
-  fnOk_of fn_block_store (by decide +kernel)
+theorem ok_array_arg_checked : FnOk prog prims info (1750, ⟨0, [], 0⟩) :=
+  fnOk_of fn_array_arg_checked (by decide +kernel)
 
-theorem ok_block_load : FnOk prog prims info (1753, ⟨1, [], 0⟩) :=
-  fnOk_of fn_block_load (by decide +kernel)
+theorem ok_element_stores : FnOk prog prims info (1751, ⟨2, [4], 0⟩) :=
+  fnOk_of fn_element_stores (by decide +kernel)
+
+theorem ok_block_at : FnOk prog prims info (1752, ⟨0, [], 0⟩) :=
+  fnOk_of fn_block_at (by decide +kernel)
+
+theorem ok_element_loads : FnOk prog prims info (1753, ⟨2, [4], 0⟩) :=
+  fnOk_of fn_element_loads (by decide +kernel)
 
 theorem ok_lx_digit_sep : FnOk prog prims info (1754, ⟨3, [2], 1⟩) :=
   fnOk_of fn_lx_digit_sep (by decide +kernel)
@@ -167,6 +168,6 @@ theorem ok_p_cast : FnOk prog prims info (1787, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_cast (by decide +kernel)
 
 theorem chunk38 : AllFns prog prims info part38 :=
-  ⟨ok_p_postfix, ok_names_field_base, ok_expr_of, ok_eff_node, ok_stmt_first, ok_block_store, ok_block_load, ok_lx_digit_sep, ok_lx_exponent_sign, ok_lx_after_fraction, ok_lx_starts_with, ok_lx_longer, ok_lx_line_run, ok_lx_block, ok_t_colon, ok_starts_with_kind, ok_cons_of_mini_selfhost_List_mini_selfhost_Ty, ok_tys_weight, ok_float_code, ok_position, ok_prim_ty, ok_split_more, ok_find_alias_at, ok_item_import, ok_find_type_at, ok_p_generic_argument_type, ok_impl_gives, ok_goals_of, ok_peel, ok_primary_names, ok_p_postfix_end, ok_p_postfix_member, ok_member_args, ok_p_expr, ok_p_base, ok_p_assign, ok_assign_value, ok_is_level, ok_fold, ok_p_cast, trivial⟩
+  ⟨ok_expr_of, ok_eff_node, ok_stmt_first, ok_array_arg_checked, ok_element_stores, ok_block_at, ok_element_loads, ok_lx_digit_sep, ok_lx_exponent_sign, ok_lx_after_fraction, ok_lx_starts_with, ok_lx_longer, ok_lx_line_run, ok_lx_block, ok_t_colon, ok_starts_with_kind, ok_cons_of_mini_selfhost_List_mini_selfhost_Ty, ok_tys_weight, ok_float_code, ok_position, ok_prim_ty, ok_split_more, ok_find_alias_at, ok_item_import, ok_find_type_at, ok_p_generic_argument_type, ok_impl_gives, ok_goals_of, ok_peel, ok_primary_names, ok_p_postfix_end, ok_p_postfix_member, ok_member_args, ok_p_expr, ok_p_base, ok_p_assign, ok_assign_value, ok_is_level, ok_fold, ok_p_cast, trivial⟩
 
 end Lanius.Faithful.SelfTerm

@@ -483,6 +483,8 @@ theorem args_stops (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decl
     simp only [evalArgs] at ok
     split at ok
     · simp at ok
+    split at ok
+    · simp at ok
     rename_i first firstOk
     simp only [consArgs] at ok
     split at ok
@@ -1363,6 +1365,8 @@ theorem arms_stops {dst eid : Nat} {ty : SrcType} {scope : List Binding} {slot :
     simp only [evalArms] at ok
     split at ok
     · simp at ok
+    split at ok
+    · simp at ok
     rename_i s' scopeOk
     split at ok
     · simp at ok
@@ -1568,6 +1572,8 @@ theorem eff_let (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls s
   split at ok
   · simp at ok
   rename_i bb bodyOk
+  split at bodyOk
+  · simp at bodyOk
   simp only [evalLetInOf] at ok
   split at ok
   case isFalse => simp at ok

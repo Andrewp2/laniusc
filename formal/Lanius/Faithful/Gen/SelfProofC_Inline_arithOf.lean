@@ -15,6 +15,7 @@ public import Lanius.Faithful.Gen.SelfStmtC_arithShiftRight
 public import Lanius.Faithful.Gen.SelfStmtC_arithUint
 public import Lanius.Faithful.Gen.SelfStmtC_armScope
 public import Lanius.Faithful.Gen.SelfStmtC_evalSame
+public import Lanius.Faithful.Gen.SelfStmtC_evalSlotLimit
 public import Lanius.Faithful.Gen.SelfStmtC_floatApply
 public import Lanius.Faithful.Gen.SelfStmtC_lowerCallSig
 public import Lanius.Faithful.Gen.SelfStmtC_lowerTagged
@@ -100,8 +101,9 @@ theorem proof_copy_slots {prog : SrcProgram} {prims : Prims} {ix_copy_slots ix_S
   simp only [src_copy_slots] at h
   faithful [Lanius.Mini.Inline.copySlots]
 
-theorem step_eval_arm_in {prog : SrcProgram} {prims : Prims} {ix_eval_arm_in ix_SrcEff_eval ix_eval_same ix_eval_arm : Nat} (fn : prog.funcs[ix_eval_arm_in]? = some (src_eval_arm_in ix_SrcEff_eval ix_eval_same ix_eval_arm)) (np : prims.isPrim ix_eval_arm_in = false)
+theorem step_eval_arm_in {prog : SrcProgram} {prims : Prims} {ix_eval_arm_in ix_SrcEff_eval ix_eval_same ix_eval_slot_limit ix_eval_arm : Nat} (fn : prog.funcs[ix_eval_arm_in]? = some (src_eval_arm_in ix_SrcEff_eval ix_eval_same ix_eval_slot_limit ix_eval_arm)) (np : prims.isPrim ix_eval_arm_in = false)
     (ext_eval_same : Certified (∀ {n : Nat}, Stmt_eval_same prog prims ix_eval_same n))
+    (ext_eval_slot_limit : Certified (∀ {n : Nat}, Stmt_eval_slot_limit prog prims ix_eval_slot_limit n))
     (ext_eval_arm : Certified (∀ {n : Nat}, Stmt_eval_arm prog prims ix_eval_arm n)) {n : Nat}
     (ih_SrcEff_eval : Certified (Stmt_SrcEff_eval prog prims ix_SrcEff_eval n)) :
     Stmt_eval_arm_in prog prims ix_eval_arm_in (n + 1) := by

@@ -59,6 +59,7 @@ import all Lanius.Faithful.Gen.SelfSrcC_evalDivideSint
 import all Lanius.Faithful.Gen.SelfSrcC_evalHost
 import all Lanius.Faithful.Gen.SelfSrcC_evalNot
 import all Lanius.Faithful.Gen.SelfSrcC_evalSame
+import all Lanius.Faithful.Gen.SelfSrcC_evalSlotLimit
 import all Lanius.Faithful.Gen.SelfSrcC_extentAfter
 import all Lanius.Faithful.Gen.SelfSrcC_floatApply
 import all Lanius.Faithful.Gen.SelfSrcC_funcNeeds
@@ -304,6 +305,7 @@ import all Lanius.Faithful.Gen.SelfSrcF_wideOf
 import all Lanius.Faithful.Gen.SelfSrcRest
 import all Lanius.Faithful.Gen.SelfTypes
 import all Lanius.Mini.Compiler.P.withBudget
+import all Lanius.Mini.Compiler.P.bindingBytes
 import all Lanius.Mini.Compiler.P.compileArgs
 import all Lanius.Mini.Compiler.P.storeArray
 import all Lanius.Mini.Compiler.P.strStores

@@ -2,6 +2,7 @@ module
 
 public import Lanius.Faithful.Gen.SelfTermInfo
 public import Lanius.Faithful.Gen.SelfLookFn4
+import all Lanius.Faithful.Gen.SelfSrcC_strStores
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_findMethodAt
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_lxAfterFractionAt
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pArrayAfterCommaTrailing
@@ -12,7 +13,6 @@ import all Lanius.Faithful.Gen.SelfSrcF_Inline_pLeTail
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pModTail
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pSelfValue
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pStructFieldsMore
-import all Lanius.Faithful.Gen.SelfSrcF_Inline_positionAt
 import all Lanius.Faithful.Gen.SelfSrcF_basedDigits
 import all Lanius.Faithful.Gen.SelfSrcF_flExpFirst
 import all Lanius.Faithful.Gen.SelfSrcF_floatTyped
@@ -25,7 +25,6 @@ import all Lanius.Faithful.Gen.SelfSrcF_purePart
 import all Lanius.Faithful.Gen.SelfSrcF_scalarOf
 import all Lanius.Faithful.Gen.SelfSrcF_stringOpen
 import all Lanius.Faithful.Gen.SelfSrcF_tryLet
-import all Lanius.Faithful.Gen.SelfSrcF_variantIn
 import all Lanius.Faithful.Gen.SelfSrcF_wideOf
 import all Lanius.Faithful.Gen.SelfTypes
 
@@ -144,25 +143,25 @@ theorem ok_stmt_of : FnOk prog prims info (1820, ⟨36, [0], 0⟩) :=
 theorem ok_then_of : FnOk prog prims info (1821, ⟨1, [], 0⟩) :=
   fnOk_of fn_then_of (by decide +kernel)
 
-theorem ok_lx_after_fraction_at : FnOk prog prims info (1822, ⟨7, [], 0⟩) :=
+theorem ok_block_store : FnOk prog prims info (1822, ⟨1, [], 0⟩) :=
+  fnOk_of fn_block_store (by decide +kernel)
+
+theorem ok_block_load : FnOk prog prims info (1823, ⟨1, [], 0⟩) :=
+  fnOk_of fn_block_load (by decide +kernel)
+
+theorem ok_lx_after_fraction_at : FnOk prog prims info (1824, ⟨7, [], 0⟩) :=
   fnOk_of fn_lx_after_fraction_at (by decide +kernel)
 
-theorem ok_lx_line_run_at : FnOk prog prims info (1823, ⟨2, [1], 1⟩) :=
+theorem ok_lx_line_run_at : FnOk prog prims info (1825, ⟨2, [1], 1⟩) :=
   fnOk_of fn_lx_line_run_at (by decide +kernel)
 
-theorem ok_lx_block_at : FnOk prog prims info (1824, ⟨2, [1], 2⟩) :=
+theorem ok_lx_block_at : FnOk prog prims info (1826, ⟨2, [1], 2⟩) :=
   fnOk_of fn_lx_block_at (by decide +kernel)
 
-theorem ok_ty_weight : FnOk prog prims info (1826, ⟨5, [2], 0⟩) :=
+theorem ok_ty_weight : FnOk prog prims info (1828, ⟨5, [2], 0⟩) :=
   fnOk_of fn_ty_weight (by decide +kernel)
 
-theorem ok_position_at : FnOk prog prims info (1827, ⟨2, [1], 1⟩) :=
-  fnOk_of fn_position_at (by decide +kernel)
-
-theorem ok_src_ty : FnOk prog prims info (1828, ⟨0, [], 0⟩) :=
-  fnOk_of fn_src_ty (by decide +kernel)
-
 theorem chunk39 : AllFns prog prims info part39 :=
-  ⟨ok_casts, ok_p_neg, ok_negated, ok_p_not, ok_notted, ok_postfix_value, ok_p_group, ok_p_ident, ok_ident_expr, ok_p_self_value, ok_local_expr, ok_local_of, ok_p_int, ok_int_literal, ok_p_true, ok_p_false, ok_p_char, ok_char_literal, ok_p_float, ok_float_literal, ok_eff_fold, ok_eff_casts, ok_x_neg_of, ok_x_not_of, ok_eff_postfix, ok_eff_ident, ok_p_match_expr, ok_eff_match, ok_p_array_lit, ok_eff_array, ok_p_let_stmt, ok_let_first, ok_stmt_of, ok_then_of, ok_lx_after_fraction_at, ok_lx_line_run_at, ok_lx_block_at, ok_ty_weight, ok_position_at, ok_src_ty, trivial⟩
+  ⟨ok_casts, ok_p_neg, ok_negated, ok_p_not, ok_notted, ok_postfix_value, ok_p_group, ok_p_ident, ok_ident_expr, ok_p_self_value, ok_local_expr, ok_local_of, ok_p_int, ok_int_literal, ok_p_true, ok_p_false, ok_p_char, ok_char_literal, ok_p_float, ok_float_literal, ok_eff_fold, ok_eff_casts, ok_x_neg_of, ok_x_not_of, ok_eff_postfix, ok_eff_ident, ok_p_match_expr, ok_eff_match, ok_p_array_lit, ok_eff_array, ok_p_let_stmt, ok_let_first, ok_stmt_of, ok_then_of, ok_block_store, ok_block_load, ok_lx_after_fraction_at, ok_lx_line_run_at, ok_lx_block_at, ok_ty_weight, trivial⟩
 
 end Lanius.Faithful.SelfTerm

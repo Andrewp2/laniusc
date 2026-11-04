@@ -4,6 +4,7 @@ import Lanius.Faithful.Gen.SelfSrcC_withBudget
 import Lanius.Faithful.Gen.SelfStmtC_withBudget
 import Lanius.Faithful.GenB.SelfBStmtC_Inline_blockLeft
 import Lanius.Faithful.GenB.SelfBStmtC_Inline_lowerSetScalar
+import Lanius.Faithful.GenB.SelfBStmtC_bindingBytes
 import Lanius.Faithful.GenB.SelfBStmtC_compileArgs
 import Lanius.Faithful.GenB.SelfBStmtC_withBudget
 import Lanius.Faithful.GenB.SelfBStmtN4

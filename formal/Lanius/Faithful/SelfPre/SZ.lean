@@ -585,7 +585,7 @@ theorem sz_le_SrcProgram_statics (s : Lanius.Mini.SrcProgram) : sz s.statics ≤
   omega
 
 instance : SZ Lanius.Mini.Binding := ⟨fun s => sz s.ty⟩
-@[simp, sz_simp] theorem sz_Binding_mk (a0 : Nat) (a1 : Nat) (a2 : Lanius.Mini.SrcType) : sz (Lanius.Mini.Binding.mk a0 a1 a2) = sz a2 := rfl
+@[simp, sz_simp] theorem sz_Binding_mk (a0 : Nat) (a1 : Nat) (a2 : Lanius.Mini.SrcType) (a3 : Option Nat) : sz (Lanius.Mini.Binding.mk a0 a1 a2 a3) = sz a2 := rfl
 theorem sz_le_Binding_ty (s : Lanius.Mini.Binding) : sz s.ty ≤ sz s := by
   show _ ≤ sz s.ty
   omega

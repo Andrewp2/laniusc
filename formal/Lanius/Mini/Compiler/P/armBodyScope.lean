@@ -14,7 +14,7 @@ def armBodyScope (binds : Bool) (binder : Nat) (ty : SrcType) (next : Nat) (scop
   if !binds then
     scope
   else
-    ({ id := binder, slot := next, ty := ty } : Binding) :: scope
+    ({ id := binder, slot := next, ty := ty, home := none } : Binding) :: scope
 
 def unitPayload (unit : Bool) : Option (List Expr) :=
   if unit then
