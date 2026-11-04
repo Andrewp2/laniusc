@@ -21,12 +21,12 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_args_then (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Nat} {x1 : List Lanius.Mini.Expr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 151 RepNat) x0 v0 → (RepList 93 RepExpr) x1 v1 →
-    (RepOption 151 RepNat) (Lanius.Mini.Inline.argsThen x0 x1) w
+  ∀ {x0 : Option Nat} {x1 : List Lanius.Mini.Expr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 135 RepNat) x0 v0 → (RepList 93 RepExpr) x1 v1 →
+    (RepOption 135 RepNat) (Lanius.Mini.Inline.argsThen x0 x1) w
 
 abbrev Stmt_expr_then (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Nat} {x1 : Lanius.Mini.Expr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 151 RepNat) x0 v0 → RepExpr x1 v1 →
-    (RepOption 151 RepNat) (Lanius.Mini.Inline.exprThen x0 x1) w
+  ∀ {x0 : Option Nat} {x1 : Lanius.Mini.Expr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 135 RepNat) x0 v0 → RepExpr x1 v1 →
+    (RepOption 135 RepNat) (Lanius.Mini.Inline.exprThen x0 x1) w
 
 abbrev Stmt_ite_code (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {x2 : Nat} {x3 : Nat} {x4 : List Lanius.Mini.Instr} {x5 : Lanius.Mini.Stmt} {x6 : Lanius.Mini.Stmt} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → RepNat x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepNat x3 v3 → (RepList 56 RepInstr) x4 v4 → RepStmt x5 v5 → RepStmt x6 v6 →
@@ -41,7 +41,7 @@ abbrev Stmt_link_fitting (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
     (RepOption 52 RepBinary) (Lanius.Mini.Inline.linkFitting x0 x1) w
 
 abbrev Stmt_lookup_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Binding} {x1 : List Lanius.Mini.Binding} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepBinding x0 v0 → (RepList 136 RepBinding) x1 v1 → RepNat x2 v2 →
+  ∀ {x0 : Lanius.Mini.Binding} {x1 : List Lanius.Mini.Binding} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepBinding x0 v0 → (RepList 137 RepBinding) x1 v1 → RepNat x2 v2 →
     (RepOption 154 RepBinding) (Lanius.Mini.Inline.lookupAt x0 x1 x2) w
 
 abbrev Stmt_loop_code (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -54,18 +54,18 @@ abbrev Stmt_offset_after (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
 
 abbrev Stmt_room_next (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {x2 : List Lanius.Mini.Code} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepNat x1 v1 → (RepList 54 RepCode) x2 v2 →
-    (RepOption 151 RepNat) (Lanius.Mini.Inline.roomNext x0 x1 x2) w
+    (RepOption 135 RepNat) (Lanius.Mini.Inline.roomNext x0 x1 x2) w
 
 abbrev Stmt_seq_code (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {x2 : Nat} {x3 : Nat} {x4 : List Lanius.Mini.Instr} {x5 : Lanius.Mini.Stmt} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepNat x3 v3 → (RepList 56 RepInstr) x4 v4 → RepStmt x5 v5 →
     (RepList 56 RepInstr) (Lanius.Mini.Inline.seqCode x0 x1 x2 x3 x4 x5) w
 
 abbrev Stmt_spend_then (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 151 RepNat) x0 v0 → RepNat x1 v1 →
-    (RepOption 151 RepNat) (Lanius.Mini.Inline.spendThen x0 x1) w
+  ∀ {x0 : Option Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 135 RepNat) x0 v0 → RepNat x1 v1 →
+    (RepOption 135 RepNat) (Lanius.Mini.Inline.spendThen x0 x1) w
 
 abbrev Stmt_stmt_then (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Nat} {x1 : Lanius.Mini.Stmt} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 151 RepNat) x0 v0 → RepStmt x1 v1 →
-    (RepOption 151 RepNat) (Lanius.Mini.Inline.stmtThen x0 x1) w
+  ∀ {x0 : Option Nat} {x1 : Lanius.Mini.Stmt} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 135 RepNat) x0 v0 → RepStmt x1 v1 →
+    (RepOption 135 RepNat) (Lanius.Mini.Inline.stmtThen x0 x1) w
 
 end Lanius.Faithful.SelfCert

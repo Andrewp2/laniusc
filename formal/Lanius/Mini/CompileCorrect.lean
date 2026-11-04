@@ -707,10 +707,12 @@ theorem compileFunc_spec {arities : List Arity} {func : Func} {code : Code}
           func.body ∧ 0 < func.results ∧ func.results ≤ func.locals := by
   simp only [compileFunc] at compiled
   split at compiled
-  · rename_i checks
-    cases compiled
-    simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
-    exact ⟨checks.1.1.1.1.1, checks.1.1.2, rfl, checks.1.2, rfl, checks.1.1.1.1.2, checks.1.1.1.2⟩
+  · split at compiled
+    · rename_i checks
+      cases compiled
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+      exact ⟨checks.1.1.1.1, checks.1.2, rfl, checks.2, rfl, checks.1.1.1.2, checks.1.1.2⟩
+    · contradiction
   · contradiction
 
 /-- A compiled function, entered with its parameters in the first slots, runs

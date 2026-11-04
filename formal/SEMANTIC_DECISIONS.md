@@ -2765,6 +2765,58 @@ without the check (`compileProgramUnchecked`): it accepts the same programs
 with the same binary. `stmtRoom_eq` gives the check's closed form,
 `stmtRoom room s = if s.weight ≤ room then some (room - s.weight) else none`.
 
+
+## A function's frame block checked as it adds up (decided 11-03, F14)
+
+`frame_block` added each parameter's and each let's block bytes
+(`decl_bytes`, at most `8 * 2^22` each) over the whole source body: every
+let, both branches of an `if` and every arm. It runs in lowering, before
+`compile_func`'s weight check (`room_fits`) and with only `slice_uses`
+charged before it, so the number of lets was bounded only by the budget and
+the sum could pass 2^64 (leafB, PreCompileSourceV4/NOTES.md). Now
+`params_room` and `block_room` take each declaration's bytes out of
+`block_limit()` (2^31 - 1) as they add up, the way `room_after` takes each
+function's code out of the image limit, and fail at once when it runs out.
+`frame_block` is then the sum when it fits and 2^31 when not, so it is at
+most 2^31 and so are the needs' addends.
+
+The needs (`need_round`) add a block to a callee's need each round, for up
+to one round per function, so they too had no bound below 2^64 (leafB,
+V4/NOTES). They are saturated: `need_capped` caps each round's need at
+`need_limit()` (2^40, more frame memory than any binary has: `elf_fits`
+keeps the stack, and so frame memory, below 2^40), and a function whose need
+in the round before was at the limit stays there, so a need below the limit
+at the end was below it in every round. `lower_func` rejects a function
+whose need reaches the limit. A block is at most 2^31 and a callee's need at
+most the limit, so no sum passes 2^64.
+
+`lower_func` already rejected a block of 2^31 or more, and `lower_funcs`
+fails when one function does. So `compileSource_unchecked`
+(`Lanius/Mini/FrameRoom.lean`) shows that `compileSource` is the compiler
+with the unchecked sums and needs (`compileSourceUnchecked`) for a program
+whose needs are below the limit (`NeedsBelow`), and rejects the others: a
+program with a function that needs 2^40 bytes of frame memory or more, which
+no binary could run. No real program comes near it.
+
+## A function's room checked before its temporaries are counted (decided 11-03, F14)
+
+`compile_func` added a function's locals and its body's temporaries
+(`Stmt.temps`) before any check, and the room check (`room_fits`, above)
+came last. The compile's pre lemmas then needed the temporaries below 2^62
+from the source: `LowerFuncsTemps` (lowering's result has at most its cost
+in temporaries) carried that bound, and it would have needed a new generated
+measure through the whole lowering. Now `compile_func` asks `room_fits`
+first and counts the slots only inside it. A body's temporaries are at most
+its weight (`Stmt.temps_le_weight` in `Lanius/Mini/Room.lean`), so a body
+that passes the check has at most `image_limit` of them
+(`Stmt.temps_le_of_roomFits`), and the sum stays far below 2^64 with no
+bound from the lowering. `LowerFuncsTemps` is no longer needed.
+
+The checks are pure, so their order changes no result:
+`compileFunc_checksLast` proves that `compileFunc` is the compiler with the
+room check last (`compileFuncChecksLast`, the order before this change).
+
+
 ## Budget certificates (decided 11-01, F14)
 
 `CompileBounded T` asks that the guarded run of `progW` has a value

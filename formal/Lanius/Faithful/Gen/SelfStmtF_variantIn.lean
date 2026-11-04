@@ -45,7 +45,7 @@ abbrev Stmt_variant_by_path (prog : SrcProgram) (prims : Prims) (ix n : Nat) : P
     (RepOption 284 RepVariantAt) (Lanius.Mini.variantByPath x0 x1) w
 
 abbrev Stmt_variant_in (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.TypeDecl} {x1 : Option Nat} {x2 : List Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 105 RepTypeDecl) x0 v0 → (RepOption 151 RepNat) x1 v1 → (RepList 25 RepNat) x2 v2 →
+  ∀ {x0 : List Lanius.Mini.TypeDecl} {x1 : Option Nat} {x2 : List Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 105 RepTypeDecl) x0 v0 → (RepOption 135 RepNat) x1 v1 → (RepList 25 RepNat) x2 v2 →
     (RepOption 284 RepVariantAt) (Lanius.Mini.variantIn x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

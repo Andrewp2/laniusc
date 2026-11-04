@@ -82,7 +82,7 @@ import all Lanius.Mini.Compiler.P.storeArray
 import all Lanius.Mini.Compiler.P.strStores
 import all Lanius.Mini.Compiler.P.arrayCallSig
 import all Lanius.Mini.Compiler.P.bindingBytes
-import all Lanius.Mini.Compiler.P.needRound
+import all Lanius.Mini.Compiler.P.needCapped
 import all Lanius.Mini.Compiler.P.needsAfter
 import all Lanius.Mini.Compiler.P.storeEvalWord
 import all Lanius.Mini.Compiler.P.storeType

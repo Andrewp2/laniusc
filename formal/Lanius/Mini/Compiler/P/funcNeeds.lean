@@ -3,6 +3,7 @@ module
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.arrayCallSig
+import Lanius.Mini.Compiler.P.needCapped
 import Lanius.Mini.Compiler.P.needsAfter
 
 public section
@@ -15,11 +16,6 @@ namespace Lanius.Mini
 /-- Each function's need: the frame memory a call to it takes, its block and its callees' (TRUSTED_BASE "Frame room"). -/
 def funcNeeds (funcs : List SrcFunc) : List Nat :=
   needsAfter funcs [] funcs.length
-
-def restNeeds (needs : List Nat) : List Nat :=
-  match needs with
-  | [] => []
-  | n :: rest => rest
 
 /-- The signatures with these needs (0 past their end). -/
 def sigsWith (funcs : List SrcFunc) (needs : List Nat) : List Sig :=

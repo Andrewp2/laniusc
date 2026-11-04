@@ -25,7 +25,7 @@ abbrev Stmt_array_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     (RepOption 258 RepMEff) (Lanius.Mini.arrayOf x0 x1) w
 
 abbrev Stmt_array_repeat_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.ArrayParts} {x1 : Option Nat} {x2 : Option Lanius.Mini.MEff} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepArrayParts x0 v0 → (RepOption 151 RepNat) x1 v1 → (RepOption 258 RepMEff) x2 v2 →
+  ∀ {x0 : Lanius.Mini.ArrayParts} {x1 : Option Nat} {x2 : Option Lanius.Mini.MEff} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepArrayParts x0 v0 → (RepOption 135 RepNat) x1 v1 → (RepOption 258 RepMEff) x2 v2 →
     (RepOption 258 RepMEff) (Lanius.Mini.arrayRepeatOf x0 x1 x2) w
 
 abbrev Stmt_diverge_call (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -49,7 +49,7 @@ abbrev Stmt_inst_bound (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
     (RepOption 181 RepInst) (Lanius.Mini.instBound x0 x1 x2 x3 x4 x5 x6 x7) w
 
 abbrev Stmt_match_tys_or_none (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List (List Nat)} {x3 : List Lanius.Mini.CTree} {x4 : Option (List Lanius.Mini.Ty)} {x5 : List Lanius.Mini.Bind} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → (RepList 83 RepCTree) x3 v3 → (RepOption 213 (RepList 142 RepTy)) x4 v4 → (RepList 275 RepBind) x5 v5 →
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List (List Nat)} {x3 : List Lanius.Mini.CTree} {x4 : Option (List Lanius.Mini.Ty)} {x5 : List Lanius.Mini.Bind} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → (RepList 83 RepCTree) x3 v3 → (RepOption 213 (RepList 143 RepTy)) x4 v4 → (RepList 275 RepBind) x5 v5 →
     (RepOption 274 (RepList 275 RepBind)) (Lanius.Mini.matchTysOrNone x0 x1 x2 x3 x4 x5) w
 
 end Lanius.Faithful.SelfCert

@@ -103,10 +103,10 @@ theorem step_arg_slots {prog : SrcProgram} {prims : Prims} {ix_arg_slots ix_plus
   simp only [src_arg_slots] at h
   faithful [Lanius.Mini.argSlots]
 
-theorem step_args_room {prog : SrcProgram} {prims : Prims} {ix_args_room ix_unbox_of_mini_selfhost_List_mini_selfhost_Expr ix_expr_then ix_spend ix_args_then : Nat} (fn : prog.funcs[ix_args_room]? = some (src_args_room ix_unbox_of_mini_selfhost_List_mini_selfhost_Expr ix_expr_then ix_spend ix_args_then)) (np : prims.isPrim ix_args_room = false)
+theorem step_args_room {prog : SrcProgram} {prims : Prims} {ix_args_room ix_spend ix_unbox_of_mini_selfhost_List_mini_selfhost_Expr ix_expr_then ix_args_then : Nat} (fn : prog.funcs[ix_args_room]? = some (src_args_room ix_spend ix_unbox_of_mini_selfhost_List_mini_selfhost_Expr ix_expr_then ix_args_then)) (np : prims.isPrim ix_args_room = false)
+    (ext_spend : Certified (∀ {n : Nat}, Stmt_spend prog prims ix_spend n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Expr prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Expr n))
-    (ext_expr_then : Certified (∀ {n : Nat}, Stmt_expr_then prog prims ix_expr_then n))
-    (ext_spend : Certified (∀ {n : Nat}, Stmt_spend prog prims ix_spend n)) {n : Nat}
+    (ext_expr_then : Certified (∀ {n : Nat}, Stmt_expr_then prog prims ix_expr_then n)) {n : Nat}
     (ih_args_then : Certified (Stmt_args_then prog prims ix_args_then n)) :
     Stmt_args_room prog prims ix_args_room (n + 1) := by
   intro x0 x1 v0 v1 w h r0 r1
@@ -169,9 +169,9 @@ theorem step_compile_stmt {prog : SrcProgram} {prims : Prims} {ix_compile_stmt i
   simp only [src_compile_stmt] at h
   faithful [Lanius.Mini.compileStmt]
 
-theorem step_expr_room {prog : SrcProgram} {prims : Prims} {ix_expr_room ix_unbox_of_mini_selfhost_Expr ix_expr_then ix_spend : Nat} (fn : prog.funcs[ix_expr_room]? = some (src_expr_room ix_unbox_of_mini_selfhost_Expr ix_expr_then ix_spend)) (np : prims.isPrim ix_expr_room = false)
-    (ext_unbox_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_Expr prog prims ix_unbox_of_mini_selfhost_Expr n))
-    (ext_spend : Certified (∀ {n : Nat}, Stmt_spend prog prims ix_spend n)) {n : Nat}
+theorem step_expr_room {prog : SrcProgram} {prims : Prims} {ix_expr_room ix_spend ix_unbox_of_mini_selfhost_Expr ix_expr_then : Nat} (fn : prog.funcs[ix_expr_room]? = some (src_expr_room ix_spend ix_unbox_of_mini_selfhost_Expr ix_expr_then)) (np : prims.isPrim ix_expr_room = false)
+    (ext_spend : Certified (∀ {n : Nat}, Stmt_spend prog prims ix_spend n))
+    (ext_unbox_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_Expr prog prims ix_unbox_of_mini_selfhost_Expr n)) {n : Nat}
     (ih_expr_then : Certified (Stmt_expr_then prog prims ix_expr_then n)) :
     Stmt_expr_room prog prims ix_expr_room (n + 1) := by
   intro x0 x1 v0 v1 w h r0 r1
@@ -207,10 +207,10 @@ theorem proof_spend {prog : SrcProgram} {prims : Prims} {ix_spend ix_minus : Nat
   simp only [src_spend] at h
   faithful [Lanius.Mini.spend]
 
-theorem step_stmt_room {prog : SrcProgram} {prims : Prims} {ix_stmt_room ix_unbox_of_mini_selfhost_Stmt ix_expr_then ix_spend ix_stmt_then ix_args_then ix_spend_then : Nat} (fn : prog.funcs[ix_stmt_room]? = some (src_stmt_room ix_unbox_of_mini_selfhost_Stmt ix_stmt_room ix_expr_then ix_spend ix_stmt_then ix_args_then ix_spend_then)) (np : prims.isPrim ix_stmt_room = false)
+theorem step_stmt_room {prog : SrcProgram} {prims : Prims} {ix_stmt_room ix_spend ix_unbox_of_mini_selfhost_Stmt ix_expr_then ix_stmt_then ix_args_then ix_spend_then : Nat} (fn : prog.funcs[ix_stmt_room]? = some (src_stmt_room ix_spend ix_unbox_of_mini_selfhost_Stmt ix_stmt_room ix_expr_then ix_stmt_then ix_args_then ix_spend_then)) (np : prims.isPrim ix_stmt_room = false)
+    (ext_spend : Certified (∀ {n : Nat}, Stmt_spend prog prims ix_spend n))
     (ext_unbox_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_Stmt prog prims ix_unbox_of_mini_selfhost_Stmt n))
     (ext_expr_then : Certified (∀ {n : Nat}, Stmt_expr_then prog prims ix_expr_then n))
-    (ext_spend : Certified (∀ {n : Nat}, Stmt_spend prog prims ix_spend n))
     (ext_args_then : Certified (∀ {n : Nat}, Stmt_args_then prog prims ix_args_then n))
     (ext_spend_then : Certified (∀ {n : Nat}, Stmt_spend_then prog prims ix_spend_then n)) {n : Nat}
     (ih_stmt_room : Certified (Stmt_stmt_room prog prims ix_stmt_room n))

@@ -20,6 +20,92 @@ open Lanius.Faithful.Budget
 
 noncomputable section
 
+mutual
+def Cost_covers_all : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.TypeDecl → List (List Nat) → List Lanius.Mini.CTree → Nat
+  | 0, x11, x24, x39, x52, x78 => 18446744073709551616
+  | n + 1, x11, x24, x39, x52, x78 => (match x52 with | [] => 0 | x197 :: x200 => ((Cost_covered_by n x11 x24 x39 x197 x78) + (Cost_covers_all n x11 x24 x39 x200 x78)))
+termination_by structural fuel => fuel
+end
+
+end
+
+noncomputable section
+
+def Cost_covers_enum : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.TypeDecl → List Lanius.Mini.CTree → Nat
+  | 0, x12, x25, x40, x53 => 18446744073709551616
+  | n + 1, x12, x25, x40, x53 => (if x40.isEnum = true then (Cost_covers_all n x12 x25 x40 x40.variants x53) else 0)
+
+end
+
+noncomputable section
+
+def Cost_covers_decl : Nat → Nat → Lanius.Mini.FrontEnv → Option Lanius.Mini.TypeDecl → List Lanius.Mini.CTree → Nat
+  | 0, x12, x25, x40, x75 => 18446744073709551616
+  | n + 1, x12, x25, x40, x75 => (match x40 with | some x192 => (Cost_covers_enum n x12 x25 x192 x75) | none => 0)
+
+end
+
+noncomputable section
+
+def Cost_covers : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.Ty → List Lanius.Mini.CTree → Nat
+  | 0, x7, x20, x35, x43 => 18446744073709551616
+  | n + 1, x7, x20, x35, x43 => (match (Lanius.Mini.namedParts x35) with | some x174 => (Cost_covers_decl n x7 x20 (x20.decls.types[x174.decl]?) x43) | none => 0)
+
+end
+
+noncomputable section
+
+def Cost_wild_inner : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.CTree → List Lanius.Mini.CTree → Nat → Lanius.Mini.CTree → Lanius.Mini.Ty → List Lanius.Mini.CTree → Lanius.Mini.CTree → Nat
+  | 0, x11, x24, x39, x49, x66, x76, x86, x94, x113 => 18446744073709551616
+  | n + 1, x11, x24, x39, x49, x66, x76, x86, x94, x113 => ((Cost_ends_wild n x94) + (if (Lanius.Mini.endsWild x94) = true then (Cost_nest_arm n x39 x49 x66 x76 x94) else ((Cost_covers n x11 x24 x86 x94) + (Cost_known_use n x11 x39 x49 x66 x76 x94 x113 (Lanius.Mini.covers x11 x24 x86 x94)))))
+
+end
+
+noncomputable section
+
+def Pre_wild_inner : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.CTree → List Lanius.Mini.CTree → Nat → Lanius.Mini.CTree → Lanius.Mini.Ty → List Lanius.Mini.CTree → Lanius.Mini.CTree → Nat → Prop
+  | 0, x11, x24, x39, x49, x66, x76, x86, x94, x113, b => True
+  | n + 1, x11, x24, x39, x49, x66, x76, x86, x94, x113, b => (∀ b1 : Nat, (Cost_ends_wild n x94) < b → b1 = b - (Cost_ends_wild n x94) → (if (Lanius.Mini.endsWild x94) = true then True else (∀ b3 : Nat, (Cost_covers n x11 x24 x86 x94) < b1 → b3 = b1 - (Cost_covers n x11 x24 x86 x94) → (Pre_known_use n x11 x39 x49 x66 x76 x94 x113 (Lanius.Mini.covers x11 x24 x86 x94) b3))))
+
+end
+
+noncomputable section
+
+def Cost_nest_inner : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.CTree → List Lanius.Mini.CTree → Nat → Lanius.Mini.CTree → Lanius.Mini.Ty → Option (List Lanius.Mini.CTree) → Option Lanius.Mini.CTree → Nat
+  | 0, x11, x24, x39, x49, x66, x76, x86, x94, x136 => 18446744073709551616
+  | n + 1, x11, x24, x39, x49, x66, x76, x86, x94, x136 => (match x94 with | some x264 => (match x136 with | some x386 => (Cost_wild_inner n x11 x24 x39 x49 x66 x76 x86 x264 x386) | none => (Cost_nest_arm n x39 x49 x66 x76 x264)) | none => 0)
+
+end
+
+noncomputable section
+
+def Pre_nest_inner : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.CTree → List Lanius.Mini.CTree → Nat → Lanius.Mini.CTree → Lanius.Mini.Ty → Option (List Lanius.Mini.CTree) → Option Lanius.Mini.CTree → Nat → Prop
+  | 0, x11, x24, x39, x49, x66, x76, x86, x94, x136, b => True
+  | n + 1, x11, x24, x39, x49, x66, x76, x86, x94, x136, b => (match x94 with | some x264 => (match x136 with | some x386 => (Pre_wild_inner n x11 x24 x39 x49 x66 x76 x86 x264 x386 b) | none => True) | none => True)
+
+end
+
+noncomputable section
+
+def Cost_column_fit : Nat → Bool → Option Lanius.Mini.CTree → Option (List Lanius.Mini.CTree) → Nat
+  | 0, x11, x23, x55 => 18446744073709551616
+  | n + 1, x11, x23, x55 => (if x11 = true then (match x23 with | some x221 => (Cost_cons_tree_tail n x221 x55) | none => 0) else 0)
+
+end
+
+noncomputable section
+
+mutual
+def Pre_row_fits : Nat → Lanius.Mini.FrontEnv → List Lanius.Mini.CTree → List Lanius.Mini.CTree → Nat → Nat → Bool → Nat → Prop
+  | 0, x9, x24, x41, x58, x68, x78, b => True
+  | n + 1, x9, x24, x41, x58, x68, x78, b => (match x24 with | [] => True | x237 :: x240 => (match x41 with | [] => True | x305 :: x308 => (if (Lanius.Mini.colFits x9 x237 x305 ((decide (x58 = x68))) x78) = true then ((Pre_plus n x58 1 b) ∧ (Pre_row_fits n x9 x240 x308 (x58 + 1) x68 x78 b)) else True)))
+termination_by structural fuel => fuel
+end
+
+end
+
+noncomputable section
+
 def Cost_sub_arm : Nat → Lanius.Mini.CTree → Lanius.Mini.CTree → Nat
   | 0, x8, x18 => 18446744073709551616
   | n + 1, x8, x18 => ((Cost_single_of_mini_selfhost_CTree n (Lanius.Mini.kid x8 2)) + ((Cost_cons_of_mini_selfhost_CTree n (Lanius.Mini.kid x8 1) ([(Lanius.Mini.kid x8 2)])) + ((Cost_cons_of_mini_selfhost_CTree n x18 ((Lanius.Mini.kid x8 1) :: ([(Lanius.Mini.kid x8 2)]))) + 1)))

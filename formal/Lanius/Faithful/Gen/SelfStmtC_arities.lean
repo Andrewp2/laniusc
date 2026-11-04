@@ -62,10 +62,10 @@ abbrev Stmt_Word_rex (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev Stmt_arities (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Func} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 87 RepFunc) x0 v0 →
-    (RepList 147 RepArity) (Lanius.Mini.arities x0) w
+    (RepList 148 RepArity) (Lanius.Mini.arities x0) w
 
 abbrev Stmt_compile_funcs (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Arity} {x1 : List Lanius.Mini.Func} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 147 RepArity) x0 v0 → (RepList 87 RepFunc) x1 v1 →
+  ∀ {x0 : List Lanius.Mini.Arity} {x1 : List Lanius.Mini.Func} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 148 RepArity) x0 v0 → (RepList 87 RepFunc) x1 v1 →
     (RepOption 134 (RepList 54 RepCode)) (Lanius.Mini.compileFuncs x0 x1) w
 
 abbrev Stmt_fsp_load (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

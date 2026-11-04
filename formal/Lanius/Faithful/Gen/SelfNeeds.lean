@@ -17,6 +17,7 @@ import all Lanius.Faithful.Gen.SelfSrcC_Expr_agrees
 import all Lanius.Faithful.Gen.SelfSrcC_FArith_opcode
 import all Lanius.Faithful.Gen.SelfSrcC_FloatTy_rex
 import all Lanius.Faithful.Gen.SelfSrcC_Inline_arithOf
+import all Lanius.Faithful.Gen.SelfSrcC_Inline_blockLeft
 import all Lanius.Faithful.Gen.SelfSrcC_Inline_factOr
 import all Lanius.Faithful.Gen.SelfSrcC_Inline_lowerSetScalar
 import all Lanius.Faithful.Gen.SelfSrcC_Lists_empty
@@ -85,7 +86,8 @@ import all Lanius.Faithful.Gen.SelfSrcC_lowerSlice
 import all Lanius.Faithful.Gen.SelfSrcC_lowerTagged
 import all Lanius.Faithful.Gen.SelfSrcC_matchDst
 import all Lanius.Faithful.Gen.SelfSrcC_matchVariants
-import all Lanius.Faithful.Gen.SelfSrcC_needRound
+import all Lanius.Faithful.Gen.SelfSrcC_needCapped
+import all Lanius.Faithful.Gen.SelfSrcC_needLimit
 import all Lanius.Faithful.Gen.SelfSrcC_needsAfter
 import all Lanius.Faithful.Gen.SelfSrcC_optimizeIte
 import all Lanius.Faithful.Gen.SelfSrcC_optimizeLeft
@@ -297,6 +299,7 @@ import all Lanius.Faithful.Gen.SelfSrcF_wideOf
 import all Lanius.Faithful.Gen.SelfSrcRest
 import all Lanius.Faithful.Gen.SelfTypes
 import all Lanius.Mini.Compiler.P.withBudget
+import all Lanius.Mini.Compiler.P.compileArgs
 import all Lanius.Mini.Compiler.P.storeArray
 import all Lanius.Mini.Compiler.P.strStores
 import all Lanius.Mini.Compiler.P.SrcType_same

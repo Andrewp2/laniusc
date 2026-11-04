@@ -21,6 +21,17 @@ open Lanius.Faithful.Budget
 noncomputable section
 
 mutual
+def Cost_close_stmt : Nat → Nat → Lanius.Mini.Tables → Lanius.Mini.MStmt → Nat
+  | 0, x11, x24, x35 => 18446744073709551616
+  | n + 1, x11, x24, x35 => (match x35 with | .mNop => 0 | .mLet x143 x147 x151 x154 => ((Cost_close_ty n x11 x24 x147) + ((Cost_close_stmt n x11 x24 x154) + (Cost_let_closed n x143 (Lanius.Mini.closeTy x11 x24 x147) x151 (Lanius.Mini.closeStmt x11 x24 x154)))) | .mLetStruct x258 x262 x266 x270 => ((Cost_close_ty n x11 x24 x262) + ((Cost_close_stmt n x11 x24 x270) + (Cost_let_struct_closed n x258 (Lanius.Mini.closeTy x11 x24 x262) x266 (Lanius.Mini.closeStmt x11 x24 x270)))) | .mLetCall x380 x384 x388 x394 x400 => ((Cost_close_ty n x11 x24 x384) + ((Cost_close_stmt n x11 x24 x400) + (Cost_let_call_closed n x380 (Lanius.Mini.closeTy x11 x24 x384) (Lanius.Mini.instIndex x24.fns x388 0) x394 (Lanius.Mini.closeStmt x11 x24 x400)))) | .mLetEnum x538 x542 x546 x549 x553 => ((Cost_close_ty n x11 x24 x542) + ((Cost_close_stmt n x11 x24 x553) + (Cost_let_enum_closed n x538 (Lanius.Mini.closeTy x11 x24 x542) x546 x549 (Lanius.Mini.closeStmt x11 x24 x553)))) | .mLetMatch x665 x669 x673 x676 x681 x687 => ((Cost_close_ty n x11 x24 x669) + ((Cost_close_ty n x11 x24 x676) + ((Cost_close_stmt n x11 x24 x687) + (Cost_let_match_closed n x665 (Lanius.Mini.closeTy x11 x24 x669) x673 (Lanius.Mini.srcEnumId ((Lanius.Mini.closeTy x11 x24 x676))) x681 (Lanius.Mini.closeStmt x11 x24 x687))))) | .mSet x834 x838 => 0 | .mSetField x880 x884 x887 => 0 | .mSetCall x936 x940 x946 => 0 | .mThen x1024 x1027 => ((Cost_close_stmt n x11 x24 x1024) + ((Cost_close_stmt n x11 x24 x1027) + (Cost_then_closed n (Lanius.Mini.closeStmt x11 x24 x1024) (Lanius.Mini.closeStmt x11 x24 x1027)))) | .mIf x1120 x1123 x1126 => ((Cost_close_stmt n x11 x24 x1123) + ((Cost_close_stmt n x11 x24 x1126) + (Cost_if_closed n x1120 (Lanius.Mini.closeStmt x11 x24 x1123) (Lanius.Mini.closeStmt x11 x24 x1126)))) | .mWhile x1223 x1226 => ((Cost_close_stmt n x11 x24 x1226) + (Cost_while_closed n x1223 (Lanius.Mini.closeStmt x11 x24 x1226))) | .mReturn x1302 => 0 | .mLetAlloc x1343 x1347 x1353 x1360 => ((Cost_close_stmt n x11 x24 x1360) + (Cost_alloc_closed n x1343 x1347 x1353 (Lanius.Mini.closeStmt x11 x24 x1360))) | .mFree x1448 x1451 x1457 => 0 | .mLetSlice x1513 x1517 x1520 x1523 x1526 => ((Cost_close_ty n x11 x24 x1517) + ((Cost_close_stmt n x11 x24 x1526) + (Cost_let_slice_closed n x1513 (Lanius.Mini.closeTy x11 x24 x1517) x1520 x1523 (Lanius.Mini.closeStmt x11 x24 x1526)))) | .mLetIndex x1637 x1641 x1645 x1648 x1651 => ((Cost_close_ty n x11 x24 x1641) + ((Cost_close_stmt n x11 x24 x1651) + (Cost_let_index_closed n x1637 (Lanius.Mini.closeTy x11 x24 x1641) x1645 x1648 (Lanius.Mini.closeStmt x11 x24 x1651)))) | .mLetView x1762 x1766 x1769 x1773 x1776 => ((Cost_close_stmt n x11 x24 x1776) + (Cost_let_view_closed n x1762 x1766 x1769 x1773 (Lanius.Mini.closeStmt x11 x24 x1776))) | .mLetStr x1866 x1870 x1874 => ((Cost_close_stmt n x11 x24 x1874) + (Cost_let_str_closed n x1866 x1870 (Lanius.Mini.closeStmt x11 x24 x1874))) | .mSetIndex x1959 x1962 x1965 => 0 | .mLetEval x2013 x2017 x2021 x2024 => ((Cost_close_ty n x11 x24 x2017) + ((Cost_close_eff n x11 x24 x2021) + ((Cost_close_stmt n x11 x24 x2024) + (Cost_let_eval_closed n x2013 (Lanius.Mini.closeTy x11 x24 x2017) (Lanius.Mini.closeEff x11 x24 x2021) (Lanius.Mini.closeStmt x11 x24 x2024))))) | .mSetEval x2151 x2155 => (Cost_close_eff n x11 x24 x2155) | .mIfEval x2221 x2224 x2227 => ((Cost_close_eff n x11 x24 x2221) + ((Cost_close_stmt n x11 x24 x2224) + ((Cost_close_stmt n x11 x24 x2227) + (Cost_if_eval_closed n (Lanius.Mini.closeEff x11 x24 x2221) (Lanius.Mini.closeStmt x11 x24 x2224) (Lanius.Mini.closeStmt x11 x24 x2227))))) | .mWhileEval x2353 x2356 => ((Cost_close_eff n x11 x24 x2353) + ((Cost_close_stmt n x11 x24 x2356) + (Cost_while_eval_closed n (Lanius.Mini.closeEff x11 x24 x2353) (Lanius.Mini.closeStmt x11 x24 x2356)))) | .mReturnEval x2461 => (Cost_close_eff n x11 x24 x2461) | .mDiscard x2527 => (Cost_close_eff n x11 x24 x2527) | .mSetIndexEval x2594 x2597 x2600 => ((Cost_close_eff n x11 x24 x2597) + (Cost_close_eff n x11 x24 x2600)) | .mSetFieldEval x2700 x2704 x2707 => (Cost_close_eff n x11 x24 x2707) | .mReturnUnit => 0 | .mAssert x2823 => (Cost_close_eff n x11 x24 x2823) | .mBreak => 0 | .mContinue => 0 | .mMatchArm x3032 x3036 x3041 x3044 x3048 x3051 x3055 x3061 => ((Cost_close_ty n x11 x24 x3036) + ((Cost_close_ty n x11 x24 x3051) + ((Cost_close_stmt n x11 x24 x3055) + ((Cost_close_stmt n x11 x24 x3061) + (Cost_match_arm_closed n x3032 (Lanius.Mini.srcEnumId ((Lanius.Mini.closeTy x11 x24 x3036))) x3041 x3044 x3048 (Lanius.Mini.armTyClosed x3044 ((Lanius.Mini.closeTy x11 x24 x3051))) (Lanius.Mini.closeStmt x11 x24 x3055) (Lanius.Mini.closeStmt x11 x24 x3061)))))) | .mUnreachable x2956 x2960 => (Cost_close_ty n x11 x24 x2960))
+termination_by structural fuel => fuel
+end
+
+end
+
+noncomputable section
+
+mutual
 def Pre_close_stmt : Nat → Nat → Lanius.Mini.Tables → Lanius.Mini.MStmt → Nat → Prop
   | 0, x11, x24, x35, b => True
   | n + 1, x11, x24, x35, b => (match x35 with | .mNop => True | .mLet x143 x147 x151 x154 => ((Pre_close_ty n x11 x24 x147 b) ∧ (∀ b1 : Nat, (Cost_close_ty n x11 x24 x147) < b → b1 = b - (Cost_close_ty n x11 x24 x147) → (Pre_close_stmt n x11 x24 x154 b1))) | .mLetStruct x258 x262 x266 x270 => ((Pre_close_ty n x11 x24 x262 b) ∧ (∀ b4 : Nat, (Cost_close_ty n x11 x24 x262) < b → b4 = b - (Cost_close_ty n x11 x24 x262) → (Pre_close_stmt n x11 x24 x270 b4))) | .mLetCall x380 x384 x388 x394 x400 => ((Pre_close_ty n x11 x24 x384 b) ∧ (∀ b7 : Nat, (Cost_close_ty n x11 x24 x384) < b → b7 = b - (Cost_close_ty n x11 x24 x384) → ((Pre_inst_index n x24.fns x388 0 b7) ∧ (Pre_close_stmt n x11 x24 x400 b7)))) | .mLetEnum x538 x542 x546 x549 x553 => ((Pre_close_ty n x11 x24 x542 b) ∧ (∀ b10 : Nat, (Cost_close_ty n x11 x24 x542) < b → b10 = b - (Cost_close_ty n x11 x24 x542) → (Pre_close_stmt n x11 x24 x553 b10))) | .mLetMatch x665 x669 x673 x676 x681 x687 => ((Pre_close_ty n x11 x24 x669 b) ∧ (∀ b13 : Nat, (Cost_close_ty n x11 x24 x669) < b → b13 = b - (Cost_close_ty n x11 x24 x669) → ((Pre_close_ty n x11 x24 x676 b13) ∧ (∀ b14 : Nat, (Cost_close_ty n x11 x24 x676) < b13 → b14 = b13 - (Cost_close_ty n x11 x24 x676) → (Pre_close_stmt n x11 x24 x687 b14))))) | .mSet x834 x838 => True | .mSetField x880 x884 x887 => True | .mSetCall x936 x940 x946 => (Pre_inst_index n x24.fns x940 0 b) | .mThen x1024 x1027 => ((Pre_close_stmt n x11 x24 x1024 b) ∧ (∀ b17 : Nat, (Cost_close_stmt n x11 x24 x1024) < b → b17 = b - (Cost_close_stmt n x11 x24 x1024) → (Pre_close_stmt n x11 x24 x1027 b17))) | .mIf x1120 x1123 x1126 => ((Pre_close_stmt n x11 x24 x1123 b) ∧ (∀ b20 : Nat, (Cost_close_stmt n x11 x24 x1123) < b → b20 = b - (Cost_close_stmt n x11 x24 x1123) → (Pre_close_stmt n x11 x24 x1126 b20))) | .mWhile x1223 x1226 => (Pre_close_stmt n x11 x24 x1226 b) | .mReturn x1302 => True | .mLetAlloc x1343 x1347 x1353 x1360 => (Pre_close_stmt n x11 x24 x1360 b) | .mFree x1448 x1451 x1457 => True | .mLetSlice x1513 x1517 x1520 x1523 x1526 => ((Pre_close_ty n x11 x24 x1517 b) ∧ (∀ b27 : Nat, (Cost_close_ty n x11 x24 x1517) < b → b27 = b - (Cost_close_ty n x11 x24 x1517) → (Pre_close_stmt n x11 x24 x1526 b27))) | .mLetIndex x1637 x1641 x1645 x1648 x1651 => ((Pre_close_ty n x11 x24 x1641 b) ∧ (∀ b30 : Nat, (Cost_close_ty n x11 x24 x1641) < b → b30 = b - (Cost_close_ty n x11 x24 x1641) → (Pre_close_stmt n x11 x24 x1651 b30))) | .mLetView x1762 x1766 x1769 x1773 x1776 => (Pre_close_stmt n x11 x24 x1776 b) | .mLetStr x1866 x1870 x1874 => (Pre_close_stmt n x11 x24 x1874 b) | .mSetIndex x1959 x1962 x1965 => True | .mLetEval x2013 x2017 x2021 x2024 => ((Pre_close_ty n x11 x24 x2017 b) ∧ (∀ b37 : Nat, (Cost_close_ty n x11 x24 x2017) < b → b37 = b - (Cost_close_ty n x11 x24 x2017) → ((Pre_close_eff n x11 x24 x2021 b37) ∧ (∀ b38 : Nat, (Cost_close_eff n x11 x24 x2021) < b37 → b38 = b37 - (Cost_close_eff n x11 x24 x2021) → (Pre_close_stmt n x11 x24 x2024 b38))))) | .mSetEval x2151 x2155 => (Pre_close_eff n x11 x24 x2155 b) | .mIfEval x2221 x2224 x2227 => ((Pre_close_eff n x11 x24 x2221 b) ∧ (∀ b42 : Nat, (Cost_close_eff n x11 x24 x2221) < b → b42 = b - (Cost_close_eff n x11 x24 x2221) → ((Pre_close_stmt n x11 x24 x2224 b42) ∧ (∀ b43 : Nat, (Cost_close_stmt n x11 x24 x2224) < b42 → b43 = b42 - (Cost_close_stmt n x11 x24 x2224) → (Pre_close_stmt n x11 x24 x2227 b43))))) | .mWhileEval x2353 x2356 => ((Pre_close_eff n x11 x24 x2353 b) ∧ (∀ b46 : Nat, (Cost_close_eff n x11 x24 x2353) < b → b46 = b - (Cost_close_eff n x11 x24 x2353) → (Pre_close_stmt n x11 x24 x2356 b46))) | .mReturnEval x2461 => (Pre_close_eff n x11 x24 x2461 b) | .mDiscard x2527 => (Pre_close_eff n x11 x24 x2527 b) | .mSetIndexEval x2594 x2597 x2600 => ((Pre_close_eff n x11 x24 x2597 b) ∧ (∀ b51 : Nat, (Cost_close_eff n x11 x24 x2597) < b → b51 = b - (Cost_close_eff n x11 x24 x2597) → (Pre_close_eff n x11 x24 x2600 b51))) | .mSetFieldEval x2700 x2704 x2707 => (Pre_close_eff n x11 x24 x2707 b) | .mReturnUnit => True | .mAssert x2823 => (Pre_close_eff n x11 x24 x2823 b) | .mBreak => True | .mContinue => True | .mMatchArm x3032 x3036 x3041 x3044 x3048 x3051 x3055 x3061 => ((Pre_close_ty n x11 x24 x3036 b) ∧ (∀ b55 : Nat, (Cost_close_ty n x11 x24 x3036) < b → b55 = b - (Cost_close_ty n x11 x24 x3036) → ((Pre_close_ty n x11 x24 x3051 b55) ∧ (∀ b56 : Nat, (Cost_close_ty n x11 x24 x3051) < b55 → b56 = b55 - (Cost_close_ty n x11 x24 x3051) → ((Pre_close_stmt n x11 x24 x3055 b56) ∧ (∀ b57 : Nat, (Cost_close_stmt n x11 x24 x3055) < b56 → b57 = b56 - (Cost_close_stmt n x11 x24 x3055) → (Pre_close_stmt n x11 x24 x3061 b57))))))) | .mUnreachable x2956 x2960 => (Pre_close_ty n x11 x24 x2960 b))
@@ -4874,92 +4885,6 @@ mutual
 def Cost_covered_by : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.TypeDecl → List Nat → List Lanius.Mini.CTree → Nat
   | 0, x11, x24, x39, x52, x68 => 18446744073709551616
   | n + 1, x11, x24, x39, x52, x68 => (match x68 with | [] => 0 | x188 :: x192 => ((Cost_plain_naming n x11 x24 x39 x52 x188) + (Cost_covered_by n x11 x24 x39 x52 x192)))
-termination_by structural fuel => fuel
-end
-
-end
-
-noncomputable section
-
-mutual
-def Cost_covers_all : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.TypeDecl → List (List Nat) → List Lanius.Mini.CTree → Nat
-  | 0, x11, x24, x39, x52, x78 => 18446744073709551616
-  | n + 1, x11, x24, x39, x52, x78 => (match x52 with | [] => 0 | x197 :: x200 => ((Cost_covered_by n x11 x24 x39 x197 x78) + (Cost_covers_all n x11 x24 x39 x200 x78)))
-termination_by structural fuel => fuel
-end
-
-end
-
-noncomputable section
-
-def Cost_covers_enum : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.TypeDecl → List Lanius.Mini.CTree → Nat
-  | 0, x12, x25, x40, x53 => 18446744073709551616
-  | n + 1, x12, x25, x40, x53 => (if x40.isEnum = true then (Cost_covers_all n x12 x25 x40 x40.variants x53) else 0)
-
-end
-
-noncomputable section
-
-def Cost_covers_decl : Nat → Nat → Lanius.Mini.FrontEnv → Option Lanius.Mini.TypeDecl → List Lanius.Mini.CTree → Nat
-  | 0, x12, x25, x40, x75 => 18446744073709551616
-  | n + 1, x12, x25, x40, x75 => (match x40 with | some x192 => (Cost_covers_enum n x12 x25 x192 x75) | none => 0)
-
-end
-
-noncomputable section
-
-def Cost_covers : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.Ty → List Lanius.Mini.CTree → Nat
-  | 0, x7, x20, x35, x43 => 18446744073709551616
-  | n + 1, x7, x20, x35, x43 => (match (Lanius.Mini.namedParts x35) with | some x174 => (Cost_covers_decl n x7 x20 (x20.decls.types[x174.decl]?) x43) | none => 0)
-
-end
-
-noncomputable section
-
-def Cost_wild_inner : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.CTree → List Lanius.Mini.CTree → Nat → Lanius.Mini.CTree → Lanius.Mini.Ty → List Lanius.Mini.CTree → Lanius.Mini.CTree → Nat
-  | 0, x11, x24, x39, x49, x66, x76, x86, x94, x113 => 18446744073709551616
-  | n + 1, x11, x24, x39, x49, x66, x76, x86, x94, x113 => ((Cost_ends_wild n x94) + (if (Lanius.Mini.endsWild x94) = true then (Cost_nest_arm n x39 x49 x66 x76 x94) else ((Cost_covers n x11 x24 x86 x94) + (Cost_known_use n x11 x39 x49 x66 x76 x94 x113 (Lanius.Mini.covers x11 x24 x86 x94)))))
-
-end
-
-noncomputable section
-
-def Pre_wild_inner : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.CTree → List Lanius.Mini.CTree → Nat → Lanius.Mini.CTree → Lanius.Mini.Ty → List Lanius.Mini.CTree → Lanius.Mini.CTree → Nat → Prop
-  | 0, x11, x24, x39, x49, x66, x76, x86, x94, x113, b => True
-  | n + 1, x11, x24, x39, x49, x66, x76, x86, x94, x113, b => (∀ b1 : Nat, (Cost_ends_wild n x94) < b → b1 = b - (Cost_ends_wild n x94) → (if (Lanius.Mini.endsWild x94) = true then True else (∀ b3 : Nat, (Cost_covers n x11 x24 x86 x94) < b1 → b3 = b1 - (Cost_covers n x11 x24 x86 x94) → (Pre_known_use n x11 x39 x49 x66 x76 x94 x113 (Lanius.Mini.covers x11 x24 x86 x94) b3))))
-
-end
-
-noncomputable section
-
-def Cost_nest_inner : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.CTree → List Lanius.Mini.CTree → Nat → Lanius.Mini.CTree → Lanius.Mini.Ty → Option (List Lanius.Mini.CTree) → Option Lanius.Mini.CTree → Nat
-  | 0, x11, x24, x39, x49, x66, x76, x86, x94, x136 => 18446744073709551616
-  | n + 1, x11, x24, x39, x49, x66, x76, x86, x94, x136 => (match x94 with | some x264 => (match x136 with | some x386 => (Cost_wild_inner n x11 x24 x39 x49 x66 x76 x86 x264 x386) | none => (Cost_nest_arm n x39 x49 x66 x76 x264)) | none => 0)
-
-end
-
-noncomputable section
-
-def Pre_nest_inner : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.CTree → List Lanius.Mini.CTree → Nat → Lanius.Mini.CTree → Lanius.Mini.Ty → Option (List Lanius.Mini.CTree) → Option Lanius.Mini.CTree → Nat → Prop
-  | 0, x11, x24, x39, x49, x66, x76, x86, x94, x136, b => True
-  | n + 1, x11, x24, x39, x49, x66, x76, x86, x94, x136, b => (match x94 with | some x264 => (match x136 with | some x386 => (Pre_wild_inner n x11 x24 x39 x49 x66 x76 x86 x264 x386 b) | none => True) | none => True)
-
-end
-
-noncomputable section
-
-def Cost_column_fit : Nat → Bool → Option Lanius.Mini.CTree → Option (List Lanius.Mini.CTree) → Nat
-  | 0, x11, x23, x55 => 18446744073709551616
-  | n + 1, x11, x23, x55 => (if x11 = true then (match x23 with | some x221 => (Cost_cons_tree_tail n x221 x55) | none => 0) else 0)
-
-end
-
-noncomputable section
-
-mutual
-def Pre_row_fits : Nat → Lanius.Mini.FrontEnv → List Lanius.Mini.CTree → List Lanius.Mini.CTree → Nat → Nat → Bool → Nat → Prop
-  | 0, x9, x24, x41, x58, x68, x78, b => True
-  | n + 1, x9, x24, x41, x58, x68, x78, b => (match x24 with | [] => True | x237 :: x240 => (match x41 with | [] => True | x305 :: x308 => (if (Lanius.Mini.colFits x9 x237 x305 ((decide (x58 = x68))) x78) = true then ((Pre_plus n x58 1 b) ∧ (Pre_row_fits n x9 x240 x308 (x58 + 1) x68 x78 b)) else True)))
 termination_by structural fuel => fuel
 end
 

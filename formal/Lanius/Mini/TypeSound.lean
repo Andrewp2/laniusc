@@ -87,7 +87,8 @@ import all Lanius.Mini.Compiler.P.storeArray
 import all Lanius.Mini.Compiler.P.strStores
 import all Lanius.Mini.Compiler.P.arrayCallSig
 import all Lanius.Mini.Compiler.P.bindingBytes
-import all Lanius.Mini.Compiler.P.needRound
+import all Lanius.Mini.Compiler.P.needCapped
+import all Lanius.Mini.Compiler.P.needLimit
 import all Lanius.Mini.Compiler.P.needsAfter
 import all Lanius.Mini.Compiler.P.storeEvalWord
 import all Lanius.Mini.Compiler.P.storeType
@@ -146,7 +147,7 @@ public import Lanius.Mini.Compiler.P.storeArray
 public import Lanius.Mini.Compiler.P.strStores
 public import Lanius.Mini.Compiler.P.arrayCallSig
 public import Lanius.Mini.Compiler.P.bindingBytes
-public import Lanius.Mini.Compiler.P.needRound
+public import Lanius.Mini.Compiler.P.needCapped
 public import Lanius.Mini.Compiler.P.needsAfter
 public import Lanius.Mini.Compiler.P.storeEvalWord
 public import Lanius.Mini.Compiler.P.storeWordElement
@@ -3142,7 +3143,7 @@ theorem lowerFunc_body {sigs : List Sig} {own : Sig} {decls : SrcDecls} {func : 
     · simp at h
     · rename_i b hb
       obtain ⟨b', hb'⟩ := unitTail_some hb
-      exact ⟨checks.1.1.2, withFrame_some hb'⟩
+      exact ⟨checks.1.1.1.2, withFrame_some hb'⟩
   · simp at h
 
 
@@ -3796,10 +3797,10 @@ def idClash : SrcProgram :=
   { funcs := [{ params := [], ret := .i32, body := body }], statics := [] }
 
 theorem noReturn_lowers : ∃ funcs, lowerFuncs (sigs noReturn.funcs) (sigs noReturn.funcs) noReturn.decls noReturn.funcs = some funcs :=
-  ⟨_, rfl⟩
+  ⟨_, by simp only [sigs, funcNeeds]; rw [needsAfter, needsAfter]; rfl⟩
 
 theorem idClash_lowers : ∃ funcs, lowerFuncs (sigs idClash.funcs) (sigs idClash.funcs) idClash.decls idClash.funcs = some funcs :=
-  ⟨_, rfl⟩
+  ⟨_, by simp only [sigs, funcNeeds]; rw [needsAfter, needsAfter]; rfl⟩
 
 theorem noReturn_rejected : compileSource noReturn = none := by rfl
 

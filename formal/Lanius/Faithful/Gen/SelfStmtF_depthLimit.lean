@@ -26,7 +26,7 @@ abbrev Stmt_depth_limit (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
 
 abbrev Stmt_depth_sum (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → RepNat x1 v1 →
-    (RepOption 151 RepNat) (Lanius.Mini.depthSum x0 x1) w
+    (RepOption 135 RepNat) (Lanius.Mini.depthSum x0 x1) w
 
 abbrev Stmt_lim_expr (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcExpr} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcExpr x0 v0 →
@@ -34,15 +34,15 @@ abbrev Stmt_lim_expr (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev Stmt_lim_slots (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcType x0 v0 →
-    (RepOption 151 RepNat) (Lanius.Mini.limSlots x0) w
+    (RepOption 135 RepNat) (Lanius.Mini.limSlots x0) w
 
 abbrev Stmt_lim_slots_list (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 74 RepSrcType) x0 v0 →
-    (RepOption 151 RepNat) (Lanius.Mini.limSlotsList x0) w
+    (RepOption 135 RepNat) (Lanius.Mini.limSlotsList x0) w
 
 abbrev Stmt_lim_slots_variants (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (List Lanius.Mini.SrcType)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 78 (RepList 74 RepSrcType)) x0 v0 →
-    (RepOption 151 RepNat) (Lanius.Mini.limSlotsVariants x0) w
+    (RepOption 135 RepNat) (Lanius.Mini.limSlotsVariants x0) w
 
 abbrev Stmt_lim_ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcType x0 v0 →

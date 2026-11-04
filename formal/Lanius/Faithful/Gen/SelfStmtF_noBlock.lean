@@ -45,7 +45,7 @@ abbrev Stmt_has_ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     RepBool (Lanius.Mini.hasTy x0) w
 
 abbrev Stmt_has_tys (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List Lanius.Mini.Ty)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 213 (RepList 142 RepTy)) x0 v0 →
+  ∀ {x0 : Option (List Lanius.Mini.Ty)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 213 (RepList 143 RepTy)) x0 v0 →
     RepBool (Lanius.Mini.hasTys x0) w
 
 abbrev Stmt_let_head (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -77,8 +77,8 @@ abbrev Stmt_postfix_head (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
     (RepOption 292 RepLetHead) (Lanius.Mini.postfixHead x0 x1 x2 x3) w
 
 abbrev Stmt_same_decl_args (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Bool} {x1 : List Lanius.Mini.Ty} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → (RepList 142 RepTy) x1 v1 →
-    (RepOption 213 (RepList 142 RepTy)) (Lanius.Mini.sameDeclArgs x0 x1) w
+  ∀ {x0 : Bool} {x1 : List Lanius.Mini.Ty} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → (RepList 143 RepTy) x1 v1 →
+    (RepOption 213 (RepList 143 RepTy)) (Lanius.Mini.sameDeclArgs x0 x1) w
 
 abbrev Stmt_stmt_arm_order (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.TypeDecl} {x3 : List Lanius.Mini.VariantTy} {x4 : List Lanius.Mini.CTree} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → RepTypeDecl x2 v2 → (RepList 289 RepVariantTy) x3 v3 → (RepList 83 RepCTree) x4 v4 →

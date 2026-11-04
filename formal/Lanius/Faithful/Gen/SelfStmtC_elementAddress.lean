@@ -29,11 +29,11 @@ abbrev Stmt_lower_element (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
     (RepOption 155 RepExpr) (Lanius.Mini.lowerElement x0 x1 x2) w
 
 abbrev Stmt_lower_load_word (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Option Lanius.Mini.Expr} {x2 : Option Lanius.Mini.Stmt} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → (RepOption 155 RepExpr) x1 v1 → (RepOption 135 RepStmt) x2 v2 →
-    (RepOption 135 RepStmt) (Lanius.Mini.lowerLoadWord x0 x1 x2) w
+  ∀ {x0 : Nat} {x1 : Option Lanius.Mini.Expr} {x2 : Option Lanius.Mini.Stmt} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → (RepOption 155 RepExpr) x1 v1 → (RepOption 136 RepStmt) x2 v2 →
+    (RepOption 136 RepStmt) (Lanius.Mini.lowerLoadWord x0 x1 x2) w
 
 abbrev Stmt_store_byte_element (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Binding} {x1 : Lanius.Mini.SrcType} {x2 : Option Lanius.Mini.Expr} {x3 : List Lanius.Mini.Binding} {x4 : Lanius.Mini.SrcExpr} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepBinding x0 v0 → RepSrcType x1 v1 → (RepOption 155 RepExpr) x2 v2 → (RepList 136 RepBinding) x3 v3 → RepSrcExpr x4 v4 →
-    (RepOption 135 RepStmt) (Lanius.Mini.storeByteElement x0 x1 x2 x3 x4) w
+  ∀ {x0 : Lanius.Mini.Binding} {x1 : Lanius.Mini.SrcType} {x2 : Option Lanius.Mini.Expr} {x3 : List Lanius.Mini.Binding} {x4 : Lanius.Mini.SrcExpr} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepBinding x0 v0 → RepSrcType x1 v1 → (RepOption 155 RepExpr) x2 v2 → (RepList 137 RepBinding) x3 v3 → RepSrcExpr x4 v4 →
+    (RepOption 136 RepStmt) (Lanius.Mini.storeByteElement x0 x1 x2 x3 x4) w
 
 end Lanius.Faithful.SelfCert

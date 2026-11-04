@@ -66,7 +66,7 @@ abbrev Stmt_prim_if (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev Stmt_repeat_ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Ty} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepTy x0 v0 → RepNat x1 v1 →
-    (RepList 142 RepTy) (Lanius.Mini.repeatTy x0 x1) w
+    (RepList 143 RepTy) (Lanius.Mini.repeatTy x0 x1) w
 
 abbrev Stmt_same_or_none (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : List Lanius.Mini.Bind} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → (RepList 275 RepBind) x1 v1 →

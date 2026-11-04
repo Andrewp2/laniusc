@@ -21,11 +21,11 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_arg_bytes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Binding} {x1 : Lanius.Mini.SrcEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 136 RepBinding) x0 v0 → RepSrcEff x1 v1 →
+  ∀ {x0 : List Lanius.Mini.Binding} {x1 : Lanius.Mini.SrcEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 137 RepBinding) x0 v0 → RepSrcEff x1 v1 →
     RepNat (Lanius.Mini.argBytes x0 x1) w
 
 abbrev Stmt_array_arg (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Binding} {x1 : Lanius.Mini.SrcEff} {x2 : Lanius.Mini.SrcType} {x3 : Nat} {x4 : Nat} {x5 : Option Lanius.Mini.ArrayArgs} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → (RepList 136 RepBinding) x0 v0 → RepSrcEff x1 v1 → RepSrcType x2 v2 → RepNat x3 v3 → RepNat x4 v4 → (RepOption 215 RepArrayArgs) x5 v5 →
+  ∀ {x0 : List Lanius.Mini.Binding} {x1 : Lanius.Mini.SrcEff} {x2 : Lanius.Mini.SrcType} {x3 : Nat} {x4 : Nat} {x5 : Option Lanius.Mini.ArrayArgs} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → (RepList 137 RepBinding) x0 v0 → RepSrcEff x1 v1 → RepSrcType x2 v2 → RepNat x3 v3 → RepNat x4 v4 → (RepOption 215 RepArrayArgs) x5 v5 →
     (RepOption 215 RepArrayArgs) (Lanius.Mini.arrayArg x0 x1 x2 x3 x4 x5) w
 
 abbrev Stmt_array_arg_checked (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -45,7 +45,7 @@ abbrev Stmt_array_arg_slice (prog : SrcProgram) (prims : Prims) (ix n : Nat) : P
     (RepOption 215 RepArrayArgs) (Lanius.Mini.arrayArgSlice x0 x1 x2 x3 x4 x5 x6) w
 
 abbrev Stmt_array_args (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Binding} {x1 : List Lanius.Mini.SrcEff} {x2 : List Lanius.Mini.SrcType} {x3 : Nat} {x4 : Nat} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepList 136 RepBinding) x0 v0 → (RepList 187 RepSrcEff) x1 v1 → (RepList 74 RepSrcType) x2 v2 → RepNat x3 v3 → RepNat x4 v4 →
+  ∀ {x0 : List Lanius.Mini.Binding} {x1 : List Lanius.Mini.SrcEff} {x2 : List Lanius.Mini.SrcType} {x3 : Nat} {x4 : Nat} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepList 137 RepBinding) x0 v0 → (RepList 187 RepSrcEff) x1 v1 → (RepList 74 RepSrcType) x2 v2 → RepNat x3 v3 → RepNat x4 v4 →
     (RepOption 215 RepArrayArgs) (Lanius.Mini.arrayArgs x0 x1 x2 x3 x4) w
 
 abbrev Stmt_array_call_code (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

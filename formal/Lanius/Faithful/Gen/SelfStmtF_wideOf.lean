@@ -33,7 +33,7 @@ abbrev Stmt_bare_int (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     RepBool (Lanius.Mini.bareInt x0) w
 
 abbrev Stmt_const_ref (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Option (List (List Nat))} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepOption 139 (RepList 31 (RepList 25 RepNat))) x2 v2 →
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Option (List (List Nat))} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepOption 140 (RepList 31 (RepList 25 RepNat))) x2 v2 →
     (RepOption 235 RepSrcExpr) (Lanius.Mini.constRef x0 x1 x2) w
 
 abbrev Stmt_const_value (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -94,14 +94,14 @@ abbrev Stmt_shift_op (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev Stmt_struct_field_tys (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Lanius.Mini.Ty} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepTy x2 v2 →
-    (RepOption 213 (RepList 142 RepTy)) (Lanius.Mini.structFieldTys x0 x1 x2) w
+    (RepOption 213 (RepList 143 RepTy)) (Lanius.Mini.structFieldTys x0 x1 x2) w
 
 abbrev Stmt_wide_const (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.Ty} {x1 : List Lanius.Mini.Token} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 212 RepTy) x0 v0 → (RepList 48 RepToken) x1 v1 →
     (RepOption 235 RepSrcExpr) (Lanius.Mini.wideConst x0 x1) w
 
 abbrev Stmt_wide_digits (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Ty} {x1 : Bool} {x2 : Option Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepTy x0 v0 → RepBool x1 v1 → (RepOption 151 RepNat) x2 v2 →
+  ∀ {x0 : Lanius.Mini.Ty} {x1 : Bool} {x2 : Option Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepTy x0 v0 → RepBool x1 v1 → (RepOption 135 RepNat) x2 v2 →
     (RepOption 235 RepSrcExpr) (Lanius.Mini.wideDigits x0 x1 x2) w
 
 abbrev Stmt_wide_inner (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -121,7 +121,7 @@ abbrev Stmt_wide_read_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
     RepBool (Lanius.Mini.wideReadOf x0) w
 
 abbrev Stmt_wide_signed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Ty} {x1 : Bool} {x2 : Option Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepTy x0 v0 → RepBool x1 v1 → (RepOption 151 RepNat) x2 v2 →
+  ∀ {x0 : Lanius.Mini.Ty} {x1 : Bool} {x2 : Option Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepTy x0 v0 → RepBool x1 v1 → (RepOption 135 RepNat) x2 v2 →
     (RepOption 235 RepSrcExpr) (Lanius.Mini.wideSigned x0 x1 x2) w
 
 abbrev Stmt_wide_value (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

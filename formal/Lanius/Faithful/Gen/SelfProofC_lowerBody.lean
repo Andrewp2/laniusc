@@ -11,7 +11,7 @@ public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmt7
-public import Lanius.Faithful.Gen.SelfStmtC_Inline_lowerSetScalar
+public import Lanius.Faithful.Gen.SelfStmtC_Inline_blockLeft
 public import Lanius.Faithful.Gen.SelfStmtC_SrcType_same
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
 public import Lanius.Faithful.Gen.SelfStmtC_arrayCallSig
@@ -19,6 +19,7 @@ public import Lanius.Faithful.Gen.SelfStmtC_enumVariants
 public import Lanius.Faithful.Gen.SelfStmtC_funcNeeds
 public import Lanius.Faithful.Gen.SelfStmtC_lowerBody
 public import Lanius.Faithful.Gen.SelfStmtC_matchVariants
+public import Lanius.Faithful.Gen.SelfStmtC_needLimit
 public import Lanius.Faithful.Gen.SelfStmtC_structFields
 public import Lanius.Faithful.Gen.SelfStmtC_withBudget
 import all Lanius.Faithful.Gen.SelfSrcC_lowerBody
@@ -165,13 +166,14 @@ theorem proof_lower_body {prog : SrcProgram} {prims : Prims} {ix_lower_body ix_p
   simp only [src_lower_body] at h
   faithful [Lanius.Mini.lowerBody]
 
-theorem proof_lower_func {prog : SrcProgram} {prims : Prims} {ix_lower_func ix_minus ix_params_size ix_frame_block ix_SrcType_size ix_params_valid ix_SrcStmt_breaks_out ix_lower_body ix_SrcStmt_depth ix_unit_tail ix_with_frame ix_SrcStmt_lower ix_with_budget ix_param_scope ix_empty_of_mini_selfhost_Binding : Nat} (fn : prog.funcs[ix_lower_func]? = some (src_lower_func ix_minus ix_params_size ix_frame_block ix_SrcType_size ix_params_valid ix_SrcStmt_breaks_out ix_lower_body ix_SrcStmt_depth ix_unit_tail ix_with_frame ix_SrcStmt_lower ix_with_budget ix_param_scope ix_empty_of_mini_selfhost_Binding)) (np : prims.isPrim ix_lower_func = false)
+theorem proof_lower_func {prog : SrcProgram} {prims : Prims} {ix_lower_func ix_minus ix_params_size ix_frame_block ix_SrcType_size ix_params_valid ix_SrcStmt_breaks_out ix_need_limit ix_lower_body ix_SrcStmt_depth ix_unit_tail ix_with_frame ix_SrcStmt_lower ix_with_budget ix_param_scope ix_empty_of_mini_selfhost_Binding : Nat} (fn : prog.funcs[ix_lower_func]? = some (src_lower_func ix_minus ix_params_size ix_frame_block ix_SrcType_size ix_params_valid ix_SrcStmt_breaks_out ix_need_limit ix_lower_body ix_SrcStmt_depth ix_unit_tail ix_with_frame ix_SrcStmt_lower ix_with_budget ix_param_scope ix_empty_of_mini_selfhost_Binding)) (np : prims.isPrim ix_lower_func = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_params_size : Certified (∀ {n : Nat}, Stmt_params_size prog prims ix_params_size n))
     (ext_frame_block : Certified (∀ {n : Nat}, Stmt_frame_block prog prims ix_frame_block n))
     (ext_SrcType_size : Certified (∀ {n : Nat}, Stmt_SrcType_size prog prims ix_SrcType_size n))
     (ext_params_valid : Certified (∀ {n : Nat}, Stmt_params_valid prog prims ix_params_valid n))
     (ext_SrcStmt_breaks_out : Certified (∀ {n : Nat}, Stmt_SrcStmt_breaks_out prog prims ix_SrcStmt_breaks_out n))
+    (ext_need_limit : Certified (∀ {n : Nat}, Stmt_need_limit prog prims ix_need_limit n))
     (ext_lower_body : Certified (∀ {n : Nat}, Stmt_lower_body prog prims ix_lower_body n))
     (ext_SrcStmt_depth : Certified (∀ {n : Nat}, Stmt_SrcStmt_depth prog prims ix_SrcStmt_depth n))
     (ext_unit_tail : Certified (∀ {n : Nat}, Stmt_unit_tail prog prims ix_unit_tail n))

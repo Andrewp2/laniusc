@@ -12,6 +12,7 @@ public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmtC_arrayCallSig
 public import Lanius.Faithful.Gen.SelfStmtC_funcNeeds
+public import Lanius.Faithful.Gen.SelfStmtC_needCapped
 public import Lanius.Faithful.Gen.SelfStmtC_needsAfter
 import all Lanius.Faithful.Gen.SelfSrcC_funcNeeds
 import all Lanius.Mini.Compiler.P.funcNeeds
@@ -79,17 +80,6 @@ theorem proof_func_needs {prog : SrcProgram} {prims : Prims} {ix_func_needs ix_n
   rw [pcall_succ np fn] at h
   simp only [src_func_needs] at h
   faithful [Lanius.Mini.funcNeeds]
-
-theorem proof_rest_needs {prog : SrcProgram} {prims : Prims} {ix_rest_needs ix_unbox_of_mini_selfhost_List_usize ix_empty_of_usize : Nat} (fn : prog.funcs[ix_rest_needs]? = some (src_rest_needs ix_unbox_of_mini_selfhost_List_usize ix_empty_of_usize)) (np : prims.isPrim ix_rest_needs = false)
-    (ext_unbox_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_usize n))
-    (ext_empty_of_usize : Certified (∀ {n : Nat}, Stmt_empty_of_usize prog prims ix_empty_of_usize n)) {n : Nat} :
-    Stmt_rest_needs prog prims ix_rest_needs n := by
-  intro x0 v0 w h r0
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_rest_needs] at h
-  faithful [Lanius.Mini.restNeeds]
 
 theorem proof_sigs {prog : SrcProgram} {prims : Prims} {ix_sigs ix_sigs_with ix_func_needs : Nat} (fn : prog.funcs[ix_sigs]? = some (src_sigs ix_sigs_with ix_func_needs)) (np : prims.isPrim ix_sigs = false)
     (ext_sigs_with : Certified (∀ {n : Nat}, Stmt_sigs_with prog prims ix_sigs_with n))

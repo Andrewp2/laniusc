@@ -3665,22 +3665,30 @@ theorem post_group_sigs_with : ∀ n : Nat,
 theorem post_sigs_with : ∀ (n : Nat) (x0 : List Lanius.Mini.SrcFunc) (x1 : List Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_sigs_with n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.sigsWith x0 x1) ≤ M + Cost_sigs_with n x0 x1 :=
   fun n => (post_group_sigs_with n)
 
-theorem post_step_need_round (n : Nat) (ih :
-    (∀ (x0 : List Lanius.Mini.SrcFunc) (x1 : List Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_need_round n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.needRound x0 x1) ≤ M + Cost_need_round n x0 x1)) :
-    ∀ (x0 : List Lanius.Mini.SrcFunc) (x1 : List Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_need_round (n + 1) x0 x1 < 18446744073709551616 → hb (Lanius.Mini.needRound x0 x1) ≤ M + Cost_need_round (n + 1) x0 x1 := by
-  have post_need_round := ih
-  intro x0 x1 M hM0 hM1
+theorem post_step_need_round_at (n : Nat) (ih :
+    (∀ (x0 : List Lanius.Mini.SrcFunc) (x1 : List Nat) (x2 : List Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → Cost_need_round_at n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.needRoundAt x0 x1 x2) ≤ M + Cost_need_round_at n x0 x1 x2)) :
+    ∀ (x0 : List Lanius.Mini.SrcFunc) (x1 : List Nat) (x2 : List Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → Cost_need_round_at (n + 1) x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.needRoundAt x0 x1 x2) ≤ M + Cost_need_round_at (n + 1) x0 x1 x2 := by
+  have post_need_round_at := ih
+  intro x0 x1 x2 M hM0 hM1 hM2
+  rw [Cost_need_round_at.eq_def]; dsimp only
+  rw [Lanius.Mini.needRoundAt.eq_def x0 x1 x2]
+  post_auto n, M
+theorem post_group_need_round_at : ∀ n : Nat,
+    (∀ (x0 : List Lanius.Mini.SrcFunc) (x1 : List Nat) (x2 : List Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → Cost_need_round_at n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.needRoundAt x0 x1 x2) ≤ M + Cost_need_round_at n x0 x1 x2) := by
+  intro n
+  induction n with
+  | zero => exact fun x0 x1 x2 M hM0 hM1 hM2 h => absurd h (Nat.lt_irrefl _)
+  | succ n ih => exact post_step_need_round_at n ih
+theorem post_need_round_at : ∀ (n : Nat) (x0 : List Lanius.Mini.SrcFunc) (x1 : List Nat) (x2 : List Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → Cost_need_round_at n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.needRoundAt x0 x1 x2) ≤ M + Cost_need_round_at n x0 x1 x2 :=
+  fun n => (post_group_need_round_at n)
+
+theorem post_need_round : ∀ (n : Nat) (x0 : List Lanius.Mini.SrcFunc) (x1 : List Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_need_round n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.needRound x0 x1) ≤ M + Cost_need_round n x0 x1 := by
+  intro n x0 x1 M hM0 hM1
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
   rw [Cost_need_round.eq_def]; dsimp only
   rw [Lanius.Mini.needRound.eq_def x0 x1]
   post_auto n, M
-theorem post_group_need_round : ∀ n : Nat,
-    (∀ (x0 : List Lanius.Mini.SrcFunc) (x1 : List Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_need_round n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.needRound x0 x1) ≤ M + Cost_need_round n x0 x1) := by
-  intro n
-  induction n with
-  | zero => exact fun x0 x1 M hM0 hM1 h => absurd h (Nat.lt_irrefl _)
-  | succ n ih => exact post_step_need_round n ih
-theorem post_need_round : ∀ (n : Nat) (x0 : List Lanius.Mini.SrcFunc) (x1 : List Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_need_round n x0 x1 < 18446744073709551616 → hb (Lanius.Mini.needRound x0 x1) ≤ M + Cost_need_round n x0 x1 :=
-  fun n => (post_group_need_round n)
 
 theorem post_step_needs_after (n : Nat) (ih :
     (∀ (x0 : List Lanius.Mini.SrcFunc) (x1 : List Nat) (x2 : Nat), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → Cost_needs_after n x0 x1 x2 < 18446744073709551616 → hb (Lanius.Mini.needsAfter x0 x1 x2) ≤ M + Cost_needs_after n x0 x1 x2)) :

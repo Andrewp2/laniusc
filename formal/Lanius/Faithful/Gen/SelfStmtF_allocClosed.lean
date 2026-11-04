@@ -29,7 +29,7 @@ abbrev Stmt_e_apply_closed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
     (RepOption 234 RepSrcEff) (Lanius.Mini.eApplyClosed x0 x1 x2) w
 
 abbrev Stmt_e_call_closed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Nat} {x1 : Option (List Lanius.Mini.SrcEff)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 151 RepNat) x0 v0 → (RepOption 243 (RepList 187 RepSrcEff)) x1 v1 →
+  ∀ {x0 : Option Nat} {x1 : Option (List Lanius.Mini.SrcEff)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 135 RepNat) x0 v0 → (RepOption 243 (RepList 187 RepSrcEff)) x1 v1 →
     (RepOption 234 RepSrcEff) (Lanius.Mini.eCallClosed x0 x1) w
 
 abbrev Stmt_let_index_closed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

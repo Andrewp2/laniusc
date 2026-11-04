@@ -53,12 +53,12 @@ abbrev Stmt_ends_wild (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     RepBool (Lanius.Mini.endsWild x0) w
 
 abbrev Stmt_first_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Bool} {x1 : Nat} {x2 : Option Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepBool x0 v0 → RepNat x1 v1 → (RepOption 151 RepNat) x2 v2 →
-    (RepOption 151 RepNat) (Lanius.Mini.firstAt x0 x1 x2) w
+  ∀ {x0 : Bool} {x1 : Nat} {x2 : Option Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepBool x0 v0 → RepNat x1 v1 → (RepOption 135 RepNat) x2 v2 →
+    (RepOption 135 RepNat) (Lanius.Mini.firstAt x0 x1 x2) w
 
 abbrev Stmt_first_nested (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : List Lanius.Mini.CTree} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepFrontEnv x0 v0 → (RepList 83 RepCTree) x1 v1 → RepNat x2 v2 →
-    (RepOption 151 RepNat) (Lanius.Mini.firstNested x0 x1 x2) w
+    (RepOption 135 RepNat) (Lanius.Mini.firstNested x0 x1 x2) w
 
 abbrev Stmt_is_last (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.CTree} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 83 RepCTree) x0 v0 →
@@ -69,7 +69,7 @@ abbrev Stmt_mentions (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     (RepOption 309 RepBool) (Lanius.Mini.mentions x0 x1 x2) w
 
 abbrev Stmt_named_known (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.TypeDecl} {x1 : List Nat} {x2 : Option (List (List Nat))} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepTypeDecl x0 v0 → (RepList 25 RepNat) x1 v1 → (RepOption 139 (RepList 31 (RepList 25 RepNat))) x2 v2 →
+  ∀ {x0 : Lanius.Mini.TypeDecl} {x1 : List Nat} {x2 : Option (List (List Nat))} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepTypeDecl x0 v0 → (RepList 25 RepNat) x1 v1 → (RepOption 140 (RepList 31 (RepList 25 RepNat))) x2 v2 →
     (RepOption 309 RepBool) (Lanius.Mini.namedKnown x0 x1 x2) w
 
 abbrev Stmt_named_path (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
