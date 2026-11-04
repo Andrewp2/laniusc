@@ -12,6 +12,7 @@ public import Lanius.Mini.Compiler.P.arithUint
 public import Lanius.Mini.Compiler.P.armScope
 public import Lanius.Mini.Compiler.P.compileModules
 public import Lanius.Mini.Compiler.P.evalSame
+public import Lanius.Mini.Compiler.P.evalSlotLimit
 public import Lanius.Mini.Compiler.P.floatApply
 public import Lanius.Mini.Compiler.P.funcNeeds
 public import Lanius.Mini.Compiler.P.loadAtBytes
@@ -102,11 +103,14 @@ namespace Lanius.Mini
 
 /-- Arm k's value evaluated from dst, under its payload's binders. -/
 @[expose] def Inline.evalArmIn (sigs : List Sig) (decls : SrcDecls) (bound : Option (List Binding)) (slot : Nat) (dst : Nat) (ty : SrcType) (k : Nat) (value : SrcEff) (rest : List SrcEff) (later : Option Stmt) : Option Stmt :=
-  match bound with
-  | none => none
-  | some s =>
-    match SrcEff.eval value sigs decls s dst with
+  if evalSlotLimit ≤ dst then
+    none
+  else
+    match bound with
     | none => none
-    | some e => evalArm slot k (evalSame e ty e.stmt) rest later
+    | some s =>
+      match SrcEff.eval value sigs decls s dst with
+      | none => none
+      | some e => evalArm slot k (evalSame e ty e.stmt) rest later
 
 end Lanius.Mini

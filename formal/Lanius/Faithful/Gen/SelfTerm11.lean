@@ -66,73 +66,73 @@ theorem ok_eval_call_sig : FnOk prog prims info (543, ⟨3, [], 0⟩) :=
 theorem ok_eval_host : FnOk prog prims info (544, ⟨5, [], 0⟩) :=
   fnOk_of fn_eval_host (by decide +kernel)
 
-theorem ok_cons_args : FnOk prog prims info (545, ⟨1, [], 0⟩) :=
+theorem ok_eval_slot_limit : FnOk prog prims info (545, ⟨0, [], 0⟩) :=
+  fnOk_of fn_eval_slot_limit (by decide +kernel)
+
+theorem ok_cons_args : FnOk prog prims info (546, ⟨1, [], 0⟩) :=
   fnOk_of fn_cons_args (by decide +kernel)
 
-theorem ok_eval_operands : FnOk prog prims info (547, ⟨8, [], 0⟩) :=
+theorem ok_eval_operands : FnOk prog prims info (548, ⟨8, [], 0⟩) :=
   fnOk_of fn_eval_operands (by decide +kernel)
 
-theorem ok_eval_then : FnOk prog prims info (549, ⟨0, [], 0⟩) :=
+theorem ok_eval_then : FnOk prog prims info (550, ⟨0, [], 0⟩) :=
   fnOk_of fn_eval_then (by decide +kernel)
 
-theorem ok_lower_negate_typed : FnOk prog prims info (550, ⟨3, [], 0⟩) :=
+theorem ok_lower_negate_typed : FnOk prog prims info (551, ⟨3, [], 0⟩) :=
   fnOk_of fn_lower_negate_typed (by decide +kernel)
 
-theorem ok_lower_not_typed : FnOk prog prims info (551, ⟨1, [], 0⟩) :=
+theorem ok_lower_not_typed : FnOk prog prims info (552, ⟨1, [], 0⟩) :=
   fnOk_of fn_lower_not_typed (by decide +kernel)
 
-theorem ok_scalar_cast : FnOk prog prims info (552, ⟨7, [], 0⟩) :=
+theorem ok_scalar_cast : FnOk prog prims info (553, ⟨7, [], 0⟩) :=
   fnOk_of fn_scalar_cast (by decide +kernel)
 
-theorem ok_eval_struct_of : FnOk prog prims info (553, ⟨3, [], 0⟩) :=
+theorem ok_eval_struct_of : FnOk prog prims info (554, ⟨3, [], 0⟩) :=
   fnOk_of fn_eval_struct_of (by decide +kernel)
 
-theorem ok_eval_tagged : FnOk prog prims info (554, ⟨4, [], 0⟩) :=
+theorem ok_eval_tagged : FnOk prog prims info (555, ⟨4, [], 0⟩) :=
   fnOk_of fn_eval_tagged (by decide +kernel)
 
-theorem ok_eval_match_of : FnOk prog prims info (555, ⟨4, [], 0⟩) :=
+theorem ok_eval_match_of : FnOk prog prims info (556, ⟨4, [], 0⟩) :=
   fnOk_of fn_eval_match_of (by decide +kernel)
 
-theorem ok_eval_arm_in : FnOk prog prims info (556, ⟨16, [7], 1⟩) :=
+theorem ok_eval_arm_in : FnOk prog prims info (557, ⟨16, [7], 1⟩) :=
   fnOk_of fn_eval_arm_in (by decide +kernel)
 
-theorem ok_empty_of_mini_selfhost_List_mini_selfhost_SrcType : FnOk prog prims info (558, ⟨0, [], 0⟩) :=
+theorem ok_empty_of_mini_selfhost_List_mini_selfhost_SrcType : FnOk prog prims info (559, ⟨0, [], 0⟩) :=
   fnOk_of fn_empty_of_mini_selfhost_List_mini_selfhost_SrcType (by decide +kernel)
 
-theorem ok_eval_divide : FnOk prog prims info (559, ⟨4, [], 0⟩) :=
+theorem ok_eval_divide : FnOk prog prims info (560, ⟨4, [], 0⟩) :=
   fnOk_of fn_eval_divide (by decide +kernel)
 
-theorem ok_eval_stride_of : FnOk prog prims info (560, ⟨7, [], 0⟩) :=
+theorem ok_eval_stride_of : FnOk prog prims info (561, ⟨7, [], 0⟩) :=
   fnOk_of fn_eval_stride_of (by decide +kernel)
 
-theorem ok_eval_if_of : FnOk prog prims info (561, ⟨3, [], 0⟩) :=
+theorem ok_eval_if_of : FnOk prog prims info (562, ⟨3, [], 0⟩) :=
   fnOk_of fn_eval_if_of (by decide +kernel)
 
-theorem ok_eval_let_in_of : FnOk prog prims info (562, ⟨4, [], 0⟩) :=
+theorem ok_eval_let_in_of : FnOk prog prims info (563, ⟨4, [], 0⟩) :=
   fnOk_of fn_eval_let_in_of (by decide +kernel)
 
-theorem ok_arm_bind : FnOk prog prims info (563, ⟨3, [2], 1⟩) :=
+theorem ok_arm_bind : FnOk prog prims info (564, ⟨3, [2], 1⟩) :=
   fnOk_of fn_arm_bind (by decide +kernel)
 
-theorem ok_eval_len_of : FnOk prog prims info (564, ⟨2, [], 0⟩) :=
+theorem ok_eval_len_of : FnOk prog prims info (565, ⟨2, [], 0⟩) :=
   fnOk_of fn_eval_len_of (by decide +kernel)
 
-theorem ok_str_placed : FnOk prog prims info (565, ⟨2, [2], 0⟩) :=
+theorem ok_str_placed : FnOk prog prims info (566, ⟨2, [2], 0⟩) :=
   fnOk_of fn_str_placed (by decide +kernel)
 
-theorem ok_store_eval : FnOk prog prims info (566, ⟨3, [], 0⟩) :=
+theorem ok_store_eval : FnOk prog prims info (567, ⟨3, [], 0⟩) :=
   fnOk_of fn_store_eval (by decide +kernel)
 
-theorem ok_store_eval_byte : FnOk prog prims info (567, ⟨3, [], 0⟩) :=
+theorem ok_store_eval_byte : FnOk prog prims info (568, ⟨3, [], 0⟩) :=
   fnOk_of fn_store_eval_byte (by decide +kernel)
 
-theorem ok_store_eval_word : FnOk prog prims info (568, ⟨6, [], 0⟩) :=
+theorem ok_store_eval_word : FnOk prog prims info (569, ⟨6, [], 0⟩) :=
   fnOk_of fn_store_eval_word (by decide +kernel)
 
-theorem ok_store_array_element : FnOk prog prims info (569, ⟨5, [], 0⟩) :=
-  fnOk_of fn_store_array_element (by decide +kernel)
-
 theorem chunk11 : AllFns prog prims info part11 :=
-  ⟨ok_within_payloads, ok_eval_element, ok_eval_array_index, ok_eval_checked, ok_eval_copy, ok_eval_field_copy, ok_bounds_guard, ok_lower_load_word, ok_lower_element, ok_lower_load_type, ok_index_of, ok_lower_set_index_of, ok_effs_slice, ok_array_call, ok_empty_of_mini_selfhost_Expr, ok_cons_of_mini_selfhost_Expr, ok_eval_call_sig, ok_eval_host, ok_cons_args, ok_eval_operands, ok_eval_then, ok_lower_negate_typed, ok_lower_not_typed, ok_scalar_cast, ok_eval_struct_of, ok_eval_tagged, ok_eval_match_of, ok_eval_arm_in, ok_empty_of_mini_selfhost_List_mini_selfhost_SrcType, ok_eval_divide, ok_eval_stride_of, ok_eval_if_of, ok_eval_let_in_of, ok_arm_bind, ok_eval_len_of, ok_str_placed, ok_store_eval, ok_store_eval_byte, ok_store_eval_word, ok_store_array_element, trivial⟩
+  ⟨ok_within_payloads, ok_eval_element, ok_eval_array_index, ok_eval_checked, ok_eval_copy, ok_eval_field_copy, ok_bounds_guard, ok_lower_load_word, ok_lower_element, ok_lower_load_type, ok_index_of, ok_lower_set_index_of, ok_effs_slice, ok_array_call, ok_empty_of_mini_selfhost_Expr, ok_cons_of_mini_selfhost_Expr, ok_eval_call_sig, ok_eval_host, ok_eval_slot_limit, ok_cons_args, ok_eval_operands, ok_eval_then, ok_lower_negate_typed, ok_lower_not_typed, ok_scalar_cast, ok_eval_struct_of, ok_eval_tagged, ok_eval_match_of, ok_eval_arm_in, ok_empty_of_mini_selfhost_List_mini_selfhost_SrcType, ok_eval_divide, ok_eval_stride_of, ok_eval_if_of, ok_eval_let_in_of, ok_arm_bind, ok_eval_len_of, ok_str_placed, ok_store_eval, ok_store_eval_byte, ok_store_eval_word, trivial⟩
 
 end Lanius.Faithful.SelfTerm

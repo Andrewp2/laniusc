@@ -2746,6 +2746,11 @@ abbrev BStmt_eval_call (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
     qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → (RepOption 153 RepSig) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → (RepOption 185 RepEvaluatedArgs) x3 v3 → k < b → Pre_eval_call n x0 x1 x2 x3 b →
     qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_eval_call n x0 x1 x2 x3 = k ∧ (RepOption 158 RepEvaluated) (Lanius.Mini.evalCall x0 x1 x2 x3) w
 
+abbrev BStmt_eval_slot_limit (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value} {k : Nat},
+    qcall spW prims uc n ix [] = some (w, k) →
+    qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.evalSlotLimit) w
+
 abbrev BStmt_cons_args (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Evaluated} {x1 : Option Lanius.Mini.EvaluatedArgs} {v0 v1 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepEvaluated x0 v0 → (RepOption 185 RepEvaluatedArgs) x1 v1 →
@@ -4785,10 +4790,5 @@ abbrev BStmt_concat_of_mini_selfhost_ConstDecl (spW sp : SrcProgram) (prims : Pr
   ∀ {x0 : List Lanius.Mini.ConstDecl} {x1 : List Lanius.Mini.ConstDecl} {v0 v1 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 113 RepConstDecl) x0 v0 → (RepList 113 RepConstDecl) x1 v1 →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_concat_of_mini_selfhost_ConstDecl n x0 x1 = k ∧ (RepList 113 RepConstDecl) (x0 ++ x1) w
-
-abbrev BStmt_concat_of_mini_selfhost_ImportDecl (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.ImportDecl} {x1 : List Lanius.Mini.ImportDecl} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 116 RepImportDecl) x0 v0 → (RepList 116 RepImportDecl) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_concat_of_mini_selfhost_ImportDecl n x0 x1 = k ∧ (RepList 116 RepImportDecl) (x0 ++ x1) w
 
 end Lanius.Faithful.SelfBudget

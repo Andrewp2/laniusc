@@ -64,14 +64,15 @@ theorem bstep_SrcEff_eval {spW sp : SrcProgram} {prims : Prims} {ix_SrcEff_eval 
     budget Cost_SrcEff_eval
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4⟩
 
-theorem bstep_eval_args {spW sp : SrcProgram} {prims : Prims} {ix_eval_args ix_plus ix_SrcType_size ix_SrcEff_eval ix_empty_of_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_cons_args : Nat}
-    (fnW : spW.funcs[ix_eval_args]? = some (src_eval_args ix_plus ix_SrcType_size ix_SrcEff_eval ix_empty_of_mini_selfhost_SrcType ix_eval_args ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_cons_args)) (fn : sp.funcs[ix_eval_args]? = some (src_eval_args ix_plus ix_SrcType_size ix_SrcEff_eval ix_empty_of_mini_selfhost_SrcType ix_eval_args ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_cons_args))
+theorem bstep_eval_args {spW sp : SrcProgram} {prims : Prims} {ix_eval_args ix_plus ix_SrcType_size ix_SrcEff_eval ix_empty_of_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_eval_slot_limit ix_cons_args : Nat}
+    (fnW : spW.funcs[ix_eval_args]? = some (src_eval_args ix_plus ix_SrcType_size ix_SrcEff_eval ix_empty_of_mini_selfhost_SrcType ix_eval_args ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_eval_slot_limit ix_cons_args)) (fn : sp.funcs[ix_eval_args]? = some (src_eval_args ix_plus ix_SrcType_size ix_SrcEff_eval ix_empty_of_mini_selfhost_SrcType ix_eval_args ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_eval_slot_limit ix_cons_args))
     (np : prims.isPrim ix_eval_args = false)
     (back : Certified (∀ {n : Nat}, Stmt_eval_args sp prims ix_eval_args n))
     (b_plus : Certified (∀ {n : Nat}, BStmt_plus spW sp prims ix_plus n))
     (b_SrcType_size : Certified (∀ {n : Nat}, BStmt_SrcType_size spW sp prims ix_SrcType_size n))
     (b_empty_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, BStmt_empty_of_mini_selfhost_SrcType spW sp prims ix_empty_of_mini_selfhost_SrcType n))
     (pp_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff = false)
+    (b_eval_slot_limit : Certified (∀ {n : Nat}, BStmt_eval_slot_limit spW sp prims ix_eval_slot_limit n))
     (b_cons_args : Certified (∀ {n : Nat}, BStmt_cons_args spW sp prims ix_cons_args n)) {n : Nat}
     (bih_SrcEff_eval : Certified (BStmt_SrcEff_eval spW sp prims ix_SrcEff_eval n))
     (bih_eval_args : Certified (BStmt_eval_args spW sp prims ix_eval_args n)) :
@@ -108,10 +109,11 @@ theorem bstep_eval_arms {spW sp : SrcProgram} {prims : Prims} {ix_eval_arms ix_p
     budget Cost_eval_arms
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4 r5 r6 r7 r8 r9⟩
 
-theorem bstep_eval_let_body {spW sp : SrcProgram} {prims : Prims} {ix_eval_let_body ix_SrcEff_eval : Nat}
-    (fnW : spW.funcs[ix_eval_let_body]? = some (src_eval_let_body ix_SrcEff_eval)) (fn : sp.funcs[ix_eval_let_body]? = some (src_eval_let_body ix_SrcEff_eval))
+theorem bstep_eval_let_body {spW sp : SrcProgram} {prims : Prims} {ix_eval_let_body ix_SrcEff_eval ix_eval_slot_limit : Nat}
+    (fnW : spW.funcs[ix_eval_let_body]? = some (src_eval_let_body ix_SrcEff_eval ix_eval_slot_limit)) (fn : sp.funcs[ix_eval_let_body]? = some (src_eval_let_body ix_SrcEff_eval ix_eval_slot_limit))
     (np : prims.isPrim ix_eval_let_body = false)
-    (back : Certified (∀ {n : Nat}, Stmt_eval_let_body sp prims ix_eval_let_body n)) {n : Nat}
+    (back : Certified (∀ {n : Nat}, Stmt_eval_let_body sp prims ix_eval_let_body n))
+    (b_eval_slot_limit : Certified (∀ {n : Nat}, BStmt_eval_slot_limit spW sp prims ix_eval_slot_limit n)) {n : Nat}
     (bih_SrcEff_eval : Certified (BStmt_SrcEff_eval spW sp prims ix_SrcEff_eval n)) :
     BStmt_eval_let_body spW sp prims ix_eval_let_body (n + 1) := by
   intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w k b h r0 r1 r2 r3 r4 hb pre
@@ -124,11 +126,12 @@ theorem bstep_eval_let_body {spW sp : SrcProgram} {prims : Prims} {ix_eval_let_b
     budget Cost_eval_let_body
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4⟩
 
-theorem bstep_eval_arm_in {spW sp : SrcProgram} {prims : Prims} {ix_eval_arm_in ix_SrcEff_eval ix_eval_same ix_eval_arm : Nat}
-    (fnW : spW.funcs[ix_eval_arm_in]? = some (src_eval_arm_in ix_SrcEff_eval ix_eval_same ix_eval_arm)) (fn : sp.funcs[ix_eval_arm_in]? = some (src_eval_arm_in ix_SrcEff_eval ix_eval_same ix_eval_arm))
+theorem bstep_eval_arm_in {spW sp : SrcProgram} {prims : Prims} {ix_eval_arm_in ix_SrcEff_eval ix_eval_same ix_eval_slot_limit ix_eval_arm : Nat}
+    (fnW : spW.funcs[ix_eval_arm_in]? = some (src_eval_arm_in ix_SrcEff_eval ix_eval_same ix_eval_slot_limit ix_eval_arm)) (fn : sp.funcs[ix_eval_arm_in]? = some (src_eval_arm_in ix_SrcEff_eval ix_eval_same ix_eval_slot_limit ix_eval_arm))
     (np : prims.isPrim ix_eval_arm_in = false)
     (back : Certified (∀ {n : Nat}, Stmt_eval_arm_in sp prims ix_eval_arm_in n))
     (b_eval_same : Certified (∀ {n : Nat}, BStmt_eval_same spW sp prims ix_eval_same n))
+    (b_eval_slot_limit : Certified (∀ {n : Nat}, BStmt_eval_slot_limit spW sp prims ix_eval_slot_limit n))
     (b_eval_arm : Certified (∀ {n : Nat}, BStmt_eval_arm spW sp prims ix_eval_arm n)) {n : Nat}
     (bih_SrcEff_eval : Certified (BStmt_SrcEff_eval spW sp prims ix_SrcEff_eval n)) :
     BStmt_eval_arm_in spW sp prims ix_eval_arm_in (n + 1) := by

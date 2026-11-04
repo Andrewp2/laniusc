@@ -516,6 +516,8 @@ theorem tsm_eval_eLet (id : Nat) (ty : SrcType) (value : SrcEff) (rt : SrcType) 
   dsimp only
   split
   · simp only [ts_none, ts_SrcType] at *; omega_atoms
+  split
+  · simp only [ts_none, ts_SrcType] at *; omega_atoms
   · rename_i s h
     rw [h] at hsc
     simp only [ts_some, ts_cons, ts_nil, ts_SrcType] at hsc ⊢
@@ -534,7 +536,10 @@ theorem tsm_eval_eStr (offset : Nat) (chars : List Nat) (sigs : List Sig) (decls
 
 theorem tsm_evalArgs_nil (sigs : List Sig) (decls : SrcDecls) (scope : List Binding) (slot : Nat) (M : Nat)
     (h16 : 16 ≤ M) : ts (evalArgs sigs decls scope [] slot) ≤ M := by
-  rw [evalArgs]; ts_auto
+  rw [evalArgs]
+  split
+  · simp only [ts_none]; omega
+  · ts_auto
 
 theorem tsm_evalArgs_cons (sigs : List Sig) (decls : SrcDecls) (scope : List Binding) (arg : SrcEff) (rest : List SrcEff)
     (slot : Nat) (M : Nat) (h16 : 16 ≤ M) (he : ts (arg :: rest) ≤ M)
@@ -544,6 +549,8 @@ theorem tsm_evalArgs_cons (sigs : List Sig) (decls : SrcDecls) (scope : List Bin
   simp only [ts_cons, Nat.max_le] at he
   have := i0 (by omega)
   rw [evalArgs]
+  split
+  · simp only [ts_none]; omega
   split
   · simp only [ts_none]; omega
   · rename_i first h

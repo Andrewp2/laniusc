@@ -12,127 +12,127 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.Termination
 open Lanius.Faithful.SelfCert
 
-theorem ok_set_field_eval_at : FnOk prog prims info (570, ⟨5, [], 0⟩) :=
+theorem ok_store_array_element : FnOk prog prims info (570, ⟨5, [], 0⟩) :=
+  fnOk_of fn_store_array_element (by decide +kernel)
+
+theorem ok_set_field_eval_at : FnOk prog prims info (571, ⟨5, [], 0⟩) :=
   fnOk_of fn_set_field_eval_at (by decide +kernel)
 
-theorem ok_lower_arm_stmt : FnOk prog prims info (571, ⟨3, [], 0⟩) :=
+theorem ok_lower_arm_stmt : FnOk prog prims info (572, ⟨3, [], 0⟩) :=
   fnOk_of fn_lower_arm_stmt (by decide +kernel)
 
-theorem ok_arm_payload : FnOk prog prims info (572, ⟨13, [], 0⟩) :=
+theorem ok_arm_payload : FnOk prog prims info (573, ⟨13, [], 0⟩) :=
   fnOk_of fn_arm_payload (by decide +kernel)
 
-theorem ok_FloatTy_number : FnOk prog prims info (573, ⟨0, [], 0⟩) :=
+theorem ok_FloatTy_number : FnOk prog prims info (574, ⟨0, [], 0⟩) :=
   fnOk_of fn_FloatTy_number (by decide +kernel)
 
-theorem ok_single_of_u64 : FnOk prog prims info (575, ⟨0, [], 0⟩) :=
+theorem ok_single_of_u64 : FnOk prog prims info (576, ⟨0, [], 0⟩) :=
   fnOk_of fn_single_of_u64 (by decide +kernel)
 
-theorem ok_cons_of_u64 : FnOk prog prims info (576, ⟨0, [], 0⟩) :=
+theorem ok_cons_of_u64 : FnOk prog prims info (577, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_u64 (by decide +kernel)
 
-theorem ok_need_capped : FnOk prog prims info (578, ⟨1, [], 0⟩) :=
+theorem ok_need_capped : FnOk prog prims info (579, ⟨1, [], 0⟩) :=
   fnOk_of fn_need_capped (by decide +kernel)
 
-theorem ok_SrcStmt_callee_need : FnOk prog prims info (579, ⟨3, [0], 0⟩) :=
+theorem ok_SrcStmt_callee_need : FnOk prog prims info (580, ⟨3, [0], 0⟩) :=
   fnOk_of fn_SrcStmt_callee_need (by decide +kernel)
 
-theorem ok_effs_types : FnOk prog prims info (580, ⟨1, [0], 0⟩) :=
+theorem ok_effs_types : FnOk prog prims info (581, ⟨1, [0], 0⟩) :=
   fnOk_of fn_effs_types (by decide +kernel)
 
-theorem ok_keep_if : FnOk prog prims info (581, ⟨0, [], 0⟩) :=
+theorem ok_keep_if : FnOk prog prims info (582, ⟨0, [], 0⟩) :=
   fnOk_of fn_keep_if (by decide +kernel)
 
-theorem ok_cons_of_mini_selfhost_SrcStructDecl : FnOk prog prims info (582, ⟨0, [], 0⟩) :=
+theorem ok_cons_of_mini_selfhost_SrcStructDecl : FnOk prog prims info (583, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_SrcStructDecl (by decide +kernel)
 
-theorem ok_struct_fields_at : FnOk prog prims info (583, ⟨0, [1], 1⟩) :=
+theorem ok_struct_fields_at : FnOk prog prims info (584, ⟨0, [1], 1⟩) :=
   fnOk_of fn_struct_fields_at (by decide +kernel)
 
-theorem ok_cons_of_mini_selfhost_SrcEnumDecl : FnOk prog prims info (585, ⟨0, [], 0⟩) :=
+theorem ok_cons_of_mini_selfhost_SrcEnumDecl : FnOk prog prims info (586, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_SrcEnumDecl (by decide +kernel)
 
-theorem ok_enum_variants_at : FnOk prog prims info (586, ⟨0, [1], 1⟩) :=
+theorem ok_enum_variants_at : FnOk prog prims info (587, ⟨0, [1], 1⟩) :=
   fnOk_of fn_enum_variants_at (by decide +kernel)
 
-theorem ok_empty_of_mini_selfhost_RawTok : FnOk prog prims info (588, ⟨0, [], 0⟩) :=
+theorem ok_empty_of_mini_selfhost_RawTok : FnOk prog prims info (589, ⟨0, [], 0⟩) :=
   fnOk_of fn_empty_of_mini_selfhost_RawTok (by decide +kernel)
 
-theorem ok_lx_one_at : FnOk prog prims info (589, ⟨16, [], 0⟩) :=
+theorem ok_lx_one_at : FnOk prog prims info (590, ⟨16, [], 0⟩) :=
   fnOk_of fn_lx_one_at (by decide +kernel)
 
-theorem ok_lx_prepend : FnOk prog prims info (590, ⟨1, [], 0⟩) :=
+theorem ok_lx_prepend : FnOk prog prims info (591, ⟨1, [], 0⟩) :=
   fnOk_of fn_lx_prepend (by decide +kernel)
 
-theorem ok_lx_shift : FnOk prog prims info (591, ⟨2, [], 0⟩) :=
+theorem ok_lx_shift : FnOk prog prims info (592, ⟨2, [], 0⟩) :=
   fnOk_of fn_lx_shift (by decide +kernel)
 
-theorem ok_lx_drop : FnOk prog prims info (592, ⟨1, [0], 0⟩) :=
+theorem ok_lx_drop : FnOk prog prims info (593, ⟨1, [0], 0⟩) :=
   fnOk_of fn_lx_drop (by decide +kernel)
 
-theorem ok_cons_of_mini_selfhost_SymRule : FnOk prog prims info (593, ⟨0, [], 0⟩) :=
+theorem ok_cons_of_mini_selfhost_SymRule : FnOk prog prims info (594, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_SymRule (by decide +kernel)
 
-theorem ok_empty_of_mini_selfhost_SymRule : FnOk prog prims info (594, ⟨0, [], 0⟩) :=
+theorem ok_empty_of_mini_selfhost_SymRule : FnOk prog prims info (595, ⟨0, [], 0⟩) :=
   fnOk_of fn_empty_of_mini_selfhost_SymRule (by decide +kernel)
 
-theorem ok_empty_of_mini_selfhost_Token : FnOk prog prims info (595, ⟨0, [], 0⟩) :=
+theorem ok_empty_of_mini_selfhost_Token : FnOk prog prims info (596, ⟨0, [], 0⟩) :=
   fnOk_of fn_empty_of_mini_selfhost_Token (by decide +kernel)
 
-theorem ok_lx_tokens_at : FnOk prog prims info (596, ⟨4, [3], 1⟩) :=
+theorem ok_lx_tokens_at : FnOk prog prims info (597, ⟨4, [3], 1⟩) :=
   fnOk_of fn_lx_tokens_at (by decide +kernel)
 
-theorem ok_lx_drop_to : FnOk prog prims info (597, ⟨2, [], 0⟩) :=
+theorem ok_lx_drop_to : FnOk prog prims info (598, ⟨2, [], 0⟩) :=
   fnOk_of fn_lx_drop_to (by decide +kernel)
 
-theorem ok_lx_ranges_at : FnOk prog prims info (599, ⟨1, [1], 1⟩) :=
+theorem ok_lx_ranges_at : FnOk prog prims info (600, ⟨1, [1], 1⟩) :=
   fnOk_of fn_lx_ranges_at (by decide +kernel)
 
-theorem ok_lx_filter_at : FnOk prog prims info (600, ⟨3, [4], 1⟩) :=
+theorem ok_lx_filter_at : FnOk prog prims info (601, ⟨3, [4], 1⟩) :=
   fnOk_of fn_lx_filter_at (by decide +kernel)
 
-theorem ok_attach_leaf : FnOk prog prims info (601, ⟨6, [1], 1⟩) :=
+theorem ok_attach_leaf : FnOk prog prims info (602, ⟨6, [1], 1⟩) :=
   fnOk_of fn_attach_leaf (by decide +kernel)
 
-theorem ok_attach_parent : FnOk prog prims info (602, ⟨6, [1], 4⟩) :=
+theorem ok_attach_parent : FnOk prog prims info (603, ⟨6, [1], 4⟩) :=
   fnOk_of fn_attach_parent (by decide +kernel)
 
-theorem ok_is_link : FnOk prog prims info (603, ⟨1, [], 0⟩) :=
+theorem ok_is_link : FnOk prog prims info (604, ⟨1, [], 0⟩) :=
   fnOk_of fn_is_link (by decide +kernel)
 
-theorem ok_join_items : FnOk prog prims info (604, ⟨2, [], 0⟩) :=
+theorem ok_join_items : FnOk prog prims info (605, ⟨2, [], 0⟩) :=
   fnOk_of fn_join_items (by decide +kernel)
 
-theorem ok_has_kids : FnOk prog prims info (605, ⟨2, [], 0⟩) :=
+theorem ok_has_kids : FnOk prog prims info (606, ⟨2, [], 0⟩) :=
   fnOk_of fn_has_kids (by decide +kernel)
 
-theorem ok_single_of_mini_selfhost_CTree : FnOk prog prims info (606, ⟨0, [], 0⟩) :=
+theorem ok_single_of_mini_selfhost_CTree : FnOk prog prims info (607, ⟨0, [], 0⟩) :=
   fnOk_of fn_single_of_mini_selfhost_CTree (by decide +kernel)
 
-theorem ok_empty_of_mini_selfhost_TypeDecl : FnOk prog prims info (607, ⟨0, [], 0⟩) :=
+theorem ok_empty_of_mini_selfhost_TypeDecl : FnOk prog prims info (608, ⟨0, [], 0⟩) :=
   fnOk_of fn_empty_of_mini_selfhost_TypeDecl (by decide +kernel)
 
-theorem ok_empty_of_mini_selfhost_FnDecl : FnOk prog prims info (608, ⟨0, [], 0⟩) :=
+theorem ok_empty_of_mini_selfhost_FnDecl : FnOk prog prims info (609, ⟨0, [], 0⟩) :=
   fnOk_of fn_empty_of_mini_selfhost_FnDecl (by decide +kernel)
 
-theorem ok_empty_of_mini_selfhost_ConstDecl : FnOk prog prims info (609, ⟨0, [], 0⟩) :=
+theorem ok_empty_of_mini_selfhost_ConstDecl : FnOk prog prims info (610, ⟨0, [], 0⟩) :=
   fnOk_of fn_empty_of_mini_selfhost_ConstDecl (by decide +kernel)
 
-theorem ok_empty_of_mini_selfhost_ImportDecl : FnOk prog prims info (610, ⟨0, [], 0⟩) :=
+theorem ok_empty_of_mini_selfhost_ImportDecl : FnOk prog prims info (611, ⟨0, [], 0⟩) :=
   fnOk_of fn_empty_of_mini_selfhost_ImportDecl (by decide +kernel)
 
-theorem ok_empty_of_mini_selfhost_AliasDecl : FnOk prog prims info (611, ⟨0, [], 0⟩) :=
+theorem ok_empty_of_mini_selfhost_AliasDecl : FnOk prog prims info (612, ⟨0, [], 0⟩) :=
   fnOk_of fn_empty_of_mini_selfhost_AliasDecl (by decide +kernel)
 
-theorem ok_empty_of_mini_selfhost_ImplDecl : FnOk prog prims info (612, ⟨0, [], 0⟩) :=
+theorem ok_empty_of_mini_selfhost_ImplDecl : FnOk prog prims info (613, ⟨0, [], 0⟩) :=
   fnOk_of fn_empty_of_mini_selfhost_ImplDecl (by decide +kernel)
 
-theorem ok_empty_of_mini_selfhost_List_mini_selfhost_List_usize : FnOk prog prims info (613, ⟨0, [], 0⟩) :=
+theorem ok_empty_of_mini_selfhost_List_mini_selfhost_List_usize : FnOk prog prims info (614, ⟨0, [], 0⟩) :=
   fnOk_of fn_empty_of_mini_selfhost_List_mini_selfhost_List_usize (by decide +kernel)
 
-theorem ok_join_decls : FnOk prog prims info (614, ⟨1, [], 0⟩) :=
-  fnOk_of fn_join_decls (by decide +kernel)
-
 theorem chunk12 : AllFns prog prims info part12 :=
-  ⟨ok_set_field_eval_at, ok_lower_arm_stmt, ok_arm_payload, ok_FloatTy_number, ok_single_of_u64, ok_cons_of_u64, ok_need_capped, ok_SrcStmt_callee_need, ok_effs_types, ok_keep_if, ok_cons_of_mini_selfhost_SrcStructDecl, ok_struct_fields_at, ok_cons_of_mini_selfhost_SrcEnumDecl, ok_enum_variants_at, ok_empty_of_mini_selfhost_RawTok, ok_lx_one_at, ok_lx_prepend, ok_lx_shift, ok_lx_drop, ok_cons_of_mini_selfhost_SymRule, ok_empty_of_mini_selfhost_SymRule, ok_empty_of_mini_selfhost_Token, ok_lx_tokens_at, ok_lx_drop_to, ok_lx_ranges_at, ok_lx_filter_at, ok_attach_leaf, ok_attach_parent, ok_is_link, ok_join_items, ok_has_kids, ok_single_of_mini_selfhost_CTree, ok_empty_of_mini_selfhost_TypeDecl, ok_empty_of_mini_selfhost_FnDecl, ok_empty_of_mini_selfhost_ConstDecl, ok_empty_of_mini_selfhost_ImportDecl, ok_empty_of_mini_selfhost_AliasDecl, ok_empty_of_mini_selfhost_ImplDecl, ok_empty_of_mini_selfhost_List_mini_selfhost_List_usize, ok_join_decls, trivial⟩
+  ⟨ok_store_array_element, ok_set_field_eval_at, ok_lower_arm_stmt, ok_arm_payload, ok_FloatTy_number, ok_single_of_u64, ok_cons_of_u64, ok_need_capped, ok_SrcStmt_callee_need, ok_effs_types, ok_keep_if, ok_cons_of_mini_selfhost_SrcStructDecl, ok_struct_fields_at, ok_cons_of_mini_selfhost_SrcEnumDecl, ok_enum_variants_at, ok_empty_of_mini_selfhost_RawTok, ok_lx_one_at, ok_lx_prepend, ok_lx_shift, ok_lx_drop, ok_cons_of_mini_selfhost_SymRule, ok_empty_of_mini_selfhost_SymRule, ok_empty_of_mini_selfhost_Token, ok_lx_tokens_at, ok_lx_drop_to, ok_lx_ranges_at, ok_lx_filter_at, ok_attach_leaf, ok_attach_parent, ok_is_link, ok_join_items, ok_has_kids, ok_single_of_mini_selfhost_CTree, ok_empty_of_mini_selfhost_TypeDecl, ok_empty_of_mini_selfhost_FnDecl, ok_empty_of_mini_selfhost_ConstDecl, ok_empty_of_mini_selfhost_ImportDecl, ok_empty_of_mini_selfhost_AliasDecl, ok_empty_of_mini_selfhost_ImplDecl, ok_empty_of_mini_selfhost_List_mini_selfhost_List_usize, trivial⟩
 
 end Lanius.Faithful.SelfTerm

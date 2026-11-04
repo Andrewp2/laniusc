@@ -121,3 +121,8 @@ variable passes it on, a `SrcType.size t` argument gives `ts t`. `str_words` get
 `word_stride`, `element_base`, `str_words` pass. Left in B: `pick_element`/`put_element` (also add the
 base slot `base + k * size`: A) and `params_array_bytes`/`SrcStmt_array_bytes` (the frame block's sums:
 D). P02: 66 -> 62, none new.
+- 11-03 (leafA, coordinator's decision, on leafB2's finding A): the evaluator's start slots are checked against
+  `eval_slot_limit()` = 2^40 in `eval_args`, `eval_let_body` and `eval_arm_in` (the three steps that add a type
+  size per nesting level), which return `None` at or past it. Between two checks a slot grows by at most one
+  type size (≤ 2^22) plus one per nesting level, so A's sums stay below 2^64 with no new premise
+  (SEMANTIC_DECISIONS "The evaluator's slots checked against a limit").

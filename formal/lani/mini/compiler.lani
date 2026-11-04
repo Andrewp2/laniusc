@@ -4541,9 +4541,23 @@ pub fn eval_arm(slot: usize, k: usize, code: core::option::Option<Stmt>, rest: L
     };
 }
 
+// The slots the evaluator's arguments may start at: below 2^40 (a function
+// using that many needs 2^43 bytes of frame, more than any binary has). Each
+// argument after the first starts past the slots of the ones before it, so a
+// nested call adds its callee's parameters' slots per level, and a let or a
+// match in an expression evaluates its body or arms past the value's slots.
+// eval_args, eval_let_body and eval_arm_in check the limit; the evaluator's
+// other slot steps add one per nesting level.
+pub fn eval_slot_limit() -> usize {
+    return 1099511627776;
+}
+
 // Arm k's value evaluated from dst, under its payload's binders.
 // extract: inline
 fn eval_arm_in(sigs: List<Sig>, decls: SrcDecls, bound: core::option::Option<List<Binding>>, slot: usize, dst: usize, ty: SrcType, k: usize, value: SrcEff, rest: List<SrcEff>, later: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    if (dst >= eval_slot_limit()) {
+        return None;
+    }
     return match (bound) {
         None -> None,
         Some(s) -> match (value.eval(sigs, decls, s, dst)) {
@@ -4802,6 +4816,9 @@ fn lower_set_scalar(slot: usize, ty: SrcType, scope: List<Binding>, value: SrcEx
 // The body of a let in an expression, under its binding.
 // extract: inline
 fn eval_let_body(sigs: List<Sig>, decls: SrcDecls, bound: core::option::Option<List<Binding>>, dst: usize, body: SrcEff) -> core::option::Option<Evaluated> {
+    if (dst >= eval_slot_limit()) {
+        return None;
+    }
     return match (bound) {
         None -> None,
         Some(s) -> body.eval(sigs, decls, s, dst),
@@ -5727,6 +5744,9 @@ impl SrcEff {
 
 // The arguments, each in the slots after the one before.
 pub fn eval_args(sigs: List<Sig>, decls: SrcDecls, scope: List<Binding>, args: List<SrcEff>, slot: usize) -> core::option::Option<EvaluatedArgs> {
+    if (slot >= eval_slot_limit()) {
+        return None;
+    }
     return match (args) {
         Nil -> Some(EvaluatedArgs { stmt: Skip, types: empty() }),
         Cons(arg, rest) -> match (arg.eval(sigs, decls, scope, slot)) {

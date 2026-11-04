@@ -2091,6 +2091,8 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
         split at h
         · simp at h
         · rename_i bb hbb
+          split at hbb
+          · simp at hbb
           simp only [evalLetInOf] at h
           split at h
           · rename_i cond
@@ -2161,11 +2163,16 @@ theorem evalArgs_typed {P : Core.Program} (target : P.target = Core.Target.x86_6
       ScopeOk P ctx scope → (∀ t ∈ effsTypes args, TypeDeclared P t) → evalArgs sigs decls scope args slot = some ea →
       ExprsHaveTypes P ctx (SrcEff.toCoreList args) (ea.types.map SrcType.toCore)
   | [], scope, ctx, slot, ea, ok, dd, h => by
-    simp only [evalArgs, Option.some.injEq] at h
+    simp only [evalArgs] at h
+    split at h
+    · simp at h
+    simp only [Option.some.injEq] at h
     subst h
     exact .nil
   | arg :: rest, scope, ctx, slot, ea, ok, dd, h => by
     simp only [evalArgs] at h
+    split at h
+    · simp at h
     split at h
     · simp at h
     · rename_i first hfirst
@@ -2192,6 +2199,8 @@ theorem evalArms_typed {P : Core.Program} (target : P.target = Core.Target.x86_6
   | _ :: _, _, _ :: _, [], _, _, _, _, _, _, _, _, _, _, h => by simp [evalArms] at h
   | value :: rest, k, types :: more, bs :: others, scope, ctx, slot, dst, ty, out, ok, dd, vars, declared, h => by
     simp only [evalArms] at h
+    split at h
+    · simp at h
     split at h
     · simp at h
     · rename_i s' hscope

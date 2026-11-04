@@ -21,6 +21,7 @@ public import Lanius.Faithful.Gen.SelfStmtC_consArgs
 public import Lanius.Faithful.Gen.SelfStmtC_evalDivide
 public import Lanius.Faithful.Gen.SelfStmtC_evalHost
 public import Lanius.Faithful.Gen.SelfStmtC_evalNot
+public import Lanius.Faithful.Gen.SelfStmtC_evalSlotLimit
 public import Lanius.Faithful.Gen.SelfStmtC_lowerCallSig
 public import Lanius.Faithful.Gen.SelfStmtC_lowerLoadType
 public import Lanius.Faithful.Gen.SelfStmtC_matchDst
@@ -86,11 +87,12 @@ theorem step_SrcEff_eval {prog : SrcProgram} {prims : Prims} {ix_SrcEff_eval ix_
   simp only [src_SrcEff_eval] at h
   faithful [Lanius.Mini.SrcEff.eval]
 
-theorem step_eval_args {prog : SrcProgram} {prims : Prims} {ix_eval_args ix_plus ix_SrcType_size ix_SrcEff_eval ix_empty_of_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_cons_args : Nat} (fn : prog.funcs[ix_eval_args]? = some (src_eval_args ix_plus ix_SrcType_size ix_SrcEff_eval ix_empty_of_mini_selfhost_SrcType ix_eval_args ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_cons_args)) (np : prims.isPrim ix_eval_args = false)
+theorem step_eval_args {prog : SrcProgram} {prims : Prims} {ix_eval_args ix_plus ix_SrcType_size ix_SrcEff_eval ix_empty_of_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_eval_slot_limit ix_cons_args : Nat} (fn : prog.funcs[ix_eval_args]? = some (src_eval_args ix_plus ix_SrcType_size ix_SrcEff_eval ix_empty_of_mini_selfhost_SrcType ix_eval_args ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_eval_slot_limit ix_cons_args)) (np : prims.isPrim ix_eval_args = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_SrcType_size : Certified (∀ {n : Nat}, Stmt_SrcType_size prog prims ix_SrcType_size n))
     (ext_empty_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_SrcType prog prims ix_empty_of_mini_selfhost_SrcType n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff n))
+    (ext_eval_slot_limit : Certified (∀ {n : Nat}, Stmt_eval_slot_limit prog prims ix_eval_slot_limit n))
     (ext_cons_args : Certified (∀ {n : Nat}, Stmt_cons_args prog prims ix_cons_args n)) {n : Nat}
     (ih_SrcEff_eval : Certified (Stmt_SrcEff_eval prog prims ix_SrcEff_eval n))
     (ih_eval_args : Certified (Stmt_eval_args prog prims ix_eval_args n)) :

@@ -16,6 +16,11 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.SelfCert
 open Lanius.Faithful.Budget
 
+abbrev BStmt_concat_of_mini_selfhost_ImportDecl (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List Lanius.Mini.ImportDecl} {x1 : List Lanius.Mini.ImportDecl} {v0 v1 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 116 RepImportDecl) x0 v0 → (RepList 116 RepImportDecl) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_concat_of_mini_selfhost_ImportDecl n x0 x1 = k ∧ (RepList 116 RepImportDecl) (x0 ++ x1) w
+
 abbrev BStmt_concat_of_mini_selfhost_AliasDecl (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.AliasDecl} {x1 : List Lanius.Mini.AliasDecl} {v0 v1 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 119 RepAliasDecl) x0 v0 → (RepList 119 RepAliasDecl) x1 v1 →
@@ -4730,10 +4735,5 @@ abbrev BStmt_wild_alone (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
   ∀ {x0 : Lanius.Mini.CTree} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepCTree x0 v0 →
     qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_wild_alone n x0 = k ∧ (RepOption 318 RepWildSplit) (Lanius.Mini.wildAlone x0) w
-
-abbrev BStmt_cons_wild (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.CTree} {x1 : Option Lanius.Mini.WildSplit} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepCTree x0 v0 → (RepOption 318 RepWildSplit) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_wild n x0 x1 = k ∧ (RepOption 318 RepWildSplit) (Lanius.Mini.consWild x0 x1) w
 
 end Lanius.Faithful.SelfBudget
