@@ -1,0 +1,742 @@
+#!/usr/bin/python3 -I
+"""lv: the one front door to the verified compiler's tools on this machine.
+
+    lv check FILE.lean..        Lean on single files (`lake env lean`), errors in full
+    lv build [TARGET..]         `lake build` (default: LaniusMini Lanius LaniusOpen)
+    lv gate [gate.py args]      the difftest gate (default: --tier quick --jobs 2)
+    lv regen [regen.py args]    regenerate the generated Lean files
+    lv open ARGS                the open-statement graph (status, check, claim, release)
+    lv merge COMMIT             coordinator only: fast-forward lang, gate, push
+    lv lake ARGS                any other lake command under a Lean slot
+    lv slot CMD..               run CMD holding a Lean slot (the old leanslot)
+    lv heavy ARGS / lv lcc ARGS the GPU lane and the resident compiler
+    lv memwait | prune | status the memory rule, cache pruning, who holds what
+    lv cache                    check every Lake output for truncation (a full disk)
+                                and quarantine damaged ones (builds check theirs)
+    lv install                  deploy this lv to target/claude-work/lv and make
+                                the old wrappers aliases of it (lv uninstall undoes it)
+
+Every command runs from the worktree you are in (its formal/), takes the
+locks the old wrappers took, and keeps their rules: one worktree lock plus
+one of three machine-wide Lean slots for builds (leanslot), one small lane
+for single files (lcheck), every scope in work.slice, memwait before heavy
+processes (lake's lean goes through target/claude-work/leanroot, whose
+bin/lean caps lean processes at six and waits in memwait), a core limit of
+exactly 1 byte (never 0: Ubuntu's apport would come back), the 5-minute
+limit on each command, and stale Lake cache artifacts pruned now and then.
+
+Failures are loud: a nonzero exit code, the error lines themselves (whole,
+not a tail) and the path of the full log. Nothing is killed for memory.
+"""
+import fcntl
+import os
+import re
+import resource
+import shutil
+import signal
+import subprocess
+import sys
+import time
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+LVD = os.path.join(HERE, 'lv.d')
+LAKE = os.path.expanduser('~/.elan/bin/lake')
+LEAN_SLOTS = ('lean.lock', 'lean.lock.2', 'lean.lock.3')   # leanslot's three machine-wide slots
+TOTAL = 295            # seconds from lv's start, slot waits included: every command ends within 5 minutes
+STARTED = time.time()
+CHECK_LIMIT = 280      # lcheck's own limit for one file
+PRUNE_EVERY = 6 * 3600
+DEFAULT_BUILD = ['LaniusMini', 'Lanius', 'LaniusOpen']
+CACHE = os.path.expanduser('~/.elan/toolchains/leanprover--lean4---v4.33.1/lake/cache')   # Lake's artifact cache
+ALIASES = {   # old wrapper -> lv arguments
+    'leanslot': ['slot'], 'lcheck': ['check'], 'heavy': ['heavy'], 'lcc': ['lcc'],
+    'merge1': ['merge'], 'cacheprune': ['prune'], 'agentstatus': ['status'],
+    'lb': ['build'], 'leanp': ['check'],
+}
+
+
+def die(msg, code=1):
+    print(f'lv: {msg}', file=sys.stderr, flush=True)
+    sys.exit(code)
+
+
+def say(msg):
+    sys.stdout.flush()
+    print(f'lv: {msg}', file=sys.stderr, flush=True)
+
+
+def git(*args, cwd=None):
+    r = subprocess.run(['git', *args], cwd=cwd, capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else None
+
+
+class Place:
+    """Where we are: this worktree (TOP), the main checkout (MAIN, home of the
+    shared .git and target/claude-work) and the shared state (SHARED)."""
+
+    def __init__(self):
+        self.top = git('rev-parse', '--show-toplevel')
+        common = git('rev-parse', '--path-format=absolute', '--git-common-dir')
+        self.main = os.path.dirname(common) if common else '/home/andrew-peterson/code/laniusc'
+        self.common = common
+        self.gitdir = git('rev-parse', '--path-format=absolute', '--git-dir')
+        self.shared = os.path.join(self.main, 'target/claude-work')
+        self.leanroot = os.path.join(self.shared, 'leanroot')
+
+    def formal(self):
+        if not self.top or not os.path.isdir(os.path.join(self.top, 'formal')):
+            die('run lv inside a laniusc checkout or worktree (no formal/ here)', 2)
+        return os.path.join(self.top, 'formal')
+
+    def ensure_links(self):
+        """A worktree reaches the shared tools, cache and compiler the way the
+        tools expect (target/claude-work/{bin,cache}, target/release)."""
+        if self.top == self.main or not self.top:
+            return
+        for rel, dest in (('target/claude-work/bin', os.path.join(self.shared, 'bin')),
+                          ('target/claude-work/cache', os.path.join(self.shared, 'cache')),
+                          ('target/release', os.path.join(self.main, 'target/release'))):
+            p = os.path.join(self.top, rel)
+            if not os.path.lexists(p):
+                os.makedirs(os.path.dirname(p), exist_ok=True)
+                os.symlink(dest, p)
+                say(f'linked {rel} -> {dest}')
+
+
+P = Place()
+
+
+def lean_env(extra=None):
+    env = dict(os.environ)
+    env['PATH'] = os.path.expanduser('~/.elan/bin') + ':' + env.get('PATH', '')
+    env.setdefault('LAKE_OVERRIDE_LEAN', '1')
+    env.setdefault('LEAN_SYSROOT', P.leanroot)
+    env.pop('LEAN_NUM_THREADS', None)   # lake deadlocks with it; only `lv check` sets it (as lcheck did)
+    env.update(extra or {})
+    return env
+
+
+def core_limit():
+    # 1 byte: the kernel then skips the core_pattern pipe (apport); 0 does not.
+    resource.setrlimit(resource.RLIMIT_CORE, (1, 1))
+
+
+def memwait():
+    subprocess.run([os.path.join(LVD, 'memwait')], check=False)
+
+
+def lock(path):
+    f = open(path, 'a')
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        say(f'waiting for {os.path.basename(path)} (held by another run of this worktree)')
+        fcntl.flock(f, fcntl.LOCK_EX)
+    return f
+
+
+def lean_slot():
+    """This worktree's lock, then one of the machine-wide Lean slots (as leanslot)."""
+    if os.environ.get('LEAN_LOCK_HELD') == '1':
+        return []
+    held = [lock(os.path.join(P.gitdir, 'lean-wt.lock'))]
+    told = False
+    while True:
+        for name in LEAN_SLOTS:
+            f = open(os.path.join(P.common, name), 'a')
+            try:
+                fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                f.close()
+                continue
+            held.append(f)
+            return held
+        if not told:
+            say('waiting for a Lean slot (all three busy: `lv status` shows who has them)')
+            told = True
+        time.sleep(3)
+
+
+def prune(force=False):
+    """Drop Lake cache artifacts no worktree links to and outputs, both older than 12 h."""
+    stamp = os.path.join(P.shared, 'lv', 'prune.stamp')
+    if not force and os.path.exists(stamp) and time.time() - os.path.getmtime(stamp) < PRUNE_EVERY:
+        return
+    cache = CACHE
+    gone = 0
+    cutoff = time.time() - 12 * 3600
+    for sub, links_only in (('artifacts', True), ('outputs', False)):
+        for d, _, files in os.walk(os.path.join(cache, sub)):
+            for name in files:
+                p = os.path.join(d, name)
+                try:
+                    st = os.lstat(p)
+                    if st.st_mtime < cutoff and (not links_only or st.st_nlink == 1):
+                        os.unlink(p)
+                        gone += 1
+                except FileNotFoundError:
+                    pass
+    os.makedirs(os.path.dirname(stamp), exist_ok=True)
+    open(stamp, 'w').write(time.strftime('%F %T\n'))
+    du = shutil.disk_usage('/')
+    if force or gone:
+        say(f'pruned {gone} stale Lake cache files; {du.free / 2**30:.0f} GB free on /')
+    return cache_check(quiet=not force)
+
+
+
+def damaged(path):
+    """Why a Lake output is damaged (truncated or empty, as Lean leaves them when
+    the disk fills), or None. An olean (also .ir, .olean.private/.server) is a
+    0x60-byte header (magic, version, githash, base address, root pointer) and
+    then objects; the root object is the last one, so it ends at the end of
+    the file. A header-only part whose root lives in another part is fine."""
+    try:
+        n = os.path.getsize(path)
+        name = os.path.basename(path)
+        ext = name.split('.', 1)[1] if '.' in name else ''
+        if ext.endswith('hash') or ext == 'trace' or ext == '':
+            return None
+        if n == 0:
+            return 'empty'
+        with open(path, 'rb') as f:
+            if ext in ('olean', 'olean.private', 'olean.server', 'ir'):
+                h = f.read(0x60)
+                if len(h) < 0x60 or h[:5] != b'olean':
+                    return 'no olean header'
+                if n == 0x60:
+                    return None
+                base, root = int.from_bytes(h[0x50:0x58], 'little'), int.from_bytes(h[0x58:0x60], 'little')
+                off = root - base
+                if not 0x60 <= off <= n - 8:
+                    return f'truncated (root object outside the file\'s {n} bytes)'
+                f.seek(off)
+                size = int.from_bytes(f.read(8)[4:6], 'little')
+                if off + size != n:
+                    return f'truncated (root object ends at {off + size}, file has {n} bytes)'
+            elif ext in ('ilean', 'c'):
+                f.seek(max(0, n - 64))
+                tail = f.read().rstrip()
+                want = b'}' if ext == 'ilean' else b'#endif'
+                if not tail.endswith(want):
+                    return f'truncated (does not end with {want.decode()})'
+    except FileNotFoundError:
+        return None
+    return None
+
+
+def worktree_builds():
+    out = git('worktree', 'list', '--porcelain', cwd=P.main)
+    for line in out.split('\n'):
+        if line.startswith('worktree '):
+            d = os.path.join(line[9:], 'formal', '.lake', 'build')
+            if os.path.isdir(d):
+                yield d
+
+
+def quarantine(bad):
+    """Move damaged cache artifacts (and the output mappings naming them) to
+    target/claude-work/lv/badcache, and delete every worktree build file that
+    is the same file (hard link) or is itself damaged, with its module's trace,
+    so lake rebuilds those modules instead of crashing on import."""
+    qdir = os.path.join(P.shared, 'lv', 'badcache', time.strftime('%m%d-%H%M%S'))
+    os.makedirs(qdir, exist_ok=True)
+    inodes = {}
+    for path, why in bad:
+        try:
+            st = os.stat(path)
+            inodes[(st.st_dev, st.st_ino)] = path
+        except FileNotFoundError:
+            pass
+    names = {os.path.basename(p) for p, _ in bad if p.startswith(CACHE)}
+    if names:
+        for d, _, files in os.walk(os.path.join(CACHE, 'outputs')):
+            for f in files:
+                m = os.path.join(d, f)
+                try:
+                    text = open(m, errors='replace').read()
+                except OSError:
+                    continue
+                if any(f'"{x}"' in text for x in names):
+                    shutil.move(m, os.path.join(qdir, 'outputs-' + f))
+    dropped = []
+    badpaths = {p for p, _ in bad}
+    for build in worktree_builds():
+        for d, _, files in os.walk(build):
+            for f in files:
+                p = os.path.join(d, f)
+                try:
+                    st = os.lstat(p)
+                except FileNotFoundError:
+                    continue
+                if (st.st_dev, st.st_ino) in inodes or p in badpaths:
+                    mod = os.path.join(d, f.split('.', 1)[0])
+                    for x in [p, mod + '.trace', p + '.hash']:
+                        if os.path.exists(x):
+                            os.unlink(x)
+                    dropped.append(p)
+    for path, why in bad:
+        if path.startswith(CACHE) and os.path.exists(path):
+            shutil.move(path, os.path.join(qdir, os.path.basename(path)))
+    return qdir, dropped
+
+
+def cache_check(since=None, quiet=False):
+    """Check the Lake outputs written since SINCE (all of them when None) in the
+    shared cache and this worktree's build; quarantine damaged ones. Returns the
+    number found; says so loudly."""
+    roots = [os.path.join(CACHE, 'artifacts')]
+    mine = os.path.join(P.top, 'formal', '.lake', 'build')
+    if os.path.isdir(mine):
+        roots.append(mine)
+    bad = []
+    for root in roots:
+        for d, _, files in os.walk(root):
+            for f in files:
+                p = os.path.join(d, f)
+                try:
+                    if since is not None and os.lstat(p).st_mtime < since:
+                        continue
+                except FileNotFoundError:
+                    continue
+                why = damaged(p)
+                if why and time.time() - os.path.getmtime(p) < 120:
+                    time.sleep(3)   # perhaps still being written by another build
+                    why = damaged(p)
+                if why:
+                    bad.append((p, why))
+    if not bad:
+        if not quiet:
+            say('cache: no damaged Lake outputs' + ('' if since is None else ' among the new ones'))
+        return 0
+    for p, why in bad:
+        print(f'  DAMAGED {p}: {why}')
+    qdir, dropped = quarantine(bad)
+    free = shutil.disk_usage('/').free / 2**30
+    say(f'cache: {len(bad)} damaged Lake outputs (truncated or empty: was the disk full? {free:.0f} GB free now); '
+        f'moved to {qdir}, {len(dropped)} worktree build files dropped so lake rebuilds them')
+    return len(bad)
+
+
+# -- running a command in a scope, with a time limit and its output kept
+
+def log_path(kind):
+    d = os.path.join(P.top or P.main, 'target/claude-work/lv')
+    os.makedirs(d, exist_ok=True)
+    return os.path.join(d, f'{kind}-{time.strftime("%m%d-%H%M%S")}-{os.getpid()}.log')
+
+
+def remaining():
+    left = TOTAL - (time.time() - STARTED)
+    if left < 20:
+        die(f'only {left:.0f} s of the {TOTAL} s left after waiting for locks: the machine is busy, run it again', 75)
+    return left
+
+
+def run_scoped(argv, cwd, env, limit, log, live=None):
+    """Run argv in its own work.slice scope; stop the scope at the limit or on
+    a signal. Every line goes to log; lines that `live` accepts are echoed.
+    Returns (exit code, seconds); 124 when the limit stopped it."""
+    unit = f'lv-{os.getpid()}-{int(time.time() * 1000) % 100000}'
+    cmd = ['systemd-run', '--user', '--scope', '-q', '--slice=work.slice', f'--unit={unit}',
+           '-p', 'TimeoutStopSec=10', *argv]
+    began = time.time()
+    out = open(log, 'w')
+    child = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                             stdin=subprocess.DEVNULL, text=True, errors='replace', start_new_session=True)
+
+    def stop(*_):
+        subprocess.run(['systemctl', '--user', 'stop', unit + '.scope'], capture_output=True)
+        try:
+            os.killpg(child.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    old = {s: signal.signal(s, lambda n, f: (stop(), sys.exit(128 + n))) for s in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)}
+    timer = None
+    stopped = []
+    import threading
+
+    def expire():
+        stopped.append(1)
+        stop()
+    limit = min(limit, remaining())
+    timer = threading.Timer(limit, expire)
+    timer.start()
+    try:
+        for line in child.stdout:
+            out.write(line)
+            if live is not None and live(line):
+                sys.stdout.write(line)
+                sys.stdout.flush()
+        code = child.wait()
+    finally:
+        timer.cancel()
+        out.close()
+        for s, h in old.items():
+            signal.signal(s, h)
+    return (124 if stopped else code), time.time() - began, limit
+
+
+HEADER = re.compile(r'^(?:(error|warning|info)(?:\([^)]*\))?: |\S+?:\d+:\d+: (error|warning|info)(?:\([^)]*\))?: )')
+TOPLINE = re.compile(r'^(?:[✔⚠✖ℹ] |trace: |Some required targets|Build completed|- \S)')
+
+
+def blocks(lines):
+    """Lean's and Lake's messages: (kind, [lines]) for each message, a header
+    line and its continuation lines; other top-level lines are ('other', [line])."""
+    cur = None
+    for line in lines:
+        m = HEADER.match(line)
+        if m:
+            if cur:
+                yield cur
+            cur = (m.group(1) or m.group(2), [line])
+        elif TOPLINE.match(line) or cur is None:
+            if cur:
+                yield cur
+                cur = None
+            yield ('other', [line])
+        else:
+            cur[1].append(line)
+    if cur:
+        yield cur
+
+
+def report(log, show_warnings=False, budget=600):
+    """Print every error message whole (and the warnings with --all); count the rest."""
+    lines = open(log, errors='replace').read().split('\n')
+    errors = warnings = printed = 0
+    failed_targets = []
+    in_failed = False
+    for kind, text in blocks(lines):
+        if kind == 'other':
+            line = text[0]
+            in_failed = line.startswith('Some required targets') or (in_failed and line.startswith('- '))
+            if in_failed and line.startswith('- '):
+                failed_targets.append(line[2:].strip())
+            if line.startswith('✖'):
+                print(line, flush=True)
+            continue
+        if kind == 'error':
+            if text[0].startswith('error: build failed') or text[0].startswith('error: Lean exited with code'):
+                continue
+            errors += 1
+        else:
+            warnings += 1
+            if not show_warnings:
+                continue
+        if printed < budget:
+            body = '\n'.join(text).rstrip()
+            print(body, flush=True)
+            printed += body.count('\n') + 1
+    if printed >= budget:
+        say(f'more messages than fit here ({printed} lines shown): all of them are in {log}')
+    return errors, warnings, failed_targets
+
+
+# -- commands
+
+def cmd_slot(args):
+    """leanslot: hold this worktree's lock and a Lean slot, then exec args
+    (a bare lake/lean, after an optional `timeout N`, runs in work.slice)."""
+    if not args:
+        die('usage: lv slot CMD..', 2)
+    core_limit()
+    held = lean_slot()
+    for f in held:
+        os.set_inheritable(f.fileno(), True)
+    i = 2 if args[0] == 'timeout' else 0
+    if os.path.basename(args[i]) in ('lake', 'lean'):
+        args = args[:i] + ['systemd-run', '--user', '--scope', '-q', '--slice=work.slice'] + args[i:]
+    env = lean_env({'LEAN_LOCK_HELD': '1'})
+    try:
+        os.execvpe(args[0], args, env)
+    except FileNotFoundError:
+        die(f'{args[0]}: no such command', 127)
+
+
+def cmd_check(args):
+    """lcheck: `lake env lean FILE` in this worktree's formal/, in the small
+    lane (one at a time, its own lock), 280 s, work.slice, after memwait."""
+    show = '--all' in args
+    files = [a for a in args if a != '--all']
+    if not files:
+        die('usage: lv check [--all] FILE.lean..', 2)
+    formal = P.formal()
+    core_limit()
+    worst = 0
+    for f in files:
+        path = os.path.realpath(f)
+        if not os.path.exists(path):
+            die(f'{f}: no such file', 2)
+        memwait()
+        held = lock(os.path.join(P.common, 'lean-small.lock'))
+        log = log_path('check')
+        code, secs, lim = run_scoped([LAKE, 'env', 'lean', path], formal, lean_env({'LEAN_NUM_THREADS': '1'}),
+                                     CHECK_LIMIT, log)
+        held.close()
+        errors, warnings, _ = report(log, show_warnings=show)
+        rel = os.path.relpath(path)
+        rel = path if rel.startswith('..') else rel
+        if code == 124:
+            say(f'{rel}: STOPPED at the {lim:.0f} s limit (a file that slow needs splitting or a faster proof); log {log}')
+        elif code != 0 or errors:
+            if not errors:   # lean failed without a message we parse: show its output whole
+                print(open(log, errors='replace').read().rstrip())
+            say(f'{rel}: FAILED, {errors} errors, {warnings} warnings, exit {code}, {secs:.1f} s; log {log}')
+        else:
+            say(f'{rel}: ok, {warnings} warnings, {secs:.1f} s')
+            os.unlink(log)
+        worst = worst or (code if code else (1 if errors else 0))
+    return worst
+
+
+def lake_current(targets, formal):
+    return subprocess.run([LAKE, 'build', '--no-build', *targets], cwd=formal, env=lean_env(),
+                          capture_output=True).returncode == 0
+
+
+def cmd_build(args):
+    """lake build TARGETS under a Lean slot, 290 s; the errors in full."""
+    show = '--all' in args
+    targets = [a for a in args if a != '--all'] or DEFAULT_BUILD
+    formal = P.formal()
+    core_limit()
+    prune()
+    if lake_current(targets, formal):
+        say(f'build: {" ".join(targets)} up to date')
+        return 0
+    held = lean_slot()
+    log = log_path('build')
+    code, secs, lim = run_scoped([LAKE, 'build', *targets], formal, lean_env({'LEAN_LOCK_HELD': '1'}), TOTAL, log,
+                            live=lambda line: line.startswith('✖'))
+    for f in held:
+        f.close()
+    if cache_check(since=STARTED - 5, quiet=True):
+        say(f'build: FAILED: it wrote damaged outputs (above); run lv build again to rebuild them. Log {log}')
+        return 1
+    if code == 0:
+        last = [x for x in open(log, errors='replace').read().split('\n') if x.strip()][-1:]
+        say(f'build: ok in {secs:.0f} s ({last[0] if last else ""})')
+        return 0
+    errors, warnings, failed = report(log, show_warnings=show)
+    if code == 124:
+        built = len(re.findall(r'^[✔⚠] ', open(log, errors='replace').read(), re.M))
+        say(f'build: STOPPED at the {lim:.0f} s limit ({built} jobs finished, {errors} errors so far). '
+            f'Lake keeps what finished: run lv build again to go on. Log {log}')
+        return 124
+    if not errors:
+        print(open(log, errors='replace').read().rstrip()[-4000:])
+    say(f'build: FAILED (exit {code}) in {secs:.0f} s: {errors} errors' +
+        (f' in {", ".join(failed)}' if failed else '') + f'; log {log}')
+    return code or 1
+
+
+def run_tool(script, args, limit=TOTAL, kind='tool'):
+    """A formal/tools script under a Lean slot (it waits once, its steps don't),
+    with the integration gate's priority in heavy's GPU queue."""
+    formal = P.formal()
+    P.ensure_links()
+    core_limit()
+    prune()
+    held = lean_slot()
+    env = lean_env({'LEAN_LOCK_HELD': '1'})
+    env.setdefault('HEAVY_PRIORITY', '1')
+    log = log_path(kind)
+    code, secs, lim = run_scoped([sys.executable, '-I', os.path.join(formal, 'tools', script), *args], P.top, env, limit,
+                                 log, live=lambda line: True)
+    for f in held:
+        f.close()
+    if cache_check(since=STARTED - 5, quiet=True) and code == 0:
+        code = 1    # its builds wrote damaged outputs: not a pass, even if the steps passed
+    return code, secs, log, lim
+
+
+def cmd_gate(args):
+    args = args or ['--tier', 'quick', '--jobs', '2']
+    code, secs, log, lim = run_tool('gate.py', args, kind='gate')
+    text = open(log, errors='replace').read()
+    bad = re.findall(r'^== (\S+): (?:failed|stopped)', text, re.M)
+    for step in bad:
+        out = os.path.join(P.top, 'target/claude-work/gate', step, 'output.txt')
+        if os.path.exists(out):
+            lines = open(out, errors='replace').read().split('\n')
+            hits = [x for x in lines if re.search(r'error|Error|FAIL|fail|Traceback|mismatch|differ|assert', x)]
+            print(f'--- {step}: {len(hits)} error lines of {len(lines)} ({out})')
+            for x in hits[:80]:
+                print('   ' + x)
+            if len(hits) > 80:
+                print(f'   ... {len(hits) - 80} more in {out}')
+    summary = re.findall(r'^\d+ steps, (\d+) failed or stopped', text, re.M)
+    if code == 124:
+        say(f'gate: STOPPED at the {lim:.0f} s limit; the steps that finished are cached. Log {log}')
+        return 124
+    if code != 0 or not summary or summary[-1] != '0':
+        if code == 0:
+            code = 1
+        say(f'gate: FAILED (exit {code})' + (f': {", ".join(bad)}' if bad else '') + f'; log {log}')
+        return code
+    say(f'gate: passed in {secs:.0f} s')
+    os.unlink(log)
+    return 0
+
+
+def cmd_regen(args):
+    code, secs, log, lim = run_tool('regen.py', args, kind='regen')
+    if code == 124:
+        say(f'regen: STOPPED at the {lim:.0f} s limit; log {log}')
+    elif code:
+        say(f'regen: FAILED (exit {code}) after {secs:.0f} s; log {log}')
+    else:
+        say(f'regen: ok in {secs:.0f} s')
+        os.unlink(log)
+    return code
+
+
+def cmd_open(args):
+    formal = P.formal()
+    os.execv(sys.executable, [sys.executable, '-I', os.path.join(formal, 'tools', 'open_graph.py'), *args])
+
+
+def cmd_lake(args):
+    formal = P.formal()
+    os.chdir(formal)
+    cmd_slot(['timeout', str(int(TOTAL)), LAKE, *args])
+
+
+def cmd_merge(args):
+    """merge1, fast-forward only: in the main checkout on lang, refuse COMMIT
+    unless it contains local lang (the agent merged lang into its branch and
+    gated there, so this checkout builds the same tree from the Lake cache),
+    `git merge --ff-only`, the quick gate, push with a 60 s limit, prune and
+    check the cache. A failed push leaves local lang ahead of origin (exit 0)."""
+    if len(args) != 1:
+        die('usage: lv merge COMMIT', 2)
+    if P.top != P.main or git('rev-parse', '--abbrev-ref', 'HEAD') != 'lang':
+        die(f'lv merge is the coordinator\'s: run it in {P.main} on branch lang', 2)
+    if git('status', '--porcelain', '--untracked-files=no'):
+        die('the main checkout has uncommitted changes to tracked files; commit or stash them first', 2)
+    c = args[0]
+    if subprocess.run(['git', 'rev-parse', '--verify', '-q', c + '^{commit}'], capture_output=True).returncode:
+        die(f'no commit {c!r}', 2)
+    head = git('rev-parse', '--short', 'HEAD')
+    if subprocess.run(['git', 'merge-base', '--is-ancestor', c, 'HEAD']).returncode == 0:
+        say(f'{c} is already in lang')
+        return 0
+    if subprocess.run(['git', 'merge-base', '--is-ancestor', 'HEAD', c]).returncode != 0:
+        die(f'NOT A FAST-FORWARD: {c} lacks lang {head}; merge local lang into the branch, gate there, then ask again', 1)
+    r = subprocess.run(['git', 'merge', '--ff-only', c], capture_output=True, text=True)
+    if r.returncode != 0 or git('diff', '--name-only', '--diff-filter=U'):
+        print(r.stdout + r.stderr)
+        subprocess.run(['git', 'merge', '--abort'], capture_output=True)
+        die('merge FAILED', 1)
+    say(f'lang {head} -> ' + git('log', '--oneline', '-1'))
+    code = cmd_gate([])
+    if code != 0:
+        die(f'GATE FAILED: not pushed (lang is fast-forwarded locally; `git reset --hard {head}` undoes it)', code)
+    try:
+        p = subprocess.run(['git', 'push', '-q', 'origin', 'lang'], capture_output=True, text=True, timeout=60)
+        pushed = p.returncode == 0
+        if not pushed:
+            print((p.stdout + p.stderr).rstrip())
+    except subprocess.TimeoutExpired:
+        pushed = False
+        print('git push took over 60 s; stopped')
+    say(('pushed: ' if pushed else 'PUSH FAILED (local lang is ahead of origin; push again later): ')
+        + git('log', '--oneline', '-1'))
+    return 1 if prune(force=True) else 0
+
+
+def cmd_install(args):
+    """Deploy this lv (and lv.d) to target/claude-work/lv, point
+    target/claude-work/bin/lv at it, make the old wrappers aliases (originals
+    kept in bin/pre-lv) and leanroot/bin/lean a link to lv.d/lean."""
+    bindir = os.path.join(P.shared, 'bin')
+    dest = os.path.join(P.shared, 'lv')
+    leanroot_bin = os.path.join(P.leanroot, 'bin')
+    if '--bin' in args:   # a scratch install, for testing
+        root = os.path.abspath(args[args.index('--bin') + 1])
+        bindir, dest, leanroot_bin = os.path.join(root, 'bin'), os.path.join(root, 'lv'), os.path.join(root, 'leanroot/bin')
+    for d in (bindir, dest, os.path.join(dest, 'lv.d'), leanroot_bin):
+        os.makedirs(d, exist_ok=True)
+    tmp = os.path.join(dest, '.new')
+    shutil.rmtree(tmp, ignore_errors=True)
+    os.makedirs(os.path.join(tmp, 'lv.d'))
+    shutil.copy2(os.path.realpath(__file__), os.path.join(tmp, 'lv'))
+    for name in os.listdir(LVD):
+        shutil.copy2(os.path.join(LVD, name), os.path.join(tmp, 'lv.d', name))
+    for name in os.listdir(tmp + '/lv.d'):
+        os.replace(os.path.join(tmp, 'lv.d', name), os.path.join(dest, 'lv.d', name))
+    os.replace(os.path.join(tmp, 'lv'), os.path.join(dest, 'lv'))
+    shutil.rmtree(tmp, ignore_errors=True)
+    lv = os.path.join(dest, 'lv')
+    backup = os.path.join(bindir, 'pre-lv')
+    os.makedirs(backup, exist_ok=True)
+
+    def place(path, text=None, link=None, saved=None):
+        saved = os.path.join(backup, saved or os.path.basename(path))
+        if os.path.lexists(path) and not os.path.exists(saved) \
+                and not (os.path.islink(path) or 'formal/tools/lv' in open(path, errors='replace').read()):
+            shutil.copy2(path, saved)
+        new = path + '.lvnew'
+        if os.path.lexists(new):
+            os.unlink(new)
+        if link:
+            os.symlink(link, new)
+        else:
+            open(new, 'w').write(text)
+            os.chmod(new, 0o755)
+        os.replace(new, path)
+    place(os.path.join(bindir, 'lv'), link=lv)
+    for old, sub in ALIASES.items():
+        place(os.path.join(bindir, old),
+              f'#!/bin/bash\n# Alias kept for running agents; see formal/tools/lv and formal/tools/README.md.\n'
+              f'exec {lv} {" ".join(sub)} "$@"\n')
+    place(os.path.join(bindir, 'memwait'), link=os.path.join(dest, 'lv.d', 'memwait'))
+    place(os.path.join(leanroot_bin, 'lean'), link=os.path.join(dest, 'lv.d', 'lean'), saved='leanroot-lean')
+    say(f'installed {lv}; aliases in {bindir} (originals in {backup})')
+    return 0
+
+
+def cmd_uninstall(args):
+    bindir = os.path.join(P.shared, 'bin')
+    leanroot = P.leanroot
+    if '--bin' in args:
+        root = os.path.abspath(args[args.index('--bin') + 1])
+        bindir, leanroot = os.path.join(root, 'bin'), os.path.join(root, 'leanroot')
+    backup = os.path.join(bindir, 'pre-lv')
+    if not os.path.isdir(backup):
+        die('nothing to restore (no bin/pre-lv)')
+    for name in os.listdir(backup):
+        target = os.path.join(leanroot, 'bin', 'lean') if name == 'leanroot-lean' else os.path.join(bindir, name)
+        new = target + '.lvold'
+        shutil.copy2(os.path.join(backup, name), new)
+        os.replace(new, target)
+    say(f'restored the wrappers from {backup}')
+    return 0
+
+
+def main(argv):
+    if not argv or argv[0] in ('-h', '--help', 'help'):
+        print(__doc__.strip())
+        return 0
+    cmd, args = argv[0], argv[1:]
+    if cmd == 'heavy':
+        os.execv(os.path.join(LVD, 'heavy'), [os.path.join(LVD, 'heavy'), *args])
+    if cmd == 'lcc':
+        os.execv(os.path.join(LVD, 'lcc'), [os.path.join(LVD, 'lcc'), *args])
+    if cmd == 'memwait':
+        os.execv(os.path.join(LVD, 'memwait'), [os.path.join(LVD, 'memwait')])
+    if cmd == 'status':
+        os.execv(os.path.join(LVD, 'agentstatus'), [os.path.join(LVD, 'agentstatus')])
+    table = {'check': cmd_check, 'build': cmd_build, 'gate': cmd_gate, 'regen': cmd_regen, 'open': cmd_open,
+             'merge': cmd_merge, 'lake': cmd_lake, 'slot': cmd_slot, 'install': cmd_install,
+             'uninstall': cmd_uninstall, 'prune': lambda a: 1 if prune(force=True) else 0,
+             'cache': lambda a: 1 if cache_check() else 0}
+    if cmd not in table:
+        die(f'no command {cmd!r}; `lv help` lists them', 2)
+    return table[cmd](args)
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))
