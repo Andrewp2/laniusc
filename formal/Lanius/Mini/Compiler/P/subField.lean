@@ -2,10 +2,17 @@ module
 
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
+import Lanius.Mini.Compiler.P.FArith_opcode
 import Lanius.Mini.Compiler.P.Lists_empty
-import Lanius.Mini.Compiler.P.SrcType_same
+import Lanius.Mini.Compiler.P.MemAccess_bytes
+import Lanius.Mini.Compiler.P.SrcExpr_guard
+import Lanius.Mini.Compiler.P.SrcType_uintKind
+import Lanius.Mini.Compiler.P.arities
+import Lanius.Mini.Compiler.P.arrayWords
 import Lanius.Mini.Compiler.P.compileModules
+import Lanius.Mini.Compiler.P.homeInit
 import Lanius.Mini.Compiler.P.loadAtBytes
+import Lanius.Mini.Compiler.P.refSlotAt
 import Lanius.Mini.Compiler.P.widthOf
 
 public section
@@ -14,6 +21,64 @@ public section
 set_option linter.unusedVariables false
 
 namespace Lanius.Mini
+
+def subField (ty : SrcType) (f : Nat) : Option SubPlace :=
+  match ty with
+  | .i32 => none
+  | .bool => none
+  | .uint kind => none
+  | .struct id fields => fieldStep fields f
+  | .enum id variants => none
+  | .ptr => none
+  | .slice element => none
+  | .array arrayElement arrayLength => none
+  | .unit => none
+  | .isize => none
+  | .char => none
+  | .float ft => none
+  | .sint sk => none
+  | .view viewLength => none
+  | .str => none
+  | .ref referent => none
+
+/-- r + offset, as a 64-bit address. -/
+def layAddOff (r : Nat) (offset : Nat) : Expr :=
+  Expr.binary Word.u64 BinOp.add (Expr.var r) (Expr.lit (BitVec.ofNat 64 offset))
+
+/-- Loads of count slots of ty from slot s on, from the block whose lowest byte is in slot r, into target + s on (SrcType.loadsFrom). -/
+def loadsFrom (ty : SrcType) (r : Nat) (target : Nat) (s : Nat) (count : Nat) : Stmt :=
+  if count = 0 then
+    Stmt.skip
+  else
+    let sa : SlotAt := refSlotAt ty s
+    Stmt.seq (MemAccess.load sa.access (target + s) (layAddOff r sa.offset)) (loadsFrom ty r target (s + 1) (count - 1))
+
+def loadSlots (ty : SrcType) (r : Nat) (target : Nat) : Stmt :=
+  loadsFrom ty r target 0 (SrcType.size ty)
+
+/-- Stores of count slots of ty from slot + s on, into the block whose lowest byte is in slot r (SrcType.storesFrom). -/
+def storesFrom (ty : SrcType) (r : Nat) (slot : Nat) (s : Nat) (count : Nat) : Stmt :=
+  if count = 0 then
+    Stmt.skip
+  else
+    let sa : SlotAt := refSlotAt ty s
+    Stmt.seq (MemAccess.store sa.access (layAddOff r sa.offset) (Expr.var (slot + s))) (storesFrom ty r slot (s + 1) (count - 1))
+
+def storeSlots (ty : SrcType) (r : Nat) (slot : Nat) : Stmt :=
+  storesFrom ty r slot 0 (SrcType.size ty)
+
+/-- The verified compiler's trap: a division by zero into slot. -/
+def layRefTrap (slot : Nat) : Stmt :=
+  Stmt.divide Word.u64 DivOp.uDiv slot (Expr.lit 1) (Expr.lit 0)
+
+/-- t := the address of element slot of an array of length elements whose block's lowest byte is in t (elementAddr). -/
+def layElementAddr (t : Nat) (slot : Nat) (length : Nat) (element : SrcType) : Stmt :=
+  let a : MemAccess := accessKind element
+  if MemAccess.narrow a then
+    Stmt.assign t (Expr.binary Word.u64 BinOp.add (Expr.var t) (Expr.binary Word.u64 BinOp.mul (Expr.var slot) (Expr.lit (BitVec.ofNat 64 (MemAccess.bytes a)))))
+  else
+    let ew : Nat := tyWords element
+    Stmt.assign t (Expr.binary Word.u64 BinOp.sub (Expr.binary Word.u64 BinOp.add (Expr.var t) (Expr.lit (BitVec.ofNat 64 (8 * ((length - 1) * ew))))) (Expr.binary Word.u64 BinOp.mul (Expr.var slot) (Expr.lit (BitVec.ofNat 64 (8 * ew)))))
 
 /-- A struct or enum slice's descriptor points at element zero's word 0, its high word, and elements of `words` words run downward: element index's word 0 is index * words words below it. A value's words descend from its word 0. -/
 def elementBase (slot : Nat) (words : Nat) (index : Expr) : Expr :=

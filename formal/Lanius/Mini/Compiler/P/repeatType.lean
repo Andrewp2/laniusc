@@ -4,7 +4,7 @@ public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.SrcExpr_guard
-import Lanius.Mini.Compiler.P.SrcType_same
+import Lanius.Mini.Compiler.P.SrcType_uintKind
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.compileModules
 import Lanius.Mini.Compiler.P.loadAtBytes
@@ -72,8 +72,8 @@ def lowerCopy (scope : List Binding) (e : SrcExpr) (ty : SrcType) : Option (List
   | .int value => none
   | .boolean value => none
   | .unsigned kind value => none
-  | .local id => copyBinding (lookup scope id) ty
-  | .field id index => copyField (lookup scope id) index ty
+  | .local id => copyBinding (lookupSlot scope id) ty
+  | .field id index => copyField (lookupSlot scope id) index ty
   | .negate operand => none
   | .not operand => none
   | .apply op left right => none

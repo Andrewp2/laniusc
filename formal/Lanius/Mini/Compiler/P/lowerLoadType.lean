@@ -4,12 +4,11 @@ public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.SrcExpr_guard
-import Lanius.Mini.Compiler.P.SrcType_same
+import Lanius.Mini.Compiler.P.SrcType_uintKind
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.assignFrom
 import Lanius.Mini.Compiler.P.compileModules
 import Lanius.Mini.Compiler.P.elementAddress
-import Lanius.Mini.Compiler.P.elementBase
 import Lanius.Mini.Compiler.P.guardAnd
 import Lanius.Mini.Compiler.P.indexOf
 import Lanius.Mini.Compiler.P.loadAtBytes
@@ -18,6 +17,7 @@ import Lanius.Mini.Compiler.P.lowerCallSig
 import Lanius.Mini.Compiler.P.matchVariants
 import Lanius.Mini.Compiler.P.shortCircuit
 import Lanius.Mini.Compiler.P.storeWordElement
+import Lanius.Mini.Compiler.P.subField
 import Lanius.Mini.Compiler.P.wordElement
 
 public section
@@ -127,7 +127,7 @@ def evalArrayIndex (b : Binding) (slot : Nat) (index : Option Evaluated) : Optio
   | .ref referent => none
 
 def evalIndex (decls : SrcDecls) (scope : List Binding) (slice : Nat) (slot : Nat) (index : Option Evaluated) : Option Evaluated :=
-  match lookup scope slice with
+  match lookupSlot scope slice with
   | none => none
   | some b =>
     match elementOf b.ty with
@@ -159,9 +159,9 @@ def isArrayLocal (binding : Option Binding) : Bool :=
 
 /-- let id: ty = local[index]; then body: an array's element as the let of the effectful array[index] (LetEval of EIndex), a raw slice's loaded. -/
 def lowerLetIndexAny (decls : SrcDecls) (scope : List Binding) (next : Nat) (ty : SrcType) (slice : Nat) (index : SrcExpr) (body : Option Stmt) : Option Stmt :=
-  if isArrayLocal (lookup scope slice) then
+  if isArrayLocal (lookupSlot scope slice) then
     lowerLetEval ty (evalIndex decls scope slice next (evalPure scope index next)) body
   else
-    guarded next (guardAnd (SrcExpr.guard index scope) (indexGuard scope slice index)) (lowerLetIndex decls next (lookup scope slice) ty (lowerIndex scope index) body)
+    guarded next (guardAnd (SrcExpr.guard index scope) (indexGuard scope slice index)) (lowerLetIndex decls next (lookupSlot scope slice) ty (lowerIndex scope index) body)
 
 end Lanius.Mini

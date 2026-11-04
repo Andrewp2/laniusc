@@ -5,10 +5,10 @@ public import Lanius.Mini.Views
 -- import all uses: Lanius.Mini.Compiler
 import all Lanius.Mini.Compiler.P.BinOp_folds
 import all Lanius.Mini.Compiler.P.Lists_empty
-import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.SrcType_uintKind
 import all Lanius.Mini.Compiler.P.Stmt_kills
-import all Lanius.Mini.Compiler.P.arrayCallSig
 import all Lanius.Mini.Compiler.P.conjunction
+import all Lanius.Mini.Compiler.P.exprRoots
 import all Lanius.Mini.Compiler.P.longer
 import all Lanius.Mini.Compiler.P.lowerApply
 -- end import all uses

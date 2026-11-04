@@ -3,6 +3,7 @@ module
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.BinOp_folds
 import Lanius.Mini.Compiler.P.DivOp_size
+import Lanius.Mini.Compiler.P.MemAccess_bytes
 import Lanius.Mini.Compiler.P.Word_compute
 import Lanius.Mini.Compiler.P.declareProgram
 

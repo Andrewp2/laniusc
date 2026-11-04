@@ -3,7 +3,7 @@ module
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.SrcExpr_guard
-import Lanius.Mini.Compiler.P.SrcType_same
+import Lanius.Mini.Compiler.P.SrcType_uintKind
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.evalSame
 import Lanius.Mini.Compiler.P.guardAnd
@@ -52,10 +52,10 @@ def lowerSetIndexEval (decls : SrcDecls) (slot : Nat) (binding : Option Binding)
 
 /-- slice[index] = value with pure operands: on an array local, the store of the evaluated operands (as SetIndexEval of EPure), on a raw slice, the guarded store. -/
 def lowerSetIndexAny (decls : SrcDecls) (scope : List Binding) (next : Nat) (slice : Nat) (index : SrcExpr) (value : SrcExpr) : Option Stmt :=
-  if isArrayLocal (lookup scope slice) then
-    lowerSetIndexEval decls next (lookup scope slice) (evalPure scope index next) (evalPure scope value (next + 1))
+  if isArrayLocal (lookupSlot scope slice) then
+    lowerSetIndexEval decls next (lookupSlot scope slice) (evalPure scope index next) (evalPure scope value (next + 1))
   else
-    guarded next (guardAnd (guardAnd (SrcExpr.guard index scope) (indexGuard scope slice index)) (SrcExpr.guard value scope)) (lowerSetIndex decls (lookup scope slice) (lowerIndex scope index) scope value)
+    guarded next (guardAnd (guardAnd (SrcExpr.guard index scope) (indexGuard scope slice index)) (SrcExpr.guard value scope)) (lowerSetIndex decls (lookupSlot scope slice) (lowerIndex scope index) scope value)
 
 /-- id is not one of ids. -/
 def idAbsent (ids : List Nat) (id : Nat) : Bool :=

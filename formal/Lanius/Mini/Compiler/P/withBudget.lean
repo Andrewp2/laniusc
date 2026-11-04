@@ -3,10 +3,12 @@ module
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Lists_empty
-import Lanius.Mini.Compiler.P.SrcType_same
+import Lanius.Mini.Compiler.P.SrcType_uintKind
+import Lanius.Mini.Compiler.P.arrayWords
 import Lanius.Mini.Compiler.P.bindingBytes
 import Lanius.Mini.Compiler.P.compileArgs
 import Lanius.Mini.Compiler.P.compileModules
+import Lanius.Mini.Compiler.P.exprRoots
 import Lanius.Mini.Compiler.P.loadAtBytes
 import Lanius.Mini.Compiler.P.strStores
 
@@ -18,10 +20,10 @@ set_option linter.unusedVariables false
 namespace Lanius.Mini
 
 /-- The signatures with the budget of the function lowered against them. -/
-def withBudget (sigs : List Sig) (room : Nat) (block : Nat) : List Sig :=
+def withBudget (sigs : List Sig) (room : Nat) (block : Nat) (frame : Nat) : List Sig :=
   match sigs with
   | [] => []
-  | sig :: rest => ({ params := sig.params, ret := sig.ret, need := sig.need, room := room, block := block } : Sig) :: withBudget rest room block
+  | sig :: rest => ({ params := sig.params, ret := sig.ret, need := sig.need, room := room, block := block, frame := frame } : Sig) :: withBudget rest room block frame
 
 /-- 8 bytes per element of an array type, 0 for any other. -/
 def arrayBytesOf (ty : SrcType) : Nat :=
@@ -43,12 +45,12 @@ def arrayBytesOf (ty : SrcType) : Nat :=
   | .str => 0
   | .ref referent => 0
 
-/-- The block bytes of a declaration of id at type ty: its array bytes when id is passed as a slice. -/
+/-- The block bytes of a declaration of id at type ty: its home's native words when it has one (a borrow names it or it is passed as a slice). -/
 def declBytes (uses : List Nat) (id : Nat) (ty : SrcType) : Nat :=
   if idAbsent uses id then
     0
   else
-    arrayBytesOf ty
+    8 * tyWords ty
 
 /-- The room left of room after each parameter's block bytes are taken out, None as soon as one does not fit (as room_after does for code). -/
 def paramsRoom (room : Nat) (params : List SrcParam) (uses : List Nat) : Option Nat :=
@@ -59,149 +61,6 @@ def paramsRoom (room : Nat) (params : List SrcParam) (uses : List Nat) : Option 
     match proom with
     | none => none
     | some pr => paramsRoom pr rest uses
-
-mutual
-/-- The ids of the arrays the expression passes as slices. -/
-def SrcEff.sliceUses (self : SrcEff) : List Nat :=
-  match self with
-  | .ePure e => []
-  | .eCall callee args => effsSliceUses args
-  | .eApply op left right => SrcEff.sliceUses left ++ SrcEff.sliceUses right
-  | .eNeg operand => SrcEff.sliceUses operand
-  | .eNot operand => SrcEff.sliceUses operand
-  | .eCast ty operand => SrcEff.sliceUses operand
-  | .eIndex slice index => SrcEff.sliceUses index
-  | .eStruct ty fields => effsSliceUses fields
-  | .eVariant ty variant payload => effsSliceUses payload
-  | .eMatch scrutinee ety ty binders values => SrcEff.sliceUses scrutinee ++ effsSliceUses values
-  | .eDivide op left right => SrcEff.sliceUses left ++ SrcEff.sliceUses right
-  | .eStride slice => []
-  | .arraySlice element array => [array]
-  | .eIf condition ty thenValue elseValue => SrcEff.sliceUses condition ++ (SrcEff.sliceUses thenValue ++ SrcEff.sliceUses elseValue)
-  | .eLet id ty value rt body => SrcEff.sliceUses value ++ SrcEff.sliceUses body
-  | .eLen slice => []
-  | .eStr offset chars => []
-  | .eBorrow bty bplace => SrcEff.sliceUses bplace
-  | .eDeref dty dref => SrcEff.sliceUses dref
-  | .eField fbase fidx => SrcEff.sliceUses fbase
-  | .eAt abase aindex => SrcEff.sliceUses abase ++ SrcEff.sliceUses aindex
-/-- The largest need of a function the expression calls, by needs (each function's, by index; 0 for a host service). -/
-def SrcEff.calleeNeed (self : SrcEff) (needs : List Nat) : Nat :=
-  match self with
-  | .ePure e => 0
-  | .eCall callee args => max (needs.getD callee 0) (effsCalleeNeed args needs)
-  | .eApply op left right => max (SrcEff.calleeNeed left needs) (SrcEff.calleeNeed right needs)
-  | .eNeg operand => SrcEff.calleeNeed operand needs
-  | .eNot operand => SrcEff.calleeNeed operand needs
-  | .eCast ty operand => SrcEff.calleeNeed operand needs
-  | .eIndex slice index => SrcEff.calleeNeed index needs
-  | .eStruct ty fields => effsCalleeNeed fields needs
-  | .eVariant ty variant payload => effsCalleeNeed payload needs
-  | .eMatch scrutinee ety ty binders values => max (SrcEff.calleeNeed scrutinee needs) (effsCalleeNeed values needs)
-  | .eDivide op left right => max (SrcEff.calleeNeed left needs) (SrcEff.calleeNeed right needs)
-  | .eStride slice => 0
-  | .arraySlice element array => 0
-  | .eIf condition ty thenValue elseValue => max (SrcEff.calleeNeed condition needs) (max (SrcEff.calleeNeed thenValue needs) (SrcEff.calleeNeed elseValue needs))
-  | .eLet id ty value rt body => max (SrcEff.calleeNeed value needs) (SrcEff.calleeNeed body needs)
-  | .eLen slice => 0
-  | .eStr offset chars => 0
-  | .eBorrow bty bplace => SrcEff.calleeNeed bplace needs
-  | .eDeref dty dref => SrcEff.calleeNeed dref needs
-  | .eField fbase fidx => SrcEff.calleeNeed fbase needs
-  | .eAt abase aindex => max (SrcEff.calleeNeed abase needs) (SrcEff.calleeNeed aindex needs)
-def effsSliceUses (es : List SrcEff) : List Nat :=
-  match es with
-  | [] => []
-  | e :: rest => SrcEff.sliceUses e ++ effsSliceUses rest
-def effsCalleeNeed (es : List SrcEff) (needs : List Nat) : Nat :=
-  match es with
-  | [] => 0
-  | e :: rest => max (SrcEff.calleeNeed e needs) (effsCalleeNeed rest needs)
-end
-
-/-- The ids of the arrays the statement passes as slices. -/
-def SrcStmt.sliceUses (self : SrcStmt) : List Nat :=
-  match self with
-  | .nop => []
-  | .let id ty value body => SrcStmt.sliceUses body
-  | .letStruct id ty fields body => SrcStmt.sliceUses body
-  | .letCall id ty callee args body => SrcStmt.sliceUses body
-  | .letEnum id ty variant payload body => SrcStmt.sliceUses body
-  | .letMatch id ty scrutinee enumId arms body => SrcStmt.sliceUses body
-  | .set id value => []
-  | .setField id index value => []
-  | .setCall id callee args => []
-  | .then first second => SrcStmt.sliceUses first ++ SrcStmt.sliceUses second
-  | .if condition thenBranch elseBranch => SrcStmt.sliceUses thenBranch ++ SrcStmt.sliceUses elseBranch
-  | .while condition body => SrcStmt.sliceUses body
-  | .return value => []
-  | .letAlloc id size shift body => SrcStmt.sliceUses body
-  | .letLoad id pointer offset body => SrcStmt.sliceUses body
-  | .setByte pointer offset value => []
-  | .free pointer size shift => []
-  | .letSlice id element pointer length body => SrcStmt.sliceUses body
-  | .letIndex id ty slice index body => SrcStmt.sliceUses body
-  | .setIndex slice index value => []
-  | .letEval id ty value body => SrcEff.sliceUses value ++ SrcStmt.sliceUses body
-  | .setEval id value => SrcEff.sliceUses value
-  | .ifEval condition thenBranch elseBranch => SrcEff.sliceUses condition ++ (SrcStmt.sliceUses thenBranch ++ SrcStmt.sliceUses elseBranch)
-  | .whileEval condition body => SrcEff.sliceUses condition ++ SrcStmt.sliceUses body
-  | .returnEval value => SrcEff.sliceUses value
-  | .discard value => SrcEff.sliceUses value
-  | .setIndexEval slice index value => SrcEff.sliceUses index ++ SrcEff.sliceUses value
-  | .setFieldEval id field value => SrcEff.sliceUses value
-  | .returnUnit => []
-  | .assert condition => SrcEff.sliceUses condition
-  | .break => []
-  | .continue => []
-  | .matchArm scrutinee enumId variant binds binder ty body rest => SrcStmt.sliceUses body ++ SrcStmt.sliceUses rest
-  | .unreachable id ty => []
-  | .letView id length fields pointer body => SrcStmt.sliceUses body
-  | .letStr pointer chars body => SrcStmt.sliceUses body
-  | .setPlace aplace avalue => SrcEff.sliceUses aplace ++ SrcEff.sliceUses avalue
-  | .setPlaceOp aop aplace avalue => SrcEff.sliceUses aplace ++ SrcEff.sliceUses avalue
-
-/-- The largest need of a function the statement calls (SrcEff.callee_need). -/
-def SrcStmt.calleeNeed (self : SrcStmt) (needs : List Nat) : Nat :=
-  match self with
-  | .nop => 0
-  | .let id ty value body => SrcStmt.calleeNeed body needs
-  | .letStruct id ty fields body => SrcStmt.calleeNeed body needs
-  | .letCall id ty callee args body => max (needs.getD callee 0) (SrcStmt.calleeNeed body needs)
-  | .letEnum id ty variant payload body => SrcStmt.calleeNeed body needs
-  | .letMatch id ty scrutinee enumId arms body => SrcStmt.calleeNeed body needs
-  | .set id value => 0
-  | .setField id index value => 0
-  | .setCall id callee args => needs.getD callee 0
-  | .then first second => max (SrcStmt.calleeNeed first needs) (SrcStmt.calleeNeed second needs)
-  | .if condition thenBranch elseBranch => max (SrcStmt.calleeNeed thenBranch needs) (SrcStmt.calleeNeed elseBranch needs)
-  | .while condition body => SrcStmt.calleeNeed body needs
-  | .return value => 0
-  | .letAlloc id size shift body => SrcStmt.calleeNeed body needs
-  | .letLoad id pointer offset body => SrcStmt.calleeNeed body needs
-  | .setByte pointer offset value => 0
-  | .free pointer size shift => 0
-  | .letSlice id element pointer length body => SrcStmt.calleeNeed body needs
-  | .letIndex id ty slice index body => SrcStmt.calleeNeed body needs
-  | .setIndex slice index value => 0
-  | .letEval id ty value body => max (SrcEff.calleeNeed value needs) (SrcStmt.calleeNeed body needs)
-  | .setEval id value => SrcEff.calleeNeed value needs
-  | .ifEval condition thenBranch elseBranch => max (SrcEff.calleeNeed condition needs) (max (SrcStmt.calleeNeed thenBranch needs) (SrcStmt.calleeNeed elseBranch needs))
-  | .whileEval condition body => max (SrcEff.calleeNeed condition needs) (SrcStmt.calleeNeed body needs)
-  | .returnEval value => SrcEff.calleeNeed value needs
-  | .discard value => SrcEff.calleeNeed value needs
-  | .setIndexEval slice index value => max (SrcEff.calleeNeed index needs) (SrcEff.calleeNeed value needs)
-  | .setFieldEval id field value => SrcEff.calleeNeed value needs
-  | .returnUnit => 0
-  | .assert condition => SrcEff.calleeNeed condition needs
-  | .break => 0
-  | .continue => 0
-  | .matchArm scrutinee enumId variant binds binder ty body rest => max (SrcStmt.calleeNeed body needs) (SrcStmt.calleeNeed rest needs)
-  | .unreachable id ty => 0
-  | .letView id length fields pointer body => SrcStmt.calleeNeed body needs
-  | .letStr pointer chars body => SrcStmt.calleeNeed body needs
-  | .setPlace aplace avalue => max (SrcEff.calleeNeed aplace needs) (SrcEff.calleeNeed avalue needs)
-  | .setPlaceOp aop aplace avalue => max (SrcEff.calleeNeed aplace needs) (SrcEff.calleeNeed avalue needs)
 
 /-- The room left of room after each declaration's block bytes (decl_bytes) are taken out, None as soon as one does not fit: every let of the body, both branches of an if and every arm. -/
 def blockRoom (room : Nat) (uses : List Nat) (s : SrcStmt) : Option Nat :=

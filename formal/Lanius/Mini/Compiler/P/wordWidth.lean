@@ -2,7 +2,7 @@ module
 
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.Lists_empty
-import Lanius.Mini.Compiler.P.SrcType_same
+import Lanius.Mini.Compiler.P.SrcType_uintKind
 import Lanius.Mini.Compiler.P.enumVariants
 import Lanius.Mini.Compiler.P.structFields
 import Lanius.Mini.Compiler.P.usizeWidth

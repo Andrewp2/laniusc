@@ -46,7 +46,7 @@ def UintTy.signedWord (self : UintTy) : Word :=
   else
     Word.s32
 
-/-- The innermost binding of id. -/
+/-- The innermost binding of id (homed or not). -/
 def lookup (scope : List Binding) (id : Nat) : Option Binding :=
   match scope with
   | [] => none
@@ -55,6 +55,19 @@ def lookup (scope : List Binding) (id : Nat) : Option Binding :=
       some binding
     else
       lookup rest id
+
+/-- A binding when it has no home. -/
+def unhomed (binding : Option Binding) : Option Binding :=
+  match binding with
+  | none => none
+  | some b =>
+    match b.home with
+    | none => some b
+    | some offset => none
+
+/-- The innermost binding of id when it has no home: every read of a slot goes through this, so a homed local is never read into an Expr (F5 S6b). lookup finds a binding homed or not. -/
+def lookupSlot (scope : List Binding) (id : Nat) : Option Binding :=
+  unhomed (lookup scope id)
 
 def boolBits (value : Bool) : BitVec 64 :=
   if value then
@@ -367,45 +380,5 @@ def SrcType.sintKind (self : SrcType) : Option UintTy :=
   | .view viewLength => none
   | .str => none
   | .ref referent => none
-
-/-- The unsigned type this is, if it is one. -/
-def SrcType.uintKind (self : SrcType) : Option UintTy :=
-  match self with
-  | .i32 => none
-  | .bool => none
-  | .uint kind => some kind
-  | .struct id fields => none
-  | .enum id variants => none
-  | .ptr => none
-  | .slice element => none
-  | .array arrayElement arrayLength => none
-  | .unit => none
-  | .isize => none
-  | .char => none
-  | .float ft => none
-  | .sint sk => none
-  | .view viewLength => none
-  | .str => none
-  | .ref referent => none
-
-/-- How a comparison of two values of this type reads their slots. -/
-def SrcType.word (self : SrcType) : Word :=
-  match self with
-  | .i32 => Word.s32
-  | .bool => Word.s32
-  | .uint kind => Word.u64
-  | .struct id fields => Word.s32
-  | .enum id variants => Word.s32
-  | .ptr => Word.u64
-  | .slice element => Word.u64
-  | .array arrayElement arrayLength => Word.s32
-  | .unit => Word.s32
-  | .isize => Word.u64
-  | .char => Word.u64
-  | .float ft => Word.u64
-  | .sint kind => UintTy.signedWord kind
-  | .view viewLength => Word.u64
-  | .str => Word.u64
-  | .ref referent => Word.u64
 
 end Lanius.Mini

@@ -492,7 +492,7 @@ structure SrcProgram where
   statics : List UInt8
   deriving Repr
 
-/-- home: the byte offset of the binding's home in its function's frame block, for a local that lives in frame memory (F5 S6b, a borrowed local); None for a local in slots, which every binding is until S6b. -/
+/-- home: the byte offset of the binding's home in its function's frame block, for a local that lives in frame memory (F5 S6b: a local a borrow's place names, or an array local passed as a slice); None for a local in slots. -/
 structure Binding where
   id : Nat
   slot : Nat
@@ -513,6 +513,8 @@ structure Sig where
   need : Nat
   room : Nat
   block : Nat
+  /-- the frame slot of the function lowered against the signatures (F5 S6b: its block's address, with_budget's) -/
+  frame : Nat
   deriving Repr
 
 /-- Code that leaves a value of type ty in slots slot, slot + 1, ...; it may write any slot from slot on, and no slot below. -/
@@ -544,6 +546,30 @@ structure SrcDecls where
   enums : List SrcEnumDecl
   /-- the program's statics (SrcProgram), which its string literals name -/
   statics : List UInt8
+  deriving Repr
+
+/-- How one slot is read and written in memory: one byte, or a word. -/
+inductive MemAccess where
+  | aByte : MemAccess
+  | aWord : MemWidth → MemAccess
+  deriving DecidableEq, Repr
+
+/-- Where a slot lies: a byte offset from the value's lowest byte, and its access. -/
+structure SlotAt where
+  offset : Nat
+  access : MemAccess
+  deriving DecidableEq, Repr
+
+/-- A field's byte offset in a struct's block and its type (SrcType.subStep .field). -/
+structure SubPlace where
+  offset : Nat
+  ty : SrcType
+  deriving Repr
+
+/-- A place's code: it leaves the lowest byte of the place in slot t (and may use t + 1 for an index), and gives the place's type (RPlace.code). -/
+structure PlaceCode where
+  stmt : Stmt
+  ty : SrcType
   deriving Repr
 
 /-- A call passing arrays as slices (SEMANTIC_DECISIONS "Addressed locals", step 3.5 of array-to-slice arguments), lowered at statement level only, since it writes the arrays' own slots: each array local passed at a [T] parameter is stored into the caller's block of frame memory, whose address slot t gets from the frame pointer (Frame(t, 0)); the callee gets the array's pointer there and its length; after the return the elements are loaded back into the local's slots. Only arrays of i32 and u8, which the slice layout packs, are passed, each at most once per call. -/

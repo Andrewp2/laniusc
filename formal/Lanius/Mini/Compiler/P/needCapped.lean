@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Mini.Compiler.Types
+import Lanius.Mini.Compiler.P.exprRoots
 import Lanius.Mini.Compiler.P.needLimit
 import Lanius.Mini.Compiler.P.withBudget
 

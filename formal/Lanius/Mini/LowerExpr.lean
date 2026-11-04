@@ -9,28 +9,28 @@ public import Lanius.Mini.ShiftBy
 public import Lanius.Mini.FloatLower
 -- import all uses: Lanius.Mini.Compiler
 import all Lanius.Mini.Compiler.P.Lists_empty
-import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.SrcType_uintKind
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.arithShiftRight
 import all Lanius.Mini.Compiler.P.arithUint
-import all Lanius.Mini.Compiler.P.arrayCallSig
 import all Lanius.Mini.Compiler.P.conjunction
 import all Lanius.Mini.Compiler.P.equality
+import all Lanius.Mini.Compiler.P.exprRoots
 import all Lanius.Mini.Compiler.P.floatApply
+import all Lanius.Mini.Compiler.P.indexPlace
 import all Lanius.Mini.Compiler.P.lowerApply
 import all Lanius.Mini.Compiler.P.lowerLocal
 import all Lanius.Mini.Compiler.P.lowerShift
 import all Lanius.Mini.Compiler.P.lowerTagged
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.sintToUint
-import all Lanius.Mini.Compiler.P.wordStride
 -- end import all uses
 -- import parts: Lanius.Mini.Compiler SrcExpr.lower SrcOp.lower SrcStmt.lower UintTy.code negateSigned equality order viewedType
 public import Lanius.Mini.Compiler.P.arithShiftRight
-public import Lanius.Mini.Compiler.P.arrayCallSig
 public import Lanius.Mini.Compiler.P.conjunction
 public import Lanius.Mini.Compiler.P.equality
+public import Lanius.Mini.Compiler.P.exprRoots
 public import Lanius.Mini.Compiler.P.lowerApply
 public import Lanius.Mini.Compiler.P.lowerLocal
 public import Lanius.Mini.Compiler.P.lowerTagged

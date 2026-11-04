@@ -2,7 +2,7 @@ module
 
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.Lists_empty
-import Lanius.Mini.Compiler.P.arrayCallSig
+import Lanius.Mini.Compiler.P.exprRoots
 import Lanius.Mini.Compiler.P.needCapped
 import Lanius.Mini.Compiler.P.needsAfter
 
@@ -21,7 +21,7 @@ def funcNeeds (funcs : List SrcFunc) : List Nat :=
 def sigsWith (funcs : List SrcFunc) (needs : List Nat) : List Sig :=
   match funcs with
   | [] => []
-  | func :: rest => ({ params := paramTypes func.params, ret := func.ret, need := needs.getD 0 0, room := 0, block := 0 } : Sig) :: sigsWith rest (restNeeds needs)
+  | func :: rest => ({ params := paramTypes func.params, ret := func.ret, need := needs.getD 0 0, room := 0, block := 0, frame := 0 } : Sig) :: sigsWith rest (restNeeds needs)
 
 def sigs (funcs : List SrcFunc) : List Sig :=
   sigsWith funcs (funcNeeds funcs)

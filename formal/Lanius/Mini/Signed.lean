@@ -3,19 +3,19 @@ module
 public import Lanius.Mini.Unsigned
 public import Lanius.Mini.Shifts
 -- import all uses: Lanius.Mini.Compiler
-import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.SrcType_uintKind
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.arithShiftRight
 import all Lanius.Mini.Compiler.P.arithUint
 import all Lanius.Mini.Compiler.P.guardAnd
+import all Lanius.Mini.Compiler.P.indexPlace
 import all Lanius.Mini.Compiler.P.lowerLocal
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.sintToUint
-import all Lanius.Mini.Compiler.P.wordStride
 -- end import all uses
 -- import parts: Lanius.Mini.Compiler norm castTo arithSint orderSint signKey
-public import Lanius.Mini.Compiler.P.SrcType_same
+public import Lanius.Mini.Compiler.P.SrcType_uintKind
 public import Lanius.Mini.Compiler.P.arithShiftRight
 public import Lanius.Mini.Compiler.P.arithUint
 public import Lanius.Mini.Compiler.P.sintToUint

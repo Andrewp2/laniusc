@@ -4,7 +4,7 @@ public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.SrcExpr_guard
-import Lanius.Mini.Compiler.P.SrcType_same
+import Lanius.Mini.Compiler.P.SrcType_uintKind
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.assignFrom
 import Lanius.Mini.Compiler.P.compileModules
@@ -99,8 +99,8 @@ def evalPure (scope : List Binding) (e : SrcExpr) (slot : Nat) : Option Evaluate
     | .int value => none
     | .boolean value => none
     | .unsigned kind value => none
-    | .local id => evalCopy scope e slot (lookup scope id)
-    | .field id index => evalFieldCopy scope e slot (lookup scope id) index
+    | .local id => evalCopy scope e slot (lookupSlot scope id)
+    | .field id index => evalFieldCopy scope e slot (lookupSlot scope id) index
     | .negate operand => none
     | .not operand => none
     | .apply op left right => none

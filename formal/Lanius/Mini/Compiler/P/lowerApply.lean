@@ -26,8 +26,8 @@ def SrcExpr.lower (self : SrcExpr) (scope : List Binding) : Option Typed :=
   | .int value => some ({ expr := Expr.lit (BitVec.setWidth 64 value), ty := SrcType.i32 } : Typed)
   | .boolean value => some ({ expr := Expr.lit (boolBits value), ty := SrcType.bool } : Typed)
   | .unsigned kind value => lowerUnsigned kind value
-  | .local id => lowerLocal (lookup scope id)
-  | .field id index => lowerField (lookup scope id) index
+  | .local id => lowerLocal (lookupSlot scope id)
+  | .field id index => lowerField (lookupSlot scope id) index
   | .negate operand => lowerNegate (SrcExpr.lower operand scope)
   | .not operand => lowerNot (SrcExpr.lower operand scope)
   | .apply op left right => lowerApply op (SrcExpr.lower left scope) (SrcExpr.lower right scope)

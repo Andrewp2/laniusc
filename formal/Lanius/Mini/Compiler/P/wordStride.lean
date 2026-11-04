@@ -3,22 +3,13 @@ module
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Lists_empty
-import Lanius.Mini.Compiler.P.SrcExpr_guard
-import Lanius.Mini.Compiler.P.SrcType_same
+import Lanius.Mini.Compiler.P.SrcType_uintKind
 import Lanius.Mini.Compiler.P.UintTy_half
-import Lanius.Mini.Compiler.P.armScope
+import Lanius.Mini.Compiler.P.arithShiftRight
+import Lanius.Mini.Compiler.P.arrayWords
 import Lanius.Mini.Compiler.P.compileModules
-import Lanius.Mini.Compiler.P.consArgs
-import Lanius.Mini.Compiler.P.evalDivide
-import Lanius.Mini.Compiler.P.evalHost
-import Lanius.Mini.Compiler.P.evalNot
-import Lanius.Mini.Compiler.P.evalSame
-import Lanius.Mini.Compiler.P.evalSlotLimit
+import Lanius.Mini.Compiler.P.homeInit
 import Lanius.Mini.Compiler.P.loadAtBytes
-import Lanius.Mini.Compiler.P.lowerCallSig
-import Lanius.Mini.Compiler.P.lowerLoadType
-import Lanius.Mini.Compiler.P.matchDst
-import Lanius.Mini.Compiler.P.matchVariants
 import Lanius.Mini.Compiler.P.shortCircuit
 import Lanius.Mini.Compiler.P.wordElement
 
@@ -49,7 +40,7 @@ def evalStrideOf (decls : SrcDecls) (element : SrcType) (slot : Nat) : Option Ev
       evalWordStride decls element slot
 
 def evalStride (decls : SrcDecls) (scope : List Binding) (slice : Nat) (slot : Nat) : Option Evaluated :=
-  match lookup scope slice with
+  match lookupSlot scope slice with
   | none => none
   | some b =>
     match elementOf b.ty with
@@ -63,7 +54,7 @@ def evalLenOf (b : Binding) (slot : Nat) : Option Evaluated :=
   | some element => some ({ stmt := Stmt.assign slot (Expr.var (b.slot + 1)), ty := SrcType.uint UintTy.usize } : Evaluated)
 
 def evalLen (scope : List Binding) (slice : Nat) (slot : Nat) : Option Evaluated :=
-  match lookup scope slice with
+  match lookupSlot scope slice with
   | none => none
   | some b => evalLenOf b slot
 
@@ -85,81 +76,52 @@ def evalStr (decls : SrcDecls) (offset : Nat) (chars : List Nat) (slot : Nat) : 
   else
     none
 
-mutual
-/-- The code computing this expression into slot, slot + 1, ..., and its type. -/
-def SrcEff.eval (self : SrcEff) (sigs : List Sig) (decls : SrcDecls) (scope : List Binding) (slot : Nat) : Option Evaluated :=
-  match self with
-  | .ePure e => evalPure scope e slot
-  | .eCall callee args => evalCall sigs[callee]? callee slot (evalArgs sigs decls scope args slot)
-  | .eApply op left right => evalApply op slot (SrcEff.eval left sigs decls scope slot) (SrcEff.eval right sigs decls scope (slot + 1))
-  | .eNeg operand => evalNegate slot (SrcEff.eval operand sigs decls scope slot)
-  | .eNot operand => evalNot slot (SrcEff.eval operand sigs decls scope slot)
-  | .eCast ty operand => evalCast ty slot (SrcEff.eval operand sigs decls scope slot)
-  | .eIndex slice index => evalIndex decls scope slice slot (SrcEff.eval index sigs decls scope slot)
-  | .eStruct ty fields => evalStruct ty (evalArgs sigs decls scope fields slot)
-  | .eVariant ty variant payload => evalVariant ty variant slot (evalArgs sigs decls scope payload (slot + 1))
-  | .eMatch scrutinee ety ty binders values => evalMatch slot ety ty (SrcEff.eval scrutinee sigs decls scope slot) (evalArms sigs decls scope slot (matchDst slot ety ty) ty 0 (matchVariants ety) binders values) binders.length values.length
-  | .eDivide op left right => evalDivision op slot (SrcEff.eval left sigs decls scope slot) (SrcEff.eval right sigs decls scope (slot + 1))
-  | .eStride slice => evalStride decls scope slice slot
-  | .arraySlice element array => none
-  | .eIf condition ty thenValue elseValue => evalIf slot ty (SrcEff.eval condition sigs decls scope slot) (SrcEff.eval thenValue sigs decls scope slot) (SrcEff.eval elseValue sigs decls scope slot)
-  | .eLet id ty value rt body =>
-    evalLetIn slot ty rt (SrcEff.eval value sigs decls scope slot) (let bound : Option (List Binding) := armScope [id] [ty] slot scope
-     let dst : Nat := matchDst slot ty rt
-     if evalSlotLimit ≤ dst then
-       none
-     else
-       match bound with
-       | none => none
-       | some s => SrcEff.eval body sigs decls s dst)
-  | .eLen slice => evalLen scope slice slot
-  | .eStr offset chars => evalStr decls offset chars slot
-  | .eBorrow bty bplace => none
-  | .eDeref dty dref => none
-  | .eField fbase fidx => none
-  | .eAt abase aindex => none
-/-- The arguments, each in the slots after the one before. -/
-def evalArgs (sigs : List Sig) (decls : SrcDecls) (scope : List Binding) (args : List SrcEff) (slot : Nat) : Option EvaluatedArgs :=
-  if evalSlotLimit ≤ slot then
-    none
-  else
-    match args with
-    | [] => some ({ stmt := Stmt.skip, types := [] } : EvaluatedArgs)
-    | arg :: rest =>
-      match SrcEff.eval arg sigs decls scope slot with
-      | none => none
-      | some first => consArgs first (evalArgs sigs decls scope rest (slot + SrcType.size first.ty))
-/-- Arms k, k + 1, ... of a match on the enum in slot, one per variant from k. -/
-def evalArms (sigs : List Sig) (decls : SrcDecls) (scope : List Binding) (slot : Nat) (dst : Nat) (ty : SrcType) (k : Nat) (variants : List (List SrcType)) (binders : List (List Nat)) (values : List SrcEff) : Option Stmt :=
-  match values with
-  | [] => none
-  | value :: rest =>
-    match variants with
-    | [] => none
-    | types :: more =>
-      match binders with
-      | [] => none
-      | bs :: others =>
-        let bound : Option (List Binding) := armScope bs types (slot + 1) scope
-        let later : Option Stmt := evalArms sigs decls scope slot dst ty (k + 1) more others rest
-        if evalSlotLimit ≤ dst then
-          none
-        else
-          match bound with
-          | none => none
-          | some s =>
-            match SrcEff.eval value sigs decls s dst with
-            | none => none
-            | some e => evalArm slot k (evalSame e ty e.stmt) rest later
-end
+/-- The frame slot and block of the function being lowered (with_budget's). -/
+def ownFrame (sigs : List Sig) : Nat :=
+  match sigs with
+  | [] => 0
+  | sig :: rest => sig.frame
 
-/-- The index in slot and its check g, then the value from slot + 1 and the stores of its words. -/
-def storeEvalThen (i : Evaluated) (v : Evaluated) (element : SrcType) (slot : Nat) (g : Expr) (store : Option Stmt) : Option Stmt :=
-  if (SrcType.isI32 i.ty || SrcType.isUint i.ty UintTy.usize) && SrcType.same v.ty element then
-    match store with
-    | none => none
-    | some s => some (Stmt.seq i.stmt (checkThen slot g (Stmt.seq v.stmt s)))
+def ownBlock (sigs : List Sig) : Nat :=
+  match sigs with
+  | [] => 0
+  | sig :: rest => sig.block
+
+/-- Whether the binding has a home. -/
+def isHomed (binding : Option Binding) : Bool :=
+  match binding with
+  | none => false
+  | some b =>
+    match b.home with
+    | none => false
+    | some offset => true
+
+/-- The bytes the homed bindings of scope take, shadowed ones included: the offset of the next home (stack order). -/
+def homedBytes (scope : List Binding) : Nat :=
+  match scope with
+  | [] => 0
+  | b :: rest =>
+    (match b.home with
+     | none => 0
+     | some bhbOffset => 8 * tyWords b.ty) + homedBytes rest
+
+/-- id is one of ids. -/
+def idListed (ids : List Nat) (id : Nat) : Bool :=
+  match ids with
+  | [] => false
+  | other :: rest => decide (other = id) || idListed rest id
+
+/-- The home of a declaration of id: the next offset when uses (the ids borrows name and the arrays passed as slices, in its scope) has id. -/
+def homeFor (uses : List Nat) (scope : List Binding) (id : Nat) : Option Nat :=
+  if idListed uses id then
+    some (homedBytes scope)
   else
     none
+
+/-- Whether a home fits the block and native layout is exact for its type. -/
+def homeFits (home : Option Nat) (ty : SrcType) (block : Nat) : Bool :=
+  match home with
+  | none => true
+  | some offset => decide (offset + 8 * tyWords ty ≤ block) && homeOk ty && tagsFit ty
 
 end Lanius.Mini

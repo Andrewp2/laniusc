@@ -22,7 +22,7 @@ public import Lanius.Mini.Compiler.P.render
 public import Lanius.Mini.Compiler.P.UintTy_mask
 public import Lanius.Mini.Compiler.P.UintTy_isWide
 public import Lanius.Mini.Compiler.P.UintTy_half
-public import Lanius.Mini.Compiler.P.SrcType_same
+public import Lanius.Mini.Compiler.P.SrcType_uintKind
 public import Lanius.Mini.Compiler.P.arithUint
 public import Lanius.Mini.Compiler.P.floatApply
 public import Lanius.Mini.Compiler.P.lowerShift
@@ -64,7 +64,14 @@ public import Lanius.Mini.Compiler.P.usizeWidth
 public import Lanius.Mini.Compiler.P.wordWidth
 public import Lanius.Mini.Compiler.P.wordElement
 public import Lanius.Mini.Compiler.P.widthOf
-public import Lanius.Mini.Compiler.P.elementBase
+public import Lanius.Mini.Compiler.P.MemAccess_bytes
+public import Lanius.Mini.Compiler.P.arrayWords
+public import Lanius.Mini.Compiler.P.layMergeWidths
+public import Lanius.Mini.Compiler.P.layWidthsAgree
+public import Lanius.Mini.Compiler.P.arraySlotAt
+public import Lanius.Mini.Compiler.P.refSlotAt
+public import Lanius.Mini.Compiler.P.homeInit
+public import Lanius.Mini.Compiler.P.subField
 public import Lanius.Mini.Compiler.P.iteThen
 public import Lanius.Mini.Compiler.P.storeType
 public import Lanius.Mini.Compiler.P.lowerSlice
@@ -73,11 +80,19 @@ public import Lanius.Mini.Compiler.P.elementAddress
 public import Lanius.Mini.Compiler.P.storeWordElement
 public import Lanius.Mini.Compiler.P.lowerLoadType
 public import Lanius.Mini.Compiler.P.wordStride
+public import Lanius.Mini.Compiler.P.fitsThen
+public import Lanius.Mini.Compiler.P.indexPlace
 public import Lanius.Mini.Compiler.P.storeEvalWord
 public import Lanius.Mini.Compiler.P.storeArray
 public import Lanius.Mini.Compiler.P.strStores
 public import Lanius.Mini.Compiler.P.bindingBytes
 public import Lanius.Mini.Compiler.P.arrayCallSig
+public import Lanius.Mini.Compiler.P.letPick
+public import Lanius.Mini.Compiler.P.letCallPick
+public import Lanius.Mini.Compiler.P.setPick
+public import Lanius.Mini.Compiler.P.entryThen
+public import Lanius.Mini.Compiler.P.paramsHomesFit
+public import Lanius.Mini.Compiler.P.exprRoots
 public import Lanius.Mini.Compiler.P.withBudget
 public import Lanius.Mini.Compiler.P.needLimit
 public import Lanius.Mini.Compiler.P.needCapped
@@ -107,6 +122,8 @@ public import Lanius.Mini.Compiler.P.packRound
 public import Lanius.Mini.Compiler.P.larger
 public import Lanius.Mini.Compiler.P.Inline_arithOf
 public import Lanius.Mini.Compiler.P.Inline_lowerSetScalar
+public import Lanius.Mini.Compiler.P.Inline_placeLoad
+public import Lanius.Mini.Compiler.P.Inline_paramsThen
 public import Lanius.Mini.Compiler.P.Inline_blockLeft
 public import Lanius.Mini.Compiler.P.Inline_factOr
 
@@ -119,6 +136,6 @@ operations become `Lists.name` with a spec theorem). `usize` is `Nat`, `i32` is
 prelude's `plus`/`minus`/`times` panic instead of wrapping, so they are
 `+`/`-`/`*` on `Nat` for every run that returns.
 
-The definitions are in 108 parts, `.P0` on, in source order, whose bodies
+The definitions are in 125 parts, `.P0` on, in source order, whose bodies
 are hidden from other modules: a proof that unfolds one imports its part with
 `import all`, so that it is rebuilt only when that part changes. -/

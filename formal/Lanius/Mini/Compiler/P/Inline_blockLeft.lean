@@ -4,7 +4,7 @@ public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Compiler.P.BinOp_folds
 public import Lanius.Mini.Compiler.P.DivOp_size
 public import Lanius.Mini.Compiler.P.Expr_agrees
-public import Lanius.Mini.Compiler.P.SrcType_same
+public import Lanius.Mini.Compiler.P.SrcType_uintKind
 public import Lanius.Mini.Compiler.P.Stmt_kills
 public import Lanius.Mini.Compiler.P.Word_narrows
 public import Lanius.Mini.Compiler.P.binaryConstant

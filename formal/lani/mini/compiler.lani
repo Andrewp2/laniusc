@@ -2040,8 +2040,8 @@ pub struct SrcProgram {
 // a || b is (a | b) != 0.
 
 // home: the byte offset of the binding's home in its function's frame block,
-// for a local that lives in frame memory (F5 S6b, a borrowed local); None for
-// a local in slots, which every binding is until S6b.
+// for a local that lives in frame memory (F5 S6b: a local a borrow's place
+// names, or an array local passed as a slice); None for a local in slots.
 pub struct Binding {
     id: usize,
     slot: usize,
@@ -2049,7 +2049,7 @@ pub struct Binding {
     home: core::option::Option<usize>,
 }
 
-// The innermost binding of id.
+// The innermost binding of id (homed or not).
 pub fn lookup(scope: List<Binding>, id: usize) -> core::option::Option<Binding> {
     return match (scope) {
         Nil -> None,
@@ -2063,6 +2063,24 @@ fn lookup_at(binding: Binding, rest: List<Binding>, id: usize) -> core::option::
         return Some(binding);
     }
     return lookup(rest, id);
+}
+
+// A binding when it has no home.
+pub fn unhomed(binding: core::option::Option<Binding>) -> core::option::Option<Binding> {
+    return match (binding) {
+        None -> None,
+        Some(b) -> match (b.home) {
+            None -> Some(b),
+            Some(offset) -> None,
+        },
+    };
+}
+
+// The innermost binding of id when it has no home: every read of a slot
+// goes through this, so a homed local is never read into an Expr (F5 S6b).
+// lookup finds a binding homed or not.
+pub fn lookup_slot(scope: List<Binding>, id: usize) -> core::option::Option<Binding> {
+    return unhomed(lookup(scope, id));
 }
 
 pub fn bool_bits(value: bool) -> u64 {
@@ -3266,8 +3284,8 @@ impl SrcExpr {
             Int(value) -> Some(Typed { expr: Lit((value as u32) as u64), ty: I32 }),
             Boolean(value) -> Some(Typed { expr: Lit(bool_bits(value)), ty: Bool }),
             Unsigned(kind, value) -> lower_unsigned(kind, value),
-            Local(id) -> lower_local(lookup(scope, id)),
-            Field(id, index) -> lower_field(lookup(scope, id), index),
+            Local(id) -> lower_local(lookup_slot(scope, id)),
+            Field(id, index) -> lower_field(lookup_slot(scope, id), index),
             Negate(operand) -> lower_negate(unbox(operand).lower(scope)),
             Not(operand) -> lower_not(unbox(operand).lower(scope)),
             Apply(op, left, right) -> lower_apply(op, unbox(left).lower(scope), unbox(right).lower(scope)),
@@ -3593,8 +3611,8 @@ pub fn lower_copy(scope: List<Binding>, e: SrcExpr, ty: SrcType) -> core::option
         Int(value) -> None,
         Boolean(value) -> None,
         Unsigned(kind, value) -> None,
-        Local(id) -> copy_binding(lookup(scope, id), ty),
-        Field(id, index) -> copy_field(lookup(scope, id), index, ty),
+        Local(id) -> copy_binding(lookup_slot(scope, id), ty),
+        Field(id, index) -> copy_field(lookup_slot(scope, id), index, ty),
         Negate(operand) -> None,
         Not(operand) -> None,
         Apply(op, left, right) -> None,
@@ -3933,6 +3951,9 @@ pub struct Sig {
     need: usize,
     room: usize,
     block: usize,
+    // the frame slot of the function lowered against the signatures (F5
+    // S6b: its block's address, with_budget's)
+    frame: usize,
 }
 
 pub fn lower_call_sig(scope: List<Binding>, sig: Sig, args: List<SrcExpr>, ty: SrcType) -> core::option::Option<List<Expr>> {
@@ -4047,8 +4068,8 @@ pub fn eval_pure(scope: List<Binding>, e: SrcExpr, slot: usize) -> core::option:
             Int(value) -> None,
             Boolean(value) -> None,
             Unsigned(kind, value) -> None,
-            Local(id) -> eval_copy(scope, e, slot, lookup(scope, id)),
-            Field(id, index) -> eval_field_copy(scope, e, slot, lookup(scope, id), index),
+            Local(id) -> eval_copy(scope, e, slot, lookup_slot(scope, id)),
+            Field(id, index) -> eval_field_copy(scope, e, slot, lookup_slot(scope, id), index),
             Negate(operand) -> None,
             Not(operand) -> None,
             Apply(op, left, right) -> None,
@@ -5160,6 +5181,506 @@ pub fn width_of(ty: SrcType) -> MemWidth {
     };
 }
 
+// F5 (S6b): native layout, as Mini/Layout.lean and Mini/Homes.lean define it
+// (SEMANTIC_DECISIONS "References: the memory model" point 4). A home holds
+// a whole local in its native words; a reference reaches a slot of its
+// referent at a byte offset with an access.
+
+// How one slot is read and written in memory: one byte, or a word.
+pub enum MemAccess {
+    AByte,
+    AWord(MemWidth),
+}
+
+impl MemAccess {
+    pub fn bytes(self) -> usize {
+        return match (self) {
+            AByte -> 1,
+            AWord(w) -> w.bytes(),
+        };
+    }
+
+    // A narrow access: an element of this width is packed in an array.
+    pub fn narrow(self) -> bool {
+        return match (self) {
+            AByte -> true,
+            AWord(w) -> match (w) {
+                M32 -> true,
+                M64 -> false,
+            },
+        };
+    }
+
+    // target = the slot at address, at this width.
+    pub fn load(self, target: usize, address: Expr) -> Stmt {
+        return match (self) {
+            AByte -> LoadByte(target, address),
+            AWord(w) -> LoadWord(w, target, address),
+        };
+    }
+
+    // The low bytes of value at address, at this width.
+    pub fn store(self, address: Expr, value: Expr) -> Stmt {
+        return match (self) {
+            AByte -> StoreByte(address, value),
+            AWord(w) -> StoreWord(w, address, value),
+        };
+    }
+}
+
+// Where a slot lies: a byte offset from the value's lowest byte, and its access.
+pub struct SlotAt {
+    offset: usize,
+    access: MemAccess,
+}
+
+pub fn uint_access(kind: UintTy) -> MemAccess {
+    return match (kind) {
+        Uint8 -> AByte,
+        Uint32 -> AWord(M64),
+        Uint64 -> AWord(M64),
+        Usize -> AWord(M64),
+        Uint16 -> AWord(M64),
+    };
+}
+
+// How an element of an array of this type is packed: an i32 at 4 bytes and a
+// u8 at 1; the others take whole words.
+pub fn access_kind(ty: SrcType) -> MemAccess {
+    return match (ty) {
+        I32 -> AWord(M32),
+        Bool -> AWord(M64),
+        Uint(kind) -> uint_access(kind),
+        Struct(id, fields) -> AWord(M64),
+        Enum(id, variants) -> AWord(M64),
+        Ptr -> AWord(M64),
+        Slice(element) -> AWord(M64),
+        SrcType::Array(array_element, array_length) -> AWord(M64),
+        Unit -> AWord(M64),
+        Isize -> AWord(M64),
+        SrcType::Char -> AWord(M64),
+        SrcType::Float(ft) -> AWord(M64),
+        Sint(sk) -> AWord(M64),
+        View(view_length) -> AWord(M64),
+        Str -> AWord(M64),
+        Ref(referent) -> AWord(M64),
+    };
+}
+
+// A packed array's bytes rounded up to words, any other array its elements'.
+pub fn array_words(a: MemAccess, length: usize, element_words: usize) -> usize {
+    if (a.narrow()) {
+        return plus(times(a.bytes(), length), 7) / 8;
+    }
+    return times(length, element_words);
+}
+
+// extract: mutual begin
+// A value's native words.
+pub fn ty_words(ty: SrcType) -> usize {
+    return match (ty) {
+        I32 -> 1,
+        Bool -> 1,
+        Uint(kind) -> 1,
+        Struct(id, fields) -> max_of(1, lay_field_words(unbox(fields))),
+        Enum(id, variants) -> plus(1, lay_variant_words(unbox(variants))),
+        Ptr -> 1,
+        Slice(element) -> 3,
+        SrcType::Array(array_element, array_length) -> array_words(access_kind(unbox(array_element)), array_length, ty_words(unbox(array_element))),
+        Unit -> 1,
+        Isize -> 1,
+        SrcType::Char -> 1,
+        SrcType::Float(ft) -> 1,
+        Sint(sk) -> 1,
+        View(view_length) -> 1,
+        Str -> 2,
+        Ref(referent) -> 1,
+    };
+}
+
+pub fn lay_field_words(fields: List<SrcType>) -> usize {
+    return match (fields) {
+        Nil -> 0,
+        Cons(t, rest) -> plus(ty_words(t), lay_field_words(unbox(rest))),
+    };
+}
+
+pub fn lay_variant_words(variants: List<List<SrcType>>) -> usize {
+    return match (variants) {
+        Nil -> 0,
+        Cons(fields, rest) -> max_of(lay_field_words(fields), lay_variant_words(unbox(rest))),
+    };
+}
+// extract: mutual end
+
+// a / b, and 0 when b is 0 (Lean's Nat division).
+pub fn div_or_zero(a: usize, b: usize) -> usize {
+    if (b == 0) {
+        return 0;
+    }
+    return a / b;
+}
+
+// a % b, and a when b is 0 (Lean's Nat remainder).
+pub fn rem_or_self(a: usize, b: usize) -> usize {
+    return minus(a, times(div_or_zero(a, b), b));
+}
+
+// Two lists of widths: the first's where both have one, then the longer's rest.
+pub fn lay_merge_widths(a: List<MemWidth>, b: List<MemWidth>) -> List<MemWidth> {
+    return match (a) {
+        Nil -> b,
+        Cons(x, xs) -> match (b) {
+            Nil -> cons(x, unbox(xs)),
+            Cons(y, ys) -> cons(x, lay_merge_widths(unbox(xs), unbox(ys))),
+        },
+    };
+}
+
+// Whether two lists of widths agree where both have one.
+pub fn lay_widths_agree(a: List<MemWidth>, b: List<MemWidth>) -> bool {
+    return match (a) {
+        Nil -> true,
+        Cons(x, xs) -> match (b) {
+            Nil -> true,
+            Cons(y, ys) -> (x.bytes() == y.bytes()) && lay_widths_agree(unbox(xs), unbox(ys)),
+        },
+    };
+}
+
+pub fn repeat_widths(count: usize, ws: List<MemWidth>) -> List<MemWidth> {
+    if (count == 0) {
+        return empty();
+    }
+    return concat(ws, repeat_widths(minus(count, 1), ws));
+}
+
+// extract: mutual begin
+// The native widths of a value's slots, in order (for uniform types).
+pub fn ty_widths(ty: SrcType) -> List<MemWidth> {
+    return match (ty) {
+        I32 -> single(width_of(ty)),
+        Bool -> single(width_of(ty)),
+        Uint(kind) -> single(width_of(ty)),
+        Struct(id, fields) -> lay_fields_widths(unbox(fields)),
+        Enum(id, variants) -> cons(M32, lay_variants_widths(unbox(variants))),
+        Ptr -> single(width_of(ty)),
+        Slice(element) -> cons(M64, cons(M64, single(M64))),
+        SrcType::Array(array_element, array_length) -> repeat_widths(array_length, ty_widths(unbox(array_element))),
+        Unit -> single(width_of(ty)),
+        Isize -> single(width_of(ty)),
+        SrcType::Char -> single(width_of(ty)),
+        SrcType::Float(ft) -> single(width_of(ty)),
+        Sint(sk) -> single(width_of(ty)),
+        View(view_length) -> single(width_of(ty)),
+        Str -> cons(M64, single(M64)),
+        Ref(referent) -> single(M64),
+    };
+}
+
+pub fn lay_fields_widths(fields: List<SrcType>) -> List<MemWidth> {
+    return match (fields) {
+        Nil -> empty(),
+        Cons(t, rest) -> concat(ty_widths(t), lay_fields_widths(unbox(rest))),
+    };
+}
+
+// The widths of an enum's payload slots: each variant's where it has the slot.
+pub fn lay_variants_widths(variants: List<List<SrcType>>) -> List<MemWidth> {
+    return match (variants) {
+        Nil -> empty(),
+        Cons(fields, rest) -> lay_merge_widths(lay_fields_widths(fields), lay_variants_widths(unbox(rest))),
+    };
+}
+// extract: mutual end
+
+// Whether an enum's variants give each payload slot one width.
+pub fn lay_variants_agree(variants: List<List<SrcType>>) -> bool {
+    return match (variants) {
+        Nil -> true,
+        Cons(fields, rest) -> lay_widths_agree(lay_fields_widths(fields), lay_variants_widths(unbox(rest))) && lay_variants_agree(unbox(rest)),
+    };
+}
+
+pub fn width_at(ws: List<MemWidth>, s: usize) -> MemWidth {
+    return match (get(ws, s)) {
+        None -> M64,
+        Some(w) -> w,
+    };
+}
+
+pub fn enum_slot_at(words: usize, variants: List<List<SrcType>>, s: usize) -> SlotAt {
+    if (s == 0) {
+        return SlotAt { offset: times(8, minus(words, 1)), access: AWord(M32) };
+    }
+    return SlotAt { offset: times(8, minus(minus(words, 1), s)), access: AWord(width_at(lay_variants_widths(variants), minus(s, 1))) };
+}
+
+pub fn array_slot_at(element: SrcType, length: usize, s: usize, inner: SlotAt) -> SlotAt {
+    let a: MemAccess = access_kind(element);
+    if (a.narrow()) {
+        return SlotAt { offset: times(a.bytes(), s), access: a };
+    }
+    let ew: usize = ty_words(element);
+    return SlotAt { offset: plus(times(8, minus(times(length, ew), times(plus(div_or_zero(s, element.size()), 1), ew))), inner.offset), access: inner.access };
+}
+
+// extract: mutual begin
+// Where slot s of a value of ty lies in native layout (SrcType.slotAt).
+pub fn slot_at(ty: SrcType, s: usize) -> SlotAt {
+    return match (ty) {
+        I32 -> SlotAt { offset: 0, access: AWord(width_of(ty)) },
+        Bool -> SlotAt { offset: 0, access: AWord(width_of(ty)) },
+        Uint(kind) -> SlotAt { offset: 0, access: AWord(width_of(ty)) },
+        Struct(id, fields) -> lay_fields_slot_at(max_of(1, lay_field_words(unbox(fields))), 0, unbox(fields), s),
+        Enum(id, variants) -> enum_slot_at(ty_words(ty), unbox(variants), s),
+        Ptr -> SlotAt { offset: 0, access: AWord(width_of(ty)) },
+        Slice(element) -> SlotAt { offset: times(8, minus(2, s)), access: AWord(M64) },
+        SrcType::Array(array_element, array_length) -> array_slot_at(unbox(array_element), array_length, s, slot_at(unbox(array_element), rem_or_self(s, unbox(array_element).size()))),
+        Unit -> SlotAt { offset: 0, access: AWord(width_of(ty)) },
+        Isize -> SlotAt { offset: 0, access: AWord(width_of(ty)) },
+        SrcType::Char -> SlotAt { offset: 0, access: AWord(width_of(ty)) },
+        SrcType::Float(ft) -> SlotAt { offset: 0, access: AWord(width_of(ty)) },
+        Sint(sk) -> SlotAt { offset: 0, access: AWord(width_of(ty)) },
+        View(view_length) -> SlotAt { offset: 0, access: AWord(width_of(ty)) },
+        Str -> SlotAt { offset: times(8, minus(1, s)), access: AWord(M64) },
+        Ref(referent) -> SlotAt { offset: 0, access: AWord(M64) },
+    };
+}
+
+// Slot s of fields whose first one starts above words below the top of a
+// total-word value.
+pub fn lay_fields_slot_at(total: usize, above: usize, fields: List<SrcType>, s: usize) -> SlotAt {
+    return match (fields) {
+        Nil -> SlotAt { offset: 0, access: AWord(M64) },
+        Cons(t, rest) -> field_slot_in(total, above, t, slot_at(t, s), unbox(rest), s),
+    };
+}
+// extract: mutual end
+
+// extract: inline
+fn field_slot_in(fsi_total: usize, fsi_above: usize, fsi_t: SrcType, fsi_inner: SlotAt, fsi_rest: List<SrcType>, fsi_s: usize) -> SlotAt {
+    if (fsi_s < fsi_t.size()) {
+        return SlotAt { offset: plus(times(8, minus(minus(fsi_total, fsi_above), ty_words(fsi_t))), fsi_inner.offset), access: fsi_inner.access };
+    }
+    return lay_fields_slot_at(fsi_total, plus(fsi_above, ty_words(fsi_t)), fsi_rest, minus(fsi_s, fsi_t.size()));
+}
+
+// How a reference to a ty reaches slot s: slot_at, but a u8 referent is one byte.
+pub fn ref_slot_at(ty: SrcType, s: usize) -> SlotAt {
+    if (ty.is_uint(Uint8)) {
+        return SlotAt { offset: 0, access: AByte };
+    }
+    return slot_at(ty, s);
+}
+
+// A home's first store: a u8 as its whole 4-byte word (SrcType.homeInit).
+pub fn home_init(ty: SrcType) -> SrcType {
+    if (ty.is_uint(Uint8)) {
+        return Uint(Uint32);
+    }
+    return ty;
+}
+
+// extract: mutual begin
+// Whether native layout is exact for this type's slots (SrcType.homeOk).
+pub fn home_ok(ty: SrcType) -> bool {
+    return match (ty) {
+        I32 -> true,
+        Bool -> true,
+        Uint(kind) -> true,
+        Struct(id, fields) -> lay_fields_home_ok(unbox(fields)),
+        Enum(id, variants) -> lay_variants_uniform(unbox(variants)) && lay_variants_agree(unbox(variants)),
+        Ptr -> true,
+        Slice(element) -> true,
+        SrcType::Array(array_element, array_length) -> home_ok(unbox(array_element)),
+        Unit -> true,
+        Isize -> true,
+        SrcType::Char -> true,
+        SrcType::Float(ft) -> true,
+        Sint(sk) -> true,
+        View(view_length) -> false,
+        Str -> true,
+        Ref(referent) -> true,
+    };
+}
+
+pub fn lay_fields_home_ok(fields: List<SrcType>) -> bool {
+    return match (fields) {
+        Nil -> true,
+        Cons(t, rest) -> home_ok(t) && lay_fields_home_ok(unbox(rest)),
+    };
+}
+
+// A type whose slot j is its native word j (SrcType.uniform).
+pub fn uniform(ty: SrcType) -> bool {
+    return match (ty) {
+        I32 -> true,
+        Bool -> true,
+        Uint(kind) -> true,
+        Struct(id, fields) -> (length(unbox(fields)) > 0) && lay_fields_uniform(unbox(fields)),
+        Enum(id, variants) -> lay_variants_uniform(unbox(variants)) && lay_variants_agree(unbox(variants)),
+        Ptr -> true,
+        Slice(element) -> false,
+        SrcType::Array(array_element, array_length) -> !access_kind(unbox(array_element)).narrow() && uniform(unbox(array_element)),
+        Unit -> true,
+        Isize -> true,
+        SrcType::Char -> true,
+        SrcType::Float(ft) -> true,
+        Sint(sk) -> true,
+        View(view_length) -> false,
+        Str -> true,
+        Ref(referent) -> true,
+    };
+}
+
+pub fn lay_fields_uniform(fields: List<SrcType>) -> bool {
+    return match (fields) {
+        Nil -> true,
+        Cons(t, rest) -> uniform(t) && lay_fields_uniform(unbox(rest)),
+    };
+}
+
+pub fn lay_variants_uniform(variants: List<List<SrcType>>) -> bool {
+    return match (variants) {
+        Nil -> true,
+        Cons(fields, rest) -> lay_fields_uniform(fields) && lay_variants_uniform(unbox(rest)),
+    };
+}
+// extract: mutual end
+
+// extract: mutual begin
+// Whether every enum in the type has at most 2^32 variants (SrcType.tagsFit).
+pub fn tags_fit(ty: SrcType) -> bool {
+    return match (ty) {
+        I32 -> true,
+        Bool -> true,
+        Uint(kind) -> true,
+        Struct(id, fields) -> lay_fields_tags_fit(unbox(fields)),
+        Enum(id, variants) -> (length(unbox(variants)) <= 4294967296) && lay_variants_tags_fit(unbox(variants)),
+        Ptr -> true,
+        Slice(element) -> true,
+        SrcType::Array(array_element, array_length) -> tags_fit(unbox(array_element)),
+        Unit -> true,
+        Isize -> true,
+        SrcType::Char -> true,
+        SrcType::Float(ft) -> true,
+        Sint(sk) -> true,
+        View(view_length) -> true,
+        Str -> true,
+        Ref(referent) -> true,
+    };
+}
+
+pub fn lay_fields_tags_fit(fields: List<SrcType>) -> bool {
+    return match (fields) {
+        Nil -> true,
+        Cons(t, rest) -> tags_fit(t) && lay_fields_tags_fit(unbox(rest)),
+    };
+}
+
+pub fn lay_variants_tags_fit(variants: List<List<SrcType>>) -> bool {
+    return match (variants) {
+        Nil -> true,
+        Cons(fields, rest) -> lay_fields_tags_fit(fields) && lay_variants_tags_fit(unbox(rest)),
+    };
+}
+// extract: mutual end
+
+// The words of the first count fields.
+pub fn words_before(fields: List<SrcType>, count: usize) -> usize {
+    if (count == 0) {
+        return 0;
+    }
+    return match (fields) {
+        Nil -> 0,
+        Cons(t, rest) -> plus(ty_words(t), words_before(unbox(rest), minus(count, 1))),
+    };
+}
+
+// A field's byte offset in a struct's block and its type (SrcType.subStep .field).
+pub struct SubPlace {
+    offset: usize,
+    ty: SrcType,
+}
+
+pub fn field_step(fields: List<SrcType>, f: usize) -> core::option::Option<SubPlace> {
+    return match (get(fields, f)) {
+        None -> None,
+        Some(t) -> Some(SubPlace { offset: times(8, minus(minus(max_of(1, lay_field_words(fields)), words_before(fields, f)), ty_words(t))), ty: t }),
+    };
+}
+
+pub fn sub_field(ty: SrcType, f: usize) -> core::option::Option<SubPlace> {
+    return match (ty) {
+        I32 -> None,
+        Bool -> None,
+        Uint(kind) -> None,
+        Struct(id, fields) -> field_step(unbox(fields), f),
+        Enum(id, variants) -> None,
+        Ptr -> None,
+        Slice(element) -> None,
+        SrcType::Array(array_element, array_length) -> None,
+        Unit -> None,
+        Isize -> None,
+        SrcType::Char -> None,
+        SrcType::Float(ft) -> None,
+        Sint(sk) -> None,
+        View(view_length) -> None,
+        Str -> None,
+        Ref(referent) -> None,
+    };
+}
+
+// r + offset, as a 64-bit address.
+pub fn lay_add_off(r: usize, offset: usize) -> Expr {
+    return Binary(U64, Add, boxed(Var(r)), boxed(Lit(offset as u64)));
+}
+
+// Loads of count slots of ty from slot s on, from the block whose lowest byte
+// is in slot r, into target + s on (SrcType.loadsFrom).
+pub fn loads_from(ty: SrcType, r: usize, target: usize, s: usize, count: usize) -> Stmt {
+    if (count == 0) {
+        return Skip;
+    }
+    let sa: SlotAt = ref_slot_at(ty, s);
+    return Seq(boxed(sa.access.load(plus(target, s), lay_add_off(r, sa.offset))), boxed(loads_from(ty, r, target, plus(s, 1), minus(count, 1))));
+}
+
+pub fn load_slots(ty: SrcType, r: usize, target: usize) -> Stmt {
+    return loads_from(ty, r, target, 0, ty.size());
+}
+
+// Stores of count slots of ty from slot + s on, into the block whose lowest
+// byte is in slot r (SrcType.storesFrom).
+pub fn stores_from(ty: SrcType, r: usize, slot: usize, s: usize, count: usize) -> Stmt {
+    if (count == 0) {
+        return Skip;
+    }
+    let sa: SlotAt = ref_slot_at(ty, s);
+    return Seq(boxed(sa.access.store(lay_add_off(r, sa.offset), Var(plus(slot, s)))), boxed(stores_from(ty, r, slot, plus(s, 1), minus(count, 1))));
+}
+
+pub fn store_slots(ty: SrcType, r: usize, slot: usize) -> Stmt {
+    return stores_from(ty, r, slot, 0, ty.size());
+}
+
+// The verified compiler's trap: a division by zero into slot.
+pub fn lay_ref_trap(slot: usize) -> Stmt {
+    return Divide(U64, UDiv, slot, Lit(1), Lit(0));
+}
+
+// t := the address of element slot of an array of length elements whose
+// block's lowest byte is in t (elementAddr).
+pub fn lay_element_addr(t: usize, slot: usize, length: usize, element: SrcType) -> Stmt {
+    let a: MemAccess = access_kind(element);
+    if (a.narrow()) {
+        return Assign(t, Binary(U64, Add, boxed(Var(t)), boxed(Binary(U64, Mul, boxed(Var(slot)), boxed(Lit(a.bytes() as u64))))));
+    }
+    let ew: usize = ty_words(element);
+    return Assign(t, Binary(U64, Sub, boxed(Binary(U64, Add, boxed(Var(t)), boxed(Lit(times(8, times(minus(length, 1), ew)) as u64)))), boxed(Binary(U64, Mul, boxed(Var(slot)), boxed(Lit(times(8, ew) as u64))))));
+}
+
 // A struct or enum slice's descriptor points at element zero's word 0, its high
 // word, and elements of `words` words run downward: element index's word 0
 // is index * words words below it. A value's words descend from its word 0.
@@ -5359,7 +5880,7 @@ pub fn lower_index(scope: List<Binding>, index: SrcExpr) -> core::option::Option
 
 // The check of slice[index]: the index below the length.
 pub fn index_guard(scope: List<Binding>, slice: usize, index: SrcExpr) -> Expr {
-    return match (lookup(scope, slice)) {
+    return match (lookup_slot(scope, slice)) {
         None -> Lit(1),
         Some(b) -> match (lower_index(scope, index)) {
             None -> Lit(1),
@@ -5598,7 +6119,7 @@ pub fn eval_array_index(b: Binding, slot: usize, index: core::option::Option<Eva
 }
 
 pub fn eval_index(decls: SrcDecls, scope: List<Binding>, slice: usize, slot: usize, index: core::option::Option<Evaluated>) -> core::option::Option<Evaluated> {
-    return match (lookup(scope, slice)) {
+    return match (lookup_slot(scope, slice)) {
         None -> None,
         Some(b) -> match (element_of(b.ty)) {
             None -> eval_array_index(b, slot, index),
@@ -5635,10 +6156,10 @@ pub fn is_array_local(binding: core::option::Option<Binding>) -> bool {
 // let id: ty = local[index]; then body: an array's element as the let of
 // the effectful array[index] (LetEval of EIndex), a raw slice's loaded.
 pub fn lower_let_index_any(decls: SrcDecls, scope: List<Binding>, next: usize, ty: SrcType, slice: usize, index: SrcExpr, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
-    if (is_array_local(lookup(scope, slice))) {
+    if (is_array_local(lookup_slot(scope, slice))) {
         return lower_let_eval(ty, eval_index(decls, scope, slice, next, eval_pure(scope, index, next)), body);
     }
-    return guarded(next, guard_and(index.guard(scope), index_guard(scope, slice, index)), lower_let_index(decls, next, lookup(scope, slice), ty, lower_index(scope, index), body));
+    return guarded(next, guard_and(index.guard(scope), index_guard(scope, slice, index)), lower_let_index(decls, next, lookup_slot(scope, slice), ty, lower_index(scope, index), body));
 }
 
 // A raw slice's stride as isize bits: element i + 1 of an i32 slice starts 4
@@ -5666,7 +6187,7 @@ pub fn eval_stride_of(decls: SrcDecls, element: SrcType, slot: usize) -> core::o
 }
 
 pub fn eval_stride(decls: SrcDecls, scope: List<Binding>, slice: usize, slot: usize) -> core::option::Option<Evaluated> {
-    return match (lookup(scope, slice)) {
+    return match (lookup_slot(scope, slice)) {
         None -> None,
         Some(b) -> match (element_of(b.ty)) {
             None -> None,
@@ -5685,7 +6206,7 @@ pub fn eval_len_of(b: Binding, slot: usize) -> core::option::Option<Evaluated> {
 }
 
 pub fn eval_len(scope: List<Binding>, slice: usize, slot: usize) -> core::option::Option<Evaluated> {
-    return match (lookup(scope, slice)) {
+    return match (lookup_slot(scope, slice)) {
         None -> None,
         Some(b) -> eval_len_of(b, slot),
     };
@@ -5716,18 +6237,476 @@ pub fn eval_str(decls: SrcDecls, offset: usize, chars: List<usize>, slot: usize)
     return None;
 }
 
+// F5 (S6b): homes, places, borrows (target/claude-work/leafA/lowering-spec.md,
+// SEMANTIC_DECISIONS "S6's steps"). A local that a borrow's place names, or
+// an array local passed as a slice, has a home: its value lives in native
+// layout at a byte offset of its function's frame block, whose address is in
+// the frame slot (Sig.frame). A homed local is never read into an Expr: its
+// reads are place loads in eval positions, its writes stores.
+
+// The frame slot and block of the function being lowered (with_budget's).
+pub fn own_frame(sigs: List<Sig>) -> usize {
+    return match (sigs) {
+        Nil -> 0,
+        Cons(sig, rest) -> sig.frame,
+    };
+}
+
+pub fn own_block(sigs: List<Sig>) -> usize {
+    return match (sigs) {
+        Nil -> 0,
+        Cons(sig, rest) -> sig.block,
+    };
+}
+
+// Whether the binding has a home.
+pub fn is_homed(binding: core::option::Option<Binding>) -> bool {
+    return match (binding) {
+        None -> false,
+        Some(b) -> match (b.home) {
+            None -> false,
+            Some(offset) -> true,
+        },
+    };
+}
+
+// The bytes the homed bindings of scope take, shadowed ones included: the
+// offset of the next home (stack order).
+pub fn homed_bytes(scope: List<Binding>) -> usize {
+    return match (scope) {
+        Nil -> 0,
+        Cons(b, rest) -> plus(binding_home_bytes(b), homed_bytes(unbox(rest))),
+    };
+}
+
+// extract: inline
+fn binding_home_bytes(bhb_b: Binding) -> usize {
+    return match (bhb_b.home) {
+        None -> 0,
+        Some(bhb_offset) -> times(8, ty_words(bhb_b.ty)),
+    };
+}
+
+// id is one of ids.
+pub fn id_listed(ids: List<usize>, id: usize) -> bool {
+    return match (ids) {
+        Nil -> false,
+        Cons(other, rest) -> (other == id) || id_listed(unbox(rest), id),
+    };
+}
+
+// The home of a declaration of id: the next offset when uses (the ids
+// borrows name and the arrays passed as slices, in its scope) has id.
+pub fn home_for(uses: List<usize>, scope: List<Binding>, id: usize) -> core::option::Option<usize> {
+    if (id_listed(uses, id)) {
+        return Some(homed_bytes(scope));
+    }
+    return None;
+}
+
+// Whether a home fits the block and native layout is exact for its type.
+pub fn home_fits(home: core::option::Option<usize>, ty: SrcType, block: usize) -> bool {
+    return match (home) {
+        None -> true,
+        Some(offset) -> (plus(offset, times(8, ty_words(ty))) <= block) && home_ok(ty) && tags_fit(ty),
+    };
+}
+
+pub fn fits_then(ok: bool, s: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    if (ok) {
+        return s;
+    }
+    return None;
+}
+
+// A homed declaration's first store, its value in the slots from slot:
+// t := frame + offset (t the slot after the value), then the slots in
+// native layout (a u8 as its whole word, home_init); then body.
+pub fn home_store_then(frame: usize, home: core::option::Option<usize>, ty: SrcType, slot: usize, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    return match (body) {
+        None -> None,
+        Some(b) -> match (home) {
+            None -> Some(b),
+            Some(offset) -> Some(Seq(boxed(Assign(plus(slot, ty.size()), lay_add_off(frame, offset))), boxed(Seq(boxed(store_slots(home_init(ty), plus(slot, ty.size()), slot)), boxed(b))))),
+        },
+    };
+}
+
+// A declaration that may not have a home (a slice, a raw load, a view).
+pub fn unhomed_then(home: core::option::Option<usize>, s: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    return match (home) {
+        None -> s,
+        Some(offset) -> None,
+    };
+}
+
+// extract: mutual begin
+// Whether the expression reads a homed local.
+pub fn reads_home(scope: List<Binding>, e: SrcExpr) -> bool {
+    return match (e) {
+        Int(value) -> false,
+        Boolean(value) -> false,
+        Unsigned(kind, value) -> false,
+        Local(id) -> is_homed(lookup(scope, id)),
+        Field(id, index) -> is_homed(lookup(scope, id)),
+        Negate(operand) -> reads_home(scope, unbox(operand)),
+        Not(operand) -> reads_home(scope, unbox(operand)),
+        Apply(op, left, right) -> reads_home(scope, unbox(left)) || reads_home(scope, unbox(right)),
+        Cast(ty, operand) -> reads_home(scope, unbox(operand)),
+        Null -> false,
+        SrcExpr::Char(code) -> false,
+        SrcExpr::Float(ft, bits) -> false,
+    };
+}
+// extract: mutual end
+
+pub fn reads_homes(scope: List<Binding>, es: List<SrcExpr>) -> bool {
+    return match (es) {
+        Nil -> false,
+        Cons(e, rest) -> reads_home(scope, e) || reads_homes(scope, unbox(rest)),
+    };
+}
+
+// The expressions as effectful ones (EPure each).
+pub fn pures(es: List<SrcExpr>) -> List<SrcEff> {
+    return match (es) {
+        Nil -> empty(),
+        Cons(e, rest) -> cons(EPure(e), pures(unbox(rest))),
+    };
+}
+
+// A place's code: it leaves the lowest byte of the place in slot t (and may
+// use t + 1 for an index), and gives the place's type (RPlace.code).
+pub struct PlaceCode {
+    stmt: Stmt,
+    ty: SrcType,
+}
+
+// A homed local's home: t := frame + offset.
+pub fn home_place(frame: usize, t: usize, binding: core::option::Option<Binding>) -> core::option::Option<PlaceCode> {
+    return match (binding) {
+        None -> None,
+        Some(b) -> match (b.home) {
+            None -> None,
+            Some(offset) -> Some(PlaceCode { stmt: Assign(t, lay_add_off(frame, offset)), ty: b.ty }),
+        },
+    };
+}
+
+// The referent of an unhomed reference local: t := its slot.
+pub fn deref_place(t: usize, dty: SrcType, binding: core::option::Option<Binding>) -> core::option::Option<PlaceCode> {
+    return match (binding) {
+        None -> None,
+        Some(b) -> match (b.ty) {
+            I32 -> None,
+            Bool -> None,
+            Uint(kind) -> None,
+            Struct(id, fields) -> None,
+            Enum(id, variants) -> None,
+            Ptr -> None,
+            Slice(element) -> None,
+            SrcType::Array(array_element, array_length) -> None,
+            Unit -> None,
+            Isize -> None,
+            SrcType::Char -> None,
+            SrcType::Float(ft) -> None,
+            Sint(sk) -> None,
+            View(view_length) -> None,
+            Str -> None,
+            Ref(referent) -> referent_place(t, b.slot, dty, unbox(referent)),
+        },
+    };
+}
+
+// extract: inline
+fn referent_place(rp_t: usize, rp_slot: usize, rp_dty: SrcType, rp_referent: SrcType) -> core::option::Option<PlaceCode> {
+    if (rp_referent.same(rp_dty)) {
+        return Some(PlaceCode { stmt: Assign(rp_t, Var(rp_slot)), ty: rp_referent });
+    }
+    return None;
+}
+
+// Field f of the place: its code, then t := t + the field's offset.
+pub fn field_place(t: usize, base: core::option::Option<PlaceCode>, f: usize) -> core::option::Option<PlaceCode> {
+    return match (base) {
+        None -> None,
+        Some(c) -> match (sub_field(c.ty, f)) {
+            None -> None,
+            Some(s) -> Some(PlaceCode { stmt: Seq(boxed(c.stmt), boxed(Assign(t, lay_add_off(t, s.offset)))), ty: s.ty }),
+        },
+    };
+}
+
+// Element index of the array place: its code, the index into t + 1, the
+// check index < length (else the trap), then the element's address.
+pub fn index_place(t: usize, base: core::option::Option<PlaceCode>, index: core::option::Option<Expr>) -> core::option::Option<PlaceCode> {
+    return match (base) {
+        None -> None,
+        Some(c) -> match (index) {
+            None -> None,
+            Some(i) -> match (c.ty) {
+                I32 -> None,
+                Bool -> None,
+                Uint(kind) -> None,
+                Struct(id, fields) -> None,
+                Enum(id, variants) -> None,
+                Ptr -> None,
+                Slice(element) -> None,
+                SrcType::Array(array_element, array_length) -> element_place(t, c.stmt, i, unbox(array_element), array_length),
+                Unit -> None,
+                Isize -> None,
+                SrcType::Char -> None,
+                SrcType::Float(ft) -> None,
+                Sint(sk) -> None,
+                View(view_length) -> None,
+                Str -> None,
+                Ref(referent) -> None,
+            },
+        },
+    };
+}
+
+// extract: inline
+fn element_place(ep_t: usize, ep_code: Stmt, ep_i: Expr, ep_element: SrcType, ep_length: usize) -> core::option::Option<PlaceCode> {
+    if (ep_length < 2147483648) {
+        return Some(PlaceCode { stmt: Seq(boxed(ep_code), boxed(Seq(boxed(Assign(plus(ep_t, 1), ep_i)), boxed(Ite(Compare(U64, Lt, boxed(Var(plus(ep_t, 1))), boxed(Lit(ep_length as u64))), boxed(lay_element_addr(ep_t, plus(ep_t, 1), ep_length, ep_element)), boxed(lay_ref_trap(ep_t))))))), ty: ep_element });
+    }
+    return None;
+}
+
+// A place's index: a pure index expression with no check (it keeps the state).
+pub fn place_index(scope: List<Binding>, index: SrcEff) -> core::option::Option<Expr> {
+    return match (index) {
+        EPure(e) -> checked_index(e.guard(scope), lower_index(scope, e)),
+        ECall(callee, args) -> None,
+        EApply(op, left, right) -> None,
+        ENeg(operand) -> None,
+        ENot(operand) -> None,
+        ECast(ty, operand) -> None,
+        EIndex(slice, i) -> None,
+        EStruct(ty, fields) -> None,
+        EVariant(ty, variant, payload) -> None,
+        EMatch(scrutinee, ety, ty, binders, values) -> None,
+        EDivide(op, left, right) -> None,
+        EStride(slice) -> None,
+        ArraySlice(element, array) -> None,
+        EIf(condition, ty, then_value, else_value) -> None,
+        ELet(id, ty, value, rt, body) -> None,
+        ELen(slice) -> None,
+        EStr(offset, chars) -> None,
+        EBorrow(bty, bplace) -> None,
+        EDeref(dty, dref) -> None,
+        EField(fbase, fidx) -> None,
+        EAt(abase, aindex) -> None,
+    };
+}
+
+// extract: inline
+fn checked_index(ci_g: Expr, ci_index: core::option::Option<Expr>) -> core::option::Option<Expr> {
+    if (is_one(ci_g)) {
+        return ci_index;
+    }
+    return None;
+}
+
+// The local a pure expression names, for a place: x or x.f.
+pub fn expr_home_place(frame: usize, scope: List<Binding>, t: usize, e: SrcExpr) -> core::option::Option<PlaceCode> {
+    return match (e) {
+        Int(value) -> None,
+        Boolean(value) -> None,
+        Unsigned(kind, value) -> None,
+        Local(id) -> home_place(frame, t, lookup(scope, id)),
+        Field(id, index) -> field_place(t, home_place(frame, t, lookup(scope, id)), index),
+        Negate(operand) -> None,
+        Not(operand) -> None,
+        Apply(op, left, right) -> None,
+        Cast(ty, operand) -> None,
+        Null -> None,
+        SrcExpr::Char(code) -> None,
+        SrcExpr::Float(ft, bits) -> None,
+    };
+}
+
+// The referent of *reference: an unhomed reference local.
+pub fn deref_of(t: usize, scope: List<Binding>, dty: SrcType, reference: SrcEff) -> core::option::Option<PlaceCode> {
+    return match (reference) {
+        EPure(e) -> match (e) {
+            Int(value) -> None,
+            Boolean(value) -> None,
+            Unsigned(kind, value) -> None,
+            Local(id) -> deref_place(t, dty, lookup_slot(scope, id)),
+            Field(id, index) -> None,
+            Negate(operand) -> None,
+            Not(operand) -> None,
+            Apply(op, left, right) -> None,
+            Cast(ty, operand) -> None,
+            Null -> None,
+            SrcExpr::Char(code) -> None,
+            SrcExpr::Float(ft, bits) -> None,
+        },
+        ECall(callee, args) -> None,
+        EApply(op, left, right) -> None,
+        ENeg(operand) -> None,
+        ENot(operand) -> None,
+        ECast(ty, operand) -> None,
+        EIndex(slice, index) -> None,
+        EStruct(ty, fields) -> None,
+        EVariant(ty, variant, payload) -> None,
+        EMatch(scrutinee, ety, ty, binders, values) -> None,
+        EDivide(op, left, right) -> None,
+        EStride(slice) -> None,
+        ArraySlice(element, array) -> None,
+        EIf(condition, ty, then_value, else_value) -> None,
+        ELet(id, ty, value, rt, body) -> None,
+        ELen(slice) -> None,
+        EStr(offset, chars) -> None,
+        EBorrow(bty, bplace) -> None,
+        EDeref(dty2, dref) -> None,
+        EField(fbase, fidx) -> None,
+        EAt(abase, aindex) -> None,
+    };
+}
+
+// The code of the place p names: a homed local, the referent of an unhomed
+// reference local, and fields and elements of those.
+pub fn place_code(frame: usize, scope: List<Binding>, t: usize, p: SrcEff) -> core::option::Option<PlaceCode> {
+    return match (p) {
+        EPure(e) -> expr_home_place(frame, scope, t, e),
+        ECall(callee, args) -> None,
+        EApply(op, left, right) -> None,
+        ENeg(operand) -> None,
+        ENot(operand) -> None,
+        ECast(ty, operand) -> None,
+        EIndex(slice, index) -> index_place(t, home_place(frame, t, lookup(scope, slice)), place_index(scope, unbox(index))),
+        EStruct(ty, fields) -> None,
+        EVariant(ty, variant, payload) -> None,
+        EMatch(scrutinee, ety, ty, binders, values) -> None,
+        EDivide(op, left, right) -> None,
+        EStride(slice) -> None,
+        ArraySlice(element, array) -> None,
+        EIf(condition, ty, then_value, else_value) -> None,
+        ELet(id, ty, value, rt, body) -> None,
+        ELen(slice) -> None,
+        EStr(offset, chars) -> None,
+        EBorrow(bty, bplace) -> None,
+        EDeref(dty, dref) -> deref_of(t, scope, dty, unbox(dref)),
+        EField(fbase, fidx) -> field_place(t, place_code(frame, scope, t, unbox(fbase)), fidx),
+        EAt(abase, aindex) -> index_place(t, place_code(frame, scope, t, unbox(abase)), place_index(scope, unbox(aindex))),
+    };
+}
+
+// &place into slot: the place's code with t = slot, one slot.
+pub fn eval_borrow(bty: SrcType, place: core::option::Option<PlaceCode>) -> core::option::Option<Evaluated> {
+    return match (place) {
+        None -> None,
+        Some(c) -> match (bty) {
+            I32 -> None,
+            Bool -> None,
+            Uint(kind) -> None,
+            Struct(id, fields) -> None,
+            Enum(id, variants) -> None,
+            Ptr -> None,
+            Slice(element) -> None,
+            SrcType::Array(array_element, array_length) -> None,
+            Unit -> None,
+            Isize -> None,
+            SrcType::Char -> None,
+            SrcType::Float(ft) -> None,
+            Sint(sk) -> None,
+            View(view_length) -> None,
+            Str -> None,
+            Ref(referent) -> borrow_typed(c, bty, unbox(referent)),
+        },
+    };
+}
+
+// extract: inline
+fn borrow_typed(bt_c: PlaceCode, bt_bty: SrcType, bt_referent: SrcType) -> core::option::Option<Evaluated> {
+    if (bt_c.ty.same(bt_referent) && home_ok(bt_referent) && tags_fit(bt_referent)) {
+        return Some(Evaluated { stmt: bt_c.stmt, ty: bt_bty });
+    }
+    return None;
+}
+
+// A read of the place p into the slots from slot: its code with t past
+// them, then the loads (PlaceLoad). The first code only gives the type.
+pub fn eval_place(frame: usize, scope: List<Binding>, p: SrcEff, slot: usize, probe: core::option::Option<PlaceCode>) -> core::option::Option<Evaluated> {
+    return match (probe) {
+        None -> None,
+        Some(first) -> place_load(slot, plus(slot, first.ty.size()), place_code(frame, scope, plus(slot, first.ty.size()), p)),
+    };
+}
+
+// extract: inline
+fn place_load(pl_slot: usize, pl_t: usize, pl_code: core::option::Option<PlaceCode>) -> core::option::Option<Evaluated> {
+    return match (pl_code) {
+        None -> None,
+        Some(pl_c) -> Some(Evaluated { stmt: Seq(boxed(pl_c.stmt), boxed(load_slots(pl_c.ty, pl_t, pl_slot))), ty: pl_c.ty }),
+    };
+}
+
+pub fn eval_place_at(frame: usize, scope: List<Binding>, p: SrcEff, slot: usize) -> core::option::Option<Evaluated> {
+    return eval_place(frame, scope, p, slot, place_code(frame, scope, slot, p));
+}
+
+// extract: mutual begin
+// A pure expression that reads a homed local, in an eval position: its
+// reads of homes are place loads, and the rest is evaluated as the SrcEff
+// with the same Core meaning (eApply of ePure operands, and so on).
+pub fn eval_homed(frame: usize, scope: List<Binding>, e: SrcExpr, slot: usize) -> core::option::Option<Evaluated> {
+    return match (e) {
+        Int(value) -> eval_pure(scope, e, slot),
+        Boolean(value) -> eval_pure(scope, e, slot),
+        Unsigned(kind, value) -> eval_pure(scope, e, slot),
+        Local(id) -> eval_local_any(frame, scope, e, slot, is_homed(lookup(scope, id))),
+        Field(id, index) -> eval_local_any(frame, scope, e, slot, is_homed(lookup(scope, id))),
+        Negate(operand) -> eval_negate(slot, eval_homed(frame, scope, unbox(operand), slot)),
+        Not(operand) -> eval_not(slot, eval_homed(frame, scope, unbox(operand), slot)),
+        Apply(op, left, right) -> eval_apply(op, slot, eval_homed(frame, scope, unbox(left), slot), eval_homed(frame, scope, unbox(right), plus(slot, 1))),
+        Cast(ty, operand) -> eval_cast(ty, slot, eval_homed(frame, scope, unbox(operand), slot)),
+        Null -> eval_pure(scope, e, slot),
+        SrcExpr::Char(code) -> eval_pure(scope, e, slot),
+        SrcExpr::Float(ft, bits) -> eval_pure(scope, e, slot),
+    };
+}
+// extract: mutual end
+
+// extract: inline
+fn eval_local_any(ela_frame: usize, ela_scope: List<Binding>, ela_e: SrcExpr, ela_slot: usize, ela_homed: bool) -> core::option::Option<Evaluated> {
+    if (ela_homed) {
+        return eval_place_at(ela_frame, ela_scope, EPure(ela_e), ela_slot);
+    }
+    return eval_pure(ela_scope, ela_e, ela_slot);
+}
+
+// ePure e in an eval position: as before, or with its homed reads loaded.
+pub fn eval_pure_any(frame: usize, scope: List<Binding>, e: SrcExpr, slot: usize) -> core::option::Option<Evaluated> {
+    if (reads_home(scope, e)) {
+        return eval_homed(frame, scope, e, slot);
+    }
+    return eval_pure(scope, e, slot);
+}
+
+// array[index] on a homed array local: the element's place load.
+pub fn eval_index_any(frame: usize, decls: SrcDecls, scope: List<Binding>, slice: usize, slot: usize, index: SrcEff, value: core::option::Option<Evaluated>) -> core::option::Option<Evaluated> {
+    if (is_homed(lookup(scope, slice))) {
+        return eval_place_at(frame, scope, EAt(boxed(EPure(Local(slice))), boxed(index)), slot);
+    }
+    return eval_index(decls, scope, slice, slot, value);
+}
+
 // extract: mutual begin
 impl SrcEff {
     // The code computing this expression into slot, slot + 1, ..., and its type.
     pub fn eval(self, sigs: List<Sig>, decls: SrcDecls, scope: List<Binding>, slot: usize) -> core::option::Option<Evaluated> {
         return match (self) {
-            EPure(e) -> eval_pure(scope, e, slot),
+            EPure(e) -> eval_pure_any(own_frame(sigs), scope, e, slot),
             ECall(callee, args) -> eval_call(get(sigs, callee), callee, slot, eval_args(sigs, decls, scope, unbox(args), slot)),
             EApply(op, left, right) -> eval_apply(op, slot, unbox(left).eval(sigs, decls, scope, slot), unbox(right).eval(sigs, decls, scope, plus(slot, 1))),
             ENeg(operand) -> eval_negate(slot, unbox(operand).eval(sigs, decls, scope, slot)),
             ENot(operand) -> eval_not(slot, unbox(operand).eval(sigs, decls, scope, slot)),
             ECast(ty, operand) -> eval_cast(ty, slot, unbox(operand).eval(sigs, decls, scope, slot)),
-            EIndex(slice, index) -> eval_index(decls, scope, slice, slot, unbox(index).eval(sigs, decls, scope, slot)),
+            EIndex(slice, index) -> eval_index_any(own_frame(sigs), decls, scope, slice, slot, unbox(index), unbox(index).eval(sigs, decls, scope, slot)),
             EStruct(ty, fields) -> eval_struct(ty, eval_args(sigs, decls, scope, unbox(fields), slot)),
             EVariant(ty, variant, payload) -> eval_variant(ty, variant, slot, eval_args(sigs, decls, scope, unbox(payload), plus(slot, 1))),
             EMatch(scrutinee, ety, ty, binders, values) -> eval_match(slot, ety, ty, unbox(scrutinee).eval(sigs, decls, scope, slot), eval_arms(sigs, decls, scope, slot, match_dst(slot, ety, ty), ty, 0, match_variants(ety), binders, unbox(values)), length(binders), length(unbox(values))),
@@ -5738,10 +6717,10 @@ impl SrcEff {
             ELet(id, ty, value, rt, body) -> eval_let_in(slot, ty, rt, unbox(value).eval(sigs, decls, scope, slot), eval_let_body(sigs, decls, arm_scope(single(id), single(ty), slot, scope), match_dst(slot, ty, rt), unbox(body))),
             ELen(slice) -> eval_len(scope, slice, slot),
             EStr(offset, chars) -> eval_str(decls, offset, chars, slot),
-            EBorrow(bty, bplace) -> None,
-            EDeref(dty, dref) -> None,
-            EField(fbase, fidx) -> None,
-            EAt(abase, aindex) -> None,
+            EBorrow(bty, bplace) -> eval_borrow(bty, place_code(own_frame(sigs), scope, slot, unbox(bplace))),
+            EDeref(dty, dref) -> eval_place_at(own_frame(sigs), scope, EDeref(dty, dref), slot),
+            EField(fbase, fidx) -> eval_place_at(own_frame(sigs), scope, EField(fbase, fidx), slot),
+            EAt(abase, aindex) -> eval_place_at(own_frame(sigs), scope, EAt(abase, aindex), slot),
         };
     }
 }
@@ -6055,10 +7034,10 @@ pub fn lower_set_index_eval(decls: SrcDecls, slot: usize, binding: core::option:
 // the evaluated operands (as SetIndexEval of EPure), on a raw slice, the
 // guarded store.
 pub fn lower_set_index_any(decls: SrcDecls, scope: List<Binding>, next: usize, slice: usize, index: SrcExpr, value: SrcExpr) -> core::option::Option<Stmt> {
-    if (is_array_local(lookup(scope, slice))) {
-        return lower_set_index_eval(decls, next, lookup(scope, slice), eval_pure(scope, index, next), eval_pure(scope, value, plus(next, 1)));
+    if (is_array_local(lookup_slot(scope, slice))) {
+        return lower_set_index_eval(decls, next, lookup_slot(scope, slice), eval_pure(scope, index, next), eval_pure(scope, value, plus(next, 1)));
     }
-    return guarded(next, guard_and(guard_and(index.guard(scope), index_guard(scope, slice, index)), value.guard(scope)), lower_set_index(decls, lookup(scope, slice), lower_index(scope, index), scope, value));
+    return guarded(next, guard_and(guard_and(index.guard(scope), index_guard(scope, slice, index)), value.guard(scope)), lower_set_index(decls, lookup_slot(scope, slice), lower_index(scope, index), scope, value));
 }
 
 // A call passing arrays as slices (SEMANTIC_DECISIONS "Addressed locals",
@@ -6163,7 +7142,7 @@ pub fn arg_bytes(scope: List<Binding>, arg: SrcEff) -> usize {
         EMatch(scrutinee, ety, ty, binders, values) -> 0,
         EDivide(op, left, right) -> 0,
         EStride(slice) -> 0,
-        ArraySlice(element, array) -> binding_bytes(lookup(scope, array)),
+        ArraySlice(element, array) -> binding_bytes(lookup_slot(scope, array)),
         EIf(condition, ity, then_value, else_value) -> 0,
         ELet(lid, lty, value, rt, body) -> 0,
         ELen(slice) -> 0,
@@ -6212,25 +7191,34 @@ pub fn array_arg_before(b: Binding, element: SrcType, ty: SrcType, id: usize, t:
 
 // The array local b passed at a parameter of type ty, at offset in the
 // block, before the rest.
-pub fn array_arg_local(b: Binding, element: SrcType, ty: SrcType, id: usize, t: usize, offset: usize, rest: core::option::Option<ArrayArgs>) -> core::option::Option<ArrayArgs> {
+// The homed array local b before the arguments r (F5 S6b): its home's
+// address frame + offset and its length, with no copy (HomeLendArgs).
+pub fn array_arg_home(frame: usize, b: Binding, element: SrcType, ty: SrcType, id: usize, width: usize, count: usize, r: ArrayArgs) -> core::option::Option<ArrayArgs> {
+    return match (b.home) {
+        None -> None,
+        Some(home) -> array_arg_checked((width > 0) && b.ty.same(SrcType::Array(boxed(element), count)) && ty.same(Slice(boxed(element))) && (2147483648 > count) && id_absent(r.ids, id), ArrayArgs { stores: r.stores, args: cons(lay_add_off(frame, home), cons(Lit(count as u64), r.args)), loads: r.loads, guard: r.guard, bytes: r.bytes, ids: cons(id, r.ids) }),
+    };
+}
+
+pub fn array_arg_local(frame: usize, b: Binding, element: SrcType, ty: SrcType, id: usize, t: usize, offset: usize, rest: core::option::Option<ArrayArgs>) -> core::option::Option<ArrayArgs> {
     let width: usize = packed_width(element);
     let count: usize = b.ty.size();
     return match (rest) {
         None -> None,
-        Some(r) -> array_arg_before(b, element, ty, id, t, offset, width, count, r),
+        Some(r) -> array_arg_home(frame, b, element, ty, id, width, count, r),
     };
 }
 
-pub fn array_arg_slice(binding: core::option::Option<Binding>, element: SrcType, ty: SrcType, id: usize, t: usize, offset: usize, rest: core::option::Option<ArrayArgs>) -> core::option::Option<ArrayArgs> {
+pub fn array_arg_slice(frame: usize, binding: core::option::Option<Binding>, element: SrcType, ty: SrcType, id: usize, t: usize, offset: usize, rest: core::option::Option<ArrayArgs>) -> core::option::Option<ArrayArgs> {
     return match (binding) {
         None -> None,
-        Some(b) -> array_arg_local(b, element, ty, id, t, offset, rest),
+        Some(b) -> array_arg_local(frame, b, element, ty, id, t, offset, rest),
     };
 }
 
 // One argument of type ty, at offset in the block, before the rest: a pure
 // value, or an array local passed as a slice.
-pub fn array_arg(scope: List<Binding>, arg: SrcEff, ty: SrcType, t: usize, offset: usize, rest: core::option::Option<ArrayArgs>) -> core::option::Option<ArrayArgs> {
+pub fn array_arg(frame: usize, scope: List<Binding>, arg: SrcEff, ty: SrcType, t: usize, offset: usize, rest: core::option::Option<ArrayArgs>) -> core::option::Option<ArrayArgs> {
     return match (arg) {
         EPure(e) -> array_arg_pure(lower_value(scope, e, ty), e.guard(scope), rest),
         ECall(callee, args) -> None,
@@ -6244,7 +7232,7 @@ pub fn array_arg(scope: List<Binding>, arg: SrcEff, ty: SrcType, t: usize, offse
         EMatch(scrutinee, ety, mty, binders, values) -> None,
         EDivide(op, left, right) -> None,
         EStride(slice) -> None,
-        ArraySlice(element, array) -> array_arg_slice(lookup(scope, array), element, ty, array, t, offset, rest),
+        ArraySlice(element, array) -> array_arg_slice(frame, lookup(scope, array), element, ty, array, t, offset, rest),
         EIf(condition, ity, then_value, else_value) -> None,
         ELet(lid, lty, value, rt, body) -> None,
         ELen(slice) -> None,
@@ -6261,7 +7249,7 @@ pub fn array_arg(scope: List<Binding>, arg: SrcEff, ty: SrcType, t: usize, offse
 // up, so no offset passes 2^64 (F14): a call that is accepted has its
 // arrays' bytes within the callee's block (array_call_code), so each of its
 // offsets is too.
-pub fn array_args(scope: List<Binding>, args: List<SrcEff>, types: List<SrcType>, t: usize, offset: usize) -> core::option::Option<ArrayArgs> {
+pub fn array_args(frame: usize, scope: List<Binding>, args: List<SrcEff>, types: List<SrcType>, t: usize, offset: usize) -> core::option::Option<ArrayArgs> {
     if (offset > block_limit()) {
         return None;
     }
@@ -6272,7 +7260,7 @@ pub fn array_args(scope: List<Binding>, args: List<SrcEff>, types: List<SrcType>
         },
         Cons(arg, rest) -> match (types) {
             Nil -> None,
-            Cons(ty, more) -> array_arg(scope, arg, ty, t, offset, array_args(scope, unbox(rest), unbox(more), t, plus(offset, arg_bytes(scope, arg)))),
+            Cons(ty, more) -> array_arg(frame, scope, arg, ty, t, offset, array_args(frame, scope, unbox(rest), unbox(more), t, plus(offset, arg_bytes(scope, arg)))),
         },
     };
 }
@@ -6285,15 +7273,14 @@ pub fn array_args(scope: List<Binding>, args: List<SrcEff>, types: List<SrcType>
 // locals", point 4).
 pub fn array_call_code(next: usize, callee: usize, sig: Sig, a: ArrayArgs) -> core::option::Option<Evaluated> {
     let count: usize = sig.ret.size();
-    let t: usize = plus(next, count);
-    if ((count > 0) && sig.ret.is_scalar() && (sig.need <= sig.room) && (sig.block > 0) && (a.bytes <= sig.block)) {
-        return Some(Evaluated { stmt: check_then(next, a.guard, Seq(boxed(Stmt::Frame(t, 0)), boxed(Seq(boxed(a.stores), boxed(Seq(boxed(Stmt::Call(next, count, callee, a.args)), boxed(Seq(boxed(Stmt::Frame(t, 0)), boxed(a.loads))))))))), ty: sig.ret });
+    if ((count > 0) && sig.ret.is_scalar() && (sig.need <= sig.room)) {
+        return Some(Evaluated { stmt: check_then(next, a.guard, Stmt::Call(next, count, callee, a.args)), ty: sig.ret });
     }
     return None;
 }
 
 pub fn array_call_sig(next: usize, callee: usize, sig: Sig, scope: List<Binding>, args: List<SrcEff>) -> core::option::Option<Evaluated> {
-    return match (array_args(scope, args, sig.params, plus(next, sig.ret.size()), 0)) {
+    return match (array_args(sig.frame, scope, args, sig.params, plus(next, sig.ret.size()), 0)) {
         None -> None,
         Some(a) -> array_call_code(next, callee, sig, a),
     };
@@ -6400,6 +7387,246 @@ impl SrcEff {
 }
 
 
+// F5 (S6b): statements over homes.
+
+// place = value: the place's code into t = slot, the value from slot + 1
+// (it keeps t), then its stores (AssignAfterRhs, RefStoreV2).
+pub fn store_place(slot: usize, place: core::option::Option<PlaceCode>, value: core::option::Option<Evaluated>) -> core::option::Option<Stmt> {
+    return match (place) {
+        None -> None,
+        Some(c) -> match (value) {
+            None -> None,
+            Some(v) -> store_place_typed(slot, c, v),
+        },
+    };
+}
+
+// extract: inline
+fn store_place_typed(spt_slot: usize, spt_c: PlaceCode, spt_v: Evaluated) -> core::option::Option<Stmt> {
+    if (spt_v.ty.same(spt_c.ty) && home_ok(spt_c.ty) && tags_fit(spt_c.ty)) {
+        return Some(Seq(boxed(spt_c.stmt), boxed(Seq(boxed(spt_v.stmt), boxed(store_slots(spt_c.ty, spt_slot, plus(spt_slot, 1)))))));
+    }
+    return None;
+}
+
+// The binary operator of a compound assignment.
+pub fn place_op_of(op: SrcAssignOp) -> SrcOp {
+    return match (op) {
+        AAdd -> Plus,
+        ASub -> Minus,
+        AMul -> Times,
+        AAnd -> BitAnd,
+        AOr -> BitOr,
+        AXor -> BitXor,
+        AShl -> ShiftLeft,
+        AShr -> ShiftRight,
+    };
+}
+
+// place op= value on a scalar place: the place's code into t = slot, the old
+// value loaded into slot + 1, the value from slot + 2, the combination into
+// slot + 1, then its store.
+pub fn store_place_op(op: SrcAssignOp, slot: usize, place: core::option::Option<PlaceCode>, value: core::option::Option<Evaluated>) -> core::option::Option<Stmt> {
+    return match (place) {
+        None -> None,
+        Some(c) -> store_place_combined(slot, c, eval_apply(place_op_of(op), plus(slot, 1), Some(Evaluated { stmt: load_slots(c.ty, slot, plus(slot, 1)), ty: c.ty }), value)),
+    };
+}
+
+// extract: inline
+fn store_place_combined(spc_slot: usize, spc_c: PlaceCode, spc_combined: core::option::Option<Evaluated>) -> core::option::Option<Stmt> {
+    return match (spc_combined) {
+        None -> None,
+        Some(spc_v) -> store_place_scalar(spc_slot, spc_c, spc_v),
+    };
+}
+
+// extract: inline
+fn store_place_scalar(sps_slot: usize, sps_c: PlaceCode, sps_v: Evaluated) -> core::option::Option<Stmt> {
+    if (sps_c.ty.is_scalar() && sps_v.ty.same(sps_c.ty)) {
+        return Some(Seq(boxed(sps_c.stmt), boxed(Seq(boxed(sps_v.stmt), boxed(store_slots(sps_c.ty, sps_slot, plus(sps_slot, 1)))))));
+    }
+    return None;
+}
+
+// let with a pure value: as before, or, when the value reads a home, as
+// LetEval of ePure value (twin, the same Core term).
+pub fn let_pick(reads: bool, slot: usize, g: Expr, values: core::option::Option<List<Expr>>, ty: SrcType, twin: core::option::Option<Evaluated>, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    if (reads) {
+        return lower_let_eval(ty, twin, body);
+    }
+    return guarded(slot, g, lower_let(slot, values, body));
+}
+
+// let id = callee(args): as before, or as LetEval of the eCall when an
+// argument reads a home.
+pub fn let_call_pick(reads: bool, slot: usize, g: Expr, count: usize, callee: usize, args: core::option::Option<List<Expr>>, ty: SrcType, twin: core::option::Option<Evaluated>, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    if (reads) {
+        return lower_let_eval(ty, twin, body);
+    }
+    return guarded(slot, g, lower_let_call(slot, count, callee, args, body));
+}
+
+// A statement with a pure part: as before, or its eval twin.
+pub fn stmt_pick(reads: bool, old: core::option::Option<Stmt>, twin: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    if (reads) {
+        return twin;
+    }
+    return old;
+}
+
+// A write to a local: to its home, or as before.
+pub fn set_pick(homed: bool, home: core::option::Option<Stmt>, other: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    if (homed) {
+        return home;
+    }
+    return other;
+}
+
+// The entry stores of the homed parameters, outermost (first) first: each
+// t := frame + offset (t the slot after the frame slot), then its slots.
+pub fn entry_stores(frame: usize, scope: List<Binding>, body: Stmt) -> Stmt {
+    return match (scope) {
+        Nil -> body,
+        Cons(b, rest) -> entry_stores(frame, unbox(rest), param_store(frame, b, body)),
+    };
+}
+
+// extract: inline
+fn param_store(ps_frame: usize, ps_b: Binding, ps_body: Stmt) -> Stmt {
+    return match (ps_b.home) {
+        None -> ps_body,
+        Some(ps_offset) -> Seq(boxed(Assign(plus(ps_frame, 1), lay_add_off(ps_frame, ps_offset))), boxed(Seq(boxed(store_slots(home_init(ps_b.ty), plus(ps_frame, 1), ps_b.slot)), boxed(ps_body)))),
+    };
+}
+
+pub fn entry_then(frame: usize, scope: List<Binding>, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    return match (body) {
+        None -> None,
+        Some(b) -> Some(entry_stores(frame, scope, b)),
+    };
+}
+
+// Whether every homed parameter's home fits the block.
+pub fn params_homes_fit(scope: List<Binding>, block: usize) -> bool {
+    return match (scope) {
+        Nil -> true,
+        Cons(b, rest) -> home_fits(b.home, b.ty, block) && params_homes_fit(unbox(rest), block),
+    };
+}
+
+// extract: mutual begin
+// Whether a value of the type may name memory: a slice, a reference or a
+// str, or an aggregate holding one (design point 8a).
+pub fn holds_pointer(ty: SrcType) -> bool {
+    return match (ty) {
+        I32 -> false,
+        Bool -> false,
+        Uint(kind) -> false,
+        Struct(id, fields) -> fields_hold_pointer(unbox(fields)),
+        Enum(id, variants) -> variants_hold_pointer(unbox(variants)),
+        Ptr -> false,
+        Slice(element) -> true,
+        SrcType::Array(array_element, array_length) -> holds_pointer(unbox(array_element)),
+        Unit -> false,
+        Isize -> false,
+        SrcType::Char -> false,
+        SrcType::Float(ft) -> false,
+        Sint(sk) -> false,
+        View(view_length) -> false,
+        Str -> false,
+        Ref(referent) -> true,
+    };
+}
+
+pub fn fields_hold_pointer(fields: List<SrcType>) -> bool {
+    return match (fields) {
+        Nil -> false,
+        Cons(t, rest) -> holds_pointer(t) || fields_hold_pointer(unbox(rest)),
+    };
+}
+
+pub fn variants_hold_pointer(variants: List<List<SrcType>>) -> bool {
+    return match (variants) {
+        Nil -> false,
+        Cons(fields, rest) -> fields_hold_pointer(fields) || variants_hold_pointer(unbox(rest)),
+    };
+}
+// extract: mutual end
+
+pub fn expr_roots(e: SrcExpr) -> List<usize> {
+    return match (e) {
+        Int(value) -> empty(),
+        Boolean(value) -> empty(),
+        Unsigned(kind, value) -> empty(),
+        Local(id) -> single(id),
+        Field(id, index) -> single(id),
+        Negate(operand) -> empty(),
+        Not(operand) -> empty(),
+        Apply(op, left, right) -> empty(),
+        Cast(ty, operand) -> empty(),
+        Null -> empty(),
+        SrcExpr::Char(code) -> empty(),
+        SrcExpr::Float(ft, bits) -> empty(),
+    };
+}
+
+// The place a borrow names is rooted at these locals (x, x.f, x[i], ...).
+pub fn place_roots(p: SrcEff) -> List<usize> {
+    return match (p) {
+        EPure(e) -> expr_roots(e),
+        ECall(callee, args) -> empty(),
+        EApply(op, left, right) -> empty(),
+        ENeg(operand) -> empty(),
+        ENot(operand) -> empty(),
+        ECast(ty, operand) -> empty(),
+        EIndex(slice, index) -> single(slice),
+        EStruct(ty, fields) -> empty(),
+        EVariant(ty, variant, payload) -> empty(),
+        EMatch(scrutinee, ety, ty, binders, values) -> empty(),
+        EDivide(op, left, right) -> empty(),
+        EStride(slice) -> empty(),
+        ArraySlice(element, array) -> empty(),
+        EIf(condition, ty, then_value, else_value) -> empty(),
+        ELet(id, ty, value, rt, body) -> empty(),
+        ELen(slice) -> empty(),
+        EStr(offset, chars) -> empty(),
+        EBorrow(bty, bplace) -> empty(),
+        EDeref(dty, dref) -> empty(),
+        EField(fbase, fidx) -> place_roots(unbox(fbase)),
+        EAt(abase, aindex) -> place_roots(unbox(abase)),
+    };
+}
+
+pub fn if_pick(reads: bool, slot: usize, g: Expr, condition: core::option::Option<Expr>, twin: core::option::Option<Evaluated>, then_branch: core::option::Option<Stmt>, else_branch: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    if (reads) {
+        return lower_if_eval(slot, twin, then_branch, else_branch);
+    }
+    return guarded(slot, g, lower_if(condition, then_branch, else_branch));
+}
+
+pub fn while_pick(reads: bool, slot: usize, g: Expr, condition: core::option::Option<Expr>, twin: core::option::Option<Evaluated>, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    if (reads) {
+        return lower_while_eval(slot, twin, body);
+    }
+    return lower_while(slot, g, condition, body);
+}
+
+pub fn return_pick(reads: bool, slot: usize, g: Expr, values: core::option::Option<List<Expr>>, ret: SrcType, twin: core::option::Option<Evaluated>) -> core::option::Option<Stmt> {
+    if (reads) {
+        return lower_return_eval(slot, ret, twin);
+    }
+    return guarded(slot, g, lower_return(values));
+}
+
+// let id = array[index] on a homed array: the element's load (LetEval of eAt).
+pub fn let_index_pick(homed: bool, decls: SrcDecls, scope: List<Binding>, next: usize, ty: SrcType, slice: usize, index: SrcExpr, twin: core::option::Option<Evaluated>, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    if (homed) {
+        return lower_let_eval(ty, twin, body);
+    }
+    return lower_let_index_any(decls, scope, next, ty, slice, index, body);
+}
+
 // The code of a value a statement computes (LetEval, Discard): a call
 // passing arrays as slices (array_call), or any other expression's code.
 pub fn stmt_eval(value: SrcEff, sigs: List<Sig>, decls: SrcDecls, scope: List<Binding>, next: usize) -> core::option::Option<Evaluated> {
@@ -6407,227 +7634,6 @@ pub fn stmt_eval(value: SrcEff, sigs: List<Sig>, decls: SrcDecls, scope: List<Bi
         return value.slice_call(sigs, scope, next);
     }
     return value.eval(sigs, decls, scope, next);
-}
-
-impl SrcStmt {
-    pub fn lower(self, sigs: List<Sig>, decls: SrcDecls, ret: SrcType, scope: List<Binding>, next: usize) -> core::option::Option<Stmt> {
-        return match (self) {
-            Nop -> Some(Skip),
-            Let(id, ty, value, body) -> guarded(next, value.guard(scope), lower_let(next, lower_value(scope, value, ty), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty, home: None }, scope), plus(next, ty.size())))),
-            LetStruct(id, ty, fields, body) -> guarded(next, guard_all(scope, fields), lower_let(next, lower_literal(scope, ty, fields), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty, home: None }, scope), plus(next, ty.size())))),
-            LetCall(id, ty, callee, args, body) -> guarded(next, guard_all(scope, args), lower_let_call(next, ty.size(), callee, lower_call(sigs, scope, callee, args, ty), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty, home: None }, scope), plus(next, ty.size())))),
-            LetEnum(id, ty, variant, payload, body) -> guarded(next, guard_all(scope, payload), lower_let(next, lower_enum_value(scope, ty, variant, payload), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty, home: None }, scope), plus(next, ty.size())))),
-            LetMatch(id, ty, scrutinee, enum_id, arms, body) -> lower_then(lower_match(scope, lookup(scope, scrutinee), enum_id, arms, ty, next), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty, home: None }, scope), plus(next, ty.size()))),
-            Set(id, value) -> guarded(next, value.guard(scope), lower_set(lookup(scope, id), scope, value)),
-            SetField(id, index, value) -> guarded(next, value.guard(scope), lower_set_field(lookup(scope, id), index, scope, value)),
-            SetCall(id, callee, args) -> guarded(next, guard_all(scope, args), lower_set_call(sigs, scope, lookup(scope, id), callee, args)),
-            Then(first, second) -> lower_then(unbox(first).lower(sigs, decls, ret, scope, next), unbox(second).lower(sigs, decls, ret, scope, next)),
-            If(condition, then_branch, else_branch) -> guarded(next, condition.guard(scope), lower_if(lower_as(scope, condition, Bool), unbox(then_branch).lower(sigs, decls, ret, scope, next), unbox(else_branch).lower(sigs, decls, ret, scope, next))),
-            While(condition, body) -> lower_while(next, condition.guard(scope), lower_as(scope, condition, Bool), unbox(body).lower(sigs, decls, ret, scope, next)),
-            Return(value) -> guarded(next, value.guard(scope), lower_return(lower_value(scope, value, ret))),
-            LetAlloc(id, size, shift, body) -> guarded(next, size.guard(scope), lower_alloc(next, shift, lower_as(scope, size, Uint(Usize)), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Ptr, home: None }, scope), plus(next, 1)))),
-            LetLoad(id, pointer, offset, body) -> guarded(next, guard_and(pointer.guard(scope), offset.guard(scope)), lower_load(next, lower_address(lower_as(scope, pointer, Ptr), lower_as(scope, offset, Uint(Usize))), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Uint(Uint8), home: None }, scope), plus(next, 1)))),
-            SetByte(pointer, offset, value) -> guarded(next, guard_and(pointer.guard(scope), guard_and(offset.guard(scope), value.guard(scope))), lower_store(lower_address(lower_as(scope, pointer, Ptr), lower_as(scope, offset, Uint(Usize))), lower_as(scope, value, Uint(Uint8)))),
-            Free(pointer, size, shift) -> guarded(next, guard_and(pointer.guard(scope), size.guard(scope)), lower_free(shift, lower_as(scope, pointer, Ptr), lower_as(scope, size, Uint(Usize)))),
-            LetSlice(id, element, pointer, length, body) -> guarded(next, guard_and(pointer.guard(scope), length.guard(scope)), lower_let(next, lower_slice(decls, element, lower_as(scope, pointer, Ptr), lower_as(scope, length, I32)), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Slice(boxed(element)), home: None }, scope), plus(next, 2)))),
-            LetIndex(id, ty, slice, index, body) -> lower_let_index_any(decls, scope, next, ty, slice, index, unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty, home: None }, scope), plus(next, ty.size()))),
-            SetIndex(slice, index, value) -> lower_set_index_any(decls, scope, next, slice, index, value),
-            LetEval(id, ty, value, body) -> lower_let_eval(ty, stmt_eval(value, sigs, decls, scope, next), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty, home: None }, scope), plus(next, ty.size()))),
-            SetEval(id, value) -> lower_set_eval(next, lookup(scope, id), value.eval(sigs, decls, scope, next)),
-            IfEval(condition, then_branch, else_branch) -> lower_if_eval(next, condition.eval(sigs, decls, scope, next), unbox(then_branch).lower(sigs, decls, ret, scope, next), unbox(else_branch).lower(sigs, decls, ret, scope, next)),
-            WhileEval(condition, body) -> lower_while_eval(next, condition.eval(sigs, decls, scope, next), unbox(body).lower(sigs, decls, ret, scope, next)),
-            ReturnEval(value) -> lower_return_eval(next, ret, value.eval(sigs, decls, scope, next)),
-            Discard(value) -> lower_discard(stmt_eval(value, sigs, decls, scope, next)),
-            SetIndexEval(slice, index, value) -> lower_set_index_eval(decls, next, lookup(scope, slice), index.eval(sigs, decls, scope, next), value.eval(sigs, decls, scope, plus(next, 1))),
-            SetFieldEval(id, field, value) -> lower_set_field_eval(next, lookup(scope, id), field, value.eval(sigs, decls, scope, next)),
-            ReturnUnit -> lower_return_unit(ret),
-            Assert(condition) -> lower_assert(condition.eval(sigs, decls, scope, next), next),
-            Break -> Some(Brk),
-            Continue -> Some(Cont),
-            MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> lower_match_arm(scope, lookup(scope, scrutinee), enum_id, variant, binds, binder, ty, next, unbox(body).lower(sigs, decls, ret, arm_body_scope(binds, binder, ty, next, scope), plus(next, ty.size())), unbox(rest).lower(sigs, decls, ret, scope, next)),
-            Unreachable(id, ty) -> lower_unreachable(ty.same(ret), next),
-            LetView(id, length, fields, pointer, body) -> guarded(next, guard_all(scope, fields), lower_view(next, length, lower_literal(scope, SrcType::Array(boxed(I32), length), fields), unbox(body).lower(sigs, decls, ret, cons(Binding { id: pointer, slot: plus(next, length), ty: Ptr, home: None }, cons(Binding { id: id, slot: next, ty: View(length), home: None }, scope)), plus(plus(next, length), 1)))),
-            LetStr(pointer, chars, body) -> lower_str(next, chars, unbox(body).lower(sigs, decls, ret, cons(Binding { id: pointer, slot: next, ty: Ptr, home: None }, scope), plus(next, 1))),
-            SetPlace(aplace, avalue) -> None,
-            SetPlaceOp(aop, aplace, avalue) -> None,
-        };
-    }
-
-    // A break or continue outside every loop of the statement: Core's
-    // typing rejects one outside every loop of the function.
-    pub fn breaks_out(self) -> bool {
-        return match (self) {
-            Nop -> false,
-            Let(id, ty, value, body) -> unbox(body).breaks_out(),
-            LetStruct(id, ty, fields, body) -> unbox(body).breaks_out(),
-            LetCall(id, ty, callee, args, body) -> unbox(body).breaks_out(),
-            LetEnum(id, ty, variant, payload, body) -> unbox(body).breaks_out(),
-            LetMatch(id, ty, scrutinee, enum_id, arms, body) -> unbox(body).breaks_out(),
-            Set(id, value) -> false,
-            SetField(id, index, value) -> false,
-            SetCall(id, callee, args) -> false,
-            Then(first, second) -> unbox(first).breaks_out() || unbox(second).breaks_out(),
-            If(condition, then_branch, else_branch) -> unbox(then_branch).breaks_out() || unbox(else_branch).breaks_out(),
-            While(condition, body) -> false,
-            Return(value) -> false,
-            LetAlloc(id, size, shift, body) -> unbox(body).breaks_out(),
-            LetLoad(id, pointer, offset, body) -> unbox(body).breaks_out(),
-            SetByte(pointer, offset, value) -> false,
-            Free(pointer, size, shift) -> false,
-            LetSlice(id, element, pointer, length, body) -> unbox(body).breaks_out(),
-            LetIndex(id, ty, slice, index, body) -> unbox(body).breaks_out(),
-            SetIndex(slice, index, value) -> false,
-            LetEval(id, ty, value, body) -> unbox(body).breaks_out(),
-            SetEval(id, value) -> false,
-            IfEval(condition, then_branch, else_branch) -> unbox(then_branch).breaks_out() || unbox(else_branch).breaks_out(),
-            WhileEval(condition, body) -> false,
-            ReturnEval(value) -> false,
-            Discard(value) -> false,
-            SetIndexEval(slice, index, value) -> false,
-            SetFieldEval(id, field, value) -> false,
-            ReturnUnit -> false,
-            Assert(condition) -> false,
-            Break -> true,
-            Continue -> true,
-            MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> unbox(body).breaks_out() || unbox(rest).breaks_out(),
-            Unreachable(id, ty) -> false,
-            LetView(id, length, fields, pointer, body) -> unbox(body).breaks_out(),
-            LetStr(pointer, chars, body) -> unbox(body).breaks_out(),
-            SetPlace(aplace, avalue) -> false,
-            SetPlaceOp(aop, aplace, avalue) -> false,
-        };
-    }
-
-    // Slots the statement's lets need beyond the ones in scope.
-    pub fn depth(self) -> usize {
-        return match (self) {
-            Nop -> 0,
-            Let(id, ty, value, body) -> plus(unbox(body).depth(), ty.size()),
-            LetStruct(id, ty, fields, body) -> plus(unbox(body).depth(), ty.size()),
-            LetCall(id, ty, callee, args, body) -> plus(unbox(body).depth(), ty.size()),
-            LetEnum(id, ty, variant, payload, body) -> plus(unbox(body).depth(), ty.size()),
-            LetMatch(id, ty, scrutinee, enum_id, arms, body) -> plus(unbox(body).depth(), ty.size()),
-            Set(id, value) -> 0,
-            SetField(id, index, value) -> 0,
-            SetCall(id, callee, args) -> 0,
-            Then(first, second) -> max_of(unbox(first).depth(), unbox(second).depth()),
-            If(condition, then_branch, else_branch) -> max_of(unbox(then_branch).depth(), unbox(else_branch).depth()),
-            While(condition, body) -> unbox(body).depth(),
-            Return(value) -> 0,
-            LetAlloc(id, size, shift, body) -> plus(unbox(body).depth(), 1),
-            LetLoad(id, pointer, offset, body) -> plus(unbox(body).depth(), 1),
-            SetByte(pointer, offset, value) -> 0,
-            Free(pointer, size, shift) -> 0,
-            LetSlice(id, element, pointer, length, body) -> plus(unbox(body).depth(), 2),
-            LetIndex(id, ty, slice, index, body) -> plus(unbox(body).depth(), ty.size()),
-            SetIndex(slice, index, value) -> 0,
-            LetEval(id, ty, value, body) -> plus(unbox(body).depth(), ty.size()),
-            SetEval(id, value) -> 0,
-            IfEval(condition, then_branch, else_branch) -> max_of(unbox(then_branch).depth(), unbox(else_branch).depth()),
-            WhileEval(condition, body) -> unbox(body).depth(),
-            ReturnEval(value) -> 0,
-            Discard(value) -> 0,
-            SetIndexEval(slice, index, value) -> 0,
-            SetFieldEval(id, field, value) -> 0,
-            ReturnUnit -> 0,
-            Assert(condition) -> 0,
-            Break -> 0,
-            Continue -> 0,
-            MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> max_of(plus(unbox(body).depth(), ty.size()), unbox(rest).depth()),
-            Unreachable(id, ty) -> 1,
-            LetView(id, length, fields, pointer, body) -> plus(unbox(body).depth(), plus(length, 1)),
-            LetStr(pointer, chars, body) -> plus(unbox(body).depth(), 1),
-            SetPlace(aplace, avalue) -> 0,
-            SetPlaceOp(aop, aplace, avalue) -> 0,
-        };
-    }
-}
-
-// Parameters take slots from 0 in order, a struct one per field; a later
-// parameter with the same id shadows an earlier one, as Core's bindLocals
-// does.
-pub fn param_scope(params: List<SrcParam>, slot: usize, scope: List<Binding>) -> List<Binding> {
-    return match (params) {
-        Nil -> scope,
-        Cons(param, rest) -> param_scope(unbox(rest), plus(slot, param.ty.size()), cons(Binding { id: param.id, slot: slot, ty: param.ty, home: None }, scope)),
-    };
-}
-
-pub fn params_valid(params: List<SrcParam>) -> bool {
-    return match (params) {
-        Nil -> true,
-        Cons(param, rest) -> (param.ty.size() > 0) && !viewed_type(param.ty) && params_valid(unbox(rest)),
-    };
-}
-
-pub fn params_size(params: List<SrcParam>) -> usize {
-    return match (params) {
-        Nil -> 0,
-        Cons(param, rest) -> plus(param.ty.size(), params_size(unbox(rest))),
-    };
-}
-
-pub fn param_types(params: List<SrcParam>) -> List<SrcType> {
-    return match (params) {
-        Nil -> empty(),
-        Cons(param, rest) -> cons(param.ty, param_types(unbox(rest))),
-    };
-}
-
-// The signatures with the budget of the function lowered against them.
-pub fn with_budget(sigs: List<Sig>, room: usize, block: usize) -> List<Sig> {
-    return match (sigs) {
-        Nil -> empty(),
-        Cons(sig, rest) -> cons(Sig { params: sig.params, ret: sig.ret, need: sig.need, room: room, block: block }, with_budget(unbox(rest), room, block)),
-    };
-}
-
-// 8 bytes per element of an array type, 0 for any other.
-pub fn array_bytes_of(ty: SrcType) -> usize {
-    return match (ty) {
-        I32 -> 0,
-        Bool -> 0,
-        Uint(kind) -> 0,
-        Struct(id, fields) -> 0,
-        Enum(id, variants) -> 0,
-        Ptr -> 0,
-        Slice(element) -> 0,
-        SrcType::Array(array_element, array_length) -> times(8, times(array_length, unbox(array_element).size())),
-        Unit -> 0,
-        Isize -> 0,
-        SrcType::Char -> 0,
-        SrcType::Float(ft) -> 0,
-        Sint(sk) -> 0,
-        View(view_length) -> 0,
-        Str -> 0,
-        Ref(referent) -> 0,
-    };
-}
-
-// The block bytes of a declaration of id at type ty: its array bytes when
-// id is passed as a slice.
-pub fn decl_bytes(uses: List<usize>, id: usize, ty: SrcType) -> usize {
-    if (id_absent(uses, id)) {
-        return 0;
-    }
-    return array_bytes_of(ty);
-}
-
-// The room left of room after each parameter's block bytes are taken out,
-// None as soon as one does not fit (as room_after does for code).
-pub fn params_room(room: usize, params: List<SrcParam>, uses: List<usize>) -> core::option::Option<usize> {
-    return match (params) {
-        Nil -> Some(room),
-        Cons(p, rest) -> params_then(spend(room, decl_bytes(uses, p.id, p.ty)), unbox(rest), uses),
-    };
-}
-
-// extract: inline
-fn params_then(proom: core::option::Option<usize>, pparams: List<SrcParam>, puses: List<usize>) -> core::option::Option<usize> {
-    return match (proom) {
-        None -> None,
-        Some(pr) -> params_room(pr, pparams, puses),
-    };
 }
 
 // extract: mutual begin
@@ -6652,7 +7658,7 @@ impl SrcEff {
             ELet(id, ty, value, rt, body) -> concat(unbox(value).slice_uses(), unbox(body).slice_uses()),
             ELen(slice) -> empty(),
             EStr(offset, chars) -> empty(),
-            EBorrow(bty, bplace) -> unbox(bplace).slice_uses(),
+            EBorrow(bty, bplace) -> concat(place_roots(unbox(bplace)), unbox(bplace).slice_uses()),
             EDeref(dty, dref) -> unbox(dref).slice_uses(),
             EField(fbase, fidx) -> unbox(fbase).slice_uses(),
             EAt(abase, aindex) -> concat(unbox(abase).slice_uses(), unbox(aindex).slice_uses()),
@@ -6791,6 +7797,228 @@ impl SrcStmt {
             SetPlaceOp(aop, aplace, avalue) -> max_of(aplace.callee_need(needs), avalue.callee_need(needs)),
         };
     }
+}
+
+impl SrcStmt {
+    pub fn lower(self, sigs: List<Sig>, decls: SrcDecls, ret: SrcType, scope: List<Binding>, next: usize) -> core::option::Option<Stmt> {
+        return match (self) {
+            Nop -> Some(Skip),
+            Let(id, ty, value, body) -> fits_then(home_fits(home_for(unbox(body).slice_uses(), scope, id), ty, own_block(sigs)), let_pick(reads_home(scope, value), next, value.guard(scope), lower_value(scope, value, ty), ty, eval_pure_any(own_frame(sigs), scope, value, next), home_store_then(own_frame(sigs), home_for(unbox(body).slice_uses(), scope, id), ty, next, unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty, home: home_for(unbox(body).slice_uses(), scope, id) }, scope), plus(next, ty.size()))))),
+            LetStruct(id, ty, fields, body) -> fits_then(home_fits(home_for(unbox(body).slice_uses(), scope, id), ty, own_block(sigs)), let_pick(reads_homes(scope, fields), next, guard_all(scope, fields), lower_literal(scope, ty, fields), ty, EStruct(ty, boxed(pures(fields))).eval(sigs, decls, scope, next), home_store_then(own_frame(sigs), home_for(unbox(body).slice_uses(), scope, id), ty, next, unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty, home: home_for(unbox(body).slice_uses(), scope, id) }, scope), plus(next, ty.size()))))),
+            LetCall(id, ty, callee, args, body) -> fits_then(home_fits(home_for(unbox(body).slice_uses(), scope, id), ty, own_block(sigs)), let_call_pick(reads_homes(scope, args), next, guard_all(scope, args), ty.size(), callee, lower_call(sigs, scope, callee, args, ty), ty, ECall(callee, boxed(pures(args))).eval(sigs, decls, scope, next), home_store_then(own_frame(sigs), home_for(unbox(body).slice_uses(), scope, id), ty, next, unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty, home: home_for(unbox(body).slice_uses(), scope, id) }, scope), plus(next, ty.size()))))),
+            LetEnum(id, ty, variant, payload, body) -> fits_then(home_fits(home_for(unbox(body).slice_uses(), scope, id), ty, own_block(sigs)), let_pick(reads_homes(scope, payload), next, guard_all(scope, payload), lower_enum_value(scope, ty, variant, payload), ty, EVariant(ty, variant, boxed(pures(payload))).eval(sigs, decls, scope, next), home_store_then(own_frame(sigs), home_for(unbox(body).slice_uses(), scope, id), ty, next, unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty, home: home_for(unbox(body).slice_uses(), scope, id) }, scope), plus(next, ty.size()))))),
+            LetMatch(id, ty, scrutinee, enum_id, arms, body) -> fits_then(home_fits(home_for(unbox(body).slice_uses(), scope, id), ty, own_block(sigs)), lower_then(lower_match(scope, lookup_slot(scope, scrutinee), enum_id, arms, ty, next), home_store_then(own_frame(sigs), home_for(unbox(body).slice_uses(), scope, id), ty, next, unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty, home: home_for(unbox(body).slice_uses(), scope, id) }, scope), plus(next, ty.size()))))),
+            Set(id, value) -> set_pick(is_homed(lookup(scope, id)), store_place(next, place_code(own_frame(sigs), scope, next, EPure(Local(id))), eval_pure_any(own_frame(sigs), scope, value, plus(next, 1))), stmt_pick(reads_home(scope, value), guarded(next, value.guard(scope), lower_set(lookup_slot(scope, id), scope, value)), lower_set_eval(next, lookup_slot(scope, id), eval_pure_any(own_frame(sigs), scope, value, next)))),
+            SetField(id, index, value) -> set_pick(is_homed(lookup(scope, id)), store_place(next, place_code(own_frame(sigs), scope, next, EField(boxed(EPure(Local(id))), index)), eval_pure_any(own_frame(sigs), scope, value, plus(next, 1))), stmt_pick(reads_home(scope, value), guarded(next, value.guard(scope), lower_set_field(lookup_slot(scope, id), index, scope, value)), lower_set_field_eval(next, lookup_slot(scope, id), index, eval_pure_any(own_frame(sigs), scope, value, next)))),
+            SetCall(id, callee, args) -> set_pick(is_homed(lookup(scope, id)), store_place(next, place_code(own_frame(sigs), scope, next, EPure(Local(id))), ECall(callee, boxed(pures(args))).eval(sigs, decls, scope, plus(next, 1))), stmt_pick(reads_homes(scope, args), guarded(next, guard_all(scope, args), lower_set_call(sigs, scope, lookup_slot(scope, id), callee, args)), lower_set_eval(next, lookup_slot(scope, id), ECall(callee, boxed(pures(args))).eval(sigs, decls, scope, next)))),
+            Then(first, second) -> lower_then(unbox(first).lower(sigs, decls, ret, scope, next), unbox(second).lower(sigs, decls, ret, scope, next)),
+            If(condition, then_branch, else_branch) -> if_pick(reads_home(scope, condition), next, condition.guard(scope), lower_as(scope, condition, Bool), eval_pure_any(own_frame(sigs), scope, condition, next), unbox(then_branch).lower(sigs, decls, ret, scope, next), unbox(else_branch).lower(sigs, decls, ret, scope, next)),
+            While(condition, body) -> while_pick(reads_home(scope, condition), next, condition.guard(scope), lower_as(scope, condition, Bool), eval_pure_any(own_frame(sigs), scope, condition, next), unbox(body).lower(sigs, decls, ret, scope, next)),
+            Return(value) -> return_pick(reads_home(scope, value), next, value.guard(scope), lower_value(scope, value, ret), ret, eval_pure_any(own_frame(sigs), scope, value, next)),
+            LetAlloc(id, size, shift, body) -> unhomed_then(home_for(unbox(body).slice_uses(), scope, id), guarded(next, size.guard(scope), lower_alloc(next, shift, lower_as(scope, size, Uint(Usize)), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Ptr, home: None }, scope), plus(next, 1))))),
+            LetLoad(id, pointer, offset, body) -> unhomed_then(home_for(unbox(body).slice_uses(), scope, id), guarded(next, guard_and(pointer.guard(scope), offset.guard(scope)), lower_load(next, lower_address(lower_as(scope, pointer, Ptr), lower_as(scope, offset, Uint(Usize))), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Uint(Uint8), home: None }, scope), plus(next, 1))))),
+            SetByte(pointer, offset, value) -> guarded(next, guard_and(pointer.guard(scope), guard_and(offset.guard(scope), value.guard(scope))), lower_store(lower_address(lower_as(scope, pointer, Ptr), lower_as(scope, offset, Uint(Usize))), lower_as(scope, value, Uint(Uint8)))),
+            Free(pointer, size, shift) -> guarded(next, guard_and(pointer.guard(scope), size.guard(scope)), lower_free(shift, lower_as(scope, pointer, Ptr), lower_as(scope, size, Uint(Usize)))),
+            LetSlice(id, element, pointer, length, body) -> unhomed_then(home_for(unbox(body).slice_uses(), scope, id), guarded(next, guard_and(pointer.guard(scope), length.guard(scope)), lower_let(next, lower_slice(decls, element, lower_as(scope, pointer, Ptr), lower_as(scope, length, I32)), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Slice(boxed(element)), home: None }, scope), plus(next, 2))))),
+            LetIndex(id, ty, slice, index, body) -> unhomed_then(home_for(unbox(body).slice_uses(), scope, id), let_index_pick(is_homed(lookup(scope, slice)), decls, scope, next, ty, slice, index, eval_place_at(own_frame(sigs), scope, EAt(boxed(EPure(Local(slice))), boxed(EPure(index))), next), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty, home: None }, scope), plus(next, ty.size())))),
+            SetIndex(slice, index, value) -> set_pick(is_homed(lookup(scope, slice)), store_place(next, place_code(own_frame(sigs), scope, next, EAt(boxed(EPure(Local(slice))), boxed(EPure(index)))), eval_pure_any(own_frame(sigs), scope, value, plus(next, 1))), lower_set_index_any(decls, scope, next, slice, index, value)),
+            LetEval(id, ty, value, body) -> fits_then(home_fits(home_for(unbox(body).slice_uses(), scope, id), ty, own_block(sigs)), lower_let_eval(ty, stmt_eval(value, sigs, decls, scope, next), home_store_then(own_frame(sigs), home_for(unbox(body).slice_uses(), scope, id), ty, next, unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty, home: home_for(unbox(body).slice_uses(), scope, id) }, scope), plus(next, ty.size()))))),
+            SetEval(id, value) -> set_pick(is_homed(lookup(scope, id)), store_place(next, place_code(own_frame(sigs), scope, next, EPure(Local(id))), value.eval(sigs, decls, scope, plus(next, 1))), lower_set_eval(next, lookup_slot(scope, id), value.eval(sigs, decls, scope, next))),
+            IfEval(condition, then_branch, else_branch) -> lower_if_eval(next, condition.eval(sigs, decls, scope, next), unbox(then_branch).lower(sigs, decls, ret, scope, next), unbox(else_branch).lower(sigs, decls, ret, scope, next)),
+            WhileEval(condition, body) -> lower_while_eval(next, condition.eval(sigs, decls, scope, next), unbox(body).lower(sigs, decls, ret, scope, next)),
+            ReturnEval(value) -> lower_return_eval(next, ret, value.eval(sigs, decls, scope, next)),
+            Discard(value) -> lower_discard(stmt_eval(value, sigs, decls, scope, next)),
+            SetIndexEval(slice, index, value) -> set_pick(is_homed(lookup(scope, slice)), store_place(next, place_code(own_frame(sigs), scope, next, EAt(boxed(EPure(Local(slice))), boxed(index))), value.eval(sigs, decls, scope, plus(next, 1))), lower_set_index_eval(decls, next, lookup_slot(scope, slice), index.eval(sigs, decls, scope, next), value.eval(sigs, decls, scope, plus(next, 1)))),
+            SetFieldEval(id, field, value) -> set_pick(is_homed(lookup(scope, id)), store_place(next, place_code(own_frame(sigs), scope, next, EField(boxed(EPure(Local(id))), field)), value.eval(sigs, decls, scope, plus(next, 1))), lower_set_field_eval(next, lookup_slot(scope, id), field, value.eval(sigs, decls, scope, next))),
+            ReturnUnit -> lower_return_unit(ret),
+            Assert(condition) -> lower_assert(condition.eval(sigs, decls, scope, next), next),
+            Break -> Some(Brk),
+            Continue -> Some(Cont),
+            MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> lower_match_arm(scope, lookup_slot(scope, scrutinee), enum_id, variant, binds, binder, ty, next, unbox(body).lower(sigs, decls, ret, arm_body_scope(binds, binder, ty, next, scope), plus(next, ty.size())), unbox(rest).lower(sigs, decls, ret, scope, next)),
+            Unreachable(id, ty) -> lower_unreachable(ty.same(ret), next),
+            LetView(id, length, fields, pointer, body) -> unhomed_then(home_for(unbox(body).slice_uses(), scope, id), guarded(next, guard_all(scope, fields), lower_view(next, length, lower_literal(scope, SrcType::Array(boxed(I32), length), fields), unbox(body).lower(sigs, decls, ret, cons(Binding { id: pointer, slot: plus(next, length), ty: Ptr, home: None }, cons(Binding { id: id, slot: next, ty: View(length), home: None }, scope)), plus(plus(next, length), 1))))),
+            LetStr(pointer, chars, body) -> unhomed_then(home_for(unbox(body).slice_uses(), scope, pointer), lower_str(next, chars, unbox(body).lower(sigs, decls, ret, cons(Binding { id: pointer, slot: next, ty: Ptr, home: None }, scope), plus(next, 1)))),
+            SetPlace(aplace, avalue) -> store_place(next, place_code(own_frame(sigs), scope, next, aplace), avalue.eval(sigs, decls, scope, plus(next, 1))),
+            SetPlaceOp(aop, aplace, avalue) -> store_place_op(aop, next, place_code(own_frame(sigs), scope, next, aplace), avalue.eval(sigs, decls, scope, plus(next, 2))),
+        };
+    }
+
+    // A break or continue outside every loop of the statement: Core's
+    // typing rejects one outside every loop of the function.
+    pub fn breaks_out(self) -> bool {
+        return match (self) {
+            Nop -> false,
+            Let(id, ty, value, body) -> unbox(body).breaks_out(),
+            LetStruct(id, ty, fields, body) -> unbox(body).breaks_out(),
+            LetCall(id, ty, callee, args, body) -> unbox(body).breaks_out(),
+            LetEnum(id, ty, variant, payload, body) -> unbox(body).breaks_out(),
+            LetMatch(id, ty, scrutinee, enum_id, arms, body) -> unbox(body).breaks_out(),
+            Set(id, value) -> false,
+            SetField(id, index, value) -> false,
+            SetCall(id, callee, args) -> false,
+            Then(first, second) -> unbox(first).breaks_out() || unbox(second).breaks_out(),
+            If(condition, then_branch, else_branch) -> unbox(then_branch).breaks_out() || unbox(else_branch).breaks_out(),
+            While(condition, body) -> false,
+            Return(value) -> false,
+            LetAlloc(id, size, shift, body) -> unbox(body).breaks_out(),
+            LetLoad(id, pointer, offset, body) -> unbox(body).breaks_out(),
+            SetByte(pointer, offset, value) -> false,
+            Free(pointer, size, shift) -> false,
+            LetSlice(id, element, pointer, length, body) -> unbox(body).breaks_out(),
+            LetIndex(id, ty, slice, index, body) -> unbox(body).breaks_out(),
+            SetIndex(slice, index, value) -> false,
+            LetEval(id, ty, value, body) -> unbox(body).breaks_out(),
+            SetEval(id, value) -> false,
+            IfEval(condition, then_branch, else_branch) -> unbox(then_branch).breaks_out() || unbox(else_branch).breaks_out(),
+            WhileEval(condition, body) -> false,
+            ReturnEval(value) -> false,
+            Discard(value) -> false,
+            SetIndexEval(slice, index, value) -> false,
+            SetFieldEval(id, field, value) -> false,
+            ReturnUnit -> false,
+            Assert(condition) -> false,
+            Break -> true,
+            Continue -> true,
+            MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> unbox(body).breaks_out() || unbox(rest).breaks_out(),
+            Unreachable(id, ty) -> false,
+            LetView(id, length, fields, pointer, body) -> unbox(body).breaks_out(),
+            LetStr(pointer, chars, body) -> unbox(body).breaks_out(),
+            SetPlace(aplace, avalue) -> false,
+            SetPlaceOp(aop, aplace, avalue) -> false,
+        };
+    }
+
+    // Slots the statement's lets need beyond the ones in scope.
+    pub fn depth(self) -> usize {
+        return match (self) {
+            Nop -> 0,
+            Let(id, ty, value, body) -> plus(unbox(body).depth(), ty.size()),
+            LetStruct(id, ty, fields, body) -> plus(unbox(body).depth(), ty.size()),
+            LetCall(id, ty, callee, args, body) -> plus(unbox(body).depth(), ty.size()),
+            LetEnum(id, ty, variant, payload, body) -> plus(unbox(body).depth(), ty.size()),
+            LetMatch(id, ty, scrutinee, enum_id, arms, body) -> plus(unbox(body).depth(), ty.size()),
+            Set(id, value) -> 0,
+            SetField(id, index, value) -> 0,
+            SetCall(id, callee, args) -> 0,
+            Then(first, second) -> max_of(unbox(first).depth(), unbox(second).depth()),
+            If(condition, then_branch, else_branch) -> max_of(unbox(then_branch).depth(), unbox(else_branch).depth()),
+            While(condition, body) -> unbox(body).depth(),
+            Return(value) -> 0,
+            LetAlloc(id, size, shift, body) -> plus(unbox(body).depth(), 1),
+            LetLoad(id, pointer, offset, body) -> plus(unbox(body).depth(), 1),
+            SetByte(pointer, offset, value) -> 0,
+            Free(pointer, size, shift) -> 0,
+            LetSlice(id, element, pointer, length, body) -> plus(unbox(body).depth(), 2),
+            LetIndex(id, ty, slice, index, body) -> plus(unbox(body).depth(), ty.size()),
+            SetIndex(slice, index, value) -> 0,
+            LetEval(id, ty, value, body) -> plus(unbox(body).depth(), ty.size()),
+            SetEval(id, value) -> 0,
+            IfEval(condition, then_branch, else_branch) -> max_of(unbox(then_branch).depth(), unbox(else_branch).depth()),
+            WhileEval(condition, body) -> unbox(body).depth(),
+            ReturnEval(value) -> 0,
+            Discard(value) -> 0,
+            SetIndexEval(slice, index, value) -> 0,
+            SetFieldEval(id, field, value) -> 0,
+            ReturnUnit -> 0,
+            Assert(condition) -> 0,
+            Break -> 0,
+            Continue -> 0,
+            MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> max_of(plus(unbox(body).depth(), ty.size()), unbox(rest).depth()),
+            Unreachable(id, ty) -> 1,
+            LetView(id, length, fields, pointer, body) -> plus(unbox(body).depth(), plus(length, 1)),
+            LetStr(pointer, chars, body) -> plus(unbox(body).depth(), 1),
+            SetPlace(aplace, avalue) -> 0,
+            SetPlaceOp(aop, aplace, avalue) -> 0,
+        };
+    }
+}
+
+// Parameters take slots from 0 in order, a struct one per field; a later
+// parameter with the same id shadows an earlier one, as Core's bindLocals
+// does.
+// A borrowed parameter has a home (stack order: the parameters first).
+pub fn param_scope(params: List<SrcParam>, slot: usize, scope: List<Binding>, uses: List<usize>) -> List<Binding> {
+    return match (params) {
+        Nil -> scope,
+        Cons(param, rest) -> param_scope(unbox(rest), plus(slot, param.ty.size()), cons(Binding { id: param.id, slot: slot, ty: param.ty, home: home_for(uses, scope, param.id) }, scope), uses),
+    };
+}
+
+pub fn params_valid(params: List<SrcParam>) -> bool {
+    return match (params) {
+        Nil -> true,
+        Cons(param, rest) -> (param.ty.size() > 0) && !viewed_type(param.ty) && params_valid(unbox(rest)),
+    };
+}
+
+pub fn params_size(params: List<SrcParam>) -> usize {
+    return match (params) {
+        Nil -> 0,
+        Cons(param, rest) -> plus(param.ty.size(), params_size(unbox(rest))),
+    };
+}
+
+pub fn param_types(params: List<SrcParam>) -> List<SrcType> {
+    return match (params) {
+        Nil -> empty(),
+        Cons(param, rest) -> cons(param.ty, param_types(unbox(rest))),
+    };
+}
+
+// The signatures with the budget of the function lowered against them.
+pub fn with_budget(sigs: List<Sig>, room: usize, block: usize, frame: usize) -> List<Sig> {
+    return match (sigs) {
+        Nil -> empty(),
+        Cons(sig, rest) -> cons(Sig { params: sig.params, ret: sig.ret, need: sig.need, room: room, block: block, frame: frame }, with_budget(unbox(rest), room, block, frame)),
+    };
+}
+
+// 8 bytes per element of an array type, 0 for any other.
+pub fn array_bytes_of(ty: SrcType) -> usize {
+    return match (ty) {
+        I32 -> 0,
+        Bool -> 0,
+        Uint(kind) -> 0,
+        Struct(id, fields) -> 0,
+        Enum(id, variants) -> 0,
+        Ptr -> 0,
+        Slice(element) -> 0,
+        SrcType::Array(array_element, array_length) -> times(8, times(array_length, unbox(array_element).size())),
+        Unit -> 0,
+        Isize -> 0,
+        SrcType::Char -> 0,
+        SrcType::Float(ft) -> 0,
+        Sint(sk) -> 0,
+        View(view_length) -> 0,
+        Str -> 0,
+        Ref(referent) -> 0,
+    };
+}
+
+// The block bytes of a declaration of id at type ty: its home's native
+// words when it has one (a borrow names it or it is passed as a slice).
+pub fn decl_bytes(uses: List<usize>, id: usize, ty: SrcType) -> usize {
+    if (id_absent(uses, id)) {
+        return 0;
+    }
+    return times(8, ty_words(ty));
+}
+
+// The room left of room after each parameter's block bytes are taken out,
+// None as soon as one does not fit (as room_after does for code).
+pub fn params_room(room: usize, params: List<SrcParam>, uses: List<usize>) -> core::option::Option<usize> {
+    return match (params) {
+        Nil -> Some(room),
+        Cons(p, rest) -> params_then(spend(room, decl_bytes(uses, p.id, p.ty)), unbox(rest), uses),
+    };
+}
+
+// extract: inline
+fn params_then(proom: core::option::Option<usize>, pparams: List<SrcParam>, puses: List<usize>) -> core::option::Option<usize> {
+    return match (proom) {
+        None -> None,
+        Some(pr) -> params_room(pr, pparams, puses),
+    };
 }
 
 // The room left of room after each declaration's block bytes
@@ -6949,7 +8177,7 @@ pub fn func_needs(funcs: List<SrcFunc>) -> List<usize> {
 pub fn sigs_with(funcs: List<SrcFunc>, needs: List<usize>) -> List<Sig> {
     return match (funcs) {
         Nil -> empty(),
-        Cons(func, rest) -> cons(Sig { params: param_types(func.params), ret: func.ret, need: get_or(needs, 0, 0), room: 0, block: 0 }, sigs_with(unbox(rest), rest_needs(needs))),
+        Cons(func, rest) -> cons(Sig { params: param_types(func.params), ret: func.ret, need: get_or(needs, 0, 0), room: 0, block: 0, frame: 0 }, sigs_with(unbox(rest), rest_needs(needs))),
     };
 }
 
@@ -7023,8 +8251,9 @@ pub fn unit_tail(ret: SrcType, body: core::option::Option<Stmt>) -> core::option
     return body;
 }
 
-// The body after the function's block is taken (its address into slot,
-// which the body's first let overwrites), when it has one.
+// The body after the function's block is taken (its address into slot, the
+// frame slot, which the body keeps: it is lowered from slot + 1), when it
+// has one.
 pub fn with_frame(slot: usize, block: usize, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
     if (block == 0) {
         return body;
@@ -7035,6 +8264,14 @@ pub fn with_frame(slot: usize, block: usize, body: core::option::Option<Stmt>) -
     };
 }
 
+// The body's first slot: past the frame slot when the function has a block.
+pub fn frame_body_start(count: usize, block: usize) -> usize {
+    if (block > 0) {
+        return plus(count, 1);
+    }
+    return count;
+}
+
 // Results and struct parameters have slots; a function returns its result
 // type's slots, so it has at least that many locals.
 // own is the function's signature: its body is lowered with its need less
@@ -7042,8 +8279,10 @@ pub fn with_frame(slot: usize, block: usize, body: core::option::Option<Stmt>) -
 pub fn lower_func(sigs: List<Sig>, own: Sig, decls: SrcDecls, func: SrcFunc) -> core::option::Option<Func> {
     let count: usize = params_size(func.params);
     let block: usize = frame_block(func);
-    if ((func.ret.size() > 0) && params_valid(func.params) && !func.body.breaks_out() && (own.need >= block) && (2147483648 > block) && (need_limit() > own.need)) {
-        return lower_body(count, func.ret.size(), func.body.depth(), unit_tail(func.ret, with_frame(count, block, func.body.lower(with_budget(sigs, minus(own.need, block), block), decls, func.ret, param_scope(func.params, 0, empty()), count))));
+    let uses: List<usize> = func.body.slice_uses();
+    let scope: List<Binding> = param_scope(func.params, 0, empty(), uses);
+    if ((func.ret.size() > 0) && params_valid(func.params) && !func.body.breaks_out() && (own.need >= block) && (2147483648 > block) && (need_limit() > own.need) && params_homes_fit(scope, block) && !((length(uses) > 0) && holds_pointer(func.ret))) {
+        return lower_body(count, func.ret.size(), func.body.depth(), unit_tail(func.ret, with_frame(count, block, entry_then(count, scope, func.body.lower(with_budget(sigs, minus(own.need, block), block, count), decls, func.ret, scope, frame_body_start(count, block))))));
     }
     return None;
 }

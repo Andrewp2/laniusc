@@ -4,15 +4,15 @@ public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.SrcExpr_guard
-import Lanius.Mini.Compiler.P.SrcType_same
+import Lanius.Mini.Compiler.P.SrcType_uintKind
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.compileModules
 import Lanius.Mini.Compiler.P.elementAddress
-import Lanius.Mini.Compiler.P.elementBase
 import Lanius.Mini.Compiler.P.loadAtBytes
 import Lanius.Mini.Compiler.P.repeatType
 import Lanius.Mini.Compiler.P.shortCircuit
 import Lanius.Mini.Compiler.P.storeType
+import Lanius.Mini.Compiler.P.subField
 import Lanius.Mini.Compiler.P.wordElement
 
 public section

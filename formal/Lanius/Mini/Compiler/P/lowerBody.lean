@@ -3,17 +3,19 @@ module
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Lists_empty
-import Lanius.Mini.Compiler.P.SrcType_same
+import Lanius.Mini.Compiler.P.SrcType_uintKind
 import Lanius.Mini.Compiler.P.UintTy_half
-import Lanius.Mini.Compiler.P.arrayCallSig
 import Lanius.Mini.Compiler.P.compileModules
 import Lanius.Mini.Compiler.P.conjunction
+import Lanius.Mini.Compiler.P.entryThen
 import Lanius.Mini.Compiler.P.enumVariants
+import Lanius.Mini.Compiler.P.exprRoots
 import Lanius.Mini.Compiler.P.funcNeeds
 import Lanius.Mini.Compiler.P.loadAtBytes
 import Lanius.Mini.Compiler.P.lowerApply
 import Lanius.Mini.Compiler.P.matchVariants
 import Lanius.Mini.Compiler.P.needLimit
+import Lanius.Mini.Compiler.P.paramsHomesFit
 import Lanius.Mini.Compiler.P.structFields
 import Lanius.Mini.Compiler.P.withBudget
 
@@ -38,7 +40,7 @@ def unitTail (ret : SrcType) (body : Option Stmt) : Option Stmt :=
   else
     body
 
-/-- The body after the function's block is taken (its address into slot, which the body's first let overwrites), when it has one. -/
+/-- The body after the function's block is taken (its address into slot, the frame slot, which the body keeps: it is lowered from slot + 1), when it has one. -/
 def withFrame (slot : Nat) (block : Nat) (body : Option Stmt) : Option Stmt :=
   if block = 0 then
     body
@@ -47,12 +49,21 @@ def withFrame (slot : Nat) (block : Nat) (body : Option Stmt) : Option Stmt :=
     | none => none
     | some b => some (Stmt.seq (Stmt.frame slot block) b)
 
+/-- The body's first slot: past the frame slot when the function has a block. -/
+def frameBodyStart (count : Nat) (block : Nat) : Nat :=
+  if 0 < block then
+    count + 1
+  else
+    count
+
 /-- Results and struct parameters have slots; a function returns its result type's slots, so it has at least that many locals. own is the function's signature: its body is lowered with its need less its block as the room for its callees. -/
 def lowerFunc (sigs : List Sig) (own : Sig) (decls : SrcDecls) (func : SrcFunc) : Option Func :=
   let count : Nat := paramsSize func.params
   let block : Nat := frameBlock func
-  if decide (0 < SrcType.size func.ret) && paramsValid func.params && !(SrcStmt.breaksOut func.body) && decide (block ≤ own.need) && decide (block < 2147483648) && decide (own.need < needLimit) then
-    lowerBody count (SrcType.size func.ret) (SrcStmt.depth func.body) (unitTail func.ret (withFrame count block (SrcStmt.lower func.body (withBudget sigs (own.need - block) block) decls func.ret (paramScope func.params 0 []) count)))
+  let uses : List Nat := SrcStmt.sliceUses func.body
+  let scope : List Binding := paramScope func.params 0 [] uses
+  if decide (0 < SrcType.size func.ret) && paramsValid func.params && !(SrcStmt.breaksOut func.body) && decide (block ≤ own.need) && decide (block < 2147483648) && decide (own.need < needLimit) && paramsHomesFit scope block && !(decide (0 < uses.length) && holdsPointer func.ret) then
+    lowerBody count (SrcType.size func.ret) (SrcStmt.depth func.body) (unitTail func.ret (withFrame count block (entryThen count scope (SrcStmt.lower func.body (withBudget sigs (own.need - block) block count) decls func.ret scope (frameBodyStart count block)))))
   else
     none
 

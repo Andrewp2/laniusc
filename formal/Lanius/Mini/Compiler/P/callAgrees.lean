@@ -6,6 +6,7 @@ import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Expr_agrees
 import Lanius.Mini.Compiler.P.FArith_opcode
 import Lanius.Mini.Compiler.P.Lists_empty
+import Lanius.Mini.Compiler.P.MemAccess_bytes
 import Lanius.Mini.Compiler.P.Word_narrows
 import Lanius.Mini.Compiler.P.arities
 

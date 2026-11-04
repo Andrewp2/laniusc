@@ -16,6 +16,46 @@ set_option linter.unusedVariables false
 
 namespace Lanius.Mini
 
+/-- The unsigned type this is, if it is one. -/
+def SrcType.uintKind (self : SrcType) : Option UintTy :=
+  match self with
+  | .i32 => none
+  | .bool => none
+  | .uint kind => some kind
+  | .struct id fields => none
+  | .enum id variants => none
+  | .ptr => none
+  | .slice element => none
+  | .array arrayElement arrayLength => none
+  | .unit => none
+  | .isize => none
+  | .char => none
+  | .float ft => none
+  | .sint sk => none
+  | .view viewLength => none
+  | .str => none
+  | .ref referent => none
+
+/-- How a comparison of two values of this type reads their slots. -/
+def SrcType.word (self : SrcType) : Word :=
+  match self with
+  | .i32 => Word.s32
+  | .bool => Word.s32
+  | .uint kind => Word.u64
+  | .struct id fields => Word.s32
+  | .enum id variants => Word.s32
+  | .ptr => Word.u64
+  | .slice element => Word.u64
+  | .array arrayElement arrayLength => Word.s32
+  | .unit => Word.s32
+  | .isize => Word.u64
+  | .char => Word.u64
+  | .float ft => Word.u64
+  | .sint kind => UintTy.signedWord kind
+  | .view viewLength => Word.u64
+  | .str => Word.u64
+  | .ref referent => Word.u64
+
 mutual
 def SrcType.same (self : SrcType) (other : SrcType) : Bool :=
   match self with

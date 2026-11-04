@@ -27,7 +27,7 @@ def lowerIndex (scope : List Binding) (index : SrcExpr) : Option Expr :=
 
 /-- The check of slice[index]: the index below the length. -/
 def indexGuard (scope : List Binding) (slice : Nat) (index : SrcExpr) : Expr :=
-  match lookup scope slice with
+  match lookupSlot scope slice with
   | none => Expr.lit 1
   | some b =>
     match lowerIndex scope index with
