@@ -1474,54 +1474,18 @@ def valueFacts : TacticM Unit := do
         unless env.contains nm do continue
         let p := mkAppN (← constFresh nm) s.getAppArgs
         if (← isTypeCorrect p) && (← isProp (← inferType p)) then facts := facts.push p
-    -- a projection's type sizes are at most its structure's (`ts_le_<S>_<f>`, SelfPre/TS.lean)
-    let mut seenP : Array Expr := #[]
-    for t in ts do
-      for s in subterms (fun e => e.isApp && e.getAppFn.isConst && !e.hasLooseBVars) t do
-        let .const fn _ := s.getAppFn | continue
-        let some info := env.getProjectionFnInfo? fn | continue
-        unless s.getAppNumArgs == info.numParams + 1 do continue
-        let nm := `Lanius.Faithful.SelfPre ++ Name.mkSimple s!"ts_le_{lastName fn.getPrefix}_{lastName fn}"
-        unless env.contains nm do continue
-        if seenP.contains s then continue
-        seenP := seenP.push s
-        facts := facts.push (mkApp (← constFresh nm) s.appArg!)
-    -- an index into a list whose elements carry their own bounds (`val_getElem_<T>`, the compile side's)
-    for t in ts do
-      for s in subterms (fun e => e.isAppOfArity ``GetElem?.getElem? 7) t do
-        if seen.contains s then continue
-        seen := seen.push s
-        for nm in [`Lanius.Faithful.SelfPre.val_getElem_sigs, `Lanius.Faithful.SelfPre.val_getElem_types,
-            `Lanius.Faithful.SelfPre.val_getElem_variants] do
-          unless env.contains nm do continue
-          let p ← try some <$> mkAppM nm #[s.getArg! 5, s.getArg! 6] catch _ => pure none
-          if let some p := p then facts := facts.push p
-    -- a value matched against a constructor: its type sizes are the constructor's
-    if env.contains `Lanius.Faithful.SelfPre.TS.ts then
-      for (h, t) in hyps do
-        let some (ty, _, r) := t.eq? | continue
-        let .const c _ := r.getAppFn | continue
-        unless env.isConstructor c && (`Lanius.Mini).isPrefixOf c do continue
-        let p ← try
-            let f ← mkAppOptM `Lanius.Faithful.SelfPre.TS.ts #[some ty, none]
-            some <$> mkCongrArg f h
-          catch _ => pure none
-        if let some p := p then facts := facts.push p
     for (h, t) in hyps do
       let some (_, l, r) := t.eq? | continue
       -- an index that finds an element: `l[i]? = some v`
       if l.isAppOfArity ``GetElem?.getElem? 7 && r.isAppOfArity ``Option.some 2 then
-        for nm in [`Lanius.Faithful.SelfPre.vals_getElem, `Lanius.Faithful.SelfPre.vals_getElem_sigs,
-            `Lanius.Faithful.SelfPre.vals_getElem_types, `Lanius.Faithful.SelfPre.vals_getElem_variants] do
-          if env.contains nm then
-            let p ← try some <$> mkAppM nm #[l.getArg! 5, l.getArg! 6, r.appArg!, h] catch _ => pure none
-            if let some p := p then facts := facts.push p
+        let nm := `Lanius.Faithful.SelfPre.vals_getElem
+        if env.contains nm then
+          let p ← try some <$> mkAppM nm #[l.getArg! 5, l.getArg! 6, r.appArg!, h] catch _ => pure none
+          if let some p := p then facts := facts.push p
         continue
       let .const fn _ := l.getAppFn | continue
       unless (`Lanius.Mini).isPrefixOf fn && r.isAppOfArity ``Option.some 2 do continue
-      let nmT := `Lanius.Faithful.SelfPre ++ Name.mkSimple s!"vals_{lastName fn.getPrefix}_{lastName fn}"
-      let nm := if env.contains nmT then nmT
-        else `Lanius.Faithful.SelfPre ++ Name.mkSimple s!"vals_{lastName fn}"
+      let nm := `Lanius.Faithful.SelfPre ++ Name.mkSimple s!"vals_{lastName fn}"
       unless env.contains nm do continue
       let p := mkAppN (← constFresh nm) (l.getAppArgs ++ #[r.appArg!, h])
       if (← isTypeCorrect p) && (← isProp (← inferType p)) then facts := facts.push p
@@ -1529,19 +1493,14 @@ def valueFacts : TacticM Unit := do
     let mut have_ := hyps.map (·.2)
     let mut g := g
     let mut i := 0
-    let mut tsFacts : Array FVarId := #[]
     for p in facts do
       let ty ← instantiateMVars (← inferType p)
       if have_.contains ty then continue
       have_ := have_.push ty
-      let (h, g') ← (← g.assert (Name.mkSimple s!"hval{i}") ty p).intro1P
+      let (_, g') ← (← g.assert (Name.mkSimple s!"hval{i}") ty p).intro1P
       g := g'
       i := i + 1
-      if (ty.find? (·.isConstOf `Lanius.Faithful.SelfPre.TS.ts)).isSome then tsFacts := tsFacts.push h
     replaceMainGoal [g]
-    -- the type sizes' facts in the form the goals' `hb_simp` gives them (`tySlots`)
-    unless tsFacts.isEmpty do
-      simpAt true hbNormNames (hs := some tsFacts) (target := false)
 
 /-- Take a precondition apart and close its pieces. -/
 partial def preGoal (nStx mStx : Term) : TacticM Unit := withMainContext do
