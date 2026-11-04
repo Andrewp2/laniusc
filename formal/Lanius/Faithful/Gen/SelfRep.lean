@@ -599,8 +599,8 @@ inductive RepAttached : Lanius.Mini.Attached → Value → Prop where
       (RepList 83 RepCTree) x0 v0 → RepCursor x1 v1 → RepAttached (Lanius.Mini.Attached.mk x0 x1) (.structure 132 [v0, v1])
 
 inductive RepBinding : Lanius.Mini.Binding → Value → Prop where
-  | c0 {x0 : Nat} {x1 : Nat} {x2 : Lanius.Mini.SrcType} {v0 v1 v2 : Value} :
-      RepNat x0 v0 → RepNat x1 v1 → RepSrcType x2 v2 → RepBinding (Lanius.Mini.Binding.mk x0 x1 x2) (.structure 138 [v0, v1, v2])
+  | c0 {x0 : Nat} {x1 : Nat} {x2 : Lanius.Mini.SrcType} {x3 : Option Nat} {v0 v1 v2 v3 : Value} :
+      RepNat x0 v0 → RepNat x1 v1 → RepSrcType x2 v2 → (RepOption 135 RepNat) x3 v3 → RepBinding (Lanius.Mini.Binding.mk x0 x1 x2 x3) (.structure 138 [v0, v1, v2, v3])
 
 inductive RepTy : Lanius.Mini.Ty → Value → Prop where
   | c0 :

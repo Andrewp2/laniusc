@@ -53,6 +53,17 @@ Imports: `Stmt.lean` imports definitions only; `Red<k>.lean` imports its own
 Module names follow the path, e.g. `Lanius.Open.F14.PreLexSource.Stmt`. Each
 file builds on its own, so an agent compiles only the statement it works on.
 
+## Deleting a statement
+
+A statement on `lang` is deleted only when a type change on `lang` stops it
+elaborating (a structure gains a field, so its anonymous constructors no
+longer fit), and only together with a `<Name>V2` that says the same thing
+with the new constructor (it may say it for every value of the new field).
+The commit that does it names both. Its proof, reductions and NOTES move to
+the V2, whose NOTES say what it replaces. First case (11-03, F5 S6a-2,
+`Binding.home`): `HomedCorrPush`, `HomedCorrPushPlain`, `HomedCorrPushHeld`,
+`HomedCorrPopHome` and `HomedCorrPopPlain` became their V2s.
+
 ## Picking work
 
 `python3 -I formal/tools/open_graph.py status` lists every statement:

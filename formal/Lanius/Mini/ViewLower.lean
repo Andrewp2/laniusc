@@ -344,7 +344,7 @@ theorem Corr.pushView {scope frame st env base next} (corr : Corr sx places scop
     {id length : Nat} {vs : List Value} (i32s : ∀ x ∈ vs, Views.IsI32 x) (pos : 0 < length)
     (len : vs.length = length) {p : Nat} (addr : (env' next).toNat = p)
     (under : ∀ x ∈ places, x.cell < st.nextCell) (heap : Lanius.Memory.Heap) :
-    Corr sx places (⟨id, next, .view length⟩ :: scope) (upd frame next st.nextCell)
+    Corr sx places (⟨id, next, .view length, none⟩ :: scope) (upd frame next st.nextCell)
       { (st.bindLocal id (.array vs)) with
         heap := heap
         i32ArrayViews := st.i32ArrayViews ++ [{ address := p, root := st.nextCell, projections := [], length := vs.length }] }
@@ -494,11 +494,11 @@ theorem view_entered {P : Core.Program} {id length pointer k : Nat} {xs : List E
     subst st3Eq
     exact ⟨(bindLocal_fresh fresh id (.array vs)).1, Views.ViewsHold.mapView fresh.2 fresh.1 hc.below i32s enc map id⟩
   have next3 : st3.nextCell = st.nextCell + 1 := by subst st3Eq; rfl
-  have corr1 : Corr sx places (⟨id, next, .view length⟩ :: scope) (upd frame next st.nextCell) st3 envB := by
+  have corr1 : Corr sx places (⟨id, next, .view length, none⟩ :: scope) (upd frame next st.nextCell) st3 envB := by
     subst st3Eq
     exact corr.pushView fr fresh agree i32s pos vlen (by rw [envB_next, pBits])
       (fun x m => Nat.lt_of_lt_of_le (under x m) le) heap'
-  have fr1 : Layout (⟨id, next, .view length⟩ :: scope) (upd frame next st.nextCell) base (next + length) :=
+  have fr1 : Layout (⟨id, next, .view length, none⟩ :: scope) (upd frame next st.nextCell) base (next + length) :=
     fr.push (corr.below fresh) le id (ty := .view length) pos
   have corrB := corr1.push fr1 fresh3 (fun _ _ _ _ => rfl) (id := pointer) (v := .pointer p)
     (SrcType.HoldsAt.ptr (by simp only [SrcType.Holds, envB_ptr, pBits]))

@@ -581,16 +581,19 @@ theorem nb_le_SrcProgram_funcs (s : Lanius.Mini.SrcProgram) : nb s.funcs ≤ nb 
   show _ ≤ nb s.funcs
   omega
 
-instance : NB Lanius.Mini.Binding := ⟨fun s => max (nb s.id) (max (nb s.slot) (nb s.ty))⟩
-@[simp, nb_simp] theorem nb_Binding_mk (a0 : Nat) (a1 : Nat) (a2 : Lanius.Mini.SrcType) : nb (Lanius.Mini.Binding.mk a0 a1 a2) = max (nb a0) (max (nb a1) (nb a2)) := rfl
+instance : NB Lanius.Mini.Binding := ⟨fun s => max (nb s.id) (max (nb s.slot) (max (nb s.ty) (nb s.home)))⟩
+@[simp, nb_simp] theorem nb_Binding_mk (a0 : Nat) (a1 : Nat) (a2 : Lanius.Mini.SrcType) (a3 : Option Nat) : nb (Lanius.Mini.Binding.mk a0 a1 a2 a3) = max (nb a0) (max (nb a1) (max (nb a2) (nb a3))) := rfl
 theorem nb_le_Binding_id (s : Lanius.Mini.Binding) : nb s.id ≤ nb s := by
-  show _ ≤ max (nb s.id) (max (nb s.slot) (nb s.ty))
+  show _ ≤ max (nb s.id) (max (nb s.slot) (max (nb s.ty) (nb s.home)))
   omega
 theorem nb_le_Binding_slot (s : Lanius.Mini.Binding) : nb s.slot ≤ nb s := by
-  show _ ≤ max (nb s.id) (max (nb s.slot) (nb s.ty))
+  show _ ≤ max (nb s.id) (max (nb s.slot) (max (nb s.ty) (nb s.home)))
   omega
 theorem nb_le_Binding_ty (s : Lanius.Mini.Binding) : nb s.ty ≤ nb s := by
-  show _ ≤ max (nb s.id) (max (nb s.slot) (nb s.ty))
+  show _ ≤ max (nb s.id) (max (nb s.slot) (max (nb s.ty) (nb s.home)))
+  omega
+theorem nb_le_Binding_home (s : Lanius.Mini.Binding) : nb s.home ≤ nb s := by
+  show _ ≤ max (nb s.id) (max (nb s.slot) (max (nb s.ty) (nb s.home)))
   omega
 
 instance : NB Lanius.Mini.Typed := ⟨fun s => max (nb s.expr) (nb s.ty)⟩
