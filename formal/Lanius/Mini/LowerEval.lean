@@ -691,7 +691,10 @@ theorem evalArgs_sound : ∀ (args : List SrcEff) {k : Nat}, (∀ m < k, EvalSou
     | succ k =>
       simp only [SrcEff.toCoreList, evalExprs, Semantics.Outcome.done.injEq] at run
       obtain ⟨rfl, rfl⟩ := run
-      simp only [evalArgs, Option.some.injEq] at ok
+      simp only [evalArgs] at ok
+      split at ok
+      · simp at ok
+      simp only [Option.some.injEq] at ok
       subst ok
       exact ⟨fresh, Keeps.refl _ _, rfl, 0, env, hp, .skip, fun _ _ => rfl, .nil, hc, fc⟩
   | e :: es, k, ihe, hp, slot, ea, st, env, vs, st', ok, corr, fr, fresh, hc, fc, run, bound => by
@@ -699,6 +702,8 @@ theorem evalArgs_sound : ∀ (args : List SrcEff) {k : Nat}, (∀ m < k, EvalSou
     | zero => simp [evalExprs] at run
     | succ k =>
       simp only [evalArgs] at ok
+      split at ok
+      · simp at ok
       split at ok
       · simp at ok
       rename_i first firstOk
@@ -2822,6 +2827,8 @@ theorem evalArms_sound {dst eid : Nat} {ty : SrcType} :
     simp only [SrcEff.coreArms, Semantics.evalMatchArms, Semantics.matchPattern] at run
     split at ok
     · simp at ok
+    split at ok
+    · simp at ok
     rename_i s' scopeOk
     split at ok
     · simp at ok
@@ -2989,6 +2996,8 @@ theorem eval_let {k : Nat} (ihe : ∀ m ≤ k, EvalSound sp mp m) {id : Nat} {ty
   split at ok
   · simp at ok
   rename_i bb bodyOk
+  split at bodyOk
+  · simp at bodyOk
   simp only [evalLetInOf] at ok
   split at ok
   · rename_i cond

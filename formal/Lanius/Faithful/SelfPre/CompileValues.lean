@@ -5,6 +5,7 @@ import Lanius.Faithful.SelfPre.CompileTypes
 import Lanius.Faithful.SelfPre.CompileEvalTypes
 import Lanius.Faithful.SelfPre.CompileNeeds
 import Lanius.Faithful.SelfPre.CompileSlots
+import Lanius.Faithful.SelfPre.EvalSlots
 import Lanius.Mini.Room
 
 /-! # Byte lists of the compile side (F14)

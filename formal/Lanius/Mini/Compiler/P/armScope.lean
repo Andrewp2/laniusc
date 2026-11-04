@@ -28,7 +28,7 @@ def armScope (binders : List Nat) (types : List SrcType) (slot : Nat) (scope : L
     | [] => none
     | ty :: more =>
       if decide (0 < SrcType.size ty) && !(viewedType ty) then
-        armScope rest more (slot + SrcType.size ty) (({ id := binder, slot := slot, ty := ty } : Binding) :: scope)
+        armScope rest more (slot + SrcType.size ty) (({ id := binder, slot := slot, ty := ty, home := none } : Binding) :: scope)
       else
         none
 

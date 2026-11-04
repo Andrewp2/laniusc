@@ -2165,6 +2165,14 @@ split between the lowering (leafC) and the proof (leafA).
   moved from `Refs/Model.lean` to `Mini/Homes.lean` with their names.
 - S6a-2: `Binding.home: Option<usize>` in the scope (`None` everywhere),
   and `RCtx.ofScope` reads the homes from the scope. No behaviour changes.
+  Done (11-04, leafA): the field is in `compiler.lani`, `None` at all 16
+  constructions; the trusted hash is unchanged (`Binding` is not trusted and
+  no function moved). `RCtx.ofScope` keeps `homes := []` until S6b makes a
+  home `Some`: reading the scope's homes now would need an "every home is
+  `None`" invariant through the simulation that S6b then removes. Five open
+  statements that built `⟨id, next, ty⟩` bindings stopped elaborating and
+  were replaced by V2s over any home (`OPEN_STATEMENTS.md`, "Deleting a
+  statement").
 - S6b (the lowering of borrows and homed lets): **a lent array local is a
   homed let.** An array local passed as a slice (`ArraySlice` at a slice
   parameter) is a borrowed local, so it gets a home like any other borrowed
@@ -2866,6 +2874,38 @@ bound from the lowering. `LowerFuncsTemps` is no longer needed.
 The checks are pure, so their order changes no result:
 `compileFunc_checksLast` proves that `compileFunc` is the compiler with the
 room check last (`compileFuncChecksLast`, the order before this change).
+
+
+## The evaluator's slots checked against a limit (decided 11-03, F14, coordinator)
+
+The evaluator (`SrcEff.eval` and its group) computes each value into a slot and
+the slots after it. Most of its steps add one per nesting level (`EApply`'s and
+`EDivide`'s right operand, a variant's payload, a match's binders), and nesting
+is bounded by the program's size. Three steps add a type's size, up to 2^22,
+per level: `eval_args` puts each argument after the slots of the ones before
+it, so `f(s, f(s, ..))` adds `f`'s parameters' slots per call (leafB2,
+PreCompileSourceV4/NOTES.md); a let in an expression evaluates its body past
+the value's slots (`match_dst`); and a match evaluates its arms there too.
+Nothing bounded those sums below 2^64: the front end's `depth_limit` counts the
+statements' lets, not the evaluator's slots.
+
+Now `eval_args`, `eval_let_body` and `eval_arm_in` reject (`None`) a start slot
+of `eval_slot_limit()` = 2^40 or more. Between two checks a slot grows by at
+most one type size plus one per nesting level, so every slot the evaluator
+computes stays far below 2^64.
+
+This is argued, not proved (the coordinator's decision: no top theorem states
+that the compiler's acceptance is unchanged, the correctness theorems cover
+whatever it accepts, and a new early `None` adds only vacuous cases; the
+difftests and the self-host fixpoint check it in practice). The argument: the
+evaluator writes each value it computes into the slots from its start slot, so
+a start slot `s` past the first is reached only past slots that code of the
+same body writes, and the function's `locals` (`lower_body`'s `extent`) is
+then more than `s - 1`. `compile_func` rejects a function whose `locals` plus
+temporaries pass `frame_limit()` (2^20 slots). So every program the compiler
+accepted before keeps every evaluator slot below 2^20, far below 2^40, and
+none of them is rejected now. A program that does reach 2^40 needs 2^43 bytes
+of frame, more than any binary has.
 
 
 ## Budget certificates (decided 11-01, F14)

@@ -472,7 +472,7 @@ theorem armPayload_shape {scope : List Binding} {slot : Nat} {fields : List SrcT
 
 /-- The scope a `LetView` body is lowered in: the pointer after the viewed array. -/
 abbrev viewScope (id length pointer next : Nat) (scope : List Binding) : List Binding :=
-  { id := pointer, slot := next + length, ty := .ptr } :: { id := id, slot := next, ty := .view length } :: scope
+  { id := pointer, slot := next + length, ty := .ptr, home := none } :: { id := id, slot := next, ty := .view length, home := none } :: scope
 
 /-- What lowering a `LetView` checks, and what it emits: the elements into
 their slots, the block into the slot after them, the stores, the body. -/
@@ -507,7 +507,7 @@ theorem letStr_lower_inv {sigs : List Sig} {decls : SrcDecls} {ret : SrcType} {s
     {next pointer : Nat} {chars : List Nat} {body : SrcStmt} {out : Stmt}
     (ok : (SrcStmt.letStr pointer chars body).lower sigs decls ret scope next = some out) :
     ∃ bstmt, chars ≠ [] ∧ chars.length < 2 ^ 31 ∧ strAscii chars = true ∧
-      body.lower sigs decls ret (⟨pointer, next, .ptr⟩ :: scope) (next + 1) = some bstmt ∧
+      body.lower sigs decls ret (⟨pointer, next, .ptr, none⟩ :: scope) (next + 1) = some bstmt ∧
       out = .seq (.alloc next 2 (.lit (BitVec.ofNat 64 (4 * (strWords chars).length))))
         (strStores next 0 (strWords chars) bstmt) := by
   simp only [SrcStmt.lower] at ok
