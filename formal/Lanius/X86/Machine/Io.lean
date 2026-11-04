@@ -104,6 +104,22 @@ theorem timespecLE_length (reading : Int × Nat) : (timespecLE reading).length =
 register's low 32 bits. -/
 def descriptor (register : BitVec 64) : Int := Int.ofNat (register.setWidth 32).toNat
 
+/-- The most bytes Linux's `write` transfers in one call (`MAX_RW_COUNT`,
+`INT_MAX & PAGE_MASK`). -/
+def maxTransfer : Nat := 2147479552
+
+end Lanius.X86.Machine
+
+end
+
+/-! The kernel's file calls on `Io.files`, whose bodies (`Lanius.Files`'s
+calls) are not exposed: the x86 model names them, and the proofs use the
+lemmas here. -/
+
+public section
+
+namespace Lanius.X86.Machine
+
 /-- `read(2)` of at most `count` bytes from a file descriptor (3 or more): the
 result, the bytes delivered, and `io` after. -/
 def Io.readFile (io : Io) (fd : Int) (count : Nat) : Int × List UInt8 × Io :=
@@ -122,8 +138,8 @@ after, or `none` where the model stops. -/
 def Io.openFile (io : Io) (path : List UInt8) (flags : Nat) : Option (Int × Io) :=
   (io.files.openWith path flags).map fun (result, files) => (result, { io with files })
 
-/-- The most bytes Linux's `write` transfers in one call (`MAX_RW_COUNT`,
-`INT_MAX & PAGE_MASK`). -/
-def maxTransfer : Nat := 2147479552
+/-- A file read delivers at most what it asks for. -/
+theorem Io.readFile_length (io : Io) (fd : Int) (count : Nat) : (io.readFile fd count).2.1.length ≤ count :=
+  io.files.read_length fd count
 
 end Lanius.X86.Machine

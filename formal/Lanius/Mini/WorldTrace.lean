@@ -91,8 +91,8 @@ theorem HeapCorr.record {h : Memory.Heap} {w : World.State} {hp : Heap} (corr : 
 
 /-- With no file open, a write to a file handle has nowhere to go. -/
 theorem writeFileBytes_closed {w : World.State} (closed : w.fs.handles = []) (handle : Int)
-    (bytes : List UInt8) : World.writeFileBytes w handle bytes = none := by
-  simp [World.writeFileBytes, Files.System.writeBytes, Files.System.handle?, closed]
+    (bytes : List UInt8) : World.writeFileBytes w handle bytes = none :=
+  World.writeFileBytes_closed closed handle bytes
 
 /-- The bytes Core loads from a range are the mini heap's bytes there, below
 Core's cursor. -/

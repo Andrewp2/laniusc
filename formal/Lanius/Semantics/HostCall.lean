@@ -203,17 +203,8 @@ theorem FileReadResult.returnBound
     exact ⟨bytes.length, value, Or.inr ⟨Int.natCast_nonneg _, by omega⟩⟩
 
 private theorem readFileBytes_bound
-    (read : World.readFileBytes world handle count = some (bytes, after)) : bytes.length ≤ count := by
-  unfold World.readFileBytes at read
-  split at read
-  · cases read
-  · split at read
-    · cases read
-    · split at read
-      · cases read
-      · simp only [Option.some.injEq, Prod.mk.injEq] at read
-        rw [← read.1, List.length_take]
-        exact Nat.min_le_left _ _
+    (read : World.readFileBytes world handle count = some (bytes, after)) : bytes.length ≤ count :=
+  World.readFileBytes_length read
 
 /-- The byte-oriented host service is total on readable storage. This shared
     boundary derives the call, exact file result and byte frame before any

@@ -3,6 +3,8 @@ module
 public import Lanius.Memory
 public import Lanius.IEEE
 public import Lanius.Files
+public import Lanius.World.Model
+public import Lanius.World.Files
 
 @[expose] public section
 
@@ -11,67 +13,6 @@ namespace Lanius.World
 open Lanius
 open Lanius.Core
 open Lanius.Memory
-
-open Lanius.Files (replaceFile replaceHandle pathLimit)
-
-abbrev FileEntry := Files.Entry
-
-abbrev FileHandle := Files.Handle
-
-/-- A user-defined external function is outside the closed Lanius world. Its
-    result is therefore supplied as part of the initial semantic environment,
-    just like process arguments, clocks, and entropy. Responses are ordered so
-    replay remains deterministic, and carry semantic values so aggregate
-    returns do not depend on a target calling convention. -/
-inductive OpaqueOutcome where
-  | returned (value : Value)
-  | trapped (reason : Trap)
-deriving Repr
-
-structure OpaqueResponse where
-  external : ExternId
-  outcome : OpaqueOutcome
-deriving Repr
-
-structure OpaqueCall where
-  external : ExternId
-  arguments : List Value
-deriving Repr
-
-/-- External inputs are part of the initial semantic state. Randomness and
-    clocks are explicit streams/values, which makes a run reproducible without
-    pretending that these services are pure. -/
-structure State where
-  arguments : List String := []
-  environment : List (String × String) := []
-  currentDirectory : String := "."
-  standardInput : List UInt8 := []
-  standardOutput : List UInt8 := []
-  standardError : List UInt8 := []
-  unixTimeSeconds : Int := 0
-  /-- The readings (seconds, nanoseconds) the monotonic clock gives, one a
-  read, in turn: a stream fixed before the run, as the kernel's clock is
-  outside the program (SEMANTIC_DECISIONS.md, "Clock readings and secure
-  bytes"). -/
-  monotonicReadings : List (Int × Nat) := []
-  /-- The readings the system (real-time) clock gives, one a read. -/
-  systemReadings : List (Int × Nat) := []
-  secureU32Stream : List Nat := []
-  secureByteStream : List UInt8 := []
-  /-- The files and directories under the current directory, and the open
-  file descriptors besides 0, 1 and 2 (the standard streams, always open:
-  closing one is not modeled), as Linux's file system calls see them
-  (`Lanius.Files`, which the x86 kernel's model shares). -/
-  fs : Files.System := {}
-  calls : List HostService := []
-  opaqueResponses : List OpaqueResponse := []
-  opaqueCalls : List OpaqueCall := []
-deriving Repr
-
-inductive OpaqueCallResult where
-  | returned (value : Value) (world : State)
-  | trapped (reason : Trap) (world : State)
-  | unmodeled (world : State)
 
 /-- Consume exactly the next response for an opaque external call. An absent
     or out-of-order response is observably unmodeled; it is never guessed from
@@ -92,20 +33,6 @@ def State.callOpaque
       else
         .unmodeled called
   | [] => .unmodeled called
-
-inductive CallResult where
-  | returned (value : Value) (world : State)
-  | exited (code : Int) (world : State)
-  | unavailable (service : HostService) (world : State)
-  | trapped (reason : Trap) (world : State)
-  | typeMismatch (world : State)
-
-inductive EffectResult where
-  | returned (value : Value) (heap : Heap) (world : State)
-  | exited (code : Int) (heap : Heap) (world : State)
-  | unavailable (service : HostService) (heap : Heap) (world : State)
-  | trapped (reason : Trap) (heap : Heap) (world : State)
-  | typeMismatch (heap : Heap) (world : State)
 
 def utf8Bytes (text : String) : List UInt8 :=
   text.toUTF8.data.toList
@@ -156,114 +83,6 @@ def writeBytes (world : State) (handle : Int) (bytes : List UInt8) : Option Stat
     some { world with standardError := world.standardError ++ bytes }
   else
     none
-
-def State.file? (world : State) (path : List UInt8) : Option FileEntry :=
-  world.fs.file? path
-
-def State.handle? (world : State) (id : Int) : Option FileHandle :=
-  world.fs.handle? id
-
-def bytesPrefix : List UInt8 → List UInt8 → Bool
-  | [], _ => true
-  | _, [] => false
-  | first :: prefixes, byte :: bytes => first == byte && bytesPrefix prefixes bytes
-
-def directoryPrefix (path : List UInt8) : List UInt8 :=
-  if path.getLast? == some 47 then path else path ++ [47]
-
-def descendantPath (parent candidate : List UInt8) : Bool :=
-  bytesPrefix (directoryPrefix parent) candidate
-
-def replacePathPrefix
-    (source destination path : List UInt8) : List UInt8 :=
-  if path == source then
-    destination
-  else if descendantPath source path then
-    directoryPrefix destination ++ path.drop (directoryPrefix source).length
-  else
-    path
-
-def State.pathOccupied (world : State) (path : List UInt8) : Bool :=
-  (world.file? path).isSome || world.fs.directories.contains path
-
-/-! ### Files as Linux's system calls see them
-
-laniusc's file externs are its runtime's raw Linux system calls (`open(2)`
-behind a copy of the path to a NUL-terminated buffer, `read(2)`, `write(2)`,
-`close(2)`), each returning the kernel's result: a descriptor, a count or
-`-errno` (SEMANTIC_DECISIONS.md, "str values" point 8). The file system and
-the calls are `Lanius.Files`'s, which the x86 kernel's model shares; `none` is
-where the model stops (`unavailable`). -/
-
-/-- The most bytes one `read(2)` or `write(2)` transfers (Linux's `MAX_RW_COUNT`). -/
-def transferLimit : Nat := 0x7ffff000
-
-/-- The runtime's path copy: a path longer than `pathLimit` is
-`-ENAMETOOLONG`, one with a NUL byte `-EINVAL`. -/
-def pathCopyError (path : List UInt8) : Option Int :=
-  if path.length > pathLimit then some (-36)
-  else if path.contains 0 then some (-22)
-  else none
-
-/-- `open(2)` of a path for reading (`O_RDONLY`), writing
-(`O_WRONLY|O_CREAT|O_TRUNC`) or appending (`O_WRONLY|O_CREAT|O_APPEND`),
-after the runtime's path copy (`Files.System.openPath`). -/
-def openFile
-    (world : State) (path : List UInt8) (readable writable append : Bool) : Option (Int × State) :=
-  match pathCopyError path with
-  | some error => some (error, world)
-  | none => (world.fs.openPath path readable writable append).map fun (id, fs) => (id, { world with fs })
-
-def closeHandle (world : State) (id : Int) : Option State :=
-  (world.fs.closeHandle id).map fun fs => { world with fs }
-
-def readFileBytes
-    (world : State) (id : Int) (capacity : Nat) : Option (List UInt8 × State) :=
-  (world.fs.readBytes id capacity).map fun (bytes, fs) => (bytes, { world with fs })
-
-def writeFileBytes
-    (world : State) (id : Int) (bytes : List UInt8) : Option State :=
-  (world.fs.writeBytes id bytes).map fun fs => { world with fs }
-
-def isAsciiDigit (byte : UInt8) : Bool :=
-  byte.toNat >= 48 && byte.toNat <= 57
-
-def parseI32Prefix (bytes : List UInt8) : Option (Int × Nat) :=
-  let trimmed := bytes.dropWhile (fun byte => byte.toNat <= 32)
-  let leading := bytes.length - trimmed.length
-  let (negative, signWidth, digits) := match trimmed with
-    | first :: rest =>
-        if first.toNat == 45 then (true, 1, rest)
-        else if first.toNat == 43 then (false, 1, rest)
-        else (false, 0, trimmed)
-    | [] => (false, 0, [])
-  let digits := digits.takeWhile isAsciiDigit
-  if digits.isEmpty then none
-  else
-    let magnitude := digits.foldl
-      (fun value digit => value * 10 + (digit.toNat - 48)) 0
-    let value := if negative then -Int.ofNat magnitude else Int.ofNat magnitude
-    let modulus : Int := 2 ^ 32
-    let bits := value % modulus
-    let value := if bits >= 2 ^ 31 then bits - modulus else bits
-    some (value, leading + signWidth + digits.length)
-
-def readFileI32 (world : State) (id fallback : Int) : Int × State :=
-  match world.handle? id with
-  | none => (fallback, world)
-  | some handle =>
-      if !handle.readable then (fallback, world)
-      else
-        match world.file? handle.path with
-        | none => (fallback, world)
-        | some file =>
-            match parseI32Prefix (file.bytes.drop handle.offset) with
-            | none => (fallback, world)
-            | some (value, consumed) =>
-                let updated := { handle with offset := handle.offset + consumed }
-                (value, {
-                  world with fs := { world.fs with handles := replaceHandle world.fs.handles updated }
-                })
 
 /-- Services that do not dereference raw memory or manipulate filesystem
     handles. Pointer-bearing services are handled by the heap-aware layer in
@@ -419,76 +238,25 @@ def call (heap : Heap) (world : State) (service : HostService)
           match heap.loadBytes pointer length with
           | .error reason => .trapped reason heap next
           | .ok path =>
-              if (next.file? path).isNone then .returned (i32Result (-1)) heap next
-              else .returned (i32Result 0) heap {
-                next with fs := { next.fs with files := next.fs.files.filter (fun file => file.path != path) }
-              }
+              .returned (i32Result (removeFilePath next path).1) heap (removeFilePath next path).2
       | .createDir, [.pointer pointer, .unsigned .usize length] =>
           match heap.loadBytes pointer length with
           | .error reason => .trapped reason heap next
           | .ok path =>
-              if next.fs.directories.contains path || (next.file? path).isSome then
-                .returned (i32Result (-1)) heap next
-              else .returned (i32Result 0) heap {
-                next with fs := { next.fs with directories := next.fs.directories ++ [path] }
-              }
+              .returned (i32Result (createDirPath next path).1) heap (createDirPath next path).2
       | .removeDir, [.pointer pointer, .unsigned .usize length] =>
           match heap.loadBytes pointer length with
           | .error reason => .trapped reason heap next
           | .ok path =>
-              let nonempty := next.fs.files.any (fun file => descendantPath path file.path) ||
-                next.fs.directories.any (fun directory => descendantPath path directory)
-              if !next.fs.directories.contains path || nonempty then
-                .returned (i32Result (-1)) heap next
-              else
-                .returned (i32Result 0) heap {
-                  next with fs := { next.fs with directories := next.fs.directories.filter (fun entry => entry != path) }
-                }
+              .returned (i32Result (removeDirPath next path).1) heap (removeDirPath next path).2
       | .rename, [.pointer fromPointer, .unsigned .usize fromLength,
           .pointer toPointer, .unsigned .usize toLength] =>
           match heap.loadBytes fromPointer fromLength, heap.loadBytes toPointer toLength with
           | .error reason, _ => .trapped reason heap next
           | _, .error reason => .trapped reason heap next
           | .ok sourcePath, .ok destinationPath =>
-              if sourcePath == destinationPath then
-                if next.pathOccupied sourcePath then
-                  .returned (i32Result 0) heap next
-                else
-                  .returned (i32Result (-1)) heap next
-              else if next.pathOccupied destinationPath then
-                .returned (i32Result (-1)) heap next
-              else
-                match next.file? sourcePath with
-                | some file =>
-                    let renamed := { file with path := destinationPath }
-                    .returned (i32Result 0) heap {
-                      next with fs := {
-                        next.fs with
-                        files := next.fs.files.filter
-                          (fun entry => entry.path != sourcePath) ++ [renamed]
-                        handles := next.fs.handles.map fun handle =>
-                          if handle.path == sourcePath then
-                            { handle with path := destinationPath }
-                          else handle }
-                    }
-                | none =>
-                    if !next.fs.directories.contains sourcePath ||
-                        descendantPath sourcePath destinationPath then
-                      .returned (i32Result (-1)) heap next
-                    else
-                      .returned (i32Result 0) heap {
-                        next with fs := {
-                          files := next.fs.files.map fun file => {
-                            file with path := (replacePathPrefix
-                              sourcePath destinationPath file.path)
-                          }
-                          directories := next.fs.directories.map
-                            (replacePathPrefix sourcePath destinationPath)
-                          handles := next.fs.handles.map fun handle => {
-                            handle with path := (replacePathPrefix
-                              sourcePath destinationPath handle.path)
-                          } }
-                      }
+              .returned (i32Result (renamePath next sourcePath destinationPath).1) heap
+                (renamePath next sourcePath destinationPath).2
       | .alloc, [.unsigned .usize size, .unsigned .usize alignment] =>
           match heap.allocate size alignment with
           | .allocated pointer allocated => .returned (.pointer pointer) allocated next

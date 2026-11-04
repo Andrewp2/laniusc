@@ -2234,7 +2234,7 @@ theorem read_simulates (rel : Rel frame s m) (fits : frame.Fits) (inFrame : slot
       obtain ⟨fdOk, countOk, inside⟩ := ok
       cases ran
       refine storing_simulates rel fits inFrame rfl rfl loaded codeHeap
-        (.inr (Nat.le_trans (Nat.add_le_add_left (Files.System.read_length _ _ _) _) inside))
+        (.inr (Nat.le_trans (Nat.add_le_add_left (Io.readFile_length _ _ _) _) inside))
         fun t r0 r7 r2 r6 io => ?_
       rw [← r2, ← io, ← r7]
       exact .readFile (r0.trans (by decide)) (by rw [r7]; exact fdOk) (by rw [r2]; exact countOk) 0

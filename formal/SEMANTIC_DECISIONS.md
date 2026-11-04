@@ -1131,7 +1131,19 @@ verified compiler's locals are 64-bit slots with no address. The design:
      has `Loaded` say that a new process has none). `write_text` and the other output
      services then write to any open descriptor as `write(2)` does.
      `remove_file`, `create_dir`, `remove_dir`, `rename` and `read_i32`
-     follow.
+     follow. The split (decided 11-04, f6v, before stage (c)): the
+     state's types are in exposed modules (`Files/Model.lean`,
+     `World/Model.lean`) and the services' meanings in modules whose
+     bodies are not exposed (`Files.lean`, `World/Files.lean`, the end
+     of `Machine/Io.lean`); the few proofs that unfold a service are in
+     or `import all` the meaning module, and everything else uses their
+     stated equations (`readFileBytes_length`, `writeFileBytes_closed`,
+     `Io.readFile_length`). So stages (c) and (d), which change service
+     bodies, rebuild only the meaning modules, the modules that
+     `import all` them and the files that are not modules (measured: a
+     changed `openPath` body rebuilt `Files`, `World.Files` and the 30
+     non-module `Semantics` files among 210 jobs, in 58 s; `World`,
+     `Semantics`, `Mini.*` and `X86.*` were not rebuilt).
 7. **A static need per function (decided 11-01, step 3.5).** A function
    takes its whole block at entry (`frame_block`: 8 bytes per element of
    each array, parameter or let, it passes as a slice), by a prologue
