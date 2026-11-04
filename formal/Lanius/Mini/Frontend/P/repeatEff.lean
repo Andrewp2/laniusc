@@ -40,6 +40,23 @@ def namedParts (t : Ty) : Option Inst :=
   | .tyNamed d args => some ({ decl := d, args := args } : Inst)
   | .tySint k => none
 
+/-- F5 (S5): the referent type of a reference type. -/
+def referent (t : Ty) : Option Ty :=
+  match t with
+  | .tyI32 => none
+  | .tyBool => none
+  | .tyUint k => none
+  | .tyPtr => none
+  | .tyIsize => none
+  | .tyChar => none
+  | .tyStr => none
+  | .tyFloat ft => none
+  | .tySlice e => none
+  | .tyArray e n => none
+  | .tyNamed d args => none
+  | .tySint k => none
+  | .tyRef r => some r
+
 mutual
 /-- Match a type expression of a declaration, whose type parameters names are being inferred, against an actual type, extending binds. -/
 def matchTy (fuel : Nat) (env : FrontEnv) (names : List (List Nat)) (pattern : CTree) (actual : Ty) (binds : List Bind) : Option (List Bind) :=
@@ -53,10 +70,20 @@ def matchTy (fuel : Nat) (env : FrontEnv) (names : List (List Nat)) (pattern : C
       | none => none
       | some a => matchTy f env names (kid pattern 1) a binds
     else
-      if nodeProd pattern = (69) then
-        matchPath f env names (typePathSpellings f (kid path 0) (kid path 1)) (listItems f (kid pattern 1)) actual binds
+      if nodeProd pattern = (285) then
+        match referent actual with
+        | none => none
+        | some a => matchTy f env names (kid pattern 1) a binds
       else
-        none
+        if nodeProd pattern = (324) then
+          match referent actual with
+          | none => none
+          | some a => matchTy f env names (kid pattern 2) a binds
+        else
+          if nodeProd pattern = (69) then
+            matchPath f env names (typePathSpellings f (kid path 0) (kid path 1)) (listItems f (kid pattern 1)) actual binds
+          else
+            none
 def matchPath (fuel : Nat) (env : FrontEnv) (names : List (List Nat)) (segments : Option (List (List Nat))) (items : Option (List CTree)) (actual : Ty) (binds : List Bind) : Option (List Bind) :=
   if fuel = 0 then
     none

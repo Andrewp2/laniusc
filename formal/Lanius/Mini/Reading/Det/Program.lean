@@ -93,22 +93,6 @@ theorem resultR_unique {env : FrontEnv} {ret : CTree} {a b : RetTy} (h₁ : Resu
     | never _ q' => exact absurd q' q
     | _ => prod_clash
 
-theorem paramTyR_unique {env : FrontEnv} {t : CTree} {a b : Ty} (h₁ : ParamTyR env t a) (h₂ : ParamTyR env t b) :
-    a = b := by
-  cases h₁ with
-  | plain n m ty => cases h₂ with
-    | plain _ _ ty' => exact tyR_unique ty ty'
-    | ref e _ => exact absurd e n
-    | refMut e _ => exact absurd e m
-  | ref e ty => cases h₂ with
-    | plain n _ _ => exact absurd e n
-    | ref _ ty' => rw [tyR_unique ty ty']
-    | refMut e' _ => rw [e] at e'; cases e'
-  | refMut e ty => cases h₂ with
-    | plain _ m _ => exact absurd e m
-    | ref e' _ => rw [e] at e'; cases e'
-    | refMut _ ty' => rw [tyR_unique ty ty']
-
 section
 variable {env : FrontEnv} {fd : FnDecl}
 

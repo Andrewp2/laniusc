@@ -91,9 +91,19 @@ theorem matchTy_unique : ∀ {env : FrontEnv} {names : List Name} {p : CTree} {a
     cases h₂ with
     | slice _ _ m' => exact matchTy_unique m m'
     | _ => prod_clash
+  | _, _, _, _, _, _, _, .ref _ m, h₂ => by
+    cases h₂ with
+    | ref _ m' => exact matchTy_unique m m'
+    | _ => prod_clash
+  | _, _, _, _, _, _, _, .refMut _ m, h₂ => by
+    cases h₂ with
+    | refMut _ m' => exact matchTy_unique m m'
+    | _ => prod_clash
   | _, _, _, _, _, _, _, .param _ s i ip bt, h₂ => by
     cases h₂ with
     | slice => prod_clash
+    | ref => prod_clash
+    | refMut => prod_clash
     | param _ s' i' ip' bt' =>
       have es := typePathSpellings_unique s s'
       subst es
@@ -113,6 +123,8 @@ theorem matchTy_unique : ∀ {env : FrontEnv} {names : List Name} {p : CTree} {a
   | _, _, _, _, _, _, _, .prim _ s i np ipr, h₂ => by
     cases h₂ with
     | slice => prod_clash
+    | ref => prod_clash
+    | refMut => prod_clash
     | param _ s' i' ip' _ =>
       rw [typePathSpellings_unique s s', items_unique i i'] at np
       exact (np _ ip').elim

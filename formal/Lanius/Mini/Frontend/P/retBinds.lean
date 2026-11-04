@@ -27,7 +27,7 @@ def retBinds (fuel : Nat) (decls : Decls) (fd : FnDecl) (names : List (List Nat)
 def argExpected (fuel : Nat) (decls : Decls) (fd : FnDecl) (names : List (List Nat)) (p : CTree) (b : List Bind) : Option Ty :=
   match boundArgs names b with
   | none => none
-  | some a => tyOf fuel (declEnv decls fd.home names a) p
+  | some a => paramTyOf fuel (declEnv decls fd.home names a) p
 
 /-- An argument's type matched with its parameter's; an integer literal binds nothing (laniusc gives it the parameter's type). -/
 def bindArg (fuel : Nat) (env : FrontEnv) (scope : List Local) (fd : FnDecl) (names : List (List Nat)) (p : CTree) (x : MEff) (b : List Bind) : Option (List Bind) :=

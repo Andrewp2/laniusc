@@ -7,7 +7,7 @@ import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.flattenTys
 import Lanius.Mini.Frontend.P.funcsOnto
 import Lanius.Mini.Frontend.P.lowerTy
-import Lanius.Mini.Frontend.P.projection
+import Lanius.Mini.Frontend.P.repeatEff
 import Lanius.Mini.Frontend.P.weightAdd
 
 public section

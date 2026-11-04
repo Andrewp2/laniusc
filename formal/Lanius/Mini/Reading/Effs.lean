@@ -95,11 +95,11 @@ def KnownTys (P : List Ty → List Ty → Prop) (known E : Option (List Ty)) : P
 
 /-- A function's parameter types at type arguments `args`. -/
 def ParamExpects (decls : Decls) (fd : FnDecl) (args : List Ty) (ts : List Ty) : Prop :=
-  ∃ ps, ParamPatterns fd ps ∧ ListRel (TyR (declScope decls fd.home (fd.implParams ++ fd.params) args)) ps ts
+  ∃ ps, ParamPatterns fd ps ∧ ListRel (ParamTyR (declScope decls fd.home (fd.implParams ++ fd.params) args)) ps ts
 
 /-- A parameter's type once every type parameter is bound. -/
 def ArgExpected (decls : Decls) (fd : FnDecl) (names : List Name) (p : CTree) (b : List Bind) (t : Ty) : Prop :=
-  ∃ args, BoundArgs b names args ∧ TyR (declScope decls fd.home names args) p t
+  ∃ args, BoundArgs b names args ∧ ParamTyR (declScope decls fd.home names args) p t
 
 /-- A parameter's expected type: none while a type parameter is unbound,
 else its type at the bound arguments. -/
@@ -545,7 +545,7 @@ theorem paramExpects_sound {fuel : Nat} {decls : Decls} {fd : FnDecl} {args : Li
   | none => rw [hp] at h; cases h
   | some ps =>
     rw [hp] at h
-    exact ⟨ps, paramPatterns_sound hp, tyList_sound h⟩
+    exact ⟨ps, paramPatterns_sound hp, paramTyList_sound h⟩
 
 theorem findBind_complete {binds : List Bind} {n : Name} {t : Ty} (h : BindOf binds n t) :
     findBind binds n = some t := by
@@ -568,7 +568,7 @@ theorem argExpected_sound {fuel : Nat} {decls : Decls} {fd : FnDecl} {names : Li
   | none => rw [hb] at h; cases h
   | some a =>
     rw [hb] at h
-    exact ⟨a, boundArgs_sound hb, tyOf_sound h⟩
+    exact ⟨a, boundArgs_sound hb, paramTyOf_sound h⟩
 
 theorem argHint_sound {fuel : Nat} {decls : Decls} {fd : FnDecl} {names : List Name} {p : CTree} {b : List Bind}
     (ok : (!hasTys (boundArgs names b) || hasTy (argExpected fuel decls fd names p b)) = true) :

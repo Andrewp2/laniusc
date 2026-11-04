@@ -204,6 +204,30 @@ def tyList (fuel : Nat) (env : FrontEnv) (ts : List CTree) : Option (List Ty) :=
     | t :: rest => consTy (tyOf (fuel - 1) env t) (tyList (fuel - 1) env rest)
 end
 
+def refTy (referent : Option Ty) : Option Ty :=
+  match referent with
+  | none => none
+  | some e => some (Ty.tyRef e)
+
+/-- A parameter's type: `&T` and `&mut T` (T a type, not a reference) are references to T (F5, SEMANTIC_DECISIONS "S5 in Lanius's syntax" point 1). -/
+def paramTyOf (fuel : Nat) (env : FrontEnv) (t : CTree) : Option Ty :=
+  if nodeProd t = (285) then
+    refTy (tyOf fuel env (kid t 1))
+  else
+    if nodeProd t = (324) then
+      refTy (tyOf fuel env (kid t 2))
+    else
+      tyOf fuel env t
+
+/-- A list of parameter type expressions, each as param_ty_of reads it. -/
+def paramTyList (fuel : Nat) (env : FrontEnv) (ts : List CTree) : Option (List Ty) :=
+  if fuel = 0 then
+    none
+  else
+    match ts with
+    | [] => some []
+    | t :: rest => consTy (paramTyOf (fuel - 1) env t) (paramTyList (fuel - 1) env rest)
+
 def consTysTail (t : List Ty) (tail : Option (List (List Ty))) : Option (List (List Ty)) :=
   match tail with
   | none => none

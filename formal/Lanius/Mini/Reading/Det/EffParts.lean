@@ -209,19 +209,35 @@ theorem knownTys_unique {P : List Ty → List Ty → Prop} (hp : ∀ args a b, P
   · cases e
     rw [hp _ _ _ p p']
 
+theorem paramTyR_unique {env : FrontEnv} {t : CTree} {a b : Ty} (h₁ : ParamTyR env t a) (h₂ : ParamTyR env t b) :
+    a = b := by
+  cases h₁ with
+  | plain n m ty => cases h₂ with
+    | plain _ _ ty' => exact tyR_unique ty ty'
+    | ref e _ => exact absurd e n
+    | refMut e _ => exact absurd e m
+  | ref e ty => cases h₂ with
+    | plain n _ _ => exact absurd e n
+    | ref _ ty' => rw [tyR_unique ty ty']
+    | refMut e' _ => rw [e] at e'; cases e'
+  | refMut e ty => cases h₂ with
+    | plain _ m _ => exact absurd e m
+    | ref e' _ => rw [e] at e'; cases e'
+    | refMut _ ty' => rw [tyR_unique ty ty']
+
 theorem paramExpects_unique {decls : Decls} {fd : FnDecl} {args a b : List Ty} (h₁ : ParamExpects decls fd args a)
     (h₂ : ParamExpects decls fd args b) : a = b := by
   obtain ⟨ps, pp, r⟩ := h₁
   obtain ⟨ps', pp', r'⟩ := h₂
   rw [paramPatterns_unique pp pp'] at r
-  exact listRel_unique (R := TyR _) (fun _ _ _ x y => tyR_unique x y) r r'
+  exact listRel_unique (R := ParamTyR _) (fun _ _ _ x y => paramTyR_unique x y) r r'
 
 theorem argExpected_unique {decls : Decls} {fd : FnDecl} {names : List Name} {p : CTree} {b : List Bind} {s t : Ty}
     (h₁ : ArgExpected decls fd names p b s) (h₂ : ArgExpected decls fd names p b t) : s = t := by
   obtain ⟨args, ba, r⟩ := h₁
   obtain ⟨args', ba', r'⟩ := h₂
   rw [boundArgs_unique ba ba'] at r
-  exact tyR_unique r r'
+  exact paramTyR_unique r r'
 
 theorem argHint_unique {decls : Decls} {fd : FnDecl} {names : List Name} {p : CTree} {b : List Bind}
     {E E' : Option Ty} (h₁ : ArgHint decls fd names p b E) (h₂ : ArgHint decls fd names p b E') : E = E' := by

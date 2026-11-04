@@ -588,4 +588,60 @@ theorem tyList_sound : ∀ {fuel : Nat} {env : FrontEnv} {ts : List CTree} {tys 
           subst h
           exact .cons (tyOf_sound ht) (tyList_sound hr)
 
+/-- (F5, S5) A parameter's type expression: `&T` and `&mut T` name a reference to the type `T` names
+(SEMANTIC_DECISIONS "S5 in Lanius's syntax" point 1); another names its type. -/
+inductive ParamTyR (env : FrontEnv) (t : CTree) : Ty → Prop
+  | plain {x : Ty} : nodeProd t ≠ pTypeRef → nodeProd t ≠ pTypeRefMut → TyR env t x → ParamTyR env t x
+  | ref {x : Ty} : nodeProd t = pTypeRef → TyR env (kid t 1) x → ParamTyR env t (.tyRef x)
+  | refMut {x : Ty} : nodeProd t = pTypeRefMut → TyR env (kid t 2) x → ParamTyR env t (.tyRef x)
+
+theorem paramTyOf_sound {fuel : Nat} {env : FrontEnv} {t : CTree} {x : Ty} (h : paramTyOf fuel env t = some x) :
+    ParamTyR env t x := by
+  unfold paramTyOf at h
+  split at h
+  · rename_i c
+    cases hx : tyOf fuel env (kid t 1) with
+    | none => rw [hx] at h; simp [refTy] at h
+    | some y =>
+      rw [hx] at h
+      simp only [refTy, Option.some.injEq] at h
+      subst h
+      exact .ref c (tyOf_sound hx)
+  split at h
+  · rename_i _ c
+    cases hx : tyOf fuel env (kid t 2) with
+    | none => rw [hx] at h; simp [refTy] at h
+    | some y =>
+      rw [hx] at h
+      simp only [refTy, Option.some.injEq] at h
+      subst h
+      exact .refMut c (tyOf_sound hx)
+  · rename_i a b
+    exact .plain a b (tyOf_sound h)
+
+theorem paramTyList_sound : ∀ {fuel : Nat} {env : FrontEnv} {ts : List CTree} {tys : List Ty},
+    paramTyList fuel env ts = some tys → ListRel (ParamTyR env) ts tys
+  | 0, _, _, _, h => by rw [paramTyList.eq_def] at h; simp at h
+  | f + 1, env, ts, tys, h => by
+    rw [paramTyList.eq_def] at h
+    simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
+    cases ts with
+    | nil =>
+      simp only [Option.some.injEq] at h
+      subst h
+      exact .nil
+    | cons t rest =>
+      simp only [consTy] at h
+      cases ht : paramTyOf f env t with
+      | none => rw [ht] at h; cases h
+      | some ty =>
+        rw [ht] at h
+        simp only [consTyTail] at h
+        cases hr : paramTyList f env rest with
+        | none => rw [hr] at h; cases h
+        | some tr =>
+          rw [hr, Option.some.injEq] at h
+          subst h
+          exact .cons (paramTyOf_sound ht) (paramTyList_sound hr)
+
 end Lanius.Mini.Reading

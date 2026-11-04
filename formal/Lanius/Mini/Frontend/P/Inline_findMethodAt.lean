@@ -27,6 +27,7 @@ public import Lanius.Mini.Frontend.P.sintAt
 public import Lanius.Mini.Frontend.P.sliceHead
 public import Lanius.Mini.Frontend.P.stringCons
 public import Lanius.Mini.Frontend.P.textSelf
+public import Lanius.Mini.Frontend.P.typeDeclAt
 public import Lanius.Mini.Frontend.P.wideLeftStmt
 
 public section

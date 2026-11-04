@@ -2766,6 +2766,36 @@ pub fn ty_list(fuel: usize, env: FrontEnv, ts: List<CTree>) -> core::option::Opt
 }
 // extract: mutual end
 
+pub fn ref_ty(referent: core::option::Option<Ty>) -> core::option::Option<Ty> {
+    return match (referent) {
+        None -> None,
+        Some(e) -> Some(TyRef(boxed(e))),
+    };
+}
+
+// A parameter's type: `&T` and `&mut T` (T a type, not a reference) are
+// references to T (F5, SEMANTIC_DECISIONS "S5 in Lanius's syntax" point 1).
+pub fn param_ty_of(fuel: usize, env: FrontEnv, t: CTree) -> core::option::Option<Ty> {
+    if (node_prod(t) == p_type_ref()) {
+        return ref_ty(ty_of(fuel, env, kid(t, 1)));
+    }
+    if (node_prod(t) == p_type_ref_mut()) {
+        return ref_ty(ty_of(fuel, env, kid(t, 2)));
+    }
+    return ty_of(fuel, env, t);
+}
+
+// A list of parameter type expressions, each as param_ty_of reads it.
+pub fn param_ty_list(fuel: usize, env: FrontEnv, ts: List<CTree>) -> core::option::Option<List<Ty>> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (ts) {
+        Nil -> Some(empty()),
+        Cons(t, rest) -> cons_ty(param_ty_of(minus(fuel, 1), env, t), param_ty_list(minus(fuel, 1), env, unbox(rest))),
+    };
+}
+
 pub fn cons_tys_tail(t: List<Ty>, tail: core::option::Option<List<List<Ty>>>) -> core::option::Option<List<List<Ty>>> {
     return match (tail) {
         None -> None,
@@ -5039,6 +5069,25 @@ pub fn named_parts(t: Ty) -> core::option::Option<Inst> {
     };
 }
 
+// F5 (S5): the referent type of a reference type.
+pub fn referent(t: Ty) -> core::option::Option<Ty> {
+    return match (t) {
+        TyI32 -> None,
+        TyBool -> None,
+        TyUint(k) -> None,
+        TyPtr -> None,
+        TyIsize -> None,
+        TyChar -> None,
+        TyStr -> None,
+        TyFloat(ft) -> None,
+        TySlice(e) -> None,
+        TyArray(e, n) -> None,
+        TyNamed(d, args) -> None,
+        TySint(k) -> None,
+        TyRef(r) -> Some(unbox(r)),
+    };
+}
+
 // extract: mutual begin
 // Match a type expression of a declaration, whose type parameters names are
 // being inferred, against an actual type, extending binds.
@@ -5052,6 +5101,18 @@ pub fn match_ty(fuel: usize, env: FrontEnv, names: List<List<usize>>, pattern: C
         return match (slice_elem(actual)) {
             None -> None,
             Some(a) -> match_ty(f, env, names, kid(pattern, 1), a, binds),
+        };
+    }
+    if (node_prod(pattern) == p_type_ref()) {
+        return match (referent(actual)) {
+            None -> None,
+            Some(a) -> match_ty(f, env, names, kid(pattern, 1), a, binds),
+        };
+    }
+    if (node_prod(pattern) == p_type_ref_mut()) {
+        return match (referent(actual)) {
+            None -> None,
+            Some(a) -> match_ty(f, env, names, kid(pattern, 2), a, binds),
         };
     }
     if (node_prod(pattern) == p_type_ident()) {
@@ -5605,6 +5666,18 @@ pub fn fit_ty(fuel: usize, env: FrontEnv, names: List<List<usize>>, pattern: CTr
         return match (slice_elem(actual)) {
             None -> Misfit,
             Some(a) -> fit_ty(f, env, names, kid(pattern, 1), a, binds),
+        };
+    }
+    if (node_prod(pattern) == p_type_ref()) {
+        return match (referent(actual)) {
+            None -> Misfit,
+            Some(a) -> fit_ty(f, env, names, kid(pattern, 1), a, binds),
+        };
+    }
+    if (node_prod(pattern) == p_type_ref_mut()) {
+        return match (referent(actual)) {
+            None -> Misfit,
+            Some(a) -> fit_ty(f, env, names, kid(pattern, 2), a, binds),
         };
     }
     if (node_prod(pattern) == p_type_ident()) {
@@ -7802,7 +7875,7 @@ pub fn param_expects(fuel: usize, decls: Decls, fd: FnDecl, args: core::option::
         None -> None,
         Some(a) -> match (param_patterns(fuel, fd)) {
             None -> None,
-            Some(ps) -> ty_list(fuel, decl_env(decls, fd.home, concat(fd.impl_params, fd.params), a), ps),
+            Some(ps) -> param_ty_list(fuel, decl_env(decls, fd.home, concat(fd.impl_params, fd.params), a), ps),
         },
     };
 }
@@ -8008,24 +8081,6 @@ pub fn projection(decls: Decls, t: Ty, j: usize) -> Inst {
     return Inst { decl: plus(length(decls.fns), j), args: single(t) };
 }
 
-// F5 (S5): the referent type of a reference type.
-pub fn referent(t: Ty) -> core::option::Option<Ty> {
-    return match (t) {
-        TyI32 -> None,
-        TyBool -> None,
-        TyUint(k) -> None,
-        TyPtr -> None,
-        TyIsize -> None,
-        TyChar -> None,
-        TyStr -> None,
-        TyFloat(ft) -> None,
-        TySlice(e) -> None,
-        TyArray(e, n) -> None,
-        TyNamed(d, args) -> None,
-        TySint(k) -> None,
-        TyRef(r) -> Some(unbox(r)),
-    };
-}
 
 pub fn is_ref_ty(t: Ty) -> bool {
     return has_ty(referent(t));
@@ -8177,7 +8232,7 @@ pub fn ret_binds(fuel: usize, decls: Decls, fd: FnDecl, names: List<List<usize>>
 pub fn arg_expected(fuel: usize, decls: Decls, fd: FnDecl, names: List<List<usize>>, p: CTree, b: List<Bind>) -> core::option::Option<Ty> {
     return match (bound_args(names, b)) {
         None -> None,
-        Some(a) -> ty_of(fuel, decl_env(decls, fd.home, names, a), p),
+        Some(a) -> param_ty_of(fuel, decl_env(decls, fd.home, names, a), p),
     };
 }
 
@@ -11474,24 +11529,6 @@ pub fn param_token(p: CTree) -> Token {
     return kid_token(p, 0);
 }
 
-pub fn ref_ty(referent: core::option::Option<Ty>) -> core::option::Option<Ty> {
-    return match (referent) {
-        None -> None,
-        Some(e) -> Some(TyRef(boxed(e))),
-    };
-}
-
-// A parameter's type: `&T` and `&mut T` (T a type, not a reference) are
-// references to T (F5, SEMANTIC_DECISIONS "S5 in Lanius's syntax" point 1).
-pub fn param_ty_of(fuel: usize, env: FrontEnv, t: CTree) -> core::option::Option<Ty> {
-    if (node_prod(t) == p_type_ref()) {
-        return ref_ty(ty_of(fuel, env, kid(t, 1)));
-    }
-    if (node_prod(t) == p_type_ref_mut()) {
-        return ref_ty(ty_of(fuel, env, kid(t, 2)));
-    }
-    return ty_of(fuel, env, t);
-}
 
 // `name: T`, `self` or `&self` (both by value), each a local named by its
 // spelling; `name: &T` and `name: &mut T` are references (param_ty_of).

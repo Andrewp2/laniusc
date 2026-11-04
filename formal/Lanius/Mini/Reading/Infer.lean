@@ -197,6 +197,10 @@ inductive MatchTy : FrontEnv → List Name → CTree → Ty → List Bind → Li
   | slice {env : FrontEnv} {names : List Name} {p : CTree} {a : Ty} {b b' : List Bind} :
       nodeProd p = pTypeArray → nodeProd (kid p 2) = pTypeSliceTail → MatchTy env names (kid p 1) a b b' →
       MatchTy env names p (.tySlice a) b b'
+  | ref {env : FrontEnv} {names : List Name} {p : CTree} {a : Ty} {b b' : List Bind} :
+      nodeProd p = pTypeRef → MatchTy env names (kid p 1) a b b' → MatchTy env names p (.tyRef a) b b'
+  | refMut {env : FrontEnv} {names : List Name} {p : CTree} {a : Ty} {b b' : List Bind} :
+      nodeProd p = pTypeRefMut → MatchTy env names (kid p 2) a b b' → MatchTy env names p (.tyRef a) b b'
   | param {env : FrontEnv} {names : List Name} {p : CTree} {ss : List Name} {gs : List CTree} {n : Name} {actual : Ty}
       {b b' : List Bind} : nodeProd p = pTypeIdent → TypePathSpellings (kid (kid p 0) 0) (kid (kid p 0) 1) ss →
       Items (kid p 1) gs → IsParam names ss gs n → BindTy b n actual b' → MatchTy env names p actual b b'
@@ -368,6 +372,40 @@ theorem matchSound : ∀ fuel, MatchSound fuel
         | tyNamed _ _ => cases h
         | tyRef _ => cases h
       rw [if_neg (by simpa using sl)] at h
+      by_cases rf : nodeProd p = pTypeRef
+      · rw [if_pos (by simpa using rf)] at h
+        cases actual with
+        | tyRef a => simp only [referent] at h; exact .ref rf (ty_ih h)
+        | tyI32 => simp [referent] at h
+        | tyBool => simp [referent] at h
+        | tyUint _ => simp [referent] at h
+        | tyPtr => simp [referent] at h
+        | tyIsize => simp [referent] at h
+        | tyChar => simp [referent] at h
+        | tyStr => simp [referent] at h
+        | tyFloat _ => simp [referent] at h
+        | tySint _ => simp [referent] at h
+        | tySlice _ => simp [referent] at h
+        | tyArray _ _ => simp [referent] at h
+        | tyNamed _ _ => simp [referent] at h
+      rw [if_neg (by simpa using rf)] at h
+      by_cases rm : nodeProd p = pTypeRefMut
+      · rw [if_pos (by simpa using rm)] at h
+        cases actual with
+        | tyRef a => simp only [referent] at h; exact .refMut rm (ty_ih h)
+        | tyI32 => simp [referent] at h
+        | tyBool => simp [referent] at h
+        | tyUint _ => simp [referent] at h
+        | tyPtr => simp [referent] at h
+        | tyIsize => simp [referent] at h
+        | tyChar => simp [referent] at h
+        | tyStr => simp [referent] at h
+        | tyFloat _ => simp [referent] at h
+        | tySint _ => simp [referent] at h
+        | tySlice _ => simp [referent] at h
+        | tyArray _ _ => simp [referent] at h
+        | tyNamed _ _ => simp [referent] at h
+      rw [if_neg (by simpa using rm)] at h
       by_cases ti : nodeProd p = pTypeIdent
       · rw [if_pos ti] at h
         obtain ⟨ss, gs, hs, hg, r⟩ := path_ih h

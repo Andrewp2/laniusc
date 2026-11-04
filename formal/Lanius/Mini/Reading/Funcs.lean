@@ -69,36 +69,6 @@ abbrev fnScope (decls : Decls) (fd : FnDecl) (args : List Ty) (ret : Option Ty) 
   { decls := decls, home := fd.home, names := fd.implParams ++ fd.params, subst := args,
     globals := moduleGlobals decls fd.home, ret := ret, base := (kidToken fd.tree 1).start }
 
-/-- (F5, S5) A parameter's type expression: `&T` and `&mut T` name a reference to the type `T` names
-(SEMANTIC_DECISIONS "S5 in Lanius's syntax" point 1); another names its type. -/
-inductive ParamTyR (env : FrontEnv) (t : CTree) : Ty → Prop
-  | plain {x : Ty} : nodeProd t ≠ pTypeRef → nodeProd t ≠ pTypeRefMut → TyR env t x → ParamTyR env t x
-  | ref {x : Ty} : nodeProd t = pTypeRef → TyR env (kid t 1) x → ParamTyR env t (.tyRef x)
-  | refMut {x : Ty} : nodeProd t = pTypeRefMut → TyR env (kid t 2) x → ParamTyR env t (.tyRef x)
-
-theorem paramTyOf_sound {fuel : Nat} {env : FrontEnv} {t : CTree} {x : Ty} (h : paramTyOf fuel env t = some x) :
-    ParamTyR env t x := by
-  unfold paramTyOf at h
-  split at h
-  · rename_i c
-    cases hx : tyOf fuel env (kid t 1) with
-    | none => rw [hx] at h; simp [refTy] at h
-    | some y =>
-      rw [hx] at h
-      simp only [refTy, Option.some.injEq] at h
-      subst h
-      exact .ref c (tyOf_sound hx)
-  split at h
-  · rename_i _ c
-    cases hx : tyOf fuel env (kid t 2) with
-    | none => rw [hx] at h; simp [refTy] at h
-    | some y =>
-      rw [hx] at h
-      simp only [refTy, Option.some.injEq] at h
-      subst h
-      exact .refMut c (tyOf_sound hx)
-  · rename_i a b
-    exact .plain a b (tyOf_sound h)
 
 /-- `name: T`, `self` or `&self` (`paramToken`: the `self` after the `&`),
 each a local named by its spelling, numbered by

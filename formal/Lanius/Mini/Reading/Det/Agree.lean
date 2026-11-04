@@ -4,6 +4,7 @@ public import Lanius.Mini.Reading.Effs
 import all Lanius.Mini.Compiler.P.SrcType_same
 import all Lanius.Mini.Frontend.P.callParts
 import all Lanius.Mini.Frontend.P.projection
+import all Lanius.Mini.Frontend.P.repeatEff
 import all Lanius.Mini.Frontend.P.hasConst
 import all Lanius.Mini.Frontend.P.isEmptyUsize
 import all Lanius.Mini.Frontend.P.purePart

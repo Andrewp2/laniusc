@@ -137,6 +137,34 @@ theorem fitSound : ∀ fuel, FitSound fuel
           refine ⟨fun h => (by cases h), fun _ b' m => ?_⟩
           cases m <;> prod_clash
       rw [if_neg (by simpa using sl)]
+      by_cases rf : nodeProd p = pTypeRef
+      · rw [if_pos (by simpa using rf)]
+        cases actual with
+        | tyRef a =>
+          simp only [referent]
+          refine ⟨fun h => .ref rf (ty_ih.1 h), fun h b' m => ?_⟩
+          cases m with
+          | ref _ m => exact ty_ih.2 h _ m
+          | _ => prod_clash
+        | _ =>
+          simp only [referent]
+          refine ⟨fun h => (by cases h), fun _ b' m => ?_⟩
+          cases m <;> prod_clash
+      rw [if_neg (by simpa using rf)]
+      by_cases rm : nodeProd p = pTypeRefMut
+      · rw [if_pos (by simpa using rm)]
+        cases actual with
+        | tyRef a =>
+          simp only [referent]
+          refine ⟨fun h => .refMut rm (ty_ih.1 h), fun h b' m => ?_⟩
+          cases m with
+          | refMut _ m => exact ty_ih.2 h _ m
+          | _ => prod_clash
+        | _ =>
+          simp only [referent]
+          refine ⟨fun h => (by cases h), fun _ b' m => ?_⟩
+          cases m <;> prod_clash
+      rw [if_neg (by simpa using rm)]
       by_cases ti : nodeProd p = pTypeIdent
       · rw [if_pos ti]
         refine ⟨fun h => ?_, fun h b' m => ?_⟩
@@ -152,6 +180,8 @@ theorem fitSound : ∀ fuel, FitSound fuel
           have its := listItems_sound hg
           cases m with
           | slice s1 _ _ => prod_clash
+          | ref _ _ => prod_clash
+          | refMut _ _ => prod_clash
           | param _ sp' its' ip bt =>
             have e := typePathSpellings_unique sp' sp
             subst e
@@ -174,6 +204,8 @@ theorem fitSound : ∀ fuel, FitSound fuel
         refine ⟨fun h => (by cases h), fun _ b' m => ?_⟩
         cases m with
         | slice s1 s2 _ => exact sl ⟨s1, s2⟩
+        | ref r _ => exact rf r
+        | refMut r _ => exact rm r
         | param ti' _ _ _ _ => exact ti ti'
         | prim ti' _ _ _ _ => exact ti ti'
         | decl ti' _ _ _ _ _ _ => exact ti ti'

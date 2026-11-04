@@ -93,7 +93,7 @@ def paramExpects (fuel : Nat) (decls : Decls) (fd : FnDecl) (args : Option (List
   | some a =>
     match paramPatterns fuel fd with
     | none => none
-    | some ps => tyList fuel (declEnv decls fd.home (fd.implParams ++ fd.params) a) ps
+    | some ps => paramTyList fuel (declEnv decls fd.home (fd.implParams ++ fd.params) a) ps
 
 /-- The expected types of the arguments after the receiver, if any. -/
 def skipExpects (expects : Option (List Ty)) (pre : List MEff) : Option (List Ty) :=

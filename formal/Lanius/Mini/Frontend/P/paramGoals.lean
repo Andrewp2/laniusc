@@ -185,10 +185,20 @@ def fitTy (fuel : Nat) (env : FrontEnv) (names : List (List Nat)) (pattern : CTr
       | none => Fit.misfit
       | some a => fitTy f env names (kid pattern 1) a binds
     else
-      if nodeProd pattern = (69) then
-        fitPath f env names (typePathSpellings f (kid path 0) (kid path 1)) (listItems f (kid pattern 1)) actual binds
+      if nodeProd pattern = (285) then
+        match referent actual with
+        | none => Fit.misfit
+        | some a => fitTy f env names (kid pattern 1) a binds
       else
-        Fit.misfit
+        if nodeProd pattern = (324) then
+          match referent actual with
+          | none => Fit.misfit
+          | some a => fitTy f env names (kid pattern 2) a binds
+        else
+          if nodeProd pattern = (69) then
+            fitPath f env names (typePathSpellings f (kid path 0) (kid path 1)) (listItems f (kid pattern 1)) actual binds
+          else
+            Fit.misfit
 def fitPath (fuel : Nat) (env : FrontEnv) (names : List (List Nat)) (segments : Option (List (List Nat))) (items : Option (List CTree)) (actual : Ty) (binds : List Bind) : Fit :=
   if fuel = 0 then
     Fit.spent
