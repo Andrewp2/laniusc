@@ -14,9 +14,8 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 open Lanius.Faithful.SelfCert
-open Lanius.Faithful.Budget
-
 open Lanius.Faithful.SelfPanics
+open Lanius.Faithful.Budget
 
 theorem bcerts_first_nested : ∀ n, (BStmt_first_nested progW prog prims 2587 n) := by
   intro n

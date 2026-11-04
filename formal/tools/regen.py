@@ -2,7 +2,7 @@
 """Regenerate every generated Lean file from the current sources and generators.
 
     target/claude-work/bin/leanslot timeout 295 python3 -I formal/tools/regen.py [--work DIR]
-        [--only STAGE,..] [--force] [--trusted]
+        [--only STAGE,..] [--force] [--trusted] [--check] [--resolve]
 
 Run from the repository root. The stages, in dependency order:
 
@@ -34,7 +34,9 @@ Each stage writes into WORK first and copies only the files whose text changed
 the generated files the run no longer makes. A stage is skipped when the
 digest of its inputs and its outputs (run_cache's file digests) is one a run of
 it left: then it would change nothing. --force runs every stage. The report
-lists each stage's time and its changed files.
+lists each stage's time and its changed files. With --check nothing is
+written: the run fails when a generated file differs from what it would write
+(the gate's `regen-current` step).
 
 Nothing here changes what a generator writes: the files are each generator's
 own output, byte for byte. One pass suffices: faithful_pure.py reads the
@@ -159,8 +161,14 @@ def fixpoint(stage, digest):
     return run_cache.load('regen', run_cache.key(stage, digest)) is not None
 
 
-def record(stage, digest):
-    run_cache.store('regen', run_cache.key(stage, digest), {})
+CHECK = [False]  # --check: write nothing, report what differs
+
+
+def record(stage, digest, changed=()):
+    """Note that the inputs and outputs with this digest are a fixpoint of stage
+    (with --check, only when the stage found nothing to change)."""
+    if not (CHECK[0] and changed):
+        run_cache.store('regen', run_cache.key(stage, digest), {})
 
 
 # ------------------------------------------------------------------ syncing
@@ -184,10 +192,12 @@ def sync(made, dest, governs=lambda n: True, only_present=False):
             skipped.append(n)
             continue
         if n not in have or not same(src, dst):
-            shutil.copyfile(src, dst)
+            if not CHECK[0]:
+                shutil.copyfile(src, dst)
             changed.append(n if n in have else '+' + n)
     for n in sorted(have - want):
-        os.remove(os.path.join(dest, n))
+        if not CHECK[0]:
+            os.remove(os.path.join(dest, n))
         changed.append('-' + n)
     return changed, skipped
 
@@ -223,6 +233,13 @@ class Regen:
         inputs = lambda: run_cache.key(files_digest(lani + tools('lani_extract.py', 'cert_trees.py')), lanius_digest())
         if self.skip('extract', inputs()):
             return self.done('extract', began, 'skipped (inputs and outputs as a run left them)')
+        if CHECK[0]:
+            r = subprocess.run(PY + [os.path.join(TOOLS, 'lani_extract.py'), '--check', '--work',
+                                     os.path.join(self.work, 'lx')], cwd=ROOT, env=ENV, capture_output=True, text=True)
+            changed = [line for line in r.stdout.split('\n') if 'FAIL' in line] or (['(exit %d)' % r.returncode]
+                                                                                   if r.returncode else [])
+            record('extract', inputs(), changed)
+            return self.done('extract', began, 'lani_extract.py --check', changed)
         before = snapshot([os.path.join(LANIUS, 'Mini'), os.path.join(LANIUS, 'Machines')], LANIUS)
         run(PY + [os.path.join(TOOLS, 'lani_extract.py'), '--work', os.path.join(self.work, 'lx')], 'lani_extract.py')
         changed = changes(before, snapshot([os.path.join(LANIUS, 'Mini'), os.path.join(LANIUS, 'Machines')], LANIUS))
@@ -261,7 +278,7 @@ class Regen:
         changed, _ = sync(out, GEN, governs)
         record('gen', run_cache.key(self.dump_digest(), files_digest(
             tools('faithful_certs.py', 'faithful_pure.py') + sim
-            + [os.path.join(LANIUS, 'Mini', d, 'P') for d in ('Compiler', 'Frontend')]), gen_digest(governs)))
+            + [os.path.join(LANIUS, 'Mini', d, 'P') for d in ('Compiler', 'Frontend')]), gen_digest(governs)), changed)
         self.done('gen', began, f'faithful_certs {t1:.1f} s, faithful_pure {t2:.1f} s', changed)
 
     def genb(self):
@@ -273,7 +290,7 @@ class Regen:
         out = fresh(os.path.join(self.work, 'genb'))
         run(PY + [os.path.join(TOOLS, 'budget_certs.py'), self.dump, out] + ROOTS, 'budget_certs.py')
         changed, _ = sync(out, GENB, lambda n: n.endswith('.lean'))
-        record('genb', digest())
+        record('genb', digest(), changed)
         self.done('genb', began, 'budget_certs.py', changed)
 
     def term(self):
@@ -291,7 +308,7 @@ class Regen:
                 'term_gen.lean', cwd=FORMAL)
         changed, _ = sync(out, GEN, governs)
         if olean:
-            record('term', digest())
+            record('term', digest(), changed)
         self.done('term', began, f'build {built:.1f} s, term_gen {time.time() - t:.1f} s', changed)
 
     def hb(self):
@@ -306,7 +323,7 @@ class Regen:
             run(PY + [os.path.join(TOOLS, 'hb_gen.py')] + ([mode] if mode else []) + [os.path.join(out, name)] + HB_TYPES,
                 'hb_gen.py ' + mode, cwd=FORMAL)
         changed, _ = sync(out, SELFPRE, lambda n: n in {name for _, name in HB_MODES})
-        record('hb', digest())
+        record('hb', digest(), changed)
         self.done('hb', began, 'hb_gen.py x4', changed)
 
     def pre(self):
@@ -325,7 +342,7 @@ class Regen:
             skipped = [n for n in skipped if n not in PRE_HELD_OUT.get(d, ())]
             changed += [f'{d}/{n}' for n in ch]
             notes.append(f'{d} {time.time() - t:.1f} s' + (f' (not added: {", ".join(skipped)})' if skipped else ''))
-        record('pre', digest())
+        record('pre', digest(), changed)
         self.done('pre', began, ', '.join(notes), changed)
 
     def trusted(self, deadline):
@@ -452,6 +469,8 @@ def main(argv):
     p.add_argument('--only', help='stages, comma-separated: ' + ','.join(STAGES))
     p.add_argument('--force', action='store_true', help='run every stage even when its digest is a recorded run')
     p.add_argument('--trusted', action='store_true', help='also build the top modules and update the trusted hash')
+    p.add_argument('--check', action='store_true',
+                   help='write nothing; fail when a generated file differs from what regen.py would write')
     p.add_argument('--resolve', action='store_true',
                    help='after a merge: settle unmerged generated files first and `git add` the generated files after')
     p.add_argument('--limit', type=float, default=285, help='seconds for the whole run (the trusted build gets what is left)')
@@ -465,6 +484,9 @@ def main(argv):
             raise SystemExit(f'no stage {s}: {", ".join(STAGES)}')
     os.makedirs(args.work, exist_ok=True)
     DEADLINE[0], WORK[0] = began + args.limit, os.path.abspath(args.work)
+    CHECK[0] = args.check
+    if args.check and (args.resolve or args.trusted):
+        raise SystemExit('--check writes nothing: not with --resolve or --trusted')
     entries = stale_entries()
     if entries:
         kinds = {k: sum(1 for x, _ in entries if x == k) for k, _ in entries}
@@ -474,7 +496,7 @@ def main(argv):
     g = Regen(os.path.abspath(args.work), args.force)
     if 'extract' in stages:
         g.extract()
-    fixed = drop_missing_parts([path for kind, path in entries if kind == 'imports'])
+    fixed = [] if args.check else drop_missing_parts([path for kind, path in entries if kind == 'imports'])
     if fixed:
         print(f'imports  removed imports of parts that no longer exist from {", ".join(fixed)}')
     if {'dump', 'gen', 'genb'} & set(stages):
@@ -487,9 +509,14 @@ def main(argv):
     if args.resolve:
         git('add', '-A', '--', GENERATED)
         print('resolve: generated files staged (git add)')
-    if entries and set(STAGES) - {'trusted'} <= set(stages):
+    if entries and not args.check and set(STAGES) - {'trusted'} <= set(stages):
         os.remove(stale_path())
     total = sum(len(c) for _, _, _, c in g.report)
+    if args.check:
+        stale = [f'{s}: {" ".join(c[:5])}' for s, _, _, c in g.report if c]
+        print(f'regen --check: {"stale: " + "; ".join(stale) + " (run regen.py)" if stale else "every generated file is what regen.py writes"}'
+              f' ({time.time() - began:.1f} s)')
+        return 1 if stale else 0
     print(f'regen: {total} files changed in {time.time() - began:.1f} s')
     return 0
 

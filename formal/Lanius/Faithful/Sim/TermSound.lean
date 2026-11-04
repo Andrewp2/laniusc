@@ -1,6 +1,10 @@
-import Lanius.Faithful.Sim.Term
-import Lanius.Faithful.Sim.Mono
-import Lanius.Faithful.Agree
+module
+
+public import Lanius.Faithful.Sim.Term
+public import Lanius.Faithful.Sim.Mono
+public import Lanius.Faithful.Agree
+
+@[expose] public section
 
 /-! # The termination check is sound
 

@@ -1,4 +1,5 @@
 import Lanius.Mini.FrontLex
+import Lanius.Mini.Compiler
 import Std.Data.HashMap
 
 /-! A compiled driver for the self-hosting checks (formal/tools/self_host.py):

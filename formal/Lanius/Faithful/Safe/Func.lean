@@ -11,13 +11,6 @@ public import Lanius.Mini.Compiler.P.funcNeeds
 public import Lanius.Mini.Compiler.P.needCapped
 public import Lanius.Mini.Compiler.P.needsAfter
 public import Lanius.Mini.Compiler.P.withBudget
-import all Lanius.Mini.Compiler.P.DivOp_size
-import all Lanius.Mini.Compiler.P.UintTy_half
-import all Lanius.Mini.Compiler.P.UintTy_isWide
-import all Lanius.Mini.Compiler.P.arithShiftRight
-import all Lanius.Mini.Compiler.P.equality
-import all Lanius.Mini.Compiler.P.floatApply
-import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.arrayCallSig
 import all Lanius.Mini.Compiler.Types
 

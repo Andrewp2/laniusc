@@ -133,13 +133,22 @@ class Models:
         self.group = {}     # name -> tuple of names in its mutual block
         self.recursive = set()
         for f in sorted(os.listdir(genb)):
-            if not re.match(r'SelfBModel\d+\.lean$', f):
+            if not re.match(r'SelfBModel\w+\.lean$', f):
                 continue
             self.read(os.path.join(genb, f))
         self.stmt = {}      # key -> (params [(x, ty)], costly, rep, term)
         for f in sorted(os.listdir(genb)):
-            if re.match(r'SelfBStmt\d+\.lean$', f):
+            if re.match(r'SelfBStmt\w+\.lean$', f):
                 self.read_stmt(os.path.join(genb, f))
+        # In the call graph's order (budget_certs.py lists it in SelfBModels).
+        listed = os.path.join(genb, 'SelfBModels.lean')
+        if os.path.exists(listed):
+            text = open(listed).read()
+            for tag, table in (('models', 'sig'), ('statements', 'stmt')):
+                order = [x for line in re.findall(rf'^-- {tag}:(.*)$', text, re.M) for x in line.split()]
+                old = getattr(self, table)
+                assert set(order) == set(old), (tag, set(order) ^ set(old))
+                setattr(self, table, {x: old[x] for x in order})
 
     def read(self, path):
         lines = open(path).read().split('\n')
@@ -596,9 +605,47 @@ COMPILE_OVERRIDES = {
     'params_size': ['Lanius.Mini.paramsSize p0 ≤ K'],
     'lower_func': ['Lanius.Mini.paramsSize p3.params ≤ K'],
     'lower_funcs': ['Lanius.Faithful.SelfPre.paramsMax p3 ≤ K'],
-    'compile_declared': ['Lanius.Faithful.SelfPre.paramsMax p1.funcs ≤ K'],
-    'compile_source': ['Lanius.Faithful.SelfPre.paramsMax p0.funcs ≤ K'],
+    'compile_declared': ['Lanius.Faithful.SelfPre.paramsMax p1.funcs ≤ K', 'Lanius.Open.CompileFuncSlotsV2'],
+    'compile_source': ['Lanius.Faithful.SelfPre.paramsMax p0.funcs ≤ K', 'Lanius.Open.CompileFuncSlotsV2'],
     'Instr_size': ['Lanius.Mini.Instr.size p0 ≤ K'],
+    # the encoders' frame slots (each a 32-bit displacement): a code's slots below its
+    # frame (`codeSlotReach`, SelfPre/CompileSlots), the frame within `frameLimit` (the open
+    # leaf CompileFuncSlotsV2); slot arguments below `2^24`
+    # the open leaf the compile chain assumes, down to `compile_program` (`vals_compileFuncs`)
+    'compile_program': ['Lanius.Open.CompileFuncSlotsV2'], 'compile_optimized': ['Lanius.Open.CompileFuncSlotsV2'],
+    'compile_lowered': ['Lanius.Open.CompileFuncSlotsV2'], 'compile_or': ['Lanius.Open.CompileFuncSlotsV2'],
+    'compile_words': ['Lanius.Open.CompileFuncSlotsV2'],
+    'link': ['Lanius.Faithful.SelfPre.codesSlack p0 = 0', 'Lanius.Faithful.SelfPre.codesNb p0 ≤ K'],
+    'room_after': ['Lanius.Faithful.SelfPre.codesSlack p1 = 0'],
+    'room_next': ['Lanius.Faithful.SelfPre.codesSlack p2 = 0'],
+    # the image: `link`'s room check bounds the codes' sizes (`vals_roomAfter`)
+    # A round's byte count is at most its bytes (`val_packRound`, `val_packRounds`).
+    'round_cons': ['p1 ≤ K', 'p2.count ≤ K'],
+    'round_join': ['p0.count ≤ K', 'p1.count ≤ K'],
+    'link_fitting': ['Lanius.Faithful.SelfPre.codesSlack p0 = 0', 'Lanius.Faithful.SelfPre.codesNb p0 ≤ K', 'Lanius.Faithful.SelfPre.codesSize p0 ≤ 1073741824'],
+    'layout': ['p0 + Lanius.Faithful.SelfPre.codesSize p1 ≤ K'],
+    'Code_size': ['Lanius.Mini.codeSize p0.instrs ≤ K'],
+    'link_onto': ['nb p0 ≤ K', 'Lanius.Faithful.SelfPre.codesSlack p2 = 0', 'Lanius.Faithful.SelfPre.codesNb p2 ≤ K', 'p1 + Lanius.Faithful.SelfPre.codesSize p2 ≤ K'],
+    'encode_onto': ['Lanius.Faithful.SelfPre.codeSlotReach p2 ≤ p0.slots', 'p0.slots ≤ 1048576',
+                    'p1 + Lanius.Mini.codeSize p2 ≤ K'],
+    'Instr_encode': ['Lanius.Faithful.SelfPre.slotReach p0 ≤ p1.slots', 'p1.slots ≤ 1048576'],
+    'copy_bytes': ['p0 + p2 + p1.length ≤ 16777216', 'Lanius.Faithful.SelfPre.listSlotTop p1 ≤ 16777216'],
+    'sys_bytes': ['p1 + 2 ≤ 16777216'],
+    'slot_offset': ['p0 ≤ 16777216'],
+    'slot_load': ['p0 ≤ 16777216'],
+    'slot_store': ['p0 ≤ 16777216'],
+    'fsp_save': ['p0 ≤ 16777216'],
+    'fsp_load': ['p0 ≤ 16777216'],
+    'slot_operands': ['p0 ≤ 16777216'],
+    'store_at_bytes': ['p0 ≤ 16777216'],
+    'frame_size': ['p0 ≤ 16777216'],
+    'arg_base': ['p0 ≤ 16777216'],
+    'prologue': ['p0 ≤ 16777216'],
+    'slot_compare': ['p2 ≤ 16777216'],
+    'BinOp_bytes': ['p2 ≤ 16777216'],
+    'DivOp_bytes': ['p2 ≤ 16777216'],
+    'FOp_bytes': ['p1 ≤ 16777216'],
+    'store_word_bytes': ['p1 ≤ 16777216'],
     # a string's bytes (`lower_str` lowers only ASCII strings, `strAscii_eq_true`)
     'str_words': ['nb p0 ≤ 255'],
     # the needs: each round caps them at `needLimit` (`CompileNeeds`)
@@ -625,7 +672,11 @@ COMPILE_PRE_SIMP = ['Lanius.Mini.Stmt.weight', 'Lanius.Mini.Expr.weight', 'Laniu
                     'Lanius.Mini.paramsSize', 'Lanius.Faithful.SelfPre.paramsMax',
                     'Lanius.Faithful.SelfPre.tsdOpt', 'Lanius.Faithful.SelfPre.sigParamsOpt',
                     'Lanius.Faithful.SelfPre.sigsParams', 'Lanius.Faithful.SelfPre.tsdStructs',
-                    'Lanius.Faithful.SelfPre.tsdEnums']
+                    'Lanius.Faithful.SelfPre.tsdEnums', 'Lanius.Faithful.SelfPre.slotReach',
+                    'Lanius.Faithful.SelfPre.codeSlotReach', 'Lanius.Faithful.SelfPre.listSlotTop',
+                    'Lanius.Faithful.SelfPre.codesSlack_nil',
+                    'Lanius.Faithful.SelfPre.codesSlack_cons_eq_zero', 'Lanius.Faithful.SelfPre.codesSize', 'Lanius.Faithful.SelfPre.codesNb',
+                    'Lanius.Mini.Code.size', 'Lanius.Mini.roundEnd', 'List.length_cons']
 PRE_PREAMBLE = ''
 # The type-size functions' arguments: their sizes (`ts`) are what they add, and
 # a list's sum ('sz', `sizes`) or largest ('ms', `maxSize`) below `K`, which their
@@ -642,7 +693,8 @@ COMPILE_TS_SEED = {'Pre_SrcType_size': {0: {'ts'}}, 'Pre_sizes': {0: {'ts', 'sz'
 COMPILE_FIXED_ROOTS = ['compile_optimized']
 # The functions whose `match`es' pattern variables count as the parameter they
 # take apart (`match_aliases`): their callers can bound the whole value.
-COMPILE_NUM_ALIAS = {'compile_funcs', 'compile_lowered', 'lower_funcs', 'Instr_encode'}
+COMPILE_NUM_ALIAS = {'compile_funcs', 'compile_lowered', 'lower_funcs', 'Instr_encode', 'encode_onto',
+                     'Expr_extent', 'args_extent', 'Stmt_extent', 'Stmt_within'}
 # Modules the compile side's pre lemmas import for proved leaves' value lemmas
 # (`val_optimizeProgram`, from OptimizeKeepsNumbers).
 COMPILE_PRE_IMPORTS = ['Lanius.Faithful.SelfPre.CompileOpt']
@@ -651,6 +703,8 @@ COMPILE_PRE_IMPORTS = ['Lanius.Faithful.SelfPre.CompileOpt']
 COMPILE_FACTS = {
     # the body's temporaries: at most its weight, which the room check bounds
     'compile_func': ['Lanius.Faithful.SelfPre.val_Stmt_temps p1.body'],
+    # its functions' numbers, which bound the codes' (`vals_compileFuncs`)
+    'compile_program': ['Lanius.Faithful.SelfPre.nb_Program_eq p0'],
 }
 
 
