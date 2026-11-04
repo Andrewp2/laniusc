@@ -94,7 +94,7 @@ def EffStops (sp : SrcProgram) (mp : Program) (n : Nat) (e : SrcEff) : Prop :=
     {frame : Nat → Nat} {base : Nat} {st : State} {env : Env},
     e.eval (sp.sigsAt bud) sp.decls scope slot = some ev →
     Corr sx places scope frame st env → Layout scope frame base slot → st.Fresh →
-    HeapCorr st.heap st.world hp → FrameCorr sx bud places st hp → st.heap.nextAddress ≤ hp.limit →
+    HeapCorr st.heap st.world hp → LentHomes sx bud places st hp → st.heap.nextAddress ≤ hp.limit →
     EFails sp hp.limit st e.toCore → ∃ d, Stops mp d env hp ev.stmt n
 
 /-! ## Core's traps pass outward -/
@@ -456,7 +456,7 @@ theorem eff_split (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls
     {st : State} {env : Env}
     (ok : e.eval (sp.sigsAt bud) sp.decls scope slot = some ev) (corr : Corr sx places scope frame st env)
     (fr : Layout scope frame base slot) (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp)
-    (fc : FrameCorr sx bud places st hp) (within : st.heap.nextAddress ≤ hp.limit) (fails : ∀ j, Failing hp.limit (whole j))
+    (fc : LentHomes sx bud places st hp) (within : st.heap.nextAddress ≤ hp.limit) (fails : ∀ j, Failing hp.limit (whole j))
     (propagate : ∀ j reason s, evalExpr j sp.toCore st e.toCore = .trapped reason s →
       ∃ j' s', whole j' = .trapped reason s' ∧ s'.heap.nextAddress = s.heap.nextAddress) :
     (∃ d, Stops mp d env hp ev.stmt n) ∨ ∃ k v st1, evalExpr k sp.toCore st e.toCore = .done v st1 ∧
@@ -472,7 +472,7 @@ theorem args_stops (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decl
     ∀ {hp : Heap} {scope : List Binding} {slot : Nat} {ea : EvaluatedArgs} {frame : Nat → Nat} {base : Nat}
       {st : State} {env : Env},
     evalArgs (sp.sigsAt bud) sp.decls scope args slot = some ea → Corr sx places scope frame st env →
-    Layout scope frame base slot → st.Fresh → HeapCorr st.heap st.world hp → FrameCorr sx bud places st hp →
+    Layout scope frame base slot → st.Fresh → HeapCorr st.heap st.world hp → LentHomes sx bud places st hp →
     st.heap.nextAddress ≤ hp.limit → (∀ j, Failing hp.limit (evalExprs j sp.toCore st (SrcEff.toCoreList args))) →
     ∃ d, Stops mp d env hp ea.stmt n
   | [], _, hp, scope, slot, ea, frame, base, st, env, ok, corr, fr, fresh, hc, fc, within, fails => by
@@ -516,13 +516,13 @@ theorem args_split (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decl
     {st : State} {env : Env}
     (ok : evalArgs (sp.sigsAt bud) sp.decls scope args slot = some ea) (corr : Corr sx places scope frame st env)
     (fr : Layout scope frame base slot) (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp)
-    (fc : FrameCorr sx bud places st hp) (within : st.heap.nextAddress ≤ hp.limit) (fails : ∀ j, Failing hp.limit (whole j))
+    (fc : LentHomes sx bud places st hp) (within : st.heap.nextAddress ≤ hp.limit) (fails : ∀ j, Failing hp.limit (whole j))
     (propagate : ∀ j reason s, evalExprs j sp.toCore st (SrcEff.toCoreList args) = .trapped reason s →
       ∃ j' s', whole j' = .trapped reason s' ∧ s'.heap.nextAddress = s.heap.nextAddress) :
     (∃ d, Stops mp d env hp ea.stmt n) ∨ ∃ k vs st1, evalExprs k sp.toCore st (SrcEff.toCoreList args) = .done vs st1 ∧
       st1.heap.nextAddress ≤ hp.limit ∧ st1.Fresh ∧ Keeps places st.nextCell st st1 ∧ st1.locals = st.locals ∧
       ∃ d env' hp', Exec mp d env hp ea.stmt (.normal env' hp') ∧ (∀ j < slot, env' j = env j) ∧
-        FieldsHold sx places ea.types vs env' slot ∧ HeapCorr st1.heap st1.world hp' ∧ FrameCorr sx bud places st1 hp' := by
+        FieldsHold sx places ea.types vs env' slot ∧ HeapCorr st1.heap st1.world hp' ∧ LentHomes sx bud places st1 hp' := by
   by_cases done : Completes hp.limit fun k => evalExprs k sp.toCore st (SrcEff.toCoreList args)
   · obtain ⟨k, vs, st1, run, bound⟩ := done
     exact .inr ⟨k, vs, st1, run, bound,
@@ -539,7 +539,7 @@ theorem pair_split (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decl
     (leOk : l.eval (sp.sigsAt bud) sp.decls scope slot = some le)
     (reOk : r.eval (sp.sigsAt bud) sp.decls scope (slot + 1) = some re) (corr : Corr sx places scope frame st env)
     (fr : Layout scope frame base slot) (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp)
-    (fc : FrameCorr sx bud places st hp) (within : st.heap.nextAddress ≤ hp.limit) (fails : EFails sp hp.limit st (.binary cop l.toCore r.toCore))
+    (fc : LentHomes sx bud places st hp) (within : st.heap.nextAddress ≤ hp.limit) (fails : EFails sp hp.limit st (.binary cop l.toCore r.toCore))
     (rest : Stmt) :
     (∃ d, Stops mp d env hp (.seq le.stmt (.seq re.stmt rest)) n) ∨
     ∃ k1 vl st1 k2 vr st2 env1 env2 hp2,
@@ -953,7 +953,7 @@ theorem eff_arrayIndex (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.
     (found : lookup scope slice = some b)
     (ok : evalArrayIndex b slot (index.eval (sp.sigsAt bud) sp.decls scope slot) = some ev)
     (corr : Corr sx places scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
-    (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp) (within : st.heap.nextAddress ≤ hp.limit)
+    (hc : HeapCorr st.heap st.world hp) (fc : LentHomes sx bud places st hp) (within : st.heap.nextAddress ≤ hp.limit)
     (fails : EFails sp hp.limit st (.index (.local slice) index.toCore)) : ∃ d, Stops mp d env hp ev.stmt n := by
   obtain ⟨e, n', i, bty, indexOk, kind, -, nsmall, -, rfl⟩ := evalArrayIndex_some ok
   obtain ⟨w0, localRun0, holdsW⟩ := corr.local found 0 sp.toCore
@@ -1338,7 +1338,7 @@ theorem arms_stops {dst eid : Nat} {ty : SrcType} {scope : List Binding} {slot :
       {stmt : Stmt} {fs : List SrcType} {vs : List Value} {hp : Heap} {frame : Nat → Nat} {st : State}
       {env : Env},
       (∀ e ∈ values, EffStops sp mp n e) → Corr sx places scope frame st env → Layout scope frame 0 slot → st.Fresh →
-      HeapCorr st.heap st.world hp → FrameCorr sx bud places st hp → st.heap.nextAddress ≤ hp.limit →
+      HeapCorr st.heap st.world hp → LentHomes sx bud places st hp → st.heap.nextAddress ≤ hp.limit →
       evalArms (sp.sigsAt bud) sp.decls scope slot dst ty j variants binders values = some stmt →
       values.length = variants.length → binders.length = variants.length →
       (∀ fs ∈ variants, slot + 1 + sizes fs ≤ dst) → j ≤ kv → variants[kv - j]? = some fs → kv < 2 ^ 64 →
@@ -1710,7 +1710,7 @@ theorem arrayCall_stops (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp
     {frame : Nat → Nat} {base next : Nat} {st : State} {env : Env} {hp : Heap} {callee : Nat}
     {args : List SrcEff} {ev : Evaluated} (ok : arrayCall (sp.sigsAt bud) scope next callee args = some ev)
     (corr : Corr sx places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp) (within : st.heap.nextAddress ≤ hp.limit)
+    (hc : HeapCorr st.heap st.world hp) (fc : LentHomes sx bud places st hp) (within : st.heap.nextAddress ≤ hp.limit)
     (fails : EFails sp hp.limit st (.call callee (SrcEff.toCoreList args))) :
     ∃ d, Stops mp d env hp ev.stmt (n + 1) := by
   simp only [arrayCall] at ok
@@ -1941,7 +1941,7 @@ theorem loop_stops (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decl
     (fr : Layout scope frame base next) :
     ∀ j ≤ m, ∀ {hp : Heap} {st0 : State} {env0 : Env},
       Corr sx places scope frame st0 env0 → st0.Fresh → base ≤ st0.nextCell → HeapCorr st0.heap st0.world hp →
-      FrameCorr sx bud places st0 hp → (∀ x ∈ places, x.cell < base) → st0.heap.nextAddress ≤ hp.limit → Fails sp hp.limit st0 (.whileLoop c.toCore body.toCore) →
+      LentHomes sx bud places st0 hp → (∀ x ∈ places, x.cell < base) → st0.heap.nextAddress ≤ hp.limit → Fails sp hp.limit st0 (.whileLoop c.toCore body.toCore) →
       ∃ d, Stops mp d env0 hp (.loop (.lit 1) (.seq cv.stmt (.ite (.var next) bstmt .brk))) j := by
   intro j
   induction j with
@@ -2302,7 +2302,7 @@ theorem stops_setIndexEval_array (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.
     (ok : storeArray b next (index.eval (sp.sigsAt bud) sp.decls scope next)
       (value.eval (sp.sigsAt bud) sp.decls scope (next + 1)) = some stmt)
     (corr : Corr sx places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp) (within : st.heap.nextAddress ≤ hp.limit)
+    (hc : HeapCorr st.heap st.world hp) (fc : LentHomes sx bud places st hp) (within : st.heap.nextAddress ≤ hp.limit)
     (fails : Fails sp hp.limit st (SrcStmt.setIndexEval slice index value).toCore) :
     ∃ d, Stops mp d env hp stmt n := by
   obtain ⟨e, n', i, w, bty, indexOk, valueOk, kind, -, -, nsmall, -, rfl⟩ := storeArray_some ok
