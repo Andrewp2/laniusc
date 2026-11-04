@@ -829,6 +829,13 @@ def reuseProof? (p : Expr) (fvs : Array (FVarId × Expr × Bool)) : MetaM (Optio
 def hbTerms (e : Expr) : Array Expr :=
   (subterms (fun e => (hbArg? e).isSome) e).filterMap hbArg?
 
+/-- An open statement (`Lanius.Open.*`, a `Prop` constant): the compile side's pre
+lemmas assume some, which callers pass on from their own hypotheses. -/
+def openProp (t : Expr) : Bool :=
+  match t.getAppFn.constName? with
+  | some n => (`Lanius.Open).isPrefixOf n
+  | none => false
+
 /-- `proveArith0?`, or the proof this run found for the same premise. -/
 def proveArith? (ty : Expr) : TacticM (Option Expr) := do
   let run := lanius.hb.run.get (← getOptions)
@@ -993,6 +1000,11 @@ where
   for m in ms do
     unless ← m.mvarId!.isAssigned do
       let t ← instantiateMVars (← inferType m)
+      -- an open statement the lemma assumes (`COMPILE_OVERRIDES`): the caller's own hypothesis
+      if openProp t then
+        if let some h ← findLocalDeclWithType? t then
+          m.mvarId!.assign (mkFVar h)
+          continue
       if ← isProp t then
         let some p ← proveArith? t |
           if lanius.hb.debug.get (← getOptions) then
@@ -1523,7 +1535,12 @@ def valueFacts : TacticM Unit := do
       let nm := if env.contains nmT then nmT
         else `Lanius.Faithful.SelfPre ++ Name.mkSimple s!"vals_{lastName fn}"
       unless env.contains nm do continue
-      let p := mkAppN (← constFresh nm) (l.getAppArgs ++ #[r.appArg!, h])
+      let mut p := mkAppN (← constFresh nm) (l.getAppArgs ++ #[r.appArg!, h])
+      -- an open statement the lemma assumes: the context's hypothesis of it
+      if ← isTypeCorrect p then
+        if let .forallE _ d _ _ ← whnfR (← inferType p) then
+          if openProp d then
+            if let some hd ← findLocalDeclWithType? d then p := mkApp p (mkFVar hd)
       if (← isTypeCorrect p) && (← isProp (← inferType p)) then facts := facts.push p
     if facts.isEmpty then return
     let mut have_ := hyps.map (·.2)
