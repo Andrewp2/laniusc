@@ -2076,7 +2076,7 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
       split at h
       · obtain ⟨e, n, i, bty, hi, cond, -, -, -, rfl⟩ := evalArrayIndex_some h
         have typedIndex := SrcEff.eval_typed target sigsOk index ok (by simpa [SrcEff.types] using dd) hi
-        have inCtx := (ok slice b found).1
+        have inCtx := (ok slice b (lookupSlot_some found).1).1
         rw [bty] at inCtx
         have integer : Typing.IntegerTy i.ty.toCore := by
           simp only [Bool.or_eq_true] at cond
@@ -2097,7 +2097,7 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
               simp only [Option.some.injEq] at h
               subst h
               have typedIndex := SrcEff.eval_typed target sigsOk index ok (by simpa [SrcEff.types] using dd) hi
-              have inCtx := (ok slice b found).1
+              have inCtx := (ok slice b (lookupSlot_some found).1).1
               have bty : b.ty = .slice element := by cases hb : b.ty <;> simp_all [elementOf]
               rw [bty, eq_i32 isI32] at inCtx
               have integer : Typing.IntegerTy i.ty.toCore := by
@@ -2118,7 +2118,7 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
                 simp only [Option.some.injEq] at h
                 subst h
                 have typedIndex := SrcEff.eval_typed target sigsOk index ok (by simpa [SrcEff.types] using dd) hi
-                have inCtx := (ok slice b found).1
+                have inCtx := (ok slice b (lookupSlot_some found).1).1
                 have bty : b.ty = .slice element := by cases hb : b.ty <;> simp_all [elementOf]
                 rw [bty, eq_uint isU8] at inCtx
                 have integer : Typing.IntegerTy i.ty.toCore := by
@@ -2133,7 +2133,7 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
           · rename_i i hi
             obtain ⟨tyEq, cond⟩ := evalWordElement_ty h
             have typedIndex := SrcEff.eval_typed target sigsOk index ok (by simpa [SrcEff.types] using dd) hi
-            have inCtx := (ok slice b found).1
+            have inCtx := (ok slice b (lookupSlot_some found).1).1
             have bty : b.ty = .slice element := by cases hb : b.ty <;> simp_all [elementOf]
             rw [bty] at inCtx
             have integer : Typing.IntegerTy i.ty.toCore := by
