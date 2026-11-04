@@ -240,6 +240,26 @@ def SrcAssignOp.toCore : SrcAssignOp → Core.AssignOp
   | .aShl => .shiftLeft
   | .aShr => .shiftRight
 
+/-- A reference type's referent; any other type itself (the type a borrow `&p` of reference type
+`ty` passes Core's `.borrow`). -/
+def SrcType.referentOf : SrcType → SrcType
+  | .ref r => r
+  | .i32 => .i32
+  | .bool => .bool
+  | .uint k => .uint k
+  | .struct id fs => .struct id fs
+  | .enum id vs => .enum id vs
+  | .ptr => .ptr
+  | .slice e => .slice e
+  | .array e n => .array e n
+  | .unit => .unit
+  | .isize => .isize
+  | .char => .char
+  | .float f => .float f
+  | .sint k => .sint k
+  | .view n => .view n
+  | .str => .str
+
 mutual
 /-- An effectful expression means the same Core expression as its pure
 counterpart, with calls, reads and literals where they occur. -/
@@ -263,7 +283,7 @@ def SrcEff.toCore : SrcEff → Core.Expr
   | .eLet id _ value _ body => .matchValue value.toCore [(.bind id, body.toCore)]
   | .eLen slice => .intrinsic .sliceLength (.local slice)
   | .eStr _ chars => .value (.string (strValue chars))
-  | .eBorrow ty place => .borrow ty.toCore (exprPlace place.toCore)
+  | .eBorrow ty place => .borrow ty.referentOf.toCore (exprPlace place.toCore)
   | .eDeref _ reference => .dereference reference.toCore
   | .eField base field => .field base.toCore field
   | .eAt base index => .index base.toCore index.toCore

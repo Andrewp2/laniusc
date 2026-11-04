@@ -200,6 +200,8 @@ review finding 5), `compileSource_behaviour_rawFree` brings in `RawFree`,
 and the front end's review fixes changed the reading. `trusted_check.py` writes each constant's own hash to
 its work directory's `definitions.txt`, to find which one changed.
 
+Pending, not yet in the hash (11-04, leafA-p3b, F5 P3, approved by the coordinator; SEMANTIC_DECISIONS S3's "Fixed 11-04" note): `SrcEff.toCore` of a borrow is `.borrow ty.referentOf.toCore (exprPlace place.toCore)` (it passed the reference type `ty` itself, where Core's `.borrow` takes the referent), and `SrcType.referentOf` moved from `Mini/Refs/HomedSound.lean` to `Mini/SourceCore.lean`. Checked with it, and unchanged: the `toCore` of `eDeref`, `eField`, `eAt`, `setPlace` and `setPlaceOp`. On lang the change is latent: `compileSource` rejects every borrow there, so it lands together with S6b, and the hash is recomputed when this branch's top modules build.
+
 ### Processes (`Lanius/Mini/Process.lean`)
 
 #### `Lanius.Mini.process_exits`

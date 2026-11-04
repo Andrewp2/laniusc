@@ -27,25 +27,6 @@ namespace Lanius.Mini
 open Lanius.Core (Value)
 open Lanius.Semantics (State Completion evalExpr execStmt)
 
-/-- A reference type's referent; any other type itself. -/
-def SrcType.referentOf : SrcType → SrcType
-  | .ref r => r
-  | .i32 => .i32
-  | .bool => .bool
-  | .uint k => .uint k
-  | .struct id fs => .struct id fs
-  | .enum id vs => .enum id vs
-  | .ptr => .ptr
-  | .slice e => .slice e
-  | .array e n => .array e n
-  | .unit => .unit
-  | .isize => .isize
-  | .char => .char
-  | .float f => .float f
-  | .sint k => .sint k
-  | .view n => .view n
-  | .str => .str
-
 /-- The homes of a scope's bindings, innermost first: each homed binding's
 `(id, offset, ty)`, with an outer id that an inner unhomed binding shadows
 left out, so that `List.lookup` finds a home exactly where `lookup` finds a

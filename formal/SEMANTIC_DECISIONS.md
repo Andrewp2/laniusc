@@ -2040,6 +2040,15 @@ compiler accepts no reference form until stage 2 proves its lowering. Stage
 - S3: Source's places, borrow, dereference and assignment through a place,
   their `toCore`, and Core's typing of `Place.deref`; their lowering is
   `none`.
+  Fixed 11-04 (leafA, F5 P3, approved by the coordinator): a borrow `&p`'s
+  `SrcEff.eBorrow` carries the reference type (the front end's
+  `XBorrow(TyRef(t), p)`), and Core's `.borrow` takes the referent, so its
+  `toCore` is `.borrow ty.referentOf.toCore (exprPlace p.toCore)`
+  (`SrcType.referentOf`, moved to `SourceCore`). Before, it passed `&T`:
+  Core typed the borrow only for a place of type `&T` and made a reference
+  value of the wrong type. `eDeref` (its type is the referent's; `toCore`
+  does not use it), `eField`, `eAt`, `setPlace` and `setPlaceOp` (no type
+  in `toCore`) were checked and are right.
 - S4: stage 2's top statement as an open statement, `SourceRefsCorrect`:
   `compileSource` itself is correct for programs with references (one
   compiler, the one that self-hosts, and one top theorem; decided 11-03 by
