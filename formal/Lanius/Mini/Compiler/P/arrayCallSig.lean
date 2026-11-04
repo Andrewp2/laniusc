@@ -136,11 +136,11 @@ def stmtEval (value : SrcEff) (sigs : List Sig) (decls : SrcDecls) (scope : List
 def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (decls : SrcDecls) (ret : SrcType) (scope : List Binding) (next : Nat) : Option Stmt :=
   match self with
   | .nop => some Stmt.skip
-  | .let id ty value body => guarded next (SrcExpr.guard value scope) (lowerLet next (lowerValue scope value ty) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty)))
-  | .letStruct id ty fields body => guarded next (guardAll scope fields) (lowerLet next (lowerLiteral scope ty fields) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty)))
-  | .letCall id ty callee args body => guarded next (guardAll scope args) (lowerLetCall next (SrcType.size ty) callee (lowerCall sigs scope callee args ty) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty)))
-  | .letEnum id ty variant payload body => guarded next (guardAll scope payload) (lowerLet next (lowerEnumValue scope ty variant payload) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty)))
-  | .letMatch id ty scrutinee enumId arms body => lowerThen (lowerMatch scope (lookup scope scrutinee) enumId arms ty next) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
+  | .let id ty value body => guarded next (SrcExpr.guard value scope) (lowerLet next (lowerValue scope value ty) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty, home := none } : Binding) :: scope) (next + SrcType.size ty)))
+  | .letStruct id ty fields body => guarded next (guardAll scope fields) (lowerLet next (lowerLiteral scope ty fields) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty, home := none } : Binding) :: scope) (next + SrcType.size ty)))
+  | .letCall id ty callee args body => guarded next (guardAll scope args) (lowerLetCall next (SrcType.size ty) callee (lowerCall sigs scope callee args ty) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty, home := none } : Binding) :: scope) (next + SrcType.size ty)))
+  | .letEnum id ty variant payload body => guarded next (guardAll scope payload) (lowerLet next (lowerEnumValue scope ty variant payload) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty, home := none } : Binding) :: scope) (next + SrcType.size ty)))
+  | .letMatch id ty scrutinee enumId arms body => lowerThen (lowerMatch scope (lookup scope scrutinee) enumId arms ty next) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty, home := none } : Binding) :: scope) (next + SrcType.size ty))
   | .set id value => guarded next (SrcExpr.guard value scope) (lowerSet (lookup scope id) scope value)
   | .setField id index value => guarded next (SrcExpr.guard value scope) (lowerSetField (lookup scope id) index scope value)
   | .setCall id callee args => guarded next (guardAll scope args) (lowerSetCall sigs scope (lookup scope id) callee args)
@@ -148,14 +148,14 @@ def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (decls : SrcDecls) (ret : S
   | .if condition thenBranch elseBranch => guarded next (SrcExpr.guard condition scope) (lowerIf (lowerAs scope condition SrcType.bool) (SrcStmt.lower thenBranch sigs decls ret scope next) (SrcStmt.lower elseBranch sigs decls ret scope next))
   | .while condition body => lowerWhile next (SrcExpr.guard condition scope) (lowerAs scope condition SrcType.bool) (SrcStmt.lower body sigs decls ret scope next)
   | .return value => guarded next (SrcExpr.guard value scope) (lowerReturn (lowerValue scope value ret))
-  | .letAlloc id size shift body => guarded next (SrcExpr.guard size scope) (lowerAlloc next shift (lowerAs scope size (SrcType.uint UintTy.usize)) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := SrcType.ptr } : Binding) :: scope) (next + 1)))
-  | .letLoad id pointer offset body => guarded next (guardAnd (SrcExpr.guard pointer scope) (SrcExpr.guard offset scope)) (lowerLoad next (lowerAddress (lowerAs scope pointer SrcType.ptr) (lowerAs scope offset (SrcType.uint UintTy.usize))) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := SrcType.uint UintTy.uint8 } : Binding) :: scope) (next + 1)))
+  | .letAlloc id size shift body => guarded next (SrcExpr.guard size scope) (lowerAlloc next shift (lowerAs scope size (SrcType.uint UintTy.usize)) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := SrcType.ptr, home := none } : Binding) :: scope) (next + 1)))
+  | .letLoad id pointer offset body => guarded next (guardAnd (SrcExpr.guard pointer scope) (SrcExpr.guard offset scope)) (lowerLoad next (lowerAddress (lowerAs scope pointer SrcType.ptr) (lowerAs scope offset (SrcType.uint UintTy.usize))) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := SrcType.uint UintTy.uint8, home := none } : Binding) :: scope) (next + 1)))
   | .setByte pointer offset value => guarded next (guardAnd (SrcExpr.guard pointer scope) (guardAnd (SrcExpr.guard offset scope) (SrcExpr.guard value scope))) (lowerStore (lowerAddress (lowerAs scope pointer SrcType.ptr) (lowerAs scope offset (SrcType.uint UintTy.usize))) (lowerAs scope value (SrcType.uint UintTy.uint8)))
   | .free pointer size shift => guarded next (guardAnd (SrcExpr.guard pointer scope) (SrcExpr.guard size scope)) (lowerFree shift (lowerAs scope pointer SrcType.ptr) (lowerAs scope size (SrcType.uint UintTy.usize)))
-  | .letSlice id element pointer length body => guarded next (guardAnd (SrcExpr.guard pointer scope) (SrcExpr.guard length scope)) (lowerLet next (lowerSlice decls element (lowerAs scope pointer SrcType.ptr) (lowerAs scope length SrcType.i32)) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := SrcType.slice element } : Binding) :: scope) (next + 2)))
-  | .letIndex id ty slice index body => lowerLetIndexAny decls scope next ty slice index (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
+  | .letSlice id element pointer length body => guarded next (guardAnd (SrcExpr.guard pointer scope) (SrcExpr.guard length scope)) (lowerLet next (lowerSlice decls element (lowerAs scope pointer SrcType.ptr) (lowerAs scope length SrcType.i32)) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := SrcType.slice element, home := none } : Binding) :: scope) (next + 2)))
+  | .letIndex id ty slice index body => lowerLetIndexAny decls scope next ty slice index (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty, home := none } : Binding) :: scope) (next + SrcType.size ty))
   | .setIndex slice index value => lowerSetIndexAny decls scope next slice index value
-  | .letEval id ty value body => lowerLetEval ty (stmtEval value sigs decls scope next) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
+  | .letEval id ty value body => lowerLetEval ty (stmtEval value sigs decls scope next) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty, home := none } : Binding) :: scope) (next + SrcType.size ty))
   | .setEval id value => lowerSetEval next (lookup scope id) (SrcEff.eval value sigs decls scope next)
   | .ifEval condition thenBranch elseBranch => lowerIfEval next (SrcEff.eval condition sigs decls scope next) (SrcStmt.lower thenBranch sigs decls ret scope next) (SrcStmt.lower elseBranch sigs decls ret scope next)
   | .whileEval condition body => lowerWhileEval next (SrcEff.eval condition sigs decls scope next) (SrcStmt.lower body sigs decls ret scope next)
@@ -169,8 +169,8 @@ def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (decls : SrcDecls) (ret : S
   | .continue => some Stmt.cont
   | .matchArm scrutinee enumId variant binds binder ty body rest => lowerMatchArm scope (lookup scope scrutinee) enumId variant binds binder ty next (SrcStmt.lower body sigs decls ret (armBodyScope binds binder ty next scope) (next + SrcType.size ty)) (SrcStmt.lower rest sigs decls ret scope next)
   | .unreachable id ty => lowerUnreachable (SrcType.same ty ret) next
-  | .letView id length fields pointer body => guarded next (guardAll scope fields) (lowerView next length (lowerLiteral scope (SrcType.array SrcType.i32 length) fields) (SrcStmt.lower body sigs decls ret (({ id := pointer, slot := next + length, ty := SrcType.ptr } : Binding) :: ({ id := id, slot := next, ty := SrcType.view length } : Binding) :: scope) (next + length + 1)))
-  | .letStr pointer chars body => lowerStr next chars (SrcStmt.lower body sigs decls ret (({ id := pointer, slot := next, ty := SrcType.ptr } : Binding) :: scope) (next + 1))
+  | .letView id length fields pointer body => guarded next (guardAll scope fields) (lowerView next length (lowerLiteral scope (SrcType.array SrcType.i32 length) fields) (SrcStmt.lower body sigs decls ret (({ id := pointer, slot := next + length, ty := SrcType.ptr, home := none } : Binding) :: ({ id := id, slot := next, ty := SrcType.view length, home := none } : Binding) :: scope) (next + length + 1)))
+  | .letStr pointer chars body => lowerStr next chars (SrcStmt.lower body sigs decls ret (({ id := pointer, slot := next, ty := SrcType.ptr, home := none } : Binding) :: scope) (next + 1))
   | .setPlace aplace avalue => none
   | .setPlaceOp aop aplace avalue => none
 
@@ -262,7 +262,7 @@ def SrcStmt.depth (self : SrcStmt) : Nat :=
 def paramScope (params : List SrcParam) (slot : Nat) (scope : List Binding) : List Binding :=
   match params with
   | [] => scope
-  | param :: rest => paramScope rest (slot + SrcType.size param.ty) (({ id := param.id, slot := slot, ty := param.ty } : Binding) :: scope)
+  | param :: rest => paramScope rest (slot + SrcType.size param.ty) (({ id := param.id, slot := slot, ty := param.ty, home := none } : Binding) :: scope)
 
 def paramsValid (params : List SrcParam) : Bool :=
   match params with

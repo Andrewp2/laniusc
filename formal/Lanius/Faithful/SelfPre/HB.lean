@@ -575,7 +575,7 @@ theorem hb_le_SrcProgram_statics (s : Lanius.Mini.SrcProgram) : hb s.statics ≤
   omega
 
 instance : HB Lanius.Mini.Binding := ⟨fun s => hb s.ty⟩
-@[simp, hb_simp] theorem hb_Binding_mk (a0 : Nat) (a1 : Nat) (a2 : Lanius.Mini.SrcType) : hb (Lanius.Mini.Binding.mk a0 a1 a2) = hb a2 := rfl
+@[simp, hb_simp] theorem hb_Binding_mk (a0 : Nat) (a1 : Nat) (a2 : Lanius.Mini.SrcType) (a3 : Option Nat) : hb (Lanius.Mini.Binding.mk a0 a1 a2 a3) = hb a2 := rfl
 theorem hb_le_Binding_ty (s : Lanius.Mini.Binding) : hb s.ty ≤ hb s := by
   show _ ≤ hb s.ty
   omega

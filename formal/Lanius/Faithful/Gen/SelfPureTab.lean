@@ -250,7 +250,7 @@ def decls : SrcDecls where
     { id := 146, fields := [.ptr] },
     { id := 145, fields := [.ptr] },
     { id := 139, fields := [.ptr] },
-    { id := 138, fields := [(.uint .usize), (.uint .usize), ty9] },
+    { id := 138, fields := [(.uint .usize), (.uint .usize), ty9, ty146] },
     { id := 132, fields := [ty86, ty139] },
     { id := 130, fields := [ty20, ty20, ty47, (.uint .usize)] },
     { id := 127, fields := [ty128, ty127] },

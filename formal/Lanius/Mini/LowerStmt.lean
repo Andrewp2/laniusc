@@ -365,7 +365,7 @@ theorem upd_scope {scope : List Binding} {frame : Nat → Nat} {base next : Nat}
 theorem Layout.push {scope frame base next} (fr : Layout scope frame base next) {cell : Nat}
     (below : ∀ b ∈ scope, frame b.slot < cell) (le : base ≤ cell) (id : Nat) {ty : SrcType}
     (sized : 0 < ty.size) :
-    Layout (⟨id, next, ty⟩ :: scope) (upd frame next cell) base (next + ty.size) := by
+    Layout (⟨id, next, ty, none⟩ :: scope) (upd frame next cell) base (next + ty.size) := by
   have same := upd_scope fr cell
   have self : upd frame next cell next = cell := by simp [upd]
   refine ⟨?_, ?_, ?_, ?_, ?_⟩
@@ -526,7 +526,7 @@ theorem Corr.push {scope frame st env base next} (corr : Corr sx places scope fr
     (agree : ScopeAgree scope env env') {id : Nat} {ty : SrcType} {v : Value}
     (holds : ty.HoldsAt sx places v env' next) (under : ∀ x ∈ places, x.cell < st.nextCell)
     (nv : viewedType ty = false := by first | rfl | assumption) :
-    Corr sx places (⟨id, next, ty⟩ :: scope) (upd frame next st.nextCell) (st.bindLocal id v) env' := by
+    Corr sx places (⟨id, next, ty, none⟩ :: scope) (upd frame next st.nextCell) (st.bindLocal id v) env' := by
   have same := upd_scope fr st.nextCell
   refine ⟨?_, ?_, ?_, ?_, ?_⟩
   rotate_left 3
@@ -572,7 +572,7 @@ theorem Corr.push {scope frame st env base next} (corr : Corr sx places scope fr
 
 /-- Leaving a `let`: Core restores the outer locals and the cells stay. -/
 theorem Corr.pop {scope frame base next id ty cell st env} {st' : State}
-    (corr : Corr sx places (⟨id, next, ty⟩ :: scope) (upd frame next cell) st env)
+    (corr : Corr sx places (⟨id, next, ty, none⟩ :: scope) (upd frame next cell) st env)
     (fr : Layout scope frame base next) (locals : st'.locals = scope.map fun b => (b.id, frame b.slot))
     (cells : st'.cells = st.cells) (views : st'.i32ArrayViews = st.i32ArrayViews := by rfl) :
     Corr sx places scope frame st' env := by
@@ -1992,7 +1992,7 @@ theorem ValueShape.below {scope next} {xs : List Expr} (shape : ValueShape scope
 theorem let_tail {sp : SrcProgram} [StaticsOf sp sx] {mp : Program} {fuel : Nat} (ih : StmtSound sp mp fuel)
     {body : SrcStmt} {ret : SrcType} {scope : List Binding} {next : Nat} {bstmt : Stmt}
     {id : Nat} {ty : SrcType} {hp : Heap}
-    (bodyOk : body.lower (sp.sigsAt bud) sp.decls ret (⟨id, next, ty⟩ :: scope) (next + ty.size) = some bstmt)
+    (bodyOk : body.lower (sp.sigsAt bud) sp.decls ret (⟨id, next, ty, none⟩ :: scope) (next + ty.size) = some bstmt)
     {frame base st env} (corr : Corr sx places scope frame st env) (fr : Layout scope frame base next)
     (fresh : st.Fresh) (le : base ≤ st.nextCell) (sized : 0 < ty.size) {v : Value} {env' : Env}
     (agree : ScopeAgree scope env env') (holds : ty.HoldsAt sx places v env' next)
@@ -2032,7 +2032,7 @@ theorem Corr.alias {scope frame st env} (corr : Corr sx places scope frame st en
     {j : Nat} (away : ∀ b ∈ scope, b.slot ≠ j) (id : Nat) {ty : SrcType} {v : Value}
     (holds : ty.HoldsAt sx places v env j) (under : ∀ x ∈ places, x.cell < st.nextCell)
     (nv : viewedType ty = false := by first | rfl | assumption) :
-    Corr sx places (⟨id, j, ty⟩ :: scope) (upd frame j st.nextCell) (st.bindLocal id v) env := by
+    Corr sx places (⟨id, j, ty, none⟩ :: scope) (upd frame j st.nextCell) (st.bindLocal id v) env := by
   have same : ∀ b ∈ scope, upd frame j st.nextCell b.slot = frame b.slot := fun b mem => by
     simp only [upd]
     rw [if_neg (away b mem)]
@@ -3374,7 +3374,7 @@ theorem stmt_letLoad (ih : StmtSound sp mp fuel) {id : Nat} {pointer offset : Sr
   cases oOk : lowerAs scope offset (.uint .usize) with
   | none => simp [pOk, oOk, lowerAddress, lowerLoad] at ok
   | some xo =>
-  cases bodyOk : body.lower (sp.sigsAt bud) sp.decls ret (⟨id, next, .uint .uint8⟩ :: scope) (next + 1) with
+  cases bodyOk : body.lower (sp.sigsAt bud) sp.decls ret (⟨id, next, .uint .uint8, none⟩ :: scope) (next + 1) with
   | none => simp [pOk, oOk, bodyOk, lowerAddress, lowerLoad] at ok
   | some bstmt =>
   simp only [pOk, oOk, bodyOk, lowerAddress, lowerLoad, Option.some.injEq] at ok
@@ -3842,7 +3842,7 @@ theorem eval_index_safe {P : Core.Program} {k : Nat} {st : State} {slice : Nat} 
 theorem stmt_letIndex_i32 (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {slice : Nat}
     {index : SrcExpr} {body : SrcStmt} (tyI32 : ty.isI32 = true)
     (ok : lowerLoadWord next (lowerElement (lookup scope slice) ty (lowerIndex scope index))
-      (body.lower (sp.sigsAt bud) sp.decls ret (⟨id, next, ty⟩ :: scope) (next + ty.size)) = some stmt)
+      (body.lower (sp.sigsAt bud) sp.decls ret (⟨id, next, ty, none⟩ :: scope) (next + ty.size)) = some stmt)
     (corr : Corr sx places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
     (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : LentHomes sx bud places st hp)
     (under : ∀ x ∈ places, x.cell < base)
@@ -4250,7 +4250,7 @@ theorem stmt_setIndex_i32 {slice : Nat} {index value : SrcExpr} {b : Binding} {e
 theorem stmt_letIndex_u8 (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {slice : Nat}
     {index : SrcExpr} {body : SrcStmt} (isU8 : ty.isUint .uint8 = true)
     (ok : lowerLoad next (lowerElement (lookup scope slice) ty (lowerIndex scope index))
-      (body.lower (sp.sigsAt bud) sp.decls ret (⟨id, next, ty⟩ :: scope) (next + ty.size)) = some stmt)
+      (body.lower (sp.sigsAt bud) sp.decls ret (⟨id, next, ty, none⟩ :: scope) (next + ty.size)) = some stmt)
     (corr : Corr sx places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
     (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : LentHomes sx bud places st hp)
     (under : ∀ x ∈ places, x.cell < base)
@@ -5078,7 +5078,7 @@ theorem storeElement_sound {sp : SrcProgram} {mp : Program} {hp : Heap} {st : St
 theorem stmt_letIndex_word (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {slice : Nat}
     {index : SrcExpr} {body : SrcStmt}
     (ok : lowerLoadType sp.decls next (lookup scope slice) ty (lowerIndex scope index)
-      (body.lower (sp.sigsAt bud) sp.decls ret (⟨id, next, ty⟩ :: scope) (next + ty.size)) = some stmt)
+      (body.lower (sp.sigsAt bud) sp.decls ret (⟨id, next, ty, none⟩ :: scope) (next + ty.size)) = some stmt)
     (corr : Corr sx places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
     (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : LentHomes sx bud places st hp)
     (under : ∀ x ∈ places, x.cell < base)

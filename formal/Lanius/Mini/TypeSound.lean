@@ -666,7 +666,7 @@ def ScopeOk (P : Core.Program) (ctx : Typing.Context) (scope : List Binding) : P
 
 theorem ScopeOk.cons {P : Core.Program} {ctx : Typing.Context} {scope : List Binding}
     (ok : ScopeOk P ctx scope) {id slot : Nat} {ty : SrcType} (declared : TypeDeclared P ty) :
-    ScopeOk P (ctx.bind id ty.toCore) ({ id := id, slot := slot, ty := ty } :: scope) := by
+    ScopeOk P (ctx.bind id ty.toCore) ({ id := id, slot := slot, ty := ty, home := none } :: scope) := by
   intro x b found
   simp only [lookup] at found
   split at found

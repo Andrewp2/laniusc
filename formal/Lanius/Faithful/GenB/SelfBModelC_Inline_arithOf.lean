@@ -785,7 +785,7 @@ termination_by structural fuel => fuel
 
 def Cost_arm_bind : Nat → Nat → Lanius.Mini.SrcType → List Nat → List Lanius.Mini.SrcType → Nat → List Lanius.Mini.Binding → Nat
   | 0, x9, x24, x37, x56, x77, x90 => 18446744073709551616
-  | n + 1, x9, x24, x37, x56, x77, x90 => (let k2 := ((Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x9 x77 x24) x90) + (Cost_arm_scope n x37 x56 (x77 + (Lanius.Mini.SrcType.size x24)) ((Lanius.Mini.Binding.mk x9 x77 x24) :: x90))); let k3 := 0; (if (decide (0 < (Lanius.Mini.SrcType.size x24))) = true then (if (!(Lanius.Mini.viewedType x24)) = true then k2 else k3) else k3))
+  | n + 1, x9, x24, x37, x56, x77, x90 => (let k2 := ((Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x9 x77 x24 (none : Option Nat)) x90) + (Cost_arm_scope n x37 x56 (x77 + (Lanius.Mini.SrcType.size x24)) ((Lanius.Mini.Binding.mk x9 x77 x24 (none : Option Nat)) :: x90))); let k3 := 0; (if (decide (0 < (Lanius.Mini.SrcType.size x24))) = true then (if (!(Lanius.Mini.viewedType x24)) = true then k2 else k3) else k3))
 termination_by structural fuel => fuel
 end
 
@@ -800,7 +800,7 @@ termination_by structural fuel => fuel
 
 def Pre_arm_bind : Nat → Nat → Lanius.Mini.SrcType → List Nat → List Lanius.Mini.SrcType → Nat → List Lanius.Mini.Binding → Nat → Prop
   | 0, x9, x24, x37, x56, x77, x90, b => True
-  | n + 1, x9, x24, x37, x56, x77, x90, b => (let k4 := fun (b1 : Nat) => ((Pre_SrcType_size n x24 b1) ∧ ((Pre_plus n x77 (Lanius.Mini.SrcType.size x24) b1) ∧ (∀ b2 : Nat, (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x9 x77 x24) x90) < b1 → b2 = b1 - (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x9 x77 x24) x90) → (Pre_arm_scope n x37 x56 (x77 + (Lanius.Mini.SrcType.size x24)) ((Lanius.Mini.Binding.mk x9 x77 x24) :: x90) b2)))); let k5 := fun (b1 : Nat) => True; ((Pre_SrcType_size n x24 b) ∧ (if (decide (0 < (Lanius.Mini.SrcType.size x24))) = true then (if (!(Lanius.Mini.viewedType x24)) = true then (k4 b) else (k5 b)) else (k5 b))))
+  | n + 1, x9, x24, x37, x56, x77, x90, b => (let k4 := fun (b1 : Nat) => ((Pre_SrcType_size n x24 b1) ∧ ((Pre_plus n x77 (Lanius.Mini.SrcType.size x24) b1) ∧ (∀ b2 : Nat, (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x9 x77 x24 (none : Option Nat)) x90) < b1 → b2 = b1 - (Cost_cons_of_mini_selfhost_Binding n (Lanius.Mini.Binding.mk x9 x77 x24 (none : Option Nat)) x90) → (Pre_arm_scope n x37 x56 (x77 + (Lanius.Mini.SrcType.size x24)) ((Lanius.Mini.Binding.mk x9 x77 x24 (none : Option Nat)) :: x90) b2)))); let k5 := fun (b1 : Nat) => True; ((Pre_SrcType_size n x24 b) ∧ (if (decide (0 < (Lanius.Mini.SrcType.size x24))) = true then (if (!(Lanius.Mini.viewedType x24)) = true then (k4 b) else (k5 b)) else (k5 b))))
 termination_by structural fuel => fuel
 end
 

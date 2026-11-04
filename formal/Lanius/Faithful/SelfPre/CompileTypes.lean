@@ -570,7 +570,7 @@ theorem val_paramScope : ∀ (ps : List SrcParam) (slot : Nat) (scope : List Bin
   | [], slot, scope => by simp only [paramScope, ts_nil]; omega
   | p :: ps, slot, scope => by
     have ih := val_paramScope ps (slot + SrcType.size p.ty)
-      ({ id := p.id, slot := slot, ty := p.ty } :: scope)
+      ({ id := p.id, slot := slot, ty := p.ty, home := none } :: scope)
     have hp : ts p = tySlots p.ty := rfl
     simp only [paramScope, ts_cons, ts_Binding_mk, ts_SrcType, hp] at ih ⊢; omega
 

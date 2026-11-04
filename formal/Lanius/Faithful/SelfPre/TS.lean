@@ -417,7 +417,7 @@ theorem ts_le_SrcProgram_funcs (s : Lanius.Mini.SrcProgram) : ts s.funcs ≤ ts 
   omega
 
 instance : TS Lanius.Mini.Binding := ⟨fun s => ts s.ty⟩
-@[simp, ts_simp] theorem ts_Binding_mk (a0 : Nat) (a1 : Nat) (a2 : Lanius.Mini.SrcType) : ts (Lanius.Mini.Binding.mk a0 a1 a2) = ts a2 := rfl
+@[simp, ts_simp] theorem ts_Binding_mk (a0 : Nat) (a1 : Nat) (a2 : Lanius.Mini.SrcType) (a3 : Option Nat) : ts (Lanius.Mini.Binding.mk a0 a1 a2 a3) = ts a2 := rfl
 theorem ts_le_Binding_ty (s : Lanius.Mini.Binding) : ts s.ty ≤ ts s := by
   show _ ≤ ts s.ty
   omega

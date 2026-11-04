@@ -2146,6 +2146,14 @@ split between the lowering (leafC) and the proof (leafA).
   moved from `Refs/Model.lean` to `Mini/Homes.lean` with their names.
 - S6a-2: `Binding.home: Option<usize>` in the scope (`None` everywhere),
   and `RCtx.ofScope` reads the homes from the scope. No behaviour changes.
+  Done (11-04, leafA): the field is in `compiler.lani`, `None` at all 16
+  constructions; the trusted hash is unchanged (`Binding` is not trusted and
+  no function moved). `RCtx.ofScope` keeps `homes := []` until S6b makes a
+  home `Some`: reading the scope's homes now would need an "every home is
+  `None`" invariant through the simulation that S6b then removes. Five open
+  statements that built `⟨id, next, ty⟩` bindings stopped elaborating and
+  were replaced by V2s over any home (`OPEN_STATEMENTS.md`, "Deleting a
+  statement").
 - S6b (the lowering of borrows and homed lets): **a lent array local is a
   homed let.** An array local passed as a slice (`ArraySlice` at a slice
   parameter) is a borrowed local, so it gets a home like any other borrowed
