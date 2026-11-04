@@ -2665,6 +2665,25 @@ whose needs are below the limit (`NeedsBelow`), and rejects the others: a
 program with a function that needs 2^40 bytes of frame memory or more, which
 no binary could run. No real program comes near it.
 
+## A function's room checked before its temporaries are counted (decided 11-03, F14)
+
+`compile_func` added a function's locals and its body's temporaries
+(`Stmt.temps`) before any check, and the room check (`room_fits`, above)
+came last. The compile's pre lemmas then needed the temporaries below 2^62
+from the source: `LowerFuncsTemps` (lowering's result has at most its cost
+in temporaries) carried that bound, and it would have needed a new generated
+measure through the whole lowering. Now `compile_func` asks `room_fits`
+first and counts the slots only inside it. A body's temporaries are at most
+its weight (`Stmt.temps_le_weight` in `Lanius/Mini/Room.lean`), so a body
+that passes the check has at most `image_limit` of them
+(`Stmt.temps_le_of_roomFits`), and the sum stays far below 2^64 with no
+bound from the lowering. `LowerFuncsTemps` is no longer needed.
+
+The checks are pure, so their order changes no result:
+`compileFunc_checksLast` proves that `compileFunc` is the compiler with the
+room check last (`compileFuncChecksLast`, the order before this change).
+
+
 ## Budget certificates (decided 11-01, F14)
 
 `CompileBounded T` asks that the guarded run of `progW` has a value

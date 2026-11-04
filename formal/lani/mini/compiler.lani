@@ -785,11 +785,16 @@ pub fn room_fits(room: core::option::Option<usize>) -> bool {
 }
 
 // A function returns at least one value, and its results fit in its locals.
+// The room check comes first: a body that fits has at most as many temporaries
+// as its weight, so its slot count is counted only when it is small.
 pub fn compile_func(arities: List<Arity>, func: Func) -> core::option::Option<Code> {
-    let slots: usize = plus(func.locals, func.body.temps());
-    if (func.locals >= func.params && func.results > 0 && func.locals >= func.results && func.body.within(func.locals, arities, func.results) && frame_limit() >= slots && room_fits(stmt_room(image_limit(), func.body))) {
-        let init: List<Instr> = cons(Imm(0), zero_locals(func.params, minus(func.locals, func.params)));
-        return Some(Code { slots: slots, instrs: concat(init, compile_stmt(func.locals, code_size(init), 0, 0, func.body)) });
+    if (room_fits(stmt_room(image_limit(), func.body))) {
+        let slots: usize = plus(func.locals, func.body.temps());
+        if (func.locals >= func.params && func.results > 0 && func.locals >= func.results && func.body.within(func.locals, arities, func.results) && frame_limit() >= slots) {
+            let init: List<Instr> = cons(Imm(0), zero_locals(func.params, minus(func.locals, func.params)));
+            return Some(Code { slots: slots, instrs: concat(init, compile_stmt(func.locals, code_size(init), 0, 0, func.body)) });
+        }
+        return None;
     }
     return None;
 }

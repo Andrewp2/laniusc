@@ -117,8 +117,10 @@ theorem compileFunc_rename {table : List Nat} {missing : Nat} {program own : Lis
       (compileFunc own func).map (Code.rename table missing) := by
   simp only [compileFunc, Stmt.within_rename agree, Stmt.temps_rename, Stmt.room_rename]
   split
-  · simp only [Option.map_some, Code.rename, List.map_append, List.map_cons,
-      zeroLocals_rename, compileStmt_rename, Instr.rename]
+  · split
+    · simp only [Option.map_some, Code.rename, List.map_append, List.map_cons,
+        zeroLocals_rename, compileStmt_rename, Instr.rename]
+    · rfl
   · rfl
 
 theorem compileFuncs_rename {table : List Nat} {missing : Nat} {program own : List Arity}
