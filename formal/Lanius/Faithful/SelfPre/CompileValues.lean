@@ -1,6 +1,8 @@
 import Lanius.Faithful.SelfPre.Values
 import Lanius.Faithful.SelfPre.NB
 import Lanius.Faithful.SelfPre.TS
+import Lanius.Faithful.SelfPre.CompileTypes
+import Lanius.Faithful.SelfPre.CompileEvalTypes
 import Lanius.Mini.Room
 
 /-! # Byte lists of the compile side (F14)
@@ -121,12 +123,6 @@ def optTemps : Option (List Func) → Nat
   | none => 0
   | some fs => funcsTemps fs
 
-/-- The most slots any of the functions' parameters take (`PreCompileSourceV4`'s
-premise bounds each by `2 ^ 40`). -/
-def paramsMax : List SrcFunc → Nat
-  | [] => 0
-  | f :: fs => max (paramsSize f.params) (paramsMax fs)
-
 theorem paramsMax_le (fs : List SrcFunc) (k : Nat) (h : ∀ f ∈ fs, paramsSize f.params ≤ k) :
     paramsMax fs ≤ k := by
   induction fs with
@@ -134,5 +130,28 @@ theorem paramsMax_le (fs : List SrcFunc) (k : Nat) (h : ∀ f ∈ fs, paramsSize
   | cons f fs ih =>
     simp only [paramsMax, Nat.max_le]
     exact ⟨h f (List.mem_cons_self ..), ih (fun g hg => h g (List.mem_cons_of_mem _ hg))⟩
+
+
+/-- A string's ASCII test, as a bound (`pre_auto` simplifies an `if`'s condition
+by `hb_simp`): `lower_str` lowers only ASCII strings, so `str_words`' bytes are
+below 128 (its `COMPILE_OVERRIDES` invariant, `nb chars ≤ 255`). -/
+@[hb_simp] theorem strAscii_eq_true (l : List Nat) : (strAscii l = true) = (nb l < 128) := by
+  induction l with
+  | nil => simp only [strAscii, nb_nil]; decide
+  | cons c r ih =>
+    simp only [strAscii, Bool.and_eq_true, decide_eq_true_eq, ih, nb_cons]
+    show (c < 128 ∧ nb r < 128) = (max c (nb r) < 128)
+    apply propext; omega
+
+@[hb_simp] theorem strAscii_eq_false (l : List Nat) : (strAscii l = false) = (128 ≤ nb l) := by
+  have h := strAscii_eq_true l
+  apply propext
+  cases hs : strAscii l
+  · rw [hs] at h
+    have : ¬ nb l < 128 := by rw [← h]; simp
+    simp only [true_iff]; omega
+  · rw [hs] at h
+    have : nb l < 128 := by rw [← h]
+    simp only [Bool.true_eq_false, false_iff]; omega
 
 end Lanius.Faithful.SelfPre
