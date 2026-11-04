@@ -203,54 +203,23 @@ theorem Kernel.agree (same : DataEq s t) (ka : Kernel s a) (kb : Kernel t b) :
   obtain ⟨hR, hP, hM, hX, hI⟩ := same
   simp only at hR hP hM hX hI
   subst hR hP hM hX hI
-  cases ka with
-  | write number fd count r11 =>
-    cases kb with
-    | write number' fd' count' r11' =>
-      refine ⟨fun r ne => ?_, rfl, rfl, rfl, rfl⟩
-      simp only [State.syscalled, if_neg ne]
-    | read number' fd' count' r11' => simp only at number number'; rw [number] at number'; cases number'
-    | poll number' _ _ _ r11' => simp only at number number'; rw [number] at number'; cases number'
-    | clock number' which' reading' next' r11' => simp only at number number'; rw [number] at number'; cases number'
-    | getrandom number' _ _ _ r11' => simp only at number number'; rw [number] at number'; cases number'
-  | read number fd count r11 =>
-    cases kb with
-    | write number' fd' count' r11' => simp only at number number'; rw [number] at number'; cases number'
-    | read number' fd' count' r11' =>
-      refine ⟨fun r ne => ?_, rfl, rfl, rfl, rfl⟩
-      simp only [State.syscalled, if_neg ne]
-    | poll number' _ _ _ r11' => simp only at number number'; rw [number] at number'; cases number'
-    | clock number' which' reading' next' r11' => simp only at number number'; rw [number] at number'; cases number'
-    | getrandom number' _ _ _ r11' => simp only at number number'; rw [number] at number'; cases number'
-  | poll number _ _ _ r11 =>
-    cases kb with
-    | write number' fd' count' r11' => simp only at number number'; rw [number] at number'; cases number'
-    | read number' fd' count' r11' => simp only at number number'; rw [number] at number'; cases number'
-    | poll number' _ _ _ r11' =>
-      refine ⟨fun r ne => ?_, rfl, rfl, rfl, rfl⟩
-      simp only [State.syscalled, if_neg ne]
-    | clock number' which' reading' next' r11' => simp only at number number'; rw [number] at number'; cases number'
-    | getrandom number' _ _ _ r11' => simp only at number number'; rw [number] at number'; cases number'
-  | clock number which reading next r11 =>
-    cases kb with
-    | write number' fd' count' r11' => simp only at number number'; rw [number] at number'; cases number'
-    | read number' fd' count' r11' => simp only at number number'; rw [number] at number'; cases number'
-    | poll number' _ _ _ r11' => simp only at number number'; rw [number] at number'; cases number'
-    | clock number' which' reading' next' r11' =>
-      rw [next] at next'
-      cases next'
-      refine ⟨fun r ne => ?_, rfl, rfl, rfl, rfl⟩
-      simp only [State.syscalled, if_neg ne]
-    | getrandom number' _ _ _ r11' => simp only at number number'; rw [number] at number'; cases number'
-  | getrandom number _ _ _ r11 =>
-    cases kb with
-    | write number' fd' count' r11' => simp only at number number'; rw [number] at number'; cases number'
-    | read number' fd' count' r11' => simp only at number number'; rw [number] at number'; cases number'
-    | poll number' _ _ _ r11' => simp only at number number'; rw [number] at number'; cases number'
-    | clock number' which' reading' next' r11' => simp only at number number'; rw [number] at number'; cases number'
-    | getrandom number' _ _ _ r11' =>
-      refine ⟨fun r ne => ?_, rfl, rfl, rfl, rfl⟩
-      simp only [State.syscalled, if_neg ne]
+  cases ka <;> cases kb
+  case clock.clock number which reading next r11 number' which' reading' next' r11' =>
+    rw [next] at next'
+    cases next'
+    exact ⟨fun r ne => by simp only [State.syscalled, if_neg ne], rfl, rfl, rfl, rfl⟩
+  case openFile.openFile number path named mode result io opened r11 number' path' named' mode' result' io'
+      opened' r11' =>
+    rw [named] at named'
+    cases named'
+    rw [opened] at opened'
+    cases opened'
+    exact ⟨fun r ne => by simp only [State.syscalled, if_neg ne], rfl, rfl, rfl, rfl⟩
+  all_goals first
+    | exact ⟨fun r ne => by simp only [State.syscalled, if_neg ne], rfl, rfl, rfl, rfl⟩
+    | (exfalso; simp_all; done)
+    | (exfalso; simp_all [descriptor]; done)
+    | (exfalso; obtain h | h := ‹_ ∨ _› <;> simp_all [descriptor]; done)
 
 /-- A `syscall`, then `mov r11, source`, which gives r11 a value the data
 determines again. -/

@@ -16,7 +16,7 @@ theorem FileCursor.record (cursor : FileCursor world id file handle) :
 
 private theorem handle_replaced (found : world.handle? id = some handle)
     (same : replacement.id = handle.id) :
-    ({ world with fileHandles := replaceHandle world.fileHandles replacement } : State).handle? id = some replacement := by
+    ({ world with fs := { world.fs with handles := Files.replaceHandle world.fs.handles replacement } } : State).handle? id = some replacement := by
   have selected : handle.id = id := by simpa only [beq_iff_eq] using List.find?_some found
   have replacementId := same.trans selected
   let change := fun (old : FileHandle) => if old.id == replacement.id then replacement else old
@@ -24,9 +24,9 @@ private theorem handle_replaced (found : world.handle? id = some handle)
     funext old
     dsimp [change]
     split <;> simp_all
-  change (world.fileHandles.map change).find? (fun old => old.id == id) = _
+  change (world.fs.handles.map change).find? (fun old => old.id == id) = _
   rw [List.find?_map]
-  change (world.fileHandles.find? (fun old => (change old).id == id)).map change = _
+  change (world.fs.handles.find? (fun old => (change old).id == id)).map change = _
   rw [stable]
   change (world.handle? id).map change = _
   rw [found]
@@ -40,10 +40,12 @@ theorem FileCursor.read (cursor : FileCursor world id file handle) (count : Nat)
       next.calls = world.calls := by
   let bytes := (file.bytes.drop handle.offset).take count
   let replacement := { handle with offset := handle.offset + bytes.length }
-  let next := { world with fileHandles := replaceHandle world.fileHandles replacement }
+  let next := { world with fs := { world.fs with handles := Files.replaceHandle world.fs.handles replacement } }
   refine ⟨next, ?_, ⟨handle_replaced cursor.found rfl, cursor.readable, cursor.contents⟩, rfl⟩
-  simp only [readFileBytes, cursor.found, cursor.readable, Bool.not_true, Bool.false_eq_true,
-    ↓reduceIte, cursor.contents, next, replacement, bytes]
+  have found : world.fs.handle? id = some handle := cursor.found
+  have contents : world.fs.file? handle.path = some file := cursor.contents
+  simp only [readFileBytes, Files.System.readBytes, found, cursor.readable, Bool.not_true, Bool.false_eq_true,
+    ↓reduceIte, contents, next, replacement, bytes, Option.map_some]
 
 #print axioms FileCursor.read
 

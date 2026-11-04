@@ -362,6 +362,18 @@ theorem Step.live (sa : Step s a) (same : DataEq s t) : ∃ b, Step t b := by
     | getrandom number flags count enough r11 =>
       exact ⟨_, .syscalled (code loaded) (.getrandom (by rw [registers]; exact number) (by rw [registers]; exact flags)
         (by rw [registers]; exact count) (by rw [registers, ← same.io]; exact enough) r11)⟩
+    | readFile number fd count r11 =>
+      exact ⟨_, .syscalled (code loaded) (.readFile (by rw [registers]; exact number) (by rw [registers]; exact fd)
+        (by rw [registers]; exact count) r11)⟩
+    | writeFile number fd count r11 =>
+      exact ⟨_, .syscalled (code loaded) (.writeFile (by rw [registers]; exact number) (by rw [registers]; exact fd)
+        (by rw [registers]; exact count) r11)⟩
+    | openFile number path named mode result io opened r11 =>
+      exact ⟨_, .syscalled (code loaded) (.openFile (by rw [registers]; exact number) path
+        (by rw [registers, ← same.memory]; exact named) (by rw [registers]; exact mode) result io
+        (by rw [registers, ← same.io]; exact opened) r11)⟩
+    | close number fd r11 =>
+      exact ⟨_, .syscalled (code loaded) (.close (by rw [registers]; exact number) (by rw [registers]; exact fd) r11)⟩
 
 /-- No run from a state that agrees with `s` but for its flags stops before
 its `n`th step. -/

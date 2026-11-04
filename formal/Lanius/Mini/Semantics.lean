@@ -262,7 +262,10 @@ bytes), appends them to the trace and returns the count. `read(0, address, count
 of at most `maxTransfer` bytes takes the next bytes of the input the kernel's
 `read` delivers (`Io.readBytes`: from 1 to `count` or all that are left, 0
 only when `count` is 0 or none are left), stores them from `address` on
-(inside the heap), and returns how many. `poll(0, 0, timeout)` with a timeout below 2^31 (a
+(inside the heap), and returns how many. A `write` or `read` naming a file
+descriptor (`descriptor fd`, its low 32 bits, 3 or more) with the same bounds,
+a `read`'s whole buffer inside the heap, is the kernel's file call on the
+heap's file system (`Io.writeFile`, `Io.readFile`). `poll(0, 0, timeout)` with a timeout below 2^31 (a
 nonnegative `int`) polls no fd: it returns 0 and changes nothing.
 `clock_gettime(clock, address, _)` of clock 0 or 1 with a reading left
 stores it as a `struct timespec` from `address` on (inside the heap) and
@@ -277,6 +280,14 @@ def Syscall.run : Syscall → List (BitVec 64) → Heap → Option (BitVec 64 ×
             address.toNat + count.toNat ≤ heap.staticBase + heap.statics.length)) then
       some (count, { heap with io := { heap.io with trace := heap.io.trace ++
         [.write fd.toNat (heap.span address.toNat count.toNat)] } })
+    else if 3 ≤ Lanius.X86.Machine.descriptor fd ∧ count.toNat ≤ Lanius.X86.Machine.maxTransfer ∧
+        (address.toNat + count.toNat ≤ heap.top ∨
+          (heap.top ≤ heap.staticBase ∧ heap.staticBase ≤ address.toNat ∧
+            address.toNat + count.toNat ≤ heap.staticBase + heap.statics.length)) then
+      some (BitVec.ofInt 64 (heap.io.writeFile (Lanius.X86.Machine.descriptor fd)
+          (heap.span address.toNat count.toNat)).1,
+        { heap with io := (heap.io.writeFile (Lanius.X86.Machine.descriptor fd)
+          (heap.span address.toNat count.toNat)).2 })
     else none
   | .read, [fd, address, count], heap =>
     if fd = 0 ∧ count.toNat ≤ Lanius.X86.Machine.maxTransfer ∧
@@ -285,6 +296,11 @@ def Syscall.run : Syscall → List (BitVec 64) → Heap → Option (BitVec 64 ×
       some (BitVec.ofNat 64 (heap.io.readBytes count.toNat).length,
         { heap.writeAll address.toNat (heap.io.readBytes count.toNat) with
           io := heap.io.afterRead count.toNat })
+    else if 3 ≤ Lanius.X86.Machine.descriptor fd ∧ count.toNat ≤ Lanius.X86.Machine.maxTransfer ∧
+        address.toNat + count.toNat ≤ heap.top then
+      some (BitVec.ofInt 64 (heap.io.readFile (Lanius.X86.Machine.descriptor fd) count.toNat).1,
+        { heap.writeAll address.toNat (heap.io.readFile (Lanius.X86.Machine.descriptor fd) count.toNat).2.1 with
+          io := (heap.io.readFile (Lanius.X86.Machine.descriptor fd) count.toNat).2.2 })
     else none
   | .poll, [fds, nfds, timeout], heap =>
     if fds = 0 ∧ nfds = 0 ∧ timeout.toNat < 2 ^ 31 then some (0, heap) else none
@@ -326,9 +342,8 @@ theorem Syscall.run_frame {call : Syscall} {args : List (BitVec 64)} {heap after
   match args, ran with
   | [fd, address, count], ran =>
     rw [Syscall.run] at ran
-    split at ran
-    · cases ran; exact ⟨rfl, rfl⟩
-    · cases ran
+    repeat' split at ran
+    all_goals (cases ran; try exact ⟨rfl, rfl⟩)
   | [], ran => simp [Syscall.run] at ran
   | [_], ran => simp [Syscall.run] at ran
   | [_, _], ran => simp [Syscall.run] at ran
@@ -341,9 +356,8 @@ theorem Syscall.run_top {call : Syscall} {args : List (BitVec 64)} {heap after :
   match args, ran with
   | [fd, address, count], ran =>
     rw [Syscall.run] at ran
-    split at ran
-    · cases ran; rfl
-    · cases ran
+    repeat' split at ran
+    all_goals (cases ran; try rfl)
   | [], ran => simp [Syscall.run] at ran
   | [_], ran => simp [Syscall.run] at ran
   | [_, _], ran => simp [Syscall.run] at ran
@@ -481,9 +495,8 @@ theorem Syscall.run_statics {call : Syscall} {args : List (BitVec 64)} {heap aft
   match args, ran with
   | [fd, address, count], ran =>
     rw [Syscall.run] at ran
-    split at ran
-    · cases ran; exact ⟨rfl, rfl⟩
-    · cases ran
+    repeat' split at ran
+    all_goals (cases ran; try exact ⟨rfl, rfl⟩)
   | [], ran => simp [Syscall.run] at ran
   | [_], ran => simp [Syscall.run] at ran
   | [_, _], ran => simp [Syscall.run] at ran

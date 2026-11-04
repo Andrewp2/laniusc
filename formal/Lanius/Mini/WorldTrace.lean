@@ -57,7 +57,7 @@ cursor and limit, whose trace the world's output is. -/
 theorem HeapCorr.retrace {h : Memory.Heap} {w : World.State} {hp : Heap} (corr : HeapCorr h w hp)
     {w' : World.State} {hp' : Heap} (bytes : hp'.bytes = hp.bytes) (cursor : hp'.cursor = hp.cursor)
     (limit : hp'.limit = hp.limit) (out : w'.standardOutput = outputOf 1 hp'.io.trace)
-    (err : w'.standardError = outputOf 2 hp'.io.trace) (closed : w'.fileHandles = [])
+    (err : w'.standardError = outputOf 2 hp'.io.trace) (closed : w'.fs.handles = [])
     (input : w'.standardInput = hp'.io.input) (streams : Streams w' hp'.io) : HeapCorr h w' hp' := by
   obtain ⟨c, pos, unb, small, sized, below, apart, unique, bs, zero, -, -, -, -, -⟩ := corr
   refine ⟨cursor.trans c, pos, unb, limit ▸ small, sized, below, apart, unique, ?_, ?_, out, err, closed, input,
@@ -79,7 +79,7 @@ theorem HeapCorr.wrote {h : Memory.Heap} {w : World.State} {hp : Heap} (corr : H
     (outs : ∀ k, outputOf k events = if fd = k then bytes else [])
     (out : w'.standardOutput = w.standardOutput ++ (if fd = 1 then bytes else []))
     (err : w'.standardError = w.standardError ++ (if fd = 2 then bytes else []))
-    (closed : w'.fileHandles = w.fileHandles) (input : w'.standardInput = hp'.io.input)
+    (closed : w'.fs.handles = w.fs.handles) (input : w'.standardInput = hp'.io.input)
     (streams : Streams w' hp'.io) : HeapCorr h w' hp' :=
   corr.retrace sameBytes cursor limit (by simp only [out, corr.out, trace, outputOf_append, outs])
     (by simp only [err, corr.err, trace, outputOf_append, outs]) (closed.trans corr.closed) input streams
@@ -90,9 +90,9 @@ theorem HeapCorr.record {h : Memory.Heap} {w : World.State} {hp : Heap} (corr : 
   corr.retrace rfl rfl rfl corr.out corr.err corr.closed corr.input corr.streams
 
 /-- With no file open, a write to a file handle has nowhere to go. -/
-theorem writeFileBytes_closed {w : World.State} (closed : w.fileHandles = []) (handle : Int)
+theorem writeFileBytes_closed {w : World.State} (closed : w.fs.handles = []) (handle : Int)
     (bytes : List UInt8) : World.writeFileBytes w handle bytes = none := by
-  simp [World.writeFileBytes, World.State.handle?, closed]
+  simp [World.writeFileBytes, Files.System.writeBytes, Files.System.handle?, closed]
 
 /-- The bytes Core loads from a range are the mini heap's bytes there, below
 Core's cursor. -/

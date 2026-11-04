@@ -70,7 +70,8 @@ theorem Streams.congr {w w' : World.State} {io io' : Lanius.X86.Machine.Io} (s :
 /-- Core's heap `h` and world `w`, and the mini heap `hp` with its trace. The
 world's standard output and error are what the trace wrote to fds 1 and 2
 (roadmap F8), its standard input is what the process has still to read, and
-no file is open, so a `write_byte` to another handle returns -1. -/
+no file is open, so a `write_byte` to another handle returns -1 (the file system is not yet the
+process's: no mini code opens a file). -/
 structure HeapCorr (h : Memory.Heap) (w : World.State) (hp : Heap) : Prop where
   cursor : hp.cursor = h.nextAddress
   pos : 1 ≤ h.nextAddress
@@ -85,7 +86,7 @@ structure HeapCorr (h : Memory.Heap) (w : World.State) (hp : Heap) : Prop where
   zero : ∀ a, h.nextAddress ≤ a → a < hp.limit → hp.bytes a = 0
   out : w.standardOutput = outputOf 1 hp.io.trace
   err : w.standardError = outputOf 2 hp.io.trace
-  closed : w.fileHandles = []
+  closed : w.fs.handles = []
   input : w.standardInput = hp.io.input
   /-- The clocks' readings and the secure bytes still to come are the
   process's. -/

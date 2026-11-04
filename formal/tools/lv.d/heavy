@@ -1,0 +1,228 @@
+#!/usr/bin/env bash
+# Part of lv (formal/tools/lv): `lv heavy ...`. Its siblings lcc and memwait are
+# the ones it runs, so an installed copy (target/claude-work/lv) is self-contained.
+here=$(dirname "$(readlink -f "$0")")
+# Run a GPU job or heavy build: one at a time per lane, first come first
+# served, memory capped.
+# usage: heavy [-m 8G] [-t MINUTES] [--build|--gpu] [--priority] [--quiet] COMMAND...
+# A GPU-lane job is stopped after -t minutes (default 15, at most 45): the
+# lane is shared by ~11 agents, so split long experiments into several jobs.
+# --priority puts the job at the front of its lane's queue; only the lead's
+# integration gates use it.
+# --quiet (GPU lane, for perf measurements): once at the front of the GPU
+# queue, take each build slot as it frees up (so the build lane drains while
+# the previous GPU job runs); after taking the GPU lock, wait at most 25 min
+# for any build still running, then hold both build slots for the whole job,
+# so no rustc/slangc competes with the measurement. The GPU time limit starts
+# after that wait. Do not run builds inside a --quiet job
+# (they would wait for the slots the job itself holds).
+# Lanes: plain `cargo build|check|clippy|doc` commands (optionally after `env
+# VAR=...`) run in the build lane, everything else in the GPU lane. One job
+# per lane runs at a time, so at most one build overlaps one GPU job: a build
+# peaks at ~4.6 GB (bin) to ~7 GB (lib tests), a GPU job at up to ~5.5 GB
+# during cold driver compiles, and the desktop plus agents take ~4 GB of the
+# 15 GB laptop. The build lane has two slots. Memory has one rule: a job
+# starts only after memwait finds room for it, and runs in work.slice (one soft
+# budget of RAM - 4 GB: past it the work slows down, nothing is killed). A
+# build is still the kernel's first choice if the machine itself runs out.
+# GPU work itself is never parallel (parallel driver compiles once
+# OOM-crashed the desktop).
+# Waiters queue as files named <ticket>-<pid>; the oldest live waiter whose
+# process still exists takes the flock next, so nobody starves.
+lane=
+limit=15
+prio=${HEAVY_PRIORITY:+1}  # HEAVY_PRIORITY=1 in the environment: the lead's integration gate
+quiet=
+while true; do
+  case "$1" in
+    -m) shift 2 ;;  # accepted for old callers; memory is work.slice's job now
+    -t) limit=$2; shift 2 ;;
+    --priority) prio=1; shift ;;
+    --quiet) quiet=1; shift ;;
+    --build) lane=build; shift ;;
+    --gpu) lane=gpu; shift ;;
+    *) break ;;
+  esac
+done
+if [ -z "$lane" ]; then
+  lane=gpu
+  i=1; args=("$@")
+  [ "${args[0]}" = env ] && i=2 || i=1
+  j=$((i - 1))
+  while [ $j -lt ${#args[@]} ] && [[ "${args[$j]}" == *=* ]]; do j=$((j + 1)); done
+  if [ "${args[$j]}" = cargo ]; then
+    case "${args[$((j + 1))]}" in build|check|clippy|doc) lane=build ;; esac
+    # A worktree whose target/release links to another checkout's must not build
+    # into it: S4's compiler builds once replaced main's laniusc under every gate.
+    top=$(git rev-parse --show-toplevel 2>/dev/null)
+    if [ -z "$CARGO_TARGET_DIR" ] && [ -n "$top" ] && [ -L "$top/target/release" ] \
+       && [[ "$(realpath "$top/target/release")" != "$top"/* ]]; then
+      echo "heavy: $top/target/release links to $(readlink "$top/target/release"); building here would replace that checkout's binaries. Set CARGO_TARGET_DIR=$top/target/own (a separate build) or use lcc with the shared binary." >&2
+      exit 64
+    fi
+    # cargo test/run compile before they run: compile in the build lane first,
+    # so rustc never holds the GPU lock (one test build blocked six GPU jobs).
+    if [ "$lane" = gpu ] && [[ "${args[$((j + 1))]}" == test || "${args[$((j + 1))]}" == run ]] \
+       && [[ " ${args[*]} " != *" --no-run "* ]]; then
+      pre=("${args[@]:0:$((j + 2))}")
+      rest=("${args[@]:$((j + 2))}")
+      cut=${#rest[@]}
+      for k in "${!rest[@]}"; do [ "${rest[$k]}" = -- ] && { cut=$k; break; }; done
+      if [ "${args[$((j + 1))]}" = test ]; then
+        "$0" --build "${pre[@]}" --no-run "${rest[@]:0:$cut}" || exit $?
+      else
+        "$0" --build "${pre[@]:0:$j}" cargo build "${rest[@]:0:$cut}" || exit $?
+      fi
+    fi
+  fi
+fi
+# The GPU is down (fell off the bus; needs a reboot): fail fast, don't hang.
+if [ "$lane" = gpu ] && [ -e /home/andrew-peterson/code/laniusc/target/claude-work/GPU_DOWN ]; then
+  echo "heavy: the GPU is down ($(cat /home/andrew-peterson/code/laniusc/target/claude-work/GPU_DOWN)); GPU jobs are refused until a reboot. Do Lean or CPU-only work." >&2
+  exit 75
+fi
+# Already inside a GPU job (an outer heavy holds the GPU lock): run directly.
+# Queueing again would wait on the outer job's own lock forever.
+if [ "$lane" = gpu ] && [ -n "$HEAVY_GPU_HELD" ]; then
+  prlimit --pid $$ --core=1:1 2>/dev/null
+  exec "$@"
+fi
+# A plain laniusc compile goes to the shared resident compiler (lcc) instead
+# of queueing for the GPU (tens of milliseconds instead of seconds); lcc sends
+# back what it cannot do with LCC_FALLBACK=1 set. Only the main checkout's
+# binary is routed (lcc runs that one): a worktree's private build runs as asked.
+if [ "$lane" = gpu ] && [ -z "$LCC_FALLBACK" ] && [ -z "$quiet" ] && [[ "${1:-}" == *laniusc ]] \
+   && [ "$(realpath -m -- "$1" 2>/dev/null)" = /home/andrew-peterson/code/laniusc/target/release/laniusc ] \
+   && [[ "${2:-}" != daemon && "${2:-}" != check && "${2:-}" != fmt && "${2:-}" != lsp && "${2:-}" != diagnostics && "${2:-}" != doctor && "${2:-}" != package ]] \
+   && ! env | grep -q "^LANIUS_DEBUG_"; then
+  exec "$here/lcc" "${@:2}"
+fi
+if [ "$lane" = build ]; then
+  oom=1000; base=/tmp/claude-1000/lanius-build
+else
+  oom=500; base=/tmp/claude-1000/lanius-heavy
+fi
+lock=$base.lock
+queue=$base.queue
+mkdir -p "$queue"
+[ "$limit" -gt 45 ] 2>/dev/null && limit=45
+[ "$limit" -ge 1 ] 2>/dev/null || limit=15
+# Tickets sort numerically; a priority ticket is smaller than any clock ticket.
+if [ -n "$prio" ]; then entry="1$(date +%s)-$$"; else entry="$(date +%s%N)-$$"; fi
+touch "$queue/$entry"
+trap 'rm -f "$queue"/*-$$' EXIT
+exec 9>"$lock"
+[ "$lane" = build ] && exec 8>"$base.lock2"
+announced=
+qb=/tmp/claude-1000/lanius-build
+quiet_claim() {
+  # A --priority build (the lead's integration build) goes before this drain:
+  # give back what was claimed and claim nothing while it waits.
+  if ls "$qb.queue" 2>/dev/null | grep -qE '^1[0-9]{10}-'; then
+    [ -n "$qopen" ] && { exec 7>&- 6>&-; qopen=; q7=; q6=; }
+    return 0
+  fi
+  # The running GPU job is itself a --quiet job still waiting for the build
+  # slots: a queued --quiet job must not take them, or that job and this one
+  # deadlock until the 25 min drain timeout.
+  local d; d=$(cat "$qb.draining" 2>/dev/null)
+  if [ -n "$d" ] && [ "$d" != "$$" ] && kill -0 "$d" 2>/dev/null; then
+    [ -n "$qopen" ] && { exec 7>&- 6>&-; qopen=; q7=; q6=; }
+    return 0
+  fi
+  [ -n "$qopen" ] || { exec 7>"$qb.lock" 6>"$qb.lock2"; qopen=1; }
+  [ -n "$q7" ] || { flock -n 7 && q7=1; }
+  [ -n "$q6" ] || { flock -n 6 && q6=1; }
+}
+while true; do
+  for f in "$queue"/*; do
+    [ -e "$f" ] || continue
+    kill -0 "${f##*-}" 2>/dev/null || rm -f "$f"
+  done
+  first=$(ls "$queue" | sort -n | head -1)
+  # Match by pid so the lead can reorder the queue by renaming a ticket
+  # (e.g. mv "$queue/<ns>-<pid>" "$queue/1<epoch>-<pid>" to prioritize it).
+  if [ "${first##*-}" = "$$" ]; then
+    if [ "$lane" != build ]; then
+      # A --quiet job at the front starts draining the build lane while the
+      # previous GPU job still runs: it takes each build slot as it frees up.
+      [ -n "$quiet" ] && quiet_claim
+      flock -n 9 && break
+    else
+      if flock -n 9; then exec 8>&-; break; fi
+      if flock -n 8; then exec 9>&-; lock=$base.lock2; break; fi
+    fi
+  elif [ -n "$qopen" ]; then
+    # Another job (e.g. a --priority one) is now ahead of this --quiet job:
+    # give back any build slots it claimed, or the job ahead (which waits for
+    # those slots while holding the GPU lock) and this one deadlock.
+    exec 7>&- 6>&-; qopen=; q7=; q6=
+  fi
+  if [ -z "$announced" ]; then
+    echo "heavy[$lane]: queued ($(ls "$queue" | wc -l) waiting); running: $(cat "$lock.owner" 2>/dev/null)" >&2
+    announced=1
+  fi
+  sleep 2
+done
+rm -f "$queue/$entry"
+echo "$$ $(date +%T) $*" > "$lock.owner"
+# A GPU job gets the whole GPU: ask the shared resident compiler (lcc) to stop
+# its daemon, which holds about 2 GB of VRAM even when idle.
+lccsock=/home/andrew-peterson/code/laniusc/target/claude-work/lcc/lcc.sock
+if [ "$lane" != build ] && [ -S "$lccsock" ]; then
+  timeout 10 python3 -I -c "import socket,sys; c=socket.socket(socket.AF_UNIX); c.connect(sys.argv[1]); c.sendall(b'{\"command\": \"release\"}\n'); c.recv(100)" "$lccsock" 2>/dev/null
+fi
+if [ -n "$quiet" ] && [ "$lane" != build ]; then
+  quiet_claim
+  [ -n "$q7" ] && [ -n "$q6" ] || echo "heavy[gpu]: --quiet: waiting for the build lane to drain" >&2
+  # Poll (faster than build waiters do) instead of blocking in flock, so a
+  # --priority build that queues meanwhile still goes first.
+  qdeadline=$(( $(date +%s) + 1500 ))
+  echo $$ > "$qb.draining"
+  while { [ -z "$q7" ] || [ -z "$q6" ]; } && [ "$(date +%s)" -lt $qdeadline ]; do
+    sleep 0.5; quiet_claim
+  done
+  [ "$(cat "$qb.draining" 2>/dev/null)" = "$$" ] && rm -f "$qb.draining"
+  if [ -n "$q7" ] && [ -n "$q6" ]; then
+    echo "$$ $(date +%T) [held by quiet GPU job] $*" | tee "$qb.lock.owner" > "$qb.lock2.owner"
+    echo "heavy[gpu]: --quiet: build lane held; load $(cut -d' ' -f1-3 /proc/loadavg)" >&2
+  else
+    echo "heavy[gpu]: --quiet: build lane still busy after 25 min; running anyway (numbers may be noisy)" >&2
+  fi
+fi
+# One pipeline cache for every worktree: GPU runs are serialized by this lock,
+# so a run only recompiles the kernels that differ from the last run's.
+export LANIUS_PIPELINE_CACHE_DIR=${LANIUS_PIPELINE_CACHE_DIR:-/home/andrew-peterson/code/laniusc/target/wgpu-pipeline-cache-shared}
+# The NVIDIA driver's own shader disk cache defaults to ~/.cache/nvidia with a
+# 1 GiB cap shared with every other app; ~11 agents' kernel sets churned it, so
+# runs kept paying cold driver compiles. Give lanius its own, larger cache.
+export __GL_SHADER_DISK_CACHE=1
+export __GL_SHADER_DISK_CACHE_PATH=${__GL_SHADER_DISK_CACHE_PATH:-/home/andrew-peterson/code/laniusc/target/nvidia-shader-cache}
+export __GL_SHADER_DISK_CACHE_SIZE=${__GL_SHADER_DISK_CACHE_SIZE:-12884901888}
+export __GL_SHADER_DISK_CACHE_SKIP_CLEANUP=1
+mkdir -p "$__GL_SHADER_DISK_CACHE_PATH"
+# No core dumps: tests run native ELFs that trap on purpose, and writing a
+# dump (apport) outlasts the harness's 500 ms process timeout, which then
+# aborts the whole test binary.
+prlimit --pid $$ --core=1:1 2>/dev/null  # 1 byte: the kernel skips apport (0 does not)
+# Everything the command starts lives in one named scope. Stopping the scope
+# when the command ends, or when heavy is interrupted, kills leftovers such as
+# a daemon whose client died: they would hold VRAM outside the lock.
+[ "$lane" = build ] && unit="lanius-build-$$" || unit="lanius-heavy-$$"
+trap 'systemctl --user stop "$unit.scope" 2>/dev/null' EXIT
+trap 'exit 143' TERM INT HUP
+[ "$lane" = gpu ] && export HEAVY_GPU_HELD=1
+"$here/memwait"
+systemd-run --user --scope -q --slice=work.slice --unit="$unit" \
+  -p TimeoutStopSec=10 choom -n $oom -- "$@" <&0 &
+pid=$!
+if [ "$lane" != build ]; then
+  # Stop the whole scope (not just the command) when the time limit passes.
+  ( trap 'kill $nap 2>/dev/null; exit 0' TERM
+    sleep $((limit * 60)) & nap=$!; wait $nap
+    echo "heavy[gpu]: time limit of $limit min reached; stopping (split the job, or pass -t up to 45)" >&2
+    systemctl --user stop "$unit.scope" 2>/dev/null ) &
+  timer=$!
+  trap 'kill $timer 2>/dev/null; systemctl --user stop "$unit.scope" 2>/dev/null' EXIT
+fi
+wait $pid
