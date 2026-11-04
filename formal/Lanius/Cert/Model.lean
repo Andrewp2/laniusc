@@ -110,10 +110,13 @@ def natModel : Model
   | 6, xs => if xs.getD 0 0 = xs.getD 1 0 then 1 else 0
   | _, _ => 0
 
-/-- Terms as trees: a variable, or a constructor on its arguments. -/
+/-- Terms as trees: a variable, a constructor on its arguments, or `none`
+for what is not a node (an argument that is not an earlier node), whose
+value is 0 as in `den`. -/
 inductive Tm where
   | var (k : Nat)
   | app (c : Nat) (args : List Tm)
+  | none
 
 
 /-- Node `n` as a tree (the same recursion as `den`). -/
@@ -123,10 +126,22 @@ def decode (w : Words) (n : Int) : Tm :=
     else
       .app (head w n).toNat ((List.range (arity w (head w n)).toNat).map fun i =>
         let x := arg w n i
-        if hx : 0 ≤ x ∧ x < n then decode w x else .app 0 [])
-  else .app 0 []
+        if hx : 0 ≤ x ∧ x < n then decode w x else .none)
+  else .none
 termination_by n.toNat
 decreasing_by omega
+
+mutual
+/-- A tree's value in `M` when variable `k` has value `σ k`. -/
+def denTm (M : Model) (σ : Nat → Nat) : Tm → Nat
+  | .var k => σ k
+  | .app c args => M c (denTms M σ args)
+  | .none => 0
+
+def denTms (M : Model) (σ : Nat → Nat) : List Tm → List Nat
+  | [] => []
+  | t :: ts => denTm M σ t :: denTms M σ ts
+end
 
 /-- A rule's statement as trees: its hypotheses and its conclusion. -/
 def statement (w : Words) (r : Int) : List Tm × Tm :=
