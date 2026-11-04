@@ -66,3 +66,35 @@ structural-recursion check sees only small terms (whole file about 8 s). `vals_S
 also get `ts x ≤ 2^22` (`ts_le_tsd`). `val_SrcType_size`. P02: 67 -> 66 (`binding_bytes`), none new.
 `step_eval_args` passes its type premise; it now fails on the slot counter `x4 + size ≤ M + Cost`
 (a slots invariant, like `param_scope`'s), not types.
+
+**11-03, the 66 left, by the invariant each needs (leafB, after S3).** From one debug check of every
+failing lemma (the failed omega goals and premises):
+- A. The lowering's slot numbers (36): `SrcEff_eval`, `eval_args`, `eval_arms`, `param_scope`,
+  `load_types`/`load_cases`, `store_type(s)`/`store_cases`, `store_eval(_byte/_word)`,
+  `element_stores/loads`, `view_stores`, `str_placed`/`str_stores`, `lower_set_index_any`,
+  `assign_from`, `slot_vars`, `eval_word_element`, `eval_len_of`, `bounds_guard`, `arm_payload`,
+  `arm_bind`, `lower_arms`, `lower_body`, `SrcStmt_depth`, `SrcStmt_lower`, `array_args`,
+  `array_call_sig`, `array_arg_local`, the four `*field_of`. Counters `slot + 1`, `slot + size`,
+  `next`, `b.slot + offset` below 2^64. Most are in `COMPILE_NUM_SKIP` (no number hypotheses).
+- B. Type sizes passed as plain numbers (7): `word_stride`, `element_base`, `pick_element`,
+  `put_element` (`8 * words`, `k * size`, `< 2^32`), `params_array_bytes`, `SrcStmt_array_bytes`,
+  `str_words` (`chars` bytes `* 256`).
+- C. The Mini compile's frames and code (17): `frame_size`, `slot_offset`, `arg_base`, `copy_bytes`,
+  `slot_range`, `sys_bytes`, `Instr_encode`, `encode_onto`, `Code_size`, `link_onto`,
+  `host_text_code`, `dying_extent`, `arg_slots`, `Expr_extent`, `Stmt_extent`, `Stmt_within`,
+  `layout`. `slot_offset`'s `(slot + 1) * 8 < 2^32` needs `compile_func`'s frame check (leafA-frame).
+- D. Needs and rounds (4, leafA-frame): `round_cons`, `round_join`, `need_round`, `frame_block`.
+- E. Whole-program numbers (2): `compile_optimized` (OptimizeKeepsNumbers, now proved), `compile_declared`.
+
+**V4 is probably false at A (the evaluator's temporaries).** `evalArgs` evaluates each argument at
+`slot +` the earlier arguments' sizes, and `eVariant`/`eStruct` likewise, so a nested call adds up to its
+callee's parameters' slots per level. Nothing limits that: the front end's `depth_limit` counts the
+lets' slots (`SrcStmt.depth`), `limEff` checks only types, and `compile_func`'s frame check comes after
+lowering. A counterexample within V4's premises: `f(s, f(s, f(s, ..)))` nested 2^43 deep, `s` a
+parameter whose struct type has 2^21 one-slot fields (`ts` ≤ 2^22, `paramsSize f` ≈ 2^21, no lets).
+The innermost argument is at slot about 2^64, while the cost (about 2^45) and `hb` (about 2^43) stay
+inside `M + b ≤ 2^62`. So `eval_args`' `slot + size < 2^64` fails. A fix needs a program-level limit
+first: the front end counting the evaluator's temporaries along with the lets (in `limEff`/`depth_limit`),
+or the lowering rejecting when `slot` passes a limit (capped, as `needs`). That is a .lani change.
+After it, a V5 premise (or an extended FrontEndStmtDepthV2) bounds every slot the lowering computes, and
+A's invariant is `slot + need ≤ 2^41`.
