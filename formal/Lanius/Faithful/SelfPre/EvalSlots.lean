@@ -124,6 +124,14 @@ theorem optTop_some (b : Binding) : optTop (some b) = b.slot + SrcType.size b.ty
 theorem optScopeTop_none : optScopeTop none = 0 := rfl
 theorem optScopeTop_some (s : List Binding) : optScopeTop (some s) = scopeTop s := rfl
 
+/-- A lowered body's extent (`Stmt.extent`: past its largest slot), `0` for none. -/
+def optExtent : Option Stmt → Nat
+  | none => 0
+  | some s => Stmt.extent s
+
+theorem optExtent_none : optExtent none = 0 := rfl
+theorem optExtent_some (s : Stmt) : optExtent (some s) = Stmt.extent s := rfl
+
 theorem slots_lookup : ∀ (scope : List Binding) (id : Nat), optTop (lookup scope id) ≤ scopeTop scope
   | [], _ => by simp [lookup, optTop, scopeTop]
   | b :: rest, id => by

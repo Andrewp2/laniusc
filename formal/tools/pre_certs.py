@@ -623,15 +623,23 @@ COMPILE_OVERRIDES = {
     # `PreCompileSourceV4`'s parameters' premise, `paramsMax`)
     'params_size': ['Lanius.Mini.paramsSize p0 ≤ K'],
     'lower_func': ['Lanius.Mini.paramsSize p3.params ≤ 1099511627776', 'Lanius.Mini.SrcStmt.depth p3.body ≤ 36028797018963968',
-                   'Lanius.Faithful.SelfPre.SrcStmt.slotNest p3.body ≤ 36028797018963968'],
-    'lower_body': ['p0 ≤ 1099511627776', 'p2 ≤ 36028797018963968'],
+                   'Lanius.Faithful.SelfPre.SrcStmt.slotNest p3.body ≤ 36028797018963968', 'Lanius.Open.LowerSlotsSmall'],
+    # the lowered body's slots, below 2^61 (the open leaf LowerSlotsSmall, `lowered_body`,
+    # SelfPre/LowerSlots), so that `Stmt.extent`'s `+ 1`s stay below `K`
+    'lower_body': ['p0 ≤ 1099511627776', 'p2 ≤ 36028797018963968',
+                   'Lanius.Faithful.SelfPre.optExtent p3 ≤ 2305843009213693952'],
+    'Expr_extent': ['Lanius.Mini.Expr.extent p0 ≤ K'],
+    'args_extent': ['Lanius.Mini.argsExtent p0 ≤ K'],
+    'Stmt_extent': ['Lanius.Mini.Stmt.extent p0 ≤ K'],
     'SrcStmt_depth': ['Lanius.Mini.SrcStmt.depth p0 ≤ 36028797018963968'],
     'lower_funcs': ['Lanius.Faithful.SelfPre.paramsMax p3 ≤ 1099511627776', 'Lanius.Faithful.SelfPre.depthMax p3 ≤ 36028797018963968',
-                    'Lanius.Faithful.SelfPre.nestMax p3 ≤ 36028797018963968'],
+                    'Lanius.Faithful.SelfPre.nestMax p3 ≤ 36028797018963968', 'Lanius.Open.LowerSlotsSmall'],
     'compile_declared': ['Lanius.Faithful.SelfPre.paramsMax p1.funcs ≤ 1099511627776', 'Lanius.Faithful.SelfPre.depthMax p1.funcs ≤ 36028797018963968',
-                         'Lanius.Faithful.SelfPre.nestMax p1.funcs ≤ 36028797018963968', 'Lanius.Open.CompileFuncSlotsV2'],
+                         'Lanius.Faithful.SelfPre.nestMax p1.funcs ≤ 36028797018963968', 'Lanius.Open.CompileFuncSlotsV2',
+                         'Lanius.Open.LowerSlotsSmall'],
     'compile_source': ['Lanius.Faithful.SelfPre.paramsMax p0.funcs ≤ 1099511627776', 'Lanius.Faithful.SelfPre.depthMax p0.funcs ≤ 36028797018963968',
-                       'Lanius.Faithful.SelfPre.nestMax p0.funcs ≤ 36028797018963968', 'Lanius.Open.CompileFuncSlotsV2'],
+                       'Lanius.Faithful.SelfPre.nestMax p0.funcs ≤ 36028797018963968', 'Lanius.Open.CompileFuncSlotsV2',
+                       'Lanius.Open.LowerSlotsSmall'],
     'Instr_size': ['Lanius.Mini.Instr.size p0 ≤ K'],
     # the encoders' frame slots (each a 32-bit displacement): a code's slots below its
     # frame (`codeSlotReach`, SelfPre/CompileSlots), the frame within `frameLimit` (the open
@@ -754,6 +762,8 @@ COMPILE_NUM_DROP = {
     'array_args': {0, 4}, 'array_arg_before': {5, 6, 7, 8},
     # a field's index: its offset is within the struct's slots (`slots_fieldOffset`)
     'lower_set_field': {1}, 'lower_set_field_eval': {2},
+    # an extent's statement: its extent, not its numbers (`COMPILE_OVERRIDES`)
+    'Expr_extent': {0}, 'args_extent': {0}, 'Stmt_extent': {0},
 }
 # The definitions the invariants' terms unfold by on constructors (the pre
 # modules' `hb_simp`, locally).
@@ -777,7 +787,9 @@ COMPILE_PRE_SIMP = ['Lanius.Mini.Stmt.weight', 'Lanius.Mini.Expr.weight', 'Laniu
                     'Lanius.Faithful.SelfPre.optTop_none', 'Lanius.Faithful.SelfPre.optTop_some',
                     'Lanius.Faithful.SelfPre.optScopeTop_none', 'Lanius.Faithful.SelfPre.optScopeTop_some',
                     'Lanius.Faithful.SelfPre.optSizes_none', 'Lanius.Faithful.SelfPre.optSizes_some',
-                    'Lanius.Faithful.SelfPre.litTs_struct', 'Lanius.Faithful.SelfPre.litTs_array']
+                    'Lanius.Faithful.SelfPre.litTs_struct', 'Lanius.Faithful.SelfPre.litTs_array',
+                    'Lanius.Mini.Stmt.extent', 'Lanius.Mini.Expr.extent', 'Lanius.Mini.argsExtent',
+                    'Lanius.Faithful.SelfPre.optExtent_none', 'Lanius.Faithful.SelfPre.optExtent_some']
 PRE_PREAMBLE = ''
 # The type-size functions' arguments: their sizes (`ts`) are what they add, and
 # a list's sum ('sz', `sizes`) or largest ('ms', `maxSize`) below `K`, which their
@@ -816,15 +828,16 @@ COMPILE_SLOT_NOT = {}
 COMPILE_SLOT_LOOSE = {'assign_from': {0}, 'str_stores': {1}, 'load_cases': {3}, 'store_cases': {5}}
 # The Mini program's compile: the functions these reach bound the program's
 # numbers by `K` rather than `M` (they do not grow as it compiles: its slots,
-# indices and counts; the pc offsets and depths have their own invariants).
-COMPILE_FIXED_ROOTS = ['compile_optimized']
+# indices and counts; the pc offsets and depths have their own invariants), and the lowered
+# functions' (`val_lowerFuncs`: the source's or below 2^61, SelfPre/LowerSlots).
+COMPILE_FIXED_ROOTS = ['compile_optimized', 'compile_lowered']
 # The functions whose `match`es' pattern variables count as the parameter they
 # take apart (`match_aliases`): their callers can bound the whole value.
 COMPILE_NUM_ALIAS = {'compile_funcs', 'compile_lowered', 'lower_funcs', 'Instr_encode', 'encode_onto',
                      'Expr_extent', 'args_extent', 'Stmt_extent', 'Stmt_within'}
 # Modules the compile side's pre lemmas import for proved leaves' value lemmas
 # (`val_optimizeProgram`, from OptimizeKeepsNumbers).
-COMPILE_PRE_IMPORTS = ['Lanius.Faithful.SelfPre.CompileOpt']
+COMPILE_PRE_IMPORTS = ['Lanius.Faithful.SelfPre.CompileOpt', 'Lanius.Faithful.SelfPre.LowerSlots']
 # Value lemmas a pre lemma states up front (`p<i>` its parameters): facts about a
 # term that only a callee's premise mentions, where `valueFacts` does not look.
 COMPILE_FACTS = {
@@ -832,6 +845,8 @@ COMPILE_FACTS = {
     'compile_func': ['Lanius.Faithful.SelfPre.val_Stmt_temps p1.body'],
     # its functions' numbers, which bound the codes' (`vals_compileFuncs`)
     'compile_program': ['Lanius.Faithful.SelfPre.nb_Program_eq p0'],
+    # the lowered body's slots, for `lower_body` (the open leaf, SelfPre/LowerSlots)
+    'lower_func': ['Lanius.Faithful.SelfPre.lowered_body p0 p1 p2 p3' + ' (by assumption)' * 8],
 }
 
 

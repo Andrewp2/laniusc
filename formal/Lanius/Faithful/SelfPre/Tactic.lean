@@ -1563,7 +1563,8 @@ def preKey? (e : Expr) : Option String :=
 
 /-- Facts on the numbers the Lean functions compute, which heights do not bound
 (SelfPre/Values): `val_F xs : F xs ≤ ..` for each `F xs` in the goal or the
-hypotheses, and `vals_F xs v h : ..` for each hypothesis `h : F xs = some v`. -/
+hypotheses, and `vals_F xs v h : ..` for each hypothesis `h : F xs = some v`; an open
+statement (`openProp`) either lemma assumes next is the context's hypothesis of it. -/
 def valueFacts : TacticM Unit := do
   if (← getGoals).isEmpty then return
   withMainContext do
@@ -1593,7 +1594,12 @@ def valueFacts : TacticM Unit := do
         let nmS := `Lanius.Faithful.SelfPre ++ Name.mkSimple s!"slots_{lastName fn}"
         for nm in (if slots then [nm, nmS] else [nm]) do
           unless env.contains nm do continue
-          let p := mkAppN (← constFresh nm) s.getAppArgs
+          let mut p := mkAppN (← constFresh nm) s.getAppArgs
+          -- an open statement the lemma assumes first: the context's hypothesis of it
+          if ← (try isTypeCorrect p catch _ => pure false) then
+            if let .forallE _ d _ _ ← whnfR (← inferType p) then
+              if openProp d then
+                if let some hd ← findLocalDeclWithType? d then p := mkApp p (mkFVar hd)
           if ← (try (do return (← isTypeCorrect p) && (← isProp (← inferType p))) catch _ => pure false) then
             facts := facts.push p
     -- a projection's type sizes are at most its structure's (`ts_le_<S>_<f>`, SelfPre/TS.lean)
