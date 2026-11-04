@@ -2761,6 +2761,12 @@ limit:
 - Every function's parameters need at most `depth_limit()` slots together
   (`params_size`; `lim_param_slots`). A struct's fields together are its
   slot count, so the first limit already bounds them.
+- Every function's expressions nest at most `depth_limit()` unchecked slot steps (`lim_nest`, as
+  `SrcStmt.slotNest` in SelfPre/EvalSlots counts them, its step saturating past the limit so it never
+  wraps), and every number in a function (ids, type ids, field and variant indices, lengths, string
+  offsets and bytes, as SelfPre/NB's `nb` counts them) is at most `depth_limit()` (`lim_nums`; added
+  11-04, leafA, for PreCompileSourceV5's premises: ids and offsets come from counters that grow with
+  monomorphization's copies).
 - `untyped_rejected` rejects a program past any of these (`lim_funcs`). It runs
   last, on the closed, monomorphized functions with their string
   literals placed, so it sees the copies.
