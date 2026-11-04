@@ -100,6 +100,25 @@ say only if those statements (and the axioms) are the reviewed ones; the
 generator prints the expected digest from its own statement list
 (`certlib.digest`), the analogue of MM0's separate `.mm0` specification.
 
+## The checker compiled by the verified compiler (check_mini.lani)
+
+`check_mini.lani` is the same checker in the subset the verified compiler
+compiles (scalars, a struct result, `i32` slices over raw memory, `while`,
+and the host's `read_stdin` and `write_byte`); `check.lani` is the original
+against laniusc's standard library. `mini_build.py WORKDIR` builds it: the
+front end reads laniusc's parse tree, `compileSource` compiles it and runAll's
+`elf` line wraps the image as an executable. `main` must be function 0 (the
+ELF entry), so the host declarations come last; a literal above 2^31 needs a
+typed constant (`4294967295 as u64` is not read by the front end).
+
+11-04: on all.cert (578,452 steps, 23.6 MB) it prints what check.lani prints
+(counts and digest) in 0.45 s wall against check.lani's 0.23 s, reading
+included; on 600 mutants of small.cert both print the same verdict, code and
+position; mutate.py (2,000 mutants) agrees with certlib's reference checker
+and attacks.py's seven cases pass. What is proved of it is the verified
+compiler's theorem (the image computes what Core's evaluator computes for
+this program); nothing is proved yet about the checker itself.
+
 ## For a GPU checker
 
 The format is laid out so that a GPU version needs no recursion and no

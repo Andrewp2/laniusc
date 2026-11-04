@@ -1,0 +1,399 @@
+// Flat proof certificate checker (formal/cert/FORMAT.md), in the subset the
+// verified compiler compiles: scalars, structs, i32 slices over raw memory,
+// while loops, and the host's read_stdin and write_byte. check.lani is the
+// same checker against laniusc's standard library; the checks are the same
+// code, step for step.
+// Reads a certificate on stdin; exit 0 and "ok AXIOMS THEOREMS STEPS DIGEST"
+// when every node, rule and step checks, exit 1 and "reject CODE AT"
+// otherwise, 2 when the input does not fit or reading fails.
+module app::main;
+
+const VAR: i32 = 2147483647;
+const STACK: i32 = 16384;
+const CAPACITY: usize = 268435456;   // the most input bytes read (2^28)
+const CHUNK: usize = 1048576;
+const MASK: u64 = 4294967295;   // (a literal above 2^31 needs a typed home: `4294967295 as u64` is not read)
+
+struct Verdict {
+    code: i32,
+    at: i32,
+    axioms: i32,
+    theorems: i32,
+    steps: i32,
+    digest: u64,
+}
+
+fn main() -> i32 {
+    let input: ptr = alloc::allocator::alloc(CAPACITY, (8 as usize));
+    let size: usize = 0;
+    let more: bool = true;
+    while (more) {
+        let want: usize = CHUNK;
+        if (CAPACITY - size < want) {
+            want = CAPACITY - size;
+        }
+        if (want == (0 as usize)) {
+            return 2;
+        }
+        let got: i32 = read_stdin(input + size, want);
+        if (got < 0) {
+            return 2;
+        }
+        if (got == 0) {
+            more = false;
+        } else {
+            size = size + (got as usize);
+        }
+    }
+    let count: i32 = (size / (4 as usize)) as i32;
+    let words: [i32] = slice_from_raw_parts(input, count);
+    let room: ptr = alloc::allocator::alloc((4 as usize) * (STACK as usize), (8 as usize));
+    let stack: [i32] = slice_from_raw_parts(room, STACK);
+    let v: Verdict = check(words, count, stack);
+    if (v.code == 0) {
+        text_ok();
+        number(v.axioms as u64);
+        number(v.theorems as u64);
+        number(v.steps as u64);
+        number(v.digest);
+        newline();
+        return 0;
+    }
+    text_reject();
+    number(v.code as u64);
+    number(v.at as u64);
+    newline();
+    return 1;
+}
+
+fn reject(code: i32, at: i32) -> Verdict {
+    return Verdict { code: code, at: at, axioms: 0, theorems: 0, steps: 0, digest: 0 };
+}
+
+fn sort_of(w: [i32], nodes: i32, cons: i32, n: i32) -> i32 {
+    let h: i32 = w[nodes + 3 * n];
+    if (h == VAR) {
+        return w[nodes + 3 * n + 2];
+    }
+    return w[cons + 3 * h];
+}
+
+// Does template t, under the substitution at pool[so..so+nv), give node x?
+fn matches(w: [i32], nodes: i32, cons: i32, pool: i32, t: i32, so: i32, nv: i32, x: i32, stack: [i32]) -> bool {
+    stack[0] = t;
+    stack[1] = x;
+    let sp: i32 = 2;
+    while (sp > 0) {
+        sp = sp - 2;
+        let tt: i32 = stack[sp];
+        let xx: i32 = stack[sp + 1];
+        let h: i32 = w[nodes + 3 * tt];
+        if (h == VAR) {
+            let k: i32 = w[nodes + 3 * tt + 1];
+            if (k >= nv) {
+                return false;
+            }
+            if (w[pool + so + k] != xx) {
+                return false;
+            }
+            if (sort_of(w, nodes, cons, xx) != w[nodes + 3 * tt + 2]) {
+                return false;
+            }
+        } else {
+            if (w[nodes + 3 * xx] != h) {
+                return false;
+            }
+            let ar: i32 = w[cons + 3 * h + 1];
+            if (sp + 2 * ar > STACK) {
+                return false;
+            }
+            let ta: i32 = pool + w[nodes + 3 * tt + 1];
+            let xa: i32 = pool + w[nodes + 3 * xx + 1];
+            let i: i32 = 0;
+            while (i < ar) {
+                stack[sp] = w[ta + i];
+                stack[sp + 1] = w[xa + i];
+                sp = sp + 2;
+                i = i + 1;
+            }
+        }
+    }
+    return true;
+}
+
+fn mix(h: u64, v: i32) -> u64 {
+    return ((h ^ (v as u64)) * (16777619 as u64)) & MASK;
+}
+
+// The statement tree of t in prefix order, into the hash; 0 when it is too deep.
+fn hash_tree(w: [i32], nodes: i32, cons: i32, pool: i32, t: i32, seed: u64, stack: [i32]) -> u64 {
+    let h: u64 = seed;
+    stack[0] = t;
+    let sp: i32 = 1;
+    while (sp > 0) {
+        sp = sp - 1;
+        let n: i32 = stack[sp];
+        let head: i32 = w[nodes + 3 * n];
+        h = mix(h, head);
+        if (head == VAR) {
+            h = mix(mix(h, w[nodes + 3 * n + 1]), w[nodes + 3 * n + 2]);
+        } else {
+            let ar: i32 = w[cons + 3 * head + 1];
+            if (sp + ar > STACK) {
+                return 0;
+            }
+            let a: i32 = pool + w[nodes + 3 * n + 1];
+            let i: i32 = ar - 1;
+            while (i >= 0) {
+                stack[sp] = w[a + i];
+                sp = sp + 1;
+                i = i - 1;
+            }
+        }
+    }
+    return h;
+}
+
+// code 0 when every check passes, else a reject code and where it failed.
+fn check(w: [i32], count: i32, stack: [i32]) -> Verdict {
+    if (count < 8) {
+        return reject(10, 0);
+    }
+    let i: i32 = 0;
+    while (i < count) {
+        if (w[i] < 0) {
+            return reject(11, i);
+        }
+        i = i + 1;
+    }
+    if (w[0] != 1414677324 || w[1] != 1) {
+        return reject(12, 0);
+    }
+    let ns: i32 = w[2];
+    let nc: i32 = w[3];
+    let nn: i32 = w[4];
+    let nr: i32 = w[5];
+    let nst: i32 = w[6];
+    let np: i32 = w[7];
+    // Each entry takes at least its own words, so no offset below can overflow (count <= 2^28).
+    if (ns > count || nc > count / 3 || nn > count / 3 || nr > count / 6 || nst > count / 4 || np > count) {
+        return reject(13, 0);
+    }
+    let o_sorts: i32 = 8;
+    let o_cons: i32 = o_sorts + ns;
+    let o_nodes: i32 = o_cons + 3 * nc;
+    let o_rules: i32 = o_nodes + 3 * nn;
+    let o_steps: i32 = o_rules + 6 * nr;
+    let o_pool: i32 = o_steps + 4 * nst;
+    if (o_pool + np != count) {
+        return reject(14, 0);
+    }
+    // constructors
+    i = 0;
+    while (i < nc) {
+        let res: i32 = w[o_cons + 3 * i];
+        let ar: i32 = w[o_cons + 3 * i + 1];
+        let ao: i32 = w[o_cons + 3 * i + 2];
+        if (res >= ns || ar > np || ao > np - ar) {
+            return reject(20, i);
+        }
+        let j: i32 = 0;
+        while (j < ar) {
+            if (w[o_pool + ao + j] >= ns) {
+                return reject(21, i);
+            }
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    // nodes: each argument an earlier node of the constructor's argument sort
+    i = 0;
+    while (i < nn) {
+        let h: i32 = w[o_nodes + 3 * i];
+        let a: i32 = w[o_nodes + 3 * i + 1];
+        if (h == VAR) {
+            if (w[o_nodes + 3 * i + 2] >= ns) {
+                return reject(30, i);
+            }
+        } else {
+            if (h >= nc) {
+                return reject(31, i);
+            }
+            let ar: i32 = w[o_cons + 3 * h + 1];
+            let ao: i32 = w[o_cons + 3 * h + 2];
+            if (a > np - ar) {
+                return reject(32, i);
+            }
+            let j: i32 = 0;
+            while (j < ar) {
+                let x: i32 = w[o_pool + a + j];
+                if (x >= i) {
+                    return reject(33, i);
+                }
+                if (sort_of(w, o_nodes, o_cons, x) != w[o_pool + ao + j]) {
+                    return reject(34, i);
+                }
+                j = j + 1;
+            }
+        }
+        i = i + 1;
+    }
+    // rules and their steps
+    let digest: u64 = 2166136261;
+    let axioms: i32 = 0;
+    let theorems: i32 = 0;
+    let prev_end: i32 = 0;
+    let r: i32 = 0;
+    while (r < nr) {
+        let base: i32 = o_rules + 6 * r;
+        let kind: i32 = w[base];
+        let nh: i32 = w[base + 2];
+        let ho: i32 = w[base + 3];
+        let concl: i32 = w[base + 4];
+        let end: i32 = w[base + 5];
+        if (concl >= nn || nh > np || ho > np - nh) {
+            return reject(40, r);
+        }
+        if (w[o_sorts + sort_of(w, o_nodes, o_cons, concl)] != 1) {
+            return reject(41, r);
+        }
+        digest = mix(mix(mix(digest, kind), w[base + 1]), nh);
+        let j: i32 = 0;
+        while (j < nh) {
+            let hyp: i32 = w[o_pool + ho + j];
+            if (hyp >= nn) {
+                return reject(42, r);
+            }
+            if (w[o_sorts + sort_of(w, o_nodes, o_cons, hyp)] != 1) {
+                return reject(43, r);
+            }
+            digest = hash_tree(w, o_nodes, o_cons, o_pool, hyp, digest, stack);
+            j = j + 1;
+        }
+        digest = hash_tree(w, o_nodes, o_cons, o_pool, concl, digest, stack);
+        if (kind == 0) {
+            axioms = axioms + 1;
+        } else {
+            if (kind != 1 || end <= prev_end || end > nst) {
+                return reject(44, r);
+            }
+            theorems = theorems + 1;
+            let s: i32 = prev_end;
+            while (s < end) {
+                let code: i32 = check_step(w, o_nodes, o_cons, o_rules, o_steps, o_pool, nn, np, nh, ho, r, prev_end, s, stack);
+                if (code != 0) {
+                    return reject(code, s);
+                }
+                s = s + 1;
+            }
+            if (w[o_steps + 4 * (end - 1) + 3] != concl) {
+                return reject(58, r);
+            }
+            prev_end = end;
+        }
+        r = r + 1;
+    }
+    if (prev_end != nst) {
+        return reject(59, 0);
+    }
+    return Verdict { code: 0, at: 0, axioms: axioms, theorems: theorems, steps: nst, digest: digest };
+}
+
+// Step s of theorem r (whose hypotheses are pool[ho..ho+nh)): 0 or a reject code.
+fn check_step(w: [i32], o_nodes: i32, o_cons: i32, o_rules: i32, o_steps: i32, o_pool: i32, nn: i32, np: i32,
+              nh: i32, ho: i32, r: i32, prev_end: i32, s: i32, stack: [i32]) -> i32 {
+    let sb: i32 = o_steps + 4 * s;
+    let rule: i32 = w[sb];
+    let so: i32 = w[sb + 1];
+    let po: i32 = w[sb + 2];
+    let res: i32 = w[sb + 3];
+    if (res >= nn) {
+        return 50;
+    }
+    if (rule == VAR) {
+        if (so >= nh || w[o_pool + ho + so] != res) {
+            return 51;
+        }
+        return 0;
+    }
+    if (rule >= r) {
+        return 52;
+    }
+    let rb: i32 = o_rules + 6 * rule;
+    let nv: i32 = w[rb + 1];
+    let rnh: i32 = w[rb + 2];
+    let rho: i32 = w[rb + 3];
+    if (so > np - nv || po > np - rnh) {
+        return 53;
+    }
+    let k: i32 = 0;
+    while (k < nv) {
+        if (w[o_pool + so + k] >= nn) {
+            return 54;
+        }
+        k = k + 1;
+    }
+    if (!matches(w, o_nodes, o_cons, o_pool, w[rb + 4], so, nv, res, stack)) {
+        return 55;
+    }
+    k = 0;
+    while (k < rnh) {
+        let p: i32 = w[o_pool + po + k];
+        if (p < prev_end || p >= s) {
+            return 56;
+        }
+        if (!matches(w, o_nodes, o_cons, o_pool, w[o_pool + rho + k], so, nv, w[o_steps + 4 * p + 3], stack)) {
+            return 57;
+        }
+        k = k + 1;
+    }
+    return 0;
+}
+
+fn put(c: i32) {
+    write_byte(1, c);
+}
+
+fn text_ok() {
+    put(111);
+    put(107);
+}
+
+fn text_reject() {
+    put(114);
+    put(101);
+    put(106);
+    put(101);
+    put(99);
+    put(116);
+}
+
+fn newline() {
+    put(10);
+}
+
+// A space, then value in decimal.
+fn number(value: u64) {
+    put(32);
+    let digits: [i32; 20] = [0; 20];
+    let n: i32 = 0;
+    let rest: u64 = value;
+    let more: bool = true;
+    while (more) {
+        digits[n] = ((rest % (10 as u64)) as i32) + 48;
+        n = n + 1;
+        rest = rest / (10 as u64);
+        if (rest == (0 as u64)) {
+            more = false;
+        }
+    }
+    while (n > 0) {
+        n = n - 1;
+        put(digits[n]);
+    }
+}
+
+// The host (Core functions 2^32 + 3 and 2^32); after main, which must be function 0, the ELF entry.
+extern "lanius_std" fn read_stdin(ptr: ptr, len: usize) -> i32;
+
+extern "lanius_std" fn write_byte(handle: i32, value: i32) -> i32;
