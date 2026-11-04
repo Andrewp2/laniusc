@@ -1,6 +1,8 @@
 import Lanius.Faithful.SelfPre.Values
 import Lanius.Faithful.SelfPre.NB
 import Lanius.Faithful.SelfPre.TS
+import Lanius.Faithful.SelfPre.CompileTypes
+import Lanius.Faithful.SelfPre.CompileEvalTypes
 import Lanius.Mini.Room
 
 /-! # Byte lists of the compile side (F14)
@@ -120,12 +122,6 @@ def funcsTemps : List Func → Nat
 def optTemps : Option (List Func) → Nat
   | none => 0
   | some fs => funcsTemps fs
-
-/-- The most slots any of the functions' parameters take (`PreCompileSourceV4`'s
-premise bounds each by `2 ^ 40`). -/
-def paramsMax : List SrcFunc → Nat
-  | [] => 0
-  | f :: fs => max (paramsSize f.params) (paramsMax fs)
 
 theorem paramsMax_le (fs : List SrcFunc) (k : Nat) (h : ∀ f ∈ fs, paramsSize f.params ≤ k) :
     paramsMax fs ≤ k := by

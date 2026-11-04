@@ -42,3 +42,27 @@
   types or field lists from the declarations (`lower_struct_fields`, `copy_slots`, `eval_struct_of`,
   ...). Needs a `ts` of `SrcStructDecl` that includes `sizes fields` (an hb_gen.py TS change, with
   `declareProgram` keeping it) or a front-end leaf on declared structs' sizes.
+- 11-03 (leafB, second context): type sizes carried through the lowering. `SelfPre/CompileTypes.lean`:
+  `tsd` over `SrcDecls` (a struct counts its fields' `sizes` and slots, an enum `1 + maxSize` and its
+  variants' slots; `ts` unchanged), `val_declareProgram : tsdOpt (declareProgram p) ≤ ts p` (by hand,
+  through `SrcType.declare`/`declareTypes`/`declareVariants`/`SrcStmt.declare`/`declareFuncs`), and the
+  lookups' lemmas (`vals_lookup`, `vals_structFields`, `vals_enumVariants`, `vals_elementOf`, index
+  lemmas for signatures, field lists and variants, `val_sigs`, `val_withBudget`, `val_paramScope`,
+  `val_repeatType`, `val_matchVariants`). pre_certs.py: the 'ts' kind follows `match` pattern variables
+  (a lookup's result included) to the parameter they come from; SrcDecls parameters get `tsd x ≤ 2^22`,
+  signatures `ts` plus their parameters' sum below K (`sigsParams`, from `paramsMax`); lists of types
+  their `sizes`/`maxSize` below K ('sz'/'ms' kinds, seeded at `sizes`/`max_size`); skipped functions
+  (COMPILE_NUM_SKIP) get these too. Tactic `valueFacts`: `ts_le_<S>_<f>` projection facts, `ts` of a
+  constructor equation (`x.ty = .struct id fs`), index lemmas, all `ts` facts simp-normalized
+  (`tySlots`). P02: 71 -> 68 failing, none new; no failure left on `SrcType_size`/`sizes`/`max_size`
+  premises of those 19 callers.
+
+**11-03, evaluator result types (leafB).** `CompileEvalTypes.lean`: `val_SrcEff_eval`/`val_evalArgs`
+(`ts` of an evaluation ≤ the expression's, signatures', declarations', scope's, or 16) and the `val_`
+lemmas of the 92 functions the evaluator reaches (`ts_auto`: split, `val_` facts, `omega_atoms`). The
+mutual theorem is `tsm_SrcEff_eval` at a linear bound `M`, its cases stated apart (`tsm_eval_*`), so the
+structural-recursion check sees only small terms (whole file about 8 s). `vals_SrcEff_eval` for
+`eval .. = some v`; `valueFacts` now tries `vals_<T>_<f>` before `vals_<f>`. Tsd-bounded declarations
+also get `ts x ≤ 2^22` (`ts_le_tsd`). `val_SrcType_size`. P02: 67 -> 66 (`binding_bytes`), none new.
+`step_eval_args` passes its type premise; it now fails on the slot counter `x4 + size ≤ M + Cost`
+(a slots invariant, like `param_scope`'s), not types.
