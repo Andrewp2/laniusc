@@ -9,7 +9,7 @@ import all Lanius.Mini.Frontend.P.textSelf
 import all Lanius.Mini.Frontend.P.textSliceLen
 import all Lanius.Mini.Frontend.P.setPlaceOf
 import all Lanius.Mini.Frontend.P.setFieldOrEval
-import all Lanius.Mini.Frontend.P.namesFieldBase
+import all Lanius.Mini.Frontend.P.primaryNames
 import all Lanius.Mini.Frontend.P.isFnPath
 import all Lanius.Mini.Frontend.P.fieldValue
 import all Lanius.Mini.Frontend.P.eDerefClosed
@@ -110,6 +110,18 @@ theorem effArmsR_named {env : FrontEnv} : ∀ {scope : List Local} {expected : O
     cases a with
     | unit _ ps an _ _ _ _ => exact ⟨_, ps, an⟩
     | payload _ ps an _ _ _ _ _ _ => exact ⟨_, ps, an⟩
+
+theorem receivers_unique {env : FrontEnv} {scope : List Local} {fd : FnDecl} {pre a b : List MEff}
+    (h₁ : Receivers env scope fd pre a) (h₂ : Receivers env scope fd pre b) : a = b := by
+  cases h₁ with
+  | nil => cases h₂ with | nil => rfl
+  | one t₁ o₁ =>
+    cases h₂ with
+    | one t₂ o₂ =>
+      rw [effTy_unique t₁ t₂] at o₁
+      rw [o₁] at o₂
+      cases o₂
+      rfl
 
 theorem methodBinds_unique {env : FrontEnv} {fd : FnDecl} {start : List Bind} {targs : CTree} {a b : List Bind}
     (h₁ : MethodBinds env fd start targs a) (h₂ : MethodBinds env fd start targs b) : a = b := by
@@ -234,11 +246,11 @@ theorem effR_unique : ∀ {scope : List Local} {expected : Option Ty} {c : CTree
     | pure p => exact pure_agree p nd (.pathCall pp p0 p01 p1 p13 pc)
     | pathCall _ _ _ _ _ pc' => exact ih1 pc'
     | _ => eff_clash
-  | _, _, _, _, .method pp mf lo it mfor fd mb inf, nd, vn, _, h₂ => by
+  | _, _, _, _, .method pp mf lo it mfor fd mb rc inf, nd, vn, _, h₂ => by
     have ih1 := fun {y} k' => effInfer_unique inf nd vn (y := y) k'
     cases h₂ with
-    | pure p => exact pure_agree p nd (.method pp mf lo it mfor fd mb inf)
-    | method _ _ lo' it' mfor' fd' mb' inf' =>
+    | pure p => exact pure_agree p nd (.method pp mf lo it mfor fd mb rc inf)
+    | method _ _ lo' it' mfor' fd' mb' rc' inf' =>
       have e := localOf_unique lo lo'
       subst e
       have e := items_unique it it'
@@ -248,6 +260,7 @@ theorem effR_unique : ∀ {scope : List Local} {expected : Option Ty} {c : CTree
       rw [fd] at fd'
       cases fd'
       cases methodBinds_unique mb mb'
+      cases receivers_unique rc rc'
       exact ih1 inf'
     | _ => eff_clash
   | _, E, _, _, .index pp p0 p01 p1 p13 lo k, nd, vn, _, h₂ => by
@@ -442,11 +455,11 @@ theorem effChain_unique : ∀ {scope : List Local} {expected : Option Ty} {a : M
     cases h₂ with
     | done _ => rfl
     | _ => eff_clash
-  | _, _, _, _, _, .method pm pn pc it et mfor fd mb inf ch, nd, vn, _, h₂ => by
+  | _, _, _, _, _, .method pm pn pc it et mfor fd mb rc inf ch, nd, vn, _, h₂ => by
     have ih1 := fun {y} k' => effInfer_unique inf nd vn (y := y) k'
     have ih2 := fun {y} k' => effChain_unique ch nd vn (y := y) k'
     cases h₂ with
-    | method _ _ _ it' et' mfor' fd' mb' inf' ch' =>
+    | method _ _ _ it' et' mfor' fd' mb' rc' inf' ch' =>
       have e := items_unique it it'
       subst e
       have e := effTy_unique et et'
@@ -456,6 +469,7 @@ theorem effChain_unique : ∀ {scope : List Local} {expected : Option Ty} {a : M
       rw [fd] at fd'
       cases fd'
       cases methodBinds_unique mb mb'
+      cases receivers_unique rc rc'
       have e := ih1 inf'
       subst e
       exact ih2 ch'

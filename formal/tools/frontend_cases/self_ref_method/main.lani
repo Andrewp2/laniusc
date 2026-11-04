@@ -1,0 +1,30 @@
+// F5 (S5b): `&self` and `&mut self` are references. A method called on a
+// local or on a field borrows its place (eBorrow); one called on a
+// reference parameter passes the reference itself. Nothing lowers
+// references yet, so this is read, not compiled.
+struct C { n: i32 }
+struct W { c: C, k: i32 }
+
+impl C {
+    fn get(&self) -> i32 {
+        return self.n;
+    }
+
+    fn bump(&mut self, d: i32) -> i32 {
+        self.n = self.n + d;
+        return self.get();
+    }
+}
+
+fn via(p: &mut C) -> i32 {
+    let a: i32 = p.bump(1);
+    return a + p.get();
+}
+
+fn top(k: i32) -> i32 {
+    let c: C = C { n: k };
+    let a: i32 = c.bump(2);
+    let w: W = W { c: c, k: 1 };
+    let b: i32 = w.c.get();
+    return a + b + c.get();
+}

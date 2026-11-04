@@ -28,6 +28,11 @@ abbrev BStmt_method_of_ty (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : P
     qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepOption 212 RepTy) x2 v2 → (RepList 25 RepNat) x3 v3 → k < b → Pre_method_of_ty n x0 x1 x2 x3 b →
     qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_method_of_ty n x0 x1 x2 x3 = k ∧ (RepOption 299 RepFound) (Lanius.Mini.methodOfTy x0 x1 x2 x3) w
 
+abbrev BStmt_referent_or_of (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Option Lanius.Mini.Ty} {v0 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 212 RepTy) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 212 RepTy) (Lanius.Mini.referentOrOf x0) w
+
 abbrev BStmt_field_value (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Decls} {x1 : Lanius.Mini.MEff} {x2 : Lanius.Mini.Ty} {x3 : Nat} {v0 v1 v2 v3 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepDecls x0 v0 → RepMEff x1 v1 → RepTy x2 v2 → RepNat x3 v3 → k < b → Pre_field_value n x0 x1 x2 x3 b →

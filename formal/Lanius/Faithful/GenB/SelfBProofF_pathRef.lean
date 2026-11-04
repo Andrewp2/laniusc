@@ -3,6 +3,7 @@ import Lanius.Faithful.Gen.SelfRep
 import Lanius.Faithful.Gen.SelfSrcF_pathRef
 import Lanius.Faithful.Gen.SelfStmtF_pathRef
 import Lanius.Faithful.GenB.SelfBStmtF_Inline_pModTail
+import Lanius.Faithful.GenB.SelfBStmtF_Inline_pPathIdentArgs
 import Lanius.Faithful.GenB.SelfBStmtF_Inline_pPathMore
 import Lanius.Faithful.GenB.SelfBStmtF_hasKids
 import Lanius.Faithful.GenB.SelfBStmtF_isEmptyUsize

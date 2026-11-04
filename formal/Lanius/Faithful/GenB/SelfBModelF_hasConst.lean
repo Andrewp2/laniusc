@@ -126,14 +126,14 @@ noncomputable section
 
 def Cost_param_expects : Nat → Nat → Lanius.Mini.Decls → Lanius.Mini.FnDecl → Option (List Lanius.Mini.Ty) → Nat
   | 0, x14, x27, x41, x53 => 18446744073709551616
-  | n + 1, x14, x27, x41, x53 => (match x53 with | some x188 => ((Cost_param_patterns n x14 x41) + (match (Lanius.Mini.paramPatterns x14 x41) with | some x272 => ((Cost_concat_of_mini_selfhost_List_usize n x41.implParams x41.params) + (Cost_ty_list n x14 (Lanius.Mini.declEnv x27 x41.home ((x41.implParams ++ x41.params)) x188) x272)) | none => 0)) | none => 0)
+  | n + 1, x14, x27, x41, x53 => (match x53 with | some x188 => ((Cost_param_patterns n x14 x41) + (match (Lanius.Mini.paramPatterns x14 x41) with | some x272 => ((Cost_concat_of_mini_selfhost_List_usize n x41.implParams x41.params) + (Cost_param_ty_list n x14 (Lanius.Mini.declEnv x27 x41.home ((x41.implParams ++ x41.params)) x188) x272)) | none => 0)) | none => 0)
 
 end
 noncomputable section
 
 def Pre_param_expects : Nat → Nat → Lanius.Mini.Decls → Lanius.Mini.FnDecl → Option (List Lanius.Mini.Ty) → Nat → Prop
   | 0, x14, x27, x41, x53, b => True
-  | n + 1, x14, x27, x41, x53, b => (match x53 with | some x188 => (∀ b1 : Nat, (Cost_param_patterns n x14 x41) < b → b1 = b - (Cost_param_patterns n x14 x41) → (match (Lanius.Mini.paramPatterns x14 x41) with | some x272 => (∀ b2 : Nat, (Cost_concat_of_mini_selfhost_List_usize n x41.implParams x41.params) < b1 → b2 = b1 - (Cost_concat_of_mini_selfhost_List_usize n x41.implParams x41.params) → (Pre_ty_list n x14 (Lanius.Mini.declEnv x27 x41.home ((x41.implParams ++ x41.params)) x188) x272 b2)) | none => True)) | none => True)
+  | n + 1, x14, x27, x41, x53, b => (match x53 with | some x188 => (∀ b1 : Nat, (Cost_param_patterns n x14 x41) < b → b1 = b - (Cost_param_patterns n x14 x41) → (match (Lanius.Mini.paramPatterns x14 x41) with | some x272 => (∀ b2 : Nat, (Cost_concat_of_mini_selfhost_List_usize n x41.implParams x41.params) < b1 → b2 = b1 - (Cost_concat_of_mini_selfhost_List_usize n x41.implParams x41.params) → (Pre_param_ty_list n x14 (Lanius.Mini.declEnv x27 x41.home ((x41.implParams ++ x41.params)) x188) x272 b2)) | none => True)) | none => True)
 
 end
 

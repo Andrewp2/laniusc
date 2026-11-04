@@ -34,6 +34,7 @@ def purePart (x : MEff) : Option SrcExpr :=
   | .xDeref dty a => none
   | .xPlaceField b j => none
   | .xPlaceAt b i => none
+  | .xBorrow bty p => none
 
 /-- The operators, casts and negations of pure operands are pure. -/
 def applyEff (op : SrcOp) (l : MEff) (r : MEff) : MEff :=

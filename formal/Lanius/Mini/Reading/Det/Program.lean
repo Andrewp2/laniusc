@@ -11,7 +11,7 @@ import all Lanius.Mini.Frontend.P.moduleOr
 import all Lanius.Mini.Frontend.P.shrFirst
 import all Lanius.Mini.Frontend.P.setPlaceOf
 import all Lanius.Mini.Frontend.P.setFieldOrEval
-import all Lanius.Mini.Frontend.P.namesFieldBase
+import all Lanius.Mini.Frontend.P.primaryNames
 import all Lanius.Mini.Frontend.P.isFnPath
 import all Lanius.Mini.Frontend.P.fieldValue
 import all Lanius.Mini.Frontend.P.eDerefClosed
@@ -93,6 +93,16 @@ theorem resultR_unique {env : FrontEnv} {ret : CTree} {a b : RetTy} (h₁ : Resu
     | never _ q' => exact absurd q' q
     | _ => prod_clash
 
+theorem selfParamTyR_unique {env : FrontEnv} {p t : CTree} {a b : Ty} (h₁ : SelfParamTyR env p t a)
+    (h₂ : SelfParamTyR env p t b) : a = b := by
+  cases h₁ with
+  | byRef e ty => cases h₂ with
+    | byRef _ ty' => rw [tyR_unique ty ty']
+    | other n m _ => exact (e.elim n m).elim
+  | other n m ty => cases h₂ with
+    | byRef e _ => exact (e.elim n m).elim
+    | other _ _ ty' => exact paramTyR_unique ty ty'
+
 section
 variable {env : FrontEnv} {fd : FnDecl}
 
@@ -104,7 +114,7 @@ theorem paramsR_unique : ∀ {scope : List Local} {ps : List CTree} {a b : MPara
     cases h₂ with
     | cons _ _ _ pt' ty' rest' =>
       cases patternOf_unique pt pt'
-      cases paramTyR_unique ty ty'
+      cases selfParamTyR_unique ty ty'
       rw [ih rest']
 termination_by structural _ _ _ _ h _ => h
 

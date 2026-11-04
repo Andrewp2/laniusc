@@ -18,15 +18,15 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 open Lanius.Faithful.Budget
 
-abbrev BStmt_is_fn_path (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : Lanius.Mini.Split} {v0 v1 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepFrontEnv x0 v0 → RepSplit x1 v1 → k < b → Pre_is_fn_path n x0 x1 b →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_is_fn_path n x0 x1 = k ∧ RepBool (Lanius.Mini.isFnPath x0 x1) w
-
 abbrev BStmt_member_args (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepNat x0 v0 →
     qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.memberArgs x0) w
+
+abbrev BStmt_is_fn_path (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : Lanius.Mini.Split} {v0 v1 w : Value} {k b : Nat},
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepFrontEnv x0 v0 → RepSplit x1 v1 → k < b → Pre_is_fn_path n x0 x1 b →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_is_fn_path n x0 x1 = k ∧ RepBool (Lanius.Mini.isFnPath x0 x1) w
 
 abbrev BStmt_is_method_form (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CTree} {v0 w : Value} {k : Nat},

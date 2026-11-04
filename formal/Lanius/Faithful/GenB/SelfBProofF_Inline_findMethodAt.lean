@@ -23,6 +23,7 @@ import Lanius.Faithful.GenB.SelfBStmtF_paramGoals
 import Lanius.Faithful.GenB.SelfBStmtF_sliceHead
 import Lanius.Faithful.GenB.SelfBStmtF_stringCons
 import Lanius.Faithful.GenB.SelfBStmtF_textSelf
+import Lanius.Faithful.GenB.SelfBStmtF_typeDeclAt
 import Lanius.Faithful.GenB.SelfBStmtF_wideLeftStmt
 import Lanius.Faithful.GenB.SelfBStmtN1
 import Lanius.Faithful.GenB.SelfBStmtN4
@@ -298,8 +299,8 @@ theorem bstep_type_table_more_at {spW sp : SrcProgram} {prims : Prims} {ix_type_
     budget Cost_type_table_more_at
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4⟩
 
-theorem bstep_param_of {spW sp : SrcProgram} {prims : Prims} {ix_param_of ix_minus ix_node_prod ix_member ix_params_of ix_param_token ix_p_param_named ix_p_param_self ix_p_param_self_ref ix_fresh_id ix_pattern_of ix_param_ty_of ix_cons_param ix_cons_of_mini_selfhost_Local : Nat}
-    (fnW : spW.funcs[ix_param_of]? = some (src_param_of ix_minus ix_node_prod ix_member ix_params_of ix_param_token ix_p_param_named ix_p_param_self ix_p_param_self_ref ix_fresh_id ix_pattern_of ix_param_ty_of ix_cons_param ix_cons_of_mini_selfhost_Local)) (fn : sp.funcs[ix_param_of]? = some (src_param_of ix_minus ix_node_prod ix_member ix_params_of ix_param_token ix_p_param_named ix_p_param_self ix_p_param_self_ref ix_fresh_id ix_pattern_of ix_param_ty_of ix_cons_param ix_cons_of_mini_selfhost_Local))
+theorem bstep_param_of {spW sp : SrcProgram} {prims : Prims} {ix_param_of ix_minus ix_node_prod ix_member ix_params_of ix_param_token ix_p_param_named ix_p_param_self ix_p_param_self_ref ix_p_param_self_ref_mut ix_fresh_id ix_pattern_of ix_self_param_ty ix_cons_param ix_cons_of_mini_selfhost_Local : Nat}
+    (fnW : spW.funcs[ix_param_of]? = some (src_param_of ix_minus ix_node_prod ix_member ix_params_of ix_param_token ix_p_param_named ix_p_param_self ix_p_param_self_ref ix_p_param_self_ref_mut ix_fresh_id ix_pattern_of ix_self_param_ty ix_cons_param ix_cons_of_mini_selfhost_Local)) (fn : sp.funcs[ix_param_of]? = some (src_param_of ix_minus ix_node_prod ix_member ix_params_of ix_param_token ix_p_param_named ix_p_param_self ix_p_param_self_ref ix_p_param_self_ref_mut ix_fresh_id ix_pattern_of ix_self_param_ty ix_cons_param ix_cons_of_mini_selfhost_Local))
     (np : prims.isPrim ix_param_of = false)
     (back : Certified (∀ {n : Nat}, Stmt_param_of sp prims ix_param_of n))
     (b_minus : Certified (∀ {n : Nat}, BStmt_minus spW sp prims ix_minus n))
@@ -309,9 +310,10 @@ theorem bstep_param_of {spW sp : SrcProgram} {prims : Prims} {ix_param_of ix_min
     (b_p_param_named : Certified (∀ {n : Nat}, BStmt_p_param_named spW sp prims ix_p_param_named n))
     (b_p_param_self : Certified (∀ {n : Nat}, BStmt_p_param_self spW sp prims ix_p_param_self n))
     (b_p_param_self_ref : Certified (∀ {n : Nat}, BStmt_p_param_self_ref spW sp prims ix_p_param_self_ref n))
+    (b_p_param_self_ref_mut : Certified (∀ {n : Nat}, BStmt_p_param_self_ref_mut spW sp prims ix_p_param_self_ref_mut n))
     (b_fresh_id : Certified (∀ {n : Nat}, BStmt_fresh_id spW sp prims ix_fresh_id n))
     (b_pattern_of : Certified (∀ {n : Nat}, BStmt_pattern_of spW sp prims ix_pattern_of n))
-    (b_param_ty_of : Certified (∀ {n : Nat}, BStmt_param_ty_of spW sp prims ix_param_ty_of n))
+    (b_self_param_ty : Certified (∀ {n : Nat}, BStmt_self_param_ty spW sp prims ix_self_param_ty n))
     (b_cons_param : Certified (∀ {n : Nat}, BStmt_cons_param spW sp prims ix_cons_param n))
     (b_cons_of_mini_selfhost_Local : Certified (∀ {n : Nat}, BStmt_cons_of_mini_selfhost_Local spW sp prims ix_cons_of_mini_selfhost_Local n)) {n : Nat}
     (bih_params_of : Certified (BStmt_params_of spW sp prims ix_params_of n)) :

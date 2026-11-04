@@ -21,8 +21,8 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_checked_bound (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Bool} {x1 : Option Lanius.Mini.ArgsBound} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → (RepOption 316 RepArgsBound) x1 v1 →
-    (RepOption 316 RepArgsBound) (Lanius.Mini.checkedBound x0 x1) w
+  ∀ {x0 : Bool} {x1 : Option Lanius.Mini.ArgsBound} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → (RepOption 319 RepArgsBound) x1 v1 →
+    (RepOption 319 RepArgsBound) (Lanius.Mini.checkedBound x0 x1) w
 
 abbrev Stmt_checked_eff (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : Option Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → (RepOption 259 RepMEff) x1 v1 →

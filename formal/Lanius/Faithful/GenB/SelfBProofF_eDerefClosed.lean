@@ -85,4 +85,20 @@ theorem bproof_e_place_at_closed {spW sp : SrcProgram} {prims : Prims} {ix_e_pla
     budget Cost_e_place_at_closed
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
 
+theorem bproof_e_borrow_closed {spW sp : SrcProgram} {prims : Prims} {ix_e_borrow_closed ix_boxed_of_mini_selfhost_SrcEff : Nat}
+    (fnW : spW.funcs[ix_e_borrow_closed]? = some (src_e_borrow_closed ix_boxed_of_mini_selfhost_SrcEff)) (fn : sp.funcs[ix_e_borrow_closed]? = some (src_e_borrow_closed ix_boxed_of_mini_selfhost_SrcEff))
+    (np : prims.isPrim ix_e_borrow_closed = false)
+    (back : Certified (∀ {n : Nat}, Stmt_e_borrow_closed sp prims ix_e_borrow_closed n))
+    (pp_boxed_of_mini_selfhost_SrcEff : prims.isPrim ix_boxed_of_mini_selfhost_SrcEff = true) (bx_boxed_of_mini_selfhost_SrcEff : prims.boxed.contains ix_boxed_of_mini_selfhost_SrcEff = true) {n : Nat} :
+    BStmt_e_borrow_closed spW sp prims ix_e_borrow_closed n := by
+  intro x0 x1 v0 v1 w k h r0 r1
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_e_borrow_closed [v0, v1] = some (w, k) ∧ Cost_e_borrow_closed (n + 1) x0 x1 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_e_borrow_closed, List.length_cons, List.length_nil, if_true] at h ⊢
+    budget Cost_e_borrow_closed
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
+
 end Lanius.Faithful.SelfBudget

@@ -163,14 +163,14 @@ theorem bproof_x_variant_of {spW sp : SrcProgram} {prims : Prims} {ix_x_variant_
     budget Cost_x_variant_of
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4 r5 r6 r7⟩
 
-theorem bproof_param_expects {spW sp : SrcProgram} {prims : Prims} {ix_param_expects ix_concat_of_mini_selfhost_List_usize ix_ty_list ix_decl_env ix_param_patterns : Nat}
-    (fnW : spW.funcs[ix_param_expects]? = some (src_param_expects ix_concat_of_mini_selfhost_List_usize ix_ty_list ix_decl_env ix_param_patterns)) (fn : sp.funcs[ix_param_expects]? = some (src_param_expects ix_concat_of_mini_selfhost_List_usize ix_ty_list ix_decl_env ix_param_patterns))
+theorem bproof_param_expects {spW sp : SrcProgram} {prims : Prims} {ix_param_expects ix_concat_of_mini_selfhost_List_usize ix_decl_env ix_param_patterns ix_param_ty_list : Nat}
+    (fnW : spW.funcs[ix_param_expects]? = some (src_param_expects ix_concat_of_mini_selfhost_List_usize ix_decl_env ix_param_patterns ix_param_ty_list)) (fn : sp.funcs[ix_param_expects]? = some (src_param_expects ix_concat_of_mini_selfhost_List_usize ix_decl_env ix_param_patterns ix_param_ty_list))
     (np : prims.isPrim ix_param_expects = false)
     (back : Certified (∀ {n : Nat}, Stmt_param_expects sp prims ix_param_expects n))
     (b_concat_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, BStmt_concat_of_mini_selfhost_List_usize spW sp prims ix_concat_of_mini_selfhost_List_usize n))
-    (b_ty_list : Certified (∀ {n : Nat}, BStmt_ty_list spW sp prims ix_ty_list n))
     (b_decl_env : Certified (∀ {n : Nat}, BStmt_decl_env spW sp prims ix_decl_env n))
-    (b_param_patterns : Certified (∀ {n : Nat}, BStmt_param_patterns spW sp prims ix_param_patterns n)) {n : Nat} :
+    (b_param_patterns : Certified (∀ {n : Nat}, BStmt_param_patterns spW sp prims ix_param_patterns n))
+    (b_param_ty_list : Certified (∀ {n : Nat}, BStmt_param_ty_list spW sp prims ix_param_ty_list n)) {n : Nat} :
     BStmt_param_expects spW sp prims ix_param_expects n := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w k b h r0 r1 r2 r3 hb pre
   rcases n with _ | n
@@ -184,8 +184,8 @@ theorem bproof_param_expects {spW sp : SrcProgram} {prims : Prims} {ix_param_exp
     budget Cost_param_expects
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3⟩
 
-theorem bproof_infer_args {spW sp : SrcProgram} {prims : Prims} {ix_infer_args ix_no_names ix_empty_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_List_usize ix_bound_or_none ix_match_tys ix_param_patterns ix_callee_env ix_inst_from : Nat}
-    (fnW : spW.funcs[ix_infer_args]? = some (src_infer_args ix_no_names ix_empty_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_List_usize ix_bound_or_none ix_match_tys ix_param_patterns ix_callee_env ix_inst_from)) (fn : sp.funcs[ix_infer_args]? = some (src_infer_args ix_no_names ix_empty_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_List_usize ix_bound_or_none ix_match_tys ix_param_patterns ix_callee_env ix_inst_from))
+theorem bproof_infer_args {spW sp : SrcProgram} {prims : Prims} {ix_infer_args ix_no_names ix_empty_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_List_usize ix_bound_or_none ix_match_tys ix_callee_env ix_param_patterns ix_inst_from : Nat}
+    (fnW : spW.funcs[ix_infer_args]? = some (src_infer_args ix_no_names ix_empty_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_List_usize ix_bound_or_none ix_match_tys ix_callee_env ix_param_patterns ix_inst_from)) (fn : sp.funcs[ix_infer_args]? = some (src_infer_args ix_no_names ix_empty_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_List_usize ix_bound_or_none ix_match_tys ix_callee_env ix_param_patterns ix_inst_from))
     (np : prims.isPrim ix_infer_args = false)
     (back : Certified (∀ {n : Nat}, Stmt_infer_args sp prims ix_infer_args n))
     (b_no_names : Certified (∀ {n : Nat}, BStmt_no_names spW sp prims ix_no_names n))
@@ -193,8 +193,8 @@ theorem bproof_infer_args {spW sp : SrcProgram} {prims : Prims} {ix_infer_args i
     (b_concat_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, BStmt_concat_of_mini_selfhost_List_usize spW sp prims ix_concat_of_mini_selfhost_List_usize n))
     (b_bound_or_none : Certified (∀ {n : Nat}, BStmt_bound_or_none spW sp prims ix_bound_or_none n))
     (b_match_tys : Certified (∀ {n : Nat}, BStmt_match_tys spW sp prims ix_match_tys n))
-    (b_param_patterns : Certified (∀ {n : Nat}, BStmt_param_patterns spW sp prims ix_param_patterns n))
     (b_callee_env : Certified (∀ {n : Nat}, BStmt_callee_env spW sp prims ix_callee_env n))
+    (b_param_patterns : Certified (∀ {n : Nat}, BStmt_param_patterns spW sp prims ix_param_patterns n))
     (b_inst_from : Certified (∀ {n : Nat}, BStmt_inst_from spW sp prims ix_inst_from n)) {n : Nat} :
     BStmt_infer_args spW sp prims ix_infer_args n := by
   intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w k b h r0 r1 r2 r3 r4 r5 hb pre

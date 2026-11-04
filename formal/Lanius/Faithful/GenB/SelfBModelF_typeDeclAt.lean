@@ -9,6 +9,7 @@ import Lanius.Faithful.GenB.SelfBModelN2
 import Lanius.Faithful.GenB.SelfBModelN3
 import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Frontend.P.Inline_pExpr
+import Lanius.Mini.Frontend.P.Inline_pModTail
 import Lanius.Mini.Frontend.P.Inline_pTypeArgsNone
 import Lanius.Mini.Frontend.P.Inline_pTypeSliceTail
 import Lanius.Mini.Frontend.P.distinct
@@ -275,6 +276,65 @@ noncomputable section
 def Cost_cons_tys_tail : Nat → List Lanius.Mini.Ty → Option (List (List Lanius.Mini.Ty)) → Nat
   | 0, x14, x27 => 18446744073709551616
   | n + 1, x14, x27 => (match x27 with | some x174 => (Cost_cons_of_mini_selfhost_List_mini_selfhost_Ty n x14 x174) | none => 0)
+
+end
+
+noncomputable section
+
+def Cost_ref_ty : Nat → Option Lanius.Mini.Ty → Nat
+  | 0, x7 => 18446744073709551616
+  | n + 1, x7 => (match x7 with | some x138 => 1 | none => 0)
+
+end
+
+noncomputable section
+
+def Cost_param_ty_of : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.CTree → Nat
+  | 0, x12, x25, x40 => 18446744073709551616
+  | n + 1, x12, x25, x40 => (if (decide ((Lanius.Mini.nodeProd x40) = Lanius.Mini.Inline.pTypeRef)) = true then ((Cost_ty_of n x12 x25 (Lanius.Mini.kid x40 1)) + (Cost_ref_ty n (Lanius.Mini.tyOf x12 x25 ((Lanius.Mini.kid x40 1))))) else (if (decide ((Lanius.Mini.nodeProd x40) = Lanius.Mini.Inline.pTypeRefMut)) = true then ((Cost_ty_of n x12 x25 (Lanius.Mini.kid x40 2)) + (Cost_ref_ty n (Lanius.Mini.tyOf x12 x25 ((Lanius.Mini.kid x40 2))))) else (Cost_ty_of n x12 x25 x40)))
+
+end
+noncomputable section
+
+def Pre_param_ty_of : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.CTree → Nat → Prop
+  | 0, x12, x25, x40, b => True
+  | n + 1, x12, x25, x40, b => (if (decide ((Lanius.Mini.nodeProd x40) = Lanius.Mini.Inline.pTypeRef)) = true then (Pre_ty_of n x12 x25 (Lanius.Mini.kid x40 1) b) else (if (decide ((Lanius.Mini.nodeProd x40) = Lanius.Mini.Inline.pTypeRefMut)) = true then (Pre_ty_of n x12 x25 (Lanius.Mini.kid x40 2) b) else (Pre_ty_of n x12 x25 x40 b)))
+
+end
+
+noncomputable section
+
+def Cost_self_param_ty : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.CTree → Lanius.Mini.CTree → Nat
+  | 0, x14, x27, x42, x52 => 18446744073709551616
+  | n + 1, x14, x27, x42, x52 => (let k2 := ((Cost_ty_of n x14 x27 x52) + (Cost_ref_ty n (Lanius.Mini.tyOf x14 x27 x52))); let k3 := (Cost_param_ty_of n x14 x27 x52); (if (decide ((Lanius.Mini.nodeProd x42) = Lanius.Mini.Inline.pParamSelfRef)) = true then k2 else (if (decide ((Lanius.Mini.nodeProd x42) = Lanius.Mini.Inline.pParamSelfRefMut)) = true then k2 else k3)))
+
+end
+noncomputable section
+
+def Pre_self_param_ty : Nat → Nat → Lanius.Mini.FrontEnv → Lanius.Mini.CTree → Lanius.Mini.CTree → Nat → Prop
+  | 0, x14, x27, x42, x52, b => True
+  | n + 1, x14, x27, x42, x52, b => (let k5 := fun (b1 : Nat) => (Pre_ty_of n x14 x27 x52 b1); let k6 := fun (b1 : Nat) => (Pre_param_ty_of n x14 x27 x52 b1); (if (decide ((Lanius.Mini.nodeProd x42) = Lanius.Mini.Inline.pParamSelfRef)) = true then (k5 b) else (if (decide ((Lanius.Mini.nodeProd x42) = Lanius.Mini.Inline.pParamSelfRefMut)) = true then (k5 b) else (k6 b))))
+
+end
+
+noncomputable section
+
+mutual
+def Cost_param_ty_list : Nat → Nat → Lanius.Mini.FrontEnv → List Lanius.Mini.CTree → Nat
+  | 0, x14, x27, x42 => 18446744073709551616
+  | n + 1, x14, x27, x42 => (if (decide (x14 = 0)) = true then 0 else (match x42 with | [] => 0 | x210 :: x213 => ((Cost_param_ty_of n (x14 - 1) x27 x210) + ((Cost_param_ty_list n (x14 - 1) x27 x213) + (Cost_cons_ty n (Lanius.Mini.paramTyOf ((x14 - 1)) x27 x210) (Lanius.Mini.paramTyList ((x14 - 1)) x27 x213))))))
+termination_by structural fuel => fuel
+end
+
+end
+noncomputable section
+
+mutual
+def Pre_param_ty_list : Nat → Nat → Lanius.Mini.FrontEnv → List Lanius.Mini.CTree → Nat → Prop
+  | 0, x14, x27, x42, b => True
+  | n + 1, x14, x27, x42, b => (if (decide (x14 = 0)) = true then True else (match x42 with | [] => True | x210 :: x213 => ((Pre_param_ty_of n (x14 - 1) x27 x210 b) ∧ (∀ b1 : Nat, (Cost_param_ty_of n (x14 - 1) x27 x210) < b → b1 = b - (Cost_param_ty_of n (x14 - 1) x27 x210) → (Pre_param_ty_list n (x14 - 1) x27 x213 b1)))))
+termination_by structural fuel => fuel
+end
 
 end
 

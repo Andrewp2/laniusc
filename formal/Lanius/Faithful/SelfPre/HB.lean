@@ -1078,6 +1078,7 @@ def hbMEff : Lanius.Mini.MEff → Nat
   | .xDeref a0 a1 => max (hb a0) (hbMEff a1)
   | .xPlaceField a0 a1 => hbMEff a0
   | .xPlaceAt a0 a1 => max (hbMEff a0) (hbMEff a1)
+  | .xBorrow a0 a1 => max (hb a0) (hbMEff a1)
 def hbMEff0 : List Lanius.Mini.MEff → Nat
   | [] => 0
   | a :: l => max (hbMEff a) (hbMEff0 l) + 1
@@ -1109,6 +1110,7 @@ theorem hbMEff0_eq : ∀ l : List Lanius.Mini.MEff, hbMEff0 l = HB.hb l
 @[simp, hb_simp] theorem hb_MEff_xDeref (a0 : Lanius.Mini.Ty) (a1 : Lanius.Mini.MEff) : hb (Lanius.Mini.MEff.xDeref a0 a1) = max (hb a0) (hb a1) := rfl
 @[simp, hb_simp] theorem hb_MEff_xPlaceField (a0 : Lanius.Mini.MEff) (a1 : Nat) : hb (Lanius.Mini.MEff.xPlaceField a0 a1) = hb a0 := rfl
 @[simp, hb_simp] theorem hb_MEff_xPlaceAt (a0 : Lanius.Mini.MEff) (a1 : Lanius.Mini.MEff) : hb (Lanius.Mini.MEff.xPlaceAt a0 a1) = max (hb a0) (hb a1) := rfl
+@[simp, hb_simp] theorem hb_MEff_xBorrow (a0 : Lanius.Mini.Ty) (a1 : Lanius.Mini.MEff) : hb (Lanius.Mini.MEff.xBorrow a0 a1) = max (hb a0) (hb a1) := rfl
 
 instance : HB Lanius.Mini.EffArm := ⟨fun s => max (hb s.binders) (max (hb s.value) (hb s.ty))⟩
 @[simp, hb_simp] theorem hb_EffArm_mk (a0 : List Nat) (a1 : Lanius.Mini.MEff) (a2 : Option Lanius.Mini.Ty) : hb (Lanius.Mini.EffArm.mk a0 a1 a2) = max (hb a0) (max (hb a1) (hb a2)) := rfl

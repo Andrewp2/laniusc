@@ -133,14 +133,14 @@ theorem proof_has_const {prog : SrcProgram} {prims : Prims} {ix_has_const : Nat}
   simp only [src_has_const] at h
   faithful [Lanius.Mini.hasConst]
 
-theorem proof_infer_args {prog : SrcProgram} {prims : Prims} {ix_infer_args ix_no_names ix_empty_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_List_usize ix_bound_or_none ix_match_tys ix_param_patterns ix_callee_env ix_inst_from : Nat} (fn : prog.funcs[ix_infer_args]? = some (src_infer_args ix_no_names ix_empty_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_List_usize ix_bound_or_none ix_match_tys ix_param_patterns ix_callee_env ix_inst_from)) (np : prims.isPrim ix_infer_args = false)
+theorem proof_infer_args {prog : SrcProgram} {prims : Prims} {ix_infer_args ix_no_names ix_empty_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_List_usize ix_bound_or_none ix_match_tys ix_callee_env ix_param_patterns ix_inst_from : Nat} (fn : prog.funcs[ix_infer_args]? = some (src_infer_args ix_no_names ix_empty_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_List_usize ix_bound_or_none ix_match_tys ix_callee_env ix_param_patterns ix_inst_from)) (np : prims.isPrim ix_infer_args = false)
     (ext_no_names : Certified (∀ {n : Nat}, Stmt_no_names prog prims ix_no_names n))
     (ext_empty_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_Ty prog prims ix_empty_of_mini_selfhost_Ty n))
     (ext_concat_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_List_usize prog prims ix_concat_of_mini_selfhost_List_usize n))
     (ext_bound_or_none : Certified (∀ {n : Nat}, Stmt_bound_or_none prog prims ix_bound_or_none n))
     (ext_match_tys : Certified (∀ {n : Nat}, Stmt_match_tys prog prims ix_match_tys n))
-    (ext_param_patterns : Certified (∀ {n : Nat}, Stmt_param_patterns prog prims ix_param_patterns n))
     (ext_callee_env : Certified (∀ {n : Nat}, Stmt_callee_env prog prims ix_callee_env n))
+    (ext_param_patterns : Certified (∀ {n : Nat}, Stmt_param_patterns prog prims ix_param_patterns n))
     (ext_inst_from : Certified (∀ {n : Nat}, Stmt_inst_from prog prims ix_inst_from n)) {n : Nat} :
     Stmt_infer_args prog prims ix_infer_args n := by
   intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5
@@ -184,11 +184,11 @@ theorem proof_named_inferred {prog : SrcProgram} {prims : Prims} {ix_named_infer
   simp only [src_named_inferred] at h
   faithful [Lanius.Mini.namedInferred]
 
-theorem proof_param_expects {prog : SrcProgram} {prims : Prims} {ix_param_expects ix_concat_of_mini_selfhost_List_usize ix_ty_list ix_decl_env ix_param_patterns : Nat} (fn : prog.funcs[ix_param_expects]? = some (src_param_expects ix_concat_of_mini_selfhost_List_usize ix_ty_list ix_decl_env ix_param_patterns)) (np : prims.isPrim ix_param_expects = false)
+theorem proof_param_expects {prog : SrcProgram} {prims : Prims} {ix_param_expects ix_concat_of_mini_selfhost_List_usize ix_decl_env ix_param_patterns ix_param_ty_list : Nat} (fn : prog.funcs[ix_param_expects]? = some (src_param_expects ix_concat_of_mini_selfhost_List_usize ix_decl_env ix_param_patterns ix_param_ty_list)) (np : prims.isPrim ix_param_expects = false)
     (ext_concat_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_List_usize prog prims ix_concat_of_mini_selfhost_List_usize n))
-    (ext_ty_list : Certified (∀ {n : Nat}, Stmt_ty_list prog prims ix_ty_list n))
     (ext_decl_env : Certified (∀ {n : Nat}, Stmt_decl_env prog prims ix_decl_env n))
-    (ext_param_patterns : Certified (∀ {n : Nat}, Stmt_param_patterns prog prims ix_param_patterns n)) {n : Nat} :
+    (ext_param_patterns : Certified (∀ {n : Nat}, Stmt_param_patterns prog prims ix_param_patterns n))
+    (ext_param_ty_list : Certified (∀ {n : Nat}, Stmt_param_ty_list prog prims ix_param_ty_list n)) {n : Nat} :
     Stmt_param_expects prog prims ix_param_expects n := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
   rcases n with _ | n

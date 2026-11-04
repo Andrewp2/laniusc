@@ -6,7 +6,7 @@ import all Lanius.Mini.Frontend.P.shrFirst
 import all Lanius.Mini.Frontend.P.tryLet
 import all Lanius.Mini.Frontend.P.setPlaceOf
 import all Lanius.Mini.Frontend.P.setFieldOrEval
-import all Lanius.Mini.Frontend.P.namesFieldBase
+import all Lanius.Mini.Frontend.P.primaryNames
 import all Lanius.Mini.Frontend.P.isFnPath
 import all Lanius.Mini.Frontend.P.fieldValue
 import all Lanius.Mini.Frontend.P.eDerefClosed
@@ -112,6 +112,7 @@ theorem effTy_unique {decls : Decls} {scope : List Local} :
   | _, _, _, .len, h₂ => by cases h₂; rfl
   | _, _, _, .str, h₂ => by cases h₂; rfl
   | _, _, _, .deref, h₂ => by cases h₂; rfl
+  | _, _, _, .borrow, h₂ => by cases h₂; rfl
   | _, _, _, .placeField b f, h₂ => by
     cases h₂ with
     | placeField b' f' =>

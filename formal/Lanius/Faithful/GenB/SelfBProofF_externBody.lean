@@ -7,8 +7,8 @@ import Lanius.Faithful.GenB.SelfBStmtF_externBody
 import Lanius.Faithful.GenB.SelfBStmtF_hasKids
 import Lanius.Faithful.GenB.SelfBStmtF_litIf
 import Lanius.Faithful.GenB.SelfBStmtF_methodDecl
-import Lanius.Faithful.GenB.SelfBStmtF_namesFieldBase
 import Lanius.Faithful.GenB.SelfBStmtF_noToken
+import Lanius.Faithful.GenB.SelfBStmtF_primaryNames
 import Lanius.Faithful.GenB.SelfBStmtN0
 import Lanius.Faithful.GenB.SelfBStmtN3
 import Lanius.Faithful.GenB.SelfBStmtN4

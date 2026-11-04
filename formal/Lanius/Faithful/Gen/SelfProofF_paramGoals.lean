@@ -14,6 +14,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_Inline_findMethodAt
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pBoundTypeArgsAfterCommaMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pExpr
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pImplMethodsSome
+public import Lanius.Faithful.Gen.SelfStmtF_Inline_pModTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pTypeArgsNone
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pTypeSliceTail
 public import Lanius.Faithful.Gen.SelfStmtF_collect
@@ -197,7 +198,7 @@ theorem step_fit_same_decl {prog : SrcProgram} {prims : Prims} {ix_fit_same_decl
   simp only [src_fit_same_decl] at h
   faithful [Lanius.Mini.fitSameDecl]
 
-theorem step_fit_ty {prog : SrcProgram} {prims : Prims} {ix_fit_ty ix_minus ix_node_prod ix_list_items ix_kid ix_p_type_array ix_p_type_slice_tail ix_p_type_ident ix_type_path_spellings ix_slice_elem ix_fit_path : Nat} (fn : prog.funcs[ix_fit_ty]? = some (src_fit_ty ix_minus ix_node_prod ix_list_items ix_kid ix_p_type_array ix_p_type_slice_tail ix_p_type_ident ix_type_path_spellings ix_slice_elem ix_fit_ty ix_fit_path)) (np : prims.isPrim ix_fit_ty = false)
+theorem step_fit_ty {prog : SrcProgram} {prims : Prims} {ix_fit_ty ix_minus ix_node_prod ix_list_items ix_kid ix_p_type_array ix_p_type_slice_tail ix_p_type_ident ix_type_path_spellings ix_referent ix_p_type_ref ix_p_type_ref_mut ix_slice_elem ix_fit_path : Nat} (fn : prog.funcs[ix_fit_ty]? = some (src_fit_ty ix_minus ix_node_prod ix_list_items ix_kid ix_p_type_array ix_p_type_slice_tail ix_p_type_ident ix_type_path_spellings ix_referent ix_p_type_ref ix_p_type_ref_mut ix_slice_elem ix_fit_ty ix_fit_path)) (np : prims.isPrim ix_fit_ty = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_list_items : Certified (∀ {n : Nat}, Stmt_list_items prog prims ix_list_items n))
@@ -206,6 +207,9 @@ theorem step_fit_ty {prog : SrcProgram} {prims : Prims} {ix_fit_ty ix_minus ix_n
     (ext_p_type_slice_tail : Certified (∀ {n : Nat}, Stmt_p_type_slice_tail prog prims ix_p_type_slice_tail n))
     (ext_p_type_ident : Certified (∀ {n : Nat}, Stmt_p_type_ident prog prims ix_p_type_ident n))
     (ext_type_path_spellings : Certified (∀ {n : Nat}, Stmt_type_path_spellings prog prims ix_type_path_spellings n))
+    (ext_referent : Certified (∀ {n : Nat}, Stmt_referent prog prims ix_referent n))
+    (ext_p_type_ref : Certified (∀ {n : Nat}, Stmt_p_type_ref prog prims ix_p_type_ref n))
+    (ext_p_type_ref_mut : Certified (∀ {n : Nat}, Stmt_p_type_ref_mut prog prims ix_p_type_ref_mut n))
     (ext_slice_elem : Certified (∀ {n : Nat}, Stmt_slice_elem prog prims ix_slice_elem n)) {n : Nat}
     (ih_fit_ty : Certified (Stmt_fit_ty prog prims ix_fit_ty n))
     (ih_fit_path : Certified (Stmt_fit_path prog prims ix_fit_path n)) :
@@ -306,13 +310,13 @@ theorem proof_impl_where {prog : SrcProgram} {prims : Prims} {ix_impl_where ix_n
   simp only [src_impl_where] at h
   faithful [Lanius.Mini.implWhere]
 
-theorem proof_infer_inst {prog : SrcProgram} {prims : Prims} {ix_infer_inst ix_no_names ix_empty_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_List_usize ix_match_tys ix_param_patterns ix_callee_env ix_infer_ret : Nat} (fn : prog.funcs[ix_infer_inst]? = some (src_infer_inst ix_no_names ix_empty_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_List_usize ix_match_tys ix_param_patterns ix_callee_env ix_infer_ret)) (np : prims.isPrim ix_infer_inst = false)
+theorem proof_infer_inst {prog : SrcProgram} {prims : Prims} {ix_infer_inst ix_no_names ix_empty_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_List_usize ix_match_tys ix_callee_env ix_param_patterns ix_infer_ret : Nat} (fn : prog.funcs[ix_infer_inst]? = some (src_infer_inst ix_no_names ix_empty_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_List_usize ix_match_tys ix_callee_env ix_param_patterns ix_infer_ret)) (np : prims.isPrim ix_infer_inst = false)
     (ext_no_names : Certified (∀ {n : Nat}, Stmt_no_names prog prims ix_no_names n))
     (ext_empty_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_Ty prog prims ix_empty_of_mini_selfhost_Ty n))
     (ext_concat_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_List_usize prog prims ix_concat_of_mini_selfhost_List_usize n))
     (ext_match_tys : Certified (∀ {n : Nat}, Stmt_match_tys prog prims ix_match_tys n))
-    (ext_param_patterns : Certified (∀ {n : Nat}, Stmt_param_patterns prog prims ix_param_patterns n))
     (ext_callee_env : Certified (∀ {n : Nat}, Stmt_callee_env prog prims ix_callee_env n))
+    (ext_param_patterns : Certified (∀ {n : Nat}, Stmt_param_patterns prog prims ix_param_patterns n))
     (ext_infer_ret : Certified (∀ {n : Nat}, Stmt_infer_ret prog prims ix_infer_ret n)) {n : Nat} :
     Stmt_infer_inst prog prims ix_infer_inst n := by
   intro x0 x1 x2 x3 x4 x5 x6 v0 v1 v2 v3 v4 v5 v6 w h r0 r1 r2 r3 r4 r5 r6

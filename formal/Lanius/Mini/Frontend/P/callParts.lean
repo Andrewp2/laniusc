@@ -42,6 +42,7 @@ def callParts (x : MEff) : Option Called :=
   | .xDeref dty a => none
   | .xPlaceField b j => none
   | .xPlaceAt b i => none
+  | .xBorrow bty p => none
 
 /-- The local an expression is, if it is one. -/
 def pureLocal (e : SrcExpr) : Option Nat :=

@@ -3,6 +3,7 @@ import Lanius.Faithful.Gen.SelfRep
 import Lanius.Faithful.Gen.SelfSrcF_repeatEff
 import Lanius.Faithful.Gen.SelfStmtF_repeatEff
 import Lanius.Faithful.GenB.SelfBStmtF_Inline_pExpr
+import Lanius.Faithful.GenB.SelfBStmtF_Inline_pModTail
 import Lanius.Faithful.GenB.SelfBStmtF_Inline_pTypeArgsNone
 import Lanius.Faithful.GenB.SelfBStmtF_Inline_pTypeSliceTail
 import Lanius.Faithful.GenB.SelfBStmtF_findConst
@@ -35,8 +36,8 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.SelfCert
 open Lanius.Faithful.Budget
 
-theorem bstep_match_ty {spW sp : SrcProgram} {prims : Prims} {ix_match_ty ix_minus ix_node_prod ix_list_items ix_kid ix_p_type_array ix_p_type_slice_tail ix_p_type_ident ix_type_path_spellings ix_slice_elem ix_match_path : Nat}
-    (fnW : spW.funcs[ix_match_ty]? = some (src_match_ty ix_minus ix_node_prod ix_list_items ix_kid ix_p_type_array ix_p_type_slice_tail ix_p_type_ident ix_type_path_spellings ix_match_ty ix_slice_elem ix_match_path)) (fn : sp.funcs[ix_match_ty]? = some (src_match_ty ix_minus ix_node_prod ix_list_items ix_kid ix_p_type_array ix_p_type_slice_tail ix_p_type_ident ix_type_path_spellings ix_match_ty ix_slice_elem ix_match_path))
+theorem bstep_match_ty {spW sp : SrcProgram} {prims : Prims} {ix_match_ty ix_minus ix_node_prod ix_list_items ix_kid ix_p_type_array ix_p_type_slice_tail ix_p_type_ident ix_type_path_spellings ix_referent ix_p_type_ref ix_p_type_ref_mut ix_slice_elem ix_match_path : Nat}
+    (fnW : spW.funcs[ix_match_ty]? = some (src_match_ty ix_minus ix_node_prod ix_list_items ix_kid ix_p_type_array ix_p_type_slice_tail ix_p_type_ident ix_type_path_spellings ix_referent ix_p_type_ref ix_p_type_ref_mut ix_match_ty ix_slice_elem ix_match_path)) (fn : sp.funcs[ix_match_ty]? = some (src_match_ty ix_minus ix_node_prod ix_list_items ix_kid ix_p_type_array ix_p_type_slice_tail ix_p_type_ident ix_type_path_spellings ix_referent ix_p_type_ref ix_p_type_ref_mut ix_match_ty ix_slice_elem ix_match_path))
     (np : prims.isPrim ix_match_ty = false)
     (back : Certified (∀ {n : Nat}, Stmt_match_ty sp prims ix_match_ty n))
     (b_minus : Certified (∀ {n : Nat}, BStmt_minus spW sp prims ix_minus n))
@@ -47,6 +48,9 @@ theorem bstep_match_ty {spW sp : SrcProgram} {prims : Prims} {ix_match_ty ix_min
     (b_p_type_slice_tail : Certified (∀ {n : Nat}, BStmt_p_type_slice_tail spW sp prims ix_p_type_slice_tail n))
     (b_p_type_ident : Certified (∀ {n : Nat}, BStmt_p_type_ident spW sp prims ix_p_type_ident n))
     (b_type_path_spellings : Certified (∀ {n : Nat}, BStmt_type_path_spellings spW sp prims ix_type_path_spellings n))
+    (b_referent : Certified (∀ {n : Nat}, BStmt_referent spW sp prims ix_referent n))
+    (b_p_type_ref : Certified (∀ {n : Nat}, BStmt_p_type_ref spW sp prims ix_p_type_ref n))
+    (b_p_type_ref_mut : Certified (∀ {n : Nat}, BStmt_p_type_ref_mut spW sp prims ix_p_type_ref_mut n))
     (b_slice_elem : Certified (∀ {n : Nat}, BStmt_slice_elem spW sp prims ix_slice_elem n)) {n : Nat}
     (bih_match_ty : Certified (BStmt_match_ty spW sp prims ix_match_ty n))
     (bih_match_path : Certified (BStmt_match_path spW sp prims ix_match_path n)) :

@@ -4,6 +4,7 @@ import Lanius.Faithful.GenB.SelfBModelF_noTrees
 import Lanius.Faithful.GenB.SelfBModelN2
 import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Frontend.P.Inline_pModTail
+import Lanius.Mini.Frontend.P.Inline_pPathIdentArgs
 import Lanius.Mini.Frontend.P.Inline_pPathMore
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.isEmptyUsize

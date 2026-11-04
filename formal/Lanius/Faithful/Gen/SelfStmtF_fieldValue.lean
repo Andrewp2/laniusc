@@ -36,6 +36,10 @@ abbrev Stmt_method_of_ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Option Lanius.Mini.Ty} {x3 : List Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepOption 212 RepTy) x2 v2 → (RepList 25 RepNat) x3 v3 →
     (RepOption 299 RepFound) (Lanius.Mini.methodOfTy x0 x1 x2 x3) w
 
+abbrev Stmt_referent_or_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Option Lanius.Mini.Ty} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 212 RepTy) x0 v0 →
+    (RepOption 212 RepTy) (Lanius.Mini.referentOrOf x0) w
+
 abbrev Stmt_step_expected (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.Ty} {x1 : Lanius.Mini.CTree} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 212 RepTy) x0 v0 → RepCTree x1 v1 →
     (RepOption 212 RepTy) (Lanius.Mini.stepExpected x0 x1) w

@@ -159,18 +159,6 @@ theorem upost_kid_token : ∀ (x0 : Lanius.Mini.CTree) (x1 : Nat), ∀ M : Nat, 
   all_goals upost_auto M
 theorem HBPost.Lanius.Mini.kidToken.p0 : ∀ (x0 : Lanius.Mini.CTree) (x1 : Nat), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.kidToken x0 x1) ≤ M := upost_kid_token
 
-theorem upost_if_not_writes : ∀ (x0 : Bool) (x1 : Lanius.Mini.MFunc), ∀ M : Nat, hb x1 ≤ M → hb (Lanius.Mini.ifNotWrites x0 x1) ≤ M := by
-  intro x0 x1 M hM0
-  first | fun_induction Lanius.Mini.ifNotWrites x0 x1 | fun_cases Lanius.Mini.ifNotWrites x0 x1 | unfold Lanius.Mini.ifNotWrites
-  all_goals upost_auto M
-theorem HBPost.Lanius.Mini.ifNotWrites.p0 : ∀ (x0 : Bool) (x1 : Lanius.Mini.MFunc), ∀ M : Nat, hb x1 ≤ M → hb (Lanius.Mini.ifNotWrites x0 x1) ≤ M := upost_if_not_writes
-
-theorem upost_ref_checked : ∀ (x0 : Option Lanius.Mini.MFunc) (x1 : Option Nat), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.refChecked x0 x1) ≤ M := by
-  intro x0 x1 M hM0
-  first | fun_induction Lanius.Mini.refChecked x0 x1 | fun_cases Lanius.Mini.refChecked x0 x1 | unfold Lanius.Mini.refChecked
-  all_goals upost_auto M
-theorem HBPost.Lanius.Mini.refChecked.p0 : ∀ (x0 : Option Lanius.Mini.MFunc) (x1 : Option Nat), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.refChecked x0 x1) ≤ M := upost_ref_checked
-
 theorem upost_ret_expected : ∀ (x0 : Option Lanius.Mini.RetTy), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.retExpected x0) ≤ M := by
   intro x0 M hM0
   first | fun_induction Lanius.Mini.retExpected x0 | fun_cases Lanius.Mini.retExpected x0 | unfold Lanius.Mini.retExpected
@@ -435,6 +423,12 @@ theorem upost_literal_head : ∀ (x0 : Option Lanius.Mini.LetHead), ∀ M : Nat,
   all_goals upost_auto M
 theorem HBPost.Lanius.Mini.literalHead.p0 : ∀ (x0 : Option Lanius.Mini.LetHead), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.literalHead x0) ≤ M := upost_literal_head
 
+theorem upost_referent : ∀ (x0 : Lanius.Mini.Ty), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.referent x0) ≤ M := by
+  intro x0 M hM0
+  first | fun_induction Lanius.Mini.referent x0 | fun_cases Lanius.Mini.referent x0 | unfold Lanius.Mini.referent
+  all_goals upost_auto M
+theorem HBPost.Lanius.Mini.referent.p0 : ∀ (x0 : Lanius.Mini.Ty), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.referent x0) ≤ M := upost_referent
+
 theorem upost_named_parts : ∀ (x0 : Lanius.Mini.Ty), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.namedParts x0) ≤ M := by
   intro x0 M hM0
   first | fun_induction Lanius.Mini.namedParts x0 | fun_cases Lanius.Mini.namedParts x0 | unfold Lanius.Mini.namedParts
@@ -597,6 +591,18 @@ theorem upost_eff_slice_local : ∀ (x0 : List Lanius.Mini.Local) (x1 : Lanius.M
   all_goals upost_auto M
 theorem HBPost.Lanius.Mini.effSliceLocal.p0 : ∀ (x0 : List Lanius.Mini.Local) (x1 : Lanius.Mini.MEff), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb (Lanius.Mini.effSliceLocal x0 x1) ≤ M := upost_eff_slice_local
 
+theorem upost_referent_or : ∀ (x0 : Lanius.Mini.Ty), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.referentOr x0) ≤ M := by
+  intro x0 M hM0
+  first | fun_induction Lanius.Mini.referentOr x0 | fun_cases Lanius.Mini.referentOr x0 | unfold Lanius.Mini.referentOr
+  all_goals upost_auto M
+theorem HBPost.Lanius.Mini.referentOr.p0 : ∀ (x0 : Lanius.Mini.Ty), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.referentOr x0) ≤ M := upost_referent_or
+
+theorem upost_referent_or_of : ∀ (x0 : Option Lanius.Mini.Ty), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.referentOrOf x0) ≤ M := by
+  intro x0 M hM0
+  first | fun_induction Lanius.Mini.referentOrOf x0 | fun_cases Lanius.Mini.referentOrOf x0 | unfold Lanius.Mini.referentOrOf
+  all_goals upost_auto M
+theorem HBPost.Lanius.Mini.referentOrOf.p0 : ∀ (x0 : Option Lanius.Mini.Ty), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.referentOrOf x0) ≤ M := upost_referent_or_of
+
 theorem upost_step_expected : ∀ (x0 : Option Lanius.Mini.Ty) (x1 : Lanius.Mini.CTree), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb (Lanius.Mini.stepExpected x0 x1) ≤ M := by
   intro x0 x1 M hM0 hM1
   first | fun_induction Lanius.Mini.stepExpected x0 x1 | fun_cases Lanius.Mini.stepExpected x0 x1 | unfold Lanius.Mini.stepExpected
@@ -680,18 +686,6 @@ theorem upost_result_ty : ∀ (x0 : Option Lanius.Mini.Ty) (x1 : List Lanius.Min
   first | fun_induction Lanius.Mini.resultTy x0 x1 | fun_cases Lanius.Mini.resultTy x0 x1 | unfold Lanius.Mini.resultTy
   all_goals upost_auto M
 theorem HBPost.Lanius.Mini.resultTy.p0 : ∀ (x0 : Option Lanius.Mini.Ty) (x1 : List Lanius.Mini.EffArm), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb (Lanius.Mini.resultTy x0 x1) ≤ M := upost_result_ty
-
-theorem upost_referent : ∀ (x0 : Lanius.Mini.Ty), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.referent x0) ≤ M := by
-  intro x0 M hM0
-  first | fun_induction Lanius.Mini.referent x0 | fun_cases Lanius.Mini.referent x0 | unfold Lanius.Mini.referent
-  all_goals upost_auto M
-theorem HBPost.Lanius.Mini.referent.p0 : ∀ (x0 : Lanius.Mini.Ty), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.referent x0) ≤ M := upost_referent
-
-theorem upost_referent_or : ∀ (x0 : Lanius.Mini.Ty), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.referentOr x0) ≤ M := by
-  intro x0 M hM0
-  first | fun_induction Lanius.Mini.referentOr x0 | fun_cases Lanius.Mini.referentOr x0 | unfold Lanius.Mini.referentOr
-  all_goals upost_auto M
-theorem HBPost.Lanius.Mini.referentOr.p0 : ∀ (x0 : Lanius.Mini.Ty), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.referentOr x0) ≤ M := upost_referent_or
 
 theorem upost_explicit_checked : ∀ (x0 : Bool) (x1 : Nat) (x2 : List Lanius.Mini.Ty), ∀ M : Nat, hb x2 ≤ M → hb (Lanius.Mini.explicitChecked x0 x1 x2) ≤ M := by
   intro x0 x1 x2 M hM0

@@ -40,8 +40,8 @@ abbrev BStmt_same_decl_args (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) :
 
 abbrev BStmt_checked_bound (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : Option Lanius.Mini.ArgsBound} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepBool x0 v0 → (RepOption 316 RepArgsBound) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 316 RepArgsBound) (Lanius.Mini.checkedBound x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepBool x0 v0 → (RepOption 319 RepArgsBound) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 319 RepArgsBound) (Lanius.Mini.checkedBound x0 x1) w
 
 abbrev BStmt_checked_effs (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : Option (List Lanius.Mini.MEff)} {v0 v1 w : Value} {k : Nat},

@@ -633,6 +633,7 @@ def tsMEff : Lanius.Mini.MEff → Nat
   | .xDeref a0 a1 => tsMEff a1
   | .xPlaceField a0 a1 => tsMEff a0
   | .xPlaceAt a0 a1 => max (tsMEff a0) (tsMEff a1)
+  | .xBorrow a0 a1 => tsMEff a1
 def tsMEff0 : List Lanius.Mini.MEff → Nat
   | [] => 0
   | a :: l => max (tsMEff a) (tsMEff0 l)
@@ -664,6 +665,7 @@ theorem tsMEff0_eq : ∀ l : List Lanius.Mini.MEff, tsMEff0 l = TS.ts l
 @[simp, ts_simp] theorem ts_MEff_xDeref (a0 : Lanius.Mini.Ty) (a1 : Lanius.Mini.MEff) : ts (Lanius.Mini.MEff.xDeref a0 a1) = ts a1 := rfl
 @[simp, ts_simp] theorem ts_MEff_xPlaceField (a0 : Lanius.Mini.MEff) (a1 : Nat) : ts (Lanius.Mini.MEff.xPlaceField a0 a1) = ts a0 := rfl
 @[simp, ts_simp] theorem ts_MEff_xPlaceAt (a0 : Lanius.Mini.MEff) (a1 : Lanius.Mini.MEff) : ts (Lanius.Mini.MEff.xPlaceAt a0 a1) = max (ts a0) (ts a1) := rfl
+@[simp, ts_simp] theorem ts_MEff_xBorrow (a0 : Lanius.Mini.Ty) (a1 : Lanius.Mini.MEff) : ts (Lanius.Mini.MEff.xBorrow a0 a1) = ts a1 := rfl
 
 instance : TS Lanius.Mini.EffArm := ⟨fun s => ts s.value⟩
 @[simp, ts_simp] theorem ts_EffArm_mk (a0 : List Nat) (a1 : Lanius.Mini.MEff) (a2 : Option Lanius.Mini.Ty) : ts (Lanius.Mini.EffArm.mk a0 a1 a2) = ts a1 := rfl

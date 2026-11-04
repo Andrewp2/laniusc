@@ -49,6 +49,9 @@ def src_p_param_self : SrcFunc := { params := [], ret := SrcType.uint (UintTy.us
 /-- mini::selfhost::p_param_self_ref -/
 def src_p_param_self_ref : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000040#64) }
 
+/-- mini::selfhost::p_param_self_ref_mut -/
+def src_p_param_self_ref_mut : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000145#64) }
+
 /-- mini::selfhost::p_params_after_comma_more -/
 def src_p_params_after_comma_more : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000124#64) }
 
@@ -75,9 +78,6 @@ def src_p_path_end : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usiz
 
 /-- mini::selfhost::p_path_ident -/
 def src_p_path_ident : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000030#64) }
-
-/-- mini::selfhost::p_path_ident_args -/
-def src_p_path_ident_args : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000031#64) }
 
 /-- mini::selfhost::p_type_ref -/
 def src_p_type_ref : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x000000000000011d#64) }

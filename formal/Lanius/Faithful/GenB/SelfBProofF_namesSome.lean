@@ -75,15 +75,15 @@ theorem bstep_uses_wild {spW sp : SrcProgram} {prims : Prims} {ix_uses_wild ix_u
     budget Cost_uses_wild
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3⟩
 
-theorem bstep_arms_or_wild {spW sp : SrcProgram} {prims : Prims} {ix_arms_or_wild ix_empty_of_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy ix_cons_tree_tail ix_arms_naming ix_wild_arm_for : Nat}
-    (fnW : spW.funcs[ix_arms_or_wild]? = some (src_arms_or_wild ix_empty_of_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy ix_arms_or_wild ix_cons_tree_tail ix_arms_naming ix_wild_arm_for)) (fn : sp.funcs[ix_arms_or_wild]? = some (src_arms_or_wild ix_empty_of_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy ix_arms_or_wild ix_cons_tree_tail ix_arms_naming ix_wild_arm_for))
+theorem bstep_arms_or_wild {spW sp : SrcProgram} {prims : Prims} {ix_arms_or_wild ix_empty_of_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy ix_arms_naming ix_cons_tree_tail ix_wild_arm_for : Nat}
+    (fnW : spW.funcs[ix_arms_or_wild]? = some (src_arms_or_wild ix_empty_of_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy ix_arms_or_wild ix_arms_naming ix_cons_tree_tail ix_wild_arm_for)) (fn : sp.funcs[ix_arms_or_wild]? = some (src_arms_or_wild ix_empty_of_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy ix_arms_or_wild ix_arms_naming ix_cons_tree_tail ix_wild_arm_for))
     (np : prims.isPrim ix_arms_or_wild = false)
     (back : Certified (∀ {n : Nat}, Stmt_arms_or_wild sp prims ix_arms_or_wild n))
     (b_empty_of_mini_selfhost_CTree : Certified (∀ {n : Nat}, BStmt_empty_of_mini_selfhost_CTree spW sp prims ix_empty_of_mini_selfhost_CTree n))
     (pp_unbox_of_mini_selfhost_List_mini_selfhost_CTree : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_CTree : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree = false)
     (pp_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy = false)
-    (b_cons_tree_tail : Certified (∀ {n : Nat}, BStmt_cons_tree_tail spW sp prims ix_cons_tree_tail n))
     (b_arms_naming : Certified (∀ {n : Nat}, BStmt_arms_naming spW sp prims ix_arms_naming n))
+    (b_cons_tree_tail : Certified (∀ {n : Nat}, BStmt_cons_tree_tail spW sp prims ix_cons_tree_tail n))
     (b_wild_arm_for : Certified (∀ {n : Nat}, BStmt_wild_arm_for spW sp prims ix_wild_arm_for n)) {n : Nat}
     (bih_arms_or_wild : Certified (BStmt_arms_or_wild spW sp prims ix_arms_or_wild n)) :
     BStmt_arms_or_wild spW sp prims ix_arms_or_wild (n + 1) := by

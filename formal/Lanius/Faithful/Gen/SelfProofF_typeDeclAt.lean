@@ -11,6 +11,7 @@ public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pExpr
+public import Lanius.Faithful.Gen.SelfStmtF_Inline_pModTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pTypeArgsNone
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pTypeSliceTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_variantsNamedAt
@@ -241,6 +242,34 @@ theorem proof_named_of {prog : SrcProgram} {prims : Prims} {ix_named_of ix_named
   simp only [src_named_of] at h
   faithful [Lanius.Mini.namedOf]
 
+theorem step_param_ty_list {prog : SrcProgram} {prims : Prims} {ix_param_ty_list ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_empty_of_mini_selfhost_Ty ix_cons_ty ix_param_ty_of : Nat} (fn : prog.funcs[ix_param_ty_list]? = some (src_param_ty_list ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_empty_of_mini_selfhost_Ty ix_cons_ty ix_param_ty_of ix_param_ty_list)) (np : prims.isPrim ix_param_ty_list = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_CTree prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree n))
+    (ext_empty_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_Ty prog prims ix_empty_of_mini_selfhost_Ty n))
+    (ext_cons_ty : Certified (∀ {n : Nat}, Stmt_cons_ty prog prims ix_cons_ty n))
+    (ext_param_ty_of : Certified (∀ {n : Nat}, Stmt_param_ty_of prog prims ix_param_ty_of n)) {n : Nat}
+    (ih_param_ty_list : Certified (Stmt_param_ty_list prog prims ix_param_ty_list n)) :
+    Stmt_param_ty_list prog prims ix_param_ty_list (n + 1) := by
+  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  rw [pcall_succ np fn] at h
+  simp only [src_param_ty_list] at h
+  faithful [Lanius.Mini.paramTyList]
+
+theorem proof_param_ty_of {prog : SrcProgram} {prims : Prims} {ix_param_ty_of ix_node_prod ix_kid ix_ty_of ix_ref_ty ix_p_type_ref ix_p_type_ref_mut : Nat} (fn : prog.funcs[ix_param_ty_of]? = some (src_param_ty_of ix_node_prod ix_kid ix_ty_of ix_ref_ty ix_p_type_ref ix_p_type_ref_mut)) (np : prims.isPrim ix_param_ty_of = false)
+    (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
+    (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
+    (ext_ty_of : Certified (∀ {n : Nat}, Stmt_ty_of prog prims ix_ty_of n))
+    (ext_ref_ty : Certified (∀ {n : Nat}, Stmt_ref_ty prog prims ix_ref_ty n))
+    (ext_p_type_ref : Certified (∀ {n : Nat}, Stmt_p_type_ref prog prims ix_p_type_ref n))
+    (ext_p_type_ref_mut : Certified (∀ {n : Nat}, Stmt_p_type_ref_mut prog prims ix_p_type_ref_mut n)) {n : Nat} :
+    Stmt_param_ty_of prog prims ix_param_ty_of n := by
+  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_param_ty_of] at h
+  faithful [Lanius.Mini.paramTyOf]
+
 theorem proof_prim_or_named {prog : SrcProgram} {prims : Prims} {ix_prim_or_named ix_empty_of_mini_selfhost_Ty ix_type_decl_at ix_named_of ix_prim_ty : Nat} (fn : prog.funcs[ix_prim_or_named]? = some (src_prim_or_named ix_empty_of_mini_selfhost_Ty ix_type_decl_at ix_named_of ix_prim_ty)) (np : prims.isPrim ix_prim_or_named = false)
     (ext_empty_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_Ty prog prims ix_empty_of_mini_selfhost_Ty n))
     (ext_type_decl_at : Certified (∀ {n : Nat}, Stmt_type_decl_at prog prims ix_type_decl_at n))
@@ -253,6 +282,31 @@ theorem proof_prim_or_named {prog : SrcProgram} {prims : Prims} {ix_prim_or_name
   rw [pcall_succ np fn] at h
   simp only [src_prim_or_named] at h
   faithful [Lanius.Mini.primOrNamed]
+
+theorem proof_ref_ty {prog : SrcProgram} {prims : Prims} {ix_ref_ty ix_boxed_of_mini_selfhost_Ty : Nat} (fn : prog.funcs[ix_ref_ty]? = some (src_ref_ty ix_boxed_of_mini_selfhost_Ty)) (np : prims.isPrim ix_ref_ty = false)
+    (ext_boxed_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Ty prog prims ix_boxed_of_mini_selfhost_Ty n)) {n : Nat} :
+    Stmt_ref_ty prog prims ix_ref_ty n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_ref_ty] at h
+  faithful [Lanius.Mini.refTy]
+
+theorem proof_self_param_ty {prog : SrcProgram} {prims : Prims} {ix_self_param_ty ix_node_prod ix_ty_of ix_p_param_self_ref ix_p_param_self_ref_mut ix_ref_ty ix_param_ty_of : Nat} (fn : prog.funcs[ix_self_param_ty]? = some (src_self_param_ty ix_node_prod ix_ty_of ix_p_param_self_ref ix_p_param_self_ref_mut ix_ref_ty ix_param_ty_of)) (np : prims.isPrim ix_self_param_ty = false)
+    (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
+    (ext_ty_of : Certified (∀ {n : Nat}, Stmt_ty_of prog prims ix_ty_of n))
+    (ext_p_param_self_ref : Certified (∀ {n : Nat}, Stmt_p_param_self_ref prog prims ix_p_param_self_ref n))
+    (ext_p_param_self_ref_mut : Certified (∀ {n : Nat}, Stmt_p_param_self_ref_mut prog prims ix_p_param_self_ref_mut n))
+    (ext_ref_ty : Certified (∀ {n : Nat}, Stmt_ref_ty prog prims ix_ref_ty n))
+    (ext_param_ty_of : Certified (∀ {n : Nat}, Stmt_param_ty_of prog prims ix_param_ty_of n)) {n : Nat} :
+    Stmt_self_param_ty prog prims ix_self_param_ty n := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_self_param_ty] at h
+  faithful [Lanius.Mini.selfParamTy]
 
 theorem proof_slice_ty {prog : SrcProgram} {prims : Prims} {ix_slice_ty ix_boxed_of_mini_selfhost_Ty : Nat} (fn : prog.funcs[ix_slice_ty]? = some (src_slice_ty ix_boxed_of_mini_selfhost_Ty)) (np : prims.isPrim ix_slice_ty = false)
     (ext_boxed_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Ty prog prims ix_boxed_of_mini_selfhost_Ty n)) {n : Nat} :

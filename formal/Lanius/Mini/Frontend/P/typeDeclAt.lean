@@ -219,6 +219,13 @@ def paramTyOf (fuel : Nat) (env : FrontEnv) (t : CTree) : Option Ty :=
     else
       tyOf fuel env t
 
+/-- A parameter's type: `&self` and `&mut self` are references to the impl's type (F5, SEMANTIC_DECISIONS "S5b: point 10"); another as param_ty_of. -/
+def selfParamTy (fuel : Nat) (env : FrontEnv) (p : CTree) (t : CTree) : Option Ty :=
+  if decide (nodeProd p = (64)) || decide (nodeProd p = (325)) then
+    refTy (tyOf fuel env t)
+  else
+    paramTyOf fuel env t
+
 /-- A list of parameter type expressions, each as param_ty_of reads it. -/
 def paramTyList (fuel : Nat) (env : FrontEnv) (ts : List CTree) : Option (List Ty) :=
   if fuel = 0 then

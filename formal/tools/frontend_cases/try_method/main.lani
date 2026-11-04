@@ -2,6 +2,9 @@ module app::main;
 
 // `?` after a method call, on a local and on self, in a typed let, an
 // untyped let and an assignment, for Result and Option.
+// `&self` is a reference (F5, S5b): a call on the value m borrows it, and
+// one on self passes self on. Nothing lowers borrows yet, so this is read,
+// not compiled.
 import core::result;
 import core::option;
 

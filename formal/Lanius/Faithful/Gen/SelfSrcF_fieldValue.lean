@@ -25,6 +25,9 @@ def src_field_value (ix_boxed_of_mini_selfhost_List_mini_selfhost_MEff : Nat) (i
 /-- mini::selfhost::method_of_ty -/
 def src_method_of_ty (ix_field_fns_Decls_of_mini_selfhost_Decls : Nat) (ix_find_method : Nat) : SrcFunc := { params := [{ id := 13, ty := SrcType.uint (UintTy.usize) }, { id := 26, ty := ty276 }, { id := 41, ty := ty251 }, { id := 70, ty := ty20 }], ret := ty358, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 41)) ty251 ty358 [[180], []] [SrcEff.eCall ix_find_method [SrcEff.ePure (SrcExpr.local 13), SrcEff.ePure (SrcExpr.field 26 0), SrcEff.eCall ix_field_fns_Decls_of_mini_selfhost_Decls [SrcEff.ePure (SrcExpr.field 26 0)], SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000000#64), SrcEff.ePure (SrcExpr.local 70), SrcEff.ePure (SrcExpr.local 180)], SrcEff.eVariant ty358 1 []]) }
 
+/-- mini::selfhost::referent_or_of -/
+def src_referent_or_of (ix_referent_or : Nat) : SrcFunc := { params := [{ id := 15, ty := ty251 }], ret := ty251, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 15)) ty251 ty251 [[132], []] [SrcEff.eVariant ty251 0 [SrcEff.eCall ix_referent_or [SrcEff.ePure (SrcExpr.local 132)]], SrcEff.eVariant ty251 1 []]) }
+
 /-- mini::selfhost::step_expected -/
 def src_step_expected (ix_node_prod : Nat) (ix_p_postfix_end : Nat) : SrcFunc := { params := [{ id := 14, ty := ty251 }, { id := 50, ty := ty85 }], ret := ty251, body := SrcStmt.then (SrcStmt.ifEval (SrcEff.eApply (SrcOp.equal) (SrcEff.eCall ix_node_prod [SrcEff.ePure (SrcExpr.local 50)]) (SrcEff.eCall ix_p_postfix_end [])) (SrcStmt.return (SrcExpr.local 14)) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty251 1 [])) }
 

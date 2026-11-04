@@ -36,6 +36,7 @@ def effNamedTys (x : MEff) : List Ty :=
   | .xDeref dty a => dty :: effNamedTys a
   | .xPlaceField b j => effNamedTys b
   | .xPlaceAt b i => effNamedTys b ++ effNamedTys i
+  | .xBorrow bty p => bty :: effNamedTys p
 def effsNamedTys (xs : List MEff) : List Ty :=
   match xs with
   | [] => []

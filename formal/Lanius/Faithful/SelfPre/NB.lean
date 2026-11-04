@@ -1133,6 +1133,7 @@ def nbMEff : Lanius.Mini.MEff → Nat
   | .xDeref a0 a1 => max (nb a0) (nbMEff a1)
   | .xPlaceField a0 a1 => max (nbMEff a0) (nb a1)
   | .xPlaceAt a0 a1 => max (nbMEff a0) (nbMEff a1)
+  | .xBorrow a0 a1 => max (nb a0) (nbMEff a1)
 def nbMEff0 : List Lanius.Mini.MEff → Nat
   | [] => 0
   | a :: l => max (nbMEff a) (nbMEff0 l)
@@ -1164,6 +1165,7 @@ theorem nbMEff0_eq : ∀ l : List Lanius.Mini.MEff, nbMEff0 l = NB.nb l
 @[simp, nb_simp] theorem nb_MEff_xDeref (a0 : Lanius.Mini.Ty) (a1 : Lanius.Mini.MEff) : nb (Lanius.Mini.MEff.xDeref a0 a1) = max (nb a0) (nb a1) := rfl
 @[simp, nb_simp] theorem nb_MEff_xPlaceField (a0 : Lanius.Mini.MEff) (a1 : Nat) : nb (Lanius.Mini.MEff.xPlaceField a0 a1) = max (nb a0) (nb a1) := rfl
 @[simp, nb_simp] theorem nb_MEff_xPlaceAt (a0 : Lanius.Mini.MEff) (a1 : Lanius.Mini.MEff) : nb (Lanius.Mini.MEff.xPlaceAt a0 a1) = max (nb a0) (nb a1) := rfl
+@[simp, nb_simp] theorem nb_MEff_xBorrow (a0 : Lanius.Mini.Ty) (a1 : Lanius.Mini.MEff) : nb (Lanius.Mini.MEff.xBorrow a0 a1) = max (nb a0) (nb a1) := rfl
 
 instance : NB Lanius.Mini.EffArm := ⟨fun s => max (nb s.binders) (max (nb s.value) (nb s.ty))⟩
 @[simp, nb_simp] theorem nb_EffArm_mk (a0 : List Nat) (a1 : Lanius.Mini.MEff) (a2 : Option Lanius.Mini.Ty) : nb (Lanius.Mini.EffArm.mk a0 a1 a2) = max (nb a0) (max (nb a1) (nb a2)) := rfl

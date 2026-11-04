@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Faithful.Gen.SelfTermInfo
+public import Lanius.Faithful.Gen.SelfLookFn1
 public import Lanius.Faithful.Gen.SelfLookFn2
 import all Lanius.Faithful.Gen.SelfSrc2
 import all Lanius.Faithful.Gen.SelfSrc6

@@ -3,6 +3,7 @@ import Lanius.Faithful.Gen.SelfRep
 import Lanius.Faithful.Gen.SelfSrcF_typeDeclAt
 import Lanius.Faithful.Gen.SelfStmtF_typeDeclAt
 import Lanius.Faithful.GenB.SelfBStmtF_Inline_pExpr
+import Lanius.Faithful.GenB.SelfBStmtF_Inline_pModTail
 import Lanius.Faithful.GenB.SelfBStmtF_Inline_pTypeArgsNone
 import Lanius.Faithful.GenB.SelfBStmtF_Inline_pTypeSliceTail
 import Lanius.Faithful.GenB.SelfBStmtF_Inline_variantsNamedAt
@@ -473,5 +474,67 @@ theorem bproof_cons_tys_tail {spW sp : SrcProgram} {prims : Prims} {ix_cons_tys_
     simp only [src_cons_tys_tail, List.length_cons, List.length_nil, if_true] at h ⊢
     budget Cost_cons_tys_tail
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
+
+theorem bproof_ref_ty {spW sp : SrcProgram} {prims : Prims} {ix_ref_ty ix_boxed_of_mini_selfhost_Ty : Nat}
+    (fnW : spW.funcs[ix_ref_ty]? = some (src_ref_ty ix_boxed_of_mini_selfhost_Ty)) (fn : sp.funcs[ix_ref_ty]? = some (src_ref_ty ix_boxed_of_mini_selfhost_Ty))
+    (np : prims.isPrim ix_ref_ty = false)
+    (back : Certified (∀ {n : Nat}, Stmt_ref_ty sp prims ix_ref_ty n))
+    (pp_boxed_of_mini_selfhost_Ty : prims.isPrim ix_boxed_of_mini_selfhost_Ty = true) (bx_boxed_of_mini_selfhost_Ty : prims.boxed.contains ix_boxed_of_mini_selfhost_Ty = true) {n : Nat} :
+    BStmt_ref_ty spW sp prims ix_ref_ty n := by
+  intro x0 v0 w k h r0
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_ref_ty [v0] = some (w, k) ∧ Cost_ref_ty (n + 1) x0 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_ref_ty, List.length_cons, List.length_nil, if_true] at h ⊢
+    budget Cost_ref_ty
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0⟩
+
+theorem bproof_param_ty_of {spW sp : SrcProgram} {prims : Prims} {ix_param_ty_of ix_node_prod ix_kid ix_ty_of ix_ref_ty ix_p_type_ref ix_p_type_ref_mut : Nat}
+    (fnW : spW.funcs[ix_param_ty_of]? = some (src_param_ty_of ix_node_prod ix_kid ix_ty_of ix_ref_ty ix_p_type_ref ix_p_type_ref_mut)) (fn : sp.funcs[ix_param_ty_of]? = some (src_param_ty_of ix_node_prod ix_kid ix_ty_of ix_ref_ty ix_p_type_ref ix_p_type_ref_mut))
+    (np : prims.isPrim ix_param_ty_of = false)
+    (back : Certified (∀ {n : Nat}, Stmt_param_ty_of sp prims ix_param_ty_of n))
+    (b_node_prod : Certified (∀ {n : Nat}, BStmt_node_prod spW sp prims ix_node_prod n))
+    (b_kid : Certified (∀ {n : Nat}, BStmt_kid spW sp prims ix_kid n))
+    (b_ty_of : Certified (∀ {n : Nat}, BStmt_ty_of spW sp prims ix_ty_of n))
+    (b_ref_ty : Certified (∀ {n : Nat}, BStmt_ref_ty spW sp prims ix_ref_ty n))
+    (b_p_type_ref : Certified (∀ {n : Nat}, BStmt_p_type_ref spW sp prims ix_p_type_ref n))
+    (b_p_type_ref_mut : Certified (∀ {n : Nat}, BStmt_p_type_ref_mut spW sp prims ix_p_type_ref_mut n)) {n : Nat} :
+    BStmt_param_ty_of spW sp prims ix_param_ty_of n := by
+  intro x0 x1 x2 v0 v1 v2 w k b h r0 r1 r2 hb pre
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_param_ty_of [v0, v1, v2] = some (w, k) ∧ Cost_param_ty_of (n + 1) x0 x1 x2 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_param_ty_of, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_param_ty_of.eq_def] at pre
+    simp only at pre
+    budget Cost_param_ty_of
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
+
+theorem bproof_self_param_ty {spW sp : SrcProgram} {prims : Prims} {ix_self_param_ty ix_node_prod ix_ty_of ix_p_param_self_ref ix_p_param_self_ref_mut ix_ref_ty ix_param_ty_of : Nat}
+    (fnW : spW.funcs[ix_self_param_ty]? = some (src_self_param_ty ix_node_prod ix_ty_of ix_p_param_self_ref ix_p_param_self_ref_mut ix_ref_ty ix_param_ty_of)) (fn : sp.funcs[ix_self_param_ty]? = some (src_self_param_ty ix_node_prod ix_ty_of ix_p_param_self_ref ix_p_param_self_ref_mut ix_ref_ty ix_param_ty_of))
+    (np : prims.isPrim ix_self_param_ty = false)
+    (back : Certified (∀ {n : Nat}, Stmt_self_param_ty sp prims ix_self_param_ty n))
+    (b_node_prod : Certified (∀ {n : Nat}, BStmt_node_prod spW sp prims ix_node_prod n))
+    (b_ty_of : Certified (∀ {n : Nat}, BStmt_ty_of spW sp prims ix_ty_of n))
+    (b_p_param_self_ref : Certified (∀ {n : Nat}, BStmt_p_param_self_ref spW sp prims ix_p_param_self_ref n))
+    (b_p_param_self_ref_mut : Certified (∀ {n : Nat}, BStmt_p_param_self_ref_mut spW sp prims ix_p_param_self_ref_mut n))
+    (b_ref_ty : Certified (∀ {n : Nat}, BStmt_ref_ty spW sp prims ix_ref_ty n))
+    (b_param_ty_of : Certified (∀ {n : Nat}, BStmt_param_ty_of spW sp prims ix_param_ty_of n)) {n : Nat} :
+    BStmt_self_param_ty spW sp prims ix_self_param_ty n := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w k b h r0 r1 r2 r3 hb pre
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_self_param_ty [v0, v1, v2, v3] = some (w, k) ∧ Cost_self_param_ty (n + 1) x0 x1 x2 x3 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_self_param_ty, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_self_param_ty.eq_def] at pre
+    simp only at pre
+    budget Cost_self_param_ty
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3⟩
 
 end Lanius.Faithful.SelfBudget

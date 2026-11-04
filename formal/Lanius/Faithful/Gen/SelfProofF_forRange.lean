@@ -68,11 +68,11 @@ theorem proof_for_array {prog : SrcProgram} {prims : Prims} {ix_for_array ix_box
   simp only [src_for_array] at h
   faithful [Lanius.Mini.forArray]
 
-theorem proof_for_range {prog : SrcProgram} {prims : Prims} {ix_for_range ix_boxed_of_mini_selfhost_MStmt ix_boxed_of_mini_selfhost_SrcExpr ix_writes_local ix_stmt_unless : Nat} (fn : prog.funcs[ix_for_range]? = some (src_for_range ix_boxed_of_mini_selfhost_MStmt ix_boxed_of_mini_selfhost_SrcExpr ix_writes_local ix_stmt_unless)) (np : prims.isPrim ix_for_range = false)
+theorem proof_for_range {prog : SrcProgram} {prims : Prims} {ix_for_range ix_boxed_of_mini_selfhost_MStmt ix_boxed_of_mini_selfhost_SrcExpr ix_stmt_unless ix_writes_local : Nat} (fn : prog.funcs[ix_for_range]? = some (src_for_range ix_boxed_of_mini_selfhost_MStmt ix_boxed_of_mini_selfhost_SrcExpr ix_stmt_unless ix_writes_local)) (np : prims.isPrim ix_for_range = false)
     (ext_boxed_of_mini_selfhost_MStmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_MStmt prog prims ix_boxed_of_mini_selfhost_MStmt n))
     (ext_boxed_of_mini_selfhost_SrcExpr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_SrcExpr prog prims ix_boxed_of_mini_selfhost_SrcExpr n))
-    (ext_writes_local : Certified (∀ {n : Nat}, Stmt_writes_local prog prims ix_writes_local n))
-    (ext_stmt_unless : Certified (∀ {n : Nat}, Stmt_stmt_unless prog prims ix_stmt_unless n)) {n : Nat} :
+    (ext_stmt_unless : Certified (∀ {n : Nat}, Stmt_stmt_unless prog prims ix_stmt_unless n))
+    (ext_writes_local : Certified (∀ {n : Nat}, Stmt_writes_local prog prims ix_writes_local n)) {n : Nat} :
     Stmt_for_range prog prims ix_for_range n := by
   intro x0 x1 x2 x3 x4 x5 x6 v0 v1 v2 v3 v4 v5 v6 w h r0 r1 r2 r3 r4 r5 r6
   rcases n with _ | n
@@ -81,11 +81,11 @@ theorem proof_for_range {prog : SrcProgram} {prims : Prims} {ix_for_range ix_box
   simp only [src_for_range] at h
   faithful [Lanius.Mini.forRange]
 
-theorem proof_for_slice {prog : SrcProgram} {prims : Prims} {ix_for_slice ix_boxed_of_mini_selfhost_MStmt ix_boxed_of_mini_selfhost_SrcExpr ix_writes_local ix_stmt_unless : Nat} (fn : prog.funcs[ix_for_slice]? = some (src_for_slice ix_boxed_of_mini_selfhost_MStmt ix_boxed_of_mini_selfhost_SrcExpr ix_writes_local ix_stmt_unless)) (np : prims.isPrim ix_for_slice = false)
+theorem proof_for_slice {prog : SrcProgram} {prims : Prims} {ix_for_slice ix_boxed_of_mini_selfhost_MStmt ix_boxed_of_mini_selfhost_SrcExpr ix_stmt_unless ix_writes_local : Nat} (fn : prog.funcs[ix_for_slice]? = some (src_for_slice ix_boxed_of_mini_selfhost_MStmt ix_boxed_of_mini_selfhost_SrcExpr ix_stmt_unless ix_writes_local)) (np : prims.isPrim ix_for_slice = false)
     (ext_boxed_of_mini_selfhost_MStmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_MStmt prog prims ix_boxed_of_mini_selfhost_MStmt n))
     (ext_boxed_of_mini_selfhost_SrcExpr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_SrcExpr prog prims ix_boxed_of_mini_selfhost_SrcExpr n))
-    (ext_writes_local : Certified (∀ {n : Nat}, Stmt_writes_local prog prims ix_writes_local n))
-    (ext_stmt_unless : Certified (∀ {n : Nat}, Stmt_stmt_unless prog prims ix_stmt_unless n)) {n : Nat} :
+    (ext_stmt_unless : Certified (∀ {n : Nat}, Stmt_stmt_unless prog prims ix_stmt_unless n))
+    (ext_writes_local : Certified (∀ {n : Nat}, Stmt_writes_local prog prims ix_writes_local n)) {n : Nat} :
     Stmt_for_slice prog prims ix_for_slice n := by
   intro x0 x1 x2 x3 x4 x5 x6 v0 v1 v2 v3 v4 v5 v6 w h r0 r1 r2 r3 r4 r5 r6
   rcases n with _ | n

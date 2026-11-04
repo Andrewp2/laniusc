@@ -115,7 +115,7 @@ abbrev BStmt_x_match_of (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
 
 abbrev BStmt_cons_eff_arm (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.EffArm} {x1 : Option (List Lanius.Mini.EffArm)} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 318 RepEffArm) x0 v0 → (RepOption 306 (RepList 307 RepEffArm)) x1 v1 →
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 316 RepEffArm) x0 v0 → (RepOption 306 (RepList 307 RepEffArm)) x1 v1 →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_eff_arm n x0 x1 = k ∧ (RepOption 306 (RepList 307 RepEffArm)) (Lanius.Mini.consEffArm x0 x1) w
 
 abbrev BStmt_cons_expr_tail (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

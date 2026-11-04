@@ -207,7 +207,7 @@ def effStep (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Optio
       if nodeProd next = (161) then
         match listItems f (kid next 1) with
         | none => none
-        | some items => effChain f env scope expected (effFoundWith f env scope (stepExpected expected (kid next 3)) (methodOfTy f env (effTy f env scope x) (kidToken tail 1).text) (kid tail 2) [x] items) (kid next 3)
+        | some items => effChain f env scope expected (effFoundWith f env scope (stepExpected expected (kid next 3)) (methodOfTy f env (referentOrOf (effTy f env scope x)) (kidToken tail 1).text) (kid tail 2) [x] items) (kid next 3)
       else
         if nodeProd (kid tail 2) = (297) then
           effChain f env scope expected (fieldOfTy env x (effTy f env scope x) (kidToken tail 1).text) next
@@ -467,7 +467,83 @@ def effBound (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Opti
     match binds with
     | none => none
     | some bs => effInfer (fuel - 1) env scope expected d fd bs pre items
-/-- eff_found with the call's type arguments node (member_type_args_opt). -/
+/-- eff_found with the call's type arguments node (member_type_args_opt). F5 (S5b): the place a receiver names: a local, a field of one, or a place through a reference; none for another value (a borrow of a temporary). -/
+def placeOf (x : MEff) : Option MEff :=
+  match x with
+  | .xPure e =>
+    (match e with
+     | .local id => some x
+     | .field id j => some (MEff.xPlaceField (MEff.xPure (SrcExpr.local id)) j)
+     | .int k => none
+     | .boolean b => none
+     | .unsigned u k => none
+     | .negate a => none
+     | .not a => none
+     | .apply op l r => none
+     | .cast t a => none
+     | .null => none
+     | .char code => none
+     | .float ft bits => none)
+  | .xCall inst args => none
+  | .xApply op l r => none
+  | .xNeg a => none
+  | .xNot a => none
+  | .xCast t a => none
+  | .xIndex s i => none
+  | .xStruct t fs => none
+  | .xVariant t k ps => none
+  | .xMatch s ety t bs vs => none
+  | .xDivide op l r => none
+  | .xStride sl => none
+  | .xArraySlice e sl => none
+  | .xHost id args => none
+  | .xIf c t a b => none
+  | .xLet id t v rt b => none
+  | .xLen sl => none
+  | .xStr cs => none
+  | .xDeref dty a => some x
+  | .xPlaceField b j => some x
+  | .xPlaceAt b i => some x
+  | .xBorrow bty p => none
+def borrowOf (t : Ty) (pl : Option MEff) : Option MEff :=
+  match pl with
+  | none => none
+  | some p => some (MEff.xBorrow (Ty.tyRef t) p)
+/-- The method takes `&self` or `&mut self`. -/
+def selfByRef (fd : FnDecl) : Bool :=
+  let ps : CTree := kid fd.tree 4
+  decide (nodeProd ps = (61)) && (decide (nodeProd (kid ps 0) = (64)) || decide (nodeProd (kid ps 0) = (325)))
+/-- A receiver x of type t: at a `&self` method a reference is passed on and another receiver's place is borrowed; at a by-value `self` it is passed as it is, and a reference is not read (no copy out of a referent). -/
+def receiverOf (byRef : Bool) (t : Ty) (x : MEff) : Option MEff :=
+  if byRef && isRefTy t then
+    some x
+  else
+    if byRef then
+      borrowOf t (placeOf x)
+    else
+      if isRefTy t then
+        none
+      else
+        some x
+def receiverTyped (byRef : Bool) (t : Option Ty) (x : MEff) : Option MEff :=
+  match t with
+  | none => none
+  | some ty => receiverOf byRef ty x
+/-- The receivers before a method's arguments (none, or one). -/
+def receiversOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (fd : FnDecl) (pre : List MEff) : Option (List MEff) :=
+  match pre with
+  | [] => some []
+  | a :: rest =>
+    match rest with
+    | [] =>
+      (match receiverTyped (selfByRef fd) (effTy fuel env scope a) a with
+       | none => none
+       | some r => some [r])
+    | b :: more => none
+def effBoundRecv (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Option Ty) (d : Nat) (fd : FnDecl) (binds : Option (List Bind)) (pre : Option (List MEff)) (items : List CTree) : Option MEff :=
+  match pre with
+  | none => none
+  | some p => effBound fuel env scope expected d fd binds p items
 def effFoundWith (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Option Ty) (found : Option Found) (targs : CTree) (pre : List MEff) (items : List CTree) : Option MEff :=
   if fuel = 0 then
     none
@@ -477,7 +553,7 @@ def effFoundWith (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : 
     | some x =>
       match env.decls.fns[x.decl]? with
       | none => none
-      | some fd => effBound (fuel - 1) env scope expected x.decl fd (methodBinds (fuel - 1) env fd x.binds targs) pre items
+      | some fd => effBoundRecv (fuel - 1) env scope expected x.decl fd (methodBinds (fuel - 1) env fd x.binds targs) (receiversOf (fuel - 1) env scope fd pre) items
 /-- `x.m(args)`: `T::m(x, args)` for x's type T. -/
 def effMethod (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Option Ty) (pf : CTree) : Option MEff :=
   if fuel = 0 then
@@ -489,7 +565,7 @@ def effMethod (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Opt
     | some x =>
       match listItems fuel (kid (kid tail 3) 1) with
       | none => none
-      | some items => effFoundWith (fuel - 1) env scope expected (findMethod fuel env.decls env.decls.fns 0 (kidToken tail 1).text x.ty) (kid tail 2) [MEff.xPure (SrcExpr.local x.id)] items
+      | some items => effFoundWith (fuel - 1) env scope expected (findMethod fuel env.decls env.decls.fns 0 (kidToken tail 1).text (referentOr x.ty)) (kid tail 2) [MEff.xPure (SrcExpr.local x.id)] items
 /-- `match (scrutinee) { arms }`: the scrutinee of an enum type, one arm per variant in order. -/
 def effMatch (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Option Ty) (m : CTree) : Option MEff :=
   if fuel = 0 then

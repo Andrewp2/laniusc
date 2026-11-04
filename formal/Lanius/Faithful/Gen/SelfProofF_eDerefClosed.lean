@@ -34,6 +34,16 @@ theorem proof_e_array_slice_closed {prog : SrcProgram} {prims : Prims} {ix_e_arr
   simp only [src_e_array_slice_closed] at h
   faithful [Lanius.Mini.eArraySliceClosed]
 
+theorem proof_e_borrow_closed {prog : SrcProgram} {prims : Prims} {ix_e_borrow_closed ix_boxed_of_mini_selfhost_SrcEff : Nat} (fn : prog.funcs[ix_e_borrow_closed]? = some (src_e_borrow_closed ix_boxed_of_mini_selfhost_SrcEff)) (np : prims.isPrim ix_e_borrow_closed = false)
+    (ext_boxed_of_mini_selfhost_SrcEff : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_SrcEff prog prims ix_boxed_of_mini_selfhost_SrcEff n)) {n : Nat} :
+    Stmt_e_borrow_closed prog prims ix_e_borrow_closed n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_e_borrow_closed] at h
+  faithful [Lanius.Mini.eBorrowClosed]
+
 theorem proof_e_deref_closed {prog : SrcProgram} {prims : Prims} {ix_e_deref_closed ix_boxed_of_mini_selfhost_SrcEff : Nat} (fn : prog.funcs[ix_e_deref_closed]? = some (src_e_deref_closed ix_boxed_of_mini_selfhost_SrcEff)) (np : prims.isPrim ix_e_deref_closed = false)
     (ext_boxed_of_mini_selfhost_SrcEff : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_SrcEff prog prims ix_boxed_of_mini_selfhost_SrcEff n)) {n : Nat} :
     Stmt_e_deref_closed prog prims ix_e_deref_closed n := by

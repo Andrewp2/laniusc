@@ -703,6 +703,8 @@ inductive RepMEff : Lanius.Mini.MEff → Value → Prop where
       RepMEff x0 v0 → RepNat x1 v1 → RepMEff (Lanius.Mini.MEff.xPlaceField x0 x1) (.enumeration 177 19 [v0, v1])
   | c20 {x0 : Lanius.Mini.MEff} {x1 : Lanius.Mini.MEff} {v0 v1 : Value} :
       RepMEff x0 v0 → RepMEff x1 v1 → RepMEff (Lanius.Mini.MEff.xPlaceAt x0 x1) (.enumeration 177 20 [v0, v1])
+  | c21 {x0 : Lanius.Mini.Ty} {x1 : Lanius.Mini.MEff} {v0 v1 : Value} :
+      RepTy x0 v0 → RepMEff x1 v1 → RepMEff (Lanius.Mini.MEff.xBorrow x0 x1) (.enumeration 177 21 [v0, v1])
 
 inductive RepMStmt : Lanius.Mini.MStmt → Value → Prop where
   | c0 :
@@ -972,13 +974,13 @@ inductive RepFlDiv : Lanius.Mini.FlDiv → Value → Prop where
   | c0 {x0 : List Bool} {x1 : List Bool} {v0 v1 : Value} :
       (RepList 263 RepBool) x0 v0 → (RepList 263 RepBool) x1 v1 → RepFlDiv (Lanius.Mini.FlDiv.mk x0 x1) (.structure 312 [v0, v1])
 
-inductive RepArgsBound : Lanius.Mini.ArgsBound → Value → Prop where
-  | c0 {x0 : List Lanius.Mini.MEff} {x1 : List Lanius.Mini.Bind} {v0 v1 : Value} :
-      (RepList 236 RepMEff) x0 v0 → (RepList 276 RepBind) x1 v1 → RepArgsBound (Lanius.Mini.ArgsBound.mk x0 x1) (.structure 317 [v0, v1])
-
 inductive RepWildSplit : Lanius.Mini.WildSplit → Value → Prop where
   | c0 {x0 : List Lanius.Mini.CTree} {x1 : Lanius.Mini.CTree} {v0 v1 : Value} :
-      (RepList 83 RepCTree) x0 v0 → RepCTree x1 v1 → RepWildSplit (Lanius.Mini.WildSplit.mk x0 x1) (.structure 320 [v0, v1])
+      (RepList 83 RepCTree) x0 v0 → RepCTree x1 v1 → RepWildSplit (Lanius.Mini.WildSplit.mk x0 x1) (.structure 318 [v0, v1])
+
+inductive RepArgsBound : Lanius.Mini.ArgsBound → Value → Prop where
+  | c0 {x0 : List Lanius.Mini.MEff} {x1 : List Lanius.Mini.Bind} {v0 v1 : Value} :
+      (RepList 236 RepMEff) x0 v0 → (RepList 276 RepBind) x1 v1 → RepArgsBound (Lanius.Mini.ArgsBound.mk x0 x1) (.structure 320 [v0, v1])
 
 inductive RepArmsUse : Lanius.Mini.ArmsUse → Value → Prop where
   | c0 {x0 : List Lanius.Mini.CTree} {x1 : Bool} {v0 v1 : Value} :
@@ -1023,19 +1025,19 @@ attribute [rep_rule] RepTy.c9 RepTy.c10 RepTy.c11 RepTy.c12 RepInst.c0 RepArity.
 attribute [rep_rule] RepRawTok.c0 RepMParam.c0 RepRetTy.c0 RepRetTy.c1 RepMEff.c0 RepMEff.c1 RepMEff.c2 RepMEff.c3
 attribute [rep_rule] RepMEff.c4 RepMEff.c5 RepMEff.c6 RepMEff.c7 RepMEff.c8 RepMEff.c9 RepMEff.c10 RepMEff.c11
 attribute [rep_rule] RepMEff.c12 RepMEff.c13 RepMEff.c14 RepMEff.c15 RepMEff.c16 RepMEff.c17 RepMEff.c18 RepMEff.c19
-attribute [rep_rule] RepMEff.c20 RepMStmt.c0 RepMStmt.c1 RepMStmt.c2 RepMStmt.c3 RepMStmt.c4 RepMStmt.c5 RepMStmt.c6
-attribute [rep_rule] RepMStmt.c7 RepMStmt.c8 RepMStmt.c9 RepMStmt.c10 RepMStmt.c11 RepMStmt.c12 RepMStmt.c13 RepMStmt.c14
-attribute [rep_rule] RepMStmt.c15 RepMStmt.c16 RepMStmt.c17 RepMStmt.c18 RepMStmt.c19 RepMStmt.c20 RepMStmt.c21 RepMStmt.c22
-attribute [rep_rule] RepMStmt.c23 RepMStmt.c24 RepMStmt.c25 RepMStmt.c26 RepMStmt.c27 RepMStmt.c28 RepMStmt.c29 RepMStmt.c30
-attribute [rep_rule] RepMStmt.c31 RepMStmt.c32 RepMStmt.c33 RepMStmt.c34 RepMStmt.c35 RepMFunc.c0 RepMono.c0 RepFact.c0
-attribute [rep_rule] RepEvaluatedArgs.c0 RepSymRule.c0 RepOneTok.c0 RepOneTok.c1 RepTables.c0 RepPlace.c0 RepArrayArgs.c0 RepVariants.c0
-attribute [rep_rule] RepLocalTy.c0 RepFrontEnv.c0 RepNumScan.c0 RepNumScan.c1 RepScan.c0 RepScan.c1 RepFields.c0 RepLocal.c0
-attribute [rep_rule] RepMParams.c0 RepTraitRef.c0 RepBoundGoal.c0 RepSplit.c0 RepFlDec.c0 RepArrayParts.c0 RepViewRead.c0 RepCalled.c0
-attribute [rep_rule] RepTried.c0 RepLetHead.c0 RepLetHead.c1 RepLetHead.c2 RepLetHead.c3 RepLetHead.c4 RepLetHead.c5 RepLetHead.c6
-attribute [rep_rule] RepLetHead.c7 RepLetHead.c8 RepLetHead.c9 RepLetHead.c10 RepUntyped.c0 RepLitForm.c0 RepLitForm.c1 RepLitForm.c2
-attribute [rep_rule] RepBind.c0 RepPathRef.c0 RepVariantAt.c0 RepVariantTy.c0 RepMatchStmt.c0 RepLitMatch.c0 RepFound.c0 RepArrayLocal.c0
-attribute [rep_rule] RepFit.c0 RepFit.c1 RepFit.c2 RepEffArm.c0 RepBound.c0 RepFlDiv.c0 RepArgsBound.c0 RepWildSplit.c0
-attribute [rep_rule] RepArmsUse.c0 RepArmUse.c0
+attribute [rep_rule] RepMEff.c20 RepMEff.c21 RepMStmt.c0 RepMStmt.c1 RepMStmt.c2 RepMStmt.c3 RepMStmt.c4 RepMStmt.c5
+attribute [rep_rule] RepMStmt.c6 RepMStmt.c7 RepMStmt.c8 RepMStmt.c9 RepMStmt.c10 RepMStmt.c11 RepMStmt.c12 RepMStmt.c13
+attribute [rep_rule] RepMStmt.c14 RepMStmt.c15 RepMStmt.c16 RepMStmt.c17 RepMStmt.c18 RepMStmt.c19 RepMStmt.c20 RepMStmt.c21
+attribute [rep_rule] RepMStmt.c22 RepMStmt.c23 RepMStmt.c24 RepMStmt.c25 RepMStmt.c26 RepMStmt.c27 RepMStmt.c28 RepMStmt.c29
+attribute [rep_rule] RepMStmt.c30 RepMStmt.c31 RepMStmt.c32 RepMStmt.c33 RepMStmt.c34 RepMStmt.c35 RepMFunc.c0 RepMono.c0
+attribute [rep_rule] RepFact.c0 RepEvaluatedArgs.c0 RepSymRule.c0 RepOneTok.c0 RepOneTok.c1 RepTables.c0 RepPlace.c0 RepArrayArgs.c0
+attribute [rep_rule] RepVariants.c0 RepLocalTy.c0 RepFrontEnv.c0 RepNumScan.c0 RepNumScan.c1 RepScan.c0 RepScan.c1 RepFields.c0
+attribute [rep_rule] RepLocal.c0 RepMParams.c0 RepTraitRef.c0 RepBoundGoal.c0 RepSplit.c0 RepFlDec.c0 RepArrayParts.c0 RepViewRead.c0
+attribute [rep_rule] RepCalled.c0 RepTried.c0 RepLetHead.c0 RepLetHead.c1 RepLetHead.c2 RepLetHead.c3 RepLetHead.c4 RepLetHead.c5
+attribute [rep_rule] RepLetHead.c6 RepLetHead.c7 RepLetHead.c8 RepLetHead.c9 RepLetHead.c10 RepUntyped.c0 RepLitForm.c0 RepLitForm.c1
+attribute [rep_rule] RepLitForm.c2 RepBind.c0 RepPathRef.c0 RepVariantAt.c0 RepVariantTy.c0 RepMatchStmt.c0 RepLitMatch.c0 RepFound.c0
+attribute [rep_rule] RepArrayLocal.c0 RepFit.c0 RepFit.c1 RepFit.c2 RepEffArm.c0 RepBound.c0 RepFlDiv.c0 RepWildSplit.c0
+attribute [rep_rule] RepArgsBound.c0 RepArmsUse.c0 RepArmUse.c0
 
 @[pure_rule] theorem ty0_typeId : ty0.typeId = 1 := rfl
 @[pure_rule] theorem ty1_typeId : ty1.typeId = 0 := rfl
@@ -1353,9 +1355,9 @@ attribute [rep_rule] RepArmsUse.c0 RepArmUse.c0
 @[pure_rule] theorem ty374_typeId : ty374.typeId = 313 := rfl
 @[pure_rule] theorem ty375_typeId : ty375.typeId = 314 := rfl
 @[pure_rule] theorem ty376_typeId : ty376.typeId = 315 := rfl
-@[pure_rule] theorem ty378_typeId : ty378.typeId = 317 := rfl
 @[pure_rule] theorem ty379_typeId : ty379.typeId = 316 := rfl
-@[pure_rule] theorem ty381_typeId : ty381.typeId = 318 := rfl
+@[pure_rule] theorem ty380_typeId : ty380.typeId = 318 := rfl
+@[pure_rule] theorem ty381_typeId : ty381.typeId = 317 := rfl
 @[pure_rule] theorem ty382_typeId : ty382.typeId = 320 := rfl
 @[pure_rule] theorem ty383_typeId : ty383.typeId = 319 := rfl
 @[pure_rule] theorem ty384_typeId : ty384.typeId = 322 := rfl

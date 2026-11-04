@@ -20,7 +20,7 @@ import all Lanius.Mini.Frontend.P.setEvalClosed
 import all Lanius.Mini.Frontend.P.shrFirst
 import all Lanius.Mini.Frontend.P.setPlaceOf
 import all Lanius.Mini.Frontend.P.setFieldOrEval
-import all Lanius.Mini.Frontend.P.namesFieldBase
+import all Lanius.Mini.Frontend.P.primaryNames
 import all Lanius.Mini.Frontend.P.isFnPath
 import all Lanius.Mini.Frontend.P.fieldValue
 import all Lanius.Mini.Frontend.P.checkedFunc
@@ -163,6 +163,9 @@ inductive EffClosed (decls : Decls) (fns types : List Inst) : MEff → SrcEff �
   | placeAt {x i : MEff} {a b : SrcEff} :
       EffClosed decls fns types x a → EffClosed decls fns types i b →
       EffClosed decls fns types (.xPlaceAt x i) (.eAt a b)
+  /-- (F5, S5b) a borrow of a place -/
+  | borrow {ty : Ty} {s : SrcType} {x : MEff} {a : SrcEff} :
+      LowerR decls types ty s → EffClosed decls fns types x a → EffClosed decls fns types (.xBorrow ty x) (.eBorrow s a)
 
 inductive EffsClosed (decls : Decls) (fns types : List Inst) : List MEff → List SrcEff → Prop
   | nil : EffsClosed decls fns types [] []
@@ -267,6 +270,11 @@ theorem closeEff_sound {fuel : Nat} {t : Tables} (ok : LoweredOk t) :
     cases hb : closeEff fuel t b <;> cases hi : closeEff fuel t i <;> simp [hb, hi, ePlaceAtClosed] at h
     subst h
     exact .placeAt (closeEff_sound ok _ _ hb) (closeEff_sound ok _ _ hi)
+  | .xBorrow ty a, s, h => by
+    simp only [closeEff] at h
+    cases ht : closeTy fuel t ty <;> cases ha : closeEff fuel t a <;> simp [ht, ha, eBorrowClosed] at h
+    subst h
+    exact .borrow (closeTy_sound ok ht) (closeEff_sound ok _ _ ha)
 
 theorem closeEffs_sound {fuel : Nat} {t : Tables} (ok : LoweredOk t) :
     ∀ (xs : List MEff) (ss : List SrcEff), closeEffs fuel t xs = some ss → EffsClosed t.decls t.fns t.types xs ss

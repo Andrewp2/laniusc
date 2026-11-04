@@ -43,6 +43,11 @@ abbrev BStmt_e_place_at_closed (spW sp : SrcProgram) (prims : Prims) (ix n : Nat
     qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 234 RepSrcEff) x0 v0 → (RepOption 234 RepSrcEff) x1 v1 →
     qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_e_place_at_closed n x0 x1 = k ∧ (RepOption 234 RepSrcEff) (Lanius.Mini.ePlaceAtClosed x0 x1) w
 
+abbrev BStmt_e_borrow_closed (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Option Lanius.Mini.SrcType} {x1 : Option Lanius.Mini.SrcEff} {v0 v1 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 160 RepSrcType) x0 v0 → (RepOption 234 RepSrcEff) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_e_borrow_closed n x0 x1 = k ∧ (RepOption 234 RepSrcEff) (Lanius.Mini.eBorrowClosed x0 x1) w
+
 abbrev BStmt_set_place_closed (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.SrcEff} {x1 : Option Lanius.Mini.SrcEff} {v0 v1 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 234 RepSrcEff) x0 v0 → (RepOption 234 RepSrcEff) x1 v1 →

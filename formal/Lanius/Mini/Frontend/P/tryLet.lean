@@ -67,6 +67,7 @@ def inferred (x : MEff) : Bool :=
   | .xDeref dty a => false
   | .xPlaceField b j => true
   | .xPlaceAt b i => true
+  | .xBorrow bty p => false
 
 def untypedIf (ok : Bool) (t : Ty) (h : LetHead) : Option Untyped :=
   if ok then

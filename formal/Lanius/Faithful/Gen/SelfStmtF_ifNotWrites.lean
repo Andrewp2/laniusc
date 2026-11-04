@@ -20,20 +20,8 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-abbrev Stmt_if_not_writes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Bool} {x1 : Lanius.Mini.MFunc} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → RepMFunc x1 v1 →
-    (RepOption 204 RepMFunc) (Lanius.Mini.ifNotWrites x0 x1) w
-
 abbrev Stmt_known_true (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Bool} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 253 RepBool) x0 v0 →
     RepBool (Lanius.Mini.knownTrue x0) w
-
-abbrev Stmt_ref_checked (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.MFunc} {x1 : Option Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 204 RepMFunc) x0 v0 → (RepOption 135 RepNat) x1 v1 →
-    (RepOption 204 RepMFunc) (Lanius.Mini.refChecked x0 x1) w
-
-abbrev Stmt_self_ref_id (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : List Lanius.Mini.CTree} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepFrontEnv x0 v0 → (RepList 83 RepCTree) x1 v1 →
-    (RepOption 135 RepNat) (Lanius.Mini.selfRefId x0 x1) w
 
 end Lanius.Faithful.SelfCert

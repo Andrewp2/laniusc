@@ -3,7 +3,7 @@ import Lanius.Faithful.Gen.SelfRep
 import Lanius.Faithful.Gen.SelfSrcF_paramGoals
 import Lanius.Faithful.Gen.SelfStmtF_paramGoals
 import Lanius.Faithful.GenB.SelfBStmtF_Inline_pBoundTypeArgsAfterCommaMore
-import Lanius.Faithful.GenB.SelfBStmtF_Inline_pExpr
+import Lanius.Faithful.GenB.SelfBStmtF_Inline_pModTail
 import Lanius.Faithful.GenB.SelfBStmtF_Inline_pTypeArgsNone
 import Lanius.Faithful.GenB.SelfBStmtF_Inline_pTypeSliceTail
 import Lanius.Faithful.GenB.SelfBStmtF_consTreeTail
@@ -313,8 +313,8 @@ theorem bproof_fn_bounds_ok {spW sp : SrcProgram} {prims : Prims} {ix_fn_bounds_
     budget Cost_fn_bounds_ok
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3⟩
 
-theorem bstep_fit_ty {spW sp : SrcProgram} {prims : Prims} {ix_fit_ty ix_minus ix_node_prod ix_list_items ix_kid ix_p_type_array ix_p_type_slice_tail ix_p_type_ident ix_type_path_spellings ix_slice_elem ix_fit_path : Nat}
-    (fnW : spW.funcs[ix_fit_ty]? = some (src_fit_ty ix_minus ix_node_prod ix_list_items ix_kid ix_p_type_array ix_p_type_slice_tail ix_p_type_ident ix_type_path_spellings ix_slice_elem ix_fit_ty ix_fit_path)) (fn : sp.funcs[ix_fit_ty]? = some (src_fit_ty ix_minus ix_node_prod ix_list_items ix_kid ix_p_type_array ix_p_type_slice_tail ix_p_type_ident ix_type_path_spellings ix_slice_elem ix_fit_ty ix_fit_path))
+theorem bstep_fit_ty {spW sp : SrcProgram} {prims : Prims} {ix_fit_ty ix_minus ix_node_prod ix_list_items ix_kid ix_p_type_array ix_p_type_slice_tail ix_p_type_ident ix_type_path_spellings ix_referent ix_p_type_ref ix_p_type_ref_mut ix_slice_elem ix_fit_path : Nat}
+    (fnW : spW.funcs[ix_fit_ty]? = some (src_fit_ty ix_minus ix_node_prod ix_list_items ix_kid ix_p_type_array ix_p_type_slice_tail ix_p_type_ident ix_type_path_spellings ix_referent ix_p_type_ref ix_p_type_ref_mut ix_slice_elem ix_fit_ty ix_fit_path)) (fn : sp.funcs[ix_fit_ty]? = some (src_fit_ty ix_minus ix_node_prod ix_list_items ix_kid ix_p_type_array ix_p_type_slice_tail ix_p_type_ident ix_type_path_spellings ix_referent ix_p_type_ref ix_p_type_ref_mut ix_slice_elem ix_fit_ty ix_fit_path))
     (np : prims.isPrim ix_fit_ty = false)
     (back : Certified (∀ {n : Nat}, Stmt_fit_ty sp prims ix_fit_ty n))
     (b_minus : Certified (∀ {n : Nat}, BStmt_minus spW sp prims ix_minus n))
@@ -325,6 +325,9 @@ theorem bstep_fit_ty {spW sp : SrcProgram} {prims : Prims} {ix_fit_ty ix_minus i
     (b_p_type_slice_tail : Certified (∀ {n : Nat}, BStmt_p_type_slice_tail spW sp prims ix_p_type_slice_tail n))
     (b_p_type_ident : Certified (∀ {n : Nat}, BStmt_p_type_ident spW sp prims ix_p_type_ident n))
     (b_type_path_spellings : Certified (∀ {n : Nat}, BStmt_type_path_spellings spW sp prims ix_type_path_spellings n))
+    (b_referent : Certified (∀ {n : Nat}, BStmt_referent spW sp prims ix_referent n))
+    (b_p_type_ref : Certified (∀ {n : Nat}, BStmt_p_type_ref spW sp prims ix_p_type_ref n))
+    (b_p_type_ref_mut : Certified (∀ {n : Nat}, BStmt_p_type_ref_mut spW sp prims ix_p_type_ref_mut n))
     (b_slice_elem : Certified (∀ {n : Nat}, BStmt_slice_elem spW sp prims ix_slice_elem n)) {n : Nat}
     (bih_fit_ty : Certified (BStmt_fit_ty spW sp prims ix_fit_ty n))
     (bih_fit_path : Certified (BStmt_fit_path spW sp prims ix_fit_path n)) :
@@ -414,62 +417,5 @@ theorem bstep_fit_same_decl {spW sp : SrcProgram} {prims : Prims} {ix_fit_same_d
     simp only at pre
     budget Cost_fit_same_decl
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4 r5 r6⟩
-
-theorem bstep_fit_args {spW sp : SrcProgram} {prims : Prims} {ix_fit_args ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_fit_args_next ix_fit_arg : Nat}
-    (fnW : spW.funcs[ix_fit_args]? = some (src_fit_args ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_fit_args_next ix_fit_arg)) (fn : sp.funcs[ix_fit_args]? = some (src_fit_args ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_fit_args_next ix_fit_arg))
-    (np : prims.isPrim ix_fit_args = false)
-    (back : Certified (∀ {n : Nat}, Stmt_fit_args sp prims ix_fit_args n))
-    (b_minus : Certified (∀ {n : Nat}, BStmt_minus spW sp prims ix_minus n))
-    (pp_unbox_of_mini_selfhost_List_mini_selfhost_CTree : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_CTree : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree = false)
-    (pp_unbox_of_mini_selfhost_List_mini_selfhost_Ty : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_Ty : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty = false) {n : Nat}
-    (bih_fit_args_next : Certified (BStmt_fit_args_next spW sp prims ix_fit_args_next n))
-    (bih_fit_arg : Certified (BStmt_fit_arg spW sp prims ix_fit_arg n)) :
-    BStmt_fit_args spW sp prims ix_fit_args (n + 1) := by
-  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w k b h r0 r1 r2 r3 r4 r5 hb pre
-  have key : qcall sp prims uc (n + 1) ix_fit_args [v0, v1, v2, v3, v4, v5] = some (w, k) ∧ Cost_fit_args (n + 1) x0 x1 x2 x3 x4 x5 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_fit_args, List.length_cons, List.length_nil, if_true] at h ⊢
-    rw [Pre_fit_args.eq_def] at pre
-    simp only at pre
-    budget Cost_fit_args
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4 r5⟩
-
-theorem bstep_fit_args_next {spW sp : SrcProgram} {prims : Prims} {ix_fit_args_next ix_minus ix_fit_args : Nat}
-    (fnW : spW.funcs[ix_fit_args_next]? = some (src_fit_args_next ix_minus ix_fit_args)) (fn : sp.funcs[ix_fit_args_next]? = some (src_fit_args_next ix_minus ix_fit_args))
-    (np : prims.isPrim ix_fit_args_next = false)
-    (back : Certified (∀ {n : Nat}, Stmt_fit_args_next sp prims ix_fit_args_next n))
-    (b_minus : Certified (∀ {n : Nat}, BStmt_minus spW sp prims ix_minus n)) {n : Nat}
-    (bih_fit_args : Certified (BStmt_fit_args spW sp prims ix_fit_args n)) :
-    BStmt_fit_args_next spW sp prims ix_fit_args_next (n + 1) := by
-  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w k b h r0 r1 r2 r3 r4 r5 hb pre
-  have key : qcall sp prims uc (n + 1) ix_fit_args_next [v0, v1, v2, v3, v4, v5] = some (w, k) ∧ Cost_fit_args_next (n + 1) x0 x1 x2 x3 x4 x5 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_fit_args_next, List.length_cons, List.length_nil, if_true] at h ⊢
-    rw [Pre_fit_args_next.eq_def] at pre
-    simp only at pre
-    budget Cost_fit_args_next
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4 r5⟩
-
-theorem bstep_fit_arg {spW sp : SrcProgram} {prims : Prims} {ix_fit_arg ix_minus ix_node_prod ix_kid ix_p_generic_argument_type ix_fit_ty : Nat}
-    (fnW : spW.funcs[ix_fit_arg]? = some (src_fit_arg ix_minus ix_node_prod ix_kid ix_p_generic_argument_type ix_fit_ty)) (fn : sp.funcs[ix_fit_arg]? = some (src_fit_arg ix_minus ix_node_prod ix_kid ix_p_generic_argument_type ix_fit_ty))
-    (np : prims.isPrim ix_fit_arg = false)
-    (back : Certified (∀ {n : Nat}, Stmt_fit_arg sp prims ix_fit_arg n))
-    (b_minus : Certified (∀ {n : Nat}, BStmt_minus spW sp prims ix_minus n))
-    (b_node_prod : Certified (∀ {n : Nat}, BStmt_node_prod spW sp prims ix_node_prod n))
-    (b_kid : Certified (∀ {n : Nat}, BStmt_kid spW sp prims ix_kid n))
-    (b_p_generic_argument_type : Certified (∀ {n : Nat}, BStmt_p_generic_argument_type spW sp prims ix_p_generic_argument_type n)) {n : Nat}
-    (bih_fit_ty : Certified (BStmt_fit_ty spW sp prims ix_fit_ty n)) :
-    BStmt_fit_arg spW sp prims ix_fit_arg (n + 1) := by
-  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w k b h r0 r1 r2 r3 r4 r5 hb pre
-  have key : qcall sp prims uc (n + 1) ix_fit_arg [v0, v1, v2, v3, v4, v5] = some (w, k) ∧ Cost_fit_arg (n + 1) x0 x1 x2 x3 x4 x5 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_fit_arg, List.length_cons, List.length_nil, if_true] at h ⊢
-    rw [Pre_fit_arg.eq_def] at pre
-    simp only at pre
-    budget Cost_fit_arg
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4 r5⟩
 
 end Lanius.Faithful.SelfBudget

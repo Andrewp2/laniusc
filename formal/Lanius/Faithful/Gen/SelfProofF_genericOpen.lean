@@ -9,6 +9,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_Inline_pBoundTypeArgsAfterCommaMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pExpr
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pLeTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pModTail
+public import Lanius.Faithful.Gen.SelfStmtF_Inline_pPathIdentArgs
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_tLparen
 public import Lanius.Faithful.Gen.SelfStmtF_genericClose
 public import Lanius.Faithful.Gen.SelfStmtF_genericOpen

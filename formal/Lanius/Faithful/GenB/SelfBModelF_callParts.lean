@@ -22,7 +22,7 @@ noncomputable section
 
 def Cost_call_parts : Nat → Lanius.Mini.MEff → Nat
   | 0, x11 => 18446744073709551616
-  | n + 1, x11 => (match x11 with | .xPure x91 => 0 | .xCall x117 x123 => (Cost_pure_list n x123) | .xApply x280 x284 x287 => 0 | .xNeg x312 => 0 | .xNot x337 => 0 | .xCast x363 x366 => 0 | .xIndex x393 x397 => 0 | .xStruct x425 x428 => 0 | .xVariant x458 x461 x464 => 0 | .xMatch x492 x496 x501 x504 x508 => 0 | .xDivide x537 x541 x544 => 0 | .xStride x572 => 0 | .xArraySlice x605 x608 => 0 | .xHost x635 x639 => 0 | .xIf x666 x669 x672 x675 => 0 | .xLet x700 x704 x707 x710 x714 => 0 | .xLen x739 => 0 | .xStr x765 => 0 | .xDeref x793 x798 => 0 | .xPlaceField x830 x833 => 0 | .xPlaceAt x862 x865 => 0)
+  | n + 1, x11 => (match x11 with | .xPure x91 => 0 | .xCall x117 x123 => (Cost_pure_list n x123) | .xApply x280 x284 x287 => 0 | .xNeg x312 => 0 | .xNot x337 => 0 | .xCast x363 x366 => 0 | .xIndex x393 x397 => 0 | .xStruct x425 x428 => 0 | .xVariant x458 x461 x464 => 0 | .xMatch x492 x496 x501 x504 x508 => 0 | .xDivide x537 x541 x544 => 0 | .xStride x572 => 0 | .xArraySlice x605 x608 => 0 | .xHost x635 x639 => 0 | .xIf x666 x669 x672 x675 => 0 | .xLet x700 x704 x707 x710 x714 => 0 | .xLen x739 => 0 | .xStr x765 => 0 | .xDeref x793 x798 => 0 | .xPlaceField x830 x833 => 0 | .xPlaceAt x862 x865 => 0 | .xBorrow x893 x898 => 0)
 
 end
 

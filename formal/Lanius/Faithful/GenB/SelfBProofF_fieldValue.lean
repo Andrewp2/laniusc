@@ -7,6 +7,7 @@ import Lanius.Faithful.GenB.SelfBStmtF_fieldValue
 import Lanius.Faithful.GenB.SelfBStmtF_freshId
 import Lanius.Faithful.GenB.SelfBStmtF_paramGoals
 import Lanius.Faithful.GenB.SelfBStmtF_projection
+import Lanius.Faithful.GenB.SelfBStmtF_repeatEff
 import Lanius.Faithful.GenB.SelfBStmtN0
 import Lanius.Faithful.GenB.SelfBStmtN2
 

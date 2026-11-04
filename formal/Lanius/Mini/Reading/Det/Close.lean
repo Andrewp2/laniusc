@@ -6,7 +6,7 @@ import all Lanius.Mini.Frontend.P.negWideI32
 import all Lanius.Mini.Frontend.P.shrFirst
 import all Lanius.Mini.Frontend.P.setPlaceOf
 import all Lanius.Mini.Frontend.P.setFieldOrEval
-import all Lanius.Mini.Frontend.P.namesFieldBase
+import all Lanius.Mini.Frontend.P.primaryNames
 import all Lanius.Mini.Frontend.P.isFnPath
 import all Lanius.Mini.Frontend.P.fieldValue
 import all Lanius.Mini.Frontend.P.eDerefClosed
@@ -55,6 +55,7 @@ theorem effClosed_unique : ∀ {x : MEff} {a b : SrcEff}, EffClosed decls fns ty
   | _, _, _, .len, .len => rfl
   | _, _, _, .str, .str => rfl
   | _, _, _, .deref lw x, .deref lw' x' => by rw [lowerR_unique lw lw', effClosed_unique x x']
+  | _, _, _, .borrow lw x, .borrow lw' x' => by rw [lowerR_unique lw lw', effClosed_unique x x']
   | _, _, _, .placeField x, .placeField x' => by rw [effClosed_unique x x']
   | _, _, _, .placeAt x i, .placeAt x' i' => by rw [effClosed_unique x x', effClosed_unique i i']
 termination_by structural _ _ _ h _ => h

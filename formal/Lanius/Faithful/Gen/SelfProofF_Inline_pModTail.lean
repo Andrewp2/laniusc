@@ -132,6 +132,15 @@ theorem proof_p_param_self_ref {prog : SrcProgram} {prims : Prims} {ix_p_param_s
   simp only [src_p_param_self_ref] at h
   faithful [Lanius.Mini.Inline.pParamSelfRef]
 
+theorem proof_p_param_self_ref_mut {prog : SrcProgram} {prims : Prims} {ix_p_param_self_ref_mut : Nat} (fn : prog.funcs[ix_p_param_self_ref_mut]? = some (src_p_param_self_ref_mut)) (np : prims.isPrim ix_p_param_self_ref_mut = false) {n : Nat} :
+    Stmt_p_param_self_ref_mut prog prims ix_p_param_self_ref_mut n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_p_param_self_ref_mut] at h
+  faithful [Lanius.Mini.Inline.pParamSelfRefMut]
+
 theorem proof_p_params_after_comma_more {prog : SrcProgram} {prims : Prims} {ix_p_params_after_comma_more : Nat} (fn : prog.funcs[ix_p_params_after_comma_more]? = some (src_p_params_after_comma_more)) (np : prims.isPrim ix_p_params_after_comma_more = false) {n : Nat} :
     Stmt_p_params_after_comma_more prog prims ix_p_params_after_comma_more n := by
   intro w h
@@ -212,15 +221,6 @@ theorem proof_p_path_ident {prog : SrcProgram} {prims : Prims} {ix_p_path_ident 
   rw [pcall_succ np fn] at h
   simp only [src_p_path_ident] at h
   faithful [Lanius.Mini.Inline.pPathIdent]
-
-theorem proof_p_path_ident_args {prog : SrcProgram} {prims : Prims} {ix_p_path_ident_args : Nat} (fn : prog.funcs[ix_p_path_ident_args]? = some (src_p_path_ident_args)) (np : prims.isPrim ix_p_path_ident_args = false) {n : Nat} :
-    Stmt_p_path_ident_args prog prims ix_p_path_ident_args n := by
-  intro w h
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_p_path_ident_args] at h
-  faithful [Lanius.Mini.Inline.pPathIdentArgs]
 
 theorem proof_p_type_ref {prog : SrcProgram} {prims : Prims} {ix_p_type_ref : Nat} (fn : prog.funcs[ix_p_type_ref]? = some (src_p_type_ref)) (np : prims.isPrim ix_p_type_ref = false) {n : Nat} :
     Stmt_p_type_ref prog prims ix_p_type_ref n := by

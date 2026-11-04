@@ -88,9 +88,25 @@ abbrev Stmt_named_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : Option Nat} {x2 : Option (List Lanius.Mini.Ty)} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepFrontEnv x0 v0 → (RepOption 135 RepNat) x1 v1 → (RepOption 213 (RepList 143 RepTy)) x2 v2 →
     (RepOption 212 RepTy) (Lanius.Mini.namedOf x0 x1 x2) w
 
+abbrev Stmt_param_ty_list (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.CTree} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 83 RepCTree) x2 v2 →
+    (RepOption 213 (RepList 143 RepTy)) (Lanius.Mini.paramTyList x0 x1 x2) w
+
+abbrev Stmt_param_ty_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.CTree} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → RepCTree x2 v2 →
+    (RepOption 212 RepTy) (Lanius.Mini.paramTyOf x0 x1 x2) w
+
 abbrev Stmt_prim_or_named (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : List (List Nat)} {x2 : List Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepFrontEnv x0 v0 → (RepList 31 (RepList 25 RepNat)) x1 v1 → (RepList 25 RepNat) x2 v2 →
     (RepOption 212 RepTy) (Lanius.Mini.primOrNamed x0 x1 x2) w
+
+abbrev Stmt_ref_ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Option Lanius.Mini.Ty} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 212 RepTy) x0 v0 →
+    (RepOption 212 RepTy) (Lanius.Mini.refTy x0) w
+
+abbrev Stmt_self_param_ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.CTree} {x3 : Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → RepCTree x2 v2 → RepCTree x3 v3 →
+    (RepOption 212 RepTy) (Lanius.Mini.selfParamTy x0 x1 x2 x3) w
 
 abbrev Stmt_slice_ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.Ty} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 212 RepTy) x0 v0 →

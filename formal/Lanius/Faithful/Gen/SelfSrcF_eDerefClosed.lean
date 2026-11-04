@@ -16,6 +16,9 @@ noncomputable section
 /-- mini::selfhost::e_array_slice_closed -/
 def src_e_array_slice_closed : SrcFunc := { params := [{ id := 21, ty := ty179 }, { id := 55, ty := SrcType.uint (UintTy.usize) }], ret := ty284, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 21)) ty179 ty284 [[157], []] [SrcEff.eVariant ty284 0 [SrcEff.eVariant ty29 12 [SrcEff.ePure (SrcExpr.local 157), SrcEff.ePure (SrcExpr.local 55)]], SrcEff.eVariant ty284 1 []]) }
 
+/-- mini::selfhost::e_borrow_closed -/
+def src_e_borrow_closed (ix_boxed_of_mini_selfhost_SrcEff : Nat) : SrcFunc := { params := [{ id := 16, ty := ty179 }, { id := 50, ty := ty284 }], ret := ty284, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 16)) ty179 ty284 [[175], []] [SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 50)) ty284 ty284 [[237], []] [SrcEff.eVariant ty284 0 [SrcEff.eVariant ty29 17 [SrcEff.ePure (SrcExpr.local 175), SrcEff.eCall ix_boxed_of_mini_selfhost_SrcEff [SrcEff.ePure (SrcExpr.local 237)]]], SrcEff.eVariant ty284 1 []], SrcEff.eVariant ty284 1 []]) }
+
 /-- mini::selfhost::e_deref_closed -/
 def src_e_deref_closed (ix_boxed_of_mini_selfhost_SrcEff : Nat) : SrcFunc := { params := [{ id := 15, ty := ty179 }, { id := 49, ty := ty284 }], ret := ty284, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 15)) ty179 ty284 [[174], []] [SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 49)) ty284 ty284 [[236], []] [SrcEff.eVariant ty284 0 [SrcEff.eVariant ty29 18 [SrcEff.ePure (SrcExpr.local 174), SrcEff.eCall ix_boxed_of_mini_selfhost_SrcEff [SrcEff.ePure (SrcExpr.local 236)]]], SrcEff.eVariant ty284 1 []], SrcEff.eVariant ty284 1 []]) }
 

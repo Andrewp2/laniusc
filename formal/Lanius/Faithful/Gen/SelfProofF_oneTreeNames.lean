@@ -83,10 +83,10 @@ theorem proof_is_data_ptr_of {prog : SrcProgram} {prims : Prims} {ix_is_data_ptr
   simp only [src_is_data_ptr_of] at h
   faithful [Lanius.Mini.isDataPtrOf]
 
-theorem proof_one_tree_names {prog : SrcProgram} {prims : Prims} {ix_one_tree_names ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_tree_names ix_is_empty_trees : Nat} (fn : prog.funcs[ix_one_tree_names]? = some (src_one_tree_names ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_tree_names ix_is_empty_trees)) (np : prims.isPrim ix_one_tree_names = false)
+theorem proof_one_tree_names {prog : SrcProgram} {prims : Prims} {ix_one_tree_names ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_is_empty_trees ix_tree_names : Nat} (fn : prog.funcs[ix_one_tree_names]? = some (src_one_tree_names ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_is_empty_trees ix_tree_names)) (np : prims.isPrim ix_one_tree_names = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_CTree prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree n))
-    (ext_tree_names : Certified (∀ {n : Nat}, Stmt_tree_names prog prims ix_tree_names n))
-    (ext_is_empty_trees : Certified (∀ {n : Nat}, Stmt_is_empty_trees prog prims ix_is_empty_trees n)) {n : Nat} :
+    (ext_is_empty_trees : Certified (∀ {n : Nat}, Stmt_is_empty_trees prog prims ix_is_empty_trees n))
+    (ext_tree_names : Certified (∀ {n : Nat}, Stmt_tree_names prog prims ix_tree_names n)) {n : Nat} :
     Stmt_one_tree_names prog prims ix_one_tree_names n := by
   intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
   rcases n with _ | n

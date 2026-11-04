@@ -49,4 +49,12 @@ def Cost_e_place_at_closed : Nat → Option Lanius.Mini.SrcEff → Option Lanius
 
 end
 
+noncomputable section
+
+def Cost_e_borrow_closed : Nat → Option Lanius.Mini.SrcType → Option Lanius.Mini.SrcEff → Nat
+  | 0, x16, x50 => 18446744073709551616
+  | n + 1, x16, x50 => (match x16 with | some x175 => (match x50 with | some x237 => 1 | none => 0) | none => 0)
+
+end
+
 end Lanius.Faithful.SelfBudget

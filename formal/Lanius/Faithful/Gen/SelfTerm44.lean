@@ -10,7 +10,6 @@ import all Lanius.Faithful.Gen.SelfSrcF_blockArmsOf
 import all Lanius.Faithful.Gen.SelfSrcF_findConst
 import all Lanius.Faithful.Gen.SelfSrcF_fnInstRet
 import all Lanius.Faithful.Gen.SelfSrcF_hasConst
-import all Lanius.Faithful.Gen.SelfSrcF_isFnPath
 import all Lanius.Faithful.Gen.SelfSrcF_itemOf
 import all Lanius.Faithful.Gen.SelfSrcF_litEffMatch
 import all Lanius.Faithful.Gen.SelfSrcF_litWants
@@ -18,6 +17,7 @@ import all Lanius.Faithful.Gen.SelfSrcF_noBlock
 import all Lanius.Faithful.Gen.SelfSrcF_paramGoals
 import all Lanius.Faithful.Gen.SelfSrcF_pathRef
 import all Lanius.Faithful.Gen.SelfSrcF_pickTy
+import all Lanius.Faithful.Gen.SelfSrcF_projection
 import all Lanius.Faithful.Gen.SelfSrcF_purePart
 import all Lanius.Faithful.Gen.SelfSrcF_repeatEff
 import all Lanius.Faithful.Gen.SelfSrcF_sliceHead
@@ -51,14 +51,14 @@ theorem ok_named_split : FnOk prog prims info (1995, ⟨4, [], 0⟩) :=
 theorem ok_eff_named : FnOk prog prims info (1996, ⟨29, [0], 0⟩) :=
   fnOk_of fn_eff_named (by decide +kernel)
 
-theorem ok_member_args : FnOk prog prims info (1997, ⟨1, [], 0⟩) :=
-  fnOk_of fn_member_args (by decide +kernel)
-
-theorem ok_eff_found_with : FnOk prog prims info (1998, ⟨29, [0], 0⟩) :=
+theorem ok_eff_found_with : FnOk prog prims info (1997, ⟨29, [0], 0⟩) :=
   fnOk_of fn_eff_found_with (by decide +kernel)
 
-theorem ok_find_method : FnOk prog prims info (1999, ⟨13, [2], 0⟩) :=
+theorem ok_find_method : FnOk prog prims info (1998, ⟨13, [2], 0⟩) :=
   fnOk_of fn_find_method (by decide +kernel)
+
+theorem ok_referent_or : FnOk prog prims info (1999, ⟨1, [], 0⟩) :=
+  fnOk_of fn_referent_or (by decide +kernel)
 
 theorem ok_single_of_mini_selfhost_MEff : FnOk prog prims info (2000, ⟨0, [], 0⟩) :=
   fnOk_of fn_single_of_mini_selfhost_MEff (by decide +kernel)
@@ -160,6 +160,6 @@ theorem ok_block_arms_of : FnOk prog prims info (2032, ⟨7, [], 0⟩) :=
   fnOk_of fn_block_arms_of (by decide +kernel)
 
 theorem chunk44 : AllFns prog prims info part44 :=
-  ⟨ok_len_arg, ok_path_ref, ok_named_split, ok_eff_named, ok_member_args, ok_eff_found_with, ok_find_method, ok_single_of_mini_selfhost_MEff, ok_eff_step, ok_find_const_at, ok_has_tys, ok_known_args, ok_variant_expects, ok_x_variant_of, ok_bare_variant, ok_enum_variant, ok_only_variant, ok_variants_named, ok_same_names, ok_field_expects, ok_x_struct_of, ok_field_values, ok_eff_ty, ok_named_parts, ok_eff_match_enum, ok_lit_eff_match, ok_lit_wants, ok_arm_value_trees, ok_array_parts, ok_repeat_eff, ok_length_of_mini_selfhost_MEff, ok_cons_eff, ok_head_ty, ok_tail_tys, ok_is_str_type, ok_string_init, ok_string_last, ok_lit_first, ok_lit_wanted, ok_block_arms_of, trivial⟩
+  ⟨ok_len_arg, ok_path_ref, ok_named_split, ok_eff_named, ok_eff_found_with, ok_find_method, ok_referent_or, ok_single_of_mini_selfhost_MEff, ok_eff_step, ok_find_const_at, ok_has_tys, ok_known_args, ok_variant_expects, ok_x_variant_of, ok_bare_variant, ok_enum_variant, ok_only_variant, ok_variants_named, ok_same_names, ok_field_expects, ok_x_struct_of, ok_field_values, ok_eff_ty, ok_named_parts, ok_eff_match_enum, ok_lit_eff_match, ok_lit_wants, ok_arm_value_trees, ok_array_parts, ok_repeat_eff, ok_length_of_mini_selfhost_MEff, ok_cons_eff, ok_head_ty, ok_tail_tys, ok_is_str_type, ok_string_init, ok_string_last, ok_lit_first, ok_lit_wanted, ok_block_arms_of, trivial⟩
 
 end Lanius.Faithful.SelfTerm

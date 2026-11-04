@@ -68,6 +68,10 @@ abbrev Stmt_named_parts (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
   ∀ {x0 : Lanius.Mini.Ty} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepTy x0 v0 →
     (RepOption 181 RepInst) (Lanius.Mini.namedParts x0) w
 
+abbrev Stmt_referent (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.Ty} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepTy x0 v0 →
+    (RepOption 212 RepTy) (Lanius.Mini.referent x0) w
+
 abbrev Stmt_repeat_eff (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.MEff} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepMEff x0 v0 → RepNat x1 v1 →
     (RepList 236 RepMEff) (Lanius.Mini.repeatEff x0 x1) w

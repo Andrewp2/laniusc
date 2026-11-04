@@ -9,6 +9,7 @@ public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pExpr
+public import Lanius.Faithful.Gen.SelfStmtF_Inline_pModTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pTypeArgsNone
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pTypeSliceTail
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
@@ -127,7 +128,7 @@ theorem step_match_same_decl {prog : SrcProgram} {prims : Prims} {ix_match_same_
   simp only [src_match_same_decl] at h
   faithful [Lanius.Mini.matchSameDecl]
 
-theorem step_match_ty {prog : SrcProgram} {prims : Prims} {ix_match_ty ix_minus ix_node_prod ix_list_items ix_kid ix_p_type_array ix_p_type_slice_tail ix_p_type_ident ix_type_path_spellings ix_slice_elem ix_match_path : Nat} (fn : prog.funcs[ix_match_ty]? = some (src_match_ty ix_minus ix_node_prod ix_list_items ix_kid ix_p_type_array ix_p_type_slice_tail ix_p_type_ident ix_type_path_spellings ix_match_ty ix_slice_elem ix_match_path)) (np : prims.isPrim ix_match_ty = false)
+theorem step_match_ty {prog : SrcProgram} {prims : Prims} {ix_match_ty ix_minus ix_node_prod ix_list_items ix_kid ix_p_type_array ix_p_type_slice_tail ix_p_type_ident ix_type_path_spellings ix_referent ix_p_type_ref ix_p_type_ref_mut ix_slice_elem ix_match_path : Nat} (fn : prog.funcs[ix_match_ty]? = some (src_match_ty ix_minus ix_node_prod ix_list_items ix_kid ix_p_type_array ix_p_type_slice_tail ix_p_type_ident ix_type_path_spellings ix_referent ix_p_type_ref ix_p_type_ref_mut ix_match_ty ix_slice_elem ix_match_path)) (np : prims.isPrim ix_match_ty = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_list_items : Certified (∀ {n : Nat}, Stmt_list_items prog prims ix_list_items n))
@@ -136,6 +137,9 @@ theorem step_match_ty {prog : SrcProgram} {prims : Prims} {ix_match_ty ix_minus 
     (ext_p_type_slice_tail : Certified (∀ {n : Nat}, Stmt_p_type_slice_tail prog prims ix_p_type_slice_tail n))
     (ext_p_type_ident : Certified (∀ {n : Nat}, Stmt_p_type_ident prog prims ix_p_type_ident n))
     (ext_type_path_spellings : Certified (∀ {n : Nat}, Stmt_type_path_spellings prog prims ix_type_path_spellings n))
+    (ext_referent : Certified (∀ {n : Nat}, Stmt_referent prog prims ix_referent n))
+    (ext_p_type_ref : Certified (∀ {n : Nat}, Stmt_p_type_ref prog prims ix_p_type_ref n))
+    (ext_p_type_ref_mut : Certified (∀ {n : Nat}, Stmt_p_type_ref_mut prog prims ix_p_type_ref_mut n))
     (ext_slice_elem : Certified (∀ {n : Nat}, Stmt_slice_elem prog prims ix_slice_elem n)) {n : Nat}
     (ih_match_ty : Certified (Stmt_match_ty prog prims ix_match_ty n))
     (ih_match_path : Certified (Stmt_match_path prog prims ix_match_path n)) :
@@ -175,6 +179,16 @@ theorem proof_named_parts {prog : SrcProgram} {prims : Prims} {ix_named_parts ix
   rw [pcall_succ np fn] at h
   simp only [src_named_parts] at h
   faithful [Lanius.Mini.namedParts]
+
+theorem proof_referent {prog : SrcProgram} {prims : Prims} {ix_referent ix_unbox_of_mini_selfhost_Ty : Nat} (fn : prog.funcs[ix_referent]? = some (src_referent ix_unbox_of_mini_selfhost_Ty)) (np : prims.isPrim ix_referent = false)
+    (ext_unbox_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_Ty prog prims ix_unbox_of_mini_selfhost_Ty n)) {n : Nat} :
+    Stmt_referent prog prims ix_referent n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_referent] at h
+  faithful [Lanius.Mini.referent]
 
 theorem step_repeat_eff {prog : SrcProgram} {prims : Prims} {ix_repeat_eff ix_minus ix_empty_of_mini_selfhost_MEff ix_cons_of_mini_selfhost_MEff : Nat} (fn : prog.funcs[ix_repeat_eff]? = some (src_repeat_eff ix_minus ix_empty_of_mini_selfhost_MEff ix_cons_of_mini_selfhost_MEff ix_repeat_eff)) (np : prims.isPrim ix_repeat_eff = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))

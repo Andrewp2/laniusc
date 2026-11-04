@@ -53,7 +53,7 @@ import all Lanius.Mini.Frontend.P.wideOf
 import all Lanius.Mini.Frontend.P.fieldValue
 import all Lanius.Mini.Frontend.P.setPlaceOf
 import all Lanius.Mini.Frontend.P.setFieldOrEval
-import all Lanius.Mini.Frontend.P.namesFieldBase
+import all Lanius.Mini.Frontend.P.primaryNames
 import all Lanius.Mini.Frontend.P.isFnPath
 import all Lanius.Mini.Frontend.P.eDerefClosed
 import all Lanius.Mini.Frontend.P.checkedFunc
@@ -287,6 +287,38 @@ theorem stringInit_sound {fuel : Nat} {init : CTree} {cs : List Nat} (h : string
       exact .mk (peel_sound hp) c.1 c.2 (stringLiteral_sound h)
     · cases h
 
+/-- (F5, S5b) A method call's receivers as the method takes them
+(`receiverOf`, SEMANTIC_DECISIONS "S5b: point 10"): at `&self` or `&mut
+self` (`selfByRef`) a reference is passed on and another receiver's place
+is borrowed (`placeOf`: a local, a field of one, or a place through a
+reference); at a by-value `self` the receiver is passed as it is, and a
+reference is not read. -/
+inductive Receivers (env : FrontEnv) (scope : List Local) (fd : FnDecl) : List MEff → List MEff → Prop
+  | nil : Receivers env scope fd [] []
+  | one {a r : MEff} {t : Ty} : EffTy env.decls scope a t → receiverOf (selfByRef fd) t a = some r →
+      Receivers env scope fd [a] [r]
+
+theorem receiversOf_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {fd : FnDecl} {pre pre' : List MEff}
+    (h : receiversOf fuel env scope fd pre = some pre') : Receivers env scope fd pre pre' := by
+  cases pre with
+  | nil => simp only [receiversOf, Option.some.injEq] at h; subst h; exact .nil
+  | cons a rest =>
+    cases rest with
+    | cons b more => simp [receiversOf] at h
+    | nil =>
+      simp only [receiversOf] at h
+      cases ht : effTy fuel env scope a with
+      | none => simp [ht, receiverTyped] at h
+      | some t =>
+        simp only [ht, receiverTyped] at h
+        cases hr : receiverOf (selfByRef fd) t a with
+        | none => rw [hr] at h; cases h
+        | some r =>
+          rw [hr] at h
+          simp only [Option.some.injEq] at h
+          subst h
+          exact .one (effTy_sound ht) hr
+
 mutual
 inductive EffR (env : FrontEnv) : List Local → Option Ty → CTree → MEff → Prop
   | pure {scope : List Local} {expected : Option Ty} {c : CTree} {e : SrcExpr} :
@@ -313,11 +345,12 @@ inductive EffR (env : FrontEnv) : List Local → Option Ty → CTree → MEff �
       nodeProd (kid (kid c 1) 3) = pPostfixEnd → EffPathCall env scope expected (kid (kid c 0) 0) (kid (kid c 1) 1) x →
       EffR env scope expected c x
   | method {scope : List Local} {expected : Option Ty} {c : CTree} {l : Local} {items : List CTree} {found : Found}
-      {fd : FnDecl} {bs : List Bind} {x : MEff} : nodeProd c = pPostfix → MethodForm c → LocalOf scope (kid c 0) l →
-      Items (kid (kid (kid c 1) 3) 1) items →
-      MethodFor env.decls env.decls.fns 0 (kidToken (kid c 1) 1).text l.ty found → env.decls.fns[found.decl]? = some fd →
-      MethodBinds env fd found.binds (kid (kid c 1) 2) bs →
-      EffInfer env scope expected found.decl fd bs [.xPure (.local l.id)] items x → EffR env scope expected c x
+      {fd : FnDecl} {bs : List Bind} {pre : List MEff} {x : MEff} : nodeProd c = pPostfix → MethodForm c →
+      LocalOf scope (kid c 0) l → Items (kid (kid (kid c 1) 3) 1) items →
+      MethodFor env.decls env.decls.fns 0 (kidToken (kid c 1) 1).text (referentOr l.ty) found →
+      env.decls.fns[found.decl]? = some fd → MethodBinds env fd found.binds (kid (kid c 1) 2) bs →
+      Receivers env scope fd [.xPure (.local l.id)] pre →
+      EffInfer env scope expected found.decl fd bs pre items x → EffR env scope expected c x
   | index {scope : List Local} {expected : Option Ty} {c : CTree} {l : Local} {i : MEff} : nodeProd c = pPostfix →
       nodeProd (kid c 0) = pIdent → nodeProd (kid (kid c 0) 1) = pIdentPlain → nodeProd (kid c 1) = pPostfixIndex →
       nodeProd (kid (kid c 1) 3) = pPostfixEnd → LocalOf scope (kid c 0) l → EffR env scope none (kid (kid c 1) 1) i →
@@ -386,13 +419,13 @@ inductive EffChain (env : FrontEnv) : List Local → Option Ty → MEff → CTre
   | done {scope : List Local} {expected : Option Ty} {a : MEff} {tail : CTree} : nodeProd tail = pPostfixEnd →
       EffChain env scope expected a tail a
   | method {scope : List Local} {expected : Option Ty} {a : MEff} {tail : CTree} {items : List CTree} {t : Ty}
-      {found : Found} {fd : FnDecl} {bs : List Bind} {y x : MEff} : nodeProd tail = pPostfixMember →
+      {found : Found} {fd : FnDecl} {bs : List Bind} {pre : List MEff} {y x : MEff} : nodeProd tail = pPostfixMember →
       (nodeProd (kid tail 2) = pMemberTypeArgsNone ∨ nodeProd (kid tail 2) = pMemberTypeArgsSome) →
       nodeProd (kid tail 3) = pPostfixCall →
       Items (kid (kid tail 3) 1) items → EffTy env.decls scope a t →
-      MethodFor env.decls env.decls.fns 0 (kidToken tail 1).text t found → env.decls.fns[found.decl]? = some fd →
-      MethodBinds env fd found.binds (kid tail 2) bs →
-      EffInfer env scope (stepExpected expected (kid (kid tail 3) 3)) found.decl fd bs [a] items y →
+      MethodFor env.decls env.decls.fns 0 (kidToken tail 1).text (referentOr t) found → env.decls.fns[found.decl]? = some fd →
+      MethodBinds env fd found.binds (kid tail 2) bs → Receivers env scope fd [a] pre →
+      EffInfer env scope (stepExpected expected (kid (kid tail 3) 3)) found.decl fd bs pre items y →
       EffChain env scope expected y (kid (kid tail 3) 3) x → EffChain env scope expected a tail x
   | field {scope : List Local} {expected : Option Ty} {a : MEff} {tail : CTree} {t : Ty} {j : Nat} {x : MEff} :
       nodeProd tail = pPostfixMember → nodeProd (kid tail 2) = pMemberTypeArgsNone →
@@ -876,10 +909,10 @@ def LiteralEff (env : FrontEnv) (scope : List Local) (expected : Option Ty) (d :
 
 /-- `recv.m(args)`, the receiver a local. -/
 def MethodEff (env : FrontEnv) (scope : List Local) (expected : Option Ty) (pf : CTree) (x : MEff) : Prop :=
-  ∃ l items found fd bs, LocalOf scope (kid pf 0) l ∧ Items (kid (kid (kid pf 1) 3) 1) items ∧
-    MethodFor env.decls env.decls.fns 0 (kidToken (kid pf 1) 1).text l.ty found ∧
+  ∃ l items found fd bs pre, LocalOf scope (kid pf 0) l ∧ Items (kid (kid (kid pf 1) 3) 1) items ∧
+    MethodFor env.decls env.decls.fns 0 (kidToken (kid pf 1) 1).text (referentOr l.ty) found ∧
     env.decls.fns[found.decl]? = some fd ∧ MethodBinds env fd found.binds (kid (kid pf 1) 2) bs ∧
-    EffInfer env scope expected found.decl fd bs [.xPure (.local l.id)] items x
+    Receivers env scope fd [.xPure (.local l.id)] pre ∧ EffInfer env scope expected found.decl fd bs pre items x
 
 /-- A match on the scrutinee `s` of enum type `ety`, its payloads `payloads`. -/
 def MatchEnumEff (env : FrontEnv) (scope : List Local) (expected : Option Ty) (s : MEff) (ety : Ty) (t : TypeDecl)
@@ -1005,8 +1038,8 @@ def EffSound (fuel : Nat) : Prop :=
   (∀ {env scope expected d fd binds pre items x}, effBound fuel env scope expected d fd binds pre items = some x →
     ∃ bs, binds = some bs ∧ EffInfer env scope expected d fd bs pre items x) ∧
   (∀ {env scope expected found targs pre items x}, effFoundWith fuel env scope expected found targs pre items = some x →
-    ∃ fo fd bs, found = some fo ∧ env.decls.fns[fo.decl]? = some fd ∧ MethodBinds env fd fo.binds targs bs ∧
-      EffInfer env scope expected fo.decl fd bs pre items x) ∧
+    ∃ fo fd bs pre', found = some fo ∧ env.decls.fns[fo.decl]? = some fd ∧ MethodBinds env fd fo.binds targs bs ∧
+      Receivers env scope fd pre pre' ∧ EffInfer env scope expected fo.decl fd bs pre' items x) ∧
   (∀ {env scope expected pf x}, effMethod fuel env scope expected pf = some x → MethodEff env scope expected pf x) ∧
   (∀ {env scope expected m x}, nodeProd m = pMatchExpr → effMatch fuel env scope expected m = some x →
     EffR env scope expected m x) ∧
@@ -1167,8 +1200,8 @@ theorem effSound : ∀ fuel, EffSound fuel
         exact .pathCall pp c.1 c.2.1 c.2.2.1 c.2.2.2 (ihPathCall h)
       split at h
       · rename_i _ _ c
-        obtain ⟨l, items, found, fd, bs, hl, hi, hm, hf, mb, inf⟩ := ihMethod h
-        exact .method pp (isMethodForm_sound c) hl hi hm hf mb inf
+        obtain ⟨l, items, found, fd, bs, pre, hl, hi, hm, hf, mb, rc, inf⟩ := ihMethod h
+        exact .method pp (isMethodForm_sound c) hl hi hm hf mb rc inf
       split at h
       · rename_i _ _ _ c
         simp only [Bool.and_eq_true, decide_eq_true_eq, and_assoc] at c
@@ -1233,13 +1266,13 @@ theorem effSound : ∀ fuel, EffSound fuel
             rw [hi] at h
             simp only at h
             obtain ⟨y, hy, ch⟩ := ihChain h
-            obtain ⟨fo, fd, bs, hfo, hfd, mb, inf⟩ := ihFoundWith hy
+            obtain ⟨fo, fd, bs, pre, hfo, hfd, mb, rc, inf⟩ := ihFoundWith hy
             unfold methodOfTy at hfo
             cases ht : effTy f env scope a with
-            | none => rw [ht] at hfo; cases hfo
+            | none => simp [ht, referentOrOf] at hfo
             | some t =>
-              rw [ht] at hfo
-              exact .method c.1 c.2 nc (listItems_sound hi) (effTy_sound ht) (findMethod_sound hfo) hfd mb inf ch
+              simp only [ht, referentOrOf] at hfo
+              exact .method c.1 c.2 nc (listItems_sound hi) (effTy_sound ht) (findMethod_sound hfo) hfd mb rc inf ch
         split at h
         · rename_i nc nn
           obtain ⟨y, hy, ch⟩ := ihChain h
@@ -1721,13 +1754,15 @@ theorem effSound : ∀ fuel, EffSound fuel
       | none => simp at h
       | some fo =>
         simp only at h
-        cases hd : env.decls.fns[fo.decl]? with
-        | none => rw [hd] at h; cases h
-        | some fd =>
-          rw [hd] at h
-          simp only at h
-          obtain ⟨bs, hb, inf⟩ := ihBound h
-          exact ⟨fo, fd, bs, rfl, hd, methodBinds_sound hb, inf⟩
+        unfold effBoundRecv at h
+        split at h
+        · cases h
+        · rename_i fd hd
+          split at h
+          · cases h
+          · rename_i pre' hr
+            obtain ⟨bs, hb, inf⟩ := ihBound h
+            exact ⟨fo, fd, bs, pre', rfl, hd, methodBinds_sound hb, receiversOf_sound hr, inf⟩
     -- effMethod
     · intro env scope expected pf x h
       rw [effMethod.eq_def] at h
@@ -1742,8 +1777,8 @@ theorem effSound : ∀ fuel, EffSound fuel
         | some items =>
           rw [hi] at h
           simp only at h
-          obtain ⟨fo, fd, bs, hfo, hfd, mb, inf⟩ := ihFoundWith h
-          exact ⟨l, items, fo, fd, bs, localOf_sound hl, listItems_sound hi, findMethod_sound hfo, hfd, mb, inf⟩
+          obtain ⟨fo, fd, bs, pre, hfo, hfd, mb, rc, inf⟩ := ihFoundWith h
+          exact ⟨l, items, fo, fd, bs, pre, localOf_sound hl, listItems_sound hi, findMethod_sound hfo, hfd, mb, rc, inf⟩
     -- effMatch
     · intro env scope expected m x pm h
       rw [effMatch.eq_def] at h

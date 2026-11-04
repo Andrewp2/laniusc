@@ -96,7 +96,7 @@ abbrev BStmt_x_struct_of (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
 abbrev BStmt_arm_eff (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.Bound} {x3 : Option Lanius.Mini.MEff} {v0 v1 v2 v3 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → RepBound x2 v2 → (RepOption 259 RepMEff) x3 v3 → k < b → Pre_arm_eff n x0 x1 x2 x3 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_arm_eff n x0 x1 x2 x3 = k ∧ (RepOption 318 RepEffArm) (Lanius.Mini.armEff x0 x1 x2 x3) w
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_arm_eff n x0 x1 x2 x3 = k ∧ (RepOption 316 RepEffArm) (Lanius.Mini.armEff x0 x1 x2 x3) w
 
 abbrev BStmt_pure_list (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.MEff} {v0 w : Value} {k : Nat},

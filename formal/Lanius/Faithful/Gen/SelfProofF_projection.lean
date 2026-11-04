@@ -8,6 +8,7 @@ public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmtF_noBlock
 public import Lanius.Faithful.Gen.SelfStmtF_projection
+public import Lanius.Faithful.Gen.SelfStmtF_repeatEff
 import all Lanius.Faithful.Gen.SelfSrcF_projection
 import all Lanius.Mini.Frontend.P.projection
 
@@ -68,16 +69,6 @@ theorem proof_projection {prog : SrcProgram} {prims : Prims} {ix_projection ix_p
   rw [pcall_succ np fn] at h
   simp only [src_projection] at h
   faithful [Lanius.Mini.projection]
-
-theorem proof_referent {prog : SrcProgram} {prims : Prims} {ix_referent ix_unbox_of_mini_selfhost_Ty : Nat} (fn : prog.funcs[ix_referent]? = some (src_referent ix_unbox_of_mini_selfhost_Ty)) (np : prims.isPrim ix_referent = false)
-    (ext_unbox_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_Ty prog prims ix_unbox_of_mini_selfhost_Ty n)) {n : Nat} :
-    Stmt_referent prog prims ix_referent n := by
-  intro x0 v0 w h r0
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_referent] at h
-  faithful [Lanius.Mini.referent]
 
 theorem proof_referent_or {prog : SrcProgram} {prims : Prims} {ix_referent_or ix_referent : Nat} (fn : prog.funcs[ix_referent_or]? = some (src_referent_or ix_referent)) (np : prims.isPrim ix_referent_or = false)
     (ext_referent : Certified (∀ {n : Nat}, Stmt_referent prog prims ix_referent n)) {n : Nat} :

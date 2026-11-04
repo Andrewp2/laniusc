@@ -23,14 +23,14 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.SelfCert
 open Lanius.Faithful.Budget
 
-theorem bproof_for_range {spW sp : SrcProgram} {prims : Prims} {ix_for_range ix_boxed_of_mini_selfhost_MStmt ix_boxed_of_mini_selfhost_SrcExpr ix_writes_local ix_stmt_unless : Nat}
-    (fnW : spW.funcs[ix_for_range]? = some (src_for_range ix_boxed_of_mini_selfhost_MStmt ix_boxed_of_mini_selfhost_SrcExpr ix_writes_local ix_stmt_unless)) (fn : sp.funcs[ix_for_range]? = some (src_for_range ix_boxed_of_mini_selfhost_MStmt ix_boxed_of_mini_selfhost_SrcExpr ix_writes_local ix_stmt_unless))
+theorem bproof_for_range {spW sp : SrcProgram} {prims : Prims} {ix_for_range ix_boxed_of_mini_selfhost_MStmt ix_boxed_of_mini_selfhost_SrcExpr ix_stmt_unless ix_writes_local : Nat}
+    (fnW : spW.funcs[ix_for_range]? = some (src_for_range ix_boxed_of_mini_selfhost_MStmt ix_boxed_of_mini_selfhost_SrcExpr ix_stmt_unless ix_writes_local)) (fn : sp.funcs[ix_for_range]? = some (src_for_range ix_boxed_of_mini_selfhost_MStmt ix_boxed_of_mini_selfhost_SrcExpr ix_stmt_unless ix_writes_local))
     (np : prims.isPrim ix_for_range = false)
     (back : Certified (∀ {n : Nat}, Stmt_for_range sp prims ix_for_range n))
     (pp_boxed_of_mini_selfhost_MStmt : prims.isPrim ix_boxed_of_mini_selfhost_MStmt = true) (bx_boxed_of_mini_selfhost_MStmt : prims.boxed.contains ix_boxed_of_mini_selfhost_MStmt = true)
     (pp_boxed_of_mini_selfhost_SrcExpr : prims.isPrim ix_boxed_of_mini_selfhost_SrcExpr = true) (bx_boxed_of_mini_selfhost_SrcExpr : prims.boxed.contains ix_boxed_of_mini_selfhost_SrcExpr = true)
-    (b_writes_local : Certified (∀ {n : Nat}, BStmt_writes_local spW sp prims ix_writes_local n))
-    (b_stmt_unless : Certified (∀ {n : Nat}, BStmt_stmt_unless spW sp prims ix_stmt_unless n)) {n : Nat} :
+    (b_stmt_unless : Certified (∀ {n : Nat}, BStmt_stmt_unless spW sp prims ix_stmt_unless n))
+    (b_writes_local : Certified (∀ {n : Nat}, BStmt_writes_local spW sp prims ix_writes_local n)) {n : Nat} :
     BStmt_for_range spW sp prims ix_for_range n := by
   intro x0 x1 x2 x3 x4 x5 x6 v0 v1 v2 v3 v4 v5 v6 w k h r0 r1 r2 r3 r4 r5 r6
   rcases n with _ | n
@@ -59,14 +59,14 @@ theorem bproof_for_array {spW sp : SrcProgram} {prims : Prims} {ix_for_array ix_
     budget Cost_for_array
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3⟩
 
-theorem bproof_for_slice {spW sp : SrcProgram} {prims : Prims} {ix_for_slice ix_boxed_of_mini_selfhost_MStmt ix_boxed_of_mini_selfhost_SrcExpr ix_writes_local ix_stmt_unless : Nat}
-    (fnW : spW.funcs[ix_for_slice]? = some (src_for_slice ix_boxed_of_mini_selfhost_MStmt ix_boxed_of_mini_selfhost_SrcExpr ix_writes_local ix_stmt_unless)) (fn : sp.funcs[ix_for_slice]? = some (src_for_slice ix_boxed_of_mini_selfhost_MStmt ix_boxed_of_mini_selfhost_SrcExpr ix_writes_local ix_stmt_unless))
+theorem bproof_for_slice {spW sp : SrcProgram} {prims : Prims} {ix_for_slice ix_boxed_of_mini_selfhost_MStmt ix_boxed_of_mini_selfhost_SrcExpr ix_stmt_unless ix_writes_local : Nat}
+    (fnW : spW.funcs[ix_for_slice]? = some (src_for_slice ix_boxed_of_mini_selfhost_MStmt ix_boxed_of_mini_selfhost_SrcExpr ix_stmt_unless ix_writes_local)) (fn : sp.funcs[ix_for_slice]? = some (src_for_slice ix_boxed_of_mini_selfhost_MStmt ix_boxed_of_mini_selfhost_SrcExpr ix_stmt_unless ix_writes_local))
     (np : prims.isPrim ix_for_slice = false)
     (back : Certified (∀ {n : Nat}, Stmt_for_slice sp prims ix_for_slice n))
     (pp_boxed_of_mini_selfhost_MStmt : prims.isPrim ix_boxed_of_mini_selfhost_MStmt = true) (bx_boxed_of_mini_selfhost_MStmt : prims.boxed.contains ix_boxed_of_mini_selfhost_MStmt = true)
     (pp_boxed_of_mini_selfhost_SrcExpr : prims.isPrim ix_boxed_of_mini_selfhost_SrcExpr = true) (bx_boxed_of_mini_selfhost_SrcExpr : prims.boxed.contains ix_boxed_of_mini_selfhost_SrcExpr = true)
-    (b_writes_local : Certified (∀ {n : Nat}, BStmt_writes_local spW sp prims ix_writes_local n))
-    (b_stmt_unless : Certified (∀ {n : Nat}, BStmt_stmt_unless spW sp prims ix_stmt_unless n)) {n : Nat} :
+    (b_stmt_unless : Certified (∀ {n : Nat}, BStmt_stmt_unless spW sp prims ix_stmt_unless n))
+    (b_writes_local : Certified (∀ {n : Nat}, BStmt_writes_local spW sp prims ix_writes_local n)) {n : Nat} :
     BStmt_for_slice spW sp prims ix_for_slice n := by
   intro x0 x1 x2 x3 x4 x5 x6 v0 v1 v2 v3 v4 v5 v6 w k h r0 r1 r2 r3 r4 r5 r6
   rcases n with _ | n

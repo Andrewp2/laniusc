@@ -105,13 +105,13 @@ theorem proof_is_u8_ty {prog : SrcProgram} {prims : Prims} {ix_is_u8_ty ix_same_
   simp only [src_is_u8_ty] at h
   faithful [Lanius.Mini.isU8Ty]
 
-theorem proof_tree_names {prog : SrcProgram} {prims : Prims} {ix_tree_names ix_node_prod ix_kid ix_peel ix_p_ident ix_p_ident_plain ix_p_postfix_end ix_is_text ix_path_name : Nat} (fn : prog.funcs[ix_tree_names]? = some (src_tree_names ix_node_prod ix_kid ix_peel ix_p_ident ix_p_ident_plain ix_p_postfix_end ix_is_text ix_path_name)) (np : prims.isPrim ix_tree_names = false)
+theorem proof_tree_names {prog : SrcProgram} {prims : Prims} {ix_tree_names ix_node_prod ix_kid ix_peel ix_p_postfix_end ix_p_ident ix_p_ident_plain ix_is_text ix_path_name : Nat} (fn : prog.funcs[ix_tree_names]? = some (src_tree_names ix_node_prod ix_kid ix_peel ix_p_postfix_end ix_p_ident ix_p_ident_plain ix_is_text ix_path_name)) (np : prims.isPrim ix_tree_names = false)
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
     (ext_peel : Certified (∀ {n : Nat}, Stmt_peel prog prims ix_peel n))
+    (ext_p_postfix_end : Certified (∀ {n : Nat}, Stmt_p_postfix_end prog prims ix_p_postfix_end n))
     (ext_p_ident : Certified (∀ {n : Nat}, Stmt_p_ident prog prims ix_p_ident n))
     (ext_p_ident_plain : Certified (∀ {n : Nat}, Stmt_p_ident_plain prog prims ix_p_ident_plain n))
-    (ext_p_postfix_end : Certified (∀ {n : Nat}, Stmt_p_postfix_end prog prims ix_p_postfix_end n))
     (ext_is_text : Certified (∀ {n : Nat}, Stmt_is_text prog prims ix_is_text n))
     (ext_path_name : Certified (∀ {n : Nat}, Stmt_path_name prog prims ix_path_name n)) {n : Nat} :
     Stmt_tree_names prog prims ix_tree_names n := by

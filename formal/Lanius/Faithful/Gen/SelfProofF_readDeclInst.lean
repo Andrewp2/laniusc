@@ -6,7 +6,7 @@ public import Lanius.Faithful.Gen.SelfSrcF_readDeclInst
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pExpr
 public import Lanius.Faithful.Gen.SelfStmtF_externBody
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
-public import Lanius.Faithful.Gen.SelfStmtF_namesFieldBase
+public import Lanius.Faithful.Gen.SelfStmtF_primaryNames
 public import Lanius.Faithful.Gen.SelfStmtF_projectionRet
 public import Lanius.Faithful.Gen.SelfStmtF_readDeclInst
 import all Lanius.Faithful.Gen.SelfSrcF_readDeclInst

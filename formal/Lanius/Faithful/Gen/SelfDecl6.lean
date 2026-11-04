@@ -39,8 +39,8 @@ public import Lanius.Faithful.Gen.SelfSrcF_hasKids
 public import Lanius.Faithful.Gen.SelfSrcF_joinInsts
 public import Lanius.Faithful.Gen.SelfSrcF_methodDecl
 public import Lanius.Faithful.Gen.SelfSrcF_moduleOr
-public import Lanius.Faithful.Gen.SelfSrcF_namesFieldBase
 public import Lanius.Faithful.Gen.SelfSrcF_negWideI32
+public import Lanius.Faithful.Gen.SelfSrcF_primaryNames
 public import Lanius.Faithful.Gen.SelfSrcF_projectionRet
 public import Lanius.Faithful.Gen.SelfSrcF_readDeclInst
 public import Lanius.Faithful.Gen.SelfSrcF_textSelf
@@ -84,8 +84,8 @@ import all Lanius.Faithful.Gen.SelfSrcF_hasKids
 import all Lanius.Faithful.Gen.SelfSrcF_joinInsts
 import all Lanius.Faithful.Gen.SelfSrcF_methodDecl
 import all Lanius.Faithful.Gen.SelfSrcF_moduleOr
-import all Lanius.Faithful.Gen.SelfSrcF_namesFieldBase
 import all Lanius.Faithful.Gen.SelfSrcF_negWideI32
+import all Lanius.Faithful.Gen.SelfSrcF_primaryNames
 import all Lanius.Faithful.Gen.SelfSrcF_projectionRet
 import all Lanius.Faithful.Gen.SelfSrcF_readDeclInst
 import all Lanius.Faithful.Gen.SelfSrcF_textSelf

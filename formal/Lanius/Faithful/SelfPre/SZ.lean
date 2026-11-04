@@ -1085,6 +1085,7 @@ def szMEff : Lanius.Mini.MEff → Nat
   | .xDeref a0 a1 => sz a0 + (szMEff a1) + 1
   | .xPlaceField a0 a1 => (szMEff a0) + 1
   | .xPlaceAt a0 a1 => (szMEff a0) + (szMEff a1) + 1
+  | .xBorrow a0 a1 => sz a0 + (szMEff a1) + 1
 def szMEff0 : List Lanius.Mini.MEff → Nat
   | [] => 0
   | a :: l => szMEff a + szMEff0 l + 1
@@ -1116,6 +1117,7 @@ theorem szMEff0_eq : ∀ l : List Lanius.Mini.MEff, szMEff0 l = SZ.sz l
 @[simp, sz_simp] theorem sz_MEff_xDeref (a0 : Lanius.Mini.Ty) (a1 : Lanius.Mini.MEff) : sz (Lanius.Mini.MEff.xDeref a0 a1) = sz a0 + sz a1 + 1 := rfl
 @[simp, sz_simp] theorem sz_MEff_xPlaceField (a0 : Lanius.Mini.MEff) (a1 : Nat) : sz (Lanius.Mini.MEff.xPlaceField a0 a1) = sz a0 + 1 := rfl
 @[simp, sz_simp] theorem sz_MEff_xPlaceAt (a0 : Lanius.Mini.MEff) (a1 : Lanius.Mini.MEff) : sz (Lanius.Mini.MEff.xPlaceAt a0 a1) = sz a0 + sz a1 + 1 := rfl
+@[simp, sz_simp] theorem sz_MEff_xBorrow (a0 : Lanius.Mini.Ty) (a1 : Lanius.Mini.MEff) : sz (Lanius.Mini.MEff.xBorrow a0 a1) = sz a0 + sz a1 + 1 := rfl
 
 instance : SZ Lanius.Mini.EffArm := ⟨fun s => sz s.binders + sz s.value + sz s.ty⟩
 @[simp, sz_simp] theorem sz_EffArm_mk (a0 : List Nat) (a1 : Lanius.Mini.MEff) (a2 : Option Lanius.Mini.Ty) : sz (Lanius.Mini.EffArm.mk a0 a1 a2) = sz a0 + sz a1 + sz a2 := rfl

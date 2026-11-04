@@ -3,7 +3,7 @@ module
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Frontend.P.externBody
 import Lanius.Mini.Frontend.P.isEmptyUsize
-import Lanius.Mini.Frontend.P.namesFieldBase
+import Lanius.Mini.Frontend.P.primaryNames
 import Lanius.Mini.Frontend.P.projectionRet
 
 public section

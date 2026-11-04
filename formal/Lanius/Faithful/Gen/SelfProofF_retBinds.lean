@@ -29,9 +29,9 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_arg_expected {prog : SrcProgram} {prims : Prims} {ix_arg_expected ix_ty_of ix_decl_env ix_bound_args : Nat} (fn : prog.funcs[ix_arg_expected]? = some (src_arg_expected ix_ty_of ix_decl_env ix_bound_args)) (np : prims.isPrim ix_arg_expected = false)
-    (ext_ty_of : Certified (∀ {n : Nat}, Stmt_ty_of prog prims ix_ty_of n))
+theorem proof_arg_expected {prog : SrcProgram} {prims : Prims} {ix_arg_expected ix_decl_env ix_param_ty_of ix_bound_args : Nat} (fn : prog.funcs[ix_arg_expected]? = some (src_arg_expected ix_decl_env ix_param_ty_of ix_bound_args)) (np : prims.isPrim ix_arg_expected = false)
     (ext_decl_env : Certified (∀ {n : Nat}, Stmt_decl_env prog prims ix_decl_env n))
+    (ext_param_ty_of : Certified (∀ {n : Nat}, Stmt_param_ty_of prog prims ix_param_ty_of n))
     (ext_bound_args : Certified (∀ {n : Nat}, Stmt_bound_args prog prims ix_bound_args n)) {n : Nat} :
     Stmt_arg_expected prog prims ix_arg_expected n := by
   intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5

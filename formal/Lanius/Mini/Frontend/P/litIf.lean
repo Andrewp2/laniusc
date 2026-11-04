@@ -377,7 +377,10 @@ def paramToken (p : CTree) : Token :=
   if nodeProd p = (64) then
     kidToken p 1
   else
-    kidToken p 0
+    if nodeProd p = (325) then
+      kidToken p 2
+    else
+      kidToken p 0
 
 /-- `name: T`, `self` or `&self` (both by value), each a local named by its spelling; `name: &T` and `name: &mut T` are references (param_ty_of). -/
 def paramsOf (fuel : Nat) (env : FrontEnv) (fd : FnDecl) (scope : List Local) (items : List CTree) : Option MParams :=
@@ -385,11 +388,11 @@ def paramsOf (fuel : Nat) (env : FrontEnv) (fd : FnDecl) (scope : List Local) (i
   | [] => some ({ params := [], scope := scope } : MParams)
   | p :: rest =>
     let tok : Token := paramToken p
-    if (decide (nodeProd p = (62)) || decide (nodeProd p = (63)) || decide (nodeProd p = (64))) && !(member env.globals tok.text) && freshId scope (tok.start - env.base) then
+    if (decide (nodeProd p = (62)) || decide (nodeProd p = (63)) || decide (nodeProd p = (64)) || decide (nodeProd p = (325))) && !(member env.globals tok.text) && freshId scope (tok.start - env.base) then
       match patternOf fd p with
       | none => none
       | some t =>
-        match paramTyOf fuel env t with
+        match selfParamTy fuel env p t with
         | none => none
         | some x => consParam ({ id := tok.start - env.base, ty := x } : MParam) (paramsOf fuel env fd (({ name := tok.text, id := tok.start - env.base, ty := x } : Local) :: scope) rest)
     else

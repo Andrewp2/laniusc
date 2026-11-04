@@ -26,7 +26,7 @@ import all Lanius.Mini.Frontend.P.litEffMatch
 import all Lanius.Mini.Frontend.P.stringLast
 import all Lanius.Mini.Frontend.P.setPlaceOf
 import all Lanius.Mini.Frontend.P.setFieldOrEval
-import all Lanius.Mini.Frontend.P.namesFieldBase
+import all Lanius.Mini.Frontend.P.primaryNames
 import all Lanius.Mini.Frontend.P.isFnPath
 import all Lanius.Mini.Frontend.P.fieldValue
 import all Lanius.Mini.Frontend.P.eDerefClosed
@@ -266,7 +266,7 @@ theorem effChain_noTryMethod {env : FrontEnv} {scope : List Local} {E : Option T
     {x : MEff} (pm : nodeProd tail = pPostfixMember) (pc : nodeProd (kid tail 3) = pPostfixCall)
     (pt : nodeProd (kid (kid tail 3) 3) = pPostfixTry) (h : EffChain env scope E a tail x) : False := by
   cases h with
-  | method _ _ _ _ _ _ _ _ _ ch => exact effChain_noTry pt ch
+  | method _ _ _ _ _ _ _ _ _ _ ch => exact effChain_noTry pt ch
   | field _ _ nc _ _ _ => exact nc pc
   | _ => prod_clash
 
@@ -296,8 +296,8 @@ theorem peel_noEffTryMethod : ∀ {env : FrontEnv} {scope : List Local} {E : Opt
 theorem methodEff_unique {env : FrontEnv} {scope : List Local} {expected : Option Ty} {pf : CTree} {x y : MEff}
     (nd : IdsFresh scope) (vn : VariantsNodup env.decls) (h₁ : MethodEff env scope expected pf x)
     (h₂ : MethodEff env scope expected pf y) : x = y := by
-  obtain ⟨l, items, found, fd, bs, lo, it, mfor, hfd, mb, inf⟩ := h₁
-  obtain ⟨l', items', found', fd', bs', lo', it', mfor', hfd', mb', inf'⟩ := h₂
+  obtain ⟨l, items, found, fd, bs, pre, lo, it, mfor, hfd, mb, rc, inf⟩ := h₁
+  obtain ⟨l', items', found', fd', bs', pre', lo', it', mfor', hfd', mb', rc', inf'⟩ := h₂
   have e := localOf_unique lo lo'
   subst e
   have e := items_unique it it'
@@ -307,6 +307,7 @@ theorem methodEff_unique {env : FrontEnv} {scope : List Local} {expected : Optio
   rw [hfd] at hfd'
   cases hfd'
   cases methodBinds_unique mb mb'
+  cases receivers_unique rc rc'
   exact effInfer_unique inf nd vn inf'
 
 theorem triedR_unique {env : FrontEnv} {r : Nat} {call : Option MEff} {st : Ty} {w : Nat} {a b : Tried}

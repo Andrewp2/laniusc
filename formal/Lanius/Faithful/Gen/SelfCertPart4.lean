@@ -95,36 +95,6 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem cert_static_byte_is {n : Nat} :
-    Stmt_static_byte_is prog prims 812 n :=
-  @proof_static_byte_is prog prims 812 fn_static_byte_is np_static_byte_is n
-
-theorem certs_get_of_u8 : ∀ n, (Stmt_get_of_u8 prog prims 813 n) := by
-  intro n
-  induction n with
-  | zero =>
-    exact (by intro x0 x1 v0 v1 w h r0 r1; simp [pcall] at h)
-  | succ n ih =>
-    have ih_get_of_u8 : Stmt_get_of_u8 prog prims 813 n := ih
-    exact @step_get_of_u8 prog prims 813 56 78 fn_get_of_u8 np_get_of_u8 ⟨@cert_minus⟩ ⟨@cert_unbox_of_mini_selfhost_List_u8⟩ n ⟨ih_get_of_u8⟩
-
-theorem cert_get_of_u8 {n : Nat} :
-    Stmt_get_of_u8 prog prims 813 n :=
-  (certs_get_of_u8 n)
-
-theorem certs_str_placed : ∀ n, (Stmt_str_placed prog prims 565 n) := by
-  intro n
-  induction n with
-  | zero =>
-    exact (by intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2; simp [pcall] at h)
-  | succ n ih =>
-    have ih_str_placed : Stmt_str_placed prog prims 565 n := ih
-    exact @step_str_placed prog prims 565 75 76 812 813 fn_str_placed np_str_placed ⟨@cert_plus⟩ ⟨@cert_unbox_of_mini_selfhost_List_usize⟩ ⟨@cert_static_byte_is⟩ ⟨@cert_get_of_u8⟩ n ⟨ih_str_placed⟩
-
-theorem cert_str_placed {n : Nat} :
-    Stmt_str_placed prog prims 565 n :=
-  (certs_str_placed n)
-
 theorem cert_eval_str {n : Nat} :
     Stmt_eval_str prog prims 379 n :=
   @proof_eval_str prog prims 379 52 75 188 291 565 fn_eval_str np_eval_str ⟨@cert_length_of_usize⟩ ⟨@cert_plus⟩ ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_length_of_u8⟩ ⟨@cert_str_placed⟩ n
@@ -176,74 +146,74 @@ theorem cert_SrcEff_passes_slices {n : Nat} :
   @proof_SrcEff_passes_slices prog prims 351 356 539 fn_SrcEff_passes_slices np_SrcEff_passes_slices ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff⟩ ⟨@cert_effs_slice⟩ n
 
 theorem cert_array_arg_pure {n : Nat} :
-    Stmt_array_arg_pure prog prims 1503 n :=
-  @proof_array_arg_pure prog prims 1503 211 1064 fn_array_arg_pure np_array_arg_pure ⟨@cert_guard_and⟩ ⟨@cert_concat_of_mini_selfhost_Expr⟩ n
+    Stmt_array_arg_pure prog prims 1499 n :=
+  @proof_array_arg_pure prog prims 1499 211 1064 fn_array_arg_pure np_array_arg_pure ⟨@cert_guard_and⟩ ⟨@cert_concat_of_mini_selfhost_Expr⟩ n
 
 theorem cert_packed_width {n : Nat} :
-    Stmt_packed_width prog prims 1693 n :=
-  @proof_packed_width prog prims 1693 235 fn_packed_width np_packed_width ⟨@cert_SrcType_same⟩ n
+    Stmt_packed_width prog prims 1689 n :=
+  @proof_packed_width prog prims 1689 235 fn_packed_width np_packed_width ⟨@cert_SrcType_same⟩ n
 
 theorem cert_array_arg_checked {n : Nat} :
-    Stmt_array_arg_checked prog prims 1694 n :=
-  @proof_array_arg_checked prog prims 1694 fn_array_arg_checked np_array_arg_checked n
+    Stmt_array_arg_checked prog prims 1690 n :=
+  @proof_array_arg_checked prog prims 1690 fn_array_arg_checked np_array_arg_checked n
 
 theorem cert_block_at {n : Nat} :
-    Stmt_block_at prog prims 1696 n :=
-  @proof_block_at prog prims 1696 337 fn_block_at np_block_at ⟨@cert_boxed_of_mini_selfhost_Expr⟩ n
+    Stmt_block_at prog prims 1692 n :=
+  @proof_block_at prog prims 1692 337 fn_block_at np_block_at ⟨@cert_boxed_of_mini_selfhost_Expr⟩ n
 
 theorem cert_block_store {n : Nat} :
-    Stmt_block_store prog prims 1754 n :=
-  @proof_block_store prog prims 1754 1696 fn_block_store np_block_store ⟨@cert_block_at⟩ n
+    Stmt_block_store prog prims 1752 n :=
+  @proof_block_store prog prims 1752 1692 fn_block_store np_block_store ⟨@cert_block_at⟩ n
 
-theorem certs_element_stores : ∀ n, (Stmt_element_stores prog prims 1695 n) := by
+theorem certs_element_stores : ∀ n, (Stmt_element_stores prog prims 1691 n) := by
   intro n
   induction n with
   | zero =>
     exact (by intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4; simp [pcall] at h)
   | succ n ih =>
-    have ih_element_stores : Stmt_element_stores prog prims 1695 n := ih
-    exact @step_element_stores prog prims 1695 56 75 188 1754 fn_element_stores np_element_stores ⟨@cert_minus⟩ ⟨@cert_plus⟩ ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_block_store⟩ n ⟨ih_element_stores⟩
+    have ih_element_stores : Stmt_element_stores prog prims 1691 n := ih
+    exact @step_element_stores prog prims 1691 56 75 188 1752 fn_element_stores np_element_stores ⟨@cert_minus⟩ ⟨@cert_plus⟩ ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_block_store⟩ n ⟨ih_element_stores⟩
 
 theorem cert_element_stores {n : Nat} :
-    Stmt_element_stores prog prims 1695 n :=
+    Stmt_element_stores prog prims 1691 n :=
   (certs_element_stores n)
 
 theorem cert_block_load {n : Nat} :
-    Stmt_block_load prog prims 1755 n :=
-  @proof_block_load prog prims 1755 1696 fn_block_load np_block_load ⟨@cert_block_at⟩ n
+    Stmt_block_load prog prims 1753 n :=
+  @proof_block_load prog prims 1753 1692 fn_block_load np_block_load ⟨@cert_block_at⟩ n
 
-theorem certs_element_loads : ∀ n, (Stmt_element_loads prog prims 1697 n) := by
+theorem certs_element_loads : ∀ n, (Stmt_element_loads prog prims 1693 n) := by
   intro n
   induction n with
   | zero =>
     exact (by intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4; simp [pcall] at h)
   | succ n ih =>
-    have ih_element_loads : Stmt_element_loads prog prims 1697 n := ih
-    exact @step_element_loads prog prims 1697 56 75 188 1755 fn_element_loads np_element_loads ⟨@cert_minus⟩ ⟨@cert_plus⟩ ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_block_load⟩ n ⟨ih_element_loads⟩
+    have ih_element_loads : Stmt_element_loads prog prims 1693 n := ih
+    exact @step_element_loads prog prims 1693 56 75 188 1753 fn_element_loads np_element_loads ⟨@cert_minus⟩ ⟨@cert_plus⟩ ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_block_load⟩ n ⟨ih_element_loads⟩
 
 theorem cert_element_loads {n : Nat} :
-    Stmt_element_loads prog prims 1697 n :=
+    Stmt_element_loads prog prims 1693 n :=
   (certs_element_loads n)
 
 theorem cert_array_arg_local {n : Nat} :
-    Stmt_array_arg_local prog prims 1620 n :=
-  @proof_array_arg_local prog prims 1620 75 105 120 188 217 235 418 490 542 1693 1694 1695 1696 1697 fn_array_arg_local np_array_arg_local ⟨@cert_plus⟩ ⟨@cert_times⟩ ⟨@cert_SrcType_size⟩ ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_boxed_of_mini_selfhost_SrcType⟩ ⟨@cert_SrcType_same⟩ ⟨@cert_cons_of_usize⟩ ⟨@cert_id_absent⟩ ⟨@cert_cons_of_mini_selfhost_Expr⟩ ⟨@cert_packed_width⟩ ⟨@cert_array_arg_checked⟩ ⟨@cert_element_stores⟩ ⟨@cert_block_at⟩ ⟨@cert_element_loads⟩ n
+    Stmt_array_arg_local prog prims 1617 n :=
+  @proof_array_arg_local prog prims 1617 75 105 120 188 217 235 418 490 542 1689 1690 1691 1692 1693 fn_array_arg_local np_array_arg_local ⟨@cert_plus⟩ ⟨@cert_times⟩ ⟨@cert_SrcType_size⟩ ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_boxed_of_mini_selfhost_SrcType⟩ ⟨@cert_SrcType_same⟩ ⟨@cert_cons_of_usize⟩ ⟨@cert_id_absent⟩ ⟨@cert_cons_of_mini_selfhost_Expr⟩ ⟨@cert_packed_width⟩ ⟨@cert_array_arg_checked⟩ ⟨@cert_element_stores⟩ ⟨@cert_block_at⟩ ⟨@cert_element_loads⟩ n
 
 theorem cert_array_arg_slice {n : Nat} :
-    Stmt_array_arg_slice prog prims 1504 n :=
-  @proof_array_arg_slice prog prims 1504 1620 fn_array_arg_slice np_array_arg_slice ⟨@cert_array_arg_local⟩ n
+    Stmt_array_arg_slice prog prims 1500 n :=
+  @proof_array_arg_slice prog prims 1500 1617 fn_array_arg_slice np_array_arg_slice ⟨@cert_array_arg_local⟩ n
 
 theorem cert_array_arg {n : Nat} :
-    Stmt_array_arg prog prims 1324 n :=
-  @proof_array_arg prog prims 1324 191 193 202 1503 1504 fn_array_arg np_array_arg ⟨@cert_SrcExpr_guard⟩ ⟨@cert_lower_value⟩ ⟨@cert_lookup⟩ ⟨@cert_array_arg_pure⟩ ⟨@cert_array_arg_slice⟩ n
+    Stmt_array_arg prog prims 1322 n :=
+  @proof_array_arg prog prims 1322 191 193 202 1499 1500 fn_array_arg np_array_arg ⟨@cert_SrcExpr_guard⟩ ⟨@cert_lower_value⟩ ⟨@cert_lookup⟩ ⟨@cert_array_arg_pure⟩ ⟨@cert_array_arg_slice⟩ n
 
 theorem cert_binding_bytes {n : Nat} :
-    Stmt_binding_bytes prog prims 1505 n :=
-  @proof_binding_bytes prog prims 1505 105 120 fn_binding_bytes np_binding_bytes ⟨@cert_times⟩ ⟨@cert_SrcType_size⟩ n
+    Stmt_binding_bytes prog prims 1501 n :=
+  @proof_binding_bytes prog prims 1501 105 120 fn_binding_bytes np_binding_bytes ⟨@cert_times⟩ ⟨@cert_SrcType_size⟩ n
 
 theorem cert_arg_bytes {n : Nat} :
-    Stmt_arg_bytes prog prims 1325 n :=
-  @proof_arg_bytes prog prims 1325 202 1505 fn_arg_bytes np_arg_bytes ⟨@cert_lookup⟩ ⟨@cert_binding_bytes⟩ n
+    Stmt_arg_bytes prog prims 1323 n :=
+  @proof_arg_bytes prog prims 1323 202 1501 fn_arg_bytes np_arg_bytes ⟨@cert_lookup⟩ ⟨@cert_binding_bytes⟩ n
 
 theorem certs_array_args : ∀ n, (Stmt_array_args prog prims 1076 n) := by
   intro n
@@ -252,7 +222,7 @@ theorem certs_array_args : ∀ n, (Stmt_array_args prog prims 1076 n) := by
     exact (by intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4; simp [pcall] at h)
   | succ n ih =>
     have ih_array_args : Stmt_array_args prog prims 1076 n := ih
-    exact @step_array_args prog prims 1076 75 139 181 356 541 1324 1325 fn_array_args np_array_args ⟨@cert_plus⟩ ⟨@cert_empty_of_usize⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_SrcType⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff⟩ ⟨@cert_empty_of_mini_selfhost_Expr⟩ ⟨@cert_array_arg⟩ ⟨@cert_arg_bytes⟩ n ⟨ih_array_args⟩
+    exact @step_array_args prog prims 1076 75 139 181 356 541 1322 1323 fn_array_args np_array_args ⟨@cert_plus⟩ ⟨@cert_empty_of_usize⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_SrcType⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff⟩ ⟨@cert_empty_of_mini_selfhost_Expr⟩ ⟨@cert_array_arg⟩ ⟨@cert_arg_bytes⟩ n ⟨ih_array_args⟩
 
 theorem cert_array_args {n : Nat} :
     Stmt_array_args prog prims 1076 n :=
@@ -901,146 +871,179 @@ theorem cert_lx_digit {n : Nat} :
   @proof_lx_digit prog prims 1100 fn_lx_digit np_lx_digit n
 
 theorem cert_lx_ident_continue {n : Nat} :
-    Stmt_lx_ident_continue prog prims 1621 n :=
-  @proof_lx_ident_continue prog prims 1621 1098 1100 fn_lx_ident_continue np_lx_ident_continue ⟨@cert_lx_ident_start⟩ ⟨@cert_lx_digit⟩ n
+    Stmt_lx_ident_continue prog prims 1618 n :=
+  @proof_lx_ident_continue prog prims 1618 1098 1100 fn_lx_ident_continue np_lx_ident_continue ⟨@cert_lx_ident_start⟩ ⟨@cert_lx_digit⟩ n
 
-theorem certs_lx_ident_run : ∀ n, (Stmt_lx_ident_run prog prims 1330 n) ∧ (Stmt_lx_ident_run_at prog prims 1507 n) := by
+theorem certs_lx_ident_run : ∀ n, (Stmt_lx_ident_run prog prims 1328 n) ∧ (Stmt_lx_ident_run_at prog prims 1503 n) := by
   intro n
   induction n with
   | zero =>
     exact ⟨(by intro x0 v0 w h r0; simp [pcall] at h), (by intro x0 x1 v0 v1 w h r0 r1; simp [pcall] at h)⟩
   | succ n ih =>
     obtain ⟨ih_lx_ident_run, ih_lx_ident_run_at⟩ := ih
-    exact ⟨@step_lx_ident_run prog prims 1330 76 1507 fn_lx_ident_run np_lx_ident_run ⟨@cert_unbox_of_mini_selfhost_List_usize⟩ n ⟨ih_lx_ident_run_at⟩, @step_lx_ident_run_at prog prims 1507 75 1330 1621 fn_lx_ident_run_at np_lx_ident_run_at ⟨@cert_plus⟩ ⟨@cert_lx_ident_continue⟩ n ⟨ih_lx_ident_run⟩⟩
+    exact ⟨@step_lx_ident_run prog prims 1328 76 1503 fn_lx_ident_run np_lx_ident_run ⟨@cert_unbox_of_mini_selfhost_List_usize⟩ n ⟨ih_lx_ident_run_at⟩, @step_lx_ident_run_at prog prims 1503 75 1328 1618 fn_lx_ident_run_at np_lx_ident_run_at ⟨@cert_plus⟩ ⟨@cert_lx_ident_continue⟩ n ⟨ih_lx_ident_run⟩⟩
 
 theorem cert_lx_ident_run {n : Nat} :
-    Stmt_lx_ident_run prog prims 1330 n :=
+    Stmt_lx_ident_run prog prims 1328 n :=
   (certs_lx_ident_run n).1
 theorem cert_lx_ident_run_at {n : Nat} :
-    Stmt_lx_ident_run_at prog prims 1507 n :=
+    Stmt_lx_ident_run_at prog prims 1503 n :=
   (certs_lx_ident_run n).2
 
 theorem cert_lx_ident_end {n : Nat} :
     Stmt_lx_ident_end prog prims 1099 n :=
-  @proof_lx_ident_end prog prims 1099 75 592 1330 fn_lx_ident_end np_lx_ident_end ⟨@cert_plus⟩ ⟨@cert_lx_drop⟩ ⟨@cert_lx_ident_run⟩ n
+  @proof_lx_ident_end prog prims 1099 75 592 1328 fn_lx_ident_end np_lx_ident_end ⟨@cert_plus⟩ ⟨@cert_lx_drop⟩ ⟨@cert_lx_ident_run⟩ n
 
 theorem cert_lx_from_number {n : Nat} :
     Stmt_lx_from_number prog prims 1101 n :=
   @proof_lx_from_number prog prims 1101 fn_lx_from_number np_lx_from_number n
 
 theorem cert_lx_is_byte {n : Nat} :
-    Stmt_lx_is_byte prog prims 1508 n :=
-  @proof_lx_is_byte prog prims 1508 fn_lx_is_byte np_lx_is_byte n
+    Stmt_lx_is_byte prog prims 1504 n :=
+  @proof_lx_is_byte prog prims 1504 fn_lx_is_byte np_lx_is_byte n
 
 theorem cert_lx_base_of {n : Nat} :
-    Stmt_lx_base_of prog prims 1509 n :=
-  @proof_lx_base_of prog prims 1509 fn_lx_base_of np_lx_base_of n
+    Stmt_lx_base_of prog prims 1505 n :=
+  @proof_lx_base_of prog prims 1505 fn_lx_base_of np_lx_base_of n
 
 theorem cert_lx_prefixed_base {n : Nat} :
-    Stmt_lx_prefixed_base prog prims 1331 n :=
-  @proof_lx_prefixed_base prog prims 1331 75 829 1508 1509 fn_lx_prefixed_base np_lx_prefixed_base ⟨@cert_plus⟩ ⟨@cert_get_of_usize⟩ ⟨@cert_lx_is_byte⟩ ⟨@cert_lx_base_of⟩ n
+    Stmt_lx_prefixed_base prog prims 1329 n :=
+  @proof_lx_prefixed_base prog prims 1329 75 829 1504 1505 fn_lx_prefixed_base np_lx_prefixed_base ⟨@cert_plus⟩ ⟨@cert_get_of_usize⟩ ⟨@cert_lx_is_byte⟩ ⟨@cert_lx_base_of⟩ n
 
 theorem cert_lx_base_digit {n : Nat} :
-    Stmt_lx_base_digit prog prims 1622 n :=
-  @proof_lx_base_digit prog prims 1622 56 75 fn_lx_base_digit np_lx_base_digit ⟨@cert_minus⟩ ⟨@cert_plus⟩ n
+    Stmt_lx_base_digit prog prims 1619 n :=
+  @proof_lx_base_digit prog prims 1619 56 75 fn_lx_base_digit np_lx_base_digit ⟨@cert_minus⟩ ⟨@cert_plus⟩ n
 
-theorem certs_lx_digit_tail : ∀ n, (Stmt_lx_digit_tail prog prims 1623 n) ∧ (Stmt_lx_digit_tail_at prog prims 1698 n) ∧ (Stmt_lx_digit_sep prog prims 1756 n) := by
+theorem certs_lx_digit_tail : ∀ n, (Stmt_lx_digit_tail prog prims 1620 n) ∧ (Stmt_lx_digit_tail_at prog prims 1694 n) ∧ (Stmt_lx_digit_sep prog prims 1754 n) := by
   intro n
   induction n with
   | zero =>
     exact ⟨(by intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2; simp [pcall] at h), (by intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3; simp [pcall] at h), (by intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3; simp [pcall] at h)⟩
   | succ n ih =>
     obtain ⟨ih_lx_digit_tail, ih_lx_digit_tail_at, ih_lx_digit_sep⟩ := ih
-    exact ⟨@step_lx_digit_tail prog prims 1623 76 1698 fn_lx_digit_tail np_lx_digit_tail ⟨@cert_unbox_of_mini_selfhost_List_usize⟩ n ⟨ih_lx_digit_tail_at⟩, @step_lx_digit_tail_at prog prims 1698 75 76 1622 1623 1756 fn_lx_digit_tail_at np_lx_digit_tail_at ⟨@cert_plus⟩ ⟨@cert_unbox_of_mini_selfhost_List_usize⟩ ⟨@cert_lx_base_digit⟩ n ⟨ih_lx_digit_tail⟩ ⟨ih_lx_digit_sep⟩, @step_lx_digit_sep prog prims 1756 75 1622 1623 fn_lx_digit_sep np_lx_digit_sep ⟨@cert_plus⟩ ⟨@cert_lx_base_digit⟩ n ⟨ih_lx_digit_tail⟩⟩
+    exact ⟨@step_lx_digit_tail prog prims 1620 76 1694 fn_lx_digit_tail np_lx_digit_tail ⟨@cert_unbox_of_mini_selfhost_List_usize⟩ n ⟨ih_lx_digit_tail_at⟩, @step_lx_digit_tail_at prog prims 1694 75 76 1619 1620 1754 fn_lx_digit_tail_at np_lx_digit_tail_at ⟨@cert_plus⟩ ⟨@cert_unbox_of_mini_selfhost_List_usize⟩ ⟨@cert_lx_base_digit⟩ n ⟨ih_lx_digit_tail⟩ ⟨ih_lx_digit_sep⟩, @step_lx_digit_sep prog prims 1754 75 1619 1620 fn_lx_digit_sep np_lx_digit_sep ⟨@cert_plus⟩ ⟨@cert_lx_base_digit⟩ n ⟨ih_lx_digit_tail⟩⟩
 
 theorem cert_lx_digit_tail {n : Nat} :
-    Stmt_lx_digit_tail prog prims 1623 n :=
+    Stmt_lx_digit_tail prog prims 1620 n :=
   (certs_lx_digit_tail n).1
 theorem cert_lx_digit_tail_at {n : Nat} :
-    Stmt_lx_digit_tail_at prog prims 1698 n :=
+    Stmt_lx_digit_tail_at prog prims 1694 n :=
   (certs_lx_digit_tail n).2.1
 theorem cert_lx_digit_sep {n : Nat} :
-    Stmt_lx_digit_sep prog prims 1756 n :=
+    Stmt_lx_digit_sep prog prims 1754 n :=
   (certs_lx_digit_tail n).2.2
 
 theorem cert_lx_digit_run_at {n : Nat} :
-    Stmt_lx_digit_run_at prog prims 1510 n :=
-  @proof_lx_digit_run_at prog prims 1510 75 1622 1623 fn_lx_digit_run_at np_lx_digit_run_at ⟨@cert_plus⟩ ⟨@cert_lx_base_digit⟩ ⟨@cert_lx_digit_tail⟩ n
+    Stmt_lx_digit_run_at prog prims 1506 n :=
+  @proof_lx_digit_run_at prog prims 1506 75 1619 1620 fn_lx_digit_run_at np_lx_digit_run_at ⟨@cert_plus⟩ ⟨@cert_lx_base_digit⟩ ⟨@cert_lx_digit_tail⟩ n
 
 theorem cert_lx_digit_run {n : Nat} :
-    Stmt_lx_digit_run prog prims 1332 n :=
-  @proof_lx_digit_run prog prims 1332 76 592 1510 fn_lx_digit_run np_lx_digit_run ⟨@cert_unbox_of_mini_selfhost_List_usize⟩ ⟨@cert_lx_drop⟩ ⟨@cert_lx_digit_run_at⟩ n
+    Stmt_lx_digit_run prog prims 1330 n :=
+  @proof_lx_digit_run prog prims 1330 76 592 1506 fn_lx_digit_run np_lx_digit_run ⟨@cert_unbox_of_mini_selfhost_List_usize⟩ ⟨@cert_lx_drop⟩ ⟨@cert_lx_digit_run_at⟩ n
 
 theorem cert_lx_exponent_sign {n : Nat} :
-    Stmt_lx_exponent_sign prog prims 1757 n :=
-  @proof_lx_exponent_sign prog prims 1757 75 fn_lx_exponent_sign np_lx_exponent_sign ⟨@cert_plus⟩ n
+    Stmt_lx_exponent_sign prog prims 1755 n :=
+  @proof_lx_exponent_sign prog prims 1755 75 fn_lx_exponent_sign np_lx_exponent_sign ⟨@cert_plus⟩ n
 
 theorem cert_lx_exponent_digits {n : Nat} :
-    Stmt_lx_exponent_digits prog prims 1699 n :=
-  @proof_lx_exponent_digits prog prims 1699 75 829 1757 fn_lx_exponent_digits np_lx_exponent_digits ⟨@cert_plus⟩ ⟨@cert_get_of_usize⟩ ⟨@cert_lx_exponent_sign⟩ n
+    Stmt_lx_exponent_digits prog prims 1695 n :=
+  @proof_lx_exponent_digits prog prims 1695 75 829 1755 fn_lx_exponent_digits np_lx_exponent_digits ⟨@cert_plus⟩ ⟨@cert_get_of_usize⟩ ⟨@cert_lx_exponent_sign⟩ n
 
 theorem cert_lx_exponent {n : Nat} :
-    Stmt_lx_exponent prog prims 1624 n :=
-  @proof_lx_exponent prog prims 1624 1332 1699 fn_lx_exponent np_lx_exponent ⟨@cert_lx_digit_run⟩ ⟨@cert_lx_exponent_digits⟩ n
+    Stmt_lx_exponent prog prims 1621 n :=
+  @proof_lx_exponent prog prims 1621 1330 1695 fn_lx_exponent np_lx_exponent ⟨@cert_lx_digit_run⟩ ⟨@cert_lx_exponent_digits⟩ n
 
 theorem cert_lx_after_fraction_at {n : Nat} :
-    Stmt_lx_after_fraction_at prog prims 1826 n :=
-  @proof_lx_after_fraction_at prog prims 1826 1624 fn_lx_after_fraction_at np_lx_after_fraction_at ⟨@cert_lx_exponent⟩ n
+    Stmt_lx_after_fraction_at prog prims 1822 n :=
+  @proof_lx_after_fraction_at prog prims 1822 1621 fn_lx_after_fraction_at np_lx_after_fraction_at ⟨@cert_lx_exponent⟩ n
 
 theorem cert_lx_after_fraction {n : Nat} :
-    Stmt_lx_after_fraction prog prims 1758 n :=
-  @proof_lx_after_fraction prog prims 1758 829 1826 fn_lx_after_fraction np_lx_after_fraction ⟨@cert_get_of_usize⟩ ⟨@cert_lx_after_fraction_at⟩ n
+    Stmt_lx_after_fraction prog prims 1756 n :=
+  @proof_lx_after_fraction prog prims 1756 829 1822 fn_lx_after_fraction np_lx_after_fraction ⟨@cert_get_of_usize⟩ ⟨@cert_lx_after_fraction_at⟩ n
 
 theorem cert_lx_fraction_digits {n : Nat} :
-    Stmt_lx_fraction_digits prog prims 1701 n :=
-  @proof_lx_fraction_digits prog prims 1701 1758 fn_lx_fraction_digits np_lx_fraction_digits ⟨@cert_lx_after_fraction⟩ n
+    Stmt_lx_fraction_digits prog prims 1697 n :=
+  @proof_lx_fraction_digits prog prims 1697 1756 fn_lx_fraction_digits np_lx_fraction_digits ⟨@cert_lx_after_fraction⟩ n
 
 theorem cert_lx_fraction_at {n : Nat} :
-    Stmt_lx_fraction_at prog prims 1700 n :=
-  @proof_lx_fraction_at prog prims 1700 1332 1624 1701 fn_lx_fraction_at np_lx_fraction_at ⟨@cert_lx_digit_run⟩ ⟨@cert_lx_exponent⟩ ⟨@cert_lx_fraction_digits⟩ n
+    Stmt_lx_fraction_at prog prims 1696 n :=
+  @proof_lx_fraction_at prog prims 1696 1330 1621 1697 fn_lx_fraction_at np_lx_fraction_at ⟨@cert_lx_digit_run⟩ ⟨@cert_lx_exponent⟩ ⟨@cert_lx_fraction_digits⟩ n
 
 theorem cert_lx_fraction {n : Nat} :
-    Stmt_lx_fraction prog prims 1625 n :=
-  @proof_lx_fraction prog prims 1625 829 1700 fn_lx_fraction np_lx_fraction ⟨@cert_get_of_usize⟩ ⟨@cert_lx_fraction_at⟩ n
+    Stmt_lx_fraction prog prims 1622 n :=
+  @proof_lx_fraction prog prims 1622 829 1696 fn_lx_fraction np_lx_fraction ⟨@cert_get_of_usize⟩ ⟨@cert_lx_fraction_at⟩ n
 
 theorem cert_lx_decimal_next {n : Nat} :
-    Stmt_lx_decimal_next prog prims 1511 n :=
-  @proof_lx_decimal_next prog prims 1511 75 829 1508 1624 1625 fn_lx_decimal_next np_lx_decimal_next ⟨@cert_plus⟩ ⟨@cert_get_of_usize⟩ ⟨@cert_lx_is_byte⟩ ⟨@cert_lx_exponent⟩ ⟨@cert_lx_fraction⟩ n
+    Stmt_lx_decimal_next prog prims 1507 n :=
+  @proof_lx_decimal_next prog prims 1507 75 829 1504 1621 1622 fn_lx_decimal_next np_lx_decimal_next ⟨@cert_plus⟩ ⟨@cert_get_of_usize⟩ ⟨@cert_lx_is_byte⟩ ⟨@cert_lx_exponent⟩ ⟨@cert_lx_fraction⟩ n
 
 theorem cert_lx_finish_decimal {n : Nat} :
-    Stmt_lx_finish_decimal prog prims 1333 n :=
-  @proof_lx_finish_decimal prog prims 1333 829 1511 fn_lx_finish_decimal np_lx_finish_decimal ⟨@cert_get_of_usize⟩ ⟨@cert_lx_decimal_next⟩ n
+    Stmt_lx_finish_decimal prog prims 1331 n :=
+  @proof_lx_finish_decimal prog prims 1331 829 1507 fn_lx_finish_decimal np_lx_finish_decimal ⟨@cert_get_of_usize⟩ ⟨@cert_lx_decimal_next⟩ n
 
 theorem cert_lx_number {n : Nat} :
     Stmt_lx_number prog prims 1102 n :=
-  @proof_lx_number prog prims 1102 75 1331 1332 1333 fn_lx_number np_lx_number ⟨@cert_plus⟩ ⟨@cert_lx_prefixed_base⟩ ⟨@cert_lx_digit_run⟩ ⟨@cert_lx_finish_decimal⟩ n
+  @proof_lx_number prog prims 1102 75 1329 1330 1331 fn_lx_number np_lx_number ⟨@cert_plus⟩ ⟨@cert_lx_prefixed_base⟩ ⟨@cert_lx_digit_run⟩ ⟨@cert_lx_finish_decimal⟩ n
 
 theorem cert_lx_space {n : Nat} :
     Stmt_lx_space prog prims 1103 n :=
   @proof_lx_space prog prims 1103 fn_lx_space np_lx_space n
 
-theorem certs_lx_space_run : ∀ n, (Stmt_lx_space_run prog prims 1334 n) ∧ (Stmt_lx_space_run_at prog prims 1512 n) := by
+theorem certs_lx_space_run : ∀ n, (Stmt_lx_space_run prog prims 1332 n) ∧ (Stmt_lx_space_run_at prog prims 1508 n) := by
   intro n
   induction n with
   | zero =>
     exact ⟨(by intro x0 v0 w h r0; simp [pcall] at h), (by intro x0 x1 v0 v1 w h r0 r1; simp [pcall] at h)⟩
   | succ n ih =>
     obtain ⟨ih_lx_space_run, ih_lx_space_run_at⟩ := ih
-    exact ⟨@step_lx_space_run prog prims 1334 76 1512 fn_lx_space_run np_lx_space_run ⟨@cert_unbox_of_mini_selfhost_List_usize⟩ n ⟨ih_lx_space_run_at⟩, @step_lx_space_run_at prog prims 1512 75 1103 1334 fn_lx_space_run_at np_lx_space_run_at ⟨@cert_plus⟩ ⟨@cert_lx_space⟩ n ⟨ih_lx_space_run⟩⟩
+    exact ⟨@step_lx_space_run prog prims 1332 76 1508 fn_lx_space_run np_lx_space_run ⟨@cert_unbox_of_mini_selfhost_List_usize⟩ n ⟨ih_lx_space_run_at⟩, @step_lx_space_run_at prog prims 1508 75 1103 1332 fn_lx_space_run_at np_lx_space_run_at ⟨@cert_plus⟩ ⟨@cert_lx_space⟩ n ⟨ih_lx_space_run⟩⟩
 
 theorem cert_lx_space_run {n : Nat} :
-    Stmt_lx_space_run prog prims 1334 n :=
+    Stmt_lx_space_run prog prims 1332 n :=
   (certs_lx_space_run n).1
 theorem cert_lx_space_run_at {n : Nat} :
-    Stmt_lx_space_run_at prog prims 1512 n :=
+    Stmt_lx_space_run_at prog prims 1508 n :=
   (certs_lx_space_run n).2
 
 theorem cert_lx_space_end {n : Nat} :
     Stmt_lx_space_end prog prims 1104 n :=
-  @proof_lx_space_end prog prims 1104 75 592 1334 fn_lx_space_end np_lx_space_end ⟨@cert_plus⟩ ⟨@cert_lx_drop⟩ ⟨@cert_lx_space_run⟩ n
+  @proof_lx_space_end prog prims 1104 75 592 1332 fn_lx_space_end np_lx_space_end ⟨@cert_plus⟩ ⟨@cert_lx_drop⟩ ⟨@cert_lx_space_run⟩ n
 
 theorem cert_lx_delimited {n : Nat} :
     Stmt_lx_delimited prog prims 1105 n :=
   @proof_lx_delimited prog prims 1105 fn_lx_delimited np_lx_delimited n
+
+theorem certs_lx_quoted : ∀ n, (Stmt_lx_quoted prog prims 1106 n) ∧ (Stmt_lx_quoted_at prog prims 1333 n) := by
+  intro n
+  induction n with
+  | zero =>
+    exact ⟨(by intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3; simp [pcall] at h), (by intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4; simp [pcall] at h)⟩
+  | succ n ih =>
+    obtain ⟨ih_lx_quoted, ih_lx_quoted_at⟩ := ih
+    exact ⟨@step_lx_quoted prog prims 1106 76 1333 fn_lx_quoted np_lx_quoted ⟨@cert_unbox_of_mini_selfhost_List_usize⟩ n ⟨ih_lx_quoted_at⟩, @step_lx_quoted_at prog prims 1333 75 1106 fn_lx_quoted_at np_lx_quoted_at ⟨@cert_plus⟩ n ⟨ih_lx_quoted⟩⟩
+
+theorem cert_lx_quoted {n : Nat} :
+    Stmt_lx_quoted prog prims 1106 n :=
+  (certs_lx_quoted n).1
+theorem cert_lx_quoted_at {n : Nat} :
+    Stmt_lx_quoted_at prog prims 1333 n :=
+  (certs_lx_quoted n).2
+
+theorem cert_lx_symbol_start {n : Nat} :
+    Stmt_lx_symbol_start prog prims 1107 n :=
+  @proof_lx_symbol_start prog prims 1107 fn_lx_symbol_start np_lx_symbol_start n
+
+theorem certs_lx_take : ∀ n, (Stmt_lx_take prog prims 1114 n) := by
+  intro n
+  induction n with
+  | zero =>
+    exact (by intro x0 x1 v0 v1 w h r0 r1; simp [pcall] at h)
+  | succ n ih =>
+    have ih_lx_take : Stmt_lx_take prog prims 1114 n := ih
+    exact @step_lx_take prog prims 1114 56 76 139 418 fn_lx_take np_lx_take ⟨@cert_minus⟩ ⟨@cert_unbox_of_mini_selfhost_List_usize⟩ ⟨@cert_empty_of_usize⟩ ⟨@cert_cons_of_usize⟩ n ⟨ih_lx_take⟩
+
+theorem cert_lx_take {n : Nat} :
+    Stmt_lx_take prog prims 1114 n :=
+  (certs_lx_take n)
 
 end Lanius.Faithful.SelfCert

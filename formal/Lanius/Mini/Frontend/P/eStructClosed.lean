@@ -106,6 +106,7 @@ def closeEff (fuel : Nat) (t : Tables) (x : MEff) : Option SrcEff :=
   | .xDeref dty a => eDerefClosed (closeTy fuel t dty) (closeEff fuel t a)
   | .xPlaceField b j => ePlaceFieldClosed (closeEff fuel t b) j
   | .xPlaceAt b i => ePlaceAtClosed (closeEff fuel t b) (closeEff fuel t i)
+  | .xBorrow bty p => eBorrowClosed (closeTy fuel t bty) (closeEff fuel t p)
 def closeEffs (fuel : Nat) (t : Tables) (xs : List MEff) : Option (List SrcEff) :=
   match xs with
   | [] => some []

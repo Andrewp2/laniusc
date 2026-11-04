@@ -15,6 +15,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_freshId
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfStmtF_paramGoals
 public import Lanius.Faithful.Gen.SelfStmtF_projection
+public import Lanius.Faithful.Gen.SelfStmtF_repeatEff
 import all Lanius.Faithful.Gen.SelfSrcF_fieldValue
 import all Lanius.Mini.Frontend.P.fieldValue
 
@@ -84,6 +85,16 @@ theorem proof_method_of_ty {prog : SrcProgram} {prims : Prims} {ix_method_of_ty 
   rw [pcall_succ np fn] at h
   simp only [src_method_of_ty] at h
   faithful [Lanius.Mini.methodOfTy]
+
+theorem proof_referent_or_of {prog : SrcProgram} {prims : Prims} {ix_referent_or_of ix_referent_or : Nat} (fn : prog.funcs[ix_referent_or_of]? = some (src_referent_or_of ix_referent_or)) (np : prims.isPrim ix_referent_or_of = false)
+    (ext_referent_or : Certified (∀ {n : Nat}, Stmt_referent_or prog prims ix_referent_or n)) {n : Nat} :
+    Stmt_referent_or_of prog prims ix_referent_or_of n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_referent_or_of] at h
+  faithful [Lanius.Mini.referentOrOf]
 
 theorem proof_step_expected {prog : SrcProgram} {prims : Prims} {ix_step_expected ix_node_prod ix_p_postfix_end : Nat} (fn : prog.funcs[ix_step_expected]? = some (src_step_expected ix_node_prod ix_p_postfix_end)) (np : prims.isPrim ix_step_expected = false)
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))

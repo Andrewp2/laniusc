@@ -6,6 +6,7 @@ import Lanius.Faithful.GenB.SelfBStmtF_Inline_pBitAnd
 import Lanius.Faithful.GenB.SelfBStmtF_Inline_pExpr
 import Lanius.Faithful.GenB.SelfBStmtF_Inline_pLeTail
 import Lanius.Faithful.GenB.SelfBStmtF_Inline_pModTail
+import Lanius.Faithful.GenB.SelfBStmtF_Inline_pPathIdentArgs
 import Lanius.Faithful.GenB.SelfBStmtF_Inline_tLparen
 import Lanius.Faithful.GenB.SelfBStmtF_genericClose
 import Lanius.Faithful.GenB.SelfBStmtF_genericOpen

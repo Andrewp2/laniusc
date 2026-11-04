@@ -127,8 +127,8 @@ theorem bproof_wide_const {spW sp : SrcProgram} {prims : Prims} {ix_wide_const i
     budget Cost_wide_const
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
 
-theorem bstep_expr_of {spW sp : SrcProgram} {prims : Prims} {ix_expr_of ix_minus ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_postfix ix_p_ident ix_p_expr ix_p_base ix_p_assign ix_assign_value ix_is_level ix_fold ix_p_cast ix_casts ix_p_neg ix_negated ix_p_not ix_notted ix_postfix_value ix_p_group ix_ident_expr ix_p_self_value ix_local_expr ix_local_of ix_p_int ix_int_literal ix_p_true ix_p_false ix_p_char ix_char_literal ix_p_float ix_float_literal : Nat}
-    (fnW : spW.funcs[ix_expr_of]? = some (src_expr_of ix_minus ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_postfix ix_expr_of ix_p_ident ix_p_expr ix_p_base ix_p_assign ix_assign_value ix_is_level ix_fold ix_p_cast ix_casts ix_p_neg ix_negated ix_p_not ix_notted ix_postfix_value ix_p_group ix_ident_expr ix_p_self_value ix_local_expr ix_local_of ix_p_int ix_int_literal ix_p_true ix_p_false ix_p_char ix_char_literal ix_p_float ix_float_literal)) (fn : sp.funcs[ix_expr_of]? = some (src_expr_of ix_minus ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_postfix ix_expr_of ix_p_ident ix_p_expr ix_p_base ix_p_assign ix_assign_value ix_is_level ix_fold ix_p_cast ix_casts ix_p_neg ix_negated ix_p_not ix_notted ix_postfix_value ix_p_group ix_ident_expr ix_p_self_value ix_local_expr ix_local_of ix_p_int ix_int_literal ix_p_true ix_p_false ix_p_char ix_char_literal ix_p_float ix_float_literal))
+theorem bstep_expr_of {spW sp : SrcProgram} {prims : Prims} {ix_expr_of ix_minus ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_postfix ix_p_expr ix_p_base ix_p_assign ix_assign_value ix_is_level ix_fold ix_p_cast ix_casts ix_p_neg ix_negated ix_p_not ix_notted ix_postfix_value ix_p_group ix_p_ident ix_ident_expr ix_p_self_value ix_local_expr ix_local_of ix_p_int ix_int_literal ix_p_true ix_p_false ix_p_char ix_char_literal ix_p_float ix_float_literal : Nat}
+    (fnW : spW.funcs[ix_expr_of]? = some (src_expr_of ix_minus ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_postfix ix_expr_of ix_p_expr ix_p_base ix_p_assign ix_assign_value ix_is_level ix_fold ix_p_cast ix_casts ix_p_neg ix_negated ix_p_not ix_notted ix_postfix_value ix_p_group ix_p_ident ix_ident_expr ix_p_self_value ix_local_expr ix_local_of ix_p_int ix_int_literal ix_p_true ix_p_false ix_p_char ix_char_literal ix_p_float ix_float_literal)) (fn : sp.funcs[ix_expr_of]? = some (src_expr_of ix_minus ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_postfix ix_expr_of ix_p_expr ix_p_base ix_p_assign ix_assign_value ix_is_level ix_fold ix_p_cast ix_casts ix_p_neg ix_negated ix_p_not ix_notted ix_postfix_value ix_p_group ix_p_ident ix_ident_expr ix_p_self_value ix_local_expr ix_local_of ix_p_int ix_int_literal ix_p_true ix_p_false ix_p_char ix_char_literal ix_p_float ix_float_literal))
     (np : prims.isPrim ix_expr_of = false)
     (back : Certified (∀ {n : Nat}, Stmt_expr_of sp prims ix_expr_of n))
     (b_minus : Certified (∀ {n : Nat}, BStmt_minus spW sp prims ix_minus n))
@@ -137,7 +137,6 @@ theorem bstep_expr_of {spW sp : SrcProgram} {prims : Prims} {ix_expr_of ix_minus
     (b_field_text_Token_of_mini_selfhost_Token : Certified (∀ {n : Nat}, BStmt_field_text_Token_of_mini_selfhost_Token spW sp prims ix_field_text_Token_of_mini_selfhost_Token n))
     (b_kid_token : Certified (∀ {n : Nat}, BStmt_kid_token spW sp prims ix_kid_token n))
     (b_p_postfix : Certified (∀ {n : Nat}, BStmt_p_postfix spW sp prims ix_p_postfix n))
-    (b_p_ident : Certified (∀ {n : Nat}, BStmt_p_ident spW sp prims ix_p_ident n))
     (b_p_expr : Certified (∀ {n : Nat}, BStmt_p_expr spW sp prims ix_p_expr n))
     (b_p_base : Certified (∀ {n : Nat}, BStmt_p_base spW sp prims ix_p_base n))
     (b_p_assign : Certified (∀ {n : Nat}, BStmt_p_assign spW sp prims ix_p_assign n))
@@ -149,6 +148,7 @@ theorem bstep_expr_of {spW sp : SrcProgram} {prims : Prims} {ix_expr_of ix_minus
     (b_p_not : Certified (∀ {n : Nat}, BStmt_p_not spW sp prims ix_p_not n))
     (b_notted : Certified (∀ {n : Nat}, BStmt_notted spW sp prims ix_notted n))
     (b_p_group : Certified (∀ {n : Nat}, BStmt_p_group spW sp prims ix_p_group n))
+    (b_p_ident : Certified (∀ {n : Nat}, BStmt_p_ident spW sp prims ix_p_ident n))
     (b_p_self_value : Certified (∀ {n : Nat}, BStmt_p_self_value spW sp prims ix_p_self_value n))
     (b_local_expr : Certified (∀ {n : Nat}, BStmt_local_expr spW sp prims ix_local_expr n))
     (b_local_of : Certified (∀ {n : Nat}, BStmt_local_of spW sp prims ix_local_of n))
@@ -237,16 +237,16 @@ theorem bstep_postfix_value {spW sp : SrcProgram} {prims : Prims} {ix_postfix_va
     budget Cost_postfix_value
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4⟩
 
-theorem bstep_ident_expr {spW sp : SrcProgram} {prims : Prims} {ix_ident_expr ix_minus ix_node_prod ix_kid ix_path_spellings ix_p_ident_plain ix_local_of ix_const_ref : Nat}
-    (fnW : spW.funcs[ix_ident_expr]? = some (src_ident_expr ix_minus ix_node_prod ix_kid ix_path_spellings ix_p_ident_plain ix_local_of ix_const_ref)) (fn : sp.funcs[ix_ident_expr]? = some (src_ident_expr ix_minus ix_node_prod ix_kid ix_path_spellings ix_p_ident_plain ix_local_of ix_const_ref))
+theorem bstep_ident_expr {spW sp : SrcProgram} {prims : Prims} {ix_ident_expr ix_minus ix_node_prod ix_kid ix_path_spellings ix_local_of ix_p_ident_plain ix_const_ref : Nat}
+    (fnW : spW.funcs[ix_ident_expr]? = some (src_ident_expr ix_minus ix_node_prod ix_kid ix_path_spellings ix_local_of ix_p_ident_plain ix_const_ref)) (fn : sp.funcs[ix_ident_expr]? = some (src_ident_expr ix_minus ix_node_prod ix_kid ix_path_spellings ix_local_of ix_p_ident_plain ix_const_ref))
     (np : prims.isPrim ix_ident_expr = false)
     (back : Certified (∀ {n : Nat}, Stmt_ident_expr sp prims ix_ident_expr n))
     (b_minus : Certified (∀ {n : Nat}, BStmt_minus spW sp prims ix_minus n))
     (b_node_prod : Certified (∀ {n : Nat}, BStmt_node_prod spW sp prims ix_node_prod n))
     (b_kid : Certified (∀ {n : Nat}, BStmt_kid spW sp prims ix_kid n))
     (b_path_spellings : Certified (∀ {n : Nat}, BStmt_path_spellings spW sp prims ix_path_spellings n))
-    (b_p_ident_plain : Certified (∀ {n : Nat}, BStmt_p_ident_plain spW sp prims ix_p_ident_plain n))
-    (b_local_of : Certified (∀ {n : Nat}, BStmt_local_of spW sp prims ix_local_of n)) {n : Nat}
+    (b_local_of : Certified (∀ {n : Nat}, BStmt_local_of spW sp prims ix_local_of n))
+    (b_p_ident_plain : Certified (∀ {n : Nat}, BStmt_p_ident_plain spW sp prims ix_p_ident_plain n)) {n : Nat}
     (bih_const_ref : Certified (BStmt_const_ref spW sp prims ix_const_ref n)) :
     BStmt_ident_expr spW sp prims ix_ident_expr (n + 1) := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w k b h r0 r1 r2 r3 hb pre

@@ -36,6 +36,11 @@ def fieldOfTy (env : FrontEnv) (x : MEff) (t : Option Ty) (name : List Nat) : Op
     | none => none
     | some j => some (fieldValue env.decls x ty j)
 
+def referentOrOf (t : Option Ty) : Option Ty :=
+  match t with
+  | none => none
+  | some x => some (referentOr x)
+
 def methodOfTy (fuel : Nat) (env : FrontEnv) (t : Option Ty) (name : List Nat) : Option Found :=
   match t with
   | none => none

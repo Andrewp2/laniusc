@@ -64,6 +64,7 @@ def bareEff (x : MEff) : Bool :=
   | .xDeref dty a => false
   | .xPlaceField b j => false
   | .xPlaceAt b i => false
+  | .xBorrow bty p => false
 
 /-- Field j's type in a struct type. -/
 def fieldTyAt (fuel : Nat) (decls : Decls) (t : Ty) (j : Nat) : Option Ty :=
@@ -109,6 +110,7 @@ def effTy (fuel : Nat) (env : FrontEnv) (scope : List Local) (x : MEff) : Option
     | .xDeref dty a => some dty
     | .xPlaceField b j => fieldTyOf fuel env.decls (effTy (fuel - 1) env scope b) j
     | .xPlaceAt b i => elemTyOf (effTy (fuel - 1) env scope b)
+    | .xBorrow bty p => some bty
 
 def effsTys (fuel : Nat) (env : FrontEnv) (scope : List Local) (xs : List MEff) : Option (List Ty) :=
   match xs with

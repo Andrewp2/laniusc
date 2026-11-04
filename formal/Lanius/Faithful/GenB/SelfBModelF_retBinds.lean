@@ -28,14 +28,14 @@ noncomputable section
 
 def Cost_arg_expected : Nat → Nat → Lanius.Mini.Decls → Lanius.Mini.FnDecl → List (List Nat) → Lanius.Mini.CTree → List Lanius.Mini.Bind → Nat
   | 0, x13, x26, x40, x52, x78, x88 => 18446744073709551616
-  | n + 1, x13, x26, x40, x52, x78, x88 => ((Cost_bound_args n x52 x88) + (match (Lanius.Mini.boundArgs x52 x88) with | some x210 => (Cost_ty_of n x13 (Lanius.Mini.declEnv x26 x40.home x52 x210) x78) | none => 0))
+  | n + 1, x13, x26, x40, x52, x78, x88 => ((Cost_bound_args n x52 x88) + (match (Lanius.Mini.boundArgs x52 x88) with | some x210 => (Cost_param_ty_of n x13 (Lanius.Mini.declEnv x26 x40.home x52 x210) x78) | none => 0))
 
 end
 noncomputable section
 
 def Pre_arg_expected : Nat → Nat → Lanius.Mini.Decls → Lanius.Mini.FnDecl → List (List Nat) → Lanius.Mini.CTree → List Lanius.Mini.Bind → Nat → Prop
   | 0, x13, x26, x40, x52, x78, x88, b => True
-  | n + 1, x13, x26, x40, x52, x78, x88, b => (∀ b1 : Nat, (Cost_bound_args n x52 x88) < b → b1 = b - (Cost_bound_args n x52 x88) → (match (Lanius.Mini.boundArgs x52 x88) with | some x210 => (Pre_ty_of n x13 (Lanius.Mini.declEnv x26 x40.home x52 x210) x78 b1) | none => True))
+  | n + 1, x13, x26, x40, x52, x78, x88, b => (∀ b1 : Nat, (Cost_bound_args n x52 x88) < b → b1 = b - (Cost_bound_args n x52 x88) → (match (Lanius.Mini.boundArgs x52 x88) with | some x210 => (Pre_param_ty_of n x13 (Lanius.Mini.declEnv x26 x40.home x52 x210) x78 b1) | none => True))
 
 end
 

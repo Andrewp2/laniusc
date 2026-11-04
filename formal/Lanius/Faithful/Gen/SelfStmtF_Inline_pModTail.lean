@@ -68,6 +68,10 @@ abbrev Stmt_p_param_self_ref (prog : SrcProgram) (prims : Prims) (ix n : Nat) : 
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.pParamSelfRef) w
 
+abbrev Stmt_p_param_self_ref_mut (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    RepNat (Lanius.Mini.Inline.pParamSelfRefMut) w
+
 abbrev Stmt_p_params_after_comma_more (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.pParamsAfterCommaMore) w
@@ -103,10 +107,6 @@ abbrev Stmt_p_path_end (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
 abbrev Stmt_p_path_ident (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.pPathIdent) w
-
-abbrev Stmt_p_path_ident_args (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    RepNat (Lanius.Mini.Inline.pPathIdentArgs) w
 
 abbrev Stmt_p_type_ref (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →

@@ -16,7 +16,6 @@ import all Lanius.Faithful.Gen.SelfSrcF_freshId
 import all Lanius.Faithful.Gen.SelfSrcF_isFnPath
 import all Lanius.Faithful.Gen.SelfSrcF_joinInsts
 import all Lanius.Faithful.Gen.SelfSrcF_noTrees
-import all Lanius.Faithful.Gen.SelfSrcF_projection
 import all Lanius.Faithful.Gen.SelfSrcF_purePart
 import all Lanius.Faithful.Gen.SelfSrcF_scalarOf
 import all Lanius.Faithful.Gen.SelfSrcF_sliceHead
@@ -137,31 +136,31 @@ theorem ok_eff_fn_path : FnOk prog prims info (2103, ⟨29, [0], 0⟩) :=
 theorem ok_no_trees : FnOk prog prims info (2104, ⟨0, [], 0⟩) :=
   fnOk_of fn_no_trees (by decide +kernel)
 
-theorem ok_eff_bound : FnOk prog prims info (2105, ⟨29, [0], 0⟩) :=
-  fnOk_of fn_eff_bound (by decide +kernel)
+theorem ok_eff_bound_recv : FnOk prog prims info (2105, ⟨29, [0], 1⟩) :=
+  fnOk_of fn_eff_bound_recv (by decide +kernel)
 
 theorem ok_method_binds : FnOk prog prims info (2106, ⟨11, [], 0⟩) :=
   fnOk_of fn_method_binds (by decide +kernel)
 
-theorem ok_find_method_at : FnOk prog prims info (2107, ⟨13, [3], 1⟩) :=
+theorem ok_receivers_of : FnOk prog prims info (2107, ⟨17, [], 0⟩) :=
+  fnOk_of fn_receivers_of (by decide +kernel)
+
+theorem ok_find_method_at : FnOk prog prims info (2108, ⟨13, [3], 1⟩) :=
   fnOk_of fn_find_method_at (by decide +kernel)
 
-theorem ok_step_expected : FnOk prog prims info (2108, ⟨1, [], 0⟩) :=
+theorem ok_step_expected : FnOk prog prims info (2109, ⟨1, [], 0⟩) :=
   fnOk_of fn_step_expected (by decide +kernel)
 
-theorem ok_method_of_ty : FnOk prog prims info (2109, ⟨14, [], 0⟩) :=
+theorem ok_method_of_ty : FnOk prog prims info (2110, ⟨14, [], 0⟩) :=
   fnOk_of fn_method_of_ty (by decide +kernel)
 
-theorem ok_field_of_ty : FnOk prog prims info (2110, ⟨5, [], 0⟩) :=
+theorem ok_referent_or_of : FnOk prog prims info (2111, ⟨2, [], 0⟩) :=
+  fnOk_of fn_referent_or_of (by decide +kernel)
+
+theorem ok_field_of_ty : FnOk prog prims info (2112, ⟨5, [], 0⟩) :=
   fnOk_of fn_field_of_ty (by decide +kernel)
 
-theorem ok_eff_place : FnOk prog prims info (2111, ⟨0, [], 0⟩) :=
-  fnOk_of fn_eff_place (by decide +kernel)
-
-theorem ok_x_at_of : FnOk prog prims info (2112, ⟨0, [], 0⟩) :=
-  fnOk_of fn_x_at_of (by decide +kernel)
-
 theorem chunk46 : AllFns prog prims info part46 :=
-  ⟨ok_p_bound_type_path_end, ok_p_bound_type_path_more, ok_apply_of, ok_scalar_src, ok_scalar_of, ok_field_in, ok_wide_read_of, ok_wide_const, ok_tree_tokens, ok_literal_as, ok_lit_prefixed, ok_lit_base, ok_wide_decimal, ok_char_first, ok_fl_digit, ok_fl_push, ok_fl_frac_part, ok_fl_exp_part, ok_fl_log2, ok_fl_decimal_at, ok_apply_eff, ok_text_alloc, ok_text_allocator, ok_text_dealloc, ok_stride_of_postfix, ok_len_of_postfix, ok_args_segment, ok_cons_segment, ok_builtin_path, ok_is_fn_path, ok_eff_fn_path, ok_no_trees, ok_eff_bound, ok_method_binds, ok_find_method_at, ok_step_expected, ok_method_of_ty, ok_field_of_ty, ok_eff_place, ok_x_at_of, trivial⟩
+  ⟨ok_p_bound_type_path_end, ok_p_bound_type_path_more, ok_apply_of, ok_scalar_src, ok_scalar_of, ok_field_in, ok_wide_read_of, ok_wide_const, ok_tree_tokens, ok_literal_as, ok_lit_prefixed, ok_lit_base, ok_wide_decimal, ok_char_first, ok_fl_digit, ok_fl_push, ok_fl_frac_part, ok_fl_exp_part, ok_fl_log2, ok_fl_decimal_at, ok_apply_eff, ok_text_alloc, ok_text_allocator, ok_text_dealloc, ok_stride_of_postfix, ok_len_of_postfix, ok_args_segment, ok_cons_segment, ok_builtin_path, ok_is_fn_path, ok_eff_fn_path, ok_no_trees, ok_eff_bound_recv, ok_method_binds, ok_receivers_of, ok_find_method_at, ok_step_expected, ok_method_of_ty, ok_referent_or_of, ok_field_of_ty, trivial⟩
 
 end Lanius.Faithful.SelfTerm

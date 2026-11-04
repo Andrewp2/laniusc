@@ -36,10 +36,6 @@ abbrev Stmt_projection (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
   ∀ {x0 : Lanius.Mini.Decls} {x1 : Lanius.Mini.Ty} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepDecls x0 v0 → RepTy x1 v1 → RepNat x2 v2 →
     RepInst (Lanius.Mini.projection x0 x1 x2) w
 
-abbrev Stmt_referent (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Ty} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepTy x0 v0 →
-    (RepOption 212 RepTy) (Lanius.Mini.referent x0) w
-
 abbrev Stmt_referent_or (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Ty} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepTy x0 v0 →
     RepTy (Lanius.Mini.referentOr x0) w

@@ -284,6 +284,8 @@ inductive MEff where
   | xPlaceField : MEff → Nat → MEff
   /-- element i of a place of an array type -/
   | xPlaceAt : MEff → MEff → MEff
+  /-- F5 (S5b): a borrow of the place p (a local, a field of one, or a place through a reference), of this reference type -/
+  | xBorrow : Ty → MEff → MEff
   deriving Repr
 
 /-- An arm of a match expression: its binders, its value and the value's type. -/

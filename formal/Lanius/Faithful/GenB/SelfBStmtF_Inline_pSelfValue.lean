@@ -27,6 +27,11 @@ abbrev BStmt_p_shift (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
     qcall spW prims uc n ix [] = some (w, k) →
     qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.Inline.pShift) w
 
+abbrev BStmt_p_self_value (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value} {k : Nat},
+    qcall spW prims uc n ix [] = some (w, k) →
+    qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.Inline.pSelfValue) w
+
 abbrev BStmt_p_shl_tail (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value} {k : Nat},
     qcall spW prims uc n ix [] = some (w, k) →
@@ -36,10 +41,5 @@ abbrev BStmt_p_shr_tail (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
   ∀ {w : Value} {k : Nat},
     qcall spW prims uc n ix [] = some (w, k) →
     qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.Inline.pShrTail) w
-
-abbrev BStmt_p_self_value (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {w : Value} {k : Nat},
-    qcall spW prims uc n ix [] = some (w, k) →
-    qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.Inline.pSelfValue) w
 
 end Lanius.Faithful.SelfBudget

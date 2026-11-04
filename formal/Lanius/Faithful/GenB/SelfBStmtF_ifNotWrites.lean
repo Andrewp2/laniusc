@@ -22,19 +22,4 @@ abbrev BStmt_known_true (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
     qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 253 RepBool) x0 v0 →
     qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.knownTrue x0) w
 
-abbrev BStmt_if_not_writes (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Bool} {x1 : Lanius.Mini.MFunc} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepBool x0 v0 → RepMFunc x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 204 RepMFunc) (Lanius.Mini.ifNotWrites x0 x1) w
-
-abbrev BStmt_ref_checked (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.MFunc} {x1 : Option Nat} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 204 RepMFunc) x0 v0 → (RepOption 135 RepNat) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 204 RepMFunc) (Lanius.Mini.refChecked x0 x1) w
-
-abbrev BStmt_self_ref_id (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : List Lanius.Mini.CTree} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepFrontEnv x0 v0 → (RepList 83 RepCTree) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 135 RepNat) (Lanius.Mini.selfRefId x0 x1) w
-
 end Lanius.Faithful.SelfBudget

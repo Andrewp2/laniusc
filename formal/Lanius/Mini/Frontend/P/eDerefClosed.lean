@@ -17,6 +17,14 @@ def eDerefClosed (t : Option SrcType) (x : Option SrcEff) : Option SrcEff :=
     | none => none
     | some a => some (SrcEff.eDeref ty a)
 
+def eBorrowClosed (t : Option SrcType) (x : Option SrcEff) : Option SrcEff :=
+  match t with
+  | none => none
+  | some ty =>
+    match x with
+    | none => none
+    | some a => some (SrcEff.eBorrow ty a)
+
 def ePlaceFieldClosed (x : Option SrcEff) (j : Nat) : Option SrcEff :=
   match x with
   | none => none

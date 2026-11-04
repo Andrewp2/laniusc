@@ -13,17 +13,8 @@ open Lanius.Mini
 
 noncomputable section
 
-/-- mini::selfhost::if_not_writes -/
-def src_if_not_writes : SrcFunc := { params := [{ id := 14, ty := SrcType.bool }, { id := 23, ty := ty195 }], ret := ty232, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 14) (SrcStmt.returnEval (SrcEff.eVariant ty232 1 [])) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty232 0 [SrcEff.ePure (SrcExpr.local 23)])) }
-
 /-- mini::selfhost::known_true -/
 def src_known_true : SrcFunc := { params := [{ id := 11, ty := ty308 }], ret := SrcType.bool, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 11)) ty308 (SrcType.bool) [[111], []] [SrcEff.ePure (SrcExpr.local 111), SrcEff.ePure (SrcExpr.boolean false)]) }
-
-/-- mini::selfhost::ref_checked -/
-def src_ref_checked (ix_if_not_writes : Nat) (ix_writes_local : Nat) : SrcFunc := { params := [{ id := 12, ty := ty232 }, { id := 44, ty := ty146 }], ret := ty232, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 12)) ty232 ty232 [[169], []] [SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 44)) ty146 ty232 [[235], []] [SrcEff.eCall ix_if_not_writes [SrcEff.eCall ix_writes_local [SrcEff.ePure (SrcExpr.field 169 2), SrcEff.ePure (SrcExpr.local 235)], SrcEff.ePure (SrcExpr.local 169)], SrcEff.eVariant ty232 0 [SrcEff.ePure (SrcExpr.local 169)]], SrcEff.eVariant ty232 1 []]) }
-
-/-- mini::selfhost::self_ref_id -/
-def src_self_ref_id (ix_self_ref_of : Nat) : SrcFunc := { params := [{ id := 12, ty := ty276 }, { id := 27, ty := ty86 }], ret := ty146, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 27)) ty86 ty146 [[], [141, 144]] [SrcEff.eVariant ty146 1 [], SrcEff.eCall ix_self_ref_of [SrcEff.ePure (SrcExpr.local 12), SrcEff.ePure (SrcExpr.local 141)]]) }
 
 end
 

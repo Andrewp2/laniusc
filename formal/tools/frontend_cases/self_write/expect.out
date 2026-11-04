@@ -1,0 +1,2 @@
+{ params := [{ id := 0, ty := (.ref (.struct 0 [.i32])) }], ret := .i32, body := (.then (.setPlace (.eField (.eDeref (.struct 0 [.i32]) (.ePure (.local 0))) 0) (.eApply .plus (.eField (.eDeref (.struct 0 [.i32]) (.ePure (.local 0))) 0) (.ePure (.int 1)))) (.returnEval (.eField (.eDeref (.struct 0 [.i32]) (.ePure (.local 0))) 0))) }
+{ params := [{ id := 0, ty := .i32 }], ret := .i32, body := (.letStruct 1 (.struct 0 [.i32]) [(.local 0)] (.letEval 2 .i32 (.eCall 0 [(.eBorrow (.ref (.struct 0 [.i32])) (.ePure (.local 1)))]) (.return (.apply .plus (.field 1 0) (.local 2))))) }

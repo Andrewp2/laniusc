@@ -49,6 +49,7 @@ def effPlace (x : MEff) : Bool :=
   | .xDeref dty a => true
   | .xPlaceField b j => true
   | .xPlaceAt b i => true
+  | .xBorrow bty p => false
 
 /-- Whether the place x has an element step. -/
 def hasAt (x : MEff) : Bool :=
@@ -74,6 +75,7 @@ def hasAt (x : MEff) : Bool :=
   | .xDeref dty a => false
   | .xPlaceField b j => hasAt b
   | .xPlaceAt b i => true
+  | .xBorrow bty p => false
 
 def xAtOf (b : MEff) (i : Option MEff) : Option MEff :=
   match i with

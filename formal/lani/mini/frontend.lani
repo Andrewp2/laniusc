@@ -2785,6 +2785,15 @@ pub fn param_ty_of(fuel: usize, env: FrontEnv, t: CTree) -> core::option::Option
     return ty_of(fuel, env, t);
 }
 
+// A parameter's type: `&self` and `&mut self` are references to the impl's
+// type (F5, SEMANTIC_DECISIONS "S5b: point 10"); another as param_ty_of.
+pub fn self_param_ty(fuel: usize, env: FrontEnv, p: CTree, t: CTree) -> core::option::Option<Ty> {
+    if (node_prod(p) == p_param_self_ref() || node_prod(p) == p_param_self_ref_mut()) {
+        return ref_ty(ty_of(fuel, env, t));
+    }
+    return param_ty_of(fuel, env, t);
+}
+
 // A list of parameter type expressions, each as param_ty_of reads it.
 pub fn param_ty_list(fuel: usize, env: FrontEnv, ts: List<CTree>) -> core::option::Option<List<Ty>> {
     if (fuel == 0) {
@@ -5268,7 +5277,7 @@ pub fn pattern_of(fd: FnDecl, p: CTree) -> core::option::Option<CTree> {
     if (node_prod(p) == p_param_self() && node_prod(tail) == p_self_param_plain() && fd.in_impl) {
         return Some(fd.self_type);
     }
-    if (node_prod(p) == p_param_self_ref() && fd.in_impl) {
+    if ((node_prod(p) == p_param_self_ref() || node_prod(p) == p_param_self_ref_mut()) && fd.in_impl) {
         return Some(fd.self_type);
     }
     if (node_prod(p) == p_param_self() && node_prod(tail) == p_self_param_typed()) {
@@ -5873,6 +5882,9 @@ pub enum MEff {
     XPlaceField(Box<MEff>, usize),
     // element i of a place of an array type
     XPlaceAt(Box<MEff>, Box<MEff>),
+    // F5 (S5b): a borrow of the place p (a local, a field of one, or a
+    // place through a reference), of this reference type
+    XBorrow(Ty, Box<MEff>),
 }
 
 // The expression, when it is pure.
@@ -5899,6 +5911,7 @@ pub fn pure_part(x: MEff) -> core::option::Option<SrcExpr> {
         XDeref(dty, a) -> None,
         XPlaceField(b, j) -> None,
         XPlaceAt(b, i) -> None,
+        XBorrow(bty, p) -> None,
     };
 }
 
@@ -6087,6 +6100,7 @@ pub fn bare_eff(x: MEff) -> bool {
         XDeref(dty, a) -> false,
         XPlaceField(b, j) -> false,
         XPlaceAt(b, i) -> false,
+        XBorrow(bty, p) -> false,
     };
 }
 
@@ -6140,6 +6154,7 @@ pub fn eff_ty(fuel: usize, env: FrontEnv, scope: List<Local>, x: MEff) -> core::
         XDeref(dty, a) -> Some(dty),
         XPlaceField(b, j) -> field_ty_of(fuel, env.decls, eff_ty(minus(fuel, 1), env, scope, unbox(b)), j),
         XPlaceAt(b, i) -> elem_ty_of(eff_ty(minus(fuel, 1), env, scope, unbox(b))),
+        XBorrow(bty, p) -> Some(bty),
     };
 }
 
@@ -7991,6 +8006,7 @@ pub fn call_parts(x: MEff) -> core::option::Option<Called> {
         XDeref(dty, a) -> None,
         XPlaceField(b, j) -> None,
         XPlaceAt(b, i) -> None,
+        XBorrow(bty, p) -> None,
     };
 }
 
@@ -8119,6 +8135,7 @@ pub fn eff_place(x: MEff) -> bool {
         XDeref(dty, a) -> true,
         XPlaceField(b, j) -> true,
         XPlaceAt(b, i) -> true,
+        XBorrow(bty, p) -> false,
     };
 }
 
@@ -8146,6 +8163,7 @@ pub fn has_at(x: MEff) -> bool {
         XDeref(dty, a) -> false,
         XPlaceField(b, j) -> has_at(unbox(b)),
         XPlaceAt(b, i) -> true,
+        XBorrow(bty, p) -> false,
     };
 }
 
@@ -8179,6 +8197,13 @@ pub fn field_of_ty(env: FrontEnv, x: MEff, t: core::option::Option<Ty>, name: Li
             None -> None,
             Some(j) -> Some(field_value(env.decls, x, ty, j)),
         },
+    };
+}
+
+pub fn referent_or_of(t: core::option::Option<Ty>) -> core::option::Option<Ty> {
+    return match (t) {
+        None -> None,
+        Some(x) -> Some(referent_or(x)),
     };
 }
 
@@ -8310,6 +8335,7 @@ pub fn diverge_eff(decls: Decls, t: Ty, x: MEff) -> MEff {
         XDeref(dty, a) -> x,
         XPlaceField(b, j) -> x,
         XPlaceAt(b, i) -> x,
+        XBorrow(bty, p) -> x,
     };
 }
 
@@ -8793,7 +8819,7 @@ pub fn eff_step(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::
         if (node_prod(next) == p_postfix_call()) {
             return match (list_items(f, kid(next, 1))) {
                 None -> None,
-                Some(items) -> eff_chain(f, env, scope, expected, eff_found_with(f, env, scope, step_expected(expected, kid(next, 3)), method_of_ty(f, env, eff_ty(f, env, scope, x), kid_token(tail, 1).text), kid(tail, 2), single(x), items), kid(next, 3)),
+                Some(items) -> eff_chain(f, env, scope, expected, eff_found_with(f, env, scope, step_expected(expected, kid(next, 3)), method_of_ty(f, env, referent_or_of(eff_ty(f, env, scope, x)), kid_token(tail, 1).text), kid(tail, 2), single(x), items), kid(next, 3)),
             };
         }
         if (node_prod(kid(tail, 2)) == p_member_type_args_none()) {
@@ -9128,6 +9154,105 @@ pub fn eff_bound(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core:
 }
 
 // eff_found with the call's type arguments node (member_type_args_opt).
+// F5 (S5b): the place a receiver names: a local, a field of one, or a place
+// through a reference; none for another value (a borrow of a temporary).
+pub fn place_of(x: MEff) -> core::option::Option<MEff> {
+    return match (x) {
+        XPure(e) -> match (e) {
+            Local(id) -> Some(x),
+            Field(id, j) -> Some(XPlaceField(boxed(XPure(Local(id))), j)),
+            Int(k) -> None,
+            Boolean(b) -> None,
+            Unsigned(u, k) -> None,
+            Negate(a) -> None,
+            Not(a) -> None,
+            Apply(op, l, r) -> None,
+            Cast(t, a) -> None,
+            Null -> None,
+            SrcExpr::Char(code) -> None,
+            SrcExpr::Float(ft, bits) -> None,
+        },
+        XCall(inst, args) -> None,
+        XApply(op, l, r) -> None,
+        XNeg(a) -> None,
+        XNot(a) -> None,
+        XCast(t, a) -> None,
+        XIndex(s, i) -> None,
+        XStruct(t, fs) -> None,
+        XVariant(t, k, ps) -> None,
+        XMatch(s, ety, t, bs, vs) -> None,
+        XDivide(op, l, r) -> None,
+        XStride(sl) -> None,
+        XArraySlice(e, sl) -> None,
+        XHost(id, args) -> None,
+        XIf(c, t, a, b) -> None,
+        XLet(id, t, v, rt, b) -> None,
+        XLen(sl) -> None,
+        XStr(cs) -> None,
+        XDeref(dty, a) -> Some(x),
+        XPlaceField(b, j) -> Some(x),
+        XPlaceAt(b, i) -> Some(x),
+        XBorrow(bty, p) -> None,
+    };
+}
+
+pub fn borrow_of(t: Ty, pl: core::option::Option<MEff>) -> core::option::Option<MEff> {
+    return match (pl) {
+        None -> None,
+        Some(p) -> Some(XBorrow(TyRef(boxed(t)), boxed(p))),
+    };
+}
+
+// The method takes `&self` or `&mut self`.
+pub fn self_by_ref(fd: FnDecl) -> bool {
+    let ps: CTree = kid(fd.tree, 4);
+    return node_prod(ps) == p_params_some() && (node_prod(kid(ps, 0)) == p_param_self_ref() || node_prod(kid(ps, 0)) == p_param_self_ref_mut());
+}
+
+// A receiver x of type t: at a `&self` method a reference is passed on and
+// another receiver's place is borrowed; at a by-value `self` it is passed
+// as it is, and a reference is not read (no copy out of a referent).
+pub fn receiver_of(by_ref: bool, t: Ty, x: MEff) -> core::option::Option<MEff> {
+    if (by_ref && is_ref_ty(t)) {
+        return Some(x);
+    }
+    if (by_ref) {
+        return borrow_of(t, place_of(x));
+    }
+    if (is_ref_ty(t)) {
+        return None;
+    }
+    return Some(x);
+}
+
+pub fn receiver_typed(by_ref: bool, t: core::option::Option<Ty>, x: MEff) -> core::option::Option<MEff> {
+    return match (t) {
+        None -> None,
+        Some(ty) -> receiver_of(by_ref, ty, x),
+    };
+}
+
+// The receivers before a method's arguments (none, or one).
+pub fn receivers_of(fuel: usize, env: FrontEnv, scope: List<Local>, fd: FnDecl, pre: List<MEff>) -> core::option::Option<List<MEff>> {
+    return match (pre) {
+        Nil -> Some(empty()),
+        Cons(a, rest) -> match (unbox(rest)) {
+            Nil -> match (receiver_typed(self_by_ref(fd), eff_ty(fuel, env, scope, a), a)) {
+                None -> None,
+                Some(r) -> Some(single(r)),
+            },
+            Cons(b, more) -> None,
+        },
+    };
+}
+
+pub fn eff_bound_recv(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::option::Option<Ty>, d: usize, fd: FnDecl, binds: core::option::Option<List<Bind>>, pre: core::option::Option<List<MEff>>, items: List<CTree>) -> core::option::Option<MEff> {
+    return match (pre) {
+        None -> None,
+        Some(p) -> eff_bound(fuel, env, scope, expected, d, fd, binds, p, items),
+    };
+}
+
 pub fn eff_found_with(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::option::Option<Ty>, found: core::option::Option<Found>, targs: CTree, pre: List<MEff>, items: List<CTree>) -> core::option::Option<MEff> {
     if (fuel == 0) {
         return None;
@@ -9136,7 +9261,7 @@ pub fn eff_found_with(fuel: usize, env: FrontEnv, scope: List<Local>, expected: 
         None -> None,
         Some(x) -> match (get(env.decls.fns, x.decl)) {
             None -> None,
-            Some(fd) -> eff_bound(minus(fuel, 1), env, scope, expected, x.decl, fd, method_binds(minus(fuel, 1), env, fd, x.binds, targs), pre, items),
+            Some(fd) -> eff_bound_recv(minus(fuel, 1), env, scope, expected, x.decl, fd, method_binds(minus(fuel, 1), env, fd, x.binds, targs), receivers_of(minus(fuel, 1), env, scope, fd, pre), items),
         },
     };
 }
@@ -9151,7 +9276,7 @@ pub fn eff_method(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core
         None -> None,
         Some(x) -> match (list_items(fuel, kid(kid(tail, 3), 1))) {
             None -> None,
-            Some(items) -> eff_found_with(minus(fuel, 1), env, scope, expected, find_method(fuel, env.decls, env.decls.fns, 0, kid_token(tail, 1).text, x.ty), kid(tail, 2), single(XPure(Local(x.id))), items),
+            Some(items) -> eff_found_with(minus(fuel, 1), env, scope, expected, find_method(fuel, env.decls, env.decls.fns, 0, kid_token(tail, 1).text, referent_or(x.ty)), kid(tail, 2), single(XPure(Local(x.id))), items),
         },
     };
 }
@@ -9402,6 +9527,7 @@ pub fn eval_let_head(ty: Ty, x: MEff) -> LetHead {
         XDeref(dty, a) -> EvalOf(x),
         XPlaceField(b, j) -> EvalOf(x),
         XPlaceAt(b, i) -> EvalOf(x),
+        XBorrow(bty, p) -> EvalOf(x),
     };
 }
 
@@ -9658,6 +9784,7 @@ pub fn inferred(x: MEff) -> bool {
         XDeref(dty, a) -> false,
         XPlaceField(b, j) -> true,
         XPlaceAt(b, i) -> true,
+        XBorrow(bty, p) -> false,
     };
 }
 
@@ -10248,6 +10375,7 @@ pub fn eff_acts(n: usize, x: MEff) -> bool {
         XDeref(dty, a) -> eff_acts(n, unbox(a)),
         XPlaceField(b, j) -> eff_acts(n, unbox(b)),
         XPlaceAt(b, i) -> eff_acts(n, unbox(b)) || eff_acts(n, unbox(i)),
+        XBorrow(bty, p) -> eff_acts(n, unbox(p)),
     };
 }
 
@@ -11526,6 +11654,9 @@ pub fn param_token(p: CTree) -> Token {
     if (node_prod(p) == p_param_self_ref()) {
         return kid_token(p, 1);
     }
+    if (node_prod(p) == p_param_self_ref_mut()) {
+        return kid_token(p, 2);
+    }
     return kid_token(p, 0);
 }
 
@@ -11542,10 +11673,10 @@ pub fn params_of(fuel: usize, env: FrontEnv, fd: FnDecl, scope: List<Local>, ite
 // extract: inline
 fn param_of(pfuel: usize, penv: FrontEnv, pfd: FnDecl, pscope: List<Local>, pp: CTree, prest: List<CTree>) -> core::option::Option<MParams> {
     let tok: Token = param_token(pp);
-    if ((node_prod(pp) == p_param_named() || node_prod(pp) == p_param_self() || node_prod(pp) == p_param_self_ref()) && !member(penv.globals, tok.text) && fresh_id(pscope, minus(tok.start, penv.base))) {
+    if ((node_prod(pp) == p_param_named() || node_prod(pp) == p_param_self() || node_prod(pp) == p_param_self_ref() || node_prod(pp) == p_param_self_ref_mut()) && !member(penv.globals, tok.text) && fresh_id(pscope, minus(tok.start, penv.base))) {
         return match (pattern_of(pfd, pp)) {
             None -> None,
-            Some(t) -> match (param_ty_of(pfuel, penv, t)) {
+            Some(t) -> match (self_param_ty(pfuel, penv, pp, t)) {
                 None -> None,
                 Some(x) -> cons_param(MParam { id: minus(tok.start, penv.base), ty: x }, params_of(pfuel, penv, pfd, cons(Local { name: tok.text, id: minus(tok.start, penv.base), ty: x }, pscope), prest)),
             },
@@ -11682,17 +11813,29 @@ pub fn checked_func(ok: bool, m: MFunc) -> core::option::Option<MFunc> {
     return None;
 }
 
-// `name.f` then anything but a call (`name.m(..)` is a method call).
+// The primary is the name (a plain name, or `self`).
+pub fn primary_names(primary: CTree, name: List<usize>) -> bool {
+    return (node_prod(primary) == p_ident() && node_prod(kid(primary, 1)) == p_ident_plain() && is_text(path_name(kid(primary, 0)), name)) || (node_prod(primary) == p_self_value() && same_text(text_self(), name));
+}
+
+// `name.f` or `name.m(..)` (a field, or a method's receiver: S5b).
 pub fn names_field_base(pf: CTree, name: List<usize>) -> bool {
-    let primary: CTree = kid(pf, 0);
     let tail: CTree = kid(pf, 1);
-    return node_prod(primary) == p_ident() && node_prod(kid(primary, 1)) == p_ident_plain() && is_text(path_name(kid(primary, 0)), name) && node_prod(tail) == p_postfix_member() && node_prod(kid(tail, 2)) == p_member_type_args_none() && node_prod(kid(tail, 3)) != p_postfix_call();
+    return primary_names(kid(pf, 0), name) && node_prod(tail) == p_postfix_member() && member_args(node_prod(kid(tail, 2)));
+}
+
+// The argument is the bare name.
+pub fn arg_names(fuel: usize, c: CTree, name: List<usize>) -> bool {
+    return match (peel(fuel, c)) {
+        None -> false,
+        Some(pf) -> primary_names(kid(pf, 0), name) && node_prod(kid(pf, 1)) == p_postfix_end(),
+    };
 }
 
 // The subtrees of t still to check: an argument that is the bare name, and
 // the name at the base of a field, are allowed uses.
 pub fn ref_kids(fuel: usize, t: CTree, name: List<usize>) -> List<CTree> {
-    if ((node_prod(t) == p_args_some() || node_prod(t) == p_args_after_comma_more()) && tree_names(fuel, kid(t, 0), name)) {
+    if ((node_prod(t) == p_args_some() || node_prod(t) == p_args_after_comma_more()) && arg_names(fuel, kid(t, 0), name)) {
         return single(kid(t, 1));
     }
     if (node_prod(t) == p_postfix() && names_field_base(t, name)) {
@@ -11750,7 +11893,7 @@ pub fn read_fn(fuel: usize, decls: Decls, fd: FnDecl, args: List<Ty>) -> core::o
     if (length(names) == length(args) && fn_bounds_ok(fuel, decls, fd, tenv)) {
         return match (list_items(fuel, kid(f, 4))) {
             None -> None,
-            Some(items) -> refs_checked(fuel, f, items, ref_checked(func_params(fuel, env, params_of(fuel, env, fd, empty(), items), rt, kid(f, 8), kid(kid(f, 9), 1)), self_ref_id(env, items))),
+            Some(items) -> refs_checked(fuel, f, items, func_params(fuel, env, params_of(fuel, env, fd, empty(), items), rt, kid(f, 8), kid(kid(f, 9), 1))),
         };
     }
     return None;
@@ -11861,6 +12004,7 @@ pub fn eff_calls(x: MEff) -> List<Inst> {
         XDeref(dty, a) -> eff_calls(unbox(a)),
         XPlaceField(b, j) -> eff_calls(unbox(b)),
         XPlaceAt(b, i) -> concat(eff_calls(unbox(b)), eff_calls(unbox(i))),
+        XBorrow(bty, p) -> eff_calls(unbox(p)),
     };
 }
 
@@ -11898,6 +12042,7 @@ pub fn eff_named_tys(x: MEff) -> List<Ty> {
         XDeref(dty, a) -> cons(dty, eff_named_tys(unbox(a))),
         XPlaceField(b, j) -> eff_named_tys(unbox(b)),
         XPlaceAt(b, i) -> concat(eff_named_tys(unbox(b)), eff_named_tys(unbox(i))),
+        XBorrow(bty, p) -> cons(bty, eff_named_tys(unbox(p))),
     };
 }
 
@@ -12581,6 +12726,16 @@ pub fn e_deref_closed(t: core::option::Option<SrcType>, x: core::option::Option<
     };
 }
 
+pub fn e_borrow_closed(t: core::option::Option<SrcType>, x: core::option::Option<SrcEff>) -> core::option::Option<SrcEff> {
+    return match (t) {
+        None -> None,
+        Some(ty) -> match (x) {
+            None -> None,
+            Some(a) -> Some(EBorrow(ty, boxed(a))),
+        },
+    };
+}
+
 pub fn e_place_field_closed(x: core::option::Option<SrcEff>, j: usize) -> core::option::Option<SrcEff> {
     return match (x) {
         None -> None,
@@ -12736,6 +12891,7 @@ pub fn close_eff(fuel: usize, t: Tables, x: MEff) -> core::option::Option<SrcEff
         XDeref(dty, a) -> e_deref_closed(close_ty(fuel, t, dty), close_eff(fuel, t, unbox(a))),
         XPlaceField(b, j) -> e_place_field_closed(close_eff(fuel, t, unbox(b)), j),
         XPlaceAt(b, i) -> e_place_at_closed(close_eff(fuel, t, unbox(b)), close_eff(fuel, t, unbox(i))),
+        XBorrow(bty, p) -> e_borrow_closed(close_ty(fuel, t, bty), close_eff(fuel, t, unbox(p))),
     };
 }
 
@@ -16384,6 +16540,11 @@ fn p_param_self() -> usize {
 // extract: inline
 fn p_param_self_ref() -> usize {
     return 64;
+}
+
+// extract: inline
+fn p_param_self_ref_mut() -> usize {
+    return 325;
 }
 
 // extract: inline

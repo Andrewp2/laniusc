@@ -22,8 +22,8 @@ import all Lanius.Faithful.Gen.SelfSrcF_effNamedTys
 import all Lanius.Faithful.Gen.SelfSrcF_findConst
 import all Lanius.Faithful.Gen.SelfSrcF_funcsOnto
 import all Lanius.Faithful.Gen.SelfSrcF_joinInsts
-import all Lanius.Faithful.Gen.SelfSrcF_namesFieldBase
 import all Lanius.Faithful.Gen.SelfSrcF_negWideI32
+import all Lanius.Faithful.Gen.SelfSrcF_primaryNames
 import all Lanius.Faithful.Gen.SelfSrcF_projectionRet
 import all Lanius.Faithful.Gen.SelfSrcF_readDeclInst
 import all Lanius.Faithful.Gen.SelfSrcF_wideLeftStmt

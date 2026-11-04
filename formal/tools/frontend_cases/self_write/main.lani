@@ -1,5 +1,6 @@
-// A write through `&self`: laniusc writes the caller's value (top(5) is
-// 12), so reading `&self` by value would be wrong; the method is not read.
+// A write through `&self` (F5, S5b): self is a reference, so the write
+// lands in the caller's value, as in laniusc (top(5) is 12). Nothing lowers
+// references yet, so this is read, not compiled.
 struct C { n: i32 }
 
 impl C {

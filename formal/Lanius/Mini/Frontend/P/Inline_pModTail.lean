@@ -51,6 +51,9 @@ namespace Lanius.Mini
 @[expose] def Inline.pParamSelfRef : Nat :=
   64
 
+@[expose] def Inline.pParamSelfRefMut : Nat :=
+  325
+
 @[expose] def Inline.pParamsAfterCommaMore : Nat :=
   292
 
@@ -77,8 +80,5 @@ namespace Lanius.Mini
 
 @[expose] def Inline.pPathIdent : Nat :=
   48
-
-@[expose] def Inline.pPathIdentArgs : Nat :=
-  49
 
 end Lanius.Mini

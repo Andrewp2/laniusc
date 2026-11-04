@@ -3,9 +3,7 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_ifNotWrites
-public import Lanius.Faithful.Gen.SelfStmtF_compoundOf
 public import Lanius.Faithful.Gen.SelfStmtF_ifNotWrites
-public import Lanius.Faithful.Gen.SelfStmtF_selfRefOf
 import all Lanius.Faithful.Gen.SelfSrcF_ifNotWrites
 import all Lanius.Mini.Frontend.P.ifNotWrites
 
@@ -26,15 +24,6 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_if_not_writes {prog : SrcProgram} {prims : Prims} {ix_if_not_writes : Nat} (fn : prog.funcs[ix_if_not_writes]? = some (src_if_not_writes)) (np : prims.isPrim ix_if_not_writes = false) {n : Nat} :
-    Stmt_if_not_writes prog prims ix_if_not_writes n := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_if_not_writes] at h
-  faithful [Lanius.Mini.ifNotWrites]
-
 theorem proof_known_true {prog : SrcProgram} {prims : Prims} {ix_known_true : Nat} (fn : prog.funcs[ix_known_true]? = some (src_known_true)) (np : prims.isPrim ix_known_true = false) {n : Nat} :
     Stmt_known_true prog prims ix_known_true n := by
   intro x0 v0 w h r0
@@ -43,26 +32,5 @@ theorem proof_known_true {prog : SrcProgram} {prims : Prims} {ix_known_true : Na
   rw [pcall_succ np fn] at h
   simp only [src_known_true] at h
   faithful [Lanius.Mini.knownTrue]
-
-theorem proof_ref_checked {prog : SrcProgram} {prims : Prims} {ix_ref_checked ix_if_not_writes ix_writes_local : Nat} (fn : prog.funcs[ix_ref_checked]? = some (src_ref_checked ix_if_not_writes ix_writes_local)) (np : prims.isPrim ix_ref_checked = false)
-    (ext_if_not_writes : Certified (∀ {n : Nat}, Stmt_if_not_writes prog prims ix_if_not_writes n))
-    (ext_writes_local : Certified (∀ {n : Nat}, Stmt_writes_local prog prims ix_writes_local n)) {n : Nat} :
-    Stmt_ref_checked prog prims ix_ref_checked n := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_ref_checked] at h
-  faithful [Lanius.Mini.refChecked]
-
-theorem proof_self_ref_id {prog : SrcProgram} {prims : Prims} {ix_self_ref_id ix_self_ref_of : Nat} (fn : prog.funcs[ix_self_ref_id]? = some (src_self_ref_id ix_self_ref_of)) (np : prims.isPrim ix_self_ref_id = false)
-    (ext_self_ref_of : Certified (∀ {n : Nat}, Stmt_self_ref_of prog prims ix_self_ref_of n)) {n : Nat} :
-    Stmt_self_ref_id prog prims ix_self_ref_id n := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_self_ref_id] at h
-  faithful [Lanius.Mini.selfRefId]
 
 end Lanius.Faithful.SelfCert

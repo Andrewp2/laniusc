@@ -22,11 +22,6 @@ abbrev BStmt_p_path_ident (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : P
     qcall spW prims uc n ix [] = some (w, k) →
     qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.Inline.pPathIdent) w
 
-abbrev BStmt_p_path_ident_args (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {w : Value} {k : Nat},
-    qcall spW prims uc n ix [] = some (w, k) →
-    qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.Inline.pPathIdentArgs) w
-
 abbrev BStmt_p_params_none (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value} {k : Nat},
     qcall spW prims uc n ix [] = some (w, k) →
@@ -71,6 +66,11 @@ abbrev BStmt_p_param_self_ref (spW sp : SrcProgram) (prims : Prims) (ix n : Nat)
   ∀ {w : Value} {k : Nat},
     qcall spW prims uc n ix [] = some (w, k) →
     qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.Inline.pParamSelfRef) w
+
+abbrev BStmt_p_param_self_ref_mut (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value} {k : Nat},
+    qcall spW prims uc n ix [] = some (w, k) →
+    qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ RepNat (Lanius.Mini.Inline.pParamSelfRefMut) w
 
 abbrev BStmt_p_param_named (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value} {k : Nat},

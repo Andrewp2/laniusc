@@ -24,6 +24,10 @@ abbrev Stmt_e_array_slice_closed (prog : SrcProgram) (prims : Prims) (ix n : Nat
   ∀ {x0 : Option Lanius.Mini.SrcType} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 160 RepSrcType) x0 v0 → RepNat x1 v1 →
     (RepOption 234 RepSrcEff) (Lanius.Mini.eArraySliceClosed x0 x1) w
 
+abbrev Stmt_e_borrow_closed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Option Lanius.Mini.SrcType} {x1 : Option Lanius.Mini.SrcEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 160 RepSrcType) x0 v0 → (RepOption 234 RepSrcEff) x1 v1 →
+    (RepOption 234 RepSrcEff) (Lanius.Mini.eBorrowClosed x0 x1) w
+
 abbrev Stmt_e_deref_closed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.SrcType} {x1 : Option Lanius.Mini.SrcEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 160 RepSrcType) x0 v0 → (RepOption 234 RepSrcEff) x1 v1 →
     (RepOption 234 RepSrcEff) (Lanius.Mini.eDerefClosed x0 x1) w

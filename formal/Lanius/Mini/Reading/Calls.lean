@@ -23,7 +23,7 @@ import all Lanius.Mini.Frontend.P.typeDeclAt
 import all Lanius.Mini.Frontend.P.wideOf
 import all Lanius.Mini.Frontend.P.setPlaceOf
 import all Lanius.Mini.Frontend.P.setFieldOrEval
-import all Lanius.Mini.Frontend.P.namesFieldBase
+import all Lanius.Mini.Frontend.P.primaryNames
 import all Lanius.Mini.Frontend.P.isFnPath
 import all Lanius.Mini.Frontend.P.fieldValue
 import all Lanius.Mini.Frontend.P.eDerefClosed
@@ -93,6 +93,8 @@ inductive EffTy (decls : Decls) (scope : List Local) : MEff → Ty → Prop
   /-- (F5, S5) a referent has its type, a field of a place the field's type, an element of a place its
   element type -/
   | deref {ty : Ty} {a : MEff} : EffTy decls scope (.xDeref ty a) ty
+  /-- (F5, S5b) a borrow, of its reference type -/
+  | borrow {ty : Ty} {p : MEff} : EffTy decls scope (.xBorrow ty p) ty
   | placeField {b : MEff} {j : Nat} {t u : Ty} : EffTy decls scope b t → FieldTyAt decls t j u →
       EffTy decls scope (.xPlaceField b j) u
   | placeAt {b i : MEff} {t : Ty} : EffTy decls scope b (.tySlice t) → EffTy decls scope (.xPlaceAt b i) t
@@ -235,6 +237,7 @@ theorem effTy_sound : ∀ {fuel : Nat} {env : FrontEnv} {scope : List Local} {x 
     | xLen sl => cases h; exact .len
     | xStr cs => cases h; exact .str
     | xDeref ty a => cases h; exact .deref
+    | xBorrow ty p => cases h; exact .borrow
     | xPlaceField b j =>
       simp only [fieldTyOf] at h
       cases hb : effTy f env scope b with

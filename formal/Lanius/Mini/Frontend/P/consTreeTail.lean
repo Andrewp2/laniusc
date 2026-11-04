@@ -38,7 +38,7 @@ def patternOf (fd : FnDecl) (p : CTree) : Option CTree :=
     if decide (nodeProd p = (63)) && decide (nodeProd tail = (66)) && fd.inImpl then
       some fd.selfType
     else
-      if decide (nodeProd p = (64)) && fd.inImpl then
+      if (decide (nodeProd p = (64)) || decide (nodeProd p = (325))) && fd.inImpl then
         some fd.selfType
       else
         if decide (nodeProd p = (63)) && decide (nodeProd tail = (65)) then
