@@ -1,6 +1,7 @@
 import Lanius.Faithful.SelfPre.TS
 import Lanius.Mini.Frontend
 import Lanius.Mini.Compiler
+import Lanius.Faithful.SelfPre.LimitsNums
 
 /-! # The front end's implementation limits (F14)
 
@@ -711,7 +712,7 @@ theorem limFuncs_ok : ∀ (fs : List SrcFunc), limFuncs fs = true →
   | [], _ => by simp
   | ⟨ps, ret, body⟩ :: rest, h => by
     simp only [limFuncs, Bool.and_eq_true, Bool.not_eq_true'] at h
-    obtain ⟨⟨⟨⟨hp, hps⟩, hr⟩, hb⟩, hrest⟩ := h
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨hp, hps⟩, hr⟩, hb⟩, -⟩, -⟩, -⟩, -⟩, hrest⟩ := h
     cases hs : limStmt body with
     | none => rw [hs] at hb; simp [isNoneWeight] at hb
     | some d =>
@@ -729,6 +730,36 @@ theorem limFuncs_ok : ∀ (fs : List SrcFunc), limFuncs fs = true →
         · rcases List.mem_cons.mp mem with rfl | mem
           · exact ⟨Nat.le_trans d1 d2, Nat.le_trans q1 q2⟩
           · exact r2 f mem
+
+theorem nbList_le {α : Type} [NB α] {B : Nat} : ∀ {l : List α}, (∀ a ∈ l, nb a ≤ B) → nb l ≤ B
+  | [], _ => by simp
+  | a :: l, h => by
+    have := h a List.mem_cons_self
+    have := nbList_le (l := l) fun b m => h b (List.mem_cons_of_mem _ m)
+    simp only [nb_cons]
+    omega
+
+/-- Every function `limFuncs` accepts has its expressions' slot steps and its
+numbers within `depthLimit` (`LimitsNums`). -/
+theorem limFuncs_nums : ∀ (fs : List SrcFunc), limFuncs fs = true →
+    ∀ f ∈ fs, SrcStmt.slotNest f.body ≤ 2 ^ 40 ∧ nb f ≤ 2 ^ 40
+  | [], _ => by simp
+  | ⟨ps, ret, body⟩ :: rest, h => by
+    simp only [limFuncs, Bool.and_eq_true, Bool.not_eq_true'] at h
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨-, -⟩, -⟩, -⟩, hn⟩, hnp⟩, hnr⟩, hns⟩, hrest⟩ := h
+    have ih := limFuncs_nums rest hrest
+    intro f mem
+    rcases List.mem_cons.mp mem with rfl | mem
+    · have n1 := limNumsParams_ok ps hnp
+      have n2 := limNumsTy_ok ret hnr
+      have n3 := limNumsStmt_ok body hns
+      simp only [decide_eq_true_eq] at hn
+      have e := limNest_le body hn
+      have dl : depthLimit = 2 ^ 40 := rfl
+      refine ⟨by rw [e]; omega, ?_⟩
+      show max (nb ps) (max (nb ret) (nb body)) ≤ 2 ^ 40
+      omega
+    · exact ih f mem
 
 /-! ## The front end -/
 
@@ -781,6 +812,26 @@ theorem frontEndWords_limits {g : List Rule} {W : List (BitVec 32)} {p : SrcProg
       · obtain ⟨ok, e⟩ := buildFiles_limits h
         obtain ⟨a, b⟩ := limFuncs_ok _ ok
         exact ⟨by rw [e]; exact a, b⟩
+    · cases h
+
+/-- What the front end returns has each function's slot steps
+(`SrcStmt.slotNest`) and every number (`nb`) at most `2 ^ 40`. -/
+theorem frontEndWords_nums {g : List Rule} {W : List (BitVec 32)} {p : SrcProgram}
+    (h : frontEndWords g W = some p) :
+    (∀ f ∈ p.funcs, SrcStmt.slotNest f.body ≤ 2 ^ 40) ∧ nb p ≤ 2 ^ 40 := by
+  unfold frontEndWords at h
+  split at h
+  · cases h
+  · unfold frontEndRead at h
+    split at h
+    · unfold frontEndFiles at h
+      split at h
+      · cases h
+      · obtain ⟨ok, -⟩ := buildFiles_limits h
+        have all := limFuncs_nums _ ok
+        refine ⟨fun f mem => (all f mem).1, ?_⟩
+        show nb p.funcs ≤ 2 ^ 40
+        exact nbList_le fun f mem => (all f mem).2
     · cases h
 
 end Lanius.Faithful.SelfPre.Limits

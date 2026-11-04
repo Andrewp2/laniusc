@@ -11,10 +11,10 @@ import all Lanius.Faithful.Gen.SelfSrcF_eStructClosed
 import all Lanius.Faithful.Gen.SelfSrcF_funcsBytes
 import all Lanius.Faithful.Gen.SelfSrcF_letStructClosed
 import all Lanius.Faithful.Gen.SelfSrcF_limLeaf
+import all Lanius.Faithful.Gen.SelfSrcF_limNumsEff
 import all Lanius.Faithful.Gen.SelfSrcF_lowerTy
 import all Lanius.Faithful.Gen.SelfSrcF_negWideI32
 import all Lanius.Faithful.Gen.SelfSrcF_setEvalClosed
-import all Lanius.Faithful.Gen.SelfSrcF_sintAt
 import all Lanius.Faithful.Gen.SelfSrcF_strBytes
 import all Lanius.Faithful.Gen.SelfSrcF_wideLeftStmt
 import all Lanius.Faithful.Gen.SelfTypes
@@ -119,40 +119,40 @@ theorem ok_lim_ty : FnOk prog prims info (1190, ⟨6, [], 0⟩) :=
 theorem ok_lim_stmt : FnOk prog prims info (1191, ⟨9, [0], 0⟩) :=
   fnOk_of fn_lim_stmt (by decide +kernel)
 
-theorem ok_place_stmt : FnOk prog prims info (1192, ⟨4, [1], 0⟩) :=
+theorem ok_depth_limit : FnOk prog prims info (1192, ⟨0, [], 0⟩) :=
+  fnOk_of fn_depth_limit (by decide +kernel)
+
+theorem ok_lim_nest : FnOk prog prims info (1193, ⟨4, [0], 0⟩) :=
+  fnOk_of fn_lim_nest (by decide +kernel)
+
+theorem ok_lim_nums_params : FnOk prog prims info (1194, ⟨3, [0], 0⟩) :=
+  fnOk_of fn_lim_nums_params (by decide +kernel)
+
+theorem ok_lim_nums_ty : FnOk prog prims info (1195, ⟨2, [0], 0⟩) :=
+  fnOk_of fn_lim_nums_ty (by decide +kernel)
+
+theorem ok_lim_nums_stmt : FnOk prog prims info (1196, ⟨5, [0], 0⟩) :=
+  fnOk_of fn_lim_nums_stmt (by decide +kernel)
+
+theorem ok_place_stmt : FnOk prog prims info (1197, ⟨4, [1], 0⟩) :=
   fnOk_of fn_place_stmt (by decide +kernel)
 
-theorem ok_stmt_bytes : FnOk prog prims info (1193, ⟨3, [0], 0⟩) :=
+theorem ok_stmt_bytes : FnOk prog prims info (1198, ⟨3, [0], 0⟩) :=
   fnOk_of fn_stmt_bytes (by decide +kernel)
 
-theorem ok_funcs_bytes : FnOk prog prims info (1194, ⟨4, [0], 0⟩) :=
+theorem ok_funcs_bytes : FnOk prog prims info (1199, ⟨4, [0], 0⟩) :=
   fnOk_of fn_funcs_bytes (by decide +kernel)
 
-theorem ok_lit_expr : FnOk prog prims info (1196, ⟨4, [2], 0⟩) :=
+theorem ok_lit_expr : FnOk prog prims info (1201, ⟨4, [2], 0⟩) :=
   fnOk_of fn_lit_expr (by decide +kernel)
 
-theorem ok_with_local : FnOk prog prims info (1198, ⟨1, [], 0⟩) :=
+theorem ok_with_local : FnOk prog prims info (1203, ⟨1, [], 0⟩) :=
   fnOk_of fn_with_local (by decide +kernel)
 
-theorem ok_lit_exprs : FnOk prog prims info (1199, ⟨5, [2], 0⟩) :=
+theorem ok_lit_exprs : FnOk prog prims info (1204, ⟨5, [2], 0⟩) :=
   fnOk_of fn_lit_exprs (by decide +kernel)
 
-theorem ok_src_fields : FnOk prog prims info (1200, ⟨2, [], 0⟩) :=
-  fnOk_of fn_src_fields (by decide +kernel)
-
-theorem ok_callee_params : FnOk prog prims info (1201, ⟨2, [], 0⟩) :=
-  fnOk_of fn_callee_params (by decide +kernel)
-
-theorem ok_payload_at : FnOk prog prims info (1202, ⟨2, [], 0⟩) :=
-  fnOk_of fn_payload_at (by decide +kernel)
-
-theorem ok_src_variants : FnOk prog prims info (1203, ⟨0, [], 0⟩) :=
-  fnOk_of fn_src_variants (by decide +kernel)
-
-theorem ok_lit_src_arms : FnOk prog prims info (1204, ⟨5, [3], 0⟩) :=
-  fnOk_of fn_lit_src_arms (by decide +kernel)
-
 theorem chunk25 : AllFns prog prims info part25 :=
-  ⟨ok_if_closed, ok_while_closed, ok_alloc_closed, ok_let_slice_closed, ok_let_index_closed, ok_let_view_closed, ok_let_str_closed, ok_let_eval_closed, ok_close_eff, ok_set_eval_closed, ok_if_eval_closed, ok_while_eval_closed, ok_return_eval_closed, ok_discard_closed, ok_set_index_eval_closed, ok_set_field_eval_closed, ok_assert_closed, ok_match_arm_closed, ok_arm_ty_closed, ok_unreachable_closed, ok_set_place_closed, ok_set_place_op_closed, ok_get_of_mini_selfhost_TypeDecl, ok_lower_decl, ok_wide_left_stmt, ok_lim_params, ok_lim_param_slots, ok_lim_ty, ok_lim_stmt, ok_place_stmt, ok_stmt_bytes, ok_funcs_bytes, ok_lit_expr, ok_with_local, ok_lit_exprs, ok_src_fields, ok_callee_params, ok_payload_at, ok_src_variants, ok_lit_src_arms, trivial⟩
+  ⟨ok_if_closed, ok_while_closed, ok_alloc_closed, ok_let_slice_closed, ok_let_index_closed, ok_let_view_closed, ok_let_str_closed, ok_let_eval_closed, ok_close_eff, ok_set_eval_closed, ok_if_eval_closed, ok_while_eval_closed, ok_return_eval_closed, ok_discard_closed, ok_set_index_eval_closed, ok_set_field_eval_closed, ok_assert_closed, ok_match_arm_closed, ok_arm_ty_closed, ok_unreachable_closed, ok_set_place_closed, ok_set_place_op_closed, ok_get_of_mini_selfhost_TypeDecl, ok_lower_decl, ok_wide_left_stmt, ok_lim_params, ok_lim_param_slots, ok_lim_ty, ok_lim_stmt, ok_depth_limit, ok_lim_nest, ok_lim_nums_params, ok_lim_nums_ty, ok_lim_nums_stmt, ok_place_stmt, ok_stmt_bytes, ok_funcs_bytes, ok_lit_expr, ok_with_local, ok_lit_exprs, trivial⟩
 
 end Lanius.Faithful.SelfTerm

@@ -67,68 +67,68 @@ set_option maxRecDepth 100000
 theorem dt27 : declareFuncs tail_end (declAt decls 0 0) = some decls := by
   rw [declAt_zero]; rfl
 
-theorem dt26 : declareFuncs tail_wild_tail (declAt decls 0 0) = some decls := by
-  rw [show tail_wild_tail = dpart26 ++ tail_end from rfl]
+theorem dt26 : declareFuncs tail_view_array (declAt decls 0 0) = some decls := by
+  rw [show tail_view_array = dpart26 ++ tail_end from rfl]
   exact declareFuncs_append (declsStep_eq dchunk26) dt27
 
-theorem dt25 : declareFuncs tail_effs_act (declAt decls 2 2) = some decls := by
-  rw [show tail_effs_act = dpart25 ++ tail_wild_tail from rfl]
+theorem dt25 : declareFuncs tail_lit_wild_value (declAt decls 2 2) = some decls := by
+  rw [show tail_lit_wild_value = dpart25 ++ tail_view_array from rfl]
   exact declareFuncs_append (declsStep_eq dchunk25) dt26
 
-theorem dt24 : declareFuncs tail_string_peeled (declAt decls 3 3) = some decls := by
-  rw [show tail_string_peeled = dpart24 ++ tail_effs_act from rfl]
+theorem dt24 : declareFuncs tail_binds_zip (declAt decls 3 4) = some decls := by
+  rw [show tail_binds_zip = dpart24 ++ tail_lit_wild_value from rfl]
   exact declareFuncs_append (declsStep_eq dchunk24) dt25
 
-theorem dt23 : declareFuncs tail_lit_if (declAt decls 4 6) = some decls := by
-  rw [show tail_lit_if = dpart23 ++ tail_string_peeled from rfl]
+theorem dt23 : declareFuncs tail_call_parts (declAt decls 4 7) = some decls := by
+  rw [show tail_call_parts = dpart23 ++ tail_binds_zip from rfl]
   exact declareFuncs_append (declsStep_eq dchunk23) dt24
 
-theorem dt22 : declareFuncs tail_wide_digits (declAt decls 5 8) = some decls := by
-  rw [show tail_wide_digits = dpart22 ++ tail_lit_if from rfl]
+theorem dt22 : declareFuncs tail_ref_target (declAt decls 5 8) = some decls := by
+  rw [show tail_ref_target = dpart22 ++ tail_call_parts from rfl]
   exact declareFuncs_append (declsStep_eq dchunk22) dt23
 
-theorem dt21 : declareFuncs tail_args_segment (declAt decls 8 12) = some decls := by
-  rw [show tail_args_segment = dpart21 ++ tail_wide_digits from rfl]
+theorem dt21 : declareFuncs tail_literal_as (declAt decls 8 12) = some decls := by
+  rw [show tail_literal_as = dpart21 ++ tail_ref_target from rfl]
   exact declareFuncs_append (declsStep_eq dchunk21) dt22
 
-theorem dt20 : declareFuncs tail_find_method (declAt decls 10 14) = some decls := by
-  rw [show tail_find_method = dpart20 ++ tail_args_segment from rfl]
+theorem dt20 : declareFuncs tail_x_divide_of (declAt decls 11 15) = some decls := by
+  rw [show tail_x_divide_of = dpart20 ++ tail_literal_as from rfl]
   exact declareFuncs_append (declsStep_eq dchunk20) dt21
 
-theorem dt19 : declareFuncs tail_is_block_match (declAt decls 15 22) = some decls := by
-  rw [show tail_is_block_match = dpart19 ++ tail_find_method from rfl]
+theorem dt19 : declareFuncs tail_eff_variant (declAt decls 16 24) = some decls := by
+  rw [show tail_eff_variant = dpart19 ++ tail_x_divide_of from rfl]
   exact declareFuncs_append (declsStep_eq dchunk19) dt20
 
-theorem dt18 : declareFuncs tail_p_group (declAt decls 26 39) = some decls := by
-  rw [show tail_p_group = dpart18 ++ tail_is_block_match from rfl]
+theorem dt18 : declareFuncs tail_is_text (declAt decls 26 39) = some decls := by
+  rw [show tail_is_text = dpart18 ++ tail_eff_variant from rfl]
   exact declareFuncs_append (declsStep_eq dchunk18) dt19
 
-theorem dt17 : declareFuncs tail_lx_exponent_digits (declAt decls 26 39) = some decls := by
-  rw [show tail_lx_exponent_digits = dpart17 ++ tail_p_group from rfl]
+theorem dt17 : declareFuncs tail_and_known (declAt decls 26 40) = some decls := by
+  rw [show tail_and_known = dpart17 ++ tail_is_text from rfl]
   exact declareFuncs_append (declsStep_eq dchunk17) dt18
 
-theorem dt16 : declareFuncs tail_ref_uses_ok (declAt decls 27 44) = some decls := by
-  rw [show tail_ref_uses_ok = dpart16 ++ tail_lx_exponent_digits from rfl]
+theorem dt16 : declareFuncs tail_p_type_array (declAt decls 27 45) = some decls := by
+  rw [show tail_p_type_array = dpart16 ++ tail_and_known from rfl]
   exact declareFuncs_append (declsStep_eq dchunk16) dt17
 
-theorem dt15 : declareFuncs tail_arith_of (declAt decls 27 46) = some decls := by
-  rw [show tail_arith_of = dpart15 ++ tail_ref_uses_ok from rfl]
+theorem dt15 : declareFuncs tail_Word_rex (declAt decls 27 46) = some decls := by
+  rw [show tail_Word_rex = dpart15 ++ tail_p_type_array from rfl]
   exact declareFuncs_append (declsStep_eq dchunk15) dt16
 
-theorem dt14 : declareFuncs tail_lim_leaf (declAt decls 30 48) = some decls := by
-  rw [show tail_lim_leaf = dpart14 ++ tail_arith_of from rfl]
+theorem dt14 : declareFuncs tail_lim_bind (declAt decls 30 48) = some decls := by
+  rw [show tail_lim_bind = dpart14 ++ tail_Word_rex from rfl]
   exact declareFuncs_append (declsStep_eq dchunk14) dt15
 
-theorem dt13 : declareFuncs tail_SrcType_is_sint_any (declAt decls 31 52) = some decls := by
-  rw [show tail_SrcType_is_sint_any = dpart13 ++ tail_lim_leaf from rfl]
+theorem dt13 : declareFuncs tail_FOp_bytes (declAt decls 31 52) = some decls := by
+  rw [show tail_FOp_bytes = dpart13 ++ tail_lim_bind from rfl]
   exact declareFuncs_append (declsStep_eq dchunk13) dt14
 
-theorem dt12 : declareFuncs tail_src_fields (declAt decls 34 55) = some decls := by
-  rw [show tail_src_fields = dpart12 ++ tail_SrcType_is_sint_any from rfl]
+theorem dt12 : declareFuncs tail_boxed_of_mini_selfhost_List_mini_selfhost_SrcFunc (declAt decls 34 56) = some decls := by
+  rw [show tail_boxed_of_mini_selfhost_List_mini_selfhost_SrcFunc = dpart12 ++ tail_FOp_bytes from rfl]
   exact declareFuncs_append (declsStep_eq dchunk12) dt13
 
 theorem dt11 : declareFuncs tail_lx_ident_end (declAt decls 35 59) = some decls := by
-  rw [show tail_lx_ident_end = dpart11 ++ tail_src_fields from rfl]
+  rw [show tail_lx_ident_end = dpart11 ++ tail_boxed_of_mini_selfhost_List_mini_selfhost_SrcFunc from rfl]
   exact declareFuncs_append (declsStep_eq dchunk11) dt12
 
 theorem dt10 : declareFuncs tail_get_of_mini_selfhost_Ty (declAt decls 35 60) = some decls := by

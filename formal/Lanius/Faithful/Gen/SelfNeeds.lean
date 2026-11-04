@@ -221,6 +221,8 @@ import all Lanius.Faithful.Gen.SelfSrcF_letClosed
 import all Lanius.Faithful.Gen.SelfSrcF_letStructClosed
 import all Lanius.Faithful.Gen.SelfSrcF_limExprs
 import all Lanius.Faithful.Gen.SelfSrcF_limLeaf
+import all Lanius.Faithful.Gen.SelfSrcF_limNumsArms
+import all Lanius.Faithful.Gen.SelfSrcF_limNumsEff
 import all Lanius.Faithful.Gen.SelfSrcF_litBound
 import all Lanius.Faithful.Gen.SelfSrcF_litEffMatch
 import all Lanius.Faithful.Gen.SelfSrcF_litIf

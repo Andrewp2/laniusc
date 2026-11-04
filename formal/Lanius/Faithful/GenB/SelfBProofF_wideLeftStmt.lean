@@ -8,7 +8,7 @@ import Lanius.Faithful.GenB.SelfBStmtF_collect
 import Lanius.Faithful.GenB.SelfBStmtF_funcsBytes
 import Lanius.Faithful.GenB.SelfBStmtF_funcsOnto
 import Lanius.Faithful.GenB.SelfBStmtF_isEmptyUsize
-import Lanius.Faithful.GenB.SelfBStmtF_limLeaf
+import Lanius.Faithful.GenB.SelfBStmtF_limNumsEff
 import Lanius.Faithful.GenB.SelfBStmtF_negWideI32
 import Lanius.Faithful.GenB.SelfBStmtF_rootInsts
 import Lanius.Faithful.GenB.SelfBStmtF_wideLeftStmt
