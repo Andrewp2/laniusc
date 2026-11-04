@@ -9,6 +9,16 @@ real=/home/andrew-peterson/.elan/toolchains/leanprover--lean4---v4.33.1/bin/lean
 dir=/home/andrew-peterson/code/laniusc/target/claude-work/leanproc
 n=${LEAN_PROCS:-6}
 case "$1" in --githash|--version|--print-prefix|--print-libdir) exec "$real" "$@" ;; esac
+# Lake sometimes restores a module's outputs from its artifact cache (read-only
+# copies or hard links) and then rebuilds the module anyway; lean then cannot
+# write the read-only .ilean ("permission denied (error code: 13)"). Unlinking an
+# output path before lean writes it is always safe: it never touches the cache's
+# copy, and lean writes a fresh file.
+prev=
+for a in "$@"; do
+  case "$prev" in -o|-i|-c|--bc|--ir) [ -e "$a" ] && [ ! -w "$a" ] && rm -f -- "$a" ;; esac
+  prev=$a
+done
 while :; do
   for ((k = 0; k < n; k++)); do
     exec 8>"$dir/slot.$k"

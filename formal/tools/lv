@@ -403,32 +403,47 @@ def blocks(lines):
 
 
 def report(log, show_warnings=False, budget=600):
-    """Print every error message whole (and the warnings with --all); count the rest."""
+    """Print every error message whole (and the warnings with --all); count the
+    rest. A failed job's `info: stderr:` (Lean's own stderr: a crash, a file it
+    could not write) counts as an error and is printed with the job's name, and
+    so is `Lean exited with code N` when the job printed no error of its own."""
     lines = open(log, errors='replace').read().split('\n')
     errors = warnings = printed = 0
     failed_targets = []
     in_failed = False
+    job, job_errors = None, 0
+
+    def show(body):
+        nonlocal printed
+        if printed < budget:
+            print(body, flush=True)
+            printed += body.count('\n') + 1
+
     for kind, text in blocks(lines):
         if kind == 'other':
             line = text[0]
             in_failed = line.startswith('Some required targets') or (in_failed and line.startswith('- '))
             if in_failed and line.startswith('- '):
                 failed_targets.append(line[2:].strip())
-            if line.startswith('✖'):
-                print(line, flush=True)
+            if line.startswith(('✖', '✔', '⚠')):
+                job, job_errors = (line if line.startswith('✖') else None), 0
             continue
-        if kind == 'error':
-            if text[0].startswith('error: build failed') or text[0].startswith('error: Lean exited with code'):
-                continue
+        body = '\n'.join(text).rstrip()
+        stderr = kind == 'info' and text[0].startswith('info: stderr:')
+        if text[0].startswith('error: build failed'):
+            continue
+        if text[0].startswith('error: Lean exited with code') and job_errors:
+            continue
+        if kind == 'error' or stderr:
             errors += 1
+            if job and not job_errors and (stderr or text[0].startswith('error: Lean exited')):
+                body = job + '\n' + body
+            job_errors += 1
+            show(body)
         else:
             warnings += 1
-            if not show_warnings:
-                continue
-        if printed < budget:
-            body = '\n'.join(text).rstrip()
-            print(body, flush=True)
-            printed += body.count('\n') + 1
+            if show_warnings:
+                show(body)
     if printed >= budget:
         say(f'more messages than fit here ({printed} lines shown): all of them are in {log}')
     return errors, warnings, failed_targets
