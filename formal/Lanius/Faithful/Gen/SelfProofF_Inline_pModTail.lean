@@ -222,4 +222,22 @@ theorem proof_p_path_ident_args {prog : SrcProgram} {prims : Prims} {ix_p_path_i
   simp only [src_p_path_ident_args] at h
   faithful [Lanius.Mini.Inline.pPathIdentArgs]
 
+theorem proof_p_type_ref {prog : SrcProgram} {prims : Prims} {ix_p_type_ref : Nat} (fn : prog.funcs[ix_p_type_ref]? = some (src_p_type_ref)) (np : prims.isPrim ix_p_type_ref = false) {n : Nat} :
+    Stmt_p_type_ref prog prims ix_p_type_ref n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_p_type_ref] at h
+  faithful [Lanius.Mini.Inline.pTypeRef]
+
+theorem proof_p_type_ref_mut {prog : SrcProgram} {prims : Prims} {ix_p_type_ref_mut : Nat} (fn : prog.funcs[ix_p_type_ref_mut]? = some (src_p_type_ref_mut)) (np : prims.isPrim ix_p_type_ref_mut = false) {n : Nat} :
+    Stmt_p_type_ref_mut prog prims ix_p_type_ref_mut n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_p_type_ref_mut] at h
+  faithful [Lanius.Mini.Inline.pTypeRefMut]
+
 end Lanius.Faithful.SelfCert

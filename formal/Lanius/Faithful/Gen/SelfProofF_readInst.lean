@@ -9,7 +9,7 @@ public import Lanius.Faithful.Gen.SelfStmt2
 public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt6
-public import Lanius.Faithful.Gen.SelfStmtF_ifNotWrites
+public import Lanius.Faithful.Gen.SelfStmtF_namesFieldBase
 public import Lanius.Faithful.Gen.SelfStmtF_projectionRet
 public import Lanius.Faithful.Gen.SelfStmtF_readDeclInst
 public import Lanius.Faithful.Gen.SelfStmtF_readInst

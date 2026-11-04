@@ -1693,13 +1693,13 @@ abbrev BStmt_SrcType_is_float (spW sp : SrcProgram) (prims : Prims) (ix n : Nat)
 
 abbrev BStmt_float_apply (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.FArith} {x1 : Lanius.Mini.FloatTy} {x2 : Lanius.Mini.Typed} {x3 : Lanius.Mini.Typed} {v0 v1 v2 v3 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → (RepOption 254 RepFArith) x0 v0 → RepFloatTy x1 v1 → RepTyped x2 v2 → RepTyped x3 v3 →
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → (RepOption 255 RepFArith) x0 v0 → RepFloatTy x1 v1 → RepTyped x2 v2 → RepTyped x3 v3 →
     qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_float_apply n x0 x1 x2 x3 = k ∧ (RepOption 156 RepTyped) (Lanius.Mini.floatApply x0 x1 x2 x3) w
 
 abbrev BStmt_float_op (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.BinOp} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepBinOp x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 254 RepFArith) (Lanius.Mini.floatOp x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 255 RepFArith) (Lanius.Mini.floatOp x0) w
 
 abbrev BStmt_float_arith_of (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.BinOp} {x1 : Lanius.Mini.Typed} {x2 : Lanius.Mini.Typed} {x3 : Lanius.Mini.FloatTy} {v0 v1 v2 v3 w : Value} {k : Nat},

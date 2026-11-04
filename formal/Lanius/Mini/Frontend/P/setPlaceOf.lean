@@ -31,8 +31,8 @@ set_option linter.unusedVariables false
 namespace Lanius.Mini
 
 /-- `place = value;` through a reference parameter, value read at the place's type (which is known). With an element step in the place, a value that can act is not read (as for `v[i] = value`, set_index_eval_of). -/
-def setPlaceOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (place : Option MEff) (value : CTree) : Option MStmt :=
-  match place with
+def setPlaceOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (target : CTree) (value : CTree) : Option MStmt :=
+  match effOf fuel env scope none target with
   | none => none
   | some pl => checkedStmt (effPlace pl && hasTy (effTy fuel env scope pl)) (setPlaceValue pl env.decls.fns.length (effOf fuel env scope (effTy fuel env scope pl) value))
 
@@ -70,18 +70,18 @@ def setPlaceOpValue (o : SrcAssignOp) (pl : MEff) (n : Nat) (v : Option MEff) : 
   | some x => stmtUnless (hasAt pl && effActs n x) (MStmt.mSetPlaceOp o pl x)
 
 /-- `place op= value;` through a reference parameter, as set_place_of. -/
-def setPlaceOpOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (op : Option SrcAssignOp) (place : Option MEff) (value : CTree) : Option MStmt :=
+def setPlaceOpOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (op : Option SrcAssignOp) (target : CTree) (value : CTree) : Option MStmt :=
   match op with
   | none => none
   | some o =>
-    match place with
+    match effOf fuel env scope none target with
     | none => none
     | some pl => checkedStmt (effPlace pl && hasTy (effTy fuel env scope pl)) (setPlaceOpValue o pl env.decls.fns.length (effOf fuel env scope (effTy fuel env scope pl) value))
 
 def assignTarget (fuel : Nat) (env : FrontEnv) (scope : List Local) (target : CTree) (v : Nat) (value : CTree) : Option MStmt :=
   let tail : CTree := kid target 1
-  if decide (nodeProd tail ≠ (164)) && refRooted (localOf env scope (kid target 0)) then
-    setPlaceOf fuel env scope (effOf fuel env scope none target) value
+  if refTarget env scope target then
+    setPlaceOf fuel env scope target value
   else
     if nodeProd tail = (164) then
       match localOf env scope (kid target 0) with

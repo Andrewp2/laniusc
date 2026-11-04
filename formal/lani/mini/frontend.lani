@@ -10246,6 +10246,12 @@ pub fn ref_rooted(l: core::option::Option<Local>) -> bool {
     };
 }
 
+// F5 (S5): an assignment's target is a field or element of a reference
+// parameter.
+pub fn ref_target(env: FrontEnv, scope: List<Local>, target: CTree) -> bool {
+    return node_prod(kid(target, 1)) != p_postfix_end() && ref_rooted(local_of(env, scope, kid(target, 0)));
+}
+
 pub fn set_place_value(pl: MEff, n: usize, v: core::option::Option<MEff>) -> core::option::Option<MStmt> {
     return match (v) {
         None -> None,
@@ -10256,8 +10262,8 @@ pub fn set_place_value(pl: MEff, n: usize, v: core::option::Option<MEff>) -> cor
 // `place = value;` through a reference parameter, value read at the
 // place's type (which is known). With an element step in the place, a value that can act is
 // not read (as for `v[i] = value`, set_index_eval_of).
-pub fn set_place_of(fuel: usize, env: FrontEnv, scope: List<Local>, place: core::option::Option<MEff>, value: CTree) -> core::option::Option<MStmt> {
-    return match (place) {
+pub fn set_place_of(fuel: usize, env: FrontEnv, scope: List<Local>, target: CTree, value: CTree) -> core::option::Option<MStmt> {
+    return match (eff_of(fuel, env, scope, None, target)) {
         None -> None,
         Some(pl) -> checked_stmt(eff_place(pl) && has_ty(eff_ty(fuel, env, scope, pl)), set_place_value(pl, length(env.decls.fns), eff_of(fuel, env, scope, eff_ty(fuel, env, scope, pl), value))),
     };
@@ -10301,10 +10307,10 @@ pub fn set_place_op_value(o: SrcAssignOp, pl: MEff, n: usize, v: core::option::O
 }
 
 // `place op= value;` through a reference parameter, as set_place_of.
-pub fn set_place_op_of(fuel: usize, env: FrontEnv, scope: List<Local>, op: core::option::Option<SrcAssignOp>, place: core::option::Option<MEff>, value: CTree) -> core::option::Option<MStmt> {
+pub fn set_place_op_of(fuel: usize, env: FrontEnv, scope: List<Local>, op: core::option::Option<SrcAssignOp>, target: CTree, value: CTree) -> core::option::Option<MStmt> {
     return match (op) {
         None -> None,
-        Some(o) -> match (place) {
+        Some(o) -> match (eff_of(fuel, env, scope, None, target)) {
             None -> None,
             Some(pl) -> checked_stmt(eff_place(pl) && has_ty(eff_ty(fuel, env, scope, pl)), set_place_op_value(o, pl, length(env.decls.fns), eff_of(fuel, env, scope, eff_ty(fuel, env, scope, pl), value))),
         },
@@ -10313,8 +10319,8 @@ pub fn set_place_op_of(fuel: usize, env: FrontEnv, scope: List<Local>, op: core:
 
 pub fn assign_target(fuel: usize, env: FrontEnv, scope: List<Local>, target: CTree, v: usize, value: CTree) -> core::option::Option<MStmt> {
     let tail: CTree = kid(target, 1);
-    if (node_prod(tail) != p_postfix_end() && ref_rooted(local_of(env, scope, kid(target, 0)))) {
-        return set_place_of(fuel, env, scope, eff_of(fuel, env, scope, None, target), value);
+    if (ref_target(env, scope, target)) {
+        return set_place_of(fuel, env, scope, target, value);
     }
     if (node_prod(tail) == p_postfix_end()) {
         return match (local_of(env, scope, kid(target, 0))) {
@@ -10465,8 +10471,8 @@ pub fn compound_field_eval(fuel: usize, env: FrontEnv, scope: List<Local>, l: Lo
 
 // `x op= e` or `x.f op= e`, when e or op is effectful.
 pub fn compound_eval(fuel: usize, env: FrontEnv, scope: List<Local>, target: CTree, p: usize, value: CTree) -> core::option::Option<MStmt> {
-    if (node_prod(kid(target, 1)) != p_postfix_end() && ref_rooted(local_of(env, scope, kid(target, 0)))) {
-        return set_place_op_of(fuel, env, scope, assign_op_of(p), eff_of(fuel, env, scope, None, target), value);
+    if (ref_target(env, scope, target)) {
+        return set_place_op_of(fuel, env, scope, assign_op_of(p), target, value);
     }
     if (node_prod(kid(target, 1)) == p_postfix_end()) {
         return match (local_of(env, scope, kid(target, 0))) {
@@ -14937,7 +14943,8 @@ pub fn lx_keyword_rules() -> List<SymRule> {
         cons(SymRule { spelling: cons(116, cons(121, cons(112, single(101)))), kind: 103 },
         cons(SymRule { spelling: cons(119, cons(104, cons(101, cons(114, single(101))))), kind: 104 },
         cons(SymRule { spelling: cons(114, cons(101, cons(113, cons(117, cons(105, cons(114, cons(101, single(115)))))))), kind: 201 },
-        empty()))))))))))))))))))))))))));
+        cons(SymRule { spelling: cons(109, cons(117, single(116))), kind: 203 },
+        empty())))))))))))))))))))))))))));
 }
 
 // `lexTokens`: the tokens of a file's bytes, if it lexes.

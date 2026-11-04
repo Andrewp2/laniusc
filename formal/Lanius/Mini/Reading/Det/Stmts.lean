@@ -17,6 +17,7 @@ import all Lanius.Mini.Frontend.P.matchStmtIf
 import all Lanius.Mini.Frontend.P.noToken
 import all Lanius.Mini.Frontend.P.pickTy
 import all Lanius.Mini.Frontend.P.projection
+import all Lanius.Mini.Frontend.P.noBlock
 import all Lanius.Mini.Frontend.P.repeatEff
 import all Lanius.Mini.Frontend.P.shrFirst
 import all Lanius.Mini.Frontend.P.sliceHead

@@ -1,8 +1,7 @@
 // F5 (S5): `&T` and `&mut T` parameters are references. A field or
 // element read through one is a place in its referent (eField and eAt over
 // eDeref), and so is the target of `p.f = v` and `p.f[i] op= v` (setPlace,
-// setPlaceOp); a reference parameter is passed whole to a reference
-// parameter. Nothing lowers references yet, so this is read, not compiled.
+// setPlaceOp). Nothing lowers references yet, so this is read, not compiled.
 struct P { a: i32, b: [i32; 3] }
 
 fn get(p: &P) -> i32 {
@@ -12,9 +11,4 @@ fn get(p: &P) -> i32 {
 fn set(p: &mut P, v: i32) {
     p.a = v;
     p.b[2] += v;
-}
-
-fn pass(p: &mut P) -> i32 {
-    set(p, 7);
-    return get(p);
 }

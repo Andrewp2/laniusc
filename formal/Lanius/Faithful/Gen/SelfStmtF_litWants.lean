@@ -25,12 +25,12 @@ abbrev Stmt_eq_on (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     (RepOption 235 RepSrcExpr) (Lanius.Mini.eqOn x0 x1) w
 
 abbrev Stmt_lit_if_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcExpr} {x1 : Lanius.Mini.Ty} {x2 : Lanius.Mini.MEff} {x3 : Option Lanius.Mini.MEff} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepOption 235 RepSrcExpr) x0 v0 → RepTy x1 v1 → RepMEff x2 v2 → (RepOption 258 RepMEff) x3 v3 →
-    (RepOption 258 RepMEff) (Lanius.Mini.litIfOf x0 x1 x2 x3) w
+  ∀ {x0 : Option Lanius.Mini.SrcExpr} {x1 : Lanius.Mini.Ty} {x2 : Lanius.Mini.MEff} {x3 : Option Lanius.Mini.MEff} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepOption 235 RepSrcExpr) x0 v0 → RepTy x1 v1 → RepMEff x2 v2 → (RepOption 259 RepMEff) x3 v3 →
+    (RepOption 259 RepMEff) (Lanius.Mini.litIfOf x0 x1 x2 x3) w
 
 abbrev Stmt_lit_last_value (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : Option Lanius.Mini.SrcExpr} {x2 : Lanius.Mini.MEff} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepBool x0 v0 → (RepOption 235 RepSrcExpr) x1 v1 → RepMEff x2 v2 →
-    (RepOption 258 RepMEff) (Lanius.Mini.litLastValue x0 x1 x2) w
+    (RepOption 259 RepMEff) (Lanius.Mini.litLastValue x0 x1 x2) w
 
 abbrev Stmt_lit_test (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcExpr} {x1 : Lanius.Mini.Ty} {x2 : Lanius.Mini.CTree} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepSrcExpr x0 v0 → RepTy x1 v1 → RepCTree x2 v2 →
@@ -38,7 +38,7 @@ abbrev Stmt_lit_test (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev Stmt_lit_value_if (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → RepMEff x1 v1 →
-    (RepOption 258 RepMEff) (Lanius.Mini.litValueIf x0 x1) w
+    (RepOption 259 RepMEff) (Lanius.Mini.litValueIf x0 x1) w
 
 abbrev Stmt_lit_wants (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.Ty} {x1 : List Lanius.Mini.CTree} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 212 RepTy) x0 v0 → (RepList 83 RepCTree) x1 v1 →

@@ -48,7 +48,7 @@ theorem ok_concat_of_mini_selfhost_Inst : FnOk prog prims info (988, ⟨0, [0], 
 theorem ok_eff_calls : FnOk prog prims info (989, ⟨1, [0], 0⟩) :=
   fnOk_of fn_eff_calls (by decide +kernel)
 
-theorem ok_extern_func : FnOk prog prims info (991, ⟨12, [], 0⟩) :=
+theorem ok_extern_func : FnOk prog prims info (991, ⟨13, [], 0⟩) :=
   fnOk_of fn_extern_func (by decide +kernel)
 
 theorem ok_diverges : FnOk prog prims info (992, ⟨4, [], 0⟩) :=

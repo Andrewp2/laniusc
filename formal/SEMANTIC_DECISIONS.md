@@ -2079,7 +2079,10 @@ answer). So S5 is:
    `p.f op= v`, `p.f[i] = v`, are read as `eField` and `eAt` over `eDeref`
    (statement positions; `setPlace` and `setPlaceOp`).
 3. A reference parameter passed at a parameter of the same reference type
-   is read as the reference value.
+   is read as the reference value. (11-03, leafC: moved to S5b. A call's
+   arguments are read against the callee's parameter type expressions
+   (`MatchTy`), which have no reference pattern yet; the lifetime check
+   already allows the use, so only the reading is left.)
 4. The lifetime check rejects a reassigned reference parameter, any other
    use of the whole reference (a let, a return, an operand, an element,
    a by-value argument), and a method call on a reference (that is point

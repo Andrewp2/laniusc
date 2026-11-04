@@ -1,9 +1,12 @@
 module
 
 public import Lanius.Mini.Frontend.Types
+import Lanius.Mini.Frontend.P.floatTyped
 import Lanius.Mini.Frontend.P.fnInstRet
 import Lanius.Mini.Frontend.P.freshId
+import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.noBlock
+import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.projection
 import Lanius.Mini.Frontend.P.setIndexOrEval
 import Lanius.Mini.Frontend.P.stringOpen
@@ -27,6 +30,10 @@ def refRooted (l : Option Local) : Bool :=
   match l with
   | none => false
   | some x => isRefTy x.ty
+
+/-- F5 (S5): an assignment's target is a field or element of a reference parameter. -/
+def refTarget (env : FrontEnv) (scope : List Local) (target : CTree) : Bool :=
+  decide (nodeProd (kid target 1) ≠ (164)) && refRooted (localOf env scope (kid target 0))
 
 def setPlaceValue (pl : MEff) (n : Nat) (v : Option MEff) : Option MStmt :=
   match v with

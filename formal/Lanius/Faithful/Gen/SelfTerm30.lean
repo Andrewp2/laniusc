@@ -12,127 +12,127 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.Termination
 open Lanius.Faithful.SelfCert
 
-theorem ok_wide_left_eff : FnOk prog prims info (1386, ⟨2, [0], 0⟩) :=
+theorem ok_lower_variants : FnOk prog prims info (1386, ⟨14, [0], 0⟩) :=
+  fnOk_of fn_lower_variants (by decide +kernel)
+
+theorem ok_payload_tys : FnOk prog prims info (1387, ⟨13, [], 0⟩) :=
+  fnOk_of fn_payload_tys (by decide +kernel)
+
+theorem ok_struct_src : FnOk prog prims info (1388, ⟨0, [], 0⟩) :=
+  fnOk_of fn_struct_src (by decide +kernel)
+
+theorem ok_lower_tys : FnOk prog prims info (1389, ⟨14, [0], 0⟩) :=
+  fnOk_of fn_lower_tys (by decide +kernel)
+
+theorem ok_wide_left : FnOk prog prims info (1390, ⟨1, [0], 0⟩) :=
+  fnOk_of fn_wide_left (by decide +kernel)
+
+theorem ok_wide_left_exprs : FnOk prog prims info (1391, ⟨2, [0], 0⟩) :=
+  fnOk_of fn_wide_left_exprs (by decide +kernel)
+
+theorem ok_wide_left_arms : FnOk prog prims info (1392, ⟨2, [0], 0⟩) :=
+  fnOk_of fn_wide_left_arms (by decide +kernel)
+
+theorem ok_wide_left_eff : FnOk prog prims info (1393, ⟨2, [0], 0⟩) :=
   fnOk_of fn_wide_left_eff (by decide +kernel)
 
-theorem ok_lim_bind : FnOk prog prims info (1387, ⟨3, [], 0⟩) :=
+theorem ok_lim_bind : FnOk prog prims info (1394, ⟨3, [], 0⟩) :=
   fnOk_of fn_lim_bind (by decide +kernel)
 
-theorem ok_lim_slots : FnOk prog prims info (1388, ⟨5, [0], 0⟩) :=
+theorem ok_lim_slots : FnOk prog prims info (1395, ⟨5, [0], 0⟩) :=
   fnOk_of fn_lim_slots (by decide +kernel)
 
-theorem ok_lim_expr : FnOk prog prims info (1389, ⟨7, [0], 0⟩) :=
+theorem ok_lim_expr : FnOk prog prims info (1396, ⟨7, [0], 0⟩) :=
   fnOk_of fn_lim_expr (by decide +kernel)
 
-theorem ok_lim_exprs : FnOk prog prims info (1390, ⟨8, [0], 0⟩) :=
+theorem ok_lim_exprs : FnOk prog prims info (1397, ⟨8, [0], 0⟩) :=
   fnOk_of fn_lim_exprs (by decide +kernel)
 
-theorem ok_lim_arms : FnOk prog prims info (1391, ⟨8, [0], 0⟩) :=
+theorem ok_lim_arms : FnOk prog prims info (1398, ⟨8, [0], 0⟩) :=
   fnOk_of fn_lim_arms (by decide +kernel)
 
-theorem ok_lim_leaf : FnOk prog prims info (1392, ⟨0, [], 0⟩) :=
+theorem ok_lim_leaf : FnOk prog prims info (1399, ⟨0, [], 0⟩) :=
   fnOk_of fn_lim_leaf (by decide +kernel)
 
-theorem ok_lim_max : FnOk prog prims info (1393, ⟨1, [], 0⟩) :=
+theorem ok_lim_max : FnOk prog prims info (1400, ⟨1, [], 0⟩) :=
   fnOk_of fn_lim_max (by decide +kernel)
 
-theorem ok_lim_guard : FnOk prog prims info (1394, ⟨0, [], 0⟩) :=
+theorem ok_lim_guard : FnOk prog prims info (1401, ⟨0, [], 0⟩) :=
   fnOk_of fn_lim_guard (by decide +kernel)
 
-theorem ok_lim_one : FnOk prog prims info (1395, ⟨0, [], 0⟩) :=
+theorem ok_lim_one : FnOk prog prims info (1402, ⟨0, [], 0⟩) :=
   fnOk_of fn_lim_one (by decide +kernel)
 
-theorem ok_lim_const : FnOk prog prims info (1396, ⟨0, [], 0⟩) :=
+theorem ok_lim_const : FnOk prog prims info (1403, ⟨0, [], 0⟩) :=
   fnOk_of fn_lim_const (by decide +kernel)
 
-theorem ok_lim_eff : FnOk prog prims info (1397, ⟨8, [0], 0⟩) :=
+theorem ok_lim_eff : FnOk prog prims info (1404, ⟨8, [0], 0⟩) :=
   fnOk_of fn_lim_eff (by decide +kernel)
 
-theorem ok_depth_sum : FnOk prog prims info (1398, ⟨2, [], 0⟩) :=
+theorem ok_depth_sum : FnOk prog prims info (1405, ⟨2, [], 0⟩) :=
   fnOk_of fn_depth_sum (by decide +kernel)
 
-theorem ok_place_eff : FnOk prog prims info (1399, ⟨3, [1], 0⟩) :=
+theorem ok_place_eff : FnOk prog prims info (1406, ⟨3, [1], 0⟩) :=
   fnOk_of fn_place_eff (by decide +kernel)
 
-theorem ok_eff_bytes : FnOk prog prims info (1400, ⟨2, [0], 0⟩) :=
+theorem ok_eff_bytes : FnOk prog prims info (1407, ⟨2, [0], 0⟩) :=
   fnOk_of fn_eff_bytes (by decide +kernel)
 
-theorem ok_int_at : FnOk prog prims info (1402, ⟨3, [], 0⟩) :=
+theorem ok_int_at : FnOk prog prims info (1409, ⟨3, [], 0⟩) :=
   fnOk_of fn_int_at (by decide +kernel)
 
-theorem ok_wide_value : FnOk prog prims info (1403, ⟨2, [], 0⟩) :=
+theorem ok_wide_value : FnOk prog prims info (1410, ⟨2, [], 0⟩) :=
   fnOk_of fn_wide_value (by decide +kernel)
 
-theorem ok_neg_wide_at : FnOk prog prims info (1404, ⟨2, [], 0⟩) :=
+theorem ok_neg_wide_at : FnOk prog prims info (1411, ⟨2, [], 0⟩) :=
   fnOk_of fn_neg_wide_at (by decide +kernel)
 
-theorem ok_neg_least : FnOk prog prims info (1405, ⟨3, [], 0⟩) :=
+theorem ok_neg_least : FnOk prog prims info (1412, ⟨3, [], 0⟩) :=
   fnOk_of fn_neg_least (by decide +kernel)
 
-theorem ok_operand_want : FnOk prog prims info (1407, ⟨1, [], 0⟩) :=
+theorem ok_operand_want : FnOk prog prims info (1414, ⟨1, [], 0⟩) :=
   fnOk_of fn_operand_want (by decide +kernel)
 
-theorem ok_known_expr : FnOk prog prims info (1408, ⟨3, [1], 0⟩) :=
+theorem ok_known_expr : FnOk prog prims info (1415, ⟨3, [1], 0⟩) :=
   fnOk_of fn_known_expr (by decide +kernel)
 
-theorem ok_amount_want : FnOk prog prims info (1409, ⟨2, [], 0⟩) :=
+theorem ok_amount_want : FnOk prog prims info (1416, ⟨2, [], 0⟩) :=
   fnOk_of fn_amount_want (by decide +kernel)
 
-theorem ok_wide_at : FnOk prog prims info (1410, ⟨2, [], 0⟩) :=
+theorem ok_wide_at : FnOk prog prims info (1417, ⟨2, [], 0⟩) :=
   fnOk_of fn_wide_at (by decide +kernel)
 
-theorem ok_float_want : FnOk prog prims info (1411, ⟨2, [], 0⟩) :=
+theorem ok_float_want : FnOk prog prims info (1418, ⟨2, [], 0⟩) :=
   fnOk_of fn_float_want (by decide +kernel)
 
-theorem ok_empty_of_mini_selfhost_SrcExpr : FnOk prog prims info (1413, ⟨0, [], 0⟩) :=
+theorem ok_empty_of_mini_selfhost_SrcExpr : FnOk prog prims info (1420, ⟨0, [], 0⟩) :=
   fnOk_of fn_empty_of_mini_selfhost_SrcExpr (by decide +kernel)
 
-theorem ok_cons_of_mini_selfhost_SrcExpr : FnOk prog prims info (1414, ⟨0, [], 0⟩) :=
+theorem ok_cons_of_mini_selfhost_SrcExpr : FnOk prog prims info (1421, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_SrcExpr (by decide +kernel)
 
-theorem ok_first_src : FnOk prog prims info (1415, ⟨3, [], 0⟩) :=
+theorem ok_first_src : FnOk prog prims info (1422, ⟨3, [], 0⟩) :=
   fnOk_of fn_first_src (by decide +kernel)
 
-theorem ok_rest_src : FnOk prog prims info (1416, ⟨0, [], 0⟩) :=
+theorem ok_rest_src : FnOk prog prims info (1423, ⟨0, [], 0⟩) :=
   fnOk_of fn_rest_src (by decide +kernel)
 
-theorem ok_get_of_mini_selfhost_SrcFunc : FnOk prog prims info (1417, ⟨1, [0], 0⟩) :=
+theorem ok_get_of_mini_selfhost_SrcFunc : FnOk prog prims info (1424, ⟨1, [0], 0⟩) :=
   fnOk_of fn_get_of_mini_selfhost_SrcFunc (by decide +kernel)
 
-theorem ok_src_param_tys : FnOk prog prims info (1418, ⟨1, [0], 0⟩) :=
+theorem ok_src_param_tys : FnOk prog prims info (1425, ⟨1, [0], 0⟩) :=
   fnOk_of fn_src_param_tys (by decide +kernel)
 
-theorem ok_empty_of_mini_selfhost_SrcArm : FnOk prog prims info (1419, ⟨0, [], 0⟩) :=
+theorem ok_empty_of_mini_selfhost_SrcArm : FnOk prog prims info (1426, ⟨0, [], 0⟩) :=
   fnOk_of fn_empty_of_mini_selfhost_SrcArm (by decide +kernel)
 
-theorem ok_cons_of_mini_selfhost_SrcArm : FnOk prog prims info (1420, ⟨0, [], 0⟩) :=
+theorem ok_cons_of_mini_selfhost_SrcArm : FnOk prog prims info (1427, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_SrcArm (by decide +kernel)
 
-theorem ok_bound_tys : FnOk prog prims info (1421, ⟨4, [0], 0⟩) :=
+theorem ok_bound_tys : FnOk prog prims info (1428, ⟨4, [0], 0⟩) :=
   fnOk_of fn_bound_tys (by decide +kernel)
 
-theorem ok_rest_payloads : FnOk prog prims info (1422, ⟨0, [], 0⟩) :=
-  fnOk_of fn_rest_payloads (by decide +kernel)
-
-theorem ok_ty_local_at : FnOk prog prims info (1423, ⟨0, [1], 1⟩) :=
-  fnOk_of fn_ty_local_at (by decide +kernel)
-
-theorem ok_lit_effs : FnOk prog prims info (1426, ⟨5, [3], 0⟩) :=
-  fnOk_of fn_lit_effs (by decide +kernel)
-
-theorem ok_known_eff : FnOk prog prims info (1428, ⟨4, [2], 0⟩) :=
-  fnOk_of fn_known_eff (by decide +kernel)
-
-theorem ok_lit_arm_effs : FnOk prog prims info (1429, ⟨5, [5], 0⟩) :=
-  fnOk_of fn_lit_arm_effs (by decide +kernel)
-
-theorem ok_weighed_more_at : FnOk prog prims info (1431, ⟨1, [1], 1⟩) :=
-  fnOk_of fn_weighed_more_at (by decide +kernel)
-
-theorem ok_weigh_again : FnOk prog prims info (1432, ⟨16, [], 0⟩) :=
-  fnOk_of fn_weigh_again (by decide +kernel)
-
 theorem chunk30 : AllFns prog prims info part30 :=
-  ⟨ok_wide_left_eff, ok_lim_bind, ok_lim_slots, ok_lim_expr, ok_lim_exprs, ok_lim_arms, ok_lim_leaf, ok_lim_max, ok_lim_guard, ok_lim_one, ok_lim_const, ok_lim_eff, ok_depth_sum, ok_place_eff, ok_eff_bytes, ok_int_at, ok_wide_value, ok_neg_wide_at, ok_neg_least, ok_operand_want, ok_known_expr, ok_amount_want, ok_wide_at, ok_float_want, ok_empty_of_mini_selfhost_SrcExpr, ok_cons_of_mini_selfhost_SrcExpr, ok_first_src, ok_rest_src, ok_get_of_mini_selfhost_SrcFunc, ok_src_param_tys, ok_empty_of_mini_selfhost_SrcArm, ok_cons_of_mini_selfhost_SrcArm, ok_bound_tys, ok_rest_payloads, ok_ty_local_at, ok_lit_effs, ok_known_eff, ok_lit_arm_effs, ok_weighed_more_at, ok_weigh_again, trivial⟩
+  ⟨ok_lower_variants, ok_payload_tys, ok_struct_src, ok_lower_tys, ok_wide_left, ok_wide_left_exprs, ok_wide_left_arms, ok_wide_left_eff, ok_lim_bind, ok_lim_slots, ok_lim_expr, ok_lim_exprs, ok_lim_arms, ok_lim_leaf, ok_lim_max, ok_lim_guard, ok_lim_one, ok_lim_const, ok_lim_eff, ok_depth_sum, ok_place_eff, ok_eff_bytes, ok_int_at, ok_wide_value, ok_neg_wide_at, ok_neg_least, ok_operand_want, ok_known_expr, ok_amount_want, ok_wide_at, ok_float_want, ok_empty_of_mini_selfhost_SrcExpr, ok_cons_of_mini_selfhost_SrcExpr, ok_first_src, ok_rest_src, ok_get_of_mini_selfhost_SrcFunc, ok_src_param_tys, ok_empty_of_mini_selfhost_SrcArm, ok_cons_of_mini_selfhost_SrcArm, ok_bound_tys, trivial⟩
 
 end Lanius.Faithful.SelfTerm

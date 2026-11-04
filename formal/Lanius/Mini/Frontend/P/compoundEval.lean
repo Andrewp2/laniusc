@@ -20,8 +20,8 @@ namespace Lanius.Mini
 
 /-- `x op= e` or `x.f op= e`, when e or op is effectful. -/
 def compoundEval (fuel : Nat) (env : FrontEnv) (scope : List Local) (target : CTree) (p : Nat) (value : CTree) : Option MStmt :=
-  if decide (nodeProd (kid target 1) ≠ (164)) && refRooted (localOf env scope (kid target 0)) then
-    setPlaceOpOf fuel env scope (assignOpOf p) (effOf fuel env scope none target) value
+  if refTarget env scope target then
+    setPlaceOpOf fuel env scope (assignOpOf p) target value
   else
     if nodeProd (kid target 1) = (164) then
       match localOf env scope (kid target 0) with

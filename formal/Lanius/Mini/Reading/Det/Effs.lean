@@ -15,6 +15,9 @@ import all Lanius.Mini.Frontend.P.isFnPath
 import all Lanius.Mini.Frontend.P.fieldValue
 import all Lanius.Mini.Frontend.P.eDerefClosed
 import all Lanius.Mini.Frontend.P.checkedFunc
+import all Lanius.Mini.Frontend.P.callParts
+import all Lanius.Mini.Frontend.P.projection
+import all Lanius.Mini.Frontend.P.purePart
 
 @[expose] public section
 /-! # The reading is deterministic, F1: effectful expressions

@@ -554,7 +554,7 @@ theorem assignTarget_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {t
   simp only at h
   split at h
   · rename_i c
-    simp only [Bool.and_eq_true, decide_eq_true_eq] at c
+    simp only [refTarget, Bool.and_eq_true, decide_eq_true_eq] at c
     obtain ⟨ne, rr⟩ := c
     cases hl : localOf env scope (kid target 0) with
     | none => rw [hl] at rr; simp [refRooted] at rr
@@ -624,9 +624,9 @@ theorem assignTarget_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {t
     | none => rw [hl] at h; cases h
     | some l =>
       have nref : isRefTy l.ty = false := by
-        rw [hl] at nr
+        simp only [refTarget] at nr; rw [hl] at nr
         have ne : ¬nodeProd (kid target 1) = pPostfixEnd := by rw [c.1]; decide
-        simpa [refRooted, ne] using nr
+        simpa [refTarget, refRooted, ne] using nr
       rw [hl] at h
       simp only [setIndexOrEval, setIndexEvalOf] at h
       cases hi : effOf fuel env scope none (kid (kid target 1) 1) with
@@ -680,7 +680,7 @@ theorem compoundOf_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {tar
   simp only [compoundEval] at h
   split at h
   · rename_i c
-    simp only [Bool.and_eq_true, decide_eq_true_eq] at c
+    simp only [refTarget, Bool.and_eq_true, decide_eq_true_eq] at c
     obtain ⟨ne, rr⟩ := c
     cases hl : localOf env scope (kid target 0) with
     | none => rw [hl] at rr; simp [refRooted] at rr

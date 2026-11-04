@@ -453,6 +453,22 @@ theorem bproof_array_type {spW sp : SrcProgram} {prims : Prims} {ix_array_type i
     budget Cost_array_type
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
 
+theorem bproof_ref_type {spW sp : SrcProgram} {prims : Prims} {ix_ref_type ix_boxed_of_mini_selfhost_SrcType : Nat}
+    (fnW : spW.funcs[ix_ref_type]? = some (src_ref_type ix_boxed_of_mini_selfhost_SrcType)) (fn : sp.funcs[ix_ref_type]? = some (src_ref_type ix_boxed_of_mini_selfhost_SrcType))
+    (np : prims.isPrim ix_ref_type = false)
+    (back : Certified (∀ {n : Nat}, Stmt_ref_type sp prims ix_ref_type n))
+    (pp_boxed_of_mini_selfhost_SrcType : prims.isPrim ix_boxed_of_mini_selfhost_SrcType = true) (bx_boxed_of_mini_selfhost_SrcType : prims.boxed.contains ix_boxed_of_mini_selfhost_SrcType = true) {n : Nat} :
+    BStmt_ref_type spW sp prims ix_ref_type n := by
+  intro x0 v0 w k h r0
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_ref_type [v0] = some (w, k) ∧ Cost_ref_type (n + 1) x0 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_ref_type, List.length_cons, List.length_nil, if_true] at h ⊢
+    budget Cost_ref_type
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0⟩
+
 theorem bproof_cons_of_mini_selfhost_List_mini_selfhost_SrcType {spW sp : SrcProgram} {prims : Prims} {ix_cons_of_mini_selfhost_List_mini_selfhost_SrcType ix_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType : Nat}
     (fnW : spW.funcs[ix_cons_of_mini_selfhost_List_mini_selfhost_SrcType]? = some (src_cons_of_mini_selfhost_List_mini_selfhost_SrcType ix_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType)) (fn : sp.funcs[ix_cons_of_mini_selfhost_List_mini_selfhost_SrcType]? = some (src_cons_of_mini_selfhost_List_mini_selfhost_SrcType ix_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType))
     (np : prims.isPrim ix_cons_of_mini_selfhost_List_mini_selfhost_SrcType = false)
@@ -499,22 +515,6 @@ theorem bproof_cons_types {spW sp : SrcProgram} {prims : Prims} {ix_cons_types i
     rw [qcall_succ np fn]
     simp only [src_cons_types, List.length_cons, List.length_nil, if_true] at h ⊢
     budget Cost_cons_types
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
-
-theorem bproof_cons_of_mini_selfhost_List_mini_selfhost_Ty {spW sp : SrcProgram} {prims : Prims} {ix_cons_of_mini_selfhost_List_mini_selfhost_Ty ix_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty : Nat}
-    (fnW : spW.funcs[ix_cons_of_mini_selfhost_List_mini_selfhost_Ty]? = some (src_cons_of_mini_selfhost_List_mini_selfhost_Ty ix_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty)) (fn : sp.funcs[ix_cons_of_mini_selfhost_List_mini_selfhost_Ty]? = some (src_cons_of_mini_selfhost_List_mini_selfhost_Ty ix_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty))
-    (np : prims.isPrim ix_cons_of_mini_selfhost_List_mini_selfhost_Ty = false)
-    (back : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_List_mini_selfhost_Ty sp prims ix_cons_of_mini_selfhost_List_mini_selfhost_Ty n))
-    (pp_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty : prims.isPrim ix_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty = true) (bx_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty : prims.boxed.contains ix_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty = true) {n : Nat} :
-    BStmt_cons_of_mini_selfhost_List_mini_selfhost_Ty spW sp prims ix_cons_of_mini_selfhost_List_mini_selfhost_Ty n := by
-  intro x0 x1 v0 v1 w k h r0 r1
-  rcases n with _ | n
-  · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_cons_of_mini_selfhost_List_mini_selfhost_Ty [v0, v1] = some (w, k) ∧ Cost_cons_of_mini_selfhost_List_mini_selfhost_Ty (n + 1) x0 x1 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_cons_of_mini_selfhost_List_mini_selfhost_Ty, List.length_cons, List.length_nil, if_true] at h ⊢
-    budget Cost_cons_of_mini_selfhost_List_mini_selfhost_Ty
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
 
 end Lanius.Faithful.SelfBudget
