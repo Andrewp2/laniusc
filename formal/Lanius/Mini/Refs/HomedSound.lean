@@ -2,6 +2,7 @@ module
 
 public import Lanius.Mini.Refs.HomedLemmas
 public import Lanius.Mini.LowerEval
+import all Lanius.Mini.Compiler.P.UintTy_half
 
 @[expose] public section
 
@@ -44,6 +45,75 @@ def SrcType.referentOf : SrcType → SrcType
   | .sint k => .sint k
   | .view n => .view n
   | .str => .str
+
+/-- The homes of a scope's bindings, innermost first: each homed binding's
+`(id, offset, ty)`, with an outer id that an inner unhomed binding shadows
+left out, so that `List.lookup` finds a home exactly where `lookup` finds a
+homed binding (`scopeHomes_lookup`). S6b's context (`lowering-spec.md`,
+"S6b" 7). -/
+def scopeHomes : List Binding → List (Lanius.VarId × Nat × SrcType)
+  | [] => []
+  | b :: rest =>
+    match b.home with
+    | some offset => (b.id, offset, b.ty) :: scopeHomes rest
+    | none => (scopeHomes rest).filter fun e => e.1 != b.id
+
+theorem lookup_filter_ne {id other : Lanius.VarId} :
+    ∀ (l : List (Lanius.VarId × Nat × SrcType)),
+      (l.filter fun e => e.1 != other).lookup id = if id = other then none else l.lookup id
+  | [] => by simp [List.lookup]
+  | (k, v) :: rest => by
+    have ih := lookup_filter_ne (id := id) (other := other) rest
+    by_cases hk : k = other
+    · subst hk
+      have : (List.filter (fun e => e.1 != k) ((k, v) :: rest)) = List.filter (fun e => e.1 != k) rest := by
+        simp
+      rw [this, ih]
+      by_cases hi : id = k
+      · simp [hi]
+      · simp only [hi, if_false, List.lookup]
+        have : (id == k) = false := by simpa using hi
+        rw [this]
+    · have : (List.filter (fun e => e.1 != other) ((k, v) :: rest)) =
+          (k, v) :: List.filter (fun e => e.1 != other) rest := by
+        simp [hk]
+      rw [this]
+      by_cases hi : id = k
+      · subst hi
+        simp [List.lookup, hk]
+      · have : (id == k) = false := by simpa using hi
+        simp only [List.lookup, this, ih]
+
+/-- A scope's homes give a home exactly to its homed bindings. -/
+theorem scopeHomes_lookup (id : Lanius.VarId) :
+    ∀ (scope : List Binding),
+      (scopeHomes scope).lookup id = (lookup scope id).bind fun b => b.home.map fun o => (o, b.ty)
+  | [] => by simp [scopeHomes, lookup, List.lookup]
+  | b :: rest => by
+    have ih := scopeHomes_lookup id rest
+    cases hh : b.home with
+    | some offset =>
+      simp only [scopeHomes, hh, lookup]
+      by_cases hi : b.id = id
+      · subst hi
+        simp [List.lookup, hh]
+      · have : (id == b.id) = false := beq_false_of_ne fun h => hi h.symm
+        rw [List.lookup, this, if_neg hi]
+        exact ih
+    | none =>
+      simp only [scopeHomes, hh, lookup]
+      rw [lookup_filter_ne, ih]
+      by_cases hi : b.id = id
+      · subst hi
+        simp [hh]
+      · simp [hi, Ne.symm hi]
+
+/-- A scope whose bindings have no home has no homes. -/
+theorem scopeHomes_none : ∀ {scope : List Binding}, (∀ b ∈ scope, b.home = none) → scopeHomes scope = []
+  | [], _ => rfl
+  | b :: rest, h => by
+    simp only [scopeHomes, h b (List.mem_cons_self ..), scopeHomes_none fun b m => h b (List.mem_cons_of_mem _ m),
+      List.filter_nil]
 
 /-- The context of a scope, its frame block's address in slot `fs`: each
 local's slot and referent as `lookup` finds them. No local has a home yet
