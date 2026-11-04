@@ -2,6 +2,7 @@ module
 
 public import Lanius.Memory
 public import Lanius.IEEE
+public import Lanius.Files
 
 @[expose] public section
 
@@ -11,20 +12,11 @@ open Lanius
 open Lanius.Core
 open Lanius.Memory
 
-structure FileEntry where
-  path : List UInt8
-  bytes : List UInt8 := []
-deriving Repr
+open Lanius.Files (replaceFile replaceHandle pathLimit)
 
-structure FileHandle where
-  id : Int
-  path : List UInt8
-  offset : Nat := 0
-  readable : Bool := false
-  writable : Bool := false
-  /-- opened with `O_APPEND`: each write goes to the file's end -/
-  append : Bool := false
-deriving Repr
+abbrev FileEntry := Files.Entry
+
+abbrev FileHandle := Files.Handle
 
 /-- A user-defined external function is outside the closed Lanius world. Its
     result is therefore supplied as part of the initial semantic environment,
@@ -66,11 +58,11 @@ structure State where
   systemReadings : List (Int × Nat) := []
   secureU32Stream : List Nat := []
   secureByteStream : List UInt8 := []
-  files : List FileEntry := []
-  directories : List (List UInt8) := []
-  /-- The open file descriptors besides 0, 1 and 2 (the standard streams,
-  always open: closing one is not modeled). -/
-  fileHandles : List FileHandle := []
+  /-- The files and directories under the current directory, and the open
+  file descriptors besides 0, 1 and 2 (the standard streams, always open:
+  closing one is not modeled), as Linux's file system calls see them
+  (`Lanius.Files`, which the x86 kernel's model shares). -/
+  fs : Files.System := {}
   calls : List HostService := []
   opaqueResponses : List OpaqueResponse := []
   opaqueCalls : List OpaqueCall := []
@@ -166,10 +158,10 @@ def writeBytes (world : State) (handle : Int) (bytes : List UInt8) : Option Stat
     none
 
 def State.file? (world : State) (path : List UInt8) : Option FileEntry :=
-  world.files.find? (fun file => file.path == path)
+  world.fs.file? path
 
 def State.handle? (world : State) (id : Int) : Option FileHandle :=
-  world.fileHandles.find? (fun handle => handle.id == id)
+  world.fs.handle? id
 
 def bytesPrefix : List UInt8 → List UInt8 → Bool
   | [], _ => true
@@ -192,54 +184,19 @@ def replacePathPrefix
     path
 
 def State.pathOccupied (world : State) (path : List UInt8) : Bool :=
-  (world.file? path).isSome || world.directories.contains path
-
-def replaceFile (files : List FileEntry) (replacement : FileEntry) : List FileEntry :=
-  files.map fun file => if file.path == replacement.path then replacement else file
-
-def replaceHandle
-    (handles : List FileHandle) (replacement : FileHandle) : List FileHandle :=
-  handles.map fun handle => if handle.id == replacement.id then replacement else handle
+  (world.file? path).isSome || world.fs.directories.contains path
 
 /-! ### Files as Linux's system calls see them
 
 laniusc's file externs are its runtime's raw Linux system calls (`open(2)`
 behind a copy of the path to a NUL-terminated buffer, `read(2)`, `write(2)`,
 `close(2)`), each returning the kernel's result: a descriptor, a count or
-`-errno` (SEMANTIC_DECISIONS.md, "str values" point 8). The model is the
-current directory's subtree, its files and directories named by their path
-bytes; `none` is where it stops (`unavailable`). -/
-
-/-- The longest path the runtime copies (Linux's `PATH_MAX` less its NUL). -/
-def pathLimit : Nat := 4095
+`-errno` (SEMANTIC_DECISIONS.md, "str values" point 8). The file system and
+the calls are `Lanius.Files`'s, which the x86 kernel's model shares; `none` is
+where the model stops (`unavailable`). -/
 
 /-- The most bytes one `read(2)` or `write(2)` transfers (Linux's `MAX_RW_COUNT`). -/
 def transferLimit : Nat := 0x7ffff000
-
-/-- The default limit on open descriptors (`RLIMIT_NOFILE`). -/
-def descriptorLimit : Nat := 1024
-
-/-- A path's components: its bytes split at each slash. -/
-def pathComponents (path : List UInt8) : List (List UInt8) :=
-  path.splitOn 47
-
-/-- A path the model reads: components joined by single slashes, none empty,
-`.` or `..` (so not absolute and with no doubled or trailing slash). -/
-def simplePath (path : List UInt8) : Bool :=
-  (pathComponents path).all fun c => !c.isEmpty && c != [46] && c != [46, 46]
-
-/-- The directories a path's lookup passes through, outermost first. -/
-def parentPaths (path : List UInt8) : List (List UInt8) :=
-  let cs := pathComponents path
-  (List.range (cs.length - 1)).map fun i => [47].intercalate (cs.take (i + 1))
-
-/-- The first failing step of a path's lookup: a missing directory is
-`-ENOENT`, a file where a directory should be `-ENOTDIR`. -/
-def State.parentError (world : State) (path : List UInt8) : Option Int :=
-  (parentPaths path).findSome? fun parent =>
-    if world.directories.contains parent then none
-    else if (world.file? parent).isSome then some (-20)
-    else some (-2)
 
 /-- The runtime's path copy: a path longer than `pathLimit` is
 `-ENAMETOOLONG`, one with a NUL byte `-EINVAL`. -/
@@ -248,97 +205,25 @@ def pathCopyError (path : List UInt8) : Option Int :=
   else if path.contains 0 then some (-22)
   else none
 
-/-- The lowest number from `n` on that no descriptor in `ids` has (fuel: one
-step more than there are ids is always enough). -/
-def freeFrom (ids : List Int) : Nat → Nat → Nat
-  | 0, n => n
-  | fuel + 1, n => if ids.contains (Int.ofNat n) then freeFrom ids fuel (n + 1) else n
-
-/-- The descriptor `open(2)` gives: the lowest number not open (0, 1 and 2
-are). -/
-def State.lowestFree (world : State) : Nat :=
-  freeFrom (world.fileHandles.map (·.id)) (world.fileHandles.length + 1) 3
-
 /-- `open(2)` of a path for reading (`O_RDONLY`), writing
 (`O_WRONLY|O_CREAT|O_TRUNC`) or appending (`O_WRONLY|O_CREAT|O_APPEND`),
-after the runtime's path copy: the descriptor or `-errno` and the world, or
-`none` where the model stops (a path it does not read, a directory opened
-for reading, no free descriptor below `descriptorLimit`). -/
+after the runtime's path copy (`Files.System.openPath`). -/
 def openFile
     (world : State) (path : List UInt8) (readable writable append : Bool) : Option (Int × State) :=
   match pathCopyError path with
   | some error => some (error, world)
-  | none =>
-    if path.isEmpty then some (-2, world)
-    else if world.lowestFree ≥ descriptorLimit || !simplePath path then none
-    else
-      match world.parentError path with
-      | some error => some (error, world)
-      | none =>
-        if world.directories.contains path then
-          if writable then some (-21, world) else none
-        else
-          let existing := world.file? path
-          if readable && existing.isNone then some (-2, world)
-          else
-            let files := if writable && !append then
-              match existing with
-              | some file => replaceFile world.files { file with bytes := [] }
-              | none => world.files ++ [{ path }]
-            else if writable && existing.isNone then
-              world.files ++ [{ path }]
-            else
-              world.files
-            let id := Int.ofNat world.lowestFree
-            let handle : FileHandle := { id, path, offset := 0, readable, writable, append }
-            some (id, { world with files, fileHandles := world.fileHandles ++ [handle] })
+  | none => (world.fs.openPath path readable writable append).map fun (id, fs) => (id, { world with fs })
 
 def closeHandle (world : State) (id : Int) : Option State :=
-  if (world.handle? id).isSome then
-    some { world with fileHandles := world.fileHandles.filter (fun handle => handle.id != id) }
-  else
-    none
+  (world.fs.closeHandle id).map fun fs => { world with fs }
 
 def readFileBytes
     (world : State) (id : Int) (capacity : Nat) : Option (List UInt8 × State) :=
-  match world.handle? id with
-  | none => none
-  | some handle =>
-      if !handle.readable then none
-      else
-        match world.file? handle.path with
-        | none => none
-        | some file =>
-            let bytes := (file.bytes.drop handle.offset).take capacity
-            let updated := { handle with offset := handle.offset + bytes.length }
-            some (bytes, {
-              world with fileHandles := replaceHandle world.fileHandles updated
-            })
+  (world.fs.readBytes id capacity).map fun (bytes, fs) => (bytes, { world with fs })
 
 def writeFileBytes
     (world : State) (id : Int) (bytes : List UInt8) : Option State :=
-  match world.handle? id with
-  | none => none
-  | some handle =>
-      if !handle.writable then none
-      else
-        match world.file? handle.path with
-        | none => none
-        | some file =>
-            -- an append descriptor writes at the end; a write past the end
-            -- fills the gap with zeros, as Linux does
-            let position := if handle.append then file.bytes.length else handle.offset
-            let suffix := file.bytes.drop (position + bytes.length)
-            let gap := List.replicate (position - file.bytes.length) (0 : UInt8)
-            let updatedFile := {
-              file with bytes := file.bytes.take position ++ gap ++ bytes ++ suffix
-            }
-            let updatedHandle := { handle with offset := position + bytes.length }
-            some {
-              world with
-              files := replaceFile world.files updatedFile
-              fileHandles := replaceHandle world.fileHandles updatedHandle
-            }
+  (world.fs.writeBytes id bytes).map fun fs => { world with fs }
 
 def isAsciiDigit (byte : UInt8) : Bool :=
   byte.toNat >= 48 && byte.toNat <= 57
@@ -377,7 +262,7 @@ def readFileI32 (world : State) (id fallback : Int) : Int × State :=
             | some (value, consumed) =>
                 let updated := { handle with offset := handle.offset + consumed }
                 (value, {
-                  world with fileHandles := replaceHandle world.fileHandles updated
+                  world with fs := { world.fs with handles := replaceHandle world.fs.handles updated }
                 })
 
 /-- Services that do not dereference raw memory or manipulate filesystem
@@ -536,28 +421,28 @@ def call (heap : Heap) (world : State) (service : HostService)
           | .ok path =>
               if (next.file? path).isNone then .returned (i32Result (-1)) heap next
               else .returned (i32Result 0) heap {
-                next with files := next.files.filter (fun file => file.path != path)
+                next with fs := { next.fs with files := next.fs.files.filter (fun file => file.path != path) }
               }
       | .createDir, [.pointer pointer, .unsigned .usize length] =>
           match heap.loadBytes pointer length with
           | .error reason => .trapped reason heap next
           | .ok path =>
-              if next.directories.contains path || (next.file? path).isSome then
+              if next.fs.directories.contains path || (next.file? path).isSome then
                 .returned (i32Result (-1)) heap next
               else .returned (i32Result 0) heap {
-                next with directories := next.directories ++ [path]
+                next with fs := { next.fs with directories := next.fs.directories ++ [path] }
               }
       | .removeDir, [.pointer pointer, .unsigned .usize length] =>
           match heap.loadBytes pointer length with
           | .error reason => .trapped reason heap next
           | .ok path =>
-              let nonempty := next.files.any (fun file => descendantPath path file.path) ||
-                next.directories.any (fun directory => descendantPath path directory)
-              if !next.directories.contains path || nonempty then
+              let nonempty := next.fs.files.any (fun file => descendantPath path file.path) ||
+                next.fs.directories.any (fun directory => descendantPath path directory)
+              if !next.fs.directories.contains path || nonempty then
                 .returned (i32Result (-1)) heap next
               else
                 .returned (i32Result 0) heap {
-                  next with directories := next.directories.filter (fun entry => entry != path)
+                  next with fs := { next.fs with directories := next.fs.directories.filter (fun entry => entry != path) }
                 }
       | .rename, [.pointer fromPointer, .unsigned .usize fromLength,
           .pointer toPointer, .unsigned .usize toLength] =>
@@ -577,31 +462,32 @@ def call (heap : Heap) (world : State) (service : HostService)
                 | some file =>
                     let renamed := { file with path := destinationPath }
                     .returned (i32Result 0) heap {
-                      next with
-                      files := next.files.filter
-                        (fun entry => entry.path != sourcePath) ++ [renamed]
-                      fileHandles := next.fileHandles.map fun handle =>
-                        if handle.path == sourcePath then
-                          { handle with path := destinationPath }
-                        else handle
+                      next with fs := {
+                        next.fs with
+                        files := next.fs.files.filter
+                          (fun entry => entry.path != sourcePath) ++ [renamed]
+                        handles := next.fs.handles.map fun handle =>
+                          if handle.path == sourcePath then
+                            { handle with path := destinationPath }
+                          else handle }
                     }
                 | none =>
-                    if !next.directories.contains sourcePath ||
+                    if !next.fs.directories.contains sourcePath ||
                         descendantPath sourcePath destinationPath then
                       .returned (i32Result (-1)) heap next
                     else
                       .returned (i32Result 0) heap {
-                        next with
-                        files := next.files.map fun file => {
-                          file with path := (replacePathPrefix
-                            sourcePath destinationPath file.path)
-                        }
-                        directories := next.directories.map
-                          (replacePathPrefix sourcePath destinationPath)
-                        fileHandles := next.fileHandles.map fun handle => {
-                          handle with path := (replacePathPrefix
-                            sourcePath destinationPath handle.path)
-                        }
+                        next with fs := {
+                          files := next.fs.files.map fun file => {
+                            file with path := (replacePathPrefix
+                              sourcePath destinationPath file.path)
+                          }
+                          directories := next.fs.directories.map
+                            (replacePathPrefix sourcePath destinationPath)
+                          handles := next.fs.handles.map fun handle => {
+                            handle with path := (replacePathPrefix
+                              sourcePath destinationPath handle.path)
+                          } }
                       }
       | .alloc, [.unsigned .usize size, .unsigned .usize alignment] =>
           match heap.allocate size alignment with

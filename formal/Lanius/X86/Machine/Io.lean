@@ -1,5 +1,7 @@
 module
 
+public import Lanius.Files
+
 @[expose] public section
 
 namespace Lanius.X86.Machine
@@ -26,6 +28,10 @@ structure Io where
   terminal may deliver fewer bytes than were asked for, but at least one while
   any are left. A read past the end of the list delivers all it asks for. -/
   readLimits : List Nat := []
+  /-- The files and directories under the current directory and the open
+  descriptors besides the standard streams (`Lanius.Files`, Core's world's
+  model too). -/
+  files : Lanius.Files.System := {}
 deriving Repr
 
 /-- How many bytes of the input the next `read` asking for `count` takes: the
@@ -93,6 +99,28 @@ def timespecLE (reading : Int × Nat) : List UInt8 :=
 
 theorem timespecLE_length (reading : Int × Nat) : (timespecLE reading).length = 16 := by
   simp [timespecLE, le64Bytes]
+
+/-- The descriptor a system call's `unsigned int fd` argument names: its
+register's low 32 bits. -/
+def descriptor (register : BitVec 64) : Int := Int.ofNat (register.setWidth 32).toNat
+
+/-- `read(2)` of at most `count` bytes from a file descriptor (3 or more): the
+result, the bytes delivered, and `io` after. -/
+def Io.readFile (io : Io) (fd : Int) (count : Nat) : Int × List UInt8 × Io :=
+  ((io.files.read fd count).1, (io.files.read fd count).2.1, { io with files := (io.files.read fd count).2.2 })
+
+/-- `write(2)` of `bytes` to a file descriptor (3 or more): the result and `io` after. -/
+def Io.writeFile (io : Io) (fd : Int) (bytes : List UInt8) : Int × Io :=
+  ((io.files.write fd bytes).1, { io with files := (io.files.write fd bytes).2 })
+
+/-- `close(2)` of a file descriptor (3 or more): the result and `io` after. -/
+def Io.closeFile (io : Io) (fd : Int) : Int × Io :=
+  ((io.files.close fd).1, { io with files := (io.files.close fd).2 })
+
+/-- `open(2)` of `path` with `flags`: the descriptor or `-errno` and `io`
+after, or `none` where the model stops. -/
+def Io.openFile (io : Io) (path : List UInt8) (flags : Nat) : Option (Int × Io) :=
+  (io.files.openWith path flags).map fun (result, files) => (result, { io with files })
 
 /-- The most bytes Linux's `write` transfers in one call (`MAX_RW_COUNT`,
 `INT_MAX & PAGE_MASK`). -/
