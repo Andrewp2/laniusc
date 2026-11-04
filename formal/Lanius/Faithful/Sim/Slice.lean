@@ -2,15 +2,7 @@ module
 
 public import Lanius.Faithful.Sim.SizeOf
 public import Lanius.Mini.Compiler.P.wordElement
-import all Lanius.Mini.Compiler.P.DivOp_size
-import all Lanius.Mini.Compiler.P.SrcType_same
-import all Lanius.Mini.Compiler.P.UintTy_half
-import all Lanius.Mini.Compiler.P.UintTy_isWide
-import all Lanius.Mini.Compiler.P.enumVariants
-import all Lanius.Mini.Compiler.P.render
-import all Lanius.Mini.Compiler.P.structFields
 import all Lanius.Mini.Compiler.P.wordElement
-import all Lanius.Mini.Compiler.P.wordWidth
 import all Lanius.Mini.Compiler.Types
 
 @[expose] public section

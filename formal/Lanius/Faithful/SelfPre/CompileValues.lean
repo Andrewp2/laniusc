@@ -3,6 +3,8 @@ import Lanius.Faithful.SelfPre.NB
 import Lanius.Faithful.SelfPre.TS
 import Lanius.Faithful.SelfPre.CompileTypes
 import Lanius.Faithful.SelfPre.CompileEvalTypes
+import Lanius.Faithful.SelfPre.CompileNeeds
+import Lanius.Faithful.SelfPre.CompileSlots
 import Lanius.Mini.Room
 
 /-! # Byte lists of the compile side (F14)
@@ -153,5 +155,64 @@ below 128 (its `COMPILE_OVERRIDES` invariant, `nb chars ≤ 255`). -/
   · rw [hs] at h
     have : nb l < 128 := by rw [← h]
     simp only [Bool.true_eq_false, false_iff]; omega
+
+
+/-- A body's temporaries are at most its weight, which `compileFunc`'s room check
+bounds (`roomFits_stmtRoom`): `compile_func`'s `locals + temps`. -/
+theorem val_Stmt_temps (s : Stmt) : Stmt.temps s ≤ Stmt.weight s := Stmt.temps_le_weight s
+
+/-- A round packs the bytes it does not leave (as `PreBinaryWordsV3`'s proof). -/
+theorem packRound_count_rest : ∀ (k : Nat) (xs : List UInt8),
+    (packRound xs k).count + (packRound xs k).rest.length = xs.length
+  | 0, xs => by rw [packRound.eq_def]; simp
+  | k + 1, [] => by rw [packRound.eq_def]; simp [roundEnd]
+  | k + 1, [a] => by rw [packRound.eq_def]; simp [roundCons, roundEnd]
+  | k + 1, [a, b] => by rw [packRound.eq_def]; simp [roundCons, roundEnd]
+  | k + 1, [a, b, c] => by rw [packRound.eq_def]; simp [roundCons, roundEnd]
+  | k + 1, a :: b :: c :: d :: rd => by
+    have ih := packRound_count_rest k rd
+    rw [packRound.eq_def]
+    simp only [Nat.add_one_ne_zero, if_false, roundCons, Nat.add_sub_cancel, List.length_cons]
+    omega
+
+theorem packRounds_count_rest : ∀ (fuel : Nat) (xs : List UInt8),
+    (packRounds xs fuel).count + (packRounds xs fuel).rest.length = xs.length
+  | 0, xs => by rw [packRounds.eq_def]; simp only [if_true]; exact packRound_count_rest _ xs
+  | fuel + 1, xs => by
+    have hr := packRound_count_rest 4096 xs
+    rw [packRounds.eq_def]
+    simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel]
+    split
+    · exact hr
+    · rename_i x more heq
+      have ih := packRounds_count_rest fuel (packRound xs 4096).rest
+      simp only [roundJoin]
+      omega
+
+/-- A round's byte count and what it leaves are at most its bytes (`round_cons`, `round_join`). -/
+theorem val_packRound (xs : List UInt8) (k : Nat) :
+    (packRound xs k).count ≤ hb xs ∧ hb (packRound xs k).rest ≤ hb xs := by
+  have := packRound_count_rest k xs
+  simp only [pc_hb_u8]; omega
+
+theorem val_packRounds (xs : List UInt8) (fuel : Nat) : (packRounds xs fuel).count ≤ hb xs := by
+  have := packRounds_count_rest fuel xs
+  simp only [pc_hb_u8]; omega
+
+/-- The entries `layout` lays out are at most where the codes end (`link_onto`'s entries). -/
+theorem val_layout : ∀ (start : Nat) (codes : List Code), nb (layout start codes) ≤ start + codesSize codes
+  | _, [] => by simp only [layout, nb_nil]; omega
+  | start, c :: rest => by
+    have := val_layout (start + Code.size c) rest
+    simp only [layout, nb_cons, nb_nat, codesSize] at *
+    omega
+
+/-- The largest number in the codes' instructions (`encode_onto`'s `nb` premise). -/
+def codesNb : List Code → Nat
+  | [] => 0
+  | c :: rest => max (nb c.instrs) (codesNb rest)
+
+/-- A program's numbers are its functions' (`compile_program`'s `nb`, for `vals_compileFuncs`). -/
+theorem nb_Program_eq (p : Program) : nb p = nb p.funcs := rfl
 
 end Lanius.Faithful.SelfPre

@@ -4,7 +4,6 @@ public import Lanius.Mini.SourceCore
 public import Lanius.NativeLayout
 public import Lanius.Mini.Compiler.P.wordElement
 public import Lanius.Mini.Compiler.P.SrcType_same
-import all Lanius.Mini.Compiler.P.BinOp_folds
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcType_same
 import all Lanius.Mini.Compiler.P.UintTy_half

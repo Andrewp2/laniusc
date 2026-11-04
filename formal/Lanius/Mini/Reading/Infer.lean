@@ -25,6 +25,13 @@ import all Lanius.Mini.Frontend.P.tryLet
 import all Lanius.Mini.Frontend.P.typeDeclAt
 import all Lanius.Mini.Frontend.P.variantIn
 import all Lanius.Mini.Frontend.P.wideOf
+import all Lanius.Mini.Frontend.P.setPlaceOf
+import all Lanius.Mini.Frontend.P.setFieldOrEval
+import all Lanius.Mini.Frontend.P.namesFieldBase
+import all Lanius.Mini.Frontend.P.isFnPath
+import all Lanius.Mini.Frontend.P.fieldValue
+import all Lanius.Mini.Frontend.P.eDerefClosed
+import all Lanius.Mini.Frontend.P.checkedFunc
 
 @[expose] public section
 /-! # The reading, V8d: expression types and type arguments
@@ -121,6 +128,7 @@ theorem exprTy_sound : ∀ {fuel : Nat} {env : FrontEnv} {scope : List Local} {e
           | tySint _ => rw [hty] at hs; cases hs
           | tyArray _ _ => rw [hty] at hs; cases hs
           | tySlice _ => rw [hty] at hs; cases hs
+          | tyRef _ => rw [hty] at hs; cases hs
     | negate x => exact .negate (exprTy_sound h)
     | not x => cases h; exact .not
     | apply op a b =>
@@ -358,6 +366,7 @@ theorem matchSound : ∀ fuel, MatchSound fuel
         | tySint _ => cases h
         | tyArray _ _ => cases h
         | tyNamed _ _ => cases h
+        | tyRef _ => cases h
       rw [if_neg (by simpa using sl)] at h
       by_cases ti : nodeProd p = pTypeIdent
       · rw [if_pos ti] at h
@@ -417,6 +426,7 @@ theorem matchSound : ∀ fuel, MatchSound fuel
           | tySint _ => cases ha
           | tyArray _ _ => cases ha
           | tySlice _ => cases ha
+          | tyRef _ => cases ha
     · intro env names dOpt items aOpt b b' h
       rw [matchDecl.eq_def] at h
       simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h

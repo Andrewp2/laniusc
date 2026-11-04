@@ -19,7 +19,7 @@ import all Lanius.Mini.Frontend.P.litWants
 import all Lanius.Mini.Frontend.P.litWildValue
 import all Lanius.Mini.Frontend.P.effNamedTys
 import all Lanius.Mini.Frontend.P.externBody
-import all Lanius.Mini.Frontend.P.fieldTyAt
+import all Lanius.Mini.Frontend.P.fnInstRet
 import all Lanius.Mini.Frontend.P.findConst
 import all Lanius.Mini.Frontend.P.funcsOnto
 import all Lanius.Mini.Frontend.P.allWeighed
@@ -34,6 +34,13 @@ import all Lanius.Mini.Frontend.P.readDeclInst
 import all Lanius.Mini.Frontend.P.readInst
 import all Lanius.Mini.Frontend.P.shrFirst
 import all Lanius.Mini.Frontend.P.typeDeclAt
+import all Lanius.Mini.Frontend.P.checkedFunc
+import all Lanius.Mini.Frontend.P.namesFieldBase
+import all Lanius.Mini.Frontend.P.setPlaceOf
+import all Lanius.Mini.Frontend.P.setFieldOrEval
+import all Lanius.Mini.Frontend.P.isFnPath
+import all Lanius.Mini.Frontend.P.fieldValue
+import all Lanius.Mini.Frontend.P.eDerefClosed
 
 @[expose] public section
 /-! # The reading, V8e: functions and monomorphization
@@ -62,14 +69,45 @@ abbrev fnScope (decls : Decls) (fd : FnDecl) (args : List Ty) (ret : Option Ty) 
   { decls := decls, home := fd.home, names := fd.implParams ++ fd.params, subst := args,
     globals := moduleGlobals decls fd.home, ret := ret, base := (kidToken fd.tree 1).start }
 
+/-- (F5, S5) A parameter's type expression: `&T` and `&mut T` name a reference to the type `T` names
+(SEMANTIC_DECISIONS "S5 in Lanius's syntax" point 1); another names its type. -/
+inductive ParamTyR (env : FrontEnv) (t : CTree) : Ty → Prop
+  | plain {x : Ty} : nodeProd t ≠ pTypeRef → nodeProd t ≠ pTypeRefMut → TyR env t x → ParamTyR env t x
+  | ref {x : Ty} : nodeProd t = pTypeRef → TyR env (kid t 1) x → ParamTyR env t (.tyRef x)
+  | refMut {x : Ty} : nodeProd t = pTypeRefMut → TyR env (kid t 2) x → ParamTyR env t (.tyRef x)
+
+theorem paramTyOf_sound {fuel : Nat} {env : FrontEnv} {t : CTree} {x : Ty} (h : paramTyOf fuel env t = some x) :
+    ParamTyR env t x := by
+  unfold paramTyOf at h
+  split at h
+  · rename_i c
+    cases hx : tyOf fuel env (kid t 1) with
+    | none => rw [hx] at h; simp [refTy] at h
+    | some y =>
+      rw [hx] at h
+      simp only [refTy, Option.some.injEq] at h
+      subst h
+      exact .ref c (tyOf_sound hx)
+  split at h
+  · rename_i _ c
+    cases hx : tyOf fuel env (kid t 2) with
+    | none => rw [hx] at h; simp [refTy] at h
+    | some y =>
+      rw [hx] at h
+      simp only [refTy, Option.some.injEq] at h
+      subst h
+      exact .refMut c (tyOf_sound hx)
+  · rename_i a b
+    exact .plain a b (tyOf_sound h)
+
 /-- `name: T`, `self` or `&self` (`paramToken`: the `self` after the `&`),
 each a local named by its spelling, numbered by
-its offset from the function's name. -/
+its offset from the function's name; `name: &T` is a reference (`ParamTyR`). -/
 inductive ParamsR (env : FrontEnv) (fd : FnDecl) : List Local → List CTree → MParams → Prop
   | nil {scope : List Local} : ParamsR env fd scope [] { params := [], scope := scope }
   | cons {scope : List Local} {p : CTree} {rest : List CTree} {t : CTree} {x : Ty} {r : MParams} :
       (nodeProd p = pParamNamed ∨ nodeProd p = pParamSelf ∨ nodeProd p = pParamSelfRef) → (paramToken p).text ∉ env.globals →
-      FreshId scope ((paramToken p).start - env.base) → PatternOf fd p t → TyR env t x →
+      FreshId scope ((paramToken p).start - env.base) → PatternOf fd p t → ParamTyR env t x →
       ParamsR env fd ({ name := (paramToken p).text, id := (paramToken p).start - env.base, ty := x } :: scope) rest r →
       ParamsR env fd scope (p :: rest)
         { params := { id := (paramToken p).start - env.base, ty := x } :: r.params, scope := r.scope }
@@ -92,7 +130,7 @@ theorem paramsOf_sound {fuel : Nat} {env : FrontEnv} {fd : FnDecl} :
       | some t =>
         rw [hp] at h
         simp only at h
-        cases ht : tyOf fuel env t with
+        cases ht : paramTyOf fuel env t with
         | none => rw [ht] at h; cases h
         | some x =>
           rw [ht] at h
@@ -103,7 +141,7 @@ theorem paramsOf_sound {fuel : Nat} {env : FrontEnv} {fd : FnDecl} :
             rw [hr] at h
             simp only [Option.some.injEq] at h
             subst h
-            refine .cons (c.1.elim (fun h => h.elim .inl (fun h => .inr (.inl h))) (fun h => .inr (.inr h))) (fun mem => ?_) ((freshId_iff _ _).1 fr) (patternOf_sound hp) (tyOf_sound ht)
+            refine .cons (c.1.elim (fun h => h.elim .inl (fun h => .inr (.inl h))) (fun h => .inr (.inr h))) (fun mem => ?_) ((freshId_iff _ _).1 fr) (patternOf_sound hp) (paramTyOf_sound ht)
               (paramsOf_sound hr)
             have := c.2
             rw [(member_iff _ _).2 mem] at this
@@ -224,6 +262,17 @@ theorem refChecked_some {f : Option MFunc} {sid : Option Nat} {m : MFunc} (h : r
         subst h
         exact ⟨rfl, fun j e => by cases e; exact w⟩
 
+/-- (F5, S5) The reference parameters' uses are checked (`refsUsedOk`): a filter only. -/
+theorem refsChecked_some {fuel : Nat} {f : CTree} {items : List CTree} {m : Option MFunc} {x : MFunc}
+    (h : refsChecked fuel f items m = some x) : m = some x := by
+  cases m with
+  | none => simp [refsChecked] at h
+  | some y =>
+    simp only [refsChecked, checkedFunc] at h
+    split at h
+    · cases h; rfl
+    · cases h
+
 theorem readFn_sound {fuel : Nat} {decls : Decls} {fd : FnDecl} {args : List Ty} {mf : MFunc}
     (h : readFn fuel decls fd args = some mf) : ReadFn decls fd args mf := by
   unfold readFn at h
@@ -239,7 +288,7 @@ theorem readFn_sound {fuel : Nat} {decls : Decls} {fd : FnDecl} {args : List Ty}
       | none => rw [hi] at h; cases h
       | some items =>
         rw [hi] at h
-        obtain ⟨h, -⟩ := refChecked_some h
+        obtain ⟨h, -⟩ := refChecked_some (refsChecked_some h)
         simp only [funcParams] at h
         split at h
         · cases h
@@ -250,7 +299,7 @@ theorem readFn_sound {fuel : Nat} {decls : Decls} {fd : FnDecl} {args : List Ty}
       | none => rw [hi] at h; cases h
       | some items =>
         rw [hi] at h
-        obtain ⟨h, nw⟩ := refChecked_some h
+        obtain ⟨h, nw⟩ := refChecked_some (refsChecked_some h)
         simp only [funcParams] at h
         cases hp : paramsOf fuel (fnScope decls fd args (retExpected (some r))) fd [] items with
         | none => rw [hp] at h; cases h

@@ -2,13 +2,13 @@ module
 
 public import Lanius.Mini.Reading.Method
 import all Lanius.Mini.Frontend.P.callParts
+import all Lanius.Mini.Frontend.P.fnInstRet
 import all Lanius.Mini.Frontend.P.projection
 import all Lanius.Mini.Frontend.P.collect
 import all Lanius.Mini.Frontend.P.consTreeTail
 import all Lanius.Mini.Frontend.P.distinct
 import all Lanius.Mini.Frontend.P.findConst
 import all Lanius.Mini.Frontend.P.floatTyped
-import all Lanius.Mini.Frontend.P.fnInstRet
 import all Lanius.Mini.Frontend.P.hasKids
 import all Lanius.Mini.Frontend.P.isEmptyUsize
 import all Lanius.Mini.Frontend.P.noToken
@@ -21,6 +21,13 @@ import all Lanius.Mini.Frontend.P.textSelf
 import all Lanius.Mini.Frontend.P.tryLet
 import all Lanius.Mini.Frontend.P.typeDeclAt
 import all Lanius.Mini.Frontend.P.wideOf
+import all Lanius.Mini.Frontend.P.setPlaceOf
+import all Lanius.Mini.Frontend.P.setFieldOrEval
+import all Lanius.Mini.Frontend.P.namesFieldBase
+import all Lanius.Mini.Frontend.P.isFnPath
+import all Lanius.Mini.Frontend.P.fieldValue
+import all Lanius.Mini.Frontend.P.eDerefClosed
+import all Lanius.Mini.Frontend.P.checkedFunc
 
 @[expose] public section
 /-! # The reading, V8d: effectful expression types, arguments and paths
@@ -49,6 +56,10 @@ inductive InstRet (decls : Decls) (inst : Inst) : Ty → Prop
   | projection {a : Ty} {rest : List Ty} {d : Nat} {args ts : List Ty} {t : Ty} : decls.fns[inst.decl]? = none →
       inst.args = a :: rest → a = .tyNamed d args → FieldTys decls d args ts → ts[inst.decl - decls.fns.length]? = some t →
       InstRet decls inst t
+
+/-- Field `j`'s type in the struct type `t`. -/
+def FieldTyAt (decls : Decls) (t : Ty) (j : Nat) (ty : Ty) : Prop :=
+  ∃ d args ts, t = .tyNamed d args ∧ FieldTys decls d args ts ∧ ts[j]? = some ty
 
 inductive EffTy (decls : Decls) (scope : List Local) : MEff → Ty → Prop
   | pure {e : SrcExpr} {t : Ty} : ExprTy decls scope e t → EffTy decls scope (.xPure e) t
@@ -79,6 +90,14 @@ inductive EffTy (decls : Decls) (scope : List Local) : MEff → Ty → Prop
   | «let» {id : Nat} {t rt : Ty} {v b : MEff} : EffTy decls scope (.xLet id t v rt b) rt
   | len {sl : Nat} : EffTy decls scope (.xLen sl) (.tyUint .usize)
   | str {cs : List Nat} : EffTy decls scope (.xStr cs) .tyStr
+  /-- (F5, S5) a referent has its type, a field of a place the field's type, an element of a place its
+  element type -/
+  | deref {ty : Ty} {a : MEff} : EffTy decls scope (.xDeref ty a) ty
+  | placeField {b : MEff} {j : Nat} {t u : Ty} : EffTy decls scope b t → FieldTyAt decls t j u →
+      EffTy decls scope (.xPlaceField b j) u
+  | placeAt {b i : MEff} {t : Ty} : EffTy decls scope b (.tySlice t) → EffTy decls scope (.xPlaceAt b i) t
+  | placeAtArray {b i : MEff} {t : Ty} {n : Nat} : EffTy decls scope b (.tyArray t n) →
+      EffTy decls scope (.xPlaceAt b i) t
 
 theorem instRet_sound {fuel : Nat} {decls : Decls} {inst : Inst} {t : Ty} (h : instRet fuel decls inst = some t) :
     InstRet decls inst t := by
@@ -123,6 +142,32 @@ theorem instRet_sound {fuel : Nat} {decls : Decls} {inst : Inst} {t : Ty} (h : i
         | tySint _ => cases hs
         | tyArray _ _ => cases hs
         | tySlice _ => cases hs
+        | tyRef _ => cases hs
+
+theorem fieldTyAt_sound {fuel : Nat} {decls : Decls} {t : Ty} {j : Nat} :
+    ∀ ty, fieldTyAt fuel decls t j = some ty → FieldTyAt decls t j ty := by
+  intro ty h
+  unfold fieldTyAt at h
+  cases t with
+  | tyNamed d args =>
+    simp only [structFieldTys] at h
+    cases hf : fieldTys fuel decls d args with
+    | none => rw [hf] at h; cases h
+    | some ts =>
+      rw [hf] at h
+      exact ⟨d, args, ts, rfl, fieldTys_sound hf, h⟩
+  | tyI32 => cases h
+  | tyBool => cases h
+  | tyUint _ => cases h
+  | tyPtr => cases h
+  | tyIsize => cases h
+  | tyChar => cases h
+  | tyStr => cases h
+  | tyFloat ft => cases h
+  | tySint _ => cases h
+  | tyArray _ _ => cases h
+  | tySlice _ => cases h
+  | tyRef _ => cases h
 
 theorem effTy_sound : ∀ {fuel : Nat} {env : FrontEnv} {scope : List Local} {x : MEff} {t : Ty},
     effTy fuel env scope x = some t → EffTy env.decls scope x t
@@ -171,6 +216,7 @@ theorem effTy_sound : ∀ {fuel : Nat} {env : FrontEnv} {scope : List Local} {x 
         | tySint _ => rw [hty] at h; cases h
         | tyArray e n => rw [hty] at h; cases h; exact .indexArray (findLocalId_sound hl) hty
         | tyNamed _ _ => rw [hty] at h; cases h
+        | tyRef _ => rw [hty] at h; cases h
     | xStruct t' fs => cases h; exact .struct
     | xVariant t' k ps => cases h; exact .variant
     | xMatch s ety t' bs vs => cases h; exact .match
@@ -188,6 +234,34 @@ theorem effTy_sound : ∀ {fuel : Nat} {env : FrontEnv} {scope : List Local} {x 
     | xLet id t' v rt b => cases h; exact .let
     | xLen sl => cases h; exact .len
     | xStr cs => cases h; exact .str
+    | xDeref ty a => cases h; exact .deref
+    | xPlaceField b j =>
+      simp only [fieldTyOf] at h
+      cases hb : effTy f env scope b with
+      | none => rw [hb] at h; cases h
+      | some tb => rw [hb] at h; exact .placeField (effTy_sound hb) (fieldTyAt_sound _ h)
+    | xPlaceAt b i =>
+      simp only [elemTyOf] at h
+      cases hb : effTy f env scope b with
+      | none => rw [hb] at h; cases h
+      | some tb =>
+        rw [hb] at h
+        simp only at h
+        unfold indexElem at h
+        cases tb with
+        | tySlice e => cases h; exact .placeAt (effTy_sound hb)
+        | tyArray e n => cases h; exact .placeAtArray (effTy_sound hb)
+        | tyI32 => cases h
+        | tyBool => cases h
+        | tyUint _ => cases h
+        | tyPtr => cases h
+        | tyIsize => cases h
+        | tyChar => cases h
+        | tyStr => cases h
+        | tyFloat ft => cases h
+        | tySint _ => cases h
+        | tyNamed _ _ => cases h
+        | tyRef _ => cases h
 
 theorem effsTys_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} :
     ∀ {xs : List MEff} {ts : List Ty}, effsTys fuel env scope xs = some ts → ListRel (EffTy env.decls scope) xs ts

@@ -762,6 +762,7 @@ def hbTy : Lanius.Mini.Ty → Nat
   | .tySint a0 => 0
   | .tyArray a0 a1 => hbTy a0
   | .tyStr => 0
+  | .tyRef a0 => hbTy a0
 def hbTy0 : List Lanius.Mini.Ty → Nat
   | [] => 0
   | a :: l => max (hbTy a) (hbTy0 l) + 1
@@ -784,6 +785,7 @@ theorem hbTy0_eq : ∀ l : List Lanius.Mini.Ty, hbTy0 l = HB.hb l
 @[simp, hb_simp] theorem hb_Ty_tySint (a0 : Lanius.Mini.UintTy) : hb (Lanius.Mini.Ty.tySint a0) = 0 := rfl
 @[simp, hb_simp] theorem hb_Ty_tyArray (a0 : Lanius.Mini.Ty) (a1 : Nat) : hb (Lanius.Mini.Ty.tyArray a0 a1) = hb a0 := rfl
 @[simp, hb_simp] theorem hb_Ty_tyStr  : hb (Lanius.Mini.Ty.tyStr) = 0 := rfl
+@[simp, hb_simp] theorem hb_Ty_tyRef (a0 : Lanius.Mini.Ty) : hb (Lanius.Mini.Ty.tyRef a0) = hb a0 := rfl
 
 instance : HB Lanius.Mini.Inst := ⟨fun s => hb s.args⟩
 @[simp, hb_simp] theorem hb_Inst_mk (a0 : Nat) (a1 : List Lanius.Mini.Ty) : hb (Lanius.Mini.Inst.mk a0 a1) = hb a1 := rfl
@@ -1073,6 +1075,9 @@ def hbMEff : Lanius.Mini.MEff → Nat
   | .xLet a0 a1 a2 a3 a4 => max (hb a1) (max (hbMEff a2) (max (hb a3) (hbMEff a4)))
   | .xLen a0 => 0
   | .xStr a0 => hb a0
+  | .xDeref a0 a1 => max (hb a0) (hbMEff a1)
+  | .xPlaceField a0 a1 => hbMEff a0
+  | .xPlaceAt a0 a1 => max (hbMEff a0) (hbMEff a1)
 def hbMEff0 : List Lanius.Mini.MEff → Nat
   | [] => 0
   | a :: l => max (hbMEff a) (hbMEff0 l) + 1
@@ -1101,6 +1106,9 @@ theorem hbMEff0_eq : ∀ l : List Lanius.Mini.MEff, hbMEff0 l = HB.hb l
 @[simp, hb_simp] theorem hb_MEff_xLet (a0 : Nat) (a1 : Lanius.Mini.Ty) (a2 : Lanius.Mini.MEff) (a3 : Lanius.Mini.Ty) (a4 : Lanius.Mini.MEff) : hb (Lanius.Mini.MEff.xLet a0 a1 a2 a3 a4) = max (hb a1) (max (hb a2) (max (hb a3) (hb a4))) := rfl
 @[simp, hb_simp] theorem hb_MEff_xLen (a0 : Nat) : hb (Lanius.Mini.MEff.xLen a0) = 0 := rfl
 @[simp, hb_simp] theorem hb_MEff_xStr (a0 : List Nat) : hb (Lanius.Mini.MEff.xStr a0) = hb a0 := rfl
+@[simp, hb_simp] theorem hb_MEff_xDeref (a0 : Lanius.Mini.Ty) (a1 : Lanius.Mini.MEff) : hb (Lanius.Mini.MEff.xDeref a0 a1) = max (hb a0) (hb a1) := rfl
+@[simp, hb_simp] theorem hb_MEff_xPlaceField (a0 : Lanius.Mini.MEff) (a1 : Nat) : hb (Lanius.Mini.MEff.xPlaceField a0 a1) = hb a0 := rfl
+@[simp, hb_simp] theorem hb_MEff_xPlaceAt (a0 : Lanius.Mini.MEff) (a1 : Lanius.Mini.MEff) : hb (Lanius.Mini.MEff.xPlaceAt a0 a1) = max (hb a0) (hb a1) := rfl
 
 instance : HB Lanius.Mini.EffArm := ⟨fun s => max (hb s.binders) (max (hb s.value) (hb s.ty))⟩
 @[simp, hb_simp] theorem hb_EffArm_mk (a0 : List Nat) (a1 : Lanius.Mini.MEff) (a2 : Option Lanius.Mini.Ty) : hb (Lanius.Mini.EffArm.mk a0 a1 a2) = max (hb a0) (max (hb a1) (hb a2)) := rfl
@@ -1150,6 +1158,8 @@ def hbMStmt : Lanius.Mini.MStmt → Nat
   | .mContinue => 0
   | .mMatchArm a0 a1 a2 a3 a4 a5 a6 a7 => max (hb a1) (max (hb a5) (max (hbMStmt a6) (hbMStmt a7)))
   | .mUnreachable a0 a1 => hb a1
+  | .mSetPlace a0 a1 => max (hb a0) (hb a1)
+  | .mSetPlaceOp a0 a1 a2 => max (hb a1) (hb a2)
 end
 instance : HB Lanius.Mini.MStmt := ⟨hbMStmt⟩
 @[simp, hb_simp] theorem hb_MStmt_mNop  : hb (Lanius.Mini.MStmt.mNop) = 0 := rfl
@@ -1186,6 +1196,8 @@ instance : HB Lanius.Mini.MStmt := ⟨hbMStmt⟩
 @[simp, hb_simp] theorem hb_MStmt_mContinue  : hb (Lanius.Mini.MStmt.mContinue) = 0 := rfl
 @[simp, hb_simp] theorem hb_MStmt_mMatchArm (a0 : Nat) (a1 : Lanius.Mini.Ty) (a2 : Nat) (a3 : Bool) (a4 : Nat) (a5 : Lanius.Mini.Ty) (a6 : Lanius.Mini.MStmt) (a7 : Lanius.Mini.MStmt) : hb (Lanius.Mini.MStmt.mMatchArm a0 a1 a2 a3 a4 a5 a6 a7) = max (hb a1) (max (hb a5) (max (hb a6) (hb a7))) := rfl
 @[simp, hb_simp] theorem hb_MStmt_mUnreachable (a0 : Nat) (a1 : Lanius.Mini.Ty) : hb (Lanius.Mini.MStmt.mUnreachable a0 a1) = hb a1 := rfl
+@[simp, hb_simp] theorem hb_MStmt_mSetPlace (a0 : Lanius.Mini.MEff) (a1 : Lanius.Mini.MEff) : hb (Lanius.Mini.MStmt.mSetPlace a0 a1) = max (hb a0) (hb a1) := rfl
+@[simp, hb_simp] theorem hb_MStmt_mSetPlaceOp (a0 : Lanius.Mini.SrcAssignOp) (a1 : Lanius.Mini.MEff) (a2 : Lanius.Mini.MEff) : hb (Lanius.Mini.MStmt.mSetPlaceOp a0 a1 a2) = max (hb a1) (hb a2) := rfl
 
 instance : HB Lanius.Mini.Called := ⟨fun s => max (hb s.inst) (hb s.args)⟩
 @[simp, hb_simp] theorem hb_Called_mk (a0 : Lanius.Mini.Inst) (a1 : List Lanius.Mini.SrcExpr) : hb (Lanius.Mini.Called.mk a0 a1) = max (hb a0) (hb a1) := rfl

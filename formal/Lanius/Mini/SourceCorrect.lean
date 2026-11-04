@@ -3,86 +3,15 @@ module
 public import Lanius.Mini.Validate
 public import Lanius.Mini.LowerEval
 public import Lanius.Mini.Compiler.P.compileSource
-import all Lanius.Mini.Compiler.P.BinOp_folds
 import all Lanius.Mini.Compiler.P.DivOp_size
-import all Lanius.Mini.Compiler.P.Expr_agrees
 import all Lanius.Mini.Compiler.P.FArith_opcode
-import all Lanius.Mini.Compiler.P.FloatTy_rex
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
 import all Lanius.Mini.Compiler.P.SrcType_same
-import all Lanius.Mini.Compiler.P.Stmt_kills
-import all Lanius.Mini.Compiler.P.UintTy_half
-import all Lanius.Mini.Compiler.P.UintTy_isWide
-import all Lanius.Mini.Compiler.P.UintTy_mask
-import all Lanius.Mini.Compiler.P.Word_compute
-import all Lanius.Mini.Compiler.P.Word_narrows
-import all Lanius.Mini.Compiler.P.applyGuard
-import all Lanius.Mini.Compiler.P.arithShiftRight
-import all Lanius.Mini.Compiler.P.arithUint
 import all Lanius.Mini.Compiler.P.arities
-import all Lanius.Mini.Compiler.P.armBodyScope
-import all Lanius.Mini.Compiler.P.armPayload
-import all Lanius.Mini.Compiler.P.armScope
-import all Lanius.Mini.Compiler.P.assignAgrees
-import all Lanius.Mini.Compiler.P.assignFrom
-import all Lanius.Mini.Compiler.P.binaryConstant
-import all Lanius.Mini.Compiler.P.callAgrees
-import all Lanius.Mini.Compiler.P.codeSize
-import all Lanius.Mini.Compiler.P.compileArgs
 import all Lanius.Mini.Compiler.P.compileModules
-import all Lanius.Mini.Compiler.P.compileOr
 import all Lanius.Mini.Compiler.P.compileSource
-import all Lanius.Mini.Compiler.P.conjunction
-import all Lanius.Mini.Compiler.P.consArgs
-import all Lanius.Mini.Compiler.P.declareFuncs
-import all Lanius.Mini.Compiler.P.declareProgram
-import all Lanius.Mini.Compiler.P.elementAddress
-import all Lanius.Mini.Compiler.P.elementBase
-import all Lanius.Mini.Compiler.P.enumVariants
-import all Lanius.Mini.Compiler.P.equality
-import all Lanius.Mini.Compiler.P.evalDivide
-import all Lanius.Mini.Compiler.P.evalDivideSint
-import all Lanius.Mini.Compiler.P.evalNot
-import all Lanius.Mini.Compiler.P.evalSame
-import all Lanius.Mini.Compiler.P.extentAfter
-import all Lanius.Mini.Compiler.P.floatApply
-import all Lanius.Mini.Compiler.P.guardAnd
-import all Lanius.Mini.Compiler.P.hostRandomCode
-import all Lanius.Mini.Compiler.P.evalHost
-import all Lanius.Mini.Compiler.P.roomFits
-import all Lanius.Mini.Compiler.P.linkedSize
-import all Lanius.Mini.Compiler.P.indexOf
-import all Lanius.Mini.Compiler.P.iteThen
-import all Lanius.Mini.Compiler.P.killShared
-import all Lanius.Mini.Compiler.P.leftTrue
 import all Lanius.Mini.Compiler.P.loadAtBytes
-import all Lanius.Mini.Compiler.P.longer
-import all Lanius.Mini.Compiler.P.lowerAddress
-import all Lanius.Mini.Compiler.P.lowerApply
-import all Lanius.Mini.Compiler.P.lowerBody
-import all Lanius.Mini.Compiler.P.lowerCallSig
-import all Lanius.Mini.Compiler.P.lowerLoadType
-import all Lanius.Mini.Compiler.P.lowerLocal
-import all Lanius.Mini.Compiler.P.lowerReturn
-import all Lanius.Mini.Compiler.P.lowerSetCallArgs
-import all Lanius.Mini.Compiler.P.lowerSetValues
-import all Lanius.Mini.Compiler.P.lowerShift
-import all Lanius.Mini.Compiler.P.lowerSlice
-import all Lanius.Mini.Compiler.P.lowerTagged
-import all Lanius.Mini.Compiler.P.matchDst
-import all Lanius.Mini.Compiler.P.matchVariants
-import all Lanius.Mini.Compiler.P.optimizeIte
-import all Lanius.Mini.Compiler.P.optimizeLeft
-import all Lanius.Mini.Compiler.P.optimizeNeg
-import all Lanius.Mini.Compiler.P.render
-import all Lanius.Mini.Compiler.P.repeatType
-import all Lanius.Mini.Compiler.P.shortCircuit
-import all Lanius.Mini.Compiler.P.withBudget
-import all Lanius.Mini.Compiler.P.funcNeeds
-import all Lanius.Mini.Compiler.P.sintToUint
-import all Lanius.Mini.Compiler.P.storeArray
-import all Lanius.Mini.Compiler.P.strStores
 import all Lanius.Mini.Compiler.P.arrayCallSig
 import all Lanius.Mini.Compiler.P.needCapped
 import all Lanius.Mini.Compiler.P.needsAfter
@@ -221,7 +150,7 @@ theorem compileSource_correct_from {sp : SrcProgram} {binary : Binary}
     obtain ⟨rfl, rfl⟩ := evalExprs_values argsRun
     obtain ⟨_, _, depth, results, after, _, returns, holds, len, hc', -⟩ :=
       body_sound (mp := { funcs := funcs, statics := sp.decls.statics }) (hp := heap) lowered (stmt_sound lowered k) found
-        fresh hc (FrameCorr.start _ frameRoom statics) (Nat.le_refl _) (fun _ mem => by simp at mem) typed bitsLen bodyRun result fits
+        fresh hc (LentHomes.start _ frameRoom statics) (Nat.le_refl _) (fun _ mem => by simp at mem) typed bitsLen bodyRun result fits
     exact ⟨depth, results, after, holds, len, hc',
       fun s imageBase window enough bounded loaded apart imageHeap entry params heapAt stack =>
         compileOptimized_correct compiledProgram returns s imageBase window enough bounded loaded apart

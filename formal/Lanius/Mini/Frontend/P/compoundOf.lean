@@ -2,10 +2,10 @@ module
 
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Frontend.P.compoundEval
-import Lanius.Mini.Frontend.P.fieldTyAt
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.noToken
+import Lanius.Mini.Frontend.P.setPlaceOf
 import Lanius.Mini.Frontend.P.wideOf
 
 public section
@@ -76,5 +76,7 @@ def writesLocal (s : MStmt) (id : Nat) : Bool :=
   | .mContinue => false
   | .mMatchArm sc st v binds b bt body rest => writesLocal body id || writesLocal rest id
   | .mUnreachable x t => false
+  | .mSetPlace pl v => false
+  | .mSetPlaceOp op pl v => false
 
 end Lanius.Mini

@@ -6,7 +6,6 @@ import all Lanius.Mini.Compiler.P.BinOp_folds
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcType_same
 import all Lanius.Mini.Compiler.P.Stmt_kills
-import all Lanius.Mini.Compiler.P.callAgrees
 import all Lanius.Mini.Frontend.P.basedDigits
 import all Lanius.Mini.Frontend.P.basedLimit
 import all Lanius.Mini.Frontend.P.digitBelow
@@ -34,6 +33,13 @@ import all Lanius.Mini.Frontend.P.unitTy
 import all Lanius.Mini.Frontend.P.variantIn
 import all Lanius.Mini.Frontend.P.wideMarker
 import all Lanius.Mini.Frontend.P.wideOf
+import all Lanius.Mini.Frontend.P.setPlaceOf
+import all Lanius.Mini.Frontend.P.setFieldOrEval
+import all Lanius.Mini.Frontend.P.namesFieldBase
+import all Lanius.Mini.Frontend.P.isFnPath
+import all Lanius.Mini.Frontend.P.fieldValue
+import all Lanius.Mini.Frontend.P.eDerefClosed
+import all Lanius.Mini.Frontend.P.checkedFunc
 
 @[expose] public section
 /-! # The reading, V8c: expressions and literals
@@ -864,6 +870,7 @@ theorem typedLiteral_sound {t : Ty} {v e : SrcExpr} (h : typedLiteral t v = some
         subst h
         exact .sint ((sintFits_iff u k).1 f)
       · rw [if_neg f] at h; cases h
+    | tyRef _ => cases h
   | boolean b =>
     cases t with
     | tyBool => cases h; exact .bool
@@ -878,6 +885,7 @@ theorem typedLiteral_sound {t : Ty} {v e : SrcExpr} (h : typedLiteral t v = some
     | tyArray _ _ => cases h
     | tyNamed _ _ => cases h
     | tySint _ => cases h
+    | tyRef _ => cases h
   | negate x =>
     cases t with
     | tyI32 =>
@@ -929,6 +937,7 @@ theorem typedLiteral_sound {t : Ty} {v e : SrcExpr} (h : typedLiteral t v = some
           exact .negSint ((sintFits_iff u _).1 f)
         · rw [if_neg f] at h; cases h
       all_goals simp [typedLiteral, negSintConst] at h
+    | tyRef _ => cases h
   | unsigned _ _ => cases h
   | «local» _ => cases h
   | field _ _ => cases h
@@ -951,6 +960,7 @@ theorem typedLiteral_sound {t : Ty} {v e : SrcExpr} (h : typedLiteral t v = some
     | tyArray _ _ => cases h
     | tyNamed _ _ => cases h
     | tySint _ => cases h
+    | tyRef _ => cases h
   | null => cases h
   | char c =>
     cases t <;> simp only [typedLiteral, reduceCtorEq, Option.some.injEq] at h
@@ -1054,6 +1064,7 @@ theorem wideOf_sound {t : Ty} {negative : Bool} {n : Nat} {e : SrcExpr} (h : wid
           exact .sintNeg bits (by omega)
         · rw [if_neg (by cases negative <;> simp_all)] at h; cases h
     · rw [if_pos (by simpa using w)] at h; cases h
+  | tyRef _ => cases h
 
 theorem wideDigits_sound {t : Ty} {negative : Bool} {text : List Nat} {e : SrcExpr}
     (h : wideDigits t negative (litValue text) = some e) :
@@ -1207,6 +1218,7 @@ theorem memberOf_sound {env : FrontEnv} {scope : List Local} {primary tail : CTr
         | tySlice _ => rw [ht] at hf; cases hf
         | tyArray _ _ => rw [ht] at hf; cases hf
         | tySint _ => rw [ht] at hf; cases hf
+        | tyRef _ => rw [ht] at hf; cases hf
   · rw [if_neg (by simpa using c)] at h; cases h
 
 /-! ## Casts -/

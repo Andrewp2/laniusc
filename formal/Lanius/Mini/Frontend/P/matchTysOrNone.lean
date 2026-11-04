@@ -64,6 +64,9 @@ def divergeEff (decls : Decls) (t : Ty) (x : MEff) : MEff :=
   | .xLet id lt v rt b => x
   | .xLen sl => x
   | .xStr cs => x
+  | .xDeref dty a => x
+  | .xPlaceField b j => x
+  | .xPlaceAt b i => x
 
 /-- The literal's elements, count of them. -/
 def arrayOf (a : ArrayParts) (values : Option (List MEff)) : Option MEff :=

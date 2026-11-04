@@ -39,6 +39,9 @@ def callParts (x : MEff) : Option Called :=
   | .xLet id t v rt b => none
   | .xLen sl => none
   | .xStr cs => none
+  | .xDeref dty a => none
+  | .xPlaceField b j => none
+  | .xPlaceAt b i => none
 
 /-- The local an expression is, if it is one. -/
 def pureLocal (e : SrcExpr) : Option Nat :=

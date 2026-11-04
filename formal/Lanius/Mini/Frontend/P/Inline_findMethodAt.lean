@@ -27,7 +27,6 @@ public import Lanius.Mini.Frontend.P.sintAt
 public import Lanius.Mini.Frontend.P.sliceHead
 public import Lanius.Mini.Frontend.P.stringCons
 public import Lanius.Mini.Frontend.P.textSelf
-public import Lanius.Mini.Frontend.P.typeDeclAt
 public import Lanius.Mini.Frontend.P.wideLeftStmt
 
 public section
@@ -94,7 +93,7 @@ namespace Lanius.Mini
     match patternOf pfd pp with
     | none => none
     | some t =>
-      match tyOf pfuel penv t with
+      match paramTyOf pfuel penv t with
       | none => none
       | some x => consParam ({ id := tok.start - penv.base, ty := x } : MParam) (paramsOf pfuel penv pfd (({ name := tok.text, id := tok.start - penv.base, ty := x } : Local) :: pscope) prest)
   else

@@ -31,6 +31,9 @@ def src_flat_payloads (ix_flatten_tys : Nat) : SrcFunc := { params := [{ id := 1
 /-- mini::selfhost::flatten_tys -/
 def src_flatten_tys (ix_empty_of_mini_selfhost_Ty : Nat) (ix_concat_of_mini_selfhost_Ty : Nat) (ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty : Nat) (ix_flatten_tys : Nat) : SrcFunc := { params := [{ id := 12, ty := ty298 }], ret := ty155, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 12)) ty298 ty155 [[], [107, 110]] [SrcEff.eCall ix_empty_of_mini_selfhost_Ty [], SrcEff.eCall ix_concat_of_mini_selfhost_Ty [SrcEff.ePure (SrcExpr.local 107), SrcEff.eCall ix_flatten_tys [SrcEff.eCall ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty [SrcEff.ePure (SrcExpr.local 110)]]]]) }
 
+/-- mini::selfhost::ref_type -/
+def src_ref_type (ix_boxed_of_mini_selfhost_SrcType : Nat) : SrcFunc := { params := [{ id := 9, ty := ty179 }], ret := ty179, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 9)) ty179 ty179 [[150], []] [SrcEff.eVariant ty179 0 [SrcEff.eVariant ty9 15 [SrcEff.eCall ix_boxed_of_mini_selfhost_SrcType [SrcEff.ePure (SrcExpr.local 150)]]], SrcEff.eVariant ty179 1 []]) }
+
 /-- mini::selfhost::slice_type -/
 def src_slice_type (ix_boxed_of_mini_selfhost_SrcType : Nat) : SrcFunc := { params := [{ id := 11, ty := ty179 }], ret := ty179, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 11)) ty179 ty179 [[150], []] [SrcEff.eVariant ty179 0 [SrcEff.eVariant ty9 6 [SrcEff.eCall ix_boxed_of_mini_selfhost_SrcType [SrcEff.ePure (SrcExpr.local 150)]]], SrcEff.eVariant ty179 1 []]) }
 

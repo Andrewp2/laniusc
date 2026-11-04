@@ -4,6 +4,13 @@ public import Lanius.Mini.Reading.Det.Stmts
 public import Lanius.Mini.Reading.Lits
 import all Lanius.Mini.Frontend.P.negWideI32
 import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.setPlaceOf
+import all Lanius.Mini.Frontend.P.setFieldOrEval
+import all Lanius.Mini.Frontend.P.namesFieldBase
+import all Lanius.Mini.Frontend.P.isFnPath
+import all Lanius.Mini.Frontend.P.fieldValue
+import all Lanius.Mini.Frontend.P.eDerefClosed
+import all Lanius.Mini.Frontend.P.checkedFunc
 
 @[expose] public section
 /-! # The reading is deterministic, F1: closing and typing literals
@@ -47,6 +54,9 @@ theorem effClosed_unique : ∀ {x : MEff} {a b : SrcEff}, EffClosed decls fns ty
     rw [lowerR_unique lt lt', effClosed_unique v v', lowerR_unique lr lr', effClosed_unique b b']
   | _, _, _, .len, .len => rfl
   | _, _, _, .str, .str => rfl
+  | _, _, _, .deref lw x, .deref lw' x' => by rw [lowerR_unique lw lw', effClosed_unique x x']
+  | _, _, _, .placeField x, .placeField x' => by rw [effClosed_unique x x']
+  | _, _, _, .placeAt x i, .placeAt x' i' => by rw [effClosed_unique x x', effClosed_unique i i']
 termination_by structural _ _ _ h _ => h
 
 theorem effsClosed_unique : ∀ {xs : List MEff} {a b : List SrcEff}, EffsClosed decls fns types xs a →
@@ -101,6 +111,8 @@ theorem stmtClosed_unique : ∀ {m : MStmt} {a b : SrcStmt}, StmtClosed decls fn
     cases lowerR_unique le le'
     rfl
   | _, _, _, .unreachable lw, .unreachable lw' => by rw [lowerR_unique lw lw']
+  | _, _, _, .setPlace p v, .setPlace p' v' => by rw [effClosed_unique p p', effClosed_unique v v']
+  | _, _, _, .setPlaceOp p v, .setPlaceOp p' v' => by rw [effClosed_unique p p', effClosed_unique v v']
   | _, _, _, .matchArmUnbound le b r, .matchArmUnbound le' b' r' => by
     rw [stmtClosed_unique b b', stmtClosed_unique r r']
     cases lowerR_unique le le'

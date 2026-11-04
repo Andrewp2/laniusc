@@ -2,14 +2,7 @@ module
 
 public import Lanius.Mini.GrammarCert
 public import Lanius.Mini.Frontend.P.genericOpen
-import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.Lists_empty
-import all Lanius.Mini.Compiler.P.UintTy_half
-import all Lanius.Mini.Compiler.P.UintTy_isWide
-import all Lanius.Mini.Compiler.P.arithShiftRight
-import all Lanius.Mini.Compiler.P.equality
-import all Lanius.Mini.Compiler.P.floatApply
-import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.Types
 import all Lanius.Mini.Frontend.P.litBound
 import all Lanius.Mini.Frontend.P.litIf
@@ -28,6 +21,13 @@ import all Lanius.Mini.Frontend.P.noToken
 import all Lanius.Mini.Frontend.P.shrFirst
 import all Lanius.Mini.Frontend.P.wideLeftStmt
 import all Lanius.Mini.Frontend.Types
+import all Lanius.Mini.Frontend.P.setPlaceOf
+import all Lanius.Mini.Frontend.P.setFieldOrEval
+import all Lanius.Mini.Frontend.P.namesFieldBase
+import all Lanius.Mini.Frontend.P.isFnPath
+import all Lanius.Mini.Frontend.P.fieldValue
+import all Lanius.Mini.Frontend.P.eDerefClosed
+import all Lanius.Mini.Frontend.P.checkedFunc
 public import Lanius.Mini.Frontend.P.grammarPart13
 public import Lanius.Mini.Frontend.P.isEmptyUsize
 public import Lanius.Mini.Frontend.P.shrFirst

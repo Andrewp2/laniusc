@@ -9,6 +9,13 @@ import all Lanius.Mini.Frontend.P.isUnderscore
 import all Lanius.Mini.Frontend.P.noToken
 import all Lanius.Mini.Frontend.P.noTrees
 import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.setPlaceOf
+import all Lanius.Mini.Frontend.P.setFieldOrEval
+import all Lanius.Mini.Frontend.P.namesFieldBase
+import all Lanius.Mini.Frontend.P.isFnPath
+import all Lanius.Mini.Frontend.P.fieldValue
+import all Lanius.Mini.Frontend.P.eDerefClosed
+import all Lanius.Mini.Frontend.P.checkedFunc
 
 @[expose] public section
 /-! # The reading is deterministic, F1: a match's arms

@@ -5,62 +5,14 @@ public import Lanius.Mini.LowerStmt
 public import Lanius.Mini.WorldTrace
 public import Lanius.Mini.Stops
 public import Lanius.Mini.Compiler.P.Lists_empty
-import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.FArith_opcode
-import all Lanius.Mini.Compiler.P.FloatTy_rex
 import all Lanius.Mini.Compiler.P.Lists_empty
-import all Lanius.Mini.Compiler.P.SrcExpr_guard
 import all Lanius.Mini.Compiler.P.SrcType_same
-import all Lanius.Mini.Compiler.P.UintTy_half
-import all Lanius.Mini.Compiler.P.UintTy_isWide
-import all Lanius.Mini.Compiler.P.UintTy_mask
-import all Lanius.Mini.Compiler.P.Word_compute
-import all Lanius.Mini.Compiler.P.Word_narrows
-import all Lanius.Mini.Compiler.P.applyGuard
 import all Lanius.Mini.Compiler.P.arithShiftRight
-import all Lanius.Mini.Compiler.P.arithUint
 import all Lanius.Mini.Compiler.P.arities
-import all Lanius.Mini.Compiler.P.armBodyScope
-import all Lanius.Mini.Compiler.P.armPayload
-import all Lanius.Mini.Compiler.P.armScope
 import all Lanius.Mini.Compiler.P.arrayCallSig
-import all Lanius.Mini.Compiler.P.assignFrom
-import all Lanius.Mini.Compiler.P.callAgrees
-import all Lanius.Mini.Compiler.P.codeSize
-import all Lanius.Mini.Compiler.P.compileModules
 import all Lanius.Mini.Compiler.P.conjunction
-import all Lanius.Mini.Compiler.P.consArgs
-import all Lanius.Mini.Compiler.P.elementAddress
-import all Lanius.Mini.Compiler.P.elementBase
-import all Lanius.Mini.Compiler.P.enumVariants
-import all Lanius.Mini.Compiler.P.equality
-import all Lanius.Mini.Compiler.P.evalDivide
-import all Lanius.Mini.Compiler.P.evalDivideSint
-import all Lanius.Mini.Compiler.P.evalNot
-import all Lanius.Mini.Compiler.P.evalSame
-import all Lanius.Mini.Compiler.P.extentAfter
-import all Lanius.Mini.Compiler.P.floatApply
-import all Lanius.Mini.Compiler.P.funcNeeds
-import all Lanius.Mini.Compiler.P.guardAnd
-import all Lanius.Mini.Compiler.P.hostRandomCode
-import all Lanius.Mini.Compiler.P.evalHost
-import all Lanius.Mini.Compiler.P.indexOf
-import all Lanius.Mini.Compiler.P.iteThen
-import all Lanius.Mini.Compiler.P.killShared
-import all Lanius.Mini.Compiler.P.leftTrue
-import all Lanius.Mini.Compiler.P.loadAtBytes
-import all Lanius.Mini.Compiler.P.longer
-import all Lanius.Mini.Compiler.P.lowerAddress
 import all Lanius.Mini.Compiler.P.lowerApply
-import all Lanius.Mini.Compiler.P.lowerBody
-import all Lanius.Mini.Compiler.P.lowerCallSig
-import all Lanius.Mini.Compiler.P.lowerLoadType
-import all Lanius.Mini.Compiler.P.lowerLocal
-import all Lanius.Mini.Compiler.P.lowerReturn
-import all Lanius.Mini.Compiler.P.lowerSetCallArgs
-import all Lanius.Mini.Compiler.P.lowerSetValues
-import all Lanius.Mini.Compiler.P.lowerShift
-import all Lanius.Mini.Compiler.P.lowerSlice
 import all Lanius.Mini.Compiler.P.lowerTagged
 import all Lanius.Mini.Compiler.P.matchDst
 import all Lanius.Mini.Compiler.P.matchVariants
@@ -72,17 +24,7 @@ import all Lanius.Mini.Compiler.P.shortCircuit
 import all Lanius.Mini.Compiler.P.sintToUint
 import all Lanius.Mini.Compiler.P.storeArray
 import all Lanius.Mini.Compiler.P.strStores
-import all Lanius.Mini.Compiler.P.storeEvalWord
-import all Lanius.Mini.Compiler.P.storeType
-import all Lanius.Mini.Compiler.P.storeWordElement
-import all Lanius.Mini.Compiler.P.structFields
-import all Lanius.Mini.Compiler.P.substAll
-import all Lanius.Mini.Compiler.P.usizeWidth
-import all Lanius.Mini.Compiler.P.widthOf
-import all Lanius.Mini.Compiler.P.withBudget
-import all Lanius.Mini.Compiler.P.wordElement
 import all Lanius.Mini.Compiler.P.wordStride
-import all Lanius.Mini.Compiler.P.wordWidth
 import all Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Compiler.P.SrcExpr_guard
 public import Lanius.Mini.Compiler.P.SrcType_same
@@ -343,11 +285,11 @@ variable [StaticsOf sp sx]
 mini code before the body (the block, the stores) runs to a heap that
 corresponds, the pointer in the let's slot. -/
 theorem str_entered {chars : List Nat} (ascii : strAscii chars = true) (nonempty : chars ≠ [])
-    (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp) {p : Nat} {heap' : Lanius.Memory.Heap}
+    (hc : HeapCorr st.heap st.world hp) (fc : LentHomes sx bud places st hp) {p : Nat} {heap' : Lanius.Memory.Heap}
     (map : st.heap.mapBorrowed (Semantics.stringStorage (strValue chars)) 4 = .allocated p heap')
     (room : heap'.nextAddress ≤ hp.limit) :
     ∃ hp3, (BitVec.ofNat 64 p).toNat = p ∧ HeapCorr heap' st.world hp3 ∧
-      FrameCorr sx bud places { st with heap := heap' } hp3 ∧ hp3.limit = hp.limit ∧
+      LentHomes sx bud places { st with heap := heap' } hp3 ∧ hp3.limit = hp.limit ∧
       (∀ {rest : Stmt} {d : Nat} {out : Outcome}, Exec mp d (env.set next (BitVec.ofNat 64 p)) hp3 rest out →
         Exec mp d env hp (.seq (.alloc next 2 (.lit (BitVec.ofNat 64 (4 * (strWords chars).length))))
           (strStores next 0 (strWords chars) rest)) out) ∧
@@ -365,7 +307,7 @@ theorem str_entered {chars : List Nat} (ascii : strAscii chars = true) (nonempty
   let hp3 := ({ hp with cursor := p + 4 * (strWords chars).length } : Heap).writeBytes p (wordBytes (strWords chars))
   have hc3 : HeapCorr heap' st.world hp3 := hcRoom tail
   have pBits : (BitVec.ofNat 64 p).toNat = p := Nat.mod_eq_of_lt (by addr_omega)
-  have fc3 : FrameCorr sx bud places { st with heap := heap' } hp3 := by
+  have fc3 : LentHomes sx bud places { st with heap := heap' } hp3 := by
     refine fc.low (fun _ _ => rfl) (fun a above => ?_) ?_ ?_ ?_ (statics := ?_)
     · simp only [hp3, Heap.writeBytes_eq_writeAll, Heap.writeAll, wordBytes_length]
       rw [if_neg (by addr_omega)]
@@ -406,7 +348,7 @@ theorem str_entered {chars : List Nat} (ascii : strAscii chars = true) (nonempty
 theorem stmt_letStr (ih : StmtSound sp mp fuel) {pointer : Nat} {chars : List Nat} {body : SrcStmt}
     (ok : (SrcStmt.letStr pointer chars body).lower (sp.sigsAt bud) sp.decls ret scope next = some stmt)
     (corr : Corr sx places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp)
+    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : LentHomes sx bud places st hp)
     (under : ∀ x ∈ places, x.cell < base)
     (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.letStr pointer chars body).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :

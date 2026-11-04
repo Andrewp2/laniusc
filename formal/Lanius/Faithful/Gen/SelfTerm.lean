@@ -1,70 +1,84 @@
-import Lanius.Faithful.Gen.SelfTermInfo
-import Lanius.Faithful.Gen.SelfLookFn0
-import Lanius.Faithful.Gen.SelfLookFn1
-import Lanius.Faithful.Gen.SelfLookFn2
-import Lanius.Faithful.Gen.SelfLookFn3
-import Lanius.Faithful.Gen.SelfLookFn4
-import Lanius.Faithful.Gen.SelfLookFn5
-import Lanius.Faithful.Gen.SelfTerm0
-import Lanius.Faithful.Gen.SelfTerm1
-import Lanius.Faithful.Gen.SelfTerm2
-import Lanius.Faithful.Gen.SelfTerm3
-import Lanius.Faithful.Gen.SelfTerm4
-import Lanius.Faithful.Gen.SelfTerm5
-import Lanius.Faithful.Gen.SelfTerm6
-import Lanius.Faithful.Gen.SelfTerm7
-import Lanius.Faithful.Gen.SelfTerm8
-import Lanius.Faithful.Gen.SelfTerm9
-import Lanius.Faithful.Gen.SelfTerm10
-import Lanius.Faithful.Gen.SelfTerm11
-import Lanius.Faithful.Gen.SelfTerm12
-import Lanius.Faithful.Gen.SelfTerm13
-import Lanius.Faithful.Gen.SelfTerm14
-import Lanius.Faithful.Gen.SelfTerm15
-import Lanius.Faithful.Gen.SelfTerm16
-import Lanius.Faithful.Gen.SelfTerm17
-import Lanius.Faithful.Gen.SelfTerm18
-import Lanius.Faithful.Gen.SelfTerm19
-import Lanius.Faithful.Gen.SelfTerm20
-import Lanius.Faithful.Gen.SelfTerm21
-import Lanius.Faithful.Gen.SelfTerm22
-import Lanius.Faithful.Gen.SelfTerm23
-import Lanius.Faithful.Gen.SelfTerm24
-import Lanius.Faithful.Gen.SelfTerm25
-import Lanius.Faithful.Gen.SelfTerm26
-import Lanius.Faithful.Gen.SelfTerm27
-import Lanius.Faithful.Gen.SelfTerm28
-import Lanius.Faithful.Gen.SelfTerm29
-import Lanius.Faithful.Gen.SelfTerm30
-import Lanius.Faithful.Gen.SelfTerm31
-import Lanius.Faithful.Gen.SelfTerm32
-import Lanius.Faithful.Gen.SelfTerm33
-import Lanius.Faithful.Gen.SelfTerm34
-import Lanius.Faithful.Gen.SelfTerm35
-import Lanius.Faithful.Gen.SelfTerm36
-import Lanius.Faithful.Gen.SelfTerm37
-import Lanius.Faithful.Gen.SelfTerm38
-import Lanius.Faithful.Gen.SelfTerm39
-import Lanius.Faithful.Gen.SelfTerm40
-import Lanius.Faithful.Gen.SelfTerm41
-import Lanius.Faithful.Gen.SelfTerm42
-import Lanius.Faithful.Gen.SelfTerm43
-import Lanius.Faithful.Gen.SelfTerm44
-import Lanius.Faithful.Gen.SelfTerm45
-import Lanius.Faithful.Gen.SelfTerm46
-import Lanius.Faithful.Gen.SelfTerm47
-import Lanius.Faithful.Gen.SelfTerm48
-import Lanius.Faithful.Gen.SelfTerm49
-import Lanius.Faithful.Gen.SelfTerm50
-import Lanius.Faithful.Gen.SelfTerm51
-import Lanius.Faithful.Gen.SelfTerm52
-import Lanius.Faithful.Gen.SelfTerm53
-import Lanius.Faithful.Gen.SelfTerm54
-import Lanius.Faithful.Gen.SelfTerm55
-import Lanius.Faithful.Gen.SelfTerm56
-import Lanius.Faithful.Gen.SelfTerm57
-import Lanius.Faithful.Gen.SelfTerm58
-import Lanius.Faithful.Gen.SelfTerm59
+module
+
+public import Lanius.Faithful.Gen.SelfTermInfo
+public import Lanius.Faithful.Gen.SelfLookFn0
+public import Lanius.Faithful.Gen.SelfLookFn1
+public import Lanius.Faithful.Gen.SelfLookFn2
+public import Lanius.Faithful.Gen.SelfLookFn3
+public import Lanius.Faithful.Gen.SelfLookFn4
+public import Lanius.Faithful.Gen.SelfLookFn5
+public import Lanius.Faithful.Gen.SelfTerm0
+public import Lanius.Faithful.Gen.SelfTerm1
+public import Lanius.Faithful.Gen.SelfTerm2
+public import Lanius.Faithful.Gen.SelfTerm3
+public import Lanius.Faithful.Gen.SelfTerm4
+public import Lanius.Faithful.Gen.SelfTerm5
+public import Lanius.Faithful.Gen.SelfTerm6
+public import Lanius.Faithful.Gen.SelfTerm7
+public import Lanius.Faithful.Gen.SelfTerm8
+public import Lanius.Faithful.Gen.SelfTerm9
+public import Lanius.Faithful.Gen.SelfTerm10
+public import Lanius.Faithful.Gen.SelfTerm11
+public import Lanius.Faithful.Gen.SelfTerm12
+public import Lanius.Faithful.Gen.SelfTerm13
+public import Lanius.Faithful.Gen.SelfTerm14
+public import Lanius.Faithful.Gen.SelfTerm15
+public import Lanius.Faithful.Gen.SelfTerm16
+public import Lanius.Faithful.Gen.SelfTerm17
+public import Lanius.Faithful.Gen.SelfTerm18
+public import Lanius.Faithful.Gen.SelfTerm19
+public import Lanius.Faithful.Gen.SelfTerm20
+public import Lanius.Faithful.Gen.SelfTerm21
+public import Lanius.Faithful.Gen.SelfTerm22
+public import Lanius.Faithful.Gen.SelfTerm23
+public import Lanius.Faithful.Gen.SelfTerm24
+public import Lanius.Faithful.Gen.SelfTerm25
+public import Lanius.Faithful.Gen.SelfTerm26
+public import Lanius.Faithful.Gen.SelfTerm27
+public import Lanius.Faithful.Gen.SelfTerm28
+public import Lanius.Faithful.Gen.SelfTerm29
+public import Lanius.Faithful.Gen.SelfTerm30
+public import Lanius.Faithful.Gen.SelfTerm31
+public import Lanius.Faithful.Gen.SelfTerm32
+public import Lanius.Faithful.Gen.SelfTerm33
+public import Lanius.Faithful.Gen.SelfTerm34
+public import Lanius.Faithful.Gen.SelfTerm35
+public import Lanius.Faithful.Gen.SelfTerm36
+public import Lanius.Faithful.Gen.SelfTerm37
+public import Lanius.Faithful.Gen.SelfTerm38
+public import Lanius.Faithful.Gen.SelfTerm39
+public import Lanius.Faithful.Gen.SelfTerm40
+public import Lanius.Faithful.Gen.SelfTerm41
+public import Lanius.Faithful.Gen.SelfTerm42
+public import Lanius.Faithful.Gen.SelfTerm43
+public import Lanius.Faithful.Gen.SelfTerm44
+public import Lanius.Faithful.Gen.SelfTerm45
+public import Lanius.Faithful.Gen.SelfTerm46
+public import Lanius.Faithful.Gen.SelfTerm47
+public import Lanius.Faithful.Gen.SelfTerm48
+public import Lanius.Faithful.Gen.SelfTerm49
+public import Lanius.Faithful.Gen.SelfTerm50
+public import Lanius.Faithful.Gen.SelfTerm51
+public import Lanius.Faithful.Gen.SelfTerm52
+public import Lanius.Faithful.Gen.SelfTerm53
+public import Lanius.Faithful.Gen.SelfTerm54
+public import Lanius.Faithful.Gen.SelfTerm55
+public import Lanius.Faithful.Gen.SelfTerm56
+public import Lanius.Faithful.Gen.SelfTerm57
+public import Lanius.Faithful.Gen.SelfTerm58
+public import Lanius.Faithful.Gen.SelfTerm59
+public import Lanius.Faithful.Gen.SelfTerm60
+import all Lanius.Faithful.Gen.SelfSrc0
+import all Lanius.Faithful.Gen.SelfSrc1
+import all Lanius.Faithful.Gen.SelfSrc2
+import all Lanius.Faithful.Gen.SelfSrc3
+import all Lanius.Faithful.Gen.SelfSrc4
+import all Lanius.Faithful.Gen.SelfSrc5
+import all Lanius.Faithful.Gen.SelfSrc6
+import all Lanius.Faithful.Gen.SelfSrc7
+import all Lanius.Faithful.Gen.SelfTypes
+
+@[expose] public section
 
 /-! Generated by formal/tools/term_gen.lean. Do not edit. -/
 
@@ -85,7 +99,7 @@ theorem decs : AllDecs prog prims info.decs :=
 
 /-- The check passes for every function the roots reach. -/
 theorem termOk : TermOk prog prims info :=
-  termOk_of decs consts info_anns (AllFns.append chunk0 (AllFns.append chunk1 (AllFns.append chunk2 (AllFns.append chunk3 (AllFns.append chunk4 (AllFns.append chunk5 (AllFns.append chunk6 (AllFns.append chunk7 (AllFns.append chunk8 (AllFns.append chunk9 (AllFns.append chunk10 (AllFns.append chunk11 (AllFns.append chunk12 (AllFns.append chunk13 (AllFns.append chunk14 (AllFns.append chunk15 (AllFns.append chunk16 (AllFns.append chunk17 (AllFns.append chunk18 (AllFns.append chunk19 (AllFns.append chunk20 (AllFns.append chunk21 (AllFns.append chunk22 (AllFns.append chunk23 (AllFns.append chunk24 (AllFns.append chunk25 (AllFns.append chunk26 (AllFns.append chunk27 (AllFns.append chunk28 (AllFns.append chunk29 (AllFns.append chunk30 (AllFns.append chunk31 (AllFns.append chunk32 (AllFns.append chunk33 (AllFns.append chunk34 (AllFns.append chunk35 (AllFns.append chunk36 (AllFns.append chunk37 (AllFns.append chunk38 (AllFns.append chunk39 (AllFns.append chunk40 (AllFns.append chunk41 (AllFns.append chunk42 (AllFns.append chunk43 (AllFns.append chunk44 (AllFns.append chunk45 (AllFns.append chunk46 (AllFns.append chunk47 (AllFns.append chunk48 (AllFns.append chunk49 (AllFns.append chunk50 (AllFns.append chunk51 (AllFns.append chunk52 (AllFns.append chunk53 (AllFns.append chunk54 (AllFns.append chunk55 (AllFns.append chunk56 (AllFns.append chunk57 (AllFns.append chunk58 (chunk59))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  termOk_of decs consts info_anns (AllFns.append chunk0 (AllFns.append chunk1 (AllFns.append chunk2 (AllFns.append chunk3 (AllFns.append chunk4 (AllFns.append chunk5 (AllFns.append chunk6 (AllFns.append chunk7 (AllFns.append chunk8 (AllFns.append chunk9 (AllFns.append chunk10 (AllFns.append chunk11 (AllFns.append chunk12 (AllFns.append chunk13 (AllFns.append chunk14 (AllFns.append chunk15 (AllFns.append chunk16 (AllFns.append chunk17 (AllFns.append chunk18 (AllFns.append chunk19 (AllFns.append chunk20 (AllFns.append chunk21 (AllFns.append chunk22 (AllFns.append chunk23 (AllFns.append chunk24 (AllFns.append chunk25 (AllFns.append chunk26 (AllFns.append chunk27 (AllFns.append chunk28 (AllFns.append chunk29 (AllFns.append chunk30 (AllFns.append chunk31 (AllFns.append chunk32 (AllFns.append chunk33 (AllFns.append chunk34 (AllFns.append chunk35 (AllFns.append chunk36 (AllFns.append chunk37 (AllFns.append chunk38 (AllFns.append chunk39 (AllFns.append chunk40 (AllFns.append chunk41 (AllFns.append chunk42 (AllFns.append chunk43 (AllFns.append chunk44 (AllFns.append chunk45 (AllFns.append chunk46 (AllFns.append chunk47 (AllFns.append chunk48 (AllFns.append chunk49 (AllFns.append chunk50 (AllFns.append chunk51 (AllFns.append chunk52 (AllFns.append chunk53 (AllFns.append chunk54 (AllFns.append chunk55 (AllFns.append chunk56 (AllFns.append chunk57 (AllFns.append chunk58 (AllFns.append chunk59 (chunk60)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 
 /-- Every pure call of `front_end_words` settles. -/
 theorem settles_front_end_words (vs : List Lanius.Core.Value) : Settles prog prims 7 vs :=

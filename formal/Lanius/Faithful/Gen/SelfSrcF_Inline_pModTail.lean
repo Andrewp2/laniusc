@@ -79,6 +79,12 @@ def src_p_path_ident : SrcFunc := { params := [], ret := SrcType.uint (UintTy.us
 /-- mini::selfhost::p_path_ident_args -/
 def src_p_path_ident_args : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000031#64) }
 
+/-- mini::selfhost::p_type_ref -/
+def src_p_type_ref : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x000000000000011d#64) }
+
+/-- mini::selfhost::p_type_ref_mut -/
+def src_p_type_ref_mut : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000144#64) }
+
 end
 
 end Lanius.Faithful.Self

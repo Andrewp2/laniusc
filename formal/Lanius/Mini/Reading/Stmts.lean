@@ -1,12 +1,8 @@
 module
 
 public import Lanius.Mini.Reading.Effs
-import all Lanius.Mini.Compiler.P.Stmt_kills
 import all Lanius.Mini.Compiler.P.arithShiftRight
-import all Lanius.Mini.Compiler.P.arities
-import all Lanius.Mini.Compiler.P.callAgrees
 import all Lanius.Mini.Compiler.P.indexOf
-import all Lanius.Mini.Compiler.P.lowerBody
 import all Lanius.Mini.Frontend.P.basedDigits
 import all Lanius.Mini.Frontend.P.bindsOfTys
 import all Lanius.Mini.Frontend.P.blockArmsOf
@@ -15,10 +11,9 @@ import all Lanius.Mini.Frontend.P.compoundOf
 import all Lanius.Mini.Frontend.P.consBinder
 import all Lanius.Mini.Frontend.P.consTys
 import all Lanius.Mini.Frontend.P.divergeArm
-import all Lanius.Mini.Frontend.P.fieldTyAt
+import all Lanius.Mini.Frontend.P.fnInstRet
 import all Lanius.Mini.Frontend.P.findConst
 import all Lanius.Mini.Frontend.P.floatTyped
-import all Lanius.Mini.Frontend.P.fnInstRet
 import all Lanius.Mini.Frontend.P.forRange
 import all Lanius.Mini.Frontend.P.freshId
 import all Lanius.Mini.Frontend.P.hasKids
@@ -65,6 +60,14 @@ import all Lanius.Mini.Frontend.P.stringReturn
 import all Lanius.Mini.Frontend.P.isTypedSliceSegments
 import all Lanius.Mini.Frontend.P.ifSome
 import all Lanius.Mini.Frontend.P.callParts
+import all Lanius.Mini.Frontend.P.projection
+import all Lanius.Mini.Frontend.P.setPlaceOf
+import all Lanius.Mini.Frontend.P.setFieldOrEval
+import all Lanius.Mini.Frontend.P.namesFieldBase
+import all Lanius.Mini.Frontend.P.isFnPath
+import all Lanius.Mini.Frontend.P.fieldValue
+import all Lanius.Mini.Frontend.P.eDerefClosed
+import all Lanius.Mini.Frontend.P.checkedFunc
 
 @[expose] public section
 /-! # The reading, V8d: statements
@@ -99,34 +102,6 @@ def PathCallForm (pf : CTree) : Prop :=
 
 theorem isPathCall_sound {pf : CTree} (h : isPathCall pf = true) : PathCallForm pf := by
   simpa [isPathCall, PathCallForm, and_assoc] using h
-
-/-- Field `j`'s type in the struct type `t`. -/
-def FieldTyAt (decls : Decls) (t : Ty) (j : Nat) (ty : Ty) : Prop :=
-  ∃ d args ts, t = .tyNamed d args ∧ FieldTys decls d args ts ∧ ts[j]? = some ty
-
-theorem fieldTyAt_sound {fuel : Nat} {decls : Decls} {t : Ty} {j : Nat} :
-    MaybeTy (FieldTyAt decls t j) (fieldTyAt fuel decls t j) := by
-  intro ty h
-  unfold fieldTyAt at h
-  cases t with
-  | tyNamed d args =>
-    simp only [structFieldTys] at h
-    cases hf : fieldTys fuel decls d args with
-    | none => rw [hf] at h; cases h
-    | some ts =>
-      rw [hf] at h
-      exact ⟨d, args, ts, rfl, fieldTys_sound hf, h⟩
-  | tyI32 => cases h
-  | tyBool => cases h
-  | tyUint _ => cases h
-  | tyPtr => cases h
-  | tyIsize => cases h
-  | tyChar => cases h
-  | tyStr => cases h
-  | tyFloat ft => cases h
-  | tySint _ => cases h
-  | tyArray _ _ => cases h
-  | tySlice _ => cases h
 
 theorem effPostfix_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {expected : Option Ty} {pf : CTree}
     {x : MEff} (pp : nodeProd pf = pPostfix) (h : effPostfix fuel env scope expected pf = some x) :
@@ -541,7 +516,7 @@ theorem setOrEval_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {l : 
     exact .eval (effOf_sound he) h
 
 /-- `target = value;`: a local, a field of a local, or an element of a
-slice local. -/
+slice local; (F5, S5) through a reference parameter, a place. -/
 inductive AssignTargetR (env : FrontEnv) (scope : List Local) (target : CTree) (v : Nat) (value : CTree) :
     MStmt → Prop
   | «local» {l : Local} {m : MStmt} : nodeProd (kid target 1) = pPostfixEnd → LocalOf scope (kid target 0) l →
@@ -555,16 +530,57 @@ inductive AssignTargetR (env : FrontEnv) (scope : List Local) (target : CTree) (
   laniusc after, so the value does not act (`effActs`: call a declared
   function or a host service). -/
   | indexEval {l : Local} {i x : MEff} : nodeProd (kid target 1) = pPostfixIndex →
-      nodeProd (kid (kid target 1) 3) = pPostfixEnd → LocalOf scope (kid target 0) l →
+      nodeProd (kid (kid target 1) 3) = pPostfixEnd → LocalOf scope (kid target 0) l → isRefTy l.ty = false →
       EffR env scope none (kid (kid target 1) 1) i → EffR env scope (indexElem l.ty) value x →
       effActs env.decls.fns.length x = false →
       AssignTargetR env scope target v value (setIndexEff l.id i x)
+  /-- (F5, S5) `p.f = value;`, `p.f[i] = value;`, ...: the target read as a place through the reference
+  parameter `p`, the value at the place's type; with an element step in the place the value does not
+  act, as for an element of a slice local. -/
+  | place {l : Local} {pl x : MEff} {t : Ty} : nodeProd (kid target 1) ≠ pPostfixEnd →
+      LocalOf scope (kid target 0) l → isRefTy l.ty = true → EffR env scope none target pl →
+      effPlace pl = true → EffTy env.decls scope pl t → EffR env scope (some t) value x →
+      (hasAt pl && effActs env.decls.fns.length x) = false →
+      AssignTargetR env scope target v value (.mSetPlace pl x)
 
 theorem assignTarget_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {target : CTree} {v : Nat}
     {value : CTree} {m : MStmt} (h : assignTarget fuel env scope target v value = some m) :
     AssignTargetR env scope target v value m := by
   unfold assignTarget at h
   simp only at h
+  split at h
+  · rename_i c
+    simp only [refTarget, Bool.and_eq_true, decide_eq_true_eq] at c
+    obtain ⟨ne, rr⟩ := c
+    cases hl : localOf env scope (kid target 0) with
+    | none => rw [hl] at rr; simp [refRooted] at rr
+    | some l =>
+      rw [hl] at rr
+      simp only [refRooted] at rr
+      simp only [setPlaceOf] at h
+      cases hp : effOf fuel env scope none target with
+      | none => rw [hp] at h; cases h
+      | some pl =>
+        rw [hp] at h
+        simp only at h
+        cases pp : effPlace pl with
+        | false => simp [pp, checkedStmt] at h
+        | true =>
+          cases ht : effTy fuel env scope pl with
+          | none => simp [ht, pp, checkedStmt, hasTy] at h
+          | some t =>
+            simp only [ht, pp, checkedStmt, hasTy, Bool.and_self, ↓reduceIte, setPlaceValue] at h
+            cases hv : effOf fuel env scope (some t) value with
+            | none => rw [hv] at h; cases h
+            | some x =>
+              rw [hv] at h
+              simp only at h
+              cases w : (hasAt pl && effActs env.decls.fns.length x) with
+              | true => simp only [stmtUnless, w, ↓reduceIte] at h; cases h
+              | false =>
+                simp only [stmtUnless, w, Bool.false_eq_true, ↓reduceIte, Option.some.injEq] at h
+                subst h
+                exact .place ne (localOf_sound hl) rr (effOf_sound hp) pp (effTy_sound ht) (effOf_sound hv) w
   split at h
   · rename_i pe
     cases hl : localOf env scope (kid target 0) with
@@ -598,11 +614,15 @@ theorem assignTarget_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {t
             exact .fieldEval c.1 c.2.1 c.2.2 (localOf_sound hl) (fieldIndex_sound hj) (fieldTyAt_sound t ht)
               (effOf_sound he)
   split at h
-  · rename_i _ _ c
+  · rename_i nr _ _ c
     simp only [Bool.and_eq_true, decide_eq_true_eq] at c
     cases hl : localOf env scope (kid target 0) with
     | none => rw [hl] at h; cases h
     | some l =>
+      have nref : isRefTy l.ty = false := by
+        simp only [refTarget] at nr; rw [hl] at nr
+        have ne : ¬nodeProd (kid target 1) = pPostfixEnd := by rw [c.1]; decide
+        simpa [refTarget, refRooted, ne] using nr
       rw [hl] at h
       simp only [setIndexOrEval, setIndexEvalOf] at h
       cases hi : effOf fuel env scope none (kid (kid target 1) 1) with
@@ -618,11 +638,12 @@ theorem assignTarget_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {t
           | false =>
             simp only [stmtUnless, w, Bool.false_eq_true, ↓reduceIte, Option.some.injEq] at h
             subst h
-            exact .indexEval c.1 c.2 (localOf_sound hl) (effOf_sound hi) (effOf_sound hv) w
+            exact .indexEval c.1 c.2 (localOf_sound hl) nref (effOf_sound hi) (effOf_sound hv) w
   cases h
 
 /-- `target op= value;`: `x = x op value` or `x.f = x.f op value`, also for
-`/=` and `%=`. -/
+`/=` and `%=`; (F5, S5) through a reference parameter, `place op= value` (not
+for `/=` and `%=`), as for `place = value`. -/
 inductive CompoundR (env : FrontEnv) (scope : List Local) (target : CTree) (p : Nat) (value : CTree) : MStmt → Prop
   | localEval {l : Local} {x y : MEff} {m : MStmt} : nodeProd (kid target 1) = pPostfixEnd →
       LocalOf scope (kid target 0) l → EffR env scope (some l.ty) value x →
@@ -634,6 +655,11 @@ inductive CompoundR (env : FrontEnv) (scope : List Local) (target : CTree) (p : 
       FieldTyAt env.decls l.ty j t → EffR env scope (some t) value x →
       compoundEff p (.xPure (.field l.id j)) (some x) = some y →
       CompoundR env scope target p value (setFieldEff l.id j y)
+  | placeEval {l : Local} {o : SrcAssignOp} {pl x : MEff} {t : Ty} : nodeProd (kid target 1) ≠ pPostfixEnd →
+      LocalOf scope (kid target 0) l → isRefTy l.ty = true → assignOpOf p = some o →
+      EffR env scope none target pl → effPlace pl = true → EffTy env.decls scope pl t →
+      EffR env scope (some t) value x → (hasAt pl && effActs env.decls.fns.length x) = false →
+      CompoundR env scope target p value (.mSetPlaceOp o pl x)
 
 theorem compoundEff_some {p : Nat} {left : MEff} {right : Option MEff} {y : MEff}
     (h : compoundEff p left right = some y) : ∃ x, right = some x ∧ compoundEff p left (some x) = some y := by
@@ -648,6 +674,44 @@ theorem compoundOf_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {tar
     {m : MStmt} (h : compoundOf fuel env scope (some target) p value = some m) : CompoundR env scope target p value m := by
   simp only [compoundOf] at h
   simp only [compoundEval] at h
+  split at h
+  · rename_i c
+    simp only [refTarget, Bool.and_eq_true, decide_eq_true_eq] at c
+    obtain ⟨ne, rr⟩ := c
+    cases hl : localOf env scope (kid target 0) with
+    | none => rw [hl] at rr; simp [refRooted] at rr
+    | some l =>
+      rw [hl] at rr
+      simp only [refRooted] at rr
+      simp only [setPlaceOpOf] at h
+      cases ho : assignOpOf p with
+      | none => rw [ho] at h; cases h
+      | some o =>
+        rw [ho] at h
+        simp only at h
+        cases hp : effOf fuel env scope none target with
+        | none => rw [hp] at h; cases h
+        | some pl =>
+          rw [hp] at h
+          simp only at h
+          cases pp : effPlace pl with
+          | false => simp [pp, checkedStmt] at h
+          | true =>
+            cases ht : effTy fuel env scope pl with
+            | none => simp [ht, pp, checkedStmt, hasTy] at h
+            | some t =>
+              simp only [ht, pp, checkedStmt, hasTy, Bool.and_self, ↓reduceIte, setPlaceOpValue] at h
+              cases hv : effOf fuel env scope (some t) value with
+              | none => rw [hv] at h; cases h
+              | some x =>
+                rw [hv] at h
+                simp only at h
+                cases w : (hasAt pl && effActs env.decls.fns.length x) with
+                | true => simp only [stmtUnless, w, ↓reduceIte] at h; cases h
+                | false =>
+                  simp only [stmtUnless, w, Bool.false_eq_true, ↓reduceIte, Option.some.injEq] at h
+                  subst h
+                  exact .placeEval ne (localOf_sound hl) rr ho (effOf_sound hp) pp (effTy_sound ht) (effOf_sound hv) w
   split at h
   · rename_i pe
     cases hl : localOf env scope (kid target 0) with
@@ -1082,7 +1146,7 @@ theorem i32ArrayLength_some {t : Ty} {n : Nat} (e : i32ArrayLength t = some n) :
       simp only [Option.some.injEq] at e
       rw [(sameTy_iff _ _).1 same, e]
     · cases e
-  | tyI32 | tyBool | tyUint _ | tyPtr | tyIsize | tyChar | tyStr | tyFloat _ | tySlice _ | tyNamed _ _ | tySint _ =>
+  | tyI32 | tyBool | tyUint _ | tyPtr | tyIsize | tyChar | tyStr | tyFloat _ | tySlice _ | tyNamed _ _ | tySint _ | tyRef _ =>
     simp [i32ArrayLength, arrayParts] at e
 
 theorem isPtrOf_some {t : Option Ty} (e : isPtrOf t = true) : t = some .tyPtr := by

@@ -4,6 +4,13 @@ public import Lanius.Mini.Reading.Det.Agree
 import all Lanius.Mini.Frontend.P.projection
 import all Lanius.Mini.Frontend.P.shrFirst
 import all Lanius.Mini.Frontend.P.tryLet
+import all Lanius.Mini.Frontend.P.setPlaceOf
+import all Lanius.Mini.Frontend.P.setFieldOrEval
+import all Lanius.Mini.Frontend.P.namesFieldBase
+import all Lanius.Mini.Frontend.P.isFnPath
+import all Lanius.Mini.Frontend.P.fieldValue
+import all Lanius.Mini.Frontend.P.eDerefClosed
+import all Lanius.Mini.Frontend.P.checkedFunc
 
 @[expose] public section
 /-! # The reading is deterministic, F1: the parts of effectful expressions
@@ -104,6 +111,26 @@ theorem effTy_unique {decls : Decls} {scope : List Local} :
   | _, _, _, .let, h₂ => by cases h₂; rfl
   | _, _, _, .len, h₂ => by cases h₂; rfl
   | _, _, _, .str, h₂ => by cases h₂; rfl
+  | _, _, _, .deref, h₂ => by cases h₂; rfl
+  | _, _, _, .placeField b f, h₂ => by
+    cases h₂ with
+    | placeField b' f' =>
+      rw [effTy_unique b b'] at f
+      obtain ⟨d, args, ts, e, fs, g⟩ := f
+      obtain ⟨d', args', ts', e', fs', g'⟩ := f'
+      rw [e] at e'
+      cases e'
+      rw [fieldTys_unique fs fs', g'] at g
+      cases g
+      rfl
+  | _, _, _, .placeAt b, h₂ => by
+    cases h₂ with
+    | placeAt b' => have := effTy_unique b b'; cases this; rfl
+    | placeAtArray b' => have := effTy_unique b b'; cases this
+  | _, _, _, .placeAtArray b, h₂ => by
+    cases h₂ with
+    | placeAt b' => have := effTy_unique b b'; cases this
+    | placeAtArray b' => have := effTy_unique b b'; cases this; rfl
 
 theorem effTys_unique {decls : Decls} {scope : List Local} {xs : List MEff} {a b : List Ty}
     (h₁ : ListRel (EffTy decls scope) xs a) (h₂ : ListRel (EffTy decls scope) xs b) : a = b :=

@@ -22,14 +22,14 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_string_call (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Nat} {x3 : List Nat} {x4 : List Nat} {x5 : Nat} {x6 : Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → RepNat x2 v2 → (RepList 25 RepNat) x3 v3 → (RepList 25 RepNat) x4 v4 → RepNat x5 v5 → RepCTree x6 v6 →
-    (RepOption 253 RepMStmt) (Lanius.Mini.stringCall x0 x1 x2 x3 x4 x5 x6) w
+    (RepOption 254 RepMStmt) (Lanius.Mini.stringCall x0 x1 x2 x3 x4 x5 x6) w
 
 abbrev Stmt_string_peeled (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Nat} {x3 : List Nat} {x4 : List Nat} {x5 : Nat} {x6 : Option Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → RepNat x2 v2 → (RepList 25 RepNat) x3 v3 → (RepList 25 RepNat) x4 v4 → RepNat x5 v5 → (RepOption 129 RepCTree) x6 v6 →
-    (RepOption 253 RepMStmt) (Lanius.Mini.stringPeeled x0 x1 x2 x3 x4 x5 x6) w
+    (RepOption 254 RepMStmt) (Lanius.Mini.stringPeeled x0 x1 x2 x3 x4 x5 x6) w
 
 abbrev Stmt_string_value (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Nat} {x3 : List Nat} {x4 : List Nat} {x5 : Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → RepNat x2 v2 → (RepList 25 RepNat) x3 v3 → (RepList 25 RepNat) x4 v4 → RepCTree x5 v5 →
-    (RepOption 253 RepMStmt) (Lanius.Mini.stringValue x0 x1 x2 x3 x4 x5) w
+    (RepOption 254 RepMStmt) (Lanius.Mini.stringValue x0 x1 x2 x3 x4 x5) w
 
 end Lanius.Faithful.SelfCert

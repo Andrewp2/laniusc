@@ -56,6 +56,7 @@ partial def tyName (decls : Decls) : Ty → String
   | .tyFloat .f64 => "f64"
   | .tySint k => sintName k
   | .tySlice e => s!"[{tyName decls e}]"
+  | .tyRef e => s!"&{tyName decls e}"
   | .tyArray e n => s!"[{tyName decls e}; {n}]"
   | .tyNamed d args =>
     let name := match decls.types[d]? with

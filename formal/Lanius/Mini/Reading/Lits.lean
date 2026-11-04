@@ -14,6 +14,13 @@ import all Lanius.Mini.Frontend.P.sintAt
 import all Lanius.Mini.Frontend.P.wideLeftStmt
 import all Lanius.Mini.Frontend.P.funcsBytes
 import all Lanius.Mini.Frontend.P.wideOf
+import all Lanius.Mini.Frontend.P.setPlaceOf
+import all Lanius.Mini.Frontend.P.setFieldOrEval
+import all Lanius.Mini.Frontend.P.namesFieldBase
+import all Lanius.Mini.Frontend.P.isFnPath
+import all Lanius.Mini.Frontend.P.fieldValue
+import all Lanius.Mini.Frontend.P.eDerefClosed
+import all Lanius.Mini.Frontend.P.checkedFunc
 
 @[expose] public section
 /-! # The reading, V8e: integer literals at their expected types

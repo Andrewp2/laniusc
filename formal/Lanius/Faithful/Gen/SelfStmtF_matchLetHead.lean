@@ -25,8 +25,8 @@ abbrev Stmt_call_let_head (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
     RepLetHead (Lanius.Mini.callLetHead x0 x1) w
 
 abbrev Stmt_eval_head (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Ty} {x1 : Option Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepTy x0 v0 → (RepOption 258 RepMEff) x1 v1 →
-    (RepOption 292 RepLetHead) (Lanius.Mini.evalHead x0 x1) w
+  ∀ {x0 : Lanius.Mini.Ty} {x1 : Option Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepTy x0 v0 → (RepOption 259 RepMEff) x1 v1 →
+    (RepOption 293 RepLetHead) (Lanius.Mini.evalHead x0 x1) w
 
 abbrev Stmt_eval_let_head (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Ty} {x1 : Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepTy x0 v0 → RepMEff x1 v1 →

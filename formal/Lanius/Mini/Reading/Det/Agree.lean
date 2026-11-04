@@ -9,6 +9,13 @@ import all Lanius.Mini.Frontend.P.isEmptyUsize
 import all Lanius.Mini.Frontend.P.purePart
 import all Lanius.Mini.Frontend.P.scalarOf
 import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.setPlaceOf
+import all Lanius.Mini.Frontend.P.setFieldOrEval
+import all Lanius.Mini.Frontend.P.namesFieldBase
+import all Lanius.Mini.Frontend.P.isFnPath
+import all Lanius.Mini.Frontend.P.fieldValue
+import all Lanius.Mini.Frontend.P.eDerefClosed
+import all Lanius.Mini.Frontend.P.checkedFunc
 
 @[expose] public section
 /-! # The reading is deterministic, F1: the pure and effectful readings agree
@@ -95,8 +102,11 @@ theorem chain_member {env : FrontEnv} {scope : List Local} {p tail : CTree} {e :
       | «local» lw =>
         have e := localWith_named nd lo lw
         subst e
-        rw [fieldIndex_unique fi₂ fi] at ch'
-        simpa [fieldValue, effLocal, purePart, pureLocal] using chain_end te ch'
+        obtain ⟨d, args, td, h, _, _⟩ := id fi
+        simp only [h, referentOr, referent] at fi₂ ch'
+        rw [fieldIndex_unique fi₂ (h ▸ fi)] at ch'
+        simpa [fieldValue, effLocal, effPlace, referent, purePart, pureLocal] using chain_end te ch'
+  | «at» _ _ _ _ => expr_clash
   | index _ _ _ _ _ => expr_clash
 
 theorem casts_agree {env : FrontEnv} {a : SrcExpr} {tail : CTree} {e : SrcExpr} (h : Casts env a tail e) :

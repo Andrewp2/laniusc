@@ -36,6 +36,12 @@ namespace Lanius.Mini
 @[expose] def Inline.pOrexpr : Nat :=
   118
 
+@[expose] def Inline.pTypeRef : Nat :=
+  285
+
+@[expose] def Inline.pTypeRefMut : Nat :=
+  324
+
 @[expose] def Inline.pParamNamed : Nat :=
   62
 

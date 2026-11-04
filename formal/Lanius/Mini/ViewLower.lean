@@ -6,60 +6,15 @@ public import Lanius.Mini.Stops
 public import Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.FArith_opcode
-import all Lanius.Mini.Compiler.P.FloatTy_rex
 import all Lanius.Mini.Compiler.P.Lists_empty
-import all Lanius.Mini.Compiler.P.SrcExpr_guard
 import all Lanius.Mini.Compiler.P.SrcType_same
-import all Lanius.Mini.Compiler.P.UintTy_half
-import all Lanius.Mini.Compiler.P.UintTy_isWide
-import all Lanius.Mini.Compiler.P.UintTy_mask
-import all Lanius.Mini.Compiler.P.Word_compute
-import all Lanius.Mini.Compiler.P.Word_narrows
-import all Lanius.Mini.Compiler.P.applyGuard
-import all Lanius.Mini.Compiler.P.arithShiftRight
-import all Lanius.Mini.Compiler.P.arithUint
 import all Lanius.Mini.Compiler.P.arities
-import all Lanius.Mini.Compiler.P.armBodyScope
-import all Lanius.Mini.Compiler.P.armPayload
-import all Lanius.Mini.Compiler.P.armScope
 import all Lanius.Mini.Compiler.P.arrayCallSig
 import all Lanius.Mini.Compiler.P.assignFrom
-import all Lanius.Mini.Compiler.P.callAgrees
-import all Lanius.Mini.Compiler.P.codeSize
 import all Lanius.Mini.Compiler.P.compileModules
 import all Lanius.Mini.Compiler.P.conjunction
-import all Lanius.Mini.Compiler.P.consArgs
-import all Lanius.Mini.Compiler.P.elementAddress
-import all Lanius.Mini.Compiler.P.elementBase
-import all Lanius.Mini.Compiler.P.enumVariants
-import all Lanius.Mini.Compiler.P.equality
-import all Lanius.Mini.Compiler.P.evalDivide
-import all Lanius.Mini.Compiler.P.evalDivideSint
-import all Lanius.Mini.Compiler.P.evalNot
-import all Lanius.Mini.Compiler.P.evalSame
-import all Lanius.Mini.Compiler.P.extentAfter
-import all Lanius.Mini.Compiler.P.floatApply
-import all Lanius.Mini.Compiler.P.funcNeeds
-import all Lanius.Mini.Compiler.P.guardAnd
-import all Lanius.Mini.Compiler.P.hostRandomCode
-import all Lanius.Mini.Compiler.P.evalHost
-import all Lanius.Mini.Compiler.P.indexOf
-import all Lanius.Mini.Compiler.P.iteThen
-import all Lanius.Mini.Compiler.P.killShared
-import all Lanius.Mini.Compiler.P.leftTrue
 import all Lanius.Mini.Compiler.P.loadAtBytes
-import all Lanius.Mini.Compiler.P.longer
-import all Lanius.Mini.Compiler.P.lowerAddress
 import all Lanius.Mini.Compiler.P.lowerApply
-import all Lanius.Mini.Compiler.P.lowerBody
-import all Lanius.Mini.Compiler.P.lowerCallSig
-import all Lanius.Mini.Compiler.P.lowerLoadType
-import all Lanius.Mini.Compiler.P.lowerLocal
-import all Lanius.Mini.Compiler.P.lowerReturn
-import all Lanius.Mini.Compiler.P.lowerSetCallArgs
-import all Lanius.Mini.Compiler.P.lowerSetValues
-import all Lanius.Mini.Compiler.P.lowerShift
-import all Lanius.Mini.Compiler.P.lowerSlice
 import all Lanius.Mini.Compiler.P.lowerTagged
 import all Lanius.Mini.Compiler.P.matchDst
 import all Lanius.Mini.Compiler.P.matchVariants
@@ -67,21 +22,8 @@ import all Lanius.Mini.Compiler.P.needCapped
 import all Lanius.Mini.Compiler.P.needsAfter
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.repeatType
-import all Lanius.Mini.Compiler.P.shortCircuit
-import all Lanius.Mini.Compiler.P.sintToUint
 import all Lanius.Mini.Compiler.P.storeArray
-import all Lanius.Mini.Compiler.P.strStores
-import all Lanius.Mini.Compiler.P.storeEvalWord
-import all Lanius.Mini.Compiler.P.storeType
-import all Lanius.Mini.Compiler.P.storeWordElement
-import all Lanius.Mini.Compiler.P.structFields
-import all Lanius.Mini.Compiler.P.substAll
-import all Lanius.Mini.Compiler.P.usizeWidth
-import all Lanius.Mini.Compiler.P.widthOf
-import all Lanius.Mini.Compiler.P.withBudget
-import all Lanius.Mini.Compiler.P.wordElement
 import all Lanius.Mini.Compiler.P.wordStride
-import all Lanius.Mini.Compiler.P.wordWidth
 import all Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Compiler.P.SrcExpr_guard
 public import Lanius.Mini.Compiler.P.SrcType_same
@@ -503,7 +445,7 @@ scope, and leaving the body's scope again corresponds for the outer one. -/
 theorem view_entered {P : Core.Program} {id length pointer k : Nat} {xs : List Expr} {vs : List Value}
     {w : Value} {st3 : State}
     (corr : Corr sx places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp)
+    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : LentHomes sx bud places st hp)
     (under : ∀ x ∈ places, x.cell < base) (pos : 0 < length)
     (fh : FieldsHold sx places (List.replicate length .i32) vs (env.setFrom next xs) next)
     (ptrRun : evalExpr k P (st.bindLocal id (.array vs)) (.i32ArrayDataPtr (.local id)) = .done w st3)
@@ -513,7 +455,7 @@ theorem view_entered {P : Core.Program} {id length pointer k : Nat} {xs : List E
       Layout (viewScope id length pointer next scope) frame' base (next + length + 1) ∧
       (st3.bindLocal pointer (.pointer p)).Fresh ∧ base ≤ (st3.bindLocal pointer (.pointer p)).nextCell ∧
       HeapCorr (st3.bindLocal pointer (.pointer p)).heap (st3.bindLocal pointer (.pointer p)).world hp3 ∧
-      FrameCorr sx bud places (st3.bindLocal pointer (.pointer p)) hp3 ∧ hp3.limit = hp.limit ∧
+      LentHomes sx bud places (st3.bindLocal pointer (.pointer p)) hp3 ∧ hp3.limit = hp.limit ∧
       Keeps places base st (st3.bindLocal pointer (.pointer p)) ∧
       (∀ {s4 : State} {c : Completion} {out : Outcome},
         Matches sx bud places ret (viewScope id length pointer next scope) frame' s4 c out →
@@ -564,14 +506,14 @@ theorem view_entered {P : Core.Program} {id length pointer k : Nat} {xs : List E
   have frB := fr1.push (corr1.below fresh3) (by rw [next3]; addr_omega) pointer (ty := .ptr) (by decide)
   have hcB : HeapCorr (st3.bindLocal pointer (.pointer p)).heap (st3.bindLocal pointer (.pointer p)).world
       hp3 := by subst st3Eq; exact hc3
-  have fcB : FrameCorr sx bud places (st3.bindLocal pointer (.pointer p)) hp3 := by
+  have fcB : LentHomes sx bud places (st3.bindLocal pointer (.pointer p)) hp3 := by
     refine fc.congrViews (fun x m => ?_) (fun x m a covers => ?_) ?_ ?_ ?_ ?_ ?_
     · have := under x m
       rw [bindLocal_entry (by rw [next3]; addr_omega)]
       subst st3Eq
       exact bindLocal_entry (by addr_omega) id _
     · have := fc.inside x m
-      unfold Addressed.Covers at covers
+      unfold Addressed.Within at covers
       simp only [hp3, Heap.writeBytes_eq_writeAll, Heap.writeAll, slotBytes_length]
       rw [if_neg (by addr_omega)]
     · simp only [hp3, Heap.writeBytes_eq_writeAll, Heap.writeAll]
@@ -646,7 +588,7 @@ theorem stmt_letView (ih : ∀ m ≤ fuel, StmtSound sp mp m) {id length pointer
     {body : SrcStmt}
     (ok : (SrcStmt.letView id length fields pointer body).lower (sp.sigsAt bud) sp.decls ret scope next = some stmt)
     (corr : Corr sx places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp)
+    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : LentHomes sx bud places st hp)
     (under : ∀ x ∈ places, x.cell < base)
     (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.letView id length fields pointer body).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :

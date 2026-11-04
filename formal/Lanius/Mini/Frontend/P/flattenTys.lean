@@ -44,6 +44,11 @@ def sliceType (element : Option SrcType) : Option SrcType :=
   | none => none
   | some e => some (SrcType.slice e)
 
+def refType (referent : Option SrcType) : Option SrcType :=
+  match referent with
+  | none => none
+  | some e => some (SrcType.ref e)
+
 /-- A type's weight is at least its slot count (`SrcType::size`) and its node count: a scalar weighs 1, a slice 1 more than its element, an array of n elements 1 + max(n, 1) times its element, a struct 1 more than its fields together, an enum 1 more than all its payloads together. The front end rejects a type heavier than weight_limit(): an array type here, a type instance in types_weighed (decided 11-01, F14). So no slot count, offset or frame size the compiler computes from a type overflows a usize, and lowering a type takes time linear in its weight. -/
 def weightLimit : Nat :=
   4194304

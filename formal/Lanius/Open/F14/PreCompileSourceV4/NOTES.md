@@ -121,6 +121,47 @@ variable passes it on, a `SrcType.size t` argument gives `ts t`. `str_words` get
 `word_stride`, `element_base`, `str_words` pass. Left in B: `pick_element`/`put_element` (also add the
 base slot `base + k * size`: A) and `params_array_bytes`/`SrcStmt_array_bytes` (the frame block's sums:
 D). P02: 66 -> 62, none new.
+
+**11-03, after leafA-frame (leafB).** The temps lines of `COMPILE_OVERRIDES` for `compile_func`,
+`compile_funcs`, `compile_program`, `compile_optimized`, `compile_lowered` and `compile_or` are gone:
+`compile_func` gets `Stmt.temps body ≤ weight` (`val_Stmt_temps`, stated up front by the new
+`COMPILE_FACTS`, since only `Stmt_temps`' premise mentions it) and its room check bounds the weight.
+D: `CompileNeeds.lean` (`val_SrcStmt_calleeNeed`/`val_SrcEff_calleeNeed`: a callee's need is at most the
+largest need, `val_frameBlock` from `frameBlock_le`, and `val_needRound(At)`/`val_needsAfter`/`val_funcNeeds`:
+every round is capped at `needLimit`), with `nb prev ≤ 2^40` as `need_round_at`'s, `need_round`'s and
+`needs_after`'s invariant. leafA-frame's caps also fixed `frame_block` and the array-bytes sums.
+P02: 62 -> 58, none new. `LowerFuncsTemps` is no longer used by the pre lemmas.
+
+**11-03, group C, first part (leafB).** Counters along a list get "counter + the list's height ≤ K"
+(`COMPILE_OVERRIDES`: `slot_range` `first + count`, `dying_extent`, `arg_slots`; the height, not
+`.length`, since `hb` facts are in scope where a callee's premise needs them), and `Instr_encode`'s
+`match` variables count as its instruction (`COMPILE_NUM_ALIAS`). P02: 58 -> 55, none new. The
+encoders' slots (`slot_offset`'s `(slot + 1) * 8 < 2^32`, `frame_size`, `arg_base`, `copy_bytes`,
+`sys_bytes`, `Instr_encode`'s `argBase slots`, `encode_onto`, `link_onto`) need a frame-slot bound that
+`nb` cannot give (it also counts jump targets): the new open leaf CompileFuncSlots (`codeSlotTop
+instrs ≤ slots ≤ frameLimit` for `compileFunc`'s code, measure in SelfPre/CompileSlots.lean), to be carried
+by `COMPILE_OVERRIDES` from `compile_func` to the encoders. Not yet looked at: `round_cons`/`round_join`
+(`count` sums), `Stmt_within`, `Code_size`, `layout`, `Expr_extent`/`Stmt_extent`. `host_text_code`
+(`slot + 1 ≤ M`) belongs with A.
+
+**11-03, group C, second part (leafB).** CompileFuncSlots' two unchecked claims hold (the leaf's NOTES),
+but the encoders need more than it states, so it is replaced by CompileFuncSlotsV2: slots by
+`slotReach` (a call's arguments and a return's sources also counted by number: `copy_bytes`), the
+code's size `≤ 2^40` (`Code_size`, `layout`, `link_onto`), and the instructions' numbers
+`≤ max (nb func) 2^40` (`encode_onto`'s `nb` premise). `vals_compileFuncs` (SelfPre/CompileOpt) turns it
+into `codesSlack codes = 0` and `codesNb codes ≤ max (nb fs) 2^40`, and the overrides carry those from
+`compile_program` through `link`, `room_after`/`room_next`, `link_fitting` and `link_onto` to
+`encode_onto` and `Instr_encode` (`codesSlack_cons_eq_zero` reads the measure one code at a time: the
+unfolded `max`/`-` form gave "(kernel) deep recursion" next to the other hypotheses). The pre lemmas
+from `compile_source` down to `compile_program` assume CompileFuncSlotsV2 (Tactic's `openProp` takes an
+open statement premise from the context), so V4's assembly becomes a reduction from it. `round_cons`/
+`round_join`: a round's count is at most its bytes (`val_packRound`, `val_packRounds`).
+`Expr_extent`/`Stmt_extent`/`Stmt_within`: their `match` variables count as the statement
+(`COMPILE_NUM_ALIAS`), so their numbers come from the caller's `nb`. `link_onto`'s entries: `val_layout`.
+
+**11-03 (leafB).** CompileFuncSlotsV2 is proved (its Proof.lean; SelfPre/CompileSlotsProof.lean), so the
+Mini-compile side's assumption of it is discharged: V4 still waits on the lowering slots (group A).
+
 - 11-03 (leafA, coordinator's decision, on leafB2's finding A): the evaluator's start slots are checked against
   `eval_slot_limit()` = 2^40 in `eval_args`, `eval_let_body` and `eval_arm_in` (the three steps that add a type
   size per nesting level), which return `None` at or past it. Between two checks a slot grows by at most one

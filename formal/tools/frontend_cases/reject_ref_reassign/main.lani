@@ -1,0 +1,8 @@
+// A reference parameter is not reassigned (SEMANTIC_DECISIONS "S5 in
+// Lanius's syntax" point 4).
+struct P { a: i32 }
+
+fn pick(p: &P, q: &P) -> i32 {
+    p = q;
+    return p.a;
+}

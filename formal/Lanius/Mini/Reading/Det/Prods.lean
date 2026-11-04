@@ -3,6 +3,13 @@ module
 public import Lanius.Mini.Reading.Prods
 public import Lanius.Mini.Reading.Clash
 import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.setPlaceOf
+import all Lanius.Mini.Frontend.P.setFieldOrEval
+import all Lanius.Mini.Frontend.P.namesFieldBase
+import all Lanius.Mini.Frontend.P.isFnPath
+import all Lanius.Mini.Frontend.P.fieldValue
+import all Lanius.Mini.Frontend.P.eDerefClosed
+import all Lanius.Mini.Frontend.P.checkedFunc
 
 @[expose] public section
 /-! The production numbers unfolded, so that `omega` can tell two of them apart. -/
