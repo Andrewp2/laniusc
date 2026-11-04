@@ -1,4 +1,8 @@
-import Lanius.Mini.Refs.Homed
+module
+
+public import Lanius.Mini.Refs.Homed
+
+@[expose] public section
 
 open Lanius.Mini
 open Lanius.Core (Value ValueProjection)

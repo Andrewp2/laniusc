@@ -1,5 +1,9 @@
-import Lanius.Mini.Refs.Model
-import Lanius.Mini.Views
+module
+
+public import Lanius.Mini.Refs.Model
+public import Lanius.Mini.Views
+
+@[expose] public section
 
 open Lanius.Mini
 open Lanius.Core (Value ValueProjection)

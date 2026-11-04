@@ -1,18 +1,22 @@
-import Lanius.Open.F5.RefLoad.Stmt
-import Lanius.Open.F5.RefStoreV2.Stmt
-import Lanius.Open.F5.PlaceAddr.Stmt
-import Lanius.Open.F5.PlaceAddrTraps.Stmt
-import Lanius.Open.F5.HomesLend.Stmt
-import Lanius.Open.F5.FrameCorrHomes.Stmt
-import Lanius.Open.F5.CorePlace.Stmt
-import Lanius.Open.F5.CoreRead.Stmt
-import Lanius.Open.F5.CoreAssign.Stmt
-import Lanius.Open.F5.CoreAssignOp.Stmt
-import Lanius.Open.F5.CoreBorrow.Stmt
-import Lanius.Open.F5.HomesPush.Stmt
-import Lanius.Open.F5.HomesFrame.Stmt
-import Lanius.Open.F5.HomesLeave.Stmt
-import Lanius.Open.F5.HomesCongrV2.Stmt
+module
+
+public import Lanius.Open.F5.RefLoad.Stmt
+public import Lanius.Open.F5.RefStoreV2.Stmt
+public import Lanius.Open.F5.PlaceAddr.Stmt
+public import Lanius.Open.F5.PlaceAddrTraps.Stmt
+public import Lanius.Open.F5.HomesLend.Stmt
+public import Lanius.Open.F5.FrameCorrHomes.Stmt
+public import Lanius.Open.F5.CorePlace.Stmt
+public import Lanius.Open.F5.CoreRead.Stmt
+public import Lanius.Open.F5.CoreAssign.Stmt
+public import Lanius.Open.F5.CoreAssignOp.Stmt
+public import Lanius.Open.F5.CoreBorrow.Stmt
+public import Lanius.Open.F5.HomesPush.Stmt
+public import Lanius.Open.F5.HomesFrame.Stmt
+public import Lanius.Open.F5.HomesLeave.Stmt
+public import Lanius.Open.F5.HomesCongrV2.Stmt
+
+@[expose] public section
 
 /-- **F5's construct lemmas.** The conjunction of the lowering facts for each
 reference construct, in the memory model of SEMANTIC_DECISIONS "References:

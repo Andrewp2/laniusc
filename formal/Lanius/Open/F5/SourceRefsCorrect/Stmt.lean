@@ -1,4 +1,8 @@
-import Lanius.Mini.SourceCorrect
+module
+
+public import Lanius.Mini.SourceCorrect
+
+@[expose] public section
 
 open Lanius.Mini Lanius.X86.Machine
 open Lanius.Core (Value)

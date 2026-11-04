@@ -23,10 +23,15 @@ Everything lives under `formal/Lanius/Open/`, one statement per directory:
       def Lanius.Open.<Name> : Prop := ...
 
   It imports only definitions (the model, the semantics, Gen/ and the like),
-  never another statement's proof. Once it is on `lang` it never changes:
-  `open_graph.py check` compares it with the version the commit that added it
-  had. A wrong or unprovable statement is replaced by a new one under a new
-  name (`<Name>V2`), and the old one is left, unused.
+  never another statement's proof. A statement is a module (`module`, its
+  imports `public`, then `@[expose] public section`) when everything it
+  imports is one, so that it rebuilds only when what it names changes. Once
+  it is on `lang` the statement never changes: `open_graph.py check` compares
+  the docstring and the `def` with its body (whitespace ignored) with the
+  ones the commit that added it had. The file's header (the `module` line,
+  the imports, the `open`s) may change. A wrong or unprovable statement is
+  replaced by a new one under a new name (`<Name>V2`), and the old one is
+  left, unused.
 - **Reduction** (`Red<k>.lean`): an ordinary, complete theorem
 
       theorem Lanius.Open.<Name>.red<k> (h₁ : Lanius.Open.<A>) (h₂ : Lanius.Open.<B>) :
@@ -72,7 +77,7 @@ note in the old one's NOTES.md which one replaces it.
 ## What is checked
 
 `open_graph.py check` (the gate's `open` step) checks that:
-- every statement has a docstring and is unchanged since it was first committed;
+- every statement has a docstring, and the docstring and `def` are unchanged since it was first committed;
 - every reduction's hypotheses are open statements and its conclusion is its own statement;
 - every proof proves exactly its own statement;
 - nothing under Lanius/Open uses `sorry`, `admit`, `axiom`, `native_decide`,

@@ -1,4 +1,8 @@
-import Lanius.Mini.Refs.Machine
+module
+
+public import Lanius.Mini.Refs.Machine
+
+@[expose] public section
 
 open Lanius.Mini
 

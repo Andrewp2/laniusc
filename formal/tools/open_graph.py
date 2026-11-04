@@ -8,10 +8,10 @@
 
 status lists what is proved, ready to assemble (with the line to write),
 blocked and open. check is the gate's `open` step: docstrings, statements
-unchanged since first committed, reductions and proofs of the right shape, no
-forbidden constructs. Lean itself checks the declarations (the gate builds
-LaniusOpen); this script checks what Lean would accept but the convention
-does not.
+(the docstring and the def; not the file's header) unchanged since first
+committed, reductions and proofs of the right shape, no forbidden
+constructs. Lean itself checks the declarations (the gate builds LaniusOpen);
+this script checks what Lean would accept but the convention does not.
 """
 
 import argparse
@@ -206,8 +206,17 @@ def git(*args):
     return subprocess.run(['git', *args], cwd=ROOT, capture_output=True, text=True)
 
 
+def statement(text):
+    """The statement of a Stmt.lean text: its docstring and its `def ... : Prop :=` with
+    the body, to the end of the file. The header before it (`module`, the imports, the
+    `open`s, the section) may change; the statement may not."""
+    m = STMT_RE.search(text)
+    return text[m.start():] if m else text
+
+
 def unchanged_problems(graph):
-    """Each Stmt.lean against the version the commit that added it had (whitespace ignored)."""
+    """Each Stmt.lean's statement against the one the commit that added it had (whitespace
+    ignored)."""
     out = []
     for name, node in graph.items():
         path = os.path.relpath(os.path.join(node['dir'], 'Stmt.lean'), ROOT)
@@ -219,7 +228,7 @@ def unchanged_problems(graph):
             out.append(f'{path}: cannot read its first committed version ({first.stderr.strip()})')
             continue
         norm = lambda s: ' '.join(s.split())
-        if norm(first.stdout) != norm(open(os.path.join(ROOT, path)).read()):
+        if norm(statement(first.stdout)) != norm(statement(open(os.path.join(ROOT, path)).read())):
             out.append(f'{path}: {short(name)} changed since {added[-1][:9]} first committed it; a statement '
                        'never changes (write a new one under a new name)')
     return out
