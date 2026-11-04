@@ -236,6 +236,8 @@ def check(words):
     o_rules = o_nodes + 3 * nn
     o_steps = o_rules + 6 * nr
     o_pool = o_steps + 4 * nst
+    n = len(w)
+    assert ns <= n and nc <= n // 3 and nn <= n // 3 and nr <= n // 6 and nst <= n // 4 and npool <= n
     assert o_pool + npool == len(w)
     pool = lambda i: w[o_pool + i]
 
@@ -301,6 +303,7 @@ def check(words):
                 assert match(pool(rho + j), sigma, rnv, w[o_steps + 4 * p + 3]), (r, i, j)
         assert w[o_steps + 4 * (end - 1) + 3] == concl
         prev_end = end
+    assert prev_end == nst
     return True
 
 

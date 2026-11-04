@@ -85,7 +85,8 @@ fn check(w: [i32], count: i32, stack: [i32], out: [u64]) -> i32 {
     while (i < count) { if (w[i] < 0) { out[0] = i as u64; return 11; } i += 1; }
     if (w[0] != 1414677324 || w[1] != 1) { return 12; }
     let ns: i32 = w[2]; let nc: i32 = w[3]; let nn: i32 = w[4]; let nr: i32 = w[5]; let nst: i32 = w[6]; let np: i32 = w[7];
-    if (ns > count || nc > count || nn > count || nr > count || nst > count || np > count) { return 13; }
+    // Each entry takes at least its own words, so no offset below can overflow (count <= 2^28).
+    if (ns > count || nc > count / 3 || nn > count / 3 || nr > count / 6 || nst > count / 4 || np > count) { return 13; }
     let o_sorts: i32 = 8; let o_cons: i32 = o_sorts + ns; let o_nodes: i32 = o_cons + 3 * nc;
     let o_rules: i32 = o_nodes + 3 * nn; let o_steps: i32 = o_rules + 6 * nr; let o_pool: i32 = o_steps + 4 * nst;
     if (o_pool + np != count) { return 14; }
@@ -175,6 +176,7 @@ fn check(w: [i32], count: i32, stack: [i32], out: [u64]) -> i32 {
         }
         r += 1;
     }
+    if (prev_end != nst) { return 59; }
     out[0] = axioms; out[1] = theorems; out[2] = nst as u64; out[3] = digest;
     return 0;
 }

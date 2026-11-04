@@ -66,6 +66,23 @@ def decl (i : Nat) (o : Json) : MetaM Declaration := do
       let val ← mkLambdaFVars (xs ++ hvs) pf
       return .thmDecl { name := Name.mkSimple s!"kobl{i}", levelParams := [], type := ty, value := val }
 
+partial def dagSize (e : Expr) (seen : Std.HashSet Expr) : Std.HashSet Expr :=
+  if seen.contains e then seen else
+  let seen := seen.insert e
+  match e with
+  | .app f a => dagSize a (dagSize f seen)
+  | .lam _ t b _ => dagSize b (dagSize t seen)
+  | .forallE _ t b _ => dagSize b (dagSize t seen)
+  | .letE _ t v b _ => dagSize b (dagSize v (dagSize t seen))
+  | .mdata _ b => dagSize b seen
+  | .proj _ _ b => dagSize b seen
+  | .bvar _ => seen
+  | .fvar _ => seen
+  | .mvar _ => seen
+  | .sort _ => seen
+  | .const _ _ => seen
+  | .lit _ => seen
+
 def run (path : String) (limit : Nat) : MetaM Unit := do
   let lines ← IO.FS.lines path
   let mut decls := #[]
@@ -73,6 +90,10 @@ def run (path : String) (limit : Nat) : MetaM Unit := do
     if i ≥ limit then break
     let j ← IO.ofExcept (Json.parse l)
     decls := decls.push (← decl i j)
+  let mut nodes := 0
+  for d in decls do
+    if let .thmDecl t := d then nodes := nodes + (dagSize t.value {}).size
+  IO.println s!"proof terms: {nodes} distinct Expr nodes in all, {nodes / decls.size} each"
   let kenv := (← getEnv).toKernelEnv
   let t0 ← IO.monoNanosNow
   let mut ok := 0

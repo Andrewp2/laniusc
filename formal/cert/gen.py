@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Certificates for the linear side conditions of pre_auto/post_auto (F14).
 
-    gen.py OBLIGATIONS.jsonl OUT.cert [--limit N] [--stats STATS.json]
+    gen.py OBLIGATIONS.jsonl OUT.cert [--limit N] [--only KEYPREFIX] [--stats STATS.json]
 
 OBLIGATIONS.jsonl is Export.lean's dump of the generated precondition
 modules: every `SelfPre.LinCert.cert` use, an obligation `L ≤ R` from
@@ -431,6 +431,9 @@ def main(argv):
     stats_path = None
     if '--limit' in argv:
         limit = int(argv[argv.index('--limit') + 1])
+    only = None
+    if '--only' in argv:
+        only = argv[argv.index('--only') + 1]
     if '--stats' in argv:
         stats_path = argv[argv.index('--stats') + 1]
     obls = []
@@ -448,6 +451,8 @@ def main(argv):
     for o in obls:
         key = statement_key(o)
         if key in seen:
+            continue
+        if only is not None and not key.startswith(only):
             continue
         if limit is not None and len(seen) >= limit:
             break
