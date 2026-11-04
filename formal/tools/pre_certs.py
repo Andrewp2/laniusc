@@ -910,6 +910,7 @@ def num_facts(e, k, xs, tys, names):
             out += (f'  have hd_{y} : Lanius.Faithful.SelfPre.tsdStructs {y}.structs ≤ {WEIGHT} ∧ '
                     f'Lanius.Faithful.SelfPre.tsdEnums {y}.enums ≤ {WEIGHT} := '
                     f'⟨Nat.le_trans (tsd_structs {y}) {hyps[j]}, Nat.le_trans (tsd_enums {y}) {hyps[j]}⟩\n')
+            out += f'  have ht_{y} : ts {y} ≤ {WEIGHT} := Nat.le_trans (ts_le_tsd {y}) {hyps[j]}\n'
         if h.startswith('ts '):
             y = h.split()[1]
             t = tys[xs.split().index(y)].strip()

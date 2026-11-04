@@ -1519,7 +1519,9 @@ def valueFacts : TacticM Unit := do
         continue
       let .const fn _ := l.getAppFn | continue
       unless (`Lanius.Mini).isPrefixOf fn && r.isAppOfArity ``Option.some 2 do continue
-      let nm := `Lanius.Faithful.SelfPre ++ Name.mkSimple s!"vals_{lastName fn}"
+      let nmT := `Lanius.Faithful.SelfPre ++ Name.mkSimple s!"vals_{lastName fn.getPrefix}_{lastName fn}"
+      let nm := if env.contains nmT then nmT
+        else `Lanius.Faithful.SelfPre ++ Name.mkSimple s!"vals_{lastName fn}"
       unless env.contains nm do continue
       let p := mkAppN (← constFresh nm) (l.getAppArgs ++ #[r.appArg!, h])
       if (← isTypeCorrect p) && (← isProp (← inferType p)) then facts := facts.push p

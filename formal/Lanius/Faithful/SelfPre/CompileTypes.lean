@@ -560,4 +560,7 @@ theorem val_fieldOffset : ∀ (l : List SrcType) (i : Nat), fieldOffset l i ≤ 
     have := val_fieldOffset l (i - 1)
     simp only [fieldOffset, sizes]; split <;> omega
 
+/-- A type's size is at most its slot count (for `valueFacts`, on any `SrcType.size t`). -/
+theorem val_SrcType_size (t : SrcType) : SrcType.size t ≤ tySlots t := size_le_tySlots t
+
 end Lanius.Faithful.SelfPre
