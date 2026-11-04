@@ -6,10 +6,10 @@ import Lanius.Faithful.GenB.SelfBStmtF_Inline_pArrayMore
 import Lanius.Faithful.GenB.SelfBStmtF_Inline_pExpr
 import Lanius.Faithful.GenB.SelfBStmtF_compoundEval
 import Lanius.Faithful.GenB.SelfBStmtF_compoundOf
-import Lanius.Faithful.GenB.SelfBStmtF_fieldTyAt
 import Lanius.Faithful.GenB.SelfBStmtF_hasKids
 import Lanius.Faithful.GenB.SelfBStmtF_isEmptyUsize
 import Lanius.Faithful.GenB.SelfBStmtF_noToken
+import Lanius.Faithful.GenB.SelfBStmtF_setPlaceOf
 import Lanius.Faithful.GenB.SelfBStmtF_wideOf
 import Lanius.Faithful.GenB.SelfBStmtN4
 import Lanius.Faithful.GenB.SelfBStmtN7
@@ -49,8 +49,8 @@ theorem bproof_compound_of {spW sp : SrcProgram} {prims : Prims} {ix_compound_of
     budget Cost_compound_of
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4 r5⟩
 
-theorem bproof_assignment {spW sp : SrcProgram} {prims : Prims} {ix_assignment ix_minus ix_node_prod ix_kid ix_has_kids ix_kid_token ix_field_start_Token_of_mini_selfhost_Token ix_p_expr ix_p_assign ix_p_assign_end ix_peel ix_p_assign_set ix_assign_target ix_compound_of ix_call_stmt : Nat}
-    (fnW : spW.funcs[ix_assignment]? = some (src_assignment ix_minus ix_node_prod ix_kid ix_has_kids ix_kid_token ix_field_start_Token_of_mini_selfhost_Token ix_p_expr ix_p_assign ix_p_assign_end ix_peel ix_p_assign_set ix_assign_target ix_compound_of ix_call_stmt)) (fn : sp.funcs[ix_assignment]? = some (src_assignment ix_minus ix_node_prod ix_kid ix_has_kids ix_kid_token ix_field_start_Token_of_mini_selfhost_Token ix_p_expr ix_p_assign ix_p_assign_end ix_peel ix_p_assign_set ix_assign_target ix_compound_of ix_call_stmt))
+theorem bproof_assignment {spW sp : SrcProgram} {prims : Prims} {ix_assignment ix_minus ix_node_prod ix_kid ix_has_kids ix_kid_token ix_field_start_Token_of_mini_selfhost_Token ix_peel ix_p_expr ix_p_assign ix_p_assign_end ix_p_assign_set ix_assign_target ix_compound_of ix_call_stmt : Nat}
+    (fnW : spW.funcs[ix_assignment]? = some (src_assignment ix_minus ix_node_prod ix_kid ix_has_kids ix_kid_token ix_field_start_Token_of_mini_selfhost_Token ix_peel ix_p_expr ix_p_assign ix_p_assign_end ix_p_assign_set ix_assign_target ix_compound_of ix_call_stmt)) (fn : sp.funcs[ix_assignment]? = some (src_assignment ix_minus ix_node_prod ix_kid ix_has_kids ix_kid_token ix_field_start_Token_of_mini_selfhost_Token ix_peel ix_p_expr ix_p_assign ix_p_assign_end ix_p_assign_set ix_assign_target ix_compound_of ix_call_stmt))
     (np : prims.isPrim ix_assignment = false)
     (back : Certified (∀ {n : Nat}, Stmt_assignment sp prims ix_assignment n))
     (b_minus : Certified (∀ {n : Nat}, BStmt_minus spW sp prims ix_minus n))
@@ -59,10 +59,10 @@ theorem bproof_assignment {spW sp : SrcProgram} {prims : Prims} {ix_assignment i
     (b_has_kids : Certified (∀ {n : Nat}, BStmt_has_kids spW sp prims ix_has_kids n))
     (b_kid_token : Certified (∀ {n : Nat}, BStmt_kid_token spW sp prims ix_kid_token n))
     (b_field_start_Token_of_mini_selfhost_Token : Certified (∀ {n : Nat}, BStmt_field_start_Token_of_mini_selfhost_Token spW sp prims ix_field_start_Token_of_mini_selfhost_Token n))
+    (b_peel : Certified (∀ {n : Nat}, BStmt_peel spW sp prims ix_peel n))
     (b_p_expr : Certified (∀ {n : Nat}, BStmt_p_expr spW sp prims ix_p_expr n))
     (b_p_assign : Certified (∀ {n : Nat}, BStmt_p_assign spW sp prims ix_p_assign n))
     (b_p_assign_end : Certified (∀ {n : Nat}, BStmt_p_assign_end spW sp prims ix_p_assign_end n))
-    (b_peel : Certified (∀ {n : Nat}, BStmt_peel spW sp prims ix_peel n))
     (b_p_assign_set : Certified (∀ {n : Nat}, BStmt_p_assign_set spW sp prims ix_p_assign_set n))
     (b_assign_target : Certified (∀ {n : Nat}, BStmt_assign_target spW sp prims ix_assign_target n))
     (b_compound_of : Certified (∀ {n : Nat}, BStmt_compound_of spW sp prims ix_compound_of n))

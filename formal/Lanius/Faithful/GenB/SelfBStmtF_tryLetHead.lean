@@ -21,7 +21,7 @@ open Lanius.Faithful.Budget
 abbrev BStmt_try_let_head (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 239 RepLocal) x2 v2 → RepCTree x3 v3 → k < b → Pre_try_let_head n x0 x1 x2 x3 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_try_let_head n x0 x1 x2 x3 = k ∧ (RepOption 292 RepLetHead) (Lanius.Mini.tryLetHead x0 x1 x2 x3) w
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_try_let_head n x0 x1 x2 x3 = k ∧ (RepOption 293 RepLetHead) (Lanius.Mini.tryLetHead x0 x1 x2 x3) w
 
 abbrev BStmt_try_payload (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : Nat} {v0 v1 w : Value} {k : Nat},

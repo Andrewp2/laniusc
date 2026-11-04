@@ -33,6 +33,9 @@ def effNamedTys (x : MEff) : List Ty :=
   | .xLet id t v rt b => effNamedTys v ++ t :: rt :: effNamedTys b
   | .xLen sl => []
   | .xStr cs => []
+  | .xDeref dty a => dty :: effNamedTys a
+  | .xPlaceField b j => effNamedTys b
+  | .xPlaceAt b i => effNamedTys b ++ effNamedTys i
 def effsNamedTys (xs : List MEff) : List Ty :=
   match xs with
   | [] => []
@@ -76,5 +79,7 @@ def stmtCalls (m : MStmt) : List Inst :=
   | .mContinue => []
   | .mMatchArm sc sty k bs x ty body rest => stmtCalls body ++ stmtCalls rest
   | .mUnreachable id ty => []
+  | .mSetPlace pl v => effCalls pl ++ effCalls v
+  | .mSetPlaceOp op pl v => effCalls pl ++ effCalls v
 
 end Lanius.Mini

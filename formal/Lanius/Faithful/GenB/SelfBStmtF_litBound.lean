@@ -20,12 +20,12 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_lit_bound (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : Nat} {x2 : Lanius.Mini.Ty} {x3 : Lanius.Mini.MEff} {x4 : Lanius.Mini.Ty} {x5 : Option Lanius.Mini.MEff} {v0 v1 v2 v3 v4 v5 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) → RepBool x0 v0 → RepNat x1 v1 → RepTy x2 v2 → RepMEff x3 v3 → RepTy x4 v4 → (RepOption 258 RepMEff) x5 v5 →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) ∧ Cost_lit_bound n x0 x1 x2 x3 x4 x5 = k ∧ (RepOption 258 RepMEff) (Lanius.Mini.litBound x0 x1 x2 x3 x4 x5) w
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) → RepBool x0 v0 → RepNat x1 v1 → RepTy x2 v2 → RepMEff x3 v3 → RepTy x4 v4 → (RepOption 259 RepMEff) x5 v5 →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) ∧ Cost_lit_bound n x0 x1 x2 x3 x4 x5 = k ∧ (RepOption 259 RepMEff) (Lanius.Mini.litBound x0 x1 x2 x3 x4 x5) w
 
 abbrev BStmt_lit_scrut_chain (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Local} {x1 : Nat} {x2 : Lanius.Mini.MEff} {x3 : Lanius.Mini.Ty} {x4 : Lanius.Mini.Ty} {x5 : List Lanius.Mini.CTree} {x6 : List Lanius.Mini.MEff} {v0 v1 v2 v3 v4 v5 v6 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5, v6] = some (w, k) → (RepList 239 RepLocal) x0 v0 → RepNat x1 v1 → RepMEff x2 v2 → RepTy x3 v3 → RepTy x4 v4 → (RepList 83 RepCTree) x5 v5 → (RepList 236 RepMEff) x6 v6 → k < b → Pre_lit_scrut_chain n x0 x1 x2 x3 x4 x5 x6 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5, v6] = some (w, k) ∧ Cost_lit_scrut_chain n x0 x1 x2 x3 x4 x5 x6 = k ∧ (RepOption 258 RepMEff) (Lanius.Mini.litScrutChain x0 x1 x2 x3 x4 x5 x6) w
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5, v6] = some (w, k) ∧ Cost_lit_scrut_chain n x0 x1 x2 x3 x4 x5 x6 = k ∧ (RepOption 259 RepMEff) (Lanius.Mini.litScrutChain x0 x1 x2 x3 x4 x5 x6) w
 
 end Lanius.Faithful.SelfBudget

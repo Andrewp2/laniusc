@@ -5,12 +5,13 @@ import Lanius.Faithful.Gen.SelfStmtF_compoundEval
 import Lanius.Faithful.GenB.SelfBStmtF_Inline_pLeTail
 import Lanius.Faithful.GenB.SelfBStmtF_Inline_pPathMore
 import Lanius.Faithful.GenB.SelfBStmtF_compoundEval
-import Lanius.Faithful.GenB.SelfBStmtF_fieldTyAt
 import Lanius.Faithful.GenB.SelfBStmtF_floatTyped
 import Lanius.Faithful.GenB.SelfBStmtF_freshId
 import Lanius.Faithful.GenB.SelfBStmtF_hasKids
 import Lanius.Faithful.GenB.SelfBStmtF_isEmptyUsize
 import Lanius.Faithful.GenB.SelfBStmtF_noToken
+import Lanius.Faithful.GenB.SelfBStmtF_setFieldOrEval
+import Lanius.Faithful.GenB.SelfBStmtF_setPlaceOf
 import Lanius.Faithful.GenB.SelfBStmtF_stringOpen
 import Lanius.Faithful.GenB.SelfBStmtF_whileEvalOf
 import Lanius.Faithful.GenB.SelfBStmtN3
@@ -32,8 +33,8 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.SelfCert
 open Lanius.Faithful.Budget
 
-theorem bproof_compound_eval {spW sp : SrcProgram} {prims : Prims} {ix_compound_eval ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_member_type_args_none ix_eff_of ix_local_of ix_p_postfix_end ix_p_postfix_member ix_field_index ix_set_eval_of ix_compound_eff ix_compound_field_eval : Nat}
-    (fnW : spW.funcs[ix_compound_eval]? = some (src_compound_eval ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_member_type_args_none ix_eff_of ix_local_of ix_p_postfix_end ix_p_postfix_member ix_field_index ix_set_eval_of ix_compound_eff ix_compound_field_eval)) (fn : sp.funcs[ix_compound_eval]? = some (src_compound_eval ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_member_type_args_none ix_eff_of ix_local_of ix_p_postfix_end ix_p_postfix_member ix_field_index ix_set_eval_of ix_compound_eff ix_compound_field_eval))
+theorem bproof_compound_eval {spW sp : SrcProgram} {prims : Prims} {ix_compound_eval ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_member_type_args_none ix_eff_of ix_p_postfix_end ix_p_postfix_member ix_local_of ix_field_index ix_ref_target ix_set_place_op_of ix_assign_op_of ix_set_eval_of ix_compound_eff ix_compound_field_eval : Nat}
+    (fnW : spW.funcs[ix_compound_eval]? = some (src_compound_eval ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_member_type_args_none ix_eff_of ix_p_postfix_end ix_p_postfix_member ix_local_of ix_field_index ix_ref_target ix_set_place_op_of ix_assign_op_of ix_set_eval_of ix_compound_eff ix_compound_field_eval)) (fn : sp.funcs[ix_compound_eval]? = some (src_compound_eval ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_member_type_args_none ix_eff_of ix_p_postfix_end ix_p_postfix_member ix_local_of ix_field_index ix_ref_target ix_set_place_op_of ix_assign_op_of ix_set_eval_of ix_compound_eff ix_compound_field_eval))
     (np : prims.isPrim ix_compound_eval = false)
     (back : Certified (∀ {n : Nat}, Stmt_compound_eval sp prims ix_compound_eval n))
     (b_node_prod : Certified (∀ {n : Nat}, BStmt_node_prod spW sp prims ix_node_prod n))
@@ -42,10 +43,13 @@ theorem bproof_compound_eval {spW sp : SrcProgram} {prims : Prims} {ix_compound_
     (b_kid_token : Certified (∀ {n : Nat}, BStmt_kid_token spW sp prims ix_kid_token n))
     (b_p_member_type_args_none : Certified (∀ {n : Nat}, BStmt_p_member_type_args_none spW sp prims ix_p_member_type_args_none n))
     (b_eff_of : Certified (∀ {n : Nat}, BStmt_eff_of spW sp prims ix_eff_of n))
-    (b_local_of : Certified (∀ {n : Nat}, BStmt_local_of spW sp prims ix_local_of n))
     (b_p_postfix_end : Certified (∀ {n : Nat}, BStmt_p_postfix_end spW sp prims ix_p_postfix_end n))
     (b_p_postfix_member : Certified (∀ {n : Nat}, BStmt_p_postfix_member spW sp prims ix_p_postfix_member n))
+    (b_local_of : Certified (∀ {n : Nat}, BStmt_local_of spW sp prims ix_local_of n))
     (b_field_index : Certified (∀ {n : Nat}, BStmt_field_index spW sp prims ix_field_index n))
+    (b_ref_target : Certified (∀ {n : Nat}, BStmt_ref_target spW sp prims ix_ref_target n))
+    (b_set_place_op_of : Certified (∀ {n : Nat}, BStmt_set_place_op_of spW sp prims ix_set_place_op_of n))
+    (b_assign_op_of : Certified (∀ {n : Nat}, BStmt_assign_op_of spW sp prims ix_assign_op_of n))
     (b_set_eval_of : Certified (∀ {n : Nat}, BStmt_set_eval_of spW sp prims ix_set_eval_of n))
     (b_compound_eff : Certified (∀ {n : Nat}, BStmt_compound_eff spW sp prims ix_compound_eff n))
     (b_compound_field_eval : Certified (∀ {n : Nat}, BStmt_compound_field_eval spW sp prims ix_compound_field_eval n)) {n : Nat} :

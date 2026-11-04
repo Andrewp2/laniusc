@@ -17,9 +17,8 @@ unhomed, and its cell is apart from the places. `sound_both_homed` is
 `sound_both` restated. The case proofs move onto `HomedCorr` one by one
 (P3), each using the other direction for the cases not yet moved.
 
-The frame invariant stays `FrameCorr` here: it becomes `Homes` together with
-the lowering's lending without a copy (S6a), which changes `ArrayCall`'s
-code.
+The frame invariant is `LentHomes` (S6a-1): `Homes`, with every place a
+lent array (`Lent`) until S6b gives borrowed locals homes.
 -/
 
 namespace Lanius.Mini
@@ -108,16 +107,16 @@ theorem Layout.apart_below {scope : List Binding} {frame : Nat → Nat} {base ne
 inductive HMatches (sx : Statics) (bud : Budget) (places : List Addressed) (ret : SrcType) (scope : List Binding)
     (frame : Nat → Nat) (fs : Nat) (st : State) : Completion → Outcome → Prop where
   | next {env : Env} {hp : Heap} : HomedCorr sx places scope frame (RCtx.ofScope fs scope) st env →
-      HeapCorr st.heap st.world hp → FrameCorr sx bud places st hp →
+      HeapCorr st.heap st.world hp → LentHomes sx bud places st hp →
       HMatches sx bud places ret scope frame fs st .next (.normal env hp)
   | returned {v : Option Value} {bits : List (BitVec 64)} {hp : Heap} :
       RetHolds sx places ret v bits → bits.length = ret.size → HeapCorr st.heap st.world hp →
-      FrameCorr sx bud places st hp → HMatches sx bud places ret scope frame fs st (.returned v) (.returned bits hp)
+      LentHomes sx bud places st hp → HMatches sx bud places ret scope frame fs st (.returned v) (.returned bits hp)
   | broke {env : Env} {hp : Heap} : HomedCorr sx places scope frame (RCtx.ofScope fs scope) st env →
-      HeapCorr st.heap st.world hp → FrameCorr sx bud places st hp →
+      HeapCorr st.heap st.world hp → LentHomes sx bud places st hp →
       HMatches sx bud places ret scope frame fs st .breakLoop (.broke env hp)
   | continued {env : Env} {hp : Heap} : HomedCorr sx places scope frame (RCtx.ofScope fs scope) st env →
-      HeapCorr st.heap st.world hp → FrameCorr sx bud places st hp →
+      HeapCorr st.heap st.world hp → LentHomes sx bud places st hp →
       HMatches sx bud places ret scope frame fs st .continueLoop (.continued env hp)
 
 theorem Matches.homed {sx : Statics} {bud : Budget} {places : List Addressed} {ret : SrcType}
@@ -155,7 +154,7 @@ def StmtSoundH (sp : SrcProgram) (mp : Program) (fuel : Nat) : Prop :=
     {env : Env} {c : Completion} {st' : State},
     s.lower (sp.sigsAt bud) sp.decls ret scope next = some stmt →
     HomedCorr sx places scope frame (RCtx.ofScope fs scope) st env → Layout scope frame base next → st.Fresh →
-    base ≤ st.nextCell → HeapCorr st.heap st.world hp → FrameCorr sx bud places st hp →
+    base ≤ st.nextCell → HeapCorr st.heap st.world hp → LentHomes sx bud places st hp →
     (∀ x ∈ places, x.cell < base) →
     execStmt fuel sp.toCore st s.toCore = .done c st' → st'.heap.nextAddress ≤ hp.limit →
     HSimulates sx bud places mp hp ret scope frame fs base st env stmt c st'
@@ -169,7 +168,7 @@ def EvalSoundH (sp : SrcProgram) (mp : Program) (fuel : Nat) : Prop :=
     e.eval (sp.sigsAt bud) sp.decls scope slot = some ev →
     HomedCorr sx places scope frame (RCtx.ofScope fs scope) st env →
     (∀ x ∈ places, ∀ b ∈ scope, x.cell ≠ frame b.slot) → Layout scope frame base slot → st.Fresh →
-    HeapCorr st.heap st.world hp → FrameCorr sx bud places st hp →
+    HeapCorr st.heap st.world hp → LentHomes sx bud places st hp →
     evalExpr fuel sp.toCore st e.toCore = .done v st' → st'.heap.nextAddress ≤ hp.limit →
     Evaluates sx bud places mp hp slot st env ev v st'
 

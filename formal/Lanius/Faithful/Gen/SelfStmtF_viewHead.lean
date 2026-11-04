@@ -21,7 +21,7 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_view_head (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List Lanius.Mini.SrcExpr)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 293 (RepList 21 RepSrcExpr)) x0 v0 →
-    (RepOption 292 RepLetHead) (Lanius.Mini.viewHead x0) w
+  ∀ {x0 : Option (List Lanius.Mini.SrcExpr)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 294 (RepList 21 RepSrcExpr)) x0 v0 →
+    (RepOption 293 RepLetHead) (Lanius.Mini.viewHead x0) w
 
 end Lanius.Faithful.SelfCert

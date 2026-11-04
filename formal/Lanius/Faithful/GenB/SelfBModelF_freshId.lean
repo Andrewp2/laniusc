@@ -37,7 +37,7 @@ noncomputable section
 
 def Pre_field_index : Nat → Lanius.Mini.FrontEnv → Lanius.Mini.Ty → List Nat → Nat → Prop
   | 0, x12, x27, x34, b => True
-  | n + 1, x12, x27, x34, b => (match x27 with | .tyI32 => True | .tyBool => True | .tyUint x171 => True | .tyPtr => True | .tyIsize => True | .tyChar => True | .tyFloat x294 => True | .tySlice x323 => True | .tyNamed x382 x385 => (Pre_field_in n (x12.decls.types[x382]?) x34 b) | .tySint x450 => True | .tyArray x351 x354 => True | .tyStr => True)
+  | n + 1, x12, x27, x34, b => (match x27 with | .tyI32 => True | .tyBool => True | .tyUint x171 => True | .tyPtr => True | .tyIsize => True | .tyChar => True | .tyFloat x323 => True | .tySlice x352 => True | .tyNamed x411 x414 => (Pre_field_in n (x12.decls.types[x411]?) x34 b) | .tySint x479 => True | .tyArray x380 x383 => True | .tyStr => True | .tyRef x292 => True)
 
 end
 

@@ -20,7 +20,7 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_variant_let_head (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : Lanius.Mini.MEff} {x2 : Nat} {x3 : Option (List Lanius.Mini.SrcExpr)} {v0 v1 v2 v3 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepBool x0 v0 → RepMEff x1 v1 → RepNat x2 v2 → (RepOption 293 (RepList 21 RepSrcExpr)) x3 v3 →
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepBool x0 v0 → RepMEff x1 v1 → RepNat x2 v2 → (RepOption 294 (RepList 21 RepSrcExpr)) x3 v3 →
     qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ 0 = k ∧ RepLetHead (Lanius.Mini.variantLetHead x0 x1 x2 x3) w
 
 abbrev BStmt_pure_arms (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

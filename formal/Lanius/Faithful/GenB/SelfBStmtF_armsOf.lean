@@ -18,10 +18,15 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 open Lanius.Faithful.Budget
 
+abbrev BStmt_and_known (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Option Bool} {x1 : Option Bool} {v0 v1 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 253 RepBool) x0 v0 → (RepOption 253 RepBool) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 253 RepBool) (Lanius.Mini.andKnown x0 x1) w
+
 abbrev BStmt_or_known (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Bool} {x1 : Option Bool} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 309 RepBool) x0 v0 → (RepOption 309 RepBool) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 309 RepBool) (Lanius.Mini.orKnown x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 253 RepBool) x0 v0 → (RepOption 253 RepBool) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 253 RepBool) (Lanius.Mini.orKnown x0 x1) w
 
 abbrev BStmt_binder_name_ok (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : Option (List Nat)} {v0 v1 w : Value} {k : Nat},
@@ -41,21 +46,16 @@ abbrev BStmt_all_binders (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
 abbrev BStmt_pats_nested (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : Option (List Lanius.Mini.CTree)} {v0 v1 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepFrontEnv x0 v0 → (RepOption 82 (RepList 83 RepCTree)) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 309 RepBool) (Lanius.Mini.patsNested x0 x1) w
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 253 RepBool) (Lanius.Mini.patsNested x0 x1) w
 
 abbrev BStmt_arm_nested (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.CTree} {v0 v1 v2 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → RepCTree x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_arm_nested n x0 x1 x2 = k ∧ (RepOption 309 RepBool) (Lanius.Mini.armNested x0 x1 x2) w
-
-abbrev BStmt_and_known (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Bool} {x1 : Option Bool} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepOption 309 RepBool) x0 v0 → (RepOption 309 RepBool) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 309 RepBool) (Lanius.Mini.andKnown x0 x1) w
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_arm_nested n x0 x1 x2 = k ∧ (RepOption 253 RepBool) (Lanius.Mini.armNested x0 x1 x2) w
 
 abbrev BStmt_not_known (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Bool} {v0 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 309 RepBool) x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 309 RepBool) (Lanius.Mini.notKnown x0) w
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 253 RepBool) x0 v0 →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 253 RepBool) (Lanius.Mini.notKnown x0) w
 
 end Lanius.Faithful.SelfBudget

@@ -21,7 +21,7 @@ open Lanius.Faithful.Budget
 abbrev BStmt_float_op (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.BinOp} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepBinOp x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 254 RepFArith) (Lanius.Mini.floatOp x0) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 255 RepFArith) (Lanius.Mini.floatOp x0) w
 
 abbrev BStmt_arith_sint (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.BinOp} {x1 : Lanius.Mini.Typed} {x2 : Lanius.Mini.Typed} {x3 : Option Lanius.Mini.UintTy} {v0 v1 v2 v3 w : Value} {k : Nat},

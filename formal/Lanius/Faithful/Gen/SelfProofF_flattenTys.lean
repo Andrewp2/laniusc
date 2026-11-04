@@ -91,6 +91,16 @@ theorem step_flatten_tys {prog : SrcProgram} {prims : Prims} {ix_flatten_tys ix_
   simp only [src_flatten_tys] at h
   faithful [Lanius.Mini.flattenTys]
 
+theorem proof_ref_type {prog : SrcProgram} {prims : Prims} {ix_ref_type ix_boxed_of_mini_selfhost_SrcType : Nat} (fn : prog.funcs[ix_ref_type]? = some (src_ref_type ix_boxed_of_mini_selfhost_SrcType)) (np : prims.isPrim ix_ref_type = false)
+    (ext_boxed_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_SrcType prog prims ix_boxed_of_mini_selfhost_SrcType n)) {n : Nat} :
+    Stmt_ref_type prog prims ix_ref_type n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_ref_type] at h
+  faithful [Lanius.Mini.refType]
+
 theorem proof_slice_type {prog : SrcProgram} {prims : Prims} {ix_slice_type ix_boxed_of_mini_selfhost_SrcType : Nat} (fn : prog.funcs[ix_slice_type]? = some (src_slice_type ix_boxed_of_mini_selfhost_SrcType)) (np : prims.isPrim ix_slice_type = false)
     (ext_boxed_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_SrcType prog prims ix_boxed_of_mini_selfhost_SrcType n)) {n : Nat} :
     Stmt_slice_type prog prims ix_slice_type n := by

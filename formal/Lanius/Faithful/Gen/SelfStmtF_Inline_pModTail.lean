@@ -108,4 +108,12 @@ abbrev Stmt_p_path_ident_args (prog : SrcProgram) (prims : Prims) (ix n : Nat) :
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.pPathIdentArgs) w
 
+abbrev Stmt_p_type_ref (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    RepNat (Lanius.Mini.Inline.pTypeRef) w
+
+abbrev Stmt_p_type_ref_mut (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    RepNat (Lanius.Mini.Inline.pTypeRefMut) w
+
 end Lanius.Faithful.SelfCert

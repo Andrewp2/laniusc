@@ -1,0 +1,6 @@
+// `/=` and `%=` are not read on a place.
+struct P { a: i32 }
+
+fn halve(p: &mut P) {
+    p.a /= 2;
+}

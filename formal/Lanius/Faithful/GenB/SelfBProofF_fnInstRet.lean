@@ -8,14 +8,11 @@ import Lanius.Faithful.GenB.SelfBStmtF_findConst
 import Lanius.Faithful.GenB.SelfBStmtF_floatTyped
 import Lanius.Faithful.GenB.SelfBStmtF_fnInstRet
 import Lanius.Faithful.GenB.SelfBStmtF_hasKids
-import Lanius.Faithful.GenB.SelfBStmtF_itemOf
 import Lanius.Faithful.GenB.SelfBStmtF_pickTy
 import Lanius.Faithful.GenB.SelfBStmtF_projectionRet
-import Lanius.Faithful.GenB.SelfBStmtF_rootInsts
 import Lanius.Faithful.GenB.SelfBStmtF_typeDeclAt
 import Lanius.Faithful.GenB.SelfBStmtF_variantIn
 import Lanius.Faithful.GenB.SelfBStmtF_wideOf
-import Lanius.Faithful.GenB.SelfBStmtN0
 import Lanius.Faithful.GenB.SelfBStmtN1
 import Lanius.Faithful.GenB.SelfBStmtN2
 import Lanius.Faithful.GenB.SelfBStmtN3
@@ -84,8 +81,45 @@ theorem bproof_inst_ret {spW sp : SrcProgram} {prims : Prims} {ix_inst_ret ix_ge
     budget Cost_inst_ret
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
 
-theorem bstep_eff_ty {spW sp : SrcProgram} {prims : Prims} {ix_eff_ty ix_minus ix_boxed_of_mini_selfhost_Ty ix_unbox_of_mini_selfhost_MEff ix_shift_op ix_src_ty ix_expr_ty ix_inst_ret ix_apply_ty ix_pick_ty ix_bare_eff ix_index_ty ix_find_local_id : Nat}
-    (fnW : spW.funcs[ix_eff_ty]? = some (src_eff_ty ix_minus ix_boxed_of_mini_selfhost_Ty ix_unbox_of_mini_selfhost_MEff ix_shift_op ix_src_ty ix_eff_ty ix_expr_ty ix_inst_ret ix_apply_ty ix_pick_ty ix_bare_eff ix_index_ty ix_find_local_id)) (fn : sp.funcs[ix_eff_ty]? = some (src_eff_ty ix_minus ix_boxed_of_mini_selfhost_Ty ix_unbox_of_mini_selfhost_MEff ix_shift_op ix_src_ty ix_eff_ty ix_expr_ty ix_inst_ret ix_apply_ty ix_pick_ty ix_bare_eff ix_index_ty ix_find_local_id))
+theorem bproof_field_ty_at {spW sp : SrcProgram} {prims : Prims} {ix_field_ty_at ix_struct_field_tys ix_get_of_mini_selfhost_Ty : Nat}
+    (fnW : spW.funcs[ix_field_ty_at]? = some (src_field_ty_at ix_struct_field_tys ix_get_of_mini_selfhost_Ty)) (fn : sp.funcs[ix_field_ty_at]? = some (src_field_ty_at ix_struct_field_tys ix_get_of_mini_selfhost_Ty))
+    (np : prims.isPrim ix_field_ty_at = false)
+    (back : Certified (∀ {n : Nat}, Stmt_field_ty_at sp prims ix_field_ty_at n))
+    (b_struct_field_tys : Certified (∀ {n : Nat}, BStmt_struct_field_tys spW sp prims ix_struct_field_tys n))
+    (b_get_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, BStmt_get_of_mini_selfhost_Ty spW sp prims ix_get_of_mini_selfhost_Ty n)) {n : Nat} :
+    BStmt_field_ty_at spW sp prims ix_field_ty_at n := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w k b h r0 r1 r2 r3 hb pre
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_field_ty_at [v0, v1, v2, v3] = some (w, k) ∧ Cost_field_ty_at (n + 1) x0 x1 x2 x3 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_field_ty_at, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_field_ty_at.eq_def] at pre
+    simp only at pre
+    budget Cost_field_ty_at
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3⟩
+
+theorem bproof_field_ty_of {spW sp : SrcProgram} {prims : Prims} {ix_field_ty_of ix_field_ty_at : Nat}
+    (fnW : spW.funcs[ix_field_ty_of]? = some (src_field_ty_of ix_field_ty_at)) (fn : sp.funcs[ix_field_ty_of]? = some (src_field_ty_of ix_field_ty_at))
+    (np : prims.isPrim ix_field_ty_of = false)
+    (back : Certified (∀ {n : Nat}, Stmt_field_ty_of sp prims ix_field_ty_of n))
+    (b_field_ty_at : Certified (∀ {n : Nat}, BStmt_field_ty_at spW sp prims ix_field_ty_at n)) {n : Nat} :
+    BStmt_field_ty_of spW sp prims ix_field_ty_of n := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w k b h r0 r1 r2 r3 hb pre
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_field_ty_of [v0, v1, v2, v3] = some (w, k) ∧ Cost_field_ty_of (n + 1) x0 x1 x2 x3 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_field_ty_of, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_field_ty_of.eq_def] at pre
+    simp only at pre
+    budget Cost_field_ty_of
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3⟩
+
+theorem bstep_eff_ty {spW sp : SrcProgram} {prims : Prims} {ix_eff_ty ix_minus ix_boxed_of_mini_selfhost_Ty ix_unbox_of_mini_selfhost_MEff ix_shift_op ix_src_ty ix_expr_ty ix_inst_ret ix_apply_ty ix_pick_ty ix_bare_eff ix_index_ty ix_find_local_id ix_field_ty_of ix_elem_ty_of : Nat}
+    (fnW : spW.funcs[ix_eff_ty]? = some (src_eff_ty ix_minus ix_boxed_of_mini_selfhost_Ty ix_unbox_of_mini_selfhost_MEff ix_shift_op ix_src_ty ix_eff_ty ix_expr_ty ix_inst_ret ix_apply_ty ix_pick_ty ix_bare_eff ix_index_ty ix_find_local_id ix_field_ty_of ix_elem_ty_of)) (fn : sp.funcs[ix_eff_ty]? = some (src_eff_ty ix_minus ix_boxed_of_mini_selfhost_Ty ix_unbox_of_mini_selfhost_MEff ix_shift_op ix_src_ty ix_eff_ty ix_expr_ty ix_inst_ret ix_apply_ty ix_pick_ty ix_bare_eff ix_index_ty ix_find_local_id ix_field_ty_of ix_elem_ty_of))
     (np : prims.isPrim ix_eff_ty = false)
     (back : Certified (∀ {n : Nat}, Stmt_eff_ty sp prims ix_eff_ty n))
     (b_minus : Certified (∀ {n : Nat}, BStmt_minus spW sp prims ix_minus n))
@@ -99,7 +133,9 @@ theorem bstep_eff_ty {spW sp : SrcProgram} {prims : Prims} {ix_eff_ty ix_minus i
     (b_pick_ty : Certified (∀ {n : Nat}, BStmt_pick_ty spW sp prims ix_pick_ty n))
     (b_bare_eff : Certified (∀ {n : Nat}, BStmt_bare_eff spW sp prims ix_bare_eff n))
     (b_index_ty : Certified (∀ {n : Nat}, BStmt_index_ty spW sp prims ix_index_ty n))
-    (b_find_local_id : Certified (∀ {n : Nat}, BStmt_find_local_id spW sp prims ix_find_local_id n)) {n : Nat}
+    (b_find_local_id : Certified (∀ {n : Nat}, BStmt_find_local_id spW sp prims ix_find_local_id n))
+    (b_field_ty_of : Certified (∀ {n : Nat}, BStmt_field_ty_of spW sp prims ix_field_ty_of n))
+    (b_elem_ty_of : Certified (∀ {n : Nat}, BStmt_elem_ty_of spW sp prims ix_elem_ty_of n)) {n : Nat}
     (bih_eff_ty : Certified (BStmt_eff_ty spW sp prims ix_eff_ty n)) :
     BStmt_eff_ty spW sp prims ix_eff_ty (n + 1) := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w k b h r0 r1 r2 r3 hb pre
@@ -152,28 +188,6 @@ theorem bproof_is_type_owner {spW sp : SrcProgram} {prims : Prims} {ix_is_type_o
     simp only at pre
     budget Cost_is_type_owner
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
-
-theorem bproof_is_fn_path {spW sp : SrcProgram} {prims : Prims} {ix_is_fn_path ix_field_fns_Decls_of_mini_selfhost_Decls ix_path_module ix_is_type_owner ix_is_some_index ix_find_fn : Nat}
-    (fnW : spW.funcs[ix_is_fn_path]? = some (src_is_fn_path ix_field_fns_Decls_of_mini_selfhost_Decls ix_path_module ix_is_type_owner ix_is_some_index ix_find_fn)) (fn : sp.funcs[ix_is_fn_path]? = some (src_is_fn_path ix_field_fns_Decls_of_mini_selfhost_Decls ix_path_module ix_is_type_owner ix_is_some_index ix_find_fn))
-    (np : prims.isPrim ix_is_fn_path = false)
-    (back : Certified (∀ {n : Nat}, Stmt_is_fn_path sp prims ix_is_fn_path n))
-    (b_field_fns_Decls_of_mini_selfhost_Decls : Certified (∀ {n : Nat}, BStmt_field_fns_Decls_of_mini_selfhost_Decls spW sp prims ix_field_fns_Decls_of_mini_selfhost_Decls n))
-    (b_path_module : Certified (∀ {n : Nat}, BStmt_path_module spW sp prims ix_path_module n))
-    (b_is_type_owner : Certified (∀ {n : Nat}, BStmt_is_type_owner spW sp prims ix_is_type_owner n))
-    (b_is_some_index : Certified (∀ {n : Nat}, BStmt_is_some_index spW sp prims ix_is_some_index n))
-    (b_find_fn : Certified (∀ {n : Nat}, BStmt_find_fn spW sp prims ix_find_fn n)) {n : Nat} :
-    BStmt_is_fn_path spW sp prims ix_is_fn_path n := by
-  intro x0 x1 v0 v1 w k b h r0 r1 hb pre
-  rcases n with _ | n
-  · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_is_fn_path [v0, v1] = some (w, k) ∧ Cost_is_fn_path (n + 1) x0 x1 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_is_fn_path, List.length_cons, List.length_nil, if_true] at h ⊢
-    rw [Pre_is_fn_path.eq_def] at pre
-    simp only at pre
-    budget Cost_is_fn_path
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
 
 theorem bstep_arm_binders {spW sp : SrcProgram} {prims : Prims} {ix_arm_binders ix_empty_of_mini_selfhost_List_usize ix_cons_of_mini_selfhost_List_usize ix_unbox_of_mini_selfhost_List_mini_selfhost_EffArm : Nat}
     (fnW : spW.funcs[ix_arm_binders]? = some (src_arm_binders ix_empty_of_mini_selfhost_List_usize ix_cons_of_mini_selfhost_List_usize ix_arm_binders ix_unbox_of_mini_selfhost_List_mini_selfhost_EffArm)) (fn : sp.funcs[ix_arm_binders]? = some (src_arm_binders ix_empty_of_mini_selfhost_List_usize ix_cons_of_mini_selfhost_List_usize ix_arm_binders ix_unbox_of_mini_selfhost_List_mini_selfhost_EffArm))

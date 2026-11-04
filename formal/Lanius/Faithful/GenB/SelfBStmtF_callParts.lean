@@ -30,13 +30,13 @@ abbrev BStmt_eff_local (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
 
 abbrev BStmt_view_array (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Ty} {x2 : Option Lanius.Mini.Local} {x3 : Lanius.Mini.MEff} {v0 v1 v2 v3 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepTy x1 v1 → (RepOption 259 RepLocal) x2 v2 → RepMEff x3 v3 →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ 0 = k ∧ (RepOption 258 RepMEff) (Lanius.Mini.viewArray x0 x1 x2 x3) w
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepTy x1 v1 → (RepOption 260 RepLocal) x2 v2 → RepMEff x3 v3 →
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ 0 = k ∧ (RepOption 259 RepMEff) (Lanius.Mini.viewArray x0 x1 x2 x3) w
 
 abbrev BStmt_view_local (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Local} {x1 : Option Lanius.Mini.Ty} {x2 : Option Nat} {x3 : Lanius.Mini.MEff} {v0 v1 v2 v3 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → (RepList 239 RepLocal) x0 v0 → (RepOption 212 RepTy) x1 v1 → (RepOption 135 RepNat) x2 v2 → RepMEff x3 v3 →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ 0 = k ∧ (RepOption 258 RepMEff) (Lanius.Mini.viewLocal x0 x1 x2 x3) w
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ 0 = k ∧ (RepOption 259 RepMEff) (Lanius.Mini.viewLocal x0 x1 x2 x3) w
 
 abbrev BStmt_want_elem (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.Ty} {v0 w : Value} {k : Nat},

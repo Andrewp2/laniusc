@@ -119,8 +119,8 @@ abbrev BStmt_get_of_mini_selfhost_SrcFunc (spW sp : SrcProgram) (prims : Prims) 
 
 abbrev BStmt_cons_of_mini_selfhost_Bind (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Bind} {x1 : List Lanius.Mini.Bind} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepBind x0 v0 → (RepList 275 RepBind) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_of_mini_selfhost_Bind n x0 x1 = k ∧ (RepList 275 RepBind) (x0 :: x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepBind x0 v0 → (RepList 276 RepBind) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_of_mini_selfhost_Bind n x0 x1 = k ∧ (RepList 276 RepBind) (x0 :: x1) w
 
 abbrev BStmt_field_args_TraitRef_of_mini_selfhost_TraitRef (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.TraitRef} {v0 w : Value} {k : Nat},
@@ -129,8 +129,8 @@ abbrev BStmt_field_args_TraitRef_of_mini_selfhost_TraitRef (spW sp : SrcProgram)
 
 abbrev BStmt_cons_of_bool (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : List Bool} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepBool x0 v0 → (RepList 262 RepBool) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_of_bool n x0 x1 = k ∧ (RepList 262 RepBool) (x0 :: x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepBool x0 v0 → (RepList 263 RepBool) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_of_bool n x0 x1 = k ∧ (RepList 263 RepBool) (x0 :: x1) w
 
 abbrev BStmt_get_of_mini_selfhost_List_mini_selfhost_Ty (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (List Lanius.Mini.Ty)} {x1 : Nat} {v0 v1 w : Value} {k : Nat},

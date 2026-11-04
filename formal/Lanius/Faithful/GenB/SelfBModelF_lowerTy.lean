@@ -49,7 +49,7 @@ termination_by structural fuel => fuel
 
 def Cost_lower_ty : Nat → Nat → Lanius.Mini.Decls → List Lanius.Mini.Inst → Lanius.Mini.Ty → Nat
   | 0, x9, x22, x36, x55 => 18446744073709551616
-  | n + 1, x9, x22, x36, x55 => (if (decide (x9 = 0)) = true then 0 else (match x55 with | .tyI32 => 0 | .tyBool => 0 | .tyUint x241 => 0 | .tyPtr => 0 | .tyIsize => 0 | .tyChar => 0 | .tyFloat x405 => 0 | .tySlice x454 => ((Cost_lower_ty n (x9 - 1) x22 x36 x454) + (Cost_slice_type n (Lanius.Mini.lowerTy ((x9 - 1)) x22 x36 x454))) | .tyNamed x628 x631 => (Cost_lower_named n (x9 - 1) x22 x36 x628 x631) | .tySint x714 => 0 | .tyArray x538 x541 => ((Cost_lower_ty n (x9 - 1) x22 x36 x538) + (Cost_array_type n (Lanius.Mini.lowerTy ((x9 - 1)) x22 x36 x538) x541)) | .tyStr => 0))
+  | n + 1, x9, x22, x36, x55 => (if (decide (x9 = 0)) = true then 0 else (match x55 with | .tyI32 => 0 | .tyBool => 0 | .tyUint x241 => 0 | .tyPtr => 0 | .tyIsize => 0 | .tyChar => 0 | .tyFloat x491 => 0 | .tySlice x540 => ((Cost_lower_ty n (x9 - 1) x22 x36 x540) + (Cost_slice_type n (Lanius.Mini.lowerTy ((x9 - 1)) x22 x36 x540))) | .tyNamed x714 x717 => (Cost_lower_named n (x9 - 1) x22 x36 x714 x717) | .tySint x800 => 0 | .tyArray x624 x627 => ((Cost_lower_ty n (x9 - 1) x22 x36 x624) + (Cost_array_type n (Lanius.Mini.lowerTy ((x9 - 1)) x22 x36 x624) x627)) | .tyStr => 0 | .tyRef x403 => ((Cost_lower_ty n (x9 - 1) x22 x36 x403) + (Cost_ref_type n (Lanius.Mini.lowerTy ((x9 - 1)) x22 x36 x403)))))
 termination_by structural fuel => fuel
 end
 
@@ -79,7 +79,7 @@ termination_by structural fuel => fuel
 
 def Pre_lower_ty : Nat → Nat → Lanius.Mini.Decls → List Lanius.Mini.Inst → Lanius.Mini.Ty → Nat → Prop
   | 0, x9, x22, x36, x55, b => True
-  | n + 1, x9, x22, x36, x55, b => (if (decide (x9 = 0)) = true then True else (match x55 with | .tyI32 => True | .tyBool => True | .tyUint x241 => True | .tyPtr => True | .tyIsize => True | .tyChar => True | .tyFloat x405 => True | .tySlice x454 => (Pre_lower_ty n (x9 - 1) x22 x36 x454 b) | .tyNamed x628 x631 => (Pre_lower_named n (x9 - 1) x22 x36 x628 x631 b) | .tySint x714 => True | .tyArray x538 x541 => ((Pre_lower_ty n (x9 - 1) x22 x36 x538 b) ∧ (∀ b4 : Nat, (Cost_lower_ty n (x9 - 1) x22 x36 x538) < b → b4 = b - (Cost_lower_ty n (x9 - 1) x22 x36 x538) → (Pre_array_type n (Lanius.Mini.lowerTy ((x9 - 1)) x22 x36 x538) x541 b4))) | .tyStr => True))
+  | n + 1, x9, x22, x36, x55, b => (if (decide (x9 = 0)) = true then True else (match x55 with | .tyI32 => True | .tyBool => True | .tyUint x241 => True | .tyPtr => True | .tyIsize => True | .tyChar => True | .tyFloat x491 => True | .tySlice x540 => (Pre_lower_ty n (x9 - 1) x22 x36 x540 b) | .tyNamed x714 x717 => (Pre_lower_named n (x9 - 1) x22 x36 x714 x717 b) | .tySint x800 => True | .tyArray x624 x627 => ((Pre_lower_ty n (x9 - 1) x22 x36 x624 b) ∧ (∀ b4 : Nat, (Cost_lower_ty n (x9 - 1) x22 x36 x624) < b → b4 = b - (Cost_lower_ty n (x9 - 1) x22 x36 x624) → (Pre_array_type n (Lanius.Mini.lowerTy ((x9 - 1)) x22 x36 x624) x627 b4))) | .tyStr => True | .tyRef x403 => (Pre_lower_ty n (x9 - 1) x22 x36 x403 b)))
 termination_by structural fuel => fuel
 end
 

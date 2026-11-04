@@ -39,6 +39,7 @@ def tyInsts (fuel : Nat) (decls : Decls) (t : Ty) : Option (List Inst) :=
     | .tyIsize => some []
     | .tyChar => some []
     | .tyStr => some []
+    | .tyRef refd => tyInsts (fuel - 1) decls refd
     | .tyFloat ft => some []
     | .tySlice e => tyInsts (fuel - 1) decls e
     | .tyArray e n => tyInsts (fuel - 1) decls e

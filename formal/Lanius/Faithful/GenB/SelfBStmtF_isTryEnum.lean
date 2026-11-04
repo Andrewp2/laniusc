@@ -46,12 +46,12 @@ abbrev BStmt_shift_of (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
 abbrev BStmt_alloc_shifted (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcExpr} {x1 : Option Nat} {x2 : List Lanius.Mini.SrcExpr} {v0 v1 v2 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepSrcExpr x0 v0 → (RepOption 135 RepNat) x1 v1 → (RepList 21 RepSrcExpr) x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ (RepOption 292 RepLetHead) (Lanius.Mini.allocShifted x0 x1 x2) w
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ (RepOption 293 RepLetHead) (Lanius.Mini.allocShifted x0 x1 x2) w
 
 abbrev BStmt_alloc_head (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option (List Lanius.Mini.SrcExpr)} {v0 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 293 (RepList 21 RepSrcExpr)) x0 v0 → k < b → Pre_alloc_head n x0 b →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 292 RepLetHead) (Lanius.Mini.allocHead x0) w
+    qcall spW prims uc n ix [v0] = some (w, k) → (RepOption 294 (RepList 21 RepSrcExpr)) x0 v0 → k < b → Pre_alloc_head n x0 b →
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ (RepOption 293 RepLetHead) (Lanius.Mini.allocHead x0) w
 
 abbrev BStmt_is_try_enum (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.TypeDecl} {v0 w : Value} {k : Nat},

@@ -13,6 +13,7 @@ import Lanius.Mini.Compiler.P.evalDivide
 import Lanius.Mini.Compiler.P.evalHost
 import Lanius.Mini.Compiler.P.evalNot
 import Lanius.Mini.Compiler.P.evalSame
+import Lanius.Mini.Compiler.P.evalSlotLimit
 import Lanius.Mini.Compiler.P.loadAtBytes
 import Lanius.Mini.Compiler.P.lowerCallSig
 import Lanius.Mini.Compiler.P.lowerLoadType
@@ -105,9 +106,12 @@ def SrcEff.eval (self : SrcEff) (sigs : List Sig) (decls : SrcDecls) (scope : Li
   | .eLet id ty value rt body =>
     evalLetIn slot ty rt (SrcEff.eval value sigs decls scope slot) (let bound : Option (List Binding) := armScope [id] [ty] slot scope
      let dst : Nat := matchDst slot ty rt
-     match bound with
-     | none => none
-     | some s => SrcEff.eval body sigs decls s dst)
+     if evalSlotLimit ≤ dst then
+       none
+     else
+       match bound with
+       | none => none
+       | some s => SrcEff.eval body sigs decls s dst)
   | .eLen slice => evalLen scope slice slot
   | .eStr offset chars => evalStr decls offset chars slot
   | .eBorrow bty bplace => none
@@ -116,12 +120,15 @@ def SrcEff.eval (self : SrcEff) (sigs : List Sig) (decls : SrcDecls) (scope : Li
   | .eAt abase aindex => none
 /-- The arguments, each in the slots after the one before. -/
 def evalArgs (sigs : List Sig) (decls : SrcDecls) (scope : List Binding) (args : List SrcEff) (slot : Nat) : Option EvaluatedArgs :=
-  match args with
-  | [] => some ({ stmt := Stmt.skip, types := [] } : EvaluatedArgs)
-  | arg :: rest =>
-    match SrcEff.eval arg sigs decls scope slot with
-    | none => none
-    | some first => consArgs first (evalArgs sigs decls scope rest (slot + SrcType.size first.ty))
+  if evalSlotLimit ≤ slot then
+    none
+  else
+    match args with
+    | [] => some ({ stmt := Stmt.skip, types := [] } : EvaluatedArgs)
+    | arg :: rest =>
+      match SrcEff.eval arg sigs decls scope slot with
+      | none => none
+      | some first => consArgs first (evalArgs sigs decls scope rest (slot + SrcType.size first.ty))
 /-- Arms k, k + 1, ... of a match on the enum in slot, one per variant from k. -/
 def evalArms (sigs : List Sig) (decls : SrcDecls) (scope : List Binding) (slot : Nat) (dst : Nat) (ty : SrcType) (k : Nat) (variants : List (List SrcType)) (binders : List (List Nat)) (values : List SrcEff) : Option Stmt :=
   match values with
@@ -135,12 +142,15 @@ def evalArms (sigs : List Sig) (decls : SrcDecls) (scope : List Binding) (slot :
       | bs :: others =>
         let bound : Option (List Binding) := armScope bs types (slot + 1) scope
         let later : Option Stmt := evalArms sigs decls scope slot dst ty (k + 1) more others rest
-        match bound with
-        | none => none
-        | some s =>
-          match SrcEff.eval value sigs decls s dst with
+        if evalSlotLimit ≤ dst then
+          none
+        else
+          match bound with
           | none => none
-          | some e => evalArm slot k (evalSame e ty e.stmt) rest later
+          | some s =>
+            match SrcEff.eval value sigs decls s dst with
+            | none => none
+            | some e => evalArm slot k (evalSame e ty e.stmt) rest later
 end
 
 /-- The index in slot and its check g, then the value from slot + 1 and the stores of its words. -/

@@ -135,12 +135,12 @@ abbrev BStmt_concat_of_mini_selfhost_Inst (spW sp : SrcProgram) (prims : Prims) 
 abbrev BStmt_empty_of_mini_selfhost_Bind (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value} {k : Nat},
     qcall spW prims uc n ix [] = some (w, k) →
-    qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ (RepList 275 RepBind) (([] : List Lanius.Mini.Bind)) w
+    qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ (RepList 276 RepBind) (([] : List Lanius.Mini.Bind)) w
 
 abbrev BStmt_single_of_bool (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepBool x0 v0 →
-    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_single_of_bool n x0 = k ∧ (RepList 262 RepBool) ([x0]) w
+    qcall sp prims uc n ix [v0] = some (w, k) ∧ Cost_single_of_bool n x0 = k ∧ (RepList 263 RepBool) ([x0]) w
 
 abbrev BStmt_single_of_mini_selfhost_MEff (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.MEff} {v0 w : Value} {k : Nat},
@@ -150,16 +150,16 @@ abbrev BStmt_single_of_mini_selfhost_MEff (spW sp : SrcProgram) (prims : Prims) 
 abbrev BStmt_empty_of_mini_selfhost_EffArm (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value} {k : Nat},
     qcall spW prims uc n ix [] = some (w, k) →
-    qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ (RepList 306 RepEffArm) (([] : List Lanius.Mini.EffArm)) w
+    qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ (RepList 307 RepEffArm) (([] : List Lanius.Mini.EffArm)) w
 
 abbrev BStmt_cons_of_mini_selfhost_EffArm (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.EffArm} {x1 : List Lanius.Mini.EffArm} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepEffArm x0 v0 → (RepList 306 RepEffArm) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_of_mini_selfhost_EffArm n x0 x1 = k ∧ (RepList 306 RepEffArm) (x0 :: x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepEffArm x0 v0 → (RepList 307 RepEffArm) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_of_mini_selfhost_EffArm n x0 x1 = k ∧ (RepList 307 RepEffArm) (x0 :: x1) w
 
 abbrev BStmt_empty_of_mini_selfhost_VariantTy (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value} {k : Nat},
     qcall spW prims uc n ix [] = some (w, k) →
-    qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ (RepList 289 RepVariantTy) (([] : List Lanius.Mini.VariantTy)) w
+    qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ (RepList 290 RepVariantTy) (([] : List Lanius.Mini.VariantTy)) w
 
 end Lanius.Faithful.SelfBudget

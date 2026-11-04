@@ -106,7 +106,7 @@ abbrev BStmt_param_of (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
 abbrev BStmt_find_method_at (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Lanius.Mini.FnDecl} {x3 : List Lanius.Mini.FnDecl} {x4 : Nat} {x5 : List Nat} {x6 : Lanius.Mini.Ty} {v0 v1 v2 v3 v4 v5 v6 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5, v6] = some (w, k) → RepNat x0 v0 → RepDecls x1 v1 → RepFnDecl x2 v2 → (RepList 110 RepFnDecl) x3 v3 → RepNat x4 v4 → (RepList 25 RepNat) x5 v5 → RepTy x6 v6 → k < b → Pre_find_method_at n x0 x1 x2 x3 x4 x5 x6 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5, v6] = some (w, k) ∧ Cost_find_method_at n x0 x1 x2 x3 x4 x5 x6 = k ∧ (RepOption 298 RepFound) (Lanius.Mini.Inline.findMethodAt x0 x1 x2 x3 x4 x5 x6) w
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5, v6] = some (w, k) ∧ Cost_find_method_at n x0 x1 x2 x3 x4 x5 x6 = k ∧ (RepOption 299 RepFound) (Lanius.Mini.Inline.findMethodAt x0 x1 x2 x3 x4 x5 x6) w
 
 abbrev BStmt_string_byte (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : List Nat} {v0 v1 w : Value} {k : Nat},
@@ -121,7 +121,7 @@ abbrev BStmt_binder_of (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
 abbrev BStmt_for_of (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 239 RepLocal) x2 v2 → RepCTree x3 v3 → k < b → Pre_for_of n x0 x1 x2 x3 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_for_of n x0 x1 x2 x3 = k ∧ (RepOption 253 RepMStmt) (Lanius.Mini.Inline.forOf x0 x1 x2 x3) w
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_for_of n x0 x1 x2 x3 = k ∧ (RepOption 254 RepMStmt) (Lanius.Mini.Inline.forOf x0 x1 x2 x3) w
 
 abbrev BStmt_mono_next (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {x2 : Lanius.Mini.Decls} {x3 : List Lanius.Mini.Inst} {x4 : List Lanius.Mini.MFunc} {x5 : Nat} {x6 : Option Lanius.Mini.MFunc} {v0 v1 v2 v3 v4 v5 v6 w : Value} {k b : Nat},

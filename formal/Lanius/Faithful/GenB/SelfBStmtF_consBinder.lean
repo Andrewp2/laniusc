@@ -57,6 +57,6 @@ abbrev BStmt_binders_of (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
 abbrev BStmt_zip_variants (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (List Nat)} {x1 : List (List Lanius.Mini.Ty)} {v0 v1 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepList 245 (RepList 143 RepTy)) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_zip_variants n x0 x1 = k ∧ (RepList 289 RepVariantTy) (Lanius.Mini.zipVariants x0 x1) w
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_zip_variants n x0 x1 = k ∧ (RepList 290 RepVariantTy) (Lanius.Mini.zipVariants x0 x1) w
 
 end Lanius.Faithful.SelfBudget

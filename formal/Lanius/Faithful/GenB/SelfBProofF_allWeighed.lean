@@ -49,8 +49,8 @@ theorem bproof_close_named {spW sp : SrcProgram} {prims : Prims} {ix_close_named
     budget Cost_close_named
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4⟩
 
-theorem bstep_close_ty {spW sp : SrcProgram} {prims : Prims} {ix_close_ty ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_unbox_of_mini_selfhost_Ty ix_inst_index ix_slice_type ix_close_named ix_array_type : Nat}
-    (fnW : spW.funcs[ix_close_ty]? = some (src_close_ty ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_unbox_of_mini_selfhost_Ty ix_close_ty ix_inst_index ix_slice_type ix_close_named ix_array_type)) (fn : sp.funcs[ix_close_ty]? = some (src_close_ty ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_unbox_of_mini_selfhost_Ty ix_close_ty ix_inst_index ix_slice_type ix_close_named ix_array_type))
+theorem bstep_close_ty {spW sp : SrcProgram} {prims : Prims} {ix_close_ty ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_unbox_of_mini_selfhost_Ty ix_inst_index ix_slice_type ix_close_named ix_array_type ix_ref_type : Nat}
+    (fnW : spW.funcs[ix_close_ty]? = some (src_close_ty ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_unbox_of_mini_selfhost_Ty ix_close_ty ix_inst_index ix_slice_type ix_close_named ix_array_type ix_ref_type)) (fn : sp.funcs[ix_close_ty]? = some (src_close_ty ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_unbox_of_mini_selfhost_Ty ix_close_ty ix_inst_index ix_slice_type ix_close_named ix_array_type ix_ref_type))
     (np : prims.isPrim ix_close_ty = false)
     (back : Certified (∀ {n : Nat}, Stmt_close_ty sp prims ix_close_ty n))
     (b_minus : Certified (∀ {n : Nat}, BStmt_minus spW sp prims ix_minus n))
@@ -59,7 +59,8 @@ theorem bstep_close_ty {spW sp : SrcProgram} {prims : Prims} {ix_close_ty ix_min
     (b_inst_index : Certified (∀ {n : Nat}, BStmt_inst_index spW sp prims ix_inst_index n))
     (b_slice_type : Certified (∀ {n : Nat}, BStmt_slice_type spW sp prims ix_slice_type n))
     (b_close_named : Certified (∀ {n : Nat}, BStmt_close_named spW sp prims ix_close_named n))
-    (b_array_type : Certified (∀ {n : Nat}, BStmt_array_type spW sp prims ix_array_type n)) {n : Nat}
+    (b_array_type : Certified (∀ {n : Nat}, BStmt_array_type spW sp prims ix_array_type n))
+    (b_ref_type : Certified (∀ {n : Nat}, BStmt_ref_type spW sp prims ix_ref_type n)) {n : Nat}
     (bih_close_ty : Certified (BStmt_close_ty spW sp prims ix_close_ty n)) :
     BStmt_close_ty spW sp prims ix_close_ty (n + 1) := by
   intro x0 x1 x2 v0 v1 v2 w k b h r0 r1 r2 hb pre

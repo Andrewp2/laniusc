@@ -10,6 +10,7 @@ import Lanius.Faithful.GenB.SelfBStmtF_fnInstRet
 import Lanius.Faithful.GenB.SelfBStmtF_hasConst
 import Lanius.Faithful.GenB.SelfBStmtF_hasKids
 import Lanius.Faithful.GenB.SelfBStmtF_isEmptyUsize
+import Lanius.Faithful.GenB.SelfBStmtF_isFnPath
 import Lanius.Faithful.GenB.SelfBStmtF_litEffMatch
 import Lanius.Faithful.GenB.SelfBStmtF_litWants
 import Lanius.Faithful.GenB.SelfBStmtF_noBlock

@@ -14,6 +14,7 @@ public import Lanius.Faithful.Gen.SelfStmtC_elementAddress
 public import Lanius.Faithful.Gen.SelfStmtC_elementBase
 public import Lanius.Faithful.Gen.SelfStmtC_enumVariants
 public import Lanius.Faithful.Gen.SelfStmtC_evalSame
+public import Lanius.Faithful.Gen.SelfStmtC_evalSlotLimit
 public import Lanius.Faithful.Gen.SelfStmtC_lowerSetValues
 public import Lanius.Faithful.Gen.SelfStmtC_structFields
 public import Lanius.Faithful.Gen.SelfStmtC_withBudget
@@ -94,7 +95,8 @@ theorem step_enum_variants_at {prog : SrcProgram} {prims : Prims} {ix_enum_varia
   simp only [src_enum_variants_at] at h
   faithful [Lanius.Mini.Inline.enumVariantsAt]
 
-theorem step_eval_let_body {prog : SrcProgram} {prims : Prims} {ix_eval_let_body ix_SrcEff_eval : Nat} (fn : prog.funcs[ix_eval_let_body]? = some (src_eval_let_body ix_SrcEff_eval)) (np : prims.isPrim ix_eval_let_body = false) {n : Nat}
+theorem step_eval_let_body {prog : SrcProgram} {prims : Prims} {ix_eval_let_body ix_SrcEff_eval ix_eval_slot_limit : Nat} (fn : prog.funcs[ix_eval_let_body]? = some (src_eval_let_body ix_SrcEff_eval ix_eval_slot_limit)) (np : prims.isPrim ix_eval_let_body = false)
+    (ext_eval_slot_limit : Certified (∀ {n : Nat}, Stmt_eval_slot_limit prog prims ix_eval_slot_limit n)) {n : Nat}
     (ih_SrcEff_eval : Certified (Stmt_SrcEff_eval prog prims ix_SrcEff_eval n)) :
     Stmt_eval_let_body prog prims ix_eval_let_body (n + 1) := by
   intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4

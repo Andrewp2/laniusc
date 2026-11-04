@@ -44,6 +44,10 @@ abbrev Stmt_flatten_tys (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
   ∀ {x0 : List (List Lanius.Mini.Ty)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 245 (RepList 143 RepTy)) x0 v0 →
     (RepList 143 RepTy) (Lanius.Mini.flattenTys x0) w
 
+abbrev Stmt_ref_type (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Option Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 160 RepSrcType) x0 v0 →
+    (RepOption 160 RepSrcType) (Lanius.Mini.refType x0) w
+
 abbrev Stmt_slice_type (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 160 RepSrcType) x0 v0 →
     (RepOption 160 RepSrcType) (Lanius.Mini.sliceType x0) w

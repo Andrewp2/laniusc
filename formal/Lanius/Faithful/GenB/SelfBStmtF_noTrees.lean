@@ -36,11 +36,11 @@ abbrev BStmt_path_name (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
 abbrev BStmt_args_segment (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Nat} {x1 : Option (List Lanius.Mini.CTree)} {v0 v1 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 25 RepNat) x0 v0 → (RepOption 82 (RepList 83 RepCTree)) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_args_segment n x0 x1 = k ∧ (RepOption 282 RepPathRef) (Lanius.Mini.argsSegment x0 x1) w
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_args_segment n x0 x1 = k ∧ (RepOption 283 RepPathRef) (Lanius.Mini.argsSegment x0 x1) w
 
 abbrev BStmt_cons_segment (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Nat} {x1 : Option Lanius.Mini.PathRef} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 25 RepNat) x0 v0 → (RepOption 282 RepPathRef) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_segment n x0 x1 = k ∧ (RepOption 282 RepPathRef) (Lanius.Mini.consSegment x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 25 RepNat) x0 v0 → (RepOption 283 RepPathRef) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_segment n x0 x1 = k ∧ (RepOption 283 RepPathRef) (Lanius.Mini.consSegment x0 x1) w
 
 end Lanius.Faithful.SelfBudget

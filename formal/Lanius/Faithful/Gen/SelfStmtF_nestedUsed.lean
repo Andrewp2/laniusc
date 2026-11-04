@@ -22,14 +22,14 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_block_value (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.CTree} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → RepCTree x1 v1 →
-    (RepOption 309 RepBool) (Lanius.Mini.blockValue x0 x1) w
+    (RepOption 253 RepBool) (Lanius.Mini.blockValue x0 x1) w
 
 abbrev Stmt_nested_used (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.CTree} {x1 : Option Lanius.Mini.ArmsUse} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 129 RepCTree) x0 v0 → (RepOption 320 RepArmsUse) x1 v1 →
+  ∀ {x0 : Option Lanius.Mini.CTree} {x1 : Option Lanius.Mini.ArmsUse} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 129 RepCTree) x0 v0 → (RepOption 321 RepArmsUse) x1 v1 →
     (RepOption 82 (RepList 83 RepCTree)) (Lanius.Mini.nestedUsed x0 x1) w
 
 abbrev Stmt_nested_with (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.TypeDecl} {x3 : List Lanius.Mini.VariantTy} {x4 : List Lanius.Mini.CTree} {x5 : Option Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → RepTypeDecl x2 v2 → (RepList 289 RepVariantTy) x3 v3 → (RepList 83 RepCTree) x4 v4 → (RepOption 129 RepCTree) x5 v5 →
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.TypeDecl} {x3 : List Lanius.Mini.VariantTy} {x4 : List Lanius.Mini.CTree} {x5 : Option Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → RepTypeDecl x2 v2 → (RepList 290 RepVariantTy) x3 v3 → (RepList 83 RepCTree) x4 v4 → (RepOption 129 RepCTree) x5 v5 →
     (RepOption 82 (RepList 83 RepCTree)) (Lanius.Mini.nestedWith x0 x1 x2 x3 x4 x5) w
 
 end Lanius.Faithful.SelfCert

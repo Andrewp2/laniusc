@@ -6,7 +6,7 @@ import all Lanius.Mini.Frontend.P.assertClosed
 import all Lanius.Mini.Frontend.P.closeFuncs
 import all Lanius.Mini.Frontend.P.distinct
 import all Lanius.Mini.Frontend.P.eDivideClosed
-import all Lanius.Mini.Frontend.P.eIndexClosed
+import all Lanius.Mini.Frontend.P.eDerefClosed
 import all Lanius.Mini.Frontend.P.eStructClosed
 import all Lanius.Mini.Frontend.P.findConst
 import all Lanius.Mini.Frontend.P.flattenTys
@@ -18,6 +18,12 @@ import all Lanius.Mini.Frontend.P.letStructClosed
 import all Lanius.Mini.Frontend.P.lowerTy
 import all Lanius.Mini.Frontend.P.setEvalClosed
 import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.setPlaceOf
+import all Lanius.Mini.Frontend.P.setFieldOrEval
+import all Lanius.Mini.Frontend.P.namesFieldBase
+import all Lanius.Mini.Frontend.P.isFnPath
+import all Lanius.Mini.Frontend.P.fieldValue
+import all Lanius.Mini.Frontend.P.checkedFunc
 
 @[expose] public section
 /-! # The reading, V8e: the closed program
@@ -74,6 +80,11 @@ theorem closeTy_sound {t : Tables} (ok : LoweredOk t) :
       cases he : closeTy f t e with
       | none => rw [he] at h; cases h
       | some x => rw [he] at h; cases h; exact .slice (closeTy_sound ok he)
+    | tyRef e =>
+      simp only [refType] at h
+      cases he : closeTy f t e with
+      | none => rw [he] at h; cases h
+      | some x => rw [he] at h; cases h; exact .ref (closeTy_sound ok he)
     | tyArray e n =>
       simp only [arrayType] at h
       cases he : closeTy f t e with
@@ -144,6 +155,14 @@ inductive EffClosed (decls : Decls) (fns types : List Inst) : MEff → SrcEff �
   | len {sl : Nat} : EffClosed decls fns types (.xLen sl) (.eLen sl)
   /-- a string literal, at offset 0 until the literals are placed (`placedProgram`) -/
   | str {cs : List Nat} : EffClosed decls fns types (.xStr cs) (.eStr 0 cs)
+  /-- (F5, S5) a reference's referent, a field of a place, an element of one -/
+  | deref {ty : Ty} {s : SrcType} {x : MEff} {a : SrcEff} :
+      LowerR decls types ty s → EffClosed decls fns types x a → EffClosed decls fns types (.xDeref ty x) (.eDeref s a)
+  | placeField {x : MEff} {a : SrcEff} {j : Nat} :
+      EffClosed decls fns types x a → EffClosed decls fns types (.xPlaceField x j) (.eField a j)
+  | placeAt {x i : MEff} {a b : SrcEff} :
+      EffClosed decls fns types x a → EffClosed decls fns types i b →
+      EffClosed decls fns types (.xPlaceAt x i) (.eAt a b)
 
 inductive EffsClosed (decls : Decls) (fns types : List Inst) : List MEff → List SrcEff → Prop
   | nil : EffsClosed decls fns types [] []
@@ -233,6 +252,21 @@ theorem closeEff_sound {fuel : Nat} {t : Tables} (ok : LoweredOk t) :
     exact .let (closeTy_sound ok ht) (closeEff_sound ok _ _ hv) (closeTy_sound ok hr) (closeEff_sound ok _ _ hb)
   | .xLen sl, s, h => by simp only [closeEff, Option.some.injEq] at h; subst h; exact .len
   | .xStr cs, s, h => by simp only [closeEff, Option.some.injEq] at h; subst h; exact .str
+  | .xDeref ty a, s, h => by
+    simp only [closeEff] at h
+    cases ht : closeTy fuel t ty <;> cases ha : closeEff fuel t a <;> simp [ht, ha, eDerefClosed] at h
+    subst h
+    exact .deref (closeTy_sound ok ht) (closeEff_sound ok _ _ ha)
+  | .xPlaceField b j, s, h => by
+    simp only [closeEff] at h
+    cases hb : closeEff fuel t b <;> simp [hb, ePlaceFieldClosed] at h
+    subst h
+    exact .placeField (closeEff_sound ok _ _ hb)
+  | .xPlaceAt b i, s, h => by
+    simp only [closeEff] at h
+    cases hb : closeEff fuel t b <;> cases hi : closeEff fuel t i <;> simp [hb, hi, ePlaceAtClosed] at h
+    subst h
+    exact .placeAt (closeEff_sound ok _ _ hb) (closeEff_sound ok _ _ hi)
 
 theorem closeEffs_sound {fuel : Nat} {t : Tables} (ok : LoweredOk t) :
     ∀ (xs : List MEff) (ss : List SrcEff), closeEffs fuel t xs = some ss → EffsClosed t.decls t.fns t.types xs ss
@@ -326,6 +360,13 @@ inductive StmtClosed (decls : Decls) (fns types : List Inst) : MStmt → SrcStmt
       StmtClosed decls fns types (.mMatchArm sc sty k true x ty b r) (.matchArm sc e k true x s c d)
   | unreachable {id : Nat} {ty : Ty} {s : SrcType} :
       LowerR decls types ty s → StmtClosed decls fns types (.mUnreachable id ty) (.unreachable id s)
+  /-- (F5, S5) an assignment to a place -/
+  | setPlace {p v : MEff} {a b : SrcEff} :
+      EffClosed decls fns types p a → EffClosed decls fns types v b →
+      StmtClosed decls fns types (.mSetPlace p v) (.setPlace a b)
+  | setPlaceOp {op : SrcAssignOp} {p v : MEff} {a b : SrcEff} :
+      EffClosed decls fns types p a → EffClosed decls fns types v b →
+      StmtClosed decls fns types (.mSetPlaceOp op p v) (.setPlaceOp op a b)
   | matchArmUnbound {sc : Nat} {sty : Ty} {e : Nat} {sss : List (List SrcType)} {k x : Nat} {ty : Ty}
       {b r : MStmt} {c d : SrcStmt} :
       LowerR decls types sty (.enum e sss) → StmtClosed decls fns types b c → StmtClosed decls fns types r d →
@@ -467,6 +508,16 @@ theorem closeStmt_sound {fuel : Nat} {t : Tables} (ok : LoweredOk t) :
     cases ht : closeTy fuel t ty <;> simp [ht, unreachableClosed] at h
     subst h
     exact .unreachable (closeTy_sound ok ht)
+  | .mSetPlace p v, s, h => by
+    simp only [closeStmt] at h
+    cases hp : closeEff fuel t p <;> cases hv : closeEff fuel t v <;> simp [hp, hv, setPlaceClosed] at h
+    subst h
+    exact .setPlace (closeEff_sound ok _ _ hp) (closeEff_sound ok _ _ hv)
+  | .mSetPlaceOp op p v, s, h => by
+    simp only [closeStmt] at h
+    cases hp : closeEff fuel t p <;> cases hv : closeEff fuel t v <;> simp [hp, hv, setPlaceOpClosed] at h
+    subst h
+    exact .setPlaceOp (closeEff_sound ok _ _ hp) (closeEff_sound ok _ _ hv)
   | .mMatchArm sc sty k true x ty b r, s, h => by
     simp only [closeStmt] at h
     cases he : srcEnumId (closeTy fuel t sty) <;> cases ht : closeTy fuel t ty <;>

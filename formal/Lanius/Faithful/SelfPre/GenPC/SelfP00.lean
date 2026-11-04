@@ -15,6 +15,12 @@ open Lanius.Faithful.Budget
 open Lanius.Faithful.SelfBudget
 open Lanius.Faithful.SelfPre.Tactic
 
+theorem upost_referent : ∀ (x0 : Lanius.Mini.Ty), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.referent x0) ≤ M := by
+  intro x0 M hM0
+  first | fun_induction Lanius.Mini.referent x0 | fun_cases Lanius.Mini.referent x0 | unfold Lanius.Mini.referent
+  all_goals upost_auto M
+theorem HBPost.Lanius.Mini.referent.p0 : ∀ (x0 : Lanius.Mini.Ty), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.referent x0) ≤ M := upost_referent
+
 theorem upost_element_of : ∀ (x0 : Lanius.Mini.SrcType), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.elementOf x0) ≤ M := by
   intro x0 M hM0
   first | fun_induction Lanius.Mini.elementOf x0 | fun_cases Lanius.Mini.elementOf x0 | unfold Lanius.Mini.elementOf

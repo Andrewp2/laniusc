@@ -113,7 +113,7 @@ def SrcStops (sp : SrcProgram) (mp : Program) (n : Nat) (s : SrcStmt) : Prop :=
     {frame : Nat → Nat} {base : Nat} {st : State} {env : Env},
     s.lower (sp.sigsAt bud) sp.decls ret scope next = some stmt →
     Corr sx places scope frame st env → Layout scope frame base next → st.Fresh → base ≤ st.nextCell →
-    HeapCorr st.heap st.world hp → FrameCorr sx bud places st hp → (∀ x ∈ places, x.cell < base) →
+    HeapCorr st.heap st.world hp → LentHomes sx bud places st hp → (∀ x ∈ places, x.cell < base) →
     st.heap.nextAddress ≤ hp.limit →
     Fails sp hp.limit st s.toCore → ∃ d, Stops mp d env hp stmt n
 
@@ -575,7 +575,7 @@ omit [StaticsOf sp sx] in
 after the prologue takes its block of frame memory. -/
 theorem callee_frame (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {callee : Nat}
     {f : SrcFunc} (found : sp.funcs[callee]? = some f) {hp : Heap} {st : State} (fresh : st.Fresh)
-    (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp) (fits : sp.need callee ≤ bud.room)
+    (hc : HeapCorr st.heap st.world hp) (fc : LentHomes sx bud places st hp) (fits : sp.need callee ≤ bud.room)
     {values : List Value}
     {bits : List (BitVec 64)} (holds : FieldsHold sx places (paramTypes f.params) values (Func.entry bits) 0) :
     ∃ g b pre frame s envX hpX, mp.funcs[callee]? = some g ∧ g.params = paramsSize f.params ∧
@@ -586,7 +586,7 @@ theorem callee_frame (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.de
       Layout (paramScope f.params 0 []) frame st.nextCell (paramsSize f.params) ∧
       (calleeState f values st).Fresh ∧ Keeps [] st.nextCell ({ st with locals := [] } : State) (calleeState f values st) ∧
       HeapCorr (calleeState f values st).heap (calleeState f values st).world hpX ∧
-      FrameCorr sx (funcBudget s f) places (calleeState f values st) hpX ∧ hpX.limit = hp.limit := by
+      LentHomes sx (funcBudget s f) places (calleeState f values st) hpX ∧ hpX.limit = hp.limit := by
   have under := fc.below fresh
   obtain ⟨g, own, gFound, ownFound, gOk⟩ := lowerFuncs_get lowered found
   obtain ⟨gParams, _, valid, inside, b, pre, bodyOk, framed, tail, needs, -⟩ := lowerFunc_some gOk
@@ -613,7 +613,7 @@ theorem callee_frame (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.de
 theorem body_shapes (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     (returns : funcsReturn sp.funcs = true) {callee : Nat} {f : SrcFunc} (found : sp.funcs[callee]? = some f)
     {hp : Heap} {st : State} (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp)
-    (fc : FrameCorr sx bud places st hp) (fits : sp.need callee ≤ bud.room) {values : List Value}
+    (fc : LentHomes sx bud places st hp) (fits : sp.need callee ≤ bud.room) {values : List Value}
     {bits : List (BitVec 64)} (holds : FieldsHold sx places (paramTypes f.params) values (Func.entry bits) 0)
     {j : Nat} {c : Completion} {completed : State}
     (run : execStmt j sp.toCore (calleeState f values st) f.body.toCore = .done c completed)
@@ -650,7 +650,7 @@ theorem callee_stops (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.de
     {callee : Nat} {args : List Core.Expr} {st afterArgs : State} {k : Nat} {values : List Value}
     (argsRun : evalExprs k sp.toCore st args = .done values afterArgs) {f : SrcFunc}
     (found : sp.funcs[callee]? = some f) {hp : Heap} (fresh : afterArgs.Fresh) (hc : HeapCorr afterArgs.heap afterArgs.world hp)
-    (fc : FrameCorr sx bud places afterArgs hp) (fits : sp.need callee ≤ bud.room)
+    (fc : LentHomes sx bud places afterArgs hp) (fits : sp.need callee ≤ bud.room)
     (within : afterArgs.heap.nextAddress ≤ hp.limit) {bits : List (BitVec 64)}
     (holds : FieldsHold sx places (paramTypes f.params) values (Func.entry bits) 0) (bitsLen : bits.length = paramsSize f.params)
     (fails : EFails sp hp.limit st (.call callee args)) :
@@ -696,7 +696,7 @@ theorem lowerCall_found {callee : Nat} {scope : List Binding} {args : List SrcEx
 theorem call_stops (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     (returns : funcsReturn sp.funcs = true) (prev : StmtStops sp mp n) {scope frame st env}
     (corr : Corr sx places scope frame st env) (fresh : st.Fresh) {hp : Heap} (hc : HeapCorr st.heap st.world hp)
-    (fc : FrameCorr sx bud places st hp) (within : st.heap.nextAddress ≤ hp.limit) {callee : Nat} {args : List SrcExpr} {ty : SrcType}
+    (fc : LentHomes sx bud places st hp) (within : st.heap.nextAddress ≤ hp.limit) {callee : Nat} {args : List SrcExpr} {ty : SrcType}
     {es : List Expr} (ok : lowerCall (sp.sigsAt bud) scope callee args ty = some es)
     (g : (guardAll scope args).eval env ≠ 0)
     (fails : EFails sp hp.limit st (.call callee (args.map SrcExpr.toCore))) (target count : Nat) :
@@ -1196,7 +1196,7 @@ theorem let_stops {body : SrcStmt} (ih : SrcStops sp mp n body) {ret : SrcType} 
     {frame base st env} (corr : Corr sx places scope frame st env) (fr : Layout scope frame base next)
     (fresh : st.Fresh) (le : base ≤ st.nextCell) (sized : 0 < ty.size) {v : Value} {env' : Env}
     (agree : ScopeAgree scope env env') (holds : ty.HoldsAt sx places v env' next)
-    (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp) (under : ∀ x ∈ places, x.cell < base)
+    (hc : HeapCorr st.heap st.world hp) (fc : LentHomes sx bud places st hp) (under : ∀ x ∈ places, x.cell < base)
     (within : st.heap.nextAddress ≤ hp.limit)
     (fails : Fails sp hp.limit (st.bindLocal id v) body.toCore)
     (nv : viewedType ty = false := by first | rfl | assumption) :
@@ -2251,7 +2251,7 @@ theorem stops_letIndex_i32 {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcE
     (ok : lowerLoadWord next (lowerElement (lookup scope slice) ty (lowerIndex scope index))
       (body.lower (sp.sigsAt bud) sp.decls ret (⟨id, next, ty⟩ :: scope) (next + ty.size)) = some stmt)
     (corr : Corr sx places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp)
+    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : LentHomes sx bud places st hp)
     (under : ∀ x ∈ places, x.cell < base) (within : st.heap.nextAddress ≤ hp.limit)
     (fails : Fails sp hp.limit st (SrcStmt.letIndex id ty slice index body).toCore) :
     ∃ d, Stops mp d env hp (checkThen next (guardAnd (index.guard scope) (indexGuard scope slice index)) stmt) n := by
@@ -2376,6 +2376,7 @@ theorem stops_letIndex_i32 {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcE
   simp only [SrcType.size, Nat.mul_one] at vHolds
   rw [Addressed.view_i32 sliced xty, Addressed.pointer_i32 xty] at vHolds
   have sz := Addressed.size_i32 xty
+  have wz := Addressed.words_i32 xty
   have ptr : (env b.slot).toNat = x.address := by rw [pointerSlot, Addressed.pointer_i32 xty]
   have address : ((Expr.binary Word.u64 BinOp.add (Expr.var b.slot)
       (Expr.binary Word.u64 BinOp.mul t.expr (Expr.lit 4))).eval env).toNat =
@@ -2408,7 +2409,7 @@ theorem stops_letIndex_u8 {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcEx
     (ok : lowerLoad next (lowerElement (lookup scope slice) ty (lowerIndex scope index))
       (body.lower (sp.sigsAt bud) sp.decls ret (⟨id, next, ty⟩ :: scope) (next + ty.size)) = some stmt)
     (corr : Corr sx places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp)
+    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : LentHomes sx bud places st hp)
     (under : ∀ x ∈ places, x.cell < base) (within : st.heap.nextAddress ≤ hp.limit)
     (fails : Fails sp hp.limit st (SrcStmt.letIndex id ty slice index body).toCore) :
     ∃ d, Stops mp d env hp (checkThen next (guardAnd (index.guard scope) (indexGuard scope slice index)) stmt) n := by
@@ -2525,6 +2526,7 @@ theorem stops_letIndex_u8 {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcEx
   simp only [SrcType.size, Nat.mul_one] at vHolds
   rw [Addressed.view_u8 sliced xty, Addressed.pointer_u8 xty] at vHolds
   have sz := Addressed.size_u8 xty
+  have wz := Addressed.words_u8 xty
   have ptr : (env b.slot).toNat = x.address := by rw [pointerSlot, Addressed.pointer_u8 xty]
   have address : ((Expr.binary Word.u64 BinOp.add (Expr.var b.slot) t.expr).eval env).toNat =
       x.address + (t.expr.eval env).toNat := by
@@ -2549,7 +2551,7 @@ theorem stops_letIndex_word {id : Nat} {ty : SrcType} {slice : Nat} {index : Src
     (ok : lowerLoadType sp.decls next (lookup scope slice) ty (lowerIndex scope index)
       (body.lower (sp.sigsAt bud) sp.decls ret (⟨id, next, ty⟩ :: scope) (next + ty.size)) = some stmt)
     (corr : Corr sx places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr sx bud places st hp)
+    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : LentHomes sx bud places st hp)
     (under : ∀ x ∈ places, x.cell < base) (within : st.heap.nextAddress ≤ hp.limit)
     (fails : Fails sp hp.limit st (SrcStmt.letIndex id ty slice index body).toCore) :
     ∃ d, Stops mp d env hp (checkThen next (guardAnd (index.guard scope) (indexGuard scope slice index)) stmt) n := by
@@ -2645,7 +2647,7 @@ theorem stops_letIndex {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcExpr}
 omit [StaticsOf sp sx] in
 /-- A failing `slice[index] = value` whose operands are checked is impossible. -/
 theorem setIndex_fails {scope : List Binding} {frame : Nat → Nat} {st : State} {env : Env} {hp : Heap}
-    (corr : Corr sx places scope frame st env) (fresh : st.Fresh) (fc : FrameCorr sx bud places st hp)
+    (corr : Corr sx places scope frame st env) (fresh : st.Fresh) (fc : LentHomes sx bud places st hp)
     (within : st.heap.nextAddress ≤ hp.limit)
     {slice : Nat} {b : Binding} (found : lookup scope slice = some b) {element : SrcType}
     (bty : b.ty = .slice element) {index value : SrcExpr} {x : Expr} (indexOk : lowerIndex scope index = some x)

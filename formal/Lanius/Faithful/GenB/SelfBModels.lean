@@ -75,8 +75,8 @@ import Lanius.Faithful.GenB.SelfBModelF_consTys
 import Lanius.Faithful.GenB.SelfBModelF_depthLimit
 import Lanius.Faithful.GenB.SelfBModelF_distinct
 import Lanius.Faithful.GenB.SelfBModelF_divergeArm
+import Lanius.Faithful.GenB.SelfBModelF_eDerefClosed
 import Lanius.Faithful.GenB.SelfBModelF_eDivideClosed
-import Lanius.Faithful.GenB.SelfBModelF_eIndexClosed
 import Lanius.Faithful.GenB.SelfBModelF_eStructClosed
 import Lanius.Faithful.GenB.SelfBModelF_findConst
 import Lanius.Faithful.GenB.SelfBModelF_firstSrc
@@ -98,6 +98,7 @@ import Lanius.Faithful.GenB.SelfBModelF_hasKids
 import Lanius.Faithful.GenB.SelfBModelF_i32ArrayLength
 import Lanius.Faithful.GenB.SelfBModelF_ifEff
 import Lanius.Faithful.GenB.SelfBModelF_isEmptyUsize
+import Lanius.Faithful.GenB.SelfBModelF_isFnPath
 import Lanius.Faithful.GenB.SelfBModelF_isPathCall
 import Lanius.Faithful.GenB.SelfBModelF_isTryEnum
 import Lanius.Faithful.GenB.SelfBModelF_isTypedSliceSegments
@@ -131,6 +132,7 @@ import Lanius.Faithful.GenB.SelfBModelF_paramGoals
 import Lanius.Faithful.GenB.SelfBModelF_pathRef
 import Lanius.Faithful.GenB.SelfBModelF_pickTy
 import Lanius.Faithful.GenB.SelfBModelF_plainNaming
+import Lanius.Faithful.GenB.SelfBModelF_projection
 import Lanius.Faithful.GenB.SelfBModelF_projectionRet
 import Lanius.Faithful.GenB.SelfBModelF_purePart
 import Lanius.Faithful.GenB.SelfBModelF_readCountedBytes
@@ -398,7 +400,7 @@ Do not edit. -/
 -- models: Pre_alias_at Pre_arg_ty Cost_ty_list Pre_ty_list Cost_field_tys Pre_field_tys
 -- models: Cost_enum_src Cost_cons_type_tail Cost_cons_type Pre_weight_sum Pre_weight_add_to
 -- models: Pre_weight_times Pre_weight_array Pre_weight_add Pre_src_weight Pre_src_weights
--- models: Pre_variant_weights Pre_weighed Cost_array_type Pre_array_type
+-- models: Pre_variant_weights Pre_weighed Cost_array_type Pre_array_type Cost_ref_type
 -- models: Cost_cons_of_mini_selfhost_List_mini_selfhost_SrcType Cost_cons_types_tail Cost_cons_types
 -- models: Cost_cons_of_mini_selfhost_List_mini_selfhost_Ty Cost_cons_tys_tail Cost_cons_tys
 -- models: Cost_payload_list Pre_payload_list Cost_payload_tys Pre_payload_tys Cost_struct_src
@@ -412,9 +414,10 @@ Do not edit. -/
 -- models: Cost_e_call_closed Cost_cons_of_mini_selfhost_SrcEff Cost_cons_src_eff Cost_e_apply_closed
 -- models: Cost_e_neg_closed Cost_e_not_closed Cost_e_cast_closed Cost_e_index_closed
 -- models: Cost_e_struct_closed Cost_e_variant_closed Cost_e_match_closed Cost_e_divide_closed
--- models: Cost_e_if_closed Cost_e_let_closed Cost_close_eff Cost_close_effs Pre_close_eff
--- models: Pre_close_effs Cost_if_eval_closed Cost_while_eval_closed Cost_match_arm_closed
--- models: Cost_close_stmt Pre_close_stmt Cost_close_funcs Pre_close_funcs
+-- models: Cost_e_if_closed Cost_e_let_closed Cost_e_deref_closed Cost_e_place_field_closed
+-- models: Cost_e_place_at_closed Cost_close_eff Cost_close_effs Pre_close_eff Pre_close_effs
+-- models: Cost_if_eval_closed Cost_while_eval_closed Cost_match_arm_closed Cost_close_stmt
+-- models: Pre_close_stmt Cost_close_funcs Pre_close_funcs
 -- models: Cost_cons_of_core_option_Option_mini_selfhost_SrcType Cost_lowered_all Pre_lowered_all
 -- models: Pre_lim_slots Pre_lim_slots_list Pre_lim_slots_variants Pre_lim_ty Pre_lim_params
 -- models: Pre_depth_sum Pre_lim_bind Pre_lim_param_slots Pre_lim_expr Pre_lim_exprs Pre_lim_arms
@@ -446,15 +449,15 @@ Do not edit. -/
 -- models: Cost_funcs_tys Cost_build_mono Pre_build_mono Cost_eff_calls Cost_effs_calls
 -- models: Cost_stmt_calls Cost_cons_of_mini_selfhost_MFunc Cost_type_names_in Cost_type_name_at
 -- models: Cost_module_globals Cost_cons_of_mini_selfhost_MEff Cost_param_effs Cost_extern_body
--- models: Cost_cons_of_mini_selfhost_MParam Cost_cons_param Cost_cons_of_mini_selfhost_Local
--- models: Cost_params_of Cost_param_of Pre_params_of Pre_param_of Cost_result_of Pre_result_of
--- models: Cost_extern_func Pre_extern_func Cost_diverges Pre_diverges Cost_init_tys
--- models: Cost_diverge_func Cost_cons_of_mini_selfhost_Bind Cost_bind_ty Cost_match_ty
--- models: Cost_match_args Cost_match_path Cost_match_args_next Cost_match_arg Cost_match_named
--- models: Cost_match_decl Cost_match_same_decl Pre_match_ty Pre_match_args Pre_match_path
--- models: Pre_match_args_next Pre_match_arg Pre_match_named Pre_match_decl Pre_match_same_decl
--- models: Cost_bound_args Cost_bound_or_none Cost_impl_args Pre_impl_args
--- models: Cost_concat_of_mini_selfhost_BoundGoal Cost_join_goals_tail Cost_join_goals
+-- models: Cost_ref_ty Cost_param_ty_of Pre_param_ty_of Cost_cons_of_mini_selfhost_MParam
+-- models: Cost_cons_param Cost_cons_of_mini_selfhost_Local Cost_params_of Cost_param_of
+-- models: Pre_params_of Pre_param_of Cost_result_of Pre_result_of Cost_extern_func Pre_extern_func
+-- models: Cost_diverges Pre_diverges Cost_init_tys Cost_diverge_func Cost_cons_of_mini_selfhost_Bind
+-- models: Cost_bind_ty Cost_match_ty Cost_match_args Cost_match_path Cost_match_args_next
+-- models: Cost_match_arg Cost_match_named Cost_match_decl Cost_match_same_decl Pre_match_ty
+-- models: Pre_match_args Pre_match_path Pre_match_args_next Pre_match_arg Pre_match_named
+-- models: Pre_match_decl Pre_match_same_decl Cost_bound_args Cost_bound_or_none Cost_impl_args
+-- models: Pre_impl_args Cost_concat_of_mini_selfhost_BoundGoal Cost_join_goals_tail Cost_join_goals
 -- models: Cost_cons_of_mini_selfhost_BoundGoal Cost_cons_goal_tail Cost_cons_goal Cost_trait_split
 -- models: Cost_trait_at Cost_bound_path_spellings Cost_args_of_items Pre_args_of_items
 -- models: Cost_trait_of_bound Pre_trait_of_bound Cost_goals_of Pre_goals_of Cost_bound_goals
@@ -463,42 +466,43 @@ Do not edit. -/
 -- models: Pre_item_goals Cost_trait_of_ty Pre_trait_of_ty Cost_goals_hold Cost_all_hold
 -- models: Cost_trait_holds Cost_any_impl Cost_impl_gives Cost_impl_fits Pre_goals_hold Pre_all_hold
 -- models: Pre_trait_holds Pre_any_impl Pre_impl_gives Pre_impl_fits Cost_fn_bounds_ok
--- models: Pre_fn_bounds_ok Cost_contract_then Cost_apply_of Cost_cast_value Cost_cast_into
--- models: Cost_named_scalar Pre_named_scalar Cost_cast_type_of Pre_cast_type_of Cost_casts Pre_casts
--- models: Cost_negated Cost_notted Cost_text_self Cost_local_of Pre_field_in Pre_field_index
--- models: Cost_member_of Pre_member_of Pre_wide_decimal Pre_wide_digit Pre_based_digits
--- models: Pre_based_digit Pre_lit_prefixed Pre_lit_value_at Pre_lit_value Cost_wide_isize
--- models: Pre_wide_isize Cost_wide_sint Pre_wide_sint Cost_wide_of Pre_wide_of Cost_wide_digits
--- models: Pre_wide_digits Cost_wide_signed Pre_wide_signed Cost_dash_text Cost_wide_const
--- models: Pre_wide_const Cost_single_of_mini_selfhost_Token Cost_concat_of_mini_selfhost_Token
--- models: Cost_tree_tokens Cost_trees_tokens Cost_sint_const Cost_negate_some Cost_negated_float
--- models: Cost_neg_sint_const Cost_typed_literal Cost_literal_as Cost_wide_marker Cost_lit_sized
--- models: Cost_int_literal Pre_int_literal Pre_char_tail Pre_char_tail_at Pre_char_first
--- models: Pre_char_body Pre_char_open Pre_char_literal Pre_fl_finish Cost_single_of_bool
--- models: Cost_fl_carry_out Cost_cons_of_bool Cost_fl_add Cost_fl_mul10 Pre_fl_nat_half
--- models: Cost_fl_of_nat Pre_fl_of_nat Cost_fl_push Pre_fl_push Pre_fl_exp_digits
--- models: Pre_fl_exp_digit_at Pre_fl_exp_first_at Pre_fl_exp_first Cost_fl_exp_sign_at
--- models: Pre_fl_exp_sign_at Cost_fl_exp_sign Pre_fl_exp_sign Cost_fl_exp_at Pre_fl_exp_at
--- models: Cost_fl_exp_part Pre_fl_exp_part Cost_fl_frac_part Cost_fl_frac_at Pre_fl_frac_part
--- models: Pre_fl_frac_at Cost_fl_int_part Cost_fl_int_at Pre_fl_int_part Pre_fl_int_at
--- models: Pre_fl_log2_up Pre_fl_log2 Pre_fl_pow2 Pre_fl_log2_or0 Cost_fl_shl Cost_fl_ratio_ok
--- models: Cost_fl_sub Cost_fl_div_step Cost_fl_divmod Cost_fl_round_up Pre_fl_to_nat Cost_fl_round
--- models: Pre_fl_round Cost_fl_times10 Cost_fl_decimal_at Pre_fl_decimal_at Cost_fl_decimal
--- models: Pre_fl_decimal Cost_float_marker Pre_float_marker Cost_float_literal Pre_float_literal
--- models: Cost_expr_of Cost_assign_value Cost_fold Cost_postfix_value Cost_ident_expr Cost_fold_op
--- models: Cost_const_ref Cost_fold_left Cost_const_value Pre_expr_of Pre_assign_value Pre_fold
--- models: Pre_postfix_value Pre_ident_expr Pre_fold_op Pre_const_ref Pre_fold_left Pre_const_value
--- models: Cost_x_divide_of Cost_apply_eff Cost_x_apply_of Cost_eff_binary Cost_x_cast_into
--- models: Cost_eff_casts Pre_eff_casts Cost_x_neg_of Cost_x_not_of Cost_text_alloc
--- models: Cost_text_allocator Cost_alloc_path Cost_text_dealloc Cost_dealloc_path
--- models: Cost_text_slice_from_raw_parts Cost_text_slice_stride Cost_stride_of_postfix
--- models: Cost_stride_arg Cost_text_slice_len Cost_len_of_postfix Cost_len_arg Cost_args_segment
--- models: Cost_cons_segment Cost_path_ref Cost_text_assert Cost_text_core Cost_text_mem
--- models: Cost_text_i32_array_data_ptr Cost_view_path Cost_builtin_path Cost_named_split
--- models: Cost_cons_eff Cost_variant_expects Pre_variant_expects Cost_struct_field_tys
--- models: Pre_struct_field_tys Cost_field_ty Pre_field_ty Cost_expr_ty Pre_expr_ty
--- models: Pre_length_of_mini_selfhost_FnDecl Cost_projection_ret Pre_projection_ret Cost_fn_inst_ret
--- models: Pre_fn_inst_ret Cost_inst_ret Pre_inst_ret Cost_eff_ty Pre_eff_ty Cost_effs_tys
+-- models: Pre_fn_bounds_ok Cost_ref_kids Cost_ref_uses_ok Cost_refs_used_ok Cost_refs_checked
+-- models: Cost_contract_then Cost_apply_of Cost_cast_value Cost_cast_into Cost_named_scalar
+-- models: Pre_named_scalar Cost_cast_type_of Pre_cast_type_of Cost_casts Pre_casts Cost_negated
+-- models: Cost_notted Cost_text_self Cost_local_of Pre_field_in Pre_field_index Cost_member_of
+-- models: Pre_member_of Pre_wide_decimal Pre_wide_digit Pre_based_digits Pre_based_digit
+-- models: Pre_lit_prefixed Pre_lit_value_at Pre_lit_value Cost_wide_isize Pre_wide_isize
+-- models: Cost_wide_sint Pre_wide_sint Cost_wide_of Pre_wide_of Cost_wide_digits Pre_wide_digits
+-- models: Cost_wide_signed Pre_wide_signed Cost_dash_text Cost_wide_const Pre_wide_const
+-- models: Cost_single_of_mini_selfhost_Token Cost_concat_of_mini_selfhost_Token Cost_tree_tokens
+-- models: Cost_trees_tokens Cost_sint_const Cost_negate_some Cost_negated_float Cost_neg_sint_const
+-- models: Cost_typed_literal Cost_literal_as Cost_wide_marker Cost_lit_sized Cost_int_literal
+-- models: Pre_int_literal Pre_char_tail Pre_char_tail_at Pre_char_first Pre_char_body Pre_char_open
+-- models: Pre_char_literal Pre_fl_finish Cost_single_of_bool Cost_fl_carry_out Cost_cons_of_bool
+-- models: Cost_fl_add Cost_fl_mul10 Pre_fl_nat_half Cost_fl_of_nat Pre_fl_of_nat Cost_fl_push
+-- models: Pre_fl_push Pre_fl_exp_digits Pre_fl_exp_digit_at Pre_fl_exp_first_at Pre_fl_exp_first
+-- models: Cost_fl_exp_sign_at Pre_fl_exp_sign_at Cost_fl_exp_sign Pre_fl_exp_sign Cost_fl_exp_at
+-- models: Pre_fl_exp_at Cost_fl_exp_part Pre_fl_exp_part Cost_fl_frac_part Cost_fl_frac_at
+-- models: Pre_fl_frac_part Pre_fl_frac_at Cost_fl_int_part Cost_fl_int_at Pre_fl_int_part
+-- models: Pre_fl_int_at Pre_fl_log2_up Pre_fl_log2 Pre_fl_pow2 Pre_fl_log2_or0 Cost_fl_shl
+-- models: Cost_fl_ratio_ok Cost_fl_sub Cost_fl_div_step Cost_fl_divmod Cost_fl_round_up
+-- models: Pre_fl_to_nat Cost_fl_round Pre_fl_round Cost_fl_times10 Cost_fl_decimal_at
+-- models: Pre_fl_decimal_at Cost_fl_decimal Pre_fl_decimal Cost_float_marker Pre_float_marker
+-- models: Cost_float_literal Pre_float_literal Cost_expr_of Cost_assign_value Cost_fold
+-- models: Cost_postfix_value Cost_ident_expr Cost_fold_op Cost_const_ref Cost_fold_left
+-- models: Cost_const_value Pre_expr_of Pre_assign_value Pre_fold Pre_postfix_value Pre_ident_expr
+-- models: Pre_fold_op Pre_const_ref Pre_fold_left Pre_const_value Cost_x_divide_of Cost_apply_eff
+-- models: Cost_x_apply_of Cost_eff_binary Cost_x_cast_into Cost_eff_casts Pre_eff_casts
+-- models: Cost_x_neg_of Cost_x_not_of Cost_text_alloc Cost_text_allocator Cost_alloc_path
+-- models: Cost_text_dealloc Cost_dealloc_path Cost_text_slice_from_raw_parts Cost_text_slice_stride
+-- models: Cost_stride_of_postfix Cost_stride_arg Cost_text_slice_len Cost_len_of_postfix
+-- models: Cost_len_arg Cost_args_segment Cost_cons_segment Cost_path_ref Cost_text_assert
+-- models: Cost_text_core Cost_text_mem Cost_text_i32_array_data_ptr Cost_view_path Cost_builtin_path
+-- models: Cost_named_split Cost_cons_eff Cost_variant_expects Pre_variant_expects
+-- models: Cost_struct_field_tys Pre_struct_field_tys Cost_field_ty Pre_field_ty Cost_expr_ty
+-- models: Pre_expr_ty Pre_length_of_mini_selfhost_FnDecl Cost_projection_ret Pre_projection_ret
+-- models: Cost_fn_inst_ret Pre_fn_inst_ret Cost_inst_ret Pre_inst_ret Cost_field_ty_at
+-- models: Pre_field_ty_at Cost_field_ty_of Pre_field_ty_of Cost_eff_ty Pre_eff_ty Cost_effs_tys
 -- models: Pre_effs_tys Cost_named_inferred Cost_match_tys Cost_match_tys_next Pre_match_tys
 -- models: Pre_match_tys_next Cost_decl_inst Pre_decl_inst Cost_x_variant_of Pre_x_variant_of
 -- models: Cost_cons_of_mini_selfhost_VariantAt Cost_variants_named Cost_variants_named_at
@@ -523,14 +527,14 @@ Do not edit. -/
 -- models: Pre_explicit_inst Cost_binds_zip Cost_binds_of_tys Cost_method_binds Pre_method_binds
 -- models: Cost_single_of_mini_selfhost_MEff Cost_x_index_of Cost_method_of_ty Pre_method_of_ty
 -- models: Cost_projection Pre_projection Cost_field_value Pre_field_value Cost_field_of_ty
--- models: Pre_field_of_ty Cost_field_expects Pre_field_expects Cost_x_struct_of Pre_x_struct_of
--- models: Cost_field_values Cost_arm_binders Cost_arm_values Cost_x_match_of Cost_arm_nested
--- models: Cost_any_nested Cost_text_underscore Cost_is_underscore Cost_is_wild_arm Cost_wild_alone
--- models: Cost_cons_wild Cost_wild_split Cost_arm_prefix Cost_arm_named Cost_arm_names
--- models: Cost_names_some Cost_all_name_some Cost_arms_naming_at Cost_arms_naming Cost_uses_wild
--- models: Cost_wild_binder Pre_wild_binder Cost_wild_binders Pre_wild_binders Cost_wild_tail
--- models: Pre_wild_tail Cost_wild_arm_for Pre_wild_arm_for Cost_arms_or_wild Pre_arms_or_wild
--- models: Cost_wild_order Pre_wild_order Pre_length_of_mini_selfhost_CTree
+-- models: Pre_field_of_ty Cost_x_at_of Cost_field_expects Pre_field_expects Cost_x_struct_of
+-- models: Pre_x_struct_of Cost_field_values Cost_arm_binders Cost_arm_values Cost_x_match_of
+-- models: Cost_arm_nested Cost_any_nested Cost_text_underscore Cost_is_underscore Cost_is_wild_arm
+-- models: Cost_wild_alone Cost_cons_wild Cost_wild_split Cost_arm_prefix Cost_arm_named
+-- models: Cost_arm_names Cost_names_some Cost_all_name_some Cost_arms_naming_at Cost_arms_naming
+-- models: Cost_uses_wild Cost_wild_binder Pre_wild_binder Cost_wild_binders Pre_wild_binders
+-- models: Cost_wild_tail Pre_wild_tail Cost_wild_arm_for Pre_wild_arm_for Cost_arms_or_wild
+-- models: Pre_arms_or_wild Cost_wild_order Pre_wild_order Pre_length_of_mini_selfhost_CTree
 -- models: Pre_length_of_mini_selfhost_VariantTy Cost_arms_by_variant Cost_arms_exact Pre_arms_exact
 -- models: Cost_arms_in_order Pre_arms_in_order Cost_join_use Cost_cons_use Cost_wild_use
 -- models: Pre_wild_use Cost_row_pats Pre_first_nested Cost_replace_at Cost_named_path
@@ -597,36 +601,37 @@ Do not edit. -/
 -- models: Pre_view_read Cost_view_stmt Cost_untyped_eval Pre_untyped_eval Cost_untyped_head
 -- models: Pre_untyped_head Cost_if_eff Cost_if_eval_of Cost_if_or_eval Pre_if_or_eval Cost_while_eff
 -- models: Cost_while_eval_of Cost_while_or_eval Pre_while_or_eval Cost_for_range Cost_for_array
--- models: Cost_for_slice Cost_set_eval_of Cost_try_set Cost_set_try_or_eval Pre_set_try_or_eval
--- models: Cost_set_or_eval Pre_set_or_eval Cost_field_ty_at Pre_field_ty_at Cost_set_field_or_eval
--- models: Pre_set_field_or_eval Cost_set_index_or_eval Pre_set_index_or_eval Cost_assign_target
--- models: Pre_assign_target Cost_compound_eff Cost_compound_field_eval Pre_compound_field_eval
--- models: Cost_compound_eval Pre_compound_eval Cost_compound_of Pre_compound_of Pre_free_of
--- models: Cost_assert_arg Pre_assert_arg Cost_try_stmt Cost_call_stmt Pre_call_stmt Cost_assignment
--- models: Pre_assignment Cost_then_rest Cost_then_of Cost_block_of Cost_stmts_of Cost_stmt_first
--- models: Cost_let_first Cost_stmt_of Cost_lit_let_of Cost_let_match_of Cost_lit_match_of
--- models: Cost_nested_of Cost_match_stmt_of Cost_let_arms_of Cost_lit_arms_of Cost_for_of
--- models: Cost_match_arms_of Cost_let_arm_of Cost_lit_arm_of Cost_match_arm_of Cost_let_body_of
--- models: Cost_lit_body_of Cost_arm_body_of Cost_inner_let_of Cost_inner_match_of Pre_block_of
--- models: Pre_stmts_of Pre_stmt_first Pre_let_first Pre_stmt_of Pre_lit_let_of Pre_let_match_of
--- models: Pre_lit_match_of Pre_nested_of Pre_match_stmt_of Pre_let_arms_of Pre_lit_arms_of
--- models: Pre_for_of Pre_match_arms_of Pre_let_arm_of Pre_lit_arm_of Pre_match_arm_of
--- models: Pre_let_body_of Pre_lit_body_of Pre_arm_body_of Pre_inner_let_of Pre_inner_match_of
--- models: Cost_func_ret Pre_func_ret Cost_func_params Pre_func_params Cost_read_fn Pre_read_fn
--- models: Cost_read_decl_inst Pre_read_decl_inst Cost_single_of_mini_selfhost_MParam
--- models: Cost_projection_func Pre_projection_func Cost_read_inst Pre_read_inst Cost_funcs_onto
--- models: Cost_mono_loop Cost_mono_next Pre_mono_loop Pre_mono_next Cost_build_checked
--- models: Pre_build_checked Cost_root_insts Cost_root_at Pre_root_insts Pre_root_at Cost_seed_insts
--- models: Cost_seed_at Pre_seed_insts Pre_seed_at Cost_build_collected Pre_build_collected
--- models: Cost_collected_with Cost_collect_files Cost_collect_file_next Cost_build_files
--- models: Pre_build_files Pre_files_fuel Cost_front_end_files Pre_front_end_files
--- models: Cost_front_end_read Pre_front_end_read Cost_front_end_words Pre_front_end_words
--- models: Cost_concat_of_mini_selfhost_Rule Cost_cons_of_mini_selfhost_Rule
--- models: Cost_cons_of_mini_selfhost_Sym Cost_grammar_part_0 Cost_grammar_part_1 Cost_grammar_part_2
--- models: Cost_grammar_part_3 Cost_grammar_part_4 Cost_grammar_part_5 Cost_grammar_part_6
--- models: Cost_grammar_part_7 Cost_grammar_part_8 Cost_grammar_part_9 Cost_grammar_part_10
--- models: Cost_grammar_part_11 Cost_grammar_part_12 Cost_grammar_part_13 Cost_grammar_part_14
--- models: Cost_grammar_part_15 Cost_grammar_part_16 Cost_grammar
+-- models: Cost_for_slice Cost_ref_target Cost_set_place_of Pre_set_place_of Cost_set_eval_of
+-- models: Cost_try_set Cost_set_try_or_eval Pre_set_try_or_eval Cost_set_or_eval Pre_set_or_eval
+-- models: Cost_set_field_or_eval Pre_set_field_or_eval Cost_set_index_or_eval Pre_set_index_or_eval
+-- models: Cost_assign_target Pre_assign_target Cost_set_place_op_of Pre_set_place_op_of
+-- models: Cost_compound_eff Cost_compound_field_eval Pre_compound_field_eval Cost_compound_eval
+-- models: Pre_compound_eval Cost_compound_of Pre_compound_of Pre_free_of Cost_assert_arg
+-- models: Pre_assert_arg Cost_try_stmt Cost_call_stmt Pre_call_stmt Cost_assignment Pre_assignment
+-- models: Cost_then_rest Cost_then_of Cost_block_of Cost_stmts_of Cost_stmt_first Cost_let_first
+-- models: Cost_stmt_of Cost_lit_let_of Cost_let_match_of Cost_lit_match_of Cost_nested_of
+-- models: Cost_match_stmt_of Cost_let_arms_of Cost_lit_arms_of Cost_for_of Cost_match_arms_of
+-- models: Cost_let_arm_of Cost_lit_arm_of Cost_match_arm_of Cost_let_body_of Cost_lit_body_of
+-- models: Cost_arm_body_of Cost_inner_let_of Cost_inner_match_of Pre_block_of Pre_stmts_of
+-- models: Pre_stmt_first Pre_let_first Pre_stmt_of Pre_lit_let_of Pre_let_match_of Pre_lit_match_of
+-- models: Pre_nested_of Pre_match_stmt_of Pre_let_arms_of Pre_lit_arms_of Pre_for_of
+-- models: Pre_match_arms_of Pre_let_arm_of Pre_lit_arm_of Pre_match_arm_of Pre_let_body_of
+-- models: Pre_lit_body_of Pre_arm_body_of Pre_inner_let_of Pre_inner_match_of Cost_func_ret
+-- models: Pre_func_ret Cost_func_params Pre_func_params Cost_read_fn Pre_read_fn Cost_read_decl_inst
+-- models: Pre_read_decl_inst Cost_single_of_mini_selfhost_MParam Cost_projection_func
+-- models: Pre_projection_func Cost_read_inst Pre_read_inst Cost_funcs_onto Cost_mono_loop
+-- models: Cost_mono_next Pre_mono_loop Pre_mono_next Cost_build_checked Pre_build_checked
+-- models: Cost_root_insts Cost_root_at Pre_root_insts Pre_root_at Cost_seed_insts Cost_seed_at
+-- models: Pre_seed_insts Pre_seed_at Cost_build_collected Pre_build_collected Cost_collected_with
+-- models: Cost_collect_files Cost_collect_file_next Cost_build_files Pre_build_files Pre_files_fuel
+-- models: Cost_front_end_files Pre_front_end_files Cost_front_end_read Pre_front_end_read
+-- models: Cost_front_end_words Pre_front_end_words Cost_concat_of_mini_selfhost_Rule
+-- models: Cost_cons_of_mini_selfhost_Rule Cost_cons_of_mini_selfhost_Sym Cost_grammar_part_0
+-- models: Cost_grammar_part_1 Cost_grammar_part_2 Cost_grammar_part_3 Cost_grammar_part_4
+-- models: Cost_grammar_part_5 Cost_grammar_part_6 Cost_grammar_part_7 Cost_grammar_part_8
+-- models: Cost_grammar_part_9 Cost_grammar_part_10 Cost_grammar_part_11 Cost_grammar_part_12
+-- models: Cost_grammar_part_13 Cost_grammar_part_14 Cost_grammar_part_15 Cost_grammar_part_16
+-- models: Cost_grammar
 -- statements: empty_of_i32 cons_of_i32 concat_of_i32 length_of_usize usize_words image_words minus
 -- statements: empty_of_u8 round_end round_cons pack_word pack_round round_join pack_rounds
 -- statements: binary_words SrcType_is_unit SrcStmt_returns funcs_return empty_of_mini_selfhost_Func
@@ -722,9 +727,9 @@ Do not edit. -/
 -- statements: lower_set_index lower_set_index_any eval_call_sig single_of_mini_selfhost_SrcType
 -- statements: host_byte_code host_write_code host_read_code host_sleep_code host_clock_code
 -- statements: host_random_code host_text_code host_newline_code eval_host_text eval_host eval_call
--- statements: cons_args short_circuit then_check operand_guard eval_right eval_operands eval_apply
--- statements: eval_then eval_negate eval_not scalar_cast eval_cast eval_struct_of eval_struct
--- statements: eval_payload eval_tagged eval_variant match_dst
+-- statements: eval_slot_limit cons_args short_circuit then_check operand_guard eval_right
+-- statements: eval_operands eval_apply eval_then eval_negate eval_not scalar_cast eval_cast
+-- statements: eval_struct_of eval_struct eval_payload eval_tagged eval_variant match_dst
 -- statements: empty_of_mini_selfhost_List_mini_selfhost_SrcType match_variants eval_match_of
 -- statements: eval_match eval_arm length_of_mini_selfhost_List_usize length_of_mini_selfhost_SrcEff
 -- statements: signed_div UintTy_least_bits overflow_guard eval_divide_sint unsigned_div
@@ -854,7 +859,7 @@ Do not edit. -/
 -- statements: cons_ty_tail cons_ty p_generic_argument_type ty_of bare_or_alias applied_of alias_ty
 -- statements: args_tys alias_at arg_ty ty_list field_tys enum_src cons_type_tail cons_type
 -- statements: weight_limit weight_sum weight_add_to weight_times weight_array weight_add src_weight
--- statements: src_weights variant_weights weighed array_type
+-- statements: src_weights variant_weights weighed array_type ref_type
 -- statements: cons_of_mini_selfhost_List_mini_selfhost_SrcType cons_types_tail cons_types
 -- statements: empty_of_mini_selfhost_List_mini_selfhost_Ty
 -- statements: cons_of_mini_selfhost_List_mini_selfhost_Ty cons_tys_tail cons_tys payload_list
@@ -866,11 +871,12 @@ Do not edit. -/
 -- statements: let_eval_closed e_call_closed empty_of_mini_selfhost_SrcEff
 -- statements: cons_of_mini_selfhost_SrcEff cons_src_eff e_apply_closed e_neg_closed e_not_closed
 -- statements: e_cast_closed e_index_closed e_struct_closed e_variant_closed e_match_closed
--- statements: e_divide_closed e_array_slice_closed e_if_closed e_let_closed close_eff close_effs
--- statements: set_eval_closed if_eval_closed while_eval_closed return_eval_closed discard_closed
+-- statements: e_divide_closed e_array_slice_closed e_if_closed e_let_closed e_deref_closed
+-- statements: e_place_field_closed e_place_at_closed close_eff close_effs set_eval_closed
+-- statements: if_eval_closed while_eval_closed return_eval_closed discard_closed
 -- statements: set_index_eval_closed set_field_eval_closed assert_closed match_arm_closed
--- statements: arm_ty_closed unreachable_closed close_stmt close_funcs
--- statements: empty_of_core_option_Option_mini_selfhost_SrcType
+-- statements: arm_ty_closed unreachable_closed set_place_closed set_place_op_closed close_stmt
+-- statements: close_funcs empty_of_core_option_Option_mini_selfhost_SrcType
 -- statements: cons_of_core_option_Option_mini_selfhost_SrcType lowered_all unit_ty wide_left
 -- statements: wide_left_exprs wide_left_arms wide_left_eff wide_left_effs wide_left_stmt
 -- statements: wide_left_funcs is_none_weight lim_slots lim_slots_list lim_slots_variants lim_ty
@@ -903,10 +909,11 @@ Do not edit. -/
 -- statements: type_names_in type_name_at module_globals field_start_Token_of_mini_selfhost_Token
 -- statements: empty_of_mini_selfhost_MEff cons_of_mini_selfhost_MEff param_effs extern_body
 -- statements: empty_of_mini_selfhost_MParam p_param_self_ref param_token p_param_named p_param_self
--- statements: fresh_id p_self_param_plain p_self_param_typed pattern_of cons_of_mini_selfhost_MParam
--- statements: cons_param cons_of_mini_selfhost_Local params_of param_of empty_of_mini_selfhost_Local
--- statements: p_ret_void p_ret_type p_type_never ret_of_ty result_of extern_func never_ret diverges
--- statements: init_tys last_ty diverge_func ret_expected slice_elem named_parts no_trees param_named
+-- statements: fresh_id p_self_param_plain p_self_param_typed pattern_of p_type_ref ref_ty
+-- statements: p_type_ref_mut param_ty_of cons_of_mini_selfhost_MParam cons_param
+-- statements: cons_of_mini_selfhost_Local params_of param_of empty_of_mini_selfhost_Local p_ret_void
+-- statements: p_ret_type p_type_never ret_of_ty result_of extern_func never_ret diverges init_tys
+-- statements: last_ty diverge_func ret_expected slice_elem named_parts no_trees param_named
 -- statements: param_spelling find_bind find_bind_at same_or_none cons_of_mini_selfhost_Bind bind_ty
 -- statements: prim_if bare_prim match_ty match_args match_path match_args_next match_arg match_named
 -- statements: match_decl match_same_decl empty_of_mini_selfhost_Bind bound_args bound_or_none
@@ -918,45 +925,48 @@ Do not edit. -/
 -- statements: bound_path_spellings args_of_items trait_of_bound goals_of bound_goals param_goals
 -- statements: params_goals p_where_some preds_goals where_goals item_goals same_trait trait_is
 -- statements: trait_of_ty ty_is goals_hold all_hold trait_holds any_impl impl_gives impl_fits
--- statements: impl_where fn_bounds_ok if_not_writes writes_local ref_checked func_body
--- statements: p_contracts_none p_contracts_more p_requires contract_then p_expr p_base p_assign
--- statements: p_assign_end p_orexpr p_andexpr p_bit_or p_bit_xor p_bit_and p_equality p_compare
--- statements: p_shift p_add p_mul is_level apply_of p_or_tail p_and_tail p_bor_tail p_xor_tail
+-- statements: impl_where fn_bounds_ok checked_func has_ty referent is_ref_ty known_true and_known
+-- statements: p_postfix p_expr p_base p_assign p_orexpr p_andexpr p_bit_or p_bit_xor p_bit_and
+-- statements: p_equality p_compare p_shift p_add p_mul is_level p_cast peel p_ident p_ident_plain
+-- statements: p_postfix_end is_text p_path path_name tree_names p_postfix_member p_postfix_call
+-- statements: names_field_base ref_kids ref_uses_ok refs_used_ok refs_checked if_not_writes
+-- statements: writes_local ref_checked func_body p_contracts_none p_contracts_more p_requires
+-- statements: contract_then p_assign_end apply_of p_or_tail p_and_tail p_bor_tail p_xor_tail
 -- statements: p_band_tail p_eq_tail p_ne_tail p_lt_tail p_gt_tail p_le_tail p_ge_tail p_shl_tail
--- statements: p_shr_tail p_add_tail p_sub_tail p_mul_tail tail_op p_cast cast_value cast_into
+-- statements: p_shr_tail p_add_tail p_sub_tail p_mul_tail tail_op cast_value cast_into
 -- statements: p_cast_type_name p_cast_type_path p_cast_type_path_ident p_cast_type_path_end
 -- statements: scalar_src scalar_of named_scalar cast_type_of casts p_neg negated p_not notted
--- statements: p_postfix p_postfix_end p_postfix_member p_ident p_self_value p_ident_plain p_path
--- statements: path_name find_local find_local_at text_self local_of field_expr field_in field_index
--- statements: member_of p_group field_consts_Decls_of_mini_selfhost_Decls find_const find_const_at
--- statements: has_wide wide_read wide_read_of wide_decimal wide_digit based_limit digit_below
--- statements: base_digit based_digits based_digit lit_prefixed lit_base lit_value_at lit_value
--- statements: wide_i32 uint_in_range wide_uint wide_isize wide_sint wide_of wide_digits wide_signed
--- statements: dash_text wide_const single_of_mini_selfhost_Token concat_of_mini_selfhost_Token
--- statements: tree_tokens trees_tokens null_const sint_const negated_int negate_some negated_float
--- statements: neg_sint_const float_typed typed_literal literal_as local_expr p_int wide_marker
--- statements: lit_sized int_literal p_true p_false p_char char_end char_close char_close_opt
--- statements: escaped_byte char_escape char_tail char_tail_at char_first char_body char_open
--- statements: char_literal p_float fl_finish fl_digit empty_of_bool single_of_bool fl_carry_out
--- statements: cons_of_bool fl_xor fl_carry fl_add fl_mul10 fl_nat_odd fl_nat_half fl_of_nat fl_push
--- statements: fl_exp_digits fl_exp_digit_at fl_exp_first_at fl_exp_first fl_exp_sign_at fl_exp_sign
--- statements: fl_exp_at fl_exp_part fl_frac_part fl_frac_at fl_int_part fl_int_at fl_low_bit
--- statements: fl_log2_up fl_log2 fl_pow2 fl_log2_or0 fl_sat fl_bit fl_shl fl_borrow_bit fl_less
--- statements: fl_ratio_ok fl_sub fl_div_step fl_divmod fl_odd fl_round_up fl_to_nat fl_round
--- statements: fl_times10 fl_decimal_at fl_decimal float_marker float_literal expr_of assign_value
--- statements: fold postfix_value ident_expr fold_op const_ref fold_left const_value p_div_tail
--- statements: x_divide_of p_mod_tail pure_part apply_eff x_apply_of eff_binary x_cast_into eff_casts
--- statements: x_neg_of x_not_of p_postfix_call is_path_call is_path text_alloc text_allocator
--- statements: alloc_path text_dealloc dealloc_path text_slice_from_raw_parts text_slice_stride peel
--- statements: stride_of_local stride_of_postfix stride_arg text_slice_len len_of_local
--- statements: len_of_postfix len_arg args_segment cons_segment path_ref text_assert text_core
--- statements: text_mem text_i32_array_data_ptr view_path builtin_path named_split checked_eff
--- statements: cons_eff head_ty tail_tys has_tys same_decl_args known_args
+-- statements: p_self_value find_local find_local_at text_self local_of field_expr field_in
+-- statements: field_index member_of p_group field_consts_Decls_of_mini_selfhost_Decls find_const
+-- statements: find_const_at has_wide wide_read wide_read_of wide_decimal wide_digit based_limit
+-- statements: digit_below base_digit based_digits based_digit lit_prefixed lit_base lit_value_at
+-- statements: lit_value wide_i32 uint_in_range wide_uint wide_isize wide_sint wide_of wide_digits
+-- statements: wide_signed dash_text wide_const single_of_mini_selfhost_Token
+-- statements: concat_of_mini_selfhost_Token tree_tokens trees_tokens null_const sint_const
+-- statements: negated_int negate_some negated_float neg_sint_const float_typed typed_literal
+-- statements: literal_as local_expr p_int wide_marker lit_sized int_literal p_true p_false p_char
+-- statements: char_end char_close char_close_opt escaped_byte char_escape char_tail char_tail_at
+-- statements: char_first char_body char_open char_literal p_float fl_finish fl_digit empty_of_bool
+-- statements: single_of_bool fl_carry_out cons_of_bool fl_xor fl_carry fl_add fl_mul10 fl_nat_odd
+-- statements: fl_nat_half fl_of_nat fl_push fl_exp_digits fl_exp_digit_at fl_exp_first_at
+-- statements: fl_exp_first fl_exp_sign_at fl_exp_sign fl_exp_at fl_exp_part fl_frac_part fl_frac_at
+-- statements: fl_int_part fl_int_at fl_low_bit fl_log2_up fl_log2 fl_pow2 fl_log2_or0 fl_sat fl_bit
+-- statements: fl_shl fl_borrow_bit fl_less fl_ratio_ok fl_sub fl_div_step fl_divmod fl_odd
+-- statements: fl_round_up fl_to_nat fl_round fl_times10 fl_decimal_at fl_decimal float_marker
+-- statements: float_literal expr_of assign_value fold postfix_value ident_expr fold_op const_ref
+-- statements: fold_left const_value p_div_tail x_divide_of p_mod_tail pure_part apply_eff x_apply_of
+-- statements: eff_binary x_cast_into eff_casts x_neg_of x_not_of is_path_call is_path text_alloc
+-- statements: text_allocator alloc_path text_dealloc dealloc_path text_slice_from_raw_parts
+-- statements: text_slice_stride stride_of_local stride_of_postfix stride_arg text_slice_len
+-- statements: len_of_local len_of_postfix len_arg args_segment cons_segment path_ref text_assert
+-- statements: text_core text_mem text_i32_array_data_ptr view_path builtin_path named_split
+-- statements: checked_eff cons_eff head_ty tail_tys has_tys same_decl_args known_args
 -- statements: get_of_mini_selfhost_List_mini_selfhost_Ty variant_expects apply_ty pick_ty
 -- statements: find_local_id find_local_id_at local_ty struct_field_tys field_ty bare_int expr_ty
 -- statements: length_of_mini_selfhost_FnDecl projection_ret ret_pattern fn_inst_ret inst_ret
--- statements: bare_eff index_elem index_ty eff_ty effs_tys named_inferred match_tys match_tys_next
--- statements: decl_inst get_of_mini_selfhost_List_mini_selfhost_CTree x_variant_of only_variant
+-- statements: bare_eff index_elem index_ty field_ty_at field_ty_of elem_ty_of eff_ty effs_tys
+-- statements: named_inferred match_tys match_tys_next decl_inst
+-- statements: get_of_mini_selfhost_List_mini_selfhost_CTree x_variant_of only_variant
 -- statements: empty_of_mini_selfhost_VariantAt cons_of_mini_selfhost_VariantAt variants_named
 -- statements: variants_named_at concat_of_mini_selfhost_VariantAt imported_variants
 -- statements: imported_variants_at bare_variant variant_of_decl variant_in enum_variant
@@ -969,28 +979,28 @@ Do not edit. -/
 -- statements: infer_ret infer_inst infer_args infer_eff concat_of_mini_selfhost_MEff eff_called
 -- statements: skip_expects p_string string_close string_cons plain_string_byte string_body
 -- statements: string_byte string_open string_literal string_primary string_init match_tys_or_none
--- statements: inst_bound eff_inferred has_ty checked_bound arg_expected cons_bound bind_arg view_of
+-- statements: inst_bound eff_inferred checked_bound arg_expected cons_bound bind_arg view_of
 -- statements: ret_binds explicit_checked explicit_inst checked_effs member_args is_method_form
 -- statements: binds_zip binds_of_tys method_binds single_of_mini_selfhost_MEff p_postfix_index
--- statements: x_index_of step_expected method_of_ty projection field_value field_of_ty
--- statements: eff_slice_local has_local has_const p_struct_lit same_names field_expects x_struct_of
--- statements: field_values p_match_expr result_ty arm_binders arm_values x_match_of or_known
--- statements: p_pattern_ident p_pattern_plain any_variant binder_name_ok is_binder_pat all_binders
--- statements: pats_nested arm_nested any_nested text_underscore is_underscore is_wild_arm wild_alone
--- statements: cons_wild wild_split arm_prefix arm_named arm_names names_some all_name_some
--- statements: arms_naming_at arms_naming uses_wild p_pattern_tuple wild_binder wild_binders
--- statements: wild_tail wild_arm_for arms_or_wild wild_order length_of_mini_selfhost_CTree
--- statements: length_of_mini_selfhost_VariantTy arms_by_variant arms_exact arms_in_order used_arms
--- statements: wild_used nested_used join_use cons_use wild_use row_pats first_at first_nested
--- statements: get_of_mini_selfhost_CTree replace_at named_path text_hidden hidden_path hidden_pat
--- statements: hidden_expr nest_arm ends_wild appended_use quiet_use and_known not_known mentions
--- statements: quiet_in col_quiet cols_quiet covered_use known_use named_known arm_naming
--- statements: plain_naming covered_by covers_all covers_enum covers_decl covers wild_inner
--- statements: nest_inner column_fit same_opt_name col_fits row_fits sub_arm wild_pat quiet_arm
--- statements: quiet_sub column_sub column_arm is_last column_arms nest_at nest_pats nest_use
--- statements: shadow_if shadow_use plain_use nested_or_plain rows_use variant_arm row_cons
--- statements: rows_naming variant_arms nested_with nested_checked p_arm_block block_value no_block
--- statements: nested_order order_by match_order empty_of_mini_selfhost_EffArm
+-- statements: x_index_of step_expected method_of_ty referent_or eff_place projection field_value
+-- statements: field_of_ty x_at_of eff_slice_local has_local has_const p_struct_lit same_names
+-- statements: field_expects x_struct_of field_values p_match_expr result_ty arm_binders arm_values
+-- statements: x_match_of or_known p_pattern_ident p_pattern_plain any_variant binder_name_ok
+-- statements: is_binder_pat all_binders pats_nested arm_nested any_nested text_underscore
+-- statements: is_underscore is_wild_arm wild_alone cons_wild wild_split arm_prefix arm_named
+-- statements: arm_names names_some all_name_some arms_naming_at arms_naming uses_wild
+-- statements: p_pattern_tuple wild_binder wild_binders wild_tail wild_arm_for arms_or_wild
+-- statements: wild_order length_of_mini_selfhost_CTree length_of_mini_selfhost_VariantTy
+-- statements: arms_by_variant arms_exact arms_in_order used_arms wild_used nested_used join_use
+-- statements: cons_use wild_use row_pats first_at first_nested get_of_mini_selfhost_CTree replace_at
+-- statements: named_path text_hidden hidden_path hidden_pat hidden_expr nest_arm ends_wild
+-- statements: appended_use quiet_use not_known mentions quiet_in col_quiet cols_quiet covered_use
+-- statements: known_use named_known arm_naming plain_naming covered_by covers_all covers_enum
+-- statements: covers_decl covers wild_inner nest_inner column_fit same_opt_name col_fits row_fits
+-- statements: sub_arm wild_pat quiet_arm quiet_sub column_sub column_arm is_last column_arms nest_at
+-- statements: nest_pats nest_use shadow_if shadow_use plain_use nested_or_plain rows_use variant_arm
+-- statements: row_cons rows_naming variant_arms nested_with nested_checked p_arm_block block_value
+-- statements: no_block nested_order order_by match_order empty_of_mini_selfhost_EffArm
 -- statements: cons_of_mini_selfhost_EffArm cons_eff_arm is_some_name cons_binder binders_of
 -- statements: binder_of arm_eff diverge_checked diverge_call diverge_eff diverge_arm
 -- statements: empty_of_mini_selfhost_VariantTy cons_of_mini_selfhost_VariantTy zip_variants lit_ty
@@ -1007,22 +1017,22 @@ Do not edit. -/
 -- statements: p_return_stmt p_return_value is_u8_slice text_typed_slice_from_raw_parts
 -- statements: is_empty_texts is_last_typed is_mem_typed is_typed_slice_segments is_empty_trees
 -- statements: is_u8_ty u8_args is_typed_slice_path string_slice text_string_data_ptr
--- statements: string_data_ptr_path is_text tree_names one_tree_names is_data_ptr_of int_primary
--- statements: int_tree string_args string_call string_peeled string_value string_return string_last
--- statements: string_let match_of_postfix match_init lit_pattern lit_first arm_block_of
--- statements: arm_block_list any_block_arm lit_wanted is_lit_init lit_head_if lit_match_head
--- statements: lit_match_typed lit_match_parts lit_bind lit_end lit_last cons_expr_tail cons_expr
--- statements: exprs_of args_of shift_of_u64 literal_shift cast_shift is_usize shift_of alloc_shifted
--- statements: alloc_head slice_head view_head call_path_head postfix_head let_head p_postfix_try
--- statements: is_try_call tried_err single_ty if_same_tys tried_shape tried_if text_result
--- statements: text_result_ty text_ok text_err text_option text_option_ty text_some text_none
--- statements: is_try_enum tried_of tried_call try_call_of is_try_method try_method_of is_try_local
--- statements: tried_local try_local_of try_postfix try_of_init try_head try_let_head call_let_head
--- statements: pure_list call_parts index_let_head struct_head variant_let_head match_let_head
--- statements: pure_arms eval_let_head eval_head let_head_or_eval alloc_let is_ptr_ty slice_let
--- statements: try_payload try_rest try_let let_stmt let_body let_of slice_returned return_slice
--- statements: return_eff return_eval_of return_or_eval local_id_of local_ty_of lit_if eq_lit
--- statements: lit_cond is_block_arm some_block_arm if_one value_arms block_arms_of is_block_match
+-- statements: string_data_ptr_path one_tree_names is_data_ptr_of int_primary int_tree string_args
+-- statements: string_call string_peeled string_value string_return string_last string_let
+-- statements: match_of_postfix match_init lit_pattern lit_first arm_block_of arm_block_list
+-- statements: any_block_arm lit_wanted is_lit_init lit_head_if lit_match_head lit_match_typed
+-- statements: lit_match_parts lit_bind lit_end lit_last cons_expr_tail cons_expr exprs_of args_of
+-- statements: shift_of_u64 literal_shift cast_shift is_usize shift_of alloc_shifted alloc_head
+-- statements: slice_head view_head call_path_head postfix_head let_head p_postfix_try is_try_call
+-- statements: tried_err single_ty if_same_tys tried_shape tried_if text_result text_result_ty
+-- statements: text_ok text_err text_option text_option_ty text_some text_none is_try_enum tried_of
+-- statements: tried_call try_call_of is_try_method try_method_of is_try_local tried_local
+-- statements: try_local_of try_postfix try_of_init try_head try_let_head call_let_head pure_list
+-- statements: call_parts index_let_head struct_head variant_let_head match_let_head pure_arms
+-- statements: eval_let_head eval_head let_head_or_eval alloc_let is_ptr_ty slice_let try_payload
+-- statements: try_rest try_let let_stmt let_body let_of slice_returned return_slice return_eff
+-- statements: return_eval_of return_or_eval local_id_of local_ty_of lit_if eq_lit lit_cond
+-- statements: is_block_arm some_block_arm if_one value_arms block_arms_of is_block_match
 -- statements: match_stmt_if match_stmt_head match_stmt_enum match_stmt_on match_stmt_parts
 -- statements: stmt_order_by stmt_arm_order stmt_arms match_stmt_value arm_binding arm_binder
 -- statements: arm_stmt bound_scope literal_head if_some i32_array_length is_ptr_of names_local
@@ -1033,22 +1043,23 @@ Do not edit. -/
 -- statements: p_for_stmt p_for_iter_range_from_start p_range_start_int p_range_exclusive
 -- statements: p_range_bound p_range_bound_name stmt_unless for_range p_for_iter_path array_local_of
 -- statements: array_local for_array for_slice match_primary is_lit_stmt is_match_stmt p_assign_set
--- statements: set_eff set_eval_of try_set set_try_or_eval set_or_eval checked_stmt field_ty_at
--- statements: set_field_eff field_eval_stmt set_field_or_eval eff_acts effs_act set_index_pure
--- statements: set_index_eff set_index_eval_of set_index_or_eval assign_target p_assign_div
--- statements: p_assign_mod p_assign_add p_assign_sub p_assign_mul p_assign_band p_assign_bor
--- statements: p_assign_xor p_assign_shl p_assign_shr compound_op compound_eff compound_field_eval
--- statements: compound_eval compound_of free_shifted free_of assert_of assert_arg discard_of
--- statements: try_stmt call_stmt assignment then_rest then_of block_of stmts_of stmt_first let_first
--- statements: stmt_of lit_let_of let_match_of lit_match_of nested_of match_stmt_of let_arms_of
--- statements: lit_arms_of for_of match_arms_of let_arm_of lit_arm_of match_arm_of let_body_of
--- statements: lit_body_of arm_body_of inner_let_of inner_match_of func_ret func_params self_ref_of
--- statements: self_ref_id read_fn read_decl_inst single_of_mini_selfhost_MParam projection_func
--- statements: read_inst funcs_onto mono_loop mono_next build_checked root_insts root_at seed_insts
--- statements: seed_at build_collected field_impls_Decls_of_mini_selfhost_Decls
--- statements: field_homes_Decls_of_mini_selfhost_Decls collected_with collect_files
--- statements: collect_file_next build_files files_fuel front_end_files front_end_read
--- statements: front_end_words concat_of_mini_selfhost_Rule cons_of_mini_selfhost_Rule
+-- statements: ref_rooted ref_target checked_stmt has_at eff_acts effs_act set_place_value
+-- statements: set_place_of set_eff set_eval_of try_set set_try_or_eval set_or_eval set_field_eff
+-- statements: field_eval_stmt set_field_or_eval set_index_pure set_index_eff set_index_eval_of
+-- statements: set_index_or_eval assign_target set_place_op_value set_place_op_of p_assign_add
+-- statements: p_assign_sub p_assign_mul p_assign_band p_assign_bor p_assign_xor p_assign_shl
+-- statements: p_assign_shr assign_op_of p_assign_div p_assign_mod compound_op compound_eff
+-- statements: compound_field_eval compound_eval compound_of free_shifted free_of assert_of
+-- statements: assert_arg discard_of try_stmt call_stmt assignment then_rest then_of block_of
+-- statements: stmts_of stmt_first let_first stmt_of lit_let_of let_match_of lit_match_of nested_of
+-- statements: match_stmt_of let_arms_of lit_arms_of for_of match_arms_of let_arm_of lit_arm_of
+-- statements: match_arm_of let_body_of lit_body_of arm_body_of inner_let_of inner_match_of func_ret
+-- statements: func_params self_ref_of self_ref_id read_fn read_decl_inst
+-- statements: single_of_mini_selfhost_MParam projection_func read_inst funcs_onto mono_loop
+-- statements: mono_next build_checked root_insts root_at seed_insts seed_at build_collected
+-- statements: field_impls_Decls_of_mini_selfhost_Decls field_homes_Decls_of_mini_selfhost_Decls
+-- statements: collected_with collect_files collect_file_next build_files files_fuel front_end_files
+-- statements: front_end_read front_end_words concat_of_mini_selfhost_Rule cons_of_mini_selfhost_Rule
 -- statements: cons_of_mini_selfhost_Sym empty_of_mini_selfhost_Sym empty_of_mini_selfhost_Rule
 -- statements: grammar_part_0 grammar_part_1 grammar_part_2 grammar_part_3 grammar_part_4
 -- statements: grammar_part_5 grammar_part_6 grammar_part_7 grammar_part_8 grammar_part_9

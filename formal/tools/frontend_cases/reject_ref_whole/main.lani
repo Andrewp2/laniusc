@@ -1,0 +1,8 @@
+// A reference parameter is used whole only as a call's argument: not
+// stored in a local.
+struct P { a: i32 }
+
+fn copy(p: &P) -> i32 {
+    let q: P = p;
+    return q.a;
+}

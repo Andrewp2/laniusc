@@ -41,11 +41,11 @@ abbrev BStmt_based_digit (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
 abbrev BStmt_variants_named_at (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.TypeDecl} {x1 : List Lanius.Mini.TypeDecl} {x2 : List (List Nat)} {x3 : List Nat} {x4 : Nat} {v0 v1 v2 v3 v4 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → RepTypeDecl x0 v0 → (RepList 105 RepTypeDecl) x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → (RepList 25 RepNat) x3 v3 → RepNat x4 v4 → k < b → Pre_variants_named_at n x0 x1 x2 x3 x4 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_variants_named_at n x0 x1 x2 x3 x4 = k ∧ (RepList 300 RepVariantAt) (Lanius.Mini.Inline.variantsNamedAt x0 x1 x2 x3 x4) w
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_variants_named_at n x0 x1 x2 x3 x4 = k ∧ (RepList 301 RepVariantAt) (Lanius.Mini.Inline.variantsNamedAt x0 x1 x2 x3 x4) w
 
 abbrev BStmt_imported_variants_at (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.TypeDecl} {x1 : Lanius.Mini.ImportDecl} {x2 : List Lanius.Mini.ImportDecl} {x3 : List (List Nat)} {x4 : List Nat} {v0 v1 v2 v3 v4 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → (RepList 105 RepTypeDecl) x0 v0 → RepImportDecl x1 v1 → (RepList 116 RepImportDecl) x2 v2 → (RepList 31 (RepList 25 RepNat)) x3 v3 → (RepList 25 RepNat) x4 v4 → k < b → Pre_imported_variants_at n x0 x1 x2 x3 x4 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_imported_variants_at n x0 x1 x2 x3 x4 = k ∧ (RepList 300 RepVariantAt) (Lanius.Mini.Inline.importedVariantsAt x0 x1 x2 x3 x4) w
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_imported_variants_at n x0 x1 x2 x3 x4 = k ∧ (RepList 301 RepVariantAt) (Lanius.Mini.Inline.importedVariantsAt x0 x1 x2 x3 x4) w
 
 end Lanius.Faithful.SelfBudget

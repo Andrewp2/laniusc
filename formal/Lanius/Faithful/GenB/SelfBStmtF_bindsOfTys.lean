@@ -20,13 +20,13 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_binds_of_tys (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (List Nat)} {x1 : Option (List Lanius.Mini.Ty)} {x2 : List Lanius.Mini.Bind} {v0 v1 v2 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepOption 213 (RepList 143 RepTy)) x1 v1 → (RepList 275 RepBind) x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_binds_of_tys n x0 x1 x2 = k ∧ (RepOption 274 (RepList 275 RepBind)) (Lanius.Mini.bindsOfTys x0 x1 x2) w
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepOption 213 (RepList 143 RepTy)) x1 v1 → (RepList 276 RepBind) x2 v2 →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_binds_of_tys n x0 x1 x2 = k ∧ (RepOption 275 (RepList 276 RepBind)) (Lanius.Mini.bindsOfTys x0 x1 x2) w
 
 abbrev BStmt_method_binds (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.FnDecl} {x3 : List Lanius.Mini.Bind} {x4 : Lanius.Mini.CTree} {v0 v1 v2 v3 v4 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → RepFnDecl x2 v2 → (RepList 275 RepBind) x3 v3 → RepCTree x4 v4 → k < b → Pre_method_binds n x0 x1 x2 x3 x4 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_method_binds n x0 x1 x2 x3 x4 = k ∧ (RepOption 274 (RepList 275 RepBind)) (Lanius.Mini.methodBinds x0 x1 x2 x3 x4) w
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → RepFnDecl x2 v2 → (RepList 276 RepBind) x3 v3 → RepCTree x4 v4 → k < b → Pre_method_binds n x0 x1 x2 x3 x4 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_method_binds n x0 x1 x2 x3 x4 = k ∧ (RepOption 275 (RepList 276 RepBind)) (Lanius.Mini.methodBinds x0 x1 x2 x3 x4) w
 
 abbrev BStmt_lit_ty (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Ty} {v0 w : Value} {k : Nat},

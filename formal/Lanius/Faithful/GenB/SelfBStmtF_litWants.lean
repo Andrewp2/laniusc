@@ -21,12 +21,12 @@ open Lanius.Faithful.Budget
 abbrev BStmt_lit_value_if (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : Lanius.Mini.MEff} {v0 v1 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepBool x0 v0 → RepMEff x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 258 RepMEff) (Lanius.Mini.litValueIf x0 x1) w
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 259 RepMEff) (Lanius.Mini.litValueIf x0 x1) w
 
 abbrev BStmt_lit_last_value (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : Option Lanius.Mini.SrcExpr} {x2 : Lanius.Mini.MEff} {v0 v1 v2 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepBool x0 v0 → (RepOption 235 RepSrcExpr) x1 v1 → RepMEff x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ (RepOption 258 RepMEff) (Lanius.Mini.litLastValue x0 x1 x2) w
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ (RepOption 259 RepMEff) (Lanius.Mini.litLastValue x0 x1 x2) w
 
 abbrev BStmt_eq_on (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcExpr} {x1 : Option Lanius.Mini.SrcExpr} {v0 v1 w : Value} {k : Nat},
@@ -40,8 +40,8 @@ abbrev BStmt_lit_test (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
 
 abbrev BStmt_lit_if_of (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.SrcExpr} {x1 : Lanius.Mini.Ty} {x2 : Lanius.Mini.MEff} {x3 : Option Lanius.Mini.MEff} {v0 v1 v2 v3 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → (RepOption 235 RepSrcExpr) x0 v0 → RepTy x1 v1 → RepMEff x2 v2 → (RepOption 258 RepMEff) x3 v3 →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_lit_if_of n x0 x1 x2 x3 = k ∧ (RepOption 258 RepMEff) (Lanius.Mini.litIfOf x0 x1 x2 x3) w
+    qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → (RepOption 235 RepSrcExpr) x0 v0 → RepTy x1 v1 → RepMEff x2 v2 → (RepOption 259 RepMEff) x3 v3 →
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_lit_if_of n x0 x1 x2 x3 = k ∧ (RepOption 259 RepMEff) (Lanius.Mini.litIfOf x0 x1 x2 x3) w
 
 abbrev BStmt_lit_wants (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.Ty} {x1 : List Lanius.Mini.CTree} {v0 v1 w : Value} {k : Nat},

@@ -21,6 +21,6 @@ open Lanius.Faithful.Budget
 abbrev BStmt_variant_of_decl (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.TypeDecl} {x1 : Nat} {x2 : List Nat} {v0 v1 v2 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepTypeDecl x0 v0 → RepNat x1 v1 → (RepList 25 RepNat) x2 v2 → k < b → Pre_variant_of_decl n x0 x1 x2 b →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ (RepOption 284 RepVariantAt) (Lanius.Mini.variantOfDecl x0 x1 x2) w
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ (RepOption 285 RepVariantAt) (Lanius.Mini.variantOfDecl x0 x1 x2) w
 
 end Lanius.Faithful.SelfBudget

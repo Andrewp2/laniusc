@@ -50,7 +50,7 @@ abbrev BStmt_eval_let_head (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : 
 
 abbrev BStmt_eval_head (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Ty} {x1 : Option Lanius.Mini.MEff} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepTy x0 v0 → (RepOption 258 RepMEff) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_eval_head n x0 x1 = k ∧ (RepOption 292 RepLetHead) (Lanius.Mini.evalHead x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepTy x0 v0 → (RepOption 259 RepMEff) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_eval_head n x0 x1 = k ∧ (RepOption 293 RepLetHead) (Lanius.Mini.evalHead x0 x1) w
 
 end Lanius.Faithful.SelfBudget

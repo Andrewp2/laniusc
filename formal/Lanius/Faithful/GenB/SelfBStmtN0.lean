@@ -99,13 +99,13 @@ abbrev BStmt_single_of_mini_selfhost_Token (spW sp : SrcProgram) (prims : Prims)
 
 abbrev BStmt_cons_of_mini_selfhost_VariantAt (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.VariantAt} {x1 : List Lanius.Mini.VariantAt} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepVariantAt x0 v0 → (RepList 300 RepVariantAt) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_of_mini_selfhost_VariantAt n x0 x1 = k ∧ (RepList 300 RepVariantAt) (x0 :: x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepVariantAt x0 v0 → (RepList 301 RepVariantAt) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_of_mini_selfhost_VariantAt n x0 x1 = k ∧ (RepList 301 RepVariantAt) (x0 :: x1) w
 
 abbrev BStmt_concat_of_mini_selfhost_VariantAt (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.VariantAt} {x1 : List Lanius.Mini.VariantAt} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 300 RepVariantAt) x0 v0 → (RepList 300 RepVariantAt) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_concat_of_mini_selfhost_VariantAt n x0 x1 = k ∧ (RepList 300 RepVariantAt) (x0 ++ x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → (RepList 301 RepVariantAt) x0 v0 → (RepList 301 RepVariantAt) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_concat_of_mini_selfhost_VariantAt n x0 x1 = k ∧ (RepList 301 RepVariantAt) (x0 ++ x1) w
 
 abbrev BStmt_field_fns_Decls_of_mini_selfhost_Decls (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Decls} {v0 w : Value} {k : Nat},

@@ -4,8 +4,8 @@ import Lanius.Faithful.Gen.SelfSrcF_eStructClosed
 import Lanius.Faithful.Gen.SelfStmtF_eStructClosed
 import Lanius.Faithful.GenB.SelfBStmtF_allWeighed
 import Lanius.Faithful.GenB.SelfBStmtF_allocClosed
+import Lanius.Faithful.GenB.SelfBStmtF_eDerefClosed
 import Lanius.Faithful.GenB.SelfBStmtF_eDivideClosed
-import Lanius.Faithful.GenB.SelfBStmtF_eIndexClosed
 import Lanius.Faithful.GenB.SelfBStmtF_eStructClosed
 import Lanius.Faithful.GenB.SelfBStmtF_findConst
 import Lanius.Faithful.GenB.SelfBStmtN5
@@ -140,8 +140,8 @@ theorem bproof_e_let_closed {spW sp : SrcProgram} {prims : Prims} {ix_e_let_clos
     budget Cost_e_let_closed
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4⟩
 
-theorem bstep_close_eff {spW sp : SrcProgram} {prims : Prims} {ix_close_eff ix_close_ty ix_inst_index ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff ix_unbox_of_mini_selfhost_MEff ix_e_call_closed ix_close_effs ix_e_apply_closed ix_e_neg_closed ix_e_not_closed ix_e_cast_closed ix_e_index_closed ix_e_struct_closed ix_e_variant_closed ix_e_match_closed ix_e_divide_closed ix_e_array_slice_closed ix_e_if_closed ix_e_let_closed : Nat}
-    (fnW : spW.funcs[ix_close_eff]? = some (src_close_eff ix_close_ty ix_inst_index ix_close_eff ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff ix_unbox_of_mini_selfhost_MEff ix_e_call_closed ix_close_effs ix_e_apply_closed ix_e_neg_closed ix_e_not_closed ix_e_cast_closed ix_e_index_closed ix_e_struct_closed ix_e_variant_closed ix_e_match_closed ix_e_divide_closed ix_e_array_slice_closed ix_e_if_closed ix_e_let_closed)) (fn : sp.funcs[ix_close_eff]? = some (src_close_eff ix_close_ty ix_inst_index ix_close_eff ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff ix_unbox_of_mini_selfhost_MEff ix_e_call_closed ix_close_effs ix_e_apply_closed ix_e_neg_closed ix_e_not_closed ix_e_cast_closed ix_e_index_closed ix_e_struct_closed ix_e_variant_closed ix_e_match_closed ix_e_divide_closed ix_e_array_slice_closed ix_e_if_closed ix_e_let_closed))
+theorem bstep_close_eff {spW sp : SrcProgram} {prims : Prims} {ix_close_eff ix_close_ty ix_inst_index ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff ix_unbox_of_mini_selfhost_MEff ix_e_call_closed ix_close_effs ix_e_apply_closed ix_e_neg_closed ix_e_not_closed ix_e_cast_closed ix_e_index_closed ix_e_struct_closed ix_e_variant_closed ix_e_match_closed ix_e_divide_closed ix_e_array_slice_closed ix_e_if_closed ix_e_let_closed ix_e_deref_closed ix_e_place_field_closed ix_e_place_at_closed : Nat}
+    (fnW : spW.funcs[ix_close_eff]? = some (src_close_eff ix_close_ty ix_inst_index ix_close_eff ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff ix_unbox_of_mini_selfhost_MEff ix_e_call_closed ix_close_effs ix_e_apply_closed ix_e_neg_closed ix_e_not_closed ix_e_cast_closed ix_e_index_closed ix_e_struct_closed ix_e_variant_closed ix_e_match_closed ix_e_divide_closed ix_e_array_slice_closed ix_e_if_closed ix_e_let_closed ix_e_deref_closed ix_e_place_field_closed ix_e_place_at_closed)) (fn : sp.funcs[ix_close_eff]? = some (src_close_eff ix_close_ty ix_inst_index ix_close_eff ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff ix_unbox_of_mini_selfhost_MEff ix_e_call_closed ix_close_effs ix_e_apply_closed ix_e_neg_closed ix_e_not_closed ix_e_cast_closed ix_e_index_closed ix_e_struct_closed ix_e_variant_closed ix_e_match_closed ix_e_divide_closed ix_e_array_slice_closed ix_e_if_closed ix_e_let_closed ix_e_deref_closed ix_e_place_field_closed ix_e_place_at_closed))
     (np : prims.isPrim ix_close_eff = false)
     (back : Certified (∀ {n : Nat}, Stmt_close_eff sp prims ix_close_eff n))
     (b_close_ty : Certified (∀ {n : Nat}, BStmt_close_ty spW sp prims ix_close_ty n))
@@ -160,7 +160,10 @@ theorem bstep_close_eff {spW sp : SrcProgram} {prims : Prims} {ix_close_eff ix_c
     (b_e_divide_closed : Certified (∀ {n : Nat}, BStmt_e_divide_closed spW sp prims ix_e_divide_closed n))
     (b_e_array_slice_closed : Certified (∀ {n : Nat}, BStmt_e_array_slice_closed spW sp prims ix_e_array_slice_closed n))
     (b_e_if_closed : Certified (∀ {n : Nat}, BStmt_e_if_closed spW sp prims ix_e_if_closed n))
-    (b_e_let_closed : Certified (∀ {n : Nat}, BStmt_e_let_closed spW sp prims ix_e_let_closed n)) {n : Nat}
+    (b_e_let_closed : Certified (∀ {n : Nat}, BStmt_e_let_closed spW sp prims ix_e_let_closed n))
+    (b_e_deref_closed : Certified (∀ {n : Nat}, BStmt_e_deref_closed spW sp prims ix_e_deref_closed n))
+    (b_e_place_field_closed : Certified (∀ {n : Nat}, BStmt_e_place_field_closed spW sp prims ix_e_place_field_closed n))
+    (b_e_place_at_closed : Certified (∀ {n : Nat}, BStmt_e_place_at_closed spW sp prims ix_e_place_at_closed n)) {n : Nat}
     (bih_close_eff : Certified (BStmt_close_eff spW sp prims ix_close_eff n))
     (bih_close_effs : Certified (BStmt_close_effs spW sp prims ix_close_effs n)) :
     BStmt_close_eff spW sp prims ix_close_eff (n + 1) := by

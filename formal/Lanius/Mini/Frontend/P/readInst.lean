@@ -2,7 +2,7 @@ module
 
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Compiler.P.arithShiftRight
-import Lanius.Mini.Frontend.P.ifNotWrites
+import Lanius.Mini.Frontend.P.namesFieldBase
 import Lanius.Mini.Frontend.P.projectionRet
 import Lanius.Mini.Frontend.P.readDeclInst
 
@@ -40,6 +40,9 @@ def effCalls (x : MEff) : List Inst :=
   | .xLet id t v rt b => effCalls v ++ effCalls b
   | .xLen sl => []
   | .xStr cs => []
+  | .xDeref dty a => effCalls a
+  | .xPlaceField b j => effCalls b
+  | .xPlaceAt b i => effCalls b ++ effCalls i
 def effsCalls (xs : List MEff) : List Inst :=
   match xs with
   | [] => []

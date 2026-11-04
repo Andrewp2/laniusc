@@ -50,16 +50,16 @@ theorem bproof_string_slice {spW sp : SrcProgram} {prims : Prims} {ix_string_sli
     budget Cost_string_slice
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2 r3 r4⟩
 
-theorem bproof_is_data_ptr_of {spW sp : SrcProgram} {prims : Prims} {ix_is_data_ptr_of ix_list_items ix_kid ix_path_spellings ix_is_path_call ix_is_path ix_peel ix_string_data_ptr_path ix_one_tree_names : Nat}
-    (fnW : spW.funcs[ix_is_data_ptr_of]? = some (src_is_data_ptr_of ix_list_items ix_kid ix_path_spellings ix_is_path_call ix_is_path ix_peel ix_string_data_ptr_path ix_one_tree_names)) (fn : sp.funcs[ix_is_data_ptr_of]? = some (src_is_data_ptr_of ix_list_items ix_kid ix_path_spellings ix_is_path_call ix_is_path ix_peel ix_string_data_ptr_path ix_one_tree_names))
+theorem bproof_is_data_ptr_of {spW sp : SrcProgram} {prims : Prims} {ix_is_data_ptr_of ix_list_items ix_kid ix_path_spellings ix_peel ix_is_path_call ix_is_path ix_string_data_ptr_path ix_one_tree_names : Nat}
+    (fnW : spW.funcs[ix_is_data_ptr_of]? = some (src_is_data_ptr_of ix_list_items ix_kid ix_path_spellings ix_peel ix_is_path_call ix_is_path ix_string_data_ptr_path ix_one_tree_names)) (fn : sp.funcs[ix_is_data_ptr_of]? = some (src_is_data_ptr_of ix_list_items ix_kid ix_path_spellings ix_peel ix_is_path_call ix_is_path ix_string_data_ptr_path ix_one_tree_names))
     (np : prims.isPrim ix_is_data_ptr_of = false)
     (back : Certified (∀ {n : Nat}, Stmt_is_data_ptr_of sp prims ix_is_data_ptr_of n))
     (b_list_items : Certified (∀ {n : Nat}, BStmt_list_items spW sp prims ix_list_items n))
     (b_kid : Certified (∀ {n : Nat}, BStmt_kid spW sp prims ix_kid n))
     (b_path_spellings : Certified (∀ {n : Nat}, BStmt_path_spellings spW sp prims ix_path_spellings n))
+    (b_peel : Certified (∀ {n : Nat}, BStmt_peel spW sp prims ix_peel n))
     (b_is_path_call : Certified (∀ {n : Nat}, BStmt_is_path_call spW sp prims ix_is_path_call n))
     (b_is_path : Certified (∀ {n : Nat}, BStmt_is_path spW sp prims ix_is_path n))
-    (b_peel : Certified (∀ {n : Nat}, BStmt_peel spW sp prims ix_peel n))
     (b_string_data_ptr_path : Certified (∀ {n : Nat}, BStmt_string_data_ptr_path spW sp prims ix_string_data_ptr_path n))
     (b_one_tree_names : Certified (∀ {n : Nat}, BStmt_one_tree_names spW sp prims ix_one_tree_names n)) {n : Nat} :
     BStmt_is_data_ptr_of spW sp prims ix_is_data_ptr_of n := by
@@ -73,16 +73,16 @@ theorem bproof_is_data_ptr_of {spW sp : SrcProgram} {prims : Prims} {ix_is_data_
     budget Cost_is_data_ptr_of
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
 
-theorem bproof_int_primary {spW sp : SrcProgram} {prims : Prims} {ix_int_primary ix_node_prod ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_int ix_int_literal ix_p_postfix_end : Nat}
-    (fnW : spW.funcs[ix_int_primary]? = some (src_int_primary ix_node_prod ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_int ix_int_literal ix_p_postfix_end)) (fn : sp.funcs[ix_int_primary]? = some (src_int_primary ix_node_prod ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_int ix_int_literal ix_p_postfix_end))
+theorem bproof_int_primary {spW sp : SrcProgram} {prims : Prims} {ix_int_primary ix_node_prod ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_postfix_end ix_p_int ix_int_literal : Nat}
+    (fnW : spW.funcs[ix_int_primary]? = some (src_int_primary ix_node_prod ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_postfix_end ix_p_int ix_int_literal)) (fn : sp.funcs[ix_int_primary]? = some (src_int_primary ix_node_prod ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_postfix_end ix_p_int ix_int_literal))
     (np : prims.isPrim ix_int_primary = false)
     (back : Certified (∀ {n : Nat}, Stmt_int_primary sp prims ix_int_primary n))
     (b_node_prod : Certified (∀ {n : Nat}, BStmt_node_prod spW sp prims ix_node_prod n))
     (b_field_text_Token_of_mini_selfhost_Token : Certified (∀ {n : Nat}, BStmt_field_text_Token_of_mini_selfhost_Token spW sp prims ix_field_text_Token_of_mini_selfhost_Token n))
     (b_kid_token : Certified (∀ {n : Nat}, BStmt_kid_token spW sp prims ix_kid_token n))
+    (b_p_postfix_end : Certified (∀ {n : Nat}, BStmt_p_postfix_end spW sp prims ix_p_postfix_end n))
     (b_p_int : Certified (∀ {n : Nat}, BStmt_p_int spW sp prims ix_p_int n))
-    (b_int_literal : Certified (∀ {n : Nat}, BStmt_int_literal spW sp prims ix_int_literal n))
-    (b_p_postfix_end : Certified (∀ {n : Nat}, BStmt_p_postfix_end spW sp prims ix_p_postfix_end n)) {n : Nat} :
+    (b_int_literal : Certified (∀ {n : Nat}, BStmt_int_literal spW sp prims ix_int_literal n)) {n : Nat} :
     BStmt_int_primary spW sp prims ix_int_primary n := by
   intro x0 x1 v0 v1 w k b h r0 r1 hb pre
   rcases n with _ | n

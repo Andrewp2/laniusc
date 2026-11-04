@@ -22,11 +22,11 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_lit_chain (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcExpr} {x1 : Lanius.Mini.Ty} {x2 : Lanius.Mini.Ty} {x3 : Bool} {x4 : Bool} {x5 : List Lanius.Mini.CTree} {x6 : List Lanius.Mini.MEff} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → RepSrcExpr x0 v0 → RepTy x1 v1 → RepTy x2 v2 → RepBool x3 v3 → RepBool x4 v4 → (RepList 83 RepCTree) x5 v5 → (RepList 236 RepMEff) x6 v6 →
-    (RepOption 258 RepMEff) (Lanius.Mini.litChain x0 x1 x2 x3 x4 x5 x6) w
+    (RepOption 259 RepMEff) (Lanius.Mini.litChain x0 x1 x2 x3 x4 x5 x6) w
 
 abbrev Stmt_lit_link (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.SrcExpr} {x1 : Lanius.Mini.Ty} {x2 : Lanius.Mini.Ty} {x3 : Bool} {x4 : Lanius.Mini.CTree} {x5 : Lanius.Mini.MEff} {x6 : List Lanius.Mini.CTree} {x7 : Option Lanius.Mini.MEff} {v0 v1 v2 v3 v4 v5 v6 v7 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6, v7] = some w → RepSrcExpr x0 v0 → RepTy x1 v1 → RepTy x2 v2 → RepBool x3 v3 → RepCTree x4 v4 → RepMEff x5 v5 → (RepList 83 RepCTree) x6 v6 → (RepOption 258 RepMEff) x7 v7 →
-    (RepOption 258 RepMEff) (Lanius.Mini.litLink x0 x1 x2 x3 x4 x5 x6 x7) w
+  ∀ {x0 : Lanius.Mini.SrcExpr} {x1 : Lanius.Mini.Ty} {x2 : Lanius.Mini.Ty} {x3 : Bool} {x4 : Lanius.Mini.CTree} {x5 : Lanius.Mini.MEff} {x6 : List Lanius.Mini.CTree} {x7 : Option Lanius.Mini.MEff} {v0 v1 v2 v3 v4 v5 v6 v7 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6, v7] = some w → RepSrcExpr x0 v0 → RepTy x1 v1 → RepTy x2 v2 → RepBool x3 v3 → RepCTree x4 v4 → RepMEff x5 v5 → (RepList 83 RepCTree) x6 v6 → (RepOption 259 RepMEff) x7 v7 →
+    (RepOption 259 RepMEff) (Lanius.Mini.litLink x0 x1 x2 x3 x4 x5 x6 x7) w
 
 abbrev Stmt_lit_result (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Option Lanius.Mini.Ty} {x4 : List Lanius.Mini.MEff} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 239 RepLocal) x2 v2 → (RepOption 212 RepTy) x3 v3 → (RepList 236 RepMEff) x4 v4 →
@@ -34,6 +34,6 @@ abbrev Stmt_lit_result (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
 
 abbrev Stmt_lit_wild_value (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.CTree} {x1 : Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 83 RepCTree) x0 v0 → RepMEff x1 v1 →
-    (RepOption 258 RepMEff) (Lanius.Mini.litWildValue x0 x1) w
+    (RepOption 259 RepMEff) (Lanius.Mini.litWildValue x0 x1) w
 
 end Lanius.Faithful.SelfCert

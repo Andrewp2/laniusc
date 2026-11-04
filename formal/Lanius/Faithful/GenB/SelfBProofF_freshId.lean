@@ -69,8 +69,8 @@ theorem bproof_field_index {spW sp : SrcProgram} {prims : Prims} {ix_field_index
     budget
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
 
-theorem bproof_member_of {spW sp : SrcProgram} {prims : Prims} {ix_member_of ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_member_type_args_none ix_local_of ix_p_postfix_end ix_field_expr ix_field_index : Nat}
-    (fnW : spW.funcs[ix_member_of]? = some (src_member_of ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_member_type_args_none ix_local_of ix_p_postfix_end ix_field_expr ix_field_index)) (fn : sp.funcs[ix_member_of]? = some (src_member_of ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_member_type_args_none ix_local_of ix_p_postfix_end ix_field_expr ix_field_index))
+theorem bproof_member_of {spW sp : SrcProgram} {prims : Prims} {ix_member_of ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_member_type_args_none ix_p_postfix_end ix_local_of ix_field_expr ix_field_index : Nat}
+    (fnW : spW.funcs[ix_member_of]? = some (src_member_of ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_member_type_args_none ix_p_postfix_end ix_local_of ix_field_expr ix_field_index)) (fn : sp.funcs[ix_member_of]? = some (src_member_of ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_member_type_args_none ix_p_postfix_end ix_local_of ix_field_expr ix_field_index))
     (np : prims.isPrim ix_member_of = false)
     (back : Certified (∀ {n : Nat}, Stmt_member_of sp prims ix_member_of n))
     (b_node_prod : Certified (∀ {n : Nat}, BStmt_node_prod spW sp prims ix_node_prod n))
@@ -78,8 +78,8 @@ theorem bproof_member_of {spW sp : SrcProgram} {prims : Prims} {ix_member_of ix_
     (b_field_text_Token_of_mini_selfhost_Token : Certified (∀ {n : Nat}, BStmt_field_text_Token_of_mini_selfhost_Token spW sp prims ix_field_text_Token_of_mini_selfhost_Token n))
     (b_kid_token : Certified (∀ {n : Nat}, BStmt_kid_token spW sp prims ix_kid_token n))
     (b_p_member_type_args_none : Certified (∀ {n : Nat}, BStmt_p_member_type_args_none spW sp prims ix_p_member_type_args_none n))
-    (b_local_of : Certified (∀ {n : Nat}, BStmt_local_of spW sp prims ix_local_of n))
     (b_p_postfix_end : Certified (∀ {n : Nat}, BStmt_p_postfix_end spW sp prims ix_p_postfix_end n))
+    (b_local_of : Certified (∀ {n : Nat}, BStmt_local_of spW sp prims ix_local_of n))
     (b_field_expr : Certified (∀ {n : Nat}, BStmt_field_expr spW sp prims ix_field_expr n))
     (b_field_index : Certified (∀ {n : Nat}, BStmt_field_index spW sp prims ix_field_index n)) {n : Nat} :
     BStmt_member_of spW sp prims ix_member_of n := by

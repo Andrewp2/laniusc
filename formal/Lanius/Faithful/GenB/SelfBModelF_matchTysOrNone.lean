@@ -103,14 +103,14 @@ noncomputable section
 
 def Cost_diverge_eff : Nat → Lanius.Mini.Decls → Lanius.Mini.Ty → Lanius.Mini.MEff → Nat
   | 0, x12, x26, x33 => 18446744073709551616
-  | n + 1, x12, x26, x33 => (match x33 with | .xPure x89 => 0 | .xCall x112 x118 => (Cost_diverge_call n x12 x26 x112 x118 x33) | .xApply x181 x185 x188 => 0 | .xNeg x210 => 0 | .xNot x232 => 0 | .xCast x255 x258 => 0 | .xIndex x282 x286 => 0 | .xStruct x311 x315 => 0 | .xVariant x342 x346 x349 => 0 | .xMatch x374 x378 x383 x387 x391 => 0 | .xDivide x417 x421 x424 => 0 | .xStride x449 => 0 | .xArraySlice x479 x482 => 0 | .xHost x506 x510 => 0 | .xIf x534 x537 x541 x544 => 0 | .xLet x566 x570 x574 x577 x581 => 0 | .xLen x603 => 0 | .xStr x626 => 0)
+  | n + 1, x12, x26, x33 => (match x33 with | .xPure x89 => 0 | .xCall x112 x118 => (Cost_diverge_call n x12 x26 x112 x118 x33) | .xApply x181 x185 x188 => 0 | .xNeg x210 => 0 | .xNot x232 => 0 | .xCast x255 x258 => 0 | .xIndex x282 x286 => 0 | .xStruct x311 x315 => 0 | .xVariant x342 x346 x349 => 0 | .xMatch x374 x378 x383 x387 x391 => 0 | .xDivide x417 x421 x424 => 0 | .xStride x449 => 0 | .xArraySlice x479 x482 => 0 | .xHost x506 x510 => 0 | .xIf x534 x537 x541 x544 => 0 | .xLet x566 x570 x574 x577 x581 => 0 | .xLen x603 => 0 | .xStr x626 => 0 | .xDeref x651 x656 => 0 | .xPlaceField x685 x688 => 0 | .xPlaceAt x714 x717 => 0)
 
 end
 noncomputable section
 
 def Pre_diverge_eff : Nat → Lanius.Mini.Decls → Lanius.Mini.Ty → Lanius.Mini.MEff → Nat → Prop
   | 0, x12, x26, x33, b => True
-  | n + 1, x12, x26, x33, b => (match x33 with | .xPure x89 => True | .xCall x112 x118 => (Pre_diverge_call n x12 x26 x112 x118 x33 b) | .xApply x181 x185 x188 => True | .xNeg x210 => True | .xNot x232 => True | .xCast x255 x258 => True | .xIndex x282 x286 => True | .xStruct x311 x315 => True | .xVariant x342 x346 x349 => True | .xMatch x374 x378 x383 x387 x391 => True | .xDivide x417 x421 x424 => True | .xStride x449 => True | .xArraySlice x479 x482 => True | .xHost x506 x510 => True | .xIf x534 x537 x541 x544 => True | .xLet x566 x570 x574 x577 x581 => True | .xLen x603 => True | .xStr x626 => True)
+  | n + 1, x12, x26, x33, b => (match x33 with | .xPure x89 => True | .xCall x112 x118 => (Pre_diverge_call n x12 x26 x112 x118 x33 b) | .xApply x181 x185 x188 => True | .xNeg x210 => True | .xNot x232 => True | .xCast x255 x258 => True | .xIndex x282 x286 => True | .xStruct x311 x315 => True | .xVariant x342 x346 x349 => True | .xMatch x374 x378 x383 x387 x391 => True | .xDivide x417 x421 x424 => True | .xStride x449 => True | .xArraySlice x479 x482 => True | .xHost x506 x510 => True | .xIf x534 x537 x541 x544 => True | .xLet x566 x570 x574 x577 x581 => True | .xLen x603 => True | .xStr x626 => True | .xDeref x651 x656 => True | .xPlaceField x685 x688 => True | .xPlaceAt x714 x717 => True)
 
 end
 

@@ -1,6 +1,4 @@
 import Lanius.Faithful.BudgetCore
-import Lanius.Faithful.GenB.SelfBModelF_Inline_positionAt
-import Lanius.Faithful.GenB.SelfBModelF_Inline_variantsNamedAt
 import Lanius.Faithful.GenB.SelfBModelF_hasKids
 import Lanius.Faithful.GenB.SelfBModelF_pickTy
 import Lanius.Faithful.GenB.SelfBModelF_projectionRet
@@ -16,7 +14,6 @@ import Lanius.Mini.Frontend.P.distinct
 import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.fnInstRet
 import Lanius.Mini.Frontend.P.hasKids
-import Lanius.Mini.Frontend.P.itemOf
 import Lanius.Mini.Frontend.P.projectionRet
 import Lanius.Mini.Frontend.P.wideOf
 import Lanius.Mini.Frontend.Types
@@ -68,10 +65,40 @@ end
 
 noncomputable section
 
+def Cost_field_ty_at : Nat → Nat → Lanius.Mini.Decls → Lanius.Mini.Ty → Nat → Nat
+  | 0, x12, x25, x39, x46 => 18446744073709551616
+  | n + 1, x12, x25, x39, x46 => (Cost_struct_field_tys n x12 x25 x39)
+
+end
+noncomputable section
+
+def Pre_field_ty_at : Nat → Nat → Lanius.Mini.Decls → Lanius.Mini.Ty → Nat → Nat → Prop
+  | 0, x12, x25, x39, x46, b => True
+  | n + 1, x12, x25, x39, x46, b => (Pre_struct_field_tys n x12 x25 x39 b)
+
+end
+
+noncomputable section
+
+def Cost_field_ty_of : Nat → Nat → Lanius.Mini.Decls → Option Lanius.Mini.Ty → Nat → Nat
+  | 0, x12, x25, x39, x68 => 18446744073709551616
+  | n + 1, x12, x25, x39, x68 => (match x39 with | some x166 => (Cost_field_ty_at n x12 x25 x166 x68) | none => 0)
+
+end
+noncomputable section
+
+def Pre_field_ty_of : Nat → Nat → Lanius.Mini.Decls → Option Lanius.Mini.Ty → Nat → Nat → Prop
+  | 0, x12, x25, x39, x68, b => True
+  | n + 1, x12, x25, x39, x68, b => (match x39 with | some x166 => (Pre_field_ty_at n x12 x25 x166 x68 b) | none => True)
+
+end
+
+noncomputable section
+
 mutual
 def Cost_eff_ty : Nat → Nat → Lanius.Mini.FrontEnv → List Lanius.Mini.Local → Lanius.Mini.MEff → Nat
   | 0, x7, x20, x35, x55 => 18446744073709551616
-  | n + 1, x7, x20, x35, x55 => (if (decide (x7 = 0)) = true then 0 else (match x55 with | .xPure x179 => (Cost_expr_ty n x7 x20 x35 x179) | .xCall x229 x235 => (Cost_inst_ret n x7 x20.decls x229) | .xApply x292 x296 x299 => ((Cost_eff_ty n (x7 - 1) x20 x35 x296) + (Cost_eff_ty n (x7 - 1) x20 x35 x299)) | .xNeg x470 => (Cost_eff_ty n (x7 - 1) x20 x35 x470) | .xNot x535 => 0 | .xCast x569 x572 => 0 | .xIndex x604 x607 => 0 | .xStruct x664 x667 => 0 | .xVariant x700 x703 x706 => 0 | .xMatch x737 x740 x745 x748 x752 => 0 | .xDivide x784 x788 x791 => ((Cost_eff_ty n (x7 - 1) x20 x35 x788) + (Cost_eff_ty n (x7 - 1) x20 x35 x791)) | .xStride x934 => 0 | .xArraySlice x976 x979 => 1 | .xHost x1025 x1029 => 0 | .xIf x1063 x1066 x1069 x1072 => 0 | .xLet x1100 x1104 x1107 x1110 x1114 => 0 | .xLen x1143 => 0 | .xStr x1184 => 0))
+  | n + 1, x7, x20, x35, x55 => (if (decide (x7 = 0)) = true then 0 else (match x55 with | .xPure x179 => (Cost_expr_ty n x7 x20 x35 x179) | .xCall x229 x235 => (Cost_inst_ret n x7 x20.decls x229) | .xApply x292 x296 x299 => ((Cost_eff_ty n (x7 - 1) x20 x35 x296) + (Cost_eff_ty n (x7 - 1) x20 x35 x299)) | .xNeg x470 => (Cost_eff_ty n (x7 - 1) x20 x35 x470) | .xNot x535 => 0 | .xCast x569 x572 => 0 | .xIndex x604 x607 => 0 | .xStruct x664 x667 => 0 | .xVariant x700 x703 x706 => 0 | .xMatch x737 x740 x745 x748 x752 => 0 | .xDivide x784 x788 x791 => ((Cost_eff_ty n (x7 - 1) x20 x35 x788) + (Cost_eff_ty n (x7 - 1) x20 x35 x791)) | .xStride x934 => 0 | .xArraySlice x976 x979 => 1 | .xHost x1025 x1029 => 0 | .xIf x1063 x1066 x1069 x1072 => 0 | .xLet x1100 x1104 x1107 x1110 x1114 => 0 | .xLen x1143 => 0 | .xStr x1184 => 0 | .xDeref x1219 x1224 => 0 | .xPlaceField x1261 x1264 => ((Cost_eff_ty n (x7 - 1) x20 x35 x1261) + (Cost_field_ty_of n x7 x20.decls (Lanius.Mini.effTy ((x7 - 1)) x20 x35 x1261) x1264)) | .xPlaceAt x1366 x1369 => (Cost_eff_ty n (x7 - 1) x20 x35 x1366)))
 termination_by structural fuel => fuel
 end
 
@@ -81,7 +108,7 @@ noncomputable section
 mutual
 def Pre_eff_ty : Nat → Nat → Lanius.Mini.FrontEnv → List Lanius.Mini.Local → Lanius.Mini.MEff → Nat → Prop
   | 0, x7, x20, x35, x55, b => True
-  | n + 1, x7, x20, x35, x55, b => (if (decide (x7 = 0)) = true then True else (match x55 with | .xPure x179 => (Pre_expr_ty n x7 x20 x35 x179 b) | .xCall x229 x235 => (Pre_inst_ret n x7 x20.decls x229 b) | .xApply x292 x296 x299 => (if (Lanius.Mini.bareEff x296) = true then ((Pre_eff_ty n (x7 - 1) x20 x35 x296 b) ∧ (∀ b5 : Nat, (Cost_eff_ty n (x7 - 1) x20 x35 x296) < b → b5 = b - (Cost_eff_ty n (x7 - 1) x20 x35 x296) → (Pre_eff_ty n (x7 - 1) x20 x35 x299 b5))) else ((Pre_eff_ty n (x7 - 1) x20 x35 x296 b) ∧ (∀ b3 : Nat, (Cost_eff_ty n (x7 - 1) x20 x35 x296) < b → b3 = b - (Cost_eff_ty n (x7 - 1) x20 x35 x296) → (Pre_eff_ty n (x7 - 1) x20 x35 x299 b3)))) | .xNeg x470 => (Pre_eff_ty n (x7 - 1) x20 x35 x470 b) | .xNot x535 => True | .xCast x569 x572 => True | .xIndex x604 x607 => True | .xStruct x664 x667 => True | .xVariant x700 x703 x706 => True | .xMatch x737 x740 x745 x748 x752 => True | .xDivide x784 x788 x791 => ((Pre_eff_ty n (x7 - 1) x20 x35 x788 b) ∧ (∀ b8 : Nat, (Cost_eff_ty n (x7 - 1) x20 x35 x788) < b → b8 = b - (Cost_eff_ty n (x7 - 1) x20 x35 x788) → (Pre_eff_ty n (x7 - 1) x20 x35 x791 b8))) | .xStride x934 => True | .xArraySlice x976 x979 => True | .xHost x1025 x1029 => True | .xIf x1063 x1066 x1069 x1072 => True | .xLet x1100 x1104 x1107 x1110 x1114 => True | .xLen x1143 => True | .xStr x1184 => True))
+  | n + 1, x7, x20, x35, x55, b => (if (decide (x7 = 0)) = true then True else (match x55 with | .xPure x179 => (Pre_expr_ty n x7 x20 x35 x179 b) | .xCall x229 x235 => (Pre_inst_ret n x7 x20.decls x229 b) | .xApply x292 x296 x299 => (if (Lanius.Mini.bareEff x296) = true then ((Pre_eff_ty n (x7 - 1) x20 x35 x296 b) ∧ (∀ b5 : Nat, (Cost_eff_ty n (x7 - 1) x20 x35 x296) < b → b5 = b - (Cost_eff_ty n (x7 - 1) x20 x35 x296) → (Pre_eff_ty n (x7 - 1) x20 x35 x299 b5))) else ((Pre_eff_ty n (x7 - 1) x20 x35 x296 b) ∧ (∀ b3 : Nat, (Cost_eff_ty n (x7 - 1) x20 x35 x296) < b → b3 = b - (Cost_eff_ty n (x7 - 1) x20 x35 x296) → (Pre_eff_ty n (x7 - 1) x20 x35 x299 b3)))) | .xNeg x470 => (Pre_eff_ty n (x7 - 1) x20 x35 x470 b) | .xNot x535 => True | .xCast x569 x572 => True | .xIndex x604 x607 => True | .xStruct x664 x667 => True | .xVariant x700 x703 x706 => True | .xMatch x737 x740 x745 x748 x752 => True | .xDivide x784 x788 x791 => ((Pre_eff_ty n (x7 - 1) x20 x35 x788 b) ∧ (∀ b8 : Nat, (Cost_eff_ty n (x7 - 1) x20 x35 x788) < b → b8 = b - (Cost_eff_ty n (x7 - 1) x20 x35 x788) → (Pre_eff_ty n (x7 - 1) x20 x35 x791 b8))) | .xStride x934 => True | .xArraySlice x976 x979 => True | .xHost x1025 x1029 => True | .xIf x1063 x1066 x1069 x1072 => True | .xLet x1100 x1104 x1107 x1110 x1114 => True | .xLen x1143 => True | .xStr x1184 => True | .xDeref x1219 x1224 => True | .xPlaceField x1261 x1264 => ((Pre_eff_ty n (x7 - 1) x20 x35 x1261 b) ∧ (∀ b11 : Nat, (Cost_eff_ty n (x7 - 1) x20 x35 x1261) < b → b11 = b - (Cost_eff_ty n (x7 - 1) x20 x35 x1261) → (Pre_field_ty_of n x7 x20.decls (Lanius.Mini.effTy ((x7 - 1)) x20 x35 x1261) x1264 b11))) | .xPlaceAt x1366 x1369 => (Pre_eff_ty n (x7 - 1) x20 x35 x1366 b)))
 termination_by structural fuel => fuel
 end
 
@@ -120,21 +147,6 @@ noncomputable section
 def Pre_is_type_owner : Nat → Lanius.Mini.FrontEnv → List (List Nat) → List Nat → Nat → Prop
   | 0, x14, x29, x55, b => True
   | n + 1, x14, x29, x55, b => (if (Lanius.Mini.isScalarOwner x14 ((Lanius.Mini.singleName x29))) = true then True else (Pre_type_decl_at n x14 x29 b))
-
-end
-
-noncomputable section
-
-def Cost_is_fn_path : Nat → Lanius.Mini.FrontEnv → Lanius.Mini.Split → Nat
-  | 0, x11, x26 => 18446744073709551616
-  | n + 1, x11, x26 => ((Cost_is_type_owner n x11 x26.home x26.name) + (if (Lanius.Mini.isTypeOwner x11 x26.home x26.name) = true then 0 else (Cost_path_module n x11 x26.home x26.name)))
-
-end
-noncomputable section
-
-def Pre_is_fn_path : Nat → Lanius.Mini.FrontEnv → Lanius.Mini.Split → Nat → Prop
-  | 0, x11, x26, b => True
-  | n + 1, x11, x26, b => ((Pre_is_type_owner n x11 x26.home x26.name b) ∧ (∀ b1 : Nat, (Cost_is_type_owner n x11 x26.home x26.name) < b → b1 = b - (Cost_is_type_owner n x11 x26.home x26.name) → (if (Lanius.Mini.isTypeOwner x11 x26.home x26.name) = true then True else (∀ b2 : Nat, (Cost_path_module n x11 x26.home x26.name) < b1 → b2 = b1 - (Cost_path_module n x11 x26.home x26.name) → (Pre_find_fn n x11.decls.fns (Lanius.Mini.pathModule x11 x26.home x26.name) x26.name 0 b2)))))
 
 end
 

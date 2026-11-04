@@ -29,16 +29,16 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.SelfCert
 open Lanius.Faithful.Budget
 
-theorem bproof_local_of {spW sp : SrcProgram} {prims : Prims} {ix_local_of ix_node_prod ix_kid ix_p_ident ix_p_self_value ix_p_ident_plain ix_path_name ix_find_local ix_text_self : Nat}
-    (fnW : spW.funcs[ix_local_of]? = some (src_local_of ix_node_prod ix_kid ix_p_ident ix_p_self_value ix_p_ident_plain ix_path_name ix_find_local ix_text_self)) (fn : sp.funcs[ix_local_of]? = some (src_local_of ix_node_prod ix_kid ix_p_ident ix_p_self_value ix_p_ident_plain ix_path_name ix_find_local ix_text_self))
+theorem bproof_local_of {spW sp : SrcProgram} {prims : Prims} {ix_local_of ix_node_prod ix_kid ix_p_ident ix_p_ident_plain ix_path_name ix_p_self_value ix_find_local ix_text_self : Nat}
+    (fnW : spW.funcs[ix_local_of]? = some (src_local_of ix_node_prod ix_kid ix_p_ident ix_p_ident_plain ix_path_name ix_p_self_value ix_find_local ix_text_self)) (fn : sp.funcs[ix_local_of]? = some (src_local_of ix_node_prod ix_kid ix_p_ident ix_p_ident_plain ix_path_name ix_p_self_value ix_find_local ix_text_self))
     (np : prims.isPrim ix_local_of = false)
     (back : Certified (∀ {n : Nat}, Stmt_local_of sp prims ix_local_of n))
     (b_node_prod : Certified (∀ {n : Nat}, BStmt_node_prod spW sp prims ix_node_prod n))
     (b_kid : Certified (∀ {n : Nat}, BStmt_kid spW sp prims ix_kid n))
     (b_p_ident : Certified (∀ {n : Nat}, BStmt_p_ident spW sp prims ix_p_ident n))
-    (b_p_self_value : Certified (∀ {n : Nat}, BStmt_p_self_value spW sp prims ix_p_self_value n))
     (b_p_ident_plain : Certified (∀ {n : Nat}, BStmt_p_ident_plain spW sp prims ix_p_ident_plain n))
     (b_path_name : Certified (∀ {n : Nat}, BStmt_path_name spW sp prims ix_path_name n))
+    (b_p_self_value : Certified (∀ {n : Nat}, BStmt_p_self_value spW sp prims ix_p_self_value n))
     (b_find_local : Certified (∀ {n : Nat}, BStmt_find_local spW sp prims ix_find_local n))
     (b_text_self : Certified (∀ {n : Nat}, BStmt_text_self spW sp prims ix_text_self n)) {n : Nat} :
     BStmt_local_of spW sp prims ix_local_of n := by

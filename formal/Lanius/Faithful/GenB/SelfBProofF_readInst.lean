@@ -2,7 +2,7 @@ import Lanius.Faithful.BudgetTactic
 import Lanius.Faithful.Gen.SelfRep
 import Lanius.Faithful.Gen.SelfSrcF_readInst
 import Lanius.Faithful.Gen.SelfStmtF_readInst
-import Lanius.Faithful.GenB.SelfBStmtF_ifNotWrites
+import Lanius.Faithful.GenB.SelfBStmtF_namesFieldBase
 import Lanius.Faithful.GenB.SelfBStmtF_projectionRet
 import Lanius.Faithful.GenB.SelfBStmtF_readDeclInst
 import Lanius.Faithful.GenB.SelfBStmtF_readInst

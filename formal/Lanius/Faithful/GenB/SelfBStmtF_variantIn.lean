@@ -41,16 +41,16 @@ abbrev BStmt_scalar_src (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
 abbrev BStmt_variant_in (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.TypeDecl} {x1 : Option Nat} {x2 : List Nat} {v0 v1 v2 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepList 105 RepTypeDecl) x0 v0 → (RepOption 135 RepNat) x1 v1 → (RepList 25 RepNat) x2 v2 → k < b → Pre_variant_in n x0 x1 x2 b →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ (RepOption 284 RepVariantAt) (Lanius.Mini.variantIn x0 x1 x2) w
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ 0 = k ∧ (RepOption 285 RepVariantAt) (Lanius.Mini.variantIn x0 x1 x2) w
 
 abbrev BStmt_enum_variant (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : List (List Nat)} {x2 : List Nat} {v0 v1 v2 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepFrontEnv x0 v0 → (RepList 31 (RepList 25 RepNat)) x1 v1 → (RepList 25 RepNat) x2 v2 → k < b → Pre_enum_variant n x0 x1 x2 b →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_enum_variant n x0 x1 x2 = k ∧ (RepOption 284 RepVariantAt) (Lanius.Mini.enumVariant x0 x1 x2) w
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_enum_variant n x0 x1 x2 = k ∧ (RepOption 285 RepVariantAt) (Lanius.Mini.enumVariant x0 x1 x2) w
 
 abbrev BStmt_variant_by_path (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : Lanius.Mini.Split} {v0 v1 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepFrontEnv x0 v0 → RepSplit x1 v1 → k < b → Pre_variant_by_path n x0 x1 b →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_variant_by_path n x0 x1 = k ∧ (RepOption 284 RepVariantAt) (Lanius.Mini.variantByPath x0 x1) w
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_variant_by_path n x0 x1 = k ∧ (RepOption 285 RepVariantAt) (Lanius.Mini.variantByPath x0 x1) w
 
 end Lanius.Faithful.SelfBudget

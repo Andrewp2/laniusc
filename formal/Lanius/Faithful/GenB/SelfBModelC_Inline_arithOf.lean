@@ -32,6 +32,7 @@ import Lanius.Mini.Compiler.P.elementAddress
 import Lanius.Mini.Compiler.P.elementBase
 import Lanius.Mini.Compiler.P.evalDivide
 import Lanius.Mini.Compiler.P.evalSame
+import Lanius.Mini.Compiler.P.evalSlotLimit
 import Lanius.Mini.Compiler.P.guardAnd
 import Lanius.Mini.Compiler.P.indexOf
 import Lanius.Mini.Compiler.P.lowerApply
@@ -2097,7 +2098,7 @@ termination_by structural fuel => fuel
 
 def Cost_eval_args : Nat → List Lanius.Mini.Sig → Lanius.Mini.SrcDecls → List Lanius.Mini.Binding → List Lanius.Mini.SrcEff → Nat → Nat
   | 0, x10, x27, x44, x66, x86 => 18446744073709551616
-  | n + 1, x10, x27, x44, x66, x86 => (match x66 with | [] => 0 | x246 :: x251 => ((Cost_SrcEff_eval n x246 x10 x27 x44 x86) + (match (Lanius.Mini.SrcEff.eval x246 x10 x27 x44 x86) with | some x348 => ((Cost_eval_args n x10 x27 x44 x251 (x86 + (Lanius.Mini.SrcType.size x348.ty))) + (Cost_cons_args n x348 (Lanius.Mini.evalArgs x10 x27 x44 x251 ((x86 + (Lanius.Mini.SrcType.size x348.ty)))))) | none => 0)))
+  | n + 1, x10, x27, x44, x66, x86 => (if (decide (Lanius.Mini.evalSlotLimit ≤ x86)) = true then 0 else (match x66 with | [] => 0 | x310 :: x315 => ((Cost_SrcEff_eval n x310 x10 x27 x44 x86) + (match (Lanius.Mini.SrcEff.eval x310 x10 x27 x44 x86) with | some x412 => ((Cost_eval_args n x10 x27 x44 x315 (x86 + (Lanius.Mini.SrcType.size x412.ty))) + (Cost_cons_args n x412 (Lanius.Mini.evalArgs x10 x27 x44 x315 ((x86 + (Lanius.Mini.SrcType.size x412.ty)))))) | none => 0))))
 termination_by structural fuel => fuel
 
 def Cost_eval_arms : Nat → List Lanius.Mini.Sig → Lanius.Mini.SrcDecls → List Lanius.Mini.Binding → Nat → Nat → Lanius.Mini.SrcType → Nat → List (List Lanius.Mini.SrcType) → List (List Nat) → List Lanius.Mini.SrcEff → Nat
@@ -2107,12 +2108,12 @@ termination_by structural fuel => fuel
 
 def Cost_eval_let_body : Nat → List Lanius.Mini.Sig → Lanius.Mini.SrcDecls → Option (List Lanius.Mini.Binding) → Nat → Lanius.Mini.SrcEff → Nat
   | 0, x14, x31, x48, x92, x104 => 18446744073709551616
-  | n + 1, x14, x31, x48, x92, x104 => (match x48 with | some x217 => (Cost_SrcEff_eval n x104 x14 x31 x217 x92) | none => 0)
+  | n + 1, x14, x31, x48, x92, x104 => (if (decide (Lanius.Mini.evalSlotLimit ≤ x92)) = true then 0 else (match x48 with | some x280 => (Cost_SrcEff_eval n x104 x14 x31 x280 x92) | none => 0))
 termination_by structural fuel => fuel
 
 def Cost_eval_arm_in : Nat → List Lanius.Mini.Sig → Lanius.Mini.SrcDecls → Option (List Lanius.Mini.Binding) → Nat → Nat → Lanius.Mini.SrcType → Nat → Lanius.Mini.SrcEff → List Lanius.Mini.SrcEff → Option Lanius.Mini.Stmt → Nat
   | 0, x12, x29, x46, x90, x103, x115, x128, x138, x153, x173 => 18446744073709551616
-  | n + 1, x12, x29, x46, x90, x103, x115, x128, x138, x153, x173 => (match x46 with | some x302 => ((Cost_SrcEff_eval n x138 x12 x29 x302 x103) + (match (Lanius.Mini.SrcEff.eval x138 x12 x29 x302 x103) with | some x393 => (Cost_eval_arm n x90 x128 (Lanius.Mini.evalSame x393 x115 x393.stmt) x153 x173) | none => 0)) | none => 0)
+  | n + 1, x12, x29, x46, x90, x103, x115, x128, x138, x153, x173 => (if (decide (Lanius.Mini.evalSlotLimit ≤ x103)) = true then 0 else (match x46 with | some x365 => ((Cost_SrcEff_eval n x138 x12 x29 x365 x103) + (match (Lanius.Mini.SrcEff.eval x138 x12 x29 x365 x103) with | some x456 => (Cost_eval_arm n x90 x128 (Lanius.Mini.evalSame x456 x115 x456.stmt) x153 x173) | none => 0)) | none => 0))
 termination_by structural fuel => fuel
 end
 
@@ -2127,7 +2128,7 @@ termination_by structural fuel => fuel
 
 def Pre_eval_args : Nat → List Lanius.Mini.Sig → Lanius.Mini.SrcDecls → List Lanius.Mini.Binding → List Lanius.Mini.SrcEff → Nat → Nat → Prop
   | 0, x10, x27, x44, x66, x86, b => True
-  | n + 1, x10, x27, x44, x66, x86, b => (match x66 with | [] => True | x246 :: x251 => ((Pre_SrcEff_eval n x246 x10 x27 x44 x86 b) ∧ (∀ b1 : Nat, (Cost_SrcEff_eval n x246 x10 x27 x44 x86) < b → b1 = b - (Cost_SrcEff_eval n x246 x10 x27 x44 x86) → (match (Lanius.Mini.SrcEff.eval x246 x10 x27 x44 x86) with | some x348 => ((Pre_SrcType_size n x348.ty b1) ∧ ((Pre_plus n x86 (Lanius.Mini.SrcType.size x348.ty) b1) ∧ (Pre_eval_args n x10 x27 x44 x251 (x86 + (Lanius.Mini.SrcType.size x348.ty)) b1))) | none => True))))
+  | n + 1, x10, x27, x44, x66, x86, b => (if (decide (Lanius.Mini.evalSlotLimit ≤ x86)) = true then True else (match x66 with | [] => True | x310 :: x315 => ((Pre_SrcEff_eval n x310 x10 x27 x44 x86 b) ∧ (∀ b1 : Nat, (Cost_SrcEff_eval n x310 x10 x27 x44 x86) < b → b1 = b - (Cost_SrcEff_eval n x310 x10 x27 x44 x86) → (match (Lanius.Mini.SrcEff.eval x310 x10 x27 x44 x86) with | some x412 => ((Pre_SrcType_size n x412.ty b1) ∧ ((Pre_plus n x86 (Lanius.Mini.SrcType.size x412.ty) b1) ∧ (Pre_eval_args n x10 x27 x44 x315 (x86 + (Lanius.Mini.SrcType.size x412.ty)) b1))) | none => True)))))
 termination_by structural fuel => fuel
 
 def Pre_eval_arms : Nat → List Lanius.Mini.Sig → Lanius.Mini.SrcDecls → List Lanius.Mini.Binding → Nat → Nat → Lanius.Mini.SrcType → Nat → List (List Lanius.Mini.SrcType) → List (List Nat) → List Lanius.Mini.SrcEff → Nat → Prop
@@ -2137,12 +2138,12 @@ termination_by structural fuel => fuel
 
 def Pre_eval_let_body : Nat → List Lanius.Mini.Sig → Lanius.Mini.SrcDecls → Option (List Lanius.Mini.Binding) → Nat → Lanius.Mini.SrcEff → Nat → Prop
   | 0, x14, x31, x48, x92, x104, b => True
-  | n + 1, x14, x31, x48, x92, x104, b => (match x48 with | some x217 => (Pre_SrcEff_eval n x104 x14 x31 x217 x92 b) | none => True)
+  | n + 1, x14, x31, x48, x92, x104, b => (if (decide (Lanius.Mini.evalSlotLimit ≤ x92)) = true then True else (match x48 with | some x280 => (Pre_SrcEff_eval n x104 x14 x31 x280 x92 b) | none => True))
 termination_by structural fuel => fuel
 
 def Pre_eval_arm_in : Nat → List Lanius.Mini.Sig → Lanius.Mini.SrcDecls → Option (List Lanius.Mini.Binding) → Nat → Nat → Lanius.Mini.SrcType → Nat → Lanius.Mini.SrcEff → List Lanius.Mini.SrcEff → Option Lanius.Mini.Stmt → Nat → Prop
   | 0, x12, x29, x46, x90, x103, x115, x128, x138, x153, x173, b => True
-  | n + 1, x12, x29, x46, x90, x103, x115, x128, x138, x153, x173, b => (match x46 with | some x302 => (Pre_SrcEff_eval n x138 x12 x29 x302 x103 b) | none => True)
+  | n + 1, x12, x29, x46, x90, x103, x115, x128, x138, x153, x173, b => (if (decide (Lanius.Mini.evalSlotLimit ≤ x103)) = true then True else (match x46 with | some x365 => (Pre_SrcEff_eval n x138 x12 x29 x365 x103 b) | none => True))
 termination_by structural fuel => fuel
 end
 

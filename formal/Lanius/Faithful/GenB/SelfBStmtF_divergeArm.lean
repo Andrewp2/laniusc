@@ -20,12 +20,12 @@ open Lanius.Faithful.Budget
 
 abbrev BStmt_binds_zip (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (List Nat)} {x1 : List Lanius.Mini.Ty} {x2 : List Lanius.Mini.Bind} {v0 v1 v2 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepList 143 RepTy) x1 v1 → (RepList 275 RepBind) x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_binds_zip n x0 x1 x2 = k ∧ (RepOption 274 (RepList 275 RepBind)) (Lanius.Mini.bindsZip x0 x1 x2) w
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepList 143 RepTy) x1 v1 → (RepList 276 RepBind) x2 v2 →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_binds_zip n x0 x1 x2 = k ∧ (RepOption 275 (RepList 276 RepBind)) (Lanius.Mini.bindsZip x0 x1 x2) w
 
 abbrev BStmt_diverge_arm (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Decls} {x1 : Option Lanius.Mini.Ty} {x2 : Option Lanius.Mini.MEff} {v0 v1 v2 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepDecls x0 v0 → (RepOption 212 RepTy) x1 v1 → (RepOption 258 RepMEff) x2 v2 → k < b → Pre_diverge_arm n x0 x1 x2 b →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_diverge_arm n x0 x1 x2 = k ∧ (RepOption 258 RepMEff) (Lanius.Mini.divergeArm x0 x1 x2) w
+    qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepDecls x0 v0 → (RepOption 212 RepTy) x1 v1 → (RepOption 259 RepMEff) x2 v2 → k < b → Pre_diverge_arm n x0 x1 x2 b →
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_diverge_arm n x0 x1 x2 = k ∧ (RepOption 259 RepMEff) (Lanius.Mini.divergeArm x0 x1 x2) w
 
 end Lanius.Faithful.SelfBudget

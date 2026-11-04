@@ -36,18 +36,18 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem step_block_value {prog : SrcProgram} {prims : Prims} {ix_block_value ix_minus ix_node_prod ix_kid ix_has_kids ix_p_expr ix_p_base ix_p_assign ix_is_level ix_p_cast ix_p_postfix ix_p_postfix_end ix_p_arm_block : Nat} (fn : prog.funcs[ix_block_value]? = some (src_block_value ix_minus ix_node_prod ix_kid ix_has_kids ix_p_expr ix_p_base ix_p_assign ix_is_level ix_p_cast ix_p_postfix ix_p_postfix_end ix_p_arm_block ix_block_value)) (np : prims.isPrim ix_block_value = false)
+theorem step_block_value {prog : SrcProgram} {prims : Prims} {ix_block_value ix_minus ix_node_prod ix_kid ix_has_kids ix_p_postfix ix_p_postfix_end ix_p_expr ix_p_base ix_p_assign ix_is_level ix_p_cast ix_p_arm_block : Nat} (fn : prog.funcs[ix_block_value]? = some (src_block_value ix_minus ix_node_prod ix_kid ix_has_kids ix_p_postfix ix_p_postfix_end ix_p_expr ix_p_base ix_p_assign ix_is_level ix_p_cast ix_p_arm_block ix_block_value)) (np : prims.isPrim ix_block_value = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
     (ext_has_kids : Certified (∀ {n : Nat}, Stmt_has_kids prog prims ix_has_kids n))
+    (ext_p_postfix : Certified (∀ {n : Nat}, Stmt_p_postfix prog prims ix_p_postfix n))
+    (ext_p_postfix_end : Certified (∀ {n : Nat}, Stmt_p_postfix_end prog prims ix_p_postfix_end n))
     (ext_p_expr : Certified (∀ {n : Nat}, Stmt_p_expr prog prims ix_p_expr n))
     (ext_p_base : Certified (∀ {n : Nat}, Stmt_p_base prog prims ix_p_base n))
     (ext_p_assign : Certified (∀ {n : Nat}, Stmt_p_assign prog prims ix_p_assign n))
     (ext_is_level : Certified (∀ {n : Nat}, Stmt_is_level prog prims ix_is_level n))
     (ext_p_cast : Certified (∀ {n : Nat}, Stmt_p_cast prog prims ix_p_cast n))
-    (ext_p_postfix : Certified (∀ {n : Nat}, Stmt_p_postfix prog prims ix_p_postfix n))
-    (ext_p_postfix_end : Certified (∀ {n : Nat}, Stmt_p_postfix_end prog prims ix_p_postfix_end n))
     (ext_p_arm_block : Certified (∀ {n : Nat}, Stmt_p_arm_block prog prims ix_p_arm_block n)) {n : Nat}
     (ih_block_value : Certified (Stmt_block_value prog prims ix_block_value n)) :
     Stmt_block_value prog prims ix_block_value (n + 1) := by

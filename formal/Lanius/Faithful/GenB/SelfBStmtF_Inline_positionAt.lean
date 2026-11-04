@@ -66,7 +66,7 @@ abbrev BStmt_position_at (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
 abbrev BStmt_find_alias_at (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.AliasDecl} {x1 : List Lanius.Mini.AliasDecl} {x2 : List (List Nat)} {x3 : List Nat} {v0 v1 v2 v3 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepAliasDecl x0 v0 → (RepList 119 RepAliasDecl) x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → (RepList 25 RepNat) x3 v3 →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ 0 = k ∧ (RepOption 257 RepAliasDecl) (Lanius.Mini.Inline.findAliasAt x0 x1 x2 x3) w
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ 0 = k ∧ (RepOption 258 RepAliasDecl) (Lanius.Mini.Inline.findAliasAt x0 x1 x2 x3) w
 
 abbrev BStmt_type_name_at (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.TypeDecl} {x1 : List Lanius.Mini.TypeDecl} {x2 : List (List Nat)} {v0 v1 v2 w : Value} {k : Nat},
@@ -76,7 +76,7 @@ abbrev BStmt_type_name_at (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : P
 abbrev BStmt_find_const_at (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.ConstDecl} {x1 : List Lanius.Mini.ConstDecl} {x2 : List (List Nat)} {x3 : List Nat} {v0 v1 v2 v3 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepConstDecl x0 v0 → (RepList 113 RepConstDecl) x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → (RepList 25 RepNat) x3 v3 →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ 0 = k ∧ (RepOption 281 RepConstDecl) (Lanius.Mini.Inline.findConstAt x0 x1 x2 x3) w
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ 0 = k ∧ (RepOption 282 RepConstDecl) (Lanius.Mini.Inline.findConstAt x0 x1 x2 x3) w
 
 abbrev BStmt_find_fn_at (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FnDecl} {x1 : List Lanius.Mini.FnDecl} {x2 : List (List Nat)} {x3 : List Nat} {x4 : Nat} {v0 v1 v2 v3 v4 w : Value} {k b : Nat},

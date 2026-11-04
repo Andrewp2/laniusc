@@ -76,6 +76,8 @@ def stmtTys (m : MStmt) : List Ty :=
   | .mContinue => []
   | .mMatchArm sc sty k bs x ty body rest => sty :: ty :: (stmtTys body ++ stmtTys rest)
   | .mUnreachable id ty => [ty]
+  | .mSetPlace pl v => effNamedTys pl ++ effNamedTys v
+  | .mSetPlaceOp op pl v => effNamedTys pl ++ effNamedTys v
 
 def paramTys (ps : List MParam) : List Ty :=
   match ps with
@@ -118,6 +120,7 @@ def tyKnown (table : List Inst) (t : Ty) : Bool :=
   | .tyIsize => true
   | .tyChar => true
   | .tyStr => true
+  | .tyRef refd => tyKnown table refd
   | .tyFloat ft => true
   | .tySlice e => tyKnown table e
   | .tyArray e n => tyKnown table e
@@ -160,6 +163,7 @@ def tyWeight (table : List Inst) (ws : List (Option Nat)) (t : Ty) : Option Nat 
   | .tyIsize => some 1
   | .tyChar => some 1
   | .tyStr => some 1
+  | .tyRef refd => weightAddTo 1 (tyWeight table ws refd)
   | .tyFloat ft => some 1
   | .tySlice e => weightAddTo 1 (tyWeight table ws e)
   | .tyArray e n => weightArray n (tyWeight table ws e)

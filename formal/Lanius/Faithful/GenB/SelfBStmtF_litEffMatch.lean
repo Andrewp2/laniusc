@@ -25,7 +25,7 @@ abbrev BStmt_string_close (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : P
 
 abbrev BStmt_lit_eff_match (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Option Lanius.Mini.Ty} {x4 : Nat} {x5 : Lanius.Mini.MEff} {x6 : Lanius.Mini.Ty} {x7 : List Lanius.Mini.CTree} {x8 : Option (List Lanius.Mini.MEff)} {v0 v1 v2 v3 v4 v5 v6 v7 v8 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5, v6, v7, v8] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 239 RepLocal) x2 v2 → (RepOption 212 RepTy) x3 v3 → RepNat x4 v4 → RepMEff x5 v5 → RepTy x6 v6 → (RepList 83 RepCTree) x7 v7 → (RepOption 286 (RepList 236 RepMEff)) x8 v8 → k < b → Pre_lit_eff_match n x0 x1 x2 x3 x4 x5 x6 x7 x8 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5, v6, v7, v8] = some (w, k) ∧ Cost_lit_eff_match n x0 x1 x2 x3 x4 x5 x6 x7 x8 = k ∧ (RepOption 258 RepMEff) (Lanius.Mini.litEffMatch x0 x1 x2 x3 x4 x5 x6 x7 x8) w
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5, v6, v7, v8] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 239 RepLocal) x2 v2 → (RepOption 212 RepTy) x3 v3 → RepNat x4 v4 → RepMEff x5 v5 → RepTy x6 v6 → (RepList 83 RepCTree) x7 v7 → (RepOption 287 (RepList 236 RepMEff)) x8 v8 → k < b → Pre_lit_eff_match n x0 x1 x2 x3 x4 x5 x6 x7 x8 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5, v6, v7, v8] = some (w, k) ∧ Cost_lit_eff_match n x0 x1 x2 x3 x4 x5 x6 x7 x8 = k ∧ (RepOption 259 RepMEff) (Lanius.Mini.litEffMatch x0 x1 x2 x3 x4 x5 x6 x7 x8) w
 
 end Lanius.Faithful.SelfBudget

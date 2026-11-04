@@ -66,27 +66,27 @@ abbrev BStmt_value_arms (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
 abbrev BStmt_match_stmt_if (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : Lanius.Mini.MatchStmt} {v0 v1 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1] = some (w, k) → RepBool x0 v0 → RepMatchStmt x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 287 RepMatchStmt) (Lanius.Mini.matchStmtIf x0 x1) w
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ 0 = k ∧ (RepOption 288 RepMatchStmt) (Lanius.Mini.matchStmtIf x0 x1) w
 
 abbrev BStmt_match_stmt_head (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Local} {x1 : Nat} {x2 : Nat} {x3 : Lanius.Mini.MEff} {x4 : Lanius.Mini.Ty} {x5 : Lanius.Mini.TypeDecl} {x6 : List Lanius.Mini.VariantTy} {x7 : Lanius.Mini.Ty} {v0 v1 v2 v3 v4 v5 v6 v7 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5, v6, v7] = some (w, k) → (RepList 239 RepLocal) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepMEff x3 v3 → RepTy x4 v4 → RepTypeDecl x5 v5 → (RepList 289 RepVariantTy) x6 v6 → RepTy x7 v7 →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5, v6, v7] = some (w, k) ∧ 0 = k ∧ (RepOption 287 RepMatchStmt) (Lanius.Mini.matchStmtHead x0 x1 x2 x3 x4 x5 x6 x7) w
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5, v6, v7] = some (w, k) → (RepList 239 RepLocal) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepMEff x3 v3 → RepTy x4 v4 → RepTypeDecl x5 v5 → (RepList 290 RepVariantTy) x6 v6 → RepTy x7 v7 →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5, v6, v7] = some (w, k) ∧ 0 = k ∧ (RepOption 288 RepMatchStmt) (Lanius.Mini.matchStmtHead x0 x1 x2 x3 x4 x5 x6 x7) w
 
 abbrev BStmt_match_stmt_enum (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : List Lanius.Mini.Local} {x2 : Lanius.Mini.CTree} {x3 : Lanius.Mini.MEff} {x4 : Lanius.Mini.Ty} {x5 : Lanius.Mini.TypeDecl} {x6 : Option (List (List Lanius.Mini.Ty))} {v0 v1 v2 v3 v4 v5 v6 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5, v6] = some (w, k) → RepFrontEnv x0 v0 → (RepList 239 RepLocal) x1 v1 → RepCTree x2 v2 → RepMEff x3 v3 → RepTy x4 v4 → RepTypeDecl x5 v5 → (RepOption 244 (RepList 245 (RepList 143 RepTy))) x6 v6 →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5, v6] = some (w, k) ∧ Cost_match_stmt_enum n x0 x1 x2 x3 x4 x5 x6 = k ∧ (RepOption 287 RepMatchStmt) (Lanius.Mini.matchStmtEnum x0 x1 x2 x3 x4 x5 x6) w
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5, v6] = some (w, k) ∧ Cost_match_stmt_enum n x0 x1 x2 x3 x4 x5 x6 = k ∧ (RepOption 288 RepMatchStmt) (Lanius.Mini.matchStmtEnum x0 x1 x2 x3 x4 x5 x6) w
 
 abbrev BStmt_match_stmt_on (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.CTree} {x4 : Option Lanius.Mini.MEff} {v0 v1 v2 v3 v4 w : Value} {k b : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 239 RepLocal) x2 v2 → RepCTree x3 v3 → (RepOption 258 RepMEff) x4 v4 → k < b → Pre_match_stmt_on n x0 x1 x2 x3 x4 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_match_stmt_on n x0 x1 x2 x3 x4 = k ∧ (RepOption 287 RepMatchStmt) (Lanius.Mini.matchStmtOn x0 x1 x2 x3 x4) w
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 239 RepLocal) x2 v2 → RepCTree x3 v3 → (RepOption 259 RepMEff) x4 v4 → k < b → Pre_match_stmt_on n x0 x1 x2 x3 x4 b →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4] = some (w, k) ∧ Cost_match_stmt_on n x0 x1 x2 x3 x4 = k ∧ (RepOption 288 RepMatchStmt) (Lanius.Mini.matchStmtOn x0 x1 x2 x3 x4) w
 
 abbrev BStmt_match_stmt_parts (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value} {k b : Nat},
     qcall spW prims uc n ix [v0, v1, v2, v3] = some (w, k) → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 239 RepLocal) x2 v2 → RepCTree x3 v3 → k < b → Pre_match_stmt_parts n x0 x1 x2 x3 b →
-    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_match_stmt_parts n x0 x1 x2 x3 = k ∧ (RepOption 287 RepMatchStmt) (Lanius.Mini.matchStmtParts x0 x1 x2 x3) w
+    qcall sp prims uc n ix [v0, v1, v2, v3] = some (w, k) ∧ Cost_match_stmt_parts n x0 x1 x2 x3 = k ∧ (RepOption 288 RepMatchStmt) (Lanius.Mini.matchStmtParts x0 x1 x2 x3) w
 
 abbrev BStmt_stmt_arms (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.MatchStmt} {x3 : Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value} {k b : Nat},
@@ -95,8 +95,8 @@ abbrev BStmt_stmt_arms (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
 
 abbrev BStmt_match_stmt_value (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.MatchStmt} {x1 : Option Lanius.Mini.MStmt} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepMatchStmt x0 v0 → (RepOption 253 RepMStmt) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_match_stmt_value n x0 x1 = k ∧ (RepOption 253 RepMStmt) (Lanius.Mini.matchStmtValue x0 x1) w
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepMatchStmt x0 v0 → (RepOption 254 RepMStmt) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_match_stmt_value n x0 x1 = k ∧ (RepOption 254 RepMStmt) (Lanius.Mini.matchStmtValue x0 x1) w
 
 abbrev BStmt_arm_binding (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.TypeDecl} {x4 : Lanius.Mini.VariantTy} {x5 : Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 w : Value} {k : Nat},
@@ -106,12 +106,12 @@ abbrev BStmt_arm_binding (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
 abbrev BStmt_arm_binder (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.MatchStmt} {x1 : Nat} {x2 : List Nat} {x3 : List Lanius.Mini.Ty} {x4 : Lanius.Mini.MStmt} {x5 : Lanius.Mini.MStmt} {v0 v1 v2 v3 v4 v5 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) → RepMatchStmt x0 v0 → RepNat x1 v1 → (RepList 25 RepNat) x2 v2 → (RepList 143 RepTy) x3 v3 → RepMStmt x4 v4 → RepMStmt x5 v5 →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) ∧ Cost_arm_binder n x0 x1 x2 x3 x4 x5 = k ∧ (RepOption 253 RepMStmt) (Lanius.Mini.armBinder x0 x1 x2 x3 x4 x5) w
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) ∧ Cost_arm_binder n x0 x1 x2 x3 x4 x5 = k ∧ (RepOption 254 RepMStmt) (Lanius.Mini.armBinder x0 x1 x2 x3 x4 x5) w
 
 abbrev BStmt_arm_stmt (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.MatchStmt} {x1 : Nat} {x2 : Lanius.Mini.Bound} {x3 : Lanius.Mini.VariantTy} {x4 : Option Lanius.Mini.MStmt} {x5 : Option Lanius.Mini.MStmt} {v0 v1 v2 v3 v4 v5 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) → RepMatchStmt x0 v0 → RepNat x1 v1 → RepBound x2 v2 → RepVariantTy x3 v3 → (RepOption 253 RepMStmt) x4 v4 → (RepOption 253 RepMStmt) x5 v5 →
-    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) ∧ Cost_arm_stmt n x0 x1 x2 x3 x4 x5 = k ∧ (RepOption 253 RepMStmt) (Lanius.Mini.armStmt x0 x1 x2 x3 x4 x5) w
+    qcall spW prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) → RepMatchStmt x0 v0 → RepNat x1 v1 → RepBound x2 v2 → RepVariantTy x3 v3 → (RepOption 254 RepMStmt) x4 v4 → (RepOption 254 RepMStmt) x5 v5 →
+    qcall sp prims uc n ix [v0, v1, v2, v3, v4, v5] = some (w, k) ∧ Cost_arm_stmt n x0 x1 x2 x3 x4 x5 = k ∧ (RepOption 254 RepMStmt) (Lanius.Mini.armStmt x0 x1 x2 x3 x4 x5) w
 
 abbrev BStmt_bound_scope (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Bound} {v0 w : Value} {k : Nat},

@@ -11,6 +11,7 @@ public import Lanius.Mini.Compiler.P.elementAddress
 public import Lanius.Mini.Compiler.P.elementBase
 public import Lanius.Mini.Compiler.P.enumVariants
 public import Lanius.Mini.Compiler.P.evalSame
+public import Lanius.Mini.Compiler.P.evalSlotLimit
 public import Lanius.Mini.Compiler.P.funcNeeds
 public import Lanius.Mini.Compiler.P.loadAtBytes
 public import Lanius.Mini.Compiler.P.lowerSetValues
@@ -34,9 +35,12 @@ namespace Lanius.Mini
 
 /-- The body of a let in an expression, under its binding. -/
 @[expose] def Inline.evalLetBody (sigs : List Sig) (decls : SrcDecls) (bound : Option (List Binding)) (dst : Nat) (body : SrcEff) : Option Evaluated :=
-  match bound with
-  | none => none
-  | some s => SrcEff.eval body sigs decls s dst
+  if evalSlotLimit ≤ dst then
+    none
+  else
+    match bound with
+    | none => none
+    | some s => SrcEff.eval body sigs decls s dst
 
 @[expose] def Inline.structFieldsAt (decl : SrcStructDecl) (rest : List SrcStructDecl) (id : Nat) : Option (List SrcType) :=
   if decl.id = id then

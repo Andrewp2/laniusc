@@ -8,12 +8,8 @@ import Lanius.Mini.Frontend.P.distinct
 import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.floatTyped
 import Lanius.Mini.Frontend.P.hasKids
-import Lanius.Mini.Frontend.P.isEmptyUsize
-import Lanius.Mini.Frontend.P.itemOf
-import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.pickTy
 import Lanius.Mini.Frontend.P.projectionRet
-import Lanius.Mini.Frontend.P.rootInsts
 import Lanius.Mini.Frontend.P.textSelf
 import Lanius.Mini.Frontend.P.typeDeclAt
 import Lanius.Mini.Frontend.P.variantIn
@@ -65,6 +61,27 @@ def bareEff (x : MEff) : Bool :=
   | .xLet id t v rt b => false
   | .xLen sl => false
   | .xStr cs => false
+  | .xDeref dty a => false
+  | .xPlaceField b j => false
+  | .xPlaceAt b i => false
+
+/-- Field j's type in a struct type. -/
+def fieldTyAt (fuel : Nat) (decls : Decls) (t : Ty) (j : Nat) : Option Ty :=
+  match structFieldTys fuel decls t with
+  | none => none
+  | some ts => ts[j]?
+
+/-- Field j's type in a struct type, when the type is known. -/
+def fieldTyOf (fuel : Nat) (decls : Decls) (t : Option Ty) (j : Nat) : Option Ty :=
+  match t with
+  | none => none
+  | some x => fieldTyAt fuel decls x j
+
+/-- The element type of an array or slice type, when the type is known. -/
+def elemTyOf (t : Option Ty) : Option Ty :=
+  match t with
+  | none => none
+  | some x => indexElem x
 
 def effTy (fuel : Nat) (env : FrontEnv) (scope : List Local) (x : MEff) : Option Ty :=
   if fuel = 0 then
@@ -89,6 +106,9 @@ def effTy (fuel : Nat) (env : FrontEnv) (scope : List Local) (x : MEff) : Option
     | .xLet id t v rt b => some rt
     | .xLen sl => some (Ty.tyUint UintTy.usize)
     | .xStr cs => some Ty.tyStr
+    | .xDeref dty a => some dty
+    | .xPlaceField b j => fieldTyOf fuel env.decls (effTy (fuel - 1) env scope b) j
+    | .xPlaceAt b i => elemTyOf (effTy (fuel - 1) env scope b)
 
 def effsTys (fuel : Nat) (env : FrontEnv) (scope : List Local) (xs : List MEff) : Option (List Ty) :=
   match xs with
@@ -190,20 +210,5 @@ def isScalarOwner (env : FrontEnv) (owner : Option (List Nat)) : Bool :=
 /-- A path's prefix that names a type, for the function spelled name: a type parameter or a primitive type (one segment), or a struct or an enum the prefix names as a type path, resolved like any other (`T::m`, `i32::hash`, `Date::lt`, `Color::next`, `p::Date::lt`). -/
 def isTypeOwner (env : FrontEnv) (front : List (List Nat)) (name : List Nat) : Bool :=
   isScalarOwner env (singleName front) || isOwnerAt env (typeDeclAt env front) name
-
-/-- A path naming a function: `T::m` for a type T, or a free function of the path's module. -/
-def isFnPath (env : FrontEnv) (s : Split) : Bool :=
-  isTypeOwner env s.home s.name || isSomeIndex (findFn env.decls.fns (pathModule env s.home s.name) s.name 0)
-
-/-- A method's type arguments, written (`.m<T>`) or not. -/
-def memberArgs (p : Nat) : Bool :=
-  decide (p = (297)) || decide (p = (298))
-
-/-- A postfix `recv.m(args)` or `recv.m<T, ..>(args)` (recv a local, no further postfix). -/
-def isMethodForm (pf : CTree) : Bool :=
-  let primary : CTree := kid pf 0
-  let tail : CTree := kid pf 1
-  let call : CTree := kid tail 3
-  (decide (nodeProd primary = (174)) || decide (nodeProd primary = (173)) && decide (nodeProd (kid primary 1) = (274))) && decide (nodeProd tail = (163)) && memberArgs (nodeProd (kid tail 2)) && decide (nodeProd call = (161)) && decide (nodeProd (kid call 3) = (164))
 
 end Lanius.Mini

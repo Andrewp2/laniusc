@@ -72,6 +72,7 @@ def scalarSrc (t : Ty) : Option SrcType :=
   | .tyIsize => some SrcType.isize
   | .tyChar => some SrcType.char
   | .tyStr => none
+  | .tyRef refd => none
   | .tyFloat ft => some (SrcType.float ft)
   | .tySlice e => none
   | .tyArray e n => none

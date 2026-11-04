@@ -110,6 +110,22 @@ theorem bproof_weight_add_to {spW sp : SrcProgram} {prims : Prims} {ix_weight_ad
     budget
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
 
+theorem bproof_ref_type {spW sp : SrcProgram} {prims : Prims} {ix_ref_type ix_boxed_of_mini_selfhost_SrcType : Nat}
+    (fnW : spW.funcs[ix_ref_type]? = some (src_ref_type ix_boxed_of_mini_selfhost_SrcType)) (fn : sp.funcs[ix_ref_type]? = some (src_ref_type ix_boxed_of_mini_selfhost_SrcType))
+    (np : prims.isPrim ix_ref_type = false)
+    (back : Certified (∀ {n : Nat}, Stmt_ref_type sp prims ix_ref_type n))
+    (pp_boxed_of_mini_selfhost_SrcType : prims.isPrim ix_boxed_of_mini_selfhost_SrcType = true) (bx_boxed_of_mini_selfhost_SrcType : prims.boxed.contains ix_boxed_of_mini_selfhost_SrcType = true) {n : Nat} :
+    BStmt_ref_type spW sp prims ix_ref_type n := by
+  intro x0 v0 w k h r0
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_ref_type [v0] = some (w, k) ∧ Cost_ref_type (n + 1) x0 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_ref_type, List.length_cons, List.length_nil, if_true] at h ⊢
+    budget Cost_ref_type
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0⟩
+
 theorem bproof_cons_types_tail {spW sp : SrcProgram} {prims : Prims} {ix_cons_types_tail ix_cons_of_mini_selfhost_List_mini_selfhost_SrcType : Nat}
     (fnW : spW.funcs[ix_cons_types_tail]? = some (src_cons_types_tail ix_cons_of_mini_selfhost_List_mini_selfhost_SrcType)) (fn : sp.funcs[ix_cons_types_tail]? = some (src_cons_types_tail ix_cons_of_mini_selfhost_List_mini_selfhost_SrcType))
     (np : prims.isPrim ix_cons_types_tail = false)

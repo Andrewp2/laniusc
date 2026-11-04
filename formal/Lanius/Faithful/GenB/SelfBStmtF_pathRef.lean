@@ -21,6 +21,6 @@ open Lanius.Faithful.Budget
 abbrev BStmt_path_ref (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.CTree} {x2 : Lanius.Mini.CTree} {v0 v1 v2 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0, v1, v2] = some (w, k) → RepNat x0 v0 → RepCTree x1 v1 → RepCTree x2 v2 →
-    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_path_ref n x0 x1 x2 = k ∧ (RepOption 282 RepPathRef) (Lanius.Mini.pathRef x0 x1 x2) w
+    qcall sp prims uc n ix [v0, v1, v2] = some (w, k) ∧ Cost_path_ref n x0 x1 x2 = k ∧ (RepOption 283 RepPathRef) (Lanius.Mini.pathRef x0 x1 x2) w
 
 end Lanius.Faithful.SelfBudget
