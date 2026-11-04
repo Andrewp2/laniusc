@@ -7,3 +7,6 @@
   (`COMPILE_OVERRIDES`), with `slotTop` facts for the `match`es on an instruction. Unchecked parts of the
   "why": `sys` uses slots `slot .. slot + 2`, and a call's results go to `target .. target + count - 1`;
   whether `Stmt.within` bounds both is to be read off `within`.
+- 11-03 (leafB): superseded by CompileFuncSlotsV2 (its NOTES): the unchecked claims hold, but `slotTop`
+  does not count what a call or a return copies, and the encoders also need the code's size and the
+  instructions' numbers. Nothing uses this statement.
