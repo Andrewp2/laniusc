@@ -3,7 +3,7 @@ module
 public import Lanius.Mini.FrameCorr
 public import Lanius.Mini.Compiler.P.widthOf
 public import Lanius.Mini.Compiler.P.UintTy_half
-import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.SrcType_uintKind
 
 @[expose] public section
 

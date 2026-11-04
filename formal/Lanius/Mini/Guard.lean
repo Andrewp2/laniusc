@@ -17,6 +17,7 @@ import all Lanius.Mini.Compiler.P.assignFrom
 import all Lanius.Mini.Compiler.P.compileModules
 import all Lanius.Mini.Compiler.P.conjunction
 import all Lanius.Mini.Compiler.P.exprRoots
+import all Lanius.Mini.Compiler.P.fitsThen
 import all Lanius.Mini.Compiler.P.floatApply
 import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.guardAnd
@@ -352,6 +353,13 @@ theorem guarded_some {slot : Nat} {g : Expr} {s : Option Stmt} {out : Stmt}
     simp only [guarded, Option.some.injEq] at h
     exact ⟨b, rfl, h.symm⟩
 
+/-- A declaration that may not have a home, lowered: it has none. -/
+theorem unhomedThen_some {home : Option Nat} {s : Option Stmt} {out : Stmt}
+    (h : unhomedThen home s = some out) : home = none ∧ s = some out := by
+  cases home with
+  | none => exact ⟨rfl, h⟩
+  | some _ => simp [unhomedThen] at h
+
 theorem Exec.checkThen {prog : Program} {d : Nat} {env : Env} {hp : Heap} {s : Stmt} {out : Outcome}
     {slot : Nat} {g : Expr} (one : g.eval env = 1) (exec : Exec prog d env hp s out) :
     Exec prog d env hp (Lanius.Mini.checkThen slot g s) out := by
@@ -485,7 +493,7 @@ theorem letView_lower_inv {sigs : List Sig} {decls : SrcDecls} {ret : SrcType} {
         (.seq (.alloc (next + length) 2 (.lit (BitVec.ofNat 64 (4 * length))))
           (viewStores (next + length) next 0 length (.seq (.assign next (.var (next + length))) bstmt)))) := by
   simp only [SrcStmt.lower] at ok
-  obtain ⟨inner, h, rfl⟩ := guarded_some ok
+  obtain ⟨inner, h, rfl⟩ := guarded_some (unhomedThen_some ok).2
   simp only [lowerView] at h
   split at h
   · simp at h
@@ -511,6 +519,7 @@ theorem letStr_lower_inv {sigs : List Sig} {decls : SrcDecls} {ret : SrcType} {s
       out = .seq (.alloc next 2 (.lit (BitVec.ofNat 64 (4 * (strWords chars).length))))
         (strStores next 0 (strWords chars) bstmt) := by
   simp only [SrcStmt.lower] at ok
+  have ok := (unhomedThen_some ok).2
   simp only [lowerStr] at ok
   split at ok
   · simp at ok
@@ -577,7 +586,7 @@ theorem matchArm_lower_inv {sigs : List Sig} {decls : SrcDecls} {ret : SrcType} 
   simp only [Option.some.injEq] at ok
   have cond' : eid = enumId ∧ variants.length < 4294967296 := by simpa using cond
   obtain ⟨rfl, few⟩ := cond'
-  exact ⟨b, variants, fields, vs, bstmt, rstmt, found, hty, fieldsFound, few, payloadOk, bodyOk, restOk, ok.symm⟩
+  exact ⟨b, variants, fields, vs, bstmt, rstmt, (lookupSlot_some found).1, hty, fieldsFound, few, payloadOk, bodyOk, restOk, ok.symm⟩
 
 /-- What lowering `Unreachable` checks, and what it emits. -/
 theorem unreachable_lower_inv {sigs : List Sig} {decls : SrcDecls} {ret : SrcType} {scope : List Binding}

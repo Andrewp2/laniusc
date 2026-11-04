@@ -2,7 +2,7 @@ module
 
 public import Lanius.Mini.Refs.Model
 public import Lanius.Mini.Borrowed
-import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.SrcType_uintKind
 import all Lanius.Mini.Compiler.P.widthOf
 import all Lanius.Mini.Compiler.P.wordWidth
 import all Lanius.Mini.Compiler.P.usizeWidth

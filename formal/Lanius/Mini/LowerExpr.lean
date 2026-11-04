@@ -78,6 +78,17 @@ theorem lookup_mem {scope : List Binding} {id : Nat} {b : Binding}
     · cases found; exact ⟨List.mem_cons_self .., by assumption⟩
     · exact ⟨List.mem_cons_of_mem _ (ih found).1, (ih found).2⟩
 
+/-- A slot read's binding (`lookupSlot`) is the innermost binding, and it has no home. -/
+theorem lookupSlot_some {scope : List Binding} {id : Nat} {b : Binding}
+    (found : lookupSlot scope id = some b) : lookup scope id = some b ∧ b.home = none := by
+  simp only [lookupSlot, unhomed] at found
+  split at found
+  · cases found
+  · rename_i b' hb
+    split at found
+    · rename_i hh; cases found; exact ⟨hb, hh⟩
+    · cases found
+
 theorem find_locals (scope : List Binding) (frame : Nat → Nat) (id : Nat) :
     (scope.map fun b => (b.id, frame b.slot)).find? (fun binding => binding.1 == id) =
       (lookup scope id).map fun b => (b.id, frame b.slot) := by
@@ -957,7 +968,7 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
         · rename_i scalar
           simp only [Option.some.injEq] at lowered
           subst lowered
-          obtain ⟨w, eval, holds⟩ := corr.local found fuel prog
+          obtain ⟨w, eval, holds⟩ := corr.local (lookupSlot_some found).1 fuel prog
           simp only [SrcExpr.toCore, eval, Semantics.Outcome.done.injEq] at run
           obtain ⟨rfl, rfl⟩ := run
           exact ⟨rfl, (SrcType.holdsAt_scalar scalar).mp holds⟩
@@ -988,7 +999,7 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
         · rename_i scalar
           simp only [Option.some.injEq] at lowered
           subst lowered
-          obtain ⟨w, eval, holds⟩ := corr.local found fuel prog
+          obtain ⟨w, eval, holds⟩ := corr.local (lookupSlot_some found).1 fuel prog
           rw [hty] at holds
           cases holds with
           | struct fieldsHold =>

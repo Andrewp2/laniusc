@@ -1,7 +1,7 @@
 module
 
 public import Lanius.Mini.Frontend.Types
-import Lanius.Mini.Compiler.P.SrcType_same
+import Lanius.Mini.Compiler.P.SrcType_uintKind
 import Lanius.Mini.Frontend.P.flattenTys
 import Lanius.Mini.Frontend.P.funcsOnto
 import Lanius.Mini.Frontend.P.repeatEff

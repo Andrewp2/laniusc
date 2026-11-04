@@ -4,7 +4,7 @@ public import Lanius.Mini.LowerExpr
 public import Lanius.Mini.HeapCorr
 public import Lanius.Mini.Views
 public import Lanius.Mini.Homes
-import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.SrcType_uintKind
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.Lists_empty
 

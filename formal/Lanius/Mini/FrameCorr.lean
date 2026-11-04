@@ -2,7 +2,7 @@ module
 
 public import Lanius.Mini.Source
 import all Lanius.Mini.Compiler.P.Lists_empty
-import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.SrcType_uintKind
 
 @[expose] public section
 

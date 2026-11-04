@@ -2,7 +2,7 @@ module
 
 public import Lanius.Mini.Reading.Det.Lower
 import all Lanius.Mini.Compiler.P.Lists_empty
-import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.SrcType_uintKind
 import all Lanius.Mini.Compiler.Types
 import all Lanius.Mini.Frontend.P.collect
 import all Lanius.Mini.Frontend.P.distinct

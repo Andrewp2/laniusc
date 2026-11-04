@@ -1,7 +1,7 @@
 module
 
 public import Lanius.Mini.Reading.LetHeads
-import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.SrcType_uintKind
 import all Lanius.Mini.Compiler.P.arithShiftRight
 import all Lanius.Mini.Frontend.P.anyNested
 import all Lanius.Mini.Frontend.P.armsOf

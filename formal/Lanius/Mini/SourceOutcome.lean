@@ -6,7 +6,7 @@ import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.FArith_opcode
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.SrcType_uintKind
 import all Lanius.Mini.Compiler.P.arities
 import all Lanius.Mini.Compiler.P.compileModules
 import all Lanius.Mini.Compiler.P.compileSource
