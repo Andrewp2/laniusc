@@ -1190,4 +1190,27 @@ theorem SlotsIn.ref {ty t : SrcType} {j off : Nat} (h : SlotsIn ty j off t) (s :
       simp [eq, Access.bytes, MemWidth.bytes_m32]
     · simp [eq]
 
+/-! ## A home's first store -/
+
+/-- The type a new home's first store writes (`homeInit` in lowering-spec
+S6b): a `u8` as a `u32`, so its 4-byte native word (`slotAt`) gets zero
+upper bytes; every other type as itself, whose `refSlotAt` is already
+`slotAt`. -/
+def SrcType.homeInit (ty : SrcType) : SrcType := if ty.isUint .uint8 then .uint .uint32 else ty
+
+theorem SrcType.homeInit_size (ty : SrcType) : ty.homeInit.size = ty.size := by
+  unfold SrcType.homeInit
+  cases hu : ty.isUint .uint8 with
+  | false => rfl
+  | true => obtain rfl := SrcType.isUint_u8 hu; rfl
+
+/-- The first store writes each slot at its native place and width. -/
+theorem SrcType.homeInit_refSlotAt (ty : SrcType) (s : Nat) : ty.homeInit.refSlotAt s = ty.slotAt s := by
+  unfold SrcType.homeInit
+  cases hu : ty.isUint .uint8 with
+  | false => simp only [Bool.false_eq_true, if_false]; exact SrcType.refSlotAt_other hu s
+  | true =>
+    obtain rfl := SrcType.isUint_u8 hu
+    simp [SrcType.refSlotAt, SrcType.isUint, UintTy.code, SrcType.slotAt, widthOf, wordWidth, usizeWidth]
+
 end Lanius.Mini

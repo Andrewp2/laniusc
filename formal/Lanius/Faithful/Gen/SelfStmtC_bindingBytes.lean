@@ -28,6 +28,10 @@ abbrev Stmt_array_arg (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Binding} {x1 : Lanius.Mini.SrcEff} {x2 : Lanius.Mini.SrcType} {x3 : Nat} {x4 : Nat} {x5 : Option Lanius.Mini.ArrayArgs} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → (RepList 137 RepBinding) x0 v0 → RepSrcEff x1 v1 → RepSrcType x2 v2 → RepNat x3 v3 → RepNat x4 v4 → (RepOption 215 RepArrayArgs) x5 v5 →
     (RepOption 215 RepArrayArgs) (Lanius.Mini.arrayArg x0 x1 x2 x3 x4 x5) w
 
+abbrev Stmt_array_arg_before (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.Binding} {x1 : Lanius.Mini.SrcType} {x2 : Lanius.Mini.SrcType} {x3 : Nat} {x4 : Nat} {x5 : Nat} {x6 : Nat} {x7 : Nat} {x8 : Lanius.Mini.ArrayArgs} {v0 v1 v2 v3 v4 v5 v6 v7 v8 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6, v7, v8] = some w → RepBinding x0 v0 → RepSrcType x1 v1 → RepSrcType x2 v2 → RepNat x3 v3 → RepNat x4 v4 → RepNat x5 v5 → RepNat x6 v6 → RepNat x7 v7 → RepArrayArgs x8 v8 →
+    (RepOption 215 RepArrayArgs) (Lanius.Mini.arrayArgBefore x0 x1 x2 x3 x4 x5 x6 x7 x8) w
+
 abbrev Stmt_array_arg_checked (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : Lanius.Mini.ArrayArgs} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → RepArrayArgs x1 v1 →
     (RepOption 215 RepArrayArgs) (Lanius.Mini.arrayArgChecked x0 x1) w
@@ -55,5 +59,9 @@ abbrev Stmt_array_call_code (prog : SrcProgram) (prims : Prims) (ix n : Nat) : P
 abbrev Stmt_binding_bytes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.Binding} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 154 RepBinding) x0 v0 →
     RepNat (Lanius.Mini.bindingBytes x0) w
+
+abbrev Stmt_block_limit (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    RepNat (Lanius.Mini.blockLimit) w
 
 end Lanius.Faithful.SelfCert

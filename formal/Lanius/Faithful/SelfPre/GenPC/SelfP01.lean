@@ -3269,6 +3269,14 @@ theorem post_group_element_loads : ∀ n : Nat,
 theorem post_element_loads : ∀ (n : Nat) (x0 : Nat) (x1 : Nat) (x2 : Nat) (x3 : Nat) (x4 : Nat), ∀ M : Nat, Cost_element_loads n x0 x1 x2 x3 x4 < 18446744073709551616 → hb (Lanius.Mini.elementLoads x0 x1 x2 x3 x4) ≤ M + Cost_element_loads n x0 x1 x2 x3 x4 :=
   fun n => (post_group_element_loads n)
 
+theorem post_array_arg_before : ∀ (n : Nat) (x0 : Lanius.Mini.Binding) (x1 : Lanius.Mini.SrcType) (x2 : Lanius.Mini.SrcType) (x3 : Nat) (x4 : Nat) (x5 : Nat) (x6 : Nat) (x7 : Nat) (x8 : Lanius.Mini.ArrayArgs), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x8 ≤ M → Cost_array_arg_before n x0 x1 x2 x3 x4 x5 x6 x7 x8 < 18446744073709551616 → hb (Lanius.Mini.arrayArgBefore x0 x1 x2 x3 x4 x5 x6 x7 x8) ≤ M + Cost_array_arg_before n x0 x1 x2 x3 x4 x5 x6 x7 x8 := by
+  intro n x0 x1 x2 x3 x4 x5 x6 x7 x8 M hM0 hM1 hM2 hM3
+  rcases n with _ | n
+  · intro h; exact absurd h (Nat.lt_irrefl _)
+  rw [Cost_array_arg_before.eq_def]; dsimp only
+  rw [Lanius.Mini.arrayArgBefore.eq_def x0 x1 x2 x3 x4 x5 x6 x7 x8]
+  post_auto n, M
+
 theorem post_array_arg_local : ∀ (n : Nat) (x0 : Lanius.Mini.Binding) (x1 : Lanius.Mini.SrcType) (x2 : Lanius.Mini.SrcType) (x3 : Nat) (x4 : Nat) (x5 : Nat) (x6 : Option Lanius.Mini.ArrayArgs), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb x2 ≤ M → hb x6 ≤ M → Cost_array_arg_local n x0 x1 x2 x3 x4 x5 x6 < 18446744073709551616 → hb (Lanius.Mini.arrayArgLocal x0 x1 x2 x3 x4 x5 x6) ≤ M + Cost_array_arg_local n x0 x1 x2 x3 x4 x5 x6 := by
   intro n x0 x1 x2 x3 x4 x5 x6 M hM0 hM1 hM2 hM3
   rcases n with _ | n

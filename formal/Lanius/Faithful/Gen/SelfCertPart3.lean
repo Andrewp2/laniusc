@@ -828,4 +828,8 @@ theorem cert_eval_len_of {n : Nat} :
     Stmt_eval_len_of prog prims 565 n :=
   @proof_eval_len_of prog prims 565 75 380 fn_eval_len_of np_eval_len_of ⟨@cert_plus⟩ ⟨@cert_element_of⟩ n
 
+theorem cert_eval_len {n : Nat} :
+    Stmt_eval_len prog prims 378 n :=
+  @proof_eval_len prog prims 378 202 565 fn_eval_len np_eval_len ⟨@cert_lookup⟩ ⟨@cert_eval_len_of⟩ n
+
 end Lanius.Faithful.SelfCert

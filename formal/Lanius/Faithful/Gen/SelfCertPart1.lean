@@ -18,6 +18,7 @@ public import Lanius.Faithful.Gen.SelfStmtC_Lists_empty
 public import Lanius.Faithful.Gen.SelfStmtC_SrcType_same
 public import Lanius.Faithful.Gen.SelfStmtC_arities
 public import Lanius.Faithful.Gen.SelfStmtC_arrayCallSig
+public import Lanius.Faithful.Gen.SelfStmtC_bindingBytes
 public import Lanius.Faithful.Gen.SelfStmtC_codeSize
 public import Lanius.Faithful.Gen.SelfStmtC_compileArgs
 public import Lanius.Faithful.Gen.SelfStmtC_compileOr
@@ -48,6 +49,7 @@ import Lanius.Faithful.Gen.SelfProofC_Lists_empty
 import Lanius.Faithful.Gen.SelfProofC_SrcType_same
 import Lanius.Faithful.Gen.SelfProofC_arities
 import Lanius.Faithful.Gen.SelfProofC_arrayCallSig
+import Lanius.Faithful.Gen.SelfProofC_bindingBytes
 import Lanius.Faithful.Gen.SelfProofC_codeSize
 import Lanius.Faithful.Gen.SelfProofC_compileArgs
 import Lanius.Faithful.Gen.SelfProofC_compileOr

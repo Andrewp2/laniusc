@@ -11,6 +11,7 @@ import all Lanius.Faithful.Gen.SelfSrcC_SrcExpr_guard
 import all Lanius.Faithful.Gen.SelfSrcC_SrcType_same
 import all Lanius.Faithful.Gen.SelfSrcC_Stmt_kills
 import all Lanius.Faithful.Gen.SelfSrcC_arities
+import all Lanius.Faithful.Gen.SelfSrcC_bindingBytes
 import all Lanius.Faithful.Gen.SelfSrcC_funcNeeds
 import all Lanius.Faithful.Gen.SelfSrcC_larger
 import all Lanius.Faithful.Gen.SelfSrcC_lowerCallSig

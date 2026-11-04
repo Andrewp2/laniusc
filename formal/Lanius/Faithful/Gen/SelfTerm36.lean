@@ -19,6 +19,9 @@ import all Lanius.Faithful.Gen.SelfSrcF_armsOf
 import all Lanius.Faithful.Gen.SelfSrcF_consTreeTail
 import all Lanius.Faithful.Gen.SelfSrcF_litIf
 import all Lanius.Faithful.Gen.SelfSrcF_lxBlockEnd
+import all Lanius.Faithful.Gen.SelfSrcF_lxExponent
+import all Lanius.Faithful.Gen.SelfSrcF_lxLeadingDot
+import all Lanius.Faithful.Gen.SelfSrcF_lxSpaceEnd
 import all Lanius.Faithful.Gen.SelfSrcF_namesFieldBase
 import all Lanius.Faithful.Gen.SelfSrcF_noBlock
 import all Lanius.Faithful.Gen.SelfSrcF_paramGoals
@@ -139,28 +142,28 @@ theorem ok_FloatTy_rex : FnOk prog prims info (1693, ⟨1, [], 0⟩) :=
 theorem ok_packed_width : FnOk prog prims info (1694, ⟨3, [], 0⟩) :=
   fnOk_of fn_packed_width (by decide +kernel)
 
-theorem ok_array_arg_checked : FnOk prog prims info (1695, ⟨0, [], 0⟩) :=
-  fnOk_of fn_array_arg_checked (by decide +kernel)
+theorem ok_array_arg_before : FnOk prog prims info (1695, ⟨3, [], 0⟩) :=
+  fnOk_of fn_array_arg_before (by decide +kernel)
 
-theorem ok_element_stores : FnOk prog prims info (1696, ⟨2, [4], 0⟩) :=
-  fnOk_of fn_element_stores (by decide +kernel)
-
-theorem ok_block_at : FnOk prog prims info (1697, ⟨0, [], 0⟩) :=
-  fnOk_of fn_block_at (by decide +kernel)
-
-theorem ok_element_loads : FnOk prog prims info (1698, ⟨2, [4], 0⟩) :=
-  fnOk_of fn_element_loads (by decide +kernel)
-
-theorem ok_lx_digit_tail_at : FnOk prog prims info (1699, ⟨3, [2], 1⟩) :=
+theorem ok_lx_digit_tail_at : FnOk prog prims info (1696, ⟨3, [2], 1⟩) :=
   fnOk_of fn_lx_digit_tail_at (by decide +kernel)
 
-theorem ok_lx_exponent_digits : FnOk prog prims info (1700, ⟨3, [], 0⟩) :=
+theorem ok_lx_exponent_digits : FnOk prog prims info (1697, ⟨3, [], 0⟩) :=
   fnOk_of fn_lx_exponent_digits (by decide +kernel)
 
-theorem ok_lx_fraction_at : FnOk prog prims info (1701, ⟨10, [], 0⟩) :=
+theorem ok_lx_fraction_at : FnOk prog prims info (1698, ⟨10, [], 0⟩) :=
   fnOk_of fn_lx_fraction_at (by decide +kernel)
 
+theorem ok_lx_fraction_digits : FnOk prog prims info (1699, ⟨9, [], 0⟩) :=
+  fnOk_of fn_lx_fraction_digits (by decide +kernel)
+
+theorem ok_lx_best_at : FnOk prog prims info (1700, ⟨4, [], 0⟩) :=
+  fnOk_of fn_lx_best_at (by decide +kernel)
+
+theorem ok_lx_line_end : FnOk prog prims info (1701, ⟨3, [], 0⟩) :=
+  fnOk_of fn_lx_line_end (by decide +kernel)
+
 theorem chunk36 : AllFns prog prims info part36 :=
-  ⟨ok_p_type_ref_mut, ok_cons_of_mini_selfhost_MParam, ok_p_type_array_len_constant, ok_p_generic_argument_integer, ok_decimal, ok_bare_ty, ok_alias_ty, ok_p_type_path_ident, ok_p_type_path_end, ok_p_type_path_more, ok_type_decl_at, ok_named_args, ok_args_tys, ok_trait_holds, ok_join_goals_tail, ok_empty_of_mini_selfhost_BoundGoal, ok_param_goals, ok_p_where_some, ok_preds_goals, ok_has_ty, ok_referent, ok_and_known, ok_ref_kids, ok_p_contracts_none, ok_p_contracts_more, ok_p_requires, ok_contract_then, ok_eff_of, ok_stmts_of, ok_cons_ty_tail, ok_kept, ok_FloatTy_rex, ok_packed_width, ok_array_arg_checked, ok_element_stores, ok_block_at, ok_element_loads, ok_lx_digit_tail_at, ok_lx_exponent_digits, ok_lx_fraction_at, trivial⟩
+  ⟨ok_p_type_ref_mut, ok_cons_of_mini_selfhost_MParam, ok_p_type_array_len_constant, ok_p_generic_argument_integer, ok_decimal, ok_bare_ty, ok_alias_ty, ok_p_type_path_ident, ok_p_type_path_end, ok_p_type_path_more, ok_type_decl_at, ok_named_args, ok_args_tys, ok_trait_holds, ok_join_goals_tail, ok_empty_of_mini_selfhost_BoundGoal, ok_param_goals, ok_p_where_some, ok_preds_goals, ok_has_ty, ok_referent, ok_and_known, ok_ref_kids, ok_p_contracts_none, ok_p_contracts_more, ok_p_requires, ok_contract_then, ok_eff_of, ok_stmts_of, ok_cons_ty_tail, ok_kept, ok_FloatTy_rex, ok_packed_width, ok_array_arg_before, ok_lx_digit_tail_at, ok_lx_exponent_digits, ok_lx_fraction_at, ok_lx_fraction_digits, ok_lx_best_at, ok_lx_line_end, trivial⟩
 
 end Lanius.Faithful.SelfTerm
