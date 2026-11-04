@@ -26,6 +26,7 @@ def floatTyped (t : Ty) (s : SrcType) (x : SrcExpr) : Option SrcExpr :=
   | .tyIsize => none
   | .tyChar => none
   | .tyStr => none
+  | .tyRef refd => none
   | .tyFloat ft => floatPick ft s x
   | .tySlice y => none
   | .tyArray y n => none

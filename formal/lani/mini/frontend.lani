@@ -1157,6 +1157,9 @@ pub enum Ty {
     TyArray(Box<Ty>, usize),
     // str: a string's static address and byte count
     TyStr,
+    // F5 (S5): a reference to a referent of this type: only a parameter's
+    // type (`&T` or `&mut T`, param_ty_of)
+    TyRef(Box<Ty>),
 }
 
 // A declaration at type arguments: a type instance (the declaration is a
@@ -2052,6 +2055,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyIsize -> false,
             TyChar -> false,
             TyStr -> false,
+            TyRef(f) -> false,
             TyFloat(g) -> false,
             TySlice(f) -> false,
             TyArray(f, n) -> false,
@@ -2066,6 +2070,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyIsize -> false,
             TyChar -> false,
             TyStr -> false,
+            TyRef(f) -> false,
             TyFloat(g) -> false,
             TySlice(f) -> false,
             TyArray(f, n) -> false,
@@ -2080,6 +2085,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyIsize -> false,
             TyChar -> false,
             TyStr -> false,
+            TyRef(f) -> false,
             TyFloat(g) -> false,
             TySlice(f) -> false,
             TyArray(f, n) -> false,
@@ -2094,6 +2100,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyIsize -> false,
             TyChar -> false,
             TyStr -> false,
+            TyRef(f) -> false,
             TyFloat(g) -> false,
             TySlice(f) -> false,
             TyArray(f, n) -> false,
@@ -2108,6 +2115,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyIsize -> true,
             TyChar -> false,
             TyStr -> false,
+            TyRef(f) -> false,
             TyFloat(g) -> false,
             TySlice(f) -> false,
             TyArray(f, n) -> false,
@@ -2122,6 +2130,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyIsize -> false,
             TyChar -> true,
             TyStr -> false,
+            TyRef(f) -> false,
             TyFloat(g) -> false,
             TySlice(f) -> false,
             TyArray(f, n) -> false,
@@ -2136,6 +2145,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyIsize -> false,
             TyChar -> false,
             TyStr -> true,
+            TyRef(f) -> false,
             TyFloat(g) -> false,
             TySlice(f) -> false,
             TyArray(f, n) -> false,
@@ -2150,6 +2160,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyIsize -> false,
             TyChar -> false,
             TyStr -> false,
+            TyRef(f) -> false,
             TyFloat(g) -> same_float(f, g),
             TySlice(f) -> false,
             TyArray(f, n) -> false,
@@ -2164,6 +2175,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyIsize -> false,
             TyChar -> false,
             TyStr -> false,
+            TyRef(f) -> false,
             TyFloat(g) -> false,
             TySlice(f) -> same_ty(unbox(x), unbox(f)),
             TyArray(f, n) -> false,
@@ -2178,6 +2190,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyIsize -> false,
             TyChar -> false,
             TyStr -> false,
+            TyRef(f) -> false,
             TyFloat(g) -> false,
             TySlice(f) -> false,
             TyArray(f, n) -> false,
@@ -2192,6 +2205,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyIsize -> false,
             TyChar -> false,
             TyStr -> false,
+            TyRef(f) -> false,
             TyFloat(g) -> false,
             TySlice(f) -> false,
             TyArray(f, n) -> false,
@@ -2206,9 +2220,25 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyIsize -> false,
             TyChar -> false,
             TyStr -> false,
+            TyRef(f) -> false,
             TyFloat(g) -> false,
             TySlice(f) -> false,
             TyArray(f, m) -> (n == m) && same_ty(unbox(x), unbox(f)),
+            TyNamed(e, bs) -> false,
+            TySint(v) -> false,
+        },
+        TyRef(x) -> match (b) {
+            TyI32 -> false,
+            TyBool -> false,
+            TyUint(v) -> false,
+            TyPtr -> false,
+            TyIsize -> false,
+            TyChar -> false,
+            TyStr -> false,
+            TyRef(f) -> same_ty(unbox(x), unbox(f)),
+            TyFloat(g) -> false,
+            TySlice(f) -> false,
+            TyArray(f, n) -> false,
             TyNamed(e, bs) -> false,
             TySint(v) -> false,
         },
@@ -2474,6 +2504,7 @@ pub fn scalar_src(t: Ty) -> core::option::Option<SrcType> {
         TyIsize -> Some(Isize),
         TyChar -> Some(SrcType::Char),
         TyStr -> None,
+        TyRef(refd) -> None,
         TyFloat(ft) -> Some(SrcType::Float(ft)),
         TySlice(e) -> None,
         TyArray(e, n) -> None,
@@ -2821,6 +2852,13 @@ pub fn slice_type(element: core::option::Option<SrcType>) -> core::option::Optio
     };
 }
 
+pub fn ref_type(referent: core::option::Option<SrcType>) -> core::option::Option<SrcType> {
+    return match (referent) {
+        None -> None,
+        Some(e) -> Some(Ref(boxed(e))),
+    };
+}
+
 // ---------------------------------------------------------------- type weights
 
 // A type's weight is at least its slot count (`SrcType::size`) and its
@@ -2959,6 +2997,7 @@ pub fn lower_ty(fuel: usize, decls: Decls, table: List<Inst>, t: Ty) -> core::op
         TyIsize -> Some(Isize),
         TyChar -> Some(SrcType::Char),
         TyStr -> Some(Str),
+        TyRef(refd) -> ref_type(lower_ty(minus(fuel, 1), decls, table, unbox(refd))),
         TyFloat(ft) -> Some(SrcType::Float(ft)),
         TySlice(e) -> slice_type(lower_ty(minus(fuel, 1), decls, table, unbox(e))),
         TyArray(e, n) -> array_type(lower_ty(minus(fuel, 1), decls, table, unbox(e)), n),
@@ -3046,6 +3085,7 @@ pub fn ty_insts(fuel: usize, decls: Decls, t: Ty) -> core::option::Option<List<I
         TyIsize -> Some(empty()),
         TyChar -> Some(empty()),
         TyStr -> Some(empty()),
+        TyRef(refd) -> ty_insts(minus(fuel, 1), decls, unbox(refd)),
         TyFloat(ft) -> Some(empty()),
         TySlice(e) -> ty_insts(minus(fuel, 1), decls, unbox(e)),
         TyArray(e, n) -> ty_insts(minus(fuel, 1), decls, unbox(e)),
@@ -3941,6 +3981,7 @@ pub fn float_typed(t: Ty, s: SrcType, x: SrcExpr) -> core::option::Option<SrcExp
         TyIsize -> None,
         TyChar -> None,
         TyStr -> None,
+        TyRef(refd) -> None,
         TyFloat(ft) -> float_pick(ft, s, x),
         TySlice(y) -> None,
         TyArray(y, n) -> None,
@@ -4060,6 +4101,7 @@ pub fn field_index(env: FrontEnv, t: Ty, name: List<usize>) -> core::option::Opt
         TyIsize -> None,
         TyChar -> None,
         TyStr -> None,
+        TyRef(refd) -> None,
         TyFloat(ft) -> None,
         TySlice(e) -> None,
         TyArray(e, n) -> None,
@@ -4248,6 +4290,7 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
             TyIsize -> Some(Cast(Isize, boxed(e))),
             TyChar -> None,
             TyStr -> None,
+            TyRef(refd) -> None,
             TyFloat(ft) -> None,
             TySlice(x) -> None,
             TyArray(x, n) -> None,
@@ -4262,6 +4305,7 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
             TyIsize -> None,
             TyChar -> None,
             TyStr -> None,
+            TyRef(refd) -> None,
             TyFloat(ft) -> None,
             TySlice(x) -> None,
             TyArray(x, n) -> None,
@@ -4279,6 +4323,7 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
             TyIsize -> negated_int(unbox(x), Negate(boxed(Cast(Isize, x)))),
             TyChar -> None,
             TyStr -> None,
+            TyRef(refd) -> None,
             TyFloat(ft) -> negated_float(ft, unbox(x)),
             TySlice(y) -> None,
             TyArray(y, n) -> None,
@@ -4297,6 +4342,7 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
             TyIsize -> None,
             TyChar -> Some(e),
             TyStr -> None,
+            TyRef(refd) -> None,
             TyFloat(ft) -> None,
             TySlice(x) -> None,
             TyArray(x, n) -> None,
@@ -4381,6 +4427,7 @@ pub fn wide_of(ty: Ty, negative: bool, n: usize) -> core::option::Option<SrcExpr
         TyIsize -> wide_isize(negative, n),
         TyChar -> None,
         TyStr -> None,
+        TyRef(refd) -> None,
         TyFloat(ft) -> None,
         TySlice(e) -> None,
         TyArray(e, n) -> None,
@@ -4745,6 +4792,7 @@ pub fn struct_field_tys(fuel: usize, decls: Decls, t: Ty) -> core::option::Optio
         TyIsize -> None,
         TyChar -> None,
         TyStr -> None,
+        TyRef(refd) -> None,
         TyFloat(ft) -> None,
         TySlice(e) -> None,
         TyArray(e, n) -> None,
@@ -4897,6 +4945,7 @@ pub fn slice_elem(t: Ty) -> core::option::Option<Ty> {
         TyIsize -> None,
         TyChar -> None,
         TyStr -> None,
+        TyRef(refd) -> None,
         TyFloat(ft) -> None,
         TySlice(e) -> Some(unbox(e)),
         TyArray(e, n) -> None,
@@ -4915,6 +4964,7 @@ pub fn index_elem(t: Ty) -> core::option::Option<Ty> {
         TyIsize -> None,
         TyChar -> None,
         TyStr -> None,
+        TyRef(refd) -> None,
         TyFloat(ft) -> None,
         TySlice(e) -> Some(unbox(e)),
         TyArray(e, n) -> Some(unbox(e)),
@@ -4939,6 +4989,7 @@ pub fn array_parts(t: Ty) -> core::option::Option<ArrayParts> {
         TyIsize -> None,
         TyChar -> None,
         TyStr -> None,
+        TyRef(refd) -> None,
         TyFloat(ft) -> None,
         TySlice(e) -> None,
         TyArray(e, n) -> Some(ArrayParts { ty: t, element: unbox(e), count: n }),
@@ -4979,6 +5030,7 @@ pub fn named_parts(t: Ty) -> core::option::Option<Inst> {
         TyIsize -> None,
         TyChar -> None,
         TyStr -> None,
+        TyRef(refd) -> None,
         TyFloat(ft) -> None,
         TySlice(e) -> None,
         TyArray(e, n) -> None,
@@ -5742,6 +5794,12 @@ pub enum MEff {
     XLen(usize),
     // a string literal's bytes: only as a call's argument (arg_eff)
     XStr(List<usize>),
+    // F5 (S5): the referent of the reference r, of this type (the referent's)
+    XDeref(Ty, Box<MEff>),
+    // field j of a place (an XDeref, XPlaceField or XPlaceAt)
+    XPlaceField(Box<MEff>, usize),
+    // element i of a place of an array type
+    XPlaceAt(Box<MEff>, Box<MEff>),
 }
 
 // The expression, when it is pure.
@@ -5765,6 +5823,9 @@ pub fn pure_part(x: MEff) -> core::option::Option<SrcExpr> {
         XLet(id, t, v, rt, b) -> None,
         XLen(sl) -> None,
         XStr(cs) -> None,
+        XDeref(dty, a) -> None,
+        XPlaceField(b, j) -> None,
+        XPlaceAt(b, i) -> None,
     };
 }
 
@@ -5950,6 +6011,33 @@ pub fn bare_eff(x: MEff) -> bool {
         XLet(id, t, v, rt, b) -> false,
         XLen(sl) -> false,
         XStr(cs) -> false,
+        XDeref(dty, a) -> false,
+        XPlaceField(b, j) -> false,
+        XPlaceAt(b, i) -> false,
+    };
+}
+
+// Field j's type in a struct type.
+pub fn field_ty_at(fuel: usize, decls: Decls, t: Ty, j: usize) -> core::option::Option<Ty> {
+    return match (struct_field_tys(fuel, decls, t)) {
+        None -> None,
+        Some(ts) -> get(ts, j),
+    };
+}
+
+// Field j's type in a struct type, when the type is known.
+pub fn field_ty_of(fuel: usize, decls: Decls, t: core::option::Option<Ty>, j: usize) -> core::option::Option<Ty> {
+    return match (t) {
+        None -> None,
+        Some(x) -> field_ty_at(fuel, decls, x, j),
+    };
+}
+
+// The element type of an array or slice type, when the type is known.
+pub fn elem_ty_of(t: core::option::Option<Ty>) -> core::option::Option<Ty> {
+    return match (t) {
+        None -> None,
+        Some(x) -> index_elem(x),
     };
 }
 
@@ -5976,6 +6064,9 @@ pub fn eff_ty(fuel: usize, env: FrontEnv, scope: List<Local>, x: MEff) -> core::
         XLet(id, t, v, rt, b) -> Some(rt),
         XLen(sl) -> Some(TyUint(Usize)),
         XStr(cs) -> Some(TyStr),
+        XDeref(dty, a) -> Some(dty),
+        XPlaceField(b, j) -> field_ty_of(fuel, env.decls, eff_ty(minus(fuel, 1), env, scope, unbox(b)), j),
+        XPlaceAt(b, i) -> elem_ty_of(eff_ty(minus(fuel, 1), env, scope, unbox(b))),
     };
 }
 
@@ -6107,6 +6198,10 @@ pub enum MStmt {
     MMatchArm(usize, Ty, usize, bool, usize, Ty, Box<MStmt>, Box<MStmt>),
     // SrcStmt's Unreachable
     MUnreachable(usize, Ty),
+    // F5 (S5): place = value and place op= value, the place an XDeref,
+    // XPlaceField or XPlaceAt (SrcStmt's SetPlace and SetPlaceOp)
+    MSetPlace(MEff, MEff),
+    MSetPlaceOp(SrcAssignOp, MEff, MEff),
 }
 
 // A call: the function instance and the arguments.
@@ -7820,6 +7915,9 @@ pub fn call_parts(x: MEff) -> core::option::Option<Called> {
         XLet(id, t, v, rt, b) -> None,
         XLen(sl) -> None,
         XStr(cs) -> None,
+        XDeref(dty, a) -> None,
+        XPlaceField(b, j) -> None,
+        XPlaceAt(b, i) -> None,
     };
 }
 
@@ -7910,19 +8008,119 @@ pub fn projection(decls: Decls, t: Ty, j: usize) -> Inst {
     return Inst { decl: plus(length(decls.fns), j), args: single(t) };
 }
 
-// Field j of the value x of type t: Field of a local, else the call of the
-// projection.
+// F5 (S5): the referent type of a reference type.
+pub fn referent(t: Ty) -> core::option::Option<Ty> {
+    return match (t) {
+        TyI32 -> None,
+        TyBool -> None,
+        TyUint(k) -> None,
+        TyPtr -> None,
+        TyIsize -> None,
+        TyChar -> None,
+        TyStr -> None,
+        TyFloat(ft) -> None,
+        TySlice(e) -> None,
+        TyArray(e, n) -> None,
+        TyNamed(d, args) -> None,
+        TySint(k) -> None,
+        TyRef(r) -> Some(unbox(r)),
+    };
+}
+
+pub fn is_ref_ty(t: Ty) -> bool {
+    return has_ty(referent(t));
+}
+
+// A type, or a reference type's referent type.
+pub fn referent_or(t: Ty) -> Ty {
+    return match (referent(t)) {
+        None -> t,
+        Some(r) -> r,
+    };
+}
+
+// Whether x is a place: the referent of a reference, a field of a place or
+// an element of one.
+pub fn eff_place(x: MEff) -> bool {
+    return match (x) {
+        XPure(e) -> false,
+        XCall(inst, args) -> false,
+        XApply(op, l, r) -> false,
+        XNeg(a) -> false,
+        XNot(a) -> false,
+        XCast(t, a) -> false,
+        XIndex(s, i) -> false,
+        XStruct(t, fs) -> false,
+        XVariant(t, k, ps) -> false,
+        XMatch(s, ety, t, bs, vs) -> false,
+        XDivide(op, l, r) -> false,
+        XStride(sl) -> false,
+        XArraySlice(e, sl) -> false,
+        XHost(id, args) -> false,
+        XIf(c, t, a, b) -> false,
+        XLet(id, t, v, rt, b) -> false,
+        XLen(sl) -> false,
+        XStr(cs) -> false,
+        XDeref(dty, a) -> true,
+        XPlaceField(b, j) -> true,
+        XPlaceAt(b, i) -> true,
+    };
+}
+
+// Whether the place x has an element step.
+pub fn has_at(x: MEff) -> bool {
+    return match (x) {
+        XPure(e) -> false,
+        XCall(inst, args) -> false,
+        XApply(op, l, r) -> false,
+        XNeg(a) -> false,
+        XNot(a) -> false,
+        XCast(t, a) -> false,
+        XIndex(s, i) -> false,
+        XStruct(t, fs) -> false,
+        XVariant(t, k, ps) -> false,
+        XMatch(s, ety, t, bs, vs) -> false,
+        XDivide(op, l, r) -> false,
+        XStride(sl) -> false,
+        XArraySlice(e, sl) -> false,
+        XHost(id, args) -> false,
+        XIf(c, t, a, b) -> false,
+        XLet(id, t, v, rt, b) -> false,
+        XLen(sl) -> false,
+        XStr(cs) -> false,
+        XDeref(dty, a) -> false,
+        XPlaceField(b, j) -> has_at(unbox(b)),
+        XPlaceAt(b, i) -> true,
+    };
+}
+
+pub fn x_at_of(b: MEff, i: core::option::Option<MEff>) -> core::option::Option<MEff> {
+    return match (i) {
+        None -> None,
+        Some(x) -> Some(XPlaceAt(boxed(b), boxed(x))),
+    };
+}
+
+// Field j of the value x of type t: of a place, the field's place; of a
+// reference, the field's place in its referent (F5, S5); else Field of a
+// local, else the call of the projection.
 pub fn field_value(decls: Decls, x: MEff, t: Ty, j: usize) -> MEff {
-    return match (eff_local(x)) {
-        Some(id) -> XPure(Field(id, j)),
-        None -> XCall(projection(decls, t, j), boxed(single(x))),
+    if (eff_place(x)) {
+        return XPlaceField(boxed(x), j);
+    }
+    return match (referent(t)) {
+        Some(r) -> XPlaceField(boxed(XDeref(r, boxed(x))), j),
+        None -> match (eff_local(x)) {
+            Some(id) -> XPure(Field(id, j)),
+            None -> XCall(projection(decls, t, j), boxed(single(x))),
+        },
     };
 }
 
 pub fn field_of_ty(env: FrontEnv, x: MEff, t: core::option::Option<Ty>, name: List<usize>) -> core::option::Option<MEff> {
     return match (t) {
         None -> None,
-        Some(ty) -> match (field_index(env, ty, name)) {
+        Some(ty) -> match (field_index(env, referent_or(ty), name)) {
             None -> None,
             Some(j) -> Some(field_value(env.decls, x, ty, j)),
         },
@@ -8054,6 +8252,9 @@ pub fn diverge_eff(decls: Decls, t: Ty, x: MEff) -> MEff {
         XLet(id, lt, v, rt, b) -> x,
         XLen(sl) -> x,
         XStr(cs) -> x,
+        XDeref(dty, a) -> x,
+        XPlaceField(b, j) -> x,
+        XPlaceAt(b, i) -> x,
     };
 }
 
@@ -8139,6 +8340,7 @@ pub fn lit_ty(t: Ty) -> bool {
         TyIsize -> true,
         TyChar -> false,
         TyStr -> false,
+        TyRef(refd) -> false,
         TyFloat(ft) -> false,
         TySlice(e) -> false,
         TyNamed(d, args) -> false,
@@ -8543,6 +8745,9 @@ pub fn eff_step(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::
             return eff_chain(f, env, scope, expected, field_of_ty(env, x, eff_ty(f, env, scope, x), kid_token(tail, 1).text), next);
         }
         return None;
+    }
+    if (node_prod(tail) == p_postfix_index() && eff_place(x)) {
+        return eff_chain(f, env, scope, expected, x_at_of(x, eff_of(f, env, scope, None, kid(tail, 1))), kid(tail, 3));
     }
     if (node_prod(tail) == p_postfix_index()) {
         return eff_chain(f, env, scope, expected, x_index_of(eff_slice_local(scope, x), eff_of(f, env, scope, None, kid(tail, 1))), kid(tail, 3));
@@ -9139,6 +9344,9 @@ pub fn eval_let_head(ty: Ty, x: MEff) -> LetHead {
         XLet(id, t, v, rt, b) -> EvalOf(x),
         XLen(sl) -> EvalOf(x),
         XStr(cs) -> EvalOf(x),
+        XDeref(dty, a) -> EvalOf(x),
+        XPlaceField(b, j) -> EvalOf(x),
+        XPlaceAt(b, i) -> EvalOf(x),
     };
 }
 
@@ -9392,6 +9600,9 @@ pub fn inferred(x: MEff) -> bool {
         XLet(id, t, v, rt, b) -> false,
         XLen(sl) -> true,
         XStr(cs) -> true,
+        XDeref(dty, a) -> false,
+        XPlaceField(b, j) -> true,
+        XPlaceAt(b, i) -> true,
     };
 }
 
@@ -9463,6 +9674,7 @@ pub fn is_ptr_ty(t: Ty) -> bool {
         TyIsize -> false,
         TyChar -> false,
         TyStr -> false,
+        TyRef(refd) -> false,
         TyFloat(ft) -> false,
         TySlice(e) -> false,
         TyArray(e, n) -> false,
@@ -9978,6 +10190,9 @@ pub fn eff_acts(n: usize, x: MEff) -> bool {
         XLet(id, t, v, rt, b) -> eff_acts(n, unbox(v)) || eff_acts(n, unbox(b)),
         XLen(sl) -> false,
         XStr(cs) -> false,
+        XDeref(dty, a) -> eff_acts(n, unbox(a)),
+        XPlaceField(b, j) -> eff_acts(n, unbox(b)),
+        XPlaceAt(b, i) -> eff_acts(n, unbox(b)) || eff_acts(n, unbox(i)),
     };
 }
 
@@ -10015,14 +10230,6 @@ pub fn field_eval_stmt(id: usize, j: usize, x: core::option::Option<MEff>) -> co
     };
 }
 
-// Field j's type in a struct type.
-pub fn field_ty_at(fuel: usize, decls: Decls, t: Ty, j: usize) -> core::option::Option<Ty> {
-    return match (struct_field_tys(fuel, decls, t)) {
-        None -> None,
-        Some(ts) -> get(ts, j),
-    };
-}
-
 // `x.f = value;`: value pure, or else effectful (stored at the field's type).
 pub fn set_field_or_eval(fuel: usize, env: FrontEnv, scope: List<Local>, l: Local, name: List<usize>, value: CTree) -> core::option::Option<MStmt> {
     return match (field_index(env, l.ty, name)) {
@@ -10031,8 +10238,84 @@ pub fn set_field_or_eval(fuel: usize, env: FrontEnv, scope: List<Local>, l: Loca
     };
 }
 
+// F5 (S5): the local is a reference parameter.
+pub fn ref_rooted(l: core::option::Option<Local>) -> bool {
+    return match (l) {
+        None -> false,
+        Some(x) -> is_ref_ty(x.ty),
+    };
+}
+
+pub fn set_place_value(pl: MEff, n: usize, v: core::option::Option<MEff>) -> core::option::Option<MStmt> {
+    return match (v) {
+        None -> None,
+        Some(x) -> stmt_unless(has_at(pl) && eff_acts(n, x), MSetPlace(pl, x)),
+    };
+}
+
+// `place = value;` through a reference parameter, value read at the
+// place's type (which is known). With an element step in the place, a value that can act is
+// not read (as for `v[i] = value`, set_index_eval_of).
+pub fn set_place_of(fuel: usize, env: FrontEnv, scope: List<Local>, place: core::option::Option<MEff>, value: CTree) -> core::option::Option<MStmt> {
+    return match (place) {
+        None -> None,
+        Some(pl) -> checked_stmt(eff_place(pl) && has_ty(eff_ty(fuel, env, scope, pl)), set_place_value(pl, length(env.decls.fns), eff_of(fuel, env, scope, eff_ty(fuel, env, scope, pl), value))),
+    };
+}
+
+// The operator of a compound assignment to a place: `/=` and `%=` are not
+// read there.
+pub fn assign_op_of(p: usize) -> core::option::Option<SrcAssignOp> {
+    if (p == p_assign_add()) {
+        return Some(AAdd);
+    }
+    if (p == p_assign_sub()) {
+        return Some(ASub);
+    }
+    if (p == p_assign_mul()) {
+        return Some(AMul);
+    }
+    if (p == p_assign_band()) {
+        return Some(AAnd);
+    }
+    if (p == p_assign_bor()) {
+        return Some(AOr);
+    }
+    if (p == p_assign_xor()) {
+        return Some(AXor);
+    }
+    if (p == p_assign_shl()) {
+        return Some(AShl);
+    }
+    if (p == p_assign_shr()) {
+        return Some(AShr);
+    }
+    return None;
+}
+
+pub fn set_place_op_value(o: SrcAssignOp, pl: MEff, n: usize, v: core::option::Option<MEff>) -> core::option::Option<MStmt> {
+    return match (v) {
+        None -> None,
+        Some(x) -> stmt_unless(has_at(pl) && eff_acts(n, x), MSetPlaceOp(o, pl, x)),
+    };
+}
+
+// `place op= value;` through a reference parameter, as set_place_of.
+pub fn set_place_op_of(fuel: usize, env: FrontEnv, scope: List<Local>, op: core::option::Option<SrcAssignOp>, place: core::option::Option<MEff>, value: CTree) -> core::option::Option<MStmt> {
+    return match (op) {
+        None -> None,
+        Some(o) -> match (place) {
+            None -> None,
+            Some(pl) -> checked_stmt(eff_place(pl) && has_ty(eff_ty(fuel, env, scope, pl)), set_place_op_value(o, pl, length(env.decls.fns), eff_of(fuel, env, scope, eff_ty(fuel, env, scope, pl), value))),
+        },
+    };
+}
+
 pub fn assign_target(fuel: usize, env: FrontEnv, scope: List<Local>, target: CTree, v: usize, value: CTree) -> core::option::Option<MStmt> {
     let tail: CTree = kid(target, 1);
+    if (node_prod(tail) != p_postfix_end() && ref_rooted(local_of(env, scope, kid(target, 0)))) {
+        return set_place_of(fuel, env, scope, eff_of(fuel, env, scope, None, target), value);
+    }
     if (node_prod(tail) == p_postfix_end()) {
         return match (local_of(env, scope, kid(target, 0))) {
             None -> None,
@@ -10182,6 +10465,9 @@ pub fn compound_field_eval(fuel: usize, env: FrontEnv, scope: List<Local>, l: Lo
 
 // `x op= e` or `x.f op= e`, when e or op is effectful.
 pub fn compound_eval(fuel: usize, env: FrontEnv, scope: List<Local>, target: CTree, p: usize, value: CTree) -> core::option::Option<MStmt> {
+    if (node_prod(kid(target, 1)) != p_postfix_end() && ref_rooted(local_of(env, scope, kid(target, 0)))) {
+        return set_place_op_of(fuel, env, scope, assign_op_of(p), eff_of(fuel, env, scope, None, target), value);
+    }
     if (node_prod(kid(target, 1)) == p_postfix_end()) {
         return match (local_of(env, scope, kid(target, 0))) {
             None -> None,
@@ -10268,6 +10554,8 @@ pub fn writes_local(s: MStmt, id: usize) -> bool {
         MContinue -> false,
         MMatchArm(sc, st, v, binds, b, bt, body, rest) -> writes_local(unbox(body), id) || writes_local(unbox(rest), id),
         MUnreachable(x, t) -> false,
+        MSetPlace(pl, v) -> false,
+        MSetPlaceOp(op, pl, v) -> false,
     };
 }
 
@@ -11180,8 +11468,27 @@ pub fn param_token(p: CTree) -> Token {
     return kid_token(p, 0);
 }
 
-// `name: T`, `self` or `&self` (both by value); each a local named by its
-// spelling.
+pub fn ref_ty(referent: core::option::Option<Ty>) -> core::option::Option<Ty> {
+    return match (referent) {
+        None -> None,
+        Some(e) -> Some(TyRef(boxed(e))),
+    };
+}
+
+// A parameter's type: `&T` and `&mut T` (T a type, not a reference) are
+// references to T (F5, SEMANTIC_DECISIONS "S5 in Lanius's syntax" point 1).
+pub fn param_ty_of(fuel: usize, env: FrontEnv, t: CTree) -> core::option::Option<Ty> {
+    if (node_prod(t) == p_type_ref()) {
+        return ref_ty(ty_of(fuel, env, kid(t, 1)));
+    }
+    if (node_prod(t) == p_type_ref_mut()) {
+        return ref_ty(ty_of(fuel, env, kid(t, 2)));
+    }
+    return ty_of(fuel, env, t);
+}
+
+// `name: T`, `self` or `&self` (both by value), each a local named by its
+// spelling; `name: &T` and `name: &mut T` are references (param_ty_of).
 pub fn params_of(fuel: usize, env: FrontEnv, fd: FnDecl, scope: List<Local>, items: List<CTree>) -> core::option::Option<MParams> {
     return match (items) {
         Nil -> Some(MParams { params: empty(), scope: scope }),
@@ -11195,7 +11502,7 @@ fn param_of(pfuel: usize, penv: FrontEnv, pfd: FnDecl, pscope: List<Local>, pp: 
     if ((node_prod(pp) == p_param_named() || node_prod(pp) == p_param_self() || node_prod(pp) == p_param_self_ref()) && !member(penv.globals, tok.text) && fresh_id(pscope, minus(tok.start, penv.base))) {
         return match (pattern_of(pfd, pp)) {
             None -> None,
-            Some(t) -> match (ty_of(pfuel, penv, t)) {
+            Some(t) -> match (param_ty_of(pfuel, penv, t)) {
                 None -> None,
                 Some(x) -> cons_param(MParam { id: minus(tok.start, penv.base), ty: x }, params_of(pfuel, penv, pfd, cons(Local { name: tok.text, id: minus(tok.start, penv.base), ty: x }, pscope), prest)),
             },
@@ -11318,6 +11625,77 @@ pub fn ref_checked(f: core::option::Option<MFunc>, sid: core::option::Option<usi
     };
 }
 
+pub fn known_true(x: core::option::Option<bool>) -> bool {
+    return match (x) {
+        None -> false,
+        Some(b) -> b,
+    };
+}
+
+pub fn checked_func(ok: bool, m: MFunc) -> core::option::Option<MFunc> {
+    if (ok) {
+        return Some(m);
+    }
+    return None;
+}
+
+// `name.f` then anything but a call (`name.m(..)` is a method call).
+pub fn names_field_base(pf: CTree, name: List<usize>) -> bool {
+    let primary: CTree = kid(pf, 0);
+    let tail: CTree = kid(pf, 1);
+    return node_prod(primary) == p_ident() && node_prod(kid(primary, 1)) == p_ident_plain() && is_text(path_name(kid(primary, 0)), name) && node_prod(tail) == p_postfix_member() && node_prod(kid(tail, 2)) == p_member_type_args_none() && node_prod(kid(tail, 3)) != p_postfix_call();
+}
+
+// The subtrees of t still to check: an argument that is the bare name, and
+// the name at the base of a field, are allowed uses.
+pub fn ref_kids(fuel: usize, t: CTree, name: List<usize>) -> List<CTree> {
+    if ((node_prod(t) == p_args_some() || node_prod(t) == p_args_after_comma_more()) && tree_names(fuel, kid(t, 0), name)) {
+        return single(kid(t, 1));
+    }
+    if (node_prod(t) == p_postfix() && names_field_base(t, name)) {
+        return single(kid(kid(t, 1), 3));
+    }
+    return kids_of(t);
+}
+
+// Whether every token of the trees spelled name is an allowed use of a
+// reference parameter (see refs_checked); None when fuel runs out.
+pub fn ref_uses_ok(fuel: usize, todo: List<CTree>, name: List<usize>) -> core::option::Option<bool> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (todo) {
+        Nil -> Some(true),
+        Cons(t, rest) -> match (t) {
+            Leaf(tok) -> and_known(Some(!same_text(tok.text, name)), ref_uses_ok(minus(fuel, 1), unbox(rest), name)),
+            Node(q, kids) -> ref_uses_ok(minus(fuel, 1), concat(ref_kids(fuel, t, name), unbox(rest)), name),
+        },
+    };
+}
+
+// Each reference parameter's uses in the trees are allowed.
+pub fn refs_used_ok(fuel: usize, trees: List<CTree>, items: List<CTree>, ps: List<MParam>) -> bool {
+    return match (items) {
+        Nil -> true,
+        Cons(i, irest) -> match (ps) {
+            Nil -> true,
+            Cons(p, prest) -> (!is_ref_ty(p.ty) || known_true(ref_uses_ok(fuel, trees, param_token(i).text))) && refs_used_ok(fuel, trees, unbox(irest), unbox(prest)),
+        },
+    };
+}
+
+// F5 (S5): a reference parameter is used only as the base of a field read
+// or write (`p.f`, `p.f[i]`, `p.f = v`) or as a whole call argument: it is
+// not reassigned, stored, returned, compared or a method's receiver
+// (SEMANTIC_DECISIONS "S5 in Lanius's syntax" point 4). A filter only: the
+// reading's relations do not name it.
+pub fn refs_checked(fuel: usize, f: CTree, items: List<CTree>, m: core::option::Option<MFunc>) -> core::option::Option<MFunc> {
+    return match (m) {
+        None -> None,
+        Some(x) -> checked_func(refs_used_ok(fuel, cons(kid(f, 8), single(kid(f, 9))), items, x.params), x),
+    };
+}
+
 // A function instance's body, read with its type parameters (the impl's,
 // then its own) standing for the instance's arguments.
 pub fn read_fn(fuel: usize, decls: Decls, fd: FnDecl, args: List<Ty>) -> core::option::Option<MFunc> {
@@ -11329,7 +11707,7 @@ pub fn read_fn(fuel: usize, decls: Decls, fd: FnDecl, args: List<Ty>) -> core::o
     if (length(names) == length(args) && fn_bounds_ok(fuel, decls, fd, tenv)) {
         return match (list_items(fuel, kid(f, 4))) {
             None -> None,
-            Some(items) -> ref_checked(func_params(fuel, env, params_of(fuel, env, fd, empty(), items), rt, kid(f, 8), kid(kid(f, 9), 1)), self_ref_id(env, items)),
+            Some(items) -> refs_checked(fuel, f, items, ref_checked(func_params(fuel, env, params_of(fuel, env, fd, empty(), items), rt, kid(f, 8), kid(kid(f, 9), 1)), self_ref_id(env, items))),
         };
     }
     return None;
@@ -11437,6 +11815,9 @@ pub fn eff_calls(x: MEff) -> List<Inst> {
         XLet(id, t, v, rt, b) -> concat(eff_calls(unbox(v)), eff_calls(unbox(b))),
         XLen(sl) -> empty(),
         XStr(cs) -> empty(),
+        XDeref(dty, a) -> eff_calls(unbox(a)),
+        XPlaceField(b, j) -> eff_calls(unbox(b)),
+        XPlaceAt(b, i) -> concat(eff_calls(unbox(b)), eff_calls(unbox(i))),
     };
 }
 
@@ -11471,6 +11852,9 @@ pub fn eff_named_tys(x: MEff) -> List<Ty> {
         XLet(id, t, v, rt, b) -> concat(eff_named_tys(unbox(v)), cons(t, cons(rt, eff_named_tys(unbox(b))))),
         XLen(sl) -> empty(),
         XStr(cs) -> empty(),
+        XDeref(dty, a) -> cons(dty, eff_named_tys(unbox(a))),
+        XPlaceField(b, j) -> eff_named_tys(unbox(b)),
+        XPlaceAt(b, i) -> concat(eff_named_tys(unbox(b)), eff_named_tys(unbox(i))),
     };
 }
 
@@ -11519,6 +11903,8 @@ pub fn stmt_calls(m: MStmt) -> List<Inst> {
         MContinue -> empty(),
         MMatchArm(sc, sty, k, bs, x, ty, body, rest) -> concat(stmt_calls(unbox(body)), stmt_calls(unbox(rest))),
         MUnreachable(id, ty) -> empty(),
+        MSetPlace(pl, v) -> concat(eff_calls(pl), eff_calls(v)),
+        MSetPlaceOp(op, pl, v) -> concat(eff_calls(pl), eff_calls(v)),
     };
 }
 
@@ -11597,6 +11983,8 @@ pub fn stmt_tys(m: MStmt) -> List<Ty> {
         MContinue -> empty(),
         MMatchArm(sc, sty, k, bs, x, ty, body, rest) -> cons(sty, cons(ty, concat(stmt_tys(unbox(body)), stmt_tys(unbox(rest))))),
         MUnreachable(id, ty) -> single(ty),
+        MSetPlace(pl, v) -> concat(eff_named_tys(pl), eff_named_tys(v)),
+        MSetPlaceOp(op, pl, v) -> concat(eff_named_tys(pl), eff_named_tys(v)),
     };
 }
 
@@ -11656,6 +12044,7 @@ pub fn ty_known(table: List<Inst>, t: Ty) -> bool {
         TyIsize -> true,
         TyChar -> true,
         TyStr -> true,
+        TyRef(refd) -> ty_known(table, unbox(refd)),
         TyFloat(ft) -> true,
         TySlice(e) -> ty_known(table, unbox(e)),
         TyArray(e, n) -> ty_known(table, unbox(e)),
@@ -11732,6 +12121,7 @@ pub fn ty_weight(table: List<Inst>, ws: List<core::option::Option<usize>>, t: Ty
         TyIsize -> Some(1),
         TyChar -> Some(1),
         TyStr -> Some(1),
+        TyRef(refd) -> weight_add_to(1, ty_weight(table, ws, unbox(refd))),
         TyFloat(ft) -> Some(1),
         TySlice(e) -> weight_add_to(1, ty_weight(table, ws, unbox(e))),
         TyArray(e, n) -> weight_array(n, ty_weight(table, ws, unbox(e))),
@@ -11892,6 +12282,7 @@ pub fn close_ty(fuel: usize, t: Tables, ty: Ty) -> core::option::Option<SrcType>
         TyIsize -> Some(Isize),
         TyChar -> Some(SrcType::Char),
         TyStr -> Some(Str),
+        TyRef(refd) -> ref_type(close_ty(minus(fuel, 1), t, unbox(refd))),
         TyFloat(ft) -> Some(SrcType::Float(ft)),
         TySlice(e) -> slice_type(close_ty(minus(fuel, 1), t, unbox(e))),
         TyArray(e, n) -> array_type(close_ty(minus(fuel, 1), t, unbox(e)), n),
@@ -12137,6 +12528,53 @@ pub fn e_cast_closed(t: SrcType, x: core::option::Option<SrcEff>) -> core::optio
     };
 }
 
+pub fn e_deref_closed(t: core::option::Option<SrcType>, x: core::option::Option<SrcEff>) -> core::option::Option<SrcEff> {
+    return match (t) {
+        None -> None,
+        Some(ty) -> match (x) {
+            None -> None,
+            Some(a) -> Some(EDeref(ty, boxed(a))),
+        },
+    };
+}
+
+pub fn e_place_field_closed(x: core::option::Option<SrcEff>, j: usize) -> core::option::Option<SrcEff> {
+    return match (x) {
+        None -> None,
+        Some(a) -> Some(EField(boxed(a), j)),
+    };
+}
+
+pub fn e_place_at_closed(x: core::option::Option<SrcEff>, i: core::option::Option<SrcEff>) -> core::option::Option<SrcEff> {
+    return match (x) {
+        None -> None,
+        Some(a) -> match (i) {
+            None -> None,
+            Some(b) -> Some(EAt(boxed(a), boxed(b))),
+        },
+    };
+}
+
+pub fn set_place_closed(p: core::option::Option<SrcEff>, v: core::option::Option<SrcEff>) -> core::option::Option<SrcStmt> {
+    return match (p) {
+        None -> None,
+        Some(a) -> match (v) {
+            None -> None,
+            Some(b) -> Some(SetPlace(a, b)),
+        },
+    };
+}
+
+pub fn set_place_op_closed(op: SrcAssignOp, p: core::option::Option<SrcEff>, v: core::option::Option<SrcEff>) -> core::option::Option<SrcStmt> {
+    return match (p) {
+        None -> None,
+        Some(a) -> match (v) {
+            None -> None,
+            Some(b) -> Some(SetPlaceOp(op, a, b)),
+        },
+    };
+}
+
 pub fn e_index_closed(s: usize, x: core::option::Option<SrcEff>) -> core::option::Option<SrcEff> {
     return match (x) {
         None -> None,
@@ -12252,6 +12690,9 @@ pub fn close_eff(fuel: usize, t: Tables, x: MEff) -> core::option::Option<SrcEff
         XLet(id, ty, v, rt, b) -> e_let_closed(id, close_ty(fuel, t, ty), close_eff(fuel, t, unbox(v)), close_ty(fuel, t, rt), close_eff(fuel, t, unbox(b))),
         XLen(sl) -> Some(ELen(sl)),
         XStr(cs) -> Some(EStr(0, cs)),
+        XDeref(dty, a) -> e_deref_closed(close_ty(fuel, t, dty), close_eff(fuel, t, unbox(a))),
+        XPlaceField(b, j) -> e_place_field_closed(close_eff(fuel, t, unbox(b)), j),
+        XPlaceAt(b, i) -> e_place_at_closed(close_eff(fuel, t, unbox(b)), close_eff(fuel, t, unbox(i))),
     };
 }
 
@@ -12381,6 +12822,8 @@ pub fn close_stmt(fuel: usize, t: Tables, m: MStmt) -> core::option::Option<SrcS
         MBreak -> Some(Break),
         MContinue -> Some(Continue),
         MUnreachable(id, ty) -> unreachable_closed(id, close_ty(fuel, t, ty)),
+        MSetPlace(pl, v) -> set_place_closed(close_eff(fuel, t, pl), close_eff(fuel, t, v)),
+        MSetPlaceOp(op, pl, v) -> set_place_op_closed(op, close_eff(fuel, t, pl), close_eff(fuel, t, v)),
         MMatchArm(sc, sty, k, bs, x, ty, body, rest) -> match_arm_closed(sc, src_enum_id(close_ty(fuel, t, sty)), k, bs, x, arm_ty_closed(bs, close_ty(fuel, t, ty)), close_stmt(fuel, t, unbox(body)), close_stmt(fuel, t, unbox(rest))),
     };
 }
@@ -15872,6 +16315,16 @@ fn p_or_tail() -> usize {
 // extract: inline
 fn p_orexpr() -> usize {
     return 118;
+}
+
+// extract: inline
+fn p_type_ref() -> usize {
+    return 285;
+}
+
+// extract: inline
+fn p_type_ref_mut() -> usize {
+    return 324;
 }
 
 // extract: inline

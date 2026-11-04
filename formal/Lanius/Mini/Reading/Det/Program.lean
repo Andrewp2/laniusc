@@ -9,6 +9,13 @@ import all Lanius.Mini.Frontend.P.projection
 import all Lanius.Mini.Frontend.P.distinct
 import all Lanius.Mini.Frontend.P.moduleOr
 import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.setPlaceOf
+import all Lanius.Mini.Frontend.P.setFieldOrEval
+import all Lanius.Mini.Frontend.P.namesFieldBase
+import all Lanius.Mini.Frontend.P.isFnPath
+import all Lanius.Mini.Frontend.P.fieldValue
+import all Lanius.Mini.Frontend.P.eDerefClosed
+import all Lanius.Mini.Frontend.P.checkedFunc
 
 @[expose] public section
 /-! # The reading is deterministic, F1: the program
@@ -86,6 +93,22 @@ theorem resultR_unique {env : FrontEnv} {ret : CTree} {a b : RetTy} (h₁ : Resu
     | never _ q' => exact absurd q' q
     | _ => prod_clash
 
+theorem paramTyR_unique {env : FrontEnv} {t : CTree} {a b : Ty} (h₁ : ParamTyR env t a) (h₂ : ParamTyR env t b) :
+    a = b := by
+  cases h₁ with
+  | plain n m ty => cases h₂ with
+    | plain _ _ ty' => exact tyR_unique ty ty'
+    | ref e _ => exact absurd e n
+    | refMut e _ => exact absurd e m
+  | ref e ty => cases h₂ with
+    | plain n _ _ => exact absurd e n
+    | ref _ ty' => rw [tyR_unique ty ty']
+    | refMut e' _ => rw [e] at e'; cases e'
+  | refMut e ty => cases h₂ with
+    | plain _ m _ => exact absurd e m
+    | ref e' _ => rw [e] at e'; cases e'
+    | refMut _ ty' => rw [tyR_unique ty ty']
+
 section
 variable {env : FrontEnv} {fd : FnDecl}
 
@@ -97,7 +120,7 @@ theorem paramsR_unique : ∀ {scope : List Local} {ps : List CTree} {a b : MPara
     cases h₂ with
     | cons _ _ _ pt' ty' rest' =>
       cases patternOf_unique pt pt'
-      cases tyR_unique ty ty'
+      cases paramTyR_unique ty ty'
       rw [ih rest']
 termination_by structural _ _ _ _ h _ => h
 

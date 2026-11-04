@@ -1,12 +1,13 @@
 module
 
 public import Lanius.Mini.Frontend.Types
-import Lanius.Mini.Frontend.P.fieldTyAt
 import Lanius.Mini.Frontend.P.floatTyped
 import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.noToken
+import Lanius.Mini.Frontend.P.setFieldOrEval
+import Lanius.Mini.Frontend.P.setPlaceOf
 import Lanius.Mini.Frontend.P.stringOpen
 import Lanius.Mini.Frontend.P.whileEvalOf
 
@@ -19,17 +20,20 @@ namespace Lanius.Mini
 
 /-- `x op= e` or `x.f op= e`, when e or op is effectful. -/
 def compoundEval (fuel : Nat) (env : FrontEnv) (scope : List Local) (target : CTree) (p : Nat) (value : CTree) : Option MStmt :=
-  if nodeProd (kid target 1) = (164) then
-    match localOf env scope (kid target 0) with
-    | none => none
-    | some l => setEvalOf l.id (compoundEff p (MEff.xPure (SrcExpr.local l.id)) (effOf fuel env scope (some l.ty) value))
+  if decide (nodeProd (kid target 1) ≠ (164)) && refRooted (localOf env scope (kid target 0)) then
+    setPlaceOpOf fuel env scope (assignOpOf p) (effOf fuel env scope none target) value
   else
-    let tail : CTree := kid target 1
-    if decide (nodeProd tail = (163)) && decide (nodeProd (kid tail 2) = (297)) && decide (nodeProd (kid tail 3) = (164)) then
+    if nodeProd (kid target 1) = (164) then
       match localOf env scope (kid target 0) with
       | none => none
-      | some l => compoundFieldEval fuel env scope l (fieldIndex env l.ty (kidToken tail 1).text) p value
+      | some l => setEvalOf l.id (compoundEff p (MEff.xPure (SrcExpr.local l.id)) (effOf fuel env scope (some l.ty) value))
     else
-      none
+      let tail : CTree := kid target 1
+      if decide (nodeProd tail = (163)) && decide (nodeProd (kid tail 2) = (297)) && decide (nodeProd (kid tail 3) = (164)) then
+        match localOf env scope (kid target 0) with
+        | none => none
+        | some l => compoundFieldEval fuel env scope l (fieldIndex env l.ty (kidToken tail 1).text) p value
+      else
+        none
 
 end Lanius.Mini

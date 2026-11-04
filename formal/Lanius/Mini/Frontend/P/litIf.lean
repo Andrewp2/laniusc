@@ -20,6 +20,7 @@ import Lanius.Mini.Frontend.P.matchStmtIf
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.noTrees
 import Lanius.Mini.Frontend.P.pickTy
+import Lanius.Mini.Frontend.P.projection
 import Lanius.Mini.Frontend.P.stringLast
 import Lanius.Mini.Frontend.P.stringOpen
 import Lanius.Mini.Frontend.P.textSelf
@@ -379,7 +380,22 @@ def paramToken (p : CTree) : Token :=
   else
     kidToken p 0
 
-/-- `name: T`, `self` or `&self` (both by value); each a local named by its spelling. -/
+def refTy (referent : Option Ty) : Option Ty :=
+  match referent with
+  | none => none
+  | some e => some (Ty.tyRef e)
+
+/-- A parameter's type: `&T` and `&mut T` (T a type, not a reference) are references to T (F5, SEMANTIC_DECISIONS "S5 in Lanius's syntax" point 1). -/
+def paramTyOf (fuel : Nat) (env : FrontEnv) (t : CTree) : Option Ty :=
+  if nodeProd t = (285) then
+    refTy (tyOf fuel env (kid t 1))
+  else
+    if nodeProd t = (324) then
+      refTy (tyOf fuel env (kid t 2))
+    else
+      tyOf fuel env t
+
+/-- `name: T`, `self` or `&self` (both by value), each a local named by its spelling; `name: &T` and `name: &mut T` are references (param_ty_of). -/
 def paramsOf (fuel : Nat) (env : FrontEnv) (fd : FnDecl) (scope : List Local) (items : List CTree) : Option MParams :=
   match items with
   | [] => some ({ params := [], scope := scope } : MParams)
@@ -389,7 +405,7 @@ def paramsOf (fuel : Nat) (env : FrontEnv) (fd : FnDecl) (scope : List Local) (i
       match patternOf fd p with
       | none => none
       | some t =>
-        match tyOf fuel env t with
+        match paramTyOf fuel env t with
         | none => none
         | some x => consParam ({ id := tok.start - env.base, ty := x } : MParam) (paramsOf fuel env fd (({ name := tok.text, id := tok.start - env.base, ty := x } : Local) :: scope) rest)
     else

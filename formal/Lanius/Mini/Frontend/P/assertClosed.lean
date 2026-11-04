@@ -5,6 +5,7 @@ import Lanius.Mini.Compiler.P.BinOp_folds
 import Lanius.Mini.Frontend.P.allWeighed
 import Lanius.Mini.Frontend.P.allocClosed
 import Lanius.Mini.Frontend.P.distinct
+import Lanius.Mini.Frontend.P.eDerefClosed
 import Lanius.Mini.Frontend.P.eStructClosed
 import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.letClosed
@@ -64,6 +65,8 @@ def closeStmt (fuel : Nat) (t : Tables) (m : MStmt) : Option SrcStmt :=
   | .mBreak => some SrcStmt.break
   | .mContinue => some SrcStmt.continue
   | .mUnreachable id ty => unreachableClosed id (closeTy fuel t ty)
+  | .mSetPlace pl v => setPlaceClosed (closeEff fuel t pl) (closeEff fuel t v)
+  | .mSetPlaceOp op pl v => setPlaceOpClosed op (closeEff fuel t pl) (closeEff fuel t v)
   | .mMatchArm sc sty k bs x ty body rest => matchArmClosed sc (srcEnumId (closeTy fuel t sty)) k bs x (armTyClosed bs (closeTy fuel t ty)) (closeStmt fuel t body) (closeStmt fuel t rest)
 
 def consSrcParam (id : Nat) (ty : Option SrcType) (rest : Option (List SrcParam)) : Option (List SrcParam) :=

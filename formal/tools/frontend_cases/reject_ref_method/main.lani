@@ -1,0 +1,12 @@
+// A method is not called on a reference parameter (point 4).
+struct P { a: i32 }
+
+impl P {
+    fn get(self) -> i32 {
+        return self.a;
+    }
+}
+
+fn via(p: &P) -> i32 {
+    return p.get();
+}

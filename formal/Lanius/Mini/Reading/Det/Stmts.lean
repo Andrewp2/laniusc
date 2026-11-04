@@ -26,6 +26,13 @@ import all Lanius.Mini.Frontend.P.isPathCall
 import all Lanius.Mini.Frontend.P.i32ArrayLength
 import all Lanius.Mini.Frontend.P.litEffMatch
 import all Lanius.Mini.Frontend.P.stringLast
+import all Lanius.Mini.Frontend.P.setPlaceOf
+import all Lanius.Mini.Frontend.P.setFieldOrEval
+import all Lanius.Mini.Frontend.P.namesFieldBase
+import all Lanius.Mini.Frontend.P.isFnPath
+import all Lanius.Mini.Frontend.P.fieldValue
+import all Lanius.Mini.Frontend.P.eDerefClosed
+import all Lanius.Mini.Frontend.P.checkedFunc
 
 @[expose] public section
 /-! # The reading is deterministic, F1: statements
@@ -494,14 +501,20 @@ theorem setR_unique {l : Local} {v : Nat} {value : CTree} {a b : MStmt} (nd : Id
       rw [effR_unique k nd vn k', e'] at e
       exact (Option.some.inj e).symm
 
+theorem fieldIndex_noRef {decls : Decls} {t : Ty} {name : Name} {j : Nat} (fi : FieldIndex decls t name j) :
+    isRefTy t = false := by
+  obtain ⟨d, args, td, rfl, _, _⟩ := fi
+  rfl
+
 theorem assignTargetR_unique {target : CTree} {v : Nat} {value : CTree} {a b : MStmt} (nd : IdsFresh scope)
     (vn : VariantsNodup env.decls) (h₁ : AssignTargetR env scope target v value a)
     (h₂ : AssignTargetR env scope target v value b) : a = b := by
   cases h₁ with
-  | «local» _ lo s => cases h₂ with
+  | «local» pe lo s => cases h₂ with
     | «local» _ lo' s' =>
       cases localOf_unique lo lo'
       exact setR_unique nd vn s s'
+    | place ne _ _ _ _ _ _ _ => exact absurd pe ne
     | _ => prod_clash
   | fieldEval _ _ _ lo fi ft k => cases h₂ with
     | fieldEval _ _ _ lo' fi' ft' k' =>
@@ -509,24 +522,48 @@ theorem assignTargetR_unique {target : CTree} {v : Nat} {value : CTree} {a b : M
       cases fieldIndex_unique fi fi'
       cases fieldTyAt_unique ft ft'
       rw [effR_unique k nd vn k']
+    | place _ lo' rr _ _ _ _ _ =>
+      cases localOf_unique lo lo'
+      rw [fieldIndex_noRef fi] at rr
+      cases rr
     | _ => prod_clash
-  | indexEval _ _ lo ki kv _ => cases h₂ with
-    | indexEval _ _ lo' ki' kv' _ =>
+  | indexEval _ _ lo nr ki kv _ => cases h₂ with
+    | indexEval _ _ lo' _ ki' kv' _ =>
       cases localOf_unique lo lo'
       rw [effR_unique ki nd vn ki', effR_unique kv nd vn kv']
+    | place _ lo' rr _ _ _ _ _ =>
+      cases localOf_unique lo lo'
+      rw [nr] at rr
+      cases rr
     | _ => prod_clash
+  | place ne lo rr kp _ et kv _ => cases h₂ with
+    | place _ lo' _ kp' _ et' kv' _ =>
+      cases localOf_unique lo lo'
+      cases effR_unique kp nd vn kp'
+      cases effTy_unique et et'
+      rw [effR_unique kv nd vn kv']
+    | «local» pe _ _ => exact absurd pe ne
+    | fieldEval _ _ _ lo' fi _ _ =>
+      cases localOf_unique lo lo'
+      rw [fieldIndex_noRef fi] at rr
+      cases rr
+    | indexEval _ _ lo' nr _ _ _ =>
+      cases localOf_unique lo lo'
+      rw [nr] at rr
+      cases rr
 
 theorem compoundR_unique {target : CTree} {p : Nat} {value : CTree} {a b : MStmt} (nd : IdsFresh scope)
     (vn : VariantsNodup env.decls) (h₁ : CompoundR env scope target p value a)
     (h₂ : CompoundR env scope target p value b) : a = b := by
   cases h₁ with
-  | localEval _ lo k c s => cases h₂ with
+  | localEval pe lo k c s => cases h₂ with
     | localEval _ lo' k' c' s' =>
       cases localOf_unique lo lo'
       rw [effR_unique k nd vn k', c'] at c
       cases c
       rw [s'] at s
       exact (Option.some.inj s).symm
+    | placeEval ne _ _ _ _ _ _ _ _ => exact absurd pe ne
     | _ => prod_clash
   | fieldEval _ _ _ lo fi ft k c => cases h₂ with
     | fieldEval _ _ _ lo' fi' ft' k' c' =>
@@ -536,7 +573,24 @@ theorem compoundR_unique {target : CTree} {p : Nat} {value : CTree} {a b : MStmt
       rw [effR_unique k nd vn k', c'] at c
       cases c
       rfl
+    | placeEval _ lo' rr _ _ _ _ _ _ =>
+      cases localOf_unique lo lo'
+      rw [fieldIndex_noRef fi] at rr
+      cases rr
     | _ => prod_clash
+  | placeEval ne lo rr ho kp _ et kv _ => cases h₂ with
+    | placeEval _ lo' _ ho' kp' _ et' kv' _ =>
+      cases localOf_unique lo lo'
+      rw [ho] at ho'
+      cases ho'
+      cases effR_unique kp nd vn kp'
+      cases effTy_unique et et'
+      rw [effR_unique kv nd vn kv']
+    | localEval pe _ _ _ _ => exact absurd pe ne
+    | fieldEval _ _ _ lo' fi _ _ _ =>
+      cases localOf_unique lo lo'
+      rw [fieldIndex_noRef fi] at rr
+      cases rr
 
 theorem callStmtR_unique {pf : CTree} {a b : MStmt} (pp : nodeProd pf = pPostfix) (nd : IdsFresh scope)
     (vn : VariantsNodup env.decls) (h₁ : CallStmtR env scope pf a) (h₂ : CallStmtR env scope pf b) : a = b := by

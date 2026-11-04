@@ -123,11 +123,11 @@ import all Lanius.Mini.Frontend.P.stringOpen
 import all Lanius.Mini.Frontend.P.litWants
 import all Lanius.Mini.Frontend.P.litWildValue
 import all Lanius.Mini.Frontend.P.eDivideClosed
-import all Lanius.Mini.Frontend.P.eIndexClosed
+import all Lanius.Mini.Frontend.P.eDerefClosed
 import all Lanius.Mini.Frontend.P.eStructClosed
 import all Lanius.Mini.Frontend.P.effNamedTys
 import all Lanius.Mini.Frontend.P.externBody
-import all Lanius.Mini.Frontend.P.fieldTyAt
+import all Lanius.Mini.Frontend.P.fnInstRet
 import all Lanius.Mini.Frontend.P.findConst
 import all Lanius.Mini.Frontend.P.firstSrc
 import all Lanius.Mini.Frontend.P.flDecimal
@@ -138,7 +138,6 @@ import all Lanius.Mini.Frontend.P.flRoundUp
 import all Lanius.Mini.Frontend.P.flattenTys
 import all Lanius.Mini.Frontend.P.weightAdd
 import all Lanius.Mini.Frontend.P.floatTyped
-import all Lanius.Mini.Frontend.P.fnInstRet
 import all Lanius.Mini.Frontend.P.forRange
 import all Lanius.Mini.Frontend.P.freshId
 import all Lanius.Mini.Frontend.P.frontEndRead
@@ -226,6 +225,12 @@ import all Lanius.Mini.Frontend.P.wideLeftStmt
 import all Lanius.Mini.Frontend.P.wideMarker
 import all Lanius.Mini.Frontend.P.wideOf
 import all Lanius.Mini.Frontend.Types
+import all Lanius.Mini.Frontend.P.setPlaceOf
+import all Lanius.Mini.Frontend.P.setFieldOrEval
+import all Lanius.Mini.Frontend.P.namesFieldBase
+import all Lanius.Mini.Frontend.P.isFnPath
+import all Lanius.Mini.Frontend.P.fieldValue
+import all Lanius.Mini.Frontend.P.checkedFunc
 public import Lanius.Mini.Compiler.P.packRound
 public import Lanius.Mini.Frontend.P.frontEndRead
 public import Lanius.Mini.Frontend.P.frontEndWords

@@ -8,6 +8,13 @@ import all Lanius.Mini.Frontend.P.distinct
 import all Lanius.Mini.Frontend.P.shrFirst
 import all Lanius.Mini.Frontend.P.textSelf
 import all Lanius.Mini.Frontend.P.textSliceLen
+import all Lanius.Mini.Frontend.P.setPlaceOf
+import all Lanius.Mini.Frontend.P.setFieldOrEval
+import all Lanius.Mini.Frontend.P.namesFieldBase
+import all Lanius.Mini.Frontend.P.isFnPath
+import all Lanius.Mini.Frontend.P.fieldValue
+import all Lanius.Mini.Frontend.P.eDerefClosed
+import all Lanius.Mini.Frontend.P.checkedFunc
 
 @[expose] public section
 /-! # The reading is deterministic, F1: effectful expressions
@@ -423,6 +430,9 @@ theorem effFold_unique : ∀ {scope : List Local} {a : MEff} {tail : CTree} {x :
       exact ih2 fo'
 termination_by structural _ _ _ _ h _ _ _ _ => h
 
+theorem effLocal_noPlace {a : MEff} {id : Nat} (h : effLocal a = some id) : effPlace a = false := by
+  cases a <;> simp_all [effLocal, effPlace, purePart]
+
 theorem effChain_unique : ∀ {scope : List Local} {expected : Option Ty} {a : MEff} {tail : CTree}
     {x : MEff}, EffChain env scope expected a tail x → IdsFresh scope → VariantsNodup env.decls →
     ∀ {y : MEff}, EffChain env scope expected a tail y → x = y
@@ -470,6 +480,17 @@ theorem effChain_unique : ∀ {scope : List Local} {expected : Option Ty} {a : M
       have e := ih1 k'
       subst e
       exact ih2 ch'
+    | «at» _ ep _ _ => rw [effLocal_noPlace el] at ep; cases ep
+    | _ => eff_clash
+  | _, _, _, _, _, .at pi ep k ch, nd, vn, _, h₂ => by
+    have ih1 := fun {y} k' => effR_unique k nd vn (y := y) k'
+    have ih2 := fun {y} k' => effChain_unique ch nd vn (y := y) k'
+    cases h₂ with
+    | «at» _ _ k' ch' =>
+      have e := ih1 k'
+      subst e
+      exact ih2 ch'
+    | index _ el _ _ _ => rw [effLocal_noPlace el] at ep; cases ep
     | _ => eff_clash
 termination_by structural _ _ _ _ _ h _ _ _ _ => h
 

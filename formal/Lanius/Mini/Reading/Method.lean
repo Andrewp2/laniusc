@@ -11,6 +11,13 @@ import all Lanius.Mini.Frontend.P.pickTy
 import all Lanius.Mini.Frontend.P.repeatEff
 import all Lanius.Mini.Frontend.P.shrFirst
 import all Lanius.Mini.Frontend.P.typeDeclAt
+import all Lanius.Mini.Frontend.P.setPlaceOf
+import all Lanius.Mini.Frontend.P.setFieldOrEval
+import all Lanius.Mini.Frontend.P.namesFieldBase
+import all Lanius.Mini.Frontend.P.isFnPath
+import all Lanius.Mini.Frontend.P.fieldValue
+import all Lanius.Mini.Frontend.P.eDerefClosed
+import all Lanius.Mini.Frontend.P.checkedFunc
 
 @[expose] public section
 /-! # The reading, F1: the method a call names
@@ -238,6 +245,7 @@ theorem fitSound : ∀ fuel, FitSound fuel
             | tySint _ => cases ha
             | tyArray _ _ => cases ha
             | tySlice _ => cases ha
+            | tyRef _ => cases ha
           · rcases m with ⟨n, ip, _⟩ | ⟨_, pr, _⟩ | ⟨_, _, d, args, rfl, da, ma⟩
             · exact np n ip
             · exact nr _ pr
