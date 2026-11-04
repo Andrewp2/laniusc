@@ -50,8 +50,8 @@ the prims). OUTDIR (default: DUMP's directory) gets
 Only the SelfOk, SelfLiveOk and SelfDecl files read the functions' bodies
 (SelfPureBase and SelfPrims read the prims'; each module `import all`s only
 what its kernel checks unfold), so an edit of one function rechecks its
-group and its run; of the files that put the facts together, only the
-SelfLive ones, which are not modules, rebuild.
+groups (SelfOk<g>, SelfLiveOk<g>) and its run, and the files that put the
+facts together stop at unchanged statements.
 
 All proofs are `decide +kernel` or `rfl`. A file is only rewritten when its
 text changes. The generator also runs a Python copy of `PureFunc` and stops
@@ -858,7 +858,7 @@ def modulize(name, text):
     while k < len(lines) and lines[k].startswith('import '):
         k += 1
     mods = [line.split()[1] for line in lines[:k]]
-    if re.fullmatch(r'SelfOk\d+|SelfDecl\d+', name):
+    if re.fullmatch(r'SelfOk\d+|SelfLiveOk\d+|SelfDecl\d+', name):
         bodies = gen_closure(mods) + checker_bodies()
     elif name == 'SelfDecls':
         bodies = checker_bodies()
@@ -1259,8 +1259,6 @@ def main(argv):
     for i in sorted(bad):
         if i in seen:
             print(f'not live: {i} {names[i]}: {why[i]}', file=sys.stderr)
-    # The SelfLive files are not modules: they import Sim/Live.lean, which
-    # imports the termination check (Sim/Term*.lean), and those are not.
     write(os.path.join(outdir, 'SelfLiveTab.lean'),
           f'import Lanius.Faithful.Sim.Live\n\n{HEADER}\nnamespace {NS}\n\n'
           '/-- The functions that can fail other than at a call, and those that call them. -/\n'
@@ -1272,7 +1270,7 @@ def main(argv):
           f'def liveWrap : List Nat := {wrap}\n\n'
           f'def ixPlus : Nat := {wrap[0]}\n\n'
           f'def ixTimes : Nat := {wrap[1]}\n\n'
-          f'end {NS}\n', module=False)
+          f'end {NS}\n')
     for g in range(GROUPS):
         members = [i for i in groups.get(g, []) if i not in wrap]
         mods = sorted({home[keys[i]] for i in members})
@@ -1284,7 +1282,7 @@ def main(argv):
             lines.append(f'/-- {names[i]} -/\n'
                          f'theorem lok{i} : LiveOk prims outside liveBad {i} ({rhs[i]}) := by decide +kernel\n\n')
         lines.append(f'end {NS}\n')
-        write(os.path.join(outdir, f'SelfLiveOk{g}.lean'), ''.join(lines), module=False)
+        write(os.path.join(outdir, f'SelfLiveOk{g}.lean'), ''.join(lines))
     la = ['import Lanius.Faithful.Gen.SelfPure\n' +
           ''.join(f'import Lanius.Faithful.Gen.SelfLiveOk{g}\n' for g in range(GROUPS)) +
           f'\n{HEADER}\nnamespace {NS}\n\n{open_lines}'
@@ -1303,7 +1301,7 @@ def main(argv):
               'theorem livesOk : LivesOk prims outside liveBad liveWrap 0 prog.funcs := by\n'
               f'  rw [funcs_parts]\n  exact\n    {expr}\n\n'
               f'end {NS}\n')
-    write(os.path.join(outdir, 'SelfLiveAll.lean'), ''.join(la), module=False)
+    write(os.path.join(outdir, 'SelfLiveAll.lean'), ''.join(la))
 
     # The chunk files the checks were in before the groups.
     for name in os.listdir(outdir):

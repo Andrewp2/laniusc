@@ -1,5 +1,9 @@
-import Lanius.Faithful.Sim.TermSound
-import Lanius.Faithful.Safe.Value
+module
+
+public import Lanius.Faithful.Sim.TermSound
+public import Lanius.Faithful.Safe.Value
+
+@[expose] public section
 
 /-! # Checked pure calls have values
 
