@@ -1,0 +1,13 @@
+#!/bin/bash
+# agentstatus: per worktree, the build/test processes running and the ones
+# waiting for a Lean slot (leanslot) or a heavy lane, with elapsed seconds.
+ps -eo pid=,etimes=,comm= | while read p t comm; do
+  case "$comm" in lean|lake|laniusc|cargo|rustc|python3|leanslot|heavy|loop.sh|lbuild.sh) ;; *) continue;; esac
+  c=$(readlink /proc/$p/cwd 2>/dev/null) || continue
+  case "$c" in /home/andrew-peterson/code/laniusc*) ;; *) continue;; esac
+  wt=$(echo "$c" | sed -E 's|/home/andrew-peterson/code/(laniusc-wt/)?([^/]+).*|\2|')
+  a=$(tr '\0' ' ' < /proc/$p/cmdline 2>/dev/null | sed -E 's|/home/andrew-peterson/[^ ]*/||g' | cut -c1-90)
+  echo "$wt ${t}s $comm: $a"
+done | sort -k1,1 -k2,2rn | awk '{k=$1" "$3; if(!(k in s)){s[k]=1; print}}'
+for s in lean.lock lean.lock.2 lean.lock.3; do echo -n "$s holders: "; fuser /home/andrew-peterson/code/laniusc/.git/$s 2>&1 | tr -s ' ' | cut -c1-60; echo; done
+awk '/MemAvailable/ {printf "MemAvailable %.1f GB\n", $2/1048576}' /proc/meminfo
