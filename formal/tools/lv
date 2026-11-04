@@ -337,9 +337,11 @@ def run_scoped(argv, cwd, env, limit, log, live=None):
     """Run argv in its own work.slice scope; stop the scope at the limit or on
     a signal. Every line goes to log; lines that `live` accepts are echoed.
     Returns (exit code, seconds); 124 when the limit stopped it."""
+    limit = min(limit, remaining())    # before the child starts: dying here must not orphan it
     unit = f'lv-{os.getpid()}-{int(time.time() * 1000) % 100000}'
+    # RuntimeMaxSec: systemd stops the scope itself if lv dies without stopping it
     cmd = ['systemd-run', '--user', '--scope', '-q', '--slice=work.slice', f'--unit={unit}',
-           '-p', 'TimeoutStopSec=10', *argv]
+           '-p', 'TimeoutStopSec=10', '-p', f'RuntimeMaxSec={int(limit) + 15}', *argv]
     began = time.time()
     out = open(log, 'w')
     child = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -359,7 +361,6 @@ def run_scoped(argv, cwd, env, limit, log, live=None):
     def expire():
         stopped.append(1)
         stop()
-    limit = min(limit, remaining())
     timer = threading.Timer(limit, expire)
     timer.start()
     try:
@@ -369,6 +370,9 @@ def run_scoped(argv, cwd, env, limit, log, live=None):
                 sys.stdout.write(line)
                 sys.stdout.flush()
         code = child.wait()
+    except BaseException:
+        stop()
+        raise
     finally:
         timer.cancel()
         out.close()
