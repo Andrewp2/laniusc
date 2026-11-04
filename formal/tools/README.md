@@ -106,7 +106,8 @@ Without them, git merges these files as plain text, as before.
 
 The merge procedure (from the worktree root):
 
-1. `git merge --no-commit origin/lang`. Generated files keep ours and are
+1. `git merge --no-commit lang` (local lang; the coordinator's `lv merge` then
+   fast-forwards lang to your branch, so it must contain local lang). Generated files keep ours and are
    listed in `lanius-regen-stale` in the worktree's git directory. A file whose only conflicts were
    top-of-file imports is merged cleanly.
 2. Resolve what is left by hand: sources (`.lani`), proofs, and
@@ -117,9 +118,11 @@ The merge procedure (from the worktree root):
    deleted one), regenerates everything from the merged sources, drops the
    imports of extracted parts that no longer exist from the files the merge
    unioned, and stages (`git add`) the generated files.
-4. Build: `lv build`, repeated until it exits 0 (124 is a pass cut short at
-   the limit). Most of this is the rebuild the
-   change causes, not regen: see "Where a regeneration's time goes" below.
+4. Build: `lv build`, once. If it stops at its deadline (exit 124, with the
+   modules still compiling listed), don't rerun it in a loop: the 5-minute
+   rule covers the whole task; report what it printed. Most of the time is
+   the rebuild the change causes, not regen: see "Where a regeneration's time
+   goes" below.
 5. `lv regen --only trusted --trusted`:
    writes the new definitions hash into `TRUSTED_BASE.md`; say in its
    last-change sentence what the merge combined.
