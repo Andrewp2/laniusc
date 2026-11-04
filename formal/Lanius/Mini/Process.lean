@@ -71,6 +71,10 @@ theorem Exits.stuck {s : State} {code : BitVec 64} (h : Exits s code) :
       | poll number => rw [h.number] at number; exact absurd number (by decide)
       | clock number => rw [h.number] at number; exact absurd number (by decide)
       | getrandom number => rw [h.number] at number; exact absurd number (by decide)
+      | readFile number => rw [h.number] at number; exact absurd number (by decide)
+      | writeFile number => rw [h.number] at number; exact absurd number (by decide)
+      | openFile number => rw [h.number] at number; exact absurd number (by decide)
+      | close number => rw [h.number] at number; exact absurd number (by decide)
   · cases fault with
     | ud2 loaded =>
       have := loaded 1 (by simp)
