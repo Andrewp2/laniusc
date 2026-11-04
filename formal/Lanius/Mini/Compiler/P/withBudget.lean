@@ -4,6 +4,7 @@ public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.SrcType_same
+import Lanius.Mini.Compiler.P.bindingBytes
 import Lanius.Mini.Compiler.P.compileArgs
 import Lanius.Mini.Compiler.P.compileModules
 import Lanius.Mini.Compiler.P.loadAtBytes
@@ -287,10 +288,6 @@ def blockRoom (room : Nat) (uses : List Nat) (s : SrcStmt) : Option Nat :=
   | .letStr pointer chars body => blockRoom room uses body
   | .setPlace aplace avalue => some room
   | .setPlaceOp aop aplace avalue => some room
-
-/-- The largest block lower_func takes: below 2^31 bytes. -/
-def blockLimit : Nat :=
-  2147483647
 
 /-- A function's own block of frame memory, taken at its entry: 8 bytes per element of each array it declares (a parameter or a let) whose id it passes as a slice somewhere. A call passing arrays places them in it (array_call), at most its bytes. The bytes are taken out of block_limit as they add up, so no sum passes 2^64 (F14); a block over the limit is 2^31, which lower_func rejects, as it rejects the sum itself. -/
 def frameBlock (func : SrcFunc) : Nat :=
