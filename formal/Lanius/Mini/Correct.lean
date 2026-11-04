@@ -29,6 +29,34 @@ nesting depth. -/
 namespace Lanius.Mini
 open Lanius.X86.Machine
 
+/-! The equations of `linkedSize`, `roomAfter` and `compileProgram`, by `rfl`
+and private: `simp [f]` would make `f`'s equation lemmas here, in this
+module's public interface, with the names of `f`'s locals, so a rename
+inside them would rebuild everything that imports this file. -/
+
+private theorem linkedSize_nil : linkedSize [] = 0 := rfl
+
+private theorem linkedSize_cons (code : Code) (rest : List Code) :
+    linkedSize (code :: rest) = code.size + linkedSize rest := rfl
+
+private theorem roomAfter_nil (room : Nat) : roomAfter room [] = some room := rfl
+
+private theorem roomAfter_cons (room : Nat) (code : Code) (rest : List Code) :
+    roomAfter room (code :: rest) = if code.size ≤ room then roomAfter (room - code.size) rest else none := rfl
+
+private theorem compileProgram_def (prog : Program) : compileProgram prog =
+    match compileFuncs (arities prog.funcs) prog.funcs with
+    | none => none
+    | some codes =>
+      if prog.statics.length ≤ imageLimit then
+        match roomAfter (imageLimit - prog.statics.length) codes with
+        | none => none
+        | some _ =>
+          some ({ codes := codes, entries := layout 0 codes, image := linkOnto (layout 0 codes) 0 codes prog.statics,
+                  statics := prog.statics } : Binary)
+      else
+        none := rfl
+
 theorem compileFuncs_cons {arities : List Arity} {func : Func} {rest : List Func} {codes : List Code}
     (compiled : compileFuncs arities (func :: rest) = some codes) :
     ∃ code codes', compileFunc arities func = some code ∧ compileFuncs arities rest = some codes' ∧
@@ -89,7 +117,7 @@ theorem linkFrom_length (entries : List Nat) : ∀ (start : Nat) (codes : List C
     (linkFrom entries start codes).length = linkedSize codes
   | _, [] => rfl
   | start, code :: rest => by
-    simp only [linkFrom, linkedSize, List.length_append, Code.image_length, linkFrom_length entries _ rest]
+    simp only [linkFrom, linkedSize_cons, List.length_append, Code.image_length, linkFrom_length entries _ rest]
 
 theorem encodeOnto_eq (place : Place) (tail : List UInt8) : ∀ (pc : Nat) (code : List Instr),
     encodeOnto place pc code tail = encodeFrom place pc code ++ tail
@@ -108,9 +136,9 @@ theorem linkOnto_eq (entries : List Nat) (tail : List UInt8) : ∀ (start : Nat)
 `some` exactly when their sum `linkedSize` fits the room. -/
 theorem roomAfter_eq : ∀ (room : Nat) (codes : List Code),
     roomAfter room codes = if linkedSize codes ≤ room then some (room - linkedSize codes) else none
-  | room, [] => by simp [roomAfter, linkedSize]
+  | room, [] => by simp [roomAfter_nil, linkedSize_nil]
   | room, code :: rest => by
-    simp only [roomAfter, linkedSize, roomAfter_eq (room - code.size) rest]
+    simp only [roomAfter_cons, linkedSize_cons, roomAfter_eq (room - code.size) rest]
     by_cases a : code.size ≤ room
     · by_cases b : linkedSize rest ≤ room - code.size
       · have c : code.size + linkedSize rest ≤ room := by omega
@@ -131,7 +159,7 @@ theorem compileProgram_eq (prog : Program) : compileProgram prog =
                 image := linkOnto (layout 0 codes) 0 codes prog.statics, statics := prog.statics } : Binary)
       else
         none := by
-  simp only [compileProgram]
+  rw [compileProgram_def]
   cases compileFuncs (arities prog.funcs) prog.funcs with
   | none => rfl
   | some codes =>
