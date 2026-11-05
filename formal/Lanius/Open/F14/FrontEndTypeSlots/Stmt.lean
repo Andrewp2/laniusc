@@ -2,7 +2,13 @@ module
 
 public import Lanius.Faithful.GenB.SelfBModel5
 public import Lanius.Faithful.SelfPre.TS
-public import Lanius.Mini.Frontend
+public import Lanius.Mini.Frontend.Types
+public import Lanius.Mini.Frontend.P.arrayType
+public import Lanius.Mini.Frontend.P.frontEndWords
+public import Lanius.Mini.Frontend.P.grammar
+public import Lanius.Mini.Frontend.P.only
+public import Lanius.Mini.Frontend.P.weighed
+public import Lanius.Mini.Frontend.P.weightLimit
 
 @[expose] public section
 

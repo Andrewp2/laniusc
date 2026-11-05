@@ -2,7 +2,17 @@ module
 
 public import Lanius.Faithful.GenB.SelfBModel5
 public import Lanius.Faithful.SelfPre.HB
-public import Lanius.Mini.Compiler
+public import Lanius.Mini.Compiler.Types
+public import Lanius.Mini.Compiler.P.BinOp_size
+public import Lanius.Mini.Compiler.P.Code_size
+public import Lanius.Mini.Compiler.P.DivOp_size
+public import Lanius.Mini.Compiler.P.FOp_size
+public import Lanius.Mini.Compiler.P.Instr_size
+public import Lanius.Mini.Compiler.P.Lists_length
+public import Lanius.Mini.Compiler.P.Piece_size
+public import Lanius.Mini.Compiler.P.SrcStmt_depth
+public import Lanius.Mini.Compiler.P.SrcType_size
+public import Lanius.Mini.Compiler.P.SrcType_word
 
 @[expose] public section
 

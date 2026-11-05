@@ -1,7 +1,8 @@
 module
 
 public import Lanius.Faithful.GenB.SelfBModel5
-public import Lanius.Mini.Compiler
+public import Lanius.Mini.Compiler.Types
+public import Lanius.Mini.Compiler.P.SrcStmt_depth
 
 @[expose] public section
 

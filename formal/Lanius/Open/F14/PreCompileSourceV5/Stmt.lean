@@ -5,7 +5,8 @@ public import Lanius.Faithful.SelfPre.HB
 public import Lanius.Faithful.SelfPre.NB
 public import Lanius.Faithful.SelfPre.TS
 public import Lanius.Faithful.SelfPre.EvalSlots
-public import Lanius.Mini.Frontend
+public import Lanius.Mini.Frontend.Types
+public import Lanius.Mini.Frontend.P.weightLimit
 
 @[expose] public section
 

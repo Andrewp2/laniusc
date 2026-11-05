@@ -2,7 +2,9 @@ module
 
 public import Lanius.Faithful.GenB.SelfBModel5
 public import Lanius.Faithful.SelfPre.NB
-public import Lanius.Mini.Frontend
+public import Lanius.Mini.Frontend.Types
+public import Lanius.Mini.Frontend.P.frontEndWords
+public import Lanius.Mini.Frontend.P.grammar
 
 @[expose] public section
 

@@ -3,7 +3,9 @@ module
 public import Lanius.Faithful.GenB.SelfBModel5
 public import Lanius.Faithful.SelfPre.HB
 public import Lanius.Faithful.SelfPre.TS
-public import Lanius.Mini.Frontend
+public import Lanius.Mini.Frontend.Types
+public import Lanius.Mini.Frontend.P.weightLimit
+public import Lanius.Mini.Frontend.P.whole
 
 @[expose] public section
 

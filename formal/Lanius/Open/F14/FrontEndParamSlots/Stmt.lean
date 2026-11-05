@@ -1,7 +1,9 @@
 module
 
 public import Lanius.Faithful.GenB.SelfBModel5
-public import Lanius.Mini.Compiler
+public import Lanius.Mini.Compiler.Types
+public import Lanius.Mini.Compiler.P.SrcType_size
+public import Lanius.Mini.Compiler.P.paramsSize
 
 @[expose] public section
 
