@@ -1,0 +1,167 @@
+#!/usr/bin/env python3
+"""lcc [--stdlib-root D] [--source-root D] [--emit x86_64|wasm] -o OUT IN.lani
+
+Compile through one resident laniusc daemon shared by every agent (a warm
+compile takes tens of milliseconds instead of seconds of GPU start-up).
+The first call starts the server (`lcc --serve`). Each compile holds heavy's
+GPU lock only while it runs. Options the daemon has no field for
+(--native-link, --native-library, ...) fall back to `heavy laniusc`."""
+import fcntl, json, os, socket, subprocess, sys, threading, time
+
+HOME = '/home/andrew-peterson/code/laniusc'
+HERE = os.path.dirname(os.path.realpath(__file__))  # lv.d: heavy and memwait beside this file
+LANIUSC = HOME + '/target/release/laniusc'
+SOCK = HOME + '/target/claude-work/lcc/lcc.sock'
+LOG = HOME + '/target/claude-work/lcc/server.log'
+GPU_LOCK = '/tmp/claude-1000/lanius-heavy.lock'
+STDLIB = HOME + '/stdlib'
+
+
+def serve():
+    try:
+        os.unlink(SOCK)
+    except FileNotFoundError:
+        pass
+    lock = threading.Lock()
+    state = {'proc': None, 'mtime': None, 'next': 0}
+
+    def daemon():
+        m = os.stat(LANIUSC).st_mtime
+        p = state['proc']
+        if p is None or p.poll() is not None or state['mtime'] != m:
+            if p is not None and p.poll() is None:
+                p.kill(); p.wait()
+            subprocess.run([os.path.join(HERE, 'memwait')])
+            p = subprocess.Popen([LANIUSC, 'daemon', '--stdio', '--backend', 'x86_64', '--stdlib-root', STDLIB],
+                                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=open(LOG + '.daemon', 'a'),
+                                 text=True, bufsize=1)
+            state['proc'], state['mtime'] = p, m
+            while True:  # wait for the ready event
+                line = p.stdout.readline()
+                if not line:
+                    raise RuntimeError('daemon exited during start-up')
+                if json.loads(line).get('event') == 'ready':
+                    break
+        return p
+
+    def handle(conn):
+        with conn:
+            req = json.loads(conn.makefile().readline())
+            if req.get('command') == 'release':
+                # heavy holds the GPU lock and wants the GPU: drop the daemon's
+                # per-job buffers (trim) but keep its pipelines, so the next
+                # compile doesn't pay a restart. Killing it on every one-shot
+                # job made agents' 70 ms compiles wait minutes.
+                with lock:
+                    p = state['proc']
+                    if p is not None and p.poll() is None:
+                        try:
+                            state['next'] += 1
+                            p.stdin.write(json.dumps({'id': state['next'], 'command': 'trim'}) + '\n')
+                            while True:
+                                line = p.stdout.readline()
+                                if not line:
+                                    state['proc'] = None
+                                    break
+                                r = json.loads(line)
+                                if r.get('id') == state['next']:
+                                    print('trim', r.get('tracked_gpu_buffers'), flush=True)
+                                    break
+                        except Exception as e:
+                            print('trim failed, stopping daemon:', e, flush=True)
+                            p.kill(); p.wait()
+                            state['proc'] = None
+                conn.sendall(b'{"ok": true, "event": "released"}\n')
+                return
+            # A caller inside a heavy GPU job already holds the GPU lock:
+            # waiting for it here would deadlock that job.
+            held = req.pop('gpu_held', False)
+            with lock:
+                gpu = open(GPU_LOCK, 'a')
+                if not held:
+                    fcntl.flock(gpu, fcntl.LOCK_EX)
+                try:
+                    p = daemon()
+                    state['next'] += 1
+                    req['id'] = state['next']
+                    p.stdin.write(json.dumps(req) + '\n')
+                    while True:
+                        line = p.stdout.readline()
+                        if not line:
+                            resp = {'ok': False, 'job_error': 'daemon exited'}
+                            state['proc'] = None
+                            break
+                        resp = json.loads(line)
+                        if resp.get('id') == req['id']:
+                            break
+                except Exception as e:
+                    resp = {'ok': False, 'job_error': f'lcc server: {e}'}
+                    state['proc'] = None
+                finally:
+                    gpu.close()
+            conn.sendall((json.dumps(resp) + '\n').encode())
+
+    s = socket.socket(socket.AF_UNIX)
+    s.bind(SOCK)
+    s.listen(64)
+    while True:
+        c, _ = s.accept()
+        threading.Thread(target=handle, args=(c,), daemon=True).start()
+
+
+def connect():
+    for i in range(300):
+        try:
+            c = socket.socket(socket.AF_UNIX)
+            c.connect(SOCK)
+            return c
+        except OSError:
+            if i == 0:
+                with open(LOG, 'a') as log:  # start the server, detached
+                    subprocess.Popen(['systemd-run', '--user', '--scope', '--slice=work.slice', '-q',
+                                      sys.executable, '-I', __file__, '--serve'], stdout=log, stderr=log,
+                                     stdin=subprocess.DEVNULL, start_new_session=True)
+            time.sleep(0.1)
+    sys.exit('lcc: server did not start; see ' + LOG)
+
+
+def main(argv):
+    if argv == ['--serve']:
+        return serve()
+    if os.path.exists(HOME + '/target/claude-work/GPU_DOWN'):
+        sys.exit('lcc: the GPU is down (' + open(HOME + '/target/claude-work/GPU_DOWN').read().strip()
+                 + '); compiles are refused until a reboot. Do Lean or CPU-only work.')
+    # Default to the stdlib of the checkout the caller is in, as laniusc does.
+    top = subprocess.run(['git', 'rev-parse', '--show-toplevel'], capture_output=True, text=True).stdout.strip()
+    req = {'command': 'compile', 'emit': 'x86_64',
+           'stdlib_root': os.path.join(top, 'stdlib') if top and os.path.isdir(os.path.join(top, 'stdlib')) else STDLIB}
+    inputs, i = [], 0
+    while i < len(argv):
+        a = argv[i]
+        if a in ('-o', '--stdlib-root', '--source-root', '--emit') and i + 1 < len(argv):
+            key = {'-o': 'output', '--stdlib-root': 'stdlib_root', '--source-root': 'source_root', '--emit': 'emit'}[a]
+            req[key] = os.path.abspath(argv[i + 1]) if key != 'emit' else argv[i + 1]
+            i += 2
+        elif a.startswith('-'):
+            os.execve(os.path.join(HERE, 'heavy'), ['heavy', LANIUSC] + argv, dict(os.environ, LCC_FALLBACK='1'))
+        else:
+            inputs.append(a); i += 1
+    if len(inputs) != 1 or 'output' not in req:
+        os.execve(os.path.join(HERE, 'heavy'), ['heavy', LANIUSC] + argv, dict(os.environ, LCC_FALLBACK='1'))
+    if req['emit'] != 'x86_64':  # the shared daemon is started for x86_64 only
+        os.execve(os.path.join(HERE, 'heavy'), ['heavy', LANIUSC] + argv, dict(os.environ, LCC_FALLBACK='1'))
+    req['input'] = os.path.abspath(inputs[0])
+    if os.environ.get('HEAVY_GPU_HELD'):
+        req['gpu_held'] = True
+    c = connect()
+    c.sendall((json.dumps(req) + '\n').encode())
+    resp = json.loads(c.makefile().readline())
+    if resp.get('ok'):
+        return 0
+    err = resp.get('diagnostic') or resp.get('job_error') or resp
+    sys.stderr.write((err if isinstance(err, str) else json.dumps(err)) + '\n')
+    return 1
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))

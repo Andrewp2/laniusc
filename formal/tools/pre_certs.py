@@ -507,6 +507,25 @@ def auto_bytes(g):
     return out
 
 
+# Hand-written preconditions' steps (as PRE_HAND): an array element's copy at `base + k * size`, k
+# counting up as count counts down: the products' steps for `omega` (it takes `x * y` as an atom).
+ELEMENT_STEPS = '''  have e1 : (x3 + 1) * x2 = x3 * x2 + x2 := Nat.succ_mul x3 x2
+  have e3 : 2 ≤ x4 → (x4 - 1) * x2 + x2 = x4 * x2 := fun h => by
+    rw [← Nat.succ_mul]; congr 1; omega
+  have e4 : 1 ≤ x4 → x2 ≤ x4 * x2 := fun h => Nat.le_mul_of_pos_left x2 h
+  have e5 : 1 ≤ x2 → x3 ≤ x3 * x2 := fun h => Nat.le_mul_of_pos_right x3 h
+  pre_auto n, M
+'''
+COMPILE_PRE_HAND = {'pick_element': ELEMENT_STEPS, 'put_element': ELEMENT_STEPS}
+
+
+# Parameters with no height hypothesis (`--compile`): a let's body's result (an inline
+# `eval_let_body`, whose height bound would need its conditional call's cost) is only
+# taken apart, its height bounds nothing.
+PRE_HB_DROP = {}
+COMPILE_PRE_HB_DROP = {'eval_let_in': {4}, 'eval_let_in_of': {4}}
+
+
 COMPILE_HAND_CASE = {
     'SrcStmt_declare': '''      rw [Cost_SrcStmt_declare.eq_def]; dsimp only
       rw [Lanius.Mini.SrcStmt.declare.eq_def x0 x1]
@@ -604,15 +623,23 @@ COMPILE_OVERRIDES = {
     # `PreCompileSourceV4`'s parameters' premise, `paramsMax`)
     'params_size': ['Lanius.Mini.paramsSize p0 ≤ K'],
     'lower_func': ['Lanius.Mini.paramsSize p3.params ≤ 1099511627776', 'Lanius.Mini.SrcStmt.depth p3.body ≤ 36028797018963968',
-                   'Lanius.Faithful.SelfPre.SrcStmt.slotNest p3.body ≤ 36028797018963968'],
-    'lower_body': ['p0 ≤ 1099511627776', 'p2 ≤ 36028797018963968'],
+                   'Lanius.Faithful.SelfPre.SrcStmt.slotNest p3.body ≤ 36028797018963968', 'Lanius.Open.LowerSlotsSmall'],
+    # the lowered body's slots, below 2^61 (the open leaf LowerSlotsSmall, `lowered_body`,
+    # SelfPre/LowerSlots), so that `Stmt.extent`'s `+ 1`s stay below `K`
+    'lower_body': ['p0 ≤ 1099511627776', 'p2 ≤ 36028797018963968',
+                   'Lanius.Faithful.SelfPre.optExtent p3 ≤ 2305843009213693952'],
+    'Expr_extent': ['Lanius.Mini.Expr.extent p0 ≤ K'],
+    'args_extent': ['Lanius.Mini.argsExtent p0 ≤ K'],
+    'Stmt_extent': ['Lanius.Mini.Stmt.extent p0 ≤ K'],
     'SrcStmt_depth': ['Lanius.Mini.SrcStmt.depth p0 ≤ 36028797018963968'],
     'lower_funcs': ['Lanius.Faithful.SelfPre.paramsMax p3 ≤ 1099511627776', 'Lanius.Faithful.SelfPre.depthMax p3 ≤ 36028797018963968',
-                    'Lanius.Faithful.SelfPre.nestMax p3 ≤ 36028797018963968'],
+                    'Lanius.Faithful.SelfPre.nestMax p3 ≤ 36028797018963968', 'Lanius.Open.LowerSlotsSmall'],
     'compile_declared': ['Lanius.Faithful.SelfPre.paramsMax p1.funcs ≤ 1099511627776', 'Lanius.Faithful.SelfPre.depthMax p1.funcs ≤ 36028797018963968',
-                         'Lanius.Faithful.SelfPre.nestMax p1.funcs ≤ 36028797018963968', 'Lanius.Open.CompileFuncSlotsV2'],
+                         'Lanius.Faithful.SelfPre.nestMax p1.funcs ≤ 36028797018963968', 'Lanius.Open.CompileFuncSlotsV2',
+                         'Lanius.Open.LowerSlotsSmall'],
     'compile_source': ['Lanius.Faithful.SelfPre.paramsMax p0.funcs ≤ 1099511627776', 'Lanius.Faithful.SelfPre.depthMax p0.funcs ≤ 36028797018963968',
-                       'Lanius.Faithful.SelfPre.nestMax p0.funcs ≤ 36028797018963968', 'Lanius.Open.CompileFuncSlotsV2'],
+                       'Lanius.Faithful.SelfPre.nestMax p0.funcs ≤ 36028797018963968', 'Lanius.Open.CompileFuncSlotsV2',
+                       'Lanius.Open.LowerSlotsSmall'],
     'Instr_size': ['Lanius.Mini.Instr.size p0 ≤ K'],
     # the encoders' frame slots (each a 32-bit displacement): a code's slots below its
     # frame (`codeSlotReach`, SelfPre/CompileSlots), the frame within `frameLimit` (the open
@@ -665,8 +692,25 @@ COMPILE_OVERRIDES = {
     'store_types': ['p2 + Lanius.Mini.sizes p0 ≤ SB', 'p4 + 8 * Lanius.Mini.sizes p0 ≤ SB'],
     'store_cases': ['Lanius.Mini.maxSize p6 + p2 ≤ SB', '8 * Lanius.Mini.maxSize p6 + p4 ≤ SB',
                     'hb p6 + p5 ≤ 9223372036854775808'],
-    'element_stores': ['p0 ≤ 8', 'p2 + 8 * p4 ≤ SB', 'p3 + p4 ≤ SB'],
-    'element_loads': ['p0 ≤ 8', 'p2 + 8 * p4 ≤ SB', 'p3 + p4 ≤ SB'],
+    # a block offset plus its elements' bytes below 2^63 (an offset is at most `block_limit`,
+    # `array_args`); the slots below the slot bound
+    'element_stores': ['p0 ≤ 8', 'p2 + 8 * p4 ≤ 9223372036854775808', 'p3 + p4 ≤ SB'],
+    'element_loads': ['p0 ≤ 8', 'p2 + 8 * p4 ≤ 9223372036854775808', 'p3 + p4 ≤ SB'],
+    # a call's arrays: the offset checked against `block_limit` (`array_args`), the array
+    # local's slots within the scope's (`slots_lookup`)
+    # an array's elements, size slots each from base: k's and the count left's below the bound
+    'pick_element': ['p1 + p3 * p2 + p4 * p2 ≤ SB', '1 ≤ p4', '1 ≤ p2'],
+    'put_element': ['p1 + p3 * p2 + p4 * p2 ≤ SB', '1 ≤ p4', '1 ≤ p2', 'p0 + 1 + p2 ≤ SB'],
+    # (an array local's elements: within its binding's slots, `n * size` as `SrcType.size`)
+    'eval_pick': ['p0 + p2 * Lanius.Mini.SrcType.size p1 ≤ BB'],
+    'eval_array_element': ['p0 + p2 * Lanius.Mini.SrcType.size p1 ≤ BB'],
+    'store_pick': ['p0 + p2 * Lanius.Mini.SrcType.size p1 ≤ BB'],
+    'store_array_element': ['p0 + p2 * Lanius.Mini.SrcType.size p1 ≤ BB'],
+    'lower_literal': ['Lanius.Faithful.SelfPre.litTs p1 ≤ 4194304', 'Lanius.Mini.SrcType.size p1 ≤ K'],
+    'array_arg': ['p4 ≤ 2147483647'],
+    'array_arg_slice': ['p5 ≤ 2147483647', 'Lanius.Faithful.SelfPre.optTop p0 ≤ BB'],
+    'array_arg_local': ['p5 ≤ 2147483647', 'p0.slot + Lanius.Mini.SrcType.size p0.ty ≤ BB'],
+    'array_arg_before': ['p5 ≤ 2147483647', 'p6 ≤ 8', 'p7 ≤ 4194304', 'p0.slot + p7 ≤ BB'],
     # A round's byte count is at most its bytes (`val_packRound`, `val_packRounds`).
     'round_cons': ['p1 ≤ K', 'p2.count ≤ K'],
     'round_join': ['p0.count ≤ K', 'p1.count ≤ K'],
@@ -710,10 +754,16 @@ COMPILE_NUM_DROP = {
     # a field's offset: its fields' sizes (below `K`), not their numbers
     'offset_after': {1, 2}, 'field_offset': {0, 1},
     # an element's width (at most 4, `slots_packedWidth`)
-    'element_stores': {0}, 'element_loads': {0},
+    'element_stores': {0, 2}, 'element_loads': {0, 2},
     # counters bound by their overrides (`COMPILE_OVERRIDES`): an offset into the statics,
     # an arm's tag, the first parameter's slot
     'str_placed': {1}, 'eval_arms': {6}, 'param_scope': {1},
+    # a call's block offset, checked against `block_limit` (`array_args`)
+    'array_args': {0, 4}, 'array_arg_before': {5, 6, 7, 8},
+    # a field's index: its offset is within the struct's slots (`slots_fieldOffset`)
+    'lower_set_field': {1}, 'lower_set_field_eval': {2},
+    # an extent's statement: its extent, not its numbers (`COMPILE_OVERRIDES`)
+    'Expr_extent': {0}, 'args_extent': {0}, 'Stmt_extent': {0},
 }
 # The definitions the invariants' terms unfold by on constructors (the pre
 # modules' `hb_simp`, locally).
@@ -736,7 +786,10 @@ COMPILE_PRE_SIMP = ['Lanius.Mini.Stmt.weight', 'Lanius.Mini.Expr.weight', 'Laniu
                     'Lanius.Faithful.SelfPre.nestMax', 'Lanius.Faithful.SelfPre.scopeTop',
                     'Lanius.Faithful.SelfPre.optTop_none', 'Lanius.Faithful.SelfPre.optTop_some',
                     'Lanius.Faithful.SelfPre.optScopeTop_none', 'Lanius.Faithful.SelfPre.optScopeTop_some',
-                    'Lanius.Faithful.SelfPre.optSizes_none', 'Lanius.Faithful.SelfPre.optSizes_some']
+                    'Lanius.Faithful.SelfPre.optSizes_none', 'Lanius.Faithful.SelfPre.optSizes_some',
+                    'Lanius.Faithful.SelfPre.litTs_struct', 'Lanius.Faithful.SelfPre.litTs_array',
+                    'Lanius.Mini.Stmt.extent', 'Lanius.Mini.Expr.extent', 'Lanius.Mini.argsExtent',
+                    'Lanius.Faithful.SelfPre.optExtent_none', 'Lanius.Faithful.SelfPre.optExtent_some']
 PRE_PREAMBLE = ''
 # The type-size functions' arguments: their sizes (`ts`) are what they add, and
 # a list's sum ('sz', `sizes`) or largest ('ms', `maxSize`) below `K`, which their
@@ -762,7 +815,7 @@ COMPILE_SLOT_SEED = {'SrcEff_eval': [4], 'SrcStmt_lower': [5], 'eval_args': [4],
                      # offsets and counters with no cost to pay for them (`COMPILE_OVERRIDES`)
                      'view_stores': [2], 'str_stores': [1], 'load_type': [3], 'load_types': [3],
                      'load_cases': [2, 3], 'store_type': [2, 4], 'store_types': [2, 4],
-                     'store_cases': [2, 4, 5], 'element_stores': [2, 3], 'element_loads': [2, 3]}
+                     'store_cases': [2, 4, 5], 'element_stores': [3], 'element_loads': [3]}
 # The lowering's bindings: their slots below SLOT_BOUND.
 BINDING_HYPS = {'List Lanius.Mini.Binding': 'Lanius.Faithful.SelfPre.scopeTop {x}',
                 'Lanius.Mini.Binding': '{x}.slot + Lanius.Mini.SrcType.size {x}.ty',
@@ -775,15 +828,16 @@ COMPILE_SLOT_NOT = {}
 COMPILE_SLOT_LOOSE = {'assign_from': {0}, 'str_stores': {1}, 'load_cases': {3}, 'store_cases': {5}}
 # The Mini program's compile: the functions these reach bound the program's
 # numbers by `K` rather than `M` (they do not grow as it compiles: its slots,
-# indices and counts; the pc offsets and depths have their own invariants).
-COMPILE_FIXED_ROOTS = ['compile_optimized']
+# indices and counts; the pc offsets and depths have their own invariants), and the lowered
+# functions' (`val_lowerFuncs`: the source's or below 2^61, SelfPre/LowerSlots).
+COMPILE_FIXED_ROOTS = ['compile_optimized', 'compile_lowered']
 # The functions whose `match`es' pattern variables count as the parameter they
 # take apart (`match_aliases`): their callers can bound the whole value.
 COMPILE_NUM_ALIAS = {'compile_funcs', 'compile_lowered', 'lower_funcs', 'Instr_encode', 'encode_onto',
                      'Expr_extent', 'args_extent', 'Stmt_extent', 'Stmt_within'}
 # Modules the compile side's pre lemmas import for proved leaves' value lemmas
 # (`val_optimizeProgram`, from OptimizeKeepsNumbers).
-COMPILE_PRE_IMPORTS = ['Lanius.Faithful.SelfPre.CompileOpt']
+COMPILE_PRE_IMPORTS = ['Lanius.Faithful.SelfPre.CompileOpt', 'Lanius.Faithful.SelfPre.LowerSlots']
 # Value lemmas a pre lemma states up front (`p<i>` its parameters): facts about a
 # term that only a callee's premise mentions, where `valueFacts` does not look.
 COMPILE_FACTS = {
@@ -791,6 +845,8 @@ COMPILE_FACTS = {
     'compile_func': ['Lanius.Faithful.SelfPre.val_Stmt_temps p1.body'],
     # its functions' numbers, which bound the codes' (`vals_compileFuncs`)
     'compile_program': ['Lanius.Faithful.SelfPre.nb_Program_eq p0'],
+    # the lowered body's slots, for `lower_body` (the open leaf, SelfPre/LowerSlots)
+    'lower_func': ['Lanius.Faithful.SelfPre.lowered_body p0 p1 p2 p3' + ' (by assumption)' * 8],
 }
 
 
@@ -1158,7 +1214,7 @@ def num_hyps(e, k, xs, tys):
     # a type's slot count (`ts`, SelfPre/TS.lean) is at most the front end's weight limit;
     # declarations and signatures by their own measures (`TS_HYPS`)
     for i in sorted(used):
-        if i < len(xs) and 'ts' in used[i] and not ts_flat(tys[i]):
+        if i < len(xs) and 'ts' in used[i] and not ts_flat(tys[i]) and i not in COMPILE_TS_DROP.get(k, ()):
             t = ' '.join(tys[i].split())
             for h in TS_HYPS.get(t, ['ts {x} ≤ W']):
                 out.append(h.format(x=xs[i]).replace('≤ W', f'≤ {WEIGHT}').replace('≤ K', f'≤ {K}'))
@@ -1171,6 +1227,12 @@ def num_hyps(e, k, xs, tys):
         if 'w' in used[i] and t == 'Nat':
             out.append(f'{xs[i]} ≤ {WEIGHT}')
     return out
+
+
+# Type parameters with no `ts` hypothesis: their overrides (`COMPILE_OVERRIDES`) bound the
+# types they are lowered at instead (a literal's type: its fields' or its element's, `litTs`;
+# a view's array type has the view's length, bounded by `SrcStmt.depth`, not `ts`).
+COMPILE_TS_DROP = {'lower_literal': {1}}
 
 
 # The 'ts' kind's hypotheses of the types `ts` does not measure enough: the
@@ -1217,7 +1279,8 @@ def num_facts(e, k, xs, tys, names):
     if not NUMS['on']:
         return ''
     hyps = names.split()
-    nhb = sum(1 for x, t in zip(xs.split(), tys) if not e.g.flat(t))
+    nhb = sum(1 for i, (x, t) in enumerate(zip(xs.split(), tys))
+              if not e.g.flat(t) and i not in PRE_HB_DROP.get(k, ()))
     out = ''
     j = nhb
     for h in num_hyps(e, k, xs.split(), tys):
@@ -1433,7 +1496,8 @@ class Emit:
         tys = self.m.sig[f'Pre_{k}']
         xs = [f'x{i}' for i in range(len(tys))]
         binders = ' '.join(f'({x} : {t})' for x, t in zip(xs, tys))
-        hyps = [f'hb {x} ≤ M' for x, t in zip(xs, tys) if not self.g.flat(t)]
+        hyps = [f'hb {x} ≤ M' for i, (x, t) in enumerate(zip(xs, tys))
+                if not self.g.flat(t) and i not in PRE_HB_DROP.get(k, ())]
         hyps += num_hyps(self, k, xs, tys)  # compile side only
         hyps.append(f'M + b ≤ {K}')
         for h in OVERRIDES.get(k, []):
@@ -1617,6 +1681,8 @@ def main():
     while args[:1] in (['--ns'], ['--base'], ['--compile'], ['--prefix']):
         if args[0] == '--compile':
             HAND_CASE.update(COMPILE_HAND_CASE)
+            PRE_HAND.update(COMPILE_PRE_HAND)
+            PRE_HB_DROP.update(COMPILE_PRE_HB_DROP)
             args, compile_side = args[1:], True
             continue
         if args[0] == '--ns':

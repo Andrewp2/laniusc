@@ -7,7 +7,7 @@ public import Lanius.Faithful.GenB.SelfBModelF_allWeighed
 public import Lanius.Faithful.GenB.SelfBModelF_closeFuncs
 public import Lanius.Faithful.GenB.SelfBModelF_funcsBytes
 public import Lanius.Faithful.GenB.SelfBModelF_isEmptyUsize
-public import Lanius.Faithful.GenB.SelfBModelF_limLeaf
+public import Lanius.Faithful.GenB.SelfBModelF_limNumsEff
 public import Lanius.Faithful.GenB.SelfBModelF_negWideI32
 public import Lanius.Faithful.GenB.SelfBModelN1
 public import Lanius.Faithful.GenB.SelfBModelN2
@@ -20,7 +20,7 @@ public import Lanius.Mini.Frontend.P.collect
 public import Lanius.Mini.Frontend.P.funcsBytes
 public import Lanius.Mini.Frontend.P.funcsOnto
 public import Lanius.Mini.Frontend.P.isEmptyUsize
-public import Lanius.Mini.Frontend.P.limLeaf
+public import Lanius.Mini.Frontend.P.limNumsEff
 public import Lanius.Mini.Frontend.P.negWideI32
 public import Lanius.Mini.Frontend.P.rootInsts
 public import Lanius.Mini.Frontend.P.wideLeftStmt

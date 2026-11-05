@@ -14,7 +14,7 @@ import all Lanius.Faithful.Gen.SelfSrcF_distinct
 import all Lanius.Faithful.Gen.SelfSrcF_funcsBytes
 import all Lanius.Faithful.Gen.SelfSrcF_funcsOnto
 import all Lanius.Faithful.Gen.SelfSrcF_hasKids
-import all Lanius.Faithful.Gen.SelfSrcF_limLeaf
+import all Lanius.Faithful.Gen.SelfSrcF_limNumsEff
 import all Lanius.Faithful.Gen.SelfSrcF_lowerTy
 import all Lanius.Faithful.Gen.SelfSrcF_methodDecl
 import all Lanius.Faithful.Gen.SelfSrcF_moduleOr

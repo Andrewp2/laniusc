@@ -1,0 +1,16 @@
+#!/bin/bash
+# Part of lv (formal/tools/lv): `lv memwait`; heavy, lcc and lean run it directly.
+# memwait: the one memory rule for starting heavy work (each lean process,
+# each heavy job, lcheck). Wait until the machine has 3.5 GB available, counting
+# every lean, laniusc, rustc or cargo process started in the last 5 s as 1.5 GB
+# it has not allocated yet. Nothing is ever killed for memory: all this work runs
+# in work.slice, whose MemoryHigh (RAM - 4 GB) only slows it down.
+# The check is serialized (memwait.lock) so a burst of starts sees each other.
+exec 7>/home/andrew-peterson/code/laniusc/target/claude-work/memwait.lock
+flock 7
+while :; do
+  avail=$(awk '/^MemAvailable:/ {print $2 * 1024}' /proc/meminfo)
+  young=$(ps -C lean,laniusc,rustc,cargo -o etimes= | awk '$1 < 5' | wc -l)
+  [ "$avail" -ge $(( 3758096384 + 1610612736 * young )) ] && exit 0
+  sleep 0.3
+done

@@ -14,6 +14,7 @@ import all Lanius.Mini.Compiler.P.storeArray
 import all Lanius.Mini.Compiler.P.strStores
 import all Lanius.Mini.Unique
 import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.bindingBytes
 
 @[expose] public section
 
@@ -139,6 +140,14 @@ theorem optTop_some (b : Binding) : optTop (some b) = b.slot + SrcType.size b.ty
 theorem optScopeTop_none : optScopeTop none = 0 := rfl
 theorem optScopeTop_some (s : List Binding) : optScopeTop (some s) = scopeTop s := rfl
 
+/-- A lowered body's extent (`Stmt.extent`: past its largest slot), `0` for none. -/
+def optExtent : Option Stmt → Nat
+  | none => 0
+  | some s => Stmt.extent s
+
+theorem optExtent_none : optExtent none = 0 := rfl
+theorem optExtent_some (s : Stmt) : optExtent (some s) = Stmt.extent s := rfl
+
 theorem slots_lookup : ∀ (scope : List Binding) (id : Nat), optTop (lookup scope id) ≤ scopeTop scope
   | [], _ => by simp [lookup, optTop, scopeTop]
   | b :: rest, id => by
@@ -153,6 +162,16 @@ theorem slotsSome_lookup (scope : List Binding) (id : Nat) (b : Binding) (h : lo
   have := slots_lookup scope id
   rw [h] at this
   exact this
+
+/-- The block bytes an argument takes: an array local's, within the scope's slots. -/
+theorem slots_argBytes (scope : List Binding) (arg : SrcEff) : argBytes scope arg ≤ 8 * scopeTop scope := by
+  have := slots_lookup scope
+  cases arg <;> simp only [argBytes] <;> try omega
+  case arraySlice element id =>
+    have h := this id
+    cases hl : lookup scope id with
+    | none => simp [bindingBytes]
+    | some b => rw [hl, optTop_some] at h; simp only [bindingBytes]; omega
 
 /-- An arm's binders start at `slot` and after the types before them. -/
 theorem slots_armScope : ∀ (binders : List Nat) (types : List SrcType) (slot : Nat) (scope : List Binding),
@@ -252,5 +271,32 @@ theorem slots_strWords : ∀ (chars : List Nat), 4 * hb (strWords chars) ≤ hb 
   | _ :: _ :: _ :: _ :: r4 => by
     have := slots_strWords r4
     simp only [strWords, hb_cons, hb_bitvec, hb_nat, Nat.zero_max] at *; omega
+
+
+/-- The slots of the types a literal of type `t` is lowered at (`lower_literal`): a struct's
+fields', an array's element's (not the array's own size, which only its length gives). -/
+def litTs : SrcType → Nat
+  | .i32 => 0
+  | .bool => 0
+  | .uint _ => 0
+  | .struct _ fields => tySlotsList fields
+  | .enum _ _ => 0
+  | .ptr => 0
+  | .slice _ => 0
+  | .array element _ => tySlots element
+  | .unit => 0
+  | .isize => 0
+  | .char => 0
+  | .float _ => 0
+  | .sint _ => 0
+  | .view _ => 0
+  | .str => 0
+  | .ref _ => 0
+
+theorem litTs_struct (id : Nat) (fields : List SrcType) : litTs (.struct id fields) = tySlotsList fields := rfl
+theorem litTs_array (element : SrcType) (length : Nat) : litTs (.array element length) = tySlots element := rfl
+
+theorem slots_litTs (t : SrcType) : litTs t ≤ tySlots t := by
+  cases t <;> simp only [litTs, tySlots] <;> omega
 
 end Lanius.Faithful.SelfPre

@@ -15,6 +15,7 @@ public import Lanius.Mini.Compiler.P.repeatType
 public import Lanius.Mini.Compiler.P.UintTy_half
 public import Lanius.Mini.Compiler.P.declareFuncs
 public import Lanius.Mini.Compiler.P.shortCircuit
+public import Lanius.Mini.Compiler.P.armBodyScope
 import all Lanius.Mini.Compiler.P.SrcType_same
 import all Lanius.Mini.Compiler.P.withBudget
 import all Lanius.Mini.Compiler.P.arrayCallSig
@@ -29,6 +30,7 @@ import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.declareFuncs
 import all Lanius.Mini.Compiler.P.shortCircuit
 import all Lanius.Mini.Compiler.P.declareProgram
+import all Lanius.Mini.Compiler.P.armBodyScope
 
 @[expose] public section
 
@@ -600,6 +602,14 @@ theorem val_paramScope : ∀ (ps : List SrcParam) (slot : Nat) (scope : List Bin
       ({ id := p.id, slot := slot, ty := p.ty, home := none } :: scope)
     have hp : ts p = tySlots p.ty := rfl
     simp only [paramScope, ts_cons, ts_Binding_mk, ts_SrcType, hp] at ih ⊢; omega
+
+/-- An arm's body scope binds its payload's type. -/
+theorem val_armBodyScope (binds : Bool) (binder : Nat) (ty : SrcType) (next : Nat) (scope : List Binding) :
+    ts (armBodyScope binds binder ty next scope) ≤ max (ts ty) (ts scope) := by
+  simp only [armBodyScope]
+  split
+  · omega
+  · simp only [ts_cons, ts_Binding_mk]; omega
 
 /-- A field's offset is at most its struct's size. -/
 theorem val_fieldOffset : ∀ (l : List SrcType) (i : Nat), fieldOffset l i ≤ sizes l

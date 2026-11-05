@@ -1042,7 +1042,7 @@ theorem host_read {ea : EvaluatedArgs}
       exact hcA.out
     · show afterArgs.world.standardError = outputOf 2 hpA.io.trace
       exact hcA.err
-    · show afterArgs.world.fileHandles = []
+    · show afterArgs.world.fs.handles = []
       exact hcA.closed
     · show afterArgs.world.standardInput.drop (envA (slot + 1)).toNat = hpA.io.input.drop (envA (slot + 1)).toNat
       rw [input]
@@ -1128,7 +1128,7 @@ theorem host_monotonicRead {ea : EvaluatedArgs}
       · show afterArgs.world.standardError = outputOf 2 (hpA.io.afterReading 1).trace
         rw [Io.afterReading_trace]
         exact hcA.err
-      · show afterArgs.world.fileHandles = []
+      · show afterArgs.world.fs.handles = []
         exact hcA.closed
       · show afterArgs.world.standardInput = (hpA.io.afterReading 1).input
         rw [Io.afterReading_input]
@@ -1187,7 +1187,7 @@ theorem host_systemRead {ea : EvaluatedArgs}
       · show afterArgs.world.standardError = outputOf 2 (hpA.io.afterReading 0).trace
         rw [Io.afterReading_trace]
         exact hcA.err
-      · show afterArgs.world.fileHandles = []
+      · show afterArgs.world.fs.handles = []
         exact hcA.closed
       · show afterArgs.world.standardInput = (hpA.io.afterReading 0).input
         rw [Io.afterReading_input]
@@ -1241,7 +1241,7 @@ theorem host_fillSecureBytes {ea : EvaluatedArgs}
       exact hcA.out
     · show afterArgs.world.standardError = outputOf 2 hpA.io.trace
       exact hcA.err
-    · show afterArgs.world.fileHandles = []
+    · show afterArgs.world.fs.handles = []
       exact hcA.closed
     · show afterArgs.world.standardInput = hpA.io.input
       exact hcA.input

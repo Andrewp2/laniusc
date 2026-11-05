@@ -14047,10 +14047,279 @@ pub fn lim_param_slots(ps: List<SrcParam>) -> core::option::Option<usize> {
     };
 }
 
+// An expression's unchecked slot steps (SrcEff.slotNest in
+// SelfPre/EvalSlots, decided 11-04, F14): the evaluator starts an
+// operator's right operand one slot past its left with no step of its own,
+// so a right-nested chain moves the slot one further per level. The checked
+// starts (a call's arguments, a let's body, a match's arms) reset it.
+// One more step, saturating past depth_limit(), so the count never wraps
+// (a count past the limit rejects the function anyway).
+pub fn lim_nest_step(n: usize) -> usize {
+    if (n > depth_limit()) {
+        return n;
+    }
+    return plus(n, 1);
+}
+
+// extract: mutual begin
+pub fn lim_nest_eff(x: SrcEff) -> usize {
+    return match (x) {
+        EPure(e) -> 0,
+        ECall(f, args) -> lim_nest_effs(unbox(args)),
+        EApply(op, a, b) -> max_of(lim_nest_eff(unbox(a)), lim_nest_step(lim_nest_eff(unbox(b)))),
+        ENeg(a) -> lim_nest_eff(unbox(a)),
+        ENot(a) -> lim_nest_eff(unbox(a)),
+        ECast(t, a) -> lim_nest_eff(unbox(a)),
+        EIndex(sl, i) -> lim_nest_eff(unbox(i)),
+        EStruct(t, fs) -> lim_nest_effs(unbox(fs)),
+        EVariant(t, k, ps) -> lim_nest_effs(unbox(ps)),
+        EMatch(sc, ety, t, bs, vs) -> max_of(lim_nest_eff(unbox(sc)), lim_nest_effs(unbox(vs))),
+        EDivide(op, a, b) -> max_of(lim_nest_eff(unbox(a)), lim_nest_step(lim_nest_eff(unbox(b)))),
+        EStride(sl) -> 0,
+        ArraySlice(e, a) -> 0,
+        EIf(c, t, a, b) -> max_of(lim_nest_eff(unbox(c)), max_of(lim_nest_eff(unbox(a)), lim_nest_eff(unbox(b)))),
+        ELet(id, t, v, rt, b) -> max_of(lim_nest_eff(unbox(v)), lim_nest_eff(unbox(b))),
+        ELen(sl) -> 0,
+        EStr(offset, chars) -> 0,
+        EBorrow(bty, bplace) -> 0,
+        EDeref(dty, dref) -> 0,
+        EField(fbase, fidx) -> 0,
+        EAt(abase, aindex) -> 0,
+    };
+}
+
+pub fn lim_nest_effs(xs: List<SrcEff>) -> usize {
+    return match (xs) {
+        Nil -> 0,
+        Cons(x, rest) -> max_of(lim_nest_eff(x), lim_nest_effs(unbox(rest))),
+    };
+}
+// extract: mutual end
+
+// The largest lim_nest_eff of a statement's expressions (SrcStmt.slotNest).
+pub fn lim_nest(s: SrcStmt) -> usize {
+    return match (s) {
+        Nop -> 0,
+        Let(id, ty, e, body) -> lim_nest(unbox(body)),
+        LetStruct(id, ty, es, body) -> lim_nest(unbox(body)),
+        LetCall(id, ty, f, args, body) -> lim_nest(unbox(body)),
+        LetEnum(id, ty, k, es, body) -> lim_nest(unbox(body)),
+        LetMatch(id, ty, sc, eid, arms, body) -> lim_nest(unbox(body)),
+        Set(id, e) -> 0,
+        SetField(id, j, e) -> 0,
+        SetCall(id, f, args) -> 0,
+        Then(a, b) -> max_of(lim_nest(unbox(a)), lim_nest(unbox(b))),
+        If(c, a, b) -> max_of(lim_nest(unbox(a)), lim_nest(unbox(b))),
+        While(c, body) -> lim_nest(unbox(body)),
+        Return(e) -> 0,
+        LetAlloc(id, size, shift, body) -> lim_nest(unbox(body)),
+        LetLoad(id, p, o, body) -> lim_nest(unbox(body)),
+        SetByte(p, o, v) -> 0,
+        Free(p, size, shift) -> 0,
+        LetSlice(id, el, p, n, body) -> lim_nest(unbox(body)),
+        LetIndex(id, ty, sl, i, body) -> lim_nest(unbox(body)),
+        SetIndex(sl, i, v) -> 0,
+        LetEval(id, ty, x, body) -> max_of(lim_nest_eff(x), lim_nest(unbox(body))),
+        SetEval(id, x) -> lim_nest_eff(x),
+        IfEval(c, a, b) -> max_of(lim_nest_eff(c), max_of(lim_nest(unbox(a)), lim_nest(unbox(b)))),
+        WhileEval(c, body) -> max_of(lim_nest_eff(c), lim_nest(unbox(body))),
+        ReturnEval(x) -> lim_nest_eff(x),
+        Discard(x) -> lim_nest_eff(x),
+        SetIndexEval(sl, i, v) -> max_of(lim_nest_eff(i), lim_nest_eff(v)),
+        SetFieldEval(id, j, x) -> lim_nest_eff(x),
+        ReturnUnit -> 0,
+        Assert(x) -> lim_nest_eff(x),
+        Break -> 0,
+        Continue -> 0,
+        MatchArm(sc, en, k, bs, x, ty, body, rest) -> max_of(lim_nest(unbox(body)), lim_nest(unbox(rest))),
+        Unreachable(id, ty) -> 0,
+        LetView(id, n, es, p, body) -> lim_nest(unbox(body)),
+        LetStr(p, cs, body) -> lim_nest(unbox(body)),
+        SetPlace(aplace, avalue) -> 0,
+        SetPlaceOp(aop, aplace, avalue) -> 0,
+    };
+}
+
+// Every number in a function is at most depth_limit() (decided 11-04, F14):
+// its ids, type ids, field and variant indices, array and view lengths,
+// string offsets and bytes, as SelfPre/NB's nb counts them. The compiler's
+// preconditions bound its parameters by the program's numbers; ids and
+// offsets come from counters that grow with monomorphization's copies.
+pub fn lim_num(n: usize) -> bool {
+    return depth_limit() >= n;
+}
+
+pub fn lim_nums_ids(ns: List<usize>) -> bool {
+    return match (ns) {
+        Nil -> true,
+        Cons(n, rest) -> lim_num(n) && lim_nums_ids(unbox(rest)),
+    };
+}
+
+pub fn lim_nums_idss(nss: List<List<usize>>) -> bool {
+    return match (nss) {
+        Nil -> true,
+        Cons(ns, rest) -> lim_nums_ids(ns) && lim_nums_idss(unbox(rest)),
+    };
+}
+
+// extract: mutual begin
+pub fn lim_nums_ty(t: SrcType) -> bool {
+    return match (t) {
+        I32 -> true,
+        Bool -> true,
+        Uint(k) -> true,
+        Struct(id, fields) -> lim_num(id) && lim_nums_tys(unbox(fields)),
+        Enum(id, variants) -> lim_num(id) && lim_nums_variants(unbox(variants)),
+        Ptr -> true,
+        Slice(element) -> lim_nums_ty(unbox(element)),
+        SrcType::Array(element, length) -> lim_nums_ty(unbox(element)) && lim_num(length),
+        Unit -> true,
+        Isize -> true,
+        SrcType::Char -> true,
+        SrcType::Float(ft) -> true,
+        Sint(sk) -> true,
+        View(view_length) -> lim_num(view_length),
+        Str -> true,
+        Ref(referent) -> lim_nums_ty(unbox(referent)),
+    };
+}
+
+pub fn lim_nums_tys(ts: List<SrcType>) -> bool {
+    return match (ts) {
+        Nil -> true,
+        Cons(t, rest) -> lim_nums_ty(t) && lim_nums_tys(unbox(rest)),
+    };
+}
+
+pub fn lim_nums_variants(vs: List<List<SrcType>>) -> bool {
+    return match (vs) {
+        Nil -> true,
+        Cons(v, rest) -> lim_nums_tys(v) && lim_nums_variants(unbox(rest)),
+    };
+}
+// extract: mutual end
+
+pub fn lim_nums_expr(e: SrcExpr) -> bool {
+    return match (e) {
+        Int(k) -> true,
+        Boolean(b) -> true,
+        Unsigned(u, k) -> true,
+        Local(id) -> lim_num(id),
+        Field(id, j) -> lim_num(id) && lim_num(j),
+        Negate(x) -> lim_nums_expr(unbox(x)),
+        Not(x) -> lim_nums_expr(unbox(x)),
+        Apply(op, a, b) -> lim_nums_expr(unbox(a)) && lim_nums_expr(unbox(b)),
+        Cast(t, x) -> lim_nums_ty(t) && lim_nums_expr(unbox(x)),
+        Null -> true,
+        SrcExpr::Char(code) -> true,
+        SrcExpr::Float(ft, bits) -> true,
+    };
+}
+
+pub fn lim_nums_exprs(es: List<SrcExpr>) -> bool {
+    return match (es) {
+        Nil -> true,
+        Cons(e, rest) -> lim_nums_expr(e) && lim_nums_exprs(unbox(rest)),
+    };
+}
+
+pub fn lim_nums_arms(arms: List<SrcArm>) -> bool {
+    return match (arms) {
+        Nil -> true,
+        Cons(a, rest) -> lim_nums_ids(a.binders) && lim_nums_expr(a.value) && lim_nums_arms(unbox(rest)),
+    };
+}
+
+// extract: mutual begin
+pub fn lim_nums_eff(x: SrcEff) -> bool {
+    return match (x) {
+        EPure(e) -> lim_nums_expr(e),
+        ECall(f, args) -> lim_num(f) && lim_nums_effs(unbox(args)),
+        EApply(op, a, b) -> lim_nums_eff(unbox(a)) && lim_nums_eff(unbox(b)),
+        ENeg(a) -> lim_nums_eff(unbox(a)),
+        ENot(a) -> lim_nums_eff(unbox(a)),
+        ECast(t, a) -> lim_nums_ty(t) && lim_nums_eff(unbox(a)),
+        EIndex(sl, i) -> lim_num(sl) && lim_nums_eff(unbox(i)),
+        EStruct(t, fs) -> lim_nums_ty(t) && lim_nums_effs(unbox(fs)),
+        EVariant(t, k, ps) -> lim_nums_ty(t) && lim_num(k) && lim_nums_effs(unbox(ps)),
+        EMatch(sc, ety, t, bs, vs) -> lim_nums_eff(unbox(sc)) && lim_nums_ty(ety) && lim_nums_ty(t) && lim_nums_idss(bs) && lim_nums_effs(unbox(vs)),
+        EDivide(op, a, b) -> lim_nums_eff(unbox(a)) && lim_nums_eff(unbox(b)),
+        EStride(sl) -> lim_num(sl),
+        ArraySlice(e, a) -> lim_nums_ty(e) && lim_num(a),
+        EIf(c, t, a, b) -> lim_nums_eff(unbox(c)) && lim_nums_ty(t) && lim_nums_eff(unbox(a)) && lim_nums_eff(unbox(b)),
+        ELet(id, t, v, rt, b) -> lim_num(id) && lim_nums_ty(t) && lim_nums_eff(unbox(v)) && lim_nums_ty(rt) && lim_nums_eff(unbox(b)),
+        ELen(sl) -> lim_num(sl),
+        EStr(offset, chars) -> lim_num(offset) && lim_nums_ids(chars),
+        EBorrow(bty, bplace) -> lim_nums_ty(bty) && lim_nums_eff(unbox(bplace)),
+        EDeref(dty, dref) -> lim_nums_ty(dty) && lim_nums_eff(unbox(dref)),
+        EField(fbase, fidx) -> lim_nums_eff(unbox(fbase)) && lim_num(fidx),
+        EAt(abase, aindex) -> lim_nums_eff(unbox(abase)) && lim_nums_eff(unbox(aindex)),
+    };
+}
+
+pub fn lim_nums_effs(xs: List<SrcEff>) -> bool {
+    return match (xs) {
+        Nil -> true,
+        Cons(x, rest) -> lim_nums_eff(x) && lim_nums_effs(unbox(rest)),
+    };
+}
+// extract: mutual end
+
+pub fn lim_nums_stmt(s: SrcStmt) -> bool {
+    return match (s) {
+        Nop -> true,
+        Let(id, ty, e, body) -> lim_num(id) && lim_nums_ty(ty) && lim_nums_expr(e) && lim_nums_stmt(unbox(body)),
+        LetStruct(id, ty, es, body) -> lim_num(id) && lim_nums_ty(ty) && lim_nums_exprs(es) && lim_nums_stmt(unbox(body)),
+        LetCall(id, ty, f, args, body) -> lim_num(id) && lim_nums_ty(ty) && lim_num(f) && lim_nums_exprs(args) && lim_nums_stmt(unbox(body)),
+        LetEnum(id, ty, k, es, body) -> lim_num(id) && lim_nums_ty(ty) && lim_num(k) && lim_nums_exprs(es) && lim_nums_stmt(unbox(body)),
+        LetMatch(id, ty, sc, eid, arms, body) -> lim_num(id) && lim_nums_ty(ty) && lim_num(sc) && lim_num(eid) && lim_nums_arms(arms) && lim_nums_stmt(unbox(body)),
+        Set(id, e) -> lim_num(id) && lim_nums_expr(e),
+        SetField(id, j, e) -> lim_num(id) && lim_num(j) && lim_nums_expr(e),
+        SetCall(id, f, args) -> lim_num(id) && lim_num(f) && lim_nums_exprs(args),
+        Then(a, b) -> lim_nums_stmt(unbox(a)) && lim_nums_stmt(unbox(b)),
+        If(c, a, b) -> lim_nums_expr(c) && lim_nums_stmt(unbox(a)) && lim_nums_stmt(unbox(b)),
+        While(c, body) -> lim_nums_expr(c) && lim_nums_stmt(unbox(body)),
+        Return(e) -> lim_nums_expr(e),
+        LetAlloc(id, size, shift, body) -> lim_num(id) && lim_nums_expr(size) && lim_num(shift) && lim_nums_stmt(unbox(body)),
+        LetLoad(id, p, o, body) -> lim_num(id) && lim_nums_expr(p) && lim_nums_expr(o) && lim_nums_stmt(unbox(body)),
+        SetByte(p, o, v) -> lim_nums_expr(p) && lim_nums_expr(o) && lim_nums_expr(v),
+        Free(p, size, shift) -> lim_nums_expr(p) && lim_nums_expr(size) && lim_num(shift),
+        LetSlice(id, el, p, n, body) -> lim_num(id) && lim_nums_ty(el) && lim_nums_expr(p) && lim_nums_expr(n) && lim_nums_stmt(unbox(body)),
+        LetIndex(id, ty, sl, i, body) -> lim_num(id) && lim_nums_ty(ty) && lim_num(sl) && lim_nums_expr(i) && lim_nums_stmt(unbox(body)),
+        SetIndex(sl, i, v) -> lim_num(sl) && lim_nums_expr(i) && lim_nums_expr(v),
+        LetEval(id, ty, x, body) -> lim_num(id) && lim_nums_ty(ty) && lim_nums_eff(x) && lim_nums_stmt(unbox(body)),
+        SetEval(id, x) -> lim_num(id) && lim_nums_eff(x),
+        IfEval(c, a, b) -> lim_nums_eff(c) && lim_nums_stmt(unbox(a)) && lim_nums_stmt(unbox(b)),
+        WhileEval(c, body) -> lim_nums_eff(c) && lim_nums_stmt(unbox(body)),
+        ReturnEval(x) -> lim_nums_eff(x),
+        Discard(x) -> lim_nums_eff(x),
+        SetIndexEval(sl, i, v) -> lim_num(sl) && lim_nums_eff(i) && lim_nums_eff(v),
+        SetFieldEval(id, j, x) -> lim_num(id) && lim_num(j) && lim_nums_eff(x),
+        ReturnUnit -> true,
+        Assert(x) -> lim_nums_eff(x),
+        Break -> true,
+        Continue -> true,
+        MatchArm(sc, en, k, bs, x, ty, body, rest) -> lim_num(sc) && lim_num(en) && lim_num(k) && lim_num(x) && lim_nums_ty(ty) && lim_nums_stmt(unbox(body)) && lim_nums_stmt(unbox(rest)),
+        Unreachable(id, ty) -> lim_num(id) && lim_nums_ty(ty),
+        LetView(id, n, es, p, body) -> lim_num(id) && lim_num(n) && lim_nums_exprs(es) && lim_num(p) && lim_nums_stmt(unbox(body)),
+        LetStr(p, cs, body) -> lim_num(p) && lim_nums_ids(cs) && lim_nums_stmt(unbox(body)),
+        SetPlace(aplace, avalue) -> lim_nums_eff(aplace) && lim_nums_eff(avalue),
+        SetPlaceOp(aop, aplace, avalue) -> lim_nums_eff(aplace) && lim_nums_eff(avalue),
+    };
+}
+
+pub fn lim_nums_params(ps: List<SrcParam>) -> bool {
+    return match (ps) {
+        Nil -> true,
+        Cons(p, rest) -> lim_num(p.id) && lim_nums_ty(p.ty) && lim_nums_params(unbox(rest)),
+    };
+}
+
 pub fn lim_funcs(fs: List<SrcFunc>) -> bool {
     return match (fs) {
         Nil -> true,
-        Cons(g, rest) -> lim_params(g.params) && !is_none_weight(lim_param_slots(g.params)) && lim_ty(g.ret) && !is_none_weight(lim_stmt(g.body)) && lim_funcs(unbox(rest)),
+        Cons(g, rest) -> lim_params(g.params) && !is_none_weight(lim_param_slots(g.params)) && lim_ty(g.ret) && !is_none_weight(lim_stmt(g.body)) && depth_limit() >= lim_nest(g.body) && lim_nums_params(g.params) && lim_nums_ty(g.ret) && lim_nums_stmt(g.body) && lim_funcs(unbox(rest)),
     };
 }
 

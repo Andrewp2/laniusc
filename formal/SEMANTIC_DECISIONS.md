@@ -1063,7 +1063,9 @@ verified compiler's locals are 64-bit slots with no address. The design:
      slots (static address, byte count) and is read-only; nothing yet
      makes a `str` from heap bytes, and a later `&str` or owned string would
      be a separate type, not this one. (8) Files (decided 11-03, f6v,
-     F8 piece 2; stage (a) done 11-03: Core's model, `World.lean`). laniusc's file externs are its
+     F8 piece 2; stage (a) done 11-03: Core's model, `World.lean`; stage
+     (b) done 11-04: `Files.lean`, the x86 kernel and the mini system
+     calls). laniusc's file externs are its
      runtime's raw Linux system calls: `open_read`, `open_write` and
      `open_append` (and the `*_path` forms taking a `str`) copy the path
      to a NUL-terminated stack buffer (longer than 4095 bytes: -36, a NUL
@@ -1109,7 +1111,24 @@ verified compiler's locals are 64-bit slots with no address. The design:
      each call of a file target runs in a fresh directory holding seed
      files on both sides and the directory trees are compared, with `str`
      paths from a fixed path set; (d) the lowering (a `.lani` change,
-     queued with the coordinator). `write_text` and the other output
+     queued with the coordinator). Stage (b) as built: the model moved
+     to `Lanius.Files` (`System`: files, directories, descriptors;
+     `openPath`, `readBytes`, `writeBytes`, `closeHandle`, and the system
+     calls' results `read`, `write`, `close`, -9 for a descriptor not
+     open), which Core's world holds as `fs` (the fields `files`,
+     `directories` and `fileHandles` are gone; `openFile` is the path
+     copy, then `openPath`) and the x86 `Io` as `files`. The x86 kernel
+     gains `read`, `write` and `close` of a descriptor 3 or more (rdi's
+     low 32 bits, as Linux's `unsigned int fd`) and `open` of a
+     NUL-terminated path with the three flag sets and mode 0666. The mini
+     `write` and `read` system calls take a descriptor 3 or more with the
+     same bounds as fds 1, 2 and 0 (a read's whole buffer in the heap) to
+     the kernel's file calls on `heap.io.files`, simulated by the same
+     code (`storing_simulates`, `sending_simulates`); the mini `open` and
+     `close` are new `Syscall` constructors in `compiler.lani`, so they
+     come with stage (d), as does relating Core's `fs` to `io.files`
+     (`HeapCorr` still asks that no descriptor be open; stage (d) also
+     has `Loaded` say that a new process has none). `write_text` and the other output
      services then write to any open descriptor as `write(2)` does.
      `remove_file`, `create_dir`, `remove_dir`, `rename` and `read_i32`
      follow.
@@ -2761,6 +2780,12 @@ limit:
 - Every function's parameters need at most `depth_limit()` slots together
   (`params_size`; `lim_param_slots`). A struct's fields together are its
   slot count, so the first limit already bounds them.
+- Every function's expressions nest at most `depth_limit()` unchecked slot steps (`lim_nest`, as
+  `SrcStmt.slotNest` in SelfPre/EvalSlots counts them, its step saturating past the limit so it never
+  wraps), and every number in a function (ids, type ids, field and variant indices, lengths, string
+  offsets and bytes, as SelfPre/NB's `nb` counts them) is at most `depth_limit()` (`lim_nums`; added
+  11-04, leafA, for PreCompileSourceV5's premises: ids and offsets come from counters that grow with
+  monomorphization's copies).
 - `untyped_rejected` rejects a program past any of these (`lim_funcs`). It runs
   last, on the closed, monomorphized functions with their string
   literals placed, so it sees the copies.

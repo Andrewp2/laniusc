@@ -708,8 +708,24 @@ def certClosed? (atomsArr : Array Expr) (goal : Expr) (hyps : Array (Expr × Exp
       mkLambdaFVars (xs ++ hs) p'
   return some (mkAppN (mkAppN closed atomsArr) (used.map (·.1)))
 
+/-- Take apart the context's conjunctions that are not arithmetic as a whole (a split's
+`(b = true ∧ 0 < x) ∧ x < k`), so that their arithmetic parts are hypotheses. -/
+partial def splitMixed : TacticM Unit := do
+  let g ← getMainGoal
+  let some h ← g.withContext (do
+      for d in ← getLCtx do
+        if d.isImplementationDetail then continue
+        let t ← instantiateMVars d.type
+        if t.isAppOfArity ``And 2 && (propAtoms t #[]).isNone then return some d.fvarId
+      return none) | return
+  let gs ← g.cases h
+  replaceMainGoal (gs.toList.map (·.mvarId))
+  splitMixed
+
 /-- Prove the main goal by `omega` over its and the hypotheses' atoms. -/
-def omegaAtoms : TacticM Unit := withMainContext do
+def omegaAtoms : TacticM Unit := do
+  splitMixed
+  withMainContext do
   let g ← getMainGoal
   let goal ← instantiateMVars (← g.getType)
   dbg "omegaAtoms"
@@ -805,7 +821,7 @@ def slotFacts (es : Array Expr) (hyps : Array (Expr × Expr)) : MetaM (Array Exp
     for s in subterms (fun e => e.isApp && e.getAppFn.isConst && !e.hasLooseBVars) t do
       let .const fn _ := s.getAppFn | continue
       if seen.contains s then continue
-      if (`Lanius.Mini).isPrefixOf fn then
+      if (`Lanius.Mini).isPrefixOf fn || (`Lanius.Faithful.SelfPre).isPrefixOf fn then
         let nm := `Lanius.Faithful.SelfPre ++ Name.mkSimple s!"slots_{lastName fn}"
         if env.contains nm then
           seen := seen.push s
@@ -830,25 +846,37 @@ def slotFacts (es : Array Expr) (hyps : Array (Expr × Expr)) : MetaM (Array Exp
 /-- The slot facts (`slotFacts`) of the goal's terms and the context's type splits, as
 hypotheses in their normal form. -/
 def addSlotFacts : TacticM Unit := do
-  if (← getGoals).isEmpty then return
-  let g ← getMainGoal
-  let facts ← g.withContext do
-    let mut eqs : Array (Expr × Expr) := #[]
-    for d in ← getLCtx do
-      if d.isImplementationDetail then continue
-      let t ← instantiateMVars d.type
-      if let some (sty, _, _) := t.eq? then
-        if sty.isConstOf `Lanius.Mini.SrcType then eqs := eqs.push (d.toExpr, t)
-    slotFacts #[← instantiateMVars (← g.getType)] eqs
-  if facts.isEmpty then return
-  let mut goal := g
-  let mut hs : Array FVarId := #[]
-  for p in facts do
-    let (h, m') ← (← goal.withContext do goal.assert `hslot (← inferType p) p).intro1P
-    goal := m'
-    hs := hs.push h
-  replaceMainGoal [goal]
-  simpAt true (hbNormNames ++ normNames ++ #[``Nat.reducePow]) (hs := some hs) (target := false)
+  -- two rounds: a fact's normal form can have terms of its own (`sizes [t]` is `t.size`)
+  for round in [0, 1] do
+    if (← getGoals).isEmpty then return
+    let g ← getMainGoal
+    let facts ← g.withContext do
+      let mut eqs : Array (Expr × Expr) := #[]
+      let mut mine : Array Expr := #[]
+      for d in ← getLCtx do
+        if d.isImplementationDetail then continue
+        let t ← instantiateMVars d.type
+        if d.userName == `hslot then mine := mine.push t
+        if let some (sty, _, _) := t.eq? then
+          if sty.isConstOf `Lanius.Mini.SrcType then eqs := eqs.push (d.toExpr, t)
+      let gt ← instantiateMVars (← g.getType)
+      let es := if round == 0 then #[gt] else mine
+      let fs ← slotFacts es eqs
+      -- (the second round's new facts only)
+      let mut out := #[]
+      for p in fs do
+        let t ← inferType p
+        unless mine.contains t do out := out.push p
+      return out
+    if facts.isEmpty then return
+    let mut goal := g
+    let mut hs : Array FVarId := #[]
+    for p in facts do
+      let (h, m') ← (← goal.withContext do goal.assert `hslot (← inferType p) p).intro1P
+      goal := m'
+      hs := hs.push h
+    replaceMainGoal [goal]
+    simpAt true (hbNormNames ++ normNames ++ #[``Nat.reducePow]) (hs := some hs) (target := false)
 
 /-- Prove `ty` in the current context: heights normalized, then a certificate or `omega`. -/
 def proveArith0? (ty : Expr) : TacticM (Option Expr) := do
@@ -1552,7 +1580,8 @@ def preKey? (e : Expr) : Option String :=
 
 /-- Facts on the numbers the Lean functions compute, which heights do not bound
 (SelfPre/Values): `val_F xs : F xs ≤ ..` for each `F xs` in the goal or the
-hypotheses, and `vals_F xs v h : ..` for each hypothesis `h : F xs = some v`. -/
+hypotheses, and `vals_F xs v h : ..` for each hypothesis `h : F xs = some v`; an open
+statement (`openProp`) either lemma assumes next is the context's hypothesis of it. -/
 def valueFacts : TacticM Unit := do
   if (← getGoals).isEmpty then return
   withMainContext do
@@ -1582,7 +1611,12 @@ def valueFacts : TacticM Unit := do
         let nmS := `Lanius.Faithful.SelfPre ++ Name.mkSimple s!"slots_{lastName fn}"
         for nm in (if slots then [nm, nmS] else [nm]) do
           unless env.contains nm do continue
-          let p := mkAppN (← constFresh nm) s.getAppArgs
+          let mut p := mkAppN (← constFresh nm) s.getAppArgs
+          -- an open statement the lemma assumes first: the context's hypothesis of it
+          if ← (try isTypeCorrect p catch _ => pure false) then
+            if let .forallE _ d _ _ ← whnfR (← inferType p) then
+              if openProp d then
+                if let some hd ← findLocalDeclWithType? d then p := mkApp p (mkFVar hd)
           if ← (try (do return (← isTypeCorrect p) && (← isProp (← inferType p))) catch _ => pure false) then
             facts := facts.push p
     -- a projection's type sizes are at most its structure's (`ts_le_<S>_<f>`, SelfPre/TS.lean)

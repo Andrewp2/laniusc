@@ -97,6 +97,11 @@ STEPS = [
     ('trusted', ['trusted_check.py', '{w}'], ['trusted'], True),
     # The open statements (OPEN_STATEMENTS.md): unchanged statements, well-formed reductions and proofs.
     ('open', ['open_graph.py', 'check', '{w}'], ['open'], True),
+    # The certificate checker (formal/cert/): Lanius/Cert/Src.lean is the front end's program of check_mini.lani,
+    # and the verified compiler's executable of it rejects the attack certificates and agrees with certlib on mutants.
+    ('cert', ['../cert/mini_build.py', '{w}', '--gate'],
+     ['cert', 'olean:Lanius.Cert.Process', 'olean:Lanius.Open.Cert.CertNatSound.Red1', 'run_all', 'src_dump', 'laniusc',
+      'stdlib'], True),
     # The full tier: larger counts and the rest.
     ('mini-200', ['mini_difftest.py', '{w}', '--count', '200', '--seed', '{s}'], ['lean', 'laniusc', 'stdlib'], False),
     ('oracle-300', ['oracle_difftest.py', '{w}', '--count', '300', '--seed', '{s}'], ['lean', 'laniusc', 'stdlib'],
@@ -160,6 +165,8 @@ def inputs():
         + run_cache.tree_digest(os.path.join(run_cache.FORMAL, 'Lanius')),
         'lani': run_cache.tree_digest(os.path.join(run_cache.FORMAL, 'lani')),
         'open': run_cache.tree_digest(os.path.join(run_cache.FORMAL, 'Lanius/Open')),
+        'cert': run_cache.tree_digest(os.path.join(run_cache.FORMAL, 'cert'))
+        + run_cache.tree_digest(os.path.join(run_cache.FORMAL, 'Lanius/Cert')),
         'tools': run_cache.tree_digest(os.path.join(ROOT, T)),
         # laniusc loads its kernels at run time from the shader artifacts its
         # build compiled from shaders/, so a shader-only change can leave the
@@ -230,7 +237,7 @@ def build():
                               'lake', 'build', *BUILT, 'LaniusMini', 'Lanius.Mini.FrontLex',
                               'Lanius.Mini.MutPilotCorrect', 'Lanius.Machines.SqliteStatementCorrect',
                               'Lanius.Machines.TlsLifecycleCorrect', 'Lanius.Machines.RunLowering',
-                              'Lanius.Faithful.SelfBounded', 'Lanius.Faithful.SelfPre', 'LaniusOpen'],
+                              'Lanius.Faithful.SelfBounded', 'Lanius.Faithful.SelfPre', 'LaniusOpen', 'LaniusCert'],
                              cwd=run_cache.FORMAL, env=env, capture_output=True, text=True)
     if run.returncode != 0:
         raise SystemExit('lake build failed:\n' + run.stdout[-3000:] + run.stderr[-3000:])

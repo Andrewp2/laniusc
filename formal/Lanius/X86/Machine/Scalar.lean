@@ -726,6 +726,12 @@ def bytesAt (memory : Memory) (address : Address) : Nat → List UInt8
 def writeBytes (memory : Memory) (address : Address) (bytes : List UInt8) : Memory :=
   fun other => if (other - address).toNat < bytes.length then bytes.getD (other - address).toNat 0 else memory other
 
+/-- The bytes from `address` up to the first zero byte, when one comes within
+`limit` bytes: the string a C string argument (a path) names. -/
+def cString (memory : Memory) (address : Address) : Nat → Option (List UInt8)
+  | 0 => none
+  | limit + 1 => if memory address = 0 then some [] else (cString memory (address + 1) limit).map (memory address :: ·)
+
 /-- The state after a `syscall` that returned `result`, leaving `memory` and
 `io`: Linux's `syscall` entry and `sysret` leave rcx at the next instruction,
 every other register but r11, the xmm registers and the flags as they were.
@@ -765,7 +771,21 @@ that no signal arrives (TRUSTED_BASE.md section 8):
 - `getrandom` (rax 318) of at most 256 bytes (rsi) with no flags (rdx 0)
   stores the next that many secure random bytes from rdi on and returns
   their count: Linux returns all of a request of at most 256 bytes, and a
-  signal does not interrupt it. -/
+  signal does not interrupt it.
+- The file calls act on the file system `Io.files` (`Lanius.Files`, Core's
+  world's model too), naming a descriptor by rdi's low 32 bits
+  (`descriptor`), 3 or more: `read` (rax 0) of at most `maxTransfer` bytes
+  stores the bytes the file has from the descriptor's offset, at most rdx of
+  them, from rsi on and returns their count (a regular file delivers all it
+  can); `write` (rax 1) of at most `maxTransfer` bytes from rsi writes all of
+  them to the file and returns their count (no disk fills up); `close` (rax
+  3) closes it and returns 0; each returns -EBADF (-9) for a descriptor not
+  open (for that direction). `open` (rax 2) of the NUL-terminated path at
+  rdi, at most `pathLimit` bytes, with flags (rsi) `O_RDONLY`,
+  `O_WRONLY|O_CREAT|O_TRUNC` or `O_WRONLY|O_CREAT|O_APPEND` and mode (rdx)
+  0666 returns the lowest free descriptor or `-errno` as
+  `Files.System.openPath` says, where it says anything (the permissions of
+  the files are not modeled: every file is readable and writable). -/
 inductive Kernel (before : State) : State → Prop where
   | write (number : before.registers 0 = 1) (fd : before.registers 7 = 1 ∨ before.registers 7 = 2)
       (count : (before.registers 2).toNat ≤ maxTransfer) (r11 : BitVec 64) :
@@ -790,6 +810,28 @@ inductive Kernel (before : State) : State → Prop where
       Kernel before (before.syscalled (before.registers 6) r11
         (writeBytes before.memory (before.registers 7) (before.io.entropy.take (before.registers 6).toNat))
         { before.io with entropy := before.io.entropy.drop (before.registers 6).toNat })
+  | readFile (number : before.registers 0 = 0) (fd : 3 ≤ descriptor (before.registers 7))
+      (count : (before.registers 2).toNat ≤ maxTransfer) (r11 : BitVec 64) :
+      Kernel before (before.syscalled
+        (BitVec.ofInt 64 (before.io.readFile (descriptor (before.registers 7)) (before.registers 2).toNat).1) r11
+        (writeBytes before.memory (before.registers 6)
+          (before.io.readFile (descriptor (before.registers 7)) (before.registers 2).toNat).2.1)
+        (before.io.readFile (descriptor (before.registers 7)) (before.registers 2).toNat).2.2)
+  | writeFile (number : before.registers 0 = 1) (fd : 3 ≤ descriptor (before.registers 7))
+      (count : (before.registers 2).toNat ≤ maxTransfer) (r11 : BitVec 64) :
+      Kernel before (before.syscalled
+        (BitVec.ofInt 64 (before.io.writeFile (descriptor (before.registers 7))
+          (bytesAt before.memory (before.registers 6) (before.registers 2).toNat)).1) r11 before.memory
+        (before.io.writeFile (descriptor (before.registers 7))
+          (bytesAt before.memory (before.registers 6) (before.registers 2).toNat)).2)
+  | openFile (number : before.registers 0 = 2) (path : List UInt8)
+      (named : cString before.memory (before.registers 7) (Lanius.Files.pathLimit + 1) = some path)
+      (mode : before.registers 2 = 438) (result : Int) (io : Io)
+      (opened : before.io.openFile path (before.registers 6).toNat = some (result, io)) (r11 : BitVec 64) :
+      Kernel before (before.syscalled (BitVec.ofInt 64 result) r11 before.memory io)
+  | close (number : before.registers 0 = 3) (fd : 3 ≤ descriptor (before.registers 7)) (r11 : BitVec 64) :
+      Kernel before (before.syscalled (BitVec.ofInt 64 (before.io.closeFile (descriptor (before.registers 7))).1) r11
+        before.memory (before.io.closeFile (descriptor (before.registers 7))).2)
 
 /-- Decoding consumes bytes actually loaded at RIP. Division must use
 `divided`, which also requires nonzero-divisor and quotient-range evidence;

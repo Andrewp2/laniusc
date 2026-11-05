@@ -24,10 +24,6 @@ abbrev Stmt_lim_const (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 135 RepNat) x0 v0 → RepNat x1 v1 →
     (RepOption 135 RepNat) (Lanius.Mini.limConst x0 x1) w
 
-abbrev Stmt_lim_funcs (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.SrcFunc} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 5 RepSrcFunc) x0 v0 →
-    RepBool (Lanius.Mini.limFuncs x0) w
-
 abbrev Stmt_lim_guard (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : Option Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → (RepOption 135 RepNat) x1 v1 →
     (RepOption 135 RepNat) (Lanius.Mini.limGuard x0 x1) w
@@ -39,6 +35,54 @@ abbrev Stmt_lim_leaf (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 abbrev Stmt_lim_max (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Nat} {x1 : Option Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 135 RepNat) x0 v0 → (RepOption 135 RepNat) x1 v1 →
     (RepOption 135 RepNat) (Lanius.Mini.limMax x0 x1) w
+
+abbrev Stmt_lim_nest (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.SrcStmt} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcStmt x0 v0 →
+    RepNat (Lanius.Mini.limNest x0) w
+
+abbrev Stmt_lim_nest_eff (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.SrcEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcEff x0 v0 →
+    RepNat (Lanius.Mini.limNestEff x0) w
+
+abbrev Stmt_lim_nest_effs (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List Lanius.Mini.SrcEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 187 RepSrcEff) x0 v0 →
+    RepNat (Lanius.Mini.limNestEffs x0) w
+
+abbrev Stmt_lim_nest_step (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
+    RepNat (Lanius.Mini.limNestStep x0) w
+
+abbrev Stmt_lim_num (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
+    RepBool (Lanius.Mini.limNum x0) w
+
+abbrev Stmt_lim_nums_expr (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.SrcExpr} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcExpr x0 v0 →
+    RepBool (Lanius.Mini.limNumsExpr x0) w
+
+abbrev Stmt_lim_nums_exprs (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List Lanius.Mini.SrcExpr} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 21 RepSrcExpr) x0 v0 →
+    RepBool (Lanius.Mini.limNumsExprs x0) w
+
+abbrev Stmt_lim_nums_ids (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 25 RepNat) x0 v0 →
+    RepBool (Lanius.Mini.limNumsIds x0) w
+
+abbrev Stmt_lim_nums_idss (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List (List Nat)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 31 (RepList 25 RepNat)) x0 v0 →
+    RepBool (Lanius.Mini.limNumsIdss x0) w
+
+abbrev Stmt_lim_nums_ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcType x0 v0 →
+    RepBool (Lanius.Mini.limNumsTy x0) w
+
+abbrev Stmt_lim_nums_tys (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 74 RepSrcType) x0 v0 →
+    RepBool (Lanius.Mini.limNumsTys x0) w
+
+abbrev Stmt_lim_nums_variants (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List (List Lanius.Mini.SrcType)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 78 (RepList 74 RepSrcType)) x0 v0 →
+    RepBool (Lanius.Mini.limNumsVariants x0) w
 
 abbrev Stmt_lim_one (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →

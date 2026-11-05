@@ -5,13 +5,12 @@ public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_limLeaf
 public import Lanius.Faithful.Gen.SelfStmtF_limLeaf
 public import Lanius.Faithful.GenB.SelfBStmtF_depthLimit
-public import Lanius.Faithful.GenB.SelfBStmtF_funcsOnto
 public import Lanius.Faithful.GenB.SelfBStmtF_limExprs
 public import Lanius.Faithful.GenB.SelfBStmtF_limLeaf
+public import Lanius.Faithful.GenB.SelfBStmtN1
 import all Lanius.Faithful.Gen.SelfSrcF_limLeaf
 import all Lanius.Faithful.Gen.SelfStmtF_limLeaf
 import all Lanius.Mini.Frontend.P.depthLimit
-import all Lanius.Mini.Frontend.P.funcsOnto
 import all Lanius.Mini.Frontend.P.limExprs
 import all Lanius.Mini.Frontend.P.limLeaf
 
@@ -100,24 +99,61 @@ theorem bstep_lim_stmt {spW sp : SrcProgram} {prims : Prims} {ix_lim_stmt ix_unb
     budget
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0⟩
 
-theorem bstep_lim_funcs {spW sp : SrcProgram} {prims : Prims} {ix_lim_funcs ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc ix_is_none_weight ix_lim_params ix_lim_param_slots ix_lim_ty ix_lim_stmt : Nat}
-    (fnW : spW.funcs[ix_lim_funcs]? = some (src_lim_funcs ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc ix_lim_funcs ix_is_none_weight ix_lim_params ix_lim_param_slots ix_lim_ty ix_lim_stmt)) (fn : sp.funcs[ix_lim_funcs]? = some (src_lim_funcs ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc ix_lim_funcs ix_is_none_weight ix_lim_params ix_lim_param_slots ix_lim_ty ix_lim_stmt))
-    (np : prims.isPrim ix_lim_funcs = false)
-    (back : Certified (∀ {n : Nat}, Stmt_lim_funcs sp prims ix_lim_funcs n))
-    (pp_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc = false)
-    (b_is_none_weight : Certified (∀ {n : Nat}, BStmt_is_none_weight spW sp prims ix_is_none_weight n))
-    (b_lim_params : Certified (∀ {n : Nat}, BStmt_lim_params spW sp prims ix_lim_params n))
-    (b_lim_param_slots : Certified (∀ {n : Nat}, BStmt_lim_param_slots spW sp prims ix_lim_param_slots n))
-    (b_lim_ty : Certified (∀ {n : Nat}, BStmt_lim_ty spW sp prims ix_lim_ty n))
-    (b_lim_stmt : Certified (∀ {n : Nat}, BStmt_lim_stmt spW sp prims ix_lim_stmt n)) {n : Nat}
-    (bih_lim_funcs : Certified (BStmt_lim_funcs spW sp prims ix_lim_funcs n)) :
-    BStmt_lim_funcs spW sp prims ix_lim_funcs (n + 1) := by
+theorem bproof_lim_nest_step {spW sp : SrcProgram} {prims : Prims} {ix_lim_nest_step ix_plus ix_depth_limit : Nat}
+    (fnW : spW.funcs[ix_lim_nest_step]? = some (src_lim_nest_step ix_plus ix_depth_limit)) (fn : sp.funcs[ix_lim_nest_step]? = some (src_lim_nest_step ix_plus ix_depth_limit))
+    (np : prims.isPrim ix_lim_nest_step = false)
+    (back : Certified (∀ {n : Nat}, Stmt_lim_nest_step sp prims ix_lim_nest_step n))
+    (b_plus : Certified (∀ {n : Nat}, BStmt_plus spW sp prims ix_plus n))
+    (b_depth_limit : Certified (∀ {n : Nat}, BStmt_depth_limit spW sp prims ix_depth_limit n)) {n : Nat} :
+    BStmt_lim_nest_step spW sp prims ix_lim_nest_step n := by
   intro x0 v0 w k b h r0 hb pre
-  have key : qcall sp prims uc (n + 1) ix_lim_funcs [v0] = some (w, k) ∧ 0 = k := by
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_lim_nest_step [v0] = some (w, k) ∧ 0 = k := by
     rw [qcall_succ np fnW] at h
     rw [qcall_succ np fn]
-    simp only [src_lim_funcs, List.length_cons, List.length_nil, if_true] at h ⊢
-    rw [Pre_lim_funcs.eq_def] at pre
+    simp only [src_lim_nest_step, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_lim_nest_step.eq_def] at pre
+    simp only at pre
+    budget
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0⟩
+
+theorem bstep_lim_nest_eff {spW sp : SrcProgram} {prims : Prims} {ix_lim_nest_eff ix_max_of ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_lim_nest_effs ix_lim_nest_step : Nat}
+    (fnW : spW.funcs[ix_lim_nest_eff]? = some (src_lim_nest_eff ix_max_of ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_lim_nest_eff ix_lim_nest_effs ix_lim_nest_step)) (fn : sp.funcs[ix_lim_nest_eff]? = some (src_lim_nest_eff ix_max_of ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_lim_nest_eff ix_lim_nest_effs ix_lim_nest_step))
+    (np : prims.isPrim ix_lim_nest_eff = false)
+    (back : Certified (∀ {n : Nat}, Stmt_lim_nest_eff sp prims ix_lim_nest_eff n))
+    (b_max_of : Certified (∀ {n : Nat}, BStmt_max_of spW sp prims ix_max_of n))
+    (pp_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff = false)
+    (pp_unbox_of_mini_selfhost_SrcEff : prims.isPrim ix_unbox_of_mini_selfhost_SrcEff = true) (bx_unbox_of_mini_selfhost_SrcEff : prims.boxed.contains ix_unbox_of_mini_selfhost_SrcEff = false)
+    (b_lim_nest_step : Certified (∀ {n : Nat}, BStmt_lim_nest_step spW sp prims ix_lim_nest_step n)) {n : Nat}
+    (bih_lim_nest_eff : Certified (BStmt_lim_nest_eff spW sp prims ix_lim_nest_eff n))
+    (bih_lim_nest_effs : Certified (BStmt_lim_nest_effs spW sp prims ix_lim_nest_effs n)) :
+    BStmt_lim_nest_eff spW sp prims ix_lim_nest_eff (n + 1) := by
+  intro x0 v0 w k b h r0 hb pre
+  have key : qcall sp prims uc (n + 1) ix_lim_nest_eff [v0] = some (w, k) ∧ 0 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_lim_nest_eff, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_lim_nest_eff.eq_def] at pre
+    simp only at pre
+    budget
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0⟩
+
+theorem bstep_lim_nest_effs {spW sp : SrcProgram} {prims : Prims} {ix_lim_nest_effs ix_max_of ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_lim_nest_eff : Nat}
+    (fnW : spW.funcs[ix_lim_nest_effs]? = some (src_lim_nest_effs ix_max_of ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_lim_nest_eff ix_lim_nest_effs)) (fn : sp.funcs[ix_lim_nest_effs]? = some (src_lim_nest_effs ix_max_of ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_lim_nest_eff ix_lim_nest_effs))
+    (np : prims.isPrim ix_lim_nest_effs = false)
+    (back : Certified (∀ {n : Nat}, Stmt_lim_nest_effs sp prims ix_lim_nest_effs n))
+    (b_max_of : Certified (∀ {n : Nat}, BStmt_max_of spW sp prims ix_max_of n))
+    (pp_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff = true) (bx_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff : prims.boxed.contains ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff = false) {n : Nat}
+    (bih_lim_nest_eff : Certified (BStmt_lim_nest_eff spW sp prims ix_lim_nest_eff n))
+    (bih_lim_nest_effs : Certified (BStmt_lim_nest_effs spW sp prims ix_lim_nest_effs n)) :
+    BStmt_lim_nest_effs spW sp prims ix_lim_nest_effs (n + 1) := by
+  intro x0 v0 w k b h r0 hb pre
+  have key : qcall sp prims uc (n + 1) ix_lim_nest_effs [v0] = some (w, k) ∧ 0 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_lim_nest_effs, List.length_cons, List.length_nil, if_true] at h ⊢
+    rw [Pre_lim_nest_effs.eq_def] at pre
     simp only at pre
     budget
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0⟩

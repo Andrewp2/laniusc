@@ -110,6 +110,7 @@ public import Lanius.Faithful.GenB.SelfBModelF_letClosed
 public import Lanius.Faithful.GenB.SelfBModelF_letStructClosed
 public import Lanius.Faithful.GenB.SelfBModelF_limExprs
 public import Lanius.Faithful.GenB.SelfBModelF_limLeaf
+public import Lanius.Faithful.GenB.SelfBModelF_limNumsEff
 public import Lanius.Faithful.GenB.SelfBModelF_litBound
 public import Lanius.Faithful.GenB.SelfBModelF_litEffMatch
 public import Lanius.Faithful.GenB.SelfBModelF_litWants
@@ -425,32 +426,32 @@ Do not edit. -/
 -- models: Cost_cons_of_core_option_Option_mini_selfhost_SrcType Cost_lowered_all Pre_lowered_all
 -- models: Pre_lim_slots Pre_lim_slots_list Pre_lim_slots_variants Pre_lim_ty Pre_lim_params
 -- models: Pre_depth_sum Pre_lim_bind Pre_lim_param_slots Pre_lim_expr Pre_lim_exprs Pre_lim_arms
--- models: Pre_lim_eff Pre_lim_effs Pre_lim_stmt Pre_lim_funcs Cost_str_bytes Cost_eff_bytes
--- models: Cost_effs_bytes Cost_stmt_bytes Cost_place_eff Cost_place_effs Pre_place_eff
--- models: Pre_place_effs Cost_place_stmt Pre_place_stmt Cost_place_funcs Pre_place_funcs
--- models: Cost_funcs_bytes Cost_placed_program Pre_placed_program Cost_untyped_rejected
--- models: Pre_untyped_rejected Cost_sint_at Cost_int_literal_at Cost_int_at Cost_neg_wide_isize
--- models: Cost_neg_wide_sint Cost_neg_wide_at Cost_least_cast Cost_neg_least_at Cost_neg_least
--- models: Cost_repeat_src Cost_src_fields Cost_known_expr Cost_wide_isize_at Cost_wide_sint_at
--- models: Cost_wide_at Cost_lit_expr Cost_cons_of_mini_selfhost_LocalTy Cost_with_local
--- models: Cost_cons_of_mini_selfhost_SrcExpr Cost_lit_exprs Cost_src_param_tys Cost_callee_params
--- models: Cost_cons_of_mini_selfhost_SrcArm Cost_bound_tys Cost_lit_src_arms Cost_known_eff
--- models: Cost_lit_eff Cost_lit_effs Cost_lit_arm_effs Cost_lit_stmt Cost_param_locals
--- models: Cost_lit_funcs Cost_build_closed Pre_build_closed Cost_cons_of_core_option_Option_usize
--- models: Cost_concat_of_mini_selfhost_Ty Cost_flatten_tys Pre_ty_weight Pre_tys_weight
--- models: Cost_payloads_weight Pre_payloads_weight Pre_fields_weight Cost_decl_weight
--- models: Pre_decl_weight Cost_inst_weight Pre_inst_weight Cost_weigh_again Pre_weigh_again
--- models: Cost_weigh_round Cost_weigh_round_at Pre_weigh_round Pre_weigh_round_at Cost_weigh_rounds
--- models: Cost_weigh_next Pre_weigh_rounds Pre_weigh_next Pre_length_of_mini_selfhost_Inst
--- models: Cost_unweighed Cost_types_weighed Pre_types_weighed Cost_single_of_mini_selfhost_Inst
--- models: Cost_concat_of_mini_selfhost_Inst Cost_add_inst Cost_add_insts
--- models: Cost_cons_of_mini_selfhost_Inst Cost_cons_inst Cost_join_insts Cost_flat_payloads
--- models: Cost_ty_insts Cost_named_insts Cost_decl_insts Cost_tys_insts Pre_ty_insts Pre_named_insts
--- models: Pre_decl_insts Pre_tys_insts Cost_type_table Cost_type_table_next Pre_type_table
--- models: Pre_type_table_next Cost_single_of_mini_selfhost_Ty Cost_type_table_more
--- models: Cost_type_table_more_at Pre_type_table_more Pre_type_table_more_at Cost_seed_tys
--- models: Cost_param_tys Cost_ret_tys Cost_eff_named_tys Cost_effs_named_tys Cost_stmt_tys
--- models: Cost_funcs_tys Cost_build_mono Pre_build_mono Cost_eff_calls Cost_effs_calls
+-- models: Pre_lim_eff Pre_lim_effs Pre_lim_stmt Pre_lim_nest_step Pre_lim_nest_eff Pre_lim_nest_effs
+-- models: Pre_lim_nest Pre_lim_funcs Cost_str_bytes Cost_eff_bytes Cost_effs_bytes Cost_stmt_bytes
+-- models: Cost_place_eff Cost_place_effs Pre_place_eff Pre_place_effs Cost_place_stmt Pre_place_stmt
+-- models: Cost_place_funcs Pre_place_funcs Cost_funcs_bytes Cost_placed_program Pre_placed_program
+-- models: Cost_untyped_rejected Pre_untyped_rejected Cost_sint_at Cost_int_literal_at Cost_int_at
+-- models: Cost_neg_wide_isize Cost_neg_wide_sint Cost_neg_wide_at Cost_least_cast Cost_neg_least_at
+-- models: Cost_neg_least Cost_repeat_src Cost_src_fields Cost_known_expr Cost_wide_isize_at
+-- models: Cost_wide_sint_at Cost_wide_at Cost_lit_expr Cost_cons_of_mini_selfhost_LocalTy
+-- models: Cost_with_local Cost_cons_of_mini_selfhost_SrcExpr Cost_lit_exprs Cost_src_param_tys
+-- models: Cost_callee_params Cost_cons_of_mini_selfhost_SrcArm Cost_bound_tys Cost_lit_src_arms
+-- models: Cost_known_eff Cost_lit_eff Cost_lit_effs Cost_lit_arm_effs Cost_lit_stmt
+-- models: Cost_param_locals Cost_lit_funcs Cost_build_closed Pre_build_closed
+-- models: Cost_cons_of_core_option_Option_usize Cost_concat_of_mini_selfhost_Ty Cost_flatten_tys
+-- models: Pre_ty_weight Pre_tys_weight Cost_payloads_weight Pre_payloads_weight Pre_fields_weight
+-- models: Cost_decl_weight Pre_decl_weight Cost_inst_weight Pre_inst_weight Cost_weigh_again
+-- models: Pre_weigh_again Cost_weigh_round Cost_weigh_round_at Pre_weigh_round Pre_weigh_round_at
+-- models: Cost_weigh_rounds Cost_weigh_next Pre_weigh_rounds Pre_weigh_next
+-- models: Pre_length_of_mini_selfhost_Inst Cost_unweighed Cost_types_weighed Pre_types_weighed
+-- models: Cost_single_of_mini_selfhost_Inst Cost_concat_of_mini_selfhost_Inst Cost_add_inst
+-- models: Cost_add_insts Cost_cons_of_mini_selfhost_Inst Cost_cons_inst Cost_join_insts
+-- models: Cost_flat_payloads Cost_ty_insts Cost_named_insts Cost_decl_insts Cost_tys_insts
+-- models: Pre_ty_insts Pre_named_insts Pre_decl_insts Pre_tys_insts Cost_type_table
+-- models: Cost_type_table_next Pre_type_table Pre_type_table_next Cost_single_of_mini_selfhost_Ty
+-- models: Cost_type_table_more Cost_type_table_more_at Pre_type_table_more Pre_type_table_more_at
+-- models: Cost_seed_tys Cost_param_tys Cost_ret_tys Cost_eff_named_tys Cost_effs_named_tys
+-- models: Cost_stmt_tys Cost_funcs_tys Cost_build_mono Pre_build_mono Cost_eff_calls Cost_effs_calls
 -- models: Cost_stmt_calls Cost_cons_of_mini_selfhost_MFunc Cost_type_names_in Cost_type_name_at
 -- models: Cost_module_globals Cost_cons_of_mini_selfhost_MEff Cost_param_effs Cost_extern_body
 -- models: Cost_ref_ty Cost_param_ty_of Pre_param_ty_of Cost_cons_of_mini_selfhost_MParam
@@ -885,14 +886,17 @@ Do not edit. -/
 -- statements: wide_left_exprs wide_left_arms wide_left_eff wide_left_effs wide_left_stmt
 -- statements: wide_left_funcs is_none_weight lim_slots lim_slots_list lim_slots_variants lim_ty
 -- statements: lim_params depth_limit depth_sum lim_bind lim_param_slots lim_expr lim_exprs lim_arms
--- statements: lim_leaf lim_max lim_guard lim_one lim_const lim_eff lim_effs lim_stmt lim_funcs
--- statements: str_bytes eff_bytes effs_bytes stmt_bytes place_eff place_effs place_stmt place_funcs
--- statements: funcs_bytes placed_program untyped_rejected null_at sint_fits sint_at int_literal_at
--- statements: int_at wide_inner wide_value neg_wide_i32 neg_wide_isize sint_wide neg_wide_sint
--- statements: neg_wide_at least_cast neg_least_at neg_least gives_bool either_ty shift_op
--- statements: operand_want repeat_src src_fields ty_local ty_local_at ty_at known_apply known_cast
--- statements: known_expr amount_want uint_mask wide_uint_at wide_isize_at wide_sint_at wide_at
--- statements: float_pick_of float_pick float_want lit_expr cons_of_mini_selfhost_LocalTy with_local
+-- statements: lim_leaf lim_max lim_guard lim_one lim_const lim_eff lim_effs lim_stmt lim_nest_step
+-- statements: lim_nest_eff lim_nest_effs lim_nest lim_num lim_nums_ty lim_nums_tys lim_nums_variants
+-- statements: lim_nums_params lim_nums_expr lim_nums_exprs lim_nums_ids lim_nums_arms lim_nums_idss
+-- statements: lim_nums_eff lim_nums_effs lim_nums_stmt lim_funcs str_bytes eff_bytes effs_bytes
+-- statements: stmt_bytes place_eff place_effs place_stmt place_funcs funcs_bytes placed_program
+-- statements: untyped_rejected null_at sint_fits sint_at int_literal_at int_at wide_inner wide_value
+-- statements: neg_wide_i32 neg_wide_isize sint_wide neg_wide_sint neg_wide_at least_cast
+-- statements: neg_least_at neg_least gives_bool either_ty shift_op operand_want repeat_src
+-- statements: src_fields ty_local ty_local_at ty_at known_apply known_cast known_expr amount_want
+-- statements: uint_mask wide_uint_at wide_isize_at wide_sint_at wide_at float_pick_of float_pick
+-- statements: float_want lit_expr cons_of_mini_selfhost_LocalTy with_local
 -- statements: empty_of_mini_selfhost_SrcExpr cons_of_mini_selfhost_SrcExpr first_src rest_src
 -- statements: lit_exprs get_of_mini_selfhost_SrcFunc src_param_tys callee_params payload_at
 -- statements: src_variants empty_of_mini_selfhost_SrcArm cons_of_mini_selfhost_SrcArm bound_tys
