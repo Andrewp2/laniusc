@@ -10,7 +10,9 @@ public import Lanius.Faithful.Gen.SelfStmtF_armsNaming
 public import Lanius.Faithful.Gen.SelfStmtF_consBinder
 public import Lanius.Faithful.Gen.SelfStmtF_consTreeTail
 import all Lanius.Faithful.Gen.SelfSrcF_armsNaming
+import all Lanius.Mini.Frontend.P.armsByVariant
 import all Lanius.Mini.Frontend.P.armsNaming
+import all Lanius.Mini.Frontend.P.textUnderscore
 
 public section
 

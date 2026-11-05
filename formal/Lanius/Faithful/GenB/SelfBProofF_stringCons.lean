@@ -9,7 +9,8 @@ public import Lanius.Faithful.GenB.SelfBStmtF_stringCons
 public import Lanius.Faithful.GenB.SelfBStmtN2
 import all Lanius.Faithful.Gen.SelfSrcF_stringCons
 import all Lanius.Faithful.Gen.SelfStmtF_stringCons
-import all Lanius.Mini.Frontend.P.stringCons
+import all Lanius.Mini.Frontend.P.plainStringByte
+import all Lanius.Mini.Frontend.P.stringBody
 
 @[expose] public section
 

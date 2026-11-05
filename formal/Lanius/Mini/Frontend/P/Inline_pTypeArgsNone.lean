@@ -12,25 +12,4 @@ namespace Lanius.Mini
 @[expose] def Inline.pTypeArgsNone : Nat :=
   226
 
-@[expose] def Inline.pTypeArgsSome : Nat :=
-  227
-
-@[expose] def Inline.pTypeArray : Nat :=
-  70
-
-@[expose] def Inline.pTypeArrayLenConstant : Nat :=
-  291
-
-@[expose] def Inline.pTypeArrayTail : Nat :=
-  283
-
-@[expose] def Inline.pTypeIdent : Nat :=
-  69
-
-@[expose] def Inline.pTypeNever : Nat :=
-  315
-
-@[expose] def Inline.pTypePathEnd : Nat :=
-  59
-
 end Lanius.Mini

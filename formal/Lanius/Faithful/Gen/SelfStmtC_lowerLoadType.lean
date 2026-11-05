@@ -1,7 +1,19 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Compiler.P.evalArrayElement
+public import Lanius.Mini.Compiler.P.evalArrayIndex
+public import Lanius.Mini.Compiler.P.evalElement
+public import Lanius.Mini.Compiler.P.evalIndex
+public import Lanius.Mini.Compiler.P.evalLoadByte
+public import Lanius.Mini.Compiler.P.evalPick
+public import Lanius.Mini.Compiler.P.evalWordElement
+public import Lanius.Mini.Compiler.P.isArrayLocal
+public import Lanius.Mini.Compiler.P.lowerLetIndex
+public import Lanius.Mini.Compiler.P.lowerLetIndexAny
 public import Lanius.Mini.Compiler.P.lowerLoadType
+public import Lanius.Mini.Compiler.P.lowerSetIndex
+public import Lanius.Mini.Compiler.P.pickElement
 
 @[expose] public section
 

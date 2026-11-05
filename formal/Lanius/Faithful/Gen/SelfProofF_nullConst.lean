@@ -6,7 +6,11 @@ public import Lanius.Faithful.Gen.SelfSrcF_nullConst
 public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmtF_nullConst
 import all Lanius.Faithful.Gen.SelfSrcF_nullConst
+import all Lanius.Mini.Frontend.P.negSintConst
 import all Lanius.Mini.Frontend.P.nullConst
+import all Lanius.Mini.Frontend.P.sintConst
+import all Lanius.Mini.Frontend.P.sintFits
+import all Lanius.Mini.Frontend.P.sintWide
 
 public section
 

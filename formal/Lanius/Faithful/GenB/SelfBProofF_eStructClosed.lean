@@ -13,9 +13,9 @@ public import Lanius.Faithful.GenB.SelfBStmtF_findConst
 public import Lanius.Faithful.GenB.SelfBStmtN5
 import all Lanius.Faithful.Gen.SelfSrcF_eStructClosed
 import all Lanius.Faithful.Gen.SelfStmtF_eStructClosed
-import all Lanius.Mini.Frontend.P.allWeighed
-import all Lanius.Mini.Frontend.P.eStructClosed
-import all Lanius.Mini.Frontend.P.findConst
+import all Lanius.Mini.Frontend.P.closeEff
+import all Lanius.Mini.Frontend.P.closeTy
+import all Lanius.Mini.Frontend.P.instIndex
 
 @[expose] public section
 

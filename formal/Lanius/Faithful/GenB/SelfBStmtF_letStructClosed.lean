@@ -3,7 +3,17 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_letStructClosed
+public import Lanius.Mini.Frontend.P.armTyClosed
+public import Lanius.Mini.Frontend.P.ifClosed
+public import Lanius.Mini.Frontend.P.letCallClosed
+public import Lanius.Mini.Frontend.P.letEnumClosed
+public import Lanius.Mini.Frontend.P.letMatchClosed
 public import Lanius.Mini.Frontend.P.letStructClosed
+public import Lanius.Mini.Frontend.P.matchArmClosed
+public import Lanius.Mini.Frontend.P.setCallClosed
+public import Lanius.Mini.Frontend.P.thenClosed
+public import Lanius.Mini.Frontend.P.unreachableClosed
+public import Lanius.Mini.Frontend.P.whileClosed
 
 @[expose] public section
 

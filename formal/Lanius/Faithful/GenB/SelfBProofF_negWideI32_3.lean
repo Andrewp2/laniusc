@@ -9,7 +9,9 @@ public import Lanius.Faithful.GenB.SelfBStmtN6
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_negWideI32
 import all Lanius.Faithful.Gen.SelfStmtF_negWideI32
-import all Lanius.Mini.Frontend.P.negWideI32
+import all Lanius.Mini.Frontend.P.litFuncs
+import all Lanius.Mini.Frontend.P.litStmt
+import all Lanius.Mini.Frontend.P.paramLocals
 
 @[expose] public section
 

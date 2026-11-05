@@ -3,7 +3,11 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_charOpen
+public import Lanius.Mini.Frontend.P.flDivStep
+public import Lanius.Mini.Frontend.P.flDivmod
 public import Lanius.Mini.Frontend.P.flLog2Or0
+public import Lanius.Mini.Frontend.P.flOdd
+public import Lanius.Mini.Frontend.P.flSat
 
 @[expose] public section
 

@@ -17,7 +17,9 @@ public import Lanius.Faithful.Gen.SelfStmtF_nestedUsed
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_variantArm
 import all Lanius.Faithful.Gen.SelfSrcF_nestedUsed
+import all Lanius.Mini.Frontend.P.blockValue
 import all Lanius.Mini.Frontend.P.nestedUsed
+import all Lanius.Mini.Frontend.P.nestedWith
 
 public section
 

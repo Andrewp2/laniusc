@@ -10,8 +10,9 @@ public import Lanius.Faithful.GenB.SelfBStmtC_equality
 public import Lanius.Faithful.GenB.SelfBStmtC_floatApply
 import all Lanius.Faithful.Gen.SelfSrcC_equality
 import all Lanius.Faithful.Gen.SelfStmtC_equality
+import all Lanius.Mini.Compiler.P.SrcType_floatTy
+import all Lanius.Mini.Compiler.P.SrcType_isFloatAny
 import all Lanius.Mini.Compiler.P.SrcType_same
-import all Lanius.Mini.Compiler.P.UintTy_half
 
 @[expose] public section
 

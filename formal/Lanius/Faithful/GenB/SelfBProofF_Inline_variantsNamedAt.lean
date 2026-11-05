@@ -17,11 +17,13 @@ public import Lanius.Faithful.GenB.SelfBStmtN0
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_variantsNamedAt
 import all Lanius.Faithful.Gen.SelfStmtF_Inline_variantsNamedAt
+import all Lanius.Mini.Frontend.P.baseDigit
 import all Lanius.Mini.Frontend.P.basedLimit
-import all Lanius.Mini.Frontend.P.digitBelow
-import all Lanius.Mini.Frontend.P.distinct
-import all Lanius.Mini.Frontend.P.findConst
+import all Lanius.Mini.Frontend.P.importedVariants
 import all Lanius.Mini.Frontend.P.itemOf
+import all Lanius.Mini.Frontend.P.position
+import all Lanius.Mini.Frontend.P.sameSpellings
+import all Lanius.Mini.Frontend.P.variantsNamed
 
 @[expose] public section
 

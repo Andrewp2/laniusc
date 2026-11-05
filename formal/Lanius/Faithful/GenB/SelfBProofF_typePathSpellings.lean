@@ -17,11 +17,13 @@ public import Lanius.Faithful.GenB.SelfBStmtN6
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_typePathSpellings
 import all Lanius.Faithful.Gen.SelfStmtF_typePathSpellings
-import all Lanius.Mini.Frontend.P.Inline_pTypeArgsNone
+import all Lanius.Mini.Frontend.P.Inline_pTypePathEnd
 import all Lanius.Mini.Frontend.P.Inline_pTypePathIdent
-import all Lanius.Mini.Frontend.P.hasKids
-import all Lanius.Mini.Frontend.P.isEmptyUsize
-import all Lanius.Mini.Frontend.P.noToken
+import all Lanius.Mini.Frontend.P.Inline_pTypePathMore
+import all Lanius.Mini.Frontend.P.kid
+import all Lanius.Mini.Frontend.P.kidToken
+import all Lanius.Mini.Frontend.P.nodeProd
+import all Lanius.Mini.Frontend.P.splitLast
 import all Lanius.Mini.Frontend.P.typePathSpellings
 
 @[expose] public section

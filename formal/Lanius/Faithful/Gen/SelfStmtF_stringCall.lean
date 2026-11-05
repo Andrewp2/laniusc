@@ -2,6 +2,8 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.stringCall
+public import Lanius.Mini.Frontend.P.stringPeeled
+public import Lanius.Mini.Frontend.P.stringValue
 
 @[expose] public section
 

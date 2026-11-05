@@ -1,9 +1,7 @@
 module
 
 public import Lanius.Mini.Compiler.Types
-import Lanius.Mini.Compiler.P.Lists_empty
-import Lanius.Mini.Compiler.P.arrayCallSig
-import Lanius.Mini.Compiler.P.needCapped
+import Lanius.Mini.Compiler.P.Lists_length
 import Lanius.Mini.Compiler.P.needsAfter
 
 public section
@@ -16,49 +14,5 @@ namespace Lanius.Mini
 /-- Each function's need: the frame memory a call to it takes, its block and its callees' (TRUSTED_BASE "Frame room"). -/
 def funcNeeds (funcs : List SrcFunc) : List Nat :=
   needsAfter funcs [] funcs.length
-
-/-- The signatures with these needs (0 past their end). -/
-def sigsWith (funcs : List SrcFunc) (needs : List Nat) : List Sig :=
-  match funcs with
-  | [] => []
-  | func :: rest => ({ params := paramTypes func.params, ret := func.ret, need := needs.getD 0 0, room := 0, block := 0 } : Sig) :: sigsWith rest (restNeeds needs)
-
-def sigs (funcs : List SrcFunc) : List Sig :=
-  sigsWith funcs (funcNeeds funcs)
-
-def Expr.extent (self : Expr) : Nat :=
-  match self with
-  | .lit value => 0
-  | .var index => index + 1
-  | .neg operand => Expr.extent operand
-  | .binary word operation left right => max (Expr.extent left) (Expr.extent right)
-  | .compare word operation left right => max (Expr.extent left) (Expr.extent right)
-  | .fp operation left right => max (Expr.extent left) (Expr.extent right)
-
-def argsExtent (args : List Expr) : Nat :=
-  match args with
-  | [] => 0
-  | arg :: rest => max (Expr.extent arg) (argsExtent rest)
-
-def Stmt.extent (self : Stmt) : Nat :=
-  match self with
-  | .skip => 0
-  | .assign index value => max (index + 1) (Expr.extent value)
-  | .seq first second => max (Stmt.extent first) (Stmt.extent second)
-  | .ite condition thenBranch elseBranch => max (Expr.extent condition) (max (Stmt.extent thenBranch) (Stmt.extent elseBranch))
-  | .loop condition body => max (Expr.extent condition) (Stmt.extent body)
-  | .call target count callee args => max (target + count) (argsExtent args)
-  | .ret values => argsExtent values
-  | .brk => 0
-  | .cont => 0
-  | .alloc target shift size => max (target + 1) (Expr.extent size)
-  | .loadByte target address => max (target + 1) (Expr.extent address)
-  | .storeByte address value => max (Expr.extent address) (Expr.extent value)
-  | .loadWord width target address => max (target + 1) (Expr.extent address)
-  | .storeWord width address value => max (Expr.extent address) (Expr.extent value)
-  | .divide word operation target left right => max (target + 1) (max (Expr.extent left) (Expr.extent right))
-  | .sys kind target args => max (target + 1) (argsExtent args)
-  | .frame target bytes => target + 1
-  | .static target offset => target + 1
 
 end Lanius.Mini

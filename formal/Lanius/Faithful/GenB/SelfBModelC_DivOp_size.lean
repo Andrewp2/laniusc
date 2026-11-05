@@ -2,8 +2,12 @@ module
 
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelN4
+public import Lanius.Mini.Compiler.P.BinOp_size
 public import Lanius.Mini.Compiler.P.DivOp_size
-public import Lanius.Mini.Compiler.P.Lists_empty
+public import Lanius.Mini.Compiler.P.FOp_size
+public import Lanius.Mini.Compiler.P.FloatTy_rexSize
+public import Lanius.Mini.Compiler.P.MemWidth_prefix
+public import Lanius.Mini.Compiler.P.Word_prefix
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.Types
 

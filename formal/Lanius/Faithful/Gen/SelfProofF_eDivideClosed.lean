@@ -6,7 +6,10 @@ public import Lanius.Faithful.Gen.SelfSrcF_eDivideClosed
 public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmtF_eDivideClosed
 import all Lanius.Faithful.Gen.SelfSrcF_eDivideClosed
+import all Lanius.Mini.Frontend.P.eCastClosed
 import all Lanius.Mini.Frontend.P.eDivideClosed
+import all Lanius.Mini.Frontend.P.eNegClosed
+import all Lanius.Mini.Frontend.P.eNotClosed
 
 public section
 

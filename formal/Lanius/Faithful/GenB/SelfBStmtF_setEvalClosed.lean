@@ -3,7 +3,12 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_setEvalClosed
+public import Lanius.Mini.Frontend.P.discardClosed
+public import Lanius.Mini.Frontend.P.ifEvalClosed
+public import Lanius.Mini.Frontend.P.returnEvalClosed
 public import Lanius.Mini.Frontend.P.setEvalClosed
+public import Lanius.Mini.Frontend.P.setIndexEvalClosed
+public import Lanius.Mini.Frontend.P.whileEvalClosed
 
 @[expose] public section
 

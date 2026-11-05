@@ -9,7 +9,7 @@ public import Lanius.Faithful.GenB.SelfBStmtC_matchDst
 public import Lanius.Faithful.GenB.SelfBStmtN1
 import all Lanius.Faithful.Gen.SelfSrcC_matchDst
 import all Lanius.Faithful.Gen.SelfStmtC_matchDst
-import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.SrcType_size
 
 @[expose] public section
 

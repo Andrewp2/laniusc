@@ -4,6 +4,9 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_argView
 public import Lanius.Mini.Frontend.P.argView
+public import Lanius.Mini.Frontend.P.argViews
+public import Lanius.Mini.Frontend.P.viewOf
+public import Lanius.Mini.Frontend.P.viewsOf
 
 @[expose] public section
 

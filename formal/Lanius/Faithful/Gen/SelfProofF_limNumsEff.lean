@@ -13,7 +13,10 @@ public import Lanius.Faithful.Gen.SelfStmtF_limLeaf
 public import Lanius.Faithful.Gen.SelfStmtF_limNumsArms
 public import Lanius.Faithful.Gen.SelfStmtF_limNumsEff
 import all Lanius.Faithful.Gen.SelfSrcF_limNumsEff
+import all Lanius.Mini.Frontend.P.limFuncs
 import all Lanius.Mini.Frontend.P.limNumsEff
+import all Lanius.Mini.Frontend.P.limNumsParams
+import all Lanius.Mini.Frontend.P.limNumsStmt
 
 public section
 

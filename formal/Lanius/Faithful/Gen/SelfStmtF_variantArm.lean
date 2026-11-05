@@ -1,7 +1,12 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.consUse
+public import Lanius.Mini.Frontend.P.joinUse
+public import Lanius.Mini.Frontend.P.usedArms
 public import Lanius.Mini.Frontend.P.variantArm
+public import Lanius.Mini.Frontend.P.variantArms
+public import Lanius.Mini.Frontend.P.wildUsed
 
 @[expose] public section
 

@@ -2,6 +2,29 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.Inline_pModTail
+public import Lanius.Mini.Frontend.P.Inline_pModule
+public import Lanius.Mini.Frontend.P.Inline_pMul
+public import Lanius.Mini.Frontend.P.Inline_pMulTail
+public import Lanius.Mini.Frontend.P.Inline_pNeTail
+public import Lanius.Mini.Frontend.P.Inline_pNeg
+public import Lanius.Mini.Frontend.P.Inline_pNot
+public import Lanius.Mini.Frontend.P.Inline_pOrTail
+public import Lanius.Mini.Frontend.P.Inline_pOrexpr
+public import Lanius.Mini.Frontend.P.Inline_pParamNamed
+public import Lanius.Mini.Frontend.P.Inline_pParamSelf
+public import Lanius.Mini.Frontend.P.Inline_pParamSelfRef
+public import Lanius.Mini.Frontend.P.Inline_pParamsAfterCommaMore
+public import Lanius.Mini.Frontend.P.Inline_pParamsAfterCommaTrailing
+public import Lanius.Mini.Frontend.P.Inline_pParamsEnd
+public import Lanius.Mini.Frontend.P.Inline_pParamsMore
+public import Lanius.Mini.Frontend.P.Inline_pParamsNone
+public import Lanius.Mini.Frontend.P.Inline_pParamsSome
+public import Lanius.Mini.Frontend.P.Inline_pPath
+public import Lanius.Mini.Frontend.P.Inline_pPathEnd
+public import Lanius.Mini.Frontend.P.Inline_pPathIdent
+public import Lanius.Mini.Frontend.P.Inline_pPathIdentArgs
+public import Lanius.Mini.Frontend.P.Inline_pTypeRef
+public import Lanius.Mini.Frontend.P.Inline_pTypeRefMut
 
 @[expose] public section
 

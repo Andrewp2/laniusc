@@ -10,7 +10,11 @@ public import Lanius.Faithful.Gen.SelfStmtF_basedDigits
 public import Lanius.Faithful.Gen.SelfStmtF_flLog2Or0
 public import Lanius.Faithful.Gen.SelfStmtF_flNatHalf
 import all Lanius.Faithful.Gen.SelfSrcF_flLog2Or0
+import all Lanius.Mini.Frontend.P.flDivStep
+import all Lanius.Mini.Frontend.P.flDivmod
 import all Lanius.Mini.Frontend.P.flLog2Or0
+import all Lanius.Mini.Frontend.P.flOdd
+import all Lanius.Mini.Frontend.P.flSat
 
 public section
 

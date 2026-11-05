@@ -6,9 +6,10 @@ public import Lanius.Faithful.GenB.SelfBModelF_armsOf
 public import Lanius.Faithful.GenB.SelfBModelF_shadowUse
 public import Lanius.Faithful.GenB.SelfBModelN2
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.anyNested
-public import Lanius.Mini.Frontend.P.armsOf
+public import Lanius.Mini.Frontend.P.armNested
+public import Lanius.Mini.Frontend.P.rowsNaming
 public import Lanius.Mini.Frontend.P.variantArm
+public import Lanius.Mini.Frontend.P.variantArms
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

@@ -12,7 +12,7 @@ public import Lanius.Faithful.GenB.SelfBStmtN6
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_treeTokens
 import all Lanius.Faithful.Gen.SelfStmtF_treeTokens
-import all Lanius.Mini.Frontend.P.nullConst
+import all Lanius.Mini.Frontend.P.sintWide
 import all Lanius.Mini.Frontend.P.treeTokens
 
 @[expose] public section

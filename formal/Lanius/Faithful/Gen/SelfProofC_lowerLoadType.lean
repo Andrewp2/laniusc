@@ -26,7 +26,19 @@ public import Lanius.Faithful.Gen.SelfStmtC_shortCircuit
 public import Lanius.Faithful.Gen.SelfStmtC_storeWordElement
 public import Lanius.Faithful.Gen.SelfStmtC_wordElement
 import all Lanius.Faithful.Gen.SelfSrcC_lowerLoadType
+import all Lanius.Mini.Compiler.P.evalArrayElement
+import all Lanius.Mini.Compiler.P.evalArrayIndex
+import all Lanius.Mini.Compiler.P.evalElement
+import all Lanius.Mini.Compiler.P.evalIndex
+import all Lanius.Mini.Compiler.P.evalLoadByte
+import all Lanius.Mini.Compiler.P.evalPick
+import all Lanius.Mini.Compiler.P.evalWordElement
+import all Lanius.Mini.Compiler.P.isArrayLocal
+import all Lanius.Mini.Compiler.P.lowerLetIndex
+import all Lanius.Mini.Compiler.P.lowerLetIndexAny
 import all Lanius.Mini.Compiler.P.lowerLoadType
+import all Lanius.Mini.Compiler.P.lowerSetIndex
+import all Lanius.Mini.Compiler.P.pickElement
 
 public section
 

@@ -10,6 +10,8 @@ public import Lanius.Faithful.Gen.SelfStmtC_lowerApply
 public import Lanius.Faithful.Gen.SelfStmtC_lowerLocal
 public import Lanius.Faithful.Gen.SelfStmtC_sintToUint
 import all Lanius.Faithful.Gen.SelfSrcC_lowerApply
+import all Lanius.Mini.Compiler.P.SrcExpr_lower
+import all Lanius.Mini.Compiler.P.isOne
 import all Lanius.Mini.Compiler.P.lowerApply
 
 public section

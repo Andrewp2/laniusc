@@ -3,6 +3,8 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_Inline_arithOf
+public import Lanius.Mini.Compiler.P.SrcExpr_lower
+public import Lanius.Mini.Compiler.P.isOne
 public import Lanius.Mini.Compiler.P.lowerApply
 
 @[expose] public section

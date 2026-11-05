@@ -11,7 +11,19 @@ public import Lanius.Faithful.Gen.SelfStmtC_UintTy_isWide
 public import Lanius.Faithful.Gen.SelfStmtC_lowerLocal
 public import Lanius.Faithful.Gen.SelfStmtC_sintToUint
 import all Lanius.Faithful.Gen.SelfSrcC_sintToUint
+import all Lanius.Mini.Compiler.P.castTo
+import all Lanius.Mini.Compiler.P.castToFloat
+import all Lanius.Mini.Compiler.P.castToI32
+import all Lanius.Mini.Compiler.P.castToIsize
+import all Lanius.Mini.Compiler.P.castToSint
+import all Lanius.Mini.Compiler.P.castToUint
+import all Lanius.Mini.Compiler.P.floatToFloat
+import all Lanius.Mini.Compiler.P.ifNarrow
+import all Lanius.Mini.Compiler.P.intToFloat
+import all Lanius.Mini.Compiler.P.lowerCast
+import all Lanius.Mini.Compiler.P.lowerFloat
 import all Lanius.Mini.Compiler.P.sintToUint
+import all Lanius.Mini.Compiler.P.sintToWide
 
 public section
 

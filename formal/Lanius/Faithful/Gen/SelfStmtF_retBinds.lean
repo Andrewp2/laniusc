@@ -1,6 +1,8 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.argExpected
+public import Lanius.Mini.Frontend.P.bindArg
 public import Lanius.Mini.Frontend.P.retBinds
 
 @[expose] public section

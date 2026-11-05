@@ -15,7 +15,23 @@ public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_sliceHead
 public import Lanius.Faithful.Gen.SelfStmtF_wideOf
 import all Lanius.Faithful.Gen.SelfSrcF_noBlock
+import all Lanius.Mini.Frontend.P.checkedBound
+import all Lanius.Mini.Frontend.P.checkedEff
+import all Lanius.Mini.Frontend.P.checkedEffs
+import all Lanius.Mini.Frontend.P.checkedStmt
+import all Lanius.Mini.Frontend.P.hasLocal
+import all Lanius.Mini.Frontend.P.hasTy
+import all Lanius.Mini.Frontend.P.hasTys
+import all Lanius.Mini.Frontend.P.letHead
+import all Lanius.Mini.Frontend.P.matchOrder
+import all Lanius.Mini.Frontend.P.nestedChecked
+import all Lanius.Mini.Frontend.P.nestedOrder
 import all Lanius.Mini.Frontend.P.noBlock
+import all Lanius.Mini.Frontend.P.orderBy
+import all Lanius.Mini.Frontend.P.postfixHead
+import all Lanius.Mini.Frontend.P.sameDeclArgs
+import all Lanius.Mini.Frontend.P.stmtArmOrder
+import all Lanius.Mini.Frontend.P.stmtOrderBy
 
 public section
 

@@ -11,6 +11,9 @@ public import Lanius.Faithful.Gen.SelfStmtF_findConst
 public import Lanius.Faithful.Gen.SelfStmtF_typeDeclAt
 import all Lanius.Faithful.Gen.SelfSrcF_consTys
 import all Lanius.Mini.Frontend.P.consTys
+import all Lanius.Mini.Frontend.P.fieldTys
+import all Lanius.Mini.Frontend.P.payloadList
+import all Lanius.Mini.Frontend.P.payloadTys
 
 public section
 

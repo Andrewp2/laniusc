@@ -3,7 +3,11 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_findMethodAt
+public import Lanius.Mini.Frontend.P.lxBaseDigit
 public import Lanius.Mini.Frontend.P.lxBlockEnd
+public import Lanius.Mini.Frontend.P.lxDigitRun
+public import Lanius.Mini.Frontend.P.lxDigitTail
+public import Lanius.Mini.Frontend.P.lxExponentDigits
 
 @[expose] public section
 

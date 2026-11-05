@@ -12,16 +12,4 @@ namespace Lanius.Mini
 @[expose] def Inline.pArgsMore : Nat :=
   167
 
-@[expose] def Inline.pArgsNone : Nat :=
-  165
-
-@[expose] def Inline.pArgsSome : Nat :=
-  166
-
-@[expose] def Inline.pArmBlock : Nat :=
-  326
-
-@[expose] def Inline.pArrayAfterCommaMore : Nat :=
-  183
-
 end Lanius.Mini

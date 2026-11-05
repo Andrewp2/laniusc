@@ -12,9 +12,14 @@ public import Lanius.Faithful.GenB.SelfBStmtC_lowerLocal
 public import Lanius.Faithful.GenB.SelfBStmtN5
 import all Lanius.Faithful.Gen.SelfSrcC_lowerLocal
 import all Lanius.Faithful.Gen.SelfStmtC_lowerLocal
-import all Lanius.Mini.Compiler.P.SrcType_same
-import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.SrcType_floatTy
+import all Lanius.Mini.Compiler.P.SrcType_isBool
+import all Lanius.Mini.Compiler.P.SrcType_isFloatAny
+import all Lanius.Mini.Compiler.P.SrcType_isI32
+import all Lanius.Mini.Compiler.P.SrcType_isIsize
+import all Lanius.Mini.Compiler.P.SrcType_sintKind
 import all Lanius.Mini.Compiler.P.UintTy_isWide
+import all Lanius.Mini.Compiler.P.fieldOffset
 
 @[expose] public section
 

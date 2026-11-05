@@ -11,9 +11,10 @@ public import Lanius.Faithful.GenB.SelfBStmtF_lxSymbolStart
 public import Lanius.Faithful.GenB.SelfBStmtN4
 import all Lanius.Faithful.Gen.SelfSrcF_lxExponent
 import all Lanius.Faithful.Gen.SelfStmtF_lxExponent
-import all Lanius.Mini.Frontend.P.lxBlockEnd
-import all Lanius.Mini.Frontend.P.lxExponent
-import all Lanius.Mini.Frontend.P.lxSymbolStart
+import all Lanius.Mini.Frontend.P.lxDigitRun
+import all Lanius.Mini.Frontend.P.lxExponentDigits
+import all Lanius.Mini.Frontend.P.lxIsByte
+import all Lanius.Mini.Frontend.P.lxPrefixedBase
 
 @[expose] public section
 

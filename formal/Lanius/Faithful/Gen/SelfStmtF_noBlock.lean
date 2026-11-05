@@ -1,7 +1,23 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.checkedBound
+public import Lanius.Mini.Frontend.P.checkedEff
+public import Lanius.Mini.Frontend.P.checkedEffs
+public import Lanius.Mini.Frontend.P.checkedStmt
+public import Lanius.Mini.Frontend.P.hasLocal
+public import Lanius.Mini.Frontend.P.hasTy
+public import Lanius.Mini.Frontend.P.hasTys
+public import Lanius.Mini.Frontend.P.letHead
+public import Lanius.Mini.Frontend.P.matchOrder
+public import Lanius.Mini.Frontend.P.nestedChecked
+public import Lanius.Mini.Frontend.P.nestedOrder
 public import Lanius.Mini.Frontend.P.noBlock
+public import Lanius.Mini.Frontend.P.orderBy
+public import Lanius.Mini.Frontend.P.postfixHead
+public import Lanius.Mini.Frontend.P.sameDeclArgs
+public import Lanius.Mini.Frontend.P.stmtArmOrder
+public import Lanius.Mini.Frontend.P.stmtOrderBy
 
 @[expose] public section
 

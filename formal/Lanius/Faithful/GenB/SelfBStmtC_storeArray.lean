@@ -3,7 +3,16 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_storeArray
+public import Lanius.Mini.Compiler.P.lowerReturnUnit
+public import Lanius.Mini.Compiler.P.lowerSetFieldEval
+public import Lanius.Mini.Compiler.P.lowerUnreachable
+public import Lanius.Mini.Compiler.P.lowerView
+public import Lanius.Mini.Compiler.P.setFieldEvalAt
+public import Lanius.Mini.Compiler.P.setFieldEvalOf
 public import Lanius.Mini.Compiler.P.storeArray
+public import Lanius.Mini.Compiler.P.strAscii
+public import Lanius.Mini.Compiler.P.strWords
+public import Lanius.Mini.Compiler.P.viewStores
 
 @[expose] public section
 

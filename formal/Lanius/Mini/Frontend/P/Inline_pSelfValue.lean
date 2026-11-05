@@ -12,16 +12,4 @@ namespace Lanius.Mini
 @[expose] def Inline.pSelfValue : Nat :=
   174
 
-@[expose] def Inline.pShift : Nat :=
-  143
-
-@[expose] def Inline.pShlTail : Nat :=
-  144
-
-@[expose] def Inline.pShrTail : Nat :=
-  145
-
-@[expose] def Inline.pStmtsEnd : Nat :=
-  74
-
 end Lanius.Mini

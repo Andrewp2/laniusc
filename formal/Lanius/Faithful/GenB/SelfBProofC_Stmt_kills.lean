@@ -15,11 +15,20 @@ public import Lanius.Faithful.GenB.SelfBStmtN4
 import all Lanius.Faithful.Gen.SelfSrcC_Stmt_kills
 import all Lanius.Faithful.Gen.SelfStmtC_Stmt_kills
 import all Lanius.Mini.Compiler.P.Expr_agrees
-import all Lanius.Mini.Compiler.P.Inline_factOr
+import all Lanius.Mini.Compiler.P.Expr_constant
+import all Lanius.Mini.Compiler.P.Expr_isZero
+import all Lanius.Mini.Compiler.P.Expr_subst
+import all Lanius.Mini.Compiler.P.Func_agrees
+import all Lanius.Mini.Compiler.P.Inline_branchAgrees
+import all Lanius.Mini.Compiler.P.Inline_deadAgrees
+import all Lanius.Mini.Compiler.P.Inline_iteAgrees
+import all Lanius.Mini.Compiler.P.Inline_seqAgrees
+import all Lanius.Mini.Compiler.P.Inline_unknown
+import all Lanius.Mini.Compiler.P.Stmt_agrees
+import all Lanius.Mini.Compiler.P.Stmt_factsAfter
+import all Lanius.Mini.Compiler.P.Stmt_isSkip
 import all Lanius.Mini.Compiler.P.Stmt_kills
-import all Lanius.Mini.Compiler.P.binaryConstant
-import all Lanius.Mini.Compiler.P.callAgrees
-import all Lanius.Mini.Compiler.P.longer
+import all Lanius.Mini.Compiler.P.assigned
 import all Lanius.Mini.Compiler.P.substAll
 
 @[expose] public section

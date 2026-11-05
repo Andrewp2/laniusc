@@ -17,7 +17,16 @@ public import Lanius.Faithful.Gen.SelfStmtC_matchVariants
 public import Lanius.Faithful.Gen.SelfStmtC_storeArray
 public import Lanius.Faithful.Gen.SelfStmtC_storeEvalWord
 import all Lanius.Faithful.Gen.SelfSrcC_storeArray
+import all Lanius.Mini.Compiler.P.lowerReturnUnit
+import all Lanius.Mini.Compiler.P.lowerSetFieldEval
+import all Lanius.Mini.Compiler.P.lowerUnreachable
+import all Lanius.Mini.Compiler.P.lowerView
+import all Lanius.Mini.Compiler.P.setFieldEvalAt
+import all Lanius.Mini.Compiler.P.setFieldEvalOf
 import all Lanius.Mini.Compiler.P.storeArray
+import all Lanius.Mini.Compiler.P.strAscii
+import all Lanius.Mini.Compiler.P.strWords
+import all Lanius.Mini.Compiler.P.viewStores
 
 public section
 

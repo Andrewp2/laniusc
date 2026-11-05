@@ -12,8 +12,9 @@ public import Lanius.Faithful.GenB.SelfBStmtC_larger
 public import Lanius.Faithful.GenB.SelfBStmtN1
 import all Lanius.Faithful.Gen.SelfSrcC_SrcType_same
 import all Lanius.Faithful.Gen.SelfStmtC_SrcType_same
-import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.SrcType_size
 import all Lanius.Mini.Compiler.P.UintTy_isWide
+import all Lanius.Mini.Compiler.P.fieldOffset
 
 @[expose] public section
 

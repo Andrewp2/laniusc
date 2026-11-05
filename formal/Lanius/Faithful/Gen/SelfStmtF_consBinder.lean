@@ -1,7 +1,14 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.anyVariant
+public import Lanius.Mini.Frontend.P.armNamed
+public import Lanius.Mini.Frontend.P.armNames
+public import Lanius.Mini.Frontend.P.armPrefix
+public import Lanius.Mini.Frontend.P.armsNamingAt
+public import Lanius.Mini.Frontend.P.bindersOf
 public import Lanius.Mini.Frontend.P.consBinder
+public import Lanius.Mini.Frontend.P.zipVariants
 
 @[expose] public section
 

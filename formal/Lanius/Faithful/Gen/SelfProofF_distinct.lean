@@ -10,7 +10,14 @@ public import Lanius.Faithful.Gen.SelfStmtF_distinct
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_textSelf
 import all Lanius.Faithful.Gen.SelfSrcF_distinct
+import all Lanius.Mini.Frontend.P.consName
+import all Lanius.Mini.Frontend.P.consNameTail
 import all Lanius.Mini.Frontend.P.distinct
+import all Lanius.Mini.Frontend.P.distinctModules
+import all Lanius.Mini.Frontend.P.moduleMember
+import all Lanius.Mini.Frontend.P.position
+import all Lanius.Mini.Frontend.P.sameSpellings
+import all Lanius.Mini.Frontend.P.singleName
 
 public section
 

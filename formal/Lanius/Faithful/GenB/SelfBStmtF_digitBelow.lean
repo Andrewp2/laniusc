@@ -2,6 +2,7 @@ module
 
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.baseDigit
 public import Lanius.Mini.Frontend.P.digitBelow
 
 @[expose] public section

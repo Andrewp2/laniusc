@@ -10,7 +10,24 @@ public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_textSelf
 import all Lanius.Faithful.Gen.SelfSrcF_textSelf
+import all Lanius.Mini.Frontend.P.member
+import all Lanius.Mini.Frontend.P.primitive
+import all Lanius.Mini.Frontend.P.spelled0
+import all Lanius.Mini.Frontend.P.spelled1
+import all Lanius.Mini.Frontend.P.spelled2
+import all Lanius.Mini.Frontend.P.spelled3
+import all Lanius.Mini.Frontend.P.spelled4
+import all Lanius.Mini.Frontend.P.spelled5
+import all Lanius.Mini.Frontend.P.textAlloc
+import all Lanius.Mini.Frontend.P.textAllocator
+import all Lanius.Mini.Frontend.P.textAssert
+import all Lanius.Mini.Frontend.P.textDealloc
 import all Lanius.Mini.Frontend.P.textSelf
+import all Lanius.Mini.Frontend.P.textSliceFromRawParts
+import all Lanius.Mini.Frontend.P.textSliceStride
+import all Lanius.Mini.Frontend.P.textStr
+import all Lanius.Mini.Frontend.P.textStringDataPtr
+import all Lanius.Mini.Frontend.P.textTypedSliceFromRawParts
 
 public section
 

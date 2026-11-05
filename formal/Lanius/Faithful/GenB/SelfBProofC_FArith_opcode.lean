@@ -12,8 +12,16 @@ public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcC_FArith_opcode
 import all Lanius.Faithful.Gen.SelfStmtC_FArith_opcode
 import all Lanius.Mini.Compiler.P.FArith_opcode
+import all Lanius.Mini.Compiler.P.FCmp_predicate
+import all Lanius.Mini.Compiler.P.FOp_opcodeBytes
 import all Lanius.Mini.Compiler.P.FloatTy_rex
-import all Lanius.Mini.Compiler.P.arities
+import all Lanius.Mini.Compiler.P.FloatTy_scalarPrefix
+import all Lanius.Mini.Compiler.P.Word_rex
+import all Lanius.Mini.Compiler.P.floatOperands
+import all Lanius.Mini.Compiler.P.floatResult
+import all Lanius.Mini.Compiler.P.le64
+import all Lanius.Mini.Compiler.P.pow2
+import all Lanius.Mini.Compiler.P.slotOperands
 
 @[expose] public section
 

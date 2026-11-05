@@ -1,7 +1,12 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.triedCall
 public import Lanius.Mini.Frontend.P.triedIf
+public import Lanius.Mini.Frontend.P.triedLocal
+public import Lanius.Mini.Frontend.P.triedOf
+public import Lanius.Mini.Frontend.P.tryCallOf
+public import Lanius.Mini.Frontend.P.tryMethodOf
 
 @[expose] public section
 

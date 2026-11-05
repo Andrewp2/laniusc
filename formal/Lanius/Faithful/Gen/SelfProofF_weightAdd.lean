@@ -11,7 +11,14 @@ public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmtF_flattenTys
 public import Lanius.Faithful.Gen.SelfStmtF_weightAdd
 import all Lanius.Faithful.Gen.SelfSrcF_weightAdd
+import all Lanius.Mini.Frontend.P.arrayType
+import all Lanius.Mini.Frontend.P.enumSrc
+import all Lanius.Mini.Frontend.P.srcWeight
+import all Lanius.Mini.Frontend.P.structSrc
+import all Lanius.Mini.Frontend.P.weighed
 import all Lanius.Mini.Frontend.P.weightAdd
+import all Lanius.Mini.Frontend.P.weightArray
+import all Lanius.Mini.Frontend.P.weightTimes
 
 public section
 

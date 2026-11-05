@@ -6,9 +6,10 @@ public import Lanius.Faithful.GenB.SelfBModelF_consTys
 public import Lanius.Faithful.GenB.SelfBModelF_flattenTys
 public import Lanius.Faithful.GenB.SelfBModelF_weightAdd
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.consTys
-public import Lanius.Mini.Frontend.P.findConst
+public import Lanius.Mini.Frontend.P.fieldTys
+public import Lanius.Mini.Frontend.P.instIndex
 public import Lanius.Mini.Frontend.P.lowerTy
+public import Lanius.Mini.Frontend.P.payloadTys
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

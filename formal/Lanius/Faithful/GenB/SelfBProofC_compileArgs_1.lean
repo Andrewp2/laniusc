@@ -13,8 +13,11 @@ public import Lanius.Faithful.GenB.SelfBStmtN6
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcC_compileArgs
 import all Lanius.Faithful.Gen.SelfStmtC_compileArgs
+import all Lanius.Mini.Compiler.P.argSlots
 import all Lanius.Mini.Compiler.P.codeSize
 import all Lanius.Mini.Compiler.P.compileArgs
+import all Lanius.Mini.Compiler.P.compileExpr
+import all Lanius.Mini.Compiler.P.compileStmt
 
 @[expose] public section
 

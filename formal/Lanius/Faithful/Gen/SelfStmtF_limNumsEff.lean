@@ -1,7 +1,10 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.limFuncs
 public import Lanius.Mini.Frontend.P.limNumsEff
+public import Lanius.Mini.Frontend.P.limNumsParams
+public import Lanius.Mini.Frontend.P.limNumsStmt
 
 @[expose] public section
 

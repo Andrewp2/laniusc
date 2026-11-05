@@ -15,7 +15,12 @@ public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 import all Lanius.Faithful.Gen.SelfSrcF_freshId
+import all Lanius.Mini.Frontend.P.fieldExpr
+import all Lanius.Mini.Frontend.P.fieldIn
+import all Lanius.Mini.Frontend.P.fieldIndex
 import all Lanius.Mini.Frontend.P.freshId
+import all Lanius.Mini.Frontend.P.localExpr
+import all Lanius.Mini.Frontend.P.memberOf
 
 public section
 

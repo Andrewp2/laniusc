@@ -10,8 +10,9 @@ public import Lanius.Faithful.GenB.SelfBStmtF_flExpFirst
 public import Lanius.Faithful.GenB.SelfBStmtN3
 import all Lanius.Faithful.Gen.SelfSrcF_flExpFirst
 import all Lanius.Faithful.Gen.SelfStmtF_flExpFirst
-import all Lanius.Mini.Frontend.P.flDecimal
-import all Lanius.Mini.Frontend.P.flExpFirst
+import all Lanius.Mini.Frontend.P.flDigit
+import all Lanius.Mini.Frontend.P.flIntPart
+import all Lanius.Mini.Frontend.P.flPush
 
 @[expose] public section
 

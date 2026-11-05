@@ -14,9 +14,10 @@ public import Lanius.Faithful.GenB.SelfBStmtN6
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_joinInsts
 import all Lanius.Faithful.Gen.SelfStmtF_joinInsts
-import all Lanius.Mini.Frontend.P.consTys
-import all Lanius.Mini.Frontend.P.flattenTys
-import all Lanius.Mini.Frontend.P.joinInsts
+import all Lanius.Mini.Frontend.P.fieldTys
+import all Lanius.Mini.Frontend.P.flatPayloads
+import all Lanius.Mini.Frontend.P.payloadTys
+import all Lanius.Mini.Frontend.P.tyInsts
 
 @[expose] public section
 

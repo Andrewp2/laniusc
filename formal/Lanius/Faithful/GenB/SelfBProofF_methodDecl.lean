@@ -19,12 +19,27 @@ public import Lanius.Faithful.GenB.SelfBStmtN5
 public import Lanius.Faithful.GenB.SelfBStmtN6
 import all Lanius.Faithful.Gen.SelfSrcF_methodDecl
 import all Lanius.Faithful.Gen.SelfStmtF_methodDecl
-import all Lanius.Mini.Frontend.P.Inline_pExpr
-import all Lanius.Mini.Frontend.P.Inline_pIdentPlain
-import all Lanius.Mini.Frontend.P.hasKids
-import all Lanius.Mini.Frontend.P.isEmptyUsize
+import all Lanius.Mini.Frontend.P.Inline_pExternAbi
+import all Lanius.Mini.Frontend.P.Inline_pImplFn
+import all Lanius.Mini.Frontend.P.Inline_pImplMethod
+import all Lanius.Mini.Frontend.P.Inline_pImplMethodPub
+import all Lanius.Mini.Frontend.P.kid
+import all Lanius.Mini.Frontend.P.kidToken
+import all Lanius.Mini.Frontend.P.listItems
 import all Lanius.Mini.Frontend.P.methodDecl
-import all Lanius.Mini.Frontend.P.noToken
+import all Lanius.Mini.Frontend.P.methodsOf
+import all Lanius.Mini.Frontend.P.nodeProd
+import all Lanius.Mini.Frontend.P.sameText
+import all Lanius.Mini.Frontend.P.textFillSecureBytes
+import all Lanius.Mini.Frontend.P.textLaniusStd
+import all Lanius.Mini.Frontend.P.textMonotonicRead
+import all Lanius.Mini.Frontend.P.textReadStdin
+import all Lanius.Mini.Frontend.P.textSleepMsI32
+import all Lanius.Mini.Frontend.P.textSystemRead
+import all Lanius.Mini.Frontend.P.textWriteByte
+import all Lanius.Mini.Frontend.P.textWriteStderr
+import all Lanius.Mini.Frontend.P.textWriteStdout
+import all Lanius.Mini.Frontend.P.textWriteText
 
 @[expose] public section
 

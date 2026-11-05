@@ -14,7 +14,14 @@ public import Lanius.Faithful.Gen.SelfStmtF_eDivideClosed
 public import Lanius.Faithful.Gen.SelfStmtF_eStructClosed
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
 import all Lanius.Faithful.Gen.SelfSrcF_eStructClosed
+import all Lanius.Mini.Frontend.P.closeEff
+import all Lanius.Mini.Frontend.P.consSrcEff
+import all Lanius.Mini.Frontend.P.eIfClosed
+import all Lanius.Mini.Frontend.P.eLetClosed
+import all Lanius.Mini.Frontend.P.eMatchClosed
 import all Lanius.Mini.Frontend.P.eStructClosed
+import all Lanius.Mini.Frontend.P.eVariantClosed
+import all Lanius.Mini.Frontend.P.letEvalClosed
 
 public section
 

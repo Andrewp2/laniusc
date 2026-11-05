@@ -16,12 +16,16 @@ public import Lanius.Faithful.GenB.SelfBStmtN2
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcC_optimizeLeft
 import all Lanius.Faithful.Gen.SelfStmtC_optimizeLeft
+import all Lanius.Mini.Compiler.P.BinOp_annihilates
+import all Lanius.Mini.Compiler.P.BinOp_commutes
 import all Lanius.Mini.Compiler.P.BinOp_folds
-import all Lanius.Mini.Compiler.P.Stmt_kills
-import all Lanius.Mini.Compiler.P.Word_compute
-import all Lanius.Mini.Compiler.P.Word_narrows
-import all Lanius.Mini.Compiler.P.longer
-import all Lanius.Mini.Compiler.P.optimizeLeft
+import all Lanius.Mini.Compiler.P.BinOp_unit
+import all Lanius.Mini.Compiler.P.Expr_literal
+import all Lanius.Mini.Compiler.P.Expr_optimize
+import all Lanius.Mini.Compiler.P.Stmt_isSkip
+import all Lanius.Mini.Compiler.P.Word_keeps
+import all Lanius.Mini.Compiler.P.Word_sameOperand
+import all Lanius.Mini.Compiler.P.optimizeAll
 
 @[expose] public section
 

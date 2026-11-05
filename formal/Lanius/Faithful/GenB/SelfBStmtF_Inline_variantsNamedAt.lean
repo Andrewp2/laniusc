@@ -3,7 +3,12 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_variantsNamedAt
+public import Lanius.Mini.Frontend.P.Inline_basedDigit
+public import Lanius.Mini.Frontend.P.Inline_decimalDigit
+public import Lanius.Mini.Frontend.P.Inline_importedVariantsAt
+public import Lanius.Mini.Frontend.P.Inline_itemImportAt
 public import Lanius.Mini.Frontend.P.Inline_variantsNamedAt
+public import Lanius.Mini.Frontend.P.Inline_wideDigit
 
 @[expose] public section
 

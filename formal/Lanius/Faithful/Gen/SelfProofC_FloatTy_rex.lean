@@ -8,6 +8,7 @@ public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtC_FloatTy_rex
 import all Lanius.Faithful.Gen.SelfSrcC_FloatTy_rex
 import all Lanius.Mini.Compiler.P.FloatTy_rex
+import all Lanius.Mini.Compiler.P.FloatTy_scalarPrefix
 
 public section
 

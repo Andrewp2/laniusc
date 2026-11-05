@@ -4,6 +4,10 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_Inline_arithOf
 public import Lanius.Mini.Compiler.P.evalDivide
+public import Lanius.Mini.Compiler.P.evalDivision
+public import Lanius.Mini.Compiler.P.evalNegate
+public import Lanius.Mini.Compiler.P.evalThen
+public import Lanius.Mini.Compiler.P.scalarCast
 
 @[expose] public section
 

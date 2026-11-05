@@ -13,6 +13,9 @@ public import Lanius.Faithful.Gen.SelfStmtF_flLog2Or0
 public import Lanius.Faithful.Gen.SelfStmtF_flNatHalf
 public import Lanius.Faithful.Gen.SelfStmtF_flRoundUp
 import all Lanius.Faithful.Gen.SelfSrcF_flRoundUp
+import all Lanius.Mini.Frontend.P.flDecimalAt
+import all Lanius.Mini.Frontend.P.flRatioOk
+import all Lanius.Mini.Frontend.P.flRound
 import all Lanius.Mini.Frontend.P.flRoundUp
 
 public section

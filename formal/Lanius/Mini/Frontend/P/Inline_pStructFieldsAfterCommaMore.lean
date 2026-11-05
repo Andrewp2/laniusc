@@ -12,10 +12,4 @@ namespace Lanius.Mini
 @[expose] def Inline.pStructFieldsAfterCommaMore : Nat :=
   264
 
-@[expose] def Inline.pStructFieldsAfterCommaTrailing : Nat :=
-  265
-
-@[expose] def Inline.pStructFieldsEnd : Nat :=
-  263
-
 end Lanius.Mini

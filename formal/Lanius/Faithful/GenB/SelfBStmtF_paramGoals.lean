@@ -4,7 +4,30 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_findMethodAt
 public import Lanius.Faithful.GenB.SelfBModelF_paramGoals
+public import Lanius.Mini.Frontend.P.explicitChecked
+public import Lanius.Mini.Frontend.P.explicitInst
+public import Lanius.Mini.Frontend.P.findMethod
+public import Lanius.Mini.Frontend.P.fitIf
+public import Lanius.Mini.Frontend.P.fitOf
+public import Lanius.Mini.Frontend.P.fitTy
+public import Lanius.Mini.Frontend.P.fnBoundsOk
+public import Lanius.Mini.Frontend.P.implArgs
+public import Lanius.Mini.Frontend.P.implFit
+public import Lanius.Mini.Frontend.P.implWhere
+public import Lanius.Mini.Frontend.P.inferInst
+public import Lanius.Mini.Frontend.P.inferRet
+public import Lanius.Mini.Frontend.P.isMisfit
+public import Lanius.Mini.Frontend.P.itemGoals
+public import Lanius.Mini.Frontend.P.noMethod
 public import Lanius.Mini.Frontend.P.paramGoals
+public import Lanius.Mini.Frontend.P.paramsGoals
+public import Lanius.Mini.Frontend.P.predsGoals
+public import Lanius.Mini.Frontend.P.sameTrait
+public import Lanius.Mini.Frontend.P.traitHolds
+public import Lanius.Mini.Frontend.P.traitIs
+public import Lanius.Mini.Frontend.P.tyIs
+public import Lanius.Mini.Frontend.P.uniqueFound
+public import Lanius.Mini.Frontend.P.whereGoals
 
 @[expose] public section
 

@@ -17,6 +17,11 @@ public import Lanius.Faithful.Gen.SelfStmtF_lowerTy
 public import Lanius.Faithful.Gen.SelfStmtF_weightAdd
 import all Lanius.Faithful.Gen.SelfSrcF_allWeighed
 import all Lanius.Mini.Frontend.P.allWeighed
+import all Lanius.Mini.Frontend.P.closeNamed
+import all Lanius.Mini.Frontend.P.closeTy
+import all Lanius.Mini.Frontend.P.srcEnumId
+import all Lanius.Mini.Frontend.P.tableWeighed
+import all Lanius.Mini.Frontend.P.typesWeighed
 
 public section
 

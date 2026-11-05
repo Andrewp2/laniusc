@@ -3,7 +3,30 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_negWideI32
+public import Lanius.Mini.Frontend.P.calleeParams
+public import Lanius.Mini.Frontend.P.calleeRet
+public import Lanius.Mini.Frontend.P.knownEff
+public import Lanius.Mini.Frontend.P.knownExpr
+public import Lanius.Mini.Frontend.P.leastCast
+public import Lanius.Mini.Frontend.P.litEff
+public import Lanius.Mini.Frontend.P.litExpr
+public import Lanius.Mini.Frontend.P.litExprs
+public import Lanius.Mini.Frontend.P.litFuncs
+public import Lanius.Mini.Frontend.P.litSrcArms
+public import Lanius.Mini.Frontend.P.litStmt
+public import Lanius.Mini.Frontend.P.negLeast
+public import Lanius.Mini.Frontend.P.negLeastAt
+public import Lanius.Mini.Frontend.P.negWideAt
 public import Lanius.Mini.Frontend.P.negWideI32
+public import Lanius.Mini.Frontend.P.negWideIsize
+public import Lanius.Mini.Frontend.P.negWideSint
+public import Lanius.Mini.Frontend.P.paramLocals
+public import Lanius.Mini.Frontend.P.srcParamTys
+public import Lanius.Mini.Frontend.P.wideLeft
+public import Lanius.Mini.Frontend.P.wideLeftArms
+public import Lanius.Mini.Frontend.P.wideLeftEff
+public import Lanius.Mini.Frontend.P.wideLeftExprs
+public import Lanius.Mini.Frontend.P.withLocal
 
 @[expose] public section
 

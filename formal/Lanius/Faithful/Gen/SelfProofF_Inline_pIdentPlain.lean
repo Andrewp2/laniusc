@@ -6,6 +6,12 @@ public import Lanius.Faithful.Gen.SelfSrcF_Inline_pIdentPlain
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pIdentPlain
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pIdentPlain
 import all Lanius.Mini.Frontend.P.Inline_pIdentPlain
+import all Lanius.Mini.Frontend.P.Inline_pIfStmt
+import all Lanius.Mini.Frontend.P.Inline_pImplFn
+import all Lanius.Mini.Frontend.P.Inline_pImplInherent
+import all Lanius.Mini.Frontend.P.Inline_pImplMethod
+import all Lanius.Mini.Frontend.P.Inline_pImplMethodPub
+import all Lanius.Mini.Frontend.P.Inline_pImplMethodsMore
 
 public section
 

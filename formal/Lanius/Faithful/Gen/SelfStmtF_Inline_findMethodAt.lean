@@ -1,7 +1,28 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.Inline_binderOf
 public import Lanius.Mini.Frontend.P.Inline_findMethodAt
+public import Lanius.Mini.Frontend.P.Inline_forOf
+public import Lanius.Mini.Frontend.P.Inline_lxBlockAt
+public import Lanius.Mini.Frontend.P.Inline_lxBlockNext
+public import Lanius.Mini.Frontend.P.Inline_lxDigitRunAt
+public import Lanius.Mini.Frontend.P.Inline_lxDigitSep
+public import Lanius.Mini.Frontend.P.Inline_lxDigitTailAt
+public import Lanius.Mini.Frontend.P.Inline_lxExponentSign
+public import Lanius.Mini.Frontend.P.Inline_lxIdentRunAt
+public import Lanius.Mini.Frontend.P.Inline_lxLineRunAt
+public import Lanius.Mini.Frontend.P.Inline_lxQuotedAt
+public import Lanius.Mini.Frontend.P.Inline_lxSpaceRunAt
+public import Lanius.Mini.Frontend.P.Inline_monoNext
+public import Lanius.Mini.Frontend.P.Inline_paramOf
+public import Lanius.Mini.Frontend.P.Inline_stringByte
+public import Lanius.Mini.Frontend.P.Inline_tyLocalAt
+public import Lanius.Mini.Frontend.P.Inline_typeTableMoreAt
+public import Lanius.Mini.Frontend.P.Inline_typeTableNext
+public import Lanius.Mini.Frontend.P.Inline_weighNext
+public import Lanius.Mini.Frontend.P.Inline_weighRoundAt
+public import Lanius.Mini.Frontend.P.Inline_weighedMoreAt
 
 @[expose] public section
 

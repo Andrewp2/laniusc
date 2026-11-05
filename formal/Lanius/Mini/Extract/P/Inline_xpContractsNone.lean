@@ -12,25 +12,4 @@ namespace Lanius.Mini
 @[expose] def Inline.xpContractsNone : Nat :=
   321
 
-@[expose] def Inline.xpDivTail : Nat :=
-  153
-
-@[expose] def Inline.xpElseStmt : Nat :=
-  78
-
-@[expose] def Inline.xpEnum : Nat :=
-  210
-
-@[expose] def Inline.xpEnumTypeParamsNone : Nat :=
-  232
-
-@[expose] def Inline.xpEqTail : Nat :=
-  134
-
-@[expose] def Inline.xpEquality : Nat :=
-  133
-
-@[expose] def Inline.xpExpr : Nat :=
-  104
-
 end Lanius.Mini

@@ -20,18 +20,23 @@ public import Lanius.Faithful.GenB.SelfBStmtN2
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_consBinder
 import all Lanius.Faithful.Gen.SelfStmtF_consBinder
-import all Lanius.Mini.Frontend.P.Inline_pPathMore
-import all Lanius.Mini.Frontend.P.collect
-import all Lanius.Mini.Frontend.P.consBinder
-import all Lanius.Mini.Frontend.P.distinct
+import all Lanius.Mini.Frontend.P.Inline_pPatternIdent
+import all Lanius.Mini.Frontend.P.Inline_pPatternPlain
+import all Lanius.Mini.Frontend.P.anyVariant
+import all Lanius.Mini.Frontend.P.bindersOf
 import all Lanius.Mini.Frontend.P.freshId
-import all Lanius.Mini.Frontend.P.hasKids
-import all Lanius.Mini.Frontend.P.isEmptyUsize
-import all Lanius.Mini.Frontend.P.noToken
-import all Lanius.Mini.Frontend.P.noTrees
-import all Lanius.Mini.Frontend.P.sliceHead
-import all Lanius.Mini.Frontend.P.textSelf
-import all Lanius.Mini.Frontend.P.typePathSpellings
+import all Lanius.Mini.Frontend.P.isSomeName
+import all Lanius.Mini.Frontend.P.kid
+import all Lanius.Mini.Frontend.P.kidToken
+import all Lanius.Mini.Frontend.P.member
+import all Lanius.Mini.Frontend.P.noNames
+import all Lanius.Mini.Frontend.P.nodeProd
+import all Lanius.Mini.Frontend.P.pathName
+import all Lanius.Mini.Frontend.P.pathSpellings
+import all Lanius.Mini.Frontend.P.sameSpellings
+import all Lanius.Mini.Frontend.P.sameText
+import all Lanius.Mini.Frontend.P.splitLast
+import all Lanius.Mini.Frontend.P.zipVariants
 
 @[expose] public section
 

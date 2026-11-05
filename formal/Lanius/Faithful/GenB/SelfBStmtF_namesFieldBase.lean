@@ -3,7 +3,15 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_findMethodAt
+public import Lanius.Mini.Frontend.P.divergeFunc
 public import Lanius.Mini.Frontend.P.namesFieldBase
+public import Lanius.Mini.Frontend.P.paramEffs
+public import Lanius.Mini.Frontend.P.projectionFunc
+public import Lanius.Mini.Frontend.P.readFn
+public import Lanius.Mini.Frontend.P.refKids
+public import Lanius.Mini.Frontend.P.refUsesOk
+public import Lanius.Mini.Frontend.P.refsChecked
+public import Lanius.Mini.Frontend.P.refsUsedOk
 
 @[expose] public section
 

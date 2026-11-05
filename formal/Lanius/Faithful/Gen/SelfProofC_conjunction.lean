@@ -11,7 +11,10 @@ public import Lanius.Faithful.Gen.SelfStmtC_equality
 public import Lanius.Faithful.Gen.SelfStmtC_floatApply
 public import Lanius.Faithful.Gen.SelfStmtC_lowerShift
 import all Lanius.Faithful.Gen.SelfSrcC_conjunction
+import all Lanius.Mini.Compiler.P.SrcOp_lower
 import all Lanius.Mini.Compiler.P.conjunction
+import all Lanius.Mini.Compiler.P.disjunction
+import all Lanius.Mini.Compiler.P.lowerScalarLocal
 
 public section
 

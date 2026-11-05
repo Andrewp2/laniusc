@@ -1,6 +1,14 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Compiler.P.SrcEff_sliceUses
+public import Lanius.Mini.Compiler.P.SrcStmt_calleeNeed
+public import Lanius.Mini.Compiler.P.SrcStmt_sliceUses
+public import Lanius.Mini.Compiler.P.arrayBytesOf
+public import Lanius.Mini.Compiler.P.blockRoom
+public import Lanius.Mini.Compiler.P.declBytes
+public import Lanius.Mini.Compiler.P.frameBlock
+public import Lanius.Mini.Compiler.P.paramsRoom
 public import Lanius.Mini.Compiler.P.withBudget
 
 @[expose] public section

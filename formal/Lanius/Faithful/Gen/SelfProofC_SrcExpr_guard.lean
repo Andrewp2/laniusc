@@ -17,6 +17,16 @@ public import Lanius.Faithful.Gen.SelfStmtC_guardAnd
 public import Lanius.Faithful.Gen.SelfStmtC_lowerApply
 import all Lanius.Faithful.Gen.SelfSrcC_SrcExpr_guard
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
+import all Lanius.Mini.Compiler.P.boundsGuard
+import all Lanius.Mini.Compiler.P.checkThen
+import all Lanius.Mini.Compiler.P.expectType
+import all Lanius.Mini.Compiler.P.guardAll
+import all Lanius.Mini.Compiler.P.guarded
+import all Lanius.Mini.Compiler.P.lowerAppend
+import all Lanius.Mini.Compiler.P.lowerAs
+import all Lanius.Mini.Compiler.P.slotVars
+import all Lanius.Mini.Compiler.P.thenCheck
+import all Lanius.Mini.Compiler.P.trap
 
 public section
 

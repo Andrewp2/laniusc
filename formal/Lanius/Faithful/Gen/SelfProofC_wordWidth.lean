@@ -12,6 +12,9 @@ public import Lanius.Faithful.Gen.SelfStmtC_structFields
 public import Lanius.Faithful.Gen.SelfStmtC_usizeWidth
 public import Lanius.Faithful.Gen.SelfStmtC_wordWidth
 import all Lanius.Faithful.Gen.SelfSrcC_wordWidth
+import all Lanius.Mini.Compiler.P.declaredSame
+import all Lanius.Mini.Compiler.P.declaredVariants
+import all Lanius.Mini.Compiler.P.wordType
 import all Lanius.Mini.Compiler.P.wordWidth
 
 public section

@@ -3,7 +3,13 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_storeEvalWord
+public import Lanius.Mini.Compiler.P.putElement
+public import Lanius.Mini.Compiler.P.storeArrayElement
+public import Lanius.Mini.Compiler.P.storeEval
+public import Lanius.Mini.Compiler.P.storeEvalByte
+public import Lanius.Mini.Compiler.P.storeEvalElement
 public import Lanius.Mini.Compiler.P.storeEvalWord
+public import Lanius.Mini.Compiler.P.storePick
 
 @[expose] public section
 

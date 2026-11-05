@@ -1,7 +1,12 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Compiler.P.Expr_literal
+public import Lanius.Mini.Compiler.P.Func_agrees
+public import Lanius.Mini.Compiler.P.Stmt_agrees
 public import Lanius.Mini.Compiler.P.Stmt_kills
+public import Lanius.Mini.Compiler.P.funcsAgree
+public import Lanius.Mini.Compiler.P.validate
 
 @[expose] public section
 

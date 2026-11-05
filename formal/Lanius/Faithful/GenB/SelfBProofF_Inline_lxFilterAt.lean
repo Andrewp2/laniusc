@@ -13,7 +13,13 @@ public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_lxFilterAt
 import all Lanius.Faithful.Gen.SelfStmtF_Inline_lxFilterAt
 import all Lanius.Mini.Frontend.P.lxCanonicalKind
-import all Lanius.Mini.Frontend.P.lxDotAt
+import all Lanius.Mini.Frontend.P.lxDropTo
+import all Lanius.Mini.Frontend.P.lxFilter
+import all Lanius.Mini.Frontend.P.lxRangePair
+import all Lanius.Mini.Frontend.P.lxRanges
+import all Lanius.Mini.Frontend.P.lxToken
+import all Lanius.Mini.Frontend.P.lxTokens
+import all Lanius.Mini.Frontend.P.lxTrivia
 
 @[expose] public section
 

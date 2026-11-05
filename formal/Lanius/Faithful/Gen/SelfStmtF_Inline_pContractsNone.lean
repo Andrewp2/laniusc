@@ -1,7 +1,11 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.Inline_pContractsMore
 public import Lanius.Mini.Frontend.P.Inline_pContractsNone
+public import Lanius.Mini.Frontend.P.Inline_pDivTail
+public import Lanius.Mini.Frontend.P.Inline_pElseNone
+public import Lanius.Mini.Frontend.P.Inline_pRequires
 
 @[expose] public section
 

@@ -11,9 +11,10 @@ public import Lanius.Faithful.GenB.SelfBStmtF_isEmptyUsize
 public import Lanius.Faithful.GenB.SelfBStmtF_noToken
 import all Lanius.Faithful.Gen.SelfSrcF_armsOf
 import all Lanius.Faithful.Gen.SelfStmtF_armsOf
-import all Lanius.Mini.Frontend.P.Inline_pPathMore
-import all Lanius.Mini.Frontend.P.isEmptyUsize
-import all Lanius.Mini.Frontend.P.noToken
+import all Lanius.Mini.Frontend.P.Inline_pPatternIdent
+import all Lanius.Mini.Frontend.P.Inline_pPatternPlain
+import all Lanius.Mini.Frontend.P.kid
+import all Lanius.Mini.Frontend.P.nodeProd
 
 @[expose] public section
 

@@ -11,7 +11,12 @@ public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtC_compileSource
 public import Lanius.Faithful.Gen.SelfStmtC_packRound
 import all Lanius.Faithful.Gen.SelfSrcC_packRound
+import all Lanius.Mini.Compiler.P.binaryWords
+import all Lanius.Mini.Compiler.P.compileWords
+import all Lanius.Mini.Compiler.P.imageWords
 import all Lanius.Mini.Compiler.P.packRound
+import all Lanius.Mini.Compiler.P.packRounds
+import all Lanius.Mini.Compiler.P.roundJoin
 
 public section
 

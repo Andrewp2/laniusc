@@ -3,6 +3,10 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_strBytes
+public import Lanius.Mini.Frontend.P.effBytes
+public import Lanius.Mini.Frontend.P.placeEff
+public import Lanius.Mini.Frontend.P.placeStmt
+public import Lanius.Mini.Frontend.P.stmtBytes
 public import Lanius.Mini.Frontend.P.strBytes
 
 @[expose] public section

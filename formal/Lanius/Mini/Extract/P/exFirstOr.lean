@@ -14,22 +14,4 @@ def exFirstOr (a : Option Token) (b : Option Token) : Option Token :=
   | none => b
   | some t => some t
 
-mutual
-/-- The first leaf of a tree. -/
-def exFirstLeaf (fuel : Nat) (c : CTree) : Option Token :=
-  if fuel = 0 then
-    none
-  else
-    match c with
-    | .leaf t => some t
-    | .node p kids => exFirstIn (fuel - 1) kids
-def exFirstIn (fuel : Nat) (kids : List CTree) : Option Token :=
-  if fuel = 0 then
-    none
-  else
-    match kids with
-    | [] => none
-    | k :: rest => exFirstOr (exFirstLeaf (fuel - 1) k) (exFirstIn (fuel - 1) rest)
-end
-
 end Lanius.Mini

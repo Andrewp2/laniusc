@@ -3,7 +3,19 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_lowerLocal
+public import Lanius.Mini.Compiler.P.fromI32
+public import Lanius.Mini.Compiler.P.lowerField
+public import Lanius.Mini.Compiler.P.lowerFieldAt
+public import Lanius.Mini.Compiler.P.lowerFieldOf
 public import Lanius.Mini.Compiler.P.lowerLocal
+public import Lanius.Mini.Compiler.P.lowerNegate
+public import Lanius.Mini.Compiler.P.lowerNegateTyped
+public import Lanius.Mini.Compiler.P.lowerNot
+public import Lanius.Mini.Compiler.P.lowerNotTyped
+public import Lanius.Mini.Compiler.P.lowerUnsigned
+public import Lanius.Mini.Compiler.P.negateFloat
+public import Lanius.Mini.Compiler.P.negateSigned
+public import Lanius.Mini.Compiler.P.sintToI32
 
 @[expose] public section
 

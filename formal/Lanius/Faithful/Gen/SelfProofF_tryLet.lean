@@ -12,7 +12,19 @@ public import Lanius.Faithful.Gen.SelfStmtF_tryLet
 public import Lanius.Faithful.Gen.SelfStmtF_tryLetHead
 public import Lanius.Faithful.Gen.SelfStmtF_tryLocalOf
 import all Lanius.Faithful.Gen.SelfSrcF_tryLet
+import all Lanius.Mini.Frontend.P.inferred
+import all Lanius.Mini.Frontend.P.isPtrTy
+import all Lanius.Mini.Frontend.P.letHeadOrEval
+import all Lanius.Mini.Frontend.P.literalHead
+import all Lanius.Mini.Frontend.P.pureInferred
+import all Lanius.Mini.Frontend.P.thenOf
+import all Lanius.Mini.Frontend.P.thenRest
 import all Lanius.Mini.Frontend.P.tryLet
+import all Lanius.Mini.Frontend.P.tryStmt
+import all Lanius.Mini.Frontend.P.untypedEval
+import all Lanius.Mini.Frontend.P.untypedHead
+import all Lanius.Mini.Frontend.P.untypedIf
+import all Lanius.Mini.Frontend.P.untypedTry
 
 public section
 

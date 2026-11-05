@@ -10,7 +10,14 @@ public import Lanius.Faithful.Gen.SelfStmtC_Word_compute
 public import Lanius.Faithful.Gen.SelfStmtC_Word_narrows
 public import Lanius.Faithful.Gen.SelfStmtC_binaryConstant
 import all Lanius.Faithful.Gen.SelfSrcC_binaryConstant
+import all Lanius.Mini.Compiler.P.Expr_constant
+import all Lanius.Mini.Compiler.P.Expr_isConstant
+import all Lanius.Mini.Compiler.P.Expr_isVar
+import all Lanius.Mini.Compiler.P.Expr_isZero
+import all Lanius.Mini.Compiler.P.Expr_unitOf
 import all Lanius.Mini.Compiler.P.binaryConstant
+import all Lanius.Mini.Compiler.P.compareConstant
+import all Lanius.Mini.Compiler.P.constantIs
 
 public section
 

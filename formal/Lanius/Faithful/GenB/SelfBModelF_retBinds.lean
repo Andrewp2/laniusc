@@ -5,10 +5,12 @@ public import Lanius.Faithful.GenB.SelfBModelF_fnInstRet
 public import Lanius.Faithful.GenB.SelfBModelF_repeatEff
 public import Lanius.Faithful.GenB.SelfBModelF_typeDeclAt
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.consTreeTail
-public import Lanius.Mini.Frontend.P.findConst
-public import Lanius.Mini.Frontend.P.fnInstRet
-public import Lanius.Mini.Frontend.P.repeatEff
+public import Lanius.Mini.Frontend.P.bareEff
+public import Lanius.Mini.Frontend.P.boundArgs
+public import Lanius.Mini.Frontend.P.calleeEnv
+public import Lanius.Mini.Frontend.P.declEnv
+public import Lanius.Mini.Frontend.P.effTy
+public import Lanius.Mini.Frontend.P.retPattern
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

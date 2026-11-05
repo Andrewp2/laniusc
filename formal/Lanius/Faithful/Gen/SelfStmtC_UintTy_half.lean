@@ -1,7 +1,29 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
-public import Lanius.Mini.Compiler.P.UintTy_half
+public import Lanius.Mini.Compiler.P.SrcType_floatTy
+public import Lanius.Mini.Compiler.P.SrcType_isBool
+public import Lanius.Mini.Compiler.P.SrcType_isChar
+public import Lanius.Mini.Compiler.P.SrcType_isFloat
+public import Lanius.Mini.Compiler.P.SrcType_isFloatAny
+public import Lanius.Mini.Compiler.P.SrcType_isI32
+public import Lanius.Mini.Compiler.P.SrcType_isInteger
+public import Lanius.Mini.Compiler.P.SrcType_isIsize
+public import Lanius.Mini.Compiler.P.SrcType_isPtr
+public import Lanius.Mini.Compiler.P.SrcType_isScalar
+public import Lanius.Mini.Compiler.P.SrcType_isSint
+public import Lanius.Mini.Compiler.P.SrcType_isSintAny
+public import Lanius.Mini.Compiler.P.SrcType_isStr
+public import Lanius.Mini.Compiler.P.SrcType_isUint
+public import Lanius.Mini.Compiler.P.SrcType_isUnit
+public import Lanius.Mini.Compiler.P.SrcType_sintKind
+public import Lanius.Mini.Compiler.P.SrcType_uintKind
+public import Lanius.Mini.Compiler.P.SrcType_word
+public import Lanius.Mini.Compiler.P.UintTy_leastBits
+public import Lanius.Mini.Compiler.P.UintTy_signedWord
+public import Lanius.Mini.Compiler.P.UintTy_spare
+public import Lanius.Mini.Compiler.P.boolBits
+public import Lanius.Mini.Compiler.P.lookup
 
 @[expose] public section
 

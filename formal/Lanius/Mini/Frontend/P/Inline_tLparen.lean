@@ -12,19 +12,4 @@ namespace Lanius.Mini
 @[expose] def Inline.tLparen : Nat :=
   4
 
-@[expose] def Inline.tLt : Nat :=
-  12
-
-@[expose] def Inline.tNotEqual : Nat :=
-  40
-
-@[expose] def Inline.tOror : Nat :=
-  18
-
-@[expose] def Inline.tRbrace : Nat :=
-  23
-
-@[expose] def Inline.tRbracket : Nat :=
-  21
-
 end Lanius.Mini

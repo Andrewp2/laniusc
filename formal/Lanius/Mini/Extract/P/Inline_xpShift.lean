@@ -12,34 +12,4 @@ namespace Lanius.Mini
 @[expose] def Inline.xpShift : Nat :=
   143
 
-@[expose] def Inline.xpShlTail : Nat :=
-  144
-
-@[expose] def Inline.xpShrTail : Nat :=
-  145
-
-@[expose] def Inline.xpStruct : Nat :=
-  258
-
-@[expose] def Inline.xpStructLit : Nat :=
-  275
-
-@[expose] def Inline.xpSubTail : Nat :=
-  149
-
-@[expose] def Inline.xpTrue : Nat :=
-  185
-
-@[expose] def Inline.xpTypeIdent : Nat :=
-  69
-
-@[expose] def Inline.xpTypeRefMut : Nat :=
-  324
-
-@[expose] def Inline.xpWhereNone : Nat :=
-  36
-
-@[expose] def Inline.xpXorTail : Nat :=
-  128
-
 end Lanius.Mini

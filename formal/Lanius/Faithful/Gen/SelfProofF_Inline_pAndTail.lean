@@ -6,6 +6,10 @@ public import Lanius.Faithful.Gen.SelfSrcF_Inline_pAndTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pAndTail
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pAndTail
 import all Lanius.Mini.Frontend.P.Inline_pAndTail
+import all Lanius.Mini.Frontend.P.Inline_pAndexpr
+import all Lanius.Mini.Frontend.P.Inline_pArgsAfterCommaMore
+import all Lanius.Mini.Frontend.P.Inline_pArgsAfterCommaTrailing
+import all Lanius.Mini.Frontend.P.Inline_pArgsEnd
 
 public section
 

@@ -4,6 +4,17 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_Inline_arithOf
 public import Lanius.Mini.Compiler.P.Inline_arithOf
+public import Lanius.Mini.Compiler.P.Inline_arithSignedOf
+public import Lanius.Mini.Compiler.P.Inline_armBind
+public import Lanius.Mini.Compiler.P.Inline_copySame
+public import Lanius.Mini.Compiler.P.Inline_copySlots
+public import Lanius.Mini.Compiler.P.Inline_evalArmIn
+public import Lanius.Mini.Compiler.P.Inline_evalSized
+public import Lanius.Mini.Compiler.P.Inline_floatArithOf
+public import Lanius.Mini.Compiler.P.Inline_floatOrderOf
+public import Lanius.Mini.Compiler.P.Inline_lowerScalarSlot
+public import Lanius.Mini.Compiler.P.Inline_orderOf
+public import Lanius.Mini.Compiler.P.Inline_orderSignedOf
 
 @[expose] public section
 

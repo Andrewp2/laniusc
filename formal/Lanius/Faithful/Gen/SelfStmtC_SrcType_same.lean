@@ -2,6 +2,10 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Compiler.P.SrcType_same
+public import Lanius.Mini.Compiler.P.SrcType_size
+public import Lanius.Mini.Compiler.P.fieldOffset
+public import Lanius.Mini.Compiler.P.norm
+public import Lanius.Mini.Compiler.P.wrap
 
 @[expose] public section
 

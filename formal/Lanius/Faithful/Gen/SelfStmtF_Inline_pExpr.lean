@@ -2,6 +2,22 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.Inline_pExpr
+public import Lanius.Mini.Frontend.P.Inline_pExprStmt
+public import Lanius.Mini.Frontend.P.Inline_pExternAbi
+public import Lanius.Mini.Frontend.P.Inline_pExternFn
+public import Lanius.Mini.Frontend.P.Inline_pFalse
+public import Lanius.Mini.Frontend.P.Inline_pFile
+public import Lanius.Mini.Frontend.P.Inline_pFloat
+public import Lanius.Mini.Frontend.P.Inline_pFn
+public import Lanius.Mini.Frontend.P.Inline_pForIterPath
+public import Lanius.Mini.Frontend.P.Inline_pForIterRangeFromStart
+public import Lanius.Mini.Frontend.P.Inline_pForStmt
+public import Lanius.Mini.Frontend.P.Inline_pGeTail
+public import Lanius.Mini.Frontend.P.Inline_pGenericArgumentInteger
+public import Lanius.Mini.Frontend.P.Inline_pGenericArgumentType
+public import Lanius.Mini.Frontend.P.Inline_pGroup
+public import Lanius.Mini.Frontend.P.Inline_pGtTail
+public import Lanius.Mini.Frontend.P.Inline_pIdent
 
 @[expose] public section
 

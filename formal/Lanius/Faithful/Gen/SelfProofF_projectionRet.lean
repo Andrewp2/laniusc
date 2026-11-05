@@ -17,6 +17,10 @@ public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_projectionRet
 public import Lanius.Faithful.Gen.SelfStmtF_wideOf
 import all Lanius.Faithful.Gen.SelfSrcF_projectionRet
+import all Lanius.Mini.Frontend.P.diverges
+import all Lanius.Mini.Frontend.P.initTys
+import all Lanius.Mini.Frontend.P.lastTy
+import all Lanius.Mini.Frontend.P.neverRet
 import all Lanius.Mini.Frontend.P.projectionRet
 
 public section

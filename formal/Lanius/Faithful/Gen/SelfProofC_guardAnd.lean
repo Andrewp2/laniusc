@@ -7,7 +7,14 @@ public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmtC_guardAnd
 public import Lanius.Faithful.Gen.SelfStmtC_lowerApply
 import all Lanius.Faithful.Gen.SelfSrcC_guardAnd
+import all Lanius.Mini.Compiler.P.UintTy_bits
+import all Lanius.Mini.Compiler.P.amountGuard
 import all Lanius.Mini.Compiler.P.guardAnd
+import all Lanius.Mini.Compiler.P.guardOr
+import all Lanius.Mini.Compiler.P.leftFalse
+import all Lanius.Mini.Compiler.P.literalBelow
+import all Lanius.Mini.Compiler.P.shiftGuard
+import all Lanius.Mini.Compiler.P.shiftWidth
 
 public section
 

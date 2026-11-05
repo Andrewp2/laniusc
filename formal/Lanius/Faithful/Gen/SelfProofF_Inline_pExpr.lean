@@ -6,6 +6,22 @@ public import Lanius.Faithful.Gen.SelfSrcF_Inline_pExpr
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pExpr
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pExpr
 import all Lanius.Mini.Frontend.P.Inline_pExpr
+import all Lanius.Mini.Frontend.P.Inline_pExprStmt
+import all Lanius.Mini.Frontend.P.Inline_pExternAbi
+import all Lanius.Mini.Frontend.P.Inline_pExternFn
+import all Lanius.Mini.Frontend.P.Inline_pFalse
+import all Lanius.Mini.Frontend.P.Inline_pFile
+import all Lanius.Mini.Frontend.P.Inline_pFloat
+import all Lanius.Mini.Frontend.P.Inline_pFn
+import all Lanius.Mini.Frontend.P.Inline_pForIterPath
+import all Lanius.Mini.Frontend.P.Inline_pForIterRangeFromStart
+import all Lanius.Mini.Frontend.P.Inline_pForStmt
+import all Lanius.Mini.Frontend.P.Inline_pGeTail
+import all Lanius.Mini.Frontend.P.Inline_pGenericArgumentInteger
+import all Lanius.Mini.Frontend.P.Inline_pGenericArgumentType
+import all Lanius.Mini.Frontend.P.Inline_pGroup
+import all Lanius.Mini.Frontend.P.Inline_pGtTail
+import all Lanius.Mini.Frontend.P.Inline_pIdent
 
 public section
 

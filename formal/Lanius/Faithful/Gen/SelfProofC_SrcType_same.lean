@@ -14,6 +14,10 @@ public import Lanius.Faithful.Gen.SelfStmtC_UintTy_mask
 public import Lanius.Faithful.Gen.SelfStmtC_larger
 import all Lanius.Faithful.Gen.SelfSrcC_SrcType_same
 import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.fieldOffset
+import all Lanius.Mini.Compiler.P.norm
+import all Lanius.Mini.Compiler.P.wrap
 
 public section
 

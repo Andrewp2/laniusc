@@ -10,6 +10,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_litEffMatch
 public import Lanius.Faithful.Gen.SelfStmtF_litWildValue
 import all Lanius.Faithful.Gen.SelfSrcF_litEffMatch
 import all Lanius.Mini.Frontend.P.litEffMatch
+import all Lanius.Mini.Frontend.P.stringClose
 
 public section
 

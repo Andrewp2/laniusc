@@ -3,6 +3,11 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_Inline_factOr
+public import Lanius.Mini.Compiler.P.factDies
+public import Lanius.Mini.Compiler.P.kill
+public import Lanius.Mini.Compiler.P.killTail
+public import Lanius.Mini.Compiler.P.mentionsAny
+public import Lanius.Mini.Compiler.P.noneDies
 public import Lanius.Mini.Compiler.P.substAll
 
 @[expose] public section

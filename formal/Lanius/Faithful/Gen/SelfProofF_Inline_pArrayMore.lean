@@ -6,6 +6,23 @@ public import Lanius.Faithful.Gen.SelfSrcF_Inline_pArrayMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pArrayMore
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pArrayMore
 import all Lanius.Mini.Frontend.P.Inline_pArrayMore
+import all Lanius.Mini.Frontend.P.Inline_pArrayRepeat
+import all Lanius.Mini.Frontend.P.Inline_pArraySome
+import all Lanius.Mini.Frontend.P.Inline_pAssign
+import all Lanius.Mini.Frontend.P.Inline_pAssignAdd
+import all Lanius.Mini.Frontend.P.Inline_pAssignBand
+import all Lanius.Mini.Frontend.P.Inline_pAssignBor
+import all Lanius.Mini.Frontend.P.Inline_pAssignDiv
+import all Lanius.Mini.Frontend.P.Inline_pAssignEnd
+import all Lanius.Mini.Frontend.P.Inline_pAssignMod
+import all Lanius.Mini.Frontend.P.Inline_pAssignMul
+import all Lanius.Mini.Frontend.P.Inline_pAssignSet
+import all Lanius.Mini.Frontend.P.Inline_pAssignShl
+import all Lanius.Mini.Frontend.P.Inline_pAssignShr
+import all Lanius.Mini.Frontend.P.Inline_pAssignSub
+import all Lanius.Mini.Frontend.P.Inline_pAssignXor
+import all Lanius.Mini.Frontend.P.Inline_pBandTail
+import all Lanius.Mini.Frontend.P.Inline_pBase
 
 public section
 

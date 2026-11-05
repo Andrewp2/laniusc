@@ -2,6 +2,9 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.Inline_lxAfterFractionAt
+public import Lanius.Mini.Frontend.P.Inline_lxDecimalNext
+public import Lanius.Mini.Frontend.P.Inline_lxFractionAt
+public import Lanius.Mini.Frontend.P.Inline_lxKeywordAt
 
 @[expose] public section
 

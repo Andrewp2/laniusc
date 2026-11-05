@@ -13,8 +13,19 @@ public import Lanius.Faithful.GenB.SelfBStmtN6
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcC_arities
 import all Lanius.Faithful.Gen.SelfStmtC_arities
+import all Lanius.Mini.Compiler.P.BinOp_opcode
+import all Lanius.Mini.Compiler.P.CmpOp_setcc
+import all Lanius.Mini.Compiler.P.DivOp_extend
+import all Lanius.Mini.Compiler.P.DivOp_opcode
+import all Lanius.Mini.Compiler.P.DivOp_result
+import all Lanius.Mini.Compiler.P.Word_rex
 import all Lanius.Mini.Compiler.P.arities
-import all Lanius.Mini.Compiler.P.roomFits
+import all Lanius.Mini.Compiler.P.compileFunc
+import all Lanius.Mini.Compiler.P.compileFuncs
+import all Lanius.Mini.Compiler.P.le32
+import all Lanius.Mini.Compiler.P.slotLoad
+import all Lanius.Mini.Compiler.P.slotOffset
+import all Lanius.Mini.Compiler.P.slotOperands
 
 @[expose] public section
 

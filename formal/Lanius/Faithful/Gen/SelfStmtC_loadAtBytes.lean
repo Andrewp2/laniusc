@@ -1,7 +1,27 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Compiler.P.Code_size
+public import Lanius.Mini.Compiler.P.Instr_encode
+public import Lanius.Mini.Compiler.P.argBase
+public import Lanius.Mini.Compiler.P.copyBytes
+public import Lanius.Mini.Compiler.P.encodeOnto
+public import Lanius.Mini.Compiler.P.epilogue
+public import Lanius.Mini.Compiler.P.frameSize
+public import Lanius.Mini.Compiler.P.layout
+public import Lanius.Mini.Compiler.P.linkOnto
 public import Lanius.Mini.Compiler.P.loadAtBytes
+public import Lanius.Mini.Compiler.P.loadWordBytes
+public import Lanius.Mini.Compiler.P.prologue
+public import Lanius.Mini.Compiler.P.relative
+public import Lanius.Mini.Compiler.P.slotRange
+public import Lanius.Mini.Compiler.P.stackCheck
+public import Lanius.Mini.Compiler.P.storeAtBytes
+public import Lanius.Mini.Compiler.P.storeWordBytes
+public import Lanius.Mini.Compiler.P.sysBytes
+public import Lanius.Mini.Compiler.P.syscallLinuxByte
+public import Lanius.Mini.Compiler.P.syscallLinuxHigh
+public import Lanius.Mini.Compiler.P.syscallRsiBytes
 
 @[expose] public section
 

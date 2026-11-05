@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Compiler.P.firstFacts
 public import Lanius.Mini.Compiler.P.killShared
 
 @[expose] public section

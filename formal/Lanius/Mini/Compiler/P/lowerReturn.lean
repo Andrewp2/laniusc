@@ -14,19 +14,4 @@ def lowerReturn (values : Option (List Expr)) : Option Stmt :=
   | none => none
   | some vs => some (Stmt.ret vs)
 
-/-- The bump allocator's size: Core gives a block of size 0 one byte. -/
-def atLeastOne (size : Expr) : Expr :=
-  Expr.binary Word.u64 BinOp.add size (Expr.compare Word.u64 CmpOp.eq size (Expr.lit 0))
-
-def lowerAlloc (slot : Nat) (shift : Nat) (size : Option Expr) (body : Option Stmt) : Option Stmt :=
-  if shift < 32 then
-    match size with
-    | none => none
-    | some s =>
-      match body with
-      | none => none
-      | some b => some (Stmt.seq (Stmt.alloc slot shift (atLeastOne s)) b)
-  else
-    none
-
 end Lanius.Mini

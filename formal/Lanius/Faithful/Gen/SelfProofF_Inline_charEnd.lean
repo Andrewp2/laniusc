@@ -11,6 +11,9 @@ public import Lanius.Faithful.Gen.SelfStmtF_Inline_charEnd
 public import Lanius.Faithful.Gen.SelfStmtF_basedDigits
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_charEnd
 import all Lanius.Mini.Frontend.P.Inline_charEnd
+import all Lanius.Mini.Frontend.P.Inline_charEscape
+import all Lanius.Mini.Frontend.P.Inline_charFirst
+import all Lanius.Mini.Frontend.P.Inline_charTailAt
 
 public section
 

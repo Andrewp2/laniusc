@@ -16,11 +16,14 @@ public import Lanius.Faithful.GenB.SelfBStmtN3
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_pathRef
 import all Lanius.Faithful.Gen.SelfStmtF_pathRef
-import all Lanius.Mini.Frontend.P.Inline_pModTail
+import all Lanius.Mini.Frontend.P.Inline_pPathEnd
+import all Lanius.Mini.Frontend.P.Inline_pPathIdent
+import all Lanius.Mini.Frontend.P.Inline_pPathIdentArgs
 import all Lanius.Mini.Frontend.P.Inline_pPathMore
-import all Lanius.Mini.Frontend.P.hasKids
-import all Lanius.Mini.Frontend.P.isEmptyUsize
-import all Lanius.Mini.Frontend.P.noToken
+import all Lanius.Mini.Frontend.P.kid
+import all Lanius.Mini.Frontend.P.kidToken
+import all Lanius.Mini.Frontend.P.listItems
+import all Lanius.Mini.Frontend.P.nodeProd
 import all Lanius.Mini.Frontend.P.pathRef
 
 @[expose] public section

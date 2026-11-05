@@ -3,8 +3,10 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelN6
 public import Lanius.Mini.Compiler.Types
+public import Lanius.Mini.Frontend.P.boundTys
 public import Lanius.Mini.Frontend.P.firstSrc
-public import Lanius.Mini.Frontend.P.nullConst
+public import Lanius.Mini.Frontend.P.restSrc
+public import Lanius.Mini.Frontend.P.sintWide
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

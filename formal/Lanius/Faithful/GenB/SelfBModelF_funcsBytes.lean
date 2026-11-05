@@ -5,7 +5,9 @@ public import Lanius.Faithful.GenB.SelfBModelF_strBytes
 public import Lanius.Faithful.GenB.SelfBModelN7
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.P.funcsBytes
-public import Lanius.Mini.Frontend.P.strBytes
+public import Lanius.Mini.Frontend.P.placeFuncs
+public import Lanius.Mini.Frontend.P.placeStmt
+public import Lanius.Mini.Frontend.P.stmtBytes
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

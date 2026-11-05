@@ -11,8 +11,9 @@ public import Lanius.Faithful.GenB.SelfBStmtC_wordElement
 public import Lanius.Faithful.GenB.SelfBStmtN4
 import all Lanius.Faithful.Gen.SelfSrcC_lowerSlice
 import all Lanius.Faithful.Gen.SelfStmtC_lowerSlice
-import all Lanius.Mini.Compiler.P.UintTy_half
-import all Lanius.Mini.Compiler.P.storeType
+import all Lanius.Mini.Compiler.P.SrcType_isI32
+import all Lanius.Mini.Compiler.P.SrcType_isUint
+import all Lanius.Mini.Compiler.P.withinLayout
 import all Lanius.Mini.Compiler.P.wordElement
 
 @[expose] public section

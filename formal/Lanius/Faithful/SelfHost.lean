@@ -2,8 +2,22 @@ module
 
 public import Lanius.Faithful.SelfCompiler
 public import Lanius.Mini.Compiler.P.compileSource
+public import Lanius.Mini.Compiler.P.packWord
+public import Lanius.Mini.Compiler.P.roundCons
+public import Lanius.Mini.Compiler.P.roundEnd
+public import Lanius.Mini.Compiler.P.usizeWords
+public import Lanius.Mini.Compiler.P.binaryWords
+public import Lanius.Mini.Compiler.P.compileWords
+public import Lanius.Mini.Compiler.P.elfBase
+public import Lanius.Mini.Compiler.P.elfBeforeImage
+public import Lanius.Mini.Compiler.P.imageWords
 public import Lanius.Mini.Compiler.P.packRound
+public import Lanius.Mini.Compiler.P.packRounds
+public import Lanius.Mini.Compiler.P.roundJoin
+public import Lanius.Mini.Frontend.P.attach
+public import Lanius.Mini.Frontend.P.only
 public import Lanius.Mini.Frontend.P.shrFirst
+public import Lanius.Mini.Frontend.P.shrSecond
 
 @[expose] public section
 /-! # The verified compiler self-hosts (roadmap step F12)

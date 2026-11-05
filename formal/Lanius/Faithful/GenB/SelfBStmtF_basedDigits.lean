@@ -6,6 +6,27 @@ public import Lanius.Faithful.GenB.SelfBModelF_Inline_charEnd
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_charOpen
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_variantsNamedAt
 public import Lanius.Mini.Frontend.P.basedDigits
+public import Lanius.Mini.Frontend.P.charBody
+public import Lanius.Mini.Frontend.P.charClose
+public import Lanius.Mini.Frontend.P.charCloseOpt
+public import Lanius.Mini.Frontend.P.charLiteral
+public import Lanius.Mini.Frontend.P.charTail
+public import Lanius.Mini.Frontend.P.escapedByte
+public import Lanius.Mini.Frontend.P.flAdd
+public import Lanius.Mini.Frontend.P.flBorrowBit
+public import Lanius.Mini.Frontend.P.flCarry
+public import Lanius.Mini.Frontend.P.flCarryOut
+public import Lanius.Mini.Frontend.P.flLess
+public import Lanius.Mini.Frontend.P.flMul10
+public import Lanius.Mini.Frontend.P.flShl
+public import Lanius.Mini.Frontend.P.flSub
+public import Lanius.Mini.Frontend.P.flTimes10
+public import Lanius.Mini.Frontend.P.flXor
+public import Lanius.Mini.Frontend.P.intLiteral
+public import Lanius.Mini.Frontend.P.litBase
+public import Lanius.Mini.Frontend.P.litPrefixed
+public import Lanius.Mini.Frontend.P.litSized
+public import Lanius.Mini.Frontend.P.litValue
 
 @[expose] public section
 

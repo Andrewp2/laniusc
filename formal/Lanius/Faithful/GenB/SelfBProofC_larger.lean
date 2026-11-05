@@ -16,11 +16,17 @@ public import Lanius.Faithful.GenB.SelfBStmtN4
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcC_larger
 import all Lanius.Faithful.Gen.SelfStmtC_larger
-import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.Code_size
+import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.argSlots
 import all Lanius.Mini.Compiler.P.codeSize
 import all Lanius.Mini.Compiler.P.compileArgs
-import all Lanius.Mini.Compiler.P.linkedSize
-import all Lanius.Mini.Compiler.P.loadAtBytes
+import all Lanius.Mini.Compiler.P.compileExpr
+import all Lanius.Mini.Compiler.P.compileStmt
+import all Lanius.Mini.Compiler.P.fieldOffset
+import all Lanius.Mini.Compiler.P.imageLimit
+import all Lanius.Mini.Compiler.P.layout
+import all Lanius.Mini.Compiler.P.roomAfter
 
 @[expose] public section
 

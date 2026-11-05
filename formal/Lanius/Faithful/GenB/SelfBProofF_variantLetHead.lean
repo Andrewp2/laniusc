@@ -9,8 +9,8 @@ public import Lanius.Faithful.GenB.SelfBStmtF_variantLetHead
 public import Lanius.Faithful.GenB.SelfBStmtN4
 import all Lanius.Faithful.Gen.SelfSrcF_variantLetHead
 import all Lanius.Faithful.Gen.SelfStmtF_variantLetHead
+import all Lanius.Mini.Frontend.P.pureArms
 import all Lanius.Mini.Frontend.P.purePart
-import all Lanius.Mini.Frontend.P.variantLetHead
 
 @[expose] public section
 

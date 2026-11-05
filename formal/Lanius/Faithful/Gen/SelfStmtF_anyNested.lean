@@ -2,6 +2,29 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.anyNested
+public import Lanius.Mini.Frontend.P.armNaming
+public import Lanius.Mini.Frontend.P.colFits
+public import Lanius.Mini.Frontend.P.columnArm
+public import Lanius.Mini.Frontend.P.columnArms
+public import Lanius.Mini.Frontend.P.columnFit
+public import Lanius.Mini.Frontend.P.columnSub
+public import Lanius.Mini.Frontend.P.endsWild
+public import Lanius.Mini.Frontend.P.firstAt
+public import Lanius.Mini.Frontend.P.firstNested
+public import Lanius.Mini.Frontend.P.isLast
+public import Lanius.Mini.Frontend.P.mentions
+public import Lanius.Mini.Frontend.P.namedKnown
+public import Lanius.Mini.Frontend.P.namedPath
+public import Lanius.Mini.Frontend.P.quietArm
+public import Lanius.Mini.Frontend.P.quietIn
+public import Lanius.Mini.Frontend.P.quietSub
+public import Lanius.Mini.Frontend.P.rowCons
+public import Lanius.Mini.Frontend.P.rowFits
+public import Lanius.Mini.Frontend.P.rowPats
+public import Lanius.Mini.Frontend.P.rowsNaming
+public import Lanius.Mini.Frontend.P.sameOptName
+public import Lanius.Mini.Frontend.P.subArm
+public import Lanius.Mini.Frontend.P.wildPat
 
 @[expose] public section
 

@@ -9,7 +9,8 @@ public import Lanius.Faithful.GenB.SelfBStmtC_needsAfter
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcC_needsAfter
 import all Lanius.Faithful.Gen.SelfStmtC_needsAfter
-import all Lanius.Mini.Compiler.P.needCapped
+import all Lanius.Mini.Compiler.P.needRound
+import all Lanius.Mini.Compiler.P.sameNeeds
 
 @[expose] public section
 

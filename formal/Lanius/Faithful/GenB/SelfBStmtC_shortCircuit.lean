@@ -3,7 +3,22 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_Inline_arithOf
+public import Lanius.Mini.Compiler.P.elementOf
+public import Lanius.Mini.Compiler.P.evalApply
+public import Lanius.Mini.Compiler.P.evalDivideUint
+public import Lanius.Mini.Compiler.P.evalLoad
+public import Lanius.Mini.Compiler.P.evalOperands
+public import Lanius.Mini.Compiler.P.evalPayload
+public import Lanius.Mini.Compiler.P.evalRight
+public import Lanius.Mini.Compiler.P.evalStruct
+public import Lanius.Mini.Compiler.P.evalStructOf
+public import Lanius.Mini.Compiler.P.evalTagged
+public import Lanius.Mini.Compiler.P.evalVariant
+public import Lanius.Mini.Compiler.P.operandGuard
+public import Lanius.Mini.Compiler.P.overflowGuard
 public import Lanius.Mini.Compiler.P.shortCircuit
+public import Lanius.Mini.Compiler.P.signedDiv
+public import Lanius.Mini.Compiler.P.unsignedDiv
 
 @[expose] public section
 

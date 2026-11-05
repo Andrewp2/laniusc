@@ -6,8 +6,9 @@ public import Lanius.Faithful.GenB.SelfBModelF_Inline_lxAfterFractionAt
 public import Lanius.Faithful.GenB.SelfBModelF_lxSpaceEnd
 public import Lanius.Faithful.GenB.SelfBModelN4
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.lxBlockEnd
-public import Lanius.Mini.Frontend.P.lxLeadingDot
+public import Lanius.Mini.Frontend.P.lxBest
+public import Lanius.Mini.Frontend.P.lxDigitRun
+public import Lanius.Mini.Frontend.P.lxStartsWith
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

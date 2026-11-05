@@ -2,6 +2,10 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Compiler.P.evalDivide
+public import Lanius.Mini.Compiler.P.evalDivision
+public import Lanius.Mini.Compiler.P.evalNegate
+public import Lanius.Mini.Compiler.P.evalThen
+public import Lanius.Mini.Compiler.P.scalarCast
 
 @[expose] public section
 

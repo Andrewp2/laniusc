@@ -11,6 +11,11 @@ public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfStmtF_shrFirst
 import all Lanius.Faithful.Gen.SelfSrcF_isEmptyUsize
 import all Lanius.Mini.Frontend.P.isEmptyUsize
+import all Lanius.Mini.Frontend.P.noTokens
+import all Lanius.Mini.Frontend.P.nodeProd
+import all Lanius.Mini.Frontend.P.usedUp
+import all Lanius.Mini.Frontend.P.validateTree
+import all Lanius.Mini.Frontend.P.whole
 
 public section
 

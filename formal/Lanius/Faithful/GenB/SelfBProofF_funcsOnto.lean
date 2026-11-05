@@ -22,14 +22,29 @@ public import Lanius.Faithful.GenB.SelfBStmtN5
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_funcsOnto
 import all Lanius.Faithful.Gen.SelfStmtF_funcsOnto
-import all Lanius.Mini.Frontend.P.consTys
+import all Lanius.Mini.Frontend.P.addInsts
 import all Lanius.Mini.Frontend.P.effNamedTys
-import all Lanius.Mini.Frontend.P.findConst
+import all Lanius.Mini.Frontend.P.fieldTys
 import all Lanius.Mini.Frontend.P.flattenTys
-import all Lanius.Mini.Frontend.P.funcsOnto
-import all Lanius.Mini.Frontend.P.joinInsts
+import all Lanius.Mini.Frontend.P.funcsTys
 import all Lanius.Mini.Frontend.P.lowerTy
+import all Lanius.Mini.Frontend.P.loweredAll
+import all Lanius.Mini.Frontend.P.paramTys
+import all Lanius.Mini.Frontend.P.payloadTys
 import all Lanius.Mini.Frontend.P.readInst
+import all Lanius.Mini.Frontend.P.retTys
+import all Lanius.Mini.Frontend.P.seedTys
+import all Lanius.Mini.Frontend.P.stmtCalls
+import all Lanius.Mini.Frontend.P.stmtTys
+import all Lanius.Mini.Frontend.P.tyInsts
+import all Lanius.Mini.Frontend.P.tyKnown
+import all Lanius.Mini.Frontend.P.tyWeight
+import all Lanius.Mini.Frontend.P.typeTable
+import all Lanius.Mini.Frontend.P.tysWeight
+import all Lanius.Mini.Frontend.P.unweighed
+import all Lanius.Mini.Frontend.P.weighAgain
+import all Lanius.Mini.Frontend.P.weighRound
+import all Lanius.Mini.Frontend.P.weighedMore
 
 @[expose] public section
 

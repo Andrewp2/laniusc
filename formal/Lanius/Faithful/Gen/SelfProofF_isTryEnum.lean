@@ -15,7 +15,14 @@ public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_isPathCall
 public import Lanius.Faithful.Gen.SelfStmtF_isTryEnum
 import all Lanius.Faithful.Gen.SelfSrcF_isTryEnum
+import all Lanius.Mini.Frontend.P.allocHead
+import all Lanius.Mini.Frontend.P.allocShifted
+import all Lanius.Mini.Frontend.P.castShift
 import all Lanius.Mini.Frontend.P.isTryEnum
+import all Lanius.Mini.Frontend.P.isUsize
+import all Lanius.Mini.Frontend.P.literalShift
+import all Lanius.Mini.Frontend.P.shiftOf
+import all Lanius.Mini.Frontend.P.shiftOfU64
 
 public section
 

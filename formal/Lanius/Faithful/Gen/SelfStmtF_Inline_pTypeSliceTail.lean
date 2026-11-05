@@ -2,6 +2,7 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.Inline_pTypeSliceTail
+public import Lanius.Mini.Frontend.P.Inline_pWhereNone
 
 @[expose] public section
 

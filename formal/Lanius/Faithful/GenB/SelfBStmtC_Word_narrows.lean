@@ -3,7 +3,16 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_Word_narrows
+public import Lanius.Mini.Compiler.P.Expr_narrow
+public import Lanius.Mini.Compiler.P.FArith_number
+public import Lanius.Mini.Compiler.P.FCmp_number
+public import Lanius.Mini.Compiler.P.FOp_number
+public import Lanius.Mini.Compiler.P.Word_keeps
 public import Lanius.Mini.Compiler.P.Word_narrows
+public import Lanius.Mini.Compiler.P.Word_number
+public import Lanius.Mini.Compiler.P.absorbed
+public import Lanius.Mini.Compiler.P.foldConstant
+public import Lanius.Mini.Compiler.P.negateConstant
 
 @[expose] public section
 

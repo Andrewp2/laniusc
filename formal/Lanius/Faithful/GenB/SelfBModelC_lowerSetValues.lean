@@ -3,8 +3,8 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelC_Inline_arithOf
 public import Lanius.Faithful.GenB.SelfBModelC_SrcType_same
-public import Lanius.Mini.Compiler.P.SrcType_same
-public import Lanius.Mini.Compiler.P.repeatType
+public import Lanius.Mini.Compiler.P.fieldOffset
+public import Lanius.Mini.Compiler.P.lowerValue
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.Types
 

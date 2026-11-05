@@ -18,7 +18,17 @@ public import Lanius.Faithful.Gen.SelfStmtC_guardAnd
 public import Lanius.Faithful.Gen.SelfStmtC_repeatType
 public import Lanius.Faithful.Gen.SelfStmtC_strStores
 import all Lanius.Faithful.Gen.SelfSrcC_bindingBytes
+import all Lanius.Mini.Compiler.P.argBytes
+import all Lanius.Mini.Compiler.P.arrayArg
+import all Lanius.Mini.Compiler.P.arrayArgBefore
+import all Lanius.Mini.Compiler.P.arrayArgChecked
+import all Lanius.Mini.Compiler.P.arrayArgLocal
+import all Lanius.Mini.Compiler.P.arrayArgPure
+import all Lanius.Mini.Compiler.P.arrayArgSlice
+import all Lanius.Mini.Compiler.P.arrayArgs
+import all Lanius.Mini.Compiler.P.arrayCallCode
 import all Lanius.Mini.Compiler.P.bindingBytes
+import all Lanius.Mini.Compiler.P.blockLimit
 
 public section
 

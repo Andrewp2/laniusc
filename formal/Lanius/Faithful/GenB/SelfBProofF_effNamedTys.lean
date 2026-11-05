@@ -14,8 +14,9 @@ public import Lanius.Faithful.GenB.SelfBStmtN5
 public import Lanius.Faithful.GenB.SelfBStmtN6
 import all Lanius.Faithful.Gen.SelfSrcF_effNamedTys
 import all Lanius.Faithful.Gen.SelfStmtF_effNamedTys
+import all Lanius.Mini.Frontend.P.effCalls
 import all Lanius.Mini.Frontend.P.effNamedTys
-import all Lanius.Mini.Frontend.P.readInst
+import all Lanius.Mini.Frontend.P.stmtCalls
 
 @[expose] public section
 

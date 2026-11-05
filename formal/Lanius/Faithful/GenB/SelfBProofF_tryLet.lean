@@ -13,11 +13,11 @@ public import Lanius.Faithful.GenB.SelfBStmtF_tryLetHead
 public import Lanius.Faithful.GenB.SelfBStmtF_tryLocalOf
 import all Lanius.Faithful.Gen.SelfSrcF_tryLet
 import all Lanius.Faithful.Gen.SelfStmtF_tryLet
-import all Lanius.Mini.Frontend.P.fnInstRet
-import all Lanius.Mini.Frontend.P.noBlock
-import all Lanius.Mini.Frontend.P.stringOpen
+import all Lanius.Mini.Frontend.P.effOf
+import all Lanius.Mini.Frontend.P.effTy
+import all Lanius.Mini.Frontend.P.letHead
 import all Lanius.Mini.Frontend.P.tryLetHead
-import all Lanius.Mini.Frontend.P.tryLocalOf
+import all Lanius.Mini.Frontend.P.tryOfInit
 
 @[expose] public section
 

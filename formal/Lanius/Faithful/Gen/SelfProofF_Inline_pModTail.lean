@@ -6,6 +6,29 @@ public import Lanius.Faithful.Gen.SelfSrcF_Inline_pModTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pModTail
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pModTail
 import all Lanius.Mini.Frontend.P.Inline_pModTail
+import all Lanius.Mini.Frontend.P.Inline_pModule
+import all Lanius.Mini.Frontend.P.Inline_pMul
+import all Lanius.Mini.Frontend.P.Inline_pMulTail
+import all Lanius.Mini.Frontend.P.Inline_pNeTail
+import all Lanius.Mini.Frontend.P.Inline_pNeg
+import all Lanius.Mini.Frontend.P.Inline_pNot
+import all Lanius.Mini.Frontend.P.Inline_pOrTail
+import all Lanius.Mini.Frontend.P.Inline_pOrexpr
+import all Lanius.Mini.Frontend.P.Inline_pParamNamed
+import all Lanius.Mini.Frontend.P.Inline_pParamSelf
+import all Lanius.Mini.Frontend.P.Inline_pParamSelfRef
+import all Lanius.Mini.Frontend.P.Inline_pParamsAfterCommaMore
+import all Lanius.Mini.Frontend.P.Inline_pParamsAfterCommaTrailing
+import all Lanius.Mini.Frontend.P.Inline_pParamsEnd
+import all Lanius.Mini.Frontend.P.Inline_pParamsMore
+import all Lanius.Mini.Frontend.P.Inline_pParamsNone
+import all Lanius.Mini.Frontend.P.Inline_pParamsSome
+import all Lanius.Mini.Frontend.P.Inline_pPath
+import all Lanius.Mini.Frontend.P.Inline_pPathEnd
+import all Lanius.Mini.Frontend.P.Inline_pPathIdent
+import all Lanius.Mini.Frontend.P.Inline_pPathIdentArgs
+import all Lanius.Mini.Frontend.P.Inline_pTypeRef
+import all Lanius.Mini.Frontend.P.Inline_pTypeRefMut
 
 public section
 

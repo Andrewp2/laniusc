@@ -1,7 +1,14 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Compiler.P.Expr_constant
+public import Lanius.Mini.Compiler.P.Expr_isConstant
+public import Lanius.Mini.Compiler.P.Expr_isVar
+public import Lanius.Mini.Compiler.P.Expr_isZero
+public import Lanius.Mini.Compiler.P.Expr_unitOf
 public import Lanius.Mini.Compiler.P.binaryConstant
+public import Lanius.Mini.Compiler.P.compareConstant
+public import Lanius.Mini.Compiler.P.constantIs
 
 @[expose] public section
 

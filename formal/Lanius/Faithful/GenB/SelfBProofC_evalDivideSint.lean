@@ -11,9 +11,10 @@ public import Lanius.Faithful.GenB.SelfBStmtC_evalDivideSint
 public import Lanius.Faithful.GenB.SelfBStmtC_shortCircuit
 import all Lanius.Faithful.Gen.SelfSrcC_evalDivideSint
 import all Lanius.Faithful.Gen.SelfStmtC_evalDivideSint
-import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.SrcType_isSint
 import all Lanius.Mini.Compiler.P.UintTy_isWide
-import all Lanius.Mini.Compiler.P.shortCircuit
+import all Lanius.Mini.Compiler.P.overflowGuard
+import all Lanius.Mini.Compiler.P.signedDiv
 
 @[expose] public section
 

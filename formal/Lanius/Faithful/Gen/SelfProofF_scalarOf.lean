@@ -16,7 +16,16 @@ public import Lanius.Faithful.Gen.SelfStmtF_scalarOf
 public import Lanius.Faithful.Gen.SelfStmtF_typeDeclAt
 public import Lanius.Faithful.Gen.SelfStmtF_variantIn
 import all Lanius.Faithful.Gen.SelfSrcF_scalarOf
+import all Lanius.Mini.Frontend.P.applyOf
+import all Lanius.Mini.Frontend.P.castInto
+import all Lanius.Mini.Frontend.P.castTypeOf
+import all Lanius.Mini.Frontend.P.castValue
+import all Lanius.Mini.Frontend.P.casts
+import all Lanius.Mini.Frontend.P.namedScalar
+import all Lanius.Mini.Frontend.P.negatedInt
 import all Lanius.Mini.Frontend.P.scalarOf
+import all Lanius.Mini.Frontend.P.uintInRange
+import all Lanius.Mini.Frontend.P.uintMask
 
 public section
 

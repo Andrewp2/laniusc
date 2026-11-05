@@ -1,7 +1,9 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.blockValue
 public import Lanius.Mini.Frontend.P.nestedUsed
+public import Lanius.Mini.Frontend.P.nestedWith
 
 @[expose] public section
 

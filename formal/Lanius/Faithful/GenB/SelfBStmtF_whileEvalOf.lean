@@ -3,7 +3,15 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_findMethodAt
+public import Lanius.Mini.Frontend.P.effActs
+public import Lanius.Mini.Frontend.P.setEvalOf
+public import Lanius.Mini.Frontend.P.setIndexEvalOf
+public import Lanius.Mini.Frontend.P.setOrEval
+public import Lanius.Mini.Frontend.P.setTryOrEval
+public import Lanius.Mini.Frontend.P.stmtUnless
+public import Lanius.Mini.Frontend.P.trySet
 public import Lanius.Mini.Frontend.P.whileEvalOf
+public import Lanius.Mini.Frontend.P.whileOrEval
 
 @[expose] public section
 

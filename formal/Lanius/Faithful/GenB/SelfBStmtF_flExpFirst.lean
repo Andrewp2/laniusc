@@ -4,6 +4,15 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_charOpen
 public import Lanius.Mini.Frontend.P.flExpFirst
+public import Lanius.Mini.Frontend.P.flExpPart
+public import Lanius.Mini.Frontend.P.flExpSign
+public import Lanius.Mini.Frontend.P.flFracPart
+public import Lanius.Mini.Frontend.P.flIntPart
+public import Lanius.Mini.Frontend.P.floatLiteral
+public import Lanius.Mini.Frontend.P.floatMarker
+public import Lanius.Mini.Frontend.P.floatPick
+public import Lanius.Mini.Frontend.P.floatPickOf
+public import Lanius.Mini.Frontend.P.floatWant
 
 @[expose] public section
 

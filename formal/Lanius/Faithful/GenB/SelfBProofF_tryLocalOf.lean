@@ -16,12 +16,14 @@ public import Lanius.Faithful.GenB.SelfBStmtN4
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_tryLocalOf
 import all Lanius.Faithful.Gen.SelfStmtF_tryLocalOf
-import all Lanius.Mini.Frontend.P.floatTyped
 import all Lanius.Mini.Frontend.P.freshId
-import all Lanius.Mini.Frontend.P.hasKids
-import all Lanius.Mini.Frontend.P.isPathCall
-import all Lanius.Mini.Frontend.P.noToken
-import all Lanius.Mini.Frontend.P.wideOf
+import all Lanius.Mini.Frontend.P.isTryCall
+import all Lanius.Mini.Frontend.P.isTryLocal
+import all Lanius.Mini.Frontend.P.isTryMethod
+import all Lanius.Mini.Frontend.P.kid
+import all Lanius.Mini.Frontend.P.kidToken
+import all Lanius.Mini.Frontend.P.localOf
+import all Lanius.Mini.Frontend.P.peel
 
 @[expose] public section
 

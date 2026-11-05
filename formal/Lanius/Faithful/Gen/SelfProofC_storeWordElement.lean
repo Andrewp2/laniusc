@@ -14,6 +14,8 @@ public import Lanius.Faithful.Gen.SelfStmtC_storeType
 public import Lanius.Faithful.Gen.SelfStmtC_storeWordElement
 public import Lanius.Faithful.Gen.SelfStmtC_wordElement
 import all Lanius.Faithful.Gen.SelfSrcC_storeWordElement
+import all Lanius.Mini.Compiler.P.lowerSetIndexOf
+import all Lanius.Mini.Compiler.P.storeAny
 import all Lanius.Mini.Compiler.P.storeWordElement
 
 public section

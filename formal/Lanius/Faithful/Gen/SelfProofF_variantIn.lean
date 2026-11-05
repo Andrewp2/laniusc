@@ -16,6 +16,12 @@ public import Lanius.Faithful.Gen.SelfStmtF_typePathSpellings
 public import Lanius.Faithful.Gen.SelfStmtF_variantIn
 public import Lanius.Faithful.Gen.SelfStmtF_variantOfDecl
 import all Lanius.Faithful.Gen.SelfSrcF_variantIn
+import all Lanius.Mini.Frontend.P.enumVariant
+import all Lanius.Mini.Frontend.P.paramTy
+import all Lanius.Mini.Frontend.P.primTy
+import all Lanius.Mini.Frontend.P.scalarSrc
+import all Lanius.Mini.Frontend.P.srcTy
+import all Lanius.Mini.Frontend.P.variantByPath
 import all Lanius.Mini.Frontend.P.variantIn
 
 public section

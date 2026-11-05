@@ -11,8 +11,8 @@ public import Lanius.Faithful.GenB.SelfBStmtN3
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_flLog2Or0
 import all Lanius.Faithful.Gen.SelfStmtF_flLog2Or0
-import all Lanius.Mini.Frontend.P.basedDigits
-import all Lanius.Mini.Frontend.P.flLog2Or0
+import all Lanius.Mini.Frontend.P.flDivmod
+import all Lanius.Mini.Frontend.P.flLess
 
 @[expose] public section
 

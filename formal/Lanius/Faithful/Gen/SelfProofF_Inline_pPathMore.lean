@@ -6,6 +6,29 @@ public import Lanius.Faithful.Gen.SelfSrcF_Inline_pPathMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pPathMore
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pPathMore
 import all Lanius.Mini.Frontend.P.Inline_pPathMore
+import all Lanius.Mini.Frontend.P.Inline_pPathTypeArgsAfterCommaMore
+import all Lanius.Mini.Frontend.P.Inline_pPathTypeArgsMore
+import all Lanius.Mini.Frontend.P.Inline_pPatternFalse
+import all Lanius.Mini.Frontend.P.Inline_pPatternIdent
+import all Lanius.Mini.Frontend.P.Inline_pPatternInt
+import all Lanius.Mini.Frontend.P.Inline_pPatternPlain
+import all Lanius.Mini.Frontend.P.Inline_pPatternTrue
+import all Lanius.Mini.Frontend.P.Inline_pPatternTuple
+import all Lanius.Mini.Frontend.P.Inline_pPatternsAfterCommaMore
+import all Lanius.Mini.Frontend.P.Inline_pPatternsAfterCommaTrailing
+import all Lanius.Mini.Frontend.P.Inline_pPatternsEnd
+import all Lanius.Mini.Frontend.P.Inline_pPatternsMore
+import all Lanius.Mini.Frontend.P.Inline_pPatternsNone
+import all Lanius.Mini.Frontend.P.Inline_pPatternsSome
+import all Lanius.Mini.Frontend.P.Inline_pPostfix
+import all Lanius.Mini.Frontend.P.Inline_pPostfixCall
+import all Lanius.Mini.Frontend.P.Inline_pPostfixEnd
+import all Lanius.Mini.Frontend.P.Inline_pPostfixIndex
+import all Lanius.Mini.Frontend.P.Inline_pPostfixMember
+import all Lanius.Mini.Frontend.P.Inline_pPostfixTry
+import all Lanius.Mini.Frontend.P.Inline_pRangeBound
+import all Lanius.Mini.Frontend.P.Inline_pRangeBoundName
+import all Lanius.Mini.Frontend.P.Inline_pRangeExclusive
 
 public section
 

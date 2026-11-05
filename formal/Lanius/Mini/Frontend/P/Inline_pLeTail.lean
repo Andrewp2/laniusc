@@ -12,46 +12,4 @@ namespace Lanius.Mini
 @[expose] def Inline.pLeTail : Nat :=
   140
 
-@[expose] def Inline.pLetInit : Nat :=
-  88
-
-@[expose] def Inline.pLetStmt : Nat :=
-  75
-
-@[expose] def Inline.pLetType : Nat :=
-  86
-
-@[expose] def Inline.pLetTypeNone : Nat :=
-  87
-
-@[expose] def Inline.pLtTail : Nat :=
-  138
-
-@[expose] def Inline.pMatchArmsAfterCommaMore : Nat :=
-  193
-
-@[expose] def Inline.pMatchArmsAfterCommaTrailing : Nat :=
-  194
-
-@[expose] def Inline.pMatchArmsEnd : Nat :=
-  192
-
-@[expose] def Inline.pMatchArmsMore : Nat :=
-  191
-
-@[expose] def Inline.pMatchArmsNone : Nat :=
-  188
-
-@[expose] def Inline.pMatchArmsSome : Nat :=
-  189
-
-@[expose] def Inline.pMatchExpr : Nat :=
-  187
-
-@[expose] def Inline.pMemberTypeArgsNone : Nat :=
-  297
-
-@[expose] def Inline.pMemberTypeArgsSome : Nat :=
-  298
-
 end Lanius.Mini

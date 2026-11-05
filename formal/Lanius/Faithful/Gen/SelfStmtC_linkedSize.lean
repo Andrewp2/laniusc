@@ -1,7 +1,8 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
-public import Lanius.Mini.Compiler.P.linkedSize
+public import Lanius.Mini.Compiler.P.compileProgram
+public import Lanius.Mini.Compiler.P.roomAfter
 
 @[expose] public section
 

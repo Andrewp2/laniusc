@@ -18,20 +18,24 @@ public import Lanius.Faithful.GenB.SelfBStmtC_wordElement
 public import Lanius.Faithful.GenB.SelfBStmtC_wordStride
 import all Lanius.Faithful.Gen.SelfSrcC_Inline_lowerSetScalar
 import all Lanius.Faithful.Gen.SelfStmtC_Inline_lowerSetScalar
-import all Lanius.Mini.Compiler.P.Inline_lowerSetScalar
+import all Lanius.Mini.Compiler.P.Inline_evalLetBody
+import all Lanius.Mini.Compiler.P.SrcEff_eval
+import all Lanius.Mini.Compiler.P.SrcType_isI32
+import all Lanius.Mini.Compiler.P.SrcType_isScalar
+import all Lanius.Mini.Compiler.P.SrcType_isUint
 import all Lanius.Mini.Compiler.P.SrcType_same
-import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.SrcType_size
 import all Lanius.Mini.Compiler.P.armScope
-import all Lanius.Mini.Compiler.P.compileArgs
+import all Lanius.Mini.Compiler.P.blockRoom
+import all Lanius.Mini.Compiler.P.declBytes
 import all Lanius.Mini.Compiler.P.elementAddress
 import all Lanius.Mini.Compiler.P.elementBase
 import all Lanius.Mini.Compiler.P.evalSame
 import all Lanius.Mini.Compiler.P.evalSlotLimit
 import all Lanius.Mini.Compiler.P.matchDst
 import all Lanius.Mini.Compiler.P.matchVariants
-import all Lanius.Mini.Compiler.P.withBudget
+import all Lanius.Mini.Compiler.P.spend
 import all Lanius.Mini.Compiler.P.wordElement
-import all Lanius.Mini.Compiler.P.wordStride
 
 @[expose] public section
 

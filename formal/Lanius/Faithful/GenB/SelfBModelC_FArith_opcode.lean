@@ -6,8 +6,16 @@ public import Lanius.Faithful.GenB.SelfBModelC_arities
 public import Lanius.Faithful.GenB.SelfBModelN6
 public import Lanius.Faithful.GenB.SelfBModelN7
 public import Lanius.Mini.Compiler.P.FArith_opcode
+public import Lanius.Mini.Compiler.P.FCmp_predicate
+public import Lanius.Mini.Compiler.P.FOp_opcodeBytes
 public import Lanius.Mini.Compiler.P.FloatTy_rex
-public import Lanius.Mini.Compiler.P.arities
+public import Lanius.Mini.Compiler.P.FloatTy_scalarPrefix
+public import Lanius.Mini.Compiler.P.Word_rex
+public import Lanius.Mini.Compiler.P.floatOperands
+public import Lanius.Mini.Compiler.P.floatResult
+public import Lanius.Mini.Compiler.P.le64
+public import Lanius.Mini.Compiler.P.pow2
+public import Lanius.Mini.Compiler.P.slotOperands
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.Types
 

@@ -22,19 +22,21 @@ public import Lanius.Faithful.GenB.SelfBStmtF_tryLet
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_stringLast
 import all Lanius.Faithful.Gen.SelfStmtF_stringLast
-import all Lanius.Mini.Frontend.P.Inline_pLeTail
-import all Lanius.Mini.Frontend.P.findConst
+import all Lanius.Mini.Frontend.P.Inline_pLetInit
+import all Lanius.Mini.Frontend.P.Inline_pLetType
+import all Lanius.Mini.Frontend.P.effOf
 import all Lanius.Mini.Frontend.P.freshId
-import all Lanius.Mini.Frontend.P.hasKids
-import all Lanius.Mini.Frontend.P.isEmptyUsize
-import all Lanius.Mini.Frontend.P.noBlock
-import all Lanius.Mini.Frontend.P.noToken
-import all Lanius.Mini.Frontend.P.pickTy
-import all Lanius.Mini.Frontend.P.stringLast
-import all Lanius.Mini.Frontend.P.stringOpen
-import all Lanius.Mini.Frontend.P.textSelf
+import all Lanius.Mini.Frontend.P.isPtrTy
+import all Lanius.Mini.Frontend.P.kid
+import all Lanius.Mini.Frontend.P.kidToken
+import all Lanius.Mini.Frontend.P.letHead
+import all Lanius.Mini.Frontend.P.member
+import all Lanius.Mini.Frontend.P.nodeProd
+import all Lanius.Mini.Frontend.P.returnSlice
+import all Lanius.Mini.Frontend.P.sameTy
+import all Lanius.Mini.Frontend.P.sliceElem
+import all Lanius.Mini.Frontend.P.stringInit
 import all Lanius.Mini.Frontend.P.treeTokens
-import all Lanius.Mini.Frontend.P.tryLet
 
 @[expose] public section
 

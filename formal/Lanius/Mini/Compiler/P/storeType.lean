@@ -1,14 +1,17 @@
 module
 
 public import Lanius.Mini.Compiler.Types
+import Lanius.Mini.Compiler.P.BinOp_size
+import Lanius.Mini.Compiler.P.Code_size
 import Lanius.Mini.Compiler.P.DivOp_size
-import Lanius.Mini.Compiler.P.Lists_empty
-import Lanius.Mini.Compiler.P.SrcType_same
-import Lanius.Mini.Compiler.P.compileModules
-import Lanius.Mini.Compiler.P.elementBase
+import Lanius.Mini.Compiler.P.FOp_size
+import Lanius.Mini.Compiler.P.Instr_size
+import Lanius.Mini.Compiler.P.Piece_size
+import Lanius.Mini.Compiler.P.SrcType_size
+import Lanius.Mini.Compiler.P.addressBelow
 import Lanius.Mini.Compiler.P.iteThen
-import Lanius.Mini.Compiler.P.loadAtBytes
-import Lanius.Mini.Compiler.P.lowerSetCallArgs
+import Lanius.Mini.Compiler.P.lowerThen
+import Lanius.Mini.Compiler.P.storeOne
 import Lanius.Mini.Compiler.P.widthOf
 
 public section
@@ -53,39 +56,6 @@ def storeCases (tag : Expr) (values : List Expr) (first : Nat) (base : Expr) (of
     match rest with
     | [] => storeTypes types values first base offset
     | more :: others => iteThen (Expr.compare Word.u64 CmpOp.eq tag (Expr.lit (BitVec.ofNat 64 k))) (storeTypes types values first base offset) (storeCases tag values first base offset (k + 1) rest)
-end
-
-mutual
-/-- A word type within Core's native layout limits (NativeLayout.words? at maxDepth), its top at depth: nested less than 64 deep, each struct at most 4096 words and each enum payload under 4096. -/
-def withinLayout (depth : Nat) (ty : SrcType) : Bool :=
-  if 63 < depth then
-    false
-  else
-    match ty with
-    | .i32 => true
-    | .bool => true
-    | .uint kind => true
-    | .struct id fields => decide (sizes fields < 4097) && withinLayouts (depth + 1) fields
-    | .enum id variants => withinPayloads (depth + 1) variants
-    | .ptr => true
-    | .slice element => false
-    | .array arrayElement arrayLength => false
-    | .unit => false
-    | .isize => true
-    | .char => false
-    | .float ft => false
-    | .sint kind => true
-    | .view viewLength => false
-    | .str => false
-    | .ref referent => false
-def withinLayouts (depth : Nat) (types : List SrcType) : Bool :=
-  match types with
-  | [] => true
-  | ty :: rest => withinLayout depth ty && withinLayouts depth rest
-def withinPayloads (depth : Nat) (variants : List (List SrcType)) : Bool :=
-  match variants with
-  | [] => true
-  | types :: rest => decide (sizes types < 4096) && withinLayouts depth types && withinPayloads depth rest
 end
 
 end Lanius.Mini

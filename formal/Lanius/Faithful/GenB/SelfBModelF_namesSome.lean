@@ -7,10 +7,14 @@ public import Lanius.Faithful.GenB.SelfBModelF_consTreeTail
 public import Lanius.Faithful.GenB.SelfBModelF_isUnderscore
 public import Lanius.Faithful.GenB.SelfBModelN4
 public import Lanius.Mini.Compiler.Types
+public import Lanius.Mini.Frontend.P.allNameSome
+public import Lanius.Mini.Frontend.P.armNames
 public import Lanius.Mini.Frontend.P.armsNaming
-public import Lanius.Mini.Frontend.P.consBinder
-public import Lanius.Mini.Frontend.P.isUnderscore
+public import Lanius.Mini.Frontend.P.armsOrWild
 public import Lanius.Mini.Frontend.P.namesSome
+public import Lanius.Mini.Frontend.P.usesWild
+public import Lanius.Mini.Frontend.P.wildArmFor
+public import Lanius.Mini.Frontend.P.wildSplit
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

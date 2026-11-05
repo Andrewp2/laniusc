@@ -11,6 +11,10 @@ public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_strBytes
 import all Lanius.Faithful.Gen.SelfSrcF_strBytes
+import all Lanius.Mini.Frontend.P.effBytes
+import all Lanius.Mini.Frontend.P.placeEff
+import all Lanius.Mini.Frontend.P.placeStmt
+import all Lanius.Mini.Frontend.P.stmtBytes
 import all Lanius.Mini.Frontend.P.strBytes
 
 public section

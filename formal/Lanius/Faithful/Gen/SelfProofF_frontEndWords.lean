@@ -11,6 +11,14 @@ public import Lanius.Faithful.Gen.SelfStmtF_frontEndWords
 public import Lanius.Faithful.Gen.SelfStmtF_readCountedBytes
 import all Lanius.Faithful.Gen.SelfSrcF_frontEndWords
 import all Lanius.Mini.Frontend.P.frontEndWords
+import all Lanius.Mini.Frontend.P.grammarPart0
+import all Lanius.Mini.Frontend.P.grammarPart1
+import all Lanius.Mini.Frontend.P.grammarPart2
+import all Lanius.Mini.Frontend.P.grammarPart3
+import all Lanius.Mini.Frontend.P.grammarPart4
+import all Lanius.Mini.Frontend.P.grammarPart5
+import all Lanius.Mini.Frontend.P.grammarPart6
+import all Lanius.Mini.Frontend.P.grammarPart7
 
 public section
 

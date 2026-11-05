@@ -1,9 +1,10 @@
 module
 
 public import Lanius.Mini.Compiler.Types
-import Lanius.Mini.Compiler.P.UintTy_half
-import Lanius.Mini.Compiler.P.loadAtBytes
-import Lanius.Mini.Compiler.P.storeType
+import Lanius.Mini.Compiler.P.SrcType_isI32
+import Lanius.Mini.Compiler.P.SrcType_isUint
+import Lanius.Mini.Compiler.P.layout
+import Lanius.Mini.Compiler.P.withinLayout
 import Lanius.Mini.Compiler.P.wordElement
 
 public section

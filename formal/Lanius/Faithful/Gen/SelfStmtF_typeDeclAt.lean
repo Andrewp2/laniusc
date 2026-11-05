@@ -1,6 +1,20 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.arityOk
+public import Lanius.Mini.Frontend.P.arrayLen
+public import Lanius.Mini.Frontend.P.arrayTy
+public import Lanius.Mini.Frontend.P.bareTy
+public import Lanius.Mini.Frontend.P.consTy
+public import Lanius.Mini.Frontend.P.consTyTail
+public import Lanius.Mini.Frontend.P.consTysTail
+public import Lanius.Mini.Frontend.P.decimal
+public import Lanius.Mini.Frontend.P.namedArgs
+public import Lanius.Mini.Frontend.P.namedChecked
+public import Lanius.Mini.Frontend.P.namedOf
+public import Lanius.Mini.Frontend.P.primOrNamed
+public import Lanius.Mini.Frontend.P.sliceTy
+public import Lanius.Mini.Frontend.P.tyOf
 public import Lanius.Mini.Frontend.P.typeDeclAt
 
 @[expose] public section

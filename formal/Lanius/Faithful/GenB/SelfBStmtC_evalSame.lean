@@ -3,6 +3,7 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_evalSame
+public import Lanius.Mini.Compiler.P.evalArm
 public import Lanius.Mini.Compiler.P.evalSame
 
 @[expose] public section

@@ -11,7 +11,16 @@ public import Lanius.Faithful.Gen.SelfStmtC_Word_compute
 public import Lanius.Faithful.Gen.SelfStmtC_Word_narrows
 public import Lanius.Faithful.Gen.SelfStmtC_declareProgram
 import all Lanius.Faithful.Gen.SelfSrcC_Word_narrows
+import all Lanius.Mini.Compiler.P.Expr_narrow
+import all Lanius.Mini.Compiler.P.FArith_number
+import all Lanius.Mini.Compiler.P.FCmp_number
+import all Lanius.Mini.Compiler.P.FOp_number
+import all Lanius.Mini.Compiler.P.Word_keeps
 import all Lanius.Mini.Compiler.P.Word_narrows
+import all Lanius.Mini.Compiler.P.Word_number
+import all Lanius.Mini.Compiler.P.absorbed
+import all Lanius.Mini.Compiler.P.foldConstant
+import all Lanius.Mini.Compiler.P.negateConstant
 
 public section
 

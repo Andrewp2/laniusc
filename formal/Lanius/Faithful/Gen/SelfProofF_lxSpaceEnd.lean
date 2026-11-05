@@ -9,6 +9,9 @@ public import Lanius.Faithful.Gen.SelfStmtF_Inline_findMethodAt
 public import Lanius.Faithful.Gen.SelfStmtF_lxSpaceEnd
 public import Lanius.Faithful.Gen.SelfStmtF_lxSymbolStart
 import all Lanius.Faithful.Gen.SelfSrcF_lxSpaceEnd
+import all Lanius.Mini.Frontend.P.lxBlock
+import all Lanius.Mini.Frontend.P.lxLineEnd
+import all Lanius.Mini.Frontend.P.lxQuoted
 import all Lanius.Mini.Frontend.P.lxSpaceEnd
 
 public section

@@ -1,7 +1,14 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Compiler.P.UintTy_bits
+public import Lanius.Mini.Compiler.P.amountGuard
 public import Lanius.Mini.Compiler.P.guardAnd
+public import Lanius.Mini.Compiler.P.guardOr
+public import Lanius.Mini.Compiler.P.leftFalse
+public import Lanius.Mini.Compiler.P.literalBelow
+public import Lanius.Mini.Compiler.P.shiftGuard
+public import Lanius.Mini.Compiler.P.shiftWidth
 
 @[expose] public section
 

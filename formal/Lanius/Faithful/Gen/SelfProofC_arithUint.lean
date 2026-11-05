@@ -6,7 +6,9 @@ public import Lanius.Faithful.Gen.SelfSrcC_arithUint
 public import Lanius.Faithful.Gen.SelfStmtC_Inline_arithOf
 public import Lanius.Faithful.Gen.SelfStmtC_arithUint
 import all Lanius.Faithful.Gen.SelfSrcC_arithUint
+import all Lanius.Mini.Compiler.P.arithSint
 import all Lanius.Mini.Compiler.P.arithUint
+import all Lanius.Mini.Compiler.P.floatOp
 
 public section
 

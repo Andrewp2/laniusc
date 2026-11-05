@@ -23,14 +23,24 @@ public import Lanius.Faithful.GenB.SelfBStmtN6
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_collect
 import all Lanius.Faithful.Gen.SelfStmtF_collect
-import all Lanius.Mini.Frontend.P.Inline_pExpr
+import all Lanius.Mini.Frontend.P.Inline_pFile
+import all Lanius.Mini.Frontend.P.aliasNamesIn
 import all Lanius.Mini.Frontend.P.collect
+import all Lanius.Mini.Frontend.P.collectedWith
+import all Lanius.Mini.Frontend.P.constNamesIn
 import all Lanius.Mini.Frontend.P.distinct
-import all Lanius.Mini.Frontend.P.hasKids
-import all Lanius.Mini.Frontend.P.isEmptyUsize
-import all Lanius.Mini.Frontend.P.methodDecl
-import all Lanius.Mini.Frontend.P.moduleOr
-import all Lanius.Mini.Frontend.P.noToken
+import all Lanius.Mini.Frontend.P.distinctModules
+import all Lanius.Mini.Frontend.P.fileDecls
+import all Lanius.Mini.Frontend.P.fnNamesIn
+import all Lanius.Mini.Frontend.P.itemDecls
+import all Lanius.Mini.Frontend.P.kid
+import all Lanius.Mini.Frontend.P.listItems
+import all Lanius.Mini.Frontend.P.moduleNamesOk
+import all Lanius.Mini.Frontend.P.modulePath
+import all Lanius.Mini.Frontend.P.nodeProd
+import all Lanius.Mini.Frontend.P.sameSpellings
+import all Lanius.Mini.Frontend.P.typeNamesIn
+import all Lanius.Mini.Frontend.P.typeOnlyNamesIn
 
 @[expose] public section
 

@@ -3,9 +3,28 @@ module
 public import Lanius.Faithful.SelfPre.NB
 public import Lanius.Faithful.SelfPre.EvalSlots
 public import Lanius.Mini.Frontend
+import all Lanius.Mini.Frontend.P.limConst
+import all Lanius.Mini.Frontend.P.limGuard
 import all Lanius.Mini.Frontend.P.limLeaf
+import all Lanius.Mini.Frontend.P.limMax
+import all Lanius.Mini.Frontend.P.limNest
+import all Lanius.Mini.Frontend.P.limNestEff
+import all Lanius.Mini.Frontend.P.limNestStep
+import all Lanius.Mini.Frontend.P.limNum
+import all Lanius.Mini.Frontend.P.limNumsExpr
+import all Lanius.Mini.Frontend.P.limNumsExprs
+import all Lanius.Mini.Frontend.P.limNumsIds
+import all Lanius.Mini.Frontend.P.limNumsIdss
+import all Lanius.Mini.Frontend.P.limNumsTy
+import all Lanius.Mini.Frontend.P.limOne
+import all Lanius.Mini.Frontend.P.limParamSlots
+import all Lanius.Mini.Frontend.P.limParams
+import all Lanius.Mini.Frontend.P.limStmt
 import all Lanius.Mini.Frontend.P.limNumsArms
+import all Lanius.Mini.Frontend.P.limFuncs
 import all Lanius.Mini.Frontend.P.limNumsEff
+import all Lanius.Mini.Frontend.P.limNumsParams
+import all Lanius.Mini.Frontend.P.limNumsStmt
 
 @[expose] public section
 

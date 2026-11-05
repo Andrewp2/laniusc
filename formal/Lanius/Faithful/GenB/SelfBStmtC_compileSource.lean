@@ -4,6 +4,10 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_compileSource
 public import Lanius.Mini.Compiler.P.compileSource
+public import Lanius.Mini.Compiler.P.packWord
+public import Lanius.Mini.Compiler.P.roundCons
+public import Lanius.Mini.Compiler.P.roundEnd
+public import Lanius.Mini.Compiler.P.usizeWords
 
 @[expose] public section
 

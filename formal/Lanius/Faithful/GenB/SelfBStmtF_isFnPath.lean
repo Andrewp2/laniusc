@@ -4,6 +4,8 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_isFnPath
 public import Lanius.Mini.Frontend.P.isFnPath
+public import Lanius.Mini.Frontend.P.isMethodForm
+public import Lanius.Mini.Frontend.P.memberArgs
 
 @[expose] public section
 

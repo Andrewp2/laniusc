@@ -11,7 +11,27 @@ public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtC_arities
 public import Lanius.Faithful.Gen.SelfStmtC_roomFits
 import all Lanius.Faithful.Gen.SelfSrcC_arities
+import all Lanius.Mini.Compiler.P.BinOp_bytes
+import all Lanius.Mini.Compiler.P.BinOp_opcode
+import all Lanius.Mini.Compiler.P.CmpOp_setcc
+import all Lanius.Mini.Compiler.P.CmpOp_setccSigned
+import all Lanius.Mini.Compiler.P.CmpOp_setccUnsigned
+import all Lanius.Mini.Compiler.P.DivOp_bytes
+import all Lanius.Mini.Compiler.P.DivOp_extend
+import all Lanius.Mini.Compiler.P.DivOp_opcode
+import all Lanius.Mini.Compiler.P.DivOp_result
+import all Lanius.Mini.Compiler.P.Word_rex
 import all Lanius.Mini.Compiler.P.arities
+import all Lanius.Mini.Compiler.P.compileFuncs
+import all Lanius.Mini.Compiler.P.fspLoad
+import all Lanius.Mini.Compiler.P.fspSave
+import all Lanius.Mini.Compiler.P.le32
+import all Lanius.Mini.Compiler.P.le64
+import all Lanius.Mini.Compiler.P.slotCompare
+import all Lanius.Mini.Compiler.P.slotLoad
+import all Lanius.Mini.Compiler.P.slotOffset
+import all Lanius.Mini.Compiler.P.slotOperands
+import all Lanius.Mini.Compiler.P.slotStore
 
 public section
 

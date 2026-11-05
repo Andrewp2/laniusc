@@ -12,8 +12,8 @@ public import Lanius.Faithful.GenB.SelfBStmtN4
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_lxBlockEnd
 import all Lanius.Faithful.Gen.SelfStmtF_lxBlockEnd
-import all Lanius.Mini.Frontend.P.lxBlockEnd
-import all Lanius.Mini.Frontend.P.lxSymbolStart
+import all Lanius.Mini.Frontend.P.lxBaseDigit
+import all Lanius.Mini.Frontend.P.lxDrop
 
 @[expose] public section
 

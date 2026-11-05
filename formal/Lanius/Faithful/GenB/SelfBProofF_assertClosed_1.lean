@@ -15,11 +15,12 @@ public import Lanius.Faithful.GenB.SelfBStmtF_letStructClosed
 public import Lanius.Faithful.GenB.SelfBStmtF_setEvalClosed
 import all Lanius.Faithful.Gen.SelfSrcF_assertClosed
 import all Lanius.Faithful.Gen.SelfStmtF_assertClosed
-import all Lanius.Mini.Frontend.P.allWeighed
-import all Lanius.Mini.Frontend.P.assertClosed
-import all Lanius.Mini.Frontend.P.eStructClosed
-import all Lanius.Mini.Frontend.P.findConst
-import all Lanius.Mini.Frontend.P.letStructClosed
+import all Lanius.Mini.Frontend.P.armTyClosed
+import all Lanius.Mini.Frontend.P.closeEff
+import all Lanius.Mini.Frontend.P.closeStmt
+import all Lanius.Mini.Frontend.P.closeTy
+import all Lanius.Mini.Frontend.P.instIndex
+import all Lanius.Mini.Frontend.P.srcEnumId
 
 @[expose] public section
 

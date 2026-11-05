@@ -1,7 +1,10 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.Inline_attachLeaf
+public import Lanius.Mini.Frontend.P.Inline_attachNonterm
 public import Lanius.Mini.Frontend.P.Inline_attachParent
+public import Lanius.Mini.Frontend.P.Inline_attachSym
 
 @[expose] public section
 

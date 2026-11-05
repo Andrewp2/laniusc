@@ -2,8 +2,28 @@ module
 
 public import Lanius.Open.F14.ReadFilesHeight.Stmt
 public import Lanius.Faithful.SelfPre.Files
+import all Lanius.Mini.Compiler.P.UintTy_code
+import all Lanius.Mini.Compiler.P.entriesAt
+import all Lanius.Mini.Compiler.P.funcsSize
+import all Lanius.Mini.Compiler.P.funcsSlots
+import all Lanius.Mini.Compiler.P.linkObjects
+import all Lanius.Mini.Compiler.P.objectExports
+import all Lanius.Mini.Compiler.P.objectFirsts
+import all Lanius.Mini.Compiler.P.objectLayout
+import all Lanius.Mini.Compiler.P.objectsLayout
+import all Lanius.Mini.Compiler.P.objectsOk
+import all Lanius.Mini.Compiler.P.objectsSlots
 import all Lanius.Mini.Compiler.P.render
+import all Lanius.Mini.Compiler.P.renderFuncs
+import all Lanius.Mini.Compiler.P.renderObjects
+import all Lanius.Mini.Frontend.P.fileLexed
+import all Lanius.Mini.Frontend.P.filesAfter
 import all Lanius.Mini.Frontend.P.readCountedBytes
+import all Lanius.Mini.Frontend.P.readCountedFiles
+import all Lanius.Mini.Frontend.P.readFile
+import all Lanius.Mini.Frontend.P.readFileEnd
+import all Lanius.Mini.Frontend.P.readFileParents
+import all Lanius.Mini.Frontend.P.readFiles
 
 @[expose] public section
 

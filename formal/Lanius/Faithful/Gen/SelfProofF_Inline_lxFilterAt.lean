@@ -11,6 +11,9 @@ public import Lanius.Faithful.Gen.SelfStmtF_lxCanonicalKind
 public import Lanius.Faithful.Gen.SelfStmtF_lxDotAt
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_lxFilterAt
 import all Lanius.Mini.Frontend.P.Inline_lxFilterAt
+import all Lanius.Mini.Frontend.P.Inline_lxRangesAt
+import all Lanius.Mini.Frontend.P.Inline_lxTokensAt
+import all Lanius.Mini.Frontend.P.Inline_pAdd
 
 public section
 

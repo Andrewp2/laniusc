@@ -23,7 +23,20 @@ public import Lanius.Faithful.Gen.SelfStmtC_needLimit
 public import Lanius.Faithful.Gen.SelfStmtC_structFields
 public import Lanius.Faithful.Gen.SelfStmtC_withBudget
 import all Lanius.Faithful.Gen.SelfSrcC_lowerBody
+import all Lanius.Mini.Compiler.P.SrcStmt_declare
+import all Lanius.Mini.Compiler.P.SrcStmt_returns
+import all Lanius.Mini.Compiler.P.SrcType_declare
+import all Lanius.Mini.Compiler.P.declareEnum
+import all Lanius.Mini.Compiler.P.declareFunc
+import all Lanius.Mini.Compiler.P.declareParams
+import all Lanius.Mini.Compiler.P.declareStruct
+import all Lanius.Mini.Compiler.P.keepIf
 import all Lanius.Mini.Compiler.P.lowerBody
+import all Lanius.Mini.Compiler.P.lowerFunc
+import all Lanius.Mini.Compiler.P.lowerFuncCons
+import all Lanius.Mini.Compiler.P.lowerFuncs
+import all Lanius.Mini.Compiler.P.unitTail
+import all Lanius.Mini.Compiler.P.withFrame
 
 public section
 

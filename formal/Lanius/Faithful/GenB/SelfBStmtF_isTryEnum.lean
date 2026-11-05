@@ -3,7 +3,14 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_isTryEnum
+public import Lanius.Mini.Frontend.P.allocHead
+public import Lanius.Mini.Frontend.P.allocShifted
+public import Lanius.Mini.Frontend.P.castShift
 public import Lanius.Mini.Frontend.P.isTryEnum
+public import Lanius.Mini.Frontend.P.isUsize
+public import Lanius.Mini.Frontend.P.literalShift
+public import Lanius.Mini.Frontend.P.shiftOf
+public import Lanius.Mini.Frontend.P.shiftOfU64
 
 @[expose] public section
 

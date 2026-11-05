@@ -3,8 +3,9 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelF_depthLimit
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.depthLimit
-public import Lanius.Mini.Frontend.P.limExprs
+public import Lanius.Mini.Frontend.P.limEff
+public import Lanius.Mini.Frontend.P.limExpr
+public import Lanius.Mini.Frontend.P.limTy
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

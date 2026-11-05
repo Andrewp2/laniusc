@@ -12,10 +12,12 @@ public import Lanius.Faithful.GenB.SelfBStmtF_retBinds
 public import Lanius.Faithful.GenB.SelfBStmtF_typeDeclAt
 import all Lanius.Faithful.Gen.SelfSrcF_retBinds
 import all Lanius.Faithful.Gen.SelfStmtF_retBinds
-import all Lanius.Mini.Frontend.P.consTreeTail
-import all Lanius.Mini.Frontend.P.findConst
-import all Lanius.Mini.Frontend.P.fnInstRet
-import all Lanius.Mini.Frontend.P.repeatEff
+import all Lanius.Mini.Frontend.P.bareEff
+import all Lanius.Mini.Frontend.P.boundArgs
+import all Lanius.Mini.Frontend.P.calleeEnv
+import all Lanius.Mini.Frontend.P.declEnv
+import all Lanius.Mini.Frontend.P.effTy
+import all Lanius.Mini.Frontend.P.retPattern
 
 @[expose] public section
 

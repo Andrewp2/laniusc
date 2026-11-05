@@ -2,6 +2,7 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.Inline_pElseStmt
+public import Lanius.Mini.Frontend.P.Inline_pEnum
 
 @[expose] public section
 

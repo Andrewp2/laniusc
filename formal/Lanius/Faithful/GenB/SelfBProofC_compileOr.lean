@@ -12,11 +12,11 @@ public import Lanius.Faithful.GenB.SelfBStmtC_lowerBody
 public import Lanius.Faithful.GenB.SelfBStmtC_optimizeIte
 import all Lanius.Faithful.Gen.SelfSrcC_compileOr
 import all Lanius.Faithful.Gen.SelfStmtC_compileOr
-import all Lanius.Mini.Compiler.P.Stmt_kills
-import all Lanius.Mini.Compiler.P.funcNeeds
-import all Lanius.Mini.Compiler.P.linkedSize
-import all Lanius.Mini.Compiler.P.lowerBody
-import all Lanius.Mini.Compiler.P.optimizeIte
+import all Lanius.Mini.Compiler.P.compileProgram
+import all Lanius.Mini.Compiler.P.lowerFuncs
+import all Lanius.Mini.Compiler.P.optimizeProgram
+import all Lanius.Mini.Compiler.P.sigs
+import all Lanius.Mini.Compiler.P.validate
 
 @[expose] public section
 

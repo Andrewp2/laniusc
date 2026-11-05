@@ -3,6 +3,24 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.Inline_pEnumTypeParam
+public import Lanius.Mini.Frontend.P.Inline_pEnumTypeParamsAfterCommaMore
+public import Lanius.Mini.Frontend.P.Inline_pEnumTypeParamsMore
+public import Lanius.Mini.Frontend.P.Inline_pEnumTypeParamsSome
+public import Lanius.Mini.Frontend.P.Inline_pEnumVariantFieldsAfterCommaMore
+public import Lanius.Mini.Frontend.P.Inline_pEnumVariantFieldsAfterCommaTrailing
+public import Lanius.Mini.Frontend.P.Inline_pEnumVariantFieldsEnd
+public import Lanius.Mini.Frontend.P.Inline_pEnumVariantFieldsMore
+public import Lanius.Mini.Frontend.P.Inline_pEnumVariantFieldsNone
+public import Lanius.Mini.Frontend.P.Inline_pEnumVariantFieldsSome
+public import Lanius.Mini.Frontend.P.Inline_pEnumVariantUnit
+public import Lanius.Mini.Frontend.P.Inline_pEnumVariantsAfterCommaMore
+public import Lanius.Mini.Frontend.P.Inline_pEnumVariantsAfterCommaTrailing
+public import Lanius.Mini.Frontend.P.Inline_pEnumVariantsEnd
+public import Lanius.Mini.Frontend.P.Inline_pEnumVariantsMore
+public import Lanius.Mini.Frontend.P.Inline_pEnumVariantsNone
+public import Lanius.Mini.Frontend.P.Inline_pEnumVariantsSome
+public import Lanius.Mini.Frontend.P.Inline_pEqTail
+public import Lanius.Mini.Frontend.P.Inline_pEquality
 
 @[expose] public section
 

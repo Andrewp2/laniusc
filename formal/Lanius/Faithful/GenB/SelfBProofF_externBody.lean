@@ -18,11 +18,13 @@ public import Lanius.Faithful.GenB.SelfBStmtN5
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_externBody
 import all Lanius.Faithful.Gen.SelfStmtF_externBody
-import all Lanius.Mini.Frontend.P.collect
-import all Lanius.Mini.Frontend.P.hasKids
-import all Lanius.Mini.Frontend.P.litIf
-import all Lanius.Mini.Frontend.P.methodDecl
-import all Lanius.Mini.Frontend.P.noToken
+import all Lanius.Mini.Frontend.P.hostId
+import all Lanius.Mini.Frontend.P.kid
+import all Lanius.Mini.Frontend.P.kidToken
+import all Lanius.Mini.Frontend.P.listItems
+import all Lanius.Mini.Frontend.P.moduleGlobals
+import all Lanius.Mini.Frontend.P.paramsOf
+import all Lanius.Mini.Frontend.P.resultOf
 
 @[expose] public section
 

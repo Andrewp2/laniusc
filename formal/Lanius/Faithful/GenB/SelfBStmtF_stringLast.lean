@@ -3,7 +3,20 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_findMethodAt
+public import Lanius.Mini.Frontend.P.allocLet
+public import Lanius.Mini.Frontend.P.ifEvalOf
+public import Lanius.Mini.Frontend.P.ifOrEval
+public import Lanius.Mini.Frontend.P.isStrLet
+public import Lanius.Mini.Frontend.P.letBody
+public import Lanius.Mini.Frontend.P.letOf
+public import Lanius.Mini.Frontend.P.letStmt
+public import Lanius.Mini.Frontend.P.returnEvalOf
+public import Lanius.Mini.Frontend.P.returnOrEval
+public import Lanius.Mini.Frontend.P.returnSlice
+public import Lanius.Mini.Frontend.P.sliceLet
+public import Lanius.Mini.Frontend.P.sliceReturned
 public import Lanius.Mini.Frontend.P.stringLast
+public import Lanius.Mini.Frontend.P.stringLet
 
 @[expose] public section
 

@@ -1,7 +1,13 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.armValueTrees
 public import Lanius.Mini.Frontend.P.bindsOfTys
+public import Lanius.Mini.Frontend.P.isFalseArm
+public import Lanius.Mini.Frontend.P.isTrueArm
+public import Lanius.Mini.Frontend.P.litTy
+public import Lanius.Mini.Frontend.P.methodBinds
+public import Lanius.Mini.Frontend.P.tyPerArm
 
 @[expose] public section
 

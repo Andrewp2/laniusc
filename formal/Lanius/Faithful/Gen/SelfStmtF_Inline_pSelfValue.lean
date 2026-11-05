@@ -2,6 +2,10 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.Inline_pSelfValue
+public import Lanius.Mini.Frontend.P.Inline_pShift
+public import Lanius.Mini.Frontend.P.Inline_pShlTail
+public import Lanius.Mini.Frontend.P.Inline_pShrTail
+public import Lanius.Mini.Frontend.P.Inline_pStmtsEnd
 
 @[expose] public section
 

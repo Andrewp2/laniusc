@@ -2,7 +2,7 @@ module
 
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.nullConst
+public import Lanius.Mini.Frontend.P.sintFits
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

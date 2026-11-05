@@ -3,7 +3,14 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_lxAfterFractionAt
+public import Lanius.Mini.Frontend.P.lxAfterFraction
+public import Lanius.Mini.Frontend.P.lxBaseOf
 public import Lanius.Mini.Frontend.P.lxExponent
+public import Lanius.Mini.Frontend.P.lxFinishDecimal
+public import Lanius.Mini.Frontend.P.lxFraction
+public import Lanius.Mini.Frontend.P.lxFractionDigits
+public import Lanius.Mini.Frontend.P.lxNumber
+public import Lanius.Mini.Frontend.P.lxPrefixedBase
 
 @[expose] public section
 

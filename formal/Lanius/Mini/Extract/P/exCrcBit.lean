@@ -16,13 +16,4 @@ def exCrcBit (c : BitVec 32) : BitVec 32 :=
   else
     c >>> 1
 
-def exCrcByte (c : BitVec 32) (b : Nat) : BitVec 32 :=
-  let x : BitVec 32 := c ^^^ BitVec.ofNat 32 b
-  exCrcBit (exCrcBit (exCrcBit (exCrcBit (exCrcBit (exCrcBit (exCrcBit (exCrcBit x)))))))
-
-def exCrcRun (c : BitVec 32) (text : List Nat) : BitVec 32 :=
-  match text with
-  | [] => c
-  | b :: rest => exCrcRun (exCrcByte c b) rest
-
 end Lanius.Mini

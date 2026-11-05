@@ -11,6 +11,8 @@ public import Lanius.Faithful.Gen.SelfStmtF_tryLetHead
 public import Lanius.Faithful.Gen.SelfStmtF_tryLocalOf
 import all Lanius.Faithful.Gen.SelfSrcF_tryLetHead
 import all Lanius.Mini.Frontend.P.tryLetHead
+import all Lanius.Mini.Frontend.P.tryPayload
+import all Lanius.Mini.Frontend.P.tryRest
 
 public section
 

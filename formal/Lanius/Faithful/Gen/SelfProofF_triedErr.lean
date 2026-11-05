@@ -10,6 +10,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_matchLetHead
 public import Lanius.Faithful.Gen.SelfStmtF_triedErr
 import all Lanius.Faithful.Gen.SelfSrcF_triedErr
 import all Lanius.Mini.Frontend.P.triedErr
+import all Lanius.Mini.Frontend.P.triedShape
 
 public section
 

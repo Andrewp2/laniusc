@@ -10,7 +10,10 @@ public import Lanius.Faithful.GenB.SelfBStmtC_leftTrue
 import all Lanius.Faithful.Gen.SelfSrcC_applyGuard
 import all Lanius.Faithful.Gen.SelfStmtC_applyGuard
 import all Lanius.Mini.Compiler.P.guardAnd
+import all Lanius.Mini.Compiler.P.guardOr
+import all Lanius.Mini.Compiler.P.leftFalse
 import all Lanius.Mini.Compiler.P.leftTrue
+import all Lanius.Mini.Compiler.P.shiftGuard
 
 @[expose] public section
 

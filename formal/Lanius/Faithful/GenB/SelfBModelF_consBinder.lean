@@ -7,15 +7,15 @@ public import Lanius.Faithful.GenB.SelfBModelN1
 public import Lanius.Faithful.GenB.SelfBModelN2
 public import Lanius.Faithful.GenB.SelfBModelN7
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.Inline_pPathMore
-public import Lanius.Mini.Frontend.P.collect
-public import Lanius.Mini.Frontend.P.consBinder
-public import Lanius.Mini.Frontend.P.distinct
-public import Lanius.Mini.Frontend.P.hasKids
-public import Lanius.Mini.Frontend.P.isEmptyUsize
-public import Lanius.Mini.Frontend.P.noToken
-public import Lanius.Mini.Frontend.P.noTrees
-public import Lanius.Mini.Frontend.P.typePathSpellings
+public import Lanius.Mini.Frontend.P.Inline_pPatternIdent
+public import Lanius.Mini.Frontend.P.kid
+public import Lanius.Mini.Frontend.P.noNames
+public import Lanius.Mini.Frontend.P.nodeProd
+public import Lanius.Mini.Frontend.P.pathSpellings
+public import Lanius.Mini.Frontend.P.sameSpellings
+public import Lanius.Mini.Frontend.P.sameText
+public import Lanius.Mini.Frontend.P.splitLast
+public import Lanius.Mini.Frontend.P.zipVariants
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

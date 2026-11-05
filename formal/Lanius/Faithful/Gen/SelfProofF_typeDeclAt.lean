@@ -25,6 +25,20 @@ public import Lanius.Faithful.Gen.SelfStmtF_typeDeclAt
 public import Lanius.Faithful.Gen.SelfStmtF_typePathSpellings
 public import Lanius.Faithful.Gen.SelfStmtF_variantIn
 import all Lanius.Faithful.Gen.SelfSrcF_typeDeclAt
+import all Lanius.Mini.Frontend.P.arityOk
+import all Lanius.Mini.Frontend.P.arrayLen
+import all Lanius.Mini.Frontend.P.arrayTy
+import all Lanius.Mini.Frontend.P.bareTy
+import all Lanius.Mini.Frontend.P.consTy
+import all Lanius.Mini.Frontend.P.consTyTail
+import all Lanius.Mini.Frontend.P.consTysTail
+import all Lanius.Mini.Frontend.P.decimal
+import all Lanius.Mini.Frontend.P.namedArgs
+import all Lanius.Mini.Frontend.P.namedChecked
+import all Lanius.Mini.Frontend.P.namedOf
+import all Lanius.Mini.Frontend.P.primOrNamed
+import all Lanius.Mini.Frontend.P.sliceTy
+import all Lanius.Mini.Frontend.P.tyOf
 import all Lanius.Mini.Frontend.P.typeDeclAt
 
 public section

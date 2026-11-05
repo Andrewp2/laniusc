@@ -1,8 +1,9 @@
 module
 
 public import Lanius.Faithful.BudgetCore
-public import Lanius.Mini.Compiler.P.guardAnd
-public import Lanius.Mini.Compiler.P.lowerApply
+public import Lanius.Mini.Compiler.P.isOne
+public import Lanius.Mini.Compiler.P.literalBelow
+public import Lanius.Mini.Compiler.P.shiftWidth
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.Types
 

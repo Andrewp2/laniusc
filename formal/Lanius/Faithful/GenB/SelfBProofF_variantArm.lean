@@ -12,9 +12,10 @@ public import Lanius.Faithful.GenB.SelfBStmtN2
 public import Lanius.Faithful.GenB.SelfBStmtN3
 import all Lanius.Faithful.Gen.SelfSrcF_variantArm
 import all Lanius.Faithful.Gen.SelfStmtF_variantArm
-import all Lanius.Mini.Frontend.P.anyNested
-import all Lanius.Mini.Frontend.P.armsOf
+import all Lanius.Mini.Frontend.P.armNested
+import all Lanius.Mini.Frontend.P.rowsNaming
 import all Lanius.Mini.Frontend.P.variantArm
+import all Lanius.Mini.Frontend.P.variantArms
 
 @[expose] public section
 

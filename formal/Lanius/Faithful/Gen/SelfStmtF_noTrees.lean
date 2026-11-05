@@ -1,7 +1,11 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.argsSegment
+public import Lanius.Mini.Frontend.P.consSegment
 public import Lanius.Mini.Frontend.P.noTrees
+public import Lanius.Mini.Frontend.P.pathName
+public import Lanius.Mini.Frontend.P.pathSpellings
 
 @[expose] public section
 

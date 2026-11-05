@@ -1,7 +1,16 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.applyEff
+public import Lanius.Mini.Frontend.P.consEff
 public import Lanius.Mini.Frontend.P.purePart
+public import Lanius.Mini.Frontend.P.xApplyOf
+public import Lanius.Mini.Frontend.P.xCallOf
+public import Lanius.Mini.Frontend.P.xCastInto
+public import Lanius.Mini.Frontend.P.xDivideOf
+public import Lanius.Mini.Frontend.P.xIndexOf
+public import Lanius.Mini.Frontend.P.xNegOf
+public import Lanius.Mini.Frontend.P.xNotOf
 
 @[expose] public section
 

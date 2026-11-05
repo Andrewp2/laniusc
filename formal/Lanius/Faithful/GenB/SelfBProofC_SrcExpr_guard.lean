@@ -14,7 +14,10 @@ public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcC_SrcExpr_guard
 import all Lanius.Faithful.Gen.SelfStmtC_SrcExpr_guard
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.lowerApply
+import all Lanius.Mini.Compiler.P.SrcExpr_lower
+import all Lanius.Mini.Compiler.P.guardAll
+import all Lanius.Mini.Compiler.P.isOne
+import all Lanius.Mini.Compiler.P.slotVars
 
 @[expose] public section
 

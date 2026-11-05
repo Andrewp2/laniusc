@@ -9,6 +9,7 @@ public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_purePart
 public import Lanius.Faithful.Gen.SelfStmtF_variantLetHead
 import all Lanius.Faithful.Gen.SelfSrcF_variantLetHead
+import all Lanius.Mini.Frontend.P.pureArms
 import all Lanius.Mini.Frontend.P.variantLetHead
 
 public section

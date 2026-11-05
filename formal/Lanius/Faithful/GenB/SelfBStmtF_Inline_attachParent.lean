@@ -3,7 +3,10 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_attachNode
+public import Lanius.Mini.Frontend.P.Inline_attachLeaf
+public import Lanius.Mini.Frontend.P.Inline_attachNonterm
 public import Lanius.Mini.Frontend.P.Inline_attachParent
+public import Lanius.Mini.Frontend.P.Inline_attachSym
 
 @[expose] public section
 

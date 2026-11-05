@@ -13,7 +13,15 @@ public import Lanius.Faithful.Gen.SelfStmtC_killShared
 public import Lanius.Faithful.Gen.SelfStmtC_longer
 public import Lanius.Faithful.Gen.SelfStmtC_substAll
 import all Lanius.Faithful.Gen.SelfSrcC_longer
+import all Lanius.Mini.Compiler.P.Stmt_factsAfter
+import all Lanius.Mini.Compiler.P.Stmt_ignores
+import all Lanius.Mini.Compiler.P.Stmt_isBrk
+import all Lanius.Mini.Compiler.P.Stmt_isCont
+import all Lanius.Mini.Compiler.P.Stmt_isSkip
+import all Lanius.Mini.Compiler.P.Stmt_jumps
+import all Lanius.Mini.Compiler.P.assigned
 import all Lanius.Mini.Compiler.P.longer
+import all Lanius.Mini.Compiler.P.trimFacts
 
 public section
 

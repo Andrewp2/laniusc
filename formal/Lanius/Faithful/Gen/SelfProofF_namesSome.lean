@@ -13,7 +13,13 @@ public import Lanius.Faithful.Gen.SelfStmtF_consTreeTail
 public import Lanius.Faithful.Gen.SelfStmtF_isUnderscore
 public import Lanius.Faithful.Gen.SelfStmtF_namesSome
 import all Lanius.Faithful.Gen.SelfSrcF_namesSome
+import all Lanius.Mini.Frontend.P.allNameSome
+import all Lanius.Mini.Frontend.P.armsExact
+import all Lanius.Mini.Frontend.P.armsInOrder
+import all Lanius.Mini.Frontend.P.armsOrWild
 import all Lanius.Mini.Frontend.P.namesSome
+import all Lanius.Mini.Frontend.P.usesWild
+import all Lanius.Mini.Frontend.P.wildOrder
 
 public section
 

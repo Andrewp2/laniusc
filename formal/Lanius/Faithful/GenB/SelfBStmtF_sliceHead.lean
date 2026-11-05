@@ -3,7 +3,17 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_sliceHead
+public import Lanius.Mini.Frontend.P.allocPath
+public import Lanius.Mini.Frontend.P.builtinPath
+public import Lanius.Mini.Frontend.P.callPathHead
+public import Lanius.Mini.Frontend.P.deallocPath
+public import Lanius.Mini.Frontend.P.fieldValues
+public import Lanius.Mini.Frontend.P.isPath
+public import Lanius.Mini.Frontend.P.isSomeName
+public import Lanius.Mini.Frontend.P.namedSplit
+public import Lanius.Mini.Frontend.P.sameNames
 public import Lanius.Mini.Frontend.P.sliceHead
+public import Lanius.Mini.Frontend.P.viewPath
 
 @[expose] public section
 

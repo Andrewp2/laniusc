@@ -11,11 +11,13 @@ public import Lanius.Faithful.GenB.SelfBModelF_setEvalClosed
 public import Lanius.Faithful.GenB.SelfBModelN2
 public import Lanius.Faithful.GenB.SelfBModelN7
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.allWeighed
-public import Lanius.Mini.Frontend.P.assertClosed
-public import Lanius.Mini.Frontend.P.eStructClosed
-public import Lanius.Mini.Frontend.P.findConst
-public import Lanius.Mini.Frontend.P.letStructClosed
+public import Lanius.Mini.Frontend.P.armTyClosed
+public import Lanius.Mini.Frontend.P.closeEff
+public import Lanius.Mini.Frontend.P.closeParams
+public import Lanius.Mini.Frontend.P.closeStmt
+public import Lanius.Mini.Frontend.P.closeTy
+public import Lanius.Mini.Frontend.P.instIndex
+public import Lanius.Mini.Frontend.P.srcEnumId
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

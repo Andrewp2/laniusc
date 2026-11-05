@@ -8,9 +8,9 @@ public import Lanius.Faithful.GenB.SelfBModelF_lowerTy
 public import Lanius.Faithful.GenB.SelfBModelF_weightAdd
 public import Lanius.Faithful.GenB.SelfBModelN6
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.allWeighed
-public import Lanius.Mini.Frontend.P.findConst
-public import Lanius.Mini.Frontend.P.funcsOnto
+public import Lanius.Mini.Frontend.P.closeTy
+public import Lanius.Mini.Frontend.P.instIndex
+public import Lanius.Mini.Frontend.P.unweighed
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

@@ -13,28 +13,4 @@ def txLeanSetWidth : List Nat :=
   let t : List Nat := 66 :: 105 :: 116 :: 86 :: 101 :: 99 :: 46 :: 115 :: 101 :: 116 :: 87 :: 105 :: 100 :: 116 :: [104]
   t
 
-def txLeanUint8OfNat : List Nat :=
-  let t : List Nat := 85 :: 73 :: 110 :: 116 :: 56 :: 46 :: 111 :: 102 :: 78 :: 97 :: [116]
-  t
-
-def txLean32 : List Nat :=
-  let t : List Nat := 51 :: [50]
-  t
-
-def txLean64 : List Nat :=
-  let t : List Nat := 54 :: [52]
-  t
-
-def txLeanWith : List Nat :=
-  let t : List Nat := 32 :: 119 :: 105 :: 116 :: 104 :: [32]
-  t
-
-def txLeanAssign : List Nat :=
-  let t : List Nat := 32 :: 58 :: 61 :: [32]
-  t
-
-def txLeanLet : List Nat :=
-  let t : List Nat := 108 :: 101 :: 116 :: [32]
-  t
-
 end Lanius.Mini

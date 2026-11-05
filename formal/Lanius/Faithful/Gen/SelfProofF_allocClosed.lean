@@ -9,6 +9,12 @@ public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmtF_allocClosed
 import all Lanius.Faithful.Gen.SelfSrcF_allocClosed
 import all Lanius.Mini.Frontend.P.allocClosed
+import all Lanius.Mini.Frontend.P.eApplyClosed
+import all Lanius.Mini.Frontend.P.eCallClosed
+import all Lanius.Mini.Frontend.P.letIndexClosed
+import all Lanius.Mini.Frontend.P.letSliceClosed
+import all Lanius.Mini.Frontend.P.letStrClosed
+import all Lanius.Mini.Frontend.P.letViewClosed
 
 public section
 

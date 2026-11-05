@@ -4,6 +4,10 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_treeTokens
 public import Lanius.Mini.Frontend.P.treeTokens
+public import Lanius.Mini.Frontend.P.wideI32
+public import Lanius.Mini.Frontend.P.wideIsize
+public import Lanius.Mini.Frontend.P.wideSint
+public import Lanius.Mini.Frontend.P.wideUint
 
 @[expose] public section
 

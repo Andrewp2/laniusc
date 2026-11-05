@@ -15,6 +15,10 @@ public import Lanius.Faithful.Gen.SelfStmtF_funcsOnto
 public import Lanius.Faithful.Gen.SelfStmtF_weightAdd
 import all Lanius.Faithful.Gen.SelfSrcF_depthLimit
 import all Lanius.Mini.Frontend.P.depthLimit
+import all Lanius.Mini.Frontend.P.depthSum
+import all Lanius.Mini.Frontend.P.limExpr
+import all Lanius.Mini.Frontend.P.limSlots
+import all Lanius.Mini.Frontend.P.limTy
 
 public section
 

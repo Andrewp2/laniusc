@@ -12,10 +12,4 @@ namespace Lanius.Mini
 @[expose] def Inline.tRparen : Nat :=
   5
 
-@[expose] def Inline.tSemicolon : Nat :=
-  37
-
-@[expose] def Inline.tShr : Nat :=
-  44
-
 end Lanius.Mini

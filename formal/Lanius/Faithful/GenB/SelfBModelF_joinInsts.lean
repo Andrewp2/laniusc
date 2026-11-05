@@ -6,9 +6,10 @@ public import Lanius.Faithful.GenB.SelfBModelF_flattenTys
 public import Lanius.Faithful.GenB.SelfBModelN2
 public import Lanius.Faithful.GenB.SelfBModelN3
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.consTys
-public import Lanius.Mini.Frontend.P.flattenTys
-public import Lanius.Mini.Frontend.P.joinInsts
+public import Lanius.Mini.Frontend.P.fieldTys
+public import Lanius.Mini.Frontend.P.flatPayloads
+public import Lanius.Mini.Frontend.P.payloadTys
+public import Lanius.Mini.Frontend.P.tyInsts
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

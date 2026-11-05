@@ -9,6 +9,13 @@ public import Lanius.Faithful.Gen.SelfStmtC_DivOp_size
 public import Lanius.Faithful.Gen.SelfStmtC_Lists_empty
 import all Lanius.Faithful.Gen.SelfSrcC_DivOp_size
 import all Lanius.Mini.Compiler.P.DivOp_size
+import all Lanius.Mini.Compiler.P.FOp_size
+import all Lanius.Mini.Compiler.P.FloatTy_mask
+import all Lanius.Mini.Compiler.P.FloatTy_number
+import all Lanius.Mini.Compiler.P.FloatTy_rexSize
+import all Lanius.Mini.Compiler.P.FloatTy_signBit
+import all Lanius.Mini.Compiler.P.FloatTy_signWord
+import all Lanius.Mini.Compiler.P.Instr_size
 
 public section
 

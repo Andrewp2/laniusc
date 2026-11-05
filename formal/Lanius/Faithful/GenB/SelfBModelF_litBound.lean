@@ -4,7 +4,7 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelF_litWildValue
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.P.freshId
-public import Lanius.Mini.Frontend.P.litWildValue
+public import Lanius.Mini.Frontend.P.litChain
 public import Lanius.Mini.Frontend.P.purePart
 public import Lanius.Mini.Frontend.Types
 

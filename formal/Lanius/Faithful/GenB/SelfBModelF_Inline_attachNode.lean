@@ -6,10 +6,12 @@ public import Lanius.Faithful.GenB.SelfBModelF_noToken
 public import Lanius.Faithful.GenB.SelfBModelF_shrFirst
 public import Lanius.Faithful.GenB.SelfBModelN7
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.Inline_pBoundTypeArgsAfterCommaMore
-public import Lanius.Mini.Frontend.P.Inline_tRparen
-public import Lanius.Mini.Frontend.P.genericOpen
+public import Lanius.Mini.Frontend.P.Inline_tGt
+public import Lanius.Mini.Frontend.P.Inline_tShr
+public import Lanius.Mini.Frontend.P.attach
+public import Lanius.Mini.Frontend.P.picks
 public import Lanius.Mini.Frontend.P.shrFirst
+public import Lanius.Mini.Frontend.P.shrSecond
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

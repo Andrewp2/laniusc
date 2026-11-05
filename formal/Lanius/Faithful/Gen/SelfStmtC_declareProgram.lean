@@ -1,7 +1,11 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Compiler.P.BinOp_compute
 public import Lanius.Mini.Compiler.P.declareProgram
+public import Lanius.Mini.Compiler.P.funcsReturn
+public import Lanius.Mini.Compiler.P.lowBits
+public import Lanius.Mini.Compiler.P.signedKey
 
 @[expose] public section
 

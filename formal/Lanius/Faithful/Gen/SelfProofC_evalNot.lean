@@ -7,6 +7,7 @@ public import Lanius.Faithful.Gen.SelfStmtC_evalDivide
 public import Lanius.Faithful.Gen.SelfStmtC_evalNot
 public import Lanius.Faithful.Gen.SelfStmtC_lowerLocal
 import all Lanius.Faithful.Gen.SelfSrcC_evalNot
+import all Lanius.Mini.Compiler.P.evalCast
 import all Lanius.Mini.Compiler.P.evalNot
 
 public section

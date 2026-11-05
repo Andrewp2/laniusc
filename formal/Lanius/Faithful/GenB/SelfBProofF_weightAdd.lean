@@ -9,8 +9,8 @@ public import Lanius.Faithful.GenB.SelfBStmtF_weightAdd
 public import Lanius.Faithful.GenB.SelfBStmtN1
 import all Lanius.Faithful.Gen.SelfSrcF_weightAdd
 import all Lanius.Faithful.Gen.SelfStmtF_weightAdd
-import all Lanius.Mini.Frontend.P.flattenTys
-import all Lanius.Mini.Frontend.P.weightAdd
+import all Lanius.Mini.Frontend.P.srcWeight
+import all Lanius.Mini.Frontend.P.weightLimit
 
 @[expose] public section
 

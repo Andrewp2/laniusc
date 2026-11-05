@@ -22,14 +22,25 @@ public import Lanius.Faithful.GenB.SelfBStmtN3
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_consTreeTail
 import all Lanius.Faithful.Gen.SelfStmtF_consTreeTail
-import all Lanius.Mini.Frontend.P.Inline_pBoundTypeArgsAfterCommaMore
-import all Lanius.Mini.Frontend.P.Inline_pTypeArgsNone
-import all Lanius.Mini.Frontend.P.consTreeTail
-import all Lanius.Mini.Frontend.P.hasKids
-import all Lanius.Mini.Frontend.P.isEmptyUsize
-import all Lanius.Mini.Frontend.P.noToken
+import all Lanius.Mini.Frontend.P.Inline_pBoundTypeIdent
+import all Lanius.Mini.Frontend.P.Inline_pBoundTypePathEnd
+import all Lanius.Mini.Frontend.P.Inline_pBoundTypePathIdent
+import all Lanius.Mini.Frontend.P.Inline_pBoundTypePathMore
+import all Lanius.Mini.Frontend.P.Inline_pTypeIdent
+import all Lanius.Mini.Frontend.P.argsOfItems
+import all Lanius.Mini.Frontend.P.boundPathSpellings
+import all Lanius.Mini.Frontend.P.goalAt
+import all Lanius.Mini.Frontend.P.goalsOf
+import all Lanius.Mini.Frontend.P.kid
+import all Lanius.Mini.Frontend.P.kidToken
+import all Lanius.Mini.Frontend.P.listItems
+import all Lanius.Mini.Frontend.P.nodeProd
+import all Lanius.Mini.Frontend.P.paramTy
+import all Lanius.Mini.Frontend.P.patternOf
+import all Lanius.Mini.Frontend.P.patternsOf
+import all Lanius.Mini.Frontend.P.splitLast
+import all Lanius.Mini.Frontend.P.traitOfBound
 import all Lanius.Mini.Frontend.P.typePathSpellings
-import all Lanius.Mini.Frontend.P.variantIn
 
 @[expose] public section
 

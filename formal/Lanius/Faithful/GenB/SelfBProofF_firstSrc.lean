@@ -9,8 +9,10 @@ public import Lanius.Faithful.GenB.SelfBStmtF_nullConst
 public import Lanius.Faithful.GenB.SelfBStmtN6
 import all Lanius.Faithful.Gen.SelfSrcF_firstSrc
 import all Lanius.Faithful.Gen.SelfStmtF_firstSrc
+import all Lanius.Mini.Frontend.P.boundTys
 import all Lanius.Mini.Frontend.P.firstSrc
-import all Lanius.Mini.Frontend.P.nullConst
+import all Lanius.Mini.Frontend.P.restSrc
+import all Lanius.Mini.Frontend.P.sintWide
 
 @[expose] public section
 

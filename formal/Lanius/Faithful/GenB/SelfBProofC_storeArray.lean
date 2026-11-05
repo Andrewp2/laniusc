@@ -17,9 +17,10 @@ public import Lanius.Faithful.GenB.SelfBStmtN6
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcC_storeArray
 import all Lanius.Faithful.Gen.SelfStmtC_storeArray
-import all Lanius.Mini.Compiler.P.SrcType_same
-import all Lanius.Mini.Compiler.P.UintTy_half
-import all Lanius.Mini.Compiler.P.storeArray
+import all Lanius.Mini.Compiler.P.SrcType_isUnit
+import all Lanius.Mini.Compiler.P.fieldOffset
+import all Lanius.Mini.Compiler.P.strWords
+import all Lanius.Mini.Compiler.P.viewStores
 
 @[expose] public section
 

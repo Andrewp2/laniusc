@@ -117,12 +117,6 @@ theorem upost_lower_return : ∀ (x0 : Option (List Lanius.Mini.Expr)), ∀ M : 
   all_goals upost_auto M
 theorem HBPost.Lanius.Mini.lowerReturn.p0 : ∀ (x0 : Option (List Lanius.Mini.Expr)), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.lowerReturn x0) ≤ M := upost_lower_return
 
-theorem upost_only : ∀ (x0 : Lanius.Mini.CTree) (x1 : List Lanius.Mini.CTree), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb (Lanius.Mini.only x0 x1) ≤ M := by
-  intro x0 x1 M hM0 hM1
-  first | fun_induction Lanius.Mini.only x0 x1 | fun_cases Lanius.Mini.only x0 x1 | unfold Lanius.Mini.only
-  all_goals upost_auto M
-theorem HBPost.Lanius.Mini.only.p0 : ∀ (x0 : Lanius.Mini.CTree) (x1 : List Lanius.Mini.CTree), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb (Lanius.Mini.only x0 x1) ≤ M := upost_only
-
 theorem upost_lower_store : ∀ (x0 : Option Lanius.Mini.Expr) (x1 : Option Lanius.Mini.Expr), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb (Lanius.Mini.lowerStore x0 x1) ≤ M := by
   intro x0 x1 M hM0 hM1
   first | fun_induction Lanius.Mini.lowerStore x0 x1 | fun_cases Lanius.Mini.lowerStore x0 x1 | unfold Lanius.Mini.lowerStore

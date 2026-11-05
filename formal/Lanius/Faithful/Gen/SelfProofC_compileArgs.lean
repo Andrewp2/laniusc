@@ -15,7 +15,23 @@ public import Lanius.Faithful.Gen.SelfStmtC_codeSize
 public import Lanius.Faithful.Gen.SelfStmtC_compileArgs
 public import Lanius.Faithful.Gen.SelfStmtC_larger
 import all Lanius.Faithful.Gen.SelfSrcC_compileArgs
+import all Lanius.Mini.Compiler.P.Expr_temps
+import all Lanius.Mini.Compiler.P.Expr_within
+import all Lanius.Mini.Compiler.P.Stmt_temps
+import all Lanius.Mini.Compiler.P.Stmt_within
+import all Lanius.Mini.Compiler.P.allWithin
+import all Lanius.Mini.Compiler.P.argSlots
+import all Lanius.Mini.Compiler.P.argsRoom
+import all Lanius.Mini.Compiler.P.argsTemps
+import all Lanius.Mini.Compiler.P.arityIs
 import all Lanius.Mini.Compiler.P.compileArgs
+import all Lanius.Mini.Compiler.P.compileStmt
+import all Lanius.Mini.Compiler.P.exprRoom
+import all Lanius.Mini.Compiler.P.frameLimit
+import all Lanius.Mini.Compiler.P.imageLimit
+import all Lanius.Mini.Compiler.P.spend
+import all Lanius.Mini.Compiler.P.stmtRoom
+import all Lanius.Mini.Compiler.P.zeroLocals
 
 public section
 

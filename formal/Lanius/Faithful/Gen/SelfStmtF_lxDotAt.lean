@@ -2,6 +2,16 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.lxDotAt
+public import Lanius.Mini.Frontend.P.lxDropTo
+public import Lanius.Mini.Frontend.P.lxKeyword
+public import Lanius.Mini.Frontend.P.lxOneAt
+public import Lanius.Mini.Frontend.P.lxOneFirst
+public import Lanius.Mini.Frontend.P.lxPrepend
+public import Lanius.Mini.Frontend.P.lxRaw
+public import Lanius.Mini.Frontend.P.lxShift
+public import Lanius.Mini.Frontend.P.lxSymbol
+public import Lanius.Mini.Frontend.P.lxSymbolAt
+public import Lanius.Mini.Frontend.P.lxTrivia
 
 @[expose] public section
 

@@ -12,9 +12,15 @@ public import Lanius.Faithful.GenB.SelfBStmtN6
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcC_roomFits
 import all Lanius.Faithful.Gen.SelfStmtC_roomFits
+import all Lanius.Mini.Compiler.P.Stmt_temps
+import all Lanius.Mini.Compiler.P.Stmt_within
 import all Lanius.Mini.Compiler.P.codeSize
-import all Lanius.Mini.Compiler.P.compileArgs
+import all Lanius.Mini.Compiler.P.compileStmt
+import all Lanius.Mini.Compiler.P.frameLimit
+import all Lanius.Mini.Compiler.P.imageLimit
 import all Lanius.Mini.Compiler.P.roomFits
+import all Lanius.Mini.Compiler.P.stmtRoom
+import all Lanius.Mini.Compiler.P.zeroLocals
 
 @[expose] public section
 

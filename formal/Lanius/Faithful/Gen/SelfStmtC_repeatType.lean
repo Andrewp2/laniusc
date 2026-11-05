@@ -1,6 +1,18 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Compiler.P.copyBinding
+public import Lanius.Mini.Compiler.P.copyField
+public import Lanius.Mini.Compiler.P.copyFieldAt
+public import Lanius.Mini.Compiler.P.copyFieldOf
+public import Lanius.Mini.Compiler.P.lowerArgs
+public import Lanius.Mini.Compiler.P.lowerCopy
+public import Lanius.Mini.Compiler.P.lowerLiteral
+public import Lanius.Mini.Compiler.P.lowerSingle
+public import Lanius.Mini.Compiler.P.lowerStructFields
+public import Lanius.Mini.Compiler.P.lowerTag
+public import Lanius.Mini.Compiler.P.lowerValue
+public import Lanius.Mini.Compiler.P.lowerVariant
 public import Lanius.Mini.Compiler.P.repeatType
 
 @[expose] public section

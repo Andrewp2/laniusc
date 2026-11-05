@@ -13,9 +13,11 @@ public import Lanius.Faithful.GenB.SelfBStmtN0
 public import Lanius.Faithful.GenB.SelfBStmtN2
 import all Lanius.Faithful.Gen.SelfSrcF_fieldValue
 import all Lanius.Faithful.Gen.SelfStmtF_fieldValue
-import all Lanius.Mini.Frontend.P.callParts
-import all Lanius.Mini.Frontend.P.freshId
-import all Lanius.Mini.Frontend.P.projection
+import all Lanius.Mini.Frontend.P.effLocal
+import all Lanius.Mini.Frontend.P.effPlace
+import all Lanius.Mini.Frontend.P.fieldIndex
+import all Lanius.Mini.Frontend.P.referent
+import all Lanius.Mini.Frontend.P.referentOr
 
 @[expose] public section
 

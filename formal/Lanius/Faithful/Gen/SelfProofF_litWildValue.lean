@@ -12,6 +12,9 @@ public import Lanius.Faithful.Gen.SelfStmtF_litWants
 public import Lanius.Faithful.Gen.SelfStmtF_litWildValue
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 import all Lanius.Faithful.Gen.SelfSrcF_litWildValue
+import all Lanius.Mini.Frontend.P.litChain
+import all Lanius.Mini.Frontend.P.litLink
+import all Lanius.Mini.Frontend.P.litResult
 import all Lanius.Mini.Frontend.P.litWildValue
 
 public section

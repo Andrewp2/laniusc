@@ -17,7 +17,12 @@ public import Lanius.Faithful.Gen.SelfStmtF_stringOpen
 public import Lanius.Faithful.Gen.SelfStmtF_triedErr
 public import Lanius.Faithful.Gen.SelfStmtF_triedIf
 import all Lanius.Faithful.Gen.SelfSrcF_triedIf
+import all Lanius.Mini.Frontend.P.triedCall
 import all Lanius.Mini.Frontend.P.triedIf
+import all Lanius.Mini.Frontend.P.triedLocal
+import all Lanius.Mini.Frontend.P.triedOf
+import all Lanius.Mini.Frontend.P.tryCallOf
+import all Lanius.Mini.Frontend.P.tryMethodOf
 
 public section
 

@@ -5,9 +5,15 @@ public import Lanius.Faithful.GenB.SelfBModelC_codeSize
 public import Lanius.Faithful.GenB.SelfBModelC_compileArgs
 public import Lanius.Faithful.GenB.SelfBModelN4
 public import Lanius.Faithful.GenB.SelfBModelN6
+public import Lanius.Mini.Compiler.P.Stmt_temps
+public import Lanius.Mini.Compiler.P.Stmt_within
 public import Lanius.Mini.Compiler.P.codeSize
-public import Lanius.Mini.Compiler.P.compileArgs
+public import Lanius.Mini.Compiler.P.compileStmt
+public import Lanius.Mini.Compiler.P.frameLimit
+public import Lanius.Mini.Compiler.P.imageLimit
 public import Lanius.Mini.Compiler.P.roomFits
+public import Lanius.Mini.Compiler.P.stmtRoom
+public import Lanius.Mini.Compiler.P.zeroLocals
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.Types
 

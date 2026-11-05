@@ -13,11 +13,13 @@ public import Lanius.Faithful.GenB.SelfBStmtF_genericClose
 public import Lanius.Faithful.GenB.SelfBStmtF_genericOpen
 import all Lanius.Faithful.Gen.SelfSrcF_genericOpen
 import all Lanius.Faithful.Gen.SelfStmtF_genericOpen
-import all Lanius.Mini.Frontend.P.Inline_pBitAnd
-import all Lanius.Mini.Frontend.P.Inline_pExpr
-import all Lanius.Mini.Frontend.P.Inline_pLeTail
-import all Lanius.Mini.Frontend.P.Inline_pModTail
-import all Lanius.Mini.Frontend.P.Inline_tLparen
+import all Lanius.Mini.Frontend.P.Inline_pBlockStmt
+import all Lanius.Mini.Frontend.P.Inline_pExprStmt
+import all Lanius.Mini.Frontend.P.Inline_pMemberTypeArgsNone
+import all Lanius.Mini.Frontend.P.Inline_pMemberTypeArgsSome
+import all Lanius.Mini.Frontend.P.Inline_pPathIdent
+import all Lanius.Mini.Frontend.P.Inline_pPathIdentArgs
+import all Lanius.Mini.Frontend.P.Inline_tLt
 
 @[expose] public section
 

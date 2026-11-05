@@ -2,6 +2,14 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.frontEndWords
+public import Lanius.Mini.Frontend.P.grammarPart0
+public import Lanius.Mini.Frontend.P.grammarPart1
+public import Lanius.Mini.Frontend.P.grammarPart2
+public import Lanius.Mini.Frontend.P.grammarPart3
+public import Lanius.Mini.Frontend.P.grammarPart4
+public import Lanius.Mini.Frontend.P.grammarPart5
+public import Lanius.Mini.Frontend.P.grammarPart6
+public import Lanius.Mini.Frontend.P.grammarPart7
 
 @[expose] public section
 

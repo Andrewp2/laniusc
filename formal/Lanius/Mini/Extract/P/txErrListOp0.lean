@@ -13,12 +13,4 @@ def txErrListOp0 : List Nat :=
   let t : List Nat := 97 :: 32 :: 108 :: 105 :: 115 :: 116 :: 32 :: 111 :: 112 :: 101 :: 114 :: 97 :: 116 :: 105 :: 111 :: [110]
   t
 
-def txErrListOp1 : List Nat :=
-  let t : List Nat := 32 :: 109 :: 97 :: 121 :: 32 :: 99 :: 97 :: 108 :: 108 :: 32 :: 111 :: 110 :: 108 :: 121 :: 32 :: [105]
-  t
-
-def txErrListOp2 : List Nat :=
-  let t : List Nat := 116 :: 115 :: 101 :: 108 :: [102]
-  t
-
 end Lanius.Mini

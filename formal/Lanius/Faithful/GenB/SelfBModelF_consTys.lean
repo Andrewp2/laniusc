@@ -3,9 +3,9 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelF_typeDeclAt
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.consTys
-public import Lanius.Mini.Frontend.P.findConst
-public import Lanius.Mini.Frontend.P.typeDeclAt
+public import Lanius.Mini.Frontend.P.declEnv
+public import Lanius.Mini.Frontend.P.payloadList
+public import Lanius.Mini.Frontend.P.tyOf
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

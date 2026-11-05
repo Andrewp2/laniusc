@@ -17,6 +17,8 @@ public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_rootInsts
 import all Lanius.Faithful.Gen.SelfSrcF_isFnPath
 import all Lanius.Mini.Frontend.P.isFnPath
+import all Lanius.Mini.Frontend.P.isMethodForm
+import all Lanius.Mini.Frontend.P.memberArgs
 
 public section
 

@@ -11,8 +11,8 @@ public import Lanius.Faithful.GenB.SelfBStmtC_lowerLocal
 public import Lanius.Faithful.GenB.SelfBStmtC_sintToUint
 import all Lanius.Faithful.Gen.SelfSrcC_lowerApply
 import all Lanius.Faithful.Gen.SelfStmtC_lowerApply
-import all Lanius.Mini.Compiler.P.UintTy_half
-import all Lanius.Mini.Compiler.P.lowerApply
+import all Lanius.Mini.Compiler.P.SrcExpr_lower
+import all Lanius.Mini.Compiler.P.lookup
 
 @[expose] public section
 

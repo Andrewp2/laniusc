@@ -17,16 +17,4 @@ def evalSame (v : Evaluated) (ty : SrcType) (stmt : Stmt) : Option Stmt :=
   else
     none
 
-/-- Arm k's code; the last arm needs no tag test. -/
-def evalArm (slot : Nat) (k : Nat) (code : Option Stmt) (rest : List SrcEff) (others : Option Stmt) : Option Stmt :=
-  match code with
-  | none => none
-  | some c =>
-    match rest with
-    | [] => some c
-    | value :: more =>
-      match others with
-      | none => none
-      | some o => some (Stmt.ite (Expr.compare Word.u64 CmpOp.eq (Expr.var slot) (Expr.lit (BitVec.ofNat 64 k))) c o)
-
 end Lanius.Mini

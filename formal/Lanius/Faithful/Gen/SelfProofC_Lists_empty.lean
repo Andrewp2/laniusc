@@ -7,7 +7,11 @@ public import Lanius.Faithful.Gen.SelfStmt0
 public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtC_Lists_empty
 import all Lanius.Faithful.Gen.SelfSrcC_Lists_empty
-import all Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.P.BinOp_size
+import all Lanius.Mini.Compiler.P.MemWidth_bytes
+import all Lanius.Mini.Compiler.P.MemWidth_prefix
+import all Lanius.Mini.Compiler.P.MemWidth_rex
+import all Lanius.Mini.Compiler.P.Word_prefix
 
 public section
 

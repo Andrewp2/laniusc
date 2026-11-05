@@ -15,6 +15,8 @@ public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_typePathSpellings
 import all Lanius.Faithful.Gen.SelfSrcF_typePathSpellings
+import all Lanius.Mini.Frontend.P.splitLast
+import all Lanius.Mini.Frontend.P.splitMore
 import all Lanius.Mini.Frontend.P.typePathSpellings
 
 public section

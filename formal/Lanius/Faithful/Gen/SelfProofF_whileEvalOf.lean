@@ -14,7 +14,15 @@ public import Lanius.Faithful.Gen.SelfStmtF_tryLetHead
 public import Lanius.Faithful.Gen.SelfStmtF_tryLocalOf
 public import Lanius.Faithful.Gen.SelfStmtF_whileEvalOf
 import all Lanius.Faithful.Gen.SelfSrcF_whileEvalOf
+import all Lanius.Mini.Frontend.P.effActs
+import all Lanius.Mini.Frontend.P.setEvalOf
+import all Lanius.Mini.Frontend.P.setIndexEvalOf
+import all Lanius.Mini.Frontend.P.setOrEval
+import all Lanius.Mini.Frontend.P.setTryOrEval
+import all Lanius.Mini.Frontend.P.stmtUnless
+import all Lanius.Mini.Frontend.P.trySet
 import all Lanius.Mini.Frontend.P.whileEvalOf
+import all Lanius.Mini.Frontend.P.whileOrEval
 
 public section
 

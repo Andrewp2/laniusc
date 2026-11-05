@@ -1,7 +1,10 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.attach
+public import Lanius.Mini.Frontend.P.only
 public import Lanius.Mini.Frontend.P.shrFirst
+public import Lanius.Mini.Frontend.P.shrSecond
 
 @[expose] public section
 

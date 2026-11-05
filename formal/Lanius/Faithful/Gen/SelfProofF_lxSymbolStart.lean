@@ -11,7 +11,14 @@ public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_findMethodAt
 public import Lanius.Faithful.Gen.SelfStmtF_lxSymbolStart
 import all Lanius.Faithful.Gen.SelfSrcF_lxSymbolStart
+import all Lanius.Mini.Frontend.P.lxDrop
+import all Lanius.Mini.Frontend.P.lxIdentEnd
+import all Lanius.Mini.Frontend.P.lxIdentRun
+import all Lanius.Mini.Frontend.P.lxIsByte
+import all Lanius.Mini.Frontend.P.lxLineRun
+import all Lanius.Mini.Frontend.P.lxSpaceRun
 import all Lanius.Mini.Frontend.P.lxSymbolStart
+import all Lanius.Mini.Frontend.P.lxTake
 
 public section
 

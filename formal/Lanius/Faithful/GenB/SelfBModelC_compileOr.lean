@@ -6,11 +6,11 @@ public import Lanius.Faithful.GenB.SelfBModelC_Inline_factOr
 public import Lanius.Faithful.GenB.SelfBModelC_Stmt_kills
 public import Lanius.Faithful.GenB.SelfBModelC_funcNeeds
 public import Lanius.Faithful.GenB.SelfBModelC_linkedSize
-public import Lanius.Mini.Compiler.P.Stmt_kills
-public import Lanius.Mini.Compiler.P.funcNeeds
-public import Lanius.Mini.Compiler.P.linkedSize
-public import Lanius.Mini.Compiler.P.lowerBody
-public import Lanius.Mini.Compiler.P.optimizeIte
+public import Lanius.Mini.Compiler.P.compileProgram
+public import Lanius.Mini.Compiler.P.lowerFuncs
+public import Lanius.Mini.Compiler.P.optimizeProgram
+public import Lanius.Mini.Compiler.P.sigs
+public import Lanius.Mini.Compiler.P.validate
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.Types
 

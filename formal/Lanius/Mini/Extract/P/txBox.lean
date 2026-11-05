@@ -13,8 +13,4 @@ def txBox : List Nat :=
   let t : List Nat := 66 :: 111 :: [120]
   t
 
-def txMutRef : List Nat :=
-  let t : List Nat := 38 :: 109 :: 117 :: [116]
-  t
-
 end Lanius.Mini

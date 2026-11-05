@@ -13,6 +13,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_effNamedTys
 public import Lanius.Faithful.Gen.SelfStmtF_readInst
 import all Lanius.Faithful.Gen.SelfSrcF_effNamedTys
 import all Lanius.Mini.Frontend.P.effNamedTys
+import all Lanius.Mini.Frontend.P.stmtCalls
 
 public section
 

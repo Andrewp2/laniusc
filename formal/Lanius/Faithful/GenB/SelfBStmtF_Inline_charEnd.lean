@@ -4,6 +4,9 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_charEnd
 public import Lanius.Mini.Frontend.P.Inline_charEnd
+public import Lanius.Mini.Frontend.P.Inline_charEscape
+public import Lanius.Mini.Frontend.P.Inline_charFirst
+public import Lanius.Mini.Frontend.P.Inline_charTailAt
 
 @[expose] public section
 

@@ -2,6 +2,11 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.isEmptyUsize
+public import Lanius.Mini.Frontend.P.noTokens
+public import Lanius.Mini.Frontend.P.nodeProd
+public import Lanius.Mini.Frontend.P.usedUp
+public import Lanius.Mini.Frontend.P.validateTree
+public import Lanius.Mini.Frontend.P.whole
 
 @[expose] public section
 

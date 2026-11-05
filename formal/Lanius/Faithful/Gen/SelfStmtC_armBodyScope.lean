@@ -2,6 +2,8 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Compiler.P.armBodyScope
+public import Lanius.Mini.Compiler.P.fieldPayload
+public import Lanius.Mini.Compiler.P.unitPayload
 
 @[expose] public section
 

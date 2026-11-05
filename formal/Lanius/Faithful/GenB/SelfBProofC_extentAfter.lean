@@ -12,7 +12,8 @@ public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcC_extentAfter
 import all Lanius.Faithful.Gen.SelfStmtC_extentAfter
 import all Lanius.Mini.Compiler.P.extentAfter
-import all Lanius.Mini.Compiler.P.substAll
+import all Lanius.Mini.Compiler.P.factDies
+import all Lanius.Mini.Compiler.P.killPrefix
 
 @[expose] public section
 

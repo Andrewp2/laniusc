@@ -15,7 +15,13 @@ public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_typeDeclAt
 import all Lanius.Faithful.Gen.SelfSrcF_bindsOfTys
+import all Lanius.Mini.Frontend.P.armValueTrees
 import all Lanius.Mini.Frontend.P.bindsOfTys
+import all Lanius.Mini.Frontend.P.isFalseArm
+import all Lanius.Mini.Frontend.P.isTrueArm
+import all Lanius.Mini.Frontend.P.litTy
+import all Lanius.Mini.Frontend.P.methodBinds
+import all Lanius.Mini.Frontend.P.tyPerArm
 
 public section
 

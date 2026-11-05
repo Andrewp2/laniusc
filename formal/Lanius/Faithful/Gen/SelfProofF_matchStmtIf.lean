@@ -28,7 +28,26 @@ public import Lanius.Faithful.Gen.SelfStmtF_repeatEff
 public import Lanius.Faithful.Gen.SelfStmtF_stringOpen
 public import Lanius.Faithful.Gen.SelfStmtF_wideOf
 import all Lanius.Faithful.Gen.SelfSrcF_matchStmtIf
+import all Lanius.Mini.Frontend.P.armBinder
+import all Lanius.Mini.Frontend.P.armBinding
+import all Lanius.Mini.Frontend.P.armBlockList
+import all Lanius.Mini.Frontend.P.armBlockOf
+import all Lanius.Mini.Frontend.P.armStmt
+import all Lanius.Mini.Frontend.P.boundScope
+import all Lanius.Mini.Frontend.P.ifOne
+import all Lanius.Mini.Frontend.P.isBlockArm
+import all Lanius.Mini.Frontend.P.localIdOf
+import all Lanius.Mini.Frontend.P.localTyOf
+import all Lanius.Mini.Frontend.P.matchInit
+import all Lanius.Mini.Frontend.P.matchStmtEnum
+import all Lanius.Mini.Frontend.P.matchStmtHead
 import all Lanius.Mini.Frontend.P.matchStmtIf
+import all Lanius.Mini.Frontend.P.matchStmtOn
+import all Lanius.Mini.Frontend.P.matchStmtParts
+import all Lanius.Mini.Frontend.P.matchStmtValue
+import all Lanius.Mini.Frontend.P.someBlockArm
+import all Lanius.Mini.Frontend.P.stmtArms
+import all Lanius.Mini.Frontend.P.valueArms
 
 public section
 

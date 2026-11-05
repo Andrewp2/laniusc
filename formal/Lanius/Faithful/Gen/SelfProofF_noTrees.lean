@@ -14,7 +14,11 @@ public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_noTrees
 import all Lanius.Faithful.Gen.SelfSrcF_noTrees
+import all Lanius.Mini.Frontend.P.argsSegment
+import all Lanius.Mini.Frontend.P.consSegment
 import all Lanius.Mini.Frontend.P.noTrees
+import all Lanius.Mini.Frontend.P.pathName
+import all Lanius.Mini.Frontend.P.pathSpellings
 
 public section
 

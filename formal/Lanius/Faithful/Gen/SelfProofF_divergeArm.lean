@@ -8,6 +8,7 @@ public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_divergeArm
 public import Lanius.Faithful.Gen.SelfStmtF_matchTysOrNone
 import all Lanius.Faithful.Gen.SelfSrcF_divergeArm
+import all Lanius.Mini.Frontend.P.bindsZip
 import all Lanius.Mini.Frontend.P.divergeArm
 
 public section

@@ -4,8 +4,8 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelF_litBound
 public import Lanius.Faithful.GenB.SelfBModelF_litWildValue
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.bindsOfTys
-public import Lanius.Mini.Frontend.P.litWildValue
+public import Lanius.Mini.Frontend.P.litResult
+public import Lanius.Mini.Frontend.P.litTy
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

@@ -6,12 +6,13 @@ public import Lanius.Faithful.GenB.SelfBModelF_hasKids
 public import Lanius.Faithful.GenB.SelfBModelF_typeDeclAt
 public import Lanius.Faithful.GenB.SelfBModelN2
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.Inline_pLeTail
-public import Lanius.Mini.Frontend.P.bindsOfTys
-public import Lanius.Mini.Frontend.P.hasKids
-public import Lanius.Mini.Frontend.P.isEmptyUsize
-public import Lanius.Mini.Frontend.P.noToken
-public import Lanius.Mini.Frontend.P.typeDeclAt
+public import Lanius.Mini.Frontend.P.Inline_pMemberTypeArgsNone
+public import Lanius.Mini.Frontend.P.armValueTrees
+public import Lanius.Mini.Frontend.P.kid
+public import Lanius.Mini.Frontend.P.listItems
+public import Lanius.Mini.Frontend.P.nodeProd
+public import Lanius.Mini.Frontend.P.tyOf
+public import Lanius.Mini.Frontend.P.tyPerArm
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

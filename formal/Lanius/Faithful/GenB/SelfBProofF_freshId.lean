@@ -17,12 +17,12 @@ public import Lanius.Faithful.GenB.SelfBStmtN3
 public import Lanius.Faithful.GenB.SelfBStmtN4
 import all Lanius.Faithful.Gen.SelfSrcF_freshId
 import all Lanius.Faithful.Gen.SelfStmtF_freshId
-import all Lanius.Mini.Frontend.P.Inline_pLeTail
-import all Lanius.Mini.Frontend.P.Inline_pPathMore
-import all Lanius.Mini.Frontend.P.floatTyped
-import all Lanius.Mini.Frontend.P.hasKids
-import all Lanius.Mini.Frontend.P.isEmptyUsize
-import all Lanius.Mini.Frontend.P.noToken
+import all Lanius.Mini.Frontend.P.Inline_pMemberTypeArgsNone
+import all Lanius.Mini.Frontend.P.Inline_pPostfixEnd
+import all Lanius.Mini.Frontend.P.kid
+import all Lanius.Mini.Frontend.P.kidToken
+import all Lanius.Mini.Frontend.P.localOf
+import all Lanius.Mini.Frontend.P.nodeProd
 
 @[expose] public section
 

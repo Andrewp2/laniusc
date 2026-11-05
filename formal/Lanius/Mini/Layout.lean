@@ -1,7 +1,18 @@
 module
 
 public import Lanius.Mini.SourceCore
+public import Lanius.Mini.Compiler.P.BinOp_size
+public import Lanius.Mini.Compiler.P.Lists_concat
+public import Lanius.Mini.Compiler.P.Lists_cons
 public import Lanius.Mini.Compiler.P.Lists_empty
+public import Lanius.Mini.Compiler.P.Lists_get
+public import Lanius.Mini.Compiler.P.Lists_getOr
+public import Lanius.Mini.Compiler.P.Lists_length
+public import Lanius.Mini.Compiler.P.Lists_single
+public import Lanius.Mini.Compiler.P.MemWidth_bytes
+public import Lanius.Mini.Compiler.P.MemWidth_prefix
+public import Lanius.Mini.Compiler.P.MemWidth_rex
+public import Lanius.Mini.Compiler.P.Word_prefix
 
 @[expose] public section
 

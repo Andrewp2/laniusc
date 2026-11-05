@@ -3,6 +3,20 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.Inline_pBitAnd
+public import Lanius.Mini.Frontend.P.Inline_pBitOr
+public import Lanius.Mini.Frontend.P.Inline_pBitXor
+public import Lanius.Mini.Frontend.P.Inline_pBlockStmt
+public import Lanius.Mini.Frontend.P.Inline_pBorTail
+public import Lanius.Mini.Frontend.P.Inline_pBreakStmt
+public import Lanius.Mini.Frontend.P.Inline_pCast
+public import Lanius.Mini.Frontend.P.Inline_pCastTypeName
+public import Lanius.Mini.Frontend.P.Inline_pCastTypePath
+public import Lanius.Mini.Frontend.P.Inline_pCastTypePathEnd
+public import Lanius.Mini.Frontend.P.Inline_pCastTypePathIdent
+public import Lanius.Mini.Frontend.P.Inline_pChar
+public import Lanius.Mini.Frontend.P.Inline_pCompare
+public import Lanius.Mini.Frontend.P.Inline_pConst
+public import Lanius.Mini.Frontend.P.Inline_pContinueStmt
 
 @[expose] public section
 

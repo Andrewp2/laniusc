@@ -6,11 +6,12 @@ public import Lanius.Faithful.GenB.SelfBModelF_isPathCall
 public import Lanius.Faithful.GenB.SelfBModelF_pathRef
 public import Lanius.Faithful.GenB.SelfBModelF_typeDeclAt
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.hasKids
-public import Lanius.Mini.Frontend.P.isPathCall
+public import Lanius.Mini.Frontend.P.isEmptyTrees
 public import Lanius.Mini.Frontend.P.isTypedSliceSegments
-public import Lanius.Mini.Frontend.P.noToken
+public import Lanius.Mini.Frontend.P.kid
 public import Lanius.Mini.Frontend.P.pathRef
+public import Lanius.Mini.Frontend.P.sameText
+public import Lanius.Mini.Frontend.P.textCore
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

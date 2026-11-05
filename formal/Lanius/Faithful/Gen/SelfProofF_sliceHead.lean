@@ -20,7 +20,17 @@ public import Lanius.Faithful.Gen.SelfStmtF_textSliceLen
 public import Lanius.Faithful.Gen.SelfStmtF_typePathSpellings
 public import Lanius.Faithful.Gen.SelfStmtF_viewHead
 import all Lanius.Faithful.Gen.SelfSrcF_sliceHead
+import all Lanius.Mini.Frontend.P.allocPath
+import all Lanius.Mini.Frontend.P.builtinPath
+import all Lanius.Mini.Frontend.P.callPathHead
+import all Lanius.Mini.Frontend.P.deallocPath
+import all Lanius.Mini.Frontend.P.fieldValues
+import all Lanius.Mini.Frontend.P.isPath
+import all Lanius.Mini.Frontend.P.isSomeName
+import all Lanius.Mini.Frontend.P.namedSplit
+import all Lanius.Mini.Frontend.P.sameNames
 import all Lanius.Mini.Frontend.P.sliceHead
+import all Lanius.Mini.Frontend.P.viewPath
 
 public section
 

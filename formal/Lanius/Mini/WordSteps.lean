@@ -2,10 +2,46 @@ module
 
 public import Lanius.Mini.HeapSteps
 public import Lanius.Mini.Compiler.P.DivOp_size
+public import Lanius.Mini.Compiler.P.FOp_size
+public import Lanius.Mini.Compiler.P.FloatTy_mask
+public import Lanius.Mini.Compiler.P.FloatTy_number
+public import Lanius.Mini.Compiler.P.FloatTy_rexSize
+public import Lanius.Mini.Compiler.P.FloatTy_signBit
+public import Lanius.Mini.Compiler.P.FloatTy_signWord
+public import Lanius.Mini.Compiler.P.Instr_size
 import all Lanius.Mini.Compiler.P.DivOp_size
+import all Lanius.Mini.Compiler.P.FOp_size
+import all Lanius.Mini.Compiler.P.FloatTy_mask
+import all Lanius.Mini.Compiler.P.FloatTy_number
+import all Lanius.Mini.Compiler.P.FloatTy_rexSize
+import all Lanius.Mini.Compiler.P.FloatTy_signBit
+import all Lanius.Mini.Compiler.P.FloatTy_signWord
+import all Lanius.Mini.Compiler.P.Instr_size
+import all Lanius.Mini.Compiler.P.BinOp_size
+import all Lanius.Mini.Compiler.P.Lists_concat
+import all Lanius.Mini.Compiler.P.Lists_cons
 import all Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.P.Lists_get
+import all Lanius.Mini.Compiler.P.Lists_getOr
+import all Lanius.Mini.Compiler.P.Lists_length
+import all Lanius.Mini.Compiler.P.Lists_single
+import all Lanius.Mini.Compiler.P.MemWidth_bytes
+import all Lanius.Mini.Compiler.P.MemWidth_prefix
+import all Lanius.Mini.Compiler.P.MemWidth_rex
+import all Lanius.Mini.Compiler.P.Word_prefix
 import all Lanius.Mini.Compiler.Types
+public import Lanius.Mini.Compiler.P.BinOp_size
+public import Lanius.Mini.Compiler.P.Lists_concat
+public import Lanius.Mini.Compiler.P.Lists_cons
 public import Lanius.Mini.Compiler.P.Lists_empty
+public import Lanius.Mini.Compiler.P.Lists_get
+public import Lanius.Mini.Compiler.P.Lists_getOr
+public import Lanius.Mini.Compiler.P.Lists_length
+public import Lanius.Mini.Compiler.P.Lists_single
+public import Lanius.Mini.Compiler.P.MemWidth_bytes
+public import Lanius.Mini.Compiler.P.MemWidth_prefix
+public import Lanius.Mini.Compiler.P.MemWidth_rex
+public import Lanius.Mini.Compiler.P.Word_prefix
 
 @[expose] public section
 /-! The x86 runs of the heap word load and store, and the byte-level facts

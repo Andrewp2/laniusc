@@ -3,7 +3,30 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_fnInstRet
+public import Lanius.Mini.Frontend.P.argsOf
+public import Lanius.Mini.Frontend.P.armBinders
+public import Lanius.Mini.Frontend.P.armValues
+public import Lanius.Mini.Frontend.P.bareEff
+public import Lanius.Mini.Frontend.P.consEffArm
+public import Lanius.Mini.Frontend.P.consExpr
+public import Lanius.Mini.Frontend.P.consExprTail
+public import Lanius.Mini.Frontend.P.effTy
+public import Lanius.Mini.Frontend.P.effsTys
+public import Lanius.Mini.Frontend.P.elemTyOf
+public import Lanius.Mini.Frontend.P.exprsOf
+public import Lanius.Mini.Frontend.P.fieldTyAt
+public import Lanius.Mini.Frontend.P.fieldTyOf
 public import Lanius.Mini.Frontend.P.fnInstRet
+public import Lanius.Mini.Frontend.P.headTy
+public import Lanius.Mini.Frontend.P.indexTy
+public import Lanius.Mini.Frontend.P.instRet
+public import Lanius.Mini.Frontend.P.isOwnerAt
+public import Lanius.Mini.Frontend.P.isScalarOwner
+public import Lanius.Mini.Frontend.P.isSomeIndex
+public import Lanius.Mini.Frontend.P.isTypeOwner
+public import Lanius.Mini.Frontend.P.resultTy
+public import Lanius.Mini.Frontend.P.tailTys
+public import Lanius.Mini.Frontend.P.xMatchOf
 
 @[expose] public section
 

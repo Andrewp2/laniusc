@@ -4,12 +4,12 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_positionAt
 public import Lanius.Faithful.GenB.SelfBModelF_floatTyped
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.Inline_pLeTail
-public import Lanius.Mini.Frontend.P.Inline_pPathMore
-public import Lanius.Mini.Frontend.P.floatTyped
-public import Lanius.Mini.Frontend.P.hasKids
-public import Lanius.Mini.Frontend.P.isEmptyUsize
-public import Lanius.Mini.Frontend.P.noToken
+public import Lanius.Mini.Frontend.P.Inline_pMemberTypeArgsNone
+public import Lanius.Mini.Frontend.P.Inline_pPostfixEnd
+public import Lanius.Mini.Frontend.P.kid
+public import Lanius.Mini.Frontend.P.kidToken
+public import Lanius.Mini.Frontend.P.localOf
+public import Lanius.Mini.Frontend.P.nodeProd
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

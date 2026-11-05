@@ -13,8 +13,4 @@ def txProofGetOr3 : List Nat :=
   let t : List Nat := 105 :: 110 :: 100 :: 101 :: 120 :: 32 :: 60 :: 59 :: 62 :: 32 :: 115 :: 105 :: 109 :: 112 :: 95 :: [97]
   t
 
-def txProofGetOr4 : List Nat :=
-  let t : List Nat := 108 :: 108 :: 32 :: 91 :: 76 :: 105 :: 115 :: 116 :: 115 :: 46 :: 103 :: 101 :: 116 :: 79 :: 114 :: [93]
-  t
-
 end Lanius.Mini

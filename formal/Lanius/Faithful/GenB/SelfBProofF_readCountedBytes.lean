@@ -11,8 +11,11 @@ public import Lanius.Faithful.GenB.SelfBStmtN2
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_readCountedBytes
 import all Lanius.Faithful.Gen.SelfStmtF_readCountedBytes
-import all Lanius.Mini.Frontend.P.lxCanonicalKind
 import all Lanius.Mini.Frontend.P.readCountedBytes
+import all Lanius.Mini.Frontend.P.readCountedNums
+import all Lanius.Mini.Frontend.P.readFile
+import all Lanius.Mini.Frontend.P.readFiles
+import all Lanius.Mini.Frontend.P.wordNum
 
 @[expose] public section
 

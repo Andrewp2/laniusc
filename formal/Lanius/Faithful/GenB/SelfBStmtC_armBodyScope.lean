@@ -4,6 +4,8 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_armBodyScope
 public import Lanius.Mini.Compiler.P.armBodyScope
+public import Lanius.Mini.Compiler.P.fieldPayload
+public import Lanius.Mini.Compiler.P.unitPayload
 
 @[expose] public section
 

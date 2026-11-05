@@ -10,8 +10,20 @@ public import Lanius.Faithful.GenB.SelfBModelN5
 public import Lanius.Faithful.GenB.SelfBModelN7
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.P.lxCanonicalKind
-public import Lanius.Mini.Frontend.P.lxDotAt
-public import Lanius.Mini.Frontend.P.lxSymbolStart
+public import Lanius.Mini.Frontend.P.lxDropTo
+public import Lanius.Mini.Frontend.P.lxFilter
+public import Lanius.Mini.Frontend.P.lxKeywordRules
+public import Lanius.Mini.Frontend.P.lxRangePair
+public import Lanius.Mini.Frontend.P.lxRanges
+public import Lanius.Mini.Frontend.P.lxRaw
+public import Lanius.Mini.Frontend.P.lxSymbolRules
+public import Lanius.Mini.Frontend.P.lxTake
+public import Lanius.Mini.Frontend.P.lxToken
+public import Lanius.Mini.Frontend.P.lxTokens
+public import Lanius.Mini.Frontend.P.lxTrivia
+public import Lanius.Mini.Frontend.P.readBytes
+public import Lanius.Mini.Frontend.P.readNums
+public import Lanius.Mini.Frontend.P.wordNum
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

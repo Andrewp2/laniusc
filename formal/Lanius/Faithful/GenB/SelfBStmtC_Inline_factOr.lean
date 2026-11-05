@@ -3,7 +3,15 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_Inline_factOr
+public import Lanius.Mini.Compiler.P.Inline_branchAgrees
+public import Lanius.Mini.Compiler.P.Inline_deadAgrees
 public import Lanius.Mini.Compiler.P.Inline_factOr
+public import Lanius.Mini.Compiler.P.Inline_iteAgrees
+public import Lanius.Mini.Compiler.P.Inline_kept
+public import Lanius.Mini.Compiler.P.Inline_loopAgrees
+public import Lanius.Mini.Compiler.P.Inline_optimizeSequence
+public import Lanius.Mini.Compiler.P.Inline_seqAgrees
+public import Lanius.Mini.Compiler.P.Inline_unknown
 
 @[expose] public section
 

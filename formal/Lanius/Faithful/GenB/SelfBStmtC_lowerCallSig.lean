@@ -3,6 +3,20 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_Inline_arithOf
+public import Lanius.Mini.Compiler.P.evalCallSig
+public import Lanius.Mini.Compiler.P.evalChecked
+public import Lanius.Mini.Compiler.P.evalCopy
+public import Lanius.Mini.Compiler.P.evalFieldCopy
+public import Lanius.Mini.Compiler.P.evalFieldOf
+public import Lanius.Mini.Compiler.P.evalFieldType
+public import Lanius.Mini.Compiler.P.evalPure
+public import Lanius.Mini.Compiler.P.evalValues
+public import Lanius.Mini.Compiler.P.hostByteCode
+public import Lanius.Mini.Compiler.P.hostClockCode
+public import Lanius.Mini.Compiler.P.hostReadCode
+public import Lanius.Mini.Compiler.P.hostSleepCode
+public import Lanius.Mini.Compiler.P.hostWriteCode
+public import Lanius.Mini.Compiler.P.lowerCall
 public import Lanius.Mini.Compiler.P.lowerCallSig
 
 @[expose] public section

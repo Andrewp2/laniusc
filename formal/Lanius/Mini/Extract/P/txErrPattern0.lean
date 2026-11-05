@@ -13,12 +13,4 @@ def txErrPattern0 : List Nat :=
   let t : List Nat := 112 :: 97 :: 116 :: 116 :: 101 :: 114 :: 110 :: 32 :: 110 :: 111 :: 116 :: 32 :: 105 :: 110 :: 32 :: [116]
   t
 
-def txErrPattern1 : List Nat :=
-  let t : List Nat := 104 :: 101 :: 32 :: 101 :: 120 :: 116 :: 114 :: 97 :: 99 :: 116 :: 101 :: 100 :: 32 :: 115 :: 117 :: [98]
-  t
-
-def txErrPattern2 : List Nat :=
-  let t : List Nat := 115 :: 101 :: [116]
-  t
-
 end Lanius.Mini

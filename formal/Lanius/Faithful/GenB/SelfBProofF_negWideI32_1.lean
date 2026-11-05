@@ -11,9 +11,20 @@ public import Lanius.Faithful.GenB.SelfBStmtN5
 public import Lanius.Faithful.GenB.SelfBStmtN6
 import all Lanius.Faithful.Gen.SelfSrcF_negWideI32
 import all Lanius.Faithful.Gen.SelfStmtF_negWideI32
+import all Lanius.Mini.Frontend.P.amountWant
+import all Lanius.Mini.Frontend.P.boundTys
+import all Lanius.Mini.Frontend.P.calleeParams
+import all Lanius.Mini.Frontend.P.firstIds
 import all Lanius.Mini.Frontend.P.firstSrc
-import all Lanius.Mini.Frontend.P.negWideI32
-import all Lanius.Mini.Frontend.P.sintAt
+import all Lanius.Mini.Frontend.P.knownEff
+import all Lanius.Mini.Frontend.P.litEff
+import all Lanius.Mini.Frontend.P.operandWant
+import all Lanius.Mini.Frontend.P.payloadAt
+import all Lanius.Mini.Frontend.P.restIds
+import all Lanius.Mini.Frontend.P.restPayloads
+import all Lanius.Mini.Frontend.P.restSrc
+import all Lanius.Mini.Frontend.P.srcFields
+import all Lanius.Mini.Frontend.P.srcVariants
 
 @[expose] public section
 

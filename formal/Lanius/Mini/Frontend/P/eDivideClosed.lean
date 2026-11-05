@@ -17,19 +17,4 @@ def eDivideClosed (op : SrcDivOp) (l : Option SrcEff) (r : Option SrcEff) : Opti
     | none => none
     | some b => some (SrcEff.eDivide op a b)
 
-def eNegClosed (x : Option SrcEff) : Option SrcEff :=
-  match x with
-  | none => none
-  | some a => some (SrcEff.eNeg a)
-
-def eNotClosed (x : Option SrcEff) : Option SrcEff :=
-  match x with
-  | none => none
-  | some a => some (SrcEff.eNot a)
-
-def eCastClosed (t : SrcType) (x : Option SrcEff) : Option SrcEff :=
-  match x with
-  | none => none
-  | some a => some (SrcEff.eCast t a)
-
 end Lanius.Mini

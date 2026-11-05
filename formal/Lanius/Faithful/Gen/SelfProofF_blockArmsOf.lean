@@ -24,7 +24,22 @@ public import Lanius.Faithful.Gen.SelfStmtF_matchStmtIf
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_stringOpen
 import all Lanius.Faithful.Gen.SelfSrcF_blockArmsOf
+import all Lanius.Mini.Frontend.P.anyBlockArm
 import all Lanius.Mini.Frontend.P.blockArmsOf
+import all Lanius.Mini.Frontend.P.eqLit
+import all Lanius.Mini.Frontend.P.isBlockMatch
+import all Lanius.Mini.Frontend.P.isLitInit
+import all Lanius.Mini.Frontend.P.isLitStmt
+import all Lanius.Mini.Frontend.P.litCond
+import all Lanius.Mini.Frontend.P.litEnd
+import all Lanius.Mini.Frontend.P.litFirst
+import all Lanius.Mini.Frontend.P.litHeadIf
+import all Lanius.Mini.Frontend.P.litLast
+import all Lanius.Mini.Frontend.P.litMatchHead
+import all Lanius.Mini.Frontend.P.litMatchParts
+import all Lanius.Mini.Frontend.P.litMatchTyped
+import all Lanius.Mini.Frontend.P.litPattern
+import all Lanius.Mini.Frontend.P.litWanted
 
 public section
 

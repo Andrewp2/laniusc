@@ -11,7 +11,9 @@ public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_funcsBytes
 import all Lanius.Faithful.Gen.SelfStmtF_funcsBytes
 import all Lanius.Mini.Frontend.P.funcsBytes
-import all Lanius.Mini.Frontend.P.strBytes
+import all Lanius.Mini.Frontend.P.placeFuncs
+import all Lanius.Mini.Frontend.P.placeStmt
+import all Lanius.Mini.Frontend.P.stmtBytes
 
 @[expose] public section
 

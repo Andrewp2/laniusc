@@ -9,8 +9,9 @@ public import Lanius.Faithful.GenB.SelfBStmtF_lxLeadingDot
 public import Lanius.Faithful.GenB.SelfBStmtF_lxSymbolStart
 import all Lanius.Faithful.Gen.SelfSrcF_lxFixed
 import all Lanius.Faithful.Gen.SelfStmtF_lxFixed
-import all Lanius.Mini.Frontend.P.lxLeadingDot
-import all Lanius.Mini.Frontend.P.lxSymbolStart
+import all Lanius.Mini.Frontend.P.lxBest
+import all Lanius.Mini.Frontend.P.lxDrop
+import all Lanius.Mini.Frontend.P.lxTake
 
 @[expose] public section
 

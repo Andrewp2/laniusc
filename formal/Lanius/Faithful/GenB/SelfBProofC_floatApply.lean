@@ -10,7 +10,13 @@ public import Lanius.Faithful.GenB.SelfBStmtC_arithUint
 public import Lanius.Faithful.GenB.SelfBStmtC_floatApply
 import all Lanius.Faithful.Gen.SelfSrcC_floatApply
 import all Lanius.Faithful.Gen.SelfStmtC_floatApply
-import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.SrcType_floatTy
+import all Lanius.Mini.Compiler.P.SrcType_isFloatAny
+import all Lanius.Mini.Compiler.P.SrcType_isI32
+import all Lanius.Mini.Compiler.P.SrcType_isIsize
+import all Lanius.Mini.Compiler.P.SrcType_isSintAny
+import all Lanius.Mini.Compiler.P.SrcType_sintKind
+import all Lanius.Mini.Compiler.P.SrcType_uintKind
 
 @[expose] public section
 

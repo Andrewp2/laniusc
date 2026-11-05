@@ -1,7 +1,30 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.declWeight
+public import Lanius.Mini.Frontend.P.fieldsWeight
 public import Lanius.Mini.Frontend.P.funcsOnto
+public import Lanius.Mini.Frontend.P.funcsTys
+public import Lanius.Mini.Frontend.P.instWeight
+public import Lanius.Mini.Frontend.P.isNoneWeight
+public import Lanius.Mini.Frontend.P.loweredAll
+public import Lanius.Mini.Frontend.P.monoLoop
+public import Lanius.Mini.Frontend.P.namedWeight
+public import Lanius.Mini.Frontend.P.paramTys
+public import Lanius.Mini.Frontend.P.payloadsWeight
+public import Lanius.Mini.Frontend.P.retTys
+public import Lanius.Mini.Frontend.P.seedTys
+public import Lanius.Mini.Frontend.P.stmtTys
+public import Lanius.Mini.Frontend.P.tyKnown
+public import Lanius.Mini.Frontend.P.tyWeight
+public import Lanius.Mini.Frontend.P.typeTable
+public import Lanius.Mini.Frontend.P.typeTableMore
+public import Lanius.Mini.Frontend.P.tysWeight
+public import Lanius.Mini.Frontend.P.unweighed
+public import Lanius.Mini.Frontend.P.weighAgain
+public import Lanius.Mini.Frontend.P.weighRound
+public import Lanius.Mini.Frontend.P.weighRounds
+public import Lanius.Mini.Frontend.P.weighedMore
 
 @[expose] public section
 

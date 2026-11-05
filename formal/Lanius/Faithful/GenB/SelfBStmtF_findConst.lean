@@ -5,7 +5,21 @@ public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_positionAt
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_variantsNamedAt
 public import Lanius.Faithful.GenB.SelfBModelF_findConst
+public import Lanius.Mini.Frontend.P.addInst
+public import Lanius.Mini.Frontend.P.addInsts
+public import Lanius.Mini.Frontend.P.declEnv
+public import Lanius.Mini.Frontend.P.findAlias
 public import Lanius.Mini.Frontend.P.findConst
+public import Lanius.Mini.Frontend.P.floatCode
+public import Lanius.Mini.Frontend.P.ifItem
+public import Lanius.Mini.Frontend.P.instIndex
+public import Lanius.Mini.Frontend.P.instMember
+public import Lanius.Mini.Frontend.P.isModule
+public import Lanius.Mini.Frontend.P.sameFloat
+public import Lanius.Mini.Frontend.P.sameInst
+public import Lanius.Mini.Frontend.P.sameTy
+public import Lanius.Mini.Frontend.P.uintCode
+public import Lanius.Mini.Frontend.P.variantsNamed
 
 @[expose] public section
 

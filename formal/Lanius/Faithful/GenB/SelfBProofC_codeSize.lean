@@ -10,8 +10,9 @@ public import Lanius.Faithful.GenB.SelfBStmtN1
 public import Lanius.Faithful.GenB.SelfBStmtN4
 import all Lanius.Faithful.Gen.SelfSrcC_codeSize
 import all Lanius.Faithful.Gen.SelfStmtC_codeSize
-import all Lanius.Mini.Compiler.P.DivOp_size
+import all Lanius.Mini.Compiler.P.Instr_size
 import all Lanius.Mini.Compiler.P.codeSize
+import all Lanius.Mini.Compiler.P.compileExpr
 
 @[expose] public section
 

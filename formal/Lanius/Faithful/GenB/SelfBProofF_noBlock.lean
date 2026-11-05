@@ -17,10 +17,10 @@ import all Lanius.Faithful.Gen.SelfSrcF_noBlock
 import all Lanius.Faithful.Gen.SelfStmtF_noBlock
 import all Lanius.Mini.Frontend.P.anyNested
 import all Lanius.Mini.Frontend.P.isPathCall
-import all Lanius.Mini.Frontend.P.isUnderscore
+import all Lanius.Mini.Frontend.P.kid
 import all Lanius.Mini.Frontend.P.noBlock
-import all Lanius.Mini.Frontend.P.noToken
-import all Lanius.Mini.Frontend.P.wideOf
+import all Lanius.Mini.Frontend.P.peel
+import all Lanius.Mini.Frontend.P.wildSplit
 
 @[expose] public section
 

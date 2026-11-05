@@ -6,6 +6,8 @@ public import Lanius.Faithful.Gen.SelfSrcF_Inline_pArrayAfterCommaTrailing
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pArrayAfterCommaTrailing
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pArrayAfterCommaTrailing
 import all Lanius.Mini.Frontend.P.Inline_pArrayAfterCommaTrailing
+import all Lanius.Mini.Frontend.P.Inline_pArrayEnd
+import all Lanius.Mini.Frontend.P.Inline_pArrayLit
 
 public section
 

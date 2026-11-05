@@ -2,6 +2,8 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.Inline_tRparen
+public import Lanius.Mini.Frontend.P.Inline_tSemicolon
+public import Lanius.Mini.Frontend.P.Inline_tShr
 
 @[expose] public section
 

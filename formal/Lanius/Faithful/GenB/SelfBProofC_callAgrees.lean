@@ -11,10 +11,11 @@ public import Lanius.Faithful.GenB.SelfBStmtC_Word_narrows
 public import Lanius.Faithful.GenB.SelfBStmtC_callAgrees
 import all Lanius.Faithful.Gen.SelfSrcC_callAgrees
 import all Lanius.Faithful.Gen.SelfStmtC_callAgrees
-import all Lanius.Mini.Compiler.P.BinOp_folds
+import all Lanius.Mini.Compiler.P.DivOp_number
 import all Lanius.Mini.Compiler.P.Expr_agrees
-import all Lanius.Mini.Compiler.P.Lists_empty
-import all Lanius.Mini.Compiler.P.Word_narrows
+import all Lanius.Mini.Compiler.P.MemWidth_bytes
+import all Lanius.Mini.Compiler.P.Syscall_number
+import all Lanius.Mini.Compiler.P.Word_number
 
 @[expose] public section
 

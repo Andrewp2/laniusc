@@ -24,14 +24,25 @@ public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_plainNaming
 import all Lanius.Faithful.Gen.SelfStmtF_plainNaming
 import all Lanius.Mini.Frontend.P.Inline_pIdentPlain
-import all Lanius.Mini.Frontend.P.Inline_pLeTail
-import all Lanius.Mini.Frontend.P.Inline_pPathMore
-import all Lanius.Mini.Frontend.P.anyNested
-import all Lanius.Mini.Frontend.P.isEmptyUsize
-import all Lanius.Mini.Frontend.P.noToken
-import all Lanius.Mini.Frontend.P.noTrees
-import all Lanius.Mini.Frontend.P.plainNaming
-import all Lanius.Mini.Frontend.P.repeatEff
+import all Lanius.Mini.Frontend.P.Inline_pMatchArmsSome
+import all Lanius.Mini.Frontend.P.Inline_pMatchExpr
+import all Lanius.Mini.Frontend.P.Inline_pPatternPlain
+import all Lanius.Mini.Frontend.P.Inline_pPatternsSome
+import all Lanius.Mini.Frontend.P.colsQuiet
+import all Lanius.Mini.Frontend.P.columnArms
+import all Lanius.Mini.Frontend.P.covers
+import all Lanius.Mini.Frontend.P.endsWild
+import all Lanius.Mini.Frontend.P.firstNested
+import all Lanius.Mini.Frontend.P.hiddenExpr
+import all Lanius.Mini.Frontend.P.hiddenPat
+import all Lanius.Mini.Frontend.P.hiddenPath
+import all Lanius.Mini.Frontend.P.kid
+import all Lanius.Mini.Frontend.P.namedParts
+import all Lanius.Mini.Frontend.P.nodeProd
+import all Lanius.Mini.Frontend.P.pathName
+import all Lanius.Mini.Frontend.P.replaceAt
+import all Lanius.Mini.Frontend.P.rowPats
+import all Lanius.Mini.Frontend.P.textHidden
 
 @[expose] public section
 

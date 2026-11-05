@@ -3,6 +3,10 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_projectionRet
+public import Lanius.Mini.Frontend.P.diverges
+public import Lanius.Mini.Frontend.P.initTys
+public import Lanius.Mini.Frontend.P.lastTy
+public import Lanius.Mini.Frontend.P.neverRet
 public import Lanius.Mini.Frontend.P.projectionRet
 
 @[expose] public section

@@ -9,7 +9,7 @@ public import Lanius.Faithful.GenB.SelfBStmtF_frontEndWords
 public import Lanius.Faithful.GenB.SelfBStmtF_readCountedBytes
 import all Lanius.Faithful.Gen.SelfSrcF_frontEndWords
 import all Lanius.Faithful.Gen.SelfStmtF_frontEndWords
-import all Lanius.Mini.Frontend.P.readCountedBytes
+import all Lanius.Mini.Frontend.P.readCountedFiles
 
 @[expose] public section
 

@@ -3,6 +3,9 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_wordWidth
+public import Lanius.Mini.Compiler.P.declaredSame
+public import Lanius.Mini.Compiler.P.declaredVariants
+public import Lanius.Mini.Compiler.P.wordType
 public import Lanius.Mini.Compiler.P.wordWidth
 
 @[expose] public section

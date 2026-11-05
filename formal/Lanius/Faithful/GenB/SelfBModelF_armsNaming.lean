@@ -5,8 +5,9 @@ public import Lanius.Faithful.GenB.SelfBModelF_consBinder
 public import Lanius.Faithful.GenB.SelfBModelF_consTreeTail
 public import Lanius.Faithful.GenB.SelfBModelN5
 public import Lanius.Mini.Compiler.Types
+public import Lanius.Mini.Frontend.P.armNames
+public import Lanius.Mini.Frontend.P.armsByVariant
 public import Lanius.Mini.Frontend.P.armsNaming
-public import Lanius.Mini.Frontend.P.consBinder
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

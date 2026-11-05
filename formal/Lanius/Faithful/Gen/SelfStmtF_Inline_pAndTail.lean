@@ -2,6 +2,10 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.Inline_pAndTail
+public import Lanius.Mini.Frontend.P.Inline_pAndexpr
+public import Lanius.Mini.Frontend.P.Inline_pArgsAfterCommaMore
+public import Lanius.Mini.Frontend.P.Inline_pArgsAfterCommaTrailing
+public import Lanius.Mini.Frontend.P.Inline_pArgsEnd
 
 @[expose] public section
 

@@ -2,6 +2,12 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.allocClosed
+public import Lanius.Mini.Frontend.P.eApplyClosed
+public import Lanius.Mini.Frontend.P.eCallClosed
+public import Lanius.Mini.Frontend.P.letIndexClosed
+public import Lanius.Mini.Frontend.P.letSliceClosed
+public import Lanius.Mini.Frontend.P.letStrClosed
+public import Lanius.Mini.Frontend.P.letViewClosed
 
 @[expose] public section
 

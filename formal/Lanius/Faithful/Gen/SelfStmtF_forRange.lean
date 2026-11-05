@@ -1,7 +1,13 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.arrayLocal
+public import Lanius.Mini.Frontend.P.arrayLocalOf
+public import Lanius.Mini.Frontend.P.forArray
 public import Lanius.Mini.Frontend.P.forRange
+public import Lanius.Mini.Frontend.P.forSlice
+public import Lanius.Mini.Frontend.P.matchOfPostfix
+public import Lanius.Mini.Frontend.P.matchPrimary
 
 @[expose] public section
 

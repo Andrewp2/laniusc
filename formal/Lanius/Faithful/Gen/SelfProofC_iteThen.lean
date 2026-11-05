@@ -7,6 +7,7 @@ public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmtC_iteThen
 import all Lanius.Faithful.Gen.SelfSrcC_iteThen
 import all Lanius.Mini.Compiler.P.iteThen
+import all Lanius.Mini.Compiler.P.storeOne
 
 public section
 

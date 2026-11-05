@@ -12,7 +12,4 @@ namespace Lanius.Mini
 @[expose] def Inline.pTypeSliceTail : Nat :=
   284
 
-@[expose] def Inline.pWhereNone : Nat :=
-  36
-
 end Lanius.Mini

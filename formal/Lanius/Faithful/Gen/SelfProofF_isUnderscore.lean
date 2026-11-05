@@ -16,7 +16,15 @@ public import Lanius.Faithful.Gen.SelfStmtF_isUnderscore
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_noTrees
 import all Lanius.Faithful.Gen.SelfSrcF_isUnderscore
+import all Lanius.Mini.Frontend.P.consWild
 import all Lanius.Mini.Frontend.P.isUnderscore
+import all Lanius.Mini.Frontend.P.isWildArm
+import all Lanius.Mini.Frontend.P.wildAlone
+import all Lanius.Mini.Frontend.P.wildArmFor
+import all Lanius.Mini.Frontend.P.wildBinder
+import all Lanius.Mini.Frontend.P.wildBinders
+import all Lanius.Mini.Frontend.P.wildSplit
+import all Lanius.Mini.Frontend.P.wildTail
 
 public section
 

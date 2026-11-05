@@ -12,7 +12,7 @@ public import Lanius.Faithful.GenB.SelfBStmtC_floatApply
 public import Lanius.Faithful.GenB.SelfBStmtC_lowerShift
 import all Lanius.Faithful.Gen.SelfSrcC_conjunction
 import all Lanius.Faithful.Gen.SelfStmtC_conjunction
-import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.SrcType_isBool
 
 @[expose] public section
 

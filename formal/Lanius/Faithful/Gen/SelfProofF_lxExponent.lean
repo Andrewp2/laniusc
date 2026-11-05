@@ -10,7 +10,14 @@ public import Lanius.Faithful.Gen.SelfStmtF_lxBlockEnd
 public import Lanius.Faithful.Gen.SelfStmtF_lxExponent
 public import Lanius.Faithful.Gen.SelfStmtF_lxSymbolStart
 import all Lanius.Faithful.Gen.SelfSrcF_lxExponent
+import all Lanius.Mini.Frontend.P.lxAfterFraction
+import all Lanius.Mini.Frontend.P.lxBaseOf
 import all Lanius.Mini.Frontend.P.lxExponent
+import all Lanius.Mini.Frontend.P.lxFinishDecimal
+import all Lanius.Mini.Frontend.P.lxFraction
+import all Lanius.Mini.Frontend.P.lxFractionDigits
+import all Lanius.Mini.Frontend.P.lxNumber
+import all Lanius.Mini.Frontend.P.lxPrefixedBase
 
 public section
 

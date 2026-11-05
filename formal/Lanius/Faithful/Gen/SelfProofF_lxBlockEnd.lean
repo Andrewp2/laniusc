@@ -12,7 +12,11 @@ public import Lanius.Faithful.Gen.SelfStmtF_lxBlockEnd
 public import Lanius.Faithful.Gen.SelfStmtF_lxSpaceEnd
 public import Lanius.Faithful.Gen.SelfStmtF_lxSymbolStart
 import all Lanius.Faithful.Gen.SelfSrcF_lxBlockEnd
+import all Lanius.Mini.Frontend.P.lxBaseDigit
 import all Lanius.Mini.Frontend.P.lxBlockEnd
+import all Lanius.Mini.Frontend.P.lxDigitRun
+import all Lanius.Mini.Frontend.P.lxDigitTail
+import all Lanius.Mini.Frontend.P.lxExponentDigits
 
 public section
 

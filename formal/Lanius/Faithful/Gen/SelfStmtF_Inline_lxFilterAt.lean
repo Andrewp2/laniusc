@@ -2,6 +2,9 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.Inline_lxFilterAt
+public import Lanius.Mini.Frontend.P.Inline_lxRangesAt
+public import Lanius.Mini.Frontend.P.Inline_lxTokensAt
+public import Lanius.Mini.Frontend.P.Inline_pAdd
 
 @[expose] public section
 

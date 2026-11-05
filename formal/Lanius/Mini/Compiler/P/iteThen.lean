@@ -17,9 +17,4 @@ def iteThen (condition : Expr) (thenBranch : Option Stmt) (elseBranch : Option S
     | none => none
     | some e => some (Stmt.ite condition t e)
 
-def storeOne (w : MemWidth) (address : Expr) (value : Option Expr) : Option Stmt :=
-  match value with
-  | none => none
-  | some v => some (Stmt.storeWord w address v)
-
 end Lanius.Mini

@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.fieldEvalStmt
 public import Lanius.Mini.Frontend.P.setIndexOrEval
 
 @[expose] public section

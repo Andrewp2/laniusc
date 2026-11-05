@@ -18,13 +18,20 @@ public import Lanius.Faithful.GenB.SelfBStmtN2
 public import Lanius.Faithful.GenB.SelfBStmtN3
 import all Lanius.Faithful.Gen.SelfSrcF_sliceHead
 import all Lanius.Faithful.Gen.SelfStmtF_sliceHead
-import all Lanius.Mini.Frontend.P.distinct
-import all Lanius.Mini.Frontend.P.fnInstRet
-import all Lanius.Mini.Frontend.P.noToken
-import all Lanius.Mini.Frontend.P.noTrees
-import all Lanius.Mini.Frontend.P.sliceHead
-import all Lanius.Mini.Frontend.P.textSelf
+import all Lanius.Mini.Frontend.P.allocPath
+import all Lanius.Mini.Frontend.P.argsOf
+import all Lanius.Mini.Frontend.P.builtinPath
+import all Lanius.Mini.Frontend.P.deallocPath
+import all Lanius.Mini.Frontend.P.fieldValues
+import all Lanius.Mini.Frontend.P.isPath
+import all Lanius.Mini.Frontend.P.kid
+import all Lanius.Mini.Frontend.P.pathSpellings
+import all Lanius.Mini.Frontend.P.sameSpellings
+import all Lanius.Mini.Frontend.P.textAssert
+import all Lanius.Mini.Frontend.P.textSliceFromRawParts
 import all Lanius.Mini.Frontend.P.textSliceLen
+import all Lanius.Mini.Frontend.P.textSliceStride
+import all Lanius.Mini.Frontend.P.viewPath
 
 @[expose] public section
 

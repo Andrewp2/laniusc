@@ -2,6 +2,8 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.isFnPath
+public import Lanius.Mini.Frontend.P.isMethodForm
+public import Lanius.Mini.Frontend.P.memberArgs
 
 @[expose] public section
 

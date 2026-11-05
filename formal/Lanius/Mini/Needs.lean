@@ -1,11 +1,28 @@
 module
 
 public import Lanius.Mini.LowerStmt
+import all Lanius.Mini.Compiler.P.SrcEff_sliceUses
+import all Lanius.Mini.Compiler.P.SrcStmt_calleeNeed
+import all Lanius.Mini.Compiler.P.SrcStmt_sliceUses
+import all Lanius.Mini.Compiler.P.arrayBytesOf
+import all Lanius.Mini.Compiler.P.blockRoom
+import all Lanius.Mini.Compiler.P.declBytes
+import all Lanius.Mini.Compiler.P.frameBlock
+import all Lanius.Mini.Compiler.P.paramsRoom
 import all Lanius.Mini.Compiler.P.withBudget
 import all Lanius.Mini.Compiler.P.needCapped
+import all Lanius.Mini.Compiler.P.needRound
+import all Lanius.Mini.Compiler.P.needRoundAt
+import all Lanius.Mini.Compiler.P.restNeeds
+import all Lanius.Mini.Compiler.P.sameNeeds
 import all Lanius.Mini.Compiler.P.needLimit
 import all Lanius.Mini.Compiler.P.needsAfter
+import all Lanius.Mini.Compiler.P.Expr_extent
+import all Lanius.Mini.Compiler.P.Stmt_extent
+import all Lanius.Mini.Compiler.P.argsExtent
 import all Lanius.Mini.Compiler.P.funcNeeds
+import all Lanius.Mini.Compiler.P.sigs
+import all Lanius.Mini.Compiler.P.sigsWith
 
 /-! # Programs that need no frame memory
 

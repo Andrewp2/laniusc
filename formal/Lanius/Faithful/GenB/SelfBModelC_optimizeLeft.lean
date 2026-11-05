@@ -3,12 +3,16 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelC_optimizeNeg
 public import Lanius.Faithful.GenB.SelfBModelN7
+public import Lanius.Mini.Compiler.P.BinOp_annihilates
+public import Lanius.Mini.Compiler.P.BinOp_commutes
 public import Lanius.Mini.Compiler.P.BinOp_folds
-public import Lanius.Mini.Compiler.P.Stmt_kills
-public import Lanius.Mini.Compiler.P.Word_compute
-public import Lanius.Mini.Compiler.P.Word_narrows
-public import Lanius.Mini.Compiler.P.longer
-public import Lanius.Mini.Compiler.P.optimizeLeft
+public import Lanius.Mini.Compiler.P.BinOp_unit
+public import Lanius.Mini.Compiler.P.Expr_literal
+public import Lanius.Mini.Compiler.P.Expr_optimize
+public import Lanius.Mini.Compiler.P.Stmt_isSkip
+public import Lanius.Mini.Compiler.P.Word_keeps
+public import Lanius.Mini.Compiler.P.Word_sameOperand
+public import Lanius.Mini.Compiler.P.optimizeAll
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.Types
 

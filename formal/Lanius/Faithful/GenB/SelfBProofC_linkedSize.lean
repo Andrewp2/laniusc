@@ -10,8 +10,9 @@ public import Lanius.Faithful.GenB.SelfBStmtC_linkedSize
 public import Lanius.Faithful.GenB.SelfBStmtC_loadAtBytes
 import all Lanius.Faithful.Gen.SelfSrcC_linkedSize
 import all Lanius.Faithful.Gen.SelfStmtC_linkedSize
+import all Lanius.Mini.Compiler.P.Code_size
 import all Lanius.Mini.Compiler.P.arities
-import all Lanius.Mini.Compiler.P.loadAtBytes
+import all Lanius.Mini.Compiler.P.compileFuncs
 
 @[expose] public section
 

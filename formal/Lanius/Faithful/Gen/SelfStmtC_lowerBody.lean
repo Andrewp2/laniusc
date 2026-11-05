@@ -1,7 +1,20 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Compiler.P.SrcStmt_declare
+public import Lanius.Mini.Compiler.P.SrcStmt_returns
+public import Lanius.Mini.Compiler.P.SrcType_declare
+public import Lanius.Mini.Compiler.P.declareEnum
+public import Lanius.Mini.Compiler.P.declareFunc
+public import Lanius.Mini.Compiler.P.declareParams
+public import Lanius.Mini.Compiler.P.declareStruct
+public import Lanius.Mini.Compiler.P.keepIf
 public import Lanius.Mini.Compiler.P.lowerBody
+public import Lanius.Mini.Compiler.P.lowerFunc
+public import Lanius.Mini.Compiler.P.lowerFuncCons
+public import Lanius.Mini.Compiler.P.lowerFuncs
+public import Lanius.Mini.Compiler.P.unitTail
+public import Lanius.Mini.Compiler.P.withFrame
 
 @[expose] public section
 

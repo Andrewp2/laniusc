@@ -1,7 +1,13 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.callLetHead
+public import Lanius.Mini.Frontend.P.evalHead
+public import Lanius.Mini.Frontend.P.evalLetHead
+public import Lanius.Mini.Frontend.P.ifSameTys
+public import Lanius.Mini.Frontend.P.indexLetHead
 public import Lanius.Mini.Frontend.P.matchLetHead
+public import Lanius.Mini.Frontend.P.singleTy
 
 @[expose] public section
 

@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Compiler.P.evalArm
 public import Lanius.Mini.Compiler.P.evalSame
 
 @[expose] public section

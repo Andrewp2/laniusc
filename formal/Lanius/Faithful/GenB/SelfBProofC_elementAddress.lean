@@ -11,7 +11,7 @@ public import Lanius.Faithful.GenB.SelfBStmtC_shortCircuit
 import all Lanius.Faithful.Gen.SelfSrcC_elementAddress
 import all Lanius.Faithful.Gen.SelfStmtC_elementAddress
 import all Lanius.Mini.Compiler.P.elementAddress
-import all Lanius.Mini.Compiler.P.shortCircuit
+import all Lanius.Mini.Compiler.P.elementOf
 
 @[expose] public section
 

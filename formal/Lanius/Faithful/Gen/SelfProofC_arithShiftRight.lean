@@ -11,6 +11,11 @@ public import Lanius.Faithful.Gen.SelfStmtC_floatApply
 public import Lanius.Faithful.Gen.SelfStmtC_lowerShift
 import all Lanius.Faithful.Gen.SelfSrcC_arithShiftRight
 import all Lanius.Mini.Compiler.P.arithShiftRight
+import all Lanius.Mini.Compiler.P.offsetOrArith
+import all Lanius.Mini.Compiler.P.order
+import all Lanius.Mini.Compiler.P.orderSint
+import all Lanius.Mini.Compiler.P.orderUint
+import all Lanius.Mini.Compiler.P.signKey
 
 public section
 

@@ -11,7 +11,17 @@ public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_flattenTys
 import all Lanius.Faithful.Gen.SelfSrcF_flattenTys
+import all Lanius.Mini.Frontend.P.consType
+import all Lanius.Mini.Frontend.P.consTypeTail
+import all Lanius.Mini.Frontend.P.consTypes
+import all Lanius.Mini.Frontend.P.consTypesTail
+import all Lanius.Mini.Frontend.P.flatPayloads
 import all Lanius.Mini.Frontend.P.flattenTys
+import all Lanius.Mini.Frontend.P.refType
+import all Lanius.Mini.Frontend.P.sliceType
+import all Lanius.Mini.Frontend.P.weightAddTo
+import all Lanius.Mini.Frontend.P.weightLimit
+import all Lanius.Mini.Frontend.P.weightSum
 
 public section
 

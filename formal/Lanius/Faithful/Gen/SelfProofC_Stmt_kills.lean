@@ -14,7 +14,12 @@ public import Lanius.Faithful.Gen.SelfStmtC_callAgrees
 public import Lanius.Faithful.Gen.SelfStmtC_longer
 public import Lanius.Faithful.Gen.SelfStmtC_substAll
 import all Lanius.Faithful.Gen.SelfSrcC_Stmt_kills
+import all Lanius.Mini.Compiler.P.Expr_literal
+import all Lanius.Mini.Compiler.P.Func_agrees
+import all Lanius.Mini.Compiler.P.Stmt_agrees
 import all Lanius.Mini.Compiler.P.Stmt_kills
+import all Lanius.Mini.Compiler.P.funcsAgree
+import all Lanius.Mini.Compiler.P.validate
 
 public section
 

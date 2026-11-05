@@ -2,7 +2,8 @@ module
 
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelC_needCapped
-public import Lanius.Mini.Compiler.P.needCapped
+public import Lanius.Mini.Compiler.P.needRound
+public import Lanius.Mini.Compiler.P.sameNeeds
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.Types
 

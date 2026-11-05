@@ -3,7 +3,30 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_plainNaming
+public import Lanius.Mini.Frontend.P.appendedUse
+public import Lanius.Mini.Frontend.P.colQuiet
+public import Lanius.Mini.Frontend.P.colsQuiet
+public import Lanius.Mini.Frontend.P.coveredBy
+public import Lanius.Mini.Frontend.P.coveredUse
+public import Lanius.Mini.Frontend.P.covers
+public import Lanius.Mini.Frontend.P.coversAll
+public import Lanius.Mini.Frontend.P.coversDecl
+public import Lanius.Mini.Frontend.P.coversEnum
+public import Lanius.Mini.Frontend.P.hiddenExpr
+public import Lanius.Mini.Frontend.P.hiddenPat
+public import Lanius.Mini.Frontend.P.hiddenPath
+public import Lanius.Mini.Frontend.P.knownUse
+public import Lanius.Mini.Frontend.P.nestArm
+public import Lanius.Mini.Frontend.P.nestAt
+public import Lanius.Mini.Frontend.P.nestInner
+public import Lanius.Mini.Frontend.P.nestPats
+public import Lanius.Mini.Frontend.P.nestUse
 public import Lanius.Mini.Frontend.P.plainNaming
+public import Lanius.Mini.Frontend.P.quietUse
+public import Lanius.Mini.Frontend.P.replaceAt
+public import Lanius.Mini.Frontend.P.shadowIf
+public import Lanius.Mini.Frontend.P.textHidden
+public import Lanius.Mini.Frontend.P.wildInner
 
 @[expose] public section
 

@@ -13,6 +13,10 @@ public import Lanius.Faithful.Gen.SelfStmtC_compileSource
 public import Lanius.Faithful.Gen.SelfStmtC_declareProgram
 import all Lanius.Faithful.Gen.SelfSrcC_compileSource
 import all Lanius.Mini.Compiler.P.compileSource
+import all Lanius.Mini.Compiler.P.packWord
+import all Lanius.Mini.Compiler.P.roundCons
+import all Lanius.Mini.Compiler.P.roundEnd
+import all Lanius.Mini.Compiler.P.usizeWords
 
 public section
 

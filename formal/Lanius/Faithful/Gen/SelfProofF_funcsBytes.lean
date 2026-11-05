@@ -10,6 +10,8 @@ public import Lanius.Faithful.Gen.SelfStmtF_funcsBytes
 public import Lanius.Faithful.Gen.SelfStmtF_strBytes
 import all Lanius.Faithful.Gen.SelfSrcF_funcsBytes
 import all Lanius.Mini.Frontend.P.funcsBytes
+import all Lanius.Mini.Frontend.P.placeFuncs
+import all Lanius.Mini.Frontend.P.placedProgram
 
 public section
 

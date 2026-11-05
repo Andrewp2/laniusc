@@ -5,7 +5,11 @@ public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_pContractsNone
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pContractsNone
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pContractsNone
+import all Lanius.Mini.Frontend.P.Inline_pContractsMore
 import all Lanius.Mini.Frontend.P.Inline_pContractsNone
+import all Lanius.Mini.Frontend.P.Inline_pDivTail
+import all Lanius.Mini.Frontend.P.Inline_pElseNone
+import all Lanius.Mini.Frontend.P.Inline_pRequires
 
 public section
 

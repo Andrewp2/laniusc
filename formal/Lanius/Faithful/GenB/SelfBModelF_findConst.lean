@@ -4,7 +4,8 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelN0
 public import Lanius.Faithful.GenB.SelfBModelN2
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.findConst
+public import Lanius.Mini.Frontend.P.addInst
+public import Lanius.Mini.Frontend.P.instMember
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

@@ -6,6 +6,9 @@ public import Lanius.Faithful.GenB.SelfBModelN5
 public import Lanius.Faithful.GenB.SelfBModelN6
 public import Lanius.Faithful.GenB.SelfBModelN7
 public import Lanius.Mini.Compiler.Types
+public import Lanius.Mini.Frontend.P.effBytes
+public import Lanius.Mini.Frontend.P.placeEff
+public import Lanius.Mini.Frontend.P.stmtBytes
 public import Lanius.Mini.Frontend.P.strBytes
 public import Lanius.Mini.Frontend.Types
 

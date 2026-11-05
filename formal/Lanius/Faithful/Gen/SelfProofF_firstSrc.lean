@@ -15,7 +15,21 @@ public import Lanius.Faithful.Gen.SelfStmtF_sintAt
 public import Lanius.Faithful.Gen.SelfStmtF_unitTy
 public import Lanius.Faithful.Gen.SelfStmtF_wideOf
 import all Lanius.Faithful.Gen.SelfSrcF_firstSrc
+import all Lanius.Mini.Frontend.P.amountWant
+import all Lanius.Mini.Frontend.P.boundTys
+import all Lanius.Mini.Frontend.P.eitherTy
+import all Lanius.Mini.Frontend.P.firstIds
 import all Lanius.Mini.Frontend.P.firstSrc
+import all Lanius.Mini.Frontend.P.knownApply
+import all Lanius.Mini.Frontend.P.knownCast
+import all Lanius.Mini.Frontend.P.operandWant
+import all Lanius.Mini.Frontend.P.restIds
+import all Lanius.Mini.Frontend.P.restPayloads
+import all Lanius.Mini.Frontend.P.restSrc
+import all Lanius.Mini.Frontend.P.wideAt
+import all Lanius.Mini.Frontend.P.wideIsizeAt
+import all Lanius.Mini.Frontend.P.wideSintAt
+import all Lanius.Mini.Frontend.P.wideUintAt
 
 public section
 

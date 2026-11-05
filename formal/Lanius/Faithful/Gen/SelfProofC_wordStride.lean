@@ -30,6 +30,16 @@ public import Lanius.Faithful.Gen.SelfStmtC_shortCircuit
 public import Lanius.Faithful.Gen.SelfStmtC_wordElement
 public import Lanius.Faithful.Gen.SelfStmtC_wordStride
 import all Lanius.Faithful.Gen.SelfSrcC_wordStride
+import all Lanius.Mini.Compiler.P.SrcEff_eval
+import all Lanius.Mini.Compiler.P.evalLen
+import all Lanius.Mini.Compiler.P.evalLenOf
+import all Lanius.Mini.Compiler.P.evalStr
+import all Lanius.Mini.Compiler.P.evalStride
+import all Lanius.Mini.Compiler.P.evalStrideOf
+import all Lanius.Mini.Compiler.P.evalWordStride
+import all Lanius.Mini.Compiler.P.staticByteIs
+import all Lanius.Mini.Compiler.P.storeEvalThen
+import all Lanius.Mini.Compiler.P.strPlaced
 import all Lanius.Mini.Compiler.P.wordStride
 
 public section

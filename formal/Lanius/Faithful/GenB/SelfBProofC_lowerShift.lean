@@ -9,7 +9,7 @@ public import Lanius.Faithful.GenB.SelfBStmtC_floatApply
 public import Lanius.Faithful.GenB.SelfBStmtC_lowerShift
 import all Lanius.Faithful.Gen.SelfSrcC_lowerShift
 import all Lanius.Faithful.Gen.SelfStmtC_lowerShift
-import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.SrcType_isInteger
 
 @[expose] public section
 

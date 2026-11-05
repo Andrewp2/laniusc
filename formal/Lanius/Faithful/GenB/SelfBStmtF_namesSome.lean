@@ -3,7 +3,13 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_namesSome
+public import Lanius.Mini.Frontend.P.allNameSome
+public import Lanius.Mini.Frontend.P.armsExact
+public import Lanius.Mini.Frontend.P.armsInOrder
+public import Lanius.Mini.Frontend.P.armsOrWild
 public import Lanius.Mini.Frontend.P.namesSome
+public import Lanius.Mini.Frontend.P.usesWild
+public import Lanius.Mini.Frontend.P.wildOrder
 
 @[expose] public section
 

@@ -15,7 +15,13 @@ public import Lanius.Faithful.Gen.SelfStmtC_optimizeIte
 public import Lanius.Faithful.Gen.SelfStmtC_optimizeLeft
 public import Lanius.Faithful.Gen.SelfStmtC_substAll
 import all Lanius.Faithful.Gen.SelfSrcC_optimizeIte
+import all Lanius.Mini.Compiler.P.Stmt_deadBefore
+import all Lanius.Mini.Compiler.P.Stmt_optimize
+import all Lanius.Mini.Compiler.P.loopUnlessZero
+import all Lanius.Mini.Compiler.P.optimizeFuncs
 import all Lanius.Mini.Compiler.P.optimizeIte
+import all Lanius.Mini.Compiler.P.optimizeLoop
+import all Lanius.Mini.Compiler.P.optimizeProgram
 
 public section
 

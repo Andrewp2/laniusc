@@ -8,6 +8,9 @@ public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmtC_lowerAddress
 import all Lanius.Faithful.Gen.SelfSrcC_lowerAddress
 import all Lanius.Mini.Compiler.P.lowerAddress
+import all Lanius.Mini.Compiler.P.lowerFree
+import all Lanius.Mini.Compiler.P.lowerLoad
+import all Lanius.Mini.Compiler.P.lowerStore
 
 public section
 

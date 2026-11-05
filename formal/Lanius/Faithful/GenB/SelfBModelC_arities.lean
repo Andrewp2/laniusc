@@ -5,8 +5,19 @@ public import Lanius.Faithful.GenB.SelfBModelC_roomFits
 public import Lanius.Faithful.GenB.SelfBModelN4
 public import Lanius.Faithful.GenB.SelfBModelN6
 public import Lanius.Faithful.GenB.SelfBModelN7
+public import Lanius.Mini.Compiler.P.BinOp_opcode
+public import Lanius.Mini.Compiler.P.CmpOp_setcc
+public import Lanius.Mini.Compiler.P.DivOp_extend
+public import Lanius.Mini.Compiler.P.DivOp_opcode
+public import Lanius.Mini.Compiler.P.DivOp_result
+public import Lanius.Mini.Compiler.P.Word_rex
 public import Lanius.Mini.Compiler.P.arities
-public import Lanius.Mini.Compiler.P.roomFits
+public import Lanius.Mini.Compiler.P.compileFunc
+public import Lanius.Mini.Compiler.P.compileFuncs
+public import Lanius.Mini.Compiler.P.le32
+public import Lanius.Mini.Compiler.P.slotLoad
+public import Lanius.Mini.Compiler.P.slotOffset
+public import Lanius.Mini.Compiler.P.slotOperands
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.Types
 

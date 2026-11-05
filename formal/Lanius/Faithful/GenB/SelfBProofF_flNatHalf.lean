@@ -9,7 +9,13 @@ public import Lanius.Faithful.GenB.SelfBStmtN3
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_flNatHalf
 import all Lanius.Faithful.Gen.SelfStmtF_flNatHalf
+import all Lanius.Mini.Frontend.P.flBit
+import all Lanius.Mini.Frontend.P.flLog2
 import all Lanius.Mini.Frontend.P.flNatHalf
+import all Lanius.Mini.Frontend.P.flNatOdd
+import all Lanius.Mini.Frontend.P.flOfNat
+import all Lanius.Mini.Frontend.P.flPow2
+import all Lanius.Mini.Frontend.P.flToNat
 
 @[expose] public section
 

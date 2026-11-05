@@ -3,7 +3,13 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_projection
+public import Lanius.Mini.Frontend.P.effPlace
+public import Lanius.Mini.Frontend.P.hasAt
+public import Lanius.Mini.Frontend.P.isRefTy
 public import Lanius.Mini.Frontend.P.projection
+public import Lanius.Mini.Frontend.P.referent
+public import Lanius.Mini.Frontend.P.referentOr
+public import Lanius.Mini.Frontend.P.xAtOf
 
 @[expose] public section
 

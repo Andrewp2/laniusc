@@ -3,6 +3,8 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Compiler.P.Word_compute
+public import Lanius.Mini.Compiler.P.Word_sameOperand
+public import Lanius.Mini.Compiler.P.Word_test
 
 @[expose] public section
 

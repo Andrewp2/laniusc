@@ -23,15 +23,28 @@ public import Lanius.Faithful.GenB.SelfBStmtN5
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_anyNested
 import all Lanius.Faithful.Gen.SelfStmtF_anyNested
-import all Lanius.Mini.Frontend.P.Inline_pModTail
-import all Lanius.Mini.Frontend.P.Inline_pPathMore
-import all Lanius.Mini.Frontend.P.anyNested
-import all Lanius.Mini.Frontend.P.armsNaming
-import all Lanius.Mini.Frontend.P.armsOf
-import all Lanius.Mini.Frontend.P.hasKids
-import all Lanius.Mini.Frontend.P.isEmptyUsize
-import all Lanius.Mini.Frontend.P.noToken
-import all Lanius.Mini.Frontend.P.noTrees
+import all Lanius.Mini.Frontend.P.Inline_pPathEnd
+import all Lanius.Mini.Frontend.P.Inline_pPathIdent
+import all Lanius.Mini.Frontend.P.Inline_pPatternIdent
+import all Lanius.Mini.Frontend.P.Inline_pPatternPlain
+import all Lanius.Mini.Frontend.P.armNaming
+import all Lanius.Mini.Frontend.P.colFits
+import all Lanius.Mini.Frontend.P.columnArms
+import all Lanius.Mini.Frontend.P.columnSub
+import all Lanius.Mini.Frontend.P.isBinderPat
+import all Lanius.Mini.Frontend.P.isLast
+import all Lanius.Mini.Frontend.P.kid
+import all Lanius.Mini.Frontend.P.kidToken
+import all Lanius.Mini.Frontend.P.namedPath
+import all Lanius.Mini.Frontend.P.nodeProd
+import all Lanius.Mini.Frontend.P.pathName
+import all Lanius.Mini.Frontend.P.pathSpellings
+import all Lanius.Mini.Frontend.P.quietIn
+import all Lanius.Mini.Frontend.P.rowFits
+import all Lanius.Mini.Frontend.P.rowPats
+import all Lanius.Mini.Frontend.P.rowsNaming
+import all Lanius.Mini.Frontend.P.textUnderscore
+import all Lanius.Mini.Frontend.P.wildPat
 
 @[expose] public section
 

@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.bindsZip
 public import Lanius.Mini.Frontend.P.divergeArm
 
 @[expose] public section

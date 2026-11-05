@@ -3,7 +3,14 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_armsOf
-public import Lanius.Mini.Frontend.P.armsOf
+public import Lanius.Mini.Frontend.P.allBinders
+public import Lanius.Mini.Frontend.P.andKnown
+public import Lanius.Mini.Frontend.P.armNested
+public import Lanius.Mini.Frontend.P.binderNameOk
+public import Lanius.Mini.Frontend.P.isBinderPat
+public import Lanius.Mini.Frontend.P.notKnown
+public import Lanius.Mini.Frontend.P.orKnown
+public import Lanius.Mini.Frontend.P.patsNested
 
 @[expose] public section
 

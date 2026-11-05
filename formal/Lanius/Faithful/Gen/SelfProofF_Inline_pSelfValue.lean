@@ -6,6 +6,10 @@ public import Lanius.Faithful.Gen.SelfSrcF_Inline_pSelfValue
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pSelfValue
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pSelfValue
 import all Lanius.Mini.Frontend.P.Inline_pSelfValue
+import all Lanius.Mini.Frontend.P.Inline_pShift
+import all Lanius.Mini.Frontend.P.Inline_pShlTail
+import all Lanius.Mini.Frontend.P.Inline_pShrTail
+import all Lanius.Mini.Frontend.P.Inline_pStmtsEnd
 
 public section
 

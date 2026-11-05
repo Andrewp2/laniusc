@@ -14,10 +14,10 @@ public import Lanius.Faithful.GenB.SelfBStmtF_tryLocalOf
 public import Lanius.Faithful.GenB.SelfBStmtF_whileEvalOf
 import all Lanius.Faithful.Gen.SelfSrcF_whileEvalOf
 import all Lanius.Faithful.Gen.SelfStmtF_whileEvalOf
-import all Lanius.Mini.Frontend.P.findConst
+import all Lanius.Mini.Frontend.P.effOf
 import all Lanius.Mini.Frontend.P.freshId
-import all Lanius.Mini.Frontend.P.stringOpen
-import all Lanius.Mini.Frontend.P.tryLocalOf
+import all Lanius.Mini.Frontend.P.sameTy
+import all Lanius.Mini.Frontend.P.tryOfInit
 
 @[expose] public section
 

@@ -14,10 +14,12 @@ public import Lanius.Faithful.GenB.SelfBStmtN2
 public import Lanius.Faithful.GenB.SelfBStmtN5
 import all Lanius.Faithful.Gen.SelfSrcC_withBudget
 import all Lanius.Faithful.Gen.SelfStmtC_withBudget
-import all Lanius.Mini.Compiler.P.SrcType_same
-import all Lanius.Mini.Compiler.P.compileArgs
-import all Lanius.Mini.Compiler.P.strStores
-import all Lanius.Mini.Compiler.P.withBudget
+import all Lanius.Mini.Compiler.P.SrcEff_sliceUses
+import all Lanius.Mini.Compiler.P.SrcStmt_sliceUses
+import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.declBytes
+import all Lanius.Mini.Compiler.P.idAbsent
+import all Lanius.Mini.Compiler.P.spend
 
 @[expose] public section
 

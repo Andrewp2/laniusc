@@ -6,6 +6,8 @@ public import Lanius.Faithful.Gen.SelfSrcF_Inline_tRparen
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_tRparen
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_tRparen
 import all Lanius.Mini.Frontend.P.Inline_tRparen
+import all Lanius.Mini.Frontend.P.Inline_tSemicolon
+import all Lanius.Mini.Frontend.P.Inline_tShr
 
 public section
 

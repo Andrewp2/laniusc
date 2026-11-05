@@ -1,7 +1,10 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.findFn
+public import Lanius.Mini.Frontend.P.findType
 public import Lanius.Mini.Frontend.P.rootInsts
+public import Lanius.Mini.Frontend.P.seedInsts
 
 @[expose] public section
 

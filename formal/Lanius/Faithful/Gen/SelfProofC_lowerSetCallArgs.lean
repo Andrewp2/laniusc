@@ -10,7 +10,12 @@ public import Lanius.Faithful.Gen.SelfStmtC_lowerApply
 public import Lanius.Faithful.Gen.SelfStmtC_lowerCallSig
 public import Lanius.Faithful.Gen.SelfStmtC_lowerSetCallArgs
 import all Lanius.Faithful.Gen.SelfSrcC_lowerSetCallArgs
+import all Lanius.Mini.Compiler.P.lowerIf
+import all Lanius.Mini.Compiler.P.lowerSetCall
 import all Lanius.Mini.Compiler.P.lowerSetCallArgs
+import all Lanius.Mini.Compiler.P.lowerThen
+import all Lanius.Mini.Compiler.P.lowerWhile
+import all Lanius.Mini.Compiler.P.whileLoop
 
 public section
 

@@ -16,13 +16,22 @@ public import Lanius.Faithful.GenB.SelfBStmtN0
 public import Lanius.Faithful.GenB.SelfBStmtN2
 import all Lanius.Faithful.Gen.SelfSrcC_Inline_blockLeft
 import all Lanius.Faithful.Gen.SelfStmtC_Inline_blockLeft
-import all Lanius.Mini.Compiler.P.BinOp_folds
+import all Lanius.Mini.Compiler.P.BinOp_commutes
+import all Lanius.Mini.Compiler.P.BinOp_number
+import all Lanius.Mini.Compiler.P.CmpOp_number
 import all Lanius.Mini.Compiler.P.Expr_agrees
-import all Lanius.Mini.Compiler.P.Inline_blockLeft
-import all Lanius.Mini.Compiler.P.Word_narrows
-import all Lanius.Mini.Compiler.P.binaryConstant
-import all Lanius.Mini.Compiler.P.lowerBody
-import all Lanius.Mini.Compiler.P.matchVariants
+import all Lanius.Mini.Compiler.P.Expr_constant
+import all Lanius.Mini.Compiler.P.Expr_isConstant
+import all Lanius.Mini.Compiler.P.Expr_unitOf
+import all Lanius.Mini.Compiler.P.FOp_number
+import all Lanius.Mini.Compiler.P.Inline_binaryAgrees
+import all Lanius.Mini.Compiler.P.Inline_declareIn
+import all Lanius.Mini.Compiler.P.SrcEff_types
+import all Lanius.Mini.Compiler.P.SrcStmt_declare
+import all Lanius.Mini.Compiler.P.SrcType_declare
+import all Lanius.Mini.Compiler.P.Word_keeps
+import all Lanius.Mini.Compiler.P.Word_number
+import all Lanius.Mini.Compiler.P.declareFunc
 
 @[expose] public section
 

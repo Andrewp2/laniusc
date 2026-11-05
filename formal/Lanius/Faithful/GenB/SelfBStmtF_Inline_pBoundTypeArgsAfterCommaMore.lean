@@ -3,6 +3,26 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.Inline_pBoundTypeArgsAfterCommaMore
+public import Lanius.Mini.Frontend.P.Inline_pBoundTypeArgsMore
+public import Lanius.Mini.Frontend.P.Inline_pBoundTypeIdent
+public import Lanius.Mini.Frontend.P.Inline_pBoundTypePathEnd
+public import Lanius.Mini.Frontend.P.Inline_pBoundTypePathIdent
+public import Lanius.Mini.Frontend.P.Inline_pBoundTypePathMore
+public import Lanius.Mini.Frontend.P.Inline_pTypeParamBound
+public import Lanius.Mini.Frontend.P.Inline_pTypeParamBoundMore
+public import Lanius.Mini.Frontend.P.Inline_pTypeParamBoundNone
+public import Lanius.Mini.Frontend.P.Inline_pWherePredicateMoreAfterComma
+public import Lanius.Mini.Frontend.P.Inline_pWherePredicatesMore
+public import Lanius.Mini.Frontend.P.Inline_pWhereSome
+public import Lanius.Mini.Frontend.P.Inline_pWhileStmt
+public import Lanius.Mini.Frontend.P.Inline_pXorTail
+public import Lanius.Mini.Frontend.P.Inline_tColon
+public import Lanius.Mini.Frontend.P.Inline_tEqeq
+public import Lanius.Mini.Frontend.P.Inline_tGe
+public import Lanius.Mini.Frontend.P.Inline_tGt
+public import Lanius.Mini.Frontend.P.Inline_tLbrace
+public import Lanius.Mini.Frontend.P.Inline_tLbracket
+public import Lanius.Mini.Frontend.P.Inline_tLe
 
 @[expose] public section
 

@@ -1,6 +1,9 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.litChain
+public import Lanius.Mini.Frontend.P.litLink
+public import Lanius.Mini.Frontend.P.litResult
 public import Lanius.Mini.Frontend.P.litWildValue
 
 @[expose] public section

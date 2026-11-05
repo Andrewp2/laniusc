@@ -4,6 +4,8 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_findMethodAt
 public import Lanius.Mini.Frontend.P.tryLetHead
+public import Lanius.Mini.Frontend.P.tryPayload
+public import Lanius.Mini.Frontend.P.tryRest
 
 @[expose] public section
 

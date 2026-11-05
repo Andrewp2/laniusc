@@ -10,8 +10,11 @@ public import Lanius.Faithful.GenB.SelfBStmtN0
 public import Lanius.Faithful.GenB.SelfBStmtN2
 import all Lanius.Faithful.Gen.SelfSrcC_needCapped
 import all Lanius.Faithful.Gen.SelfStmtC_needCapped
+import all Lanius.Mini.Compiler.P.SrcStmt_calleeNeed
+import all Lanius.Mini.Compiler.P.frameBlock
 import all Lanius.Mini.Compiler.P.needCapped
-import all Lanius.Mini.Compiler.P.withBudget
+import all Lanius.Mini.Compiler.P.needRoundAt
+import all Lanius.Mini.Compiler.P.restNeeds
 
 @[expose] public section
 

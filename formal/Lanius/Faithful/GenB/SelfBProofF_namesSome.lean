@@ -13,10 +13,14 @@ public import Lanius.Faithful.GenB.SelfBStmtN3
 public import Lanius.Faithful.GenB.SelfBStmtN4
 import all Lanius.Faithful.Gen.SelfSrcF_namesSome
 import all Lanius.Faithful.Gen.SelfStmtF_namesSome
+import all Lanius.Mini.Frontend.P.allNameSome
+import all Lanius.Mini.Frontend.P.armNames
 import all Lanius.Mini.Frontend.P.armsNaming
-import all Lanius.Mini.Frontend.P.consBinder
-import all Lanius.Mini.Frontend.P.isUnderscore
+import all Lanius.Mini.Frontend.P.armsOrWild
 import all Lanius.Mini.Frontend.P.namesSome
+import all Lanius.Mini.Frontend.P.usesWild
+import all Lanius.Mini.Frontend.P.wildArmFor
+import all Lanius.Mini.Frontend.P.wildSplit
 
 @[expose] public section
 

@@ -1,6 +1,8 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Compiler.P.atLeastOne
+public import Lanius.Mini.Compiler.P.lowerAlloc
 public import Lanius.Mini.Compiler.P.lowerReturn
 
 @[expose] public section

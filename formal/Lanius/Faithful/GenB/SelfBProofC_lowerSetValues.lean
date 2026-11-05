@@ -12,8 +12,8 @@ public import Lanius.Faithful.GenB.SelfBStmtC_repeatType
 public import Lanius.Faithful.GenB.SelfBStmtN5
 import all Lanius.Faithful.Gen.SelfSrcC_lowerSetValues
 import all Lanius.Faithful.Gen.SelfStmtC_lowerSetValues
-import all Lanius.Mini.Compiler.P.SrcType_same
-import all Lanius.Mini.Compiler.P.repeatType
+import all Lanius.Mini.Compiler.P.fieldOffset
+import all Lanius.Mini.Compiler.P.lowerValue
 
 @[expose] public section
 

@@ -15,6 +15,18 @@ public import Lanius.Faithful.Gen.SelfStmtC_SrcType_same
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
 public import Lanius.Faithful.Gen.SelfStmtC_repeatType
 import all Lanius.Faithful.Gen.SelfSrcC_repeatType
+import all Lanius.Mini.Compiler.P.copyBinding
+import all Lanius.Mini.Compiler.P.copyField
+import all Lanius.Mini.Compiler.P.copyFieldAt
+import all Lanius.Mini.Compiler.P.copyFieldOf
+import all Lanius.Mini.Compiler.P.lowerArgs
+import all Lanius.Mini.Compiler.P.lowerCopy
+import all Lanius.Mini.Compiler.P.lowerLiteral
+import all Lanius.Mini.Compiler.P.lowerSingle
+import all Lanius.Mini.Compiler.P.lowerStructFields
+import all Lanius.Mini.Compiler.P.lowerTag
+import all Lanius.Mini.Compiler.P.lowerValue
+import all Lanius.Mini.Compiler.P.lowerVariant
 import all Lanius.Mini.Compiler.P.repeatType
 
 public section

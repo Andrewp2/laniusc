@@ -2,6 +2,15 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.Inline_charOpen
+public import Lanius.Mini.Frontend.P.Inline_findBindAt
+public import Lanius.Mini.Frontend.P.Inline_findLocalAt
+public import Lanius.Mini.Frontend.P.Inline_findLocalIdAt
+public import Lanius.Mini.Frontend.P.Inline_flExpAt
+public import Lanius.Mini.Frontend.P.Inline_flExpDigitAt
+public import Lanius.Mini.Frontend.P.Inline_flExpFirstAt
+public import Lanius.Mini.Frontend.P.Inline_flExpSignAt
+public import Lanius.Mini.Frontend.P.Inline_flFracAt
+public import Lanius.Mini.Frontend.P.Inline_flIntAt
 
 @[expose] public section
 

@@ -12,10 +12,11 @@ public import Lanius.Faithful.GenB.SelfBStmtF_projectionRet
 public import Lanius.Faithful.GenB.SelfBStmtF_readDeclInst
 import all Lanius.Faithful.Gen.SelfSrcF_readDeclInst
 import all Lanius.Faithful.Gen.SelfStmtF_readDeclInst
-import all Lanius.Mini.Frontend.P.Inline_pExpr
-import all Lanius.Mini.Frontend.P.isEmptyUsize
-import all Lanius.Mini.Frontend.P.namesFieldBase
-import all Lanius.Mini.Frontend.P.projectionRet
+import all Lanius.Mini.Frontend.P.Inline_pExternFn
+import all Lanius.Mini.Frontend.P.diverges
+import all Lanius.Mini.Frontend.P.initTys
+import all Lanius.Mini.Frontend.P.nodeProd
+import all Lanius.Mini.Frontend.P.readFn
 
 @[expose] public section
 

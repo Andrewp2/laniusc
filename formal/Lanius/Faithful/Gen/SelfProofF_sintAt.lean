@@ -14,7 +14,16 @@ public import Lanius.Faithful.Gen.SelfStmtF_nullAt
 public import Lanius.Faithful.Gen.SelfStmtF_nullConst
 public import Lanius.Faithful.Gen.SelfStmtF_sintAt
 import all Lanius.Faithful.Gen.SelfSrcF_sintAt
+import all Lanius.Mini.Frontend.P.intAt
+import all Lanius.Mini.Frontend.P.intLiteralAt
+import all Lanius.Mini.Frontend.P.payloadAt
+import all Lanius.Mini.Frontend.P.repeatSrc
 import all Lanius.Mini.Frontend.P.sintAt
+import all Lanius.Mini.Frontend.P.srcElement
+import all Lanius.Mini.Frontend.P.srcFields
+import all Lanius.Mini.Frontend.P.srcVariants
+import all Lanius.Mini.Frontend.P.tyAt
+import all Lanius.Mini.Frontend.P.tyLocal
 
 public section
 

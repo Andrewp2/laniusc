@@ -24,7 +24,29 @@ public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfStmtF_moduleOr
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 import all Lanius.Faithful.Gen.SelfSrcF_moduleOr
-import all Lanius.Mini.Frontend.P.moduleOr
+import all Lanius.Mini.Frontend.P.consField
+import all Lanius.Mini.Frontend.P.consFnDecl
+import all Lanius.Mini.Frontend.P.consVariant
+import all Lanius.Mini.Frontend.P.consVariantTail
+import all Lanius.Mini.Frontend.P.enumDeclOf
+import all Lanius.Mini.Frontend.P.fieldsOf
+import all Lanius.Mini.Frontend.P.fnDeclOf
+import all Lanius.Mini.Frontend.P.freeParams
+import all Lanius.Mini.Frontend.P.ifUnbounded
+import all Lanius.Mini.Frontend.P.importDecls
+import all Lanius.Mini.Frontend.P.itemBody
+import all Lanius.Mini.Frontend.P.joinDecls
+import all Lanius.Mini.Frontend.P.moduleDecls
+import all Lanius.Mini.Frontend.P.modulePath
+import all Lanius.Mini.Frontend.P.noDecls
+import all Lanius.Mini.Frontend.P.paramSpellings
+import all Lanius.Mini.Frontend.P.structDeclFields
+import all Lanius.Mini.Frontend.P.structDeclOf
+import all Lanius.Mini.Frontend.P.typeDecl
+import all Lanius.Mini.Frontend.P.typeParams
+import all Lanius.Mini.Frontend.P.unbounded
+import all Lanius.Mini.Frontend.P.variantPayload
+import all Lanius.Mini.Frontend.P.variantsOf
 
 public section
 

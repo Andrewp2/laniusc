@@ -1,7 +1,14 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.arrayType
+public import Lanius.Mini.Frontend.P.enumSrc
+public import Lanius.Mini.Frontend.P.srcWeight
+public import Lanius.Mini.Frontend.P.structSrc
+public import Lanius.Mini.Frontend.P.weighed
 public import Lanius.Mini.Frontend.P.weightAdd
+public import Lanius.Mini.Frontend.P.weightArray
+public import Lanius.Mini.Frontend.P.weightTimes
 
 @[expose] public section
 

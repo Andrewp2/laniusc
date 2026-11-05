@@ -11,6 +11,7 @@ public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_flattenTys
 import all Lanius.Faithful.Gen.SelfStmtF_flattenTys
 import all Lanius.Mini.Frontend.P.flattenTys
+import all Lanius.Mini.Frontend.P.weightLimit
 
 @[expose] public section
 

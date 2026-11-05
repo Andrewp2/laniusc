@@ -6209,12 +6209,13 @@ pub fn ex_split_end(modname: List<usize>, part: List<XUnit>, acc: List<XPart>) -
     return concat(acc, single(ex_part_of(modname, part)));
 }
 
-// The units split into parts: a part ends after a unit whose first name
-// ends a part, or at 24 units.
+// The units split into parts: one part for each unit (a definition or a
+// mutual block), named after it, so that adding a function adds a part and
+// leaves the others' interfaces as they were (11-04).
 pub fn ex_split(modname: List<usize>, units: List<XUnit>, part: List<XUnit>, acc: List<XPart>) -> List<XPart> {
     return match (units) {
         Nil -> ex_split_end(modname, part, acc),
-        Cons(u, rest) -> ex_split_at(modname, unbox(rest), concat(part, single(u)), ex_ends_part(get_or(u.names, 0, empty())), acc),
+        Cons(u, rest) -> ex_split_at(modname, unbox(rest), concat(part, single(u)), true, acc),
     };
 }
 

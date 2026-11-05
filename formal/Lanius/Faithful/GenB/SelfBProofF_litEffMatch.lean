@@ -10,8 +10,8 @@ public import Lanius.Faithful.GenB.SelfBStmtF_litEffMatch
 public import Lanius.Faithful.GenB.SelfBStmtF_litWildValue
 import all Lanius.Faithful.Gen.SelfSrcF_litEffMatch
 import all Lanius.Faithful.Gen.SelfStmtF_litEffMatch
-import all Lanius.Mini.Frontend.P.bindsOfTys
-import all Lanius.Mini.Frontend.P.litWildValue
+import all Lanius.Mini.Frontend.P.litResult
+import all Lanius.Mini.Frontend.P.litTy
 
 @[expose] public section
 

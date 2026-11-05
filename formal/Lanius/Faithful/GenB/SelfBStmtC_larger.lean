@@ -5,7 +5,18 @@ public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_SrcType_same
 public import Lanius.Faithful.GenB.SelfBModelC_compileArgs
 public import Lanius.Faithful.GenB.SelfBModelC_larger
-public import Lanius.Mini.Compiler.P.larger
+public import Lanius.Mini.Compiler.P.Inline_argsThen
+public import Lanius.Mini.Compiler.P.Inline_exprThen
+public import Lanius.Mini.Compiler.P.Inline_iteCode
+public import Lanius.Mini.Compiler.P.Inline_link
+public import Lanius.Mini.Compiler.P.Inline_linkFitting
+public import Lanius.Mini.Compiler.P.Inline_lookupAt
+public import Lanius.Mini.Compiler.P.Inline_loopCode
+public import Lanius.Mini.Compiler.P.Inline_offsetAfter
+public import Lanius.Mini.Compiler.P.Inline_roomNext
+public import Lanius.Mini.Compiler.P.Inline_seqCode
+public import Lanius.Mini.Compiler.P.Inline_spendThen
+public import Lanius.Mini.Compiler.P.Inline_stmtThen
 
 @[expose] public section
 

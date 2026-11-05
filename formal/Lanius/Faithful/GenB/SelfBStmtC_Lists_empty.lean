@@ -3,7 +3,11 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_Lists_empty
-public import Lanius.Mini.Compiler.P.Lists_empty
+public import Lanius.Mini.Compiler.P.BinOp_size
+public import Lanius.Mini.Compiler.P.MemWidth_bytes
+public import Lanius.Mini.Compiler.P.MemWidth_prefix
+public import Lanius.Mini.Compiler.P.MemWidth_rex
+public import Lanius.Mini.Compiler.P.Word_prefix
 
 @[expose] public section
 

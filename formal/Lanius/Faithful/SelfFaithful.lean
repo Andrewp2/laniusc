@@ -6,9 +6,31 @@ public import Lanius.Faithful.Gen.SelfPure
 import all Lanius.Faithful.Gen.SelfSrcC_packRound
 import all Lanius.Faithful.Gen.SelfSrcF_grammarPart13
 import all Lanius.Faithful.Gen.SelfSrcF_frontEndWords
+public import Lanius.Mini.Compiler.P.binaryWords
+public import Lanius.Mini.Compiler.P.compileWords
+public import Lanius.Mini.Compiler.P.elfBase
+public import Lanius.Mini.Compiler.P.elfBeforeImage
+public import Lanius.Mini.Compiler.P.imageWords
 public import Lanius.Mini.Compiler.P.packRound
+public import Lanius.Mini.Compiler.P.packRounds
+public import Lanius.Mini.Compiler.P.roundJoin
 public import Lanius.Mini.Frontend.P.frontEndWords
+public import Lanius.Mini.Frontend.P.grammarPart0
+public import Lanius.Mini.Frontend.P.grammarPart1
+public import Lanius.Mini.Frontend.P.grammarPart2
+public import Lanius.Mini.Frontend.P.grammarPart3
+public import Lanius.Mini.Frontend.P.grammarPart4
+public import Lanius.Mini.Frontend.P.grammarPart5
+public import Lanius.Mini.Frontend.P.grammarPart6
+public import Lanius.Mini.Frontend.P.grammarPart7
+public import Lanius.Mini.Frontend.P.Inline_attachAfter
+public import Lanius.Mini.Frontend.P.Inline_attachTerm
+public import Lanius.Mini.Frontend.P.Inline_genericCloseAt
+public import Lanius.Mini.Frontend.P.grammar
 public import Lanius.Mini.Frontend.P.grammarPart13
+public import Lanius.Mini.Frontend.P.grammarPart14
+public import Lanius.Mini.Frontend.P.grammarPart15
+public import Lanius.Mini.Frontend.P.grammarPart16
 
 @[expose] public section
 /-! # The self program's compiler means its extraction (roadmap V1)

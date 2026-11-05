@@ -3,7 +3,11 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_grammarPart8
+public import Lanius.Mini.Frontend.P.grammarPart10
+public import Lanius.Mini.Frontend.P.grammarPart11
+public import Lanius.Mini.Frontend.P.grammarPart12
 public import Lanius.Mini.Frontend.P.grammarPart8
+public import Lanius.Mini.Frontend.P.grammarPart9
 
 @[expose] public section
 

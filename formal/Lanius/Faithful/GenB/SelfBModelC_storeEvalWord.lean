@@ -5,11 +5,14 @@ public import Lanius.Faithful.GenB.SelfBModelC_Inline_arithOf
 public import Lanius.Faithful.GenB.SelfBModelC_SrcType_same
 public import Lanius.Faithful.GenB.SelfBModelC_elementBase
 public import Lanius.Faithful.GenB.SelfBModelC_wordElement
-public import Lanius.Mini.Compiler.P.SrcExpr_guard
+public import Lanius.Mini.Compiler.P.SrcType_isI32
+public import Lanius.Mini.Compiler.P.SrcType_isUint
 public import Lanius.Mini.Compiler.P.SrcType_same
-public import Lanius.Mini.Compiler.P.UintTy_half
+public import Lanius.Mini.Compiler.P.SrcType_size
+public import Lanius.Mini.Compiler.P.boundsGuard
 public import Lanius.Mini.Compiler.P.elementBase
-public import Lanius.Mini.Compiler.P.storeEvalWord
+public import Lanius.Mini.Compiler.P.putElement
+public import Lanius.Mini.Compiler.P.slotVars
 public import Lanius.Mini.Compiler.P.storeType
 public import Lanius.Mini.Compiler.P.wordElement
 public import Lanius.Mini.Compiler.Types

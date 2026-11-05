@@ -11,8 +11,8 @@ public import Lanius.Faithful.GenB.SelfBStmtN4
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcC_killShared
 import all Lanius.Faithful.Gen.SelfStmtC_killShared
-import all Lanius.Mini.Compiler.P.extentAfter
-import all Lanius.Mini.Compiler.P.killShared
+import all Lanius.Mini.Compiler.P.dyingExtent
+import all Lanius.Mini.Compiler.P.firstFacts
 
 @[expose] public section
 

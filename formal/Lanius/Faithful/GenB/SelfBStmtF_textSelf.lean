@@ -3,7 +3,24 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_textSelf
+public import Lanius.Mini.Frontend.P.member
+public import Lanius.Mini.Frontend.P.primitive
+public import Lanius.Mini.Frontend.P.spelled0
+public import Lanius.Mini.Frontend.P.spelled1
+public import Lanius.Mini.Frontend.P.spelled2
+public import Lanius.Mini.Frontend.P.spelled3
+public import Lanius.Mini.Frontend.P.spelled4
+public import Lanius.Mini.Frontend.P.spelled5
+public import Lanius.Mini.Frontend.P.textAlloc
+public import Lanius.Mini.Frontend.P.textAllocator
+public import Lanius.Mini.Frontend.P.textAssert
+public import Lanius.Mini.Frontend.P.textDealloc
 public import Lanius.Mini.Frontend.P.textSelf
+public import Lanius.Mini.Frontend.P.textSliceFromRawParts
+public import Lanius.Mini.Frontend.P.textSliceStride
+public import Lanius.Mini.Frontend.P.textStr
+public import Lanius.Mini.Frontend.P.textStringDataPtr
+public import Lanius.Mini.Frontend.P.textTypedSliceFromRawParts
 
 @[expose] public section
 

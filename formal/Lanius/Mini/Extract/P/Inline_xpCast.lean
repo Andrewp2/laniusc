@@ -12,7 +12,4 @@ namespace Lanius.Mini
 @[expose] def Inline.xpCast : Nat :=
   307
 
-@[expose] def Inline.xpCastTail : Nat :=
-  308
-
 end Lanius.Mini

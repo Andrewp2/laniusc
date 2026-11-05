@@ -8,8 +8,9 @@ public import Lanius.Faithful.GenB.SelfBModelN2
 public import Lanius.Faithful.GenB.SelfBModelN3
 public import Lanius.Faithful.GenB.SelfBModelN7
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.projectionRet
-public import Lanius.Mini.Frontend.P.wideOf
+public import Lanius.Mini.Frontend.P.initTys
+public import Lanius.Mini.Frontend.P.neverRet
+public import Lanius.Mini.Frontend.P.structFieldTys
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

@@ -4,6 +4,7 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_findMethodAt
 public import Lanius.Mini.Frontend.P.externBody
+public import Lanius.Mini.Frontend.P.externFunc
 
 @[expose] public section
 

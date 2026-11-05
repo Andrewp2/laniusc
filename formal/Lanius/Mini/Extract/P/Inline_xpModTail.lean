@@ -12,37 +12,4 @@ namespace Lanius.Mini
 @[expose] def Inline.xpModTail : Nat :=
   154
 
-@[expose] def Inline.xpMul : Nat :=
-  151
-
-@[expose] def Inline.xpMulTail : Nat :=
-  152
-
-@[expose] def Inline.xpNeTail : Nat :=
-  135
-
-@[expose] def Inline.xpNot : Nat :=
-  158
-
-@[expose] def Inline.xpOrTail : Nat :=
-  119
-
-@[expose] def Inline.xpOrexpr : Nat :=
-  118
-
-@[expose] def Inline.xpParamNamed : Nat :=
-  62
-
-@[expose] def Inline.xpParamSelf : Nat :=
-  63
-
-@[expose] def Inline.xpParamSelfRefMut : Nat :=
-  325
-
-@[expose] def Inline.xpPathEnd : Nat :=
-  51
-
-@[expose] def Inline.xpPathIdent : Nat :=
-  48
-
 end Lanius.Mini

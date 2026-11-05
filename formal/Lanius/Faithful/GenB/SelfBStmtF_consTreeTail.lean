@@ -3,7 +3,28 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_consTreeTail
+public import Lanius.Mini.Frontend.P.argsOfItems
+public import Lanius.Mini.Frontend.P.boundGoals
+public import Lanius.Mini.Frontend.P.boundOrNone
+public import Lanius.Mini.Frontend.P.boundPathSpellings
+public import Lanius.Mini.Frontend.P.calleeEnv
+public import Lanius.Mini.Frontend.P.consGoal
+public import Lanius.Mini.Frontend.P.consGoalTail
+public import Lanius.Mini.Frontend.P.consTree
 public import Lanius.Mini.Frontend.P.consTreeTail
+public import Lanius.Mini.Frontend.P.goalAt
+public import Lanius.Mini.Frontend.P.goalsOf
+public import Lanius.Mini.Frontend.P.instFrom
+public import Lanius.Mini.Frontend.P.joinGoals
+public import Lanius.Mini.Frontend.P.joinGoalsTail
+public import Lanius.Mini.Frontend.P.paramPatterns
+public import Lanius.Mini.Frontend.P.patternOf
+public import Lanius.Mini.Frontend.P.patternsOf
+public import Lanius.Mini.Frontend.P.retPattern
+public import Lanius.Mini.Frontend.P.traitAt
+public import Lanius.Mini.Frontend.P.traitOfBound
+public import Lanius.Mini.Frontend.P.traitOfTy
+public import Lanius.Mini.Frontend.P.traitSplit
 
 @[expose] public section
 

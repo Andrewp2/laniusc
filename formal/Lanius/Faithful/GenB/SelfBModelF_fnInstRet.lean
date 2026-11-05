@@ -11,13 +11,20 @@ public import Lanius.Faithful.GenB.SelfBModelN2
 public import Lanius.Faithful.GenB.SelfBModelN3
 public import Lanius.Faithful.GenB.SelfBModelN7
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.consTreeTail
-public import Lanius.Mini.Frontend.P.distinct
-public import Lanius.Mini.Frontend.P.findConst
-public import Lanius.Mini.Frontend.P.fnInstRet
-public import Lanius.Mini.Frontend.P.hasKids
-public import Lanius.Mini.Frontend.P.projectionRet
-public import Lanius.Mini.Frontend.P.wideOf
+public import Lanius.Mini.Frontend.P.armBinders
+public import Lanius.Mini.Frontend.P.armValues
+public import Lanius.Mini.Frontend.P.bareEff
+public import Lanius.Mini.Frontend.P.declEnv
+public import Lanius.Mini.Frontend.P.diverges
+public import Lanius.Mini.Frontend.P.effTy
+public import Lanius.Mini.Frontend.P.effsTys
+public import Lanius.Mini.Frontend.P.exprOf
+public import Lanius.Mini.Frontend.P.exprsOf
+public import Lanius.Mini.Frontend.P.isScalarOwner
+public import Lanius.Mini.Frontend.P.listItems
+public import Lanius.Mini.Frontend.P.resultTy
+public import Lanius.Mini.Frontend.P.retPattern
+public import Lanius.Mini.Frontend.P.singleName
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

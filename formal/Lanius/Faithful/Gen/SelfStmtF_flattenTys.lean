@@ -1,7 +1,17 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.consType
+public import Lanius.Mini.Frontend.P.consTypeTail
+public import Lanius.Mini.Frontend.P.consTypes
+public import Lanius.Mini.Frontend.P.consTypesTail
+public import Lanius.Mini.Frontend.P.flatPayloads
 public import Lanius.Mini.Frontend.P.flattenTys
+public import Lanius.Mini.Frontend.P.refType
+public import Lanius.Mini.Frontend.P.sliceType
+public import Lanius.Mini.Frontend.P.weightAddTo
+public import Lanius.Mini.Frontend.P.weightLimit
+public import Lanius.Mini.Frontend.P.weightSum
 
 @[expose] public section
 

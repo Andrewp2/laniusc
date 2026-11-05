@@ -5,9 +5,10 @@ public import Lanius.Faithful.GenB.SelfBModelC_arrayCallSig
 public import Lanius.Faithful.GenB.SelfBModelC_needsAfter
 public import Lanius.Faithful.GenB.SelfBModelN4
 public import Lanius.Faithful.GenB.SelfBModelN5
-public import Lanius.Mini.Compiler.P.arrayCallSig
 public import Lanius.Mini.Compiler.P.funcNeeds
-public import Lanius.Mini.Compiler.P.needCapped
+public import Lanius.Mini.Compiler.P.paramTypes
+public import Lanius.Mini.Compiler.P.restNeeds
+public import Lanius.Mini.Compiler.P.sigsWith
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.Types
 

@@ -12,10 +12,11 @@ public import Lanius.Faithful.GenB.SelfBStmtF_stringCall
 public import Lanius.Faithful.GenB.SelfBStmtF_stringReturn
 import all Lanius.Faithful.Gen.SelfSrcF_stringReturn
 import all Lanius.Faithful.Gen.SelfStmtF_stringReturn
-import all Lanius.Mini.Frontend.P.Inline_pRetVoid
-import all Lanius.Mini.Frontend.P.isEmptyUsize
-import all Lanius.Mini.Frontend.P.isTypedSliceSegments
-import all Lanius.Mini.Frontend.P.noToken
+import all Lanius.Mini.Frontend.P.Inline_pReturnStmt
+import all Lanius.Mini.Frontend.P.Inline_pReturnValue
+import all Lanius.Mini.Frontend.P.isU8Slice
+import all Lanius.Mini.Frontend.P.kid
+import all Lanius.Mini.Frontend.P.nodeProd
 
 @[expose] public section
 

@@ -10,6 +10,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_nullConst
 public import Lanius.Faithful.Gen.SelfStmtF_scalarOf
 public import Lanius.Faithful.Gen.SelfStmtF_typedLiteral
 import all Lanius.Faithful.Gen.SelfSrcF_typedLiteral
+import all Lanius.Mini.Frontend.P.literalAs
 import all Lanius.Mini.Frontend.P.typedLiteral
 
 public section

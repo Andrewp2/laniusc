@@ -1,6 +1,9 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Compiler.P.compileDeclared
+public import Lanius.Mini.Compiler.P.compileLowered
+public import Lanius.Mini.Compiler.P.compileOptimized
 public import Lanius.Mini.Compiler.P.compileOr
 
 @[expose] public section

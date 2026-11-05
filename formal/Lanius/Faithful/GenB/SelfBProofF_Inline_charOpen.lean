@@ -12,7 +12,8 @@ public import Lanius.Faithful.GenB.SelfBStmtN2
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_charOpen
 import all Lanius.Faithful.Gen.SelfStmtF_Inline_charOpen
-import all Lanius.Mini.Frontend.P.flDecimal
+import all Lanius.Mini.Frontend.P.flDigit
+import all Lanius.Mini.Frontend.P.flPush
 
 @[expose] public section
 

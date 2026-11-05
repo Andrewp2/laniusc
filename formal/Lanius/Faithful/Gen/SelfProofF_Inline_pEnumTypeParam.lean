@@ -6,6 +6,24 @@ public import Lanius.Faithful.Gen.SelfSrcF_Inline_pEnumTypeParam
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pEnumTypeParam
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pEnumTypeParam
 import all Lanius.Mini.Frontend.P.Inline_pEnumTypeParam
+import all Lanius.Mini.Frontend.P.Inline_pEnumTypeParamsAfterCommaMore
+import all Lanius.Mini.Frontend.P.Inline_pEnumTypeParamsMore
+import all Lanius.Mini.Frontend.P.Inline_pEnumTypeParamsSome
+import all Lanius.Mini.Frontend.P.Inline_pEnumVariantFieldsAfterCommaMore
+import all Lanius.Mini.Frontend.P.Inline_pEnumVariantFieldsAfterCommaTrailing
+import all Lanius.Mini.Frontend.P.Inline_pEnumVariantFieldsEnd
+import all Lanius.Mini.Frontend.P.Inline_pEnumVariantFieldsMore
+import all Lanius.Mini.Frontend.P.Inline_pEnumVariantFieldsNone
+import all Lanius.Mini.Frontend.P.Inline_pEnumVariantFieldsSome
+import all Lanius.Mini.Frontend.P.Inline_pEnumVariantUnit
+import all Lanius.Mini.Frontend.P.Inline_pEnumVariantsAfterCommaMore
+import all Lanius.Mini.Frontend.P.Inline_pEnumVariantsAfterCommaTrailing
+import all Lanius.Mini.Frontend.P.Inline_pEnumVariantsEnd
+import all Lanius.Mini.Frontend.P.Inline_pEnumVariantsMore
+import all Lanius.Mini.Frontend.P.Inline_pEnumVariantsNone
+import all Lanius.Mini.Frontend.P.Inline_pEnumVariantsSome
+import all Lanius.Mini.Frontend.P.Inline_pEqTail
+import all Lanius.Mini.Frontend.P.Inline_pEquality
 
 public section
 

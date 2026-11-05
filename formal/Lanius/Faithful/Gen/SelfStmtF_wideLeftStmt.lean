@@ -1,6 +1,21 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.buildChecked
+public import Lanius.Mini.Frontend.P.buildClosed
+public import Lanius.Mini.Frontend.P.buildCollected
+public import Lanius.Mini.Frontend.P.buildFiles
+public import Lanius.Mini.Frontend.P.buildMono
+public import Lanius.Mini.Frontend.P.consRoot
+public import Lanius.Mini.Frontend.P.filesFuel
+public import Lanius.Mini.Frontend.P.frontEndFiles
+public import Lanius.Mini.Frontend.P.lxDigit
+public import Lanius.Mini.Frontend.P.lxIdentContinue
+public import Lanius.Mini.Frontend.P.lxIdentStart
+public import Lanius.Mini.Frontend.P.lxSpace
+public import Lanius.Mini.Frontend.P.untypedRejected
+public import Lanius.Mini.Frontend.P.validateFiles
+public import Lanius.Mini.Frontend.P.wideLeftFuncs
 public import Lanius.Mini.Frontend.P.wideLeftStmt
 
 @[expose] public section

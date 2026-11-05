@@ -4,10 +4,11 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelF_isTypedSliceSegments
 public import Lanius.Faithful.GenB.SelfBModelF_stringCall
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.Inline_pRetVoid
-public import Lanius.Mini.Frontend.P.isEmptyUsize
-public import Lanius.Mini.Frontend.P.isTypedSliceSegments
-public import Lanius.Mini.Frontend.P.noToken
+public import Lanius.Mini.Frontend.P.Inline_pReturnStmt
+public import Lanius.Mini.Frontend.P.Inline_pReturnValue
+public import Lanius.Mini.Frontend.P.isU8Slice
+public import Lanius.Mini.Frontend.P.kid
+public import Lanius.Mini.Frontend.P.nodeProd
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

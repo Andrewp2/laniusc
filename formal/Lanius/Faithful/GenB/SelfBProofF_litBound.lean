@@ -11,7 +11,7 @@ public import Lanius.Faithful.GenB.SelfBStmtF_purePart
 import all Lanius.Faithful.Gen.SelfSrcF_litBound
 import all Lanius.Faithful.Gen.SelfStmtF_litBound
 import all Lanius.Mini.Frontend.P.freshId
-import all Lanius.Mini.Frontend.P.litWildValue
+import all Lanius.Mini.Frontend.P.litChain
 import all Lanius.Mini.Frontend.P.purePart
 
 @[expose] public section

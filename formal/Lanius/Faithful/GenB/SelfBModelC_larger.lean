@@ -3,9 +3,10 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelC_loadAtBytes
 public import Lanius.Faithful.GenB.SelfBModelN3
-public import Lanius.Mini.Compiler.P.compileArgs
-public import Lanius.Mini.Compiler.P.linkedSize
-public import Lanius.Mini.Compiler.P.loadAtBytes
+public import Lanius.Mini.Compiler.P.Code_size
+public import Lanius.Mini.Compiler.P.imageLimit
+public import Lanius.Mini.Compiler.P.layout
+public import Lanius.Mini.Compiler.P.roomAfter
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.Types
 

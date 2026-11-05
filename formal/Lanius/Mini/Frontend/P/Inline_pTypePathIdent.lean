@@ -12,7 +12,4 @@ namespace Lanius.Mini
 @[expose] def Inline.pTypePathIdent : Nat :=
   57
 
-@[expose] def Inline.pTypePathMore : Nat :=
-  58
-
 end Lanius.Mini

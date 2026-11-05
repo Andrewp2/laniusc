@@ -2,6 +2,14 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Compiler.P.FArith_opcode
+public import Lanius.Mini.Compiler.P.FCmp_predicate
+public import Lanius.Mini.Compiler.P.FOp_bytes
+public import Lanius.Mini.Compiler.P.FOp_opcodeBytes
+public import Lanius.Mini.Compiler.P.bumpBytes
+public import Lanius.Mini.Compiler.P.floatOperands
+public import Lanius.Mini.Compiler.P.floatResult
+public import Lanius.Mini.Compiler.P.frameMemoryBytes
+public import Lanius.Mini.Compiler.P.pow2
 
 @[expose] public section
 

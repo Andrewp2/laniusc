@@ -16,6 +16,15 @@ public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_pickTy
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_charOpen
 import all Lanius.Mini.Frontend.P.Inline_charOpen
+import all Lanius.Mini.Frontend.P.Inline_findBindAt
+import all Lanius.Mini.Frontend.P.Inline_findLocalAt
+import all Lanius.Mini.Frontend.P.Inline_findLocalIdAt
+import all Lanius.Mini.Frontend.P.Inline_flExpAt
+import all Lanius.Mini.Frontend.P.Inline_flExpDigitAt
+import all Lanius.Mini.Frontend.P.Inline_flExpFirstAt
+import all Lanius.Mini.Frontend.P.Inline_flExpSignAt
+import all Lanius.Mini.Frontend.P.Inline_flFracAt
+import all Lanius.Mini.Frontend.P.Inline_flIntAt
 
 public section
 

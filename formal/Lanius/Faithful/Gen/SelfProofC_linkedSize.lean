@@ -9,7 +9,8 @@ public import Lanius.Faithful.Gen.SelfStmtC_larger
 public import Lanius.Faithful.Gen.SelfStmtC_linkedSize
 public import Lanius.Faithful.Gen.SelfStmtC_loadAtBytes
 import all Lanius.Faithful.Gen.SelfSrcC_linkedSize
-import all Lanius.Mini.Compiler.P.linkedSize
+import all Lanius.Mini.Compiler.P.compileProgram
+import all Lanius.Mini.Compiler.P.roomAfter
 
 public section
 

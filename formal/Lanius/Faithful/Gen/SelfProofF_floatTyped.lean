@@ -17,7 +17,12 @@ public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_noTrees
 public import Lanius.Faithful.Gen.SelfStmtF_textSelf
 import all Lanius.Faithful.Gen.SelfSrcF_floatTyped
+import all Lanius.Mini.Frontend.P.findLocal
+import all Lanius.Mini.Frontend.P.findLocalId
 import all Lanius.Mini.Frontend.P.floatTyped
+import all Lanius.Mini.Frontend.P.localOf
+import all Lanius.Mini.Frontend.P.negateSome
+import all Lanius.Mini.Frontend.P.negatedFloat
 
 public section
 

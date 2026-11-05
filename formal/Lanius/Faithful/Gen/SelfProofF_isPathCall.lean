@@ -15,6 +15,20 @@ public import Lanius.Faithful.Gen.SelfStmtF_isPathCall
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 import all Lanius.Faithful.Gen.SelfSrcF_isPathCall
 import all Lanius.Mini.Frontend.P.isPathCall
+import all Lanius.Mini.Frontend.P.isTryCall
+import all Lanius.Mini.Frontend.P.isTryLocal
+import all Lanius.Mini.Frontend.P.isTryMethod
+import all Lanius.Mini.Frontend.P.textCore
+import all Lanius.Mini.Frontend.P.textErr
+import all Lanius.Mini.Frontend.P.textI32ArrayDataPtr
+import all Lanius.Mini.Frontend.P.textMem
+import all Lanius.Mini.Frontend.P.textNone
+import all Lanius.Mini.Frontend.P.textOk
+import all Lanius.Mini.Frontend.P.textOption
+import all Lanius.Mini.Frontend.P.textOptionTy
+import all Lanius.Mini.Frontend.P.textResult
+import all Lanius.Mini.Frontend.P.textResultTy
+import all Lanius.Mini.Frontend.P.textSome
 
 public section
 

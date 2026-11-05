@@ -3,7 +3,27 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_arities
+public import Lanius.Mini.Compiler.P.BinOp_bytes
+public import Lanius.Mini.Compiler.P.BinOp_opcode
+public import Lanius.Mini.Compiler.P.CmpOp_setcc
+public import Lanius.Mini.Compiler.P.CmpOp_setccSigned
+public import Lanius.Mini.Compiler.P.CmpOp_setccUnsigned
+public import Lanius.Mini.Compiler.P.DivOp_bytes
+public import Lanius.Mini.Compiler.P.DivOp_extend
+public import Lanius.Mini.Compiler.P.DivOp_opcode
+public import Lanius.Mini.Compiler.P.DivOp_result
+public import Lanius.Mini.Compiler.P.Word_rex
 public import Lanius.Mini.Compiler.P.arities
+public import Lanius.Mini.Compiler.P.compileFuncs
+public import Lanius.Mini.Compiler.P.fspLoad
+public import Lanius.Mini.Compiler.P.fspSave
+public import Lanius.Mini.Compiler.P.le32
+public import Lanius.Mini.Compiler.P.le64
+public import Lanius.Mini.Compiler.P.slotCompare
+public import Lanius.Mini.Compiler.P.slotLoad
+public import Lanius.Mini.Compiler.P.slotOffset
+public import Lanius.Mini.Compiler.P.slotOperands
+public import Lanius.Mini.Compiler.P.slotStore
 
 @[expose] public section
 

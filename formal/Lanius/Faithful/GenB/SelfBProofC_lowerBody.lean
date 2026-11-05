@@ -23,16 +23,28 @@ public import Lanius.Faithful.GenB.SelfBStmtN6
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcC_lowerBody
 import all Lanius.Faithful.Gen.SelfStmtC_lowerBody
-import all Lanius.Mini.Compiler.P.Inline_blockLeft
-import all Lanius.Mini.Compiler.P.SrcType_same
-import all Lanius.Mini.Compiler.P.UintTy_half
-import all Lanius.Mini.Compiler.P.arrayCallSig
+import all Lanius.Mini.Compiler.P.Inline_declareIn
+import all Lanius.Mini.Compiler.P.SrcEff_types
+import all Lanius.Mini.Compiler.P.SrcStmt_breaksOut
+import all Lanius.Mini.Compiler.P.SrcStmt_declare
+import all Lanius.Mini.Compiler.P.SrcStmt_depth
+import all Lanius.Mini.Compiler.P.SrcStmt_lower
+import all Lanius.Mini.Compiler.P.SrcType_declare
+import all Lanius.Mini.Compiler.P.SrcType_isUnit
+import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.declareParams
 import all Lanius.Mini.Compiler.P.enumVariants
-import all Lanius.Mini.Compiler.P.lowerBody
-import all Lanius.Mini.Compiler.P.matchVariants
+import all Lanius.Mini.Compiler.P.frameBlock
+import all Lanius.Mini.Compiler.P.lowerFunc
+import all Lanius.Mini.Compiler.P.lowerFuncs
 import all Lanius.Mini.Compiler.P.needLimit
+import all Lanius.Mini.Compiler.P.paramScope
+import all Lanius.Mini.Compiler.P.paramsSize
+import all Lanius.Mini.Compiler.P.paramsValid
 import all Lanius.Mini.Compiler.P.structFields
+import all Lanius.Mini.Compiler.P.unitTail
 import all Lanius.Mini.Compiler.P.withBudget
+import all Lanius.Mini.Compiler.P.withFrame
 
 @[expose] public section
 

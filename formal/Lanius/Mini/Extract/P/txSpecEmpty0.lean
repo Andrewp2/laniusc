@@ -13,20 +13,4 @@ def txSpecEmpty0 : List Nat :=
   let t : List Nat := 123 :: 84 :: 32 :: 58 :: 32 :: 84 :: 121 :: 112 :: 101 :: 125 :: 32 :: 58 :: 32 :: 40 :: 76 :: [105]
   t
 
-def txSpecEmpty1 : List Nat :=
-  let t : List Nat := 115 :: 116 :: 115 :: 46 :: 101 :: 109 :: 112 :: 116 :: 121 :: 32 :: 58 :: 32 :: 76 :: 105 :: 115 :: [116]
-  t
-
-def txSpecEmpty2 : List Nat :=
-  let t : List Nat := 32 :: 84 :: 41 :: 32 :: 61 :: 32 :: 91 :: [93]
-  t
-
-def txSpecEmpty : List Nat :=
-  let t : List Nat := txSpecEmpty0 ++ (txSpecEmpty1 ++ txSpecEmpty2)
-  t
-
-def txSpecSingle0 : List Nat :=
-  let t : List Nat := 123 :: 84 :: 32 :: 58 :: 32 :: 84 :: 121 :: 112 :: 101 :: 125 :: 32 :: 40 :: 105 :: 116 :: 101 :: [109]
-  t
-
 end Lanius.Mini

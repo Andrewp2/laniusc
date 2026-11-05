@@ -22,15 +22,25 @@ public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_positionAt
 import all Lanius.Faithful.Gen.SelfStmtF_Inline_positionAt
 import all Lanius.Mini.Frontend.P.Inline_pEnumTypeParam
-import all Lanius.Mini.Frontend.P.Inline_pModTail
-import all Lanius.Mini.Frontend.P.collect
-import all Lanius.Mini.Frontend.P.distinct
-import all Lanius.Mini.Frontend.P.findConst
-import all Lanius.Mini.Frontend.P.hasKids
-import all Lanius.Mini.Frontend.P.isEmptyUsize
-import all Lanius.Mini.Frontend.P.moduleOr
-import all Lanius.Mini.Frontend.P.noToken
+import all Lanius.Mini.Frontend.P.Inline_pModule
+import all Lanius.Mini.Frontend.P.aliasNamesIn
+import all Lanius.Mini.Frontend.P.collectedWith
+import all Lanius.Mini.Frontend.P.constNamesIn
+import all Lanius.Mini.Frontend.P.fileDecls
+import all Lanius.Mini.Frontend.P.fnNamesIn
+import all Lanius.Mini.Frontend.P.itemBody
+import all Lanius.Mini.Frontend.P.kid
+import all Lanius.Mini.Frontend.P.kidToken
+import all Lanius.Mini.Frontend.P.noNames
+import all Lanius.Mini.Frontend.P.nodeProd
+import all Lanius.Mini.Frontend.P.paramSpellings
 import all Lanius.Mini.Frontend.P.rootInsts
+import all Lanius.Mini.Frontend.P.sameInst
+import all Lanius.Mini.Frontend.P.sameSpellings
+import all Lanius.Mini.Frontend.P.sameText
+import all Lanius.Mini.Frontend.P.seedInsts
+import all Lanius.Mini.Frontend.P.typeNamesIn
+import all Lanius.Mini.Frontend.P.typeOnlyNamesIn
 
 @[expose] public section
 

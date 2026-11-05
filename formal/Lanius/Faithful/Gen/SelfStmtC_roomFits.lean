@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Compiler.P.compileFunc
 public import Lanius.Mini.Compiler.P.roomFits
 
 @[expose] public section

@@ -5,11 +5,12 @@ public import Lanius.Faithful.GenB.SelfBModelF_fnInstRet
 public import Lanius.Faithful.GenB.SelfBModelF_isUnderscore
 public import Lanius.Faithful.GenB.SelfBModelF_litWants
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.bindsOfTys
-public import Lanius.Mini.Frontend.P.isUnderscore
-public import Lanius.Mini.Frontend.P.litWants
-public import Lanius.Mini.Frontend.P.litWildValue
-public import Lanius.Mini.Frontend.P.noToken
+public import Lanius.Mini.Frontend.P.isFalseArm
+public import Lanius.Mini.Frontend.P.isTrueArm
+public import Lanius.Mini.Frontend.P.isWildArm
+public import Lanius.Mini.Frontend.P.kid
+public import Lanius.Mini.Frontend.P.litChain
+public import Lanius.Mini.Frontend.P.litTest
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

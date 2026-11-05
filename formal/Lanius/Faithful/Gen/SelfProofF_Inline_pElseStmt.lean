@@ -6,6 +6,7 @@ public import Lanius.Faithful.Gen.SelfSrcF_Inline_pElseStmt
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pElseStmt
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pElseStmt
 import all Lanius.Mini.Frontend.P.Inline_pElseStmt
+import all Lanius.Mini.Frontend.P.Inline_pEnum
 
 public section
 

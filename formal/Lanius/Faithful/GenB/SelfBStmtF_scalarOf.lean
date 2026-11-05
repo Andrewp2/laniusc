@@ -3,7 +3,16 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_scalarOf
+public import Lanius.Mini.Frontend.P.applyOf
+public import Lanius.Mini.Frontend.P.castInto
+public import Lanius.Mini.Frontend.P.castTypeOf
+public import Lanius.Mini.Frontend.P.castValue
+public import Lanius.Mini.Frontend.P.casts
+public import Lanius.Mini.Frontend.P.namedScalar
+public import Lanius.Mini.Frontend.P.negatedInt
 public import Lanius.Mini.Frontend.P.scalarOf
+public import Lanius.Mini.Frontend.P.uintInRange
+public import Lanius.Mini.Frontend.P.uintMask
 
 @[expose] public section
 

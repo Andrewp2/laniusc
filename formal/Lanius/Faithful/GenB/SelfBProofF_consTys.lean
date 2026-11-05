@@ -11,9 +11,9 @@ public import Lanius.Faithful.GenB.SelfBStmtN0
 public import Lanius.Faithful.GenB.SelfBStmtN2
 import all Lanius.Faithful.Gen.SelfSrcF_consTys
 import all Lanius.Faithful.Gen.SelfStmtF_consTys
-import all Lanius.Mini.Frontend.P.consTys
-import all Lanius.Mini.Frontend.P.findConst
-import all Lanius.Mini.Frontend.P.typeDeclAt
+import all Lanius.Mini.Frontend.P.declEnv
+import all Lanius.Mini.Frontend.P.payloadList
+import all Lanius.Mini.Frontend.P.tyOf
 
 @[expose] public section
 

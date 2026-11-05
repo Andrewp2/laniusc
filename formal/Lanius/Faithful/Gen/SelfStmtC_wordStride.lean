@@ -1,6 +1,16 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Compiler.P.SrcEff_eval
+public import Lanius.Mini.Compiler.P.evalLen
+public import Lanius.Mini.Compiler.P.evalLenOf
+public import Lanius.Mini.Compiler.P.evalStr
+public import Lanius.Mini.Compiler.P.evalStride
+public import Lanius.Mini.Compiler.P.evalStrideOf
+public import Lanius.Mini.Compiler.P.evalWordStride
+public import Lanius.Mini.Compiler.P.staticByteIs
+public import Lanius.Mini.Compiler.P.storeEvalThen
+public import Lanius.Mini.Compiler.P.strPlaced
 public import Lanius.Mini.Compiler.P.wordStride
 
 @[expose] public section

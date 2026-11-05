@@ -10,6 +10,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_litWildValue
 public import Lanius.Faithful.Gen.SelfStmtF_purePart
 import all Lanius.Faithful.Gen.SelfSrcF_litBound
 import all Lanius.Mini.Frontend.P.litBound
+import all Lanius.Mini.Frontend.P.litScrutChain
 
 public section
 

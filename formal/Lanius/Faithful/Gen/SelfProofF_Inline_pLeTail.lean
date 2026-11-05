@@ -6,6 +6,20 @@ public import Lanius.Faithful.Gen.SelfSrcF_Inline_pLeTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pLeTail
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pLeTail
 import all Lanius.Mini.Frontend.P.Inline_pLeTail
+import all Lanius.Mini.Frontend.P.Inline_pLetInit
+import all Lanius.Mini.Frontend.P.Inline_pLetStmt
+import all Lanius.Mini.Frontend.P.Inline_pLetType
+import all Lanius.Mini.Frontend.P.Inline_pLetTypeNone
+import all Lanius.Mini.Frontend.P.Inline_pLtTail
+import all Lanius.Mini.Frontend.P.Inline_pMatchArmsAfterCommaMore
+import all Lanius.Mini.Frontend.P.Inline_pMatchArmsAfterCommaTrailing
+import all Lanius.Mini.Frontend.P.Inline_pMatchArmsEnd
+import all Lanius.Mini.Frontend.P.Inline_pMatchArmsMore
+import all Lanius.Mini.Frontend.P.Inline_pMatchArmsNone
+import all Lanius.Mini.Frontend.P.Inline_pMatchArmsSome
+import all Lanius.Mini.Frontend.P.Inline_pMatchExpr
+import all Lanius.Mini.Frontend.P.Inline_pMemberTypeArgsNone
+import all Lanius.Mini.Frontend.P.Inline_pMemberTypeArgsSome
 
 public section
 

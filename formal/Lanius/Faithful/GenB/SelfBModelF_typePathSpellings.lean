@@ -5,11 +5,13 @@ public import Lanius.Faithful.GenB.SelfBModelF_distinct
 public import Lanius.Faithful.GenB.SelfBModelN2
 public import Lanius.Faithful.GenB.SelfBModelN3
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.Inline_pTypeArgsNone
+public import Lanius.Mini.Frontend.P.Inline_pTypePathEnd
 public import Lanius.Mini.Frontend.P.Inline_pTypePathIdent
-public import Lanius.Mini.Frontend.P.hasKids
-public import Lanius.Mini.Frontend.P.isEmptyUsize
-public import Lanius.Mini.Frontend.P.noToken
+public import Lanius.Mini.Frontend.P.Inline_pTypePathMore
+public import Lanius.Mini.Frontend.P.kid
+public import Lanius.Mini.Frontend.P.kidToken
+public import Lanius.Mini.Frontend.P.nodeProd
+public import Lanius.Mini.Frontend.P.splitLast
 public import Lanius.Mini.Frontend.P.typePathSpellings
 public import Lanius.Mini.Frontend.Types
 

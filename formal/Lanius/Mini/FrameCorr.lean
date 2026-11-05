@@ -1,8 +1,23 @@
 module
 
 public import Lanius.Mini.Source
+import all Lanius.Mini.Compiler.P.BinOp_size
+import all Lanius.Mini.Compiler.P.Lists_concat
+import all Lanius.Mini.Compiler.P.Lists_cons
 import all Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.P.Lists_get
+import all Lanius.Mini.Compiler.P.Lists_getOr
+import all Lanius.Mini.Compiler.P.Lists_length
+import all Lanius.Mini.Compiler.P.Lists_single
+import all Lanius.Mini.Compiler.P.MemWidth_bytes
+import all Lanius.Mini.Compiler.P.MemWidth_prefix
+import all Lanius.Mini.Compiler.P.MemWidth_rex
+import all Lanius.Mini.Compiler.P.Word_prefix
 import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.fieldOffset
+import all Lanius.Mini.Compiler.P.norm
+import all Lanius.Mini.Compiler.P.wrap
 
 @[expose] public section
 

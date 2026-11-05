@@ -6,6 +6,13 @@ public import Lanius.Faithful.Gen.SelfSrcF_Inline_pTypeArgsNone
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pTypeArgsNone
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pTypeArgsNone
 import all Lanius.Mini.Frontend.P.Inline_pTypeArgsNone
+import all Lanius.Mini.Frontend.P.Inline_pTypeArgsSome
+import all Lanius.Mini.Frontend.P.Inline_pTypeArray
+import all Lanius.Mini.Frontend.P.Inline_pTypeArrayLenConstant
+import all Lanius.Mini.Frontend.P.Inline_pTypeArrayTail
+import all Lanius.Mini.Frontend.P.Inline_pTypeIdent
+import all Lanius.Mini.Frontend.P.Inline_pTypeNever
+import all Lanius.Mini.Frontend.P.Inline_pTypePathEnd
 
 public section
 

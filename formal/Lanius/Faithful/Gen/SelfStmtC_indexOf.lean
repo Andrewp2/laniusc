@@ -1,7 +1,9 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Compiler.P.indexGuard
 public import Lanius.Mini.Compiler.P.indexOf
+public import Lanius.Mini.Compiler.P.lowerIndex
 
 @[expose] public section
 

@@ -6,12 +6,12 @@ public import Lanius.Faithful.GenB.SelfBModelF_isTypedSliceSegments
 public import Lanius.Faithful.GenB.SelfBModelF_oneTreeNames
 public import Lanius.Faithful.GenB.SelfBModelF_treeTokens
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.hasKids
 public import Lanius.Mini.Frontend.P.isPathCall
-public import Lanius.Mini.Frontend.P.isTypedSliceSegments
-public import Lanius.Mini.Frontend.P.noToken
+public import Lanius.Mini.Frontend.P.isTypedSlicePath
+public import Lanius.Mini.Frontend.P.kid
+public import Lanius.Mini.Frontend.P.listItems
+public import Lanius.Mini.Frontend.P.peel
 public import Lanius.Mini.Frontend.P.treeTokens
-public import Lanius.Mini.Frontend.P.wideOf
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

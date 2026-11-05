@@ -1,7 +1,17 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Compiler.P.Expr_optimize
+public import Lanius.Mini.Compiler.P.iteOrSkip
+public import Lanius.Mini.Compiler.P.optimizeAll
+public import Lanius.Mini.Compiler.P.optimizeAssign
+public import Lanius.Mini.Compiler.P.optimizeBinary
+public import Lanius.Mini.Compiler.P.optimizeBoth
+public import Lanius.Mini.Compiler.P.optimizeCompare
 public import Lanius.Mini.Compiler.P.optimizeLeft
+public import Lanius.Mini.Compiler.P.optimizeRight
+public import Lanius.Mini.Compiler.P.optimizeSeq
+public import Lanius.Mini.Compiler.P.pickBranch
 
 @[expose] public section
 

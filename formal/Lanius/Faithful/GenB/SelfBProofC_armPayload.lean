@@ -16,10 +16,10 @@ public import Lanius.Faithful.GenB.SelfBStmtN5
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcC_armPayload
 import all Lanius.Faithful.Gen.SelfStmtC_armPayload
-import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.SrcType_size
 import all Lanius.Mini.Compiler.P.armPayload
 import all Lanius.Mini.Compiler.P.armScope
-import all Lanius.Mini.Compiler.P.lowerTagged
+import all Lanius.Mini.Compiler.P.viewedType
 
 @[expose] public section
 

@@ -11,6 +11,7 @@ public import Lanius.Faithful.Gen.SelfStmtC_DivOp_size
 public import Lanius.Faithful.Gen.SelfStmtC_codeSize
 import all Lanius.Faithful.Gen.SelfSrcC_codeSize
 import all Lanius.Mini.Compiler.P.codeSize
+import all Lanius.Mini.Compiler.P.compileExpr
 
 public section
 

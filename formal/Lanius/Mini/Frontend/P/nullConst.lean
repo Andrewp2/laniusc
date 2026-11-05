@@ -16,45 +16,4 @@ def nullConst (k : BitVec 32) : Option SrcExpr :=
   else
     none
 
-/-- Whether an i32 value is in the range of the signed type as wide as u: its 32 bits at most 2^(w-1) - 1, or at least 2^32 - 2^(w-1). -/
-def sintFits (u : UintTy) (k : BitVec 32) : Bool :=
-  match u with
-  | .uint8 => decide (k.toNat ≤ 127) || decide (4294967168 ≤ k.toNat)
-  | .uint32 => true
-  | .uint64 => true
-  | .usize => true
-  | .uint16 => decide (k.toNat ≤ 32767) || decide (4294934528 ≤ k.toNat)
-
-/-- The 64-bit signed types; the others are held as i32. -/
-def sintWide (u : UintTy) : Bool :=
-  match u with
-  | .uint8 => false
-  | .uint32 => false
-  | .uint64 => true
-  | .usize => true
-  | .uint16 => false
-
-/-- A signed constant: the cast of the i32 literal k, when the type holds it. -/
-def sintConst (u : UintTy) (k : BitVec 32) : Option SrcExpr :=
-  if sintFits u k then
-    some (SrcExpr.cast (SrcType.sint u) (SrcExpr.int k))
-  else
-    none
-
-/-- `-k` as a signed constant. -/
-def negSintConst (u : UintTy) (x : SrcExpr) : Option SrcExpr :=
-  match x with
-  | .int k => sintConst u (0 - k)
-  | .boolean b => none
-  | .unsigned v k => none
-  | .local id => none
-  | .field id j => none
-  | .negate y => none
-  | .not y => none
-  | .apply op a b => none
-  | .cast t y => none
-  | .null => none
-  | .char code => none
-  | .float ft bits => none
-
 end Lanius.Mini

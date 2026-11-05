@@ -2,6 +2,7 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Compiler.P.storeType
+public import Lanius.Mini.Compiler.P.withinLayout
 
 @[expose] public section
 

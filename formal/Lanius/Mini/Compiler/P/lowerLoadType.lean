@@ -1,23 +1,16 @@
 module
 
 public import Lanius.Mini.Compiler.Types
+import Lanius.Mini.Compiler.P.BinOp_size
+import Lanius.Mini.Compiler.P.Code_size
 import Lanius.Mini.Compiler.P.DivOp_size
-import Lanius.Mini.Compiler.P.Lists_empty
-import Lanius.Mini.Compiler.P.SrcExpr_guard
+import Lanius.Mini.Compiler.P.FOp_size
+import Lanius.Mini.Compiler.P.Instr_size
+import Lanius.Mini.Compiler.P.Piece_size
 import Lanius.Mini.Compiler.P.SrcType_same
-import Lanius.Mini.Compiler.P.UintTy_half
-import Lanius.Mini.Compiler.P.assignFrom
-import Lanius.Mini.Compiler.P.compileModules
-import Lanius.Mini.Compiler.P.elementAddress
+import Lanius.Mini.Compiler.P.SrcType_size
 import Lanius.Mini.Compiler.P.elementBase
-import Lanius.Mini.Compiler.P.guardAnd
-import Lanius.Mini.Compiler.P.indexOf
-import Lanius.Mini.Compiler.P.loadAtBytes
-import Lanius.Mini.Compiler.P.lowerAddress
-import Lanius.Mini.Compiler.P.lowerCallSig
-import Lanius.Mini.Compiler.P.matchVariants
-import Lanius.Mini.Compiler.P.shortCircuit
-import Lanius.Mini.Compiler.P.storeWordElement
+import Lanius.Mini.Compiler.P.loadType
 import Lanius.Mini.Compiler.P.wordElement
 
 public section
@@ -42,126 +35,5 @@ def lowerLoadType (decls : SrcDecls) (next : Nat) (binding : Option Binding) (ty
           some (loadType ty next (elementBase b.slot (SrcType.size ty) i) 0 s)
         else
           none
-
-def lowerLetIndex (decls : SrcDecls) (next : Nat) (binding : Option Binding) (ty : SrcType) (index : Option Expr) (body : Option Stmt) : Option Stmt :=
-  if SrcType.isI32 ty then
-    lowerLoadWord next (lowerElement binding ty index) body
-  else
-    if SrcType.isUint ty UintTy.uint8 then
-      lowerLoad next (lowerElement binding ty index) body
-    else
-      lowerLoadType decls next binding ty index body
-
-def lowerSetIndex (decls : SrcDecls) (binding : Option Binding) (index : Option Expr) (scope : List Binding) (value : SrcExpr) : Option Stmt :=
-  match binding with
-  | none => none
-  | some b => lowerSetIndexOf decls b index scope value
-
-/-- sigs are the program's signatures and ret the function's result type; next is the first slot no binding in scope uses. slice[index] of a raw slice of word structs or enums: the index in slot, the value loaded from slot + 1 at Core's native offsets, then copied down. -/
-def evalWordElement (decls : SrcDecls) (b : Binding) (element : SrcType) (slot : Nat) (i : Evaluated) : Option Evaluated :=
-  if wordElement decls element && (SrcType.isI32 i.ty || SrcType.isUint i.ty UintTy.usize) then
-    some ({ stmt := Stmt.seq i.stmt (checkThen slot (boundsGuard b (Expr.var slot)) (loadType element (slot + 1) (elementBase b.slot (SrcType.size element) (Expr.var slot)) 0 (assignFrom slot (slotVars (slot + 1) (SrcType.size element)) Stmt.skip))), ty := element } : Evaluated)
-  else
-    none
-
-/-- slice[index] of a byte view: the index in slot, then the byte loaded over it. -/
-def evalLoadByte (b : Binding) (slot : Nat) (i : Evaluated) : Option Evaluated :=
-  if SrcType.isI32 i.ty || SrcType.isUint i.ty UintTy.usize then
-    some ({ stmt := Stmt.seq i.stmt (checkThen slot (boundsGuard b (Expr.var slot)) (Stmt.loadByte slot (Expr.binary Word.u64 BinOp.add (Expr.var b.slot) (Expr.var slot)))), ty := SrcType.uint UintTy.uint8 } : Evaluated)
-  else
-    none
-
-/-- slice[index] of a raw slice of i32. -/
-def evalElement (decls : SrcDecls) (b : Binding) (element : SrcType) (slot : Nat) (index : Option Evaluated) : Option Evaluated :=
-  if SrcType.isI32 element then
-    match index with
-    | none => none
-    | some i => evalLoad b slot i
-  else
-    if SrcType.isUint element UintTy.uint8 then
-      match index with
-      | none => none
-      | some i => evalLoadByte b slot i
-    else
-      match index with
-      | none => none
-      | some i => evalWordElement decls b element slot i
-
-/-- The copy of element k of the array whose elements, size slots each, start at slot base, k the index in slot: it tests the index against k, k + 1, ..., count elements from k, the last one untested. -/
-def pickElement (slot : Nat) (base : Nat) (size : Nat) (k : Nat) (count : Nat) : Stmt :=
-  let copy : Stmt := assignFrom slot (slotVars (base + k * size) size) Stmt.skip
-  if count < 2 then
-    copy
-  else
-    Stmt.ite (Expr.compare Word.u64 CmpOp.eq (Expr.var slot) (Expr.lit (BitVec.ofNat 64 k))) copy (pickElement slot base size (k + 1) (count - 1))
-
-/-- array[index] of an array local whose elements start at slot base: the index in slot, checked below the length (an i32 index below 0 is a word of at least 2^31), then the element it picks copied over it. -/
-def evalPick (base : Nat) (element : SrcType) (count : Nat) (slot : Nat) (i : Evaluated) : Option Evaluated :=
-  if (SrcType.isI32 i.ty || SrcType.isUint i.ty UintTy.usize) && decide (0 < count) && decide (count < 2147483648) && decide (0 < SrcType.size element) then
-    some ({ stmt := Stmt.seq i.stmt (checkThen slot (Expr.compare Word.u64 CmpOp.lt (Expr.var slot) (Expr.lit (BitVec.ofNat 64 count))) (pickElement slot base (SrcType.size element) 0 count)), ty := element } : Evaluated)
-  else
-    none
-
-def evalArrayElement (base : Nat) (element : SrcType) (count : Nat) (slot : Nat) (index : Option Evaluated) : Option Evaluated :=
-  match index with
-  | none => none
-  | some i => evalPick base element count slot i
-
-def evalArrayIndex (b : Binding) (slot : Nat) (index : Option Evaluated) : Option Evaluated :=
-  match b.ty with
-  | .i32 => none
-  | .bool => none
-  | .uint kind => none
-  | .struct id fields => none
-  | .enum id variants => none
-  | .ptr => none
-  | .slice element => none
-  | .array arrayElement arrayLength => evalArrayElement b.slot arrayElement arrayLength slot index
-  | .unit => none
-  | .isize => none
-  | .char => none
-  | .float ft => none
-  | .sint sk => none
-  | .view viewLength => none
-  | .str => none
-  | .ref referent => none
-
-def evalIndex (decls : SrcDecls) (scope : List Binding) (slice : Nat) (slot : Nat) (index : Option Evaluated) : Option Evaluated :=
-  match lookup scope slice with
-  | none => none
-  | some b =>
-    match elementOf b.ty with
-    | none => evalArrayIndex b slot index
-    | some element => evalElement decls b element slot index
-
-/-- Whether the local id is an array. -/
-def isArrayLocal (binding : Option Binding) : Bool :=
-  match binding with
-  | none => false
-  | some b =>
-    match b.ty with
-    | .i32 => false
-    | .bool => false
-    | .uint kind => false
-    | .struct id fields => false
-    | .enum id variants => false
-    | .ptr => false
-    | .slice element => false
-    | .array arrayElement arrayLength => true
-    | .unit => false
-    | .isize => false
-    | .char => false
-    | .float ft => false
-    | .sint sk => false
-    | .view viewLength => false
-    | .str => false
-    | .ref referent => false
-
-/-- let id: ty = local[index]; then body: an array's element as the let of the effectful array[index] (LetEval of EIndex), a raw slice's loaded. -/
-def lowerLetIndexAny (decls : SrcDecls) (scope : List Binding) (next : Nat) (ty : SrcType) (slice : Nat) (index : SrcExpr) (body : Option Stmt) : Option Stmt :=
-  if isArrayLocal (lookup scope slice) then
-    lowerLetEval ty (evalIndex decls scope slice next (evalPure scope index next)) body
-  else
-    guarded next (guardAnd (SrcExpr.guard index scope) (indexGuard scope slice index)) (lowerLetIndex decls next (lookup scope slice) ty (lowerIndex scope index) body)
 
 end Lanius.Mini

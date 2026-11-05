@@ -29,7 +29,30 @@ public import Lanius.Faithful.Gen.SelfStmtF_repeatEff
 public import Lanius.Faithful.Gen.SelfStmtF_typeDeclAt
 public import Lanius.Faithful.Gen.SelfStmtF_typePathSpellings
 import all Lanius.Faithful.Gen.SelfSrcF_paramGoals
+import all Lanius.Mini.Frontend.P.explicitChecked
+import all Lanius.Mini.Frontend.P.explicitInst
+import all Lanius.Mini.Frontend.P.findMethod
+import all Lanius.Mini.Frontend.P.fitIf
+import all Lanius.Mini.Frontend.P.fitOf
+import all Lanius.Mini.Frontend.P.fitTy
+import all Lanius.Mini.Frontend.P.fnBoundsOk
+import all Lanius.Mini.Frontend.P.implArgs
+import all Lanius.Mini.Frontend.P.implFit
+import all Lanius.Mini.Frontend.P.implWhere
+import all Lanius.Mini.Frontend.P.inferInst
+import all Lanius.Mini.Frontend.P.inferRet
+import all Lanius.Mini.Frontend.P.isMisfit
+import all Lanius.Mini.Frontend.P.itemGoals
+import all Lanius.Mini.Frontend.P.noMethod
 import all Lanius.Mini.Frontend.P.paramGoals
+import all Lanius.Mini.Frontend.P.paramsGoals
+import all Lanius.Mini.Frontend.P.predsGoals
+import all Lanius.Mini.Frontend.P.sameTrait
+import all Lanius.Mini.Frontend.P.traitHolds
+import all Lanius.Mini.Frontend.P.traitIs
+import all Lanius.Mini.Frontend.P.tyIs
+import all Lanius.Mini.Frontend.P.uniqueFound
+import all Lanius.Mini.Frontend.P.whereGoals
 
 public section
 

@@ -12,9 +12,10 @@ public import Lanius.Faithful.GenB.SelfBStmtF_flRoundUp
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_flDecimal
 import all Lanius.Faithful.Gen.SelfStmtF_flDecimal
-import all Lanius.Mini.Frontend.P.basedDigits
-import all Lanius.Mini.Frontend.P.flDecimal
-import all Lanius.Mini.Frontend.P.flNatHalf
+import all Lanius.Mini.Frontend.P.flDigit
+import all Lanius.Mini.Frontend.P.flLog2
+import all Lanius.Mini.Frontend.P.flMul10
+import all Lanius.Mini.Frontend.P.flOfNat
 
 @[expose] public section
 

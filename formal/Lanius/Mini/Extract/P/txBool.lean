@@ -13,28 +13,4 @@ def txBool : List Nat :=
   let t : List Nat := 98 :: 111 :: 111 :: [108]
   t
 
-def txLeanNat : List Nat :=
-  let t : List Nat := 78 :: 97 :: [116]
-  t
-
-def txLeanBv32 : List Nat :=
-  let t : List Nat := 66 :: 105 :: 116 :: 86 :: 101 :: 99 :: 32 :: 51 :: [50]
-  t
-
-def txLeanBv64 : List Nat :=
-  let t : List Nat := 66 :: 105 :: 116 :: 86 :: 101 :: 99 :: 32 :: 54 :: [52]
-  t
-
-def txLeanUint8 : List Nat :=
-  let t : List Nat := 85 :: 73 :: 110 :: 116 :: [56]
-  t
-
-def txLeanBool : List Nat :=
-  let t : List Nat := 66 :: 111 :: 111 :: [108]
-  t
-
-def txLeanList : List Nat :=
-  let t : List Nat := 76 :: 105 :: 115 :: 116 :: [32]
-  t
-
 end Lanius.Mini

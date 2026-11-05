@@ -2,6 +2,7 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Compiler.P.codeSize
+public import Lanius.Mini.Compiler.P.compileExpr
 
 @[expose] public section
 

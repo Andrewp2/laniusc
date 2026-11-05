@@ -13,7 +13,10 @@ public import Lanius.Faithful.Gen.SelfStmtF_grammarPart13
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_shrFirst
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_attachParent
+import all Lanius.Mini.Frontend.P.Inline_attachLeaf
+import all Lanius.Mini.Frontend.P.Inline_attachNonterm
 import all Lanius.Mini.Frontend.P.Inline_attachParent
+import all Lanius.Mini.Frontend.P.Inline_attachSym
 
 public section
 

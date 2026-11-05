@@ -18,12 +18,15 @@ public import Lanius.Faithful.GenB.SelfBStmtN5
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_paramGoals
 import all Lanius.Faithful.Gen.SelfStmtF_paramGoals
-import all Lanius.Mini.Frontend.P.collect
-import all Lanius.Mini.Frontend.P.consTreeTail
-import all Lanius.Mini.Frontend.P.hasKids
-import all Lanius.Mini.Frontend.P.paramGoals
-import all Lanius.Mini.Frontend.P.repeatEff
-import all Lanius.Mini.Frontend.P.typeDeclAt
+import all Lanius.Mini.Frontend.P.calleeEnv
+import all Lanius.Mini.Frontend.P.implFit
+import all Lanius.Mini.Frontend.P.isMisfit
+import all Lanius.Mini.Frontend.P.matchTy
+import all Lanius.Mini.Frontend.P.noNames
+import all Lanius.Mini.Frontend.P.paramPatterns
+import all Lanius.Mini.Frontend.P.retPattern
+import all Lanius.Mini.Frontend.P.sameText
+import all Lanius.Mini.Frontend.P.tyOf
 
 @[expose] public section
 

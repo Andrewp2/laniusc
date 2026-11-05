@@ -8,6 +8,9 @@ public import Lanius.Faithful.Gen.SelfStmtF_ifNotWrites
 public import Lanius.Faithful.Gen.SelfStmtF_selfRefOf
 import all Lanius.Faithful.Gen.SelfSrcF_ifNotWrites
 import all Lanius.Mini.Frontend.P.ifNotWrites
+import all Lanius.Mini.Frontend.P.knownTrue
+import all Lanius.Mini.Frontend.P.refChecked
+import all Lanius.Mini.Frontend.P.selfRefId
 
 public section
 

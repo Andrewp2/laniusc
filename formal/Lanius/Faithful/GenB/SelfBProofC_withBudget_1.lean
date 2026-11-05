@@ -12,8 +12,12 @@ public import Lanius.Faithful.GenB.SelfBStmtC_withBudget
 public import Lanius.Faithful.GenB.SelfBStmtN4
 import all Lanius.Faithful.Gen.SelfSrcC_withBudget
 import all Lanius.Faithful.Gen.SelfStmtC_withBudget
-import all Lanius.Mini.Compiler.P.bindingBytes
-import all Lanius.Mini.Compiler.P.compileArgs
+import all Lanius.Mini.Compiler.P.SrcStmt_sliceUses
+import all Lanius.Mini.Compiler.P.blockLimit
+import all Lanius.Mini.Compiler.P.blockRoom
+import all Lanius.Mini.Compiler.P.declBytes
+import all Lanius.Mini.Compiler.P.paramsRoom
+import all Lanius.Mini.Compiler.P.spend
 import all Lanius.Mini.Compiler.P.withBudget
 
 @[expose] public section

@@ -6,6 +6,13 @@ public import Lanius.Faithful.Gen.SelfSrcF_Inline_pImplMethodsSome
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pImplMethodsSome
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pImplMethodsSome
 import all Lanius.Mini.Frontend.P.Inline_pImplMethodsSome
+import all Lanius.Mini.Frontend.P.Inline_pImplTrait
+import all Lanius.Mini.Frontend.P.Inline_pImport
+import all Lanius.Mini.Frontend.P.Inline_pImportPath
+import all Lanius.Mini.Frontend.P.Inline_pInt
+import all Lanius.Mini.Frontend.P.Inline_pItemPub
+import all Lanius.Mini.Frontend.P.Inline_pItemsEnd
+import all Lanius.Mini.Frontend.P.Inline_pItemsMore
 
 public section
 

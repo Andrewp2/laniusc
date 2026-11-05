@@ -20,18 +20,19 @@ public import Lanius.Faithful.GenB.SelfBStmtF_wideOf
 public import Lanius.Faithful.GenB.SelfBStmtN3
 import all Lanius.Faithful.Gen.SelfSrcF_oneTreeNames
 import all Lanius.Faithful.Gen.SelfStmtF_oneTreeNames
-import all Lanius.Mini.Frontend.P.Inline_pImplMethodsSome
-import all Lanius.Mini.Frontend.P.Inline_pPathMore
-import all Lanius.Mini.Frontend.P.hasKids
-import all Lanius.Mini.Frontend.P.i32ArrayLength
-import all Lanius.Mini.Frontend.P.isEmptyUsize
+import all Lanius.Mini.Frontend.P.Inline_pInt
+import all Lanius.Mini.Frontend.P.Inline_pPostfixEnd
+import all Lanius.Mini.Frontend.P.intTree
+import all Lanius.Mini.Frontend.P.isDataPtrOf
+import all Lanius.Mini.Frontend.P.isEmptyTrees
+import all Lanius.Mini.Frontend.P.isPath
 import all Lanius.Mini.Frontend.P.isPathCall
-import all Lanius.Mini.Frontend.P.isTypedSliceSegments
-import all Lanius.Mini.Frontend.P.noToken
-import all Lanius.Mini.Frontend.P.noTrees
-import all Lanius.Mini.Frontend.P.oneTreeNames
-import all Lanius.Mini.Frontend.P.sliceHead
-import all Lanius.Mini.Frontend.P.wideOf
+import all Lanius.Mini.Frontend.P.kid
+import all Lanius.Mini.Frontend.P.kidToken
+import all Lanius.Mini.Frontend.P.nodeProd
+import all Lanius.Mini.Frontend.P.pathSpellings
+import all Lanius.Mini.Frontend.P.peel
+import all Lanius.Mini.Frontend.P.stringDataPtrPath
 
 @[expose] public section
 

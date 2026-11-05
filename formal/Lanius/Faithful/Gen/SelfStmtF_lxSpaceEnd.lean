@@ -1,6 +1,9 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.lxBlock
+public import Lanius.Mini.Frontend.P.lxLineEnd
+public import Lanius.Mini.Frontend.P.lxQuoted
 public import Lanius.Mini.Frontend.P.lxSpaceEnd
 
 @[expose] public section

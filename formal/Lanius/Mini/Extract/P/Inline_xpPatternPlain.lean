@@ -12,31 +12,4 @@ namespace Lanius.Mini
 @[expose] def Inline.xpPatternPlain : Nat :=
   199
 
-@[expose] def Inline.xpPostfix : Nat :=
-  160
-
-@[expose] def Inline.xpPostfixCall : Nat :=
-  161
-
-@[expose] def Inline.xpPostfixEnd : Nat :=
-  164
-
-@[expose] def Inline.xpPostfixMember : Nat :=
-  163
-
-@[expose] def Inline.xpRetType : Nat :=
-  34
-
-@[expose] def Inline.xpReturnStmt : Nat :=
-  76
-
-@[expose] def Inline.xpReturnValue : Nat :=
-  90
-
-@[expose] def Inline.xpSelfParamPlain : Nat :=
-  66
-
-@[expose] def Inline.xpSelfValue : Nat :=
-  174
-
 end Lanius.Mini

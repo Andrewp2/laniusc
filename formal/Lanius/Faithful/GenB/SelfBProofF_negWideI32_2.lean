@@ -8,8 +8,15 @@ public import Lanius.Faithful.GenB.SelfBStmtF_negWideI32
 public import Lanius.Faithful.GenB.SelfBStmtF_sintAt
 import all Lanius.Faithful.Gen.SelfSrcF_negWideI32
 import all Lanius.Faithful.Gen.SelfStmtF_negWideI32
-import all Lanius.Mini.Frontend.P.negWideI32
-import all Lanius.Mini.Frontend.P.sintAt
+import all Lanius.Mini.Frontend.P.calleeParams
+import all Lanius.Mini.Frontend.P.payloadAt
+import all Lanius.Mini.Frontend.P.repeatSrc
+import all Lanius.Mini.Frontend.P.srcElement
+import all Lanius.Mini.Frontend.P.srcFields
+import all Lanius.Mini.Frontend.P.srcVariants
+import all Lanius.Mini.Frontend.P.tyAt
+import all Lanius.Mini.Frontend.P.tyLocal
+import all Lanius.Mini.Frontend.P.withLocal
 
 @[expose] public section
 

@@ -20,7 +20,30 @@ public import Lanius.Faithful.Gen.SelfStmtF_lowerTy
 public import Lanius.Faithful.Gen.SelfStmtF_readInst
 public import Lanius.Faithful.Gen.SelfStmtF_weightAdd
 import all Lanius.Faithful.Gen.SelfSrcF_funcsOnto
+import all Lanius.Mini.Frontend.P.declWeight
+import all Lanius.Mini.Frontend.P.fieldsWeight
 import all Lanius.Mini.Frontend.P.funcsOnto
+import all Lanius.Mini.Frontend.P.funcsTys
+import all Lanius.Mini.Frontend.P.instWeight
+import all Lanius.Mini.Frontend.P.isNoneWeight
+import all Lanius.Mini.Frontend.P.loweredAll
+import all Lanius.Mini.Frontend.P.monoLoop
+import all Lanius.Mini.Frontend.P.namedWeight
+import all Lanius.Mini.Frontend.P.paramTys
+import all Lanius.Mini.Frontend.P.payloadsWeight
+import all Lanius.Mini.Frontend.P.retTys
+import all Lanius.Mini.Frontend.P.seedTys
+import all Lanius.Mini.Frontend.P.stmtTys
+import all Lanius.Mini.Frontend.P.tyKnown
+import all Lanius.Mini.Frontend.P.tyWeight
+import all Lanius.Mini.Frontend.P.typeTable
+import all Lanius.Mini.Frontend.P.typeTableMore
+import all Lanius.Mini.Frontend.P.tysWeight
+import all Lanius.Mini.Frontend.P.unweighed
+import all Lanius.Mini.Frontend.P.weighAgain
+import all Lanius.Mini.Frontend.P.weighRound
+import all Lanius.Mini.Frontend.P.weighRounds
+import all Lanius.Mini.Frontend.P.weighedMore
 
 public section
 

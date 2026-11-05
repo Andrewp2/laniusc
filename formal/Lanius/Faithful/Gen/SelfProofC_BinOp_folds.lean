@@ -5,7 +5,15 @@ public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcC_BinOp_folds
 public import Lanius.Faithful.Gen.SelfStmtC_BinOp_folds
 import all Lanius.Faithful.Gen.SelfSrcC_BinOp_folds
+import all Lanius.Mini.Compiler.P.BinOp_annihilates
+import all Lanius.Mini.Compiler.P.BinOp_commutes
 import all Lanius.Mini.Compiler.P.BinOp_folds
+import all Lanius.Mini.Compiler.P.BinOp_number
+import all Lanius.Mini.Compiler.P.BinOp_unit
+import all Lanius.Mini.Compiler.P.CmpOp_number
+import all Lanius.Mini.Compiler.P.CmpOp_test
+import all Lanius.Mini.Compiler.P.DivOp_number
+import all Lanius.Mini.Compiler.P.Syscall_number
 
 public section
 

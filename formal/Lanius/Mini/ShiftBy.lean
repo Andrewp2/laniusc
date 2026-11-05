@@ -2,12 +2,13 @@ module
 
 public import Lanius.Mini.Signed
 -- import all uses: Lanius.Mini.Compiler
-import all Lanius.Mini.Compiler.P.UintTy_half
-import all Lanius.Mini.Compiler.P.guardAnd
+import all Lanius.Mini.Compiler.P.SrcType_isInteger
+import all Lanius.Mini.Compiler.P.UintTy_bits
 import all Lanius.Mini.Compiler.P.lowerShift
+import all Lanius.Mini.Compiler.P.shiftWidth
 -- end import all uses
 -- import parts: Lanius.Mini.Compiler shiftWidth
-public import Lanius.Mini.Compiler.P.guardAnd
+public import Lanius.Mini.Compiler.P.shiftWidth
 -- end import parts
 
 @[expose] public section

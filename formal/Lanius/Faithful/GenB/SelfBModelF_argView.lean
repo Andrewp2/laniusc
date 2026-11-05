@@ -4,7 +4,9 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelF_purePart
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.P.argView
-public import Lanius.Mini.Frontend.P.fnInstRet
+public import Lanius.Mini.Frontend.P.argViews
+public import Lanius.Mini.Frontend.P.headTy
+public import Lanius.Mini.Frontend.P.tailTys
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

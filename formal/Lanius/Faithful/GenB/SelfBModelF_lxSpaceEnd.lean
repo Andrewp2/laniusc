@@ -3,7 +3,9 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_findMethodAt
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.lxSymbolStart
+public import Lanius.Mini.Frontend.P.lxDrop
+public import Lanius.Mini.Frontend.P.lxLineRun
+public import Lanius.Mini.Frontend.P.lxSpaceRun
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

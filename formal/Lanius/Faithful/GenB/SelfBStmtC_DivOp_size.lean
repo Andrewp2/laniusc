@@ -4,6 +4,13 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_DivOp_size
 public import Lanius.Mini.Compiler.P.DivOp_size
+public import Lanius.Mini.Compiler.P.FOp_size
+public import Lanius.Mini.Compiler.P.FloatTy_mask
+public import Lanius.Mini.Compiler.P.FloatTy_number
+public import Lanius.Mini.Compiler.P.FloatTy_rexSize
+public import Lanius.Mini.Compiler.P.FloatTy_signBit
+public import Lanius.Mini.Compiler.P.FloatTy_signWord
+public import Lanius.Mini.Compiler.P.Instr_size
 
 @[expose] public section
 

@@ -6,6 +6,11 @@ public import Lanius.Faithful.Gen.SelfSrcF_Inline_tLparen
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_tLparen
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_tLparen
 import all Lanius.Mini.Frontend.P.Inline_tLparen
+import all Lanius.Mini.Frontend.P.Inline_tLt
+import all Lanius.Mini.Frontend.P.Inline_tNotEqual
+import all Lanius.Mini.Frontend.P.Inline_tOror
+import all Lanius.Mini.Frontend.P.Inline_tRbrace
+import all Lanius.Mini.Frontend.P.Inline_tRbracket
 
 public section
 

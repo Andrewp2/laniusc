@@ -12,19 +12,4 @@ namespace Lanius.Mini
 @[expose] def Inline.xpLetInit : Nat :=
   88
 
-@[expose] def Inline.xpLetStmt : Nat :=
-  75
-
-@[expose] def Inline.xpLetType : Nat :=
-  86
-
-@[expose] def Inline.xpLtTail : Nat :=
-  138
-
-@[expose] def Inline.xpMatchExpr : Nat :=
-  187
-
-@[expose] def Inline.xpMemberTypeArgsNone : Nat :=
-  297
-
 end Lanius.Mini

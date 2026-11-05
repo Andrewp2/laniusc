@@ -8,8 +8,9 @@ public import Lanius.Faithful.GenB.SelfBStmtF_depthLimit
 public import Lanius.Faithful.GenB.SelfBStmtF_limExprs
 import all Lanius.Faithful.Gen.SelfSrcF_limExprs
 import all Lanius.Faithful.Gen.SelfStmtF_limExprs
-import all Lanius.Mini.Frontend.P.depthLimit
-import all Lanius.Mini.Frontend.P.limExprs
+import all Lanius.Mini.Frontend.P.limEff
+import all Lanius.Mini.Frontend.P.limExpr
+import all Lanius.Mini.Frontend.P.limTy
 
 @[expose] public section
 

@@ -4,6 +4,7 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_litBound
 public import Lanius.Mini.Frontend.P.litBound
+public import Lanius.Mini.Frontend.P.litScrutChain
 
 @[expose] public section
 

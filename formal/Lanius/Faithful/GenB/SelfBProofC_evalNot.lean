@@ -9,8 +9,8 @@ public import Lanius.Faithful.GenB.SelfBStmtC_evalNot
 public import Lanius.Faithful.GenB.SelfBStmtC_lowerLocal
 import all Lanius.Faithful.Gen.SelfSrcC_evalNot
 import all Lanius.Faithful.Gen.SelfStmtC_evalNot
-import all Lanius.Mini.Compiler.P.evalDivide
-import all Lanius.Mini.Compiler.P.lowerLocal
+import all Lanius.Mini.Compiler.P.lowerNotTyped
+import all Lanius.Mini.Compiler.P.scalarCast
 
 @[expose] public section
 

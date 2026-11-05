@@ -4,8 +4,9 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelF_lxLeadingDot
 public import Lanius.Faithful.GenB.SelfBModelF_lxSymbolStart
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.lxLeadingDot
-public import Lanius.Mini.Frontend.P.lxSymbolStart
+public import Lanius.Mini.Frontend.P.lxBest
+public import Lanius.Mini.Frontend.P.lxDrop
+public import Lanius.Mini.Frontend.P.lxTake
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

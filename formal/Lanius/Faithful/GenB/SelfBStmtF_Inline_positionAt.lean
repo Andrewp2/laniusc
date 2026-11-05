@@ -3,7 +3,22 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_positionAt
+public import Lanius.Mini.Frontend.P.Inline_aliasNameAt
+public import Lanius.Mini.Frontend.P.Inline_collectFileNext
+public import Lanius.Mini.Frontend.P.Inline_constNameAt
+public import Lanius.Mini.Frontend.P.Inline_findAliasAt
+public import Lanius.Mini.Frontend.P.Inline_findConstAt
+public import Lanius.Mini.Frontend.P.Inline_findFnAt
+public import Lanius.Mini.Frontend.P.Inline_findTypeAt
+public import Lanius.Mini.Frontend.P.Inline_fnNameAt
+public import Lanius.Mini.Frontend.P.Inline_instIndexAt
+public import Lanius.Mini.Frontend.P.Inline_moduleAt
+public import Lanius.Mini.Frontend.P.Inline_paramSpellingAt
 public import Lanius.Mini.Frontend.P.Inline_positionAt
+public import Lanius.Mini.Frontend.P.Inline_rootAt
+public import Lanius.Mini.Frontend.P.Inline_seedAt
+public import Lanius.Mini.Frontend.P.Inline_typeNameAt
+public import Lanius.Mini.Frontend.P.Inline_typeOnlyAt
 
 @[expose] public section
 

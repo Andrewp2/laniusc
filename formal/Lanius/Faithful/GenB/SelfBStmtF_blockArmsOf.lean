@@ -3,7 +3,22 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_findMethodAt
+public import Lanius.Mini.Frontend.P.anyBlockArm
 public import Lanius.Mini.Frontend.P.blockArmsOf
+public import Lanius.Mini.Frontend.P.eqLit
+public import Lanius.Mini.Frontend.P.isBlockMatch
+public import Lanius.Mini.Frontend.P.isLitInit
+public import Lanius.Mini.Frontend.P.isLitStmt
+public import Lanius.Mini.Frontend.P.litCond
+public import Lanius.Mini.Frontend.P.litEnd
+public import Lanius.Mini.Frontend.P.litFirst
+public import Lanius.Mini.Frontend.P.litHeadIf
+public import Lanius.Mini.Frontend.P.litLast
+public import Lanius.Mini.Frontend.P.litMatchHead
+public import Lanius.Mini.Frontend.P.litMatchParts
+public import Lanius.Mini.Frontend.P.litMatchTyped
+public import Lanius.Mini.Frontend.P.litPattern
+public import Lanius.Mini.Frontend.P.litWanted
 
 @[expose] public section
 

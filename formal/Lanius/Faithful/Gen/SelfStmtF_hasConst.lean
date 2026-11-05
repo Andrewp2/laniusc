@@ -1,7 +1,23 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.armEff
+public import Lanius.Mini.Frontend.P.declInst
+public import Lanius.Mini.Frontend.P.effBinary
+public import Lanius.Mini.Frontend.P.effCalled
+public import Lanius.Mini.Frontend.P.effCasts
+public import Lanius.Mini.Frontend.P.fieldExpects
 public import Lanius.Mini.Frontend.P.hasConst
+public import Lanius.Mini.Frontend.P.inferArgs
+public import Lanius.Mini.Frontend.P.inferEff
+public import Lanius.Mini.Frontend.P.knownArgs
+public import Lanius.Mini.Frontend.P.namedInferred
+public import Lanius.Mini.Frontend.P.paramExpects
+public import Lanius.Mini.Frontend.P.pureList
+public import Lanius.Mini.Frontend.P.skipExpects
+public import Lanius.Mini.Frontend.P.variantExpects
+public import Lanius.Mini.Frontend.P.xStructOf
+public import Lanius.Mini.Frontend.P.xVariantOf
 
 @[expose] public section
 

@@ -2,7 +2,7 @@ module
 
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
-public import Lanius.Mini.Compiler.P.render
+public import Lanius.Mini.Compiler.P.UintTy_code
 
 @[expose] public section
 

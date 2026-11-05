@@ -3,7 +3,13 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelN7
 public import Lanius.Mini.Compiler.Types
+public import Lanius.Mini.Frontend.P.flBit
+public import Lanius.Mini.Frontend.P.flLog2
 public import Lanius.Mini.Frontend.P.flNatHalf
+public import Lanius.Mini.Frontend.P.flNatOdd
+public import Lanius.Mini.Frontend.P.flOfNat
+public import Lanius.Mini.Frontend.P.flPow2
+public import Lanius.Mini.Frontend.P.flToNat
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

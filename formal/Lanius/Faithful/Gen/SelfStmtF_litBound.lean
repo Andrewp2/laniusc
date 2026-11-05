@@ -2,6 +2,7 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.litBound
+public import Lanius.Mini.Frontend.P.litScrutChain
 
 @[expose] public section
 

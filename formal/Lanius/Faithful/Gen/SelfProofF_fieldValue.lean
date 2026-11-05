@@ -16,7 +16,11 @@ public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfStmtF_paramGoals
 public import Lanius.Faithful.Gen.SelfStmtF_projection
 import all Lanius.Faithful.Gen.SelfSrcF_fieldValue
+import all Lanius.Mini.Frontend.P.effSliceLocal
+import all Lanius.Mini.Frontend.P.fieldOfTy
 import all Lanius.Mini.Frontend.P.fieldValue
+import all Lanius.Mini.Frontend.P.methodOfTy
+import all Lanius.Mini.Frontend.P.stepExpected
 
 public section
 

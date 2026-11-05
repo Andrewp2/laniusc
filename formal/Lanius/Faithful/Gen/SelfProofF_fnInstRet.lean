@@ -25,7 +25,30 @@ public import Lanius.Faithful.Gen.SelfStmtF_typeDeclAt
 public import Lanius.Faithful.Gen.SelfStmtF_variantIn
 public import Lanius.Faithful.Gen.SelfStmtF_wideOf
 import all Lanius.Faithful.Gen.SelfSrcF_fnInstRet
+import all Lanius.Mini.Frontend.P.argsOf
+import all Lanius.Mini.Frontend.P.armBinders
+import all Lanius.Mini.Frontend.P.armValues
+import all Lanius.Mini.Frontend.P.bareEff
+import all Lanius.Mini.Frontend.P.consEffArm
+import all Lanius.Mini.Frontend.P.consExpr
+import all Lanius.Mini.Frontend.P.consExprTail
+import all Lanius.Mini.Frontend.P.effTy
+import all Lanius.Mini.Frontend.P.effsTys
+import all Lanius.Mini.Frontend.P.elemTyOf
+import all Lanius.Mini.Frontend.P.exprsOf
+import all Lanius.Mini.Frontend.P.fieldTyAt
+import all Lanius.Mini.Frontend.P.fieldTyOf
 import all Lanius.Mini.Frontend.P.fnInstRet
+import all Lanius.Mini.Frontend.P.headTy
+import all Lanius.Mini.Frontend.P.indexTy
+import all Lanius.Mini.Frontend.P.instRet
+import all Lanius.Mini.Frontend.P.isOwnerAt
+import all Lanius.Mini.Frontend.P.isScalarOwner
+import all Lanius.Mini.Frontend.P.isSomeIndex
+import all Lanius.Mini.Frontend.P.isTypeOwner
+import all Lanius.Mini.Frontend.P.resultTy
+import all Lanius.Mini.Frontend.P.tailTys
+import all Lanius.Mini.Frontend.P.xMatchOf
 
 public section
 

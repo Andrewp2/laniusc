@@ -1,7 +1,7 @@
 module
 
 public import Lanius.Mini.Extract.Types
-public import Lanius.Mini.Extract.P.txErrInlineExternal1
+public import Lanius.Mini.Extract.P.exStarts
 public import Lanius.Mini.Extract.P.txLeanDef
 public import Lanius.Mini.Extract.P.txLeanExpose
 

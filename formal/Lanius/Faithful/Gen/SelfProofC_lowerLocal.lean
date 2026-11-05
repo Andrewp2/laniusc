@@ -16,7 +16,19 @@ public import Lanius.Faithful.Gen.SelfStmtC_UintTy_mask
 public import Lanius.Faithful.Gen.SelfStmtC_conjunction
 public import Lanius.Faithful.Gen.SelfStmtC_lowerLocal
 import all Lanius.Faithful.Gen.SelfSrcC_lowerLocal
+import all Lanius.Mini.Compiler.P.fromI32
+import all Lanius.Mini.Compiler.P.lowerField
+import all Lanius.Mini.Compiler.P.lowerFieldAt
+import all Lanius.Mini.Compiler.P.lowerFieldOf
 import all Lanius.Mini.Compiler.P.lowerLocal
+import all Lanius.Mini.Compiler.P.lowerNegate
+import all Lanius.Mini.Compiler.P.lowerNegateTyped
+import all Lanius.Mini.Compiler.P.lowerNot
+import all Lanius.Mini.Compiler.P.lowerNotTyped
+import all Lanius.Mini.Compiler.P.lowerUnsigned
+import all Lanius.Mini.Compiler.P.negateFloat
+import all Lanius.Mini.Compiler.P.negateSigned
+import all Lanius.Mini.Compiler.P.sintToI32
 
 public section
 

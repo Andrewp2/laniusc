@@ -12,16 +12,4 @@ namespace Lanius.Mini
 @[expose] def Inline.pContractsNone : Nat :=
   321
 
-@[expose] def Inline.pContractsMore : Nat :=
-  322
-
-@[expose] def Inline.pRequires : Nat :=
-  323
-
-@[expose] def Inline.pDivTail : Nat :=
-  153
-
-@[expose] def Inline.pElseNone : Nat :=
-  79
-
 end Lanius.Mini

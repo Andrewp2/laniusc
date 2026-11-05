@@ -1,7 +1,11 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.negSintConst
 public import Lanius.Mini.Frontend.P.nullConst
+public import Lanius.Mini.Frontend.P.sintConst
+public import Lanius.Mini.Frontend.P.sintFits
+public import Lanius.Mini.Frontend.P.sintWide
 
 @[expose] public section
 

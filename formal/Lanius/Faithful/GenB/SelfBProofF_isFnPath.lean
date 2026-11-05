@@ -11,8 +11,8 @@ public import Lanius.Faithful.GenB.SelfBStmtF_rootInsts
 public import Lanius.Faithful.GenB.SelfBStmtN0
 import all Lanius.Faithful.Gen.SelfSrcF_isFnPath
 import all Lanius.Faithful.Gen.SelfStmtF_isFnPath
-import all Lanius.Mini.Frontend.P.fnInstRet
-import all Lanius.Mini.Frontend.P.itemOf
+import all Lanius.Mini.Frontend.P.isTypeOwner
+import all Lanius.Mini.Frontend.P.pathModule
 
 @[expose] public section
 

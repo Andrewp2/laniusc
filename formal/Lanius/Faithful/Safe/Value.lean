@@ -4,7 +4,27 @@ public import Lanius.Faithful.Sim.Scalar
 public import Lanius.Faithful.Sim.Check
 public import Lanius.Mini.Fails
 public import Lanius.Mini.Compiler.P.SrcExpr_guard
+public import Lanius.Mini.Compiler.P.boundsGuard
+public import Lanius.Mini.Compiler.P.checkThen
+public import Lanius.Mini.Compiler.P.expectType
+public import Lanius.Mini.Compiler.P.guardAll
+public import Lanius.Mini.Compiler.P.guarded
+public import Lanius.Mini.Compiler.P.lowerAppend
+public import Lanius.Mini.Compiler.P.lowerAs
+public import Lanius.Mini.Compiler.P.slotVars
+public import Lanius.Mini.Compiler.P.thenCheck
+public import Lanius.Mini.Compiler.P.trap
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
+import all Lanius.Mini.Compiler.P.boundsGuard
+import all Lanius.Mini.Compiler.P.checkThen
+import all Lanius.Mini.Compiler.P.expectType
+import all Lanius.Mini.Compiler.P.guardAll
+import all Lanius.Mini.Compiler.P.guarded
+import all Lanius.Mini.Compiler.P.lowerAppend
+import all Lanius.Mini.Compiler.P.lowerAs
+import all Lanius.Mini.Compiler.P.slotVars
+import all Lanius.Mini.Compiler.P.thenCheck
+import all Lanius.Mini.Compiler.P.trap
 import all Lanius.Mini.Compiler.Types
 
 @[expose] public section

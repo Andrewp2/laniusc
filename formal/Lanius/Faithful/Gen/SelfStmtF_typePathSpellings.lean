@@ -1,6 +1,8 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.splitLast
+public import Lanius.Mini.Frontend.P.splitMore
 public import Lanius.Mini.Frontend.P.typePathSpellings
 
 @[expose] public section

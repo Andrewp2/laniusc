@@ -3,8 +3,8 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelF_flattenTys
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.flattenTys
-public import Lanius.Mini.Frontend.P.weightAdd
+public import Lanius.Mini.Frontend.P.srcWeight
+public import Lanius.Mini.Frontend.P.weightLimit
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

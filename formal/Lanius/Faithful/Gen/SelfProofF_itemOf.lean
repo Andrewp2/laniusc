@@ -14,7 +14,12 @@ public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_itemOf
 public import Lanius.Faithful.Gen.SelfStmtF_typePathSpellings
 import all Lanius.Faithful.Gen.SelfSrcF_itemOf
+import all Lanius.Mini.Frontend.P.bareVariant
+import all Lanius.Mini.Frontend.P.importedVariants
+import all Lanius.Mini.Frontend.P.itemImport
 import all Lanius.Mini.Frontend.P.itemOf
+import all Lanius.Mini.Frontend.P.onlyVariant
+import all Lanius.Mini.Frontend.P.pathModule
 
 public section
 

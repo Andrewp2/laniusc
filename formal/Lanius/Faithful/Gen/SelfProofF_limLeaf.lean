@@ -15,7 +15,23 @@ public import Lanius.Faithful.Gen.SelfStmtF_depthLimit
 public import Lanius.Faithful.Gen.SelfStmtF_limExprs
 public import Lanius.Faithful.Gen.SelfStmtF_limLeaf
 import all Lanius.Faithful.Gen.SelfSrcF_limLeaf
+import all Lanius.Mini.Frontend.P.limConst
+import all Lanius.Mini.Frontend.P.limGuard
 import all Lanius.Mini.Frontend.P.limLeaf
+import all Lanius.Mini.Frontend.P.limMax
+import all Lanius.Mini.Frontend.P.limNest
+import all Lanius.Mini.Frontend.P.limNestEff
+import all Lanius.Mini.Frontend.P.limNestStep
+import all Lanius.Mini.Frontend.P.limNum
+import all Lanius.Mini.Frontend.P.limNumsExpr
+import all Lanius.Mini.Frontend.P.limNumsExprs
+import all Lanius.Mini.Frontend.P.limNumsIds
+import all Lanius.Mini.Frontend.P.limNumsIdss
+import all Lanius.Mini.Frontend.P.limNumsTy
+import all Lanius.Mini.Frontend.P.limOne
+import all Lanius.Mini.Frontend.P.limParamSlots
+import all Lanius.Mini.Frontend.P.limParams
+import all Lanius.Mini.Frontend.P.limStmt
 
 public section
 

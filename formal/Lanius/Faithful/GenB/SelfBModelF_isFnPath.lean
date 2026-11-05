@@ -5,8 +5,8 @@ public import Lanius.Faithful.GenB.SelfBModelF_Inline_positionAt
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_variantsNamedAt
 public import Lanius.Faithful.GenB.SelfBModelF_fnInstRet
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.fnInstRet
-public import Lanius.Mini.Frontend.P.itemOf
+public import Lanius.Mini.Frontend.P.isTypeOwner
+public import Lanius.Mini.Frontend.P.pathModule
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

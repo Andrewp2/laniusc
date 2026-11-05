@@ -7,9 +7,23 @@ public import Lanius.Faithful.GenB.SelfBModelN0
 public import Lanius.Faithful.GenB.SelfBModelN1
 public import Lanius.Faithful.GenB.SelfBModelN3
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.frontEndWords
+public import Lanius.Mini.Frontend.P.grammarPart0
+public import Lanius.Mini.Frontend.P.grammarPart1
+public import Lanius.Mini.Frontend.P.grammarPart10
+public import Lanius.Mini.Frontend.P.grammarPart11
+public import Lanius.Mini.Frontend.P.grammarPart12
 public import Lanius.Mini.Frontend.P.grammarPart13
+public import Lanius.Mini.Frontend.P.grammarPart14
+public import Lanius.Mini.Frontend.P.grammarPart15
+public import Lanius.Mini.Frontend.P.grammarPart16
+public import Lanius.Mini.Frontend.P.grammarPart2
+public import Lanius.Mini.Frontend.P.grammarPart3
+public import Lanius.Mini.Frontend.P.grammarPart4
+public import Lanius.Mini.Frontend.P.grammarPart5
+public import Lanius.Mini.Frontend.P.grammarPart6
+public import Lanius.Mini.Frontend.P.grammarPart7
 public import Lanius.Mini.Frontend.P.grammarPart8
+public import Lanius.Mini.Frontend.P.grammarPart9
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

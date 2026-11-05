@@ -1,7 +1,15 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.consWild
 public import Lanius.Mini.Frontend.P.isUnderscore
+public import Lanius.Mini.Frontend.P.isWildArm
+public import Lanius.Mini.Frontend.P.wildAlone
+public import Lanius.Mini.Frontend.P.wildArmFor
+public import Lanius.Mini.Frontend.P.wildBinder
+public import Lanius.Mini.Frontend.P.wildBinders
+public import Lanius.Mini.Frontend.P.wildSplit
+public import Lanius.Mini.Frontend.P.wildTail
 
 @[expose] public section
 

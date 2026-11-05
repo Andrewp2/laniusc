@@ -1,7 +1,20 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Compiler.P.SrcEff_isSlice
+public import Lanius.Mini.Compiler.P.SrcEff_passesSlices
+public import Lanius.Mini.Compiler.P.SrcEff_sliceCall
+public import Lanius.Mini.Compiler.P.SrcStmt_breaksOut
+public import Lanius.Mini.Compiler.P.SrcStmt_depth
+public import Lanius.Mini.Compiler.P.SrcStmt_lower
+public import Lanius.Mini.Compiler.P.arrayCall
 public import Lanius.Mini.Compiler.P.arrayCallSig
+public import Lanius.Mini.Compiler.P.effsSlice
+public import Lanius.Mini.Compiler.P.paramScope
+public import Lanius.Mini.Compiler.P.paramTypes
+public import Lanius.Mini.Compiler.P.paramsSize
+public import Lanius.Mini.Compiler.P.paramsValid
+public import Lanius.Mini.Compiler.P.stmtEval
 
 @[expose] public section
 

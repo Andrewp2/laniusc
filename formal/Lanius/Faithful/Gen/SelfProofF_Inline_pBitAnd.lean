@@ -6,6 +6,20 @@ public import Lanius.Faithful.Gen.SelfSrcF_Inline_pBitAnd
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pBitAnd
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pBitAnd
 import all Lanius.Mini.Frontend.P.Inline_pBitAnd
+import all Lanius.Mini.Frontend.P.Inline_pBitOr
+import all Lanius.Mini.Frontend.P.Inline_pBitXor
+import all Lanius.Mini.Frontend.P.Inline_pBlockStmt
+import all Lanius.Mini.Frontend.P.Inline_pBorTail
+import all Lanius.Mini.Frontend.P.Inline_pBreakStmt
+import all Lanius.Mini.Frontend.P.Inline_pCast
+import all Lanius.Mini.Frontend.P.Inline_pCastTypeName
+import all Lanius.Mini.Frontend.P.Inline_pCastTypePath
+import all Lanius.Mini.Frontend.P.Inline_pCastTypePathEnd
+import all Lanius.Mini.Frontend.P.Inline_pCastTypePathIdent
+import all Lanius.Mini.Frontend.P.Inline_pChar
+import all Lanius.Mini.Frontend.P.Inline_pCompare
+import all Lanius.Mini.Frontend.P.Inline_pConst
+import all Lanius.Mini.Frontend.P.Inline_pContinueStmt
 
 public section
 

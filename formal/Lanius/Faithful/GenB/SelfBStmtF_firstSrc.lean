@@ -3,7 +3,21 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_firstSrc
+public import Lanius.Mini.Frontend.P.amountWant
+public import Lanius.Mini.Frontend.P.boundTys
+public import Lanius.Mini.Frontend.P.eitherTy
+public import Lanius.Mini.Frontend.P.firstIds
 public import Lanius.Mini.Frontend.P.firstSrc
+public import Lanius.Mini.Frontend.P.knownApply
+public import Lanius.Mini.Frontend.P.knownCast
+public import Lanius.Mini.Frontend.P.operandWant
+public import Lanius.Mini.Frontend.P.restIds
+public import Lanius.Mini.Frontend.P.restPayloads
+public import Lanius.Mini.Frontend.P.restSrc
+public import Lanius.Mini.Frontend.P.wideAt
+public import Lanius.Mini.Frontend.P.wideIsizeAt
+public import Lanius.Mini.Frontend.P.wideSintAt
+public import Lanius.Mini.Frontend.P.wideUintAt
 
 @[expose] public section
 

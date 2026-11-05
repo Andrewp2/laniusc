@@ -1,6 +1,9 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.boundArgs
+public import Lanius.Mini.Frontend.P.matchTy
+public import Lanius.Mini.Frontend.P.namedParts
 public import Lanius.Mini.Frontend.P.repeatEff
 
 @[expose] public section

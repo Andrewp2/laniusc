@@ -2,23 +2,46 @@ module
 
 public import Lanius.Mini.Signed
 -- import all uses: Lanius.Mini.Compiler
-import all Lanius.Mini.Compiler.P.BinOp_folds
-import all Lanius.Mini.Compiler.P.DivOp_size
-import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.BinOp_number
+import all Lanius.Mini.Compiler.P.CmpOp_number
+import all Lanius.Mini.Compiler.P.DivOp_number
+import all Lanius.Mini.Compiler.P.FArith_number
+import all Lanius.Mini.Compiler.P.FCmp_number
+import all Lanius.Mini.Compiler.P.FOp_number
+import all Lanius.Mini.Compiler.P.FloatTy_mask
+import all Lanius.Mini.Compiler.P.FloatTy_number
+import all Lanius.Mini.Compiler.P.FloatTy_signBit
+import all Lanius.Mini.Compiler.P.FloatTy_signWord
+import all Lanius.Mini.Compiler.P.SrcEff_eval
+import all Lanius.Mini.Compiler.P.SrcType_floatTy
+import all Lanius.Mini.Compiler.P.SrcType_isFloat
+import all Lanius.Mini.Compiler.P.SrcType_isFloatAny
+import all Lanius.Mini.Compiler.P.SrcType_isInteger
+import all Lanius.Mini.Compiler.P.SrcType_sintKind
+import all Lanius.Mini.Compiler.P.SrcType_word
+import all Lanius.Mini.Compiler.P.Syscall_number
+import all Lanius.Mini.Compiler.P.UintTy_bits
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_mask
-import all Lanius.Mini.Compiler.P.Word_narrows
-import all Lanius.Mini.Compiler.P.arithUint
+import all Lanius.Mini.Compiler.P.Word_number
+import all Lanius.Mini.Compiler.P.castToFloat
 import all Lanius.Mini.Compiler.P.floatApply
-import all Lanius.Mini.Compiler.P.guardAnd
-import all Lanius.Mini.Compiler.P.lowerLocal
-import all Lanius.Mini.Compiler.P.sintToUint
-import all Lanius.Mini.Compiler.P.wordStride
+import all Lanius.Mini.Compiler.P.floatArith
+import all Lanius.Mini.Compiler.P.floatCompare
+import all Lanius.Mini.Compiler.P.floatOp
+import all Lanius.Mini.Compiler.P.floatOrder
+import all Lanius.Mini.Compiler.P.floatToFloat
+import all Lanius.Mini.Compiler.P.ifNarrow
+import all Lanius.Mini.Compiler.P.intToFloat
+import all Lanius.Mini.Compiler.P.lowerFloat
+import all Lanius.Mini.Compiler.P.negateFloat
 -- end import all uses
 -- import parts: Lanius.Mini.Compiler castToFloat floatArith floatOrder negateFloat lowerFloat
-public import Lanius.Mini.Compiler.P.floatApply
-public import Lanius.Mini.Compiler.P.lowerLocal
-public import Lanius.Mini.Compiler.P.sintToUint
+public import Lanius.Mini.Compiler.P.castToFloat
+public import Lanius.Mini.Compiler.P.floatArith
+public import Lanius.Mini.Compiler.P.floatOrder
+public import Lanius.Mini.Compiler.P.lowerFloat
+public import Lanius.Mini.Compiler.P.negateFloat
 -- end import parts
 
 @[expose] public section

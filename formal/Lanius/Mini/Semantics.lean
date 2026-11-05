@@ -4,18 +4,21 @@ public import Lanius.Mini.Compiler.Types
 public import Lanius.IEEE
 public import Lanius.X86.Machine.Io
 -- import all uses: Lanius.Mini.Compiler
-import all Lanius.Mini.Compiler.P.FArith_opcode
-import all Lanius.Mini.Compiler.P.Lists_empty
-import all Lanius.Mini.Compiler.P.UintTy_half
-import all Lanius.Mini.Compiler.P.Word_narrows
-import all Lanius.Mini.Compiler.P.arities
-import all Lanius.Mini.Compiler.P.guardAnd
-import all Lanius.Mini.Compiler.P.loadAtBytes
-import all Lanius.Mini.Compiler.P.wordStride
+import all Lanius.Mini.Compiler.P.BinOp_bytes
+import all Lanius.Mini.Compiler.P.DivOp_bytes
+import all Lanius.Mini.Compiler.P.Expr_narrow
+import all Lanius.Mini.Compiler.P.FOp_bytes
+import all Lanius.Mini.Compiler.P.Lists_length
+import all Lanius.Mini.Compiler.P.MemWidth_bytes
+import all Lanius.Mini.Compiler.P.SrcEff_eval
+import all Lanius.Mini.Compiler.P.SrcType_word
+import all Lanius.Mini.Compiler.P.UintTy_bits
+import all Lanius.Mini.Compiler.P.frameSize
 -- end import all uses
 -- import parts: Lanius.Mini.Compiler BinOp.bytes DivOp.bytes MemWidth.bytes
-public import Lanius.Mini.Compiler.P.Lists_empty
-public import Lanius.Mini.Compiler.P.arities
+public import Lanius.Mini.Compiler.P.BinOp_bytes
+public import Lanius.Mini.Compiler.P.DivOp_bytes
+public import Lanius.Mini.Compiler.P.MemWidth_bytes
 -- end import parts
 
 @[expose] public section

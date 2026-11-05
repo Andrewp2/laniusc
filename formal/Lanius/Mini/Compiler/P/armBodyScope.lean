@@ -16,16 +16,4 @@ def armBodyScope (binds : Bool) (binder : Nat) (ty : SrcType) (next : Nat) (scop
   else
     ({ id := binder, slot := next, ty := ty, home := none } : Binding) :: scope
 
-def unitPayload (unit : Bool) : Option (List Expr) :=
-  if unit then
-    some []
-  else
-    none
-
-def fieldPayload (bound : Bool) (values : Option (List Expr)) : Option (List Expr) :=
-  if bound then
-    values
-  else
-    none
-
 end Lanius.Mini

@@ -6,6 +6,21 @@ public import Lanius.Faithful.Gen.SelfSrcF_Inline_pStructFieldsMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pStructFieldsMore
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pStructFieldsMore
 import all Lanius.Mini.Frontend.P.Inline_pStructFieldsMore
+import all Lanius.Mini.Frontend.P.Inline_pStructFieldsNone
+import all Lanius.Mini.Frontend.P.Inline_pStructFieldsSome
+import all Lanius.Mini.Frontend.P.Inline_pStructLit
+import all Lanius.Mini.Frontend.P.Inline_pStructLitFieldsAfterCommaMore
+import all Lanius.Mini.Frontend.P.Inline_pStructLitFieldsAfterCommaTrailing
+import all Lanius.Mini.Frontend.P.Inline_pStructLitFieldsEnd
+import all Lanius.Mini.Frontend.P.Inline_pStructLitFieldsMore
+import all Lanius.Mini.Frontend.P.Inline_pStructLitFieldsNone
+import all Lanius.Mini.Frontend.P.Inline_pStructLitFieldsSome
+import all Lanius.Mini.Frontend.P.Inline_pSubTail
+import all Lanius.Mini.Frontend.P.Inline_pTrait
+import all Lanius.Mini.Frontend.P.Inline_pTrue
+import all Lanius.Mini.Frontend.P.Inline_pTypeAlias
+import all Lanius.Mini.Frontend.P.Inline_pTypeArgsAfterCommaMore
+import all Lanius.Mini.Frontend.P.Inline_pTypeArgsMore
 
 public section
 

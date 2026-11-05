@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.pureArms
 public import Lanius.Mini.Frontend.P.variantLetHead
 
 @[expose] public section

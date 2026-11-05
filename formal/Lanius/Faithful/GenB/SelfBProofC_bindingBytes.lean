@@ -18,11 +18,16 @@ public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcC_bindingBytes
 import all Lanius.Faithful.Gen.SelfStmtC_bindingBytes
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
+import all Lanius.Mini.Compiler.P.SrcType_isScalar
 import all Lanius.Mini.Compiler.P.SrcType_same
-import all Lanius.Mini.Compiler.P.UintTy_half
-import all Lanius.Mini.Compiler.P.bindingBytes
-import all Lanius.Mini.Compiler.P.repeatType
-import all Lanius.Mini.Compiler.P.strStores
+import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.argBytes
+import all Lanius.Mini.Compiler.P.arrayArgs
+import all Lanius.Mini.Compiler.P.blockAt
+import all Lanius.Mini.Compiler.P.blockLimit
+import all Lanius.Mini.Compiler.P.lookup
+import all Lanius.Mini.Compiler.P.lowerValue
+import all Lanius.Mini.Compiler.P.packedWidth
 
 @[expose] public section
 

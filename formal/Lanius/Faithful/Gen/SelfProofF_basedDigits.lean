@@ -16,6 +16,27 @@ public import Lanius.Faithful.Gen.SelfStmtF_joinInsts
 public import Lanius.Faithful.Gen.SelfStmtF_wideMarker
 import all Lanius.Faithful.Gen.SelfSrcF_basedDigits
 import all Lanius.Mini.Frontend.P.basedDigits
+import all Lanius.Mini.Frontend.P.charBody
+import all Lanius.Mini.Frontend.P.charClose
+import all Lanius.Mini.Frontend.P.charCloseOpt
+import all Lanius.Mini.Frontend.P.charLiteral
+import all Lanius.Mini.Frontend.P.charTail
+import all Lanius.Mini.Frontend.P.escapedByte
+import all Lanius.Mini.Frontend.P.flAdd
+import all Lanius.Mini.Frontend.P.flBorrowBit
+import all Lanius.Mini.Frontend.P.flCarry
+import all Lanius.Mini.Frontend.P.flCarryOut
+import all Lanius.Mini.Frontend.P.flLess
+import all Lanius.Mini.Frontend.P.flMul10
+import all Lanius.Mini.Frontend.P.flShl
+import all Lanius.Mini.Frontend.P.flSub
+import all Lanius.Mini.Frontend.P.flTimes10
+import all Lanius.Mini.Frontend.P.flXor
+import all Lanius.Mini.Frontend.P.intLiteral
+import all Lanius.Mini.Frontend.P.litBase
+import all Lanius.Mini.Frontend.P.litPrefixed
+import all Lanius.Mini.Frontend.P.litSized
+import all Lanius.Mini.Frontend.P.litValue
 
 public section
 

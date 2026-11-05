@@ -12,7 +12,12 @@ public import Lanius.Faithful.Gen.SelfStmtF_Inline_pBoundTypeArgsAfterCommaMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_tLparen
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 import all Lanius.Faithful.Gen.SelfSrcF_noToken
+import all Lanius.Mini.Frontend.P.genericTail
+import all Lanius.Mini.Frontend.P.kid
+import all Lanius.Mini.Frontend.P.kidsOf
 import all Lanius.Mini.Frontend.P.noToken
+import all Lanius.Mini.Frontend.P.startsWithKind
+import all Lanius.Mini.Frontend.P.withKid
 
 public section
 

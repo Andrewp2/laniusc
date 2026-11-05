@@ -1,6 +1,9 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Compiler.P.declaredSame
+public import Lanius.Mini.Compiler.P.declaredVariants
+public import Lanius.Mini.Compiler.P.wordType
 public import Lanius.Mini.Compiler.P.wordWidth
 
 @[expose] public section

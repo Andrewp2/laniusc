@@ -4,8 +4,9 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelC_DivOp_size
 public import Lanius.Faithful.GenB.SelfBModelN1
 public import Lanius.Faithful.GenB.SelfBModelN4
-public import Lanius.Mini.Compiler.P.DivOp_size
+public import Lanius.Mini.Compiler.P.Instr_size
 public import Lanius.Mini.Compiler.P.codeSize
+public import Lanius.Mini.Compiler.P.compileExpr
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.Types
 

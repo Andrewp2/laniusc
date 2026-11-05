@@ -1,6 +1,8 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.plainStringByte
+public import Lanius.Mini.Frontend.P.stringBody
 public import Lanius.Mini.Frontend.P.stringCons
 
 @[expose] public section

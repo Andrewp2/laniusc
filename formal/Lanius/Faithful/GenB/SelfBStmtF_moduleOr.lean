@@ -3,7 +3,29 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_positionAt
-public import Lanius.Mini.Frontend.P.moduleOr
+public import Lanius.Mini.Frontend.P.consField
+public import Lanius.Mini.Frontend.P.consFnDecl
+public import Lanius.Mini.Frontend.P.consVariant
+public import Lanius.Mini.Frontend.P.consVariantTail
+public import Lanius.Mini.Frontend.P.enumDeclOf
+public import Lanius.Mini.Frontend.P.fieldsOf
+public import Lanius.Mini.Frontend.P.fnDeclOf
+public import Lanius.Mini.Frontend.P.freeParams
+public import Lanius.Mini.Frontend.P.ifUnbounded
+public import Lanius.Mini.Frontend.P.importDecls
+public import Lanius.Mini.Frontend.P.itemBody
+public import Lanius.Mini.Frontend.P.joinDecls
+public import Lanius.Mini.Frontend.P.moduleDecls
+public import Lanius.Mini.Frontend.P.modulePath
+public import Lanius.Mini.Frontend.P.noDecls
+public import Lanius.Mini.Frontend.P.paramSpellings
+public import Lanius.Mini.Frontend.P.structDeclFields
+public import Lanius.Mini.Frontend.P.structDeclOf
+public import Lanius.Mini.Frontend.P.typeDecl
+public import Lanius.Mini.Frontend.P.typeParams
+public import Lanius.Mini.Frontend.P.unbounded
+public import Lanius.Mini.Frontend.P.variantPayload
+public import Lanius.Mini.Frontend.P.variantsOf
 
 @[expose] public section
 

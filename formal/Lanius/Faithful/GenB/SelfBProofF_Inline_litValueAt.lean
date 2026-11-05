@@ -9,7 +9,7 @@ public import Lanius.Faithful.GenB.SelfBStmtF_basedDigits
 public import Lanius.Faithful.GenB.SelfBStmtF_joinInsts
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_litValueAt
 import all Lanius.Faithful.Gen.SelfStmtF_Inline_litValueAt
-import all Lanius.Mini.Frontend.P.basedDigits
+import all Lanius.Mini.Frontend.P.litBase
 
 @[expose] public section
 

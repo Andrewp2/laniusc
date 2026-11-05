@@ -10,8 +10,11 @@ public import Lanius.Faithful.GenB.SelfBStmtC_assignFrom
 public import Lanius.Faithful.GenB.SelfBStmtC_repeatType
 import all Lanius.Faithful.Gen.SelfSrcC_assignFrom
 import all Lanius.Faithful.Gen.SelfStmtC_assignFrom
+import all Lanius.Mini.Compiler.P.armGuard
 import all Lanius.Mini.Compiler.P.armScope
 import all Lanius.Mini.Compiler.P.assignFrom
+import all Lanius.Mini.Compiler.P.lowerArmValue
+import all Lanius.Mini.Compiler.P.lowerArms
 
 @[expose] public section
 

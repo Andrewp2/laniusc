@@ -6,6 +6,9 @@ public import Lanius.Faithful.Gen.SelfSrcF_Inline_pRetVoid
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pRetVoid
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pRetVoid
 import all Lanius.Mini.Frontend.P.Inline_pRetVoid
+import all Lanius.Mini.Frontend.P.Inline_pReturnStmt
+import all Lanius.Mini.Frontend.P.Inline_pReturnValue
+import all Lanius.Mini.Frontend.P.Inline_pReturnVoid
 
 public section
 

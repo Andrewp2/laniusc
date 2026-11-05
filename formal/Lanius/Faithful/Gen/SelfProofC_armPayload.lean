@@ -17,6 +17,12 @@ public import Lanius.Faithful.Gen.SelfStmtC_assignFrom
 public import Lanius.Faithful.Gen.SelfStmtC_lowerTagged
 import all Lanius.Faithful.Gen.SelfSrcC_armPayload
 import all Lanius.Mini.Compiler.P.armPayload
+import all Lanius.Mini.Compiler.P.lowerArmFound
+import all Lanius.Mini.Compiler.P.lowerArmStmt
+import all Lanius.Mini.Compiler.P.lowerMatch
+import all Lanius.Mini.Compiler.P.lowerMatchArm
+import all Lanius.Mini.Compiler.P.lowerMatchArms
+import all Lanius.Mini.Compiler.P.lowerMatchOn
 
 public section
 

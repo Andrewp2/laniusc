@@ -17,22 +17,4 @@ def exDrop (n : Nat) (items : List Nat) : List Nat :=
     | [] => []
     | x :: rest => exDrop (n - 1) rest
 
-def exReverse (items : List Nat) (acc : List Nat) : List Nat :=
-  match items with
-  | [] => acc
-  | x :: rest => exReverse rest (x :: acc)
-
-def exIsSpace (c : Nat) : Bool :=
-  decide (c = 32) || decide (c = 9) || decide (c = 10) || decide (c = 13) || decide (c = 11) || decide (c = 12)
-
-def exTrimFront (text : List Nat) : List Nat :=
-  match text with
-  | [] => []
-  | c :: rest =>
-    let tspace : Bool := exIsSpace c
-    if tspace then
-      exTrimFront rest
-    else
-      text
-
 end Lanius.Mini

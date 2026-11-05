@@ -4,6 +4,8 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_funcsBytes
 public import Lanius.Mini.Frontend.P.funcsBytes
+public import Lanius.Mini.Frontend.P.placeFuncs
+public import Lanius.Mini.Frontend.P.placedProgram
 
 @[expose] public section
 

@@ -10,7 +10,15 @@ public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_flNatHalf
 import all Lanius.Faithful.Gen.SelfSrcF_flNatHalf
+import all Lanius.Mini.Frontend.P.flBit
+import all Lanius.Mini.Frontend.P.flLog2
+import all Lanius.Mini.Frontend.P.flLog2Up
+import all Lanius.Mini.Frontend.P.flLowBit
 import all Lanius.Mini.Frontend.P.flNatHalf
+import all Lanius.Mini.Frontend.P.flNatOdd
+import all Lanius.Mini.Frontend.P.flOfNat
+import all Lanius.Mini.Frontend.P.flPow2
+import all Lanius.Mini.Frontend.P.flToNat
 
 public section
 

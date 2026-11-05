@@ -12,7 +12,7 @@ public import Lanius.Faithful.GenB.SelfBStmtN0
 public import Lanius.Faithful.GenB.SelfBStmtN1
 import all Lanius.Faithful.Gen.SelfSrcF_setIndexOrEval
 import all Lanius.Faithful.Gen.SelfStmtF_setIndexOrEval
-import all Lanius.Mini.Frontend.P.pickTy
+import all Lanius.Mini.Frontend.P.indexElem
 
 @[expose] public section
 

@@ -2,6 +2,8 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.tryLetHead
+public import Lanius.Mini.Frontend.P.tryPayload
+public import Lanius.Mini.Frontend.P.tryRest
 
 @[expose] public section
 

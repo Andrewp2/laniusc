@@ -12,39 +12,4 @@ namespace Lanius.Mini
 def start : State :=
   State.ready
 
-def go (next : State) : Move :=
-  ({ next := next, allowed := true } : Move)
-
-def stay (state : State) : Move :=
-  ({ next := state, allowed := true } : Move)
-
-def refuse (state : State) : Move :=
-  ({ next := state, allowed := false } : Move)
-
-def inReady (event : Event) : Move :=
-  match event with
-  | .bind => stay State.ready
-  | .clearBindings => stay State.ready
-  | .step => stay State.ready
-  | .stepRow => go State.row
-  | .stepDone => go State.done
-  | .stepFailed => go State.failed
-  | .column => refuse State.ready
-  | .columnFailed => refuse State.ready
-  | .reset => stay State.ready
-  | .finalize => go State.finalized
-
-def inRow (event : Event) : Move :=
-  match event with
-  | .bind => refuse State.row
-  | .clearBindings => refuse State.row
-  | .step => stay State.row
-  | .stepRow => go State.row
-  | .stepDone => go State.done
-  | .stepFailed => go State.failed
-  | .column => stay State.row
-  | .columnFailed => go State.failed
-  | .reset => go State.ready
-  | .finalize => go State.finalized
-
 end Lanius.Mini

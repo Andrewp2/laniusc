@@ -13,8 +13,4 @@ def txOption : List Nat :=
   let t : List Nat := 79 :: 112 :: 116 :: 105 :: 111 :: [110]
   t
 
-def txList : List Nat :=
-  let t : List Nat := 76 :: 105 :: 115 :: [116]
-  t
-
 end Lanius.Mini

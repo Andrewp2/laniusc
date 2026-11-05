@@ -15,11 +15,13 @@ public import Lanius.Faithful.GenB.SelfBStmtN4
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcC_optimizeIte
 import all Lanius.Faithful.Gen.SelfStmtC_optimizeIte
-import all Lanius.Mini.Compiler.P.Stmt_kills
-import all Lanius.Mini.Compiler.P.callAgrees
-import all Lanius.Mini.Compiler.P.longer
-import all Lanius.Mini.Compiler.P.optimizeIte
-import all Lanius.Mini.Compiler.P.optimizeLeft
+import all Lanius.Mini.Compiler.P.Expr_literal
+import all Lanius.Mini.Compiler.P.Expr_optimize
+import all Lanius.Mini.Compiler.P.Expr_subst
+import all Lanius.Mini.Compiler.P.Stmt_deadBefore
+import all Lanius.Mini.Compiler.P.Stmt_factsAfter
+import all Lanius.Mini.Compiler.P.Stmt_optimize
+import all Lanius.Mini.Compiler.P.optimizeFuncs
 import all Lanius.Mini.Compiler.P.substAll
 
 @[expose] public section

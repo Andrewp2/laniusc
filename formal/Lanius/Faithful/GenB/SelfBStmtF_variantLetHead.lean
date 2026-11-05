@@ -3,6 +3,7 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_variantLetHead
+public import Lanius.Mini.Frontend.P.pureArms
 public import Lanius.Mini.Frontend.P.variantLetHead
 
 @[expose] public section

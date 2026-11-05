@@ -3,7 +3,12 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_floatTyped
+public import Lanius.Mini.Frontend.P.findLocal
+public import Lanius.Mini.Frontend.P.findLocalId
 public import Lanius.Mini.Frontend.P.floatTyped
+public import Lanius.Mini.Frontend.P.localOf
+public import Lanius.Mini.Frontend.P.negateSome
+public import Lanius.Mini.Frontend.P.negatedFloat
 
 @[expose] public section
 

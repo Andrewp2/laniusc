@@ -6,8 +6,15 @@ public import Lanius.Faithful.GenB.SelfBModelN1
 public import Lanius.Faithful.GenB.SelfBModelN2
 public import Lanius.Faithful.GenB.SelfBModelN4
 public import Lanius.Faithful.GenB.SelfBModelN6
+public import Lanius.Mini.Compiler.P.Expr_temps
+public import Lanius.Mini.Compiler.P.Expr_within
+public import Lanius.Mini.Compiler.P.Stmt_within
+public import Lanius.Mini.Compiler.P.argSlots
 public import Lanius.Mini.Compiler.P.codeSize
 public import Lanius.Mini.Compiler.P.compileArgs
+public import Lanius.Mini.Compiler.P.compileExpr
+public import Lanius.Mini.Compiler.P.compileStmt
+public import Lanius.Mini.Compiler.P.zeroLocals
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.Types
 

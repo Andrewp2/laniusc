@@ -362,6 +362,7 @@ def bucket_name(prog, key, parts, i):
     edit rebuilds one proof module; any other, a hash of its name."""
     part = parts.where.get(prog.head(i, parts.inline)) if prog.role(i) == 'fn' else None
     if part:
+        part = parts.chunk.get(part, part)
         return part.split('.')[2][0] + '_' + part.rsplit('.', 1)[1]
     return str(bucket(key[i]))
 
@@ -497,6 +498,32 @@ def inners(prog, i, comp):
 CALLEE_BODIES = {'Lanius.Mini.effNode', 'Lanius.Mini.exprOf', 'Lanius.Mini.peel'}
 
 
+def crc_ends(name):
+    """extract.lani's old part boundary (ex_ends_part): a run of definitions ended after one whose name's
+    CRC-32 is 0 mod 8."""
+    return zlib.crc32(name.encode()) % 8 == 0
+
+
+def chunks(formal, base):
+    """The extraction's parts (one per definition or mutual block, 11-04) grouped as extract.lani grouped them
+    before: in source order, a group ending after a part whose first definition `crc_ends`, or at 24 parts. Each
+    part maps to its group's first part: the generated certificates' modules (bucket_name) stay that coarse, so a
+    module per function does not multiply them by eight."""
+    agg = open(os.path.join(formal, 'Lanius/Mini', base + '.lean')).read()
+    order = re.findall(rf'^public import (Lanius\.Mini\.{base}\.P\.\S+)$', agg, re.M)
+    out, head, n = {}, None, 0
+    for m in order:
+        text = open(os.path.join(formal, m.replace('.', '/') + '.lean')).read()
+        first = re.search(r'^(?:@\[[^\]]*\] )?(?:noncomputable )?(?:def|abbrev|inductive|structure|theorem|instance) ([A-Za-z0-9_.\']+)', text, re.M)
+        if head is None:
+            head, n = m, 0
+        out[m] = head
+        n += 1
+        if (first and crc_ends(first.group(1))) or n >= 24:
+            head = None
+    return out
+
+
 class Parts:
     """Where the extraction defines each Lean name (extract.py's parts), and
     the parts a proof that unfolds a definition imports with `import all`: its
@@ -514,6 +541,9 @@ class Parts:
         for name in self.where:
             self.short.setdefault(name.rsplit('.', 1)[-1], set()).add(name)
         self.inline = {n[len('Lanius.Mini.Inline.'):] for n in self.where if n.startswith('Lanius.Mini.Inline.')}
+        self.chunk = {}
+        for base in ['Compiler', 'Frontend']:
+            self.chunk.update(chunks(formal, base))
 
     def scan(self, text, module):
         for chunk in re.split(r'\n(?=(?:/--.*\n)?(?:@\[expose\] )?(?:def|theorem|structure|inductive) )', text):

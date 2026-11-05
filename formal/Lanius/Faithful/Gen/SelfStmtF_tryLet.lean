@@ -1,7 +1,19 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.inferred
+public import Lanius.Mini.Frontend.P.isPtrTy
+public import Lanius.Mini.Frontend.P.letHeadOrEval
+public import Lanius.Mini.Frontend.P.literalHead
+public import Lanius.Mini.Frontend.P.pureInferred
+public import Lanius.Mini.Frontend.P.thenOf
+public import Lanius.Mini.Frontend.P.thenRest
 public import Lanius.Mini.Frontend.P.tryLet
+public import Lanius.Mini.Frontend.P.tryStmt
+public import Lanius.Mini.Frontend.P.untypedEval
+public import Lanius.Mini.Frontend.P.untypedHead
+public import Lanius.Mini.Frontend.P.untypedIf
+public import Lanius.Mini.Frontend.P.untypedTry
 
 @[expose] public section
 

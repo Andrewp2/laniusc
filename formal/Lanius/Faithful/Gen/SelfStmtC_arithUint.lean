@@ -1,7 +1,9 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Compiler.P.arithSint
 public import Lanius.Mini.Compiler.P.arithUint
+public import Lanius.Mini.Compiler.P.floatOp
 
 @[expose] public section
 

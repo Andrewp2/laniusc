@@ -2,6 +2,11 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Compiler.P.arithShiftRight
+public import Lanius.Mini.Compiler.P.offsetOrArith
+public import Lanius.Mini.Compiler.P.order
+public import Lanius.Mini.Compiler.P.orderSint
+public import Lanius.Mini.Compiler.P.orderUint
+public import Lanius.Mini.Compiler.P.signKey
 
 @[expose] public section
 

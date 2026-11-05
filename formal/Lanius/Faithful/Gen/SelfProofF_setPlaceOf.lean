@@ -33,7 +33,20 @@ public import Lanius.Faithful.Gen.SelfStmtF_triedIf
 public import Lanius.Faithful.Gen.SelfStmtF_tryLet
 public import Lanius.Faithful.Gen.SelfStmtF_whileEvalOf
 import all Lanius.Faithful.Gen.SelfSrcF_setPlaceOf
+import all Lanius.Mini.Frontend.P.assertArg
+import all Lanius.Mini.Frontend.P.assertOf
+import all Lanius.Mini.Frontend.P.assignOpOf
+import all Lanius.Mini.Frontend.P.assignTarget
+import all Lanius.Mini.Frontend.P.callStmt
+import all Lanius.Mini.Frontend.P.compoundEff
+import all Lanius.Mini.Frontend.P.compoundFieldEval
+import all Lanius.Mini.Frontend.P.compoundOp
+import all Lanius.Mini.Frontend.P.discardOf
+import all Lanius.Mini.Frontend.P.freeOf
+import all Lanius.Mini.Frontend.P.freeShifted
 import all Lanius.Mini.Frontend.P.setPlaceOf
+import all Lanius.Mini.Frontend.P.setPlaceOpOf
+import all Lanius.Mini.Frontend.P.setPlaceOpValue
 
 public section
 

@@ -15,30 +15,4 @@ def ifEff (x : MEff) (a : MStmt) (b : MStmt) : MStmt :=
   | some v => MStmt.mIf v a b
   | none => MStmt.mIfEval x a b
 
-def whileEff (x : MEff) (body : MStmt) : MStmt :=
-  match purePart x with
-  | some v => MStmt.mWhile v body
-  | none => MStmt.mWhileEval x body
-
-def setEff (id : Nat) (x : MEff) : MStmt :=
-  match purePart x with
-  | some v => MStmt.mSet id v
-  | none => MStmt.mSetEval id x
-
-def setFieldEff (id : Nat) (j : Nat) (x : MEff) : MStmt :=
-  match purePart x with
-  | some v => MStmt.mSetField id j v
-  | none => MStmt.mSetFieldEval id j x
-
-def setIndexPure (slice : Nat) (i : MEff) (v : MEff) (value : Option SrcExpr) : MStmt :=
-  match purePart i with
-  | none => MStmt.mSetIndexEval slice i v
-  | some a =>
-    match value with
-    | none => MStmt.mSetIndexEval slice i v
-    | some b => MStmt.mSetIndex slice a b
-
-def setIndexEff (slice : Nat) (i : MEff) (v : MEff) : MStmt :=
-  setIndexPure slice i v (purePart v)
-
 end Lanius.Mini

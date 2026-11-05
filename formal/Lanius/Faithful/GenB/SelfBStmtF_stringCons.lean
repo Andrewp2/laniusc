@@ -4,6 +4,8 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_findMethodAt
 public import Lanius.Faithful.GenB.SelfBModelF_stringCons
+public import Lanius.Mini.Frontend.P.plainStringByte
+public import Lanius.Mini.Frontend.P.stringBody
 public import Lanius.Mini.Frontend.P.stringCons
 
 @[expose] public section

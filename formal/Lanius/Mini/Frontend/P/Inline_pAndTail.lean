@@ -12,16 +12,4 @@ namespace Lanius.Mini
 @[expose] def Inline.pAndTail : Nat :=
   122
 
-@[expose] def Inline.pAndexpr : Nat :=
-  121
-
-@[expose] def Inline.pArgsAfterCommaMore : Nat :=
-  169
-
-@[expose] def Inline.pArgsAfterCommaTrailing : Nat :=
-  170
-
-@[expose] def Inline.pArgsEnd : Nat :=
-  168
-
 end Lanius.Mini

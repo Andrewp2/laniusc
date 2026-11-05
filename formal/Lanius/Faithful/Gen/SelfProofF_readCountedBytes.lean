@@ -9,7 +9,14 @@ public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_lxCanonicalKind
 public import Lanius.Faithful.Gen.SelfStmtF_readCountedBytes
 import all Lanius.Faithful.Gen.SelfSrcF_readCountedBytes
+import all Lanius.Mini.Frontend.P.fileLexed
+import all Lanius.Mini.Frontend.P.filesAfter
 import all Lanius.Mini.Frontend.P.readCountedBytes
+import all Lanius.Mini.Frontend.P.readCountedFiles
+import all Lanius.Mini.Frontend.P.readFile
+import all Lanius.Mini.Frontend.P.readFileEnd
+import all Lanius.Mini.Frontend.P.readFileParents
+import all Lanius.Mini.Frontend.P.readFiles
 
 public section
 

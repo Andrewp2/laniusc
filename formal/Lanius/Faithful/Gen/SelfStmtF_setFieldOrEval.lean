@@ -1,7 +1,10 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.refRooted
+public import Lanius.Mini.Frontend.P.refTarget
 public import Lanius.Mini.Frontend.P.setFieldOrEval
+public import Lanius.Mini.Frontend.P.setPlaceValue
 
 @[expose] public section
 

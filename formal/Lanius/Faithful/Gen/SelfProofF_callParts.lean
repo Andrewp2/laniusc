@@ -13,6 +13,11 @@ public import Lanius.Faithful.Gen.SelfStmtF_pickTy
 public import Lanius.Faithful.Gen.SelfStmtF_purePart
 import all Lanius.Faithful.Gen.SelfSrcF_callParts
 import all Lanius.Mini.Frontend.P.callParts
+import all Lanius.Mini.Frontend.P.effLocal
+import all Lanius.Mini.Frontend.P.pureLocal
+import all Lanius.Mini.Frontend.P.viewArray
+import all Lanius.Mini.Frontend.P.viewLocal
+import all Lanius.Mini.Frontend.P.wantElem
 
 public section
 

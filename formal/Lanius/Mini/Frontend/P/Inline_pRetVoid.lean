@@ -12,13 +12,4 @@ namespace Lanius.Mini
 @[expose] def Inline.pRetVoid : Nat :=
   35
 
-@[expose] def Inline.pReturnStmt : Nat :=
-  76
-
-@[expose] def Inline.pReturnValue : Nat :=
-  90
-
-@[expose] def Inline.pReturnVoid : Nat :=
-  91
-
 end Lanius.Mini

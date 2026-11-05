@@ -18,6 +18,14 @@ public import Lanius.Faithful.Gen.SelfStmtC_compileArgs
 public import Lanius.Faithful.Gen.SelfStmtC_strStores
 public import Lanius.Faithful.Gen.SelfStmtC_withBudget
 import all Lanius.Faithful.Gen.SelfSrcC_withBudget
+import all Lanius.Mini.Compiler.P.SrcEff_sliceUses
+import all Lanius.Mini.Compiler.P.SrcStmt_calleeNeed
+import all Lanius.Mini.Compiler.P.SrcStmt_sliceUses
+import all Lanius.Mini.Compiler.P.arrayBytesOf
+import all Lanius.Mini.Compiler.P.blockRoom
+import all Lanius.Mini.Compiler.P.declBytes
+import all Lanius.Mini.Compiler.P.frameBlock
+import all Lanius.Mini.Compiler.P.paramsRoom
 import all Lanius.Mini.Compiler.P.withBudget
 
 public section

@@ -15,7 +15,12 @@ public import Lanius.Faithful.Gen.SelfStmtC_funcNeeds
 public import Lanius.Faithful.Gen.SelfStmtC_needCapped
 public import Lanius.Faithful.Gen.SelfStmtC_needsAfter
 import all Lanius.Faithful.Gen.SelfSrcC_funcNeeds
+import all Lanius.Mini.Compiler.P.Expr_extent
+import all Lanius.Mini.Compiler.P.Stmt_extent
+import all Lanius.Mini.Compiler.P.argsExtent
 import all Lanius.Mini.Compiler.P.funcNeeds
+import all Lanius.Mini.Compiler.P.sigs
+import all Lanius.Mini.Compiler.P.sigsWith
 
 public section
 

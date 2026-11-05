@@ -3,7 +3,9 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_findMethodAt
+public import Lanius.Mini.Frontend.P.assignment
 public import Lanius.Mini.Frontend.P.compoundOf
+public import Lanius.Mini.Frontend.P.writesLocal
 
 @[expose] public section
 

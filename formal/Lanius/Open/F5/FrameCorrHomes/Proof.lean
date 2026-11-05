@@ -2,9 +2,47 @@ module
 
 public import Lanius.Open.F5.FrameCorrHomes.Stmt
 public import Lanius.Mini.Borrowed
+import all Lanius.Mini.Compiler.P.BinOp_size
+import all Lanius.Mini.Compiler.P.Lists_concat
+import all Lanius.Mini.Compiler.P.Lists_cons
 import all Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.P.Lists_get
+import all Lanius.Mini.Compiler.P.Lists_getOr
+import all Lanius.Mini.Compiler.P.Lists_length
+import all Lanius.Mini.Compiler.P.Lists_single
+import all Lanius.Mini.Compiler.P.MemWidth_bytes
+import all Lanius.Mini.Compiler.P.MemWidth_prefix
+import all Lanius.Mini.Compiler.P.MemWidth_rex
+import all Lanius.Mini.Compiler.P.Word_prefix
 import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.fieldOffset
+import all Lanius.Mini.Compiler.P.norm
+import all Lanius.Mini.Compiler.P.wrap
+import all Lanius.Mini.Compiler.P.Code_image
+import all Lanius.Mini.Compiler.P.Code_size
+import all Lanius.Mini.Compiler.P.Instr_encode
+import all Lanius.Mini.Compiler.P.argBase
+import all Lanius.Mini.Compiler.P.copyBytes
+import all Lanius.Mini.Compiler.P.encodeFrom
+import all Lanius.Mini.Compiler.P.encodeOnto
+import all Lanius.Mini.Compiler.P.epilogue
+import all Lanius.Mini.Compiler.P.frameSize
+import all Lanius.Mini.Compiler.P.layout
+import all Lanius.Mini.Compiler.P.linkFrom
+import all Lanius.Mini.Compiler.P.linkOnto
 import all Lanius.Mini.Compiler.P.loadAtBytes
+import all Lanius.Mini.Compiler.P.loadWordBytes
+import all Lanius.Mini.Compiler.P.prologue
+import all Lanius.Mini.Compiler.P.relative
+import all Lanius.Mini.Compiler.P.slotRange
+import all Lanius.Mini.Compiler.P.stackCheck
+import all Lanius.Mini.Compiler.P.storeAtBytes
+import all Lanius.Mini.Compiler.P.storeWordBytes
+import all Lanius.Mini.Compiler.P.sysBytes
+import all Lanius.Mini.Compiler.P.syscallLinuxByte
+import all Lanius.Mini.Compiler.P.syscallLinuxHigh
+import all Lanius.Mini.Compiler.P.syscallRsiBytes
 
 @[expose] public section
 

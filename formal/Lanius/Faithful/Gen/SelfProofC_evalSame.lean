@@ -8,6 +8,7 @@ public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmtC_SrcType_same
 public import Lanius.Faithful.Gen.SelfStmtC_evalSame
 import all Lanius.Faithful.Gen.SelfSrcC_evalSame
+import all Lanius.Mini.Compiler.P.evalArm
 import all Lanius.Mini.Compiler.P.evalSame
 
 public section

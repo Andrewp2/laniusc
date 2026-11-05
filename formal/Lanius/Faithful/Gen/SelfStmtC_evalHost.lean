@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Compiler.P.evalCall
 public import Lanius.Mini.Compiler.P.evalHost
 
 @[expose] public section

@@ -24,6 +24,16 @@ public import Lanius.Faithful.Gen.SelfStmtF_tryLet
 public import Lanius.Faithful.Gen.SelfStmtF_typeDeclAt
 import all Lanius.Faithful.Gen.SelfSrcF_i32ArrayLength
 import all Lanius.Mini.Frontend.P.i32ArrayLength
+import all Lanius.Mini.Frontend.P.isEmptyTexts
+import all Lanius.Mini.Frontend.P.isLastTyped
+import all Lanius.Mini.Frontend.P.isMemTyped
+import all Lanius.Mini.Frontend.P.isPtrOf
+import all Lanius.Mini.Frontend.P.namesLocal
+import all Lanius.Mini.Frontend.P.stringDataPtrPath
+import all Lanius.Mini.Frontend.P.viewPointer
+import all Lanius.Mini.Frontend.P.viewRead
+import all Lanius.Mini.Frontend.P.viewStmt
+import all Lanius.Mini.Frontend.P.viewsLocal
 
 public section
 

@@ -3,7 +3,22 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_findMethodAt
+public import Lanius.Mini.Frontend.P.blockOf
+public import Lanius.Mini.Frontend.P.consParam
+public import Lanius.Mini.Frontend.P.contractThen
+public import Lanius.Mini.Frontend.P.contractsOf
+public import Lanius.Mini.Frontend.P.funcBody
+public import Lanius.Mini.Frontend.P.funcParams
+public import Lanius.Mini.Frontend.P.funcRet
+public import Lanius.Mini.Frontend.P.litBind
 public import Lanius.Mini.Frontend.P.litIf
+public import Lanius.Mini.Frontend.P.paramToken
+public import Lanius.Mini.Frontend.P.paramTyOf
+public import Lanius.Mini.Frontend.P.paramsOf
+public import Lanius.Mini.Frontend.P.refTy
+public import Lanius.Mini.Frontend.P.resultOf
+public import Lanius.Mini.Frontend.P.retExpected
+public import Lanius.Mini.Frontend.P.retOfTy
 
 @[expose] public section
 

@@ -2,6 +2,7 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.litEffMatch
+public import Lanius.Mini.Frontend.P.stringClose
 
 @[expose] public section
 

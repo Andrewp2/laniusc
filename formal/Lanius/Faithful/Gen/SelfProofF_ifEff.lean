@@ -8,6 +8,11 @@ public import Lanius.Faithful.Gen.SelfStmtF_ifEff
 public import Lanius.Faithful.Gen.SelfStmtF_purePart
 import all Lanius.Faithful.Gen.SelfSrcF_ifEff
 import all Lanius.Mini.Frontend.P.ifEff
+import all Lanius.Mini.Frontend.P.setEff
+import all Lanius.Mini.Frontend.P.setFieldEff
+import all Lanius.Mini.Frontend.P.setIndexEff
+import all Lanius.Mini.Frontend.P.setIndexPure
+import all Lanius.Mini.Frontend.P.whileEff
 
 public section
 

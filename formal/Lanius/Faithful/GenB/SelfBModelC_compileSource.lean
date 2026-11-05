@@ -4,8 +4,9 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelC_compileOr
 public import Lanius.Faithful.GenB.SelfBModelC_declareProgram
 public import Lanius.Faithful.GenB.SelfBModelN2
-public import Lanius.Mini.Compiler.P.compileSource
 public import Lanius.Mini.Compiler.P.declareProgram
+public import Lanius.Mini.Compiler.P.funcsReturn
+public import Lanius.Mini.Compiler.P.usizeWords
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.Types
 

@@ -2,19 +2,20 @@ module
 
 public import Lanius.Mini.Source
 -- import all uses: Lanius.Mini.Compiler
-import all Lanius.Mini.Compiler.P.DivOp_size
-import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.FloatTy_mask
+import all Lanius.Mini.Compiler.P.SrcEff_eval
+import all Lanius.Mini.Compiler.P.UintTy_bits
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_mask
-import all Lanius.Mini.Compiler.P.arithShiftRight
-import all Lanius.Mini.Compiler.P.guardAnd
-import all Lanius.Mini.Compiler.P.lowerLocal
-import all Lanius.Mini.Compiler.P.wordStride
+import all Lanius.Mini.Compiler.P.fromI32
+import all Lanius.Mini.Compiler.P.order
+import all Lanius.Mini.Compiler.P.signKey
+import all Lanius.Mini.Compiler.P.wrap
 -- end import all uses
 -- import parts: Lanius.Mini.Compiler UintTy.isWide UintTy.mask fromI32
 public import Lanius.Mini.Compiler.P.UintTy_isWide
 public import Lanius.Mini.Compiler.P.UintTy_mask
-public import Lanius.Mini.Compiler.P.lowerLocal
+public import Lanius.Mini.Compiler.P.fromI32
 -- end import parts
 
 @[expose] public section

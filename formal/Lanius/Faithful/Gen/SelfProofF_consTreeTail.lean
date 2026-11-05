@@ -27,7 +27,28 @@ public import Lanius.Faithful.Gen.SelfStmtF_typeDeclAt
 public import Lanius.Faithful.Gen.SelfStmtF_typePathSpellings
 public import Lanius.Faithful.Gen.SelfStmtF_variantIn
 import all Lanius.Faithful.Gen.SelfSrcF_consTreeTail
+import all Lanius.Mini.Frontend.P.argsOfItems
+import all Lanius.Mini.Frontend.P.boundGoals
+import all Lanius.Mini.Frontend.P.boundOrNone
+import all Lanius.Mini.Frontend.P.boundPathSpellings
+import all Lanius.Mini.Frontend.P.calleeEnv
+import all Lanius.Mini.Frontend.P.consGoal
+import all Lanius.Mini.Frontend.P.consGoalTail
+import all Lanius.Mini.Frontend.P.consTree
 import all Lanius.Mini.Frontend.P.consTreeTail
+import all Lanius.Mini.Frontend.P.goalAt
+import all Lanius.Mini.Frontend.P.goalsOf
+import all Lanius.Mini.Frontend.P.instFrom
+import all Lanius.Mini.Frontend.P.joinGoals
+import all Lanius.Mini.Frontend.P.joinGoalsTail
+import all Lanius.Mini.Frontend.P.paramPatterns
+import all Lanius.Mini.Frontend.P.patternOf
+import all Lanius.Mini.Frontend.P.patternsOf
+import all Lanius.Mini.Frontend.P.retPattern
+import all Lanius.Mini.Frontend.P.traitAt
+import all Lanius.Mini.Frontend.P.traitOfBound
+import all Lanius.Mini.Frontend.P.traitOfTy
+import all Lanius.Mini.Frontend.P.traitSplit
 
 public section
 

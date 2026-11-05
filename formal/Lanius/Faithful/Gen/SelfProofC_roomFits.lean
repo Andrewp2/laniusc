@@ -11,6 +11,7 @@ public import Lanius.Faithful.Gen.SelfStmtC_codeSize
 public import Lanius.Faithful.Gen.SelfStmtC_compileArgs
 public import Lanius.Faithful.Gen.SelfStmtC_roomFits
 import all Lanius.Faithful.Gen.SelfSrcC_roomFits
+import all Lanius.Mini.Compiler.P.compileFunc
 import all Lanius.Mini.Compiler.P.roomFits
 
 public section

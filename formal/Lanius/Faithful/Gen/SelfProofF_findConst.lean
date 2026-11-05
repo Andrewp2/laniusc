@@ -15,7 +15,21 @@ public import Lanius.Faithful.Gen.SelfStmtF_Inline_variantsNamedAt
 public import Lanius.Faithful.Gen.SelfStmtF_distinct
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
 import all Lanius.Faithful.Gen.SelfSrcF_findConst
+import all Lanius.Mini.Frontend.P.addInst
+import all Lanius.Mini.Frontend.P.addInsts
+import all Lanius.Mini.Frontend.P.declEnv
+import all Lanius.Mini.Frontend.P.findAlias
 import all Lanius.Mini.Frontend.P.findConst
+import all Lanius.Mini.Frontend.P.floatCode
+import all Lanius.Mini.Frontend.P.ifItem
+import all Lanius.Mini.Frontend.P.instIndex
+import all Lanius.Mini.Frontend.P.instMember
+import all Lanius.Mini.Frontend.P.isModule
+import all Lanius.Mini.Frontend.P.sameFloat
+import all Lanius.Mini.Frontend.P.sameInst
+import all Lanius.Mini.Frontend.P.sameTy
+import all Lanius.Mini.Frontend.P.uintCode
+import all Lanius.Mini.Frontend.P.variantsNamed
 
 public section
 

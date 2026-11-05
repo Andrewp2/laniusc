@@ -2,6 +2,10 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.depthLimit
+public import Lanius.Mini.Frontend.P.depthSum
+public import Lanius.Mini.Frontend.P.limExpr
+public import Lanius.Mini.Frontend.P.limSlots
+public import Lanius.Mini.Frontend.P.limTy
 
 @[expose] public section
 

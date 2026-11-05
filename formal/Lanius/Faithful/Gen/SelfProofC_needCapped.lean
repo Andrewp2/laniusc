@@ -12,6 +12,10 @@ public import Lanius.Faithful.Gen.SelfStmtC_needLimit
 public import Lanius.Faithful.Gen.SelfStmtC_withBudget
 import all Lanius.Faithful.Gen.SelfSrcC_needCapped
 import all Lanius.Mini.Compiler.P.needCapped
+import all Lanius.Mini.Compiler.P.needRound
+import all Lanius.Mini.Compiler.P.needRoundAt
+import all Lanius.Mini.Compiler.P.restNeeds
+import all Lanius.Mini.Compiler.P.sameNeeds
 
 public section
 

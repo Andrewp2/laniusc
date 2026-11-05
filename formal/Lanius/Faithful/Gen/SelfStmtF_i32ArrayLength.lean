@@ -2,6 +2,16 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.i32ArrayLength
+public import Lanius.Mini.Frontend.P.isEmptyTexts
+public import Lanius.Mini.Frontend.P.isLastTyped
+public import Lanius.Mini.Frontend.P.isMemTyped
+public import Lanius.Mini.Frontend.P.isPtrOf
+public import Lanius.Mini.Frontend.P.namesLocal
+public import Lanius.Mini.Frontend.P.stringDataPtrPath
+public import Lanius.Mini.Frontend.P.viewPointer
+public import Lanius.Mini.Frontend.P.viewRead
+public import Lanius.Mini.Frontend.P.viewStmt
+public import Lanius.Mini.Frontend.P.viewsLocal
 
 @[expose] public section
 

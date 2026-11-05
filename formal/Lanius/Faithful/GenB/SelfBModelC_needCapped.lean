@@ -3,8 +3,11 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelC_Inline_arithOf
 public import Lanius.Faithful.GenB.SelfBModelN2
+public import Lanius.Mini.Compiler.P.SrcStmt_calleeNeed
+public import Lanius.Mini.Compiler.P.frameBlock
 public import Lanius.Mini.Compiler.P.needCapped
-public import Lanius.Mini.Compiler.P.withBudget
+public import Lanius.Mini.Compiler.P.needRoundAt
+public import Lanius.Mini.Compiler.P.restNeeds
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.Types
 

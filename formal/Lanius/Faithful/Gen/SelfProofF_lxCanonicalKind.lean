@@ -16,7 +16,23 @@ public import Lanius.Faithful.Gen.SelfStmtF_lxCanonicalKind
 public import Lanius.Faithful.Gen.SelfStmtF_lxDotAt
 public import Lanius.Faithful.Gen.SelfStmtF_lxSymbolStart
 import all Lanius.Faithful.Gen.SelfSrcF_lxCanonicalKind
+import all Lanius.Mini.Frontend.P.byteAfter
+import all Lanius.Mini.Frontend.P.lexSource
+import all Lanius.Mini.Frontend.P.lxAsText
 import all Lanius.Mini.Frontend.P.lxCanonicalKind
+import all Lanius.Mini.Frontend.P.lxFilter
+import all Lanius.Mini.Frontend.P.lxKeywordRules
+import all Lanius.Mini.Frontend.P.lxRangePair
+import all Lanius.Mini.Frontend.P.lxRanges
+import all Lanius.Mini.Frontend.P.lxSymbolRules
+import all Lanius.Mini.Frontend.P.lxToken
+import all Lanius.Mini.Frontend.P.lxTokenText
+import all Lanius.Mini.Frontend.P.lxTokens
+import all Lanius.Mini.Frontend.P.numsAfter
+import all Lanius.Mini.Frontend.P.readBytes
+import all Lanius.Mini.Frontend.P.readCountedNums
+import all Lanius.Mini.Frontend.P.readNums
+import all Lanius.Mini.Frontend.P.wordNum
 
 public section
 

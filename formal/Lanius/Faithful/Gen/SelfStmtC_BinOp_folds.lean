@@ -1,7 +1,15 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Compiler.P.BinOp_annihilates
+public import Lanius.Mini.Compiler.P.BinOp_commutes
 public import Lanius.Mini.Compiler.P.BinOp_folds
+public import Lanius.Mini.Compiler.P.BinOp_number
+public import Lanius.Mini.Compiler.P.BinOp_unit
+public import Lanius.Mini.Compiler.P.CmpOp_number
+public import Lanius.Mini.Compiler.P.CmpOp_test
+public import Lanius.Mini.Compiler.P.DivOp_number
+public import Lanius.Mini.Compiler.P.Syscall_number
 
 @[expose] public section
 

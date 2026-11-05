@@ -3,11 +3,13 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelF_genericClose
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.Inline_pBitAnd
-public import Lanius.Mini.Frontend.P.Inline_pExpr
-public import Lanius.Mini.Frontend.P.Inline_pLeTail
-public import Lanius.Mini.Frontend.P.Inline_pModTail
-public import Lanius.Mini.Frontend.P.Inline_tLparen
+public import Lanius.Mini.Frontend.P.Inline_pBlockStmt
+public import Lanius.Mini.Frontend.P.Inline_pExprStmt
+public import Lanius.Mini.Frontend.P.Inline_pMemberTypeArgsNone
+public import Lanius.Mini.Frontend.P.Inline_pMemberTypeArgsSome
+public import Lanius.Mini.Frontend.P.Inline_pPathIdent
+public import Lanius.Mini.Frontend.P.Inline_pPathIdentArgs
+public import Lanius.Mini.Frontend.P.Inline_tLt
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

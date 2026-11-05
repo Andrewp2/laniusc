@@ -3,7 +3,19 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_sintToUint
+public import Lanius.Mini.Compiler.P.castTo
+public import Lanius.Mini.Compiler.P.castToFloat
+public import Lanius.Mini.Compiler.P.castToI32
+public import Lanius.Mini.Compiler.P.castToIsize
+public import Lanius.Mini.Compiler.P.castToSint
+public import Lanius.Mini.Compiler.P.castToUint
+public import Lanius.Mini.Compiler.P.floatToFloat
+public import Lanius.Mini.Compiler.P.ifNarrow
+public import Lanius.Mini.Compiler.P.intToFloat
+public import Lanius.Mini.Compiler.P.lowerCast
+public import Lanius.Mini.Compiler.P.lowerFloat
 public import Lanius.Mini.Compiler.P.sintToUint
+public import Lanius.Mini.Compiler.P.sintToWide
 
 @[expose] public section
 

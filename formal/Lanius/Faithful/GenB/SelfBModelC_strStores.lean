@@ -7,13 +7,16 @@ public import Lanius.Faithful.GenB.SelfBModelC_storeArray
 public import Lanius.Faithful.GenB.SelfBModelC_storeEvalWord
 public import Lanius.Faithful.GenB.SelfBModelN4
 public import Lanius.Mini.Compiler.P.SrcExpr_guard
-public import Lanius.Mini.Compiler.P.UintTy_half
+public import Lanius.Mini.Compiler.P.elementOf
+public import Lanius.Mini.Compiler.P.evalPure
 public import Lanius.Mini.Compiler.P.guardAnd
-public import Lanius.Mini.Compiler.P.indexOf
-public import Lanius.Mini.Compiler.P.lowerCallSig
-public import Lanius.Mini.Compiler.P.lowerLoadType
-public import Lanius.Mini.Compiler.P.shortCircuit
-public import Lanius.Mini.Compiler.P.storeArray
+public import Lanius.Mini.Compiler.P.indexGuard
+public import Lanius.Mini.Compiler.P.isArrayLocal
+public import Lanius.Mini.Compiler.P.lookup
+public import Lanius.Mini.Compiler.P.lowerIndex
+public import Lanius.Mini.Compiler.P.lowerSetIndex
+public import Lanius.Mini.Compiler.P.strAscii
+public import Lanius.Mini.Compiler.P.strWords
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.Types
 

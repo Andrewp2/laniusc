@@ -13,10 +13,18 @@ public import Lanius.Faithful.GenB.SelfBStmtN3
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_isTryEnum
 import all Lanius.Faithful.Gen.SelfStmtF_isTryEnum
-import all Lanius.Mini.Frontend.P.distinct
-import all Lanius.Mini.Frontend.P.hasKids
-import all Lanius.Mini.Frontend.P.isPathCall
-import all Lanius.Mini.Frontend.P.isTryEnum
+import all Lanius.Mini.Frontend.P.isUsize
+import all Lanius.Mini.Frontend.P.sameSpellings
+import all Lanius.Mini.Frontend.P.sameText
+import all Lanius.Mini.Frontend.P.textCore
+import all Lanius.Mini.Frontend.P.textErr
+import all Lanius.Mini.Frontend.P.textNone
+import all Lanius.Mini.Frontend.P.textOk
+import all Lanius.Mini.Frontend.P.textOption
+import all Lanius.Mini.Frontend.P.textOptionTy
+import all Lanius.Mini.Frontend.P.textResult
+import all Lanius.Mini.Frontend.P.textResultTy
+import all Lanius.Mini.Frontend.P.textSome
 
 @[expose] public section
 

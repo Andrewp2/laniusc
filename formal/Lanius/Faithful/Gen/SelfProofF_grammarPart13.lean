@@ -19,7 +19,14 @@ public import Lanius.Faithful.Gen.SelfStmtF_grammarPart8
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_shrFirst
 import all Lanius.Faithful.Gen.SelfSrcF_grammarPart13
+import all Lanius.Mini.Frontend.P.Inline_attachAfter
+import all Lanius.Mini.Frontend.P.Inline_attachTerm
+import all Lanius.Mini.Frontend.P.Inline_genericCloseAt
+import all Lanius.Mini.Frontend.P.grammar
 import all Lanius.Mini.Frontend.P.grammarPart13
+import all Lanius.Mini.Frontend.P.grammarPart14
+import all Lanius.Mini.Frontend.P.grammarPart15
+import all Lanius.Mini.Frontend.P.grammarPart16
 
 public section
 

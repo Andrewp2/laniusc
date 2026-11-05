@@ -3,9 +3,11 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelC_SrcType_same
 public import Lanius.Faithful.GenB.SelfBModelN0
+public import Lanius.Mini.Compiler.P.declaredSame
+public import Lanius.Mini.Compiler.P.declaredVariants
 public import Lanius.Mini.Compiler.P.enumVariants
 public import Lanius.Mini.Compiler.P.structFields
-public import Lanius.Mini.Compiler.P.wordWidth
+public import Lanius.Mini.Compiler.P.wordType
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.Types
 

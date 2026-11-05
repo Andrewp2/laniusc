@@ -13,14 +13,14 @@ public import Lanius.Faithful.GenB.SelfBStmtC_wordStride
 public import Lanius.Faithful.GenB.SelfBStmtN5
 import all Lanius.Faithful.Gen.SelfSrcC_wordStride
 import all Lanius.Faithful.Gen.SelfStmtC_wordStride
-import all Lanius.Mini.Compiler.P.Inline_lowerSetScalar
-import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.Inline_evalLetBody
+import all Lanius.Mini.Compiler.P.SrcEff_eval
+import all Lanius.Mini.Compiler.P.SrcType_size
 import all Lanius.Mini.Compiler.P.armScope
 import all Lanius.Mini.Compiler.P.evalSame
 import all Lanius.Mini.Compiler.P.evalSlotLimit
 import all Lanius.Mini.Compiler.P.matchDst
 import all Lanius.Mini.Compiler.P.matchVariants
-import all Lanius.Mini.Compiler.P.wordStride
 
 @[expose] public section
 

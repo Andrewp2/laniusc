@@ -3,7 +3,9 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_armsNaming
+public import Lanius.Mini.Frontend.P.armsByVariant
 public import Lanius.Mini.Frontend.P.armsNaming
+public import Lanius.Mini.Frontend.P.textUnderscore
 
 @[expose] public section
 

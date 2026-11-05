@@ -3,7 +3,12 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_packRound
+public import Lanius.Mini.Compiler.P.binaryWords
+public import Lanius.Mini.Compiler.P.compileWords
+public import Lanius.Mini.Compiler.P.imageWords
 public import Lanius.Mini.Compiler.P.packRound
+public import Lanius.Mini.Compiler.P.packRounds
+public import Lanius.Mini.Compiler.P.roundJoin
 
 @[expose] public section
 

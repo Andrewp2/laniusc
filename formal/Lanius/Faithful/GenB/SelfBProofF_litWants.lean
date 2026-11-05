@@ -14,11 +14,13 @@ public import Lanius.Faithful.GenB.SelfBStmtF_litWants
 public import Lanius.Faithful.GenB.SelfBStmtN3
 import all Lanius.Faithful.Gen.SelfSrcF_litWants
 import all Lanius.Faithful.Gen.SelfStmtF_litWants
-import all Lanius.Mini.Frontend.P.Inline_pPathMore
-import all Lanius.Mini.Frontend.P.basedDigits
-import all Lanius.Mini.Frontend.P.findConst
-import all Lanius.Mini.Frontend.P.hasKids
-import all Lanius.Mini.Frontend.P.isEmptyUsize
+import all Lanius.Mini.Frontend.P.Inline_pPatternFalse
+import all Lanius.Mini.Frontend.P.Inline_pPatternInt
+import all Lanius.Mini.Frontend.P.Inline_pPatternTrue
+import all Lanius.Mini.Frontend.P.intLiteral
+import all Lanius.Mini.Frontend.P.kidToken
+import all Lanius.Mini.Frontend.P.nodeProd
+import all Lanius.Mini.Frontend.P.sameTy
 
 @[expose] public section
 

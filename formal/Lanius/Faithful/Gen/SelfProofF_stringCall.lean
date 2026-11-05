@@ -14,6 +14,8 @@ public import Lanius.Faithful.Gen.SelfStmtF_treeTokens
 public import Lanius.Faithful.Gen.SelfStmtF_wideOf
 import all Lanius.Faithful.Gen.SelfSrcF_stringCall
 import all Lanius.Mini.Frontend.P.stringCall
+import all Lanius.Mini.Frontend.P.stringPeeled
+import all Lanius.Mini.Frontend.P.stringValue
 
 public section
 

@@ -1,7 +1,12 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Compiler.P.Expr_extent
+public import Lanius.Mini.Compiler.P.Stmt_extent
+public import Lanius.Mini.Compiler.P.argsExtent
 public import Lanius.Mini.Compiler.P.funcNeeds
+public import Lanius.Mini.Compiler.P.sigs
+public import Lanius.Mini.Compiler.P.sigsWith
 
 @[expose] public section
 

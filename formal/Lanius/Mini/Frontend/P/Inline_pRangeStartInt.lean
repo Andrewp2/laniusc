@@ -12,7 +12,4 @@ namespace Lanius.Mini
 @[expose] def Inline.pRangeStartInt : Nat :=
   96
 
-@[expose] def Inline.pRetType : Nat :=
-  34
-
 end Lanius.Mini

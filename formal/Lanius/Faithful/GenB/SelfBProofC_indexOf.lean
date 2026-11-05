@@ -10,8 +10,8 @@ public import Lanius.Faithful.GenB.SelfBStmtC_indexOf
 public import Lanius.Faithful.GenB.SelfBStmtC_lowerApply
 import all Lanius.Faithful.Gen.SelfSrcC_indexOf
 import all Lanius.Faithful.Gen.SelfStmtC_indexOf
-import all Lanius.Mini.Compiler.P.UintTy_half
-import all Lanius.Mini.Compiler.P.indexOf
+import all Lanius.Mini.Compiler.P.lookup
+import all Lanius.Mini.Compiler.P.lowerIndex
 
 @[expose] public section
 

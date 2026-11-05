@@ -10,6 +10,7 @@ public import Lanius.Faithful.Gen.SelfStmtC_Inline_blockLeft
 public import Lanius.Faithful.Gen.SelfStmtC_binaryConstant
 import all Lanius.Faithful.Gen.SelfSrcC_Expr_agrees
 import all Lanius.Mini.Compiler.P.Expr_agrees
+import all Lanius.Mini.Compiler.P.argsAgree
 
 public section
 

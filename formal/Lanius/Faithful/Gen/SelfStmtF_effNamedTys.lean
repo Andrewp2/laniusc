@@ -2,6 +2,7 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.effNamedTys
+public import Lanius.Mini.Frontend.P.stmtCalls
 
 @[expose] public section
 

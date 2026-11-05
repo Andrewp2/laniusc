@@ -1,7 +1,14 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.lxDrop
+public import Lanius.Mini.Frontend.P.lxIdentEnd
+public import Lanius.Mini.Frontend.P.lxIdentRun
+public import Lanius.Mini.Frontend.P.lxIsByte
+public import Lanius.Mini.Frontend.P.lxLineRun
+public import Lanius.Mini.Frontend.P.lxSpaceRun
 public import Lanius.Mini.Frontend.P.lxSymbolStart
+public import Lanius.Mini.Frontend.P.lxTake
 
 @[expose] public section
 

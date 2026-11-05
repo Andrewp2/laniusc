@@ -3,6 +3,7 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_typedLiteral
+public import Lanius.Mini.Frontend.P.literalAs
 public import Lanius.Mini.Frontend.P.typedLiteral
 
 @[expose] public section

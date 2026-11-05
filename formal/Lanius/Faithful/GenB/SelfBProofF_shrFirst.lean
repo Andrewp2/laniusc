@@ -12,10 +12,12 @@ public import Lanius.Faithful.GenB.SelfBStmtN5
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_shrFirst
 import all Lanius.Faithful.Gen.SelfStmtF_shrFirst
-import all Lanius.Mini.Frontend.P.Inline_pBoundTypeArgsAfterCommaMore
-import all Lanius.Mini.Frontend.P.Inline_tRparen
-import all Lanius.Mini.Frontend.P.genericOpen
+import all Lanius.Mini.Frontend.P.Inline_tGt
+import all Lanius.Mini.Frontend.P.Inline_tShr
+import all Lanius.Mini.Frontend.P.attach
+import all Lanius.Mini.Frontend.P.picks
 import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.shrSecond
 
 @[expose] public section
 

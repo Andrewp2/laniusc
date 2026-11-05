@@ -14,6 +14,10 @@ public import Lanius.Faithful.Gen.SelfStmtF_scalarOf
 public import Lanius.Faithful.Gen.SelfStmtF_treeTokens
 import all Lanius.Faithful.Gen.SelfSrcF_treeTokens
 import all Lanius.Mini.Frontend.P.treeTokens
+import all Lanius.Mini.Frontend.P.wideI32
+import all Lanius.Mini.Frontend.P.wideIsize
+import all Lanius.Mini.Frontend.P.wideSint
+import all Lanius.Mini.Frontend.P.wideUint
 
 public section
 

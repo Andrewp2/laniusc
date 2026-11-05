@@ -16,9 +16,16 @@ public import Lanius.Faithful.GenB.SelfBStmtN3
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_basedDigits
 import all Lanius.Faithful.Gen.SelfStmtF_basedDigits
-import all Lanius.Mini.Frontend.P.basedDigits
+import all Lanius.Mini.Frontend.P.baseDigit
 import all Lanius.Mini.Frontend.P.basedLimit
-import all Lanius.Mini.Frontend.P.digitBelow
+import all Lanius.Mini.Frontend.P.flAdd
+import all Lanius.Mini.Frontend.P.flBorrowBit
+import all Lanius.Mini.Frontend.P.flCarry
+import all Lanius.Mini.Frontend.P.flShl
+import all Lanius.Mini.Frontend.P.flSub
+import all Lanius.Mini.Frontend.P.flTimes10
+import all Lanius.Mini.Frontend.P.flXor
+import all Lanius.Mini.Frontend.P.litValue
 
 @[expose] public section
 

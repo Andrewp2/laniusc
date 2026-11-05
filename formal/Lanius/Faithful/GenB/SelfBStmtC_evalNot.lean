@@ -3,6 +3,7 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_Inline_arithOf
+public import Lanius.Mini.Compiler.P.evalCast
 public import Lanius.Mini.Compiler.P.evalNot
 
 @[expose] public section

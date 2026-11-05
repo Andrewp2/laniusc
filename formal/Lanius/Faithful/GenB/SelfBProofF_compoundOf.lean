@@ -17,12 +17,15 @@ public import Lanius.Faithful.GenB.SelfBStmtN4
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_compoundOf
 import all Lanius.Faithful.Gen.SelfStmtF_compoundOf
-import all Lanius.Mini.Frontend.P.Inline_pArrayMore
+import all Lanius.Mini.Frontend.P.Inline_pAssign
+import all Lanius.Mini.Frontend.P.Inline_pAssignEnd
+import all Lanius.Mini.Frontend.P.Inline_pAssignSet
 import all Lanius.Mini.Frontend.P.Inline_pExpr
 import all Lanius.Mini.Frontend.P.hasKids
-import all Lanius.Mini.Frontend.P.isEmptyUsize
-import all Lanius.Mini.Frontend.P.noToken
-import all Lanius.Mini.Frontend.P.wideOf
+import all Lanius.Mini.Frontend.P.kid
+import all Lanius.Mini.Frontend.P.kidToken
+import all Lanius.Mini.Frontend.P.nodeProd
+import all Lanius.Mini.Frontend.P.peel
 
 @[expose] public section
 

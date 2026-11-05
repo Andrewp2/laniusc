@@ -3,6 +3,11 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_lowerSetValues
+public import Lanius.Mini.Compiler.P.lowerSet
+public import Lanius.Mini.Compiler.P.lowerSetField
+public import Lanius.Mini.Compiler.P.lowerSetFieldAt
+public import Lanius.Mini.Compiler.P.lowerSetFieldOf
+public import Lanius.Mini.Compiler.P.lowerSetValue
 public import Lanius.Mini.Compiler.P.lowerSetValues
 
 @[expose] public section

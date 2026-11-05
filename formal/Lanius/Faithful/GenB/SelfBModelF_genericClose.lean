@@ -2,9 +2,21 @@ module
 
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.Inline_pBoundTypeArgsAfterCommaMore
+public import Lanius.Mini.Frontend.P.Inline_tEqeq
+public import Lanius.Mini.Frontend.P.Inline_tGe
+public import Lanius.Mini.Frontend.P.Inline_tGt
+public import Lanius.Mini.Frontend.P.Inline_tLbrace
+public import Lanius.Mini.Frontend.P.Inline_tLbracket
+public import Lanius.Mini.Frontend.P.Inline_tLe
 public import Lanius.Mini.Frontend.P.Inline_tLparen
+public import Lanius.Mini.Frontend.P.Inline_tLt
+public import Lanius.Mini.Frontend.P.Inline_tNotEqual
+public import Lanius.Mini.Frontend.P.Inline_tOror
+public import Lanius.Mini.Frontend.P.Inline_tRbrace
+public import Lanius.Mini.Frontend.P.Inline_tRbracket
 public import Lanius.Mini.Frontend.P.Inline_tRparen
+public import Lanius.Mini.Frontend.P.Inline_tSemicolon
+public import Lanius.Mini.Frontend.P.Inline_tShr
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

@@ -15,7 +15,18 @@ public import Lanius.Faithful.Gen.SelfStmtC_larger
 public import Lanius.Faithful.Gen.SelfStmtC_linkedSize
 public import Lanius.Faithful.Gen.SelfStmtC_loadAtBytes
 import all Lanius.Faithful.Gen.SelfSrcC_larger
-import all Lanius.Mini.Compiler.P.larger
+import all Lanius.Mini.Compiler.P.Inline_argsThen
+import all Lanius.Mini.Compiler.P.Inline_exprThen
+import all Lanius.Mini.Compiler.P.Inline_iteCode
+import all Lanius.Mini.Compiler.P.Inline_link
+import all Lanius.Mini.Compiler.P.Inline_linkFitting
+import all Lanius.Mini.Compiler.P.Inline_lookupAt
+import all Lanius.Mini.Compiler.P.Inline_loopCode
+import all Lanius.Mini.Compiler.P.Inline_offsetAfter
+import all Lanius.Mini.Compiler.P.Inline_roomNext
+import all Lanius.Mini.Compiler.P.Inline_seqCode
+import all Lanius.Mini.Compiler.P.Inline_spendThen
+import all Lanius.Mini.Compiler.P.Inline_stmtThen
 
 public section
 

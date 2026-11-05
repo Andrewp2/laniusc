@@ -13,8 +13,4 @@ def txOpXor : List Nat :=
   let t : List Nat := [94]
   t
 
-def txOpBand : List Nat :=
-  let t : List Nat := [38]
-  t
-
 end Lanius.Mini

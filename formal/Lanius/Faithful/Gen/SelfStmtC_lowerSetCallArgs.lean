@@ -1,7 +1,12 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Compiler.P.lowerIf
+public import Lanius.Mini.Compiler.P.lowerSetCall
 public import Lanius.Mini.Compiler.P.lowerSetCallArgs
+public import Lanius.Mini.Compiler.P.lowerThen
+public import Lanius.Mini.Compiler.P.lowerWhile
+public import Lanius.Mini.Compiler.P.whileLoop
 
 @[expose] public section
 

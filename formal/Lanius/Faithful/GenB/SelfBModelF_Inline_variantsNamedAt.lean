@@ -5,11 +5,14 @@ public import Lanius.Faithful.GenB.SelfBModelF_Inline_positionAt
 public import Lanius.Faithful.GenB.SelfBModelF_typePathSpellings
 public import Lanius.Faithful.GenB.SelfBModelN0
 public import Lanius.Mini.Compiler.Types
+public import Lanius.Mini.Frontend.P.baseDigit
 public import Lanius.Mini.Frontend.P.basedLimit
-public import Lanius.Mini.Frontend.P.digitBelow
-public import Lanius.Mini.Frontend.P.distinct
-public import Lanius.Mini.Frontend.P.findConst
+public import Lanius.Mini.Frontend.P.importedVariants
+public import Lanius.Mini.Frontend.P.itemImport
 public import Lanius.Mini.Frontend.P.itemOf
+public import Lanius.Mini.Frontend.P.position
+public import Lanius.Mini.Frontend.P.sameSpellings
+public import Lanius.Mini.Frontend.P.variantsNamed
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

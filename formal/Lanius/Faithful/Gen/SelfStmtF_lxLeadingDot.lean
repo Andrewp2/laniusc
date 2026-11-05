@@ -1,7 +1,14 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.lxBest
+public import Lanius.Mini.Frontend.P.lxBestAt
+public import Lanius.Mini.Frontend.P.lxDelimited
+public import Lanius.Mini.Frontend.P.lxFixedAt
+public import Lanius.Mini.Frontend.P.lxFromNumber
 public import Lanius.Mini.Frontend.P.lxLeadingDot
+public import Lanius.Mini.Frontend.P.lxLonger
+public import Lanius.Mini.Frontend.P.lxStartsWith
 
 @[expose] public section
 

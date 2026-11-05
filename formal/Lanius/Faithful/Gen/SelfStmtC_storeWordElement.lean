@@ -1,6 +1,8 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Compiler.P.lowerSetIndexOf
+public import Lanius.Mini.Compiler.P.storeAny
 public import Lanius.Mini.Compiler.P.storeWordElement
 
 @[expose] public section

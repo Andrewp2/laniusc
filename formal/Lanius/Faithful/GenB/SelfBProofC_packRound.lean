@@ -14,6 +14,10 @@ import all Lanius.Faithful.Gen.SelfSrcC_packRound
 import all Lanius.Faithful.Gen.SelfStmtC_packRound
 import all Lanius.Mini.Compiler.P.compileSource
 import all Lanius.Mini.Compiler.P.packRound
+import all Lanius.Mini.Compiler.P.packRounds
+import all Lanius.Mini.Compiler.P.packWord
+import all Lanius.Mini.Compiler.P.roundEnd
+import all Lanius.Mini.Compiler.P.usizeWords
 
 @[expose] public section
 

@@ -11,8 +11,8 @@ public import Lanius.Faithful.GenB.SelfBStmtN5
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_sintAt
 import all Lanius.Faithful.Gen.SelfStmtF_sintAt
-import all Lanius.Mini.Frontend.P.nullConst
-import all Lanius.Mini.Frontend.P.sintAt
+import all Lanius.Mini.Frontend.P.repeatSrc
+import all Lanius.Mini.Frontend.P.sintFits
 
 @[expose] public section
 

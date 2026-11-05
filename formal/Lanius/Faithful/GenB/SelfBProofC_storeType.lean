@@ -13,9 +13,10 @@ public import Lanius.Faithful.GenB.SelfBStmtC_widthOf
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcC_storeType
 import all Lanius.Faithful.Gen.SelfStmtC_storeType
-import all Lanius.Mini.Compiler.P.SrcType_same
-import all Lanius.Mini.Compiler.P.elementBase
+import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.addressBelow
 import all Lanius.Mini.Compiler.P.storeType
+import all Lanius.Mini.Compiler.P.withinLayout
 
 @[expose] public section
 

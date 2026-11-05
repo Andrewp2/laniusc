@@ -6,6 +6,7 @@ public import Lanius.Faithful.Gen.SelfSrcF_Inline_pTypeSliceTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pTypeSliceTail
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pTypeSliceTail
 import all Lanius.Mini.Frontend.P.Inline_pTypeSliceTail
+import all Lanius.Mini.Frontend.P.Inline_pWhereNone
 
 public section
 

@@ -5,12 +5,18 @@ public import Lanius.Faithful.GenB.SelfBModelF_typeDeclAt
 public import Lanius.Faithful.GenB.SelfBModelF_variantIn
 public import Lanius.Faithful.GenB.SelfBModelN2
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.Inline_pBitAnd
+public import Lanius.Mini.Frontend.P.Inline_pCastTypeName
+public import Lanius.Mini.Frontend.P.Inline_pCastTypePath
+public import Lanius.Mini.Frontend.P.Inline_pCastTypePathEnd
+public import Lanius.Mini.Frontend.P.Inline_pCastTypePathIdent
+public import Lanius.Mini.Frontend.P.castInto
+public import Lanius.Mini.Frontend.P.castTypeOf
 public import Lanius.Mini.Frontend.P.hasKids
-public import Lanius.Mini.Frontend.P.isEmptyUsize
-public import Lanius.Mini.Frontend.P.noToken
-public import Lanius.Mini.Frontend.P.scalarOf
-public import Lanius.Mini.Frontend.P.variantIn
+public import Lanius.Mini.Frontend.P.kid
+public import Lanius.Mini.Frontend.P.kidToken
+public import Lanius.Mini.Frontend.P.nodeProd
+public import Lanius.Mini.Frontend.P.paramTy
+public import Lanius.Mini.Frontend.P.primTy
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

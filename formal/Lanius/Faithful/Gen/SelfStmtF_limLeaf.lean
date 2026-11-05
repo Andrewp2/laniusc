@@ -1,7 +1,23 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.limConst
+public import Lanius.Mini.Frontend.P.limGuard
 public import Lanius.Mini.Frontend.P.limLeaf
+public import Lanius.Mini.Frontend.P.limMax
+public import Lanius.Mini.Frontend.P.limNest
+public import Lanius.Mini.Frontend.P.limNestEff
+public import Lanius.Mini.Frontend.P.limNestStep
+public import Lanius.Mini.Frontend.P.limNum
+public import Lanius.Mini.Frontend.P.limNumsExpr
+public import Lanius.Mini.Frontend.P.limNumsExprs
+public import Lanius.Mini.Frontend.P.limNumsIds
+public import Lanius.Mini.Frontend.P.limNumsIdss
+public import Lanius.Mini.Frontend.P.limNumsTy
+public import Lanius.Mini.Frontend.P.limOne
+public import Lanius.Mini.Frontend.P.limParamSlots
+public import Lanius.Mini.Frontend.P.limParams
+public import Lanius.Mini.Frontend.P.limStmt
 
 @[expose] public section
 

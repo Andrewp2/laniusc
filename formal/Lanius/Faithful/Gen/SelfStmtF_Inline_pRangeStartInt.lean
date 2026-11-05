@@ -2,6 +2,7 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.Inline_pRangeStartInt
+public import Lanius.Mini.Frontend.P.Inline_pRetType
 
 @[expose] public section
 

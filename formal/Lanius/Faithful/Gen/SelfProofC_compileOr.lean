@@ -10,6 +10,9 @@ public import Lanius.Faithful.Gen.SelfStmtC_linkedSize
 public import Lanius.Faithful.Gen.SelfStmtC_lowerBody
 public import Lanius.Faithful.Gen.SelfStmtC_optimizeIte
 import all Lanius.Faithful.Gen.SelfSrcC_compileOr
+import all Lanius.Mini.Compiler.P.compileDeclared
+import all Lanius.Mini.Compiler.P.compileLowered
+import all Lanius.Mini.Compiler.P.compileOptimized
 import all Lanius.Mini.Compiler.P.compileOr
 
 public section

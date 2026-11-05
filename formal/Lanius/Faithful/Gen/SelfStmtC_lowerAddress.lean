@@ -2,6 +2,9 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Compiler.P.lowerAddress
+public import Lanius.Mini.Compiler.P.lowerFree
+public import Lanius.Mini.Compiler.P.lowerLoad
+public import Lanius.Mini.Compiler.P.lowerStore
 
 @[expose] public section
 

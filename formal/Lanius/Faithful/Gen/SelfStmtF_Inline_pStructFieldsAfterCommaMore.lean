@@ -2,6 +2,8 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.Inline_pStructFieldsAfterCommaMore
+public import Lanius.Mini.Frontend.P.Inline_pStructFieldsAfterCommaTrailing
+public import Lanius.Mini.Frontend.P.Inline_pStructFieldsEnd
 
 @[expose] public section
 

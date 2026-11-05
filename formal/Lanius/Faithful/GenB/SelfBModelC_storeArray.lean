@@ -7,9 +7,10 @@ public import Lanius.Faithful.GenB.SelfBModelC_storeEvalWord
 public import Lanius.Faithful.GenB.SelfBModelN2
 public import Lanius.Faithful.GenB.SelfBModelN4
 public import Lanius.Faithful.GenB.SelfBModelN6
-public import Lanius.Mini.Compiler.P.SrcType_same
-public import Lanius.Mini.Compiler.P.UintTy_half
-public import Lanius.Mini.Compiler.P.storeArray
+public import Lanius.Mini.Compiler.P.SrcType_isUnit
+public import Lanius.Mini.Compiler.P.fieldOffset
+public import Lanius.Mini.Compiler.P.strWords
+public import Lanius.Mini.Compiler.P.viewStores
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.Types
 

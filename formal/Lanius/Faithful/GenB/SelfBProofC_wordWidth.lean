@@ -11,9 +11,11 @@ public import Lanius.Faithful.GenB.SelfBStmtC_wordWidth
 public import Lanius.Faithful.GenB.SelfBStmtN0
 import all Lanius.Faithful.Gen.SelfSrcC_wordWidth
 import all Lanius.Faithful.Gen.SelfStmtC_wordWidth
+import all Lanius.Mini.Compiler.P.declaredSame
+import all Lanius.Mini.Compiler.P.declaredVariants
 import all Lanius.Mini.Compiler.P.enumVariants
 import all Lanius.Mini.Compiler.P.structFields
-import all Lanius.Mini.Compiler.P.wordWidth
+import all Lanius.Mini.Compiler.P.wordType
 
 @[expose] public section
 

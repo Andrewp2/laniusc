@@ -14,9 +14,10 @@ public import Lanius.Faithful.GenB.SelfBStmtN5
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_pickTy
 import all Lanius.Faithful.Gen.SelfStmtF_pickTy
-import all Lanius.Mini.Frontend.P.floatTyped
-import all Lanius.Mini.Frontend.P.pickTy
-import all Lanius.Mini.Frontend.P.wideOf
+import all Lanius.Mini.Frontend.P.bareInt
+import all Lanius.Mini.Frontend.P.findBind
+import all Lanius.Mini.Frontend.P.findLocalId
+import all Lanius.Mini.Frontend.P.repeatTy
 
 @[expose] public section
 

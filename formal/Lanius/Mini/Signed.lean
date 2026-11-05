@@ -3,22 +3,40 @@ module
 public import Lanius.Mini.Unsigned
 public import Lanius.Mini.Shifts
 -- import all uses: Lanius.Mini.Compiler
-import all Lanius.Mini.Compiler.P.SrcType_same
-import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.SrcEff_eval
+import all Lanius.Mini.Compiler.P.SrcType_isBool
+import all Lanius.Mini.Compiler.P.SrcType_isFloatAny
+import all Lanius.Mini.Compiler.P.SrcType_isPtr
+import all Lanius.Mini.Compiler.P.SrcType_isScalar
+import all Lanius.Mini.Compiler.P.SrcType_isSint
+import all Lanius.Mini.Compiler.P.SrcType_sintKind
+import all Lanius.Mini.Compiler.P.UintTy_bits
+import all Lanius.Mini.Compiler.P.UintTy_code
 import all Lanius.Mini.Compiler.P.UintTy_isWide
-import all Lanius.Mini.Compiler.P.arithShiftRight
-import all Lanius.Mini.Compiler.P.arithUint
-import all Lanius.Mini.Compiler.P.guardAnd
-import all Lanius.Mini.Compiler.P.lowerLocal
-import all Lanius.Mini.Compiler.P.render
+import all Lanius.Mini.Compiler.P.UintTy_signedWord
+import all Lanius.Mini.Compiler.P.UintTy_spare
+import all Lanius.Mini.Compiler.P.arithSint
+import all Lanius.Mini.Compiler.P.castTo
+import all Lanius.Mini.Compiler.P.castToFloat
+import all Lanius.Mini.Compiler.P.castToI32
+import all Lanius.Mini.Compiler.P.castToIsize
+import all Lanius.Mini.Compiler.P.castToSint
+import all Lanius.Mini.Compiler.P.castToUint
+import all Lanius.Mini.Compiler.P.norm
+import all Lanius.Mini.Compiler.P.order
+import all Lanius.Mini.Compiler.P.orderSint
+import all Lanius.Mini.Compiler.P.signKey
+import all Lanius.Mini.Compiler.P.sintToI32
 import all Lanius.Mini.Compiler.P.sintToUint
-import all Lanius.Mini.Compiler.P.wordStride
+import all Lanius.Mini.Compiler.P.sintToWide
+import all Lanius.Mini.Compiler.P.wrap
 -- end import all uses
 -- import parts: Lanius.Mini.Compiler norm castTo arithSint orderSint signKey
-public import Lanius.Mini.Compiler.P.SrcType_same
-public import Lanius.Mini.Compiler.P.arithShiftRight
-public import Lanius.Mini.Compiler.P.arithUint
-public import Lanius.Mini.Compiler.P.sintToUint
+public import Lanius.Mini.Compiler.P.arithSint
+public import Lanius.Mini.Compiler.P.castTo
+public import Lanius.Mini.Compiler.P.norm
+public import Lanius.Mini.Compiler.P.orderSint
+public import Lanius.Mini.Compiler.P.signKey
 -- end import parts
 
 @[expose] public section

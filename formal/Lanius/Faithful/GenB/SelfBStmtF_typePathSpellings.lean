@@ -3,6 +3,8 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_typePathSpellings
+public import Lanius.Mini.Frontend.P.splitLast
+public import Lanius.Mini.Frontend.P.splitMore
 public import Lanius.Mini.Frontend.P.typePathSpellings
 
 @[expose] public section

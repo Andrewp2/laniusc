@@ -4,6 +4,11 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_callParts
 public import Lanius.Mini.Frontend.P.callParts
+public import Lanius.Mini.Frontend.P.effLocal
+public import Lanius.Mini.Frontend.P.pureLocal
+public import Lanius.Mini.Frontend.P.viewArray
+public import Lanius.Mini.Frontend.P.viewLocal
+public import Lanius.Mini.Frontend.P.wantElem
 
 @[expose] public section
 

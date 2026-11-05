@@ -11,8 +11,13 @@ public import Lanius.Faithful.GenB.SelfBStmtN2
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_lxSymbolStart
 import all Lanius.Faithful.Gen.SelfStmtF_lxSymbolStart
-import all Lanius.Mini.Frontend.P.lxSymbolStart
-import all Lanius.Mini.Frontend.P.wideLeftStmt
+import all Lanius.Mini.Frontend.P.lxDrop
+import all Lanius.Mini.Frontend.P.lxIdentContinue
+import all Lanius.Mini.Frontend.P.lxIdentRun
+import all Lanius.Mini.Frontend.P.lxLineRun
+import all Lanius.Mini.Frontend.P.lxSpace
+import all Lanius.Mini.Frontend.P.lxSpaceRun
+import all Lanius.Mini.Frontend.P.lxTake
 
 @[expose] public section
 

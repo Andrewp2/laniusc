@@ -15,6 +15,21 @@ public import Lanius.Faithful.Gen.SelfStmtC_evalSame
 public import Lanius.Faithful.Gen.SelfStmtC_matchDst
 public import Lanius.Faithful.Gen.SelfStmtC_matchVariants
 import all Lanius.Faithful.Gen.SelfSrcC_matchVariants
+import all Lanius.Mini.Compiler.P.SrcEff_types
+import all Lanius.Mini.Compiler.P.evalIf
+import all Lanius.Mini.Compiler.P.evalIfOf
+import all Lanius.Mini.Compiler.P.evalLetIn
+import all Lanius.Mini.Compiler.P.evalLetInOf
+import all Lanius.Mini.Compiler.P.evalMatch
+import all Lanius.Mini.Compiler.P.evalMatchOf
+import all Lanius.Mini.Compiler.P.lowerDiscard
+import all Lanius.Mini.Compiler.P.lowerIfEval
+import all Lanius.Mini.Compiler.P.lowerLet
+import all Lanius.Mini.Compiler.P.lowerLetCall
+import all Lanius.Mini.Compiler.P.lowerLetEval
+import all Lanius.Mini.Compiler.P.lowerReturnEval
+import all Lanius.Mini.Compiler.P.lowerSetEval
+import all Lanius.Mini.Compiler.P.lowerWhileEval
 import all Lanius.Mini.Compiler.P.matchVariants
 
 public section

@@ -8,8 +8,8 @@ public import Lanius.Faithful.GenB.SelfBStmtC_Inline_arithOf
 public import Lanius.Faithful.GenB.SelfBStmtC_armScope
 import all Lanius.Faithful.Gen.SelfSrcC_armScope
 import all Lanius.Faithful.Gen.SelfStmtC_armScope
-import all Lanius.Mini.Compiler.P.SrcType_same
-import all Lanius.Mini.Compiler.P.lowerTagged
+import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.viewedType
 
 @[expose] public section
 

@@ -12,6 +12,9 @@ public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_depthLimit
 import all Lanius.Faithful.Gen.SelfStmtF_depthLimit
 import all Lanius.Mini.Frontend.P.depthLimit
+import all Lanius.Mini.Frontend.P.limExpr
+import all Lanius.Mini.Frontend.P.limSlots
+import all Lanius.Mini.Frontend.P.limTy
 
 @[expose] public section
 

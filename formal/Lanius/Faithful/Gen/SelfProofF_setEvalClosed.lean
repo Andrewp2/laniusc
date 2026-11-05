@@ -6,7 +6,12 @@ public import Lanius.Faithful.Gen.SelfSrcF_setEvalClosed
 public import Lanius.Faithful.Gen.SelfStmt0
 public import Lanius.Faithful.Gen.SelfStmtF_setEvalClosed
 import all Lanius.Faithful.Gen.SelfSrcF_setEvalClosed
+import all Lanius.Mini.Frontend.P.discardClosed
+import all Lanius.Mini.Frontend.P.ifEvalClosed
+import all Lanius.Mini.Frontend.P.returnEvalClosed
 import all Lanius.Mini.Frontend.P.setEvalClosed
+import all Lanius.Mini.Frontend.P.setIndexEvalClosed
+import all Lanius.Mini.Frontend.P.whileEvalClosed
 
 public section
 

@@ -2,6 +2,7 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.externBody
+public import Lanius.Mini.Frontend.P.externFunc
 
 @[expose] public section
 

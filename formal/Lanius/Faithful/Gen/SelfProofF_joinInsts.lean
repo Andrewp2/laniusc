@@ -26,7 +26,14 @@ public import Lanius.Faithful.Gen.SelfStmtF_consTys
 public import Lanius.Faithful.Gen.SelfStmtF_flattenTys
 public import Lanius.Faithful.Gen.SelfStmtF_joinInsts
 import all Lanius.Faithful.Gen.SelfSrcF_joinInsts
+import all Lanius.Mini.Frontend.P.consInst
+import all Lanius.Mini.Frontend.P.isLevel
 import all Lanius.Mini.Frontend.P.joinInsts
+import all Lanius.Mini.Frontend.P.negated
+import all Lanius.Mini.Frontend.P.notted
+import all Lanius.Mini.Frontend.P.tailOp
+import all Lanius.Mini.Frontend.P.tyInsts
+import all Lanius.Mini.Frontend.P.wideDecimal
 
 public section
 

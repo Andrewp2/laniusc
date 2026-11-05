@@ -18,6 +18,20 @@ public import Lanius.Faithful.Gen.SelfStmtC_lowerApply
 public import Lanius.Faithful.Gen.SelfStmtC_lowerCallSig
 public import Lanius.Faithful.Gen.SelfStmtC_repeatType
 import all Lanius.Faithful.Gen.SelfSrcC_lowerCallSig
+import all Lanius.Mini.Compiler.P.evalCallSig
+import all Lanius.Mini.Compiler.P.evalChecked
+import all Lanius.Mini.Compiler.P.evalCopy
+import all Lanius.Mini.Compiler.P.evalFieldCopy
+import all Lanius.Mini.Compiler.P.evalFieldOf
+import all Lanius.Mini.Compiler.P.evalFieldType
+import all Lanius.Mini.Compiler.P.evalPure
+import all Lanius.Mini.Compiler.P.evalValues
+import all Lanius.Mini.Compiler.P.hostByteCode
+import all Lanius.Mini.Compiler.P.hostClockCode
+import all Lanius.Mini.Compiler.P.hostReadCode
+import all Lanius.Mini.Compiler.P.hostSleepCode
+import all Lanius.Mini.Compiler.P.hostWriteCode
+import all Lanius.Mini.Compiler.P.lowerCall
 import all Lanius.Mini.Compiler.P.lowerCallSig
 
 public section

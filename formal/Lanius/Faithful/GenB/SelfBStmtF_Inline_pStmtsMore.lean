@@ -3,6 +3,8 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.Inline_pStmtsMore
+public import Lanius.Mini.Frontend.P.Inline_pString
+public import Lanius.Mini.Frontend.P.Inline_pStruct
 
 @[expose] public section
 

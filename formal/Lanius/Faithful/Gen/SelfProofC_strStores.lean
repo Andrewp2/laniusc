@@ -22,6 +22,17 @@ public import Lanius.Faithful.Gen.SelfStmtC_storeArray
 public import Lanius.Faithful.Gen.SelfStmtC_storeEvalWord
 public import Lanius.Faithful.Gen.SelfStmtC_strStores
 import all Lanius.Faithful.Gen.SelfSrcC_strStores
+import all Lanius.Mini.Compiler.P.blockAt
+import all Lanius.Mini.Compiler.P.blockLoad
+import all Lanius.Mini.Compiler.P.blockStore
+import all Lanius.Mini.Compiler.P.elementLoads
+import all Lanius.Mini.Compiler.P.elementStores
+import all Lanius.Mini.Compiler.P.idAbsent
+import all Lanius.Mini.Compiler.P.lowerAssert
+import all Lanius.Mini.Compiler.P.lowerSetIndexAny
+import all Lanius.Mini.Compiler.P.lowerSetIndexEval
+import all Lanius.Mini.Compiler.P.lowerStr
+import all Lanius.Mini.Compiler.P.packedWidth
 import all Lanius.Mini.Compiler.P.strStores
 
 public section

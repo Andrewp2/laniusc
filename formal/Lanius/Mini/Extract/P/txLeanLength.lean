@@ -13,20 +13,4 @@ def txLeanLength : List Nat :=
   let t : List Nat := 46 :: 108 :: 101 :: 110 :: 103 :: 116 :: [104]
   t
 
-def txLeanGetd : List Nat :=
-  let t : List Nat := 46 :: 103 :: 101 :: 116 :: 68 :: [32]
-  t
-
-def txLeanGetClose : List Nat :=
-  let t : List Nat := 93 :: [63]
-  t
-
-def txLeanToNat : List Nat :=
-  let t : List Nat := 46 :: 116 :: 111 :: 78 :: 97 :: [116]
-  t
-
-def txLeanOfNat : List Nat :=
-  let t : List Nat := 66 :: 105 :: 116 :: 86 :: 101 :: 99 :: 46 :: 111 :: 102 :: 78 :: 97 :: [116]
-  t
-
 end Lanius.Mini

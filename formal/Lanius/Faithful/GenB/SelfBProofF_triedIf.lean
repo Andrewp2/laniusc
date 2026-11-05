@@ -18,12 +18,12 @@ public import Lanius.Faithful.GenB.SelfBStmtN4
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_triedIf
 import all Lanius.Faithful.Gen.SelfStmtF_triedIf
-import all Lanius.Mini.Frontend.P.fnInstRet
+import all Lanius.Mini.Frontend.P.effOf
+import all Lanius.Mini.Frontend.P.effTy
 import all Lanius.Mini.Frontend.P.freshId
-import all Lanius.Mini.Frontend.P.hasKids
-import all Lanius.Mini.Frontend.P.noToken
-import all Lanius.Mini.Frontend.P.repeatEff
-import all Lanius.Mini.Frontend.P.stringOpen
+import all Lanius.Mini.Frontend.P.kid
+import all Lanius.Mini.Frontend.P.kidToken
+import all Lanius.Mini.Frontend.P.namedParts
 
 @[expose] public section
 

@@ -10,6 +10,14 @@ public import Lanius.Faithful.Gen.SelfStmtC_FloatTy_rex
 public import Lanius.Faithful.Gen.SelfStmtC_arities
 import all Lanius.Faithful.Gen.SelfSrcC_FArith_opcode
 import all Lanius.Mini.Compiler.P.FArith_opcode
+import all Lanius.Mini.Compiler.P.FCmp_predicate
+import all Lanius.Mini.Compiler.P.FOp_bytes
+import all Lanius.Mini.Compiler.P.FOp_opcodeBytes
+import all Lanius.Mini.Compiler.P.bumpBytes
+import all Lanius.Mini.Compiler.P.floatOperands
+import all Lanius.Mini.Compiler.P.floatResult
+import all Lanius.Mini.Compiler.P.frameMemoryBytes
+import all Lanius.Mini.Compiler.P.pow2
 
 public section
 

@@ -2,6 +2,12 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Compiler.P.armPayload
+public import Lanius.Mini.Compiler.P.lowerArmFound
+public import Lanius.Mini.Compiler.P.lowerArmStmt
+public import Lanius.Mini.Compiler.P.lowerMatch
+public import Lanius.Mini.Compiler.P.lowerMatchArm
+public import Lanius.Mini.Compiler.P.lowerMatchArms
+public import Lanius.Mini.Compiler.P.lowerMatchOn
 
 @[expose] public section
 

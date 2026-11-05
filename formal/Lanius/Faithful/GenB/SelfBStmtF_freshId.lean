@@ -3,7 +3,12 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_freshId
+public import Lanius.Mini.Frontend.P.fieldExpr
+public import Lanius.Mini.Frontend.P.fieldIn
+public import Lanius.Mini.Frontend.P.fieldIndex
 public import Lanius.Mini.Frontend.P.freshId
+public import Lanius.Mini.Frontend.P.localExpr
+public import Lanius.Mini.Frontend.P.memberOf
 
 @[expose] public section
 

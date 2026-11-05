@@ -20,6 +20,9 @@ public import Lanius.Faithful.Gen.SelfStmtF_repeatEff
 public import Lanius.Faithful.Gen.SelfStmtF_typeDeclAt
 public import Lanius.Faithful.Gen.SelfStmtF_typePathSpellings
 import all Lanius.Faithful.Gen.SelfSrcF_repeatEff
+import all Lanius.Mini.Frontend.P.boundArgs
+import all Lanius.Mini.Frontend.P.matchTy
+import all Lanius.Mini.Frontend.P.namedParts
 import all Lanius.Mini.Frontend.P.repeatEff
 
 public section

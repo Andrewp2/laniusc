@@ -1,9 +1,9 @@
 module
 
 public import Lanius.Mini.Compiler.Types
-import Lanius.Mini.Compiler.P.UintTy_half
-import Lanius.Mini.Compiler.P.UintTy_isWide
-import Lanius.Mini.Compiler.P.floatApply
+import Lanius.Mini.Compiler.P.SrcType_isI32
+import Lanius.Mini.Compiler.P.SrcType_isIsize
+import Lanius.Mini.Compiler.P.SrcType_isSintAny
 import Lanius.Mini.Compiler.P.lowerShift
 
 public section
@@ -19,55 +19,5 @@ def arithShiftRight (left : Typed) (right : Typed) : Option Typed :=
     lowerShift BinOp.sar left right
   else
     lowerShift BinOp.shr left right
-
-/-- ptr + usize and ptr - usize move the address, wrapping at 2^64 like Core's pointerOffset; other operands are arithmetic. -/
-def offsetOrArith (operation : BinOp) (left : Typed) (right : Typed) : Option Typed :=
-  if SrcType.isPtr left.ty && SrcType.isUint right.ty UintTy.usize then
-    some ({ expr := Expr.binary Word.u64 operation left.expr right.expr, ty := SrcType.ptr } : Typed)
-  else
-    arith operation left right
-
-def orderUint (operation : CmpOp) (left : Typed) (right : Typed) (kind : Option UintTy) : Option Typed :=
-  match kind with
-  | none => none
-  | some k =>
-    if SrcType.isUint right.ty k then
-      some ({ expr := Expr.compare Word.u64 operation left.expr right.expr, ty := SrcType.bool } : Typed)
-    else
-      none
-
-/-- An isize's bits plus 2^63, which flips the sign bit and so orders isizes as unsigned numbers in their signed order. -/
-def signKey (e : Expr) : Expr :=
-  Expr.binary Word.u64 BinOp.add e (Expr.lit 9223372036854775808)
-
-def orderSint (operation : CmpOp) (left : Typed) (right : Typed) (kind : Option UintTy) : Option Typed :=
-  match kind with
-  | none => none
-  | some k =>
-    if SrcType.isSint right.ty k && UintTy.isWide k then
-      some ({ expr := Expr.compare Word.u64 operation (signKey left.expr) (signKey right.expr), ty := SrcType.bool } : Typed)
-    else
-      if SrcType.isSint right.ty k then
-        some ({ expr := Expr.compare Word.s32 operation left.expr right.expr, ty := SrcType.bool } : Typed)
-      else
-        none
-
-def order (operation : CmpOp) (left : Typed) (right : Typed) : Option Typed :=
-  if SrcType.isFloatAny left.ty then
-    floatOrder operation left right (SrcType.floatTy left.ty)
-  else
-    if SrcType.isI32 left.ty && SrcType.isI32 right.ty then
-      some ({ expr := Expr.compare Word.s32 operation left.expr right.expr, ty := SrcType.bool } : Typed)
-    else
-      if SrcType.isIsize left.ty && SrcType.isIsize right.ty then
-        some ({ expr := Expr.compare Word.u64 operation (signKey left.expr) (signKey right.expr), ty := SrcType.bool } : Typed)
-      else
-        if SrcType.isSintAny left.ty then
-          orderSint operation left right (SrcType.sintKind left.ty)
-        else
-          if SrcType.isChar left.ty && SrcType.isChar right.ty then
-            some ({ expr := Expr.compare Word.u64 operation left.expr right.expr, ty := SrcType.bool } : Typed)
-          else
-            orderUint operation left right (SrcType.uintKind left.ty)
 
 end Lanius.Mini

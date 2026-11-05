@@ -1,7 +1,12 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.genericTail
+public import Lanius.Mini.Frontend.P.kid
+public import Lanius.Mini.Frontend.P.kidsOf
 public import Lanius.Mini.Frontend.P.noToken
+public import Lanius.Mini.Frontend.P.startsWithKind
+public import Lanius.Mini.Frontend.P.withKid
 
 @[expose] public section
 

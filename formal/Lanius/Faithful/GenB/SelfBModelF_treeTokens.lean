@@ -4,7 +4,7 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelN0
 public import Lanius.Faithful.GenB.SelfBModelN5
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.nullConst
+public import Lanius.Mini.Frontend.P.sintWide
 public import Lanius.Mini.Frontend.P.treeTokens
 public import Lanius.Mini.Frontend.Types
 

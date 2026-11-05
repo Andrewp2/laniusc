@@ -21,7 +21,17 @@ public import Lanius.Faithful.Gen.SelfStmtC_withBudget
 public import Lanius.Faithful.Gen.SelfStmtC_wordElement
 public import Lanius.Faithful.Gen.SelfStmtC_wordStride
 import all Lanius.Faithful.Gen.SelfSrcC_Inline_lowerSetScalar
+import all Lanius.Mini.Compiler.P.Inline_blockThen
+import all Lanius.Mini.Compiler.P.Inline_checkedElement
+import all Lanius.Mini.Compiler.P.Inline_checkedLoad
+import all Lanius.Mini.Compiler.P.Inline_elementAt
+import all Lanius.Mini.Compiler.P.Inline_enumVariantsAt
+import all Lanius.Mini.Compiler.P.Inline_evalLetBody
 import all Lanius.Mini.Compiler.P.Inline_lowerSetScalar
+import all Lanius.Mini.Compiler.P.Inline_paramsThen
+import all Lanius.Mini.Compiler.P.Inline_setScalarEval
+import all Lanius.Mini.Compiler.P.Inline_storeElement
+import all Lanius.Mini.Compiler.P.Inline_structFieldsAt
 
 public section
 

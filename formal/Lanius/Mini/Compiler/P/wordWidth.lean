@@ -1,10 +1,6 @@
 module
 
 public import Lanius.Mini.Compiler.Types
-import Lanius.Mini.Compiler.P.Lists_empty
-import Lanius.Mini.Compiler.P.SrcType_same
-import Lanius.Mini.Compiler.P.enumVariants
-import Lanius.Mini.Compiler.P.structFields
 import Lanius.Mini.Compiler.P.usizeWidth
 
 public section
@@ -33,47 +29,5 @@ def wordWidth (ty : SrcType) : Option MemWidth :=
   | .view viewLength => none
   | .str => none
   | .ref referent => none
-
-/-- The fields declared for a struct match the type's. -/
-def declaredSame (declared : Option (List SrcType)) (fields : List SrcType) : Bool :=
-  match declared with
-  | none => false
-  | some fs => typesSame fs fields
-
-/-- The variants declared for an enum match the type's. -/
-def declaredVariants (declared : Option (List (List SrcType))) (variants : List (List SrcType)) : Bool :=
-  match declared with
-  | none => false
-  | some vs => variantsSame vs variants
-
-mutual
-/-- A type Core and the mini compiler both lay out a word per slot: a word scalar (word_width); a struct, declared with these fields, of such fields and at least one word; or an enum, declared with these variants, of at least one variant, tags that fit in 32 bits, and payloads of such fields. Core puts an enum's tag in its word 0 and its payload after it, padded to the longest payload as the slots are, so word k is slot k. -/
-def wordType (decls : SrcDecls) (ty : SrcType) : Bool :=
-  match ty with
-  | .i32 => true
-  | .bool => true
-  | .uint kind => true
-  | .struct id fields => declaredSame (structFields decls.structs id) fields && wordTypes decls fields && decide (0 < sizes fields)
-  | .enum id variants => declaredVariants (enumVariants decls.enums id) variants && decide (0 < variants.length) && decide (variants.length < 4294967296) && wordVariants decls variants
-  | .ptr => true
-  | .slice element => false
-  | .array arrayElement arrayLength => false
-  | .unit => false
-  | .isize => true
-  | .char => false
-  | .float ft => false
-  | .sint kind => true
-  | .view viewLength => false
-  | .str => false
-  | .ref referent => false
-def wordTypes (decls : SrcDecls) (types : List SrcType) : Bool :=
-  match types with
-  | [] => true
-  | ty :: rest => wordType decls ty && wordTypes decls rest
-def wordVariants (decls : SrcDecls) (variants : List (List SrcType)) : Bool :=
-  match variants with
-  | [] => true
-  | types :: rest => wordTypes decls types && wordVariants decls rest
-end
 
 end Lanius.Mini

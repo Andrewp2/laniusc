@@ -18,7 +18,13 @@ public import Lanius.Faithful.Gen.SelfStmtF_pickTy
 public import Lanius.Faithful.Gen.SelfStmtF_whileEvalOf
 public import Lanius.Faithful.Gen.SelfStmtF_wideOf
 import all Lanius.Faithful.Gen.SelfSrcF_forRange
+import all Lanius.Mini.Frontend.P.arrayLocal
+import all Lanius.Mini.Frontend.P.arrayLocalOf
+import all Lanius.Mini.Frontend.P.forArray
 import all Lanius.Mini.Frontend.P.forRange
+import all Lanius.Mini.Frontend.P.forSlice
+import all Lanius.Mini.Frontend.P.matchOfPostfix
+import all Lanius.Mini.Frontend.P.matchPrimary
 
 public section
 

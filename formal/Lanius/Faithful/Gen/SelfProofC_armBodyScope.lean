@@ -8,6 +8,8 @@ public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmtC_armBodyScope
 import all Lanius.Faithful.Gen.SelfSrcC_armBodyScope
 import all Lanius.Mini.Compiler.P.armBodyScope
+import all Lanius.Mini.Compiler.P.fieldPayload
+import all Lanius.Mini.Compiler.P.unitPayload
 
 public section
 

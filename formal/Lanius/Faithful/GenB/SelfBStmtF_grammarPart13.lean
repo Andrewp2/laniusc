@@ -5,7 +5,14 @@ public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_attachNode
 public import Lanius.Faithful.GenB.SelfBModelF_genericClose
 public import Lanius.Faithful.GenB.SelfBModelF_grammarPart13
+public import Lanius.Mini.Frontend.P.Inline_attachAfter
+public import Lanius.Mini.Frontend.P.Inline_attachTerm
+public import Lanius.Mini.Frontend.P.Inline_genericCloseAt
+public import Lanius.Mini.Frontend.P.grammar
 public import Lanius.Mini.Frontend.P.grammarPart13
+public import Lanius.Mini.Frontend.P.grammarPart14
+public import Lanius.Mini.Frontend.P.grammarPart15
+public import Lanius.Mini.Frontend.P.grammarPart16
 
 @[expose] public section
 

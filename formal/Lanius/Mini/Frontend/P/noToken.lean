@@ -12,29 +12,4 @@ namespace Lanius.Mini
 def noToken : Token :=
   ({ kind := 0, start := 0, text := [] } : Token)
 
-def kidsOf (c : CTree) : List CTree :=
-  match c with
-  | .leaf t => []
-  | .node p kids => kids
-
-/-- Child i (a dummy leaf if there is none). -/
-def kid (c : CTree) (i : Nat) : CTree :=
-  (kidsOf c).getD i (CTree.leaf noToken)
-
-def withKid (kid : CTree) (rest : Option Attached) : Option Attached :=
-  match rest with
-  | none => none
-  | some a => some ({ kids := kid :: a.kids, rest := a.rest } : Attached)
-
-/-- The grammar is ambiguous where `x < y` in an expression could also open the type arguments of a generic path `x<y>`: `a < b > (c)` is a comparison chain and a generic call. laniusc reads `x<` as type arguments when the matching `>` (angles counted outside brackets, a `>>` closing two) comes before any bracket closes or `;`, no `||`, `==`, `!=`, `<=` or `>=` comes before it, and `(`, `::` or `{` follows it. generic_path_at says that of the tokens from the identifier on; the validator accepts a path segment only if they agree, and formal/Lanius/Mini/Unique.lean proves that then at most one tree reads a file's tokens. -/
-def startsWithKind (tokens : List Token) (kind : Nat) : Bool :=
-  match tokens with
-  | [] => false
-  | t :: rest => decide (t.kind = kind)
-
-def genericTail (tokens : List Token) : Bool :=
-  match tokens with
-  | [] => false
-  | t :: rest => decide (t.kind = (4)) || decide (t.kind = (22)) || decide (t.kind = (38)) && startsWithKind rest (38)
-
 end Lanius.Mini

@@ -2,8 +2,8 @@ module
 
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelC_SrcType_same
-public import Lanius.Mini.Compiler.P.SrcType_same
-public import Lanius.Mini.Compiler.P.elementBase
+public import Lanius.Mini.Compiler.P.SrcType_size
+public import Lanius.Mini.Compiler.P.loadType
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.Types
 

@@ -1,7 +1,9 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.armsByVariant
 public import Lanius.Mini.Frontend.P.armsNaming
+public import Lanius.Mini.Frontend.P.textUnderscore
 
 @[expose] public section
 

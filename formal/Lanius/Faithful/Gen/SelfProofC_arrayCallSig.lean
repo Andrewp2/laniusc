@@ -31,7 +31,20 @@ public import Lanius.Faithful.Gen.SelfStmtC_storeArray
 public import Lanius.Faithful.Gen.SelfStmtC_strStores
 public import Lanius.Faithful.Gen.SelfStmtC_wordStride
 import all Lanius.Faithful.Gen.SelfSrcC_arrayCallSig
+import all Lanius.Mini.Compiler.P.SrcEff_isSlice
+import all Lanius.Mini.Compiler.P.SrcEff_passesSlices
+import all Lanius.Mini.Compiler.P.SrcEff_sliceCall
+import all Lanius.Mini.Compiler.P.SrcStmt_breaksOut
+import all Lanius.Mini.Compiler.P.SrcStmt_depth
+import all Lanius.Mini.Compiler.P.SrcStmt_lower
+import all Lanius.Mini.Compiler.P.arrayCall
 import all Lanius.Mini.Compiler.P.arrayCallSig
+import all Lanius.Mini.Compiler.P.effsSlice
+import all Lanius.Mini.Compiler.P.paramScope
+import all Lanius.Mini.Compiler.P.paramTypes
+import all Lanius.Mini.Compiler.P.paramsSize
+import all Lanius.Mini.Compiler.P.paramsValid
+import all Lanius.Mini.Compiler.P.stmtEval
 
 public section
 

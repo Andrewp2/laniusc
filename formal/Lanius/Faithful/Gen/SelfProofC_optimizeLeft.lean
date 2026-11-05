@@ -18,7 +18,17 @@ public import Lanius.Faithful.Gen.SelfStmtC_longer
 public import Lanius.Faithful.Gen.SelfStmtC_optimizeLeft
 public import Lanius.Faithful.Gen.SelfStmtC_optimizeNeg
 import all Lanius.Faithful.Gen.SelfSrcC_optimizeLeft
+import all Lanius.Mini.Compiler.P.Expr_optimize
+import all Lanius.Mini.Compiler.P.iteOrSkip
+import all Lanius.Mini.Compiler.P.optimizeAll
+import all Lanius.Mini.Compiler.P.optimizeAssign
+import all Lanius.Mini.Compiler.P.optimizeBinary
+import all Lanius.Mini.Compiler.P.optimizeBoth
+import all Lanius.Mini.Compiler.P.optimizeCompare
 import all Lanius.Mini.Compiler.P.optimizeLeft
+import all Lanius.Mini.Compiler.P.optimizeRight
+import all Lanius.Mini.Compiler.P.optimizeSeq
+import all Lanius.Mini.Compiler.P.pickBranch
 
 public section
 

@@ -14,7 +14,10 @@ public import Lanius.Faithful.Gen.SelfStmtF_triedIf
 public import Lanius.Faithful.Gen.SelfStmtF_tryLocalOf
 public import Lanius.Faithful.Gen.SelfStmtF_wideOf
 import all Lanius.Faithful.Gen.SelfSrcF_tryLocalOf
+import all Lanius.Mini.Frontend.P.tryHead
 import all Lanius.Mini.Frontend.P.tryLocalOf
+import all Lanius.Mini.Frontend.P.tryOfInit
+import all Lanius.Mini.Frontend.P.tryPostfix
 
 public section
 

@@ -4,6 +4,7 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_attachNode
 public import Lanius.Mini.Frontend.P.Inline_attachNode
+public import Lanius.Mini.Frontend.P.Inline_attachProd
 
 @[expose] public section
 

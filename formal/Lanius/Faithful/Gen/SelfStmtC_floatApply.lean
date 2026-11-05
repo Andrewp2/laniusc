@@ -1,7 +1,11 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Compiler.P.arith
 public import Lanius.Mini.Compiler.P.floatApply
+public import Lanius.Mini.Compiler.P.floatArith
+public import Lanius.Mini.Compiler.P.floatCompare
+public import Lanius.Mini.Compiler.P.floatOrder
 
 @[expose] public section
 

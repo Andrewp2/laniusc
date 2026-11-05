@@ -8,8 +8,10 @@ public import Lanius.Faithful.GenB.SelfBStmtC_DivOp_size
 public import Lanius.Faithful.GenB.SelfBStmtC_Word_narrows
 import all Lanius.Faithful.Gen.SelfSrcC_Word_narrows
 import all Lanius.Faithful.Gen.SelfStmtC_Word_narrows
-import all Lanius.Mini.Compiler.P.DivOp_size
-import all Lanius.Mini.Compiler.P.Word_narrows
+import all Lanius.Mini.Compiler.P.FArith_number
+import all Lanius.Mini.Compiler.P.FCmp_number
+import all Lanius.Mini.Compiler.P.FloatTy_number
+import all Lanius.Mini.Compiler.P.Word_number
 
 @[expose] public section
 

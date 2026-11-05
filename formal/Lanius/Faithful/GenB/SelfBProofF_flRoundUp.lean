@@ -13,10 +13,18 @@ public import Lanius.Faithful.GenB.SelfBStmtN3
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_flRoundUp
 import all Lanius.Faithful.Gen.SelfStmtF_flRoundUp
-import all Lanius.Mini.Frontend.P.basedDigits
+import all Lanius.Mini.Frontend.P.flBit
+import all Lanius.Mini.Frontend.P.flDivmod
+import all Lanius.Mini.Frontend.P.flLess
 import all Lanius.Mini.Frontend.P.flLog2Or0
-import all Lanius.Mini.Frontend.P.flNatHalf
+import all Lanius.Mini.Frontend.P.flOdd
+import all Lanius.Mini.Frontend.P.flPow2
+import all Lanius.Mini.Frontend.P.flRatioOk
 import all Lanius.Mini.Frontend.P.flRoundUp
+import all Lanius.Mini.Frontend.P.flSat
+import all Lanius.Mini.Frontend.P.flShl
+import all Lanius.Mini.Frontend.P.flTimes10
+import all Lanius.Mini.Frontend.P.flToNat
 
 @[expose] public section
 

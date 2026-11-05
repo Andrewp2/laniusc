@@ -3,7 +3,13 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_findMethodAt
+public import Lanius.Mini.Frontend.P.effOf
+public import Lanius.Mini.Frontend.P.isStrType
+public import Lanius.Mini.Frontend.P.returnEff
+public import Lanius.Mini.Frontend.P.stringInit
+public import Lanius.Mini.Frontend.P.stringLiteral
 public import Lanius.Mini.Frontend.P.stringOpen
+public import Lanius.Mini.Frontend.P.stringPrimary
 
 @[expose] public section
 

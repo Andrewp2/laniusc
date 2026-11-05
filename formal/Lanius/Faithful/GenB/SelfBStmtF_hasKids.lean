@@ -4,6 +4,13 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_hasKids
 public import Lanius.Mini.Frontend.P.hasKids
+public import Lanius.Mini.Frontend.P.isLink
+public import Lanius.Mini.Frontend.P.joinItems
+public import Lanius.Mini.Frontend.P.joinSecond
+public import Lanius.Mini.Frontend.P.kidToken
+public import Lanius.Mini.Frontend.P.leafToken
+public import Lanius.Mini.Frontend.P.listItems
+public import Lanius.Mini.Frontend.P.sameText
 
 @[expose] public section
 

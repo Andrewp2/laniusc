@@ -12,7 +12,21 @@ public import Lanius.Faithful.Gen.SelfStmtC_Lists_empty
 public import Lanius.Faithful.Gen.SelfStmtC_Word_narrows
 public import Lanius.Faithful.Gen.SelfStmtC_callAgrees
 import all Lanius.Faithful.Gen.SelfSrcC_callAgrees
+import all Lanius.Mini.Compiler.P.Expr_isAtom
+import all Lanius.Mini.Compiler.P.Expr_mentions
+import all Lanius.Mini.Compiler.P.Expr_subst
+import all Lanius.Mini.Compiler.P.allocAgrees
 import all Lanius.Mini.Compiler.P.callAgrees
+import all Lanius.Mini.Compiler.P.divideAgrees
+import all Lanius.Mini.Compiler.P.factValue
+import all Lanius.Mini.Compiler.P.frameAgrees
+import all Lanius.Mini.Compiler.P.loadByteAgrees
+import all Lanius.Mini.Compiler.P.loadWordAgrees
+import all Lanius.Mini.Compiler.P.retAgrees
+import all Lanius.Mini.Compiler.P.staticAgrees
+import all Lanius.Mini.Compiler.P.storeByteAgrees
+import all Lanius.Mini.Compiler.P.storeWordAgrees
+import all Lanius.Mini.Compiler.P.sysAgrees
 
 public section
 

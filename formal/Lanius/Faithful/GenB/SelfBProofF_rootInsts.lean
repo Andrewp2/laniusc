@@ -9,10 +9,11 @@ public import Lanius.Faithful.GenB.SelfBStmtF_rootInsts
 public import Lanius.Faithful.GenB.SelfBStmtN6
 import all Lanius.Faithful.Gen.SelfSrcF_rootInsts
 import all Lanius.Faithful.Gen.SelfStmtF_rootInsts
-import all Lanius.Mini.Frontend.P.collect
-import all Lanius.Mini.Frontend.P.distinct
-import all Lanius.Mini.Frontend.P.hasKids
+import all Lanius.Mini.Frontend.P.noNames
 import all Lanius.Mini.Frontend.P.rootInsts
+import all Lanius.Mini.Frontend.P.sameSpellings
+import all Lanius.Mini.Frontend.P.sameText
+import all Lanius.Mini.Frontend.P.seedInsts
 
 @[expose] public section
 

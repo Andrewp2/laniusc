@@ -4,6 +4,11 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_ifEff
 public import Lanius.Mini.Frontend.P.ifEff
+public import Lanius.Mini.Frontend.P.setEff
+public import Lanius.Mini.Frontend.P.setFieldEff
+public import Lanius.Mini.Frontend.P.setIndexEff
+public import Lanius.Mini.Frontend.P.setIndexPure
+public import Lanius.Mini.Frontend.P.whileEff
 
 @[expose] public section
 

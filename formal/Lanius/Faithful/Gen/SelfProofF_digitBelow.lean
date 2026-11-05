@@ -6,6 +6,7 @@ public import Lanius.Faithful.Gen.SelfSrcF_digitBelow
 public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_digitBelow
 import all Lanius.Faithful.Gen.SelfSrcF_digitBelow
+import all Lanius.Mini.Frontend.P.baseDigit
 import all Lanius.Mini.Frontend.P.digitBelow
 
 public section

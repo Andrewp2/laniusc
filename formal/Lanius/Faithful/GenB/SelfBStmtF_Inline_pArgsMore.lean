@@ -3,6 +3,10 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.Inline_pArgsMore
+public import Lanius.Mini.Frontend.P.Inline_pArgsNone
+public import Lanius.Mini.Frontend.P.Inline_pArgsSome
+public import Lanius.Mini.Frontend.P.Inline_pArmBlock
+public import Lanius.Mini.Frontend.P.Inline_pArrayAfterCommaMore
 
 @[expose] public section
 

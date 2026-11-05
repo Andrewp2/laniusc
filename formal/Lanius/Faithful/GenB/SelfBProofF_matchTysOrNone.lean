@@ -18,12 +18,13 @@ public import Lanius.Faithful.GenB.SelfBStmtN4
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_matchTysOrNone
 import all Lanius.Faithful.Gen.SelfStmtF_matchTysOrNone
-import all Lanius.Mini.Frontend.P.consTreeTail
-import all Lanius.Mini.Frontend.P.fnInstRet
+import all Lanius.Mini.Frontend.P.boundArgs
+import all Lanius.Mini.Frontend.P.calleeEnv
+import all Lanius.Mini.Frontend.P.effsTys
+import all Lanius.Mini.Frontend.P.instBound
 import all Lanius.Mini.Frontend.P.matchTysOrNone
-import all Lanius.Mini.Frontend.P.projectionRet
+import all Lanius.Mini.Frontend.P.neverRet
 import all Lanius.Mini.Frontend.P.purePart
-import all Lanius.Mini.Frontend.P.repeatEff
 
 @[expose] public section
 

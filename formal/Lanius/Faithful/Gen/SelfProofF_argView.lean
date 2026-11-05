@@ -11,6 +11,9 @@ public import Lanius.Faithful.Gen.SelfStmtF_fnInstRet
 public import Lanius.Faithful.Gen.SelfStmtF_purePart
 import all Lanius.Faithful.Gen.SelfSrcF_argView
 import all Lanius.Mini.Frontend.P.argView
+import all Lanius.Mini.Frontend.P.argViews
+import all Lanius.Mini.Frontend.P.viewOf
+import all Lanius.Mini.Frontend.P.viewsOf
 
 public section
 

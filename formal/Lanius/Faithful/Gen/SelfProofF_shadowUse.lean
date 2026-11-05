@@ -8,7 +8,11 @@ public import Lanius.Faithful.Gen.SelfStmtF_isUnderscore
 public import Lanius.Faithful.Gen.SelfStmtF_plainNaming
 public import Lanius.Faithful.Gen.SelfStmtF_shadowUse
 import all Lanius.Faithful.Gen.SelfSrcF_shadowUse
+import all Lanius.Mini.Frontend.P.nestedOrPlain
+import all Lanius.Mini.Frontend.P.plainUse
+import all Lanius.Mini.Frontend.P.rowsUse
 import all Lanius.Mini.Frontend.P.shadowUse
+import all Lanius.Mini.Frontend.P.wildUse
 
 public section
 

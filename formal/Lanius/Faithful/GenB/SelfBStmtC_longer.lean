@@ -3,7 +3,15 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_Inline_factOr
+public import Lanius.Mini.Compiler.P.Stmt_factsAfter
+public import Lanius.Mini.Compiler.P.Stmt_ignores
+public import Lanius.Mini.Compiler.P.Stmt_isBrk
+public import Lanius.Mini.Compiler.P.Stmt_isCont
+public import Lanius.Mini.Compiler.P.Stmt_isSkip
+public import Lanius.Mini.Compiler.P.Stmt_jumps
+public import Lanius.Mini.Compiler.P.assigned
 public import Lanius.Mini.Compiler.P.longer
+public import Lanius.Mini.Compiler.P.trimFacts
 
 @[expose] public section
 

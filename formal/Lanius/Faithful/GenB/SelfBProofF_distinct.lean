@@ -9,7 +9,7 @@ public import Lanius.Faithful.GenB.SelfBStmtF_distinct
 public import Lanius.Faithful.GenB.SelfBStmtN3
 import all Lanius.Faithful.Gen.SelfSrcF_distinct
 import all Lanius.Faithful.Gen.SelfStmtF_distinct
-import all Lanius.Mini.Frontend.P.hasKids
+import all Lanius.Mini.Frontend.P.sameText
 
 @[expose] public section
 

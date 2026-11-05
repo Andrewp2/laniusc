@@ -1,7 +1,14 @@
 module
 
 public import Lanius.Faithful.SelfPre.HB
+public import Lanius.Mini.Frontend.P.fileLexed
+public import Lanius.Mini.Frontend.P.filesAfter
 public import Lanius.Mini.Frontend.P.readCountedBytes
+public import Lanius.Mini.Frontend.P.readCountedFiles
+public import Lanius.Mini.Frontend.P.readFile
+public import Lanius.Mini.Frontend.P.readFileEnd
+public import Lanius.Mini.Frontend.P.readFileParents
+public import Lanius.Mini.Frontend.P.readFiles
 
 @[expose] public section
 

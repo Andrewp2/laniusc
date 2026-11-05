@@ -2,6 +2,7 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Compiler.P.FloatTy_rex
+public import Lanius.Mini.Compiler.P.FloatTy_scalarPrefix
 
 @[expose] public section
 

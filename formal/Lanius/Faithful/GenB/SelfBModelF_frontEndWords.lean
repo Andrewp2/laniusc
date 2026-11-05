@@ -6,7 +6,7 @@ public import Lanius.Faithful.GenB.SelfBModelF_readCountedBytes
 public import Lanius.Faithful.GenB.SelfBModelN0
 public import Lanius.Faithful.GenB.SelfBModelN3
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.readCountedBytes
+public import Lanius.Mini.Frontend.P.readCountedFiles
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

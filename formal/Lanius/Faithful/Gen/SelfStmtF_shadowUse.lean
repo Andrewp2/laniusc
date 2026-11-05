@@ -1,7 +1,11 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.nestedOrPlain
+public import Lanius.Mini.Frontend.P.plainUse
+public import Lanius.Mini.Frontend.P.rowsUse
 public import Lanius.Mini.Frontend.P.shadowUse
+public import Lanius.Mini.Frontend.P.wildUse
 
 @[expose] public section
 

@@ -18,7 +18,13 @@ public import Lanius.Faithful.Gen.SelfStmtC_storeType
 public import Lanius.Faithful.Gen.SelfStmtC_wordElement
 public import Lanius.Faithful.Gen.SelfStmtC_wordStride
 import all Lanius.Faithful.Gen.SelfSrcC_storeEvalWord
+import all Lanius.Mini.Compiler.P.putElement
+import all Lanius.Mini.Compiler.P.storeArrayElement
+import all Lanius.Mini.Compiler.P.storeEval
+import all Lanius.Mini.Compiler.P.storeEvalByte
+import all Lanius.Mini.Compiler.P.storeEvalElement
 import all Lanius.Mini.Compiler.P.storeEvalWord
+import all Lanius.Mini.Compiler.P.storePick
 
 public section
 

@@ -3,8 +3,12 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelC_SrcType_same
 public import Lanius.Faithful.GenB.SelfBModelC_lowerLocal
-public import Lanius.Mini.Compiler.P.UintTy_half
+public import Lanius.Mini.Compiler.P.SrcType_isBool
+public import Lanius.Mini.Compiler.P.SrcType_isFloatAny
+public import Lanius.Mini.Compiler.P.SrcType_isPtr
+public import Lanius.Mini.Compiler.P.SrcType_isScalar
 public import Lanius.Mini.Compiler.P.UintTy_isWide
+public import Lanius.Mini.Compiler.P.UintTy_signedWord
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.Types
 

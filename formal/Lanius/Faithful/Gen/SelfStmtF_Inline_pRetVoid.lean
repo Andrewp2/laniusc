@@ -2,6 +2,9 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.Inline_pRetVoid
+public import Lanius.Mini.Frontend.P.Inline_pReturnStmt
+public import Lanius.Mini.Frontend.P.Inline_pReturnValue
+public import Lanius.Mini.Frontend.P.Inline_pReturnVoid
 
 @[expose] public section
 

@@ -3,6 +3,21 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_Inline_arithOf
+public import Lanius.Mini.Compiler.P.SrcEff_types
+public import Lanius.Mini.Compiler.P.evalIf
+public import Lanius.Mini.Compiler.P.evalIfOf
+public import Lanius.Mini.Compiler.P.evalLetIn
+public import Lanius.Mini.Compiler.P.evalLetInOf
+public import Lanius.Mini.Compiler.P.evalMatch
+public import Lanius.Mini.Compiler.P.evalMatchOf
+public import Lanius.Mini.Compiler.P.lowerDiscard
+public import Lanius.Mini.Compiler.P.lowerIfEval
+public import Lanius.Mini.Compiler.P.lowerLet
+public import Lanius.Mini.Compiler.P.lowerLetCall
+public import Lanius.Mini.Compiler.P.lowerLetEval
+public import Lanius.Mini.Compiler.P.lowerReturnEval
+public import Lanius.Mini.Compiler.P.lowerSetEval
+public import Lanius.Mini.Compiler.P.lowerWhileEval
 public import Lanius.Mini.Compiler.P.matchVariants
 
 @[expose] public section

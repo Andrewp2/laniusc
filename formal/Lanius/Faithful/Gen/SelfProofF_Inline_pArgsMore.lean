@@ -6,6 +6,10 @@ public import Lanius.Faithful.Gen.SelfSrcF_Inline_pArgsMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pArgsMore
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pArgsMore
 import all Lanius.Mini.Frontend.P.Inline_pArgsMore
+import all Lanius.Mini.Frontend.P.Inline_pArgsNone
+import all Lanius.Mini.Frontend.P.Inline_pArgsSome
+import all Lanius.Mini.Frontend.P.Inline_pArmBlock
+import all Lanius.Mini.Frontend.P.Inline_pArrayAfterCommaMore
 
 public section
 

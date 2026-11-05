@@ -11,8 +11,8 @@ public import Lanius.Faithful.GenB.SelfBStmtF_lxSymbolStart
 public import Lanius.Faithful.GenB.SelfBStmtN4
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_lxAfterFractionAt
 import all Lanius.Faithful.Gen.SelfStmtF_Inline_lxAfterFractionAt
-import all Lanius.Mini.Frontend.P.lxBlockEnd
-import all Lanius.Mini.Frontend.P.lxSymbolStart
+import all Lanius.Mini.Frontend.P.lxDigitRun
+import all Lanius.Mini.Frontend.P.lxIsByte
 
 @[expose] public section
 

@@ -4,6 +4,9 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_lxFilterAt
 public import Lanius.Mini.Frontend.P.Inline_lxFilterAt
+public import Lanius.Mini.Frontend.P.Inline_lxRangesAt
+public import Lanius.Mini.Frontend.P.Inline_lxTokensAt
+public import Lanius.Mini.Frontend.P.Inline_pAdd
 
 @[expose] public section
 

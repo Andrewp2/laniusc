@@ -12,6 +12,11 @@ public import Lanius.Faithful.Gen.SelfStmtC_assignFrom
 public import Lanius.Faithful.Gen.SelfStmtC_lowerSetValues
 public import Lanius.Faithful.Gen.SelfStmtC_repeatType
 import all Lanius.Faithful.Gen.SelfSrcC_lowerSetValues
+import all Lanius.Mini.Compiler.P.lowerSet
+import all Lanius.Mini.Compiler.P.lowerSetField
+import all Lanius.Mini.Compiler.P.lowerSetFieldAt
+import all Lanius.Mini.Compiler.P.lowerSetFieldOf
+import all Lanius.Mini.Compiler.P.lowerSetValue
 import all Lanius.Mini.Compiler.P.lowerSetValues
 
 public section

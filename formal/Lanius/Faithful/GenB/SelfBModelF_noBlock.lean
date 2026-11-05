@@ -9,10 +9,10 @@ public import Lanius.Faithful.GenB.SelfBModelF_sliceHead
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.P.anyNested
 public import Lanius.Mini.Frontend.P.isPathCall
-public import Lanius.Mini.Frontend.P.isUnderscore
+public import Lanius.Mini.Frontend.P.kid
 public import Lanius.Mini.Frontend.P.noBlock
-public import Lanius.Mini.Frontend.P.noToken
-public import Lanius.Mini.Frontend.P.wideOf
+public import Lanius.Mini.Frontend.P.peel
+public import Lanius.Mini.Frontend.P.wildSplit
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

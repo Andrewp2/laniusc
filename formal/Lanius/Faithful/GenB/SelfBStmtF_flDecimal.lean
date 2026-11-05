@@ -4,6 +4,10 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_charOpen
 public import Lanius.Mini.Frontend.P.flDecimal
+public import Lanius.Mini.Frontend.P.flDigit
+public import Lanius.Mini.Frontend.P.flExpDigits
+public import Lanius.Mini.Frontend.P.flFinish
+public import Lanius.Mini.Frontend.P.flPush
 
 @[expose] public section
 

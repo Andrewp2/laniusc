@@ -22,7 +22,30 @@ public import Lanius.Faithful.Gen.SelfStmtF_noTrees
 public import Lanius.Faithful.Gen.SelfStmtF_plainNaming
 public import Lanius.Faithful.Gen.SelfStmtF_repeatEff
 import all Lanius.Faithful.Gen.SelfSrcF_plainNaming
+import all Lanius.Mini.Frontend.P.appendedUse
+import all Lanius.Mini.Frontend.P.colQuiet
+import all Lanius.Mini.Frontend.P.colsQuiet
+import all Lanius.Mini.Frontend.P.coveredBy
+import all Lanius.Mini.Frontend.P.coveredUse
+import all Lanius.Mini.Frontend.P.covers
+import all Lanius.Mini.Frontend.P.coversAll
+import all Lanius.Mini.Frontend.P.coversDecl
+import all Lanius.Mini.Frontend.P.coversEnum
+import all Lanius.Mini.Frontend.P.hiddenExpr
+import all Lanius.Mini.Frontend.P.hiddenPat
+import all Lanius.Mini.Frontend.P.hiddenPath
+import all Lanius.Mini.Frontend.P.knownUse
+import all Lanius.Mini.Frontend.P.nestArm
+import all Lanius.Mini.Frontend.P.nestAt
+import all Lanius.Mini.Frontend.P.nestInner
+import all Lanius.Mini.Frontend.P.nestPats
+import all Lanius.Mini.Frontend.P.nestUse
 import all Lanius.Mini.Frontend.P.plainNaming
+import all Lanius.Mini.Frontend.P.quietUse
+import all Lanius.Mini.Frontend.P.replaceAt
+import all Lanius.Mini.Frontend.P.shadowIf
+import all Lanius.Mini.Frontend.P.textHidden
+import all Lanius.Mini.Frontend.P.wildInner
 
 public section
 

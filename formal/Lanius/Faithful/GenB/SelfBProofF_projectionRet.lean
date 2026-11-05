@@ -14,8 +14,9 @@ public import Lanius.Faithful.GenB.SelfBStmtN5
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_projectionRet
 import all Lanius.Faithful.Gen.SelfStmtF_projectionRet
-import all Lanius.Mini.Frontend.P.projectionRet
-import all Lanius.Mini.Frontend.P.wideOf
+import all Lanius.Mini.Frontend.P.initTys
+import all Lanius.Mini.Frontend.P.neverRet
+import all Lanius.Mini.Frontend.P.structFieldTys
 
 @[expose] public section
 

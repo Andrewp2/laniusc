@@ -21,6 +21,21 @@ public import Lanius.Faithful.Gen.SelfStmtF_negWideI32
 public import Lanius.Faithful.Gen.SelfStmtF_rootInsts
 public import Lanius.Faithful.Gen.SelfStmtF_wideLeftStmt
 import all Lanius.Faithful.Gen.SelfSrcF_wideLeftStmt
+import all Lanius.Mini.Frontend.P.buildChecked
+import all Lanius.Mini.Frontend.P.buildClosed
+import all Lanius.Mini.Frontend.P.buildCollected
+import all Lanius.Mini.Frontend.P.buildFiles
+import all Lanius.Mini.Frontend.P.buildMono
+import all Lanius.Mini.Frontend.P.consRoot
+import all Lanius.Mini.Frontend.P.filesFuel
+import all Lanius.Mini.Frontend.P.frontEndFiles
+import all Lanius.Mini.Frontend.P.lxDigit
+import all Lanius.Mini.Frontend.P.lxIdentContinue
+import all Lanius.Mini.Frontend.P.lxIdentStart
+import all Lanius.Mini.Frontend.P.lxSpace
+import all Lanius.Mini.Frontend.P.untypedRejected
+import all Lanius.Mini.Frontend.P.validateFiles
+import all Lanius.Mini.Frontend.P.wideLeftFuncs
 import all Lanius.Mini.Frontend.P.wideLeftStmt
 
 public section

@@ -4,6 +4,9 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_genericOpen
 public import Lanius.Mini.Frontend.P.genericOpen
+public import Lanius.Mini.Frontend.P.genericPathAt
+public import Lanius.Mini.Frontend.P.opensBlock
+public import Lanius.Mini.Frontend.P.picks
 
 @[expose] public section
 

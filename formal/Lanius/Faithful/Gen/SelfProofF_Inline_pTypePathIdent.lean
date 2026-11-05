@@ -6,6 +6,7 @@ public import Lanius.Faithful.Gen.SelfSrcF_Inline_pTypePathIdent
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pTypePathIdent
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pTypePathIdent
 import all Lanius.Mini.Frontend.P.Inline_pTypePathIdent
+import all Lanius.Mini.Frontend.P.Inline_pTypePathMore
 
 public section
 

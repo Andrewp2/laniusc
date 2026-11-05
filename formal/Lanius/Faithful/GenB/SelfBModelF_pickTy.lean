@@ -5,9 +5,10 @@ public import Lanius.Faithful.GenB.SelfBModelF_wideOf
 public import Lanius.Faithful.GenB.SelfBModelN2
 public import Lanius.Faithful.GenB.SelfBModelN7
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.floatTyped
-public import Lanius.Mini.Frontend.P.pickTy
-public import Lanius.Mini.Frontend.P.wideOf
+public import Lanius.Mini.Frontend.P.bareInt
+public import Lanius.Mini.Frontend.P.findBind
+public import Lanius.Mini.Frontend.P.findLocalId
+public import Lanius.Mini.Frontend.P.repeatTy
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

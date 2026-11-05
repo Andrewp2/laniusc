@@ -16,6 +16,13 @@ public import Lanius.Faithful.Gen.SelfStmtF_projectionRet
 public import Lanius.Faithful.Gen.SelfStmtF_purePart
 public import Lanius.Faithful.Gen.SelfStmtF_repeatEff
 import all Lanius.Faithful.Gen.SelfSrcF_matchTysOrNone
+import all Lanius.Mini.Frontend.P.arrayOf
+import all Lanius.Mini.Frontend.P.arrayRepeatOf
+import all Lanius.Mini.Frontend.P.divergeCall
+import all Lanius.Mini.Frontend.P.divergeChecked
+import all Lanius.Mini.Frontend.P.divergeEff
+import all Lanius.Mini.Frontend.P.effInferred
+import all Lanius.Mini.Frontend.P.instBound
 import all Lanius.Mini.Frontend.P.matchTysOrNone
 
 public section

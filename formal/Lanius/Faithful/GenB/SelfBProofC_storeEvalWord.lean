@@ -16,11 +16,14 @@ public import Lanius.Faithful.GenB.SelfBStmtC_wordStride
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcC_storeEvalWord
 import all Lanius.Faithful.Gen.SelfStmtC_storeEvalWord
-import all Lanius.Mini.Compiler.P.SrcExpr_guard
+import all Lanius.Mini.Compiler.P.SrcType_isI32
+import all Lanius.Mini.Compiler.P.SrcType_isUint
 import all Lanius.Mini.Compiler.P.SrcType_same
-import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.boundsGuard
 import all Lanius.Mini.Compiler.P.elementBase
-import all Lanius.Mini.Compiler.P.storeEvalWord
+import all Lanius.Mini.Compiler.P.putElement
+import all Lanius.Mini.Compiler.P.slotVars
 import all Lanius.Mini.Compiler.P.storeType
 import all Lanius.Mini.Compiler.P.wordElement
 

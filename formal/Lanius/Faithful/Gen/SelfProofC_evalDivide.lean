@@ -13,6 +13,10 @@ public import Lanius.Faithful.Gen.SelfStmtC_shortCircuit
 public import Lanius.Faithful.Gen.SelfStmtC_sintToUint
 import all Lanius.Faithful.Gen.SelfSrcC_evalDivide
 import all Lanius.Mini.Compiler.P.evalDivide
+import all Lanius.Mini.Compiler.P.evalDivision
+import all Lanius.Mini.Compiler.P.evalNegate
+import all Lanius.Mini.Compiler.P.evalThen
+import all Lanius.Mini.Compiler.P.scalarCast
 
 public section
 

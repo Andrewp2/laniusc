@@ -2,6 +2,21 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.Inline_pStructFieldsMore
+public import Lanius.Mini.Frontend.P.Inline_pStructFieldsNone
+public import Lanius.Mini.Frontend.P.Inline_pStructFieldsSome
+public import Lanius.Mini.Frontend.P.Inline_pStructLit
+public import Lanius.Mini.Frontend.P.Inline_pStructLitFieldsAfterCommaMore
+public import Lanius.Mini.Frontend.P.Inline_pStructLitFieldsAfterCommaTrailing
+public import Lanius.Mini.Frontend.P.Inline_pStructLitFieldsEnd
+public import Lanius.Mini.Frontend.P.Inline_pStructLitFieldsMore
+public import Lanius.Mini.Frontend.P.Inline_pStructLitFieldsNone
+public import Lanius.Mini.Frontend.P.Inline_pStructLitFieldsSome
+public import Lanius.Mini.Frontend.P.Inline_pSubTail
+public import Lanius.Mini.Frontend.P.Inline_pTrait
+public import Lanius.Mini.Frontend.P.Inline_pTrue
+public import Lanius.Mini.Frontend.P.Inline_pTypeAlias
+public import Lanius.Mini.Frontend.P.Inline_pTypeArgsAfterCommaMore
+public import Lanius.Mini.Frontend.P.Inline_pTypeArgsMore
 
 @[expose] public section
 

@@ -1,7 +1,17 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Compiler.P.argBytes
+public import Lanius.Mini.Compiler.P.arrayArg
+public import Lanius.Mini.Compiler.P.arrayArgBefore
+public import Lanius.Mini.Compiler.P.arrayArgChecked
+public import Lanius.Mini.Compiler.P.arrayArgLocal
+public import Lanius.Mini.Compiler.P.arrayArgPure
+public import Lanius.Mini.Compiler.P.arrayArgSlice
+public import Lanius.Mini.Compiler.P.arrayArgs
+public import Lanius.Mini.Compiler.P.arrayCallCode
 public import Lanius.Mini.Compiler.P.bindingBytes
+public import Lanius.Mini.Compiler.P.blockLimit
 
 @[expose] public section
 

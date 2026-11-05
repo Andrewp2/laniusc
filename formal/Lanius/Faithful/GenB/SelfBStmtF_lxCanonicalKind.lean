@@ -3,7 +3,23 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_lxFilterAt
+public import Lanius.Mini.Frontend.P.byteAfter
+public import Lanius.Mini.Frontend.P.lexSource
+public import Lanius.Mini.Frontend.P.lxAsText
 public import Lanius.Mini.Frontend.P.lxCanonicalKind
+public import Lanius.Mini.Frontend.P.lxFilter
+public import Lanius.Mini.Frontend.P.lxKeywordRules
+public import Lanius.Mini.Frontend.P.lxRangePair
+public import Lanius.Mini.Frontend.P.lxRanges
+public import Lanius.Mini.Frontend.P.lxSymbolRules
+public import Lanius.Mini.Frontend.P.lxToken
+public import Lanius.Mini.Frontend.P.lxTokenText
+public import Lanius.Mini.Frontend.P.lxTokens
+public import Lanius.Mini.Frontend.P.numsAfter
+public import Lanius.Mini.Frontend.P.readBytes
+public import Lanius.Mini.Frontend.P.readCountedNums
+public import Lanius.Mini.Frontend.P.readNums
+public import Lanius.Mini.Frontend.P.wordNum
 
 @[expose] public section
 

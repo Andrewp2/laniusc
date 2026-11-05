@@ -15,17 +15,4 @@ def digitBelow (d : Nat) (base : Nat) : Option Nat :=
   else
     none
 
-/-- The value of b as a digit of base, if it is one: `0`-`9`, `a`-`f`, `A`-`F`. -/
-def baseDigit (b : Nat) (base : Nat) : Option Nat :=
-  if decide (48 ≤ b) && decide (b ≤ 57) then
-    digitBelow (b - 48) base
-  else
-    if decide (97 ≤ b) && decide (b ≤ 102) then
-      digitBelow (b - 87) base
-    else
-      if decide (65 ≤ b) && decide (b ≤ 70) then
-        digitBelow (b - 55) base
-      else
-        none
-
 end Lanius.Mini

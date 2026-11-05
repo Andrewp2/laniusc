@@ -20,7 +20,12 @@ public import Lanius.Faithful.Gen.SelfStmtF_oneTreeNames
 public import Lanius.Faithful.Gen.SelfStmtF_sliceHead
 public import Lanius.Faithful.Gen.SelfStmtF_wideOf
 import all Lanius.Faithful.Gen.SelfSrcF_oneTreeNames
+import all Lanius.Mini.Frontend.P.intPrimary
+import all Lanius.Mini.Frontend.P.intTree
+import all Lanius.Mini.Frontend.P.isDataPtrOf
 import all Lanius.Mini.Frontend.P.oneTreeNames
+import all Lanius.Mini.Frontend.P.stringArgs
+import all Lanius.Mini.Frontend.P.stringSlice
 
 public section
 

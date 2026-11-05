@@ -14,7 +14,14 @@ public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_noTrees
 public import Lanius.Faithful.Gen.SelfStmtF_textSelf
 import all Lanius.Faithful.Gen.SelfSrcF_armsOf
-import all Lanius.Mini.Frontend.P.armsOf
+import all Lanius.Mini.Frontend.P.allBinders
+import all Lanius.Mini.Frontend.P.andKnown
+import all Lanius.Mini.Frontend.P.armNested
+import all Lanius.Mini.Frontend.P.binderNameOk
+import all Lanius.Mini.Frontend.P.isBinderPat
+import all Lanius.Mini.Frontend.P.notKnown
+import all Lanius.Mini.Frontend.P.orKnown
+import all Lanius.Mini.Frontend.P.patsNested
 
 public section
 

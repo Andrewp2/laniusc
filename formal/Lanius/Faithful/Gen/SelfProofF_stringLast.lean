@@ -22,7 +22,20 @@ public import Lanius.Faithful.Gen.SelfStmtF_textSelf
 public import Lanius.Faithful.Gen.SelfStmtF_treeTokens
 public import Lanius.Faithful.Gen.SelfStmtF_tryLet
 import all Lanius.Faithful.Gen.SelfSrcF_stringLast
+import all Lanius.Mini.Frontend.P.allocLet
+import all Lanius.Mini.Frontend.P.ifEvalOf
+import all Lanius.Mini.Frontend.P.ifOrEval
+import all Lanius.Mini.Frontend.P.isStrLet
+import all Lanius.Mini.Frontend.P.letBody
+import all Lanius.Mini.Frontend.P.letOf
+import all Lanius.Mini.Frontend.P.letStmt
+import all Lanius.Mini.Frontend.P.returnEvalOf
+import all Lanius.Mini.Frontend.P.returnOrEval
+import all Lanius.Mini.Frontend.P.returnSlice
+import all Lanius.Mini.Frontend.P.sliceLet
+import all Lanius.Mini.Frontend.P.sliceReturned
 import all Lanius.Mini.Frontend.P.stringLast
+import all Lanius.Mini.Frontend.P.stringLet
 
 public section
 

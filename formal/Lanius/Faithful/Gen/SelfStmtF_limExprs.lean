@@ -1,6 +1,9 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.limArms
+public import Lanius.Mini.Frontend.P.limBind
+public import Lanius.Mini.Frontend.P.limEff
 public import Lanius.Mini.Frontend.P.limExprs
 
 @[expose] public section

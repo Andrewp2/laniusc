@@ -2,6 +2,11 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.allWeighed
+public import Lanius.Mini.Frontend.P.closeNamed
+public import Lanius.Mini.Frontend.P.closeTy
+public import Lanius.Mini.Frontend.P.srcEnumId
+public import Lanius.Mini.Frontend.P.tableWeighed
+public import Lanius.Mini.Frontend.P.typesWeighed
 
 @[expose] public section
 

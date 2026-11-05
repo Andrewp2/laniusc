@@ -12,25 +12,4 @@ namespace Lanius.Mini
 @[expose] def Inline.pImplMethodsSome : Nat :=
   20
 
-@[expose] def Inline.pImplTrait : Nat :=
-  18
-
-@[expose] def Inline.pImport : Nat :=
-  43
-
-@[expose] def Inline.pImportPath : Nat :=
-  44
-
-@[expose] def Inline.pInt : Nat :=
-  175
-
-@[expose] def Inline.pItemPub : Nat :=
-  3
-
-@[expose] def Inline.pItemsEnd : Nat :=
-  2
-
-@[expose] def Inline.pItemsMore : Nat :=
-  1
-
 end Lanius.Mini

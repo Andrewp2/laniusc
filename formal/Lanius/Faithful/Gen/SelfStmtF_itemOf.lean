@@ -1,7 +1,12 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.bareVariant
+public import Lanius.Mini.Frontend.P.importedVariants
+public import Lanius.Mini.Frontend.P.itemImport
 public import Lanius.Mini.Frontend.P.itemOf
+public import Lanius.Mini.Frontend.P.onlyVariant
+public import Lanius.Mini.Frontend.P.pathModule
 
 @[expose] public section
 

@@ -40,7 +40,28 @@ public import Lanius.Faithful.Gen.SelfStmtF_stringCons
 public import Lanius.Faithful.Gen.SelfStmtF_textSelf
 public import Lanius.Faithful.Gen.SelfStmtF_wideLeftStmt
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_findMethodAt
+import all Lanius.Mini.Frontend.P.Inline_binderOf
 import all Lanius.Mini.Frontend.P.Inline_findMethodAt
+import all Lanius.Mini.Frontend.P.Inline_forOf
+import all Lanius.Mini.Frontend.P.Inline_lxBlockAt
+import all Lanius.Mini.Frontend.P.Inline_lxBlockNext
+import all Lanius.Mini.Frontend.P.Inline_lxDigitRunAt
+import all Lanius.Mini.Frontend.P.Inline_lxDigitSep
+import all Lanius.Mini.Frontend.P.Inline_lxDigitTailAt
+import all Lanius.Mini.Frontend.P.Inline_lxExponentSign
+import all Lanius.Mini.Frontend.P.Inline_lxIdentRunAt
+import all Lanius.Mini.Frontend.P.Inline_lxLineRunAt
+import all Lanius.Mini.Frontend.P.Inline_lxQuotedAt
+import all Lanius.Mini.Frontend.P.Inline_lxSpaceRunAt
+import all Lanius.Mini.Frontend.P.Inline_monoNext
+import all Lanius.Mini.Frontend.P.Inline_paramOf
+import all Lanius.Mini.Frontend.P.Inline_stringByte
+import all Lanius.Mini.Frontend.P.Inline_tyLocalAt
+import all Lanius.Mini.Frontend.P.Inline_typeTableMoreAt
+import all Lanius.Mini.Frontend.P.Inline_typeTableNext
+import all Lanius.Mini.Frontend.P.Inline_weighNext
+import all Lanius.Mini.Frontend.P.Inline_weighRoundAt
+import all Lanius.Mini.Frontend.P.Inline_weighedMoreAt
 
 public section
 

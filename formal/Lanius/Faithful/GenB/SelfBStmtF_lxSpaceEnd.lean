@@ -4,6 +4,9 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_findMethodAt
 public import Lanius.Faithful.GenB.SelfBModelF_lxSpaceEnd
+public import Lanius.Mini.Frontend.P.lxBlock
+public import Lanius.Mini.Frontend.P.lxLineEnd
+public import Lanius.Mini.Frontend.P.lxQuoted
 public import Lanius.Mini.Frontend.P.lxSpaceEnd
 
 @[expose] public section

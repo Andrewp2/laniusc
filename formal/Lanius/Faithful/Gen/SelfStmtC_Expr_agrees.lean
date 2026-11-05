@@ -2,6 +2,7 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Compiler.P.Expr_agrees
+public import Lanius.Mini.Compiler.P.argsAgree
 
 @[expose] public section
 

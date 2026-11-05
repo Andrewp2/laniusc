@@ -13,20 +13,4 @@ def txUsize : List Nat :=
   let t : List Nat := 117 :: 115 :: 105 :: 122 :: [101]
   t
 
-def txI32 : List Nat :=
-  let t : List Nat := 105 :: 51 :: [50]
-  t
-
-def txU32 : List Nat :=
-  let t : List Nat := 117 :: 51 :: [50]
-  t
-
-def txU64 : List Nat :=
-  let t : List Nat := 117 :: 54 :: [52]
-  t
-
-def txU8 : List Nat :=
-  let t : List Nat := 117 :: [56]
-  t
-
 end Lanius.Mini

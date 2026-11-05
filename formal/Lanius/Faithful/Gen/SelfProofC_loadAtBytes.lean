@@ -17,7 +17,27 @@ public import Lanius.Faithful.Gen.SelfStmtC_arities
 public import Lanius.Faithful.Gen.SelfStmtC_codeSize
 public import Lanius.Faithful.Gen.SelfStmtC_loadAtBytes
 import all Lanius.Faithful.Gen.SelfSrcC_loadAtBytes
+import all Lanius.Mini.Compiler.P.Code_size
+import all Lanius.Mini.Compiler.P.Instr_encode
+import all Lanius.Mini.Compiler.P.argBase
+import all Lanius.Mini.Compiler.P.copyBytes
+import all Lanius.Mini.Compiler.P.encodeOnto
+import all Lanius.Mini.Compiler.P.epilogue
+import all Lanius.Mini.Compiler.P.frameSize
+import all Lanius.Mini.Compiler.P.layout
+import all Lanius.Mini.Compiler.P.linkOnto
 import all Lanius.Mini.Compiler.P.loadAtBytes
+import all Lanius.Mini.Compiler.P.loadWordBytes
+import all Lanius.Mini.Compiler.P.prologue
+import all Lanius.Mini.Compiler.P.relative
+import all Lanius.Mini.Compiler.P.slotRange
+import all Lanius.Mini.Compiler.P.stackCheck
+import all Lanius.Mini.Compiler.P.storeAtBytes
+import all Lanius.Mini.Compiler.P.storeWordBytes
+import all Lanius.Mini.Compiler.P.sysBytes
+import all Lanius.Mini.Compiler.P.syscallLinuxByte
+import all Lanius.Mini.Compiler.P.syscallLinuxHigh
+import all Lanius.Mini.Compiler.P.syscallRsiBytes
 
 public section
 

@@ -1,8 +1,10 @@
 module
 
 public import Lanius.Faithful.BudgetCore
-public import Lanius.Mini.Compiler.P.DivOp_size
-public import Lanius.Mini.Compiler.P.Word_narrows
+public import Lanius.Mini.Compiler.P.FArith_number
+public import Lanius.Mini.Compiler.P.FCmp_number
+public import Lanius.Mini.Compiler.P.FloatTy_number
+public import Lanius.Mini.Compiler.P.Word_number
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.Types
 

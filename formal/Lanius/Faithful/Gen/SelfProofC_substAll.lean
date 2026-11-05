@@ -12,6 +12,11 @@ public import Lanius.Faithful.Gen.SelfStmtC_Inline_factOr
 public import Lanius.Faithful.Gen.SelfStmtC_callAgrees
 public import Lanius.Faithful.Gen.SelfStmtC_substAll
 import all Lanius.Faithful.Gen.SelfSrcC_substAll
+import all Lanius.Mini.Compiler.P.factDies
+import all Lanius.Mini.Compiler.P.kill
+import all Lanius.Mini.Compiler.P.killTail
+import all Lanius.Mini.Compiler.P.mentionsAny
+import all Lanius.Mini.Compiler.P.noneDies
 import all Lanius.Mini.Compiler.P.substAll
 
 public section

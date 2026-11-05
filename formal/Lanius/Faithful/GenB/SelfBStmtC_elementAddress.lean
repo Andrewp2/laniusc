@@ -4,6 +4,9 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_Inline_arithOf
 public import Lanius.Mini.Compiler.P.elementAddress
+public import Lanius.Mini.Compiler.P.lowerElement
+public import Lanius.Mini.Compiler.P.lowerLoadWord
+public import Lanius.Mini.Compiler.P.storeByteElement
 
 @[expose] public section
 

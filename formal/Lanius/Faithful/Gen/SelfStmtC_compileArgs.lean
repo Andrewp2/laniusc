@@ -1,7 +1,23 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Compiler.P.Expr_temps
+public import Lanius.Mini.Compiler.P.Expr_within
+public import Lanius.Mini.Compiler.P.Stmt_temps
+public import Lanius.Mini.Compiler.P.Stmt_within
+public import Lanius.Mini.Compiler.P.allWithin
+public import Lanius.Mini.Compiler.P.argSlots
+public import Lanius.Mini.Compiler.P.argsRoom
+public import Lanius.Mini.Compiler.P.argsTemps
+public import Lanius.Mini.Compiler.P.arityIs
 public import Lanius.Mini.Compiler.P.compileArgs
+public import Lanius.Mini.Compiler.P.compileStmt
+public import Lanius.Mini.Compiler.P.exprRoom
+public import Lanius.Mini.Compiler.P.frameLimit
+public import Lanius.Mini.Compiler.P.imageLimit
+public import Lanius.Mini.Compiler.P.spend
+public import Lanius.Mini.Compiler.P.stmtRoom
+public import Lanius.Mini.Compiler.P.zeroLocals
 
 @[expose] public section
 

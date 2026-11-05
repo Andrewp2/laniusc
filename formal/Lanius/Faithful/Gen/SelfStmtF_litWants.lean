@@ -1,6 +1,11 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.eqOn
+public import Lanius.Mini.Frontend.P.litIfOf
+public import Lanius.Mini.Frontend.P.litLastValue
+public import Lanius.Mini.Frontend.P.litTest
+public import Lanius.Mini.Frontend.P.litValueIf
 public import Lanius.Mini.Frontend.P.litWants
 
 @[expose] public section

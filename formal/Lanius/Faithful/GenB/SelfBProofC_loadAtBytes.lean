@@ -17,11 +17,30 @@ public import Lanius.Faithful.GenB.SelfBStmtN6
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcC_loadAtBytes
 import all Lanius.Faithful.Gen.SelfStmtC_loadAtBytes
-import all Lanius.Mini.Compiler.P.DivOp_size
-import all Lanius.Mini.Compiler.P.Lists_empty
-import all Lanius.Mini.Compiler.P.arities
+import all Lanius.Mini.Compiler.P.Code_size
+import all Lanius.Mini.Compiler.P.Instr_encode
+import all Lanius.Mini.Compiler.P.Instr_size
+import all Lanius.Mini.Compiler.P.MemWidth_rex
+import all Lanius.Mini.Compiler.P.argBase
 import all Lanius.Mini.Compiler.P.codeSize
-import all Lanius.Mini.Compiler.P.loadAtBytes
+import all Lanius.Mini.Compiler.P.copyBytes
+import all Lanius.Mini.Compiler.P.encodeOnto
+import all Lanius.Mini.Compiler.P.epilogue
+import all Lanius.Mini.Compiler.P.frameSize
+import all Lanius.Mini.Compiler.P.fspLoad
+import all Lanius.Mini.Compiler.P.fspSave
+import all Lanius.Mini.Compiler.P.layout
+import all Lanius.Mini.Compiler.P.le32
+import all Lanius.Mini.Compiler.P.le64
+import all Lanius.Mini.Compiler.P.relative
+import all Lanius.Mini.Compiler.P.slotLoad
+import all Lanius.Mini.Compiler.P.slotOffset
+import all Lanius.Mini.Compiler.P.slotRange
+import all Lanius.Mini.Compiler.P.slotStore
+import all Lanius.Mini.Compiler.P.stackCheck
+import all Lanius.Mini.Compiler.P.syscallLinuxByte
+import all Lanius.Mini.Compiler.P.syscallLinuxHigh
+import all Lanius.Mini.Compiler.P.syscallRsiBytes
 
 @[expose] public section
 

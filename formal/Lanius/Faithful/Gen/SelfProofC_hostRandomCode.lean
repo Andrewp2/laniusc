@@ -12,7 +12,10 @@ public import Lanius.Faithful.Gen.SelfStmtC_SrcType_same
 public import Lanius.Faithful.Gen.SelfStmtC_hostRandomCode
 public import Lanius.Faithful.Gen.SelfStmtC_lowerCallSig
 import all Lanius.Faithful.Gen.SelfSrcC_hostRandomCode
+import all Lanius.Mini.Compiler.P.evalHostText
+import all Lanius.Mini.Compiler.P.hostNewlineCode
 import all Lanius.Mini.Compiler.P.hostRandomCode
+import all Lanius.Mini.Compiler.P.hostTextCode
 
 public section
 

@@ -11,7 +11,9 @@ public import Lanius.Faithful.GenB.SelfBStmtN4
 import all Lanius.Faithful.Gen.SelfSrcF_argView
 import all Lanius.Faithful.Gen.SelfStmtF_argView
 import all Lanius.Mini.Frontend.P.argView
-import all Lanius.Mini.Frontend.P.fnInstRet
+import all Lanius.Mini.Frontend.P.argViews
+import all Lanius.Mini.Frontend.P.headTy
+import all Lanius.Mini.Frontend.P.tailTys
 
 @[expose] public section
 

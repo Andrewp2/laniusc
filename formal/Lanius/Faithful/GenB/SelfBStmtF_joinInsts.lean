@@ -4,7 +4,14 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_variantsNamedAt
 public import Lanius.Faithful.GenB.SelfBModelF_joinInsts
+public import Lanius.Mini.Frontend.P.consInst
+public import Lanius.Mini.Frontend.P.isLevel
 public import Lanius.Mini.Frontend.P.joinInsts
+public import Lanius.Mini.Frontend.P.negated
+public import Lanius.Mini.Frontend.P.notted
+public import Lanius.Mini.Frontend.P.tailOp
+public import Lanius.Mini.Frontend.P.tyInsts
+public import Lanius.Mini.Frontend.P.wideDecimal
 
 @[expose] public section
 

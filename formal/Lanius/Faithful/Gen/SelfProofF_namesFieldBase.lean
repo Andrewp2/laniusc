@@ -32,7 +32,15 @@ public import Lanius.Faithful.Gen.SelfStmtF_paramGoals
 public import Lanius.Faithful.Gen.SelfStmtF_projection
 public import Lanius.Faithful.Gen.SelfStmtF_projectionRet
 import all Lanius.Faithful.Gen.SelfSrcF_namesFieldBase
+import all Lanius.Mini.Frontend.P.divergeFunc
 import all Lanius.Mini.Frontend.P.namesFieldBase
+import all Lanius.Mini.Frontend.P.paramEffs
+import all Lanius.Mini.Frontend.P.projectionFunc
+import all Lanius.Mini.Frontend.P.readFn
+import all Lanius.Mini.Frontend.P.refKids
+import all Lanius.Mini.Frontend.P.refUsesOk
+import all Lanius.Mini.Frontend.P.refsChecked
+import all Lanius.Mini.Frontend.P.refsUsedOk
 
 public section
 

@@ -3,7 +3,21 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_callAgrees
+public import Lanius.Mini.Compiler.P.Expr_isAtom
+public import Lanius.Mini.Compiler.P.Expr_mentions
+public import Lanius.Mini.Compiler.P.Expr_subst
+public import Lanius.Mini.Compiler.P.allocAgrees
 public import Lanius.Mini.Compiler.P.callAgrees
+public import Lanius.Mini.Compiler.P.divideAgrees
+public import Lanius.Mini.Compiler.P.factValue
+public import Lanius.Mini.Compiler.P.frameAgrees
+public import Lanius.Mini.Compiler.P.loadByteAgrees
+public import Lanius.Mini.Compiler.P.loadWordAgrees
+public import Lanius.Mini.Compiler.P.retAgrees
+public import Lanius.Mini.Compiler.P.staticAgrees
+public import Lanius.Mini.Compiler.P.storeByteAgrees
+public import Lanius.Mini.Compiler.P.storeWordAgrees
+public import Lanius.Mini.Compiler.P.sysAgrees
 
 @[expose] public section
 

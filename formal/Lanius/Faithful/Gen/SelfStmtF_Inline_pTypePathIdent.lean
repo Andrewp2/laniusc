@@ -2,6 +2,7 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.Inline_pTypePathIdent
+public import Lanius.Mini.Frontend.P.Inline_pTypePathMore
 
 @[expose] public section
 

@@ -11,8 +11,9 @@ public import Lanius.Faithful.GenB.SelfBStmtN2
 public import Lanius.Faithful.GenB.SelfBStmtN5
 import all Lanius.Faithful.Gen.SelfSrcC_compileSource
 import all Lanius.Faithful.Gen.SelfStmtC_compileSource
-import all Lanius.Mini.Compiler.P.compileSource
 import all Lanius.Mini.Compiler.P.declareProgram
+import all Lanius.Mini.Compiler.P.funcsReturn
+import all Lanius.Mini.Compiler.P.usizeWords
 
 @[expose] public section
 

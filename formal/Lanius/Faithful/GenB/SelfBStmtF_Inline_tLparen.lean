@@ -3,6 +3,11 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.Inline_tLparen
+public import Lanius.Mini.Frontend.P.Inline_tLt
+public import Lanius.Mini.Frontend.P.Inline_tNotEqual
+public import Lanius.Mini.Frontend.P.Inline_tOror
+public import Lanius.Mini.Frontend.P.Inline_tRbrace
+public import Lanius.Mini.Frontend.P.Inline_tRbracket
 
 @[expose] public section
 

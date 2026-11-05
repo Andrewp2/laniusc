@@ -4,7 +4,8 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_larger
 public import Lanius.Faithful.GenB.SelfBModelC_linkedSize
-public import Lanius.Mini.Compiler.P.linkedSize
+public import Lanius.Mini.Compiler.P.compileProgram
+public import Lanius.Mini.Compiler.P.roomAfter
 
 @[expose] public section
 

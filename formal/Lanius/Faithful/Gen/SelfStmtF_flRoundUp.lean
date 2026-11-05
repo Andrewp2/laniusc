@@ -1,6 +1,9 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.flDecimalAt
+public import Lanius.Mini.Frontend.P.flRatioOk
+public import Lanius.Mini.Frontend.P.flRound
 public import Lanius.Mini.Frontend.P.flRoundUp
 
 @[expose] public section

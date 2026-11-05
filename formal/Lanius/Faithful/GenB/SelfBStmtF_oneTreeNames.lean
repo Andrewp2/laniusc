@@ -3,7 +3,12 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_oneTreeNames
+public import Lanius.Mini.Frontend.P.intPrimary
+public import Lanius.Mini.Frontend.P.intTree
+public import Lanius.Mini.Frontend.P.isDataPtrOf
 public import Lanius.Mini.Frontend.P.oneTreeNames
+public import Lanius.Mini.Frontend.P.stringArgs
+public import Lanius.Mini.Frontend.P.stringSlice
 
 @[expose] public section
 

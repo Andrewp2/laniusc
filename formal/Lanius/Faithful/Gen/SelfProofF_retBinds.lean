@@ -10,6 +10,8 @@ public import Lanius.Faithful.Gen.SelfStmtF_repeatEff
 public import Lanius.Faithful.Gen.SelfStmtF_retBinds
 public import Lanius.Faithful.Gen.SelfStmtF_typeDeclAt
 import all Lanius.Faithful.Gen.SelfSrcF_retBinds
+import all Lanius.Mini.Frontend.P.argExpected
+import all Lanius.Mini.Frontend.P.bindArg
 import all Lanius.Mini.Frontend.P.retBinds
 
 public section

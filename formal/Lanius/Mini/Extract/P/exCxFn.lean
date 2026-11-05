@@ -23,23 +23,4 @@ def exCxFn (a : XAt) : List XFn :=
     | .iPreludeEnd => []
     | .iBad why => []
 
-def exCxFns (ats : List XAt) : List XFn :=
-  match ats with
-  | [] => []
-  | a :: rest => exCxFn a ++ exCxFns rest
-
-def exCxMethod (a : XAt) : List XFn :=
-  if a.prelude then
-    []
-  else
-    match a.item with
-    | .iStruct name tparams fields => []
-    | .iEnum name tparams ctors => []
-    | .iFn f => []
-    | .iImpl name fns => fns
-    | .iMutual b f => []
-    | .iExternal m p => []
-    | .iPreludeEnd => []
-    | .iBad why => []
-
 end Lanius.Mini

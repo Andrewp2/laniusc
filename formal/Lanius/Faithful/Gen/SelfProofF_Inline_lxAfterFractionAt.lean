@@ -13,6 +13,9 @@ public import Lanius.Faithful.Gen.SelfStmtF_lxExponent
 public import Lanius.Faithful.Gen.SelfStmtF_lxSymbolStart
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_lxAfterFractionAt
 import all Lanius.Mini.Frontend.P.Inline_lxAfterFractionAt
+import all Lanius.Mini.Frontend.P.Inline_lxDecimalNext
+import all Lanius.Mini.Frontend.P.Inline_lxFractionAt
+import all Lanius.Mini.Frontend.P.Inline_lxKeywordAt
 
 public section
 

@@ -3,6 +3,8 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_retBinds
+public import Lanius.Mini.Frontend.P.argExpected
+public import Lanius.Mini.Frontend.P.bindArg
 public import Lanius.Mini.Frontend.P.retBinds
 
 @[expose] public section

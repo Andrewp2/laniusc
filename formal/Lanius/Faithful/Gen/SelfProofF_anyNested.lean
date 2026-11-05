@@ -23,6 +23,29 @@ public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_noTrees
 import all Lanius.Faithful.Gen.SelfSrcF_anyNested
 import all Lanius.Mini.Frontend.P.anyNested
+import all Lanius.Mini.Frontend.P.armNaming
+import all Lanius.Mini.Frontend.P.colFits
+import all Lanius.Mini.Frontend.P.columnArm
+import all Lanius.Mini.Frontend.P.columnArms
+import all Lanius.Mini.Frontend.P.columnFit
+import all Lanius.Mini.Frontend.P.columnSub
+import all Lanius.Mini.Frontend.P.endsWild
+import all Lanius.Mini.Frontend.P.firstAt
+import all Lanius.Mini.Frontend.P.firstNested
+import all Lanius.Mini.Frontend.P.isLast
+import all Lanius.Mini.Frontend.P.mentions
+import all Lanius.Mini.Frontend.P.namedKnown
+import all Lanius.Mini.Frontend.P.namedPath
+import all Lanius.Mini.Frontend.P.quietArm
+import all Lanius.Mini.Frontend.P.quietIn
+import all Lanius.Mini.Frontend.P.quietSub
+import all Lanius.Mini.Frontend.P.rowCons
+import all Lanius.Mini.Frontend.P.rowFits
+import all Lanius.Mini.Frontend.P.rowPats
+import all Lanius.Mini.Frontend.P.rowsNaming
+import all Lanius.Mini.Frontend.P.sameOptName
+import all Lanius.Mini.Frontend.P.subArm
+import all Lanius.Mini.Frontend.P.wildPat
 
 public section
 

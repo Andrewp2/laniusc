@@ -10,6 +10,7 @@ public import Lanius.Faithful.Gen.SelfStmtC_evalHost
 public import Lanius.Faithful.Gen.SelfStmtC_hostRandomCode
 public import Lanius.Faithful.Gen.SelfStmtC_lowerCallSig
 import all Lanius.Faithful.Gen.SelfSrcC_evalHost
+import all Lanius.Mini.Compiler.P.evalCall
 import all Lanius.Mini.Compiler.P.evalHost
 
 public section

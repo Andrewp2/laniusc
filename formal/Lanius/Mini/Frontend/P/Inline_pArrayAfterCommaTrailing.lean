@@ -12,10 +12,4 @@ namespace Lanius.Mini
 @[expose] def Inline.pArrayAfterCommaTrailing : Nat :=
   184
 
-@[expose] def Inline.pArrayEnd : Nat :=
-  182
-
-@[expose] def Inline.pArrayLit : Nat :=
-  171
-
 end Lanius.Mini

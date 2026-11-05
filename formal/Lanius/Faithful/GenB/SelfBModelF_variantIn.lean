@@ -6,11 +6,11 @@ public import Lanius.Faithful.GenB.SelfBModelF_Inline_variantsNamedAt
 public import Lanius.Faithful.GenB.SelfBModelF_typePathSpellings
 public import Lanius.Faithful.GenB.SelfBModelF_variantOfDecl
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.collect
-public import Lanius.Mini.Frontend.P.itemOf
-public import Lanius.Mini.Frontend.P.rootInsts
-public import Lanius.Mini.Frontend.P.typePathSpellings
-public import Lanius.Mini.Frontend.P.variantIn
+public import Lanius.Mini.Frontend.P.enumVariant
+public import Lanius.Mini.Frontend.P.findType
+public import Lanius.Mini.Frontend.P.noNames
+public import Lanius.Mini.Frontend.P.pathModule
+public import Lanius.Mini.Frontend.P.splitLast
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

@@ -14,6 +14,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_projectionRet
 public import Lanius.Faithful.Gen.SelfStmtF_readDeclInst
 public import Lanius.Faithful.Gen.SelfStmtF_readInst
 import all Lanius.Faithful.Gen.SelfSrcF_readInst
+import all Lanius.Mini.Frontend.P.effCalls
 import all Lanius.Mini.Frontend.P.readInst
 
 public section

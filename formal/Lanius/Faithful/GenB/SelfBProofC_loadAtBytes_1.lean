@@ -8,7 +8,10 @@ public import Lanius.Faithful.GenB.SelfBStmtC_loadAtBytes
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcC_loadAtBytes
 import all Lanius.Faithful.Gen.SelfStmtC_loadAtBytes
-import all Lanius.Mini.Compiler.P.loadAtBytes
+import all Lanius.Mini.Compiler.P.Code_size
+import all Lanius.Mini.Compiler.P.encodeOnto
+import all Lanius.Mini.Compiler.P.linkOnto
+import all Lanius.Mini.Compiler.P.prologue
 
 @[expose] public section
 

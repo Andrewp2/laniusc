@@ -12,7 +12,14 @@ public import Lanius.Faithful.Gen.SelfStmtF_lxExponent
 public import Lanius.Faithful.Gen.SelfStmtF_lxLeadingDot
 public import Lanius.Faithful.Gen.SelfStmtF_lxSpaceEnd
 import all Lanius.Faithful.Gen.SelfSrcF_lxLeadingDot
+import all Lanius.Mini.Frontend.P.lxBest
+import all Lanius.Mini.Frontend.P.lxBestAt
+import all Lanius.Mini.Frontend.P.lxDelimited
+import all Lanius.Mini.Frontend.P.lxFixedAt
+import all Lanius.Mini.Frontend.P.lxFromNumber
 import all Lanius.Mini.Frontend.P.lxLeadingDot
+import all Lanius.Mini.Frontend.P.lxLonger
+import all Lanius.Mini.Frontend.P.lxStartsWith
 
 public section
 

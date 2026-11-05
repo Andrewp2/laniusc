@@ -5,10 +5,18 @@ public import Lanius.Faithful.GenB.SelfBModelF_isPathCall
 public import Lanius.Faithful.GenB.SelfBModelN2
 public import Lanius.Faithful.GenB.SelfBModelN3
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.distinct
-public import Lanius.Mini.Frontend.P.hasKids
-public import Lanius.Mini.Frontend.P.isPathCall
-public import Lanius.Mini.Frontend.P.isTryEnum
+public import Lanius.Mini.Frontend.P.isUsize
+public import Lanius.Mini.Frontend.P.sameSpellings
+public import Lanius.Mini.Frontend.P.sameText
+public import Lanius.Mini.Frontend.P.textCore
+public import Lanius.Mini.Frontend.P.textErr
+public import Lanius.Mini.Frontend.P.textNone
+public import Lanius.Mini.Frontend.P.textOk
+public import Lanius.Mini.Frontend.P.textOption
+public import Lanius.Mini.Frontend.P.textOptionTy
+public import Lanius.Mini.Frontend.P.textResult
+public import Lanius.Mini.Frontend.P.textResultTy
+public import Lanius.Mini.Frontend.P.textSome
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

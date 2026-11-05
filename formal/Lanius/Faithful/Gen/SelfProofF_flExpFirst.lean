@@ -12,6 +12,15 @@ public import Lanius.Faithful.Gen.SelfStmtF_flExpFirst
 public import Lanius.Faithful.Gen.SelfStmtF_unitTy
 import all Lanius.Faithful.Gen.SelfSrcF_flExpFirst
 import all Lanius.Mini.Frontend.P.flExpFirst
+import all Lanius.Mini.Frontend.P.flExpPart
+import all Lanius.Mini.Frontend.P.flExpSign
+import all Lanius.Mini.Frontend.P.flFracPart
+import all Lanius.Mini.Frontend.P.flIntPart
+import all Lanius.Mini.Frontend.P.floatLiteral
+import all Lanius.Mini.Frontend.P.floatMarker
+import all Lanius.Mini.Frontend.P.floatPick
+import all Lanius.Mini.Frontend.P.floatPickOf
+import all Lanius.Mini.Frontend.P.floatWant
 
 public section
 

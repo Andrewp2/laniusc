@@ -2,6 +2,7 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.triedErr
+public import Lanius.Mini.Frontend.P.triedShape
 
 @[expose] public section
 

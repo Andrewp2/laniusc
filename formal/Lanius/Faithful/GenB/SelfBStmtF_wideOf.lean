@@ -3,7 +3,20 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_wideOf
+public import Lanius.Mini.Frontend.P.applyTy
+public import Lanius.Mini.Frontend.P.bareInt
+public import Lanius.Mini.Frontend.P.dashText
+public import Lanius.Mini.Frontend.P.exprOf
+public import Lanius.Mini.Frontend.P.fieldTy
+public import Lanius.Mini.Frontend.P.givesBool
+public import Lanius.Mini.Frontend.P.localTy
+public import Lanius.Mini.Frontend.P.peel
+public import Lanius.Mini.Frontend.P.shiftOp
+public import Lanius.Mini.Frontend.P.structFieldTys
+public import Lanius.Mini.Frontend.P.wideConst
+public import Lanius.Mini.Frontend.P.wideDigits
 public import Lanius.Mini.Frontend.P.wideOf
+public import Lanius.Mini.Frontend.P.wideSigned
 
 @[expose] public section
 

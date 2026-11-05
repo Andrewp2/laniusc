@@ -6,6 +6,26 @@ public import Lanius.Faithful.Gen.SelfSrcF_Inline_pBoundTypeArgsAfterCommaMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pBoundTypeArgsAfterCommaMore
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pBoundTypeArgsAfterCommaMore
 import all Lanius.Mini.Frontend.P.Inline_pBoundTypeArgsAfterCommaMore
+import all Lanius.Mini.Frontend.P.Inline_pBoundTypeArgsMore
+import all Lanius.Mini.Frontend.P.Inline_pBoundTypeIdent
+import all Lanius.Mini.Frontend.P.Inline_pBoundTypePathEnd
+import all Lanius.Mini.Frontend.P.Inline_pBoundTypePathIdent
+import all Lanius.Mini.Frontend.P.Inline_pBoundTypePathMore
+import all Lanius.Mini.Frontend.P.Inline_pTypeParamBound
+import all Lanius.Mini.Frontend.P.Inline_pTypeParamBoundMore
+import all Lanius.Mini.Frontend.P.Inline_pTypeParamBoundNone
+import all Lanius.Mini.Frontend.P.Inline_pWherePredicateMoreAfterComma
+import all Lanius.Mini.Frontend.P.Inline_pWherePredicatesMore
+import all Lanius.Mini.Frontend.P.Inline_pWhereSome
+import all Lanius.Mini.Frontend.P.Inline_pWhileStmt
+import all Lanius.Mini.Frontend.P.Inline_pXorTail
+import all Lanius.Mini.Frontend.P.Inline_tColon
+import all Lanius.Mini.Frontend.P.Inline_tEqeq
+import all Lanius.Mini.Frontend.P.Inline_tGe
+import all Lanius.Mini.Frontend.P.Inline_tGt
+import all Lanius.Mini.Frontend.P.Inline_tLbrace
+import all Lanius.Mini.Frontend.P.Inline_tLbracket
+import all Lanius.Mini.Frontend.P.Inline_tLe
 
 public section
 

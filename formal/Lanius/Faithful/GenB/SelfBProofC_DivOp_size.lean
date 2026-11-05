@@ -9,8 +9,12 @@ public import Lanius.Faithful.GenB.SelfBStmtC_Lists_empty
 public import Lanius.Faithful.GenB.SelfBStmtN4
 import all Lanius.Faithful.Gen.SelfSrcC_DivOp_size
 import all Lanius.Faithful.Gen.SelfStmtC_DivOp_size
+import all Lanius.Mini.Compiler.P.BinOp_size
 import all Lanius.Mini.Compiler.P.DivOp_size
-import all Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.P.FOp_size
+import all Lanius.Mini.Compiler.P.FloatTy_rexSize
+import all Lanius.Mini.Compiler.P.MemWidth_prefix
+import all Lanius.Mini.Compiler.P.Word_prefix
 
 @[expose] public section
 

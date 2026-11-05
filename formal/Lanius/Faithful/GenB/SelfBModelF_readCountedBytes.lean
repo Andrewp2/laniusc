@@ -4,8 +4,11 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_lxFilterAt
 public import Lanius.Faithful.GenB.SelfBModelN2
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.lxCanonicalKind
 public import Lanius.Mini.Frontend.P.readCountedBytes
+public import Lanius.Mini.Frontend.P.readCountedNums
+public import Lanius.Mini.Frontend.P.readFile
+public import Lanius.Mini.Frontend.P.readFiles
+public import Lanius.Mini.Frontend.P.wordNum
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

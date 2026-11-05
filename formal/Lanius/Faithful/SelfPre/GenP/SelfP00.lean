@@ -285,12 +285,6 @@ theorem upost_discard_of : ∀ (x0 : Option Lanius.Mini.MEff), ∀ M : Nat, hb x
   all_goals upost_auto M
 theorem HBPost.Lanius.Mini.discardOf.p0 : ∀ (x0 : Option Lanius.Mini.MEff), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.discardOf x0) ≤ M := upost_discard_of
 
-theorem upost_only : ∀ (x0 : Lanius.Mini.CTree) (x1 : List Lanius.Mini.CTree), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb (Lanius.Mini.only x0 x1) ≤ M := by
-  intro x0 x1 M hM0 hM1
-  first | fun_induction Lanius.Mini.only x0 x1 | fun_cases Lanius.Mini.only x0 x1 | unfold Lanius.Mini.only
-  all_goals upost_auto M
-theorem HBPost.Lanius.Mini.only.p0 : ∀ (x0 : Lanius.Mini.CTree) (x1 : List Lanius.Mini.CTree), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb (Lanius.Mini.only x0 x1) ≤ M := upost_only
-
 theorem upost_assert_of : ∀ (x0 : Option Lanius.Mini.MEff), ∀ M : Nat, hb x0 ≤ M → hb (Lanius.Mini.assertOf x0) ≤ M := by
   intro x0 M hM0
   first | fun_induction Lanius.Mini.assertOf x0 | fun_cases Lanius.Mini.assertOf x0 | unfold Lanius.Mini.assertOf
@@ -602,6 +596,12 @@ theorem upost_step_expected : ∀ (x0 : Option Lanius.Mini.Ty) (x1 : Lanius.Mini
   first | fun_induction Lanius.Mini.stepExpected x0 x1 | fun_cases Lanius.Mini.stepExpected x0 x1 | unfold Lanius.Mini.stepExpected
   all_goals upost_auto M
 theorem HBPost.Lanius.Mini.stepExpected.p0 : ∀ (x0 : Option Lanius.Mini.Ty) (x1 : Lanius.Mini.CTree), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb (Lanius.Mini.stepExpected x0 x1) ≤ M := upost_step_expected
+
+theorem upost_only : ∀ (x0 : Lanius.Mini.CTree) (x1 : List Lanius.Mini.CTree), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb (Lanius.Mini.only x0 x1) ≤ M := by
+  intro x0 x1 M hM0 hM1
+  first | fun_induction Lanius.Mini.only x0 x1 | fun_cases Lanius.Mini.only x0 x1 | unfold Lanius.Mini.only
+  all_goals upost_auto M
+theorem HBPost.Lanius.Mini.only.p0 : ∀ (x0 : Lanius.Mini.CTree) (x1 : List Lanius.Mini.CTree), ∀ M : Nat, hb x0 ≤ M → hb x1 ≤ M → hb (Lanius.Mini.only x0 x1) ≤ M := upost_only
 
 theorem upost_same_decl_args : ∀ (x0 : Bool) (x1 : List Lanius.Mini.Ty), ∀ M : Nat, hb x1 ≤ M → hb (Lanius.Mini.sameDeclArgs x0 x1) ≤ M := by
   intro x0 x1 M hM0

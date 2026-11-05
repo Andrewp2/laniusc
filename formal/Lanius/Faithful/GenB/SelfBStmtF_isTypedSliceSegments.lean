@@ -3,7 +3,14 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_isTypedSliceSegments
+public import Lanius.Mini.Frontend.P.isEmptyTrees
+public import Lanius.Mini.Frontend.P.isText
+public import Lanius.Mini.Frontend.P.isTypedSlicePath
 public import Lanius.Mini.Frontend.P.isTypedSliceSegments
+public import Lanius.Mini.Frontend.P.isU8Slice
+public import Lanius.Mini.Frontend.P.isU8Ty
+public import Lanius.Mini.Frontend.P.treeNames
+public import Lanius.Mini.Frontend.P.u8Args
 
 @[expose] public section
 

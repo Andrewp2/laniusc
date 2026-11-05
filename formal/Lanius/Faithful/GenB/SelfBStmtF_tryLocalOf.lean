@@ -3,7 +3,10 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_findMethodAt
+public import Lanius.Mini.Frontend.P.tryHead
 public import Lanius.Mini.Frontend.P.tryLocalOf
+public import Lanius.Mini.Frontend.P.tryOfInit
+public import Lanius.Mini.Frontend.P.tryPostfix
 
 @[expose] public section
 

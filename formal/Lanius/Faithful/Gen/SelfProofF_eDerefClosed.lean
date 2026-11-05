@@ -6,7 +6,13 @@ public import Lanius.Faithful.Gen.SelfSrcF_eDerefClosed
 public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmtF_eDerefClosed
 import all Lanius.Faithful.Gen.SelfSrcF_eDerefClosed
+import all Lanius.Mini.Frontend.P.eArraySliceClosed
 import all Lanius.Mini.Frontend.P.eDerefClosed
+import all Lanius.Mini.Frontend.P.eIndexClosed
+import all Lanius.Mini.Frontend.P.ePlaceAtClosed
+import all Lanius.Mini.Frontend.P.ePlaceFieldClosed
+import all Lanius.Mini.Frontend.P.setPlaceClosed
+import all Lanius.Mini.Frontend.P.setPlaceOpClosed
 
 public section
 

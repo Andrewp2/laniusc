@@ -20,7 +20,14 @@ public import Lanius.Faithful.Gen.SelfStmtF_noTrees
 public import Lanius.Faithful.Gen.SelfStmtF_textSelf
 public import Lanius.Faithful.Gen.SelfStmtF_typePathSpellings
 import all Lanius.Faithful.Gen.SelfSrcF_consBinder
+import all Lanius.Mini.Frontend.P.anyVariant
+import all Lanius.Mini.Frontend.P.armNamed
+import all Lanius.Mini.Frontend.P.armNames
+import all Lanius.Mini.Frontend.P.armPrefix
+import all Lanius.Mini.Frontend.P.armsNamingAt
+import all Lanius.Mini.Frontend.P.bindersOf
 import all Lanius.Mini.Frontend.P.consBinder
+import all Lanius.Mini.Frontend.P.zipVariants
 
 public section
 

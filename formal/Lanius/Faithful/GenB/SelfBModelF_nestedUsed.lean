@@ -4,7 +4,7 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelF_namesSome
 public import Lanius.Faithful.GenB.SelfBModelF_variantArm
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.namesSome
+public import Lanius.Mini.Frontend.P.allNameSome
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

@@ -11,8 +11,8 @@ public import Lanius.Faithful.GenB.SelfBStmtN2
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_assertClosed
 import all Lanius.Faithful.Gen.SelfStmtF_assertClosed
-import all Lanius.Mini.Frontend.P.allWeighed
-import all Lanius.Mini.Frontend.P.assertClosed
+import all Lanius.Mini.Frontend.P.closeParams
+import all Lanius.Mini.Frontend.P.closeTy
 
 @[expose] public section
 

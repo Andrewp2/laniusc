@@ -10,6 +10,9 @@ public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmtF_depthLimit
 public import Lanius.Faithful.Gen.SelfStmtF_limExprs
 import all Lanius.Faithful.Gen.SelfSrcF_limExprs
+import all Lanius.Mini.Frontend.P.limArms
+import all Lanius.Mini.Frontend.P.limBind
+import all Lanius.Mini.Frontend.P.limEff
 import all Lanius.Mini.Frontend.P.limExprs
 
 public section

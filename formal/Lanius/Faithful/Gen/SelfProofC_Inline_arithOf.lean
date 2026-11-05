@@ -22,6 +22,17 @@ public import Lanius.Faithful.Gen.SelfStmtC_lowerTagged
 public import Lanius.Faithful.Gen.SelfStmtC_wordStride
 import all Lanius.Faithful.Gen.SelfSrcC_Inline_arithOf
 import all Lanius.Mini.Compiler.P.Inline_arithOf
+import all Lanius.Mini.Compiler.P.Inline_arithSignedOf
+import all Lanius.Mini.Compiler.P.Inline_armBind
+import all Lanius.Mini.Compiler.P.Inline_copySame
+import all Lanius.Mini.Compiler.P.Inline_copySlots
+import all Lanius.Mini.Compiler.P.Inline_evalArmIn
+import all Lanius.Mini.Compiler.P.Inline_evalSized
+import all Lanius.Mini.Compiler.P.Inline_floatArithOf
+import all Lanius.Mini.Compiler.P.Inline_floatOrderOf
+import all Lanius.Mini.Compiler.P.Inline_lowerScalarSlot
+import all Lanius.Mini.Compiler.P.Inline_orderOf
+import all Lanius.Mini.Compiler.P.Inline_orderSignedOf
 
 public section
 

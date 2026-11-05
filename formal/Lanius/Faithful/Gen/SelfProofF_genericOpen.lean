@@ -14,6 +14,9 @@ public import Lanius.Faithful.Gen.SelfStmtF_genericClose
 public import Lanius.Faithful.Gen.SelfStmtF_genericOpen
 import all Lanius.Faithful.Gen.SelfSrcF_genericOpen
 import all Lanius.Mini.Frontend.P.genericOpen
+import all Lanius.Mini.Frontend.P.genericPathAt
+import all Lanius.Mini.Frontend.P.opensBlock
+import all Lanius.Mini.Frontend.P.picks
 
 public section
 

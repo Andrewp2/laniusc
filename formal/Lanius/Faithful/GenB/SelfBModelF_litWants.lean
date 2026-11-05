@@ -4,11 +4,13 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_charOpen
 public import Lanius.Faithful.GenB.SelfBModelF_bindsOfTys
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.Inline_pPathMore
-public import Lanius.Mini.Frontend.P.basedDigits
-public import Lanius.Mini.Frontend.P.findConst
-public import Lanius.Mini.Frontend.P.hasKids
-public import Lanius.Mini.Frontend.P.isEmptyUsize
+public import Lanius.Mini.Frontend.P.Inline_pPatternFalse
+public import Lanius.Mini.Frontend.P.Inline_pPatternInt
+public import Lanius.Mini.Frontend.P.Inline_pPatternTrue
+public import Lanius.Mini.Frontend.P.intLiteral
+public import Lanius.Mini.Frontend.P.kidToken
+public import Lanius.Mini.Frontend.P.nodeProd
+public import Lanius.Mini.Frontend.P.sameTy
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

@@ -10,7 +10,29 @@ public import Lanius.Faithful.Gen.SelfStmtC_UintTy_isWide
 public import Lanius.Faithful.Gen.SelfStmtC_larger
 public import Lanius.Faithful.Gen.SelfStmtC_render
 import all Lanius.Faithful.Gen.SelfSrcC_UintTy_half
-import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.SrcType_floatTy
+import all Lanius.Mini.Compiler.P.SrcType_isBool
+import all Lanius.Mini.Compiler.P.SrcType_isChar
+import all Lanius.Mini.Compiler.P.SrcType_isFloat
+import all Lanius.Mini.Compiler.P.SrcType_isFloatAny
+import all Lanius.Mini.Compiler.P.SrcType_isI32
+import all Lanius.Mini.Compiler.P.SrcType_isInteger
+import all Lanius.Mini.Compiler.P.SrcType_isIsize
+import all Lanius.Mini.Compiler.P.SrcType_isPtr
+import all Lanius.Mini.Compiler.P.SrcType_isScalar
+import all Lanius.Mini.Compiler.P.SrcType_isSint
+import all Lanius.Mini.Compiler.P.SrcType_isSintAny
+import all Lanius.Mini.Compiler.P.SrcType_isStr
+import all Lanius.Mini.Compiler.P.SrcType_isUint
+import all Lanius.Mini.Compiler.P.SrcType_isUnit
+import all Lanius.Mini.Compiler.P.SrcType_sintKind
+import all Lanius.Mini.Compiler.P.SrcType_uintKind
+import all Lanius.Mini.Compiler.P.SrcType_word
+import all Lanius.Mini.Compiler.P.UintTy_leastBits
+import all Lanius.Mini.Compiler.P.UintTy_signedWord
+import all Lanius.Mini.Compiler.P.UintTy_spare
+import all Lanius.Mini.Compiler.P.boolBits
+import all Lanius.Mini.Compiler.P.lookup
 
 public section
 

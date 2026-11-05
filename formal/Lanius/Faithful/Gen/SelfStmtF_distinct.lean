@@ -1,7 +1,14 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.consName
+public import Lanius.Mini.Frontend.P.consNameTail
 public import Lanius.Mini.Frontend.P.distinct
+public import Lanius.Mini.Frontend.P.distinctModules
+public import Lanius.Mini.Frontend.P.moduleMember
+public import Lanius.Mini.Frontend.P.position
+public import Lanius.Mini.Frontend.P.sameSpellings
+public import Lanius.Mini.Frontend.P.singleName
 
 @[expose] public section
 

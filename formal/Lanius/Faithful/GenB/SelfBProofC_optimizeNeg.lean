@@ -9,7 +9,7 @@ public import Lanius.Faithful.GenB.SelfBStmtC_declareProgram
 public import Lanius.Faithful.GenB.SelfBStmtC_optimizeNeg
 import all Lanius.Faithful.Gen.SelfSrcC_optimizeNeg
 import all Lanius.Faithful.Gen.SelfStmtC_optimizeNeg
-import all Lanius.Mini.Compiler.P.Stmt_kills
+import all Lanius.Mini.Compiler.P.Expr_literal
 
 @[expose] public section
 

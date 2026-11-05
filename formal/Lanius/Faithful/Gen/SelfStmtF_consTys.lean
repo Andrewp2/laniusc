@@ -2,6 +2,9 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.consTys
+public import Lanius.Mini.Frontend.P.fieldTys
+public import Lanius.Mini.Frontend.P.payloadList
+public import Lanius.Mini.Frontend.P.payloadTys
 
 @[expose] public section
 

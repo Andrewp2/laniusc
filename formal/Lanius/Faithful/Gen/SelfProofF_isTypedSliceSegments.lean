@@ -20,7 +20,14 @@ public import Lanius.Faithful.Gen.SelfStmtF_pathRef
 public import Lanius.Faithful.Gen.SelfStmtF_typeDeclAt
 public import Lanius.Faithful.Gen.SelfStmtF_wideOf
 import all Lanius.Faithful.Gen.SelfSrcF_isTypedSliceSegments
+import all Lanius.Mini.Frontend.P.isEmptyTrees
+import all Lanius.Mini.Frontend.P.isText
+import all Lanius.Mini.Frontend.P.isTypedSlicePath
 import all Lanius.Mini.Frontend.P.isTypedSliceSegments
+import all Lanius.Mini.Frontend.P.isU8Slice
+import all Lanius.Mini.Frontend.P.isU8Ty
+import all Lanius.Mini.Frontend.P.treeNames
+import all Lanius.Mini.Frontend.P.u8Args
 
 public section
 

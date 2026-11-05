@@ -13,7 +13,11 @@ public import Lanius.Faithful.Gen.SelfStmtC_armScope
 public import Lanius.Faithful.Gen.SelfStmtC_assignFrom
 public import Lanius.Faithful.Gen.SelfStmtC_repeatType
 import all Lanius.Faithful.Gen.SelfSrcC_assignFrom
+import all Lanius.Mini.Compiler.P.armGuard
 import all Lanius.Mini.Compiler.P.assignFrom
+import all Lanius.Mini.Compiler.P.lowerArm
+import all Lanius.Mini.Compiler.P.lowerArmValue
+import all Lanius.Mini.Compiler.P.lowerArms
 
 public section
 

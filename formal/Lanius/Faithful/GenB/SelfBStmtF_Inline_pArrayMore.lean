@@ -3,6 +3,23 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.Inline_pArrayMore
+public import Lanius.Mini.Frontend.P.Inline_pArrayRepeat
+public import Lanius.Mini.Frontend.P.Inline_pArraySome
+public import Lanius.Mini.Frontend.P.Inline_pAssign
+public import Lanius.Mini.Frontend.P.Inline_pAssignAdd
+public import Lanius.Mini.Frontend.P.Inline_pAssignBand
+public import Lanius.Mini.Frontend.P.Inline_pAssignBor
+public import Lanius.Mini.Frontend.P.Inline_pAssignDiv
+public import Lanius.Mini.Frontend.P.Inline_pAssignEnd
+public import Lanius.Mini.Frontend.P.Inline_pAssignMod
+public import Lanius.Mini.Frontend.P.Inline_pAssignMul
+public import Lanius.Mini.Frontend.P.Inline_pAssignSet
+public import Lanius.Mini.Frontend.P.Inline_pAssignShl
+public import Lanius.Mini.Frontend.P.Inline_pAssignShr
+public import Lanius.Mini.Frontend.P.Inline_pAssignSub
+public import Lanius.Mini.Frontend.P.Inline_pAssignXor
+public import Lanius.Mini.Frontend.P.Inline_pBandTail
+public import Lanius.Mini.Frontend.P.Inline_pBase
 
 @[expose] public section
 

@@ -9,8 +9,8 @@ public import Lanius.Faithful.GenB.SelfBStmtC_elementBase
 public import Lanius.Faithful.GenB.SelfBStmtC_widthOf
 import all Lanius.Faithful.Gen.SelfSrcC_elementBase
 import all Lanius.Faithful.Gen.SelfStmtC_elementBase
-import all Lanius.Mini.Compiler.P.SrcType_same
-import all Lanius.Mini.Compiler.P.elementBase
+import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.loadType
 
 @[expose] public section
 

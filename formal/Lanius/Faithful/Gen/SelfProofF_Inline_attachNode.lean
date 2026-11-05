@@ -11,6 +11,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_grammarPart13
 public import Lanius.Faithful.Gen.SelfStmtF_shrFirst
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_attachNode
 import all Lanius.Mini.Frontend.P.Inline_attachNode
+import all Lanius.Mini.Frontend.P.Inline_attachProd
 
 public section
 

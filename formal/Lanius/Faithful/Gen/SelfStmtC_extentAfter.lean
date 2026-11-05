@@ -1,7 +1,10 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Compiler.P.dyingExtent
 public import Lanius.Mini.Compiler.P.extentAfter
+public import Lanius.Mini.Compiler.P.killPrefix
+public import Lanius.Mini.Compiler.P.killPrefixAt
 
 @[expose] public section
 

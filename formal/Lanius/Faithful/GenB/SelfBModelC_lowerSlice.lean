@@ -4,8 +4,9 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelC_Inline_arithOf
 public import Lanius.Faithful.GenB.SelfBModelC_wordElement
 public import Lanius.Faithful.GenB.SelfBModelN4
-public import Lanius.Mini.Compiler.P.UintTy_half
-public import Lanius.Mini.Compiler.P.storeType
+public import Lanius.Mini.Compiler.P.SrcType_isI32
+public import Lanius.Mini.Compiler.P.SrcType_isUint
+public import Lanius.Mini.Compiler.P.withinLayout
 public import Lanius.Mini.Compiler.P.wordElement
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.Types

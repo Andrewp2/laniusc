@@ -10,6 +10,9 @@ public import Lanius.Faithful.Gen.SelfStmtC_elementAddress
 public import Lanius.Faithful.Gen.SelfStmtC_shortCircuit
 import all Lanius.Faithful.Gen.SelfSrcC_elementAddress
 import all Lanius.Mini.Compiler.P.elementAddress
+import all Lanius.Mini.Compiler.P.lowerElement
+import all Lanius.Mini.Compiler.P.lowerLoadWord
+import all Lanius.Mini.Compiler.P.storeByteElement
 
 public section
 

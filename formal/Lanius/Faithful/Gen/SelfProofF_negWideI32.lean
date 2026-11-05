@@ -18,7 +18,30 @@ public import Lanius.Faithful.Gen.SelfStmtF_sintAt
 public import Lanius.Faithful.Gen.SelfStmtF_unitTy
 public import Lanius.Faithful.Gen.SelfStmtF_wideOf
 import all Lanius.Faithful.Gen.SelfSrcF_negWideI32
+import all Lanius.Mini.Frontend.P.calleeParams
+import all Lanius.Mini.Frontend.P.calleeRet
+import all Lanius.Mini.Frontend.P.knownEff
+import all Lanius.Mini.Frontend.P.knownExpr
+import all Lanius.Mini.Frontend.P.leastCast
+import all Lanius.Mini.Frontend.P.litEff
+import all Lanius.Mini.Frontend.P.litExpr
+import all Lanius.Mini.Frontend.P.litExprs
+import all Lanius.Mini.Frontend.P.litFuncs
+import all Lanius.Mini.Frontend.P.litSrcArms
+import all Lanius.Mini.Frontend.P.litStmt
+import all Lanius.Mini.Frontend.P.negLeast
+import all Lanius.Mini.Frontend.P.negLeastAt
+import all Lanius.Mini.Frontend.P.negWideAt
 import all Lanius.Mini.Frontend.P.negWideI32
+import all Lanius.Mini.Frontend.P.negWideIsize
+import all Lanius.Mini.Frontend.P.negWideSint
+import all Lanius.Mini.Frontend.P.paramLocals
+import all Lanius.Mini.Frontend.P.srcParamTys
+import all Lanius.Mini.Frontend.P.wideLeft
+import all Lanius.Mini.Frontend.P.wideLeftArms
+import all Lanius.Mini.Frontend.P.wideLeftEff
+import all Lanius.Mini.Frontend.P.wideLeftExprs
+import all Lanius.Mini.Frontend.P.withLocal
 
 public section
 

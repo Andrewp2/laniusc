@@ -16,7 +16,9 @@ public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_setPlaceOf
 public import Lanius.Faithful.Gen.SelfStmtF_wideOf
 import all Lanius.Faithful.Gen.SelfSrcF_compoundOf
+import all Lanius.Mini.Frontend.P.assignment
 import all Lanius.Mini.Frontend.P.compoundOf
+import all Lanius.Mini.Frontend.P.writesLocal
 
 public section
 

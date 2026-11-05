@@ -12,8 +12,12 @@ public import Lanius.Faithful.GenB.SelfBStmtC_shortCircuit
 public import Lanius.Faithful.GenB.SelfBStmtC_sintToUint
 import all Lanius.Faithful.Gen.SelfSrcC_evalDivide
 import all Lanius.Faithful.Gen.SelfStmtC_evalDivide
-import all Lanius.Mini.Compiler.P.UintTy_half
-import all Lanius.Mini.Compiler.P.lowerLocal
+import all Lanius.Mini.Compiler.P.SrcType_isI32
+import all Lanius.Mini.Compiler.P.SrcType_isIsize
+import all Lanius.Mini.Compiler.P.SrcType_isScalar
+import all Lanius.Mini.Compiler.P.SrcType_sintKind
+import all Lanius.Mini.Compiler.P.SrcType_uintKind
+import all Lanius.Mini.Compiler.P.lowerNegateTyped
 
 @[expose] public section
 

@@ -3,6 +3,13 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_matchTysOrNone
+public import Lanius.Mini.Frontend.P.arrayOf
+public import Lanius.Mini.Frontend.P.arrayRepeatOf
+public import Lanius.Mini.Frontend.P.divergeCall
+public import Lanius.Mini.Frontend.P.divergeChecked
+public import Lanius.Mini.Frontend.P.divergeEff
+public import Lanius.Mini.Frontend.P.effInferred
+public import Lanius.Mini.Frontend.P.instBound
 public import Lanius.Mini.Frontend.P.matchTysOrNone
 
 @[expose] public section

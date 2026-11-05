@@ -22,7 +22,28 @@ public import Lanius.Faithful.Gen.SelfStmtF_moduleOr
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_textSelf
 import all Lanius.Faithful.Gen.SelfSrcF_collect
+import all Lanius.Mini.Frontend.P.aliasNamesIn
 import all Lanius.Mini.Frontend.P.collect
+import all Lanius.Mini.Frontend.P.collectFiles
+import all Lanius.Mini.Frontend.P.collectedWith
+import all Lanius.Mini.Frontend.P.constNamesIn
+import all Lanius.Mini.Frontend.P.enumNamedOk
+import all Lanius.Mini.Frontend.P.enumsNamedOk
+import all Lanius.Mini.Frontend.P.fileCollected
+import all Lanius.Mini.Frontend.P.fileDecls
+import all Lanius.Mini.Frontend.P.fileItems
+import all Lanius.Mini.Frontend.P.fnNamesIn
+import all Lanius.Mini.Frontend.P.isNoneType
+import all Lanius.Mini.Frontend.P.moduleGlobals
+import all Lanius.Mini.Frontend.P.moduleNamesOk
+import all Lanius.Mini.Frontend.P.modulesDistinctNames
+import all Lanius.Mini.Frontend.P.noNames
+import all Lanius.Mini.Frontend.P.noPrimitive
+import all Lanius.Mini.Frontend.P.noPrimitiveAlias
+import all Lanius.Mini.Frontend.P.noneMember
+import all Lanius.Mini.Frontend.P.typeNamesIn
+import all Lanius.Mini.Frontend.P.typeOnlyNamesIn
+import all Lanius.Mini.Frontend.P.wellNamed
 
 public section
 

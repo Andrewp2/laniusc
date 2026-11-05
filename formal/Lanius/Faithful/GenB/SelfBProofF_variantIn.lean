@@ -17,11 +17,11 @@ public import Lanius.Faithful.GenB.SelfBStmtN4
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_variantIn
 import all Lanius.Faithful.Gen.SelfStmtF_variantIn
-import all Lanius.Mini.Frontend.P.collect
-import all Lanius.Mini.Frontend.P.itemOf
-import all Lanius.Mini.Frontend.P.rootInsts
-import all Lanius.Mini.Frontend.P.typePathSpellings
-import all Lanius.Mini.Frontend.P.variantIn
+import all Lanius.Mini.Frontend.P.enumVariant
+import all Lanius.Mini.Frontend.P.findType
+import all Lanius.Mini.Frontend.P.noNames
+import all Lanius.Mini.Frontend.P.pathModule
+import all Lanius.Mini.Frontend.P.splitLast
 
 @[expose] public section
 

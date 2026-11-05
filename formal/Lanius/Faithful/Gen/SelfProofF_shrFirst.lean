@@ -11,7 +11,10 @@ public import Lanius.Faithful.Gen.SelfStmtF_Inline_attachParent
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pBoundTypeArgsAfterCommaMore
 public import Lanius.Faithful.Gen.SelfStmtF_shrFirst
 import all Lanius.Faithful.Gen.SelfSrcF_shrFirst
+import all Lanius.Mini.Frontend.P.attach
+import all Lanius.Mini.Frontend.P.only
 import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.shrSecond
 
 public section
 

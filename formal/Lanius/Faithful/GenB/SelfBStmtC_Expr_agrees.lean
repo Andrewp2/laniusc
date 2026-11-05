@@ -4,6 +4,7 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_Expr_agrees
 public import Lanius.Mini.Compiler.P.Expr_agrees
+public import Lanius.Mini.Compiler.P.argsAgree
 
 @[expose] public section
 

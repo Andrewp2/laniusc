@@ -12,7 +12,9 @@ public import Lanius.Faithful.GenB.SelfBStmtN4
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcC_substAll
 import all Lanius.Faithful.Gen.SelfStmtC_substAll
-import all Lanius.Mini.Compiler.P.callAgrees
+import all Lanius.Mini.Compiler.P.Expr_subst
+import all Lanius.Mini.Compiler.P.kill
+import all Lanius.Mini.Compiler.P.noneDies
 import all Lanius.Mini.Compiler.P.substAll
 
 @[expose] public section

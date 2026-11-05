@@ -6,6 +6,7 @@ public import Lanius.Faithful.Gen.SelfSrcF_Inline_pRangeStartInt
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pRangeStartInt
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pRangeStartInt
 import all Lanius.Mini.Frontend.P.Inline_pRangeStartInt
+import all Lanius.Mini.Frontend.P.Inline_pRetType
 
 public section
 

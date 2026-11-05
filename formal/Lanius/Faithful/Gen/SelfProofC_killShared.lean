@@ -10,6 +10,7 @@ public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtC_extentAfter
 public import Lanius.Faithful.Gen.SelfStmtC_killShared
 import all Lanius.Faithful.Gen.SelfSrcC_killShared
+import all Lanius.Mini.Compiler.P.firstFacts
 import all Lanius.Mini.Compiler.P.killShared
 
 public section

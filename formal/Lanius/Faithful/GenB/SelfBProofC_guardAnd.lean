@@ -8,8 +8,9 @@ public import Lanius.Faithful.GenB.SelfBStmtC_guardAnd
 public import Lanius.Faithful.GenB.SelfBStmtC_lowerApply
 import all Lanius.Faithful.Gen.SelfSrcC_guardAnd
 import all Lanius.Faithful.Gen.SelfStmtC_guardAnd
-import all Lanius.Mini.Compiler.P.guardAnd
-import all Lanius.Mini.Compiler.P.lowerApply
+import all Lanius.Mini.Compiler.P.isOne
+import all Lanius.Mini.Compiler.P.literalBelow
+import all Lanius.Mini.Compiler.P.shiftWidth
 
 @[expose] public section
 

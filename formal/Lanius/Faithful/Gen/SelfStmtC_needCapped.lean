@@ -2,6 +2,10 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Compiler.P.needCapped
+public import Lanius.Mini.Compiler.P.needRound
+public import Lanius.Mini.Compiler.P.needRoundAt
+public import Lanius.Mini.Compiler.P.restNeeds
+public import Lanius.Mini.Compiler.P.sameNeeds
 
 @[expose] public section
 

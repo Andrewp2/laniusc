@@ -1,7 +1,10 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Compiler.P.SrcOp_lower
 public import Lanius.Mini.Compiler.P.conjunction
+public import Lanius.Mini.Compiler.P.disjunction
+public import Lanius.Mini.Compiler.P.lowerScalarLocal
 
 @[expose] public section
 

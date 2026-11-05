@@ -18,16 +18,20 @@ public import Lanius.Faithful.GenB.SelfBStmtF_typeDeclAt
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_i32ArrayLength
 import all Lanius.Faithful.Gen.SelfStmtF_i32ArrayLength
-import all Lanius.Mini.Frontend.P.Inline_pLeTail
+import all Lanius.Mini.Frontend.P.Inline_pLetInit
+import all Lanius.Mini.Frontend.P.Inline_pLetStmt
+import all Lanius.Mini.Frontend.P.Inline_pLetType
 import all Lanius.Mini.Frontend.P.freshId
-import all Lanius.Mini.Frontend.P.hasKids
 import all Lanius.Mini.Frontend.P.i32ArrayLength
-import all Lanius.Mini.Frontend.P.isEmptyUsize
-import all Lanius.Mini.Frontend.P.isPathCall
-import all Lanius.Mini.Frontend.P.noToken
-import all Lanius.Mini.Frontend.P.textSelf
-import all Lanius.Mini.Frontend.P.tryLet
-import all Lanius.Mini.Frontend.P.typeDeclAt
+import all Lanius.Mini.Frontend.P.isPtrOf
+import all Lanius.Mini.Frontend.P.kid
+import all Lanius.Mini.Frontend.P.kidToken
+import all Lanius.Mini.Frontend.P.literalHead
+import all Lanius.Mini.Frontend.P.member
+import all Lanius.Mini.Frontend.P.nodeProd
+import all Lanius.Mini.Frontend.P.sameText
+import all Lanius.Mini.Frontend.P.textMem
+import all Lanius.Mini.Frontend.P.tyOf
 
 @[expose] public section
 

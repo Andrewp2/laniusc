@@ -3,7 +3,17 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_Inline_arithOf
+public import Lanius.Mini.Compiler.P.Inline_blockThen
+public import Lanius.Mini.Compiler.P.Inline_checkedElement
+public import Lanius.Mini.Compiler.P.Inline_checkedLoad
+public import Lanius.Mini.Compiler.P.Inline_elementAt
+public import Lanius.Mini.Compiler.P.Inline_enumVariantsAt
+public import Lanius.Mini.Compiler.P.Inline_evalLetBody
 public import Lanius.Mini.Compiler.P.Inline_lowerSetScalar
+public import Lanius.Mini.Compiler.P.Inline_paramsThen
+public import Lanius.Mini.Compiler.P.Inline_setScalarEval
+public import Lanius.Mini.Compiler.P.Inline_storeElement
+public import Lanius.Mini.Compiler.P.Inline_structFieldsAt
 
 @[expose] public section
 

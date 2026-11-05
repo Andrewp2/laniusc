@@ -11,9 +11,15 @@ public import Lanius.Faithful.GenB.SelfBStmtF_limNumsEff
 import all Lanius.Faithful.Gen.SelfSrcF_limNumsEff
 import all Lanius.Faithful.Gen.SelfStmtF_limNumsEff
 import all Lanius.Mini.Frontend.P.depthLimit
-import all Lanius.Mini.Frontend.P.funcsOnto
-import all Lanius.Mini.Frontend.P.limLeaf
-import all Lanius.Mini.Frontend.P.limNumsEff
+import all Lanius.Mini.Frontend.P.isNoneWeight
+import all Lanius.Mini.Frontend.P.limNest
+import all Lanius.Mini.Frontend.P.limNumsParams
+import all Lanius.Mini.Frontend.P.limNumsStmt
+import all Lanius.Mini.Frontend.P.limNumsTy
+import all Lanius.Mini.Frontend.P.limParamSlots
+import all Lanius.Mini.Frontend.P.limParams
+import all Lanius.Mini.Frontend.P.limStmt
+import all Lanius.Mini.Frontend.P.limTy
 
 @[expose] public section
 

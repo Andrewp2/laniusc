@@ -2,6 +2,9 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.ifNotWrites
+public import Lanius.Mini.Frontend.P.knownTrue
+public import Lanius.Mini.Frontend.P.refChecked
+public import Lanius.Mini.Frontend.P.selfRefId
 
 @[expose] public section
 

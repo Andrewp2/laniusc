@@ -8,6 +8,8 @@ public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_findMethodAt
 public import Lanius.Faithful.Gen.SelfStmtF_stringCons
 import all Lanius.Faithful.Gen.SelfSrcF_stringCons
+import all Lanius.Mini.Frontend.P.plainStringByte
+import all Lanius.Mini.Frontend.P.stringBody
 import all Lanius.Mini.Frontend.P.stringCons
 
 public section

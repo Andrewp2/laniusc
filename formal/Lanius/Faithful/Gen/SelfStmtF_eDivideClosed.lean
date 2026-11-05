@@ -1,7 +1,10 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.eCastClosed
 public import Lanius.Mini.Frontend.P.eDivideClosed
+public import Lanius.Mini.Frontend.P.eNegClosed
+public import Lanius.Mini.Frontend.P.eNotClosed
 
 @[expose] public section
 

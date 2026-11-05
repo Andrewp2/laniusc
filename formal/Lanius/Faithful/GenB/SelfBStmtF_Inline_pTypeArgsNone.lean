@@ -3,6 +3,13 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.Inline_pTypeArgsNone
+public import Lanius.Mini.Frontend.P.Inline_pTypeArgsSome
+public import Lanius.Mini.Frontend.P.Inline_pTypeArray
+public import Lanius.Mini.Frontend.P.Inline_pTypeArrayLenConstant
+public import Lanius.Mini.Frontend.P.Inline_pTypeArrayTail
+public import Lanius.Mini.Frontend.P.Inline_pTypeIdent
+public import Lanius.Mini.Frontend.P.Inline_pTypeNever
+public import Lanius.Mini.Frontend.P.Inline_pTypePathEnd
 
 @[expose] public section
 

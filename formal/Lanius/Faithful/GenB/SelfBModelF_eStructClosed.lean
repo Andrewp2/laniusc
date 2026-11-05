@@ -8,9 +8,9 @@ public import Lanius.Faithful.GenB.SelfBModelF_eDerefClosed
 public import Lanius.Faithful.GenB.SelfBModelF_eDivideClosed
 public import Lanius.Faithful.GenB.SelfBModelN5
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.allWeighed
-public import Lanius.Mini.Frontend.P.eStructClosed
-public import Lanius.Mini.Frontend.P.findConst
+public import Lanius.Mini.Frontend.P.closeEff
+public import Lanius.Mini.Frontend.P.closeTy
+public import Lanius.Mini.Frontend.P.instIndex
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

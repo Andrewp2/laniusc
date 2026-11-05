@@ -2,6 +2,16 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Compiler.P.SrcExpr_guard
+public import Lanius.Mini.Compiler.P.boundsGuard
+public import Lanius.Mini.Compiler.P.checkThen
+public import Lanius.Mini.Compiler.P.expectType
+public import Lanius.Mini.Compiler.P.guardAll
+public import Lanius.Mini.Compiler.P.guarded
+public import Lanius.Mini.Compiler.P.lowerAppend
+public import Lanius.Mini.Compiler.P.lowerAs
+public import Lanius.Mini.Compiler.P.slotVars
+public import Lanius.Mini.Compiler.P.thenCheck
+public import Lanius.Mini.Compiler.P.trap
 
 @[expose] public section
 

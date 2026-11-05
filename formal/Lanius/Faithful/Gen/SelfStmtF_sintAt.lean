@@ -1,7 +1,16 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.intAt
+public import Lanius.Mini.Frontend.P.intLiteralAt
+public import Lanius.Mini.Frontend.P.payloadAt
+public import Lanius.Mini.Frontend.P.repeatSrc
 public import Lanius.Mini.Frontend.P.sintAt
+public import Lanius.Mini.Frontend.P.srcElement
+public import Lanius.Mini.Frontend.P.srcFields
+public import Lanius.Mini.Frontend.P.srcVariants
+public import Lanius.Mini.Frontend.P.tyAt
+public import Lanius.Mini.Frontend.P.tyLocal
 
 @[expose] public section
 

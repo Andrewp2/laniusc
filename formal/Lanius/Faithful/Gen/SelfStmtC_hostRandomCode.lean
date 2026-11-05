@@ -1,7 +1,10 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Compiler.P.evalHostText
+public import Lanius.Mini.Compiler.P.hostNewlineCode
 public import Lanius.Mini.Compiler.P.hostRandomCode
+public import Lanius.Mini.Compiler.P.hostTextCode
 
 @[expose] public section
 

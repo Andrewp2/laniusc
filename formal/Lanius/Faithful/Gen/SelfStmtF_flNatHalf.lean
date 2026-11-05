@@ -1,7 +1,15 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.flBit
+public import Lanius.Mini.Frontend.P.flLog2
+public import Lanius.Mini.Frontend.P.flLog2Up
+public import Lanius.Mini.Frontend.P.flLowBit
 public import Lanius.Mini.Frontend.P.flNatHalf
+public import Lanius.Mini.Frontend.P.flNatOdd
+public import Lanius.Mini.Frontend.P.flOfNat
+public import Lanius.Mini.Frontend.P.flPow2
+public import Lanius.Mini.Frontend.P.flToNat
 
 @[expose] public section
 

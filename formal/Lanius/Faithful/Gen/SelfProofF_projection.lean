@@ -9,7 +9,13 @@ public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmtF_noBlock
 public import Lanius.Faithful.Gen.SelfStmtF_projection
 import all Lanius.Faithful.Gen.SelfSrcF_projection
+import all Lanius.Mini.Frontend.P.effPlace
+import all Lanius.Mini.Frontend.P.hasAt
+import all Lanius.Mini.Frontend.P.isRefTy
 import all Lanius.Mini.Frontend.P.projection
+import all Lanius.Mini.Frontend.P.referent
+import all Lanius.Mini.Frontend.P.referentOr
+import all Lanius.Mini.Frontend.P.xAtOf
 
 public section
 

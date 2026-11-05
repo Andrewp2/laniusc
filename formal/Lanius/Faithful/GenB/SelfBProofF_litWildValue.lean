@@ -12,11 +12,12 @@ public import Lanius.Faithful.GenB.SelfBStmtF_litWildValue
 public import Lanius.Faithful.GenB.SelfBStmtF_noToken
 import all Lanius.Faithful.Gen.SelfSrcF_litWildValue
 import all Lanius.Faithful.Gen.SelfStmtF_litWildValue
-import all Lanius.Mini.Frontend.P.bindsOfTys
-import all Lanius.Mini.Frontend.P.isUnderscore
-import all Lanius.Mini.Frontend.P.litWants
-import all Lanius.Mini.Frontend.P.litWildValue
-import all Lanius.Mini.Frontend.P.noToken
+import all Lanius.Mini.Frontend.P.isFalseArm
+import all Lanius.Mini.Frontend.P.isTrueArm
+import all Lanius.Mini.Frontend.P.isWildArm
+import all Lanius.Mini.Frontend.P.kid
+import all Lanius.Mini.Frontend.P.litChain
+import all Lanius.Mini.Frontend.P.litTest
 
 @[expose] public section
 

@@ -9,11 +9,17 @@ public import Lanius.Faithful.GenB.SelfBStmtC_Inline_blockLeft
 public import Lanius.Faithful.GenB.SelfBStmtC_binaryConstant
 import all Lanius.Faithful.Gen.SelfSrcC_Expr_agrees
 import all Lanius.Faithful.Gen.SelfStmtC_Expr_agrees
-import all Lanius.Mini.Compiler.P.BinOp_folds
+import all Lanius.Mini.Compiler.P.BinOp_commutes
+import all Lanius.Mini.Compiler.P.BinOp_number
+import all Lanius.Mini.Compiler.P.CmpOp_number
 import all Lanius.Mini.Compiler.P.Expr_agrees
-import all Lanius.Mini.Compiler.P.Inline_blockLeft
-import all Lanius.Mini.Compiler.P.Word_narrows
-import all Lanius.Mini.Compiler.P.binaryConstant
+import all Lanius.Mini.Compiler.P.Expr_constant
+import all Lanius.Mini.Compiler.P.Expr_isConstant
+import all Lanius.Mini.Compiler.P.Expr_unitOf
+import all Lanius.Mini.Compiler.P.FOp_number
+import all Lanius.Mini.Compiler.P.Inline_binaryAgrees
+import all Lanius.Mini.Compiler.P.Word_keeps
+import all Lanius.Mini.Compiler.P.Word_number
 
 @[expose] public section
 

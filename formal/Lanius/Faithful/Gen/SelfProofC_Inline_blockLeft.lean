@@ -17,7 +17,19 @@ public import Lanius.Faithful.Gen.SelfStmtC_bindingBytes
 public import Lanius.Faithful.Gen.SelfStmtC_declareFuncs
 public import Lanius.Faithful.Gen.SelfStmtC_lowerBody
 import all Lanius.Faithful.Gen.SelfSrcC_Inline_blockLeft
+import all Lanius.Mini.Compiler.P.Inline_binaryAgrees
 import all Lanius.Mini.Compiler.P.Inline_blockLeft
+import all Lanius.Mini.Compiler.P.Inline_compareAgrees
+import all Lanius.Mini.Compiler.P.Inline_declareEnumIn
+import all Lanius.Mini.Compiler.P.Inline_declareFuncsAfter
+import all Lanius.Mini.Compiler.P.Inline_declareIn
+import all Lanius.Mini.Compiler.P.Inline_declareParamsAfter
+import all Lanius.Mini.Compiler.P.Inline_declareStructIn
+import all Lanius.Mini.Compiler.P.Inline_declareTypesAfter
+import all Lanius.Mini.Compiler.P.Inline_declareVariantsAfter
+import all Lanius.Mini.Compiler.P.Inline_fpAgrees
+import all Lanius.Mini.Compiler.P.Inline_negAgrees
+import all Lanius.Mini.Compiler.P.Inline_unitAgrees
 
 public section
 

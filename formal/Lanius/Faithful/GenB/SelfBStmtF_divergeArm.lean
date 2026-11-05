@@ -3,6 +3,7 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_divergeArm
+public import Lanius.Mini.Frontend.P.bindsZip
 public import Lanius.Mini.Frontend.P.divergeArm
 
 @[expose] public section

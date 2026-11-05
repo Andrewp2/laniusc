@@ -17,6 +17,16 @@ public import Lanius.Faithful.Gen.SelfStmtF_lxSymbolStart
 public import Lanius.Faithful.Gen.SelfStmtF_wideLeftStmt
 import all Lanius.Faithful.Gen.SelfSrcF_lxDotAt
 import all Lanius.Mini.Frontend.P.lxDotAt
+import all Lanius.Mini.Frontend.P.lxDropTo
+import all Lanius.Mini.Frontend.P.lxKeyword
+import all Lanius.Mini.Frontend.P.lxOneAt
+import all Lanius.Mini.Frontend.P.lxOneFirst
+import all Lanius.Mini.Frontend.P.lxPrepend
+import all Lanius.Mini.Frontend.P.lxRaw
+import all Lanius.Mini.Frontend.P.lxShift
+import all Lanius.Mini.Frontend.P.lxSymbol
+import all Lanius.Mini.Frontend.P.lxSymbolAt
+import all Lanius.Mini.Frontend.P.lxTrivia
 
 public section
 

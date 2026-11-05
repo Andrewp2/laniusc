@@ -9,7 +9,9 @@ public import Lanius.Faithful.GenB.SelfBStmtF_lxSpaceEnd
 public import Lanius.Faithful.GenB.SelfBStmtF_lxSymbolStart
 import all Lanius.Faithful.Gen.SelfSrcF_lxSpaceEnd
 import all Lanius.Faithful.Gen.SelfStmtF_lxSpaceEnd
-import all Lanius.Mini.Frontend.P.lxSymbolStart
+import all Lanius.Mini.Frontend.P.lxDrop
+import all Lanius.Mini.Frontend.P.lxLineRun
+import all Lanius.Mini.Frontend.P.lxSpaceRun
 
 @[expose] public section
 

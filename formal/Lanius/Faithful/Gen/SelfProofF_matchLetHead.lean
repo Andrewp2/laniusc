@@ -14,7 +14,13 @@ public import Lanius.Faithful.Gen.SelfStmtF_purePart
 public import Lanius.Faithful.Gen.SelfStmtF_structHead
 public import Lanius.Faithful.Gen.SelfStmtF_variantLetHead
 import all Lanius.Faithful.Gen.SelfSrcF_matchLetHead
+import all Lanius.Mini.Frontend.P.callLetHead
+import all Lanius.Mini.Frontend.P.evalHead
+import all Lanius.Mini.Frontend.P.evalLetHead
+import all Lanius.Mini.Frontend.P.ifSameTys
+import all Lanius.Mini.Frontend.P.indexLetHead
 import all Lanius.Mini.Frontend.P.matchLetHead
+import all Lanius.Mini.Frontend.P.singleTy
 
 public section
 

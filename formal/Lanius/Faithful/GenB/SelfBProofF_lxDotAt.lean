@@ -16,9 +16,14 @@ public import Lanius.Faithful.GenB.SelfBStmtN4
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_lxDotAt
 import all Lanius.Faithful.Gen.SelfStmtF_lxDotAt
-import all Lanius.Mini.Frontend.P.lxDotAt
+import all Lanius.Mini.Frontend.P.lxDigit
+import all Lanius.Mini.Frontend.P.lxDrop
+import all Lanius.Mini.Frontend.P.lxIdentStart
+import all Lanius.Mini.Frontend.P.lxOneAt
+import all Lanius.Mini.Frontend.P.lxRaw
+import all Lanius.Mini.Frontend.P.lxShift
+import all Lanius.Mini.Frontend.P.lxSpace
 import all Lanius.Mini.Frontend.P.lxSymbolStart
-import all Lanius.Mini.Frontend.P.wideLeftStmt
 
 @[expose] public section
 

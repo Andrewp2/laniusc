@@ -3,9 +3,10 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelF_hasKids
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.Inline_pPathMore
-public import Lanius.Mini.Frontend.P.isEmptyUsize
-public import Lanius.Mini.Frontend.P.noToken
+public import Lanius.Mini.Frontend.P.Inline_pPatternIdent
+public import Lanius.Mini.Frontend.P.Inline_pPatternPlain
+public import Lanius.Mini.Frontend.P.kid
+public import Lanius.Mini.Frontend.P.nodeProd
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

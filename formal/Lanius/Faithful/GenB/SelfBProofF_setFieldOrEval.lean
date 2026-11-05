@@ -16,11 +16,11 @@ public import Lanius.Faithful.GenB.SelfBStmtF_setIndexOrEval
 public import Lanius.Faithful.GenB.SelfBStmtF_stringOpen
 import all Lanius.Faithful.Gen.SelfSrcF_setFieldOrEval
 import all Lanius.Faithful.Gen.SelfStmtF_setFieldOrEval
-import all Lanius.Mini.Frontend.P.Inline_pPathMore
-import all Lanius.Mini.Frontend.P.fnInstRet
-import all Lanius.Mini.Frontend.P.freshId
-import all Lanius.Mini.Frontend.P.isEmptyUsize
-import all Lanius.Mini.Frontend.P.noToken
+import all Lanius.Mini.Frontend.P.Inline_pPostfixEnd
+import all Lanius.Mini.Frontend.P.fieldIndex
+import all Lanius.Mini.Frontend.P.fieldTyAt
+import all Lanius.Mini.Frontend.P.kid
+import all Lanius.Mini.Frontend.P.nodeProd
 
 @[expose] public section
 

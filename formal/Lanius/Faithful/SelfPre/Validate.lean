@@ -1,11 +1,54 @@
 module
 
 public import Lanius.Faithful.SelfPre.Files
+import all Lanius.Machines.SqliteStatement.P.go
+import all Lanius.Machines.SqliteStatement.P.inReady
+import all Lanius.Machines.SqliteStatement.P.inRow
+import all Lanius.Machines.SqliteStatement.P.refuse
 import all Lanius.Machines.SqliteStatement.P.start
+import all Lanius.Machines.SqliteStatement.P.stay
+import all Lanius.Mini.Compiler.P.UintTy_code
+import all Lanius.Mini.Compiler.P.entriesAt
+import all Lanius.Mini.Compiler.P.funcsSize
+import all Lanius.Mini.Compiler.P.funcsSlots
+import all Lanius.Mini.Compiler.P.linkObjects
+import all Lanius.Mini.Compiler.P.objectExports
+import all Lanius.Mini.Compiler.P.objectFirsts
+import all Lanius.Mini.Compiler.P.objectLayout
+import all Lanius.Mini.Compiler.P.objectsLayout
+import all Lanius.Mini.Compiler.P.objectsOk
+import all Lanius.Mini.Compiler.P.objectsSlots
 import all Lanius.Mini.Compiler.P.render
+import all Lanius.Mini.Compiler.P.renderFuncs
+import all Lanius.Mini.Compiler.P.renderObjects
+import all Lanius.Mini.Frontend.P.attach
+import all Lanius.Mini.Frontend.P.only
 import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.shrSecond
+import all Lanius.Mini.Frontend.P.build
+import all Lanius.Mini.Frontend.P.buildChecked
+import all Lanius.Mini.Frontend.P.buildClosed
+import all Lanius.Mini.Frontend.P.buildCollected
+import all Lanius.Mini.Frontend.P.buildFiles
+import all Lanius.Mini.Frontend.P.buildMono
+import all Lanius.Mini.Frontend.P.consRoot
+import all Lanius.Mini.Frontend.P.filesFuel
+import all Lanius.Mini.Frontend.P.frontEnd
+import all Lanius.Mini.Frontend.P.frontEndFiles
+import all Lanius.Mini.Frontend.P.lxDigit
+import all Lanius.Mini.Frontend.P.lxIdentContinue
+import all Lanius.Mini.Frontend.P.lxIdentStart
+import all Lanius.Mini.Frontend.P.lxSpace
+import all Lanius.Mini.Frontend.P.untypedRejected
+import all Lanius.Mini.Frontend.P.validateFiles
+import all Lanius.Mini.Frontend.P.wideLeftFuncs
 import all Lanius.Mini.Frontend.P.wideLeftStmt
+import all Lanius.Mini.Frontend.P.genericTail
+import all Lanius.Mini.Frontend.P.kid
+import all Lanius.Mini.Frontend.P.kidsOf
 import all Lanius.Mini.Frontend.P.noToken
+import all Lanius.Mini.Frontend.P.startsWithKind
+import all Lanius.Mini.Frontend.P.withKid
 
 @[expose] public section
 

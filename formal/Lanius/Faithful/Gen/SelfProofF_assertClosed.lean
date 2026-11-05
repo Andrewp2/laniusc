@@ -18,6 +18,14 @@ public import Lanius.Faithful.Gen.SelfStmtF_letStructClosed
 public import Lanius.Faithful.Gen.SelfStmtF_setEvalClosed
 import all Lanius.Faithful.Gen.SelfSrcF_assertClosed
 import all Lanius.Mini.Frontend.P.assertClosed
+import all Lanius.Mini.Frontend.P.closeParams
+import all Lanius.Mini.Frontend.P.closeRet
+import all Lanius.Mini.Frontend.P.closeStmt
+import all Lanius.Mini.Frontend.P.consFunc
+import all Lanius.Mini.Frontend.P.consFuncTail
+import all Lanius.Mini.Frontend.P.consSrcParam
+import all Lanius.Mini.Frontend.P.setFieldEvalClosed
+import all Lanius.Mini.Frontend.P.srcFunc
 
 public section
 

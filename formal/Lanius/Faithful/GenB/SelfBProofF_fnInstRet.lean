@@ -24,13 +24,20 @@ public import Lanius.Faithful.GenB.SelfBStmtN6
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_fnInstRet
 import all Lanius.Faithful.Gen.SelfStmtF_fnInstRet
-import all Lanius.Mini.Frontend.P.consTreeTail
-import all Lanius.Mini.Frontend.P.distinct
-import all Lanius.Mini.Frontend.P.findConst
-import all Lanius.Mini.Frontend.P.fnInstRet
-import all Lanius.Mini.Frontend.P.hasKids
-import all Lanius.Mini.Frontend.P.projectionRet
-import all Lanius.Mini.Frontend.P.wideOf
+import all Lanius.Mini.Frontend.P.armBinders
+import all Lanius.Mini.Frontend.P.armValues
+import all Lanius.Mini.Frontend.P.bareEff
+import all Lanius.Mini.Frontend.P.declEnv
+import all Lanius.Mini.Frontend.P.diverges
+import all Lanius.Mini.Frontend.P.effTy
+import all Lanius.Mini.Frontend.P.effsTys
+import all Lanius.Mini.Frontend.P.exprOf
+import all Lanius.Mini.Frontend.P.exprsOf
+import all Lanius.Mini.Frontend.P.isScalarOwner
+import all Lanius.Mini.Frontend.P.listItems
+import all Lanius.Mini.Frontend.P.resultTy
+import all Lanius.Mini.Frontend.P.retPattern
+import all Lanius.Mini.Frontend.P.singleName
 
 @[expose] public section
 

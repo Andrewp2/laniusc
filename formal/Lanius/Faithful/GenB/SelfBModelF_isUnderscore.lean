@@ -5,12 +5,17 @@ public import Lanius.Faithful.GenB.SelfBModelF_armsNaming
 public import Lanius.Faithful.GenB.SelfBModelN2
 public import Lanius.Faithful.GenB.SelfBModelN5
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.Inline_pPathMore
-public import Lanius.Mini.Frontend.P.hasKids
-public import Lanius.Mini.Frontend.P.isEmptyUsize
-public import Lanius.Mini.Frontend.P.isUnderscore
-public import Lanius.Mini.Frontend.P.noToken
-public import Lanius.Mini.Frontend.P.noTrees
+public import Lanius.Mini.Frontend.P.Inline_pPatternIdent
+public import Lanius.Mini.Frontend.P.Inline_pPatternPlain
+public import Lanius.Mini.Frontend.P.Inline_pPatternsSome
+public import Lanius.Mini.Frontend.P.kid
+public import Lanius.Mini.Frontend.P.kidToken
+public import Lanius.Mini.Frontend.P.nodeProd
+public import Lanius.Mini.Frontend.P.pathName
+public import Lanius.Mini.Frontend.P.wildBinder
+public import Lanius.Mini.Frontend.P.wildBinders
+public import Lanius.Mini.Frontend.P.wildSplit
+public import Lanius.Mini.Frontend.P.wildTail
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

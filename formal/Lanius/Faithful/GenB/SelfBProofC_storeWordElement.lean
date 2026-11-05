@@ -16,11 +16,12 @@ public import Lanius.Faithful.GenB.SelfBStmtC_storeWordElement
 public import Lanius.Faithful.GenB.SelfBStmtC_wordElement
 import all Lanius.Faithful.Gen.SelfSrcC_storeWordElement
 import all Lanius.Faithful.Gen.SelfStmtC_storeWordElement
-import all Lanius.Mini.Compiler.P.SrcType_same
-import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.SrcType_isI32
+import all Lanius.Mini.Compiler.P.SrcType_isUint
+import all Lanius.Mini.Compiler.P.SrcType_size
 import all Lanius.Mini.Compiler.P.elementBase
-import all Lanius.Mini.Compiler.P.repeatType
-import all Lanius.Mini.Compiler.P.shortCircuit
+import all Lanius.Mini.Compiler.P.elementOf
+import all Lanius.Mini.Compiler.P.lowerValue
 import all Lanius.Mini.Compiler.P.wordElement
 
 @[expose] public section

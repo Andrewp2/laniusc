@@ -3,6 +3,29 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.Inline_pPathMore
+public import Lanius.Mini.Frontend.P.Inline_pPathTypeArgsAfterCommaMore
+public import Lanius.Mini.Frontend.P.Inline_pPathTypeArgsMore
+public import Lanius.Mini.Frontend.P.Inline_pPatternFalse
+public import Lanius.Mini.Frontend.P.Inline_pPatternIdent
+public import Lanius.Mini.Frontend.P.Inline_pPatternInt
+public import Lanius.Mini.Frontend.P.Inline_pPatternPlain
+public import Lanius.Mini.Frontend.P.Inline_pPatternTrue
+public import Lanius.Mini.Frontend.P.Inline_pPatternTuple
+public import Lanius.Mini.Frontend.P.Inline_pPatternsAfterCommaMore
+public import Lanius.Mini.Frontend.P.Inline_pPatternsAfterCommaTrailing
+public import Lanius.Mini.Frontend.P.Inline_pPatternsEnd
+public import Lanius.Mini.Frontend.P.Inline_pPatternsMore
+public import Lanius.Mini.Frontend.P.Inline_pPatternsNone
+public import Lanius.Mini.Frontend.P.Inline_pPatternsSome
+public import Lanius.Mini.Frontend.P.Inline_pPostfix
+public import Lanius.Mini.Frontend.P.Inline_pPostfixCall
+public import Lanius.Mini.Frontend.P.Inline_pPostfixEnd
+public import Lanius.Mini.Frontend.P.Inline_pPostfixIndex
+public import Lanius.Mini.Frontend.P.Inline_pPostfixMember
+public import Lanius.Mini.Frontend.P.Inline_pPostfixTry
+public import Lanius.Mini.Frontend.P.Inline_pRangeBound
+public import Lanius.Mini.Frontend.P.Inline_pRangeBoundName
+public import Lanius.Mini.Frontend.P.Inline_pRangeExclusive
 
 @[expose] public section
 

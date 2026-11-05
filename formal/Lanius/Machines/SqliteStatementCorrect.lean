@@ -5,7 +5,14 @@ public import Lanius.Machines.SqliteStatement
 -- import all: Lanius.Machines.SqliteStatement
 import all Lanius.Machines.SqliteStatement.Types
 import all Lanius.Machines.SqliteStatement.P.start
+import all Lanius.Machines.SqliteStatement.P.go
+import all Lanius.Machines.SqliteStatement.P.stay
+import all Lanius.Machines.SqliteStatement.P.refuse
+import all Lanius.Machines.SqliteStatement.P.inReady
+import all Lanius.Machines.SqliteStatement.P.inRow
 import all Lanius.Machines.SqliteStatement.P.inDone
+import all Lanius.Machines.SqliteStatement.P.inFailed
+import all Lanius.Machines.SqliteStatement.P.inFinalized
 import all Lanius.Machines.SqliteStatement.P.transition
 -- end import all
 

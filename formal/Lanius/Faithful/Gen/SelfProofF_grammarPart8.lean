@@ -8,7 +8,11 @@ public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmtF_grammarPart8
 import all Lanius.Faithful.Gen.SelfSrcF_grammarPart8
+import all Lanius.Mini.Frontend.P.grammarPart10
+import all Lanius.Mini.Frontend.P.grammarPart11
+import all Lanius.Mini.Frontend.P.grammarPart12
 import all Lanius.Mini.Frontend.P.grammarPart8
+import all Lanius.Mini.Frontend.P.grammarPart9
 
 public section
 

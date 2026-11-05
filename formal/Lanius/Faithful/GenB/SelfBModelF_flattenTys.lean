@@ -6,6 +6,7 @@ public import Lanius.Faithful.GenB.SelfBModelN5
 public import Lanius.Faithful.GenB.SelfBModelN7
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.P.flattenTys
+public import Lanius.Mini.Frontend.P.weightLimit
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

@@ -7,7 +7,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_nullConst
 public import Lanius.Faithful.GenB.SelfBStmtF_nullConst
 import all Lanius.Faithful.Gen.SelfSrcF_nullConst
 import all Lanius.Faithful.Gen.SelfStmtF_nullConst
-import all Lanius.Mini.Frontend.P.nullConst
+import all Lanius.Mini.Frontend.P.sintFits
 
 @[expose] public section
 

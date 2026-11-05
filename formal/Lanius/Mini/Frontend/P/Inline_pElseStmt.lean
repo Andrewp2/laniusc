@@ -12,7 +12,4 @@ namespace Lanius.Mini
 @[expose] def Inline.pElseStmt : Nat :=
   78
 
-@[expose] def Inline.pEnum : Nat :=
-  210
-
 end Lanius.Mini

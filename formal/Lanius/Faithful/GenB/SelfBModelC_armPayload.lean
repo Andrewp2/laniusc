@@ -6,10 +6,10 @@ public import Lanius.Faithful.GenB.SelfBModelC_SrcType_same
 public import Lanius.Faithful.GenB.SelfBModelN0
 public import Lanius.Faithful.GenB.SelfBModelN2
 public import Lanius.Faithful.GenB.SelfBModelN7
-public import Lanius.Mini.Compiler.P.SrcType_same
+public import Lanius.Mini.Compiler.P.SrcType_size
 public import Lanius.Mini.Compiler.P.armPayload
 public import Lanius.Mini.Compiler.P.armScope
-public import Lanius.Mini.Compiler.P.lowerTagged
+public import Lanius.Mini.Compiler.P.viewedType
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.Types
 

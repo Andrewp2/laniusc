@@ -2,11 +2,17 @@ module
 
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelC_Word_narrows
-public import Lanius.Mini.Compiler.P.BinOp_folds
+public import Lanius.Mini.Compiler.P.BinOp_commutes
+public import Lanius.Mini.Compiler.P.BinOp_number
+public import Lanius.Mini.Compiler.P.CmpOp_number
 public import Lanius.Mini.Compiler.P.Expr_agrees
-public import Lanius.Mini.Compiler.P.Inline_blockLeft
-public import Lanius.Mini.Compiler.P.Word_narrows
-public import Lanius.Mini.Compiler.P.binaryConstant
+public import Lanius.Mini.Compiler.P.Expr_constant
+public import Lanius.Mini.Compiler.P.Expr_isConstant
+public import Lanius.Mini.Compiler.P.Expr_unitOf
+public import Lanius.Mini.Compiler.P.FOp_number
+public import Lanius.Mini.Compiler.P.Inline_binaryAgrees
+public import Lanius.Mini.Compiler.P.Word_keeps
+public import Lanius.Mini.Compiler.P.Word_number
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.Types
 

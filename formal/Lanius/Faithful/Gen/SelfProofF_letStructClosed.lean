@@ -6,7 +6,17 @@ public import Lanius.Faithful.Gen.SelfSrcF_letStructClosed
 public import Lanius.Faithful.Gen.SelfStmt0
 public import Lanius.Faithful.Gen.SelfStmtF_letStructClosed
 import all Lanius.Faithful.Gen.SelfSrcF_letStructClosed
+import all Lanius.Mini.Frontend.P.armTyClosed
+import all Lanius.Mini.Frontend.P.ifClosed
+import all Lanius.Mini.Frontend.P.letCallClosed
+import all Lanius.Mini.Frontend.P.letEnumClosed
+import all Lanius.Mini.Frontend.P.letMatchClosed
 import all Lanius.Mini.Frontend.P.letStructClosed
+import all Lanius.Mini.Frontend.P.matchArmClosed
+import all Lanius.Mini.Frontend.P.setCallClosed
+import all Lanius.Mini.Frontend.P.thenClosed
+import all Lanius.Mini.Frontend.P.unreachableClosed
+import all Lanius.Mini.Frontend.P.whileClosed
 
 public section
 

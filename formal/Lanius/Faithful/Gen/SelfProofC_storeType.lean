@@ -15,6 +15,7 @@ public import Lanius.Faithful.Gen.SelfStmtC_storeType
 public import Lanius.Faithful.Gen.SelfStmtC_widthOf
 import all Lanius.Faithful.Gen.SelfSrcC_storeType
 import all Lanius.Mini.Compiler.P.storeType
+import all Lanius.Mini.Compiler.P.withinLayout
 
 public section
 

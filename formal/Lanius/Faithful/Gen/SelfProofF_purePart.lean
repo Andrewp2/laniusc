@@ -8,7 +8,16 @@ public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmtF_purePart
 import all Lanius.Faithful.Gen.SelfSrcF_purePart
+import all Lanius.Mini.Frontend.P.applyEff
+import all Lanius.Mini.Frontend.P.consEff
 import all Lanius.Mini.Frontend.P.purePart
+import all Lanius.Mini.Frontend.P.xApplyOf
+import all Lanius.Mini.Frontend.P.xCallOf
+import all Lanius.Mini.Frontend.P.xCastInto
+import all Lanius.Mini.Frontend.P.xDivideOf
+import all Lanius.Mini.Frontend.P.xIndexOf
+import all Lanius.Mini.Frontend.P.xNegOf
+import all Lanius.Mini.Frontend.P.xNotOf
 
 public section
 

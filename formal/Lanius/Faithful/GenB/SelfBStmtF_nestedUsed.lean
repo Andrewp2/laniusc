@@ -3,7 +3,9 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_nestedUsed
+public import Lanius.Mini.Frontend.P.blockValue
 public import Lanius.Mini.Frontend.P.nestedUsed
+public import Lanius.Mini.Frontend.P.nestedWith
 
 @[expose] public section
 

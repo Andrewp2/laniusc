@@ -26,17 +26,22 @@ public import Lanius.Faithful.GenB.SelfBStmtN5
 public import Lanius.Faithful.GenB.SelfBStmtN6
 import all Lanius.Faithful.Gen.SelfSrcC_wordStride
 import all Lanius.Faithful.Gen.SelfStmtC_wordStride
-import all Lanius.Mini.Compiler.P.Inline_lowerSetScalar
+import all Lanius.Mini.Compiler.P.Inline_evalLetBody
+import all Lanius.Mini.Compiler.P.SrcEff_eval
+import all Lanius.Mini.Compiler.P.SrcType_isI32
+import all Lanius.Mini.Compiler.P.SrcType_isUint
 import all Lanius.Mini.Compiler.P.SrcType_same
-import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.SrcType_size
 import all Lanius.Mini.Compiler.P.armScope
+import all Lanius.Mini.Compiler.P.elementOf
 import all Lanius.Mini.Compiler.P.evalSame
 import all Lanius.Mini.Compiler.P.evalSlotLimit
+import all Lanius.Mini.Compiler.P.lookup
 import all Lanius.Mini.Compiler.P.matchDst
 import all Lanius.Mini.Compiler.P.matchVariants
-import all Lanius.Mini.Compiler.P.shortCircuit
+import all Lanius.Mini.Compiler.P.staticByteIs
+import all Lanius.Mini.Compiler.P.strPlaced
 import all Lanius.Mini.Compiler.P.wordElement
-import all Lanius.Mini.Compiler.P.wordStride
 
 @[expose] public section
 

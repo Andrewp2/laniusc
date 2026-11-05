@@ -15,9 +15,10 @@ public import Lanius.Faithful.GenB.SelfBStmtN4
 public import Lanius.Faithful.GenB.SelfBStmtN5
 import all Lanius.Faithful.Gen.SelfSrcC_funcNeeds
 import all Lanius.Faithful.Gen.SelfStmtC_funcNeeds
-import all Lanius.Mini.Compiler.P.arrayCallSig
 import all Lanius.Mini.Compiler.P.funcNeeds
-import all Lanius.Mini.Compiler.P.needCapped
+import all Lanius.Mini.Compiler.P.paramTypes
+import all Lanius.Mini.Compiler.P.restNeeds
+import all Lanius.Mini.Compiler.P.sigsWith
 
 @[expose] public section
 

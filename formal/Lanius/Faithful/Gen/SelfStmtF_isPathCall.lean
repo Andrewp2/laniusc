@@ -2,6 +2,20 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.isPathCall
+public import Lanius.Mini.Frontend.P.isTryCall
+public import Lanius.Mini.Frontend.P.isTryLocal
+public import Lanius.Mini.Frontend.P.isTryMethod
+public import Lanius.Mini.Frontend.P.textCore
+public import Lanius.Mini.Frontend.P.textErr
+public import Lanius.Mini.Frontend.P.textI32ArrayDataPtr
+public import Lanius.Mini.Frontend.P.textMem
+public import Lanius.Mini.Frontend.P.textNone
+public import Lanius.Mini.Frontend.P.textOk
+public import Lanius.Mini.Frontend.P.textOption
+public import Lanius.Mini.Frontend.P.textOptionTy
+public import Lanius.Mini.Frontend.P.textResult
+public import Lanius.Mini.Frontend.P.textResultTy
+public import Lanius.Mini.Frontend.P.textSome
 
 @[expose] public section
 

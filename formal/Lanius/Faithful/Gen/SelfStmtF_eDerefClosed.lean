@@ -1,7 +1,13 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.eArraySliceClosed
 public import Lanius.Mini.Frontend.P.eDerefClosed
+public import Lanius.Mini.Frontend.P.eIndexClosed
+public import Lanius.Mini.Frontend.P.ePlaceAtClosed
+public import Lanius.Mini.Frontend.P.ePlaceFieldClosed
+public import Lanius.Mini.Frontend.P.setPlaceClosed
+public import Lanius.Mini.Frontend.P.setPlaceOpClosed
 
 @[expose] public section
 

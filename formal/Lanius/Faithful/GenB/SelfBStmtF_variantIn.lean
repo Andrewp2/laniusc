@@ -3,6 +3,12 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_variantIn
+public import Lanius.Mini.Frontend.P.enumVariant
+public import Lanius.Mini.Frontend.P.paramTy
+public import Lanius.Mini.Frontend.P.primTy
+public import Lanius.Mini.Frontend.P.scalarSrc
+public import Lanius.Mini.Frontend.P.srcTy
+public import Lanius.Mini.Frontend.P.variantByPath
 public import Lanius.Mini.Frontend.P.variantIn
 
 @[expose] public section

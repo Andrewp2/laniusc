@@ -11,9 +11,13 @@ public import Lanius.Faithful.GenB.SelfBStmtN1
 public import Lanius.Faithful.GenB.SelfBStmtN4
 import all Lanius.Faithful.Gen.SelfSrcC_longer
 import all Lanius.Faithful.Gen.SelfStmtC_longer
-import all Lanius.Mini.Compiler.P.callAgrees
+import all Lanius.Mini.Compiler.P.Expr_isAtom
+import all Lanius.Mini.Compiler.P.Expr_mentions
+import all Lanius.Mini.Compiler.P.Expr_subst
+import all Lanius.Mini.Compiler.P.Stmt_factsAfter
 import all Lanius.Mini.Compiler.P.killShared
 import all Lanius.Mini.Compiler.P.longer
+import all Lanius.Mini.Compiler.P.trimFacts
 
 @[expose] public section
 

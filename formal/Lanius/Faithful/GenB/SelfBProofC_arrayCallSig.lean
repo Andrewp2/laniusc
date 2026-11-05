@@ -13,10 +13,12 @@ public import Lanius.Faithful.GenB.SelfBStmtN0
 public import Lanius.Faithful.GenB.SelfBStmtN1
 import all Lanius.Faithful.Gen.SelfSrcC_arrayCallSig
 import all Lanius.Faithful.Gen.SelfStmtC_arrayCallSig
-import all Lanius.Mini.Compiler.P.SrcType_same
-import all Lanius.Mini.Compiler.P.arrayCallSig
-import all Lanius.Mini.Compiler.P.bindingBytes
-import all Lanius.Mini.Compiler.P.lowerTagged
+import all Lanius.Mini.Compiler.P.SrcEff_passesSlices
+import all Lanius.Mini.Compiler.P.SrcStmt_depth
+import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.arrayArgs
+import all Lanius.Mini.Compiler.P.paramsSize
+import all Lanius.Mini.Compiler.P.viewedType
 
 @[expose] public section
 

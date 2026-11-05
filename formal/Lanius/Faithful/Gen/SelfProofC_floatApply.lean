@@ -9,7 +9,11 @@ public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
 public import Lanius.Faithful.Gen.SelfStmtC_arithUint
 public import Lanius.Faithful.Gen.SelfStmtC_floatApply
 import all Lanius.Faithful.Gen.SelfSrcC_floatApply
+import all Lanius.Mini.Compiler.P.arith
 import all Lanius.Mini.Compiler.P.floatApply
+import all Lanius.Mini.Compiler.P.floatArith
+import all Lanius.Mini.Compiler.P.floatCompare
+import all Lanius.Mini.Compiler.P.floatOrder
 
 public section
 

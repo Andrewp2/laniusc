@@ -3,8 +3,11 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelF_assertClosed
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.assertClosed
 public import Lanius.Mini.Frontend.P.closeFuncs
+public import Lanius.Mini.Frontend.P.closeParams
+public import Lanius.Mini.Frontend.P.closeRet
+public import Lanius.Mini.Frontend.P.closeStmt
+public import Lanius.Mini.Frontend.P.srcFunc
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

@@ -3,7 +3,20 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_findMethodAt
+public import Lanius.Mini.Frontend.P.assertArg
+public import Lanius.Mini.Frontend.P.assertOf
+public import Lanius.Mini.Frontend.P.assignOpOf
+public import Lanius.Mini.Frontend.P.assignTarget
+public import Lanius.Mini.Frontend.P.callStmt
+public import Lanius.Mini.Frontend.P.compoundEff
+public import Lanius.Mini.Frontend.P.compoundFieldEval
+public import Lanius.Mini.Frontend.P.compoundOp
+public import Lanius.Mini.Frontend.P.discardOf
+public import Lanius.Mini.Frontend.P.freeOf
+public import Lanius.Mini.Frontend.P.freeShifted
 public import Lanius.Mini.Frontend.P.setPlaceOf
+public import Lanius.Mini.Frontend.P.setPlaceOpOf
+public import Lanius.Mini.Frontend.P.setPlaceOpValue
 
 @[expose] public section
 

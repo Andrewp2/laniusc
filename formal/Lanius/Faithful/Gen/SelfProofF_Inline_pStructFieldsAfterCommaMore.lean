@@ -6,6 +6,8 @@ public import Lanius.Faithful.Gen.SelfSrcF_Inline_pStructFieldsAfterCommaMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pStructFieldsAfterCommaMore
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pStructFieldsAfterCommaMore
 import all Lanius.Mini.Frontend.P.Inline_pStructFieldsAfterCommaMore
+import all Lanius.Mini.Frontend.P.Inline_pStructFieldsAfterCommaTrailing
+import all Lanius.Mini.Frontend.P.Inline_pStructFieldsEnd
 
 public section
 

@@ -4,6 +4,7 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelC_arities
 public import Lanius.Faithful.GenB.SelfBModelC_larger
 public import Lanius.Mini.Compiler.P.arities
+public import Lanius.Mini.Compiler.P.compileFuncs
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.Types
 

@@ -4,6 +4,14 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_assertClosed
 public import Lanius.Mini.Frontend.P.assertClosed
+public import Lanius.Mini.Frontend.P.closeParams
+public import Lanius.Mini.Frontend.P.closeRet
+public import Lanius.Mini.Frontend.P.closeStmt
+public import Lanius.Mini.Frontend.P.consFunc
+public import Lanius.Mini.Frontend.P.consFuncTail
+public import Lanius.Mini.Frontend.P.consSrcParam
+public import Lanius.Mini.Frontend.P.setFieldEvalClosed
+public import Lanius.Mini.Frontend.P.srcFunc
 
 @[expose] public section
 

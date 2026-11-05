@@ -18,6 +18,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_namesFieldBase
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 import all Lanius.Faithful.Gen.SelfSrcF_externBody
 import all Lanius.Mini.Frontend.P.externBody
+import all Lanius.Mini.Frontend.P.externFunc
 
 public section
 

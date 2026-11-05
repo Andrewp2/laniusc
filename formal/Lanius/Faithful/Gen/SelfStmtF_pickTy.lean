@@ -1,7 +1,20 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.arrayParts
+public import Lanius.Mini.Frontend.P.barePrim
+public import Lanius.Mini.Frontend.P.bindTy
+public import Lanius.Mini.Frontend.P.expectedArray
+public import Lanius.Mini.Frontend.P.exprTy
+public import Lanius.Mini.Frontend.P.findBind
+public import Lanius.Mini.Frontend.P.indexElem
+public import Lanius.Mini.Frontend.P.paramNamed
+public import Lanius.Mini.Frontend.P.paramSpelling
 public import Lanius.Mini.Frontend.P.pickTy
+public import Lanius.Mini.Frontend.P.primIf
+public import Lanius.Mini.Frontend.P.repeatTy
+public import Lanius.Mini.Frontend.P.sameOrNone
+public import Lanius.Mini.Frontend.P.sliceElem
 
 @[expose] public section
 

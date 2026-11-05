@@ -9,11 +9,16 @@ public import Lanius.Faithful.GenB.SelfBModelN2
 public import Lanius.Faithful.GenB.SelfBModelN6
 public import Lanius.Faithful.GenB.SelfBModelN7
 public import Lanius.Mini.Compiler.P.SrcExpr_guard
+public import Lanius.Mini.Compiler.P.SrcType_isScalar
 public import Lanius.Mini.Compiler.P.SrcType_same
-public import Lanius.Mini.Compiler.P.UintTy_half
-public import Lanius.Mini.Compiler.P.bindingBytes
-public import Lanius.Mini.Compiler.P.repeatType
-public import Lanius.Mini.Compiler.P.strStores
+public import Lanius.Mini.Compiler.P.SrcType_size
+public import Lanius.Mini.Compiler.P.argBytes
+public import Lanius.Mini.Compiler.P.arrayArgs
+public import Lanius.Mini.Compiler.P.blockAt
+public import Lanius.Mini.Compiler.P.blockLimit
+public import Lanius.Mini.Compiler.P.lookup
+public import Lanius.Mini.Compiler.P.lowerValue
+public import Lanius.Mini.Compiler.P.packedWidth
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.Types
 

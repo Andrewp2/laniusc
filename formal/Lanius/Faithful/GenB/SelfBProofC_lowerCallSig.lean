@@ -19,10 +19,11 @@ public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcC_lowerCallSig
 import all Lanius.Faithful.Gen.SelfStmtC_lowerCallSig
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
+import all Lanius.Mini.Compiler.P.SrcExpr_lower
 import all Lanius.Mini.Compiler.P.SrcType_same
-import all Lanius.Mini.Compiler.P.UintTy_half
-import all Lanius.Mini.Compiler.P.lowerApply
-import all Lanius.Mini.Compiler.P.repeatType
+import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.lookup
+import all Lanius.Mini.Compiler.P.lowerValue
 
 @[expose] public section
 

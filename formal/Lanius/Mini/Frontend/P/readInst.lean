@@ -1,8 +1,7 @@
 module
 
 public import Lanius.Mini.Frontend.Types
-import Lanius.Mini.Compiler.P.arithShiftRight
-import Lanius.Mini.Frontend.P.namesFieldBase
+import Lanius.Mini.Frontend.P.projectionFunc
 import Lanius.Mini.Frontend.P.projectionRet
 import Lanius.Mini.Frontend.P.readDeclInst
 
@@ -17,36 +16,5 @@ def readInst (fuel : Nat) (decls : Decls) (inst : Inst) : Option MFunc :=
   match decls.fns[inst.decl]? with
   | none => projectionFunc (projectionRet fuel decls inst) inst decls
   | some fd => readDeclInst fuel decls fd inst
-
-mutual
-/-- The function instances an expression calls, in order (a callee before its arguments'). -/
-def effCalls (x : MEff) : List Inst :=
-  match x with
-  | .xPure e => []
-  | .xCall inst args => inst :: effsCalls args
-  | .xApply op l r => effCalls l ++ effCalls r
-  | .xNeg a => effCalls a
-  | .xNot a => effCalls a
-  | .xCast t a => effCalls a
-  | .xIndex s i => effCalls i
-  | .xStruct t fs => effsCalls fs
-  | .xVariant t k ps => effsCalls ps
-  | .xMatch s ety t bs vs => effCalls s ++ effsCalls vs
-  | .xDivide op l r => effCalls l ++ effCalls r
-  | .xStride sl => []
-  | .xArraySlice e sl => []
-  | .xHost id args => effsCalls args
-  | .xIf c t a b => effCalls c ++ (effCalls a ++ effCalls b)
-  | .xLet id t v rt b => effCalls v ++ effCalls b
-  | .xLen sl => []
-  | .xStr cs => []
-  | .xDeref dty a => effCalls a
-  | .xPlaceField b j => effCalls b
-  | .xPlaceAt b i => effCalls b ++ effCalls i
-def effsCalls (xs : List MEff) : List Inst :=
-  match xs with
-  | [] => []
-  | x :: rest => effCalls x ++ effsCalls rest
-end
 
 end Lanius.Mini

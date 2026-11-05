@@ -2,10 +2,11 @@ module
 
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelC_Expr_agrees
-public import Lanius.Mini.Compiler.P.BinOp_folds
+public import Lanius.Mini.Compiler.P.DivOp_number
 public import Lanius.Mini.Compiler.P.Expr_agrees
-public import Lanius.Mini.Compiler.P.Lists_empty
-public import Lanius.Mini.Compiler.P.Word_narrows
+public import Lanius.Mini.Compiler.P.MemWidth_bytes
+public import Lanius.Mini.Compiler.P.Syscall_number
+public import Lanius.Mini.Compiler.P.Word_number
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.Types
 

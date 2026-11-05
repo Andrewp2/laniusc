@@ -14,7 +14,15 @@ public import Lanius.Faithful.Gen.SelfStmtC_longer
 public import Lanius.Faithful.Gen.SelfStmtC_optimizeIte
 public import Lanius.Faithful.Gen.SelfStmtC_optimizeLeft
 import all Lanius.Faithful.Gen.SelfSrcC_Inline_factOr
+import all Lanius.Mini.Compiler.P.Inline_branchAgrees
+import all Lanius.Mini.Compiler.P.Inline_deadAgrees
 import all Lanius.Mini.Compiler.P.Inline_factOr
+import all Lanius.Mini.Compiler.P.Inline_iteAgrees
+import all Lanius.Mini.Compiler.P.Inline_kept
+import all Lanius.Mini.Compiler.P.Inline_loopAgrees
+import all Lanius.Mini.Compiler.P.Inline_optimizeSequence
+import all Lanius.Mini.Compiler.P.Inline_seqAgrees
+import all Lanius.Mini.Compiler.P.Inline_unknown
 
 public section
 

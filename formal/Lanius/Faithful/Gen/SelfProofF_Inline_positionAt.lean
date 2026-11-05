@@ -20,7 +20,22 @@ public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_noTrees
 public import Lanius.Faithful.Gen.SelfStmtF_rootInsts
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_positionAt
+import all Lanius.Mini.Frontend.P.Inline_aliasNameAt
+import all Lanius.Mini.Frontend.P.Inline_collectFileNext
+import all Lanius.Mini.Frontend.P.Inline_constNameAt
+import all Lanius.Mini.Frontend.P.Inline_findAliasAt
+import all Lanius.Mini.Frontend.P.Inline_findConstAt
+import all Lanius.Mini.Frontend.P.Inline_findFnAt
+import all Lanius.Mini.Frontend.P.Inline_findTypeAt
+import all Lanius.Mini.Frontend.P.Inline_fnNameAt
+import all Lanius.Mini.Frontend.P.Inline_instIndexAt
+import all Lanius.Mini.Frontend.P.Inline_moduleAt
+import all Lanius.Mini.Frontend.P.Inline_paramSpellingAt
 import all Lanius.Mini.Frontend.P.Inline_positionAt
+import all Lanius.Mini.Frontend.P.Inline_rootAt
+import all Lanius.Mini.Frontend.P.Inline_seedAt
+import all Lanius.Mini.Frontend.P.Inline_typeNameAt
+import all Lanius.Mini.Frontend.P.Inline_typeOnlyAt
 
 public section
 

@@ -3,14 +3,14 @@ module
 public import Lanius.Mini.LowerExpr
 public import Lanius.Mini.Views
 -- import all uses: Lanius.Mini.Compiler
-import all Lanius.Mini.Compiler.P.BinOp_folds
-import all Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.P.BinOp_unit
+import all Lanius.Mini.Compiler.P.Expr_literal
+import all Lanius.Mini.Compiler.P.Lists_length
+import all Lanius.Mini.Compiler.P.SrcExpr_lower
+import all Lanius.Mini.Compiler.P.SrcOp_lower
+import all Lanius.Mini.Compiler.P.SrcStmt_lower
 import all Lanius.Mini.Compiler.P.SrcType_same
-import all Lanius.Mini.Compiler.P.Stmt_kills
-import all Lanius.Mini.Compiler.P.arrayCallSig
-import all Lanius.Mini.Compiler.P.conjunction
-import all Lanius.Mini.Compiler.P.longer
-import all Lanius.Mini.Compiler.P.lowerApply
+import all Lanius.Mini.Compiler.P.assigned
 -- end import all uses
 
 @[expose] public section

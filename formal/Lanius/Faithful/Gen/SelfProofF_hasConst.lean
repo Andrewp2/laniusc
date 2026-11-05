@@ -27,7 +27,23 @@ public import Lanius.Faithful.Gen.SelfStmtF_repeatEff
 public import Lanius.Faithful.Gen.SelfStmtF_scalarOf
 public import Lanius.Faithful.Gen.SelfStmtF_typeDeclAt
 import all Lanius.Faithful.Gen.SelfSrcF_hasConst
+import all Lanius.Mini.Frontend.P.armEff
+import all Lanius.Mini.Frontend.P.declInst
+import all Lanius.Mini.Frontend.P.effBinary
+import all Lanius.Mini.Frontend.P.effCalled
+import all Lanius.Mini.Frontend.P.effCasts
+import all Lanius.Mini.Frontend.P.fieldExpects
 import all Lanius.Mini.Frontend.P.hasConst
+import all Lanius.Mini.Frontend.P.inferArgs
+import all Lanius.Mini.Frontend.P.inferEff
+import all Lanius.Mini.Frontend.P.knownArgs
+import all Lanius.Mini.Frontend.P.namedInferred
+import all Lanius.Mini.Frontend.P.paramExpects
+import all Lanius.Mini.Frontend.P.pureList
+import all Lanius.Mini.Frontend.P.skipExpects
+import all Lanius.Mini.Frontend.P.variantExpects
+import all Lanius.Mini.Frontend.P.xStructOf
+import all Lanius.Mini.Frontend.P.xVariantOf
 
 public section
 

@@ -2,9 +2,14 @@ module
 
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.GenB.SelfBModelC_SrcType_same
-public import Lanius.Mini.Compiler.P.SrcType_same
-public import Lanius.Mini.Compiler.P.UintTy_half
+public import Lanius.Mini.Compiler.P.SrcType_floatTy
+public import Lanius.Mini.Compiler.P.SrcType_isBool
+public import Lanius.Mini.Compiler.P.SrcType_isFloatAny
+public import Lanius.Mini.Compiler.P.SrcType_isI32
+public import Lanius.Mini.Compiler.P.SrcType_isIsize
+public import Lanius.Mini.Compiler.P.SrcType_sintKind
 public import Lanius.Mini.Compiler.P.UintTy_isWide
+public import Lanius.Mini.Compiler.P.fieldOffset
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.Types
 

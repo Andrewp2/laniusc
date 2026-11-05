@@ -11,8 +11,12 @@ public import Lanius.Faithful.GenB.SelfBStmtC_lowerLocal
 public import Lanius.Faithful.GenB.SelfBStmtC_sintToUint
 import all Lanius.Faithful.Gen.SelfSrcC_sintToUint
 import all Lanius.Faithful.Gen.SelfStmtC_sintToUint
-import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.SrcType_isBool
+import all Lanius.Mini.Compiler.P.SrcType_isFloatAny
+import all Lanius.Mini.Compiler.P.SrcType_isPtr
+import all Lanius.Mini.Compiler.P.SrcType_isScalar
 import all Lanius.Mini.Compiler.P.UintTy_isWide
+import all Lanius.Mini.Compiler.P.UintTy_signedWord
 
 @[expose] public section
 

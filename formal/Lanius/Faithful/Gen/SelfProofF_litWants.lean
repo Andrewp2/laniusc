@@ -14,6 +14,11 @@ public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfStmtF_litWants
 import all Lanius.Faithful.Gen.SelfSrcF_litWants
+import all Lanius.Mini.Frontend.P.eqOn
+import all Lanius.Mini.Frontend.P.litIfOf
+import all Lanius.Mini.Frontend.P.litLastValue
+import all Lanius.Mini.Frontend.P.litTest
+import all Lanius.Mini.Frontend.P.litValueIf
 import all Lanius.Mini.Frontend.P.litWants
 
 public section

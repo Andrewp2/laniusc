@@ -1,7 +1,14 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.closeEff
+public import Lanius.Mini.Frontend.P.consSrcEff
+public import Lanius.Mini.Frontend.P.eIfClosed
+public import Lanius.Mini.Frontend.P.eLetClosed
+public import Lanius.Mini.Frontend.P.eMatchClosed
 public import Lanius.Mini.Frontend.P.eStructClosed
+public import Lanius.Mini.Frontend.P.eVariantClosed
+public import Lanius.Mini.Frontend.P.letEvalClosed
 
 @[expose] public section
 

@@ -14,41 +14,4 @@ def setEvalClosed (id : Nat) (x : Option SrcEff) : Option SrcStmt :=
   | none => none
   | some e => some (SrcStmt.setEval id e)
 
-def ifEvalClosed (c : Option SrcEff) (a : Option SrcStmt) (b : Option SrcStmt) : Option SrcStmt :=
-  match c with
-  | none => none
-  | some e =>
-    match a with
-    | none => none
-    | some x =>
-      match b with
-      | none => none
-      | some y => some (SrcStmt.ifEval e x y)
-
-def whileEvalClosed (c : Option SrcEff) (body : Option SrcStmt) : Option SrcStmt :=
-  match c with
-  | none => none
-  | some e =>
-    match body with
-    | none => none
-    | some b => some (SrcStmt.whileEval e b)
-
-def returnEvalClosed (x : Option SrcEff) : Option SrcStmt :=
-  match x with
-  | none => none
-  | some e => some (SrcStmt.returnEval e)
-
-def discardClosed (x : Option SrcEff) : Option SrcStmt :=
-  match x with
-  | none => none
-  | some e => some (SrcStmt.discard e)
-
-def setIndexEvalClosed (s : Nat) (i : Option SrcEff) (v : Option SrcEff) : Option SrcStmt :=
-  match i with
-  | none => none
-  | some x =>
-    match v with
-    | none => none
-    | some y => some (SrcStmt.setIndexEval s x y)
-
 end Lanius.Mini

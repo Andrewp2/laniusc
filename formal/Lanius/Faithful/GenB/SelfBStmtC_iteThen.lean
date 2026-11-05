@@ -4,6 +4,7 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_iteThen
 public import Lanius.Mini.Compiler.P.iteThen
+public import Lanius.Mini.Compiler.P.storeOne
 
 @[expose] public section
 

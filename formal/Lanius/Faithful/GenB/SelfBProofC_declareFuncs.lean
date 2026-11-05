@@ -9,7 +9,7 @@ public import Lanius.Faithful.GenB.SelfBStmtC_declareFuncs
 public import Lanius.Faithful.GenB.SelfBStmtC_lowerBody
 import all Lanius.Faithful.Gen.SelfSrcC_declareFuncs
 import all Lanius.Faithful.Gen.SelfStmtC_declareFuncs
-import all Lanius.Mini.Compiler.P.lowerBody
+import all Lanius.Mini.Compiler.P.declareFunc
 
 @[expose] public section
 

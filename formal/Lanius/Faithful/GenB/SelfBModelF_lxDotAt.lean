@@ -9,9 +9,14 @@ public import Lanius.Faithful.GenB.SelfBModelF_lxSpaceEnd
 public import Lanius.Faithful.GenB.SelfBModelF_lxSymbolStart
 public import Lanius.Faithful.GenB.SelfBModelN1
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.lxDotAt
+public import Lanius.Mini.Frontend.P.lxDigit
+public import Lanius.Mini.Frontend.P.lxDrop
+public import Lanius.Mini.Frontend.P.lxIdentStart
+public import Lanius.Mini.Frontend.P.lxOneAt
+public import Lanius.Mini.Frontend.P.lxRaw
+public import Lanius.Mini.Frontend.P.lxShift
+public import Lanius.Mini.Frontend.P.lxSpace
 public import Lanius.Mini.Frontend.P.lxSymbolStart
-public import Lanius.Mini.Frontend.P.wideLeftStmt
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

@@ -1,7 +1,13 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Compiler.P.Stmt_deadBefore
+public import Lanius.Mini.Compiler.P.Stmt_optimize
+public import Lanius.Mini.Compiler.P.loopUnlessZero
+public import Lanius.Mini.Compiler.P.optimizeFuncs
 public import Lanius.Mini.Compiler.P.optimizeIte
+public import Lanius.Mini.Compiler.P.optimizeLoop
+public import Lanius.Mini.Compiler.P.optimizeProgram
 
 @[expose] public section
 

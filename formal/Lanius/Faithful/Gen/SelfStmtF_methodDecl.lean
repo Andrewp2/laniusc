@@ -1,7 +1,30 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Frontend.P.aliasDecls
+public import Lanius.Mini.Frontend.P.collectFront
+public import Lanius.Mini.Frontend.P.externTree
+public import Lanius.Mini.Frontend.P.fnsDecls
+public import Lanius.Mini.Frontend.P.hostExtern
+public import Lanius.Mini.Frontend.P.hostId
+public import Lanius.Mini.Frontend.P.implMethods
+public import Lanius.Mini.Frontend.P.itemDecls
 public import Lanius.Mini.Frontend.P.methodDecl
+public import Lanius.Mini.Frontend.P.methodsOf
+public import Lanius.Mini.Frontend.P.textFillSecureBytes
+public import Lanius.Mini.Frontend.P.textLaniusStd
+public import Lanius.Mini.Frontend.P.textMonotonicRead
+public import Lanius.Mini.Frontend.P.textReadStdin
+public import Lanius.Mini.Frontend.P.textSleepMsI32
+public import Lanius.Mini.Frontend.P.textSystemRead
+public import Lanius.Mini.Frontend.P.textWriteByte
+public import Lanius.Mini.Frontend.P.textWriteNewline
+public import Lanius.Mini.Frontend.P.textWriteStderr
+public import Lanius.Mini.Frontend.P.textWriteStdout
+public import Lanius.Mini.Frontend.P.textWriteText
+public import Lanius.Mini.Frontend.P.typeDecls
+public import Lanius.Mini.Frontend.P.withImpl
+public import Lanius.Mini.Frontend.P.withImplDecl
 
 @[expose] public section
 

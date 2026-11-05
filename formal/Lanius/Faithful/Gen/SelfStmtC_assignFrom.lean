@@ -1,7 +1,11 @@
 module
 
 public import Lanius.Faithful.Gen.SelfRep
+public import Lanius.Mini.Compiler.P.armGuard
 public import Lanius.Mini.Compiler.P.assignFrom
+public import Lanius.Mini.Compiler.P.lowerArm
+public import Lanius.Mini.Compiler.P.lowerArmValue
+public import Lanius.Mini.Compiler.P.lowerArms
 
 @[expose] public section
 

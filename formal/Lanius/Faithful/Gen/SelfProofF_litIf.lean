@@ -41,7 +41,22 @@ public import Lanius.Faithful.Gen.SelfStmtF_tryLet
 public import Lanius.Faithful.Gen.SelfStmtF_typeDeclAt
 public import Lanius.Faithful.Gen.SelfStmtF_whileEvalOf
 import all Lanius.Faithful.Gen.SelfSrcF_litIf
+import all Lanius.Mini.Frontend.P.blockOf
+import all Lanius.Mini.Frontend.P.consParam
+import all Lanius.Mini.Frontend.P.contractThen
+import all Lanius.Mini.Frontend.P.contractsOf
+import all Lanius.Mini.Frontend.P.funcBody
+import all Lanius.Mini.Frontend.P.funcParams
+import all Lanius.Mini.Frontend.P.funcRet
+import all Lanius.Mini.Frontend.P.litBind
 import all Lanius.Mini.Frontend.P.litIf
+import all Lanius.Mini.Frontend.P.paramToken
+import all Lanius.Mini.Frontend.P.paramTyOf
+import all Lanius.Mini.Frontend.P.paramsOf
+import all Lanius.Mini.Frontend.P.refTy
+import all Lanius.Mini.Frontend.P.resultOf
+import all Lanius.Mini.Frontend.P.retExpected
+import all Lanius.Mini.Frontend.P.retOfTy
 
 public section
 

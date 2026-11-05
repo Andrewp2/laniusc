@@ -3,6 +3,20 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.Inline_pLeTail
+public import Lanius.Mini.Frontend.P.Inline_pLetInit
+public import Lanius.Mini.Frontend.P.Inline_pLetStmt
+public import Lanius.Mini.Frontend.P.Inline_pLetType
+public import Lanius.Mini.Frontend.P.Inline_pLetTypeNone
+public import Lanius.Mini.Frontend.P.Inline_pLtTail
+public import Lanius.Mini.Frontend.P.Inline_pMatchArmsAfterCommaMore
+public import Lanius.Mini.Frontend.P.Inline_pMatchArmsAfterCommaTrailing
+public import Lanius.Mini.Frontend.P.Inline_pMatchArmsEnd
+public import Lanius.Mini.Frontend.P.Inline_pMatchArmsMore
+public import Lanius.Mini.Frontend.P.Inline_pMatchArmsNone
+public import Lanius.Mini.Frontend.P.Inline_pMatchArmsSome
+public import Lanius.Mini.Frontend.P.Inline_pMatchExpr
+public import Lanius.Mini.Frontend.P.Inline_pMemberTypeArgsNone
+public import Lanius.Mini.Frontend.P.Inline_pMemberTypeArgsSome
 
 @[expose] public section
 

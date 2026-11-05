@@ -11,7 +11,7 @@ public import Lanius.Faithful.GenB.SelfBStmtC_lowerCallSig
 public import Lanius.Faithful.GenB.SelfBStmtC_lowerSetCallArgs
 import all Lanius.Faithful.Gen.SelfSrcC_lowerSetCallArgs
 import all Lanius.Faithful.Gen.SelfStmtC_lowerSetCallArgs
-import all Lanius.Mini.Compiler.P.lowerApply
+import all Lanius.Mini.Compiler.P.isOne
 
 @[expose] public section
 

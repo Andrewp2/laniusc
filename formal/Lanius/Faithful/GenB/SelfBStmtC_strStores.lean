@@ -3,6 +3,17 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_strStores
+public import Lanius.Mini.Compiler.P.blockAt
+public import Lanius.Mini.Compiler.P.blockLoad
+public import Lanius.Mini.Compiler.P.blockStore
+public import Lanius.Mini.Compiler.P.elementLoads
+public import Lanius.Mini.Compiler.P.elementStores
+public import Lanius.Mini.Compiler.P.idAbsent
+public import Lanius.Mini.Compiler.P.lowerAssert
+public import Lanius.Mini.Compiler.P.lowerSetIndexAny
+public import Lanius.Mini.Compiler.P.lowerSetIndexEval
+public import Lanius.Mini.Compiler.P.lowerStr
+public import Lanius.Mini.Compiler.P.packedWidth
 public import Lanius.Mini.Compiler.P.strStores
 
 @[expose] public section

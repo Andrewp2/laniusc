@@ -2,6 +2,11 @@ module
 
 public import Lanius.Mini.Reading.Det.Arms
 import all Lanius.Mini.Compiler.P.arithShiftRight
+import all Lanius.Mini.Compiler.P.offsetOrArith
+import all Lanius.Mini.Compiler.P.order
+import all Lanius.Mini.Compiler.P.orderSint
+import all Lanius.Mini.Compiler.P.orderUint
+import all Lanius.Mini.Compiler.P.signKey
 
 @[expose] public section
 /-! # Determinism: a match expression's arm order

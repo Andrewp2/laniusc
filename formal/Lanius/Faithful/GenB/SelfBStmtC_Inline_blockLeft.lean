@@ -4,7 +4,19 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_Expr_agrees
 public import Lanius.Faithful.GenB.SelfBModelC_Inline_blockLeft
+public import Lanius.Mini.Compiler.P.Inline_binaryAgrees
 public import Lanius.Mini.Compiler.P.Inline_blockLeft
+public import Lanius.Mini.Compiler.P.Inline_compareAgrees
+public import Lanius.Mini.Compiler.P.Inline_declareEnumIn
+public import Lanius.Mini.Compiler.P.Inline_declareFuncsAfter
+public import Lanius.Mini.Compiler.P.Inline_declareIn
+public import Lanius.Mini.Compiler.P.Inline_declareParamsAfter
+public import Lanius.Mini.Compiler.P.Inline_declareStructIn
+public import Lanius.Mini.Compiler.P.Inline_declareTypesAfter
+public import Lanius.Mini.Compiler.P.Inline_declareVariantsAfter
+public import Lanius.Mini.Compiler.P.Inline_fpAgrees
+public import Lanius.Mini.Compiler.P.Inline_negAgrees
+public import Lanius.Mini.Compiler.P.Inline_unitAgrees
 
 @[expose] public section
 

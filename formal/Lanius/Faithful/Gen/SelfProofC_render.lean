@@ -5,7 +5,7 @@ public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcC_render
 public import Lanius.Faithful.Gen.SelfStmtC_render
 import all Lanius.Faithful.Gen.SelfSrcC_render
-import all Lanius.Mini.Compiler.P.render
+import all Lanius.Mini.Compiler.P.UintTy_code
 
 public section
 

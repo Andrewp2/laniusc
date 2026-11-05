@@ -2,6 +2,12 @@ module
 
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Mini.Frontend.P.Inline_pIdentPlain
+public import Lanius.Mini.Frontend.P.Inline_pIfStmt
+public import Lanius.Mini.Frontend.P.Inline_pImplFn
+public import Lanius.Mini.Frontend.P.Inline_pImplInherent
+public import Lanius.Mini.Frontend.P.Inline_pImplMethod
+public import Lanius.Mini.Frontend.P.Inline_pImplMethodPub
+public import Lanius.Mini.Frontend.P.Inline_pImplMethodsMore
 
 @[expose] public section
 

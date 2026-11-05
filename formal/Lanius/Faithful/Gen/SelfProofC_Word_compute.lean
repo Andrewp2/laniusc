@@ -8,6 +8,8 @@ public import Lanius.Faithful.Gen.SelfStmtC_Word_compute
 public import Lanius.Faithful.Gen.SelfStmtC_declareProgram
 import all Lanius.Faithful.Gen.SelfSrcC_Word_compute
 import all Lanius.Mini.Compiler.P.Word_compute
+import all Lanius.Mini.Compiler.P.Word_sameOperand
+import all Lanius.Mini.Compiler.P.Word_test
 
 public section
 

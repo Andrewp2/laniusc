@@ -6,6 +6,10 @@ public import Lanius.Faithful.GenB.SelfBModelN2
 public import Lanius.Faithful.GenB.SelfBModelN4
 public import Lanius.Mini.Compiler.P.compileSource
 public import Lanius.Mini.Compiler.P.packRound
+public import Lanius.Mini.Compiler.P.packRounds
+public import Lanius.Mini.Compiler.P.packWord
+public import Lanius.Mini.Compiler.P.roundEnd
+public import Lanius.Mini.Compiler.P.usizeWords
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.Types
 

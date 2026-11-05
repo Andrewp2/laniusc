@@ -10,7 +10,11 @@ public import Lanius.Faithful.Gen.SelfStmtC_declareFuncs
 public import Lanius.Faithful.Gen.SelfStmtC_declareProgram
 public import Lanius.Faithful.Gen.SelfStmtC_lowerBody
 import all Lanius.Faithful.Gen.SelfSrcC_declareProgram
+import all Lanius.Mini.Compiler.P.BinOp_compute
 import all Lanius.Mini.Compiler.P.declareProgram
+import all Lanius.Mini.Compiler.P.funcsReturn
+import all Lanius.Mini.Compiler.P.lowBits
+import all Lanius.Mini.Compiler.P.signedKey
 
 public section
 

@@ -3,7 +3,11 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelF_Inline_findMethodAt
+public import Lanius.Mini.Frontend.P.effSliceLocal
+public import Lanius.Mini.Frontend.P.fieldOfTy
 public import Lanius.Mini.Frontend.P.fieldValue
+public import Lanius.Mini.Frontend.P.methodOfTy
+public import Lanius.Mini.Frontend.P.stepExpected
 
 @[expose] public section
 

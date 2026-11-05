@@ -17,7 +17,22 @@ public import Lanius.Faithful.Gen.SelfStmtC_guardAnd
 public import Lanius.Faithful.Gen.SelfStmtC_repeatType
 public import Lanius.Faithful.Gen.SelfStmtC_shortCircuit
 import all Lanius.Faithful.Gen.SelfSrcC_shortCircuit
+import all Lanius.Mini.Compiler.P.elementOf
+import all Lanius.Mini.Compiler.P.evalApply
+import all Lanius.Mini.Compiler.P.evalDivideUint
+import all Lanius.Mini.Compiler.P.evalLoad
+import all Lanius.Mini.Compiler.P.evalOperands
+import all Lanius.Mini.Compiler.P.evalPayload
+import all Lanius.Mini.Compiler.P.evalRight
+import all Lanius.Mini.Compiler.P.evalStruct
+import all Lanius.Mini.Compiler.P.evalStructOf
+import all Lanius.Mini.Compiler.P.evalTagged
+import all Lanius.Mini.Compiler.P.evalVariant
+import all Lanius.Mini.Compiler.P.operandGuard
+import all Lanius.Mini.Compiler.P.overflowGuard
 import all Lanius.Mini.Compiler.P.shortCircuit
+import all Lanius.Mini.Compiler.P.signedDiv
+import all Lanius.Mini.Compiler.P.unsignedDiv
 
 public section
 

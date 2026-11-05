@@ -12,22 +12,4 @@ namespace Lanius.Mini
 @[expose] def Inline.pIdentPlain : Nat :=
   274
 
-@[expose] def Inline.pIfStmt : Nat :=
-  77
-
-@[expose] def Inline.pImplFn : Nat :=
-  13
-
-@[expose] def Inline.pImplInherent : Nat :=
-  17
-
-@[expose] def Inline.pImplMethod : Nat :=
-  21
-
-@[expose] def Inline.pImplMethodPub : Nat :=
-  22
-
-@[expose] def Inline.pImplMethodsMore : Nat :=
-  23
-
 end Lanius.Mini

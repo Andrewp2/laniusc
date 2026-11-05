@@ -9,8 +9,11 @@ public import Lanius.Faithful.GenB.SelfBStmtF_closeFuncs
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_closeFuncs
 import all Lanius.Faithful.Gen.SelfStmtF_closeFuncs
-import all Lanius.Mini.Frontend.P.assertClosed
 import all Lanius.Mini.Frontend.P.closeFuncs
+import all Lanius.Mini.Frontend.P.closeParams
+import all Lanius.Mini.Frontend.P.closeRet
+import all Lanius.Mini.Frontend.P.closeStmt
+import all Lanius.Mini.Frontend.P.srcFunc
 
 @[expose] public section
 

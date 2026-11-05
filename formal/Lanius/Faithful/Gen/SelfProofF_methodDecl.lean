@@ -24,7 +24,30 @@ public import Lanius.Faithful.Gen.SelfStmtF_moduleOr
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_noTrees
 import all Lanius.Faithful.Gen.SelfSrcF_methodDecl
+import all Lanius.Mini.Frontend.P.aliasDecls
+import all Lanius.Mini.Frontend.P.collectFront
+import all Lanius.Mini.Frontend.P.externTree
+import all Lanius.Mini.Frontend.P.fnsDecls
+import all Lanius.Mini.Frontend.P.hostExtern
+import all Lanius.Mini.Frontend.P.hostId
+import all Lanius.Mini.Frontend.P.implMethods
+import all Lanius.Mini.Frontend.P.itemDecls
 import all Lanius.Mini.Frontend.P.methodDecl
+import all Lanius.Mini.Frontend.P.methodsOf
+import all Lanius.Mini.Frontend.P.textFillSecureBytes
+import all Lanius.Mini.Frontend.P.textLaniusStd
+import all Lanius.Mini.Frontend.P.textMonotonicRead
+import all Lanius.Mini.Frontend.P.textReadStdin
+import all Lanius.Mini.Frontend.P.textSleepMsI32
+import all Lanius.Mini.Frontend.P.textSystemRead
+import all Lanius.Mini.Frontend.P.textWriteByte
+import all Lanius.Mini.Frontend.P.textWriteNewline
+import all Lanius.Mini.Frontend.P.textWriteStderr
+import all Lanius.Mini.Frontend.P.textWriteStdout
+import all Lanius.Mini.Frontend.P.textWriteText
+import all Lanius.Mini.Frontend.P.typeDecls
+import all Lanius.Mini.Frontend.P.withImpl
+import all Lanius.Mini.Frontend.P.withImplDecl
 
 public section
 

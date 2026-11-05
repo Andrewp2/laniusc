@@ -18,32 +18,4 @@ def lowerAddress (pointer : Option Expr) (offset : Option Expr) : Option Expr :=
     | none => none
     | some o => some (Expr.binary Word.u64 BinOp.add p o)
 
-def lowerLoad (slot : Nat) (address : Option Expr) (body : Option Stmt) : Option Stmt :=
-  match address with
-  | none => none
-  | some a =>
-    match body with
-    | none => none
-    | some b => some (Stmt.seq (Stmt.loadByte slot a) b)
-
-def lowerStore (address : Option Expr) (value : Option Expr) : Option Stmt :=
-  match address with
-  | none => none
-  | some a =>
-    match value with
-    | none => none
-    | some v => some (Stmt.storeByte a v)
-
-/-- The bump allocator never frees, so a free only checks its operands' types. -/
-def lowerFree (shift : Nat) (pointer : Option Expr) (size : Option Expr) : Option Stmt :=
-  if shift < 32 then
-    match pointer with
-    | none => none
-    | some p =>
-      match size with
-      | none => none
-      | some s => some Stmt.skip
-  else
-    none
-
 end Lanius.Mini

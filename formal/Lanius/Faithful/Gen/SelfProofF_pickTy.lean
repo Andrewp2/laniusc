@@ -19,7 +19,20 @@ public import Lanius.Faithful.Gen.SelfStmtF_textSelf
 public import Lanius.Faithful.Gen.SelfStmtF_variantIn
 public import Lanius.Faithful.Gen.SelfStmtF_wideOf
 import all Lanius.Faithful.Gen.SelfSrcF_pickTy
+import all Lanius.Mini.Frontend.P.arrayParts
+import all Lanius.Mini.Frontend.P.barePrim
+import all Lanius.Mini.Frontend.P.bindTy
+import all Lanius.Mini.Frontend.P.expectedArray
+import all Lanius.Mini.Frontend.P.exprTy
+import all Lanius.Mini.Frontend.P.findBind
+import all Lanius.Mini.Frontend.P.indexElem
+import all Lanius.Mini.Frontend.P.paramNamed
+import all Lanius.Mini.Frontend.P.paramSpelling
 import all Lanius.Mini.Frontend.P.pickTy
+import all Lanius.Mini.Frontend.P.primIf
+import all Lanius.Mini.Frontend.P.repeatTy
+import all Lanius.Mini.Frontend.P.sameOrNone
+import all Lanius.Mini.Frontend.P.sliceElem
 
 public section
 

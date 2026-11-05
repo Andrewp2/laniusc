@@ -16,7 +16,10 @@ public import Lanius.Faithful.Gen.SelfStmtF_setIndexOrEval
 public import Lanius.Faithful.Gen.SelfStmtF_stringOpen
 public import Lanius.Faithful.Gen.SelfStmtF_whileEvalOf
 import all Lanius.Faithful.Gen.SelfSrcF_setFieldOrEval
+import all Lanius.Mini.Frontend.P.refRooted
+import all Lanius.Mini.Frontend.P.refTarget
 import all Lanius.Mini.Frontend.P.setFieldOrEval
+import all Lanius.Mini.Frontend.P.setPlaceValue
 
 public section
 

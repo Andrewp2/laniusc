@@ -13,32 +13,4 @@ def txOpEq : List Nat :=
   let t : List Nat := 61 :: [61]
   t
 
-def txOpNe : List Nat :=
-  let t : List Nat := 33 :: [61]
-  t
-
-def txOpLt : List Nat :=
-  let t : List Nat := [60]
-  t
-
-def txOpGt : List Nat :=
-  let t : List Nat := [62]
-  t
-
-def txOpLe : List Nat :=
-  let t : List Nat := 60 :: [61]
-  t
-
-def txOpGe : List Nat :=
-  let t : List Nat := 62 :: [61]
-  t
-
-def txOpShl : List Nat :=
-  let t : List Nat := 60 :: [60]
-  t
-
-def txOpShr : List Nat :=
-  let t : List Nat := 62 :: [62]
-  t
-
 end Lanius.Mini

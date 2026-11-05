@@ -5,8 +5,18 @@ public import Lanius.Faithful.GenB.SelfBModelF_depthLimit
 public import Lanius.Faithful.GenB.SelfBModelF_limExprs
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Frontend.P.depthLimit
+public import Lanius.Mini.Frontend.P.depthSum
+public import Lanius.Mini.Frontend.P.limArms
+public import Lanius.Mini.Frontend.P.limConst
+public import Lanius.Mini.Frontend.P.limEff
+public import Lanius.Mini.Frontend.P.limExpr
 public import Lanius.Mini.Frontend.P.limExprs
-public import Lanius.Mini.Frontend.P.limLeaf
+public import Lanius.Mini.Frontend.P.limNestEff
+public import Lanius.Mini.Frontend.P.limOne
+public import Lanius.Mini.Frontend.P.limParamSlots
+public import Lanius.Mini.Frontend.P.limSlots
+public import Lanius.Mini.Frontend.P.limStmt
+public import Lanius.Mini.Frontend.P.limTy
 public import Lanius.Mini.Frontend.Types
 
 @[expose] public section

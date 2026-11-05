@@ -3,7 +3,9 @@ module
 public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_lowerTagged
+public import Lanius.Mini.Compiler.P.lowerEnumValue
 public import Lanius.Mini.Compiler.P.lowerTagged
+public import Lanius.Mini.Compiler.P.viewedType
 
 @[expose] public section
 

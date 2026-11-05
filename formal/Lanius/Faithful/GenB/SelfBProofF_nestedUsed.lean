@@ -9,7 +9,7 @@ public import Lanius.Faithful.GenB.SelfBStmtF_nestedUsed
 public import Lanius.Faithful.GenB.SelfBStmtF_variantArm
 import all Lanius.Faithful.Gen.SelfSrcF_nestedUsed
 import all Lanius.Faithful.Gen.SelfStmtF_nestedUsed
-import all Lanius.Mini.Frontend.P.namesSome
+import all Lanius.Mini.Frontend.P.allNameSome
 
 @[expose] public section
 

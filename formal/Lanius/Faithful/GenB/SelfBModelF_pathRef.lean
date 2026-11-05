@@ -5,11 +5,14 @@ public import Lanius.Faithful.GenB.SelfBModelF_hasKids
 public import Lanius.Faithful.GenB.SelfBModelF_noTrees
 public import Lanius.Faithful.GenB.SelfBModelN2
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Frontend.P.Inline_pModTail
+public import Lanius.Mini.Frontend.P.Inline_pPathEnd
+public import Lanius.Mini.Frontend.P.Inline_pPathIdent
+public import Lanius.Mini.Frontend.P.Inline_pPathIdentArgs
 public import Lanius.Mini.Frontend.P.Inline_pPathMore
-public import Lanius.Mini.Frontend.P.hasKids
-public import Lanius.Mini.Frontend.P.isEmptyUsize
-public import Lanius.Mini.Frontend.P.noToken
+public import Lanius.Mini.Frontend.P.kid
+public import Lanius.Mini.Frontend.P.kidToken
+public import Lanius.Mini.Frontend.P.listItems
+public import Lanius.Mini.Frontend.P.nodeProd
 public import Lanius.Mini.Frontend.P.pathRef
 public import Lanius.Mini.Frontend.Types
 

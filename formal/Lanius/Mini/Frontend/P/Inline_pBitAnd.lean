@@ -12,46 +12,4 @@ namespace Lanius.Mini
 @[expose] def Inline.pBitAnd : Nat :=
   130
 
-@[expose] def Inline.pBitOr : Nat :=
-  124
-
-@[expose] def Inline.pBitXor : Nat :=
-  127
-
-@[expose] def Inline.pBlockStmt : Nat :=
-  84
-
-@[expose] def Inline.pBorTail : Nat :=
-  125
-
-@[expose] def Inline.pBreakStmt : Nat :=
-  82
-
-@[expose] def Inline.pCast : Nat :=
-  307
-
-@[expose] def Inline.pCastTypeName : Nat :=
-  310
-
-@[expose] def Inline.pCastTypePath : Nat :=
-  311
-
-@[expose] def Inline.pCastTypePathEnd : Nat :=
-  314
-
-@[expose] def Inline.pCastTypePathIdent : Nat :=
-  312
-
-@[expose] def Inline.pChar : Nat :=
-  178
-
-@[expose] def Inline.pCompare : Nat :=
-  137
-
-@[expose] def Inline.pConst : Nat :=
-  208
-
-@[expose] def Inline.pContinueStmt : Nat :=
-  83
-
 end Lanius.Mini

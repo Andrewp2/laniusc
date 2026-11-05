@@ -2,7 +2,15 @@ module
 
 public import Lanius.Faithful.Sim.Check
 public import Lanius.Mini.Compiler.P.SrcType_same
+public import Lanius.Mini.Compiler.P.SrcType_size
+public import Lanius.Mini.Compiler.P.fieldOffset
+public import Lanius.Mini.Compiler.P.norm
+public import Lanius.Mini.Compiler.P.wrap
 import all Lanius.Mini.Compiler.P.SrcType_same
+import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.fieldOffset
+import all Lanius.Mini.Compiler.P.norm
+import all Lanius.Mini.Compiler.P.wrap
 import all Lanius.Mini.Compiler.Types
 
 @[expose] public section

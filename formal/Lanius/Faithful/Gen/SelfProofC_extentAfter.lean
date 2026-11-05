@@ -10,7 +10,10 @@ public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtC_extentAfter
 public import Lanius.Faithful.Gen.SelfStmtC_substAll
 import all Lanius.Faithful.Gen.SelfSrcC_extentAfter
+import all Lanius.Mini.Compiler.P.dyingExtent
 import all Lanius.Mini.Compiler.P.extentAfter
+import all Lanius.Mini.Compiler.P.killPrefix
+import all Lanius.Mini.Compiler.P.killPrefixAt
 
 public section
 

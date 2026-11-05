@@ -16,9 +16,11 @@ public import Lanius.Faithful.GenB.SelfBStmtN4
 public import Lanius.Faithful.GenB.SelfBStmtN5
 import all Lanius.Faithful.Gen.SelfSrcF_itemOf
 import all Lanius.Faithful.Gen.SelfStmtF_itemOf
-import all Lanius.Mini.Frontend.P.distinct
-import all Lanius.Mini.Frontend.P.findConst
+import all Lanius.Mini.Frontend.P.importedVariants
+import all Lanius.Mini.Frontend.P.itemImport
 import all Lanius.Mini.Frontend.P.itemOf
+import all Lanius.Mini.Frontend.P.sameSpellings
+import all Lanius.Mini.Frontend.P.variantsNamed
 
 @[expose] public section
 

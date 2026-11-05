@@ -8,7 +8,10 @@ public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_positionAt
 public import Lanius.Faithful.Gen.SelfStmtF_rootInsts
 import all Lanius.Faithful.Gen.SelfSrcF_rootInsts
+import all Lanius.Mini.Frontend.P.findFn
+import all Lanius.Mini.Frontend.P.findType
 import all Lanius.Mini.Frontend.P.rootInsts
+import all Lanius.Mini.Frontend.P.seedInsts
 
 public section
 

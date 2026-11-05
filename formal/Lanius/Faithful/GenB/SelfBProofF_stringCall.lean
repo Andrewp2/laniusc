@@ -15,12 +15,12 @@ public import Lanius.Faithful.GenB.SelfBStmtF_wideOf
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_stringCall
 import all Lanius.Faithful.Gen.SelfStmtF_stringCall
-import all Lanius.Mini.Frontend.P.hasKids
 import all Lanius.Mini.Frontend.P.isPathCall
-import all Lanius.Mini.Frontend.P.isTypedSliceSegments
-import all Lanius.Mini.Frontend.P.noToken
+import all Lanius.Mini.Frontend.P.isTypedSlicePath
+import all Lanius.Mini.Frontend.P.kid
+import all Lanius.Mini.Frontend.P.listItems
+import all Lanius.Mini.Frontend.P.peel
 import all Lanius.Mini.Frontend.P.treeTokens
-import all Lanius.Mini.Frontend.P.wideOf
 
 @[expose] public section
 

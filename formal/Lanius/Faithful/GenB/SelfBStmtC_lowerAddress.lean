@@ -4,6 +4,9 @@ public import Lanius.Faithful.BudgetCore
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.GenB.SelfBModelC_lowerAddress
 public import Lanius.Mini.Compiler.P.lowerAddress
+public import Lanius.Mini.Compiler.P.lowerFree
+public import Lanius.Mini.Compiler.P.lowerLoad
+public import Lanius.Mini.Compiler.P.lowerStore
 
 @[expose] public section
 

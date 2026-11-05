@@ -7,6 +7,8 @@ public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmtC_lowerReturn
 import all Lanius.Faithful.Gen.SelfSrcC_lowerReturn
+import all Lanius.Mini.Compiler.P.atLeastOne
+import all Lanius.Mini.Compiler.P.lowerAlloc
 import all Lanius.Mini.Compiler.P.lowerReturn
 
 public section

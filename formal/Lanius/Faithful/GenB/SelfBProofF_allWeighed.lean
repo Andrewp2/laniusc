@@ -15,9 +15,9 @@ public import Lanius.Faithful.GenB.SelfBStmtN6
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcF_allWeighed
 import all Lanius.Faithful.Gen.SelfStmtF_allWeighed
-import all Lanius.Mini.Frontend.P.allWeighed
-import all Lanius.Mini.Frontend.P.findConst
-import all Lanius.Mini.Frontend.P.funcsOnto
+import all Lanius.Mini.Frontend.P.closeTy
+import all Lanius.Mini.Frontend.P.instIndex
+import all Lanius.Mini.Frontend.P.unweighed
 
 @[expose] public section
 

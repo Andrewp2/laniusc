@@ -11,7 +11,12 @@ public import Lanius.Faithful.Gen.SelfStmtF_armsOf
 public import Lanius.Faithful.Gen.SelfStmtF_shadowUse
 public import Lanius.Faithful.Gen.SelfStmtF_variantArm
 import all Lanius.Faithful.Gen.SelfSrcF_variantArm
+import all Lanius.Mini.Frontend.P.consUse
+import all Lanius.Mini.Frontend.P.joinUse
+import all Lanius.Mini.Frontend.P.usedArms
 import all Lanius.Mini.Frontend.P.variantArm
+import all Lanius.Mini.Frontend.P.variantArms
+import all Lanius.Mini.Frontend.P.wildUsed
 
 public section
 

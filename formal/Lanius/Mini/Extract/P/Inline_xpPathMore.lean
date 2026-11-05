@@ -12,7 +12,4 @@ namespace Lanius.Mini
 @[expose] def Inline.xpPathMore : Nat :=
   50
 
-@[expose] def Inline.xpPatternIdent : Nat :=
-  195
-
 end Lanius.Mini

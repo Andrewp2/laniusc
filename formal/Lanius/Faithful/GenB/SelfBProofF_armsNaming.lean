@@ -10,8 +10,9 @@ public import Lanius.Faithful.GenB.SelfBStmtF_consTreeTail
 public import Lanius.Faithful.GenB.SelfBStmtN3
 import all Lanius.Faithful.Gen.SelfSrcF_armsNaming
 import all Lanius.Faithful.Gen.SelfStmtF_armsNaming
+import all Lanius.Mini.Frontend.P.armNames
+import all Lanius.Mini.Frontend.P.armsByVariant
 import all Lanius.Mini.Frontend.P.armsNaming
-import all Lanius.Mini.Frontend.P.consBinder
 
 @[expose] public section
 

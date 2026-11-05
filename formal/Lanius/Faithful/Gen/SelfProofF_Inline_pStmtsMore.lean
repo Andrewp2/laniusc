@@ -6,6 +6,8 @@ public import Lanius.Faithful.Gen.SelfSrcF_Inline_pStmtsMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pStmtsMore
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pStmtsMore
 import all Lanius.Mini.Frontend.P.Inline_pStmtsMore
+import all Lanius.Mini.Frontend.P.Inline_pString
+import all Lanius.Mini.Frontend.P.Inline_pStruct
 
 public section
 

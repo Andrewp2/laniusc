@@ -15,9 +15,13 @@ public import Lanius.Faithful.GenB.SelfBStmtN5
 public import Lanius.Faithful.GenB.SelfBStmtN7
 import all Lanius.Faithful.Gen.SelfSrcC_repeatType
 import all Lanius.Faithful.Gen.SelfStmtC_repeatType
-import all Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.SrcType_same
-import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.SrcType_isScalar
+import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.fieldOffset
+import all Lanius.Mini.Compiler.P.lookup
+import all Lanius.Mini.Compiler.P.lowerArgs
+import all Lanius.Mini.Compiler.P.lowerAs
+import all Lanius.Mini.Compiler.P.lowerValue
 import all Lanius.Mini.Compiler.P.repeatType
 
 @[expose] public section
