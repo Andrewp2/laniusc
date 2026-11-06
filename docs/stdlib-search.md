@@ -1,8 +1,8 @@
 # Fast byte and substring search
 
 `core::search` searches `[u8]` slices over explicit `[from, to)` ranges. It
-needs no allocation and no native library. `core::text::Text::find` now uses
-it, and the [parallel grep](stdlib-concurrency.md#samples) uses it for both
+needs no allocation and no native library. `core::text::Text::find` and `rfind`
+use it, and the [parallel grep](stdlib-concurrency.md#samples) uses it for both
 line scanning and matching.
 
 | Function | Result |
@@ -26,12 +26,20 @@ Negative or inverted ranges return -1, or 0 for `count`.
 
 ## Algorithm
 
-**Byte scans.** `find_byte` builds one `u64` storage view over the range and
-tests two words per step with the SWAR zero-byte expression
+**Byte scans.** When the byte slice has stride `+1`, `find_byte` builds one
+`u64` storage view over the range and tests two words per step with the SWAR zero-byte expression
 `(x - 0x01..01) & !x & 0x80..80`, where `x` is the word XORed with the
 repeated byte. Only the lowest flagged byte of a word is used; higher flags
 can be borrow artifacts. `rfind_byte` confirms the highest zero byte
 exactly.
+
+For other byte strides, `find_byte` and `rfind_byte` scan logical indexed
+elements in their requested direction. The same storage correction reaches
+`find`, `rfind`, and `count` through those scanners. Needle comparisons also
+use indexed bytes. The [text partition gates](stdlib-text-partitions.md#accepted-execution-evidence)
+execute packed ascending (`+1`) and native descending (`-8`) byte storage,
+with source and needle layouts varied independently. Other byte strides have
+not been executed by those gates.
 
 **Substring search.** `find` ranks the needle's bytes by a fixed
 text/source frequency table. The first probe is the rarest offset. The
@@ -71,7 +79,7 @@ periodic needles, or when every haystack byte is the needle's rarest byte.
   backwards.
 
 Prefilter work stays linear before the switch, so `find`, `rfind`, `count`
-and `Text::find` are O(n + m) with O(1) space. `find_two_way` and
+and `Text::find`/`Text::rfind` are O(n + m) with O(1) space. `find_two_way` and
 `rfind_two_way` expose the fallback directly.
 
 **Platform assumptions.** The word loads may be unaligned, which x86_64

@@ -1,0 +1,88 @@
+// Binary interactive test driver. No traversal decisions are hidden in the probe.
+// Request: 7 little-endian u64 limits/mode words. Command: (operation, argument).
+// Report: 16 u64 words, then path bytes and leaf-name bytes; all are copied before
+// another cursor mutation. A host pauses at every report to inspect live fds.
+module app::main;
+import core::io;
+import core::mem;
+import core::path::Path;
+import core::slice::View;
+import core::result::Result;
+import core::result;
+import std::directory;
+import std::file;
+import std::walk;
+import std::file_ops;
+import std::linux;
+import std::stream;
+
+fn bytes(value:str,length:i32)->View<u8>{return View{values:core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),length),start:0,length:length};}
+fn path(value:str,length:i32)->Path{return Path{bytes:bytes(value,length)};}
+fn word(input:[u8],offset:i32)->u64{let value:u64=0;let i:i32=0;while(i<8){value|=(input[offset+i] as u64)<<(i*8);i+=1;}return value;}
+fn io_code(value:core::io::Error)->u64{return match(value){core::io::Error::Host(n)->1000+n as u64,core::io::Error::Interrupted->1004,core::io::Error::WouldBlock->1011,_ ->1999};}
+fn directory_code(value:std::directory::Error)->u64{return match(value){std::directory::Error::Bounds->1,std::directory::Error::Limit->3,std::directory::Error::AllocationFailed->4,std::directory::Error::Closed->5,std::directory::Error::Failed->6,std::directory::Error::Malformed(_)->20,std::directory::Error::Changed->21,std::directory::Error::UnavailableMetadata->22,std::directory::Error::Io(e)->io_code(e)};}
+fn error_code(value:std::walk::Error)->u64{return match(value){std::walk::Error::Bounds->1,std::walk::Error::InvalidState->2,std::walk::Error::Limit->3,std::walk::Error::AllocationFailed->4,std::walk::Error::Closed->5,std::walk::Error::Failed->6,std::walk::Error::Directory(e)->10000+directory_code(e)};}
+fn status(value:Result<i32,std::walk::Error>)->u64{if(value.is_ok()){assert(value.unwrap()==0);return 0;}return error_code(value.unwrap_err());}
+fn stage(value:std::walk::Stage)->u64{return match(value){std::walk::Stage::Metadata->1,std::walk::Stage::Open->2,std::walk::Stage::Verify->3,std::walk::Stage::Read->4,std::walk::Stage::Close->5};}
+fn mark(value:u8){let raw:[u8;1]=[value];let sink=std::stream::stderr();core::io::write_all(sink.borrow(),raw,0,1).unwrap();}
+fn emit(report:[u64],name:View<u8>,leaf:View<u8>){report[10]=name.length as u64;report[11]=leaf.length as u64;let raw:[u8;128]=[0;128];let i:i32=0;while(i<16){let j:i32=0;while(j<8){raw[i*8+j]=((report[i]>>(j*8))&255) as u8;j+=1;}i+=1;}let sink=std::stream::stdout();core::io::write_all(sink.borrow(),raw,0,128).unwrap();core::io::write_all(sink.borrow(),name.values,name.start,name.length).unwrap();core::io::write_all(sink.borrow(),leaf.values,leaf.start,leaf.length).unwrap();}
+fn metadata(report:[u64],value:std::file_ops::Metadata){assert(value.has(257));report[6]=value.mode as u64;report[7]=value.identity.inode;report[8]=value.identity.device_major as u64;report[9]=value.identity.device_minor as u64;}
+struct EventBytes { path:View<u8>, name:View<u8> }
+fn event_bytes(report:[u64],event:std::walk::Event)->EventBytes{
+    match(event){
+        std::walk::Event::Entry(value)->{
+            report[1]=1;report[3]=value.depth as u64;report[5]=value.parent_fd as u64;
+            metadata(report,value.metadata);
+            return EventBytes{path:value.path,name:value.name};
+        },
+        std::walk::Event::Enter(value)->{
+            report[1]=2;report[3]=value.depth as u64;report[4]=value.fd as u64;
+            metadata(report,value.metadata);
+            return EventBytes{path:value.path,name:bytes("",0)};
+        },
+        std::walk::Event::Leave(value)->{
+            report[1]=3;report[3]=value.depth as u64;report[4]=value.fd as u64;
+            metadata(report,value.metadata);
+            return EventBytes{path:value.path,name:bytes("",0)};
+        },
+        std::walk::Event::Fault(value)->{
+            report[1]=4;report[3]=value.depth as u64;report[4]=stage(value.stage);
+            report[2]=directory_code(value.cause);
+            return EventBytes{path:value.path,name:bytes("",0)};
+        },
+    };
+}
+fn main()->i32{
+    let input:[u8;56]=[0;56];let source=std::stream::stdin();core::io::read_exact(source.borrow(),input,0,56).unwrap();
+    let limits=std::walk::Limits{max_open_dirs:word(input,0) as i32,max_entries:word(input,8),max_path_bytes:word(input,16) as i32,max_work:word(input,24),buffer_bytes:word(input,32) as i32};let anchor_mode=word(input,40);let root_mode=word(input,48);
+    let report:[u64;16]=[0;16];report[0]=1463897163;let pid_args:[std::linux::Argument;1]=[std::linux::Argument::Word(0)];report[14]=std::linux::call(39,View{values:pid_args,start:0,length:0}).unwrap() as u64;
+    let owner=std::file::File{handle:-1};let anchor_fd:i32=-100;mark(67);
+    if(anchor_mode==1){let options=std::file_ops::options();options.directory=true;options.no_follow=true;owner=std::file_ops::open(path("anchor",6),options).unwrap();anchor_fd=owner.raw_handle().unwrap();}report[15]=anchor_fd as u64;
+    let root=path("root",4);if(root_mode==1){root=path("root/.",6);}if(root_mode==2){root=path("missing",7);}if(root_mode==3){root=path("regular",7);}if(root_mode==4){root.bytes.start=-1;}if(root_mode==5){root.bytes.length=-1;}if(root_mode==6){root.bytes.start=2147483647;root.bytes.length=2;}
+    let opened:Result<std::walk::Cursor,std::walk::Error> = core::result::Err(std::walk::Error::Bounds);if(anchor_mode==1){opened=std::walk::open_at(anchor_fd,root,limits);}else{opened=std::walk::open(root,limits);}mark(99);
+    if(opened.is_err()){report[1]=7;report[2]=error_code(opened.unwrap_err());if(anchor_mode==1){owner.close().unwrap();}emit(report,bytes("",0),bytes("",0));let done:[u8;16]=[0;16];core::io::read_exact(source.borrow(),done,0,16).unwrap();assert(word(done,0)==5);return 0;}
+    let cursor=opened.unwrap();report[1]=5;report[12]=cursor.work_done();report[13]=cursor.entries_seen();emit(report,bytes("",0),bytes("",0));
+    while(true){
+        let command:[u8;16]=[0;16];core::io::read_exact(source.borrow(),command,0,16).unwrap();let operation=word(command,0);assert(operation>=1 && operation<=8);if(operation==5){if(anchor_mode==1){owner.close().unwrap();}return 0;}
+        let name=bytes("",0);let leaf=bytes("",0);let i:i32=1;while(i<12){report[i]=0;i+=1;}report[1]=6;
+        mark(67);
+        if(operation==1){
+            let result=cursor.next();
+            if(result.is_err()){report[2]=error_code(result.unwrap_err());}
+            else{
+                let event=result.unwrap();
+                if(event.is_none()){report[1]=0;}
+                else{let selected=event_bytes(report,event.unwrap());name=selected.path;leaf=selected.name;}
+            }
+        }
+        if(operation==2){report[2]=status(cursor.descend());}
+        if(operation==3){report[2]=status(cursor.prune());}
+        if(operation==4){report[2]=status(cursor.close());}
+        if(operation==6){let args:[std::linux::Argument;1]=[std::linux::Argument::Word(word(command,8) as i64)];mark(81);assert(std::linux::call(3,View{values:args,start:0,length:1}).unwrap()==0);mark(113);}
+        if(operation==7){assert(anchor_mode==1);owner.close().unwrap();}
+        if(operation==8){report[2]=888;}
+        mark(99);
+        report[12]=cursor.work_done();report[13]=cursor.entries_seen();emit(report,name,leaf);
+    }
+    return 0;
+}

@@ -1,0 +1,15 @@
+module app::main;
+import core::slice;
+import core::slice::View;
+import ext::weighted_graph;
+
+fn slice_value(cells:[u8]) -> View<u8> {
+    let selected:core::slice::View<u8> = core::slice::View { values:cells,start:0,length:1 };
+    return selected;
+}
+fn main() -> i32 {
+    let cells:[u8;1]=[7];
+    let value=slice_value(cells);
+    assert(value.start==0 && value.length==1 && value.values[value.start]==7);
+    return 0;
+}

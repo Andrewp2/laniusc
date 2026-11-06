@@ -23,6 +23,7 @@ import std::file;
 import std::file_ops;
 import std::fs;
 import std::stream;
+import std::walk;
 
 struct Options { invert: bool, numbers: bool, count: bool, max_line: i32, regex: ext::regex::Options, help: bool, recursive: bool, gitignore: bool, line_set: bool, work_set: bool }
 impl Options { fn borrow(&self) -> &Options { return self; } }
@@ -400,12 +401,9 @@ fn directory_skipped(globs: &Globs, name: core::slice::View<u8>, command_line: b
     while (i < globs.items.len()) { let glob: Glob = globs.items.at(i); i += 1; if (glob.kind == 3 && glob_match(glob.bytes,name,command_line)) { return true; } }
     return false;
 }
-// An open directory of the walk: its reader, the path length before its
-// name was appended and the rule count before its .gitignore was added.
-struct Level { reader: std::directory::Reader, length: i32, rules: i32 }
 // State of a file search: the reused file buffer, the current path, the
 // gitignore rules of the open directories, and the outcome so far.
-struct Run { buffer: alloc::vec::Vec<u8>, path: alloc::vec::Vec<u8>, levels: alloc::vec::Vec<Level>, rules: ext::gitignore::Rules, names: bool, any: bool, failed: bool }
+struct Run { buffer: alloc::vec::Vec<u8>, path: alloc::vec::Vec<u8>, rule_scopes: alloc::vec::Vec<i32>, rules: ext::gitignore::Rules, names: bool, any: bool, failed: bool }
 impl Run { fn borrow(&self) -> &Run { return self; } }
 fn view_of(bytes: alloc::vec::Vec<u8>) -> core::slice::View<u8> { return bytes.as_view(); }
 // "text-grep: PATH: message" on stderr.
@@ -885,84 +883,115 @@ fn load_rules(run: &Run, fd: i32, base: i32, diagnostic: &Diagnostic, output: &O
     if (core::result::is_err(added)) { return fail(diagnostic,4,8); }
     return 0;
 }
-// Walks the directory at root (shown with the prefix display) depth first,
-// entries in the order the filesystem returns them, as GNU grep's fts walk
-// does. Symbolic links and special files below root are skipped.
+// Cursor paths are relative to the operand. Only the display buffer and
+// gitignore rule checkpoints belong to the application; std::walk owns fds.
+fn walk_path(run: &Run, display: core::slice::View<u8>, relative: core::slice::View<u8>, diagnostic: &Diagnostic) -> i32 {
+    run.path.clear();
+    if (core::result::is_err(run.path.try_extend(display))) { return fail(diagnostic,4,8); }
+    if (relative.len() > 0 && display.len() > 0 && run.path.at(run.path.len() - 1) != 47) {
+        if (core::result::is_err(run.path.try_push(47))) { return fail(diagnostic,4,8); }
+    }
+    if (core::result::is_err(run.path.try_extend(relative))) { return fail(diagnostic,4,8); }
+    return 0;
+}
+fn walk_failure(run: &Run, path: core::slice::View<u8>, error: std::walk::Error, diagnostic: &Diagnostic, output: &Output) -> i32 {
+    return match (error) {
+        std::walk::Error::AllocationFailed -> fail(diagnostic,4,8),
+        std::walk::Error::Limit -> walk_limit(diagnostic),
+        std::walk::Error::Directory(cause) -> directory_failure(run,path,cause,diagnostic,output),
+        _ -> open_failure(run,path,diagnostic,output)
+    };
+}
+fn walk_limit(diagnostic: &Diagnostic) -> i32 { diagnostic.stage = 2; return fail(diagnostic,2,5); }
+fn walk_decision(run: &Run, decision: core::result::Result<i32,std::walk::Error>, diagnostic: &Diagnostic, output: &Output) -> i32 {
+    if (core::result::is_err(decision)) { return walk_failure(run,run.path.as_view(),core::result::unwrap_err(decision),diagnostic,output); }
+    return 0;
+}
+fn walk_enter(run: &Run, directory: std::walk::Directory, options: Options, diagnostic: &Diagnostic, output: &Output) -> i32 {
+    if (!options.gitignore) { return 0; }
+    if (core::result::is_err(run.rule_scopes.try_push(run.rules.len()))) { return fail(diagnostic,4,8); }
+    let base: i32 = run.path.len();
+    if (base > 0 && run.path.at(base - 1) != 47) { base += 1; }
+    return load_rules(run,directory.fd,base,diagnostic,output);
+}
+fn walk_leave(run: &Run, options: Options) -> i32 {
+    if (options.gitignore) { run.rules.truncate(core::option::unwrap(run.rule_scopes.pop())); }
+    return 0;
+}
+fn walk_entry(run: &Run, cursor: &std::walk::Cursor, item: std::walk::Item, regex: &ext::regex::Regex, matcher: &Matcher, filter: &Filter, options: Options, globs: &Globs, output: &Output, diagnostic: &Diagnostic) -> i32 {
+    let kind: std::file_ops::Kind = std::file_ops::kind(item.metadata.mode);
+    let directory: bool = match (kind) { std::file_ops::Kind::Directory -> true, _ -> false };
+    if (directory) {
+        let skipped: bool = directory_skipped(globs,item.name,false);
+        if (options.gitignore) {
+            if (item.name.length == 4 && item.name.values[item.name.start] == 46 && item.name.values[item.name.start + 1] == 103 && item.name.values[item.name.start + 2] == 105 && item.name.values[item.name.start + 3] == 116) { skipped = true; }
+            if (run.rules.check(run.path.as_view(),true) == ext::gitignore::IGNORED) { skipped = true; }
+        }
+        if (skipped) { return walk_decision(run,cursor.prune(),diagnostic,output); }
+        // Root counts as one open directory. Keep the existing recoverable
+        // per-path depth limit: report and prune before scheduling an open.
+        if (item.depth >= 512) {
+            diagnostic.stage = 2;
+            let status: i32 = file_failure(run,run.path.as_view(),fail(diagnostic,2,5),diagnostic,output);
+            if (status != 0) { return status; }
+            return walk_decision(run,cursor.prune(),diagnostic,output);
+        }
+        return walk_decision(run,cursor.descend(),diagnostic,output);
+    }
+    let regular: bool = match (kind) { std::file_ops::Kind::Regular -> true, _ -> false };
+    if (!regular || file_skipped(globs,item.name,false)) { return 0; }
+    if (options.gitignore && run.rules.check(run.path.as_view(),false) == ext::gitignore::IGNORED) { return 0; }
+    let name: core::path::Path = core::result::unwrap(core::path::from_view(item.name));
+    let options_read: std::file_ops::OpenOptions = std::file_ops::options(); options_read.no_follow = true;
+    let file = std::file_ops::open_at(item.parent_fd,name,options_read);
+    if (core::result::is_err(file)) { return open_failure(run,run.path.as_view(),diagnostic,output); }
+    let opened_file: std::file::File = core::result::unwrap(file);
+    return search_file(run,core::option::unwrap(opened_file.raw_handle()),run.path.as_view(),true,regex,matcher,filter,options,output,diagnostic);
+}
+fn walk_event_path(event: std::walk::Event) -> core::slice::View<u8> {
+    return match (event) {
+        std::walk::Event::Entry(item) -> item.path,
+        std::walk::Event::Enter(directory) -> directory.path,
+        std::walk::Event::Leave(directory) -> directory.path,
+        std::walk::Event::Fault(fault) -> fault.path
+    };
+}
+fn walk_event(run: &Run, cursor: &std::walk::Cursor, event: std::walk::Event, regex: &ext::regex::Regex, matcher: &Matcher, filter: &Filter, options: Options, globs: &Globs, output: &Output, diagnostic: &Diagnostic) -> i32 {
+    return match (event) {
+        std::walk::Event::Entry(item) -> walk_entry(run,cursor,item,regex,matcher,filter,options,globs,output,diagnostic),
+        std::walk::Event::Enter(directory) -> walk_enter(run,directory,options,diagnostic,output),
+        std::walk::Event::Leave(directory) -> walk_leave(run,options),
+        std::walk::Event::Fault(fault) -> directory_failure(run,run.path.as_view(),fault.cause,diagnostic,output)
+    };
+}
+// Filesystem order, depth first. '/.' follows a command-line directory
+// symlink; std::walk never follows descendant symlinks. Filter before descend.
 fn walk(run: &Run, root: core::slice::View<u8>, display: core::slice::View<u8>, regex: &ext::regex::Regex, matcher: &Matcher, filter: &Filter, options: Options, globs: &Globs, output: &Output, diagnostic: &Diagnostic) -> i32 {
     run.path.clear();
     if (core::result::is_err(run.path.try_extend(root)) || core::result::is_err(run.path.try_extend(literal("/.",2)))) { return fail(diagnostic,4,8); }
-    let reader: std::directory::Reader = std::directory::empty_directory();
     let target = core::path::from_view(run.path.as_view());
     if (core::result::is_err(target)) { return open_failure(run,display,diagnostic,output); }
-    let opened = std::directory::open_into(core::result::unwrap(target),32768,reader.borrow());
-    if (core::result::is_err(opened)) { return directory_failure(run,display,core::result::unwrap_err(opened),diagnostic,output); }
-    run.path.clear(); if (core::result::is_err(run.path.try_extend(display))) { return fail(diagnostic,4,8); }
-    // A display that is empty or ends with '/' takes names without a '/'.
-    let rules_before: i32 = run.rules.len();
-    if (options.gitignore) {
-        let base: i32 = run.path.len(); if (base > 0 && run.path.at(base - 1) != 47) { base += 1; }
-        let status: i32 = load_rules(run,core::option::unwrap(reader.raw_handle()),base,diagnostic,output); if (status != 0) { let closed = reader.close(); return status; }
+    // The CLI has no aggregate entry/work budget. Only representable counters
+    // and paths limit total traversal, retaining the 512 active-directory cap.
+    let limits: std::walk::Limits = std::walk::Limits { max_open_dirs: 512, max_entries: 18446744073709551615, max_path_bytes: 2147483647, max_work: 18446744073709551615, buffer_bytes: 32768 };
+    let opened = std::walk::open(core::result::unwrap(target),limits);
+    if (core::result::is_err(opened)) { return walk_failure(run,display,core::result::unwrap_err(opened),diagnostic,output); }
+    let cursor: std::walk::Cursor = core::result::unwrap(opened);
+    let rules_before: i32 = run.rules.len(); let status: i32 = 0;
+    while (status == 0) {
+        let next = cursor.next();
+        if (core::result::is_err(next)) { status = walk_failure(run,run.path.as_view(),core::result::unwrap_err(next),diagnostic,output); break; }
+        let value = core::result::unwrap(next); if (core::option::is_none(value)) { break; }
+        let event: std::walk::Event = core::option::unwrap(value);
+        status = walk_path(run,display,walk_event_path(event),diagnostic);
+        if (status == 0) { status = walk_event(run,cursor.borrow(),event,regex,matcher,filter,options,globs,output,diagnostic); }
     }
-    if (core::result::is_err(run.levels.try_push(Level { reader: reader, length: run.path.len(), rules: rules_before }))) { let closed = reader.close(); return fail(diagnostic,4,8); }
-    while (run.levels.len() > 0) {
-        let index: i32 = run.levels.len() - 1; let level: Level = run.levels.at(index);
-        let current: std::directory::Reader = level.reader; let next = current.next(); level.reader = current; core::result::unwrap(run.levels.set(index,level));
-        let finished: bool = core::result::is_err(next);
-        if (finished) {
-            core::result::unwrap(run.path.truncate(level.length));
-            let status: i32 = open_failure(run,run.path.as_view(),diagnostic,output); if (status != 0) { close_levels(run); return status; }
-        } else { if (core::option::is_none(core::result::unwrap(next))) { finished = true; } }
-        if (finished) {
-            let popped: Level = core::option::unwrap(run.levels.pop()); let closing: std::directory::Reader = popped.reader; let closed = closing.close();
-            run.rules.truncate(popped.rules);
-            if (run.levels.len() > 0) { let parent: Level = run.levels.at(run.levels.len() - 1); core::result::unwrap(run.path.truncate(parent.length)); }
-            continue;
-        }
-        let entry: std::directory::Entry = core::option::unwrap(core::result::unwrap(next));
-        core::result::unwrap(run.path.truncate(level.length));
-        let parent_length: i32 = run.path.len();
-        if (parent_length > 0 && run.path.at(parent_length - 1) != 47) { if (core::result::is_err(run.path.try_push(47))) { close_levels(run); return fail(diagnostic,4,8); } }
-        if (core::result::is_err(run.path.try_extend(entry.name))) { close_levels(run); return fail(diagnostic,4,8); }
-        let fd: i32 = core::option::unwrap(current.raw_handle());
-        let name: core::path::Path = core::result::unwrap(core::path::from_view(entry.name));
-        let kind: std::file_ops::Kind = entry.kind;
-        let unknown: bool = match (kind) { std::file_ops::Kind::Unknown -> true, _ -> false };
-        if (unknown) {
-            let metadata: std::file_ops::Metadata = std::file_ops::empty_metadata();
-            if (core::result::is_err(std::file_ops::metadata_at_into(fd,name,false,metadata.borrow()))) { let status: i32 = open_failure(run,run.path.as_view(),diagnostic,output); if (status != 0) { close_levels(run); return status; } continue; }
-            kind = std::file_ops::kind(metadata.mode);
-        }
-        let directory: bool = match (kind) { std::file_ops::Kind::Directory -> true, _ -> false };
-        let regular: bool = match (kind) { std::file_ops::Kind::Regular -> true, _ -> false };
-        if (directory) {
-            if (directory_skipped(globs,entry.name,false)) { continue; }
-            if (options.gitignore) {
-                if (entry.name.length == 4 && entry.name.values[entry.name.start] == 46 && entry.name.values[entry.name.start + 1] == 103 && entry.name.values[entry.name.start + 2] == 105 && entry.name.values[entry.name.start + 3] == 116) { continue; }
-                if (run.rules.check(run.path.as_view(),true) == ext::gitignore::IGNORED) { continue; }
-            }
-            if (run.levels.len() >= 512) { diagnostic.stage = 2; let status: i32 = file_failure(run,run.path.as_view(),fail(diagnostic,2,5),diagnostic,output); if (status != 0) { close_levels(run); return status; } continue; }
-            let child: std::directory::Reader = std::directory::empty_directory();
-            let entered = std::directory::open_at_into(fd,name,32768,child.borrow());
-            if (core::result::is_err(entered)) { let status: i32 = directory_failure(run,run.path.as_view(),core::result::unwrap_err(entered),diagnostic,output); if (status != 0) { close_levels(run); return status; } continue; }
-            let before: i32 = run.rules.len();
-            if (options.gitignore) { let status: i32 = load_rules(run,core::option::unwrap(child.raw_handle()),run.path.len() + 1,diagnostic,output); if (status != 0) { let closed = child.close(); close_levels(run); return status; } }
-            if (core::result::is_err(run.levels.try_push(Level { reader: child, length: run.path.len(), rules: before }))) { let closed = child.close(); close_levels(run); return fail(diagnostic,4,8); }
-            continue;
-        }
-        if (!regular) { continue; }
-        if (file_skipped(globs,entry.name,false)) { continue; }
-        if (options.gitignore && run.rules.check(run.path.as_view(),false) == ext::gitignore::IGNORED) { continue; }
-        let options_read: std::file_ops::OpenOptions = std::file_ops::options(); options_read.no_follow = true;
-        let file = std::file_ops::open_at(fd,name,options_read);
-        if (core::result::is_err(file)) { let status: i32 = open_failure(run,run.path.as_view(),diagnostic,output); if (status != 0) { close_levels(run); return status; } continue; }
-        let opened_file: std::file::File = core::result::unwrap(file);
-        let status: i32 = search_file(run,core::option::unwrap(opened_file.raw_handle()),run.path.as_view(),true,regex,matcher,filter,options,output,diagnostic);
-        if (status != 0) { close_levels(run); return status; }
-    }
-    return 0;
-}
-fn close_levels(run: &Run) {
-    while (run.levels.len() > 0) { let popped: Level = core::option::unwrap(run.levels.pop()); let closing: std::directory::Reader = popped.reader; let closed = closing.close(); }
+    let closed = cursor.close();
+    if (status == 0 && core::result::is_err(closed)) { status = walk_failure(run,display,core::result::unwrap_err(closed),diagnostic,output); }
+    // Cancellation need not emit Leave. Restore rule scope explicitly once
+    // cursor.close has consumed every descriptor, including on fatal failure.
+    run.rules.truncate(rules_before); run.rule_scopes.clear();
+    return status;
 }
 // One command-line operand: a file is searched, a directory walked with -r.
 fn operand_path(run: &Run, path: core::slice::View<u8>, implicit: bool, regex: &ext::regex::Regex, matcher: &Matcher, filter: &Filter, options: Options, globs: &Globs, output: &Output, diagnostic: &Diagnostic) -> i32 {
@@ -992,7 +1021,7 @@ fn files(regex: &ext::regex::Regex, matcher: &Matcher, filter: &Filter, options:
     // unless --max-line says otherwise.
     let limits: Options = options; if (!limits.line_set) { limits.max_line = 67108864; }
     let output: Output = Output { bytes: alloc::vec::new(), used: 0, number: 0, width: 0, label: alloc::vec::new(), label_length: 0, close: true };
-    let run: Run = Run { buffer: alloc::vec::new(), path: alloc::vec::new(), levels: alloc::vec::new(), rules: ext::gitignore::rules(), names: pattern.files.len() > 1, any: false, failed: false };
+    let run: Run = Run { buffer: alloc::vec::new(), path: alloc::vec::new(), rule_scopes: alloc::vec::new(), rules: ext::gitignore::rules(), names: pattern.files.len() > 1, any: false, failed: false };
     let status: i32 = 0;
     if (pattern.files.len() == 0) { status = operand_path(run.borrow(),literal(".",1),true,regex,matcher,filter,limits,globs,output.borrow(),diagnostic); }
     let i: i32 = 0;
@@ -1001,7 +1030,7 @@ fn files(regex: &ext::regex::Regex, matcher: &Matcher, filter: &Filter, options:
         status = operand_path(run.borrow(),item.bytes,false,regex,matcher,filter,limits,globs,output.borrow(),diagnostic);
     }
     if (status == 0 && output.used > 0 && !flush(output.borrow())) { diagnostic.stage = 4; status = fail(diagnostic,3,7); }
-    output.bytes.destroy(); output.label.destroy(); run.buffer.destroy(); run.path.destroy(); run.levels.destroy(); run.rules.destroy();
+    output.bytes.destroy(); output.label.destroy(); run.buffer.destroy(); run.path.destroy(); run.rule_scopes.destroy(); run.rules.destroy();
     if (status != 0) { return status; }
     if (run.failed) { diagnostic.reason = -1; return 2; }
     if (run.any) { return 0; } return 1;

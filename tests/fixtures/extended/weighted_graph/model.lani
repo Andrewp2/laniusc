@@ -1,0 +1,136 @@
+// Test-only binary adapter; mathematical answers come from oracle.py.
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::weighted_graph;
+import std::io;
+
+fn read_exact(pointer:ptr,count:i32) {
+    let done:i32=0;
+    while(done<count) {
+        let got:i32=std::io::read_stdin(pointer+(done as usize),(count-done) as usize);
+        assert(got>0 && got<=count-done); done+=got;
+    }
+}
+fn write_all(pointer:ptr,count:i32) {
+    let done:i32=0;
+    while(done<count) {
+        let got:i32=std::io::write_stdout(pointer+(done as usize),(count-done) as usize);
+        assert(got>0 && got<=count-done); done+=got;
+    }
+}
+fn get64(bytes:[u8],offset:i32) -> u64 {
+    let value:u64=0; let index:i32=0;
+    while(index<8) { value|=(bytes[offset+index] as u64)<<(index*8); index+=1; }
+    return value;
+}
+struct Output { bytes:[u8],pointer:ptr,used:i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) { write_all(self.pointer,self.used); self.used=0; }
+    fn word(&self,value:u64) {
+        if(self.used==4096) { self.flush(); }
+        let index:i32=0;
+        while(index<8) { self.bytes[self.used+index]=((value>>(index*8))&255) as u8; index+=1; }
+        self.used+=8;
+    }
+}
+fn code(kind:ext::weighted_graph::ErrorKind) -> u64 {
+    return match(kind) {
+        ext::weighted_graph::ErrorKind::InvalidLimits -> 1,
+        ext::weighted_graph::ErrorKind::Bounds -> 2,
+        ext::weighted_graph::ErrorKind::NodeLimit -> 3,
+        ext::weighted_graph::ErrorKind::EdgeLimit -> 4,
+        ext::weighted_graph::ErrorKind::WorkLimit -> 5,
+        ext::weighted_graph::ErrorKind::Offset -> 6,
+        ext::weighted_graph::ErrorKind::Source -> 7,
+        ext::weighted_graph::ErrorKind::Target -> 8,
+        ext::weighted_graph::ErrorKind::Order -> 9,
+        ext::weighted_graph::ErrorKind::NegativeEdge -> 10,
+        ext::weighted_graph::ErrorKind::Overflow -> 11,
+        ext::weighted_graph::ErrorKind::NegativeCycle -> 12,
+        ext::weighted_graph::ErrorKind::AllocationFailed -> 13,
+        ext::weighted_graph::ErrorKind::Closed -> 14
+    };
+}
+fn edge(value:ext::weighted_graph::Edge,output:&Output) {
+    output.word(value.source as i64 as u64); output.word(value.target as i64 as u64); output.word(value.cost as u64);
+}
+fn optional_edge(value:core::option::Option<ext::weighted_graph::Edge>,output:&Output) {
+    output.word(value.is_some() as u64);
+    if(value.is_some()) { edge(value.unwrap(),output); }
+}
+fn emit_paths(result:core::result::Result<ext::weighted_graph::Paths,ext::weighted_graph::Error>,
+              limits:ext::weighted_graph::Limits,output:&Output) {
+    if(result.is_err()) {
+        let failure=result.unwrap_err();
+        output.word(code(failure.kind)); output.word(failure.node as i64 as u64); output.word(failure.edge as i64 as u64);
+        return;
+    }
+    let owner=result.unwrap();
+    output.word(0); output.word(18446744073709551615); output.word(18446744073709551615);
+    output.word(owner.is_open() as u64); output.word(owner.node_count() as u64); output.word(owner.source().unwrap() as u64);
+    let node:i32=0;
+    while(node<owner.node_count()) {
+        let distance=owner.distance(node).unwrap(); output.word(distance.is_some() as u64);
+        if(distance.is_some()) { output.word(distance.unwrap() as u64); }
+        optional_edge(owner.predecessor(node).unwrap(),output);
+        let selected=owner.path_to(node,limits).unwrap(); output.word(selected.is_some() as u64);
+        if(selected.is_some()) {
+            let path=selected.unwrap(); output.word(path.len() as u64); let index:i32=0;
+            while(index<path.len()) { edge(path.at(index),output); index+=1; }
+            path.destroy();
+        }
+        node+=1;
+    }
+    assert(owner.destroy() && !owner.destroy() && !owner.is_open() && owner.node_count()==0 && owner.source().is_none());
+    assert(code(owner.distance(0).unwrap_err().kind)==14);
+    assert(code(owner.path_to(0,limits).unwrap_err().kind)==14);
+}
+fn run(index:u64,nodes:i32,source:i32,edges:[ext::weighted_graph::Edge],count:i32,output:&Output) {
+    let limits=ext::weighted_graph::default_limits();
+    let input=core::slice::view_range(edges,1,count).unwrap();
+    let graph=ext::weighted_graph::from_edges(nodes,input,limits).unwrap();
+    let view=graph.view().unwrap();
+    assert(graph.node_count()==nodes && graph.edge_count()==count && view.arcs.len()==count);
+    output.word(index); output.word(nodes as u64); output.word(count as u64);
+    let i:i32=0;
+    while(i<view.offsets.len()) { output.word(view.offsets.get(i).unwrap() as i64 as u64); i+=1; }
+    i=0;
+    while(i<count) { let item=view.arcs.get(i).unwrap(); output.word(item.target as i64 as u64); output.word(item.cost as u64); i+=1; }
+    output.word(0); emit_paths(ext::weighted_graph::dijkstra(view,source,limits),limits,output);
+    output.word(1); emit_paths(ext::weighted_graph::bellman_ford(view,source,limits),limits,output);
+    assert(ext::weighted_graph::validate(view,limits).unwrap()==count);
+    i=0; while(i<count) { edge(edges[i+1],output); i+=1; }
+    assert(edges[0].source==-777 && edges[0].target==-888 && edges[0].cost==-999);
+    assert(edges[65].source==-777 && edges[65].target==-888 && edges[65].cost==-999);
+    assert(graph.destroy() && !graph.destroy() && !graph.is_open() && graph.view().is_none());
+    output.word(1);
+}
+fn main() -> i32 {
+    let header_words:[i32;6]=[0;6]; let header_pointer:ptr=core::mem::i32_array_data_ptr(header_words);
+    let header:[u8]=core::mem::typed_slice_from_raw_parts<u8>(header_pointer,24);
+    read_exact(header_pointer,16); assert(get64(header,0)==6289075901800730436);
+    let count:i32=get64(header,8) as i32; assert(count>0 && count<=4096);
+    let output_words:[i32;1024]=[0;1024]; let output_pointer:ptr=core::mem::i32_array_data_ptr(output_words);
+    let output:Output=Output { bytes:core::mem::typed_slice_from_raw_parts<u8>(output_pointer,4096),pointer:output_pointer,used:0 };
+    let sentinel:ext::weighted_graph::Edge=ext::weighted_graph::Edge { source:-777,target:-888,cost:-999 };
+    let edges:[ext::weighted_graph::Edge;66]=[sentinel;66];
+    let ordinal:i32=0;
+    while(ordinal<count) {
+        read_exact(header_pointer,24);
+        let nodes:i32=get64(header,0) as i32; let source:i32=get64(header,8) as i32; let length:i32=get64(header,16) as i32;
+        assert(nodes>=1 && nodes<=6 && source>=0 && source<nodes && length>=0 && length<=64);
+        let index:i32=0;
+        while(index<length) {
+            read_exact(header_pointer,24);
+            edges[index+1]=ext::weighted_graph::Edge { source:get64(header,0) as i32,target:get64(header,8) as i32,cost:get64(header,16) as i64 };
+            index+=1;
+        }
+        run(ordinal as u64,nodes,source,edges,length,output.borrow()); ordinal+=1;
+    }
+    output.flush(); return 0;
+}

@@ -3,6 +3,17 @@
 This list records boundaries encountered while building the libraries. A row
 does not mean unrelated library work is blocked.
 
+The [weighted View item-import reduction](../tests/fixtures/stdlib_compiler_state/weighted_view_import/README.md)
+confirms a source-pack type-check rejection when `core::slice::View` is
+explicitly imported alongside `ext::weighted_graph`, which also exports
+`View`. The short `View<u8>` return annotation rejects with LNC0007 at 6:31;
+qualifying only that annotation or removing only the weighted-graph import
+compiles and executes on Linux x86_64 CPU output from the GPU compiler.
+`weighted-view-import-results.log` records the explicit diagnostic run:
+2 controls passed, 1 intended-success test failed in 7.90s. That test remains
+ignored pending compiler repair; the application uses qualified slice types.
+No internal cause, compiler repair or graph-runtime failure is claimed.
+
 The [lazy map update increment](stdlib-lazy-map-updates.md) uses existing
 Producer/Mapper traits, generic entry/error values and the canonical map
 insertion engines. It adds no host binding. Query/candidate consistency,

@@ -1,0 +1,133 @@
+module app::main;
+import core::iter;
+import core::mem;
+import core::option;
+import core::pair;
+import core::result;
+import core::search;
+import core::text;
+import std::io;
+
+fn mark(value:i32) { let byte:[i32;1] = [value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+fn literal(value:str,count:i32) -> core::text::Text { return core::text::from_utf8(core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count),count).unwrap(); }
+fn view(actual:core::text::Text,source:core::text::Text,start:i32,end:i32) {
+    assert(actual.start==source.start+start && actual.length==end-start);
+    assert(actual.equals(source.slice(start,end).unwrap()));
+    assert(core::mem::slice_stride(actual.bytes)==core::mem::slice_stride(source.bytes));
+}
+fn fields<I>(cursor:&I,source:core::text::Text,positions:[i32],count:i32) where I:core::iter::Iterator<core::text::Text> {
+    let i:i32=0;
+    while(i<count) { let item:core::option::Option<core::text::Text> = cursor.next(); view(item.unwrap(),source,positions[i*2],positions[i*2+1]); i+=1; }
+    let first:core::option::Option<core::text::Text> = cursor.next(); let second:core::option::Option<core::text::Text> = cursor.next(); assert(first.is_none() && second.is_none());
+}
+fn matches(source:core::text::Text,needle:core::text::Text,positions:[i32],count:i32) {
+    let cursor=source.rmatch_indices(needle); let i:i32=0;
+    while(i<count) { let item=cursor.next().unwrap(); assert(item.first==positions[i]); view(item.second,source,positions[i],positions[i]+needle.length); i+=1; }
+    assert(cursor.next().is_none() && cursor.next().is_none());
+}
+fn once(source:core::text::Text,needle:core::text::Text,left:i32,right:i32) {
+    let first=source.split_once(needle); let last=source.rsplit_once(needle);
+    if(left<0) { assert(first.is_none() && last.is_none()); return; }
+    let a=first.unwrap(); let b=last.unwrap();
+    view(a.first,source,0,left); view(a.second,source,left+needle.length,source.length);
+    view(b.first,source,0,right); view(b.second,source,right+needle.length,source.length);
+}
+fn partitions(source:core::text::Text,needle:core::text::Text) {
+    // source is the selected range "aéaéa"; byte positions differ from scalar positions.
+    once(source,needle,1,4); once(source,source.slice(0,0).unwrap(),0,7); once(source,source,0,0);
+    once(source,literal("missing",7),-1,-1);
+    let forward:[i32;6] = [0,1,3,4,6,7]; let reverse:[i32;6] = [6,7,3,4,0,1];
+    let r=source.rsplit(needle); fields<core::text::RSplit>(r.borrow(),source,reverse,3);
+    let f=source.splitn(needle,99); fields<core::text::SplitN>(f.borrow(),source,forward,3);
+    let rn=source.rsplitn(needle,18446744073709551615); fields<core::text::RSplitN>(rn.borrow(),source,reverse,3);
+    let twof:[i32;4] = [0,1,3,7]; let twor:[i32;4] = [6,7,0,4];
+    let f2=source.splitn(needle,2); fields<core::text::SplitN>(f2.borrow(),source,twof,2);
+    let r2=source.rsplitn(needle,2); fields<core::text::RSplitN>(r2.borrow(),source,twor,2);
+    let whole:[i32;2] = [0,7]; let one=source.splitn(needle,1); fields<core::text::SplitN>(one.borrow(),source,whole,1);
+    let rone=source.rsplitn(needle,1); fields<core::text::RSplitN>(rone.borrow(),source,whole,1);
+    let zero=source.splitn(needle,0); fields<core::text::SplitN>(zero.borrow(),source,whole,0);
+    let rzero=source.rsplitn(needle,0); fields<core::text::RSplitN>(rzero.borrow(),source,whole,0);
+    let at:[i32;2] = [4,1]; matches(source,needle,at,2);
+    let boundaries:[i32;6] = [7,6,4,3,1,0]; let empty=source.slice(0,0).unwrap(); matches(source,empty,boundaries,6);
+    let empty_fields:[i32;14] = [7,7,6,7,4,6,3,4,1,3,0,1,0,0]; let es=source.rsplit(empty); fields<core::text::RSplit>(es.borrow(),source,empty_fields,7);
+    let empty_tail:[i32;4] = [7,7,0,7]; let en=source.rsplitn(empty,2); fields<core::text::RSplitN>(en.borrow(),source,empty_tail,2);
+    let empty_head:[i32;4] = [0,0,0,7]; let f_empty=source.splitn(empty,2); fields<core::text::SplitN>(f_empty.borrow(),source,empty_head,2);
+    // A cursor captures the descriptor; reassigning the variable does not retarget it.
+    let selected=source; let saved=selected.rsplit(needle); selected=source.slice(0,0).unwrap(); view(saved.next().unwrap(),source,6,7);
+    let copy=saved; view(saved.next().unwrap(),source,3,4); view(copy.next().unwrap(),source,3,4);
+    let take=core::iter::take<core::text::RSplit,core::text::Text>(saved.borrow(),1); view(take.next().unwrap(),source,0,1);
+    assert(take.next().is_none() && take.next().is_none() && saved.next().is_none()); view(copy.next().unwrap(),source,0,1);
+    let untouched=source.rsplitn(needle,2); let z=core::iter::take<core::text::RSplitN,core::text::Text>(untouched.borrow(),0);
+    assert(z.next().is_none()); view(untouched.next().unwrap(),source,6,7); view(untouched.next().unwrap(),source,0,4);
+    let mi=source.rmatch_indices(needle); let mc=mi;
+    let mt=core::iter::take<core::text::RMatchIndices,core::pair::Pair<i32,core::text::Text>>(mi.borrow(),1);
+    assert(mt.next().unwrap().first==4 && mt.next().is_none() && mi.next().unwrap().first==1 && mc.next().unwrap().first==4);
+}
+fn overlaps() {
+    let source=literal("ababa",5); let needle=literal("aba",3); once(source,needle,0,2);
+    let at:[i32;1] = [2]; matches(source,needle,at,1);
+    let right:[i32;4] = [5,5,0,2]; let left:[i32;4] = [0,0,3,5];
+    let r=source.rsplit(needle); fields<core::text::RSplit>(r.borrow(),source,right,2);
+    let f=source.splitn(needle,3); fields<core::text::SplitN>(f.borrow(),source,left,2);
+    let empty=literal("",0); let pair:[i32;4] = [0,0,0,0];
+    once(empty,empty,0,0); once(empty,needle,-1,-1); let em:[i32;1] = [0]; matches(empty,empty,em,1);
+    let er=empty.rsplit(empty); fields<core::text::RSplit>(er.borrow(),empty,pair,2);
+    let en=empty.rsplitn(empty,2); fields<core::text::RSplitN>(en.borrow(),empty,pair,2);
+    let absent=source.rsplit(literal("x",1)); let whole:[i32;2] = [0,5]; fields<core::text::RSplit>(absent.borrow(),source,whole,1);
+}
+fn reference(bytes:[u8],from:i32,to:i32,needle:[u8],start:i32,length:i32,reverse:bool) -> i32 {
+    if(length==0) { if(reverse) { return to; } return from; }
+    let result:i32=-1; let i:i32=from;
+    while(i<=to-length) {
+        let j:i32=0; while(j<length && bytes[i+j]==needle[start+j]) { j+=1; }
+        if(j==length) { if(!reverse) { return i; } result=i; }
+        i+=1;
+    }
+    return result;
+}
+fn search(bytes:[u8],needle:[u8]) {
+    let from:i32=0;
+    while(from<=5) {
+        let to:i32=from;
+        while(to<=37) {
+            let probe:i32=0;
+            while(probe<5) {
+                let values:[u8;5] = [0,97,98,255,99]; let wanted:u8=values[probe]; let single:[u8;1] = [wanted];
+                assert(core::search::find_byte(bytes,from,to,wanted)==reference(bytes,from,to,single,0,1,false));
+                assert(core::search::rfind_byte(bytes,from,to,wanted)==reference(bytes,from,to,single,0,1,true)); probe+=1;
+            }
+            let length:i32=0;
+            while(length<=10) {
+                assert(core::search::find(bytes,from,to,needle,1,length)==reference(bytes,from,to,needle,1,length,false));
+                assert(core::search::rfind(bytes,from,to,needle,1,length)==reference(bytes,from,to,needle,1,length,true));
+                let expected:i32=to-from+1;
+                if(length>0) {
+                    expected=0; let next:i32=from; let done:bool=false;
+                    while(!done) { let at:i32=reference(bytes,next,to,needle,1,length,false); if(at<0) { done=true; } else { expected+=1; next=at+length; } }
+                }
+                assert(core::search::count(bytes,from,to,needle,1,length)==expected); length+=1;
+            }
+            to+=1;
+        }
+        from+=1;
+    }
+    assert(core::search::find_byte(bytes,-1,37,97)==-1 && core::search::rfind_byte(bytes,5,4,97)==-1);
+    assert(core::search::find(bytes,0,37,needle,-1,1)==-1 && core::search::rfind(bytes,0,37,needle,0,-1)==-1);
+    assert(core::search::count(bytes,5,4,needle,1,0)==0);
+}
+fn main() -> i32 {
+    mark(80);
+    let native:[u8;11] = [255,255,97,195,169,97,195,169,97,255,255];
+    let words:[i32;3] = [0;3]; let packed:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words),12);
+    let i:i32=0; while(i<11) { packed[i]=native[i]; i+=1; } packed[11]=177;
+    let a=core::text::from_utf8_range(native,2,7).unwrap(); let b=core::text::from_utf8_range(packed,2,7).unwrap();
+    assert(core::mem::slice_stride(a.bytes)<0 && core::mem::slice_stride(b.bytes)==1);
+    partitions(a,b.slice(1,3).unwrap()); partitions(b,a.slice(1,3).unwrap()); overlaps();
+    let hay:[u8;37] = [0;37]; let hay_words:[i32;10] = [0;10]; let hay_packed:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(hay_words),40);
+    let nd:[u8;12] = [255,97,98,97,98,97,98,97,98,97,98,255]; let nw:[i32;3] = [0;3]; let np:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(nw),12);
+    i=0; while(i<12) { np[i]=nd[i]; i+=1; } i=0; while(i<37) { hay[i]=(97+i%2) as u8; i+=1; } hay[0]=0; hay[9]=255; hay[36]=0;
+    i=0; while(i<37) { hay_packed[i]=hay[i]; i+=1; }
+    search(hay,nd); search(hay,np); search(hay_packed,nd); search(hay_packed,np);
+    let original:[u8;11] = [255,255,97,195,169,97,195,169,97,255,255]; i=0; while(i<11) { assert(native[i]==original[i] && packed[i]==original[i]); i+=1; } assert(packed[11]==177);
+    mark(112); return 0;
+}

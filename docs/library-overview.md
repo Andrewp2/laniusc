@@ -1,5 +1,39 @@
 # Standard and extended library overview
 
+The [borrowed Text partition increment](stdlib-text-partitions.md) adds
+`split_once`, `rsplit_once`, `rmatch_indices`, `rsplit`, `splitn` and `rsplitn`.
+Rightmost matches have their own overlap policy; empty separators use scalar
+boundaries, and bounded cursors retain the unsplit final remainder. Shared
+[byte search](stdlib-search.md) preserves logical order for packed ascending
+and native descending storage. All ten library gates pass on native Linux
+x86_64, including the 873-case / 57,204-pull model, observation of no source
+allocations and eight capability rejections. The
+[field selector](stdlib-select-field.md) passes all four groups / 102 native
+cases, including ten reached allocation failures and exact retry-budget checks.
+Other layouts and device execution remain unverified.
+
+The [weighted graph increment](extended-weighted-graph.md) is implemented with
+canonical directed multigraphs, checked `i64` Dijkstra and Bellman–Ford, and
+path results that own their storage independently of the graph. Duplicate
+edges and self-loops remain; overflow, negative edges and reachable negative
+cycles have explicit errors. The [route-cost program](extended-route-cost.md)
+combines these APIs with bounded CSV input and staged output. All four library
+gates pass on native Linux x86_64, including 2,819 model graphs / 5,638
+algorithm outcomes and nine reached allocation failures with recovery.
+Route-cost passes all four groups / 148 cases, including three selected
+allocation failures and two real-stream chunk/prefix cases. These finite
+receipts do not establish other targets or formal verification.
+
+The [directory cursor](stdlib-directory-cursor.md), `std::walk`, is implemented
+as descriptor-anchored depth-first traversal with explicit descent/pruning,
+recoverable fault events, resource limits and manual cleanup. The
+[recursive grep migration](extended-text-grep-walk.md) uses that cursor for
+traversal and retains its filtering and per-directory ignore rules. Both grep
+gates pass: 23 behavior comparisons and 12 fault runs. All five cursor gates
+pass: four native groups / 60 cases plus 39 host observer controls. The
+existing `std::directory::walk` snapshot API and its historical receipts remain
+separate.
+
 The [lazy map update increment](stdlib-lazy-map-updates.md) adds scoped
 update-or-insert methods to HashMap and TreeMap, with same-type and borrowed
 queries. Hits preserve stored keys and reinstall the latest value; misses call
@@ -2261,7 +2295,7 @@ The focused poll-fault receipt is
 Rare WANT schedules, clock failures after native TLS calls and concurrent
 mixed invalid/valid mutual-TLS admissions retain finite coverage gaps. The
 sequential mutual-TLS matrices do not establish that mixed concurrent schedule.
-The [declaration reference](library-api-reference.md#current-generation-receipt)
+The [declaration reference](library-api-reference.md)
 passes its bounded writer and final check for the command hierarchy/help
 source/API freeze: 253 pages, 252 modules and 8,346 lexical public declaration
 markers. Five outputs change: the index, flat parser, new command/help pages

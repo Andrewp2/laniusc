@@ -8,9 +8,12 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `std`. Role: module. Profile: **Source inventory**.
 
+The owned directory snapshot walk remains separate from the new resumable std::walk cursor. The cursor reuses Reader and descriptor-relative operations; all five library gates pass, with 60 native cases and 39 host observer controls. The recursive text_grep migration passes both gates/35 cases on native Linux x86_64. Existing directory receipts retain their original source/API scope.
+
 ## Contract and evidence guides
 
 - [stdlib-directory](../../stdlib-directory.md)
+- [stdlib-directory-cursor](../../stdlib-directory-cursor.md)
 
 Declaration counts: enum: 1; field: 24; function: 9; impl: 3; method: 12; struct: 5; variant: 9.
 

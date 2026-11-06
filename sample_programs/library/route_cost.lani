@@ -1,0 +1,287 @@
+// Bounded exact-i64 shortest routes over canonical weighted directed graphs.
+module app::main;
+import alloc::io;
+import alloc::vec;
+import alloc::vec::Vec;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::option;
+import core::option::Option;
+import core::result;
+import core::result::Result;
+import core::slice;
+import core::text;
+import ext::cli;
+import ext::csv;
+import ext::csv_write;
+import ext::weighted_graph;
+import std::args;
+import std::signal;
+import std::stream;
+
+struct Options {
+    nodes:i32, source:i32, target:i32, bellman:bool, help:bool,
+    nodes_set:bool, source_set:bool, target_set:bool, algorithm_set:bool
+}
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Writes { bytes:u64, calls:u64 }
+impl Writes { fn borrow(&self) -> &Writes { return self; } }
+fn literal(value:str,count:i32) -> core::slice::View<u8> {
+    return core::slice::view(core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count),count).unwrap();
+}
+fn bytes(value:core::text::Text) -> core::slice::View<u8> {
+    return core::slice::View { values:value.bytes,start:value.start,length:value.length };
+}
+fn text(value:core::slice::View<u8>) -> core::text::Text {
+    return core::text::from_utf8_unchecked(value.values,value.start,value.length);
+}
+fn equal(left:core::slice::View<u8>,right:core::slice::View<u8>) -> bool {
+    if(left.length!=right.length) { return false; }
+    let i:i32=0; while(i<left.length) { if(left.get(i).unwrap()!=right.get(i).unwrap()) { return false; } i+=1; }
+    return true;
+}
+fn write(value:core::slice::View<u8>,handle:i32,maximum:i32) -> bool {
+    let sink=std::stream::from_handle(handle); let sent:i32=0; let calls:i32=0;
+    while(sent<value.length) {
+        if(calls==maximum) { return false; } calls+=1;
+        let result=sink.write(value.values,value.start+sent,value.length-sent);
+        if(result.is_err()) { if(core::io::is_interrupted(result.unwrap_err())) { continue; } return false; }
+        let count=result.unwrap(); if(count<=0 || count>value.length-sent) { return false; } sent+=count;
+    }
+    return true;
+}
+fn report(status:i32) -> i32 {
+    let message:core::slice::View<u8> =literal("route-cost: invalid input or arguments\n",39);
+    if(status==3) { message=literal("route-cost: input I/O failed\n",29); }
+    if(status==4) { message=literal("route-cost: allocation failed\n",30); }
+    if(status==5) { message=literal("route-cost: output I/O failed\n",30); }
+    if(status==6) { message=literal("route-cost: negative edge requires bellman-ford\n",48); }
+    if(status==7) { message=literal("route-cost: reachable negative cycle\n",37); }
+    if(status==8) { message=literal("route-cost: i64 path arithmetic overflow\n",41); }
+    if(status==9) { message=literal("route-cost: resource limit exceeded\n",36); }
+    write(message,2,8); return status;
+}
+fn limits() -> ext::weighted_graph::Limits {
+    return ext::weighted_graph::Limits { max_nodes:4096,max_edges:65536,max_work:100000000 };
+}
+fn graph_status(error:ext::weighted_graph::Error) -> i32 {
+    return match(error.kind) {
+        ext::weighted_graph::ErrorKind::AllocationFailed -> 4,
+        ext::weighted_graph::ErrorKind::NegativeEdge -> 6,
+        ext::weighted_graph::ErrorKind::NegativeCycle -> 7,
+        ext::weighted_graph::ErrorKind::Overflow -> 8,
+        ext::weighted_graph::ErrorKind::NodeLimit -> 9,
+        ext::weighted_graph::ErrorKind::EdgeLimit -> 9,
+        ext::weighted_graph::ErrorKind::WorkLimit -> 9,
+        _ -> 2
+    };
+}
+fn csv_status(error:ext::csv::Error) -> i32 {
+    return match(error) {
+        ext::csv::Error::AllocationFailed -> 4,
+        ext::csv::Error::LimitExceeded(at) -> 9,
+        ext::csv::Error::CapacityOverflow -> 9,
+        ext::csv::Error::OffsetOverflow -> 9,
+        _ -> 2
+    };
+}
+fn read_status(error:alloc::io::ReadError) -> i32 {
+    return match(error) {
+        alloc::io::ReadError::Io(cause) -> 3,
+        alloc::io::ReadError::Storage(cause) -> match(cause) { alloc::vec::Error::AllocationFailed -> 4, _ -> 9 },
+        alloc::io::ReadError::ByteLimit -> 9,
+        alloc::io::ReadError::CallLimit -> 9,
+        _ -> 2
+    };
+}
+fn collect(input:&Vec<u8>,edges:&Vec<ext::weighted_graph::Edge>,options:&Options) -> i32 {
+    let dialect=ext::csv::default_options(); dialect.max_records=65537; dialect.max_fields=3;
+    dialect.max_field_bytes=128; dialect.max_record_bytes=384;
+    let parsed=ext::csv::parse_bytes(input.as_slice(),0,input.len(),dialect);
+    if(parsed.is_err()) { return csv_status(parsed.unwrap_err()); }
+    let table=parsed.unwrap(); let status:i32=0;
+    if(table.row_count()<1 || table.field_count(0).unwrap()!=3) { status=2; }
+    if(status==0 && (!equal(bytes(table.field(0,0).unwrap()),literal("source",6))
+        || !equal(bytes(table.field(0,1).unwrap()),literal("target",6))
+        || !equal(bytes(table.field(0,2).unwrap()),literal("cost",4)))) { status=2; }
+    let row:i32=1;
+    while(status==0 && row<table.row_count()) {
+        if(table.field_count(row).unwrap()!=3) { status=2; break; }
+        let from=bytes(table.field(row,0).unwrap()); let to=bytes(table.field(row,1).unwrap()); let number=bytes(table.field(row,2).unwrap());
+        let source=core::decimal::parse_u64_range(from.values,from.start,from.length);
+        let target=core::decimal::parse_u64_range(to.values,to.start,to.length);
+        let cost=core::decimal::parse_i64_range(number.values,number.start,number.length);
+        if(source.is_err() || target.is_err() || cost.is_err()) { status=2; break; }
+        if(source.unwrap()>=(options.nodes as u64) || target.unwrap()>=(options.nodes as u64)) { status=2; break; }
+        let edge:ext::weighted_graph::Edge=ext::weighted_graph::Edge { source:source.unwrap() as i32,target:target.unwrap() as i32,cost:cost.unwrap() };
+        if(edges.try_push(edge).is_err()) { status=4; break; }
+        row+=1;
+    }
+    table.destroy(); return status;
+}
+fn emit(output:&alloc::io::Buffer,record:&ext::csv::Record,state:&Writes,fields:core::slice::View<core::slice::View<u8>>) -> i32 {
+    record.clear(); let i:i32=0;
+    while(i<fields.length) {
+        let pushed=record.try_push_field(text(fields.get(i).unwrap()));
+        if(pushed.is_err()) { return csv_status(pushed.unwrap_err()); } i+=1;
+    }
+    let bounds=ext::csv_write::Limits { max_output:1048576-state.bytes,max_write_calls:131072-state.calls };
+    let sent=ext::csv_write::write_record(output,record,bounds);
+    if(sent.is_err()) {
+        let failure=sent.unwrap_err(); state.bytes+=failure.written; state.calls+=failure.write_calls;
+        return match(failure.cause) {
+            ext::csv_write::Cause::Csv(cause) -> csv_status(cause),
+            ext::csv_write::Cause::Io(cause) -> match(cause) { core::io::Error::AllocationFailed -> 4, _ -> 9 },
+            _ -> 9
+        };
+    }
+    let progress=sent.unwrap(); state.bytes+=progress.written; state.calls+=progress.write_calls; return 0;
+}
+fn render_all(paths:&ext::weighted_graph::Paths,options:&Options,output:&alloc::io::Buffer) -> i32 {
+    let record=ext::csv::new(); let state=Writes { bytes:0,calls:0 };
+    let header:[core::slice::View<u8>;4]=[literal("node",4),literal("reachable",9),literal("cost",4),literal("predecessor",11)];
+    let status:i32=emit(output,record.borrow(),state.borrow(),core::slice::view(header,4).unwrap());
+    let node:i32=0;
+    while(status==0 && node<options.nodes) {
+        let distance=paths.distance(node); let previous=paths.predecessor(node);
+        if(distance.is_err()) { status=graph_status(distance.unwrap_err()); break; }
+        if(previous.is_err()) { status=graph_status(previous.unwrap_err()); break; }
+        let node_bytes:[u8;10]=[0;10]; let cost_bytes:[u8;20]=[0;20]; let predecessor:[u8;10]=[0;10];
+        let node_count=core::decimal::format_u32(node_bytes,0,10,node as u32).unwrap();
+        let cost:core::slice::View<u8> =literal("",0); let parent:core::slice::View<u8> =literal("",0); let reachable:core::slice::View<u8> =literal("false",5);
+        if(distance.unwrap().is_some()) {
+            reachable=literal("true",4);
+            let count=core::decimal::format_i64(cost_bytes,0,20,distance.unwrap().unwrap()).unwrap();
+            cost=core::slice::view(cost_bytes,count).unwrap();
+        }
+        if(previous.unwrap().is_some()) {
+            let count=core::decimal::format_u32(predecessor,0,10,previous.unwrap().unwrap().source as u32).unwrap();
+            parent=core::slice::view(predecessor,count).unwrap();
+        }
+        let fields:[core::slice::View<u8>;4]=[core::slice::view(node_bytes,node_count).unwrap(),reachable,cost,parent];
+        status=emit(output,record.borrow(),state.borrow(),core::slice::view(fields,4).unwrap()); node+=1;
+    }
+    record.destroy(); return status;
+}
+fn append_node(path:&Vec<u8>,node:i32) -> i32 {
+    let number:[u8;10]=[0;10]; let count=core::decimal::format_u32(number,0,10,node as u32).unwrap();
+    if(count>65536-path.len()) { return 9; }
+    if(path.try_extend(core::slice::view(number,count).unwrap()).is_err()) { return 4; } return 0;
+}
+fn render_target(paths:&ext::weighted_graph::Paths,options:&Options,output:&alloc::io::Buffer) -> i32 {
+    let distance=paths.distance(options.target); if(distance.is_err()) { return graph_status(distance.unwrap_err()); }
+    let found=paths.path_to(options.target,limits()); if(found.is_err()) { return graph_status(found.unwrap_err()); }
+    let path:Vec<u8> =alloc::vec::new<u8>(); let status:i32=0;
+    if(found.unwrap().is_some()) {
+        let edges=found.unwrap().unwrap();
+        status=append_node(path.borrow(),options.source); let i:i32=0;
+        while(status==0 && i<edges.len()) {
+            if(path.len()==65536) { status=9; break; }
+            if(path.try_push(59).is_err()) { status=4; break; }
+            status=append_node(path.borrow(),edges.at(i).target); i+=1;
+        }
+        edges.destroy();
+    }
+    if(status!=0) { path.destroy(); return status; }
+    let record=ext::csv::new(); let state=Writes { bytes:0,calls:0 };
+    let header:[core::slice::View<u8>;5]=[literal("source",6),literal("target",6),literal("reachable",9),literal("cost",4),literal("path",4)];
+    status=emit(output,record.borrow(),state.borrow(),core::slice::view(header,5).unwrap());
+    if(status==0) {
+        let source:[u8;10]=[0;10]; let target:[u8;10]=[0;10]; let number:[u8;20]=[0;20];
+        let source_count=core::decimal::format_u32(source,0,10,options.source as u32).unwrap();
+        let target_count=core::decimal::format_u32(target,0,10,options.target as u32).unwrap();
+        let cost:core::slice::View<u8> =literal("",0); let reachable:core::slice::View<u8> =literal("false",5);
+        if(distance.unwrap().is_some()) {
+            reachable=literal("true",4);
+            let count=core::decimal::format_i64(number,0,20,distance.unwrap().unwrap()).unwrap();
+            cost=core::slice::view(number,count).unwrap();
+        }
+        let fields:[core::slice::View<u8>;5]=[core::slice::view(source,source_count).unwrap(),core::slice::view(target,target_count).unwrap(),reachable,cost,path.as_view()];
+        status=emit(output,record.borrow(),state.borrow(),core::slice::view(fields,5).unwrap());
+    }
+    record.destroy(); path.destroy(); return status;
+}
+fn solve(graph:ext::weighted_graph::View,source:i32,bellman:bool) -> Result<ext::weighted_graph::Paths,ext::weighted_graph::Error> {
+    if(bellman) { return ext::weighted_graph::bellman_ford(graph,source,limits()); }
+    return ext::weighted_graph::dijkstra(graph,source,limits());
+}
+// This function consumes the edge owner. The result owns its path data after
+// both the input edges and canonical graph have been released.
+fn calculate(edges:Vec<ext::weighted_graph::Edge>,options:&Options,output:&alloc::io::Buffer) -> i32 {
+    let made=ext::weighted_graph::from_edges(options.nodes,edges.as_view(),limits()); edges.destroy();
+    if(made.is_err()) { return graph_status(made.unwrap_err()); } let graph=made.unwrap();
+    let computed=solve(graph.view().unwrap(),options.source,options.bellman); graph.destroy();
+    if(computed.is_err()) { return graph_status(computed.unwrap_err()); } let paths=computed.unwrap();
+    let status:i32=0;
+    if(options.target_set) { status=render_target(paths.borrow(),options,output); }
+    else { status=render_all(paths.borrow(),options,output); }
+    paths.destroy(); return status;
+}
+fn run(options:&Options) -> i32 {
+    let source=std::stream::stdin();
+    let collected=alloc::io::read_to_end(source.borrow(),alloc::io::ReadLimits { max_bytes:4194304,max_calls:16384 });
+    if(collected.is_err()) { let failure=collected.unwrap_err(); let status=read_status(failure.cause); failure.destroy(); return status; }
+    let input=collected.unwrap(); let edges:Vec<ext::weighted_graph::Edge> =alloc::vec::new<ext::weighted_graph::Edge>();
+    let status:i32=collect(input.borrow(),edges.borrow(),options); input.destroy();
+    if(status!=0) { edges.destroy(); return status; }
+    let made=alloc::io::with_limit(1048576);
+    if(made.is_err()) { edges.destroy(); return 4; }
+    let output=made.unwrap(); status=calculate(edges,options,output.borrow());
+    if(status==0 && !write(core::slice::view(output.as_bytes(),output.len()).unwrap(),1,16384)) { status=5; }
+    output.destroy(); return status;
+}
+fn arguments(values:core::slice::View<core::slice::View<u8>>) -> i32 {
+    let specs:[ext::cli::Spec;5]=[
+        ext::cli::Spec { id:1,long:literal("help",4),short:104,arity:ext::cli::Arity::Flag },
+        ext::cli::Spec { id:2,long:literal("nodes",5),short:110,arity:ext::cli::Arity::Required },
+        ext::cli::Spec { id:3,long:literal("source",6),short:115,arity:ext::cli::Arity::Required },
+        ext::cli::Spec { id:4,long:literal("algorithm",9),short:97,arity:ext::cli::Arity::Required },
+        ext::cli::Spec { id:5,long:literal("target",6),short:116,arity:ext::cli::Arity::Required }
+    ];
+    let made=ext::cli::parser(values,core::slice::view(specs,5).unwrap(),ext::cli::Ordering::Intermixed);
+    if(made.is_err()) { return report(2); }
+    let parser=made.unwrap();
+    let options=Options { nodes:0,source:0,target:0,bellman:false,help:false,nodes_set:false,source_set:false,target_set:false,algorithm_set:false };
+    while(true) {
+        let event=parser.next(); if(event.is_err()) { return report(2); }
+        let next=event.unwrap(); if(next.is_none()) { break; }
+        let item:Option<ext::cli::Occurrence> =match(next.unwrap()) { ext::cli::Event::Option(value) -> core::option::Some(value), _ -> core::option::None() };
+        if(item.is_none()) { return report(2); } let found=item.unwrap();
+        if(found.id==1) { if(options.help) { return report(2); } options.help=true; }
+        if(found.id==4) {
+            if(options.algorithm_set) { return report(2); } options.algorithm_set=true;
+            let value=found.value.unwrap().bytes;
+            if(equal(value,literal("bellman-ford",12))) { options.bellman=true; }
+            else { if(!equal(value,literal("dijkstra",8))) { return report(2); } }
+        }
+        if(found.id==2 || found.id==3 || found.id==5) {
+            let value=found.value.unwrap().bytes; let parsed=core::decimal::parse_u64_range(value.values,value.start,value.length);
+            if(parsed.is_err()) { return report(2); } let number=parsed.unwrap();
+            if(found.id==2) {
+                if(options.nodes_set || number==0) { return report(2); }
+                if(number>4096) { return report(9); } options.nodes_set=true; options.nodes=number as i32;
+            }
+            if(found.id==3) {
+                if(options.source_set || number>2147483647) { return report(2); }
+                options.source_set=true; options.source=number as i32;
+            }
+            if(found.id==5) {
+                if(options.target_set || number>2147483647) { return report(2); }
+                options.target_set=true; options.target=number as i32;
+            }
+        }
+    }
+    if(options.help) {
+        let help=literal("Usage: route-cost --nodes N --source S [--algorithm dijkstra|bellman-ford] [--target T]\nRead CSV source,target,cost with exact signed i64 costs.\nDefault: Dijkstra and all-node CSV distances. --target emits one route.\nDijkstra rejects every negative edge; Bellman-Ford rejects reachable negative cycles.\nLimits: 4096 nodes, 65536 edges, 4 MiB input, 100000000 work, 1 MiB staged output.\nShort options: -n N, -s S, -a ALGORITHM, -t T, -h.\n",437);
+        if(!write(help,1,64)) { return report(5); } return 0;
+    }
+    if(!options.nodes_set || !options.source_set || options.source>=options.nodes || (options.target_set && options.target>=options.nodes)) { return report(2); }
+    let status=run(options.borrow()); if(status!=0) { return report(status); } return 0;
+}
+fn main() -> i32 {
+    if(std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return report(5); }
+    let captured=std::args::snapshot(1,24,1024);
+    if(captured.is_err()) { return report(match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4,std::args::Error::HostRead(index) -> 3,_ -> 2 }); }
+    let values=captured.unwrap(); let status=arguments(values.as_view()); values.destroy(); return status;
+}

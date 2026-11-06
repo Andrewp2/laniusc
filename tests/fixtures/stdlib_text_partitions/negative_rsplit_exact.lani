@@ -1,0 +1,13 @@
+module app::main;
+import core::iter;
+import core::option;
+import core::pair;
+import core::result;
+import core::text;
+fn required<I,T>(source:&I) -> u64 where I:core::iter::Iterator<T>,I:core::iter::ExactSizeIterator<T> { return source.remaining_count(); }
+fn main() -> i32 {
+    let bytes:[u8;3] = [97,58,98]; let text=core::text::from_utf8(bytes,3).unwrap(); let needle=text.slice(1,2).unwrap();
+    let cursor:core::text::RSplit=text.rsplit(needle);
+    let rejected=required<core::text::RSplit,core::text::Text>(cursor.borrow()); // rejected_partition_capability
+    return 0;
+}

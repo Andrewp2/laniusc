@@ -41,9 +41,13 @@ unchanged until their entries are removed or the map is destroyed.
 | `starts_with`, `ends_with` | Exact prefix/suffix matches; empty patterns match |
 | `find`, `rfind` | Optional byte offsets; empty patterns match at 0 and byte_len respectively |
 | `match_indices(needle)` | Forward nonoverlapping `Pair<i32, Text>` matches; [contract and accepted evidence](stdlib-text-replacement.md) |
+| `rmatch_indices(needle)` | Rightmost nonoverlapping `Pair<i32, Text>` matches; [partition contract and evidence](stdlib-text-partitions.md) |
+| `split_once(separator)`, `rsplit_once(separator)` | Optional prefix/suffix pair around the leftmost or rightmost match, always in source order |
 | `trim_ascii()` | Borrowed subview trimming HT, LF, VT, FF, CR and space |
 | `scalars()` | Iterator of `Scalar { byte_index, value: u32 }`, relative to this view |
 | `split(separator)` | Iterator of borrowed fields, preserving empty fields |
+| `rsplit(separator)` | Rightmost nonoverlapping fields, yielded right to left |
+| `splitn(separator, max_fields)`, `rsplitn(separator, max_fields)` | At most a `u64` field limit; zero yields none, one yields the whole source, and the final field retains the unsplit remainder |
 | `split_ascii_whitespace()` | Iterator of nonempty borrowed words, separated by HT/LF/VT/FF/CR/space |
 | `lines()` | Borrowed LF/CRLF partition, excluding terminators and a phantom final line; shared forward/backward traversal |
 | `parse_u8/u16/u32/u64/usize/i8/i16/i32/i64/isize()` | Checked decimal parsing with errors relative to this view |
@@ -72,10 +76,14 @@ vertical tab and form feed; format parsers keep their own whitespace grammar.
 
 Equality, ordering and hashing traits allow Text in generic collections.
 Hashing is the same deterministic FNV-1a byte hash as String, independent of
-backing storage or offsets. It is not cryptographic or keyed. Search uses a
-direct scan with O(haystack length × pattern length) worst-case work. Scalar
-traversal, hashing and comparison are linear; subviews allocate nothing and do
-not revalidate already valid text.
+backing storage or offsets. It is not cryptographic or keyed. Both `find` and
+`rfind` use `core::search` with its byte prefilter and Two-Way fallback,
+O(haystack length + pattern length) work, and O(1) auxiliary space. Packed byte
+scans use word loads; other strides use logical indexed bytes. Scalar traversal,
+hashing and comparison are linear; subviews allocate nothing and do not
+revalidate already valid text. The [partition guide](stdlib-text-partitions.md)
+records directional overlap rules, bounded remainders, cursor capabilities,
+and accepted search-layout evidence.
 
 ## Owned and extended-library integration
 

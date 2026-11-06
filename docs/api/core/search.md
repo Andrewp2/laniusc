@@ -4,13 +4,16 @@
 
 Generated source inventory. Linked guides own runtime and semantic contracts; a listed declaration does not establish executable behavior.
 
-[All modules](../README.md) · [Source](../../../stdlib/core/search.lani#L13)
+[All modules](../README.md) · [Source](../../../stdlib/core/search.lani#L14)
 
 Layer: `core`. Role: module. Profile: **Source inventory**.
+
+Packed stride-one byte scans retain SWAR; other strides use logical indexed byte scans before the existing substring prefilter/Two-Way machinery. The accepted Text partition increment checks packed ascending and native descending haystack/needle combinations, exact subrange results and no source allocation/release. The ten library gates include an independent 873-case Text model and eight capability rejections. Arbitrary unexecuted strides and GPU-device execution are not claimed; earlier search throughput receipts retain their original source/layout scope.
 
 ## Contract and evidence guides
 
 - [stdlib-search](../../stdlib-search.md)
+- [stdlib-text-partitions](../../stdlib-text-partitions.md)
 
 Declaration counts: function: 8.
 
@@ -18,13 +21,13 @@ Declaration counts: function: 8.
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::mem](mem.md) · [source](../../../stdlib/core/search.lani#L14)
+- [core::mem](mem.md) · [source](../../../stdlib/core/search.lani#L15)
 
 ## Free functions and extern declarations
 
 ### function: find_byte
 
-[Source line 42](../../../stdlib/core/search.lani#L42)
+[Source line 43](../../../stdlib/core/search.lani#L43)
 
 ```lanius
 pub fn find_byte(bytes: [u8], from: i32, to: i32, byte: u8) -> i32
@@ -32,7 +35,7 @@ pub fn find_byte(bytes: [u8], from: i32, to: i32, byte: u8) -> i32
 
 ### function: rfind_byte
 
-[Source line 73](../../../stdlib/core/search.lani#L73)
+[Source line 79](../../../stdlib/core/search.lani#L79)
 
 ```lanius
 pub fn rfind_byte(bytes: [u8], from: i32, to: i32, byte: u8) -> i32
@@ -40,7 +43,7 @@ pub fn rfind_byte(bytes: [u8], from: i32, to: i32, byte: u8) -> i32
 
 ### function: rank
 
-[Source line 89](../../../stdlib/core/search.lani#L89)
+[Source line 100](../../../stdlib/core/search.lani#L100)
 
 ```lanius
 pub fn rank(byte: u8) -> i32
@@ -48,7 +51,7 @@ pub fn rank(byte: u8) -> i32
 
 ### function: find_two_way
 
-[Source line 174](../../../stdlib/core/search.lani#L174)
+[Source line 185](../../../stdlib/core/search.lani#L185)
 
 ```lanius
 pub fn find_two_way(bytes: [u8], from: i32, to: i32, needle: [u8], needle_start: i32, needle_length: i32) -> i32
@@ -56,7 +59,7 @@ pub fn find_two_way(bytes: [u8], from: i32, to: i32, needle: [u8], needle_start:
 
 ### function: rfind_two_way
 
-[Source line 182](../../../stdlib/core/search.lani#L182)
+[Source line 193](../../../stdlib/core/search.lani#L193)
 
 ```lanius
 pub fn rfind_two_way(bytes: [u8], from: i32, to: i32, needle: [u8], needle_start: i32, needle_length: i32) -> i32
@@ -64,7 +67,7 @@ pub fn rfind_two_way(bytes: [u8], from: i32, to: i32, needle: [u8], needle_start
 
 ### function: find
 
-[Source line 200](../../../stdlib/core/search.lani#L200)
+[Source line 211](../../../stdlib/core/search.lani#L211)
 
 ```lanius
 pub fn find(bytes: [u8], from: i32, to: i32, needle: [u8], needle_start: i32, needle_length: i32) -> i32
@@ -72,7 +75,7 @@ pub fn find(bytes: [u8], from: i32, to: i32, needle: [u8], needle_start: i32, ne
 
 ### function: rfind
 
-[Source line 243](../../../stdlib/core/search.lani#L243)
+[Source line 254](../../../stdlib/core/search.lani#L254)
 
 ```lanius
 pub fn rfind(bytes: [u8], from: i32, to: i32, needle: [u8], needle_start: i32, needle_length: i32) -> i32
@@ -80,7 +83,7 @@ pub fn rfind(bytes: [u8], from: i32, to: i32, needle: [u8], needle_start: i32, n
 
 ### function: count
 
-[Source line 269](../../../stdlib/core/search.lani#L269)
+[Source line 280](../../../stdlib/core/search.lani#L280)
 
 ```lanius
 pub fn count(bytes: [u8], from: i32, to: i32, needle: [u8], needle_start: i32, needle_length: i32) -> i32

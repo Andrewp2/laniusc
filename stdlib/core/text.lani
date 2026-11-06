@@ -20,7 +20,11 @@ pub struct Text { bytes: [u8], start: i32, length: i32 }
 pub struct Scalar { byte_index: i32, value: u32 }
 pub struct Scalars { text: Text, position: i32, back: i32 }
 pub struct MatchIndices { text: Text, needle: Text, position: i32, done: bool }
+pub struct RMatchIndices { text: Text, needle: Text, position: i32, done: bool }
 pub struct Split { text: Text, separator: Text, position: i32, empty_head: bool, done: bool }
+pub struct RSplit { text: Text, separator: Text, position: i32, empty_tail: bool, done: bool }
+pub struct SplitN { inner: Split, remaining: u64 }
+pub struct RSplitN { inner: RSplit, remaining: u64 }
 pub struct SplitAsciiWhitespace { text: Text, position: i32, back: i32 }
 pub struct Lines { text: Text, front: i32, back: i32 }
 
@@ -93,7 +97,19 @@ pub impl Text {
         if (found < 0) { return core::option::None(); }
         return core::option::Some(found - self.start);
     }
-
+    fn rfind_before(&self, needle: Text, end: i32) -> core::option::Option<i32> {
+        if (needle.length > end) { return core::option::None(); }
+        if (needle.length == 0) { return core::option::Some(end); }
+        let found: i32 = core::search::rfind(self.bytes, self.start, self.start + end, needle.bytes, needle.start, needle.length);
+        if (found < 0) { return core::option::None(); }
+        return core::option::Some(found - self.start);
+    }
+    // end is a nonzero scalar boundary in this valid Text.
+    fn previous_boundary(&self, end: i32) -> i32 {
+        let index: i32 = end - 1;
+        while (index > 0 && core::utf8::is_continuation_byte(self.bytes[self.start + index])) { index -= 1; }
+        return index;
+    }
 
     pub fn byte_len(&self) -> i32 { return self.length; }
     pub fn is_empty(&self) -> bool { return self.length == 0; }
@@ -164,22 +180,34 @@ pub impl Text {
         return suffix.length <= self.length && self.matches_at(suffix, self.length - suffix.length);
     }
     // Nonempty valid UTF-8 cannot match inside a scalar. Empty needles match
-    // at 0 for find and byte_len for rfind. find uses core::search (rarest
-    // byte prefilter, eight bytes per step, Two-Way fallback); O(n+m), no allocation.
+    // at 0 for find and byte_len for rfind. Both use core::search (byte
+    // prefilter and Two-Way fallback); O(n+m), no allocation, any byte stride.
     pub fn find(&self, needle: Text) -> core::option::Option<i32> { return self.find_from(needle, 0); }
-    pub fn rfind(&self, needle: Text) -> core::option::Option<i32> {
-        if (needle.length > self.length) { return core::option::None(); }
-        let index: i32 = self.length - needle.length;
-        while (index >= 0) {
-            if (self.matches_at(needle, index)) { return core::option::Some(index); }
-            index -= 1;
-        }
-        return core::option::None();
-    }
+    pub fn rfind(&self, needle: Text) -> core::option::Option<i32> { return self.rfind_before(needle, self.length); }
     // Leftmost nonoverlapping matches borrow the source, with relative byte
     // indices. Empty needles match every scalar boundary, including both ends.
     pub fn match_indices(&self, needle: Text) -> MatchIndices {
         return MatchIndices { text: self.part(0, self.length), needle: needle, position: 0, done: false };
+    }
+    // Rightmost nonoverlapping matches, with indices relative to this Text.
+    // This sequence can differ from reversed match_indices on overlapping
+    // needles, so it supplies Iterator only, not DoubleEndedIterator.
+    pub fn rmatch_indices(&self, needle: Text) -> RMatchIndices {
+        return RMatchIndices { text: self.part(0, self.length), needle: needle, position: self.length, done: false };
+    }
+    // The pair remains in source order and excludes the selected separator.
+    // Empty separators split at the initial/final scalar boundary respectively.
+    pub fn split_once(&self, separator: Text) -> core::option::Option<core::pair::Pair<Text,Text>> {
+        let found: core::option::Option<i32> = self.find_from(separator, 0);
+        if (found.is_none()) { return core::option::None(); }
+        let index: i32 = found.unwrap();
+        return core::option::Some(core::pair::Pair { first: self.part(0, index), second: self.part(index + separator.length, self.length) });
+    }
+    pub fn rsplit_once(&self, separator: Text) -> core::option::Option<core::pair::Pair<Text,Text>> {
+        let found: core::option::Option<i32> = self.rfind_before(separator, self.length);
+        if (found.is_none()) { return core::option::None(); }
+        let index: i32 = found.unwrap();
+        return core::option::Some(core::pair::Pair { first: self.part(0, index), second: self.part(index + separator.length, self.length) });
     }
     pub fn trim_ascii(&self) -> Text {
         let start: i32 = 0;
@@ -203,6 +231,19 @@ pub impl Text {
     // fields. Empty separator yields empty, each scalar, then empty.
     pub fn split(&self, separator: Text) -> Split {
         return Split { text: self.part(0, self.length), separator: separator, position: 0, empty_head: true, done: false };
+    }
+    // Rightmost nonoverlapping partition, returned from right to left. An
+    // empty separator yields trailing empty, scalars backward, then leading empty.
+    pub fn rsplit(&self, separator: Text) -> RSplit {
+        return RSplit { text: self.part(0, self.length), separator: separator, position: self.length, empty_tail: true, done: false };
+    }
+    // At most max_fields items. Zero never reads backing; one returns the
+    // whole Text. The last allowed item retains the unsplit remainder.
+    pub fn splitn(&self, separator: Text, max_fields: u64) -> SplitN {
+        return SplitN { inner: self.split(separator), remaining: max_fields };
+    }
+    pub fn rsplitn(&self, separator: Text, max_fields: u64) -> RSplitN {
+        return RSplitN { inner: self.rsplit(separator), remaining: max_fields };
     }
     // Separate maximal nonempty words at HT, LF, VT, FF, CR and space.
     // Non-ASCII whitespace and NUL remain ordinary text. The cursor is fused.
@@ -363,6 +404,27 @@ pub impl core::iter::Iterator<core::pair::Pair<i32,Text>> for MatchIndices {
     }
 }
 
+pub impl RMatchIndices {
+    pub fn borrow(&self) -> &RMatchIndices { return self; }
+}
+
+pub impl core::iter::Iterator<core::pair::Pair<i32,Text>> for RMatchIndices {
+    pub fn next(&self) -> core::option::Option<core::pair::Pair<i32,Text>> {
+        if (self.done) { return core::option::None(); }
+        if (self.needle.is_empty()) {
+            let index: i32 = self.position;
+            if (index == 0) { self.done = true; }
+            else { self.position = self.text.previous_boundary(index); }
+            return core::option::Some(core::pair::Pair { first: index, second: self.text.part(index, index) });
+        }
+        let found: core::option::Option<i32> = self.text.rfind_before(self.needle, self.position);
+        if (found.is_none()) { self.done = true; return core::option::None(); }
+        let index: i32 = found.unwrap();
+        self.position = index;
+        return core::option::Some(core::pair::Pair { first: index, second: self.text.part(index, index + self.needle.length) });
+    }
+}
+
 pub impl Split {
     pub fn borrow(&self) -> &Split { return self; }
 }
@@ -391,6 +453,75 @@ pub impl core::iter::Iterator<Text> for Split {
         if (core::option::is_some(found)) { self.position = end + self.separator.byte_len(); }
         else { self.done = true; }
         return core::option::Some(value);
+    }
+}
+
+pub impl RSplit {
+    pub fn borrow(&self) -> &RSplit { return self; }
+}
+
+pub impl core::iter::Iterator<Text> for RSplit {
+    pub fn next(&self) -> core::option::Option<Text> {
+        if (self.done) { return core::option::None(); }
+        let end: i32 = self.position;
+        if (self.separator.is_empty()) {
+            if (self.empty_tail) {
+                self.empty_tail = false;
+                return core::option::Some(self.text.part(end, end));
+            }
+            if (end > 0) {
+                self.position = self.text.previous_boundary(end);
+                return core::option::Some(self.text.part(self.position, end));
+            }
+            self.done = true;
+            return core::option::Some(self.text.part(0, 0));
+        }
+        let found: core::option::Option<i32> = self.text.rfind_before(self.separator, end);
+        if (found.is_none()) {
+            self.done = true;
+            return core::option::Some(self.text.part(0, end));
+        }
+        let index: i32 = found.unwrap();
+        self.position = index;
+        return core::option::Some(self.text.part(index + self.separator.length, end));
+    }
+}
+
+pub impl SplitN {
+    pub fn borrow(&self) -> &SplitN { return self; }
+}
+
+pub impl core::iter::Iterator<Text> for SplitN {
+    pub fn next(&self) -> core::option::Option<Text> {
+        if (self.remaining == 0 || self.inner.done) { return core::option::None(); }
+        if (self.remaining == 1) {
+            self.remaining = 0;
+            self.inner.done = true;
+            return core::option::Some(self.inner.text.part(self.inner.position, self.inner.text.length));
+        }
+        let value: core::option::Option<Text> = self.inner.next();
+        if (value.is_none()) { self.remaining = 0; }
+        else { self.remaining -= 1; }
+        return value;
+    }
+}
+
+pub impl RSplitN {
+    pub fn borrow(&self) -> &RSplitN { return self; }
+}
+
+pub impl core::iter::Iterator<Text> for RSplitN {
+    pub fn next(&self) -> core::option::Option<Text> {
+        if (self.remaining == 0 || self.inner.done) { return core::option::None(); }
+        if (self.remaining == 1) {
+            self.remaining = 0;
+            self.inner.done = true;
+            return core::option::Some(self.inner.text.part(0, self.inner.position));
+        }
+        let value: core::option::Option<Text> = self.inner.next();
+        if (value.is_none()) { self.remaining = 0; }
+        else { self.remaining -= 1; }
+        return value;
     }
 }
 

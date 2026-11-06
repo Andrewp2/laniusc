@@ -1,0 +1,101 @@
+module app::main;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::weighted_graph;
+
+fn failed<T>(value:core::result::Result<T,ext::weighted_graph::Error>,kind:ext::weighted_graph::ErrorKind,node:i32,index:i32) {
+    assert(value.is_err()); let error=value.unwrap_err(); assert(error.kind==kind && error.node==node && error.edge==index);
+}
+fn limits(nodes:i32,edges:i32,work:u64) -> ext::weighted_graph::Limits { return ext::weighted_graph::Limits { max_nodes:nodes,max_edges:edges,max_work:work }; }
+fn budget(work:u64) -> ext::weighted_graph::Limits { return limits(2147483647,2147483647,work); }
+fn part<T>(values:[T],start:i32,length:i32) -> core::slice::View<T> { return core::slice::View { values:values,start:start,length:length }; }
+fn shape(nodes:i32,offsets:core::slice::View<i32>,arcs:core::slice::View<ext::weighted_graph::Arc>) -> ext::weighted_graph::View { return ext::weighted_graph::View { nodes:nodes,offsets:offsets,arcs:arcs }; }
+fn arc(target:i32,cost:i64) -> ext::weighted_graph::Arc { return ext::weighted_graph::Arc { target:target,cost:cost }; }
+fn edge(source:i32,target:i32,cost:i64) -> ext::weighted_graph::Edge { return ext::weighted_graph::Edge { source:source,target:target,cost:cost }; }
+fn logical_preflight_without_backing_reads() {
+    let defaults=ext::weighted_graph::default_limits(); assert(defaults.max_nodes==1048576 && defaults.max_edges==1048576 && defaults.max_work==100000000);
+    let nowhere:ptr=0; let integers:[i32]=core::mem::typed_slice_from_raw_parts<i32>(nowhere,0);
+    let arcs:[ext::weighted_graph::Arc]=core::mem::typed_slice_from_raw_parts<ext::weighted_graph::Arc>(nowhere,0);
+    let edges:[ext::weighted_graph::Edge]=core::mem::typed_slice_from_raw_parts<ext::weighted_graph::Edge>(nowhere,0);
+    let empty=part(arcs,0,0); let poison=shape(3,part(integers,0,4),part(arcs,0,3));
+    failed(ext::weighted_graph::validate(shape(-1,part(integers,0,0),empty),limits(-1,0,0)),ext::weighted_graph::ErrorKind::InvalidLimits,-1,-1);
+    failed(ext::weighted_graph::validate(poison,limits(3,-1,0)),ext::weighted_graph::ErrorKind::InvalidLimits,-1,-1);
+    failed(ext::weighted_graph::validate(shape(-1,part(integers,0,0),empty),budget(0)),ext::weighted_graph::ErrorKind::Bounds,-1,-1);
+    failed(ext::weighted_graph::validate(shape(3,part(integers,-1,4),empty),budget(0)),ext::weighted_graph::ErrorKind::Bounds,-1,-1);
+    failed(ext::weighted_graph::validate(shape(3,part(integers,0,-1),empty),budget(0)),ext::weighted_graph::ErrorKind::Bounds,-1,-1);
+    failed(ext::weighted_graph::validate(shape(3,part(integers,2147483647,1),empty),budget(0)),ext::weighted_graph::ErrorKind::Bounds,-1,-1);
+    failed(ext::weighted_graph::validate(shape(3,part(integers,0,4),part(arcs,1,2147483647)),budget(0)),ext::weighted_graph::ErrorKind::Bounds,-1,-1);
+    failed(ext::weighted_graph::validate(shape(2147483647,part(integers,0,0),empty),budget(0)),ext::weighted_graph::ErrorKind::NodeLimit,-1,-1);
+    let node_capacity:i32=(2147483647/core::mem::size_of<i32>()) as i32;
+    let arc_capacity:i32=(2147483647/core::mem::size_of<ext::weighted_graph::Arc>()) as i32;
+    let edge_capacity:i32=(2147483647/core::mem::size_of<ext::weighted_graph::Edge>()) as i32;
+    failed(ext::weighted_graph::validate(shape(node_capacity,part(integers,0,0),empty),budget(0)),ext::weighted_graph::ErrorKind::NodeLimit,-1,-1);
+    failed(ext::weighted_graph::validate(shape(1,part(integers,0,0),part(arcs,0,arc_capacity+1)),budget(0)),ext::weighted_graph::ErrorKind::EdgeLimit,-1,-1);
+    failed(ext::weighted_graph::validate(shape(3,part(integers,0,3),empty),budget(0)),ext::weighted_graph::ErrorKind::Bounds,-1,-1);
+    failed(ext::weighted_graph::validate(poison,limits(2,3,100)),ext::weighted_graph::ErrorKind::NodeLimit,-1,-1);
+    failed(ext::weighted_graph::validate(poison,limits(3,2,100)),ext::weighted_graph::ErrorKind::EdgeLimit,-1,-1);
+    failed(ext::weighted_graph::validate(poison,budget(6)),ext::weighted_graph::ErrorKind::WorkLimit,-1,-1);
+    failed(ext::weighted_graph::view(3,poison.offsets,poison.arcs,budget(6)),ext::weighted_graph::ErrorKind::WorkLimit,-1,-1);
+    failed(ext::weighted_graph::neighbors(poison,-9,budget(6)),ext::weighted_graph::ErrorKind::WorkLimit,-1,-1);
+    failed(ext::weighted_graph::from_view(poison,budget(13)),ext::weighted_graph::ErrorKind::WorkLimit,-1,-1);
+    failed(ext::weighted_graph::from_edges(3,part(edges,0,3),budget(57)),ext::weighted_graph::ErrorKind::WorkLimit,-1,-1);
+    failed(ext::weighted_graph::from_edges(3,part(edges,2147483647,1),budget(100)),ext::weighted_graph::ErrorKind::Bounds,-1,-1);
+    failed(ext::weighted_graph::from_edges(1,part(edges,0,edge_capacity+1),budget(18446744073709551615)),ext::weighted_graph::ErrorKind::EdgeLimit,-1,-1);
+    // Eighty million native Edge records fit the ceiling; this exact work
+    // boundary exceeds u32 and must be checked before any pointer is read.
+    failed(ext::weighted_graph::from_edges(1,part(edges,0,80000000),budget(9440000001)),ext::weighted_graph::ErrorKind::WorkLimit,-1,-1);
+}
+fn offsets_before_arcs_and_canonical_order() {
+    let nowhere:ptr=0; let unread:[ext::weighted_graph::Arc]=core::mem::typed_slice_from_raw_parts<ext::weighted_graph::Arc>(nowhere,0);
+    let bad_first:[i32;4]=[1,2,3,3]; let backwards:[i32;4]=[0,2,1,3]; let past:[i32;4]=[0,4,4,4]; let last:[i32;4]=[0,1,2,2];
+    failed(ext::weighted_graph::validate(shape(3,part(bad_first,0,4),part(unread,0,3)),budget(7)),ext::weighted_graph::ErrorKind::Offset,0,-1);
+    failed(ext::weighted_graph::validate(shape(3,part(backwards,0,4),part(unread,0,3)),budget(7)),ext::weighted_graph::ErrorKind::Offset,1,-1);
+    failed(ext::weighted_graph::validate(shape(3,part(past,0,4),part(unread,0,3)),budget(7)),ext::weighted_graph::ErrorKind::Offset,0,-1);
+    failed(ext::weighted_graph::validate(shape(3,part(last,0,4),part(unread,0,3)),budget(7)),ext::weighted_graph::ErrorKind::Offset,2,-1);
+    let empty_offsets:[i32;1]=[0]; let empty=shape(0,part(empty_offsets,0,1),part(unread,2147483647,0));
+    assert(ext::weighted_graph::validate(empty,budget(1)).unwrap()==0);
+    let owned=ext::weighted_graph::from_view(empty,budget(2)).unwrap(); assert(owned.is_open() && owned.node_count()==0 && owned.edge_count()==0);
+    failed(ext::weighted_graph::dijkstra(owned.view().unwrap(),0,budget(100)),ext::weighted_graph::ErrorKind::Bounds,0,-1); owned.destroy();
+    let offsets:[i32;4]=[-99,0,3,3]; let entries:[ext::weighted_graph::Arc;5]=[arc(-99,-99),arc(1,-2),arc(1,-2),arc(1,7),arc(-99,-99)];
+    let valid=shape(2,part(offsets,1,3),part(entries,1,3));
+    assert(ext::weighted_graph::view(2,valid.offsets,valid.arcs,budget(6)).is_ok());
+    entries[3]=arc(1,-3); failed(ext::weighted_graph::validate(valid,budget(6)),ext::weighted_graph::ErrorKind::Order,0,2);
+    entries[3]=arc(0,7); failed(ext::weighted_graph::validate(valid,budget(6)),ext::weighted_graph::ErrorKind::Order,0,2);
+    entries[3]=arc(-1,7); failed(ext::weighted_graph::validate(valid,budget(6)),ext::weighted_graph::ErrorKind::Target,0,2);
+    failed(ext::weighted_graph::neighbors(valid,-7,budget(6)),ext::weighted_graph::ErrorKind::Target,0,2);
+    failed(ext::weighted_graph::dijkstra(valid,-7,budget(6)),ext::weighted_graph::ErrorKind::Target,0,2);
+    entries[3]=arc(1,7); failed(ext::weighted_graph::neighbors(valid,-7,budget(6)),ext::weighted_graph::ErrorKind::Bounds,-7,-1);
+    assert(offsets[0]==-99 && entries[0].target==-99 && entries[4].target==-99);
+    let raw:[ext::weighted_graph::Edge;3]=[edge(-99,-99,0),edge(3,4,0),edge(-99,-99,0)];
+    failed(ext::weighted_graph::from_edges(2,part(raw,1,1),budget(100)),ext::weighted_graph::ErrorKind::Source,3,0);
+    raw[1]=edge(1,-4,0); failed(ext::weighted_graph::from_edges(2,part(raw,1,1),budget(100)),ext::weighted_graph::ErrorKind::Target,-4,0);
+}
+fn exact_work_and_path_precedence() {
+    let raw:[ext::weighted_graph::Edge;2]=[edge(0,1,2),edge(1,2,3)];
+    // from_edges: n+1+6m+4m(1+ceil(log2 m)) = 5+12+16 = 33.
+    failed(ext::weighted_graph::from_edges(4,part(raw,0,2),budget(32)),ext::weighted_graph::ErrorKind::WorkLimit,-1,-1);
+    let graph=ext::weighted_graph::from_edges(4,part(raw,0,2),budget(33)).unwrap(); let view=graph.view().unwrap();
+    assert(ext::weighted_graph::validate(view,budget(7)).unwrap()==2);
+    failed(ext::weighted_graph::from_view(view,budget(13)),ext::weighted_graph::ErrorKind::WorkLimit,-1,-1);
+    let copy=ext::weighted_graph::from_view(view,budget(14)).unwrap(); copy.destroy();
+    failed(ext::weighted_graph::dijkstra(view,-1,budget(7)),ext::weighted_graph::ErrorKind::Bounds,-1,-1);
+    failed(ext::weighted_graph::dijkstra(view,0,budget(64)),ext::weighted_graph::ErrorKind::WorkLimit,-1,-1);
+    failed(ext::weighted_graph::bellman_ford(view,0,budget(42)),ext::weighted_graph::ErrorKind::WorkLimit,-1,-1);
+    let d=ext::weighted_graph::dijkstra(view,0,budget(65)).unwrap(); let b=ext::weighted_graph::bellman_ford(view,0,budget(43)).unwrap(); b.destroy();
+    failed(d.distance(-2),ext::weighted_graph::ErrorKind::Bounds,-2,-1); failed(d.predecessor(4),ext::weighted_graph::ErrorKind::Bounds,4,-1);
+    failed(d.path_to(-2,limits(-1,-1,0)),ext::weighted_graph::ErrorKind::Bounds,-2,-1);
+    failed(d.path_to(2,limits(-1,-1,0)),ext::weighted_graph::ErrorKind::InvalidLimits,-1,-1);
+    failed(d.path_to(2,limits(3,0,0)),ext::weighted_graph::ErrorKind::NodeLimit,-1,-1);
+    failed(d.path_to(3,limits(4,0,12)),ext::weighted_graph::ErrorKind::WorkLimit,-1,-1);
+    assert(d.path_to(3,limits(4,0,13)).unwrap().is_none());
+    let zero=d.path_to(0,limits(4,0,13)).unwrap().unwrap(); assert(zero.len()==0); zero.destroy();
+    failed(d.path_to(2,limits(4,1,13)),ext::weighted_graph::ErrorKind::EdgeLimit,-1,-1);
+    let two=d.path_to(2,limits(4,2,13)).unwrap().unwrap(); assert(two.len()==2); two.destroy();
+    d.destroy(); failed(d.path_to(-2,limits(-1,-1,0)),ext::weighted_graph::ErrorKind::Closed,-1,-1); graph.destroy();
+    let negative:[ext::weighted_graph::Edge;1]=[edge(1,1,-1)]; let g=ext::weighted_graph::from_edges(2,part(negative,0,1),budget(100)).unwrap();
+    failed(ext::weighted_graph::dijkstra(g.view().unwrap(),0,budget(30)),ext::weighted_graph::ErrorKind::WorkLimit,-1,-1);
+    // Dijkstra full work: 4+8+3+4*2*2 = 31, before the negative-edge scan.
+    failed(ext::weighted_graph::dijkstra(g.view().unwrap(),0,budget(31)),ext::weighted_graph::ErrorKind::NegativeEdge,1,0); g.destroy();
+}
+fn main() -> i32 { logical_preflight_without_backing_reads(); offsets_before_arcs_and_canonical_order(); exact_work_and_path_precedence(); return 0; }

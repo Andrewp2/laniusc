@@ -706,8 +706,10 @@
     },
     "core::search": {
       "guides": [
-        "docs/stdlib-search.md"
-      ]
+        "docs/stdlib-search.md",
+        "docs/stdlib-text-partitions.md"
+      ],
+      "note": "Packed stride-one byte scans retain SWAR; other strides use logical indexed byte scans before the existing substring prefilter/Two-Way machinery. The accepted Text partition increment checks packed ascending and native descending haystack/needle combinations, exact subrange results and no source allocation/release. The ten library gates include an independent 873-case Text model and eight capability rejections. Arbitrary unexecuted strides and GPU-device execution are not claimed; earlier search throughput receipts retain their original source/layout scope."
     },
     "core::set": {
       "guides": [
@@ -760,9 +762,11 @@
         "docs/stdlib-bidirectional-text.md",
         "docs/stdlib-text-replacement.md",
         "docs/stdlib-literal-rewrite.md",
-        "docs/stdlib-ordered-navigation.md"
+        "docs/stdlib-ordered-navigation.md",
+        "docs/stdlib-text-partitions.md",
+        "docs/stdlib-select-field.md"
       ],
-      "note": "TextPrefix is a zero-sized Comparator<Text,Text> for ordered navigation: stored Text beginning with the query bytes is Equal, others keep unsigned byte order, so range_bounds_by(Included(p), Included(p)) traverses one prefix family; it is not a point-lookup policy. Text.compare is a direct unsigned byte loop (same results as the core::iter ordering engine, faster on Text-keyed collections). Literal MatchIndices yields canonical Pair<i32,Text> through forward Iterator: original Text-relative byte indices and source subviews with retained stride. Empty needles match scalar boundaries including both ends; cursors are fused and copies fork positions over immutable borrowed backing. No reverse or ExactSize promise is added. All five literal-replacement library groups and four application groups/94 cases pass on native Linux x86_64, with the 440-case independent model and reached allocation failures. Selected existing regressions and standalone examples remain separate. Earlier Text receipts retain their own source/API scope. Text scalars and split cursors already use canonical Iterator and borrowed adapters. The earlier bidirectional increment adds Text.lines and DoubleEndedIterator for Lines, Scalars and SplitAsciiWhitespace. All seven new library gates pass: six native tests and one group of three ExactSize rejections. The independent model checks 4878 cases, 276732 pulls, 129686 items and 77262 cursor copies across three families/two actual layouts. Live owner tests verify exact setup/releases and no traversal allocations; the canonical report function preserves input, uses fixed staging and recovers a reached write failure. The canonical Unicode-report stdin regression also passes. Line-summary passes all four groups/102 native cases, including 11 reached allocation failures, plus standalone build/examples. Continuous output-budget faults establish 131072 payload attempts and the exact limit-message requests, then exhaust all 64 diagnostic attempts with final status 3; successful status-2 output-limit reporting is not directly exercised. A reduced chained generic Option method call still rejects LNC0027 while its typed-match control executes; no compiler repair is claimed. Front/back pulls share one remainder and None from either end fuses both. Lines consume LF/CRLF, omit terminators and a phantom final item, retain leading/repeated empty lines and keep lone CR as content. Scalar byte_index remains relative to the original selected Text. Words keep exactly HT/LF/VT/FF/CR/space; NUL and non-ASCII whitespace remain content. Those bidirectional cursor constructors are inert; their traversal is allocation-free with constant cursor storage and linear complete traversal, preserving actual stride and offsets. Literal MatchIndices instead retains the existing O(source bytes * needle bytes) worst-case search bound. No ExactSize capability, owner transfer, backing validation or automatic lifetime enforcement is added. Copies fork leaf positions over the same immutable backing; borrowed adapter copies share their source. The initial target is native Linux x86_64 CPU output, with other hosts/device execution/proofs separate. Earlier forward receipts retain their original source/API scope."
+      "note": "The current partition/search increment adds split_once and rsplit_once returning source-ordered borrowed Text pairs, plus forward Iterator cursors RMatchIndices, RSplit, SplitN and RSplitN. Rightmost nonoverlapping matches can differ from a reversed leftmost sequence; empty separators use UTF-8 scalar boundaries. Bounded cursors accept u64 field limits, produce nothing for zero and the whole source for one, and retain the final unsplit remainder. No DoubleEndedIterator or ExactSizeIterator capability is added. Text searches and literal cursors now share core::search; packed ascending and native descending byte layouts execute, with source-relative indices, unchanged backing and retained returned strides. All ten library gates pass on native Linux x86_64: direct contracts/source-allocation observation, the 873-case/57,204-pull independent model and eight capability rejections. The select_field consumer passes all four groups/102 native cases, including ten reached allocation failures and exact read/write/diagnostic retry-budget assertions. Untested strides, other targets, device execution and formal verification remain separate. The earlier notes below retain their original source/API and complexity scope; the current search integration supersedes the earlier naive MatchIndices search bound. TextPrefix is a zero-sized Comparator<Text,Text> for ordered navigation: stored Text beginning with the query bytes is Equal, others keep unsigned byte order, so range_bounds_by(Included(p), Included(p)) traverses one prefix family; it is not a point-lookup policy. Text.compare is a direct unsigned byte loop (same results as the core::iter ordering engine, faster on Text-keyed collections). Literal MatchIndices yields canonical Pair<i32,Text> through forward Iterator: original Text-relative byte indices and source subviews with retained stride. Empty needles match scalar boundaries including both ends; cursors are fused and copies fork positions over immutable borrowed backing. No reverse or ExactSize promise is added. All five literal-replacement library groups and four application groups/94 cases pass on native Linux x86_64, with the 440-case independent model and reached allocation failures. Selected existing regressions and standalone examples remain separate. Earlier Text receipts retain their own source/API scope. Text scalars and split cursors already use canonical Iterator and borrowed adapters. The earlier bidirectional increment adds Text.lines and DoubleEndedIterator for Lines, Scalars and SplitAsciiWhitespace. All seven new library gates pass: six native tests and one group of three ExactSize rejections. The independent model checks 4878 cases, 276732 pulls, 129686 items and 77262 cursor copies across three families/two actual layouts. Live owner tests verify exact setup/releases and no traversal allocations; the canonical report function preserves input, uses fixed staging and recovers a reached write failure. The canonical Unicode-report stdin regression also passes. Line-summary passes all four groups/102 native cases, including 11 reached allocation failures, plus standalone build/examples. Continuous output-budget faults establish 131072 payload attempts and the exact limit-message requests, then exhaust all 64 diagnostic attempts with final status 3; successful status-2 output-limit reporting is not directly exercised. A reduced chained generic Option method call still rejects LNC0027 while its typed-match control executes; no compiler repair is claimed. Front/back pulls share one remainder and None from either end fuses both. Lines consume LF/CRLF, omit terminators and a phantom final item, retain leading/repeated empty lines and keep lone CR as content. Scalar byte_index remains relative to the original selected Text. Words keep exactly HT/LF/VT/FF/CR/space; NUL and non-ASCII whitespace remain content. Those bidirectional cursor constructors are inert; their traversal is allocation-free with constant cursor storage and linear complete traversal, preserving actual stride and offsets. Literal MatchIndices instead retains the existing O(source bytes * needle bytes) worst-case search bound. No ExactSize capability, owner transfer, backing validation or automatic lifetime enforcement is added. Copies fork leaf positions over the same immutable backing; borrowed adapter copies share their source. The initial target is native Linux x86_64 CPU output, with other hosts/device execution/proofs separate. Earlier forward receipts retain their original source/API scope."
     },
     "core::time": {
       "guides": [
@@ -2005,6 +2009,23 @@
       ],
       "note": "permessage-deflate (RFC 7692): offers, server negotiation (negotiate, negotiate_no_context), response checking, and a per-connection Codec that compresses with a sync-flushed ext::deflate level-1 encoder (context takeover or reset, window 2^8..2^15) and inflates with a 32 KiB history. Passes deflate_oracle.py against Python zlib (9 cases)."
     },
+    "ext::weighted_graph": {
+      "guides": [
+        "docs/extended-weighted-graph.md",
+        "docs/extended-route-cost.md"
+      ],
+      "note": "Implemented canonical directed multigraphs with i64 costs: duplicates, parallel edges and self-loops remain. Raw construction copies and sorts without mutating input. Dijkstra rejects negative edges anywhere; Bellman-Ford rejects source-reachable negative cycles. Both check every examined reachable sum before improvement, retain the first equal-cost predecessor and return independently owned Paths. Size-based capacities, conservative work admission, explicit errors and manual cleanup are part of the contract. All four library gates pass on native Linux x86_64: direct storage/arithmetic/ownership/admission contracts, 2,819 model graphs/5,638 outcomes and five resource profiles with nine reached allocation failures and same-process recovery. Natural Overflow/NegativeCycle cleanup and two initial Dijkstra allocations with no traversal growth execute. The route-cost consumer passes all four groups/148 native cases, including three selected allocation failures and two real-stream chunk/prefix cases. These finite receipts exclude GPU-device execution, other targets and formal verification.",
+      "declarations": {
+        "default_limits": "Returns 1,048,576 nodes, 1,048,576 edges and 100,000,000 work units without allocation.",
+        "validate": "Admits limits, logical metadata, size_of capacities, offset length and work before backing reads; scans all offsets before canonical nondecreasing (target,cost) arcs.",
+        "view": "Returns a borrowed View after complete validation; physical backing and lifetime remain caller preconditions.",
+        "neighbors": "Validates the complete graph before requested-node Bounds, then returns the borrowed Arc row.",
+        "from_edges": "Checks raw endpoints in original order, then copies and sorts by (source,target,cost). Retains every edge and releases partial private owners on failure.",
+        "from_view": "Admits full validation/copy work before adjacency reads, then returns an independent Graph.",
+        "dijkstra": "Validates, checks source/workspace/work admission, then rejects the first global negative arc before allocation. Lazy stale-entry filtering uses a reserved m+1 queue; checked-add overflow precedes improvement.",
+        "bellman_ford": "Canonical in-place strict relaxation for at most n-1 passes, followed by a reachable improvement scan. The first examined overflow or detected negative cycle wins; no partial Paths is returned."
+      }
+    },
     "ext::weighted_statistics": {
       "guides": [
         "docs/extended-weighted-statistics.md",
@@ -2142,8 +2163,10 @@
     },
     "std::directory": {
       "guides": [
-        "docs/stdlib-directory.md"
-      ]
+        "docs/stdlib-directory.md",
+        "docs/stdlib-directory-cursor.md"
+      ],
+      "note": "The owned directory snapshot walk remains separate from the new resumable std::walk cursor. The cursor reuses Reader and descriptor-relative operations; all five library gates pass, with 60 native cases and 39 host observer controls. The recursive text_grep migration passes both gates/35 cases on native Linux x86_64. Existing directory receipts retain their original source/API scope."
     },
     "std::entropy": {
       "guides": [
@@ -2400,6 +2423,18 @@
       ],
       "profile": "Protected legacy",
       "note": "Protected active formal vector specification/template contract and a remaining binary-heap backing dependency. The mini compiler and extractor use List; the dependency ledger records the formal contract and separate heap-migration compiler dependency. Legacy failure/owner policies differ from alloc::vec; ordinary programs use alloc::vec. This source inventory creates no compatibility alias or new support promise."
+    },
+    "std::walk": {
+      "guides": [
+        "docs/stdlib-directory-cursor.md",
+        "docs/extended-text-grep-walk.md"
+      ],
+      "note": "Implemented resumable Linux directory cursor over existing Reader/file-operation bindings. Descriptor-anchored depth-first traversal uses filesystem order, explicit descend/prune decisions and Entry/Enter/Leave/Fault events. Event paths, names and handles borrow cursor state until its next mutation. Recoverable metadata/open/verify/read/close faults remain visible; terminal limits/allocation errors retain owners until explicit close. Close attempts all remaining owners once, frees storage and does not spend traversal budget. Active-reader, entry, path and work bounds are explicit; no snapshot consistency or hostile-namespace sandbox is promised. All five library gates pass: four native groups/60 cases covering events, decisions, limits, filesystem mutation and reached host/allocation faults, plus 39 host observer controls. Migrated text_grep passes both gates/35 cases (23 comparisons and 12 fault runs) on Linux x86_64 CPU output. These finite receipts exclude GPU-device execution, other targets and formal verification.",
+      "declarations": {
+        "default_limits": "Returns 64 active directories, 65,536 entries, 4095 relative-path bytes, 134,217,728 work units and 32,768 reader-buffer bytes.",
+        "open": "Opens a root relative to AT_FDCWD and returns one explicit cleanup authority; first traversal event is root Enter.",
+        "open_at": "Borrows parent_fd and root bytes only for construction, admits metadata/limits/work before host operations, and owns the opened root independently. Construction errors release partial resources."
+      }
     },
     "std::worker": {
       "guides": [

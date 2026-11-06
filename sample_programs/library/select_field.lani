@@ -1,0 +1,186 @@
+// Select a literal-delimited field through bounded directional Text cursors.
+module app::main;
+import alloc::io;
+import alloc::string;
+import alloc::vec;
+import core::decimal;
+import core::io;
+import core::iter;
+import core::mem;
+import core::option;
+import core::option::Option;
+import core::result;
+import core::result::Result;
+import core::slice;
+import core::slice::View;
+import core::text;
+import core::text::Text;
+import ext::cli;
+import std::args;
+import std::signal;
+import std::stream;
+
+struct Options { delimiter:Text, field:u64, right:bool, delimiter_set:bool, field_set:bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+
+fn literal(value:str,count:i32) -> View<u8> {
+    let bytes:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    return core::slice::view(bytes,count).unwrap();
+}
+fn equal(left:View<u8>,right:View<u8>) -> bool {
+    if(left.length!=right.length) { return false; }
+    let i:i32=0;
+    while(i<left.length) { if(left.values[left.start+i]!=right.values[right.start+i]) { return false; } i+=1; }
+    return true;
+}
+fn write(bytes:View<u8>,handle:i32,maximum:i32) -> bool {
+    let sink=std::stream::from_handle(handle); let sent:i32=0; let calls:i32=0;
+    while(sent<bytes.length) {
+        if(calls==maximum) { return false; }
+        let wanted:i32=bytes.length-sent; if(wanted>1024) { wanted=1024; }
+        calls+=1;
+        let written:Result<i32,core::io::Error> = sink.write(bytes.values,bytes.start+sent,wanted);
+        if(written.is_err()) { if(core::io::is_interrupted(written.unwrap_err())) { continue; } return false; }
+        let count:i32=written.unwrap(); if(count<=0 || count>wanted) { return false; }
+        sent+=count;
+    }
+    return true;
+}
+fn report(status:i32) -> i32 {
+    write(literal("select_field: operation failed\n",31),2,8); return status;
+}
+fn help() -> i32 {
+    if(!write(literal("Usage: select_field --delimiter TEXT --field N [--from-right]\nSelect the Nth literal-delimited field of each UTF-8 LF or CRLF record.\nN is a positive decimal u64; leading zeros are allowed. Short options: -d, -f, -r.\nEmpty delimiters split at Unicode scalar boundaries, with empty endpoint fields.\nMissing fields emit empty lines. Every output record ends in LF; lone CR is data.\nLimits: 1 MiB input, 65536 records, 2 MiB staged output, 1024 delimiter bytes.\nInput permits 16384 attempts; output permits 8192 attempts of at most 1024 bytes.\nThe complete input and staged output are accepted before stdout publication.\nOutput I/O failure may leave a written prefix. Sole --help or -h bypasses input.\n",699),1,64)) { return 5; }
+    return 0;
+}
+fn input_status(error:alloc::io::ReadError) -> i32 {
+    return match(error) {
+        alloc::io::ReadError::InvalidLimits -> 2,
+        alloc::io::ReadError::CallLimit -> 2,
+        alloc::io::ReadError::ByteLimit -> 2,
+        alloc::io::ReadError::Storage(cause) -> match(cause) { alloc::vec::Error::AllocationFailed -> 4, _ -> 2 },
+        alloc::io::ReadError::Text(cause) -> match(cause) { alloc::string::Error::AllocationFailed -> 4, _ -> 2 },
+        alloc::io::ReadError::Io(cause) -> match(cause) { core::io::Error::AllocationFailed -> 4, _ -> 3 }
+    };
+}
+fn output_status(error:core::io::Error) -> i32 {
+    return match(error) { core::io::Error::AllocationFailed -> 4, core::io::Error::LimitExceeded -> 2, _ -> 3 };
+}
+fn number(value:View<u8>) -> Result<u64,i32> {
+    if(value.length<1 || value.length>64) { return core::result::Err(2); }
+    let i:i32=0;
+    while(i<value.length) {
+        let byte:u8=value.values[value.start+i]; if(byte<48 || byte>57) { return core::result::Err(2); } i+=1;
+    }
+    let parsed=core::decimal::parse_u64_range(value.values,value.start,value.length);
+    if(parsed.is_err() || parsed.unwrap()==0) { return core::result::Err(2); }
+    return core::result::Ok(parsed.unwrap());
+}
+fn arguments(values:View<View<u8>>) -> Result<Options,i32> {
+    let empty=literal("",0);
+    let options:Options=Options { delimiter:core::text::from_utf8_unchecked(empty.values,empty.start,0),field:0,right:false,delimiter_set:false,field_set:false };
+    let specs:[ext::cli::Spec;3] = [
+        ext::cli::Spec { id:1,long:literal("delimiter",9),short:100,arity:ext::cli::Arity::Required },
+        ext::cli::Spec { id:2,long:literal("field",5),short:102,arity:ext::cli::Arity::Required },
+        ext::cli::Spec { id:3,long:literal("from-right",10),short:114,arity:ext::cli::Arity::Flag }
+    ];
+    let created=ext::cli::parser(values,core::slice::view(specs,3).unwrap(),ext::cli::Ordering::Intermixed);
+    if(created.is_err()) { return core::result::Err(2); }
+    let parser=created.unwrap();
+    while(true) {
+        let event=parser.next(); if(event.is_err()) { return core::result::Err(2); }
+        let next=event.unwrap(); if(next.is_none()) { break; }
+        let selected:Option<ext::cli::Occurrence> = match(next.unwrap()) {
+            ext::cli::Event::Option(value) -> core::option::Some(value),
+            _ -> core::option::None()
+        };
+        if(selected.is_none()) { return core::result::Err(2); }
+        let found=selected.unwrap();
+        if(found.id==1) {
+            if(options.delimiter_set) { return core::result::Err(2); }
+            let token=found.value.unwrap().bytes;
+            if(token.length>1024) { return core::result::Err(2); }
+            let checked=core::text::from_utf8_range(token.values,token.start,token.length);
+            if(checked.is_err()) { return core::result::Err(2); }
+            let i:i32=0; while(i<token.length) { if(token.values[token.start+i]==10) { return core::result::Err(2); } i+=1; }
+            options.delimiter=checked.unwrap(); options.delimiter_set=true;
+        } else { if(found.id==2) {
+            if(options.field_set) { return core::result::Err(2); }
+            let parsed=number(found.value.unwrap().bytes);
+            if(parsed.is_err()) { return core::result::Err(parsed.unwrap_err()); }
+            options.field=parsed.unwrap(); options.field_set=true;
+        } else {
+            if(found.id!=3 || options.right) { return core::result::Err(2); }
+            options.right=true;
+        } }
+    }
+    if(!options.delimiter_set || !options.field_set) { return core::result::Err(2); }
+    return core::result::Ok(options);
+}
+fn nth<I>(cursor:&I,position:u64) -> Option<Text> where I:core::iter::Iterator<Text> {
+    let seen:u64=0;
+    while(seen<position) {
+        let item:Option<Text> = cursor.next(); if(item.is_none()) { return core::option::None(); }
+        seen+=1; if(seen==position) { return item; }
+    }
+    return core::option::None();
+}
+fn selected(line:Text,options:&Options) -> Option<Text> {
+    // One extra field keeps the requested field separate from any remainder.
+    // UINT64_MAX cannot be reached within the bounded input, but must not wrap.
+    let quota:u64=options.field; if(quota<18446744073709551615) { quota+=1; }
+    if(options.right) {
+        let cursor:core::text::RSplitN=line.rsplitn(options.delimiter,quota);
+        return nth<core::text::RSplitN>(cursor.borrow(),options.field);
+    }
+    let cursor:core::text::SplitN=line.splitn(options.delimiter,quota);
+    return nth<core::text::SplitN>(cursor.borrow(),options.field);
+}
+fn stage(input:Text,options:&Options,output:&alloc::io::Buffer) -> i32 {
+    let cursor=input.lines(); let records:i32=0; let newline:[u8;1]=[10];
+    while(true) {
+        let next:Option<Text> = cursor.next(); if(next.is_none()) { return 0; }
+        if(records==65536) { return 2; } records+=1;
+        let field=selected(next.unwrap(),options);
+        if(field.is_some()) {
+            let value=field.unwrap();
+            let saved=output.write(value.bytes,value.start,value.length);
+            if(saved.is_err()) { return output_status(saved.unwrap_err()); }
+            if(saved.unwrap()!=value.length) { return 3; }
+        }
+        let ended=output.write(newline,0,1);
+        if(ended.is_err()) { return output_status(ended.unwrap_err()); }
+        if(ended.unwrap()!=1) { return 3; }
+    }
+    return 0;
+}
+fn run(options:&Options) -> i32 {
+    let source=std::stream::stdin();
+    let received:Result<alloc::string::String,alloc::io::ReadFailure> =
+        alloc::io::read_to_string<std::stream::Descriptor>(source.borrow(),alloc::io::ReadLimits { max_bytes:1048576,max_calls:16384 });
+    if(received.is_err()) {
+        let failure=received.unwrap_err(); let status:i32=input_status(failure.cause);
+        failure.destroy(); return status;
+    }
+    let input=received.unwrap();
+    let created=alloc::io::with_limit(2097152);
+    if(created.is_err()) { input.destroy(); return output_status(created.unwrap_err()); }
+    let output=created.unwrap(); let status:i32=stage(input.as_text(),options,output.borrow());
+    if(status==0 && !write(core::slice::view(output.as_bytes(),output.len()).unwrap(),1,8192)) { status=5; }
+    output.destroy(); input.destroy(); return status;
+}
+fn main() -> i32 {
+    if(std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return report(3); }
+    let captured=std::args::snapshot(1,8,4096);
+    if(captured.is_err()) { return report(match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 }); }
+    let owner=captured.unwrap(); let values=owner.as_view(); let status:i32=0; let helping:bool=false;
+    if(values.length==1) { let first=values.values[values.start]; helping=equal(first,literal("--help",6)) || equal(first,literal("-h",2)); }
+    if(helping) { status=help(); }
+    else {
+        let parsed=arguments(values);
+        if(parsed.is_err()) { status=parsed.unwrap_err(); }
+        else { let options=parsed.unwrap(); status=run(options.borrow()); }
+    }
+    // Delimiter Text borrows the argument snapshot throughout run.
+    owner.destroy(); if(status!=0) { return report(status); } return 0;
+}

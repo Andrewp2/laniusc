@@ -1,5 +1,6 @@
 // Fast byte and substring search over u8 slices.
-// find_byte/rfind_byte scan eight bytes per step with SWAR zero-byte tests.
+// find_byte/rfind_byte scan packed bytes with SWAR zero-byte tests; other
+// slice strides use logical indexed bytes, preserving the same search order.
 // find picks the needle's two rarest bytes by a fixed frequency rank, scans
 // for the rarest one with find_byte, checks the second, then compares the
 // whole needle. Results equal a naive leftmost (or rightmost) search. When
@@ -41,6 +42,11 @@ fn valid(bytes: [u8], from: i32, to: i32) -> bool { return from >= 0 && from <= 
 // First index i in [from, to) with bytes[i] == byte, or -1.
 pub fn find_byte(bytes: [u8], from: i32, to: i32, byte: u8) -> i32 {
     if (!valid(bytes, from, to)) { return -1; }
+    if (slice_stride(bytes) != 1) {
+        let index: i32 = from;
+        while (index < to) { if (bytes[index] == byte) { return index; } index += 1; }
+        return -1;
+    }
     let base: ptr = core::mem::i32_slice_data_ptr(bytes);
     let spread: u64 = (byte as u64) * ONES;
     let i: i32 = from;
@@ -72,6 +78,11 @@ pub fn find_byte(bytes: [u8], from: i32, to: i32, byte: u8) -> i32 {
 // Last index i in [from, to) with bytes[i] == byte, or -1.
 pub fn rfind_byte(bytes: [u8], from: i32, to: i32, byte: u8) -> i32 {
     if (!valid(bytes, from, to)) { return -1; }
+    if (slice_stride(bytes) != 1) {
+        let end: i32 = to;
+        while (end > from) { end -= 1; if (bytes[end] == byte) { return end; } }
+        return -1;
+    }
     let base: ptr = core::mem::i32_slice_data_ptr(bytes);
     let spread: u64 = (byte as u64) * ONES;
     let end: i32 = to;

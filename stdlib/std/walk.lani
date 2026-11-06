@@ -1,0 +1,247 @@
+// Resumable descriptor-anchored depth-first traversal. Views and handles are
+// borrowed until the next cursor mutation; one Cursor owns all open readers.
+module std::walk;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+import core::slice;
+import std::directory;
+import std::file_ops;
+
+pub enum Error { Bounds, InvalidState, Limit, AllocationFailed, Closed, Failed, Directory(std::directory::Error) }
+pub enum Stage { Metadata, Open, Verify, Read, Close }
+pub struct Limits { max_open_dirs:i32, max_entries:u64, max_path_bytes:i32, max_work:u64, buffer_bytes:i32 }
+pub struct Item { path:core::slice::View<u8>, name:core::slice::View<u8>, depth:i32, metadata:std::file_ops::Metadata, parent_fd:i32 }
+pub struct Directory { path:core::slice::View<u8>, depth:i32, metadata:std::file_ops::Metadata, fd:i32 }
+pub struct Fault { path:core::slice::View<u8>, depth:i32, stage:Stage, cause:std::directory::Error }
+pub enum Event { Entry(Item), Enter(Directory), Leave(Directory), Fault(Fault) }
+struct Frame { reader:std::directory::Reader, metadata:std::file_ops::Metadata, length:i32, parent_length:i32, depth:i32 }
+// Phases: 0 root Enter, 1 read, 2 decision, 3 descend, 4 skip entry,
+// 5 Leave after read fault, 6 close after Leave, 7 restore after close fault,
+// 8 exhausted, 9 failed, 10 explicitly closed.
+pub struct Cursor {
+    frames:alloc::vec::Vec<Frame>, path:alloc::vec::Vec<u8>, limits:Limits,
+    remaining:u64, entries:u64, phase:i32, pending_start:i32,
+    pending_depth:i32, pending_metadata:std::file_ops::Metadata, restore_length:i32
+}
+
+pub fn default_limits() -> Limits {
+    return Limits { max_open_dirs:64,max_entries:65536,max_path_bytes:4095,max_work:134217728,buffer_bytes:32768 };
+}
+fn valid(view:core::slice::View<u8>) -> bool {
+    return view.start>=0 && view.length>=0 && view.start<=2147483647-view.length;
+}
+fn valid_limits(limits:Limits) -> bool {
+    return limits.max_open_dirs>=1 && limits.max_open_dirs<=4096
+        && (limits.max_open_dirs as usize)<=2147483647/core::mem::size_of<Frame>()
+        && limits.max_path_bytes>=0 && limits.buffer_bytes>=24 && limits.buffer_bytes<=1048576;
+}
+fn reserve<T>(owner:&alloc::vec::Vec<T>,required:i32,maximum:i32) -> bool {
+    if(required<=owner.capacity()) { return true; }
+    let capacity:i32=maximum;
+    if(owner.capacity()<=maximum/2) { capacity=owner.capacity()*2; }
+    if(capacity<4 && maximum>=4) { capacity=4; }
+    if(capacity<required) { capacity=required; }
+    return owner.try_reserve(capacity-owner.len()).is_ok();
+}
+fn directory_error(cause:std::directory::Error) -> Error {
+    return match(cause) {
+        std::directory::Error::AllocationFailed -> Error::AllocationFailed,
+        _ -> Error::Directory(cause)
+    };
+}
+fn empty(limits:Limits) -> Cursor {
+    return Cursor {
+        frames:alloc::vec::new<Frame>(),path:alloc::vec::new<u8>(),limits:limits,
+        remaining:limits.max_work,entries:0,phase:0,pending_start:0,
+        pending_depth:0,pending_metadata:std::file_ops::empty_metadata(),restore_length:0
+    };
+}
+pub fn open(root:core::path::Path,limits:Limits) -> Result<Cursor,Error> {
+    return std::walk::open_at(std::file_ops::AT_FDCWD,root,limits);
+}
+// root bytes are observed only during this call. A successful cursor keeps
+// the opened descriptor and its own relative path, not the supplied root view.
+pub fn open_at(parent_fd:i32,root:core::path::Path,limits:Limits) -> Result<Cursor,Error> {
+    if(!valid_limits(limits) || !valid(root.as_bytes())) { return Err(Error::Bounds); }
+    let cursor:Cursor=empty(limits);
+    let initial:u64=(limits.buffer_bytes as u64)+(root.byte_len() as u64)+2;
+    if(!cursor.spend(initial)) { cursor.close(); return Err(Error::Limit); }
+    if(!reserve(cursor.frames.borrow(),1,limits.max_open_dirs)) {
+        cursor.close(); return Err(Error::AllocationFailed);
+    }
+    let reader:std::directory::Reader=std::directory::empty_directory();
+    let opened=std::directory::open_at_into(parent_fd,root,limits.buffer_bytes,reader.borrow());
+    if(opened.is_err()) { cursor.close(); return Err(directory_error(opened.unwrap_err())); }
+    let metadata:std::file_ops::Metadata=std::file_ops::empty_metadata();
+    let file=reader.file;
+    let queried=std::file_ops::metadata_file_into(file.borrow(),metadata.borrow());
+    if(queried.is_err()) {
+        reader.close(); cursor.close();
+        return Err(Error::Directory(std::directory::Error::Io(queried.unwrap_err())));
+    }
+    if(!metadata.has(257)) {
+        reader.close(); cursor.close();
+        return Err(Error::Directory(std::directory::Error::UnavailableMetadata));
+    }
+    cursor.frames.try_push(Frame { reader:reader,metadata:metadata,length:0,parent_length:0,depth:0 }).unwrap();
+    return Ok(cursor);
+}
+
+pub impl Cursor {
+    pub fn borrow(&self) -> &Cursor { return self; }
+    pub fn work_done(&self) -> u64 { return self.limits.max_work-self.remaining; }
+    pub fn entries_seen(&self) -> u64 { return self.entries; }
+    fn spend(&self,amount:u64) -> bool {
+        if(amount>self.remaining) { self.phase=9; return false; }
+        self.remaining-=amount; return true;
+    }
+    fn terminal(&self,error:Error) -> Result<core::option::Option<Event>,Error> {
+        self.phase=9; return Err(error);
+    }
+    fn directory(&self) -> Directory {
+        let frame:Frame=self.frames.at(self.frames.len()-1);
+        let reader=frame.reader;
+        return Directory { path:self.path.as_view(),depth:frame.depth,metadata:frame.metadata,fd:reader.raw_handle().unwrap() };
+    }
+    fn fault(&self,depth:i32,stage:Stage,cause:std::directory::Error) -> Result<core::option::Option<Event>,Error> {
+        let failure:Fault=Fault { path:self.path.as_view(),depth:depth,stage:stage,cause:cause };
+        return Ok(core::option::Some(Event::Fault(failure)));
+    }
+    // These calls decide only. The next next() performs the child open and
+    // identity check, so recoverable host failures remain observable events.
+    pub fn descend(&self) -> Result<i32,Error> {
+        if(self.phase==10) { return Err(Error::Closed); }
+        if(self.phase==9) { return Err(Error::Failed); }
+        if(self.phase!=2) { return Err(Error::InvalidState); }
+        if(self.frames.len()==self.limits.max_open_dirs) { self.phase=9; return Err(Error::Limit); }
+        self.phase=3; return Ok(0);
+    }
+    pub fn prune(&self) -> Result<i32,Error> {
+        if(self.phase==10) { return Err(Error::Closed); }
+        if(self.phase==9) { return Err(Error::Failed); }
+        if(self.phase!=2) { return Err(Error::InvalidState); }
+        self.phase=4; return Ok(0);
+    }
+    fn enter_child(&self) -> Result<core::option::Option<Event>,Error> {
+        let parent:Frame=self.frames.at(self.frames.len()-1);
+        let parent_reader=parent.reader;
+        let name=self.path.as_view().subview(self.pending_start,self.path.len()).unwrap();
+        let cost:u64=(self.limits.buffer_bytes as u64)+(name.len() as u64)+2;
+        if(!self.spend(cost)) { return Err(Error::Limit); }
+        if(!reserve(self.frames.borrow(),self.frames.len()+1,self.limits.max_open_dirs)) {
+            return self.terminal(Error::AllocationFailed);
+        }
+        let path=core::path::from_view(name).unwrap();
+        let child:std::directory::Reader=std::directory::empty_directory();
+        let opened=std::directory::open_at_into(parent_reader.raw_handle().unwrap(),path,self.limits.buffer_bytes,child.borrow());
+        if(opened.is_err()) {
+            let cause=opened.unwrap_err();
+            let allocation:bool=match(cause) { std::directory::Error::AllocationFailed -> true, _ -> false };
+            if(allocation) { return self.terminal(Error::AllocationFailed); }
+            self.phase=4; return self.fault(self.pending_depth,Stage::Open,cause);
+        }
+        let metadata:std::file_ops::Metadata=std::file_ops::empty_metadata();
+        let file=child.file;
+        let queried=std::file_ops::metadata_file_into(file.borrow(),metadata.borrow());
+        if(queried.is_err()) {
+            child.close(); self.phase=4;
+            return self.fault(self.pending_depth,Stage::Verify,std::directory::Error::Io(queried.unwrap_err()));
+        }
+        if(!metadata.has(257)) {
+            child.close(); self.phase=4;
+            return self.fault(self.pending_depth,Stage::Verify,std::directory::Error::UnavailableMetadata);
+        }
+        let expected=self.pending_metadata.identity; let actual=metadata.identity;
+        if(actual.inode!=expected.inode || actual.device_major!=expected.device_major || actual.device_minor!=expected.device_minor) {
+            child.close(); self.phase=4;
+            return self.fault(self.pending_depth,Stage::Verify,std::directory::Error::Changed);
+        }
+        self.frames.try_push(Frame { reader:child,metadata:metadata,length:self.path.len(),parent_length:parent.length,depth:self.pending_depth }).unwrap();
+        self.phase=1;
+        return Ok(core::option::Some(Event::Enter(self.directory())));
+    }
+    fn read_entry(&self) -> Result<core::option::Option<Event>,Error> {
+        let index:i32=self.frames.len()-1; let frame:Frame=self.frames.at(index);
+        let reader=frame.reader; let before:u64=reader.work_done();
+        let found=reader.next(); frame.reader=reader; self.frames.set(index,frame).unwrap();
+        // A raw reader call is bounded by three refills. Its actual decoded
+        // bytes are known only afterward; charge them before publishing any event.
+        if(!self.spend(reader.work_done()-before)) { return Err(Error::Limit); }
+        if(found.is_err()) { self.phase=5; return self.fault(frame.depth,Stage::Read,found.unwrap_err()); }
+        let selected=found.unwrap();
+        if(selected.is_none()) { self.phase=6; return Ok(core::option::Some(Event::Leave(self.directory()))); }
+        let entry:std::directory::Entry=selected.unwrap();
+        if(self.entries==self.limits.max_entries) { return self.terminal(Error::Limit); }
+        self.entries+=1;
+        let separator:i32=0; if(frame.length>0) { separator=1; }
+        if(frame.length>self.limits.max_path_bytes-separator || entry.name.len()>self.limits.max_path_bytes-separator-frame.length) {
+            return self.terminal(Error::Limit);
+        }
+        let length:i32=frame.length+separator+entry.name.len();
+        if(!self.spend((length as u64)+(entry.name.len() as u64)+2)) { return Err(Error::Limit); }
+        if(!reserve(self.path.borrow(),length,self.limits.max_path_bytes)) { return self.terminal(Error::AllocationFailed); }
+        if(separator!=0) { self.path.try_push(47).unwrap(); }
+        self.path.try_extend(entry.name).unwrap();
+        let start:i32=frame.length+separator;
+        let name=self.path.as_view().subview(start,length).unwrap();
+        let path=core::path::from_view(name).unwrap();
+        let metadata:std::file_ops::Metadata=std::file_ops::empty_metadata();
+        let fd:i32=reader.raw_handle().unwrap();
+        let queried=std::file_ops::metadata_at_into(fd,path,false,metadata.borrow());
+        self.phase=4;
+        if(queried.is_err()) { return self.fault(frame.depth+1,Stage::Metadata,std::directory::Error::Io(queried.unwrap_err())); }
+        if(!metadata.has(257)) { return self.fault(frame.depth+1,Stage::Metadata,std::directory::Error::UnavailableMetadata); }
+        let directory:bool=match(std::file_ops::kind(metadata.mode)) { std::file_ops::Kind::Directory -> true, _ -> false };
+        if(directory) {
+            self.pending_start=start; self.pending_depth=frame.depth+1; self.pending_metadata=metadata; self.phase=2;
+        }
+        let item:Item=Item { path:self.path.as_view(),name:name,depth:frame.depth+1,metadata:metadata,parent_fd:fd };
+        return Ok(core::option::Some(Event::Entry(item)));
+    }
+    pub fn next(&self) -> Result<core::option::Option<Event>,Error> {
+        if(self.phase==10) { return Err(Error::Closed); }
+        if(self.phase==9) { return Err(Error::Failed); }
+        if(self.phase==2) { return Err(Error::InvalidState); }
+        if(self.phase==8) { return Ok(core::option::None()); }
+        if(!self.spend(1)) { return Err(Error::Limit); }
+        if(self.phase==0) { self.phase=1; return Ok(core::option::Some(Event::Enter(self.directory()))); }
+        if(self.phase==3) { return self.enter_child(); }
+        if(self.phase==5) { self.phase=6; return Ok(core::option::Some(Event::Leave(self.directory()))); }
+        if(self.phase==6) {
+            let frame:Frame=self.frames.pop().unwrap(); let reader=frame.reader;
+            self.restore_length=frame.parent_length; self.phase=7;
+            let closed=reader.close();
+            if(closed.is_err()) { return self.fault(frame.depth,Stage::Close,closed.unwrap_err()); }
+        }
+        if(self.phase==7) {
+            self.path.truncate(self.restore_length).unwrap();
+            if(self.frames.is_empty()) { self.phase=8; return Ok(core::option::None()); }
+            self.phase=1;
+        }
+        if(self.phase==4) {
+            let frame:Frame=self.frames.at(self.frames.len()-1);
+            self.path.truncate(frame.length).unwrap(); self.phase=1;
+        }
+        return self.read_entry();
+    }
+    // Cleanup is never denied by a traversal budget. Consume every descriptor
+    // once, even if one close fails; preserve the first close error for reporting.
+    // Fatal next()/descend() errors retain ownership until this explicit call.
+    pub fn close(&self) -> Result<i32,Error> {
+        let first:core::option::Option<std::directory::Error> =core::option::None();
+        while(!self.frames.is_empty()) {
+            let frame:Frame=self.frames.pop().unwrap(); let reader=frame.reader;
+            let closed=reader.close();
+            if(closed.is_err() && first.is_none()) { first=core::option::Some(closed.unwrap_err()); }
+        }
+        self.frames.destroy(); self.path.destroy(); self.phase=10;
+        if(first.is_some()) { return Err(Error::Directory(first.unwrap())); }
+        return Ok(0);
+    }
+}

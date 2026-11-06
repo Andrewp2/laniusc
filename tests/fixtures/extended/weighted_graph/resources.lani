@@ -1,0 +1,70 @@
+// Five isolated operation profiles; each retires its private result within its
+// marked phase. The setup graph/Paths remain valid through failed retry.
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::weighted_graph;
+import std::io;
+
+fn edge(source:i32,target:i32,cost:i64) -> ext::weighted_graph::Edge { return ext::weighted_graph::Edge { source:source,target:target,cost:cost }; }
+fn mark(value:i32) { let bytes:[i32;1]=[value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(bytes),1)==1); }
+fn failure(value:ext::weighted_graph::Error) -> i32 { assert(value.kind==ext::weighted_graph::ErrorKind::AllocationFailed && value.node==-1 && value.edge==-1); return 1; }
+fn natural_failures(profile:i32) {
+    let limits=ext::weighted_graph::default_limits(); let offsets:[i32;3]=[0,1,2];
+    let arcs:[ext::weighted_graph::Arc;2]=[ext::weighted_graph::Arc { target:1,cost:9223372036854775807 },ext::weighted_graph::Arc { target:0,cost:1 }];
+    let view=ext::weighted_graph::view(2,core::slice::view(offsets,3).unwrap(),core::slice::view(arcs,2).unwrap(),limits).unwrap();
+    if(profile==2) {
+        let failure=ext::weighted_graph::dijkstra(view,0,limits).unwrap_err();
+        assert(failure.kind==ext::weighted_graph::ErrorKind::Overflow && failure.node==1 && failure.edge==1); return;
+    }
+    let overflow=ext::weighted_graph::bellman_ford(view,0,limits).unwrap_err();
+    assert(overflow.kind==ext::weighted_graph::ErrorKind::Overflow && overflow.node==1 && overflow.edge==1);
+    arcs[0]=ext::weighted_graph::Arc { target:1,cost:0 }; arcs[1]=ext::weighted_graph::Arc { target:0,cost:-1 };
+    let cycle=ext::weighted_graph::bellman_ford(view,0,limits).unwrap_err();
+    assert(cycle.kind==ext::weighted_graph::ErrorKind::NegativeCycle && cycle.node==0 && cycle.edge==0);
+}
+fn retire_graph(result:core::result::Result<ext::weighted_graph::Graph,ext::weighted_graph::Error>) -> i32 {
+    if(result.is_err()) { return failure(result.unwrap_err()); }
+    let graph=result.unwrap(); assert(graph.node_count()==5 && graph.edge_count()==8);
+    let view=graph.view().unwrap(); assert(ext::weighted_graph::validate(view,ext::weighted_graph::default_limits()).unwrap()==8);
+    assert(view.offsets.get(5).unwrap()==8 && view.arcs.get(0).unwrap().target==1 && view.arcs.get(0).unwrap().cost==2);
+    assert(graph.destroy() && !graph.destroy()); return 0;
+}
+fn retire_paths(result:core::result::Result<ext::weighted_graph::Paths,ext::weighted_graph::Error>) -> i32 {
+    if(result.is_err()) { return failure(result.unwrap_err()); }
+    let paths=result.unwrap(); assert(paths.node_count()==5 && paths.source().unwrap()==0);
+    let expected:[i64;5]=[0,2,5,9,14]; let index:i32=0;
+    while(index<5) { assert(paths.distance(index).unwrap().unwrap()==expected[index]); index+=1; }
+    assert(paths.predecessor(4).unwrap().unwrap().cost==5);
+    assert(paths.destroy() && !paths.destroy()); return 0;
+}
+fn operation(profile:i32,raw:core::slice::View<ext::weighted_graph::Edge>,view:ext::weighted_graph::View,paths:&ext::weighted_graph::Paths) -> i32 {
+    let limits=ext::weighted_graph::default_limits();
+    if(profile==0) { return retire_graph(ext::weighted_graph::from_edges(5,raw,limits)); }
+    if(profile==1) { return retire_graph(ext::weighted_graph::from_view(view,limits)); }
+    if(profile==2) { return retire_paths(ext::weighted_graph::dijkstra(view,0,limits)); }
+    if(profile==3) { return retire_paths(ext::weighted_graph::bellman_ford(view,0,limits)); }
+    assert(profile==4);
+    let result=paths.path_to(4,limits);
+    if(result.is_err()) { return failure(result.unwrap_err()); }
+    let path=result.unwrap().unwrap(); assert(path.len()==4); let index:i32=0;
+    while(index<4) { let value=path.at(index); assert(value.source==index && value.target==index+1 && value.cost==(index+2) as i64); index+=1; }
+    path.destroy(); return 0;
+}
+fn main() -> i32 {
+    let input:[i32;1]=[0]; assert(std::io::read_stdin(core::mem::i32_array_data_ptr(input),1)==1); let profile:i32=input[0]; assert(profile>=0 && profile<5);
+    let sentinel=edge(-7,-8,-9);
+    let raw:[ext::weighted_graph::Edge;10]=[sentinel,edge(3,4,5),edge(0,4,50),edge(2,3,4),edge(0,1,2),edge(1,2,3),edge(0,1,2),edge(2,2,0),edge(1,3,20),sentinel];
+    let selected=core::slice::view_range(raw,1,8).unwrap(); let limits=ext::weighted_graph::default_limits();
+    let graph=ext::weighted_graph::from_edges(5,selected,limits).unwrap(); let view=graph.view().unwrap();
+    let paths=ext::weighted_graph::bellman_ford(view,0,limits).unwrap();
+    if(profile==2 || profile==3) { mark(78); natural_failures(profile); mark(110); }
+    mark(65); let status=operation(profile,selected,view,paths.borrow()); mark(97);
+    assert(ext::weighted_graph::validate(view,limits).unwrap()==8 && paths.distance(4).unwrap().unwrap()==14);
+    assert(raw[0].source==-7 && raw[9].target==-8 && raw[1].source==3 && raw[2].cost==50 && raw[4].cost==2);
+    if(status==1) { mark(82); assert(operation(profile,selected,view,paths.borrow())==0); mark(114); }
+    assert(paths.destroy() && !paths.destroy()); assert(graph.destroy() && !graph.destroy()); mark(68);
+    let report:[i32;1]=[profile+256*status]; assert(std::io::write_stdout(core::mem::i32_array_data_ptr(report),2)==2); return 0;
+}
