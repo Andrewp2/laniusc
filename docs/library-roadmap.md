@@ -550,7 +550,7 @@ protocol and extension checks, masked frames with pooled OS-random keys,
 fragmented sends and receives, automatic Pong replies, both close
 handshakes, failing the connection with 1002/1007/1009/1011, and
 permessage-deflate with context takeover on or off for each side. Its
-`ws_cat` sample passes a stdlib-only asyncio echo server's ws group (50
+`ws_cat` sample's historical receipts pass a stdlib-only asyncio echo server's ws group (50
 cases), wss group (52 cases, generated test certificates) and deflate group
 (24 cases against Python `zlib`), which check masking, key freshness,
 minimal length encodings, fragmented and oversized control frames, opcode
@@ -559,6 +559,16 @@ sizes, including compressed fragmented sends. The
 [WebSocket service](extended-websocket-service.md) keeps server context
 takeover unless asked to reset. Redirects of the opening request and
 background Ping handling remain open.
+
+Both URL-client and event-loop-service Accept calculations now use the
+[checked OpenSSL helper](extended-openssl-websocket.md#current-caller-migration),
+with `Accept(error)` preserving provider and digest-size failures. The
+client cleans up before writing its opening request; the service keeps its
+HTTP slot without a 101 or session, allowing the sample to answer 500.
+The plain service requires `libcrypto`; the client already links `libssl`
+and `libcrypto`. The handwritten SHA-1 module and wire-level Accept helper
+are removed, while portable wire/frame processing remains independent of
+native crypto. Earlier oracle receipts retain their original source scope.
 
 [DNS wire processing](extended-dns.md) validates binary names, compression,
 QUERY sections, common RDATA and EDNS, with bounded complete message writing.

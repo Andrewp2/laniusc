@@ -7,8 +7,9 @@ so resolution, ordered connect attempts and verified TLS behave as they do
 for `http://` and `https://`. The opening handshake, frame parsing and
 encoding, fragmented messages, UTF-8 checks and close-code rules are the
 existing [`ext::websocket`](extended-websocket.md) frame code, which the
-servers also use, run with `Role::Client`. The Accept value is computed in
-Lanius (`websocket::accept_into` over `ext::sha1`). permessage-deflate
+servers also use, run with `Role::Client`. The expected Accept value comes
+from [`openssl_websocket::accept_into`](extended-openssl-websocket.md),
+which delegates the RFC 6455 digest to OpenSSL 3. permessage-deflate
 (RFC 7692) comes from `ext::ws_deflate` over `ext::deflate` and
 `ext::inflate`, with context takeover on or off for each side. The `wss://`
 transport comes from OpenSSL 3 through the agent, so programs link `libssl`
@@ -59,6 +60,12 @@ origin-form target with `Host` from the URL authority, a key made from 16
 fresh bytes of the OS random source, version 13, the offered protocols and
 the caller's fields. `websocket::encode_request` owns the handshake fields;
 a caller field that names one fails with `InvalidRequest`.
+
+Before writing the HTTP request, `connect` computes the expected Accept
+value with the checked OpenSSL helper. A helper failure returns
+`Accept(openssl_websocket::Error)`, releases the staged buffers and destroys
+the connection. No opening request is sent on that path. OpenSSL provider
+policy can reject SHA-1 even for a plain `ws://` connection.
 
 The response head is read up to its blank line. Any other status than 101
 fails with `Rejected(status)`. A 101 must pass `websocket::validate_response`
@@ -166,6 +173,7 @@ frame.
 | `InvalidRequest` | bad options, header or protocol list, or a send the frame state does not allow |
 | `BadUrl`, `Url(kind)`, `UnsupportedScheme` | the URL has a fragment, does not parse, or is not ws/wss |
 | `Connect(error)` | the agent's connect or TLS failure (see [its errors](extended-http-agent.md#deadlines-limits-and-errors)) |
+| `Accept(error)` | the checked OpenSSL Accept helper failed before the HTTP request was sent; includes provider and unexpected digest-size errors |
 | `Rejected(status)`, `Handshake(error)` | a non-101 status, or an invalid 101 |
 | `Io(error)`, `Timeout` | transport failure; a receive or send deadline |
 | `Eof` | the transport ended without a Close |
@@ -192,9 +200,14 @@ permessage-deflate was negotiated),
 then one line per received message (`KIND LENGTH FNV1A32 DATA`, with DATA
 only up to 200 bytes), `close CODE REASON` for a peer Close, `closed CODE`
 after `close`, `timeout` for a receive that timed out, and `error NAME` (exit
-status 1) on failure.
+status 1) on failure. An Accept-helper failure prints `error crypto`.
 
-## Executed evidence
+## Historical executed evidence
+
+The following groups predate the migration to the checked OpenSSL Accept
+helper and retain their earlier source scope. The
+[current migration receipts](extended-openssl-websocket.md#current-caller-migration)
+record the focused checks of the changed callers separately.
 
 `tests/extended_websocket_client_execution.rs` compiles `ws_cat` with
 `libssl` and `libcrypto` and runs

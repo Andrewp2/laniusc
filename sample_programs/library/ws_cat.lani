@@ -103,6 +103,7 @@ fn error_name(e: ext::websocket_client::Error) -> core::slice::View<u8> {
             ext::http_agent::Error::Tls(t) -> match(t.cause) { ext::openssl_tls::Cause::Verification -> literal("certificate",11), ext::openssl_tls::Cause::PeerCertificate -> literal("certificate",11), _ -> literal("tls",3) },
             ext::http_agent::Error::Timeout -> literal("timeout",7), _ -> literal("connect",7) },
         ext::websocket_client::Error::Rejected(s) -> literal("rejected",8), ext::websocket_client::Error::Handshake(h) -> literal("handshake",9),
+        ext::websocket_client::Error::Accept(cause) -> literal("crypto",6),
         ext::websocket_client::Error::Io(i) -> literal("io",2), ext::websocket_client::Error::Timeout -> literal("timeout",7),
         ext::websocket_client::Error::Eof -> literal("eof",3),
         ext::websocket_client::Error::Wire(w) -> match(w) {

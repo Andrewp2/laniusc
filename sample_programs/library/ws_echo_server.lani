@@ -60,6 +60,8 @@ fn handle(server: &ext::http_service::Server, hub: &ext::websocket_service::Hub,
         totals.rejected += 1;
         let full: bool = match(up.unwrap_err()) { ext::websocket_service::Error::Full -> true, _ -> false };
         if (full) { answer(server,slot,503,literal("busy\n",5)); return; }
+        let accept_failed: bool = match(up.unwrap_err()) { ext::websocket_service::Error::Accept(cause) -> true, _ -> false };
+        if (accept_failed) { answer(server,slot,500,literal("websocket accept unavailable\n",29)); return; }
         answer(server,slot,400,literal("websocket upgrade required\n",27)); return;
     }
     if (eq(request.path,"/",1)) { answer(server,slot,200,literal("websocket echo: /ws, /chat\n",27)); return; }

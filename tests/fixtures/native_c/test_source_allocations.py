@@ -221,6 +221,23 @@ class SourceAllocationAuthority(unittest.TestCase):
                 SOURCE.classify(profile, post_ip)
         self.assertEqual(SOURCE.classify(profile, end + 2), "native")
 
+    def test_terminal_syscall_owns_its_full_two_byte_extent(self):
+        inspected = self.image()
+        profile = self.profile(inspected)
+        start = inspected["runtime_starts"][0]
+        end = start + len(self.runtime)
+        self.assertEqual(inspected["runtime_instructions"][end - 2][0], "syscall")
+        self.assertIn(end, profile[0].source_syscall_sites)
+        self.assertEqual(SOURCE.classify(profile, end), "source")
+        original = profile[0].executable_ranges
+        others = [pair for pair in original if pair != (start, end)]
+        # The syscall starts in the block, but its second byte is outside.
+        with self.assertRaisesRegex(ValueError, "post-IP escapes"):
+            SOURCE._partition(inspected, others + [(start, end - 1)], [(start, end)], self.crt)
+        # A range containing only the second byte cannot authorize its start.
+        with self.assertRaisesRegex(ValueError, "unknown unsized"):
+            SOURCE._partition(inspected, others + [(start, end - 2), (end - 1, end)], [(start, end)], self.crt)
+
     def test_public_entry_requires_validator_admission_and_legacy_result_is_same(self):
         with patch.object(SOURCE.ELF, "inspect", side_effect=ValueError("rejected ELF")):
             with self.assertRaisesRegex(ValueError, "rejected ELF"):

@@ -8,15 +8,16 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
-WebSocket sessions on one std::event loop, upgraded from ext::http_service (Hub.upgrade detaches the socket). Pings, fragmentation, UTF-8, close codes and limits per RFC 6455; permessage-deflate with server context takeover unless the offer or deflate_no_context asks for a reset, and the offered server_max_window_bits. ws_echo_server passes an 89-case hand-written-peer oracle.
+WebSocket sessions on one std::event loop, upgraded from ext::http_service (Hub.upgrade detaches the socket). Accept is computed by the checked ext::openssl_websocket helper, requiring libcrypto even for a plain service. Accept(error) leaves the HTTP slot attached, writes no 101 and publishes no session; ws_echo_server answers 500. Pings, fragmentation, UTF-8, close codes and limits per RFC 6455; permessage-deflate with server context takeover unless the offer or deflate_no_context asks for a reset, and the offered server_max_window_bits. Historical ws_echo_server receipts pass an 89-case hand-written-peer oracle; they retain their source scope. Current typed-helper checks pass four processes with six exact provider/size/full-width-size errors, retained HTTP ownership and real-provider recovery. Separate current reruns also pass the 89-case echo group and three sample processes with six exact HTTP-500 responses and HTTP connection reuse.
 
 ## Contract and evidence guides
 
 - [extended-websocket-service](../../extended-websocket-service.md)
 - [extended-websocket](../../extended-websocket.md)
+- [extended-openssl-websocket](../../extended-openssl-websocket.md)
 - [extended-http-service](../../extended-http-service.md)
 
-Declaration counts: enum: 2; field: 30; function: 2; impl: 1; method: 18; struct: 4; variant: 12.
+Declaration counts: enum: 2; field: 30; function: 2; impl: 1; method: 18; struct: 4; variant: 13.
 
 ## Declared imports
 
@@ -31,12 +32,13 @@ Direct source imports; this is not a package-resolution or transitive dependency
 - [core::time](../core/time.md) · [source](../../../extended/ext/websocket_service.lani#L15)
 - [ext::http](http.md) · [source](../../../extended/ext/websocket_service.lani#L16)
 - [ext::http_service](http_service.md) · [source](../../../extended/ext/websocket_service.lani#L17)
-- [ext::websocket](websocket.md) · [source](../../../extended/ext/websocket_service.lani#L18)
-- [ext::ws_deflate](ws_deflate.md) · [source](../../../extended/ext/websocket_service.lani#L19)
-- [std::clock](../std/clock.md) · [source](../../../extended/ext/websocket_service.lani#L20)
-- [std::event](../std/event.md) · [source](../../../extended/ext/websocket_service.lani#L21)
-- [std::linux](../std/linux.md) · [source](../../../extended/ext/websocket_service.lani#L22)
-- [std::socket](../std/socket.md) · [source](../../../extended/ext/websocket_service.lani#L23)
+- [ext::openssl_websocket](openssl_websocket.md) · [source](../../../extended/ext/websocket_service.lani#L18)
+- [ext::websocket](websocket.md) · [source](../../../extended/ext/websocket_service.lani#L19)
+- [ext::ws_deflate](ws_deflate.md) · [source](../../../extended/ext/websocket_service.lani#L20)
+- [std::clock](../std/clock.md) · [source](../../../extended/ext/websocket_service.lani#L21)
+- [std::event](../std/event.md) · [source](../../../extended/ext/websocket_service.lani#L22)
+- [std::linux](../std/linux.md) · [source](../../../extended/ext/websocket_service.lani#L23)
+- [std::socket](../std/socket.md) · [source](../../../extended/ext/websocket_service.lani#L24)
 
 ## Types, fields and variants
 
@@ -44,7 +46,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 25](../../../extended/ext/websocket_service.lani#L25)
+[Source line 26](../../../extended/ext/websocket_service.lani#L26)
 
 ```lanius
 pub enum Error
@@ -52,15 +54,23 @@ pub enum Error
 
 #### variant: Handshake
 
-[Source line 25](../../../extended/ext/websocket_service.lani#L25)
+[Source line 26](../../../extended/ext/websocket_service.lani#L26)
 
 ```lanius
 Handshake
 ```
 
+#### variant: Accept
+
+[Source line 26](../../../extended/ext/websocket_service.lani#L26)
+
+```lanius
+Accept(ext::openssl_websocket::Error)
+```
+
 #### variant: Full
 
-[Source line 25](../../../extended/ext/websocket_service.lani#L25)
+[Source line 26](../../../extended/ext/websocket_service.lani#L26)
 
 ```lanius
 Full
@@ -68,7 +78,7 @@ Full
 
 #### variant: Backlog
 
-[Source line 25](../../../extended/ext/websocket_service.lani#L25)
+[Source line 26](../../../extended/ext/websocket_service.lani#L26)
 
 ```lanius
 Backlog
@@ -76,7 +86,7 @@ Backlog
 
 #### variant: InvalidState
 
-[Source line 25](../../../extended/ext/websocket_service.lani#L25)
+[Source line 26](../../../extended/ext/websocket_service.lani#L26)
 
 ```lanius
 InvalidState
@@ -84,7 +94,7 @@ InvalidState
 
 #### variant: AllocationFailed
 
-[Source line 25](../../../extended/ext/websocket_service.lani#L25)
+[Source line 26](../../../extended/ext/websocket_service.lani#L26)
 
 ```lanius
 AllocationFailed
@@ -92,7 +102,7 @@ AllocationFailed
 
 #### variant: Clock
 
-[Source line 25](../../../extended/ext/websocket_service.lani#L25)
+[Source line 26](../../../extended/ext/websocket_service.lani#L26)
 
 ```lanius
 Clock
@@ -100,7 +110,7 @@ Clock
 
 #### variant: Event
 
-[Source line 25](../../../extended/ext/websocket_service.lani#L25)
+[Source line 26](../../../extended/ext/websocket_service.lani#L26)
 
 ```lanius
 Event(std::event::Error)
@@ -108,7 +118,7 @@ Event(std::event::Error)
 
 #### variant: Http
 
-[Source line 25](../../../extended/ext/websocket_service.lani#L25)
+[Source line 26](../../../extended/ext/websocket_service.lani#L26)
 
 ```lanius
 Http(ext::http_service::Error)
@@ -116,7 +126,7 @@ Http(ext::http_service::Error)
 
 #### variant: Wire
 
-[Source line 25](../../../extended/ext/websocket_service.lani#L25)
+[Source line 26](../../../extended/ext/websocket_service.lani#L26)
 
 ```lanius
 Wire(ext::websocket::Error)
@@ -124,7 +134,7 @@ Wire(ext::websocket::Error)
 
 ### enum: Kind
 
-[Source line 29](../../../extended/ext/websocket_service.lani#L29)
+[Source line 30](../../../extended/ext/websocket_service.lani#L30)
 
 ```lanius
 pub enum Kind
@@ -132,7 +142,7 @@ pub enum Kind
 
 #### variant: Text
 
-[Source line 29](../../../extended/ext/websocket_service.lani#L29)
+[Source line 30](../../../extended/ext/websocket_service.lani#L30)
 
 ```lanius
 Text
@@ -140,7 +150,7 @@ Text
 
 #### variant: Binary
 
-[Source line 29](../../../extended/ext/websocket_service.lani#L29)
+[Source line 30](../../../extended/ext/websocket_service.lani#L30)
 
 ```lanius
 Binary
@@ -148,7 +158,7 @@ Binary
 
 #### variant: Closed
 
-[Source line 29](../../../extended/ext/websocket_service.lani#L29)
+[Source line 30](../../../extended/ext/websocket_service.lani#L30)
 
 ```lanius
 Closed
@@ -156,7 +166,7 @@ Closed
 
 ### struct: Message
 
-[Source line 30](../../../extended/ext/websocket_service.lani#L30)
+[Source line 31](../../../extended/ext/websocket_service.lani#L31)
 
 ```lanius
 pub struct Message
@@ -164,7 +174,7 @@ pub struct Message
 
 #### field: session
 
-[Source line 30](../../../extended/ext/websocket_service.lani#L30)
+[Source line 31](../../../extended/ext/websocket_service.lani#L31)
 
 ```lanius
 session: i32
@@ -172,7 +182,7 @@ session: i32
 
 #### field: kind
 
-[Source line 30](../../../extended/ext/websocket_service.lani#L30)
+[Source line 31](../../../extended/ext/websocket_service.lani#L31)
 
 ```lanius
 kind: Kind
@@ -180,7 +190,7 @@ kind: Kind
 
 #### field: start
 
-[Source line 30](../../../extended/ext/websocket_service.lani#L30)
+[Source line 31](../../../extended/ext/websocket_service.lani#L31)
 
 ```lanius
 start: i32
@@ -188,7 +198,7 @@ start: i32
 
 #### field: length
 
-[Source line 30](../../../extended/ext/websocket_service.lani#L30)
+[Source line 31](../../../extended/ext/websocket_service.lani#L31)
 
 ```lanius
 length: i32
@@ -196,7 +206,7 @@ length: i32
 
 #### field: code
 
-[Source line 30](../../../extended/ext/websocket_service.lani#L30)
+[Source line 31](../../../extended/ext/websocket_service.lani#L31)
 
 ```lanius
 code: i32
@@ -204,7 +214,7 @@ code: i32
 
 ### struct: Options
 
-[Source line 38](../../../extended/ext/websocket_service.lani#L38)
+[Source line 39](../../../extended/ext/websocket_service.lani#L39)
 
 ```lanius
 pub struct Options
@@ -212,7 +222,7 @@ pub struct Options
 
 #### field: limits
 
-[Source line 38](../../../extended/ext/websocket_service.lani#L38)
+[Source line 39](../../../extended/ext/websocket_service.lani#L39)
 
 ```lanius
 limits: ext::websocket::Limits
@@ -220,7 +230,7 @@ limits: ext::websocket::Limits
 
 #### field: deflate
 
-[Source line 38](../../../extended/ext/websocket_service.lani#L38)
+[Source line 39](../../../extended/ext/websocket_service.lani#L39)
 
 ```lanius
 deflate: bool
@@ -228,7 +238,7 @@ deflate: bool
 
 #### field: deflate_no_context
 
-[Source line 38](../../../extended/ext/websocket_service.lani#L38)
+[Source line 39](../../../extended/ext/websocket_service.lani#L39)
 
 ```lanius
 deflate_no_context: bool
@@ -236,7 +246,7 @@ deflate_no_context: bool
 
 #### field: sessions
 
-[Source line 38](../../../extended/ext/websocket_service.lani#L38)
+[Source line 39](../../../extended/ext/websocket_service.lani#L39)
 
 ```lanius
 sessions: i32
@@ -244,7 +254,7 @@ sessions: i32
 
 #### field: output_bytes
 
-[Source line 38](../../../extended/ext/websocket_service.lani#L38)
+[Source line 39](../../../extended/ext/websocket_service.lani#L39)
 
 ```lanius
 output_bytes: i32
@@ -252,7 +262,7 @@ output_bytes: i32
 
 #### field: idle_timeout_ms
 
-[Source line 38](../../../extended/ext/websocket_service.lani#L38)
+[Source line 39](../../../extended/ext/websocket_service.lani#L39)
 
 ```lanius
 idle_timeout_ms: i32
@@ -260,7 +270,7 @@ idle_timeout_ms: i32
 
 #### field: close_timeout_ms
 
-[Source line 38](../../../extended/ext/websocket_service.lani#L38)
+[Source line 39](../../../extended/ext/websocket_service.lani#L39)
 
 ```lanius
 close_timeout_ms: i32
@@ -268,7 +278,7 @@ close_timeout_ms: i32
 
 #### field: compress_min
 
-[Source line 38](../../../extended/ext/websocket_service.lani#L38)
+[Source line 39](../../../extended/ext/websocket_service.lani#L39)
 
 ```lanius
 compress_min: i32
@@ -276,7 +286,7 @@ compress_min: i32
 
 ### struct: Stats
 
-[Source line 39](../../../extended/ext/websocket_service.lani#L39)
+[Source line 40](../../../extended/ext/websocket_service.lani#L40)
 
 ```lanius
 pub struct Stats
@@ -284,7 +294,7 @@ pub struct Stats
 
 #### field: sessions
 
-[Source line 39](../../../extended/ext/websocket_service.lani#L39)
+[Source line 40](../../../extended/ext/websocket_service.lani#L40)
 
 ```lanius
 sessions: i32
@@ -292,7 +302,7 @@ sessions: i32
 
 #### field: messages_in
 
-[Source line 39](../../../extended/ext/websocket_service.lani#L39)
+[Source line 40](../../../extended/ext/websocket_service.lani#L40)
 
 ```lanius
 messages_in: u64
@@ -300,7 +310,7 @@ messages_in: u64
 
 #### field: messages_out
 
-[Source line 39](../../../extended/ext/websocket_service.lani#L39)
+[Source line 40](../../../extended/ext/websocket_service.lani#L40)
 
 ```lanius
 messages_out: u64
@@ -308,7 +318,7 @@ messages_out: u64
 
 #### field: bytes_in
 
-[Source line 39](../../../extended/ext/websocket_service.lani#L39)
+[Source line 40](../../../extended/ext/websocket_service.lani#L40)
 
 ```lanius
 bytes_in: u64
@@ -316,7 +326,7 @@ bytes_in: u64
 
 #### field: bytes_out
 
-[Source line 39](../../../extended/ext/websocket_service.lani#L39)
+[Source line 40](../../../extended/ext/websocket_service.lani#L40)
 
 ```lanius
 bytes_out: u64
@@ -324,7 +334,7 @@ bytes_out: u64
 
 #### field: failed
 
-[Source line 39](../../../extended/ext/websocket_service.lani#L39)
+[Source line 40](../../../extended/ext/websocket_service.lani#L40)
 
 ```lanius
 failed: i32
@@ -332,7 +342,7 @@ failed: i32
 
 #### field: compressed
 
-[Source line 39](../../../extended/ext/websocket_service.lani#L39)
+[Source line 40](../../../extended/ext/websocket_service.lani#L40)
 
 ```lanius
 compressed: i32
@@ -340,7 +350,7 @@ compressed: i32
 
 ### struct: Hub
 
-[Source line 51](../../../extended/ext/websocket_service.lani#L51)
+[Source line 52](../../../extended/ext/websocket_service.lani#L52)
 
 ```lanius
 pub struct Hub
@@ -348,7 +358,7 @@ pub struct Hub
 
 #### field: events
 
-[Source line 51](../../../extended/ext/websocket_service.lani#L51)
+[Source line 52](../../../extended/ext/websocket_service.lani#L52)
 
 ```lanius
 events: std::event::Loop
@@ -356,7 +366,7 @@ events: std::event::Loop
 
 #### field: options
 
-[Source line 51](../../../extended/ext/websocket_service.lani#L51)
+[Source line 52](../../../extended/ext/websocket_service.lani#L52)
 
 ```lanius
 options: Options
@@ -364,7 +374,7 @@ options: Options
 
 #### field: sessions
 
-[Source line 51](../../../extended/ext/websocket_service.lani#L51)
+[Source line 52](../../../extended/ext/websocket_service.lani#L52)
 
 ```lanius
 sessions: alloc::vec::Vec<Session>
@@ -372,7 +382,7 @@ sessions: alloc::vec::Vec<Session>
 
 #### field: messages
 
-[Source line 51](../../../extended/ext/websocket_service.lani#L51)
+[Source line 52](../../../extended/ext/websocket_service.lani#L52)
 
 ```lanius
 messages: alloc::vec::Vec<Message>
@@ -380,7 +390,7 @@ messages: alloc::vec::Vec<Message>
 
 #### field: head
 
-[Source line 51](../../../extended/ext/websocket_service.lani#L51)
+[Source line 52](../../../extended/ext/websocket_service.lani#L52)
 
 ```lanius
 head: i32
@@ -388,7 +398,7 @@ head: i32
 
 #### field: inbox
 
-[Source line 51](../../../extended/ext/websocket_service.lani#L51)
+[Source line 52](../../../extended/ext/websocket_service.lani#L52)
 
 ```lanius
 inbox: alloc::vec::Vec<u8>
@@ -396,7 +406,7 @@ inbox: alloc::vec::Vec<u8>
 
 #### field: scratch
 
-[Source line 51](../../../extended/ext/websocket_service.lani#L51)
+[Source line 52](../../../extended/ext/websocket_service.lani#L52)
 
 ```lanius
 scratch: alloc::vec::Vec<u8>
@@ -404,7 +414,7 @@ scratch: alloc::vec::Vec<u8>
 
 #### field: active
 
-[Source line 51](../../../extended/ext/websocket_service.lani#L51)
+[Source line 52](../../../extended/ext/websocket_service.lani#L52)
 
 ```lanius
 active: i32
@@ -412,7 +422,7 @@ active: i32
 
 #### field: external
 
-[Source line 51](../../../extended/ext/websocket_service.lani#L51)
+[Source line 52](../../../extended/ext/websocket_service.lani#L52)
 
 ```lanius
 external: bool
@@ -420,7 +430,7 @@ external: bool
 
 #### field: stats
 
-[Source line 51](../../../extended/ext/websocket_service.lani#L51)
+[Source line 52](../../../extended/ext/websocket_service.lani#L52)
 
 ```lanius
 stats: Stats
@@ -430,7 +440,7 @@ stats: Stats
 
 ### function: default_options
 
-[Source line 53](../../../extended/ext/websocket_service.lani#L53)
+[Source line 54](../../../extended/ext/websocket_service.lani#L54)
 
 ```lanius
 pub fn default_options() -> Options
@@ -438,7 +448,7 @@ pub fn default_options() -> Options
 
 ### function: hub
 
-[Source line 94](../../../extended/ext/websocket_service.lani#L94)
+[Source line 95](../../../extended/ext/websocket_service.lani#L95)
 
 ```lanius
 pub fn hub(options: Options) -> core::result::Result<Hub,Error>
@@ -446,9 +456,9 @@ pub fn hub(options: Options) -> core::result::Result<Hub,Error>
 
 ## Implementation blocks and public methods
 
-### impl at line 102
+### impl at line 103
 
-[Source line 102](../../../extended/ext/websocket_service.lani#L102)
+[Source line 103](../../../extended/ext/websocket_service.lani#L103)
 
 ```lanius
 pub impl Hub
@@ -456,7 +466,7 @@ pub impl Hub
 
 #### method: borrow
 
-[Source line 103](../../../extended/ext/websocket_service.lani#L103)
+[Source line 104](../../../extended/ext/websocket_service.lani#L104)
 
 ```lanius
 pub fn borrow(&self) -> &Hub
@@ -464,7 +474,7 @@ pub fn borrow(&self) -> &Hub
 
 #### method: stats
 
-[Source line 104](../../../extended/ext/websocket_service.lani#L104)
+[Source line 105](../../../extended/ext/websocket_service.lani#L105)
 
 ```lanius
 pub fn stats(&self) -> Stats
@@ -472,7 +482,7 @@ pub fn stats(&self) -> Stats
 
 #### method: active
 
-[Source line 105](../../../extended/ext/websocket_service.lani#L105)
+[Source line 106](../../../extended/ext/websocket_service.lani#L106)
 
 ```lanius
 pub fn active(&self) -> i32
@@ -480,7 +490,7 @@ pub fn active(&self) -> i32
 
 #### method: is_open
 
-[Source line 106](../../../extended/ext/websocket_service.lani#L106)
+[Source line 107](../../../extended/ext/websocket_service.lani#L107)
 
 ```lanius
 pub fn is_open(&self, session: i32) -> bool
@@ -488,7 +498,7 @@ pub fn is_open(&self, session: i32) -> bool
 
 #### method: peer
 
-[Source line 107](../../../extended/ext/websocket_service.lani#L107)
+[Source line 108](../../../extended/ext/websocket_service.lani#L108)
 
 ```lanius
 pub fn peer(&self, session: i32) -> core::net::SocketAddr
@@ -496,7 +506,7 @@ pub fn peer(&self, session: i32) -> core::net::SocketAddr
 
 #### method: compressed
 
-[Source line 109](../../../extended/ext/websocket_service.lani#L109)
+[Source line 110](../../../extended/ext/websocket_service.lani#L110)
 
 ```lanius
 pub fn compressed(&self, session: i32) -> bool
@@ -504,7 +514,7 @@ pub fn compressed(&self, session: i32) -> bool
 
 #### method: watch
 
-[Source line 112](../../../extended/ext/websocket_service.lani#L112)
+[Source line 113](../../../extended/ext/websocket_service.lani#L113)
 
 ```lanius
 pub fn watch(&self, fd: i32) -> core::result::Result<i32,Error>
@@ -512,7 +522,7 @@ pub fn watch(&self, fd: i32) -> core::result::Result<i32,Error>
 
 #### method: external
 
-[Source line 117](../../../extended/ext/websocket_service.lani#L117)
+[Source line 118](../../../extended/ext/websocket_service.lani#L118)
 
 ```lanius
 pub fn external(&self) -> bool
@@ -520,7 +530,7 @@ pub fn external(&self) -> bool
 
 #### method: upgrade
 
-[Source line 123](../../../extended/ext/websocket_service.lani#L123)
+[Source line 125](../../../extended/ext/websocket_service.lani#L125)
 
 ```lanius
 pub fn upgrade(&self, server: &ext::http_service::Server, slot: i32, protocol: core::option::Option<core::slice::View<u8>>) -> core::result::Result<i32,Error>
@@ -528,7 +538,7 @@ pub fn upgrade(&self, server: &ext::http_service::Server, slot: i32, protocol: c
 
 #### method: send
 
-[Source line 308](../../../extended/ext/websocket_service.lani#L308)
+[Source line 311](../../../extended/ext/websocket_service.lani#L311)
 
 ```lanius
 pub fn send(&self, session: i32, opcode: i32, data: core::slice::View<u8>) -> core::result::Result<i32,Error>
@@ -536,7 +546,7 @@ pub fn send(&self, session: i32, opcode: i32, data: core::slice::View<u8>) -> co
 
 #### method: send_text
 
-[Source line 341](../../../extended/ext/websocket_service.lani#L341)
+[Source line 344](../../../extended/ext/websocket_service.lani#L344)
 
 ```lanius
 pub fn send_text(&self, session: i32, data: core::slice::View<u8>) -> core::result::Result<i32,Error>
@@ -544,7 +554,7 @@ pub fn send_text(&self, session: i32, data: core::slice::View<u8>) -> core::resu
 
 #### method: send_binary
 
-[Source line 342](../../../extended/ext/websocket_service.lani#L342)
+[Source line 345](../../../extended/ext/websocket_service.lani#L345)
 
 ```lanius
 pub fn send_binary(&self, session: i32, data: core::slice::View<u8>) -> core::result::Result<i32,Error>
@@ -552,7 +562,7 @@ pub fn send_binary(&self, session: i32, data: core::slice::View<u8>) -> core::re
 
 #### method: ping
 
-[Source line 344](../../../extended/ext/websocket_service.lani#L344)
+[Source line 347](../../../extended/ext/websocket_service.lani#L347)
 
 ```lanius
 pub fn ping(&self, session: i32, data: core::slice::View<u8>) -> core::result::Result<i32,Error>
@@ -560,7 +570,7 @@ pub fn ping(&self, session: i32, data: core::slice::View<u8>) -> core::result::R
 
 #### method: close
 
-[Source line 351](../../../extended/ext/websocket_service.lani#L351)
+[Source line 354](../../../extended/ext/websocket_service.lani#L354)
 
 ```lanius
 pub fn close(&self, session: i32, code: i32, reason: core::slice::View<u8>) -> core::result::Result<i32,Error>
@@ -568,7 +578,7 @@ pub fn close(&self, session: i32, code: i32, reason: core::slice::View<u8>) -> c
 
 #### method: poll
 
-[Source line 365](../../../extended/ext/websocket_service.lani#L365)
+[Source line 368](../../../extended/ext/websocket_service.lani#L368)
 
 ```lanius
 pub fn poll(&self, deadline: core::time::Deadline) -> core::result::Result<i32,Error>
@@ -576,7 +586,7 @@ pub fn poll(&self, deadline: core::time::Deadline) -> core::result::Result<i32,E
 
 #### method: next
 
-[Source line 410](../../../extended/ext/websocket_service.lani#L410)
+[Source line 413](../../../extended/ext/websocket_service.lani#L413)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<Message>
@@ -584,7 +594,7 @@ pub fn next(&self) -> core::option::Option<Message>
 
 #### method: data
 
-[Source line 415](../../../extended/ext/websocket_service.lani#L415)
+[Source line 418](../../../extended/ext/websocket_service.lani#L418)
 
 ```lanius
 pub fn data(&self, message: Message) -> core::slice::View<u8>
@@ -592,7 +602,7 @@ pub fn data(&self, message: Message) -> core::slice::View<u8>
 
 #### method: destroy
 
-[Source line 417](../../../extended/ext/websocket_service.lani#L417)
+[Source line 420](../../../extended/ext/websocket_service.lani#L420)
 
 ```lanius
 pub fn destroy(&self)

@@ -15,6 +15,7 @@ import core::slice;
 import core::time;
 import ext::http;
 import ext::http_service;
+import ext::openssl_websocket;
 import ext::websocket;
 import ext::ws_deflate;
 import std::clock;
@@ -22,7 +23,7 @@ import std::event;
 import std::linux;
 import std::socket;
 
-pub enum Error { Handshake, Full, Backlog, InvalidState, AllocationFailed, Clock, Event(std::event::Error), Http(ext::http_service::Error), Wire(ext::websocket::Error) }
+pub enum Error { Handshake, Accept(ext::openssl_websocket::Error), Full, Backlog, InvalidState, AllocationFailed, Clock, Event(std::event::Error), Http(ext::http_service::Error), Wire(ext::websocket::Error) }
 // What a poll delivered: a complete message, or the end of a session with
 // its close code (the peer's, 1005 when it sent none, ours when we failed
 // the connection, 1006 when the transport ended without a close).
@@ -117,8 +118,9 @@ pub impl Hub {
     pub fn external(&self) -> bool { return self.external; }
     // Upgrade the request waiting in the server's slot (after next, before
     // put): on success the 101 is queued, the socket detached and the new
-    // session's id returned. Err(Handshake) or Err(Full) leaves the slot to
-    // the caller, which still answers it (such as 400 or 503). protocol is
+    // session's id returned. Err(Handshake), Err(Accept) or Err(Full) leaves
+    // the slot to the caller, which still answers it (such as 400, 500 or 503).
+    // Accept preserves a native digest failure before any 101 or detachment. protocol is
     // a subprotocol to select; it must be one the client offered.
     pub fn upgrade(&self, server: &ext::http_service::Server, slot: i32, protocol: core::option::Option<core::slice::View<u8>>) -> core::result::Result<i32,Error> {
         let id: i32 = 0; while (id < self.sessions.len() && self.sessions.get(id).unwrap().state != FREE) { id += 1; }
@@ -129,7 +131,8 @@ pub impl Hub {
         let wsr: ext::websocket::Request = checked.unwrap();
         if (protocol.is_some() && !ext::websocket::offers(wsr,protocol.unwrap())) { return core::result::Err(Error::Handshake); }
         let accept: [u8;28] = [0;28]; let av: core::slice::View<u8> = core::slice::View { values: accept, start: 0, length: 28 };
-        if (ext::websocket::accept_into(wsr.key,av).is_err()) { return core::result::Err(Error::Handshake); }
+        let accepted = ext::openssl_websocket::accept_into(wsr.key,av);
+        if (accepted.is_err()) { return core::result::Err(Error::Accept(accepted.unwrap_err())); }
         let value: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); let params: core::option::Option<ext::ws_deflate::Params> = core::option::None();
         if (self.options.deflate) {
             if (self.options.deflate_no_context) { params = ext::ws_deflate::negotiate_no_context(wsr.head,value.borrow()); }

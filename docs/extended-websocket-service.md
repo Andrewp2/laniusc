@@ -9,6 +9,12 @@ then on. permessage-deflate (RFC 7692) comes from `ext::ws_deflate`, the
 same code the [WebSocket client](extended-websocket-client.md#permessage-deflate)
 uses.
 
+The handshake Accept value comes from
+[`openssl_websocket::accept_into`](extended-openssl-websocket.md), which
+delegates the RFC 6455 digest to OpenSSL 3. Even a plain WebSocket service
+requires `--native-link --native-library crypto`; `libssl` is not required
+for this service. The wire/frame module has no native crypto dependency.
+
 ## API
 
 ```lanius
@@ -59,6 +65,15 @@ when it failed the session, or 1006 when the transport ended without a
 Close. `watch` adds another descriptor, such as the HTTP server's own epoll
 descriptor, so one wait covers both.
 
+## Upgrade failures
+
+`Hub.upgrade` validates the request and selected protocol before computing
+Accept. A checked-helper failure returns
+`Accept(openssl_websocket::Error)`, including provider rejection and an
+unexpected digest size. It leaves the connection in its HTTP slot, writes
+no 101 response and publishes no WebSocket session. The caller can still
+send an HTTP error response; `ws_echo_server` maps this failure to 500.
+
 ## permessage-deflate
 
 `upgrade` accepts the first permessage-deflate offer whose parameters parse
@@ -79,12 +94,17 @@ Messages of at least `compress_min` bytes are compressed. With context
 takeover a message that fails to compress or to frame leaves the client's
 inflater out of step, so that session fails with 1011.
 
-## Sample and executed evidence
+## Sample and historical executed evidence
 
 [`ws_echo_server`](../sample_programs/library/ws_echo_server.lani) echoes
 messages on `GET /ws` and relays them to every session on `GET /chat`.
 `--no-deflate` declines permessage-deflate and `--deflate-no-context` makes
 the server reset its context per message.
+
+The following groups predate the checked OpenSSL Accept migration and
+retain their earlier source scope. The
+[current migration receipts](extended-openssl-websocket.md#current-caller-migration)
+record the changed upgrade and sample failure paths separately.
 
 [`echo_oracle.py`](../tests/fixtures/extended/websocket_service/echo_oracle.py)
 drives it with a hand-written RFC 6455 peer

@@ -102,6 +102,52 @@ The [upgrade program](extended-websocket-upgrade-program.md) provides a real
 consumer of the helper. These finite checks do not establish every OpenSSL
 provider policy or resource-failure condition.
 
+## Current caller migration
+
+The URL-based [client](extended-websocket-client.md) and event-loop
+[service](extended-websocket-service.md) now use this checked helper for
+Accept. Both expose `Accept(openssl_websocket::Error)` for digest failures.
+The client releases staged buffers and destroys its connection before any
+HTTP request write. The service retains the HTTP slot, writes no 101 and
+publishes no session; its echo sample can answer 500 on that connection.
+
+The plain service now links `libcrypto`. The client already links `libssl`
+and `libcrypto` through its HTTP-agent transport. The portable
+`ext::websocket` request/response and frame code imports no native crypto;
+it takes externally computed Accept values. The handwritten `ext::sha1`
+module and `websocket::accept_into` entry point have been removed without
+compatibility aliases.
+
+The helper receipts above and the client/service guides' historical oracle
+groups retain their original source scope. The following separate reruns
+exercise the current migration on Linux x86_64/glibc with OpenSSL 3.
+Receipt files are under `target/stdlib-work/` and share the prefix
+`websocket-native-crypto-`.
+
+| Receipt suffix | Current result |
+| --- | --- |
+| `upgrade.log` | 2 Rust tests passed in 11.29 s: 310 real-OpenSSL input/layout/overlap cases, 24 injected provider/size cases with atomic output, and portable response validation/encoding contracts. |
+| `wire.log` | 2 Rust tests passed in 14.91 s: request/frame/fragment/control/close/limit contracts and allocation-failure staging/state checks. |
+| `client-ws.log` | 1 Rust test passed in 17.17 s: the existing 50-case plain-client group. |
+| `client-remaining.log` | 3 Rust tests passed in 18.75 s: the existing 52-case TLS and 24-case deflate groups, plus three injected `ws_cat` failures reporting `error crypto` with no HTTP request bytes sent. |
+| `client-errors-final.log` | 1 Rust test passed in 21.91 s: three exact provider/size/full-width-size errors, zero HTTP request bytes followed by EOF, same-process real-provider recovery, and balanced source owners both around the failed call before retry and across the complete trace. |
+| `service-errors.log` | 1 Rust test passed in 8.57 s: four Hub processes, including a real-provider control and six exact typed failures across provider rejection, size 19 and full-width size `0x100000014`; repeated rejection preserves the same HTTP connection and the single session slot, followed by a real-provider upgrade and frame exchange. |
+| `service-apps.log` | 2 Rust tests passed in 9.87 s: the existing 89-case echo oracle and three sample processes with six injected digest failures, exact HTTP 500 responses and reuse of each HTTP connection. |
+
+The connected fault tests reuse the existing test-only interposer, which
+implements no cryptography. The typed client and service checks distinguish
+provider error `OpenSsl(0x40000123)` from `UnexpectedSize(19)` and
+`UnexpectedSize(0x100000014)`.
+
+The client ownership check covers source allocations; native OpenSSL and
+CRT mappings are outside that claim. Its initial `client-errors.log` stopped
+in an outdated host allocation-site recognizer. The final gate uses the
+shared current-runtime verifier with its terminal-instruction boundary
+corrected; 14 host controls and 10 verifier-authority tests pass. No
+production or compiler repair was required. These finite groups do not
+establish broader provider policies or allocation-failure coverage beyond
+their stated cases.
+
 ## Protocol scope
 
 This function computes a handshake field value. HTTP request/response checks,

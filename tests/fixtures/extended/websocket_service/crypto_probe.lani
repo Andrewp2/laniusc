@@ -1,0 +1,109 @@
+// Public Hub boundary probe. Only unsetenv controls the test interposer;
+// all successful accepts are computed by the real OpenSSL provider.
+module app::main;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import ext::http_service;
+import ext::openssl_websocket;
+import ext::websocket_service;
+import std::clock;
+import std::socket;
+import std::stream;
+
+extern "C" fn unsetenv(name: ptr) -> i32;
+
+fn literal(s: str, n: i32) -> core::slice::View<u8> {
+    return core::slice::view(core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(s),n),n).unwrap();
+}
+fn after_ms(ms: u64) -> core::time::Deadline {
+    return core::time::deadline_after(std::clock::monotonic_now().unwrap(),core::time::from_millis(ms)).unwrap();
+}
+fn write(bytes: core::slice::View<u8>) {
+    let sink = std::stream::stdout();
+    assert(core::io::write_all(sink.borrow(),bytes.values,bytes.start,bytes.len()).is_ok());
+}
+fn put_u64(bytes: [u8], at: i32, value: u64) {
+    let i: i32 = 0; while (i < 8) { bytes[at+i] = ((value >> (i*8)) & 255) as u8; i += 1; }
+}
+fn unchanged(before: ext::websocket_service::Stats, after: ext::websocket_service::Stats) {
+    assert(before.sessions == after.sessions && before.messages_in == after.messages_in && before.messages_out == after.messages_out);
+    assert(before.bytes_in == after.bytes_in && before.bytes_out == after.bytes_out && before.failed == after.failed && before.compressed == after.compressed);
+}
+fn answer(server: &ext::http_service::Server, slot: i32, status: i32, body: core::slice::View<u8>) {
+    let connection = server.take(slot);
+    assert(connection.will_keep_alive());
+    assert(connection.respond(status,literal("application/octet-stream",24),body).is_ok());
+    assert(server.put(slot,connection).is_ok());
+}
+fn main() -> i32 {
+    let listener = std::socket::create(std::socket::Family::Ipv4,std::socket::Kind::Tcp,true).unwrap();
+    assert(listener.bind(core::net::SocketAddr::V4(core::net::SocketAddrV4 { address: core::net::ipv4(127,0,0,1), port: 0 })).is_ok());
+    assert(listener.listen(4).is_ok());
+    let server = ext::http_service::server(listener.borrow(),ext::http_service::default_options(),1).unwrap();
+    let options = ext::websocket_service::default_options(); options.sessions = 1;
+    let hub = ext::websocket_service::hub(options).unwrap();
+    let startup: [u8;64] = [0;64];
+    let count = listener.local_addr().unwrap().format_into(core::slice::view(startup,63).unwrap()).unwrap();
+    startup[count] = 10; write(core::slice::view(startup,count+1).unwrap());
+    let deadline = after_ms(10000); let failures: i32 = 0; let upgraded: bool = false;
+    while (!upgraded) {
+        let next = server.next(deadline).unwrap(); assert(next.is_some()); let slot = next.unwrap();
+        assert(server.active() == 1 && slot == 0 && hub.active() == 0);
+        let request = server.request(slot);
+        if (ext::http_service::same(request.path,literal("/http",5))) {
+            answer(server.borrow(),slot,200,literal("http retained\n",14)); continue;
+        }
+        let recover: bool = ext::http_service::same(request.path,literal("/recover",8));
+        if (recover) { assert(unsetenv(core::mem::string_data_ptr("LANIUS_WEBSOCKET_FAULT\0")) == 0); }
+        let before = hub.stats(); let http_before = server.take(slot).stats(); let server_before = server.stats();
+        let result = hub.upgrade(server.borrow(),slot,core::option::None());
+        if (recover) {
+            assert(result.is_ok() && result.unwrap() == 0);
+            assert(server.active() == 0 && hub.active() == 1 && hub.is_open(0));
+            assert(hub.stats().sessions == 1 && hub.stats().failed == 0 && hub.stats().compressed == 0);
+            assert(hub.send_text(0,literal("native accept works",19)).is_ok()); upgraded = true; continue;
+        }
+        assert(result.is_err());
+        let cause: ext::openssl_websocket::Error = match(result.unwrap_err()) {
+            ext::websocket_service::Error::Accept(error) -> error,
+            _ -> ext::openssl_websocket::Error::Bounds
+        };
+        let kind: u64 = match(cause) {
+            ext::openssl_websocket::Error::OpenSsl(code) -> 1,
+            ext::openssl_websocket::Error::UnexpectedSize(size) -> 2,
+            _ -> 0
+        };
+        let value: u64 = match(cause) {
+            ext::openssl_websocket::Error::OpenSsl(code) -> code,
+            ext::openssl_websocket::Error::UnexpectedSize(size) -> size,
+            _ -> 0
+        };
+        assert(kind != 0);
+        unchanged(before,hub.stats());
+        assert(hub.active() == 0 && !hub.is_open(0) && !hub.compressed(0) && hub.next().is_none());
+        assert(server.active() == 1);
+        let http_after = server.take(slot).stats(); let server_after = server.stats();
+        assert(http_after.requests == http_before.requests && http_after.responses == http_before.responses);
+        assert(http_after.bytes_sent == http_before.bytes_sent && http_after.bytes_received == http_before.bytes_received && http_after.reads == http_before.reads);
+        assert(server_after.connections == server_before.connections && server_after.requests == server_before.requests);
+        assert(server_after.rejected == server_before.rejected && server_after.timeouts == server_before.timeouts && server_after.idle == server_before.idle && server_after.errors == server_before.errors && server_after.peak == server_before.peak && server_after.h2_connections == server_before.h2_connections);
+        let record: [u8;16] = [0;16]; put_u64(record,0,kind); put_u64(record,8,value);
+        answer(server.borrow(),slot,500,core::slice::view(record,16).unwrap()); failures += 1;
+    }
+    assert(failures == 0 || failures == 2);
+    let closed: bool = false;
+    while (!closed) {
+        assert(!deadline.is_expired(std::clock::monotonic_now().unwrap()));
+        assert(hub.poll(deadline).is_ok());
+        let next = hub.next();
+        if (next.is_some()) { let message = next.unwrap(); closed = match(message.kind) { ext::websocket_service::Kind::Closed -> true, _ -> false }; }
+    }
+    assert(hub.active() == 0 && hub.stats().sessions == 1 && hub.stats().failed == 0);
+    hub.destroy(); assert(server.close().is_ok()); assert(listener.close().is_ok());
+    write(literal("crypto-probe ok\n",16)); return 0;
+}

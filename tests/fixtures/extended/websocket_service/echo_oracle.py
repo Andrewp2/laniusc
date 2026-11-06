@@ -5,6 +5,8 @@ control frame rules), UTF-8, close codes, limits, permessage-deflate,
 broadcast, many sessions, and leftover bytes after the upgrade.
 Usage: echo_oracle.py SERVER. Prints one summary line."""
 import os
+import select
+import signal
 import struct
 import subprocess
 import sys
@@ -17,20 +19,36 @@ from peer import Closed, Peer  # noqa: E402
 
 EXE = sys.argv[1]
 TAIL = b"\x00\x00\xff\xff"
+RUNNING = set()
 
 
 def start(*args):
     p = subprocess.Popen([EXE, "127.0.0.1:0"] + list(args), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    line = p.stdout.readline().decode().strip()
-    if not line:
-        raise AssertionError(("no startup line", p.stderr.read()[:300]))
-    return p, int(line.rsplit(":", 1)[1])
+    RUNNING.add(p)
+    try:
+        deadline = time.monotonic() + 5
+        line = b""
+        while b"\n" not in line:
+            remaining = deadline - time.monotonic()
+            check(remaining > 0, "startup deadline")
+            ready, _, _ = select.select([p.stdout], [], [], remaining)
+            check(ready, "startup deadline")
+            chunk = os.read(p.stdout.fileno(), 256)
+            check(chunk, ("no startup line", p.poll()))
+            line += chunk
+            check(len(line) <= 256, ("startup line", line))
+        return p, int(line.strip().rsplit(b":", 1)[1])
+    except BaseException:
+        stop(p)
+        raise
 
 
 def stop(p):
     alive = p.poll() is None
-    p.kill()
-    p.wait()
+    if alive:
+        p.kill()
+    p.wait(timeout=3)
+    RUNNING.discard(p)
     return alive
 
 
@@ -308,11 +326,13 @@ def many_cases(port):
             peer.expect_close([1000])
         except Exception as ex:  # noqa: BLE001
             errors.append((k, repr(ex)))
-    threads = [threading.Thread(target=client, args=(k,)) for k in range(40)]
+    threads = [threading.Thread(target=client, args=(k,), daemon=True) for k in range(40)]
     for t in threads:
         t.start()
+    deadline = time.monotonic() + 20
     for t in threads:
-        t.join(60)
+        t.join(max(0, deadline - time.monotonic()))
+    check(not any(t.is_alive() for t in threads), "concurrent client deadline")
     check(not errors, ("concurrent", errors[:3]))
     # Frames sent together with the handshake (leftover bytes at detach).
     peer = Peer(port)
@@ -389,4 +409,15 @@ def main():
     print("ws-service cases=%d" % total)
 
 
-main()
+def expired(signum, frame):
+    raise TimeoutError("WebSocket service oracle exceeded 60 seconds")
+
+
+signal.signal(signal.SIGALRM, expired)
+signal.alarm(60)
+try:
+    main()
+finally:
+    signal.alarm(0)
+    for process in tuple(RUNNING):
+        stop(process)

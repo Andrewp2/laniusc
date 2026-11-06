@@ -8,13 +8,15 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
-Narrow RFC 6455 accept-value operation through OpenSSL 3 EVP_Q_digest. Validates the original 24-byte canonical padded Base64 key, snapshots 60 packed key-plus-GUID bytes, uses a separate 64-byte digest scratch and full-width u64 size_t cell, then commits exactly 28 Base64 bytes. Logical bounds/capacity/key/native/wrong-size errors preserve caller output; strided views and overlap work. No Lanius heap allocation or retained native owner, though OpenSSL may allocate internally and provider policy can reject SHA1. Requires Linux x86_64 LP64 native C/CRT and libcrypto, not libssl. Direct execution passes 310 cases across two layouts/overlap and 24 injected provider/size/full-width-size cases. OpenSSL computes the digest for this protocol helper. Peer authentication, connected transport and GPU-device services remain outside its contract.
+Narrow RFC 6455 accept-value operation through OpenSSL 3 EVP_Q_digest. Validates the original 24-byte canonical padded Base64 key, snapshots 60 packed key-plus-GUID bytes, uses a separate 64-byte digest scratch and full-width u64 size_t cell, then commits exactly 28 Base64 bytes. Logical bounds/capacity/key/native/wrong-size errors preserve caller output; strided views and overlap work. No Lanius heap allocation or retained native owner, though OpenSSL may allocate internally and provider policy can reject SHA1. Requires Linux x86_64 LP64 native C/CRT and libcrypto, not libssl. Current direct execution passes 310 cases across two layouts/overlap and 24 injected provider/size/full-width-size cases; earlier receipts retain their source scope. OpenSSL computes the digest for this protocol helper. The URL client and event-loop service now call it and expose Accept(error); client failure cleans up before HTTP writes, while service failure retains the HTTP slot without a 101 or session. Separately scoped current migration receipts cover both helper/wire runtime tests, all three existing client groups, three client sample failure cases and typed service failures/recovery plus the 89-case service echo and six sample HTTP-500 failures. Three exact typed client failures also pass zero-request/EOF, same-process recovery and source-owner balance; native OpenSSL/CRT mappings are outside that balance claim. Peer authentication, connected transport and GPU-device services remain outside its contract.
 
 ## Contract and evidence guides
 
 - [extended-openssl-websocket](../../extended-openssl-websocket.md)
 - [extended-websocket](../../extended-websocket.md)
 - [extended-websocket-upgrade-program](../../extended-websocket-upgrade-program.md)
+- [extended-websocket-client](../../extended-websocket-client.md)
+- [extended-websocket-service](../../extended-websocket-service.md)
 - [library-native-c](../../library-native-c.md)
 
 Declaration counts: enum: 1; extern function: 3; function: 1; variant: 5.

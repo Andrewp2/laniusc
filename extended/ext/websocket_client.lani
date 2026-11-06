@@ -13,19 +13,21 @@ import core::time;
 import ext::http;
 import ext::http_agent;
 import ext::http_url;
+import ext::openssl_websocket;
 import ext::websocket;
 import ext::ws_deflate;
 import std::clock;
 import std::entropy;
 
 // Rejected(status): the server answered the upgrade with another status.
-// Handshake(e): an invalid 101 response. Wire(e): the server broke the frame
+// Handshake(e): an invalid 101 response. Accept(e): the native handshake
+// digest failed before request publication. Wire(e): the server broke the frame
 // protocol; the client sent Close 1002, 1007, 1009 or 1011 and closed.
 // Inflate: a compressed message did not inflate (Close 1007 was sent). Eof:
 // the transport ended without a Close.
 pub enum Error {
     InvalidRequest, BadUrl, Url(ext::http_url::ErrorKind), UnsupportedScheme,
-    Connect(ext::http_agent::Error), Rejected(i32), Handshake(ext::websocket::Error),
+    Connect(ext::http_agent::Error), Rejected(i32), Handshake(ext::websocket::Error), Accept(ext::openssl_websocket::Error),
     Io(ext::http_agent::Error), Timeout, Eof, Wire(ext::websocket::Error), Closed,
     Entropy, AllocationFailed, Clock, Inflate
 }
@@ -152,10 +154,11 @@ fn handshake(conn: ext::http_agent::Connection, u: &ext::http_url::Url, options:
     }
     request.destroy(); request = encoded.unwrap();
     let key: [u8;24] = [0;24]; let accept: [u8;28] = [0;28];
-    if (ext::websocket::key_into(core::slice::view<u8>(nonce,16).unwrap(),core::slice::view<u8>(key,24).unwrap()).is_err()
-        || ext::websocket::accept_into(core::slice::view<u8>(key,24).unwrap(),core::slice::view<u8>(accept,28).unwrap()).is_err()) {
+    if (ext::websocket::key_into(core::slice::view<u8>(nonce,16).unwrap(),core::slice::view<u8>(key,24).unwrap()).is_err()) {
         return fail_open(conn.borrow(),input.borrow(),request.borrow(),Error::Handshake(ext::websocket::Error::Handshake));
     }
+    let accepted = ext::openssl_websocket::accept_into(core::slice::view<u8>(key,24).unwrap(),core::slice::view<u8>(accept,28).unwrap());
+    if (accepted.is_err()) { return fail_open(conn.borrow(),input.borrow(),request.borrow(),Error::Accept(accepted.unwrap_err())); }
     let sent: core::result::Result<i32,ext::http_agent::Error> = conn.borrow().send(request.as_view(),deadline);
     if (sent.is_err()) { return fail_open(conn.borrow(),input.borrow(),request.borrow(),transport(sent.unwrap_err())); }
     // Read until the response head ends; later bytes are already frames.

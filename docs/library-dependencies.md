@@ -231,6 +231,12 @@ global metadata still grow; explicit descriptor CLI modes remain unsupported.
 Callbacks, variadics, aggregates and foreign thread entry remain separate compiler contracts. The
 [API conventions](library-api-conventions.md#cryptography-and-tls-boundary)
 record this boundary.
+The [WebSocket Accept helper](extended-openssl-websocket.md) also delegates
+its RFC 6455 digest to OpenSSL 3. The URL client and event-loop service use
+that checked boundary and expose helper failures as `Accept(error)`.
+The plain service requires `libcrypto`; the client already requires
+`libssl` and `libcrypto`. Portable WebSocket wire/frame processing takes
+externally computed Accept values and has no native crypto dependency.
 The [host prerequisite audit](library-host-prerequisites.md) distinguishes the
 historical missing operations from the remaining code-entry/memory-model work.
 Current [memory/view contracts](stdlib-memory.md) and

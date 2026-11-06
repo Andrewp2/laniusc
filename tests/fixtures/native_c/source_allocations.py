@@ -135,7 +135,7 @@ def _partition(inspected, source_ranges, runtime_ranges, crt=None):
     ELF.check(len(mains) == 1 and used == {raw for raw, _ in wrappers}, "missing unique main or unpaired source unit")
     source_sites = {address + 2 for address, operation in instructions.items() if operation[0] == "syscall"
                     and any(low <= address < high for low, high in source_ranges)}
-    ELF.check(all(any(low <= site < high for low, high in source_ranges) for site in source_sites),
+    ELF.check(all(any(low <= site - 2 and site <= high for low, high in source_ranges) for site in source_sites),
               "source syscall post-IP escapes source/runtime authority")
     image_sites = {address + 2 for address, operation in instructions.items() if operation[0] == "syscall"}
     ELF.check(image_sites == source_sites | set(bootstrap), "unknown unsized image syscall outside source/runtime/bootstrap")

@@ -1,0 +1,70 @@
+// Public client boundary: retain the native cause, retire failed-open owners,
+// then clear only the injected fault and reconnect through actual OpenSSL.
+module app::main;
+import core::io;
+import core::mem;
+import core::result;
+import ext::openssl_websocket;
+import ext::websocket_client;
+import std::args;
+import std::stream;
+
+extern "C" fn unsetenv(name: ptr) -> i32;
+
+fn marker(value: u8) {
+    let bytes: [u8;2] = [value,10];
+    let sink: std::stream::Descriptor = std::stream::stderr();
+    assert(core::io::write_all(sink.borrow(),bytes,0,2).is_ok());
+}
+fn put(bytes: [u8], offset: i32, value: u64) {
+    let i: i32 = 0;
+    while (i < 8) { bytes[offset+i] = ((value >> (i*8)) & 255) as u8; i += 1; }
+}
+fn main() -> i32 {
+    let args = std::args::snapshot(1,1,4096).unwrap();
+    assert(args.len() == 1);
+    let options: ext::websocket_client::Options = ext::websocket_client::default_options();
+    options.timeout_ms = 2000;
+    marker(65);
+    let failed = ext::websocket_client::connect(args.get(0).unwrap(),options);
+    assert(failed.is_err());
+    let error: ext::websocket_client::Error = failed.unwrap_err();
+    let kind: u64 = match(error) {
+        ext::websocket_client::Error::Accept(cause) -> match(cause) {
+            ext::openssl_websocket::Error::OpenSsl(code) -> 1,
+            ext::openssl_websocket::Error::UnexpectedSize(count) -> 2,
+            _ -> 0
+        },
+        _ -> 0
+    };
+    let value: u64 = match(error) {
+        ext::websocket_client::Error::Accept(cause) -> match(cause) {
+            ext::openssl_websocket::Error::OpenSsl(code) -> code,
+            ext::openssl_websocket::Error::UnexpectedSize(count) -> count,
+            _ -> 0
+        },
+        _ -> 0
+    };
+    assert(kind != 0);
+    // The source-owner ledger requires all allocations made after A to have
+    // been released by B, before retry or process exit can hide a leak.
+    marker(66);
+    let storage: [i32;6] = [0;6];
+    let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+    let name: [u8] = core::mem::typed_slice_from_raw_parts<u8>(pointer,24);
+    let text: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr("LANIUS_WEBSOCKET_FAULT"),22);
+    let i: i32 = 0;
+    while (i < 22) { name[i] = text[i]; i += 1; }
+    assert(unsetenv(pointer) == 0);
+    let recovered = ext::websocket_client::connect(args.get(0).unwrap(),options);
+    assert(recovered.is_ok());
+    let client: ext::websocket_client::Client = recovered.unwrap();
+    assert(client.is_open() && !client.is_secure());
+    assert(client.destroy());
+    args.destroy();
+    let output: [u8;16] = [0;16];
+    put(output,0,kind); put(output,8,value);
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    assert(core::io::write_all(sink.borrow(),output,0,16).is_ok());
+    return 0;
+}
