@@ -8,14 +8,16 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `alloc`. Role: module. Profile: **Source inventory**.
 
-The shared Seek increment adds Reader<R> under R:Read+Seek and Writer<W> under W:Write+Seek. Reader Current queries/subtracts unread bytes/checks arithmetic/seeks absolute, even for zero; actual seek errors or malformed positions fault it and clear unread publication. Arithmetic rejection after query preserves unread bytes. Writer completes existing flush before seek; partial flush effects survive errors, and successful-flush/failed-seek leaves active empty pending state. Start acknowledgement mismatches fault adapters. Borrowed inner access must be exclusive; allocation/handoff/discard stay manual. Current buffered import executes in one probe/6.01s after two private nongeneric enum-projection helpers replace rejected Reader-body spellings. Public generic bounds and state behavior are unchanged; local/simple imported nested-bound controls execute, and the initial Mapper diagnostic is not a general generic limitation or compiler repair. The real reverse-records program passes four groups/86 cases in 8.00s on buffered source08212669. All three scripted Seek tests pass in 9.95s on production08212669/peer365d8062: nine reader phases, twelve writer phases, nested four-buffer ownership/handoff and four individually reached constructor allocation denials, with exact call/effect order, all-host-call-free pure phases and address/extent release checks. Four selected existing buffered tests pass separately in 10.57s (one writer-only test filtered): actual binary-copy sample, constructor denials, nested copy and reader handoff. The finite native Linux x86_64 Seek increment is accepted. Retained original-source controls document only the specific Reader-body admission boundary; no compiler repair or general generic restriction is claimed. Historical buffered receipts retain their API/source scope. Reader<R> now implements canonical core::io::BufRead under R:Read. Existing public fill_buf/consume bodies move into that single trait implementation with no duplicate inherent aliases; inactive/faulted checks, fixed capacity, no permanent EOF cache, read-ahead and unread handoff remain explicit. The new delimiter helpers require only BufRead and do not allocate; this adapter still owns one manually released buffer and borrows its inner Read stream. Small native protocol admission passes in 7.24s. Four selected buffered regressions pass in 9.81s: reader/handoff/faults, nested copy, four constructor OOM failures and the actual binary-copy sample; one writer-only test was filtered. Direct delimiter contracts pass separately in 7.56s. The independent model passes one test in 5.64s with 18000 cases, four stride combinations and two invocations/case after a fixture-only syntax correction. The real record-selector passes four groups/91 cases in 8.51s, including five reached allocation denials and actual output-prefix/required-EOF failures. The finite native Linux x86_64 increment is accepted. Direct no-effect trace evidence covers only mmap/mremap/munmap/brk/read/write/close, without an all-host-call claim. Historical buffered receipts retain their source/API scope and do not establish the current migration.
+Owning fixed-capacity buffering wrappers retain their actual Vec and embed core::buffered, delegating every Read/Write/BufRead/Seek transition instead of mirroring engine state. Constructors reserve and initialize one positive capacity; later I/O never grows it. The endpoint remains borrowed. take_parts transfers the actual Vec and retained interval/fault state. Consuming reader_from_parts/writer_from_parts validate through the core engine before transferring that owner, allocate or release nothing, leave invalid Parts unchanged, and empty the actual Parts on success. Faulted restoration stays faulted; Parts must resume its producing reader/writer meaning. Finish releases the Vec only after successful flush; discard explicitly abandons and releases it. Shallow record copies create neither independent controllers nor another cleanup owner. All selected gates pass on Linux x86_64 CPU output through the GPU compiler rebuilt at cc8cfec22: seven direct/capability tests, a 144-case/1455-action/753-provider-call independent model, four resource tests, five existing buffering and three existing Seek regressions, and the migrated 92-case record selector plus 69-case format report. Resource checks cover real heap backing, actual negative stride, both mixed nesting orientations at 4096 and 262144 bytes, reached owning-constructor denial with retry, and exact releases. Exact allocation/release and failure traces select LANIUS_ALLOC=mmap; ordinary allocations pool by default. An initial LNC0047 came from old kernels loaded through a relative artifact path; the supported absolute LANIUS_SHADER_ARTIFACT_ROOT resolved it. Import, typed/chained generic-result controls and final natural chained Read/Seek admission pass; these fixtures establish no current generic compiler dependency or compiler-source repair. Earlier receipts retain their original source/API scope. Other targets, device execution, enforced lifetimes and formal proofs remain separate.
 
 ## Contract and evidence guides
 
+- [stdlib-caller-buffered](../../stdlib-caller-buffered.md)
 - [stdlib-buffered](../../stdlib-buffered.md)
 - [stdlib-format-write](../../stdlib-format-write.md)
 - [stdlib-delimited-io](../../stdlib-delimited-io.md)
 - [stdlib-select-records](../../stdlib-select-records.md)
+- [stdlib-format-report](../../stdlib-format-report.md)
 - [stdlib-seek](../../stdlib-seek.md)
 - [stdlib-reverse-records](../../stdlib-reverse-records.md)
 
@@ -142,6 +144,8 @@ pub fn reader<R>(inner:&R, capacity:i32) -> core::result::Result<Reader<R>,core:
     where R:core::io::Read
 ```
 
+R:Read. Positive capacity only; InvalidInput precedes allocation/provider calls. Reserve and initialize the Vec once, then borrow it through the canonical core engine. Allocation failure releases construction storage.
+
 ### function: writer
 
 [Source line 45](../../../stdlib/alloc/buffered.lani#L45)
@@ -150,6 +154,8 @@ pub fn reader<R>(inner:&R, capacity:i32) -> core::result::Result<Reader<R>,core:
 pub fn writer<W>(inner:&W, capacity:i32) -> core::result::Result<Writer<W>,core::io::Error>
     where W:core::io::Write
 ```
+
+W:Write. Positive capacity only; reserve and initialize one Vec and delegate I/O to core::buffered. Finish releases only after successful flush; failed finish preserves state for explicit retry, handoff or discard.
 
 ### function: reader_from_parts
 
@@ -160,6 +166,8 @@ pub fn reader_from_parts<R>(parts:&Parts<R>) -> core::result::Result<Reader<R>,c
     where R:core::io::Read
 ```
 
+R:Read. Validate the retained interval through core before taking the actual Vec. Successful restoration preserves endpoint, unread range and fault state and empties Parts without allocation or release; invalid Parts remains unchanged. Keep one valid Vec cleanup owner.
+
 ### function: writer_from_parts
 
 [Source line 67](../../../stdlib/alloc/buffered.lani#L67)
@@ -168,6 +176,8 @@ pub fn reader_from_parts<R>(parts:&Parts<R>) -> core::result::Result<Reader<R>,c
 pub fn writer_from_parts<W>(parts:&Parts<W>) -> core::result::Result<Writer<W>,core::io::Error>
     where W:core::io::Write
 ```
+
+W:Write. Validate through core before taking the actual Vec. Successful restoration preserves the pending suffix and fault state and empties Parts without allocation or release; invalid Parts remains unchanged. Restore writer meaning and end prior views/aliases.
 
 ## Implementation blocks and public methods
 

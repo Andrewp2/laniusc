@@ -1,0 +1,14 @@
+module app::main;
+import core::buffered;
+import alloc::buffered;
+import alloc::vec;
+import core::io;
+import core::result;
+import core::slice;
+import fixture::endpoints;
+fn main() -> i32 {
+    let bytes:[u8;3]=[0;3];
+    let endpoint:fixture::endpoints::WriteOnly=fixture::endpoints::WriteOnly { calls:0,flushes:0,total:0,payload:0 };
+    let rejected_buffered_bound=alloc::buffered::reader(endpoint.borrow(),3);
+    return 0;
+}

@@ -1,0 +1,20 @@
+module fixture::endpoints;
+import core::io;
+import core::result;
+pub struct ReadOnly { calls:i32 }
+pub impl ReadOnly { pub fn borrow(&self) -> &ReadOnly { return self; } }
+pub impl core::io::Read for ReadOnly {
+    pub fn read(&self, destination:[u8], offset:i32, count:i32) -> core::result::Result<i32,core::io::Error> {
+        assert(count>0); self.calls+=1; destination[offset]=17; return core::result::Ok(1);
+    }
+}
+pub struct WriteOnly { calls:i32,flushes:i32,total:i32,payload:u64 }
+pub impl WriteOnly { pub fn borrow(&self) -> &WriteOnly { return self; } }
+pub impl core::io::Write for WriteOnly {
+    pub fn write(&self, source:[u8], offset:i32, count:i32) -> core::result::Result<i32,core::io::Error> {
+        assert(count>0 && self.total+count<=8); self.calls+=1; let i:i32=0;
+        while(i<count) { self.payload|=(source[offset+i] as u64)<<(8*self.total); self.total+=1; i+=1; }
+        return core::result::Ok(count);
+    }
+    pub fn flush(&self) -> core::result::Result<i32,core::io::Error> { self.flushes+=1; return core::result::Ok(0); }
+}

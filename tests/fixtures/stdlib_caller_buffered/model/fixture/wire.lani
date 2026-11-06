@@ -1,0 +1,132 @@
+// Test-only wire format and scheduled endpoint, independent of buffered state.
+module fixture::wire;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import std::io;
+
+pub fn read_exact(pointer:ptr,count:i32) {
+    let done:i32=0;
+    while(done<count) { let got:i32=std::io::read_stdin(pointer+(done as usize),(count-done) as usize); assert(got>0); done+=got; }
+}
+fn write_all(pointer:ptr,count:i32) {
+    let done:i32=0;
+    while(done<count) { let got:i32=std::io::write_stdout(pointer+(done as usize),(count-done) as usize); assert(got>0); done+=got; }
+}
+pub fn get(bytes:[u8],at:i32) -> u64 {
+    let value:u64=0; let i:i32=0;
+    while(i<8) { value|=(bytes[at+i] as u64)<<(i*8); i+=1; } return value;
+}
+pub struct Output { bytes:[u8],pointer:ptr,used:i32 }
+pub impl Output {
+    pub fn borrow(&self) -> &Output { return self; }
+    pub fn flush(&self) { write_all(self.pointer,self.used); self.used=0; }
+    pub fn word(&self,value:u64) {
+        if(self.used==4096) { self.flush(); }
+        let i:i32=0; while(i<8) { self.bytes[self.used+i]=(value>>(i*8)) as u8; i+=1; } self.used+=8;
+    }
+    pub fn bytes(&self,values:[u8],start:i32,length:i32) { let i:i32=0; while(i<length) { self.word(values[start+i] as u64); i+=1; } }
+    pub fn view(&self,value:core::slice::View<u8>) { self.word(value.start as i64 as u64); self.word(value.length as i64 as u64); self.word(core::mem::slice_stride(value.values) as u64); self.bytes(value.values,value.start,value.length); }
+}
+pub fn code(error:core::io::Error) -> i32 {
+    return match(error) { core::io::Error::InvalidInput -> 1,core::io::Error::UnexpectedEof -> 2,
+        core::io::Error::WriteZero -> 3,core::io::Error::InvalidCount -> 4,core::io::Error::CountOverflow -> 5,
+        core::io::Error::LimitExceeded -> 6,core::io::Error::Interrupted -> 7,core::io::Error::WouldBlock -> 8,
+        core::io::Error::AllocationFailed -> 9,core::io::Error::Host(_) -> 10 };
+}
+pub fn host(error:core::io::Error) -> i32 { return match(error) { core::io::Error::Host(value) -> value,_ -> 0 }; }
+fn error(event:i64) -> core::io::Error {
+    let tag:i64=-event;
+    return match(tag) { 1 -> core::io::Error::InvalidInput,2 -> core::io::Error::UnexpectedEof,
+        3 -> core::io::Error::WriteZero,4 -> core::io::Error::InvalidCount,5 -> core::io::Error::CountOverflow,
+        6 -> core::io::Error::LimitExceeded,7 -> core::io::Error::Interrupted,8 -> core::io::Error::WouldBlock,
+        9 -> core::io::Error::AllocationFailed,_ -> core::io::Error::Host(-2147483648) };
+}
+pub struct Action { op:i32,offset:i32,count:i32,first:i64,second:i64,flush:i64,seek_first:i64,seek_second:i64,target:u64,aux:i32 }
+pub fn action(input:[u8]) -> Action {
+    return Action { op:get(input,0) as i32,offset:get(input,8) as i32,count:get(input,16) as i32,first:get(input,24) as i64,second:get(input,32) as i64,flush:get(input,40) as i64,seek_first:get(input,48) as i64,seek_second:get(input,56) as i64,target:get(input,64),aux:get(input,72) as i32 };
+}
+pub fn seek(a:Action) -> core::io::SeekFrom {
+    if(a.aux==0) { return core::io::SeekFrom::Start(a.target); }
+    if(a.aux==1) { return core::io::SeekFrom::Current(a.target as i64); }
+    return core::io::SeekFrom::End(a.target as i64);
+}
+pub struct Reply { code:i32,host:i32,number:u64,has_view:bool,view:core::slice::View<u8> }
+pub fn success(number:u64,values:[u8]) -> Reply { return Reply { code:0,host:0,number:number,has_view:false,view:core::slice::View { values:values,start:0,length:0 } }; }
+pub fn failure(cause:core::io::Error,values:[u8]) -> Reply { let reply:Reply=success(0,values); reply.code=code(cause); reply.host=host(cause); return reply; }
+pub fn number(result:core::result::Result<i32,core::io::Error>,values:[u8]) -> Reply { if(result.is_err()) { return failure(result.unwrap_err(),values); } return success(result.unwrap() as i64 as u64,values); }
+pub fn position(result:core::result::Result<u64,core::io::Error>,values:[u8]) -> Reply { if(result.is_err()) { return failure(result.unwrap_err(),values); } return success(result.unwrap(),values); }
+pub fn filled(result:core::result::Result<core::slice::View<u8>,core::io::Error>,values:[u8]) -> Reply { if(result.is_err()) { return failure(result.unwrap_err(),values); } let reply:Reply=success(0,values); reply.has_view=true; reply.view=result.unwrap(); return reply; }
+pub fn reply(reply:Reply,out:&Output) { out.word((reply.code!=0) as u64); out.word(reply.code as u64); out.word(reply.host as i64 as u64); out.word(reply.number); out.word(reply.has_view as u64); if(reply.has_view) { out.view(reply.view); } }
+
+pub struct Peer { data:[u8],position:u64,limit:u64,calls:[i32],tape:[u64],used:i32,events:i32,transfers:i32,seeks:i32,action:Action }
+pub impl Peer {
+    pub fn borrow(&self) -> &Peer { return self; }
+    pub fn reset(&self,a:Action) { self.used=0; self.events=0; self.transfers=0; self.seeks=0; self.action=a; }
+    fn word(&self,value:u64) { assert(self.used<512); self.tape[self.used]=value; self.used+=1; }
+    fn record(&self,kind:i32,event:i64,start:i32,count:i32,before:u64,argument:u64,cause:i32,host:i32,value:u64,stride:isize,offered:[u8],offered_start:i32,offered_length:i32) {
+        self.calls[kind]+=1; self.events+=1;
+        self.word(kind as u64); self.word(event as u64); self.word(start as i64 as u64); self.word(count as u64);
+        self.word(before); self.word(argument); self.word(cause as u64); self.word(host as i64 as u64); self.word(value); self.word(self.position); self.word(stride as u64);
+        self.word(offered_length as u64); let i:i32=0; while(i<offered_length) { self.word(offered[offered_start+i] as u64); i+=1; }
+    }
+    fn transfer_event(&self) -> i64 { let event:i64=99; if(self.transfers==0) { event=self.action.first; } if(self.transfers==1) { event=self.action.second; } self.transfers+=1; return event; }
+    fn transfer(&self,kind:i32,values:[u8],start:i32,count:i32) -> core::result::Result<i32,core::io::Error> {
+        assert(count>0 && count<=7 && start>=0 && start<=32-count);
+        let event:i64=self.transfer_event(); let before:u64=self.position; let amount:i32=0; let cause:i32=0; let h:i32=0;
+        if(event<=-1 && event>=-10) { cause=code(error(event)); h=host(error(event)); }
+        else {
+            if(event==-101) { amount=-1; }
+            else {
+                if(event==-102) { amount=count+1; }
+                else {
+                    assert(event>=0); amount=event as i32; if(amount>count) { amount=count; }
+                    if(self.position>=self.limit) { amount=0; }
+                    else { if((amount as u64)>self.limit-self.position) { amount=(self.limit-self.position) as i32; } }
+                    let i:i32=0; while(i<amount) { if(kind==0) { values[start+i]=self.data[(self.position as i32)+i]; } else { self.data[(self.position as i32)+i]=values[start+i]; } i+=1; }
+                    self.position+=amount as u64;
+                }
+            }
+        }
+        let offered:i32=0; if(kind==1) { offered=count; }
+        self.record(kind,event,start,count,before,0,cause,h,amount as i64 as u64,core::mem::slice_stride(values),values,start,offered);
+        if(cause!=0) { return core::result::Err(error(event)); } return core::result::Ok(amount);
+    }
+    pub fn emit(&self,out:&Output) { out.word(self.events as u64); let i:i32=0; while(i<self.used) { out.word(self.tape[i]); i+=1; } }
+    pub fn state(&self,out:&Output) { out.word(self.position); let i:i32=0; while(i<4) { out.word(self.calls[i] as u64); i+=1; } out.bytes(self.data,0,128); }
+}
+pub impl core::io::Read for Peer {
+    pub fn read(&self,destination:[u8],offset:i32,count:i32) -> core::result::Result<i32,core::io::Error> { return self.transfer(0,destination,offset,count); }
+}
+pub impl core::io::Write for Peer {
+    pub fn write(&self,source:[u8],offset:i32,count:i32) -> core::result::Result<i32,core::io::Error> { return self.transfer(1,source,offset,count); }
+    pub fn flush(&self) -> core::result::Result<i32,core::io::Error> {
+        let event:i64=self.action.flush; let cause:i32=0; let h:i32=0; let value:i32=0;
+        if(event<=-1 && event>=-10) { cause=code(error(event)); h=host(error(event)); } else { assert(event>=0); value=event as i32; }
+        let zero:isize=0; self.record(2,event,0,0,self.position,0,cause,h,value as i64 as u64,zero,self.data,0,0);
+        if(cause!=0) { return core::result::Err(error(event)); } return core::result::Ok(value);
+    }
+}
+pub impl core::io::Seek for Peer {
+    pub fn seek(&self,from:core::io::SeekFrom) -> core::result::Result<u64,core::io::Error> {
+        let origin:i32=match(from) { core::io::SeekFrom::Start(_) -> 0,core::io::SeekFrom::Current(_) -> 1,core::io::SeekFrom::End(_) -> 2 };
+        let argument:u64=match(from) { core::io::SeekFrom::Start(value) -> value,core::io::SeekFrom::Current(value) -> value as u64,core::io::SeekFrom::End(value) -> value as u64 };
+        let event:i64=self.action.seek_second; if(self.seeks==0) { event=self.action.seek_first; } self.seeks+=1;
+        let before:u64=self.position; let cause:i32=0; let h:i32=0; let value:u64=0;
+        if(event<=-1 && event>=-10) { cause=code(error(event)); h=host(error(event)); self.position=111; }
+        else {
+            let target:u64=argument;
+            if(origin!=0) {
+                let base:u64=self.position; if(origin==2) { base=self.limit; }
+                let delta:i64=argument as i64;
+                if(delta<0) { let magnitude:u64=(-(delta+1)) as u64; magnitude+=1; if(magnitude>base) { cause=1; } else { target=base-magnitude; } }
+                else { if(argument>18446744073709551615-base) { cause=1; } else { target=base+argument; } }
+            }
+            if(cause==0) { value=target; if(event==1) { value=target+1; } if(event==2) { value=0; } if(event==3) { value=18446744073709551615; } self.position=value; }
+        }
+        let zero:isize=0; self.record(3,event,origin,0,before,argument,cause,h,value,zero,self.data,0,0);
+        if(cause!=0) { if(event<0) { return core::result::Err(error(event)); } return core::result::Err(core::io::Error::InvalidInput); }
+        return core::result::Ok(value);
+    }
+}

@@ -61,6 +61,51 @@ class Words:
         for value in values: self.put(value, label)
 
 
+class Conservation:
+    """Account only for public transfers, provider receipts and abandonment.
+
+    This ledger has no fill/drain cursor, capacity decision or restoration
+    algorithm. It checks that each acknowledged byte has exactly one source
+    and that every unacknowledged byte remains with the one live controller.
+    """
+    def __init__(self):
+        self.live = deque()
+        self.received = self.delivered = self.abandoned = 0
+
+    def observe(self, model, action, step, result, was_active, had_parts):
+        for event in model.events:
+            kind, _, _, request, before, _, code, _, amount, _, _, offered = event
+            if kind == 1:
+                assert tuple(self.live) == offered, ('offered ledger', offered, self.live)
+            if kind not in (0, 1) or code or not 0 <= amount <= request:
+                continue
+            if kind == 0:
+                values = initial_peer()[before:before + amount]
+                assert len(values) == amount
+                self.live.extend(values); self.received += amount
+            else:
+                for _ in range(amount): self.live.popleft()
+                self.delivered += amount
+        if result[0] == 0:
+            if action.op == 3:
+                values = source(step)[action.offset:action.offset + result[2]]
+                self.live.extend(values); self.received += len(values)
+            if action.op in (0, 2):
+                values = [self.live.popleft() for _ in range(result[2])]
+                if action.op == 0:
+                    assert values == model.argument[action.offset:action.offset + result[2]]
+                self.delivered += len(values)
+        abandoned = ((action.op == 9 and was_active) or
+                     (action.op == 10 and had_parts) or
+                     (action.op == 5 and model.case.direction == 0 and
+                      was_active and (model.fault or result[0] == 0)))
+        if abandoned:
+            self.abandoned += len(self.live); self.live.clear()
+        retained = model.pending if model.active else model.parts[0] if model.parts is not None else ()
+        assert tuple(self.live) == tuple(value for _, value in retained), ('conserved queue', action)
+        assert self.received == self.delivered + self.abandoned + len(self.live)
+
+
 class Model:
     def __init__(self, case, route, alternate=False, mutant=None):
         self.case, self.route, self.mutant = case, route, mutant
@@ -76,6 +121,7 @@ class Model:
         self.events = []; self.total = Counter(); self.observations = []
         self.accepted = []; self.acknowledged = []; self.fetched = []; self.consumed = []
         self.changed = False
+        self.conservation = Conservation()
 
     def cells(self): return self.owner if self.route == 2 else self.caller
     def put(self, slot, values):
@@ -262,6 +308,7 @@ class Model:
             assert tuple(slots) == tuple(range(slots[0], slots[0] + len(slots)))
             assert list(values) == self.cells()[self.base + slots[0]:self.base + slots[-1] + 1]
         if not self.mutant:
+            self.conservation.observe(self, a, step, result, old_active, before_parts is not None)
             if self.case.direction == 1 and a.op not in (6, 7, 8, 9, 10, 12) and self.active:
                 assert self.accepted[len(self.acknowledged):] == [v for _, v in self.pending]
             assert len([e for e in self.events if e[0] == 0]) <= 1

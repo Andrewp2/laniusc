@@ -1,8 +1,16 @@
 # Buffered byte streams
 
+`core::buffered` owns the buffering state machine over a borrowed endpoint and
+caller-provided `View<u8>`. `alloc::buffered` owns a Vec and delegates all I/O
+transitions to that engine. Both forms support consuming Parts restoration.
+The [caller-buffered guide](stdlib-caller-buffered.md) specifies scratch
+admission, handoff, restoration and manual lifetimes. Its selected native
+gates pass on Linux x86_64 CPU output; the receipts below cover earlier source/API scopes.
+This guide describes the allocating wrapper and the shared I/O behavior.
+
 The [shared Seek increment](stdlib-seek.md) adds conditional Seek implementations
-under Read+Seek for Reader and Write+Seek for Writer. The current buffered
-module now compiles and executes through a small import probe; the real
+under Read+Seek for Reader and Write+Seek for Writer. Its then-current buffered
+module compiled and executed through a small import probe; the real
 reverse-records program passes four groups/86 cases. Two private nongeneric
 enum-projection helpers replace rejected Reader-body spellings without changing
 public generic bounds or state behavior. Three scripted reader/writer/nesting
@@ -32,8 +40,10 @@ record-selection program also pass. This finite native Linux x86_64 increment
 is accepted; the separate guide scopes its runtime receipts.
 The earlier API/source receipts below retain their scope.
 
-The module is `alloc::buffered`, containing a fixed-capacity reader and
-writer over a borrowed `core::io::Read` / `core::io::Write`. The stream contracts
+The owning module is `alloc::buffered`, containing a fixed-capacity reader and
+writer over a borrowed `core::io::Read` / `core::io::Write`. It retains the
+actual Vec owner alongside the canonical core adapter; it does not mirror
+the engine's active, range or fault state. The stream contracts
 in `stdlib/core/io.lani` and the manual ownership/storage rules in
 `stdlib/alloc/vec.lani` remain authoritative. In particular, an ordinary `Write`
 error accepts no source bytes from that call, and `flush` succeeds only with
@@ -51,6 +61,10 @@ prevalidated formatting and final publication failures.
 reader<R>(inner: &R, capacity: i32) -> Result<Reader<R>, core::io::Error>
     where R: core::io::Read;
 writer<W>(inner: &W, capacity: i32) -> Result<Writer<W>, core::io::Error>
+    where W: core::io::Write;
+reader_from_parts<R>(parts: &Parts<R>) -> Result<Reader<R>, core::io::Error>
+    where R: core::io::Read;
+writer_from_parts<W>(parts: &Parts<W>) -> Result<Writer<W>, core::io::Error>
     where W: core::io::Write;
 
 // Reader<R> implements Read and BufRead under R: Read;
@@ -73,6 +87,7 @@ struct Parts<I> {
     faulted: bool
 }
 Parts<I>::bytes() -> View<u8>;
+Parts<I>::borrow() -> &Parts<I>;
 Parts<I>::discard() -> i32;
 ```
 
@@ -242,9 +257,22 @@ For `faulted=true`, the flag must remain attached to the recovery decision:
 Parts stores scalar offsets, not a view pointing at a temporary record. Its
 buffer has full initialized length equal to the former capacity; only
 `start..start+length` carries the range semantics above. `bytes()` borrows that
-range. A caller that transfers the shallow Vec descriptor into a separate
-active owner logically consumes Parts and must stop using Parts, including its
-`discard()` method. Copying the field cannot create a second allocation owner.
+range. The full capacity survives handoff even when the retained range is empty.
+
+`reader_from_parts(parts.borrow())` and `writer_from_parts(parts.borrow())`
+validate positive capacity and a nonnegative retained interval wholly within
+it before transferring the actual Vec. Rejection returns `InvalidInput`,
+leaves Parts unchanged and makes no endpoint call or backing access. Success
+preserves backing, endpoint, interval and fault state, empties the actual
+Parts and allocates or releases nothing. A second restoration rejects.
+Faulted Parts restore a faulted adapter; restoration does not repair unknown
+provider effects.
+
+Parts is layer-neutral: restore the same reader or writer meaning that
+produced it. End old views and aliases before restoration. A caller that
+instead transfers the shallow Vec descriptor into a separate active owner
+logically consumes Parts and must stop using Parts, including its `discard()`
+method. Copying the field cannot create a second allocation owner.
 
 ## Explicit discard and view lifetimes
 

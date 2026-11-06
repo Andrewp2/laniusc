@@ -4,8 +4,9 @@
 and writer borrow a caller-provided `View<u8>` and an endpoint. The allocating
 `alloc::buffered` wrappers own a Vec and use the same core state machine.
 The [frozen plan](library-caller-buffered-plan.md) defines this increment.
-Current native acceptance is pending; earlier buffering and Seek receipts
-retain their original source and API scope.
+All selected library, model, resource, regression and application gates pass
+on Linux x86_64 CPU output through the GPU compiler. Earlier buffering and
+Seek receipts retain their original source and API scope.
 
 ## Factories and capabilities
 
@@ -134,7 +135,7 @@ and Parts views are read-only observations whose borrows end before the next
 state mutation. Nested outer controllers must be settled before their inner
 controller or backing is retired.
 
-Core-owned buffering work performs no allocation or cleanup of caller storage.
+The core buffering engine performs no allocation or cleanup of caller storage.
 Provider implementations keep their own effects, allocation and blocking
 behavior. Allocating constructors reserve and initialize their Vec once;
 subsequent I/O does not grow it. Each completed handoff has one cleanup
@@ -163,8 +164,88 @@ resources stay the same. Removed buffer allocations and their former failure
 sites intentionally disappear. `buffered_copy` stays an allocating-wrapper
 regression with separately scoped evidence.
 
-Current direct, model, owner/resource, selected regression and application
-acceptance is pending. The initial target is Linux x86_64 CPU output from the
-GPU compiler. Portable source does not establish GPU-device or other-target
+The increment is accepted for the selected direct, model, resource,
+regression and application gates below. The target is Linux x86_64 CPU output
+from the GPU compiler. Portable source does not establish GPU-device or other-target
 execution. Physical backing, lifetime enforcement and formal verification
 remain separate dependencies; the full library goal remains open.
+
+The runtime allocator pools ordinary allocations by default. Exact
+mapping/release and allocation-denial gates select `LANIUS_ALLOC=mmap` to
+observe each allocation boundary. Their mapping counts describe that explicit
+test mode, not ordinary pooled processes. Core buffering remains allocation
+free in either mode; an endpoint may have its own allocation effects.
+
+### Current native receipts
+
+These runs use the compiler rebuilt from the rebased source
+`cc8cfec224b7537ccbb3b24c1fe4df7e8367b371`, producing Linux x86_64 CPU
+executables through the GPU compiler. They are finite functional checks, not
+throughput measurements or evidence for another target. Log names below are
+relative to `target/stdlib-work/`.
+
+| Gate | Result | Receipt |
+| --- | --- | --- |
+| Tiny core/owning/Seek/Parts admission | One test passed in 46.01s with cold shader setup; the final original chained-call source passed separately in 5.93s. | `caller-buffered-lang-admission-current-kernels.log`, `caller-buffered-lang-admission-final.log` |
+| Direct behavior and capabilities | Six tests passed in 11.53s: three native contract fixtures plus three groups covering 12 marked missing-capability rejections. Admission was filtered; three temporary dependency probes were ignored in this command. | `caller-buffered-lang-direct.log` |
+| Temporary import/generic-result controls | All three explicitly selected probes passed in 5.98s. They were removed after resolving the artifact-path setup issue; these are diagnostic controls, not permanent library gates. | `caller-buffered-lang-generic-probes.log` |
+| Independent native model | One test passed in 6.13s: 144 cases, 1,455 actions and 753 provider calls across native descending, packed interior and owning routes. | `caller-buffered-lang-model-retry.log` |
+| Model host controls | One host-control test passed with two positive scratch patterns and 22 rejected corruptions. The same initial command's native test failed on fixture syntax/setup, so that command was not wholly green. | `caller-buffered-lang-model.log` |
+| Existing allocating buffering | All five tests passed in 12.23s, including the actual binary-copy sample, reader/writer contracts, nesting and four reached constructor denials. | `caller-buffered-lang-existing-buffered.log` |
+| Existing buffered Seek | All three tests passed in 9.51s, including reader/writer state and nested handoff/restoration with constructor denials. | `caller-buffered-lang-existing-seek.log` |
+| Record selector | All four tests passed in 9.06s: model33, limits8, CLI33 and I/O18, totaling 92 native cases. I/O includes all five observed allocation denials in direct-allocation mode. | `caller-buffered-lang-select-records.log` |
+| Owner/resource gates | All four tests passed in 15.08s: real heap backing, actual negative stride, both mixed nesting orientations at 4,096 and 262,144 bytes, reached owning-constructor denial with retry, and exact address/extent release accounting. | `caller-buffered-lang-resources-final.log` |
+| Format report | One test passed in 10.21s: one strict ELF and 69 native cases, including all 11 observed representative allocation denials. | `caller-buffered-lang-format-report.log` |
+
+The initial LNC0047 admission failure loaded old kernels through a relative
+artifact path. Supplying the supported absolute `LANIUS_SHADER_ARTIFACT_ROOT`
+admitted the current compiler output. The three import/generic-result controls
+then passed, and the final tiny check passed with the original natural chained
+Read/Seek calls. These fixtures establish no current generic compiler
+dependency. This was build setup, not a reproduced compiler-source defect or
+a compiler repair. Static inspection supplied the model's explicit fixture
+source root before its first native invocation. That invocation rejected only
+unsupported fixture `else if` syntax; the corrected retry retained the
+histories, oracle and expected bytes.
+The [model guide](../tests/fixtures/stdlib_caller_buffered/model/README.md)
+records its full comparison scope and accepted source hashes.
+
+Earlier resource attempts failed on fixture byte-length/enum-name spellings
+and the Rust trace parser's handling of alignment whitespace. The accepted
+retry corrects a `usize` length, qualified enum names and trace parsing;
+neither production buffering nor compiler source changed for these failures.
+
+### Source manifest
+
+These SHA-256 values identify the current production sources and principal
+drivers for the receipts above. The direct driver excludes the resolved
+temporary probes, and the final tiny receipt uses the original chained calls.
+
+| Source, relative to the repository root | SHA-256 |
+| --- | --- |
+| `stdlib/core/buffered.lani` | `d21dfc851783d4f69f77834c4e44080662bb07eb090af0990ade4c91adb2150a` |
+| `stdlib/alloc/buffered.lani` | `e034d16035b015934df9bb20980bdc1344472c9ea3956f45d4bea4f1fa323eb5` |
+| `stdlib/core/io.lani` | `20989eca5ce3860a7dd0dee89f31ec5df8ba4dd7bdddaaf1b9067a7a36fb70ab` |
+| `stdlib/core/slice.lani` | `c67c47cad01117fd2d9f733ad8b736d7116b4efde51cc214ae2be03632e38b62` |
+| `sample_programs/library/select_records.lani` | `f8039e5656cbaf8c3d338231a822a68c50c218d8b6fca8ed5f87bbb5134bd321` |
+| `sample_programs/library/format_report.lani` | `0bd263f0862fa797e5e5079990e5a04b04d5b0846c5df8676aae43e7d65706d6` |
+| `sample_programs/library/buffered_copy.lani` | `e698aef5ead468f7dd928cb8391e68da7e43dc676774db62b62e6d56a878b238` |
+| `tests/stdlib_caller_buffered_execution.rs` | `cde019eee0fcd182c6acd1ebf493ddb763672327853710239aedca22dba65ac3` |
+| `tests/fixtures/stdlib_caller_buffered/direct/admission.lani` | `ce2cefe016a2eaa90b5f2e61049510c2fa536e020e30849c590f137b46ccd9f6` |
+| `tests/stdlib_caller_buffered_model_execution.rs` | `a59f8c5c4c2847d27b96a7c45115aa168d972b60d1f3e49882ebcb0ffdaa0668` |
+| `tests/stdlib_caller_buffered_resources_execution.rs` | `8471bd71ddcf76f0353be3f15c30c8f76b155b6da8812c9dbcf06fa4f43905c0` |
+| `tests/fixtures/stdlib_caller_buffered/resources/heap_lifecycle.lani` | `168a187c06da31dd9adf1057e891b94af5855a745f86efc8db1ae8ab7175d465` |
+| `tests/fixtures/stdlib_caller_buffered/resources/mixed_core_outer.lani` | `1a810af69071ea0508b9a29f0ab50b5309d87ea02ec628bb96cccfa623a46775` |
+| `tests/fixtures/stdlib_caller_buffered/resources/mixed_alloc_outer.lani` | `c84835eb312c293a3af6fd88c330ad10b73e067079b3a2999714c634aa501c2b` |
+| `tests/fixtures/stdlib_caller_buffered/resources/constructor_retry.lani` | `7e2d78a665be593523aabd15aed3ba3950e1abfde473d7745481d1980dcd375d` |
+| `tests/fixtures/stdlib_caller_buffered/resources/fixture/resource.lani` | `ef81ca27e3a922a8e9ec7006add676652adb08cea5392b70a30345725dbaebd5` |
+| `tests/stdlib_select_records_execution.rs` | `0fd867e851b34e770a668652e46eed3dc72d321268509d3a16267b1870ff4ffc` |
+| `tests/stdlib_format_report_execution.rs` | `c21e9d94f80309a9d413b3e05f601478e5f03d6cb09853bd530bbae426632fed` |
+| `tests/fixtures/stdlib_foundation/buffered_seek/nesting.lani` | `1730894b791faae0e149871ccb4d2f6c6e122e0c2bd39aeaf0b4550927dedcd8` |
+
+The 18 current direct `.lani` fixtures have aggregate digest
+`db62d43398afa40966cbe4d388200f1c49287a83ec632715c9e255dee2e11c04`.
+It is SHA-256 over UTF-8 lines of `SHA256  repository/relative/path\n`, sorted
+by path, for all `.lani` files beneath
+`tests/fixtures/stdlib_caller_buffered/direct/`. This identifies that fixture
+set without claiming a complete transitive source closure.

@@ -27,7 +27,7 @@ Inventory: **366 modules**, **19225 declaration/member entries**. Counts include
 | [core::bits](core/bits.md) | [source](../../stdlib/core/bits.lani#L2) | 42 | Source inventory | [stdlib-boolean-bits](../stdlib-boolean-bits.md) |
 | [core::bitset](core/bitset.md) | [source](../../stdlib/core/bitset.lani#L5) | 59 | Source inventory | [stdlib-bitset-owned](../stdlib-bitset-owned.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md) |
 | [core::bool](core/bool.md) | [source](../../stdlib/core/bool.lani#L3) | 10 | Source inventory | [stdlib-boolean-bits](../stdlib-boolean-bits.md) |
-| [core::buffered](core/buffered.md) | [source](../../stdlib/core/buffered.lani#L4) | 57 | Source inventory | **Unregistered** |
+| [core::buffered](core/buffered.md) | [source](../../stdlib/core/buffered.lani#L4) | 57 | Source inventory | [stdlib-caller-buffered](../stdlib-caller-buffered.md), [stdlib-buffered](../stdlib-buffered.md), [stdlib-streams](../stdlib-streams.md), [stdlib-seek](../stdlib-seek.md), [stdlib-select-records](../stdlib-select-records.md), [stdlib-format-report](../stdlib-format-report.md) |
 | [core::calendar](core/calendar.md) | [source](../../stdlib/core/calendar.lani#L4) | 158 | Source inventory | [stdlib-calendar](../stdlib-calendar.md) |
 | [core::char](core/char.md) | [source](../../stdlib/core/char.lani#L2) | 19 | Source inventory | [stdlib-unicode](../stdlib-unicode.md) |
 | [core::clone](core/clone.md) | [source](../../stdlib/core/clone.lani#L3) | 4 | Source inventory | [stdlib-clone](../stdlib-clone.md), [stdlib-clone-values](../stdlib-clone-values.md) |
@@ -112,7 +112,7 @@ Inventory: **366 modules**, **19225 declaration/member entries**. Counts include
 | [alloc::bitset](alloc/bitset.md) | [source](../../stdlib/alloc/bitset.lani#L4) | 55 | Source inventory | [stdlib-bitset-owned](../stdlib-bitset-owned.md) |
 | [alloc::btree_map](alloc/btree_map.md) | [source](../../stdlib/alloc/btree_map.lani#L5) | 85 | Source inventory | [stdlib-btree-map](../stdlib-btree-map.md), [stdlib-tree-map](../stdlib-tree-map.md) |
 | [alloc::btree_set](alloc/btree_set.md) | [source](../../stdlib/alloc/btree_set.lani#L5) | 45 | Source inventory | [stdlib-btree-map](../stdlib-btree-map.md) |
-| [alloc::buffered](alloc/buffered.md) | [source](../../stdlib/alloc/buffered.lani#L4) | 49 | Source inventory | [stdlib-buffered](../stdlib-buffered.md), [stdlib-format-write](../stdlib-format-write.md), [stdlib-delimited-io](../stdlib-delimited-io.md), [stdlib-select-records](../stdlib-select-records.md), [stdlib-seek](../stdlib-seek.md), [stdlib-reverse-records](../stdlib-reverse-records.md) |
+| [alloc::buffered](alloc/buffered.md) | [source](../../stdlib/alloc/buffered.lani#L4) | 49 | Source inventory | [stdlib-caller-buffered](../stdlib-caller-buffered.md), [stdlib-buffered](../stdlib-buffered.md), [stdlib-format-write](../stdlib-format-write.md), [stdlib-delimited-io](../stdlib-delimited-io.md), [stdlib-select-records](../stdlib-select-records.md), [stdlib-format-report](../stdlib-format-report.md), [stdlib-seek](../stdlib-seek.md), [stdlib-reverse-records](../stdlib-reverse-records.md) |
 | [alloc::clone](alloc/clone.md) | [source](../../stdlib/alloc/clone.lani#L2) | 8 | Source inventory | [stdlib-clone](../stdlib-clone.md), [stdlib-owning-iterators](../stdlib-owning-iterators.md) |
 | [alloc::clone_binary_heap](alloc/clone_binary_heap.md) | [source](../../stdlib/alloc/clone_binary_heap.lani#L4) | 10 | Source inventory | [stdlib-clone-binary-heap](../stdlib-clone-binary-heap.md), [stdlib-owning-heap](../stdlib-owning-heap.md) |
 | [alloc::clone_deque](alloc/clone_deque.md) | [source](../../stdlib/alloc/clone_deque.lani#L4) | 9 | Source inventory | [stdlib-clone-deque](../stdlib-clone-deque.md) |
@@ -429,7 +429,6 @@ These are discovery/contract-link gaps, not claims that their code is missing or
 - [core::array_u8_4](core/array_u8_4.md)
 - [core::binary_wide_i64](core/binary_wide_i64.md)
 - [core::binary_wide_u64](core/binary_wide_u64.md)
-- [core::buffered](core/buffered.md)
 - [core::hex_wide_i64](core/hex_wide_i64.md)
 - [core::hex_wide_u64](core/hex_wide_u64.md)
 - [core::ops](core/ops.md)

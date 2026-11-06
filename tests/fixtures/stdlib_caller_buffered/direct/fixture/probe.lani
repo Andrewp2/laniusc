@@ -16,7 +16,7 @@ pub fn probe(data:[u8],length:i32,replies:[Reply],limit:i32,events:[Event]) -> P
 pub impl Probe {
     pub fn borrow(&self) -> &Probe { return self; }
     fn record(&self,kind:i32,offset:i32,count:i32,stride:isize,payload:u64,absolute:u64,delta:i64) -> Reply { assert(self.calls<self.limit && self.calls<32); let response:Reply=self.replies[self.calls]; assert(response.kind==kind); self.events[self.calls]=Event { kind:kind,offset:offset,count:count,stride:stride,payload:payload,absolute:absolute,delta:delta }; self.calls+=1; return response; }
-    pub fn tail(&self) { let i:i32=self.calls; while(i<32) { let item:Event=self.events[i]; assert(item.kind==77 && item.offset==88 && item.count==99 && item.stride==111 && item.payload==222 && item.absolute==333 && item.delta==444); i+=1; } }
+    pub fn tail(&self) { assert(self.calls==self.limit); let i:i32=self.calls; while(i<32) { let item:Event=self.events[i]; assert(item.kind==77 && item.offset==88 && item.count==99 && item.stride==111 && item.payload==222 && item.absolute==333 && item.delta==444); i+=1; } }
 }
 pub impl core::io::Read for Probe {
     pub fn read(&self,destination:[u8],offset:i32,count:i32) -> core::result::Result<i32,core::io::Error> {

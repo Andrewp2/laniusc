@@ -1,0 +1,233 @@
+// Execute scripted actions through the real public APIs; serialize every effect.
+module app::main;
+import alloc::buffered;
+import alloc::vec;
+import core::buffered;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import fixture::wire;
+
+fn begin(input:[u8],pointer:ptr,step:i32,argument:[u8],peer:&fixture::wire::Peer,out:&fixture::wire::Output) -> fixture::wire::Action {
+    fixture::wire::read_exact(pointer,80); out.word(step as u64);
+    let i:i32=0; while(i<10) { out.word(fixture::wire::get(input,i*8)); i+=1; }
+    i=0; while(i<32) { argument[i]=(i*29+step*41+17) as u8; i+=1; }
+    let a:fixture::wire::Action=fixture::wire::action(input); peer.reset(a); return a;
+}
+fn tail(peer:&fixture::wire::Peer,argument:[u8],backing:[u8],length:i32,out:&fixture::wire::Output) {
+    peer.state(out); out.word(core::mem::slice_stride(argument) as u64); out.bytes(argument,0,32);
+    out.word(length as u64); out.bytes(backing,0,length);
+}
+
+fn borrowed_reader(peer:&fixture::wire::Peer,scratch:[u8],argument:[u8],base:i32,capacity:i32,steps:i32,input:[u8],pointer:ptr,out:&fixture::wire::Output) {
+    let selected:core::slice::View<u8> =core::slice::View { values:scratch,start:base,length:capacity };
+    let stream:core::buffered::Reader<fixture::wire::Peer> =core::buffered::reader<fixture::wire::Peer>(peer,selected).unwrap();
+    let parts:core::buffered::Parts<fixture::wire::Peer> =core::buffered::Parts { inner:peer,buffer:core::slice::View { values:scratch,start:0,length:0 },start:0,length:0,faulted:false };
+    let step:i32=0;
+    while(step<steps) {
+        let a:fixture::wire::Action=begin(input,pointer,step,argument,peer,out);
+        let reply:fixture::wire::Reply=fixture::wire::success(0,argument);
+        let extra_start:i32=0; let extra_length:i32=0; let extra_capacity:i32=0; let extra_fault:bool=false;
+        if(a.op==0) { reply=fixture::wire::number(stream.read(argument,a.offset,a.count),argument); }
+        if(a.op==1) { reply=fixture::wire::filled(stream.fill_buf(),argument); }
+        if(a.op==2) { reply=fixture::wire::number(stream.consume(a.count),argument); }
+        if(a.op==5) { reply=fixture::wire::position(stream.seek(fixture::wire::seek(a)),argument); }
+        if(a.op==6) {
+            let taken:core::result::Result<core::buffered::Parts<fixture::wire::Peer>,core::io::Error> =stream.take_parts();
+            if(taken.is_err()) { reply=fixture::wire::failure(taken.unwrap_err(),argument); } else { parts=taken.unwrap(); }
+        }
+        if(a.op==7) {
+            let restored:core::result::Result<core::buffered::Reader<fixture::wire::Peer>,core::io::Error> =core::buffered::reader_from_parts<fixture::wire::Peer>(parts.borrow());
+            if(restored.is_err()) { reply=fixture::wire::failure(restored.unwrap_err(),argument); } else { stream=restored.unwrap(); }
+        }
+        if(a.op==8) {
+            let saved_start:i32=parts.start; let saved_length:i32=parts.length;
+            if(a.aux==0) { parts.start=-1; }
+            if(a.aux==1) { parts.start=0; parts.length=capacity+1; }
+            if(a.aux==2) { parts.start=capacity; parts.length=1; }
+            let rejected:core::result::Result<core::buffered::Reader<fixture::wire::Peer>,core::io::Error> =core::buffered::reader_from_parts<fixture::wire::Peer>(parts.borrow());
+            assert(rejected.is_err()); reply=fixture::wire::failure(rejected.unwrap_err(),argument);
+            extra_start=parts.start; extra_length=parts.length; extra_capacity=parts.buffer.length; extra_fault=parts.faulted;
+            parts.start=saved_start; parts.length=saved_length;
+        }
+        if(a.op==9) { reply=fixture::wire::success(stream.discard() as u64,argument); }
+        if(a.op==10) { reply=fixture::wire::success(parts.discard() as u64,argument); }
+        if(a.op==12) { assert(!stream.is_active() && parts.buffer.length==0); stream=core::buffered::reader<fixture::wire::Peer>(peer,selected).unwrap(); }
+        peer.emit(out); fixture::wire::reply(reply,out);
+        if(a.op==8) { out.word(4); out.word(extra_start as i64 as u64); out.word(extra_length as i64 as u64); out.word(extra_capacity as u64); out.word(extra_fault as u64); } else { out.word(0); }
+        out.word(stream.is_active() as u64); out.word(stream.is_faulted() as u64); out.word(stream.capacity() as u64); out.view(stream.buffered());
+        out.word(parts.buffer.length as u64); out.word(parts.start as i64 as u64); out.word(parts.length as i64 as u64); out.word(parts.faulted as u64); out.view(parts.bytes());
+        tail(peer,argument,scratch,32,out);
+        step+=1;
+    }
+    stream.discard(); parts.discard();
+}
+
+fn borrowed_writer(peer:&fixture::wire::Peer,scratch:[u8],argument:[u8],base:i32,capacity:i32,steps:i32,input:[u8],pointer:ptr,out:&fixture::wire::Output) {
+    let selected:core::slice::View<u8> =core::slice::View { values:scratch,start:base,length:capacity };
+    let stream:core::buffered::Writer<fixture::wire::Peer> =core::buffered::writer<fixture::wire::Peer>(peer,selected).unwrap();
+    let parts:core::buffered::Parts<fixture::wire::Peer> =core::buffered::Parts { inner:peer,buffer:core::slice::View { values:scratch,start:0,length:0 },start:0,length:0,faulted:false };
+    let step:i32=0;
+    while(step<steps) {
+        let a:fixture::wire::Action=begin(input,pointer,step,argument,peer,out);
+        let reply:fixture::wire::Reply=fixture::wire::success(0,argument);
+        let extra_start:i32=0; let extra_length:i32=0; let extra_capacity:i32=0; let extra_fault:bool=false;
+        if(a.op==3) { reply=fixture::wire::number(stream.write(argument,a.offset,a.count),argument); }
+        if(a.op==4) { reply=fixture::wire::number(stream.flush(),argument); }
+        if(a.op==11) { reply=fixture::wire::number(stream.finish(),argument); }
+        if(a.op==5) { reply=fixture::wire::position(stream.seek(fixture::wire::seek(a)),argument); }
+        if(a.op==6) {
+            let taken:core::result::Result<core::buffered::Parts<fixture::wire::Peer>,core::io::Error> =stream.take_parts();
+            if(taken.is_err()) { reply=fixture::wire::failure(taken.unwrap_err(),argument); } else { parts=taken.unwrap(); }
+        }
+        if(a.op==7) {
+            let restored:core::result::Result<core::buffered::Writer<fixture::wire::Peer>,core::io::Error> =core::buffered::writer_from_parts<fixture::wire::Peer>(parts.borrow());
+            if(restored.is_err()) { reply=fixture::wire::failure(restored.unwrap_err(),argument); } else { stream=restored.unwrap(); }
+        }
+        if(a.op==8) {
+            let saved_start:i32=parts.start; let saved_length:i32=parts.length;
+            if(a.aux==0) { parts.start=-1; }
+            if(a.aux==1) { parts.start=0; parts.length=capacity+1; }
+            if(a.aux==2) { parts.start=capacity; parts.length=1; }
+            let rejected:core::result::Result<core::buffered::Writer<fixture::wire::Peer>,core::io::Error> =core::buffered::writer_from_parts<fixture::wire::Peer>(parts.borrow());
+            assert(rejected.is_err()); reply=fixture::wire::failure(rejected.unwrap_err(),argument);
+            extra_start=parts.start; extra_length=parts.length; extra_capacity=parts.buffer.length; extra_fault=parts.faulted;
+            parts.start=saved_start; parts.length=saved_length;
+        }
+        if(a.op==9) { reply=fixture::wire::success(stream.discard() as u64,argument); }
+        if(a.op==10) { reply=fixture::wire::success(parts.discard() as u64,argument); }
+        if(a.op==12) { assert(!stream.is_active() && parts.buffer.length==0); stream=core::buffered::writer<fixture::wire::Peer>(peer,selected).unwrap(); }
+        peer.emit(out); fixture::wire::reply(reply,out);
+        if(a.op==8) { out.word(4); out.word(extra_start as i64 as u64); out.word(extra_length as i64 as u64); out.word(extra_capacity as u64); out.word(extra_fault as u64); } else { out.word(0); }
+        out.word(stream.is_active() as u64); out.word(stream.is_faulted() as u64); out.word(stream.capacity() as u64); out.view(stream.pending());
+        out.word(parts.buffer.length as u64); out.word(parts.start as i64 as u64); out.word(parts.length as i64 as u64); out.word(parts.faulted as u64); out.view(parts.bytes());
+        tail(peer,argument,scratch,32,out);
+        step+=1;
+    }
+    stream.discard(); parts.discard();
+}
+
+fn owned_reader(peer:&fixture::wire::Peer,scratch:[u8],argument:[u8],base:i32,capacity:i32,steps:i32,input:[u8],pointer:ptr,out:&fixture::wire::Output) {
+    let selected:core::slice::View<u8> =core::slice::View { values:scratch,start:base,length:capacity };
+    let stream:alloc::buffered::Reader<fixture::wire::Peer> =alloc::buffered::reader<fixture::wire::Peer>(peer,capacity).unwrap();
+    let parts:alloc::buffered::Parts<fixture::wire::Peer> =alloc::buffered::Parts { inner:peer,buffer:alloc::vec::new<u8>(),start:0,length:0,faulted:false };
+    let step:i32=0;
+    while(step<steps) {
+        let a:fixture::wire::Action=begin(input,pointer,step,argument,peer,out);
+        let reply:fixture::wire::Reply=fixture::wire::success(0,argument);
+        let extra_start:i32=0; let extra_length:i32=0; let extra_capacity:i32=0; let extra_fault:bool=false;
+        if(a.op==0) { reply=fixture::wire::number(stream.read(argument,a.offset,a.count),argument); }
+        if(a.op==1) { reply=fixture::wire::filled(stream.fill_buf(),argument); }
+        if(a.op==2) { reply=fixture::wire::number(stream.consume(a.count),argument); }
+        if(a.op==5) { reply=fixture::wire::position(stream.seek(fixture::wire::seek(a)),argument); }
+        if(a.op==6) {
+            let taken:core::result::Result<alloc::buffered::Parts<fixture::wire::Peer>,core::io::Error> =stream.take_parts();
+            if(taken.is_err()) { reply=fixture::wire::failure(taken.unwrap_err(),argument); } else { parts=taken.unwrap(); }
+        }
+        if(a.op==7) {
+            let restored:core::result::Result<alloc::buffered::Reader<fixture::wire::Peer>,core::io::Error> =alloc::buffered::reader_from_parts<fixture::wire::Peer>(parts.borrow());
+            if(restored.is_err()) { reply=fixture::wire::failure(restored.unwrap_err(),argument); } else { stream=restored.unwrap(); }
+        }
+        if(a.op==8) {
+            let saved_start:i32=parts.start; let saved_length:i32=parts.length;
+            if(a.aux==0) { parts.start=-1; }
+            if(a.aux==1) { parts.start=0; parts.length=capacity+1; }
+            if(a.aux==2) { parts.start=capacity; parts.length=1; }
+            let rejected:core::result::Result<alloc::buffered::Reader<fixture::wire::Peer>,core::io::Error> =alloc::buffered::reader_from_parts<fixture::wire::Peer>(parts.borrow());
+            assert(rejected.is_err()); reply=fixture::wire::failure(rejected.unwrap_err(),argument);
+            extra_start=parts.start; extra_length=parts.length; extra_capacity=parts.buffer.len(); extra_fault=parts.faulted;
+            parts.start=saved_start; parts.length=saved_length;
+        }
+        if(a.op==9) { reply=fixture::wire::success(stream.discard() as u64,argument); }
+        if(a.op==10) { reply=fixture::wire::success(parts.discard() as u64,argument); }
+        if(a.op==12) { assert(!stream.is_active() && parts.buffer.len()==0); stream=alloc::buffered::reader<fixture::wire::Peer>(peer,capacity).unwrap(); }
+        peer.emit(out); fixture::wire::reply(reply,out);
+        if(a.op==8) { out.word(4); out.word(extra_start as i64 as u64); out.word(extra_length as i64 as u64); out.word(extra_capacity as u64); out.word(extra_fault as u64); } else { out.word(0); }
+        out.word(stream.is_active() as u64); out.word(stream.is_faulted() as u64); out.word(stream.capacity() as u64); out.view(stream.buffered());
+        out.word(parts.buffer.len() as u64); out.word(parts.start as i64 as u64); out.word(parts.length as i64 as u64); out.word(parts.faulted as u64); out.view(parts.bytes());
+        if(stream.is_active()) { tail(peer,argument,stream.buffer.as_slice(),stream.buffer.len(),out); }
+        else { tail(peer,argument,parts.buffer.as_slice(),parts.buffer.len(),out); }
+        step+=1;
+    }
+    stream.discard(); parts.discard();
+}
+
+fn owned_writer(peer:&fixture::wire::Peer,scratch:[u8],argument:[u8],base:i32,capacity:i32,steps:i32,input:[u8],pointer:ptr,out:&fixture::wire::Output) {
+    let selected:core::slice::View<u8> =core::slice::View { values:scratch,start:base,length:capacity };
+    let stream:alloc::buffered::Writer<fixture::wire::Peer> =alloc::buffered::writer<fixture::wire::Peer>(peer,capacity).unwrap();
+    let parts:alloc::buffered::Parts<fixture::wire::Peer> =alloc::buffered::Parts { inner:peer,buffer:alloc::vec::new<u8>(),start:0,length:0,faulted:false };
+    let step:i32=0;
+    while(step<steps) {
+        let a:fixture::wire::Action=begin(input,pointer,step,argument,peer,out);
+        let reply:fixture::wire::Reply=fixture::wire::success(0,argument);
+        let extra_start:i32=0; let extra_length:i32=0; let extra_capacity:i32=0; let extra_fault:bool=false;
+        if(a.op==3) { reply=fixture::wire::number(stream.write(argument,a.offset,a.count),argument); }
+        if(a.op==4) { reply=fixture::wire::number(stream.flush(),argument); }
+        if(a.op==11) { reply=fixture::wire::number(stream.finish(),argument); }
+        if(a.op==5) { reply=fixture::wire::position(stream.seek(fixture::wire::seek(a)),argument); }
+        if(a.op==6) {
+            let taken:core::result::Result<alloc::buffered::Parts<fixture::wire::Peer>,core::io::Error> =stream.take_parts();
+            if(taken.is_err()) { reply=fixture::wire::failure(taken.unwrap_err(),argument); } else { parts=taken.unwrap(); }
+        }
+        if(a.op==7) {
+            let restored:core::result::Result<alloc::buffered::Writer<fixture::wire::Peer>,core::io::Error> =alloc::buffered::writer_from_parts<fixture::wire::Peer>(parts.borrow());
+            if(restored.is_err()) { reply=fixture::wire::failure(restored.unwrap_err(),argument); } else { stream=restored.unwrap(); }
+        }
+        if(a.op==8) {
+            let saved_start:i32=parts.start; let saved_length:i32=parts.length;
+            if(a.aux==0) { parts.start=-1; }
+            if(a.aux==1) { parts.start=0; parts.length=capacity+1; }
+            if(a.aux==2) { parts.start=capacity; parts.length=1; }
+            let rejected:core::result::Result<alloc::buffered::Writer<fixture::wire::Peer>,core::io::Error> =alloc::buffered::writer_from_parts<fixture::wire::Peer>(parts.borrow());
+            assert(rejected.is_err()); reply=fixture::wire::failure(rejected.unwrap_err(),argument);
+            extra_start=parts.start; extra_length=parts.length; extra_capacity=parts.buffer.len(); extra_fault=parts.faulted;
+            parts.start=saved_start; parts.length=saved_length;
+        }
+        if(a.op==9) { reply=fixture::wire::success(stream.discard() as u64,argument); }
+        if(a.op==10) { reply=fixture::wire::success(parts.discard() as u64,argument); }
+        if(a.op==12) { assert(!stream.is_active() && parts.buffer.len()==0); stream=alloc::buffered::writer<fixture::wire::Peer>(peer,capacity).unwrap(); }
+        peer.emit(out); fixture::wire::reply(reply,out);
+        if(a.op==8) { out.word(4); out.word(extra_start as i64 as u64); out.word(extra_length as i64 as u64); out.word(extra_capacity as u64); out.word(extra_fault as u64); } else { out.word(0); }
+        out.word(stream.is_active() as u64); out.word(stream.is_faulted() as u64); out.word(stream.capacity() as u64); out.view(stream.pending());
+        out.word(parts.buffer.len() as u64); out.word(parts.start as i64 as u64); out.word(parts.length as i64 as u64); out.word(parts.faulted as u64); out.view(parts.bytes());
+        if(stream.is_active()) { tail(peer,argument,stream.buffer.as_slice(),stream.buffer.len(),out); }
+        else { tail(peer,argument,parts.buffer.as_slice(),parts.buffer.len(),out); }
+        step+=1;
+    }
+    stream.discard(); parts.discard();
+}
+
+fn run(header:[u8],input:[u8],pointer:ptr,out:&fixture::wire::Output) {
+    let route:i32=fixture::wire::get(header,8) as i32; let direction:i32=fixture::wire::get(header,16) as i32;
+    let capacity:i32=fixture::wire::get(header,24) as i32; let steps:i32=fixture::wire::get(header,32) as i32;
+    assert(route>=0 && route<3 && direction>=0 && direction<2 && capacity>0 && capacity<=7 && steps<=32);
+    let native_scratch:[u8;32]=[0;32]; let native_argument:[u8;32]=[0;32];
+    let packed_scratch:[i32;8]=[0;8]; let packed_argument:[i32;8]=[0;8];
+    let scratch:[u8]=native_scratch; let argument:[u8]=native_argument; let base:i32=3;
+    if(route==1) { scratch=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(packed_scratch),32); argument=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(packed_argument),32); base=5; }
+    let i:i32=0; while(i<32) { scratch[i]=(197+i*3) as u8; i+=1; }
+    let data:[u8;128]=[0;128]; i=0; while(i<128) { data[i]=(i*37+11) as u8; i+=1; }
+    let calls:[i32;4]=[0;4]; let tape:[u64;512]=[0;512]; let limit:u64=19; if(direction==1) { limit=128; }
+    let peer:fixture::wire::Peer=fixture::wire::Peer { data:data,position:0,limit:limit,calls:calls,tape:tape,used:0,events:0,transfers:0,seeks:0,action:fixture::wire::action(input) };
+    if(route<2) {
+        if(direction==0) { borrowed_reader(peer.borrow(),scratch,argument,base,capacity,steps,input,pointer,out); }
+        else { borrowed_writer(peer.borrow(),scratch,argument,base,capacity,steps,input,pointer,out); }
+    } else {
+        if(direction==0) { owned_reader(peer.borrow(),scratch,argument,0,capacity,steps,input,pointer,out); }
+        else { owned_writer(peer.borrow(),scratch,argument,0,capacity,steps,input,pointer,out); }
+    }
+}
+fn main() -> i32 {
+    let header_words:[i32;10]=[0;10]; let header_pointer:ptr=core::mem::i32_array_data_ptr(header_words); let header:[u8]=core::mem::typed_slice_from_raw_parts<u8>(header_pointer,40);
+    let input_words:[i32;20]=[0;20]; let pointer:ptr=core::mem::i32_array_data_ptr(input_words); let input:[u8]=core::mem::typed_slice_from_raw_parts<u8>(pointer,80);
+    let output_words:[i32;1024]=[0;1024]; let output_pointer:ptr=core::mem::i32_array_data_ptr(output_words);
+    let output:fixture::wire::Output=fixture::wire::Output { bytes:core::mem::typed_slice_from_raw_parts<u8>(output_pointer,4096),pointer:output_pointer,used:0 };
+    fixture::wire::read_exact(header_pointer,16); assert(fixture::wire::get(header,0)==7094689377966782001);
+    let count:i32=fixture::wire::get(header,8) as i32; assert(count==144); output.word(fixture::wire::get(header,0)); output.word(count as u64);
+    let index:i32=0; while(index<count) {
+        fixture::wire::read_exact(header_pointer,40); let i:i32=0; while(i<5) { output.word(fixture::wire::get(header,i*8)); i+=1; }
+        run(header,input,pointer,output.borrow()); index+=1;
+    }
+    output.word(7308889619308111409); output.flush(); return 0;
+}

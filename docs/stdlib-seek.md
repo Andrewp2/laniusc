@@ -6,6 +6,13 @@ has accepted portable arithmetic/cursor, native File, buffered and application
 gates on the finite native profile, with selected existing regressions. The
 full library goal stays open.
 
+Buffered Seek now lives in the shared `core::buffered` engine over caller
+`View<u8>` scratch; `alloc::buffered` delegates to it while retaining its Vec
+owner. The [caller-buffered increment](stdlib-caller-buffered.md) preserves
+the contracts below and adds consuming Parts restoration. Its selected native
+gates pass on Linux x86_64 CPU output; this guide's receipts retain their
+earlier source/API scope.
+
 ## Core API and offset domain
 
 ```text
@@ -70,7 +77,7 @@ calls. Keep exclusive access to the borrowed inner during each operation.
 
 | Origin | Inner calls and publication |
 | --- | --- |
-| Start/End | One inner seek; successful Start must match its target. Success clears unread bytes but retains allocation. |
+| Start/End | One inner seek; successful Start must match its target. Success clears unread bytes but retains buffer capacity. |
 | Current(delta) | Query inner Current(0), subtract unread count, apply checked `offset_position`, then inner Start(target). Even delta zero reconciles read-ahead and clears unread bytes on success. |
 
 A query position below unread count is InvalidCount and faults the reader.
@@ -80,9 +87,10 @@ effects, although conforming Current(0) preserves logical position.
 
 Any actual inner seek error, including a failed query, or malformed Start
 acknowledgement faults the reader and clears unread publication. Preserve
-the primary error; backing allocation and inner ownership remain retained.
-`take_parts`/`discard` permit explicit handoff/release; rebuild after establishing
-the inner position. No stale View may be read after seek. There is no automatic
+the primary error; buffer storage and the borrowed endpoint remain retained.
+`take_parts`/`discard` permit explicit handoff/abandonment. Restoring faulted
+Parts retains its fault; a fresh controller requires a known inner position
+and no live old controller or view. No stale View may be read after seek. There is no automatic
 recovery, close, allocation or EOF cache.
 
 ## Buffered writer: `W: Write` and `W: Seek`
@@ -95,11 +103,14 @@ already have moved the inner cursor; no rollback or byte replay is implied.
 
 After successful flush, an inner seek error leaves the active wrapper with
 empty pending bytes and an unspecified position. Malformed Start acknowledgement
-faults the writer. Success retains the empty allocation. No implicit retry,
+faults the writer. Success retains the empty buffer's capacity. No implicit retry,
 close or new allocation occurs. Ordinary [buffered ownership](stdlib-buffered.md),
 fault, handoff and borrowed-lifetime rules still apply.
 
 ## Application, evidence and targets
+
+These receipts predate the shared core-engine refactor and consuming Parts
+restoration; they do not establish acceptance of those changes.
 
 The [`reverse_records PATH WIDTH` program](stdlib-reverse-records.md) reads
 bounded fixed-width binary records in reverse through buffered Seek/Read,

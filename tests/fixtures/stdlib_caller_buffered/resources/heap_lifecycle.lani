@@ -1,0 +1,73 @@
+module app::main;
+import alloc::vec;
+import core::buffered;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import fixture::resource;
+
+fn native_stride() {
+    let source:[u8;5]=[0,255,13,10,128]; let target:[u8;7]=[211;7];
+    let scratch:[u8;9]=[177;9]; let destination:[u8;4]=[199;4];
+    let stride:isize=core::mem::slice_stride(scratch); assert(stride<0);
+    let input=fixture::resource::stream(source,5,5);
+    let reader=core::buffered::reader(input.borrow(),core::slice::View { values:scratch,start:2,length:5 }).unwrap();
+    assert(reader.read(destination,1,2).unwrap()==2 && destination[1]==0 && destination[2]==255);
+    assert(input.last_offset==2 && input.last_stride==stride && input.position==5 && reader.buffered().length==3);
+    let parts=reader.take_parts().unwrap(); let restored=core::buffered::reader_from_parts(parts.borrow()).unwrap();
+    assert(restored.buffered().get(0).unwrap()==13 && restored.discard()==3 && parts.discard()==0);
+    let output=fixture::resource::stream(target,7,2);
+    let writer=core::buffered::writer(output.borrow(),core::slice::View { values:scratch,start:2,length:5 }).unwrap();
+    assert(writer.write(source,0,5).unwrap()==5 && writer.finish().unwrap()==0);
+    assert(output.position==5 && output.writes==3 && output.flushes==1 && output.last_offset==6 && output.last_stride==stride);
+    let i:i32=0; while(i<5) { assert(target[i]==source[i]); i+=1; }
+    assert(target[5]==211 && target[6]==211 && scratch[0]==177 && scratch[1]==177 && scratch[7]==177 && scratch[8]==177);
+    assert(destination[0]==199 && destination[3]==199);
+}
+fn main() -> i32 {
+    let source=fixture::resource::owner(9,0); fixture::resource::initialize(source.borrow());
+    let target=fixture::resource::owner(12,211);
+    let scratch=fixture::resource::owner(11,177); let storage:ptr=scratch.storage;
+    fixture::resource::mark(80);
+    let input=fixture::resource::stream(source.as_slice(),9,5);
+    let output=fixture::resource::stream(target.as_slice(),12,2);
+    let destination:[u8;4]=[199;4];
+    let reader=core::buffered::reader(input.borrow(),core::slice::View { values:scratch.as_slice(),start:3,length:5 }).unwrap();
+    fixture::resource::guards(scratch.borrow(),0,0,177);
+    assert(reader.read(destination,1,2).unwrap()==2 && input.position==5 && input.reads==1 && input.last_offset==3 && input.last_stride==1);
+    assert(destination[0]==199 && destination[1]==0 && destination[2]==73 && destination[3]==199);
+    let parts=reader.take_parts().unwrap();
+    assert(!reader.is_active() && parts.bytes().start==5 && parts.bytes().length==3 && scratch.storage==storage && scratch.len()==11);
+    let restored=core::buffered::reader_from_parts(parts.borrow()).unwrap();
+    assert(parts.bytes().length==0 && restored.capacity()==5 && restored.buffered().get(0).unwrap()==146);
+    assert(restored.read(destination,1,1).unwrap()==1 && input.reads==1 && destination[1]==146);
+    assert(restored.discard()==2 && restored.discard()==0 && parts.discard()==0 && reader.discard()==0);
+    fixture::resource::guards(scratch.borrow(),3,5,177);
+    let writer=core::buffered::writer(output.borrow(),core::slice::View { values:scratch.as_slice(),start:3,length:5 }).unwrap();
+    assert(writer.write(source.as_slice(),0,5).unwrap()==5); output.fail_write=2;
+    assert(fixture::resource::would_block(writer.finish().unwrap_err()));
+    assert(writer.is_active() && !writer.is_faulted() && writer.pending().start==5 && writer.pending().length==3);
+    assert(output.position==2 && output.writes==2 && output.flushes==0 && output.last_offset==5 && output.last_stride==1);
+    assert(scratch.storage==storage && scratch.len()==11 && target.at(0)==0 && target.at(1)==73 && target.at(2)==211);
+    let pending=writer.take_parts().unwrap(); let rebuilt=core::buffered::writer_from_parts(pending.borrow()).unwrap();
+    assert(!writer.is_active() && pending.bytes().length==0 && rebuilt.pending().start==5 && rebuilt.pending().get(0).unwrap()==146);
+    assert(rebuilt.finish().unwrap()==0 && !rebuilt.is_active() && output.position==5 && output.writes==4 && output.flushes==1);
+    assert(rebuilt.discard()==0 && pending.discard()==0 && writer.discard()==0);
+    // Abandon a second handoff without clearing or releasing the caller owner.
+    let abandoned=core::buffered::writer(output.borrow(),core::slice::View { values:scratch.as_slice(),start:3,length:5 }).unwrap();
+    assert(abandoned.write(source.as_slice(),5,2).unwrap()==2);
+    let unused=abandoned.take_parts().unwrap(); assert(unused.discard()==2 && unused.discard()==0 && abandoned.discard()==0);
+    assert(scratch.at(3)==fixture::resource::pattern(5) && scratch.at(4)==fixture::resource::pattern(6));
+    assert(scratch.storage==storage && scratch.len()==11 && scratch.capacity()==11 && output.position==5 && output.flushes==1);
+    fixture::resource::guards(scratch.borrow(),3,5,177);
+    let i:i32=0; while(i<12) { let expected:u8=211; if(i<5) { expected=fixture::resource::pattern(i); } assert(target.at(i)==expected); i+=1; }
+    i=0; while(i<9) { assert(source.at(i)==fixture::resource::pattern(i)); i+=1; }
+    // Providers remain usable after every controller and Parts has ended.
+    assert(input.read(destination,1,1).unwrap()==1 && input.position==6 && destination[1]==fixture::resource::pattern(5));
+    assert(output.flush().unwrap()==0 && output.flushes==2);
+    native_stride();
+    fixture::resource::mark(112);
+    scratch.destroy(); target.destroy(); source.destroy();
+    fixture::resource::mark(68); return 0;
+}

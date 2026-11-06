@@ -5,6 +5,18 @@ with Lanius interfaces and explicit native bindings for host and third-party
 services. This document tracks the whole scope. Completing the first
 milestone does not complete the goal.
 
+The current [caller-provided buffering increment](stdlib-caller-buffered.md)
+uses one `core::buffered` read/write/Seek engine over caller `View<u8>` scratch.
+`alloc::buffered` retains its Vec owner and delegates the state transitions.
+Both layers add consuming Parts restoration with metadata checks before
+transfer, preserving exact backing and faults. The real record selector and
+format report borrow their fixed buffers; their other resource and I/O
+contracts remain. All selected gates pass on Linux x86_64 CPU output: seven
+direct/capability tests, the 144-case model, four resource tests, eight selected
+existing buffered/Seek tests and 92/69 cases in the two applications. Historical
+buffering, Seek and application receipts below retain their source/API scope,
+and manual lifetimes, other targets and the full library goal remain open.
+
 ## Dependency layers
 
 | Layer | Owns | May depend on |
@@ -1256,7 +1268,7 @@ checks committed and pending words before copying, retaining 64-token flush
 windows and complete UTF-8 admission. All nine library groups and the migrated
 application's 124 native cases pass on Linux x86_64 CPU output; four selected
 existing regressions pass separately. Heterogeneous ordered bounds/ranges
-are the current increment above; caller-backed buffering remains separate.
+retain their separate scope; caller-backed buffering is the accepted increment above.
 
 The [lazy Option/Result increment](stdlib-lazy-outcomes.md) adds nineteen
 free-function/method pairs and moves Mapper to the import-free core::function
@@ -2916,12 +2928,13 @@ borrowed point lookup has the current increment above.
   including allocation and I/O failure coverage. Initial counts still require
   valid physical backing. Shared generic iteration now has separate execution
   evidence through the module below; the older reproductions remain historical.
-- [Buffered I/O composition](stdlib-buffered.md) now has its own runtime
+- The earlier [buffered I/O composition](stdlib-buffered.md) has its own runtime
   admission: five compiled programs and eighteen native executions cover
   nested readers/writers, confirmed partial progress, every constructor
   allocation failure and actual EPIPE failures during copying and final flush.
   The fixed-capacity buffers require explicit cleanup and preserve their
   confirmed unread/pending ranges on errors; no automatic ownership is implied.
+  That receipt predates the shared core engine and consuming Parts restoration.
 - [Shared iteration](stdlib-iterators.md) now executes through one fused
   protocol, slice and finite i32 range cursors, borrowed take/chain and bounded
   consumption. Seven compilation jobs produce five checked native executables

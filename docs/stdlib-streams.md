@@ -49,14 +49,18 @@ below cover their earlier API/source scope. One selected existing stream
 regression separately passes in 11.34s with two native fixtures; it is not a
 whole-stream-suite rerun.
 
-[Fixed-capacity buffered adapters](stdlib-buffered.md) now execute through these
-same traits. `alloc::buffered::Reader<R>` and `Writer<W>` borrow their inner
-streams and own explicit byte buffers; they support nested wrappers, unread or
-pending-byte handoff, checked counts, explicit finish and manual cleanup.
-Five focused groups include eighteen native executions covering partial I/O,
-allocation failures and a binary-copy application. The historical implementation
-routing failure remains preserved; current generic transport and these adapters
-have separate executable evidence.
+[Fixed-capacity buffering](stdlib-caller-buffered.md) uses one
+`core::buffered` engine over a borrowed endpoint and caller `View<u8>`.
+`alloc::buffered` owns a Vec and delegates its I/O transitions. Both forms
+support nested wrappers, unread or pending-byte handoff, consuming Parts
+restoration, checked counts and explicit finish/discard. Caller storage,
+published views and endpoint lifetimes remain manual. The selected refactor
+gates pass on Linux x86_64 CPU output, including both migrated applications.
+The [earlier allocating-buffer receipt](stdlib-buffered.md)
+covers five focused groups/eighteen native executions for partial I/O,
+allocation failures and a binary-copy application; it retains its original
+source/API scope. The historical implementation-routing failure remains
+preserved separately.
 
 The [bounded delimiter increment](stdlib-delimited-io.md) adds standalone
 BufRead, caller-buffer `read_until` and allocation-free `skip_until`. Small

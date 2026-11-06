@@ -1,0 +1,58 @@
+// core outside alloc: fixed reusable buffers over complete finite streams.
+module app::main;
+import alloc::buffered;
+import core::buffered;
+import core::io;
+import core::result;
+import core::slice;
+import fixture::resource;
+fn exercise(length:i32) {
+    let source=fixture::resource::owner(length,0); fixture::resource::initialize(source.borrow());
+    let target=fixture::resource::owner(length,211);
+    let read_scratch=fixture::resource::owner(11,177);
+    let write_scratch=fixture::resource::owner(17,155);
+    let input=fixture::resource::stream(source.as_slice(),length,19);
+    let output=fixture::resource::stream(target.as_slice(),length,3);
+    let reader=alloc::buffered::reader(input.borrow(),11).unwrap();
+    let writer=alloc::buffered::writer(output.borrow(),5).unwrap();
+    let outer_reader=core::buffered::reader(reader.borrow(),core::slice::View { values:read_scratch.as_slice(),start:2,length:7 }).unwrap();
+    let outer_writer=core::buffered::writer(writer.borrow(),core::slice::View { values:write_scratch.as_slice(),start:2,length:13 }).unwrap();
+    fixture::resource::mark(80);
+    let transfer:[u8;19]=[199;19];
+    assert(outer_reader.read(transfer,1,1).unwrap()==1 && transfer[1]==0);
+    assert(input.position==11 && input.reads==1 && reader.buffered().length==4 && outer_reader.buffered().length==6);
+    assert(outer_reader.buffered().get(0).unwrap()==fixture::resource::pattern(1));
+    assert(reader.buffered().get(0).unwrap()==fixture::resource::pattern(7));
+    assert(core::io::read_exact(outer_reader.borrow(),transfer,2,13).unwrap()==13);
+    assert(outer_writer.write(transfer,1,7).unwrap()==7 && output.position==0 && writer.pending().length==0 && outer_writer.pending().length==7);
+    assert(outer_writer.write(transfer,8,7).unwrap()==6 && outer_writer.pending().length==13 && writer.pending().length==0);
+    assert(outer_writer.write(transfer,14,1).unwrap()==1);
+    assert(output.position==10 && output.writes==4 && output.flushes==0 && writer.pending().length==3 && outer_writer.pending().length==1);
+    assert(writer.pending().get(0).unwrap()==fixture::resource::pattern(10) && outer_writer.pending().get(0).unwrap()==fixture::resource::pattern(13));
+    // Handoff retains the outer layer's one byte, not the inner layer's three.
+    let parts=outer_writer.take_parts().unwrap();
+    assert(!outer_writer.is_active() && parts.bytes().length==1 && writer.pending().length==3);
+    let restored=core::buffered::writer_from_parts(parts.borrow()).unwrap();
+    assert(parts.bytes().length==0 && restored.pending().get(0).unwrap()==fixture::resource::pattern(13));
+    fixture::resource::remaining(outer_reader.borrow(),restored.borrow(),transfer,length);
+    assert(restored.flush().unwrap()==0 && output.position==length && output.flushes==1);
+    assert(restored.pending().length==0 && writer.pending().length==0 && reader.buffered().length==0 && outer_reader.buffered().length==0);
+    // Transfer an empty range too: capacity and its sole ownership survive.
+    let final_parts=restored.take_parts().unwrap();
+    assert(!restored.is_active() && final_parts.bytes().length==0);
+    let final_writer=core::buffered::writer_from_parts(final_parts.borrow()).unwrap();
+    assert(final_writer.capacity()==13 && final_parts.bytes().length==0);
+    assert(parts.discard()==0 && final_parts.discard()==0 && restored.discard()==0);
+    fixture::resource::guards(read_scratch.borrow(),2,7,177);
+    fixture::resource::guards(write_scratch.borrow(),2,13,155);
+    let i:i32=0; while(i<length) { assert(source.at(i)==fixture::resource::pattern(i) && target.at(i)==source.at(i)); i+=1; }
+    assert(final_writer.finish().unwrap()==0 && !final_writer.is_active() && writer.is_active());
+    assert(outer_reader.discard()==0 && reader.is_active());
+    fixture::resource::mark(112);
+    write_scratch.destroy(); read_scratch.destroy();
+    assert(writer.finish().unwrap()==0 && reader.discard()==0);
+    assert(output.position==length && output.flushes==3 && !writer.is_active() && !reader.is_active());
+    fixture::resource::mark(79); fixture::resource::emit(target.borrow());
+    target.destroy(); source.destroy(); fixture::resource::mark(68);
+}
+fn main() -> i32 { exercise(4096); exercise(262144); return 0; }

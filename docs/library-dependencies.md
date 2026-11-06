@@ -3,6 +3,24 @@
 This list records boundaries encountered while building the libraries. A row
 does not mean unrelated library work is blocked.
 
+The [caller-provided buffering increment](stdlib-caller-buffered.md) uses
+existing Read/Write/BufRead/Seek protocols, `View<u8>` and stride-aware slice
+copies. The core engine neither allocates nor frees scratch; allocating
+wrappers retain their actual Vec and delegate all I/O transitions. Consuming
+Parts restoration checks metadata before backing access or owner transfer.
+Physical backing, exclusive controllers and manual endpoint/view lifetimes
+remain caller obligations. All selected native gates pass on Linux x86_64 CPU
+output through the GPU compiler. An initial LNC0047 loaded old kernels through
+a relative artifact path; the supported absolute `LANIUS_SHADER_ARTIFACT_ROOT`
+resolved it. Import, typed and chained generic-result controls then passed,
+as did final admission with natural chained Read/Seek calls. These fixtures
+establish no current generic compiler dependency or compiler-source repair;
+historical reductions below retain their scope. The runtime allocator now pools by
+default. Exact mapping/release and reached-allocation-failure gates select
+`LANIUS_ALLOC=mmap`; those observations do not describe the mapping count of
+ordinary pooled processes. Other targets, enforced lifetimes and formal proof
+remain separate dependencies.
+
 The [TOML streaming serializer](extended-toml-streaming.md) uses existing
 Document links, byte/scalar operations, Read and the owned collector. Its
 [normalizer](extended-toml-normalize.md) uses the existing Copier with fixed

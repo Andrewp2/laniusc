@@ -3,10 +3,14 @@
 [`sample_programs/library/format_report.lani`](../sample_programs/library/format_report.lani)
 turns a bounded CSV item list into a formatted report. It parses and validates
 every row before publication, then streams runtime formatting through seven
-bytes of caller scratch into a 17-byte buffered writer. It does not allocate
+bytes of caller scratch into a buffered writer with 17 logical byte elements
+of separate caller scratch. It does not allocate
 a complete formatted report. All application behavior is Lanius.
 
-Accepted on **2026-10-24** for x86_64 Linux native execution of an ELF built
+The current program uses [caller-provided buffering](stdlib-caller-buffered.md)
+and passes 69 native Linux x86_64 cases in 10.21s, including all 11 observed
+representative allocation denials. The earlier owning-buffer source was
+accepted on **2026-10-24** for x86_64 Linux native execution of an ELF built
 through the GPU compiler. One strict ELF passed 81 native cases, including all
 23 observed representative allocation denials. The application executes on the
 CPU. This is functional acceptance; no throughput result is claimed.
@@ -106,17 +110,20 @@ price, and amount. Every row is measured with the same fixed pattern and
 format limits used for publication. The program checks the sum of the header,
 footer, and all row lengths before output, rejecting a 65,537-byte report.
 Input, CSV, numeric, name, arithmetic, and preflight-limit errors publish no
-bytes. All heap owners, including the writer's fixed buffer, are allocated
-before publication. Work is bounded per operation and row count; these logical
-budgets do not impose an elapsed-time or exact total-memory limit.
+bytes. All heap owners are allocated before publication. The writer borrows
+caller scratch and performs no buffer allocation. Work is bounded per operation
+and row count; these logical budgets do not impose an elapsed-time or exact
+total-memory limit.
 
 ## Streaming output, failures, and cleanup
 
-`core::format::write<alloc::buffered::Writer<std::stream::Descriptor>>` formats
+`core::format::write<core::buffered::Writer<std::stream::Descriptor>>` formats
 the header, each row, and footer using caller-owned packed scratch with length
-seven. Even a short data row is larger than scratch. The buffered writer owns
-17 initialized bytes and batches scratch emissions into host writes of at most
-17 bytes. No allocation occurs after the first stdout attempt.
+seven. Even a short data row is larger than scratch. The buffered writer
+borrows a separate 17-element native-array View and batches formatting scratch
+emissions into host writes of at most 17 bytes. Both views retain their actual
+stride; logical capacity does not imply a compact physical stack extent.
+No allocation occurs after the first stdout attempt.
 
 The formatting call budget counts direct calls to the borrowed **buffered
 writer**. It does not count every nested host syscall. A buffered drain may
@@ -127,17 +134,19 @@ budget.
 
 Formatter `WriteFailure.completed` counts bytes accepted by that buffered
 layer. Some may still be pending, so it is not a count of stdout bytes. On a
-formatting failure the application stops, discards pending output, and releases
-the writer buffer. It does not retry a formatted row or replay an accepted
-prefix. Validation normally prevents later format errors; host failures or an
+formatting failure the application stops and discards pending output. Discard
+inactivates the writer without clearing or freeing caller storage. It does not
+retry a formatted row or replay an accepted prefix. Validation normally
+prevents later format errors; host failures or an
 I/O-call limit can still occur after publication begins.
 
 After every formatting call succeeds, main explicitly finishes the writer.
 Interrupted finish errors retry up to 64 attempts; other finish errors stop
 immediately. Exhausting that attempt budget returns status 7. A failed finish
 retains pending bytes, which the app explicitly discards. Successful finish
-releases the writer buffer. Either path then destroys typed rows before the
-CSV table and releases the input owner. A later output failure may leave any
+inactivates the writer. Its caller scratch remains live through either path.
+The app then destroys typed rows before the CSV table and releases the input
+owner. A later output failure may leave any
 confirmed host prefix, including a partial header, row, or footer.
 
 Stdin and stdout remain borrowed descriptors. Main installs process-wide
@@ -157,7 +166,7 @@ contracts.
 | 0 | Complete report and successful writer finish |
 | 2 | Arguments, CSV/schema, name, integer, or price invalid |
 | 3 | Signal setup, input, output, or finish I/O failure |
-| 4 | Input, CSV, typed row, or buffered-writer allocation failure |
+| 4 | Input, CSV, or typed-row allocation failure |
 | 5 | Derived binary64 amount is nonfinite |
 | 7 | Input/CSV/numeric/format/output limit, formatter I/O budget, or finish-attempt budget |
 
@@ -166,7 +175,39 @@ returns 7. Missing or inconsistent fields return 2. Resource or allocation
 errors detected before publication leave stdout empty; a publication-time
 status 3 or 7 may leave a prefix.
 
-## Focused driver and accepted evidence
+## Current migration acceptance
+
+The current driver retains 58 fixed native cases and denies every observed
+allocation position from its representative run. Its total is `58 + B`, where
+`B` is that observed count; the removed writer allocation is no longer a
+failure site. Byte-for-byte output, preflight rejection, publication failures,
+finish retries and exact remaining-owner cleanup keep their existing checks.
+
+Allocation traces select `LANIUS_ALLOC=mmap` because the normal runtime now
+pools allocations. Mapping/release counts describe that explicit mode.
+The registered application group passed in 10.21s on the rebuilt compiler at
+`cc8cfec224b7537ccbb3b24c1fe4df7e8367b371`: one strict ELF, 58 fixed native
+cases and all `B=11` observed representative allocation denials, totaling 69
+cases. The receipt is `target/stdlib-work/caller-buffered-lang-format-report.log`.
+It also reports no extra allocation beyond the matched numeric-preflight
+control, with the separate 256-row correctness and exact 65,536-byte output
+boundary checks intact.
+
+Accepted SHA-256 identities are application
+`0bd263f0862fa797e5e5079990e5a04b04d5b0846c5df8676aae43e7d65706d6`
+and driver `c21e9d94f80309a9d413b3e05f601478e5f03d6cb09853bd530bbae426632fed`.
+This is finite functional acceptance on Linux x86_64 CPU output through the
+GPU compiler; other targets, exhaustive fault schedules and throughput remain
+outside this receipt.
+
+## Historical owning-buffer evidence
+
+This historical receipt covers the owning-buffer source. Its 23 representative
+allocation positions include the writer allocation removed by the current
+migration. The remaining owner cleanup, grammar, limits, preflight policy,
+output and true I/O failures retain their contracts. Current migration
+acceptance is recorded separately in the
+[caller-buffered guide](stdlib-caller-buffered.md).
 
 [`tests/stdlib_format_report_execution.rs`](../tests/stdlib_format_report_execution.rs)
 defines `format_report_csv_preflight_streaming_and_exact_failure_cleanup`. It
@@ -220,8 +261,8 @@ or read stdin.
 
 The accepted source base was `0b03990bfd7b658f0c419cf4ec2c32477ccb186e` plus
 the new `core::format` writer implementation. No compiler changes were needed.
-The application body and driver stayed frozen after the gate; only this guide
-and the application's admission comment were updated.
+The application body and driver stayed frozen for that receipt; the current
+caller-buffer migration is outside its scope.
 
 | Evidence | Accepted result |
 | --- | --- |

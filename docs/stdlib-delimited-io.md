@@ -2,9 +2,12 @@
 
 `core::io::BufRead` exposes borrowed unread bytes for binary delimiter reads
 and skips. The helpers require only `B: BufRead`; there is no Read supertrait,
-text decoding or allocation requirement. All selected library, model,
-application and regression gates pass. This [increment](library-delimited-io-plan.md)
-is accepted on the finite native profile below; the full library goal stays open.
+text decoding or allocation requirement. The original
+[increment](library-delimited-io-plan.md) passed its selected library, model,
+application and regression gates on the finite native profile below.
+The later [caller-buffered migration](stdlib-caller-buffered.md) has separate
+native acceptance, including the 92-case record selector; the full library
+goal stays open.
 
 ## API and provider contract
 
@@ -83,16 +86,25 @@ Logical checks cannot prove physical backing; overclaims can trap.
 
 `SliceReader` implements BufRead over its original remaining native-stride
 slice, with checked cursor consumption and no allocation.
-`alloc::buffered::Reader<R>` implements BufRead under `R: Read`: its existing
-fill/consume members now have one canonical trait implementation, with no
+`core::buffered::Reader<R>` implements BufRead under `R: Read` using caller
+`View<u8>` scratch. `alloc::buffered::Reader<R>` owns a Vec and delegates to
+that same engine. Fill/consume have one canonical implementation, with no
 inherent aliases. Import `core::io` for the protocol and generic bounds.
 Inactive/faulted checks, no EOF cache, Read behavior, unread handoff, fixed
 capacity and manual discard remain in the [buffered contract](stdlib-buffered.md).
-The inner endpoint and its backing must outlive the borrowed adapter.
+The inner endpoint, its backing and caller scratch must outlive the borrowed
+adapter and any handed-off Parts. Both buffering forms support consuming
+Parts restoration under the [caller-buffered contract](stdlib-caller-buffered.md).
 
 ## Evidence and target
 
-One native admission test passes in 7.24s:
+These historical receipts predate the shared core buffering engine, consuming
+Parts restoration and the record selector's caller-backed reader. Their
+allocation denials, reader-release assertions and source identities apply to
+the original owning-buffer program. They do not establish the current
+migration's acceptance.
+
+One native admission test passed in 7.24s:
 `target/stdlib-work/delimited-io-admission-first.log`. It executes a BufRead-only
 custom provider through generic helpers, plus actual SliceReader and buffered
 Reader read-ahead/cleanup. Its separate driver build took 1.78s. Selected
@@ -114,7 +126,7 @@ program's 91 cases include five reached allocation denials, reader release
 before stdout, required-EOF failure without output and a genuine output prefix.
 The buffered regression actually ran the sample; it was not filtered.
 Earlier receipts retain their scope. [Direct fixtures](../tests/fixtures/stdlib_foundation/delimited_io/README.md)
-own exact source identities; current production is core I/O `d2d4d869…` and
+own exact source identities; that receipt used core I/O `d2d4d869…` and
 buffered `02539487…`.
 
 The accepted profile is Linux x86_64 CPU output from the GPU compiler.

@@ -1,0 +1,82 @@
+module fixture::resource;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::result;
+import std::io;
+
+pub fn mark(value:i32) {
+    let byte:[i32;1]=[value];
+    assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1);
+}
+pub fn owner(length:i32,value:u8) -> alloc::vec::Vec<u8> {
+    let made:core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> =alloc::vec::with_capacity(length);
+    let bytes:alloc::vec::Vec<u8> =made.unwrap();
+    assert(bytes.try_resize(length,value).unwrap()==length);
+    assert(bytes.len()==length && bytes.capacity()==length && core::mem::slice_stride(bytes.as_slice())==1);
+    return bytes;
+}
+pub fn guards(bytes:&alloc::vec::Vec<u8>,start:i32,length:i32,value:u8) {
+    let i:i32=0;
+    while(i<bytes.len()) {
+        if(i<start || i>=start+length) { assert(bytes.at(i)==value); }
+        i+=1;
+    }
+}
+pub fn pattern(index:i32) -> u8 { return ((index*73+index/251+(index/65536)*19)%256) as u8; }
+pub fn initialize(bytes:&alloc::vec::Vec<u8>) {
+    let values:[u8]=bytes.as_slice(); let i:i32=0;
+    while(i<bytes.len()) { values[i]=pattern(i); i+=1; }
+}
+pub fn emit(bytes:&alloc::vec::Vec<u8>) {
+    let sent:i32=0;
+    while(sent<bytes.len()) {
+        let remaining:i32=bytes.len()-sent;
+        let amount:i32=std::io::write_stdout(bytes.storage+(sent as usize),remaining as usize);
+        assert(amount>0 && amount<=remaining); sent+=amount;
+    }
+}
+pub fn would_block(error:core::io::Error) -> bool { return match(error) { core::io::Error::WouldBlock -> true,_ -> false }; }
+pub fn allocation_failed(error:core::io::Error) -> bool { return match(error) { core::io::Error::AllocationFailed -> true,_ -> false }; }
+
+// Endpoints borrow actual backing owners. No endpoint operation allocates,
+// releases, closes, or emits host I/O; the driver observes all host effects.
+pub struct Stream { data:[u8],length:i32,position:i32,chunk:i32,reads:i32,writes:i32,flushes:i32,fail_write:i32,last_offset:i32,last_stride:isize }
+pub fn stream(data:[u8],length:i32,chunk:i32) -> Stream {
+    let zero:isize=0;
+    return Stream { data:data,length:length,position:0,chunk:chunk,reads:0,writes:0,flushes:0,fail_write:0,last_offset:0,last_stride:zero };
+}
+pub impl Stream { pub fn borrow(&self) -> &Stream { return self; } }
+pub impl core::io::Read for Stream {
+    pub fn read(&self,destination:[u8],offset:i32,count:i32) -> core::result::Result<i32,core::io::Error> {
+        assert(core::io::valid_range(offset,count)); self.reads+=1;
+        self.last_offset=offset; self.last_stride=core::mem::slice_stride(destination);
+        let amount:i32=self.length-self.position;
+        if(amount>count) { amount=count; } if(amount>self.chunk) { amount=self.chunk; }
+        let i:i32=0; while(i<amount) { destination[offset+i]=self.data[self.position+i]; i+=1; }
+        self.position+=amount; return core::result::Ok(amount);
+    }
+}
+pub impl core::io::Write for Stream {
+    pub fn write(&self,source:[u8],offset:i32,count:i32) -> core::result::Result<i32,core::io::Error> {
+        assert(core::io::valid_range(offset,count)); self.writes+=1;
+        self.last_offset=offset; self.last_stride=core::mem::slice_stride(source);
+        if(self.writes==self.fail_write) { return core::result::Err(core::io::Error::WouldBlock); }
+        let amount:i32=self.length-self.position;
+        if(amount>count) { amount=count; } if(amount>self.chunk) { amount=self.chunk; }
+        let i:i32=0; while(i<amount) { self.data[self.position+i]=source[offset+i]; i+=1; }
+        self.position+=amount; return core::result::Ok(amount);
+    }
+    pub fn flush(&self) -> core::result::Result<i32,core::io::Error> { self.flushes+=1; return core::result::Ok(0); }
+}
+
+pub fn remaining<R,W>(reader:&R,writer:&W,bytes:[u8],length:i32) where R:core::io::Read,W:core::io::Write {
+    let copied:i32=14;
+    while(copied<length) {
+        let received:core::result::Result<i32,core::io::Error> =reader.read(bytes,1,17);
+        let amount:i32=received.unwrap(); assert(amount>0 && amount<=17 && amount<=length-copied);
+        assert(core::io::write_all(writer,bytes,1,amount).unwrap()==amount); copied+=amount;
+    }
+    let eof:core::result::Result<i32,core::io::Error> =reader.read(bytes,1,17);
+    assert(eof.unwrap()==0 && bytes[0]==199 && bytes[18]==199);
+}

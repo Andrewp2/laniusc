@@ -18,23 +18,40 @@ implied. Native output is the selected original bytes, including delimiters.
 | model | 33 | Empty/consecutive/final records, binary/NUL/non-UTF8 delimiters, zero-based cadence, selected/skipped records across 1024-byte transfers and 4096-byte reader chunks, exact record/count/input caps and seeded streams |
 | limits | 8 | Selected/skipped oversized terminated and unterminated records, excess record count/input bytes, later failure after a valid selected prefix; stdout remains empty |
 | cli | 33 | Arity, decimal/sign/space/non-ASCII/range/overflow/length checks, sole help bypass, leading zeros and exact 128-byte argument boundary |
-| io | 17 | Traced baseline, five reached argv/reader/staging allocation faults, actual input and closed stdout errors, read/write EINTR, later and required-EOF read errors, real 1024-byte output prefix, signal failure and input/output attempt caps |
+| io | 13 + A | Traced baseline and matched argv-only control, every reached allocation denial, actual input and closed stdout errors, read/write EINTR, later and required-EOF read errors, real 1024-byte output prefix, signal failure and input/output attempt caps |
+
+`A` is the allocation count observed in the representative baseline, not a
+fixed ABI or implementation count. Each of those requests is denied in its
+own run. The complete campaign has 87 + A native cases.
 
 Limits apply to all records, including skipped ones: 1 MiB logical input and
 output, 65536 records, and 65536 bytes per record including its delimiter.
 The exact unterminated record boundary requires actual EOF before acceptance.
-The source is streamed through a 4096-byte buffered reader; all selected output
-is staged until whole-input validation completes. A 1 MiB sparse-selection case
-selects only the first 16-byte record and requires at most four observed mmap
-calls, checking that skipped data did not obtain source-sized retained storage.
-The all-selected 1 MiB case separately exercises the complete output bound.
+The source is streamed through a caller-backed 4096-byte buffered reader; all
+selected output is staged until whole-input validation completes. A 1 MiB
+sparse-selection case selects only the first 16-byte record and requires every
+observed allocation request to be smaller than 65536 bytes, checking that skipped
+data did not obtain source-sized retained storage. The all-selected 1 MiB case separately
+exercises the complete output bound.
 
+Traced cases explicitly set `LANIUS_ALLOC=mmap`; the runtime's direct allocator
+mode gives each allocation and release its own `mmap` and `munmap`. Untraced
+functional cases leave allocator selection unchanged (pooled by default). This
+split preserves allocation-denial and cleanup evidence when the default
+allocator pools memory.
 Every successful mmap in a full trace requires an explicit successful munmap
-of the same address and requested length. The baseline checks actual input
-EOF and reader release before stdout, with no allocation after EOF. Selected
-ENOMEM faults must reach the requested ordinal with matching baseline arguments,
-return 4 and publish nothing. The campaign is finite; these observations do
-not establish automatic lifetime enforcement, leak freedom or exhaustive faults.
+of the same address and requested length. The baseline compares all allocation
+requests before the first input read with an invalid-cadence control that has
+the same argument count and byte lengths. That control completes argv capture
+but exits before reader construction. Matching requests verify that the
+caller-backed reader adds no allocation.
+
+The baseline checks actual input EOF before stdout, with no allocation after
+EOF. It also reaches staged-output growth. Each ENOMEM fault must reach its
+requested ordinal, match the full baseline allocation-request prefix, return 4
+and publish nothing. The release ledger applies to every full trace, including
+all those failures. These finite observations do not establish automatic
+lifetime enforcement, leak freedom or exhaustive faults.
 
 An output EIO follows an actual successful 1024-byte write and must retain
 exactly that independent selected prefix. Read errors, including failure of
@@ -58,7 +75,44 @@ python3 -B tests/fixtures/stdlib_execution/select_records/oracle.py cli PATH_TO_
 python3 -B tests/fixtures/stdlib_execution/select_records/oracle.py io PATH_TO_ELF
 ```
 
-## Acceptance
+## Caller-buffered acceptance
+
+Nine CPU control families pass, including explicit record/selection vectors,
+generated corpus counts, all-byte delimiter rejoining, a deliberately missing
+release and a deliberately added reader allocation.
+
+The native gate against the compiler/runtime rebased on `origin/lang`
+`cc8cfec22` passed all four tests in **9.06 seconds**: **92 native Linux x86_64
+cases**, with no failures or filtered tests. The representative reached five
+allocations (`A = 5`), and all five denial runs passed the request-prefix and
+exact cleanup checks. Receipt:
+`target/stdlib-work/caller-buffered-lang-select-records.log`.
+
+| Group | Cases | Evidence |
+| --- | ---: | --- |
+| model | 33 | `/tmp/select-records-model-go5udkw5` |
+| limits | 8 | `/tmp/select-records-limits-_tpg71kr` |
+| cli | 33 | `/tmp/select-records-cli-rl356aw_` |
+| io | 18 | `/tmp/select-records-io-if_gql9g` |
+
+Accepted identities (SHA-256):
+
+- Application: `f8039e5656cbaf8c3d338231a822a68c50c218d8b6fca8ed5f87bbb5134bd321`.
+- Oracle: `aa54321c123fdcb00ebb55997c007c7644b637fcc899a65148f8c8d0b87c0d00`.
+- Rust driver: `0fd867e851b34e770a668652e46eed3dc72d321268509d3a16267b1870ff4ffc`.
+
+The saved baseline reads all 5125 input bytes and EOF before publishing the
+3075-byte independently selected output. Its allocation requests before the
+first read match the argv-only control exactly. The output-prefix case records
+a real 1024-byte stdout write followed by second-write EIO; captured stdout is
+exactly the expected 1024-byte prefix. Failure of the required EOF probe occurs
+after all 5125 input bytes and leaves stdout empty. Every full trace passes
+the exact release ledger in direct allocator mode.
+
+## Prior owning-reader acceptance (historical)
+
+The following receipt describes the earlier application and oracle identities.
+Its reader allocation and release no longer exist in the caller-buffered path.
 
 All four registered tests passed on the first attempt in 8.51 seconds:
 **91 distinct native Linux x86_64 cases**, with no failures or filtered tests.

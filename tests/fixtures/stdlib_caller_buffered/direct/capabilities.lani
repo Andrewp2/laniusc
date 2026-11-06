@@ -1,0 +1,43 @@
+module app::main;
+import core::buffered;
+import alloc::buffered;
+import core::io;
+import core::result;
+import core::slice;
+import fixture::endpoints;
+fn read<R>(reader:&R,destination:[u8]) -> i32 where R:core::io::Read {
+    let result:core::result::Result<i32,core::io::Error> =reader.read(destination,1,1); return result.unwrap();
+}
+fn buffered<R>(reader:&R) -> i32 where R:core::io::BufRead {
+    let filled:core::result::Result<core::slice::View<u8>,core::io::Error> =reader.fill_buf();
+    assert(filled.unwrap().get(0).unwrap()==17);
+    let consumed:core::result::Result<i32,core::io::Error> =reader.consume(1); return consumed.unwrap();
+}
+fn write<W>(writer:&W,source:[u8]) -> i32 where W:core::io::Write {
+    let result:core::result::Result<i32,core::io::Error> =writer.write(source,1,2); return result.unwrap();
+}
+fn flush<W>(writer:&W) -> i32 where W:core::io::Write {
+    let result:core::result::Result<i32,core::io::Error> =writer.flush(); return result.unwrap();
+}
+fn main() -> i32 {
+    let scratch:[u8;5]=[177;5]; let destination:[u8;3]=[199;3]; let source:[u8;4]=[9,21,34,8];
+    let input:fixture::endpoints::ReadOnly=fixture::endpoints::ReadOnly { calls:0 };
+    let reader=core::buffered::reader(input.borrow(),core::slice::View { values:scratch,start:1,length:3 }).unwrap();
+    assert(read(reader.borrow(),destination)==1 && buffered(reader.borrow())==1 && input.calls==2);
+    let parts=reader.take_parts().unwrap(); let restored=core::buffered::reader_from_parts(parts.borrow()).unwrap();
+    assert(read(restored.borrow(),destination)==1 && restored.discard()==0 && input.calls==3);
+    let owned=alloc::buffered::reader(input.borrow(),2).unwrap(); assert(buffered(owned.borrow())==1);
+    let owned_parts=owned.take_parts().unwrap(); let owned_restored=alloc::buffered::reader_from_parts(owned_parts.borrow()).unwrap();
+    assert(read(owned_restored.borrow(),destination)==1 && owned_restored.discard()==0 && input.calls==5);
+    let output:fixture::endpoints::WriteOnly=fixture::endpoints::WriteOnly { calls:0,flushes:0,total:0,payload:0 };
+    let writer=core::buffered::writer(output.borrow(),core::slice::View { values:scratch,start:1,length:3 }).unwrap();
+    assert(write(writer.borrow(),source)==2 && output.calls==0 && flush(writer.borrow())==0);
+    let pending=writer.take_parts().unwrap(); let rebuilt=core::buffered::writer_from_parts(pending.borrow()).unwrap();
+    assert(rebuilt.finish().unwrap()==0 && output.calls==1 && output.flushes==2);
+    let owned_writer=alloc::buffered::writer(output.borrow(),2).unwrap(); assert(write(owned_writer.borrow(),source)==2);
+    let owned_pending=owned_writer.take_parts().unwrap(); let owned_rebuilt=alloc::buffered::writer_from_parts(owned_pending.borrow()).unwrap();
+    assert(flush(owned_rebuilt.borrow())==0 && owned_rebuilt.finish().unwrap()==0);
+    assert(output.calls==2 && output.flushes==4 && output.total==4 && output.payload==571810325);
+    assert(destination[0]==199 && destination[1]==17 && destination[2]==199 && scratch[0]==177 && scratch[4]==177);
+    assert(source[0]==9 && source[1]==21 && source[2]==34 && source[3]==8); return 0;
+}

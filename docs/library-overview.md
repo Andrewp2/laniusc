@@ -1,6 +1,18 @@
 # Standard and extended library overview
 
-The full library goal remains open. The current increment adds
+The [caller-provided buffering increment](stdlib-caller-buffered.md) separates
+storage from one `core::buffered` read/write/Seek engine. Core adapters borrow
+a caller `View<u8>`; `alloc::buffered` owns a Vec and delegates every I/O
+transition. Both restore Parts by consuming the actual handoff record after
+metadata admission. `select_records` and `format_report` now borrow buffer
+scratch, removing only those buffer allocations. All selected gates pass on
+Linux x86_64 CPU output: seven direct/capability tests, the 144-case model,
+four resource tests, eight existing buffered/Seek regressions and the
+92-case selector plus 69-case report. Earlier buffering, delimiter, Seek and
+application receipts retain their original source/API scope. Manual lifetimes,
+other targets and the full library goal remain open.
+
+The preceding increment adds
 [`alloc::btree_map`](stdlib-btree-map.md), a B+ tree ordered map with the
 tree map's API and atomic allocation failure. It iterates about 2.2x faster
 than the AVL `alloc::tree_map` and does key-order lookups 23% faster. Lookups
@@ -132,8 +144,8 @@ queries of String keys. The [word deduplicator](stdlib-unique-words.md) checks
 both committed and pending words before allocating a new key. All nine library
 groups and the migrated application's 124 native cases pass on Linux x86_64 CPU
 output, with four selected regressions recorded separately. Heterogeneous
-ordered bounds/ranges are the current increment above; caller-backed
-buffering remains separate work.
+ordered bounds/ranges retain their separate receipt scope; caller-backed
+buffering is the accepted increment described above.
 The preceding
 [lazy Option/Result increment](stdlib-lazy-outcomes.md) adds nineteen
 free-function/method pairs over one shared `core::function::Mapper` and
@@ -897,6 +909,10 @@ accepted. No new compiler dependency is introduced. No prior
 ordering receipt is extended to these APIs.
 
 **Shared Seek.**
+
+This section records the earlier Seek acceptance. The later shared
+core-buffering engine and consuming Parts restoration have a separate
+[accepted receipt](stdlib-caller-buffered.md).
 
 The [Seek guide](stdlib-seek.md) specifies u64 positions with signed-i64
 relative arithmetic and exact Start acknowledgement. Fixed memory cursors

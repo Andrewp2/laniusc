@@ -16,6 +16,11 @@ Signs, spaces, prefixes, missing/extra operands and mixed help are invalid.
 Capture admits two argument values and 128 total bytes, excluding terminating
 NULs; each numeric token is at most 64 bytes. Help bypasses stdin.
 
+The current program uses [caller-provided buffering](stdlib-caller-buffered.md).
+All four current application groups pass: 92 native Linux x86_64 cases in
+9.06s. Earlier application receipts below describe the allocating-reader
+source and keep that scope.
+
 ## Record and selection contract
 
 DELIMITER is one arbitrary byte, including NUL or non-UTF8 bytes. Records
@@ -44,9 +49,10 @@ EOF admits the boundary; any extra byte rejects the staged result.
 
 ## Actual public composition
 
-A fixed-capacity `alloc::buffered::Reader<Input>` with 4096 logical bytes
-borrows an input adapter over the existing stdin Descriptor. The application
-uses:
+A fixed-capacity `core::buffered::Reader<Input>` borrows a 4096-element
+caller `View<u8>` and an input adapter over the existing stdin Descriptor.
+Capacity counts logical byte elements, without assuming compact native-array
+storage. The application uses:
 
 - `core::io::read_until` for selected records, copying into a 1024-byte
   caller scratch array in bounded chunks.
@@ -109,11 +115,13 @@ The attempt limits do not impose a wall-clock timeout on blocking host I/O.
 
 ## Ownership and statuses
 
-The input adapter borrows the live stdin Descriptor. The buffered reader owns
-one fixed byte allocation, released by exactly one `discard` on every
-recoverable path after construction. It does not close stdin. Output has one
-separate Buffer owner, starts without backing, and grows only for successful
-selected chunks. It is destroyed after publication or any failed selection.
+The input adapter borrows the live stdin Descriptor. The buffered reader
+borrows caller scratch that remains live through its final `discard`; discard
+inactivates the reader without clearing or freeing that storage. It does not
+close stdin. Buffer construction makes no allocation, so its former allocation
+failure site is removed. Output has one separate Buffer owner, starts without
+backing, and grows only for successful selected chunks. It is destroyed after
+publication or any failed selection.
 The argument snapshot is released before main returns. No owner copy gains a
 second cleanup authority; automatic destruction is not assumed.
 
@@ -122,7 +130,7 @@ second cleanup authority; automatic destruction is not assumed.
 | 0 | Complete selected bytes written, or help written |
 | 2 | Invalid CLI, input/output/record/count/helper/raw-input-attempt limit |
 | 3 | Stdin or argument-capture host error |
-| 4 | Argument, buffered-reader or staged-output allocation failure |
+| 4 | Argument or staged-output allocation failure |
 | 5 | Data/help stdout or SIGPIPE-policy failure |
 | 6 | Unexpected logical/provider/progress/buffer contract failure |
 
@@ -132,9 +140,49 @@ status. SIGPIPE is ignored before I/O; setup failure returns 5 without a
 diagnostic. Successful runs have no stderr output. Empty input or an empty
 selected result intentionally produces no stdout write.
 
-## Target and acceptance
+## Current migration acceptance
 
-All four registered application groups passed on the first runtime attempt
+The current driver retains the 33 model, eight limit and 33 CLI cases. Its
+I/O group has 13 fixed cases plus one denial for each observed successful
+allocation in the representative run. The total is `87 + A`, where `A` is
+that observed allocation count. It no longer assumes an owning reader's
+allocation position. A matched argument-capture control separates argument
+storage from selected-output storage; traces require exact cleanup and EOF
+before publication.
+
+Allocation traces select `LANIUS_ALLOC=mmap` because the normal runtime now
+pools allocations. These mapping counts apply only to that explicit mode.
+All four registered groups passed in 9.06s on the rebuilt compiler at
+`cc8cfec224b7537ccbb3b24c1fe4df7e8367b371`: model33, limits8, CLI33 and
+I/O18, totaling 92 native cases. The representative baseline observed `A=5`,
+and all five allocation denials were reached and cleaned up. The receipt is
+`target/stdlib-work/caller-buffered-lang-select-records.log`.
+
+The saved baseline reads 5,125 bytes and actual EOF before publishing the
+complete 3,075-byte independently selected output. Its allocation requests
+before input match the argument-only control. A real 1,024-byte stdout write
+followed by second-write EIO leaves exactly that prefix; failure of the
+required EOF probe leaves stdout empty. Full traces pass exact release
+accounting in direct-allocation mode. Untraced functional cases retain the
+normal allocator selection, pooled by default.
+
+Accepted SHA-256 identities are application
+`f8039e5656cbaf8c3d338231a822a68c50c218d8b6fca8ed5f87bbb5134bd321`,
+oracle `aa54321c123fdcb00ebb55997c007c7644b637fcc899a65148f8c8d0b87c0d00`
+and driver `0fd867e851b34e770a668652e46eed3dc72d321268509d3a16267b1870ff4ffc`.
+The [fixture guide](../tests/fixtures/stdlib_execution/select_records/README.md)
+records commands and per-group evidence directories. This receipt establishes
+finite Linux x86_64 CPU behavior, not other targets, automatic lifetimes or
+exhaustive fault schedules.
+
+## Historical owning-reader acceptance
+
+The following historical receipt predates the caller-backed reader. Its
+source hash, fixed-reader allocation denial and mapping counts apply to the
+earlier owning-buffer program. Current migration acceptance is recorded
+separately in the [caller-buffered guide](stdlib-caller-buffered.md).
+
+All four registered application groups passed on their first runtime attempt
 in one 8.51s run after a 1.83s driver build, totaling 91 unique native cases:
 
 | Accepted group | Cases | Evidence directory |
@@ -173,11 +221,11 @@ later failure after an already selected prefix, always with empty stdout.
 CLI cases cover exact syntax, help bypass, numeric/argument bounds and the
 128-byte argument boundary.
 
-Five selected allocation-denial sites are reached: both argv allocations,
+That run reached five selected allocation-denial sites: both argv allocations,
 the fixed reader and first/last selected-output growth. This is not every
 allocation ordinal. Each returns 4 with empty stdout. Complete traces require
 explicit successful same-address/same-size releases for observed successful
-mappings. The baseline observes actual EOF and reader release before stdout,
+mappings. Its baseline observes actual EOF and reader release before stdout,
 with no allocation after EOF.
 
 I/O cases execute input errors, closed stdout, read/write EINTR, later and
@@ -199,7 +247,7 @@ See `tests/fixtures/stdlib_execution/select_records/README.md` for retained
 commands and detailed scope, and `tests/stdlib_select_records_execution.rs`
 for the registered driver. Whitespace-only driver formatting after these
 receipts does not represent a native rerun. With a warm build and configured
-GPU, reproduce using:
+GPU, run the current source using:
 
 ```sh
 timeout --kill-after=2s 100s flock -w 95 target/stdlib-work/library-gpu.lock \

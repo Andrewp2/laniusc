@@ -1,0 +1,15 @@
+module app::main;
+import core::buffered;
+import alloc::buffered;
+import alloc::vec;
+import core::io;
+import core::result;
+import core::slice;
+import fixture::endpoints;
+fn main() -> i32 {
+    let bytes:[u8;3]=[0;3];
+    let endpoint:fixture::endpoints::ReadOnly=fixture::endpoints::ReadOnly { calls:0 };
+    let stream=core::buffered::reader(endpoint.borrow(),core::slice::View { values:bytes,start:0,length:3 }).unwrap();
+    let rejected_buffered_bound=core::io::stream_position(stream.borrow());
+    return 0;
+}

@@ -6,7 +6,7 @@ use std::{
     fs,
     os::unix::fs::PermissionsExt,
     path::PathBuf,
-    process::{Command, Output, Stdio},
+    process::{Output, Stdio},
 };
 
 const MAX_INPUT: usize = 1_048_576;
@@ -249,6 +249,23 @@ fn checked(run: &Run, status: i32, stdout: &[u8], signal_ok: bool) {
     }
     for write in calls(&run.events, "write") {
         assert!(write.starts_with("write(1,"), "{}", run.events);
+        if status == 0 {
+            // A synthetic positive return skips the actual syscall. It cannot
+            // establish successful publication, even if a sliced expectation
+            // accidentally accepts the resulting missing output bytes.
+            let response = result(write, "write").1;
+            assert!(
+                !response.contains("INJECTED")
+                    || !response
+                        .split_whitespace()
+                        .next()
+                        .unwrap()
+                        .parse::<i64>()
+                        .is_ok_and(|count| count > 0),
+                "successful output requires real host writes: {}",
+                run.events
+            );
+        }
         let request: usize = result(write, "write")
             .0
             .rsplit_once(',')

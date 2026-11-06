@@ -8,7 +8,16 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `core`. Role: module. Profile: **Source inventory**.
 
-**No contract guide registered.** This page makes no runtime support claim.
+Canonical read-ahead, pending-output, flush and Seek engine over a borrowed endpoint and caller View<u8> scratch. Factories admit positive logical capacity, nonnegative offset and nonoverflowing i32 end before backing access or provider calls; physical backing and actual stride remain caller obligations. Construction neither allocates nor initializes scratch. Read/BufRead require Read, Write requires Write, and Seek additionally requires endpoint Seek. Offsets remain relative to the selected View while provider calls retain its original offset and stride. Ordinary errors preserve confirmed progress without hidden retry; malformed successful acknowledgements fault the adapter. Reader Seek faults on provider errors, whereas arithmetic rejection preserves unread bytes; Writer flushes before Seek. Consuming restoration validates retained intervals, leaves rejected Parts unchanged, preserves exact backing/endpoint/fault state on success and empties the actual Parts. A second restoration rejects. Parts is layer-neutral and must resume its producing reader/writer meaning. Discard and successful finish end the controller without freeing or clearing caller storage; endpoints stay borrowed. Views, exclusivity and cleanup authority remain manual. All selected gates pass on Linux x86_64 CPU output through the GPU compiler rebuilt at cc8cfec22: seven direct/capability tests, a 144-case/1455-action/753-provider-call independent model, four resource tests, five existing buffering and three existing Seek regressions, and the migrated 92-case record selector plus 69-case format report. Resource checks cover real heap backing, actual negative stride, both mixed nesting orientations at 4096 and 262144 bytes, reached owning-constructor denial with retry, and exact releases. Exact allocation/release and failure traces select LANIUS_ALLOC=mmap; ordinary allocations pool by default. An initial LNC0047 came from old kernels loaded through a relative artifact path; the supported absolute LANIUS_SHADER_ARTIFACT_ROOT resolved it. Import, typed/chained generic-result controls and final natural chained Read/Seek admission pass; these fixtures establish no current generic compiler dependency or compiler-source repair. Earlier receipts retain their original source/API scope. Other targets, device execution, enforced lifetimes and formal proofs remain separate.
+
+## Contract and evidence guides
+
+- [stdlib-caller-buffered](../../stdlib-caller-buffered.md)
+- [stdlib-buffered](../../stdlib-buffered.md)
+- [stdlib-streams](../../stdlib-streams.md)
+- [stdlib-seek](../../stdlib-seek.md)
+- [stdlib-select-records](../../stdlib-select-records.md)
+- [stdlib-format-report](../../stdlib-format-report.md)
 
 Declaration counts: field: 17; function: 4; impl: 8; method: 25; struct: 3.
 
@@ -195,6 +204,8 @@ pub fn reader<R>(inner:&R, buffer:core::slice::View<u8>) -> core::result::Result
     where R:core::io::Read
 ```
 
+R:Read. Borrow a positive View without allocation or initialization. Invalid metadata returns InvalidInput before scratch access or endpoint calls. The endpoint and selected scratch remain live and exclusive through the adapter and handed-off Parts.
+
 ### function: writer
 
 [Source line 57](../../../stdlib/core/buffered.lani#L57)
@@ -203,6 +214,8 @@ pub fn reader<R>(inner:&R, buffer:core::slice::View<u8>) -> core::result::Result
 pub fn writer<W>(inner:&W, buffer:core::slice::View<u8>) -> core::result::Result<Writer<W>,core::io::Error>
     where W:core::io::Write
 ```
+
+W:Write. Borrow a positive View without allocation or initialization. Keep scratch, state, endpoint mutable backing and source/destination arguments noninterfering. Successful finish flushes then inactivates; discard abandons pending bytes without freeing scratch.
 
 ### function: reader_from_parts
 
@@ -213,6 +226,8 @@ pub fn reader_from_parts<R>(parts:&Parts<R>) -> core::result::Result<Reader<R>,c
     where R:core::io::Read
 ```
 
+R:Read. Consume valid Parts after positive-capacity and retained-interval admission. Preserve exact backing, endpoint, unread range and fault state; empty the actual Parts. Rejection preserves Parts without backing/provider access. End old views and restore reader meaning.
+
 ### function: writer_from_parts
 
 [Source line 71](../../../stdlib/core/buffered.lani#L71)
@@ -221,6 +236,8 @@ pub fn reader_from_parts<R>(parts:&Parts<R>) -> core::result::Result<Reader<R>,c
 pub fn writer_from_parts<W>(parts:&Parts<W>) -> core::result::Result<Writer<W>,core::io::Error>
     where W:core::io::Write
 ```
+
+W:Write. Consume valid Parts after positive-capacity and retained-interval admission. Preserve exact backing, endpoint, pending suffix and fault state; empty the actual Parts. Rejection preserves Parts without backing/provider access. Restoration does not repair faults or authorize replay of unknown effects.
 
 ## Implementation blocks and public methods
 
