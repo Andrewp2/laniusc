@@ -1,0 +1,104 @@
+module app::main;
+import alloc::hash_map;
+import alloc::tree_map;
+import core::function;
+import core::option;
+import core::pair;
+import core::result;
+
+struct Unit {}
+struct HashSupply<T> { value:T, calls:i32 }
+impl<T> HashSupply<T> { fn borrow(&self) -> &HashSupply<T> { return self; } }
+pub impl<T> core::function::Producer<core::result::Result<alloc::hash_map::Entry<i32,T>,Unit>> for HashSupply<T> {
+    pub fn produce(&self) -> core::result::Result<alloc::hash_map::Entry<i32,T>,Unit> {
+        self.calls+=1; return core::result::Ok(alloc::hash_map::Entry { key:7,value:self.value });
+    }
+}
+struct TreeSupply<T> { value:T, calls:i32 }
+impl<T> TreeSupply<T> { fn borrow(&self) -> &TreeSupply<T> { return self; } }
+pub impl<T> core::function::Producer<core::result::Result<alloc::tree_map::Entry<i32,T>,Unit>> for TreeSupply<T> {
+    pub fn produce(&self) -> core::result::Result<alloc::tree_map::Entry<i32,T>,Unit> {
+        self.calls+=1; return core::result::Ok(alloc::tree_map::Entry { key:7,value:self.value });
+    }
+}
+struct Swap<T> { value:T, calls:i32 }
+impl<T> Swap<T> { fn borrow(&self) -> &Swap<T> { return self; } }
+pub impl<T> core::function::Mapper<T,core::pair::Pair<T,T>> for Swap<T> {
+    pub fn apply(&self,old:T) -> core::pair::Pair<T,T> {
+        self.calls+=1; return core::pair::Pair { first:self.value,second:old };
+    }
+}
+struct BoolUnit { calls:i32 }
+impl BoolUnit { fn borrow(&self) -> &BoolUnit { return self; } }
+pub impl core::function::Mapper<bool,core::pair::Pair<bool,Unit>> for BoolUnit {
+    pub fn apply(&self,old:bool) -> core::pair::Pair<bool,Unit> {
+        assert(!old); self.calls+=1; return core::pair::Pair { first:true,second:Unit {} };
+    }
+}
+
+fn nested_options() {
+    let h:alloc::hash_map::HashMap<i32,core::option::Option<bool>> =alloc::hash_map::new<i32,core::option::Option<bool>>();
+    let t:alloc::tree_map::TreeMap<i32,core::option::Option<bool>> =alloc::tree_map::new<i32,core::option::Option<bool>>();
+    let hi:HashSupply<core::option::Option<bool>> =HashSupply { value:core::option::None(),calls:0 };
+    let ti:TreeSupply<core::option::Option<bool>> =TreeSupply { value:core::option::None(),calls:0 };
+    let update:Swap<core::option::Option<bool>> =Swap { value:core::option::Some(false),calls:0 };
+    let hr=h.try_update_or_insert<HashSupply<core::option::Option<bool>>,Swap<core::option::Option<bool>>,core::option::Option<bool>,Unit>(7,hi.borrow(),update.borrow());
+    let tr=t.try_update_or_insert<TreeSupply<core::option::Option<bool>>,Swap<core::option::Option<bool>>,core::option::Option<bool>,Unit>(7,ti.borrow(),update.borrow());
+    assert(hr.unwrap().is_none() && tr.unwrap().is_none() && update.calls==0);
+    // Inserted None and an occupied callback that returns None are distinct.
+    hr=h.try_update_or_insert<HashSupply<core::option::Option<bool>>,Swap<core::option::Option<bool>>,core::option::Option<bool>,Unit>(7,hi.borrow(),update.borrow());
+    tr=t.try_update_or_insert<TreeSupply<core::option::Option<bool>>,Swap<core::option::Option<bool>>,core::option::Option<bool>,Unit>(7,ti.borrow(),update.borrow());
+    assert(hr.unwrap().is_some() && hr.unwrap().unwrap().is_none());
+    assert(tr.unwrap().is_some() && tr.unwrap().unwrap().is_none());
+    assert(!h.get(7).unwrap().unwrap() && !t.get(7).unwrap().unwrap());
+    update.value=core::option::Some(true);
+    hr=h.try_update_or_insert<HashSupply<core::option::Option<bool>>,Swap<core::option::Option<bool>>,core::option::Option<bool>,Unit>(7,hi.borrow(),update.borrow());
+    tr=t.try_update_or_insert<TreeSupply<core::option::Option<bool>>,Swap<core::option::Option<bool>>,core::option::Option<bool>,Unit>(7,ti.borrow(),update.borrow());
+    assert(!hr.unwrap().unwrap().unwrap() && !tr.unwrap().unwrap().unwrap());
+    assert(h.get(7).unwrap().unwrap() && t.get(7).unwrap().unwrap());
+    assert(hi.calls==1 && ti.calls==1 && update.calls==4); h.destroy(); t.destroy();
+}
+fn arrays() {
+    let first:[u64;3]=[0,18446744073709551615,9223372036854775811];
+    let replacement:[u64;3]=[18446744073709551614,37,0];
+    let h:alloc::hash_map::HashMap<i32,[u64;3]> =alloc::hash_map::new<i32,[u64;3]>();
+    let t:alloc::tree_map::TreeMap<i32,[u64;3]> =alloc::tree_map::new<i32,[u64;3]>();
+    let hi:HashSupply<[u64;3]> =HashSupply { value:first,calls:0 };
+    let ti:TreeSupply<[u64;3]> =TreeSupply { value:first,calls:0 };
+    let update:Swap<[u64;3]> =Swap { value:replacement,calls:0 };
+    let hr=h.try_update_or_insert<HashSupply<[u64;3]>,Swap<[u64;3]>,[u64;3],Unit>(7,hi.borrow(),update.borrow());
+    let tr=t.try_update_or_insert<TreeSupply<[u64;3]>,Swap<[u64;3]>,[u64;3],Unit>(7,ti.borrow(),update.borrow());
+    assert(hr.unwrap().is_none() && tr.unwrap().is_none() && update.calls==0);
+    hr=h.try_update_or_insert<HashSupply<[u64;3]>,Swap<[u64;3]>,[u64;3],Unit>(7,hi.borrow(),update.borrow());
+    tr=t.try_update_or_insert<TreeSupply<[u64;3]>,Swap<[u64;3]>,[u64;3],Unit>(7,ti.borrow(),update.borrow());
+    let old_h:[u64;3]=hr.unwrap().unwrap(); let old_t:[u64;3]=tr.unwrap().unwrap();
+    let new_h:[u64;3]=h.get(7).unwrap(); let new_t:[u64;3]=t.get(7).unwrap(); let i:i32=0;
+    while(i<3) { assert(old_h[i]==first[i] && old_t[i]==first[i] && new_h[i]==replacement[i] && new_t[i]==replacement[i]); i+=1; }
+    assert(hi.calls==1 && ti.calls==1 && update.calls==2); h.destroy(); t.destroy();
+}
+fn zero_sized() {
+    let h:alloc::hash_map::HashMap<i32,Unit> =alloc::hash_map::new<i32,Unit>();
+    let t:alloc::tree_map::TreeMap<i32,Unit> =alloc::tree_map::new<i32,Unit>();
+    let hi:HashSupply<Unit> =HashSupply { value:Unit {},calls:0 }; let ti:TreeSupply<Unit> =TreeSupply { value:Unit {},calls:0 };
+    let update:Swap<Unit> =Swap { value:Unit {},calls:0 };
+    let hr=h.try_update_or_insert<HashSupply<Unit>,Swap<Unit>,Unit,Unit>(7,hi.borrow(),update.borrow());
+    let tr=t.try_update_or_insert<TreeSupply<Unit>,Swap<Unit>,Unit,Unit>(7,ti.borrow(),update.borrow());
+    assert(hr.unwrap().is_none() && tr.unwrap().is_none() && update.calls==0);
+    hr=h.try_update_or_insert<HashSupply<Unit>,Swap<Unit>,Unit,Unit>(7,hi.borrow(),update.borrow());
+    tr=t.try_update_or_insert<TreeSupply<Unit>,Swap<Unit>,Unit,Unit>(7,ti.borrow(),update.borrow());
+    assert(hr.unwrap().is_some() && tr.unwrap().is_some() && hi.calls==1 && ti.calls==1 && update.calls==2);
+    assert(h.len()==1 && t.len()==1 && h.get(7).is_some() && t.get(7).is_some()); h.destroy(); t.destroy();
+    // A nonzero-sized value and zero-sized report use a different pair layout.
+    let bh:alloc::hash_map::HashMap<i32,bool> =alloc::hash_map::new<i32,bool>();
+    let bt:alloc::tree_map::TreeMap<i32,bool> =alloc::tree_map::new<i32,bool>();
+    let bhi:HashSupply<bool> =HashSupply { value:false,calls:0 }; let bti:TreeSupply<bool> =TreeSupply { value:false,calls:0 };
+    let to_unit:BoolUnit=BoolUnit { calls:0 };
+    let bhr=bh.try_update_or_insert<HashSupply<bool>,BoolUnit,Unit,Unit>(7,bhi.borrow(),to_unit.borrow());
+    let btr=bt.try_update_or_insert<TreeSupply<bool>,BoolUnit,Unit,Unit>(7,bti.borrow(),to_unit.borrow());
+    assert(bhr.unwrap().is_none() && btr.unwrap().is_none() && to_unit.calls==0);
+    bhr=bh.try_update_or_insert<HashSupply<bool>,BoolUnit,Unit,Unit>(7,bhi.borrow(),to_unit.borrow());
+    btr=bt.try_update_or_insert<TreeSupply<bool>,BoolUnit,Unit,Unit>(7,bti.borrow(),to_unit.borrow());
+    assert(bhr.unwrap().is_some() && btr.unwrap().is_some() && bhi.calls==1 && bti.calls==1 && to_unit.calls==2);
+    assert(bh.get(7).unwrap() && bt.get(7).unwrap()); bh.destroy(); bt.destroy();
+}
+fn main() -> i32 { nested_options(); arrays(); zero_sized(); return 0; }

@@ -1,5 +1,6 @@
 """Independent UTF-8 word/byte-position model and application resource evidence."""
 from collections import Counter
+import importlib.util
 from pathlib import Path
 import random
 import os
@@ -13,6 +14,40 @@ WORD_CAP = 65536
 INPUT_CALLS = 16384
 WRITE_CALLS = 131072
 TRACE = 'read,write,mmap,munmap,mremap,brk,openat,close,rt_sigaction'
+
+
+def load(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+FIXTURES = Path(__file__).resolve().parents[2]
+SOURCE = load('concordance_native_source_authority', FIXTURES / 'native_c/source_allocations.py')
+OWNERS = load('concordance_source_owners', FIXTURES / 'stdlib_execution/temp_file/ledger.py')
+
+
+def source_events(text, profile, directory):
+    """Keep global injection ordinals while admitting exact source syscall sites."""
+    found, memory, counts = [], [], Counter()
+    for line in text.splitlines():
+        match = OWNERS.LINE.fullmatch(line)
+        assert match and match[2] in TRACE.split(','), line
+        ip, name, args, answer = match.groups()
+        counts[name] += 1
+        authority = SOURCE.classify(profile, int(ip, 16))
+        assert authority in ('source', 'native', 'bootstrap-' + name), (authority, line)
+        if name in ('mmap', 'munmap'):
+            memory.append(line + '\n')
+        if authority == 'source':
+            found.append(dict(name=name, args=args, answer=answer, ordinal=counts[name], line=line))
+        else:
+            assert 'INJECTED' not in answer, ('fault reached outside source authority', line)
+    # The shared ledger additionally binds allocation/release sites, flags and
+    # full-width byte extents. Native and CRT maps are outside source owners.
+    OWNERS.source_maps(''.join(memory), profile, directory)
+    return found
 
 
 def reference(data):
@@ -49,26 +84,26 @@ def model_cases():
     return cases
 
 
-def ledger(text, *, preflight=False):
+def ledger(text, profile, directory, *, preflight=False):
     events = []; counts = Counter(); live = {}; consumed = 0; eof = False
-    input_address = None; input_retired = False; started = False; retiring = False; peak = 0
-    for line in text.splitlines():
-        match = re.fullmatch(r'([a-z0-9_]+)\((.*)\)\s+=\s+(.*)', line)
-        assert match and match[1] in TRACE.split(','), line
-        name, args, answer = match.groups(); counts[name] += 1
-        event = dict(name=name, args=args, answer=answer, ordinal=counts[name], line=line)
+    input_address = None; input_retired = False; started = False; retiring = False; peak = 0; live_bytes = 0
+    for event in source_events(text, profile, directory):
+        name, args, answer, line = (event[key] for key in ('name', 'args', 'answer', 'line'))
+        counts[name] += 1
         if name == 'mmap':
             assert not started and not input_retired, ('allocation after publication/input retirement', line)
             size = int(args.split(',')[1].strip()); event['extent'] = size
             event['phase'] = 'index' if eof else 'input'
             if answer.startswith('0x'):
                 address = answer.split()[0]; assert address not in live; live[address] = size
-                peak = max(peak, sum(live.values()))
+                live_bytes += size
+                peak = max(peak, live_bytes)
             else:
                 assert answer.startswith('-1 ENOMEM ') and 'INJECTED' in answer
         elif name == 'munmap':
             address, size = args.split(','); address = address.strip()
             assert answer == '0' and live.pop(address, None) == int(size), line
+            live_bytes -= int(size)
             if eof and address == input_address:
                 assert not input_retired and not live, ('borrowed-key input retired before other owners', line, live)
                 input_retired = True
@@ -96,7 +131,7 @@ def ledger(text, *, preflight=False):
         elif name == 'rt_sigaction':
             assert len(events) == 0 and args.startswith('SIGPIPE,') and 'SIG_IGN' in args, line
         events.append(event)
-    assert not live, ('unreleased mappings', live)
+    assert not live and live_bytes == 0, ('unreleased mappings', live, live_bytes)
     assert counts['rt_sigaction'] == 1
     assert counts['read'] <= INPUT_CALLS and counts['write'] <= WRITE_CALLS
     return dict(events=events, consumed=consumed, eof=eof, peak=peak, input_retired=input_retired)
@@ -111,13 +146,14 @@ class Runner:
         assert len(header) == 64 and header[:6] == b'\x7fELF\x02\x01'
         assert int.from_bytes(header[16:18], 'little') == 2 and int.from_bytes(header[18:20], 'little') == 62
         self.directory = Path(tempfile.mkdtemp(prefix=f'word-concordance-{group}-'))
+        self.profile = SOURCE.verified_sites(self.executable)
         self.count = 0
 
     def run(self, name, data=b'', *, arguments=(), status=0, output=None,
             injections=(), preflight=False, closed_stdout=False, closed_stderr=False, directory_stdin=False):
         directory = self.directory / name; directory.mkdir()
         source = directory / 'input'; source.write_bytes(data)
-        command = ['strace','-E','LANIUS_ALLOC=mmap', '--kill-on-exit', '-qq', '-xx', '-s', '16', '-e', 'signal=none',
+        command = ['strace','-E','LANIUS_ALLOC=mmap', '--kill-on-exit', '-qq', '-i', '-xx', '-s', '16', '-e', 'signal=none',
                    '-e', 'trace=' + TRACE, '-o', str(directory / 'trace')]
         for call, position, change in injections:
             action = change if change.startswith('retval=') else 'error=' + change
@@ -152,7 +188,7 @@ class Runner:
         wanted = reference(data) if output is None and status == 0 else (output or b'')
         assert result.returncode == status and result.stdout == wanted, (name, result.returncode, status, result.stdout[:128], wanted[:128], result.stderr)
         assert result.stderr == b'', (name, result.stderr)
-        traced = ledger((directory / 'trace').read_text(), preflight=preflight)
+        traced = ledger((directory / 'trace').read_text(), self.profile, directory, preflight=preflight)
         found = traced['events']; selected = []
         for call, position, change in injections:
             events = {event['ordinal']: event for event in found if event['name'] == call}
@@ -204,6 +240,7 @@ def limits(runner):
     expanded = runner.run('large-position-expansion', b'a ' * (BYTE_CAP // 2))
     distinct = b' '.join(f'w{index:04x}'.encode() for index in range(WORD_CAP))
     runner.run('exact-distinct-word-cap', distinct)
+    runner.run('existing-words-at-distinct-cap', distinct + b' w0000 wffff w0000')
     rejected = runner.run('excess-distinct-word-cap', distinct + b' w10000', status=2)
     if runner.observes:
         for traced, probe in ((exact, 0), (empty, 0), (expanded, 0), (excess, 1)):
@@ -224,10 +261,10 @@ def io(runner):
     if runner.observes:
         assert {event['phase'] for event in mappings} == {'input', 'index'}
         assert [event['extent'] for event in mappings if event['phase'] == 'input'] == [1024 << n for n in range(11)]
-    for old in mappings:
+    for index, old in enumerate(mappings):
         actual = runner.run(f'oom-{old["ordinal"]}', data, status=4, injections=(('mmap', old['ordinal'], 'ENOMEM'),))
         reached = [event for event in actual['events'] if event['name'] == 'mmap']
-        assert [event['args'] for event in reached] == [event['args'] for event in mappings[:old['ordinal']]]
+        assert [event['args'] for event in reached] == [event['args'] for event in mappings[:index+1]]
     reads = [event for event in base['events'] if event['name'] == 'read']
     writes = [event for event in base['events'] if event['name'] == 'write']
     assert len(reads) > 1 and len(writes) > 1
@@ -241,15 +278,17 @@ def io(runner):
     runner.run('write-would-block', data, status=3, injections=(('write', writes[0]['ordinal'], 'EAGAIN'),))
     runner.run('write-eintr', data, injections=(('write', writes[0]['ordinal'], 'EINTR'),))
     runner.run('write-zero', data, status=3, injections=(('write', writes[0]['ordinal'], 'retval=0'),))
-    runner.run('signal-eio', status=3, preflight=True, injections=(('rt_sigaction', 1, 'EIO'),))
-    runner.run('signal-eio-closed-stderr', status=3, preflight=True, closed_stderr=True, injections=(('rt_sigaction', 1, 'EIO'),))
+    signal = next(event['ordinal'] for event in base['events'] if event['name'] == 'rt_sigaction')
+    runner.run('signal-eio', status=3, preflight=True, injections=(('rt_sigaction', signal, 'EIO'),))
+    runner.run('signal-eio-closed-stderr', status=3, preflight=True, closed_stderr=True, injections=(('rt_sigaction', signal, 'EIO'),))
     runner.run('closed-stdout', b'valid', status=3, closed_stdout=True)
     runner.run('closed-stdout-empty-output', b' \n', closed_stdout=True)
     runner.run('closed-stderr-invalid-input', b'\xff', status=2, closed_stderr=True)
     runner.run('directory-stdin', status=3, directory_stdin=True)
-    read_limit = runner.run('read-call-limit', b'word', status=2, injections=(('read', f'1..{INPUT_CALLS}', 'EINTR'),))
-    first = runner.run('write-call-limit', payload, status=2, injections=(('write', '1+', 'EINTR'),))
-    after = runner.run('write-call-limit-after-prefix', data, status=2, output=reference(data)[:prefix], injections=(('write', '2+', 'EINTR'),))
+    read_at = reads[0]['ordinal']
+    read_limit = runner.run('read-call-limit', b'word', status=2, injections=(('read', f'{read_at}..{read_at+INPUT_CALLS-1}', 'EINTR'),))
+    first = runner.run('write-call-limit', payload, status=2, injections=(('write', f'{writes[0]["ordinal"]}+', 'EINTR'),))
+    after = runner.run('write-call-limit-after-prefix', data, status=2, output=reference(data)[:prefix], injections=(('write', f'{writes[1]["ordinal"]}+', 'EINTR'),))
     if runner.observes:
         assert sum(event['name'] == 'read' for event in read_limit['events']) == INPUT_CALLS
         # This app budgets actual writes only, unlike the JSON Copier app.
@@ -275,7 +314,8 @@ class ControlRunner:
         if name == 'allocation-baseline':
             return dict(events=[dict(name='mmap', ordinal=1, args='baseline', extent=1024),
                                 dict(name='read', ordinal=1), dict(name='read', ordinal=2),
-                                dict(name='write', ordinal=1, answer='1024'), dict(name='write', ordinal=2)])
+                                dict(name='write', ordinal=1, answer='1024'), dict(name='write', ordinal=2),
+                                dict(name='rt_sigaction', ordinal=1)])
         if name.startswith('oom-'):
             return dict(events=[dict(name='mmap', ordinal=1, args='baseline')])
         return dict(events=[])
@@ -295,18 +335,52 @@ def controls():
         'write(1, "word\\t0\\n", 7) = 7', 'munmap(0x300000000, 32) = 0',
         'munmap(0x200000000, 256) = 0', 'munmap(0x100000000, 1024) = 0',
     ]
-    assert ledger('\n'.join(trace))['input_retired']
     broken = [trace[:-1], trace[:6] + [trace[-1]] + trace[6:-1],
               trace[:7] + [trace[4].replace('0x200000000', '0x400000000')] + trace[7:],
               trace[:-1] + [trace[-1].replace('1024', '1023')],
               trace[:8] + [trace[6]] + trace[8:]]
-    for bad in broken:
-        try:
-            ledger('\n'.join(bad))
-        except AssertionError:
-            pass
-        else:
-            raise AssertionError('ledger control admitted an ownership/order violation')
+    sites = SOURCE.RuntimePairs([(0x401002, 0x401012)])
+    sites.mmap_flags = {0x401002: 0x22}
+    sites.executable_ranges = [(0x401000, 0x401030)]
+    sites.source_syscall_sites = {0x401002, 0x401012, 0x401022}
+    sites.bootstrap_sites = {0x402002: 'bootstrap-mmap', 0x402012: 'bootstrap-munmap'}
+    sites.image_ranges = [(0x400000, 0x403000)]
+    profile = sites, []
+
+    def event(line, ip):
+        return f'[{ip:016x}] {line}\n'
+
+    def encode(lines):
+        return ''.join(event(line, 0x401002 if line.startswith('mmap(')
+                             else 0x401012 if line.startswith('munmap(') else 0x401022)
+                       for line in lines)
+
+    valid = encode(trace)
+    native = event('read(3, "loader", 16) = 6', 0x7fff00001000)
+    native += event('mmap(NULL, 8192, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x7fff20000000', 0x7fff00001000)
+    native += event('mmap(NULL, 8388608, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x7fff30000000', 0x402002)
+    ended = event('munmap(0x7fff30000000, 8388608) = 0', 0x402012)
+    with tempfile.TemporaryDirectory(prefix='word-concordance-controls-') as directory:
+        assert ledger(valid, profile, directory)['input_retired']
+        current = ledger(native + valid + ended, profile, directory)
+        assert current['input_retired']
+        assert current['peak'] == 1024 + 256 + 32
+        assert [item['ordinal'] for item in current['events'] if item['name'] == 'read'] == [2, 3]
+        assert [item['ordinal'] for item in current['events'] if item['name'] == 'mmap'] == [3, 4, 5]
+        mutations = [encode(bad) for bad in broken]
+        mutations.extend([
+            valid.replace('0000000000401002', '0000000000401052'),
+            valid.replace('0000000000401012', '00007fff00001000'),
+            valid.replace('MAP_PRIVATE|MAP_ANONYMOUS,', 'MAP_PRIVATE|MAP_ANONYMOUS|MAP_32BIT,'),
+            event('read(3, "loader", 16) = -1 EIO (Input/output error) (INJECTED)', 0x7fff00001000) + valid,
+        ])
+        for bad in mutations:
+            try:
+                ledger(bad, profile, directory)
+            except (AssertionError, ValueError):
+                pass
+            else:
+                raise AssertionError('ledger control admitted an ownership/order/authority violation')
     groups = []
     for name, run in GROUPS.items():
         runner = ControlRunner(); allocations = run(runner) or 0

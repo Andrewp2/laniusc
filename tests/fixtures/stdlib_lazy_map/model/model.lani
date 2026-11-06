@@ -1,0 +1,354 @@
+// Test-only bounded binary actions and complete semantic map observations.
+module app::main;
+import alloc::hash_map;
+import alloc::tree_map;
+import core::cmp;
+import core::function;
+import core::hash;
+import core::iter;
+import core::mem;
+import core::option;
+import core::ordering;
+import core::pair;
+import core::result;
+import std::io;
+
+fn read_exact(pointer:ptr,count:i32,allow_eof:bool) -> bool {
+    let done:i32=0;
+    while(done<count) {
+        let got:i32=std::io::read_stdin(pointer+(done as usize),(count-done) as usize);
+        assert(got>=0);
+        if(got==0) { assert(allow_eof && done==0); return false; }
+        done+=got;
+    }
+    return true;
+}
+fn write_all(pointer:ptr,count:i32) {
+    let done:i32=0;
+    while(done<count) {
+        let sent:i32=std::io::write_stdout(pointer+(done as usize),(count-done) as usize);
+        assert(sent>0); done+=sent;
+    }
+}
+fn get64(bytes:[u8],offset:i32) -> u64 {
+    let value:u64=0; let i:i32=0;
+    while(i<8) { value|=(bytes[offset+i] as u64)<<(i*8); i+=1; }
+    return value;
+}
+struct Output { bytes:[u8],pointer:ptr,used:i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) { write_all(self.pointer,self.used); self.used=0; }
+    fn word(&self,value:u64) {
+        if(self.used==4096) { self.flush(); }
+        let i:i32=0;
+        while(i<8) { self.bytes[self.used+i]=((value>>(i*8))&255) as u8; i+=1; }
+        self.used+=8;
+    }
+}
+struct Key { identity:i32,stamp:u64,code:u32 }
+pub impl core::cmp::Eq<Key> for Key {
+    pub fn eq(a:Key,b:Key) -> bool { return a.identity==b.identity; }
+    pub fn ne(a:Key,b:Key) -> bool { return a.identity!=b.identity; }
+}
+pub impl core::cmp::Ord<Key> for Key {
+    pub fn lt(a:Key,b:Key) -> bool { return a.identity<b.identity; }
+    pub fn le(a:Key,b:Key) -> bool { return a.identity<=b.identity; }
+    pub fn gt(a:Key,b:Key) -> bool { return a.identity>b.identity; }
+    pub fn ge(a:Key,b:Key) -> bool { return a.identity>=b.identity; }
+}
+pub impl core::hash::Hash<Key> for Key {
+    pub fn hash(value:Key) -> u32 { return value.code; }
+}
+fn hash_code(identity:i32,mode:i32) -> u32 {
+    if(mode==0) { return 65535; }
+    if(mode==1) { return ((identity%3) as u32)*2654435761; }
+    return (identity as u32)*2654435761;
+}
+struct Query { encoded:i32,code:u32 }
+pub impl core::hash::Hash<Query> for Query {
+    pub fn hash(value:Query) -> u32 { return value.code; }
+}
+struct Equality {}
+impl Equality { fn borrow(&self) -> &Equality { return self; } }
+pub impl core::function::Mapper<core::pair::Pair<Key,Query>,bool> for Equality {
+    pub fn apply(&self,values:core::pair::Pair<Key,Query>) -> bool {
+        return values.first.identity==values.second.encoded-1001;
+    }
+}
+struct Ordering {}
+impl Ordering { fn borrow(&self) -> &Ordering { return self; } }
+pub impl core::ordering::Comparator<Key,Query> for Ordering {
+    pub fn compare(&self,stored:Key,query:Query) -> core::ordering::Ordering {
+        let identity:i32=query.encoded-1001;
+        if(stored.identity<identity) { return core::ordering::Ordering::Less; }
+        if(stored.identity>identity) { return core::ordering::Ordering::Greater; }
+        return core::ordering::Ordering::Equal;
+    }
+}
+struct Value { total:u64,visits:u64,mark:core::option::Option<bool> }
+fn initial(token:u64) -> Value {
+    let mark:core::option::Option<bool> = core::option::None();
+    if(token%3!=0) { mark=core::option::Some((token&1)!=0); }
+    return Value { total:token,visits:0,mark:mark };
+}
+fn emit_key(value:Key,output:&Output) {
+    output.word(value.identity as u64); output.word(value.stamp); output.word(value.code as u64);
+}
+fn emit_value(value:Value,output:&Output) {
+    output.word(value.total); output.word(value.visits);
+    if(value.mark.is_none()) { output.word(0); }
+    else { if(value.mark.unwrap()) { output.word(2); } else { output.word(1); } }
+}
+fn emit_report(value:core::result::Result<u64,u64>,output:&Output) {
+    if(value.is_ok()) { output.word(0); output.word(value.unwrap()); }
+    else { output.word(1); output.word(value.unwrap_err()); }
+}
+struct State {
+    initialized:u64,updated:u64,key:Key,token:u64,init_mode:i32,update_mode:i32,hashing:i32,output:&Output
+}
+impl State { fn borrow(&self) -> &State { return self; } }
+fn candidate_key(state:&State) -> Key {
+    let key:Key=state.key;
+    if(state.init_mode==2) {
+        key.identity=(key.identity+1)%31;
+        key.code=hash_code(key.identity,state.hashing);
+    }
+    if(state.init_mode==3) { key.code=key.code^2147483648; }
+    return key;
+}
+fn begin_initialization(state:&State) {
+    state.initialized+=1;
+    let output:&Output=state.output;
+    output.word(193); output.word(state.initialized); output.word(state.init_mode as u64);
+    emit_key(state.key,output); output.word(state.token);
+}
+struct Update { state:&State }
+impl Update { fn borrow(&self) -> &Update { return self; } }
+pub impl core::function::Mapper<Value,core::pair::Pair<Value,core::result::Result<u64,u64>>> for Update {
+    pub fn apply(&self,old:Value) -> core::pair::Pair<Value,core::result::Result<u64,u64>> {
+        let state:&State=self.state; state.updated+=1;
+        let token:u64=state.token; let tick:u64=state.updated;
+        let mark:core::option::Option<bool> = core::option::None();
+        if(state.update_mode==0 && old.mark.is_some()) { mark=core::option::Some(!old.mark.unwrap()); }
+        if(state.update_mode>=2) { mark=core::option::Some(((token^tick)&1)!=0); }
+        let value:Value=Value { total:old.total^token^(tick<<32),visits:old.visits+1,mark:mark };
+        let answer:core::result::Result<u64,u64> = core::result::Ok(old.total^tick);
+        if(state.update_mode%2!=0) { answer=core::result::Err(token^value.visits); }
+        let output:&Output=state.output;
+        output.word(194); output.word(tick); output.word(state.update_mode as u64);
+        output.word(token); emit_value(old,output); emit_value(value,output); emit_report(answer,output);
+        return core::pair::Pair { first:value,second:answer };
+    }
+}
+
+struct HashMapInit { state:&State }
+impl HashMapInit { fn borrow(&self) -> &HashMapInit { return self; } }
+pub impl core::function::Producer<core::result::Result<alloc::hash_map::Entry<Key,Value>,u64>> for HashMapInit {
+    pub fn produce(&self) -> core::result::Result<alloc::hash_map::Entry<Key,Value>,u64> {
+        let state:&State=self.state; begin_initialization(state);
+        if(state.init_mode==1) { return core::result::Err(state.token^1229801703532086340); }
+        return core::result::Ok(alloc::hash_map::Entry { key:candidate_key(state),value:initial(state.token) });
+    }
+}
+fn emit_hash_entry(found:core::option::Option<alloc::hash_map::Entry<Key,Value>>,output:&Output) {
+    if(found.is_none()) { output.word(0); return; }
+    let item:alloc::hash_map::Entry<Key,Value> =found.unwrap();
+    output.word(1); emit_key(item.key,output); emit_value(item.value,output);
+}
+fn emit_hash_error(failure:alloc::hash_map::UpdateError<Key,Value,u64>,output:&Output) {
+    match(failure) {
+        alloc::hash_map::UpdateError::Initialize(error) -> {
+            output.word(2); output.word(error); return;
+        },
+        alloc::hash_map::UpdateError::KeyMismatch(item) -> {
+            output.word(3); emit_key(item.key,output); emit_value(item.value,output); return;
+        },
+        alloc::hash_map::UpdateError::Storage(error,item) -> { assert(false); return; }
+    };
+}
+fn snapshot_hash(map:&alloc::hash_map::HashMap<Key,Value>,query:Key,output:&Output) {
+    emit_hash_entry(map.get_entry(query),output); output.word(map.len() as u64);
+    let cursor:alloc::hash_map::Iter<Key,Value> =map.iter(); let count:i32=0;
+    while(true) {
+        let found:core::option::Option<alloc::hash_map::Entry<Key,Value>> = cursor.next();
+        emit_hash_entry(found,output); if(found.is_none()) { break; }
+        let entry:alloc::hash_map::Entry<Key,Value> =found.unwrap();
+        let again:alloc::hash_map::Entry<Key,Value> =map.get_entry(entry.key).unwrap();
+        assert(again.key.stamp==entry.key.stamp && again.key.code==entry.key.code);
+        assert(again.value.total==entry.value.total && again.value.visits==entry.value.visits);
+        count+=1; assert(count<=31);
+    }
+    assert(count==map.len() && cursor.next().is_none()); output.word(1);
+}
+fn run_hash(header:[u8],actions:[u8],output:&Output) {
+    let map:alloc::hash_map::HashMap<Key,Value> = alloc::hash_map::new();
+    let state:State=State { initialized:0,updated:0,key:Key { identity:0,stamp:0,code:0 },token:0,init_mode:0,update_mode:0,hashing:get64(header,16) as i32,output:output };
+    let initialize:HashMapInit=HashMapInit { state:state.borrow() };
+    let update:Update=Update { state:state.borrow() };
+    let policy:Equality=Equality {};
+    let count:i32=get64(header,24) as i32; let i:i32=0;
+    while(i<count) {
+        let offset:i32=i*48; let op:i32=get64(actions,offset) as i32;
+        let identity:i32=get64(actions,offset+8) as i32;
+        assert(op>=0 && op<=5 && identity>=0 && identity<31);
+        let key:Key=Key { identity:identity,stamp:get64(actions,offset+16),code:hash_code(identity,state.hashing) };
+        state.key=key; state.token=get64(actions,offset+24);
+        state.init_mode=get64(actions,offset+32) as i32; state.update_mode=get64(actions,offset+40) as i32;
+        assert(state.init_mode>=0 && state.init_mode<4 && state.update_mode>=0 && state.update_mode<4);
+        output.word(218); output.word(i as u64); output.word(op as u64);
+        if(op==0) {
+            let previous:core::option::Option<alloc::hash_map::Entry<Key,Value>> = map.try_insert(key,initial(state.token)).unwrap();
+            output.word(219); emit_hash_entry(previous,output);
+        } else { if(op==1) {
+            let previous:core::option::Option<alloc::hash_map::Entry<Key,Value>> = map.remove(key);
+            output.word(219); emit_hash_entry(previous,output);
+        } else { if(op==2 || op==3) {
+            let storage:ptr=map.storage; let capacity:i32=map.capacity(); let length:i32=map.len();
+            let result:core::result::Result<core::option::Option<core::result::Result<u64,u64>>,alloc::hash_map::UpdateError<Key,Value,u64>> =
+                core::result::Ok(core::option::None());
+            if(op==2) {
+                result=map.try_update_or_insert<HashMapInit,Update,core::result::Result<u64,u64>,u64>(key,initialize.borrow(),update.borrow());
+            } else {
+                let query:Query=Query { encoded:identity+1001,code:key.code };
+                result=map.try_update_or_insert_by<Query,Equality,HashMapInit,Update,core::result::Result<u64,u64>,u64>(query,policy.borrow(),initialize.borrow(),update.borrow());
+            }
+            output.word(219);
+            if(result.is_ok()) {
+                let outcome:core::option::Option<core::result::Result<u64,u64>> = result.unwrap();
+                if(outcome.is_none()) { output.word(0); }
+                else {
+                    assert(map.storage==storage && map.capacity()==capacity && map.len()==length);
+                    output.word(1); emit_report(outcome.unwrap(),output);
+                }
+            } else {
+                assert(map.storage==storage && map.capacity()==capacity && map.len()==length);
+                emit_hash_error(result.unwrap_err(),output);
+            }
+        } else {
+            if(op==4) { map.clear(); }
+            output.word(219);
+        } } }
+        output.word(state.initialized); output.word(state.updated);
+        snapshot_hash(map.borrow(),key,output); i+=1;
+    }
+    map.destroy();
+}
+
+struct TreeMapInit { state:&State }
+impl TreeMapInit { fn borrow(&self) -> &TreeMapInit { return self; } }
+pub impl core::function::Producer<core::result::Result<alloc::tree_map::Entry<Key,Value>,u64>> for TreeMapInit {
+    pub fn produce(&self) -> core::result::Result<alloc::tree_map::Entry<Key,Value>,u64> {
+        let state:&State=self.state; begin_initialization(state);
+        if(state.init_mode==1) { return core::result::Err(state.token^1229801703532086340); }
+        return core::result::Ok(alloc::tree_map::Entry { key:candidate_key(state),value:initial(state.token) });
+    }
+}
+fn emit_tree_entry(found:core::option::Option<alloc::tree_map::Entry<Key,Value>>,output:&Output) {
+    if(found.is_none()) { output.word(0); return; }
+    let item:alloc::tree_map::Entry<Key,Value> =found.unwrap();
+    output.word(1); emit_key(item.key,output); emit_value(item.value,output);
+}
+fn emit_tree_error(failure:alloc::tree_map::UpdateError<Key,Value,u64>,output:&Output) {
+    match(failure) {
+        alloc::tree_map::UpdateError::Initialize(error) -> {
+            output.word(2); output.word(error); return;
+        },
+        alloc::tree_map::UpdateError::KeyMismatch(item) -> {
+            output.word(3); emit_key(item.key,output); emit_value(item.value,output); return;
+        },
+        alloc::tree_map::UpdateError::Storage(error,item) -> { assert(false); return; }
+    };
+}
+fn snapshot_tree(map:&alloc::tree_map::TreeMap<Key,Value>,query:Key,output:&Output) {
+    emit_tree_entry(map.get_entry(query),output); output.word(map.len() as u64);
+    let cursor:alloc::tree_map::Cursor<Key,Value> =map.iter(); let count:i32=0;
+    while(true) {
+        let found:core::option::Option<alloc::tree_map::Entry<Key,Value>> = cursor.next();
+        emit_tree_entry(found,output); if(found.is_none()) { break; }
+        let entry:alloc::tree_map::Entry<Key,Value> =found.unwrap();
+        let again:alloc::tree_map::Entry<Key,Value> =map.get_entry(entry.key).unwrap();
+        assert(again.key.stamp==entry.key.stamp && again.key.code==entry.key.code);
+        assert(again.value.total==entry.value.total && again.value.visits==entry.value.visits);
+        count+=1; assert(count<=31);
+    }
+    assert(count==map.len() && cursor.next().is_none()); output.word(1);
+}
+fn run_tree(header:[u8],actions:[u8],output:&Output) {
+    let map:alloc::tree_map::TreeMap<Key,Value> = alloc::tree_map::new();
+    let state:State=State { initialized:0,updated:0,key:Key { identity:0,stamp:0,code:0 },token:0,init_mode:0,update_mode:0,hashing:get64(header,16) as i32,output:output };
+    let initialize:TreeMapInit=TreeMapInit { state:state.borrow() };
+    let update:Update=Update { state:state.borrow() };
+    let policy:Ordering=Ordering {};
+    let count:i32=get64(header,24) as i32; let i:i32=0;
+    while(i<count) {
+        let offset:i32=i*48; let op:i32=get64(actions,offset) as i32;
+        let identity:i32=get64(actions,offset+8) as i32;
+        assert(op>=0 && op<=5 && identity>=0 && identity<31);
+        let key:Key=Key { identity:identity,stamp:get64(actions,offset+16),code:hash_code(identity,state.hashing) };
+        state.key=key; state.token=get64(actions,offset+24);
+        state.init_mode=get64(actions,offset+32) as i32; state.update_mode=get64(actions,offset+40) as i32;
+        assert(state.init_mode>=0 && state.init_mode<4 && state.update_mode>=0 && state.update_mode<4);
+        output.word(218); output.word(i as u64); output.word(op as u64);
+        if(op==0) {
+            let previous:core::option::Option<alloc::tree_map::Entry<Key,Value>> = map.try_insert(key,initial(state.token)).unwrap();
+            output.word(219); emit_tree_entry(previous,output);
+        } else { if(op==1) {
+            let previous:core::option::Option<alloc::tree_map::Entry<Key,Value>> = map.remove(key);
+            output.word(219); emit_tree_entry(previous,output);
+        } else { if(op==2 || op==3) {
+            let storage:ptr=map.storage; let capacity:i32=map.capacity(); let length:i32=map.len();
+            let result:core::result::Result<core::option::Option<core::result::Result<u64,u64>>,alloc::tree_map::UpdateError<Key,Value,u64>> =
+                core::result::Ok(core::option::None());
+            if(op==2) {
+                result=map.try_update_or_insert<TreeMapInit,Update,core::result::Result<u64,u64>,u64>(key,initialize.borrow(),update.borrow());
+            } else {
+                let query:Query=Query { encoded:identity+1001,code:key.code };
+                result=map.try_update_or_insert_by<Query,Ordering,TreeMapInit,Update,core::result::Result<u64,u64>,u64>(query,policy.borrow(),initialize.borrow(),update.borrow());
+            }
+            output.word(219);
+            if(result.is_ok()) {
+                let outcome:core::option::Option<core::result::Result<u64,u64>> = result.unwrap();
+                if(outcome.is_none()) { output.word(0); }
+                else {
+                    assert(map.storage==storage && map.capacity()==capacity && map.len()==length);
+                    output.word(1); emit_report(outcome.unwrap(),output);
+                }
+            } else {
+                assert(map.storage==storage && map.capacity()==capacity && map.len()==length);
+                emit_tree_error(result.unwrap_err(),output);
+            }
+        } else {
+            if(op==4) { map.clear(); }
+            output.word(219);
+        } } }
+        output.word(state.initialized); output.word(state.updated);
+        snapshot_tree(map.borrow(),key,output); i+=1;
+    }
+    map.destroy();
+}
+
+fn main() -> i32 {
+    let prefix_words:[i32;4]=[0;4]; let prefix_pointer:ptr=core::mem::i32_array_data_ptr(prefix_words);
+    let prefix:[u8]=core::mem::typed_slice_from_raw_parts<u8>(prefix_pointer,16);
+    assert(read_exact(prefix_pointer,16,false)); assert(get64(prefix,0)==5494753468931064141);
+    let cases:i32=get64(prefix,8) as i32; assert(cases>=0 && cases<=64);
+    let output_words:[i32;1024]=[0;1024]; let output_pointer:ptr=core::mem::i32_array_data_ptr(output_words);
+    let output:Output=Output { bytes:core::mem::typed_slice_from_raw_parts<u8>(output_pointer,4096),pointer:output_pointer,used:0 };
+    output.word(5494753468931064141); output.word(cases as u64);
+    let header_words:[i32;8]=[0;8]; let header_pointer:ptr=core::mem::i32_array_data_ptr(header_words);
+    let header:[u8]=core::mem::typed_slice_from_raw_parts<u8>(header_pointer,32);
+    let action_words:[i32;3072]=[0;3072]; let action_pointer:ptr=core::mem::i32_array_data_ptr(action_words);
+    let actions:[u8]=core::mem::typed_slice_from_raw_parts<u8>(action_pointer,12288);
+    let i:i32=0;
+    while(i<cases) {
+        assert(read_exact(header_pointer,32,false)); assert(get64(header,0)==i as u64);
+        let family:i32=get64(header,8) as i32; assert(family>=0 && family<2 && get64(header,16)<3);
+        let count:i32=get64(header,24) as i32; assert(count>=0 && count<=256);
+        assert(read_exact(action_pointer,count*48,false)); output.word(i as u64);
+        if(family==0) { run_hash(header,actions,output.borrow()); }
+        else { run_tree(header,actions,output.borrow()); }
+        i+=1;
+    }
+    assert(!read_exact(prefix_pointer,1,true)); output.word(4994005193759370573); output.flush(); return 0;
+}

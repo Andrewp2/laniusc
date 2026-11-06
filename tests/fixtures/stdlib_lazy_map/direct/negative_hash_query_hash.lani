@@ -1,0 +1,26 @@
+module app::main;
+import alloc::hash_map;
+import core::function;
+import core::pair;
+import core::result;
+struct Query { value:i32 }
+struct Policy {}
+impl Policy { fn borrow(&self) -> &Policy { return self; } }
+pub impl core::function::Mapper<core::pair::Pair<i32,Query>,bool> for Policy {
+    pub fn apply(&self,values:core::pair::Pair<i32,Query>) -> bool { return values.first==values.second.value; }
+}
+struct Supply {}
+impl Supply { fn borrow(&self) -> &Supply { return self; } }
+pub impl core::function::Producer<core::result::Result<alloc::hash_map::Entry<i32,u64>,u64>> for Supply {
+    pub fn produce(&self) -> core::result::Result<alloc::hash_map::Entry<i32,u64>,u64> { return core::result::Ok(alloc::hash_map::Entry { key:1,value:7 }); }
+}
+struct Update {}
+impl Update { fn borrow(&self) -> &Update { return self; } }
+pub impl core::function::Mapper<u64,core::pair::Pair<u64,bool>> for Update {
+    pub fn apply(&self,value:u64) -> core::pair::Pair<u64,bool> { return core::pair::Pair { first:value,second:true }; }
+}
+fn main() -> i32 {
+    let map=alloc::hash_map::new<i32,u64>(); let supply=Supply {}; let update=Update {}; let policy=Policy {};
+    let rejected_lazy_bound=map.try_update_or_insert_by<Query,Policy,Supply,Update,bool,u64>(Query { value:1 },policy.borrow(),supply.borrow(),update.borrow());
+    return 0;
+}

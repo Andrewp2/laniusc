@@ -1,0 +1,92 @@
+module fixture::owners;
+import alloc::string;
+import alloc::vec;
+import core::function;
+import core::mem;
+import core::pair;
+import core::result;
+import core::text;
+import std::io;
+
+pub struct Value { data:alloc::vec::Vec<u8>, label:alloc::string::String }
+pub struct Candidate { key:alloc::string::String, value:Value }
+pub enum InitError { Allocation(i32), Owned(alloc::string::String) }
+pub struct Build { mode:i32, calls:i32, key_ptr:ptr, data_ptr:ptr, label_ptr:ptr }
+pub struct Update { calls:i32 }
+
+pub fn unexpected_owned() -> alloc::string::String { assert(false); return alloc::string::new(); }
+pub fn unexpected_stage() -> i32 { assert(false); return -1; }
+pub fn owned_error(error:InitError) -> alloc::string::String {
+    return match(error) { InitError::Owned(owned) -> owned, _ -> unexpected_owned() };
+}
+pub fn allocation_stage(error:InitError) -> i32 {
+    return match(error) { InitError::Allocation(at) -> at, _ -> unexpected_stage() };
+}
+
+pub fn mark(code:i32) {
+    let byte:[i32;1] = [code];
+    assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1);
+}
+pub fn raw(value:str,count:i32) -> [u8] {
+    return core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+}
+pub fn text(value:str,count:i32) -> core::text::Text {
+    return core::text::from_utf8(raw(value,count),count).unwrap();
+}
+pub fn string(value:str,count:i32) -> alloc::string::String {
+    return alloc::string::from_utf8(raw(value,count),count).unwrap();
+}
+pub fn key(index:i32) -> core::text::Text {
+    return match(index) { 0 -> text("keya",4), 1 -> text("keyb",4), 2 -> text("keyc",4), _ -> text("keyd",4) };
+}
+pub fn value() -> Value {
+    let data:alloc::vec::Vec<u8> = alloc::vec::with_capacity<u8>(4).unwrap();
+    data.try_push(1).unwrap(); data.try_push(2).unwrap(); data.try_push(3).unwrap();
+    return Value { data:data,label:string("seed",4) };
+}
+pub fn check(value:Value,grown:bool) {
+    assert(value.data.at(0)==1 && value.data.at(1)==2 && value.data.at(2)==3);
+    assert(value.data.len()==3 || (grown && value.data.len()==4));
+    if(grown) { assert(value.data.len()==4 && value.data.at(3)==42); }
+    else { assert(value.data.len()==3); }
+    assert(value.label.as_text().equals(text("seed",4)));
+}
+pub fn destroy(value:Value) { value.data.destroy(); value.label.destroy(); }
+pub impl Build {
+    pub fn borrow(&self) -> &Build { return self; }
+    pub fn create(&self) -> core::result::Result<Candidate,InitError> {
+        self.calls+=1;
+        if(self.mode==1) { return core::result::Err(InitError::Owned(string("owned-error",11))); }
+        let wanted:core::text::Text = text("novel",5);
+        if(self.mode==2) { wanted=text("wrong",5); }
+        let key_result=alloc::string::from_text(wanted);
+        if(key_result.is_err()) { return core::result::Err(InitError::Allocation(1)); }
+        let owned_key=key_result.unwrap();
+        let data_result=alloc::vec::with_capacity<u8>(4);
+        if(data_result.is_err()) { owned_key.destroy(); return core::result::Err(InitError::Allocation(2)); }
+        let data=data_result.unwrap();
+        data.try_push(1).unwrap(); data.try_push(2).unwrap(); data.try_push(3).unwrap();
+        let label_result=alloc::string::from_utf8(raw("seed",4),4);
+        if(label_result.is_err()) { data.destroy(); owned_key.destroy(); return core::result::Err(InitError::Allocation(3)); }
+        let label=label_result.unwrap();
+        self.key_ptr=owned_key.bytes.storage; self.data_ptr=data.storage; self.label_ptr=label.bytes.storage;
+        return core::result::Ok(Candidate { key:owned_key,value:Value { data:data,label:label } });
+    }
+    pub fn verify(&self,key:alloc::string::String,value:Value) {
+        assert(key.bytes.storage==self.key_ptr && value.data.storage==self.data_ptr && value.label.bytes.storage==self.label_ptr);
+        check(value,false);
+    }
+}
+pub impl Update { pub fn borrow(&self) -> &Update { return self; } }
+pub impl core::function::Mapper<Value,core::pair::Pair<Value,core::result::Result<i32,i32>>> for Update {
+    pub fn apply(&self,value:Value) -> core::pair::Pair<Value,core::result::Result<i32,i32>> {
+        self.calls+=1;
+        let latest=value.data; latest.try_push(42).unwrap(); value.data=latest;
+        let report:core::result::Result<i32,i32> = core::result::Err(71);
+        return core::pair::Pair { first:value,second:report };
+    }
+}
+pub fn report(code:i32) {
+    let byte:[i32;1] = [code];
+    assert(std::io::write_stdout(core::mem::i32_array_data_ptr(byte),1)==1);
+}

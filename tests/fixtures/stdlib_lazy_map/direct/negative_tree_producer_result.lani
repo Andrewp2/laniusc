@@ -1,0 +1,21 @@
+module app::main;
+import alloc::tree_map;
+import core::function;
+import core::pair;
+import core::result;
+struct Supply {}
+impl Supply { fn borrow(&self) -> &Supply { return self; } }
+// A Producer exists, but its complete Result type is not the requested one.
+pub impl core::function::Producer<core::result::Result<alloc::tree_map::Entry<i32,u64>,bool>> for Supply {
+    pub fn produce(&self) -> core::result::Result<alloc::tree_map::Entry<i32,u64>,bool> { return core::result::Err(false); }
+}
+struct Update {}
+impl Update { fn borrow(&self) -> &Update { return self; } }
+pub impl core::function::Mapper<u64,core::pair::Pair<u64,bool>> for Update {
+    pub fn apply(&self,value:u64) -> core::pair::Pair<u64,bool> { return core::pair::Pair { first:value,second:true }; }
+}
+fn main() -> i32 {
+    let map=alloc::tree_map::new<i32,u64>(); let supply=Supply {}; let update=Update {};
+    let rejected_lazy_bound=map.try_update_or_insert<Supply,Update,bool,u64>(1,supply.borrow(),update.borrow());
+    return 0;
+}

@@ -1,0 +1,16 @@
+module app::main;
+import alloc::hash_map;
+import core::function;
+import core::pair;
+struct Missing {}
+impl Missing { fn borrow(&self) -> &Missing { return self; } }
+struct Update {}
+impl Update { fn borrow(&self) -> &Update { return self; } }
+pub impl core::function::Mapper<u64,core::pair::Pair<u64,bool>> for Update {
+    pub fn apply(&self,value:u64) -> core::pair::Pair<u64,bool> { return core::pair::Pair { first:value,second:true }; }
+}
+fn main() -> i32 {
+    let map=alloc::hash_map::new<i32,u64>(); let missing=Missing {}; let update=Update {};
+    let rejected_lazy_bound=map.try_update_or_insert<Missing,Update,bool,u64>(1,missing.borrow(),update.borrow());
+    return 0;
+}

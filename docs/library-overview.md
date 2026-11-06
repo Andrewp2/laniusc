@@ -1,5 +1,16 @@
 # Standard and extended library overview
 
+The [lazy map update increment](stdlib-lazy-map-updates.md) adds scoped
+update-or-insert methods to HashMap and TreeMap, with same-type and borrowed
+queries. Hits preserve stored keys and reinstall the latest value; misses call
+one initializer and return its complete candidate on validation or storage
+failure. All six library gates pass on native Linux x86_64, including the
+32-case / 5,920-action model and eight reached allocation failures with recovery.
+The word-concordance consumer passes four groups / 104 native cases; two
+existing insertion regressions pass separately. Historical map and application
+receipts retain their source scope. Manual lifetimes, other targets and the
+full library goal remain open.
+
 The [caller-provided buffering increment](stdlib-caller-buffered.md) separates
 storage from one `core::buffered` read/write/Seek engine. Core adapters borrow
 a caller `View<u8>`; `alloc::buffered` owns a Vec and delegates every I/O

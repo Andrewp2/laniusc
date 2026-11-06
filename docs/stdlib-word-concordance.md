@@ -103,11 +103,18 @@ if stdout is a closed pipe. Call quotas do not bound provider blocking time.
 
 The input collector adopts its byte Vec as a String after UTF-8 validation.
 `TreeMap<Text,Vec<u64>>` stores borrowed input words and independent owned
-position vectors. New keys receive a newly allocated vector. Existing keys
-use `update_value` with a mapper that appends one position and returns both the
-latest Vec descriptor and its `Result`, including after allocation failure.
-The map retains the original representative key and stores the returned value
-descriptor before the caller examines that result.
+position vectors. The [lazy map operation](stdlib-lazy-map-updates.md) calls an
+initializer only for a missing key. It constructs the vector containing the
+first position, after checking a distinct-word admission decision captured
+before the map call. Existing keys use the mapper to append one position and
+return both the latest Vec descriptor and its `Result`, including after
+allocation failure. The map retains the original representative key and stores
+the returned value descriptor before the caller examines that result.
+
+Initialization cleans its partial vector on error. A rejected candidate or map
+storage failure returns its vector for explicit cleanup. The initializer does
+not access the map, and hitting the distinct-word limit does not prevent an
+existing word from receiving another position.
 
 Keys borrow unchanged input until every map operation and output cursor ends.
 One fixed output scratch batches words, separators and decimal positions;
@@ -116,7 +123,25 @@ vector once, then map storage, then the input owner. This ordering applies to
 success, indexing failure, preflight rejection and output failure. These are
 manual ownership rules; no automatic borrow checking is claimed.
 
-## Verification scope
+## Current migration and historical verification
+
+The lazy update-or-insert migration passes all four Rust tests, totaling 104
+native process cases. The standalone examples above and historical receipts
+below retain their earlier source scope. Current logs are under
+`target/stdlib-work/` with prefix `lazy-map-concordance-`:
+
+| Receipt suffix | Tests | Native cases | Test time |
+| --- | ---: | ---: | ---: |
+| `model.log` | 1 | 28 | 9.00 s |
+| `limits.log` | 2 | 7 limit + 12 admission | 47.68 s combined |
+| `failures.log` | 1 | 57, including 38 reached allocation failures | 22.05 s |
+
+The separate Rust build took 9.82 s. The added limit case verifies that an
+existing word still receives positions at the distinct-word cap. Current
+source/oracle/driver hashes and evidence directories are in the
+[fixture receipt](../tests/fixtures/stdlib_execution/word_concordance/README.md#current-native-receipts).
+The library's own contracts, model and ownership gates have
+[separate evidence](stdlib-lazy-map-updates.md#consumer-and-verification).
 
 `tests/stdlib_word_concordance_execution.rs` runs the real program against an
 independent model using byte-regex word boundaries, exact byte offsets and
@@ -124,7 +149,10 @@ byte-sorted keys. It checks complete outputs, real input-cap probes,
 65,536/65,537 distinct words, large position-list expansion, reached allocation
 failures, I/O faults and confirmed prefixes under exhausted budgets.
 
-The resource ledger accounts for full allocation addresses/extents. It keeps
+The current resource ledger classifies syscall sites with the exact runtime
+verifier and excludes only verified native/CRT mappings from source-owner
+claims. With `LANIUS_ALLOC=mmap`, it accounts for full allocation
+addresses/extents and exact release authority. It keeps
 the final input mapping live through publication and requires it to be the
 final mapping released. It rejects allocations after the first write and
 publication-phase releases followed by another write. Indexing legitimately
@@ -134,8 +162,10 @@ syscalls `read`, `write`, `mmap`, `munmap`, `mremap`, `brk`, `openat`, `close`
 and `rt_sigaction`; it does not observe every possible host effect. Direct map
 resource tests separately check callback and map-storage ownership.
 
-Host-only corpus/ledger controls pass. All four focused native gates passed:
-103 native process cases, including 38 reached allocation failures.
+Host-only corpus/ledger controls pass separately. The following historical
+receipts predate lazy insertion and the current-runtime verifier migration:
+four focused native gates / 103 process cases, including 38 reached allocation
+failures.
 
 | Gate | Native cases | Test time | Separate build time |
 | --- | ---: | ---: | ---: |

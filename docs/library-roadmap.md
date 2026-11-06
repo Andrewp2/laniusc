@@ -5,7 +5,16 @@ with Lanius interfaces and explicit native bindings for host and third-party
 services. This document tracks the whole scope. Completing the first
 milestone does not complete the goal.
 
-The current [caller-provided buffering increment](stdlib-caller-buffered.md)
+The current [lazy map update increment](stdlib-lazy-map-updates.md) adds
+same-type and borrowed-query update-or-insert methods to HashMap and TreeMap.
+Only misses initialize a complete entry; candidate validation and storage
+failures return its owners intact. Hits preserve stored keys and reinstall
+the latest value, including Result-error reports. Word concordance consumes
+the operation. All six library gates and four application groups / 104 native
+cases pass on Linux x86_64 CPU output, with two existing insertion regressions
+separate. This does not complete the collection or broader library roadmap.
+
+The preceding [caller-provided buffering increment](stdlib-caller-buffered.md)
 uses one `core::buffered` read/write/Seek engine over caller `View<u8>` scratch.
 `alloc::buffered` retains its Vec owner and delegates the state transitions.
 Both layers add consuming Parts restoration with metadata checks before

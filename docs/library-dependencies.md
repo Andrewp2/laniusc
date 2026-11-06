@@ -3,6 +3,17 @@
 This list records boundaries encountered while building the libraries. A row
 does not mean unrelated library work is blocked.
 
+The [lazy map update increment](stdlib-lazy-map-updates.md) uses existing
+Producer/Mapper traits, generic entry/error values and the canonical map
+insertion engines. It adds no host binding. Query/candidate consistency,
+exclusive callback access and nested owner cleanup remain manual obligations;
+the finite candidate check cannot establish an arbitrary policy's laws.
+All six library gates and four application groups / 104 native cases pass on
+Linux x86_64 CPU output from the GPU compiler. Two existing insertion
+regressions pass separately. Fixture syntax and observer corrections required
+no compiler, runtime or ABI repair. Other targets, enforced ownership and proofs
+remain separate.
+
 The [caller-provided buffering increment](stdlib-caller-buffered.md) uses
 existing Read/Write/BufRead/Seek protocols, `View<u8>` and stride-aware slice
 copies. The core engine neither allocates nor frees scratch; allocating

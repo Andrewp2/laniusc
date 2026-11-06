@@ -18,6 +18,9 @@ pub enum Error { InvalidCapacity, CapacityOverflow, AllocationFailed, InvalidOrd
 pub enum SinkError { Duplicate, Storage(Error) }
 pub enum IntoIterError { Remaining(i32) }
 pub struct Entry<K, V> { key: K, value: V }
+// Failed initialization returns its error; later failures return the complete
+// uninserted entry with its cleanup authority. No nested owner is destroyed.
+pub enum UpdateError<K,V,E> { Initialize(E), KeyMismatch(Entry<K,V>), Storage(Error,Entry<K,V>) }
 struct Node<K, V> { item: Entry<K, V>, left: i32, right: i32, parent: i32, height: i32, next_free: i32 }
 pub struct TreeMap<K, V> { storage: ptr, reserved: i32, used: i32, length: i32, root: i32, free: i32 }
 pub struct Cursor<K, V> { storage: ptr, reserved: i32, front: i32, back: i32 }
@@ -200,6 +203,17 @@ pub impl<K, V> TreeMap<K, V> {
         nodes[index] = node;
         return core::option::Some(updated.second);
     }
+    // Hit: update once and return Some(report), preserving the stored key.
+    // Miss: initialize once, check its key, insert and return None. The query
+    // is only observed; the initializer supplies the actual transferred entry.
+    // Initialize/KeyMismatch/Storage failures preserve this map and capacity.
+    pub fn try_update_or_insert<F,M,R,E>(&self, query:K, initialize:&F, update:&M)
+        -> core::result::Result<core::option::Option<R>,UpdateError<K,V,E>>
+        where K:core::cmp::Ord<K>, F:core::function::Producer<core::result::Result<Entry<K,V>,E>>,
+              M:core::function::Mapper<V,core::pair::Pair<V,R>> {
+        let policy:NaturalKey<K> = NaturalKey {};
+        return self.try_update_or_insert_by<K,NaturalKey<K>,F,M,R,E>(query,policy.borrow(),initialize,update);
+    }
     // Policies partition the stored order as Less, optional Equal, Greater;
     // each query identifies at most one key identity. Operands are call-scoped
     // observations: no mutation, retirement, reentry or descriptor escape.
@@ -221,6 +235,48 @@ pub impl<K, V> TreeMap<K, V> {
         where P:core::ordering::Comparator<K,Q>, M:core::function::Mapper<V,core::pair::Pair<V,R>> {
         let index:i32 = self.find_by<Q,P>(query,policy);
         return self.update_at<M,R>(index,update);
+    }
+    // One descent, then either the updater or the initializer, never both.
+    // All callbacks must keep query/key identity stable and must not access
+    // this map through aliases. End old borrows/cursors before calling.
+    // For every stored key, comparing it with query must agree with comparing
+    // it with the produced key. The Equal check below detects a mismatched
+    // candidate, but cannot establish this global ordering law for a policy.
+    // Return the latest V from update even when its R reports an error; there
+    // is no rollback, implicit Destroy or cleanup after a non-normal return.
+    pub fn try_update_or_insert_by<Q,P,F,M,R,E>(&self, query:Q, policy:&P, initialize:&F, update:&M)
+        -> core::result::Result<core::option::Option<R>,UpdateError<K,V,E>>
+        where K:core::cmp::Ord<K>, P:core::ordering::Comparator<K,Q>,
+              F:core::function::Producer<core::result::Result<Entry<K,V>,E>>,
+              M:core::function::Mapper<V,core::pair::Pair<V,R>> {
+        let nodes:[Node<K,V>] = self.nodes();
+        let index:i32 = self.root; let parent:i32 = -1; let left:bool = false;
+        while (index >= 0) {
+            let node:Node<K,V> = nodes[index]; parent = index;
+            let stored:K = node.item.key;
+            let order:core::ordering::Ordering = policy.compare(stored,query);
+            if (core::ordering::is_greater(order)) { left = true; index = node.left; }
+            else { if (core::ordering::is_less(order)) { left = false; index = node.right; }
+            else { return core::result::Ok(self.update_at<M,R>(index,update)); } }
+        }
+        let made:core::result::Result<Entry<K,V>,E> = initialize.produce();
+        if (made.is_err()) {
+            let failure:UpdateError<K,V,E> = UpdateError::Initialize(made.unwrap_err());
+            return core::result::Err(failure);
+        }
+        let item:Entry<K,V> = made.unwrap();
+        let key:K = item.key;
+        let order:core::ordering::Ordering = policy.compare(key,query);
+        if (!core::ordering::is_equal(order)) {
+            let failure:UpdateError<K,V,E> = UpdateError::KeyMismatch(item);
+            return core::result::Err(failure);
+        }
+        let added:core::result::Result<i32,Error> = self.insert_vacant(item,parent,left);
+        if (added.is_err()) {
+            let failure:UpdateError<K,V,E> = UpdateError::Storage(added.unwrap_err(),item);
+            return core::result::Err(failure);
+        }
+        return core::result::Ok(core::option::None());
     }
     pub fn remove_by<Q,P>(&self, query:Q, policy:&P) -> core::option::Option<Entry<K,V>>
         where P:core::ordering::Comparator<K,Q> {
@@ -496,6 +552,13 @@ pub impl<K, V> TreeMap<K, V> {
             else { if (K::lt(node.item.key, key)) { left = false; index = node.right; }
             else { let old: Entry<K, V> = node.item; node.item = item; nodes[index] = node; return core::result::Ok(core::option::Some(old)); } }
         }
+        let added:core::result::Result<i32,Error> = self.insert_vacant(item,parent,left);
+        if (added.is_err()) { return core::result::Err(added.unwrap_err()); }
+        return core::result::Ok(core::option::None());
+    }
+    // Insert at a known vacant child. Only stable node indices cross reserve;
+    // reacquire the backing view afterward. No key callbacks run during commit.
+    fn insert_vacant(&self, item:Entry<K,V>, parent:i32, left:bool) -> core::result::Result<i32,Error> {
         if (self.length == self.reserved) {
             let limit: i32 = capacity_limit<K, V>();
             if (self.length == limit) { return core::result::Err(Error::CapacityOverflow); }
@@ -505,13 +568,13 @@ pub impl<K, V> TreeMap<K, V> {
             let grown: core::result::Result<i32, Error> = self.try_reserve(target - self.length);
             if (core::result::is_err(grown)) { return core::result::Err(core::result::unwrap_err(grown)); }
         }
-        let target: [Node<K, V>] = self.nodes(); index = self.free;
+        let target: [Node<K, V>] = self.nodes(); let index:i32 = self.free;
         if (index >= 0) { let unused: Node<K, V> = target[index]; self.free = unused.next_free; }
         else { index = self.used; assert(index < self.reserved); self.used += 1; }
         target[index] = Node { item: item, left: -1, right: -1, parent: parent, height: 1, next_free: -1 };
         if (parent < 0) { self.root = index; }
         else { let upper: Node<K, V> = target[parent]; if (left) { upper.left = index; } else { upper.right = index; } target[parent] = upper; }
-        self.length += 1; self.rebalance(parent); return core::result::Ok(core::option::None());
+        self.length += 1; self.rebalance(parent); return core::result::Ok(self.length);
     }
     fn remove_at(&self, index: i32) -> core::option::Option<Entry<K, V>> {
         if (index < 0) { return core::option::None(); }

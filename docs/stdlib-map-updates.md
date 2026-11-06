@@ -46,9 +46,10 @@ limits apply to map-owned work: lawful user key operations may themselves
 allocate, release resources or record observations, just as the mapper may.
 
 `try_insert` still replaces the complete key/value entry and returns the
-displaced pair. `update_value` never inserts a missing key. A caller that wants
-to insert on absence must handle `None` and perform an ordinary checked
-insertion, including its allocation and ownership outcomes.
+displaced pair. `update_value` never inserts a missing key. The separate
+[lazy update-or-insert API](stdlib-lazy-map-updates.md) adds checked entry
+construction on absence, including recoverable candidate owners. Its runtime
+acceptance is tracked separately from the earlier receipts in this guide.
 
 ## Borrowed-query updates
 

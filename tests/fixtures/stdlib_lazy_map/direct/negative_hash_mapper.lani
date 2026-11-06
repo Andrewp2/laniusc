@@ -1,0 +1,16 @@
+module app::main;
+import alloc::hash_map;
+import core::function;
+import core::result;
+struct Supply {}
+impl Supply { fn borrow(&self) -> &Supply { return self; } }
+pub impl core::function::Producer<core::result::Result<alloc::hash_map::Entry<i32,u64>,u64>> for Supply {
+    pub fn produce(&self) -> core::result::Result<alloc::hash_map::Entry<i32,u64>,u64> { return core::result::Ok(alloc::hash_map::Entry { key:1,value:7 }); }
+}
+struct Missing {}
+impl Missing { fn borrow(&self) -> &Missing { return self; } }
+fn main() -> i32 {
+    let map=alloc::hash_map::new<i32,u64>(); let supply=Supply {}; let missing=Missing {};
+    let rejected_lazy_bound=map.try_update_or_insert<Supply,Missing,bool,u64>(1,supply.borrow(),missing.borrow());
+    return 0;
+}

@@ -29,11 +29,36 @@ pub impl core::function::Mapper<alloc::vec::Vec<u64>,core::pair::Pair<alloc::vec
     }
 }
 
+// The limit applies only to a missing word. Capture that decision before
+// lending the map to the operation; the initializer never accesses the map.
+struct FirstPosition { word:Text, position:u64, room:bool }
+impl FirstPosition { fn borrow(&self) -> &FirstPosition { return self; } }
+pub impl core::function::Producer<Result<alloc::tree_map::Entry<Text,alloc::vec::Vec<u64>>,i32>> for FirstPosition {
+    pub fn produce(&self) -> Result<alloc::tree_map::Entry<Text,alloc::vec::Vec<u64>>,i32> {
+        if (!self.room) { return core::result::Err(2); }
+        let positions:alloc::vec::Vec<u64> = alloc::vec::new<u64>();
+        let added = positions.try_push(self.position);
+        if (added.is_err()) { positions.destroy(); return core::result::Err(vector_status(added.unwrap_err())); }
+        let item:alloc::tree_map::Entry<Text,alloc::vec::Vec<u64>> = alloc::tree_map::Entry { key:self.word,value:positions };
+        return core::result::Ok(item);
+    }
+}
+
 fn vector_status(error:alloc::vec::Error) -> i32 {
     return match (error) { alloc::vec::Error::AllocationFailed -> 4, _ -> 2 };
 }
 fn map_status(error:alloc::tree_map::Error) -> i32 {
     return match (error) { alloc::tree_map::Error::AllocationFailed -> 4, _ -> 2 };
+}
+fn discard_candidate(item:alloc::tree_map::Entry<Text,alloc::vec::Vec<u64>>, status:i32) -> i32 {
+    item.value.destroy(); return status;
+}
+fn update_status(error:alloc::tree_map::UpdateError<Text,alloc::vec::Vec<u64>,i32>) -> i32 {
+    return match (error) {
+        alloc::tree_map::UpdateError::Initialize(status) -> status,
+        alloc::tree_map::UpdateError::KeyMismatch(item) -> discard_candidate(item,3),
+        alloc::tree_map::UpdateError::Storage(cause,item) -> discard_candidate(item,map_status(cause))
+    };
 }
 fn read_status(error:alloc::io::ReadError) -> i32 {
     return match (error) {
@@ -61,25 +86,13 @@ fn index_words(words:&alloc::tree_map::TreeMap<Text,alloc::vec::Vec<u64>>, input
         let word:Text = selected.unwrap();
         let position:u64 = (word.start-input.start) as u64;
         let append:AppendPosition = AppendPosition { position:position };
-        let updated:Option<Result<i32,alloc::vec::Error>> = words.update_value<AppendPosition,Result<i32,alloc::vec::Error>>(word,append.borrow());
+        let first:FirstPosition = FirstPosition { word:word,position:position,room:words.len()<65536 };
+        let changed = words.try_update_or_insert<FirstPosition,AppendPosition,Result<i32,alloc::vec::Error>,i32>(word,first.borrow(),append.borrow());
+        if (changed.is_err()) { return update_status(changed.unwrap_err()); }
+        let updated:Option<Result<i32,alloc::vec::Error>> = changed.unwrap();
         if (updated.is_some()) {
             let added:Result<i32,alloc::vec::Error> = updated.unwrap();
             if (added.is_err()) { return vector_status(added.unwrap_err()); }
-        } else {
-            if (words.len() >= 65536) { return 2; }
-            let positions:alloc::vec::Vec<u64> = alloc::vec::new();
-            let added:Result<i32,alloc::vec::Error> = positions.try_push(position);
-            if (added.is_err()) { positions.destroy(); return vector_status(added.unwrap_err()); }
-            let inserted:Result<Option<alloc::tree_map::Entry<Text,alloc::vec::Vec<u64>>>,alloc::tree_map::Error> = words.try_insert(word,positions);
-            if (inserted.is_err()) { positions.destroy(); return map_status(inserted.unwrap_err()); }
-            // Stable keys make replacement impossible after update returned
-            // None. Still retire a displaced owner if that invariant fails.
-            let previous:Option<alloc::tree_map::Entry<Text,alloc::vec::Vec<u64>>> = inserted.unwrap();
-            if (previous.is_some()) {
-                let old:alloc::tree_map::Entry<Text,alloc::vec::Vec<u64>> = previous.unwrap();
-                old.value.destroy();
-                return 3;
-            }
         }
     }
     return 0;

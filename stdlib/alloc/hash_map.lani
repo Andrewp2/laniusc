@@ -16,6 +16,9 @@ pub enum IntoIterError { Remaining(i32) }
 // Sink insertion rejects existing keys instead of replacing their entries.
 pub enum SinkError { Duplicate, Storage(Error) }
 pub struct Entry<K, V> { key: K, value: V }
+// Initialization errors retain their own cleanup policy. The other variants
+// return the complete uninserted candidate; no nested owner is destroyed.
+pub enum UpdateError<K,V,E> { Initialize(E), KeyMismatch(Entry<K,V>), Storage(Error,Entry<K,V>) }
 // One table allocation holds `buckets` cells, then `buckets` control bytes
 // read as buckets / 8 group words. A control byte is empty (255), deleted
 // (128) or, for a full cell, seven bits of the spread hash. The cell caches
@@ -251,6 +254,37 @@ pub impl<K, V> HashMap<K, V> {
         }
         return -1;
     }
+    // The borrowed-query counterpart of find_slot. Save a vacant position
+    // while checking the complete probe path for an existing equivalent key.
+    fn find_slot_by<Q,P>(&self, query:Q, hash:u32, policy:&P) -> i32
+        where P:core::function::Mapper<core::pair::Pair<K,Q>,bool> {
+        if (self.buckets == 0) { return -1; }
+        let control: [u64] = slice_from_raw_parts(self.storage + (self.buckets as usize), self.buckets >> 3);
+        let slots: [Cell<K, V>] = slice_from_raw_parts(self.storage, self.buckets);
+        let groups: i32 = self.buckets >> 3;
+        let mask: i32 = groups - 1;
+        let mixed: u64 = spread(hash);
+        let pattern: u64 = (mixed >> 57) * 72340172838076673;
+        let group: i32 = first_group(mixed, groups);
+        let free: i32 = -1;
+        let stride: i32 = 0;
+        while (stride < groups) {
+            let word: u64 = control[group];
+            let hits: u64 = match_tag(word, pattern);
+            while (hits != 0) {
+                let index: i32 = (group << 3) + lowest_byte(hits);
+                let cell: Cell<K, V> = slots[index];
+                if (cell.hash == hash && equivalent<K,V,Q,P>(cell.item,query,policy)) { return index; }
+                hits = hits & (hits - 1);
+            }
+            let open: u64 = match_free(word);
+            if (free < 0 && open != 0) { free = (group << 3) + lowest_byte(open); }
+            if (match_empty(word) != 0) { return -2 - free; }
+            stride += 1;
+            group = (group + stride) & mask;
+        }
+        return -2 - free;
+    }
     pub fn contains_key(&self, key: K) -> bool where K: core::hash::Hash<K>, K: core::cmp::Eq<K> {
         return self.find(key, K::hash(key)) >= 0;
     }
@@ -280,6 +314,24 @@ pub impl<K, V> HashMap<K, V> {
         let hash: u32 = K::hash(key);
         let index: i32 = self.find(key, hash);
         return self.update_at<M,R>(index,update);
+    }
+    // Ok(Some(report)) updates an existing value; Ok(None) inserts a newly
+    // initialized entry. Hits call only update, preserving the stored key;
+    // misses call only initialize, before any reservation. Query is observed,
+    // while the produced Entry transfers to the map or an error payload.
+    // End previous borrows/cursors and keep query backing live. Neither
+    // callback may access this map or change query/key identity through aliases.
+    // As in update_value, an R reporting failure still reinstalls the latest V.
+    pub fn try_update_or_insert<F,M,R,E>(&self, query:K, initialize:&F, update:&M)
+        -> core::result::Result<core::option::Option<R>,UpdateError<K,V,E>>
+        where K:core::hash::Hash<K>, K:core::cmp::Eq<K>,
+              F:core::function::Producer<core::result::Result<Entry<K,V>,E>>,
+              M:core::function::Mapper<V,core::pair::Pair<V,R>> {
+        let hash:u32 = K::hash(query);
+        let slot:i32 = self.find_slot(query,hash);
+        if (slot >= 0) { return core::result::Ok(self.update_at<M,R>(slot,update)); }
+        let policy:NaturalKey<K> = NaturalKey {};
+        return self.initialize_slot<K,NaturalKey<K>,F,R,E>(query,hash,slot,policy.borrow(),initialize);
     }
     fn update_at<M,R>(&self, index:i32, update:&M) -> core::option::Option<R>
         where M:core::function::Mapper<V,core::pair::Pair<V,R>> {
@@ -314,6 +366,37 @@ pub impl<K, V> HashMap<K, V> {
               M:core::function::Mapper<V,core::pair::Pair<V,R>> {
         let index:i32 = self.find_by<Q,P>(query,Q::hash(query),policy);
         return self.update_at<M,R>(index,update);
+    }
+    // The query/policy must identify exactly one natural key identity, with
+    // equal hashes for matching keys. A produced key is checked against the
+    // saved query hash and policy before reserve; KeyMismatch returns it intact.
+    // This finite check does not validate an arbitrary unlawful policy.
+    pub fn try_update_or_insert_by<Q,P,F,M,R,E>(&self, query:Q, policy:&P, initialize:&F, update:&M)
+        -> core::result::Result<core::option::Option<R>,UpdateError<K,V,E>>
+        where K:core::hash::Hash<K>, K:core::cmp::Eq<K>, Q:core::hash::Hash<Q>,
+              P:core::function::Mapper<core::pair::Pair<K,Q>,bool>,
+              F:core::function::Producer<core::result::Result<Entry<K,V>,E>>,
+              M:core::function::Mapper<V,core::pair::Pair<V,R>> {
+        let hash:u32 = Q::hash(query);
+        let slot:i32 = self.find_slot_by<Q,P>(query,hash,policy);
+        if (slot >= 0) { return core::result::Ok(self.update_at<M,R>(slot,update)); }
+        return self.initialize_slot<Q,P,F,R,E>(query,hash,slot,policy,initialize);
+    }
+    // A negative slot records one completed lookup. No callback may invalidate
+    // it. Reservation may rehash, so insert_vacant reacquires a free position.
+    fn initialize_slot<Q,P,F,R,E>(&self, query:Q, hash:u32, slot:i32, policy:&P, initialize:&F)
+        -> core::result::Result<core::option::Option<R>,UpdateError<K,V,E>>
+        where K:core::hash::Hash<K>, P:core::function::Mapper<core::pair::Pair<K,Q>,bool>,
+              F:core::function::Producer<core::result::Result<Entry<K,V>,E>> {
+        let initialized:core::result::Result<Entry<K,V>,E> = initialize.produce();
+        if (initialized.is_err()) { return core::result::Err(UpdateError::Initialize(initialized.unwrap_err())); }
+        let item:Entry<K,V> = initialized.unwrap();
+        let candidate_hash:u32 = K::hash(item.key);
+        if (candidate_hash != hash) { return core::result::Err(UpdateError::KeyMismatch(item)); }
+        if (!equivalent<K,V,Q,P>(item,query,policy)) { return core::result::Err(UpdateError::KeyMismatch(item)); }
+        let inserted:core::result::Result<i32,Error> = self.insert_vacant(item,hash,slot);
+        if (inserted.is_err()) { return core::result::Err(UpdateError::Storage(inserted.unwrap_err(),item)); }
+        return core::result::Ok(core::option::None());
     }
     pub fn remove_by<Q,P>(&self, query:Q, policy:&P) -> core::option::Option<Entry<K,V>>
         where Q:core::hash::Hash<Q>, P:core::function::Mapper<core::pair::Pair<K,Q>,bool> {
@@ -362,6 +445,14 @@ pub impl<K, V> HashMap<K, V> {
             slots[slot] = Cell { hash: hash, item: item };
             return core::result::Ok(core::option::Some(previous));
         }
+        let inserted:core::result::Result<i32,Error> = self.insert_vacant(item,hash,slot);
+        if (inserted.is_err()) { return core::result::Err(inserted.unwrap_err()); }
+        return core::result::Ok(core::option::None());
+    }
+    // Publish a known-absent entry. The encoded slot remains useful until a
+    // reserve rehashes the table; then find a free cell using the cached hash.
+    // A failed reserve leaves the table and caller-owned entry unchanged.
+    fn insert_vacant(&self, item:Entry<K,V>, hash:u32, slot:i32) -> core::result::Result<i32,Error> {
         let index: i32 = -2 - slot;
         let mixed: u64 = (hash as u64) * 11400714819323198485;
         if (self.occupied >= self.buckets / 2) {
@@ -381,7 +472,7 @@ pub impl<K, V> HashMap<K, V> {
         let slots: [Cell<K, V>] = slice_from_raw_parts(self.storage, self.buckets);
         slots[index] = Cell { hash: hash, item: item };
         self.length += 1;
-        return core::result::Ok(core::option::None());
+        return core::result::Ok(index);
     }
     pub fn remove(&self, key: K) -> core::option::Option<Entry<K, V>>
         where K: core::hash::Hash<K>, K: core::cmp::Eq<K> {

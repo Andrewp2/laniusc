@@ -1,0 +1,222 @@
+module app::main;
+import alloc::hash_map;
+import alloc::tree_map;
+import core::cmp;
+import core::function;
+import core::hash;
+import core::iter;
+import core::option;
+import core::ordering;
+import core::pair;
+import core::result;
+
+// Only semantic callback order is recorded. No table layout or exact search
+// comparison count is prescribed; hash calls are counted where contracted.
+struct Trace { words:[u64], used:i32 }
+impl Trace {
+    fn borrow(&self) -> &Trace { return self; }
+    fn reset(&self) { self.used=0; }
+    fn record(&self,kind:u64,value:u64) {
+        assert(self.used<256); self.words[self.used*2]=kind; self.words[self.used*2+1]=value; self.used+=1;
+    }
+    fn count(&self,kind:u64,value:u64) -> i32 {
+        let found:i32=0; let i:i32=0;
+        while(i<self.used) { if(self.words[i*2]==kind && self.words[i*2+1]==value) { found+=1; } i+=1; }
+        return found;
+    }
+    fn callbacks(&self,inserted:bool,initializer_failed:bool) {
+        let initialized:i32=0; let updated:i32=0; let i:i32=0;
+        while(i<self.used) {
+            let kind:u64=self.words[i*2];
+            if(kind==10) { initialized+=1; }
+            if(kind==20) { updated+=1; assert(i==self.used-1); }
+            i+=1;
+        }
+        if(inserted) { assert(initialized==1 && updated==0); }
+        else { assert(initialized==0 && updated==1); }
+        if(initializer_failed) { assert(self.words[(self.used-1)*2]==10); }
+    }
+}
+struct Key { rank:i32, tag:u64, hash:u32, trace:&Trace }
+struct Query { rank:i32, hash:u32, trace:&Trace }
+fn key(rank:i32,tag:u64,hash:u32,trace:&Trace) -> Key { return Key { rank:rank,tag:tag,hash:hash,trace:trace }; }
+fn query(rank:i32,hash:u32,trace:&Trace) -> Query { return Query { rank:rank,hash:hash,trace:trace }; }
+pub impl core::hash::Hash<Key> for Key {
+    pub fn hash(value:Key) -> u32 { value.trace.record(1,value.tag); return value.hash; }
+}
+pub impl core::hash::Hash<Query> for Query {
+    pub fn hash(value:Query) -> u32 { value.trace.record(2,value.rank as u64); return value.hash; }
+}
+pub impl core::cmp::Eq<Key> for Key {
+    pub fn eq(left:Key,right:Key) -> bool { left.trace.record(3,left.tag); return left.rank==right.rank; }
+    pub fn ne(left:Key,right:Key) -> bool { return !Key::eq(left,right); }
+}
+pub impl core::cmp::Ord<Key> for Key {
+    pub fn lt(left:Key,right:Key) -> bool { left.trace.record(4,left.tag); return left.rank<right.rank; }
+    pub fn le(left:Key,right:Key) -> bool { return !Key::lt(right,left); }
+    pub fn gt(left:Key,right:Key) -> bool { return Key::lt(right,left); }
+    pub fn ge(left:Key,right:Key) -> bool { return !Key::lt(left,right); }
+}
+struct Policy {}
+impl Policy { fn borrow(&self) -> &Policy { return self; } }
+pub impl core::function::Mapper<core::pair::Pair<Key,Query>,bool> for Policy {
+    pub fn apply(&self,values:core::pair::Pair<Key,Query>) -> bool {
+        values.first.trace.record(5,values.first.tag); return values.first.rank==values.second.rank;
+    }
+}
+pub impl core::ordering::Comparator<Key,Query> for Policy {
+    pub fn compare(&self,stored:Key,wanted:Query) -> core::ordering::Ordering {
+        stored.trace.record(5,stored.tag);
+        if(stored.rank<wanted.rank) { return core::ordering::Less; }
+        if(stored.rank>wanted.rank) { return core::ordering::Greater; }
+        return core::ordering::Equal;
+    }
+}
+struct HashInit { candidate:alloc::hash_map::Entry<Key,u64>, fail:bool, calls:i32, trace:&Trace }
+impl HashInit { fn borrow(&self) -> &HashInit { return self; } }
+pub impl core::function::Producer<core::result::Result<alloc::hash_map::Entry<Key,u64>,u64>> for HashInit {
+    pub fn produce(&self) -> core::result::Result<alloc::hash_map::Entry<Key,u64>,u64> {
+        self.calls+=1; self.trace.record(10,self.candidate.key.tag);
+        if(self.fail) { return core::result::Err(18446744073709551614); }
+        return core::result::Ok(self.candidate);
+    }
+}
+struct TreeInit { candidate:alloc::tree_map::Entry<Key,u64>, fail:bool, calls:i32, trace:&Trace }
+impl TreeInit { fn borrow(&self) -> &TreeInit { return self; } }
+pub impl core::function::Producer<core::result::Result<alloc::tree_map::Entry<Key,u64>,u64>> for TreeInit {
+    pub fn produce(&self) -> core::result::Result<alloc::tree_map::Entry<Key,u64>,u64> {
+        self.calls+=1; self.trace.record(10,self.candidate.key.tag);
+        if(self.fail) { return core::result::Err(18446744073709551614); }
+        return core::result::Ok(self.candidate);
+    }
+}
+struct Update { calls:i32, fail_report:bool, trace:&Trace }
+impl Update { fn borrow(&self) -> &Update { return self; } }
+pub impl core::function::Mapper<u64,core::pair::Pair<u64,core::result::Result<u64,u64>>> for Update {
+    pub fn apply(&self,old:u64) -> core::pair::Pair<u64,core::result::Result<u64,u64>> {
+        self.calls+=1; self.trace.record(20,old);
+        let report:core::result::Result<u64,u64> =core::result::Ok(old);
+        if(self.fail_report) { report=core::result::Err(9223372036854775813); }
+        return core::pair::Pair { first:old+5,second:report };
+    }
+}
+
+fn hash_contracts() {
+    let words:[u64;512]=[0;512]; let trace:Trace=Trace { words:words,used:0 }; let policy:Policy=Policy {};
+    let map:alloc::hash_map::HashMap<Key,u64> =alloc::hash_map::new<Key,u64>();
+    let init:HashInit=HashInit { candidate:alloc::hash_map::Entry { key:key(1,101,7,trace.borrow()),value:10 },fail:true,calls:0,trace:trace.borrow() };
+    let update:Update=Update { calls:0,fail_report:true,trace:trace.borrow() };
+    let result=map.try_update_or_insert<HashInit,Update,core::result::Result<u64,u64>,u64>(key(1,901,7,trace.borrow()),init.borrow(),update.borrow());
+    assert(result.is_err());
+    let failure:u64=match(result.unwrap_err()) { alloc::hash_map::UpdateError::Initialize(cause) -> cause, _ -> 0 };
+    assert(failure==18446744073709551614 && map.len()==0 && map.capacity()==0 && map.storage==0);
+    trace.callbacks(true,true); assert(trace.count(1,901)==1 && trace.count(1,101)==0 && init.calls==1 && update.calls==0);
+    trace.reset(); init.fail=false;
+    result=map.try_update_or_insert<HashInit,Update,core::result::Result<u64,u64>,u64>(key(1,901,7,trace.borrow()),init.borrow(),update.borrow());
+    assert(result.is_ok() && result.unwrap().is_none()); trace.callbacks(true,false);
+    assert(trace.count(1,901)==1 && trace.count(1,101)==1 && init.calls==2 && update.calls==0);
+    let rank:i32=2; while(rank<=4) { map.try_insert(key(rank,100+rank as u64,7,trace.borrow()),rank as u64*10).unwrap(); rank+=1; }
+    assert(map.len()==map.capacity()); let pointer:ptr=map.storage; let capacity:i32=map.capacity();
+    trace.reset(); init.fail=true;
+    result=map.try_update_or_insert<HashInit,Update,core::result::Result<u64,u64>,u64>(key(1,901,7,trace.borrow()),init.borrow(),update.borrow());
+    assert(result.is_ok() && result.unwrap().unwrap().unwrap_err()==9223372036854775813);
+    trace.callbacks(false,false); assert(trace.count(1,901)==1 && trace.count(1,101)==0 && init.calls==2 && update.calls==1);
+    assert(map.storage==pointer && map.capacity()==capacity && map.len()==4);
+    let first=map.get_entry(key(1,901,7,trace.borrow())).unwrap(); assert(first.key.tag==101 && first.value==15);
+    // Wrong candidate hash is rejected before its equality policy runs.
+    init.fail=false; init.candidate=alloc::hash_map::Entry { key:key(5,105,8,trace.borrow()),value:50 }; trace.reset();
+    result=map.try_update_or_insert<HashInit,Update,core::result::Result<u64,u64>,u64>(key(5,905,7,trace.borrow()),init.borrow(),update.borrow());
+    let rejected:alloc::hash_map::Entry<Key,u64> =match(result.unwrap_err()) { alloc::hash_map::UpdateError::KeyMismatch(item) -> item, _ -> alloc::hash_map::Entry { key:key(-1,0,0,trace.borrow()),value:0 as u64 } };
+    assert(rejected.key.rank==5 && rejected.key.tag==105 && rejected.key.hash==8 && rejected.value==50);
+    trace.callbacks(true,false); assert(trace.count(1,905)==1 && trace.count(1,105)==1 && trace.count(3,105)==0);
+    assert(map.storage==pointer && map.capacity()==capacity && map.len()==4 && update.calls==1);
+    // Equal hashes alone do not make a candidate denote the query.
+    init.candidate=alloc::hash_map::Entry { key:key(6,106,7,trace.borrow()),value:60 }; trace.reset();
+    result=map.try_update_or_insert_by<Query,Policy,HashInit,Update,core::result::Result<u64,u64>,u64>(query(5,7,trace.borrow()),policy.borrow(),init.borrow(),update.borrow());
+    rejected=match(result.unwrap_err()) { alloc::hash_map::UpdateError::KeyMismatch(item) -> item, _ -> alloc::hash_map::Entry { key:key(-1,0,0,trace.borrow()),value:0 as u64 } };
+    assert(rejected.key.rank==6 && rejected.key.tag==106 && rejected.value==60);
+    trace.callbacks(true,false); assert(trace.count(2,5)==1 && trace.count(1,106)==1 && trace.count(5,106)==1);
+    assert(map.storage==pointer && map.capacity()==capacity && map.len()==4 && update.calls==1);
+    // Retry the returned candidate under the matching query; it becomes the representative.
+    init.candidate=rejected; trace.reset();
+    result=map.try_update_or_insert_by<Query,Policy,HashInit,Update,core::result::Result<u64,u64>,u64>(query(6,7,trace.borrow()),policy.borrow(),init.borrow(),update.borrow());
+    assert(result.unwrap().is_none()); trace.callbacks(true,false); assert(trace.count(2,6)==1 && trace.count(1,106)==1);
+    init.fail=true; trace.reset(); update.fail_report=false;
+    result=map.try_update_or_insert_by<Query,Policy,HashInit,Update,core::result::Result<u64,u64>,u64>(query(6,7,trace.borrow()),policy.borrow(),init.borrow(),update.borrow());
+    assert(result.unwrap().unwrap().unwrap()==60); trace.callbacks(false,false); assert(trace.count(2,6)==1 && trace.count(1,106)==0);
+    let last=map.get_entry_by(query(6,7,trace.borrow()),policy.borrow()).unwrap(); assert(last.key.tag==106 && last.value==65);
+    trace.reset();
+    result=map.try_update_or_insert_by<Query,Policy,HashInit,Update,core::result::Result<u64,u64>,u64>(query(9,7,trace.borrow()),policy.borrow(),init.borrow(),update.borrow());
+    assert(result.is_err()); trace.callbacks(true,true); assert(trace.count(2,9)==1 && map.len()==5 && update.calls==2);
+    rank=1; while(rank<=4) { trace.reset(); let item=map.get_entry(key(rank,900+rank as u64,7,trace.borrow())).unwrap(); let expected:u64=rank as u64*10; if(rank==1) { expected=15; } assert(item.key.tag==100+rank as u64 && item.value==expected); rank+=1; }
+    map.destroy();
+}
+
+fn tree_contracts() {
+    let words:[u64;512]=[0;512]; let trace:Trace=Trace { words:words,used:0 }; let policy:Policy=Policy {};
+    let map:alloc::tree_map::TreeMap<Key,u64> =alloc::tree_map::new<Key,u64>();
+    let init:TreeInit=TreeInit { candidate:alloc::tree_map::Entry { key:key(1,101,7,trace.borrow()),value:10 },fail:true,calls:0,trace:trace.borrow() };
+    let update:Update=Update { calls:0,fail_report:true,trace:trace.borrow() };
+    let result=map.try_update_or_insert<TreeInit,Update,core::result::Result<u64,u64>,u64>(key(1,901,7,trace.borrow()),init.borrow(),update.borrow());
+    let failure:u64=match(result.unwrap_err()) { alloc::tree_map::UpdateError::Initialize(cause) -> cause, _ -> 0 };
+    assert(failure==18446744073709551614 && map.len()==0 && map.capacity()==0 && map.storage==0);
+    trace.callbacks(true,true); assert(init.calls==1 && update.calls==0);
+    trace.reset(); init.fail=false;
+    result=map.try_update_or_insert<TreeInit,Update,core::result::Result<u64,u64>,u64>(key(1,901,7,trace.borrow()),init.borrow(),update.borrow());
+    assert(result.unwrap().is_none()); trace.callbacks(true,false); assert(init.calls==2 && update.calls==0);
+    let rank:i32=2; while(rank<=4) { map.try_insert(key(rank,100+rank as u64,7,trace.borrow()),rank as u64*10).unwrap(); rank+=1; }
+    assert(map.len()==map.capacity()); let pointer:ptr=map.storage; let capacity:i32=map.capacity();
+    trace.reset(); init.fail=true;
+    result=map.try_update_or_insert<TreeInit,Update,core::result::Result<u64,u64>,u64>(key(1,901,7,trace.borrow()),init.borrow(),update.borrow());
+    assert(result.unwrap().unwrap().unwrap_err()==9223372036854775813); trace.callbacks(false,false);
+    assert(init.calls==2 && update.calls==1 && map.storage==pointer && map.capacity()==capacity && map.len()==4);
+    let first=map.get_entry(key(1,901,7,trace.borrow())).unwrap(); assert(first.key.tag==101 && first.value==15);
+    init.fail=false; init.candidate=alloc::tree_map::Entry { key:key(6,106,7,trace.borrow()),value:60 }; trace.reset();
+    result=map.try_update_or_insert<TreeInit,Update,core::result::Result<u64,u64>,u64>(key(5,905,7,trace.borrow()),init.borrow(),update.borrow());
+    let rejected:alloc::tree_map::Entry<Key,u64> =match(result.unwrap_err()) { alloc::tree_map::UpdateError::KeyMismatch(item) -> item, _ -> alloc::tree_map::Entry { key:key(-1,0,0,trace.borrow()),value:0 as u64 } };
+    assert(rejected.key.rank==6 && rejected.key.tag==106 && rejected.value==60); trace.callbacks(true,false);
+    assert(map.storage==pointer && map.capacity()==capacity && map.len()==4 && update.calls==1);
+    trace.reset();
+    result=map.try_update_or_insert_by<Query,Policy,TreeInit,Update,core::result::Result<u64,u64>,u64>(query(5,7,trace.borrow()),policy.borrow(),init.borrow(),update.borrow());
+    rejected=match(result.unwrap_err()) { alloc::tree_map::UpdateError::KeyMismatch(item) -> item, _ -> alloc::tree_map::Entry { key:key(-1,0,0,trace.borrow()),value:0 as u64 } };
+    assert(rejected.key.rank==6 && rejected.key.tag==106 && rejected.value==60); trace.callbacks(true,false); assert(trace.count(5,106)==1);
+    assert(map.storage==pointer && map.capacity()==capacity && map.len()==4 && update.calls==1);
+    init.candidate=rejected; trace.reset();
+    result=map.try_update_or_insert_by<Query,Policy,TreeInit,Update,core::result::Result<u64,u64>,u64>(query(6,7,trace.borrow()),policy.borrow(),init.borrow(),update.borrow());
+    assert(result.unwrap().is_none()); trace.callbacks(true,false);
+    init.fail=true; trace.reset(); update.fail_report=false;
+    result=map.try_update_or_insert_by<Query,Policy,TreeInit,Update,core::result::Result<u64,u64>,u64>(query(6,7,trace.borrow()),policy.borrow(),init.borrow(),update.borrow());
+    assert(result.unwrap().unwrap().unwrap()==60); trace.callbacks(false,false);
+    let last=map.get_entry_by(query(6,7,trace.borrow()),policy.borrow()).unwrap(); assert(last.key.tag==106 && last.value==65);
+    trace.reset();
+    result=map.try_update_or_insert_by<Query,Policy,TreeInit,Update,core::result::Result<u64,u64>,u64>(query(9,7,trace.borrow()),policy.borrow(),init.borrow(),update.borrow());
+    assert(result.is_err()); trace.callbacks(true,true); assert(map.len()==5 && update.calls==2);
+    let cursor=map.iter(); rank=1;
+    while(rank<=4) { let item=cursor.next().unwrap(); let expected:u64=rank as u64*10; if(rank==1) { expected=15; } assert(item.key.rank==rank && item.key.tag==100+rank as u64 && item.value==expected); rank+=1; }
+    let tail=cursor.next().unwrap(); assert(tail.key.rank==6 && tail.key.tag==106 && tail.value==65 && cursor.next().is_none()); map.destroy();
+}
+
+fn reused_slots() {
+    let words:[u64;512]=[0;512]; let trace:Trace=Trace { words:words,used:0 }; let policy:Policy=Policy {};
+    let hash:alloc::hash_map::HashMap<Key,u64> =alloc::hash_map::new<Key,u64>(); hash.try_reserve(8).unwrap();
+    let tree:alloc::tree_map::TreeMap<Key,u64> =alloc::tree_map::with_capacity<Key,u64>(8).unwrap();
+    let rank:i32=0; while(rank<8) { trace.reset(); hash.try_insert(key(rank,100+rank as u64,7,trace.borrow()),rank as u64).unwrap(); tree.try_insert(key(rank,100+rank as u64,7,trace.borrow()),rank as u64).unwrap(); rank+=1; }
+    trace.reset(); hash.remove(key(3,903,7,trace.borrow())).unwrap(); tree.remove(key(3,903,7,trace.borrow())).unwrap();
+    assert(hash.occupied>hash.len() && tree.free>=0); // Reach a tombstone and a reusable node.
+    let tree_pointer:ptr=tree.storage; let used:i32=tree.used;
+    let hi:HashInit=HashInit { candidate:alloc::hash_map::Entry { key:key(8,108,7,trace.borrow()),value:8 },fail:false,calls:0,trace:trace.borrow() };
+    let ti:TreeInit=TreeInit { candidate:alloc::tree_map::Entry { key:key(8,108,7,trace.borrow()),value:8 },fail:false,calls:0,trace:trace.borrow() };
+    let update:Update=Update { calls:0,fail_report:false,trace:trace.borrow() };
+    trace.reset(); let h=hash.try_update_or_insert_by<Query,Policy,HashInit,Update,core::result::Result<u64,u64>,u64>(query(8,7,trace.borrow()),policy.borrow(),hi.borrow(),update.borrow()); assert(h.unwrap().is_none()); trace.callbacks(true,false);
+    trace.reset(); let t=tree.try_update_or_insert_by<Query,Policy,TreeInit,Update,core::result::Result<u64,u64>,u64>(query(8,7,trace.borrow()),policy.borrow(),ti.borrow(),update.borrow()); assert(t.unwrap().is_none()); trace.callbacks(true,false);
+    assert(tree.storage==tree_pointer && tree.used==used && tree.capacity()==8 && hash.capacity()==8 && hash.len()==8 && tree.len()==8);
+    assert(hi.calls==1 && ti.calls==1 && update.calls==0);
+    rank=0; while(rank<=8) {
+        trace.reset(); let hentry=hash.get_entry_by(query(rank,7,trace.borrow()),policy.borrow()); let tentry=tree.get_entry_by(query(rank,7,trace.borrow()),policy.borrow());
+        if(rank==3) { assert(hentry.is_none() && tentry.is_none()); }
+        else { let hv=hentry.unwrap(); let tv=tentry.unwrap(); assert(hv.key.tag==100+rank as u64 && tv.key.tag==hv.key.tag && hv.value==rank as u64 && tv.value==hv.value); }
+        rank+=1;
+    }
+    hash.destroy(); tree.destroy();
+}
+fn main() -> i32 { hash_contracts(); tree_contracts(); reused_slots(); return 0; }

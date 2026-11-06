@@ -1,0 +1,142 @@
+module app::main;
+import alloc::tree_map;
+import alloc::string;
+import core::function;
+import core::iter;
+import core::option;
+import core::result;
+import core::text;
+import fixture::owners;
+
+struct Factory { build:&fixture::owners::Build, saved:core::option::Option<alloc::tree_map::Entry<alloc::string::String,fixture::owners::Value>> }
+impl Factory { fn borrow(&self) -> &Factory { return self; } }
+pub impl core::function::Producer<core::result::Result<alloc::tree_map::Entry<alloc::string::String,fixture::owners::Value>,fixture::owners::InitError>> for Factory {
+    pub fn produce(&self) -> core::result::Result<alloc::tree_map::Entry<alloc::string::String,fixture::owners::Value>,fixture::owners::InitError> {
+        if(self.saved.is_some()) {
+            self.build.calls+=1;
+            let item=self.saved.unwrap(); self.saved=core::option::None();
+            return core::result::Ok(item);
+        }
+        let made=self.build.create();
+        if(made.is_err()) { return core::result::Err(made.unwrap_err()); }
+        let candidate=made.unwrap();
+        return core::result::Ok(alloc::tree_map::Entry { key:candidate.key,value:candidate.value });
+    }
+}
+fn owned_error(error:alloc::tree_map::UpdateError<alloc::string::String,fixture::owners::Value,fixture::owners::InitError>) -> alloc::string::String {
+    return match(error) {
+        alloc::tree_map::UpdateError::Initialize(cause) -> fixture::owners::owned_error(cause),
+        _ -> fixture::owners::unexpected_owned()
+    };
+}
+fn retire_candidate(item:alloc::tree_map::Entry<alloc::string::String,fixture::owners::Value>,build:&fixture::owners::Build) -> i32 {
+    build.verify(item.key,item.value);
+    assert(item.key.as_text().equals(fixture::owners::text("wrong",5)));
+    item.key.destroy(); fixture::owners::destroy(item.value); return 0;
+}
+fn retire_mismatch(error:alloc::tree_map::UpdateError<alloc::string::String,fixture::owners::Value,fixture::owners::InitError>,build:&fixture::owners::Build) -> i32 {
+    return match(error) {
+        alloc::tree_map::UpdateError::KeyMismatch(item) -> retire_candidate(item,build),
+        _ -> fixture::owners::unexpected_stage()
+    };
+}
+fn recover_candidate(cause:alloc::tree_map::Error,item:alloc::tree_map::Entry<alloc::string::String,fixture::owners::Value>,factory:&Factory,missing:core::text::Text) -> i32 {
+    let allocation_failed:bool=match(cause) { alloc::tree_map::Error::AllocationFailed -> true, _ -> false };
+    assert(allocation_failed);
+    factory.build.verify(item.key,item.value); assert(item.key.as_text().equals(missing));
+    factory.saved=core::option::Some(item); return 4;
+}
+fn recovery_stage(error:alloc::tree_map::UpdateError<alloc::string::String,fixture::owners::Value,fixture::owners::InitError>,factory:&Factory,missing:core::text::Text) -> i32 {
+    return match(error) {
+        alloc::tree_map::UpdateError::Initialize(cause) -> fixture::owners::allocation_stage(cause),
+        alloc::tree_map::UpdateError::Storage(cause,item) -> recover_candidate(cause,item,factory,missing),
+        _ -> fixture::owners::unexpected_stage()
+    };
+}
+fn check_original(map:&alloc::tree_map::TreeMap<alloc::string::String,fixture::owners::Value>, pointers:[ptr], policy:&alloc::string::TextKey) {
+    let i:i32=0;
+    while(i<4) {
+        let item=map.get_entry_by<core::text::Text,alloc::string::TextKey>(fixture::owners::key(i),policy).unwrap();
+        assert(item.key.bytes.storage==pointers[i*3]);
+        assert(item.value.data.storage==pointers[i*3+1] && item.value.label.bytes.storage==pointers[i*3+2]);
+        assert(item.key.as_text().equals(fixture::owners::key(i)));
+        fixture::owners::check(item.value,i==1); i+=1;
+    }
+}
+fn main() -> i32 {
+    let map:alloc::tree_map::TreeMap<alloc::string::String,fixture::owners::Value> = alloc::tree_map::new();
+    map.try_reserve(4).unwrap(); assert(map.capacity()==4);
+    let nowhere:ptr=0; let pointers:[ptr;12]=[nowhere;12]; let i:i32=0;
+    while(i<4) {
+        let key=alloc::string::from_text(fixture::owners::key(i)).unwrap();
+        let value=fixture::owners::value();
+        pointers[i*3]=key.bytes.storage; pointers[i*3+1]=value.data.storage; pointers[i*3+2]=value.label.bytes.storage;
+        assert(map.try_insert(key,value).unwrap().is_none()); i+=1;
+    }
+    let query_owner=fixture::owners::string("keyb",4);
+    let missing_owner=fixture::owners::string("novel",5);
+    let query=query_owner.as_text(); let missing=missing_owner.as_text();
+    assert(query_owner.bytes.storage!=pointers[3]);
+    let policy:alloc::string::TextKey=alloc::string::TextKey {};
+    let update:fixture::owners::Update=fixture::owners::Update { calls:0 };
+    let build:fixture::owners::Build=fixture::owners::Build { mode:0,calls:0,key_ptr:nowhere,data_ptr:nowhere,label_ptr:nowhere };
+    let factory:Factory=Factory { build:build.borrow(),saved:core::option::None() };
+    let storage:ptr=map.storage;
+    fixture::owners::mark(72); // H..h: full occupied map, no allocation or initialization.
+    let hit=map.try_update_or_insert_by<core::text::Text,alloc::string::TextKey,Factory,fixture::owners::Update,core::result::Result<i32,i32>,fixture::owners::InitError>(query,policy.borrow(),factory.borrow(),update.borrow());
+    assert(hit.unwrap().unwrap().unwrap_err()==71);
+    assert(build.calls==0 && update.calls==1 && map.len()==4 && map.capacity()==4 && map.storage==storage);
+    check_original(map.borrow(),pointers,policy.borrow());
+    fixture::owners::mark(104);
+
+    // A typed, independently owned initializer error outlives the map itself.
+    build.mode=1;
+    let failed=map.try_update_or_insert_by<core::text::Text,alloc::string::TextKey,Factory,fixture::owners::Update,core::result::Result<i32,i32>,fixture::owners::InitError>(missing,policy.borrow(),factory.borrow(),update.borrow());
+    assert(failed.is_err() && build.calls==1 && update.calls==1);
+    let error_owner:alloc::string::String=owned_error(failed.unwrap_err());
+    assert(error_owner.as_text().equals(fixture::owners::text("owned-error",11)));
+    assert(map.storage==storage && map.len()==4 && map.capacity()==4);
+    check_original(map.borrow(),pointers,policy.borrow());
+
+    build.mode=2;
+    fixture::owners::mark(77); // M..m: rejected candidate is wholly retired here.
+    let mismatched=map.try_update_or_insert_by<core::text::Text,alloc::string::TextKey,Factory,fixture::owners::Update,core::result::Result<i32,i32>,fixture::owners::InitError>(missing,policy.borrow(),factory.borrow(),update.borrow());
+    assert(mismatched.is_err() && build.calls==2 && update.calls==1);
+    assert(retire_mismatch(mismatched.unwrap_err(),build.borrow())==0);
+    fixture::owners::mark(109);
+    assert(map.storage==storage && map.len()==4 && map.capacity()==4);
+    check_original(map.borrow(),pointers,policy.borrow());
+
+    build.mode=0;
+    fixture::owners::mark(65); // A..a: key, nested vector, nested string, table growth.
+    let insertion=map.try_update_or_insert_by<core::text::Text,alloc::string::TextKey,Factory,fixture::owners::Update,core::result::Result<i32,i32>,fixture::owners::InitError>(missing,policy.borrow(),factory.borrow(),update.borrow());
+    fixture::owners::mark(97);
+    assert(build.calls==3 && update.calls==1);
+    let stage:i32=0;
+    if(insertion.is_err()) {
+        assert(map.storage==storage && map.len()==4 && map.capacity()==4);
+        check_original(map.borrow(),pointers,policy.borrow());
+        stage=recovery_stage(insertion.unwrap_err(),factory.borrow(),missing);
+        assert(stage>=1 && stage<=4);
+        fixture::owners::mark(82);
+        let retried=map.try_update_or_insert_by<core::text::Text,alloc::string::TextKey,Factory,fixture::owners::Update,core::result::Result<i32,i32>,fixture::owners::InitError>(missing,policy.borrow(),factory.borrow(),update.borrow());
+        fixture::owners::mark(114);
+        assert(retried.unwrap().is_none() && build.calls==4 && factory.saved.is_none());
+    } else { assert(insertion.unwrap().is_none()); }
+    assert(map.len()==5 && map.capacity()>=5 && update.calls==1);
+    check_original(map.borrow(),pointers,policy.borrow());
+    let inserted=map.get_entry_by<core::text::Text,alloc::string::TextKey>(missing,policy.borrow()).unwrap();
+    build.verify(inserted.key,inserted.value); assert(inserted.key.as_text().equals(missing));
+    assert(query_owner.as_text().equals(fixture::owners::text("keyb",4)));
+    assert(missing_owner.as_text().equals(fixture::owners::text("novel",5)));
+    query_owner.destroy(); missing_owner.destroy();
+    let cursor=map.take_iter(); let retired:i32=0;
+    while(true) {
+        let next=cursor.next(); if(next.is_none()) { break; }
+        let item=next.unwrap(); item.key.destroy(); fixture::owners::destroy(item.value); retired+=1;
+    }
+    assert(retired==5); assert(cursor.try_finish().is_none()); map.destroy();
+    assert(error_owner.as_text().equals(fixture::owners::text("owned-error",11))); error_owner.destroy();
+    fixture::owners::mark(68);
+    fixture::owners::report(stage); return 0;
+}
