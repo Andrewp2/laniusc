@@ -203,11 +203,12 @@ wrap between observation and sleep remains unresolved. The `u64` queue
 counter repair does not fix notification-epoch ABA or prove all schedules
 free of missed wakes.
 
-Native acceptance of the revised constructor rollback, recoverable send
-allocation failure, post-commit wake policy and counter wrap behavior is
-pending. Earlier success/performance receipts below retain their original
-source scope; they do not establish these new failure paths. GPU-device
-execution, other targets and formal verification remain unverified.
+The focused `stdlib_thread_channel_allocation_execution` gate passes 12
+profiles: six reached allocation failures and six reached post-commit wake
+failures, plus balanced recovery, two queue-counter wrap rounds and 27 host
+observer controls. Earlier success/performance receipts below retain their
+original source scope. GPU-device execution, other targets and formal
+verification remain unverified.
 
 ### Close and drain
 
@@ -262,8 +263,9 @@ The [fixture](#thread-channel-checks) checks these cases.
 
 The earlier `tests/fixtures/stdlib_execution/concurrency/thread_channels.lani`
 receipt printed one line per check and exited 0; five runs passed in about
-0.9 s each. The fixture now uses canonical Thread owners and awaits its
-current-source regression. `tests/stdlib_concurrency_execution.rs` runs it.
+0.9 s each. Its current-source regression passes with canonical Thread
+owners, alongside four other migrated thread/allocator/pool/process-exit
+tests in 23.22 seconds. `tests/stdlib_concurrency_execution.rs` runs them.
 
 | Check | Invariant |
 | --- | --- |
@@ -427,11 +429,14 @@ worker's record (plan, data, scratch, index) sits in the plan's crew area.
 The revised crew stores actual Thread owners and retains successful-join
 state. A spawn failure stops and joins started workers; a reported join
 failure terminates before borrowed plans, data or scratch can be released.
-Native acceptance of these revised cleanup paths is pending; earlier sort
+The [focused sort lifetime gate](stdlib-thread-sort-lifecycle.md) passes
+61 cases, including 11 traced ownership/failure cases; earlier performance
 receipts below keep their original source scope.
 The crew threads start once per sort and are all joined before it returns.
-`par_sort.lani` modes 10 and 11 run these two sorts. The model oracle now
-covers 12 modes, 4,320 runs over 8 seeds, with 0 mismatches.
+`par_sort.lani` modes 10 and 11 run these two sorts. Its current registered
+regression passes 84 runs (seven shapes across 12 modes) in 9.00 seconds.
+The earlier model receipt covered 4,320 runs over eight seeds with zero
+mismatches; it is not a rerun of that full corpus on this revision.
 
 Fork and thread crews on 10M i64 keys, in ms, at 8 workers, interleaved.
 The load average was 24–27 from other jobs, so read the ranges, not single

@@ -6,10 +6,9 @@ maps the existing `core::crc32` implementation over fixed-size chunks through
 workers from `std::thread`; the caller also processes work. Output order is
 input order regardless of worker scheduling.
 
-The source, executable tests and independent oracle are prepared. Fifteen
-host-only oracle controls pass. Native runtime acceptance is pending the
-repaired pool/thread gate. The target is Linux x86_64/glibc CPU execution of
-GPU-compiled output, linked with `atomic`.
+All five executable test groups pass: 105 native cases and 15 separate
+host-only oracle controls. The supported target is Linux x86_64/glibc CPU
+execution of GPU-compiled output, linked with `atomic`.
 
 ## Command and output
 
@@ -138,12 +137,12 @@ Resource and threading groups link the shared test-only real-pthread probe;
 successful create/join calls still use glibc. Its environment faults affect
 only the emitted program, with no preload or production test hooks.
 
-| Group | Prepared cases |
+| Group | Executed cases |
 | --- | ---: |
 | Binary data and independent zlib model | 32 |
 | CLI and help admission | 26 |
 | Input, chunk-count, chunk-size and worker bounds | 6 |
-| Source allocation and I/O failures | 12 plus every reached source allocation |
+| Source allocation and I/O failures | 31, including 19 reached allocation failures |
 | Admission before side effects, real workers, fallback and join termination | 10 |
 
 The fixed and seeded model covers all byte values, embedded NUL/newlines,
@@ -185,7 +184,9 @@ timeout --kill-after=2s 100s python3 -I -B \
   tests/fixtures/stdlib_execution/parallel_checksums/oracle.py controls
 ```
 
-Native execution remains pending. Each executable invocation has a
-15-second timeout and each oracle group has an 80-second outer bound.
+The five registered tests pass in 16.39 seconds on Linux x86_64/glibc.
+The 1 MiB witness observes three real workers and matches the serial output;
+its single timing observation is not a performance benchmark. Each executable
+invocation has a 15-second timeout and each oracle group an 80-second bound.
 Supported-target evidence, enforced borrowing/data-race safety and formal
 verification remain distinct from these finite tests.

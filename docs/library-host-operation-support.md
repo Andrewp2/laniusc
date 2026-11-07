@@ -19,6 +19,12 @@ because the older `std::net` service 5 declarations have no binding. Both
 inventories retain `HAS_RUNTIME_SERVICES=false`: the complete catalog is not
 bound. This does not mean that every individual operation is unavailable.
 
+The same distinction applies to threads: `core::target::HAS_THREADS` describes
+the executable native-linked [glibc library](stdlib-thread-lifecycle.md), while
+`core::runtime::HAS_THREADS` remains false for legacy service 8. All seven
+focused thread lifecycle tests pass; raw ELF output does not automatically
+link glibc.
+
 A service-level flag also does not promise every operation in that family.
 Clock service 4 has both executable timespec operations and unbound i64
 declarations. Conversely, the panic-hook service is unbound while source panic
@@ -42,7 +48,7 @@ and the [diagnostic catalog](../crates/laniusc-compiler/src/compiler/diagnostics
 | 5: legacy network | No direct binding | All ten `std::net` TCP/UDP externs are known-unbound. Working `std::socket` is a different library boundary over family 14. | Source flags/catalog; `stdlib_socket_execution` proves the separate working family |
 | 6: panic/hook distinction | `core::panic::panic` and `unreachable` execute `assert(false)` and trap | Hook registration remains unavailable. These operations have executable source bodies and require no panic-hook binding. Their operation metadata now says `executable-stdlib`, while the owning service metadata remains `known-unbound`. | `stdlib_panic_execution::{panic_metadata_reports_executable_traps_and_unbound_hooks,panic_and_unreachable_trap_instead_of_returning}` |
 | 7: generic host services | Descriptor/status metadata only | No separate executable generic-host operation. Service 14 does not change this service's status. | Catalog/source contract; no operation implementation claimed |
-| 8: threads | No direct binding | `spawn`, `join`, `yield_now`, `current_id` remain unbound. No checked thread entry, new-stack trampoline or memory-ordering contract follows from raw syscalls. | Catalog/source contract; no thread execution claimed |
+| 8: legacy thread service | No direct binding | The old catalog entries remain unbound. Canonical `std::thread` instead executes through glibc and Linux bindings; raw pointer signatures and lifetimes remain unchecked. | Direct-service metadata only; `stdlib_thread_lifecycle_execution` proves the separate native-linked library profile |
 | 9: secure entropy | `fill_secure_bytes`, `secure_u32`; recoverable `std::entropy` wrappers | Raw fill makes one host request; higher wrappers handle partial progress/EINTR. Raw `secure_u32` traps on error or short result; it is not an error-returning operation or silent zero fallback. | `stdlib_random_execution`, `randomness_execution::os_entropy_preserves_bytes_progress_errors_and_source_sampling` |
 | 10: user GPU service | No direct binding | Buffer alloc/free/read/write and dispatch declarations are unbound. GPU use by the compiler is independent. | Catalog/source contract; no user GPU execution claimed |
 | 11: original process service | `argc`, `arg_len`, `arg_read`, `exit` | Arguments come from retained startup process state. This direct family does not bind spawn/wait; `std::command` implements those over 14. | `stdlib_host_execution`, `stdlib_command_execution` |
@@ -91,8 +97,10 @@ NSS allocation, blocking time or cleanup work; there is no lookup deadline.
 The same native C path supplies [OpenSSL TLS, including mutual TLS](extended-openssl-mutual-tls.md)
 and [SQLite](extended-sqlite.md). These are ordinary library calls, with explicit
 native owners and wrapper policies. They add no host intrinsic or service ID
-and do not bind the ten legacy `std::net` externs. Callbacks, foreign thread
-entry and aggregate C layouts remain outside the native C profile.
+and do not bind the ten legacy `std::net` externs. Supported non-generic free
+functions now have [C callback entries](language-ergonomics.md#c-callbacks),
+including entries used by glibc pthreads. Typed indirect calls and aggregate
+C layouts remain outside this profile.
 
 ## Binding authority and metadata corrections
 
@@ -122,9 +130,11 @@ Direct native success does not loosen composable-artifact descriptor policy:
 target-byte descriptors with runtime requirements remain rejected, including
 family 14. The separate [native C profile](library-native-c.md) supplies
 executable scalar/pointer calls and CRT linking outside those descriptor modes.
-Broader C ABI profiles, source thread-local storage and atomics, foreign thread
-entry, user GPU execution and complete external runtime linking require their
-own contracts and evidence.
+Broader C ABI profiles, source thread-local storage, user GPU execution and
+complete external runtime linking require their own contracts and evidence.
+Native [atomics and synchronization](stdlib-concurrency.md) and
+[thread entries](stdlib-thread-lifecycle.md) have separate executable profiles;
+they do not provide compiler-enforced data-race or lifetime safety.
 
 ### Keeping this inventory current
 

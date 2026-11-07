@@ -77,8 +77,10 @@ def run(executable, payload, faults=None, trace=None, injection=None):
     for name, value in (faults or {}).items(): env['LANIUS_THREAD_PROBE_FAIL_' + name.upper()] = value
     command = [str(executable)]
     if trace is not None:
-        command = ['strace', '--kill-on-exit', '-ff', '-qq', '-i', '-xx', '-v', '-s', '65536',
-                   '-e', 'signal=none', '-e', 'trace=mmap,munmap,write,exit_group,futex', '-o', str(trace)]
+        # Keep SIGILL and terminal records: suppressing signals or using -qq
+        # removes the termination evidence required below.
+        command = ['strace', '--kill-on-exit', '-ff', '-q', '-i', '-xx', '-v', '-s', '65536',
+                   '-e', 'signal=SIGILL', '-e', 'trace=mmap,munmap,write,exit_group,futex', '-o', str(trace)]
         if injection is not None: command += ['-e', injection]
         command += [str(executable)]
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -106,8 +108,9 @@ def snapshot(prefix, profile):
 def retained_region(state, prefix, output):
     assert output.returncode in (-signal.SIGILL, 128 + signal.SIGILL), (output.returncode, output.stderr)
     main_pid = state['main_events'][0]['tid']
-    assert re.search(r'^\+\+\+ killed by SIGILL(?: \(core dumped\))? \+\+\+$',
-                     Path(str(prefix) + '.' + str(main_pid)).read_text(), re.M), 'main process did not receive SIGILL'
+    main_trace = Path(str(prefix) + '.' + str(main_pid)).read_text()
+    assert re.search(r'^(?:\[(?:[0-9a-fA-F]+|\?+)\]\s+)?\+\+\+ killed by SIGILL(?: \(core dumped\))? \+\+\+$',
+                     main_trace, re.M), ('main process did not receive SIGILL', prefix.name, main_trace[-2000:])
     regions = [allocation for allocation in state['allocations'] if allocation['kind'] == 'region']
     assert len(regions) == 1 and regions[0]['extent'] == 2097152 and regions[0]['address'], regions
     address = regions[0]['address']

@@ -16,11 +16,19 @@ fn threaded_sort_preserves_owners_until_join_and_traps_on_unprovable_quiescence(
         ("deny_wake", "stdlib_thread_sort_lifecycle/deny_wake.c"),
     ] {
         let object = common::TempArtifact::new("laniusc_thread_sort", name, Some("o"));
+        // Keep helper-to-libc edges as calls for the native source-site verifier.
         let output = common::process_output_with_timeout(
             "compile sort fault observation helper",
             Command::new("cc")
                 .args([
-                    "-std=c11", "-O2", "-fno-optimize-sibling-calls", "-Wall", "-Wextra", "-Werror", "-fPIC", "-c",
+                    "-std=c11",
+                    "-O2",
+                    "-fno-optimize-sibling-calls",
+                    "-Wall",
+                    "-Wextra",
+                    "-Werror",
+                    "-fPIC",
+                    "-c",
                 ])
                 .arg(root().join("tests/fixtures").join(source))
                 .arg("-o")

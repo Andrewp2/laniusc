@@ -106,5 +106,5 @@ fn thread_pool_resource_observer_rejects_invalid_ownership_traces() {
     );
     common::assert_command_success("thread pool resource controls", &output);
     assert!(output.stderr.is_empty(), "{output:?}");
-    assert_eq!(output.stdout, b"thread-pool resource controls=31\n");
+    assert_eq!(output.stdout, b"thread-pool resource controls=39\n");
 }

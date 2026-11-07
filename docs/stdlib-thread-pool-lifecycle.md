@@ -6,9 +6,9 @@ retain its resources after a failed join; a synchronous borrowed operation
 must finish every join before returning. The implementation now stores actual
 `std::thread::Thread` owners and records each successful join.
 
-**Native acceptance is pending for this repair.** Independent lifecycle,
-allocation, synchronization and application gates are being prepared. The
-intended target is Linux x86_64/glibc with native linking and `libatomic`.
+All six focused gates pass: 74 native cases exercise lifecycle, allocation,
+synchronization and ordered results, with separate observer controls. The
+supported target is Linux x86_64/glibc with native linking and `libatomic`.
 Other targets, compiler-enforced lifetimes/data-race safety and formal proofs
 remain unsupported or unverified. Historical pool performance measurements
 do not establish the repaired lifecycle behavior.
@@ -213,11 +213,15 @@ This process termination does not unwind or use the runtime's separate
 
 ## Evidence boundary
 
-Independent fixtures are owned separately from this implementation. Required
-gates cover construction rollback, pending construction/shutdown recovery,
+The independent fixtures in `tests/fixtures/stdlib_thread_pool_lifecycle`
+cover construction rollback, pending construction/shutdown recovery,
 successful-join state across retries, exact source allocation extents, closed
 queries, complete synchronous results under spawn fallback, allocation errors,
 wait/clock failures and synchronous join-failure termination before caller
 cleanup. A real parallel-checksum program exercises the map composition.
-Acceptance receipts will be recorded here after the native gates execute;
-source review and host-only models alone do not establish those behaviors.
+All six tests in `stdlib_thread_pool_lifecycle_execution` pass in 17.57 seconds.
+The five native groups cover 18 model cases, 23 admission cases, seven retained-owner
+lifecycle cases, 21 resource cases and five synchronous-failure traps. The
+separate observer gate checks 39 accepted/rejected trace shapes, including
+instruction-pointer-prefixed signal and exit records. These finite tests do
+not prove every interleaving or enforce the caller's ownership obligations.

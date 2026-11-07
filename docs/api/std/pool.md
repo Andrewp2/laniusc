@@ -4,31 +4,36 @@
 
 Generated source inventory. Linked guides own runtime and semantic contracts; a listed declaration does not establish executable behavior.
 
-[All modules](../README.md) · [Source](../../../stdlib/std/pool.lani#L23)
+[All modules](../README.md) · [Source](../../../stdlib/std/pool.lani#L4)
 
 Layer: `std`. Role: module. Profile: **Source inventory**.
+
+Thread pools use canonical std::thread with actual Thread owner storage. Construction failure can retain a pending Pool after failed cleanup; shutdown attempts each remaining join once and preserves backing for retry. Queries return Results and reject retired pools; submission/wait close when shutdown begins. Synchronous failed joins terminate before borrowed backing is released. All six focused gates pass: 74 native model/admission/lifecycle/resource/trap cases and 39 host observer controls. The real parallel-checksum program also passes five groups/105 native cases. Linux x86_64/glibc with libatomic is supported; other targets, enforced borrowing/data-race safety and formal verification remain unverified. Earlier performance receipts retain their original scope.
 
 ## Contract and evidence guides
 
 - [stdlib-threads](../../stdlib-threads.md)
+- [stdlib-thread-pool-lifecycle](../../stdlib-thread-pool-lifecycle.md)
+- [stdlib-parallel-checksums](../../stdlib-parallel-checksums.md)
 
-Declaration counts: enum: 1; field: 1; function: 9; impl: 1; method: 10; struct: 1; trait: 1; trait member: 1; variant: 3.
+Declaration counts: constant: 1; enum: 1; field: 3; function: 9; impl: 1; method: 11; struct: 2; trait: 1; trait member: 1; variant: 8.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::allocator](../alloc/allocator.md) · [source](../../../stdlib/std/pool.lani#L24)
-- [core::iter](../core/iter.md) · [source](../../../stdlib/std/pool.lani#L25)
-- [core::function](../core/function.md) · [source](../../../stdlib/std/pool.lani#L26)
-- [core::mem](../core/mem.md) · [source](../../../stdlib/std/pool.lani#L27)
-- [core::option](../core/option.md) · [source](../../../stdlib/std/pool.lani#L28)
-- [core::result](../core/result.md) · [source](../../../stdlib/std/pool.lani#L29)
-- [std::atomic](atomic.md) · [source](../../../stdlib/std/pool.lani#L30)
-- [std::channel](channel.md) · [source](../../../stdlib/std/pool.lani#L31)
-- [std::parallel](parallel.md) · [source](../../../stdlib/std/pool.lani#L32)
-- [std::pthread](pthread.md) · [source](../../../stdlib/std/pool.lani#L33)
-- [std::sync](sync.md) · [source](../../../stdlib/std/pool.lani#L34)
+- [alloc::allocator](../alloc/allocator.md) · [source](../../../stdlib/std/pool.lani#L5)
+- [core::iter](../core/iter.md) · [source](../../../stdlib/std/pool.lani#L6)
+- [core::function](../core/function.md) · [source](../../../stdlib/std/pool.lani#L7)
+- [core::mem](../core/mem.md) · [source](../../../stdlib/std/pool.lani#L8)
+- [core::option](../core/option.md) · [source](../../../stdlib/std/pool.lani#L9)
+- [core::panic](../core/panic.md) · [source](../../../stdlib/std/pool.lani#L10)
+- [core::result](../core/result.md) · [source](../../../stdlib/std/pool.lani#L11)
+- [std::atomic](atomic.md) · [source](../../../stdlib/std/pool.lani#L12)
+- [std::channel](channel.md) · [source](../../../stdlib/std/pool.lani#L13)
+- [std::parallel](parallel.md) · [source](../../../stdlib/std/pool.lani#L14)
+- [std::sync](sync.md) · [source](../../../stdlib/std/pool.lani#L15)
+- [std::thread](thread.md) · [source](../../../stdlib/std/pool.lani#L16)
 
 ## Types, fields and variants
 
@@ -36,7 +41,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 36](../../../stdlib/std/pool.lani#L36)
+[Source line 18](../../../stdlib/std/pool.lani#L18)
 
 ```lanius
 pub enum Error
@@ -44,31 +49,71 @@ pub enum Error
 
 #### variant: InvalidInput
 
-[Source line 36](../../../stdlib/std/pool.lani#L36)
+[Source line 19](../../../stdlib/std/pool.lani#L19)
 
 ```lanius
 InvalidInput
 ```
 
-#### variant: Thread
+#### variant: SizeOverflow
 
-[Source line 36](../../../stdlib/std/pool.lani#L36)
+[Source line 19](../../../stdlib/std/pool.lani#L19)
 
 ```lanius
-Thread(std::pthread::Error)
+SizeOverflow
+```
+
+#### variant: AllocationFailed
+
+[Source line 19](../../../stdlib/std/pool.lani#L19)
+
+```lanius
+AllocationFailed
+```
+
+#### variant: Closed
+
+[Source line 19](../../../stdlib/std/pool.lani#L19)
+
+```lanius
+Closed
+```
+
+#### variant: CounterOverflow
+
+[Source line 19](../../../stdlib/std/pool.lani#L19)
+
+```lanius
+CounterOverflow
+```
+
+#### variant: Thread
+
+[Source line 20](../../../stdlib/std/pool.lani#L20)
+
+```lanius
+Thread(std::thread::Error)
 ```
 
 #### variant: Channel
 
-[Source line 36](../../../stdlib/std/pool.lani#L36)
+[Source line 20](../../../stdlib/std/pool.lani#L20)
 
 ```lanius
 Channel(std::channel::Error)
 ```
 
+#### variant: Sync
+
+[Source line 20](../../../stdlib/std/pool.lani#L20)
+
+```lanius
+Sync(std::sync::Error)
+```
+
 ### struct: Pool
 
-[Source line 86](../../../stdlib/std/pool.lani#L86)
+[Source line 102](../../../stdlib/std/pool.lani#L102)
 
 ```lanius
 pub struct Pool<T>
@@ -76,17 +121,51 @@ pub struct Pool<T>
 
 #### field: block
 
-[Source line 86](../../../stdlib/std/pool.lani#L86)
+[Source line 102](../../../stdlib/std/pool.lani#L102)
 
 ```lanius
 block: ptr
+```
+
+### struct: CreateFailure
+
+[Source line 103](../../../stdlib/std/pool.lani#L103)
+
+```lanius
+pub struct CreateFailure<T>
+```
+
+#### field: cause
+
+[Source line 103](../../../stdlib/std/pool.lani#L103)
+
+```lanius
+cause: Error
+```
+
+#### field: pending
+
+[Source line 103](../../../stdlib/std/pool.lani#L103)
+
+```lanius
+pending: core::option::Option<Pool<T>>
+```
+
+## Constants
+
+### constant: MAX_SUBMITTED
+
+[Source line 23](../../../stdlib/std/pool.lani#L23)
+
+```lanius
+pub const MAX_SUBMITTED: i64 = 9223372036854775807;
 ```
 
 ## Free functions and extern declarations
 
 ### function: scoped
 
-[Source line 63](../../../stdlib/std/pool.lani#L63)
+[Source line 74](../../../stdlib/std/pool.lani#L74)
 
 ```lanius
 pub fn scoped(entry: ptr, args: ptr, count: i32, stride: usize) -> core::result::Result<i32, Error>
@@ -94,15 +173,15 @@ pub fn scoped(entry: ptr, args: ptr, count: i32, stride: usize) -> core::result:
 
 ### function: pool
 
-[Source line 92](../../../stdlib/std/pool.lani#L92)
+[Source line 107](../../../stdlib/std/pool.lani#L107)
 
 ```lanius
-pub fn pool<T>(workers: i32, capacity: i32, entry: ptr) -> core::result::Result<Pool<T>, Error> where T: Task
+pub fn pool<T>(workers: i32, capacity: i32, entry: ptr) -> core::result::Result<Pool<T>, CreateFailure<T>> where T: Task
 ```
 
 ### function: serve
 
-[Source line 118](../../../stdlib/std/pool.lani#L118)
+[Source line 146](../../../stdlib/std/pool.lani#L146)
 
 ```lanius
 pub fn serve<T>(arg: ptr) -> ptr where T: Task
@@ -110,7 +189,7 @@ pub fn serve<T>(arg: ptr) -> ptr where T: Task
 
 ### function: map_entry
 
-[Source line 280](../../../stdlib/std/pool.lani#L280)
+[Source line 374](../../../stdlib/std/pool.lani#L374)
 
 ```lanius
 pub fn map_entry<T, U, M>(arg: ptr) -> ptr where M: core::function::Mapper<T, U>
@@ -118,7 +197,7 @@ pub fn map_entry<T, U, M>(arg: ptr) -> ptr where M: core::function::Mapper<T, U>
 
 ### function: map
 
-[Source line 284](../../../stdlib/std/pool.lani#L284)
+[Source line 378](../../../stdlib/std/pool.lani#L378)
 
 ```lanius
 pub fn map<T, U, M>(workers: i32, input: std::parallel::Shared<T>, output: std::parallel::Shared<U>, mapper: M, grain: i32, entry: ptr) -> core::result::Result<i32, Error> where M: core::function::Mapper<T, U>
@@ -126,7 +205,7 @@ pub fn map<T, U, M>(workers: i32, input: std::parallel::Shared<T>, output: std::
 
 ### function: reduce_entry
 
-[Source line 318](../../../stdlib/std/pool.lani#L318)
+[Source line 417](../../../stdlib/std/pool.lani#L417)
 
 ```lanius
 pub fn reduce_entry<T, A, F>(arg: ptr) -> ptr where F: core::iter::Folder<A, T>
@@ -134,7 +213,7 @@ pub fn reduce_entry<T, A, F>(arg: ptr) -> ptr where F: core::iter::Folder<A, T>
 
 ### function: reduce
 
-[Source line 323](../../../stdlib/std/pool.lani#L323)
+[Source line 422](../../../stdlib/std/pool.lani#L422)
 
 ```lanius
 pub fn reduce<T, A, F, C>(workers: i32, input: std::parallel::Shared<T>, identity: A, fold: F, combine: &C, grain: i32, entry: ptr) -> core::result::Result<A, Error>
@@ -143,7 +222,7 @@ pub fn reduce<T, A, F, C>(workers: i32, input: std::parallel::Shared<T>, identit
 
 ### function: scan_entry
 
-[Source line 372](../../../stdlib/std/pool.lani#L372)
+[Source line 472](../../../stdlib/std/pool.lani#L472)
 
 ```lanius
 pub fn scan_entry<T, C>(arg: ptr) -> ptr where C: core::iter::Folder<T, T>
@@ -151,7 +230,7 @@ pub fn scan_entry<T, C>(arg: ptr) -> ptr where C: core::iter::Folder<T, T>
 
 ### function: scan
 
-[Source line 378](../../../stdlib/std/pool.lani#L378)
+[Source line 478](../../../stdlib/std/pool.lani#L478)
 
 ```lanius
 pub fn scan<T, C>(workers: i32, data: std::parallel::Shared<T>, identity: T, combine: C, grain: i32, entry: ptr) -> core::result::Result<i32, Error> where C: core::iter::Folder<T, T>
@@ -161,7 +240,7 @@ pub fn scan<T, C>(workers: i32, data: std::parallel::Shared<T>, identity: T, com
 
 ### trait: Task
 
-[Source line 38](../../../stdlib/std/pool.lani#L38)
+[Source line 22](../../../stdlib/std/pool.lani#L22)
 
 ```lanius
 pub trait Task
@@ -169,7 +248,7 @@ pub trait Task
 
 #### trait member: run
 
-[Source line 40](../../../stdlib/std/pool.lani#L40)
+[Source line 22](../../../stdlib/std/pool.lani#L22)
 
 ```lanius
 pub fn run(&self) -> i64;
@@ -177,9 +256,9 @@ pub fn run(&self) -> i64;
 
 ## Implementation blocks and public methods
 
-### impl at line 136
+### impl at line 167
 
-[Source line 136](../../../stdlib/std/pool.lani#L136)
+[Source line 167](../../../stdlib/std/pool.lani#L167)
 
 ```lanius
 pub impl<T> Pool<T>
@@ -187,23 +266,55 @@ pub impl<T> Pool<T>
 
 #### method: borrow
 
-[Source line 137](../../../stdlib/std/pool.lani#L137)
+[Source line 168](../../../stdlib/std/pool.lani#L168)
 
 ```lanius
 pub fn borrow(&self) -> &Pool<T>
 ```
 
-#### method: workers
+#### method: is_open
 
-[Source line 138](../../../stdlib/std/pool.lani#L138)
+[Source line 170](../../../stdlib/std/pool.lani#L170)
 
 ```lanius
-pub fn workers(&self) -> i32
+pub fn is_open(&self) -> bool
+```
+
+#### method: workers
+
+[Source line 173](../../../stdlib/std/pool.lani#L173)
+
+```lanius
+pub fn workers(&self) -> core::result::Result<i32, Error>
+```
+
+#### method: submitted
+
+[Source line 177](../../../stdlib/std/pool.lani#L177)
+
+```lanius
+pub fn submitted(&self) -> core::result::Result<i64, Error>
+```
+
+#### method: completed
+
+[Source line 181](../../../stdlib/std/pool.lani#L181)
+
+```lanius
+pub fn completed(&self) -> core::result::Result<i64, Error>
+```
+
+#### method: total
+
+[Source line 186](../../../stdlib/std/pool.lani#L186)
+
+```lanius
+pub fn total(&self) -> core::result::Result<i64, Error>
 ```
 
 #### method: submit
 
-[Source line 142](../../../stdlib/std/pool.lani#L142)
+[Source line 190](../../../stdlib/std/pool.lani#L190)
 
 ```lanius
 pub fn submit(&self, task: T) -> core::result::Result<i32, Error>
@@ -211,39 +322,15 @@ pub fn submit(&self, task: T) -> core::result::Result<i32, Error>
 
 #### method: try_submit
 
-[Source line 153](../../../stdlib/std/pool.lani#L153)
+[Source line 202](../../../stdlib/std/pool.lani#L202)
 
 ```lanius
 pub fn try_submit(&self, task: T) -> core::result::Result<bool, Error>
 ```
 
-#### method: submitted
-
-[Source line 162](../../../stdlib/std/pool.lani#L162)
-
-```lanius
-pub fn submitted(&self) -> i64
-```
-
-#### method: completed
-
-[Source line 163](../../../stdlib/std/pool.lani#L163)
-
-```lanius
-pub fn completed(&self) -> i64
-```
-
-#### method: total
-
-[Source line 165](../../../stdlib/std/pool.lani#L165)
-
-```lanius
-pub fn total(&self) -> i64
-```
-
 #### method: wait
 
-[Source line 167](../../../stdlib/std/pool.lani#L167)
+[Source line 217](../../../stdlib/std/pool.lani#L217)
 
 ```lanius
 pub fn wait(&self) -> core::result::Result<i32, Error>
@@ -251,7 +338,7 @@ pub fn wait(&self) -> core::result::Result<i32, Error>
 
 #### method: wait_timeout_ms
 
-[Source line 183](../../../stdlib/std/pool.lani#L183)
+[Source line 229](../../../stdlib/std/pool.lani#L229)
 
 ```lanius
 pub fn wait_timeout_ms(&self, milliseconds: i64) -> core::result::Result<bool, Error>
@@ -259,8 +346,8 @@ pub fn wait_timeout_ms(&self, milliseconds: i64) -> core::result::Result<bool, E
 
 #### method: shutdown
 
-[Source line 203](../../../stdlib/std/pool.lani#L203)
+[Source line 248](../../../stdlib/std/pool.lani#L248)
 
 ```lanius
-pub fn shutdown(&self)
+pub fn shutdown(&self) -> core::result::Result<bool, Error>
 ```

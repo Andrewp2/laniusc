@@ -2,9 +2,8 @@
 
 These fixtures target native Linux x86_64/glibc code emitted by the GPU
 compiler. They test the ordinary `std::thread` library functions, independently
-of the compiler's historical unbound service-8 metadata. Native execution
-results are pending until the registered gates run; host checks only establish
-fixture syntax and observer controls.
+of the compiler's historical unbound service-8 metadata. All seven registered native execution tests pass on Linux x86_64/glibc
+in 12.04 seconds. Host observer controls remain separate evidence.
 
 - `admission.lani` starts and joins a real thread through canonical
   `std::thread`, verifies the worker's actual pthread identity and C-entry
@@ -35,7 +34,9 @@ for pool/par tests belongs to their separate exact native source-site ledger.
 The direct raw-thread fixtures use caller-owned stack backing and join every
 successful thread before main returns.
 
-Registered selectors in `tests/stdlib_thread_lifecycle_execution.rs`:
+The driver also runs four [callback frame regressions](repros/README.md).
+
+Lifecycle selectors in `tests/stdlib_thread_lifecycle_execution.rs`:
 
 ```text
 canonical_thread_ordinary_functions_execute_real_native_threads

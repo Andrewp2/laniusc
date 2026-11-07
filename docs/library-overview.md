@@ -7,9 +7,13 @@ custom-stack failures can carry a started owner, and pool shutdown retains
 unjoined workers and backing for retry. Synchronous pool and sort operations
 terminate on failed join before borrowed backing can be released. Existing
 consumers store actual owners, and obsolete unbound-module tests are removed.
-The canonical-module admission gate passes (one test, 4.12 s); native lifecycle
-acceptance is pending. Earlier thread receipts do not establish the new
-failure contracts. `core::target::HAS_THREADS` describes the native-linked
+All seven raw-thread tests pass, together with six pool gates (74 native
+cases), the sort lifetime gate (61 cases), and the parallel-checksum program
+(five groups, 105 native cases). These cover real workers, reached failures,
+retained join authority and exact source allocation cleanup. A callback frame
+corruption exposed by these tests is fixed by sharing function-address
+classification between the GPU compiler's x86 count and scatter passes.
+`core::target::HAS_THREADS` describes the native-linked
 Linux x86_64/glibc library profile; raw ELF output does not gain automatic
 glibc linkage. The legacy compiler service-8 catalog
 remains a separate metadata dependency. Manual ownership, raw callback
@@ -18,9 +22,11 @@ signature admission, other targets and formal verification remain open.
 The related [thread-channel repairs](stdlib-concurrency.md#allocation-failure-and-counter-boundaries)
 check constructor sizes and allocation rollback, retain an Mpsc message on
 allocation failure, terminate on a reported post-commit wake failure and use
-modular queue counters. Native acceptance remains pending. The atomic ring
-has no formal lock-free progress guarantee; notification-epoch ABA remains
-unresolved separately from the queue-counter repair.
+modular queue counters. The focused native gate passes 12 failure profiles,
+with six reached allocation failures, six reached wake failures, balanced
+recovery, two wrap rounds and 27 observer controls. The atomic ring has no
+formal lock-free progress guarantee; notification-epoch ABA remains unresolved
+separately from the queue-counter repair.
 
 The [borrowed Text partition increment](stdlib-text-partitions.md) adds
 `split_once`, `rsplit_once`, `rmatch_indices`, `rsplit`, `splitn` and `rsplitn`.

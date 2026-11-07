@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **367 modules**, **19394 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **366 modules**, **19365 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -76,7 +76,7 @@ Inventory: **367 modules**, **19394 declaration/member entries**. Counts include
 | [core::search](core/search.md) | [source](../../stdlib/core/search.lani#L14) | 8 | Source inventory | [stdlib-search](../stdlib-search.md), [stdlib-text-partitions](../stdlib-text-partitions.md) |
 | [core::set](core/set.md) | [source](../../stdlib/core/set.lani#L4) | 24 | Source inventory | [stdlib-fixed-capacity](../stdlib-fixed-capacity.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md) |
 | [core::slice](core/slice.md) | [source](../../stdlib/core/slice.lani#L11) | 131 | Source inventory | [stdlib-slice-views](../stdlib-slice-views.md), [stdlib-slice](../stdlib-slice.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-exact-size-iterators](../stdlib-exact-size-iterators.md), [stdlib-slice-ordering](../stdlib-slice-ordering.md), [stdlib-sort-rows](../stdlib-sort-rows.md), [stdlib-slice-selection](../stdlib-slice-selection.md), [stdlib-select-value](../stdlib-select-value.md), [stdlib-slice-segmentation](../stdlib-slice-segmentation.md), [stdlib-sort-algorithms](../stdlib-sort-algorithms.md) |
-| [core::target](core/target.md) | [source](../../stdlib/core/target.lani#L6) | 37 | Source inventory | [library-host-prerequisites](../library-host-prerequisites.md), [library-host-operation-support](../library-host-operation-support.md) |
+| [core::target](core/target.md) | [source](../../stdlib/core/target.lani#L9) | 37 | Source inventory | [library-host-prerequisites](../library-host-prerequisites.md), [library-host-operation-support](../library-host-operation-support.md), [stdlib-thread-lifecycle](../stdlib-thread-lifecycle.md) |
 | [core::text](core/text.md) | [source](../../stdlib/core/text.lani#L4) | 157 | Source inventory | [stdlib-text](../stdlib-text.md), [stdlib-text-composition](../stdlib-text-composition.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-text-split-iterators](../stdlib-text-split-iterators.md), [stdlib-bidirectional-text](../stdlib-bidirectional-text.md), [stdlib-text-replacement](../stdlib-text-replacement.md), [stdlib-literal-rewrite](../stdlib-literal-rewrite.md), [stdlib-ordered-navigation](../stdlib-ordered-navigation.md), [stdlib-text-partitions](../stdlib-text-partitions.md), [stdlib-select-field](../stdlib-select-field.md) |
 | [core::time](core/time.md) | [source](../../stdlib/core/time.lani#L4) | 118 | Source inventory | [stdlib-time](../stdlib-time.md) |
 | [core::transcode](core/transcode.md) | [source](../../stdlib/core/transcode.lani#L4) | 14 | Source inventory | [stdlib-utf-codecs](../stdlib-utf-codecs.md) |
@@ -142,7 +142,7 @@ Inventory: **367 modules**, **19394 declaration/member entries**. Counts include
 | [std::args_checked](std/args_checked.md) | [source](../../stdlib/std/args_checked.lani#L7) | 3 | Source inventory | [stdlib-process-context](../stdlib-process-context.md) |
 | [std::atomic](std/atomic.md) | [source](../../stdlib/std/atomic.lani#L4) | 50 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md) |
 | [std::atomic_file](std/atomic_file.md) | [source](../../stdlib/std/atomic_file.lani#L4) | 104 | Source inventory | [stdlib-atomic-files](../stdlib-atomic-files.md), [stdlib-temp-files](../stdlib-temp-files.md), [extended-kv](../extended-kv.md) |
-| [std::channel](std/channel.md) | [source](../../stdlib/std/channel.lani#L19) | 110 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md), [stdlib-threads](../stdlib-threads.md) |
+| [std::channel](std/channel.md) | [source](../../stdlib/std/channel.lani#L21) | 113 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md), [stdlib-threads](../stdlib-threads.md) |
 | [std::cli](std/cli.md) | [source](../../stdlib/std/cli.lani#L6) | 71 | Source inventory | [stdlib-cli](../stdlib-cli.md) |
 | [std::clock](std/clock.md) | [source](../../stdlib/std/clock.lani#L2) | 21 | Source inventory | [stdlib-time](../stdlib-time.md) |
 | [std::command](std/command.md) | [source](../../stdlib/std/command.lani#L3) | 150 | Source inventory | [stdlib-command](../stdlib-command.md), [stdlib-command-groups](../stdlib-command-groups.md), [stdlib-run-group](../stdlib-run-group.md), [stdlib-host-clocks](../stdlib-host-clocks.md), [stdlib-child-usage](../stdlib-child-usage.md) |
@@ -180,12 +180,11 @@ Inventory: **367 modules**, **19394 declaration/member entries**. Counts include
 | [std::io_utf8](std/io_utf8.md) | [source](../../stdlib/std/io_utf8.lani#L3) | 7 | Source inventory | **Unregistered** |
 | [std::linux](std/linux.md) | [source](../../stdlib/std/linux.lani#L4) | 15 | Source inventory | [stdlib-linux](../stdlib-linux.md) |
 | [std::net](std/net.md) | [source](../../stdlib/std/net.lani#L5) | 85 | Unbound host declarations | [library-remaining-api-audit](../library-remaining-api-audit.md), [library-host-prerequisites](../library-host-prerequisites.md) |
-| [std::par](std/par.md) | [source](../../stdlib/std/par.lani#L11) | 34 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md) |
+| [std::par](std/par.md) | [source](../../stdlib/std/par.lani#L11) | 34 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md), [stdlib-thread-sort-lifecycle](../stdlib-thread-sort-lifecycle.md) |
 | [std::parallel](std/parallel.md) | [source](../../stdlib/std/parallel.lani#L10) | 30 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md) |
 | [std::poll](std/poll.md) | [source](../../stdlib/std/poll.lani#L4) | 45 | Source inventory | [stdlib-poll](../stdlib-poll.md) |
-| [std::pool](std/pool.md) | [source](../../stdlib/std/pool.lani#L23) | 28 | Source inventory | [stdlib-threads](../stdlib-threads.md) |
+| [std::pool](std/pool.md) | [source](../../stdlib/std/pool.lani#L4) | 38 | Source inventory | [stdlib-threads](../stdlib-threads.md), [stdlib-thread-pool-lifecycle](../stdlib-thread-pool-lifecycle.md), [stdlib-parallel-checksums](../stdlib-parallel-checksums.md) |
 | [std::process](std/process.md) | [source](../../stdlib/std/process.lani#L3) | 66 | Source inventory | [stdlib-process-context](../stdlib-process-context.md) |
-| [std::pthread](std/pthread.md) | [source](../../stdlib/std/pthread.lani#L15) | 19 | Source inventory | [stdlib-threads](../stdlib-threads.md) |
 | [std::random](std/random.md) | [source](../../stdlib/std/random.lani#L3) | 43 | Source inventory | [stdlib-randomness](../stdlib-randomness.md) |
 | [std::random_checked](std/random_checked.md) | [source](../../stdlib/std/random_checked.lani#L5) | 6 | Source inventory | [stdlib-randomness](../stdlib-randomness.md) |
 | [std::random_wide](std/random_wide.md) | [source](../../stdlib/std/random_wide.lani#L3) | 5 | Source inventory | [stdlib-randomness](../stdlib-randomness.md) |
@@ -200,7 +199,7 @@ Inventory: **367 modules**, **19394 declaration/member entries**. Counts include
 | [std::sync](std/sync.md) | [source](../../stdlib/std/sync.lani#L7) | 108 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md) |
 | [std::temp_dir](std/temp_dir.md) | [source](../../stdlib/std/temp_dir.lani#L3) | 88 | Source inventory | [stdlib-temp-directories](../stdlib-temp-directories.md), [stdlib-mktemp-dir](../stdlib-mktemp-dir.md) |
 | [std::temp_file](std/temp_file.md) | [source](../../stdlib/std/temp_file.lani#L4) | 90 | Source inventory | [stdlib-temp-files](../stdlib-temp-files.md), [stdlib-file-operations](../stdlib-file-operations.md) |
-| [std::thread](std/thread.md) | [source](../../stdlib/std/thread.lani#L5) | 47 | Unbound host declarations | [library-remaining-api-audit](../library-remaining-api-audit.md), [library-host-prerequisites](../library-host-prerequisites.md) |
+| [std::thread](std/thread.md) | [source](../../stdlib/std/thread.lani#L5) | 24 | Source inventory | [stdlib-threads](../stdlib-threads.md), [stdlib-thread-lifecycle](../stdlib-thread-lifecycle.md) |
 | [std::time](std/time.md) | [source](../../stdlib/std/time.lani#L5) | 83 | Mixed host bindings | [stdlib-time](../stdlib-time.md) |
 | [std::time_checked](std/time_checked.md) | [source](../../stdlib/std/time_checked.lani#L6) | 3 | Source inventory | [stdlib-time](../stdlib-time.md) |
 | [std::time_wide](std/time_wide.md) | [source](../../stdlib/std/time_wide.lani#L4) | 5 | Source inventory | [stdlib-time](../stdlib-time.md) |

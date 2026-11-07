@@ -23,7 +23,10 @@ FIXTURES = Path(__file__).resolve().parents[1]
 SOURCE = load('pool_native_source_authority', FIXTURES / 'native_c/source_allocations.py')
 verified_sites = SOURCE.verified_sites
 LINE = re.compile(r'^\[([0-9a-fA-F]+)\]\s+([a-z0-9_]+)\((.*)\)\s+=\s+(.+)$')
-TERMINAL = re.compile(r'^\+\+\+ (?:exited with \d+|killed by SIG[A-Z0-9]+(?: \(core dumped\))?) \+\+\+$')
+# With -i, strace also prefixes terminal records with the final instruction
+# pointer (or question marks after a thread disappears).
+TERMINAL = re.compile(r'^(?:\[(?:[0-9a-fA-F]+|\?+)\]\s+)?\+\+\+ (?:exited with \d+|killed by SIG[A-Z0-9]+(?: \(core dumped\))?) \+\+\+$')
+ILLEGAL_INSTRUCTION = re.compile(r'^\[(?:[0-9a-fA-F]+|\?+)\]\s+--- SIGILL \{si_signo=SIGILL, si_code=ILL_[A-Z_]+, si_addr=0x[0-9a-fA-F]+\} ---$')
 
 
 def arguments(value):
@@ -44,7 +47,7 @@ def decode(text, profile, tid):
     """Decode a completed per-TID strace prefix, preserving native ordinals."""
     found, counts = [], Counter()
     for line in text.splitlines():
-        if TERMINAL.fullmatch(line):
+        if TERMINAL.fullmatch(line) or ILLEGAL_INSTRUCTION.fullmatch(line):
             continue
         match = LINE.fullmatch(line)
         assert match, ('incomplete/unsupported syscall trace', tid, line)

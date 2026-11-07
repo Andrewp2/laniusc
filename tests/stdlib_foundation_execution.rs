@@ -1,9 +1,6 @@
 mod common;
 
-use laniusc_compiler::compiler::{
-    compile_entry_to_x86_64_with_stdlib,
-    compile_source_to_x86_64_with_gpu_codegen,
-};
+use laniusc_compiler::compiler::compile_entry_to_x86_64_with_stdlib;
 
 #[test]
 fn imported_generic_slice_claims_execute_and_reject_inconsistent_types() {
@@ -700,7 +697,7 @@ fn executable_core_function_surface_has_runtime_cases() {
         include_str!("fixtures/stdlib_foundation/float_bits.lani"),
     );
     let slice_fixtures = format!(
-        "{}\n{}\n{}\n{}\n{}\n{}\n{}",
+        "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
         include_str!("fixtures/stdlib_foundation/core_slice.lani"),
         include_str!("fixtures/stdlib_foundation/core_slice_view.lani"),
         include_str!("fixtures/stdlib_foundation/slice_view_model.lani"),
@@ -708,6 +705,8 @@ fn executable_core_function_surface_has_runtime_cases() {
         include_str!("fixtures/stdlib_foundation/slice_selection/admission.lani"),
         include_str!("fixtures/stdlib_slice_segmentation/direct/contracts.lani"),
         include_str!("fixtures/stdlib_slice_segmentation/direct/composition.lani"),
+        include_str!("fixtures/stdlib_sort_algorithms/model.lani"),
+        include_str!("fixtures/stdlib_execution/concurrency/par_sort.lani"),
     );
     let bitset_fixtures = format!(
         "{}\n{}\n{}",

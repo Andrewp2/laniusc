@@ -752,7 +752,7 @@
         "docs/library-host-operation-support.md",
         "docs/stdlib-thread-lifecycle.md"
       ],
-      "note": "Executable source-library capabilities differ from core::runtime direct service bindings. HAS_THREADS=true describes std::thread on native-linked Linux x86_64/glibc (--native-link), not automatic glibc linkage for raw ELF output. The direct runtime thread service remains unavailable. Canonical std::thread admission passes; revised lifecycle execution remains pending."
+      "note": "Executable source-library capabilities differ from core::runtime direct service bindings. HAS_THREADS=true describes std::thread on native-linked Linux x86_64/glibc (--native-link), not automatic glibc linkage for raw ELF output. The direct runtime thread service remains unavailable. All seven canonical std::thread native lifecycle tests pass; this does not establish GPU-device thread support."
     },
     "core::text": {
       "guides": [
@@ -2111,7 +2111,7 @@
         "docs/stdlib-concurrency.md",
         "docs/stdlib-threads.md"
       ],
-      "note": "Linux x86_64/glibc with native linking and libatomic. Region-backed Channel supports forked workers; heap-backed Ring/Mpsc use private futexes within one process. Ring is an atomic bounded MPMC queue, not a formal lock-free or wait-free progress guarantee; stalled participants can delay progress. Revised Ring/Mpsc constructors check allocation sizes and roll back earlier allocations on OOM. Mpsc send returns AllocationFailed(value) before publication, leaving the queue unchanged. Reported thread-channel futex wake failures after commitment terminate through core::panic, including close/drain/select notifications. Explicit modular u64 queue counters and signed distances fix their wrap boundary; the separate u32 notification-epoch ABA remains unresolved. Revised lifecycle/failure/counter native acceptance is pending; earlier success/performance receipts retain their original source scope. Manual endpoint/backing lifetimes, other targets and formal verification remain open."
+      "note": "Linux x86_64/glibc with native linking and libatomic. Region-backed Channel supports forked workers; heap-backed Ring/Mpsc use private futexes within one process. Ring is an atomic bounded MPMC queue, not a formal lock-free or wait-free progress guarantee; stalled participants can delay progress. Revised Ring/Mpsc constructors check allocation sizes and roll back earlier allocations on OOM. Mpsc send returns AllocationFailed(value) before publication, leaving the queue unchanged. Reported thread-channel futex wake failures after commitment terminate through core::panic, including close/drain/select notifications. Explicit modular u64 queue counters and signed distances fix their wrap boundary; the separate u32 notification-epoch ABA remains unresolved. The focused native gate passes 12 fault profiles (six reached allocation and six reached wake failures), balanced recovery, two wrap rounds and 27 observer controls; earlier performance receipts retain their original scope. Manual endpoint/backing lifetimes, other targets and formal verification remain open."
     },
     "std::clock": {
       "guides": [
@@ -2266,8 +2266,10 @@
     },
     "std::par": {
       "guides": [
-        "docs/stdlib-concurrency.md"
-      ]
+        "docs/stdlib-concurrency.md",
+        "docs/stdlib-thread-sort-lifecycle.md"
+      ],
+      "note": "Threaded sorting retains actual Thread owners, joins started workers on spawn failure, and terminates before returning borrowed backing after a failed join or hard synchronization failure. The focused native Linux x86_64/glibc gate passes 61 cases, including 11 traced ownership/failure cases and stable-record/fork regressions. Full nonnegative i32 length arithmetic is admitted, but successful maximal allocations and all interleavings are not proved. Manual backing and callback obligations remain; no GPU-device or new performance claim is made."
     },
     "std::parallel": {
       "guides": [
@@ -2282,9 +2284,10 @@
     "std::pool": {
       "guides": [
         "docs/stdlib-threads.md",
-        "docs/stdlib-thread-lifecycle.md"
+        "docs/stdlib-thread-pool-lifecycle.md",
+        "docs/stdlib-parallel-checksums.md"
       ],
-      "note": "Thread pools use canonical std::thread with actual Thread owner storage. Construction failure can retain a pending Pool after failed cleanup; shutdown attempts each remaining join once and preserves backing for retry. Queries return Results and reject retired pools; submission/wait close when shutdown begins. Synchronous failed joins terminate before borrowed backing is released. Native acceptance of this lifecycle increment is pending; earlier successful-path/performance receipts retain their original source scope."
+      "note": "Thread pools use canonical std::thread with actual Thread owner storage. Construction failure can retain a pending Pool after failed cleanup; shutdown attempts each remaining join once and preserves backing for retry. Queries return Results and reject retired pools; submission/wait close when shutdown begins. Synchronous failed joins terminate before borrowed backing is released. All six focused gates pass: 74 native model/admission/lifecycle/resource/trap cases and 39 host observer controls. The real parallel-checksum program also passes five groups/105 native cases. Linux x86_64/glibc with libatomic is supported; other targets, enforced borrowing/data-race safety and formal verification remain unverified. Earlier performance receipts retain their original scope."
     },
     "std::process": {
       "guides": [
@@ -2372,7 +2375,7 @@
         "docs/stdlib-thread-lifecycle.md"
       ],
       "profile": "Source inventory",
-      "note": "Canonical Lanius native-thread implementation over glibc pthread functions and std::linux on Linux x86_64. The former std::pthread path and join_id are removed. Actual Thread owners retain join authority on failure; custom-stack SpawnFailure preserves primary/secondary cleanup errors and any started owner. Scheduling and bounded affinity queries return explicit Results. Canonical std::thread admission passes one test in 4.12s (thread-lifecycle-admission.log), without compiler changes. Native lifecycle acceptance is pending; earlier pthread receipts do not establish its revised failure contracts. The compiler no-run service-8 catalog remains an independent unbound metadata dependency, not this source implementation. Raw callback signatures, argument lifetimes, alias/cleanup discipline, other targets and formal verification remain caller obligations or unverified."
+      "note": "Canonical Lanius native-thread implementation over glibc pthread functions and std::linux. The former std::pthread path and join_id are removed. Actual Thread owners retain join authority on failure; custom-stack SpawnFailure preserves primary/secondary cleanup errors and any started owner. Scheduling and bounded affinity queries return explicit Results. All seven native lifecycle tests pass in 12.04s, including four callback-frame regressions. A function-address count/scatter mismatch in GPU x86 lowering is fixed; no IR format, runtime, ABI or proof change was needed. The compiler no-run service-8 catalog remains an independent unbound metadata dependency. Raw callback signatures, argument lifetimes and alias/cleanup discipline are not enforced; other targets and formal verification remain unverified."
     },
     "std::temp_dir": {
       "guides": [

@@ -79,7 +79,8 @@ Current result:
 Controls exercise six exact model checks, one accepted trace shape and eight
 rejected ownership/admission/thread-order mutations.
 
-Native acceptance is pending the root agent's serialized compiler/runtime
-lane. No compiler, Cargo or native executable was run while preparing this
-source, fixture or documentation. Host controls are separate evidence and
-do not establish that the program executes correctly.
+All five native groups pass in 16.39 seconds on Linux x86_64/glibc:
+32 model, 26 admission, six limits, 31 resource and ten thread cases.
+The resource group reaches 19 source-allocation failures; the 1 MiB thread
+case observes three real workers and matches serial output. Host controls
+remain separate from these 105 native execution cases.

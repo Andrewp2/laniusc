@@ -19,10 +19,12 @@ The [operation-level inventory](library-host-operation-support.md) records
 the bound subset, source wrappers and retained native test evidence for all
 fourteen families, including executable traps beside unavailable panic hooks.
 
-Thread creation still needs checked entry, a new-stack trampoline, atomic
-memory ordering and ownership/join contracts. Thread local storage can be absent
-from an initial Lanius/raw-syscall profile; libc integrations need their storage
-initialization contract separately.
+Native-linked [threads](stdlib-thread-lifecycle.md) now execute through glibc
+pthread creation and the compiler's C callback entry. Their focused lifecycle
+tests pass, including retained ownership after failed cleanup. Raw callback
+signatures, argument lifetimes and data-race prevention remain caller
+obligations; [atomics and synchronization](stdlib-concurrency.md) have their
+own explicit contracts. Direct runtime service 8 remains unavailable.
 The [native integration proposal](library-native-integration-prerequisites.md)
 records the existing code-entry, linker, allocator and process-context evidence.
 The syscall thunk requires the
@@ -43,9 +45,10 @@ module guide records the exact receipts and bounded bulk-workload measurement.
 an explicit unauthenticated-client policy.
 [Required-client mutual TLS](extended-openssl-mutual-tls.md) also executes
 through OpenSSL with shared credential owners and fresh required authentication.
-Broader security wrappers remain library work. Callbacks,
-variadics, aggregate C layouts and foreign thread entry need separate compiler
-contracts.
+Broader security wrappers remain library work. Supported non-generic free
+functions have [C callback entries](language-ergonomics.md#c-callbacks);
+typed indirect calls, variadics and aggregate C layouts need separate
+compiler contracts.
 [Subprocess support](stdlib-command.md) now executes over same-stack
 fork/exec/wait, with explicit startup uncertainty, owned pipes and a
 single-threaded/no-outside-reaping contract. The command runner and 78-case

@@ -6,9 +6,9 @@ It replaces the old service-8 declarations and the separate `std::pthread`
 module; the old module path and `join_id` are removed.
 
 The implementation targets native-linked Linux x86_64/glibc CPU programs.
-Native acceptance of this consolidation is pending. Earlier pthread tests
-do not establish the new failure and ownership contracts. GPU-device
-execution, other targets, formal verification and compiler-enforced
+The seven focused native execution tests pass, including the failure and
+ownership contracts below. Earlier pthread receipts retain their original
+scope. GPU-device execution, other targets, formal verification and compiler-enforced
 lifetimes are outside this increment.
 
 ## Public interface
@@ -164,15 +164,28 @@ The public operations are ordinary Lanius functions over existing C and
 Linux bindings. They do not use the former `extern "lanius_std"` thread
 declarations. The compiler's old no-run service-8 diagnostic catalog remains
 a separate metadata dependency; it does not describe this implementation.
-No compiler, IR, runtime, proof or ABI change is part of this module move.
+The module move uses the existing runtime and ABI. Its execution tests exposed
+and fixed a separate GPU compiler defect: x86 row counting applied ordinary
+call inlining to a function-address value, while scattering emitted a callback
+address. Both passes now share the same classification. No IR format, runtime,
+proof or ABI change was needed. The [small regressions](../tests/fixtures/stdlib_thread_lifecycle/repros/README.md)
+cover inline, named and split-result forms without a source workaround.
 
-Acceptance must establish default/custom-stack success, callback identity,
+The native tests establish default/custom-stack success, callback identity,
 join state, local rejection before host calls, the attribute outcome table,
 recovery of a real started thread after destruction failure, and retained
 join authority after a reached join failure. Scheduling and affinity checks
-must include host errors and invalid successful results. Caller tests must
+include host errors and invalid successful results. Caller tests
 separately establish that pool and parallel operations retain or retire
 worker-accessible backing correctly.
 
-Native receipts will be recorded after the serialized compiler and runtime
-gates complete. Source inspection alone is not executable acceptance.
+On Linux x86_64/glibc, `stdlib_thread_lifecycle_execution` passes all seven
+tests in 12.04 seconds. These cover ordinary thread admission; four callback
+frame regressions; real default, zero-selected-default, 256 KiB and minimum
+stack threads; seven attribute/create error profiles; recovery of a real
+started thread after attribute destruction failure; and same-owner join retry
+followed by local duplicate-join rejection. Scheduling covers 13 outcomes,
+including 11 reached syscall injections and 11 observer controls. The raw
+thread and retained-owner checks call real glibc pthread functions through a
+test-only interposer. They do not establish automatic ownership or data-race
+safety.

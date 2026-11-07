@@ -6,407 +6,225 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 [All modules](../README.md) · [Source](../../../stdlib/std/thread.lani#L5)
 
-Layer: `std`. Role: module. Profile: **Unbound host declarations**.
+Layer: `std`. Role: module. Profile: **Source inventory**.
 
-Thread spawn/join/yield/current-ID extern declarations have no runtime binding. Source metadata helpers do not implement threads. Parallel work executes through std::worker forked processes; see docs/stdlib-concurrency.md.
+Canonical Lanius native-thread implementation over glibc pthread functions and std::linux. The former std::pthread path and join_id are removed. Actual Thread owners retain join authority on failure; custom-stack SpawnFailure preserves primary/secondary cleanup errors and any started owner. Scheduling and bounded affinity queries return explicit Results. All seven native lifecycle tests pass in 12.04s, including four callback-frame regressions. A function-address count/scatter mismatch in GPU x86 lowering is fixed; no IR format, runtime, ABI or proof change was needed. The compiler no-run service-8 catalog remains an independent unbound metadata dependency. Raw callback signatures, argument lifetimes and alias/cleanup discipline are not enforced; other targets and formal verification remain unverified.
 
 ## Contract and evidence guides
 
-- [library-remaining-api-audit](../../library-remaining-api-audit.md)
-- [library-host-prerequisites](../../library-host-prerequisites.md)
+- [stdlib-threads](../../stdlib-threads.md)
+- [stdlib-thread-lifecycle](../../stdlib-thread-lifecycle.md)
 
-Declaration counts: constant: 6; extern function: 4; function: 32; type alias: 5.
+Declaration counts: constant: 1; enum: 1; field: 5; function: 5; impl: 1; method: 4; struct: 2; variant: 5.
 
 ## Declared imports
 
-None.
+Direct source imports; this is not a package-resolution or transitive dependency result.
+
+- [core::mem](../core/mem.md) · [source](../../../stdlib/std/thread.lani#L6)
+- [core::option](../core/option.md) · [source](../../../stdlib/std/thread.lani#L7)
+- [core::result](../core/result.md) · [source](../../../stdlib/std/thread.lani#L8)
+- [core::slice](../core/slice.md) · [source](../../../stdlib/std/thread.lani#L9)
+- [std::linux](linux.md) · [source](../../../stdlib/std/thread.lani#L10)
 
 ## Types, fields and variants
 
-### type alias: ThreadCapability
+Fields and variants are retained under their declared public owner. Their representation does not establish safe construction or mutation; consult the guides.
 
-[Source line 7](../../../stdlib/std/thread.lani#L7)
-
-```lanius
-pub type ThreadCapability = bool;
-```
-
-### type alias: ThreadRuntimeAbiVersion
-
-[Source line 8](../../../stdlib/std/thread.lani#L8)
-
-```lanius
-pub type ThreadRuntimeAbiVersion = u32;
-```
-
-### type alias: ThreadServiceId
-
-[Source line 9](../../../stdlib/std/thread.lani#L9)
-
-```lanius
-pub type ThreadServiceId = u32;
-```
-
-### type alias: ThreadServiceStatus
-
-[Source line 10](../../../stdlib/std/thread.lani#L10)
-
-```lanius
-pub type ThreadServiceStatus = u32;
-```
-
-### type alias: ThreadOperationResult
-
-[Source line 11](../../../stdlib/std/thread.lani#L11)
-
-```lanius
-pub type ThreadOperationResult = i32;
-```
-
-## Constants
-
-### constant: THREAD_RUNTIME_ABI_VERSION
-
-[Source line 13](../../../stdlib/std/thread.lani#L13)
-
-```lanius
-pub const THREAD_RUNTIME_ABI_VERSION: ThreadRuntimeAbiVersion = 1;
-```
-
-### constant: THREAD_SERVICE_ID
-
-[Source line 14](../../../stdlib/std/thread.lani#L14)
-
-```lanius
-pub const THREAD_SERVICE_ID: ThreadServiceId = 8;
-```
-
-### constant: THREAD_SERVICE_STATUS_UNAVAILABLE
-
-[Source line 15](../../../stdlib/std/thread.lani#L15)
-
-```lanius
-pub const THREAD_SERVICE_STATUS_UNAVAILABLE: ThreadServiceStatus = 1;
-```
-
-### constant: THREAD_HAS_RUNTIME_BINDING
-
-[Source line 16](../../../stdlib/std/thread.lani#L16)
-
-```lanius
-pub const THREAD_HAS_RUNTIME_BINDING: ThreadCapability = false;
-```
-
-### constant: THREAD_OPERATION_OK
-
-[Source line 17](../../../stdlib/std/thread.lani#L17)
-
-```lanius
-pub const THREAD_OPERATION_OK: ThreadOperationResult = 0;
-```
-
-### constant: THREAD_OPERATION_UNAVAILABLE
-
-[Source line 18](../../../stdlib/std/thread.lani#L18)
-
-```lanius
-pub const THREAD_OPERATION_UNAVAILABLE: ThreadOperationResult = -1;
-```
-
-## Free functions and extern declarations
-
-### function: thread_runtime_abi_version
+### enum: Error
 
 [Source line 20](../../../stdlib/std/thread.lani#L20)
 
 ```lanius
-pub fn thread_runtime_abi_version() -> ThreadRuntimeAbiVersion
+pub enum Error
 ```
 
-### function: thread_service_id
+#### variant: Host
+
+[Source line 20](../../../stdlib/std/thread.lani#L20)
+
+```lanius
+Host(i32)
+```
+
+#### variant: System
+
+[Source line 20](../../../stdlib/std/thread.lani#L20)
+
+```lanius
+System(std::linux::Error)
+```
+
+#### variant: InvalidInput
+
+[Source line 20](../../../stdlib/std/thread.lani#L20)
+
+```lanius
+InvalidInput
+```
+
+#### variant: Joined
+
+[Source line 20](../../../stdlib/std/thread.lani#L20)
+
+```lanius
+Joined
+```
+
+#### variant: UnexpectedResult
+
+[Source line 20](../../../stdlib/std/thread.lani#L20)
+
+```lanius
+UnexpectedResult
+```
+
+### struct: Thread
 
 [Source line 24](../../../stdlib/std/thread.lani#L24)
 
 ```lanius
-pub fn thread_service_id() -> ThreadServiceId
+pub struct Thread
 ```
 
-### function: thread_service_is_known
+#### field: id
+
+[Source line 24](../../../stdlib/std/thread.lani#L24)
+
+```lanius
+id:u64
+```
+
+#### field: joined
+
+[Source line 24](../../../stdlib/std/thread.lani#L24)
+
+```lanius
+joined:bool
+```
+
+### struct: SpawnFailure
+
+[Source line 27](../../../stdlib/std/thread.lani#L27)
+
+```lanius
+pub struct SpawnFailure
+```
+
+#### field: cause
 
 [Source line 28](../../../stdlib/std/thread.lani#L28)
 
 ```lanius
-pub fn thread_service_is_known() -> ThreadCapability
+cause:Error
 ```
 
-### function: thread_contract_metadata_is_available
+#### field: cleanup_error
 
-[Source line 32](../../../stdlib/std/thread.lani#L32)
+[Source line 29](../../../stdlib/std/thread.lani#L29)
 
 ```lanius
-pub fn thread_contract_metadata_is_available() -> ThreadCapability
+cleanup_error:core::option::Option<i32>
 ```
 
-### function: thread_service_status
+#### field: started
 
-[Source line 36](../../../stdlib/std/thread.lani#L36)
+[Source line 30](../../../stdlib/std/thread.lani#L30)
 
 ```lanius
-pub fn thread_service_status() -> ThreadServiceStatus
+started:core::option::Option<Thread>
 ```
 
-### function: thread_is_available
+## Constants
 
-[Source line 40](../../../stdlib/std/thread.lani#L40)
+### constant: MIN_STACK_BYTES
+
+[Source line 21](../../../stdlib/std/thread.lani#L21)
 
 ```lanius
-pub fn thread_is_available() -> ThreadCapability
+pub const MIN_STACK_BYTES:usize = 16384;
 ```
 
-### function: thread_is_blocked
+## Free functions and extern declarations
 
-[Source line 44](../../../stdlib/std/thread.lani#L44)
+### function: spawn
+
+[Source line 43](../../../stdlib/std/thread.lani#L43)
 
 ```lanius
-pub fn thread_is_blocked() -> ThreadCapability
+pub fn spawn(entry:ptr, arg:ptr) -> core::result::Result<Thread,Error>
 ```
 
-### function: thread_is_known_but_unbound
+### function: spawn_with_stack
 
-[Source line 48](../../../stdlib/std/thread.lani#L48)
+[Source line 55](../../../stdlib/std/thread.lani#L55)
 
 ```lanius
-pub fn thread_is_known_but_unbound() -> ThreadCapability
+pub fn spawn_with_stack(entry:ptr, arg:ptr, stack_bytes:usize) -> core::result::Result<Thread,SpawnFailure>
 ```
 
-### function: thread_requires_runtime_binding
+### function: current
 
-[Source line 52](../../../stdlib/std/thread.lani#L52)
+[Source line 110](../../../stdlib/std/thread.lani#L110)
 
 ```lanius
-pub fn thread_requires_runtime_binding() -> ThreadCapability
+pub fn current() -> u64
 ```
 
-### function: thread_host_abi_is_contract_only
+### function: yield_now
 
-[Source line 56](../../../stdlib/std/thread.lani#L56)
+[Source line 111](../../../stdlib/std/thread.lani#L111)
 
 ```lanius
-pub fn thread_host_abi_is_contract_only() -> ThreadCapability
+pub fn yield_now() -> core::result::Result<i32,Error>
 ```
 
-### function: thread_operation_ok
+### function: available_parallelism
 
-[Source line 60](../../../stdlib/std/thread.lani#L60)
+[Source line 122](../../../stdlib/std/thread.lani#L122)
 
 ```lanius
-pub fn thread_operation_ok() -> ThreadOperationResult
+pub fn available_parallelism() -> core::result::Result<i32,Error>
 ```
 
-### function: thread_operation_unavailable
+## Implementation blocks and public methods
 
-[Source line 64](../../../stdlib/std/thread.lani#L64)
+### impl at line 89
+
+[Source line 89](../../../stdlib/std/thread.lani#L89)
 
 ```lanius
-pub fn thread_operation_unavailable() -> ThreadOperationResult
+pub impl Thread
 ```
 
-### function: thread_operation_succeeded
+#### method: borrow
 
-[Source line 68](../../../stdlib/std/thread.lani#L68)
+[Source line 90](../../../stdlib/std/thread.lani#L90)
 
 ```lanius
-pub fn thread_operation_succeeded(result: ThreadOperationResult) -> ThreadCapability
+pub fn borrow(&self) -> &Thread
 ```
 
-### function: thread_operation_failed
-
-[Source line 72](../../../stdlib/std/thread.lani#L72)
-
-```lanius
-pub fn thread_operation_failed(result: ThreadOperationResult) -> ThreadCapability
-```
-
-### function: thread_operation_is_unavailable
-
-[Source line 76](../../../stdlib/std/thread.lani#L76)
-
-```lanius
-pub fn thread_operation_is_unavailable(result: ThreadOperationResult) -> ThreadCapability
-```
-
-### function: thread_operation_is_fail_closed
-
-[Source line 80](../../../stdlib/std/thread.lani#L80)
-
-```lanius
-pub fn thread_operation_is_fail_closed(result: ThreadOperationResult) -> ThreadCapability
-```
-
-### function: thread_spawn_is_executable
-
-[Source line 84](../../../stdlib/std/thread.lani#L84)
-
-```lanius
-pub fn thread_spawn_is_executable() -> ThreadCapability
-```
-
-### function: thread_spawn_is_blocked
-
-[Source line 88](../../../stdlib/std/thread.lani#L88)
-
-```lanius
-pub fn thread_spawn_is_blocked() -> ThreadCapability
-```
-
-### function: thread_spawn_is_known_but_unbound
+#### method: id
 
 [Source line 92](../../../stdlib/std/thread.lani#L92)
 
 ```lanius
-pub fn thread_spawn_is_known_but_unbound() -> ThreadCapability
+pub fn id(&self) -> u64
 ```
 
-### function: thread_spawn_requires_runtime_binding
+#### method: is_joined
 
-[Source line 96](../../../stdlib/std/thread.lani#L96)
+[Source line 93](../../../stdlib/std/thread.lani#L93)
 
 ```lanius
-pub fn thread_spawn_requires_runtime_binding() -> ThreadCapability
+pub fn is_joined(&self) -> bool
 ```
 
-### function: thread_join_is_executable
+#### method: join
 
-[Source line 100](../../../stdlib/std/thread.lani#L100)
+[Source line 97](../../../stdlib/std/thread.lani#L97)
 
 ```lanius
-pub fn thread_join_is_executable() -> ThreadCapability
+pub fn join(&self) -> core::result::Result<ptr,Error>
 ```
-
-### function: thread_join_is_blocked
-
-[Source line 104](../../../stdlib/std/thread.lani#L104)
-
-```lanius
-pub fn thread_join_is_blocked() -> ThreadCapability
-```
-
-### function: thread_join_is_known_but_unbound
-
-[Source line 108](../../../stdlib/std/thread.lani#L108)
-
-```lanius
-pub fn thread_join_is_known_but_unbound() -> ThreadCapability
-```
-
-### function: thread_join_requires_runtime_binding
-
-[Source line 112](../../../stdlib/std/thread.lani#L112)
-
-```lanius
-pub fn thread_join_requires_runtime_binding() -> ThreadCapability
-```
-
-### function: thread_yield_is_executable
-
-[Source line 116](../../../stdlib/std/thread.lani#L116)
-
-```lanius
-pub fn thread_yield_is_executable() -> ThreadCapability
-```
-
-### function: thread_yield_is_blocked
-
-[Source line 120](../../../stdlib/std/thread.lani#L120)
-
-```lanius
-pub fn thread_yield_is_blocked() -> ThreadCapability
-```
-
-### function: thread_yield_is_known_but_unbound
-
-[Source line 124](../../../stdlib/std/thread.lani#L124)
-
-```lanius
-pub fn thread_yield_is_known_but_unbound() -> ThreadCapability
-```
-
-### function: thread_yield_requires_runtime_binding
-
-[Source line 128](../../../stdlib/std/thread.lani#L128)
-
-```lanius
-pub fn thread_yield_requires_runtime_binding() -> ThreadCapability
-```
-
-### function: thread_current_id_is_executable
-
-[Source line 132](../../../stdlib/std/thread.lani#L132)
-
-```lanius
-pub fn thread_current_id_is_executable() -> ThreadCapability
-```
-
-### function: thread_current_id_is_blocked
-
-[Source line 136](../../../stdlib/std/thread.lani#L136)
-
-```lanius
-pub fn thread_current_id_is_blocked() -> ThreadCapability
-```
-
-### function: thread_current_id_is_known_but_unbound
-
-[Source line 140](../../../stdlib/std/thread.lani#L140)
-
-```lanius
-pub fn thread_current_id_is_known_but_unbound() -> ThreadCapability
-```
-
-### function: thread_current_id_requires_runtime_binding
-
-[Source line 144](../../../stdlib/std/thread.lani#L144)
-
-```lanius
-pub fn thread_current_id_requires_runtime_binding() -> ThreadCapability
-```
-
-### extern function: spawn
-
-[Source line 148](../../../stdlib/std/thread.lani#L148)
-
-```lanius
-pub extern "lanius_std" fn spawn(entry_id: u32, arg: u32) -> ThreadOperationResult;
-```
-
-Extern declaration; binding availability is not inferred.
-
-### extern function: join
-
-[Source line 150](../../../stdlib/std/thread.lani#L150)
-
-```lanius
-pub extern "lanius_std" fn join(handle: i32) -> ThreadOperationResult;
-```
-
-Extern declaration; binding availability is not inferred.
-
-### extern function: yield_now
-
-[Source line 152](../../../stdlib/std/thread.lani#L152)
-
-```lanius
-pub extern "lanius_std" fn yield_now() -> ThreadOperationResult;
-```
-
-Extern declaration; binding availability is not inferred.
-
-### extern function: current_id
-
-[Source line 154](../../../stdlib/std/thread.lani#L154)
-
-```lanius
-pub extern "lanius_std" fn current_id() -> ThreadOperationResult;
-```
-
-Extern declaration; binding availability is not inferred.

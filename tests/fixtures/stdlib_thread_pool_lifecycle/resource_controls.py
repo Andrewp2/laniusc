@@ -28,6 +28,14 @@ def main():
     count = 0
     def ledger(text, pid=42, shared=False):
         return R.source_maps(R.decode(text, profile, pid), profile, 42, shared_regions=shared)
+    for terminal in ['+++ exited with 0 +++', '[110] +++ exited with 0 +++',
+                     '[????????????????] +++ killed by SIGILL +++',
+                     '[110] +++ killed by SIGILL (core dumped) +++',
+                     '[110] --- SIGILL {si_signo=SIGILL, si_code=ILL_ILLOPN, si_addr=0x110} ---']:
+        R.assert_empty(ledger(alloc + free + terminal + '\n')); count += 1
+    for terminal in ['[garbage] +++ exited with 0 +++', '+++ killed by SIGILL +++ ignored',
+                     '[110] --- SIGILL {unrecognized} ---']:
+        rejects(lambda: ledger(alloc + free + terminal + '\n')); count += 1
     assert ledger(alloc)['maps'] == {0x100000000: 32}
     assert ledger(alloc)['peak'] == 32
     R.assert_empty(ledger(alloc + free))

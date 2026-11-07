@@ -75,9 +75,15 @@ fn main() -> i32 {
     let spare=std::parallel::shared<i64>(region.borrow(),n).unwrap();
     let items=std::parallel::shared<Item>(region.borrow(),n).unwrap();
     let item_spare=std::parallel::shared<Item>(region.borrow(),n).unwrap();
-    read_exact(keys.storage,n*8);
     let values=keys.view(); let tagged=items.view(); let i:i32=0;
-    while(i<n) { tagged[i]=Item { key:values[i],index:i }; i+=1; }
+    // Decode the wire order into logical indices: raw i64 storage descends,
+    // so reading the whole input directly into keys.storage reverses it.
+    let encoded:[i32;2]=[0;2];
+    while(i<n) {
+        read_exact(core::mem::i32_array_data_ptr(encoded),8);
+        let bits:u64=((encoded[1] as u32) as u64)<<32 | ((encoded[0] as u32) as u64);
+        values[i]=bits as i64; tagged[i]=Item { key:values[i],index:i }; i+=1;
+    }
     let entry:ptr=key_crew; let input=keys; let scratch=spare;
     let nowhere:ptr=0;
     // Admission cases retain real backing but change only metadata. In mode12,

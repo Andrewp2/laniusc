@@ -78,7 +78,7 @@ seccomp helper. Sorting and ownership logic remain in Lanius. Python supplies
 inputs, compares values with its independent stable sort, and checks process
 and syscall observations.
 
-The prepared finite gate covers 38 normal cases, 12 admission cases, one
+The passing finite gate covers 38 normal cases, 12 admission cases, one
 worker-result error, and 10 fault/capacity cases. Normal cases include empty
 and singleton arrays, duplicate keys, signed extrema, multiple worker counts,
 stable records with original indices, maximal grain, and representative fork
@@ -105,8 +105,11 @@ by an assertion cannot pass as a successful fail-closed test. Each subprocess
 has a seven-second limit; timeout cleanup kills its process group and traced
 descendants. The oracle has an 80-second outer bound.
 
-Native acceptance is pending the root agent's run. Source review and host-side
-syntax checks are not runtime evidence. This finite gate does not prove all
+The native gate passes in 10.12 seconds on Linux x86_64/glibc: 61 cases,
+including 11 traced ownership/failure cases. Binary inputs are decoded into
+logical slice order before records receive their original-index tags, so the
+stability oracle is independent of the descending raw storage layout.
+This finite gate does not prove all
 interleavings, all comparator implementations, successful full-`i32` allocations,
 fork fault recovery, or performance. No new GPU execution or performance claim
 is made by this cleanup.

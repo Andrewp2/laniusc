@@ -4,14 +4,17 @@
 
 Generated source inventory. Linked guides own runtime and semantic contracts; a listed declaration does not establish executable behavior.
 
-[All modules](../README.md) · [Source](../../../stdlib/core/target.lani#L6)
+[All modules](../README.md) · [Source](../../../stdlib/core/target.lani#L9)
 
 Layer: `core`. Role: module. Profile: **Source inventory**.
+
+Executable source-library capabilities differ from core::runtime direct service bindings. HAS_THREADS=true describes std::thread on native-linked Linux x86_64/glibc (--native-link), not automatic glibc linkage for raw ELF output. The direct runtime thread service remains unavailable. All seven canonical std::thread native lifecycle tests pass; this does not establish GPU-device thread support.
 
 ## Contract and evidence guides
 
 - [library-host-prerequisites](../../library-host-prerequisites.md)
 - [library-host-operation-support](../../library-host-operation-support.md)
+- [stdlib-thread-lifecycle](../../stdlib-thread-lifecycle.md)
 
 Declaration counts: constant: 17; function: 19; type alias: 1.
 
@@ -23,7 +26,7 @@ None.
 
 ### type alias: Capability
 
-[Source line 8](../../../stdlib/core/target.lani#L8)
+[Source line 11](../../../stdlib/core/target.lani#L11)
 
 ```lanius
 pub type Capability = bool;
@@ -33,7 +36,7 @@ pub type Capability = bool;
 
 ### constant: IS_WASM
 
-[Source line 10](../../../stdlib/core/target.lani#L10)
+[Source line 13](../../../stdlib/core/target.lani#L13)
 
 ```lanius
 pub const IS_WASM: Capability = false;
@@ -41,7 +44,7 @@ pub const IS_WASM: Capability = false;
 
 ### constant: IS_NATIVE
 
-[Source line 11](../../../stdlib/core/target.lani#L11)
+[Source line 14](../../../stdlib/core/target.lani#L14)
 
 ```lanius
 pub const IS_NATIVE: Capability = true;
@@ -49,7 +52,7 @@ pub const IS_NATIVE: Capability = true;
 
 ### constant: HAS_ALLOCATOR
 
-[Source line 12](../../../stdlib/core/target.lani#L12)
+[Source line 15](../../../stdlib/core/target.lani#L15)
 
 ```lanius
 pub const HAS_ALLOCATOR: Capability = true;
@@ -57,7 +60,7 @@ pub const HAS_ALLOCATOR: Capability = true;
 
 ### constant: HAS_FILESYSTEM
 
-[Source line 13](../../../stdlib/core/target.lani#L13)
+[Source line 16](../../../stdlib/core/target.lani#L16)
 
 ```lanius
 pub const HAS_FILESYSTEM: Capability = true;
@@ -65,7 +68,7 @@ pub const HAS_FILESYSTEM: Capability = true;
 
 ### constant: HAS_STDIO
 
-[Source line 14](../../../stdlib/core/target.lani#L14)
+[Source line 17](../../../stdlib/core/target.lani#L17)
 
 ```lanius
 pub const HAS_STDIO: Capability = true;
@@ -73,15 +76,15 @@ pub const HAS_STDIO: Capability = true;
 
 ### constant: HAS_THREADS
 
-[Source line 15](../../../stdlib/core/target.lani#L15)
+[Source line 18](../../../stdlib/core/target.lani#L18)
 
 ```lanius
-pub const HAS_THREADS: Capability = false;
+pub const HAS_THREADS: Capability = true;
 ```
 
 ### constant: HAS_NETWORK
 
-[Source line 16](../../../stdlib/core/target.lani#L16)
+[Source line 19](../../../stdlib/core/target.lani#L19)
 
 ```lanius
 pub const HAS_NETWORK: Capability = true;
@@ -89,7 +92,7 @@ pub const HAS_NETWORK: Capability = true;
 
 ### constant: HAS_CLOCK
 
-[Source line 17](../../../stdlib/core/target.lani#L17)
+[Source line 20](../../../stdlib/core/target.lani#L20)
 
 ```lanius
 pub const HAS_CLOCK: Capability = true;
@@ -97,7 +100,7 @@ pub const HAS_CLOCK: Capability = true;
 
 ### constant: HAS_PANIC_HOOK
 
-[Source line 18](../../../stdlib/core/target.lani#L18)
+[Source line 21](../../../stdlib/core/target.lani#L21)
 
 ```lanius
 pub const HAS_PANIC_HOOK: Capability = false;
@@ -105,7 +108,7 @@ pub const HAS_PANIC_HOOK: Capability = false;
 
 ### constant: HAS_HOST_SERVICES
 
-[Source line 19](../../../stdlib/core/target.lani#L19)
+[Source line 22](../../../stdlib/core/target.lani#L22)
 
 ```lanius
 pub const HAS_HOST_SERVICES: Capability = false;
@@ -113,7 +116,7 @@ pub const HAS_HOST_SERVICES: Capability = false;
 
 ### constant: HAS_SECURE_RNG
 
-[Source line 20](../../../stdlib/core/target.lani#L20)
+[Source line 23](../../../stdlib/core/target.lani#L23)
 
 ```lanius
 pub const HAS_SECURE_RNG: Capability = true;
@@ -121,7 +124,7 @@ pub const HAS_SECURE_RNG: Capability = true;
 
 ### constant: HAS_GPU
 
-[Source line 21](../../../stdlib/core/target.lani#L21)
+[Source line 24](../../../stdlib/core/target.lani#L24)
 
 ```lanius
 pub const HAS_GPU: Capability = false;
@@ -129,7 +132,7 @@ pub const HAS_GPU: Capability = false;
 
 ### constant: HAS_PROCESS
 
-[Source line 22](../../../stdlib/core/target.lani#L22)
+[Source line 25](../../../stdlib/core/target.lani#L25)
 
 ```lanius
 pub const HAS_PROCESS: Capability = true;
@@ -137,7 +140,7 @@ pub const HAS_PROCESS: Capability = true;
 
 ### constant: HAS_ENV
 
-[Source line 23](../../../stdlib/core/target.lani#L23)
+[Source line 26](../../../stdlib/core/target.lani#L26)
 
 ```lanius
 pub const HAS_ENV: Capability = true;
@@ -145,7 +148,7 @@ pub const HAS_ENV: Capability = true;
 
 ### constant: HAS_TEST_HARNESS
 
-[Source line 24](../../../stdlib/core/target.lani#L24)
+[Source line 27](../../../stdlib/core/target.lani#L27)
 
 ```lanius
 pub const HAS_TEST_HARNESS: Capability = false;
@@ -153,7 +156,7 @@ pub const HAS_TEST_HARNESS: Capability = false;
 
 ### constant: HAS_LINUX_SYSCALLS
 
-[Source line 25](../../../stdlib/core/target.lani#L25)
+[Source line 28](../../../stdlib/core/target.lani#L28)
 
 ```lanius
 pub const HAS_LINUX_SYSCALLS: Capability = true;
@@ -161,7 +164,7 @@ pub const HAS_LINUX_SYSCALLS: Capability = true;
 
 ### constant: HAS_RUNTIME_SERVICES
 
-[Source line 26](../../../stdlib/core/target.lani#L26)
+[Source line 29](../../../stdlib/core/target.lani#L29)
 
 ```lanius
 pub const HAS_RUNTIME_SERVICES: Capability = false;
@@ -171,7 +174,7 @@ pub const HAS_RUNTIME_SERVICES: Capability = false;
 
 ### function: is_wasm
 
-[Source line 28](../../../stdlib/core/target.lani#L28)
+[Source line 31](../../../stdlib/core/target.lani#L31)
 
 ```lanius
 pub fn is_wasm() -> Capability
@@ -179,7 +182,7 @@ pub fn is_wasm() -> Capability
 
 ### function: is_native
 
-[Source line 32](../../../stdlib/core/target.lani#L32)
+[Source line 35](../../../stdlib/core/target.lani#L35)
 
 ```lanius
 pub fn is_native() -> Capability
@@ -187,7 +190,7 @@ pub fn is_native() -> Capability
 
 ### function: has_allocator
 
-[Source line 36](../../../stdlib/core/target.lani#L36)
+[Source line 39](../../../stdlib/core/target.lani#L39)
 
 ```lanius
 pub fn has_allocator() -> Capability
@@ -195,7 +198,7 @@ pub fn has_allocator() -> Capability
 
 ### function: has_filesystem
 
-[Source line 40](../../../stdlib/core/target.lani#L40)
+[Source line 43](../../../stdlib/core/target.lani#L43)
 
 ```lanius
 pub fn has_filesystem() -> Capability
@@ -203,7 +206,7 @@ pub fn has_filesystem() -> Capability
 
 ### function: has_stdio
 
-[Source line 44](../../../stdlib/core/target.lani#L44)
+[Source line 47](../../../stdlib/core/target.lani#L47)
 
 ```lanius
 pub fn has_stdio() -> Capability
@@ -211,7 +214,7 @@ pub fn has_stdio() -> Capability
 
 ### function: has_threads
 
-[Source line 48](../../../stdlib/core/target.lani#L48)
+[Source line 51](../../../stdlib/core/target.lani#L51)
 
 ```lanius
 pub fn has_threads() -> Capability
@@ -219,7 +222,7 @@ pub fn has_threads() -> Capability
 
 ### function: has_network
 
-[Source line 52](../../../stdlib/core/target.lani#L52)
+[Source line 55](../../../stdlib/core/target.lani#L55)
 
 ```lanius
 pub fn has_network() -> Capability
@@ -227,7 +230,7 @@ pub fn has_network() -> Capability
 
 ### function: has_clock
 
-[Source line 56](../../../stdlib/core/target.lani#L56)
+[Source line 59](../../../stdlib/core/target.lani#L59)
 
 ```lanius
 pub fn has_clock() -> Capability
@@ -235,7 +238,7 @@ pub fn has_clock() -> Capability
 
 ### function: has_panic_hook
 
-[Source line 60](../../../stdlib/core/target.lani#L60)
+[Source line 63](../../../stdlib/core/target.lani#L63)
 
 ```lanius
 pub fn has_panic_hook() -> Capability
@@ -243,7 +246,7 @@ pub fn has_panic_hook() -> Capability
 
 ### function: has_host_services
 
-[Source line 64](../../../stdlib/core/target.lani#L64)
+[Source line 67](../../../stdlib/core/target.lani#L67)
 
 ```lanius
 pub fn has_host_services() -> Capability
@@ -251,7 +254,7 @@ pub fn has_host_services() -> Capability
 
 ### function: has_secure_rng
 
-[Source line 68](../../../stdlib/core/target.lani#L68)
+[Source line 71](../../../stdlib/core/target.lani#L71)
 
 ```lanius
 pub fn has_secure_rng() -> Capability
@@ -259,7 +262,7 @@ pub fn has_secure_rng() -> Capability
 
 ### function: has_gpu
 
-[Source line 72](../../../stdlib/core/target.lani#L72)
+[Source line 75](../../../stdlib/core/target.lani#L75)
 
 ```lanius
 pub fn has_gpu() -> Capability
@@ -267,7 +270,7 @@ pub fn has_gpu() -> Capability
 
 ### function: has_process
 
-[Source line 76](../../../stdlib/core/target.lani#L76)
+[Source line 79](../../../stdlib/core/target.lani#L79)
 
 ```lanius
 pub fn has_process() -> Capability
@@ -275,7 +278,7 @@ pub fn has_process() -> Capability
 
 ### function: has_env
 
-[Source line 80](../../../stdlib/core/target.lani#L80)
+[Source line 83](../../../stdlib/core/target.lani#L83)
 
 ```lanius
 pub fn has_env() -> Capability
@@ -283,7 +286,7 @@ pub fn has_env() -> Capability
 
 ### function: has_test_harness
 
-[Source line 84](../../../stdlib/core/target.lani#L84)
+[Source line 87](../../../stdlib/core/target.lani#L87)
 
 ```lanius
 pub fn has_test_harness() -> Capability
@@ -291,7 +294,7 @@ pub fn has_test_harness() -> Capability
 
 ### function: has_linux_syscalls
 
-[Source line 88](../../../stdlib/core/target.lani#L88)
+[Source line 91](../../../stdlib/core/target.lani#L91)
 
 ```lanius
 pub fn has_linux_syscalls() -> Capability
@@ -299,7 +302,7 @@ pub fn has_linux_syscalls() -> Capability
 
 ### function: has_runtime_services
 
-[Source line 90](../../../stdlib/core/target.lani#L90)
+[Source line 93](../../../stdlib/core/target.lani#L93)
 
 ```lanius
 pub fn has_runtime_services() -> Capability
@@ -307,7 +310,7 @@ pub fn has_runtime_services() -> Capability
 
 ### function: runtime_services_are_blocked
 
-[Source line 94](../../../stdlib/core/target.lani#L94)
+[Source line 97](../../../stdlib/core/target.lani#L97)
 
 ```lanius
 pub fn runtime_services_are_blocked() -> Capability
@@ -315,7 +318,7 @@ pub fn runtime_services_are_blocked() -> Capability
 
 ### function: is_freestanding
 
-[Source line 98](../../../stdlib/core/target.lani#L98)
+[Source line 101](../../../stdlib/core/target.lani#L101)
 
 ```lanius
 pub fn is_freestanding() -> Capability

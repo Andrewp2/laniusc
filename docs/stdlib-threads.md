@@ -1,11 +1,11 @@
 # Native threads: `std::thread`
 
 The [thread ownership and failure contract](stdlib-thread-lifecycle.md) is
-being consolidated around this canonical module. `std::pthread` and
+implemented in this canonical module. `std::pthread` and
 `join_id` are removed. Existing consumers now store actual `Thread` owners;
 thread creation, pool shutdown and thread-crew cleanup have explicit failure
-policies. The canonical-module admission gate passes (one test, 4.12 s);
-native lifecycle acceptance is pending. `core::target::HAS_THREADS` describes
+policies. All seven focused raw-thread tests pass on native Linux
+x86_64/glibc in 12.04 seconds. `core::target::HAS_THREADS` describes
 this native-linked Linux x86_64/glibc library profile, not automatic glibc
 linkage for raw ELF output. The checks and performance observations below
 describe the earlier implementation and
@@ -234,8 +234,9 @@ crew threads start once per sort, wait on the phase futex between phases
 and exit on the stop word. The caller passes the crew entry for its element
 type. The crew retains actual `Thread` owners. If spawning fails, started
 workers are stopped and joined before ordinary return. A failed synchronous
-join ends the process before releasing plans, data or scratch. Native
-acceptance of these revised cleanup paths is pending. See
+join ends the process before releasing plans, data or scratch. The
+[focused lifetime gate](stdlib-thread-sort-lifecycle.md) passes all 61 cases.
+See
 [parallel sorting](stdlib-concurrency.md#parallel-sorting-map-reduce-and-scan)
 for the oracle and benchmark. The threaded stable sort used to burn about
 1.6x the CPU of the forked one. Record stores from a stack temporary ran as
