@@ -114,7 +114,6 @@ fn execute_function_address_case(name: &str) {
 }
 
 #[test]
-#[ignore = "Compiler dependency: inline function-address Result receiver may store callback at saved RBP"]
 fn inline_function_address_result_unwrap_preserves_the_callers_frame() {
     execute_function_address_case("repros/function_address_result_unwrap.lani");
 }

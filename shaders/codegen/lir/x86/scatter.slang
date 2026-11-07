@@ -1,6 +1,7 @@
 import primitive_types;
 import native_value_layout;
 import codegen.lir.x86.common;
+import codegen.lir.x86.c_entry;
 import codegen.lir.x86.storage_layout;
 import codegen.lir.x86.runtime_abi;
 import codegen.lowering_ir;
@@ -417,19 +418,6 @@ bool c_entry_scalar(uint type, bool result)
         type == SCALAR_PTR || (result && (type == SCALAR_UNIT || type == SCALAR_UNKNOWN));
 }
 
-// A CALL row from a name (HIR name or path expression) whose callee is a fn
-// item is a function named as a value: the address of its C entry. A const
-// item named as a value also lowers to a CALL row from a name.
-bool c_entry_call(OptIrNodeCore source, uint source_hir, uint function, uint function_count)
-{
-    if (opt_ir_op(source) != SEMANTIC_LIR_OP_CALL || function >= function_count ||
-        source_hir == INVALID) return false;
-    uint kind = compact_hir_core[source_hir].kind;
-    uint callee = semantic_lir_functions[function].hir_function;
-    return (kind == 22u || kind == 33u) && callee != INVALID &&
-        compact_hir_core[callee].kind == 3u;
-}
-
 bool c_entry_signature(uint function, uint function_count)
 {
     if (function >= function_count) return false;
@@ -459,23 +447,24 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint source_hir = opt_ir_source_hir[semantic_row];
     uint target_start = target_lir_offset[scheduled_row];
     OptIrNodeCore source = opt_ir_core[semantic_row];
+    OptIrNodeOperands args = opt_ir_operands[semantic_row];
+    uint function_count = min(gParams.semantic_capacity, semantic_lir_function_total[0u]);
+    bool c_entry = x86_c_entry_call(source, source_hir, args.a,
+        function_count, compact_hir_core, semantic_lir_functions);
     // Call-argument rows are an ABI expansion of call instructions only. A
     // loop or control row may share a HIR-indexed workspace slot with a prior
     // call, so do not let stale/non-call metadata manufacture CALL_ARG rows.
-    bool is_call = semantic_lir_is_call(opt_ir_op(source));
+    bool is_call = !c_entry && semantic_lir_is_call(opt_ir_op(source));
     uint argument_count = is_call
         ? semantic_lir_call_arg_count_by_hir[source_hir] : 0u;
     uint argument_start = semantic_lir_call_arg_start_by_hir[source_hir];
     uint argument_rows = call_abi_argument_count(argument_start, argument_count);
-    OptIrNodeOperands args = opt_ir_operands[semantic_row];
-    uint function_count = min(gParams.semantic_capacity, semantic_lir_function_total[0u]);
     X86InlineInfo inline_info;
     inline_info.return_value = INVALID;
     inline_info.body_row_count = 0u;
     inline_info.schedule_start = INVALID;
     inline_info.schedule_end = INVALID;
     // A C entry address (a function named as a value) calls nothing here.
-    bool c_entry = c_entry_call(source, source_hir, args.a, function_count);
     if (opt_ir_op(source) == SEMANTIC_LIR_OP_CALL && !c_entry &&
         args.a < function_count)
         inline_info = x86_inline_info_by_function[args.a];

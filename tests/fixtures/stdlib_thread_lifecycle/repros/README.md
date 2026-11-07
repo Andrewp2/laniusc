@@ -1,59 +1,28 @@
-# Function-address frame corruption dependency
+# Function-address frame regression
 
-The full confirmed reproducer is `../failures.lani`, compiled with the shared
-pthread probe. Root retained the failing native executable at
-`/tmp/laniusc_thread_lifecycle_failures_lani_1855884_1`; its debugger receipt is
-`target/stdlib-work/thread-lifecycle-gdb.log`.
+These four executable regressions cover function addresses passed to a call
+returning a record inside `Result`, followed by `.unwrap()` and a return from
+the enclosing helper. All four originally corrupted the caller's saved RBP
+and terminated with SIGSEGV, including the named-local and split-result forms.
+Naming the pointer was not a safe workaround.
 
-Every preflight assertion and the real echo-thread join complete. The parent
-then receives the correct return instruction address, but its restored RBP is
-`0x4195e7`, an emitted callback thunk address, instead of a stack address. It
-faults at `0x41c756` while storing EAX at `[rbp-0x88]`.
+The x86 lowering count pass treated the CALL-shaped function-address node as
+an ordinary call and counted an inlined callee body. Scatter instead emitted
+a C callback entry address. The inconsistent row counts produced a duplicate
+callback thunk whose result store overwrote the saved frame pointer.
 
-Static disassembly identifies the write before that failure:
+`shaders/codegen/lir/x86/c_entry.slang` now supplies one classification shared
+by count and scatter. Function addresses have no call-argument or callee-body
+rows. No IR format, runtime, ABI or formal-proof change was required.
 
-```text
-preflight entry 0x4189d8:
-  push rbp
-  mov  rsp,rbp
-  sub  0x8d0,rsp
-
-0x419598: lea  0x4195a1,rax   # first echo callback thunk
-0x41959f: jmp  0x4195db
-... first C-entry thunk, whose body calls echo ...
-0x4195db: mov  rax,r9         # real spawn callback argument
-0x4195de: lea  0x4195e7,rax   # second, redundant echo callback thunk
-0x4195e5: jmp  0x419621
-... second C-entry thunk, also calls echo ...
-0x419621: mov  rax,[rbp+0]    # overwrites saved caller RBP
-0x419628: mov  rbx,r10
-0x41962b: mov  r9,rsi
-0x41962e: mov  r10,rdx
-0x419631: lea  [rbp-0x600],rdi
-0x419638: call std::thread::spawn
-```
-
-The observed corrupt value exactly matches the second thunk address. This is
-an emitted frame-header store, not a pthread cleanup or interposer write.
-The original test remains intact; neither a compiler change nor an assertion
-workaround is included here.
-
-`function_address_result_unwrap.lani` is a candidate small reduction preserving
-the named function address passed into a call returning a record inside
-`Result`, immediately followed by `.unwrap()`. It removes threads, C calls,
-raw memory and allocation. Its runtime behavior is not yet confirmed; root
-owns compiler/native runs. Expected correct behavior is a clean exit with
-status zero and no output.
-
-Three controls are ready for the same root-owned native driver:
-
-- `function_address_named_local.lani` names `entry:ptr=echo` before the
-  otherwise identical `make(entry,...).unwrap()` expression.
+- `function_address_result_unwrap.lani` passes the function address inline.
+  It needs no threads, C calls, raw memory or allocation.
+- `function_address_named_local.lani` names the address before the call.
 - `function_address_split_result.lani` also separates the call from unwrap.
-- `thread_named_entry.lani` uses a real canonical thread with the named entry
-  pointer, joins a null return value and then returns from its helper.
+- `thread_named_entry.lani` starts a real canonical thread, joins its null
+  result and returns from the helper.
 
-The integration driver registers the intended-success inline reproduction as
-ignored while the dependency is unresolved, plus these three controls. None
-has yet been executed in this reduced form. The full failing lifecycle gate
-has not been weakened or ignored.
+All four now exit successfully with no output through
+`tests/stdlib_thread_lifecycle_execution.rs`. The complete seven-test driver,
+including the original `../failures.lani` lifecycle fixture, passes on native
+Linux x86_64/glibc in 12.04 seconds. No case is ignored or weakened.

@@ -1,11 +1,13 @@
 import native_value_layout;
 import primitive_types;
 import codegen.lir.x86.common;
+import codegen.lir.x86.c_entry;
 import codegen.lir.x86.runtime_abi;
 import codegen.lowering_ir;
 import codegen.optimization_ir;
 import codegen.lir.optimization.execution_owner;
 import gpu_index;
+import hir_records;
 
 struct Params { uint semantic_capacity; uint semantic_start; uint page_capacity; uint reserved; };
 ConstantBuffer<Params> gParams;
@@ -23,6 +25,7 @@ StructuredBuffer<SemanticLirCallArg> semantic_lir_call_args;
 StructuredBuffer<uint> semantic_lir_function_total;
 StructuredBuffer<SemanticLirFunction> semantic_lir_functions;
 StructuredBuffer<SemanticLirParam> semantic_lir_params;
+StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<uint> x86_live_by_semantic;
 StructuredBuffer<X86InlineInfo> x86_inline_info_by_function;
 StructuredBuffer<uint> semantic_lir_aggregate_element_total;
@@ -137,7 +140,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if ((core.flags & SEMANTIC_LIR_FLAG_UNSUPPORTED_MATCH_CONTEXT) != 0u)
         report_diagnostic(LOWERING_DIAGNOSTIC_X86_MATCH_EXPRESSION,
             LOWERING_DIAGNOSTIC_DETAIL_HIR, source_hir, source_hir, semantic_row);
-    uint argument_count = semantic_lir_is_call(opt_ir_op(core))
+    OptIrNodeOperands operands = opt_ir_operands[semantic_row];
+    bool c_entry = x86_c_entry_call(core, source_hir, operands.a,
+        function_count, compact_hir_core, semantic_lir_functions);
+    uint argument_count = !c_entry && semantic_lir_is_call(opt_ir_op(core))
         ? semantic_lir_call_arg_count_by_hir[source_hir]
         : 0u;
     uint argument_rows = 0u;
@@ -147,7 +153,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
         SemanticLirCallArg argument = semantic_lir_call_args[argument_start + arg_i];
         argument_rows += x86_abi_argument_width(argument.value_metadata);
     }
-    OptIrNodeOperands operands = opt_ir_operands[semantic_row];
     uint constant_rhs = 0u;
     if ((opt_ir_op(core) == SEMANTIC_LIR_OP_DIV || opt_ir_op(core) == SEMANTIC_LIR_OP_REM) &&
         !scalar_is_float(core.type_id) &&
@@ -215,7 +220,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 semantic_row);
         }
     }
-    uint result_words = opt_ir_op(core) == SEMANTIC_LIR_OP_CALL &&
+    uint result_words = c_entry ? 0u : opt_ir_op(core) == SEMANTIC_LIR_OP_CALL &&
         operands.a < function_count ? semantic_lir_functions[operands.a].result_word_count :
         opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL
             ? x86_imported_call_result_words(core) :
@@ -289,7 +294,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             copy_words = 1u;
     }
     uint operation_rows = x86_lir_count(core, operands);
-    if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL &&
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL && !c_entry &&
         operands.a < function_count)
     {
         X86InlineInfo inline_info = x86_inline_info_by_function[operands.a];

@@ -1,5 +1,5 @@
-// Candidate reduction of the observed callback-address store to saved RBP.
-// No threads, C calls, raw memory, or allocation. Root must confirm execution.
+// Regression for the callback-address store that overwrote saved RBP.
+// No threads, C calls, raw memory, or allocation.
 module app::main;
 import core::result;
 
