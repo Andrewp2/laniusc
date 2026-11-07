@@ -231,10 +231,10 @@ fn channels(region: &std::sync::Region, producers: i32, consumers: i32, messages
 
 fn send_error(result: core::result::Result<i32, std::channel::SendError<u64>>) -> i32 {
     if (result.is_ok()) { return 0; }
-    return match (result.unwrap_err()) { std::channel::SendError::Full(v) -> 1, std::channel::SendError::Disconnected(v) -> 2, std::channel::SendError::TimedOut(v) -> 3, std::channel::SendError::Sync(e) -> 4 };
+    return match (result.unwrap_err()) { std::channel::SendError::Full(v) -> 1, std::channel::SendError::Disconnected(v) -> 2, std::channel::SendError::TimedOut(v) -> 3, std::channel::SendError::AllocationFailed(v) -> 5, std::channel::SendError::Sync(e) -> 4 };
 }
 fn returned(result: core::result::Result<i32, std::channel::SendError<u64>>) -> u64 {
-    return match (result.unwrap_err()) { std::channel::SendError::Full(v) -> v, std::channel::SendError::Disconnected(v) -> v, std::channel::SendError::TimedOut(v) -> v, std::channel::SendError::Sync(e) -> 0 };
+    return match (result.unwrap_err()) { std::channel::SendError::Full(v) -> v, std::channel::SendError::Disconnected(v) -> v, std::channel::SendError::TimedOut(v) -> v, std::channel::SendError::AllocationFailed(v) -> v, std::channel::SendError::Sync(e) -> 0 };
 }
 fn recv_error(result: core::result::Result<u64, std::channel::RecvError>) -> i32 {
     if (result.is_ok()) { return 0; }

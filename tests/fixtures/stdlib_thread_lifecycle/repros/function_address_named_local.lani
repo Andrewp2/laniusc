@@ -1,0 +1,18 @@
+// Control: keep the function address in a named ptr before Result chaining.
+module app::main;
+import core::result;
+struct Handle { entry:ptr, active:bool }
+enum Error { InvalidInput, Host(i32), Joined }
+fn echo(argument:ptr) -> ptr { return argument; }
+fn make(entry:ptr,argument:ptr) -> core::result::Result<Handle,Error> {
+    let nowhere:ptr=0;
+    if(entry==nowhere) { return core::result::Err(Error::InvalidInput); }
+    return core::result::Ok(Handle { entry:entry,active:true });
+}
+fn exercise() {
+    let nowhere:ptr=0;
+    let entry:ptr=echo;
+    let owner=make(entry,nowhere).unwrap();
+    assert(owner.active && owner.entry!=nowhere);
+}
+fn main() -> i32 { exercise(); return 0; }

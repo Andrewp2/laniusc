@@ -250,14 +250,17 @@ canary and syscall-argument evidence is recorded in
 ## Exit and status metadata
 
 `std::process::exit(code: i32)` uses native Linux syscall 231, `SYS_exit_group`.
-It terminates every thread of the process, including `std::pthread` threads,
+It terminates every thread of the process, including canonical `std::thread` workers,
 from whichever thread calls it. It does not return through normal Lanius
 cleanup, and it runs no owner destructors, finalizers or userspace output
 flushing. Release resources and check output before calling it when those
 actions matter. Allocation failure, a failed bounds check or other safety
 guard (status 101) and the static entry wrapper's exit after `main` use the
-same syscall, so a trap on a worker thread also ends the process.
-The observed parent exit status uses the low eight bits. These kernel semantics
+same syscall, so those traps on a worker thread also end the process.
+`core::panic::panic` instead executes `assert(false)`, raising SIGILL on native
+x86_64; it does not use `exit_group` or unwind. The revised thread lifecycle
+has its own [acceptance scope](stdlib-thread-lifecycle.md), currently pending.
+The observed parent exit status of `std::process::exit` uses the low eight bits. These kernel semantics
 are documented in the [Linux exit manual](https://man7.org/linux/man-pages/man2/_exit.2.html).
 
 `EXIT_SUCCESS`/`exit_success_code()` are 0 and

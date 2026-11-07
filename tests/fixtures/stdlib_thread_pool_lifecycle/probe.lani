@@ -1,0 +1,170 @@
+// Real pthread workers; binary reports pause main before caller backing retires.
+module app::main;
+import alloc::allocator;
+import core::function;
+import core::io;
+import core::iter;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import std::atomic;
+import std::channel;
+import std::linux;
+import std::parallel;
+import std::pool;
+import std::stream;
+import std::thread;
+
+extern "C" fn thread_probe_reset()->i32;
+extern "C" fn thread_probe_fail(kind:i32,ordinal:i32,error:i32)->i32;
+extern "C" fn thread_probe_calls(kind:i32)->i32;
+extern "C" fn thread_probe_created()->i32;
+extern "C" fn thread_probe_joined()->i32;
+extern "C" fn thread_probe_live()->i32;
+extern "C" fn thread_probe_created_id(index:i32)->u64;
+extern "C" fn thread_probe_join_attempt(index:i32)->u64;
+extern "C" fn thread_probe_hold_create(ordinal:i32)->i32;
+extern "C" fn thread_probe_wait_ready(ordinal:i32)->i32;
+extern "C" fn thread_probe_release(ordinal:i32)->i32;
+extern "C" fn thread_probe_entered(ordinal:i32)->i32;
+extern "C" fn thread_probe_exited(ordinal:i32)->i32;
+
+const MOD:i64 = 1000000007;
+fn word(input:[u8],offset:i32)->u64{let value:u64=0;let i:i32=0;while(i<8){value|=(input[offset+i] as u64)<<(i*8);i+=1;}return value;}
+fn mark(value:u8){let raw:[u8;1]=[value];let sink=std::stream::stderr();core::io::write_all(sink.borrow(),raw,0,1).unwrap();}
+fn get(at:ptr)->i64{let raw:[i64]=core::mem::typed_slice_from_raw_parts<i64>(at,1);return raw[0];}
+fn put(at:ptr,value:i64){let raw:[i64]=core::mem::typed_slice_from_raw_parts<i64>(at,1);raw[0]=value;}
+fn flag(value:bool)->u64{if(value){return 1;}return 0;}
+fn error(value:std::pool::Error)->u64{return match(value){
+    std::pool::Error::InvalidInput->1,std::pool::Error::SizeOverflow->2,
+    std::pool::Error::AllocationFailed->3,std::pool::Error::Closed->4,
+    std::pool::Error::CounterOverflow->5,std::pool::Error::Thread(e)->thread_error(e),
+    std::pool::Error::Channel(e)->channel_error(e),std::pool::Error::Sync(_)->3000};}
+fn channel_error(value:std::channel::Error)->u64{return match(value){std::channel::Error::AllocationFailed->3,std::channel::Error::SizeOverflow->2,_ ->2000};}
+fn thread_error(value:std::thread::Error)->u64{return match(value){std::thread::Error::Host(code)->1000+code as u64,_ ->1999};}
+fn q32(value:core::result::Result<i32,std::pool::Error>)->u64{if(value.is_err()){return 100000+error(value.unwrap_err());}return value.unwrap() as u64;}
+fn q64(value:core::result::Result<i64,std::pool::Error>)->u64{if(value.is_err()){return 100000+error(value.unwrap_err());}return value.unwrap() as u64;}
+fn emit(report:[u64],phase:u64,tail:[i64],length:i32){
+    report[2]=phase;report[9]=thread_probe_created() as u64;report[10]=thread_probe_joined() as u64;
+    report[11]=thread_probe_live() as u64;report[12]=thread_probe_calls(5) as u64;
+    report[14]=thread_probe_entered(1) as u64;report[15]=thread_probe_exited(1) as u64;
+    let i:i32=0;while(i<8){report[16+i]=thread_probe_created_id(i);report[24+i]=thread_probe_join_attempt(i);i+=1;}
+    let raw:[u8;520]=[0;520];i=0;while(i<32){let j:i32=0;while(j<8){raw[i*8+j]=((report[i]>>(j*8))&255) as u8;j+=1;}i+=1;}
+    let sink=std::stream::stdout();core::io::write_all(sink.borrow(),raw,0,256).unwrap();
+    i=0;while(i<length){let j:i32=0;while(j<8){raw[i*8+j]=(((tail[i] as u64)>>(j*8))&255) as u8;j+=1;}i+=1;}
+    core::io::write_all(sink.borrow(),raw,0,length*8).unwrap();
+    let ack:[u8;1]=[0];let source=std::stream::stdin();core::io::read_exact(source.borrow(),ack,0,1).unwrap();assert(ack[0]==33);
+}
+fn empty()->[i64]{let nowhere:ptr=0;return core::mem::typed_slice_from_raw_parts<i64>(nowhere,0);}
+fn configure(input:[u64]){
+    assert(thread_probe_reset()==0);
+    if(input[4]>0){assert(thread_probe_fail(3,input[4] as i32,11)==0);}
+    if(input[5]>0){assert(thread_probe_fail(5,input[5] as i32,16)==0);}
+    if(input[6]>0){assert(thread_probe_hold_create(input[6] as i32)==0);}
+}
+struct Job { slot:ptr, value:i64 }
+pub impl std::pool::Task for Job {pub fn run(&self)->i64{std::atomic::at64(self.slot).fetch_add(1,std::atomic::Ordering::SeqCst);return self.value*3+1;}}
+fn worker(argument:ptr)->ptr{return std::pool::serve<Job>(argument);}
+fn query(report:[u64],owner:&std::pool::Pool<Job>){report[4]=flag(owner.is_open());report[5]=q32(owner.workers());report[6]=q64(owner.submitted());report[7]=q64(owner.completed());report[8]=q64(owner.total());}
+fn rejects_work(owner:&std::pool::Pool<Job>,backing:ptr){
+    assert(error(owner.submit(Job{slot:backing,value:0}).unwrap_err())==4);
+    assert(error(owner.try_submit(Job{slot:backing,value:0}).unwrap_err())==4);
+    assert(error(owner.wait().unwrap_err())==4);
+    assert(error(owner.wait_timeout_ms(0).unwrap_err())==4);
+}
+fn run_pool(input:[u64],report:[u64])->i32{
+    let count:i32=input[2] as i32;assert(count>=0&&count<=65);
+    mark(73);let backing=alloc::allocator::alloc(1024,8);let nowhere:ptr=0;assert(backing!=nowhere);
+    let memory:[u8]=core::mem::typed_slice_from_raw_parts<u8>(backing,1024);let i:i32=0;while(i<1024){memory[i]=0;i+=1;}mark(105);
+    configure(input);emit(report,0,empty(),0);
+    let entry:ptr=worker;if(input[7]==1){entry=nowhere;}
+    let workers:i32=input[1] as i32;let capacity:i32=128;if(input[7]==2){capacity=0;}
+    mark(67);let made=std::pool::pool<Job>(workers,capacity,entry);mark(99);
+    let selected:core::option::Option<std::pool::Pool<Job>> = core::option::None();
+    if(made.is_ok()){selected=core::option::Some(made.unwrap());report[3]=0;}
+    else{let failed=made.unwrap_err();report[3]=error(failed.cause);selected=failed.pending;}
+    if(selected.is_none()){
+        emit(report,1,empty(),0);mark(85);alloc::allocator::dealloc(backing,1024,8);mark(117);emit(report,9,empty(),0);return 0;
+    }
+    let owner=selected.unwrap();let constructor_status:u64=report[3];
+    if(input[6]>0){assert(thread_probe_wait_ready(input[6] as i32)==0);assert(thread_probe_entered(input[6] as i32)==0);}
+    query(report,owner.borrow());emit(report,1,empty(),0);
+    if(constructor_status==0){
+        i=0;while(i<count){owner.submit(Job{slot:backing+(i as usize)*8,value:((i as i64)*7)%19-7}).unwrap();i+=1;}
+        if(input[6]>0&&workers==1&&input[5]==0){assert(!owner.wait_timeout_ms(0).unwrap());assert(thread_probe_release(input[6] as i32)==0);}
+        owner.wait().unwrap();query(report,owner.borrow());
+        let counts:[i64;65]=[0;65];i=0;while(i<count){counts[i]=get(backing+(i as usize)*8);i+=1;}emit(report,2,counts,count);
+        mark(83);let stopped=owner.shutdown();mark(115);
+        if(stopped.is_err()){
+            report[3]=error(stopped.unwrap_err());assert(owner.is_open());rejects_work(owner.borrow(),backing);
+            query(report,owner.borrow());emit(report,3,empty(),0);
+            if(input[6]>0){assert(thread_probe_release(input[6] as i32)==0);}
+            mark(83);assert(owner.shutdown().unwrap());mark(115);
+        }else{assert(stopped.unwrap());}
+    }else{
+        rejects_work(owner.borrow(),backing);
+        if(input[6]>0){assert(thread_probe_release(input[6] as i32)==0);}
+        mark(83);assert(owner.shutdown().unwrap());mark(115);
+    }
+    assert(!owner.is_open());assert(!owner.shutdown().unwrap());rejects_work(owner.borrow(),backing);
+    report[3]=0;query(report,owner.borrow());emit(report,4,empty(),0);
+    mark(85);alloc::allocator::dealloc(backing,1024,8);mark(117);emit(report,9,empty(),0);return 0;
+}
+
+struct Affine { bias:i64 }
+pub impl core::function::Mapper<i64,i64> for Affine {pub fn apply(&self,value:i64)->i64{return value*3+self.bias;}}
+struct Add { unused:i64 }
+pub impl core::iter::Folder<i64,i64> for Add {pub fn apply(&self,left:i64,right:i64)->i64{return left+right;}}
+struct Hash { value:i64, power:i64 }
+struct Fold { base:i64 }
+pub impl core::iter::Folder<Hash,i64> for Fold {pub fn apply(&self,left:Hash,right:i64)->Hash{return Hash{value:(left.value*self.base+right)%MOD,power:(left.power*self.base)%MOD};}}
+struct Combine { unused:i64 }
+impl Combine {pub fn borrow(&self)->&Combine{return self;}}
+pub impl core::iter::Folder<Hash,Hash> for Combine {pub fn apply(&self,left:Hash,right:Hash)->Hash{return Hash{value:(left.value*right.power+right.value)%MOD,power:(left.power*right.power)%MOD};}}
+fn mapped(argument:ptr)->ptr{return std::pool::map_entry<i64,i64,Affine>(argument);}
+fn reduced(argument:ptr)->ptr{return std::pool::reduce_entry<i64,Hash,Fold>(argument);}
+fn scanned(argument:ptr)->ptr{return std::pool::scan_entry<i64,Add>(argument);}
+fn scoped_job(argument:ptr)->ptr{put(argument,get(argument)*3+1);return argument;}
+fn run_borrowed(input:[u64],report:[u64])->i32{
+    let mode:u64=input[0];let count:i32=input[2] as i32;assert(count>=0&&count<=65);
+    let bytes:usize=(count as usize)*8;if(bytes==0){bytes=8;}
+    mark(73);let source=alloc::allocator::alloc(bytes,8);let target=alloc::allocator::alloc(bytes,8);let nowhere:ptr=0;assert(source!=nowhere&&target!=nowhere);
+    let values:[i64]=core::mem::typed_slice_from_storage<i64>(source,count);let output:[i64]=core::mem::typed_slice_from_storage<i64>(target,count);
+    let i:i32=0;while(i<count){values[i]=((i as i64)*17+3)%101;output[i]=-999;i+=1;}mark(105);
+    configure(input);emit(report,0,empty(),0);
+    let workers:i32=input[1] as i32;let grain:i32=input[3] as i32;
+    let data=std::parallel::Shared<i64>{storage:source,length:count};let destination=std::parallel::Shared<i64>{storage:target,length:count};
+    if(input[7]==2){destination.length=count+1;}if(input[7]==3){data.storage=nowhere;}
+    mark(67);
+    if(mode==1){
+        let entry:ptr=scoped_job;if(input[7]==1){entry=nowhere;}
+        let stride:usize=8;if(input[7]==4){stride=18446744073709551615;}
+        let result=std::pool::scoped(entry,source,workers,stride);
+        if(result.is_err()){report[3]=error(result.unwrap_err());}else{report[4]=result.unwrap() as u64;}
+    }
+    if(mode==2){
+        let entry:ptr=mapped;if(input[7]==1){entry=nowhere;}
+        let result=std::pool::map<i64,i64,Affine>(workers,data,destination,Affine{bias:5},grain,entry);
+        if(result.is_err()){report[3]=error(result.unwrap_err());}else{report[4]=result.unwrap() as u64;}
+    }
+    if(mode==3){
+        let entry:ptr=reduced;if(input[7]==1){entry=nowhere;}
+        let join=Combine{unused:0};let result=std::pool::reduce<i64,Hash,Fold,Combine>(workers,data,Hash{value:0,power:1},Fold{base:31},join.borrow(),grain,entry);
+        if(result.is_err()){report[3]=error(result.unwrap_err());}else{let hash=result.unwrap();report[4]=hash.value as u64;report[5]=hash.power as u64;}
+    }
+    if(mode==4){
+        let entry:ptr=scanned;if(input[7]==1){entry=nowhere;}
+        let result=std::pool::scan<i64,Add>(workers,data,0,Add{unused:0},grain,entry);
+        if(result.is_err()){report[3]=error(result.unwrap_err());}else{report[4]=result.unwrap() as u64;}
+    }
+    mark(99);mark(82);
+    if(mode==2){emit(report,2,output,count);}else{emit(report,2,values,count);}
+    mark(85);alloc::allocator::dealloc(target,bytes,8);alloc::allocator::dealloc(source,bytes,8);mark(117);emit(report,9,empty(),0);return 0;
+}
+fn main()->i32{
+    let input:[u8;64]=[0;64];let source=std::stream::stdin();core::io::read_exact(source.borrow(),input,0,64).unwrap();
+    let request:[u64;8]=[0;8];let i:i32=0;while(i<8){request[i]=word(input,i*8);i+=1;}assert(request[0]<=4);
+    let report:[u64;32]=[0;32];report[0]=1347374924;report[1]=request[0];let args:[std::linux::Argument;1]=[std::linux::Argument::Word(0)];report[13]=std::linux::call(39,core::slice::View{values:args,start:0,length:0}).unwrap() as u64;
+    if(request[0]==0){return run_pool(request,report);}return run_borrowed(request,report);
+}

@@ -1,0 +1,10 @@
+// Real-thread control with a named C-entry pointer and a joined null result.
+module app::main;
+import std::thread;
+fn echo(argument:ptr) -> ptr { return argument; }
+fn exercise() {
+    let nowhere:ptr=0; let entry:ptr=echo;
+    let owner=std::thread::spawn(entry,nowhere).unwrap();
+    assert(owner.join().unwrap()==nowhere && owner.is_joined());
+}
+fn main() -> i32 { exercise(); return 0; }

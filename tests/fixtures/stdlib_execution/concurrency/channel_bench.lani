@@ -5,14 +5,23 @@
 // (the minimum is 2, so 2) and 1024 for fan-in.
 // Build: laniusc --native-link --native-library atomic --stdlib-root stdlib
 module app::main;
+import alloc::vec;
 import core::mem;
 import core::result;
 import core::slice;
 import std::args;
 import std::channel;
 import std::io;
-import std::pthread;
+import std::thread;
 import std::sync;
+
+// The vector holds the single join authority. Persist successful retirement.
+fn join_at(owners: &alloc::vec::Vec<std::thread::Thread>, index: i32) -> ptr {
+    let thread: std::thread::Thread = owners.at(index);
+    let result: ptr = thread.join().unwrap();
+    owners.set(index, thread).unwrap();
+    return result;
+}
 
 fn get(at: ptr, word: i32) -> i64 { let v: [i64] = core::mem::typed_slice_from_raw_parts<i64>(at + (word as usize) * 8, 1); return v[0]; }
 fn set(at: ptr, word: i32, value: i64) { let v: [i64] = core::mem::typed_slice_from_raw_parts<i64>(at + (word as usize) * 8, 1); v[0] = value; }
@@ -25,7 +34,7 @@ fn number(text: core::slice::View<u8>) -> i64 {
     return value;
 }
 
-// Task words: 0 there, 1 back, 2 rounds or items, 3 id.
+// Task words: 0 there, 1 back, 2 rounds or items. Thread owners stay in a Vec.
 fn ring_echo(task: ptr) -> ptr {
     let there: std::channel::Ring<i64> = std::channel::ring_at<i64>(get_ptr(task, 0));
     let back: std::channel::Ring<i64> = std::channel::ring_at<i64>(get_ptr(task, 1));
@@ -73,39 +82,41 @@ fn main() -> i32 {
             let back: std::channel::Ring<i64> = std::channel::ring<i64>(2, 1, 1).unwrap();
             set_ptr(tasks, 0, there.handle()); set_ptr(tasks, 1, back.handle());
             start = now_us();
-            let echo: std::pthread::Thread = std::pthread::spawn(ring_echo, tasks).unwrap();
+            let echo: std::thread::Thread = std::thread::spawn(ring_echo, tasks).unwrap();
             let i: i64 = 0; let v: i64 = 0;
             while (i < n) { there.send(v).unwrap(); v = back.recv().unwrap(); i += 1; }
-            echo.join(); check = v;
+            echo.join().unwrap(); check = v;
         } else {
             let there: std::channel::Mpsc<i64> = std::channel::mpsc<i64>(1).unwrap();
             let back: std::channel::Mpsc<i64> = std::channel::mpsc<i64>(1).unwrap();
             set_ptr(tasks, 0, there.handle()); set_ptr(tasks, 1, back.handle());
             start = now_us();
-            let echo: std::pthread::Thread = std::pthread::spawn(mpsc_echo, tasks).unwrap();
+            let echo: std::thread::Thread = std::thread::spawn(mpsc_echo, tasks).unwrap();
             let i: i64 = 0; let v: i64 = 0;
             while (i < n) { there.send(v).unwrap(); v = back.recv().unwrap(); i += 1; }
-            echo.join(); check = v;
+            echo.join().unwrap(); check = v;
         }
     } else {
         let items: i64 = number(arguments.get(3).unwrap());
         let producers: i32 = n as i32;
+        let owners: alloc::vec::Vec<std::thread::Thread> = alloc::vec::with_capacity<std::thread::Thread>(producers).unwrap();
         let w: i32 = 0;
         if (ring_kind) {
             let ring: std::channel::Ring<i64> = std::channel::ring<i64>(1024, producers, 1).unwrap();
             start = now_us();
             while (w < producers) { let task: ptr = tasks + (w as usize) * 64; set_ptr(task, 0, ring.handle()); set(task, 2, items);
-                let t: std::pthread::Thread = std::pthread::spawn(ring_feed, task).unwrap(); set(task, 3, t.id() as i64); w += 1; }
+                let t: std::thread::Thread = std::thread::spawn(ring_feed, task).unwrap(); owners.try_push(t).unwrap(); w += 1; }
             while (true) { let got: core::result::Result<i64, std::channel::RecvError> = ring.recv(); if (got.is_err()) { break; } check += got.unwrap(); }
         } else {
             let queue: std::channel::Mpsc<i64> = std::channel::mpsc<i64>(producers).unwrap();
             start = now_us();
             while (w < producers) { let task: ptr = tasks + (w as usize) * 64; set_ptr(task, 0, queue.handle()); set(task, 2, items);
-                let t: std::pthread::Thread = std::pthread::spawn(mpsc_feed, task).unwrap(); set(task, 3, t.id() as i64); w += 1; }
+                let t: std::thread::Thread = std::thread::spawn(mpsc_feed, task).unwrap(); owners.try_push(t).unwrap(); w += 1; }
             while (true) { let got: core::result::Result<i64, std::channel::RecvError> = queue.recv(); if (got.is_err()) { break; } check += got.unwrap(); }
         }
         w = 0;
-        while (w < producers) { std::pthread::join_id(get(tasks + (w as usize) * 64, 3) as u64).unwrap(); w += 1; }
+        while (w < producers) { join_at(owners.borrow(), w); w += 1; }
+        owners.destroy();
     }
     let elapsed: i64 = now_us() - start;
     std::io::write_text(1, "ms "); std::io::write_i32(1, (elapsed / 1000) as i32);

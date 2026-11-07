@@ -1,154 +1,139 @@
-// Source-level thread host ABI declarations.
-// The service contract below is intentionally conservative: the current
-// backends can type-check these declarations, but they do not bind threads.
-
+// Native Linux x86_64/glibc threads with one explicit join authority.
+// Entries are non-generic fn(ptr)->ptr C callbacks. Their signatures and
+// argument lifetimes remain caller obligations; join before main returns.
+// See docs/stdlib-thread-lifecycle.md. Native linking is required.
 module std::thread;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import std::linux;
 
-pub type ThreadCapability = bool;
-pub type ThreadRuntimeAbiVersion = u32;
-pub type ThreadServiceId = u32;
-pub type ThreadServiceStatus = u32;
-pub type ThreadOperationResult = i32;
+extern "C" fn pthread_create(thread:ptr, attr:ptr, start:ptr, arg:ptr) -> i32;
+extern "C" fn pthread_join(thread:u64, result:ptr) -> i32;
+extern "C" fn pthread_attr_init(attr:ptr) -> i32;
+extern "C" fn pthread_attr_setstacksize(attr:ptr, size:usize) -> i32;
+extern "C" fn pthread_attr_destroy(attr:ptr) -> i32;
+extern "C" fn pthread_self() -> u64;
 
-pub const THREAD_RUNTIME_ABI_VERSION: ThreadRuntimeAbiVersion = 1;
-pub const THREAD_SERVICE_ID: ThreadServiceId = 8;
-pub const THREAD_SERVICE_STATUS_UNAVAILABLE: ThreadServiceStatus = 1;
-pub const THREAD_HAS_RUNTIME_BINDING: ThreadCapability = false;
-pub const THREAD_OPERATION_OK: ThreadOperationResult = 0;
-pub const THREAD_OPERATION_UNAVAILABLE: ThreadOperationResult = -1;
+// Host carries pthread's error number; System preserves the syscall boundary.
+pub enum Error { Host(i32), System(std::linux::Error), InvalidInput, Joined, UnexpectedResult }
+pub const MIN_STACK_BYTES:usize = 16384;
 
-pub fn thread_runtime_abi_version() -> ThreadRuntimeAbiVersion {
-    return THREAD_RUNTIME_ABI_VERSION;
+// Copies alias one logical join authority. Keep and mutate one active owner.
+pub struct Thread { id:u64, joined:bool }
+// A post-create attribute failure must not hide the running thread. A caller
+// must recover and join started before releasing its argument backing.
+pub struct SpawnFailure {
+    cause:Error,
+    cleanup_error:core::option::Option<i32>,
+    started:core::option::Option<Thread>
 }
 
-pub fn thread_service_id() -> ThreadServiceId {
-    return THREAD_SERVICE_ID;
+fn spawn_failure(cause:Error) -> SpawnFailure {
+    return SpawnFailure { cause:cause,cleanup_error:core::option::None(),started:core::option::None() };
+}
+fn created_thread(slot:ptr) -> Thread {
+    let id:[u64] = core::mem::typed_slice_from_raw_parts<u64>(slot,1);
+    return Thread { id:id[0],joined:false };
 }
 
-pub fn thread_service_is_known() -> ThreadCapability {
-    return true;
+// Default attributes require no local attribute object. Stack size follows
+// the host configuration; it is not a fixed 8 MiB promise.
+pub fn spawn(entry:ptr, arg:ptr) -> core::result::Result<Thread,Error> {
+    let nowhere:ptr = 0;
+    if(entry==nowhere) { return core::result::Err(Error::InvalidInput); }
+    let handle:[i32;2] = [0;2];
+    let slot:ptr = core::mem::i32_array_data_ptr(handle);
+    let code:i32 = pthread_create(slot,nowhere,entry,arg);
+    if(code!=0) { return core::result::Err(Error::Host(code)); }
+    return core::result::Ok(created_thread(slot));
 }
 
-pub fn thread_contract_metadata_is_available() -> ThreadCapability {
-    return thread_service_is_known();
+// Zero selects default attributes. Otherwise the host validates the requested
+// size after the local minimum check. Destroy only an initialized attr, once.
+pub fn spawn_with_stack(entry:ptr, arg:ptr, stack_bytes:usize) -> core::result::Result<Thread,SpawnFailure> {
+    let nowhere:ptr = 0;
+    if(entry==nowhere || (stack_bytes!=0 && stack_bytes<MIN_STACK_BYTES)) {
+        return core::result::Err(spawn_failure(Error::InvalidInput));
+    }
+    if(stack_bytes==0) {
+        let created:core::result::Result<Thread,Error> = std::thread::spawn(entry,arg);
+        if(created.is_err()) { return core::result::Err(spawn_failure(created.unwrap_err())); }
+        return core::result::Ok(created.unwrap());
+    }
+    let handle:[i32;2] = [0;2];
+    let slot:ptr = core::mem::i32_array_data_ptr(handle);
+    // pthread_attr_t occupies 56 bytes in this glibc x86_64 profile.
+    let words:[i32;16] = [0;16];
+    let attr:ptr = core::mem::i32_array_data_ptr(words);
+    let initialized:i32 = pthread_attr_init(attr);
+    if(initialized!=0) { return core::result::Err(spawn_failure(Error::Host(initialized))); }
+    let primary:i32 = pthread_attr_setstacksize(attr,stack_bytes);
+    if(primary==0) { primary=pthread_create(slot,attr,entry,arg); }
+    let retired:i32 = pthread_attr_destroy(attr);
+    if(primary!=0) {
+        let failure:SpawnFailure = spawn_failure(Error::Host(primary));
+        if(retired!=0) { failure.cleanup_error=core::option::Some(retired); }
+        return core::result::Err(failure);
+    }
+    let thread:Thread = created_thread(slot);
+    if(retired!=0) {
+        let failure:SpawnFailure = spawn_failure(Error::Host(retired));
+        failure.started=core::option::Some(thread);
+        return core::result::Err(failure);
+    }
+    return core::result::Ok(thread);
 }
 
-pub fn thread_service_status() -> ThreadServiceStatus {
-    return THREAD_SERVICE_STATUS_UNAVAILABLE;
+pub impl Thread {
+    pub fn borrow(&self) -> &Thread { return self; }
+    // Identity only: an id does not authorize another join owner.
+    pub fn id(&self) -> u64 { return self.id; }
+    pub fn is_joined(&self) -> bool { return self.joined; }
+    // Successful join retires the authority; a host failure leaves it intact.
+    // Concurrent joins, owner copies and externally joined ids violate the
+    // caller's single-owner obligation.
+    pub fn join(&self) -> core::result::Result<ptr,Error> {
+        if(self.joined) { return core::result::Err(Error::Joined); }
+        let words:[i32;2] = [0;2];
+        let slot:ptr = core::mem::i32_array_data_ptr(words);
+        let code:i32 = pthread_join(self.id,slot);
+        if(code!=0) { return core::result::Err(Error::Host(code)); }
+        self.joined=true;
+        let result:[ptr] = core::mem::typed_slice_from_raw_parts<ptr>(slot,1);
+        return core::result::Ok(result[0]);
+    }
 }
 
-pub fn thread_is_available() -> ThreadCapability {
-    return THREAD_HAS_RUNTIME_BINDING;
+// pthread identity, not a Linux TID and not an independently joinable owner.
+pub fn current() -> u64 { return pthread_self(); }
+pub fn yield_now() -> core::result::Result<i32,Error> {
+    let none:[std::linux::Argument;1] = [std::linux::Argument::Word(0)];
+    let result:core::result::Result<i64,std::linux::Error> = std::linux::call(24,core::slice::view(none,0).unwrap());
+    if(result.is_err()) { return core::result::Err(Error::System(result.unwrap_err())); }
+    if(result.unwrap()!=0) { return core::result::Err(Error::UnexpectedResult); }
+    return core::result::Ok(0);
 }
 
-pub fn thread_is_blocked() -> ThreadCapability {
-    return !thread_is_available();
+// Count this thread's allowed CPUs using a bounded 128-byte affinity mask.
+// Kernels requiring a larger mask report System(System(EINVAL)); no fallback
+// count is invented. Validate the raw syscall length before reading storage.
+pub fn available_parallelism() -> core::result::Result<i32,Error> {
+    let words:[i32;32] = [0;32];
+    let mask:ptr = core::mem::i32_array_data_ptr(words);
+    let args:[std::linux::Argument;3] = [std::linux::Argument::Word(0),std::linux::Argument::Word(128),std::linux::Argument::Address(mask)];
+    let result:core::result::Result<i64,std::linux::Error> = std::linux::call(204,core::slice::view(args,3).unwrap());
+    if(result.is_err()) { return core::result::Err(Error::System(result.unwrap_err())); }
+    let length:i64 = result.unwrap();
+    if(length<=0 || length>128) { return core::result::Err(Error::UnexpectedResult); }
+    let bytes:[u8] = core::mem::typed_slice_from_raw_parts<u8>(mask,128);
+    let count:i32 = 0; let index:i32 = 0;
+    while(index<(length as i32)) {
+        let bits:u8 = bytes[index];
+        while(bits!=0) { count+=(bits&1) as i32; bits=bits>>1; }
+        index+=1;
+    }
+    if(count==0) { return core::result::Err(Error::UnexpectedResult); }
+    return core::result::Ok(count);
 }
-
-pub fn thread_is_known_but_unbound() -> ThreadCapability {
-    return thread_service_is_known() && thread_is_blocked();
-}
-
-pub fn thread_requires_runtime_binding() -> ThreadCapability {
-    return !THREAD_HAS_RUNTIME_BINDING;
-}
-
-pub fn thread_host_abi_is_contract_only() -> ThreadCapability {
-    return thread_requires_runtime_binding();
-}
-
-pub fn thread_operation_ok() -> ThreadOperationResult {
-    return THREAD_OPERATION_OK;
-}
-
-pub fn thread_operation_unavailable() -> ThreadOperationResult {
-    return THREAD_OPERATION_UNAVAILABLE;
-}
-
-pub fn thread_operation_succeeded(result: ThreadOperationResult) -> ThreadCapability {
-    return result >= 0;
-}
-
-pub fn thread_operation_failed(result: ThreadOperationResult) -> ThreadCapability {
-    return result < 0;
-}
-
-pub fn thread_operation_is_unavailable(result: ThreadOperationResult) -> ThreadCapability {
-    return result == THREAD_OPERATION_UNAVAILABLE;
-}
-
-pub fn thread_operation_is_fail_closed(result: ThreadOperationResult) -> ThreadCapability {
-    return thread_is_known_but_unbound() && thread_operation_is_unavailable(result);
-}
-
-pub fn thread_spawn_is_executable() -> ThreadCapability {
-    return THREAD_HAS_RUNTIME_BINDING;
-}
-
-pub fn thread_spawn_is_blocked() -> ThreadCapability {
-    return !thread_spawn_is_executable();
-}
-
-pub fn thread_spawn_is_known_but_unbound() -> ThreadCapability {
-    return thread_service_is_known() && thread_spawn_is_blocked();
-}
-
-pub fn thread_spawn_requires_runtime_binding() -> ThreadCapability {
-    return !thread_spawn_is_executable();
-}
-
-pub fn thread_join_is_executable() -> ThreadCapability {
-    return THREAD_HAS_RUNTIME_BINDING;
-}
-
-pub fn thread_join_is_blocked() -> ThreadCapability {
-    return !thread_join_is_executable();
-}
-
-pub fn thread_join_is_known_but_unbound() -> ThreadCapability {
-    return thread_service_is_known() && thread_join_is_blocked();
-}
-
-pub fn thread_join_requires_runtime_binding() -> ThreadCapability {
-    return !thread_join_is_executable();
-}
-
-pub fn thread_yield_is_executable() -> ThreadCapability {
-    return THREAD_HAS_RUNTIME_BINDING;
-}
-
-pub fn thread_yield_is_blocked() -> ThreadCapability {
-    return !thread_yield_is_executable();
-}
-
-pub fn thread_yield_is_known_but_unbound() -> ThreadCapability {
-    return thread_service_is_known() && thread_yield_is_blocked();
-}
-
-pub fn thread_yield_requires_runtime_binding() -> ThreadCapability {
-    return !thread_yield_is_executable();
-}
-
-pub fn thread_current_id_is_executable() -> ThreadCapability {
-    return THREAD_HAS_RUNTIME_BINDING;
-}
-
-pub fn thread_current_id_is_blocked() -> ThreadCapability {
-    return !thread_current_id_is_executable();
-}
-
-pub fn thread_current_id_is_known_but_unbound() -> ThreadCapability {
-    return thread_service_is_known() && thread_current_id_is_blocked();
-}
-
-pub fn thread_current_id_requires_runtime_binding() -> ThreadCapability {
-    return !thread_current_id_is_executable();
-}
-
-pub extern "lanius_std" fn spawn(entry_id: u32, arg: u32) -> ThreadOperationResult;
-
-pub extern "lanius_std" fn join(handle: i32) -> ThreadOperationResult;
-
-pub extern "lanius_std" fn yield_now() -> ThreadOperationResult;
-
-pub extern "lanius_std" fn current_id() -> ThreadOperationResult;

@@ -1,7 +1,10 @@
 // Executable library capabilities of the native x86_64 Linux target. A family
 // can be implemented in Lanius over another bound service: std::socket uses the
-// Linux syscall boundary. core::runtime separately inventories direct service
-// bindings; its legacy network service remains unavailable.
+// Linux syscall boundary, and std::thread uses glibc through --native-link.
+// HAS_THREADS describes that native-linked Linux x86_64/glibc library profile;
+// it does not supply automatic glibc linkage to raw ELF output. core::runtime
+// separately inventories direct service bindings; its legacy network/thread
+// services remain unavailable.
 
 module core::target;
 
@@ -12,7 +15,7 @@ pub const IS_NATIVE: Capability = true;
 pub const HAS_ALLOCATOR: Capability = true;
 pub const HAS_FILESYSTEM: Capability = true;
 pub const HAS_STDIO: Capability = true;
-pub const HAS_THREADS: Capability = false;
+pub const HAS_THREADS: Capability = true;
 pub const HAS_NETWORK: Capability = true;
 pub const HAS_CLOCK: Capability = true;
 pub const HAS_PANIC_HOOK: Capability = false;

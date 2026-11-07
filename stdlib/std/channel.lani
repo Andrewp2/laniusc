@@ -3,11 +3,13 @@
 // Channel<T> (`bounded`): a bounded multi-producer multi-consumer FIFO in a
 // shared Region, ordered by one mutex. It works between forked workers.
 // Ring<T> (`ring`) and Mpsc<T> (`mpsc`) are for the threads of one process
-// (std::pthread). They use process-private futexes, so they must not be
-// shared with forked workers. Ring<T> is a lock-free bounded
+// (std::thread). They use process-private futexes, so they must not be
+// shared with forked workers. Ring<T> is an atomic bounded
 // multi-producer multi-consumer ring, and Mpsc<T> an unbounded
 // multi-producer single-consumer queue on the heap. `select` receives from
 // whichever of two thread channels is ready (see the end of this file).
+// The ring has no formal lock-free progress guarantee: a participant paused
+// after claiming a slot can delay other operations. See the channel guide.
 //
 // Channel<T> in detail: a bounded multi-producer multi-consumer FIFO in a
 // shared Region. T is copied by value into Region storage: it must be a plain value
@@ -18,20 +20,24 @@
 // See docs/stdlib-concurrency.md for endpoint counting and disconnection.
 module std::channel;
 import alloc::allocator;
+import core::layout;
 import core::mem;
 import core::option;
+import core::panic;
 import core::result;
 import core::slice;
+import core::u64;
 import std::atomic;
 import std::linux;
 import std::sync;
 
 pub const MAX_CAPACITY: i32 = 1048576;
 
-// Rejected sends return the message to the caller.
-pub enum SendError<T> { Full(T), Disconnected(T), TimedOut(T), Sync(std::sync::Error) }
+// Full, Disconnected, TimedOut and AllocationFailed carry the rejected value.
+// Sync carries only the synchronization error, not the value.
+pub enum SendError<T> { Full(T), Disconnected(T), TimedOut(T), AllocationFailed(T), Sync(std::sync::Error) }
 pub enum RecvError { Empty, Disconnected, TimedOut, Sync(std::sync::Error) }
-pub enum Error { InvalidCapacity, NoEndpoint, Sync(std::sync::Error) }
+pub enum Error { InvalidCapacity, NoEndpoint, SizeOverflow, AllocationFailed, Sync(std::sync::Error) }
 
 // Shared header words, each 8 bytes: head, length, senders, receivers.
 pub struct Channel<T> { lock: std::sync::Mutex, readable: std::sync::Condvar, writable: std::sync::Condvar, header: ptr, slots: ptr, capacity: u64 }
@@ -218,9 +224,10 @@ pub impl<T> Receiver<T> {
 // Blocking: an operation first retries for SPINS attempts, then sleeps on a
 // private futex epoch word. A waiter registers in a waiter count with a
 // locked add before its final recheck. A successful send or receive
-// publishes with a locked swap before it reads that count, so a wake is
-// never lost: either the recheck sees the item, or the publisher sees the
-// waiter, bumps the epoch and wakes it.
+// publishes with a locked swap before it reads that count. This closes the
+// registration/publication race while the observed u32 epoch does not wrap
+// back to the same value. Notification-epoch ABA remains a separate limit;
+// correcting the ring's u64 queue counters does not resolve it.
 
 pub const SPINS: i32 = 200;
 
@@ -239,11 +246,14 @@ fn epoch(at: ptr) -> u32 { return std::atomic::at32(at).load(std::atomic::Load::
 fn wake_one(word: ptr, waiters: ptr) {
     if (cell(waiters).load(std::atomic::Load::Relaxed) == 0) { return; }
     std::atomic::at32(word).fetch_add(1, std::atomic::Ordering::SeqCst);
-    std::sync::futex_wake_private(word, 1);
+    // The message/slot transition has already committed. Returning a rejected
+    // operation would permit a duplicate, while dropping the wake can strand
+    // an owner. This exceptional host failure terminates the process.
+    if (std::sync::futex_wake_private(word, 1).is_err()) { core::panic::panic(); }
 }
 fn wake_all(word: ptr) {
     std::atomic::at32(word).fetch_add(1, std::atomic::Ordering::SeqCst);
-    std::sync::futex_wake_private(word, 2147483647);
+    if (std::sync::futex_wake_private(word, 2147483647).is_err()) { core::panic::panic(); }
 }
 // Sleep while the epoch at `word` is still `seen`: mode 1 without a limit,
 // mode 2 until the deadline. Ok(true) once the deadline has passed.
@@ -287,11 +297,24 @@ pub struct Ring<T> { block: ptr }
 pub fn ring<T>(capacity: i32, senders: i32, receivers: i32) -> core::result::Result<Ring<T>, Error> {
     if (capacity < 2 || capacity > MAX_CAPACITY || (capacity & (capacity - 1)) != 0) { return core::result::Err(Error::InvalidCapacity); }
     if (senders < 1 || receivers < 1) { return core::result::Err(Error::NoEndpoint); }
-    let block: ptr = alloc::allocator::alloc(RING_BLOCK, 8);
-    let sequence: ptr = alloc::allocator::alloc((capacity as usize) * 8, 8);
-    let bytes: usize = (capacity as usize) * core::mem::size_of<T>();
+    let size: usize = core::mem::size_of<T>();
+    if (size > core::layout::MAX_SIZE / (capacity as usize)) { return core::result::Err(Error::SizeOverflow); }
+    let bytes: usize = (capacity as usize) * size;
     if (bytes == 0) { bytes = 8; }
+    if (core::layout::from_size_align(bytes, 8).is_err()) { return core::result::Err(Error::SizeOverflow); }
+    let block: ptr = alloc::allocator::alloc(RING_BLOCK, 8);
+    if (block == 0) { return core::result::Err(Error::AllocationFailed); }
+    let sequence: ptr = alloc::allocator::alloc((capacity as usize) * 8, 8);
+    if (sequence == 0) {
+        alloc::allocator::dealloc(block, RING_BLOCK, 8);
+        return core::result::Err(Error::AllocationFailed);
+    }
     let slots: ptr = alloc::allocator::alloc(bytes, 8);
+    if (slots == 0) {
+        alloc::allocator::dealloc(sequence, (capacity as usize) * 8, 8);
+        alloc::allocator::dealloc(block, RING_BLOCK, 8);
+        return core::result::Err(Error::AllocationFailed);
+    }
     let word: usize = 0;
     while (word < RING_BLOCK) { set(block + word, 0); word += 8; }
     let index: u64 = 0;
@@ -311,14 +334,18 @@ pub impl<T> Ring<T> {
     pub fn len(&self) -> i32 {
         let tail: u64 = cell(self.block).load(std::atomic::Load::Acquire);
         let head: u64 = cell(self.block + 64).load(std::atomic::Load::Acquire);
-        if (tail <= head) { return 0; }
-        return (tail - head) as i32;
+        let distance: i64 = core::u64::wrapping_sub(tail, head) as i64;
+        if (distance <= 0) { return 0; }
+        let capacity: i32 = self.capacity();
+        if (distance > (capacity as i64)) { return capacity; }
+        return distance as i32;
     }
     pub fn sender_count(&self) -> i32 { return cell(self.block + 256).load(std::atomic::Load::Acquire) as i32; }
     pub fn receiver_count(&self) -> i32 { return cell(self.block + 264).load(std::atomic::Load::Acquire) as i32; }
     fn slots(&self) -> [T] { return core::mem::typed_slice_from_storage<T>(pget(self.block + 288), get(self.block + 272) as i32); }
     fn sequence(&self, index: u64) -> std::atomic::Atomic64 { return cell(pget(self.block + 280) + (index as usize) * 8); }
-    // One lock-free attempt: false when the ring is full.
+    // Attempt a slot claim with atomics; false when the next slot is unavailable.
+    // CAS retries and a stalled claimant have no bounded progress guarantee.
     fn push(&self, value: T) -> bool {
         let mask: u64 = get(self.block + 272) - 1;
         let tail: std::atomic::Atomic64 = cell(self.block);
@@ -326,16 +353,21 @@ pub impl<T> Ring<T> {
         while (true) {
             let slot: std::atomic::Atomic64 = self.sequence(position & mask);
             let stamp: u64 = slot.load(std::atomic::Load::Acquire);
-            if (stamp == position) {
-                let claimed: std::atomic::Exchange = tail.compare_exchange(position, position + 1, std::atomic::Ordering::SeqCst, std::atomic::Load::Relaxed);
+            // Sequence positions are modular counters. Signed distance
+            // distinguishes a previous lap across u64 wrap; unsigned order
+            // incorrectly spins at an empty/full boundary near u64::MAX.
+            let distance: i64 = core::u64::wrapping_sub(stamp, position) as i64;
+            let next: u64 = core::u64::wrapping_add(position, 1);
+            if (distance == 0) {
+                let claimed: std::atomic::Exchange = tail.compare_exchange(position, next, std::atomic::Ordering::SeqCst, std::atomic::Load::Relaxed);
                 if (std::atomic::swapped(claimed)) {
                     let ring: [T] = self.slots(); ring[(position & mask) as i32] = value;
-                    slot.swap(position + 1, std::atomic::Ordering::SeqCst);
+                    slot.swap(next, std::atomic::Ordering::SeqCst);
                     return true;
                 }
                 position = std::atomic::observed(claimed);
             } else {
-                if (stamp < position) { return false; }
+                if (distance < 0) { return false; }
                 position = tail.load(std::atomic::Load::Relaxed);
             }
         }
@@ -349,16 +381,18 @@ pub impl<T> Ring<T> {
         while (true) {
             let slot: std::atomic::Atomic64 = self.sequence(position & mask);
             let stamp: u64 = slot.load(std::atomic::Load::Acquire);
-            if (stamp == position + 1) {
-                let claimed: std::atomic::Exchange = head.compare_exchange(position, position + 1, std::atomic::Ordering::SeqCst, std::atomic::Load::Relaxed);
+            let next: u64 = core::u64::wrapping_add(position, 1);
+            let distance: i64 = core::u64::wrapping_sub(stamp, next) as i64;
+            if (distance == 0) {
+                let claimed: std::atomic::Exchange = head.compare_exchange(position, next, std::atomic::Ordering::SeqCst, std::atomic::Load::Relaxed);
                 if (std::atomic::swapped(claimed)) {
                     let ring: [T] = self.slots(); let value: T = ring[(position & mask) as i32];
-                    slot.swap(position + capacity, std::atomic::Ordering::SeqCst);
+                    slot.swap(core::u64::wrapping_add(position, capacity), std::atomic::Ordering::SeqCst);
                     return core::option::Some(value);
                 }
                 position = std::atomic::observed(claimed);
             } else {
-                if (stamp < position + 1) { return core::option::None(); }
+                if (distance < 0) { return core::option::None(); }
                 position = head.load(std::atomic::Load::Relaxed);
             }
         }
@@ -485,13 +519,20 @@ pub struct Mpsc<T> { block: ptr }
 // Each message is one heap node, freed by the receiver.
 pub fn mpsc<T>(senders: i32) -> core::result::Result<Mpsc<T>, Error> {
     if (senders < 1) { return core::result::Err(Error::NoEndpoint); }
-    let block: ptr = alloc::allocator::alloc(MPSC_BLOCK, 8);
-    let word: usize = 0;
-    while (word < MPSC_BLOCK) { set(block + word, 0); word += 8; }
     let payload: usize = core::mem::size_of<T>();
     if (payload < 8) { payload = 8; }
+    if (payload > core::layout::MAX_SIZE - 8) { return core::result::Err(Error::SizeOverflow); }
     let node_bytes: usize = 8 + payload;
+    if (core::layout::from_size_align(node_bytes, 8).is_err()) { return core::result::Err(Error::SizeOverflow); }
+    let block: ptr = alloc::allocator::alloc(MPSC_BLOCK, 8);
+    if (block == 0) { return core::result::Err(Error::AllocationFailed); }
     let stub: ptr = alloc::allocator::alloc(node_bytes, 8);
+    if (stub == 0) {
+        alloc::allocator::dealloc(block, MPSC_BLOCK, 8);
+        return core::result::Err(Error::AllocationFailed);
+    }
+    let word: usize = 0;
+    while (word < MPSC_BLOCK) { set(block + word, 0); word += 8; }
     set(stub, 0);
     pset(block, stub); pset(block + 64, stub);
     set(block + 192, senders as u64); set(block + 200, 1); set(block + 208, node_bytes as u64);
@@ -506,10 +547,13 @@ pub impl<T> Mpsc<T> {
     pub fn handle(&self) -> ptr { return self.block; }
     pub fn sender_count(&self) -> i32 { return cell(self.block + 192).load(std::atomic::Load::Acquire) as i32; }
     pub fn receiver_open(&self) -> bool { return cell(self.block + 200).load(std::atomic::Load::Acquire) != 0; }
-    // Never blocks: the queue has no bound.
+    // No queue-capacity wait; allocation and notification may call the host.
     pub fn send(&self, value: T) -> core::result::Result<i32, SendError<T>> {
         if (cell(self.block + 200).load(std::atomic::Load::Acquire) == 0) { return core::result::Err(SendError::Disconnected(value)); }
         let node: ptr = alloc::allocator::alloc(get(self.block + 208) as usize, 8);
+        // Before tail publication, the caller retains the rejected value and
+        // the existing queue is unchanged, so allocation failure is recoverable.
+        if (node == 0) { return core::result::Err(SendError::AllocationFailed(value)); }
         set(node, 0);
         let slot: [T] = node_value<T>(node); slot[0] = value;
         let previous: ptr = address(cell(self.block).swap(bits(node), std::atomic::Ordering::SeqCst));

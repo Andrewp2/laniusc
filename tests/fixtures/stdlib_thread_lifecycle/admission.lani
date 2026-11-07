@@ -1,0 +1,21 @@
+// Canonical ordinary std::thread functions, real glibc thread and C entry.
+module app::main;
+import core::mem;
+import std::process;
+import std::thread;
+
+fn worker(argument:ptr) -> ptr {
+    let identity:[u64]=core::mem::typed_slice_from_raw_parts<u64>(argument,1);
+    identity[0]=std::thread::current();
+    return argument+std::process::argc()*8;
+}
+fn main() -> i32 {
+    let words:[i32;2]=[0;2]; let argument:ptr=core::mem::i32_array_data_ptr(words);
+    let main_id:u64=std::thread::current(); assert(main_id!=0);
+    assert(std::thread::yield_now().unwrap()==0 && std::thread::available_parallelism().unwrap()>=1);
+    let owner=std::thread::spawn(worker,argument).unwrap(); let id:u64=owner.id(); assert(id!=0 && id!=main_id && !owner.is_joined());
+    assert(owner.join().unwrap()==argument+std::process::argc()*8 && owner.is_joined());
+    let identity:[u64]=core::mem::typed_slice_from_raw_parts<u64>(argument,1); assert(identity[0]==id);
+    assert(match(owner.join().unwrap_err()) { std::thread::Error::Joined -> true, _ -> false });
+    return 0;
+}

@@ -1,4 +1,4 @@
-// Stress test for the thread-safe runtime allocator under std::pthread.
+// Stress test for the thread-safe runtime allocator under std::thread.
 // Prints "name value" per check (" FAIL want W" on a mismatch) and exits 0
 // when every check passes:
 //   churn.T    T threads each run ROUNDS random alloc/realloc/dealloc steps
@@ -11,17 +11,26 @@
 //   spawn.*    1,000 sequential spawn/join pairs whose bodies allocate
 // Build: laniusc --native-link --native-library atomic --stdlib-root stdlib
 module app::main;
+import alloc::vec;
 import alloc::allocator;
 import core::mem;
 import core::slice;
 import std::io;
-import std::pthread;
+import std::thread;
 import std::sync;
 
 const ROUNDS: i64 = 20000;
 const SLOTS: i32 = 64;
 const ITEMS: i64 = 20000;
 const CAPACITY: i64 = 16;
+
+// The vector holds the single join authority. Persist successful retirement.
+fn join_at(owners: &alloc::vec::Vec<std::thread::Thread>, index: i32) -> ptr {
+    let thread: std::thread::Thread = owners.at(index);
+    let result: ptr = thread.join().unwrap();
+    owners.set(index, thread).unwrap();
+    return result;
+}
 
 fn get(at: ptr, word: i32) -> i64 { let v: [i64] = core::mem::typed_slice_from_raw_parts<i64>(at + (word as usize) * 8, 1); return v[0]; }
 fn set(at: ptr, word: i32, value: i64) { let v: [i64] = core::mem::typed_slice_from_raw_parts<i64>(at + (word as usize) * 8, 1); v[0] = value; }
@@ -110,6 +119,7 @@ fn churn(task: ptr) -> ptr {
 }
 fn churn_threads(score: &Score, region: &std::sync::Region, threads: i32, label: str) {
     let tasks: ptr = region.allocate((threads as usize) * 64).unwrap();
+    let owners: alloc::vec::Vec<std::thread::Thread> = alloc::vec::with_capacity<std::thread::Thread>(threads).unwrap();
     let tables: ptr = region.allocate((threads as usize) * 3 * (SLOTS as usize) * 8).unwrap();
     let t: i32 = 0;
     while (t < threads) {
@@ -118,18 +128,19 @@ fn churn_threads(score: &Score, region: &std::sync::Region, threads: i32, label:
         let w: i32 = 0;
         while (w < 3 * SLOTS) { set(table, w, 0); w += 1; }
         set_ptr(task, 0, table); set(task, 1, 977 + (t as i64) * 7919); set(task, 2, 0); set(task, 3, 0);
-        let made: std::pthread::Thread = std::pthread::spawn(churn, task).unwrap();
-        set(task, 4, made.id() as i64);
+        let made: std::thread::Thread = std::thread::spawn(churn, task).unwrap();
+        owners.try_push(made).unwrap();
         t += 1;
     }
     let errors: i64 = 0; let steps: i64 = 0;
     t = 0;
     while (t < threads) {
         let task: ptr = tasks + (t as usize) * 64;
-        std::pthread::join_id(get(task, 4) as u64).unwrap();
+        join_at(owners.borrow(), t);
         errors += get(task, 2); steps += get(task, 3);
         t += 1;
     }
+    owners.destroy();
     report(score, label, errors, 0);
     report(score, "churn.steps", steps, (threads as i64) * ROUNDS);
 }
@@ -220,7 +231,7 @@ fn main() -> i32 {
     // 2 producers, 2 consumers; main allocates meanwhile, too.
     let queue: ptr = region.allocate(512).unwrap();
     let jobs: ptr = region.allocate(256).unwrap();
-    let ids: ptr = region.allocate(64).unwrap();
+    let owners: alloc::vec::Vec<std::thread::Thread> = alloc::vec::with_capacity<std::thread::Thread>(4).unwrap();
     let w: i32 = 0;
     while (w < 64) { set(queue, w, 0); w += 1; }
     let p: i32 = 0;
@@ -230,8 +241,8 @@ fn main() -> i32 {
         let entry: ptr = consume;
         if (p < 2) { set(job, 1, 31 + (p as i64) * 104729); entry = produce; }
         else { set(job, 1, 2 * ITEMS); }
-        let made: std::pthread::Thread = std::pthread::spawn(entry, job).unwrap();
-        set(ids, p, made.id() as i64);
+        let made: std::thread::Thread = std::thread::spawn(entry, job).unwrap();
+        owners.try_push(made).unwrap();
         p += 1;
     }
     let mine: i64 = 0;
@@ -243,7 +254,8 @@ fn main() -> i32 {
         r += 1;
     }
     p = 0;
-    while (p < 4) { std::pthread::join_id(get(ids, p) as u64).unwrap(); p += 1; }
+    while (p < 4) { join_at(owners.borrow(), p); p += 1; }
+    owners.destroy();
     report(score.borrow(), "cross.taken", get(queue, 7), 2 * ITEMS);
     report(score.borrow(), "cross.bad", get(jobs, 2) + get(jobs + 64, 2) + get(jobs + 128, 2) + get(jobs + 192, 2), 0);
     report(score.borrow(), "cross.main", mine, 2000);
@@ -253,7 +265,7 @@ fn main() -> i32 {
     let good: i64 = 0;
     let k: i32 = 0;
     while (k < 1000) {
-        let thread: std::pthread::Thread = std::pthread::spawn(grab, base).unwrap();
+        let thread: std::thread::Thread = std::thread::spawn(grab, base).unwrap();
         let back: ptr = thread.join().unwrap();
         if (back == base + 8) { good += 1; }
         k += 1;

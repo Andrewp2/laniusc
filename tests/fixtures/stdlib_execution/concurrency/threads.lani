@@ -1,4 +1,4 @@
-// Functional tests for std::pthread with std::sync's Mutex and Condvar.
+// Functional tests for std::thread with std::sync's Mutex and Condvar.
 // Prints "name value" per check (" FAIL want W" on a mismatch) and exits 0
 // when every check passes:
 //   sum.T      parallel sum over T threads equals the serial sum
@@ -7,16 +7,25 @@
 //   join.*     1,000 sequential spawn/join pairs return their results
 // Build: laniusc --native-link --native-library atomic --stdlib-root stdlib
 module app::main;
+import alloc::vec;
 import core::mem;
 import core::result;
 import std::io;
-import std::pthread;
+import std::thread;
 import std::sync;
 
 const N: i32 = 1000003;
 const ROUNDS: i64 = 20000;
 const ITEMS: i64 = 20000;
 const CAPACITY: i64 = 8;
+
+// The vector holds the single join authority. Persist successful retirement.
+fn join_at(owners: &alloc::vec::Vec<std::thread::Thread>, index: i32) -> ptr {
+    let thread: std::thread::Thread = owners.at(index);
+    let result: ptr = thread.join().unwrap();
+    owners.set(index, thread).unwrap();
+    return result;
+}
 
 fn get(at: ptr, word: i32) -> i64 { let v: [i64] = core::mem::typed_slice_from_raw_parts<i64>(at + (word as usize) * 8, 1); return v[0]; }
 fn set(at: ptr, word: i32, value: i64) { let v: [i64] = core::mem::typed_slice_from_raw_parts<i64>(at + (word as usize) * 8, 1); v[0] = value; }
@@ -47,24 +56,25 @@ fn add_range(task: ptr) -> ptr {
 }
 fn parallel_sum(score: &Score, region: &std::sync::Region, data: ptr, threads: i32, label: str) {
     let tasks: ptr = region.allocate((threads as usize) * 64).unwrap();
+    let owners: alloc::vec::Vec<std::thread::Thread> = alloc::vec::with_capacity<std::thread::Thread>(threads).unwrap();
     let t: i32 = 0;
     while (t < threads) {
         let task: ptr = tasks + (t as usize) * 64;
         set_ptr(task, 0, data); set(task, 1, N as i64);
         set(task, 2, ((N as i64) * (t as i64)) / (threads as i64));
         set(task, 3, ((N as i64) * ((t + 1) as i64)) / (threads as i64));
-        let made: std::pthread::Thread = std::pthread::spawn(add_range, task).unwrap();
-        set(task, 5, made.id() as i64);
+        let made: std::thread::Thread = std::thread::spawn(add_range, task).unwrap();
+        owners.try_push(made).unwrap();
         t += 1;
     }
     let total: u64 = 0;
     t = 0;
     while (t < threads) {
-        let task: ptr = tasks + (t as usize) * 64;
-        let done: ptr = std::pthread::join_id(get(task, 5) as u64).unwrap();
+        let done: ptr = join_at(owners.borrow(), t);
         total += get(done, 4) as u64;
         t += 1;
     }
+    owners.destroy();
     let serial: u64 = 0;
     let values: [u64] = core::mem::typed_slice_from_storage<u64>(data, N);
     let i: i32 = 0;
@@ -154,16 +164,18 @@ fn main() -> i32 {
     let words: ptr = region.allocate(64).unwrap();
     let task: ptr = region.allocate(64).unwrap();
     set_ptr(task, 0, words); set_ptr(task, 1, words + 8);
-    let ids: ptr = region.allocate(64).unwrap();
+    let counter_threads: alloc::vec::Vec<std::thread::Thread> = alloc::vec::with_capacity<std::thread::Thread>(8).unwrap();
     let t: i32 = 0;
-    while (t < 8) { let made: std::pthread::Thread = std::pthread::spawn(count_up, task).unwrap(); set(ids, t, made.id() as i64); t += 1; }
+    while (t < 8) { let made: std::thread::Thread = std::thread::spawn(count_up, task).unwrap(); counter_threads.try_push(made).unwrap(); t += 1; }
     t = 0;
-    while (t < 8) { std::pthread::join_id(get(ids, t) as u64).unwrap(); t += 1; }
+    while (t < 8) { join_at(counter_threads.borrow(), t); t += 1; }
+    counter_threads.destroy();
     report(score.borrow(), "counter", get(words, 1), 8 * ROUNDS);
 
     // Queue: 2 producers, 2 consumers.
     let queue: ptr = region.allocate(256).unwrap();
     let jobs: ptr = region.allocate(256).unwrap();
+    let queue_threads: alloc::vec::Vec<std::thread::Thread> = alloc::vec::with_capacity<std::thread::Thread>(4).unwrap();
     let p: i32 = 0;
     while (p < 4) {
         let job: ptr = jobs + (p as usize) * 64;
@@ -171,12 +183,13 @@ fn main() -> i32 {
         let entry: ptr = consume;
         if (p < 2) { set(job, 1, (p as i64) * 1000000); entry = produce; }
         else { set(job, 1, 2 * ITEMS); }
-        let made: std::pthread::Thread = std::pthread::spawn(entry, job).unwrap();
-        set(ids, p, made.id() as i64);
+        let made: std::thread::Thread = std::thread::spawn(entry, job).unwrap();
+        queue_threads.try_push(made).unwrap();
         p += 1;
     }
     p = 0;
-    while (p < 4) { std::pthread::join_id(get(ids, p) as u64).unwrap(); p += 1; }
+    while (p < 4) { join_at(queue_threads.borrow(), p); p += 1; }
+    queue_threads.destroy();
     let expected: i64 = 2 * (ITEMS * (ITEMS - 1) / 2) + 1000000 * ITEMS;
     report(score.borrow(), "queue.taken", get(queue, 7), 2 * ITEMS);
     report(score.borrow(), "queue.sum_ok", flag(get(queue, 8) == expected), 1);
@@ -187,19 +200,19 @@ fn main() -> i32 {
     let good: i64 = 0;
     let k: i32 = 0;
     while (k < 1000) {
-        let thread: std::pthread::Thread = std::pthread::spawn(echo, base).unwrap();
+        let thread: std::thread::Thread = std::thread::spawn(echo, base).unwrap();
         let back: ptr = thread.join().unwrap();
         if (back == base + 8) { good += 1; }
         if (k == 999) {
-            let again: core::result::Result<ptr, std::pthread::Error> = thread.join();
+            let again: core::result::Result<ptr, std::thread::Error> = thread.join();
             let refused: i64 = 0;
-            if (again.is_err()) { refused = match (again.unwrap_err()) { std::pthread::Error::Joined -> 1, _ -> 0 }; }
+            if (again.is_err()) { refused = match (again.unwrap_err()) { std::thread::Error::Joined -> 1, _ -> 0 }; }
             report(score.borrow(), "join.second_refused", refused, 1);
         }
         k += 1;
     }
     report(score.borrow(), "join.pairs", good, 1000);
-    report(score.borrow(), "parallelism_ok", flag(std::pthread::available_parallelism() >= 1), 1);
+    report(score.borrow(), "parallelism_ok", flag(std::thread::available_parallelism().unwrap() >= 1), 1);
     region.unmap();
     if (score.failed != 0) { return 1; }
     return 0;

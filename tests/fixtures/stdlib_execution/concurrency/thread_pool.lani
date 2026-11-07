@@ -23,7 +23,7 @@ import std::channel;
 import std::io;
 import std::parallel;
 import std::pool;
-import std::pthread;
+import std::thread;
 import std::sync;
 
 const N: i32 = 1000003;
@@ -84,7 +84,7 @@ struct Hold { gate: ptr }
 fn hold_worker(arg: ptr) -> ptr { return std::pool::serve<Hold>(arg); }
 pub impl std::pool::Task for Hold {
     pub fn run(&self) -> i64 {
-        while (std::atomic::at64(self.gate).load(std::atomic::Load::Acquire) == 0) { std::pthread::yield_now(); }
+        while (std::atomic::at64(self.gate).load(std::atomic::Load::Acquire) == 0) { std::thread::yield_now().unwrap(); }
         return 1;
     }
 }
@@ -138,16 +138,16 @@ fn main() -> i32 {
     let k: i64 = 0; let want_counter: i64 = 0;
     while (k < TASKS) { pool.submit(Job { counter: counter, amount: k % 97 }).unwrap(); want_counter += k % 97; k += 1; }
     pool.wait().unwrap();
-    report(score.borrow(), "pool.workers", pool.workers() as i64, 4);
-    report(score.borrow(), "pool.completed", pool.completed(), TASKS);
-    report(score.borrow(), "pool.total_ok", flag(pool.total() == 2 * want_counter), 1);
+    report(score.borrow(), "pool.workers", pool.workers().unwrap() as i64, 4);
+    report(score.borrow(), "pool.completed", pool.completed().unwrap(), TASKS);
+    report(score.borrow(), "pool.total_ok", flag(pool.total().unwrap() == 2 * want_counter), 1);
     report(score.borrow(), "pool.counter_ok", flag(get(counter, 0) == want_counter), 1);
     k = 0;
     while (k < 1000) { pool.submit(Job { counter: counter, amount: 1 }).unwrap(); k += 1; }
     pool.wait().unwrap();
-    report(score.borrow(), "pool.second_batch", pool.completed(), TASKS + 1000);
+    report(score.borrow(), "pool.second_batch", pool.completed().unwrap(), TASKS + 1000);
     report(score.borrow(), "pool.counter_after_ok", flag(get(counter, 0) == want_counter + 1000), 1);
-    pool.shutdown();
+    pool.shutdown().unwrap();
 
     // try_submit and wait_timeout_ms: one worker held on a gate, queue of 2.
     let gate: ptr = region.allocate(64).unwrap();
@@ -157,12 +157,12 @@ fn main() -> i32 {
     while (k < 6) { if (held.try_submit(Hold { gate: gate }).unwrap()) { accepted += 1; } k += 1; }
     // The worker takes at most one task off the queue, so 2 or 3 fit.
     report(score.borrow(), "pool.try_refused", flag(accepted >= 2 && accepted <= 3), 1);
-    report(score.borrow(), "pool.try_submitted", flag(held.submitted() == accepted), 1);
+    report(score.borrow(), "pool.try_submitted", flag(held.submitted().unwrap() == accepted), 1);
     report(score.borrow(), "pool.wait_timeout", flag(!held.wait_timeout_ms(20).unwrap()), 1);
     std::atomic::at64(gate).store(1, std::atomic::Store::Release);
     report(score.borrow(), "pool.wait_done", flag(held.wait_timeout_ms(10000).unwrap()), 1);
-    report(score.borrow(), "pool.try_completed", flag(held.completed() == accepted), 1);
-    held.shutdown();
+    report(score.borrow(), "pool.try_completed", flag(held.completed().unwrap() == accepted), 1);
+    held.shutdown().unwrap();
 
     // Results back through an Mpsc.
     let replies: std::channel::Mpsc<i64> = std::channel::mpsc<i64>(1).unwrap();
@@ -175,7 +175,7 @@ fn main() -> i32 {
     report(score.borrow(), "pool.replies", got, 1000);
     report(score.borrow(), "pool.replies_sum_ok", flag(square_sum == 332833500), 1);
     report(score.borrow(), "pool.replies_extra", flag(replies.try_recv().is_err()), 1);
-    squares.shutdown();
+    squares.shutdown().unwrap();
     replies.destroy();
 
     // map

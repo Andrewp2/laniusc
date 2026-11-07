@@ -1,0 +1,136 @@
+// Binary test protocol: mode/workers/length/grain (four native little-endian
+// i32 words), then length i64 keys. No production test hooks are required.
+module app::main;
+import core::cmp;
+import core::mem;
+import core::result;
+import std::atomic;
+import std::io;
+import std::par;
+import std::parallel;
+import std::sync;
+import std::thread;
+
+extern "C" fn thread_probe_calls(kind:i32) -> i32;
+extern "C" fn thread_probe_created() -> i32;
+extern "C" fn thread_probe_joined() -> i32;
+extern "C" fn thread_probe_live() -> i32;
+extern "C" fn thread_probe_created_id(index:i32) -> u64;
+extern "C" fn thread_probe_join_attempt(index:i32) -> u64;
+extern "C" fn par_probe_deny_wake(address:ptr) -> i32;
+extern "C" fn par_probe_deny_wait(address:ptr) -> i32;
+extern "C" fn par_probe_record_arg(argument:ptr);
+extern "C" fn par_probe_argument() -> ptr;
+extern "C" fn thread_probe_hold_create(ordinal:i32) -> i32;
+extern "C" fn thread_probe_wait_ready(ordinal:i32) -> i32;
+extern "C" fn thread_probe_entered(ordinal:i32) -> i32;
+extern "C" fn thread_probe_release(ordinal:i32) -> i32;
+
+struct Item { key:i64, index:i32 }
+pub impl core::cmp::Ord<Item> for Item {
+    pub fn lt(a:Item,b:Item) -> bool { return a.key<b.key; }
+    pub fn le(a:Item,b:Item) -> bool { return a.key<=b.key; }
+    pub fn gt(a:Item,b:Item) -> bool { return a.key>b.key; }
+    pub fn ge(a:Item,b:Item) -> bool { return a.key>=b.key; }
+}
+fn key_crew(argument:ptr) -> ptr { par_probe_record_arg(argument); return std::par::crew_entry<i64>(argument); }
+fn item_crew(argument:ptr) -> ptr { return std::par::crew_entry<Item>(argument); }
+fn failed_crew(argument:ptr) -> ptr { std::par::crew_entry<i64>(argument); let nowhere:ptr=0; return nowhere; }
+fn read_exact(data:ptr,length:i32) {
+    let at:i32=0;
+    while(at<length) { let n:i32=std::io::read_stdin(data+(at as usize),(length-at) as usize); assert(n>0); at+=n; }
+}
+fn emit(data:ptr,length:i32) {
+    let at:i32=0;
+    while(at<length) { let n:i32=std::io::write_stdout(data+(at as usize),(length-at) as usize); assert(n>0); at+=n; }
+}
+fn code(result:core::result::Result<i32,std::par::Error>) -> i32 {
+    if(result.is_ok()) { return 0; }
+    return match(result.unwrap_err()) {
+        std::par::Error::InvalidPlan -> -1,
+        std::par::Error::LengthMismatch -> -2,
+        std::par::Error::Thread(error) -> match(error) { std::thread::Error::Host(value) -> value, std::thread::Error::InvalidInput -> -3, _ -> -4 },
+        _ -> -5
+    };
+}
+fn record(key:i64,index:i32) {
+    let words:[i32;3]=[0;3]; let bits:u64=key as u64;
+    words[0]=bits as i32; words[1]=(bits>>32) as i32; words[2]=index;
+    emit(core::mem::i32_array_data_ptr(words),12);
+}
+fn main() -> i32 {
+    let header:[i32;4]=[0;4]; read_exact(core::mem::i32_array_data_ptr(header),16);
+    let mode:i32=header[0]; let workers:i32=header[1]; let n:i32=header[2]; let grain:i32=header[3];
+    assert(workers>=1 && workers<=8 && n>=0 && n<=1024 && grain>0);
+    let made=std::sync::map_shared(2097152);
+    if(made.is_err()) { std::io::write_text(1,"A"); return 4; }
+    let region=made.unwrap();
+    if(mode==18) {
+        let tiny=std::sync::map_shared(4096).unwrap();
+        let exhausted=std::par::plan(tiny.borrow(),workers,grain); assert(exhausted.is_err());
+        assert(tiny.unmap().is_ok() && region.unmap().is_ok()); std::io::write_text(1,"E"); return 0;
+    }
+    let plan=std::par::plan(region.borrow(),workers,grain).unwrap();
+    let keys=std::parallel::shared<i64>(region.borrow(),n).unwrap();
+    let spare=std::parallel::shared<i64>(region.borrow(),n).unwrap();
+    let items=std::parallel::shared<Item>(region.borrow(),n).unwrap();
+    let item_spare=std::parallel::shared<Item>(region.borrow(),n).unwrap();
+    read_exact(keys.storage,n*8);
+    let values=keys.view(); let tagged=items.view(); let i:i32=0;
+    while(i<n) { tagged[i]=Item { key:values[i],index:i }; i+=1; }
+    let entry:ptr=key_crew; let input=keys; let scratch=spare;
+    let nowhere:ptr=0;
+    // Admission cases retain real backing but change only metadata. In mode12,
+    // maximal length is accepted through validation to the null-entry error.
+    if(mode==10) { input.length=-1; scratch.length=-1; }
+    if(mode==11) { scratch.length=n+1; }
+    if(mode==12) { input.length=2147483647; scratch.length=2147483647; entry=nowhere; }
+    if(mode==13) { entry=nowhere; }
+    if(mode==14) { plan.workers=0; }
+    if(mode==15) { plan.grain=0; }
+    if(mode==16) { plan.workers=257; }
+    if(mode==17) { input.length=-2147483648; scratch.length=-2147483648; }
+    if(mode==19) { plan.workers=256; }
+    if(mode==20 || mode==21) { assert(par_probe_deny_wake(plan.control)==0); }
+    if(mode==22) { entry=failed_crew; }
+    if(mode==30 || mode==32) { assert(thread_probe_hold_create(1)==0); }
+    if(mode==31) { assert(thread_probe_hold_create(2)==0); }
+    let result:core::result::Result<i32,std::par::Error> = core::result::Ok(0);
+    if(mode==1) { result=std::par::sort_stable_threads(plan,items,item_spare,item_crew); }
+    else {
+        if(mode==2) { result=std::par::sort_unstable(plan,keys,spare); }
+        else {
+            if(mode==3) { result=std::par::sort_stable(plan,items,item_spare); }
+            else { result=std::par::sort_unstable_threads(plan,input,scratch,entry); }
+        }
+    }
+    if(mode==24) {
+        // Retain the actual argument observed by a completed one-worker crew;
+        // never reconstruct the private Crew layout. Re-enter on a real pthread
+        // with phase zero, so it must attempt its first wait before doing work.
+        assert(workers==2 && result.is_ok());
+        std::atomic::at32(plan.control).store(0,std::atomic::Store::Relaxed);
+        std::atomic::at32(plan.control+8).store(0,std::atomic::Store::Relaxed);
+        assert(par_probe_deny_wait(plan.control)==0 && thread_probe_hold_create(2)==0);
+        let thread=std::thread::spawn(key_crew,par_probe_argument()).unwrap();
+        assert(thread_probe_wait_ready(2)==0 && thread_probe_entered(2)==0);
+        assert(thread_probe_release(2)==0); thread.join();
+    }
+    // This marker precedes every assertion and cleanup. A bad ordinary return
+    // followed by a fixture assertion must never impersonate fail-closed sort.
+    assert(std::io::write_text(1,"R")==1);
+    let summary:[i32;6]=[0;6];
+    summary[0]=code(result); summary[1]=thread_probe_created(); summary[2]=thread_probe_joined();
+    summary[3]=thread_probe_live(); summary[4]=thread_probe_calls(3); summary[5]=thread_probe_calls(5);
+    emit(core::mem::i32_array_data_ptr(summary),24);
+    assert(summary[1]==summary[2] && summary[3]==0 && summary[5]==summary[1]);
+    i=0;
+    while(i<summary[1]) { assert(thread_probe_created_id(i)!=0 && thread_probe_created_id(i)==thread_probe_join_attempt(i)); i+=1; }
+    i=0;
+    while(i<n) {
+        if(mode==1 || mode==3) { record(tagged[i].key,tagged[i].index); }
+        else { record(values[i],-1); }
+        i+=1;
+    }
+    assert(region.unmap().is_ok()); assert(std::io::write_text(1,"U")==1); return 0;
+}

@@ -1,0 +1,161 @@
+// Single-thread channels: exact allocation denial/recovery and deterministic
+// wake-failure reachability. Synthetic waiter counts are test instrumentation,
+// not evidence about concurrent waiters (covered by the threaded fixtures).
+module app::main;
+import core::mem;
+import core::option;
+import core::panic;
+import core::result;
+import core::u64;
+import std::atomic;
+import std::channel;
+import std::io;
+
+struct Message { number:i64, bits:u64, flag:bool, optional:core::option::Option<i32>, address:ptr }
+struct Empty {}
+
+fn mark(value:i32) { let bytes:[i32;1]=[value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(bytes),1)==1); }
+fn message(index:i32, address:ptr) -> Message {
+    return Message { number:-7000000000-(index as i64),bits:18446744073709551615-(index as u64),flag:index==1,optional:core::option::Some(index+19),address:address };
+}
+fn check(value:Message,index:i32,address:ptr) {
+    assert(value.number==-7000000000-(index as i64));
+    assert(value.bits==18446744073709551615-(index as u64));
+    assert(value.flag==(index==1) && value.optional.unwrap()==index+19 && value.address==address);
+}
+fn empty_message(result:core::result::Result<Message,std::channel::RecvError>) {
+    assert(result.is_err()); assert(match(result.unwrap_err()) { std::channel::RecvError::Empty -> true, _ -> false });
+}
+fn constructor_error(value:std::channel::Error) -> i32 {
+    return match(value) { std::channel::Error::InvalidCapacity -> 1, std::channel::Error::NoEndpoint -> 2, std::channel::Error::AllocationFailed -> 3, _ -> 0 };
+}
+fn ring_attempt(address:ptr) -> i32 {
+    let result=std::channel::ring<Message>(2,1,1);
+    if(result.is_err()) { assert(constructor_error(result.unwrap_err())==3); return 1; }
+    let queue=result.unwrap(); assert(queue.capacity()==2 && queue.len()==0 && queue.sender_count()==1 && queue.receiver_count()==1);
+    assert(queue.try_send(message(0,address)).unwrap()==0); check(queue.try_recv().unwrap(),0,address);
+    empty_message(queue.try_recv()); queue.destroy(); return 0;
+}
+fn mpsc_attempt() -> i32 {
+    let result=std::channel::mpsc<Message>(1);
+    if(result.is_err()) { assert(constructor_error(result.unwrap_err())==3); return 1; }
+    let queue=result.unwrap(); assert(queue.sender_count()==1 && queue.receiver_open());
+    empty_message(queue.try_recv()); queue.destroy(); return 0;
+}
+fn node_attempt(address:ptr) -> i32 {
+    let queue=std::channel::mpsc<Message>(1).unwrap();
+    assert(queue.send(message(0,address)).unwrap()==0);
+    // Make a successful publication issue a wake; failed allocation must not.
+    std::atomic::at64(queue.handle()+136).store(1,std::atomic::Store::SeqCst);
+    mark(65); let result=queue.send(message(1,address)); mark(97);
+    let failed:i32=0;
+    if(result.is_err()) {
+        let rejected=match(result.unwrap_err()) {
+            std::channel::SendError::AllocationFailed(value) -> value,
+            _ -> core::panic::panic()
+        };
+        check(rejected,1,address); check(queue.try_recv().unwrap(),0,address); empty_message(queue.try_recv());
+        mark(82); assert(queue.send(rejected).unwrap()==0); mark(114); failed=1;
+    } else { assert(result.unwrap()==0); check(queue.try_recv().unwrap(),0,address); }
+    check(queue.try_recv().unwrap(),1,address); empty_message(queue.try_recv());
+    std::atomic::at64(queue.handle()+136).store(0,std::atomic::Store::SeqCst);
+    queue.destroy(); return failed;
+}
+fn zero_sized() {
+    assert(core::mem::size_of<Empty>()==0);
+    let ring=std::channel::ring<Empty>(2,1,1).unwrap();
+    assert(ring.try_send(Empty {}).unwrap()==0 && ring.try_send(Empty {}).unwrap()==0);
+    let full=ring.try_send(Empty {}); assert(full.is_err());
+    assert(match(full.unwrap_err()) { std::channel::SendError::Full(value) -> true, _ -> false });
+    assert(ring.len()==2); ring.try_recv().unwrap(); ring.try_recv().unwrap(); assert(ring.len()==0);
+    let empty=ring.try_recv(); assert(empty.is_err());
+    assert(match(empty.unwrap_err()) { std::channel::RecvError::Empty -> true, _ -> false }); ring.destroy();
+    let mpsc=std::channel::mpsc<Empty>(1).unwrap();
+    assert(mpsc.send(Empty {}).unwrap()==0 && mpsc.send(Empty {}).unwrap()==0);
+    mpsc.try_recv().unwrap(); mpsc.try_recv().unwrap();
+    let empty_mpsc=mpsc.try_recv(); assert(empty_mpsc.is_err());
+    assert(match(empty_mpsc.unwrap_err()) { std::channel::RecvError::Empty -> true, _ -> false }); mpsc.destroy();
+}
+fn invalid_metadata() {
+    let capacities:[i32;6]=[-1,0,1,3,1048577,2147483647]; let index:i32=0;
+    while(index<6) { assert(constructor_error(std::channel::ring<Message>(capacities[index],1,1).unwrap_err())==1); index+=1; }
+    assert(constructor_error(std::channel::ring<Message>(2,0,1).unwrap_err())==2);
+    assert(constructor_error(std::channel::ring<Message>(2,1,0).unwrap_err())==2);
+    assert(constructor_error(std::channel::ring<Message>(2,-1,1).unwrap_err())==2);
+    assert(constructor_error(std::channel::ring<Message>(2,1,-1).unwrap_err())==2);
+    assert(constructor_error(std::channel::mpsc<Message>(0).unwrap_err())==2);
+    assert(constructor_error(std::channel::mpsc<Message>(-1).unwrap_err())==2);
+}
+fn wake_ring(profile:i32,address:ptr) {
+    let queue=std::channel::ring<Message>(2,1,1).unwrap();
+    if(profile==5) { std::atomic::at64(queue.handle()+136).store(1,std::atomic::Store::SeqCst); }
+    if(profile==6) { assert(queue.try_send(message(0,address)).unwrap()==0); std::atomic::at64(queue.handle()+200).store(1,std::atomic::Store::SeqCst); }
+    mark(65);
+    if(profile==5) { assert(queue.try_send(message(0,address)).unwrap()==0); }
+    if(profile==6) { check(queue.try_recv().unwrap(),0,address); }
+    if(profile==8) { assert(queue.close_sender().unwrap()==0); }
+    if(profile==9) { assert(queue.close_receiver().unwrap()==0); }
+    mark(97);
+    std::atomic::at64(queue.handle()+136).store(0,std::atomic::Store::SeqCst);
+    std::atomic::at64(queue.handle()+200).store(0,std::atomic::Store::SeqCst);
+    if(profile==5) { check(queue.try_recv().unwrap(),0,address); }
+    if(profile==6) { assert(queue.len()==0); }
+    if(profile==8) { assert(queue.sender_count()==0); }
+    if(profile==9) { assert(queue.receiver_count()==0); }
+    queue.destroy();
+}
+fn wake_mpsc(profile:i32,address:ptr) {
+    let queue=std::channel::mpsc<Message>(1).unwrap();
+    if(profile==7) { std::atomic::at64(queue.handle()+136).store(1,std::atomic::Store::SeqCst); }
+    mark(65);
+    if(profile==7) { assert(queue.send(message(0,address)).unwrap()==0); }
+    if(profile==10) { assert(queue.close_sender().unwrap()==0); }
+    mark(97); std::atomic::at64(queue.handle()+136).store(0,std::atomic::Store::SeqCst);
+    if(profile==7) { check(queue.try_recv().unwrap(),0,address); }
+    if(profile==10) { assert(queue.sender_count()==0); }
+    queue.destroy();
+}
+fn wrap_round(base:u64,address:ptr) {
+    // A valid, empty, quiescent capacity-four queue at an arbitrary counter.
+    // Stamp distances remain below 2^63. No live worker observes this seeding.
+    let queue=std::channel::ring<Message>(4,1,1).unwrap();
+    let block=queue.handle();
+    std::atomic::at64(block).store(base,std::atomic::Store::SeqCst);
+    std::atomic::at64(block+64).store(base,std::atomic::Store::SeqCst);
+    let words:[ptr]=core::mem::typed_slice_from_raw_parts<ptr>(block+280,1);
+    let sequence=words[0]; let offset:u64=0;
+    while(offset<4) {
+        let position:u64=core::u64::wrapping_add(base,offset);
+        std::atomic::at64(sequence+((position&3) as usize)*8).store(position,std::atomic::Store::SeqCst); offset+=1;
+    }
+    assert(queue.len()==0); empty_message(queue.try_recv());
+    let index:i32=0;
+    while(index<4) { assert(queue.try_send(message(index,address)).unwrap()==0); assert(queue.len()==index+1); index+=1; }
+    let full=queue.try_send(message(6,address)); assert(full.is_err());
+    let rejected=match(full.unwrap_err()) { std::channel::SendError::Full(value) -> value, _ -> core::panic::panic() };
+    check(rejected,6,address); assert(queue.len()==4);
+    check(queue.try_recv().unwrap(),0,address); check(queue.try_recv().unwrap(),1,address); assert(queue.len()==2);
+    assert(queue.try_send(message(4,address)).unwrap()==0 && queue.try_send(message(5,address)).unwrap()==0); assert(queue.len()==4);
+    let again=queue.try_send(rejected); assert(again.is_err());
+    let rejected_again=match(again.unwrap_err()) { std::channel::SendError::Full(value) -> value, _ -> core::panic::panic() };
+    check(rejected_again,6,address); index=2;
+    while(index<6) { check(queue.try_recv().unwrap(),index,address); assert(queue.len()==5-index); index+=1; }
+    empty_message(queue.try_recv()); assert(queue.len()==0); queue.destroy();
+}
+fn main() -> i32 {
+    let input:[i32;1]=[0]; let address=core::mem::i32_array_data_ptr(input);
+    assert(std::io::read_stdin(address,1)==1); let profile:i32=input[0]; assert(profile>=0 && profile<=11);
+    let failed:i32=0;
+    if(profile==0 || profile==1) {
+        mark(65); if(profile==0) { failed=ring_attempt(address); } else { failed=mpsc_attempt(); } mark(97);
+        if(failed==1) { mark(82); if(profile==0) { assert(ring_attempt(address)==0); } else { assert(mpsc_attempt()==0); } mark(114); }
+    }
+    if(profile==2) { failed=node_attempt(address); }
+    if(profile==3) { mark(65); zero_sized(); mark(97); }
+    if(profile==4) { mark(65); invalid_metadata(); mark(97); }
+    if(profile==5 || profile==6 || profile==8 || profile==9) { wake_ring(profile,address); }
+    if(profile==7 || profile==10) { wake_mpsc(profile,address); }
+    if(profile==11) { mark(65); wrap_round(18446744073709551614,address); wrap_round(18446744073709551615,address); mark(97); }
+    mark(68); let report:[i32;1]=[profile+256*failed];
+    assert(std::io::write_stdout(core::mem::i32_array_data_ptr(report),2)==2); return 0;
+}

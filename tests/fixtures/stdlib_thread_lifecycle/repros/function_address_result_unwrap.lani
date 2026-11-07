@@ -1,0 +1,19 @@
+// Candidate reduction of the observed callback-address store to saved RBP.
+// No threads, C calls, raw memory, or allocation. Root must confirm execution.
+module app::main;
+import core::result;
+
+struct Handle { entry:ptr, active:bool }
+enum Error { InvalidInput, Host(i32), Joined }
+fn echo(argument:ptr) -> ptr { return argument; }
+fn make(entry:ptr,argument:ptr) -> core::result::Result<Handle,Error> {
+    let nowhere:ptr=0;
+    if(entry==nowhere) { return core::result::Err(Error::InvalidInput); }
+    return core::result::Ok(Handle { entry:entry,active:true });
+}
+fn exercise() {
+    let nowhere:ptr=0;
+    let owner=make(echo,nowhere).unwrap();
+    assert(owner.active && owner.entry!=nowhere);
+}
+fn main() -> i32 { exercise(); return 0; }

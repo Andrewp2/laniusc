@@ -317,18 +317,18 @@ fn uring_checks_and_batched_cat_and_copy_are_exact() {
     fs::remove_dir_all(scratch.path()).unwrap();
 }
 
-// std::pthread: parallel sums against the serial sum, a Mutex-guarded
+// std::thread: parallel sums against the serial sum, a Mutex-guarded
 // counter, a bounded Condvar queue and 1,000 sequential spawn/join pairs.
 #[test]
-fn pthread_sum_counter_queue_and_join_are_exact() {
+fn thread_sum_counter_queue_and_join_are_exact() {
     let program = native("tests/fixtures/stdlib_execution/concurrency/threads.lani", "threads");
     let text = run(&program, None);
     assert!(!text.contains("FAIL"), "{text}");
     assert!(text.contains("counter 160000\n") && text.contains("join.pairs 1000\n") && text.contains("queue.taken 40000\n"), "{text}");
 }
 
-// Runtime exit and traps use exit_group: an exit or a failed bounds check on a
-// worker thread ends the whole process with that status.
+// Runtime exit and bounds traps use exit_group: either on a worker thread
+// ends the whole process with that status. core::panic uses SIGILL separately.
 #[test]
 fn exit_and_trap_on_a_worker_thread_end_the_process() {
     let program = native("tests/fixtures/stdlib_execution/concurrency/thread_exit.lani", "thread_exit");
@@ -340,11 +340,11 @@ fn exit_and_trap_on_a_worker_thread_end_the_process() {
     }
 }
 
-// The runtime allocator under std::pthread: 1, 4 and 16 threads churning
+// The runtime allocator under std::thread: 1, 4 and 16 threads churning
 // tagged alloc/realloc/dealloc steps, blocks freed by a thread other than the
 // one that allocated them, and 1,000 sequential spawn/join pairs that allocate.
 #[test]
-fn pthread_bodies_allocate_and_free_across_threads() {
+fn thread_bodies_allocate_and_free_across_threads() {
     let program = native("tests/fixtures/stdlib_execution/concurrency/thread_alloc.lani", "thread_alloc");
     let text = run(&program, None);
     assert!(!text.contains("FAIL"), "{text}");

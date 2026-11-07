@@ -1,0 +1,23 @@
+module app::main;
+import core::mem;
+import core::result;
+import std::io;
+import std::linux;
+import std::thread;
+
+fn system(error:std::linux::Error) -> i32 { return match(error) { std::linux::Error::System(code) -> code, _ -> -1 }; }
+fn error_code(error:std::thread::Error) -> i32 {
+    return match(error) { std::thread::Error::System(cause) -> system(cause), std::thread::Error::UnexpectedResult -> -2, _ -> -3 };
+}
+fn emit(result:core::result::Result<i32,std::thread::Error>) {
+    let words:[i32;2]=[0;2];
+    if(result.is_ok()) { words[0]=0; words[1]=result.unwrap(); }
+    else { words[0]=1; words[1]=error_code(result.unwrap_err()); }
+    assert(std::io::write_stdout(core::mem::i32_array_data_ptr(words),8)==8);
+}
+fn main() -> i32 {
+    let input:[i32;1]=[0]; assert(std::io::read_stdin(core::mem::i32_array_data_ptr(input),1)==1);
+    if(input[0]==0) { emit(std::thread::yield_now()); }
+    else { assert(input[0]==1); emit(std::thread::available_parallelism()); }
+    return 0;
+}

@@ -173,12 +173,6 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
-            "std_thread_metadata",
-            "tests/fixtures/stdlib_foundation/std_thread_metadata.lani",
-            0,
-            b"",
-        ),
-        (
             "std_gpu_metadata",
             "tests/fixtures/stdlib_foundation/std_gpu_metadata.lani",
             0,
@@ -985,13 +979,6 @@ fn executable_core_function_surface_has_runtime_cases() {
             include_str!("../stdlib/std/net.lani"),
             include_str!("fixtures/stdlib_foundation/std_net_metadata.lani"),
             64,
-            6,
-        ),
-        (
-            "std::thread",
-            include_str!("../stdlib/std/thread.lani"),
-            include_str!("fixtures/stdlib_foundation/std_thread_metadata.lani"),
-            32,
             6,
         ),
         (

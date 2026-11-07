@@ -5314,7 +5314,7 @@ fn main() {
     let native: Capability = core::target::is_native();
     let has_stdio: core::target::Capability = core::target::HAS_STDIO;
     let threaded: Capability = core::target::has_threads();
-    if (native && has_stdio && !threaded) {
+    if (native && has_stdio && threaded) {
         return 0;
     }
     return 1;

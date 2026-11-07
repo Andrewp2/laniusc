@@ -1,5 +1,27 @@
 # Standard and extended library overview
 
+The [native thread consolidation](stdlib-thread-lifecycle.md) moves the
+implemented glibc interface into canonical `std::thread` and removes
+`std::pthread` and ID-based joining. Actual `Thread` owners retain join state;
+custom-stack failures can carry a started owner, and pool shutdown retains
+unjoined workers and backing for retry. Synchronous pool and sort operations
+terminate on failed join before borrowed backing can be released. Existing
+consumers store actual owners, and obsolete unbound-module tests are removed.
+The canonical-module admission gate passes (one test, 4.12 s); native lifecycle
+acceptance is pending. Earlier thread receipts do not establish the new
+failure contracts. `core::target::HAS_THREADS` describes the native-linked
+Linux x86_64/glibc library profile; raw ELF output does not gain automatic
+glibc linkage. The legacy compiler service-8 catalog
+remains a separate metadata dependency. Manual ownership, raw callback
+signature admission, other targets and formal verification remain open.
+
+The related [thread-channel repairs](stdlib-concurrency.md#allocation-failure-and-counter-boundaries)
+check constructor sizes and allocation rollback, retain an Mpsc message on
+allocation failure, terminate on a reported post-commit wake failure and use
+modular queue counters. Native acceptance remains pending. The atomic ring
+has no formal lock-free progress guarantee; notification-epoch ABA remains
+unresolved separately from the queue-counter repair.
+
 The [borrowed Text partition increment](stdlib-text-partitions.md) adds
 `split_once`, `rsplit_once`, `rmatch_indices`, `rsplit`, `splitn` and `rsplitn`.
 Rightmost matches have their own overlap policy; empty separators use scalar
@@ -66,7 +88,7 @@ guide explains. `from_sorted`, `try_clone`, the iterator sinks and
 [`alloc::btree_set`](stdlib-btree-map.md#set), with linear set algebra, run on
 the same tree.
 The preceding increment makes the runtime
-allocator [thread-safe](runtime-allocator.md#threads), so `std::pthread`
+allocator [thread-safe](runtime-allocator.md#threads), so `std::thread`
 bodies may allocate and free. Each thread, keyed by its `%fs:0` thread
 pointer, gets its own pool, and there is no lock on the hot path. Blocks freed
 on another thread flow back through shared per-class lists, so a
@@ -111,8 +133,7 @@ contract fixture checks exact call counts, interval edges and unchanged
 owner fields, and the interval-edit fixture shows under an in-program
 RLIMIT_AS denial that failed extraction leaves the source unchanged. Native receipts use the prebuilt compiler; the two registered
 Rust tests type-check and await a full test-binary run.
-The [concurrency increment](stdlib-concurrency.md) adds four modules for parallel
-The [`std::pthread`](stdlib-threads.md) increment runs native threads
+The earlier [`native thread`](stdlib-threads.md) increment runs native threads
 through `pthread_create`/`pthread_join`, with Lanius functions as C entries.
 Threads coordinate with std::sync's futex Mutex and Condvar. Its fixture
 checks parallel sums against the serial sum, an exact Mutex counter, a
@@ -143,9 +164,9 @@ work on native Linux x86_64/glibc with libatomic:
   poisoning.
 - `std::channel`: a bounded MPMC channel of any plain value type, with try,
   blocking and deadline forms and endpoint-count disconnection. For threads:
-  a lock-free bounded MPMC `Ring<T>`, an unbounded MPSC `Mpsc<T>`, `drain`,
+  an atomic bounded MPMC `Ring<T>`, an unbounded MPSC `Mpsc<T>`, `drain`,
   and `select` over any two of them, sleeping on both in one `futex_waitv`.
-- `std::pool`: thread pools over `std::pthread`: scoped spawn, a task pool
+- `std::pool`: thread pools over `std::thread`: scoped spawn, a task pool
   with `submit`/`try_submit`/`wait`/`wait_timeout_ms`, and `map`, ordered
   `reduce` and `scan` on threads.
 - `std::steal`: work-stealing queues, one deque per worker, with
@@ -169,7 +190,9 @@ pipeline. The stealing fixture runs a 524,287-task tree with every leaf
 exactly once; a parallel quicksort sorts 2,000,000 values in 0.25 s with
 eight workers, against 0.80 s with one. C callback entry now exists (a function named as a value,
 [C callbacks](language-ergonomics.md#c-callbacks)) and a fixture starts and joins a pthread running
-Lanius code, but `std::thread` is not yet bound to it.
+Lanius code. Canonical `std::thread` now uses this source-level C entry path;
+its revised ownership/failure behavior awaits the separate acceptance gates
+above. The legacy direct service-8 catalog is still unbound.
 The preceding
 The full library goal remains open. The
 [Unicode quick-check and uconv increment](extended-unicode-uconv.md) replaces

@@ -243,9 +243,11 @@ or compiler-performance comparisons.
 | New `core::time`, `std::clock` | Executable typed arithmetic, clocks and generic waits; no silent stub operations |
 
 The raw declarations retain their compiler-bound identities. Migrating old
-checked/two-word consumers, float construction, calendar/zone libraries,
-additional clocks, cancellation and native absolute/submillisecond sleep remain
-work. No forwarding compatibility modules were added.
+checked/two-word consumers, float construction and cancellation remain work.
+[Calendar values](stdlib-calendar.md), [TZif zones](extended-timezone.md) and
+[named host clocks with absolute nanosecond waits](stdlib-host-clocks.md)
+have their own executable contracts and target limits. No forwarding
+compatibility modules were added.
 
 A [compiler reproduction](../tests/fixtures/stdlib_foundation/clock_wait_dependency/README.md)
 records a layout failure when a generic clock read is followed by the fallible

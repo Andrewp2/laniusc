@@ -1,6 +1,17 @@
-# Native threads: `std::pthread`
+# Native threads: `std::thread`
 
-`std::pthread` starts and joins threads with glibc's `pthread_create` and
+The [thread ownership and failure contract](stdlib-thread-lifecycle.md) is
+being consolidated around this canonical module. `std::pthread` and
+`join_id` are removed. Existing consumers now store actual `Thread` owners;
+thread creation, pool shutdown and thread-crew cleanup have explicit failure
+policies. The canonical-module admission gate passes (one test, 4.12 s);
+native lifecycle acceptance is pending. `core::target::HAS_THREADS` describes
+this native-linked Linux x86_64/glibc library profile, not automatic glibc
+linkage for raw ELF output. The checks and performance observations below
+describe the earlier implementation and
+do not establish the new failure paths or updated API.
+
+`std::thread` starts and joins threads with glibc's `pthread_create` and
 `pthread_join`. A Lanius function is the start routine. A non-generic
 `fn name(arg: ptr) -> ptr` named as a value is a `ptr` to its C entry (see
 [C callbacks](language-ergonomics.md#c-callbacks)). That entry loads R15
@@ -16,23 +27,27 @@ target/release/laniusc --native-link --native-library atomic --stdlib-root stdli
 ```lani
 fn add_range(task: ptr) -> ptr { /* sum task's range into task */ return task; }
 
-let thread: std::pthread::Thread = std::pthread::spawn(add_range, task).unwrap();
+let thread: std::thread::Thread = std::thread::spawn(add_range, task).unwrap();
 let done: ptr = thread.join().unwrap();   // add_range's return value
 ```
 
 | Call | Effect |
 | --- | --- |
-| `spawn(entry, arg)` | Start `entry(arg)` on a new thread with glibc's default 8 MiB stack |
-| `spawn_with_stack(entry, arg, bytes)` | The same with a stack of `bytes` (at least `MIN_STACK_BYTES`, 16 KiB) |
-| `Thread::join()` | Wait for the thread and return its entry's result. A second join is `Error::Joined` |
-| `Thread::id()`, `join_id(id)` | The pthread id, and a join by id for callers that keep ids in shared memory |
+| `spawn(entry, arg)` | Return `Result<Thread, Error>` using glibc's configured default stack, without an attribute object |
+| `spawn_with_stack(entry, arg, bytes)` | Return `Result<Thread, SpawnFailure>`; zero uses the default path, otherwise request at least `MIN_STACK_BYTES` (16 KiB). Inspect the failure for a started owner and secondary cleanup error |
+| `Thread::join()` | Return `Result<ptr, Error>`; success retires join authority, failure retains it for retry, and a second successful-owner join is `Error::Joined` |
+| `Thread::id()`, `is_joined()` | Read identity or local retirement state; an ID cannot reconstruct join authority |
 | `current()` | The calling thread's pthread id |
-| `yield_now()` | `sched_yield` |
-| `available_parallelism()` | The CPUs in this thread's affinity mask (`sched_getaffinity`), at least 1 |
+| `yield_now()` | Return `Result<i32, Error>`; success is exactly zero, with syscall errors preserved |
+| `available_parallelism()` | Return `Result<i32, Error>` from a checked 128-byte affinity mask; insufficient masks, errors or invalid results do not become a fabricated count |
 
 `Error::Host(code)` carries pthread's error number: EAGAIN when the process
 is out of threads or memory, EINVAL, or EDEADLK when a thread joins itself.
-A null entry and a stack below the minimum are `Error::InvalidInput`.
+A null entry and a nonzero stack below the minimum are `Error::InvalidInput`.
+`Error::System` preserves Linux syscall failures. If creation succeeds but
+attribute destruction fails, `SpawnFailure.started` contains the actual
+thread owner: join it before releasing argument storage. A copied handle
+does not create another cleanup authority; maintain one active owner.
 
 ## Rules
 
@@ -42,10 +57,12 @@ A null entry and a stack below the minimum are `Error::InvalidInput`.
 - **The entry's type is not checked.** The name is only a `ptr`, so passing
   a function of another signature is undefined. Use exactly
   `fn (ptr) -> ptr`.
-- **An exit or a trap on any thread ends the process.** The runtime exits
-  with `exit_group` (syscall 231): `std::process::exit`, a failed bounds
-  check (status 101) and allocation failure all end every thread, as they
-  would in a one-thread program.
+- **An exit or a trap on any thread ends the process.** Explicit
+  `std::process::exit`, failed bounds checks (status 101) and runtime
+  allocation-failure exits use `exit_group` (syscall 231). The runtime's
+  fixed trap entries use exit statuses 101/102. Separately,
+  `core::panic::panic` executes `assert(false)`: the native assertion
+  instruction raises SIGILL. Panic does not call `exit_group` or unwind.
 - **Heap allocation is allowed in thread bodies.** The runtime allocator is
   thread-safe: each thread allocates from and frees into its own pool
   ([runtime allocator](runtime-allocator.md)). A thread may still prefer to
@@ -61,9 +78,10 @@ A null entry and a stack below the minimum are `Error::InvalidInput`.
   use. Within one process a private futex would save the kernel's shared-key
   lookup; that optimization is not taken.
 
-`std::thread` still holds the older unbound service-8 declarations, which
-the compiler's admission diagnostics recognize by path, so the working API
-has its own module.
+`std::thread` now contains ordinary Lanius functions over native C and Linux
+bindings. The compiler's legacy no-run service-8 catalog remains a separate
+metadata dependency. Its unbound direct-service status does not classify
+this source implementation; direct catalog tests remain in place.
 
 ## Checks
 
@@ -96,7 +114,7 @@ allocation in thread bodies, in the same format. Ten runs passed, in 1.1 to
 
 ## Thread pools: std::pool
 
-`std::pool` builds on `std::pthread` and the thread channels
+`std::pool` builds on `std::thread` and the thread channels
 ([Ring and Mpsc](stdlib-concurrency.md#thread-channels-ring-mpsc-and-select)).
 A thread runs one fixed, non-generic entry, so each generic operation is
 reached through a one-line wrapper that names its types:
@@ -109,11 +127,11 @@ fn triple(arg: ptr) -> ptr { return std::pool::map_entry<i64, i64, Affine3>(arg)
 | Call | Effect |
 | --- | --- |
 | `scoped(entry, args, count, stride)` | Run `entry(args + i * stride)` on `count` threads (1 to 1,024) and join them all before returning, so the threads may use anything the caller owns. If a spawn fails, the threads already started are joined and the error is returned |
-| `pool<T>(workers, capacity, entry)` | Start 1 to 256 workers running `serve<T>`. Each receives a `T: Task` from a Ring of `capacity` slots and calls `run()` |
+| `pool<T>(workers, capacity, entry)` | Return `Result<Pool<T>, CreateFailure<T>>`; each worker runs `serve<T>` over a Ring. If partial construction cannot join every started worker, the failure retains a pool in `pending` for shutdown retry |
 | `Pool::submit(task)` / `try_submit(task)` | Queue a task; `submit` waits while the queue is full, `try_submit` returns `Ok(false)` |
 | `Pool::wait()` / `wait_timeout_ms(ms)` | Wait until every submitted task has finished; the timed form returns `Ok(false)` if time runs out first |
-| `Pool::completed()`, `submitted()`, `total()` | Counts, and the sum of every finished task's `run()` result |
-| `Pool::shutdown()` | Finish the queued tasks, join the workers and free the pool |
+| `Pool::workers()`, `completed()`, `submitted()`, `total()` | Fallible worker/count/result snapshots while backing is live, including pending shutdown; `Closed` after retirement |
+| `Pool::shutdown()` | Return `Result<bool, Error>`: close admission, drain queued work and attempt remaining joins once; retain backing on failure. `Ok(true)` retires the pool, `Ok(false)` reports repeated shutdown |
 | `map(workers, input, output, mapper, grain, entry)` | `output[i] = mapper.apply(input[i])` |
 | `reduce(workers, input, identity, fold, combine, grain, entry)` | Fold each chunk, then combine the chunk results in index order: `combine` must be associative, not necessarily commutative |
 | `scan(workers, data, identity, combine, grain, entry)` | In-place inclusive prefix scan in two passes |
@@ -125,9 +143,23 @@ of 0 or less picks `length / (8 * workers)`, at least 2,048. Task, mapper
 and folder values are copied by value into the pool's memory, so they must
 be plain values.
 
-Only the pool's owner thread submits and waits. A task returns an `i64`
-that the pool adds up. For a result per task, the task can send it back
-through a channel; the fixture's `Square` task sends `key * key` to an
+Only the pool's owner thread submits, waits and shuts it down. Once shutdown
+begins, submit/wait operations return `Closed`; `is_open()` remains true
+while backing is retained, including after a failed shutdown. Retry shutdown
+through that same owner. It attempts only workers not already joined and
+frees storage only after every join succeeds. Successful query calls now
+unwrap their `Result`, as does successful shutdown.
+
+Synchronous scoped/map/reduce/scan calls cannot return borrowed caller data
+while a worker may still access it. A reached join failure therefore ends
+the process through `core::panic` (SIGILL); it does not return or release live worker
+backing. Spawn failure in map/reduce/scan may reduce parallelism while the
+caller completes the work. Empty operations allocate/spawn nothing; a
+one-worker operation may use a null entry. Invalid inputs, size/allocation
+failures and submission-counter overflow are explicit errors.
+
+A task returns an `i64` that the pool adds up with wrapping arithmetic.
+For a result per task, the task can send it back through a channel; the fixture's `Square` task sends `key * key` to an
 `Mpsc<i64>` that the owner receives from.
 
 ### Pool checks
@@ -200,7 +232,10 @@ The thread channels from `channel_bench.lani` (best of 5): Ring fan-in of
 phases as the forked sorts, with `workers - 1` pthreads as the crew. The
 crew threads start once per sort, wait on the phase futex between phases
 and exit on the stop word. The caller passes the crew entry for its element
-type. See
+type. The crew retains actual `Thread` owners. If spawning fails, started
+workers are stopped and joined before ordinary return. A failed synchronous
+join ends the process before releasing plans, data or scratch. Native
+acceptance of these revised cleanup paths is pending. See
 [parallel sorting](stdlib-concurrency.md#parallel-sorting-map-reduce-and-scan)
 for the oracle and benchmark. The threaded stable sort used to burn about
 1.6x the CPU of the forked one. Record stores from a stack temporary ran as

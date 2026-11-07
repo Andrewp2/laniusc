@@ -749,8 +749,10 @@
     "core::target": {
       "guides": [
         "docs/library-host-prerequisites.md",
-        "docs/library-host-operation-support.md"
-      ]
+        "docs/library-host-operation-support.md",
+        "docs/stdlib-thread-lifecycle.md"
+      ],
+      "note": "Executable source-library capabilities differ from core::runtime direct service bindings. HAS_THREADS=true describes std::thread on native-linked Linux x86_64/glibc (--native-link), not automatic glibc linkage for raw ELF output. The direct runtime thread service remains unavailable. Canonical std::thread admission passes; revised lifecycle execution remains pending."
     },
     "core::text": {
       "guides": [
@@ -2108,7 +2110,8 @@
       "guides": [
         "docs/stdlib-concurrency.md",
         "docs/stdlib-threads.md"
-      ]
+      ],
+      "note": "Linux x86_64/glibc with native linking and libatomic. Region-backed Channel supports forked workers; heap-backed Ring/Mpsc use private futexes within one process. Ring is an atomic bounded MPMC queue, not a formal lock-free or wait-free progress guarantee; stalled participants can delay progress. Revised Ring/Mpsc constructors check allocation sizes and roll back earlier allocations on OOM. Mpsc send returns AllocationFailed(value) before publication, leaving the queue unchanged. Reported thread-channel futex wake failures after commitment terminate through core::panic, including close/drain/select notifications. Explicit modular u64 queue counters and signed distances fix their wrap boundary; the separate u32 notification-epoch ABA remains unresolved. Revised lifecycle/failure/counter native acceptance is pending; earlier success/performance receipts retain their original source scope. Manual endpoint/backing lifetimes, other targets and formal verification remain open."
     },
     "std::clock": {
       "guides": [
@@ -2278,13 +2281,10 @@
     },
     "std::pool": {
       "guides": [
-        "docs/stdlib-threads.md"
-      ]
-    },
-    "std::pthread": {
-      "guides": [
-        "docs/stdlib-threads.md"
-      ]
+        "docs/stdlib-threads.md",
+        "docs/stdlib-thread-lifecycle.md"
+      ],
+      "note": "Thread pools use canonical std::thread with actual Thread owner storage. Construction failure can retain a pending Pool after failed cleanup; shutdown attempts each remaining join once and preserves backing for retry. Queries return Results and reject retired pools; submission/wait close when shutdown begins. Synchronous failed joins terminate before borrowed backing is released. Native acceptance of this lifecycle increment is pending; earlier successful-path/performance receipts retain their original source scope."
     },
     "std::process": {
       "guides": [
@@ -2368,11 +2368,11 @@
     },
     "std::thread": {
       "guides": [
-        "docs/library-remaining-api-audit.md",
-        "docs/library-host-prerequisites.md"
+        "docs/stdlib-threads.md",
+        "docs/stdlib-thread-lifecycle.md"
       ],
-      "profile": "Unbound host declarations",
-      "note": "Thread spawn/join/yield/current-ID extern declarations have no runtime binding. Source metadata helpers do not implement threads. Parallel work executes through std::worker forked processes; see docs/stdlib-concurrency.md."
+      "profile": "Source inventory",
+      "note": "Canonical Lanius native-thread implementation over glibc pthread functions and std::linux on Linux x86_64. The former std::pthread path and join_id are removed. Actual Thread owners retain join authority on failure; custom-stack SpawnFailure preserves primary/secondary cleanup errors and any started owner. Scheduling and bounded affinity queries return explicit Results. Canonical std::thread admission passes one test in 4.12s (thread-lifecycle-admission.log), without compiler changes. Native lifecycle acceptance is pending; earlier pthread receipts do not establish its revised failure contracts. The compiler no-run service-8 catalog remains an independent unbound metadata dependency, not this source implementation. Raw callback signatures, argument lifetimes, alias/cleanup discipline, other targets and formal verification remain caller obligations or unverified."
     },
     "std::temp_dir": {
       "guides": [

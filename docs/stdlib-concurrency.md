@@ -10,10 +10,13 @@ target/release/laniusc --native-link --native-library atomic --stdlib-root stdli
 
 ## Execution model: workers are forked processes
 
-The compiler has no checked C callback entry yet (see the
-[concurrency admission audit](library-concurrency-dependencies.md)), so
-`pthread_create` cannot receive a Lanius start routine and `std::thread`
-stays unbound. Without a callback, a worker is instead a `fork` of the caller.
+`std::worker` uses `fork` to create worker processes. This differs from
+[canonical native threads](stdlib-thread-lifecycle.md), where glibc starts a
+non-generic Lanius `fn(ptr) -> ptr` entry. That raw pointer entry is executable,
+but its signature and borrowed lifetimes remain caller obligations; the
+[concurrency admission audit](library-concurrency-dependencies.md) retains
+historical context. The revised thread lifecycle is still awaiting native
+acceptance. A forked worker begins as a copy of the caller's process.
 `Pool::spawn` returns twice: `Role::Parent(index)` in the caller and
 `Role::Child(index)` in the new worker. The child continues in the same
 function and must end with `std::worker::finish(status)`. That call
@@ -115,7 +118,7 @@ every operation. That gives three guarantees:
 
 | Operation | Result |
 | --- | --- |
-| `send` / `try_send` / `send_until` / `send_timeout_ms` | `Ok`, or `Full(v)`, `TimedOut(v)`, `Disconnected(v)`, `Sync(e)`. A rejected message is returned to the caller |
+| `send` / `try_send` / `send_until` / `send_timeout_ms` | `Ok`, or `Full(v)`, `TimedOut(v)`, `Disconnected(v)`, `Sync(e)`. The payload variants return the value; `Sync` carries only the error |
 | `recv` / `try_recv` / `recv_until` / `recv_timeout_ms` | `Ok(v)`, or `Empty`, `TimedOut`, `Disconnected`, `Sync(e)` |
 | `Sender::close` / `Receiver::close` | Remaining count of that side; `Err(NoEndpoint)` when none is open. The last close wakes every waiter on the other side |
 
@@ -134,24 +137,77 @@ A channel with no registered sender reports `Disconnected` at once.
 ## Thread channels: Ring, Mpsc and select
 
 `Channel<T>` above serves forked workers. The threads of one process
-([`std::pthread`](stdlib-threads.md)) have two faster channels, which use
+([`std::thread`](stdlib-threads.md)) have two heap-backed channels, which use
 process-private futexes and so must not cross a fork:
 
 | Channel | Shape | Blocking |
 | --- | --- | --- |
 | `ring<T>(capacity, senders, receivers)` | Bounded multi-producer multi-consumer; a power-of-two ring of 2 to 1,048,576 slots with a sequence word per slot (Vyukov's bounded queue) | `send` waits while full, `recv` while empty |
-| `mpsc<T>(senders)` | Unbounded multi-producer single-consumer; a linked list of heap nodes, one per message, freed by the receiver | `send` never waits; `recv` waits while empty |
+| `mpsc<T>(senders)` | Unbounded multi-producer single-consumer; a linked list of heap nodes, one per message, freed by the receiver | No queue-capacity wait in `send`; allocation and notification can call the host. `recv` waits while empty |
 
-Both are one heap control block reached through a `ptr`, so a thread entry
-rebuilds the channel with `ring_at<T>(handle)` or `mpsc_at<T>(handle)`.
-`send`, `recv` and the `try_`, `_until` and `_timeout_ms` forms return the
-same `SendError<T>` and `RecvError` values as `Channel<T>`.
+Each channel has one control block reached through a `ptr`, so a thread
+entry rebuilds a borrowed handle with `ring_at<T>(handle)` or
+`mpsc_at<T>(handle)`. These handles share backing and do not create new
+endpoint counts or cleanup authority. Keep exactly one destroy obligation
+and join every participant before destroying the channel.
 
-Blocking: an operation retries for `SPINS` (200) attempts, then sleeps on a
-futex epoch word. A waiter adds itself to a waiter count before its last
-recheck, and a successful operation reads that count after publishing, so a
-wake cannot be lost: either the recheck sees the message, or the publisher
-sees the waiter and wakes it.
+The ring uses atomic slot claims, not a mutex. This is **not a formal
+lock-free progress guarantee**: a participant paused after reserving a slot
+can delay other operations. CAS retries have no per-call work bound. The
+original author states this limitation in the [bounded MPMC queue
+description](https://groups.google.com/g/lock-free/c/-bqYlfbQmH0).
+The Mpsc receiver can likewise wait for a producer paused between publishing
+its tail and linking its node; even `try_recv` can spin at that gap. Neither
+channel promises wait-free operation, fairness or recovery from a terminated
+participant.
+
+### Allocation, failure and counter boundaries
+
+The revised `ring` and `mpsc` constructors check element/node allocation
+sizes before allocating or dereferencing storage. Invalid counts/capacities
+return `NoEndpoint`/`InvalidCapacity`; unrepresentable storage returns
+`SizeOverflow`. Any failed allocation returns `AllocationFailed`, after
+freeing all earlier allocations made by that constructor. A zero-sized
+payload still has reserved backing. This rollback contract belongs to these
+heap-backed constructors, not the older Region-backed `bounded` constructor.
+
+`Mpsc::send` allocates one node before publishing it. Failed allocation
+returns `SendError::AllocationFailed(value)`, retaining the caller's value
+and leaving the queue unchanged. Ring sends allocate no nodes. The shared
+`SendError<T>` type also contains `Full(value)`, `Disconnected(value)`,
+`TimedOut(value)` and `Sync(error)`; `Sync` does not carry a value.
+
+After a thread-channel message/slot transition or last-endpoint close has
+committed, a reported futex wake failure terminates the process through
+`core::panic` (`assert(false)`, raising SIGILL on native x86_64 rather than
+calling `exit_group`). Returning a rejected send after publication could invite a
+duplicate, while silently dropping a required notification could strand a
+waiter. This policy also covers drain and select's forwarded notifications.
+It does not turn the older Region-backed Channel's synchronization errors
+into the same contract. Before-commit wait/deadline errors remain explicit
+`Sync` results.
+
+Ring positions and slot stamps use explicit wrapping `u64` arithmetic and
+signed modular differences to distinguish preceding and succeeding laps.
+`len()` is a concurrent snapshot clamped to `0..capacity`, not a reservation
+or proof that a receive can complete. The modular comparison assumes active
+observations do not span half the counter space; it is not an unlimited
+suspension or termination-recovery guarantee.
+
+Blocking operations retry for `SPINS` (200) attempts before sleeping on a
+futex epoch word. Waiter registration precedes the final recheck, and
+publication precedes checking the waiter count. This closes that
+registration/publication race while the observed epoch does not wrap back
+to the same value. Notification epochs are still `u32`: an ABA after a full
+wrap between observation and sleep remains unresolved. The `u64` queue
+counter repair does not fix notification-epoch ABA or prove all schedules
+free of missed wakes.
+
+Native acceptance of the revised constructor rollback, recoverable send
+allocation failure, post-commit wake policy and counter wrap behavior is
+pending. Earlier success/performance receipts below retain their original
+source scope; they do not establish these new failure paths. GPU-device
+execution, other targets and formal verification remain unverified.
 
 ### Close and drain
 
@@ -193,19 +249,21 @@ Mpsc that is its one receiver.
 - **One side closed.** `Disconnected` comes only when both channels are
   drained and all of their senders have closed. While one side is open,
   select keeps delivering from it.
-- **No stolen wakes.** A send wakes one waiter. If that waiter is a select
+- **Forwarding a consumed wake.** A send wakes one waiter. If that waiter is a select
   that then takes from the other channel, a plain receiver of the first
   channel could stay asleep with a message waiting. So after a select that
   slept receives, it passes a wake on to the other channel's waiters (a
-  no-op when there are none).
+  no-op when there are none). This handshake retains the notification-epoch
+  wrap limitation above.
 
 The [fixture](#thread-channel-checks) checks these cases.
 
 ### Thread channel checks
 
-`tests/fixtures/stdlib_execution/concurrency/thread_channels.lani` prints one
-line per check and exits 0 when all pass; five runs passed in about 0.9 s
-each. `tests/stdlib_concurrency_execution.rs` runs it.
+The earlier `tests/fixtures/stdlib_execution/concurrency/thread_channels.lani`
+receipt printed one line per check and exited 0; five runs passed in about
+0.9 s each. The fixture now uses canonical Thread owners and awaits its
+current-source regression. `tests/stdlib_concurrency_execution.rs` runs it.
 
 | Check | Invariant |
 | --- | --- |
@@ -354,7 +412,7 @@ was left pending), `Steal`, `Sync`, `Worker` and `Thread`.
 
 `sort_unstable_threads(plan, data, scratch, entry)` and
 `sort_stable_threads(...)` run the same phases with a crew of `workers - 1`
-[`std::pthread`](stdlib-threads.md) threads instead of forked children. The
+[`std::thread`](stdlib-threads.md) threads instead of forked children. The
 threads share the caller's address space, so nothing is forked and nothing
 is copied. A thread's start routine must be a non-generic `fn (ptr) -> ptr`,
 so the caller passes a one-line entry for its element type:
@@ -366,6 +424,11 @@ std::par::sort_unstable_threads(plan, keys, spare, key_crew).unwrap();
 
 The entry must instantiate `crew_entry` with the `T` of that sort. Each
 worker's record (plan, data, scratch, index) sits in the plan's crew area.
+The revised crew stores actual Thread owners and retains successful-join
+state. A spawn failure stops and joins started workers; a reported join
+failure terminates before borrowed plans, data or scratch can be released.
+Native acceptance of these revised cleanup paths is pending; earlier sort
+receipts below keep their original source scope.
 The crew threads start once per sort and are all joined before it returns.
 `par_sort.lani` modes 10 and 11 run these two sorts. The model oracle now
 covers 12 modes, 4,320 runs over 8 seeds, with 0 mismatches.

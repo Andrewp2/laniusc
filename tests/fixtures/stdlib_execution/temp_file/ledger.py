@@ -130,6 +130,12 @@ def source_maps(text, profile, directory):
                 del live[pointer]
             else:
                 assert ip not in free_sites and not in_image and pointer >= 0x80000000, ("unowned source release", entry, live)
+                # A native/CRT call cannot retire any part of a source owner,
+                # including a partial or containing range with a different
+                # start address. Exact-base releases are checked above.
+                overlapping = [(start, size) for start, size in live.items()
+                               if pointer < start + size and start < pointer + length]
+                assert not overlapping, ("native release overlaps source owner", entry, overlapping)
     assert not live, ("source mappings survived release", live)
     return dict(allocations=allocations, epoch_allocations=[], attempts=attempts,
                 calls=dict(counters), max_sockets=0)

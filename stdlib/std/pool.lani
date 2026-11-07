@@ -1,267 +1,361 @@
-// Thread pools over std::pthread: a typed task pool with a work queue, a
-// scoped spawn that joins before it returns, and parallel map, reduce and
-// scan on threads.
-//
-// Lanius has no indirect calls, so a thread runs one fixed entry: a
-// non-generic `fn (ptr) -> ptr`. Generic work is reached through a one-line
-// entry that names the types, the same pattern as std::par's crew_entry:
-//
-//   fn workers(arg: ptr) -> ptr { return std::pool::serve<Job>(arg); }
-//   fn squares(arg: ptr) -> ptr { return std::pool::map_entry<i64, i64, Square>(arg); }
-//
-// Pool<T> holds `workers` threads that each run `serve<T>`: receive a T from
-// a std::channel::Ring<T>, call T::run, count it done. T is a plain value
-// (often an enum of job kinds) that implements Task.
-//
-// map, reduce and scan start workers - 1 threads for the call, the caller
-// works as the last one, and every thread is joined before the call returns.
-// Each thread takes grain-sized chunks from a shared atomic counter. The
-// mapper or folder is copied by value into the call's control block, so it
-// must be a plain value too.
-// Linux x86_64; link with --native-link --native-library atomic.
-// See docs/stdlib-threads.md.
+// Native task pools and synchronous borrowed operations over std::thread.
+// Actual Thread owners survive failed joins. See docs/stdlib-thread-pool-lifecycle.md.
+// Linux x86_64/glibc; native link with libatomic.
 module std::pool;
 import alloc::allocator;
 import core::iter;
 import core::function;
 import core::mem;
 import core::option;
+import core::panic;
 import core::result;
 import std::atomic;
 import std::channel;
 import std::parallel;
-import std::pthread;
 import std::sync;
+import std::thread;
 
-pub enum Error { InvalidInput, Thread(std::pthread::Error), Channel(std::channel::Error) }
-
-pub trait Task {
-    // Run one job. The pool adds the results; see Pool::total.
-    pub fn run(&self) -> i64;
+pub enum Error {
+    InvalidInput, SizeOverflow, AllocationFailed, Closed, CounterOverflow,
+    Thread(std::thread::Error), Channel(std::channel::Error), Sync(std::sync::Error)
 }
-
+pub trait Task { pub fn run(&self) -> i64; }
+pub const MAX_SUBMITTED: i64 = 9223372036854775807;
+const MAX_STORAGE_BYTES: usize = 9223372036854775807;
 fn cell(at: ptr) -> std::atomic::Atomic64 { return std::atomic::at64(at); }
 fn get(at: ptr) -> u64 { return cell(at).load(std::atomic::Load::Acquire); }
 fn set(at: ptr, value: u64) { cell(at).store(value, std::atomic::Store::Release); }
 fn pget(at: ptr) -> ptr { let view: [ptr] = core::mem::typed_slice_from_raw_parts<ptr>(at, 1); return view[0]; }
 fn pset(at: ptr, value: ptr) { let view: [ptr] = core::mem::typed_slice_from_raw_parts<ptr>(at, 1); view[0] = value; }
+// Pointer representation is read through explicit storage, as in channel.bits;
+// numeric casts do not accept ptr values in the language.
+fn bits(value: ptr) -> usize {
+    let scratch: [i32; 2] = [0; 2]; let at: ptr = core::mem::i32_array_data_ptr(scratch);
+    pset(at, value); return get(at) as usize;
+}
 fn iget(at: ptr) -> i64 { let view: [i64] = core::mem::typed_slice_from_raw_parts<i64>(at, 1); return view[0]; }
 fn iset(at: ptr, value: i64) { let view: [i64] = core::mem::typed_slice_from_raw_parts<i64>(at, 1); view[0] = value; }
-fn zero(at: ptr, bytes: usize) { let w: usize = 0; while (w < bytes) { iset(at + w, 0); w += 8; } }
-fn storage_bytes<T>(count: i32) -> usize {
-    let bytes: usize = (count as usize) * core::mem::size_of<T>();
-    if (bytes < 8) { return 8; }
-    return bytes;
+fn zero(at: ptr, bytes: usize) { let offset: usize = 0; while (offset < bytes) { iset(at + offset, 0); offset += 8; } }
+fn storage_bytes<T>(count: i32) -> core::result::Result<usize, Error> {
+    if (count < 0) { return core::result::Err(Error::InvalidInput); }
+    let size: usize = core::mem::size_of<T>();
+    if (size != 0 && (count as usize) > MAX_STORAGE_BYTES / size) { return core::result::Err(Error::SizeOverflow); }
+    let bytes: usize = (count as usize) * size;
+    if (bytes < 8) { bytes = 8; }
+    return core::result::Ok(bytes);
+}
+fn allocate(bytes: usize) -> core::result::Result<ptr, Error> {
+    let memory: ptr = alloc::allocator::alloc(bytes, 8);
+    if (memory == 0) { return core::result::Err(Error::AllocationFailed); }
+    return core::result::Ok(memory);
+}
+// Aggregate element addresses depend on full allocated capacity, not started.
+fn join_pending(storage: ptr, capacity: i32, started: i32) -> core::option::Option<std::thread::Error> {
+    let slots: [std::thread::Thread] = core::mem::typed_slice_from_storage<std::thread::Thread>(storage, capacity);
+    let first: core::option::Option<std::thread::Error> = core::option::None();
+    let index: i32 = 0;
+    while (index < started) {
+        let owned: std::thread::Thread = slots[index];
+        if (!owned.is_joined()) {
+            let joined: core::result::Result<ptr, std::thread::Error> = owned.join();
+            slots[index] = owned;
+            if (joined.is_err() && first.is_none()) { first = core::option::Some(joined.unwrap_err()); }
+        }
+        index += 1;
+    }
+    return first;
+}
+fn join_borrowed(storage: ptr, capacity: i32, started: i32) {
+    if (join_pending(storage, capacity, started).is_some()) { core::panic::panic(); }
 }
 
-// ---- Scoped spawn ----
-
-// Run entry(args + i * stride) on `count` threads (1 .. 1024) and join every
-// one before returning, so the threads may use anything the caller owns.
-// Returns how many threads ran. If a spawn fails, the threads already
-// started are joined and the error is returned.
+// A non-generic fn(ptr)->ptr entry. Args may be null if entry permits it.
+// Validate all address arithmetic before spawning. A join failure never returns.
 pub fn scoped(entry: ptr, args: ptr, count: i32, stride: usize) -> core::result::Result<i32, Error> {
-    if (count < 1 || count > 1024) { return core::result::Err(Error::InvalidInput); }
-    let ids: ptr = alloc::allocator::alloc((count as usize) * 8, 8);
-    let started: i32 = 0;
-    let failure: core::option::Option<std::pthread::Error> = core::option::None();
+    if (count < 1 || count > 1024 || entry == 0) { return core::result::Err(Error::InvalidInput); }
+    let last: usize = (count - 1) as usize; let maximum: usize = 18446744073709551615;
+    if (last != 0 && stride > maximum / last) { return core::result::Err(Error::SizeOverflow); }
+    let offset: usize = last * stride;
+    if (bits(args) > maximum - offset) { return core::result::Err(Error::SizeOverflow); }
+    let extent: core::result::Result<usize, Error> = storage_bytes<std::thread::Thread>(count);
+    if (extent.is_err()) { return core::result::Err(extent.unwrap_err()); }
+    let made_storage: core::result::Result<ptr, Error> = allocate(extent.unwrap());
+    if (made_storage.is_err()) { return core::result::Err(made_storage.unwrap_err()); }
+    let storage: ptr = made_storage.unwrap();
+    let slots: [std::thread::Thread] = core::mem::typed_slice_from_storage<std::thread::Thread>(storage, count);
+    let started: i32 = 0; let failure: core::option::Option<std::thread::Error> = core::option::None();
     while (started < count) {
-        let made: core::result::Result<std::pthread::Thread, std::pthread::Error> = std::pthread::spawn(entry, args + (started as usize) * stride);
+        let made: core::result::Result<std::thread::Thread, std::thread::Error> = std::thread::spawn(entry, args + (started as usize) * stride);
         if (made.is_err()) { failure = core::option::Some(made.unwrap_err()); break; }
-        iset(ids + (started as usize) * 8, made.unwrap().id() as i64);
-        started += 1;
+        slots[started] = made.unwrap(); started += 1;
     }
-    let i: i32 = 0;
-    while (i < started) { std::pthread::join_id(iget(ids + (i as usize) * 8) as u64); i += 1; }
-    alloc::allocator::dealloc(ids, (count as usize) * 8, 8);
-    if (core::option::is_some(failure)) { return core::result::Err(Error::Thread(core::option::unwrap(failure))); }
+    join_borrowed(storage, count, started);
+    alloc::allocator::dealloc(storage, extent.unwrap(), 8);
+    if (failure.is_some()) { return core::result::Err(Error::Thread(failure.unwrap())); }
     return core::result::Ok(started);
 }
 
-// ---- Task pool ----
-//
-// Control block: 0 ring handle, 8 workers, 16 thread ids, 64 submitted,
-// 128 completed, 136 result total, 192 done epoch (u32), 200 waiters.
+// Control: ring0, started8, Thread storage16, closing24, Thread bytes32,
+// Thread capacity40, submitted64, completed128, total136,
+// notification192 (u32: 0idle,1armed,2notified). Owner methods are serialized.
 const POOL_BLOCK: usize = 256;
 pub struct Pool<T> { block: ptr }
-
-// Start `workers` (1 .. 256) threads running `entry`, which must be
-// `fn (arg: ptr) -> ptr { return std::pool::serve<T>(arg); }` for this T.
-// `capacity` (a power of two) bounds the work queue; submit blocks while it
-// is full.
-pub fn pool<T>(workers: i32, capacity: i32, entry: ptr) -> core::result::Result<Pool<T>, Error> where T: Task {
-    if (workers < 1 || workers > 256) { return core::result::Err(Error::InvalidInput); }
-    let ring: core::result::Result<std::channel::Ring<T>, std::channel::Error> = std::channel::ring<T>(capacity, 1, workers);
-    if (ring.is_err()) { return core::result::Err(Error::Channel(ring.unwrap_err())); }
-    let block: ptr = alloc::allocator::alloc(POOL_BLOCK, 8);
+pub struct CreateFailure<T> { cause: Error, pending: core::option::Option<Pool<T>> }
+fn create_failure<T>(cause: Error) -> CreateFailure<T> {
+    return CreateFailure { cause: cause, pending: core::option::None() };
+}
+pub fn pool<T>(workers: i32, capacity: i32, entry: ptr) -> core::result::Result<Pool<T>, CreateFailure<T>> where T: Task {
+    if (workers < 1 || workers > 256 || entry == 0) { return core::result::Err(create_failure<T>(Error::InvalidInput)); }
+    let extent: core::result::Result<usize, Error> = storage_bytes<std::thread::Thread>(workers);
+    if (extent.is_err()) { return core::result::Err(create_failure<T>(extent.unwrap_err())); }
+    let made_ring: core::result::Result<std::channel::Ring<T>, std::channel::Error> = std::channel::ring<T>(capacity, 1, workers);
+    if (made_ring.is_err()) { return core::result::Err(create_failure<T>(Error::Channel(made_ring.unwrap_err()))); }
+    let ring: std::channel::Ring<T> = made_ring.unwrap();
+    let made_block: core::result::Result<ptr, Error> = allocate(POOL_BLOCK);
+    if (made_block.is_err()) { ring.destroy(); return core::result::Err(create_failure<T>(made_block.unwrap_err())); }
+    let block: ptr = made_block.unwrap();
+    let made_threads: core::result::Result<ptr, Error> = allocate(extent.unwrap());
+    if (made_threads.is_err()) {
+        alloc::allocator::dealloc(block, POOL_BLOCK, 8); ring.destroy();
+        return core::result::Err(create_failure<T>(made_threads.unwrap_err()));
+    }
     zero(block, POOL_BLOCK);
-    let ids: ptr = alloc::allocator::alloc((workers as usize) * 8, 8);
-    pset(block, ring.unwrap().handle()); iset(block + 8, workers as i64); pset(block + 16, ids);
-    cell(block + 64).fetch_add(0, std::atomic::Ordering::SeqCst);
-    let w: i32 = 0;
-    while (w < workers) {
-        let made: core::result::Result<std::pthread::Thread, std::pthread::Error> = std::pthread::spawn(entry, block);
+    let threads: ptr = made_threads.unwrap();
+    pset(block, ring.handle()); pset(block + 16, threads);
+    iset(block + 32, extent.unwrap() as i64); iset(block + 40, workers as i64);
+    let slots: [std::thread::Thread] = core::mem::typed_slice_from_storage<std::thread::Thread>(threads, workers);
+    let started: i32 = 0;
+    while (started < workers) {
+        let made: core::result::Result<std::thread::Thread, std::thread::Error> = std::thread::spawn(entry, block);
         if (made.is_err()) {
-            // Stop and join the workers already running.
-            iset(block + 8, w as i64);
+            let cause: Error = Error::Thread(made.unwrap_err());
             let partial: Pool<T> = Pool { block: block };
-            partial.shutdown();
-            return core::result::Err(Error::Thread(made.unwrap_err()));
+            let retired: core::result::Result<bool, Error> = partial.shutdown();
+            if (retired.is_err()) { return core::result::Err(CreateFailure { cause: cause, pending: core::option::Some(partial) }); }
+            return core::result::Err(create_failure<T>(cause));
         }
-        iset(ids + (w as usize) * 8, made.unwrap().id() as i64);
-        w += 1;
+        slots[started] = made.unwrap(); started += 1; iset(block + 8, started as i64);
     }
     return core::result::Ok(Pool { block: block });
 }
+fn completed_at(block: ptr) -> u64 { return cell(block + 128).load(std::atomic::Load::SeqCst); }
+fn notification(block: ptr, value: u32) { std::atomic::at32(block + 192).store(value, std::atomic::Store::SeqCst); }
 
-// A worker's loop: run tasks until the pool shuts down.
+// Only normal disconnection ends a worker. Losing an accepted task after a
+// receive error or committed completion wake failure must not hang wait().
 pub fn serve<T>(arg: ptr) -> ptr where T: Task {
     let ring: std::channel::Ring<T> = std::channel::ring_at<T>(pget(arg));
     while (true) {
         let got: core::result::Result<T, std::channel::RecvError> = ring.recv();
-        if (got.is_err()) { break; }
-        let task: T = got.unwrap();
-        let result: i64 = task.run();
+        if (got.is_err()) {
+            let closed: bool = match (got.unwrap_err()) { std::channel::RecvError::Disconnected -> true, _ -> false };
+            if (!closed) { core::panic::panic(); }
+            break;
+        }
+        let task: T = got.unwrap(); let result: i64 = task.run();
         cell(arg + 136).fetch_add(result as u64, std::atomic::Ordering::SeqCst);
         cell(arg + 128).fetch_add(1, std::atomic::Ordering::SeqCst);
-        if (cell(arg + 200).load(std::atomic::Load::Relaxed) != 0) {
-            std::atomic::at32(arg + 192).fetch_add(1, std::atomic::Ordering::SeqCst);
-            std::sync::futex_wake_private(arg + 192, 2147483647);
+        let notified: std::atomic::Exchange = std::atomic::at32(arg + 192).compare_exchange(1, 2, std::atomic::Ordering::SeqCst, std::atomic::Load::SeqCst);
+        if (std::atomic::swapped(notified)) {
+            if (std::sync::futex_wake_private(arg + 192, 2147483647).is_err()) { core::panic::panic(); }
         }
     }
-    ring.close_receiver();
+    if (ring.close_receiver().is_err()) { core::panic::panic(); }
     return arg;
 }
 
 pub impl<T> Pool<T> {
     pub fn borrow(&self) -> &Pool<T> { return self; }
-    pub fn workers(&self) -> i32 { return iget(self.block + 8) as i32; }
+    // True includes a closing pool retained after failed joins.
+    pub fn is_open(&self) -> bool { return self.block != 0; }
+    fn accepting(&self) -> bool { return self.is_open() && iget(self.block + 24) == 0; }
     fn ring(&self) -> std::channel::Ring<T> { return std::channel::ring_at<T>(pget(self.block)); }
-    // Queue one task; blocks while the queue is full. Only the pool's owner
-    // thread may submit.
+    pub fn workers(&self) -> core::result::Result<i32, Error> {
+        if (!self.is_open()) { return core::result::Err(Error::Closed); }
+        return core::result::Ok(iget(self.block + 8) as i32);
+    }
+    pub fn submitted(&self) -> core::result::Result<i64, Error> {
+        if (!self.is_open()) { return core::result::Err(Error::Closed); }
+        return core::result::Ok(get(self.block + 64) as i64);
+    }
+    pub fn completed(&self) -> core::result::Result<i64, Error> {
+        if (!self.is_open()) { return core::result::Err(Error::Closed); }
+        return core::result::Ok(completed_at(self.block) as i64);
+    }
+    // Task result aggregation wraps modulo 2^64, interpreted as signed i64.
+    pub fn total(&self) -> core::result::Result<i64, Error> {
+        if (!self.is_open()) { return core::result::Err(Error::Closed); }
+        return core::result::Ok(get(self.block + 136) as i64);
+    }
     pub fn submit(&self, task: T) -> core::result::Result<i32, Error> {
+        if (!self.accepting()) { return core::result::Err(Error::Closed); }
+        if (get(self.block + 64) == MAX_SUBMITTED as u64) { return core::result::Err(Error::CounterOverflow); }
         cell(self.block + 64).fetch_add(1, std::atomic::Ordering::SeqCst);
         let sent: core::result::Result<i32, std::channel::SendError<T>> = self.ring().send(task);
         if (sent.is_err()) {
             cell(self.block + 64).fetch_sub(1, std::atomic::Ordering::SeqCst);
-            return core::result::Err(Error::Channel(std::channel::Error::NoEndpoint));
+            let failure: Error = match (sent.unwrap_err()) { std::channel::SendError::Sync(error) -> Error::Sync(error), _ -> Error::Channel(std::channel::Error::NoEndpoint) };
+            return core::result::Err(failure);
         }
         return core::result::Ok(0);
     }
-    // Queue one task without blocking: Ok(false) when the queue is full (the
-    // caller still holds its copy of the task).
     pub fn try_submit(&self, task: T) -> core::result::Result<bool, Error> {
+        if (!self.accepting()) { return core::result::Err(Error::Closed); }
+        if (get(self.block + 64) == MAX_SUBMITTED as u64) { return core::result::Err(Error::CounterOverflow); }
         cell(self.block + 64).fetch_add(1, std::atomic::Ordering::SeqCst);
         let sent: core::result::Result<i32, std::channel::SendError<T>> = self.ring().try_send(task);
         if (sent.is_ok()) { return core::result::Ok(true); }
         cell(self.block + 64).fetch_sub(1, std::atomic::Ordering::SeqCst);
-        let full: bool = match (sent.unwrap_err()) { std::channel::SendError::Full(t) -> true, _ -> false };
+        let error: std::channel::SendError<T> = sent.unwrap_err();
+        let full: bool = match (error) { std::channel::SendError::Full(value) -> true, _ -> false };
         if (full) { return core::result::Ok(false); }
-        return core::result::Err(Error::Channel(std::channel::Error::NoEndpoint));
+        let failure: Error = match (error) { std::channel::SendError::Sync(cause) -> Error::Sync(cause), _ -> Error::Channel(std::channel::Error::NoEndpoint) };
+        return core::result::Err(failure);
     }
-    pub fn submitted(&self) -> i64 { return get(self.block + 64) as i64; }
-    pub fn completed(&self) -> i64 { return get(self.block + 128) as i64; }
-    // The sum of every finished task's run() result.
-    pub fn total(&self) -> i64 { return get(self.block + 136) as i64; }
-    // Block until every submitted task has finished.
+    // SC arm/count handshake: completion before arming is seen by the count
+    // recheck; completion after it changes 1->2, so the futex changes or wakes.
     pub fn wait(&self) -> core::result::Result<i32, Error> {
+        if (!self.accepting()) { return core::result::Err(Error::Closed); }
+        let target: u64 = get(self.block + 64);
         while (true) {
-            if (get(self.block + 128) == get(self.block + 64)) { return core::result::Ok(0); }
-            let seen: u32 = std::atomic::at32(self.block + 192).load(std::atomic::Load::Acquire);
-            cell(self.block + 200).fetch_add(1, std::atomic::Ordering::SeqCst);
-            if (get(self.block + 128) == get(self.block + 64)) {
-                cell(self.block + 200).fetch_sub(1, std::atomic::Ordering::SeqCst);
-                return core::result::Ok(0);
-            }
-            std::sync::futex_wait_private(self.block + 192, seen);
-            cell(self.block + 200).fetch_sub(1, std::atomic::Ordering::SeqCst);
+            notification(self.block, 1);
+            if (completed_at(self.block) == target) { notification(self.block, 0); return core::result::Ok(0); }
+            let slept: core::result::Result<std::sync::Wait, std::sync::Error> = std::sync::futex_wait_private(self.block + 192, 1);
+            notification(self.block, 0);
+            if (slept.is_err()) { return core::result::Err(Error::Sync(slept.unwrap_err())); }
         }
         return core::result::Ok(0);
     }
-    // wait with a limit: Ok(true) once every submitted task has finished,
-    // Ok(false) if `milliseconds` (0 ..= 86,400,000) pass first.
     pub fn wait_timeout_ms(&self, milliseconds: i64) -> core::result::Result<bool, Error> {
+        if (!self.accepting()) { return core::result::Err(Error::Closed); }
+        if (milliseconds < 0 || milliseconds > 86400000) { return core::result::Err(Error::InvalidInput); }
         let limit: core::result::Result<std::sync::Deadline, std::sync::Error> = std::sync::deadline_after_ms(milliseconds);
-        if (limit.is_err()) { return core::result::Err(Error::InvalidInput); }
-        let deadline: std::sync::Deadline = limit.unwrap();
+        if (limit.is_err()) { return core::result::Err(Error::Sync(limit.unwrap_err())); }
+        let deadline: std::sync::Deadline = limit.unwrap(); let target: u64 = get(self.block + 64);
         while (true) {
-            if (get(self.block + 128) == get(self.block + 64)) { return core::result::Ok(true); }
-            let seen: u32 = std::atomic::at32(self.block + 192).load(std::atomic::Load::Acquire);
-            cell(self.block + 200).fetch_add(1, std::atomic::Ordering::SeqCst);
-            if (get(self.block + 128) == get(self.block + 64)) {
-                cell(self.block + 200).fetch_sub(1, std::atomic::Ordering::SeqCst);
-                return core::result::Ok(true);
-            }
-            std::sync::futex_wait_until_private(self.block + 192, seen, deadline);
-            cell(self.block + 200).fetch_sub(1, std::atomic::Ordering::SeqCst);
+            notification(self.block, 1);
+            if (completed_at(self.block) == target) { notification(self.block, 0); return core::result::Ok(true); }
+            let slept: core::result::Result<std::sync::Wait, std::sync::Error> = std::sync::futex_wait_until_private(self.block + 192, 1, deadline);
+            notification(self.block, 0);
+            if (slept.is_err()) { return core::result::Err(Error::Sync(slept.unwrap_err())); }
+            if (completed_at(self.block) == target) { return core::result::Ok(true); }
             let past: core::result::Result<bool, std::sync::Error> = std::sync::is_past(deadline);
-            if (past.is_ok() && past.unwrap() && get(self.block + 128) != get(self.block + 64)) { return core::result::Ok(false); }
+            if (past.is_err()) { return core::result::Err(Error::Sync(past.unwrap_err())); }
+            if (past.unwrap()) { return core::result::Ok(false); }
         }
         return core::result::Ok(true);
     }
-    // Finish the queued tasks, stop and join the workers, free the pool.
-    pub fn shutdown(&self) {
+    pub fn shutdown(&self) -> core::result::Result<bool, Error> {
+        if (!self.is_open()) { return core::result::Ok(false); }
         let ring: std::channel::Ring<T> = self.ring();
-        ring.close_sender();
-        let workers: i32 = iget(self.block + 8) as i32;
-        let ids: ptr = pget(self.block + 16);
-        let w: i32 = 0;
-        while (w < workers) { std::pthread::join_id(iget(ids + (w as usize) * 8) as u64); w += 1; }
-        ring.destroy();
-        alloc::allocator::dealloc(ids, (workers as usize) * 8, 8);
+        if (iget(self.block + 24) == 0) {
+            iset(self.block + 24, 1);
+            let closed: core::result::Result<i32, std::channel::Error> = ring.close_sender();
+            if (closed.is_err()) { return core::result::Err(Error::Channel(closed.unwrap_err())); }
+        }
+        let threads: ptr = pget(self.block + 16);
+        let failure: core::option::Option<std::thread::Error> = join_pending(threads, iget(self.block + 40) as i32, iget(self.block + 8) as i32);
+        if (failure.is_some()) { return core::result::Err(Error::Thread(failure.unwrap())); }
+        let thread_bytes: usize = iget(self.block + 32) as usize;
+        ring.destroy(); alloc::allocator::dealloc(threads, thread_bytes, 8);
         alloc::allocator::dealloc(self.block, POOL_BLOCK, 8);
+        let nowhere: ptr = 0; self.block = nowhere;
+        return core::result::Ok(true);
     }
 }
 
-// ---- Parallel map, reduce and scan ----
-//
-// Call block: 0 input storage, 8 length, 16 output storage, 24 grain,
-// 32 tasks, 40 pass, 48 partials storage, 64 next chunk (own line),
-// 128 the mapper or folder (copied by value).
+// Synchronous call storage: input0,length8,output16,grain24,chunks32,pass40,
+// partials48,next64; plain mapper/folder at CALL_BLOCK.
 const CALL_BLOCK: usize = 128;
-
+struct Call {
+    block: ptr, block_bytes: usize, threads: ptr, thread_bytes: usize,
+    capacity: i32, unit: ptr, unit_bytes: usize, partials: ptr, partial_bytes: usize
+}
+impl Call {
+    fn borrow(&self) -> &Call { return self; }
+    fn destroy(&self) {
+        if (self.partials != 0) { alloc::allocator::dealloc(self.partials, self.partial_bytes, 8); }
+        if (self.unit != 0) { alloc::allocator::dealloc(self.unit, self.unit_bytes, 8); }
+        if (self.threads != 0) { alloc::allocator::dealloc(self.threads, self.thread_bytes, 8); }
+        alloc::allocator::dealloc(self.block, self.block_bytes, 8);
+    }
+}
 fn grain_for(length: i32, workers: i32, grain: i32) -> i32 {
     if (grain > 0) { return grain; }
     let auto: i32 = length / (workers * 8);
     if (auto < 2048) { return 2048; }
     return auto;
 }
-fn call_block<F>(input: ptr, length: i32, output: ptr, grain: i32, function: F) -> ptr {
-    let block: ptr = alloc::allocator::alloc(CALL_BLOCK + storage_bytes<F>(1), 8);
-    zero(block, CALL_BLOCK);
-    pset(block, input); iset(block + 8, length as i64); pset(block + 16, output); iset(block + 24, grain as i64);
-    let tasks: i32 = 0;
-    if (length > 0) { tasks = (length - 1) / grain + 1; }
-    iset(block + 32, tasks as i64);
-    let slot: [F] = core::mem::typed_slice_from_storage<F>(block + CALL_BLOCK, 1); slot[0] = function;
-    cell(block + 64).fetch_add(0, std::atomic::Ordering::SeqCst);
-    return block;
+fn chunk_count(length: i32, grain: i32) -> i32 { return (length - 1) / grain + 1; }
+fn chunk_end(first: i32, grain: i32, length: i32) -> i32 {
+    if (grain > length - first) { return length; }
+    return first + grain;
 }
-fn free_call<F>(block: ptr) { alloc::allocator::dealloc(block, CALL_BLOCK + storage_bytes<F>(1), 8); }
+fn valid_call(workers: i32, length: i32, entry: ptr) -> bool {
+    return workers >= 1 && workers <= 256 && length >= 0 && (length == 0 || workers == 1 || entry != 0);
+}
+fn backing<T>(value: std::parallel::Shared<T>) -> core::result::Result<usize, Error> {
+    let extent: core::result::Result<usize, Error> = storage_bytes<T>(value.len());
+    if (extent.is_err()) { return extent; }
+    if (value.len() > 0 && value.storage() == 0) { return core::result::Err(Error::InvalidInput); }
+    // Borrowed backing has its actual typed extent, not our owned allocation
+    // helper's minimum-eight-byte reservation (notably for packed u8/i32).
+    let bytes: usize = (value.len() as usize) * core::mem::size_of<T>();
+    let maximum: usize = 18446744073709551615;
+    if (bits(value.storage()) > maximum - bytes) { return core::result::Err(Error::SizeOverflow); }
+    return core::result::Ok(bytes);
+}
+fn prepare<F>(workers: i32, input: ptr, length: i32, output: ptr, grain: i32, function: F, unit_bytes: usize, partial_bytes: usize) -> core::result::Result<Call, Error> {
+    let function_bytes: core::result::Result<usize, Error> = storage_bytes<F>(1);
+    if (function_bytes.is_err()) { return core::result::Err(function_bytes.unwrap_err()); }
+    if (function_bytes.unwrap() > MAX_STORAGE_BYTES - CALL_BLOCK) { return core::result::Err(Error::SizeOverflow); }
+    let thread_bytes: core::result::Result<usize, Error> = storage_bytes<std::thread::Thread>(workers - 1);
+    if (thread_bytes.is_err()) { return core::result::Err(thread_bytes.unwrap_err()); }
+    let block_bytes: usize = CALL_BLOCK + function_bytes.unwrap();
+    let memory: core::result::Result<ptr, Error> = allocate(block_bytes);
+    if (memory.is_err()) { return core::result::Err(memory.unwrap_err()); }
+    let nowhere: ptr = 0;
+    let call: Call = Call { block: memory.unwrap(), block_bytes: block_bytes, threads: nowhere, thread_bytes: thread_bytes.unwrap(), capacity: workers - 1,
+        unit: nowhere, unit_bytes: unit_bytes, partials: nowhere, partial_bytes: partial_bytes };
+    if (workers > 1) {
+        let made: core::result::Result<ptr, Error> = allocate(call.thread_bytes);
+        if (made.is_err()) { call.destroy(); return core::result::Err(made.unwrap_err()); }
+        call.threads = made.unwrap();
+    }
+    if (unit_bytes > 0) {
+        let made: core::result::Result<ptr, Error> = allocate(unit_bytes);
+        if (made.is_err()) { call.destroy(); return core::result::Err(made.unwrap_err()); }
+        call.unit = made.unwrap();
+    }
+    if (partial_bytes > 0) {
+        let made: core::result::Result<ptr, Error> = allocate(partial_bytes);
+        if (made.is_err()) { call.destroy(); return core::result::Err(made.unwrap_err()); }
+        call.partials = made.unwrap();
+    }
+    zero(call.block, CALL_BLOCK);
+    pset(call.block, input); iset(call.block + 8, length as i64); pset(call.block + 16, output);
+    if (unit_bytes > 0) { pset(call.block + 16, call.unit); }
+    iset(call.block + 24, grain as i64); iset(call.block + 32, chunk_count(length, grain) as i64);
+    pset(call.block + 48, call.partials);
+    let slot: [F] = core::mem::typed_slice_from_storage<F>(call.block + CALL_BLOCK, 1); slot[0] = function;
+    return core::result::Ok(call);
+}
 fn function_of<F>(block: ptr) -> F { let slot: [F] = core::mem::typed_slice_from_storage<F>(block + CALL_BLOCK, 1); return slot[0]; }
-// The next chunk index, or -1 when every chunk is taken.
 fn next_chunk(block: ptr) -> i32 {
-    let chunk: i64 = cell(block + 64).fetch_add(1, std::atomic::Ordering::SeqCst) as i64;
-    if (chunk >= iget(block + 32)) { return -1; }
+    let chunk: u64 = cell(block + 64).fetch_add(1, std::atomic::Ordering::SeqCst);
+    if (chunk >= get(block + 32)) { return -1; }
     return chunk as i32;
 }
-// Run `entry` on workers - 1 threads and `work` on the caller: the caller
-// side is the generic function itself, called directly.
-fn crew_start(workers: i32, entry: ptr, block: ptr, ids: ptr) -> i32 {
+fn crew_start(entry: ptr, call: &Call) -> i32 {
+    let slots: [std::thread::Thread] = core::mem::typed_slice_from_storage<std::thread::Thread>(call.threads, call.capacity);
     let started: i32 = 0;
-    while (started < workers - 1) {
-        let made: core::result::Result<std::pthread::Thread, std::pthread::Error> = std::pthread::spawn(entry, block);
+    while (started < call.capacity) {
+        let made: core::result::Result<std::thread::Thread, std::thread::Error> = std::thread::spawn(entry, call.block);
         if (made.is_err()) { break; }
-        iset(ids + (started as usize) * 8, made.unwrap().id() as i64);
-        started += 1;
+        slots[started] = made.unwrap(); started += 1;
     }
     return started;
 }
-fn crew_join(started: i32, ids: ptr) {
-    let i: i32 = 0;
-    while (i < started) { std::pthread::join_id(iget(ids + (i as usize) * 8) as u64); i += 1; }
-}
-fn crew_run_check(workers: i32) -> bool { return workers >= 1 && workers <= 256; }
 
 fn map_work<T, U, M>(block: ptr) where M: core::function::Mapper<T, U> {
     let length: i32 = iget(block + 8) as i32;
@@ -271,7 +365,7 @@ fn map_work<T, U, M>(block: ptr) where M: core::function::Mapper<T, U> {
     let mapper: M = function_of<M>(block);
     let chunk: i32 = next_chunk(block);
     while (chunk >= 0) {
-        let i: i32 = chunk * grain; let end: i32 = i + grain; if (end > length) { end = length; }
+        let i: i32 = chunk * grain; let end: i32 = chunk_end(i, grain, length);
         while (i < end) { let mapped: U = mapper.apply(source[i]); target[i] = mapped; i += 1; }
         chunk = next_chunk(block);
     }
@@ -279,19 +373,24 @@ fn map_work<T, U, M>(block: ptr) where M: core::function::Mapper<T, U> {
 // The thread entry for map: `fn e(arg: ptr) -> ptr { return std::pool::map_entry<T, U, M>(arg); }`
 pub fn map_entry<T, U, M>(arg: ptr) -> ptr where M: core::function::Mapper<T, U> { map_work<T, U, M>(arg); return arg; }
 
-// output[i] = mapper.apply(input[i]) on `workers` threads (the caller is one).
-// grain <= 0 picks length / (8 * workers), at least 2048. Returns the chunk count.
+// Equal counts and disjoint live storage are required. Spawn failure reduces
+// parallelism; the caller completes every unclaimed chunk.
 pub fn map<T, U, M>(workers: i32, input: std::parallel::Shared<T>, output: std::parallel::Shared<U>, mapper: M, grain: i32, entry: ptr) -> core::result::Result<i32, Error> where M: core::function::Mapper<T, U> {
-    if (!crew_run_check(workers) || output.len() != input.len()) { return core::result::Err(Error::InvalidInput); }
     let length: i32 = input.len();
-    let block: ptr = call_block<M>(input.storage(), length, output.storage(), grain_for(length, workers, grain), mapper);
-    let ids: ptr = alloc::allocator::alloc((workers as usize) * 8, 8);
-    let started: i32 = crew_start(workers, entry, block, ids);
-    map_work<T, U, M>(block);
-    crew_join(started, ids);
-    let tasks: i32 = iget(block + 32) as i32;
-    alloc::allocator::dealloc(ids, (workers as usize) * 8, 8);
-    free_call<M>(block);
+    if (!valid_call(workers, length, entry) || output.len() != length) { return core::result::Err(Error::InvalidInput); }
+    if (length == 0) { return core::result::Ok(0); }
+    let input_bytes: core::result::Result<usize, Error> = backing(input);
+    if (input_bytes.is_err()) { return core::result::Err(input_bytes.unwrap_err()); }
+    let output_bytes: core::result::Result<usize, Error> = backing(output);
+    if (output_bytes.is_err()) { return core::result::Err(output_bytes.unwrap_err()); }
+    let first: usize = bits(input.storage()); let second: usize = bits(output.storage());
+    if (first < second + output_bytes.unwrap() && second < first + input_bytes.unwrap()) { return core::result::Err(Error::InvalidInput); }
+    let prepared: core::result::Result<Call, Error> = prepare<M>(workers, input.storage(), length, output.storage(), grain_for(length, workers, grain), mapper, 0, 0);
+    if (prepared.is_err()) { return core::result::Err(prepared.unwrap_err()); }
+    let call: Call = prepared.unwrap();
+    let started: i32 = crew_start(entry, call.borrow()); map_work<T, U, M>(call.block);
+    join_borrowed(call.threads, call.capacity, started);
+    let tasks: i32 = iget(call.block + 32) as i32; call.destroy();
     return core::result::Ok(tasks);
 }
 
@@ -307,7 +406,7 @@ fn reduce_work<T, A, F>(block: ptr) where F: core::iter::Folder<A, T> {
     let fold: F = function_of<F>(block);
     let chunk: i32 = next_chunk(block);
     while (chunk >= 0) {
-        let i: i32 = chunk * grain; let end: i32 = i + grain; if (end > length) { end = length; }
+        let i: i32 = chunk * grain; let end: i32 = chunk_end(i, grain, length);
         let acc: A = identity;
         while (i < end) { acc = fold.apply(acc, source[i]); i += 1; }
         sums[chunk] = acc;
@@ -322,26 +421,27 @@ pub fn reduce_entry<T, A, F>(arg: ptr) -> ptr where F: core::iter::Folder<A, T> 
 // with unit identity, not necessarily commutative.
 pub fn reduce<T, A, F, C>(workers: i32, input: std::parallel::Shared<T>, identity: A, fold: F, combine: &C, grain: i32, entry: ptr) -> core::result::Result<A, Error>
     where F: core::iter::Folder<A, T>, C: core::iter::Folder<A, A> {
-    if (!crew_run_check(workers)) { return core::result::Err(Error::InvalidInput); }
     let length: i32 = input.len();
-    let unit: ptr = alloc::allocator::alloc(storage_bytes<A>(1), 8);
-    let unit_view: [A] = core::mem::typed_slice_from_storage<A>(unit, 1); unit_view[0] = identity;
-    let block: ptr = call_block<F>(input.storage(), length, unit, grain_for(length, workers, grain), fold);
-    let tasks: i32 = iget(block + 32) as i32;
-    let partials: ptr = alloc::allocator::alloc(storage_bytes<A>(tasks), 8);
-    pset(block + 48, partials);
-    let ids: ptr = alloc::allocator::alloc((workers as usize) * 8, 8);
-    let started: i32 = crew_start(workers, entry, block, ids);
-    reduce_work<T, A, F>(block);
-    crew_join(started, ids);
-    let sums: [A] = core::mem::typed_slice_from_storage<A>(partials, tasks);
-    let total: A = identity; let k: i32 = 0;
-    while (k < tasks) { total = combine.apply(total, sums[k]); k += 1; }
-    alloc::allocator::dealloc(ids, (workers as usize) * 8, 8);
-    alloc::allocator::dealloc(partials, storage_bytes<A>(tasks), 8);
-    alloc::allocator::dealloc(unit, storage_bytes<A>(1), 8);
-    free_call<F>(block);
-    return core::result::Ok(total);
+    if (!valid_call(workers, length, entry)) { return core::result::Err(Error::InvalidInput); }
+    if (length == 0) { return core::result::Ok(identity); }
+    let input_bytes: core::result::Result<usize, Error> = backing(input);
+    if (input_bytes.is_err()) { return core::result::Err(input_bytes.unwrap_err()); }
+    let width: i32 = grain_for(length, workers, grain); let tasks: i32 = chunk_count(length, width);
+    let unit_bytes: core::result::Result<usize, Error> = storage_bytes<A>(1);
+    if (unit_bytes.is_err()) { return core::result::Err(unit_bytes.unwrap_err()); }
+    let partial_bytes: core::result::Result<usize, Error> = storage_bytes<A>(tasks);
+    if (partial_bytes.is_err()) { return core::result::Err(partial_bytes.unwrap_err()); }
+    let nowhere: ptr = 0;
+    let prepared: core::result::Result<Call, Error> = prepare<F>(workers, input.storage(), length, nowhere, width, fold, unit_bytes.unwrap(), partial_bytes.unwrap());
+    if (prepared.is_err()) { return core::result::Err(prepared.unwrap_err()); }
+    let call: Call = prepared.unwrap();
+    let unit: [A] = core::mem::typed_slice_from_storage<A>(call.unit, 1); unit[0] = identity;
+    let started: i32 = crew_start(entry, call.borrow()); reduce_work<T, A, F>(call.block);
+    join_borrowed(call.threads, call.capacity, started);
+    let sums: [A] = core::mem::typed_slice_from_storage<A>(call.partials, tasks);
+    let total: A = identity; let index: i32 = 0;
+    while (index < tasks) { total = combine.apply(total, sums[index]); index += 1; }
+    call.destroy(); return core::result::Ok(total);
 }
 
 fn scan_work<T, C>(block: ptr) where C: core::iter::Folder<T, T> {
@@ -356,7 +456,7 @@ fn scan_work<T, C>(block: ptr) where C: core::iter::Folder<T, T> {
     let combine: C = function_of<C>(block);
     let chunk: i32 = next_chunk(block);
     while (chunk >= 0) {
-        let i: i32 = chunk * grain; let end: i32 = i + grain; if (end > length) { end = length; }
+        let i: i32 = chunk * grain; let end: i32 = chunk_end(i, grain, length);
         if (pass == 1) {
             let acc: T = identity;
             while (i < end) { acc = combine.apply(acc, values[i]); i += 1; }
@@ -376,31 +476,32 @@ pub fn scan_entry<T, C>(arg: ptr) -> ptr where C: core::iter::Folder<T, T> { sca
 // into exclusive prefixes; pass 2 rescans each chunk from its prefix. Each
 // pass is one crew. Returns the chunk count.
 pub fn scan<T, C>(workers: i32, data: std::parallel::Shared<T>, identity: T, combine: C, grain: i32, entry: ptr) -> core::result::Result<i32, Error> where C: core::iter::Folder<T, T> {
-    if (!crew_run_check(workers)) { return core::result::Err(Error::InvalidInput); }
     let length: i32 = data.len();
-    let unit: ptr = alloc::allocator::alloc(storage_bytes<T>(1), 8);
-    let unit_view: [T] = core::mem::typed_slice_from_storage<T>(unit, 1); unit_view[0] = identity;
-    let block: ptr = call_block<C>(data.storage(), length, unit, grain_for(length, workers, grain), combine);
-    let tasks: i32 = iget(block + 32) as i32;
-    let partials: ptr = alloc::allocator::alloc(storage_bytes<T>(tasks), 8);
-    pset(block + 48, partials);
-    let ids: ptr = alloc::allocator::alloc((workers as usize) * 8, 8);
+    if (!valid_call(workers, length, entry)) { return core::result::Err(Error::InvalidInput); }
+    if (length == 0) { return core::result::Ok(0); }
+    let data_bytes: core::result::Result<usize, Error> = backing(data);
+    if (data_bytes.is_err()) { return core::result::Err(data_bytes.unwrap_err()); }
+    let width: i32 = grain_for(length, workers, grain); let tasks: i32 = chunk_count(length, width);
+    let unit_bytes: core::result::Result<usize, Error> = storage_bytes<T>(1);
+    if (unit_bytes.is_err()) { return core::result::Err(unit_bytes.unwrap_err()); }
+    let partial_bytes: core::result::Result<usize, Error> = storage_bytes<T>(tasks);
+    if (partial_bytes.is_err()) { return core::result::Err(partial_bytes.unwrap_err()); }
+    let nowhere: ptr = 0;
+    let prepared: core::result::Result<Call, Error> = prepare<C>(workers, data.storage(), length, nowhere, width, combine, unit_bytes.unwrap(), partial_bytes.unwrap());
+    if (prepared.is_err()) { return core::result::Err(prepared.unwrap_err()); }
+    let call: Call = prepared.unwrap();
+    let unit: [T] = core::mem::typed_slice_from_storage<T>(call.unit, 1); unit[0] = identity;
     let pass: i64 = 1;
     while (pass <= 2) {
-        iset(block + 40, pass); set(block + 64, 0);
-        let started: i32 = crew_start(workers, entry, block, ids);
-        scan_work<T, C>(block);
-        crew_join(started, ids);
+        iset(call.block + 40, pass); set(call.block + 64, 0);
+        let started: i32 = crew_start(entry, call.borrow()); scan_work<T, C>(call.block);
+        join_borrowed(call.threads, call.capacity, started);
         if (pass == 1) {
-            let sums: [T] = core::mem::typed_slice_from_storage<T>(partials, tasks);
-            let running: T = identity; let k: i32 = 0;
-            while (k < tasks) { let total: T = sums[k]; sums[k] = running; running = combine.apply(running, total); k += 1; }
+            let sums: [T] = core::mem::typed_slice_from_storage<T>(call.partials, tasks);
+            let running: T = identity; let index: i32 = 0;
+            while (index < tasks) { let total: T = sums[index]; sums[index] = running; running = combine.apply(running, total); index += 1; }
         }
         pass += 1;
     }
-    alloc::allocator::dealloc(ids, (workers as usize) * 8, 8);
-    alloc::allocator::dealloc(partials, storage_bytes<T>(tasks), 8);
-    alloc::allocator::dealloc(unit, storage_bytes<T>(1), 8);
-    free_call<C>(block);
-    return core::result::Ok(tasks);
+    call.destroy(); return core::result::Ok(tasks);
 }

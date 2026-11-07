@@ -1,0 +1,130 @@
+// Named faults wrap real glibc calls; each admitted thread is actually joined.
+module app::main;
+import core::mem;
+import std::io;
+import std::process;
+import std::thread;
+
+extern "C" fn thread_probe_reset() -> i32;
+extern "C" fn thread_probe_fail(kind:i32,ordinal:i32,error:i32) -> i32;
+extern "C" fn thread_probe_calls(kind:i32) -> i32;
+extern "C" fn thread_probe_created() -> i32;
+extern "C" fn thread_probe_joined() -> i32;
+extern "C" fn thread_probe_live() -> i32;
+extern "C" fn thread_probe_created_id(index:i32) -> u64;
+extern "C" fn thread_probe_join_attempt(index:i32) -> u64;
+extern "C" fn thread_probe_event_count() -> i32;
+extern "C" fn thread_probe_event_kind(index:i32) -> i32;
+extern "C" fn thread_probe_event_result(index:i32) -> i32;
+extern "C" fn thread_probe_hold_create(ordinal:i32) -> i32;
+extern "C" fn thread_probe_wait_ready(ordinal:i32) -> i32;
+extern "C" fn thread_probe_release(ordinal:i32) -> i32;
+extern "C" fn thread_probe_entered(ordinal:i32) -> i32;
+extern "C" fn thread_probe_exited(ordinal:i32) -> i32;
+extern "C" fn thread_probe_stack_size() -> u64;
+extern "C" fn thread_probe_phase(phase:i32) -> i32;
+
+fn host(error:std::thread::Error) -> i32 { return match(error) { std::thread::Error::Host(code) -> code, _ -> -1 }; }
+fn invalid(error:std::thread::Error) -> bool { return match(error) { std::thread::Error::InvalidInput -> true, _ -> false }; }
+fn reset() { assert(thread_probe_phase(100)==0); assert(thread_probe_reset()==0); assert(thread_probe_phase(101)==0); }
+fn counts(init:i32,set:i32,create:i32,destroy:i32,join:i32) {
+    assert(thread_probe_calls(1)==init && thread_probe_calls(2)==set && thread_probe_calls(3)==create && thread_probe_calls(4)==destroy && thread_probe_calls(5)==join);
+}
+fn worker(argument:ptr) -> ptr {
+    let identity:[u64]=core::mem::typed_slice_from_raw_parts<u64>(argument,1); identity[0]=std::thread::current();
+    let count:[u64]=core::mem::typed_slice_from_raw_parts<u64>(argument+8,1); count[0]=std::process::argc() as u64;
+    let stack:[u64]=core::mem::typed_slice_from_raw_parts<u64>(argument+16,1); stack[0]=thread_probe_stack_size();
+    return argument+8;
+}
+fn echo(argument:ptr) -> ptr { return argument; }
+fn joined(owner:&std::thread::Thread,argument:ptr) {
+    let id:u64=owner.id(); assert(id!=0 && !owner.is_joined());
+    assert(owner.join().unwrap()==argument+8 && owner.is_joined());
+    let identity:[u64]=core::mem::typed_slice_from_raw_parts<u64>(argument,1); assert(identity[0]==id && id!=std::thread::current());
+    let argc:[u64]=core::mem::typed_slice_from_raw_parts<u64>(argument+8,1); assert(argc[0]==std::process::argc() as u64);
+    let stack:[u64]=core::mem::typed_slice_from_raw_parts<u64>(argument+16,1); assert(stack[0]>=std::thread::MIN_STACK_BYTES as u64);
+    let before:i32=thread_probe_calls(5);
+    assert(match(owner.join().unwrap_err()) { std::thread::Error::Joined -> true, _ -> false });
+    assert(thread_probe_calls(5)==before && thread_probe_live()==0 && thread_probe_joined()==1);
+}
+fn no_started(failure:std::thread::SpawnFailure,code:i32,cleanup:i32) {
+    assert(host(failure.cause)==code && failure.started.is_none());
+    if(cleanup==0) { assert(failure.cleanup_error.is_none()); }
+    else { assert(failure.cleanup_error.unwrap()==cleanup); }
+    assert(thread_probe_live()==0 && thread_probe_created()==0);
+}
+fn preflight(argument:ptr) {
+    assert(thread_probe_phase(10)==0); reset(); let nowhere:ptr=0;
+    assert(invalid(std::thread::spawn(nowhere,argument).unwrap_err()));
+    let low=std::thread::spawn_with_stack(worker,argument,std::thread::MIN_STACK_BYTES-1).unwrap_err();
+    assert(invalid(low.cause) && low.cleanup_error.is_none() && low.started.is_none());
+    let null=std::thread::spawn_with_stack(nowhere,argument,262144).unwrap_err();
+    assert(invalid(null.cause) && null.cleanup_error.is_none() && null.started.is_none());
+    let zero=std::thread::spawn_with_stack(nowhere,argument,0).unwrap_err(); assert(invalid(zero.cause) && zero.started.is_none());
+    counts(0,0,0,0,0); assert(thread_probe_event_count()==0);
+    assert(thread_probe_phase(11)==0);
+    // Null arguments are permitted when the entry itself accepts them.
+    let owner=std::thread::spawn(echo,nowhere).unwrap(); assert(thread_probe_phase(12)==0);
+    let result=owner.join(); assert(thread_probe_phase(13)==0); assert(result.is_ok());
+    assert(thread_probe_phase(14)==0); let returned:ptr=result.unwrap(); assert(thread_probe_phase(15)==0);
+    assert(returned==nowhere); assert(thread_probe_phase(16)==0); counts(0,0,1,0,1); assert(thread_probe_phase(17)==0);
+}
+fn defaults_and_custom(argument:ptr) {
+    assert(thread_probe_phase(20)==0); reset(); assert(thread_probe_fail(1,1,12)==0); assert(thread_probe_phase(21)==0);
+    let ordinary=std::thread::spawn(worker,argument).unwrap(); joined(ordinary.borrow(),argument); counts(0,0,1,0,1);
+    reset(); assert(thread_probe_fail(1,1,12)==0);
+    let zero=std::thread::spawn_with_stack(worker,argument,0).unwrap(); joined(zero.borrow(),argument); counts(0,0,1,0,1);
+    reset(); let custom=std::thread::spawn_with_stack(worker,argument,262144).unwrap(); joined(custom.borrow(),argument); counts(1,1,1,1,1);
+    let extent:[u64]=core::mem::typed_slice_from_raw_parts<u64>(argument+16,1); assert(extent[0]==262144);
+    let expected:[i32;5]=[1,2,3,4,5]; let i:i32=0;
+    while(i<5) { assert(thread_probe_event_kind(i)==expected[i] && thread_probe_event_result(i)==0); i+=1; }
+    assert(thread_probe_event_count()==5);
+    reset(); let minimum=std::thread::spawn_with_stack(worker,argument,std::thread::MIN_STACK_BYTES).unwrap(); joined(minimum.borrow(),argument); counts(1,1,1,1,1);
+    assert(extent[0]==std::thread::MIN_STACK_BYTES as u64);
+}
+fn attribute_failures(argument:ptr) {
+    reset(); assert(thread_probe_fail(1,1,12)==0);
+    no_started(std::thread::spawn_with_stack(worker,argument,262144).unwrap_err(),12,0); counts(1,0,0,0,0);
+    reset(); assert(thread_probe_fail(2,1,22)==0);
+    no_started(std::thread::spawn_with_stack(worker,argument,262144).unwrap_err(),22,0); counts(1,1,0,1,0);
+    assert(thread_probe_event_kind(2)==4 && thread_probe_event_result(2)==0);
+    reset(); assert(thread_probe_fail(2,1,22)==0 && thread_probe_fail(4,1,16)==0);
+    no_started(std::thread::spawn_with_stack(worker,argument,262144).unwrap_err(),22,16); counts(1,1,0,1,0);
+    reset(); assert(thread_probe_fail(3,1,11)==0);
+    no_started(std::thread::spawn_with_stack(worker,argument,262144).unwrap_err(),11,0); counts(1,1,1,1,0);
+    reset(); assert(thread_probe_fail(3,1,11)==0 && thread_probe_fail(4,1,16)==0);
+    no_started(std::thread::spawn_with_stack(worker,argument,262144).unwrap_err(),11,16); counts(1,1,1,1,0);
+    reset(); assert(thread_probe_fail(3,1,11)==0);
+    assert(host(std::thread::spawn(worker,argument).unwrap_err())==11); counts(0,0,1,0,0);
+    reset(); assert(thread_probe_fail(3,1,11)==0);
+    no_started(std::thread::spawn_with_stack(worker,argument,0).unwrap_err(),11,0); counts(0,0,1,0,0);
+}
+fn started_after_destroy_failure(argument:ptr) {
+    reset(); assert(thread_probe_hold_create(1)==0 && thread_probe_fail(4,1,16)==0);
+    let failure=std::thread::spawn_with_stack(worker,argument,262144).unwrap_err();
+    assert(host(failure.cause)==16 && failure.cleanup_error.is_none() && failure.started.is_some());
+    let owner=failure.started.unwrap(); let id:u64=owner.id();
+    assert(thread_probe_wait_ready(1)==0 && thread_probe_entered(1)==0 && thread_probe_exited(1)==0);
+    assert(thread_probe_created()==1 && thread_probe_live()==1 && thread_probe_joined()==0 && id==thread_probe_created_id(0));
+    assert(thread_probe_reset()==16); counts(1,1,1,1,0);
+    assert(thread_probe_release(1)==0); joined(owner.borrow(),argument);
+    assert(thread_probe_join_attempt(0)==id && thread_probe_exited(1)==1); counts(1,1,1,1,1);
+}
+fn failed_join_retains_authority(argument:ptr) {
+    reset(); assert(thread_probe_hold_create(1)==0 && thread_probe_fail(5,1,16)==0);
+    let owner=std::thread::spawn(worker,argument).unwrap(); let id:u64=owner.id();
+    assert(thread_probe_wait_ready(1)==0 && thread_probe_entered(1)==0);
+    assert(host(owner.join().unwrap_err())==16 && !owner.is_joined() && owner.id()==id);
+    assert(thread_probe_live()==1 && thread_probe_joined()==0 && thread_probe_join_attempt(0)==id && thread_probe_entered(1)==0);
+    assert(thread_probe_release(1)==0); joined(owner.borrow(),argument);
+    assert(thread_probe_join_attempt(1)==id && thread_probe_calls(5)==2 && thread_probe_event_result(1)==16 && thread_probe_event_result(2)==0);
+}
+fn main() -> i32 {
+    let words:[i32;6]=[0;6]; let argument:ptr=core::mem::i32_array_data_ptr(words);
+    assert(thread_probe_phase(1)==0); preflight(argument); assert(thread_probe_phase(2)==0);
+    defaults_and_custom(argument); assert(thread_probe_phase(3)==0);
+    attribute_failures(argument); assert(thread_probe_phase(4)==0);
+    started_after_destroy_failure(argument); assert(thread_probe_phase(5)==0);
+    failed_join_retains_authority(argument); assert(thread_probe_phase(6)==0); reset();
+    std::io::write_text(1,"thread-lifecycle real-pthreads attributes=7 retained-start=1 join-retry=1\n"); return 0;
+}

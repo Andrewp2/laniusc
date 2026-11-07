@@ -1,0 +1,176 @@
+// Ordered CRC32 chunk report using synchronous native-thread pool mapping.
+module app::main;
+import alloc::allocator;
+import alloc::io;
+import alloc::string;
+import alloc::vec;
+import core::crc32;
+import core::decimal;
+import core::function;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::result::Result;
+import core::slice;
+import ext::cli;
+import std::args;
+import std::parallel;
+import std::pool;
+import std::signal;
+import std::stream;
+
+struct Options { workers:i32, chunk:i32, workers_set:bool, chunk_set:bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Chunk { bytes:[u8], offset:i32, length:i32 }
+struct Crc32 { unused:i32 }
+pub impl core::function::Mapper<Chunk,u32> for Crc32 {
+    pub fn apply(&self, chunk:Chunk) -> u32 {
+        let state:u32=core::crc32::INITIAL; let index:i32=0;
+        while(index<chunk.length) { state=core::crc32::update_byte(state,chunk.bytes[chunk.offset+index]); index+=1; }
+        return core::crc32::finish(state);
+    }
+}
+fn checksum_worker(argument:ptr) -> ptr { return std::pool::map_entry<Chunk,u32,Crc32>(argument); }
+
+fn literal(value:str,count:i32) -> core::slice::View<u8> {
+    return core::slice::view(core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count),count).unwrap();
+}
+fn equal(left:core::slice::View<u8>,right:core::slice::View<u8>) -> bool {
+    if(left.length!=right.length) { return false; }
+    let i:i32=0; while(i<left.length) { if(left.values[left.start+i]!=right.values[right.start+i]) { return false; } i+=1; }
+    return true;
+}
+fn write(bytes:core::slice::View<u8>,handle:i32,maximum:i32) -> bool {
+    let sink=std::stream::from_handle(handle); let sent:i32=0; let calls:i32=0;
+    while(sent<bytes.length) {
+        if(calls==maximum) { return false; }
+        let wanted:i32=bytes.length-sent; if(wanted>1024) { wanted=1024; } calls+=1;
+        let written=sink.write(bytes.values,bytes.start+sent,wanted);
+        if(written.is_err()) { if(core::io::is_interrupted(written.unwrap_err())) { continue; } return false; }
+        let count=written.unwrap(); if(count<=0 || count>wanted) { return false; } sent+=count;
+    }
+    return true;
+}
+fn report(status:i32) -> i32 { write(literal("parallel_checksums: operation failed\n",37),2,8); return status; }
+fn help() -> i32 {
+    if(!write(literal("Usage: parallel_checksums [--workers N] [--chunk BYTES]\nCompute CRC32 for consecutive binary stdin chunks and emit ordered CSV.\nOptions: -w/--workers 1..32 (default 4), -c/--chunk 1..1048576 (default 4096).\nLimits: 1 MiB input, 65536 chunks, 4 MiB staged output, 16384 input attempts.\nOutput: chunk,offset,length,crc32 with zero-based indices and decimal values.\nEmpty input emits only the header. A final short chunk is included.\nAll work is joined and output staged before publication; output errors may leave a prefix.\nThread creation failure falls back to fewer workers. Unresolved join failure terminates.\nSole --help or -h bypasses input.\n",645),1,64)) { return 5; }
+    return 0;
+}
+fn number(value:core::slice::View<u8>,maximum:u64) -> Result<i32,i32> {
+    if(value.length<1 || value.length>64) { return core::result::Err(2); }
+    let i:i32=0;
+    while(i<value.length) { let byte=value.values[value.start+i]; if(byte<48 || byte>57) { return core::result::Err(2); } i+=1; }
+    let parsed=core::decimal::parse_u64_range(value.values,value.start,value.length);
+    if(parsed.is_err()) { return core::result::Err(2); }
+    let count=parsed.unwrap(); if(count==0 || count>maximum) { return core::result::Err(2); }
+    return core::result::Ok(count as i32);
+}
+fn arguments(values:core::slice::View<core::slice::View<u8>>) -> Result<Options,i32> {
+    let options:Options=Options { workers:4,chunk:4096,workers_set:false,chunk_set:false };
+    let specs:[ext::cli::Spec;2] = [
+        ext::cli::Spec { id:1,long:literal("workers",7),short:119,arity:ext::cli::Arity::Required },
+        ext::cli::Spec { id:2,long:literal("chunk",5),short:99,arity:ext::cli::Arity::Required }
+    ];
+    let created=ext::cli::parser(values,core::slice::view(specs,2).unwrap(),ext::cli::Ordering::Intermixed);
+    if(created.is_err()) { return core::result::Err(2); } let parser=created.unwrap();
+    while(true) {
+        let found=parser.next(); if(found.is_err()) { return core::result::Err(2); }
+        let event=found.unwrap(); if(event.is_none()) { break; }
+        let option:core::option::Option<ext::cli::Occurrence> = match(event.unwrap()) {
+            ext::cli::Event::Option(value) -> core::option::Some(value), _ -> core::option::None()
+        };
+        if(option.is_none()) { return core::result::Err(2); } let item=option.unwrap();
+        let limit:u64=1048576; if(item.id==1) { limit=32; }
+        let parsed=number(item.value.unwrap().bytes,limit);
+        if(parsed.is_err()) { return core::result::Err(2); }
+        if(item.id==1) {
+            if(options.workers_set) { return core::result::Err(2); }
+            options.workers=parsed.unwrap(); options.workers_set=true;
+        } else {
+            if(item.id!=2 || options.chunk_set) { return core::result::Err(2); }
+            options.chunk=parsed.unwrap(); options.chunk_set=true;
+        }
+    }
+    return core::result::Ok(options);
+}
+fn input_status(error:alloc::io::ReadError) -> i32 {
+    return match(error) {
+        alloc::io::ReadError::Storage(cause) -> match(cause) { alloc::vec::Error::AllocationFailed -> 4, _ -> 2 },
+        alloc::io::ReadError::Text(cause) -> match(cause) { alloc::string::Error::AllocationFailed -> 4, _ -> 2 },
+        alloc::io::ReadError::Io(cause) -> match(cause) { core::io::Error::AllocationFailed -> 4, _ -> 3 },
+        _ -> 2
+    };
+}
+fn append(output:&alloc::io::Buffer,bytes:[u8],start:i32,count:i32) -> i32 {
+    let saved=output.write(bytes,start,count);
+    if(saved.is_err()) { return match(saved.unwrap_err()) { core::io::Error::AllocationFailed -> 4,core::io::Error::LimitExceeded -> 2,_ -> 3 }; }
+    if(saved.unwrap()!=count) { return 3; } return 0;
+}
+fn decimal(output:&alloc::io::Buffer,value:u64,last:bool) -> i32 {
+    let scratch:[u8;20]=[0;20]; let formatted=core::decimal::format_u64(scratch,0,20,value);
+    if(formatted.is_err()) { return 3; }
+    let status=append(output,scratch,0,formatted.unwrap()); if(status!=0) { return status; }
+    let separator:[u8;1]=[44]; if(last) { separator[0]=10; }
+    return append(output,separator,0,1);
+}
+fn stage(input:[u8],length:i32,options:&Options,output:&alloc::io::Buffer) -> i32 {
+    let count:i32=0; if(length>0) { count=(length-1)/options.chunk+1; }
+    if(count>65536) { return 2; }
+    let header=literal("chunk,offset,length,crc32\n",26);
+    let status=append(output,header.values,header.start,header.length);
+    if(status!=0 || count==0) { return status; }
+    let chunk_size:usize=core::mem::size_of<Chunk>(); let check_size:usize=core::mem::size_of<u32>();
+    if(chunk_size==0 || check_size==0 || chunk_size>2147483647/(count as usize) || check_size>2147483647/(count as usize)) { return 3; }
+    let chunk_bytes:usize=chunk_size*(count as usize); let check_bytes:usize=check_size*(count as usize);
+    let chunk_storage:ptr=alloc::allocator::alloc(chunk_bytes,8); if(chunk_storage==0) { return 4; }
+    let check_storage:ptr=alloc::allocator::alloc(check_bytes,8);
+    if(check_storage==0) { alloc::allocator::dealloc(chunk_storage,chunk_bytes,8); return 4; }
+    let chunks:std::parallel::Shared<Chunk> = std::parallel::Shared { storage:chunk_storage,length:count };
+    let checks:std::parallel::Shared<u32> = std::parallel::Shared { storage:check_storage,length:count };
+    let descriptors=chunks.view(); let sums=checks.view(); let index:i32=0;
+    while(index<count) {
+        let offset:i32=index*options.chunk; let amount:i32=length-offset; if(amount>options.chunk) { amount=options.chunk; }
+        descriptors[index]=Chunk { bytes:input,offset:offset,length:amount }; sums[index]=0; index+=1;
+    }
+    // map returns only after every started thread has joined. A join failure
+    // terminates inside pool; it must not return into this backing cleanup.
+    let mapped=std::pool::map<Chunk,u32,Crc32>(options.workers,chunks,checks,Crc32 { unused:0 },1,checksum_worker);
+    if(mapped.is_err()) { status=match(mapped.unwrap_err()) { std::pool::Error::AllocationFailed -> 4,_ -> 3 }; }
+    else { if(mapped.unwrap()!=count) { status=3; } }
+    index=0;
+    while(status==0 && index<count) {
+        let chunk=descriptors[index];
+        status=decimal(output,index as u64,false);
+        if(status==0) { status=decimal(output,chunk.offset as u64,false); }
+        if(status==0) { status=decimal(output,chunk.length as u64,false); }
+        if(status==0) { status=decimal(output,sums[index] as u64,true); }
+        index+=1;
+    }
+    alloc::allocator::dealloc(check_storage,check_bytes,8);
+    alloc::allocator::dealloc(chunk_storage,chunk_bytes,8);
+    return status;
+}
+fn run(options:&Options) -> i32 {
+    let source=std::stream::stdin();
+    let received=alloc::io::read_to_end<std::stream::Descriptor>(source.borrow(),alloc::io::ReadLimits { max_bytes:1048576,max_calls:16384 });
+    if(received.is_err()) { let failure=received.unwrap_err(); let status=input_status(failure.cause); failure.destroy(); return status; }
+    let input=received.unwrap(); let created=alloc::io::with_limit(4194304);
+    if(created.is_err()) { input.destroy(); return match(created.unwrap_err()) { core::io::Error::AllocationFailed -> 4,_ -> 3 }; }
+    let output=created.unwrap(); let status=stage(input.as_slice(),input.len(),options,output.borrow());
+    // Thread-visible input and scratch are retired before stdout publication.
+    input.destroy();
+    if(status==0 && !write(core::slice::view(output.as_bytes(),output.len()).unwrap(),1,8192)) { status=5; }
+    output.destroy(); return status;
+}
+fn main() -> i32 {
+    if(std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return report(3); }
+    let captured=std::args::snapshot(1,8,512);
+    if(captured.is_err()) { return report(match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4,std::args::Error::HostRead(index) -> 3,_ -> 2 }); }
+    let owner=captured.unwrap(); let values=owner.as_view(); let helping:bool=false;
+    if(values.length==1) { let value=values.values[values.start]; helping=equal(value,literal("--help",6)) || equal(value,literal("-h",2)); }
+    if(helping) { owner.destroy(); let status=help(); if(status!=0) { return report(status); } return 0; }
+    let parsed=arguments(values); owner.destroy();
+    if(parsed.is_err()) { return report(parsed.unwrap_err()); }
+    let options=parsed.unwrap(); let status=run(options.borrow()); if(status!=0) { return report(status); } return 0;
+}

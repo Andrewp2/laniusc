@@ -21,11 +21,12 @@
 //                   a plain receiver (no lost wake)
 // Build: laniusc --native-link --native-library atomic --stdlib-root stdlib
 module app::main;
+import alloc::vec;
 import core::mem;
 import core::result;
 import std::channel;
 import std::io;
-import std::pthread;
+import std::thread;
 import std::sync;
 
 const ITEMS: i64 = 50000;
@@ -33,6 +34,14 @@ const PRODUCERS: i32 = 4;
 const CONSUMERS: i32 = 4;
 
 struct Item { key: i64, tag: i32 }
+
+// The vector holds the single join authority. Persist successful retirement.
+fn join_at(owners: &alloc::vec::Vec<std::thread::Thread>, index: i32) -> ptr {
+    let thread: std::thread::Thread = owners.at(index);
+    let result: ptr = thread.join().unwrap();
+    owners.set(index, thread).unwrap();
+    return result;
+}
 
 fn get(at: ptr, word: i32) -> i64 { let v: [i64] = core::mem::typed_slice_from_raw_parts<i64>(at + (word as usize) * 8, 1); return v[0]; }
 fn set(at: ptr, word: i32, value: i64) { let v: [i64] = core::mem::typed_slice_from_raw_parts<i64>(at + (word as usize) * 8, 1); v[0] = value; }
@@ -153,7 +162,7 @@ fn ring_single(score: &Score) {
 fn ring_mpmc(score: &Score, region: &std::sync::Region) {
     let ring: std::channel::Ring<i64> = std::channel::ring<i64>(64, PRODUCERS, CONSUMERS).unwrap();
     let tasks: ptr = region.allocate(((PRODUCERS + CONSUMERS) as usize) * 128).unwrap();
-    let ids: ptr = region.allocate(((PRODUCERS + CONSUMERS) as usize) * 8).unwrap();
+    let owners: alloc::vec::Vec<std::thread::Thread> = alloc::vec::with_capacity<std::thread::Thread>(PRODUCERS + CONSUMERS).unwrap();
     let t: i32 = 0;
     while (t < PRODUCERS + CONSUMERS) {
         let task: ptr = tasks + (t as usize) * 128;
@@ -161,12 +170,13 @@ fn ring_mpmc(score: &Score, region: &std::sync::Region) {
         let w: i32 = 2; while (w < 16) { set(task, w, 0); w += 1; }
         let entry: ptr = ring_consumer;
         if (t < PRODUCERS) { entry = ring_producer; }
-        let thread: std::pthread::Thread = std::pthread::spawn(entry, task).unwrap();
-        set(ids, t, thread.id() as i64);
+        let thread: std::thread::Thread = std::thread::spawn(entry, task).unwrap();
+        owners.try_push(thread).unwrap();
         t += 1;
     }
     t = 0;
-    while (t < PRODUCERS + CONSUMERS) { std::pthread::join_id(get(ids, t) as u64).unwrap(); t += 1; }
+    while (t < PRODUCERS + CONSUMERS) { join_at(owners.borrow(), t); t += 1; }
+    owners.destroy();
     let count: i64 = 0; let sum: i64 = 0; let order: i64 = 0; let busy: i64 = 0;
     t = PRODUCERS;
     while (t < PRODUCERS + CONSUMERS) {
@@ -188,7 +198,7 @@ fn ring_records(score: &Score, region: &std::sync::Region) {
     let ring: std::channel::Ring<Item> = std::channel::ring<Item>(16, 1, 1).unwrap();
     let task: ptr = region.allocate(64).unwrap();
     set_ptr(task, 0, ring.handle());
-    let thread: std::pthread::Thread = std::pthread::spawn(record_producer, task).unwrap();
+    let thread: std::thread::Thread = std::thread::spawn(record_producer, task).unwrap();
     let good: i64 = 0; let i: i64 = 0;
     while (true) {
         let got: core::result::Result<Item, std::channel::RecvError> = ring.recv();
@@ -197,7 +207,7 @@ fn ring_records(score: &Score, region: &std::sync::Region) {
         if (item.key == i * 3 && item.tag == (i % 1000) as i32) { good += 1; }
         i += 1;
     }
-    thread.join();
+    thread.join().unwrap();
     report(score, "ring.records", good, ITEMS);
     ring.destroy();
 }
@@ -205,13 +215,13 @@ fn ring_records(score: &Score, region: &std::sync::Region) {
 fn mpsc_checks(score: &Score, region: &std::sync::Region) {
     let queue: std::channel::Mpsc<i64> = std::channel::mpsc<i64>(PRODUCERS).unwrap();
     let tasks: ptr = region.allocate((PRODUCERS as usize) * 64).unwrap();
-    let ids: ptr = region.allocate((PRODUCERS as usize) * 8).unwrap();
+    let owners: alloc::vec::Vec<std::thread::Thread> = alloc::vec::with_capacity<std::thread::Thread>(PRODUCERS).unwrap();
     let t: i32 = 0;
     while (t < PRODUCERS) {
         let task: ptr = tasks + (t as usize) * 64;
         set_ptr(task, 0, queue.handle()); set(task, 1, t as i64);
-        let thread: std::pthread::Thread = std::pthread::spawn(mpsc_producer, task).unwrap();
-        set(ids, t, thread.id() as i64);
+        let thread: std::thread::Thread = std::thread::spawn(mpsc_producer, task).unwrap();
+        owners.try_push(thread).unwrap();
         t += 1;
     }
     let last: [i64; 4] = [-1; 4];
@@ -227,7 +237,8 @@ fn mpsc_checks(score: &Score, region: &std::sync::Region) {
         count += 1; sum += v;
     }
     t = 0;
-    while (t < PRODUCERS) { std::pthread::join_id(get(ids, t) as u64).unwrap(); t += 1; }
+    while (t < PRODUCERS) { join_at(owners.borrow(), t); t += 1; }
+    owners.destroy();
     let want: i64 = 0; let p: i64 = 0;
     while (p < (PRODUCERS as i64)) { want += p * 4294967296 * ITEMS + ITEMS * (ITEMS - 1) / 2; p += 1; }
     report(score, "mpsc.fanin.count", count, ITEMS * (PRODUCERS as i64));
@@ -355,14 +366,14 @@ fn drain_checks(score: &Score, region: &std::sync::Region) {
     while (i < 8) { ring.send(i * 3).unwrap(); i += 1; }
     let task: ptr = region.allocate(64).unwrap();
     set_ptr(task, 0, ring.handle()); set(task, 1, 0);
-    let thread: std::pthread::Thread = std::pthread::spawn(blocked_sender, task).unwrap();
+    let thread: std::thread::Thread = std::thread::spawn(blocked_sender, task).unwrap();
     pause_ms(20);
     report(score, "drain.sender_blocked", get(task, 1), 0);
     let out: [i64; 5] = [0; 5];
     let first: i32 = ring.drain(out, 5);
     report(score, "drain.first", first as i64, 5);
     report(score, "drain.first_order", flag(out[0] == 0 && out[4] == 12), 1);
-    thread.join();
+    thread.join().unwrap();
     report(score, "drain.sender_woken", get(task, 1), 1);
     let second: i32 = ring.drain(out, 5);
     report(score, "drain.second", second as i64, 4);
@@ -400,10 +411,10 @@ fn select_checks(score: &Score, region: &std::sync::Region) {
     let task: ptr = region.allocate(64).unwrap();
     set_ptr(task, 0, queue.handle()); set(task, 2, 40);
     start = now_ms();
-    let late: std::pthread::Thread = std::pthread::spawn(late_item, task).unwrap();
+    let late: std::thread::Thread = std::thread::spawn(late_item, task).unwrap();
     report(score, "select.woken", second_key(select_pair(r, q)), 4242);
     report(score, "select.woken_waited", flag(now_ms() - start >= 39), 1);
-    late.join();
+    late.join().unwrap();
 
     // One side closes while the other still runs; then both are closed.
     queue.send(Item { key: 1, tag: 0 }).unwrap();
@@ -427,8 +438,8 @@ fn select_checks(score: &Score, region: &std::sync::Region) {
     let tasks: ptr = region.allocate(128).unwrap();
     set_ptr(tasks, 0, values.handle()); set(tasks, 1, ITEMS);
     set_ptr(tasks + 64, 0, items.handle()); set(tasks + 64, 1, ITEMS);
-    let one: std::pthread::Thread = std::pthread::spawn(value_producer, tasks).unwrap();
-    let two: std::pthread::Thread = std::pthread::spawn(item_producer, tasks + 64).unwrap();
+    let one: std::thread::Thread = std::thread::spawn(value_producer, tasks).unwrap();
+    let two: std::thread::Thread = std::thread::spawn(item_producer, tasks + 64).unwrap();
     let firsts: i64 = 0; let seconds: i64 = 0; let sum: i64 = 0; let order: i64 = 0;
     let next_value: i64 = 0; let next_key: i64 = 0;
     while (true) {
@@ -446,7 +457,7 @@ fn select_checks(score: &Score, region: &std::sync::Region) {
             next_key = item.key + 1; seconds += 1; sum += item.key;
         }
     }
-    one.join(); two.join();
+    one.join().unwrap(); two.join().unwrap();
     report(score, "select.fanin.first", firsts, ITEMS);
     report(score, "select.fanin.second", seconds, ITEMS);
     report(score, "select.fanin.sum_ok", flag(sum == ITEMS * (ITEMS - 1)), 1);
@@ -457,7 +468,7 @@ fn select_checks(score: &Score, region: &std::sync::Region) {
     let x: std::channel::Ring<i64> = std::channel::ring<i64>(16, 2, 3).unwrap();
     let y: std::channel::Ring<i64> = std::channel::ring<i64>(16, 2, 2).unwrap();
     let crew: ptr = region.allocate(7 * 64).unwrap();
-    let ids: ptr = region.allocate(7 * 8).unwrap();
+    let owners: alloc::vec::Vec<std::thread::Thread> = alloc::vec::with_capacity<std::thread::Thread>(7).unwrap();
     let t: i32 = 0;
     while (t < 7) {
         let at: ptr = crew + (t as usize) * 64;
@@ -471,12 +482,13 @@ fn select_checks(score: &Score, region: &std::sync::Region) {
             set_ptr(at, 0, x.handle()); set_ptr(at, 1, y.handle());
             if (t == 6) { set(at, 4, 1); }
         }
-        let thread: std::pthread::Thread = std::pthread::spawn(entry, at).unwrap();
-        set(ids, t, thread.id() as i64);
+        let thread: std::thread::Thread = std::thread::spawn(entry, at).unwrap();
+        owners.try_push(thread).unwrap();
         t += 1;
     }
     t = 0;
-    while (t < 7) { std::pthread::join_id(get(ids, t) as u64).unwrap(); t += 1; }
+    while (t < 7) { join_at(owners.borrow(), t); t += 1; }
+    owners.destroy();
     let count: i64 = 0; let total: i64 = 0;
     t = 4;
     while (t < 7) { count += get(crew + (t as usize) * 64, 2); total += get(crew + (t as usize) * 64, 3); t += 1; }

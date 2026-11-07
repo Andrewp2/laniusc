@@ -291,15 +291,18 @@ phases.
   the allocator array. Before this change it failed, because the readable
   assembly still had the old `MAP_32BIT` flags.
 - [`thread_alloc.lani`](../tests/fixtures/stdlib_execution/concurrency/thread_alloc.lani)
-  runs the allocator under `std::pthread`:
+  now runs the allocator under canonical `std::thread`. The receipt below
+  belongs to the earlier thread implementation; the owner-migrated fixture's
+  current-source regression is pending:
   - 1, 4 and 16 threads each run 20,000 tagged alloc, realloc and free steps;
   - two producers pass 40,000 tagged blocks through a Condvar queue to two
     consumers, which verify and free them while the main thread also
     allocates;
   - 1,000 sequential spawn/join pairs whose bodies allocate.
 
-  Ten runs pass. `tests/stdlib_concurrency_execution.rs` registers it next to
-  `threads.lani`; that Rust test has not been run, but the program was built
+  Ten original runs passed. `tests/stdlib_concurrency_execution.rs` registers
+  it as `thread_bodies_allocate_and_free_across_threads`, next to
+  `threads.lani`; that original Rust test was not run, but the program was built
   with `--native-link --native-library atomic` and checked by hand. The
   emitted runtime matches the table (`raw_host_width_tables.py --elf`).
 - The strace and ptrace expectations were updated by reasoning only and have

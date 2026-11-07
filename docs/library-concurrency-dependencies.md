@@ -1,13 +1,21 @@
 # Concurrency admission dependencies
 
-This is a source and native-ABI audit of the current Linux x86_64/glibc
-compiler. It proposes the next executable contracts for the full library;
-bounded downloader scheduling does not complete threads or synchronization.
-No compiler, runtime, IR or proof changes are made here. All seven focused
-admission controls have run with unchanged compiler sources at
-`4a7a9c5ef02f987ea449bd1c82c494a31cb34b61`: three positive controls execute and
-four negative controls reject. These receipts establish no worker execution
-or compare-exchange support.
+This document preserves a Linux x86_64/glibc admission audit and its pinned
+receipts. All seven original controls ran with unchanged compiler sources at
+`4a7a9c5ef02f987ea449bd1c82c494a31cb34b61`: three positive controls executed and
+four negative controls rejected. Those receipts establish no worker execution
+or compare-exchange support; they are not the current library inventory.
+
+[Native threads](stdlib-threads.md), [atomics and synchronization](stdlib-concurrency.md)
+subsequently acquired executable source implementations. Canonical
+`std::thread` now replaces the unbound declarations and the separate former
+module. Its ordinary-source admission gate passes (one test, 4.12 s); the
+[revised ownership and failure contracts](stdlib-thread-lifecycle.md) still
+await native lifecycle acceptance. The direct compiler service-8 catalog
+remains unbound independently of this native-linked glibc source library.
+Raw callback signatures, caller lifetimes and inter-thread data-race
+prevention are still not enforced by the language. No compiler, runtime, IR
+or proof changes are made by this documentation update.
 
 ## What already exists
 
@@ -20,12 +28,12 @@ the argument is a function pointer with a checked calling convention.
 
 | Boundary | Current source evidence | Consequence |
 | --- | --- | --- |
-| Thread API | [`std::thread`](../stdlib/std/thread.lani) explicitly marks service 8 unavailable; `spawn`, `join`, `yield_now` and `current_id` are runtime externs | Type-checkable metadata does not provide executable operations |
+| Thread API | [`std::thread`](../stdlib/std/thread.lani) contains ordinary Lanius functions over glibc and Linux bindings; the old unbound source declarations are removed | Canonical-module admission passes, while revised lifecycle acceptance is pending. Native linking is required; direct service 8 remains separate and unavailable |
 | Callable definitions and values | A non-generic free function named as a value is the `ptr` address of a System V entry that loads R15 ([C callbacks](language-ergonomics.md#c-callbacks)); `tests/fixtures/native_c_callback/pthread.lani` starts and joins a pthread running a Lanius `(ptr) -> ptr` worker | Callback entry exists; there is still no function type or indirect call from Lanius |
-| Checked calls | [`00_calls.slang`](../shaders/type_checker/semantic/artifact/00_calls.slang) resolves function/dependency/intrinsic/variant declaration targets; native metadata in [`semantic_interface.rs`](../crates/laniusc-compiler/src/compiler/semantic_interface.rs) carries scalar signatures | A direct C call is established; arbitrary indirect calls and callback entry are not |
+| Checked calls | [`00_calls.slang`](../shaders/type_checker/semantic/artifact/00_calls.slang) resolves function/dependency/intrinsic/variant declaration targets; native metadata in [`semantic_interface.rs`](../crates/laniusc-compiler/src/compiler/semantic_interface.rs) carries scalar signatures | Direct C calls and supported non-generic callback entries exist; arbitrary typed indirect calls remain separate |
 | Memory effects | [`opt_ir_memory_effects`](../shaders/codegen/optimization_ir.slang) treats every call as an opaque memory read and write | Existing calls offer a plausible conservative foundation for native atomics; they are not yet a documented inter-thread memory model |
 | Process context | [`crt_entry.s`](../shaders/codegen/lir/x86/crt_entry.s) reconstructs the argument/environment vector at the fixed address `0x100000000000`, keeps it in R15 and unmaps it when language main returns; a C callback entry loads R15 from that address | Workers must finish before main returns, while the vector is mapped. A worker or callback must establish its own valid R15 context and retain the vector for its entire use. The [runtime allocator](runtime-allocator.md) keeps its state page at `[R15 + 4]` and gives each thread (keyed by `%fs:0`) its own pool, so it is thread-safe across the shared vector |
-| Termination | [`runtime_abi.slang`](../shaders/codegen/lir/x86/runtime_abi.slang) uses Linux syscall 231 (exit_group) for runtime exit and allocation failure, so an exit or allocation failure on any thread ends the whole process | Resolved for std::pthread: `thread_exit.lani` checks that an exit on a worker thread ends the process with its status |
+| Termination | [`runtime_abi.slang`](../shaders/codegen/lir/x86/runtime_abi.slang) uses Linux syscall 231 (exit_group) for runtime exit and allocation failure, so an exit or allocation failure on any thread ends the whole process | The earlier `thread_exit.lani` receipt established process-wide exit; its canonical `std::thread` regression is pending. `core::panic` separately raises SIGILL through `assert(false)` |
 
 The compiler's GPU-side Slang atomics synchronize compiler workgroups. They
 do not expose CPU atomic values or a source memory-order contract.
@@ -94,15 +102,17 @@ an i32 handle, process ID or generally portable representation.
 `pthread_self` and `pthread_equal` have usable current scalar signatures.
 The initial-thread control now compiles and executes, but produces no worker.
 `pthread_create` takes a Lanius `fn worker(arg: ptr) -> ptr` named as a
-value: its address is a checked System V entry that establishes R15 and calls
+value: its address is a generated System V entry that establishes R15 and calls
 the ordinary body ([C callbacks](language-ergonomics.md#c-callbacks)). The
 internal generated `__lanius_<library>_<unit>_<declaration>` ELF symbol is
 still not an entry contract.
 
-## Minimum complete ownership and ordering contract
+## Original ownership and ordering admission checklist
 
-The following are prerequisites for publishing an executable thread/atomic
-library. They are proposed acceptance conditions, not current guarantees.
+The original audit proposed the following acceptance conditions. Later source
+libraries satisfy parts of them while retaining explicit raw-signature and
+manual-owner preconditions; this checklist does not supersede their dedicated
+current contracts or assert that every condition is compiler-enforced.
 
 1. **Checked entry authority.** Admit a monomorphic C callback definition and
    a typed entry capability, or a compiler-checked static entry registry.
@@ -168,7 +178,7 @@ from a libatomic symbol name.
 
 Sources are in
 [`concurrency_admission`](../tests/fixtures/stdlib_compiler_state/concurrency_admission/REPRODUCTION.md).
-The parent runner compiled every source with the current GPU compiler. Each
+The parent runner compiled every source with the pinned audit compiler. Each
 positive executable passed linked-ELF validation and exited zero with empty
 stdout and stderr. The observed outcomes are:
 
@@ -190,15 +200,16 @@ describe focused compiler invocations, not atomic or thread throughput.
 
 The legacy thread diagnostic's decisive note is
 `native declaration [0, 0, 43] has no Lanius definition or checked foreign binding`.
-This agrees with the explicitly unbound service 8. Its generic
-`source-pack artifact store failed` wrapper and remove-artifacts help do not
-demonstrate a disk/cache failure; deleting artifacts does not supply a thread
-binding.
+At that baseline, this agreed with the unbound service-8 source declarations.
+Its generic `source-pack artifact store failed` wrapper and remove-artifacts
+help did not demonstrate a disk/cache failure. The direct catalog remains
+unbound, but the current ordinary `std::thread` implementation does not depend
+on those declarations; deleting artifacts is not a binding implementation.
 
-The next compiler work is checked Boolean transport and callback/worker entry,
-followed by the runtime ownership/order admission above. The paired controls
-now isolate those admissions from working direct and scalar calls. Subsequent
-bounded native tests should cover full-width CAS success/failure and expected
+The audit originally identified checked Boolean transport and callback/worker
+entry, followed by ownership/order admission. Callback entry and source atomic
+operations have since gained their own evidence; the paired controls above
+retain their pinned scope. The original proposed native coverage included full-width CAS success/failure and expected
 updates, two-worker fetch-add uniqueness, release/acquire message publication,
 worker errno/TLS isolation and process argument access, imported entries, and
 exact owner cleanup on spawn failure, normal join and recovery. Native pthread
@@ -206,7 +217,8 @@ oracles/observers should check entry ABI, lifetime and cleanup independently.
 Use explicit operation counts and external process timeouts; a finite stress
 run is not a proof of memory ordering, race freedom or liveness.
 
-These controls establish neither concurrent memory ordering nor executable
-Lanius callbacks, workers or compare-exchange. The earlier
+These original controls alone establish neither concurrent memory ordering nor
+executable Lanius callbacks, workers or compare-exchange. Current evidence is
+recorded separately in the native-thread and concurrency guides. The earlier
 [native integration prerequisites](library-native-integration-prerequisites.md)
 and [full library roadmap](library-roadmap.md) remain applicable.

@@ -11,7 +11,7 @@ import core::result;
 import core::slice;
 import std::args;
 import std::process;
-import std::pthread;
+import std::thread;
 
 fn worker(arg: ptr) -> ptr {
     let mode: [u8] = core::mem::typed_slice_from_raw_parts<u8>(arg, 1);
@@ -32,7 +32,7 @@ fn main() -> i32 {
     let slot: ptr = core::mem::i32_array_data_ptr(cell);
     let byte: [u8] = core::mem::typed_slice_from_raw_parts<u8>(slot, 1);
     byte[0] = mode.values[mode.start];
-    let thread: std::pthread::Thread = std::pthread::spawn(worker, slot).unwrap();
-    thread.join();
+    let thread: std::thread::Thread = std::thread::spawn(worker, slot).unwrap();
+    thread.join().unwrap();
     return 0;
 }
