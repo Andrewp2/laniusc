@@ -86,7 +86,13 @@ def benchmark_edit_variants(
     raise ValueError(f"could not identify a stable benchmark edit in {project}")
 
 
-def daemon_commands(repo: Path, project: Path, target: str, samples: int) -> dict:
+def daemon_commands(
+    repo: Path,
+    project: Path,
+    target: str,
+    samples: int,
+    laniusc: str = "target/release/laniusc",
+) -> dict:
     relative = project.relative_to(repo)
     suffix = "wasm" if target == "wasm" else ""
     output_name = "matrix-artifact" + (f".{suffix}" if suffix else "")
@@ -143,7 +149,7 @@ def daemon_commands(repo: Path, project: Path, target: str, samples: int) -> dic
     return {
         "lanius": {
             "daemon_start": [
-                "target/release/laniusc",
+                laniusc,
                 "daemon",
                 "--stdio",
                 "--backend",
@@ -280,6 +286,11 @@ def main() -> int:
     parser.add_argument("--samples", type=int, default=20, help="warm samples per cell")
     parser.add_argument("--target", choices=("x86_64", "wasm"), default="x86_64")
     parser.add_argument("--output", required=True)
+    parser.add_argument(
+        "--laniusc",
+        default="target/release/laniusc",
+        help="laniusc executable the daemon runs (relative to the repository)",
+    )
     parser.add_argument("--startup-timeout", type=float, default=900.0)
     parser.add_argument("--job-timeout", type=float, default=900.0)
     args = parser.parse_args()
@@ -296,7 +307,7 @@ def main() -> int:
         if not manifest_path.is_file():
             raise ValueError(f"missing generated project manifest {manifest_path}")
         manifest = json.loads(manifest_path.read_text())
-        commands = daemon_commands(repo, project, args.target, args.samples)
+        commands = daemon_commands(repo, project, args.target, args.samples, args.laniusc)
         commands_path = output.parent / f"commands-{file_count}-{args.target}.json"
         transcript_path = output.parent / f"transcript-{file_count}-{args.target}.json"
         commands_path.write_text(json.dumps(commands, indent=2, sort_keys=True) + "\n")

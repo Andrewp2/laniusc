@@ -1,18 +1,8 @@
-// Builds all four delimiter minimum trees in one hierarchy traversal.
+// Builds all four delimiter minimum trees in one hierarchy traversal, eight
+// levels per dispatch (tree/heap_levels.slang).
 
-struct Params
-{
-    uint n_blocks;
-    uint leaf_base;
-    uint start_node;
-    uint node_count;
-    uint mode;
-    uint _pad0;
-    uint _pad1;
-    uint _pad2;
-};
-
-ConstantBuffer<Params> gMinTree;
+#include "../../tree/heap_params.slang"
+ConstantBuffer<HeapTreeParams> gMinTree;
 
 StructuredBuffer<int> paren_match_block_min;
 StructuredBuffer<int> brace_match_block_min;
@@ -23,14 +13,7 @@ RWStructuredBuffer<int> brace_match_min_tree;
 RWStructuredBuffer<int> bracket_match_min_tree;
 RWStructuredBuffer<int> angle_match_min_tree;
 
-static const uint WG_SIZE = 256u;
-static const uint MAX_GROUPS_X = 65535u;
 static const int INF = 2147483647;
-
-uint linear_thread_id(uint3 dtid)
-{
-    return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
-}
 
 void store_tree(uint node, int4 value)
 {
@@ -49,27 +32,18 @@ int4 load_tree(uint node)
         angle_match_min_tree[node]);
 }
 
+#define TREE_PARAMS gMinTree
+#define TREE_VALUE int4
+#define TREE_IDENTITY int4(INF, INF, INF, INF)
+#define TREE_COMBINE(a, b) min(a, b)
+#define TREE_LEAF(i) int4(paren_match_block_min[i], brace_match_block_min[i], bracket_match_block_min[i], angle_match_block_min[i])
+#define TREE_LOAD(node) load_tree(node)
+#define TREE_STORE(node, v) store_tree(node, v)
+#include "../../tree/heap_levels.slang"
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
 {
-    uint i = linear_thread_id(dtid);
-    if (i >= gMinTree.node_count)
-        return;
-
-    if (gMinTree.mode == 0u)
-    {
-        int4 value = i < gMinTree.n_blocks
-            ? int4(
-                paren_match_block_min[i],
-                brace_match_block_min[i],
-                bracket_match_block_min[i],
-                angle_match_block_min[i])
-            : int4(INF, INF, INF, INF);
-        store_tree(gMinTree.leaf_base + i, value);
-        return;
-    }
-
-    uint node = gMinTree.start_node + i;
-    store_tree(node, min(load_tree(node * 2u), load_tree(node * 2u + 1u)));
+    heap_build(gid, ltid);
 }

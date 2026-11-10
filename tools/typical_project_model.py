@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 import random
 from dataclasses import dataclass
@@ -23,7 +24,15 @@ from typical_project_constructs import (
 )
 
 
-LANGUAGES = ("c", "cpp", "rust", "zig", "moonbit", "lanius")
+LANGUAGES = ("c", "cpp", "rust", "zig", "moonbit", "d", "go", "v", "ts", "lanius")
+# Renderers kept in their own modules (they import this one, so they are
+# loaded on first use): language -> (module, function).
+EXTERNAL_RENDERERS = {
+    "d": ("typical_project_d", "render_d_project"),
+    "go": ("typical_project_go", "render_go_project"),
+    "v": ("typical_project_v", "render_v_project"),
+    "ts": ("typical_project_ts", "render_ts_project"),
+}
 # MoonBit module and package names for the generated moon project.
 MOONBIT_MODULE = "lanius/typical"
 MOONBIT_ENTRY_PACKAGE = "main"
@@ -414,6 +423,9 @@ def render_project(language: str, project: TypicalProject) -> dict[str, str]:
         return render_zig_project(project)
     if language == "moonbit":
         return render_moonbit_project(project)
+    if language in EXTERNAL_RENDERERS:
+        module_name, function_name = EXTERNAL_RENDERERS[language]
+        return getattr(importlib.import_module(module_name), function_name)(project)
     return render_lanius_project(project)
 
 
@@ -687,13 +699,21 @@ def render_zig_project(project: TypicalProject) -> dict[str, str]:
         (set(project.roots) - {project.entry_index}) | set(dependency_indices(entry))
     )
     imports = '''const std = @import("std");
-const c = @cImport({
-    @cInclude("stdio.h");
-    @cInclude("stdlib.h");
-    @cInclude("unistd.h");
-    @cInclude("time.h");
-    @cInclude("sys/random.h");
-});
+// libc declarations (Zig 0.17 removed @cImport; these match glibc on x86_64).
+const c = struct {
+    pub const FILE = opaque {};
+    pub const struct_timespec = extern struct { tv_sec: c_long, tv_nsec: c_long };
+    pub const CLOCK_REALTIME: c_int = 0;
+    pub extern "c" fn printf(format: [*:0]const u8, ...) c_int;
+    pub extern "c" fn fflush(stream: ?*FILE) c_int;
+    pub extern "c" fn malloc(size: usize) ?*anyopaque;
+    pub extern "c" fn free(pointer: ?*anyopaque) void;
+    pub extern "c" fn getcwd(buffer: [*]u8, size: usize) ?[*]u8;
+    pub extern "c" fn clock_gettime(clock: c_int, time: *struct_timespec) c_int;
+    pub extern "c" fn getrandom(buffer: *anyopaque, length: usize, flags: c_uint) isize;
+    pub extern "c" fn fopen(path: [*:0]const u8, mode: [*:0]const u8) ?*FILE;
+    pub extern "c" fn fclose(stream: *FILE) c_int;
+};
 ''' + "".join(
         f'const {project.modules[index].name} = @import("{project.modules[index].name}.zig");\n'
         for index in imported_indices

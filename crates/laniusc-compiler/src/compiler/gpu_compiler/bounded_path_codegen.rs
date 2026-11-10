@@ -269,7 +269,8 @@ impl<'gpu> GpuCompiler<'gpu> {
             Some(output) => ResidentSourcePackExecutor::with_output_file(self, target, output),
             None => ResidentSourcePackExecutor::new(self, target),
         }
-        .with_standard_library(source_pack.standard_library_id);
+        .with_standard_library(source_pack.standard_library_id)
+        .with_frontend_units(&build_plan);
         execute_path_batched_link_build_async(source_pack, &build_plan, batch_limits, &mut executor)
             .await
             .map(|result| result.linked_output)

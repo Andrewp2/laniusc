@@ -39,6 +39,12 @@ pub(crate) struct CheckedUnitFacts {
     pub native_call_owners: Vec<CheckedCallOwner>,
     /// The GPU instance closure of an original unit (D1).
     pub instance_closure: super::generic_calls::CheckedInstanceClosure,
+    /// The unit's own GPU job proved it leaves nothing for the whole-program
+    /// trait solver (the `solver_demand` counters are all zero).
+    pub solver_closed: bool,
+    /// The unit is solver-closed and its caller asked to skip every other
+    /// fact in that case: the vectors above are empty, not read.
+    pub facts_elided: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

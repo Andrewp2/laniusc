@@ -24,7 +24,8 @@ pub struct Params {
     pub start_node: u32,
     pub node_count: u32,
     pub mode: u32,
-    pub _pad0: u32,
+    /// Levels this dispatch builds above the one it reads.
+    pub levels: u32,
     pub _pad1: u32,
     pub _pad2: u32,
 }

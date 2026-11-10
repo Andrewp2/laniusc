@@ -372,6 +372,17 @@ fn wrap_literal_environment_with_depth(packet: &mut GpuPacket, depth: u32) -> [u
     panic!("fold fixture needs a literal constant environment binding");
 }
 
+/// Commits of the last solver attempt, by how each was decided: proven by
+/// its grid-wide audit lanes, or by its serial stage (PCA_GRID, PCA_SERIAL in
+/// proof_commit_audit.slang).
+pub(super) fn commit_audit_counts(gpu: &GpuProgramEvidence, packet: &GpuPacket) -> (u32, u32) {
+    let audit = kernels::commit_audit(&gpu.storage, &packet.proof).unwrap();
+    let raw = gpu.readback.read_regions(&gpu.device, &gpu.queue, &[
+        ReadbackRegion::from_buffer(&audit, 0, arena::byte_len(16).unwrap(), "commit audit header").unwrap(),
+    ], "commit audit header").unwrap();
+    let header = words(&raw[0]).unwrap();
+    (header[6], header[5])
+}
 fn assert_failed_prefixes(gpu: &GpuProgramEvidence, packet: &GpuPacket,
     error: &anyhow::Error, observation: &Observation) {
     let failure = error.downcast_ref::<EvidenceDispatchFailure>().expect("owned GPU admission receipt");
@@ -532,6 +543,8 @@ fn gpu_rejects_duplicate_equal_binding_spans_before_publication() {
     arm(&packet, FaultKind::DuplicateBindingSpan, None);
     let error = gpu.check(&mut packet).expect_err("aliased binding allocations must fail");
     assert_failed_prefixes(&gpu, &packet, &error, &observation(&packet));
+    // The audit lanes cannot prove an aliased cover; the serial stage reports it.
+    assert_ne!(commit_audit_counts(&gpu, &packet).1, 0, "the serial stage decides a failed audit");
     assert!(packet.packet_mut().is_err());
 }
 #[test]
@@ -544,6 +557,7 @@ fn gpu_rejects_orphan_substitution_before_publication() {
     arm(&packet, FaultKind::OrphanSubstitution, None);
     let error = gpu.check(&mut packet).expect_err("unowned substitution must fail");
     assert_failed_prefixes(&gpu, &packet, &error, &observation(&packet));
+    assert_ne!(commit_audit_counts(&gpu, &packet).1, 0, "the serial stage decides a failed audit");
     assert!(packet.packet_mut().is_err());
 }
 #[test]

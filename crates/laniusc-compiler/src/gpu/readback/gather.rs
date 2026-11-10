@@ -4,8 +4,9 @@
 //! rows. One buffer copy per row costs about 2 µs of encoding plus GPU time,
 //! so ~12k rows took ~22 ms of a warm 1 MB job. Instead, one dispatch per
 //! source buffer gathers the small rows into a dense image, and the page loop
-//! copies that image with a few coalesced copies. All dispatches of one
-//! readback share one compute pass.
+//! copies that image with a few coalesced copies. One dispatch gathers from up
+//! to eight source buffers, so a record's columns take one dispatch, and all
+//! dispatches of one readback share one compute pass.
 //!
 //! Word readbacks (`PagedReadback::read_words`) also take sets of rows of
 //! fixed-stride tables. Their records are written straight from the row
@@ -43,8 +44,11 @@ use crate::gpu::{
 const GATHER_SHADER: &str = "readback/gather_words";
 const GATHER_LABEL: &str = "readback.gather";
 const GATHER_PARAMS: &str = "gather_params";
-/// One `GatherParams` record: first region record, record count, padding.
-const PARAMS_BYTES: usize = 16;
+/// One `GatherParams` record: first region record, record count, two
+/// reserved words and the record ends of the eight source slots.
+const PARAMS_BYTES: usize = 48;
+/// Source buffers (`gather_source_N` in gather_words.slang) of one dispatch.
+const GATHER_SOURCES: usize = 8;
 /// Words of one region record: output word, source word, word count.
 const RECORD_WORDS: usize = 3;
 /// Below this many small regions, direct copies cost about as much as the
@@ -171,8 +175,8 @@ pub(super) struct GatheredWords<'a> {
     pub(super) dispatches: usize,
 }
 
-/// The gather dispatches of one readback: one per source window, each with
-/// the records of its regions.
+/// The gather dispatches of one readback: one per `GATHER_SOURCES` source
+/// windows, each with the records of its regions.
 struct GatherPlan<'a> {
     align: u64,
     max_window: u64,
@@ -422,18 +426,31 @@ impl GatherLease {
         let image_words = plan.image_words;
         let groups = plan.groups;
         let limits = device.limits();
-        // One run of region records per group, named by the group's params
-        // record.
+        // One dispatch per GATHER_SOURCES consecutive groups, whose region
+        // records are contiguous; its params record names their first record,
+        // their count and where each source slot's records end.
         let params_stride = PARAMS_BYTES
             .next_multiple_of(limits.min_uniform_buffer_offset_alignment.max(1) as usize);
         let record_bytes = groups.iter().map(|group| group.records.len()).sum::<usize>();
-        let mut params = vec![0u8; groups.len() * params_stride];
+        let batches = groups.chunks(GATHER_SOURCES).collect::<Vec<_>>();
+        let mut params = vec![0u8; batches.len() * params_stride];
         let mut first = 0u32;
-        for (slot, group) in groups.iter().enumerate() {
-            let count = (group.records.len() / (RECORD_WORDS * 4)) as u32;
-            let slot_params = &mut params[slot * params_stride..][..8];
+        for (slot, batch) in batches.iter().enumerate() {
+            let mut slot_ends = [0u32; GATHER_SOURCES];
+            let mut count = 0u32;
+            for (source, group) in batch.iter().enumerate() {
+                count += (group.records.len() / (RECORD_WORDS * 4)) as u32;
+                slot_ends[source] = count;
+            }
+            for end in &mut slot_ends[batch.len()..] {
+                *end = count;
+            }
+            let slot_params = &mut params[slot * params_stride..][..PARAMS_BYTES];
             slot_params[..4].copy_from_slice(&first.to_le_bytes());
-            slot_params[4..].copy_from_slice(&count.to_le_bytes());
+            slot_params[4..8].copy_from_slice(&count.to_le_bytes());
+            for (source, end) in slot_ends.iter().enumerate() {
+                slot_params[16 + source * 4..][..4].copy_from_slice(&end.to_le_bytes());
+            }
             first += count;
         }
 
@@ -471,30 +488,48 @@ impl GatherLease {
         let params_buffer = kernel.params.as_ref().expect("gather params buffer");
         // Create every bind group before recording, so an error leaves no
         // stamped dispatch in an encoder that is never submitted.
-        let mut dispatches = Vec::with_capacity(groups.len());
-        for (slot, group) in groups.iter().enumerate() {
-            let record_count = (group.records.len() / (RECORD_WORDS * 4)) as u32;
+        const SOURCE_BINDINGS: [&str; GATHER_SOURCES] = [
+            "gather_source_0",
+            "gather_source_1",
+            "gather_source_2",
+            "gather_source_3",
+            "gather_source_4",
+            "gather_source_5",
+            "gather_source_6",
+            "gather_source_7",
+        ];
+        let mut dispatches = Vec::with_capacity(batches.len());
+        for (slot, batch) in batches.iter().enumerate() {
+            let record_count = batch
+                .iter()
+                .map(|group| (group.records.len() / (RECORD_WORDS * 4)) as u32)
+                .sum::<u32>();
             let params = wgpu::BindingResource::Buffer(wgpu::BufferBinding {
                 buffer: &params_buffer.buffer,
                 offset: 0,
                 size: NonZeroU64::new(PARAMS_BYTES as u64),
             });
-            let source = wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                buffer: group.source,
-                offset: group.window.0,
-                size: NonZeroU64::new(group.window.1),
-            });
+            let mut bindings = vec![(GATHER_PARAMS, params)];
+            // Slots past the batch's last source repeat it; no record reads them.
+            for (source, name) in SOURCE_BINDINGS.iter().enumerate() {
+                let group = &batch[source.min(batch.len() - 1)];
+                bindings.push((
+                    *name,
+                    wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: group.source,
+                        offset: group.window.0,
+                        size: NonZeroU64::new(group.window.1),
+                    }),
+                ));
+            }
+            bindings.push(("gather_regions", records_buffer.as_entire_binding()));
+            bindings.push(("gather_output", output.as_entire_binding()));
             let bindings = passes_core::bind_group::create_bind_group_from_bindings(
                 device,
                 Some(GATHER_LABEL),
                 &kernel.pass,
                 0,
-                &[
-                    (GATHER_PARAMS, params),
-                    ("gather_source", source),
-                    ("gather_regions", records_buffer.as_entire_binding()),
-                    ("gather_output", output.as_entire_binding()),
-                ],
+                &bindings,
             )?;
             let workgroups = passes_core::plan_workgroups(
                 DispatchDim::D1,
@@ -640,11 +675,11 @@ mod tests {
                 .expect("enough regions to gather")
                 .dispatches;
             gpu.queue.submit([encoder.finish()]);
-            assert_eq!(dispatches, 2, "one dispatch per source buffer");
+            assert_eq!(dispatches, 1, "one dispatch for up to eight source buffers");
             created.push(gather_bind_groups_created() - before);
         }
         assert!(pollster::block_on(validation.pop()).is_none());
-        assert!(created[0] <= 2, "the first gather creates one bind group per source");
+        assert!(created[0] <= 1, "the first gather creates one bind group for its sources");
         assert_eq!(created[1..], [0, 0], "gathers of other regions create none");
     }
 }

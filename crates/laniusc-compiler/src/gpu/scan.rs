@@ -189,3 +189,23 @@ mod tests {
         }
     }
 }
+
+/// The dispatches that build a heap-layout tree of `leaf_base` leaves
+/// (parser/tree/heap_levels.slang): (mode, first node of the level read, the
+/// levels built above it). The first reads the leaves; each builds up to eight
+/// levels, so a tree of 2^k leaves takes ceil(k / 8) dispatches, at least one.
+pub(crate) fn heap_build_levels(leaf_base: u32) -> Vec<(u32, u32, u32)> {
+    debug_assert!(leaf_base.is_power_of_two());
+    let mut steps = Vec::new();
+    let mut level_start = leaf_base.max(1);
+    let mut mode = 0;
+    loop {
+        let levels = level_start.trailing_zeros().min(8);
+        steps.push((mode, level_start, levels));
+        level_start >>= levels;
+        if level_start <= 1 {
+            break steps;
+        }
+        mode = 1;
+    }
+}

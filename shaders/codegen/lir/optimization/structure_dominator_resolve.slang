@@ -1,18 +1,25 @@
-// Resolve immediate dominators from the reachable CFG, in forward-dependency
-// order. Each block has one writer. Joins intersect completed predecessor
-// parent chains; lexical source owners do not determine dominance.
+// Resolves immediate dominators from the reachable forward CFG, one lane per
+// block. A block's immediate dominator is the nearest common dominator of its
+// reachable forward predecessors: a block with one such predecessor takes it
+// directly, and a join walks the predecessors' dominator chains downward in
+// scheduling position until they meet. Lexical source owners do not determine
+// dominance.
+//
+// A walk may need the dominator of a join that is not resolved yet. The lane
+// never waits for it: it computes that dominator itself and publishes it, then
+// resumes its own walk. A dominator depends only on blocks at lower positions
+// and every lane computes the same value from the same resolved inputs, so
+// concurrent publications agree and every lane finishes whatever the others
+// do.
 //
 // The later edge validator proves that every omitted retreating edge targets
 // a dominator of its source. Adding those edges therefore preserves the exact
 // dominators computed on this acyclic graph.
-//
-// The order is a dependency chain, so a lane keeps one successor it made
-// ready and resolves it itself: a chain of blocks costs one lane's loads per
-// block instead of a global pop/publish/finish cycle per block.
 
 import codegen.lowering_ir;
 import codegen.optimization_ir;
 import codegen.lir.optimization.ssa_sparse_work;
+import gpu_index;
 
 struct Params
 {
@@ -30,17 +37,31 @@ StructuredBuffer<OptIrEdge> opt_ir_edges;
 StructuredBuffer<uint> opt_ir_predecessor_prefix;
 StructuredBuffer<uint> opt_ir_predecessor_edge_ids;
 StructuredBuffer<uint> opt_ir_reachable;
-RWStructuredBuffer<uint> opt_ir_forward_predecessor_count_by_block;
 RWStructuredBuffer<uint> opt_ir_immediate_dominator;
-RWStructuredBuffer<uint> opt_ir_reachability_work_state;
-RWStructuredBuffer<uint> opt_ir_reachability_work_queue;
 RWStructuredBuffer<LoweringStatus> lowering_status;
 
-static const uint INVALID = 0xffffffffu;
-static const uint WORKER_COUNT = 32u;
-groupshared uint batch_begin;
-groupshared uint batch_count;
-groupshared uint batch_done;
+static const uint DISPATCH_X_STRIDE = 16776960u;
+static const uint NONE = 0xffffffffu;
+
+static const uint WALK_DONE = 0u;
+// The walk needs the dominator of an unresolved block and keeps its place.
+static const uint WALK_BLOCKED = 1u;
+// The CFG is malformed at the goal. Every lane reaches the same verdict.
+static const uint WALK_FAILED = 2u;
+static const uint WALK_EXHAUSTED = 3u;
+
+// The resumable computation of one block's immediate dominator.
+struct Walk
+{
+    uint goal;
+    // The next predecessor row to fold, and the end of the goal's rows.
+    uint row;
+    uint end;
+    // The common dominator of the predecessors folded so far.
+    uint left;
+    // The predecessor being folded into `left`.
+    uint right;
+};
 
 void report_structure_failure(uint block)
 {
@@ -49,200 +70,138 @@ void report_structure_failure(uint block)
     InterlockedMin(lowering_status[0u].first_unsupported_opt_row, block);
 }
 
-void report_capacity(uint required)
+Walk walk_begin(uint goal, uint block_total, uint edge_total)
 {
-    InterlockedOr(lowering_status[0u].flags,
-        LOWERING_STATUS_OPTIMIZATION_CAPACITY);
-    InterlockedMax(lowering_status[0u].required_capacity, required);
-    lowering_status[0u].available_capacity = gParams.block_capacity;
+    Walk walk;
+    walk.goal = goal;
+    walk.row = opt_ir_predecessor_prefix[goal];
+    walk.end = goal + 1u < block_total
+        ? opt_ir_predecessor_prefix[goal + 1u] : edge_total;
+    walk.left = NONE;
+    walk.right = NONE;
+    return walk;
 }
 
-uint common_parent(uint left, uint right, uint function_id, uint block_total)
+uint walk_advance(inout Walk walk, uint block_total, uint edge_total,
+    out uint blocker)
 {
-    // A strictly decreasing position bounds each cursor by the block count.
-    // Parent loads are atomic because earlier queue batches publish them in
-    // this dispatch. No unresolved chain may be consumed.
-    uint steps = 0u;
-    while (left != right)
+    blocker = NONE;
+    if (walk.end > edge_total || walk.row > walk.end) return WALK_FAILED;
+    OptIrBlock record = opt_ir_blocks[walk.goal];
+    // Every step folds one predecessor row or lowers one cursor, and a cursor
+    // strictly descends in position.
+    uint budget = edge_total + 2u * block_total + 2u;
+    for (uint step = 0u; step < budget; ++step)
     {
-        if (left >= block_total || right >= block_total ||
-            opt_ir_blocks[left].function_id != function_id ||
-            opt_ir_blocks[right].function_id != function_id ||
-            steps >= block_total)
-            return INVALID;
-        bool advance_left = opt_ir_blocks[left].position_start >
-            opt_ir_blocks[right].position_start;
-        uint cursor = advance_left ? left : right;
-        uint parent = ssa_atomic_load(opt_ir_immediate_dominator, cursor);
-        if (parent >= block_total || parent == cursor ||
-            opt_ir_blocks[parent].function_id != function_id ||
-            opt_ir_blocks[parent].position_start >=
-                opt_ir_blocks[cursor].position_start)
-            return INVALID;
-        if (advance_left) left = parent;
-        else right = parent;
-        steps += 1u;
-    }
-    return left;
-}
-
-// Resolves one ready block. Returns one successor it made ready (to resolve
-// next on this lane), publishing the others.
-uint resolve_block(uint block, uint block_total, uint edge_total)
-{
-    if (block >= block_total || opt_ir_reachable[block] == 0u ||
-        ssa_atomic_load(opt_ir_forward_predecessor_count_by_block, block) != 0u)
-    {
-        report_structure_failure(block);
-        return INVALID;
-    }
-    OptIrBlock record = opt_ir_blocks[block];
-    uint parent = ssa_atomic_load(opt_ir_immediate_dominator, block);
-    if (parent != block)
-    {
-        if (parent != OPT_IR_DOMINATOR_UNRESOLVED)
+        if (walk.right == NONE)
         {
-            report_structure_failure(block);
-            return INVALID;
-        }
-        uint begin = opt_ir_predecessor_prefix[block];
-        uint end = block + 1u < block_total
-            ? opt_ir_predecessor_prefix[block + 1u] : edge_total;
-        if (begin > end || end > edge_total)
-        {
-            report_structure_failure(block);
-            return INVALID;
-        }
-        parent = INVALID;
-        for (uint row = begin; row < end; ++row)
-        {
-            uint edge_id = opt_ir_predecessor_edge_ids[row];
-            if (edge_id >= edge_total)
-            {
-                report_structure_failure(block);
-                return INVALID;
-            }
+            if (walk.row >= walk.end)
+                return walk.left < block_total ? WALK_DONE : WALK_FAILED;
+            uint edge_id = opt_ir_predecessor_edge_ids[walk.row];
+            walk.row += 1u;
+            if (edge_id >= edge_total) return WALK_FAILED;
             OptIrEdge edge = opt_ir_edges[edge_id];
             uint predecessor = edge.from_block;
             if (predecessor >= block_total ||
-                opt_ir_edge_to_block(edge.packed_target) != block)
-            {
-                report_structure_failure(block);
-                return INVALID;
-            }
+                opt_ir_edge_to_block(edge.packed_target) != walk.goal)
+                return WALK_FAILED;
             if ((opt_ir_edge_flags(edge.packed_target) & OPT_IR_EDGE_BACK) != 0u ||
                 opt_ir_reachable[predecessor] == 0u)
                 continue;
-            if (opt_ir_blocks[predecessor].function_id != record.function_id ||
-                opt_ir_blocks[predecessor].position_start >= record.position_start ||
-                ssa_atomic_load(opt_ir_immediate_dominator, predecessor) >= block_total)
-            {
-                report_structure_failure(block);
-                return INVALID;
-            }
-            parent = parent == INVALID ? predecessor
-                : common_parent(parent, predecessor, record.function_id, block_total);
-            if (parent == INVALID)
-            {
-                report_structure_failure(block);
-                return INVALID;
-            }
+            OptIrBlock source = opt_ir_blocks[predecessor];
+            if (source.function_id != record.function_id ||
+                source.position_start >= record.position_start)
+                return WALK_FAILED;
+            if (walk.left == NONE) walk.left = predecessor;
+            else walk.right = predecessor;
+            continue;
         }
-        if (parent >= block_total ||
-            opt_ir_blocks[parent].position_start >= record.position_start)
+        if (walk.left == walk.right)
         {
-            report_structure_failure(block);
-            return INVALID;
+            walk.right = NONE;
+            continue;
         }
-        uint ignored;
-        InterlockedExchange(opt_ir_immediate_dominator[block], parent, ignored);
+        // The cursor at the higher position cannot dominate the other.
+        bool advance_left = opt_ir_blocks[walk.left].position_start >
+            opt_ir_blocks[walk.right].position_start;
+        uint cursor = advance_left ? walk.left : walk.right;
+        uint parent = ssa_atomic_load(opt_ir_immediate_dominator, cursor);
+        if (parent == OPT_IR_DOMINATOR_UNRESOLVED)
+        {
+            blocker = cursor;
+            return WALK_BLOCKED;
+        }
+        if (parent >= block_total || parent == cursor ||
+            opt_ir_blocks[parent].function_id != record.function_id ||
+            opt_ir_blocks[parent].position_start >=
+                opt_ir_blocks[cursor].position_start)
+            return WALK_FAILED;
+        if (advance_left) walk.left = parent;
+        else walk.right = parent;
     }
-
-    // Publish the completed parent before successor readiness is released.
-    DeviceMemoryBarrier();
-    uint begin = opt_ir_block_edge_start(record);
-    uint count = opt_ir_block_edge_count(record);
-    if (begin > edge_total || count > edge_total - min(begin, edge_total))
-    {
-        report_structure_failure(block);
-        return INVALID;
-    }
-    uint next = INVALID;
-    for (uint ordinal = 0u; ordinal < count; ++ordinal)
-    {
-        OptIrEdge edge = opt_ir_edges[begin + ordinal];
-        uint target = opt_ir_edge_to_block(edge.packed_target);
-        if (edge.from_block != block || target >= block_total)
-        {
-            report_structure_failure(block);
-            continue;
-        }
-        if ((opt_ir_edge_flags(edge.packed_target) & OPT_IR_EDGE_BACK) != 0u)
-            continue;
-        if (opt_ir_reachable[target] == 0u)
-        {
-            report_structure_failure(block);
-            continue;
-        }
-        uint prior;
-        InterlockedAdd(opt_ir_forward_predecessor_count_by_block[target],
-            0xffffffffu, prior);
-        if (prior == 0u)
-        {
-            report_structure_failure(target);
-            continue;
-        }
-        if (prior != 1u) continue;
-        if (next == INVALID)
-        {
-            next = target;
-            continue;
-        }
-        uint required = 0u;
-        if (!ssa_work_publish(target, gParams.block_capacity,
-                opt_ir_reachability_work_state,
-                opt_ir_reachability_work_queue, required))
-            report_capacity(required);
-    }
-    return next;
+    return WALK_EXHAUSTED;
 }
 
 [shader("compute")]
-[numthreads(32, 1, 1)]
-void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
+[numthreads(256, 1, 1)]
+void main(uint3 dtid: SV_DispatchThreadID)
 {
-    if (gid.x >= WORKER_COUNT) return;
+    uint block = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
     uint block_total = min(opt_ir_block_total[0u], gParams.block_capacity);
+    if (block >= block_total) return;
+    if (ssa_atomic_load(opt_ir_immediate_dominator, block) !=
+        OPT_IR_DOMINATOR_UNRESOLVED)
+        return;
     uint edge_total = min(opt_ir_edge_total[0u], gParams.edge_capacity);
-    for (;;)
+
+    // `own` is this block's walk while the lane resolves `needed`, the block
+    // that walk is blocked on. Resolving `needed` can itself block on a lower
+    // block; the lane then resolves that one and starts `needed` over.
+    Walk walk = walk_begin(block, block_total, edge_total);
+    Walk own = walk;
+    uint needed = NONE;
+    // Each round resolves a block or descends to a lower one.
+    uint budget = block_total > 0xffffu
+        ? 0xffffffffu : block_total * block_total + 1u;
+    for (uint round = 0u; round < budget; ++round)
     {
-        // One lane schedules; every lane takes the same exit and barrier path.
-        if (ltid.x == 0u)
+        if (needed != NONE)
         {
-            ssa_work_try_pop_batch(gParams.block_capacity, 32u,
-                opt_ir_reachability_work_state, batch_begin, batch_count);
-            batch_done = batch_count == 0u &&
-                    ssa_work_quiescent(opt_ir_reachability_work_state)
-                ? 1u : 0u;
+            if (ssa_atomic_load(opt_ir_immediate_dominator, needed) !=
+                OPT_IR_DOMINATOR_UNRESOLVED)
+            {
+                walk = own;
+                needed = NONE;
+            }
+            else if (walk.goal != needed &&
+                ssa_atomic_load(opt_ir_immediate_dominator, walk.goal) !=
+                    OPT_IR_DOMINATOR_UNRESOLVED)
+                walk = walk_begin(needed, block_total, edge_total);
         }
-        GroupMemoryBarrierWithGroupSync();
-        uint begin = batch_begin;
-        uint count = batch_count;
-        bool done = batch_done != 0u;
-        GroupMemoryBarrierWithGroupSync();
-        if (done) return;
-        if (count == 0u) continue;
-        if (ltid.x < count)
+        if (needed == NONE &&
+            ssa_atomic_load(opt_ir_immediate_dominator, block) !=
+                OPT_IR_DOMINATOR_UNRESOLVED)
+            return;
+
+        uint blocker;
+        uint status = walk_advance(walk, block_total, edge_total, blocker);
+        if (status == WALK_EXHAUSTED) break;
+        if (status == WALK_BLOCKED)
         {
-            uint block = ssa_work_read_published(opt_ir_reachability_work_queue,
-                begin + ltid.x);
-            // The batch stays outstanding until every lane is done, so the
-            // blocks a lane resolves itself keep the queue from quiescing.
-            for (uint steps = 0u; block != INVALID && steps <= block_total; ++steps)
-                block = resolve_block(block, block_total, edge_total);
+            if (needed == NONE)
+            {
+                own = walk;
+                needed = blocker;
+            }
+            walk = walk_begin(blocker, block_total, edge_total);
+            continue;
         }
-        GroupMemoryBarrierWithGroupSync();
-        if (ltid.x == 0u)
-            ssa_work_finish_batch(opt_ir_reachability_work_state, count);
+        if (status == WALK_FAILED) report_structure_failure(walk.goal);
+        uint ignored;
+        InterlockedExchange(opt_ir_immediate_dominator[walk.goal],
+            status == WALK_DONE ? walk.left : OPT_IR_DOMINATOR_INVALID,
+            ignored);
+        if (needed == NONE) return;
     }
+    report_structure_failure(block);
 }

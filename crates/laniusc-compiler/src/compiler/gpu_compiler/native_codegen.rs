@@ -77,7 +77,7 @@ impl GpuCompiler<'_> {
         let paths = source_files.iter().map(|file| Some(file.path.clone())).collect::<Vec<_>>();
         self.compile_pending_original_source_pack_unit_for_target(
             SourcePackArtifactTarget::X86_64, sources.into(), job.library_id, unit_id,
-            dependencies, Some(&paths),
+            dependencies, Some(&paths), false,
         ).await?.spill_native()
     }
 }

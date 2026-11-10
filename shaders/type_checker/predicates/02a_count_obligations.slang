@@ -14,5 +14,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     predicate_obligation_count_by_call[node] = 0u;
     validate_predicate_fail_closed_status(node);
     validate_unique_impl_key(node);
+    count_solver_implementation_demand(node);
     count_call_predicate_obligations(node);
 }

@@ -10,7 +10,7 @@ struct Params
     uint declaration_capacity;
     uint declaration_block_capacity;
     uint demand_capacity;
-    uint worker_count;
+    uint reserved0;
     uint max_radix_blocks;
     uint incoming_capacity;
 };

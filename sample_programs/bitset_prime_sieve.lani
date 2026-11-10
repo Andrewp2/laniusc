@@ -8,10 +8,10 @@ fn main() -> i32 {
     let composite: [u32; 4] = [zero, zero, zero, zero];
     let candidate: i32 = 2;
     while (candidate * candidate <= 100) {
-        if (!core::bitset::get_or(composite, 101, candidate, false)) {
+        if (!get_or(composite, 101, candidate, false)) {
             let multiple: i32 = candidate * candidate;
             while (multiple <= 100) {
-                if (!core::bitset::set(composite, 101, multiple)) { return 1; }
+                if (!set(composite, 101, multiple)) { return 1; }
                 multiple += candidate;
             }
         }
@@ -22,9 +22,9 @@ fn main() -> i32 {
     let sum: i32 = 0;
     candidate = 2;
     while (candidate <= 100) {
-        if (!core::bitset::get_or(composite, 101, candidate, false)) {
-            count = core::i32::saturating_add(count, 1);
-            sum = core::i32::saturating_add(sum, candidate);
+        if (!get_or(composite, 101, candidate, false)) {
+            count = saturating_add(count, 1);
+            sum = saturating_add(sum, candidate);
         }
         candidate += 1;
     }

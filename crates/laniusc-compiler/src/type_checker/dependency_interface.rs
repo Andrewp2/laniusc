@@ -23,6 +23,12 @@ pub(crate) struct GpuDependencyInterfaceState {
     pub(crate) module_lookup_capacity: u32,
     pub(crate) words: LaniusBuffer<u32>,
     pub(crate) module_lookup: LaniusBuffer<u32>,
+    /// Every page of the job, back to back, resident for the whole job. A
+    /// page enters the fixed slot by a GPU copy recorded in order with the
+    /// passes that read it, so streaming pages needs neither a host upload
+    /// nor a queue submission per page. Grown on demand; not part of the
+    /// slot's capacities, so growing it leaves the workspace in place.
+    pub(crate) page_store: Option<LaniusBuffer<u32>>,
 }
 
 /// One fixed GPU dependency slot plus the CPU-packed pages that are streamed
@@ -32,6 +38,9 @@ pub(crate) struct GpuDependencyInterfaceState {
 pub(crate) struct GpuDependencyInterfacePages {
     state: GpuDependencyInterfaceState,
     pages: Vec<PackedGpuDependencyInterfacePage>,
+    /// Byte offset of each page in the slot state's `page_store` (only with
+    /// more than one page).
+    page_store_offsets: Vec<u64>,
     current_library_id: u32,
     current_unit_id: u32,
     /// The dependencies' closure summaries (D1b), None without any.
@@ -504,6 +513,39 @@ impl GpuDependencyInterfacePages {
                 device, allocation,
             ));
         }
+        // With several pages, all of them go to the GPU in one upload and
+        // stay there for the job: `record_page` streams them through the slot.
+        let mut page_store_offsets = Vec::new();
+        if pages.len() > 1 {
+            let mut offset = 0u64;
+            for page in &pages {
+                page_store_offsets.push(offset);
+                offset += page.words.len() as u64 * 4;
+            }
+            let store_words = (offset / 4) as usize;
+            let resident = resident_state
+                .as_mut()
+                .expect("dependency resident state allocated");
+            if resident
+                .page_store
+                .as_ref()
+                .is_none_or(|store| store.count < store_words)
+            {
+                let capacity = store_words.next_power_of_two().max(1024);
+                resident.page_store = Some(upload_words(
+                    device,
+                    "type_check.dependencies.page_store",
+                    &vec![0; capacity],
+                ));
+            }
+            let store = resident.page_store.as_ref().expect("page store allocated");
+            let bytes = pages
+                .iter()
+                .flat_map(|page| page.words.iter().copied())
+                .flat_map(u32::to_le_bytes)
+                .collect::<Vec<_>>();
+            store.write(queue, 0, &bytes);
+        }
         let state = resident_state
             .as_ref()
             .expect("dependency resident state allocated")
@@ -523,6 +565,7 @@ impl GpuDependencyInterfacePages {
         let pages = Self {
             state,
             pages,
+            page_store_offsets,
             current_library_id,
             current_unit_id,
             closure_summaries,
@@ -550,6 +593,32 @@ impl GpuDependencyInterfacePages {
             .get(page)
             .ok_or_else(|| anyhow::anyhow!("dependency page index {page} is out of bounds"))?;
         self.state.write_page(queue, page)
+    }
+
+    /// Records the GPU copy that makes `page` the slot's contents for the
+    /// passes recorded after it.
+    pub(crate) fn record_page(&self, encoder: &mut wgpu::CommandEncoder, page: usize) -> Result<()> {
+        let packed = self
+            .pages
+            .get(page)
+            .ok_or_else(|| anyhow::anyhow!("dependency page index {page} is out of bounds"))?;
+        self.state.check_page_fits(packed)?;
+        let store = self
+            .state
+            .page_store
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("dependency pages have no resident page store"))?;
+        let offset = self.page_store_offsets[page];
+        let bytes = packed.words.len() as u64 * 4;
+        crate::gpu::passes_core::flush_deferred_compute(encoder);
+        encoder.copy_buffer_to_buffer(
+            &store.buffer,
+            store.absolute_offset(offset),
+            &self.state.words.buffer,
+            self.state.words.absolute_offset(0),
+            bytes,
+        );
+        Ok(())
     }
 
     pub(crate) fn len(&self) -> usize {
@@ -621,6 +690,7 @@ impl GpuDependencyInterfaceState {
             module_lookup_capacity: capacities.module_lookup,
             words,
             module_lookup,
+            page_store: None,
         }
     }
 
@@ -629,6 +699,18 @@ impl GpuDependencyInterfaceState {
         queue: &wgpu::Queue,
         page: &PackedGpuDependencyInterfacePage,
     ) -> Result<()> {
+        self.check_page_fits(page)?;
+        let bytes = page
+            .words
+            .iter()
+            .copied()
+            .flat_map(u32::to_le_bytes)
+            .collect::<Vec<_>>();
+        self.words.write(queue, 0, &bytes);
+        Ok(())
+    }
+
+    fn check_page_fits(&self, page: &PackedGpuDependencyInterfacePage) -> Result<()> {
         if page.words.len() > self.words.count
             || page.module_lookup_capacity > self.module_lookup_capacity
             || page.module_count > self.module_count
@@ -647,13 +729,6 @@ impl GpuDependencyInterfaceState {
         {
             anyhow::bail!("dependency page exceeds its fixed GPU slot capacity");
         }
-        let bytes = page
-            .words
-            .iter()
-            .copied()
-            .flat_map(u32::to_le_bytes)
-            .collect::<Vec<_>>();
-        self.words.write(queue, 0, &bytes);
         Ok(())
     }
 }

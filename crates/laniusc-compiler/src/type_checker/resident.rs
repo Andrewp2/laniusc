@@ -40,6 +40,45 @@ impl TypeCheckRecordHostTimer {
 }
 
 /// The rejection a status buffer's words describe, if a pass recorded one.
+/// Words per inference round in the readback buffer: the two state words
+/// (word 1 counts the round's changes), then the four status words.
+pub(super) const CALL_INFERENCE_HISTORY_WORDS: usize =
+    (compiler_graph::CALL_INFERENCE_READBACK_SLOT_BYTES / 4) as usize;
+/// The most inference rounds one submission carries.
+pub(super) const CALL_INFERENCE_MAX_BATCH: u32 = compiler_graph::CALL_INFERENCE_MAX_BATCH;
+
+/// The rounds the last converged inference of a workspace shape needed.
+static CALL_INFERENCE_ROUNDS: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<(u32, u32), u32>>,
+> = std::sync::LazyLock::new(Default::default);
+
+/// How many rounds the next inference batch records: the rounds the last
+/// converged inference of this workspace shape needed (the round that
+/// changed nothing included), two for a new shape, or
+/// `LANIUS_CALL_INFERENCE_BATCH`.
+fn call_inference_batch(key: (u32, u32)) -> u32 {
+    if let Some(forced) = std::env::var("LANIUS_CALL_INFERENCE_BATCH")
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+    {
+        return forced.clamp(1, CALL_INFERENCE_MAX_BATCH);
+    }
+    CALL_INFERENCE_ROUNDS
+        .lock()
+        .expect("call inference round memory poisoned")
+        .get(&key)
+        .copied()
+        .unwrap_or(2)
+        .clamp(1, CALL_INFERENCE_MAX_BATCH)
+}
+
+fn remember_call_inference_rounds(key: (u32, u32), rounds: u32) {
+    CALL_INFERENCE_ROUNDS
+        .lock()
+        .expect("call inference round memory poisoned")
+        .insert(key, rounds);
+}
+
 fn status_rejection(words: [u32; 4]) -> Option<GpuTypeCheckError> {
     if words[0] != 0 {
         return None;
@@ -410,7 +449,11 @@ impl GpuTypeChecker {
         );
         // Words 0-1: inference state (word 1 counts the round's changes);
         // words 2-5: the status words after the round.
-        let call_inference_readback = readback_u32s(device, "rb.type_check.calls.inference", 6);
+        let call_inference_readback = readback_u32s(
+            device,
+            "rb.type_check.calls.inference",
+            CALL_INFERENCE_HISTORY_WORDS * CALL_INFERENCE_MAX_BATCH as usize,
+        );
         let canonical_counts_readback = readback_u32s(
             device,
             "rb.type_check.canonical.counts",
@@ -1104,6 +1147,7 @@ impl GpuTypeChecker {
             predicates.clear_syntax_tokens.record(encoder)?;
             // Initialize every constant partition before the first dependency page.
             bind_groups.type_instances.clear_constants.record(encoder)?;
+            reset_dependency_type_index(module_path, dependency_pages);
             record_module_path_state_with_passes(
                 device,
                 queue,
@@ -1202,10 +1246,9 @@ impl GpuTypeChecker {
                 .record(encoder)?;
             // Hidden interface indices exist before anything keys a local
             // nominal (canonical early stage below).
-            module_path
-                .bind_groups
-                .map_hidden_interface_decls
-                .record(encoder)?;
+            for operation in &module_path.bind_groups.map_hidden_interface_decls {
+                operation.record(encoder)?;
+            }
             let canonical = &bind_groups.semantic_projection.canonical_types;
             canonical.record_clear(encoder)?;
             if let Some(dependency_visibility) = &module_path.dependency_visibility {
@@ -2063,15 +2106,36 @@ impl GpuTypeChecker {
                 let mut repeats = CallInferenceRepeats::new();
                 let mut repeat_warned = false;
                 let mut first_error_round = None;
-                for round in 0..round_limit {
-                    let round_started = std::time::Instant::now();
+                // Rounds run in batches recorded into one submission: the GPU
+                // resets the state before each round and copies the round's
+                // state and status words into its history slot, so the host
+                // waits once per batch instead of once per round. A round
+                // after the one that changed nothing recomputes the same
+                // facts from the same inputs and changes nothing, so rounds
+                // past convergence in a batch leave the result as it was.
+                // After the first error the batch is one round, so an error
+                // that keeps inference from converging still stops it at
+                // the same round.
+                let batch_key = (hir_node_capacity, token_capacity);
+                let mut round = 0u32;
+                let mut converged_rounds = None;
+                'rounds: while round < round_limit {
+                    let batch = if first_error_round.is_some() {
+                        1
+                    } else {
+                        call_inference_batch(batch_key)
+                    }
+                    .min(round_limit - round)
+                    .max(1);
+                    let batch_started = std::time::Instant::now();
                     let dispatches_before =
                         crate::gpu::passes_core::recorded_compute_dispatch_count();
-                    self.call_inference_state
-                        .write(queue, 0, &[1, 0, 0, 0, 0, 0, 0, 0]);
-                    record_returns(encoder)?;
-                    bind_groups.calls.inference_readback.record(encoder);
-                    bind_groups.calls.inference_status_readback.record(encoder);
+                    for slot in 0..batch as usize {
+                        bind_groups.calls.inference_round_reset.record(encoder);
+                        record_returns(encoder)?;
+                        bind_groups.calls.inference_readback[slot].record(encoder);
+                        bind_groups.calls.inference_status_readback[slot].record(encoder);
+                    }
                     let next = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                         label: Some("type-check-call-inference-encoder"),
                     });
@@ -2086,7 +2150,9 @@ impl GpuTypeChecker {
                         recorded.finish(),
                     );
                     let submitted = std::time::Instant::now();
-                    let slice = self.call_inference_readback.slice(..);
+                    let history_bytes =
+                        u64::from(batch) * (CALL_INFERENCE_HISTORY_WORDS as u64 * 4);
+                    let slice = self.call_inference_readback.slice(..history_bytes);
                     crate::gpu::passes_core::map_readback_blocking(
                         device,
                         &slice,
@@ -2094,80 +2160,88 @@ impl GpuTypeChecker {
                     )?;
                     let mapped_at = std::time::Instant::now();
                     let mapped = slice.get_mapped_range();
-                    let words: [u32; 6] = crate::gpu::readback::read_u32_words(
-                        &mapped,
-                        "type checker call inference",
-                    )?;
+                    let history: Vec<u32> = mapped
+                        .chunks_exact(4)
+                        .map(|word| u32::from_le_bytes(word.try_into().expect("four bytes")))
+                        .collect();
                     drop(mapped);
                     self.call_inference_readback.unmap();
-                    let changed = words[1];
-                    if trace_inference {
-                        // record = host recording and submit (the GPU idles
-                        // unless earlier work is queued); wait = the round's
-                        // GPU time plus the map round trip.
-                        eprintln!(
-                            "[typecheck.call_inference] round={round} changed={changed} dispatches={} record_ms={:.3} wait_ms={:.3}",
-                            crate::gpu::passes_core::recorded_compute_dispatch_count()
-                                - dispatches_before,
-                            (submitted - round_started).as_secs_f64() * 1000.0,
-                            (mapped_at - submitted).as_secs_f64() * 1000.0,
-                        );
-                    }
-                    // A recorded error fails the check whatever later rounds
-                    // infer, but the final passes report the root error only
-                    // once inference has finished (missing-fact errors wait
-                    // for it). So inference may continue for a few rounds
-                    // after the first error, and an error that keeps it from
-                    // converging ends it there: the remaining passes still
-                    // run, and the check reports the status of that round.
-                    let status = [words[2], words[3], words[4], words[5]];
-                    if changed != 0 && status_rejection(status).is_some() {
-                        let first = *first_error_round.get_or_insert(round);
-                        if round - first >= compiler_graph::CALL_INFERENCE_ERROR_ROUNDS {
-                            if trace_inference {
-                                eprintln!(
-                                    "[typecheck.call_inference] round={round} stopped on an error recorded in round {first}"
-                                );
+                    let dispatches = crate::gpu::passes_core::recorded_compute_dispatch_count()
+                        - dispatches_before;
+                    for words in history.chunks_exact(CALL_INFERENCE_HISTORY_WORDS) {
+                        let changed = words[1];
+                        if trace_inference {
+                            // record = host recording and submit of the
+                            // round's batch (the GPU idles unless earlier work
+                            // is queued); wait = the batch's GPU time plus the
+                            // map round trip.
+                            eprintln!(
+                                "[typecheck.call_inference] round={round} changed={changed} batch={batch} dispatches={dispatches} record_ms={:.3} wait_ms={:.3}",
+                                (submitted - batch_started).as_secs_f64() * 1000.0,
+                                (mapped_at - submitted).as_secs_f64() * 1000.0,
+                            );
+                        }
+                        // A recorded error fails the check whatever later rounds
+                        // infer, but the final passes report the root error only
+                        // once inference has finished (missing-fact errors wait
+                        // for it). So inference may continue for a few rounds
+                        // after the first error, and an error that keeps it from
+                        // converging ends it there: the remaining passes still
+                        // run, and the check reports the status of that round.
+                        let status = [words[2], words[3], words[4], words[5]];
+                        if changed != 0 && status_rejection(status).is_some() {
+                            let first = *first_error_round.get_or_insert(round);
+                            if round - first >= compiler_graph::CALL_INFERENCE_ERROR_ROUNDS {
+                                if trace_inference {
+                                    eprintln!(
+                                        "[typecheck.call_inference] round={round} stopped on an error recorded in round {first}"
+                                    );
+                                }
+                                inference_error = Some(status);
+                                break 'rounds;
                             }
-                            inference_error = Some(status);
-                            break;
                         }
-                    }
-                    if changed == 0 {
-                        if crate::gpu::env::env_bool_truthy("LANIUS_TRACE_RANGE_INFERENCE", false) {
-                            trace_range_inference(device, queue, bind_groups, hir_items.hir)?;
+                        if changed == 0 {
+                            converged_rounds = Some(round + 1);
+                            if crate::gpu::env::env_bool_truthy("LANIUS_TRACE_RANGE_INFERENCE", false) {
+                                trace_range_inference(device, queue, bind_groups, hir_items.hir)?;
+                            }
+                            break 'rounds;
                         }
-                        break;
+                        if round + 1 == round_limit {
+                            return Err(GpuTypeCheckError::Rejected {
+                                token: 0,
+                                code: GpuTypeCheckCode::GenericInstantiationBoundary,
+                                detail: if round_limit < node_round_limit {
+                                    compiler_graph::CALL_INFERENCE_DEPTH_DETAIL
+                                } else {
+                                    5
+                                },
+                            });
+                        }
+                        total_changed = total_changed.saturating_add(u64::from(changed));
+                        if total_changed > change_limit {
+                            return Err(GpuTypeCheckError::Rejected {
+                                token: 0,
+                                code: GpuTypeCheckCode::GenericInstantiationBoundary,
+                                detail: compiler_graph::CALL_INFERENCE_STALL_DETAIL,
+                            });
+                        }
+                        if repeats.record(changed, compiler_graph::CALL_INFERENCE_REPEAT_WARNING_ROUNDS)
+                            && trace_inference
+                            && !repeat_warned
+                        {
+                            repeat_warned = true;
+                            eprintln!(
+                                "[typecheck.call_inference] round={round} warning: change counts have repeated for {} rounds; inference may not converge",
+                                compiler_graph::CALL_INFERENCE_REPEAT_WARNING_ROUNDS
+                            );
+                        }
+                        round += 1;
                     }
-                    if round + 1 == round_limit {
-                        return Err(GpuTypeCheckError::Rejected {
-                            token: 0,
-                            code: GpuTypeCheckCode::GenericInstantiationBoundary,
-                            detail: if round_limit < node_round_limit {
-                                compiler_graph::CALL_INFERENCE_DEPTH_DETAIL
-                            } else {
-                                5
-                            },
-                        });
-                    }
-                    total_changed = total_changed.saturating_add(u64::from(changed));
-                    if total_changed > change_limit {
-                        return Err(GpuTypeCheckError::Rejected {
-                            token: 0,
-                            code: GpuTypeCheckCode::GenericInstantiationBoundary,
-                            detail: compiler_graph::CALL_INFERENCE_STALL_DETAIL,
-                        });
-                    }
-                    if repeats.record(changed, compiler_graph::CALL_INFERENCE_REPEAT_WARNING_ROUNDS)
-                        && trace_inference
-                        && !repeat_warned
-                    {
-                        repeat_warned = true;
-                        eprintln!(
-                            "[typecheck.call_inference] round={round} warning: change counts have repeated for {} rounds; inference may not converge",
-                            compiler_graph::CALL_INFERENCE_REPEAT_WARNING_ROUNDS
-                        );
-                    }
+                }
+                if let Some(rounds) = converged_rounds {
+                    remember_call_inference_rounds(batch_key, rounds);
                 }
                 // The same producer diagnoses missing or unsupported types
                 // after inference has stopped producing new facts.
@@ -2343,6 +2417,7 @@ impl GpuTypeChecker {
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.predicates_indices.done");
             }
+            predicates.solver_demand_clear.record(encoder);
             predicates.count_obligation_pairs.record(encoder)?;
             predicates.obligation_pair_scan.record(encoder)?;
             predicates.obligation_pair_dispatch_clear.record(encoder);
@@ -2384,12 +2459,32 @@ impl GpuTypeChecker {
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.calls_backend_targets.done");
             }
-            if hir_items.body_specialization.is_some() {
+            // An original job's closure selects the functions the body
+            // passes bind in place (closure/inplace_read.slang).
+            let in_place =
+                instance_closure && super::instance_closure_passes::inplace_instances_enabled();
+            if instance_closure {
+                let closure = &bind_groups.semantic_projection.instance_closure;
+                closure.record(encoder, closure_import_rounds)?;
+                if in_place {
+                    closure.record_inplace_select(encoder)?;
+                }
+                if let Some(timer) = timer.as_deref_mut() {
+                    timer.stamp(encoder, "typecheck.instance_closure.done");
+                }
+            }
+            if hir_items.body_specialization.is_some() || in_place {
                 let projection = &bind_groups.semantic_projection;
                 for (index, (required_feature, operation)) in
                     projection.body_specialization.iter().enumerate()
                 {
+                    if in_place && index == projection.body_rearm_at {
+                        projection.instance_closure.record_inplace_rearm(encoder, 1)?;
+                    }
                     if index == projection.body_canonical_split {
+                        if in_place {
+                            projection.instance_closure.record_inplace_rearm(encoder, 0)?;
+                        }
                         // The body passes from here on read the IDs of the
                         // specialized rows.
                         record_canonical_types(
@@ -2428,14 +2523,15 @@ impl GpuTypeChecker {
                 .semantic_projection
                 .generic_call_results
                 .record(encoder)?;
-            if instance_closure {
-                bind_groups
-                    .semantic_projection
-                    .instance_closure
-                    .record(encoder, closure_import_rounds)?;
-                if let Some(timer) = timer.as_deref_mut() {
-                    timer.stamp(encoder, "typecheck.instance_closure.done");
-                }
+            if in_place {
+                let closure = &bind_groups.semantic_projection.instance_closure;
+                closure.record_inplace_guard(encoder)?;
+                closure.record_inplace_rearm(encoder, 2)?;
+            }
+            // An original job counts what it leaves for the trait solver
+            // (closure/04e_solver_demand.slang).
+            if hir_items.semantic_interface_required && hir_items.body_specialization.is_none() {
+                bind_groups.semantic_projection.instance_closure.record_solver_demand(encoder)?;
             }
             record_canonical_types(
                 device,

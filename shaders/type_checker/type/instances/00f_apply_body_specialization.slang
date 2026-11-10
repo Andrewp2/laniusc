@@ -57,6 +57,8 @@ StructuredBuffer<uint4> body_specialization_inputs;
 StructuredBuffer<uint4> checked_constant_atoms;
 
 #include "body_type_graph_reference.slang"
+#define LANIUS_INPLACE_ARGUMENTS 1
+#include "../../closure/inplace_read.slang"
 
 RWStructuredBuffer<uint> type_generic_param_slot_by_token;
 RWStructuredBuffer<uint> type_const_param_slot_by_token;
@@ -167,6 +169,14 @@ void publish_type_parameter_reference(uint row, uint slot, uint use_token)
             body_type_graph_reference(argument.z, source_capacity, tag, payload);
         }
     }
+    // An original job binds the owner's one instance in place.
+    uint2 operand;
+    if (body_entry_count() == 0u && owner < active_hir_node_count() &&
+        inplace_argument(owner, slot, false, operand))
+    {
+        tag = operand.x;
+        payload = operand.y;
+    }
     type_expr_ref_tag[use_token] = tag;
     type_expr_ref_payload[use_token] = payload;
 }
@@ -241,7 +251,8 @@ void publish_const_len_use_slot(uint node)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
-    if (body_specialization_inputs[0u].x == 0u && body_specialization_inputs[705u].x == 0u) return;
+    bool packet = body_specialization_inputs[0u].x != 0u || body_specialization_inputs[705u].x != 0u;
+    if (!packet && !inplace_job()) return;
     if (valid_node(node) && compact_hir_core[node].kind == 34u)
     {
         uint token = compact_hir_core[node].token_start;
@@ -273,6 +284,22 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 any(checked_constant_atoms[atom] != uint4(value, 0u)))
             { record_min_token_error(status, parameter, ERR_BAD_HIR, 0x474e0008u); return; }
             type_const_param_value_by_token[parameter] = atom;
+        }
+        // An original job binds the owner's one instance in place. Its
+        // constant is an atom of this job with the parameter's scalar.
+        uint2 operand;
+        if (!packet && valid_token(parameter) && slot < 32u && owner < active_hir_node_count() &&
+            inplace_argument(owner, slot, true, operand) && operand.x == 1u)
+        {
+            uint type_node = compact_generic_param_types[node];
+            uint type_token = valid_node(type_node) ? compact_hir_core[type_node].token_start : INVALID;
+            uint scalar = valid_token(type_token) && type_expr_ref_tag[type_token] == TYPE_REF_SCALAR
+                ? type_expr_ref_payload[type_token] : 0u;
+            uint atoms; uint stride;
+            checked_constant_atoms.GetDimensions(atoms, stride);
+            uint3 value = operand.y < atoms ? checked_constant_atoms[operand.y].xyz : uint3(0u, 0u, 0u);
+            if (operand.y < atoms && scalar == value.x && constant_value_is_valid(value))
+                type_const_param_value_by_token[parameter] = operand.y;
         }
     }
     publish_compact_variant_payload_use_slot(node);

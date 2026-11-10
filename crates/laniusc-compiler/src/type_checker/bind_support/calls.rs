@@ -14,6 +14,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
     claim_capacity: u32,
     parser_feature_flags: u32,
     has_dependency_interfaces: bool,
+    dependency_bound_rows: u32,
 ) -> Result<CallBindGroups> {
     let indirect = |spec| {
         ComputeOperation::indirect_spec(device, graph, resources, passes, spec, hir_dispatch_args)
@@ -217,8 +218,11 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         bound_inference: if has_dependency_interfaces {
             Some(BoundInferenceOperations {
                 clear: direct(CALLS_BOUND_TABLES_CLEAR, 4)?,
-                // 03l1 strides the page with this many lanes.
-                collect_dependency: direct(CALLS_BOUND_DEPENDENCY_COLLECT, 4096)?,
+                // One lane per implementation or predicate row of the slot.
+                collect_dependency: direct(
+                    CALLS_BOUND_DEPENDENCY_COLLECT,
+                    dependency_bound_rows.max(1),
+                )?,
                 collect_local: indirect(CALLS_BOUND_LOCAL_COLLECT)?,
                 infer: indirect(CALLS_BOUND_INFER)?,
             })
@@ -374,28 +378,44 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             compiler_graph::CALLS_INFER_RETURN_BINDINGS_PASS,
             "type_checker/calls/03f_infer_return_bindings",
         )?,
-        inference_readback: crate::gpu::operations::CopyBufferOperation::new(
+        inference_round_reset: crate::gpu::operations::ClearBufferOperation::range(
             graph,
-            compiler_graph::CALLS_INFERENCE_READBACK_PASS,
+            compiler_graph::CALLS_INFERENCE_ROUND_RESET_PASS,
             "call_inference_state",
             &inference_state,
-            0,
-            "call_inference_readback",
-            &inference_readback,
-            0,
-            8,
+            4,
+            4,
         )?,
-        inference_status_readback: crate::gpu::operations::CopyBufferOperation::new(
-            graph,
-            compiler_graph::CALLS_INFERENCE_STATUS_READBACK_PASS,
-            "status",
-            &status,
-            0,
-            "call_inference_readback",
-            &inference_readback,
-            8,
-            16,
-        )?,
+        inference_readback: (0..compiler_graph::CALL_INFERENCE_MAX_BATCH)
+            .map(|slot| {
+                crate::gpu::operations::CopyBufferOperation::new(
+                    graph,
+                    compiler_graph::CALLS_INFERENCE_READBACK_PASS,
+                    "call_inference_state",
+                    &inference_state,
+                    0,
+                    "call_inference_readback",
+                    &inference_readback,
+                    u64::from(slot) * compiler_graph::CALL_INFERENCE_READBACK_SLOT_BYTES,
+                    8,
+                )
+            })
+            .collect::<Result<_>>()?,
+        inference_status_readback: (0..compiler_graph::CALL_INFERENCE_MAX_BATCH)
+            .map(|slot| {
+                crate::gpu::operations::CopyBufferOperation::new(
+                    graph,
+                    compiler_graph::CALLS_INFERENCE_STATUS_READBACK_PASS,
+                    "status",
+                    &status,
+                    0,
+                    "call_inference_readback",
+                    &inference_readback,
+                    u64::from(slot) * compiler_graph::CALL_INFERENCE_READBACK_SLOT_BYTES + 8,
+                    16,
+                )
+            })
+            .collect::<Result<_>>()?,
         status_prior: crate::gpu::operations::CopyBufferOperation::new(
             graph,
             compiler_graph::CALLS_STATUS_PRIOR_PASS,

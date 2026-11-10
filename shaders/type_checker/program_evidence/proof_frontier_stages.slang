@@ -11,6 +11,7 @@ import type_checker.program_evidence.proof_frontier_reduction;
 import type_checker.program_evidence.proof_substitution_walk;
 import type_checker.program_evidence.proof_row_admission;
 import type_checker.program_evidence.proof_span_coverage;
+import type_checker.program_evidence.proof_commit_audit;
 
 struct PendingBindingNodeSpans : IProofSpanSource
 {
@@ -108,54 +109,94 @@ public void pps_stage_admit_work(uint local)
 
 // Serial, after the complete validation wave. Check every requested prefix
 // before publishing any of them. Pending counts cannot change in this phase.
-public EvidenceStatus pps_commit_tables(uint tables[5], uint count)
+// `packed` holds `count` table ids, four bits each, the first one lowest.
+public EvidenceStatus pps_commit_tables(uint packed, uint count)
 {
-    uint4 spans[5]; uint accepted;
-    if (count > 5u) return pev_invalid(66u, count, PEV_INVALID);
-    for (uint i = 0u; i < count; i++)
+    if (count > 8u) return pev_invalid(66u, count, PEV_INVALID);
+    [loop]
+    for (uint step = 0u; step < 2u * count; step++)
     {
-        if (!pps_descriptor(tables[i], spans[i], accepted)) return pev_invalid(66u, tables[i], PEV_INVALID);
-        EvidenceStatus status = pps_check_validated_prefix(tables[i], spans[i].w, spans[i].y);
-        if (status.state != PEV_VALID) return status;
-    }
-    for (uint i = 0u; i < count; i++)
-    {
-        EvidenceStatus status = pps_publish_validated_prefix(tables[i], spans[i].w, spans[i].y);
+        uint table = (packed >> (4u * (step < count ? step : step - count))) & 15u;
+        uint4 span; uint accepted; EvidenceStatus status;
+        if (!pps_descriptor(table, span, accepted)) return pev_invalid(66u, table, PEV_INVALID);
+        if (step < count) status = pps_check_validated_prefix(table, span.w, span.y);
+        else status = pps_publish_validated_prefix(table, span.w, span.y);
         if (status.state != PEV_VALID) return status;
     }
     return pev_ok();
 }
-public void pps_stage_commit_work()
+// Phase 50 over the whole grid: one audit lane per pending Work row, one
+// thread that reserves the goal index, one lane per pending Work row that
+// writes its index row, and one thread that commits (proof_commit_audit.slang).
+public void pps_stage_audit_work(uint local)
 {
-    if (!pps_building() || !pev_batch_is_building()) return;
-    uint4 work; uint4 index; uint4 requirements; uint4 roots; uint accepted;
-    if (!pps_descriptor(PPS_WORK, work, accepted) || !pps_descriptor(PPS_GOAL_INDEX, index, accepted) ||
-        !pps_descriptor(PPS_REQUIREMENTS, requirements, accepted) || !pps_descriptor(PPS_ROOT_LINKS, roots, accepted) ||
-        index.y != work.w) { pev_batch_failure(pev_invalid(70u, PPS_WORK, PPS_GOAL_INDEX)); return; }
-    uint source_count[2] = { 0u, 0u };
-    [loop]
-    for (uint row = work.w; row < work.y; row++)
+    uint row; uint4 source;
+    if (!pps_stage_row(local, PPS_WORK, row)) return;
+    pca_add(PCA_AUDITED, 1u);
+    if (!pps_pending4(PPS_WORK, row, 12u, source) || source.x > 1u) { pca_fail(); return; }
+    pca_add(PCA_TOTALS + source.x, 1u);
+}
+// The reserving thread. When the audit lanes did not count every pending row
+// it counts them itself and, after the reservation, completes the phase
+// serially for its exact result; the later lanes and thread then do nothing.
+public void pps_stage_reserve_goal_index()
+{
+    bool building = pps_building() && pev_batch_is_building();
+    uint4 work = uint4(0u, 0u, 0u, 0u); uint4 index = work; uint4 requirements = work; uint4 roots = work;
+    uint accepted;
+    bool described = building && pps_descriptor(PPS_WORK, work, accepted) &&
+        pps_descriptor(PPS_GOAL_INDEX, index, accepted) &&
+        pps_descriptor(PPS_REQUIREMENTS, requirements, accepted) &&
+        pps_descriptor(PPS_ROOT_LINKS, roots, accepted) && index.y == work.w;
+    uint root_sources = pca_word(PCA_TOTALS); uint requirement_sources = pca_word(PCA_TOTALS + 1u);
+    bool counted = described && pca_word(PCA_FAILED) == 0u && pca_word(PCA_AUDITED) == work.y - work.w;
+    pca_reset();
+    if (!building) return;
+    pca_count(counted);
+    if (!described) { pev_batch_failure(pev_invalid(70u, PPS_WORK, PPS_GOAL_INDEX)); return; }
+    if (!counted)
     {
-        uint4 source;
-        if (!pps_pending4(PPS_WORK, row, 12u, source) || source.x > 1u)
-        { pev_batch_failure(pev_invalid(70u, row, PPS_WORK)); return; }
-        source_count[source.x]++;
+        root_sources = 0u; requirement_sources = 0u;
+        [loop]
+        for (uint row = work.w; row < work.y; row++)
+        {
+            uint4 source;
+            if (!pps_pending4(PPS_WORK, row, 12u, source) || source.x > 1u)
+            { pev_batch_failure(pev_invalid(70u, row, PPS_WORK)); return; }
+            if (source.x == 0u) root_sources++; else requirement_sources++;
+        }
     }
     // Every request proved a unique row backlink in 49. Equal counts therefore
     // cover the entire pending edge/root inventory, including unused rows.
-    if (source_count[0] != roots.y - roots.w || source_count[1] != requirements.y - requirements.w)
+    if (root_sources != roots.y - roots.w || requirement_sources != requirements.y - requirements.w)
     { pev_batch_failure(pev_invalid(70u, PPS_WORK, PPS_REQUIREMENTS)); return; }
     uint first;
     EvidenceStatus status = pps_reserve(PPS_GOAL_INDEX, work.y - work.w, PPS_WORK, first);
     if (status.state != PEV_VALID) { pev_batch_failure(status); return; }
     if (work.y != work.w && first != work.w)
     { pev_batch_failure(pev_invalid(70u, first, work.w)); return; }
+    if (counted) { program_evidence_commit_audit[PCA_PUBLISHED] = 50u; return; }
     [loop]
     for (uint row = work.w; row < work.y; row++)
         if (!pps_write4(PPS_GOAL_INDEX, row, 0u, uint4(0u, PEV_INVALID, row, 0u)))
         { pev_batch_failure(pev_invalid(1u, row, PPS_GOAL_INDEX)); return; }
-    uint tables[5] = { PPS_WORK, PPS_REQUIREMENTS, PPS_ROOT_LINKS, PPS_REDUCTION_QUEUE, PPS_GOAL_INDEX };
-    pev_batch_failure(pps_commit_tables(tables, 5u));
+    pev_batch_failure(pps_commit_tables(PPS_WORK | (PPS_REQUIREMENTS << 4u) | (PPS_ROOT_LINKS << 8u) |
+        (PPS_REDUCTION_QUEUE << 12u) | (PPS_GOAL_INDEX << 16u), 5u));
+}
+public void pps_stage_write_goal_index(uint local)
+{
+    uint row;
+    if (pca_word(PCA_PUBLISHED) != 50u || !pps_stage_row(local, PPS_WORK, row)) return;
+    if (!pps_write4(PPS_GOAL_INDEX, row, 0u, uint4(0u, PEV_INVALID, row, 0u)))
+        pev_batch_failure(pev_invalid(1u, row, PPS_GOAL_INDEX));
+}
+public void pps_stage_commit_work()
+{
+    bool reserved = pca_word(PCA_PUBLISHED) == 50u;
+    pca_reset();
+    if (!reserved || !pps_building() || !pev_batch_is_building()) return;
+    pev_batch_failure(pps_commit_tables(PPS_WORK | (PPS_REQUIREMENTS << 4u) | (PPS_ROOT_LINKS << 8u) |
+        (PPS_REDUCTION_QUEUE << 12u) | (PPS_GOAL_INDEX << 16u), 5u));
 }
 public void pps_stage_index_work(uint local)
 { uint row; if (pps_stage_row(local, PPS_WORK, row)) pev_batch_failure(pps_insert_work(row)); }
@@ -215,18 +256,75 @@ public void pps_stage_walk_bindings(uint local, uint consumer)
 }
 public void pps_stage_admit_binding_rows(uint local)
 { uint row; if (pps_stage_row(local, PPS_BINDINGS, row)) pev_batch_failure(pps_admit_binding_row(row)); }
-// The phase 55 commit. Unless `audited` (the group audits proved that the
-// serial cover audits succeed), it runs the serial audits first. Its one call
-// site keeps one inlined copy of the commit and of the serial audits.
-void pps_commit_substitution_tables(bool audited)
+// Phase 55 over the whole grid: one audit lane per Work, then one committing
+// thread (proof_commit_audit.slang). A selected Work's lane claims its
+// substitution, the substitution's bindings and each binding's nodes, making
+// the checks the three span sources above make of them.
+//
+// The serial audits cover the nodes from the pending bindings and the bindings
+// from the pending substitutions. They agree with the lanes once each level's
+// cover is exact, which the same audit proves from the Works down: then the
+// rows reached through the Works are every pending row of that level, once.
+public void pps_stage_audit_substitutions(uint local)
 {
-    if (!audited)
+    uint works; uint work;
+    if (!pps_building() || !pev_batch_is_building() || !pps_count(PPS_WORK, works) ||
+        !pev_dispatch_row(local, works, work)) return;
+    pca_add(PCA_AUDITED, 1u);
+    uint4 key; uint4 selected; uint4 completion; uint4 source;
+    if (!pps_work_read(work, key, selected, completion, source)) { pca_fail(); return; }
+    if (key.z != PPS_WORK_SELECTED) return;
+    uint4 nodes; uint4 bindings; uint4 substitutions; uint accepted; uint4 row;
+    if (!pps_descriptor(PPS_TERM_NODES, nodes, accepted) ||
+        !pps_descriptor(PPS_BINDINGS, bindings, accepted) ||
+        !pps_descriptor(PPS_SUBSTITUTIONS, substitutions, accepted) ||
+        !pps_read_pending4(PPS_SUBSTITUTIONS, selected.y, 0u, row) ||
+        row.x != selected.x || row.w != key.y || row.z > 64u) { pca_fail(); return; }
+    uint tag = pca_tag();
+    pca_cover(PPS_SUBSTITUTIONS, substitutions, selected.y, 1u, tag);
+    pca_cover(PPS_BINDINGS, bindings, row.y, row.z, tag);
+    uint node_total = 0u;
+    [loop]
+    for (uint offset = 0u; offset < row.z; offset++)
     {
-        uint4 nodes; uint4 bindings; uint4 substitutions; uint accepted; uint works;
-        if (!pps_descriptor(PPS_TERM_NODES, nodes, accepted) ||
-            !pps_descriptor(PPS_BINDINGS, bindings, accepted) ||
-            !pps_descriptor(PPS_SUBSTITUTIONS, substitutions, accepted) || !pps_count(PPS_WORK, works))
-        { pev_batch_failure(pev_invalid(68u, PPS_BINDINGS, PPS_TERM_NODES)); return; }
+        uint4 binding; uint4 allocation;
+        // A sum past 32 bits cannot equal the pending node count.
+        if (!pps_read_pending8(PPS_BINDINGS, row.y + offset, binding, allocation) ||
+            !pps_binding_node_span(allocation, true) || allocation.y > PEV_INVALID - node_total)
+        { pca_fail(); return; }
+        node_total += allocation.y;
+        pca_cover(PPS_TERM_NODES, nodes, allocation.x, allocation.y, tag);
+    }
+    pca_add(PCA_TOTALS, node_total);
+    pca_add(PCA_TOTALS + 1u, row.z);
+    pca_add(PCA_TOTALS + 2u, 1u);
+}
+// The committing thread. The lanes proved the serial cover audits when none
+// failed, every Work was audited, each table's claimed rows number its pending
+// rows, and the serial audits' visits stay within their budget. Otherwise it
+// runs the serial audits for their exact result. One call site keeps one
+// inlined copy of the commit.
+public void pps_stage_commit_substitutions()
+{
+    bool building = pps_building() && pev_batch_is_building();
+    uint4 nodes = uint4(0u, 0u, 0u, 0u); uint4 bindings = nodes; uint4 substitutions = nodes;
+    uint accepted; uint works = 0u;
+    bool described = building && pps_descriptor(PPS_TERM_NODES, nodes, accepted) &&
+        pps_descriptor(PPS_BINDINGS, bindings, accepted) &&
+        pps_descriptor(PPS_SUBSTITUTIONS, substitutions, accepted) && pps_count(PPS_WORK, works);
+    uint charges = pps_cover_charge_add(0u, pca_word(PCA_TOUCHED));
+    charges = pps_cover_charge(charges, nodes.y - nodes.w, bindings.y - bindings.w);
+    charges = pps_cover_charge(charges, bindings.y - bindings.w, substitutions.y - substitutions.w);
+    charges = pps_cover_charge(charges, substitutions.y - substitutions.w, works);
+    bool proven = described && pca_word(PCA_FAILED) == 0u && pca_word(PCA_AUDITED) == works &&
+        pca_word(PCA_TOTALS) == nodes.y - nodes.w && pca_word(PCA_TOTALS + 1u) == bindings.y - bindings.w &&
+        pca_word(PCA_TOTALS + 2u) == substitutions.y - substitutions.w && charges <= PEV_VISIT_LIMIT;
+    pca_reset();
+    if (!building) return;
+    pca_count(proven);
+    if (!described) { pev_batch_failure(pev_invalid(68u, PPS_BINDINGS, PPS_TERM_NODES)); return; }
+    if (!proven)
+    {
         // Exact replay validates bytes; independent coverage validates ownership.
         // Equal requests must not alias an allocation and hide an unchecked row.
         uint visits = 0u;
@@ -240,32 +338,7 @@ void pps_commit_substitution_tables(bool audited)
             substitutions.w, substitutions.y, 0u, works, visits);
         if (cover.state != PEV_VALID) { pev_batch_failure(cover); return; }
     }
-    uint tables[5] = { PPS_TERM_NODES, PPS_SUBSTITUTIONS, PPS_BINDINGS, 0u, 0u };
-    pev_batch_failure(pps_commit_tables(tables, 3u));
-}
-// Phase 55 as one 256-lane workgroup. The lanes run the three cover audits
-// together; when that proves the serial audits succeed, lane 0 commits
-// directly. Otherwise lane 0 runs the serial audits for their exact result.
-public void pps_stage_commit_substitutions_group(uint lane)
-{
-    if (!pps_building() || !pev_batch_is_building()) return;
-    uint4 nodes; uint4 bindings; uint4 substitutions; uint accepted; uint works;
-    bool audited = pps_descriptor(PPS_TERM_NODES, nodes, accepted) &&
-        pps_descriptor(PPS_BINDINGS, bindings, accepted) &&
-        pps_descriptor(PPS_SUBSTITUTIONS, substitutions, accepted) && pps_count(PPS_WORK, works);
-    uint charges = 0u;
-    if (audited)
-        audited = pps_group_check_span_cover<PendingBindingNodeSpans>(lane, PPS_TERM_NODES,
-            nodes.w, nodes.y, bindings.w, bindings.y, charges);
-    if (audited)
-        audited = pps_group_check_span_cover<PendingSubstitutionBindingSpans>(lane, PPS_BINDINGS,
-            bindings.w, bindings.y, substitutions.w, substitutions.y, charges);
-    if (audited)
-        audited = pps_group_check_span_cover<SelectedWorkSubstitutionSpans>(lane, PPS_SUBSTITUTIONS,
-            substitutions.w, substitutions.y, 0u, works, charges);
-    // The building checks above still hold: the group audits write only
-    // groupshared words.
-    if (lane == 0u) pps_commit_substitution_tables(audited && charges <= PEV_VISIT_LIMIT);
+    pev_batch_failure(pps_commit_tables(PPS_TERM_NODES | (PPS_SUBSTITUTIONS << 4u) | (PPS_BINDINGS << 8u), 3u));
 }
 public void pps_stage_expand_work(uint local)
 { uint row; if (pps_stage_row(local, PPS_WORK, row)) pev_batch_failure(pps_expand_work(row)); }
@@ -285,8 +358,7 @@ public void pps_stage_admit_proof_edge_rows(uint local)
 public void pps_stage_commit_proofs()
 {
     if (!pps_building() || !pev_batch_is_building()) return;
-    uint tables[5] = { PPS_PROOFS, PPS_PROOF_EDGES, 0u, 0u, 0u };
-    pev_batch_failure(pps_commit_tables(tables, 2u));
+    pev_batch_failure(pps_commit_tables(PPS_PROOFS | (PPS_PROOF_EDGES << 4u), 2u));
 }
 public void pps_stage_publish_work_proofs(uint local)
 { uint row; if (pps_stage_row(local, PPS_REDUCTION_QUEUE, row)) pev_batch_failure(pps_publish_work_proof(row)); }
@@ -295,8 +367,7 @@ public void pps_stage_notify_work(uint local)
 public void pps_stage_commit_queue()
 {
     if (!pps_building() || !pev_batch_is_building()) return;
-    uint tables[5] = { PPS_REDUCTION_QUEUE, 0u, 0u, 0u, 0u };
-    pev_batch_failure(pps_commit_tables(tables, 1u));
+    pev_batch_failure(pps_commit_tables(PPS_REDUCTION_QUEUE, 1u));
 }
 public void pps_stage_publish_roots(uint local)
 {

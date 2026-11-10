@@ -462,10 +462,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                             queue,
                             encoder,
                             timer.as_deref_mut(),
-                            LoweringJobBounds::from_sources(
+                            LoweringJobBounds::from_lexed_bytes(
                                 parser_feature_flags,
                                 bufs.n,
-                                [src],
                             )
                             .with_token_capacity(token_capacity)
                             .with_output_demand(output_demand),
@@ -858,10 +857,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                         unit_id,
                         lowering_target,
                         object_request,
-                        LoweringJobBounds::from_sources(
+                        LoweringJobBounds::from_lexed_bytes(
                             parser.parser_feature_flags,
                             bufs.n,
-                            diagnostic_files.iter().map(|file| file.source.as_str()),
                         ),
                         output_demand,
                     )
@@ -942,10 +940,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                     unit_id,
                     lowering_target,
                     object_request,
-                    LoweringJobBounds::from_sources(
+                    LoweringJobBounds::from_lexed_bytes(
                         parser_feature_flags,
                         bufs.n,
-                        diagnostic_files.iter().map(|file| file.source.as_str()),
                     ),
                     output_demand,
                 )
@@ -1121,6 +1118,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                     semantic_interface.is_some(),
                     object_request.and_then(LoweringObjectRequest::template_contracts),
                     object_request.and_then(LoweringObjectRequest::body_specialization),
+                    object_request.is_some_and(LoweringObjectRequest::elide_closed_facts),
                 )
                 .map_err(|error| {
                     CompileError::GpuFrontend(format!(
@@ -1166,6 +1164,8 @@ impl<'gpu> GpuCompiler<'gpu> {
             checked_call_owners: unit_facts.call_owners,
             native_call_owners: unit_facts.native_call_owners,
             instance_closure: unit_facts.instance_closure,
+            solver_closed: unit_facts.solver_closed,
+            facts_elided: unit_facts.facts_elided,
             native_call_hirs,
         }))
     }
@@ -1683,8 +1683,11 @@ impl<'gpu> GpuCompiler<'gpu> {
     ) -> Result<PendingOriginalUnit, CompileError> {
         let template_sources = sources.iter().map(|source| source.as_ref().to_owned())
             .collect::<Vec<_>>().into();
-        self.compile_pending_original_source_pack_unit(
-            template_sources, 0, 0, Vec::new().into(), source_paths).await
+        // The one unit is the whole program.
+        self.compile_pending_original_source_pack_unit_for_target(
+            SourcePackArtifactTarget::X86_64, template_sources, 0, 0, Vec::new().into(),
+            source_paths, super::body_specialization::closed_release_ready(&[]),
+        ).await
     }
 
     pub(super) async fn compile_checked_source_pack_with_lowering<S: AsRef<str>>(
@@ -1766,7 +1769,7 @@ impl<'gpu> GpuCompiler<'gpu> {
     ) -> Result<PendingOriginalUnit, CompileError> {
         self.compile_pending_original_source_pack_unit_for_target(
             SourcePackArtifactTarget::X86_64, template_sources, library_id, unit_id,
-            template_dependency_pages, source_paths,
+            template_dependency_pages, source_paths, false,
         ).await
     }
 
@@ -1779,6 +1782,9 @@ impl<'gpu> GpuCompiler<'gpu> {
         unit_id: u32,
         template_dependency_pages: std::sync::Arc<[Vec<crate::compiler::GpuSemanticInterfaceArtifact>]>,
         source_paths: Option<&[Option<PathBuf>]>,
+        // The caller knows this is the program's last unit and that the
+        // trait solver will not run if it turns out solver-closed.
+        elide_closed_facts: bool,
     ) -> Result<PendingOriginalUnit, CompileError> {
         let lowering_target = object_lowering_target(target)?;
         if template_sources.is_empty() {
@@ -1802,6 +1808,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                     target: lowering_target,
                     library_id,
                     unit_id,
+                    elide_closed_facts,
                 }),
             )
             .await?;
@@ -2527,6 +2534,13 @@ struct OriginalUnitSnapshot {
     template_dependency_pages: std::sync::Arc<[Vec<crate::compiler::GpuSemanticInterfaceArtifact>]>,
     owner_spans: Option<std::sync::Arc<gpu_type_checker::CheckedOwnerSpans>>,
     instance_closure: Option<std::sync::Arc<gpu_type_checker::CheckedInstanceClosure>>,
+    solver_closed: bool,
+    facts_elided: bool,
+    /// The interface of this snapshot passed its serialization check.
+    interface_checked: std::sync::atomic::AtomicBool,
+    /// The most recent sets of open (not solver-closed) units, this one among
+    /// them, of programs the trait solver passed without changing any object.
+    released_with: std::sync::Mutex<Vec<Vec<std::sync::Weak<OriginalUnitSnapshot>>>>,
 }
 
 impl OriginalUnitFacts {
@@ -2543,6 +2557,10 @@ impl OriginalUnitFacts {
                 template_dependency_pages: unit.template_dependency_pages.clone(),
                 owner_spans: unit.owner_spans.clone(),
                 instance_closure: unit.instance_closure.clone(),
+                solver_closed: unit.solver_closed,
+                facts_elided: unit.facts_elided,
+                interface_checked: std::sync::atomic::AtomicBool::new(false),
+                released_with: std::sync::Mutex::new(Vec::new()),
             }),
             interface_validated_in_this_job: false,
         }
@@ -2572,6 +2590,63 @@ impl OriginalUnitFacts {
                 "semantic interface validated in this job no longer validates: {reason}"))?;
         }
         interface.check_encoded_len()
+    }
+
+    /// The unit's own GPU job left nothing for the whole-program trait solver.
+    pub(super) fn solver_closed(&self) -> bool {
+        self.snapshot.solver_closed
+    }
+
+    /// The unit's solver facts were never read back (it is solver-closed).
+    pub(super) fn facts_elided(&self) -> bool {
+        self.snapshot.facts_elided
+    }
+
+    /// The serialization check, run at most once per snapshot that passes.
+    pub(super) fn check_interface_serializable_once(&self) -> Result<(), String> {
+        use std::sync::atomic::Ordering;
+        if !self.snapshot.interface_checked.load(Ordering::Relaxed) {
+            self.check_interface_serializable()?;
+            self.snapshot.interface_checked.store(true, Ordering::Relaxed);
+        }
+        Ok(())
+    }
+
+    /// Whether `group` is exactly a set of open units the trait solver
+    /// released this snapshot with before.
+    pub(super) fn released_with(&self, group: &[&Self]) -> bool {
+        self.snapshot.released_with.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .any(|released| Self::same_group(released, group))
+    }
+
+    fn same_group(released: &[std::sync::Weak<OriginalUnitSnapshot>], group: &[&Self]) -> bool {
+        released.len() == group.len()
+            && group.iter().all(|unit| released.iter().any(|peer| {
+                std::ptr::eq(peer.as_ptr(), std::sync::Arc::as_ptr(&unit.snapshot))
+                    && peer.strong_count() != 0
+            }))
+    }
+
+    const RELEASED_GROUPS: usize = 8;
+
+    /// Record that the trait solver passed a program whose open units were
+    /// exactly `group` and left every object as compiled.
+    pub(super) fn mark_released_with(group: &[&Self]) {
+        use std::sync::atomic::Ordering;
+        for unit in group {
+            unit.snapshot.interface_checked.store(true, Ordering::Relaxed);
+            let mut released = unit.snapshot.released_with.lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            // Groups whose members were dropped can never match again.
+            released.retain(|peers| peers.iter().all(|peer| peer.strong_count() != 0)
+                && !Self::same_group(peers, group));
+            if released.len() == Self::RELEASED_GROUPS {
+                released.remove(0);
+            }
+            released.push(group.iter().map(|peer| std::sync::Arc::downgrade(&peer.snapshot)).collect());
+        }
     }
 
     /// Admission receipts match this exact immutable snapshot, never numeric
@@ -2665,6 +2740,14 @@ impl PendingOriginalUnit {
     ) -> anyhow::Result<(CompiledSourcePackUnit, Vec<program_evidence::AdmittedCall>)> {
         let calls = admission.check_original_unit(&self.facts)?;
         Ok((self.unit, calls))
+    }
+
+    /// Release without the trait solver. The caller has established that the
+    /// solver would pass this program and leave every object as compiled:
+    /// each unit is solver-closed or was released with exactly the program's
+    /// open units before (body_specialization.rs).
+    pub(super) fn release_closed(self) -> CompiledSourcePackObject {
+        self.unit.object
     }
 }
 
@@ -2810,6 +2893,8 @@ enum LoweringObjectRequest<'a> {
         target: LoweringTarget,
         library_id: u32,
         unit_id: u32,
+        /// Skip the solver facts when the GPU proves the unit solver-closed.
+        elide_closed_facts: bool,
     },
     Specialized {
         target: LoweringTarget,
@@ -2838,6 +2923,10 @@ impl<'a> LoweringObjectRequest<'a> {
             } => Some(template_contracts),
             _ => None,
         }
+    }
+
+    fn elide_closed_facts(self) -> bool {
+        matches!(self, Self::PendingOriginal { elide_closed_facts: true, .. })
     }
 
     fn body_specialization(self) -> Option<&'a gpu_type_checker::CheckedBodySpecializationBatch> {
@@ -2978,11 +3067,17 @@ fn finish_source_pack_unit(
     ).map_err(|error| CompileError::GpuFrontend(format!(
         "generic declaration arity retention failed: {error:#}"
     )))?;
-    let native_call_function_hirs = retain_native_call_owners(
-        &artifacts.native_call_hirs, &artifacts.native_call_owners,
-    ).map_err(|error| CompileError::GpuFrontend(format!(
-        "native call ownership retention failed: {error:#}"
-    )))?;
+    // Call owners serve only replays, which a unit without solver facts
+    // never has.
+    let native_call_function_hirs = if artifacts.facts_elided {
+        Vec::new()
+    } else {
+        retain_native_call_owners(
+            &artifacts.native_call_hirs, &artifacts.native_call_owners,
+        ).map_err(|error| CompileError::GpuFrontend(format!(
+            "native call ownership retention failed: {error:#}"
+        )))?
+    };
     // Resolving dependency signatures can remove ordinary imported calls from
     // the retained generic-call inventory. Keep exactly its checked owner rows,
     // including explicit no-function owners; absence is never a top-level scope.
@@ -3030,7 +3125,7 @@ fn finish_source_pack_unit(
     // An original unit's closure summary (D1b) rides on its interface for
     // its dependents. A unit whose summary cannot be built has none, which
     // its dependents treat as an absent summary.
-    if original {
+    if original && !artifacts.facts_elided {
         match gpu_type_checker::ClosureSummary::build(
             [library_id, unit_id],
             &artifacts.generic_calls,
@@ -3056,6 +3151,8 @@ fn finish_source_pack_unit(
     Ok(CompiledSourcePackUnit {
         owner_spans: artifacts.owner_spans.map(std::sync::Arc::new),
         instance_closure,
+        solver_closed: artifacts.solver_closed,
+        facts_elided: artifacts.facts_elided,
         interface,
         object,
         template_sources,
@@ -3083,6 +3180,8 @@ struct CheckedSourcePackArtifacts {
     checked_call_owners: Vec<gpu_type_checker::CheckedCallOwner>,
     native_call_owners: Vec<gpu_type_checker::CheckedCallOwner>,
     instance_closure: gpu_type_checker::CheckedInstanceClosure,
+    solver_closed: bool,
+    facts_elided: bool,
     native_call_hirs: Vec<u32>,
 }
 
@@ -3220,6 +3319,14 @@ pub(in crate::compiler) struct CompiledSourcePackUnit {
     /// The GPU instance closure of an original unit (D1); None for a replay
     /// or a unit without generic calls.
     pub(in crate::compiler) instance_closure: Option<std::sync::Arc<gpu_type_checker::CheckedInstanceClosure>>,
+    /// The unit's own GPU job proved it leaves nothing for the whole-program
+    /// trait solver: no call obligation, implementation or generic call that
+    /// its local checks did not already decide.
+    pub(in crate::compiler) solver_closed: bool,
+    /// A solver-closed unit compiled without its solver facts: its calls,
+    /// contracts, owners and closure summary were never read back. Only a
+    /// program that skips the trait solver may hold such a unit.
+    pub(in crate::compiler) facts_elided: bool,
     pub(in crate::compiler) interface: crate::compiler::GpuSemanticInterfaceArtifact,
     pub(in crate::compiler) object: CompiledSourcePackObject,
     pub(in crate::compiler) generic_calls: std::sync::Arc<[gpu_type_checker::CheckedGenericCall]>,

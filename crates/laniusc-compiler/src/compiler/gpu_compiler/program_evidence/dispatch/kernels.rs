@@ -323,10 +323,17 @@ fn record_phase_with_resources(
     } else {
         None
     };
-    let max_rows = if scratch.is_some() {
+    // Audit lanes take no scratch slot, so they run over their whole span.
+    let max_rows = if scratch.is_some() && !WHOLE_SPAN_KERNELS.contains(&pass.shader_id.as_str()) {
         max_rows.min(THREAD_SCRATCH_SLOTS)
     } else {
         max_rows
+    };
+    let audit = match proof {
+        Some(proof) if passes_core::bind_group::declares_binding(pass, 0, COMMIT_AUDIT) => {
+            Some(commit_audit(catalog, proof.storage)?)
+        }
+        _ => None,
     };
     // LANIUS_DEBUG_EVIDENCE_DISPATCHES=1 logs each requested span, for sizing
     // the scratch chunk against real row counts.
@@ -404,6 +411,9 @@ fn record_phase_with_resources(
         if let Some(demand) = demand {
             resources.push(("program_evidence_proof_demand", demand.as_entire_binding()));
         }
+        if let Some(audit) = &audit {
+            resources.push((COMMIT_AUDIT, audit.as_entire_binding()));
+        }
         let bindings = passes_core::bind_group::create_bind_group_from_bindings(
             device,
             Some("program_evidence.bindings"),
@@ -430,6 +440,32 @@ fn thread_scratch(catalog: &Arena) -> Result<LaniusBuffer<u32>> {
         .workspace()
         .shared("program_evidence.thread_scratch")
         .buffer(THREAD_SCRATCH_SLOTS * THREAD_SCRATCH_CELLS * 4, wgpu::BufferUsages::STORAGE, None)
+}
+
+/// The commit audits' shared words (proof_commit_audit.slang): a header, then
+/// one claim word per two words of the proof arena. The role is shared: a
+/// stage's audit lanes and committing thread are recorded together, and
+/// stale claim words can only send a commit to its serial stage.
+const COMMIT_AUDIT: &str = "program_evidence_commit_audit";
+const COMMIT_AUDIT_HEADER_WORDS: u32 = 16;
+pub(super) fn commit_audit(catalog: &Arena, proof: &Arena) -> Result<LaniusBuffer<u32>> {
+    let claims = u32::try_from(proof.buffer.byte_size / 8)?;
+    let words = claims
+        .checked_add(COMMIT_AUDIT_HEADER_WORDS + 1)
+        .ok_or_else(|| anyhow!("commit audit table overflow"))?;
+    catalog.workspace().shared("program_evidence.commit_audit").buffer(
+        words,
+        wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
+        None,
+    )
+}
+/// Zeroes the audit header for a solver attempt, keeping its epoch word: an
+/// earlier attempt may have stopped between a stage's audit and its commit.
+pub(super) fn reset_commit_audit(catalog: &Arena, proof: ProofResources<'_>) -> Result<()> {
+    let audit = commit_audit(catalog, proof.storage)?;
+    let zeros = [0u8; (COMMIT_AUDIT_HEADER_WORDS as usize - 1) * 4];
+    audit.write(catalog.workspace().queue(), 4, &zeros);
+    Ok(())
 }
 
 #[derive(Clone, Copy)]
@@ -719,12 +755,39 @@ const WAVE_PLAN_PHASE: u32 = 70;
 /// and prerequisite Works (phase 42).
 pub(super) const COUNT_ORIGINAL_NORMALIZATION: u32 = 67;
 pub(super) const COUNT_PREREQUISITE_NORMALIZATION: u32 = 68;
-/// Commit stages that run as one 256-lane workgroup: the lanes audit
-/// together, then lane 0 publishes (or reruns the serial stage). Like the
-/// one-thread stages, they take only the one-row span (0, 1).
-const GROUP_STAGES: &[u32] = &[45, 47, 55];
-fn single_dispatch(phase: u32, threads: u32) -> bool {
-    threads == 1 || GROUP_STAGES.contains(&phase)
+const AUDIT_TERMS: &str = "type_checker/program_evidence/entries/45_audit_normalized_terms";
+const COMMIT_TERMS: &str = "type_checker/program_evidence/entries/45_commit_normalized_terms";
+const AUDIT_GOALS: &str = "type_checker/program_evidence/entries/47_audit_normalized_goals";
+const COMMIT_GOALS: &str = "type_checker/program_evidence/entries/47_commit_normalized_goals";
+const MARK_GOALS: &str = "type_checker/program_evidence/entries/47_mark_normalized_goals";
+const AUDIT_WORK: &str = "type_checker/program_evidence/entries/50_audit_work";
+const RESERVE_GOAL_INDEX: &str = "type_checker/program_evidence/entries/50_reserve_goal_index";
+const WRITE_GOAL_INDEX: &str = "type_checker/program_evidence/entries/50_write_goal_index";
+const COMMIT_WORK: &str = "type_checker/program_evidence/entries/50_commit_work";
+const AUDIT_SUBSTITUTIONS: &str = "type_checker/program_evidence/entries/55_audit_substitutions";
+const COMMIT_SUBSTITUTIONS: &str = "type_checker/program_evidence/entries/55_commit_substitutions";
+/// Commit stages over the whole grid (proof_commit_audit.slang): audit lanes
+/// over the owner rows, then one committing thread; 47 and 50 go on with the
+/// lanes, and for 50 the thread, that finish what the commit let through.
+/// The lanes of 45, 47 and 55 take every admitted Work, those of 50 the
+/// pending Work rows; each thread takes the one-row span (0, 1).
+const COMMIT_STAGES: [(u32, &[&str]); 4] = [
+    (45, &[AUDIT_TERMS, COMMIT_TERMS]),
+    (47, &[AUDIT_GOALS, COMMIT_GOALS, MARK_GOALS]),
+    (50, &[AUDIT_WORK, RESERVE_GOAL_INDEX, WRITE_GOAL_INDEX, COMMIT_WORK]),
+    (55, &[AUDIT_SUBSTITUTIONS, COMMIT_SUBSTITUTIONS]),
+];
+/// Lanes that use no thread-scratch slot: one dispatch over the whole span.
+const WHOLE_SPAN_KERNELS: [&str; 6] = [
+    AUDIT_TERMS,
+    AUDIT_GOALS,
+    MARK_GOALS,
+    AUDIT_WORK,
+    WRITE_GOAL_INDEX,
+    AUDIT_SUBSTITUTIONS,
+];
+fn commit_stage(phase: u32) -> Option<&'static [&'static str]> {
+    COMMIT_STAGES.iter().find(|(entry, _)| *entry == phase).map(|(_, keys)| *keys)
 }
 const PROOF_KEYS: &[(u32, &str, u32)] = &[
     (
@@ -752,23 +815,17 @@ const PROOF_KEYS: &[(u32, &str, u32)] = &[
         "type_checker/program_evidence/entries/44_validate_prerequisite_normalization",
         256,
     ),
-    // One 256-lane workgroup over the one-row span (0, 1).
-    (
-        45,
-        "type_checker/program_evidence/entries/45_commit_normalized_terms",
-        256,
-    ),
+    // Commit stages 45, 47, 50 and 55: see COMMIT_STAGES.
+    (45, AUDIT_TERMS, 256),
+    (45, COMMIT_TERMS, 1),
     (
         46,
         "type_checker/program_evidence/entries/46_hash_normalized_goals",
         256,
     ),
-    // One 256-lane workgroup over the one-row span (0, 1).
-    (
-        47,
-        "type_checker/program_evidence/entries/47_commit_normalized_goals",
-        256,
-    ),
+    (47, AUDIT_GOALS, 256),
+    (47, COMMIT_GOALS, 1),
+    (47, MARK_GOALS, 256),
     (
         48,
         "type_checker/program_evidence/entries/48_initialize_work",
@@ -779,11 +836,10 @@ const PROOF_KEYS: &[(u32, &str, u32)] = &[
         "type_checker/program_evidence/entries/49_admit_work",
         256,
     ),
-    (
-        50,
-        "type_checker/program_evidence/entries/50_commit_work",
-        1,
-    ),
+    (50, AUDIT_WORK, 256),
+    (50, RESERVE_GOAL_INDEX, 1),
+    (50, WRITE_GOAL_INDEX, 256),
+    (50, COMMIT_WORK, 1),
     (
         51,
         "type_checker/program_evidence/entries/51_index_work",
@@ -812,12 +868,8 @@ const PROOF_KEYS: &[(u32, &str, u32)] = &[
     (54, WALK_ROOTS, 256),
     (54, WALK_BINDINGS, 256),
     (54, BINDING_ROWS, 256),
-    // One 256-lane workgroup over the one-row span (0, 1).
-    (
-        55,
-        "type_checker/program_evidence/entries/55_commit_substitutions",
-        256,
-    ),
+    (55, AUDIT_SUBSTITUTIONS, 256),
+    (55, COMMIT_SUBSTITUTIONS, 1),
     (
         56,
         "type_checker/program_evidence/entries/56_expand_work",
@@ -890,26 +942,27 @@ impl ProofKernels {
             .collect::<Result<Vec<_>>>()?;
         Ok(Self { passes })
     }
+    /// Normalization of the round's `work`; its two commits audit
+    /// `all_work`, every admitted Work.
     pub fn record_normalization(
         &self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         work: Span,
+        all_work: Span,
         catalog: &Arena,
         input: &Arena,
         output: &Arena,
         proof: ProofResources<'_>,
     ) -> Result<()> {
         for phase in 41..=47 {
-            let span = if matches!(phase, 45 | 47) {
-                Span::new(0, 1)?
-            } else {
-                work
-            };
+            let span = if matches!(phase, 45 | 47) { all_work } else { work };
             self.record(device, encoder, phase, span, catalog, input, output, proof)?;
         }
         Ok(())
     }
+    /// Records one stage over `span`. For a commit stage (COMMIT_STAGES)
+    /// `span` is its lanes' rows, and each of its threads runs once.
     pub fn record(
         &self,
         device: &wgpu::Device,
@@ -926,6 +979,14 @@ impl ProofKernels {
                 | WAVE_PLAN_PHASE | COUNT_ORIGINAL_NORMALIZATION | COUNT_PREREQUISITE_NORMALIZATION),
             "proof stage {phase} records through its own recorder"
         );
+        if let Some(keys) = commit_stage(phase) {
+            for key in keys {
+                let index = proof_key_index(key)?;
+                let span = if PROOF_KEYS[index].2 == 1 { Span::new(0, 1)? } else { span };
+                self.record_index(device, encoder, index, span, catalog, input, output, proof)?;
+            }
+            return Ok(());
+        }
         let index = PROOF_KEYS
             .iter()
             .position(|(entry, _, _)| *entry == phase)
@@ -1107,7 +1168,7 @@ impl ProofKernels {
     ) -> Result<()> {
         let (phase, _, threads) = PROOF_KEYS[index];
         ensure!(
-            !single_dispatch(phase, threads) || (span.first == 0 && span.count == 1),
+            threads != 1 || (span.first == 0 && span.count == 1),
             "singleton proof stage needs exactly one dispatch"
         );
         record_phase_with_proof(
@@ -1204,15 +1265,17 @@ enum WaveSpan {
     Work = 2,
     WorkOne = 3,
     Requirements = 4,
-    SelectedWork = 5,
-    Bindings = 6,
-    SelectedOne = 7,
-    ExpandedWork = 8,
-    ExpandedOne = 9,
-    Queue = 10,
-    EmittedQueue = 11,
-    ProofEdges = 12,
-    EmittedOne = 13,
+    AllWork = 5,
+    SelectedWork = 6,
+    Bindings = 7,
+    SelectedOne = 8,
+    SelectedAllWork = 9,
+    ExpandedWork = 10,
+    ExpandedOne = 11,
+    Queue = 12,
+    EmittedQueue = 13,
+    ProofEdges = 14,
+    EmittedOne = 15,
 }
 impl WaveSpan {
     fn is_one(self) -> bool {
@@ -1224,6 +1287,11 @@ impl WaveSpan {
                 | WaveSpan::ExpandedOne
                 | WaveSpan::EmittedOne
         )
+    }
+    /// Every admitted Work, for the commit audits: one step over the whole
+    /// span, however long.
+    fn is_whole(self) -> bool {
+        matches!(self, WaveSpan::AllWork | WaveSpan::SelectedAllWork)
     }
 }
 
@@ -1237,21 +1305,35 @@ fn wave_segment(point: WavePoint) -> Result<Vec<(WaveSpan, Vec<(&'static str, u3
             .map(|(_, key, _)| (*key, phase))
             .ok_or_else(|| anyhow!("unregistered proof stage {phase}"))
     };
+    // A commit stage (COMMIT_STAGES): its lanes over `rows`, its threads once.
+    let commit = |phase: u32, rows: WaveSpan, one: WaveSpan| -> Result<Vec<(WaveSpan, Vec<(&'static str, u32)>)>> {
+        let keys = commit_stage(phase).ok_or_else(|| anyhow!("proof stage {phase} is not a commit"))?;
+        keys.iter()
+            .map(|&key| {
+                let threads = PROOF_KEYS[proof_key_index(key)?].2;
+                Ok((if threads == 1 { one } else { rows }, vec![(key, phase)]))
+            })
+            .collect()
+    };
     use WaveSpan::*;
     Ok(match point {
         // Each Work admission counts the next normalization's rows, as the
         // stepped loop does (GpuProgramEvidence::admit_counted_work).
-        WavePoint::FirstWork => vec![
-            (FirstWork, vec![stage(49)?]),
-            (FirstOne, vec![stage(50)?]),
-            (FirstWork, vec![stage(COUNT_ORIGINAL_NORMALIZATION)?]),
-        ],
+        WavePoint::FirstWork => {
+            let mut groups = vec![(FirstWork, vec![stage(49)?])];
+            groups.extend(commit(50, FirstWork, FirstOne)?);
+            groups.push((FirstWork, vec![stage(COUNT_ORIGINAL_NORMALIZATION)?]));
+            groups
+        }
         WavePoint::Round => {
             // ProofKernels::record_normalization, 51, 52, 57, record_selection.
             let mut groups = Vec::new();
             for phase in 41..=47 {
-                let span = if matches!(phase, 45 | 47) { WorkOne } else { Work };
-                groups.push((span, vec![stage(phase)?]));
+                if matches!(phase, 45 | 47) {
+                    groups.extend(commit(phase, AllWork, WorkOne)?);
+                } else {
+                    groups.push((Work, vec![stage(phase)?]));
+                }
             }
             groups.push((Work, vec![stage(51)?]));
             groups.push((Work, vec![stage(52)?]));
@@ -1259,17 +1341,21 @@ fn wave_segment(point: WavePoint) -> Result<Vec<(WaveSpan, Vec<(&'static str, u3
             groups.push((Work, SELECTION_STEPS.to_vec()));
             groups
         }
-        WavePoint::Selected => vec![
-            (SelectedWork, SUBSTITUTION_STEPS.to_vec()),
-            (Bindings, vec![(BINDING_ROWS, SUBSTITUTION_PHASE)]),
-            (SelectedOne, vec![stage(55)?]),
-            (SelectedWork, vec![stage(56)?]),
-        ],
-        WavePoint::Expanded => vec![
-            (ExpandedWork, vec![stage(49)?]),
-            (ExpandedOne, vec![stage(50)?]),
-            (ExpandedWork, vec![stage(COUNT_PREREQUISITE_NORMALIZATION)?]),
-        ],
+        WavePoint::Selected => {
+            let mut groups = vec![
+                (SelectedWork, SUBSTITUTION_STEPS.to_vec()),
+                (Bindings, vec![(BINDING_ROWS, SUBSTITUTION_PHASE)]),
+            ];
+            groups.extend(commit(55, SelectedAllWork, SelectedOne)?);
+            groups.push((SelectedWork, vec![stage(56)?]));
+            groups
+        }
+        WavePoint::Expanded => {
+            let mut groups = vec![(ExpandedWork, vec![stage(49)?])];
+            groups.extend(commit(50, ExpandedWork, ExpandedOne)?);
+            groups.push((ExpandedWork, vec![stage(COUNT_PREREQUISITE_NORMALIZATION)?]));
+            groups
+        }
         WavePoint::Queue => vec![(Queue, vec![stage(58)?])],
         WavePoint::Emitted => vec![
             (EmittedQueue, IMPLEMENTATION_PROOF_STEPS.to_vec()),
@@ -1382,8 +1468,12 @@ impl ProofKernels {
         for &point in points {
             let first = slots.len();
             for (span, steps) in wave_segment(point)? {
-                let span_chunks = if span.is_one() { 1 } else { chunks };
-                let limit = span_chunks.saturating_mul(THREAD_SCRATCH_SLOTS);
+                let span_chunks = if span.is_one() || span.is_whole() { 1 } else { chunks };
+                let limit = if span.is_whole() {
+                    u32::MAX
+                } else {
+                    span_chunks.saturating_mul(THREAD_SCRATCH_SLOTS)
+                };
                 let steps = steps
                     .into_iter()
                     .map(|(key, phase)| proof_key_index(key).map(|index| (index, phase)))
@@ -1391,10 +1481,15 @@ impl ProofKernels {
                 for chunk in 1..=span_chunks {
                     for &(index, phase) in &steps {
                         ensure!(
-                            !single_dispatch(phase, PROOF_KEYS[index].2) || span.is_one(),
+                            PROOF_KEYS[index].2 != 1 || span.is_one(),
                             "singleton proof stage needs exactly one dispatch"
                         );
-                        slots.push((index, phase, span, chunk, limit));
+                        ensure!(
+                            !span.is_whole() || WHOLE_SPAN_KERNELS.contains(&PROOF_KEYS[index].1),
+                            "a whole-span step needs a kernel without scratch slots"
+                        );
+                        // Chunk word 0: the whole span (PSW_SLOT_CHUNK).
+                        slots.push((index, phase, span, if span.is_whole() { 0 } else { chunk }, limit));
                     }
                 }
             }
@@ -1428,6 +1523,7 @@ impl ProofKernels {
             Some(&words),
         )?;
         let scratch = thread_scratch(catalog)?;
+        let audit = commit_audit(catalog, proof.storage)?;
         // One proof-store parameter block per phase.
         let mut phases = vec![WAVE_PLAN_PHASE];
         for &(_, phase, _, _, _) in &slots {
@@ -1502,6 +1598,7 @@ impl ProofKernels {
                             ("proof_store_params", params_binding(&proof_uniform(phase).0)),
                             ("thread_scratch", scratch.as_entire_binding()),
                             ("program_evidence_proof_demand", demand.as_entire_binding()),
+                            (COMMIT_AUDIT, audit.as_entire_binding()),
                         ];
                         let bindings = passes_core::bind_group::create_bind_group_from_bindings(
                             device,

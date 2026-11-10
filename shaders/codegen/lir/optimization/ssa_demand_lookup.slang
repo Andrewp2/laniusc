@@ -54,14 +54,16 @@ public OptIrSsaDemand opt_ir_declaration_block_key(
     return key;
 }
 
-public uint opt_ir_lower_bound_declaration_block(
+// Lower bound inside the half-open row window `[lo, hi)`. A lane that stays on
+// one declaration narrows the window to that declaration's rows once and then
+// pays only for the blocks of that declaration.
+public uint opt_ir_lower_bound_declaration_block_in(
     uint declaration,
     uint block,
-    uint row_total,
+    uint lo,
+    uint hi,
     uint access_total)
 {
-    uint lo = 0u;
-    uint hi = row_total;
     while (lo < hi)
     {
         uint mid = lo + (hi - lo) / 2u;
@@ -74,14 +76,28 @@ public uint opt_ir_lower_bound_declaration_block(
     return lo;
 }
 
-public uint opt_ir_outgoing_local_definition(
+public uint opt_ir_lower_bound_declaration_block(
     uint declaration,
     uint block,
+    uint row_total,
+    uint access_total)
+{
+    return opt_ir_lower_bound_declaration_block_in(
+        declaration, block, 0u, row_total, access_total);
+}
+
+// `[lo, hi)` must contain every row of `declaration`; the full table always
+// qualifies.
+public uint opt_ir_outgoing_local_definition_in(
+    uint declaration,
+    uint block,
+    uint lo,
+    uint hi,
     uint declaration_block_total,
     uint access_total)
 {
-    uint row = opt_ir_lower_bound_declaration_block(
-        declaration, block, declaration_block_total, access_total);
+    uint row = opt_ir_lower_bound_declaration_block_in(
+        declaration, block, lo, hi, access_total);
     if (row >= declaration_block_total) return SSA_DEMAND_INVALID;
     OptIrSsaDemand key = opt_ir_declaration_block_key(row, access_total);
     if (key.declaration != declaration || key.block != block)
@@ -96,4 +112,19 @@ public uint opt_ir_outgoing_local_definition(
     return access_id < access_total
         ? opt_ir_local_definition_by_access[access_id]
         : SSA_DEMAND_INVALID;
+}
+
+public uint opt_ir_outgoing_local_definition(
+    uint declaration,
+    uint block,
+    uint declaration_block_total,
+    uint access_total)
+{
+    return opt_ir_outgoing_local_definition_in(
+        declaration,
+        block,
+        0u,
+        declaration_block_total,
+        declaration_block_total,
+        access_total);
 }

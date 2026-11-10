@@ -1009,11 +1009,14 @@ impl GpuCompiler<'_> {
         standard_library: bool,
         source_files: &[ExplicitSourcePathFile],
         dependency_pages: Arc<[Vec<GpuSemanticInterfaceArtifact>]>,
+        elide_closed_facts: bool,
     ) -> Result<PendingOriginalUnit, super::CompileError> {
         let unit_id = u32::try_from(job.phase_unit_index).map_err(|_| {
             source_pack_artifact_store_error("pending native source-unit index exceeds u32")
         })?;
         let cacheable = standard_library && pending_original_cache_enabled();
+        // A retained original serves later programs, which may need its facts.
+        let elide_closed_facts = elide_closed_facts && !standard_library;
         let cache_hint = if cacheable {
             CompiledUnitCacheHintKey::new(
                 target,
@@ -1078,6 +1081,7 @@ impl GpuCompiler<'_> {
                 unit_id,
                 dependency_pages,
                 Some(&source_paths),
+                elide_closed_facts,
             )
             .await?;
         if let Some(key) = cache_key {
@@ -1289,6 +1293,8 @@ mod tests {
             body_binding_native_layouts: None,
             owner_spans: None,
             instance_closure: None,
+            solver_closed: false,
+            facts_elided: false,
             interface: GpuSemanticInterfaceArtifact {
                 version: crate::compiler::GPU_SEMANTIC_INTERFACE_VERSION,
                 library_id,

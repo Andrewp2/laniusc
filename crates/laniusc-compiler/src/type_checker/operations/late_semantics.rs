@@ -109,9 +109,12 @@ pub(in crate::type_checker) struct SemanticProjectionOperations {
     /// application index).
     pub(in crate::type_checker) body_field_closure: substitution_passes::FieldClosureOperations,
     pub(in crate::type_checker) body_field_closure_at: usize,
+    /// `body_specialization[i]` for this `i` is the canonical rearm inside
+    /// the body passes.
+    pub(in crate::type_checker) body_rearm_at: usize,
     pub(in crate::type_checker) calls: ComputeOperation,
     pub(in crate::type_checker) generic_call_results: ComputeOperation,
-    /// The instance closure of an original job, after the call results.
+    /// The instance closure of an original job, ahead of the body passes.
     pub(in crate::type_checker) instance_closure: instance_closure_passes::InstanceClosureOperations,
     pub(in crate::type_checker) instance_table: instance_closure_passes::InstanceTableOperations,
     pub(in crate::type_checker) canonical_types: CanonicalTypeOperations,
@@ -203,6 +206,7 @@ impl SemanticProjectionOperations {
         )?;
         let body_canonical_split = std::cell::Cell::new(0usize);
         let body_field_closure_at = std::cell::Cell::new(0usize);
+        let body_rearm_at = std::cell::Cell::new(0usize);
         let owner_span_count: LaniusBuffer<u32> =
             typed_buffer_from_resources(resources, "retained_owner_span_count")?;
         let body_span_count: LaniusBuffer<u32> =
@@ -343,6 +347,9 @@ impl SemanticProjectionOperations {
                 if name == compiler_graph::BODY_FIELD_CLOSURE_AFTER_PASS {
                     body_field_closure_at.set(index + 1);
                 }
+                if name == compiler_graph::BODY_SPECIALIZATION_CANONICAL_REARM_PASS {
+                    body_rearm_at.set(index);
+                }
                 // These relations are initialized only for the corresponding
                 // parser feature. A reused workspace can contain unrelated
                 // scratch in their slots when the feature is absent.
@@ -419,6 +426,7 @@ impl SemanticProjectionOperations {
                 &typed_buffer_from_resources(resources, "token_active_dispatch_args")?,
             )?,
             body_field_closure_at: body_field_closure_at.get(),
+            body_rearm_at: body_rearm_at.get(),
             retained_callables: CompactionOperation::indirect(
                 device,
                 graph,

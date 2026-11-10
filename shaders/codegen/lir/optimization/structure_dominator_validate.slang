@@ -1,9 +1,8 @@
-// Validate complete dependency consumption and one well-formed immediate
-// dominator per reachable block before declaration-specific SSA work begins.
+// Validate one well-formed immediate dominator per reachable block before
+// declaration-specific SSA work begins.
 
 import codegen.lowering_ir;
 import codegen.optimization_ir;
-import codegen.lir.optimization.ssa_sparse_work;
 import gpu_index;
 
 struct Params
@@ -21,8 +20,6 @@ StructuredBuffer<OptIrBlock> opt_ir_blocks;
 StructuredBuffer<OptIrFunction> opt_ir_functions;
 StructuredBuffer<uint> opt_ir_immediate_dominator;
 StructuredBuffer<uint> opt_ir_reachable;
-StructuredBuffer<uint> opt_ir_forward_predecessor_count_by_block;
-StructuredBuffer<uint> opt_ir_reachability_work_state;
 RWStructuredBuffer<LoweringStatus> lowering_status;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -57,17 +54,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint dominator = opt_ir_immediate_dominator[block_id];
     uint entry = opt_ir_functions[block.function_id].entry_block;
     bool reachable = opt_ir_reachable[block_id] != 0u;
-    bool valid = opt_ir_forward_predecessor_count_by_block[block_id] == 0u;
-    valid = valid && (block_id == entry
+    bool valid = block_id == entry
         ? reachable && dominator == block_id
         : !reachable ? dominator == OPT_IR_DOMINATOR_UNREACHABLE
         : dominator < block_total && dominator != block_id &&
           opt_ir_blocks[dominator].function_id == block.function_id &&
-          opt_ir_blocks[dominator].position_start < block.position_start);
-    if (block_id == 0u)
-        valid = valid && opt_ir_reachability_work_state[SSA_WORK_HEAD] ==
-            opt_ir_reachability_work_state[SSA_WORK_TAIL] &&
-            opt_ir_reachability_work_state[SSA_WORK_TAIL] <= block_total &&
-            opt_ir_reachability_work_state[SSA_WORK_OUTSTANDING] == 0u;
+          opt_ir_blocks[dominator].position_start < block.position_start;
     if (!valid) report_structure_failure(block_id);
 }

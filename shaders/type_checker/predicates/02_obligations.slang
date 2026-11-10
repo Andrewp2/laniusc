@@ -77,6 +77,16 @@ StructuredBuffer<uint> predicate_obligation_pair_total;
 
 RWStructuredBuffer<uint> status;
 
+#if defined(LANIUS_OBLIGATION_COUNT_PASS) || defined(LANIUS_OBLIGATION_VALIDATE_PASS)
+// What this unit leaves for the whole-program trait solver, counted by the
+// unit's own job (closure/04e_solver_demand.slang). Word 0: call obligations
+// that no enclosing contract and no unique concrete local implementation
+// proves. Word 1: implementations and bounds the local index cannot decide.
+RWStructuredBuffer<uint> solver_demand;
+static const uint SOLVER_DEMAND_OBLIGATIONS = 0u;
+static const uint SOLVER_DEMAND_IMPLEMENTATIONS = 1u;
+#endif
+
 #include "../type/instances/lexical_parameter_lookup.slang"
 
 static const uint INVALID = 0xffffffffu;
@@ -545,15 +555,33 @@ void validate_trait_obligation_for_call(uint pred, uint fn_node, uint node)
     uint replay_owner = gParams.authorized_replay_callable;
     bool authorized_replay = gParams.trait_obligation_mode == 2u &&
         valid_node(replay_owner) && compact_hir_core[replay_owner].kind == 3u;
-    if ((gParams.trait_obligation_mode == 1u || authorized_replay) &&
-        call_intrinsic_tag[callee] == 0u) return;
+    bool deferred = (gParams.trait_obligation_mode == 1u || authorized_replay) &&
+        call_intrinsic_tag[callee] == 0u;
+#if defined(LANIUS_OBLIGATION_VALIDATE_PASS)
+    // An original job still records whether its own concrete implementations
+    // decide the bound. One that they do not decide stays with the
+    // whole-program solver, which reports it.
+    bool count_demand = deferred && gParams.trait_obligation_mode == 1u;
+    if (deferred && !count_demand) return;
+#else
+    bool count_demand = false;
+    if (deferred) return;
+#endif
     uint first_match;
     uint matches = impl_index_match_count(predicate_bound_reference[pred], subject,
         pred, context, count, hash, first_match);
-    if (matches != 1u)
-        record_error(callee,
-            matches == 0u ? ERR_TRAIT_BOUND_UNSATISFIED : ERR_TRAIT_BOUND_AMBIGUOUS,
-            matches == 0u ? PREDICATE_STATUS_UNSATISFIED_BOUND : PREDICATE_STATUS_AMBIGUOUS_BOUND);
+    if (matches == 1u) return;
+#if defined(LANIUS_OBLIGATION_VALIDATE_PASS)
+    if (count_demand)
+    {
+        uint ignored;
+        InterlockedAdd(solver_demand[SOLVER_DEMAND_OBLIGATIONS], 1u, ignored);
+        return;
+    }
+#endif
+    record_error(callee,
+        matches == 0u ? ERR_TRAIT_BOUND_UNSATISFIED : ERR_TRAIT_BOUND_AMBIGUOUS,
+        matches == 0u ? PREDICATE_STATUS_UNSATISFIED_BOUND : PREDICATE_STATUS_AMBIGUOUS_BOUND);
 }
 
 // Resolve the accepted local callable before walking its lexical contract.
@@ -634,6 +662,34 @@ uint callable_contract_predicate(uint function, uint ordinal,
 }
 
 #if defined(LANIUS_OBLIGATION_COUNT_PASS)
+// The local exact-key index decides a bound only among concrete
+// implementations of this unit's own traits, and call sites prove only the
+// bounds a function owns. Every other predicate row needs the solver: a
+// generic implementation head, an implementation of a dependency's trait
+// (another unit may implement it too), and a bound owned by an
+// implementation or a declaration (a prerequisite the solver discharges).
+void count_solver_implementation_demand(uint node)
+{
+    if (!valid_node(node)) return;
+    uint owner = predicate_owner_node[node];
+    if (!valid_node(owner)) return;
+    bool demand;
+    if (owner == node)
+    {
+        demand = compact_hir_semantic_facts[node].semantic_kind == HIR_SEMANTIC_IMPL_TRAIT &&
+            (compact_generic_param_ranges[node].count != 0u ||
+            predicate_bound_reference[node] == INVALID ||
+            trait_reference_is_dependency(predicate_bound_reference[node]));
+    }
+    else
+        demand = compact_hir_core[owner].kind != 3u;
+    if (demand)
+    {
+        uint ignored;
+        InterlockedAdd(solver_demand[SOLVER_DEMAND_IMPLEMENTATIONS], 1u, ignored);
+    }
+}
+
 void count_call_predicate_obligations(uint call_node)
 {
     if (!valid_node(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)

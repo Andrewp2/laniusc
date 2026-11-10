@@ -867,15 +867,13 @@ mod tests {
         }
     }
 
-    // A job records one aggregate layout round without enums and one round
-    // per `enum` word of its text with them
-    // (LoweringJobBounds::aggregate_layout_rounds), and the pointer-jump
-    // pairs of its token capacity (LoweringCapacities::job_jump_pairs). Every
-    // later round must leave the layouts unchanged and every later pair must
-    // find nothing left to jump, so compiling the same program with the
-    // conservative bounds (all 64 rounds and the workspace's pairs) has to
-    // give the same artifact byte for byte. The enum cases nest as deep as
-    // they have declarations, so their bound is tight.
+    // A job records the pointer-jump pairs of its token capacity
+    // (LoweringCapacities::job_jump_pairs). Every later pair must find
+    // nothing left to jump, so compiling the same program with the
+    // conservative bounds (the workspace's pairs) has to give the same
+    // artifact byte for byte. The enum cases nest as deep as they have
+    // declarations, so they check the by-value layout walk
+    // (function_layout_words.slang) through every nesting level.
     //
     // Both compiles go through the production entry points on both targets;
     // only the bounds differ (TEST_CONSERVATIVE_LOWERING_BOUNDS). The cases
@@ -981,10 +979,9 @@ mod tests {
             //
             // All feature bits set: the bound comes from the text alone. A
             // token takes at least one byte, besides the file's EOF token.
-            let bounds = LoweringJobBounds::from_sources(
+            let bounds = LoweringJobBounds::from_lexed_bytes(
                 crate::lexer::features::CONSERVATIVE_PARSER_FEATURES,
                 u32::try_from(source.len()).unwrap(),
-                [source],
             )
             .with_token_capacity(u32::try_from(source.len() + 1).unwrap());
             let retained = compiler

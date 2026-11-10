@@ -20,8 +20,19 @@ StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<HirMethodSignature> compact_method_signatures;
 StructuredBuffer<uint> fn_start_token_by_decl_token;
+// Functions that are not instantiated in place (04b_select_inplace).
+RWStructuredBuffer<uint> instance_inplace_owner;
 
 static const uint INVALID = 0xffffffffu;
+static const uint INPLACE_BLOCKED = 0x80000000u;
+
+void inplace_block(uint row)
+{
+    uint rows; uint stride;
+    instance_inplace_owner.GetDimensions(rows, stride);
+    uint ignored;
+    if (row < rows) InterlockedOr(instance_inplace_owner[row], INPLACE_BLOCKED, ignored);
+}
 
 #include "closure_calls.slang"
 #include "bound_route.slang"
@@ -36,10 +47,14 @@ void route_bound_edge(uint call, uint token, uint4 instance, inout CtSpare subst
     if (selected == INVALID)
     {
         ic_count(IC_COUNT_SKIPPED);
+        inplace_block(instance.y);
         return;
     }
     // A nongeneric implementation's method is concrete.
     if (!ct_is_record(env)) return;
+    // A generic implementation's method is an instance the replays patch
+    // into the caller's body.
+    inplace_block(instance.y);
     HirMethodCore core = compact_method_cores[selected];
     uint candidate = core.name_token;
     uint member = fn_hir_by_decl_token[candidate];

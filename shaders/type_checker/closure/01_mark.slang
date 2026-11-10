@@ -18,8 +18,19 @@ StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<HirRange> compact_generic_param_ranges;
 StructuredBuffer<uint> compact_hir_nearest_fn;
+// Functions that are not instantiated in place (04b_select_inplace).
+RWStructuredBuffer<uint> instance_inplace_owner;
 
 static const uint INVALID = 0xffffffffu;
+static const uint INPLACE_BLOCKED = 0x80000000u;
+
+void inplace_block(uint row)
+{
+    uint rows; uint stride;
+    instance_inplace_owner.GetDimensions(rows, stride);
+    uint ignored;
+    if (row < rows) InterlockedOr(instance_inplace_owner[row], INPLACE_BLOCKED, ignored);
+}
 
 #include "closure_calls.slang"
 
@@ -55,14 +66,24 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
     uint owner = compact_hir_nearest_fn[call];
-    if (!valid_node(owner) || compact_hir_core[owner].kind != HIR_FN) return;
+    if (!valid_node(owner) || compact_hir_core[owner].kind != HIR_FN)
+    {
+        // A call outside any function is no instance the closure counts.
+        inplace_block(callee);
+        return;
+    }
     if (has_generic_environment(owner))
     {
         ic_link_edge(owner, call);
+        // The callee's environment depends on its caller's instances, and
+        // the caller's body holds a call the replays patch.
+        inplace_block(owner);
+        inplace_block(callee);
         return;
     }
     CtSpare subst_spare = ct_spare_none();
     CtSpare env_spare = ct_spare_none();
     uint key = closure_instance_env(token, callee, masks, CT_NONE, subst_spare, env_spare);
     if (ct_is_record(key)) ic_insert(key, callee, 1u, call);
+    else inplace_block(callee);
 }

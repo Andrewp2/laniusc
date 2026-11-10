@@ -9,7 +9,8 @@ use crate::{
 
 use super::literal_values::Params;
 
-/// Exact floating candidates with a bounded storage workspace.
+/// Exact floating candidates: one lane per claimed float literal, each with a
+/// storage workspace.
 pub struct HirFloatValuesPass {
     data: PassData,
 }
@@ -74,6 +75,8 @@ impl HirFloatValuesPass {
                 "hir_token_pos".into(),
                 buffers.hir_token_pos.as_entire_binding(),
             ),
+            ("hir_literal_status".into(), buffers.hir_literal_status.as_entire_binding()),
+            ("hir_float_nodes".into(), buffers.hir_float_nodes.as_entire_binding()),
             ("hir_expr_float_bits".into(), buffers.hir_expr_float_bits.as_entire_binding()),
             ("hir_float_workspace".into(), buffers.hir_float_workspace.as_entire_binding()),
         ]);

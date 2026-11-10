@@ -1,18 +1,11 @@
-// Shared exact sparse-set and bounded-work-queue primitives for GPU SSA.
-//
-// Persistent workgroups are schedulers only. Logical capacity lives in one
-// global set and queue, so changing worker occupancy never multiplies storage.
+// Shared exact sparse-set primitives for GPU SSA. Logical capacity lives in
+// one global set, so the number of lanes never multiplies storage.
 
 import atomics;
 
 public static const uint SSA_SPARSE_INSERT_EXISTING = 0u;
 public static const uint SSA_SPARSE_INSERTED = 1u;
 public static const uint SSA_SPARSE_INSERT_FULL = 2u;
-
-public static const uint SSA_WORK_HEAD = 0u;
-public static const uint SSA_WORK_TAIL = 1u;
-public static const uint SSA_WORK_OUTSTANDING = 2u;
-public static const uint SSA_WORK_RESERVED = 3u;
 
 public uint ssa_sparse_mix(uint value)
 {
@@ -90,111 +83,4 @@ public uint ssa_atomic_load(
     uint index)
 {
     return atomic_u32_add(values, index, 0u);
-}
-
-// Publishes value+1 so a zeroed queue slot is visibly not ready. Outstanding
-// is incremented before tail publication; the source item remains outstanding
-// until its workgroup has finished discovering every successor.
-public bool ssa_work_publish(
-    uint value,
-    uint capacity,
-    RWStructuredBuffer<uint> state,
-    RWStructuredBuffer<uint> queue,
-    out uint required)
-{
-    atomic_u32_add(state, SSA_WORK_OUTSTANDING, 1u);
-    uint row = atomic_u32_add(state, SSA_WORK_TAIL, 1u);
-    required = row + 1u;
-    if (row >= capacity)
-    {
-        atomic_u32_add(state, SSA_WORK_OUTSTANDING, 0xffffffffu);
-        return false;
-    }
-    uint ignored;
-    InterlockedExchange(queue[row], value + 1u, ignored);
-    return true;
-}
-
-// Returns one published value. A producer that has exposed a tail row is
-// already resident and will publish its slot; atomic polling avoids observing
-// an ordinary non-atomic payload write before it is ready.
-public bool ssa_work_try_pop(
-    uint capacity,
-    RWStructuredBuffer<uint> state,
-    RWStructuredBuffer<uint> queue,
-    out uint value)
-{
-    for (;;)
-    {
-        uint head = ssa_atomic_load(state, SSA_WORK_HEAD);
-        uint tail = ssa_atomic_load(state, SSA_WORK_TAIL);
-        if (head >= tail) return false;
-        uint prior = atomic_u32_compare_exchange(
-            state, SSA_WORK_HEAD, head, head + 1u);
-        if (prior != head) continue;
-        if (head >= capacity) continue;
-
-        uint published = 0u;
-        while (published == 0u)
-            published = ssa_atomic_load(queue, head);
-        value = published - 1u;
-        return true;
-    }
-}
-
-// Reserves up to max_count already-published queue rows with one head CAS.
-// One workgroup can then process the contiguous batch cooperatively instead
-// of contending once per lane. Rows beyond capacity are consumed but omitted;
-// their producers already reported capacity and withdrew their outstanding
-// contribution.
-public bool ssa_work_try_pop_batch(
-    uint capacity,
-    uint max_count,
-    RWStructuredBuffer<uint> state,
-    out uint begin,
-    out uint count)
-{
-    begin = 0u;
-    count = 0u;
-    for (;;)
-    {
-        uint head = ssa_atomic_load(state, SSA_WORK_HEAD);
-        uint tail = ssa_atomic_load(state, SSA_WORK_TAIL);
-        if (head >= tail) return false;
-        uint end = min(tail, head + max_count);
-        uint prior = atomic_u32_compare_exchange(
-            state, SSA_WORK_HEAD, head, end);
-        if (prior != head) continue;
-        if (head >= capacity) return false;
-        begin = head;
-        count = min(end, capacity) - head;
-        return count != 0u;
-    }
-}
-
-public uint ssa_work_read_published(
-    RWStructuredBuffer<uint> queue,
-    uint row)
-{
-    uint published = 0u;
-    while (published == 0u)
-        published = ssa_atomic_load(queue, row);
-    return published - 1u;
-}
-
-public bool ssa_work_quiescent(RWStructuredBuffer<uint> state)
-{
-    return ssa_atomic_load(state, SSA_WORK_OUTSTANDING) == 0u;
-}
-
-public void ssa_work_finish(RWStructuredBuffer<uint> state)
-{
-    atomic_u32_add(state, SSA_WORK_OUTSTANDING, 0xffffffffu);
-}
-
-public void ssa_work_finish_batch(
-    RWStructuredBuffer<uint> state,
-    uint count)
-{
-    atomic_u32_add(state, SSA_WORK_OUTSTANDING, 0u - count);
 }

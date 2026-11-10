@@ -87,6 +87,10 @@ impl HirLiteralValuesPass {
                 buffers.hir_literal_status.as_entire_binding(),
             ),
             (
+                "hir_float_nodes".into(),
+                buffers.hir_float_nodes.as_entire_binding(),
+            ),
+            (
                 "hir_expr_int_value".into(),
                 buffers.hir_expr_int_value.as_entire_binding(),
             ),

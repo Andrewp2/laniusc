@@ -571,6 +571,9 @@ impl GpuTypeChecker {
             call_generic_claim_capacity,
             parser_feature_flags,
             dependency_interfaces.is_some_and(|dependency| dependency.type_count != 0),
+            dependency_interfaces.map_or(0, |dependency| {
+                dependency.implementation_count.max(dependency.predicate_count)
+            }),
         )?;
         resources.validate_graph_passes_if_present(
             [

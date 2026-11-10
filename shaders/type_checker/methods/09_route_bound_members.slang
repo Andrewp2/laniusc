@@ -143,6 +143,8 @@ bool valid_hir(uint node) { return node < active_hir_count(); }
 uint active_hir_node_count() { return active_hir_count(); }
 
 #include "../type/instances/body_specialization_owner.slang"
+#define LANIUS_INPLACE_WRITE_OWNER 1
+#include "../closure/inplace_read.slang"
 #include "../type/instances/body_impl_bindings.slang"
 #include "../type/instances/body_type_graph_reference.slang"
 
@@ -543,6 +545,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         method_call_name_id[token] == INVALID) return;
     uint4 required = required_member(token);
     if (required.x == 0u) return;
+    // An original job routes only the bodies it instantiates in place
+    // (closure/04b_select_inplace); every other receiver is a parameter.
+    bool in_place = body_entry_count() == 0u;
+    uint in_place_owner = enclosing_fn[token] - 1u;
+    if (in_place && inplace_instance(in_place_owner) == INPLACE_NONE) return;
     uint tag = method_call_receiver_ref_tag[token];
     uint payload = method_call_receiver_ref_payload[token];
     if (tag == TYPE_REF_GENERIC_PARAM || tag == 0u || payload == INVALID) return;
@@ -654,6 +661,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
             if (aliases.x < gParams.n_tokens) call_context_owner_by_token[aliases.x] = call;
             if (aliases.y < gParams.n_tokens) call_context_owner_by_token[aliases.y] = call;
         }
+    }
+    // An in-place body whose call finds no member in this unit, or a generic
+    // implementation's member (an instance of its own), stays a template:
+    // a replay routes the call with its instance's evidence.
+    if (in_place && (!routed || selected_generic))
+    {
+        uint ignored;
+        InterlockedOr(instance_inplace_owner[in_place_owner], INPLACE_FAILED, ignored);
+        if (!routed) return;
     }
     if (!external && (matches != 1u || (selected_generic && !bindings)))
     {

@@ -155,8 +155,37 @@ impl GpuCompiler<'_> {
             .iter()
             .map(|unit| unit.facts().clone())
             .collect::<Vec<_>>();
+        // A unit whose own GPU job left nothing for the trait solver is
+        // closed. The solver decides only the open units, and an open unit's
+        // snapshot never changes, so a program whose open units are exactly a
+        // group the solver already passed unchanged needs no second run.
+        let release = ClosedRelease::from_env();
+        let open = facts.iter().filter(|unit| !unit.solver_closed()).collect::<Vec<_>>();
+        let predicted = release != ClosedRelease::Off
+            && closed_units_release(&facts.iter().collect::<Vec<_>>());
+        if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_SPECIALIZATION", false) {
+            eprintln!("[specialization] closed release units={} open={} predicted={predicted}",
+                facts.len(), open.len());
+        }
+        if predicted && release == ClosedRelease::On {
+            for unit in &facts {
+                unit.check_interface_serializable_once()
+                    .map_err(|error| native_program_error(anyhow::anyhow!(error)))?;
+            }
+            return Ok(pending.into_iter().map(PendingOriginalUnit::release_closed).collect());
+        }
+        if facts.iter().any(OriginalUnitFacts::facts_elided) {
+            return Err(CompileError::GpuCodegen(
+                "a unit compiled without its solver facts reached a program that needs the trait solver".into()));
+        }
+        let closed_units = facts.len() - open.len();
         let mut program = NativeProgramSession::admit(&self.program_evidence_workspace, &facts)
-            .map_err(native_program_error)?;
+            .map_err(|error| {
+                if release == ClosedRelease::Verify && closed_units != 0 {
+                    eprintln!("[closed-release] verify: solver error with {closed_units} closed units (predicted={predicted}): {error:#}");
+                }
+                native_program_error(error)
+            })?;
         let released = pending
             .into_iter()
             .zip(&facts)
@@ -177,7 +206,26 @@ impl GpuCompiler<'_> {
         let references = units.iter().collect::<Vec<_>>();
         let objects = self
             .specialize_admitted_source_pack_objects(&references, program, calls, spill_native)
-            .await?;
+            .await
+            .inspect_err(|error| {
+                if release == ClosedRelease::Verify && closed_units != 0 {
+                    eprintln!("[closed-release] verify: specialization error with {closed_units} closed units (predicted={predicted}): {error}");
+                }
+            })?;
+        let unchanged = objects.len() == units.len()
+            && objects.iter().all(|object| matches!(object, Cow::Borrowed(_)));
+        if release == ClosedRelease::Verify {
+            let closed_changed = facts.iter().zip(&objects)
+                .any(|(unit, object)| unit.solver_closed() && matches!(object, Cow::Owned(_)));
+            if closed_changed || (predicted && !unchanged) {
+                return Err(CompileError::GpuCodegen(format!(
+                    "closed release verification failed: the trait solver changed a program the GPU declared closed (closed_changed={closed_changed} predicted={predicted} objects={} units={})",
+                    objects.len(), units.len())));
+            }
+        }
+        if unchanged {
+            OriginalUnitFacts::mark_released_with(&open);
+        }
         Ok(objects.into_iter().map(Cow::into_owned).collect())
     }
 
@@ -2091,6 +2139,40 @@ fn specialization_limit_error(detail: &str) -> CompileError {
         Diagnostic::error("LNC0017", "generic specialization limit exceeded")
             .with_note(detail.to_owned()),
     )
+}
+
+/// Whether a program of exactly `units` needs no trait solver run: every unit
+/// is solver-closed or belongs to a group of open units the solver already
+/// passed unchanged, and that group is exactly this program's open units.
+fn closed_units_release(units: &[&OriginalUnitFacts]) -> bool {
+    let open = units.iter().copied().filter(|unit| !unit.solver_closed()).collect::<Vec<_>>();
+    units.windows(2).all(|pair| pair[0].target() == pair[1].target())
+        && open.iter().all(|unit| unit.released_with(&open))
+}
+
+/// Whether a program of `units` plus one more solver-closed unit will skip
+/// the trait solver at link. The answer only changes if `units` does.
+pub(super) fn closed_release_ready(units: &[&OriginalUnitFacts]) -> bool {
+    ClosedRelease::from_env() == ClosedRelease::On && closed_units_release(units)
+}
+
+/// `LANIUS_CLOSED_RELEASE`: `0` always runs the trait solver; `verify` runs
+/// it as well and fails when it changes what the GPU declared closed.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ClosedRelease {
+    Off,
+    On,
+    Verify,
+}
+
+impl ClosedRelease {
+    fn from_env() -> Self {
+        match std::env::var("LANIUS_CLOSED_RELEASE").as_deref() {
+            Ok("0") | Ok("off") | Ok("false") => Self::Off,
+            Ok("verify") => Self::Verify,
+            _ => Self::On,
+        }
+    }
 }
 
 #[cfg(test)]

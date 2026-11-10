@@ -720,12 +720,36 @@ pub(in crate::type_checker) const TYPE_INSTANCES_PROJECT: ReflectedComputeSpec =
 .with_indirect_dispatch("path_dispatch_args");
 
 /// Private types an exported type's fields need become hidden interface
-/// declarations, one workgroup, before the canonical early stage.
+/// declarations before the canonical early stage. One lane per field and
+/// payload row marks them (02_hidden); per-block counts (03_hidden_count)
+/// let every block publish its indices (04_hidden_publish).
 pub(in crate::type_checker) const INTERFACE_HIDDEN_DECLS_MAP: ReflectedComputeSpec = typecheck_operation!(
     "type_check.interface.public_decls.hidden",
     Declarations,
     "type_checker/interface/public_decls/02_hidden"
     ; resources [
+        typecheck_resource!("interface_public_decl_index_by_local" => "interface_public_decl_index_by_local", ReadWrite),
+        typecheck_resource!("interface_public_decl_index_by_hir" => "interface_public_decl_index_by_hir", ReadWrite),
+    ]
+);
+
+pub(in crate::type_checker) const INTERFACE_HIDDEN_DECLS_COUNT: ReflectedComputeSpec = typecheck_operation!(
+    "type_check.interface.public_decls.hidden_count",
+    Declarations,
+    "type_checker/interface/public_decls/03_hidden_count"
+    ; resources [
+        typecheck_resource!("interface_public_decl_count" => "interface_public_decl_count", Read),
+        typecheck_resource!("interface_public_decl_index_by_local" => "interface_public_decl_index_by_local", Read),
+        typecheck_resource!("interface_hidden_block_count" => "interface_hidden_block_count", Write),
+    ]
+);
+
+pub(in crate::type_checker) const INTERFACE_HIDDEN_DECLS_PUBLISH: ReflectedComputeSpec = typecheck_operation!(
+    "type_check.interface.public_decls.hidden_publish",
+    Declarations,
+    "type_checker/interface/public_decls/04_hidden_publish"
+    ; resources [
+        typecheck_resource!("interface_hidden_block_count" => "interface_hidden_block_count", Read),
         typecheck_resource!("status" => "status", ReadWrite),
         typecheck_resource!("interface_public_decl_count" => "interface_public_decl_count", ReadWrite),
         typecheck_resource!("interface_public_decl_local_id" => "interface_public_decl_local_id", ReadWrite),

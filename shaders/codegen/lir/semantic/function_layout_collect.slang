@@ -14,8 +14,7 @@ RWStructuredBuffer<uint> semantic_aggregate_hir_by_name_token;
 RWStructuredBuffer<uint> semantic_struct_field_count_by_hir;
 RWStructuredBuffer<uint> semantic_struct_field_start_by_hir;
 RWStructuredBuffer<uint> semantic_struct_word_count_by_hir;
-// Indirect arguments for the layout rounds: [0..3) one lane per variant row,
-// [3..6) one lane per field row.
+// Indirect arguments for layout validation: one lane per variant row.
 RWStructuredBuffer<uint> semantic_layout_dispatch_args;
 
 static const uint HIR_STRUCT_ITEM = 27u;
@@ -53,7 +52,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (row == 0u)
     {
         publish_layout_dispatch(0u, min(compact_variant_count[0u], hir_count));
-        publish_layout_dispatch(1u, field_count);
     }
     if (row < field_count)
     {

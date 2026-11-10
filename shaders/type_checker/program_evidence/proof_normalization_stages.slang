@@ -15,6 +15,7 @@ import type_checker.program_evidence.proof_term_candidate;
 import type_checker.program_evidence.proof_normalization_sources;
 import type_checker.program_evidence.proof_goal_admission;
 import type_checker.program_evidence.proof_span_coverage;
+import type_checker.program_evidence.proof_commit_audit;
 import type_checker.scoped_type_hash;
 import type_checker.scoped_type_scratch;
 
@@ -392,140 +393,126 @@ public EvidenceStatus pps_commit_normalized_terms()
     return pev_ok();
 }
 
-// Phase 45 as one 256-lane workgroup. The lanes audit in parallel what
+// Phase 45 over the whole grid: one audit lane per Work, then one committing
+// thread (proof_commit_audit.slang). The lanes prove what
 // pps_commit_normalized_terms audits serially, everything before its
-// preflight. True proves the serial audit succeeds, so lane 0 then runs only
-// the preflight and publication (pps_publish_normalized_terms); false proves
-// nothing, and lane 0 runs the serial stage for its exact result.
-groupshared uint4 pps_group_normalization_spans[5];
-groupshared uint pps_group_normalization_totals[5];
-groupshared uint pps_group_normalization_works;
-// One word per phase: a word read after one barrier is written again only
-// after the next one.
-groupshared uint pps_group_normalization_known;
-groupshared uint pps_group_normalization_failed;
-
+// preflight. A Work's lane makes the serial audit's checks of that Work and
+// claims the rows the Work owns: its goal and requests, and through each of
+// its requests the request's nodes, edges and root.
+//
+// The serial audit covers the term rows from the pending requests instead of
+// from the Works. The two agree once the Works' request spans cover the
+// pending requests exactly, which the same audit proves: then the requests
+// reached through the Works are every pending request, each once, and each
+// one already passed the checks PendingNormalizationRequestSpans makes of it.
 uint pps_normalization_commit_table(uint t)
 {
     return t == 0u ? PPS_TERM_NODES : t == 1u ? PPS_TERM_EDGES : t == 2u ? PPS_TERM_ROOTS :
         t == 3u ? PPS_NORMALIZATION_REQUESTS : PPS_GOALS;
 }
-// The serial audit's checks of one Work; adds the Work's rows to the totals.
-bool pps_audit_normalized_work(uint work, inout uint nodes, inout uint edges, inout uint roots,
-    inout uint requests, inout uint goals)
+public void pps_stage_audit_normalized_terms(uint local)
 {
+    uint works; uint work;
+    if (!pps_building() || !pev_batch_is_building() || !pps_count(PPS_WORK, works) ||
+        !pev_dispatch_row(local, works, work)) return;
+    pca_add(PCA_AUDITED, 1u);
     uint4 key; uint4 selected; uint4 completion; uint4 source;
     if (!pps_work_read(work, key, selected, completion, source) ||
         key.z == PPS_WORK_REQUEST || key.z == PPS_WORK_NORMALIZATION_EMITTED ||
-        key.z == PPS_WORK_GOAL_VALIDATED) return false;
-    if (key.z != PPS_WORK_NORMALIZATION_VALIDATED) return true;
+        key.z == PPS_WORK_GOAL_VALIDATED) { pca_fail(); return; }
+    if (key.z != PPS_WORK_NORMALIZATION_VALIDATED) return;
+    uint4 nodes; uint4 edges; uint4 roots; uint4 requests; uint4 goals; uint accepted;
     uint4 goal; uint4 extra;
-    if (!pps_normalization_pending_span(PPS_GOALS, key.y, 1u) ||
+    if (!pps_descriptor(PPS_TERM_NODES, nodes, accepted) ||
+        !pps_descriptor(PPS_TERM_EDGES, edges, accepted) ||
+        !pps_descriptor(PPS_TERM_ROOTS, roots, accepted) ||
+        !pps_descriptor(PPS_NORMALIZATION_REQUESTS, requests, accepted) ||
+        !pps_descriptor(PPS_GOALS, goals, accepted) ||
+        !pps_normalization_pending_span(PPS_GOALS, key.y, 1u) ||
         !pps_read_pending8(PPS_GOALS, key.y, goal, extra) || extra.x > 32u ||
         !pps_normalization_pending_span(PPS_NORMALIZATION_REQUESTS, source.w, extra.x + 1u))
-        return false;
+    { pca_fail(); return; }
+    uint tag = pca_tag();
+    uint node_total = 0u; uint edge_total = 0u;
     bool valid = true;
     [loop]
-    for (uint ordinal = 0u; ordinal <= extra.x; ordinal++)
+    for (uint ordinal = 0u; ordinal <= extra.x && valid; ordinal++)
     {
-        uint4 request = uint4(0u, 0u, 0u, 0u); uint4 counts = request;
-        if (valid)
-            valid = pps_read_pending8(PPS_NORMALIZATION_REQUESTS, source.w + ordinal, request, counts) &&
-                request.x == work && request.y == ordinal;
-        if (valid) valid = pps_normalization_add(nodes, counts.x) && pps_normalization_add(edges, counts.z);
-    }
-    return valid && pps_normalization_add(roots, extra.x + 1u) &&
-        pps_normalization_add(requests, extra.x + 1u) && pps_normalization_add(goals, 1u);
-}
-// Adds one lane's total; a sum past 32 bits fails the audit, as it fails the
-// serial count.
-void pps_group_normalization_add(uint t, uint count)
-{
-    uint previous;
-    InterlockedAdd(pps_group_normalization_totals[t], count, previous);
-    if (count > PEV_INVALID - previous) InterlockedOr(pps_group_normalization_failed, 1u);
-}
-
-public bool pps_group_audit_normalized_terms(uint lane)
-{
-    if (lane == 0u)
-    {
-        uint failed = 0u;
+        uint4 request; uint4 counts;
+        valid = pps_read_pending8(PPS_NORMALIZATION_REQUESTS, source.w + ordinal, request, counts) &&
+            request.x == work && request.y == ordinal &&
+            pps_normalization_add(node_total, counts.x) && pps_normalization_add(edge_total, counts.z);
+        if (!valid) break;
+        // The request's spans, as PendingNormalizationRequestSpans gives them.
         [loop]
-        for (uint t = 0u; t < 5u; t++)
-        {
-            uint4 span; uint accepted;
-            if (!pps_descriptor(pps_normalization_commit_table(t), span, accepted)) failed = 1u;
-            pps_group_normalization_spans[t] = span;
-            pps_group_normalization_totals[t] = 0u;
-        }
-        uint works;
-        if (!pps_count(PPS_WORK, works)) failed = 1u;
-        pps_group_normalization_works = works;
-        pps_group_normalization_known = failed;
-        pps_group_normalization_failed = 0u;
+        for (uint t = 0u; t < 3u; t++)
+            pca_cover(pps_normalization_commit_table(t),
+                t == 0u ? nodes : t == 1u ? edges : roots,
+                t == 0u ? request.w : t == 1u ? counts.y : request.z,
+                t == 0u ? counts.x : t == 1u ? counts.z : 1u, tag);
     }
-    GroupMemoryBarrierWithGroupSync();
-    if (pps_group_normalization_known != 0u) return false;
-    uint works = pps_group_normalization_works;
-    uint nodes = 0u; uint edges = 0u; uint roots = 0u; uint requests = 0u; uint goals = 0u;
-    bool valid = true;
+    if (!valid) { pca_fail(); return; }
+    // The Work's spans, as PendingNormalizationWorkSpans gives them.
     [loop]
-    for (uint work = lane; work < works && valid; work += PPS_GROUP_LANES)
-        valid = pps_audit_normalized_work(work, nodes, edges, roots, requests, goals);
-    if (!valid) InterlockedOr(pps_group_normalization_failed, 1u);
-    pps_group_normalization_add(0u, nodes);
-    pps_group_normalization_add(1u, edges);
-    pps_group_normalization_add(2u, roots);
-    pps_group_normalization_add(3u, requests);
-    pps_group_normalization_add(4u, goals);
-    GroupMemoryBarrierWithGroupSync();
-    bool audited = pps_group_normalization_failed == 0u;
-    [loop]
-    for (uint t = 0u; t < 5u; t++)
-    {
-        uint4 span = pps_group_normalization_spans[t];
-        audited = audited && pps_group_normalization_totals[t] == span.y - span.w;
-    }
-    // Pending requests own the term rows; Works own the requests and goals.
-    // The audits share one visit charge, as the serial audits share a budget.
-    uint4 owners = pps_group_normalization_spans[3];
-    uint charges = 0u;
-    [loop]
-    for (uint t = 0u; t < 3u && audited; t++)
-    {
-        uint4 span = pps_group_normalization_spans[t];
-        audited = pps_group_check_span_cover<PendingNormalizationRequestSpans>(lane,
-            pps_normalization_commit_table(t), span.w, span.y, owners.w, owners.y, charges);
-    }
-    [loop]
-    for (uint t = 3u; t < 5u && audited; t++)
-    {
-        uint4 span = pps_group_normalization_spans[t];
-        audited = pps_group_check_span_cover<PendingNormalizationWorkSpans>(lane,
-            pps_normalization_commit_table(t), span.w, span.y, 0u, works, charges);
-    }
-    return audited && charges <= PEV_VISIT_LIMIT;
+    for (uint t = 3u; t < 5u; t++)
+        pca_cover(pps_normalization_commit_table(t), t == 3u ? requests : goals,
+            t == 3u ? source.w : key.y, t == 3u ? extra.x + 1u : 1u, tag);
+    pca_add(PCA_TOTALS, node_total);
+    pca_add(PCA_TOTALS + 1u, edge_total);
+    pca_add(PCA_TOTALS + 2u, extra.x + 1u);
+    pca_add(PCA_TOTALS + 3u, extra.x + 1u);
+    pca_add(PCA_TOTALS + 4u, 1u);
 }
-// pps_commit_normalized_terms after its audit, over the spans the group
-// audit read.
-public EvidenceStatus pps_publish_normalized_terms()
+// pps_commit_normalized_terms after its audit.
+EvidenceStatus pps_publish_normalized_terms()
 {
-    if (!pps_building() || !pev_batch_is_building()) return pev_invalid(66u, PPS_TERM_NODES, PEV_INVALID);
     EvidenceStatus status = pev_ok();
     [loop]
     for (uint t = 0u; t < 4u && status.state == PEV_VALID; t++)
     {
-        uint4 span = pps_group_normalization_spans[t];
-        status = pps_check_validated_prefix(pps_normalization_commit_table(t), span.w, span.y);
+        uint4 span; uint accepted; uint table = pps_normalization_commit_table(t);
+        status = pps_descriptor(table, span, accepted) ?
+            pps_check_validated_prefix(table, span.w, span.y) : pev_invalid(1u, table, PEV_INVALID);
     }
     [loop]
     for (uint t = 0u; t < 4u && status.state == PEV_VALID; t++)
     {
-        uint4 span = pps_group_normalization_spans[t];
-        status = pps_publish_validated_prefix(pps_normalization_commit_table(t), span.w, span.y);
+        uint4 span; uint accepted; uint table = pps_normalization_commit_table(t);
+        status = pps_descriptor(table, span, accepted) ?
+            pps_publish_validated_prefix(table, span.w, span.y) : pev_invalid(1u, table, PEV_INVALID);
     }
     return status;
+}
+// The committing thread of phase 45. The lanes proved the serial audit when
+// none failed, every Work was audited, each table's claimed rows number its
+// pending rows (disjoint claims inside a suffix that add up to it cover it
+// exactly), and the serial audit's visits stay within its budget. Anything
+// else is the serial stage's to report.
+public void pps_stage_commit_normalized_terms()
+{
+    bool building = pps_building() && pev_batch_is_building();
+    uint works = 0u;
+    bool proven = building && pps_count(PPS_WORK, works) && pca_word(PCA_FAILED) == 0u &&
+        pca_word(PCA_AUDITED) == works;
+    uint charges = pps_cover_charge_add(0u, pca_word(PCA_TOUCHED));
+    // Requests first: they are the owners the serial audit charges for the
+    // term tables. Works own the requests and the goals.
+    uint request_rows = 0u;
+    [loop]
+    for (uint index = 0u; index < 5u && proven; index++)
+    {
+        uint t = index < 2u ? index + 3u : index - 2u;
+        uint4 span; uint accepted;
+        proven = pps_descriptor(pps_normalization_commit_table(t), span, accepted) &&
+            pca_word(PCA_TOTALS + t) == span.y - span.w;
+        if (t == 3u) request_rows = span.y - span.w;
+        charges = pps_cover_charge(charges, span.y - span.w, t < 3u ? request_rows : works);
+    }
+    proven = proven && charges <= PEV_VISIT_LIMIT;
+    pca_reset();
+    if (!building) return;
+    pca_count(proven);
+    pev_batch_failure(proven ? pps_publish_normalized_terms() : pps_commit_normalized_terms());
 }
 
 public EvidenceStatus pps_hash_normalized_goal(uint work)
@@ -593,15 +580,14 @@ public EvidenceStatus pps_commit_normalized_goals()
     return pev_ok();
 }
 
-// Phase 47 as one 256-lane workgroup, matching pps_commit_normalized_goals.
-// The lanes audit the Works in parallel, including that each goal-validated
-// Work's state word is writable. When the audit proves the serial audit
-// succeeds, lane 0 publishes the goal prefix and then every lane marks its
-// Works normalized, the writes the serial stage makes in order. Otherwise
-// lane 0 runs the serial stage for its exact result.
-groupshared uint pps_group_goal_validated;
-groupshared uint pps_group_goal_failed;
-groupshared uint pps_group_goal_published;
+// Phase 47 over the whole grid, matching pps_commit_normalized_goals: one
+// audit lane per Work, one committing thread, then one lane per Work again.
+// The audit lanes make the serial audit's checks, including that each
+// goal-validated Work's state word is writable. When they prove the serial
+// audit, the thread publishes the goal prefix and the last lanes mark their
+// Works normalized, the writes the serial stage makes in order. Otherwise the
+// thread runs the serial stage for its exact result, and the last lanes do
+// nothing.
 
 // The serial audit's checks of one Work; counts a goal-validated Work.
 bool pps_audit_normalized_goal(uint work, inout uint validated)
@@ -615,40 +601,38 @@ bool pps_audit_normalized_goal(uint work, inout uint validated)
     return pps_normalization_pending_span(PPS_GOALS, key.y, 1u) &&
         pps_address(PPS_WORK, work, 2u, 1u, true, address);
 }
-
-public void pps_group_commit_normalized_goals(uint lane)
+public void pps_stage_audit_normalized_goals(uint local)
 {
-    uint4 goals; uint accepted; uint works;
-    bool known = pps_descriptor(PPS_GOALS, goals, accepted) && pps_count(PPS_WORK, works);
-    if (lane == 0u) { pps_group_goal_validated = 0u; pps_group_goal_failed = known ? 0u : 1u; }
-    GroupMemoryBarrierWithGroupSync();
-    uint validated = 0u; bool valid = known;
-    [loop]
-    for (uint work = lane; work < works && valid; work += PPS_GROUP_LANES)
-        valid = pps_audit_normalized_goal(work, validated);
-    if (!valid) InterlockedOr(pps_group_goal_failed, 1u);
-    InterlockedAdd(pps_group_goal_validated, validated);
-    GroupMemoryBarrierWithGroupSync();
-    bool audited = pps_group_goal_failed == 0u && pps_group_goal_validated == goals.y - goals.w;
-    if (!audited)
-    {
-        if (lane == 0u) pev_batch_failure(pps_commit_normalized_goals());
-        return;
-    }
-    // The serial stage's publication, then its Work writes.
-    if (lane == 0u)
-    {
-        EvidenceStatus status = pps_publish_validated_prefix(PPS_GOALS, goals.w, goals.y);
-        pps_group_goal_published = status.state == PEV_VALID ? 1u : 0u;
-        pev_batch_failure(status);
-    }
-    GroupMemoryBarrierWithGroupSync();
-    if (pps_group_goal_published == 0u) return;
-    [loop]
-    for (uint work = lane; work < works; work += PPS_GROUP_LANES)
-    {
-        uint4 key;
-        if (pps_read4(PPS_WORK, work, 0u, key) && key.z == PPS_WORK_GOAL_VALIDATED)
-            pps_transient_word(PPS_WORK, work, 2u, PPS_WORK_NORMALIZED);
-    }
+    uint works; uint work;
+    if (!pps_building() || !pev_batch_is_building() || !pps_count(PPS_WORK, works) ||
+        !pev_dispatch_row(local, works, work)) return;
+    pca_add(PCA_AUDITED, 1u);
+    uint validated = 0u;
+    if (!pps_audit_normalized_goal(work, validated)) { pca_fail(); return; }
+    pca_add(PCA_TOTALS, validated);
+}
+public void pps_stage_commit_normalized_goals()
+{
+    bool building = pps_building() && pev_batch_is_building();
+    uint4 goals = uint4(0u, 0u, 0u, 0u); uint accepted; uint works = 0u;
+    bool proven = building && pps_descriptor(PPS_GOALS, goals, accepted) && pps_count(PPS_WORK, works) &&
+        pca_word(PCA_FAILED) == 0u && pca_word(PCA_AUDITED) == works &&
+        pca_word(PCA_TOTALS) == goals.y - goals.w;
+    pca_reset();
+    if (!building) return;
+    pca_count(proven);
+    if (!proven) { pev_batch_failure(pps_commit_normalized_goals()); return; }
+    EvidenceStatus status = pps_publish_validated_prefix(PPS_GOALS, goals.w, goals.y);
+    // The marking lanes complete before indexing can consume NORMALIZED.
+    if (status.state == PEV_VALID) program_evidence_commit_audit[PCA_PUBLISHED] = 47u;
+    pev_batch_failure(status);
+}
+public void pps_stage_mark_normalized_goals(uint local)
+{
+    uint works; uint work; uint4 key;
+    if (pca_word(PCA_PUBLISHED) != 47u || !pps_count(PPS_WORK, works) ||
+        !pev_dispatch_row(local, works, work)) return;
+    if (!pps_read4(PPS_WORK, work, 0u, key) || (key.z == PPS_WORK_GOAL_VALIDATED &&
+        !pps_transient_word(PPS_WORK, work, 2u, PPS_WORK_NORMALIZED)))
+        pev_batch_failure(pev_invalid(1u, work, PPS_WORK));
 }

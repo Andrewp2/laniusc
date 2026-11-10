@@ -185,6 +185,7 @@ pub(super) const RETAINED_INPUTS: &[&str] = &[
     "retained_owner_spans",
     "retained_body_span_count",
     "retained_body_spans",
+    "solver_demand",
     "instance_closure_counts",
     "instance_closure_instances",
     "instance_closure_refs",
@@ -2066,6 +2067,7 @@ pub(super) fn read_unit_facts(
     interface_exported: bool,
     template_contracts: Option<&CheckedUnitContracts>,
     instance_copies: Option<&super::CheckedBodySpecializationBatch>,
+    elide_closed: bool,
 ) -> Result<CheckedUnitFacts> {
     // Ordinary object-only jobs do not publish a definition contract snapshot.
     // Body replay is explicit and supplies the immutable template instead.
@@ -2119,8 +2121,30 @@ pub(super) fn read_unit_facts(
             super::instance_closure_passes::INSTANCE_CLOSURE_COUNT_WORDS as usize,
             "instance closure counts"))
         .transpose()?;
+    // Only an original job counts what it leaves for the trait solver.
+    let original_job = interface_exported && template_contracts.is_none() && instance_copies.is_none();
+    let solver_demand = original_job
+        .then(|| batch.push(inputs.buffer("solver_demand"), 0,
+            super::instance_closure_passes::SOLVER_DEMAND_WORDS, "solver demand"))
+        .transpose()?;
     let counts = batch.read(&readback, device, queue, "generic call counts")?;
     timer.stamp("counts");
+    // The in-place tables the call counter reads are current only when the
+    // closure ran; a unit without generic parameters never consults them.
+    let solver_closed = solver_demand.is_some_and(|start| {
+        let demand = &counts[start..start + 3];
+        if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_CLOSED_RELEASE", false) {
+            eprintln!("[closed-release] solver demand obligations={} implementations={} calls={} generic_parameters={} closure={closure_active}",
+                demand[0], demand[1], demand[2], counts[4]);
+        }
+        demand.iter().all(|&word| word == 0) && (counts[4] == 0 || closure_active)
+    });
+    // Every other fact feeds the trait solver (or a dependent unit's closure
+    // summary). A caller that knows this unit has no dependents and that the
+    // solver will not run for its program reads none of them.
+    if elide_closed && solver_closed {
+        return Ok(CheckedUnitFacts { solver_closed, facts_elided: true, ..Default::default() });
+    }
     // Every later read depends on these counts. The GPU work that wrote the
     // retained rows has finished and nothing below records GPU work, so an
     // earlier run's plan with the same counts can be fetched in one round.
@@ -2167,7 +2191,7 @@ pub(super) fn read_unit_facts(
         && declaration_count == 0
         && method_count == 0
     {
-        return Ok(CheckedUnitFacts::default());
+        return Ok(CheckedUnitFacts { solver_closed, ..Default::default() });
     }
     for name in ["decl_kind", "decl_name_token", "decl_hir_node"] {
         ensure!(
@@ -2607,6 +2631,8 @@ pub(super) fn read_unit_facts(
             call_owners: Vec::new(),
             native_call_owners: Vec::new(),
             instance_closure,
+            solver_closed,
+            facts_elided: false,
         });
     }
     // Without generic parameters (type or constant) no local callee is
@@ -3203,6 +3229,8 @@ pub(super) fn read_unit_facts(
         call_owners,
         native_call_owners,
         instance_closure,
+        solver_closed,
+        facts_elided: false,
     })
 }
 
@@ -3610,6 +3638,7 @@ impl super::GpuTypeChecker {
         interface_exported: bool,
         template_contracts: Option<&CheckedUnitContracts>,
         instance_copies: Option<&super::CheckedBodySpecializationBatch>,
+        elide_closed: bool,
     ) -> Result<CheckedUnitFacts> {
         let semantic = self
             .semantic_artifact()
@@ -3623,6 +3652,7 @@ impl super::GpuTypeChecker {
             interface_exported,
             template_contracts,
             instance_copies,
+            elide_closed,
         )
     }
 }

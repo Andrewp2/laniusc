@@ -842,6 +842,11 @@ pub(super) fn register_resources(
     // array is added to ordinary parser lanes.
     workspace(graph, "hir_float_workspace", ResourceDomain::HirNodes,
         if capacity.parser_feature_flags & PARSER_FEATURE_FLOAT_LITERALS != 0 { 2048 * 768 * 4 } else { 4 })?;
+    // One slot per float literal; a job has at most one per token.
+    workspace(graph, "hir_float_nodes", ResourceDomain::HirNodes,
+        if capacity.parser_feature_flags & PARSER_FEATURE_FLOAT_LITERALS != 0 {
+            u64::from(capacity.token_capacity.max(1)) * 4
+        } else { 4 })?;
     if capacity.parser_feature_flags & PARSER_FEATURE_FLOAT_LITERALS == 0 {
         // The absent float family retains only inert sentinel views. Both
         // views still need an initialization owner in the compiler graph.
@@ -1948,6 +1953,7 @@ fn register_literals_and_raw_expression_records(
             "hir_expr_int_value",
             "hir_expr_string_start",
             "hir_expr_string_len",
+            "hir_float_nodes",
         ],
     )?;
     indirect(

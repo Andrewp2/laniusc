@@ -73,6 +73,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             .collect::<Vec<_>>().into();
         let pending = self.compile_pending_original_source_pack_unit_for_target(
             SourcePackArtifactTarget::Wasm, template_sources, 0, 0, Vec::new().into(), source_paths,
+            super::body_specialization::closed_release_ready(&[]),
         ).await?;
         let objects = self.specialize_pending_source_pack_objects(vec![pending]).await?;
         let objects = objects.iter().map(|object| match object {

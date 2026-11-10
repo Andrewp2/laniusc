@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Generate one corpus-calibrated project in C, C++, Rust, Zig, MoonBit, and Lanius."""
+"""Generate one corpus-calibrated project in C, C++, Rust, Zig, MoonBit, D, Go,
+V, TypeScript, and Lanius."""
 
 from __future__ import annotations
 
@@ -31,7 +32,11 @@ def write_files(root: Path, files: dict[str, str]) -> list[dict[str, object]]:
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(source)
-        if path.suffix in {".c", ".cpp", ".rs", ".zig", ".mbt", ".lani"}:
+        # Module sources only: C headers and TypeScript declaration files
+        # (.d.ts) are compiler inputs but not modules of the project.
+        if path.suffix in {
+            ".c", ".cpp", ".rs", ".zig", ".mbt", ".lani", ".d", ".go", ".v", ".ts",
+        } and not path.name.endswith(".d.ts"):
             records.append(
                 {
                     "path": relative,

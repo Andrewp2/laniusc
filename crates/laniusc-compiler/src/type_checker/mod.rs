@@ -394,6 +394,8 @@ pub struct GpuTypeChecker {
     /// The status words as the follow-on call checks find them.
     status_prior: LaniusBuffer<u32>,
     call_inference_state: LaniusBuffer<u32>,
+    /// Per inference round of a batch, the state words and status words
+    /// after the round (`CALL_INFERENCE_HISTORY_WORDS` each).
     call_inference_readback: LaniusBuffer<u32>,
     /// Host-visible `ct_counts` after each canonical interning batch; a
     /// deferred job's check reads the last stage's copy with its status.

@@ -29,9 +29,10 @@ impl DependencyPatternReplay<'_> {
     }
 }
 
-/// Streams every logical dependency page through one fixed GPU slot. A queue
-/// submission separates each upload from the next overwrite; without that
-/// ordering, all recorded dispatches would observe only the final page.
+/// Streams every logical dependency page through one fixed GPU slot. Each
+/// page is copied into the slot from the job's resident page store by a GPU
+/// copy recorded before the page's passes, so the copies and the passes
+/// execute in recording order within one submission.
 pub(in crate::type_checker) fn record_dependency_pages(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -54,36 +55,15 @@ pub(in crate::type_checker) fn record_each_dependency_page(
     pages: &GpuDependencyInterfacePages,
     mut record: impl FnMut(&mut wgpu::CommandEncoder) -> Result<()>,
 ) -> Result<()> {
+    let _ = (device, queue);
     if pages.len() == 1 {
         return record(encoder);
     }
-    submit_dependency_page_boundary(device, queue, encoder);
     for page in 0..pages.len() {
-        pages.write(queue, page)?;
+        pages.record_page(encoder, page)?;
         record(encoder)?;
-        submit_dependency_page_boundary(device, queue, encoder);
     }
     Ok(())
-}
-
-fn submit_dependency_page_boundary(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    encoder: &mut wgpu::CommandEncoder,
-) {
-    // Page uploads may overwrite every dependency word. Submit all work that
-    // reads the current page, including deferred compute dispatches, first.
-    crate::gpu::passes_core::flush_deferred_compute(encoder);
-    let next = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-        label: Some("type-check-dependency-page-encoder"),
-    });
-    let recorded = std::mem::replace(encoder, next);
-    crate::gpu::timer::stamp_active_submission_begin(encoder, "type_check.dependency_page");
-    crate::gpu::passes_core::submit_with_progress(
-        queue,
-        "type-check dependency page boundary",
-        recorded.finish(),
-    );
 }
 
 fn record_graph_invocation(
@@ -239,7 +219,37 @@ pub(in crate::type_checker) fn record_dependency_type_index(
         DependencyTypeIndexStage::CallValidation => &visibility.type_index_call_validation,
         DependencyTypeIndexStage::TraitContracts => &visibility.type_index_trait_contracts,
     };
-    visibility.type_index.record(encoder, invocations)
+    // The index is a function of the loaded dependency page alone: its roots,
+    // arity and field counts are written only by these passes, its constant
+    // atoms and references are cleared once before the first build, and the
+    // graph keeps each of these workspace resources for one interval from the
+    // first build to the last read. With a single page the first build of a
+    // recording therefore serves every later stage; with several pages each
+    // page needs its own.
+    use std::sync::atomic::Ordering::Relaxed;
+    let reusable = visibility.type_index_reusable.load(Relaxed);
+    if reusable && visibility.type_index_current.load(Relaxed) {
+        return Ok(());
+    }
+    visibility.type_index.record(encoder, invocations)?;
+    visibility.type_index_current.store(reusable, Relaxed);
+    Ok(())
+}
+
+/// Starts a type-check recording's type index: none is built yet, and the
+/// first build is reusable when the job loads at most one dependency page.
+pub(in crate::type_checker) fn reset_dependency_type_index(
+    state: &ModulePathState,
+    pages: Option<&GpuDependencyInterfacePages>,
+) {
+    use std::sync::atomic::Ordering::Relaxed;
+    let Some(visibility) = &state.dependency_visibility else {
+        return;
+    };
+    let single_page = pages.is_none_or(|pages| pages.len() <= 1);
+    let enabled = crate::gpu::env::env_bool_truthy("LANIUS_REUSE_DEPENDENCY_TYPE_INDEX", true);
+    visibility.type_index_current.store(false, Relaxed);
+    visibility.type_index_reusable.store(single_page && enabled, Relaxed);
 }
 
 /// Collects candidate identities or projects the finalized winner for the

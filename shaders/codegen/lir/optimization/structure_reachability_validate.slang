@@ -2,7 +2,6 @@
 
 import codegen.lowering_ir;
 import codegen.optimization_ir;
-import codegen.lir.optimization.ssa_sparse_work;
 import gpu_index;
 
 struct Params
@@ -23,7 +22,6 @@ StructuredBuffer<OptIrEdge> opt_ir_edges;
 StructuredBuffer<uint> opt_ir_predecessor_prefix;
 StructuredBuffer<uint> opt_ir_predecessor_edge_ids;
 StructuredBuffer<uint> opt_ir_reachable;
-RWStructuredBuffer<uint> opt_ir_reachability_work_state;
 RWStructuredBuffer<LoweringStatus> lowering_status;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -74,10 +72,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     bool expected = entry || reachable_predecessor;
     valid = valid && (opt_ir_reachable[block] != 0u) == expected;
-    if (block == 0u)
-        valid = valid &&
-            opt_ir_reachability_work_state[SSA_WORK_HEAD] ==
-                opt_ir_reachability_work_state[SSA_WORK_TAIL] &&
-            opt_ir_reachability_work_state[SSA_WORK_OUTSTANDING] == 0u;
     if (!valid) report_structure_failure(block);
 }

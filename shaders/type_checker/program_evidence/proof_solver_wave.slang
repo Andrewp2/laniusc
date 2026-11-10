@@ -83,16 +83,18 @@ public static const uint PSW_SPAN_FIRST_ONE = 1u;
 public static const uint PSW_SPAN_WORK = 2u;
 public static const uint PSW_SPAN_WORK_ONE = 3u;
 public static const uint PSW_SPAN_REQUIREMENTS = 4u;
-public static const uint PSW_SPAN_SELECTED_WORK = 5u;
-public static const uint PSW_SPAN_BINDINGS = 6u;
-public static const uint PSW_SPAN_SELECTED_ONE = 7u;
-public static const uint PSW_SPAN_EXPANDED_WORK = 8u;
-public static const uint PSW_SPAN_EXPANDED_ONE = 9u;
-public static const uint PSW_SPAN_QUEUE = 10u;
-public static const uint PSW_SPAN_EMITTED_QUEUE = 11u;
-public static const uint PSW_SPAN_PROOF_EDGES = 12u;
-public static const uint PSW_SPAN_EMITTED_ONE = 13u;
-public static const uint PSW_SPANS = 14u;
+public static const uint PSW_SPAN_ALL_WORK = 5u;      // every admitted Work, for the commit audits
+public static const uint PSW_SPAN_SELECTED_WORK = 6u;
+public static const uint PSW_SPAN_BINDINGS = 7u;
+public static const uint PSW_SPAN_SELECTED_ONE = 8u;
+public static const uint PSW_SPAN_SELECTED_ALL_WORK = 9u;
+public static const uint PSW_SPAN_EXPANDED_WORK = 10u;
+public static const uint PSW_SPAN_EXPANDED_ONE = 11u;
+public static const uint PSW_SPAN_QUEUE = 12u;
+public static const uint PSW_SPAN_EMITTED_QUEUE = 13u;
+public static const uint PSW_SPAN_PROOF_EDGES = 14u;
+public static const uint PSW_SPAN_EMITTED_ONE = 15u;
+public static const uint PSW_SPANS = 16u;
 
 void psw_span(uint span, uint first, uint count)
 {
@@ -204,6 +206,7 @@ void psw_plan_spans(uint point)
         psw_span(PSW_SPAN_WORK, work_cursor, work - work_cursor);
         psw_span(PSW_SPAN_WORK_ONE, 0u, 1u);
         psw_span(PSW_SPAN_REQUIREMENTS, requirement_cursor, requirements - requirement_cursor);
+        psw_span(PSW_SPAN_ALL_WORK, 0u, work);
         return;
     }
     uint work_first = program_evidence_wave[PSW_WORK_FIRST];
@@ -217,6 +220,8 @@ void psw_plan_spans(uint point)
         psw_span(PSW_SPAN_SELECTED_WORK, work_first, work_count);
         psw_span(PSW_SPAN_BINDINGS, admitted, reserved - admitted);
         psw_span(PSW_SPAN_SELECTED_ONE, 0u, 1u);
+        psw_table(PPS_WORK, admitted, reserved);
+        psw_span(PSW_SPAN_SELECTED_ALL_WORK, 0u, admitted);
         return;
     }
     if (point == PSW_POINT_EXPANDED)

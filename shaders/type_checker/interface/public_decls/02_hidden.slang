@@ -7,19 +7,20 @@
 // values and read their fields. The identity record marks it
 // DECL_FLAG_HIDDEN, and importers leave it out of name lookup.
 //
-// One workgroup runs the closure to its fixed point. Round 0 walks the
-// fields and payloads of public declarations; round r walks the fields,
-// payloads and alias targets of the types round r - 1 marked. So each
-// declaration's type roots are walked once, and the round count is the
-// depth of the private chain. Every round before the last marks at least
-// one declaration, so active declarations + 1 rounds always reach the
-// fixed point; the bound is sized from the job, and a miss fails closed.
+// This pass marks the hidden declarations; 03_hidden_count and
+// 04_hidden_publish give them their indices. One lane per field row and per
+// variant payload row of a public declaration walks that type tree. A private
+// nominal it names is claimed with a compare-exchange on its local index, so
+// every hidden declaration is claimed by exactly one lane, and that lane walks
+// the declaration's own fields, payloads and alias target in turn. A lane
+// keeps its claimed, unwalked declarations as a stack linked through
+// interface_public_decl_index_by_hir (MARK | next local), which publishing
+// overwrites. Every declaration is walked at most once, all in one dispatch.
 //
 // Dispatch after module paths have resolved and type instances have been
 // projected, and before the canonical early stage: canonical keys name a
 // local nominal by this index, and only hidden locals change, from INVALID.
 import hir_records;
-import status;
 import native_c_abi;
 
 StructuredBuffer<uint> decl_count_out;
@@ -50,30 +51,19 @@ StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> type_instance_decl_token;
 StructuredBuffer<NativeAbiToken> token_words;
 ByteAddressBuffer source_bytes;
-globallycoherent RWStructuredBuffer<uint> interface_public_decl_count;
-globallycoherent RWStructuredBuffer<uint> interface_public_decl_local_id;
 globallycoherent RWStructuredBuffer<uint> interface_public_decl_index_by_local;
 globallycoherent RWStructuredBuffer<uint> interface_public_decl_index_by_hir;
-RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
-static const uint LANES = 256u;
 static const uint MARK = 0x80000000u;
 static const uint HIR_TYPE = 5u;
 static const uint TYPE_REF_INSTANCE = 3u;
 static const uint KIND_STRUCT = 6u;
 static const uint KIND_ENUM = 7u;
 static const uint KIND_TYPE_ALIAS = 8u;
-static const uint KIND_ENUM_VARIANT = 9u;
-static const uint ERR_NAME_LIMIT = 11u;
-// "HIDE": the closure did not converge, or hidden indices overflowed.
-static const uint HIDDEN_LIMIT_DETAIL = 0x48494445u;
-
-// Three words, so lane 0 clears the next round's word while every lane has
-// already read the word it reuses (last read two rounds before).
-groupshared uint g_changed[3];
-groupshared uint g_marked;
-groupshared uint g_scan[LANES];
+static const uint KIND_FUNCTION = 5u;
+static const uint STACK_END = 0x7fffffffu;
+static const uint MAX_GROUPS_X = 65535u;
 
 uint decl_capacity()
 {
@@ -98,13 +88,6 @@ uint hir_capacity()
 
 uint active_hir() { return min(compact_hir_count[0u], hir_capacity()); }
 uint active_decls() { return min(decl_count_out[0u], decl_capacity()); }
-
-// Whether a declaration's type roots are walked in `round`: public ones in
-// round 0, hidden ones in the round after the one that marked them.
-bool walks(uint persisted, uint round)
-{
-    return round == 0u ? persisted < decl_capacity() : persisted == (MARK | (round - 1u));
-}
 
 uint instance_local(uint token)
 {
@@ -150,158 +133,150 @@ uint type_node_local(uint node)
     return local;
 }
 
-void mark(uint local, uint round)
+// Claim a private nominal for the hidden partition and push it on this
+// lane's stack.
+void claim(uint local, inout uint top)
 {
     if (local >= active_decls()) return;
     uint kind = decl_kind[local];
     if (kind != KIND_STRUCT && kind != KIND_ENUM && kind != KIND_TYPE_ALIAS) return;
     uint prior;
-    InterlockedCompareExchange(interface_public_decl_index_by_local[local], INVALID, MARK | round, prior);
+    InterlockedCompareExchange(interface_public_decl_index_by_local[local], INVALID, MARK, prior);
     if (prior != INVALID) return;
     uint hir = decl_hir_node[local];
-    if (hir < hir_capacity()) interface_public_decl_index_by_hir[hir] = MARK | round;
-    InterlockedOr(g_changed[round % 3u], 1u);
-    InterlockedAdd(g_marked, 1u);
+    // Without its HIR row the declaration has no fields, payloads or alias
+    // target to walk.
+    if (hir >= active_hir()) return;
+    interface_public_decl_index_by_hir[hir] = MARK | top;
+    top = local;
 }
 
-// Mark every private nominal named in the type tree at `root`.
-void walk(uint root, uint round)
+// Claim every private nominal named in the type tree at `root`.
+void walk(uint root, inout uint top)
 {
     uint active = active_hir();
     if (root >= active || compact_hir_core[root].kind != HIR_TYPE) return;
     uint end = min(max(compact_hir_links[root].subtree_end, root + 1u), active);
     [loop]
     for (uint node = root; node < end; node++)
-        if (compact_hir_core[node].kind == HIR_TYPE) mark(type_node_local(node), round);
+        if (compact_hir_core[node].kind == HIR_TYPE) claim(type_node_local(node), top);
 }
 
 uint by_hir(uint hir) { return hir < hir_capacity() ? interface_public_decl_index_by_hir[hir] : INVALID; }
 
-void walk_round(uint lane, uint round)
+// Whether a declaration's fields and payloads are roots: it is public.
+bool public_owner(uint hir) { return by_hir(hir) < decl_capacity(); }
+
+uint first_field_row(uint owner, uint fields)
 {
+    uint lo = 0u;
+    uint hi = fields;
+    while (lo < hi)
+    {
+        uint mid = lo + (hi - lo) / 2u;
+        if (compact_fields[mid].owner < owner) lo = mid + 1u;
+        else hi = mid;
+    }
+    return lo;
+}
+
+uint first_variant_row(uint owner, uint variants)
+{
+    uint lo = 0u;
+    uint hi = variants;
+    while (lo < hi)
+    {
+        uint mid = lo + (hi - lo) / 2u;
+        if (compact_variants[mid].owner < owner) lo = mid + 1u;
+        else hi = mid;
+    }
+    return lo;
+}
+
+uint first_payload_row(uint variant, uint payloads)
+{
+    uint lo = 0u;
+    uint hi = payloads;
+    while (lo < hi)
+    {
+        uint mid = lo + (hi - lo) / 2u;
+        if (compact_variant_payloads[mid].variant < variant) lo = mid + 1u;
+        else hi = mid;
+    }
+    return lo;
+}
+
+// Walk the fields, payloads and alias target of a claimed declaration. Field,
+// variant and payload rows are ordered by their owner's HIR row.
+void walk_declaration(uint local, inout uint top)
+{
+    uint hir = decl_hir_node[local];
     uint hirs = hir_capacity();
     uint fields = min(compact_field_count[0u], hirs);
     [loop]
-    for (uint row = lane; row < fields; row += LANES)
-    {
-        HirField field = compact_fields[row];
-        if (walks(by_hir(field.owner), round)) walk(field.value, round);
-    }
+    for (uint row = first_field_row(hir, fields);
+         row < fields && compact_fields[row].owner == hir; row += 1u)
+        walk(compact_fields[row].value, top);
     uint variants = min(compact_variant_count[0u], hirs);
     uint payloads = min(compact_variant_payload_row_count[0u], hirs);
     [loop]
-    for (uint row = lane; row < payloads; row += LANES)
+    for (uint variant = first_variant_row(hir, variants);
+         variant < variants && compact_variants[variant].owner == hir; variant += 1u)
     {
-        HirVariantPayload payload = compact_variant_payloads[row];
-        if (payload.variant < variants && walks(by_hir(compact_variants[payload.variant].owner), round))
-            walk(payload.type_node, round);
+        [loop]
+        for (uint row = first_payload_row(variant, payloads);
+             row < payloads && compact_variant_payloads[row].variant == variant; row += 1u)
+            walk(compact_variant_payloads[row].type_node, top);
     }
-    uint decls = active_decls();
-    [loop]
-    for (uint local = lane; local < decls; local += LANES)
-    {
-        uint hir = decl_hir_node[local];
-        // A public alias's target is a signature root (LNC0075), not layout.
-        if (round != 0u && decl_kind[local] == KIND_TYPE_ALIAS && hir < hirs &&
-            walks(interface_public_decl_index_by_local[local], round))
-            walk(compact_type_alias_target[hir], round);
-    }
+    // A public alias's target is a signature root (LNC0075), not layout; a
+    // hidden alias's target is layout.
+    if (decl_kind[local] == KIND_TYPE_ALIAS)
+        walk(compact_type_alias_target[hir], top);
 }
-
-bool marked(uint persisted) { return persisted != INVALID && persisted >= MARK; }
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
-void main(uint3 group: SV_GroupID, uint lane: SV_GroupIndex)
+void main(uint3 dtid: SV_DispatchThreadID)
 {
-    if (any(group != uint3(0u, 0u, 0u))) return;
-    if (lane == 0u) { g_changed[0u] = 0u; g_changed[1u] = 0u; g_changed[2u] = 0u; g_marked = 0u; }
-    GroupMemoryBarrierWithGroupSync();
+    uint row = dtid.x + dtid.y * MAX_GROUPS_X * 256u;
     uint decls = active_decls();
     // A private C declaration still needs a stable symbol/name/signature for
     // native linking. Keep it in the hidden partition; dependency name lookup
     // continues to exclude it. It is admitted later by the checked C profile.
-    uint source_len; source_bytes.GetDimensions(source_len);
-    uint tokens; uint token_stride; token_words.GetDimensions(tokens, token_stride);
-    [loop]
-    for (uint local = lane; local < decls; local += LANES)
+    if (row < decls)
     {
-        uint hir = decl_hir_node[local];
-        if (decl_kind[local] == 5u && hir < active_hir() &&
-            interface_public_decl_index_by_local[local] == INVALID &&
+        uint hir = decl_hir_node[row];
+        uint source_len; source_bytes.GetDimensions(source_len);
+        uint tokens; uint token_stride; token_words.GetDimensions(tokens, token_stride);
+        if (decl_kind[row] == KIND_FUNCTION && hir < active_hir() &&
+            interface_public_decl_index_by_local[row] == INVALID &&
             native_extern_source_abi(compact_hir_core[hir], compact_hir_payload[hir],
                 token_words, source_bytes, tokens, source_len) == NATIVE_ABI_C)
         {
-            interface_public_decl_index_by_local[local] = MARK;
+            interface_public_decl_index_by_local[row] = MARK;
             interface_public_decl_index_by_hir[hir] = MARK;
-            InterlockedAdd(g_marked, 1u);
         }
     }
-    AllMemoryBarrierWithGroupSync();
-    uint rounds = decls + 1u;
-    bool converged = false;
+
+    uint top = STACK_END;
+    uint hirs = hir_capacity();
+    if (row < min(compact_field_count[0u], hirs))
+    {
+        HirField field = compact_fields[row];
+        if (public_owner(field.owner)) walk(field.value, top);
+    }
+    uint variants = min(compact_variant_count[0u], hirs);
+    if (row < min(compact_variant_payload_row_count[0u], hirs))
+    {
+        HirVariantPayload payload = compact_variant_payloads[row];
+        if (payload.variant < variants && public_owner(compact_variants[payload.variant].owner))
+            walk(payload.type_node, top);
+    }
     [loop]
-    for (uint round = 0u; round < rounds; round++)
+    while (top != STACK_END)
     {
-        if (lane == 0u) g_changed[(round + 1u) % 3u] = 0u;
-        walk_round(lane, round);
-        AllMemoryBarrierWithGroupSync();
-        if (g_changed[round % 3u] == 0u) { converged = true; break; }
+        uint local = top;
+        top = interface_public_decl_index_by_hir[decl_hir_node[local]] & ~MARK;
+        walk_declaration(local, top);
     }
-    if (!converged)
-    {
-        if (lane == 0u) record_min_token_error(status, 0u, ERR_NAME_LIMIT, HIDDEN_LIMIT_DETAIL);
-        return;
-    }
-    if (g_marked == 0u) return;
-    // The variants of a hidden enum are hidden with it.
-    [loop]
-    for (uint local = lane; local < decls; local += LANES)
-    {
-        uint parent = decl_parent_type_decl[local];
-        if (decl_kind[local] == KIND_ENUM_VARIANT && parent < decls &&
-            marked(interface_public_decl_index_by_local[parent]) &&
-            interface_public_decl_index_by_local[local] == INVALID)
-            interface_public_decl_index_by_local[local] = MARK;
-    }
-    AllMemoryBarrierWithGroupSync();
-    // Hidden indices follow the public partition in local declaration order.
-    uint next = interface_public_decl_count[0u];
-    uint capacity = decl_capacity();
-    [loop]
-    for (uint base = 0u; base < decls; base += LANES)
-    {
-        uint local = base + lane;
-        uint flag = local < decls && marked(interface_public_decl_index_by_local[local]) ? 1u : 0u;
-        g_scan[lane] = flag;
-        GroupMemoryBarrierWithGroupSync();
-        [loop]
-        for (uint step = 1u; step < LANES; step <<= 1u)
-        {
-            uint add = lane >= step ? g_scan[lane - step] : 0u;
-            GroupMemoryBarrierWithGroupSync();
-            g_scan[lane] += add;
-            GroupMemoryBarrierWithGroupSync();
-        }
-        uint persisted = next + g_scan[lane] - flag;
-        if (flag != 0u)
-        {
-            if (persisted < capacity)
-            {
-                interface_public_decl_local_id[persisted] = local;
-                interface_public_decl_index_by_local[local] = persisted;
-                uint hir = decl_hir_node[local];
-                if (decl_kind[local] != KIND_ENUM_VARIANT && hir < hir_capacity())
-                    interface_public_decl_index_by_hir[hir] = persisted;
-            }
-            else
-            {
-                interface_public_decl_index_by_local[local] = INVALID;
-                record_min_token_error(status, 0u, ERR_NAME_LIMIT, HIDDEN_LIMIT_DETAIL);
-            }
-        }
-        next += g_scan[LANES - 1u];
-        GroupMemoryBarrierWithGroupSync();
-    }
-    if (lane == 0u) interface_public_decl_count[0u] = min(next, capacity);
 }

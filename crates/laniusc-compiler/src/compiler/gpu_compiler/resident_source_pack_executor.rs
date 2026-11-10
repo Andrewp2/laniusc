@@ -26,6 +26,9 @@ pub(super) struct ResidentSourcePackExecutor<'compiler, 'gpu> {
     // enter the warm caches that survive a project clear.
     standard_library_id: Option<u32>,
     native_link: Option<NativeLinkOptions>,
+    // The number of units the build plan compiles, when known: the last one
+    // has no dependents and can know whether the trait solver will run.
+    frontend_units: Option<usize>,
 }
 
 /// The linked program: its bytes, or the byte length already written to the
@@ -77,7 +80,7 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
         target: SourcePackArtifactTarget,
     ) -> Self {
         debug_assert_ne!(target, SourcePackArtifactTarget::Generic);
-        Self { compiler, target, pending_originals: Vec::new(), output_file: None, standard_library_id: None, native_link: None }
+        Self { compiler, target, pending_originals: Vec::new(), output_file: None, standard_library_id: None, native_link: None, frontend_units: None }
     }
 
     pub(super) fn with_output_file(
@@ -91,6 +94,13 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
     /// Names the manifest's standard library (its `standard_library_id`).
     pub(super) fn with_standard_library(mut self, standard_library_id: Option<u32>) -> Self {
         self.standard_library_id = standard_library_id;
+        self
+    }
+
+    /// Names how many library-frontend jobs the build plan schedules.
+    pub(super) fn with_frontend_units(mut self, build_plan: &SourcePackBuildPlan) -> Self {
+        self.frontend_units = Some(build_plan.schedule.jobs.iter()
+            .filter(|job| job.phase == SourcePackJobPhase::LibraryFrontend).count());
         self
     }
 
@@ -130,8 +140,15 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
                 &handle.job, &handle.source_files, dependency_pages.into(),
             ).await?
         } else {
+            // The program's last unit has no dependents. When the units
+            // before it already let the link skip the trait solver, a last
+            // unit the GPU proves solver-closed needs none of its solver facts.
+            let elide_closed_facts = self.frontend_units == Some(self.pending_originals.len() + 1)
+                && super::body_specialization::closed_release_ready(
+                    &self.pending_originals.iter().map(PendingOriginalUnit::facts).collect::<Vec<_>>());
             self.compiler.compile_cached_pending_original_unit(
                 self.target, &handle.job, standard_library, &handle.source_files, dependency_pages.into(),
+                elide_closed_facts,
             ).await?
         };
         let artifact = PendingNativeArtifact {

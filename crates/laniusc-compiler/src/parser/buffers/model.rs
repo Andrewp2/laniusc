@@ -1063,6 +1063,8 @@ pub struct ParserBuffers {
     pub hir_expr_float_bits: LaniusBuffer<u32>,
     /// At most 2048 disjoint 768-word decimal workspaces, in storage memory.
     pub(crate) hir_float_workspace: LaniusBuffer<u32>,
+    /// Float-literal nodes claimed by the literal pass, in claim order.
+    pub(crate) hir_float_nodes: LaniusBuffer<u32>,
     pub hir_expr_string_start: LaniusBuffer<u32>,
     pub hir_expr_string_len: LaniusBuffer<u32>,
     pub(crate) hir_literal_values_params:

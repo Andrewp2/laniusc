@@ -122,6 +122,12 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
         "predicate_obligation_pair_dispatch_args",
         &obligation_dispatch_args,
     )?;
+    let solver_demand_clear = crate::gpu::operations::ClearBufferOperation::entire(
+        graph,
+        compiler_graph::PREDICATES_SOLVER_DEMAND_CLEAR_PASS,
+        "solver_demand",
+        &typed_buffer_from_resources::<u32>(resources, "solver_demand")?,
+    )?;
     let validate_obligation_pairs = indirect(
         compiler_graph::PREDICATES_VALIDATE_OBLIGATION_PAIRS_PASS,
         "type_checker/predicates/02b_validate_obligations",
@@ -141,6 +147,7 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
         validate_imported_methods,
         reduce_method_validation_errors,
         _obligation_pair_dispatch_params: obligation_pair_dispatch_params,
+        solver_demand_clear,
         count_obligation_pairs,
         obligation_pair_scan,
         obligation_pair_dispatch_clear,

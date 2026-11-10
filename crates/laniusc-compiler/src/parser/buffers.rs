@@ -1433,6 +1433,7 @@ impl ParserBuffers {
         let hir_expr_float_bits = graph_buffer!(u32, "hir_expr_float_bits");
         let hir_float_workspace = optional_graph_buffer!(u32, "hir_float_workspace",
             parser_feature_flags & crate::lexer::features::PARSER_FEATURE_FLOAT_LITERALS != 0);
+        let hir_float_nodes = graph_buffer!(u32, "hir_float_nodes");
         // Literal rows are token-anchored in production. Integer and float
         // literals still initialize these columns, so an absent string family
         // uses token capacity rather than a one-row sentinel, but never raw
@@ -2379,6 +2380,7 @@ impl ParserBuffers {
             hir_expr_int_value,
             hir_expr_float_bits,
             hir_float_workspace,
+            hir_float_nodes,
             hir_expr_string_start,
             hir_expr_string_len,
             hir_literal_values_params,

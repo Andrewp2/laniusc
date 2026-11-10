@@ -16,8 +16,9 @@ pub(in crate::type_checker) struct ProjectionBindGroups {
     pub(in crate::type_checker) validate_type_paths: ComputeOperation,
     pub(in crate::type_checker) type_aliases: Option<Box<TypeAliasProjection>>,
     pub(in crate::type_checker) project_type_instances: ComputeOperation,
-    /// Hidden interface declarations (interface/public_decls/02_hidden).
-    pub(in crate::type_checker) map_hidden_interface_decls: ComputeOperation,
+    /// Hidden interface declarations: mark (interface/public_decls/02_hidden),
+    /// count per block (03_hidden_count) and publish (04_hidden_publish).
+    pub(in crate::type_checker) map_hidden_interface_decls: [ComputeOperation; 3],
     pub(in crate::type_checker) mark_value_call_paths: ComputeOperation,
     pub(in crate::type_checker) project_value_paths: ComputeOperation,
     pub(in crate::type_checker) consume_value_calls: ComputeOperation,
@@ -121,15 +122,35 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
         TYPE_INSTANCES_PROJECT,
         &path_dispatch_args,
     )?;
-    // One workgroup: the closure loops to its fixed point inside the dispatch.
-    let map_hidden_interface_decls = ComputeOperation::direct_spec(
-        device,
-        graph,
-        resources,
-        passes,
-        INTERFACE_HIDDEN_DECLS_MAP,
-        256,
-    )?;
+    // One lane per field or payload row (and per declaration), then one
+    // workgroup per 256 declarations.
+    let record_capacity = inputs.hir_items.module_record_capacity.max(1);
+    let map_hidden_interface_decls = [
+        ComputeOperation::direct_spec(
+            device,
+            graph,
+            resources,
+            passes,
+            INTERFACE_HIDDEN_DECLS_MAP,
+            inputs.hir_node_capacity.max(record_capacity),
+        )?,
+        ComputeOperation::direct_spec(
+            device,
+            graph,
+            resources,
+            passes,
+            INTERFACE_HIDDEN_DECLS_COUNT,
+            record_capacity,
+        )?,
+        ComputeOperation::direct_spec(
+            device,
+            graph,
+            resources,
+            passes,
+            INTERFACE_HIDDEN_DECLS_PUBLISH,
+            record_capacity,
+        )?,
+    ];
     let mark_value_call_paths = ComputeOperation::direct_spec(
         device,
         graph,

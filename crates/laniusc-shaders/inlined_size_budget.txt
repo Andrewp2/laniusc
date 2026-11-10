@@ -8,4 +8,4 @@
 # schedule moved to its own dispatch).
 57083 tests/owned_type_constraints_fixed
 51215 tests/owned_type_constraints_overlap
-30687 codegen/lir/semantic/scatter
+30677 codegen/lir/semantic/scatter

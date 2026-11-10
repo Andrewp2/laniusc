@@ -1,9 +1,10 @@
-// Initializes the least-summary lattice and the shared propagation frontier.
+// Initializes the least-summary lattice and marks the arguments whose direct
+// sources already give them a summary: each is the root of one propagation
+// lane.
 
 import codegen.lowering_ir;
 import codegen.optimization_ir;
 import codegen.lir.optimization.ssa_block_argument_lookup;
-import codegen.lir.optimization.ssa_sparse_work;
 import gpu_index;
 
 struct Params
@@ -14,7 +15,7 @@ struct Params
     uint declaration_capacity;
     uint declaration_block_capacity;
     uint demand_capacity;
-    uint worker_count;
+    uint reserved0;
     uint max_radix_blocks;
     uint incoming_capacity;
 };
@@ -24,13 +25,16 @@ StructuredBuffer<uint> opt_ir_ssa_block_argument_incoming_total;
 StructuredBuffer<OptIrBlockArgumentIncoming>
     opt_ir_ssa_block_argument_incoming;
 RWStructuredBuffer<uint> opt_ir_ssa_block_argument_summary;
-RWStructuredBuffer<uint> opt_ir_ssa_work_state;
-RWStructuredBuffer<uint> opt_ir_ssa_work_queue;
+RWStructuredBuffer<uint> opt_ir_ssa_walk;
 RWStructuredBuffer<LoweringStatus> lowering_status;
 
 static const uint SUMMARY_NONE = 0u;
 static const uint SUMMARY_CONFLICT = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
+// The first walk word of each of an argument's two transitions (to one
+// source, to conflict): whether the transition is this argument's own start.
+static const uint WALK_ROOT = 0xffffffffu;
+static const uint WALK_UNCLAIMED = 0xfffffffeu;
 
 uint combine_summary(uint current, uint contribution)
 {
@@ -48,14 +52,6 @@ uint direct_summary(OptIrBlockArgumentIncoming incoming)
     if (source.kind == OPT_IR_SSA_SOURCE_INVALID)
         return SUMMARY_CONFLICT;
     return SUMMARY_NONE;
-}
-
-void report_capacity(uint required, uint available)
-{
-    InterlockedOr(lowering_status[0u].flags,
-        LOWERING_STATUS_OPTIMIZATION_CAPACITY);
-    InterlockedMax(lowering_status[0u].required_capacity, required);
-    lowering_status[0u].available_capacity = available;
 }
 
 void report_structure_failure(uint row)
@@ -97,16 +93,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     opt_ir_ssa_block_argument_summary[argument] = summary;
     if (!valid) report_structure_failure(argument);
 
-    if (summary != SUMMARY_NONE)
-    {
-        uint required = 0u;
-        uint queue_capacity = gParams.demand_capacity * 2u;
-        if (!ssa_work_publish(
-                argument,
-                queue_capacity,
-                opt_ir_ssa_work_state,
-                opt_ir_ssa_work_queue,
-                required))
-            report_capacity(required, queue_capacity);
-    }
+    uint transition = 2u * argument;
+    opt_ir_ssa_walk[2u * transition] =
+        summary != SUMMARY_NONE && summary != SUMMARY_CONFLICT
+            ? WALK_ROOT : WALK_UNCLAIMED;
+    opt_ir_ssa_walk[2u * (transition + 1u)] =
+        summary == SUMMARY_CONFLICT ? WALK_ROOT : WALK_UNCLAIMED;
 }

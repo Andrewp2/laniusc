@@ -771,6 +771,10 @@ mod compute_pass_counting_tests {
             ),
             ("parser/syntax.rs", 4),
             ("type_checker/bind_support/control.rs", 2),
+            // The page swap of the graph's paged dependency slot: the page
+            // store is no graph resource, and the copy stands where a host
+            // upload of the page stood.
+            ("type_checker/dependency_interface.rs", 1),
         ]);
         let mut violations = Vec::new();
         visit_rust_sources(&source_root, &mut |path, source| {

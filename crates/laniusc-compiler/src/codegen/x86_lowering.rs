@@ -88,7 +88,6 @@ pub(crate) struct GpuX86LirStage {
     analysis_clear: ComputeOperation,
     analysis_index: ComputeOperation,
     optimize_init: ComputeOperation,
-    optimize_seed: ComputeOperation,
     optimize_close: ComputeOperation,
     if_convert: ComputeOperation,
     allocation_words: ComputeOperation,
@@ -244,11 +243,6 @@ impl GpuX86LirStage {
             "lir.x86.optimize.init",
             "codegen/lir/x86/optimize_init",
         )?;
-        let optimize_seed_pass = load(
-            kernels,
-            "lir.x86.optimize.seed",
-            "codegen/lir/x86/optimize_seed",
-        )?;
         let optimize_close_pass = load(
             kernels,
             "lir.x86.optimize.close",
@@ -310,7 +304,7 @@ impl GpuX86LirStage {
                 function_capacity: capacities.hir_nodes.max(1),
                 token_capacity: capacities.declaration_capacity(),
                 reserved0: 0,
-                reserved1: LoweringCapacities::OPTIMIZATION_SSA_WORKER_COUNT,
+                reserved1: 0,
                 reserved2: u32::from(include_object),
             },
         );
@@ -583,15 +577,6 @@ impl GpuX86LirStage {
             &analysis_params,
             semantic_capacity,
         )?;
-        let optimize_seed = ComputeOperation::direct_with_uniform(
-            device,
-            &context,
-            &resources,
-            "lir.x86.optimize.seed",
-            &optimize_seed_pass,
-            &analysis_params,
-            semantic_capacity,
-        )?;
         let optimize_close = ComputeOperation::direct_with_uniform(
             device,
             &context,
@@ -599,7 +584,7 @@ impl GpuX86LirStage {
             "lir.x86.optimize.close",
             &optimize_close_pass,
             &analysis_params,
-            LoweringCapacities::OPTIMIZATION_SSA_WORKER_COUNT * 32,
+            semantic_capacity,
         )?;
         let if_convert = ComputeOperation::direct_with_uniform(
             device,
@@ -713,7 +698,6 @@ impl GpuX86LirStage {
             analysis_clear,
             analysis_index,
             optimize_init,
-            optimize_seed,
             optimize_close,
             if_convert,
             allocation_words,
@@ -795,9 +779,19 @@ impl GpuX86LirStage {
             stamp(timer, encoder, "codegen.x86.analysis.clear.done");
             self.analysis_index.record(encoder)?;
             stamp(timer, encoder, "codegen.x86.analysis.index.done");
-            self.optimize_init.record(encoder)?;
-            self.optimize_seed.record(encoder)?;
-            self.optimize_close.record(encoder)?;
+            // One lane per semantic row; rows past the job's own return at
+            // once, so the job's extent covers every root.
+            match job {
+                Some(job) => {
+                    let rows = job.semantic_instructions.max(1);
+                    self.optimize_init.record_elements(encoder, rows)?;
+                    self.optimize_close.record_elements(encoder, rows)?;
+                }
+                None => {
+                    self.optimize_init.record(encoder)?;
+                    self.optimize_close.record(encoder)?;
+                }
+            }
             stamp(timer, encoder, "codegen.x86.optimize.parallel.done");
             self.if_convert.record(encoder)?;
             stamp(timer, encoder, "codegen.x86.if_convert.done");
@@ -1487,14 +1481,17 @@ mod tests {
         assert_eq!([operand_words[0], operand_words[4]], [9, 16]);
         let location_words = read_words(&gpu.device, &locations_rb);
         let location = |row: usize| &location_words[row * 5..row * 5 + 5];
-        // `9` is last read by the call, so it takes a stack home (stable
-        // sources for the argument moves, allocation_words). `16` is read
-        // again by the return after the call and takes a callee-saved
-        // register; RBX and R12 are held for the declaration slots.
+        // `9` is last read by the direct call, so it may take any temporary
+        // register but R8 (the argument moves assign R9 last,
+        // allocation_words); R10 and R11 are held for the declaration slots.
+        // `16` is read again by the return after the call and takes a
+        // callee-saved register; RBX and R12 are held for the declaration
+        // slots.
+        let r9 = opcode::X86_LOCATION_REGISTER | 9;
         let r13 = opcode::X86_LOCATION_REGISTER | 13;
-        assert_eq!(location(0), &[0, u32::MAX, u32::MAX, u32::MAX, u32::MAX]);
+        assert_eq!(location(0), &[r9, u32::MAX, u32::MAX, u32::MAX, u32::MAX]);
         assert_eq!(location(1), &[r13, u32::MAX, u32::MAX, u32::MAX, u32::MAX]);
-        assert_eq!(location(3)[1], 0);
+        assert_eq!(location(3)[1], r9);
         assert_eq!(location(4)[1], r13);
         assert_eq!(location(9)[1], r13);
         assert_eq!(read_words(&gpu.device, &function_count_rb)[0], 1);
@@ -1502,15 +1499,15 @@ mod tests {
         // at target row 7.
         assert_eq!(&operand_words[24..28], &[u32::MAX, 7, 0, 0]);
         assert_eq!(&operand_words[32..35], &[7, 11, 23]);
-        // Ten rows from 0; six frame words: three temporaries (`9` and the two
-        // call results) and the parameter's three-word declaration home.
-        assert_eq!(&read_words(&gpu.device, &functions_rb)[..4], &[0, 0, 10, 6]);
+        // Ten rows from 0; five frame words: two temporaries (the two call
+        // results) and the parameter's three-word declaration home.
+        assert_eq!(&read_words(&gpu.device, &functions_rb)[..4], &[0, 0, 10, 5]);
         let frame_slots = read_words(&gpu.device, &frame_slots_rb);
         // The parameter is never read in a function with calls, so it keeps a
         // stack home after the temporaries (decl_slots_scatter). Declaration
         // 4 has no live definition in this fixture, so dead-declaration
         // filtering must leave it unassigned rather than reserving a slot.
-        assert_eq!((frame_slots[3], frame_slots[4]), (3, u32::MAX));
+        assert_eq!((frame_slots[3], frame_slots[4]), (2, u32::MAX));
         assert_eq!(read_words(&gpu.device, &saved_mask_rb)[0], 1 << 13);
         let status_words = read_words(&gpu.device, &status_rb);
         // This fixture deliberately keeps one parameter on the entrypoint so

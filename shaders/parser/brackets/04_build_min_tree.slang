@@ -2,52 +2,31 @@
 // stack-effect validation. Leaves are the roots of the blocks' local layer
 // heaps from 03_apply_prefix; later levels reduce them with min. Together
 // with the local heaps this is the two-level heap pse_04_pair_by_layer
-// searches (blocked_search_tree.slang).
+// searches (blocked_search_tree.slang). Blocks past the stack changes keep
+// stale heaps. A search descends only into blocks before its own; a low stale
+// root only delays a miss.
 
-struct Params
-{
-    uint n_blocks;
-    uint leaf_base;
-    uint start_node;
-    uint node_count;
-    uint mode;
-    uint _pad0;
-    uint _pad1;
-    uint _pad2;
-};
-
-ConstantBuffer<Params> gMinTree;
+#include "../tree/heap_params.slang"
+ConstantBuffer<HeapTreeParams> gMinTree;
 
 StructuredBuffer<int> layer_local_min;
 RWStructuredBuffer<int> min_tree;
 
 static const uint WG_SIZE = 256u;
-static const uint MAX_GROUPS_X = 65535u;
 static const int INF = 2147483647;
 
-uint linear_thread_id(uint3 dtid)
-{
-    return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
-}
+#define TREE_PARAMS gMinTree
+#define TREE_VALUE int
+#define TREE_IDENTITY INF
+#define TREE_COMBINE(a, b) min(a, b)
+#define TREE_LEAF(i) layer_local_min[(i) * WG_SIZE]
+#define TREE_LOAD(node) min_tree[node]
+#define TREE_STORE(node, v) min_tree[node] = (v)
+#include "../tree/heap_levels.slang"
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
 {
-    uint i = linear_thread_id(dtid);
-    if (i >= gMinTree.node_count)
-        return;
-
-    if (gMinTree.mode == 0u)
-    {
-        // Blocks past the stack changes keep stale heaps. A search descends
-        // only into blocks before its own; a low stale root only delays a miss.
-        min_tree[gMinTree.leaf_base + i] = i < gMinTree.n_blocks
-            ? layer_local_min[i * WG_SIZE]
-            : INF;
-        return;
-    }
-
-    uint node = gMinTree.start_node + i;
-    min_tree[node] = min(min_tree[node * 2u], min_tree[node * 2u + 1u]);
+    heap_build(gid, ltid);
 }

@@ -184,9 +184,14 @@ pub(in crate::type_checker) struct CallBindGroups {
     pub(in crate::type_checker) materialize_array_literals: Option<ComputeOperation>,
     pub(in crate::type_checker) validate_array_literals: Option<ComputeOperation>,
     pub(in crate::type_checker) infer_return_bindings: Option<ComputeOperation>,
-    pub(in crate::type_checker) inference_readback: crate::gpu::operations::CopyBufferOperation,
+    /// Zeroes the round's change count (state word 1) before each round.
+    pub(in crate::type_checker) inference_round_reset: crate::gpu::operations::ClearBufferOperation,
+    /// Per batch slot, the copy of the state words into the slot.
+    pub(in crate::type_checker) inference_readback:
+        Vec<crate::gpu::operations::CopyBufferOperation>,
+    /// Per batch slot, the copy of the status words after the state words.
     pub(in crate::type_checker) inference_status_readback:
-        crate::gpu::operations::CopyBufferOperation,
+        Vec<crate::gpu::operations::CopyBufferOperation>,
     /// Status words for the follow-on checks; recorded before each 03a4b
     /// invocation and before the final validation passes.
     pub(in crate::type_checker) status_prior: crate::gpu::operations::CopyBufferOperation,
@@ -258,6 +263,8 @@ pub(in crate::type_checker) struct PredicateBindGroups {
     pub(in crate::type_checker) validate_imported_methods: ComputeOperation,
     pub(in crate::type_checker) reduce_method_validation_errors: ComputeOperation,
     pub(in crate::type_checker) _obligation_pair_dispatch_params: LaniusBuffer<CountDispatchParams>,
+    /// Zeroes `solver_demand` ahead of the passes that count into it.
+    pub(in crate::type_checker) solver_demand_clear: crate::gpu::operations::ClearBufferOperation,
     pub(in crate::type_checker) count_obligation_pairs: ComputeOperation,
     pub(in crate::type_checker) obligation_pair_scan: PrefixScanOperation,
     pub(in crate::type_checker) obligation_pair_dispatch_clear:

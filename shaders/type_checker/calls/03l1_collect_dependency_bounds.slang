@@ -18,8 +18,6 @@ static const uint INVALID = 0xffffffffu;
 static const uint TYPE_WORDS = 9u;
 static const uint INTERFACE_TYPE_GENERIC_PARAMETER = 2u;
 static const uint IMPLEMENTATION_KIND_TRAIT = 2u;
-// The dispatch width (resident.rs records 4096 lanes); lanes stride the page.
-static const uint LANES = 4096u;
 
 // The canonical type of dependency node `t` (its alias root's), or CT_UNKNOWN.
 uint dependency_type(uint t)
@@ -115,14 +113,9 @@ void collect_predicate(uint row)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint lane = dtid.x + dtid.y * 16776960u;
-    if (lane >= LANES) return;
-    uint implementations = dependency_implementation_count();
-    uint predicates = dependency_predicate_count();
-    uint rows = max(implementations, predicates);
-    for (uint row = lane; row < rows; row += LANES)
-    {
-        if (row < implementations) collect_implementation(row);
-        if (row < predicates) collect_predicate(row);
-    }
+    // One lane per page row: the host dispatches the slot's implementation
+    // and predicate capacity, whichever is larger.
+    uint row = dtid.x + dtid.y * 16776960u;
+    if (row < dependency_implementation_count()) collect_implementation(row);
+    if (row < dependency_predicate_count()) collect_predicate(row);
 }

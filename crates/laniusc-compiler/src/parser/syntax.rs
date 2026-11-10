@@ -43,7 +43,7 @@ struct MinTreeParams {
     start_node: u32,
     node_count: u32,
     mode: u32,
-    _pad0: u32,
+    levels: u32,
     _pad1: u32,
     _pad2: u32,
 }
@@ -2025,51 +2025,30 @@ fn make_min_tree_build_steps(
     n_blocks: u32,
     leaf_base: u32,
 ) -> Vec<MinTreeBuildStep> {
-    let mut steps = Vec::new();
-    steps.push(MinTreeBuildStep {
-        params: uniform_from_val(
-            device,
-            "parser.syntax.paren_match_min_tree.params.leaves",
-            &MinTreeParams {
-                n_blocks,
-                leaf_base,
-                start_node: 0,
-                node_count: leaf_base,
-                mode: 0,
-                _pad0: 0,
-                _pad1: 0,
-                _pad2: 0,
-            },
-        ),
-        work_items: leaf_base,
-    });
-
-    let mut start_node = leaf_base / 2;
-    while start_node > 0 {
-        steps.push(MinTreeBuildStep {
+    crate::gpu::scan::heap_build_levels(leaf_base)
+        .into_iter()
+        .map(|(mode, start_node, levels)| MinTreeBuildStep {
             params: uniform_from_val(
                 device,
-                "parser.syntax.paren_match_min_tree.params.combine",
+                if mode == 0 {
+                    "parser.syntax.paren_match_min_tree.params.leaves"
+                } else {
+                    "parser.syntax.paren_match_min_tree.params.combine"
+                },
                 &MinTreeParams {
                     n_blocks,
                     leaf_base,
                     start_node,
                     node_count: start_node,
-                    mode: 1,
-                    _pad0: 0,
+                    mode,
+                    levels,
                     _pad1: 0,
                     _pad2: 0,
                 },
             ),
             work_items: start_node,
-        });
-
-        if start_node == 1 {
-            break;
-        }
-        start_node >>= 1;
-    }
-    steps
+        })
+        .collect()
 }
 
 fn next_power_of_two_u32(value: u32) -> u32 {

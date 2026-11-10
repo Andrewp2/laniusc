@@ -138,6 +138,12 @@ pub(in crate::type_checker) struct DependencyVisibilityState {
     pub(in crate::type_checker) type_index_return_materialization: DependencyTypeIndexInvocations,
     pub(in crate::type_checker) type_index_call_validation: DependencyTypeIndexInvocations,
     pub(in crate::type_checker) type_index_trait_contracts: DependencyTypeIndexInvocations,
+    /// The type index of the current type-check recording is built and still
+    /// holds the loaded page's facts (see `record_dependency_type_index`).
+    pub(in crate::type_checker) type_index_current: std::sync::atomic::AtomicBool,
+    /// This recording loads a single dependency page, so one build of the
+    /// type index serves every later stage.
+    pub(in crate::type_checker) type_index_reusable: std::sync::atomic::AtomicBool,
     pub(in crate::type_checker) project_type_instances_group: ComputeOperation,
     pub(in crate::type_checker) materialize_alias_targets_group: ComputeOperation,
     pub(in crate::type_checker) collect_methods_group: ComputeOperation,
@@ -663,6 +669,8 @@ pub(in crate::type_checker) fn create(
         type_index_return_materialization,
         type_index_call_validation,
         type_index_trait_contracts,
+        type_index_current: std::sync::atomic::AtomicBool::new(false),
+        type_index_reusable: std::sync::atomic::AtomicBool::new(false),
         project_type_instances_group,
         materialize_alias_targets_group,
         collect_methods_group,

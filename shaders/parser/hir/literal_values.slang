@@ -36,7 +36,11 @@ StructuredBuffer<uint> hir_token_pos;
 RWStructuredBuffer<uint2> hir_expr_int_value;
 // Each zero-initialized slot stores ~token for its earliest rejection.
 // Separate failure slots make both the token and reason deterministic.
+// Slot 3 counts the float literals claimed into hir_float_nodes this job.
 RWStructuredBuffer<uint> hir_literal_status;
+// Dense list of float-literal nodes in claim order. The exact-decimal workers
+// visit only these rows instead of striding the whole tree.
+RWStructuredBuffer<uint> hir_float_nodes;
 RWStructuredBuffer<uint> hir_expr_string_start;
 RWStructuredBuffer<uint> hir_expr_string_len;
 
@@ -51,6 +55,7 @@ static const uint HIR_EXPR_CHAR = 29u;
 static const uint HIR_EXPR_RECORD_STRIDE = 4u;
 static const uint HIR_EXPR_RECORD_FORM = 0u;
 static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
+static const uint HIR_FLOAT_COUNT_SLOT = 3u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -241,6 +246,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
         uint value_token = expr_slot(i, HIR_EXPR_RECORD_VALUE_TOKEN);
         if (value_token != INVALID)
             hir_expr_int_value[literal_row] = uint2(parse_char_token(value_token), 0u);
+        return;
+    }
+
+    if (form == HIR_EXPR_FLOAT)
+    {
+        uint float_capacity;
+        uint float_stride;
+        hir_float_nodes.GetDimensions(float_capacity, float_stride);
+        uint slot = atomic_u32_add(hir_literal_status, HIR_FLOAT_COUNT_SLOT, 1u);
+        if (slot < float_capacity)
+            hir_float_nodes[slot] = i;
         return;
     }
 

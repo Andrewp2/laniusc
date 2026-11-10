@@ -188,6 +188,10 @@ fn gpu_batch_selects_imported_callers_nested_length_implementation() {
     assert_eq!(result.len(), 1);
     assert!(result[0].is_concrete(),
         "GPU-owned proof discharges the caller's length-3 goal despite the provider's length-2 candidate");
+    // A valid solve never runs a serial commit stage: its grid-wide audit
+    // lanes prove every commit.
+    let (grid, serial) = super::typed_constant_fault_tests::commit_audit_counts(&gpu, &packet);
+    assert!(grid >= 4 && serial == 0, "commits proven by lanes: {grid}, by the serial stage: {serial}");
 }
 
 #[test]

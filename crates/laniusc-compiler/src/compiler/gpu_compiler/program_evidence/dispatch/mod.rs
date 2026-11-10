@@ -497,7 +497,7 @@ impl GpuProgramEvidence {
                 label: Some("program_evidence.proof_wave"),
             });
         let resources = packet.proof_resources(submission);
-        for (phase, span) in [(49, pending), (50, Span::new(0, 1)?)] {
+        for (phase, span) in [(49, pending), (50, pending)] {
             solver.record(&self.device, &mut commands, phase, span, &self.storage,
                 &packet.input, &packet.output, resources)?;
         }
@@ -553,6 +553,7 @@ impl GpuProgramEvidence {
         };
         let mut commands = encoder();
         self.prepare_proof_store(packet, &mut commands, submission, capacities)?;
+        kernels::reset_commit_audit(&self.storage, packet.proof_resources(submission))?;
         let resets = layout.reset_writes(submission)?;
         packet.output.upload(&mut commands, &resets)?;
         let mut attempt_plan = plan.clone();
@@ -618,6 +619,8 @@ impl GpuProgramEvidence {
         loop {
             let work = progress.appended(proof::WORK, work_cursor)?;
             if work.count != 0 {
+                // The commit audits of this round take every admitted Work.
+                let all_work = Span::new(0, progress.admitted[proof::WORK])?;
                 let requirements = progress.appended(9, requirement_cursor)?;
                 let requirement_end = progress.admitted[9];
                 let mut commands = encoder();
@@ -630,7 +633,7 @@ impl GpuProgramEvidence {
                         let binding_recipe = typed_constant_fault_tests::needs_binding_recipe_boundary(packet);
                         let last = if binding_recipe { 45 } else { 42 };
                         for phase in 41..=last {
-                            record(packet, &mut commands, phase, if phase == 45 { one } else { work })?;
+                            record(packet, &mut commands, phase, if phase == 45 { all_work } else { work })?;
                         }
                         progress = self.submit_proof_progress(packet, layout, submission, commands)?;
                         if !progress.is_building() { return Ok(Some(progress)); }
@@ -642,13 +645,14 @@ impl GpuProgramEvidence {
                         commands = encoder();
                         let first = if binding_recipe { 46 } else { 43 };
                         for phase in first..=47 {
-                            record(packet, &mut commands, phase, if matches!(phase, 45 | 47) { one } else { work })?;
+                            record(packet, &mut commands, phase, if matches!(phase, 45 | 47) { all_work } else { work })?;
                         }
                     } else {
                         solver.record_normalization(
                             &self.device,
                             &mut commands,
                             work,
+                            all_work,
                             &self.storage,
                             &packet.input,
                             &packet.output,
@@ -661,6 +665,7 @@ impl GpuProgramEvidence {
                     &self.device,
                     &mut commands,
                     work,
+                    all_work,
                     &self.storage,
                     &packet.input,
                     &packet.output,
@@ -706,7 +711,7 @@ impl GpuProgramEvidence {
                     &packet.output,
                     packet.proof_resources(submission),
                 )?;
-                record(packet, &mut commands, 55, one)?;
+                record(packet, &mut commands, 55, all_work)?;
                 record(packet, &mut commands, 56, work)?;
                 progress = self.submit_proof_progress(packet, layout, submission, commands)?;
                 if !progress.is_building() {

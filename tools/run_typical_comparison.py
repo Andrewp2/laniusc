@@ -10,6 +10,7 @@ import os
 import platform
 import shlex
 import shutil
+import signal
 import statistics
 import subprocess
 import sys
@@ -17,13 +18,103 @@ import time
 from pathlib import Path
 
 import moonbit_project
+import typical_parallelism
 from generate_typical_project import generate
+from run_compiler_stress_matrix import (
+    DEFAULT_TOOLCHAINS,
+    DMD,
+    GO_ROOT,
+    LDC2,
+    TSC_NATIVE,
+    TSRS_NATIVE,
+    TYPESCRIPT_CHECKERS,
+    V_ROOT,
+    compiler_environment,
+)
 from perf_model import command_record, new_document, source_facts, summarize, write_document
 from run_typical_lanius_matrix import parse_counts
 
 
-LANGUAGES = ("c", "cpp", "rust", "zig", "tcc", "moonbit")
+LANGUAGES = (
+    "c", "cpp", "rust", "zig", "tcc", "moonbit",
+    "d", "ldc", "go", "v", "tsc", "tsrs",
+)
 LANES = ("o0", "optimized")
+TYPESCRIPT_COMPILERS = ("tsc", "tsrs")
+# Compilers that build another compiler's rendering of the project.
+SOURCE_LANGUAGE = {"tcc": "c", "ldc": "d", "tsc": "ts", "tsrs": "ts"}
+# Toolchains installed in the --toolchains directory (as for the single-file
+# runner); each is dropped, with a message, when its executable is missing.
+# Compilers outside the system packages are installed in the toolchains
+# directory; each falls back to the one on PATH when it is not there.
+ZIG = "zig/zig-x86_64-linux-0.17.1/zig"
+TCC = "tcc/bin/tcc"
+# The newest GCC installed side by side with the system compiler (for example
+# from the ubuntu-toolchain-r PPA), else the system cc/c++.
+GCC_VERSIONS = (16, 15, 14)
+
+
+def zig_executable(toolchains: Path) -> str:
+    pinned = toolchains / ZIG
+    return str(pinned) if pinned.is_file() else "zig"
+
+
+def default_tcc(toolchains: Path = DEFAULT_TOOLCHAINS) -> str:
+    built = toolchains / TCC
+    return str(built) if built.is_file() else "tcc"
+
+
+def default_c_compilers() -> tuple[str, str]:
+    for version in GCC_VERSIONS:
+        if shutil.which(f"gcc-{version}") and shutil.which(f"g++-{version}"):
+            return f"gcc-{version}", f"g++-{version}"
+    return "cc", "c++"
+
+
+def select_ninja_compiler(build_file: Path, compiler: str) -> None:
+    """Point a generated ninja file at the selected C or C++ compiler."""
+    lines = build_file.read_text().splitlines(keepends=True)
+    if not lines or not lines[0].startswith("compiler = "):
+        raise RuntimeError(f"unexpected ninja file header: {build_file}")
+    lines[0] = f"compiler = {compiler}\n"
+    build_file.write_text("".join(lines))
+
+
+TOOLCHAIN_EXECUTABLES = {
+    "d": DMD,
+    "ldc": LDC2,
+    "go": f"{GO_ROOT}/bin/go",
+    "v": f"{V_ROOT}/v",
+    "tsc": TSC_NATIVE,
+    "tsrs": TSRS_NATIVE,
+}
+# The Go standard-library packages the rendered project imports are compiled
+# once into a run-private cache snapshot; every sample starts from a copy of it,
+# so project packages are always compiled and the standard library never is.
+GO_STD_PRIMER = """package main
+
+import (
+{imports})
+
+func main() {{
+}}
+"""
+# V's counterpart: a program importing the same vlib modules as the project's
+# main.v warms V's module cache with its runtime (builtin, the Boehm GC, os,
+# time, crypto.rand) but none of the project's modules.
+V_STD_PRIMER = """module main
+
+{imports}
+fn main() {{
+}}
+"""
+# One rule for every compiler: a build still running after this many seconds
+# is stopped and its lane recorded as did-not-finish (DNF).
+DEFAULT_BUILD_TIMEOUT_SECONDS = 600
+# A lane whose first measured build takes longer than this keeps only
+# SLOW_LANE_SAMPLES samples; the row records that the count was reduced.
+SLOW_LANE_THRESHOLD_MS = 30_000
+SLOW_LANE_SAMPLES = 5
 
 
 def parse_languages(value: str) -> tuple[str, ...]:
@@ -45,20 +136,43 @@ def entry_source(project: Path, language: str) -> Path:
         "rust": "rust/src/main.rs",
         "zig": "zig/main.zig",
         "moonbit": "moonbit/main/main.mbt",
+        "d": "d/main.d",
+        "ldc": "d/main.d",
+        "go": "go/main.go",
+        "v": "v/main.v",
+        "tsc": "ts/src/main.ts",
+        "tsrs": "ts/src/main.ts",
     }[language]
     return project / relative
 
 
 def source_language(language: str) -> str:
-    return "c" if language == "tcc" else language
+    return SOURCE_LANGUAGE.get(language, language)
 
 
-def available_languages(languages: tuple[str, ...]) -> tuple[str, ...]:
-    """Drop MoonBit, with a message, when its toolchain is not installed."""
-    if "moonbit" in languages and not moonbit_project.moon_available():
-        print(f"run_typical_comparison: {moonbit_project.MISSING_MESSAGE}", file=sys.stderr)
-        return tuple(language for language in languages if language != "moonbit")
-    return languages
+def available_languages(
+    languages: tuple[str, ...], toolchains: Path = DEFAULT_TOOLCHAINS
+) -> tuple[str, ...]:
+    """Drop MoonBit and the toolchains-directory compilers, with a message,
+    when they are not installed."""
+    available = []
+    for language in languages:
+        if language == "moonbit" and not moonbit_project.moon_available():
+            print(f"run_typical_comparison: {moonbit_project.MISSING_MESSAGE}", file=sys.stderr)
+            continue
+        executable = TOOLCHAIN_EXECUTABLES.get(language)
+        if executable is not None and not (toolchains / executable).is_file():
+            print(
+                f"run_typical_comparison: {language} is not installed at "
+                f"{toolchains / executable}; skipping it",
+                file=sys.stderr,
+            )
+            continue
+        if language in TYPESCRIPT_COMPILERS and shutil.which("node") is None:
+            print(f"run_typical_comparison: node is required to run {language} output; skipping it", file=sys.stderr)
+            continue
+        available.append(language)
+    return tuple(available)
 
 
 def moonbit_profile(lane: str) -> str:
@@ -68,7 +182,12 @@ def moonbit_profile(lane: str) -> str:
 def lanes_for(language: str) -> tuple[str, ...]:
     # TCC deliberately omits an optimizer, so separate optimization lanes would
     # measure the same compiler configuration under misleading names.
-    return ("default",) if language == "tcc" else LANES
+    if language == "tcc":
+        return ("default",)
+    # TypeScript has one configuration: a full type check plus JavaScript emit.
+    if language in TYPESCRIPT_COMPILERS:
+        return ("check_emit",)
+    return LANES
 
 
 def parse_tcc_parallel_shards(value: str) -> tuple[int, ...]:
@@ -212,10 +331,38 @@ def run_checked(command: list[str], cwd: Path, env: dict[str, str] | None = None
         )
 
 
-def timed_checked(command: list[str], cwd: Path, env: dict[str, str] | None = None) -> float:
+def timed_checked(
+    command: list[str],
+    cwd: Path,
+    env: dict[str, str] | None = None,
+    timeout: float | None = None,
+) -> float:
+    """Wall time of one build; raises subprocess.TimeoutExpired past timeout."""
     started = time.perf_counter_ns()
-    run_checked(command, cwd, env)
-    return (time.perf_counter_ns() - started) / 1_000_000.0
+    # Its own session, so a timeout stops the compiler's children (ninja jobs,
+    # V's cc processes) as well as the driver.
+    process = subprocess.Popen(
+        command,
+        cwd=cwd,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+        process.communicate()
+        raise
+    elapsed = (time.perf_counter_ns() - started) / 1_000_000.0
+    if process.returncode != 0:
+        raise RuntimeError(
+            f"command failed ({process.returncode}): {command!r}\n"
+            f"stdout:\n{stdout}\nstderr:\n{stderr}"
+        )
+    return elapsed
 
 
 def command_for(
@@ -226,8 +373,27 @@ def command_for(
     rust_frontend_threads: int,
     tcc: str = "tcc",
     tcc_runtime_path: Path | None = None,
+    toolchains: Path = DEFAULT_TOOLCHAINS,
+    c_compilers: tuple[str, str] = ("cc", "c++"),
+    rust_toolchain: str | None = None,
 ) -> tuple[list[str], Path, Path, dict[str, str]]:
     env = os.environ.copy()
+    if language in {"d", "ldc"}:
+        return d_command(project, language, lane, toolchains), project / "d", project / "d" / f"typical-project-{language}-{lane}", env
+    if language == "go":
+        return go_command(project, lane, sample, toolchains)
+    if language == "v":
+        return v_command(project, lane, sample, toolchains)
+    if language in TYPESCRIPT_COMPILERS:
+        root = project / "ts"
+        shutil.rmtree(root / "out", ignore_errors=True)
+        executable = TSC_NATIVE if language == "tsc" else TSRS_NATIVE
+        return (
+            [str(toolchains / executable), "-p", "tsconfig.json", "--checkers", str(TYPESCRIPT_CHECKERS)],
+            root,
+            root / "out" / "main.js",
+            env,
+        )
     if language == "tcc":
         root = project / "c"
         source_paths = sorted((root / "src").glob("*.c"))
@@ -264,11 +430,14 @@ def command_for(
     if language in {"c", "cpp"}:
         root = project / language
         build_file = f"build-{lane}.ninja"
+        select_ninja_compiler(root / build_file, c_compilers[language == "cpp"])
         run_checked(["ninja", "-f", build_file, "-t", "clean"], root)
         return ["ninja", "-f", build_file], root, root / f"typical-project-{lane}", env
     if language == "rust":
         root = project / "rust"
         env["CARGO_INCREMENTAL"] = "0"
+        if rust_toolchain is not None:
+            env["RUSTUP_TOOLCHAIN"] = rust_toolchain
         env["RUSTFLAGS"] = f"-Awarnings -Zthreads={rust_frontend_threads}"
         run_checked(["cargo", "clean", "--quiet"], root, env)
         command = ["cargo", "build", "--quiet"]
@@ -299,7 +468,7 @@ def command_for(
         mode = "Debug" if lane == "o0" else "ReleaseFast"
         return (
             [
-                "zig",
+                zig_executable(toolchains),
                 "build-exe",
                 "-lc",
                 "-O",
@@ -319,9 +488,155 @@ def command_for(
     raise AssertionError(language)
 
 
+def d_command(project: Path, language: str, lane: str, toolchains: Path) -> list[str]:
+    """dmd and LDC compile and link the whole project in one invocation, the
+    way dub and hand-written D builds do; neither keeps a cache."""
+    root = project / "d"
+    objects = root / "build" / f"{language}-{lane}"
+    shutil.rmtree(objects, ignore_errors=True)
+    output = root / f"typical-project-{language}-{lane}"
+    output.unlink(missing_ok=True)
+    sources = ["main.d", *sorted(str(path.relative_to(root)) for path in (root / "typical").glob("*.d"))]
+    compiler, flags = d_compiler_flags(language, lane, toolchains)
+    return [str(compiler), *flags, f"-od={objects.relative_to(root)}", f"-of={output.name}", *sources]
+
+
+def d_compiler_flags(language: str, lane: str, toolchains: Path) -> tuple[Path, list[str]]:
+    if language == "d":
+        return toolchains / DMD, (["-O", "-release", "-inline"] if lane == "optimized" else [])
+    return toolchains / LDC2, (["-O3", "-release"] if lane == "optimized" else ["-O0"])
+
+
+def configured_command(
+    project: Path,
+    language: str,
+    lane: str,
+    sample: int,
+    config: str,
+    **options,
+) -> tuple[list[str], Path, Path, dict[str, str]]:
+    """command_for, adjusted for one parallelism configuration
+    (typical_parallelism); "default" is the compiler's default parallelism."""
+    if language == "tcc":
+        return command_for(project, language, typical_parallelism.tcc_lane(config) if config != "default" else lane, sample, **options)
+    if language in {"d", "ldc"} and config.startswith("separate-j"):
+        root = project / "d"
+        compiler, flags = d_compiler_flags(language, lane, options["toolchains"])
+        command, output = typical_parallelism.d_separate_build(
+            root, language, lane, compiler, flags, typical_parallelism.number(config, "j")
+        )
+        return command, root, output, os.environ.copy()
+    command, cwd, artifact, env = command_for(project, language, lane, sample, **options)
+    return typical_parallelism.apply(language, lane, config, command, env), cwd, artifact, env
+
+
+def go_std_imports(root: Path) -> list[str]:
+    imports = set()
+    for source in root.rglob("*.go"):
+        in_block = False
+        for line in source.read_text().splitlines():
+            stripped = line.strip()
+            if stripped.startswith("import ("):
+                in_block = True
+                continue
+            if in_block and stripped == ")":
+                in_block = False
+                continue
+            if in_block or stripped.startswith("import "):
+                quoted = stripped.split('"')
+                if len(quoted) >= 3 and not quoted[1].startswith("typical"):
+                    imports.add(quoted[1])
+    return sorted(imports)
+
+
+def go_command(
+    project: Path, lane: str, sample: int, toolchains: Path
+) -> tuple[list[str], Path, Path, dict[str, str]]:
+    root = project / "go"
+    cache = project / ".benchmark-cache" / "go"
+    snapshot = cache / "std"
+    env = compiler_environment("go", toolchains, cache)
+    go = str(toolchains / GO_ROOT / "bin/go")
+    if not snapshot.is_dir():
+        primer = cache / "std-primer"
+        shutil.rmtree(primer, ignore_errors=True)
+        primer.mkdir(parents=True)
+        imports = go_std_imports(root)
+        (primer / "go.mod").write_text("module primer\n\ngo 1.27\n")
+        (primer / "main.go").write_text(GO_STD_PRIMER.format(
+            imports="".join(f'\t_ "{name}"\n' for name in imports)
+        ))
+        partial = cache / "std.partial"
+        shutil.rmtree(partial, ignore_errors=True)
+        env["GOCACHE"] = str(partial)
+        run_checked([go, "build", "-o", "primer", "."], primer, env)
+        partial.rename(snapshot)
+    sample_cache = fresh_cache_copy(snapshot, cache / f"sample-{lane}-{sample}")
+    env["GOCACHE"] = str(sample_cache)
+    output = root / f"typical-project-{lane}"
+    output.unlink(missing_ok=True)
+    # -N -l (no optimisation, no inlining) for the project's own packages only,
+    # not the standard library, as in the single-file runner.
+    flags = ["-gcflags=typical/...=-N -l"] if lane == "o0" else []
+    return [go, "build", *flags, "-o", output.name, "."], root, output, env
+
+
+def fresh_cache_copy(snapshot: Path, sample_cache: Path) -> Path:
+    """Replace every earlier per-sample copy with a new copy of the snapshot,
+    so a run keeps one copy on disk rather than one per sample."""
+    for previous in sample_cache.parent.glob("sample-*"):
+        shutil.rmtree(previous, ignore_errors=True)
+    shutil.copytree(snapshot, sample_cache)
+    return sample_cache
+
+
+def v_imports(source: Path) -> list[str]:
+    """vlib modules imported by main.v (project modules have no dot and live
+    beside v.mod; vlib modules the probe uses are os, time and crypto.rand)."""
+    project_modules = {path.name for path in source.parent.iterdir() if path.is_dir()}
+    return sorted(
+        line.split()[1]
+        for line in source.read_text().splitlines()
+        if line.startswith("import ") and line.split()[1] not in project_modules
+    )
+
+
+def v_command(
+    project: Path, lane: str, sample: int, toolchains: Path
+) -> tuple[list[str], Path, Path, dict[str, str]]:
+    """V generates C for the program and compiles it (its bundled TCC by
+    default, the system cc at -O3 with -prod); some V versions cache one C
+    object per module. Every sample starts from a copy of a run-private cache
+    holding only V's runtime, so every project module is compiled every time."""
+    root = project / "v"
+    cache = project / ".benchmark-cache" / f"v-{lane}"
+    snapshot = cache / "std"
+    v = str(toolchains / V_ROOT / "v")
+    flags = ["-prod"] if lane == "optimized" else []
+    if not snapshot.is_dir():
+        primer = cache / "std-primer"
+        shutil.rmtree(primer, ignore_errors=True)
+        primer.mkdir(parents=True)
+        (primer / "v.mod").write_text("Module {\n\tname: 'primer'\n}\n")
+        (primer / "main.v").write_text(V_STD_PRIMER.format(
+            imports="".join(f"import {name}\n" for name in v_imports(root / "main.v"))
+        ))
+        partial = cache / "std.partial"
+        shutil.rmtree(partial, ignore_errors=True)
+        primer_env = compiler_environment("v", toolchains, partial)
+        run_checked([v, "-w", "-n", *flags, "-o", "primer", "."], primer, primer_env)
+        partial.rename(snapshot)
+    sample_cache = fresh_cache_copy(snapshot, cache / f"sample-{sample}")
+    env = compiler_environment("v", toolchains, sample_cache)
+    output = root / f"typical-project-{lane}"
+    output.unlink(missing_ok=True)
+    return [v, "-w", "-n", *flags, "-o", output.name, "."], root, output, env
+
+
 def validate(path: Path, expected: str, cwd: Path) -> str:
+    command = ["node", str(path)] if path.suffix == ".js" else [str(path)]
     result = subprocess.run(
-        [str(path)], cwd=cwd, capture_output=True, text=True, timeout=30
+        command, cwd=cwd, capture_output=True, text=True, timeout=30
     )
     if result.returncode != 0 or result.stdout != expected:
         raise RuntimeError(
@@ -464,6 +779,63 @@ def write_canonical_tcc_results(
     return written
 
 
+def measure_configuration(
+    project: Path,
+    language: str,
+    lane: str,
+    config: str,
+    sample_count: int,
+    source: Path,
+    original: str,
+    expected: str,
+    options: dict[str, object],
+    build_timeout: float,
+) -> dict[str, object]:
+    """Time sample_count clean builds of one configuration, validating each
+    artifact; stops at the first build past build_timeout (DNF)."""
+    elapsed: list[float] = []
+    hashes: list[str] = []
+    retained: list[dict[str, object]] = []
+    dnf = False
+    sample_target = sample_count
+    sample = 0
+    while sample < sample_target:
+        write_variant(source, original, lane, sample)
+        command, cwd, artifact, env = configured_command(
+            project, language, lane, sample, config, **options
+        )
+        try:
+            wall_ms = timed_checked(command, cwd, env, build_timeout)
+        except subprocess.TimeoutExpired:
+            dnf = True
+            print(
+                f"run_typical_comparison: {language} {lane} {config} exceeded "
+                f"{build_timeout:g}s: DNF",
+                file=sys.stderr,
+                flush=True,
+            )
+            break
+        if language == "moonbit":
+            # Older moon toolchains write target/, not _build/.
+            artifact = moonbit_project.artifact_path(cwd, "native", moonbit_profile(lane))
+        hashes.append(validate(artifact, expected, project))
+        elapsed.append(wall_ms)
+        retained.append(
+            {
+                "language": language,
+                "lane": lane,
+                "parallelism": config,
+                "sample": sample,
+                "wall_ms": wall_ms,
+                "command": command,
+            }
+        )
+        if sample == 0 and wall_ms > SLOW_LANE_THRESHOLD_MS and sample_target > SLOW_LANE_SAMPLES:
+            sample_target = SLOW_LANE_SAMPLES
+        sample += 1
+    return {"elapsed": elapsed, "hashes": hashes, "samples": retained, "dnf": dnf}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--file-counts", default="1,10,100,1000,10000")
@@ -477,7 +849,13 @@ def main() -> int:
     )
     parser.add_argument("--languages", type=parse_languages, default=LANGUAGES)
     parser.add_argument("--rust-frontend-threads", type=int, default=16)
-    parser.add_argument("--tcc", default="tcc", help="TCC executable")
+    parser.add_argument("--tcc", help="TCC executable (default: the toolchains build, else tcc)")
+    parser.add_argument("--cc", help="C compiler (default: newest gcc-N installed, else cc)")
+    parser.add_argument("--cxx", help="C++ compiler (default: newest g++-N installed, else c++)")
+    parser.add_argument(
+        "--rust-toolchain",
+        help="rustup toolchain for the Rust lanes (default: the rustup default)",
+    )
     parser.add_argument(
         "--tcc-runtime-path",
         type=Path,
@@ -494,6 +872,32 @@ def main() -> int:
         action="store_true",
         help="benchmark only the requested parallel TCC configurations",
     )
+    parser.add_argument(
+        "--toolchains",
+        type=Path,
+        default=DEFAULT_TOOLCHAINS,
+        help="directory holding the go, dmd, ldc, v and ts toolchains",
+    )
+    parser.add_argument(
+        "--build-timeout",
+        type=float,
+        default=DEFAULT_BUILD_TIMEOUT_SECONDS,
+        help="seconds after which any build is stopped and its lane recorded as DNF",
+    )
+    parser.add_argument(
+        "--tune-parallelism",
+        action="store_true",
+        help=(
+            "sweep each compiler's parallelism settings (typical_parallelism), "
+            "then measure the fastest one"
+        ),
+    )
+    parser.add_argument(
+        "--sweep-samples",
+        type=int,
+        default=5,
+        help="samples per candidate configuration in the parallelism sweep",
+    )
     parser.add_argument("--skip-generation", action="store_true")
     parser.add_argument("--skip-lanius", action="store_true")
     args = parser.parse_args()
@@ -504,11 +908,16 @@ def main() -> int:
     if args.skip_tcc_serial and not args.tcc_parallel_shards:
         parser.error("--skip-tcc-serial requires --tcc-parallel-shards")
 
-    args.languages = available_languages(args.languages)
+    args.toolchains = args.toolchains.resolve()
+    args.languages = available_languages(args.languages, args.toolchains)
     if not args.languages and args.skip_lanius:
         parser.error("no requested compiler is available")
 
     repo = Path(__file__).resolve().parents[1]
+    default_cc, default_cxx = default_c_compilers()
+    args.cc = args.cc or default_cc
+    args.cxx = args.cxx or default_cxx
+    args.tcc = args.tcc or default_tcc(args.toolchains)
     if Path(args.tcc).parent != Path("."):
         args.tcc = str((repo / args.tcc).resolve())
     if args.tcc_runtime_path is not None:
@@ -554,58 +963,83 @@ def main() -> int:
                 else lanes_for(language)
             )
             for lane in language_lanes:
-                elapsed = []
-                artifact_hashes = []
                 source = entry_source(project, language)
                 original = source.read_text()
+                options = {
+                    "rust_frontend_threads": args.rust_frontend_threads,
+                    "tcc": args.tcc,
+                    "tcc_runtime_path": args.tcc_runtime_path,
+                    "toolchains": args.toolchains,
+                    "c_compilers": (args.cc, args.cxx),
+                    "rust_toolchain": args.rust_toolchain,
+                }
+                sweep: dict[str, dict[str, object]] = {}
                 try:
                     if language == "zig":
                         write_variant(source, original, lane, -1)
-                        command, cwd, artifact, env = command_for(
-                            project, language, lane, -1, args.rust_frontend_threads
-                        )
+                        command, cwd, artifact, env = command_for(project, language, lane, -1, **options)
                         run_checked(command, cwd, env)
                         validate(artifact, expected, project)
-                    for sample in range(args.samples):
-                        write_variant(source, original, lane, sample)
-                        command, cwd, artifact, env = command_for(
-                            project,
+                    config = "default"
+                    if args.tune_parallelism:
+                        for candidate in typical_parallelism.candidates(
                             language,
                             lane,
-                            sample,
-                            args.rust_frontend_threads,
-                            args.tcc,
-                            args.tcc_runtime_path,
-                        )
-                        wall_ms = timed_checked(command, cwd, env)
-                        if language == "moonbit":
-                            # Older moon toolchains write target/, not _build/.
-                            artifact = moonbit_project.artifact_path(
-                                cwd, "native", moonbit_profile(lane)
+                            manifest["languages"][source_language(language)]["source_file_count"],
+                        ):
+                            trial = measure_configuration(
+                                project, language, lane, candidate, args.sweep_samples,
+                                source, original, expected, options, args.build_timeout,
                             )
-                        artifact_hashes.append(validate(artifact, expected, project))
-                        elapsed.append(wall_ms)
-                        samples.append(
-                            {
-                                "file_count": count,
-                                "language": language,
-                                "lane": lane,
-                                "sample": sample,
-                                "wall_ms": wall_ms,
-                                "command": command,
-                            }
-                        )
+                            sweep[candidate] = (
+                                {"dnf": True}
+                                if trial["dnf"]
+                                else median_mad(trial["elapsed"])
+                            )
+                            print(
+                                f"run_typical_comparison: sweep {count} {language} {lane} {candidate}: "
+                                + ("DNF" if trial["dnf"] else f"{sweep[candidate]['median_ms']:.1f} ms"),
+                                file=sys.stderr,
+                                flush=True,
+                            )
+                        finished = [name for name, result in sweep.items() if "median_ms" in result]
+                        if finished:
+                            config = min(finished, key=lambda name: sweep[name]["median_ms"])
+                    result = measure_configuration(
+                        project, language, lane, config, args.samples,
+                        source, original, expected, options, args.build_timeout,
+                    )
                 finally:
                     source.write_text(original)
+                elapsed = result["elapsed"]
+                dnf = result["dnf"]
+                for sample in result["samples"]:
+                    samples.append({"file_count": count, **sample})
                 row = {
                     "file_count": count,
                     "source_files": manifest["languages"][source_language(language)]["source_file_count"],
                     "source_bytes": manifest["languages"][source_language(language)]["source_bytes"],
                     "language": language,
                     "lane": lane,
-                    "compile": median_mad(elapsed),
-                    "artifact_sha256_count": len(set(artifact_hashes)),
+                    "parallelism": config,
+                    "compile": median_mad(elapsed) if elapsed and not dnf else None,
+                    "artifact_sha256_count": len(set(result["hashes"])),
+                    "requested_samples": args.samples,
                 }
+                if sweep:
+                    row["parallelism_sweep"] = sweep
+                if dnf:
+                    row["dnf"] = {
+                        "timeout_seconds": args.build_timeout,
+                        "completed_samples": len(elapsed),
+                    }
+                elif len(elapsed) < args.samples:
+                    row["samples_reduced"] = {
+                        "reason": (
+                            f"first build exceeded {SLOW_LANE_THRESHOLD_MS / 1000:g}s; "
+                            f"lane limited to {SLOW_LANE_SAMPLES} samples"
+                        ),
+                    }
                 rows.append(row)
                 print(json.dumps(row, sort_keys=True), flush=True)
 
@@ -630,26 +1064,39 @@ def main() -> int:
                 if row["file_count"] == count and row["language"] == "lanius"
             )
             for row in rows:
-                if row["file_count"] == count:
+                if row["file_count"] == count and row["compile"] is not None:
                     row["speedup_vs_lanius"] = row["compile"]["median_ms"] / lanius_ms
 
     versions = {
-        "gcc": tool_version(["gcc", "--version"]),
-        "g++": tool_version(["g++", "--version"]),
-        "rustc": tool_version(["rustc", "--version"]),
-        "cargo": tool_version(["cargo", "--version"]),
-        "zig": tool_version(["zig", "version"]),
+        "gcc": tool_version([args.cc, "--version"]),
+        "g++": tool_version([args.cxx, "--version"]),
+        "rustc": tool_version(["rustc", *([f"+{args.rust_toolchain}"] if args.rust_toolchain else []), "--version"]),
+        "cargo": tool_version(["cargo", *([f"+{args.rust_toolchain}"] if args.rust_toolchain else []), "--version"]),
+        "zig": tool_version([zig_executable(args.toolchains), "version"]),
         "ninja": tool_version(["ninja", "--version"]),
     }
     if "tcc" in args.languages:
         versions["tcc"] = tool_version([args.tcc, "-v"])
     if "moonbit" in args.languages:
         versions["moon"] = moonbit_project.version()
+    toolchain_versions = {
+        "d": ("dmd", [str(args.toolchains / DMD), "--version"]),
+        "ldc": ("ldc2", [str(args.toolchains / LDC2), "--version"]),
+        "go": ("go", [str(args.toolchains / GO_ROOT / "bin/go"), "version"]),
+        "v": ("v", [str(args.toolchains / V_ROOT / "v"), "version"]),
+        "tsc": ("tsc", [str(args.toolchains / TSC_NATIVE), "--version"]),
+        "tsrs": ("tsrs", [str(args.toolchains / TSRS_NATIVE), "--version"]),
+    }
+    for language, (name, command) in toolchain_versions.items():
+        if language in args.languages:
+            versions[name] = tool_version(command)
+    if any(language in TYPESCRIPT_COMPILERS for language in args.languages):
+        versions["node"] = tool_version(["node", "--version"])
 
     document = {
         "schema": "lanius.typical-project-comparison.v1",
         "measurement_policy": {
-            "native": "clean build; cleanup occurs before timed interval; default compiler parallelism",
+            "native": "clean build; cleanup occurs before timed interval",
             "native_source_variation": "a semantics-neutral entry-source marker changes for every sample",
             "tcc": "serial TCC or byte-balanced parallel TCC partial-link shards followed by one TCC link; debug info disabled",
             "zig_cache": "fresh local build cache per sample; persistent compiler-global cache; one unmeasured primer per lane",
@@ -662,6 +1109,43 @@ def main() -> int:
             "moonbit": (
                 "clean moon build of the native backend (moon clean before the timed "
                 "interval); one package per module; o0 is --debug, optimized is --release"
+            ),
+            "d": (
+                "dmd and LDC compile and link every module in one invocation; "
+                "o0 is dmd's default or ldc2 -O0, optimized is dmd -O -release -inline "
+                "or ldc2 -O3 -release"
+            ),
+            "go": (
+                "go build of one module with one package per project module and the "
+                "go command's default package parallelism; every sample starts from a "
+                "copy of a run-private GOCACHE holding only the standard-library "
+                "packages the project imports; o0 is -gcflags=typical/...=-N -l"
+            ),
+            "v": (
+                "v builds the project with its default strategy, compiling the "
+                "generated C with its bundled TCC, or the system cc at -O3 with "
+                "-prod; every sample starts from a copy of a "
+                "run-private cache holding only V's runtime and the vlib modules the "
+                "project imports"
+            ),
+            "typescript": (
+                "tsc and tsrs type-check every module and emit ES2022 JavaScript "
+                f"(--checkers {TYPESCRIPT_CHECKERS}); node runs the output; no native code"
+            ),
+            "dnf": (
+                f"any build still running after {args.build_timeout:g}s is stopped and "
+                "its lane recorded as did-not-finish, for every compiler"
+            ),
+            "slow_lanes": (
+                f"a lane whose first measured build exceeds {SLOW_LANE_THRESHOLD_MS / 1000:g}s "
+                f"keeps {SLOW_LANE_SAMPLES} samples instead of the requested count"
+            ),
+            "parallelism": (
+                "each compiler measured at the fastest of its parallelism settings "
+                f"(tools/typical_parallelism.py), chosen by the lowest median of "
+                f"{args.sweep_samples} samples per candidate; the sweep is retained per row"
+                if args.tune_parallelism
+                else "default compiler parallelism"
             ),
             "validation": "every emitted artifact executed and exact stdout checked",
         },

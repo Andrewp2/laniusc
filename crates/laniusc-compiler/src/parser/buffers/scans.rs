@@ -181,52 +181,30 @@ pub(super) fn make_tree_prefix_max_build_steps(
     n_blocks: u32,
     leaf_base: u32,
 ) -> Vec<TreePrefixMaxBuildStep> {
-    let mut steps = Vec::new();
-    steps.push(TreePrefixMaxBuildStep {
-        params: uniform_from_val(
-            device,
-            "parser.tree_prefix_max.params.leaves",
-            &super::super::passes::tree::prefix::build_max_tree::Params {
-                n_blocks,
-                leaf_base,
-                start_node: 0,
-                node_count: leaf_base,
-                mode: 0,
-                _pad0: 0,
-                _pad1: 0,
-                _pad2: 0,
-            },
-        ),
-        work_items: leaf_base,
-    });
-
-    let mut start_node = leaf_base / 2;
-    while start_node > 0 {
-        steps.push(TreePrefixMaxBuildStep {
+    crate::gpu::scan::heap_build_levels(leaf_base)
+        .into_iter()
+        .map(|(mode, start_node, levels)| TreePrefixMaxBuildStep {
             params: uniform_from_val(
                 device,
-                "parser.tree_prefix_max.params.combine",
+                if mode == 0 {
+                    "parser.tree_prefix_max.params.leaves"
+                } else {
+                    "parser.tree_prefix_max.params.combine"
+                },
                 &super::super::passes::tree::prefix::build_max_tree::Params {
                     n_blocks,
                     leaf_base,
                     start_node,
                     node_count: start_node,
-                    mode: 1,
-                    _pad0: 0,
+                    mode,
+                    levels,
                     _pad1: 0,
                     _pad2: 0,
                 },
             ),
             work_items: start_node,
-        });
-
-        if start_node == 1 {
-            break;
-        }
-        start_node /= 2;
-    }
-
-    steps
+        })
+        .collect()
 }
 
 /// Returns the next power of two, saturating at the largest supported tree base.

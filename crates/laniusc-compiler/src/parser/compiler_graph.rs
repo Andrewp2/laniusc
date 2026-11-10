@@ -1528,7 +1528,7 @@ fn build_graph(
         ("ll1_status", ResourceDomain::Tokens, 24),
         ("token_feature_flags", ResourceDomain::Tokens, 4),
         ("status_readback", ResourceDomain::Tokens, 44),
-        ("hir_literal_status", ResourceDomain::Tokens, 12),
+        ("hir_literal_status", ResourceDomain::Tokens, 16),
         ("hir_count_readback", ResourceDomain::HirNodes, 120),
         (
             "tree_prefix_inblock",
@@ -2442,7 +2442,7 @@ fn build_graph(
     )?;
     graph.mark_pass_bindings_initialize("brackets_04_build_min_tree", &["min_tree"])?;
     graph.repeat_pass_range(
-        bracket_leaf_base.trailing_zeros() + 1,
+        crate::gpu::scan::heap_build_levels(bracket_leaf_base).len() as u32,
         "brackets_04_build_min_tree",
         "brackets_04_build_min_tree",
     )?;
@@ -2632,7 +2632,7 @@ fn build_graph(
         &["prefix_block_max_tree"],
     )?;
     graph.repeat_pass_range(
-        prefix_leaf_base.trailing_zeros() + 1,
+        crate::gpu::scan::heap_build_levels(prefix_leaf_base).len() as u32,
         "tree_prefix_04_build_max_tree",
         "tree_prefix_04_build_max_tree",
     )?;

@@ -728,9 +728,20 @@ struct SsaParams {
     declaration_capacity: u32,
     declaration_block_capacity: u32,
     demand_capacity: u32,
-    worker_count: u32,
+    reserved0: u32,
     max_radix_blocks: u32,
     incoming_capacity: u32,
+}
+
+/// One round of the demand-alias collapse. Two rounds of `hops_per_round`
+/// hops cover every chain when `(hops_per_round + 1)^2 >= demand_capacity`.
+#[repr(C)]
+#[derive(Clone, Copy, ShaderType)]
+struct SsaAliasParams {
+    demand_capacity: u32,
+    hops_per_round: u32,
+    final_round: u32,
+    reserved: u32,
 }
 
 #[repr(C)]
@@ -1214,14 +1225,12 @@ pub(crate) struct GpuOptimizationStage {
     structure_function_init: JobSized,
     structure_function_reduce: JobSized,
     structure_function_finalize: JobSized,
-    reachability_clear: ClearBuffersOperation,
     reachability_seed: JobSized,
-    reachability_close: ComputeOperation,
+    reachability_close: JobSized,
     reachability_validate: JobSized,
-    dominator_clear: JobSized,
-    dominator_count: JobSized,
+    dominator_edge_validate: JobSized,
     dominator_seed: JobSized,
-    dominator_resolve: ComputeOperation,
+    dominator_resolve: JobSized,
     dominator_validate: JobSized,
     dominator_child_clear: JobSized,
     dominator_child_count: JobSized,
@@ -1284,7 +1293,7 @@ pub(crate) struct GpuOptimizationStage {
     demand_work_clear: ClearBuffersOperation,
     demand_closure_prepare: ComputeOperation,
     demand_seed_publish: JobSized,
-    demand_close: ComputeOperation,
+    demand_close: JobSized,
     demand_sort_prepare: ComputeOperation,
     demand_sort: RadixSortOperation<AccessRadixParams>,
     demand_validate: JobSized,
@@ -1294,17 +1303,16 @@ pub(crate) struct GpuOptimizationStage {
     block_argument_scan: PrefixScanPairOperation,
     block_argument_scatter: JobSized,
     block_argument_validate: JobSized,
-    demand_alias_worker_clear: ClearBuffersOperation,
-    demand_alias_resolve: ComputeOperation,
+    demand_alias_jump: JobSized,
+    demand_alias_resolve: JobSized,
     demand_alias_validate: JobSized,
     block_argument_user_count_clear: ClearBuffersOperation,
     block_argument_user_count: JobSized,
     block_argument_user_scan: PrefixScanOperation,
     block_argument_user_cursor_clear: ClearBuffersOperation,
     block_argument_user_scatter: JobSized,
-    trivial_block_argument_work_clear: ClearBuffersOperation,
     trivial_block_argument_init: JobSized,
-    trivial_block_argument_propagate: ComputeOperation,
+    trivial_block_argument_propagate: JobSized,
     trivial_block_argument_finalize: JobSized,
     trivial_block_argument_validate: JobSized,
     ssa_value_mark: JobSized,
@@ -1353,8 +1361,7 @@ pub(crate) struct GpuOptimizationStage {
     _edges: LaniusBuffer<OptIrEdge>,
     _predecessor_edge_ids: LaniusBuffer<u32>,
     _reachable: LaniusBuffer<u32>,
-    _reachability_work_state: LaniusBuffer<u32>,
-    _reachability_work_queue: LaniusBuffer<u32>,
+    _dead_claim_by_block: LaniusBuffer<u32>,
     _immediate_dominator: LaniusBuffer<OptIrImmediateDominator>,
     _dominator_children: LaniusBuffer<u32>,
     _dominator_child_row_by_block: LaniusBuffer<u32>,
@@ -1380,11 +1387,10 @@ pub(crate) struct GpuOptimizationStage {
     _reaching_definition_states: LaniusBuffer<OptIrReachingDefinitionState>,
     _ssa_demands: LaniusBuffer<OptIrSsaDemand>,
     _ssa_demand_seed_total: LaniusBuffer<u32>,
-    _ssa_worker_next_group: LaniusBuffer<u32>,
+    _ssa_alias_params: [LaniusBuffer<SsaAliasParams>; 2],
     _ssa_sparse_declaration: LaniusBuffer<u32>,
     _ssa_sparse_block: LaniusBuffer<u32>,
-    _ssa_work_state: LaniusBuffer<u32>,
-    _ssa_work_queue: LaniusBuffer<u32>,
+    _ssa_walk: LaniusBuffer<u32>,
     _ssa_demand_order: LaniusBuffer<u32>,
     _ssa_demand_radix_dispatch_args: LaniusBuffer<u32>,
     _ssa_canonical_demands_tmp: LaniusBuffer<OptIrSsaDemand>,
@@ -1458,7 +1464,7 @@ impl GpuOptimizationStage {
         let incoming_capacity = capacities.optimization_ssa_incoming_capacity();
         let user_capacity = capacities.optimization_ssa_user_capacity();
         let ssa_sparse_capacity = capacities.optimization_ssa_sparse_capacity();
-        let ssa_work_capacity = capacities.optimization_ssa_work_capacity();
+        let ssa_walk_capacity = capacities.optimization_ssa_walk_capacity();
         let value_capacity = capacities.optimization_value_capacity();
         let use_capacity = capacities.optimization_use_capacity();
         let access_radix = opt_ir_access_radix_layout(capacities);
@@ -1514,13 +1520,10 @@ impl GpuOptimizationStage {
                 block_capacity as usize,
             )
             .map_err(anyhow::Error::msg)?;
-        let reachability_work_state = workspace
-            .alias(graph, resource("lir.opt.reachability.work_state")?, 4)
-            .map_err(anyhow::Error::msg)?;
-        let reachability_work_queue = workspace
+        let dead_claim_by_block = workspace
             .alias(
                 graph,
-                resource("lir.opt.reachability.work_queue")?,
+                resource("lir.opt.dead_claim_by_block")?,
                 block_capacity as usize,
             )
             .map_err(anyhow::Error::msg)?;
@@ -1698,9 +1701,6 @@ impl GpuOptimizationStage {
         let ssa_demand_seed_total = workspace
             .alias(graph, resource("lir.opt.ssa.demand_seed_total")?, 1)
             .map_err(anyhow::Error::msg)?;
-        let ssa_worker_next_group = workspace
-            .alias(graph, resource("lir.opt.ssa.worker_next_group")?, 1)
-            .map_err(anyhow::Error::msg)?;
         let ssa_sparse_declaration = workspace
             .alias(
                 graph,
@@ -1715,14 +1715,11 @@ impl GpuOptimizationStage {
                 ssa_sparse_capacity as usize,
             )
             .map_err(anyhow::Error::msg)?;
-        let ssa_work_state = workspace
-            .alias(graph, resource("lir.opt.ssa.work_state")?, 4)
-            .map_err(anyhow::Error::msg)?;
-        let ssa_work_queue = workspace
+        let ssa_walk = workspace
             .alias(
                 graph,
-                resource("lir.opt.ssa.work_queue")?,
-                ssa_work_capacity as usize,
+                resource("lir.opt.ssa.walk")?,
+                ssa_walk_capacity as usize,
             )
             .map_err(anyhow::Error::msg)?;
         let ssa_demand_order = workspace
@@ -1997,7 +1994,7 @@ impl GpuOptimizationStage {
                 declaration_capacity: capacities.declaration_capacity(),
                 declaration_block_capacity,
                 demand_capacity,
-                worker_count: LoweringCapacities::OPTIMIZATION_SSA_WORKER_COUNT,
+                reserved0: 0,
                 max_radix_blocks: ssa_demand_radix.blocks,
                 incoming_capacity,
             },
@@ -2158,17 +2155,6 @@ impl GpuOptimizationStage {
             &params,
             capacities.hir_nodes.max(1),
         )?, opt_extent::hir, capacities)?;
-        let reachability_clear = ClearBuffersOperation::new(
-            &(graph, &allocations),
-            "lir.opt.reachability.clear",
-            &[
-                ("opt_ir_reachable", (&reachable).into()),
-                (
-                    "opt_ir_reachability_work_state",
-                    (&reachability_work_state).into(),
-                ),
-            ],
-        )?;
         let reachability_seed = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
@@ -2176,18 +2162,17 @@ impl GpuOptimizationStage {
             "lir.opt.reachability.seed",
             kernels.kernel("codegen/lir/optimization/structure_reachability_seed"),
             &params,
-            capacities.hir_nodes.max(1),
-        )?, opt_extent::hir, capacities)?;
-        let reachability_close = ComputeOperation::direct_with_uniform(
+            block_capacity,
+        )?, opt_extent::block, capacities)?;
+        let reachability_close = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
             "lir.opt.reachability.close",
             kernels.kernel("codegen/lir/optimization/structure_reachability_close"),
             &params,
-            // The kernel's 32 persistent workgroups of 32 lanes.
-            32 * 32,
-        )?;
+            block_capacity,
+        )?, opt_extent::block, capacities)?;
         let reachability_validate = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
@@ -2197,21 +2182,12 @@ impl GpuOptimizationStage {
             &params,
             block_capacity,
         )?, opt_extent::block, capacities)?;
-        let dominator_clear = JobSized::new(ComputeOperation::direct_with_uniform(
+        let dominator_edge_validate = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
-            "lir.opt.dominators.clear",
-            kernels.kernel("codegen/lir/optimization/structure_dominator_clear"),
-            &params,
-            block_capacity,
-        )?, opt_extent::block, capacities)?;
-        let dominator_count = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.dominators.count",
-            kernels.kernel("codegen/lir/optimization/structure_dominator_count"),
+            "lir.opt.dominators.edge_validate",
+            kernels.kernel("codegen/lir/optimization/structure_dominator_edge_validate"),
             &params,
             edge_capacity,
         )?, opt_extent::edge, capacities)?;
@@ -2224,16 +2200,15 @@ impl GpuOptimizationStage {
             &params,
             block_capacity,
         )?, opt_extent::block, capacities)?;
-        let dominator_resolve = ComputeOperation::direct_with_uniform(
+        let dominator_resolve = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
             "lir.opt.dominators.resolve",
             kernels.kernel("codegen/lir/optimization/structure_dominator_resolve"),
             &params,
-            // The kernel's 32 persistent workgroups of 32 lanes.
-            32 * 32,
-        )?;
+            block_capacity,
+        )?, opt_extent::block, capacities)?;
         let dominator_validate = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
@@ -2751,8 +2726,6 @@ impl GpuOptimizationStage {
                     (&ssa_sparse_declaration).into(),
                 ),
                 ("opt_ir_ssa_sparse_block", (&ssa_sparse_block).into()),
-                ("opt_ir_ssa_work_state", (&ssa_work_state).into()),
-                ("opt_ir_ssa_work_queue", (&ssa_work_queue).into()),
             ],
         )?;
         let demand_closure_prepare = ComputeOperation::direct(
@@ -2772,16 +2745,15 @@ impl GpuOptimizationStage {
             &ssa_params,
             demand_capacity,
         )?, opt_extent::demand, capacities)?;
-        let demand_close = ComputeOperation::direct_with_uniform(
+        let demand_close = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
             "lir.opt.ssa.demands.close",
             kernels.kernel("codegen/lir/optimization/ssa_demand_close"),
             &ssa_params,
-            LoweringCapacities::OPTIMIZATION_SSA_WORKER_COUNT
-                .saturating_mul(LoweringCapacities::OPTIMIZATION_SSA_QUEUE_WORKGROUP_SIZE),
-        )?;
+            demand_capacity,
+        )?, opt_extent::demand, capacities)?;
         let demand_sort_prepare = ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
@@ -2874,23 +2846,38 @@ impl GpuOptimizationStage {
             &ssa_params,
             demand_capacity,
         )?, opt_extent::demand, capacities)?;
-        let demand_alias_worker_clear = ClearBuffersOperation::new(
+        // One lane per demand row; the second round hops over the first
+        // round's jumps and leaves the result in the resolution table.
+        let ssa_alias_params = [0u32, 1].map(|final_round| {
+            uniform_from_val(
+                device,
+                "lir.opt.ssa.demand_aliases.params",
+                &SsaAliasParams {
+                    demand_capacity,
+                    hops_per_round: demand_capacity.isqrt().max(1),
+                    final_round,
+                    reserved: 0,
+                },
+            )
+        });
+        let demand_alias_jump = JobSized::new(ComputeOperation::direct_with_uniform(
+            device,
             &(graph, &allocations),
-            "lir.opt.ssa.demand_aliases.worker_clear",
-            &[(
-                "opt_ir_ssa_worker_next_group",
-                (&ssa_worker_next_group).into(),
-            )],
-        )?;
-        let demand_alias_resolve = ComputeOperation::direct_with_uniform(
+            &resources,
+            "lir.opt.ssa.demand_aliases.jump",
+            kernels.kernel("codegen/lir/optimization/ssa_demand_resolve_aliases"),
+            &ssa_alias_params[0],
+            demand_capacity,
+        )?, opt_extent::demand, capacities)?;
+        let demand_alias_resolve = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
             "lir.opt.ssa.demand_aliases.resolve",
             kernels.kernel("codegen/lir/optimization/ssa_demand_resolve_aliases"),
-            &ssa_params,
-            LoweringCapacities::OPTIMIZATION_SSA_WORKER_COUNT.saturating_mul(256),
-        )?;
+            &ssa_alias_params[1],
+            demand_capacity,
+        )?, opt_extent::demand, capacities)?;
         let demand_alias_validate = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
@@ -2940,14 +2927,6 @@ impl GpuOptimizationStage {
             &ssa_params,
             demand_capacity,
         )?, opt_extent::demand, capacities)?;
-        let trivial_block_argument_work_clear = ClearBuffersOperation::new(
-            &(graph, &allocations),
-            "lir.opt.ssa.trivial_block_arguments.work_clear",
-            &[
-                (("opt_ir_ssa_work_state", (&ssa_work_state).into())),
-                (("opt_ir_ssa_work_queue", (&ssa_work_queue).into())),
-            ],
-        )?;
         let trivial_block_argument_init = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
@@ -2957,16 +2936,15 @@ impl GpuOptimizationStage {
             &ssa_params,
             demand_capacity,
         )?, opt_extent::demand, capacities)?;
-        let trivial_block_argument_propagate = ComputeOperation::direct_with_uniform(
+        let trivial_block_argument_propagate = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
             "lir.opt.ssa.trivial_block_arguments.propagate",
             kernels.kernel("codegen/lir/optimization/ssa_trivial_block_argument_propagate"),
             &ssa_params,
-            LoweringCapacities::OPTIMIZATION_SSA_WORKER_COUNT
-                .saturating_mul(LoweringCapacities::OPTIMIZATION_SSA_QUEUE_WORKGROUP_SIZE),
-        )?;
+            demand_capacity,
+        )?, opt_extent::demand, capacities)?;
         let trivial_block_argument_finalize = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
@@ -3296,12 +3274,10 @@ impl GpuOptimizationStage {
             structure_function_init,
             structure_function_reduce,
             structure_function_finalize,
-            reachability_clear,
             reachability_seed,
             reachability_close,
             reachability_validate,
-            dominator_clear,
-            dominator_count,
+            dominator_edge_validate,
             dominator_seed,
             dominator_resolve,
             dominator_validate,
@@ -3374,7 +3350,7 @@ impl GpuOptimizationStage {
             block_argument_scan,
             block_argument_scatter,
             block_argument_validate,
-            demand_alias_worker_clear,
+            demand_alias_jump,
             demand_alias_resolve,
             demand_alias_validate,
             block_argument_user_count_clear,
@@ -3382,7 +3358,6 @@ impl GpuOptimizationStage {
             block_argument_user_scan,
             block_argument_user_cursor_clear,
             block_argument_user_scatter,
-            trivial_block_argument_work_clear,
             trivial_block_argument_init,
             trivial_block_argument_propagate,
             trivial_block_argument_finalize,
@@ -3433,8 +3408,7 @@ impl GpuOptimizationStage {
             _edges: edges,
             _predecessor_edge_ids: predecessor_edge_ids,
             _reachable: reachable,
-            _reachability_work_state: reachability_work_state,
-            _reachability_work_queue: reachability_work_queue,
+            _dead_claim_by_block: dead_claim_by_block,
             _immediate_dominator: immediate_dominator,
             _dominator_children: dominator_children,
             _dominator_child_row_by_block: dominator_child_row_by_block,
@@ -3460,11 +3434,10 @@ impl GpuOptimizationStage {
             _reaching_definition_states: reaching_definition_states,
             _ssa_demands: ssa_demands,
             _ssa_demand_seed_total: ssa_demand_seed_total,
-            _ssa_worker_next_group: ssa_worker_next_group,
+            _ssa_alias_params: ssa_alias_params,
             _ssa_sparse_declaration: ssa_sparse_declaration,
             _ssa_sparse_block: ssa_sparse_block,
-            _ssa_work_state: ssa_work_state,
-            _ssa_work_queue: ssa_work_queue,
+            _ssa_walk: ssa_walk,
             _ssa_demand_order: ssa_demand_order,
             _ssa_demand_radix_dispatch_args: ssa_demand_radix_dispatch_args,
             _ssa_canonical_demands_tmp: ssa_canonical_demands_tmp,
@@ -3591,11 +3564,9 @@ impl GpuOptimizationStage {
         if let Some(trace) = trace.as_mut() {
             trace.capture(encoder, OptimizationTracePoint::Structure);
         }
-        self.reachability_clear.record(encoder);
-        trace_checkpoint!("reachability_clear", None);
         self.reachability_seed.record_job(encoder, job)?;
         trace_checkpoint!("reachability_seed", None);
-        self.reachability_close.record(encoder)?;
+        self.reachability_close.record_job(encoder, job)?;
         trace_checkpoint!("reachability_close", None);
         if validate_structure {
             self.reachability_validate.record_job(encoder, job)?;
@@ -3608,13 +3579,11 @@ impl GpuOptimizationStage {
         // are read only by validators (ssa.dominance.validate included), so
         // a copy replay that skips validation skips them too.
         if validate_structure {
-            self.dominator_clear.record_job(encoder, job)?;
-            trace_checkpoint!("dominator_clear", None);
-            self.dominator_count.record_job(encoder, job)?;
-            trace_checkpoint!("dominator_count", None);
+            self.dominator_edge_validate.record_job(encoder, job)?;
+            trace_checkpoint!("dominator_edge_validate", None);
             self.dominator_seed.record_job(encoder, job)?;
             trace_checkpoint!("dominator_seed", None);
-            self.dominator_resolve.record(encoder)?;
+            self.dominator_resolve.record_job(encoder, job)?;
             trace_checkpoint!("dominator_resolve", None);
             self.dominator_validate.record_job(encoder, job)?;
             trace_checkpoint!("dominator_validate", None);
@@ -3777,7 +3746,7 @@ impl GpuOptimizationStage {
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "optimization.demand_closure.publish.done");
         }
-        self.demand_close.record(encoder)?;
+        self.demand_close.record_job(encoder, job)?;
         trace_checkpoint!("demand_close", None);
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "optimization.demand_closure.close.done");
@@ -3813,9 +3782,9 @@ impl GpuOptimizationStage {
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "optimization.block_arguments.done");
         }
-        self.demand_alias_worker_clear.record(encoder);
-        trace_checkpoint!("demand_alias_worker_clear", None);
-        self.demand_alias_resolve.record(encoder)?;
+        self.demand_alias_jump.record_job(encoder, job)?;
+        trace_checkpoint!("demand_alias_jump", None);
+        self.demand_alias_resolve.record_job(encoder, job)?;
         trace_checkpoint!("demand_alias_resolve", None);
         if validate_structure {
             self.demand_alias_validate.record_job(encoder, job)?;
@@ -3837,14 +3806,12 @@ impl GpuOptimizationStage {
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "optimization.block_argument_users.done");
         }
-        self.trivial_block_argument_work_clear.record(encoder);
-        trace_checkpoint!("trivial_block_argument_work_clear", None);
         self.trivial_block_argument_init.record_job(encoder, job)?;
         trace_checkpoint!("trivial_block_argument_init", None);
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "optimization.trivial_block_arguments.init.done");
         }
-        self.trivial_block_argument_propagate.record(encoder)?;
+        self.trivial_block_argument_propagate.record_job(encoder, job)?;
         trace_checkpoint!("trivial_block_argument_propagate", None);
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(

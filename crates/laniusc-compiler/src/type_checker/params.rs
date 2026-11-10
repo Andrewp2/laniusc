@@ -266,7 +266,8 @@ pub(in crate::type_checker) struct VisibleDeclTreeParams {
     pub(in crate::type_checker) leaf_base: u32,
     pub(in crate::type_checker) level_start: u32,
     pub(in crate::type_checker) level_count: u32,
-    pub(in crate::type_checker) reserved0: u32,
+    /// Levels the dispatch builds above the one it reads.
+    pub(in crate::type_checker) levels: u32,
     pub(in crate::type_checker) reserved1: u32,
     pub(in crate::type_checker) reserved2: u32,
 }

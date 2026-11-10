@@ -1,14 +1,19 @@
-// Computes transitive value liveness with a persistent global work queue.
-// Work is proportional to live nodes and local operand arity, never to a
-// whole function assigned to one invocation.
+// Computes transitive value liveness, one lane per observable root. A lane
+// marks its root live and walks the values the root reads, depth first. The
+// lane that marks a value live owns it and walks its dependencies in turn, so
+// each live value is expanded exactly once and no lane waits on another. Work
+// is proportional to live nodes and local operand arity.
+//
+// The walk keeps no stack: a value records the reader that claimed it and the
+// reader's next dependency, and the lane returns along that record.
 
 import codegen.lowering_ir;
 import codegen.optimization_ir;
 import codegen.lir.optimization.execution_owner;
-import codegen.lir.optimization.ssa_sparse_work;
 import codegen.lir.x86.common;
 import primitive_types;
 import atomics;
+import gpu_index;
 
 struct Params
 {
@@ -18,7 +23,7 @@ struct Params
     uint function_capacity;
     uint token_capacity;
     uint reserved0;
-    uint worker_count;
+    uint reserved1;
     uint reserved2;
 };
 ConstantBuffer<Params> gParams;
@@ -38,34 +43,53 @@ StructuredBuffer<X86DeclarationAnalysis> x86_decl_analysis_by_token;
 StructuredBuffer<X86ValueAnalysis> x86_value_by_semantic;
 RWStructuredBuffer<uint> x86_last_use_by_semantic;
 RWStructuredBuffer<uint> x86_live_by_semantic;
-RWStructuredBuffer<uint> x86_liveness_work_state;
-RWStructuredBuffer<uint> x86_liveness_work_queue;
+// Two words per value: the reader that claimed it, then that reader's next
+// dependency ordinal.
+RWStructuredBuffer<uint> x86_liveness_walk;
 
 static const uint INVALID = 0xffffffffu;
+static const uint DISPATCH_X_STRIDE = 16776960u;
 
-groupshared uint batch_begin;
-groupshared uint batch_count;
-groupshared uint batch_done;
+static const uint VARIABLE_NONE = 0u;
+static const uint VARIABLE_CALL_ARGUMENTS = 1u;
+static const uint VARIABLE_AGGREGATE_ELEMENTS = 2u;
+
+// The values one live node reads: up to three operands, then the rows of its
+// call arguments or aggregate elements.
+struct Dependencies
+{
+    uint position;
+    uint function_id;
+    uint fixed0;
+    uint fixed1;
+    uint fixed2;
+    uint fixed_count;
+    uint variable_kind;
+    uint variable_start;
+    uint variable_count;
+};
+
+bool observable_root(OptIrNodeCore core)
+{
+    uint op = opt_ir_op(core);
+    if ((core.flags & (SEMANTIC_LIR_FLAG_UNSUPPORTED |
+                       SEMANTIC_LIR_FLAG_UNSUPPORTED_FOR_ITERABLE)) != 0u)
+        return true;
+    return op == SEMANTIC_LIR_OP_VALUE_SET ||
+        op == SEMANTIC_LIR_OP_STORE || op == SEMANTIC_LIR_OP_PLACE_STORE ||
+        op == SEMANTIC_LIR_OP_INDEX_ADDRESS || semantic_lir_is_call(op) ||
+        (op >= SEMANTIC_LIR_OP_BLOCK_BEGIN && op <= SEMANTIC_LIR_OP_RETURN) ||
+        op == SEMANTIC_LIR_OP_TRAP ||
+        op == SEMANTIC_LIR_OP_DROP || op == SEMANTIC_LIR_OP_LOAD ||
+        op == SEMANTIC_LIR_OP_AGGREGATE_COPY ||
+        op == SEMANTIC_LIR_OP_DIV || op == SEMANTIC_LIR_OP_REM;
+}
 
 uint function_for_node(uint row)
 {
     uint owner = opt_ir_source_hir[row];
     return owner < gParams.function_capacity
         ? semantic_function_id_by_hir[owner] : INVALID;
-}
-
-void admit(uint value, uint position, uint total, uint function_id)
-{
-    if (!opt_ir_node_is_executable(value, total) ||
-        function_for_node(value) != function_id) return;
-    uint ignored;
-    InterlockedMax(x86_last_use_by_semantic[value], position, ignored);
-    uint prior = atomic_u32_compare_exchange(
-        x86_live_by_semantic, value, 0u, X86_SEMANTIC_LIVE);
-    if (prior != 0u) return;
-    uint required;
-    ssa_work_publish(value, gParams.semantic_capacity,
-        x86_liveness_work_state, x86_liveness_work_queue, required);
 }
 
 bool fusible_comparison(uint row, uint total, uint function_id)
@@ -126,15 +150,34 @@ uint immediate_operand(uint op, OptIrNodeCore core, uint left_row, uint right_ro
     return 0u;
 }
 
-void admit_dependencies(uint row, uint total)
+Dependencies dependencies(uint row, uint total)
 {
-    if (!opt_ir_node_is_executable(row, total)) return;
+    Dependencies deps;
+    deps.position = INVALID;
+    deps.function_id = INVALID;
+    deps.fixed0 = INVALID;
+    deps.fixed1 = INVALID;
+    deps.fixed2 = INVALID;
+    deps.fixed_count = 0u;
+    deps.variable_kind = VARIABLE_NONE;
+    deps.variable_start = 0u;
+    deps.variable_count = 0u;
+    if (!opt_ir_node_is_executable(row, total)) return deps;
     uint position = x86_position_by_semantic[row];
     uint function_id = function_for_node(row);
-    if (position == INVALID || function_id == INVALID) return;
+    if (position == INVALID || function_id == INVALID) return deps;
+    deps.position = position;
+    deps.function_id = function_id;
     OptIrNodeCore core = opt_ir_core[row];
     OptIrNodeOperands operands = opt_ir_operands[row];
     uint op = opt_ir_op(core);
+    // A binary operation, or a comparison this row reads through, whose
+    // operands are the dependencies unless one encodes as an immediate.
+    bool binary = false;
+    uint binary_op = op;
+    OptIrNodeCore binary_core = core;
+    uint left = INVALID;
+    uint right = INVALID;
     if (op == SEMANTIC_LIR_OP_VALUE_GET)
     {
         if (operands.a < gParams.token_capacity)
@@ -142,7 +185,10 @@ void admit_dependencies(uint row, uint total)
             uint definition = x86_decl_analysis_by_token[operands.a].definition;
             if (definition < total &&
                 x86_position_by_semantic[definition] < position)
-                admit(definition, position, total, function_id);
+            {
+                deps.fixed0 = definition;
+                deps.fixed_count = 1u;
+            }
         }
     }
     else if (op == SEMANTIC_LIR_OP_VALUE_SET || op == SEMANTIC_LIR_OP_STORE)
@@ -151,12 +197,17 @@ void admit_dependencies(uint row, uint total)
             (core.flags & (SEMANTIC_LIR_FLAG_INDEXED |
                            SEMANTIC_LIR_FLAG_FIELD)) != 0u)
         {
-            admit(operands.a, position, total, function_id);
+            deps.fixed0 = operands.a;
             if ((core.flags & SEMANTIC_LIR_FLAG_INDEXED) != 0u)
-                admit(operands.b, position, total, function_id);
-            admit(operands.c, position, total, function_id);
+                deps.fixed1 = operands.b;
+            deps.fixed2 = operands.c;
+            deps.fixed_count = 3u;
         }
-        else admit(operands.b, position, total, function_id);
+        else
+        {
+            deps.fixed0 = operands.b;
+            deps.fixed_count = 1u;
+        }
     }
     else if ((op >= SEMANTIC_LIR_OP_ADD && op <= SEMANTIC_LIR_OP_COMPARE) ||
              op == SEMANTIC_LIR_OP_LOGICAL_AND ||
@@ -172,9 +223,9 @@ void admit_dependencies(uint row, uint total)
                 x86_value_by_semantic[operands.a].value,
                 x86_value_by_semantic[operands.b].value, folded))
         {
-            uint immediate = immediate_operand(op, core, operands.a, operands.b, total);
-            if (immediate != 1u) admit(operands.a, position, total, function_id);
-            if (immediate != 2u) admit(operands.b, position, total, function_id);
+            binary = true;
+            left = operands.a;
+            right = operands.b;
         }
     }
     else if (op == SEMANTIC_LIR_OP_NEGATE ||
@@ -182,22 +233,23 @@ void admit_dependencies(uint row, uint total)
              op == SEMANTIC_LIR_OP_CONVERT || op == SEMANTIC_LIR_OP_DROP ||
              op == SEMANTIC_LIR_OP_PLACE_LOAD || op == SEMANTIC_LIR_OP_FIELD_ADDRESS ||
              op == SEMANTIC_LIR_OP_RETURN)
-        admit(operands.a, position, total, function_id);
-    else if (op == SEMANTIC_LIR_OP_INDEX_ADDRESS || op == SEMANTIC_LIR_OP_PLACE_STORE)
     {
-        admit(operands.a, position, total, function_id);
-        admit(operands.b, position, total, function_id);
+        deps.fixed0 = operands.a;
+        deps.fixed_count = 1u;
+    }
+    else if (op == SEMANTIC_LIR_OP_INDEX_ADDRESS || op == SEMANTIC_LIR_OP_PLACE_STORE ||
+             op == SEMANTIC_LIR_OP_AGGREGATE_COPY)
+    {
+        deps.fixed0 = operands.a;
+        deps.fixed1 = operands.b;
+        deps.fixed_count = 2u;
     }
     else if (op == SEMANTIC_LIR_OP_LOAD)
     {
-        admit(operands.a, position, total, function_id);
+        deps.fixed0 = operands.a;
         if ((core.flags & SEMANTIC_LIR_FLAG_INDEXED) != 0u)
-            admit(operands.b, position, total, function_id);
-    }
-    else if (op == SEMANTIC_LIR_OP_AGGREGATE_COPY)
-    {
-        admit(operands.a, position, total, function_id);
-        admit(operands.b, position, total, function_id);
+            deps.fixed1 = operands.b;
+        deps.fixed_count = 2u;
     }
     else if (op == SEMANTIC_LIR_OP_IF_BEGIN ||
              op == SEMANTIC_LIR_OP_BRANCH_IF)
@@ -230,13 +282,24 @@ void admit_dependencies(uint row, uint total)
         }
         if (fusible_comparison(condition, total, function_id))
         {
-            OptIrNodeOperands comparison = opt_ir_operands[condition];
-            uint immediate = immediate_operand(SEMANTIC_LIR_OP_COMPARE,
-                opt_ir_core[condition], comparison.a, comparison.b, total);
-            if (immediate != 1u) admit(comparison.a, position, total, function_id);
-            if (immediate != 2u) admit(comparison.b, position, total, function_id);
+            binary = true;
+            binary_op = SEMANTIC_LIR_OP_COMPARE;
+            binary_core = opt_ir_core[condition];
+            left = opt_ir_operands[condition].a;
+            right = opt_ir_operands[condition].b;
         }
-        else admit(condition, position, total, function_id);
+        else
+        {
+            deps.fixed0 = condition;
+            deps.fixed_count = 1u;
+        }
+    }
+    if (binary)
+    {
+        uint immediate = immediate_operand(binary_op, binary_core, left, right, total);
+        if (immediate != 1u) deps.fixed0 = left;
+        if (immediate != 2u) deps.fixed1 = right;
+        deps.fixed_count = 2u;
     }
 
     uint source_hir = opt_ir_source_hir[row];
@@ -244,64 +307,89 @@ void admit_dependencies(uint row, uint total)
     {
         uint start = semantic_lir_call_arg_start_by_hir[source_hir];
         uint count = semantic_lir_call_arg_count_by_hir[source_hir];
-        for (uint ordinal = 0u; ordinal < count; ++ordinal)
-        {
-            uint arg_row = start + ordinal;
-            if (arg_row >= gParams.call_arg_capacity) break;
-            SemanticLirCallArg argument = semantic_lir_call_args[arg_row];
-            if (argument.call_instruction == row)
-                admit(argument.value_instruction, position, total, function_id);
-        }
+        deps.variable_kind = VARIABLE_CALL_ARGUMENTS;
+        deps.variable_start = start;
+        deps.variable_count = min(count,
+            gParams.call_arg_capacity - min(start, gParams.call_arg_capacity));
     }
-    if (op == SEMANTIC_LIR_OP_AGGREGATE_NEW)
+    else if (op == SEMANTIC_LIR_OP_AGGREGATE_NEW)
     {
         uint element_total = min(gParams.aggregate_capacity,
             semantic_lir_aggregate_element_total[0u]);
-        for (uint ordinal = 0u; ordinal < operands.b; ++ordinal)
-        {
-            uint element_row = operands.a + ordinal;
-            if (element_row >= element_total) break;
-            SemanticLirAggregateElement element =
-                semantic_lir_aggregate_elements[element_row];
-            if (element.aggregate_instruction == row)
-                admit(element.value_instruction, position, total, function_id);
-        }
+        deps.variable_kind = VARIABLE_AGGREGATE_ELEMENTS;
+        deps.variable_start = operands.a;
+        deps.variable_count = min(operands.b,
+            element_total - min(operands.a, element_total));
     }
+    return deps;
 }
 
 [shader("compute")]
-[numthreads(32, 1, 1)]
-void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
+[numthreads(256, 1, 1)]
+void main(uint3 dtid: SV_DispatchThreadID)
 {
-    if (gid.x >= gParams.worker_count) return;
+    uint root = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
     uint total = min(gParams.semantic_capacity, opt_ir_total[0u]);
-    for (;;)
+    if (!opt_ir_node_is_executable(root, total) ||
+        !observable_root(opt_ir_core[root])) return;
+    // A root another root reads may already be owned by that reader's lane.
+    if (atomic_u32_compare_exchange(
+            x86_live_by_semantic, root, 0u, X86_SEMANTIC_LIVE) != 0u)
+        return;
+
+    uint node = root;
+    uint ordinal = 0u;
+    // A lane enters each value it owns once and returns to it once per
+    // dependency it claimed there.
+    uint budget = 2u * total + 2u;
+    for (uint step = 0u; step < budget; ++step)
     {
-        // One lane schedules; every lane takes the same exit and
-        // barrier path, and reads the batch before it can change.
-        if (ltid.x == 0u)
+        Dependencies deps = dependencies(node, total);
+        uint count = deps.fixed_count + deps.variable_count;
+        uint claimed = INVALID;
+        while (ordinal < count && claimed == INVALID)
         {
-            ssa_work_try_pop_batch(gParams.semantic_capacity, 32u,
-                x86_liveness_work_state, batch_begin, batch_count);
-            batch_done = batch_count == 0u &&
-                    ssa_work_quiescent(x86_liveness_work_state)
-                ? 1u : 0u;
+            uint value = INVALID;
+            if (ordinal < deps.fixed_count)
+                value = ordinal == 0u ? deps.fixed0
+                    : ordinal == 1u ? deps.fixed1 : deps.fixed2;
+            else
+            {
+                uint index = deps.variable_start + (ordinal - deps.fixed_count);
+                if (deps.variable_kind == VARIABLE_CALL_ARGUMENTS)
+                {
+                    SemanticLirCallArg argument = semantic_lir_call_args[index];
+                    if (argument.call_instruction == node)
+                        value = argument.value_instruction;
+                }
+                else
+                {
+                    SemanticLirAggregateElement element =
+                        semantic_lir_aggregate_elements[index];
+                    if (element.aggregate_instruction == node)
+                        value = element.value_instruction;
+                }
+            }
+            ordinal += 1u;
+            if (!opt_ir_node_is_executable(value, total) ||
+                function_for_node(value) != deps.function_id) continue;
+            uint ignored;
+            InterlockedMax(x86_last_use_by_semantic[value], deps.position, ignored);
+            if (atomic_u32_compare_exchange(
+                    x86_live_by_semantic, value, 0u, X86_SEMANTIC_LIVE) != 0u)
+                continue;
+            x86_liveness_walk[2u * value] = node;
+            x86_liveness_walk[2u * value + 1u] = ordinal;
+            claimed = value;
         }
-        GroupMemoryBarrierWithGroupSync();
-        uint work_begin = batch_begin;
-        uint work_count = batch_count;
-        bool work_done = batch_done != 0u;
-        GroupMemoryBarrierWithGroupSync();
-        if (work_done) return;
-        if (work_count == 0u) continue;
-        if (ltid.x < work_count)
+        if (claimed != INVALID)
         {
-            uint row = ssa_work_read_published(
-                x86_liveness_work_queue, work_begin + ltid.x);
-            if (row < total) admit_dependencies(row, total);
+            node = claimed;
+            ordinal = 0u;
+            continue;
         }
-        GroupMemoryBarrierWithGroupSync();
-        if (ltid.x == 0u)
-            ssa_work_finish_batch(x86_liveness_work_state, work_count);
+        if (node == root) return;
+        ordinal = x86_liveness_walk[2u * node + 1u];
+        node = x86_liveness_walk[2u * node];
     }
 }

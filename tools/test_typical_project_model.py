@@ -61,10 +61,15 @@ class TypicalProjectModelTests(unittest.TestCase):
                     "rust": ".rs",
                     "zig": ".zig",
                     "moonbit": ".mbt",
+                    "d": ".d",
+                    "go": ".go",
+                    "v": ".v",
+                    "ts": ".ts",
                     "lanius": ".lani",
                 }[language]
                 rendered_count = sum(
-                    path.endswith(suffix) for path in render_project(language, project)
+                    path.endswith(suffix) and not path.endswith(".d.ts")
+                    for path in render_project(language, project)
                 )
                 self.assertEqual(rendered_count, file_count, language)
 

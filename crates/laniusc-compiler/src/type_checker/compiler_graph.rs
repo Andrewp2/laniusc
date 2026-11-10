@@ -488,6 +488,15 @@ pub(super) const SEMANTIC_LOCAL_CONST_FOLD_PUBLISH_PASS: &str =
     "type_check.semantic_artifact.local_const_fold_publish";
 pub(super) const STATUS_READBACK_PASS: &str = "type_check.status.readback";
 
+/// Zeroes the round's change count before each inference round, so one
+/// submission can carry several rounds.
+pub(super) const CALLS_INFERENCE_ROUND_RESET_PASS: &str = "type_check.calls.inference.round_reset";
+/// Inference rounds one submission can carry; the readback keeps one slot of
+/// `CALL_INFERENCE_READBACK_SLOT_BYTES` per round.
+pub(super) const CALL_INFERENCE_MAX_BATCH: u32 = 8;
+/// Words 0-1: inference state after the round (word 1 counts the round's
+/// changes); words 2-5: the status words after the round.
+pub(super) const CALL_INFERENCE_READBACK_SLOT_BYTES: u64 = 24;
 pub(super) const CALLS_INFERENCE_READBACK_PASS: &str = "type_check.calls.inference.readback";
 pub(super) const CALLS_INFERENCE_STATUS_READBACK_PASS: &str =
     "type_check.calls.inference.status.readback";
@@ -669,6 +678,8 @@ pub(super) const PREDICATES_OBLIGATION_PAIR_DISPATCH_CLEAR_PASS: &str =
     "type_check.predicates.obligation_pair_dispatch.clear";
 pub(super) const PREDICATES_VALIDATE_OBLIGATION_PAIRS_PASS: &str =
     "type_check.predicates.validate_obligation_pairs";
+pub(super) const PREDICATES_SOLVER_DEMAND_CLEAR_PASS: &str =
+    "type_check.predicates.solver_demand.clear";
 
 pub(super) const CALL_PARAM_ROW_SCAN: PrefixScanSpec = PrefixScanSpec {
     phase: CompilerPhase::TypeCheck,
@@ -3181,6 +3192,8 @@ fn build_graph(
         _interface_public_decl_local_id as "interface_public_decl_local_id" in Declarations => record_rows * 4;
         _interface_public_decl_index_by_local as "interface_public_decl_index_by_local" in Declarations => record_rows * 4;
         _interface_public_decl_index_by_hir as "interface_public_decl_index_by_hir" in HirNodes => hir_rows * 4;
+        // 03_hidden_count: the public count, then one count per 256 records.
+        _interface_hidden_block_count as "interface_hidden_block_count" in Declarations => (record_rows.div_ceil(256) + 1) * 4;
         _import_visible_type_lookup_state as "import_visible_type_lookup_state" in Declarations => import_visible_rows * 8;
         _import_visible_type_duplicate_of as "import_visible_type_duplicate_of" in Declarations => import_visible_rows * 4;
         _import_visible_value_lookup_state as "import_visible_value_lookup_state" in Declarations => import_visible_rows * 8;
@@ -3594,6 +3607,9 @@ fn build_graph(
         _predicate_obligation_scan_prefix_a as "predicate_obligation_scan_prefix_a" in HirNodes => predicate_rows.div_ceil(256) * 4;
         predicate_obligation_pair_total in HirNodes => 4;
         predicate_obligation_pair_dispatch_args in DispatchArguments [StorageIndirect] => 12;
+        // What the unit leaves for the whole-program trait solver
+        // (closure/04e_solver_demand.slang): three counts and a spare word.
+        solver_demand in HirNodes => 16;
     });
     graph_resources!(graph, Workspace {
         decl_kind in Declarations => hir_rows * 4;
@@ -3965,7 +3981,8 @@ fn build_graph(
         _status_readback as "status_readback" in Bytes => 16;
         status_prior as "status_prior" in Bytes => 16;
         call_inference_state as "call_inference_state" in Calls => 8;
-        call_inference_readback as "call_inference_readback" in Calls => 24;
+        call_inference_readback as "call_inference_readback" in Calls =>
+            CALL_INFERENCE_READBACK_SLOT_BYTES * CALL_INFERENCE_MAX_BATCH as u64;
     });
     graph_resources!(graph, Workspace {
         _return_fn_flags as "return_fn_flags" in HirNodes => hir_rows * 4;
@@ -4606,6 +4623,8 @@ fn build_graph(
     TYPE_PATHS_PROJECT_AFTER_PROJECTED_ALIASES.register_kernel(&mut graph, kernels)?;
     TYPE_INSTANCES_PROJECT.register_kernel(&mut graph, kernels)?;
     INTERFACE_HIDDEN_DECLS_MAP.register_kernel(&mut graph, kernels)?;
+    INTERFACE_HIDDEN_DECLS_COUNT.register_kernel(&mut graph, kernels)?;
+    INTERFACE_HIDDEN_DECLS_PUBLISH.register_kernel(&mut graph, kernels)?;
     // Canonical identities start ahead of the dependency pages, which intern
     // their signature types while each page is resident.
     let (substitution_records, substitution_argument_words) =
@@ -5274,7 +5293,10 @@ fn build_graph(
         &["hir_visible_decl_owner_fn", "hir_visible_decl_name_id"],
     )?;
     VISIBLE_SCOPE_TREE_LEAVES.register_kernel(&mut graph, kernels)?;
-    let visible_tree_level_count = visible_tree_leaf_base.trailing_zeros();
+    let visible_tree_level_count = crate::gpu::scan::heap_build_levels(visible_tree_leaf_base)
+        .iter()
+        .filter(|&&(_, _, levels)| levels > 0)
+        .count() as u32;
     if visible_tree_level_count > 0 {
         VISIBLE_SCOPE_TREE_LEVEL.register_kernel(&mut graph, kernels)?;
         graph.repeat_pass_range(
@@ -5615,6 +5637,12 @@ fn build_graph(
         )?;
         graph.add_indirect_dispatch(name, "token_active_dispatch_args")?;
     }
+    graph.add_buffer_clear_pass(
+        CALLS_INFERENCE_ROUND_RESET_PASS,
+        CompilerPhase::TypeCheck,
+        "call_inference_state",
+        call_inference_state,
+    )?;
     METHODS_MARK_CALL_KEYS_INFERENCE.register_kernel(&mut graph, kernels)?;
     METHODS_MARK_CALL_RETURN_KEYS_INFERENCE.register_kernel(&mut graph, kernels)?;
     METHODS_RESET_CANDIDATES_INFERENCE.register_kernel(&mut graph, kernels)?;
@@ -6021,7 +6049,7 @@ fn build_graph(
             .max(1)
             .saturating_mul(CALL_INFERENCE_ROUND_FACTOR)
             .saturating_add(1),
-        METHODS_MARK_CALL_KEYS_INFERENCE.name,
+        CALLS_INFERENCE_ROUND_RESET_PASS,
         CALLS_FINAL_CONTEXT_CONSTANTS_ADMIT.name,
     )?;
     VALUE_ENUM_CALLS_CONSUME_AFTER_INFERENCE.register_kernel(&mut graph, kernels)?;
@@ -6132,6 +6160,12 @@ fn build_graph(
             kernels,
             "type_checker/predicates/01g_reduce_method_validation_errors",
             &[],
+        )?;
+        graph.add_buffer_clear_pass(
+            PREDICATES_SOLVER_DEMAND_CLEAR_PASS,
+            CompilerPhase::TypeCheck,
+            "solver_demand",
+            solver_demand,
         )?;
         graph.add_kernel_pass_by_name(
             PREDICATES_COUNT_OBLIGATION_PAIRS_PASS,
@@ -6297,6 +6331,19 @@ fn build_graph(
         reflected_bindings![
             "call_dependency_library_id" => _call_dependency_library_id: Read,
             "backend_call_fn_index" => backend_call_fn_index: Write,
+        ],
+    )?;
+    // The instance closure of an original job reads the checked call
+    // environments and realizes its instances' arguments as checked rows. It
+    // precedes the body passes: they bind in place the functions it selects
+    // (closure/inplace_read.slang).
+    super::instance_closure_passes::register_instance_closure_passes(
+        &mut graph,
+        kernels,
+        hir_rows,
+        reflected_bindings![
+            "type_native_word_count" => _type_native_word_count: Write,
+            "type_native_scalar_identity" => _type_native_scalar_identity: Write,
         ],
     )?;
     // Call checking retains the symbolic signature. Only the native body
@@ -6474,6 +6521,9 @@ fn build_graph(
             ResourceDomain::HirNodes,
         ),
     ] {
+        if name == BODY_SPECIALIZATION_CANONICAL_REARM_PASS {
+            super::instance_closure_passes::register_inplace_rearm_pass(&mut graph, kernels, 1)?;
+        }
         graph.add_kernel_pass_by_name(
             name,
             CompilerPhase::TypeCheck,
@@ -6495,6 +6545,7 @@ fn build_graph(
             },
         )?;
         if name == BODY_CANONICAL_AFTER_PASS {
+            super::instance_closure_passes::register_inplace_rearm_pass(&mut graph, kernels, 0)?;
             super::canonical_passes::register_canonical_body_passes(&mut graph, kernels)?;
             super::substitution_passes::register_substitution_body_passes(&mut graph, kernels)?;
         }
@@ -6552,18 +6603,9 @@ fn build_graph(
         "type_checker/semantic/artifact/00c_generic_call_results",
         &[],
     )?;
-    // The instance closure of an original job reads the final call
-    // environments and realizes its instances' arguments as checked rows,
-    // ahead of the late canonical stage like the call results' own.
-    super::instance_closure_passes::register_instance_closure_passes(
-        &mut graph,
-        kernels,
-        hir_rows,
-        reflected_bindings![
-            "type_native_word_count" => _type_native_word_count: Write,
-            "type_native_scalar_identity" => _type_native_scalar_identity: Write,
-        ],
-    )?;
+    super::instance_closure_passes::register_inplace_guard_pass(&mut graph, kernels)?;
+    super::instance_closure_passes::register_solver_demand_pass(&mut graph, kernels)?;
+    super::instance_closure_passes::register_inplace_rearm_pass(&mut graph, kernels, 2)?;
     super::canonical_passes::register_canonical_late_passes(&mut graph, kernels, type_rows)?;
     // Rows the inference rounds created are interned only by the late stage;
     // seed their IDs' rows before the layout and projection passes read them.
@@ -7175,7 +7217,8 @@ mod tests {
             4096u32
                 .div_ceil(HIR_VISIBLE_DECL_ROW_BLOCK_SIZE)
                 .next_power_of_two()
-                .trailing_zeros(),
+                .trailing_zeros()
+                .div_ceil(8),
         );
         let early_struct_refs = graph
             .pass_id(SEMANTIC_STRUCT_LITERAL_REFS_EARLY_PROJECT_PASS)

@@ -34,6 +34,29 @@ pub(super) const INSTANCE_CLOSURE_MARK_DEPENDENCY_PASS: &str =
     "type_check.instance_closure.mark_dependency_roots";
 pub(super) const INSTANCE_CLOSURE_EXPAND_DEPENDENCY_PASS: &str =
     "type_check.instance_closure.expand_dependency";
+/// In-place instantiation (closure/inplace_read.slang): the selection after
+/// the export, the rearm requests ahead of the canonical stages that follow
+/// the body passes, and the guard after the call results.
+pub(super) const INSTANCE_INPLACE_SELECT_PASS: &str = "type_check.instance_inplace.select";
+pub(super) const INSTANCE_INPLACE_GUARD_PASS: &str = "type_check.instance_inplace.guard";
+pub(super) const INSTANCE_INPLACE_REARM_PASSES: [&str; 3] = [
+    "type_check.instance_inplace.rearm_bindings",
+    "type_check.instance_inplace.rearm_body",
+    "type_check.instance_inplace.rearm_late",
+];
+const INPLACE_SELECT_KERNEL: &str = "type_checker/closure/04b_select_inplace";
+const INPLACE_GUARD_KERNEL: &str = "type_checker/closure/04c_inplace_guard";
+const INPLACE_REARM_KERNEL: &str = "type_checker/closure/04d_inplace_rearm";
+/// The calls an original job leaves for the whole-program trait solver
+/// (closure/04e_solver_demand.slang), after the in-place guard.
+pub(super) const SOLVER_DEMAND_PASS: &str = "type_check.solver_demand.calls";
+const SOLVER_DEMAND_KERNEL: &str = "type_checker/closure/04e_solver_demand";
+/// Words of `solver_demand`: unproven call obligations, implementations
+/// and bounds the local index cannot decide, calls whose body is not in an
+/// object, and a spare.
+pub(in crate::type_checker) const SOLVER_DEMAND_WORDS: usize = 4;
+/// Words of `instance_inplace_counts`: word 0 counts the selected functions.
+const INSTANCE_INPLACE_COUNT_WORDS: u64 = 4;
 const MARK_KERNEL: &str = "type_checker/closure/01_mark";
 const ADVANCE_KERNEL: &str = "type_checker/closure/02_advance";
 const EXPAND_KERNEL: &str = "type_checker/closure/03_expand";
@@ -126,6 +149,9 @@ pub(super) fn register_instance_closure_passes(
     storage(graph, "instance_closure_targets", instances * 16)?;
     let head = storage(graph, "instance_closure_edge_head", hir_rows.max(1) * 4)?;
     storage(graph, "instance_closure_edge_next", hir_rows.max(1) * 4)?;
+    let inplace_owner = storage(graph, "instance_inplace_owner", hir_rows.max(1) * 4)?;
+    let inplace_counts =
+        storage(graph, "instance_inplace_counts", INSTANCE_INPLACE_COUNT_WORDS * 4)?;
     let summary_ct = storage(
         graph,
         CLOSURE_SUMMARY_CT,
@@ -153,6 +179,8 @@ pub(super) fn register_instance_closure_passes(
             PassAccess::write("instance_closure_set", set),
             PassAccess::write("instance_closure_edge_head", head),
             PassAccess::write(CLOSURE_SUMMARY_CT, summary_ct),
+            PassAccess::write("instance_inplace_owner", inplace_owner),
+            PassAccess::write("instance_inplace_counts", inplace_counts),
         ],
     })?;
     // The dependency summaries' nodes intern ahead of the roots (D1b).
@@ -250,7 +278,74 @@ pub(super) fn register_instance_closure_passes(
         )?;
         graph.add_indirect_dispatch(name, "instance_closure_args")?;
     }
+    // One lane per exported instance selects the in-place instantiations.
+    graph.add_kernel_pass_by_name(
+        INSTANCE_INPLACE_SELECT_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::Types,
+        kernels,
+        INPLACE_SELECT_KERNEL,
+        &[],
+    )?;
+    graph.add_indirect_dispatch(INSTANCE_INPLACE_SELECT_PASS, "instance_closure_args")?;
     Ok(())
+}
+
+/// Registers rearm request `index` of an in-place job, ahead of the
+/// canonical rearm it addresses.
+pub(super) fn register_inplace_rearm_pass(
+    graph: &mut CompilerGraphBuilder,
+    kernels: &impl crate::gpu::kernels::KernelReflections,
+    index: usize,
+) -> Result<(), String> {
+    graph.add_kernel_pass_by_name(
+        INSTANCE_INPLACE_REARM_PASSES[index],
+        CompilerPhase::TypeCheck,
+        ResourceDomain::Types,
+        kernels,
+        INPLACE_REARM_KERNEL,
+        &[],
+    )?;
+    Ok(())
+}
+
+/// Registers the in-place guard, after the generic call results.
+pub(super) fn register_inplace_guard_pass(
+    graph: &mut CompilerGraphBuilder,
+    kernels: &impl crate::gpu::kernels::KernelReflections,
+) -> Result<(), String> {
+    graph.add_kernel_pass_by_name(
+        INSTANCE_INPLACE_GUARD_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        INPLACE_GUARD_KERNEL,
+        &[],
+    )?;
+    graph.add_indirect_dispatch(INSTANCE_INPLACE_GUARD_PASS, "hir_active_dispatch_args")
+}
+
+/// Registers the solver-demand call count, after the in-place guard.
+pub(super) fn register_solver_demand_pass(
+    graph: &mut CompilerGraphBuilder,
+    kernels: &impl crate::gpu::kernels::KernelReflections,
+) -> Result<(), String> {
+    graph.add_kernel_pass_by_name(
+        SOLVER_DEMAND_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        SOLVER_DEMAND_KERNEL,
+        &[],
+    )?;
+    graph.add_indirect_dispatch(SOLVER_DEMAND_PASS, "hir_active_dispatch_args")
+}
+
+/// `LANIUS_INPLACE_INSTANCES=0` (A/B runs) leaves every generic body to the
+/// replays.
+pub(in crate::type_checker) fn inplace_instances_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| crate::gpu::env::env_bool_truthy("LANIUS_INPLACE_INSTANCES", true))
 }
 
 /// Virtual rows one job's instance table holds: half its HIR rows. A full
@@ -449,6 +544,10 @@ pub(in crate::type_checker) struct InstanceClosureOperations {
     expand_dependency: ComputeOperation,
     export: ComputeOperation,
     export_final: ComputeOperation,
+    inplace_select: ComputeOperation,
+    inplace_guard: ComputeOperation,
+    inplace_rearm: [ComputeOperation; 3],
+    solver_demand: ComputeOperation,
 }
 
 impl InstanceClosureOperations {
@@ -464,6 +563,8 @@ impl InstanceClosureOperations {
         let set = buffer("instance_closure_set")?;
         let head = buffer("instance_closure_edge_head")?;
         let summary_ct = buffer(CLOSURE_SUMMARY_CT)?;
+        let inplace_owner = buffer("instance_inplace_owner")?;
+        let inplace_counts = buffer("instance_inplace_counts")?;
         let clear = crate::gpu::operations::ClearBuffersOperation::new(
             graph,
             INSTANCE_CLOSURE_CLEAR_PASS,
@@ -472,6 +573,8 @@ impl InstanceClosureOperations {
                 ("instance_closure_set", (&set).into()),
                 ("instance_closure_edge_head", (&head).into()),
                 (CLOSURE_SUMMARY_CT, (&summary_ct).into()),
+                ("instance_inplace_owner", (&inplace_owner).into()),
+                ("instance_inplace_counts", (&inplace_counts).into()),
             ],
         )?;
         let direct = |name, kernel, elements| {
@@ -505,7 +608,63 @@ impl InstanceClosureOperations {
             // per appended instance, none when the table is empty.
             export: indirect(INSTANCE_CLOSURE_EXPORT_PASS, EXPORT_KERNEL)?,
             export_final: indirect(INSTANCE_CLOSURE_EXPORT_FINAL_PASS, EXPORT_FINAL_KERNEL)?,
+            inplace_select: indirect(INSTANCE_INPLACE_SELECT_PASS, INPLACE_SELECT_KERNEL)?,
+            inplace_guard: ComputeOperation::indirect(
+                device,
+                graph,
+                resources,
+                INSTANCE_INPLACE_GUARD_PASS,
+                &passes.kernel(INPLACE_GUARD_KERNEL),
+                &buffer("hir_active_dispatch_args")?,
+            )?,
+            inplace_rearm: [
+                direct(INSTANCE_INPLACE_REARM_PASSES[0], INPLACE_REARM_KERNEL, 1)?,
+                direct(INSTANCE_INPLACE_REARM_PASSES[1], INPLACE_REARM_KERNEL, 1)?,
+                direct(INSTANCE_INPLACE_REARM_PASSES[2], INPLACE_REARM_KERNEL, 1)?,
+            ],
+            solver_demand: ComputeOperation::indirect(
+                device,
+                graph,
+                resources,
+                SOLVER_DEMAND_PASS,
+                &passes.kernel(SOLVER_DEMAND_KERNEL),
+                &buffer("hir_active_dispatch_args")?,
+            )?,
         })
+    }
+
+    /// Selects the in-place instantiations, after `record`.
+    pub(in crate::type_checker) fn record_inplace_select(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+    ) -> Result<()> {
+        self.inplace_select.record(encoder)
+    }
+
+    /// Rearm request `index` (`INSTANCE_INPLACE_REARM_PASSES`).
+    pub(in crate::type_checker) fn record_inplace_rearm(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        index: usize,
+    ) -> Result<()> {
+        self.inplace_rearm[index].record(encoder)
+    }
+
+    /// Withholds the bodies whose in-place instantiation failed.
+    pub(in crate::type_checker) fn record_inplace_guard(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+    ) -> Result<()> {
+        self.inplace_guard.record(encoder)
+    }
+
+    /// Counts the calls this original job leaves for the trait solver,
+    /// after the in-place guard (or where it would run).
+    pub(in crate::type_checker) fn record_solver_demand(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+    ) -> Result<()> {
+        self.solver_demand.record(encoder)
     }
 
     /// `import_rounds` is the summaries' import depth (0 without any: the

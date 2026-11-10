@@ -17,6 +17,8 @@ import type_checker.constant_publication;
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint4> body_specialization_inputs;
+// Selected in-place instantiations (closure/04b_select_inplace).
+StructuredBuffer<uint> instance_inplace_counts;
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_arg_count;
 StructuredBuffer<uint> type_instance_arg_start;
@@ -60,7 +62,9 @@ static const uint INVALID = 0xffffffffu;
 void main(uint3 dtid : SV_DispatchThreadID)
 {
     // Entry 0's constant count, or any extra entries (which may bind constants).
-    if (body_specialization_inputs[705u].x == 0u && body_specialization_inputs[705u].y == 0u) return;
+    // An in-place instantiation of an original job binds constants too.
+    if (body_specialization_inputs[705u].x == 0u && body_specialization_inputs[705u].y == 0u &&
+        (body_specialization_inputs[0u].x != 0u || instance_inplace_counts[0u] == 0u)) return;
     uint instance = dtid.x + dtid.y * 65535u * 256u;
     uint capacity; uint stride;
     type_instance_kind.GetDimensions(capacity, stride);

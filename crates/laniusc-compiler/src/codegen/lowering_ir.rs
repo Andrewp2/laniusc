@@ -967,8 +967,6 @@ pub struct LoweringCapacities {
 impl LoweringCapacities {
     const REUSE_GRANULARITY: u32 = 4 * 1024;
     const OPTIMIZATION_EDGE_TARGET_CAPACITY: u32 = 1 << 28;
-    pub(crate) const OPTIMIZATION_SSA_WORKER_COUNT: u32 = 128;
-    pub(crate) const OPTIMIZATION_SSA_QUEUE_WORKGROUP_SIZE: u32 = 32;
 
     fn capacity_bucket(value: u32) -> u32 {
         value
@@ -1109,12 +1107,13 @@ impl LoweringCapacities {
             .max(1)
     }
 
-    /// Reusable global work rows. Demand closure admits each demand once.
-    /// Trivial block-argument propagation is the larger user: an argument can
-    /// change monotonically at most twice (`none -> one source -> conflict`).
-    pub(crate) fn optimization_ssa_work_capacity(self) -> u32 {
+    /// Reusable walk records, two words each. Demand closure keeps one per
+    /// demand row. Trivial block-argument propagation is the larger user: an
+    /// argument can change monotonically at most twice (`none -> one source ->
+    /// conflict`) and each change keeps a record.
+    pub(crate) fn optimization_ssa_walk_capacity(self) -> u32 {
         self.optimization_ssa_demand_capacity()
-            .saturating_mul(2)
+            .saturating_mul(4)
             .max(1)
     }
 
@@ -1906,7 +1905,7 @@ fn lowering_compiler_graph_builder(
         ResourceDomain::Declarations,
         LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
     ))?;
-    // Variant-row and field-row dispatches of the aggregate layout rounds.
+    // Variant-row dispatch of the aggregate layout validation.
     let semantic_layout_dispatch_args = graph.add_indirect_storage(
         "lir.semantic.layout_dispatch_args",
         ResourceDomain::DispatchArguments,
@@ -2560,121 +2559,96 @@ fn lowering_compiler_graph_builder(
             "semantic_aggregate_hir_by_name_token",
             semantic_aggregate_hir_by_name_token,
         ),
-        PassAccess::read_write(
+        PassAccess::read(
             "semantic_struct_word_count_by_hir",
             semantic_struct_word_count_by_hir,
         ),
         PassAccess::read_write("lowering_status", lowering_status),
         PassAccess::indirect(INDIRECT_DISPATCH_BINDING, semantic_layout_dispatch_args),
     ];
+    // One lane per HIR row walks each struct and enum declaration's by-value
+    // layout (function_layout_words.slang).
     graph.add_pass(PassDesc {
-        name: "lir.semantic.functions.layout.enum_variants",
+        name: "lir.semantic.functions.layout.words",
         phase: CompilerPhase::SemanticLowering,
-        dispatch_domain: ResourceDomain::Declarations,
-        accesses: enum_variant_layout_accesses.clone(),
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.semantic.functions.layout.enum_fields",
-        phase: CompilerPhase::SemanticLowering,
-        dispatch_domain: ResourceDomain::Declarations,
+        dispatch_domain: ResourceDomain::HirNodes,
         accesses: vec![
             PassAccess::read_write("checked_constant_atoms", checked_constant_atoms),
             PassAccess::read_write("checked_constant_projections", checked_constant_projections),
             PassAccess::read("type_const_param_scalar_by_token", type_const_param_scalar),
             PassAccess::read("type_const_param_value_by_token", type_const_param_value),
             PassAccess::read("type_const_param_slot_by_token", type_const_param_slot),
-            PassAccess::read("semantic_expr_ref_tag", semantic_expr_ref_tags),
-            PassAccess::read("semantic_expr_ref_payload", semantic_expr_ref_payloads),
             PassAccess::read("type_instance_kind", type_instance_kind),
-            PassAccess::read("type_instance_decl_token", type_instance_decl_token),
+            PassAccess::read("type_instance_native_words", type_instance_native_words),
+            PassAccess::read("type_instance_arg_count", type_instance_arg_count),
+            PassAccess::read("type_instance_arg_start", type_instance_arg_start),
+            PassAccess::read("type_instance_arg_ref_tag", type_instance_arg_ref_tag),
+            PassAccess::read(
+                "type_instance_arg_ref_payload",
+                type_instance_arg_ref_payload,
+            ),
+            PassAccess::read("type_instance_arg_row_start", type_instance_arg_row_start),
+            PassAccess::read("type_instance_arg_row_count", type_instance_arg_row_count),
+            PassAccess::read(
+                "type_instance_arg_row_ref_tag",
+                type_instance_arg_row_ref_tag,
+            ),
+            PassAccess::read(
+                "type_instance_arg_row_ref_payload",
+                type_instance_arg_row_ref_payload,
+            ),
             PassAccess::read("type_instance_elem_ref_tag", type_instance_elem_ref_tag),
-            PassAccess::read("type_instance_elem_ref_payload", type_instance_elem_ref_payload),
+            PassAccess::read(
+                "type_instance_elem_ref_payload",
+                type_instance_elem_ref_payload,
+            ),
             PassAccess::read("type_instance_len_kind", type_instance_len_kind),
             PassAccess::read("type_instance_len_payload", type_instance_len_payload),
-            PassAccess::read("type_instance_native_words", type_instance_native_words),
+            PassAccess::read("compact_hir_count", hir_count),
             PassAccess::read("compact_hir_core", hir_core),
             PassAccess::read("compact_hir_payload", hir_payload),
             PassAccess::read("compact_field_count", hir_field_count),
             PassAccess::read("compact_fields", hir_fields),
+            PassAccess::read("compact_variant_count", hir_variant_count),
+            PassAccess::read("compact_variants", hir_variants),
+            PassAccess::read(
+                "compact_variant_payload_row_count",
+                hir_variant_payload_row_count,
+            ),
+            PassAccess::read("compact_variant_payload_start", hir_variant_payload_start),
+            PassAccess::read("compact_variant_payload_count", hir_variant_payload_count),
+            PassAccess::read("compact_variant_payloads", hir_variant_payloads),
+            PassAccess::read("semantic_expr_ref_tag", semantic_expr_ref_tags),
+            PassAccess::read("semantic_expr_ref_payload", semantic_expr_ref_payloads),
+            PassAccess::read(
+                "semantic_aggregate_decl_token",
+                semantic_aggregate_decl_tokens,
+            ),
             PassAccess::read(
                 "semantic_aggregate_hir_by_name_token",
                 semantic_aggregate_hir_by_name_token,
             ),
             PassAccess::read(
+                "semantic_struct_field_start_by_hir",
+                semantic_struct_field_start_by_hir,
+            ),
+            PassAccess::read(
+                "semantic_struct_field_count_by_hir",
+                semantic_struct_field_count_by_hir,
+            ),
+            PassAccess::write(
                 "semantic_struct_word_count_by_hir",
                 semantic_struct_word_count_by_hir,
+            ),
+            PassAccess::write(
+                "semantic_struct_field_word_offset_by_row",
+                semantic_struct_field_word_offset_by_row,
             ),
             PassAccess::write(
                 "semantic_struct_field_word_count_by_row",
                 semantic_struct_field_word_count_by_row,
             ),
-            PassAccess::indirect(INDIRECT_DISPATCH_BINDING, semantic_layout_dispatch_args),
-        ],
-    })?;
-    let struct_word_layout_accesses = vec![
-        PassAccess::read_write("checked_constant_atoms", checked_constant_atoms),
-        PassAccess::read_write("checked_constant_projections", checked_constant_projections),
-        PassAccess::read("type_const_param_scalar_by_token", type_const_param_scalar),
-        PassAccess::read("type_const_param_value_by_token", type_const_param_value),
-        PassAccess::read("type_const_param_slot_by_token", type_const_param_slot),
-        PassAccess::read("type_instance_kind", type_instance_kind),
-        PassAccess::read("type_instance_len_kind", type_instance_len_kind),
-        PassAccess::read("type_instance_len_payload", type_instance_len_payload),
-        PassAccess::read("compact_hir_count", hir_count),
-        PassAccess::read("compact_hir_core", hir_core),
-        PassAccess::read("compact_hir_payload", hir_payload),
-        PassAccess::read("compact_field_count", hir_field_count),
-        PassAccess::read("compact_fields", hir_fields),
-        PassAccess::read("semantic_expr_ref_tag", semantic_expr_ref_tags),
-        PassAccess::read("semantic_expr_ref_payload", semantic_expr_ref_payloads),
-        PassAccess::read("type_instance_native_words", type_instance_native_words),
-        PassAccess::read(
-            "semantic_aggregate_decl_token",
-            semantic_aggregate_decl_tokens,
-        ),
-        PassAccess::read(
-            "semantic_aggregate_hir_by_name_token",
-            semantic_aggregate_hir_by_name_token,
-        ),
-        PassAccess::read(
-            "semantic_struct_field_start_by_hir",
-            semantic_struct_field_start_by_hir,
-        ),
-        PassAccess::read(
-            "semantic_struct_field_count_by_hir",
-            semantic_struct_field_count_by_hir,
-        ),
-        PassAccess::read_write(
-            "semantic_struct_word_count_by_hir",
-            semantic_struct_word_count_by_hir,
-        ),
-        PassAccess::write(
-            "semantic_struct_field_word_offset_by_row",
-            semantic_struct_field_word_offset_by_row,
-        ),
-        PassAccess::read_write(
-            "semantic_struct_field_word_count_by_row",
-            semantic_struct_field_word_count_by_row,
-        ),
-    ];
-    graph.add_pass(PassDesc {
-        name: "lir.semantic.functions.layout.words",
-        phase: CompilerPhase::SemanticLowering,
-        dispatch_domain: ResourceDomain::HirNodes,
-        accesses: struct_word_layout_accesses.clone(),
-    })?;
-    // The fixed-point rounds take one lane per field row (see
-    // function_layout_words.slang's root_rows).
-    let mut struct_word_round_accesses = struct_word_layout_accesses;
-    struct_word_round_accesses.push(PassAccess::indirect(
-        INDIRECT_DISPATCH_BINDING,
-        semantic_layout_dispatch_args,
-    ));
-    graph.add_pass(PassDesc {
-        name: "lir.semantic.functions.layout.words.round",
-        phase: CompilerPhase::SemanticLowering,
-        dispatch_domain: ResourceDomain::Declarations,
-        accesses: struct_word_round_accesses,
+                    ],
     })?;
     graph.add_pass(PassDesc {
         name: "lir.semantic.functions.layout.validate",
@@ -4075,13 +4049,8 @@ fn lowering_compiler_graph_builder(
         ResourceDomain::OptimizationBlocks,
         LoweringCapacities::bytes::<u32>(capacities.optimization_block_capacity()),
     ))?;
-    let opt_reachability_work_state = graph.add_resource(workspace(
-        "lir.opt.reachability.work_state",
-        ResourceDomain::OptimizationBlocks,
-        LoweringCapacities::bytes::<u32>(4),
-    ))?;
-    let opt_reachability_work_queue = graph.add_resource(workspace(
-        "lir.opt.reachability.work_queue",
+    let opt_dead_claim_by_block = graph.add_resource(workspace(
+        "lir.opt.dead_claim_by_block",
         ResourceDomain::OptimizationBlocks,
         LoweringCapacities::bytes::<u32>(capacities.optimization_block_capacity()),
     ))?;
@@ -4335,11 +4304,6 @@ fn lowering_compiler_graph_builder(
         ResourceDomain::OptimizationSsaDemands,
         LoweringCapacities::bytes::<OptIrSsaDemand>(capacities.optimization_ssa_demand_capacity()),
     ))?;
-    let opt_ssa_worker_next_group = graph.add_resource(workspace(
-        "lir.opt.ssa.worker_next_group",
-        ResourceDomain::OptimizationAccessGroups,
-        LoweringCapacities::bytes::<u32>(1),
-    ))?;
     let opt_ssa_sparse_declaration = graph.add_resource(workspace(
         "lir.opt.ssa.sparse_declaration",
         ResourceDomain::OptimizationSsaDemands,
@@ -4350,15 +4314,10 @@ fn lowering_compiler_graph_builder(
         ResourceDomain::OptimizationSsaDemands,
         LoweringCapacities::bytes::<u32>(capacities.optimization_ssa_sparse_capacity()),
     ))?;
-    let opt_ssa_work_state = graph.add_resource(workspace(
-        "lir.opt.ssa.work_state",
+    let opt_ssa_walk = graph.add_resource(workspace(
+        "lir.opt.ssa.walk",
         ResourceDomain::OptimizationSsaDemands,
-        LoweringCapacities::bytes::<u32>(4),
-    ))?;
-    let opt_ssa_work_queue = graph.add_resource(workspace(
-        "lir.opt.ssa.work_queue",
-        ResourceDomain::OptimizationSsaDemands,
-        LoweringCapacities::bytes::<u32>(capacities.optimization_ssa_work_capacity()),
+        LoweringCapacities::bytes::<u32>(capacities.optimization_ssa_walk_capacity()),
     ))?;
     let opt_ssa_demand_radix = graph.add_radix_sort_resources(
         opt_ssa_demand_total,
@@ -5077,20 +5036,11 @@ fn lowering_compiler_graph_builder(
     } else {
         None
     };
-    let x86_liveness_work_state = if target == LoweringTarget::X86_64 {
+    let x86_liveness_walk = if target == LoweringTarget::X86_64 {
         Some(graph.add_resource(workspace(
-            "lir.x86.liveness_work_state",
+            "lir.x86.liveness_walk",
             ResourceDomain::SemanticInstructions,
-            LoweringCapacities::bytes::<u32>(4),
-        ))?)
-    } else {
-        None
-    };
-    let x86_liveness_work_queue = if target == LoweringTarget::X86_64 {
-        Some(graph.add_resource(workspace(
-            "lir.x86.liveness_work_queue",
-            ResourceDomain::SemanticInstructions,
-            LoweringCapacities::bytes::<u32>(capacities.semantic_instructions),
+            LoweringCapacities::bytes::<u32>(capacities.semantic_instructions.saturating_mul(2)),
         ))?)
     } else {
         None
@@ -6251,34 +6201,24 @@ fn lowering_compiler_graph_builder(
         ],
     })?;
     graph.add_pass(PassDesc {
-        name: "lir.opt.reachability.clear",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::logical_write("opt_ir_reachable", opt_reachable),
-            PassAccess::logical_write(
-                "opt_ir_reachability_work_state",
-                opt_reachability_work_state,
-            ),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
         name: "lir.opt.reachability.seed",
         phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationFunctions,
+        dispatch_domain: ResourceDomain::OptimizationBlocks,
         accesses: vec![
             PassAccess::read("semantic_function_total", semantic_function_total),
             PassAccess::read("opt_ir_functions", opt_functions),
             PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read_write("opt_ir_reachable", opt_reachable),
-            PassAccess::read_write(
-                "opt_ir_reachability_work_state",
-                opt_reachability_work_state,
-            ),
+            PassAccess::read("opt_ir_blocks", opt_blocks),
+            PassAccess::read("opt_ir_edge_total", opt_edge_total),
+            PassAccess::read("opt_ir_edges", opt_edges),
+            PassAccess::read("opt_ir_predecessor_prefix", opt_edge_prefix),
+            PassAccess::read("opt_ir_predecessor_edge_ids", opt_predecessor_edge_ids),
+            PassAccess::write("opt_ir_reachable", opt_reachable),
             PassAccess::write(
-                "opt_ir_reachability_work_queue",
-                opt_reachability_work_queue,
+                "opt_ir_live_predecessor_count_by_block",
+                opt_edge_count_by_block,
             ),
+            PassAccess::write("opt_ir_dead_claim_by_block", opt_dead_claim_by_block),
             PassAccess::read_write("lowering_status", lowering_status),
         ],
     })?;
@@ -6293,13 +6233,10 @@ fn lowering_compiler_graph_builder(
             PassAccess::read("opt_ir_edges", opt_edges),
             PassAccess::read_write("opt_ir_reachable", opt_reachable),
             PassAccess::read_write(
-                "opt_ir_reachability_work_state",
-                opt_reachability_work_state,
+                "opt_ir_live_predecessor_count_by_block",
+                opt_edge_count_by_block,
             ),
-            PassAccess::read_write(
-                "opt_ir_reachability_work_queue",
-                opt_reachability_work_queue,
-            ),
+            PassAccess::read_write("opt_ir_dead_claim_by_block", opt_dead_claim_by_block),
             PassAccess::read_write("lowering_status", lowering_status),
         ],
     })?;
@@ -6317,36 +6254,11 @@ fn lowering_compiler_graph_builder(
             PassAccess::read("opt_ir_predecessor_prefix", opt_edge_prefix),
             PassAccess::read("opt_ir_predecessor_edge_ids", opt_predecessor_edge_ids),
             PassAccess::read("opt_ir_reachable", opt_reachable),
-            PassAccess::read_write(
-                "opt_ir_reachability_work_state",
-                opt_reachability_work_state,
-            ),
             PassAccess::read_write("lowering_status", lowering_status),
         ],
     })?;
     graph.add_pass(PassDesc {
-        name: "lir.opt.dominators.clear",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::write(
-                "opt_ir_forward_predecessor_count_by_block",
-                opt_edge_count_by_block,
-            ),
-            PassAccess::write("opt_ir_immediate_dominator", opt_immediate_dominator),
-            PassAccess::write(
-                "opt_ir_reachability_work_state",
-                opt_reachability_work_state,
-            ),
-            PassAccess::write(
-                "opt_ir_reachability_work_queue",
-                opt_reachability_work_queue,
-            ),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.dominators.count",
+        name: "lir.opt.dominators.edge_validate",
         phase: CompilerPhase::Optimization,
         dispatch_domain: ResourceDomain::OptimizationEdges,
         accesses: vec![
@@ -6354,11 +6266,6 @@ fn lowering_compiler_graph_builder(
             PassAccess::read("opt_ir_edge_total", opt_edge_total),
             PassAccess::read("opt_ir_blocks", opt_blocks),
             PassAccess::read("opt_ir_edges", opt_edges),
-            PassAccess::read("opt_ir_reachable", opt_reachable),
-            PassAccess::read_write(
-                "opt_ir_forward_predecessor_count_by_block",
-                opt_edge_count_by_block,
-            ),
             PassAccess::read_write("lowering_status", lowering_status),
         ],
     })?;
@@ -6372,19 +6279,7 @@ fn lowering_compiler_graph_builder(
             PassAccess::read("opt_ir_blocks", opt_blocks),
             PassAccess::read("opt_ir_functions", opt_functions),
             PassAccess::read("opt_ir_reachable", opt_reachable),
-            PassAccess::read(
-                "opt_ir_forward_predecessor_count_by_block",
-                opt_edge_count_by_block,
-            ),
-            PassAccess::read_write("opt_ir_immediate_dominator", opt_immediate_dominator),
-            PassAccess::read_write(
-                "opt_ir_reachability_work_state",
-                opt_reachability_work_state,
-            ),
-            PassAccess::write(
-                "opt_ir_reachability_work_queue",
-                opt_reachability_work_queue,
-            ),
+            PassAccess::write("opt_ir_immediate_dominator", opt_immediate_dominator),
             PassAccess::read_write("lowering_status", lowering_status),
         ],
     })?;
@@ -6400,19 +6295,7 @@ fn lowering_compiler_graph_builder(
             PassAccess::read("opt_ir_predecessor_prefix", opt_edge_prefix),
             PassAccess::read("opt_ir_predecessor_edge_ids", opt_predecessor_edge_ids),
             PassAccess::read("opt_ir_reachable", opt_reachable),
-            PassAccess::read_write(
-                "opt_ir_forward_predecessor_count_by_block",
-                opt_edge_count_by_block,
-            ),
             PassAccess::read_write("opt_ir_immediate_dominator", opt_immediate_dominator),
-            PassAccess::read_write(
-                "opt_ir_reachability_work_state",
-                opt_reachability_work_state,
-            ),
-            PassAccess::read_write(
-                "opt_ir_reachability_work_queue",
-                opt_reachability_work_queue,
-            ),
             PassAccess::read_write("lowering_status", lowering_status),
         ],
     })?;
@@ -6426,14 +6309,6 @@ fn lowering_compiler_graph_builder(
             PassAccess::read("opt_ir_blocks", opt_blocks),
             PassAccess::read("opt_ir_functions", opt_functions),
             PassAccess::read("opt_ir_reachable", opt_reachable),
-            PassAccess::read(
-                "opt_ir_forward_predecessor_count_by_block",
-                opt_edge_count_by_block,
-            ),
-            PassAccess::read(
-                "opt_ir_reachability_work_state",
-                opt_reachability_work_state,
-            ),
             PassAccess::read("opt_ir_immediate_dominator", opt_immediate_dominator),
             PassAccess::read_write("lowering_status", lowering_status),
         ],
@@ -7270,8 +7145,6 @@ fn lowering_compiler_graph_builder(
         accesses: vec![
             PassAccess::logical_write("opt_ir_ssa_sparse_declaration", opt_ssa_sparse_declaration),
             PassAccess::logical_write("opt_ir_ssa_sparse_block", opt_ssa_sparse_block),
-            PassAccess::logical_write("opt_ir_ssa_work_state", opt_ssa_work_state),
-            PassAccess::logical_write("opt_ir_ssa_work_queue", opt_ssa_work_queue),
         ],
     })?;
     graph.add_pass(PassDesc {
@@ -7281,7 +7154,6 @@ fn lowering_compiler_graph_builder(
         accesses: vec![
             PassAccess::read("opt_ir_ssa_demand_total", opt_ssa_demand_total),
             PassAccess::write("opt_ir_ssa_demand_seed_total", opt_ssa_demand_seed_total),
-            PassAccess::write("opt_ir_ssa_work_state", opt_ssa_work_state),
         ],
     })?;
     graph.add_pass(PassDesc {
@@ -7293,7 +7165,6 @@ fn lowering_compiler_graph_builder(
             PassAccess::read("opt_ir_ssa_demands", opt_ssa_demands),
             PassAccess::read_write("opt_ir_ssa_sparse_declaration", opt_ssa_sparse_declaration),
             PassAccess::read_write("opt_ir_ssa_sparse_block", opt_ssa_sparse_block),
-            PassAccess::write("opt_ir_ssa_work_queue", opt_ssa_work_queue),
             PassAccess::read_write("lowering_status", lowering_status),
         ],
     })?;
@@ -7320,12 +7191,13 @@ fn lowering_compiler_graph_builder(
                 opt_declaration_block_total,
             ),
             PassAccess::read("opt_ir_declaration_blocks", opt_declaration_blocks),
+            PassAccess::read("opt_ir_ssa_demand_seed_total", opt_ssa_demand_seed_total),
             PassAccess::read_write("opt_ir_ssa_demand_total", opt_ssa_demand_total),
             PassAccess::read_write("opt_ir_ssa_demands", opt_ssa_demands),
             PassAccess::read_write("opt_ir_ssa_sparse_declaration", opt_ssa_sparse_declaration),
             PassAccess::read_write("opt_ir_ssa_sparse_block", opt_ssa_sparse_block),
-            PassAccess::read_write("opt_ir_ssa_work_state", opt_ssa_work_state),
-            PassAccess::read_write("opt_ir_ssa_work_queue", opt_ssa_work_queue),
+            // Each lane reads back only the records it wrote in this pass.
+            PassAccess::write("opt_ir_ssa_walk", opt_ssa_walk),
             PassAccess::read_write("lowering_status", lowering_status),
         ],
     })?;
@@ -7525,33 +7397,33 @@ fn lowering_compiler_graph_builder(
             PassAccess::read_write("lowering_status", lowering_status),
         ],
     })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.ssa.demand_aliases.worker_clear",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationSsaDemands,
-        accesses: vec![PassAccess::logical_write(
-            "opt_ir_ssa_worker_next_group",
-            opt_ssa_worker_next_group,
-        )],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.ssa.demand_aliases.resolve",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationSsaDemands,
-        accesses: vec![
-            PassAccess::read("opt_ir_access_group_total", opt_access_group_total),
-            PassAccess::read("opt_ir_access_groups", opt_access_groups),
-            PassAccess::read("opt_ir_ssa_demand_total", opt_ssa_demand_total),
-            PassAccess::read("opt_ir_ssa_demands", opt_ssa_demands),
-            PassAccess::read_write("opt_ir_ssa_demand_resolutions", opt_ssa_demand_resolutions),
-            PassAccess::initialize_read_write(
-                "opt_ir_ssa_demand_resolution_tmp",
-                opt_ssa_demand_resolution_tmp,
-            ),
-            PassAccess::read_write("opt_ir_ssa_worker_next_group", opt_ssa_worker_next_group),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
+    // Two rounds of one kernel: the seed table into the temporary one, then
+    // back, so the collapsed chains end in the table every consumer reads.
+    for (name, input, output) in [
+        (
+            "lir.opt.ssa.demand_aliases.jump",
+            opt_ssa_demand_resolutions,
+            opt_ssa_demand_resolution_tmp,
+        ),
+        (
+            "lir.opt.ssa.demand_aliases.resolve",
+            opt_ssa_demand_resolution_tmp,
+            opt_ssa_demand_resolutions,
+        ),
+    ] {
+        graph.add_pass(PassDesc {
+            name,
+            phase: CompilerPhase::Optimization,
+            dispatch_domain: ResourceDomain::OptimizationSsaDemands,
+            accesses: vec![
+                PassAccess::read("opt_ir_ssa_demand_total", opt_ssa_demand_total),
+                PassAccess::read("opt_ir_ssa_demands", opt_ssa_demands),
+                PassAccess::read("opt_ir_ssa_demand_resolution_in", input),
+                PassAccess::write("opt_ir_ssa_demand_resolution_out", output),
+                PassAccess::read_write("lowering_status", lowering_status),
+            ],
+        })?;
+    }
     graph.add_pass(PassDesc {
         name: "lir.opt.ssa.demand_aliases.validate",
         phase: CompilerPhase::Optimization,
@@ -7662,15 +7534,6 @@ fn lowering_compiler_graph_builder(
         ],
     })?;
     graph.add_pass(PassDesc {
-        name: "lir.opt.ssa.trivial_block_arguments.work_clear",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationSsaBlockArguments,
-        accesses: vec![
-            PassAccess::logical_write("opt_ir_ssa_work_state", opt_ssa_work_state),
-            PassAccess::logical_write("opt_ir_ssa_work_queue", opt_ssa_work_queue),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
         name: "lir.opt.ssa.trivial_block_arguments.init",
         phase: CompilerPhase::Optimization,
         dispatch_domain: ResourceDomain::OptimizationSsaBlockArguments,
@@ -7692,8 +7555,7 @@ fn lowering_compiler_graph_builder(
                 "opt_ir_ssa_block_argument_summary",
                 opt_ssa_block_argument_summary,
             ),
-            PassAccess::read_write("opt_ir_ssa_work_state", opt_ssa_work_state),
-            PassAccess::read_write("opt_ir_ssa_work_queue", opt_ssa_work_queue),
+            PassAccess::write("opt_ir_ssa_walk", opt_ssa_walk),
             PassAccess::read_write("lowering_status", lowering_status),
         ],
     })?;
@@ -7723,8 +7585,7 @@ fn lowering_compiler_graph_builder(
                 "opt_ir_ssa_block_argument_summary",
                 opt_ssa_block_argument_summary,
             ),
-            PassAccess::read_write("opt_ir_ssa_work_state", opt_ssa_work_state),
-            PassAccess::read_write("opt_ir_ssa_work_queue", opt_ssa_work_queue),
+            PassAccess::read_write("opt_ir_ssa_walk", opt_ssa_walk),
             PassAccess::read_write("lowering_status", lowering_status),
         ],
     })?;
@@ -8613,23 +8474,6 @@ fn lowering_compiler_graph_builder(
                 PassAccess::read("opt_ir_core", opt_core),
                 PassAccess::read("opt_ir_operands", opt_operands),
                 PassAccess::write("x86_value_by_semantic", x86_value_by_semantic.unwrap()),
-                PassAccess::write("x86_liveness_work_state", x86_liveness_work_state.unwrap()),
-                PassAccess::write("x86_liveness_work_queue", x86_liveness_work_queue.unwrap()),
-            ],
-        })?;
-        graph.add_pass(PassDesc {
-            name: "lir.x86.optimize.seed",
-            phase: target_phase,
-            dispatch_domain: ResourceDomain::SemanticInstructions,
-            accesses: vec![
-                PassAccess::read("opt_ir_block_total", opt_block_total),
-                PassAccess::read("opt_ir_control", opt_control),
-                PassAccess::read("opt_ir_reachable", opt_reachable),
-                PassAccess::read("opt_ir_total", opt_total),
-                PassAccess::read("opt_ir_core", opt_core),
-                PassAccess::read_write("x86_live_by_semantic", x86_live_by_semantic.unwrap()),
-                PassAccess::read_write("x86_liveness_work_state", x86_liveness_work_state.unwrap()),
-                PassAccess::read_write("x86_liveness_work_queue", x86_liveness_work_queue.unwrap()),
             ],
         })?;
         graph.add_pass(PassDesc {
@@ -8676,8 +8520,8 @@ fn lowering_compiler_graph_builder(
                     x86_last_use_by_semantic.unwrap(),
                 ),
                 PassAccess::read_write("x86_live_by_semantic", x86_live_by_semantic.unwrap()),
-                PassAccess::read_write("x86_liveness_work_state", x86_liveness_work_state.unwrap()),
-                PassAccess::read_write("x86_liveness_work_queue", x86_liveness_work_queue.unwrap()),
+                // Each lane reads back only the records it wrote in this pass.
+                PassAccess::write("x86_liveness_walk", x86_liveness_walk.unwrap()),
             ],
         })?;
         graph.add_pass(PassDesc {
@@ -9188,6 +9032,8 @@ fn lowering_compiler_graph_builder(
             PassAccess::read("semantic_lir_function_total", semantic_function_total),
             PassAccess::read("semantic_lir_functions", semantic_functions),
             PassAccess::read("semantic_lir_params", semantic_params),
+            // Inline expansion reads each callee's parameter records.
+            PassAccess::read("compact_hir_core", hir_core),
             PassAccess::read("x86_live_by_semantic", x86_live_by_semantic.unwrap()),
             PassAccess::read(
                 "x86_inline_info_by_function",
@@ -12149,19 +11995,7 @@ mod tests {
                 "codegen/lir/semantic/function_layout_collect",
             ),
             (
-                "lir.semantic.functions.layout.enum_variants",
-                "codegen/lir/semantic/function_layout_enum_variants",
-            ),
-            (
-                "lir.semantic.functions.layout.enum_fields",
-                "codegen/lir/semantic/function_layout_enum_fields",
-            ),
-            (
                 "lir.semantic.functions.layout.words",
-                "codegen/lir/semantic/function_layout_words",
-            ),
-            (
-                "lir.semantic.functions.layout.words.round",
                 "codegen/lir/semantic/function_layout_words",
             ),
             (
@@ -12352,6 +12186,10 @@ mod tests {
             (
                 "lir.opt.ssa.block_arguments.validate",
                 "codegen/lir/optimization/ssa_block_argument_validate",
+            ),
+            (
+                "lir.opt.ssa.demand_aliases.jump",
+                "codegen/lir/optimization/ssa_demand_resolve_aliases",
             ),
             (
                 "lir.opt.ssa.demand_aliases.resolve",
@@ -12738,7 +12576,6 @@ mod tests {
             ("lir.x86.analysis.clear", "codegen/lir/x86/analysis_clear"),
             ("lir.x86.analysis.index", "codegen/lir/x86/analysis_index"),
             ("lir.x86.optimize.init", "codegen/lir/x86/optimize_init"),
-            ("lir.x86.optimize.seed", "codegen/lir/x86/optimize_seed"),
             ("lir.x86.optimize.close", "codegen/lir/x86/optimize_close"),
             ("lir.x86.if_convert", "codegen/lir/x86/if_convert"),
             (

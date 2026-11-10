@@ -87,7 +87,7 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
             leaf_base: shape.leaf_base,
             level_start: 0,
             level_count: shape.leaf_base,
-            reserved0: 0,
+            levels: 0,
             reserved1: 0,
             reserved2: 0,
         },
@@ -102,9 +102,13 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
         shape.leaf_base.max(1),
     )?;
 
+    // Each dispatch reads one level, from the leaves up, and builds up to
+    // eight levels above it (03h_build_hir_decl_scope_tree.slang).
     let mut hir_decl_scope_tree_levels = Vec::new();
-    let mut level_start = shape.leaf_base / 2;
-    while level_start > 0 {
+    for (_, level_start, levels) in crate::gpu::scan::heap_build_levels(shape.leaf_base.max(1))
+        .into_iter()
+        .filter(|&(_, _, levels)| levels > 0)
+    {
         let level_params = uniform_from_val(
             device,
             &format!("type_check.visible.hir_decl_scope_tree.level.{level_start}"),
@@ -114,7 +118,7 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
                 leaf_base: shape.leaf_base,
                 level_start,
                 level_count: level_start,
-                reserved0: 0,
+                levels,
                 reserved1: 0,
                 reserved2: 0,
             },
@@ -126,13 +130,12 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
             VISIBLE_SCOPE_TREE_LEVEL.name,
             &passes.kernel("type_checker/visible/03h_build_hir_decl_scope_tree"),
             &level_params,
-            level_start.max(1),
+            level_start,
         )?;
         hir_decl_scope_tree_levels.push(VisibleDeclScopeTreeLevel {
             _params: level_params,
             operation,
         });
-        level_start /= 2;
     }
 
     let hir_names = ComputeOperation::indirect_spec(
