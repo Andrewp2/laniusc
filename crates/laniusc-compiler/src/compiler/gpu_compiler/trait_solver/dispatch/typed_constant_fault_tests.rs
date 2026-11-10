@@ -40,7 +40,7 @@ pub(super) struct ConstantAdmissionFault {
     observation: Option<Observation>,
 }
 pub(super) fn needs_normalization_boundary(packet: &GpuPacket) -> bool {
-    packet.constant_admission_fault.borrow().as_ref().is_some_and(|fault|
+    packet.constant_admission_fault.read().unwrap().as_ref().is_some_and(|fault|
         (matches!(fault.kind, FaultKind::ObserveFold | FaultKind::CorruptFoldedChild)
             && fault.observation.is_none()) || binding_recipe_needed(fault))
 }
@@ -49,7 +49,7 @@ fn binding_recipe_needed(fault: &ConstantAdmissionFault) -> bool {
         && !fault.binding_recipe_seeded
 }
 pub(super) fn needs_binding_recipe_boundary(packet: &GpuPacket) -> bool {
-    packet.constant_admission_fault.borrow().as_ref().is_some_and(binding_recipe_needed)
+    packet.constant_admission_fault.read().unwrap().as_ref().is_some_and(binding_recipe_needed)
 }
 
 fn table_words(gpu: &GpuTraitSolver, packet: &GpuPacket, table: usize,
@@ -101,7 +101,7 @@ fn row_word(packet: &GpuPacket, table: usize, row: u32, width: u32) -> Result<u3
 
 pub(super) fn inject_pending_substitution_fault(gpu: &GpuTraitSolver, packet: &GpuPacket,
     layout: &OutputLayout, progress: &proof::ProofProgress) -> Result<()> {
-    let mut armed = packet.constant_admission_fault.borrow_mut();
+    let mut armed = packet.constant_admission_fault.write().unwrap();
     let Some(fault) = armed.as_mut() else { return Ok(()); };
     if fault.observation.is_some() || !matches!(fault.kind,
         FaultKind::DuplicateBindingSpan | FaultKind::OrphanSubstitution |
@@ -221,7 +221,7 @@ fn reachable_nodes(root: [u32; 2], nodes: &[u32], edges: &[u32]) -> BTreeSet<u32
 
 pub(super) fn inspect_pending_normalization(gpu: &GpuTraitSolver, packet: &GpuPacket,
     layout: &OutputLayout, progress: &proof::ProofProgress) -> Result<()> {
-    let mut armed = packet.constant_admission_fault.borrow_mut();
+    let mut armed = packet.constant_admission_fault.write().unwrap();
     let Some(fault) = armed.as_mut() else { return Ok(()); };
     if fault.observation.is_some() { return Ok(()); }
     let pending = progress.pending(REQUESTS)?;
@@ -274,7 +274,7 @@ pub(super) fn inspect_pending_normalization(gpu: &GpuTraitSolver, packet: &GpuPa
 // The host copies shape/scalar/limbs; it never computes fitting or a result.
 pub(super) fn seed_binding_projection_recipe(gpu: &GpuTraitSolver, packet: &GpuPacket,
     progress: &proof::ProofProgress, work: Span) -> Result<()> {
-    let mut armed = packet.constant_admission_fault.borrow_mut();
+    let mut armed = packet.constant_admission_fault.write().unwrap();
     let fault = armed.as_mut().expect("binding ABI fixture must be armed");
     ensure!(binding_recipe_needed(fault), "binding ABI fixture seeded twice");
     let literal = fault.literal.expect("binding ABI fixture retains copied literal bits");
@@ -416,11 +416,11 @@ fn assert_failed_prefixes(gpu: &GpuTraitSolver, packet: &GpuPacket,
     assert!(packet.poisoned);
 }
 fn arm(packet: &GpuPacket, kind: FaultKind, literal: Option<[u32; 3]>) {
-    *packet.constant_admission_fault.borrow_mut() = Some(ConstantAdmissionFault {
+    *packet.constant_admission_fault.write().unwrap() = Some(ConstantAdmissionFault {
         kind, literal, binding_recipe_seeded: false, observation: None });
 }
 fn observation(packet: &GpuPacket) -> Observation {
-    packet.constant_admission_fault.borrow().as_ref().unwrap().observation.clone()
+    packet.constant_admission_fault.read().unwrap().as_ref().unwrap().observation.clone()
         .expect("fixture reached the requested pending-stage shape; no vacuous fault test")
 }
 

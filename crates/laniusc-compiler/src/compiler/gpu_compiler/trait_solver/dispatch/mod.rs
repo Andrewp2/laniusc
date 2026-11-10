@@ -155,11 +155,11 @@ pub(super) struct GpuPacket {
     poisoned: bool,
     /// Test-only: the next submission also re-uploads this retained input row.
     #[cfg(test)]
-    retained_input_rewrite: std::cell::Cell<Option<(usize, u32)>>,
+    retained_input_rewrite: std::sync::Mutex<Option<(usize, u32)>>,
     #[cfg(test)]
-    proof_admission_fault: std::cell::RefCell<Option<batch_tests::ProofAdmissionFault>>,
+    proof_admission_fault: std::sync::RwLock<Option<batch_tests::ProofAdmissionFault>>,
     #[cfg(test)]
-    constant_admission_fault: std::cell::RefCell<Option<typed_constant_fault_tests::ConstantAdmissionFault>>,
+    constant_admission_fault: std::sync::RwLock<Option<typed_constant_fault_tests::ConstantAdmissionFault>>,
 }
 impl GpuPacket {
     #[cfg(test)]
@@ -329,11 +329,11 @@ impl GpuTraitSolver {
             completed_input_offsets: [0; TABLE_COUNT],
             poisoned: false,
             #[cfg(test)]
-            retained_input_rewrite: std::cell::Cell::new(None),
+            retained_input_rewrite: std::sync::Mutex::new(None),
             #[cfg(test)]
-            proof_admission_fault: std::cell::RefCell::new(None),
+            proof_admission_fault: std::sync::RwLock::new(None),
             #[cfg(test)]
-            constant_admission_fault: std::cell::RefCell::new(None),
+            constant_admission_fault: std::sync::RwLock::new(None),
         })
     }
 
@@ -476,8 +476,8 @@ impl GpuTraitSolver {
         )?;
         record(packet, &mut commands, 48, plan.obligations)?;
         #[cfg(test)]
-        if packet.constant_admission_fault.borrow().is_some()
-            || packet.proof_admission_fault.borrow().is_some()
+        if packet.constant_admission_fault.read().unwrap().is_some()
+            || packet.proof_admission_fault.read().unwrap().is_some()
         {
             return self.run_paused_solver_waves(packet, layout, plan, submission, commands);
         }

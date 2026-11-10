@@ -606,7 +606,7 @@ pub(super) fn rewrite_retained_input(
     layout: &OutputLayout,
     mut submission: Submission,
 ) -> Result<Submission> {
-    if let Some((table, row)) = packet.retained_input_rewrite.take() {
+    if let Some((table, row)) = packet.retained_input_rewrite.lock().unwrap().take() {
         ensure!(row < packet.completed_suffix_counts[table], "rewrite needs a retained row");
         let words = packet.packet.tables.row(table, row)?.to_vec();
         let first_word = add(layout.input_offsets[table], mul(row, WIDTHS[table], "row")?, "row word")?;
@@ -653,7 +653,7 @@ fn gpu_batch_refuses_rewritten_retained_assumption_row() {
     // The authentic proof of another goal, as in the wrong-goal test above, but
     // as a rewrite of the retained row.
     packet.packet.tables.row_mut(14, assumption).unwrap()[3] = other;
-    packet.retained_input_rewrite.set(Some((14, assumption)));
+    *packet.retained_input_rewrite.lock().unwrap() = Some((14, assumption));
     let error = gpu
         .check(&mut packet)
         .expect_err("a rewritten retained row must be refused");
@@ -699,7 +699,7 @@ pub(super) fn inject_pending_proof_fault(
     layout: &OutputLayout,
     progress: &proof::ProofProgress,
 ) -> anyhow::Result<()> {
-    let mut armed = packet.proof_admission_fault.borrow_mut();
+    let mut armed = packet.proof_admission_fault.write().unwrap();
     let Some(fault) = armed.as_mut() else {
         return Ok(());
     };
@@ -842,7 +842,7 @@ fn gpu_batch_rejects_corrupted_pending_assumption_proofs_before_commit() {
     ] {
         let mut packet = gpu.new_packet().expect("fresh fault-case arena");
         append_originals(&mut packet);
-        *packet.proof_admission_fault.borrow_mut() = Some(ProofAdmissionFault {
+        *packet.proof_admission_fault.write().unwrap() = Some(ProofAdmissionFault {
             kind,
             observation: None,
         });
@@ -852,7 +852,7 @@ fn gpu_batch_rejects_corrupted_pending_assumption_proofs_before_commit() {
         };
         let observation = packet
             .proof_admission_fault
-            .borrow()
+            .read().unwrap()
             .as_ref()
             .unwrap()
             .observation

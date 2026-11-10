@@ -6860,8 +6860,8 @@ fn main() {
         }),
         "path manifest should include core::result from the stdlib root"
     );
-    // The entry, core::result, core::cmp and core::panic.
-    assert_eq!(manifest.files.len(), 4);
+    // The entry, core::result, core::cmp, core::function and core::panic.
+    assert_eq!(manifest.files.len(), 5);
     assert!(
         runtime_bound_api_diagnostic_info("core::result::or").is_none(),
         "core::result::or is a source-level helper and must not claim a runtime binding"
@@ -6979,8 +6979,9 @@ fn main() {
         }),
         "path manifest should include core::result from the stdlib root"
     );
-    // The entry, core::option, core::result, core::cmp and core::panic.
-    assert_eq!(manifest.files.len(), 5);
+    // The entry, core::option, core::result, core::cmp, core::function and
+    // core::panic.
+    assert_eq!(manifest.files.len(), 6);
     for helper_name in [
         "core::option::contains",
         "core::result::contains",
@@ -7040,8 +7041,8 @@ fn main() {
         }),
         "path manifest should include core::result from the stdlib root"
     );
-    // The entry, core::result, core::cmp and core::panic.
-    assert_eq!(manifest.files.len(), 4);
+    // The entry, core::result, core::cmp, core::function and core::panic.
+    assert_eq!(manifest.files.len(), 5);
     for helper_name in ["core::result::and"] {
         assert!(
             runtime_bound_api_diagnostic_info(helper_name).is_none(),

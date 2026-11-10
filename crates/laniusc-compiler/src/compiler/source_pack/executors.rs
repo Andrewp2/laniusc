@@ -283,7 +283,7 @@ pub trait PagedArtifactBuildExecutor: ArtifactBuildExecutor {
 
 /// Boxed future result type used by async source-pack executor traits.
 pub type SourcePackBoxFuture<'a, T> =
-    std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, CompileError>> + 'a>>;
+    std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, CompileError>> + Send + 'a>>;
 
 /// Async variant of `PagedArtifactBuildExecutor`.
 ///
