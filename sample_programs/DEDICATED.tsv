@@ -2,6 +2,7 @@ sample	test
 bitset_prime_sieve	tests/stdlib_bitset_execution.rs
 boolean_window_checksum	tests/stdlib_foundation_execution.rs
 byte_frequency_report	tests/stdlib_legacy_collection_migration_execution.rs
+cbor_to_json	tests/extended_cbor_stream_execution.rs
 character_inventory	tests/stdlib_char_array_literal_execution.rs
 checked_window_checksum	tests/compiler_generic_types_execution.rs
 checksum	tests/extended_cli_execution.rs
@@ -10,6 +11,7 @@ count_digit_bytes	tests/stdlib_legacy_collection_migration_execution.rs
 count_distinct_bytes	tests/stdlib_legacy_collection_migration_execution.rs
 csv_normalize	tests/extended_csv_execution.rs
 csv_report	tests/library_csv_report_execution.rs
+csv_to_json	tests/extended_json_stream_execution.rs
 file_concat	tests/stdlib_owned_file_execution.rs
 first_valid_reading	tests/stdlib_option_scalar_execution.rs
 floating_window_total	tests/stdlib_comparison_execution.rs
@@ -17,7 +19,9 @@ fnv1a_stdin	tests/stdlib_io_byte_execution.rs
 halfword_window_total	tests/stdlib_foundation_execution.rs
 hex_packet_checksum	tests/stdlib_foundation_execution.rs
 hex_to_decimal	tests/stdlib_io_byte_execution.rs
+jq_lite	tests/extended_json_stream_execution.rs
 json_normalize	tests/extended_json_execution.rs
+msgpack_json	tests/extended_msgpack_execution.rs
 narrow_byte_report	tests/stdlib_narrow_execution.rs
 normalize_words	tests/stdlib_text_composition_execution.rs
 optional_reading_summary	tests/stdlib_generic_predicates_execution.rs
@@ -56,8 +60,8 @@ utf16le_scalar_count	tests/stdlib_utf16_execution.rs
 utf8_owned_line	tests/stdlib_legacy_collection_migration_execution.rs
 utf8_text_report	tests/stdlib_utf8_bytes_execution.rs
 utf8_to_utf16_summary	tests/stdlib_transcode_execution.rs
-varint_frame_sum	tests/stdlib_varint_execution.rs
-varint_signed_frame_sum	tests/stdlib_varint_signed_execution.rs
+varint_frame_sum	tests/stdlib_varint_frames_execution.rs
+varint_signed_frame_sum	tests/stdlib_varint_frames_execution.rs
 vector_byte_checksum	tests/stdlib_foundation_execution.rs
 vector_edit_checksum	tests/stdlib_checked_sample_migration_execution.rs
 vector_halfword_checksum	tests/stdlib_checked_sample_migration_execution.rs
