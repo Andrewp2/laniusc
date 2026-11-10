@@ -1055,6 +1055,20 @@ impl GpuTypeChecker {
         artifact_operation.record(encoder)?;
         artifact_length_readback.record(encoder);
         status_readback.record(encoder);
+        // The artifact's length is known only after the job ran. Copy as
+        // many bytes as this unit's last artifact had, with some room, in
+        // this submission, so `finish_semantic_interface` usually needs no
+        // round trip of its own.
+        if let Some(expected) = expected_artifact_bytes(library_id, unit_id)
+            && let Ok(region) = crate::gpu::readback::ReadbackRegion::from_buffer(
+                &artifact_words,
+                0,
+                expected.min(artifact_words.byte_size) / 4 * 4,
+                "semantic-interface artifact",
+            )
+        {
+            artifact_readback.record_prefetch(encoder, &[region]);
+        }
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "semantic_interface.artifact");
         }
@@ -2092,10 +2106,15 @@ impl GpuTypeChecker {
                 recorded.artifact_capacity as f64 / byte_len.max(1) as f64,
             );
         }
-        let bytes = recorded.artifact_readback.read(
+        remember_artifact_bytes(
+            recorded.expected_library_id,
+            recorded.expected_unit_id,
+            byte_len,
+        );
+        let bytes = recorded.artifact_readback.read_buffer(
             device,
             queue,
-            &recorded._artifact_words.buffer,
+            &recorded._artifact_words,
             0,
             byte_len,
             "semantic-interface artifact",
@@ -2115,6 +2134,30 @@ impl GpuTypeChecker {
         }
         Ok(artifact)
     }
+}
+
+/// The byte length of each unit's last exported artifact, by library and
+/// unit id. A job copies about that many bytes for the host while it runs.
+static LAST_ARTIFACT_BYTES: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<(u32, u32), usize>>,
+> = std::sync::LazyLock::new(Default::default);
+
+/// The artifact bytes a job of this unit should copy ahead of its length:
+/// the unit's last length plus an eighth and 1 KiB, so an ordinary edit
+/// still fits.
+fn expected_artifact_bytes(library_id: u32, unit_id: u32) -> Option<usize> {
+    let last = *LAST_ARTIFACT_BYTES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(&(library_id, unit_id))?;
+    Some((last + last / 8 + 1024).next_multiple_of(4))
+}
+
+fn remember_artifact_bytes(library_id: u32, unit_id: u32, byte_len: usize) {
+    LAST_ARTIFACT_BYTES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .insert((library_id, unit_id), byte_len);
 }
 
 /// The smallest step a retained artifact allocation grows by.

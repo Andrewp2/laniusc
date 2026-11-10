@@ -114,6 +114,10 @@ pub(crate) struct GpuX86ObjectStage {
     metadata_readback_copies: Vec<CopyBufferOperation>,
     metadata_readback: LaniusBuffer<u8>,
     payload_readback: PagedReadback,
+    /// The byte lengths of the last object's payload regions, in the order
+    /// of [`Self::payload_regions`]. A job copies about that much for the
+    /// host while it runs.
+    last_payload_bytes: std::sync::Mutex<Option<[usize; 7]>>,
 }
 
 impl GpuX86ObjectStage {
@@ -505,6 +509,7 @@ impl GpuX86ObjectStage {
             metadata_readback_copies,
             metadata_readback,
             payload_readback,
+            last_payload_bytes: std::sync::Mutex::new(None),
         })
     }
 
@@ -547,7 +552,69 @@ impl GpuX86ObjectStage {
         for copy in &self.metadata_readback_copies {
             copy.record(encoder);
         }
+        // The payload's lengths are known only after the job ran. Copy as
+        // much of each region as the last object had, with some room, in this
+        // submission, so `finish` usually needs no round trip of its own.
+        // Without a last object this discards a prefetch no job read.
+        let expected = *self
+            .last_payload_bytes
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let regions = expected.and_then(|last| {
+            let capacities = self.payload_capacities();
+            let expected = std::array::from_fn(|index| {
+                (last[index] + last[index] / 8 + 256)
+                    .next_multiple_of(4)
+                    .min(capacities[index] / 4 * 4)
+            });
+            self.payload_regions(expected).ok()
+        });
+        self.payload_readback
+            .record_prefetch(encoder, regions.as_ref().map_or(&[], |regions| &regions[..]));
         Ok(())
+    }
+
+    /// The byte capacity of each payload region.
+    fn payload_capacities(&self) -> [usize; 7] {
+        [
+            self.relocations.byte_size,
+            self.runtime_relocations.byte_size,
+            self.undefined_symbols.byte_size,
+            self.definitions.byte_size,
+            self.text_words.byte_size,
+            self.rodata_words.byte_size,
+            self.call_hir_by_symbol.byte_size,
+        ]
+    }
+
+    /// The object's payload as readback regions of the given byte lengths:
+    /// relocations, runtime relocations, undefined symbols, definitions,
+    /// text, rodata and the call HIR identity of each undefined symbol.
+    fn payload_regions(&self, bytes: [usize; 7]) -> Result<[ReadbackRegion<'_>; 7]> {
+        Ok([
+            ReadbackRegion::from_buffer(&self.relocations, 0, bytes[0], "x86 object relocations")?,
+            ReadbackRegion::from_buffer(
+                &self.runtime_relocations,
+                0,
+                bytes[1],
+                "x86 object runtime relocations",
+            )?,
+            ReadbackRegion::from_buffer(
+                &self.undefined_symbols,
+                0,
+                bytes[2],
+                "x86 object undefined symbols",
+            )?,
+            ReadbackRegion::from_buffer(&self.definitions, 0, bytes[3], "x86 object definitions")?,
+            ReadbackRegion::from_buffer(&self.text_words, 0, bytes[4], "x86 object text")?,
+            ReadbackRegion::from_buffer(&self.rodata_words, 0, bytes[5], "x86 object rodata")?,
+            ReadbackRegion::from_buffer(
+                &self.call_hir_by_symbol,
+                0,
+                bytes[6],
+                "x86 object call HIR identities",
+            )?,
+        ])
     }
 
     pub(crate) fn finish(
@@ -604,6 +671,19 @@ impl GpuX86ObjectStage {
             );
         }
 
+        let payload_bytes = [
+            relocation_count * 32,
+            runtime_relocation_count * 32,
+            symbol_count * 16,
+            definition_count * 32,
+            text_len,
+            rodata_len,
+            symbol_count * 4,
+        ];
+        *self
+            .last_payload_bytes
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(payload_bytes);
         let [
             relocation_bytes,
             runtime_relocation_bytes,
@@ -617,45 +697,7 @@ impl GpuX86ObjectStage {
             .read_regions(
                 device,
                 queue,
-                &[
-                    ReadbackRegion::from_buffer(
-                        &self.relocations,
-                        0,
-                        relocation_count * 32,
-                        "x86 object relocations",
-                    )?,
-                    ReadbackRegion::from_buffer(
-                        &self.runtime_relocations,
-                        0,
-                        runtime_relocation_count * 32,
-                        "x86 object runtime relocations",
-                    )?,
-                    ReadbackRegion::from_buffer(
-                        &self.undefined_symbols,
-                        0,
-                        symbol_count * 16,
-                        "x86 object undefined symbols",
-                    )?,
-                    ReadbackRegion::from_buffer(
-                        &self.definitions,
-                        0,
-                        definition_count * 32,
-                        "x86 object definitions",
-                    )?,
-                    ReadbackRegion::from_buffer(&self.text_words, 0, text_len, "x86 object text")?,
-                    ReadbackRegion::from_buffer(
-                        &self.rodata_words,
-                        0,
-                        rodata_len,
-                        "x86 object rodata",
-                    )?,
-                    ReadbackRegion::from_buffer(
-                        &self.call_hir_by_symbol,
-                        0,
-                        symbol_count * 4,
-                        "x86 object call HIR identities",
-                    )?,
-                ],
+                &self.payload_regions(payload_bytes)?,
                 "x86 object payload readback",
             )?
             .try_into()

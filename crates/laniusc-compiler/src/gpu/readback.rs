@@ -17,8 +17,19 @@ pub(crate) struct PagedReadback {
     staging: LaniusBuffer<u8>,
     /// The read plan replay of one decoder run, if one is running.
     replay: std::sync::Mutex<Option<plan::PlanReplay>>,
+    /// Copies into the staging page that a job recorded with its own
+    /// commands ([`PagedReadback::record_prefetch`]), until the next read.
+    prefetch: std::sync::Mutex<Option<Vec<PrefetchedRegion>>>,
     #[cfg(test)]
     map_wait_override: Option<ReadbackMapWait>,
+}
+
+/// One prefetched range and where its copy starts in the staging page.
+struct PrefetchedRegion {
+    source: wgpu::Buffer,
+    source_offset: u64,
+    byte_len: usize,
+    page_offset: usize,
 }
 
 #[cfg(test)]
@@ -205,6 +216,7 @@ impl PagedReadback {
         Self {
             staging: readback_bytes(device, label, page_bytes, page_bytes),
             replay: std::sync::Mutex::new(None),
+            prefetch: std::sync::Mutex::new(None),
             #[cfg(test)]
             map_wait_override: None,
         }
@@ -214,6 +226,7 @@ impl PagedReadback {
         Self {
             staging,
             replay: std::sync::Mutex::new(None),
+            prefetch: std::sync::Mutex::new(None),
             #[cfg(test)]
             map_wait_override: None,
         }
@@ -239,6 +252,114 @@ impl PagedReadback {
         Ok(mapping)
     }
 
+    /// Records copies of `regions` into the staging page with a job's own
+    /// commands, for a read whose lengths the job reports only afterwards.
+    ///
+    /// The caller passes the lengths it expects. The next read is answered
+    /// from these copies, with no submission of its own, when it asks for the
+    /// same ranges in the same order and each is at most as long as its copy.
+    /// Any other read, and the next call of this function, discards them, so
+    /// a wrong expectation costs only the wasted copy.
+    ///
+    /// The copies must be recorded after the last command that writes the
+    /// regions, and the encoder must be submitted before the read. Records
+    /// nothing when a length is not whole words or the regions do not fit
+    /// one page.
+    pub(crate) fn record_prefetch(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        regions: &[ReadbackRegion<'_>],
+    ) {
+        let mut prefetch = self.prefetch.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        *prefetch = None;
+        let total = regions.iter().map(|region| region.byte_len).sum::<usize>();
+        if total == 0
+            || total > self.staging.byte_size
+            || regions.iter().any(|region| region.byte_len % 4 != 0)
+        {
+            return;
+        }
+        super::passes_core::flush_deferred_compute(encoder);
+        let mut page_offset = 0usize;
+        let mut prefetched = Vec::with_capacity(regions.len());
+        for region in regions {
+            if region.byte_len != 0 {
+                encoder.copy_buffer_to_buffer(
+                    region.source,
+                    region.source_offset,
+                    &self.staging.buffer,
+                    page_offset as u64,
+                    region.byte_len as u64,
+                );
+            }
+            prefetched.push(PrefetchedRegion {
+                source: region.source.clone(),
+                source_offset: region.source_offset,
+                byte_len: region.byte_len,
+                page_offset,
+            });
+            page_offset += region.byte_len;
+        }
+        *prefetch = Some(prefetched);
+    }
+
+    /// Takes the recorded prefetch and returns each requested range's start
+    /// in the staging page if the prefetch holds all of them.
+    fn take_prefetch<'a>(
+        &self,
+        requests: impl ExactSizeIterator<Item = (&'a wgpu::Buffer, u64, usize)>,
+    ) -> Option<Vec<usize>> {
+        let prefetched = self
+            .prefetch
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()?;
+        if prefetched.len() != requests.len() {
+            return None;
+        }
+        prefetched
+            .iter()
+            .zip(requests)
+            .map(|(held, (source, source_offset, byte_len))| {
+                (held.source == *source
+                    && held.source_offset == source_offset
+                    && byte_len <= held.byte_len)
+                    .then_some(held.page_offset)
+            })
+            .collect()
+    }
+
+    /// Hands `sink` each requested range from the prefetched staging page:
+    /// (request index, bytes). The page was copied by the job's own
+    /// submission, so this maps it without submitting.
+    fn read_prefetched(
+        &self,
+        device: &wgpu::Device,
+        page_offsets: &[usize],
+        byte_lens: impl Iterator<Item = usize>,
+        label: &str,
+        mut sink: impl FnMut(usize, &[u8]),
+    ) -> Result<()> {
+        let ranges = page_offsets
+            .iter()
+            .zip(byte_lens)
+            .map(|(&offset, len)| offset..offset + len)
+            .collect::<Vec<_>>();
+        let end = ranges.iter().map(|range| range.end).max().unwrap_or(0).next_multiple_of(4);
+        if end == 0 {
+            return Ok(());
+        }
+        let slice = self.staging.buffer.slice(..end as u64);
+        let mapping = self.map_staging(device, &slice, label)?;
+        let mapped = slice.get_mapped_range();
+        for (index, range) in ranges.into_iter().enumerate() {
+            sink(index, &mapped[range]);
+        }
+        drop(mapped);
+        drop(mapping);
+        Ok(())
+    }
+
     pub(crate) fn read(
         &self,
         device: &wgpu::Device,
@@ -254,22 +375,15 @@ impl PagedReadback {
             ));
         }
         let mut output = Vec::with_capacity(byte_len);
-        while output.len() < byte_len {
-            let logical_len = (byte_len - output.len()).min(self.staging.byte_size);
-            let copy_len = logical_len.next_multiple_of(4);
-            let offset = source_offset + output.len() as u64;
-            let mut encoder = device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
-            encoder.copy_buffer_to_buffer(source, offset, &self.staging.buffer, 0, copy_len as u64);
-            queue.submit(Some(encoder.finish()));
-
-            let slice = self.staging.buffer.slice(..copy_len as u64);
-            let mapping = self.map_staging(device, &slice, label)?;
-            let mapped = slice.get_mapped_range();
-            output.extend_from_slice(&mapped[..logical_len]);
-            drop(mapped);
-            drop(mapping);
-        }
+        let region = ReadbackRegion {
+            source,
+            source_offset,
+            byte_len,
+            allocation: None,
+        };
+        self.read_regions_with(device, queue, &[region], label, |_, _, bytes| {
+            output.extend_from_slice(bytes)
+        })?;
         Ok(output)
     }
 
@@ -485,8 +599,21 @@ impl PagedReadback {
         queue: &wgpu::Queue,
         regions: &[ReadbackRegion<'_>],
         label: &str,
-        sink: impl FnMut(usize, usize, &[u8]),
+        mut sink: impl FnMut(usize, usize, &[u8]),
     ) -> Result<()> {
+        if let Some(page_offsets) = self.take_prefetch(
+            regions
+                .iter()
+                .map(|region| (region.source, region.source_offset, region.byte_len)),
+        ) {
+            return self.read_prefetched(
+                device,
+                &page_offsets,
+                regions.iter().map(|region| region.byte_len),
+                label,
+                |index, bytes| sink(index, 0, bytes),
+            );
+        }
         // Sparse fact readers pass thousands of regions; report where their
         // time goes (copy encoding vs. the GPU round trip).
         let timing = regions.len() >= 32
@@ -533,6 +660,8 @@ impl PagedReadback {
         label: &str,
         mut sink: impl FnMut(usize, usize, &[u8]),
     ) -> Result<CopyStats> {
+        // These copies overwrite the staging page a prefetch filled.
+        self.prefetch.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take();
         let mut stats = CopyStats::default();
         let mut first_encoder = Some(first_encoder);
         let mut consumed = vec![0usize; regions.len()];
@@ -740,6 +869,51 @@ mod lifecycle_tests {
         let _ = fail_pending_map(device, slice, label);
         slice.buffer().unmap();
         Err(anyhow!("injected completed-map failure"))
+    }
+
+    #[test]
+    fn gpu_paged_readback_answers_a_covered_read_from_its_prefetch() {
+        let gpu = device::global();
+        let source = source(&gpu.device);
+        let readback = PagedReadback::new(&gpu.device, "readback prefetch page", 16);
+        let regions = |lens: [usize; 2]| {
+            [
+                ReadbackRegion::from_buffer(&source, 0, lens[0], "first region").unwrap(),
+                ReadbackRegion::from_buffer(&source, 8, lens[1], "second region").unwrap(),
+            ]
+        };
+        // Stands for a job: its commands end with the prefetch copies.
+        let run_job = |fill: u8, lens: [usize; 2]| {
+            source.write(&gpu.queue, 0, &[fill; 16]);
+            let mut encoder = gpu.device.create_command_encoder(&Default::default());
+            readback.record_prefetch(&mut encoder, &regions(lens));
+            gpu.queue.submit(Some(encoder.finish()));
+        };
+        let read = |lens: [usize; 2]| {
+            readback
+                .read_regions(&gpu.device, &gpu.queue, &regions(lens), "prefetched read")
+                .unwrap()
+        };
+
+        // The source changes after the job. A covered read returns the bytes
+        // the job copied, so it made no copy of its own.
+        run_job(1, [8, 8]);
+        source.write(&gpu.queue, 0, &[2; 16]);
+        assert_eq!(read([6, 3]), [vec![1; 6], vec![1; 3]]);
+        // A prefetch answers one read.
+        assert_eq!(read([6, 3]), [vec![2; 6], vec![2; 3]]);
+
+        // A read longer than a copy is read from the GPU.
+        run_job(3, [4, 4]);
+        source.write(&gpu.queue, 0, &[4; 16]);
+        assert_eq!(read([6, 3]), [vec![4; 6], vec![4; 3]]);
+
+        // Regions larger than the page record no prefetch, and the earlier
+        // job's prefetch is gone.
+        run_job(5, [8, 8]);
+        run_job(6, [16, 8]);
+        source.write(&gpu.queue, 0, &[7; 16]);
+        assert_eq!(read([8, 8]), [vec![7; 8], vec![7; 8]]);
     }
 
     #[test]
