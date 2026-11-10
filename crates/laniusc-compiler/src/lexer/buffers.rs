@@ -41,6 +41,10 @@ pub struct GpuBuffers {
 
     /// Uploaded source bytes, padded to a word boundary.
     pub in_bytes: LaniusBuffer<u8>,
+    /// Host copy of the bytes `in_bytes` holds from its start after the last
+    /// source-pack upload; empty when they are unknown. A job compares its
+    /// pack with it and uploads only the range that differs.
+    pub(in crate::lexer) resident_source_bytes: Vec<u8>,
     /// Packed DFA transition and emit table, two `u16` entries per `u32`.
     pub next_emit: LaniusBuffer<u32>,
     /// Packed byte-indexed DFA transition table, four states per `u32`.
@@ -344,6 +348,7 @@ impl GpuBuffers {
             params,
 
             in_bytes,
+            resident_source_bytes: Vec::new(),
             next_emit,
             next_u8,
             token_map,

@@ -43,27 +43,63 @@ impl SourceFileMetadata {
     }
 }
 
-fn build_source_pack<S: AsRef<str>>(sources: &[S]) -> Result<(Vec<u8>, SourceFileMetadata)> {
-    let file_count = u32::try_from(sources.len())
-        .map_err(|_| anyhow!("source pack has too many source files"))?;
-    let mut bytes = Vec::new();
-    let mut starts = Vec::with_capacity(file_count as usize);
-    let mut lens = Vec::with_capacity(file_count as usize);
+/// The start and length of each source in the pack, and the pack's length.
+fn source_pack_metadata<S: AsRef<str>>(sources: &[S]) -> Result<(u32, SourceFileMetadata)> {
+    u32::try_from(sources.len()).map_err(|_| anyhow!("source pack has too many source files"))?;
+    let mut starts = Vec::with_capacity(sources.len());
+    let mut lens = Vec::with_capacity(sources.len());
     let mut total_len = 0u32;
 
     for (file_i, source) in sources.iter().enumerate() {
-        let source_bytes = source.as_ref().as_bytes();
-        let len = u32::try_from(source_bytes.len())
+        let len = u32::try_from(source.as_ref().len())
             .map_err(|_| anyhow!("source file {file_i} is too large to lex"))?;
         starts.push(total_len);
         lens.push(len);
-        bytes.extend_from_slice(source_bytes);
         total_len = total_len
             .checked_add(len)
             .ok_or_else(|| anyhow!("source pack byte length exceeds lexer capacity"))?;
     }
 
-    Ok((bytes, SourceFileMetadata { starts, lens }))
+    Ok((total_len, SourceFileMetadata { starts, lens }))
+}
+
+/// Makes `resident` the pack of `sources` padded with zeros to `aligned_len`
+/// bytes, and returns the word-aligned byte range that changed, if any.
+///
+/// `resident` holds what the GPU source buffer holds from its start, so the
+/// returned range is the only part a job has to upload. A file whose bytes
+/// are already in place is compared and left alone. Bytes past the previous
+/// length are unknown on the GPU and always count as changed.
+fn update_resident_source_pack<S: AsRef<str>>(
+    resident: &mut Vec<u8>,
+    sources: &[S],
+    starts: &[u32],
+    aligned_len: usize,
+) -> Option<std::ops::Range<usize>> {
+    let mut changed: Option<std::ops::Range<usize>> =
+        (aligned_len > resident.len()).then(|| resident.len()..aligned_len);
+    let mut mark = |range: std::ops::Range<usize>| {
+        changed = Some(match changed.take() {
+            Some(old) => old.start.min(range.start)..old.end.max(range.end),
+            None => range,
+        });
+    };
+    resident.resize(aligned_len, 0);
+    let mut text_end = 0usize;
+    for (source, &start) in sources.iter().zip(starts) {
+        let bytes = source.as_ref().as_bytes();
+        let start = start as usize;
+        text_end = start + bytes.len();
+        if resident[start..text_end] != *bytes {
+            resident[start..text_end].copy_from_slice(bytes);
+            mark(start..text_end);
+        }
+    }
+    if resident[text_end..].iter().any(|&byte| byte != 0) {
+        resident[text_end..].fill(0);
+        mark(text_end..aligned_len);
+    }
+    changed.map(|range| range.start / 4 * 4..range.end.next_multiple_of(4))
 }
 
 impl GpuLexer {
@@ -193,9 +229,7 @@ impl GpuLexer {
         skip_kinds: [u32; 4],
     ) -> Result<std::sync::MutexGuard<'a, Option<buffers::GpuBuffers>>> {
         let _span = crate::gpu::trace::HostSpan::new("host.lexer", "lex.source-pack.prepare_buffers");
-        let (input_bytes, source_files) = build_source_pack(sources)?;
-        let n = u32::try_from(input_bytes.len())
-            .map_err(|_| anyhow!("source pack byte length exceeds lexer capacity"))?;
+        let (n, source_files) = source_pack_metadata(sources)?;
         let aligned_len = align_to_word(n);
         let source_file_capacity = source_files.capacity();
 
@@ -269,7 +303,7 @@ impl GpuLexer {
                 self.raise_source_pack_capacity_floor(new_bytes, new_files);
                 self.write_source_pack_lex_inputs(
                     &mut new_bufs,
-                    &input_bytes,
+                    sources,
                     &source_files,
                     n,
                     nb_dfa,
@@ -282,7 +316,7 @@ impl GpuLexer {
             } else {
                 self.write_source_pack_lex_inputs(
                     bufs,
-                    &input_bytes,
+                    sources,
                     &source_files,
                     n,
                     nb_dfa,
@@ -313,10 +347,10 @@ impl GpuLexer {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn write_source_pack_lex_inputs(
+    fn write_source_pack_lex_inputs<S: AsRef<str>>(
         &self,
         bufs: &mut buffers::GpuBuffers,
-        input_bytes: &[u8],
+        sources: &[S],
         source_files: &SourceFileMetadata,
         n: u32,
         nb_dfa: u32,
@@ -324,13 +358,29 @@ impl GpuLexer {
         start_state: u32,
         skip_kinds: [u32; 4],
     ) {
-        self.write_input_bytes(bufs, input_bytes, n);
+        // The source buffer keeps the previous job's bytes: no pass writes
+        // it. Upload only the range this job's pack changes.
+        let changed = update_resident_source_pack(
+            &mut bufs.resident_source_bytes,
+            sources,
+            &source_files.starts,
+            align_to_word(n) as usize,
+        );
+        if let Some(changed) = changed {
+            self.queue.write_buffer(
+                &bufs.in_bytes,
+                changed.start as u64,
+                &bufs.resident_source_bytes[changed],
+            );
+        }
         self.write_lex_params(bufs, n, start_state, skip_kinds);
         self.write_source_pack_metadata(bufs, source_files);
         set_runtime_sizes(bufs, n, nb_dfa, nb_sum);
     }
 
-    fn write_input_bytes(&self, bufs: &buffers::GpuBuffers, input_bytes: &[u8], n: u32) {
+    fn write_input_bytes(&self, bufs: &mut buffers::GpuBuffers, input_bytes: &[u8], n: u32) {
+        // This write replaces what the source-pack path knows the buffer holds.
+        bufs.resident_source_bytes.clear();
         if n == 0 {
             return;
         }
@@ -440,7 +490,66 @@ mod tests {
         SOURCE_FILE_CAPACITY_GRANULARITY,
         capacity_bucket,
         grown_resident_capacity,
+        source_pack_metadata,
+        update_resident_source_pack,
     };
+
+    /// Updates `resident` for `sources` and returns the changed range.
+    fn update(resident: &mut Vec<u8>, sources: &[&str]) -> Option<std::ops::Range<usize>> {
+        let (n, files) = source_pack_metadata(sources).unwrap();
+        let aligned = (n as usize).next_multiple_of(4);
+        let changed = update_resident_source_pack(resident, sources, &files.starts, aligned);
+        let mut expected = sources.concat().into_bytes();
+        expected.resize(aligned, 0);
+        assert_eq!(*resident, expected);
+        changed
+    }
+
+    #[test]
+    fn resident_source_pack_uploads_everything_once_then_nothing() {
+        let mut resident = Vec::new();
+        assert_eq!(update(&mut resident, &["fn a() {}", "fn bb() {}"]), Some(0..20));
+        assert_eq!(update(&mut resident, &["fn a() {}", "fn bb() {}"]), None);
+    }
+
+    #[test]
+    fn resident_source_pack_uploads_one_edited_file_of_the_same_length() {
+        let mut resident = Vec::new();
+        update(&mut resident, &["aaaaaaaa", "bbbbbbbb", "cccccccc"]);
+        assert_eq!(
+            update(&mut resident, &["aaaaaaaa", "bbbbbbbX", "cccccccc"]),
+            Some(8..16)
+        );
+    }
+
+    #[test]
+    fn resident_source_pack_uploads_from_a_length_change_to_the_end() {
+        let mut resident = Vec::new();
+        update(&mut resident, &["aaaaaaaa", "bbbbbbbb", "cccccccc"]);
+        // The second file grows by one byte, so the third moves.
+        assert_eq!(
+            update(&mut resident, &["aaaaaaaa", "bbbbbbbbb", "cccccccc"]),
+            Some(8..28)
+        );
+        // It shrinks by two: its remaining bytes are in place, the third
+        // file moves, and the pack's padding is zero again.
+        assert_eq!(
+            update(&mut resident, &["aaaaaaaa", "bbbbbbb", "cccccccc"]),
+            Some(12..24)
+        );
+    }
+
+    #[test]
+    fn resident_source_pack_uploads_bytes_past_the_known_length() {
+        let mut resident = Vec::new();
+        update(&mut resident, &["aaaa"]);
+        // The GPU bytes past the first pack are unknown, so a longer pack
+        // uploads them even where they are zero.
+        assert_eq!(update(&mut resident, &["aaaa", "\0\0\0\0"]), Some(4..8));
+        // An unknown buffer (after a single-source upload) uploads all of it.
+        resident.clear();
+        assert_eq!(update(&mut resident, &["aaaa", "\0\0\0\0"]), Some(0..8));
+    }
 
     #[test]
     fn source_capacity_buckets_cover_ordinary_edits() {
