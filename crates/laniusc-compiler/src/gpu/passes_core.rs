@@ -507,6 +507,15 @@ pub(crate) fn record_compiler_operation(label: &str) {
     }
 }
 
+/// `LANIUS_TRACE=operations` also prints the bytes each raw buffer clear
+/// writes. A clear has no GPU timestamp of its own, so its time is charged to
+/// the next dispatch.
+pub(crate) fn trace_clear(label: &str, bytes: u64) {
+    if crate::options::get().trace.operations {
+        eprintln!("[lanius-clear] {label} {bytes}");
+    }
+}
+
 /// Debug bisection for GPU hangs: `LANIUS_TRACE=operations` prints each
 /// logical operation in recording order, and `LANIUS_OPERATION_LIMIT=N`
 /// drops every dispatch from operation N onward (results are then garbage,

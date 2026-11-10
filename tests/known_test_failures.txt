@@ -79,7 +79,6 @@ extended_sqlite_allocation_execution  each_reached_staging_allocation_failure_pr
 
 # CLI suites: pre-existing since the 10-2x full runs; still failing on the
 # Phase 1 tree.
-cli_daemon  cli_daemon_reuses_capacity_for_twenty_jobs_on_each_target  TBD  capacity report says cold_or_grown_workspace, test expects retained_capacity (pre-existing)
 cli_diagnostics  cli_check_unknown_token_can_render_json_diagnostic_at_token_span  TBD  reports LNC0046, test expects LNC0016 (pre-existing)
 cli_diagnostics  cli_diagnostics_explain_prints_single_code_json_without_compiling_source  TBD  unsupported_feature.next_step no longer mentions --emit=wasm (pre-existing)
 cli_diagnostics  cli_diagnostics_registry_prints_combined_registry_json_without_compiling_source  TBD  registry JSON differs from the expected catalog (pre-existing)

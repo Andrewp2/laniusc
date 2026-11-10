@@ -799,6 +799,7 @@ impl<T> LaniusBuffer<T> {
             end <= self.byte_size as u64,
             "GPU buffer clear exceeds its logical view"
         );
+        crate::gpu::passes_core::trace_clear("buffer.clear", size);
         encoder.clear_buffer(
             &self.buffer,
             self.absolute_offset(relative_offset),

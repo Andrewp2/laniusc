@@ -23,6 +23,22 @@ use crate::{
     },
 };
 
+/// Page resources grow in these steps, not to each job's exact size, so a
+/// daemon job whose page is a little larger than the last keeps the retained
+/// page graph, its buffers and its bind groups.
+const PAGE_BYTE_CAPACITY_GRANULE: usize = 64 << 10;
+const PAGE_RELOCATION_CAPACITY_GRANULE: usize = 1024;
+
+/// `required` rounded up to `granule`, but never past `limit` unless
+/// `required` itself is.
+fn retained_page_capacity(required: usize, granule: usize, limit: usize) -> usize {
+    required
+        .max(1)
+        .next_multiple_of(granule)
+        .min(limit & !3usize)
+        .max(required)
+}
+
 pub(crate) struct WasmExecutablePageGraph {
     output_capacity: usize,
     type_capacity: usize,
@@ -275,13 +291,14 @@ impl GpuWasmLinker {
             wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         );
         for page in &output_plan.pages {
-            let max_relocations_per_batch =
-                (device.limits().max_storage_buffer_binding_size as usize / 32).max(1);
-            let relocation_buffer_records = page
-                .relocation_indices
-                .len()
-                .min(max_relocations_per_batch)
-                .max(1);
+            let binding_limit = device.limits().max_storage_buffer_binding_size as usize;
+            let max_relocations_per_batch = (binding_limit / 32).max(1);
+            let relocation_buffer_records = retained_page_capacity(
+                page.relocation_indices.len(),
+                PAGE_RELOCATION_CAPACITY_GRANULE,
+                usize::MAX,
+            )
+            .min(max_relocations_per_batch);
             let relocation_batches = page
                 .relocation_indices
                 .chunks(max_relocations_per_batch)
@@ -360,13 +377,16 @@ impl GpuWasmLinker {
                     batch_count,
                 )
             }) {
+                let byte_capacity = |required: usize| {
+                    retained_page_capacity(required, PAGE_BYTE_CAPACITY_GRANULE, binding_limit)
+                };
                 *graph_guard = Some(WasmExecutablePageGraph::new(
                     self,
                     device,
-                    output_bytes,
-                    type_page.len(),
-                    body_page.len(),
-                    data_page.len(),
+                    byte_capacity(output_bytes),
+                    byte_capacity(type_page.len()),
+                    byte_capacity(body_page.len()),
+                    byte_capacity(data_page.len()),
                     relocation_buffer_records,
                     batch_count,
                 )?);
@@ -596,7 +616,11 @@ fn input_bytes(
     let buffer = linker.job_buffers.binding_capacity::<u8>(
         device,
         label,
-        data.len(),
+        retained_page_capacity(
+            data.len(),
+            PAGE_BYTE_CAPACITY_GRANULE,
+            device.limits().max_storage_buffer_binding_size as usize,
+        ),
         wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
     );
     buffer.write(queue, 0, &data);

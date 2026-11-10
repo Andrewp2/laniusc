@@ -93,6 +93,7 @@ impl ClearBuffersOperation {
         }
         crate::gpu::passes_core::flush_deferred_compute(encoder);
         for buffer in &self.buffers {
+            crate::gpu::passes_core::trace_clear(self.name, buffer.byte_size as u64);
             encoder.clear_buffer(
                 &buffer.buffer,
                 buffer.byte_offset,
@@ -171,6 +172,7 @@ impl ResetGraphAllocationsOperation {
                 0,
                 "compiler reset range is not copy-aligned"
             );
+            crate::gpu::passes_core::trace_clear(self.name, byte_size);
             encoder.clear_buffer(&buffer.buffer, 0, Some(byte_size));
             cleared = cleared.saturating_add(byte_size);
         }
@@ -329,6 +331,7 @@ impl ClearBufferOperation {
             return;
         }
         crate::gpu::passes_core::flush_deferred_compute(encoder);
+        crate::gpu::passes_core::trace_clear(self.name, self.buffer.byte_size as u64);
         encoder.clear_buffer(
             &self.buffer.buffer,
             self.buffer.byte_offset,
