@@ -4243,6 +4243,16 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
             )
         }
         GpuTypeCheckCode::AssignMismatch
+            if detail & 0xffff_ff00 == crate::primitive_types::PRINT_ARGUMENT_TYPE =>
+        {
+            let (label, note) = print_argument_text(detail & 0xff);
+            CompileError::Diagnostic(
+                Diagnostic::error("LNC0006", "type mismatch")
+                    .with_primary_label(diagnostic_label_from_source_span(path, source, start, len, label))
+                    .with_note(note),
+            )
+        }
+        GpuTypeCheckCode::AssignMismatch
             if assign_mismatch_looks_like_invalid_member_access(source, start, detail) =>
         {
             invalid_member_access_diagnostic(path, source, start, len, u32::MAX)
@@ -4936,6 +4946,30 @@ fn generic_param_diagnostic(
     ))
 }
 
+/// Label and note for a `print` argument of a type `print` cannot write.
+/// `scalar` is the argument's scalar code, or 0 when it is not a scalar.
+fn print_argument_text(scalar: u32) -> (String, &'static str) {
+    use crate::primitive_types::*;
+    let found = match crate::primitive_types::name(scalar) {
+        Some(name) if scalar != SCALAR_UNKNOWN => format!("this value is `{name}`"),
+        _ => "this value is not an integer".to_string(),
+    };
+    let label = format!("`print` writes an `i32`, `i16`, `i8`, `u16` or `u8`; {found}");
+    let note = match scalar {
+        SCALAR_STR => "to write text, import `std::io` and call `std::io::println(text)`",
+        SCALAR_U32 | SCALAR_I64 | SCALAR_U64 | SCALAR_ISIZE | SCALAR_USIZE => {
+            "this type holds values an `i32` cannot; convert with `as i32` when the value fits, or format it with `core::decimal`"
+        }
+        SCALAR_F32 | SCALAR_F64 => {
+            "format a float with `core::float_decimal`, or convert with `as i32` to print its whole part"
+        }
+        SCALAR_BOOL => "print a number chosen by the condition, for example `if (flag) { print(1); } else { print(0); }`",
+        SCALAR_CHAR => "convert with `as i32` to print the character's code point",
+        _ => "print one of its integer fields or elements",
+    };
+    (label, note)
+}
+
 fn call_mismatch_diagnostic(
     path: &Path,
     source: &str,
@@ -4957,6 +4991,7 @@ fn call_mismatch_diagnostic(
     const CALL_MISMATCH_AMBIGUOUS_METHOD: u32 = 0xffffff0c;
     const CALL_MISMATCH_INVALID_METHOD_RECEIVER: u32 = 0xffffff0d;
     const CALL_MISMATCH_UNROUTED_BOUND_MEMBER: u32 = 0xffffff0e;
+    const CALL_MISMATCH_INTRINSIC_ARITY: u32 = 0xffffff0f;
     let (label, note) = match detail {
         CALL_MISMATCH_UNSUPPORTED_METHOD_RETURN_REF => (
             "method return type is not supported for generic method dispatch here",
@@ -4977,6 +5012,10 @@ fn call_mismatch_diagnostic(
         CALL_MISMATCH_ARITY => (
             "call has the wrong number of arguments",
             "match the argument list to the resolved function or method signature",
+        ),
+        CALL_MISMATCH_INTRINSIC_ARITY => (
+            "`print` and `assert` take exactly one argument",
+            "pass one value: `print(count);` writes one integer and a line end, and `assert(condition);` stops the program when the condition is false",
         ),
         CALL_MISMATCH_TYPED_SLICE_RETURN => (
             "slice_from_raw_parts must return a slice type",

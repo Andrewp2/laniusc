@@ -153,6 +153,7 @@ static const uint TYPE_LEN_CONST_PARAM = 2u;
 static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint PARAM_CACHE_STRIDE = 4u;
 static const uint INTRINSIC_NONE = 0u;
+static const uint INTRINSIC_PRINT = 1u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
@@ -264,6 +265,23 @@ void claim_generic_slot(
     // are not diagnostics.
 }
 
+// `print` writes the decimal digits of a 32-bit signed value. It accepts the
+// integer types that convert to one without loss. Any other argument (text,
+// a float, a wider integer, an aggregate) would print an unrelated number,
+// so it is a type error. The strict pass checks it, as it does a parameter.
+void check_print_argument(uint node, uint callee)
+{
+    if (call_inference_state[0u] != 0u) return;
+    uint tag; uint payload;
+    bool known = argument_result_reference(resolve_expr(node), tag, payload);
+    if (known && type_ref_is_never(tag, payload)) return;
+    bool scalar = known && tag == TYPE_REF_SCALAR;
+    if (scalar && (payload == SCALAR_I32 || payload == SCALAR_I8 || payload == SCALAR_I16 ||
+        payload == SCALAR_U8 || payload == SCALAR_U16)) return;
+    record_error(call_arg_error_token(node, callee), ERR_ASSIGN_MISMATCH,
+        PRINT_ARGUMENT_TYPE | (scalar ? payload : 0u));
+}
+
 void collect_row_argument(uint row)
 {
     if (row >= call_arg_row_count_out[0u]) return;
@@ -271,8 +289,13 @@ void collect_row_argument(uint row)
     uint node = call_arg_row_node[row];
     uint callee = callee_token_for_hir_call(call);
     uint param = call_arg_param_row[row];
-    if (!valid_node(call) || !valid_node(node) || !valid_token(callee) ||
-        call_intrinsic_tag[callee] != INTRINSIC_NONE || param == INVALID) return;
+    if (!valid_node(call) || !valid_node(node) || !valid_token(callee)) return;
+    if (call_intrinsic_tag[callee] == INTRINSIC_PRINT)
+    {
+        check_print_argument(node, callee);
+        return;
+    }
+    if (call_intrinsic_tag[callee] != INTRINSIC_NONE || param == INVALID) return;
     if (!parameter_pattern_page_contains(call_dependency_library_id[callee],
         call_dependency_unit_id[callee], call_dependency_local_index[callee])) return;
     uint error_token = call_arg_error_token(node, callee);

@@ -119,6 +119,11 @@ public static const uint BLOCK_ARM_FALLS_THROUGH = 0x20000005u;
 // (conditions/compact_exclusive.slang).
 // PRIMITIVE_CONSTANT
 public static const uint LIVE_REFERENCE_WRITTEN = 0x20000006u;
+// LNC0006 detail base of a `print` argument whose type `print` cannot write
+// (calls/03a_collect_row_args.slang). The low byte holds the argument's
+// scalar code, or 0 for a type that is not a scalar.
+// PRIMITIVE_CONSTANT
+public static const uint PRINT_ARGUMENT_TYPE = 0x21000000u;
 
 // Any primitive identity, never included: canonical IDs and interface leaves.
 [ForceInline]
