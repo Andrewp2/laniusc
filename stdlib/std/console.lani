@@ -1,0 +1,40 @@
+// Whole values to standard output, with no handle, count or buffer to pass.
+// Each function returns false when the host reports a write error. Part of
+// the value may already be written then.
+module std::console;
+import core::decimal;
+import core::io;
+import core::result;
+import core::text;
+import std::stream;
+
+pub fn write(text: core::text::Text) -> bool {
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    return core::io::write_all(sink.borrow(), text.bytes, text.start, text.byte_len()).is_ok();
+}
+
+pub fn write_line(text: core::text::Text) -> bool {
+    return write(text) && write(core::text::from_str("\n"));
+}
+
+pub fn write_str(text: str) -> bool {
+    return write(core::text::from_str(text));
+}
+
+// Base-ten digits with a leading minus for a negative value, and no line end.
+// Smaller signed integers widen with `as i64`.
+pub fn write_i64(value: i64) -> bool {
+    let digits: [u8; 20] = [0; 20];
+    let count: i32 = core::result::unwrap(core::decimal::format_i64(digits, 0, 20, value));
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    return core::io::write_all(sink.borrow(), digits, 0, count).is_ok();
+}
+
+// Base-ten digits and no line end. Smaller unsigned integers widen with
+// `as u64`.
+pub fn write_u64(value: u64) -> bool {
+    let digits: [u8; 20] = [0; 20];
+    let count: i32 = core::result::unwrap(core::decimal::format_u64(digits, 0, 20, value));
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    return core::io::write_all(sink.borrow(), digits, 0, count).is_ok();
+}

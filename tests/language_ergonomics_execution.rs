@@ -219,6 +219,25 @@ fn slice_len_and_string_len_count_on_wasm() {
 }
 
 #[test]
+fn text_helpers_convert_literals_and_write_whole_values() {
+    let fixture = "text_helpers.lani";
+    let bytes = compile(fixture).unwrap_or_else(|error| panic!("{fixture}: {error}"));
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output("language ergonomics", fixture, &bytes);
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout),
+            "12\nhello, world\nhello\nworld\nname: Lanius\n6\n5\n100\n4\n\
+             -1234567890123 18446744073709551615\n",
+            "{output:?}"
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
 fn length_builtins_reject_an_argument_of_another_type() {
     assert_rejected(
         "slice_len_of_integer.lani",

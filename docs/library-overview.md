@@ -1,5 +1,19 @@
 # Standard and extended library overview
 
+Text literals and whole slices no longer need a byte or element count.
+`core::text::from_str(text)` returns the bytes of a `str` as a `Text` without a
+UTF-8 check, because every `str` is source text. `Text::equals_str`,
+`alloc::string::from_str`, `String::try_append_str` and `String::equals_str`
+take a `str` directly. `core::slice::length(values)` returns the element count
+of a slice or fixed array as `i32`, and `core::slice::whole(values)` returns a
+`View` of all of it. The new `std::console` module writes to standard output:
+`write(text)`, `write_line(text)`, `write_str(text)`, `write_i64(value)` and
+`write_u64(value)`; each returns false when the host write fails. These use the
+`slice_len` and `string_len` built-ins described in
+[stdlib-memory.md](stdlib-memory.md). One x86_64 program in
+`tests/language_ergonomics_execution.rs` runs all of them and compares standard
+output. Wasm does not compile `alloc::string` or `std::console` yet.
+
 The [native thread consolidation](stdlib-thread-lifecycle.md) moves the
 implemented glibc interface into canonical `std::thread` and removes
 `std::pthread` and ID-based joining. Actual `Thread` owners retain join state;

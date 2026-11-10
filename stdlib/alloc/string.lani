@@ -107,6 +107,11 @@ pub fn from_text(text: core::text::Text) -> core::result::Result<String, Error> 
     return core::result::Ok(value);
 }
 
+// Copy a `str` into independent owned storage.
+pub fn from_str(text: str) -> core::result::Result<String, Error> {
+    return from_text(core::text::from_str(text));
+}
+
 // Independent copies, with all length arithmetic checked before allocation.
 // Empty parts produce empty text; separators appear only between parts.
 pub fn join(parts: core::slice::View<core::text::Text>, separator: core::text::Text) -> core::result::Result<String, Error> {
@@ -370,6 +375,11 @@ pub impl String {
         return core::result::Ok(self.commit_append(grown));
     }
 
+    // Append a `str`. Return the new byte length.
+    pub fn try_append_str(&self, source: str) -> core::result::Result<i32, Error> {
+        return self.try_append_text(core::text::from_str(source));
+    }
+
     // Append the complete joined sequence atomically. Parts and separator may
     // borrow this String, including during growth. Return the new byte length.
     pub fn try_append_joined(&self, parts: core::slice::View<core::text::Text>, separator: core::text::Text) -> core::result::Result<i32, Error> {
@@ -452,6 +462,12 @@ pub impl String {
         let length: i32 = self.bytes.len();
         if (length != other.bytes.len()) { return false; }
         return core::slice::memcmp(self.bytes.as_slice(), other.bytes.as_slice(), length) == 0;
+    }
+
+    // Byte equality with a `str`, for example `name.equals_str("main")`.
+    pub fn equals_str(&self, other: str) -> bool {
+        let text: core::text::Text = self.as_text();
+        return text.equals(core::text::from_str(other));
     }
 
     // Total lexicographic order of UTF-8 bytes (also Unicode scalar order).

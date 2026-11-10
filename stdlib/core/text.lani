@@ -76,6 +76,14 @@ pub fn from_utf8_unchecked(bytes: [u8], offset: i32, count: i32) -> Text {
     return Text { bytes: bytes, start: offset, length: count };
 }
 
+// The bytes of a `str` as a Text. Every `str` is source text, which is
+// valid UTF-8, so no check runs. Its storage lasts for the whole program.
+pub fn from_str(text: str) -> Text {
+    let count: i32 = string_len(text) as i32;
+    let bytes: [u8] = slice_from_raw_parts(string_data_ptr(text), count);
+    return Text { bytes: bytes, start: 0, length: count };
+}
+
 pub impl Text {
     fn part(&self, start: i32, end: i32) -> Text {
         return Text { bytes: self.bytes, start: self.start + start, length: end - start };
@@ -161,6 +169,8 @@ pub impl Text {
     // A direct unsigned byte loop: the ordering engine of core::iter gives
     // the same answer, but this is the hot path of every Text-keyed ordered
     // collection and runs several times faster.
+    // Byte equality with a `str`, for example `word.equals_str("yes")`.
+    pub fn equals_str(&self, other: str) -> bool { return self.equals(from_str(other)); }
     pub fn compare(&self, other: Text) -> i32 {
         let count: i32 = self.length; if (other.length < count) { count = other.length; }
         let index: i32 = 0;

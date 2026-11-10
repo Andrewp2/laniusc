@@ -42,6 +42,15 @@ fn view_valid<T>(values: View<T>) -> bool {
     return values.start <= 2147483647 - values.length;
 }
 
+// The element count of a slice, or of an array passed as one, as the i32
+// that this library's counts and indexes use.
+pub fn length<T>(values: [T]) -> i32 { return slice_len(values) as i32; }
+
+// A View of every element of a slice, or of an array passed as one.
+pub fn whole<T>(values: [T]) -> View<T> {
+    return View { values: values, start: 0, length: slice_len(values) as i32 };
+}
+
 pub fn view<T>(values: [T], count: i32) -> core::result::Result<View<T>, ViewError> {
     return view_range(values, 0, count);
 }

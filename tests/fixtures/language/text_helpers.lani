@@ -1,0 +1,50 @@
+// A `str` becomes a Text or a String without a byte count, a slice reports
+// its own length, and std::console writes whole values to standard output.
+import alloc::string;
+import core::slice;
+import core::text;
+import std::console;
+
+fn sum(values: [i32]) -> i32 {
+    let total = 0;
+    let count = core::slice::length(values);
+    for index in 0..count { total += values[index]; }
+    return total;
+}
+
+fn main() -> i32 {
+    let greeting = core::text::from_str("hello, world");
+    print(greeting.byte_len());
+    if (!greeting.starts_with(core::text::from_str("hello"))) { return 1; }
+    if (!greeting.equals_str("hello, world")) { return 2; }
+    if (greeting.equals_str("hello")) { return 3; }
+    if (!std::console::write_line(greeting)) { return 4; }
+    let words = greeting.split(core::text::from_str(", "));
+    while (true) {
+        let word = words.next();
+        if (word.is_none()) { break; }
+        std::console::write_line(word.unwrap());
+    }
+    let name: String = alloc::string::new();
+    if (name.try_append_str("Lan").is_err()) { return 5; }
+    if (name.try_append_str("ius").is_err()) { return 6; }
+    std::console::write_str("name: ");
+    std::console::write_line(name.as_text());
+    if (!name.equals_str("Lanius")) { return 7; }
+    name.destroy();
+    let copied = alloc::string::from_str("héllo");
+    if (copied.is_err()) { return 8; }
+    let owned: String = copied.unwrap();
+    print(owned.byte_len());
+    print(owned.scalar_count());
+    owned.destroy();
+    let values: [i32; 4] = [10, 20, 30, 40];
+    print(sum(values));
+    let all = core::slice::whole(values);
+    print(all.len());
+    std::console::write_i64(-1234567890123);
+    std::console::write_str(" ");
+    std::console::write_u64(18446744073709551615);
+    std::console::write_str("\n");
+    return 0;
+}
