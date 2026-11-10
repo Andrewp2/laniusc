@@ -396,7 +396,7 @@ impl GpuTypeChecker {
             |key| {
                 // Program catalogs own these pipelines separately and can outlive
                 // source-job workspaces. Source checking never dispatches them.
-                if key.starts_with("type_checker/program_evidence/") {
+                if key.starts_with("type_checker/trait_solver/") {
                     return false;
                 }
                 if canonical_passes::CANONICAL_DEBUG_KERNELS.contains(&key)

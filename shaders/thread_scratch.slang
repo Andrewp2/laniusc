@@ -4,7 +4,7 @@
 // never shrink it. This table is sized by the dispatched row count instead.
 //
 // INTERIM: this is still per-thread DFS state, only moved to global memory.
-// The end state (P7) is program evidence on canonical type IDs with level
+// The end state (P7) is trait solver on canonical type IDs with level
 // rounds, where these walkers and the owned constraint engine are deleted.
 //
 // Layout: slots are interleaved in groups of THREAD_SCRATCH_GROUP, like the
@@ -36,9 +36,9 @@ public static const uint SCRATCH_OWNED_OCCURS = 576u;
 // Constant projection target scalars: four lists of 16 cells, 4 per cell.
 public static const uint SCRATCH_OWNED_TARGETS = 704u;
 // Proof-term normalization stack: 6 cells per depth.
-public static const uint SCRATCH_PEV_NORMALIZE = 768u;
+public static const uint SCRATCH_TS_NORMALIZE = 768u;
 // Admitted-root graph walk: 2 cells per depth.
-public static const uint SCRATCH_PEV_GRAPH = 1152u;
+public static const uint SCRATCH_TS_GRAPH = 1152u;
 // Scoped type hash and equality stacks: 2 cells per depth each.
 public static const uint SCRATCH_SCOPED_HASH = 1280u;
 public static const uint SCRATCH_SCOPED_EQUALITY = 1408u;

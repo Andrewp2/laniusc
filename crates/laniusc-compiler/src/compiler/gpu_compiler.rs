@@ -9,7 +9,7 @@ pub use backends::GpuCompilerBackends;
 mod benchmarks;
 mod body_specialization;
 mod instance_copies;
-mod program_evidence;
+mod trait_solver;
 mod bounded_path_codegen;
 mod buffers;
 mod descriptor_work_queue;
@@ -77,7 +77,7 @@ pub struct GpuCompiler<'gpu> {
     library_instance_cache: std::sync::Mutex<unit_cache::LibraryInstanceCache>,
     parser_shape_cache: std::sync::Mutex<ParserShapeCache>,
     codegen_kernels: Option<Box<crate::gpu::kernels::KernelRegistry>>,
-    program_evidence_workspace: program_evidence::EvidenceWorkspacePool,
+    trait_solver_workspace: trait_solver::EvidenceWorkspacePool,
 }
 
 // A worst-case 10,000-file project may place each file in its own bounded
@@ -208,11 +208,11 @@ fn initialize_pipeline_families(
                 .stack_size(PIPELINE_INIT_STACK_BYTES)
                 .spawn_scoped(scope, || {
                     let start = std::time::Instant::now();
-                    // Native body specialization admits program evidence in
+                    // Native body specialization admits trait solver in
                     // x86 jobs; its pipelines are prepared with the linker's.
                     let linker = x86::GpuX86Linker::new_with_device(gpu)
                         .and_then(|linker| {
-                            program_evidence::prepare_evidence_kernels(&gpu.device)?;
+                            trait_solver::prepare_evidence_kernels(&gpu.device)?;
                             Ok(linker)
                         })
                         .map(Box::new)
@@ -454,7 +454,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 library_instance_cache: std::sync::Mutex::new(unit_cache::LibraryInstanceCache::default()),
                 parser_shape_cache: std::sync::Mutex::new(ParserShapeCache::default()),
                 codegen_kernels,
-                program_evidence_workspace: program_evidence::EvidenceWorkspacePool::new(
+                trait_solver_workspace: trait_solver::EvidenceWorkspacePool::new(
                     gpu.device.clone(), gpu.queue.clone(),
                 ),
             })
@@ -530,7 +530,7 @@ impl<'gpu> GpuCompiler<'gpu> {
     /// released resident graph.
     pub async fn release_resident_job_buffers(&self) -> GpuResidentJobBufferTrim {
         let _resident_guard = self.resident_pipeline_lock.lock().await;
-        self.program_evidence_workspace.release();
+        self.trait_solver_workspace.release();
         self.clear_library_instance_cache();
         self.lexer.release_current_resident_buffers();
         self.parser.release_current_resident_buffers();

@@ -1,11 +1,11 @@
 // The scoped type hash and equality walkers with their frames in the thread
-// scratch table, for kernels that bind it (program evidence). Callers must
+// scratch table, for kernels that bind it (trait solver). Callers must
 // have bound their slot with thread_scratch_begin. Local-array callers keep
 // scoped_type_ref_hash and scoped_type_refs_equal_graphs, which expand the
 // same walker bodies.
 //
 // INTERIM: this is still per-thread DFS state, only moved to global memory.
-// The end state (P7) is program evidence on canonical type IDs with level
+// The end state (P7) is trait solver on canonical type IDs with level
 // rounds, where these walkers are deleted.
 import type_checker.concrete_type_equality;
 import type_checker.scoped_type_equality;

@@ -49,7 +49,7 @@ Limits of this first version:
   still a parameter infers nothing.
 - Implementation `where` clauses are not consulted when counting. A clause
   can't add a candidate; it can only make a unique match fail later, when
-  program evidence validates the selected implementation.
+  trait solver validates the selected implementation.
 - An implementation whose header has no canonical ID matches every subject,
   so it can only make a selection ambiguous.
 - Implementations of local traits are not collected, since an imported

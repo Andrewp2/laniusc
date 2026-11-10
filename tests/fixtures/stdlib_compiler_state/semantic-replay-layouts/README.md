@@ -41,7 +41,7 @@ The build 23 GPU admission test first accepts complete recipes, then rejects an
 incorrect catalog epoch, a broken group backlink, and a valid sibling parameter
 used outside its lexical owner. It checks exact GPU failure receipts and recovery
 on a fresh valid catalog. Both catalog and recipe admission must succeed before
-program evidence becomes available. The native controls still execute imported
+trait solver becomes available. The native controls still execute imported
 bound methods and independently copied compound results after admission is added.
 This establishes recipe transport/admission, not the missing foreign-layout consumer.
 

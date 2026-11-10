@@ -928,7 +928,7 @@ async fn run_session(
             |id| format!("daemon.job.{id}"),
         );
         let job_trace_started = Instant::now();
-        // Program evidence and the x86 link record dispatches outside every
+        // Trait solver and the x86 link record dispatches outside every
         // phase timer; the session stamps them in profiled jobs.
         let job_timing =
             crate::gpu::timer::GpuJobTimingSession::begin(&compiler.gpu().device, &compiler.gpu().queue);

@@ -11,12 +11,12 @@
 
 sample_program_manifest  checked_sample_catalog_covers_required_runtime_facilities  TBD  random_fill (and three output samples) ignore SIGPIPE through std::signal, which reaches std::linux system calls the Wasm backend rejects (LNC0036); needs a platform-selection feature or a Wasm std::signal binding; the samples are tagged x86_64 until then
 
-# laniusc-compiler lib tests (cargo test -p laniusc-compiler --lib): the PEV GPU
+# laniusc-compiler lib tests (cargo test -p laniusc-compiler --lib): the trait-solver GPU
 # tests below fail the same way in every P7a gate since before integ27.
-laniusc_compiler  compiler::gpu_compiler::program_evidence::dispatch::batch_tests::gpu_batch_rejects_changed_retained_witness_before_replay  P7a  pre-existing, PEV, owner P7a (parked)
-laniusc_compiler  compiler::gpu_compiler::program_evidence::dispatch::typed_constant_fault_tests::gpu_binding_abi_replays_unreachable_folded_allocation_before_publication  P7a  pre-existing, PEV, owner P7a (parked)
-laniusc_compiler  compiler::gpu_compiler::program_evidence::dispatch::typed_constant_fault_tests::gpu_rejected_append_preserves_accepted_constant_rows_and_receipts  P7a  pre-existing, PEV, owner P7a (parked)
-laniusc_compiler  compiler::gpu_compiler::program_evidence::dispatch::typed_constant_fault_tests::gpu_validates_folded_projection_allocations_including_unreachable_child  P7a  pre-existing, PEV, owner P7a (parked)
+laniusc_compiler  compiler::gpu_compiler::trait_solver::dispatch::batch_tests::gpu_batch_rejects_changed_retained_witness_before_replay  P7a  pre-existing, trait solver, owner P7a (parked)
+laniusc_compiler  compiler::gpu_compiler::trait_solver::dispatch::typed_constant_fault_tests::gpu_binding_abi_replays_unreachable_folded_allocation_before_publication  P7a  pre-existing, trait solver, owner P7a (parked)
+laniusc_compiler  compiler::gpu_compiler::trait_solver::dispatch::typed_constant_fault_tests::gpu_rejected_append_preserves_accepted_constant_rows_and_receipts  P7a  pre-existing, trait solver, owner P7a (parked)
+laniusc_compiler  compiler::gpu_compiler::trait_solver::dispatch::typed_constant_fault_tests::gpu_validates_folded_projection_allocations_including_unreachable_child  P7a  pre-existing, trait solver, owner P7a (parked)
 
 # More lib tests that fail on the generics-gpu base 9318578e (P10 baseline,
 # 2026-10-19, RTX 3070 Laptop, whole lib binary with its own pin's shaders).

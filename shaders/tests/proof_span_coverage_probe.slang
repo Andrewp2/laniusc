@@ -1,7 +1,7 @@
 // Source-only probe: execute one 24-thread workgroup during integration.
 // result = (observed state, expected state, pass, charged work).
-import type_checker.program_evidence.proof_span_coverage;
-import type_checker.program_evidence.abi;
+import type_checker.trait_solver.proof_span_coverage;
+import type_checker.trait_solver.abi;
 
 RWStructuredBuffer<uint4> coverage_results;
 struct CoverageSpans : IProofSpanSource
@@ -46,14 +46,14 @@ void main(uint3 tid : SV_DispatchThreadID)
 {
     uint id = tid.x; if (id >= 24u) return;
     uint first = 3u; uint end = 6u; uint owners = 2u; uint visits = 0u;
-    uint expected = PEV_INVALID_INPUT;
+    uint expected = TS_INVALID_INPUT;
     switch (id)
     {
-    case 0u: end = first; owners = 0u; expected = PEV_VALID; break;
-    case 1u: end = first; expected = PEV_VALID; break;
+    case 0u: end = first; owners = 0u; expected = TS_VALID; break;
+    case 1u: end = first; expected = TS_VALID; break;
     case 2u: end = first; break;
-    case 3u: expected = PEV_VALID; break;
-    case 4u: end = 10u; expected = PEV_VALID; break;
+    case 3u: expected = TS_VALID; break;
+    case 4u: end = 10u; expected = TS_VALID; break;
     case 5u: end = 5u; break;
     case 6u: end = 9u; break;
     case 7u: end = 7u; break;
@@ -61,23 +61,23 @@ void main(uint3 tid : SV_DispatchThreadID)
     case 9u: end = 5u; owners = 1u; break;
     case 10u: end = 5u; owners = 1u; break;
     case 11u: first = 0xfffffffbu; end = 0xfffffffeu; owners = 1u; break;
-    case 12u: first = 0xfffffffau; end = 0xfffffffeu; expected = PEV_VALID; break;
+    case 12u: first = 0xfffffffau; end = 0xfffffffeu; expected = TS_VALID; break;
     case 13u: first = 0u; end = 1025u; break;
-    case 14u: first = 53u; end = 2150u; expected = PEV_VALID; break;
-    case 15u: first = 17u; end = 82u; owners = 3u; expected = PEV_VALID; break;
+    case 14u: first = 53u; end = 2150u; expected = TS_VALID; break;
+    case 15u: first = 17u; end = 82u; owners = 3u; expected = TS_VALID; break;
     case 16u: end = 4u; owners = 1u; break;
-    case 17u: end = 4u; owners = 1u; visits = PEV_VISIT_LIMIT; expected = PEV_RESOURCE_LIMIT; break;
-    case 18u: end = 4u; owners = 1u; visits = PEV_VISIT_LIMIT - 3u; expected = PEV_VALID; break;
-    case 19u: end = 4u; owners = 1u; visits = PEV_VISIT_LIMIT - 2u; expected = PEV_RESOURCE_LIMIT; break;
-    case 20u: first = 0u; end = 2048u; owners = 1u; expected = PEV_VALID; break;
+    case 17u: end = 4u; owners = 1u; visits = TS_VISIT_LIMIT; expected = TS_RESOURCE_LIMIT; break;
+    case 18u: end = 4u; owners = 1u; visits = TS_VISIT_LIMIT - 3u; expected = TS_VALID; break;
+    case 19u: end = 4u; owners = 1u; visits = TS_VISIT_LIMIT - 2u; expected = TS_RESOURCE_LIMIT; break;
+    case 20u: first = 0u; end = 2048u; owners = 1u; expected = TS_VALID; break;
     case 21u: end = 4u; owners = 1u; break;
-    case 22u: end = 4u; owners = 1u; visits = PEV_VISIT_LIMIT - 5u; expected = PEV_RESOURCE_LIMIT; break;
+    case 22u: end = 4u; owners = 1u; visits = TS_VISIT_LIMIT - 5u; expected = TS_RESOURCE_LIMIT; break;
     case 23u: first = 5u; end = 4u; owners = 1u; break;
     }
     EvidenceStatus status = pps_check_span_cover<CoverageSpans>(id, first, end, 0u, owners, visits);
     // Separate destination audits must share the budget; resetting it here
     // would incorrectly admit row22 after six operations with only five left.
-    if (id == 22u && status.state == PEV_VALID)
+    if (id == 22u && status.state == TS_VALID)
         status = pps_check_span_cover<CoverageSpans>(id, first, end, 0u, owners, visits);
     coverage_results[id] = uint4(status.state, expected, status.state == expected ? 1u : 0u, visits);
 }

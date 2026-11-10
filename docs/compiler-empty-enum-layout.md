@@ -21,7 +21,7 @@ invent a valid tag.
 
 The checked native layout path did not preserve that fact. It represented a
 known empty enum with zero payload groups, then treated zero groups as an
-unavailable layout. Program-evidence materialization also explicitly rejected
+unavailable layout. Trait-solver materialization also explicitly rejected
 that case. These failures could block `Result<i32,Empty>` even when a function
 returned only `Ok(37)`.
 
@@ -58,7 +58,7 @@ The change aligns three existing GPU layout sites:
    Retained recognition requires enum kind 7 with the completion bit admitted
    by `retained_layout_kind`, plus a zero group count. A provisional width of
    zero does not satisfy it.
-2. [Program-evidence materialization](../shaders/type_checker/program_evidence/native_layout/materialize.slang)
+2. [Trait-solver materialization](../shaders/type_checker/trait_solver/native_layout/materialize.slang)
    accepts an admitted enum recipe with zero groups and publishes width one in
    its existing expansion row. The ordinary leaf reader then consumes that
    completed width. Recipe lookup, exact owner identity, operand arity and

@@ -38,7 +38,7 @@
 // a local one.
 //
 // An implementation outside this unit has no candidate here. In replay, the
-// instance's program evidence names it (body_impl_bindings.slang): the
+// instance's trait solver names it (body_impl_bindings.slang): the
 // implementation that proved the bound on the parameter's binding slot, keyed
 // by the required member's symbol and its trait's unit. The call then becomes
 // a dependency call of that implementation's member.

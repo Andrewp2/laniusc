@@ -561,7 +561,7 @@ fn set_gpu_clock_calibration(calibration: Option<GpuClockCalibration>) {
 }
 
 /// Times the GPU operations of one compiler job that no phase timer records,
-/// such as program evidence and the x86 link, so a profiled job stamps every
+/// such as trait solver and the x86 link, so a profiled job stamps every
 /// dispatch it records. Phase timers nest inside it.
 pub struct GpuJobTimingSession {
     timer: GpuTimer,

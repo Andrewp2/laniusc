@@ -33,7 +33,7 @@ are under `target/stdlib-work/stream-forward-current-66e966d3/`.
    proof closure; it must not be reconstructed from a nominal type's arguments.
 2. Native export deliberately drops generic implementations.
    `FrozenCatalog::implementation_method_targets` in
-   `compiler/gpu_compiler/program_evidence/catalog.rs` returns `None` whenever
+   `compiler/gpu_compiler/trait_solver/catalog.rs` returns `None` whenever
    `composed_parameters(owner)` is nonempty. Its contract says those methods need
    an environment of their own. `native_session.rs::impl_bindings` skips them.
 3. `BodyImplBinding` in `type_checker/generic_body.rs` and its shader reader

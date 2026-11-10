@@ -140,7 +140,7 @@ first in the file. Two cases were found on the 8 GB laptop GPU, both with
 
 - One compile of an `import core::result;` file with 16,500 one-line helpers
   (1.65 MB; 16,000 helpers pass) runs out creating
-  `program_evidence.thread_scratch`. Generate it with
+  `trait_solver.thread_scratch`. Generate it with
   `python3 -c 'print("import core::result;"); [print(f"fn helper_{i}(x: i32) -> i32 {{ let y: i32 = x + {i % 97}; if (y > 1000) {{ return y - 1000; }} return y; }}") for i in range(16500)]; print("fn main() -> i32 { return helper_0(3); }")'`.
 - A poisoned daemon. After one 18,000- to 20,000-helper compile without
   imports (about 2 MB), the daemon's resident buffers stay sized for it.

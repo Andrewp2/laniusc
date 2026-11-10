@@ -195,7 +195,7 @@ The first scalar gate failed with LNC0047 detail 6 in 4.00 seconds
 (`target/stdlib-work/clone-values-scalars.log`). Paired reductions identified a
 general empty-enum layout gap. The
 [empty-enum compiler repair](compiler-empty-enum-layout.md) aligns the checked
-native-width producer, program-evidence materializer and imported enum
+native-width producer, trait-solver materializer and imported enum
 projection. Complete empty enums retain the existing one-word discriminant
 layout; unavailable definitions still fail closed. This does not invent a
 constructible variant or change the public `Infallible {}` error. The library

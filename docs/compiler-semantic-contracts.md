@@ -336,7 +336,7 @@ separate GPU phases then admit recipes and ordered groups before freezing the
 recipe receipt and nominal-to-recipe map. Both directions of group ownership and
 exact lexical parameter ownership are checked. Host serialization supplies no
 trusted acceptance bit. Both catalog and recipe receipts must be valid before
-program evidence is released; this adds no readback fence.
+trait solver is released; this adds no readback fence.
 
 Build 23's focused GPU test checks valid recipes, stale epoch rejection, a broken
 group backlink, a foreign lexical parameter, and valid-catalog recovery. This

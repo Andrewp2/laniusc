@@ -1836,12 +1836,12 @@ impl<'gpu> GpuCompiler<'gpu> {
     /// The result remains opaque until that same request checks every fresh call.
     pub(super) async fn compile_authorized_body_specialization(
         &self,
-        request: &program_evidence::ValidatedReplayRequest<'_>,
+        request: &trait_solver::ValidatedReplayRequest<'_>,
     ) -> Result<PendingReplayUnit, CompileError> {
         let template = request.template();
         let declarations_only = request.declarations_only();
         let compiled = match declarations_only {
-            Some(blanked) if program_evidence::declarations_only_templates_checked() => {
+            Some(blanked) if trait_solver::declarations_only_templates_checked() => {
                 let full = self.compile_replay_input(request, BodySpecializationInput::authorized(request)).await;
                 let short = self
                     .compile_replay_input(request, BodySpecializationInput::declarations_only(request, blanked))
@@ -1849,7 +1849,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 compare_declarations_only_replay(template.interface(), blanked, &full, &short)?;
                 full?
             }
-            Some(blanked) if program_evidence::declarations_only_templates_enabled() => self
+            Some(blanked) if trait_solver::declarations_only_templates_enabled() => self
                 .compile_replay_input(request, BodySpecializationInput::declarations_only(request, blanked))
                 .await?,
             _ => self.compile_replay_input(request, BodySpecializationInput::authorized(request)).await?,
@@ -1863,7 +1863,7 @@ impl<'gpu> GpuCompiler<'gpu> {
     /// One frontend run of an authorized replay request.
     async fn compile_replay_input(
         &self,
-        request: &program_evidence::ValidatedReplayRequest<'_>,
+        request: &trait_solver::ValidatedReplayRequest<'_>,
         input: BodySpecializationInput<'_>,
     ) -> Result<CompiledSourcePackUnit, CompileError> {
         let template = request.template();
@@ -2736,8 +2736,8 @@ impl PendingOriginalUnit {
 
     pub(super) fn finish(
         self,
-        admission: program_evidence::ValidatedOriginalUnit,
-    ) -> anyhow::Result<(CompiledSourcePackUnit, Vec<program_evidence::AdmittedCall>)> {
+        admission: trait_solver::ValidatedOriginalUnit,
+    ) -> anyhow::Result<(CompiledSourcePackUnit, Vec<trait_solver::AdmittedCall>)> {
         let calls = admission.check_original_unit(&self.facts)?;
         Ok((self.unit, calls))
     }
@@ -2795,8 +2795,8 @@ pub(super) struct PendingReplayUnit {
 impl PendingReplayUnit {
     pub(super) fn finish(
         mut self,
-        request: program_evidence::ValidatedReplayRequest<'_>,
-    ) -> anyhow::Result<(CompiledSourcePackUnit, program_evidence::CheckedReplayCalls)> {
+        request: trait_solver::ValidatedReplayRequest<'_>,
+    ) -> anyhow::Result<(CompiledSourcePackUnit, trait_solver::CheckedReplayCalls)> {
         let calls = request.check_replay_unit(&mut self.unit, &self.request_identity)?;
         Ok((self.unit, calls))
     }
@@ -2842,7 +2842,7 @@ impl<'a> BodySpecializationInput<'a> {
         }
     }
 
-    fn authorized(request: &'a program_evidence::ValidatedReplayRequest<'_>) -> Self {
+    fn authorized(request: &'a trait_solver::ValidatedReplayRequest<'_>) -> Self {
         let template = request.template();
         Self {
             specialization: request.specialization(),
@@ -2861,8 +2861,8 @@ impl<'a> BodySpecializationInput<'a> {
 
     /// `authorized` against the request's declarations-only template.
     fn declarations_only(
-        request: &'a program_evidence::ValidatedReplayRequest<'_>,
-        template: &'a program_evidence::DeclarationsOnlyTemplate,
+        request: &'a trait_solver::ValidatedReplayRequest<'_>,
+        template: &'a trait_solver::DeclarationsOnlyTemplate,
     ) -> Self {
         Self {
             replay_selection: crate::codegen::lowering::ReplaySelection::CopiesFrom(template.first_copy_row),
@@ -3191,7 +3191,7 @@ struct CheckedSourcePackArtifacts {
 /// diagnostic). Any difference fails the compile.
 fn compare_declarations_only_replay(
     interface: &crate::compiler::GpuSemanticInterfaceArtifact,
-    blanked: &program_evidence::DeclarationsOnlyTemplate,
+    blanked: &trait_solver::DeclarationsOnlyTemplate,
     full: &Result<CompiledSourcePackUnit, CompileError>,
     short: &Result<CompiledSourcePackUnit, CompileError>,
 ) -> Result<(), CompileError> {

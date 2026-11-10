@@ -398,7 +398,7 @@ Definitions and call occurrences have different lifetimes:
 
 Retained batch input rows are immutable for the life of a GPU packet. The GPU
 binds the input arena read-only. `ensure_retained_inputs_unchanged` in
-`program_evidence/dispatch/mod.rs` refuses, before any upload, a submission that
+`trait_solver/dispatch/mod.rs` refuses, before any upload, a submission that
 rewrites a retained row, moves a table without copying its rows, or overlaps two
 tables. A refused submission poisons the packet, so it is never checked again.
 Indexes built from retained rows therefore stay valid without being cleared.

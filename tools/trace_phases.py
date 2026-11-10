@@ -13,7 +13,7 @@ TRACE is a LANIUS_PERFETTO_TRACE file. The job is the `daemon.job.NAME` span
                     record.parser_capacity_reused on an edit job, to its
                     finish.wasm_object stamp)
   gaps              the time between replays and after the last one: generic
-                    call discovery, program evidence, link
+                    call discovery, trait solver, link
 
 Each part's wall time is attributed to the innermost host span open at each
 moment, with priority readback wait > submit > compiler stamp > lexer stamp >
@@ -66,7 +66,7 @@ def readback_phase(name: str) -> str:
     if name.startswith("generic call"):
         return "generic call discovery"
     if name.startswith("program "):
-        return "program evidence"
+        return "trait solver"
     if name.startswith(("codegen", "x86", "lowering", "wasm")):
         return "codegen"
     if name.startswith(("parser", "lex")):

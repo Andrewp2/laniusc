@@ -12,7 +12,7 @@ use std::{
 };
 
 use super::{
-    program_evidence::{
+    trait_solver::{
         AdmittedCall,
         CheckedReplayCalls,
         NativeProgramSession,
@@ -90,7 +90,7 @@ impl GpuCompiler<'_> {
             })
             .collect::<anyhow::Result<Vec<_>>>()
             .map_err(native_program_error)?;
-        let mut program = NativeProgramSession::admit(&self.program_evidence_workspace, &facts)
+        let mut program = NativeProgramSession::admit(&self.trait_solver_workspace, &facts)
             .map_err(native_program_error)?;
         let calls = facts
             .iter()
@@ -179,7 +179,7 @@ impl GpuCompiler<'_> {
                 "a unit compiled without its solver facts reached a program that needs the trait solver".into()));
         }
         let closed_units = facts.len() - open.len();
-        let mut program = NativeProgramSession::admit(&self.program_evidence_workspace, &facts)
+        let mut program = NativeProgramSession::admit(&self.trait_solver_workspace, &facts)
             .map_err(|error| {
                 if release == ClosedRelease::Verify && closed_units != 0 {
                     eprintln!("[closed-release] verify: solver error with {closed_units} closed units (predicted={predicted}): {error:#}");
@@ -194,7 +194,7 @@ impl GpuCompiler<'_> {
                 let released = unit.finish(program.validated_original(facts)?);
                 let interface = facts.interface();
                 unit_span(
-                    "program_evidence.release_original",
+                    "trait_solver.release_original",
                     Some([interface.library_id, interface.unit_id]),
                     started,
                 );

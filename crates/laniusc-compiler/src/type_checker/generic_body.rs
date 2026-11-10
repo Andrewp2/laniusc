@@ -98,7 +98,7 @@ impl std::error::Error for BodyReplayCapacityError {}
 pub(crate) const BODY_COPY_TARGET: u32 = 0xc000_0000;
 
 /// The native target of one bound member in one replayed instance: the
-/// implementation that program evidence selected for a bound on a type slot
+/// implementation that trait solver selected for a bound on a type slot
 /// of the instance's environment, outside the replayed unit. 09
 /// (methods/09_route_bound_members) routes a bound member call that finds
 /// no implementation in the replayed unit to it. Keyed by
@@ -121,7 +121,7 @@ pub(crate) struct BodyImplBinding {
     pub receiver_mode: u32,
     pub required_types: u32,
     pub required_constants: u32,
-    /// The exact closed impl/method substitution selected by program evidence.
+    /// The exact closed impl/method substitution selected by trait solver.
     pub environment: BodyImplEnvironment,
 }
 

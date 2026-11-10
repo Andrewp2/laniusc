@@ -8,7 +8,7 @@ or user GPU kernels.**
 ## The missing boundary
 
 An imported generic helper such as `core::io::write_all<W>` calls a required
-member on `W`. Program evidence can select `impl<T> Write for Forward<T>`.
+member on `W`. Trait solver can select `impl<T> Write for Forward<T>`.
 The replay must carry that particular implementation's substitution and route
 the required member to its method under that substitution.
 
@@ -51,7 +51,7 @@ does. A stale raw receipt and a valid older owned root have different rules.
 Materialized types and GPU-normalized typed constants supply argument data.
 They cannot create call authority. Prerequisite proofs remain provenance;
 routing the method creates an ordinary checked call whose obligations are
-admitted through the existing program-evidence path. No child proof is
+admitted through the existing trait-solver path. No child proof is
 promoted into fabricated root evidence.
 
 ## Replay transport

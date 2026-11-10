@@ -1,10 +1,10 @@
 // The concrete value layout walker with its frames in the thread scratch
-// table, for kernels that bind it (program evidence native layout). Callers
+// table, for kernels that bind it (trait solver native layout). Callers
 // must have bound their slot with thread_scratch_begin. Local-array callers
 // keep concrete_value_words, which expands the same walker body.
 //
 // INTERIM: this is still per-thread DFS state, only moved to global memory.
-// The end state (P7) is program evidence on canonical type IDs with level
+// The end state (P7) is trait solver on canonical type IDs with level
 // rounds, where this walker is deleted.
 import type_checker.concrete_value_layout;
 import thread_scratch;

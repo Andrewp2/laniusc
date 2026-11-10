@@ -41,10 +41,10 @@ class PrimeProbeTests(unittest.TestCase):
             "buffers": [{"label": "type_check.interface.decls.rows", "created": 2},
                         {"label": "type_check.interface.decls.keys", "created": 3},
                         {"label": "readback.gather", "created": 1}],
-            "bind_groups": [{"label": "program_evidence.bindings.a.b", "created": 4}]}}
+            "bind_groups": [{"label": "trait_solver.bindings.a.b", "created": 4}]}}
         bufs, bgs = group_creations(response)
         self.assertEqual(bufs, {"type_check.interface.decls": 5, "readback.gather": 1})
-        self.assertEqual(bgs, {"program_evidence.bindings.a": 4})
+        self.assertEqual(bgs, {"trait_solver.bindings.a": 4})
         self.assertEqual(group_creations({}), ({}, {}))
 
     def test_created_anything(self):

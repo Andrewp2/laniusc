@@ -16,7 +16,7 @@
 //    publication and the call keeps its existing diagnostic.
 //
 // Implementation prerequisites (`where` clauses of the implementation) are
-// not consulted: they cannot add a candidate, and program evidence still
+// not consulted: they cannot add a candidate, and trait solver still
 // checks the selected implementation. Rounds repeat until nothing changes,
 // so a binding inferred here can feed the next call's argument claims.
 import hir_records;
