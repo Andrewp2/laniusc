@@ -76,6 +76,8 @@ static const uint CALL_MISMATCH_INTRINSIC_ARITY = 0xffffff0fu;
 static const uint INTRINSIC_NONE = 0u;
 static const uint INTRINSIC_PRINT = 1u;
 static const uint INTRINSIC_ASSERT = 2u;
+static const uint INTRINSIC_SLICE_LEN = 9u;
+static const uint INTRINSIC_STRING_LEN = 10u;
 static const uint INTRINSIC_TYPED_SLICE_FROM_RAW_PARTS = 7u;
 static const uint TYPE_INSTANCE_SLICE = 3u;
 static const uint WG_SIZE = 256u;
@@ -303,10 +305,12 @@ void resolve_callee_token(uint callee_i, uint call_node)
     if (method_call_name_id[callee_i] != INVALID)
         return;
 
-    // `print` and `assert` have no declaration to count parameters from.
-    // Each takes one argument.
+    // `print`, `assert`, `slice_len` and `string_len` have no declaration
+    // to count parameters from. Each takes one argument.
     if ((call_intrinsic_tag[callee_i] == INTRINSIC_PRINT ||
-         call_intrinsic_tag[callee_i] == INTRINSIC_ASSERT) &&
+         call_intrinsic_tag[callee_i] == INTRINSIC_ASSERT ||
+         call_intrinsic_tag[callee_i] == INTRINSIC_SLICE_LEN ||
+         call_intrinsic_tag[callee_i] == INTRINSIC_STRING_LEN) &&
         call_arg_count_for_callee(callee_i) != 1u)
     {
         record_error(callee_i, ERR_CALL_MISMATCH, CALL_MISMATCH_INTRINSIC_ARITY);

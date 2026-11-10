@@ -532,6 +532,7 @@ bool wasm_intrinsic_supported(uint intrinsic)
     return intrinsic == WASM_INTRINSIC_PRINT || intrinsic == WASM_INTRINSIC_ASSERT ||
         intrinsic == INTRINSIC_I32_ARRAY_DATA_PTR || intrinsic == INTRINSIC_I32_SLICE_DATA_PTR ||
         intrinsic == INTRINSIC_STRING_DATA_PTR || intrinsic == INTRINSIC_SLICE_STRIDE ||
+        intrinsic == INTRINSIC_SLICE_LEN || intrinsic == INTRINSIC_STRING_LEN ||
         intrinsic_slice_from_raw_parts(intrinsic);
 }
 
@@ -1284,9 +1285,35 @@ void wasm_plan_body(WasmPlanRow row,
             wasm_emit(WASM_LIR_OP_I32_LOAD, 0u);
             return;
         }
+        if (operands.a == INTRINSIC_SLICE_LEN)
+        {
+            // The layout column holds the argument's checked length. A
+            // slice (the runtime marker) reads its descriptor. A fixed
+            // array is the address of its element 0, so its length is the
+            // checked constant.
+            if (row.layout == SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME)
+            {
+                wasm_emit_offset(wasm_word_delta(NATIVE_SLICE_LENGTH));
+                wasm_emit(WASM_LIR_OP_I32_LOAD, 0u);
+                return;
+            }
+            if (row.layout == WASM_LIR_INVALID) wasm_plan_unsupported = true;
+            wasm_emit(WASM_LIR_OP_DROP, 0u);
+            wasm_emit(WASM_LIR_OP_I32_CONST, row.layout);
+            return;
+        }
         if (operands.a == INTRINSIC_I32_SLICE_DATA_PTR)
         {
             wasm_emit(WASM_LIR_OP_I32_LOAD, 0u);
+            return;
+        }
+        // A string's byte length is its second ABI value: keep it and drop
+        // the pointer under it.
+        if (operands.a == INTRINSIC_STRING_LEN)
+        {
+            wasm_emit(WASM_LIR_OP_LOCAL_SET, WASM_SYNTHETIC_I32_TEMP);
+            wasm_emit(WASM_LIR_OP_DROP, 0u);
+            wasm_emit(WASM_LIR_OP_LOCAL_GET, WASM_SYNTHETIC_I32_TEMP);
             return;
         }
         // A string's data pointer is its first ABI value.

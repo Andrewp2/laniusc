@@ -55,6 +55,8 @@ They are separate from the 11 source helpers and from the host allocator:
 | `core::mem::i32_slice_from_raw_parts(data, length)` | Canonical packed `[i32]` raw view |
 | `slice_from_raw_parts(data, length)` | Contextually typed `[T]` raw view; the complete receiving type determines `T` |
 | `core::mem::slice_stride(view)` | `isize` signed byte stride stored in that particular slice descriptor |
+| `core::mem::slice_len(view)` | `usize` element count of a slice, or of an array passed as one |
+| `core::mem::string_len(text)` | `usize` byte count of a `str` |
 
 The unqualified `slice_from_raw_parts` spelling is used in the source helpers
 and the direct typed-intrinsic fixture. It does not infer an element type from

@@ -124,6 +124,12 @@ public static const uint LIVE_REFERENCE_WRITTEN = 0x20000006u;
 // scalar code, or 0 for a type that is not a scalar.
 // PRIMITIVE_CONSTANT
 public static const uint PRINT_ARGUMENT_TYPE = 0x21000000u;
+// LNC0006 detail base of a `slice_len` or `string_len` argument of the wrong
+// type (calls/03a_collect_row_args.slang). Bit 8 is set for `string_len`.
+// The low byte holds the argument's scalar code, or 0 for a type that is
+// not a scalar.
+// PRIMITIVE_CONSTANT
+public static const uint LENGTH_ARGUMENT_TYPE = 0x22000000u;
 
 // Any primitive identity, never included: canonical IDs and interface leaves.
 [ForceInline]

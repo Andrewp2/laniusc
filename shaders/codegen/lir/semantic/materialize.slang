@@ -1851,9 +1851,12 @@ SemanticLirRow materialize_original_semantic_lir_row(uint node, uint local_row, 
     {
         uint stored_value = compound_assignment ? first_row + 1u
             : lir_for_value_hir(payload.c, hir_count);
+        // A field store and an indexed store both address the base of the
+        // assignment's left side.
+        if (assignment_field || assignment_indexed)
+            operands.a = lir_for_hir(assignment_lhs_payload.b, hir_count);
         if (assignment_field)
         {
-            operands.a = lir_for_hir(assignment_lhs_payload.b, hir_count);
             uint field_words;
             member_word_layout(assignment_lhs,
                 semantic_member_field_ordinal[assignment_lhs], hir_count,
@@ -1865,7 +1868,6 @@ SemanticLirRow materialize_original_semantic_lir_row(uint node, uint local_row, 
         }
         else if (assignment_indexed)
         {
-            operands.a = lir_for_hir(assignment_lhs_payload.b, hir_count);
             operands.b = lir_for_hir(assignment_lhs_payload.c, hir_count);
             operands.c = stored_value;
         }
@@ -1951,15 +1953,13 @@ SemanticLirRow materialize_original_semantic_lir_row(uint node, uint local_row, 
             core.flags |= SEMANTIC_LIR_FLAG_UNSUPPORTED;
         operands.b = semantic_member_field_ordinal[member];
     }
-    else if (op == SEMANTIC_LIR_OP_LOAD && assignment_indexed)
+    else if (op == SEMANTIC_LIR_OP_LOAD && (assignment_indexed || hir.kind == HIR_INDEX_EXPR))
     {
-        operands.a = lir_for_hir(assignment_lhs_payload.b, hir_count);
-        operands.b = lir_for_hir(assignment_lhs_payload.c, hir_count);
-    }
-    else if (op == SEMANTIC_LIR_OP_LOAD && hir.kind == HIR_INDEX_EXPR)
-    {
-        operands.a = lir_for_hir(payload.b, hir_count);
-        operands.b = lir_for_hir(payload.c, hir_count);
+        // A compound assignment reads the indexed place on its left side.
+        // An index expression reads its own base and index.
+        HirPayload indexed = assignment_indexed ? assignment_lhs_payload : payload;
+        operands.a = lir_for_hir(indexed.b, hir_count);
+        operands.b = lir_for_hir(indexed.c, hir_count);
     }
     else if (op == SEMANTIC_LIR_OP_BRANCH)
     {
@@ -2015,6 +2015,17 @@ SemanticLirRow materialize_original_semantic_lir_row(uint node, uint local_row, 
             else if (words != LIR_INVALID && words <= 0x0fffffffu)
                 layout_word_offset = 0u - words * 8u;
         }
+    }
+    if (op == SEMANTIC_LIR_OP_CALL_INTRINSIC && operands.a == INTRINSIC_SLICE_LEN)
+    {
+        // A slice keeps its length in its descriptor. A fixed array has no
+        // descriptor on every target, so the row publishes the argument's
+        // checked length: the element count of an array, or the runtime
+        // marker for a slice.
+        HirCallArg argument = compact_call_args[payload.b];
+        layout_word_offset = payload.b < compact_call_arg_count[0u] &&
+            argument.call == node && argument.value < hir_count
+            ? semantic_array_length[argument.value] : LIR_INVALID;
     }
     // Field operands are target-independent ordinals. Explicit member HIR
     // above computes a potentially wider flattened x86 layout offset; field

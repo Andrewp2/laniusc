@@ -311,10 +311,7 @@ uint spill_word_count(uint row, uint total, uint function_total)
         return operands.a == HOST_SERVICE_I32_TO_F32 ||
             x86_runtime_service_has_result(operands.a) ? 1u : 0u;
     if (op == SEMANTIC_LIR_OP_CALL_INTRINSIC)
-        return (operands.a == INTRINSIC_I32_ARRAY_DATA_PTR ||
-                operands.a == INTRINSIC_I32_SLICE_DATA_PTR ||
-                operands.a == INTRINSIC_STRING_DATA_PTR ||
-                operands.a == INTRINSIC_SLICE_STRIDE) ? 1u :
+        return intrinsic_argument_word(operands.a) ? 1u :
             intrinsic_slice_from_raw_parts(operands.a) ?
                 1u + NATIVE_SLICE_WORDS : 0u;
     return produces_scalar_value(op) ? 1u : 0u;

@@ -4253,6 +4253,16 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
             )
         }
         GpuTypeCheckCode::AssignMismatch
+            if detail & 0xffff_fe00 == crate::primitive_types::LENGTH_ARGUMENT_TYPE =>
+        {
+            let (label, note) = length_argument_text(detail & 0x100 != 0, detail & 0xff);
+            CompileError::Diagnostic(
+                Diagnostic::error("LNC0006", "type mismatch")
+                    .with_primary_label(diagnostic_label_from_source_span(path, source, start, len, label))
+                    .with_note(note),
+            )
+        }
+        GpuTypeCheckCode::AssignMismatch
             if assign_mismatch_looks_like_invalid_member_access(source, start, detail) =>
         {
             invalid_member_access_diagnostic(path, source, start, len, u32::MAX)
@@ -4970,6 +4980,31 @@ fn print_argument_text(scalar: u32) -> (String, &'static str) {
     (label, note)
 }
 
+/// Label and note for a `slice_len` or `string_len` argument of the wrong type.
+fn length_argument_text(text: bool, scalar: u32) -> (String, &'static str) {
+    use crate::primitive_types::*;
+    let found = match crate::primitive_types::name(scalar) {
+        Some(name) if scalar != SCALAR_UNKNOWN => format!("this value is `{name}`"),
+        _ if text => "this value is not text".to_string(),
+        _ => "this value is neither".to_string(),
+    };
+    if text {
+        let note = if scalar == SCALAR_UNKNOWN {
+            "`slice_len(values)` counts the elements of a slice or an array"
+        } else {
+            "`string_len(text)` counts the bytes of a `str`"
+        };
+        (format!("`string_len` takes a `str`; {found}"), note)
+    } else {
+        let note = if scalar == SCALAR_STR {
+            "`string_len(text)` counts the bytes of a `str`"
+        } else {
+            "`slice_len(values)` counts the elements of a slice or an array"
+        };
+        (format!("`slice_len` takes a slice or an array; {found}"), note)
+    }
+}
+
 fn call_mismatch_diagnostic(
     path: &Path,
     source: &str,
@@ -5014,8 +5049,8 @@ fn call_mismatch_diagnostic(
             "match the argument list to the resolved function or method signature",
         ),
         CALL_MISMATCH_INTRINSIC_ARITY => (
-            "`print` and `assert` take exactly one argument",
-            "pass one value: `print(count);` writes one integer and a line end, and `assert(condition);` stops the program when the condition is false",
+            "this built-in function takes exactly one argument",
+            "`print(count)`, `assert(condition)`, `slice_len(values)` and `string_len(text)` each take one value",
         ),
         CALL_MISMATCH_TYPED_SLICE_RETURN => (
             "slice_from_raw_parts must return a slice type",

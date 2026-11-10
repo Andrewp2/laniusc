@@ -511,6 +511,18 @@ static const uint INTRINSIC_STRING_DATA_PTR = 6u;
 static const uint INTRINSIC_TYPED_SLICE_FROM_RAW_PARTS = 7u;
 // The third word (byte stride) of a slice argument, as isize.
 static const uint INTRINSIC_SLICE_STRIDE = 8u;
+// The second word (element count) of a slice argument, as usize.
+static const uint INTRINSIC_SLICE_LEN = 9u;
+// The second word (byte count) of a str argument, as usize.
+static const uint INTRINSIC_STRING_LEN = 10u;
+
+// An intrinsic whose result is one word of its argument.
+bool intrinsic_argument_word(uint tag)
+{
+    return tag == INTRINSIC_I32_ARRAY_DATA_PTR || tag == INTRINSIC_I32_SLICE_DATA_PTR ||
+        tag == INTRINSIC_STRING_DATA_PTR || tag == INTRINSIC_SLICE_STRIDE ||
+        tag == INTRINSIC_SLICE_LEN || tag == INTRINSIC_STRING_LEN;
+}
 
 bool intrinsic_slice_from_raw_parts(uint tag)
 {

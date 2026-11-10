@@ -111,11 +111,15 @@ pub fn typed_prefix_from_storage<T>(storage: ptr, capacity: i32, length: i32) ->
 
 // Compiler-provided intrinsics available through this module:
 // i32_array_data_ptr, i32_slice_data_ptr, string_data_ptr,
-// i32_slice_from_raw_parts, and slice_stride. They are not defined in Lanius
-// source because a placeholder body would silently return a null pointer or
-// empty view on a target without intrinsic lowering. Callers must keep
-// borrowed backing storage alive. Constructing a view also requires a valid
-// aligned pointer with at least the claimed number of i32 elements.
+// i32_slice_from_raw_parts, slice_stride, slice_len, and string_len. They are
+// not defined in Lanius source because a placeholder body would silently
+// return a null pointer or empty view on a target without intrinsic lowering.
+// Callers must keep borrowed backing storage alive. Constructing a view also
+// requires a valid aligned pointer with at least the claimed number of i32
+// elements.
 // slice_stride(view) returns the view's signed byte stride as isize: element
 // i + 1 starts that many bytes after element i. A native array passed as a
 // slice keeps its own layout, so its stride can differ from a raw view's.
+// slice_len(view) returns the element count of a slice, or of an array
+// passed as one, as usize. string_len(text) returns the byte count of a str
+// as usize. Each rejects an argument of any other type.

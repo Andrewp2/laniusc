@@ -4,7 +4,10 @@ mod common;
 
 use std::path::PathBuf;
 
-use laniusc_compiler::compiler::compile_entry_to_x86_64_with_stdlib;
+use laniusc_compiler::compiler::{
+    compile_entry_to_wasm_with_stdlib,
+    compile_entry_to_x86_64_with_stdlib,
+};
 
 fn compile(fixture: &str) -> Result<Vec<u8>, String> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -182,6 +185,67 @@ fn distinct_types_reject_values_of_another_type() {
     ] {
         assert_rejected(fixture, &["LNC0006", DISTINCT]);
     }
+}
+
+const LENGTHS: &str = "15\n3\n6\n5\n0\n6\n3\n3\n3\n2\n3\n";
+
+#[test]
+fn slice_len_and_string_len_count_elements_and_bytes() {
+    let fixture = "length_builtins.lani";
+    let bytes = compile(fixture).unwrap_or_else(|error| panic!("{fixture}: {error}"));
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output("language ergonomics", fixture, &bytes);
+        assert_eq!(String::from_utf8_lossy(&output.stdout), LENGTHS, "{output:?}");
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn slice_len_and_string_len_count_on_wasm() {
+    common::require_node();
+    let fixture = "length_builtins.lani";
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/language").join(fixture);
+    let stdlib_root = root.join("stdlib");
+    let wasm = common::run_gpu_codegen_with_timeout(fixture, move || {
+        pollster::block_on(compile_entry_to_wasm_with_stdlib(&entry, &stdlib_root))
+    })
+    .unwrap_or_else(|error| panic!("{fixture}: {error}"));
+    let stdout = common::run_wasm_main_with_node("language ergonomics", "length_builtins", &wasm);
+    assert_eq!(stdout, LENGTHS);
+}
+
+#[test]
+fn length_builtins_reject_an_argument_of_another_type() {
+    assert_rejected(
+        "slice_len_of_integer.lani",
+        &["LNC0006", "`slice_len` takes a slice or an array; this value is `i32`"],
+    );
+    assert_rejected(
+        "slice_len_of_text.lani",
+        &["LNC0006", "this value is `str`", "`string_len(text)` counts the bytes"],
+    );
+    assert_rejected(
+        "string_len_of_array.lani",
+        &["LNC0006", "`string_len` takes a `str`", "`slice_len(values)` counts the elements"],
+    );
+    assert_rejected(
+        "slice_len_two_arguments.lani",
+        &["LNC0027", "takes exactly one argument"],
+    );
+}
+
+#[test]
+fn print_rejects_a_value_it_cannot_write() {
+    assert_rejected(
+        "print_text.lani",
+        &["LNC0006", "this value is `str`", "std::io::println"],
+    );
+    assert_rejected("print_wide_integer.lani", &["LNC0006", "this value is `i64`", "as i32"]);
+    assert_rejected("print_two_arguments.lani", &["LNC0027", "takes exactly one argument"]);
 }
 
 #[test]

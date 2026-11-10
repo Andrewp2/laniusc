@@ -1,0 +1,3 @@
+fn main() -> i32 {
+    return slice_len(3) as i32;
+}

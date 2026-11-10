@@ -41,7 +41,7 @@ static const uint PATH_RESOLVE_STATUS_INVALID = 0xffffffffu;
 static const uint PATH_RESOLVE_STATUS_MISSING_ASSOCIATED_ITEM = 8u;
 static const uint ERR_UNRESOLVED_IDENT = 2u;
 static const uint ERR_CALL_MISMATCH = 10u;
-static const uint LANGUAGE_SYMBOL_COUNT = 79u;
+static const uint LANGUAGE_SYMBOL_COUNT = 81u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
 [ForceInline]

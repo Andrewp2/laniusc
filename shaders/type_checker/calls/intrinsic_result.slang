@@ -10,9 +10,12 @@ public static const uint INTRINSIC_I32_SLICE_DATA_PTR = 5u;
 public static const uint INTRINSIC_STRING_DATA_PTR = 6u;
 public static const uint INTRINSIC_TYPED_SLICE_FROM_RAW_PARTS = 7u;
 public static const uint INTRINSIC_SLICE_STRIDE = 8u;
+public static const uint INTRINSIC_SLICE_LEN = 9u;
+public static const uint INTRINSIC_STRING_LEN = 10u;
 
 // The legacy result code of an intrinsic: ptr for the data pointers, the
 // i32 slice code for i32_slice_from_raw_parts, isize for slice_stride,
+// usize for slice_len and string_len,
 // unknown for the typed slice (its element comes from the caller) and void
 // for the rest.
 public uint intrinsic_result_type(uint intrinsic)
@@ -21,6 +24,7 @@ public uint intrinsic_result_type(uint intrinsic)
         intrinsic == INTRINSIC_STRING_DATA_PTR) return 8u;
     if (intrinsic == INTRINSIC_I32_SLICE_FROM_RAW_PARTS) return 128u + 3u;
     if (intrinsic == INTRINSIC_SLICE_STRIDE) return 16u;
+    if (intrinsic == INTRINSIC_SLICE_LEN || intrinsic == INTRINSIC_STRING_LEN) return 17u;
     return intrinsic == INTRINSIC_TYPED_SLICE_FROM_RAW_PARTS ? 0u : 1u;
 }
 

@@ -154,6 +154,8 @@ static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint PARAM_CACHE_STRIDE = 4u;
 static const uint INTRINSIC_NONE = 0u;
 static const uint INTRINSIC_PRINT = 1u;
+static const uint INTRINSIC_SLICE_LEN = 9u;
+static const uint INTRINSIC_STRING_LEN = 10u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
@@ -282,6 +284,34 @@ void check_print_argument(uint node, uint callee)
         PRINT_ARGUMENT_TYPE | (scalar ? payload : 0u));
 }
 
+// `slice_len` reads the length word of a slice or of an array passed as one.
+// `string_len` reads the length word of a `str`. Any other argument has no
+// such word, so it is a type error. The strict pass checks it.
+void check_length_argument(uint node, uint callee, bool text)
+{
+    if (call_inference_state[0u] != 0u) return;
+    uint tag; uint payload;
+    bool known = argument_result_reference(resolve_expr(node), tag, payload);
+    if (known && type_ref_is_never(tag, payload)) return;
+    bool scalar = known && tag == TYPE_REF_SCALAR;
+    bool accepted = false;
+    if (text)
+        accepted = scalar && payload == SCALAR_STR;
+    else if (known && tag == TYPE_REF_INSTANCE && payload < parameter_type_capacity())
+        accepted = type_instance_kind[payload] == TYPE_INSTANCE_SLICE ||
+            type_instance_kind[payload] == TYPE_INSTANCE_ARRAY;
+    else if (known && tag == TYPE_REF_EXTERNAL_CANONICAL)
+    {
+        uint count = dependency_type_count();
+        uint root = payload < count ? canonical_type_roots[payload] : INVALID;
+        uint kind = root < count ? dependency_type_word(root * 9u) : 0u;
+        accepted = kind == 4u || kind == 5u;
+    }
+    if (accepted) return;
+    record_error(call_arg_error_token(node, callee), ERR_ASSIGN_MISMATCH,
+        LENGTH_ARGUMENT_TYPE | (text ? 0x100u : 0u) | (scalar ? payload : 0u));
+}
+
 void collect_row_argument(uint row)
 {
     if (row >= call_arg_row_count_out[0u]) return;
@@ -293,6 +323,12 @@ void collect_row_argument(uint row)
     if (call_intrinsic_tag[callee] == INTRINSIC_PRINT)
     {
         check_print_argument(node, callee);
+        return;
+    }
+    if (call_intrinsic_tag[callee] == INTRINSIC_SLICE_LEN ||
+        call_intrinsic_tag[callee] == INTRINSIC_STRING_LEN)
+    {
+        check_length_argument(node, callee, call_intrinsic_tag[callee] == INTRINSIC_STRING_LEN);
         return;
     }
     if (call_intrinsic_tag[callee] != INTRINSIC_NONE || param == INVALID) return;
