@@ -520,6 +520,22 @@ impl<'gpu> GpuCompiler<'gpu> {
         .current()
     }
 
+    /// Zeroes the parser's resident job storage for the next job. A daemon
+    /// calls this after it has written a job's response, so the clear (about
+    /// 750 MB for a 100-file project) runs while the daemon waits for the
+    /// next request and that job's parser skips its own.
+    pub async fn clear_job_storage_for_next_job(&self) {
+        let _resident_guard = self.resident_pipeline_lock.lock().await;
+        let label = "compile.idle.clear_job_storage";
+        let mut encoder = self
+            .gpu
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
+        if self.parser.record_job_storage_clear_after_job(&mut encoder) {
+            crate::gpu::passes_core::submit_with_progress(&self.gpu.queue, label, encoder.finish());
+        }
+    }
+
     /// Releases source/job-sized GPU buffers across every compiler phase while
     /// retaining shader pipelines, immutable compiler tables, and the device.
     ///

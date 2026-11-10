@@ -705,6 +705,23 @@ impl GpuParser {
         consume(bufs)
     }
 
+    /// Records the clear of the resident job storage for the next job
+    /// (`ParserBuffers::clear_job_storage_after_job`). False when no resident
+    /// buffers exist.
+    pub(crate) fn record_job_storage_clear_after_job(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+    ) -> bool {
+        let guard = self
+            .resident_buffers
+            .lock()
+            .expect("parser.resident_buffers poisoned");
+        let Some(resident) = guard.as_ref() else {
+            return false;
+        };
+        resident.buffers.clear_job_storage_after_job(encoder) != 0
+    }
+
     /// Releases resident parser buffers and cached parser bind groups.
     pub fn release_current_resident_buffers(&self) {
         *self

@@ -263,11 +263,21 @@ impl ParserBuffers {
         );
     }
 
+    /// Returns the bytes cleared: zero when the clear after the last job
+    /// already zeroed the storage. The type checker and lowering write this
+    /// storage too, always after a parser recording, so a recording marks
+    /// it written.
     pub(crate) fn clear_job_storage(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         active_tree_capacity: u32,
     ) -> u64 {
+        if self
+            .job_storage_zeroed
+            .swap(false, std::sync::atomic::Ordering::Relaxed)
+        {
+            return 0;
+        }
         self.job_storage_reset
             .as_ref()
             .expect("parser job reset was not installed")
@@ -279,6 +289,28 @@ impl ParserBuffers {
                         .unwrap_or(0)
                 }),
             )
+    }
+
+    /// Zeroes the job storage in full, so the next job of any size starts
+    /// without its own clear. The caller submits `encoder` after a job's last
+    /// readback and before any other parser recording: the clear then runs
+    /// while the daemon waits for a request, not inside the next compile.
+    pub(crate) fn clear_job_storage_after_job(&self, encoder: &mut wgpu::CommandEncoder) -> u64 {
+        let cleared = self
+            .job_storage_reset
+            .as_ref()
+            .expect("parser job reset was not installed")
+            .record_ranges(
+                encoder,
+                self.resettable_buffers.iter().map(|buffer| {
+                    Self::clears_before_job(buffer)
+                        .then_some(buffer.byte_size)
+                        .unwrap_or(0)
+                }),
+            );
+        self.job_storage_zeroed
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        cleared
     }
 
     pub(crate) fn resettable_storage_totals(&self) -> (usize, u64) {
@@ -1907,6 +1939,7 @@ impl ParserBuffers {
             copy_operations,
             clear_operations: std::sync::OnceLock::new(),
             job_storage_reset: None,
+            job_storage_zeroed: std::sync::atomic::AtomicBool::new(false),
             params_llp,
             semantic_token_kinds,
             token_delimiter_params,
