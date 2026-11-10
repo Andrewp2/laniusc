@@ -24,6 +24,21 @@ const DEFAULT_PENDING_ORIGINAL_CACHE_BYTES: usize = 128 * 1024 * 1024;
 /// Library instance runs (see `LibraryInstanceCache`).
 const DEFAULT_LIBRARY_INSTANCE_CACHE_BYTES: usize = 32 * 1024 * 1024;
 
+/// The source texts of each path-backed unit's last job, by library and unit
+/// id, in the unit's file order (`GpuCompiler::read_unit_source_files`).
+#[derive(Default)]
+pub(super) struct UnitSourceTexts {
+    units: HashMap<(u32, u32), Vec<Option<UnitSourceText>>>,
+}
+
+/// One file's elaborated text with the manifest record it was read under.
+struct UnitSourceText {
+    path: std::path::PathBuf,
+    byte_len: usize,
+    modified_unix_nanos: Option<u128>,
+    text: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(super) struct CompiledUnitCacheKey {
     target: u8,
@@ -882,6 +897,11 @@ impl GpuCompiler<'_> {
             .lock()
             .expect("pending-original cache mutex poisoned")
             .clear();
+        self.unit_source_texts
+            .lock()
+            .expect("unit source texts mutex poisoned")
+            .units
+            .clear();
         self.clear_library_instance_cache();
     }
 
@@ -970,6 +990,62 @@ impl GpuCompiler<'_> {
         )
     }
 
+    /// Reads one unit's source files, keeping the texts for the unit's next
+    /// job. A file whose path, byte length and modification time match the
+    /// kept record is not read again; any other file is validated against
+    /// the disk, read and elaborated as `read_explicit_source_path_files`
+    /// does. A file without a recorded modification time is always read.
+    fn read_unit_source_files(
+        &self,
+        label: &str,
+        library_id: u32,
+        unit_id: u32,
+        source_files: &[ExplicitSourcePathFile],
+    ) -> Result<Vec<String>, super::CompileError> {
+        let _span =
+            crate::gpu::trace::HostSpan::new("host.compiler", "compile.source-pack.unit.read_sources");
+        let key = (library_id, unit_id);
+        let mut kept = self
+            .unit_source_texts
+            .lock()
+            .expect("unit source texts mutex poisoned")
+            .units
+            .remove(&key)
+            .unwrap_or_default();
+        kept.resize_with(source_files.len(), || None);
+        let mut sources = Vec::with_capacity(source_files.len());
+        for (index, file) in source_files.iter().enumerate() {
+            let current = kept[index].take().filter(|text| {
+                file.modified_unix_nanos.is_some()
+                    && text.modified_unix_nanos == file.modified_unix_nanos
+                    && text.byte_len == file.byte_len
+                    && text.path == file.path
+            });
+            let text = match current {
+                Some(text) => text,
+                None => {
+                    let read = read_explicit_source_path_files(label, std::slice::from_ref(file))?
+                        .pop()
+                        .expect("one source file was read");
+                    UnitSourceText {
+                        path: file.path.clone(),
+                        byte_len: file.byte_len,
+                        modified_unix_nanos: file.modified_unix_nanos,
+                        text: read,
+                    }
+                }
+            };
+            sources.push(text.text.clone());
+            kept[index] = Some(text);
+        }
+        self.unit_source_texts
+            .lock()
+            .expect("unit source texts mutex poisoned")
+            .units
+            .insert(key, kept);
+        Ok(sources)
+    }
+
     /// Compiles one path-backed native unit as a pending original, or reuses
     /// a standard-library unit's pending original from an earlier job with
     /// the same identity: target, library, unit, source paths, lengths and
@@ -1015,8 +1091,12 @@ impl GpuCompiler<'_> {
         }) {
             return Ok(self.register_standard_original(standard_library, hit.pending()));
         }
-        let sources =
-            read_explicit_source_path_files("pending native library-interface job", source_files)?;
+        let sources = self.read_unit_source_files(
+            "pending native library-interface job",
+            job.library_id,
+            unit_id,
+            source_files,
+        )?;
         let cache_key = match (&cache_hint, standard_library) {
             (Some(hint), _) => Some(CompiledUnitCacheKey::from_hint(hint)),
             (None, true) => Some(
