@@ -6,10 +6,10 @@ import type_checker.scoped_type_equality;
 import type_checker.scoped_type_hash;
 import type_checker.scoped_type_scratch;
 
-public EvidenceStatus ts_admit_environment(
+public SolverStatus ts_admit_environment(
     uint environment, uint expected_owner, uint caller_owner, uint form)
 {
-    EvidenceStatus status = ts_admit_environment_header(environment, expected_owner, form);
+    SolverStatus status = ts_admit_environment_header(environment, expected_owner, form);
     if (status.state != TS_VALID) return status;
     uint4 env;
     if (!ts_environment_header(environment, env)) return ts_invalid(1u, environment, TS_INVALID);
@@ -30,12 +30,12 @@ public EvidenceStatus ts_admit_environment(
 // Caller must first admit each supplied environment with its exact target owner
 // and caller scope. An INVALID environment is the original symbolic context.
 // Each root has an independent budget; 32 operands do not share one 64-node cap.
-public EvidenceStatus ts_hash_root(
+public SolverStatus ts_hash_root(
     uint root, uint environment, uint visible_owner, bool require_closed, out uint hash)
 {
     hash = 0u;
     uint visits;
-    EvidenceStatus status = ts_admit_root(root, environment, visible_owner, require_closed, visits);
+    SolverStatus status = ts_admit_root(root, environment, visible_owner, require_closed, visits);
     if (status.state != TS_VALID) return status;
     uint2 reference; uint nodes; uint atoms;
     if (!ts_read_root(root, reference) || !ts_table_count(5u, nodes) || !ts_table_count(1u, atoms))
@@ -46,14 +46,14 @@ public EvidenceStatus ts_hash_root(
     return ts_ok();
 }
 
-public EvidenceStatus ts_equal_roots(
+public SolverStatus ts_equal_roots(
     uint left_root, uint left_environment, uint left_visible_owner, bool left_closed,
     uint right_root, uint right_environment, uint right_visible_owner, bool right_closed,
     out bool equal)
 {
     equal = false;
     uint visits;
-    EvidenceStatus status = ts_admit_root(
+    SolverStatus status = ts_admit_root(
         left_root, left_environment, left_visible_owner, left_closed, visits);
     if (status.state != TS_VALID) return status;
     status = ts_admit_root(right_root, right_environment, right_visible_owner, right_closed, visits);

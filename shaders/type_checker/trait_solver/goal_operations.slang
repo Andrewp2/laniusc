@@ -10,28 +10,28 @@ import type_checker.scoped_type_hash;
 import type_checker.scoped_type_equality;
 import type_checker.scoped_type_scratch;
 
-public struct EvidenceGoal
+public struct SolverGoal
 {
     public uint trait_atom; public uint subject_root; public uint first_argument; public uint argument_count;
     public uint environment; public uint visible_owner;
 }
-public bool ts_predicate_goal(uint predicate, uint environment, uint visible_owner, out EvidenceGoal goal)
+public bool ts_predicate_goal(uint predicate, uint environment, uint visible_owner, out SolverGoal goal)
 {
-    goal = (EvidenceGoal)0; uint4 low; uint4 high;
+    goal = (SolverGoal)0; uint4 low; uint4 high;
     if (!ts_read4(8u, predicate, 0u, low) || !ts_read4(8u, predicate, 4u, high)) return false;
     goal.trait_atom = low.z; goal.subject_root = low.w;
     goal.first_argument = high.x; goal.argument_count = high.y;
     goal.environment = environment; goal.visible_owner = visible_owner; return true;
 }
-public bool ts_implementation_goal(uint implementation, out EvidenceGoal goal)
+public bool ts_implementation_goal(uint implementation, out SolverGoal goal)
 {
-    goal = (EvidenceGoal)0; uint4 low; uint4 middle;
+    goal = (SolverGoal)0; uint4 low; uint4 middle;
     if (!ts_read4(9u, implementation, 0u, low) || !ts_read4(9u, implementation, 4u, middle)) return false;
     goal.trait_atom = low.z; goal.subject_root = low.w;
     goal.first_argument = middle.x; goal.argument_count = middle.y;
     goal.environment = TS_INVALID; goal.visible_owner = low.y; return true;
 }
-public EvidenceStatus ts_admit_and_hash_goal(EvidenceGoal goal, bool closed, out uint hash)
+public SolverStatus ts_admit_and_hash_goal(SolverGoal goal, bool closed, out uint hash)
 {
     hash = 0u;
     if (!ts_nominal_is_valid(goal.trait_atom)) return ts_invalid(2u, goal.trait_atom, TS_INVALID);
@@ -55,7 +55,7 @@ public EvidenceStatus ts_admit_and_hash_goal(EvidenceGoal goal, bool closed, out
         uint root = goal.subject_root;
         if (i != 0u) root = goal.first_argument + (i - 1u);
         uint child_hash;
-        EvidenceStatus status = ts_hash_root(root, goal.environment,
+        SolverStatus status = ts_hash_root(root, goal.environment,
             goal.visible_owner, closed, child_hash);
         if (status.state != TS_VALID) return status;
         accumulated = scoped_type_hash_mix(accumulated, child_hash);
@@ -71,7 +71,7 @@ public bool ts_equal_admitted_goal_roots(uint left_root, uint left_env, uint rig
     return scoped_type_refs_equal_scratch<TraitSolverTypeGraph>(
         left.x, left.y, left_env, right.x, right.y, right_env, nodes, atoms);
 }
-public bool ts_equal_admitted_goals(EvidenceGoal left, EvidenceGoal right)
+public bool ts_equal_admitted_goals(SolverGoal left, SolverGoal right)
 {
     // Only called after complete goal and complete environment admission.
     // Inputs stay immutable through every equality dispatch. Thus shared false
@@ -95,7 +95,7 @@ public bool ts_equal_admitted_goals(EvidenceGoal left, EvidenceGoal right)
     return true;
 }
 
-public EvidenceStatus ts_environment_is_closed(uint environment, uint visible_owner, out bool closed)
+public SolverStatus ts_environment_is_closed(uint environment, uint visible_owner, out bool closed)
 {
     closed = true; uint4 env;
     if (!ts_environment_header(environment, env)) return ts_invalid(1u, environment, TS_INVALID);
@@ -105,7 +105,7 @@ public EvidenceStatus ts_environment_is_closed(uint environment, uint visible_ow
     {
         uint root; uint visits;
         if (!ts_word(12u, env.y + i, 2u, root)) return ts_invalid(1u, environment, env.y + i);
-        EvidenceStatus status = ts_admit_root(root, TS_INVALID, visible_owner, true, visits);
+        SolverStatus status = ts_admit_root(root, TS_INVALID, visible_owner, true, visits);
         if (status.state == TS_INVALID_INPUT && status.detail == 10u) { closed = false; continue; }
         if (status.state != TS_VALID) return status;
     }

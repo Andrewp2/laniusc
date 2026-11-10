@@ -219,7 +219,7 @@ public struct PlmCopyGraphs : IProofNormalizationPair
 // Count, emit, and exact-check share the existing one-shot transform. All three
 // operate on immutable source/replacement graphs. The exclusive job publishes
 // new row counts only after the check; unrelated invocations cannot read it.
-public EvidenceStatus plm_copy_closed_root<Graphs : IProofNormalizationPair,
+public SolverStatus plm_copy_closed_root<Graphs : IProofNormalizationPair,
     Bindings : IProofNormalizationBindings>(
     uint2 source, uint environment, uint owner, uint side, out uint2 result)
 {
@@ -232,7 +232,7 @@ public EvidenceStatus plm_copy_closed_root<Graphs : IProofNormalizationPair,
     {
         reservation.sink_mode = pass;
         ProofNormalizationCounts measured; uint2 normalized; bool closed;
-        EvidenceStatus status = ts_normalize_proof_root_on_side<Graphs, Bindings, NativeLayoutSink>(
+        SolverStatus status = ts_normalize_proof_root_on_side<Graphs, Bindings, NativeLayoutSink>(
             source, environment, owner, TS_ADMITTED_DOMAIN_TYPE, pass != 0u, reservation, side,
             normalized, closed, measured);
         if (status.state != TS_VALID) return status;

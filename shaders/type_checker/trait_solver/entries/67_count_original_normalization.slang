@@ -17,7 +17,7 @@ void main(uint3 dtid : SV_DispatchThreadID)
     uint local = linear_dispatch_thread_id_2d(dtid, 16776960u);
     uint count; uint row;
     if (!pps_count(PPS_WORK, count) || !ts_dispatch_row(local, count, row)) return;
-    EvidenceStatus status; uint nodes; uint edges; uint roots;
+    SolverStatus status; uint nodes; uint edges; uint roots;
     if (!ts_bind_scratch(local, row, status)) return;
     if (pps_measure_original_work(row, nodes, edges, roots))
         pps_add_normalization_demand(nodes, edges, roots);

@@ -12,6 +12,6 @@ void main(uint3 dtid : SV_DispatchThreadID)
     uint local = linear_dispatch_thread_id_2d(dtid, 16776960u);
     uint row;
     if (!ts_catalog_admission_row(6u, local, row)) return;
-    EvidenceStatus status = ts_admit_catalog_edge(row);
+    SolverStatus status = ts_admit_catalog_edge(row);
     ts_catalog_failure(status);
 }

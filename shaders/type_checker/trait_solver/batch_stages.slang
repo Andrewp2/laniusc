@@ -18,7 +18,7 @@ public void ts_batch_validate_contexts(uint local)
     if (!ts_batch_is_building()) return;
     uint count; uint row;
     if (!ts_table_count(13u, count) || !ts_dispatch_row(local, count, row)) return;
-    EvidenceStatus status;
+    SolverStatus status;
     if (ts_bind_scratch(local, row, status)) status = ts_validate_context(row);
     ts_write_status(2u, row, status);
     ts_batch_failure(status);
@@ -28,7 +28,7 @@ public void ts_batch_index_assumptions(uint local)
     if (!ts_batch_is_building()) return;
     uint count; uint row;
     if (!ts_table_count(14u, count) || !ts_dispatch_row(local, count, row)) return;
-    EvidenceStatus status;
+    SolverStatus status;
     if (ts_bind_scratch(local, row, status)) status = ts_build_assumption_index(row);
     ts_batch_failure(status);
 }
@@ -74,13 +74,13 @@ public void ts_batch_reduce_calls(uint local)
             bool terminal = state >= 3u && state <= 7u;
             ts_call_status(call, terminal ? 3u : 4u, terminal ? detail : 15u,
                 obligation, required, available);
-            EvidenceStatus failed = ts_invalid(terminal ? detail : 15u, call, obligation);
+            SolverStatus failed = ts_invalid(terminal ? detail : 15u, call, obligation);
             if (terminal) failed.state = TS_OBLIGATION_FAILURE;
             ts_batch_failure(failed); return;
         }
         hypothesis = hypothesis || state == 2u;
     }
-    bool closed = false; EvidenceStatus status;
+    bool closed = false; SolverStatus status;
     if (ts_bind_scratch(local, call, status)) status = ts_environment_is_closed(high.x, low.z, closed);
     if (status.state != TS_VALID)
     {
@@ -114,7 +114,7 @@ public void ts_batch_finish()
     // completed each phase, and inserted all required barriers. Any failed row
     // has already replaced BUILDING. No-call batches still require this gate.
     if (!ts_batch_is_building()) return;
-    EvidenceStatus accepted = pps_accept_submission();
+    SolverStatus accepted = pps_accept_submission();
     if (accepted.state != TS_VALID) { pps_store_failure(accepted); return; }
     ts_write_batch_receipt(accepted);
 }

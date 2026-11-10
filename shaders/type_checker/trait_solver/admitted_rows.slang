@@ -49,7 +49,7 @@ public bool ts_admitted_constant_reference_shape(uint2 reference)
 public bool ts_read_admitted_owner(uint owner, out uint4 low, out uint4 high)
 {
     low = uint4(TS_INVALID, TS_INVALID, TS_INVALID, TS_INVALID); high = low;
-    EvidenceTable descriptor;
+    SolverTable descriptor;
     // Definitions and lexical owners never come from a batch suffix.
     return ts_descriptor(2u, descriptor) && owner < descriptor.catalog_count &&
         ts_read8(2u, owner, low, high) && high.y <= 64u &&
@@ -87,7 +87,7 @@ public bool ts_admitted_parameter_visible(uint atom, uint owner)
 
 // Derive counts from admitted composed scopes without re-proving chain shape,
 // ordinal order, distinct slots, or composed-slot order for every consumer.
-public EvidenceStatus ts_admitted_owner_parameter_counts(
+public SolverStatus ts_admitted_owner_parameter_counts(
     uint owner, out uint type_count, out uint constant_count)
 {
     type_count = 0u; constant_count = 0u;

@@ -13,7 +13,7 @@ use super::{
     AdmittedCall,
     OwnedProofRoot,
     ProgramPacket,
-    ValidatedEvidence,
+    ValidatedSolverResult,
 };
 use crate::{
     constant_value::CheckedConstantValue,
@@ -28,7 +28,7 @@ use crate::{
 
 pub(in crate::compiler::gpu_compiler::trait_solver) struct ImplApplicationRequest {
     origin: AdmittedCall,
-    evidence: ValidatedEvidence,
+    evidence: ValidatedSolverResult,
     root: OwnedProofRoot,
     subject_slot: u32,
     identity: Arc<()>,
@@ -147,7 +147,7 @@ impl ProgramPacket {
     fn implementation_request_source(
         &self,
         origin: &AdmittedCall,
-        evidence: &ValidatedEvidence,
+        evidence: &ValidatedSolverResult,
     ) -> Result<(OwnedProofRoot, u32, [u32; 8])> {
         let (_, _, _, obligations) = self.replay_origin(origin)?;
         ensure!(
@@ -215,7 +215,7 @@ impl ProgramPacket {
     pub(in crate::compiler::gpu_compiler::trait_solver) fn request_implementation_application(
         &self,
         origin: &AdmittedCall,
-        evidence: &ValidatedEvidence,
+        evidence: &ValidatedSolverResult,
     ) -> Result<ImplApplicationRequest> {
         let (root, subject_slot, rows) = self.implementation_request_source(origin, evidence)?;
         Ok(ImplApplicationRequest {

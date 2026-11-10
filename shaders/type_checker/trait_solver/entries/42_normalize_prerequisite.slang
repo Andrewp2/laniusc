@@ -16,7 +16,7 @@ void main(uint3 dtid : SV_DispatchThreadID)
     if (!pps_count(PPS_WORK, count))
     { ts_batch_failure(ts_invalid(1u, PPS_WORK, TS_INVALID)); return; }
     if (!ts_dispatch_row(local, count, row)) return;
-    EvidenceStatus status;
+    SolverStatus status;
     if (ts_bind_scratch(local, row, status)) status = pps_normalize_prerequisite_work(row);
     ts_batch_failure(status);
 }

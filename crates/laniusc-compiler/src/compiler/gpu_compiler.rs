@@ -77,7 +77,7 @@ pub struct GpuCompiler<'gpu> {
     library_instance_cache: std::sync::Mutex<unit_cache::LibraryInstanceCache>,
     parser_shape_cache: std::sync::Mutex<ParserShapeCache>,
     codegen_kernels: Option<Box<crate::gpu::kernels::KernelRegistry>>,
-    trait_solver_workspace: trait_solver::EvidenceWorkspacePool,
+    trait_solver_workspace: trait_solver::SolverWorkspacePool,
 }
 
 // A worst-case 10,000-file project may place each file in its own bounded
@@ -212,7 +212,7 @@ fn initialize_pipeline_families(
                     // x86 jobs; its pipelines are prepared with the linker's.
                     let linker = x86::GpuX86Linker::new_with_device(gpu)
                         .and_then(|linker| {
-                            trait_solver::prepare_evidence_kernels(&gpu.device)?;
+                            trait_solver::prepare_solver_kernels(&gpu.device)?;
                             Ok(linker)
                         })
                         .map(Box::new)
@@ -454,7 +454,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 library_instance_cache: std::sync::Mutex::new(unit_cache::LibraryInstanceCache::default()),
                 parser_shape_cache: std::sync::Mutex::new(ParserShapeCache::default()),
                 codegen_kernels,
-                trait_solver_workspace: trait_solver::EvidenceWorkspacePool::new(
+                trait_solver_workspace: trait_solver::SolverWorkspacePool::new(
                     gpu.device.clone(), gpu.queue.clone(),
                 ),
             })

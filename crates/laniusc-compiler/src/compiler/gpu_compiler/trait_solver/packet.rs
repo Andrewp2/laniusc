@@ -27,7 +27,7 @@ pub(super) use implementation_application::{
 /// GPU catalog, batch, context and call status for this exact Submission.
 /// Its constructor is deliberately at this module boundary, not a public API.
 #[derive(Clone, Debug)]
-pub(in crate::compiler::gpu_compiler) struct ValidatedEvidence {
+pub(in crate::compiler::gpu_compiler) struct ValidatedSolverResult {
     epoch: u64,
     arena_id: u64,
     input_row: u32,
@@ -43,7 +43,7 @@ pub(in crate::compiler::gpu_compiler) struct ValidatedEvidence {
     proof: Option<OwnedProofRoot>,
 }
 
-impl ValidatedEvidence {
+impl ValidatedSolverResult {
     pub fn is_concrete(&self) -> bool {
         self.proof.as_ref().is_some_and(|proof| proof.is_concrete())
     }
@@ -148,7 +148,7 @@ pub(in crate::compiler::gpu_compiler) struct ReplayContextInput<'a> {
     pub snapshot: u32,
     pub selected_owner_hir: u32,
     /// Definition predicate order, selected owner then lexical ancestors.
-    pub evidence: &'a [ValidatedEvidence],
+    pub evidence: &'a [ValidatedSolverResult],
     pub origin_call: u32,
 }
 
@@ -207,8 +207,8 @@ pub(in crate::compiler::gpu_compiler) struct ProgramPacket {
 /// writes. Only environments whose graph copy writes no compound (table 5)
 /// or edge (table 6) row are reused. Lives for one packet (one job).
 ///
-/// `LANIUS_EVIDENCE_ENCODING_MEMO=0` encodes every call in full.
-/// `LANIUS_CHECK_EVIDENCE_ENCODING_MEMO=1` encodes every call in full and
+/// `LANIUS_SOLVER_ENCODING_MEMO=0` encodes every call in full.
+/// `LANIUS_CHECK_SOLVER_ENCODING_MEMO=1` encodes every call in full and
 /// fails the append if a reusable encoding would have written other rows.
 struct EnvironmentEncodings {
     enabled: bool,
@@ -229,8 +229,8 @@ struct EnvironmentEncoding {
 impl EnvironmentEncodings {
     fn new() -> Self {
         Self {
-            enabled: crate::gpu::env::env_bool_truthy("LANIUS_EVIDENCE_ENCODING_MEMO", true),
-            checked: crate::gpu::env::env_bool_truthy("LANIUS_CHECK_EVIDENCE_ENCODING_MEMO", false),
+            enabled: crate::gpu::env::env_bool_truthy("LANIUS_SOLVER_ENCODING_MEMO", true),
+            checked: crate::gpu::env::env_bool_truthy("LANIUS_CHECK_SOLVER_ENCODING_MEMO", false),
             by_owner: HashMap::new(),
             predicates: HashMap::new(),
         }
@@ -1087,7 +1087,7 @@ impl ProgramPacket {
                 let encoding = &self.encodings.by_owner[&owner][index];
                 ensure!(
                     encoding.roots == written_roots && encoding.bindings == written_bindings,
-                    "[evidence-encoding-memo] MISMATCH: call HIR {} encodes other environment rows than call HIR {}",
+                    "[solver-encoding-memo] MISMATCH: call HIR {} encodes other environment rows than call HIR {}",
                     call.call_hir,
                     encoding.facts[encoding.fact_index].call_hir
                 );
@@ -1352,7 +1352,7 @@ impl ProgramPacket {
 
     /// The dispatch owner supplies complete status readbacks, never just an
     /// evidence slot. Failed or incomplete submissions poison this packet.
-    /// Copying validated Evidence8 retains all referenced immutable row closures.
+    /// Copying a validated result row retains all referenced immutable row closures.
     pub fn accept_submission(
         &mut self,
         submission: &Submission,
@@ -1363,7 +1363,7 @@ impl ProgramPacket {
         obligation_results: &[[u32; 8]],
         evidence_rows: &[[u32; 8]],
         proof_readback: &GpuProofReadback,
-    ) -> Result<Vec<ValidatedEvidence>> {
+    ) -> Result<Vec<ValidatedSolverResult>> {
         let result = (|| {
             ensure!(
                 !self.poisoned
@@ -1448,7 +1448,7 @@ impl ProgramPacket {
                     );
                     let predicate_identity =
                         self.catalog.stable_witness(self.catalog.tables.row(8, goal[1])?[0])?;
-                    retained.push(ValidatedEvidence {
+                    retained.push(ValidatedSolverResult {
                         epoch: self.catalog.epoch,
                         arena_id: self.arena_id,
                         input_row: INVALID,
@@ -1493,7 +1493,7 @@ impl ProgramPacket {
                         "GPU evidence names an implementation outside the catalog");
                 }
                 let input_row = self.tables.push(17, evidence)?;
-                retained.push(ValidatedEvidence {
+                retained.push(ValidatedSolverResult {
                     epoch: self.catalog.epoch,
                     arena_id: self.arena_id,
                     input_row,

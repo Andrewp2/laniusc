@@ -385,7 +385,7 @@ pub(super) fn commit_audit_counts(gpu: &GpuTraitSolver, packet: &GpuPacket) -> (
 }
 fn assert_failed_prefixes(gpu: &GpuTraitSolver, packet: &GpuPacket,
     error: &anyhow::Error, observation: &Observation) {
-    let failure = error.downcast_ref::<EvidenceDispatchFailure>().expect("owned GPU admission receipt");
+    let failure = error.downcast_ref::<SolverDispatchFailure>().expect("owned GPU admission receipt");
     assert_eq!(failure.catalog[0], 1, "fault did not affect catalog admission");
     for (field, expected) in observation.expected_receipt.iter().enumerate() {
         if let Some(value) = expected { assert_eq!(failure.receipt[field], *value, "receipt={:?}", failure.receipt); }
@@ -503,7 +503,7 @@ fn assert_accepted_snapshot(gpu: &GpuTraitSolver, packet: &GpuPacket,
         assert_eq!(packet.packet.tables.row(17, row as u32).unwrap(), expected,
             "retained host evidence input changed during failed append");
     }
-    let failure = error.downcast_ref::<EvidenceDispatchFailure>().unwrap();
+    let failure = error.downcast_ref::<SolverDispatchFailure>().unwrap();
     let receipt = output_words(gpu, packet, 10, 1).unwrap();
     assert_eq!(receipt.as_slice(), failure.receipt.as_slice());
     assert_ne!(receipt, before.receipt, "append reused the earlier successful receipt");

@@ -61,7 +61,7 @@ public void pps_stage_initialize_work(uint local)
     ts_batch_failure(pps_initialize_obligation(row));
 }
 
-public EvidenceStatus pps_admit_work_request(uint work)
+public SolverStatus pps_admit_work_request(uint work)
 {
     uint4 key; uint4 selection; uint4 completion; uint4 source;
     if (!pps_pending4(PPS_WORK, work, 0u, key) || !pps_pending4(PPS_WORK, work, 4u, selection) ||
@@ -110,14 +110,14 @@ public void pps_stage_admit_work(uint local)
 // Serial, after the complete validation wave. Check every requested prefix
 // before publishing any of them. Pending counts cannot change in this phase.
 // `packed` holds `count` table ids, four bits each, the first one lowest.
-public EvidenceStatus pps_commit_tables(uint packed, uint count)
+public SolverStatus pps_commit_tables(uint packed, uint count)
 {
     if (count > 8u) return ts_invalid(66u, count, TS_INVALID);
     [loop]
     for (uint step = 0u; step < 2u * count; step++)
     {
         uint table = (packed >> (4u * (step < count ? step : step - count))) & 15u;
-        uint4 span; uint accepted; EvidenceStatus status;
+        uint4 span; uint accepted; SolverStatus status;
         if (!pps_descriptor(table, span, accepted)) return ts_invalid(66u, table, TS_INVALID);
         if (step < count) status = pps_check_validated_prefix(table, span.w, span.y);
         else status = pps_publish_validated_prefix(table, span.w, span.y);
@@ -171,7 +171,7 @@ public void pps_stage_reserve_goal_index()
     if (root_sources != roots.y - roots.w || requirement_sources != requirements.y - requirements.w)
     { ts_batch_failure(ts_invalid(70u, PPS_WORK, PPS_REQUIREMENTS)); return; }
     uint first;
-    EvidenceStatus status = pps_reserve(PPS_GOAL_INDEX, work.y - work.w, PPS_WORK, first);
+    SolverStatus status = pps_reserve(PPS_GOAL_INDEX, work.y - work.w, PPS_WORK, first);
     if (status.state != TS_VALID) { ts_batch_failure(status); return; }
     if (work.y != work.w && first != work.w)
     { ts_batch_failure(ts_invalid(70u, first, work.w)); return; }
@@ -202,7 +202,7 @@ public void pps_stage_index_work(uint local)
 { uint row; if (pps_stage_row(local, PPS_WORK, row)) ts_batch_failure(pps_insert_work(row)); }
 public void pps_stage_resolve_work(uint local)
 {
-    uint row; EvidenceStatus status;
+    uint row; SolverStatus status;
     if (!pps_stage_row(local, PPS_WORK, row)) return;
     if (ts_bind_scratch(local, row, status)) status = pps_resolve_work(row);
     ts_batch_failure(status);
@@ -210,21 +210,21 @@ public void pps_stage_resolve_work(uint local)
 // Work selection phases; see pps_select_implementation.
 public void pps_stage_select_implementations(uint local, bool coarse)
 {
-    uint row; EvidenceStatus status;
+    uint row; SolverStatus status;
     if (!pps_stage_row(local, PPS_WORK, row)) return;
     if (ts_bind_scratch(local, row, status)) status = pps_select_implementation(row, coarse);
     ts_batch_failure(status);
 }
 public void pps_stage_select_assumptions(uint local)
 {
-    uint row; EvidenceStatus status;
+    uint row; SolverStatus status;
     if (!pps_stage_row(local, PPS_WORK, row)) return;
     if (ts_bind_scratch(local, row, status)) status = pps_select_assumption(row);
     ts_batch_failure(status);
 }
 public void pps_stage_select_work(uint local)
 {
-    uint row; EvidenceStatus status;
+    uint row; SolverStatus status;
     if (!pps_stage_row(local, PPS_WORK, row)) return;
     if (ts_bind_scratch(local, row, status)) status = pps_select_finish(row);
     ts_batch_failure(status);
@@ -235,21 +235,21 @@ uint pps_walk_table(uint phase)
 { return phase == PPS_WALK_PHASE_WORK ? PPS_WORK : PPS_REDUCTION_QUEUE; }
 public void pps_stage_walk_goals(uint local, uint consumer)
 {
-    uint row; EvidenceStatus status;
+    uint row; SolverStatus status;
     if (!pps_stage_row(local, pps_walk_table(consumer), row)) return;
     if (ts_bind_scratch(local, row, status)) status = pps_walk_goals(consumer, row);
     ts_batch_failure(status);
 }
 public void pps_stage_walk_roots(uint local, uint phase)
 {
-    uint row; EvidenceStatus status;
+    uint row; SolverStatus status;
     if (!pps_stage_row(local, pps_walk_table(phase), row)) return;
     if (ts_bind_scratch(local, row, status)) status = pps_walk_roots(phase, row);
     ts_batch_failure(status);
 }
 public void pps_stage_walk_bindings(uint local, uint consumer)
 {
-    uint row; EvidenceStatus status;
+    uint row; SolverStatus status;
     if (!pps_stage_row(local, pps_walk_table(consumer), row)) return;
     if (ts_bind_scratch(local, row, status)) status = pps_walk_bindings(consumer, row);
     ts_batch_failure(status);
@@ -328,7 +328,7 @@ public void pps_stage_commit_substitutions()
         // Exact replay validates bytes; independent coverage validates ownership.
         // Equal requests must not alias an allocation and hide an unchecked row.
         uint visits = 0u;
-        EvidenceStatus cover = pps_check_span_cover<PendingBindingNodeSpans>(PPS_TERM_NODES,
+        SolverStatus cover = pps_check_span_cover<PendingBindingNodeSpans>(PPS_TERM_NODES,
             nodes.w, nodes.y, bindings.w, bindings.y, visits);
         if (cover.state != TS_VALID) { ts_batch_failure(cover); return; }
         cover = pps_check_span_cover<PendingSubstitutionBindingSpans>(PPS_BINDINGS,
@@ -348,7 +348,7 @@ public void pps_stage_emit_ready_proofs(uint local)
 { uint row; if (pps_stage_row(local, PPS_REDUCTION_QUEUE, row)) ts_batch_failure(pps_emit_ready_proof(row)); }
 public void pps_stage_admit_assumption_proofs(uint local)
 {
-    uint row; EvidenceStatus status;
+    uint row; SolverStatus status;
     if (!pps_stage_row(local, PPS_REDUCTION_QUEUE, row)) return;
     if (ts_bind_scratch(local, row, status)) status = pps_admit_ready_assumption_proof(row);
     ts_batch_failure(status);
@@ -371,7 +371,7 @@ public void pps_stage_commit_queue()
 }
 public void pps_stage_publish_roots(uint local)
 {
-    uint row; EvidenceStatus status;
+    uint row; SolverStatus status;
     if (!pps_stage_row(local, PPS_ROOT_LINKS, row)) return;
     if (ts_bind_scratch(local, row, status)) status = pps_publish_root(row);
     ts_batch_failure(status);

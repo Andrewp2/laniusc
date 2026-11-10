@@ -133,7 +133,7 @@ public bool plm_header_is_valid()
     }
     return next == actual && trait_solver_native_layout_work[18u] <= trait_solver_native_layout_work[17u];
 }
-public EvidenceStatus plm_charge(uint visits)
+public SolverStatus plm_charge(uint visits)
 {
     uint used = trait_solver_native_layout_work[18u];
     uint limit = trait_solver_native_layout_work[17u];
@@ -141,7 +141,7 @@ public EvidenceStatus plm_charge(uint visits)
         return ts_limit(170u, TS_INVALID, visits, used <= limit ? limit - used : 0u);
     trait_solver_native_layout_work[18u] = used + visits; return ts_ok();
 }
-public EvidenceStatus plm_reserve(uint table, uint count, out uint first)
+public SolverStatus plm_reserve(uint table, uint count, out uint first)
 {
     first = TS_INVALID; uint offset; uint capacity;
     if (table >= 4u || !plm_table(table, offset, capacity)) return ts_invalid(171u, table, TS_INVALID);
@@ -150,7 +150,7 @@ public EvidenceStatus plm_reserve(uint table, uint count, out uint first)
         return ts_limit(172u, table, count, used <= capacity ? capacity - used : 0u);
     first = used; return ts_ok();
 }
-public void plm_status(EvidenceStatus status)
+public void plm_status(SolverStatus status)
 {
     // Single writer; publication happens only after complete graph/layout checks.
     plm_write4(5u, 0u, 4u, uint4(status.required, status.available, 0u, 0u));

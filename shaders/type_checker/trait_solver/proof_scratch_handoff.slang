@@ -15,7 +15,7 @@ static const uint PPS_HANDOFF_CONSUMED = 0u;
 public void pps_handoff_tag(uint stage, uint row, uint outcome)
 { scratch_set_cell(SCRATCH_PPS_HANDOFF, uint4(outcome, stage, row, proof_store_params.serial)); }
 // The outcome an earlier dispatch of this chunk recorded for `row`.
-public EvidenceStatus pps_handoff_outcome(uint stage, uint row, out uint outcome)
+public SolverStatus pps_handoff_outcome(uint stage, uint row, out uint outcome)
 {
     uint4 cell = scratch_cell(SCRATCH_PPS_HANDOFF);
     outcome = cell.x;

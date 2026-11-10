@@ -6,7 +6,7 @@ import type_checker.trait_solver.proof_work;
 import type_checker.trait_solver.proof_frontier_selection;
 import type_checker.owned_type_constraint_contract;
 
-public EvidenceStatus pps_initialize_obligation(uint obligation)
+public SolverStatus pps_initialize_obligation(uint obligation)
 {
     uint4 source; uint4 call; uint owner; bool closed; uint state;
     if (!ts_read4(16u, obligation, 0u, source) || !ts_read4(15u, source.x, 0u, call) ||
@@ -14,7 +14,7 @@ public EvidenceStatus pps_initialize_obligation(uint obligation)
         !ts_output_read(2u, call.x, 0u, state) || state != TS_VALID)
         return ts_invalid(3u, obligation, source.x);
     uint work; uint link;
-    EvidenceStatus status = pps_reserve(PPS_WORK, 1u, obligation, work);
+    SolverStatus status = pps_reserve(PPS_WORK, 1u, obligation, work);
     if (status.state != TS_VALID) return status;
     status = pps_reserve(PPS_ROOT_LINKS, 1u, obligation, link);
     if (status.state != TS_VALID) return status;
@@ -29,7 +29,7 @@ public EvidenceStatus pps_initialize_obligation(uint obligation)
 // Run only after the whole substitution/binding wave was jointly admitted.
 // Prerequisites retain the caller context; the impl's prerequisites never enter
 // the caller assumption table. New children are request rows until normalization.
-public EvidenceStatus pps_expand_work(uint work)
+public SolverStatus pps_expand_work(uint work)
 {
     uint4 key; uint4 selected; uint4 completion; uint4 source;
     if (!pps_work_read(work, key, selected, completion, source)) return ts_invalid(1u, work, PPS_WORK);
@@ -40,7 +40,7 @@ public EvidenceStatus pps_expand_work(uint work)
         !ts_read4(9u, selected.x, 8u, prerequisites) || prerequisites.z != 0u || prerequisites.w != 0u)
         return ts_invalid(68u, work, selected.x);
     uint children; uint requirements;
-    EvidenceStatus status = pps_reserve(PPS_WORK, prerequisites.y, work, children);
+    SolverStatus status = pps_reserve(PPS_WORK, prerequisites.y, work, children);
     if (status.state != TS_VALID) return status;
     status = pps_reserve(PPS_REQUIREMENTS, prerequisites.y, work, requirements);
     if (status.state != TS_VALID) return status;
@@ -61,7 +61,7 @@ public EvidenceStatus pps_expand_work(uint work)
     return prerequisites.y == 0u ? pps_enqueue(work, PPS_EVENT_READY) : ts_ok();
 }
 
-public EvidenceStatus pps_mark_parent_failed(uint work)
+public SolverStatus pps_mark_parent_failed(uint work)
 {
     uint address;
     if (!pps_address(PPS_WORK, work, 2u, 1u, true, address)) return ts_invalid(1u, work, PPS_WORK);
@@ -71,7 +71,7 @@ public EvidenceStatus pps_mark_parent_failed(uint work)
     if (previous == PPS_WORK_MISSING || previous == PPS_WORK_FAILED) return ts_ok();
     return ts_invalid(70u, work, previous);
 }
-public EvidenceStatus pps_complete_requirement(uint parent)
+public SolverStatus pps_complete_requirement(uint parent)
 {
     uint address; uint state_address;
     if (!pps_address(PPS_WORK, parent, 9u, 1u, true, address) ||
@@ -90,7 +90,7 @@ public EvidenceStatus pps_complete_requirement(uint parent)
 
 // Resolve child aliases before linking. Notifications run in a later dispatch.
 // Already-notified children are handled immediately and never get a stale link.
-public EvidenceStatus pps_link_requirement(uint requirement)
+public SolverStatus pps_link_requirement(uint requirement)
 {
     uint4 edge; uint4 child; uint4 selected; uint4 completion; uint4 source;
     if (!pps_read4(PPS_REQUIREMENTS, requirement, 0u, edge) ||
@@ -125,7 +125,7 @@ public EvidenceStatus pps_link_requirement(uint requirement)
     return ts_limit(8u, requirement, active + 1u, active);
 }
 
-public EvidenceStatus pps_notify_work(uint work, bool success)
+public SolverStatus pps_notify_work(uint work, bool success)
 {
     uint4 key; uint4 selected; uint4 completion; uint4 source; uint requirements;
     if (!pps_work_read(work, key, selected, completion, source) ||
@@ -139,7 +139,7 @@ public EvidenceStatus pps_notify_work(uint work, bool success)
         uint4 row;
         if (edge >= requirements || !pps_read4(PPS_REQUIREMENTS, edge, 0u, row) || row.z != work)
             return ts_invalid(70u, work, edge);
-        EvidenceStatus status = success ? pps_complete_requirement(row.x) : pps_mark_parent_failed(row.x);
+        SolverStatus status = success ? pps_complete_requirement(row.x) : pps_mark_parent_failed(row.x);
         if (status.state != TS_VALID) return status;
         edge = row.w;
     }

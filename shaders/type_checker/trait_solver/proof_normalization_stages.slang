@@ -41,7 +41,7 @@ uint pps_normalization_domain(uint ordinal)
 // Source authority comes from the admitted original obligation or the exact
 // admitted prerequisite edge. NormRequest rows cannot select their own source,
 // caller owner, environment, or substitution.
-EvidenceStatus pps_normalization_source(uint work, uint4 key, uint4 completion, uint4 source,
+SolverStatus pps_normalization_source(uint work, uint4 key, uint4 completion, uint4 source,
     out uint owner, out bool require_closed, out uint4 predicate, out uint4 arguments)
 {
     owner = TS_INVALID; require_closed = false;
@@ -83,7 +83,7 @@ EvidenceStatus pps_normalization_source(uint work, uint4 key, uint4 completion, 
     return ts_ok();
 }
 
-EvidenceStatus pps_emit_normalization<Source : IWorkNormalizationSource>(uint work)
+SolverStatus pps_emit_normalization<Source : IWorkNormalizationSource>(uint work)
 {
     uint4 key; uint4 selected; uint4 completion; uint4 source;
     if (!pps_work_read(work, key, selected, completion, source)) return ts_invalid(1u, work, PPS_WORK);
@@ -92,7 +92,7 @@ EvidenceStatus pps_emit_normalization<Source : IWorkNormalizationSource>(uint wo
     if (source.x != Source.kind()) return ts_ok();
     if (key.y != TS_INVALID || source.w != TS_INVALID) return ts_invalid(65u, work, key.y);
     uint owner; bool require_closed; uint4 predicate; uint4 arguments;
-    EvidenceStatus status = pps_normalization_source(work, key, completion, source,
+    SolverStatus status = pps_normalization_source(work, key, completion, source,
         owner, require_closed, predicate, arguments);
     if (status.state != TS_VALID) return status;
     uint root_count = arguments.y + 1u;
@@ -162,7 +162,7 @@ EvidenceStatus pps_emit_normalization<Source : IWorkNormalizationSource>(uint wo
     return ts_ok();
 }
 
-EvidenceStatus pps_validate_normalization<Source : IWorkNormalizationSource>(uint work)
+SolverStatus pps_validate_normalization<Source : IWorkNormalizationSource>(uint work)
 {
     uint4 key; uint4 selected; uint4 completion; uint4 source;
     if (!pps_work_read(work, key, selected, completion, source)) return ts_invalid(1u, work, PPS_WORK);
@@ -170,7 +170,7 @@ EvidenceStatus pps_validate_normalization<Source : IWorkNormalizationSource>(uin
     if (source.x > 1u) return ts_invalid(65u, work, source.x);
     if (source.x != Source.kind()) return ts_ok();
     uint owner; bool require_closed; uint4 predicate; uint4 arguments;
-    EvidenceStatus status = pps_normalization_source(work, key, completion, source,
+    SolverStatus status = pps_normalization_source(work, key, completion, source,
         owner, require_closed, predicate, arguments);
     if (status.state != TS_VALID) return status;
     uint root_count = arguments.y + 1u; uint4 goal; uint4 extra;
@@ -252,7 +252,7 @@ bool pps_measure_normalization<Source : IWorkNormalizationSource>(uint work,
     if (key.z != PPS_WORK_REQUEST || source.x != Source.kind() ||
         key.y != TS_INVALID || source.w != TS_INVALID) return false;
     uint owner; bool require_closed; uint4 predicate; uint4 arguments;
-    EvidenceStatus status = pps_normalization_source(work, key, completion, source,
+    SolverStatus status = pps_normalization_source(work, key, completion, source,
         owner, require_closed, predicate, arguments);
     if (status.state != TS_VALID) return false;
     uint root_count = arguments.y + 1u;
@@ -279,13 +279,13 @@ public bool pps_measure_original_work(uint work, out uint nodes, out uint edges,
 public bool pps_measure_prerequisite_work(uint work, out uint nodes, out uint edges, out uint roots)
 { return pps_measure_normalization<PrerequisiteWorkNormalizationSource>(work, nodes, edges, roots); }
 
-public EvidenceStatus pps_normalize_original_work(uint work)
+public SolverStatus pps_normalize_original_work(uint work)
 { return pps_emit_normalization<OriginalWorkNormalizationSource>(work); }
-public EvidenceStatus pps_normalize_prerequisite_work(uint work)
+public SolverStatus pps_normalize_prerequisite_work(uint work)
 { return pps_emit_normalization<PrerequisiteWorkNormalizationSource>(work); }
-public EvidenceStatus pps_validate_original_work(uint work)
+public SolverStatus pps_validate_original_work(uint work)
 { return pps_validate_normalization<OriginalWorkNormalizationSource>(work); }
-public EvidenceStatus pps_validate_prerequisite_work(uint work)
+public SolverStatus pps_validate_prerequisite_work(uint work)
 { return pps_validate_normalization<PrerequisiteWorkNormalizationSource>(work); }
 
 struct PendingNormalizationRequestSpans : IProofSpanSource
@@ -325,7 +325,7 @@ struct PendingNormalizationWorkSpans : IProofSpanSource
     }
 }
 
-public EvidenceStatus pps_commit_normalized_terms()
+public SolverStatus pps_commit_normalized_terms()
 {
     if (!pps_building() || !ts_batch_is_building()) return ts_invalid(66u, PPS_TERM_NODES, TS_INVALID);
     uint4 spans[5]; uint tables[5] = {PPS_TERM_NODES, PPS_TERM_EDGES, PPS_TERM_ROOTS,
@@ -368,13 +368,13 @@ public EvidenceStatus pps_commit_normalized_terms()
     uint visits = 0u;
     for (uint t = 0u; t < 3u; t++)
     {
-        EvidenceStatus status = pps_check_span_cover<PendingNormalizationRequestSpans>(tables[t],
+        SolverStatus status = pps_check_span_cover<PendingNormalizationRequestSpans>(tables[t],
             spans[t].w, spans[t].y, spans[3].w, spans[3].y, visits);
         if (status.state != TS_VALID) return status;
     }
     for (uint t = 3u; t < 5u; t++)
     {
-        EvidenceStatus status = pps_check_span_cover<PendingNormalizationWorkSpans>(tables[t],
+        SolverStatus status = pps_check_span_cover<PendingNormalizationWorkSpans>(tables[t],
             spans[t].w, spans[t].y, 0u, works, visits);
         if (status.state != TS_VALID) return status;
     }
@@ -382,12 +382,12 @@ public EvidenceStatus pps_commit_normalized_terms()
     // private until hash/admission completes in the following dispatch.
     for (uint t = 0u; t < 4u; t++)
     {
-        EvidenceStatus status = pps_check_validated_prefix(tables[t], spans[t].w, spans[t].y);
+        SolverStatus status = pps_check_validated_prefix(tables[t], spans[t].w, spans[t].y);
         if (status.state != TS_VALID) return status;
     }
     for (uint t = 0u; t < 4u; t++)
     {
-        EvidenceStatus status = pps_publish_validated_prefix(tables[t], spans[t].w, spans[t].y);
+        SolverStatus status = pps_publish_validated_prefix(tables[t], spans[t].w, spans[t].y);
         if (status.state != TS_VALID) return status;
     }
     return ts_ok();
@@ -464,9 +464,9 @@ public void pps_stage_audit_normalized_terms(uint local)
     pca_add(PCA_TOTALS + 4u, 1u);
 }
 // pps_commit_normalized_terms after its audit.
-EvidenceStatus pps_publish_normalized_terms()
+SolverStatus pps_publish_normalized_terms()
 {
-    EvidenceStatus status = ts_ok();
+    SolverStatus status = ts_ok();
     [loop]
     for (uint t = 0u; t < 4u && status.state == TS_VALID; t++)
     {
@@ -515,7 +515,7 @@ public void pps_stage_commit_normalized_terms()
     ts_batch_failure(proven ? pps_publish_normalized_terms() : pps_commit_normalized_terms());
 }
 
-public EvidenceStatus pps_hash_normalized_goal(uint work)
+public SolverStatus pps_hash_normalized_goal(uint work)
 {
     uint4 key; uint4 selected; uint4 completion; uint4 source;
     if (!pps_work_read(work, key, selected, completion, source)) return ts_invalid(1u, work, PPS_WORK);
@@ -541,13 +541,13 @@ public EvidenceStatus pps_hash_normalized_goal(uint work)
     // Admission rereads the row just written; its hash already covers these
     // unchanged roots, so only the other admission checks remain.
     bool closed;
-    EvidenceStatus status = pps_admit_goal_checked<RecordedGoalHash>(key.y, key.x, closed);
+    SolverStatus status = pps_admit_goal_checked<RecordedGoalHash>(key.y, key.x, closed);
     if (status.state != TS_VALID) return status;
     return pps_transient_word(PPS_WORK, work, 2u, PPS_WORK_GOAL_VALIDATED) ?
         ts_ok() : ts_invalid(1u, work, PPS_WORK);
 }
 
-public EvidenceStatus pps_commit_normalized_goals()
+public SolverStatus pps_commit_normalized_goals()
 {
     if (!pps_building() || !ts_batch_is_building()) return ts_invalid(66u, PPS_GOALS, TS_INVALID);
     uint4 goals; uint accepted; uint works; uint validated = 0u;
@@ -565,7 +565,7 @@ public EvidenceStatus pps_commit_normalized_goals()
             !pps_normalization_add(validated, 1u)) return ts_invalid(65u, work, key.y);
     }
     if (validated != goals.y - goals.w) return ts_invalid(65u, PPS_GOALS, validated);
-    EvidenceStatus status = pps_publish_validated_prefix(PPS_GOALS, goals.w, goals.y);
+    SolverStatus status = pps_publish_validated_prefix(PPS_GOALS, goals.w, goals.y);
     if (status.state != TS_VALID) return status;
     // This serial dispatch completes before indexing can consume NORMALIZED.
     [loop]
@@ -622,7 +622,7 @@ public void pps_stage_commit_normalized_goals()
     if (!building) return;
     pca_count(proven);
     if (!proven) { ts_batch_failure(pps_commit_normalized_goals()); return; }
-    EvidenceStatus status = pps_publish_validated_prefix(PPS_GOALS, goals.w, goals.y);
+    SolverStatus status = pps_publish_validated_prefix(PPS_GOALS, goals.w, goals.y);
     // The marking lanes complete before indexing can consume NORMALIZED.
     if (status.state == TS_VALID) trait_solver_commit_audit[PCA_PUBLISHED] = 47u;
     ts_batch_failure(status);

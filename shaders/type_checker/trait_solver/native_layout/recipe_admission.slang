@@ -10,7 +10,7 @@ import type_checker.trait_solver.graph_admission;
 static const uint PLR_HIR_ENUM_ITEM = 26u;
 static const uint PLR_HIR_STRUCT_ITEM = 27u;
 
-public EvidenceStatus plr_admit_recipe(uint recipe)
+public SolverStatus plr_admit_recipe(uint recipe)
 {
     uint4 row; uint4 tail; uint4 owner; uint4 span; uint4 identity; uint4 extra;
     uint4 binder; uint4 binder_extra; uint group_offset; uint groups; uint group_width;
@@ -57,7 +57,7 @@ public EvidenceStatus plr_admit_recipe(uint recipe)
     return ts_ok();
 }
 
-public EvidenceStatus plr_admit_group(uint group)
+public SolverStatus plr_admit_group(uint group)
 {
     uint3 row; uint4 recipe; uint4 tail;
     if (!plr_read_group(group, row) || !plr_read_recipe(row.x, recipe, tail) ||
@@ -74,7 +74,7 @@ public EvidenceStatus plr_admit_group(uint group)
         if (!ts_read_root(row.y + i, reference) || !ts_admitted_type_reference_shape(reference))
             return ts_invalid(166u, group, row.y + i);
         uint visits;
-        EvidenceStatus result = ts_admit_catalog_definition_root(row.y + i, recipe.y, false, visits);
+        SolverStatus result = ts_admit_catalog_definition_root(row.y + i, recipe.y, false, visits);
         if (result.state != TS_VALID) return result;
     }
     return ts_ok();

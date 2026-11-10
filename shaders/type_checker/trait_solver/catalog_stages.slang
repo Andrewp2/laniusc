@@ -6,11 +6,11 @@ public void ts_catalog_initialize()
 {
     // Host reset CatalogStatus to UNPROCESSED at a trusted output address first.
     // If the claimed layout itself is unsafe, leave that receipt unprocessed.
-    EvidenceStatus layout = ts_admit_output_layout();
+    SolverStatus layout = ts_admit_output_layout();
     if (layout.state != TS_VALID) return;
-    EvidenceStatus blank = ts_ok(); blank.state = TS_CATALOG_BUILDING;
+    SolverStatus blank = ts_ok(); blank.state = TS_CATALOG_BUILDING;
     ts_write_status(0u, 0u, blank);
-    EvidenceStatus status = ts_admit_directories();
+    SolverStatus status = ts_admit_directories();
     if (status.state != TS_VALID) ts_catalog_failure(status);
 }
 public void ts_catalog_clear_work(uint local)
@@ -117,7 +117,7 @@ public void ts_catalog_build_implementations(uint local)
     uint implementations; uint row;
     if (!ts_catalog_count(9u, implementations) || !ts_dispatch_row(local, implementations, row)) return;
     uint admitted; uint coarse_hash = 0u; uint exact_hash = 0u; bool exact = false;
-    EvidenceStatus status;
+    SolverStatus status;
     if (!ts_output_read(1u, row, 0u, admitted) || admitted != TS_VALID)
         status = ts_invalid(15u, row, TS_INVALID);
     else
@@ -145,7 +145,7 @@ public void ts_catalog_check_coherence(uint local)
     if (!ts_catalog_is_building()) return;
     uint implementations; uint row;
     if (!ts_catalog_count(9u, implementations) || !ts_dispatch_row(local, implementations, row)) return;
-    EvidenceStatus status;
+    SolverStatus status;
     if (ts_bind_scratch(local, row, status)) status = ts_check_impl_coherence(row);
     ts_write_status(1u, row, status);
     ts_catalog_failure(status);

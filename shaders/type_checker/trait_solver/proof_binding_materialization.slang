@@ -51,13 +51,13 @@ public struct OwnedBindingCheckSink : IProofNormalizationSink
 // The terminal/root is already in the admitted goal namespace (side1). Each
 // target owns one row; folding to Node6 does not erase allocation ownership of
 // earlier steps. Exact replay checks those rows even when they become unreachable.
-public EvidenceStatus pps_materialize_binding_request<Sink : IProofNormalizationSink>(
+public SolverStatus pps_materialize_binding_request<Sink : IProofNormalizationSink>(
     OwnedConstraintBindingRequest request, uint parameter, uint visible_owner,
     bool require_closed, uint4 allocation, out uint2 normalized, out bool closed)
 {
     normalized = uint2(0u, TS_INVALID); closed = false;
     uint2 leaf; bool constant;
-    EvidenceStatus status = pps_binding_request_leaf(request, parameter, allocation, leaf, constant);
+    SolverStatus status = pps_binding_request_leaf(request, parameter, allocation, leaf, constant);
     if (status.state != TS_VALID) return status;
     status = pps_admit_term(leaf, visible_owner,
         constant ? TS_ADMITTED_DOMAIN_CONSTANT : TS_ADMITTED_DOMAIN_TYPE, require_closed, closed);
@@ -66,7 +66,7 @@ public EvidenceStatus pps_materialize_binding_request<Sink : IProofNormalization
         normalized);
 }
 // The request's leaf, admitted in the constant domain for a constant parameter.
-public EvidenceStatus pps_binding_request_leaf(OwnedConstraintBindingRequest request,
+public SolverStatus pps_binding_request_leaf(OwnedConstraintBindingRequest request,
     uint parameter, uint4 allocation, out uint2 leaf, out bool constant)
 {
     leaf = request.reference.yz; constant = false;
@@ -83,7 +83,7 @@ public EvidenceStatus pps_binding_request_leaf(OwnedConstraintBindingRequest req
     return ts_ok();
 }
 // After the leaf's admission: its scalar, then each owned target row.
-public EvidenceStatus pps_binding_request_targets<Sink : IProofNormalizationSink>(
+public SolverStatus pps_binding_request_targets<Sink : IProofNormalizationSink>(
     OwnedConstraintBindingRequest request, uint parameter, uint4 allocation, uint2 leaf,
     bool constant, out uint2 normalized)
 {

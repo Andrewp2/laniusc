@@ -12,8 +12,8 @@ use super::{
     super::unit_cache::CachedReplayBindingContract,
     catalog::{CatalogInput, FrozenCatalog, FrozenSnapshot, accepted_call_owners},
     dispatch::{
-        EvidenceDispatchFailure,
-        EvidenceWorkspacePool,
+        SolverDispatchFailure,
+        SolverWorkspacePool,
         GpuPacket,
         GpuTraitSolver,
         ImplProjectionLimits,
@@ -24,7 +24,7 @@ use super::{
         ProgramPacket,
         ReplayContextInput,
         RetainedCallSite,
-        ValidatedEvidence,
+        ValidatedSolverResult,
     },
 };
 use crate::{
@@ -65,7 +65,7 @@ pub(in crate::compiler::gpu_compiler) struct NativeProgramSession {
     gpu: GpuTraitSolver,
     packet: GpuPacket,
     /// Global obligation order; hypotheses have no concrete replay capability.
-    evidence: Vec<ValidatedEvidence>,
+    evidence: Vec<ValidatedSolverResult>,
     poisoned: bool,
     /// Admitted origins of each unit's instance closure (D1), by unit:
     /// (instantiation depth, origin call).
@@ -101,7 +101,7 @@ pub(in crate::compiler::gpu_compiler) fn unit_span(
 }
 
 impl NativeProgramSession {
-    pub fn admit(workspace: &EvidenceWorkspacePool, units: &[OriginalUnitFacts]) -> Result<Self> {
+    pub fn admit(workspace: &SolverWorkspacePool, units: &[OriginalUnitFacts]) -> Result<Self> {
         // Facts contain no object. Freeze the complete exact source inventory
         // before any pending unit can be released or native bodies reused.
         let inputs = units
@@ -273,7 +273,7 @@ impl NativeProgramSession {
                 // Preserve the typed GPU failure and attach only descriptive
                 // retained source data. A poisoned packet cannot issue proofs.
                 let site = error
-                    .downcast_ref::<EvidenceDispatchFailure>()
+                    .downcast_ref::<SolverDispatchFailure>()
                     .and_then(|failure| self.packet.failure_call_site(failure));
                 return Err(match site {
                     Some(site) => error.context(site),
@@ -2148,7 +2148,7 @@ pub(in crate::compiler::gpu_compiler) fn native_program_error(
     error: anyhow::Error,
 ) -> CompileError {
     let missing = error
-        .downcast_ref::<EvidenceDispatchFailure>()
+        .downcast_ref::<SolverDispatchFailure>()
         .and_then(|failure| failure.obligation)
         .is_some_and(|(_, status)| status[0] == 3);
     if missing {

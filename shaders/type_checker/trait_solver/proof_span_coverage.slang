@@ -19,7 +19,7 @@ bool pps_cover_charge(inout uint visits)
 // scratch. The caller shares the visit budget across all destination tables.
 // Every owner-span query, bitmap update and final coverage check is charged. Resource exhaustion
 // is a failure before publication, even if the spans would form a valid cover.
-public EvidenceStatus pps_check_span_cover<Source : IProofSpanSource>(uint table,
+public SolverStatus pps_check_span_cover<Source : IProofSpanSource>(uint table,
     uint first, uint end, uint owner_first, uint owner_end, inout uint visits)
 {
     if (first > end || owner_first > owner_end || end == TS_INVALID || owner_end == TS_INVALID)

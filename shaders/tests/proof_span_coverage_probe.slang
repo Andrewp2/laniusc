@@ -74,7 +74,7 @@ void main(uint3 tid : SV_DispatchThreadID)
     case 22u: end = 4u; owners = 1u; visits = TS_VISIT_LIMIT - 5u; expected = TS_RESOURCE_LIMIT; break;
     case 23u: first = 5u; end = 4u; owners = 1u; break;
     }
-    EvidenceStatus status = pps_check_span_cover<CoverageSpans>(id, first, end, 0u, owners, visits);
+    SolverStatus status = pps_check_span_cover<CoverageSpans>(id, first, end, 0u, owners, visits);
     // Separate destination audits must share the budget; resetting it here
     // would incorrectly admit row22 after six operations with only five left.
     if (id == 22u && status.state == TS_VALID)

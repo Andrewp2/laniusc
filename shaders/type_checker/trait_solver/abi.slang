@@ -19,33 +19,33 @@ public static const uint TS_OBLIGATION_FAILURE = 6u;
 public static const uint TS_DEPTH_LIMIT = 64u;
 public static const uint TS_VISIT_LIMIT = 65536u;
 
-public struct EvidenceStatus
+public struct SolverStatus
 {
     public uint state; public uint detail; public uint subject_row; public uint related_row;
     public uint required; public uint available;
 }
 // The status helpers below inline this constructor at every return site.
 [ForceInline]
-public EvidenceStatus ts_status(uint state, uint detail, uint subject, uint related,
+public SolverStatus ts_status(uint state, uint detail, uint subject, uint related,
     uint required, uint available)
 {
-    EvidenceStatus r;
+    SolverStatus r;
     r.state = state; r.detail = detail; r.subject_row = subject; r.related_row = related;
     r.required = required; r.available = available;
     return r;
 }
 [ForceInline]
-public EvidenceStatus ts_ok()
+public SolverStatus ts_ok()
 { return ts_status(TS_VALID, 0u, TS_INVALID, TS_INVALID, 0u, 0u); }
 [ForceInline]
-public EvidenceStatus ts_invalid(uint detail, uint subject, uint related)
+public SolverStatus ts_invalid(uint detail, uint subject, uint related)
 { return ts_status(TS_INVALID_INPUT, detail, subject, related, 0u, 0u); }
 [ForceInline]
-public EvidenceStatus ts_limit(uint detail, uint subject, uint required, uint available)
+public SolverStatus ts_limit(uint detail, uint subject, uint required, uint available)
 { return ts_status(TS_RESOURCE_LIMIT, detail, subject, TS_INVALID, required, available); }
 // A row that reaches the thread-scratch walkers binds its dispatch-local slot
 // first. Without a slot it must report `missing` instead of running.
-public bool ts_bind_scratch(uint local, uint subject, out EvidenceStatus missing)
+public bool ts_bind_scratch(uint local, uint subject, out SolverStatus missing)
 {
     uint slots = thread_scratch_begin(local);
     missing = ts_limit(190u, subject, local + 1u, slots);
@@ -67,7 +67,7 @@ public RWStructuredBuffer<uint> trait_solver_catalog;
 public StructuredBuffer<uint> trait_solver_batch;
 public RWStructuredBuffer<uint> trait_solver_output;
 
-public struct EvidenceTable
+public struct SolverTable
 {
     public uint catalog_offset; public uint catalog_count; public uint batch_offset;
     public uint batch_count; public uint batch_capacity; public uint width;
@@ -117,9 +117,9 @@ public bool ts_header_is_valid()
     return true;
 }
 
-public bool ts_descriptor(uint table, out EvidenceTable desc)
+public bool ts_descriptor(uint table, out SolverTable desc)
 {
-    desc = (EvidenceTable)0;
+    desc = (SolverTable)0;
     // Protocol identity is checked by initialization/work/publication gates.
     // This reader independently proves physical safety; no cached admission or
     // capacity value substitutes for logical row membership.
@@ -132,7 +132,7 @@ public bool ts_descriptor(uint table, out EvidenceTable desc)
         (catalog_words <= actual_catalog) & (batch_words <= actual_batch))) return false;
     // table < TS_TABLES and the fixed header bound prove all six words.
     uint start = TS_DIRECTORY_WORD + table * 6u;
-    EvidenceTable read = {
+    SolverTable read = {
         trait_solver_batch[start], trait_solver_batch[start + 1u],
         trait_solver_batch[start + 2u], trait_solver_batch[start + 3u],
         trait_solver_batch[start + 4u], trait_solver_batch[start + 5u] };
@@ -282,7 +282,7 @@ public bool ts_scalar_is_valid(uint scalar)
 
 // Reject overlapping physical input table slices, including header/directories.
 // This is fixed 18*18 work, independent of program graph size.
-public EvidenceStatus ts_admit_directories()
+public SolverStatus ts_admit_directories()
 {
     uint actual_catalog; uint actual_batch; uint stride;
     trait_solver_catalog.GetDimensions(actual_catalog, stride);
@@ -295,7 +295,7 @@ public EvidenceStatus ts_admit_directories()
     uint batch_header_end = TS_BATCH_FIXED_WORDS;
     for (uint table = 0u; table < TS_TABLES; table++)
     {
-        EvidenceTable current;
+        SolverTable current;
         // Header admission made this fixed directory read safe. Preserve the
         // allocation failure separately from an invalid pointer/row encoding.
         uint directory = TS_DIRECTORY_WORD + table * 6u;
@@ -317,7 +317,7 @@ public EvidenceStatus ts_admit_directories()
         uint batch_end = current.batch_offset + current.batch_capacity * current.width;
         for (uint prior = 0u; prior < table; prior++)
         {
-            EvidenceTable other;
+            SolverTable other;
             if (!ts_descriptor(prior, other)) return ts_invalid(1u, prior, TS_INVALID);
             if (current.catalog_count != 0u && other.catalog_count != 0u &&
                 current.catalog_offset < other.catalog_offset + other.catalog_count * other.width &&

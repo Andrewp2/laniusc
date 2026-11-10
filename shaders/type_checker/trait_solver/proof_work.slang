@@ -70,7 +70,7 @@ public bool pps_transient_word(uint table, uint row, uint field, uint value)
 // A successful CAS is a prefix reservation, not admission. Each emitter first
 // counts its complete rows and makes one reservation per table; overflow never
 // truncates a row. A failed wave discards its entire unaccepted suffix.
-public EvidenceStatus pps_reserve(uint table, uint count, uint subject, out uint first)
+public SolverStatus pps_reserve(uint table, uint count, uint subject, out uint first)
 {
     first = TS_INVALID;
     uint4 span; uint accepted;
@@ -116,7 +116,7 @@ public bool pps_goal_equal(uint left, uint right)
     return true;
 }
 
-public EvidenceStatus pps_insert_work(uint work)
+public SolverStatus pps_insert_work(uint work)
 {
     uint4 key; uint4 selected; uint4 completion; uint4 source; uint4 goal; uint4 extra;
     uint4 buckets; uint unused; uint active;
@@ -150,7 +150,7 @@ public EvidenceStatus pps_insert_work(uint work)
 // Resolve only after the whole insertion dispatch. All candidate goals were
 // independently admitted. Lowest logical Work ID gives a stable representative
 // across waves; repeated goals become edges, never optimistic recursive proofs.
-public EvidenceStatus pps_resolve_work(uint work)
+public SolverStatus pps_resolve_work(uint work)
 {
     uint4 key; uint4 selected; uint4 completion; uint4 source; uint4 index;
     uint4 buckets; uint unused; uint active; uint address;

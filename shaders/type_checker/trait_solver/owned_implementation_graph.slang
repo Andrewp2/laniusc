@@ -65,7 +65,7 @@ public struct CatalogImplementationPatternGraph : IOwnedConstraintPatternGraph
     }
 }
 
-public EvidenceStatus ts_owned_constraint_status(OwnedConstraintStatus status, uint subject)
+public SolverStatus ts_owned_constraint_status(OwnedConstraintStatus status, uint subject)
 {
     if (status.state == OWNED_CONSTRAINT_MATCHED) return ts_ok();
     if (status.state == OWNED_CONSTRAINT_RESOURCE_LIMIT)
@@ -85,7 +85,7 @@ public bool ts_implementation_root(uint implementation, uint ordinal, out uint2 
 
 // Must follow full goal-shape/visibility admission for EVERY definition. This
 // extra pass establishes that even an unused impl's entire header is inferable.
-public EvidenceStatus ts_admit_implementation_coverage(uint implementation, OwnedConstraintLimits limits)
+public SolverStatus ts_admit_implementation_coverage(uint implementation, OwnedConstraintLimits limits)
 {
     uint4 low; uint4 middle; uint nodes; uint atoms;
     if (!ts_read4(9u, implementation, 0u, low) || !ts_read4(9u, implementation, 4u, middle) ||
@@ -107,7 +107,7 @@ public EvidenceStatus ts_admit_implementation_coverage(uint implementation, Owne
 
 // All heads already passed full coverage/shape admission. An early NoMatch is
 // consequently a semantic result; malformed unused branches cannot hide here.
-public EvidenceStatus ts_implementation_heads_overlap(uint left, uint right,
+public SolverStatus ts_implementation_heads_overlap(uint left, uint right,
     OwnedConstraintLimits limits, out bool overlap)
 {
     overlap = false;

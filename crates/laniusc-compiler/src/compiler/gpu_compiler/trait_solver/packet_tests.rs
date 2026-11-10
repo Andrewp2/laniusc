@@ -257,14 +257,14 @@ fn new_gpu_packet(catalog: Arc<FrozenCatalog>, units: &[&CompiledSourcePackUnit]
     }
     GpuFixture { dispatcher, packet }
 }
-fn admitted(fixture: &mut GpuFixture) -> Vec<ValidatedEvidence> {
+fn admitted(fixture: &mut GpuFixture) -> Vec<ValidatedSolverResult> {
     fixture
         .dispatcher
         .check(&mut fixture.packet)
         .expect("GPU admits complete fixture batch")
 }
 
-fn replay(packet: &mut ProgramPacket, evidence: &[ValidatedEvidence]) -> u32 {
+fn replay(packet: &mut ProgramPacket, evidence: &[ValidatedSolverResult]) -> u32 {
     packet
         .replay_context(ReplayContextInput {
             snapshot: packet.catalog.snapshot_by_unit[&UNIT],
@@ -766,7 +766,7 @@ fn replay_reuses_equal_sibling_facts_and_paths_but_rejects_changes() {
 
 #[test]
 fn program_failure_diagnostics_require_an_exact_retained_file_span() {
-    use super::super::{dispatch::EvidenceDispatchFailure, native_session::native_program_error};
+    use super::super::{dispatch::SolverDispatchFailure, native_session::native_program_error};
     use crate::compiler::CompileError;
 
     let first = "module first;\n";
@@ -790,7 +790,7 @@ fn program_failure_diagnostics_require_an_exact_retained_file_span() {
         let obligation = submission.obligation_span.first;
         // A failure is descriptive data, not a fabricated successful proof.
         // Missing's payload need not contain its obligation index.
-        let failure = EvidenceDispatchFailure {
+        let failure = SolverDispatchFailure {
             epoch: submission.epoch,
             arena_id: submission.arena_id,
             serial: submission.serial,

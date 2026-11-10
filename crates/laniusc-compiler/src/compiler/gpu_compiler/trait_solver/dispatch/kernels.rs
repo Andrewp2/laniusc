@@ -335,9 +335,9 @@ fn record_phase_with_resources(
         }
         _ => None,
     };
-    // LANIUS_DEBUG_EVIDENCE_DISPATCHES=1 logs each requested span, for sizing
+    // LANIUS_DEBUG_SOLVER_DISPATCHES=1 logs each requested span, for sizing
     // the scratch chunk against real row counts.
-    if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_EVIDENCE_DISPATCHES", false) {
+    if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_SOLVER_DISPATCHES", false) {
         eprintln!(
             "[lanius-trait-solver] {} rows={} chunk={} scratch={}",
             pass.shader_id,

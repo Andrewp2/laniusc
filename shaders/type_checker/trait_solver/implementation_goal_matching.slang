@@ -39,7 +39,7 @@ public struct TsRootMatch
 // both a head match and fixed prerequisite checks (implementation proof
 // admission) expands the unification once. The result is in state.status:
 // MATCHED or the first failure. A root that cannot be read is invalid.
-public EvidenceStatus ts_match_roots(TsRootMatch match, inout OwnedConstraintState state)
+public SolverStatus ts_match_roots(TsRootMatch match, inout OwnedConstraintState state)
 {
     [loop]
     for (uint i = 0u; i <= match.arguments; i++)
@@ -63,7 +63,7 @@ public EvidenceStatus ts_match_roots(TsRootMatch match, inout OwnedConstraintSta
 // The match state uses owned constraint frame `frame` (owned_constraint_frame).
 // A head whose trait or argument count differs from the goal's is no
 // candidate (and leaves the state zero); a candidate's state has begun.
-public EvidenceStatus ts_begin_implementation_goal(uint implementation, uint goal,
+public SolverStatus ts_begin_implementation_goal(uint implementation, uint goal,
     OwnedConstraintLimits limits, uint frame, out OwnedConstraintState state,
     out TsRootMatch match, out bool candidate)
 {
@@ -83,7 +83,7 @@ public EvidenceStatus ts_begin_implementation_goal(uint implementation, uint goa
 }
 
 // After ts_match_roots of a head: NoMatch is no match, a match must finish.
-public EvidenceStatus ts_finish_implementation_goal(uint implementation,
+public SolverStatus ts_finish_implementation_goal(uint implementation,
     inout OwnedConstraintState state, out bool matches)
 {
     matches = false;
@@ -95,12 +95,12 @@ public EvidenceStatus ts_finish_implementation_goal(uint implementation,
     matches = true; return ts_ok();
 }
 
-public EvidenceStatus ts_match_implementation_goal(uint implementation, uint goal,
+public SolverStatus ts_match_implementation_goal(uint implementation, uint goal,
     OwnedConstraintLimits limits, uint frame, out bool matches, out OwnedConstraintState state)
 {
     matches = false;
     TsRootMatch match; bool candidate;
-    EvidenceStatus status = ts_begin_implementation_goal(implementation, goal, limits, frame,
+    SolverStatus status = ts_begin_implementation_goal(implementation, goal, limits, frame,
         state, match, candidate);
     if (status.state != TS_VALID || !candidate) return status;
     status = ts_match_roots(match, state);

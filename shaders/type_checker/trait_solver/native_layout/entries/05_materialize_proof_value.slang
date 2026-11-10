@@ -20,7 +20,7 @@ void main(uint3 dtid : SV_DispatchThreadID)
     plm_write4(6u, 0u, 0u, uint4(0u, TS_INVALID, TS_INVALID, 0u));
     uint2 source = uint2(trait_solver_native_layout_work[8u], trait_solver_native_layout_work[9u]);
     // One status write site. The single materialization thread owns scratch slot 0.
-    EvidenceStatus status = ts_invalid(173u, source.y, source.x);
+    SolverStatus status = ts_invalid(173u, source.y, source.x);
     if (source.x == 1u || source.x == 3u)
     {
         status = ts_limit(190u, source.y, 1u, 0u);

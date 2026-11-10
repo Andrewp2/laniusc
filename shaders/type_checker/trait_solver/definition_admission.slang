@@ -29,7 +29,7 @@ public bool ts_owned_identity_matches(uint atom, uint owner, uint public_kind, u
     return private_kind == 11u && identity.w != TS_INVALID;
 }
 
-public EvidenceStatus ts_admit_callable(uint callable)
+public SolverStatus ts_admit_callable(uint callable)
 {
     uint4 row; uint reverse_callable;
     if (!ts_read4(4u, callable, 0u, row) || !ts_callable_atom_is_valid(row.x) ||
@@ -37,13 +37,13 @@ public EvidenceStatus ts_admit_callable(uint callable)
         !ts_word(2u, row.y, 8u, reverse_callable) || reverse_callable != callable)
         return ts_invalid(14u, callable, TS_INVALID);
     uint types; uint constants;
-    EvidenceStatus result = ts_admitted_owner_parameter_counts(row.y, types, constants);
+    SolverStatus result = ts_admitted_owner_parameter_counts(row.y, types, constants);
     if (result.state != TS_VALID) return result;
     if (row.z != types || row.w != constants) return ts_invalid(9u, callable, row.y);
     return ts_ok();
 }
 
-public EvidenceStatus ts_admit_inherited_method_environment(uint method_owner, uint implementation_owner)
+public SolverStatus ts_admit_inherited_method_environment(uint method_owner, uint implementation_owner)
 {
     uint4 owner; uint4 span;
     if (!ts_read_admitted_owner(method_owner, owner, span) || owner.w != implementation_owner)
@@ -55,13 +55,13 @@ public EvidenceStatus ts_admit_inherited_method_environment(uint method_owner, u
     // substitution/equivalence and remain explicitly unsupported at this stage.
     if (span.y != 0u || span.w != 0u)
     {
-        EvidenceStatus result = ts_invalid(span.y != 0u ? 11u : 12u, method_owner, implementation_owner);
+        SolverStatus result = ts_invalid(span.y != 0u ? 11u : 12u, method_owner, implementation_owner);
         result.state = TS_UNSUPPORTED; return result;
     }
     return ts_ok();
 }
 
-public EvidenceStatus ts_admit_goal_roots(
+public SolverStatus ts_admit_goal_roots(
     uint subject, uint first_argument, uint argument_count, uint owner, bool closed)
 {
     if (argument_count > 32u) return ts_limit(19u, subject, argument_count, 32u);
@@ -75,14 +75,14 @@ public EvidenceStatus ts_admit_goal_roots(
     {
         // Independent visits/depth budget for every ordered operand.
         uint visits;
-        EvidenceStatus result = ts_admit_catalog_definition_root(
+        SolverStatus result = ts_admit_catalog_definition_root(
             ordinal == 0u ? subject : first_argument + ordinal - 1u, owner, closed, visits);
         if (result.state != TS_VALID) return result;
     }
     return ts_ok();
 }
 
-public EvidenceStatus ts_admit_predicate(uint predicate)
+public SolverStatus ts_admit_predicate(uint predicate)
 {
     uint4 low; uint4 high;
     if (!ts_read8(8u, predicate, low, high) ||
@@ -102,7 +102,7 @@ public EvidenceStatus ts_admit_predicate(uint predicate)
 // head (row shape, owner, prerequisites, ancestors, goal roots), then its
 // members (coverage, required methods). The members dispatch runs only while
 // the catalog is still building, so every implementation has passed its head.
-public EvidenceStatus ts_admit_implementation_head(uint implementation)
+public SolverStatus ts_admit_implementation_head(uint implementation)
 {
     uint4 low; uint4 middle; uint4 high;
     if (!ts_read8(9u, implementation, low, middle) ||
@@ -110,7 +110,7 @@ public EvidenceStatus ts_admit_implementation_head(uint implementation)
         !ts_nominal_is_valid(low.z) || !ts_owned_identity_matches(low.x, low.y, 6u, 7u))
         return ts_invalid(2u, implementation, TS_INVALID);
     uint types; uint constants;
-    EvidenceStatus result = ts_admitted_owner_parameter_counts(low.y, types, constants);
+    SolverStatus result = ts_admitted_owner_parameter_counts(low.y, types, constants);
     if (result.state != TS_VALID) return result;
     // No new flag interpretation is introduced. Parameter inventory comes
     // from exact admitted Owner/Parameter rows, not an unsupported flag bit.
@@ -162,7 +162,7 @@ public EvidenceStatus ts_admit_implementation_head(uint implementation)
         types == 0u && constants == 0u);
 }
 
-public EvidenceStatus ts_admit_implementation_members(uint implementation, OwnedConstraintLimits limits)
+public SolverStatus ts_admit_implementation_members(uint implementation, OwnedConstraintLimits limits)
 {
     // The head passed, so this row reads exactly as it did there.
     uint4 low; uint4 middle;
@@ -170,7 +170,7 @@ public EvidenceStatus ts_admit_implementation_members(uint implementation, Owned
     // Every admitted definition, including an unused/disjoint implementation,
     // must cover every own type and constant parameter in its complete head.
     // Candidate matching/coherence may return early only after this pass.
-    EvidenceStatus result = ts_admit_implementation_coverage(implementation, limits);
+    SolverStatus result = ts_admit_implementation_coverage(implementation, limits);
     if (result.state != TS_VALID) return result;
     // Host sorts exact required symbols (no semantic matching). The accepted
     // source/export producer owns completeness; strict order preserves uniqueness

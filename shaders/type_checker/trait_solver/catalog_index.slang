@@ -28,7 +28,7 @@ public bool ts_atom_keys_equal(uint left, uint right)
     }
     return true;
 }
-public EvidenceStatus ts_hash_admitted_catalog_root(uint root, out uint hash)
+public SolverStatus ts_hash_admitted_catalog_root(uint root, out uint hash)
 {
     hash = 0u; uint2 ref; uint nodes; uint atoms;
     if (!ts_read_root(root, ref) || !ts_catalog_count(5u, nodes) || !ts_catalog_count(1u, atoms))
@@ -39,7 +39,7 @@ public EvidenceStatus ts_hash_admitted_catalog_root(uint root, out uint hash)
         return ts_invalid(15u, root, TS_INVALID);
     return ts_ok();
 }
-public EvidenceStatus ts_hash_admitted_implementation(uint implementation, out uint hash)
+public SolverStatus ts_hash_admitted_implementation(uint implementation, out uint hash)
 {
     hash = 0u; uint4 low; uint4 args;
     if (!ts_read4(9u, implementation, 0u, low) || !ts_read4(9u, implementation, 4u, args))
@@ -50,7 +50,7 @@ public EvidenceStatus ts_hash_admitted_implementation(uint implementation, out u
     for (uint ordinal = 0u; ordinal <= args.y; ordinal++)
     {
         uint child_hash;
-        EvidenceStatus status = ts_hash_admitted_catalog_root(
+        SolverStatus status = ts_hash_admitted_catalog_root(
             ordinal == 0u ? low.w : args.x + ordinal - 1u, child_hash);
         if (status.state != TS_VALID) return status;
         mixed = scoped_type_hash_mix(mixed, child_hash);
@@ -83,7 +83,7 @@ public uint ts_coarse_implementation_hash(uint trait_atom, uint argument_count)
 {
     return scoped_type_hash_mix(scoped_type_hash_mix(2166136261u, trait_atom), argument_count);
 }
-public EvidenceStatus ts_hash_coarse_implementation(uint implementation, out uint hash)
+public SolverStatus ts_hash_coarse_implementation(uint implementation, out uint hash)
 {
     hash = 0u; uint4 low; uint4 args;
     if (!ts_read4(9u, implementation, 0u, low) || !ts_read4(9u, implementation, 4u, args) ||
@@ -91,7 +91,7 @@ public EvidenceStatus ts_hash_coarse_implementation(uint implementation, out uin
     hash = ts_coarse_implementation_hash(low.z, args.y);
     return ts_ok();
 }
-public EvidenceStatus ts_exact_implementation_eligible(uint implementation, out bool eligible)
+public SolverStatus ts_exact_implementation_eligible(uint implementation, out bool eligible)
 {
     eligible = false; uint4 low; uint4 high; uint4 owner; uint4 owner_span;
     if (!ts_read4(9u, implementation, 0u, low) || !ts_read4(9u, implementation, 8u, high) ||
@@ -106,7 +106,7 @@ public EvidenceStatus ts_exact_implementation_eligible(uint implementation, out 
 
 // Publication returns its failure; the caller owns its stage's one catalog
 // failure report site.
-EvidenceStatus ts_publish_catalog_index(uint index_table, uint bucket_table,
+SolverStatus ts_publish_catalog_index(uint index_table, uint bucket_table,
     uint row, uint hash, uint admitted_row, uint rows, uint buckets)
 {
     if (row >= rows || buckets == 0u) return ts_invalid(1u, row, index_table);
@@ -140,13 +140,13 @@ EvidenceStatus ts_publish_catalog_index(uint index_table, uint bucket_table,
 public void ts_publish_index(uint row, uint hash, uint admitted_row)
 {
     uint rows; uint buckets;
-    EvidenceStatus status = ts_invalid(1u, row, 6u);
+    SolverStatus status = ts_invalid(1u, row, 6u);
     if (ts_work_counts(rows, buckets))
         status = ts_publish_catalog_index(6u, 7u, row, hash, admitted_row, rows, buckets);
     ts_catalog_failure(status);
 }
 // Index 0 is the coarse implementation index, index 1 the exact one.
-public EvidenceStatus ts_publish_implementation_index(uint implementation, uint index, uint hash)
+public SolverStatus ts_publish_implementation_index(uint implementation, uint index, uint hash)
 {
     bool coarse = index == 0u;
     uint catalog_rows = 0u; uint work_rows; uint buckets;
@@ -157,7 +157,7 @@ public EvidenceStatus ts_publish_implementation_index(uint implementation, uint 
         implementation, coarse ? catalog_rows : work_rows, buckets);
 }
 
-public EvidenceStatus ts_check_atom_unique(uint atom)
+public SolverStatus ts_check_atom_unique(uint atom)
 {
     uint atom_count; uint rows; uint buckets; uint hash; uint candidate;
     if (!ts_catalog_count(1u, atom_count) || atom >= atom_count || !ts_work_counts(rows, buckets) ||
@@ -179,7 +179,7 @@ public EvidenceStatus ts_check_atom_unique(uint atom)
     return ts_ok();
 }
 
-public EvidenceStatus ts_check_impl_coherence(uint implementation)
+public SolverStatus ts_check_impl_coherence(uint implementation)
 {
     uint implementation_count; uint rows; uint buckets; uint candidate; uint4 own_index;
     if (!ts_catalog_count(9u, implementation_count) || implementation >= implementation_count ||
@@ -203,7 +203,7 @@ public EvidenceStatus ts_check_impl_coherence(uint implementation)
         if (candidate < implementation && own_index.x == other.x)
         {
             bool overlap;
-            EvidenceStatus status = ts_implementation_heads_overlap(implementation, candidate, limits, overlap);
+            SolverStatus status = ts_implementation_heads_overlap(implementation, candidate, limits, overlap);
             if (status.state != TS_VALID) return status;
             if (overlap)
             {

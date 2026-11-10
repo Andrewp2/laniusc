@@ -181,7 +181,7 @@ public bool ts_parameter_visible(uint atom, uint owner)
     return false;
 }
 
-public EvidenceStatus ts_admit_owner_chain(uint owner, out uint type_count, out uint constant_count)
+public SolverStatus ts_admit_owner_chain(uint owner, out uint type_count, out uint constant_count)
 {
     type_count = 0u; constant_count = 0u;
     uint type_mask = 0u; uint constant_mask = 0u;
@@ -287,14 +287,14 @@ public bool ts_admitted_environment_binding(uint environment, uint atom, out uin
     return false;
 }
 
-public EvidenceStatus ts_admit_environment_header(uint environment, uint expected_owner, uint form)
+public SolverStatus ts_admit_environment_header(uint environment, uint expected_owner, uint form)
 {
     uint4 env;
     if (!ts_read4(11u, environment, 0u, env)) return ts_invalid(1u, environment, TS_INVALID);
     if (env.z > 64u) return ts_limit(19u, environment, env.z, 64u);
     if (env.x != expected_owner || env.w != form) return ts_invalid(3u, environment, expected_owner);
     uint types; uint constants;
-    EvidenceStatus status = ts_admitted_owner_parameter_counts(env.x, types, constants);
+    SolverStatus status = ts_admitted_owner_parameter_counts(env.x, types, constants);
     if (status.state != TS_VALID) return status;
     if (!ts_environment_header(environment, env)) return ts_invalid(1u, environment, TS_INVALID);
     if (env.z != types + constants) return ts_invalid(9u, environment, expected_owner);

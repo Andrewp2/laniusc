@@ -12,7 +12,7 @@ void main(uint3 dtid : SV_DispatchThreadID)
     uint local = linear_dispatch_thread_id_2d(dtid, 16776960u);
     uint row;
     if (!ts_catalog_admission_row(9u, local, row)) return;
-    EvidenceStatus status;
+    SolverStatus status;
     if (ts_bind_scratch(local, row, status)) status = ts_admit_catalog_implementation_head(row);
     // A passing head is reported by 02_09_admit_implementation_members, which
     // runs only while every implementation head has passed.

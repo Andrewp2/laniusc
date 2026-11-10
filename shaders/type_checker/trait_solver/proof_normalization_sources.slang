@@ -9,16 +9,16 @@ import type_checker.trait_solver.proof_normalization_admission;
 public interface IWorkNormalizationSource
 {
     static uint kind();
-    static EvidenceStatus transform(uint2 input, uint environment, uint owner, uint domain,
+    static SolverStatus transform(uint2 input, uint environment, uint owner, uint domain,
         bool emit, ProofNormalizationReservation reservation, out uint2 normalized,
         out bool closed, out ProofNormalizationCounts measured);
-    static EvidenceStatus validate(uint input_root, uint environment, uint owner, uint domain,
+    static SolverStatus validate(uint input_root, uint environment, uint owner, uint domain,
         ProofNormalizationReservation reservation, uint2 expected_root, out bool closed);
 }
 public struct OriginalWorkNormalizationSource : IWorkNormalizationSource
 {
     public static uint kind() { return 0u; }
-    public static EvidenceStatus transform(uint2 input, uint environment, uint owner, uint domain,
+    public static SolverStatus transform(uint2 input, uint environment, uint owner, uint domain,
         bool emit, ProofNormalizationReservation reservation, out uint2 normalized,
         out bool closed, out ProofNormalizationCounts measured)
     {
@@ -26,7 +26,7 @@ public struct OriginalWorkNormalizationSource : IWorkNormalizationSource
             InputProofNormalizationBindings, SolverProofTermSink>(input, environment, owner, domain, emit, reservation,
                 normalized, closed, measured);
     }
-    public static EvidenceStatus validate(uint input_root, uint environment, uint owner, uint domain,
+    public static SolverStatus validate(uint input_root, uint environment, uint owner, uint domain,
         ProofNormalizationReservation reservation, uint2 expected_root, out bool closed)
     {
         return pps_validate_original_normalization(input_root, environment, owner,
@@ -36,7 +36,7 @@ public struct OriginalWorkNormalizationSource : IWorkNormalizationSource
 public struct PrerequisiteWorkNormalizationSource : IWorkNormalizationSource
 {
     public static uint kind() { return 1u; }
-    public static EvidenceStatus transform(uint2 input, uint substitution, uint owner, uint domain,
+    public static SolverStatus transform(uint2 input, uint substitution, uint owner, uint domain,
         bool emit, ProofNormalizationReservation reservation, out uint2 normalized,
         out bool closed, out ProofNormalizationCounts measured)
     {
@@ -44,7 +44,7 @@ public struct PrerequisiteWorkNormalizationSource : IWorkNormalizationSource
             SolverProofTermGraph>, SolverProofBindings, SolverProofTermSink>(
                 input, substitution, owner, domain, emit, reservation, normalized, closed, measured);
     }
-    public static EvidenceStatus validate(uint input_root, uint substitution, uint owner, uint domain,
+    public static SolverStatus validate(uint input_root, uint substitution, uint owner, uint domain,
         ProofNormalizationReservation reservation, uint2 expected_root, out bool closed)
     {
         return pps_validate_prerequisite_normalization(input_root, substitution,

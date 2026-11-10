@@ -12,7 +12,7 @@ void main(uint3 dtid : SV_DispatchThreadID)
     uint local = linear_dispatch_thread_id_2d(dtid, 16776960u);
     uint row;
     if (!ts_catalog_admission_row(8u, local, row)) return;
-    EvidenceStatus status;
+    SolverStatus status;
     if (ts_bind_scratch(local, row, status)) status = ts_admit_catalog_predicate(row);
     ts_catalog_failure(status);
 }

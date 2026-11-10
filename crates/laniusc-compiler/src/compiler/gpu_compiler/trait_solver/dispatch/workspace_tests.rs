@@ -2,7 +2,7 @@
 //! with one test thread because resource-creation counters are process-wide.
 
 use super::super::abi::{ArenaCopy, ArenaWrite};
-use super::{arena::Arena, workspace::EvidenceWorkspacePool};
+use super::{arena::Arena, workspace::SolverWorkspacePool};
 use crate::gpu::{device, passes_core::this_thread_gpu_activity, readback::PagedReadback};
 
 fn contents(
@@ -26,9 +26,9 @@ fn contents(
 }
 
 #[test]
-fn gpu_evidence_workspace_leases_isolate_live_arenas_and_trim_returns() {
+fn gpu_solver_workspace_leases_isolate_live_arenas_and_trim_returns() {
     let gpu = device::global();
-    let pool = EvidenceWorkspacePool::new(gpu.device.clone(), gpu.queue.clone());
+    let pool = SolverWorkspacePool::new(gpu.device.clone(), gpu.queue.clone());
     let readback = PagedReadback::new(&gpu.device, "workspace ownership readback", 128);
     let first = pool.checkout();
     let a = Arena::from_words(&first, "workspace.case", &[11, 12]).unwrap();
@@ -70,9 +70,9 @@ fn gpu_evidence_workspace_leases_isolate_live_arenas_and_trim_returns() {
 }
 
 #[test]
-fn gpu_evidence_workspace_reuses_capacity_preserving_transfer_order_and_zero_state() {
+fn gpu_solver_workspace_reuses_capacity_preserving_transfer_order_and_zero_state() {
     let gpu = device::global();
-    let pool = EvidenceWorkspacePool::new(gpu.device.clone(), gpu.queue.clone());
+    let pool = SolverWorkspacePool::new(gpu.device.clone(), gpu.queue.clone());
     let readback = PagedReadback::new(&gpu.device, "workspace transfer readback", 128);
     for iteration in 0..4u32 {
         let before = this_thread_gpu_activity();

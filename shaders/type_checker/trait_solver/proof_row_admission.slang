@@ -9,7 +9,7 @@ import type_checker.trait_solver.proof_term_graph;
 import type_checker.trait_solver.proof_term_candidate;
 import type_checker.trait_solver.proof_binding_materialization;
 
-public EvidenceStatus pps_admit_binding_row(uint binding)
+public SolverStatus pps_admit_binding_row(uint binding)
 {
     uint4 bindings; uint4 substitutions; uint accepted;
     if (!pps_building() || !pps_descriptor(PPS_BINDINGS, bindings, accepted) ||
@@ -49,7 +49,7 @@ public EvidenceStatus pps_admit_binding_row(uint binding)
     return ts_ok();
 }
 
-public EvidenceStatus pps_admit_proof_edge_row(uint edge)
+public SolverStatus pps_admit_proof_edge_row(uint edge)
 {
     uint4 edges; uint4 proofs; uint accepted;
     if (!pps_building() || !pps_descriptor(PPS_PROOF_EDGES, edges, accepted) ||

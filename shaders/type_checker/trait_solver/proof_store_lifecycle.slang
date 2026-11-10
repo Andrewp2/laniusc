@@ -5,7 +5,7 @@ import type_checker.trait_solver.abi;
 import type_checker.trait_solver.batch_io;
 import type_checker.trait_solver.proof_store_abi;
 
-public void pps_store_failure(EvidenceStatus status)
+public void pps_store_failure(SolverStatus status)
 {
     if (status.state == TS_VALID) return;
     // Even a rejected identity must not produce a successful arena header.
@@ -14,10 +14,10 @@ public void pps_store_failure(EvidenceStatus status)
     ts_batch_failure(status);
 }
 
-public EvidenceStatus pps_initialize_store()
+public SolverStatus pps_initialize_store()
 {
     if (!ts_batch_is_building()) return ts_invalid(66u, TS_INVALID, TS_INVALID);
-    EvidenceStatus status = pps_admit_layout();
+    SolverStatus status = pps_admit_layout();
     if (status.state != TS_VALID) return status;
     if (proof_store_params.epoch_low != trait_solver_batch[2u] ||
         proof_store_params.epoch_high != trait_solver_batch[3u] ||
@@ -62,7 +62,7 @@ public EvidenceStatus pps_initialize_store()
 // The producer supplies the frozen wave endpoints, never a caller-chosen new
 // count. Every row in [expected_admitted,frozen_reserved) must have completed
 // its typed validator, with all failures reduced to the sticky batch status.
-public EvidenceStatus pps_check_validated_prefix(uint table, uint expected_admitted, uint frozen_reserved)
+public SolverStatus pps_check_validated_prefix(uint table, uint expected_admitted, uint frozen_reserved)
 {
     uint4 span; uint accepted;
     if (!ts_batch_is_building() || !pps_building() ||
@@ -70,9 +70,9 @@ public EvidenceStatus pps_check_validated_prefix(uint table, uint expected_admit
         return ts_invalid(66u, table, frozen_reserved);
     return ts_ok();
 }
-public EvidenceStatus pps_publish_validated_prefix(uint table, uint expected_admitted, uint frozen_reserved)
+public SolverStatus pps_publish_validated_prefix(uint table, uint expected_admitted, uint frozen_reserved)
 {
-    EvidenceStatus status = pps_check_validated_prefix(table, expected_admitted, frozen_reserved);
+    SolverStatus status = pps_check_validated_prefix(table, expected_admitted, frozen_reserved);
     if (status.state != TS_VALID) return status;
     trait_solver_proof_store[PPS_DIRECTORY + table * 6u + 3u] = frozen_reserved;
     return ts_ok();
@@ -81,12 +81,12 @@ public EvidenceStatus pps_publish_validated_prefix(uint table, uint expected_adm
 // Called exactly once after the complete root/call reduction, including empty
 // batches. Earlier failure dispatches have already replaced batch BUILDING.
 // The host's exact table-row inventory and barriers are part of this protocol.
-public EvidenceStatus pps_accept_submission()
+public SolverStatus pps_accept_submission()
 {
     if (!ts_batch_is_building() || !pps_building() ||
         trait_solver_proof_store[7u] >= proof_store_params.serial)
         return ts_invalid(66u, TS_INVALID, TS_INVALID);
-    EvidenceStatus status = pps_admit_layout();
+    SolverStatus status = pps_admit_layout();
     if (status.state != TS_VALID) return status;
     for (uint table = 0u; table < PPS_PERSISTENT_TABLES; table++)
     {

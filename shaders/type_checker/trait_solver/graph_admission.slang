@@ -17,7 +17,7 @@ static const uint TS_GRAPH_CONSTANT = 0x80000000u;
 
 // Binding values are already in caller scope. Substitute an original owned
 // parameter once and clear its environment, including for node replacements.
-EvidenceStatus ts_admit_reference_leaf<Graph : ITsAdmissionGraph>(
+SolverStatus ts_admit_reference_leaf<Graph : ITsAdmissionGraph>(
     uint root, uint visible_owner, bool require_closed, inout uint3 reference)
 {
     if (reference.x != 1u && reference.x != 2u && reference.x != 3u &&
@@ -72,7 +72,7 @@ EvidenceStatus ts_admit_reference_leaf<Graph : ITsAdmissionGraph>(
     return ts_ok();
 }
 
-EvidenceStatus ts_admit_root_with_graph<Graph : ITsAdmissionGraph>(
+SolverStatus ts_admit_root_with_graph<Graph : ITsAdmissionGraph>(
     uint root, uint environment, uint visible_owner,
     bool require_closed, out uint visits)
 {
@@ -100,7 +100,7 @@ EvidenceStatus ts_admit_root_with_graph<Graph : ITsAdmissionGraph>(
             if (visits == TS_VISIT_LIMIT)
                 return ts_limit(7u, root, TS_VISIT_LIMIT + 1u, TS_VISIT_LIMIT);
             visits++;
-            EvidenceStatus status = ts_admit_reference_leaf<Graph>(
+            SolverStatus status = ts_admit_reference_leaf<Graph>(
                 root, visible_owner, require_closed, reference);
             if (status.state != TS_VALID) return status;
 
@@ -174,7 +174,7 @@ EvidenceStatus ts_admit_root_with_graph<Graph : ITsAdmissionGraph>(
 
 // Batch admission retains full owner-aware substitution. Keep one traversal
 // implementation for both graph policies, including every diagnostic/budget.
-public EvidenceStatus ts_admit_root(
+public SolverStatus ts_admit_root(
     uint root, uint environment, uint visible_owner,
     bool require_closed, out uint visits)
 {
@@ -185,7 +185,7 @@ public EvidenceStatus ts_admit_root(
 // Catalog callers cannot supply an environment. Symbolic predicate leaves still
 // require exact identity and lexical visibility; closed implementations reject
 // them through the same shared walker.
-public EvidenceStatus ts_admit_catalog_definition_root(
+public SolverStatus ts_admit_catalog_definition_root(
     uint root, uint visible_owner, bool require_closed, out uint visits)
 {
     return ts_admit_root_with_graph<CatalogTraitSolverTypeGraph>(

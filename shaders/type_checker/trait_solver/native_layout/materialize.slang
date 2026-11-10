@@ -19,20 +19,20 @@ import type_checker.trait_solver.native_layout.work_graph;
 // copied closed in the nominal's environment. With `source_copy` it instead
 // copies the materialization's source term into `copied`, through the same
 // copy site (solver graph side, no environment and no visible owner).
-public EvidenceStatus plm_expand_nominal(uint node, bool source_copy, uint2 source,
+public SolverStatus plm_expand_nominal(uint node, bool source_copy, uint2 source,
     out uint first_root, out uint root_count, out uint2 copied)
 {
     first_root = 0u; root_count = 0u; copied = uint2(0u, TS_INVALID);
     uint recipe = 0u; uint4 row = uint4(0u, 0u, 0u, 0u);
     uint first_group = 0u; uint groups = 1u;
-    EvidenceStatus status;
+    SolverStatus status;
     if (!source_copy)
     {
         uint4 nominal; uint4 children; uint4 tail; uint4 owner; uint4 span;
         if (!plm_node(node, false, nominal, children) || nominal.x != 1u ||
             !plr_recipe_for_nominal(nominal.y, recipe))
         {
-            EvidenceStatus missing = ts_invalid(175u, node, nominal.y);
+            SolverStatus missing = ts_invalid(175u, node, nominal.y);
             missing.state = TS_UNSUPPORTED; return missing;
         }
         if (!plr_read_recipe(recipe, row, tail) || !ts_read_admitted_owner(row.y, owner, span) ||
@@ -115,7 +115,7 @@ public EvidenceStatus plm_expand_nominal(uint node, bool source_copy, uint2 sour
 // checks it for a non-node root. The walk starts on the source term: its
 // first visit copies the source into `root` through the nominal expansion's
 // copy site, then the walk restarts on that copy.
-public EvidenceStatus plm_expand_value_graph(uint2 source, out uint2 root, out uint root_words)
+public SolverStatus plm_expand_value_graph(uint2 source, out uint2 root, out uint root_words)
 {
     root = uint2(0u, TS_INVALID); root_words = TS_INVALID;
     // The stack lives in thread scratch: per depth, cell0 = (reference, next
@@ -134,7 +134,7 @@ public EvidenceStatus plm_expand_value_graph(uint2 source, out uint2 root, out u
         bool array_visit = false; uint2 element = uint2(0u, TS_INVALID);
         if (next == TS_INVALID)
         {
-            EvidenceStatus status;
+            SolverStatus status;
             bool expand = !copied;
             if (copied)
             {
@@ -300,11 +300,11 @@ public struct MaterializedNativeValueLayout : IConcreteValueLayout
     }
 }
 
-public EvidenceStatus plm_materialize(uint2 source)
+public SolverStatus plm_materialize(uint2 source)
 {
     // The source copy, then its value graph (plm_expand_value_graph).
     uint2 root; uint words;
-    EvidenceStatus status = plm_expand_value_graph(source, root, words);
+    SolverStatus status = plm_expand_value_graph(source, root, words);
     if (status.state != TS_VALID) return status;
     if (words == TS_INVALID) return ts_limit(182u, source.y, TS_INVALID, TS_INVALID - 1u);
     // Width belongs to this exact immutable source reference and proof arena.

@@ -28,10 +28,10 @@ public OwnedConstraintLimits pps_matching_limits()
     limits.occurs_visits = TS_VISIT_LIMIT; limits.substitution_steps = TS_VISIT_LIMIT;
     return limits;
 }
-public EvidenceStatus pps_enqueue(uint work, uint event)
+public SolverStatus pps_enqueue(uint work, uint event)
 {
     uint row;
-    EvidenceStatus status = pps_reserve(PPS_REDUCTION_QUEUE, 1u, work, row);
+    SolverStatus status = pps_reserve(PPS_REDUCTION_QUEUE, 1u, work, row);
     if (status.state != TS_VALID) return status;
     return pps_write2(PPS_REDUCTION_QUEUE, row, 0u, uint2(work, event)) ? ts_ok() :
         ts_invalid(1u, work, PPS_REDUCTION_QUEUE);
@@ -39,7 +39,7 @@ public EvidenceStatus pps_enqueue(uint work, uint event)
 
 // The coherent catalog admits at most one matching implementation. Complete
 // every bounded chain anyway: malformed links and exhausted work are errors.
-public EvidenceStatus pps_find_implementation(uint goal, bool coarse,
+public SolverStatus pps_find_implementation(uint goal, bool coarse,
     out uint selected, out OwnedConstraintState selected_state)
 {
     selected = TS_INVALID; selected_state = (OwnedConstraintState)0;
@@ -64,14 +64,14 @@ public EvidenceStatus pps_find_implementation(uint goal, bool coarse,
             bool matches; OwnedConstraintState current;
             uint frame = owned_constraint_frame(
                 selected != TS_INVALID && selected_state.frame == owned_constraint_frame(0u) ? 1u : 0u);
-            EvidenceStatus status = ts_match_implementation_goal(candidate, goal,
+            SolverStatus status = ts_match_implementation_goal(candidate, goal,
                 pps_matching_limits(), frame, matches, current);
             if (status.state != TS_VALID) return status;
             if (matches)
             {
                 if (selected != TS_INVALID && selected != candidate)
                 {
-                    EvidenceStatus conflict = ts_invalid(0u, selected, candidate);
+                    SolverStatus conflict = ts_invalid(0u, selected, candidate);
                     conflict.state = TS_COHERENCE_CONFLICT; return conflict;
                 }
                 selected = candidate; selected_state = current;
@@ -81,7 +81,7 @@ public EvidenceStatus pps_find_implementation(uint goal, bool coarse,
     }
     return ts_ok();
 }
-public EvidenceStatus pps_find_assumption(uint context, uint goal, out uint selected)
+public SolverStatus pps_find_assumption(uint context, uint goal, out uint selected)
 {
     selected = TS_INVALID;
     uint4 low; uint4 high; uint assumptions; uint buckets; uint candidate;
@@ -104,7 +104,7 @@ public EvidenceStatus pps_find_assumption(uint context, uint goal, out uint sele
         if (index.x == high.y && row.x == context)
         {
             bool equal;
-            EvidenceStatus status = pps_assumption_equals_goal(candidate, row.y, row.z, owner, goal,
+            SolverStatus status = pps_assumption_equals_goal(candidate, row.y, row.z, owner, goal,
                 closed, equal);
             if (status.state != TS_VALID) return status;
             if (equal)
@@ -120,7 +120,7 @@ public EvidenceStatus pps_find_assumption(uint context, uint goal, out uint sele
     return ts_ok();
 }
 
-public EvidenceStatus pps_write_substitution(uint implementation, uint goal, uint context,
+public SolverStatus pps_write_substitution(uint implementation, uint goal, uint context,
     inout OwnedConstraintState state, out uint substitution)
 {
     substitution = TS_INVALID; uint4 head; uint4 owner;
@@ -165,7 +165,7 @@ public EvidenceStatus pps_write_substitution(uint implementation, uint goal, uin
                     : ts_owned_constraint_status(state.status, implementation);
             table = PPS_TERM_NODES; count = request.target_count; subject = atom;
         }
-        EvidenceStatus status;
+        SolverStatus status;
         uint first = 0u;
         if (unit < 2u || count != 0u)
         {
@@ -217,7 +217,7 @@ void pps_selection_save(uint work, uint outcome, uint selected)
     scratch_set_word(PPS_SELECT_KEY_CELL, 2u, selected);
     pps_handoff_tag(PPS_SELECT_PHASE_EXACT, work, outcome);
 }
-EvidenceStatus pps_selection_load(uint work, out uint outcome, out uint selected)
+SolverStatus pps_selection_load(uint work, out uint outcome, out uint selected)
 {
     selected = scratch_word(PPS_SELECT_KEY_CELL, 2u);
     return pps_handoff_outcome(PPS_SELECT_PHASE_EXACT, work, outcome);
@@ -226,12 +226,12 @@ EvidenceStatus pps_selection_load(uint work, out uint outcome, out uint selected
 // Exact (coarse false) or generic implementation match. The exact phase
 // admits the work row; the generic phase runs only for works that neither an
 // exact implementation nor an assumption selected.
-public EvidenceStatus pps_select_implementation(uint work, bool coarse)
+public SolverStatus pps_select_implementation(uint work, bool coarse)
 {
     uint4 key; uint outcome; uint selected;
     if (coarse)
     {
-        EvidenceStatus handoff = pps_selection_load(work, outcome, selected);
+        SolverStatus handoff = pps_selection_load(work, outcome, selected);
         if (handoff.state != TS_VALID) return handoff;
         if (outcome != PPS_SELECT_ASSUMPTION_NONE) return ts_ok();
         key = scratch_cell(PPS_SELECT_KEY_CELL);
@@ -246,17 +246,17 @@ public EvidenceStatus pps_select_implementation(uint work, bool coarse)
         scratch_set_cell(PPS_SELECT_KEY_CELL, key);
     }
     uint implementation; OwnedConstraintState state;
-    EvidenceStatus status = pps_find_implementation(key.y, coarse, implementation, state);
+    SolverStatus status = pps_find_implementation(key.y, coarse, implementation, state);
     if (status.state != TS_VALID) return status;
     if (implementation != TS_INVALID) pps_handoff_save_state(PPS_SELECT_STATE_CELL, state);
     pps_selection_save(work, implementation != TS_INVALID ? PPS_SELECT_IMPLEMENTATION :
         coarse ? PPS_SELECT_MISSING : PPS_SELECT_EXACT_NONE, implementation);
     return ts_ok();
 }
-public EvidenceStatus pps_select_assumption(uint work)
+public SolverStatus pps_select_assumption(uint work)
 {
     uint outcome; uint selected;
-    EvidenceStatus status = pps_selection_load(work, outcome, selected);
+    SolverStatus status = pps_selection_load(work, outcome, selected);
     if (status.state != TS_VALID || outcome != PPS_SELECT_EXACT_NONE) return status;
     uint4 key = scratch_cell(PPS_SELECT_KEY_CELL);
     uint assumption;
@@ -266,10 +266,10 @@ public EvidenceStatus pps_select_assumption(uint work)
         assumption);
     return ts_ok();
 }
-public EvidenceStatus pps_select_finish(uint work)
+public SolverStatus pps_select_finish(uint work)
 {
     uint outcome; uint found;
-    EvidenceStatus status = pps_selection_load(work, outcome, found);
+    SolverStatus status = pps_selection_load(work, outcome, found);
     if (status.state != TS_VALID) return status;
     pps_handoff_consume();
     if (outcome == PPS_SELECT_SKIP) return ts_ok();

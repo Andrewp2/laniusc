@@ -13,7 +13,7 @@ import type_checker.owned_type_constraint_contract;
 // scan. Atom interning is exact and unique across the catalog and batch arenas.
 public bool ts_catalog_span(uint table, uint first, uint count)
 {
-    EvidenceTable descriptor;
+    SolverTable descriptor;
     return ts_descriptor(table, descriptor) &&
         (count != 0u || first == 0u) && first <= descriptor.catalog_count &&
         count <= descriptor.catalog_count - first;
@@ -66,7 +66,7 @@ public bool ts_catalog_constant_ref(uint2 reference)
 public bool ts_catalog_ref(uint2 reference)
 { return ts_catalog_type_ref(reference) || ts_catalog_constant_ref(reference); }
 
-public EvidenceStatus ts_admit_catalog_atom(uint atom)
+public SolverStatus ts_admit_catalog_atom(uint atom)
 {
     uint4 low; uint4 high;
     if (!ts_catalog_row(1u, atom) || !ts_atom(atom, low, high))
@@ -103,7 +103,7 @@ public EvidenceStatus ts_admit_catalog_atom(uint atom)
     return ts_ok();
 }
 
-public EvidenceStatus ts_admit_catalog_node(uint node)
+public SolverStatus ts_admit_catalog_node(uint node)
 {
     uint4 low; uint4 high;
     if (!ts_catalog_row(5u, node) || !ts_read8(5u, node, low, high)) return ts_invalid(1u, node, 5u);
@@ -135,7 +135,7 @@ public EvidenceStatus ts_admit_catalog_node(uint node)
     return ts_ok();
 }
 
-public EvidenceStatus ts_admit_catalog_owner(uint owner)
+public SolverStatus ts_admit_catalog_owner(uint owner)
 {
     uint4 low; uint4 high; uint callable;
     if (!ts_catalog_row(2u, owner) || !ts_read8(2u, owner, low, high) || !ts_word(2u, owner, 8u, callable))
@@ -158,7 +158,7 @@ public EvidenceStatus ts_admit_catalog_owner(uint owner)
     return ts_admit_owner_chain(owner, types, constants);
 }
 
-public EvidenceStatus ts_admit_catalog_parameter(uint row)
+public SolverStatus ts_admit_catalog_parameter(uint row)
 {
     uint4 parameter; uint4 span;
     if (!ts_catalog_row(3u, row) || !ts_read4(3u, row, 0u, parameter) ||
@@ -173,7 +173,7 @@ public EvidenceStatus ts_admit_catalog_parameter(uint row)
     return ts_ok();
 }
 
-public EvidenceStatus ts_admit_catalog_callable(uint row)
+public SolverStatus ts_admit_catalog_callable(uint row)
 {
     uint4 callable;
     if (!ts_catalog_row(4u, row) || !ts_read4(4u, row, 0u, callable) ||
@@ -182,7 +182,7 @@ public EvidenceStatus ts_admit_catalog_callable(uint row)
     return ts_admit_callable(row);
 }
 
-public EvidenceStatus ts_admit_catalog_predicate(uint row)
+public SolverStatus ts_admit_catalog_predicate(uint row)
 {
     uint4 low; uint4 high;
     if (!ts_catalog_row(8u, row) || !ts_read8(8u, row, low, high)) return ts_invalid(1u, row, 8u);
@@ -190,14 +190,14 @@ public EvidenceStatus ts_admit_catalog_predicate(uint row)
     if (!ts_catalog_row(1u, low.x) || !ts_catalog_row(2u, low.y) ||
         !ts_catalog_nominal(low.z) || !ts_catalog_row(7u, low.w) ||
         !ts_catalog_span(7u, high.x, high.y)) return ts_invalid(1u, row, TS_INVALID);
-    EvidenceStatus status = ts_admit_catalog_atom(low.x);
+    SolverStatus status = ts_admit_catalog_atom(low.x);
     if (status.state != TS_VALID) return status;
     return ts_admit_predicate(row);
 }
 
 // 02_09 admits an implementation row in two dispatches (definition_admission:
 // ts_admit_implementation_head, then ts_admit_implementation_members).
-public EvidenceStatus ts_admit_catalog_implementation_head(uint row)
+public SolverStatus ts_admit_catalog_implementation_head(uint row)
 {
     uint4 low; uint4 middle; uint4 high;
     if (!ts_catalog_row(9u, row) || !ts_read8(9u, row, low, middle) || !ts_read4(9u, row, 8u, high))
@@ -208,12 +208,12 @@ public EvidenceStatus ts_admit_catalog_implementation_head(uint row)
         !ts_catalog_span(7u, middle.x, middle.y) ||
         !ts_catalog_span(10u, middle.z, middle.w) ||
         !ts_catalog_span(8u, high.x, high.y)) return ts_invalid(1u, row, TS_INVALID);
-    EvidenceStatus status = ts_admit_catalog_atom(low.x);
+    SolverStatus status = ts_admit_catalog_atom(low.x);
     if (status.state != TS_VALID) return status;
     return ts_admit_implementation_head(row);
 }
 
-public EvidenceStatus ts_admit_catalog_implementation_members(uint row)
+public SolverStatus ts_admit_catalog_implementation_members(uint row)
 {
     // Complete head coverage precedes both exact/coarse index publication and
     // any early match. Up to 33 admitted roots retain their prior visit budget.
@@ -225,7 +225,7 @@ public EvidenceStatus ts_admit_catalog_implementation_members(uint row)
     return ts_admit_implementation_members(row, limits);
 }
 
-public EvidenceStatus ts_admit_catalog_method(uint row)
+public SolverStatus ts_admit_catalog_method(uint row)
 {
     uint4 method; uint2 tail; uint4 implementation; uint4 span; uint parent;
     if (!ts_catalog_row(10u, row) || !ts_read4(10u, row, 0u, method) ||
@@ -244,20 +244,20 @@ public EvidenceStatus ts_admit_catalog_method(uint row)
         if (!ts_word(10u, row - 1u, 1u, previous) || previous >= method.y)
             return ts_invalid(14u, row, row - 1u);
     }
-    EvidenceStatus status = ts_admit_inherited_method_environment(tail.x, implementation.y);
+    SolverStatus status = ts_admit_inherited_method_environment(tail.x, implementation.y);
     if (status.state != TS_VALID) return status;
     // Exact membership of target atom + owner in accepted Callable records is
     // checked by the catalog index phase; no per-method full-table scan here.
     return ts_ok();
 }
 
-public EvidenceStatus ts_admit_catalog_snapshot(uint row)
+public SolverStatus ts_admit_catalog_snapshot(uint row)
 {
     if (!ts_catalog_row(0u, row)) return ts_invalid(1u, row, 0u);
     if (!ts_snapshot_is_valid(row)) return ts_invalid(2u, row, 0u);
     return ts_ok();
 }
-public EvidenceStatus ts_admit_catalog_edge(uint row)
+public SolverStatus ts_admit_catalog_edge(uint row)
 {
     if (!ts_catalog_row(6u, row)) return ts_invalid(1u, row, 6u);
     uint2 reference;
@@ -265,7 +265,7 @@ public EvidenceStatus ts_admit_catalog_edge(uint row)
         return ts_invalid(4u, row, 6u);
     return ts_ok();
 }
-public EvidenceStatus ts_admit_catalog_root(uint row)
+public SolverStatus ts_admit_catalog_root(uint row)
 {
     if (!ts_catalog_row(7u, row)) return ts_invalid(1u, row, 7u);
     uint2 reference;

@@ -97,7 +97,7 @@ public bool pps_descriptor(uint table, out uint4 span, out uint accepted)
 // init is the only complete directory/overlap admission. Future reservation
 // phases may change logical counts, never offsets/capacities/widths. Growth is
 // an explicit host copy/reinitialize boundary preserving accepted logical IDs.
-public EvidenceStatus pps_admit_layout()
+public SolverStatus pps_admit_layout()
 {
     if (!pps_identity_is_valid()) return ts_invalid(66u, TS_INVALID, TS_INVALID);
     for (uint table = 0u; table < PPS_TABLES; table++)

@@ -12,7 +12,7 @@ void main(uint3 dtid : SV_DispatchThreadID)
     uint local = linear_dispatch_thread_id_2d(dtid, 16776960u);
     uint row;
     if (!ts_catalog_admission_row(9u, local, row)) return;
-    EvidenceStatus status;
+    SolverStatus status;
     // Every head passed: a failed head stops the catalog building.
     if (ts_bind_scratch(local, row, status)) status = ts_admit_catalog_implementation_members(row);
     ts_write_status(1u, row, status);

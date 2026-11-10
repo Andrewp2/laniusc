@@ -17,7 +17,7 @@ public bool ts_batch_is_building()
         state == TS_BATCH_BUILDING && ts_output_read(10u, 0u, 6u, serial) &&
         serial == trait_solver_batch[4u];
 }
-public void ts_batch_failure(EvidenceStatus status)
+public void ts_batch_failure(SolverStatus status)
 {
     if (status.state == TS_VALID) return;
     uint arena; uint address;
@@ -38,9 +38,9 @@ public void ts_batch_initialize()
 {
     // Layout rejection must leave trusted host-initialized state UNPROCESSED;
     // it must never enable later writers. The receipt is reset EVERY submission.
-    EvidenceStatus status = ts_admit_output_layout();
+    SolverStatus status = ts_admit_output_layout();
     if (status.state != TS_VALID) return;
-    EvidenceStatus building = ts_ok(); building.state = TS_BATCH_BUILDING;
+    SolverStatus building = ts_ok(); building.state = TS_BATCH_BUILDING;
     ts_write_batch_receipt(building);
     status = ts_admit_directories();
     if (status.state != TS_VALID) { ts_batch_failure(status); return; }
@@ -70,7 +70,7 @@ public void ts_obligation_proven(uint obligation, uint state, uint proof, uint k
     ts_output_write8(3u, obligation, uint4(state, 0u, obligation, proof),
         uint4(TS_INVALID, 0u, 0u, kind == 1u ? source + 1u : 0u));
 }
-public void ts_obligation_failure(uint obligation, EvidenceStatus status)
+public void ts_obligation_failure(uint obligation, SolverStatus status)
 {
     uint state = status.state == TS_RESOURCE_LIMIT ? 5u :
         (status.state == TS_UNSUPPORTED ? 6u : (status.state == TS_COHERENCE_CONFLICT ? 7u : 4u));

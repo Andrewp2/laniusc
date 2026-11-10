@@ -7,7 +7,7 @@ import type_checker.trait_solver.batch_io;
 import type_checker.trait_solver.goal_operations;
 import type_checker.trait_solver.proof_goal_equality;
 
-public EvidenceStatus ts_validate_retained_evidence(uint evidence)
+public SolverStatus ts_validate_retained_evidence(uint evidence)
 {
     uint4 low; uint4 high;
     if (!ts_read4(17u, evidence, 0u, low) || !ts_read4(17u, evidence, 4u, high))
@@ -36,7 +36,7 @@ public EvidenceStatus ts_validate_retained_evidence(uint evidence)
     return ts_ok();
 }
 
-public EvidenceStatus ts_validate_context(uint context)
+public SolverStatus ts_validate_context(uint context)
 {
     uint4 low; uint4 high;
     if (!ts_read4(13u, context, 0u, low) || !ts_read4(13u, context, 4u, high))
@@ -49,7 +49,7 @@ public EvidenceStatus ts_validate_context(uint context)
     {
         uint assumption = low.w + i; uint4 offered;
         if (!ts_read4(14u, assumption, 0u, offered)) return ts_invalid(1u, context, assumption);
-        EvidenceStatus status = ts_validate_retained_evidence(offered.w);
+        SolverStatus status = ts_validate_retained_evidence(offered.w);
         if (status.state != TS_VALID) return status;
         uint4 source;
         if (!ts_read4(17u, offered.w, 0u, source) || source.x != 1u)

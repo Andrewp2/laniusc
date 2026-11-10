@@ -21,7 +21,7 @@ import type_checker.scoped_type_hash;
 
 // The roots of a prerequisite predicate to recheck against the finished head
 // state; ts_match_roots then unifies them without inferring bindings.
-public EvidenceStatus pps_fixed_predicate_roots(uint predicate, uint goal, uint owner,
+public SolverStatus pps_fixed_predicate_roots(uint predicate, uint goal, uint owner,
     out TsRootMatch match)
 {
     uint4 pattern; uint4 args; uint4 actual; uint4 extra;
@@ -41,7 +41,7 @@ public EvidenceStatus pps_fixed_predicate_roots(uint predicate, uint goal, uint 
 // Assumption leaves retain the authority of their caller context. An original
 // hypothesis stays symbolic even when its particular goal contains no rigid
 // parameters. Replay hypotheses require a prior accepted concrete proof.
-public EvidenceStatus pps_admit_assumption_proof(uint proof)
+public SolverStatus pps_admit_assumption_proof(uint proof)
 {
     uint admitted; uint goals; uint4 low; uint4 high;
     if (!pps_building() || !pps_count(PPS_PROOFS, admitted) || !pps_count(PPS_GOALS, goals))
@@ -52,7 +52,7 @@ public EvidenceStatus pps_admit_assumption_proof(uint proof)
         high.y != 0u || high.z != 0u || (high.w != 1u && high.w != 2u))
         return ts_invalid(68u, proof, TS_INVALID);
     bool conclusion_closed;
-    EvidenceStatus status = pps_admit_goal(low.y, low.z, conclusion_closed);
+    SolverStatus status = pps_admit_goal(low.y, low.z, conclusion_closed);
     if (status.state != TS_VALID) return status;
     uint4 offered; uint2 tail; uint4 context; uint4 extra;
     if (!ts_read4(14u, low.w, 0u, offered) || !ts_read2(14u, low.w, 4u, tail) ||

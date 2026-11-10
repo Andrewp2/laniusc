@@ -46,14 +46,14 @@ public struct SolverProofNormalizationCheckSink : IProofNormalizationSink
 // The caller must derive source/environment/owner/domain from the admitted
 // obligation or implementation prerequisite, never from an untrusted request's
 // self-asserted provenance. Exact request ownership is a separate stage gate.
-public EvidenceStatus pps_validate_original_normalization(
+public SolverStatus pps_validate_original_normalization(
     uint input_root, uint environment, uint owner, uint domain,
     ProofNormalizationReservation reservation, uint2 expected_root,
     out bool closed)
 {
     closed = false; uint2 source; uint2 normalized; ProofNormalizationCounts counts;
     if (!ts_read_root(input_root, source)) return ts_invalid(1u, input_root, TS_INVALID);
-    EvidenceStatus status = ts_normalize_proof_root<
+    SolverStatus status = ts_normalize_proof_root<
         SameProofNormalizationGraph<InputProofNormalizationGraph>, InputProofNormalizationBindings,
         SolverProofNormalizationCheckSink>(source, environment, owner, domain,
             true, reservation, normalized, closed, counts);
@@ -62,14 +62,14 @@ public EvidenceStatus pps_validate_original_normalization(
     return ts_ok();
 }
 
-public EvidenceStatus pps_validate_prerequisite_normalization(
+public SolverStatus pps_validate_prerequisite_normalization(
     uint input_root, uint substitution, uint caller_owner, uint domain,
     ProofNormalizationReservation reservation, uint2 expected_root,
     out bool closed)
 {
     closed = false; uint2 source; uint2 normalized; ProofNormalizationCounts counts;
     if (!ts_read_root(input_root, source)) return ts_invalid(1u, input_root, TS_INVALID);
-    EvidenceStatus status = ts_normalize_proof_root<
+    SolverStatus status = ts_normalize_proof_root<
         SplitProofNormalizationGraphs<InputProofNormalizationGraph, SolverProofTermGraph>,
         SolverProofBindings, SolverProofNormalizationCheckSink>(
             source, substitution, caller_owner, domain, true, reservation,

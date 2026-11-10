@@ -107,7 +107,7 @@ public bool plr_is_valid()
     uint state;
     return plr_header_is_valid() && plr_state(state) && state == TS_VALID;
 }
-public bool plr_write_status(EvidenceStatus status)
+public bool plr_write_status(SolverStatus status)
 {
     uint address;
     if (!plr_address(2u, 0u, 0u, 8u, address)) return false;
@@ -120,7 +120,7 @@ public bool plr_write_status(EvidenceStatus status)
     trait_solver_native_recipes[address + 7u] = 0u;
     trait_solver_native_recipes[address] = status.state; return true;
 }
-public void plr_failure(EvidenceStatus status)
+public void plr_failure(SolverStatus status)
 {
     if (status.state == TS_VALID) return;
     uint address;

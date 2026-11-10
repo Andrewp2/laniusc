@@ -11,7 +11,7 @@ mod native_session;
 mod packet;
 mod proof_store;
 
-pub(super) use dispatch::{EvidenceWorkspacePool, prepare_kernels as prepare_evidence_kernels};
+pub(super) use dispatch::{SolverWorkspacePool, prepare_kernels as prepare_solver_kernels};
 
 pub(super) use abi::{ArenaCopy, ArenaWrite, OutputRange, UploadPlan};
 pub(super) use catalog::{CatalogInput, FrozenCatalog, FrozenSnapshotId, StableWitnessIdentity};
@@ -34,7 +34,7 @@ pub(super) use packet::{
     ReplayContextInput,
     SourceCallIdentity,
     Submission,
-    ValidatedEvidence,
+    ValidatedSolverResult,
 };
 
 // Callable native identities come from accepted owner retention; actual public

@@ -128,11 +128,11 @@ public void pps_substitution_walk_begin(uint substitution, uint context,
 // failure is the walk's result.
 //
 // The goal stage (START and GOAL) ends by naming the head's PPS_CALL_ROOTS.
-public EvidenceStatus pps_substitution_feed_goal(inout PpsSubstitutionWalk walk,
-    inout PpsSubstitutionCall call, EvidenceStatus result, bool closed)
+public SolverStatus pps_substitution_feed_goal(inout PpsSubstitutionWalk walk,
+    inout PpsSubstitutionCall call, SolverStatus result, bool closed)
 {
     if (walk.phase != PPS_WALK_START && result.state != TS_VALID) return result;
-    EvidenceStatus status;
+    SolverStatus status;
     if (walk.phase == PPS_WALK_START)
     {
         uint4 substitutions; uint accepted;
@@ -190,11 +190,11 @@ public EvidenceStatus pps_substitution_feed_goal(inout PpsSubstitutionWalk walk,
 
 // The binding stage: from the result of the head's PPS_CALL_ROOTS (HEAD)
 // through the rechecks and bindings to PPS_CALL_DONE.
-public EvidenceStatus pps_substitution_feed_bindings(inout PpsSubstitutionWalk walk,
-    inout PpsSubstitutionCall call, EvidenceStatus result, bool closed)
+public SolverStatus pps_substitution_feed_bindings(inout PpsSubstitutionWalk walk,
+    inout PpsSubstitutionCall call, SolverStatus result, bool closed)
 {
     if (result.state != TS_VALID) return result;
-    EvidenceStatus status;
+    SolverStatus status;
     bool recheck = false; bool next_binding = false;
     bool binding_rest = false; bool binding_failed = false;
     if (walk.phase == PPS_WALK_HEAD)

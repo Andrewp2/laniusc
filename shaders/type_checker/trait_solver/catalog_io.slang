@@ -3,13 +3,13 @@ import type_checker.trait_solver.abi;
 public static const uint TS_CATALOG_BUSY = 0x80000000u;
 public static const uint TS_CATALOG_BUILDING = 0x80000001u;
 public static const uint TS_CHAIN_LIMIT = 1024u;
-public struct EvidenceOutputTable
+public struct SolverOutputTable
 {
     public uint arena; public uint offset; public uint count; public uint capacity; public uint width;
 }
 public bool ts_catalog_count(uint table, out uint count)
 {
-    count = 0u; EvidenceTable desc;
+    count = 0u; SolverTable desc;
     if (!ts_descriptor(table, desc)) return false;
     count = desc.catalog_count; return true;
 }
@@ -38,9 +38,9 @@ public uint ts_output_width(uint table)
     return select(table < TS_OUTPUT_TABLES,
         select((bit & 0x940u) != 0u, 4u, select((bit & 0x1280u) != 0u, 1u, 8u)), 0u);
 }
-public bool ts_output_descriptor(uint table, out EvidenceOutputTable desc)
+public bool ts_output_descriptor(uint table, out SolverOutputTable desc)
 {
-    desc = (EvidenceOutputTable)0;
+    desc = (SolverOutputTable)0;
     // The descriptor has a fixed ABI location. Validate its physical/logical
     // batch extent before reading it, independent of protocol admission.
     uint batch_words; uint batch_stride;
@@ -49,7 +49,7 @@ public bool ts_output_descriptor(uint table, out EvidenceOutputTable desc)
     if (!((table < TS_OUTPUT_TABLES) & (logical_batch >= TS_BATCH_FIXED_WORDS) &
         (logical_batch <= batch_words))) return false;
     uint start = TS_OUTPUT_DIRECTORY_WORD + table * 5u;
-    EvidenceOutputTable read = {
+    SolverOutputTable read = {
         trait_solver_batch[start], trait_solver_batch[start + 1u],
         trait_solver_batch[start + 2u], trait_solver_batch[start + 3u],
         trait_solver_batch[start + 4u] };
@@ -69,7 +69,7 @@ public bool ts_output_descriptor(uint table, out EvidenceOutputTable desc)
 public bool ts_output_span_address(uint table, uint row, uint field, uint fields,
     out uint arena, out uint address)
 {
-    arena = TS_INVALID; address = TS_INVALID; EvidenceOutputTable desc;
+    arena = TS_INVALID; address = TS_INVALID; SolverOutputTable desc;
     bool known = ts_output_descriptor(table, desc);
     if (!(known & (row < desc.count) & (fields != 0u) & (field < desc.width) &
         (fields <= desc.width - field))) return false;
@@ -139,7 +139,7 @@ public bool ts_output_write8(uint table, uint row, uint4 low, uint4 high)
     }
     return true;
 }
-public bool ts_write_status(uint table, uint row, EvidenceStatus status)
+public bool ts_write_status(uint table, uint row, SolverStatus status)
 {
     return ts_output_write8(table, row,
         uint4(status.state, status.detail, status.subject_row, status.related_row),
@@ -149,7 +149,7 @@ public bool ts_write_status(uint table, uint row, EvidenceStatus status)
 // Submission-wide receipt, deliberately distinct from a generic Status8.
 // A caller may publish VALID only after every batch admission/selection/replay
 // phase has completed and its writes are visible. This helper is not that gate.
-public bool ts_write_batch_receipt(EvidenceStatus status)
+public bool ts_write_batch_receipt(SolverStatus status)
 {
     if (!ts_header_is_valid()) return false;
     return ts_output_write(10u, 0u, 1u, status.detail) &&
@@ -164,7 +164,7 @@ public bool ts_write_batch_receipt(EvidenceStatus status)
 
 // Called once before any other catalog writer. Malformed output layout leaves
 // the host-initialized receipt UNPROCESSED, which is never an accepted catalog.
-public EvidenceStatus ts_admit_output_layout()
+public SolverStatus ts_admit_output_layout()
 {
     // Both initializers call this before publishing BUILDING. Descriptor readers
     // only prove bounds and cannot supply the protocol/epoch admission gate.
@@ -177,7 +177,7 @@ public EvidenceStatus ts_admit_output_layout()
     if (!ts_work_counts(work_rows, work_buckets)) return ts_invalid(19u, 6u, TS_INVALID);
     for (uint table = 0u; table < TS_OUTPUT_TABLES; table++)
     {
-        EvidenceOutputTable current;
+        SolverOutputTable current;
         if (!ts_output_descriptor(table, current)) return ts_invalid(1u, table, TS_INVALID);
         uint expected = 0u;
         if (table == 0u || table == 10u) expected = 1u;
@@ -201,7 +201,7 @@ public EvidenceStatus ts_admit_output_layout()
             if (current.offset < 4u) return ts_invalid(1u, table, TS_INVALID);
             for (uint source = 0u; source < TS_TABLES; source++)
             {
-                EvidenceTable input;
+                SolverTable input;
                 if (!ts_descriptor(source, input)) return ts_invalid(1u, source, TS_INVALID);
                 if (input.catalog_count != 0u && current.offset < input.catalog_offset + input.catalog_count * input.width &&
                     input.catalog_offset < end) return ts_invalid(1u, table, source);
@@ -209,7 +209,7 @@ public EvidenceStatus ts_admit_output_layout()
         }
         for (uint prior = 0u; prior < table; prior++)
         {
-            EvidenceOutputTable other;
+            SolverOutputTable other;
             if (!ts_output_descriptor(prior, other)) return ts_invalid(1u, prior, TS_INVALID);
             if (current.arena == other.arena && current.capacity != 0u && other.capacity != 0u &&
                 current.offset < other.offset + other.capacity * other.width && other.offset < end)
@@ -227,7 +227,7 @@ public bool ts_catalog_is_building()
 }
 // Failure record field 1..5: detail, subject, related, required, available;
 // field 6 the given serial word; field 7 zero.
-public uint ts_failure_field(EvidenceStatus status, uint field, uint serial)
+public uint ts_failure_field(SolverStatus status, uint field, uint serial)
 {
     uint value = select(field == 6u, serial, 0u);
     value = select(field == 5u, status.available, value);
@@ -236,7 +236,7 @@ public uint ts_failure_field(EvidenceStatus status, uint field, uint serial)
     value = select(field == 2u, status.subject_row, value);
     return select(field == 1u, status.detail, value);
 }
-public void ts_catalog_failure(EvidenceStatus status)
+public void ts_catalog_failure(SolverStatus status)
 {
     if (status.state == TS_VALID) return;
     uint arena; uint address;

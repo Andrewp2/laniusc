@@ -12,7 +12,7 @@ void main(uint3 dtid : SV_DispatchThreadID)
         trait_solver_params.dispatch_count != 1u || !iap_physical_work()) return;
     // A fresh exclusive arena starts with zero counters and an unpublished
     // receipt. No partial failure can publish a successful application list.
-    EvidenceStatus status = ts_invalid(200u, TS_INVALID, TS_INVALID);
+    SolverStatus status = ts_invalid(200u, TS_INVALID, TS_INVALID);
     if (iap_header_is_valid()) status = iap_project();
     iap_status(status);
 }

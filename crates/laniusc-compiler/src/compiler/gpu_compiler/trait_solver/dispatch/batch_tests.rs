@@ -83,9 +83,9 @@ fn append_originals(packet: &mut GpuPacket) {
     }
 }
 
-fn gpu_failure(error: &anyhow::Error) -> &EvidenceDispatchFailure {
+fn gpu_failure(error: &anyhow::Error) -> &SolverDispatchFailure {
     error
-        .downcast_ref::<EvidenceDispatchFailure>()
+        .downcast_ref::<SolverDispatchFailure>()
         .unwrap_or_else(|| {
             panic!("expected a GPU semantic receipt, not infrastructure failure: {error:#}")
         })
@@ -106,8 +106,8 @@ fn original_call_row(packet: &ProgramPacket, snapshot: u32, hir: u32) -> u32 {
 fn call_evidence(
     packet: &ProgramPacket,
     call: u32,
-    original_results: &[ValidatedEvidence],
-) -> ValidatedEvidence {
+    original_results: &[ValidatedSolverResult],
+) -> ValidatedSolverResult {
     let row = packet.tables.row(15, call).unwrap();
     assert_eq!(row[6], 1, "fixture callable owns one marker predicate");
     // The initial submission starts at obligation zero. This is an exact row
@@ -424,9 +424,9 @@ fn scalar_origin_evidence(
     unit: &CompiledSourcePackUnit,
     packet: &ProgramPacket,
     snapshot: u32,
-    results: &[ValidatedEvidence],
+    results: &[ValidatedSolverResult],
     scalar: u32,
-) -> (u32, ValidatedEvidence, u32) {
+) -> (u32, ValidatedSolverResult, u32) {
     let call = unit
         .generic_calls
         .iter()
@@ -486,7 +486,7 @@ fn gpu_batch_rejects_changed_retained_witness_before_replay() {
     }
     let previous_serial = packet.completed_serial;
     // accept_submission just retained these GPU outputs on the host. They have
-    // not been uploaded as Evidence17 inputs yet. Change only the witness to
+    // not been uploaded as table-17 inputs yet. Change only the witness to
     // another accepted proof root; the origin/obligation backlinks remain
     // valid, but that root proves the other goal. The normal next check must
     // upload this new suffix and reject the witness during row admission,
@@ -1282,7 +1282,7 @@ fn main() -> i32 { return inspect<Cell<[i32; 3]>>(); }
 }
 
 #[test]
-fn gpu_evidence_workspace_alternates_catalogs_rejects_stale_capabilities_and_recovers() {
+fn gpu_solver_workspace_alternates_catalogs_rejects_stale_capabilities_and_recovers() {
     let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
     let rich = compile_unit(&compiler, [96, 0], FORWARDING, vec![]);
     let plain = compile_unit(&compiler, [97, 0], "fn main()->i32 { return 0; }", vec![]);

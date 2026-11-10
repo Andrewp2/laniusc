@@ -7,16 +7,16 @@ import type_checker.scoped_type_hash;
 uint ts_assumption_bucket_hash(uint context, uint goal_hash)
 { return scoped_type_hash_mix(goal_hash, context); }
 
-public EvidenceStatus ts_build_assumption_index(uint assumption)
+public SolverStatus ts_build_assumption_index(uint assumption)
 {
     uint4 row; uint owner; bool closed; uint context_state;
     if (!ts_read4(14u, assumption, 0u, row) ||
         !ts_context_goal_scope(row.x, owner, closed) ||
         !ts_output_read(2u, row.x, 0u, context_state) || context_state != TS_VALID)
         return ts_invalid(3u, assumption, TS_INVALID);
-    EvidenceGoal goal; uint hash;
+    SolverGoal goal; uint hash;
     if (!ts_predicate_goal(row.y, row.z, owner, goal)) return ts_invalid(1u, assumption, row.y);
-    EvidenceStatus status = ts_admit_and_hash_goal(goal, closed, hash);
+    SolverStatus status = ts_admit_and_hash_goal(goal, closed, hash);
     if (status.state != TS_VALID) return status;
     uint assumptions; uint buckets; uint arena; uint address;
     if (!ts_table_count(14u, assumptions) || assumption >= assumptions ||

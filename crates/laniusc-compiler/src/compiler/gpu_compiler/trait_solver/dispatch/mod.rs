@@ -4,7 +4,7 @@ mod arena;
 mod workspace;
 #[cfg(test)]
 mod workspace_tests;
-pub(in crate::compiler::gpu_compiler) use workspace::EvidenceWorkspacePool;
+pub(in crate::compiler::gpu_compiler) use workspace::SolverWorkspacePool;
 use workspace::WorkspaceLease;
 #[cfg(test)]
 mod batch_tests;
@@ -29,7 +29,7 @@ use arena::Arena;
 use super::{
     abi::*,
     catalog::FrozenCatalog,
-    packet::{ProgramPacket, Submission, ValidatedEvidence},
+    packet::{ProgramPacket, Submission, ValidatedSolverResult},
     proof_store::{PROOF_STORE_FIXED_WORDS, PROOF_STORE_TABLES},
 };
 use crate::gpu::{
@@ -176,7 +176,7 @@ impl GpuPacket {
     /// this accessor cannot admit rows or grant another replay capability.
     pub(super) fn failure_call_site(
         &self,
-        failure: &EvidenceDispatchFailure,
+        failure: &SolverDispatchFailure,
     ) -> Option<super::packet::RetainedCallSite> {
         let call = if let Some((obligation, _)) = failure.obligation {
             // Failure payload words need not name the row. Use the dispatch
@@ -1082,7 +1082,7 @@ impl GpuTraitSolver {
 
     /// Gate before body reuse/specialization and after each replay's fresh calls.
     /// A valid catalog does not bypass batch checking, including an empty delta.
-    pub fn check(&mut self, packet: &mut GpuPacket) -> Result<Vec<ValidatedEvidence>> {
+    pub fn check(&mut self, packet: &mut GpuPacket) -> Result<Vec<ValidatedSolverResult>> {
         ensure!(
             !packet.poisoned,
             "GPU evidence packet failed; discard this packet"
@@ -1283,7 +1283,7 @@ impl GpuTraitSolver {
                 &proof_readback,
             )
             .map_err(|reason| {
-                reason.context(EvidenceDispatchFailure::new(
+                reason.context(SolverDispatchFailure::new(
                     &submission,
                     catalog_status,
                     batch_status,
@@ -1293,7 +1293,7 @@ impl GpuTraitSolver {
                 ))
             })?;
         packet.completed_serial = submission.serial;
-        // accept_submission appends returned Evidence17 to the host packet.
+        // accept_submission appends returned table-17 rows to the host packet.
         // Those rows were NOT inputs to this dispatch; admit them next time.
         packet.completed_suffix_counts = layout.input_suffix_counts;
         packet.completed_input_offsets = layout.input_offsets;
@@ -1673,7 +1673,7 @@ impl BatchPlan {
             assumption_index,
             "assumption index",
         )?;
-        // Prior result/evidence rows are GPU provenance for retained Evidence17.
+        // Prior result/evidence rows are GPU provenance for retained table-17 rows.
         // Only a bucket-count change may reset old assumption index rows; status,
         // goal-cache, and evidence slots must never erase admitted old closures.
         for reset in &submission.plan.initialize_outputs {
@@ -1818,7 +1818,7 @@ fn ensure_same_span(actual: Span, expected: Span, what: &str) -> Result<()> {
 /// Receipt state6 is a summary: call and obligation rows retain Missing,
 /// InvalidInput, ResourceLimit, Unsupported, and Ambiguous separately.
 #[derive(Debug)]
-pub(super) struct EvidenceDispatchFailure {
+pub(super) struct SolverDispatchFailure {
     pub epoch: u64,
     pub arena_id: u64,
     pub serial: u32,
@@ -1858,7 +1858,7 @@ fn without_soft_refutations(
     (calls, obligations)
 }
 
-impl EvidenceDispatchFailure {
+impl SolverDispatchFailure {
     fn new(
         submission: &Submission,
         catalog: [u32; 8],
@@ -1911,7 +1911,7 @@ fn failure_row(
         .or_else(|| rows.iter().enumerate().find(|(_, row)| failed(row)))
         .map(|(offset, &row)| (span.first + offset as u32, row))
 }
-impl std::fmt::Display for EvidenceDispatchFailure {
+impl std::fmt::Display for SolverDispatchFailure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -1930,4 +1930,4 @@ impl std::fmt::Display for EvidenceDispatchFailure {
         write!(f, " catalog {:?}; batch {:?}", self.catalog, self.receipt)
     }
 }
-impl std::error::Error for EvidenceDispatchFailure {}
+impl std::error::Error for SolverDispatchFailure {}

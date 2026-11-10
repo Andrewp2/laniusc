@@ -10,7 +10,7 @@ import type_checker.trait_solver.proof_term_graph;
 
 // Exact declaration ordinal across the callable's composed owner chain. The
 // accepted call's complete obligation count must still match that inventory.
-EvidenceStatus iap_predicate_at(uint owner, uint ordinal, uint expected_count, out uint predicate)
+SolverStatus iap_predicate_at(uint owner, uint ordinal, uint expected_count, out uint predicate)
 {
     predicate = TS_INVALID; uint total = 0u; uint original = owner;
     [loop]
@@ -36,7 +36,7 @@ EvidenceStatus iap_predicate_at(uint owner, uint ordinal, uint expected_count, o
 // The initial accepted evidence lives in output5 immediately. Its CPU table-17
 // copy is appended only after upload, so this query must not require that copy
 // to have been uploaded by another (otherwise unnecessary) submission.
-EvidenceStatus iap_output_evidence(uint obligation_row, out uint4 retained, out uint4 source,
+SolverStatus iap_output_evidence(uint obligation_row, out uint4 retained, out uint4 source,
     out uint4 proof, out uint4 proof_extra, out uint call_state)
 {
     retained = uint4(TS_INVALID); source = retained; proof = retained; proof_extra = retained;
@@ -65,7 +65,7 @@ EvidenceStatus iap_output_evidence(uint obligation_row, out uint4 retained, out 
         !iap_catalog_span(4u, call.w, 1u) || !ts_read4(4u, call.w, 0u, callable))
         return ts_invalid(203u, obligation_row, source.x);
     uint predicate;
-    EvidenceStatus status = iap_predicate_at(callable.y, source.z - extra.y, extra.z, predicate);
+    SolverStatus status = iap_predicate_at(callable.y, source.z - extra.y, extra.z, predicate);
     if (status.state != TS_VALID) return status;
     return predicate == retained.y ? ts_ok() : ts_invalid(203u, obligation_row, predicate);
 }
@@ -73,7 +73,7 @@ EvidenceStatus iap_output_evidence(uint obligation_row, out uint4 retained, out 
 // Supporting replay assumptions name older table-17 inputs that were already
 // admitted with their context. Check their exact copy against the accepted
 // output, rather than promoting a child proof into a new source obligation.
-EvidenceStatus iap_evidence(uint evidence, out uint4 retained, out uint4 source,
+SolverStatus iap_evidence(uint evidence, out uint4 retained, out uint4 source,
     out uint4 proof, out uint4 proof_extra, out uint call_state)
 {
     uint4 supplied; uint4 supplied_source;
@@ -83,14 +83,14 @@ EvidenceStatus iap_evidence(uint evidence, out uint4 retained, out uint4 source,
         call_state = 0u;
         return ts_invalid(203u, evidence, TS_INVALID);
     }
-    EvidenceStatus status = iap_output_evidence(supplied_source.z,
+    SolverStatus status = iap_output_evidence(supplied_source.z,
         retained, source, proof, proof_extra, call_state);
     if (status.state != TS_VALID) return status;
     return all(retained == supplied) && all(source == supplied_source) ? ts_ok() :
         ts_invalid(203u, evidence, supplied_source.z);
 }
 
-EvidenceStatus iap_subject_slot(uint predicate, uint expected_slot)
+SolverStatus iap_subject_slot(uint predicate, uint expected_slot)
 {
     uint4 requirement; uint2 subject; uint4 atom;
     if (expected_slot >= 32u || !iap_catalog_span(8u, predicate, 1u) ||
@@ -124,13 +124,13 @@ EvidenceStatus iap_subject_slot(uint predicate, uint expected_slot)
     return ts_invalid(204u, predicate, subject.y);
 }
 
-EvidenceStatus iap_resolve(uint request, uint4 requested, uint4 identity, inout uint3 used,
+SolverStatus iap_resolve(uint request, uint4 requested, uint4 identity, inout uint3 used,
     out uint resolved, out uint4 proof, out uint4 proof_extra, out uint first_hop, out uint hop_count)
 {
     resolved = requested.x; proof = uint4(TS_INVALID); proof_extra = proof;
     first_hop = used.z; hop_count = 0u;
     uint4 retained; uint4 source; uint call_state;
-    EvidenceStatus status = iap_output_evidence(requested.w, retained, source, proof, proof_extra, call_state);
+    SolverStatus status = iap_output_evidence(requested.w, retained, source, proof, proof_extra, call_state);
     if (status.state != TS_VALID) return status;
     if (identity.w != 0u || retained.w != requested.x || source.x != requested.y ||
         source.y != requested.z || retained.y != identity.x || proof.z != identity.z || call_state != 1u)
@@ -172,7 +172,7 @@ EvidenceStatus iap_resolve(uint request, uint4 requested, uint4 identity, inout 
     }
 }
 
-EvidenceStatus iap_bindings(uint implementation, uint substitution, uint owner,
+SolverStatus iap_bindings(uint implementation, uint substitution, uint owner,
     uint4 owner_low, uint4 owner_span, uint4 selected, uint first)
 {
     // Accepted binding spans are strictly sorted by exact parameter atom, not
@@ -236,12 +236,12 @@ EvidenceStatus iap_bindings(uint implementation, uint substitution, uint owner,
     return ts_ok();
 }
 
-EvidenceStatus iap_project_one(uint request, inout uint3 used)
+SolverStatus iap_project_one(uint request, inout uint3 used)
 {
     uint4 requested = iap_read4(IAP_REQUEST_ROW + request * 2u);
     uint4 identity = iap_read4(IAP_REQUEST_ROW + request * 2u + 1u);
     uint resolved; uint4 proof; uint4 proof_extra; uint first_hop; uint hop_count;
-    EvidenceStatus status = iap_resolve(request, requested, identity, used,
+    SolverStatus status = iap_resolve(request, requested, identity, used,
         resolved, proof, proof_extra, first_hop, hop_count);
     if (status.state != TS_VALID) return status;
     uint4 implementation; uint4 implementation_extra; uint4 prerequisites;
@@ -269,7 +269,7 @@ EvidenceStatus iap_project_one(uint request, inout uint3 used)
             return ts_invalid(209u, implementation.y, ancestor);
         if (span.y != 0u || span.w != 0u)
         {
-            EvidenceStatus unsupported = ts_invalid(210u, implementation.y, ancestor);
+            SolverStatus unsupported = ts_invalid(210u, implementation.y, ancestor);
             unsupported.state = TS_UNSUPPORTED; return unsupported;
         }
         ancestor = ancestor_owner.w;
@@ -302,13 +302,13 @@ EvidenceStatus iap_project_one(uint request, inout uint3 used)
     return ts_ok();
 }
 
-public EvidenceStatus iap_project()
+public SolverStatus iap_project()
 {
     uint3 used = uint3(0u); uint count = iap_read4(1u).w;
     [loop]
     for (uint request = 0u; request < count; request++)
     {
-        EvidenceStatus status = iap_project_one(request, used);
+        SolverStatus status = iap_project_one(request, used);
         if (status.state != TS_VALID) return status;
     }
     iap_write4(5u, uint4(used, count));

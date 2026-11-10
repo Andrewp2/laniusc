@@ -11,12 +11,12 @@ import type_checker.trait_solver.proof_term_normalization;
 import type_checker.scoped_type_hash;
 import type_checker.scoped_type_scratch;
 
-public EvidenceStatus pps_admit_term(uint2 reference, uint owner, uint domain,
+public SolverStatus pps_admit_term(uint2 reference, uint owner, uint domain,
     bool require_closed, out bool closed)
 {
     closed = false; uint2 unpublished; ProofNormalizationCounts counts;
     ProofNormalizationReservation reservation = (ProofNormalizationReservation)0;
-    EvidenceStatus status = ts_normalize_proof_root<SameProofNormalizationGraph<SolverProofTermGraph>,
+    SolverStatus status = ts_normalize_proof_root<SameProofNormalizationGraph<SolverProofTermGraph>,
         NoProofNormalizationBindings, NoProofNormalizationSink>(
         reference, TS_INVALID, owner, domain, false, reservation, unpublished, closed, counts);
     if (status.state != TS_VALID) return status;
@@ -52,7 +52,7 @@ public struct RecordedGoalHash : IGoalHashCheck
 }
 
 [ForceInline]
-public EvidenceStatus pps_admit_goal(uint goal, uint context, out bool closed)
+public SolverStatus pps_admit_goal(uint goal, uint context, out bool closed)
 {
     return pps_admit_goal_checked<RecomputedGoalHash>(goal, context, closed);
 }
@@ -67,7 +67,7 @@ public struct PpsGoalAdmission
     public uint hash; public bool all_closed;
 }
 // The goal row and scope checks before its roots (pps_admit_goal_checked).
-public EvidenceStatus pps_goal_admission_begin(uint goal, uint context, out PpsGoalAdmission admission)
+public SolverStatus pps_goal_admission_begin(uint goal, uint context, out PpsGoalAdmission admission)
 {
     admission = (PpsGoalAdmission)0;
     admission.goal = goal; admission.context = context;
@@ -95,7 +95,7 @@ public EvidenceStatus pps_goal_admission_begin(uint goal, uint context, out PpsG
     return ts_ok();
 }
 // Root i (0 = subject) and its admission domain.
-public EvidenceStatus pps_goal_admission_root(PpsGoalAdmission admission, uint i,
+public SolverStatus pps_goal_admission_root(PpsGoalAdmission admission, uint i,
     out uint2 root, out uint domain)
 {
     // Decode the captured row instead of rereading a pending goal through
@@ -107,7 +107,7 @@ public EvidenceStatus pps_goal_admission_root(PpsGoalAdmission admission, uint i
     return ts_ok();
 }
 // Root i was admitted with closure `root_closed`: mix it into the hash.
-public EvidenceStatus pps_goal_admission_mix<Check : IGoalHashCheck>(
+public SolverStatus pps_goal_admission_mix<Check : IGoalHashCheck>(
     inout PpsGoalAdmission admission, uint i, uint2 root, bool root_closed)
 {
     admission.all_closed = admission.all_closed && root_closed;
@@ -116,7 +116,7 @@ public EvidenceStatus pps_goal_admission_mix<Check : IGoalHashCheck>(
     return ts_ok();
 }
 // After every root: the recorded hash and closure.
-public EvidenceStatus pps_goal_admission_finish<Check : IGoalHashCheck>(
+public SolverStatus pps_goal_admission_finish<Check : IGoalHashCheck>(
     PpsGoalAdmission admission, out bool closed)
 {
     closed = false;
@@ -125,12 +125,12 @@ public EvidenceStatus pps_goal_admission_finish<Check : IGoalHashCheck>(
         return ts_invalid(67u, admission.goal, admission.context);
     closed = admission.all_closed; return ts_ok();
 }
-public EvidenceStatus pps_admit_goal_checked<Check : IGoalHashCheck>(uint goal, uint context,
+public SolverStatus pps_admit_goal_checked<Check : IGoalHashCheck>(uint goal, uint context,
     out bool closed)
 {
     closed = false;
     PpsGoalAdmission admission;
-    EvidenceStatus status = pps_goal_admission_begin(goal, context, admission);
+    SolverStatus status = pps_goal_admission_begin(goal, context, admission);
     if (status.state != TS_VALID) return status;
     [loop]
     for (uint i = 0u; i <= admission.high.x; i++)

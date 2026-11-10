@@ -7,7 +7,7 @@ import type_checker.trait_solver.proof_frontier_expansion;
 import type_checker.trait_solver.proof_goal_equality;
 import type_checker.trait_solver.proof_application_admission;
 
-public EvidenceStatus pps_emit_ready_proof(uint event)
+public SolverStatus pps_emit_ready_proof(uint event)
 {
     uint2 queue;
     if (!pps_read2(PPS_REDUCTION_QUEUE, event, 0u, queue)) return ts_invalid(1u, event, PPS_REDUCTION_QUEUE);
@@ -16,7 +16,7 @@ public EvidenceStatus pps_emit_ready_proof(uint event)
     if (!pps_work_read(work, key, selected, completion, source) || key.z != PPS_WORK_READY ||
         completion.y != 0u) return ts_invalid(70u, event, work);
     uint proof; uint edges;
-    EvidenceStatus status = pps_reserve(PPS_PROOFS, 1u, work, proof);
+    SolverStatus status = pps_reserve(PPS_PROOFS, 1u, work, proof);
     if (status.state != TS_VALID) return status;
     status = pps_reserve(PPS_PROOF_EDGES, selected.w, work, edges);
     if (status.state != TS_VALID) return status;
@@ -59,7 +59,7 @@ public EvidenceStatus pps_emit_ready_proof(uint event)
 
 // Both kind-specific validation passes inspect the same frozen pending rows.
 // They publish no proof authority; phase60 commits only after both complete.
-public EvidenceStatus pps_read_ready_proof(uint event, out uint proof, out uint kind)
+public SolverStatus pps_read_ready_proof(uint event, out uint proof, out uint kind)
 {
     proof = TS_INVALID; kind = 0u;
     uint2 queue; uint4 key; uint4 selected; uint4 completion; uint4 source;
@@ -76,15 +76,15 @@ public EvidenceStatus pps_read_ready_proof(uint event, out uint proof, out uint 
     return ts_ok();
 }
 
-public EvidenceStatus pps_admit_ready_assumption_proof(uint event)
+public SolverStatus pps_admit_ready_assumption_proof(uint event)
 {
     uint proof; uint kind;
-    EvidenceStatus status = pps_read_ready_proof(event, proof, kind);
+    SolverStatus status = pps_read_ready_proof(event, proof, kind);
     if (status.state != TS_VALID || kind != 2u) return status;
     return pps_admit_assumption_proof(proof);
 }
 
-public EvidenceStatus pps_publish_work_proof(uint event)
+public SolverStatus pps_publish_work_proof(uint event)
 {
     uint2 queue; uint4 key; uint4 selected; uint4 completion; uint4 source;
     if (!pps_read2(PPS_REDUCTION_QUEUE, event, 0u, queue)) return ts_invalid(1u, event, PPS_REDUCTION_QUEUE);
@@ -97,7 +97,7 @@ public EvidenceStatus pps_publish_work_proof(uint event)
     return pps_write4(PPS_WORK, queue.x, 0u, key) ? ts_ok() : ts_invalid(1u, event, queue.x);
 }
 
-public EvidenceStatus pps_process_notification(uint event)
+public SolverStatus pps_process_notification(uint event)
 {
     uint2 queue;
     if (!pps_read2(PPS_REDUCTION_QUEUE, event, 0u, queue)) return ts_invalid(1u, event, PPS_REDUCTION_QUEUE);
@@ -110,7 +110,7 @@ public EvidenceStatus pps_process_notification(uint event)
 // Only after every request is expanded and the readiness queue is drained.
 // A remaining waiting component has no finite derivation. Changing-type growth
 // never reaches this phase: its graph/work/capacity limit is reported earlier.
-public EvidenceStatus pps_publish_root(uint link)
+public SolverStatus pps_publish_root(uint link)
 {
     uint2 root; uint4 key; uint4 selected; uint4 completion; uint4 source;
     if (!pps_read2(PPS_ROOT_LINKS, link, 0u, root) ||
@@ -124,7 +124,7 @@ public EvidenceStatus pps_publish_root(uint link)
         call.x != key.x || !ts_context_goal_scope(key.x, owner, closed))
         return ts_invalid(3u, root.x, work);
     bool equal;
-    EvidenceStatus status = pps_predicate_equals_goal(obligation.y, obligation.z, owner, key.y, closed, equal);
+    SolverStatus status = pps_predicate_equals_goal(obligation.y, obligation.z, owner, key.y, closed, equal);
     if (status.state != TS_VALID) return status;
     if (!equal) return ts_invalid(68u, root.x, work);
     if (key.z == PPS_WORK_FAILED || key.z == PPS_WORK_MISSING || key.z == PPS_WORK_WAITING)

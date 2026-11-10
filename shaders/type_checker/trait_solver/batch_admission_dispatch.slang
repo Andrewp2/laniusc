@@ -10,7 +10,7 @@ public bool ts_batch_admission_row(uint table, uint local, out uint row)
 {
     row = TS_INVALID;
     if (!ts_batch_is_building()) return false;
-    uint count; EvidenceStatus failure = ts_ok();
+    uint count; SolverStatus failure = ts_ok();
     if (!ts_table_count(table, count)) failure = ts_invalid(1u, table, TS_INVALID);
     else
     {
@@ -25,7 +25,7 @@ public bool ts_batch_admission_row(uint table, uint local, out uint row)
 
 // These are the reference-row and Env11 invocation projections previously in
 // the generic table switch. Every other entry calls its existing validator.
-public EvidenceStatus ts_admit_batch_reference_row(uint table, uint row)
+public SolverStatus ts_admit_batch_reference_row(uint table, uint row)
 {
     // Atom1 and Node5 admission completed before these stages. Validate
     // each edge/root's own reference domain/bounds, including orphan rows.
@@ -35,7 +35,7 @@ public EvidenceStatus ts_admit_batch_reference_row(uint table, uint row)
         return ts_invalid(4u, row, table);
     return ts_ok();
 }
-public EvidenceStatus ts_admit_batch_environment_row(uint row)
+public SolverStatus ts_admit_batch_environment_row(uint row)
 {
     uint form; uint owner;
     if (!ts_word(11u, row, 3u, form) || !ts_word(11u, row, 4u, owner))

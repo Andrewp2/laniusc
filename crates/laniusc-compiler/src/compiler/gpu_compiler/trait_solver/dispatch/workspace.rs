@@ -60,11 +60,11 @@ struct PoolOwner {
 /// One bounded idle workspace per compiler/device. Simultaneous sessions get
 /// distinct leases; they never share mutable evidence storage. Source frontend
 /// resets and replay jobs do not affect a checked-out workspace.
-pub(in crate::compiler::gpu_compiler) struct EvidenceWorkspacePool {
+pub(in crate::compiler::gpu_compiler) struct SolverWorkspacePool {
     owner: Arc<PoolOwner>,
 }
 
-impl EvidenceWorkspacePool {
+impl SolverWorkspacePool {
     pub fn new(device: Arc<wgpu::Device>, queue: Arc<wgpu::Queue>) -> Self {
         Self {
             owner: Arc::new(PoolOwner {

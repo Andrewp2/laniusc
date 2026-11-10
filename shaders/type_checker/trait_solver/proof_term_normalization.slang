@@ -128,7 +128,7 @@ public struct SplitProofNormalizationGraphs<SourceGraph : IProofNormalizationGra
 // iteration performs at most one begin_node and one set_child, in the same
 // order as before.
 [ForceInline]
-public EvidenceStatus ts_normalize_proof_root<
+public SolverStatus ts_normalize_proof_root<
     Graphs : IProofNormalizationPair,
     Bindings : IProofNormalizationBindings,
     Sink : IProofNormalizationSink>(
@@ -142,7 +142,7 @@ public EvidenceStatus ts_normalize_proof_root<
 // The root is read on graph side `side`. A walk without an environment never
 // substitutes, so every reference keeps that side: a pair can then select
 // one of several source graphs by side (PpsAdmissionGraphs).
-public EvidenceStatus ts_normalize_proof_root_on_side<
+public SolverStatus ts_normalize_proof_root_on_side<
     Graphs : IProofNormalizationPair,
     Bindings : IProofNormalizationBindings,
     Sink : IProofNormalizationSink>(

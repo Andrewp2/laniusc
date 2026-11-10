@@ -54,7 +54,7 @@ public bool iap_accepted_span(uint table, uint first, uint count)
 }
 public bool iap_catalog_span(uint table, uint first, uint count)
 {
-    EvidenceTable span;
+    SolverTable span;
     return ts_descriptor(table, span) && first <= span.catalog_count &&
         count <= span.catalog_count - first;
 }
@@ -90,7 +90,7 @@ public bool iap_header_is_valid()
     }
     return true;
 }
-public EvidenceStatus iap_reserve(uint pool, uint count, inout uint3 used, out uint first)
+public SolverStatus iap_reserve(uint pool, uint count, inout uint3 used, out uint first)
 {
     first = TS_INVALID;
     uint4 limits = iap_read4(2u);
@@ -100,7 +100,7 @@ public EvidenceStatus iap_reserve(uint pool, uint count, inout uint3 used, out u
         return ts_limit(201u, pool, count, prior <= available ? available - prior : 0u);
     first = prior; used[pool] = prior + count; return ts_ok();
 }
-public void iap_status(EvidenceStatus status)
+public void iap_status(SolverStatus status)
 {
     // Single writer, state last. Failed or partial output never has authority.
     uint at = IAP_STATUS_ROW * 4u;

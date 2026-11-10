@@ -76,7 +76,7 @@ PpsSubstitutionWalk pps_walk_load()
 // The consumer's checks before its walk: whether row `row` has a substitution
 // to walk, and its (substitution, context). An implementation proof's rows are
 // handed on for its prerequisite checks.
-EvidenceStatus pps_walk_subject(uint consumer, uint row, out bool walks,
+SolverStatus pps_walk_subject(uint consumer, uint row, out bool walks,
     out uint substitution, out uint context)
 {
     walks = false; substitution = TS_INVALID; context = TS_INVALID;
@@ -91,7 +91,7 @@ EvidenceStatus pps_walk_subject(uint consumer, uint row, out bool walks,
     }
     // A ready implementation proof: its pending row, then its substitution.
     uint proof; uint kind;
-    EvidenceStatus status = pps_read_ready_proof(row, proof, kind);
+    SolverStatus status = pps_read_ready_proof(row, proof, kind);
     if (status.state != TS_VALID || kind != 1u) return status;
     uint4 low; uint4 high; uint admitted_proofs;
     if (!pps_count(PPS_PROOFS, admitted_proofs)) return ts_invalid(1u, proof, PPS_PROOFS);
@@ -117,15 +117,15 @@ EvidenceStatus pps_walk_subject(uint consumer, uint row, out bool walks,
 }
 
 // Goal stage: the consumer's checks, then the walk up to the head match.
-public EvidenceStatus pps_walk_goals(uint consumer, uint row)
+public SolverStatus pps_walk_goals(uint consumer, uint row)
 {
     bool walks; uint substitution; uint context;
-    EvidenceStatus status = pps_walk_subject(consumer, row, walks, substitution, context);
+    SolverStatus status = pps_walk_subject(consumer, row, walks, substitution, context);
     if (status.state != TS_VALID) return status;
     if (!walks) { pps_handoff_tag(consumer, row, PPS_WALKED_SKIP); return ts_ok(); }
     PpsSubstitutionWalk walk; PpsSubstitutionCall call;
     pps_substitution_walk_begin(substitution, context, pps_matching_limits(), walk, call);
-    EvidenceStatus result = ts_ok(); bool closed = false;
+    SolverStatus result = ts_ok(); bool closed = false;
     [loop]
     for (;;)
     {
@@ -151,12 +151,12 @@ public EvidenceStatus pps_walk_goals(uint consumer, uint row)
 // Root unification: the head match of a walk (phase PPS_WALK_PHASE_WORK or
 // PPS_WALK_PHASE_PROOFS), or the fixed prerequisite checks of an implementation
 // proof after its walk (PPS_WALK_PHASE_PREREQUISITES). One unification site.
-public EvidenceStatus pps_walk_roots(uint phase, uint row)
+public SolverStatus pps_walk_roots(uint phase, uint row)
 {
     bool prerequisites = phase == PPS_WALK_PHASE_PREREQUISITES;
     uint consumer = prerequisites ? PPS_WALK_PHASE_PROOFS : phase;
     uint outcome;
-    EvidenceStatus status = pps_handoff_outcome(consumer, row, outcome);
+    SolverStatus status = pps_handoff_outcome(consumer, row, outcome);
     if (status.state != TS_VALID) return status;
     if (outcome == PPS_WALKED_SKIP)
     {
@@ -226,10 +226,10 @@ public EvidenceStatus pps_walk_roots(uint phase, uint row)
 }
 
 // Binding stage: the walk from the head match to its end.
-public EvidenceStatus pps_walk_bindings(uint consumer, uint row)
+public SolverStatus pps_walk_bindings(uint consumer, uint row)
 {
     uint outcome;
-    EvidenceStatus status = pps_handoff_outcome(consumer, row, outcome);
+    SolverStatus status = pps_handoff_outcome(consumer, row, outcome);
     if (status.state != TS_VALID) return status;
     if (outcome == PPS_WALKED_SKIP)
     {
@@ -240,7 +240,7 @@ public EvidenceStatus pps_walk_bindings(uint consumer, uint row)
     PpsSubstitutionWalk walk = pps_walk_load();
     walk.phase = PPS_WALK_HEAD;
     PpsSubstitutionCall call = (PpsSubstitutionCall)0;
-    EvidenceStatus result = ts_ok(); bool closed = false;
+    SolverStatus result = ts_ok(); bool closed = false;
     [loop]
     for (;;)
     {

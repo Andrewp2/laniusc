@@ -348,7 +348,7 @@ fn host_batch_diagnostic_prefers_the_receipts_named_failure_rows() {
     let unrelated_limit = [4, 51, 5, INVALID, 65, 64, 0, 0];
     let named_obligation = [3, 61, 6, INVALID, 0, 0, 0, 0];
     let receipt = [6, 0, 4, 6, 0, 0, submission.serial, 0];
-    let failure = EvidenceDispatchFailure::new(
+    let failure = SolverDispatchFailure::new(
         &submission,
         valid,
         receipt,
