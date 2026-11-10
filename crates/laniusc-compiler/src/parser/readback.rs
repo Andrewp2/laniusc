@@ -197,7 +197,25 @@ pub(crate) fn project_hir_item_decl_tokens(kinds: &[u32], token_pos: &[u32]) -> 
 }
 
 const HIR_VARIANT_PAYLOAD_SLOT_STRIDE: u32 = 4;
-const PROD_BOUND_TYPE_IDENT: u32 = 241;
+// Production ids shift when the grammar gains a production. The test below
+// compares this copy with the generated table.
+const PROD_BOUND_TYPE_IDENT: u32 = 243;
+
+#[cfg(test)]
+mod production_id_tests {
+    #[test]
+    fn bound_type_ident_matches_the_generated_production_table() {
+        let generated = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../shaders/parser/generated_parse_production_ids.slang"
+        ));
+        let line = format!(
+            "static const uint PROD_BOUND_TYPE_IDENT = {}u;",
+            super::PROD_BOUND_TYPE_IDENT
+        );
+        assert!(generated.contains(&line), "expected `{line}` in the generated table");
+    }
+}
 
 mod validators;
 pub use validators::*;

@@ -97,8 +97,11 @@ stmt_list     [stmts_end]    -> ;
 stmt          [let_stmt]     -> 'Let' 'LetIdent' let_type_opt let_init_opt 'LetSemicolon';
 stmt          [return_stmt]  -> 'Return' return_value_opt 'ReturnSemicolon';
 stmt          [if_stmt]      -> 'If' 'GroupLParen' expr 'GroupRParen' if_block else_tail;
-else_tail     [else_stmt]    -> 'Else' block;
+else_tail     [else_stmt]    -> 'Else' else_arm;
 else_tail     [else_none]    -> ;
+# `else if` is an `if` statement in the else arm. It has no braces of its own.
+else_arm      [else_block]   -> block;
+else_arm      [else_if]      -> 'If' 'GroupLParen' expr 'GroupRParen' if_block else_tail;
 stmt          [while_stmt]   -> 'While' 'GroupLParen' expr 'GroupRParen' block;
 stmt          [for_stmt]     -> 'For' 'Ident' 'In' for_iterable block;
 stmt          [break_stmt]   -> 'Break' 'BreakSemicolon';

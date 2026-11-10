@@ -367,7 +367,13 @@ uint else_block_for_if(uint node)
         if (!valid_node(child))
             return INVALID;
         if (node_kind[child] == PROD_ELSE_STMT)
-            return block_child(child);
+        {
+            // The else arm is a block, or the `if` statement of an `else if`.
+            uint arm = direct_child_or_invalid(child);
+            if (!valid_node(arm))
+                return INVALID;
+            return node_kind[arm] == PROD_ELSE_IF ? arm : block_child(arm);
+        }
         child = direct_next_sibling_or_invalid(node, child);
     }
     return INVALID;
@@ -613,7 +619,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         publish_return(i);
     else if (compressed_if_return_value(i))
         publish_return_value(i);
-    else if (prod == PROD_IF_STMT)
+    else if (prod == PROD_IF_STMT || prod == PROD_ELSE_IF)
         publish_if(i);
     else if (prod == PROD_REQUIRES)
         publish_requires(i);

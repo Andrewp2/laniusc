@@ -187,6 +187,8 @@ fn distinct_types_reject_values_of_another_type() {
     }
 }
 
+const ELSE_IF: &str = "1\n2\n3\n4\n5\n4\n3\n0\n1432\n10\n11\n12\n";
+
 const LENGTHS: &str = "15\n3\n6\n5\n0\n6\n3\n3\n3\n2\n3\n";
 
 #[test]
@@ -216,6 +218,43 @@ fn slice_len_and_string_len_count_on_wasm() {
     .unwrap_or_else(|error| panic!("{fixture}: {error}"));
     let stdout = common::run_wasm_main_with_node("language ergonomics", "length_builtins", &wasm);
     assert_eq!(stdout, LENGTHS);
+}
+
+#[test]
+fn else_if_chains_take_the_first_true_arm() {
+    let fixture = "else_if.lani";
+    let bytes = compile(fixture).unwrap_or_else(|error| panic!("{fixture}: {error}"));
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output("language ergonomics", fixture, &bytes);
+        assert_eq!(String::from_utf8_lossy(&output.stdout), ELSE_IF, "{output:?}");
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn else_if_chains_take_the_first_true_arm_on_wasm() {
+    common::require_node();
+    let fixture = "else_if.lani";
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/language").join(fixture);
+    let stdlib_root = root.join("stdlib");
+    let wasm = common::run_gpu_codegen_with_timeout(fixture, move || {
+        pollster::block_on(compile_entry_to_wasm_with_stdlib(&entry, &stdlib_root))
+    })
+    .unwrap_or_else(|error| panic!("{fixture}: {error}"));
+    let stdout = common::run_wasm_main_with_node("language ergonomics", "else_if", &wasm);
+    assert_eq!(stdout, ELSE_IF);
+}
+
+#[test]
+fn else_takes_a_block_or_an_if_statement() {
+    assert_rejected("else_if_without_parentheses.lani", &["LNC0016", "expected `(`"]);
+    assert_rejected("else_without_block.lani", &["LNC0016", "expected `{` or keyword `if`"]);
+    assert_rejected("else_if_integer_condition.lani", &["LNC0006", "expects bool"]);
+    assert_rejected("else_if_arm_scope.lani", &["LNC0005", "not found in this scope"]);
 }
 
 #[test]

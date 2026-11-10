@@ -991,7 +991,9 @@ SemanticLirSchedule semantic_schedule(uint node, uint local_row, uint local_coun
             // arm's token_end cannot sort into the controlled region.
             schedule.execution_region = closing_end > hir.token_start
                 ? closing_end - 1u : closing_end;
-            schedule.execution_rank = 0xffffffffu;
+            // An `else if` chain closes every statement in it on one token.
+            // The statement that starts later is nested, so it closes first.
+            schedule.execution_rank = ~hir.token_start;
             schedule.execution_tie = 0xffffffffu;
             if (links.subtree_end <= node)
                 schedule.execution_region = hir.token_start;

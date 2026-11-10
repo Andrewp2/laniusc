@@ -1488,7 +1488,7 @@ void main(uint3 tid: SV_DispatchThreadID)
     {
         if (i == 0u || (token_kind(i - 1u) != TK_IF_RBRACE && token_kind(i - 1u) != TK_RBRACE))
             record_error(i, ERR_EXPECTED_TOKEN, TK_IF);
-        else if (token_kind(i + 1u) != TK_LBRACE)
+        else if (token_kind(i + 1u) != TK_LBRACE && token_kind(i + 1u) != TK_IF)
             record_error(i, ERR_EXPECTED_TOKEN, TK_LBRACE);
     }
 }

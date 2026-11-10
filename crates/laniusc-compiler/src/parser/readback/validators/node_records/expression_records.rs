@@ -1712,12 +1712,13 @@ pub fn validate_hir_statement_records(
                     ));
                 }
                 if operand2[row] != INVALID {
+                    // The else arm of an `else if` is the next if statement.
                     let else_block = require_node_edge(
                         row,
                         operand2[row],
-                        &[HIR_NODE_BLOCK],
+                        &[HIR_NODE_BLOCK, HIR_NODE_IF_STMT],
                         false,
-                        "if else block",
+                        "if else arm",
                     )?;
                     if else_block == then_block {
                         return Err(anyhow!(

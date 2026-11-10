@@ -1,6 +1,6 @@
-# Language ergonomics: item imports, `?`, local inference, block arms, path calls, C callbacks
+# Language ergonomics: item imports, `?`, local inference, block arms, path calls, C callbacks, `else if`
 
-Six features shorten ordinary Lanius code without adding hidden behavior.
+Seven features shorten ordinary Lanius code without adding hidden behavior.
 Each section states what the feature does, what it refuses, and the
 decision behind it. Tests: `tests/language_ergonomics_execution.rs`, fixtures
 in `tests/fixtures/language/`.
@@ -173,6 +173,40 @@ Fixtures: `tests/fixtures/compiler_defects/b14_path_self_method_*.lani`,
 `b19_stdlib_path_self_method.lani`, `generic_impl_path_inference.lani`, and
 `tests/fixtures/generics_matrix/p82_imported_type_path_self_method/` and
 `p83_bare_imported_type_path_self_method.lani`.
+
+## `else if`
+
+`else` takes a block or another `if` statement. The second form needs no
+braces around the nested statement:
+
+```lanius
+if (n < 0) {
+    return 1;
+} else if (n == 0) {
+    return 2;
+} else {
+    return 3;
+}
+```
+
+- The conditions are evaluated in order. The first true one selects its arm,
+  and the conditions after it are not evaluated.
+- A chain without a final `else` runs no arm when every condition is false.
+- A chain in which every arm returns, including a final `else`, ends a
+  function body the way a `return` does.
+- Each arm is its own scope. A `let` in one arm is not visible in another.
+- The condition keeps its parentheses, and `else` still needs a block or an
+  `if`. `else if n > 3 {` and `else return 2;` are syntax errors (`LNC0016`).
+
+`else if (c) { ... }` means the same as `else { if (c) { ... } }`. The grammar
+production `else_if` makes the nested statement the else arm of the enclosing
+one (`grammar/lanius.bnf`). Both statements end on the same `}`, so lowering
+closes the statement that starts later first
+(`shaders/codegen/lir/semantic/materialize.slang`). Fixture:
+`tests/fixtures/language/else_if.lani`, run on x86_64 and Wasm.
+
+Decision: `if` is still a statement. There is no `if` expression, and `match`
+remains the way to compute a value from alternatives.
 
 ## C callbacks
 

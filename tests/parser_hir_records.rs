@@ -11714,6 +11714,73 @@ fn main(flag: bool) -> i32 {
 }
 
 #[test]
+fn parser_hir_else_if_records_link_each_if_statement_to_the_next() {
+    let parsed = parse_resident_source_pack(&[r#"
+module app::main;
+
+fn main(n: i32) -> i32 {
+    if (n < 0) {
+        return 1;
+    } else if (n == 0) {
+        return 2;
+    } else if (n < 10) {
+        return 3;
+    } else {
+        return 4;
+    }
+}
+"#]);
+    assert!(
+        parsed.ll1_status[0] != 0,
+        "resident parser should accept the fixture: error_pos={} code={} detail={}",
+        parsed.ll1_status[1],
+        parsed.ll1_status[2],
+        parsed.ll1_status[3]
+    );
+
+    let mut if_nodes = parsed
+        .hir_stmt_record_kind
+        .iter()
+        .enumerate()
+        .filter_map(|(node, &kind)| {
+            (kind == STMT_RECORD_KIND_IF && parsed.hir_kind[node] == HIR_NODE_IF_STMT)
+                .then_some(node)
+        })
+        .collect::<Vec<_>>();
+    if_nodes.sort_unstable_by_key(|&node| parsed.hir_token_pos[node]);
+    assert_eq!(if_nodes.len(), 3, "the chain should publish three if-statement records");
+
+    for pair in if_nodes.windows(2) {
+        let (outer, inner) = (pair[0], pair[1]);
+        assert_eq!(
+            parsed.hir_stmt_record_operand2[outer] as usize, inner,
+            "the else arm of an `else if` should be the next if statement"
+        );
+        assert_eq!(
+            parsed.hir_token_end[inner], parsed.hir_token_end[outer],
+            "an `else if` statement should end where its enclosing if statement ends"
+        );
+        let then_block = parsed.hir_stmt_record_operand1[outer] as usize;
+        assert_eq!(parsed.hir_kind[then_block], HIR_NODE_BLOCK);
+        assert!(
+            parsed.hir_token_end[then_block] < parsed.hir_token_pos[inner],
+            "the `else` keyword should separate the then block from the next if statement"
+        );
+    }
+
+    let last = if_nodes[2];
+    let last_else = assert_valid_source_pack_hir_node_index(
+        &parsed,
+        parsed.hir_stmt_record_operand2[last],
+        "final else block",
+    );
+    assert_eq!(
+        parsed.hir_kind[last_else], HIR_NODE_BLOCK,
+        "the final else of the chain should publish a block"
+    );
+}
+
+#[test]
 fn parser_hir_method_receiver_records_are_source_addressable_in_source_packs() {
     let source_count = 2;
     let parsed = parse_resident_source_pack(&[
