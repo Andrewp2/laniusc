@@ -331,12 +331,14 @@ impl std::error::Error for GpuTypeCheckError {}
 
 impl GpuTypeCheckError {
     /// The check of a job recorded without canonical readbacks found a stage
-    /// that left candidates pending or overflowed. The caller records the
-    /// job again (lexer, parser and type check); the type checker records
-    /// that attempt synchronously.
-    pub(crate) fn requests_canonical_rerecord(&self) -> bool {
+    /// that left candidates pending or overflowed, or call inference recorded
+    /// without a wait did not converge. The caller records the job again
+    /// (lexer, parser and type check); the type checker records that attempt
+    /// with the readbacks.
+    pub(crate) fn requests_rerecord(&self) -> bool {
         matches!(self, GpuTypeCheckError::Gpu(error)
-            if error.downcast_ref::<canonical_passes::CanonicalSynchronousRetry>().is_some())
+            if error.downcast_ref::<canonical_passes::CanonicalSynchronousRetry>().is_some()
+                || error.downcast_ref::<resident::CallInferenceWaitRetry>().is_some())
     }
 }
 
@@ -434,6 +436,9 @@ pub struct GpuTypeChecker {
 pub struct RecordedTypeCheck {
     /// The status words of the round in which an error ended call inference.
     inference_error: Option<[u32; 4]>,
+    /// The inference batch recorded without a wait; the check reads its
+    /// history before the status.
+    unwaited_inference: Option<resident::UnwaitedCallInference>,
     /// The canonical stages were recorded without counter readbacks, so the
     /// check reads the job's counters before its status.
     canonical_deferred: bool,
