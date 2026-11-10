@@ -785,6 +785,17 @@ impl GpuParser {
                     .hir_param_id_apply
                     .record_pass_indirect(&mut ctx, &bufs.hir_list_rank_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_param_id_apply");
+                // About a third of the HIR passes are recorded. Finishing
+                // the encoder of all of them takes longer than the GPU needs
+                // for the tree, so submit this part now. The only queue
+                // writes left are the literal and string parameters, and
+                // every pass that reads them is recorded after them.
+                crate::gpu::passes_core::submit_recorded_prefix(
+                    &self.device,
+                    &self.queue,
+                    ctx.encoder,
+                    "compile.parser.hir_items",
+                );
                 if parser_compute_pass_batching_enabled(timer_ref) {
                     {
                         let bg_cache = ctx
